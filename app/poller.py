@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -159,7 +160,6 @@ class VatsimPoller:
                         pos["groundspeed"],
                         pos["heading"],
                     )
-                    conn.commit()
                     self._active_flights[cid] = flight_id
 
                     # Telegram alert (only when token + chat_id configured)
@@ -209,8 +209,6 @@ class VatsimPoller:
                     )
 
                 # 2c. Pilots who went offline
-                from datetime import datetime, timezone
-
                 logoff_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 for cid in went_offline:
                     flight_id = self._active_flights[cid]
