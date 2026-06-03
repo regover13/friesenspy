@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS position_history (
 );
 CREATE INDEX IF NOT EXISTS idx_ph_cid_ts ON position_history(cid, ts);
 CREATE INDEX IF NOT EXISTS idx_ph_ts     ON position_history(ts);
+CREATE INDEX IF NOT EXISTS idx_flights_cid ON flights(cid);
 """
 
 
@@ -87,6 +88,7 @@ def init_db(db_path: str) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
         conn.executescript(_DDL)
         conn.commit()
     finally:
@@ -97,6 +99,7 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     """Neue Verbindung mit WAL-Mode und row_factory=sqlite3.Row."""
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn
 
