@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FriesenSpy — VATSIM Live Tracker</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;500;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <style>
+    /* =====================================================================
+       RESET & BASE
+       ===================================================================== */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border-radius: 0 !important;
+    }
+
+    :root {
+      --bg-body:      #060d0a;
+      --bg-panel:     #0a1505;
+      --bg-panel-2:   #0d1a08;
+      --green:        #39e75f;
+      --green-dim:    rgba(57,231,95,0.3);
+      --green-glow:   rgba(57,231,95,0.2);
+      --green-faint:  rgba(57,231,95,0.08);
+      --green-grid:   rgba(57,231,95,0.06);
+      --cyan:         #00d4e0;
+      --amber:        #f0a500;
+      --red:          #ff4444;
+      --text-bright:  #e8f5e9;
+      --text-label:   #7cb87e;
+      --text-mono:    'Courier Prime', monospace;
+      --text-display: 'Exo 2', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-body);
+      color: var(--text-bright);
+      font-family: var(--text-display);
+      font-weight: 300;
+      overflow-x: hidden;
+    }
+
+    body {
+      background:
+        radial-gradient(ellipse at 50% 40%, rgba(57,231,95,0.04) 0%, transparent 70%),
+        var(--bg-body);
+    }
+
+    /* Grid overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--green-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--green-grid) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* =====================================================================
+       SCAN LINE
+       ===================================================================== */
+    .scanline {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      width: 100%;
+      height: 2px;
+      background: rgba(57,231,95,0.12);
+      animation: scanline 8s linear infinite;
+      top: -2px;
+    }
+
+    @keyframes scanline {
+      0%   { top: -2px; }
+      100% { top: 100vh; }
+    }
+
+    /* =====================================================================
+       LAYOUT WRAPPER
+       ===================================================================== */
+    #app {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 16px 32px;
+    }
+
+    /* =====================================================================
+       HEADER
+       ===================================================================== */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 0 16px;
+      border-bottom: 1px solid var(--green-dim);
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .logo {
+      font-family: var(--text-display);
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--green);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-shadow: 0 0 20px rgba(57,231,95,0.5), 0 0 40px rgba(57,231,95,0.2);
+    }
+
+    .logo-prefix {
+      color: var(--text-label);
+      font-weight: 300;
+      font-size: 1.1rem;
+      margin-right: 6px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    /* SSE Status Badge */
+    .sse-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--text-display);
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 6px 14px;
+      border: 1px solid var(--green-dim);
+      background: var(--bg-panel);
+      box-shadow: 0 0 10px var(--green-glow);
+    }
+
+    .sse-badge.disconnected {
+      border-color: rgba(255,68,68,0.4);
+      box-shadow: 0 0 10px rgba(255,68,68,0.2);
+    }
+
+    .sse-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--green);
+      border-radius: 50% !important;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .sse-badge.disconnected .sse-dot {
+      background: var(--red);
+      animation: none;
+    }
+
+    .sse-badge.disconnected .sse-label {
+      color: var(--red);
+    }
+
+    .sse-label {
+      color: var(--green);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--green); }
+      50%       { opacity: 0.4; box-shadow: none; }
+    }
+
+    .utc-clock {
+      font-family: var(--text-mono);
+      font-size: 1rem;
+      color: var(--text-label);
+      letter-spacing: 0.08em;
+      min-width: 120px;
+      text-align: right;
+    }
+
+    /* =====================================================================
+       TAB NAVIGATION
+       ===================================================================== */
+    .tab-nav {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--green-dim);
+      margin-bottom: 0;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      font-family: var(--text-display);
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 14px 24px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+      top: 1px;
+    }
+
+    .tab-btn:hover {
+      color: var(--green);
+      background: var(--green-faint);
+      box-shadow: 0 0 15px rgba(57,231,95,0.15);
+    }
+
+    .tab-btn.active {
+      color: var(--green);
+      background: rgba(57,231,95,0.08);
+      border-bottom: 2px solid var(--green);
+      text-shadow: 0 0 8px rgba(57,231,95,0.5);
+    }
+
+    /* =====================================================================
+       TAB PANELS
+       ===================================================================== */
+    .tab-panel {
+      display: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      padding: 24px 0;
+    }
+
+    .tab-panel.active {
+      display: block;
+      opacity: 1;
+    }
+
+    /* =====================================================================
+       PANELS / CARDS
+       ===================================================================== */
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--green-dim);
+      box-shadow: 0 0 10px var(--green-glow);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .panel-title {
+      font-family: var(--text-display);
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--green-grid);
+    }
+
+    /* =====================================================================
+       LIVE TABLE
+       ===================================================================== */
+    .live-table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--text-mono);
+      font-size: 0.85rem;
+    }
+
+    thead th {
+      font-family: var(--text-display);
+      font-size: 0.65rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--green-dim);
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--green-grid);
+      transition: background 0.15s ease;
+      border-left: 3px solid var(--green);
+    }
+
+    tbody tr:hover {
+      background: rgba(57,231,95,0.06);
+    }
+
+    tbody tr.new-row {
+      animation: rowHighlight 1.5s ease-out;
+    }
+
+    @keyframes rowHighlight {
+      0%   { background: rgba(57,231,95,0.25); }
+      100% { background: transparent; }
+    }
+
+    tbody td {
+      padding: 10px 12px;
+      color: var(--text-bright);
+      white-space: nowrap;
+    }
+
+    .td-callsign {
+      font-family: var(--text-mono);
+      font-weight: 700;
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.9rem;
+    }
+
+    .td-route {
+      color: var(--text-label);
+      font-size: 0.8rem;
+    }
+
+    .td-alt {
+      color: var(--cyan);
+    }
+
+    .td-gs {
+      color: var(--text-bright);
+    }
+
+    .td-time {
+      color: var(--amber);
+      font-size: 0.8rem;
+    }
+
+    /* Empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      gap: 20px;
+      color: var(--text-label);
+    }
+
+    .empty-state-text {
+      font-family: var(--text-display);
+      font-size: 0.85rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    /* Radar sweep for empty state */
+    .radar-sweep {
+      width: 80px;
+      height: 80px;
+      position: relative;
+    }
+
+    .radar-sweep::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border: 1px solid var(--green-dim);
+      border-radius: 50% !important;
+    }
+
+    .radar-sweep::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 50%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--green));
+      transform-origin: left center;
+      animation: radarSweep 3s linear infinite;
+    }
+
+    @keyframes radarSweep {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    /* =====================================================================
+       MAP (KARTE)
+       ===================================================================== */
+    #map-container {
+      height: 580px;
+      border: 1px solid var(--green-dim);
+      box-shadow: 0 0 10px var(--green-glow);
+      overflow: hidden;
+    }
+
+    #leaflet-map {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Override Leaflet popup styles for the radar aesthetic */
+    .leaflet-popup-content-wrapper {
+      background: var(--bg-panel) !important;
+      border: 1px solid var(--green-dim) !important;
+      color: var(--text-bright) !important;
+      box-shadow: 0 0 15px var(--green-glow) !important;
+      font-family: var(--text-mono) !important;
+      font-size: 0.8rem !important;
+    }
+
+    .leaflet-popup-tip {
+      background: var(--bg-panel) !important;
+    }
+
+    .popup-callsign {
+      font-weight: 700;
+      color: var(--green);
+      font-size: 1rem;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .popup-row {
+      color: var(--text-label);
+      margin: 2px 0;
+    }
+
+    .popup-row span {
+      color: var(--text-bright);
+    }
+
+    /* Aircraft markers */
+    .aircraft-marker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--green);
+      filter: drop-shadow(0 0 4px rgba(57,231,95,0.7));
+    }
+
+    /* =====================================================================
+       STATISTIKEN
+       ===================================================================== */
+    .stats-controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .stats-controls label {
+      font-family: var(--text-display);
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-label);
+    }
+
+    select, input[type="number"], input[type="text"], input[type="datetime-local"] {
+      background: var(--bg-panel-2);
+      border: 1px solid var(--green-dim);
+      color: var(--text-bright);
+      font-family: var(--text-mono);
+      font-size: 0.85rem;
+      padding: 8px 12px;
+      outline: none;
+      appearance: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    select:focus, input:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 8px var(--green-glow);
+    }
+
+    select option {
+      background: var(--bg-panel-2);
+    }
+
+    .rank-1 {
+      color: var(--amber);
+      font-weight: 700;
+    }
+
+    .rank-symbol {
+      font-size: 1rem;
+    }
+
+    /* =====================================================================
+       BUTTONS
+       ===================================================================== */
+    .btn {
+      font-family: var(--text-display);
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--green);
+      background: transparent;
+      border: 1px solid var(--green-dim);
+      padding: 8px 20px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      background: var(--green-faint);
+      border-color: var(--green);
+      box-shadow: 0 0 15px rgba(57,231,95,0.5);
+    }
+
+    .btn:active {
+      background: rgba(57,231,95,0.15);
+    }
+
+    .btn-primary {
+      color: var(--bg-body);
+      background: var(--green);
+      border-color: var(--green);
+      font-weight: 700;
+    }
+
+    .btn-primary:hover {
+      background: #4eff7a;
+      box-shadow: 0 0 20px rgba(57,231,95,0.6);
+    }
+
+    /* =====================================================================
+       EVENTS FORM
+       ===================================================================== */
+    .events-form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      align-items: end;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-family: var(--text-display);
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-label);
+    }
+
+    .input-suffix-wrap {
+      display: flex;
+      align-items: center;
+    }
+
+    .input-suffix-wrap input {
+      flex: 1;
+    }
+
+    .input-suffix {
+      background: var(--bg-panel);
+      border: 1px solid var(--green-dim);
+      border-left: none;
+      padding: 8px 10px;
+      font-family: var(--text-display);
+      font-size: 0.7rem;
+      color: var(--text-label);
+      letter-spacing: 0.1em;
+    }
+
+    .form-group input[type="text"],
+    .form-group input[type="number"],
+    .form-group input[type="datetime-local"] {
+      width: 100%;
+    }
+
+    /* Events results */
+    .events-summary {
+      font-family: var(--text-display);
+      font-size: 1rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--green-dim);
+      margin-bottom: 16px;
+    }
+
+    .events-summary.found {
+      color: var(--green);
+    }
+
+    .events-summary.not-found {
+      color: var(--text-label);
+    }
+
+    .pilot-card {
+      background: var(--bg-panel-2);
+      border: 1px solid var(--green-dim);
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .pilot-card-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50% !important;
+      flex-shrink: 0;
+    }
+
+    .pilot-card-name {
+      font-family: var(--text-mono);
+      font-weight: 700;
+      color: var(--text-bright);
+      font-size: 0.9rem;
+    }
+
+    .pilot-card-detail {
+      font-family: var(--text-display);
+      font-size: 0.7rem;
+      color: var(--text-label);
+      letter-spacing: 0.1em;
+    }
+
+    #events-map-container {
+      height: 400px;
+      border: 1px solid var(--green-dim);
+      box-shadow: 0 0 10px var(--green-glow);
+      margin-top: 20px;
+      overflow: hidden;
+      display: none;
+    }
+
+    #events-leaflet-map {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* =====================================================================
+       LOADING INDICATOR
+       ===================================================================== */
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-label);
+      font-family: var(--text-display);
+      font-size: 0.75rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      padding: 20px;
+    }
+
+    .loading-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--green);
+      border-radius: 50% !important;
+      animation: loadingBlink 1s ease-in-out infinite;
+    }
+
+    .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes loadingBlink {
+      0%, 100% { opacity: 0.2; }
+      50%       { opacity: 1; }
+    }
+
+    /* =====================================================================
+       MISC HELPERS
+       ===================================================================== */
+    .hidden { display: none !important; }
+
+    .text-green  { color: var(--green); }
+    .text-cyan   { color: var(--cyan); }
+    .text-amber  { color: var(--amber); }
+    .text-label  { color: var(--text-label); }
+    .mono        { font-family: var(--text-mono); }
+
+    hr.divider {
+      border: none;
+      border-top: 1px solid var(--green-dim);
+      margin: 16px 0;
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-body); }
+    ::-webkit-scrollbar-thumb { background: var(--green-dim); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--green); }
+
+    /* =====================================================================
+       RESPONSIVE
+       ===================================================================== */
+    @media (max-width: 768px) {
+      .logo { font-size: 1.6rem; }
+      .tab-btn { padding: 10px 14px; font-size: 0.7rem; }
+      .events-form { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Scan line overlay -->
+<div class="scanline"></div>
+
+<div id="app">
+
+  <!-- =====================================================================
+       HEADER
+       ===================================================================== -->
+  <header>
+    <div class="logo">
+      <span class="logo-prefix">◈</span>FRIESENSPY
+    </div>
+    <div class="header-right">
+      <div id="sse-badge" class="sse-badge disconnected">
+        <div class="sse-dot"></div>
+        <span class="sse-label" id="sse-label">GETRENNT</span>
+      </div>
+      <div class="utc-clock" id="utc-clock">00:00:00 UTC</div>
+    </div>
+  </header>
+
+  <!-- =====================================================================
+       TAB NAVIGATION
+       ===================================================================== -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="live">⬡ LIVE</button>
+    <button class="tab-btn" data-tab="karte">◎ KARTE</button>
+    <button class="tab-btn" data-tab="statistiken">▦ STATISTIKEN</button>
+    <button class="tab-btn" data-tab="events">◈ EVENTS</button>
+  </nav>
+
+  <!-- =====================================================================
+       TAB: LIVE
+       ===================================================================== -->
+  <div id="tab-live" class="tab-panel active">
+    <div class="panel">
+      <div class="panel-title">Live-Positionen · FriesenFlieger auf VATSIM</div>
+      <div id="live-content">
+        <div class="loading">
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+          Verbinde...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       TAB: KARTE
+       ===================================================================== -->
+  <div id="tab-karte" class="tab-panel">
+    <div id="map-container">
+      <div id="leaflet-map"></div>
+    </div>
+    <div class="panel" style="margin-top:16px;">
+      <div class="panel-title">Karten-Legende</div>
+      <span class="mono text-green" style="font-size:0.8rem;">
+        ◈ Flugzeug-Marker rotieren mit dem aktuellen Heading · Klick für Details
+      </span>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       TAB: STATISTIKEN
+       ===================================================================== -->
+  <div id="tab-statistiken" class="tab-panel">
+    <div class="panel">
+      <div class="panel-title">Flugstatistiken</div>
+      <div class="stats-controls">
+        <label for="stats-days">Zeitraum</label>
+        <select id="stats-days">
+          <option value="30">30 Tage</option>
+          <option value="90">90 Tage</option>
+          <option value="365">365 Tage</option>
+        </select>
+        <button class="btn" id="stats-refresh-btn">Aktualisieren</button>
+      </div>
+      <div id="stats-content">
+        <div class="loading">
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+          Lade Statistiken...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       TAB: EVENTS
+       ===================================================================== -->
+  <div id="tab-events" class="tab-panel">
+    <div class="panel">
+      <div class="panel-title">Event-Analyse · Wer war dabei?</div>
+      <div class="events-form">
+        <div class="form-group">
+          <label for="ev-icao">ICAO-Codes (kommagetrennt)</label>
+          <input type="text" id="ev-icao" placeholder="EDDK, EDDL, EHAM" />
+        </div>
+        <div class="form-group">
+          <label for="ev-radius">Radius</label>
+          <div class="input-suffix-wrap">
+            <input type="number" id="ev-radius" value="150" min="10" max="999" />
+            <span class="input-suffix">KM</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="ev-start">Start UTC</label>
+          <input type="datetime-local" id="ev-start" />
+        </div>
+        <div class="form-group">
+          <label for="ev-end">Ende UTC</label>
+          <input type="datetime-local" id="ev-end" />
+        </div>
+        <div class="form-group" style="justify-content:flex-end;">
+          <button class="btn btn-primary" id="events-search-btn">Suchen</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="events-results" class="hidden">
+      <div class="panel">
+        <div id="events-summary" class="events-summary"></div>
+        <div id="events-pilots-list"></div>
+      </div>
+      <div id="events-map-container">
+        <div id="events-leaflet-map"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#app -->
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLjE=" crossorigin=""></script>
+
+<script>
+'use strict';
+
+// ==========================================================================
+//  Constants & State
+// ==========================================================================
+const PILOT_COLORS = ['#39e75f', '#00d4e0', '#f0a500', '#ff6b6b', '#c084fc', '#fb923c'];
+const TILE_URL     = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const TILE_ATTR    = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+let liveMap        = null;  // Leaflet map instance for Karte tab
+let mapMarkers     = {};    // {callsign: marker}
+let eventsMap      = null;  // Leaflet map instance for Events tab
+let mapInitialized = false;
+let liveData       = [];    // current live positions
+let sseSource      = null;
+
+// ==========================================================================
+//  UTC Clock
+// ==========================================================================
+function updateClock() {
+  document.getElementById('utc-clock').textContent =
+    new Date().toISOString().slice(11, 19) + ' UTC';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ==========================================================================
+//  SSE Connection
+// ==========================================================================
+function setSSEStatus(status) {
+  const badge = document.getElementById('sse-badge');
+  const label = document.getElementById('sse-label');
+  if (status === 'connected') {
+    badge.classList.remove('disconnected');
+    label.textContent = 'LIVE';
+  } else {
+    badge.classList.add('disconnected');
+    label.textContent = 'GETRENNT';
+  }
+}
+
+function connectSSE() {
+  if (sseSource) {
+    sseSource.close();
+    sseSource = null;
+  }
+
+  sseSource = new EventSource('/api/sse');
+
+  sseSource.onopen = () => {
+    setSSEStatus('connected');
+  };
+
+  sseSource.onmessage = (e) => {
+    // Skip keepalive comments — EventSource won't fire onmessage for comments
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'positions') {
+        setSSEStatus('connected');
+        liveData = msg.data;
+        renderLiveTable(msg.data);
+        updateMap(msg.data);
+      }
+    } catch (_) { /* ignore parse errors */ }
+  };
+
+  sseSource.onerror = () => {
+    setSSEStatus('disconnected');
+    sseSource.close();
+    sseSource = null;
+    setTimeout(connectSSE, 5000);
+  };
+}
+
+// ==========================================================================
+//  Formatters
+// ==========================================================================
+function fmtAlt(alt) {
+  if (alt === null || alt === undefined) return '—';
+  alt = Number(alt);
+  return alt > 18000
+    ? 'FL' + Math.round(alt / 100)
+    : alt.toLocaleString('de') + ' ft';
+}
+
+function fmtGS(gs) {
+  if (gs === null || gs === undefined) return '—';
+  return Number(gs).toLocaleString('de') + ' kt';
+}
+
+function fmtOnlineTime(logonIso) {
+  if (!logonIso) return '—';
+  const start = new Date(logonIso);
+  const now   = new Date();
+  const diffMs = now - start;
+  if (isNaN(diffMs) || diffMs < 0) return '—';
+  const h = Math.floor(diffMs / 3600000);
+  const m = Math.floor((diffMs % 3600000) / 60000);
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
+function fmtRoute(dep, arr) {
+  const d = (dep || '').toUpperCase() || '????';
+  const a = (arr || '').toUpperCase() || '????';
+  return d + ' → ' + a;
+}
+
+// ==========================================================================
+//  LIVE TAB
+// ==========================================================================
+function renderLiveTable(pilots) {
+  const container = document.getElementById('live-content');
+
+  if (!pilots || pilots.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="radar-sweep"></div>
+        <div class="empty-state-text">Keine Friesen online</div>
+      </div>`;
+    return;
+  }
+
+  // Track existing callsigns to detect new rows
+  const existing = new Set(
+    container.querySelectorAll('tr[data-callsign]')
+      ? Array.from(container.querySelectorAll('tr[data-callsign]')).map(r => r.dataset.callsign)
+      : []
+  );
+
+  let html = `
+    <div class="live-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Callsign</th>
+            <th>Pilot</th>
+            <th>Muster</th>
+            <th>Route</th>
+            <th>Höhe</th>
+            <th>GS</th>
+            <th>Online seit</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+  for (const p of pilots) {
+    const isNew = !existing.has(p.callsign);
+    html += `
+          <tr data-callsign="${escHtml(p.callsign)}" ${isNew ? 'class="new-row"' : ''}>
+            <td class="td-callsign">${escHtml((p.callsign || '').toUpperCase())}</td>
+            <td>${escHtml(p.name || '—')}</td>
+            <td class="mono">${escHtml(p.aircraft || '—')}</td>
+            <td class="td-route">${escHtml(fmtRoute(p.departure, p.arrival))}</td>
+            <td class="td-alt">${fmtAlt(p.altitude)}</td>
+            <td class="td-gs">${fmtGS(p.groundspeed)}</td>
+            <td class="td-time">${fmtOnlineTime(p.logon_time)}</td>
+          </tr>`;
+  }
+
+  html += `</tbody></table></div>`;
+  container.innerHTML = html;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Initial fetch for live data (before SSE delivers first message)
+async function fetchLiveInitial() {
+  try {
+    const res  = await fetch('/api/live');
+    const data = await res.json();
+    liveData = data;
+    renderLiveTable(data);
+  } catch (e) {
+    document.getElementById('live-content').innerHTML =
+      `<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Verbindungsfehler — warte auf SSE...</div>`;
+  }
+}
+
+// ==========================================================================
+//  KARTE TAB — Leaflet
+// ==========================================================================
+function initLiveMap() {
+  if (mapInitialized) return;
+  mapInitialized = true;
+
+  liveMap = L.map('leaflet-map', {
+    center:    [54.5, 8.5],
+    zoom:      7,
+    zoomControl: true,
+    attributionControl: true,
+  });
+
+  L.tileLayer(TILE_URL, {
+    attribution: TILE_ATTR,
+    subdomains: 'abcd',
+    maxZoom: 19,
+  }).addTo(liveMap);
+
+  // Style Leaflet controls
+  const styleEl = document.createElement('style');
+  styleEl.textContent = `
+    .leaflet-control-zoom a {
+      background: #0a1505 !important;
+      color: #39e75f !important;
+      border-color: rgba(57,231,95,0.3) !important;
+    }
+    .leaflet-control-attribution {
+      background: rgba(6,13,10,0.8) !important;
+      color: #7cb87e !important;
+      font-size: 9px !important;
+    }
+    .leaflet-control-attribution a { color: #39e75f !important; }
+  `;
+  document.head.appendChild(styleEl);
+
+  // Render current liveData on map
+  updateMap(liveData);
+}
+
+function makeAircraftIcon(heading) {
+  const hdg = Number(heading) || 0;
+  return L.divIcon({
+    className: '',
+    html: `<div class="aircraft-marker" style="transform: rotate(${hdg}deg);">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2L8 10H4l3 2-1 4 6-2 6 2-1-4 3-2h-4z"/>
+      </svg>
+    </div>`,
+    iconSize:   [20, 20],
+    iconAnchor: [10, 10],
+    popupAnchor:[0, -12],
+  });
+}
+
+function buildPopupHtml(p) {
+  return `
+    <div class="popup-callsign">${escHtml((p.callsign || '').toUpperCase())}</div>
+    <div class="popup-row">Pilot: <span>${escHtml(p.name || '—')}</span></div>
+    <div class="popup-row">Muster: <span>${escHtml(p.aircraft || '—')}</span></div>
+    <div class="popup-row">Route: <span>${escHtml(fmtRoute(p.departure, p.arrival))}</span></div>
+    <div class="popup-row">Höhe: <span>${fmtAlt(p.altitude)}</span></div>
+    <div class="popup-row">GS: <span>${fmtGS(p.groundspeed)}</span></div>
+    <div class="popup-row">Online: <span>${fmtOnlineTime(p.logon_time)}</span></div>`;
+}
+
+function updateMap(pilots) {
+  if (!mapInitialized || !liveMap) return;
+
+  const currentCallsigns = new Set((pilots || []).map(p => p.callsign));
+
+  // Remove stale markers
+  for (const [cs, marker] of Object.entries(mapMarkers)) {
+    if (!currentCallsigns.has(cs)) {
+      liveMap.removeLayer(marker);
+      delete mapMarkers[cs];
+    }
+  }
+
+  // Add / update markers
+  for (const p of (pilots || [])) {
+    if (p.latitude == null || p.longitude == null) continue;
+    const icon = makeAircraftIcon(p.heading);
+    if (mapMarkers[p.callsign]) {
+      mapMarkers[p.callsign]
+        .setLatLng([p.latitude, p.longitude])
+        .setIcon(icon)
+        .setPopupContent(buildPopupHtml(p));
+    } else {
+      const marker = L.marker([p.latitude, p.longitude], { icon })
+        .bindPopup(buildPopupHtml(p), { maxWidth: 240 })
+        .addTo(liveMap);
+      mapMarkers[p.callsign] = marker;
+    }
+  }
+}
+
+// ==========================================================================
+//  STATISTIKEN TAB
+// ==========================================================================
+async function fetchStats() {
+  const days = document.getElementById('stats-days').value;
+  const container = document.getElementById('stats-content');
+  container.innerHTML = `<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade Daten...</div>`;
+
+  try {
+    const res  = await fetch(`/api/stats?days=${days}`);
+    const data = await res.json();
+    renderStatsTable(data);
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden der Statistiken</div></div>`;
+  }
+}
+
+function renderStatsTable(stats) {
+  const container = document.getElementById('stats-content');
+
+  if (!stats || stats.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-state-text">Keine Flugdaten vorhanden</div></div>`;
+    return;
+  }
+
+  // Sort by hours descending
+  const sorted = [...stats].sort((a, b) => (b.total_hours || 0) - (a.total_hours || 0));
+
+  let html = `
+    <div class="live-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Rang</th>
+            <th>Pilot</th>
+            <th>Flüge</th>
+            <th>Stunden</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+  sorted.forEach((s, i) => {
+    const rank = i + 1;
+    const rankCell = rank === 1
+      ? `<span class="rank-1 rank-symbol">◈</span>`
+      : `<span class="text-label mono">${rank}</span>`;
+    const hours = (s.total_hours || 0).toFixed(1);
+    html += `
+          <tr>
+            <td>${rankCell}</td>
+            <td>${escHtml(s.name || String(s.cid))}</td>
+            <td class="mono">${s.flight_count || 0}</td>
+            <td class="mono text-cyan">${hours} h</td>
+          </tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+  container.innerHTML = html;
+}
+
+// ==========================================================================
+//  EVENTS TAB
+// ==========================================================================
+let eventsMapInitialized = false;
+
+async function searchEvents() {
+  const icao   = document.getElementById('ev-icao').value.trim();
+  const radius = document.getElementById('ev-radius').value || 150;
+  const start  = document.getElementById('ev-start').value;
+  const end    = document.getElementById('ev-end').value;
+
+  if (!icao) {
+    alert('Bitte mindestens einen ICAO-Code eingeben.');
+    return;
+  }
+
+  const btn = document.getElementById('events-search-btn');
+  btn.disabled = true;
+  btn.textContent = 'Suche...';
+
+  // Convert datetime-local to ISO with Z
+  const startIso = start ? new Date(start).toISOString() : '';
+  const endIso   = end   ? new Date(end).toISOString()   : '';
+
+  const params = new URLSearchParams({
+    icao,
+    radius,
+    ...(startIso && { start: startIso }),
+    ...(endIso   && { end:   endIso   }),
+  });
+
+  try {
+    const res  = await fetch(`/api/events?${params}`);
+    const data = await res.json();
+    renderEventsResults(data, icao, Number(radius));
+  } catch (e) {
+    alert('Fehler bei der Event-Suche.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Suchen';
+  }
+}
+
+function renderEventsResults(data, icaoStr, radiusKm) {
+  const results   = document.getElementById('events-results');
+  const summary   = document.getElementById('events-summary');
+  const pilotList = document.getElementById('events-pilots-list');
+  const mapDiv    = document.getElementById('events-map-container');
+
+  results.classList.remove('hidden');
+
+  const pilots = data.pilots || [];
+
+  if (pilots.length === 0) {
+    summary.textContent = 'Keine Treffer';
+    summary.className   = 'events-summary not-found';
+    pilotList.innerHTML = '';
+    mapDiv.style.display = 'none';
+    return;
+  }
+
+  summary.textContent = `${pilots.length} Fries${pilots.length === 1 ? '' : 'en'} dabei`;
+  summary.className   = 'events-summary found';
+
+  // Pilot cards
+  let cardsHtml = '';
+  pilots.forEach((p, i) => {
+    const color    = PILOT_COLORS[i % PILOT_COLORS.length];
+    const trackLen = (p.positions || []).length;
+    cardsHtml += `
+      <div class="pilot-card">
+        <div class="pilot-card-dot" style="background:${color};"></div>
+        <div>
+          <div class="pilot-card-name">${escHtml(p.name || String(p.cid))}</div>
+          <div class="pilot-card-detail">${trackLen} Track-Punkte</div>
+        </div>
+      </div>`;
+  });
+  pilotList.innerHTML = cardsHtml;
+
+  // Map
+  mapDiv.style.display = 'block';
+  renderEventsMap(pilots, icaoStr, radiusKm);
+
+  // Smooth scroll to results
+  results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderEventsMap(pilots, icaoStr, radiusKm) {
+  if (!eventsMapInitialized) {
+    eventsMap = L.map('events-leaflet-map', {
+      center: [54.5, 8.5],
+      zoom:   6,
+    });
+    L.tileLayer(TILE_URL, {
+      attribution: TILE_ATTR,
+      subdomains: 'abcd',
+      maxZoom: 19,
+    }).addTo(eventsMap);
+    eventsMapInitialized = true;
+  } else {
+    // Clear previous layers except the tile layer
+    eventsMap.eachLayer(layer => {
+      if (!(layer instanceof L.TileLayer)) eventsMap.removeLayer(layer);
+    });
+  }
+
+  const bounds = [];
+
+  // Airport circles (approximate — we don't have coords here, show note)
+  // If we had airport coords we'd draw circles; skip for now as API doesn't return them
+
+  // Pilot tracks as polylines
+  pilots.forEach((p, i) => {
+    const color     = PILOT_COLORS[i % PILOT_COLORS.length];
+    const positions = (p.positions || [])
+      .filter(pos => pos.lat != null && pos.lon != null)
+      .map(pos => [pos.lat, pos.lon]);
+
+    if (positions.length === 0) return;
+
+    L.polyline(positions, { color, weight: 2, opacity: 0.8 }).addTo(eventsMap);
+
+    // Start / end markers
+    const first = positions[0];
+    const last  = positions[positions.length - 1];
+
+    L.circleMarker(first, {
+      radius: 5, color, fillColor: color, fillOpacity: 1, weight: 2,
+    }).bindTooltip(`${p.name || p.cid} — Start`, { className: 'mono' }).addTo(eventsMap);
+
+    if (positions.length > 1) {
+      L.circleMarker(last, {
+        radius: 5, color, fillColor: '#060d0a', fillOpacity: 1, weight: 2,
+      }).bindTooltip(`${p.name || p.cid} — Ende`, { className: 'mono' }).addTo(eventsMap);
+    }
+
+    bounds.push(...positions);
+  });
+
+  if (bounds.length > 0) {
+    eventsMap.fitBounds(bounds, { padding: [40, 40] });
+  }
+}
+
+// ==========================================================================
+//  TAB SWITCHING
+// ==========================================================================
+let statsLoaded = false;
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+
+    // Update buttons
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    // Update panels with fade
+    document.querySelectorAll('.tab-panel').forEach(p => {
+      p.classList.remove('active');
+      p.style.opacity = '0';
+    });
+
+    const panel = document.getElementById(`tab-${tab}`);
+    panel.classList.add('active');
+    requestAnimationFrame(() => {
+      panel.style.opacity = '1';
+    });
+
+    // Lazy initialization
+    if (tab === 'karte') {
+      // Leaflet requires the container to be visible before init
+      requestAnimationFrame(() => {
+        initLiveMap();
+        // Invalidate size after possible layout shift
+        if (liveMap) liveMap.invalidateSize();
+      });
+    }
+
+    if (tab === 'statistiken' && !statsLoaded) {
+      statsLoaded = true;
+      fetchStats();
+    }
+  });
+});
+
+// Stats controls
+document.getElementById('stats-refresh-btn').addEventListener('click', fetchStats);
+document.getElementById('stats-days').addEventListener('change', fetchStats);
+
+// Events search
+document.getElementById('events-search-btn').addEventListener('click', searchEvents);
+
+// Allow Enter key in ICAO input
+document.getElementById('ev-icao').addEventListener('keydown', e => {
+  if (e.key === 'Enter') searchEvents();
+});
+
+// ==========================================================================
+//  BOOT
+// ==========================================================================
+fetchLiveInitial();
+connectSSE();
+
+// Update online times every minute (SSE might not fire that often)
+setInterval(() => {
+  if (liveData.length > 0) renderLiveTable(liveData);
+}, 60000);
+
+</script>
+</body>
+</html>
