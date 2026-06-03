@@ -1,0 +1,8 @@
+fastapi>=0.111
+uvicorn[standard]>=0.29
+apscheduler>=3.10
+httpx>=0.27
+pydantic-settings>=2.2
+airportsdata>=20240320
+pytest>=8.0
+pytest-asyncio>=0.23
