@@ -1,6 +1,7 @@
 """Telegram-Alert-System für FriesenSpy — Benachrichtigungen wenn Friesen online gehen."""
 from __future__ import annotations
 
+import html
 import logging
 
 import httpx
@@ -31,14 +32,14 @@ def format_online_message(
         Falls departure oder arrival leer: Route-Zeile angepasst oder weggelassen.
     """
     lines = [
-        f"✈️ {callsign} ist jetzt online!",
-        f"Pilot: {pilot_name}",
+        f"✈️ {html.escape(callsign)} ist jetzt online!",
+        f"Pilot: {html.escape(pilot_name)}",
     ]
 
     # Route-Zeile nur hinzufügen falls mindestens ein Flughafen angegeben
     if departure or arrival:
-        dep_display = departure if departure else "?"
-        arr_display = arrival if arrival else "?"
+        dep_display = html.escape(departure) if departure else "?"
+        arr_display = html.escape(arrival) if arrival else "?"
         lines.append(f"Route: {dep_display} → {arr_display}")
 
     return "\n".join(lines)
@@ -83,5 +84,5 @@ async def send_telegram_alert(
         response = await client.post(url, json=payload)
         response.raise_for_status()
     except Exception as e:
-        # Fehler geloggt, aber nicht weitergeworfen (silent fail)
-        logger.warning(f"Failed to send Telegram alert: {e}")
+        # Nur Exception-Typ loggen — die URL enthält den Bot-Token
+        logger.warning("Failed to send Telegram alert: %s", type(e).__name__)
