@@ -1,0 +1,282 @@
+"""SQLite WAL-Mode Datenbank-Layer für FriesenSpy."""
+from __future__ import annotations
+
+import sqlite3
+from datetime import datetime, timezone
+
+
+# ---------------------------------------------------------------------------
+# Schema
+# ---------------------------------------------------------------------------
+
+_DDL = """
+CREATE TABLE IF NOT EXISTS pilots (
+    cid       INTEGER PRIMARY KEY,
+    name      TEXT,
+    added_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS flights (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    cid           INTEGER REFERENCES pilots(cid),
+    callsign      TEXT,
+    aircraft_short TEXT,
+    departure     TEXT,
+    arrival       TEXT,
+    logon_time    TEXT,
+    logoff_time   TEXT,
+    duration_min  INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS live_positions (
+    cid          INTEGER PRIMARY KEY,
+    callsign     TEXT,
+    aircraft     TEXT,
+    departure    TEXT,
+    arrival      TEXT,
+    latitude     REAL,
+    longitude    REAL,
+    altitude     INTEGER,
+    groundspeed  INTEGER,
+    heading      INTEGER,
+    logon_time   TEXT,
+    updated_at   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS position_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    cid         INTEGER NOT NULL REFERENCES pilots(cid),
+    callsign    TEXT,
+    latitude    REAL,
+    longitude   REAL,
+    altitude    INTEGER,
+    groundspeed INTEGER,
+    heading     INTEGER,
+    ts          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ph_cid_ts ON position_history(cid, ts);
+CREATE INDEX IF NOT EXISTS idx_ph_ts     ON position_history(ts);
+"""
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _now_utc() -> str:
+    """Return current UTC time as ISO8601 string."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_iso(ts: str) -> datetime:
+    """Parse an ISO8601 UTC string (with or without trailing Z) to datetime."""
+    ts = ts.rstrip("Z")
+    return datetime.fromisoformat(ts).replace(tzinfo=timezone.utc)
+
+
+def _row_to_dict(row: sqlite3.Row) -> dict:
+    return dict(row)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def init_db(db_path: str) -> None:
+    """Datenbank initialisieren: WAL-Mode setzen, Tabellen/Indizes anlegen (IF NOT EXISTS)."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.executescript(_DDL)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_connection(db_path: str) -> sqlite3.Connection:
+    """Neue Verbindung mit WAL-Mode und row_factory=sqlite3.Row."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def ensure_pilot(conn: sqlite3.Connection, cid: int, name: str) -> None:
+    """Pilot in pilots-Tabelle eintragen falls noch nicht vorhanden (INSERT OR IGNORE)."""
+    conn.execute(
+        "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)",
+        (cid, name, _now_utc()),
+    )
+
+
+def open_flight(
+    conn: sqlite3.Connection,
+    cid: int,
+    callsign: str,
+    aircraft_short: str,
+    departure: str,
+    arrival: str,
+    logon_time: str,
+) -> int:
+    """Neuen Flug eröffnen, flight.id zurückgeben."""
+    cur = conn.execute(
+        """
+        INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, logon_time)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (cid, callsign, aircraft_short, departure, arrival, logon_time),
+    )
+    return cur.lastrowid  # type: ignore[return-value]
+
+
+def close_flight(conn: sqlite3.Connection, flight_id: int, logoff_time: str) -> None:
+    """Flug abschließen: logoff_time setzen, duration_min berechnen."""
+    row = conn.execute(
+        "SELECT logon_time FROM flights WHERE id = ?", (flight_id,)
+    ).fetchone()
+    if row is None:
+        return
+
+    logon_dt = _parse_iso(row[0])
+    logoff_dt = _parse_iso(logoff_time)
+    duration_min = max(0, int((logoff_dt - logon_dt).total_seconds() / 60))
+
+    conn.execute(
+        "UPDATE flights SET logoff_time = ?, duration_min = ? WHERE id = ?",
+        (logoff_time, duration_min, flight_id),
+    )
+
+
+def upsert_live_position(
+    conn: sqlite3.Connection,
+    cid: int,
+    callsign: str,
+    aircraft: str,
+    departure: str,
+    arrival: str,
+    latitude: float,
+    longitude: float,
+    altitude: int,
+    groundspeed: int,
+    heading: int,
+    logon_time: str,
+) -> None:
+    """Live-Position aktualisieren (INSERT OR REPLACE), updated_at = jetzt."""
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO live_positions
+            (cid, callsign, aircraft, departure, arrival,
+             latitude, longitude, altitude, groundspeed, heading,
+             logon_time, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            cid, callsign, aircraft, departure, arrival,
+            latitude, longitude, altitude, groundspeed, heading,
+            logon_time, _now_utc(),
+        ),
+    )
+
+
+def remove_live_position(conn: sqlite3.Connection, cid: int) -> None:
+    """Pilot aus live_positions entfernen (offline gegangen)."""
+    conn.execute("DELETE FROM live_positions WHERE cid = ?", (cid,))
+
+
+def save_position_history(
+    conn: sqlite3.Connection,
+    cid: int,
+    callsign: str,
+    latitude: float,
+    longitude: float,
+    altitude: int,
+    groundspeed: int,
+    heading: int,
+) -> None:
+    """Positions-Snapshot speichern, ts = jetzt UTC."""
+    conn.execute(
+        """
+        INSERT INTO position_history
+            (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (cid, callsign, latitude, longitude, altitude, groundspeed, heading, _now_utc()),
+    )
+
+
+def get_live_positions(conn: sqlite3.Connection) -> list[dict]:
+    """Alle aktuellen Live-Positionen als Liste von Dicts."""
+    rows = conn.execute("SELECT * FROM live_positions").fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
+    """Flugstunden pro Pilot für die letzten N Tage.
+
+    Gibt Liste von {'cid': int, 'name': str, 'flight_count': int, 'total_hours': float} zurück.
+    """
+    rows = conn.execute(
+        """
+        SELECT
+            p.cid,
+            p.name,
+            COUNT(f.id)                         AS flight_count,
+            ROUND(SUM(COALESCE(f.duration_min, 0)) / 60.0, 2) AS total_hours
+        FROM pilots p
+        LEFT JOIN flights f
+               ON f.cid = p.cid
+              AND f.logon_time >= datetime('now', ? || ' days')
+              AND f.logoff_time IS NOT NULL
+        GROUP BY p.cid, p.name
+        ORDER BY total_hours DESC, p.name
+        """,
+        (f"-{days}",),
+    ).fetchall()
+    return [
+        {
+            "cid": r["cid"],
+            "name": r["name"],
+            "flight_count": r["flight_count"],
+            "total_hours": r["total_hours"],
+        }
+        for r in rows
+    ]
+
+
+def cleanup_old_history(conn: sqlite3.Connection, days: int = 90) -> int:
+    """position_history-Einträge älter als N Tage löschen. Gibt Anzahl gelöschter Zeilen zurück."""
+    cur = conn.execute(
+        "DELETE FROM position_history WHERE ts < datetime('now', ? || ' days')",
+        (f"-{days}",),
+    )
+    return cur.rowcount
+
+
+def get_position_history(
+    conn: sqlite3.Connection, cid: int, start_ts: str, end_ts: str
+) -> list[dict]:
+    """Positionshistorie für einen Piloten in einem Zeitfenster (ISO8601 UTC Strings)."""
+    rows = conn.execute(
+        """
+        SELECT * FROM position_history
+        WHERE cid = ? AND ts >= ? AND ts <= ?
+        ORDER BY ts
+        """,
+        (cid, start_ts, end_ts),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def get_all_position_history(
+    conn: sqlite3.Connection, start_ts: str, end_ts: str
+) -> list[dict]:
+    """Positionshistorie aller Piloten in einem Zeitfenster (für Event-Filter)."""
+    rows = conn.execute(
+        """
+        SELECT * FROM position_history
+        WHERE ts >= ? AND ts <= ?
+        ORDER BY ts
+        """,
+        (start_ts, end_ts),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
