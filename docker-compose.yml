@@ -1,0 +1,9 @@
+services:
+  friesenspy:
+    image: ghcr.io/regover13/friesenspy:latest
+    ports:
+      - "127.0.0.1:8091:8091"
+    volumes:
+      - ./data:/opt/friesenspy/data
+    env_file: config.env
+    restart: unless-stopped

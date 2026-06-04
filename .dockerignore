@@ -1,0 +1,11 @@
+.git
+.github
+.worktrees
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+tests/
+*.db
+config.env
+.env
