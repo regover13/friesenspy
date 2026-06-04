@@ -1799,9 +1799,9 @@ async function searchEvents() {
   btn.disabled = true;
   btn.textContent = 'Suche...';
 
-  // Convert datetime-local to ISO with Z
-  const startIso = start ? new Date(start).toISOString() : '';
-  const endIso   = end   ? new Date(end).toISOString()   : '';
+  // datetime-local liefert Ortszeit ohne Timezone — direkt als UTC behandeln
+  const startIso = start ? start + ':00Z' : '';
+  const endIso   = end   ? end   + ':00Z' : '';
 
   const params = new URLSearchParams({
     icao,
