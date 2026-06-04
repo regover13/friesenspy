@@ -15,8 +15,9 @@ logger = logging.getLogger(__name__)
 _CID_PATTERN = re.compile(
     r'<td class="info"><div><a href="https://stats\.vatsim\.net/stats/(\d+)">'
 )
-_TOKEN_PATTERN = re.compile(r'<input type="hidden" name="form_token" value="([^"]+)"')
-_CREATION_PATTERN = re.compile(r'<input type="hidden" name="creation_time" value="([^"]+)"')
+_TOKEN_PATTERN = re.compile(r'name="form_token" value="([^"]+)"')
+_CREATION_PATTERN = re.compile(r'name="creation_time" value="([^"]+)"')
+_SID_PATTERN = re.compile(r'name="sid" value="([^"]+)"')
 _PAGE_SIZE = 25
 
 
@@ -39,14 +40,16 @@ async def fetch_friesen_cids(
             timeout=30.0,
             follow_redirects=True,
         ) as client:
-            # Schritt 1: Login-Seite laden um CSRF-Token zu erhalten
+            # Schritt 1: Login-Seite laden um CSRF-Token + SID zu erhalten
             login_page = await client.get("/ucp.php?mode=login")
             form_token = _TOKEN_PATTERN.search(login_page.text)
             creation_time = _CREATION_PATTERN.search(login_page.text)
+            sid = _SID_PATTERN.search(login_page.text)
+            sid_val = sid.group(1) if sid else ""
 
-            # Schritt 2: Login mit CSRF-Token
+            # Schritt 2: Login mit CSRF-Token und SID (phpBB validiert beides)
             resp = await client.post(
-                "/ucp.php?mode=login",
+                f"/ucp.php?mode=login&sid={sid_val}",
                 data={
                     "username": username,
                     "password": password,
@@ -54,6 +57,7 @@ async def fetch_friesen_cids(
                     "viewonline": "1",
                     "redirect": "index.php",
                     "login": "Anmelden",
+                    "sid": sid_val,
                     "form_token": form_token.group(1) if form_token else "",
                     "creation_time": creation_time.group(1) if creation_time else "",
                 },
