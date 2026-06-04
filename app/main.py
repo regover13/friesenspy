@@ -169,7 +169,7 @@ async def get_pilot_flights(cid: int, days: int = 90):
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
-        fs_flights = get_pilot_flights_friesenspy(conn, cid, days)
+        fs_flights = get_pilot_flights_friesenspy(conn, cid, days if days > 0 else 99999)
         statsim_flights: list[dict] = []
         if settings.STATSIM_API_KEY:
             last = get_statsim_last_fetched(conn, cid)
@@ -185,12 +185,19 @@ async def get_pilot_flights(cid: int, days: int = 90):
                     pass
             if not cache_fresh:
                 async with _httpx.AsyncClient() as client:
-                    fresh = await fetch_pilot_flights(client, cid, settings.STATSIM_API_KEY, days)
+                    if days == 0:
+                        # Alle Flüge seit StatSim-Start (2020-01-22)
+                        from datetime import datetime as _dt
+                        statsim_days = (_dt.now(_timezone.utc) - _dt(2020, 1, 22, tzinfo=_timezone.utc)).days
+                    else:
+                        statsim_days = max(days, 365)
+                    fresh = await fetch_pilot_flights(client, cid, settings.STATSIM_API_KEY, statsim_days)
                 for f in fresh:
                     f["cid"] = cid
                 upsert_statsim_flights(conn, fresh)
                 conn.commit()
-            statsim_flights = get_statsim_flights_for_pilot(conn, cid, days)
+            display_days = days if days > 0 else 99999
+            statsim_flights = get_statsim_flights_for_pilot(conn, cid, display_days)
     finally:
         conn.close()
 

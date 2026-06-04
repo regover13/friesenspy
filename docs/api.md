@@ -54,7 +54,7 @@ Aktuelle Live-Positionen aller online Friesen (Callsign-Prefix `FRS`).
 
 ## GET /api/stats
 
-Flugstunden und Fluganzahl pro Pilot, absteigend sortiert. Nur FriesenSpy-eigene Aufzeichnungen; für historische Daten → `/api/pilots/{cid}/flights`.
+Letzter Flug und Fluganzahl pro Pilot, absteigend nach Datum. Nur FriesenSpy-eigene Aufzeichnungen; für historische Daten → `/api/pilots/{cid}/flights`.
 
 **Query-Parameter**
 
@@ -70,7 +70,7 @@ Flugstunden und Fluganzahl pro Pilot, absteigend sortiert. Nur FriesenSpy-eigene
     "cid": 1602713,
     "name": "Tobias EDKB",
     "flight_count": 12,
-    "total_hours": 14.5
+    "last_flight": "2026-06-04T07:14:54Z"
   }
 ]
 ```
@@ -79,13 +79,13 @@ Flugstunden und Fluganzahl pro Pilot, absteigend sortiert. Nur FriesenSpy-eigene
 
 ## GET /api/pilots/{cid}/flights
 
-Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und StatSim-Historik (wenn `STATSIM_API_KEY` konfiguriert). StatSim-Daten werden gecacht (24h TTL).
+Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und StatSim-Historik (wenn `STATSIM_API_KEY` konfiguriert). StatSim wird immer mit mindestens 365 Tagen abgefragt und gecacht (24h TTL).
 
 **Query-Parameter**
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
-| `days` | int | `90` | Zeitraum in Tagen |
+| `days` | int | `365` | Zeitraum in Tagen; `0` = alle verfügbaren Flüge seit 2020-01-22 |
 
 **Response**
 

@@ -416,7 +416,8 @@ class TestGetStats:
         assert s["cid"] == 1
         assert s["name"] == "Heinz Friesen"
         assert s["flight_count"] == 2
-        assert abs(s["total_hours"] - 2.5) < 0.05
+        assert "last_flight" in s
+        assert s["last_flight"] is not None
         conn.close()
 
     def test_stats_multiple_pilots(self):
@@ -444,8 +445,10 @@ class TestGetStats:
         stats = get_stats(conn, days=30)
         assert len(stats) == 2
         by_cid = {s["cid"]: s for s in stats}
-        assert abs(by_cid[1]["total_hours"] - 1.0) < 0.02
-        assert abs(by_cid[2]["total_hours"] - 0.5) < 0.02
+        assert by_cid[1]["last_flight"] is not None
+        assert by_cid[1]["last_flight"].startswith("20")
+        assert by_cid[2]["last_flight"] is not None
+        assert by_cid[2]["last_flight"].startswith("20")
         conn.close()
 
     def test_stats_open_flights_excluded(self):
@@ -461,7 +464,7 @@ class TestGetStats:
         stats = get_stats(conn, days=365)
         assert len(stats) == 1
         assert stats[0]["flight_count"] == 0
-        assert stats[0]["total_hours"] == 0.0
+        assert stats[0]["last_flight"] is None
         conn.close()
 
     def test_stats_no_pilots(self):

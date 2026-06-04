@@ -1410,7 +1410,6 @@ function switchToMapAndCenter(callsign) {
 async function openPilotFlights(cid) {
   const pilot = pilotStatsMap[cid];
   if (!pilot) return;
-  const days = document.getElementById('stats-days').value;
   const container = document.getElementById('stats-content');
   currentStatsCid = cid;
 
@@ -1422,7 +1421,7 @@ async function openPilotFlights(cid) {
     <div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade Flüge...</div>`;
 
   try {
-    const res = await fetch(`/api/pilots/${cid}/flights?days=${days}`);
+    const res = await fetch(`/api/pilots/${cid}/flights?days=365`);
     const flights = await res.json();
     renderFlightsList(cid, pilot.name, flights);
   } catch (e) {
@@ -1433,6 +1432,17 @@ async function openPilotFlights(cid) {
 function closePilotFlights() {
   currentStatsCid = null;
   fetchStats();
+}
+
+async function loadAllFlights(cid) {
+  const pilot = pilotStatsMap[cid];
+  try {
+    const res = await fetch(`/api/pilots/${cid}/flights?days=0`);
+    const flights = await res.json();
+    renderFlightsList(cid, pilot?.name, flights);
+  } catch (e) {
+    console.error('Fehler beim Laden aller Flüge', e);
+  }
 }
 
 function renderFlightsList(cid, pilotName, flights) {
@@ -1484,6 +1494,12 @@ function renderFlightsList(cid, pilotName, flights) {
       </tr>`;
     }
     html += `</tbody></table></div>`;
+    html += `
+  <div style="text-align:center; padding:10px 0 4px;">
+    <button class="btn" onclick="loadAllFlights(${cid})">
+      Alle Flüge laden (seit 2020)
+    </button>
+  </div>`;
   }
   html += `<div class="stats-disclaimer">FriesenSpy-Aufzeichnungen + StatSim-Daten</div>`;
   container.innerHTML = html;
@@ -1718,34 +1734,35 @@ function renderStatsTable(stats) {
     return;
   }
 
-  // Sort by hours descending
-  const sorted = [...stats].sort((a, b) => (b.total_hours || 0) - (a.total_hours || 0));
+  // Sort by last_flight descending
+  const sorted = [...stats].sort((a, b) => {
+    if (!a.last_flight && !b.last_flight) return 0;
+    if (!a.last_flight) return 1;
+    if (!b.last_flight) return -1;
+    return b.last_flight.localeCompare(a.last_flight);
+  });
 
   let html = `
     <div class="live-table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Rang</th>
             <th>Pilot</th>
             <th>Flüge</th>
-            <th>Stunden</th>
+            <th>Letzter Flug</th>
           </tr>
         </thead>
         <tbody>`;
 
-  sorted.forEach((s, i) => {
-    const rank = i + 1;
-    const rankCell = rank === 1
-      ? `<span class="rank-1 rank-symbol">◈</span>`
-      : `<span class="text-label mono">${rank}</span>`;
-    const hours = (s.total_hours || 0).toFixed(1);
+  sorted.forEach((s) => {
+    const lf = s.last_flight
+      ? s.last_flight.slice(0, 16).replace('T', ' ') + ' UTC'
+      : '—';
     html += `
           <tr data-cid="${s.cid}" style="cursor:pointer;">
-            <td>${rankCell}</td>
             <td>${escHtml(s.name || String(s.cid))}</td>
             <td class="mono">${s.flight_count || 0}</td>
-            <td class="mono text-cyan">${hours} h</td>
+            <td class="mono text-label">${lf}</td>
           </tr>`;
     pilotStatsMap[s.cid] = s;
   });
@@ -1970,6 +1987,15 @@ document.getElementById('ev-icao').addEventListener('keydown', e => {
 // ==========================================================================
 //  BOOT
 // ==========================================================================
+function setDefaultEventDates() {
+  const now  = new Date();
+  const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const fmt  = d => d.toISOString().slice(0, 16);
+  document.getElementById('ev-end').value   = fmt(now);
+  document.getElementById('ev-start').value = fmt(past);
+}
+setDefaultEventDates();
+
 fetchLiveInitial();
 connectSSE();
 

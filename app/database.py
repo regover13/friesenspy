@@ -269,24 +269,24 @@ def get_live_positions(conn: sqlite3.Connection) -> list[dict]:
 
 
 def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
-    """Flugstunden pro Pilot für die letzten N Tage.
+    """Letzter Flug + Anzahl Flüge pro Pilot für die letzten N Tage.
 
-    Gibt Liste von {'cid': int, 'name': str, 'flight_count': int, 'total_hours': float} zurück.
+    Gibt Liste von {'cid': int, 'name': str, 'flight_count': int, 'last_flight': str|None} zurück.
     """
     rows = conn.execute(
         """
         SELECT
             p.cid,
             p.name,
-            COUNT(f.id)                         AS flight_count,
-            ROUND(SUM(COALESCE(f.duration_min, 0)) / 60.0, 2) AS total_hours
+            COUNT(f.id)       AS flight_count,
+            MAX(f.logon_time) AS last_flight
         FROM pilots p
         LEFT JOIN flights f
                ON f.cid = p.cid
               AND f.logon_time >= datetime('now', ? || ' days')
               AND f.logoff_time IS NOT NULL
         GROUP BY p.cid, p.name
-        ORDER BY total_hours DESC, p.name
+        ORDER BY last_flight DESC, p.name
         """,
         (f"-{days}",),
     ).fetchall()
@@ -295,7 +295,7 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
             "cid": r["cid"],
             "name": r["name"],
             "flight_count": r["flight_count"],
-            "total_hours": r["total_hours"],
+            "last_flight": r["last_flight"],
         }
         for r in rows
     ]

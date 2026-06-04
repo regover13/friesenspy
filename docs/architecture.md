@@ -95,7 +95,7 @@ FastAPI mit `lifespan`-Kontext-Manager (startup: DB init + Poller start; shutdow
 
 Endpoints: `/api/live`, `/api/stats`, `/api/pilots/{cid}/flights`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/sse`.
 
-`/api/pilots/{cid}/flights` lädt StatSim-Daten lazy (beim ersten Aufruf oder wenn Cache > 24h alt) und cached sie in `statsim_cache`.
+`/api/pilots/{cid}/flights` lädt StatSim-Daten lazy (beim ersten Aufruf oder wenn Cache > 24h alt) und cached sie in `statsim_cache`. StatSim wird immer mit mindestens 365 Tagen abgefragt (`days=0` → alle Flüge seit 2020-01-22).
 
 ### `app/static/index.html`
 
@@ -103,7 +103,7 @@ Single-File-SPA ohne Build-Step. Vier Tabs:
 
 - **LIVE** — EventSource(`/api/sse`) mit Reconnect; Callsign-Klick → Flugplan-Modal; ◎-Klick → `switchToMapAndCenter()`
 - **KARTE** — Leaflet.js; Marker mit Heading-Rotation; Double-RAF-Init beim Tab-Wechsel
-- **STATISTIKEN** — `/api/stats?days=N`; Pilot-Klick → `openPilotFlights()` → `/api/pilots/{cid}/flights`; ◎-Klick → Track-Modal
+- **STATISTIKEN** — `/api/stats?days=N`; zeigt letzten Flug + Anzahl, sortiert nach Datum; Pilot-Klick → `openPilotFlights()` → `/api/pilots/{cid}/flights?days=365`; „Alle laden" → `?days=0`; ◎-Klick → Track-Modal
 - **EVENTS** — `/api/events`; Ergebnisse mit Routen auf Leaflet-Karte
 
 Design: FriesenFlieger-Blau (`#04080f` Hintergrund, `#2d9cdb` Blau, `#D31141` Vereinsrot).
