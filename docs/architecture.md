@@ -96,7 +96,7 @@ FastAPI mit `lifespan`-Kontext-Manager (startup: DB init + Poller start; shutdow
 
 Endpoints: `/api/live`, `/api/stats`, `/api/pilots/{cid}/flights`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/sse`.
 
-`/api/pilots/{cid}/flights` lädt StatSim-Daten lazy (beim ersten Aufruf oder wenn Cache > 24h alt) und cached sie in `statsim_cache`. StatSim wird immer mit mindestens 365 Tagen abgefragt (`days=0` → alle Flüge seit 2020-01-22).
+`/api/pilots/{cid}/flights` lädt StatSim-Daten lazy (beim ersten Aufruf oder wenn Cache > 24h alt) und cached sie in `statsim_cache`. StatSim wird immer mit mindestens 365 Tagen abgefragt (`days=0` → alle Flüge seit 2020-01-22). `days=0` umgeht den 24h-Cache immer (force full refetch), da ein vorhandener Cache aus einer normalen `days=365`-Anfrage den vollen Abruf sonst fälschlich verhindert.
 
 ### `app/static/index.html`
 
@@ -104,8 +104,8 @@ Single-File-SPA ohne Build-Step. Vier Tabs:
 
 - **LIVE** — EventSource(`/api/sse`) mit Reconnect; Callsign-Klick → Flugplan-Modal; ◎-Klick → `switchToMapAndCenter()`
 - **KARTE** — Leaflet.js; Marker mit Heading-Rotation; Double-RAF-Init beim Tab-Wechsel
-- **STATISTIKEN** — `/api/stats?days=N`; zeigt letzten Flug + Anzahl, sortiert nach Datum; Pilot-Klick → `openPilotFlights()` → `/api/pilots/{cid}/flights?days=365`; „Alle laden" → `?days=0`; ◎-Klick → Track-Modal
-- **EVENTS** — `/api/events`; pro Pilot werden einzelne Flüge aufgelistet (Datum, Dauer, Callsign, DEP/ARR, Anzahl Punkte); Segmentierung basiert auf echten VATSIM-Session-Records (Fallback: 30-min-Gap); Karte zeigt alle Flüge aller Piloten gleichzeitig als separate Polylines; Klick auf einen Flug → Hervorhebung auf der Karte
+- **STATISTIKEN** — `/api/stats?days=N`; zeigt letzten Flug + Anzahl, sortiert nach Datum; Pilot-Klick → `openPilotFlights()` → `/api/pilots/{cid}/flights?days=365`; „Alle laden" → `loadAllFlights()` → `?days=0` (Button zeigt während des langen Fetches „Lade Historik…" und ist deaktiviert); ◎-Klick → Track-Modal; Plural-aware: `1 Flug` statt `1 Flüge`
+- **EVENTS** — `/api/events`; pro Pilot werden einzelne Flüge aufgelistet (Datum, Dauer, Callsign, Route DEP→ARR, Anzahl Punkte); Segmentierung basiert auf echten VATSIM-Session-Records (Fallback: 30-min-Gap); Karte zeigt alle Flüge aller Piloten gleichzeitig als separate Polylines; Klick auf einen Flug → `highlightEventFlight()` hebt den Track auf der Karte hervor und scrollt per `scrollIntoView` automatisch zur Karte
 
 Design: FriesenFlieger-Blau (`#04080f` Hintergrund, `#2d9cdb` Blau, `#D31141` Vereinsrot).
 
