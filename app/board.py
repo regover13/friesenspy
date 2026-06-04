@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 _CID_PATTERN = re.compile(
     r'<td class="info"><div><a href="https://stats\.vatsim\.net/stats/(\d+)">'
 )
+_TOKEN_PATTERN = re.compile(r'<input type="hidden" name="form_token" value="([^"]+)"')
+_CREATION_PATTERN = re.compile(r'<input type="hidden" name="creation_time" value="([^"]+)"')
 _PAGE_SIZE = 25
 
 
@@ -37,21 +39,37 @@ async def fetch_friesen_cids(
             timeout=30.0,
             follow_redirects=True,
         ) as client:
-            # Login
+            # Schritt 1: Login-Seite laden um CSRF-Token zu erhalten
+            login_page = await client.get("/ucp.php?mode=login")
+            form_token = _TOKEN_PATTERN.search(login_page.text)
+            creation_time = _CREATION_PATTERN.search(login_page.text)
+
+            # Schritt 2: Login mit CSRF-Token
             resp = await client.post(
                 "/ucp.php?mode=login",
                 data={
                     "username": username,
                     "password": password,
                     "autologin": "on",
+                    "viewonline": "1",
+                    "redirect": "index.php",
                     "login": "Anmelden",
+                    "form_token": form_token.group(1) if form_token else "",
+                    "creation_time": creation_time.group(1) if creation_time else "",
                 },
             )
-            if "memberlist.php" not in resp.text and resp.status_code not in (200, 302):
-                logger.warning("Board-Login fehlgeschlagen (status %s)", resp.status_code)
+
+            # phpBB setzt phpbb3_*_u auf die echte User-ID (>1) bei Erfolg
+            uid = next(
+                (v for k, v in client.cookies.items() if k.endswith("_u")), "1"
+            )
+            if uid == "1":
+                logger.warning("Board-Login fehlgeschlagen (UID=1/Gast)")
                 return []
 
-            # Alle Seiten scrapen
+            logger.debug("Board-Login OK (UID=%s)", uid)
+
+            # Schritt 3: Alle Seiten scrapen
             cids: list[int] = []
             start = 0
             while True:
@@ -64,7 +82,6 @@ async def fetch_friesen_cids(
                     if cid not in cids:
                         cids.append(cid)
                 start += _PAGE_SIZE
-                # Abbruch wenn letzte Seite weniger als PAGE_SIZE Einträge
                 if len(found) < _PAGE_SIZE:
                     break
 
