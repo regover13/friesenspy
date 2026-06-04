@@ -52,14 +52,14 @@ async def fetch_pilot_flights(
     """Gibt Flughistorie eines Piloten von StatSim zurück. Silent fail → []."""
     if not api_key:
         return []
-    try:
-        results = []
-        end = datetime.now(timezone.utc)
-        start = end - timedelta(days=days)
-        chunk_days = 31
-        cursor = start
-        while cursor < end:
-            chunk_end = min(cursor + timedelta(days=chunk_days), end)
+    results = []
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=days)
+    chunk_days = 31
+    cursor = start
+    while cursor < end:
+        chunk_end = min(cursor + timedelta(days=chunk_days), end)
+        try:
             resp = await client.get(
                 f"{STATSIM_BASE}/api/Flights/VatsimId",
                 headers={"X-API-Key": api_key},
@@ -68,25 +68,27 @@ async def fetch_pilot_flights(
                     "from": cursor.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "to": chunk_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 },
-                timeout=15.0,
+                timeout=30.0,
             )
             resp.raise_for_status()
             data = resp.json()
             if isinstance(data, list):
                 for f in data:
                     results.append(_normalize_flight(f))
-            cursor = chunk_end
-        seen: set[int] = set()
-        deduped = []
-        for f in results:
-            sid = f.get("statsim_id")
-            if sid is not None and sid not in seen:
-                seen.add(sid)
-                deduped.append(f)
-        return deduped
-    except Exception:
-        logger.warning("StatSim fetch failed for CID %s", cid)
-        return []
+        except Exception as e:
+            logger.warning(
+                "StatSim chunk failed for CID %s (%s→%s): %s",
+                cid, cursor.date(), chunk_end.date(), type(e).__name__,
+            )
+        cursor = chunk_end
+    seen: set[int] = set()
+    deduped = []
+    for f in results:
+        sid = f.get("statsim_id")
+        if sid is not None and sid not in seen:
+            seen.add(sid)
+            deduped.append(f)
+    return deduped
 
 
 async def fetch_flight_track(
