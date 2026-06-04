@@ -75,10 +75,14 @@ async def fetch_pilot_flights(
             if isinstance(data, list):
                 for f in data:
                     results.append(_normalize_flight(f))
+            else:
+                logger.warning("StatSim unexpected response type for CID %s (%s→%s): %s", cid, cursor.date(), chunk_end.date(), type(data).__name__)
         except Exception as e:
+            status = getattr(getattr(e, "response", None), "status_code", "")
             logger.warning(
-                "StatSim chunk failed for CID %s (%s→%s): %s",
+                "StatSim chunk failed for CID %s (%s→%s): %s%s",
                 cid, cursor.date(), chunk_end.date(), type(e).__name__,
+                f" HTTP {status}" if status else "",
             )
         cursor = chunk_end
     seen: set[int] = set()
