@@ -177,15 +177,21 @@ Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe e
       "cid": 1602713,
       "callsign": "FRS49",
       "name": "Tobias EDKB",
-      "positions": [
+      "flights": [
         {
-          "callsign": "FRS49",
-          "latitude": 50.865,
-          "longitude": 7.142,
-          "altitude": 2800,
-          "groundspeed": 95,
-          "heading": 270,
-          "ts": "2024-01-01T11:23:00Z"
+          "logon_time": "2026-06-04T07:00:00Z",
+          "logoff_time": "2026-06-04T10:20:00Z",
+          "positions": [
+            {
+              "callsign": "FRS49",
+              "latitude": 50.865,
+              "longitude": 7.142,
+              "altitude": 2800,
+              "groundspeed": 95,
+              "heading": 270,
+              "ts": "2026-06-04T07:00:00Z"
+            }
+          ]
         }
       ]
     }
@@ -193,7 +199,7 @@ Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe e
 }
 ```
 
-`positions` enthält alle aufgezeichneten Positionen des Piloten im Zeitfenster — nicht nur die im Radius.
+`flights` enthält die Positionen des Piloten im Zeitfenster aufgeteilt in einzelne Flüge. Liegen zwei aufeinanderfolgende Positionen mehr als 30 Minuten auseinander, beginnt ein neuer Flug-Eintrag. `positions` enthält alle aufgezeichneten Positionen des jeweiligen Fluges — nicht nur die im Radius.
 
 ---
 

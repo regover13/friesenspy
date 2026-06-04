@@ -24,7 +24,7 @@ from app.database import (
     init_db,
     upsert_statsim_flights,
 )
-from app.geo import filter_event_pilots
+from app.geo import filter_event_pilots, segment_into_flights
 from app.poller import VatsimPoller, create_poller
 from app.statsim import fetch_flight_track, fetch_pilot_flights
 
@@ -130,7 +130,13 @@ async def get_events(
             name = row["name"] if row else ""
         finally:
             conn2.close()
-        pilots.append({"cid": cid, "callsign": callsign, "name": name, "positions": positions})
+        flights = segment_into_flights(positions)
+        pilots.append({
+            "cid": cid,
+            "callsign": callsign,
+            "name": name,
+            "flights": flights,   # war: "positions": positions
+        })
 
     return {"pilots": pilots}
 

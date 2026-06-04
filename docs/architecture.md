@@ -39,7 +39,7 @@ Pflichtfelder: `SECRET_KEY`. Optional: `STATSIM_API_KEY` für historische Flugda
 
 StatSim API-Client für historische Flugdaten (Daten ab 2020-01-22).
 
-- `fetch_pilot_flights(client, cid, api_key, days)` — paginierte Abfrage in ≤31-Tage-Chunks. Silent fail → []. Normalisiert Felder: `statsim_id`, `callsign`, `departure`, `arrival`, `aircraft`, `logon_time`, `logoff_time`, `duration_min`.
+- `fetch_pilot_flights(client, cid, api_key, days)` — paginierte Abfrage in ≤31-Tage-Chunks. Fehlerhafte Chunks werden einzeln übersprungen (kein Abbruch der Gesamtabfrage). Timeout: 30s. Silent fail → []. Normalisiert Felder: `statsim_id`, `callsign`, `departure`, `arrival`, `aircraft`, `logon_time`, `logoff_time`, `duration_min`.
 - `fetch_flight_track(client, statsim_id, api_key)` — GPS-Track eines einzelnen Fluges. Silent fail → [].
 
 StatSim API: `https://api.statsim.net`, Auth: `X-API-Key` Header, max. 31 Tage pro Query.
@@ -104,7 +104,7 @@ Single-File-SPA ohne Build-Step. Vier Tabs:
 - **LIVE** — EventSource(`/api/sse`) mit Reconnect; Callsign-Klick → Flugplan-Modal; ◎-Klick → `switchToMapAndCenter()`
 - **KARTE** — Leaflet.js; Marker mit Heading-Rotation; Double-RAF-Init beim Tab-Wechsel
 - **STATISTIKEN** — `/api/stats?days=N`; zeigt letzten Flug + Anzahl, sortiert nach Datum; Pilot-Klick → `openPilotFlights()` → `/api/pilots/{cid}/flights?days=365`; „Alle laden" → `?days=0`; ◎-Klick → Track-Modal
-- **EVENTS** — `/api/events`; Ergebnisse mit Routen auf Leaflet-Karte
+- **EVENTS** — `/api/events`; pro Pilot werden einzelne Flüge aufgelistet (Datum, Dauer, Anzahl Punkte); Karte zeigt alle Flüge aller Piloten gleichzeitig als separate Polylines; Klick auf einen Flug → Hervorhebung auf der Karte
 
 Design: FriesenFlieger-Blau (`#04080f` Hintergrund, `#2d9cdb` Blau, `#D31141` Vereinsrot).
 

@@ -11,7 +11,7 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 - **Live-Tab** — Echtzeit-Liste aller Friesen online (SSE); Callsign klicken → Flugplan-Modal; ◎ klicken → direkt zur Karte mit Zentrierung
 - **Karte** — Leaflet.js mit Flugzeug-Symbolen, Heading-Rotation, Popup mit Details
 - **Statistiken** — Letzter Flug + Anzahl pro Pilot (30/90/365 Tage); Pilot anklicken → Einzelflüge (mind. 365 Tage, „Alle laden" für volle Historik seit 2020); ◎ → Track auf Karte
-- **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei? Mit Track-Anzeige auf Karte
+- **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei? Ergebnisse als einzelne Flüge pro Pilot (Datum, Dauer, Punkte); alle Tracks gleichzeitig auf Karte; Klick auf Flug → Hervorhebung
 - **StatSim-Integration** — Historische Flüge seit 2020 via [StatSim API](https://statsim.net) (API-Key nötig)
 - **Telegram-Alerts** — Optional: Nachricht wenn ein Friese online geht
 
@@ -63,7 +63,7 @@ STATSIM_API_KEY=                            # Optional: historische Flüge via s
 pytest tests/ -v
 ```
 
-169 Tests, keine externen Abhängigkeiten (alles gemockt).
+175 Tests, keine externen Abhängigkeiten (alles gemockt).
 
 ---
 
@@ -131,7 +131,8 @@ FriesenSpy/
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
 │   ├── poller.py      # APScheduler, Flug-State-Machine, SSE-Queue
 │   └── static/
-│       └── index.html # Vanilla-JS-SPA (4 Tabs)
+│       ├── index.html # Vanilla-JS-SPA (4 Tabs)
+│       └── favicon.ico
 ├── tests/             # 169 pytest-Tests
 ├── docs/              # Architektur, API, Deployment
 ├── nginx/             # nginx-Konfiguration für friesenspy.devprops.de

@@ -1844,21 +1844,62 @@ function renderEventsResults(data, icaoStr, radiusKm) {
   let cardsHtml = '';
   pilots.forEach((p, i) => {
     const color    = PILOT_COLORS[i % PILOT_COLORS.length];
-    const trackLen = (p.positions || []).length;
-    const callsign = p.callsign
-      || (p.positions && p.positions[0] ? p.positions[0].callsign : '')
-      || String(p.cid);
+    const callsign = p.callsign || String(p.cid);
+    const flights  = p.flights || [];
+
+    let flightRows = '';
+    flights.forEach((f, fi) => {
+      const date = f.logon_time ? f.logon_time.slice(0, 10) : '—';
+      const pts  = (f.positions || []).length;
+      let dur = '—';
+      if (f.logon_time && f.logoff_time) {
+        try {
+          const ms = new Date(f.logoff_time) - new Date(f.logon_time);
+          const h  = Math.floor(ms / 3600000);
+          const m  = Math.floor((ms % 3600000) / 60000);
+          dur = `${h}:${String(m).padStart(2,'0')} h`;
+        } catch(e) {}
+      }
+      // Flug-ID für Map-Highlight: pilotIndex_flightIndex
+      const flightKey = `${i}_${fi}`;
+      flightRows += `<tr class="events-flight-row" data-flight-key="${flightKey}" style="cursor:pointer;">
+        <td class="mono text-label">${escHtml(date)}</td>
+        <td class="mono">${dur}</td>
+        <td class="mono text-label">${pts} Pkt.</td>
+        <td><span class="td-map-btn" title="Auf Karte zeigen">◎</span></td>
+      </tr>`;
+    });
+
     cardsHtml += `
-      <div class="pilot-card">
-        <div class="pilot-card-dot" style="background:${color};"></div>
-        <div>
-          <div class="pilot-card-callsign">${escHtml(callsign)}</div>
-          <div class="pilot-card-cid">CID ${p.cid}</div>
-          <div class="pilot-card-detail">${trackLen} Track-Punkte</div>
+      <div class="pilot-card" style="flex-direction:column; align-items:flex-start; gap:6px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div class="pilot-card-dot" style="background:${color};"></div>
+          <div>
+            <span class="pilot-card-callsign">${escHtml(callsign)}</span>
+            <span class="pilot-card-cid" style="margin-left:8px;">CID ${p.cid}</span>
+            <span class="pilot-card-detail" style="margin-left:8px;">${flights.length} Flüge</span>
+          </div>
         </div>
+        ${flightRows ? `<table style="width:100%;margin-left:24px;font-size:0.8rem;">
+          <thead><tr>
+            <th style="text-align:left;">Datum</th>
+            <th style="text-align:left;">Dauer</th>
+            <th style="text-align:left;">Punkte</th>
+            <th></th>
+          </tr></thead>
+          <tbody>${flightRows}</tbody>
+        </table>` : ''}
       </div>`;
   });
   pilotList.innerHTML = cardsHtml;
+
+  // Klick auf Flug-Zeile oder ◎ → highlight auf Karte
+  pilotList.querySelectorAll('.events-flight-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const [pi, fi] = row.dataset.flightKey.split('_').map(Number);
+      highlightEventFlight(pilots, pi, fi);
+    });
+  });
 
   // Map
   mapDiv.style.display = 'block';
@@ -1887,42 +1928,62 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
     });
   }
 
+  // Globale Map für Polylines (für Highlight-Funktion)
+  window._eventPolylines = {};
+
   const bounds = [];
 
   // Airport circles (approximate — we don't have coords here, show note)
   // If we had airport coords we'd draw circles; skip for now as API doesn't return them
 
-  // Pilot tracks as polylines
+  // Ein Polyline pro Flug (nicht pro Pilot), alle mit gleicher Farbe des Piloten
   pilots.forEach((p, i) => {
-    const color     = PILOT_COLORS[i % PILOT_COLORS.length];
-    const positions = (p.positions || [])
-      .filter(pos => pos.latitude != null && pos.longitude != null)
-      .map(pos => [pos.latitude, pos.longitude]);
+    const color   = PILOT_COLORS[i % PILOT_COLORS.length];
+    const label   = p.callsign || p.name || String(p.cid);
+    const flights = p.flights || [];
 
-    if (positions.length === 0) return;
+    flights.forEach((f, fi) => {
+      const positions = (f.positions || [])
+        .filter(pos => pos.latitude != null && pos.longitude != null)
+        .map(pos => [pos.latitude, pos.longitude]);
 
-    L.polyline(positions, { color, weight: 2, opacity: 0.8 }).addTo(eventsMap);
+      if (positions.length === 0) return;
 
-    // Start / end markers
-    const first = positions[0];
-    const last  = positions[positions.length - 1];
+      const polyline = L.polyline(positions, { color, weight: 2, opacity: 0.7 }).addTo(eventsMap);
+      polyline.bindTooltip(`${label} — ${f.logon_time ? f.logon_time.slice(0,10) : ''}`, { className: 'mono' });
+      window._eventPolylines[`${i}_${fi}`] = polyline;
+      positions.forEach(p => bounds.push(p));
 
-    const label = p.callsign || p.name || String(p.cid);
-    L.circleMarker(first, {
-      radius: 5, color, fillColor: color, fillOpacity: 1, weight: 2,
-    }).bindTooltip(`${label} — Start`, { className: 'mono' }).addTo(eventsMap);
+      // Start-Marker
+      L.circleMarker(positions[0], {
+        radius: 4, color, fillColor: color, fillOpacity: 1, weight: 2,
+      }).bindTooltip(`${label} Start`, { className: 'mono' }).addTo(eventsMap);
 
-    if (positions.length > 1) {
-      L.circleMarker(last, {
-        radius: 5, color, fillColor: '#04080f', fillOpacity: 1, weight: 2,
-      }).bindTooltip(`${label} — Ende`, { className: 'mono' }).addTo(eventsMap);
-    }
-
-    bounds.push(...positions);
+      // End-Marker
+      if (positions.length > 1) {
+        L.circleMarker(positions[positions.length - 1], {
+          radius: 4, color, fillColor: '#04080f', fillOpacity: 1, weight: 2,
+        }).bindTooltip(`${label} Ende`, { className: 'mono' }).addTo(eventsMap);
+      }
+    });
   });
 
   if (bounds.length > 0) {
     eventsMap.fitBounds(bounds, { padding: [40, 40] });
+  }
+}
+
+function highlightEventFlight(pilots, pilotIdx, flightIdx) {
+  // Alle Polylines dimmen
+  Object.values(window._eventPolylines || {}).forEach(pl => {
+    pl.setStyle({ opacity: 0.2, weight: 1 });
+  });
+  // Ausgewählten hervorheben
+  const key = `${pilotIdx}_${flightIdx}`;
+  const pl  = (window._eventPolylines || {})[key];
+  if (pl) {
+    pl.setStyle({ opacity: 1.0, weight: 4 });
+    eventsMap.fitBounds(pl.getBounds(), { padding: [40, 40] });
   }
 }
 
