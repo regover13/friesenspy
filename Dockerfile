@@ -14,7 +14,7 @@ COPY --chown=friesenspy:friesenspy app/ ./app/
 
 ENV PATH="/home/friesenspy/.local/bin:$PATH"
 ENV DB_PATH=/opt/friesenspy/data/friesenspy.db
-ENV SECRET_KEY=changeme
+# SECRET_KEY wird über config.env gesetzt (Pflichtfeld — kein Fallback)
 
 EXPOSE 8091
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8091", "--log-level", "info"]
