@@ -66,6 +66,20 @@ CREATE TABLE IF NOT EXISTS position_history (
 CREATE INDEX IF NOT EXISTS idx_ph_cid_ts ON position_history(cid, ts);
 CREATE INDEX IF NOT EXISTS idx_ph_ts     ON position_history(ts);
 CREATE INDEX IF NOT EXISTS idx_flights_cid ON flights(cid);
+
+CREATE TABLE IF NOT EXISTS statsim_cache (
+    statsim_id   INTEGER PRIMARY KEY,
+    cid          INTEGER NOT NULL,
+    callsign     TEXT,
+    departure    TEXT,
+    arrival      TEXT,
+    aircraft     TEXT,
+    logon_time   TEXT,
+    logoff_time  TEXT,
+    duration_min INTEGER,
+    fetched_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sc_cid ON statsim_cache(cid);
 """
 
 
@@ -322,5 +336,69 @@ def get_all_position_history(
         ORDER BY ts
         """,
         (start_ts, end_ts),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def upsert_statsim_flights(conn: sqlite3.Connection, flights: list[dict]) -> None:
+    """StatSim-Flüge in Cache schreiben (INSERT OR REPLACE)."""
+    now = _now_utc()
+    for f in flights:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO statsim_cache
+                (statsim_id, cid, callsign, departure, arrival, aircraft,
+                 logon_time, logoff_time, duration_min, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f.get("statsim_id"), f.get("cid"), f.get("callsign", ""),
+                f.get("departure", ""), f.get("arrival", ""), f.get("aircraft", ""),
+                f.get("logon_time", ""), f.get("logoff_time"),
+                f.get("duration_min"), now,
+            ),
+        )
+
+
+def get_statsim_flights_for_pilot(
+    conn: sqlite3.Connection, cid: int, days: int = 90
+) -> list[dict]:
+    """Gecachte StatSim-Flüge für einen Piloten."""
+    rows = conn.execute(
+        """
+        SELECT * FROM statsim_cache
+        WHERE cid = ?
+          AND (logon_time >= datetime('now', ? || ' days') OR logon_time = '')
+        ORDER BY logon_time DESC
+        """,
+        (cid, f"-{days}"),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def get_statsim_last_fetched(conn: sqlite3.Connection, cid: int) -> str | None:
+    """Gibt fetched_at des neuesten Cache-Eintrags zurück, oder None."""
+    row = conn.execute(
+        "SELECT MAX(fetched_at) AS ft FROM statsim_cache WHERE cid = ?",
+        (cid,),
+    ).fetchone()
+    return row["ft"] if row else None
+
+
+def get_pilot_flights_friesenspy(
+    conn: sqlite3.Connection, cid: int, days: int = 90
+) -> list[dict]:
+    """FriesenSpy-eigene Flüge für einen Piloten (nur abgeschlossene)."""
+    rows = conn.execute(
+        """
+        SELECT id, cid, callsign, aircraft_short AS aircraft,
+               departure, arrival, logon_time, logoff_time, duration_min
+        FROM flights
+        WHERE cid = ?
+          AND logoff_time IS NOT NULL
+          AND logon_time >= datetime('now', ? || ' days')
+        ORDER BY logon_time DESC
+        """,
+        (cid, f"-{days}"),
     ).fetchall()
     return [_row_to_dict(r) for r in rows]

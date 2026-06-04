@@ -14,13 +14,17 @@ from app.database import (
     get_all_position_history,
     get_connection,
     get_live_positions,
+    get_pilot_flights_friesenspy,
     get_position_history,
     get_stats,
+    get_statsim_flights_for_pilot,
+    get_statsim_last_fetched,
     init_db,
     open_flight,
     remove_live_position,
     save_position_history,
     upsert_live_position,
+    upsert_statsim_flights,
 )
 
 
@@ -532,4 +536,57 @@ class TestCleanupOldHistory:
         deleted = cleanup_old_history(conn, days=90)
         conn.commit()
         assert deleted == 0
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# statsim_cache
+# ---------------------------------------------------------------------------
+
+class TestStatSimCache:
+    def test_upsert_and_get(self):
+        conn = _make_conn()
+        flights = [{
+            "statsim_id": 1001, "cid": 9999, "callsign": "FRS99",
+            "departure": "EDKB", "arrival": "EDDK", "aircraft": "PA24",
+            "logon_time": _ts_offset(-60), "logoff_time": _ts_offset(-15),
+            "duration_min": 45,
+        }]
+        upsert_statsim_flights(conn, flights)
+        conn.commit()
+        result = get_statsim_flights_for_pilot(conn, 9999, days=30)
+        assert len(result) == 1
+        assert result[0]["callsign"] == "FRS99"
+        conn.close()
+
+    def test_upsert_replace(self):
+        conn = _make_conn()
+        f = {"statsim_id": 1001, "cid": 9999, "callsign": "FRS99",
+             "departure": "EDKB", "arrival": "EDDK", "aircraft": "PA24",
+             "logon_time": _ts_offset(-60), "logoff_time": None, "duration_min": None}
+        upsert_statsim_flights(conn, [f])
+        conn.commit()
+        upsert_statsim_flights(conn, [{**f, "duration_min": 30}])
+        conn.commit()
+        result = get_statsim_flights_for_pilot(conn, 9999, days=30)
+        assert len(result) == 1
+        assert result[0]["duration_min"] == 30
+        conn.close()
+
+    def test_last_fetched_none_when_empty(self):
+        conn = _make_conn()
+        result = get_statsim_last_fetched(conn, 9999)
+        assert result is None
+        conn.close()
+
+    def test_pilot_friesenspy_flights(self):
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "Test")
+        conn.commit()
+        fid = open_flight(conn, 1, "FRS01", "PA24", "EDKB", "EDDK", _ts_offset(-90))
+        close_flight(conn, fid, _ts_offset(-45))
+        conn.commit()
+        result = get_pilot_flights_friesenspy(conn, 1, days=30)
+        assert len(result) == 1
+        assert result[0]["callsign"] == "FRS01"
         conn.close()

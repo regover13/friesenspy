@@ -15,6 +15,9 @@ config.env
 # Playwright-MCP temporäre Dateien
 .playwright-mcp/
 
+# Claude Code Worktrees
+.claude/worktrees/
+
 # IDE
 .vscode/
 .idea/

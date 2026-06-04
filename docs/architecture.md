@@ -27,17 +27,22 @@ VATSIM Data API (15s)
 
 pydantic-settings liest `config.env` oder Umgebungsvariablen. `get_settings()` ist mit `@lru_cache` als Singleton implementiert — einmal geladen, für die Prozess-Lebensdauer gecacht.
 
-Einzige Pflichtfield: `SECRET_KEY`. Alle anderen haben sinnvolle Defaults.
+Pflichtfelder: `SECRET_KEY`. Optional: `STATSIM_API_KEY` für historische Flugdaten.
 
 ### `app/vatsim.py`
 
-Zwei öffentliche Funktionen:
+- `fetch_vatsim_data(client)` — HTTP GET auf die VATSIM Data API, gibt geparsten JSON-Dict zurück.
+- `filter_friesen_pilots(callsign_prefix, vatsim_data)` — filtert Piloten-Liste nach Callsign-Prefix (case-insensitiv).
+- `pilot_to_position(pilot)` — normalisiert rohe VATSIM-Daten in ein flaches Dict mit 22 Feldern, inkl. aller `flight_plan`-Details (flight_rules, aircraft_icao, route, remarks, …).
 
-- `fetch_vatsim_data(client)` — HTTP GET auf `https://data.vatsim.net/v3/vatsim-data.json`, gibt geparsten JSON-Dict zurück. Wirft `httpx.HTTPError` bei Fehler, wird in `_poll_once` gecatcht.
+### `app/statsim.py`
 
-- `filter_friesen_pilots(callsign_prefix, vatsim_data)` — filtert Piloten-Liste nach Callsign-Prefix (case-insensitiv). Kein CID-Lookup, keine externe Abhängigkeit.
+StatSim API-Client für historische Flugdaten (Daten ab 2020-01-22).
 
-- `pilot_to_position(pilot)` — normalisiert rohe VATSIM-Daten in ein flaches Dict mit 13 Feldern. Null-`flight_plan` wird graceful behandelt (leere Strings).
+- `fetch_pilot_flights(client, cid, api_key, days)` — paginierte Abfrage in ≤31-Tage-Chunks. Silent fail → []. Normalisiert Felder: `statsim_id`, `callsign`, `departure`, `arrival`, `aircraft`, `logon_time`, `logoff_time`, `duration_min`.
+- `fetch_flight_track(client, statsim_id, api_key)` — GPS-Track eines einzelnen Fluges. Silent fail → [].
+
+StatSim API: `https://api.statsim.net`, Auth: `X-API-Key` Header, max. 31 Tage pro Query.
 
 ### `app/database.py`
 
@@ -88,18 +93,20 @@ Telegram-Alert beim "Online gehen" eines Piloten. Alle VATSIM-Felder werden mit 
 
 FastAPI mit `lifespan`-Kontext-Manager (startup: DB init + Poller start; shutdown: Poller stop).
 
-Der SSE-Endpoint (`/api/sse`) sendet alle 30 Sekunden einen `: keepalive`-Kommentar, um Proxy-Timeouts zu verhindern. Nginx ist mit `proxy_read_timeout 3600s` konfiguriert.
+Endpoints: `/api/live`, `/api/stats`, `/api/pilots/{cid}/flights`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/sse`.
+
+`/api/pilots/{cid}/flights` lädt StatSim-Daten lazy (beim ersten Aufruf oder wenn Cache > 24h alt) und cached sie in `statsim_cache`.
 
 ### `app/static/index.html`
 
-Single-File-SPA (~1400 Zeilen) ohne Build-Step. Vier Tabs:
+Single-File-SPA ohne Build-Step. Vier Tabs:
 
-- **LIVE** — EventSource(`/api/sse`) mit automatischem Reconnect (5s Delay)
-- **KARTE** — Leaflet.js mit CartoDB Dark Matter Tiles, SVG-Flugzeug-Marker
-- **STATISTIKEN** — Chart via `/api/stats?days=N`
-- **EVENTS** — Formular → `/api/events`
+- **LIVE** — EventSource(`/api/sse`) mit Reconnect; Callsign-Klick → Flugplan-Modal; ◎-Klick → `switchToMapAndCenter()`
+- **KARTE** — Leaflet.js; Marker mit Heading-Rotation; Double-RAF-Init beim Tab-Wechsel
+- **STATISTIKEN** — `/api/stats?days=N`; Pilot-Klick → `openPilotFlights()` → `/api/pilots/{cid}/flights`; ◎-Klick → Track-Modal
+- **EVENTS** — `/api/events`; Ergebnisse mit Routen auf Leaflet-Karte
 
-Design: Phosphoreszierender ATC-Radar-Look (`#060d0a` Hintergrund, `#39e75f` Grün).
+Design: FriesenFlieger-Blau (`#04080f` Hintergrund, `#2d9cdb` Blau, `#D31141` Vereinsrot).
 
 ## Datenfluss SSE
 
@@ -125,45 +132,70 @@ Browser                     FastAPI                  VatsimPoller
 ```sql
 CREATE TABLE pilots (
     cid       INTEGER PRIMARY KEY,
-    name      TEXT NOT NULL
+    name      TEXT,
+    added_at  TEXT
 );
 
 CREATE TABLE flights (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    cid           INTEGER NOT NULL REFERENCES pilots(cid),
-    callsign      TEXT NOT NULL,
-    aircraft      TEXT,
+    cid           INTEGER REFERENCES pilots(cid),
+    callsign      TEXT,
+    aircraft_short TEXT,
     departure     TEXT,
     arrival       TEXT,
-    logon_time    TEXT NOT NULL,
+    logon_time    TEXT,
     logoff_time   TEXT,
     duration_min  INTEGER
 );
 
 CREATE TABLE live_positions (
-    cid           INTEGER PRIMARY KEY REFERENCES pilots(cid),
-    callsign      TEXT NOT NULL,
+    cid           INTEGER PRIMARY KEY,
+    callsign      TEXT,
     aircraft      TEXT,
     departure     TEXT,
     arrival       TEXT,
-    latitude      REAL NOT NULL,
-    longitude     REAL NOT NULL,
+    latitude      REAL,
+    longitude     REAL,
     altitude      INTEGER,
     groundspeed   INTEGER,
     heading       INTEGER,
     logon_time    TEXT,
-    updated_at    TEXT NOT NULL
+    updated_at    TEXT,
+    -- Flugplan-Details (für Modal)
+    flight_rules  TEXT,
+    aircraft_icao TEXT,
+    alternate     TEXT,
+    deptime       TEXT,
+    cruise_tas    TEXT,
+    enroute_time  TEXT,
+    fuel_time     TEXT,
+    route         TEXT,
+    remarks       TEXT
 );
 
 CREATE TABLE position_history (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     cid         INTEGER NOT NULL REFERENCES pilots(cid),
-    callsign    TEXT NOT NULL,
-    latitude    REAL NOT NULL,
-    longitude   REAL NOT NULL,
+    callsign    TEXT,
+    latitude    REAL,
+    longitude   REAL,
     altitude    INTEGER,
     groundspeed INTEGER,
     heading     INTEGER,
-    ts          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    ts          TEXT NOT NULL
+);
+
+-- StatSim-Historik-Cache (24h TTL, lazy per Pilot)
+CREATE TABLE statsim_cache (
+    statsim_id   INTEGER PRIMARY KEY,
+    cid          INTEGER NOT NULL,
+    callsign     TEXT,
+    departure    TEXT,
+    arrival      TEXT,
+    aircraft     TEXT,
+    logon_time   TEXT,
+    logoff_time  TEXT,
+    duration_min INTEGER,
+    fetched_at   TEXT NOT NULL
 );
 ```

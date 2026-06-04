@@ -8,10 +8,11 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 
 ## Features
 
-- **Live-Tab** — Echtzeit-Liste aller Friesen online (SSE, kein Polling)
-- **Karte** — Leaflet.js-Karte mit Flugzeug-Symbolen und Routen
-- **Statistiken** — Flugstunden pro Pilot (30/90/365 Tage)
-- **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei?
+- **Live-Tab** — Echtzeit-Liste aller Friesen online (SSE); Callsign klicken → Flugplan-Modal; ◎ klicken → direkt zur Karte mit Zentrierung
+- **Karte** — Leaflet.js mit Flugzeug-Symbolen, Heading-Rotation, Popup mit Details
+- **Statistiken** — Flugstunden pro Pilot (30/90/365 Tage); Pilot anklicken → Einzelflüge inkl. StatSim-Historik; ◎ → Track auf Karte
+- **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei? Mit Track-Anzeige auf Karte
+- **StatSim-Integration** — Historische Flüge seit 2020 via [StatSim API](https://statsim.net) (API-Key nötig)
 - **Telegram-Alerts** — Optional: Nachricht wenn ein Friese online geht
 
 ## Wie funktioniert das?
@@ -53,6 +54,7 @@ VATSIM_POLL_INTERVAL=15                     # Sekunden, Default: 15
 DB_PATH=friesenspy.db                       # Lokal: relativer Pfad OK
 TELEGRAM_BOT_TOKEN=                         # Optional
 TELEGRAM_CHAT_ID=                           # Optional
+STATSIM_API_KEY=                            # Optional: historische Flüge via statsim.net
 ```
 
 ### Tests
@@ -61,7 +63,7 @@ TELEGRAM_CHAT_ID=                           # Optional
 pytest tests/ -v
 ```
 
-152 Tests, keine externen Abhängigkeiten (alles gemockt).
+169 Tests, keine externen Abhängigkeiten (alles gemockt).
 
 ---
 
@@ -124,12 +126,14 @@ FriesenSpy/
 │   ├── config.py      # pydantic-settings (liest config.env)
 │   ├── database.py    # SQLite WAL, alle DB-Funktionen
 │   ├── vatsim.py      # VATSIM-API-Client + Callsign-Filter
+│   ├── statsim.py     # StatSim API-Client (historische Flüge)
 │   ├── geo.py         # Haversine, ICAO→Koordinaten, Event-Filter
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
 │   ├── poller.py      # APScheduler, Flug-State-Machine, SSE-Queue
 │   └── static/
 │       └── index.html # Vanilla-JS-SPA (4 Tabs)
-├── tests/             # 152 pytest-Tests
+├── tests/             # 169 pytest-Tests
+├── docs/              # Architektur, API, Deployment
 ├── nginx/             # nginx-Konfiguration für friesenspy.devprops.de
 ├── .github/workflows/ # CI/CD: Build → GHCR → SSH-Deploy
 ├── Dockerfile
@@ -144,9 +148,12 @@ FriesenSpy/
 |----------|---------|--------------|
 | `/` | GET | SPA (index.html) |
 | `/health` | GET | `{"status": "ok"}` |
-| `/api/live` | GET | Aktuelle Live-Positionen |
+| `/api/live` | GET | Aktuelle Live-Positionen (inkl. Flugplan-Felder) |
 | `/api/stats?days=30` | GET | Flugstunden pro Pilot |
-| `/api/events?icao=EDDK&radius=150&start=...&end=...` | GET | Event-Teilnehmer |
+| `/api/pilots/{cid}/flights?days=90` | GET | Einzelflüge eines Piloten (FriesenSpy + StatSim) |
+| `/api/flights/{id}/track` | GET | GPS-Track eines FriesenSpy-Fluges |
+| `/api/flights/statsim/{id}/track` | GET | GPS-Track eines StatSim-Fluges |
+| `/api/events?icao=EDDK&radius=150&start=...&end=...` | GET | Event-Teilnehmer mit Tracks |
 | `/api/sse` | GET | Server-Sent Events Stream |
 
 Details: siehe [docs/api.md](docs/api.md)

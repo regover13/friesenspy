@@ -4,8 +4,11 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from datetime import datetime
+from datetime import timezone as _timezone
 
-from fastapi import FastAPI, Request
+import httpx as _httpx
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -14,11 +17,16 @@ from app.database import (
     get_all_position_history,
     get_connection,
     get_live_positions,
+    get_pilot_flights_friesenspy,
     get_stats,
+    get_statsim_flights_for_pilot,
+    get_statsim_last_fetched,
     init_db,
+    upsert_statsim_flights,
 )
 from app.geo import filter_event_pilots
 from app.poller import VatsimPoller, create_poller
+from app.statsim import fetch_flight_track, fetch_pilot_flights
 
 
 # ---------------------------------------------------------------------------
@@ -153,3 +161,83 @@ async def sse_endpoint(request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/api/pilots/{cid}/flights")
+async def get_pilot_flights(cid: int, days: int = 90):
+    """Alle Flüge eines Piloten: FriesenSpy + StatSim (gecached 24h)."""
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        fs_flights = get_pilot_flights_friesenspy(conn, cid, days)
+        statsim_flights: list[dict] = []
+        if settings.STATSIM_API_KEY:
+            last = get_statsim_last_fetched(conn, cid)
+            cache_fresh = False
+            if last:
+                try:
+                    last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+                    age_h = (
+                        datetime.now(_timezone.utc) - last_dt.astimezone(_timezone.utc)
+                    ).total_seconds() / 3600
+                    cache_fresh = age_h < 24
+                except Exception:
+                    pass
+            if not cache_fresh:
+                async with _httpx.AsyncClient() as client:
+                    fresh = await fetch_pilot_flights(client, cid, settings.STATSIM_API_KEY, days)
+                for f in fresh:
+                    f["cid"] = cid
+                upsert_statsim_flights(conn, fresh)
+                conn.commit()
+            statsim_flights = get_statsim_flights_for_pilot(conn, cid, days)
+    finally:
+        conn.close()
+
+    fs_logons = {(f.get("logon_time") or "")[:16] for f in fs_flights}
+    result: list[dict] = [{"source": "friesenspy", **f} for f in fs_flights]
+    for f in statsim_flights:
+        lt = (f.get("logon_time") or "")[:16]
+        if lt not in fs_logons:
+            result.append({"source": "statsim", "id": None, **f})
+    result.sort(key=lambda x: x.get("logon_time") or "", reverse=True)
+    return result
+
+
+@app.get("/api/flights/{flight_id}/track")
+async def get_flight_track(flight_id: int):
+    """Positionshistorie eines FriesenSpy-Fluges aus position_history."""
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        flight = conn.execute(
+            "SELECT logon_time, logoff_time FROM flights WHERE id = ?", (flight_id,)
+        ).fetchone()
+        if not flight:
+            raise HTTPException(status_code=404, detail="Flight not found")
+        logon = flight["logon_time"] or ""
+        logoff = flight["logoff_time"] or datetime.now(_timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        rows = conn.execute(
+            """
+            SELECT latitude, longitude, altitude, groundspeed, heading, ts
+            FROM position_history
+            WHERE ts >= ? AND ts <= ?
+            ORDER BY ts
+            """,
+            (logon, logoff),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/flights/statsim/{statsim_id}/track")
+async def get_statsim_flight_track(statsim_id: int):
+    """Positionshistorie eines StatSim-Fluges (live von StatSim API)."""
+    settings = get_settings()
+    if not settings.STATSIM_API_KEY:
+        return []
+    async with _httpx.AsyncClient() as client:
+        return await fetch_flight_track(client, statsim_id, settings.STATSIM_API_KEY)

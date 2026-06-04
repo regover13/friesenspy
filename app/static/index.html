@@ -25,19 +25,19 @@
     }
 
     :root {
-      --bg-body:      #060d0a;
-      --bg-panel:     #0a1505;
-      --bg-panel-2:   #0d1a08;
-      --green:        #39e75f;
-      --green-dim:    rgba(57,231,95,0.3);
-      --green-glow:   rgba(57,231,95,0.2);
-      --green-faint:  rgba(57,231,95,0.08);
-      --green-grid:   rgba(57,231,95,0.06);
-      --cyan:         #00d4e0;
+      --bg-body:      #04080f;
+      --bg-panel:     #071525;
+      --bg-panel-2:   #091b30;
+      --green:        #2d9cdb;
+      --green-dim:    rgba(45,156,219,0.3);
+      --green-glow:   rgba(45,156,219,0.2);
+      --green-faint:  rgba(45,156,219,0.08);
+      --green-grid:   rgba(45,156,219,0.05);
+      --cyan:         #D31141;
       --amber:        #f0a500;
-      --red:          #ff4444;
-      --text-bright:  #e8f5e9;
-      --text-label:   #7cb87e;
+      --red:          #ff5555;
+      --text-bright:  #d4e8f5;
+      --text-label:   #6b9ab8;
       --text-mono:    'Courier Prime', monospace;
       --text-display: 'Exo 2', sans-serif;
     }
@@ -53,7 +53,7 @@
 
     body {
       background:
-        radial-gradient(ellipse at 50% 40%, rgba(57,231,95,0.04) 0%, transparent 70%),
+        radial-gradient(ellipse at 50% 40%, rgba(45,156,219,0.04) 0%, transparent 70%),
         var(--bg-body);
     }
 
@@ -79,7 +79,7 @@
       z-index: 9999;
       width: 100%;
       height: 2px;
-      background: rgba(57,231,95,0.12);
+      background: rgba(45,156,219,0.12);
       animation: scanline 8s linear infinite;
       top: -2px;
     }
@@ -123,7 +123,7 @@
       color: var(--green);
       letter-spacing: 0.12em;
       text-transform: uppercase;
-      text-shadow: 0 0 20px rgba(57,231,95,0.5), 0 0 40px rgba(57,231,95,0.2);
+      text-shadow: 0 0 20px rgba(45,156,219,0.5), 0 0 40px rgba(45,156,219,0.2);
     }
 
     .logo-prefix {
@@ -226,14 +226,14 @@
     .tab-btn:hover {
       color: var(--green);
       background: var(--green-faint);
-      box-shadow: 0 0 15px rgba(57,231,95,0.15);
+      box-shadow: 0 0 15px rgba(45,156,219,0.15);
     }
 
     .tab-btn.active {
       color: var(--green);
-      background: rgba(57,231,95,0.08);
+      background: rgba(45,156,219,0.08);
       border-bottom: 2px solid var(--green);
-      text-shadow: 0 0 8px rgba(57,231,95,0.5);
+      text-shadow: 0 0 8px rgba(45,156,219,0.5);
     }
 
     /* =====================================================================
@@ -308,7 +308,7 @@
     }
 
     tbody tr:hover {
-      background: rgba(57,231,95,0.06);
+      background: rgba(45,156,219,0.06);
     }
 
     tbody tr.new-row {
@@ -316,7 +316,7 @@
     }
 
     @keyframes rowHighlight {
-      0%   { background: rgba(57,231,95,0.25); }
+      0%   { background: rgba(45,156,219,0.25); }
       100% { background: transparent; }
     }
 
@@ -455,7 +455,7 @@
       align-items: center;
       justify-content: center;
       color: var(--green);
-      filter: drop-shadow(0 0 4px rgba(57,231,95,0.7));
+      filter: drop-shadow(0 0 4px rgba(45,156,219,0.7));
     }
 
     /* =====================================================================
@@ -527,11 +527,11 @@
     .btn:hover {
       background: var(--green-faint);
       border-color: var(--green);
-      box-shadow: 0 0 15px rgba(57,231,95,0.5);
+      box-shadow: 0 0 15px rgba(45,156,219,0.5);
     }
 
     .btn:active {
-      background: rgba(57,231,95,0.15);
+      background: rgba(45,156,219,0.15);
     }
 
     .btn-primary {
@@ -542,8 +542,8 @@
     }
 
     .btn-primary:hover {
-      background: #4eff7a;
-      box-shadow: 0 0 20px rgba(57,231,95,0.6);
+      background: #5db8f0;
+      box-shadow: 0 0 20px rgba(45,156,219,0.6);
     }
 
     /* =====================================================================
@@ -730,7 +730,7 @@
     .fp-modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(6,13,10,0.88);
+      background: rgba(4,8,15,0.88);
       z-index: 10000;
       display: flex;
       align-items: center;
@@ -741,7 +741,7 @@
     .fp-modal-box {
       background: var(--bg-panel);
       border: 1px solid var(--green);
-      box-shadow: 0 0 40px rgba(57,231,95,0.25), 0 0 80px rgba(57,231,95,0.08);
+      box-shadow: 0 0 40px rgba(45,156,219,0.25), 0 0 80px rgba(45,156,219,0.08);
       width: min(720px, 95vw);
       max-height: 88vh;
       overflow-y: auto;
@@ -759,7 +759,7 @@
       justify-content: space-between;
       padding: 16px 20px;
       border-bottom: 1px solid var(--green-dim);
-      background: rgba(57,231,95,0.04);
+      background: rgba(45,156,219,0.04);
     }
 
     .fp-callsign-title {
@@ -768,7 +768,7 @@
       font-size: 1.5rem;
       color: var(--green);
       letter-spacing: 0.12em;
-      text-shadow: 0 0 12px rgba(57,231,95,0.5);
+      text-shadow: 0 0 12px rgba(45,156,219,0.5);
     }
 
     .fp-close-btn {
@@ -861,7 +861,7 @@
     }
 
     .td-callsign-link:hover {
-      text-shadow: 0 0 12px rgba(57,231,95,0.9);
+      text-shadow: 0 0 12px rgba(45,156,219,0.9);
     }
 
     /* Events: Callsign prominenter als CID */
@@ -890,6 +890,58 @@
       padding-top: 10px;
       border-top: 1px solid var(--green-grid);
     }
+
+    /* =====================================================================
+       KARTE TAB — Map icon button in live table
+       ===================================================================== */
+    .td-map-btn {
+      cursor: pointer;
+      color: var(--text-label);
+      font-size: 1rem;
+      text-align: center;
+      transition: color 0.15s, text-shadow 0.15s;
+      user-select: none;
+    }
+    .td-map-btn:hover {
+      color: var(--green);
+      text-shadow: 0 0 8px rgba(45,156,219,0.7);
+    }
+
+    /* =====================================================================
+       FLUG-DRILL-DOWN (Statistiken)
+       ===================================================================== */
+    .flights-panel-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 0 16px 0;
+      border-bottom: 1px solid var(--green-dim);
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .flights-panel-title {
+      font-family: var(--text-mono);
+      font-weight: 700;
+      color: var(--green);
+      font-size: 1.05rem;
+      letter-spacing: 0.05em;
+    }
+    .flights-panel-count {
+      font-family: var(--text-display);
+      font-size: 0.72rem;
+      color: var(--text-label);
+      letter-spacing: 0.08em;
+    }
+    .source-badge {
+      font-family: var(--text-display);
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      white-space: nowrap;
+    }
+    .source-fs { color: var(--green); border: 1px solid var(--green-dim); }
+    .source-st { color: var(--cyan); border: 1px solid rgba(211,17,65,0.3); }
   </style>
 </head>
 <body>
@@ -1064,6 +1116,22 @@
   </div>
 </div>
 
+<!-- Track Modal -->
+<div id="track-modal" class="fp-modal-overlay hidden">
+  <div class="fp-modal-box" style="width:min(800px,95vw);" onclick="event.stopPropagation()">
+    <div class="fp-modal-header">
+      <span class="fp-callsign-title" id="track-modal-title">—</span>
+      <button class="fp-close-btn" onclick="closeTrackModal()">✕</button>
+    </div>
+    <div style="height:460px;position:relative;">
+      <div id="track-leaflet-map" style="width:100%;height:100%;"></div>
+    </div>
+    <div class="fp-section" style="padding:10px 20px;">
+      <div id="track-modal-info" class="text-label" style="font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.1em;"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
@@ -1073,7 +1141,7 @@
 // ==========================================================================
 //  Constants & State
 // ==========================================================================
-const PILOT_COLORS = ['#39e75f', '#00d4e0', '#f0a500', '#ff6b6b', '#c084fc', '#fb923c'];
+const PILOT_COLORS = ['#2d9cdb', '#00d4e0', '#f0a500', '#ff6b6b', '#c084fc', '#fb923c'];
 const TILE_URL     = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 const TILE_ATTR    = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
@@ -1084,6 +1152,8 @@ let mapInitialized = false;
 let liveData       = [];    // current live positions
 let sseSource      = null;
 let pilotDataMap   = {};    // {callsign: pilotObj} für Flugplan-Modal
+let pilotStatsMap   = {};    // {cid: statsObj} für Drill-Down
+let currentStatsCid = null;
 
 // ==========================================================================
 //  UTC Clock
@@ -1210,6 +1280,7 @@ function renderLiveTable(pilots) {
             <th>Höhe</th>
             <th>GS</th>
             <th>Online seit</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>`;
@@ -1228,6 +1299,7 @@ function renderLiveTable(pilots) {
             <td class="td-alt">${fmtAlt(p.altitude)}</td>
             <td class="td-gs">${fmtGS(p.groundspeed)}</td>
             <td class="td-time">${fmtOnlineTime(p.logon_time)}</td>
+            <td class="td-map-btn" data-cs="${escHtml(p.callsign || '')}">◎</td>
           </tr>`;
   }
 
@@ -1239,6 +1311,13 @@ function renderLiveTable(pilots) {
     td.addEventListener('click', () => {
       const pilot = pilotDataMap[td.dataset.cs];
       if (pilot) openFpModal(pilot);
+    });
+  });
+
+  container.querySelectorAll('.td-map-btn').forEach(td => {
+    td.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchToMapAndCenter(td.dataset.cs);
     });
   });
 }
@@ -1308,6 +1387,200 @@ document.getElementById('fp-modal').addEventListener('click', (e) => {
   if (e.target === document.getElementById('fp-modal')) closeFpModal();
 });
 
+// ==========================================================================
+//  KARTE TAB — Zur Karte wechseln und Pilot zentrieren
+// ==========================================================================
+function switchToMapAndCenter(callsign) {
+  document.querySelector('[data-tab="karte"]').click();
+  let attempts = 0;
+  const tryCenter = () => {
+    if (mapMarkers[callsign] && liveMap) {
+      liveMap.setView(mapMarkers[callsign].getLatLng(), 11);
+      mapMarkers[callsign].openPopup();
+    } else if (attempts++ < 20) {
+      setTimeout(tryCenter, 100);
+    }
+  };
+  setTimeout(tryCenter, 250);
+}
+
+// ==========================================================================
+//  PILOT DRILL-DOWN
+// ==========================================================================
+async function openPilotFlights(cid) {
+  const pilot = pilotStatsMap[cid];
+  if (!pilot) return;
+  const days = document.getElementById('stats-days').value;
+  const container = document.getElementById('stats-content');
+  currentStatsCid = cid;
+
+  container.innerHTML = `
+    <div class="flights-panel-header">
+      <button class="btn" onclick="closePilotFlights()">← Zurück</button>
+      <span class="flights-panel-title">${escHtml(pilot.name || String(cid))}</span>
+    </div>
+    <div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade Flüge...</div>`;
+
+  try {
+    const res = await fetch(`/api/pilots/${cid}/flights?days=${days}`);
+    const flights = await res.json();
+    renderFlightsList(cid, pilot.name, flights);
+  } catch (e) {
+    document.getElementById('stats-content').innerHTML += '<div class="empty-state"><div class="empty-state-text">Fehler beim Laden</div></div>';
+  }
+}
+
+function closePilotFlights() {
+  currentStatsCid = null;
+  fetchStats();
+}
+
+function renderFlightsList(cid, pilotName, flights) {
+  const container = document.getElementById('stats-content');
+  const fsCount = flights.filter(f => f.source === 'friesenspy').length;
+  const stCount = flights.filter(f => f.source === 'statsim').length;
+
+  let html = `
+    <div class="flights-panel-header">
+      <button class="btn" onclick="closePilotFlights()">← Zurück</button>
+      <span class="flights-panel-title">${escHtml(pilotName || String(cid))}</span>
+      <span class="flights-panel-count">${flights.length} Flüge`;
+  if (stCount > 0) html += ` <span class="text-label">(${fsCount} FriesenSpy · ${stCount} StatSim)</span>`;
+  html += `</span></div>`;
+
+  if (flights.length === 0) {
+    html += `<div class="empty-state"><div class="empty-state-text">Keine Flüge gefunden</div></div>`;
+  } else {
+    html += `<div class="live-table-wrap"><table>
+      <thead><tr>
+        <th>Callsign</th><th>Route</th><th>Datum</th><th>Dauer</th><th>Track</th><th>Quelle</th>
+      </tr></thead><tbody>`;
+
+    for (const f of flights) {
+      const dep = f.departure || '????';
+      const arr = f.arrival || '????';
+      const dt = f.logon_time ? f.logon_time.slice(0, 10) : '—';
+      const durMin = f.duration_min;
+      const dur = durMin != null
+        ? `${Math.floor(durMin / 60)}:${String(durMin % 60).padStart(2, '0')} h`
+        : '—';
+      const sourceTag = f.source === 'friesenspy'
+        ? `<span class="source-badge source-fs">● FriesenSpy</span>`
+        : `<span class="source-badge source-st">○ StatSim</span>`;
+      const trackId = f.source === 'friesenspy' ? f.id : f.statsim_id;
+      html += `<tr>
+        <td class="mono text-green">${escHtml(f.callsign || '—')}</td>
+        <td class="td-route">${escHtml(dep)} → ${escHtml(arr)}</td>
+        <td class="mono">${escHtml(dt)}</td>
+        <td class="mono">${dur}</td>
+        <td><span class="td-map-btn track-btn"
+              data-track-id="${trackId}"
+              data-track-src="${f.source === 'friesenspy' ? 'friesenspy' : 'statsim'}"
+              data-callsign="${escHtml(f.callsign || '')}"
+              data-dep="${escHtml(dep)}"
+              data-arr="${escHtml(arr)}"
+              title="Track anzeigen">◎</span></td>
+        <td>${sourceTag}</td>
+      </tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+  html += `<div class="stats-disclaimer">FriesenSpy-Aufzeichnungen + StatSim-Daten</div>`;
+  container.innerHTML = html;
+
+  container.querySelectorAll('.track-btn').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.trackId;
+      const src = el.dataset.trackSrc;
+      if (id && id !== 'null' && id !== 'undefined') {
+        openTrackModal(src, id, el.dataset.callsign, el.dataset.dep, el.dataset.arr);
+      }
+    });
+  });
+}
+
+// ==========================================================================
+//  TRACK MODAL
+// ==========================================================================
+let trackMap            = null;
+let trackMapInitialized = false;
+
+async function openTrackModal(source, id, callsign, dep, arr) {
+  document.getElementById('track-modal-title').textContent =
+    `${(callsign || '').toUpperCase()}  ·  ${dep || '?'} → ${arr || '?'}`;
+  document.getElementById('track-modal-info').textContent = 'Lade Track...';
+  document.getElementById('track-modal').classList.remove('hidden');
+  document.addEventListener('keydown', _trackEscHandler);
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (!trackMapInitialized) {
+        trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6 });
+        L.tileLayer(TILE_URL, { attribution: TILE_ATTR, subdomains: 'abcd', maxZoom: 19 }).addTo(trackMap);
+        trackMapInitialized = true;
+      } else {
+        trackMap.eachLayer(layer => {
+          if (!(layer instanceof L.TileLayer)) trackMap.removeLayer(layer);
+        });
+      }
+      trackMap.invalidateSize();
+      _loadAndDrawTrack(source, id);
+    });
+  });
+}
+
+async function _loadAndDrawTrack(source, id) {
+  try {
+    const url = source === 'friesenspy'
+      ? `/api/flights/${id}/track`
+      : `/api/flights/statsim/${id}/track`;
+    const res = await fetch(url);
+    const positions = await res.json();
+
+    if (!Array.isArray(positions) || positions.length === 0) {
+      document.getElementById('track-modal-info').textContent = 'Kein Track verfügbar.';
+      return;
+    }
+
+    const latlngs = positions
+      .filter(p => p.latitude != null && p.longitude != null)
+      .map(p => [p.latitude, p.longitude]);
+
+    if (latlngs.length === 0) {
+      document.getElementById('track-modal-info').textContent = 'Keine gültigen Koordinaten.';
+      return;
+    }
+
+    L.polyline(latlngs, { color: '#2d9cdb', weight: 2, opacity: 0.9 }).addTo(trackMap);
+    L.circleMarker(latlngs[0], {
+      radius: 6, color: '#2d9cdb', fillColor: '#2d9cdb', fillOpacity: 1, weight: 2,
+    }).bindTooltip('Start', { className: 'mono' }).addTo(trackMap);
+    if (latlngs.length > 1) {
+      L.circleMarker(latlngs[latlngs.length - 1], {
+        radius: 6, color: '#00d4e0', fillColor: '#04080f', fillOpacity: 1, weight: 2,
+      }).bindTooltip('Ende', { className: 'mono' }).addTo(trackMap);
+    }
+    trackMap.fitBounds(latlngs, { padding: [40, 40] });
+    document.getElementById('track-modal-info').textContent =
+      `${positions.length} Track-Punkte  ·  ${source === 'friesenspy' ? '● FriesenSpy' : '○ StatSim'}`;
+  } catch (e) {
+    document.getElementById('track-modal-info').textContent = 'Fehler beim Laden des Tracks.';
+  }
+}
+
+function closeTrackModal() {
+  document.getElementById('track-modal').classList.add('hidden');
+  document.removeEventListener('keydown', _trackEscHandler);
+}
+
+function _trackEscHandler(e) {
+  if (e.key === 'Escape') closeTrackModal();
+}
+
+document.getElementById('track-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('track-modal')) closeTrackModal();
+});
+
 // Initial fetch for live data (before SSE delivers first message)
 async function fetchLiveInitial() {
   try {
@@ -1345,16 +1618,16 @@ function initLiveMap() {
   const styleEl = document.createElement('style');
   styleEl.textContent = `
     .leaflet-control-zoom a {
-      background: #0a1505 !important;
-      color: #39e75f !important;
-      border-color: rgba(57,231,95,0.3) !important;
+      background: #071525 !important;
+      color: #2d9cdb !important;
+      border-color: rgba(45,156,219,0.3) !important;
     }
     .leaflet-control-attribution {
-      background: rgba(6,13,10,0.8) !important;
-      color: #7cb87e !important;
+      background: rgba(4,8,15,0.8) !important;
+      color: #6b9ab8 !important;
       font-size: 9px !important;
     }
-    .leaflet-control-attribution a { color: #39e75f !important; }
+    .leaflet-control-attribution a { color: #2d9cdb !important; }
   `;
   document.head.appendChild(styleEl);
 
@@ -1438,6 +1711,7 @@ async function fetchStats() {
 
 function renderStatsTable(stats) {
   const container = document.getElementById('stats-content');
+  pilotStatsMap = {};
 
   if (!stats || stats.length === 0) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text">Keine Flugdaten vorhanden</div></div>`;
@@ -1467,16 +1741,21 @@ function renderStatsTable(stats) {
       : `<span class="text-label mono">${rank}</span>`;
     const hours = (s.total_hours || 0).toFixed(1);
     html += `
-          <tr>
+          <tr data-cid="${s.cid}" style="cursor:pointer;">
             <td>${rankCell}</td>
             <td>${escHtml(s.name || String(s.cid))}</td>
             <td class="mono">${s.flight_count || 0}</td>
             <td class="mono text-cyan">${hours} h</td>
           </tr>`;
+    pilotStatsMap[s.cid] = s;
   });
 
   html += `</tbody></table></div>`;
   container.innerHTML = html;
+
+  container.querySelectorAll('tr[data-cid]').forEach(tr => {
+    tr.addEventListener('click', () => openPilotFlights(Number(tr.dataset.cid)));
+  });
 }
 
 // ==========================================================================
@@ -1617,7 +1896,7 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
 
     if (positions.length > 1) {
       L.circleMarker(last, {
-        radius: 5, color, fillColor: '#060d0a', fillOpacity: 1, weight: 2,
+        radius: 5, color, fillColor: '#04080f', fillOpacity: 1, weight: 2,
       }).bindTooltip(`${label} — Ende`, { className: 'mono' }).addTo(eventsMap);
     }
 
