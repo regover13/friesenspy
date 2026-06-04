@@ -126,16 +126,46 @@ async def get_events(
         callsign = positions[0].get("callsign", "") if positions else ""
         conn2 = get_connection(settings.DB_PATH)
         try:
-            row = conn2.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
-            name = row["name"] if row else ""
+            name_row = conn2.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
+            name = name_row["name"] if name_row else ""
+            # Segmentierung über flights-Tabelle (exakter als Zeitlücke)
+            flight_rows = conn2.execute(
+                """SELECT callsign, departure, arrival, aircraft_short,
+                          logon_time, logoff_time
+                   FROM flights
+                   WHERE cid = ?
+                     AND logoff_time IS NOT NULL
+                     AND logon_time <= ?
+                     AND logoff_time >= ?
+                   ORDER BY logon_time""",
+                (cid, end or "9999-12-31", start or "0000-01-01"),
+            ).fetchall()
         finally:
             conn2.close()
-        flights = segment_into_flights(positions)
+
+        if flight_rows:
+            flights = []
+            for fr in flight_rows:
+                lo, lf = fr["logon_time"], fr["logoff_time"]
+                seg_positions = [p for p in positions if lo <= p.get("ts", "") <= lf]
+                flights.append({
+                    "logon_time": lo,
+                    "logoff_time": lf,
+                    "callsign": fr["callsign"],
+                    "departure": fr["departure"] or "",
+                    "arrival": fr["arrival"] or "",
+                    "aircraft": fr["aircraft_short"] or "",
+                    "positions": seg_positions,
+                })
+        else:
+            # Fallback: Zeitlücken-Segmentierung (z.B. Positionen vor FriesenSpy-Start)
+            flights = segment_into_flights(positions)
+
         pilots.append({
             "cid": cid,
             "callsign": callsign,
             "name": name,
-            "flights": flights,   # war: "positions": positions
+            "flights": flights,
         })
 
     return {"pilots": pilots}
