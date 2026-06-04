@@ -219,7 +219,7 @@ async def get_pilot_flights(cid: int, days: int = 90):
                     cache_fresh = age_h < 24
                 except Exception:
                     pass
-            if not cache_fresh:
+            if not cache_fresh or days == 0:  # days=0 → immer vollen Zeitraum holen
                 async with _httpx.AsyncClient() as client:
                     if days == 0:
                         # Alle Flüge seit StatSim-Start (2020-01-22)

@@ -1437,12 +1437,15 @@ function closePilotFlights() {
 
 async function loadAllFlights(cid) {
   const pilot = pilotStatsMap[cid];
+  const btn = document.getElementById('all-flights-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Lade Historik…'; }
   try {
     const res = await fetch(`/api/pilots/${cid}/flights?days=0`);
     const flights = await res.json();
     renderFlightsList(cid, pilot?.name, flights);
   } catch (e) {
     console.error('Fehler beim Laden aller Flüge', e);
+    if (btn) { btn.disabled = false; btn.textContent = 'Alle Flüge laden (seit 2020)'; }
   }
 }
 
@@ -1497,7 +1500,7 @@ function renderFlightsList(cid, pilotName, flights) {
     html += `</tbody></table></div>`;
     html += `
   <div style="text-align:center; padding:10px 0 4px;">
-    <button class="btn" onclick="loadAllFlights(${cid})">
+    <button class="btn" id="all-flights-btn" onclick="loadAllFlights(${cid})">
       Alle Flüge laden (seit 2020)
     </button>
   </div>`;
@@ -1851,6 +1854,9 @@ function renderEventsResults(data, icaoStr, radiusKm) {
     flights.forEach((f, fi) => {
       const date = f.logon_time ? f.logon_time.slice(0, 10) : '—';
       const pts  = (f.positions || []).length;
+      const dep  = f.departure || '';
+      const arr  = f.arrival   || '';
+      const cs   = f.callsign  || callsign;
       let dur = '—';
       if (f.logon_time && f.logoff_time) {
         try {
@@ -1860,16 +1866,20 @@ function renderEventsResults(data, icaoStr, radiusKm) {
           dur = `${h}:${String(m).padStart(2,'0')} h`;
         } catch(e) {}
       }
+      const route = dep && arr ? `${escHtml(dep)} → ${escHtml(arr)}` : '—';
       // Flug-ID für Map-Highlight: pilotIndex_flightIndex
       const flightKey = `${i}_${fi}`;
-      flightRows += `<tr class="events-flight-row" data-flight-key="${flightKey}" style="cursor:pointer;">
+      flightRows += `<tr class="events-flight-row" data-flight-key="${flightKey}" style="cursor:pointer;" title="Klick → Flug auf Karte hervorheben">
         <td class="mono text-label">${escHtml(date)}</td>
+        <td class="mono text-green">${escHtml(cs)}</td>
+        <td class="mono">${route}</td>
         <td class="mono">${dur}</td>
         <td class="mono text-label">${pts} Pkt.</td>
         <td><span class="td-map-btn" title="Auf Karte zeigen">◎</span></td>
       </tr>`;
     });
 
+    const flightWord = flights.length === 1 ? 'Flug' : 'Flüge';
     cardsHtml += `
       <div class="pilot-card" style="flex-direction:column; align-items:flex-start; gap:6px;">
         <div style="display:flex; align-items:center; gap:10px;">
@@ -1877,12 +1887,14 @@ function renderEventsResults(data, icaoStr, radiusKm) {
           <div>
             <span class="pilot-card-callsign">${escHtml(callsign)}</span>
             <span class="pilot-card-cid" style="margin-left:8px;">CID ${p.cid}</span>
-            <span class="pilot-card-detail" style="margin-left:8px;">${flights.length} Flüge</span>
+            <span class="pilot-card-detail" style="margin-left:8px;">${flights.length} ${flightWord}</span>
           </div>
         </div>
         ${flightRows ? `<table style="width:100%;margin-left:24px;font-size:0.8rem;">
           <thead><tr>
             <th style="text-align:left;">Datum</th>
+            <th style="text-align:left;">Callsign</th>
+            <th style="text-align:left;">Route</th>
             <th style="text-align:left;">Dauer</th>
             <th style="text-align:left;">Punkte</th>
             <th></th>
@@ -1985,6 +1997,8 @@ function highlightEventFlight(pilots, pilotIdx, flightIdx) {
     pl.setStyle({ opacity: 1.0, weight: 4 });
     eventsMap.fitBounds(pl.getBounds(), { padding: [40, 40] });
   }
+  // Karte in Sichtbereich scrollen
+  document.getElementById('events-map-container').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // ==========================================================================
