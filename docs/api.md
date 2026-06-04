@@ -181,6 +181,10 @@ Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe e
         {
           "logon_time": "2026-06-04T07:00:00Z",
           "logoff_time": "2026-06-04T10:20:00Z",
+          "callsign": "FRS49",
+          "departure": "EDKB",
+          "arrival": "EDDK",
+          "aircraft": "PA24",
           "positions": [
             {
               "callsign": "FRS49",
@@ -199,7 +203,7 @@ Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe e
 }
 ```
 
-`flights` enthält die Positionen des Piloten im Zeitfenster aufgeteilt in einzelne Flüge. Liegen zwei aufeinanderfolgende Positionen mehr als 30 Minuten auseinander, beginnt ein neuer Flug-Eintrag. `positions` enthält alle aufgezeichneten Positionen des jeweiligen Fluges — nicht nur die im Radius.
+`flights` enthält die Positionen des Piloten im Zeitfenster aufgeteilt in einzelne Flüge. Die Segmentierung basiert primär auf echten VATSIM-Session-Records aus der `flights`-Tabelle (Callsign, DEP/ARR, Flugzeugtyp aus dem Flugplan). `callsign`, `departure`, `arrival` und `aircraft` sind `null` wenn kein passender `flights`-Eintrag existiert — in diesem Fall wird als Fallback nach Zeitlücken von mehr als 30 Minuten segmentiert (z.B. für Positionen aus Zeiten vor FriesenSpy-Start). `positions` enthält alle aufgezeichneten Positionen des jeweiligen Fluges — nicht nur die im Radius.
 
 ---
 

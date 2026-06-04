@@ -84,6 +84,7 @@ Ein einziges `conn.commit()` am Ende — kein partieller Schreibzustand möglich
 - `haversine(lat1, lon1, lat2, lon2)` — Großkreis-Abstand in km
 - `icao_to_coords(icao)` — ICAO → (lat, lon) via `airportsdata`-Package (keine Netzwerk-Anfrage, statische Daten)
 - `filter_event_pilots(rows, icao_list, radius_km, start_utc, end_utc)` — filtert `position_history`-Zeilen auf Piloten die im Zeitfenster innerhalb von `radius_km` um einen der ICAOs waren
+- `segment_into_flights(positions, flights_rows)` — gruppiert Positionen anhand echter VATSIM-Session-Records aus der `flights`-Tabelle; jedes Segment erhält `callsign`, `departure`, `arrival`, `aircraft` aus dem passenden `flights`-Eintrag. Fallback auf Zeitlücken-Segmentierung (30-min-Gap) wenn kein `flights`-Eintrag für eine Position gefunden wird (z.B. Altdaten vor FriesenSpy-Start)
 
 ### `app/alerts.py`
 
@@ -104,7 +105,7 @@ Single-File-SPA ohne Build-Step. Vier Tabs:
 - **LIVE** — EventSource(`/api/sse`) mit Reconnect; Callsign-Klick → Flugplan-Modal; ◎-Klick → `switchToMapAndCenter()`
 - **KARTE** — Leaflet.js; Marker mit Heading-Rotation; Double-RAF-Init beim Tab-Wechsel
 - **STATISTIKEN** — `/api/stats?days=N`; zeigt letzten Flug + Anzahl, sortiert nach Datum; Pilot-Klick → `openPilotFlights()` → `/api/pilots/{cid}/flights?days=365`; „Alle laden" → `?days=0`; ◎-Klick → Track-Modal
-- **EVENTS** — `/api/events`; pro Pilot werden einzelne Flüge aufgelistet (Datum, Dauer, Anzahl Punkte); Karte zeigt alle Flüge aller Piloten gleichzeitig als separate Polylines; Klick auf einen Flug → Hervorhebung auf der Karte
+- **EVENTS** — `/api/events`; pro Pilot werden einzelne Flüge aufgelistet (Datum, Dauer, Callsign, DEP/ARR, Anzahl Punkte); Segmentierung basiert auf echten VATSIM-Session-Records (Fallback: 30-min-Gap); Karte zeigt alle Flüge aller Piloten gleichzeitig als separate Polylines; Klick auf einen Flug → Hervorhebung auf der Karte
 
 Design: FriesenFlieger-Blau (`#04080f` Hintergrund, `#2d9cdb` Blau, `#D31141` Vereinsrot).
 
