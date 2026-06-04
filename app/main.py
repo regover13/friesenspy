@@ -235,9 +235,9 @@ async def get_pilot_flights(cid: int, days: int = 90):
             if not cache_fresh:
                 async with _httpx.AsyncClient() as client:
                     if days == 0:
-                        # Alle Flüge seit StatSim-Start (2020-01-22)
+                        # Alle Flüge seit 2025-01-01
                         from datetime import datetime as _dt
-                        statsim_days = (_dt.now(_timezone.utc) - _dt(2020, 1, 22, tzinfo=_timezone.utc)).days
+                        statsim_days = (_dt.now(_timezone.utc) - _dt(2025, 1, 1, tzinfo=_timezone.utc)).days
                     else:
                         statsim_days = max(days, 365)
                     fresh = await fetch_pilot_flights(client, cid, settings.STATSIM_API_KEY, statsim_days)

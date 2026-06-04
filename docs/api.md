@@ -79,13 +79,13 @@ Letzter Flug und Fluganzahl pro Pilot, absteigend nach Datum. Nur FriesenSpy-eig
 
 ## GET /api/pilots/{cid}/flights
 
-Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und StatSim-Historik (wenn `STATSIM_API_KEY` konfiguriert). StatSim wird immer mit mindestens 365 Tagen abgefragt und gecacht (24h TTL). `days=0` umgeht den Cache immer und erzwingt einen vollständigen Abruf aller Flüge seit 2020-01-22.
+Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und StatSim-Historik (wenn `STATSIM_API_KEY` konfiguriert). StatSim wird immer mit mindestens 365 Tagen abgefragt und gecacht (24h TTL). `days=0` umgeht den Cache immer und erzwingt einen vollständigen Abruf aller Flüge seit 2025-01-01.
 
 **Query-Parameter**
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
-| `days` | int | `365` | Zeitraum in Tagen; `0` = alle verfügbaren Flüge seit 2020-01-22 |
+| `days` | int | `365` | Zeitraum in Tagen; `0` = alle verfügbaren Flüge seit 2025-01-01 |
 
 **Response**
 

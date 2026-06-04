@@ -10,9 +10,9 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 
 - **Live-Tab** — Echtzeit-Liste aller Friesen online (SSE); Callsign klicken → Flugplan-Modal; ◎ klicken → direkt zur Karte mit Zentrierung
 - **Karte** — Leaflet.js mit Flugzeug-Symbolen, Heading-Rotation, Popup mit Details
-- **Statistiken** — Letzter Flug + Anzahl pro Pilot (30/90/365 Tage); Pilot anklicken → Einzelflüge (mind. 365 Tage, „Alle laden" für volle Historik seit 2020 mit Lade-Feedback); ◎ → Track auf Karte
+- **Statistiken** — Letzter Flug + Anzahl pro Pilot (30/90/365 Tage); Pilot anklicken → Einzelflüge (mind. 365 Tage, „Alle laden" für volle Historik seit 2025 mit Lade-Feedback); ◎ → Track auf Karte
 - **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei? Ergebnisse als einzelne Flüge pro Pilot (Datum, Dauer, Callsign, Route, Punkte); alle Tracks gleichzeitig auf Karte; Klick auf Flug → Hervorhebung + automatischer Scroll zur Karte
-- **StatSim-Integration** — Historische Flüge seit 2020 via [StatSim API](https://statsim.net) (API-Key nötig)
+- **StatSim-Integration** — Historische Flüge seit 2025 via [StatSim API](https://statsim.net) (API-Key nötig)
 - **Telegram-Alerts** — Optional: Nachricht wenn ein Friese online geht
 
 ## Wie funktioniert das?
@@ -151,7 +151,7 @@ FriesenSpy/
 | `/health` | GET | `{"status": "ok"}` |
 | `/api/live` | GET | Aktuelle Live-Positionen (inkl. Flugplan-Felder) |
 | `/api/stats?days=30` | GET | Letzter Flug + Fluganzahl pro Pilot |
-| `/api/pilots/{cid}/flights?days=365` | GET | Einzelflüge eines Piloten (FriesenSpy + StatSim, min. 365 Tage); `days=0` = alles seit 2020 |
+| `/api/pilots/{cid}/flights?days=365` | GET | Einzelflüge eines Piloten (FriesenSpy + StatSim, min. 365 Tage); `days=0` = alles seit 2025 |
 | `/api/flights/{id}/track` | GET | GPS-Track eines FriesenSpy-Fluges |
 | `/api/flights/statsim/{id}/track` | GET | GPS-Track eines StatSim-Fluges |
 | `/api/events?icao=EDDK&radius=150&start=...&end=...` | GET | Event-Teilnehmer mit Tracks |

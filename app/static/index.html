@@ -1445,7 +1445,7 @@ async function loadAllFlights(cid) {
     renderFlightsList(cid, pilot?.name, flights);
   } catch (e) {
     console.error('Fehler beim Laden aller Flüge', e);
-    if (btn) { btn.disabled = false; btn.textContent = 'Alle Flüge laden (seit 2020)'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Alle Flüge laden (seit 2025)'; }
   }
 }
 
@@ -1501,7 +1501,7 @@ function renderFlightsList(cid, pilotName, flights) {
     html += `
   <div style="text-align:center; padding:10px 0 4px;">
     <button class="btn" id="all-flights-btn" onclick="loadAllFlights(${cid})">
-      Alle Flüge laden (seit 2020)
+      Alle Flüge laden (seit 2025)
     </button>
   </div>`;
   }

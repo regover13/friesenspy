@@ -37,7 +37,7 @@ Pflichtfelder: `SECRET_KEY`. Optional: `STATSIM_API_KEY` für historische Flugda
 
 ### `app/statsim.py`
 
-StatSim API-Client für historische Flugdaten (Daten ab 2020-01-22).
+StatSim API-Client für historische Flugdaten (Daten ab 2025-01-01).
 
 - `fetch_pilot_flights(client, cid, api_key, days)` — paginierte Abfrage in ≤31-Tage-Chunks. Fehlerhafte Chunks werden einzeln übersprungen (kein Abbruch der Gesamtabfrage). Timeout: 30s. Silent fail → []. Normalisiert Felder: `statsim_id`, `callsign`, `departure`, `arrival`, `aircraft`, `logon_time`, `logoff_time`, `duration_min`.
 - `fetch_flight_track(client, statsim_id, api_key)` — GPS-Track eines einzelnen Fluges. Silent fail → [].
@@ -96,7 +96,7 @@ FastAPI mit `lifespan`-Kontext-Manager (startup: DB init + Poller start; shutdow
 
 Endpoints: `/api/live`, `/api/stats`, `/api/pilots/{cid}/flights`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/sse`.
 
-`/api/pilots/{cid}/flights` lädt StatSim-Daten lazy (beim ersten Aufruf oder wenn Cache > 24h alt) und cached sie in `statsim_cache`. StatSim wird immer mit mindestens 365 Tagen abgefragt (`days=0` → alle Flüge seit 2020-01-22). `days=0` umgeht den 24h-Cache immer (force full refetch), da ein vorhandener Cache aus einer normalen `days=365`-Anfrage den vollen Abruf sonst fälschlich verhindert.
+`/api/pilots/{cid}/flights` lädt StatSim-Daten lazy (beim ersten Aufruf oder wenn Cache > 24h alt) und cached sie in `statsim_cache`. StatSim wird immer mit mindestens 365 Tagen abgefragt (`days=0` → alle Flüge seit 2025-01-01). `days=0` umgeht den 24h-Cache immer (force full refetch), da ein vorhandener Cache aus einer normalen `days=365`-Anfrage den vollen Abruf sonst fälschlich verhindert.
 
 ### `app/static/index.html`
 
