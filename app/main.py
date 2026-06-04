@@ -6,7 +6,7 @@ import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
@@ -50,6 +50,11 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # ---------------------------------------------------------------------------
 # REST endpoints
 # ---------------------------------------------------------------------------
+
+
+@app.get("/")
+async def index():
+    return FileResponse("app/static/index.html")
 
 
 @app.get("/health")
