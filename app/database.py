@@ -40,7 +40,16 @@ CREATE TABLE IF NOT EXISTS live_positions (
     groundspeed  INTEGER,
     heading      INTEGER,
     logon_time   TEXT,
-    updated_at   TEXT
+    updated_at   TEXT,
+    flight_rules TEXT,
+    aircraft_icao TEXT,
+    alternate    TEXT,
+    deptime      TEXT,
+    cruise_tas   TEXT,
+    enroute_time TEXT,
+    fuel_time    TEXT,
+    route        TEXT,
+    remarks      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS position_history (
@@ -83,6 +92,19 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
+_LIVE_POSITIONS_MIGRATIONS = [
+    "ALTER TABLE live_positions ADD COLUMN flight_rules TEXT",
+    "ALTER TABLE live_positions ADD COLUMN aircraft_icao TEXT",
+    "ALTER TABLE live_positions ADD COLUMN alternate TEXT",
+    "ALTER TABLE live_positions ADD COLUMN deptime TEXT",
+    "ALTER TABLE live_positions ADD COLUMN cruise_tas TEXT",
+    "ALTER TABLE live_positions ADD COLUMN enroute_time TEXT",
+    "ALTER TABLE live_positions ADD COLUMN fuel_time TEXT",
+    "ALTER TABLE live_positions ADD COLUMN route TEXT",
+    "ALTER TABLE live_positions ADD COLUMN remarks TEXT",
+]
+
+
 def init_db(db_path: str) -> None:
     """Datenbank initialisieren: WAL-Mode setzen, Tabellen/Indizes anlegen (IF NOT EXISTS)."""
     conn = sqlite3.connect(db_path)
@@ -90,6 +112,12 @@ def init_db(db_path: str) -> None:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.executescript(_DDL)
+        # Migration: neue Spalten hinzufügen falls noch nicht vorhanden
+        for stmt in _LIVE_POSITIONS_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # Spalte existiert bereits
         conn.commit()
     finally:
         conn.close()
@@ -163,6 +191,15 @@ def upsert_live_position(
     groundspeed: int,
     heading: int,
     logon_time: str,
+    flight_rules: str = "",
+    aircraft_icao: str = "",
+    alternate: str = "",
+    deptime: str = "",
+    cruise_tas: str = "",
+    enroute_time: str = "",
+    fuel_time: str = "",
+    route: str = "",
+    remarks: str = "",
 ) -> None:
     """Live-Position aktualisieren (INSERT OR REPLACE), updated_at = jetzt."""
     conn.execute(
@@ -170,13 +207,17 @@ def upsert_live_position(
         INSERT OR REPLACE INTO live_positions
             (cid, callsign, aircraft, departure, arrival,
              latitude, longitude, altitude, groundspeed, heading,
-             logon_time, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             logon_time, updated_at,
+             flight_rules, aircraft_icao, alternate, deptime, cruise_tas,
+             enroute_time, fuel_time, route, remarks)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             cid, callsign, aircraft, departure, arrival,
             latitude, longitude, altitude, groundspeed, heading,
             logon_time, _now_utc(),
+            flight_rules, aircraft_icao, alternate, deptime, cruise_tas,
+            enroute_time, fuel_time, route, remarks,
         ),
     )
 

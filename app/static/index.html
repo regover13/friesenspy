@@ -723,6 +723,173 @@
       .tab-btn { padding: 10px 14px; font-size: 0.7rem; }
       .events-form { grid-template-columns: 1fr; }
     }
+
+    /* =====================================================================
+       FLIGHT PLAN MODAL
+       ===================================================================== */
+    .fp-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(6,13,10,0.88);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(2px);
+    }
+
+    .fp-modal-box {
+      background: var(--bg-panel);
+      border: 1px solid var(--green);
+      box-shadow: 0 0 40px rgba(57,231,95,0.25), 0 0 80px rgba(57,231,95,0.08);
+      width: min(720px, 95vw);
+      max-height: 88vh;
+      overflow-y: auto;
+      animation: fpModalIn 0.15s ease-out;
+    }
+
+    @keyframes fpModalIn {
+      from { opacity: 0; transform: scale(0.97) translateY(-8px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .fp-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--green-dim);
+      background: rgba(57,231,95,0.04);
+    }
+
+    .fp-callsign-title {
+      font-family: var(--text-mono);
+      font-weight: 700;
+      font-size: 1.5rem;
+      color: var(--green);
+      letter-spacing: 0.12em;
+      text-shadow: 0 0 12px rgba(57,231,95,0.5);
+    }
+
+    .fp-close-btn {
+      background: transparent;
+      border: 1px solid var(--green-dim);
+      color: var(--text-label);
+      font-size: 1rem;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+
+    .fp-close-btn:hover {
+      border-color: var(--green);
+      color: var(--green);
+      background: var(--green-faint);
+    }
+
+    .fp-section {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--green-grid);
+    }
+
+    .fp-section:last-child { border-bottom: none; }
+
+    .fp-section-title {
+      font-family: var(--text-display);
+      font-size: 0.62rem;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      margin-bottom: 12px;
+    }
+
+    .fp-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 12px 20px;
+    }
+
+    .fp-field {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .fp-label {
+      font-family: var(--text-display);
+      font-size: 0.58rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-label);
+    }
+
+    .fp-val {
+      font-family: var(--text-mono);
+      font-size: 0.9rem;
+      color: var(--text-bright);
+    }
+
+    .fp-val.empty { color: var(--text-label); }
+
+    .fp-route-text {
+      font-family: var(--text-mono);
+      font-size: 0.9rem;
+      color: var(--green);
+      line-height: 1.6;
+      word-break: break-all;
+      min-height: 20px;
+    }
+
+    .fp-remarks-text {
+      font-family: var(--text-mono);
+      font-size: 0.82rem;
+      color: var(--text-label);
+      line-height: 1.6;
+      word-break: break-word;
+      min-height: 20px;
+    }
+
+    .td-callsign-link {
+      cursor: pointer;
+      transition: text-shadow 0.15s;
+    }
+
+    .td-callsign-link:hover {
+      text-shadow: 0 0 12px rgba(57,231,95,0.9);
+    }
+
+    /* Events: Callsign prominenter als CID */
+    .pilot-card-callsign {
+      font-family: var(--text-mono);
+      font-weight: 700;
+      color: var(--green);
+      font-size: 1rem;
+      letter-spacing: 0.05em;
+    }
+
+    .pilot-card-cid {
+      font-family: var(--text-display);
+      font-size: 0.65rem;
+      color: var(--text-label);
+      letter-spacing: 0.1em;
+    }
+
+    /* Statistiken Disclaimer */
+    .stats-disclaimer {
+      font-family: var(--text-display);
+      font-size: 0.68rem;
+      color: var(--text-label);
+      letter-spacing: 0.08em;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--green-grid);
+    }
   </style>
 </head>
 <body>
@@ -813,6 +980,7 @@
           Lade Statistiken...
         </div>
       </div>
+      <div class="stats-disclaimer">Zeigt FriesenSpy-eigene Aufzeichnungen · Daten wachsen mit jedem erfassten Flug</div>
     </div>
   </div>
 
@@ -861,6 +1029,41 @@
 
 </div><!-- /#app -->
 
+<!-- Flight Plan Modal -->
+<div id="fp-modal" class="fp-modal-overlay hidden">
+  <div class="fp-modal-box" onclick="event.stopPropagation()">
+    <div class="fp-modal-header">
+      <span class="fp-callsign-title" id="fp-callsign-title">—</span>
+      <button class="fp-close-btn" onclick="closeFpModal()">✕</button>
+    </div>
+    <div class="fp-section">
+      <div class="fp-section-title">Flight Details</div>
+      <div class="fp-grid">
+        <div class="fp-field"><span class="fp-label">Callsign</span><span class="fp-val" id="fp-cs">—</span></div>
+        <div class="fp-field"><span class="fp-label">Flight Rules</span><span class="fp-val" id="fp-rules">—</span></div>
+        <div class="fp-field"><span class="fp-label">Aircraft (ICAO)</span><span class="fp-val" id="fp-aircraft">—</span></div>
+        <div class="fp-field"><span class="fp-label">Departure</span><span class="fp-val" id="fp-dep">—</span></div>
+        <div class="fp-field"><span class="fp-label">Arrival</span><span class="fp-val" id="fp-arr">—</span></div>
+        <div class="fp-field"><span class="fp-label">Alternate</span><span class="fp-val" id="fp-alt-icao">—</span></div>
+        <div class="fp-field"><span class="fp-label">Off Block UTC</span><span class="fp-val" id="fp-deptime">—</span></div>
+        <div class="fp-field"><span class="fp-label">Altitude (ft)</span><span class="fp-val" id="fp-altft">—</span></div>
+        <div class="fp-field"><span class="fp-label">TAS (kt)</span><span class="fp-val" id="fp-tas">—</span></div>
+        <div class="fp-field"><span class="fp-label">Enroute</span><span class="fp-val" id="fp-enroute">—</span></div>
+        <div class="fp-field"><span class="fp-label">Fuel Endurance</span><span class="fp-val" id="fp-fuel">—</span></div>
+        <div class="fp-field"><span class="fp-label">Online seit</span><span class="fp-val" id="fp-logon">—</span></div>
+      </div>
+    </div>
+    <div class="fp-section">
+      <div class="fp-section-title">Route Details</div>
+      <div class="fp-route-text" id="fp-route">—</div>
+    </div>
+    <div class="fp-section" id="fp-remarks-section">
+      <div class="fp-section-title">Remarks</div>
+      <div class="fp-remarks-text" id="fp-remarks">—</div>
+    </div>
+  </div>
+</div>
+
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLjE=" crossorigin=""></script>
 
@@ -880,6 +1083,7 @@ let eventsMap      = null;  // Leaflet map instance for Events tab
 let mapInitialized = false;
 let liveData       = [];    // current live positions
 let sseSource      = null;
+let pilotDataMap   = {};    // {callsign: pilotObj} für Flugplan-Modal
 
 // ==========================================================================
 //  UTC Clock
@@ -1010,11 +1214,14 @@ function renderLiveTable(pilots) {
         </thead>
         <tbody>`;
 
+  // Rebuild pilotDataMap for modal access
+  pilotDataMap = {};
   for (const p of pilots) {
+    if (p.callsign) pilotDataMap[p.callsign] = p;
     const isNew = !existing.has(p.callsign);
     html += `
           <tr data-callsign="${escHtml(p.callsign)}" ${isNew ? 'class="new-row"' : ''}>
-            <td class="td-callsign">${escHtml((p.callsign || '').toUpperCase())}</td>
+            <td class="td-callsign td-callsign-link" data-cs="${escHtml(p.callsign || '')}">${escHtml((p.callsign || '').toUpperCase())}</td>
             <td>${escHtml(p.name || '—')}</td>
             <td class="mono">${escHtml(p.aircraft || '—')}</td>
             <td class="td-route">${escHtml(fmtRoute(p.departure, p.arrival))}</td>
@@ -1026,6 +1233,14 @@ function renderLiveTable(pilots) {
 
   html += `</tbody></table></div>`;
   container.innerHTML = html;
+
+  // Attach click handlers after DOM update
+  container.querySelectorAll('.td-callsign-link').forEach(td => {
+    td.addEventListener('click', () => {
+      const pilot = pilotDataMap[td.dataset.cs];
+      if (pilot) openFpModal(pilot);
+    });
+  });
 }
 
 function escHtml(str) {
@@ -1035,6 +1250,63 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+// ==========================================================================
+//  FLIGHT PLAN MODAL
+// ==========================================================================
+const FP_RULES = { 'V': 'VFR', 'I': 'IFR', 'Y': 'IFR/VFR', 'Z': 'VFR/IFR' };
+
+function fmtHHMM(raw) {
+  if (!raw) return '—';
+  const s = String(raw).padStart(4, '0');
+  return s.slice(0, 2) + ':' + s.slice(2, 4) + ' UTC';
+}
+
+function fpSet(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = val || '—';
+  el.className = 'fp-val' + (val ? '' : ' empty');
+}
+
+function openFpModal(pilot) {
+  document.getElementById('fp-callsign-title').textContent = (pilot.callsign || '').toUpperCase();
+  fpSet('fp-cs',      (pilot.callsign || '').toUpperCase());
+  fpSet('fp-rules',   FP_RULES[pilot.flight_rules] || pilot.flight_rules);
+  fpSet('fp-aircraft', pilot.aircraft_icao || pilot.aircraft);
+  fpSet('fp-dep',     pilot.departure);
+  fpSet('fp-arr',     pilot.arrival);
+  fpSet('fp-alt-icao', pilot.alternate);
+  fpSet('fp-deptime', pilot.deptime ? fmtHHMM(pilot.deptime) : '');
+  fpSet('fp-altft',   pilot.altitude ? pilot.altitude.toLocaleString('de') + ' ft' : '');
+  fpSet('fp-tas',     pilot.cruise_tas ? pilot.cruise_tas + ' kt' : '');
+  fpSet('fp-enroute', pilot.enroute_time ? fmtHHMM(pilot.enroute_time) : '');
+  fpSet('fp-fuel',    pilot.fuel_time ? fmtHHMM(pilot.fuel_time) : '');
+  fpSet('fp-logon',   fmtOnlineTime(pilot.logon_time));
+
+  const routeEl = document.getElementById('fp-route');
+  routeEl.textContent = pilot.route || '—';
+
+  const remarksEl = document.getElementById('fp-remarks');
+  remarksEl.textContent = pilot.remarks || '—';
+
+  document.getElementById('fp-modal').classList.remove('hidden');
+  document.addEventListener('keydown', _fpEscHandler);
+}
+
+function closeFpModal() {
+  document.getElementById('fp-modal').classList.add('hidden');
+  document.removeEventListener('keydown', _fpEscHandler);
+}
+
+function _fpEscHandler(e) {
+  if (e.key === 'Escape') closeFpModal();
+}
+
+// Close on overlay click
+document.getElementById('fp-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('fp-modal')) closeFpModal();
+});
 
 // Initial fetch for live data (before SSE delivers first message)
 async function fetchLiveInitial() {
@@ -1268,7 +1540,7 @@ function renderEventsResults(data, icaoStr, radiusKm) {
     return;
   }
 
-  summary.textContent = `${pilots.length} Fries${pilots.length === 1 ? '' : 'en'} dabei`;
+  summary.textContent = `${pilots.length} Friese${pilots.length !== 1 ? 'n' : ''} dabei`;
   summary.className   = 'events-summary found';
 
   // Pilot cards
@@ -1276,11 +1548,15 @@ function renderEventsResults(data, icaoStr, radiusKm) {
   pilots.forEach((p, i) => {
     const color    = PILOT_COLORS[i % PILOT_COLORS.length];
     const trackLen = (p.positions || []).length;
+    const callsign = p.callsign
+      || (p.positions && p.positions[0] ? p.positions[0].callsign : '')
+      || String(p.cid);
     cardsHtml += `
       <div class="pilot-card">
         <div class="pilot-card-dot" style="background:${color};"></div>
         <div>
-          <div class="pilot-card-name">${escHtml(p.name || String(p.cid))}</div>
+          <div class="pilot-card-callsign">${escHtml(callsign)}</div>
+          <div class="pilot-card-cid">CID ${p.cid}</div>
           <div class="pilot-card-detail">${trackLen} Track-Punkte</div>
         </div>
       </div>`;
@@ -1323,8 +1599,8 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
   pilots.forEach((p, i) => {
     const color     = PILOT_COLORS[i % PILOT_COLORS.length];
     const positions = (p.positions || [])
-      .filter(pos => pos.lat != null && pos.lon != null)
-      .map(pos => [pos.lat, pos.lon]);
+      .filter(pos => pos.latitude != null && pos.longitude != null)
+      .map(pos => [pos.latitude, pos.longitude]);
 
     if (positions.length === 0) return;
 
@@ -1334,14 +1610,15 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
     const first = positions[0];
     const last  = positions[positions.length - 1];
 
+    const label = p.callsign || p.name || String(p.cid);
     L.circleMarker(first, {
       radius: 5, color, fillColor: color, fillOpacity: 1, weight: 2,
-    }).bindTooltip(`${p.name || p.cid} — Start`, { className: 'mono' }).addTo(eventsMap);
+    }).bindTooltip(`${label} — Start`, { className: 'mono' }).addTo(eventsMap);
 
     if (positions.length > 1) {
       L.circleMarker(last, {
         radius: 5, color, fillColor: '#060d0a', fillOpacity: 1, weight: 2,
-      }).bindTooltip(`${p.name || p.cid} — Ende`, { className: 'mono' }).addTo(eventsMap);
+      }).bindTooltip(`${label} — Ende`, { className: 'mono' }).addTo(eventsMap);
     }
 
     bounds.push(...positions);
@@ -1379,11 +1656,16 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
     // Lazy initialization
     if (tab === 'karte') {
-      // Leaflet requires the container to be visible before init
+      // Double RAF: first frame makes container visible, second frame
+      // ensures layout is computed before Leaflet measures the container
       requestAnimationFrame(() => {
-        initLiveMap();
-        // Invalidate size after possible layout shift
-        if (liveMap) liveMap.invalidateSize();
+        requestAnimationFrame(() => {
+          initLiveMap();
+          if (liveMap) {
+            liveMap.invalidateSize();
+            updateMap(liveData);
+          }
+        });
       });
     }
 

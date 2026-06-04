@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: str = ""
     VATSIM_POLL_INTERVAL: int = 15
     DB_PATH: str = "/opt/friesenspy/data/friesenspy.db"
+    STATSIM_API_KEY: str = ""
 
 
 @lru_cache(maxsize=1)

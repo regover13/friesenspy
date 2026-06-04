@@ -430,20 +430,73 @@ class TestPilotToPosition:
             "cid", "name", "callsign", "aircraft", "aircraft_short",
             "departure", "arrival", "latitude", "longitude", "altitude",
             "groundspeed", "heading", "logon_time",
+            "flight_rules", "aircraft_icao", "alternate", "deptime",
+            "cruise_tas", "enroute_time", "fuel_time", "route", "remarks",
         }
         assert set(result.keys()) == expected_keys
 
     def test_all_result_fields_present(self, pilot_with_flight_plan):
-        """Alle 13 Felder sind im Ergebnis vorhanden."""
+        """Alle 22 Felder sind im Ergebnis vorhanden."""
         result = pilot_to_position(pilot_with_flight_plan)
 
         required_fields = [
             "cid", "name", "callsign", "aircraft", "aircraft_short",
             "departure", "arrival", "latitude", "longitude", "altitude",
             "groundspeed", "heading", "logon_time",
+            "flight_rules", "aircraft_icao", "alternate", "deptime",
+            "cruise_tas", "enroute_time", "fuel_time", "route", "remarks",
         ]
         for field in required_fields:
             assert field in result, f"Field '{field}' missing"
+
+    def test_flight_plan_fields_extracted(self):
+        """Alle flight_plan-Detailfelder werden korrekt extrahiert."""
+        pilot = {
+            "cid": 1602713,
+            "name": "Tobias EDKB",
+            "callsign": "FRS49",
+            "latitude": 50.767,
+            "longitude": 7.162,
+            "altitude": 2500,
+            "groundspeed": 110,
+            "heading": 317,
+            "logon_time": "2026-06-04T07:14:54Z",
+            "flight_plan": {
+                "aircraft_short": "PA24",
+                "aircraft_icao": "PA24",
+                "aircraft": "PA24/L",
+                "departure": "EDKB",
+                "arrival": "EDKF",
+                "alternate": "",
+                "flight_rules": "V",
+                "deptime": "1145",
+                "cruise_tas": "147",
+                "altitude": "2500",
+                "enroute_time": "0045",
+                "fuel_time": "0400",
+                "route": "DCT",
+                "remarks": "CAVOK VFR DAYLIGHT",
+            },
+        }
+        result = pilot_to_position(pilot)
+
+        assert result["flight_rules"] == "V"
+        assert result["aircraft_icao"] == "PA24"
+        assert result["alternate"] == ""
+        assert result["deptime"] == "1145"
+        assert result["cruise_tas"] == "147"
+        assert result["enroute_time"] == "0045"
+        assert result["fuel_time"] == "0400"
+        assert result["route"] == "DCT"
+        assert result["remarks"] == "CAVOK VFR DAYLIGHT"
+
+    def test_flight_plan_fields_empty_without_plan(self, pilot_without_flight_plan):
+        """Alle flight_plan-Detailfelder sind leer wenn kein flight_plan."""
+        result = pilot_to_position(pilot_without_flight_plan)
+
+        for field in ["flight_rules", "aircraft_icao", "alternate", "deptime",
+                      "cruise_tas", "enroute_time", "fuel_time", "route", "remarks"]:
+            assert result[field] == "", f"Field '{field}' should be empty string, got: {result[field]!r}"
 
     def test_empty_flight_plan_dict(self):
         """Flight Plan ist leeres Dict."""

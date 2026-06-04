@@ -149,6 +149,15 @@ class VatsimPoller:
                         pos["groundspeed"],
                         pos["heading"],
                         pos["logon_time"],
+                        pos.get("flight_rules", ""),
+                        pos.get("aircraft_icao", ""),
+                        pos.get("alternate", ""),
+                        pos.get("deptime", ""),
+                        pos.get("cruise_tas", ""),
+                        pos.get("enroute_time", ""),
+                        pos.get("fuel_time", ""),
+                        pos.get("route", ""),
+                        pos.get("remarks", ""),
                     )
                     save_position_history(
                         conn,
@@ -196,6 +205,15 @@ class VatsimPoller:
                         pos["groundspeed"],
                         pos["heading"],
                         pos["logon_time"],
+                        pos.get("flight_rules", ""),
+                        pos.get("aircraft_icao", ""),
+                        pos.get("alternate", ""),
+                        pos.get("deptime", ""),
+                        pos.get("cruise_tas", ""),
+                        pos.get("enroute_time", ""),
+                        pos.get("fuel_time", ""),
+                        pos.get("route", ""),
+                        pos.get("remarks", ""),
                     )
                     save_position_history(
                         conn,

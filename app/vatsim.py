@@ -70,18 +70,22 @@ def pilot_to_position(pilot: dict) -> dict:
         - logon_time: ISO8601 UTC String
     """
     flight_plan = pilot.get("flight_plan")
+    fp = flight_plan if (flight_plan and isinstance(flight_plan, dict)) else {}
 
-    # Extract aircraft info, defaulting to '' if no flight_plan
-    aircraft = ""
-    if flight_plan and isinstance(flight_plan, dict):
-        aircraft = flight_plan.get("aircraft_short", "")
+    aircraft = fp.get("aircraft_short", "")
+    departure = fp.get("departure", "")
+    arrival = fp.get("arrival", "")
 
-    # Extract departure/arrival, defaulting to '' if no flight_plan
-    departure = ""
-    arrival = ""
-    if flight_plan and isinstance(flight_plan, dict):
-        departure = flight_plan.get("departure", "")
-        arrival = flight_plan.get("arrival", "")
+    # Full flight plan fields for modal
+    flight_rules = fp.get("flight_rules", "")
+    aircraft_icao = fp.get("aircraft_icao", "") or fp.get("aircraft", "").split("/")[0] if fp.get("aircraft") else ""
+    alternate = fp.get("alternate", "")
+    deptime = fp.get("deptime", "")
+    cruise_tas = fp.get("cruise_tas", "")
+    enroute_time = fp.get("enroute_time", "")
+    fuel_time = fp.get("fuel_time", "")
+    route = fp.get("route", "")
+    remarks = fp.get("remarks", "")
 
     return {
         "cid": pilot.get("cid"),
@@ -97,4 +101,13 @@ def pilot_to_position(pilot: dict) -> dict:
         "groundspeed": pilot.get("groundspeed", 0),
         "heading": pilot.get("heading", 0),
         "logon_time": pilot.get("logon_time", ""),
+        "flight_rules": flight_rules,
+        "aircraft_icao": aircraft_icao,
+        "alternate": alternate,
+        "deptime": deptime,
+        "cruise_tas": cruise_tas,
+        "enroute_time": enroute_time,
+        "fuel_time": fuel_time,
+        "route": route,
+        "remarks": remarks,
     }

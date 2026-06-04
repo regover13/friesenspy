@@ -113,10 +113,17 @@ async def get_events(
 
     pilot_map = filter_event_pilots(rows, icao_list, radius, start, end)
 
-    pilots = [
-        {"cid": cid, "positions": positions}
-        for cid, positions in pilot_map.items()
-    ]
+    pilots = []
+    for cid, positions in pilot_map.items():
+        callsign = positions[0].get("callsign", "") if positions else ""
+        conn2 = get_connection(settings.DB_PATH)
+        try:
+            row = conn2.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
+            name = row["name"] if row else ""
+        finally:
+            conn2.close()
+        pilots.append({"cid": cid, "callsign": callsign, "name": name, "positions": positions})
+
     return {"pilots": pilots}
 
 
