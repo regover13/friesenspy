@@ -64,7 +64,7 @@ def sample_vatsim_data() -> dict:
                 "groundspeed": 100,
                 "heading": 45,
                 "logon_time": "2024-01-01T12:00:00.000000Z",
-                "flight_plan": None,  # Kein Flight Plan eingereicht
+                "flight_plan": None,
             },
         ],
         "controllers": [],
@@ -182,59 +182,59 @@ class TestFetchVatsimData:
 # ---------------------------------------------------------------------------
 
 class TestFilterFriesenPilots:
-    def test_filter_exact_match(self, sample_vatsim_data):
-        """Piloten exakt nach CID filtern."""
-        cids = [1234567, 8901234]
-        result = filter_friesen_pilots(cids, sample_vatsim_data)
+    def test_filter_by_prefix_matches_two(self, sample_vatsim_data):
+        """Prefix 'FRS' trifft FRS001 und FRS002."""
+        result = filter_friesen_pilots("FRS", sample_vatsim_data)
 
         assert len(result) == 2
-        cids_found = [p["cid"] for p in result]
-        assert set(cids_found) == set(cids)
+        callsigns = {p["callsign"] for p in result}
+        assert callsigns == {"FRS001", "FRS002"}
+
+    def test_filter_excludes_non_prefix(self, sample_vatsim_data):
+        """UNK001 wird nicht von FRS-Prefix erfasst."""
+        result = filter_friesen_pilots("FRS", sample_vatsim_data)
+
+        callsigns = {p["callsign"] for p in result}
+        assert "UNK001" not in callsigns
 
     def test_filter_single_match(self, sample_vatsim_data):
-        """Einzelnen Piloten filtern."""
-        cids = [1234567]
-        result = filter_friesen_pilots(cids, sample_vatsim_data)
+        """Präziserer Prefix trifft nur einen Piloten."""
+        result = filter_friesen_pilots("FRS001", sample_vatsim_data)
 
         assert len(result) == 1
-        assert result[0]["cid"] == 1234567
-        assert result[0]["name"] == "Max Mustermann"
+        assert result[0]["callsign"] == "FRS001"
 
     def test_filter_no_matches(self, sample_vatsim_data):
-        """Keine Übereinstimmungen — leere Liste."""
-        cids = [9999999]
-        result = filter_friesen_pilots(cids, sample_vatsim_data)
+        """Unbekannter Prefix — leere Liste."""
+        result = filter_friesen_pilots("XYZ", sample_vatsim_data)
 
         assert result == []
 
-    def test_filter_partial_match(self, sample_vatsim_data):
-        """Teilmenge der Piloten filtern."""
-        cids = [1234567, 9999999]  # Ein Match, ein No-Match
-        result = filter_friesen_pilots(cids, sample_vatsim_data)
+    def test_filter_case_insensitive(self, sample_vatsim_data):
+        """Prefix-Vergleich ist case-insensitiv."""
+        result_upper = filter_friesen_pilots("FRS", sample_vatsim_data)
+        result_lower = filter_friesen_pilots("frs", sample_vatsim_data)
+        result_mixed = filter_friesen_pilots("Frs", sample_vatsim_data)
 
-        assert len(result) == 1
-        assert result[0]["cid"] == 1234567
+        assert len(result_upper) == len(result_lower) == len(result_mixed) == 2
 
-    def test_filter_empty_cids(self, sample_vatsim_data):
-        """Leere CID-Liste — keine Matches."""
-        cids = []
-        result = filter_friesen_pilots(cids, sample_vatsim_data)
+    def test_filter_empty_prefix_matches_all(self, sample_vatsim_data):
+        """Leerer Prefix passt auf alle Callsigns."""
+        result = filter_friesen_pilots("", sample_vatsim_data)
 
-        assert result == []
+        assert len(result) == 3
 
     def test_filter_missing_pilots_key(self):
         """API-Response ohne 'pilots'-Schlüssel."""
         data = {"controllers": [], "servers": []}
-        cids = [1234567]
-        result = filter_friesen_pilots(cids, data)
+        result = filter_friesen_pilots("FRS", data)
 
         assert result == []
 
     def test_filter_empty_pilots_list(self):
         """API-Response mit leerer pilots-Liste."""
         data = {"pilots": []}
-        cids = [1234567]
-        result = filter_friesen_pilots(cids, data)
+        result = filter_friesen_pilots("FRS", data)
 
         assert result == []
 
@@ -242,30 +242,27 @@ class TestFilterFriesenPilots:
         """Malformed pilot-Eintrag wird ignoriert."""
         data = {
             "pilots": [
-                {"cid": 1234567, "name": "Valid Pilot"},
-                "not-a-dict",  # Malformed
-                None,  # Invalid
-                {"name": "No CID"},  # Missing CID
+                {"cid": 1234567, "callsign": "FRS001", "name": "Valid"},
+                "not-a-dict",
+                None,
+                {"name": "No Callsign"},
             ]
         }
-        cids = [1234567]
-        result = filter_friesen_pilots(cids, data)
+        result = filter_friesen_pilots("FRS", data)
 
         assert len(result) == 1
-        assert result[0]["cid"] == 1234567
+        assert result[0]["callsign"] == "FRS001"
 
     def test_filter_pilots_not_list(self):
         """API-Response mit non-list 'pilots'-Wert."""
-        data = {"pilots": {"1234567": {}}}  # Dict statt List
-        cids = [1234567]
-        result = filter_friesen_pilots(cids, data)
+        data = {"pilots": {"FRS001": {}}}
+        result = filter_friesen_pilots("FRS", data)
 
         assert result == []
 
     def test_filter_preserves_pilot_data(self, sample_vatsim_data):
         """Gefilterte Piloten-Daten sind unmodifiziert."""
-        cids = [1234567]
-        result = filter_friesen_pilots(cids, sample_vatsim_data)
+        result = filter_friesen_pilots("FRS001", sample_vatsim_data)
 
         pilot = result[0]
         assert pilot["cid"] == 1234567
@@ -273,6 +270,19 @@ class TestFilterFriesenPilots:
         assert pilot["callsign"] == "FRS001"
         assert pilot["latitude"] == 53.6
         assert pilot["flight_plan"]["aircraft_short"] == "B737"
+
+    def test_filter_pilot_with_empty_callsign(self):
+        """Pilot ohne Callsign wird nicht gematcht (außer bei leerem Prefix)."""
+        data = {
+            "pilots": [
+                {"cid": 1, "callsign": "", "name": "No Callsign"},
+                {"cid": 2, "callsign": "FRS001", "name": "Valid"},
+            ]
+        }
+        result = filter_friesen_pilots("FRS", data)
+
+        assert len(result) == 1
+        assert result[0]["callsign"] == "FRS001"
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +356,7 @@ class TestPilotToPosition:
         pilot = {
             "cid": 1234567,
             "name": "Partial Pilot",
-            "callsign": "TEST001",
+            "callsign": "FRS001",
             "latitude": 53.0,
             "longitude": 9.0,
             "altitude": 10000,
@@ -369,14 +379,14 @@ class TestPilotToPosition:
         pilot = {
             "cid": 1234567,
             "name": "Invalid FP Pilot",
-            "callsign": "TEST001",
+            "callsign": "FRS001",
             "latitude": 50.0,
             "longitude": 10.0,
             "altitude": 5000,
             "groundspeed": 100,
             "heading": 0,
             "logon_time": "2024-01-01T10:00:00Z",
-            "flight_plan": "invalid",  # String, nicht Dict
+            "flight_plan": "invalid",
         }
         result = pilot_to_position(pilot)
 
@@ -440,14 +450,14 @@ class TestPilotToPosition:
         pilot = {
             "cid": 1,
             "name": "Empty FP",
-            "callsign": "EFP001",
+            "callsign": "FRS001",
             "latitude": 50.0,
             "longitude": 10.0,
             "altitude": 5000,
             "groundspeed": 100,
             "heading": 0,
             "logon_time": "2024-01-01T10:00:00Z",
-            "flight_plan": {},  # Leeres Dict
+            "flight_plan": {},
         }
         result = pilot_to_position(pilot)
 
@@ -462,19 +472,16 @@ class TestPilotToPosition:
 
         assert len(results) == 3
 
-        # Max Mustermann — mit Flight Plan
         pos1 = results[0]
         assert pos1["cid"] == 1234567
         assert pos1["aircraft"] == "B737"
         assert pos1["departure"] == "EDDH"
 
-        # Erika Beispiel — mit Flight Plan
         pos2 = results[1]
         assert pos2["cid"] == 8901234
         assert pos2["aircraft"] == "A320"
         assert pos2["departure"] == "EDDF"
 
-        # Unknown Pilot — ohne Flight Plan
         pos3 = results[2]
         assert pos3["cid"] == 5555555
         assert pos3["aircraft"] == ""

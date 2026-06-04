@@ -1,4 +1,4 @@
-"""Tests for app/config.py — Settings, CID parsing, defaults, env overrides."""
+"""Tests for app/config.py — Settings, defaults, env overrides."""
 from __future__ import annotations
 
 import importlib
@@ -10,24 +10,19 @@ import pytest
 
 def _make_settings(**env_overrides: str):
     """Instantiate a fresh Settings object with the given env vars set."""
-    # Patch environment, reload module to bust lru_cache, restore afterwards
     original = {k: os.environ.get(k) for k in env_overrides}
-    # Ensure SECRET_KEY is always present unless overridden
     if "SECRET_KEY" not in env_overrides:
         env_overrides.setdefault("SECRET_KEY", "test-secret")
 
     for k, v in env_overrides.items():
         os.environ[k] = v
 
-    # Re-import Settings directly to avoid cached singleton
     if "app.config" in sys.modules:
         importlib.reload(sys.modules["app.config"])
     from app.config import Settings  # noqa: PLC0415
 
-    # Build without reading config.env so tests are hermetic
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
-    # Restore env
     for k, orig in original.items():
         if orig is None:
             os.environ.pop(k, None)
@@ -37,33 +32,18 @@ def _make_settings(**env_overrides: str):
     return settings
 
 
-class TestCIDParsing:
-    def test_single_cid(self):
-        s = _make_settings(FRIESENFLIEGER_CIDS="1234567")
-        assert s.cids == [1234567]
+class TestCallsignPrefix:
+    def test_default_prefix(self):
+        s = _make_settings()
+        assert s.CALLSIGN_PREFIX == "FRS"
 
-    def test_multiple_cids(self):
-        s = _make_settings(FRIESENFLIEGER_CIDS="1234567,8901234")
-        assert s.cids == [1234567, 8901234]
+    def test_prefix_override(self):
+        s = _make_settings(CALLSIGN_PREFIX="FFR")
+        assert s.CALLSIGN_PREFIX == "FFR"
 
-    def test_cids_with_spaces(self):
-        s = _make_settings(FRIESENFLIEGER_CIDS=" 1234567 , 8901234 ")
-        assert s.cids == [1234567, 8901234]
-
-    def test_empty_cids(self):
-        s = _make_settings(FRIESENFLIEGER_CIDS="")
-        assert s.cids == []
-
-    def test_cids_not_set_defaults_to_empty(self):
-        # Make sure FRIESENFLIEGER_CIDS is absent from env
-        os.environ.pop("FRIESENFLIEGER_CIDS", None)
-        os.environ["SECRET_KEY"] = "test-secret"
-        if "app.config" in sys.modules:
-            importlib.reload(sys.modules["app.config"])
-        from app.config import Settings  # noqa: PLC0415
-
-        s = Settings(_env_file=None)  # type: ignore[call-arg]
-        assert s.cids == []
+    def test_empty_prefix(self):
+        s = _make_settings(CALLSIGN_PREFIX="")
+        assert s.CALLSIGN_PREFIX == ""
 
 
 class TestDefaults:
@@ -102,7 +82,6 @@ class TestEnvOverride:
 
 class TestGetSettings:
     def test_singleton_returns_same_instance(self):
-        # Reload to get a fresh lru_cache
         if "app.config" in sys.modules:
             importlib.reload(sys.modules["app.config"])
         os.environ.setdefault("SECRET_KEY", "test-secret")

@@ -22,7 +22,7 @@ from app.poller import VatsimPoller, create_poller
 def _make_poller(db_path: str = ":memory:", **kwargs) -> VatsimPoller:
     return VatsimPoller(
         db_path=db_path,
-        cids=[1234567, 7654321],
+        callsign_prefix="FRS",
         poll_interval=60,
         **kwargs,
     )
@@ -40,7 +40,7 @@ class TestVatsimPollerInstantiation:
     def test_default_attributes(self):
         poller = _make_poller()
         assert poller.db_path == ":memory:"
-        assert poller.cids == [1234567, 7654321]
+        assert poller.callsign_prefix == "FRS"
         assert poller.poll_interval == 60
         assert poller.telegram_token == ""
         assert poller.telegram_chat_id == ""
@@ -81,7 +81,6 @@ class TestStartStop:
         poller = _make_poller()
         await poller.start()
         await poller.stop()
-        # APScheduler shutdown(wait=False) is async — give it a moment to settle
         await asyncio.sleep(0.15)
         assert poller._scheduler is None or not poller._scheduler.running
 
@@ -91,13 +90,13 @@ class TestStartStop:
         poller = _make_poller()
         await poller.start()
         await asyncio.sleep(0.05)
-        await poller.stop()  # should not raise
+        await poller.stop()
 
     @pytest.mark.asyncio
     async def test_stop_without_start_is_safe(self):
         """stop() vor start() sollte keinen Fehler werfen."""
         poller = _make_poller()
-        await poller.stop()  # should not raise
+        await poller.stop()
 
     @pytest.mark.asyncio
     async def test_scheduler_has_two_jobs(self):
@@ -121,14 +120,12 @@ class TestPollOnceExceptionHandling:
     async def test_exception_does_not_propagate(self):
         """Wenn fetch_vatsim_data wirft, soll _poll_once keinen Fehler nach außen werfen."""
         poller = _make_poller()
-        # Provide a mock http_client so the assertion in _poll_once passes
         poller._http_client = AsyncMock()
 
         with patch(
             "app.poller.fetch_vatsim_data",
             new=AsyncMock(side_effect=Exception("VATSIM unreachable")),
         ):
-            # Must not raise
             await poller._poll_once()
 
     @pytest.mark.asyncio
@@ -143,7 +140,7 @@ class TestPollOnceExceptionHandling:
             "app.poller.fetch_vatsim_data",
             new=AsyncMock(side_effect=httpx.ConnectError("connection refused")),
         ):
-            await poller._poll_once()  # must not raise
+            await poller._poll_once()
 
     @pytest.mark.asyncio
     async def test_sse_queue_not_updated_on_error(self):
@@ -185,14 +182,14 @@ class TestPollOnceExceptionHandling:
     @pytest.mark.asyncio
     async def test_poll_once_online_pilot_opens_flight(self, tmp_path):
         """Wenn ein Pilot neu online geht, wird ein Flug geöffnet und die SSE-Queue gefüllt."""
-        from app.database import init_db, get_connection, get_live_positions
+        from app.database import init_db
 
         db_file = str(tmp_path / "test.db")
         init_db(db_file)
 
         poller = VatsimPoller(
             db_path=db_file,
-            cids=[1234567],
+            callsign_prefix="FRS",
             poll_interval=60,
         )
         poller._http_client = AsyncMock()
@@ -202,7 +199,7 @@ class TestPollOnceExceptionHandling:
                 {
                     "cid": 1234567,
                     "name": "Max Friesen",
-                    "callsign": "FFR001",
+                    "callsign": "FRS001",
                     "latitude": 53.6,
                     "longitude": 9.98,
                     "altitude": 35000,
@@ -224,10 +221,8 @@ class TestPollOnceExceptionHandling:
         ):
             await poller._poll_once()
 
-        # Pilot should now be in _active_flights
         assert 1234567 in poller._active_flights
 
-        # SSE queue should have one event with the live position
         assert not poller.sse_queue.empty()
         event = poller.sse_queue.get_nowait()
         assert event["type"] == "positions"
@@ -244,18 +239,17 @@ class TestPollOnceExceptionHandling:
 
         poller = VatsimPoller(
             db_path=db_file,
-            cids=[1234567],
+            callsign_prefix="FRS",
             poll_interval=60,
         )
         poller._http_client = AsyncMock()
 
-        # First poll: pilot is online
         vatsim_online = {
             "pilots": [
                 {
                     "cid": 1234567,
                     "name": "Max Friesen",
-                    "callsign": "FFR001",
+                    "callsign": "FRS001",
                     "latitude": 53.6,
                     "longitude": 9.98,
                     "altitude": 35000,
@@ -277,9 +271,8 @@ class TestPollOnceExceptionHandling:
             await poller._poll_once()
 
         assert 1234567 in poller._active_flights
-        poller.sse_queue.get_nowait()  # discard first event
+        poller.sse_queue.get_nowait()
 
-        # Second poll: pilot gone
         vatsim_offline = {"pilots": []}
         with patch(
             "app.poller.fetch_vatsim_data",
@@ -302,15 +295,15 @@ class TestCreatePoller:
     def test_create_poller_returns_instance(self, monkeypatch):
         """create_poller() gibt eine VatsimPoller-Instanz zurück."""
         monkeypatch.setenv("SECRET_KEY", "test-secret")
-        monkeypatch.setenv("FRIESENFLIEGER_CIDS", "1111,2222")
+        monkeypatch.setenv("CALLSIGN_PREFIX", "FRS")
         monkeypatch.setenv("DB_PATH", "/tmp/test.db")
 
-        # Clear lru_cache so fresh settings are loaded
         from app.config import get_settings
         get_settings.cache_clear()
 
         try:
             poller = create_poller()
             assert isinstance(poller, VatsimPoller)
+            assert poller.callsign_prefix == "FRS"
         finally:
             get_settings.cache_clear()

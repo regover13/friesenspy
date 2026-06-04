@@ -26,7 +26,6 @@ from app.database import (
 )
 from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_position
 from app.alerts import format_online_message, send_telegram_alert
-from app.board import fetch_friesen_cids
 
 logger = logging.getLogger(__name__)
 
@@ -35,22 +34,16 @@ class VatsimPoller:
     def __init__(
         self,
         db_path: str,
-        cids: list[int],
+        callsign_prefix: str = "FRS",
         poll_interval: int = 15,
         telegram_token: str = "",
         telegram_chat_id: str = "",
-        board_url: str = "",
-        board_username: str = "",
-        board_password: str = "",
     ) -> None:
         self.db_path = db_path
-        self.cids = cids
+        self.callsign_prefix = callsign_prefix
         self.poll_interval = poll_interval
         self.telegram_token = telegram_token
         self.telegram_chat_id = telegram_chat_id
-        self.board_url = board_url
-        self.board_username = board_username
-        self.board_password = board_password
         self._scheduler: AsyncIOScheduler | None = None
         self._http_client: httpx.AsyncClient | None = None
         # State: cid → flight_id (offene Flüge)
@@ -78,13 +71,6 @@ class VatsimPoller:
             hour=3,
             minute=0,
             id="daily_cleanup",
-        )
-        self._scheduler.add_job(
-            self._refresh_cids_from_board,
-            "cron",
-            hour=4,
-            minute=0,
-            id="board_cid_refresh",
         )
         self._scheduler.start()
 
@@ -118,7 +104,7 @@ class VatsimPoller:
 
             # 1. Fetch + filter
             vatsim_data = await fetch_vatsim_data(self._http_client)
-            online_pilots = filter_friesen_pilots(self.cids, vatsim_data)
+            online_pilots = filter_friesen_pilots(self.callsign_prefix, vatsim_data)
 
             # Build lookup: cid → position dict
             current: dict[int, dict] = {
@@ -243,24 +229,6 @@ class VatsimPoller:
             logger.exception("Error in _poll_once")
 
     # ------------------------------------------------------------------
-    # Board CID refresh (täglich 04:00)
-    # ------------------------------------------------------------------
-
-    async def _refresh_cids_from_board(self) -> None:
-        """CID-Liste aus FriesenFlieger-Board aktualisieren. Silent fail."""
-        if not self.board_username or not self.board_password:
-            return
-        try:
-            fresh_cids = await fetch_friesen_cids(
-                self.board_url, self.board_username, self.board_password
-            )
-            if fresh_cids:
-                self.cids = fresh_cids
-                logger.info("CID-Liste aktualisiert: %d Piloten", len(fresh_cids))
-        except Exception:
-            logger.exception("Fehler beim Aktualisieren der CID-Liste")
-
-    # ------------------------------------------------------------------
     # Daily cleanup
     # ------------------------------------------------------------------
 
@@ -288,11 +256,8 @@ def create_poller() -> VatsimPoller:
     settings = get_settings()
     return VatsimPoller(
         db_path=settings.DB_PATH,
-        cids=settings.cids,
+        callsign_prefix=settings.CALLSIGN_PREFIX,
         poll_interval=settings.VATSIM_POLL_INTERVAL,
         telegram_token=settings.TELEGRAM_BOT_TOKEN,
         telegram_chat_id=settings.TELEGRAM_CHAT_ID,
-        board_url=settings.BOARD_URL,
-        board_username=settings.BOARD_USERNAME,
-        board_password=settings.BOARD_PASSWORD,
     )

@@ -23,11 +23,11 @@ async def fetch_vatsim_data(client: httpx.AsyncClient) -> dict:
     return response.json()
 
 
-def filter_friesen_pilots(cids: list[int], vatsim_data: dict) -> list[dict]:
-    """Filtert VATSIM-Piloten nach CID-Liste.
+def filter_friesen_pilots(callsign_prefix: str, vatsim_data: dict) -> list[dict]:
+    """Filtert VATSIM-Piloten nach Callsign-Prefix (z.B. 'FRS').
 
     Args:
-        cids: Liste der zu suchenden Pilot-CIDs (VATSIM-Kennungen).
+        callsign_prefix: Callsign-Präfix (case-insensitiv), z.B. 'FRS'.
         vatsim_data: Dictionary von VATSIM-API mit 'pilots'-Schlüssel.
 
     Returns:
@@ -40,8 +40,11 @@ def filter_friesen_pilots(cids: list[int], vatsim_data: dict) -> list[dict]:
     if not isinstance(pilots, list):
         return []
 
-    cid_set = set(cids)
-    return [p for p in pilots if isinstance(p, dict) and p.get("cid") in cid_set]
+    prefix = callsign_prefix.upper()
+    return [
+        p for p in pilots
+        if isinstance(p, dict) and p.get("callsign", "").upper().startswith(prefix)
+    ]
 
 
 def pilot_to_position(pilot: dict) -> dict:
