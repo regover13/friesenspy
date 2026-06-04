@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: str = ""
     VATSIM_POLL_INTERVAL: int = 15
     DB_PATH: str = "/opt/friesenspy/data/friesenspy.db"
+    BOARD_URL: str = "https://board.friesenflieger.de"
+    BOARD_USERNAME: str = ""
+    BOARD_PASSWORD: str = ""
 
     @field_validator("FRIESENFLIEGER_CIDS", mode="before")
     @classmethod
