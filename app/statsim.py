@@ -68,7 +68,7 @@ async def fetch_pilot_flights(
                     "from": cursor.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "to": chunk_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 },
-                timeout=30.0,
+                timeout=10.0,
             )
             resp.raise_for_status()
             data = resp.json()
