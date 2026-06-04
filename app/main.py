@@ -28,6 +28,11 @@ from app.geo import filter_event_pilots, segment_into_flights
 from app.poller import VatsimPoller, create_poller
 from app.statsim import fetch_flight_track, fetch_pilot_flights
 
+# In-Memory-Cooldown für den "alle Flüge seit 2020"-Fetch (days=0).
+# Verhindert, dass jeder Klick auf "Alle laden" ~76 StatSim-API-Calls auslöst.
+# Verloren beim Neustart → erstes days=0 nach Restart holt immer frische Daten.
+_full_history_fetched: dict[int, datetime] = {}  # cid → fetch-Zeitpunkt
+
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -219,7 +224,15 @@ async def get_pilot_flights(cid: int, days: int = 90):
                     cache_fresh = age_h < 24
                 except Exception:
                     pass
-            if not cache_fresh or days == 0:  # days=0 → immer vollen Zeitraum holen
+            # days=0: nur re-fetchen wenn der Full-History-Cooldown abgelaufen ist
+            if days == 0:
+                last_full = _full_history_fetched.get(cid)
+                if last_full:
+                    full_age_h = (datetime.now(_timezone.utc) - last_full).total_seconds() / 3600
+                    cache_fresh = full_age_h < 24
+                else:
+                    cache_fresh = False  # noch nie voll abgerufen
+            if not cache_fresh:
                 async with _httpx.AsyncClient() as client:
                     if days == 0:
                         # Alle Flüge seit StatSim-Start (2020-01-22)
@@ -232,6 +245,8 @@ async def get_pilot_flights(cid: int, days: int = 90):
                     f["cid"] = cid
                 upsert_statsim_flights(conn, fresh)
                 conn.commit()
+                if days == 0:
+                    _full_history_fetched[cid] = datetime.now(_timezone.utc)
             display_days = days if days > 0 else 99999
             statsim_flights = get_statsim_flights_for_pilot(conn, cid, display_days)
     finally:
