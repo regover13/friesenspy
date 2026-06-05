@@ -337,7 +337,7 @@ def get_stats(
            )
         GROUP BY p.cid, p.name
         """,
-        (f"-{days}", f"-{days}", prefix_pat, f"-{days}", f"-{days}", f"-{days}", prefix_pat, f"-{days}"),
+        (f"-{days}", f"-{days}", f"-{days}", prefix_pat, f"-{days}", f"-{days}", prefix_pat, f"-{days}"),
     ).fetchall()
     result = []
     for r in rows:
@@ -380,7 +380,7 @@ def merge_fragmented_flights(flights: list[dict], gap_minutes: int = 5) -> list[
             if cs_match and (curr_no_fp ^ nxt_no_fp):
                 try:
                     gap = (_parse_iso(nxt['logon_time']) - _parse_iso(curr['logoff_time'])).total_seconds() / 60
-                    close = 0 <= gap <= gap_minutes
+                    close = -2 <= gap <= gap_minutes
                 except Exception:
                     close = False
                 if close:
