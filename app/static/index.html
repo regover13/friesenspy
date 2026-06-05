@@ -1133,6 +1133,28 @@
   </div>
 </div>
 
+<!-- Flight Detail Modal -->
+<div id="fld-modal" class="fp-modal-overlay hidden">
+  <div class="fp-modal-box" onclick="event.stopPropagation()">
+    <div class="fp-modal-header">
+      <span class="fp-callsign-title" id="fld-callsign">—</span>
+      <button class="fp-close-btn" onclick="closeFldModal()">✕</button>
+    </div>
+    <div class="fp-section">
+      <div class="fp-section-title">Flugdetails</div>
+      <div class="fp-grid">
+        <div class="fp-field"><span class="fp-label">Callsign</span><span class="fp-val" id="fld-cs">—</span></div>
+        <div class="fp-field"><span class="fp-label">Aircraft</span><span class="fp-val" id="fld-ac">—</span></div>
+        <div class="fp-field"><span class="fp-label">Departure</span><span class="fp-val" id="fld-dep">—</span></div>
+        <div class="fp-field"><span class="fp-label">Arrival</span><span class="fp-val" id="fld-arr">—</span></div>
+        <div class="fp-field"><span class="fp-label">Datum UTC</span><span class="fp-val" id="fld-dt">—</span></div>
+        <div class="fp-field"><span class="fp-label">Dauer</span><span class="fp-val" id="fld-dur">—</span></div>
+        <div class="fp-field"><span class="fp-label">Quelle</span><span class="fp-val" id="fld-src">—</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
@@ -1392,6 +1414,36 @@ document.getElementById('fp-modal').addEventListener('click', (e) => {
 });
 
 // ==========================================================================
+//  FLIGHT DETAIL MODAL
+// ==========================================================================
+function openFlightDetailModal(d) {
+  document.getElementById('fld-callsign').textContent = d.cs || '—';
+  document.getElementById('fld-cs').textContent  = d.cs  || '—';
+  document.getElementById('fld-ac').textContent  = d.ac  || '—';
+  document.getElementById('fld-dep').textContent = d.dep || '—';
+  document.getElementById('fld-arr').textContent = d.arr || '—';
+  document.getElementById('fld-dt').textContent  = d.dt
+    ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
+  document.getElementById('fld-dur').textContent = d.dur || '—';
+  document.getElementById('fld-src').textContent = d.src || '—';
+  document.getElementById('fld-modal').classList.remove('hidden');
+  document.addEventListener('keydown', _fldEscHandler);
+}
+
+function closeFldModal() {
+  document.getElementById('fld-modal').classList.add('hidden');
+  document.removeEventListener('keydown', _fldEscHandler);
+}
+
+function _fldEscHandler(e) {
+  if (e.key === 'Escape') closeFldModal();
+}
+
+document.getElementById('fld-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('fld-modal')) closeFldModal();
+});
+
+// ==========================================================================
 //  KARTE TAB — Zur Karte wechseln und Pilot zentrieren
 // ==========================================================================
 function switchToMapAndCenter(callsign) {
@@ -1513,7 +1565,14 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
         ? `<span class="source-badge source-fs">● FriesenSpy</span>`
         : `<span class="source-badge source-st">○ StatSim</span>`;
       const trackId = f.source === 'friesenspy' ? f.id : f.statsim_id;
-      html += `<tr>
+      html += `<tr class="flight-row" style="cursor:pointer;"
+          data-cs="${escHtml(f.callsign || '—')}"
+          data-ac="${escHtml(f.aircraft || '—')}"
+          data-dep="${escHtml(dep)}"
+          data-arr="${escHtml(arr)}"
+          data-dt="${escHtml(f.logon_time || '')}"
+          data-dur="${escHtml(dur)}"
+          data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
         <td class="mono text-green">${escHtml(f.callsign || '—')}</td>
         <td class="td-route">${escHtml(dep)} → ${escHtml(arr)}</td>
         <td class="mono">${escHtml(dt)}</td>
@@ -1540,12 +1599,19 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   container.innerHTML = html;
 
   container.querySelectorAll('.track-btn').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
       const id = el.dataset.trackId;
       const src = el.dataset.trackSrc;
       if (id && id !== 'null' && id !== 'undefined') {
         openTrackModal(src, id, el.dataset.callsign, el.dataset.dep, el.dataset.arr);
       }
+    });
+  });
+
+  container.querySelectorAll('.flight-row').forEach(tr => {
+    tr.addEventListener('click', () => {
+      openFlightDetailModal(tr.dataset);
     });
   });
 }
@@ -1838,14 +1904,11 @@ function renderStatsTable(stats) {
       ? s.last_flight.slice(0, 16).replace('T', ' ') + ' UTC'
       : '—';
     const cs = (s.last_callsign || '').toUpperCase() || '—';
-    const stLabel = s.st_count > 0
-      ? ` <span class="text-label">(${s.fs_count} FS · ${s.st_count} ST)</span>`
-      : '';
     html += `
           <tr data-cid="${s.cid}" style="cursor:pointer;">
             <td class="mono text-green">${escHtml(cs)}</td>
             <td>${escHtml(s.name || String(s.cid))}</td>
-            <td class="mono">${s.flight_count || 0}${stLabel}</td>
+            <td class="mono">${s.flight_count || 0}</td>
             <td class="mono text-label">${lf}</td>
           </tr>`;
     pilotStatsMap[s.cid] = s;
