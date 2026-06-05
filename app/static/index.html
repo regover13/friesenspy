@@ -11,6 +11,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;500;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet" />
 
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 
@@ -943,6 +946,25 @@
     }
     .source-fs { color: var(--green); border: 1px solid var(--green-dim); }
     .source-st { color: var(--cyan); border: 1px solid rgba(211,17,65,0.3); }
+
+    /* =====================================================================
+       ACTIVITY CHART
+       ===================================================================== */
+    .stats-chart-wrap {
+      background: var(--bg-panel-2);
+      border: 1px solid var(--green-grid);
+      padding: 12px 16px 8px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+    .stats-chart-title {
+      font-family: var(--text-display);
+      font-size: 0.6rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      margin-bottom: 8px;
+    }
 
     /* =====================================================================
        SHARE BUTTON
@@ -1991,6 +2013,127 @@ async function fetchStats() {
   }
 }
 
+// ==========================================================================
+//  ACTIVITY CHART
+// ==========================================================================
+let _activityChart = null;
+
+function _fmtChartLabel(period, grouping) {
+  if (grouping === 'day') {
+    const [, m, d] = period.split('-');
+    return `${d}.${m}.`;
+  }
+  if (grouping === 'week') {
+    const [y, w] = period.split('-W');
+    return `KW${w}`;
+  }
+  // month: YYYY-MM
+  const months = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  const [y, m] = period.split('-');
+  return `${months[parseInt(m, 10) - 1]} '${y.slice(2)}`;
+}
+
+async function fetchAndRenderChart(days) {
+  try {
+    const res  = await fetch(`/api/stats/activity?days=${days}`);
+    const body = await res.json();
+    renderActivityChart(body.data, body.grouping);
+  } catch (_) {}
+}
+
+function renderActivityChart(data, grouping) {
+  const wrap = document.getElementById('stats-activity-wrap');
+  if (!wrap) return;
+
+  const labels   = data.map(d => _fmtChartLabel(d.period, grouping));
+  const fsData   = data.map(d => d.fs_count);
+  const stData   = data.map(d => d.st_count);
+  const totalMax = Math.max(...data.map(d => d.fs_count + d.st_count), 1);
+
+  if (_activityChart) {
+    _activityChart.data.labels          = labels;
+    _activityChart.data.datasets[0].data = stData;
+    _activityChart.data.datasets[1].data = fsData;
+    _activityChart.update('none');
+    return;
+  }
+
+  const ctx = document.getElementById('stats-activity-canvas').getContext('2d');
+  _activityChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'StatSim',
+          data: stData,
+          backgroundColor: 'rgba(211,17,65,0.55)',
+          borderColor: 'rgba(211,17,65,0.8)',
+          borderWidth: 1,
+          stack: 'a',
+        },
+        {
+          label: 'FriesenSpy',
+          data: fsData,
+          backgroundColor: 'rgba(45,156,219,0.7)',
+          borderColor: 'rgba(45,156,219,0.9)',
+          borderWidth: 1,
+          stack: 'a',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: {
+          labels: {
+            color: '#6b9ab8',
+            font: { family: "'Exo 2', sans-serif", size: 10 },
+            boxWidth: 10, padding: 12,
+          },
+        },
+        tooltip: {
+          backgroundColor: '#071525',
+          borderColor: 'rgba(45,156,219,0.3)',
+          borderWidth: 1,
+          titleColor: '#2d9cdb',
+          bodyColor: '#d4e8f5',
+          callbacks: {
+            title: items => items[0].label,
+            label: item => ` ${item.dataset.label}: ${item.raw}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          grid: { color: 'rgba(45,156,219,0.05)' },
+          ticks: {
+            color: '#6b9ab8',
+            font: { family: "'Courier Prime', monospace", size: 9 },
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 18,
+          },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          grid: { color: 'rgba(45,156,219,0.07)' },
+          ticks: {
+            color: '#6b9ab8',
+            font: { family: "'Exo 2', sans-serif", size: 10 },
+            stepSize: 1,
+            maxTicksLimit: 6,
+          },
+        },
+      },
+    },
+  });
+}
+
 function renderStatsSummary(stats, days) {
   const totalFlights = stats.reduce((s, p) => s + (p.flight_count || 0), 0);
   const totalMin     = stats.reduce((s, p) => s + (p.total_duration_min || 0), 0);
@@ -2041,6 +2184,7 @@ function renderStatsTable(stats, days) {
   days = days || 30;
   const container = document.getElementById('stats-content');
   pilotStatsMap = {};
+  if (_activityChart) { _activityChart.destroy(); _activityChart = null; }
 
   if (!stats || stats.length === 0) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text">Keine Flugdaten vorhanden</div></div>`;
@@ -2057,6 +2201,10 @@ function renderStatsTable(stats, days) {
 
   let html = renderStatsSummary(stats, days);
   html += `
+    <div class="stats-chart-wrap" id="stats-activity-wrap">
+      <div class="stats-chart-title">Flugaktivität</div>
+      <div style="height:160px;"><canvas id="stats-activity-canvas"></canvas></div>
+    </div>
     <div class="live-table-wrap">
       <table>
         <thead>
@@ -2090,6 +2238,7 @@ function renderStatsTable(stats, days) {
   container.querySelectorAll('tr[data-cid]').forEach(tr => {
     tr.addEventListener('click', () => openPilotFlights(Number(tr.dataset.cid)));
   });
+  fetchAndRenderChart(days);
 }
 
 // ==========================================================================

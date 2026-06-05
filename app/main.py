@@ -21,6 +21,7 @@ from app.database import (
     get_live_positions,
     get_pilot_flights_friesenspy,
     get_stats,
+    get_stats_activity,
     get_statsim_flights_for_pilot,
     get_statsim_last_fetched,
     init_db,
@@ -116,6 +117,17 @@ async def get_live(request: Request):
     finally:
         conn.close()
     return positions
+
+
+@app.get("/api/stats/activity")
+async def get_stats_activity_endpoint(days: int = 30):
+    """Flugaktivität über Zeit für Chart — gruppiert nach Tag/Woche/Monat."""
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        return get_stats_activity(conn, days=days, callsign_prefix=settings.CALLSIGN_PREFIX)
+    finally:
+        conn.close()
 
 
 @app.get("/api/stats")

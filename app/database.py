@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +354,74 @@ def get_stats(
         })
     result.sort(key=lambda x: x["last_flight"] or "", reverse=True)
     return result
+
+
+def get_stats_activity(
+    conn: sqlite3.Connection, days: int = 30, callsign_prefix: str = "FRS"
+) -> dict:
+    """Flugaktivität über Zeit — für Chart im Statistiken-Tab.
+
+    Gruppierung: ≤31 Tage → täglich, ≤93 Tage → wöchentlich, >93 Tage → monatlich.
+    Gibt alle Perioden mit Lücken gefüllt (0-Einträge) zurück.
+    """
+    prefix_pat = callsign_prefix + "%"
+    today = date.today()
+    start = today - timedelta(days=days)
+
+    if days <= 31:
+        sql_fmt = "%Y-%m-%d"
+        grouping = "day"
+    elif days <= 93:
+        sql_fmt = "%Y-%W"
+        grouping = "week"
+    else:
+        sql_fmt = "%Y-%m"
+        grouping = "month"
+
+    fs = {r[0]: r[1] for r in conn.execute(
+        f"SELECT strftime(?, logon_time), COUNT(*) FROM flights "
+        f"WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL "
+        f"GROUP BY 1",
+        (sql_fmt, f"-{days}"),
+    ).fetchall()}
+
+    st = {r[0]: r[1] for r in conn.execute(
+        f"SELECT strftime(?, logon_time), COUNT(*) FROM statsim_cache "
+        f"WHERE logon_time >= datetime('now', ? || ' days') AND logon_time != '' "
+        f"AND callsign LIKE ? GROUP BY 1",
+        (sql_fmt, f"-{days}", prefix_pat),
+    ).fetchall()}
+
+    # Lücken füllen
+    periods: list[str] = []
+    if grouping == "day":
+        cur = start
+        while cur <= today:
+            periods.append(cur.strftime(sql_fmt))
+            cur += timedelta(days=1)
+    elif grouping == "week":
+        seen: set[str] = set()
+        cur = start
+        while cur <= today:
+            wk = cur.strftime(sql_fmt)
+            if wk not in seen:
+                seen.add(wk)
+                periods.append(wk)
+            cur += timedelta(days=1)
+    else:
+        y, m = start.year, start.month
+        while date(y, m, 1) <= today:
+            periods.append(f"{y:04d}-{m:02d}")
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+
+    data = [
+        {"period": p, "fs_count": fs.get(p, 0), "st_count": st.get(p, 0)}
+        for p in periods
+    ]
+    return {"grouping": grouping, "data": data}
 
 
 def merge_fragmented_flights(flights: list[dict], gap_minutes: int = 5) -> list[dict]:
