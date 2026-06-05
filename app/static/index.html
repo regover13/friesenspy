@@ -1132,8 +1132,13 @@
         <div id="events-summary" class="events-summary"></div>
         <div id="events-pilots-list"></div>
       </div>
-      <div id="events-map-container">
+      <div id="events-map-container" style="position:relative;">
         <div id="events-leaflet-map"></div>
+        <button id="ev-reset-btn" class="hidden"
+          onclick="resetEventFlights()"
+          style="position:absolute;top:10px;right:10px;z-index:1000;background:var(--bg-panel);border:1px solid var(--green-dim);color:var(--text-bright);font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.08em;padding:6px 12px;cursor:pointer;">
+          ↺ Alle Tracks
+        </button>
       </div>
     </div>
   </div>
@@ -2273,6 +2278,11 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
 
   // Globale Map für Polylines (für Highlight-Funktion)
   window._eventPolylines = {};
+  window._eventAllBounds = [];
+
+  // Reset-Button verstecken wenn neue Suche
+  const resetBtn = document.getElementById('ev-reset-btn');
+  if (resetBtn) resetBtn.classList.add('hidden');
 
   const bounds = [];
 
@@ -2312,8 +2322,20 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
   });
 
   if (bounds.length > 0) {
+    window._eventAllBounds = bounds;
     eventsMap.fitBounds(bounds, { padding: [40, 40] });
   }
+}
+
+function resetEventFlights() {
+  Object.values(window._eventPolylines || {}).forEach(pl => {
+    pl.setStyle({ opacity: 0.7, weight: 2 });
+  });
+  if (eventsMap && window._eventAllBounds && window._eventAllBounds.length > 0) {
+    eventsMap.fitBounds(window._eventAllBounds, { padding: [40, 40] });
+  }
+  const btn = document.getElementById('ev-reset-btn');
+  if (btn) btn.classList.add('hidden');
 }
 
 function highlightEventFlight(pilots, pilotIdx, flightIdx) {
@@ -2328,6 +2350,9 @@ function highlightEventFlight(pilots, pilotIdx, flightIdx) {
     pl.setStyle({ opacity: 1.0, weight: 4 });
     eventsMap.fitBounds(pl.getBounds(), { padding: [40, 40] });
   }
+  // Reset-Button einblenden
+  const btn = document.getElementById('ev-reset-btn');
+  if (btn) btn.classList.remove('hidden');
   // Karte in Sichtbereich scrollen
   document.getElementById('events-map-container').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
