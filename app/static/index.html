@@ -2199,6 +2199,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
           <div class="pilot-card-dot" style="background:${color};"></div>
           <div>
             <span class="pilot-card-callsign">${escHtml(callsign)}</span>
+            ${p.name ? `<span class="pilot-card-cid" style="margin-left:8px;">${escHtml(p.name)}</span>` : ''}
             <span class="pilot-card-cid" style="margin-left:8px;">CID ${p.cid}</span>
             <span class="pilot-card-detail" style="margin-left:8px;">${flights.length} ${flightWord}</span>
           </div>
