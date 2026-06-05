@@ -329,7 +329,7 @@ async def get_flight_track(flight_id: int):
     conn = get_connection(settings.DB_PATH)
     try:
         flight = conn.execute(
-            "SELECT logon_time, logoff_time FROM flights WHERE id = ?", (flight_id,)
+            "SELECT cid, logon_time, logoff_time FROM flights WHERE id = ?", (flight_id,)
         ).fetchone()
         if not flight:
             raise HTTPException(status_code=404, detail="Flight not found")
@@ -341,10 +341,10 @@ async def get_flight_track(flight_id: int):
             """
             SELECT latitude, longitude, altitude, groundspeed, heading, ts
             FROM position_history
-            WHERE ts >= ? AND ts <= ?
+            WHERE cid = ? AND ts >= ? AND ts <= ?
             ORDER BY ts
             """,
-            (logon, logoff),
+            (flight["cid"], logon, logoff),
         ).fetchall()
     finally:
         conn.close()

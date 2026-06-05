@@ -2447,7 +2447,13 @@ async function initFromUrl() {
       const trackId  = p.get('track');
       const trackSrc = p.get('src');
       if (trackId && trackSrc) {
-        openTrackModal(trackSrc, trackId, '', '', '');
+        const btn = document.querySelector(
+          `.track-btn[data-track-id="${trackId}"][data-track-src="${trackSrc}"]`
+        );
+        openTrackModal(
+          trackSrc, trackId,
+          btn?.dataset.callsign || '', btn?.dataset.dep || '', btn?.dataset.arr || ''
+        );
       }
     }
   } else if (tab === 'live') {
