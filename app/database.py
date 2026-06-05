@@ -290,7 +290,16 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
             COUNT(DISTINCT f_all.id)          AS fs_count,
             COUNT(DISTINCT sc_all.statsim_id) AS st_count,
             MAX(f_filt.logon_time)            AS last_fs,
-            MAX(CASE WHEN sc_filt.logon_time != '' THEN sc_filt.logon_time END) AS last_st
+            MAX(CASE WHEN sc_filt.logon_time != '' THEN sc_filt.logon_time END) AS last_st,
+            (SELECT COALESCE(SUM(duration_min), 0)
+             FROM flights
+             WHERE cid = p.cid
+               AND logon_time >= datetime('now', '-365 days')
+               AND logoff_time IS NOT NULL) AS fs_duration_min,
+            (SELECT COALESCE(SUM(duration_min), 0)
+             FROM statsim_cache
+             WHERE cid = p.cid
+               AND logon_time != '')        AS st_duration_min
         FROM pilots p
         -- Filter-Joins: bestimmen Sichtbarkeit und letzter-Flug-Datum
         LEFT JOIN flights f_filt
@@ -331,6 +340,7 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
             "fs_count": r["fs_count"],
             "st_count": r["st_count"],
             "flight_count": r["fs_count"] + r["st_count"],
+            "total_duration_min": (r["fs_duration_min"] or 0) + (r["st_duration_min"] or 0),
             "last_flight": last_flight,
         })
     result.sort(key=lambda x: x["last_flight"] or "", reverse=True)

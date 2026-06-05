@@ -8,10 +8,11 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 
 ## Features
 
-- **Live-Tab** — Echtzeit-Liste aller Friesen online (SSE); Callsign klicken → Flugplan-Modal; ◎ klicken → direkt zur Karte mit Zentrierung
+- **Live-Tab** — Echtzeit-Liste aller Friesen online (SSE); Callsign klicken → Flugplan-Modal; ◎ klicken → direkt zur Karte mit Zentrierung; ⎘ Teilen — direkter Link zum Flugplan
 - **Karte** — Leaflet.js mit Flugzeug-Symbolen, Heading-Rotation, Popup mit Details; Live-Track des aktuellen Fluges als Polyline (aus `position_history`, wächst mit jedem SSE-Update)
-- **Statistiken** — Callsign + Pilot + geloggte Flüge (FriesenSpy + StatSim) + letzter Flug (30/90/365 Tage); Pilot anklicken → Einzelflüge sofort aus Cache, StatSim-Update im Hintergrund mit Badge; „Alle laden" → 365-Tage-Refresh; ◎ → Track auf Karte
-- **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei? Ergebnisse als einzelne Flüge pro Pilot (Datum, Dauer, Callsign, Route, Punkte); alle Tracks gleichzeitig auf Karte; Klick auf Flug → Hervorhebung + automatischer Scroll zur Karte
+- **Statistiken** — KPI-Box (Piloten, Flüge, Stunden, Ø pro Tag, Aktivster Pilot, Ø Flugdauer); Callsign + Pilot + geloggte Flüge (FriesenSpy + StatSim) + letzter Flug (30/90/365 Tage); Pilot anklicken → Einzelflüge sofort aus Cache, StatSim-Update im Hintergrund mit Badge; „Alle laden" → 365-Tage-Refresh; ◎ → Track auf Karte; ⎘ Teilen im Drill-Down und Track-Modal
+- **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei? Ergebnisse als einzelne Flüge pro Pilot (Datum, Dauer, Callsign, Route, Punkte); alle Tracks gleichzeitig auf Karte; Klick auf Flug → Hervorhebung + automatischer Scroll zur Karte; ⎘ Teilen nach erfolgter Suche
+- **URL Deep-Linking** — alle Zustände (Tab, Pilot, Track, Flugplan, Events-Filter) sind als URL-Hash teilbar; Seite neu laden öffnet denselben Zustand direkt
 - **StatSim-Integration** — Historische Flüge (letztes Jahr) via [StatSim API](https://statsim.net); sofortige Anzeige aus Cache, Hintergrund-Update des letzten 31-Tage-Chunks (API-Key nötig)
 - **Telegram-Alerts** — Optional: Nachricht wenn ein Friese online geht
 

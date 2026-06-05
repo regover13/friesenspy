@@ -943,6 +943,64 @@
     }
     .source-fs { color: var(--green); border: 1px solid var(--green-dim); }
     .source-st { color: var(--cyan); border: 1px solid rgba(211,17,65,0.3); }
+
+    /* =====================================================================
+       SHARE BUTTON
+       ===================================================================== */
+    .btn-share {
+      background: transparent;
+      border: 1px solid var(--green-dim);
+      color: var(--text-label);
+      font-family: var(--text-display);
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .btn-share:hover { border-color: var(--green); color: var(--green); background: var(--green-faint); }
+
+    /* =====================================================================
+       STATISTIKEN — KPI SUMMARY BOX
+       ===================================================================== */
+    .stats-kpi-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--green-grid);
+    }
+    .stats-kpi-card {
+      background: var(--bg-panel-2);
+      border: 1px solid var(--green-grid);
+      padding: 10px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 110px;
+    }
+    .stats-kpi-value {
+      font-family: var(--text-mono);
+      font-size: 1.15rem;
+      color: var(--green);
+      font-weight: 700;
+    }
+    .stats-kpi-label {
+      font-family: var(--text-display);
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-label);
+    }
+    .stats-kpi-note {
+      font-family: var(--text-display);
+      font-size: 0.62rem;
+      color: var(--text-label);
+      letter-spacing: 0.05em;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
@@ -1087,7 +1145,10 @@
   <div class="fp-modal-box" onclick="event.stopPropagation()">
     <div class="fp-modal-header">
       <span class="fp-callsign-title" id="fp-callsign-title">—</span>
-      <button class="fp-close-btn" onclick="closeFpModal()">✕</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
+        <button class="fp-close-btn" onclick="closeFpModal()">✕</button>
+      </div>
     </div>
     <div class="fp-section">
       <div class="fp-section-title">Flight Details</div>
@@ -1122,7 +1183,10 @@
   <div class="fp-modal-box" style="width:min(800px,95vw);" onclick="event.stopPropagation()">
     <div class="fp-modal-header">
       <span class="fp-callsign-title" id="track-modal-title">—</span>
-      <button class="fp-close-btn" onclick="closeTrackModal()">✕</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
+        <button class="fp-close-btn" onclick="closeTrackModal()">✕</button>
+      </div>
     </div>
     <div style="height:460px;position:relative;">
       <div id="track-leaflet-map" style="width:100%;height:100%;"></div>
@@ -1357,6 +1421,29 @@ function escHtml(str) {
 }
 
 // ==========================================================================
+//  URL STATE (Deep-Linking)
+// ==========================================================================
+function getUrlState() {
+  return new URLSearchParams(location.hash.slice(1));
+}
+
+function setUrlState(params) {
+  history.replaceState(null, '', '#' + new URLSearchParams(params).toString());
+}
+
+function copyShareUrl(btn) {
+  navigator.clipboard.writeText(location.href).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Kopiert!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✗ Fehler';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  });
+}
+
+// ==========================================================================
 //  FLIGHT PLAN MODAL
 // ==========================================================================
 const FP_RULES = { 'V': 'VFR', 'I': 'IFR', 'Y': 'IFR/VFR', 'Z': 'VFR/IFR' };
@@ -1397,11 +1484,13 @@ function openFpModal(pilot) {
 
   document.getElementById('fp-modal').classList.remove('hidden');
   document.addEventListener('keydown', _fpEscHandler);
+  setUrlState({ tab: 'live', fp: (pilot.callsign || '').toUpperCase() });
 }
 
 function closeFpModal() {
   document.getElementById('fp-modal').classList.add('hidden');
   document.removeEventListener('keydown', _fpEscHandler);
+  setUrlState({ tab: 'live' });
 }
 
 function _fpEscHandler(e) {
@@ -1471,6 +1560,7 @@ async function openPilotFlights(cid) {
   if (!pilot) return;
   const container = document.getElementById('stats-content');
   currentStatsCid = cid;
+  setUrlState({ tab: 'statistiken', cid });
 
   container.innerHTML = `
     <div class="flights-panel-header">
@@ -1493,6 +1583,7 @@ async function openPilotFlights(cid) {
 function closePilotFlights() {
   clearTimeout(_flightsRefreshTimer);
   currentStatsCid = null;
+  setUrlState({ tab: 'statistiken' });
   fetchStats();
 }
 
@@ -1540,7 +1631,9 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       <span class="flights-panel-title">${escHtml(pilotName || String(cid))}</span>
       <span class="flights-panel-count">${flights.length} Flüge`;
   if (stCount > 0) html += ` <span class="text-label">(${fsCount} FriesenSpy · ${stCount} StatSim)</span>`;
-  html += `</span></div>`;
+  html += `</span>
+      <button class="btn-share" style="margin-left:auto;" onclick="copyShareUrl(this)">⎘ Teilen</button>
+    </div>`;
   if (statsimStatus === 'updating') {
     html += `<div style="text-align:center;padding:4px 0;font-size:0.8em;color:var(--color-label)">⟳ StatSim wird aktualisiert…</div>`;
   }
@@ -1630,6 +1723,10 @@ async function openTrackModal(source, id, callsign, dep, arr) {
   document.getElementById('track-modal-info').textContent = 'Lade Track...';
   document.getElementById('track-modal').classList.remove('hidden');
   document.addEventListener('keydown', _trackEscHandler);
+  const p = getUrlState();
+  p.set('track', id);
+  p.set('src', source);
+  history.replaceState(null, '', '#' + p.toString());
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -1690,6 +1787,10 @@ async function _loadAndDrawTrack(source, id) {
 function closeTrackModal() {
   document.getElementById('track-modal').classList.add('hidden');
   document.removeEventListener('keydown', _trackEscHandler);
+  const p = getUrlState();
+  p.delete('track');
+  p.delete('src');
+  history.replaceState(null, '', '#' + p.toString());
 }
 
 function _trackEscHandler(e) {
@@ -1865,13 +1966,59 @@ async function fetchStats() {
   try {
     const res  = await fetch(`/api/stats?days=${days}`);
     const data = await res.json();
-    renderStatsTable(data);
+    renderStatsTable(data, Number(days));
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden der Statistiken</div></div>`;
   }
 }
 
-function renderStatsTable(stats) {
+function renderStatsSummary(stats, days) {
+  const totalFlights = stats.reduce((s, p) => s + (p.flight_count || 0), 0);
+  const totalMin     = stats.reduce((s, p) => s + (p.total_duration_min || 0), 0);
+  const totalHours   = totalMin / 60;
+  const avgFlightsDay = (totalFlights / days).toFixed(1);
+  const avgHoursDay   = (totalHours / days).toFixed(2);
+  const best = stats.reduce((a, b) => (b.flight_count || 0) > (a.flight_count || 0) ? b : a, stats[0]);
+  const avgDur = totalFlights > 0
+    ? (() => { const m = Math.round(totalMin / totalFlights); return `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')} h`; })()
+    : '—';
+
+  return `
+    <div class="stats-kpi-row">
+      <div class="stats-kpi-card">
+        <span class="stats-kpi-value">${stats.length}</span>
+        <span class="stats-kpi-label">Piloten</span>
+      </div>
+      <div class="stats-kpi-card">
+        <span class="stats-kpi-value">${totalFlights}</span>
+        <span class="stats-kpi-label">Geloggte Flüge</span>
+      </div>
+      <div class="stats-kpi-card">
+        <span class="stats-kpi-value">${totalHours.toFixed(1)}</span>
+        <span class="stats-kpi-label">Geloggte Stunden</span>
+      </div>
+      <div class="stats-kpi-card">
+        <span class="stats-kpi-value">${avgFlightsDay}</span>
+        <span class="stats-kpi-label">Ø Flüge / Tag</span>
+      </div>
+      <div class="stats-kpi-card">
+        <span class="stats-kpi-value">${avgHoursDay}</span>
+        <span class="stats-kpi-label">Ø Stunden / Tag</span>
+      </div>
+      <div class="stats-kpi-card">
+        <span class="stats-kpi-value">${avgDur}</span>
+        <span class="stats-kpi-label">Ø Flugdauer</span>
+      </div>
+      <div class="stats-kpi-card" style="min-width:160px;">
+        <span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(best?.name || '—')}</span>
+        <span class="stats-kpi-label">Aktivster Pilot (${best?.flight_count || 0} Flüge)</span>
+      </div>
+    </div>
+    <p class="stats-kpi-note">Flüge und Stunden immer über 365 Tage (unabhängig vom Zeitraum-Filter)</p>`;
+}
+
+function renderStatsTable(stats, days) {
+  days = days || 30;
   const container = document.getElementById('stats-content');
   pilotStatsMap = {};
 
@@ -1888,7 +2035,8 @@ function renderStatsTable(stats) {
     return b.last_flight.localeCompare(a.last_flight);
   });
 
-  let html = `
+  let html = renderStatsSummary(stats, days);
+  html += `
     <div class="live-table-wrap">
       <table>
         <thead>
@@ -1958,7 +2106,7 @@ async function searchEvents() {
   try {
     const res  = await fetch(`/api/events?${params}`);
     const data = await res.json();
-    renderEventsResults(data, icao, Number(radius));
+    renderEventsResults(data, icao, Number(radius), start, end);
   } catch (e) {
     alert('Fehler bei der Event-Suche.');
   } finally {
@@ -1967,7 +2115,7 @@ async function searchEvents() {
   }
 }
 
-function renderEventsResults(data, icaoStr, radiusKm) {
+function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   const results   = document.getElementById('events-results');
   const summary   = document.getElementById('events-summary');
   const pilotList = document.getElementById('events-pilots-list');
@@ -1978,15 +2126,22 @@ function renderEventsResults(data, icaoStr, radiusKm) {
   const pilots = data.pilots || [];
 
   if (pilots.length === 0) {
-    summary.textContent = 'Keine Treffer';
+    summary.innerHTML = 'Keine Treffer';
     summary.className   = 'events-summary not-found';
     pilotList.innerHTML = '';
     mapDiv.style.display = 'none';
     return;
   }
 
-  summary.textContent = `${pilots.length} Friese${pilots.length !== 1 ? 'n' : ''} dabei`;
+  const urlParams = { tab: 'events', icao: icaoStr, radius: radiusKm };
+  if (startVal) urlParams.start = startVal;
+  if (endVal)   urlParams.end   = endVal;
+  setUrlState(urlParams);
+
+  summary.innerHTML = `<span>${pilots.length} Friese${pilots.length !== 1 ? 'n' : ''} dabei</span>
+    <button class="btn-share" style="margin-left:auto;" onclick="copyShareUrl(this)">⎘ Teilen</button>`;
   summary.className   = 'events-summary found';
+  summary.style.cssText = 'display:flex;align-items:center;gap:12px;';
 
   // Pilot cards
   let cardsHtml = '';
@@ -2155,6 +2310,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const tab = btn.dataset.tab;
 
+    // Update URL (preserve no modal params when switching tabs)
+    setUrlState({ tab });
+
     // Update buttons
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
@@ -2206,6 +2364,54 @@ document.getElementById('ev-icao').addEventListener('keydown', e => {
 });
 
 // ==========================================================================
+//  URL INIT FROM HASH
+// ==========================================================================
+async function initFromUrl() {
+  const p = getUrlState();
+  const tab = p.get('tab');
+  if (!tab) return;
+
+  const tabBtn = document.querySelector(`[data-tab="${tab}"]`);
+  if (!tabBtn) return;
+
+  if (tab === 'statistiken') statsLoaded = true;  // prevent double-fetch
+  tabBtn.click();
+
+  if (tab === 'statistiken') {
+    await fetchStats();
+    const cid = p.get('cid');
+    if (cid) {
+      await openPilotFlights(Number(cid));
+      const trackId  = p.get('track');
+      const trackSrc = p.get('src');
+      if (trackId && trackSrc) {
+        openTrackModal(trackSrc, trackId, '', '', '');
+      }
+    }
+  } else if (tab === 'live') {
+    const fp = p.get('fp');
+    if (fp) {
+      await _liveInitialPromise;
+      const cs = fp.toUpperCase();
+      const pilot = pilotDataMap[cs] || pilotDataMap[fp];
+      if (pilot) openFpModal(pilot);
+    }
+  } else if (tab === 'events') {
+    const icao = p.get('icao');
+    if (icao) {
+      document.getElementById('ev-icao').value = icao;
+      const radius = p.get('radius');
+      if (radius) document.getElementById('ev-radius').value = radius;
+      const start = p.get('start');
+      const end   = p.get('end');
+      if (start) document.getElementById('ev-start').value = start;
+      if (end)   document.getElementById('ev-end').value   = end;
+      await searchEvents();
+    }
+  }
+}
+
+// ==========================================================================
 //  BOOT
 // ==========================================================================
 function setDefaultEventDates() {
@@ -2217,8 +2423,9 @@ function setDefaultEventDates() {
 }
 setDefaultEventDates();
 
-fetchLiveInitial();
+const _liveInitialPromise = fetchLiveInitial();
 connectSSE();
+initFromUrl();
 
 // Update online times every minute (SSE might not fire that often)
 setInterval(() => {
