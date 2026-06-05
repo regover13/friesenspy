@@ -264,7 +264,9 @@ def save_position_history(
 
 def get_live_positions(conn: sqlite3.Connection) -> list[dict]:
     """Alle aktuellen Live-Positionen als Liste von Dicts."""
-    rows = conn.execute("SELECT * FROM live_positions").fetchall()
+    rows = conn.execute(
+        "SELECT lp.*, p.name FROM live_positions lp LEFT JOIN pilots p ON lp.cid = p.cid"
+    ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
