@@ -2185,10 +2185,18 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
       const flightKey = `${i}_${fi}`;
       flightRows += `<tr class="events-flight-row" data-flight-key="${flightKey}" style="cursor:pointer;" title="Klick → Flug auf Karte hervorheben">
         <td class="mono text-label">${escHtml(date)}</td>
-        <td class="mono text-green">${escHtml(cs)}</td>
+        <td class="mono text-green td-callsign-link ev-cs-cell"
+            data-cs="${escHtml(cs)}"
+            data-ac="${escHtml(f.aircraft || '—')}"
+            data-dep="${escHtml(dep)}"
+            data-arr="${escHtml(arr)}"
+            data-dt="${escHtml(f.logon_time || '')}"
+            data-dur="${escHtml(dur)}"
+            data-src="FriesenSpy"
+            title="Flugplan öffnen">${escHtml(cs)}</td>
         <td class="mono">${route}</td>
         <td class="mono">${dur}</td>
-        <td class="mono text-label">${pts} Pkt.</td>
+        <td class="mono text-label">${pts}</td>
         <td><span class="td-map-btn" title="Auf Karte zeigen">◎</span></td>
       </tr>`;
     });
@@ -2211,7 +2219,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             <th style="text-align:left;">Callsign</th>
             <th style="text-align:left;">Route</th>
             <th style="text-align:left;">Dauer</th>
-            <th style="text-align:left;">Punkte</th>
+            <th style="text-align:left;">Wegpunkte</th>
             <th></th>
           </tr></thead>
           <tbody>${flightRows}</tbody>
@@ -2220,7 +2228,15 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   });
   pilotList.innerHTML = cardsHtml;
 
-  // Klick auf Flug-Zeile oder ◎ → highlight auf Karte
+  // Klick auf Callsign → Flugdetail-Modal
+  pilotList.querySelectorAll('.ev-cs-cell').forEach(td => {
+    td.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openFlightDetailModal(td.dataset);
+    });
+  });
+
+  // Klick auf Flug-Zeile → highlight auf Karte
   pilotList.querySelectorAll('.events-flight-row').forEach(row => {
     row.addEventListener('click', () => {
       const [pi, fi] = row.dataset.flightKey.split('_').map(Number);
