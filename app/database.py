@@ -307,7 +307,11 @@ def get_stats(
              WHERE cid = p.cid
                AND logon_time >= datetime('now', ? || ' days')
                AND logoff_time IS NOT NULL) AS fs_duration_min,
-            (SELECT COALESCE(SUM(duration_min), 0)
+            (SELECT COALESCE(SUM(
+               COALESCE(duration_min,
+                 CASE WHEN logoff_time IS NOT NULL AND logoff_time != ''
+                 THEN CAST((JULIANDAY(logoff_time) - JULIANDAY(logon_time)) * 1440 AS INTEGER)
+                 END)), 0)
              FROM statsim_cache
              WHERE cid = p.cid
                AND logon_time >= datetime('now', ? || ' days')
