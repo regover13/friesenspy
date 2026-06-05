@@ -2029,9 +2029,9 @@ function renderStatsSummary(stats, days) {
         <span class="stats-kpi-value">${avgDur}</span>
         <span class="stats-kpi-label">Ø Flugdauer</span>
       </div>
-      <div class="stats-kpi-card" style="min-width:160px;">
+      <div class="stats-kpi-card" style="min-width:160px;cursor:pointer;" onclick="openPilotFlights(${best?.cid})">
         <span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(best?.name || '—')}</span>
-        <span class="stats-kpi-label">Aktivster Pilot (${best?.flight_count || 0} Flüge)</span>
+        <span class="stats-kpi-label">Aktivster Pilot (${best?.flight_count || 0} Flüge) →</span>
       </div>
     </div>
     `;
