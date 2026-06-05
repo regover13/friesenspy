@@ -123,7 +123,7 @@ async def get_stats_endpoint(request: Request, days: int = 30):
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
-        stats = get_stats(conn, days=days)
+        stats = get_stats(conn, days=days, callsign_prefix=settings.CALLSIGN_PREFIX)
     finally:
         conn.close()
     return stats

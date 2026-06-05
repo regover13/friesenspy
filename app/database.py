@@ -270,12 +270,16 @@ def get_live_positions(conn: sqlite3.Connection) -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
-def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
-    """Letzter Flug + Anzahl Flüge pro Pilot (FriesenSpy + StatSim-Cache).
+def get_stats(
+    conn: sqlite3.Connection, days: int = 30, callsign_prefix: str = "FRS"
+) -> list[dict]:
+    """Letzter Flug + Anzahl FRS*-Flüge pro Pilot (FriesenSpy + StatSim-Cache).
 
-    Alle Werte (Sichtbarkeit, Fluganzahl, Dauer) werden auf den gewählten
-    Zeitraum (days) begrenzt.
+    Alle Werte werden auf den gewählten Zeitraum (days) und den konfigurierten
+    Callsign-Prefix begrenzt. StatSim-Einträge ohne FRS*-Callsign werden nicht
+    gezählt (Piloten fliegen auch in anderen VAs).
     """
+    prefix_pat = callsign_prefix + "%"
     rows = conn.execute(
         """
         SELECT
@@ -299,7 +303,8 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
              FROM statsim_cache
              WHERE cid = p.cid
                AND logon_time >= datetime('now', ? || ' days')
-               AND logon_time != '')        AS st_duration_min
+               AND logon_time != ''
+               AND callsign LIKE ?)          AS st_duration_min
         FROM pilots p
         LEFT JOIN flights f_filt
                ON f_filt.cid = p.cid
@@ -309,6 +314,7 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
                ON sc_filt.cid = p.cid
               AND sc_filt.logon_time >= datetime('now', ? || ' days')
               AND sc_filt.logon_time != ''
+              AND sc_filt.callsign LIKE ?
         WHERE f_filt.id IS NOT NULL
            OR sc_filt.statsim_id IS NOT NULL
            OR EXISTS (
@@ -319,7 +325,7 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
            )
         GROUP BY p.cid, p.name
         """,
-        (f"-{days}",) * 5,
+        (f"-{days}", f"-{days}", prefix_pat, f"-{days}", f"-{days}", prefix_pat, f"-{days}"),
     ).fetchall()
     result = []
     for r in rows:
