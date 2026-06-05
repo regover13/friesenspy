@@ -1577,7 +1577,8 @@ async function openPilotFlights(cid) {
     <div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade Flüge...</div>`;
 
   try {
-    const res = await fetch(`/api/pilots/${cid}/flights?days=365`);
+    const days = _statsDays();
+    const res = await fetch(`/api/pilots/${cid}/flights?days=${days}`);
     const flights = await res.json();
     const status = res.headers.get('X-StatSim-Status') || 'no-key';
     renderFlightsList(cid, pilot.name, flights, status);
@@ -1617,7 +1618,7 @@ function scheduleFlightsRefresh(cid, pilotName, delayMs, fullLoad) {
     try {
       const url = fullLoad
         ? `/api/pilots/${cid}/flights?days=0`
-        : `/api/pilots/${cid}/flights?days=365`;
+        : `/api/pilots/${cid}/flights?days=${_statsDays()}`;
       const res = await fetch(url);
       const flights = await res.json();
       const status = res.headers.get('X-StatSim-Status') || 'no-key';
