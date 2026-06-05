@@ -3,19 +3,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from datetime import timezone as _timezone
 
 import httpx as _httpx
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import (
     get_all_position_history,
     get_connection,
+    get_live_flight_track,
     get_live_positions,
     get_pilot_flights_friesenspy,
     get_stats,
@@ -28,10 +30,38 @@ from app.geo import filter_event_pilots, segment_into_flights
 from app.poller import VatsimPoller, create_poller
 from app.statsim import fetch_flight_track, fetch_pilot_flights
 
-# In-Memory-Cooldown für den "alle Flüge seit 2020"-Fetch (days=0).
-# Verhindert, dass jeder Klick auf "Alle laden" ~76 StatSim-API-Calls auslöst.
+_logger = logging.getLogger(__name__)
+
+# CID → Zeitpunkt des letzten vollständigen StatSim-Abrufs (days=0).
 # Verloren beim Neustart → erstes days=0 nach Restart holt immer frische Daten.
-_full_history_fetched: dict[int, datetime] = {}  # cid → fetch-Zeitpunkt
+_full_history_fetched: dict[int, datetime] = {}
+_full_history_fetching: set[int] = set()  # laufende Full-Fetches
+_statsim_updating: set[int] = set()       # laufende 31-Tage-Hintergrund-Fetches
+
+
+async def _fetch_statsim_background(cid: int, api_key: str, db_path: str, full: bool) -> None:
+    """Holt StatSim-Daten im Hintergrund und schreibt sie in den Cache."""
+    try:
+        async with _httpx.AsyncClient() as client:
+            statsim_days = 365 if full else 31
+            fresh = await fetch_pilot_flights(client, cid, api_key, statsim_days)
+        for f in fresh:
+            f["cid"] = cid
+        conn = get_connection(db_path)
+        try:
+            upsert_statsim_flights(conn, fresh)
+            conn.commit()
+        finally:
+            conn.close()
+        if full:
+            _full_history_fetched[cid] = datetime.now(_timezone.utc)
+    except Exception as e:
+        _logger.warning("StatSim background fetch failed CID %s: %s", cid, type(e).__name__)
+    finally:
+        if full:
+            _full_history_fetching.discard(cid)
+        else:
+            _statsim_updating.discard(cid)
 
 
 # ---------------------------------------------------------------------------
@@ -205,50 +235,63 @@ async def sse_endpoint(request: Request):
 
 
 @app.get("/api/pilots/{cid}/flights")
-async def get_pilot_flights(cid: int, days: int = 90):
-    """Alle Flüge eines Piloten: FriesenSpy + StatSim (gecached 24h)."""
+async def get_pilot_flights(cid: int, days: int = 90, background_tasks: BackgroundTasks = None):
+    """Alle Flüge eines Piloten: FriesenSpy sofort + StatSim aus Cache.
+
+    StatSim wird im Hintergrund aktualisiert (letzter 31-Tage-Chunk bei normalem
+    Aufruf; volle 365 Tage bei days=0). Antwort kommt immer sofort.
+    Header X-StatSim-Status: fresh | updating | no-key
+    """
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
+    statsim_status = "no-key"
     try:
-        fs_flights = get_pilot_flights_friesenspy(conn, cid, days if days > 0 else 99999)
+        display_days = days if days > 0 else 99999
+        fs_flights = get_pilot_flights_friesenspy(conn, cid, display_days)
         statsim_flights: list[dict] = []
+
         if settings.STATSIM_API_KEY:
-            last = get_statsim_last_fetched(conn, cid)
-            cache_fresh = False
-            if last:
-                try:
-                    last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
-                    age_h = (
-                        datetime.now(_timezone.utc) - last_dt.astimezone(_timezone.utc)
-                    ).total_seconds() / 3600
-                    cache_fresh = age_h < 24
-                except Exception:
-                    pass
-            # days=0: nur re-fetchen wenn der Full-History-Cooldown abgelaufen ist
-            if days == 0:
-                last_full = _full_history_fetched.get(cid)
-                if last_full:
-                    full_age_h = (datetime.now(_timezone.utc) - last_full).total_seconds() / 3600
-                    cache_fresh = full_age_h < 24
-                else:
-                    cache_fresh = False  # noch nie voll abgerufen
-            if not cache_fresh:
-                async with _httpx.AsyncClient() as client:
-                    if days == 0:
-                        # Alle Flüge seit 2025-01-01
-                        from datetime import datetime as _dt
-                        statsim_days = (_dt.now(_timezone.utc) - _dt(2025, 1, 1, tzinfo=_timezone.utc)).days
-                    else:
-                        statsim_days = max(days, 365)
-                    fresh = await fetch_pilot_flights(client, cid, settings.STATSIM_API_KEY, statsim_days)
-                for f in fresh:
-                    f["cid"] = cid
-                upsert_statsim_flights(conn, fresh)
-                conn.commit()
-                if days == 0:
-                    _full_history_fetched[cid] = datetime.now(_timezone.utc)
-            display_days = days if days > 0 else 99999
+            # Immer gecachte Daten sofort zurückgeben
             statsim_flights = get_statsim_flights_for_pilot(conn, cid, display_days)
+
+            if days == 0:
+                # Force full refresh (365 Tage) — Cooldown 24 h
+                if cid in _full_history_fetching:
+                    statsim_status = "updating"
+                else:
+                    last_full = _full_history_fetched.get(cid)
+                    if last_full and (datetime.now(_timezone.utc) - last_full).total_seconds() < 86400:
+                        statsim_status = "fresh"
+                    else:
+                        _full_history_fetching.add(cid)
+                        if background_tasks is not None:
+                            background_tasks.add_task(
+                                _fetch_statsim_background, cid, settings.STATSIM_API_KEY, settings.DB_PATH, True
+                            )
+                        statsim_status = "updating"
+            else:
+                # Normaler Aufruf — nur letzten 31-Tage-Chunk im Hintergrund holen
+                if cid in _statsim_updating:
+                    statsim_status = "updating"
+                else:
+                    last = get_statsim_last_fetched(conn, cid)
+                    cache_fresh = False
+                    if last:
+                        try:
+                            last_dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+                            age_h = (datetime.now(_timezone.utc) - last_dt.astimezone(_timezone.utc)).total_seconds() / 3600
+                            cache_fresh = age_h < 24
+                        except Exception:
+                            pass
+                    if cache_fresh:
+                        statsim_status = "fresh"
+                    else:
+                        _statsim_updating.add(cid)
+                        if background_tasks is not None:
+                            background_tasks.add_task(
+                                _fetch_statsim_background, cid, settings.STATSIM_API_KEY, settings.DB_PATH, False
+                            )
+                        statsim_status = "updating"
     finally:
         conn.close()
 
@@ -259,7 +302,18 @@ async def get_pilot_flights(cid: int, days: int = 90):
         if lt not in fs_logons:
             result.append({"source": "statsim", "id": None, **f})
     result.sort(key=lambda x: x.get("logon_time") or "", reverse=True)
-    return result
+    return JSONResponse(content=result, headers={"X-StatSim-Status": statsim_status})
+
+
+@app.get("/api/pilots/{cid}/live-track")
+async def get_pilot_live_track(cid: int):
+    """Positions-Track des aktuell laufenden Fluges aus position_history."""
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        return get_live_flight_track(conn, cid)
+    finally:
+        conn.close()
 
 
 @app.get("/api/flights/{flight_id}/track")

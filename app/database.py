@@ -271,36 +271,67 @@ def get_live_positions(conn: sqlite3.Connection) -> list[dict]:
 
 
 def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
-    """Letzter Flug + Anzahl Flüge pro Pilot für die letzten N Tage.
-
-    Gibt Liste von {'cid': int, 'name': str, 'flight_count': int, 'last_flight': str|None} zurück.
-    """
+    """Letzter Flug + Anzahl Flüge pro Pilot (FriesenSpy + StatSim-Cache)."""
     rows = conn.execute(
         """
         SELECT
             p.cid,
             p.name,
-            COUNT(f.id)       AS flight_count,
-            MAX(f.logon_time) AS last_flight
+            COALESCE(
+                (SELECT lp.callsign FROM live_positions lp WHERE lp.cid = p.cid),
+                (SELECT f2.callsign FROM flights f2 WHERE f2.cid = p.cid
+                 ORDER BY f2.logon_time DESC LIMIT 1)
+            ) AS last_callsign,
+            COUNT(DISTINCT f.id)          AS fs_count,
+            COUNT(DISTINCT sc.statsim_id) AS st_count,
+            MAX(f.logon_time)             AS last_fs,
+            MAX(CASE WHEN sc.logon_time != '' THEN sc.logon_time END) AS last_st
         FROM pilots p
         LEFT JOIN flights f
                ON f.cid = p.cid
               AND f.logon_time >= datetime('now', ? || ' days')
               AND f.logoff_time IS NOT NULL
+        LEFT JOIN statsim_cache sc
+               ON sc.cid = p.cid
+              AND sc.logon_time >= datetime('now', ? || ' days')
+              AND sc.logon_time != ''
         GROUP BY p.cid, p.name
-        ORDER BY last_flight DESC, p.name
         """,
-        (f"-{days}",),
+        (f"-{days}", f"-{days}"),
     ).fetchall()
-    return [
-        {
+    result = []
+    for r in rows:
+        last_flight = max(filter(None, [r["last_fs"], r["last_st"]]), default=None)
+        result.append({
             "cid": r["cid"],
             "name": r["name"],
-            "flight_count": r["flight_count"],
-            "last_flight": r["last_flight"],
-        }
-        for r in rows
-    ]
+            "last_callsign": r["last_callsign"] or "",
+            "fs_count": r["fs_count"],
+            "st_count": r["st_count"],
+            "flight_count": r["fs_count"] + r["st_count"],
+            "last_flight": last_flight,
+        })
+    result.sort(key=lambda x: x["last_flight"] or "", reverse=True)
+    return result
+
+
+def get_live_flight_track(conn: sqlite3.Connection, cid: int) -> list[dict]:
+    """Positions-Track des aktuell laufenden Fluges (logoff_time IS NULL)."""
+    flight = conn.execute(
+        "SELECT logon_time FROM flights WHERE cid = ? AND logoff_time IS NULL"
+        " ORDER BY logon_time DESC LIMIT 1",
+        (cid,),
+    ).fetchone()
+    if not flight:
+        return []
+    rows = conn.execute(
+        """SELECT latitude, longitude, altitude, groundspeed, heading, ts
+           FROM position_history
+           WHERE cid = ? AND ts >= ?
+           ORDER BY ts""",
+        (cid, flight["logon_time"]),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def cleanup_old_history(conn: sqlite3.Connection, days: int = 90) -> int:
