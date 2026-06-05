@@ -1588,10 +1588,12 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       </tr>`;
     }
     html += `</tbody></table></div>`;
+    const btnUpdating = statsimStatus === 'updating';
     html += `
   <div style="text-align:center; padding:10px 0 4px;">
-    <button class="btn" id="all-flights-btn" onclick="loadAllFlights(${cid})">
-      Alle Flüge laden (letztes Jahr)
+    <button class="btn" id="all-flights-btn" onclick="loadAllFlights(${cid})"
+        ${btnUpdating ? 'disabled' : ''}>
+      ${btnUpdating ? 'Wird aktualisiert…' : 'Alle Flüge laden (letztes Jahr)'}
     </button>
   </div>`;
   }
