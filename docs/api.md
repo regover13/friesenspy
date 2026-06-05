@@ -54,7 +54,7 @@ Aktuelle Live-Positionen aller online Friesen (Callsign-Prefix `FRS`).
 
 ## GET /api/stats
 
-Letzter Flug und Fluganzahl pro Pilot, absteigend nach Datum. Nur FriesenSpy-eigene Aufzeichnungen; für historische Daten → `/api/pilots/{cid}/flights`.
+Letzter Flug und Fluganzahl pro Pilot, absteigend nach Datum. Kombiniert FriesenSpy-Aufzeichnungen und gecachte StatSim-Daten.
 
 **Query-Parameter**
 
@@ -69,23 +69,28 @@ Letzter Flug und Fluganzahl pro Pilot, absteigend nach Datum. Nur FriesenSpy-eig
   {
     "cid": 1602713,
     "name": "Tobias EDKB",
+    "last_callsign": "FRS49",
+    "fs_count": 3,
+    "st_count": 9,
     "flight_count": 12,
     "last_flight": "2026-06-04T07:14:54Z"
   }
 ]
 ```
 
+`flight_count` = `fs_count` + `st_count`. StatSim-Daten sind nur vorhanden wenn der Pilot zuvor im Statistiken-Tab angeklickt wurde (lazy cache).
+
 ---
 
 ## GET /api/pilots/{cid}/flights
 
-Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und StatSim-Historik (wenn `STATSIM_API_KEY` konfiguriert). StatSim wird immer mit mindestens 365 Tagen abgefragt und gecacht (24h TTL). `days=0` umgeht den Cache immer und erzwingt einen vollständigen Abruf aller Flüge seit 2025-01-01.
+Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und StatSim-Historik. Antwortet **sofort** mit gecachten Daten; StatSim-Update läuft im Hintergrund (letzter 31-Tage-Chunk). Response-Header `X-StatSim-Status: fresh | updating | no-key`.
 
 **Query-Parameter**
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
-| `days` | int | `365` | Zeitraum in Tagen; `0` = alle verfügbaren Flüge seit 2025-01-01 |
+| `days` | int | `365` | Zeitraum in Tagen; `0` = Force-Refresh aller 365 Tage |
 
 **Response**
 
@@ -121,6 +126,14 @@ Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und St
 ```
 
 Sortiert nach `logon_time` absteigend. FriesenSpy-Einträge haben Vorrang bei Zeitstempel-Überschneidungen (±5 Min).
+
+---
+
+## GET /api/pilots/{cid}/live-track
+
+GPS-Track des aktuell laufenden Fluges aus `position_history` (logoff_time IS NULL). Leeres Array wenn der Pilot nicht online ist.
+
+**Response** — gleiches Format wie `/api/flights/{id}/track`
 
 ---
 

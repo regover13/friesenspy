@@ -37,7 +37,7 @@ Pflichtfelder: `SECRET_KEY`. Optional: `STATSIM_API_KEY` für historische Flugda
 
 ### `app/statsim.py`
 
-StatSim API-Client für historische Flugdaten (Daten ab 2025-01-01).
+StatSim API-Client für historische Flugdaten.
 
 - `fetch_pilot_flights(client, cid, api_key, days)` — paginierte Abfrage in ≤31-Tage-Chunks. Fehlerhafte Chunks werden einzeln übersprungen (kein Abbruch der Gesamtabfrage). Timeout: 30s. Silent fail → []. Normalisiert Felder: `statsim_id`, `callsign`, `departure`, `arrival`, `aircraft`, `logon_time`, `logoff_time`, `duration_min`.
 - `fetch_flight_track(client, statsim_id, api_key)` — GPS-Track eines einzelnen Fluges. Silent fail → [].
@@ -94,17 +94,19 @@ Telegram-Alert beim "Online gehen" eines Piloten. Alle VATSIM-Felder werden mit 
 
 FastAPI mit `lifespan`-Kontext-Manager (startup: DB init + Poller start; shutdown: Poller stop).
 
-Endpoints: `/api/live`, `/api/stats`, `/api/pilots/{cid}/flights`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/sse`.
+Endpoints: `/api/live`, `/api/stats`, `/api/pilots/{cid}/flights`, `/api/pilots/{cid}/live-track`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/sse`.
 
-`/api/pilots/{cid}/flights` lädt StatSim-Daten lazy (beim ersten Aufruf oder wenn Cache > 24h alt) und cached sie in `statsim_cache`. StatSim wird immer mit mindestens 365 Tagen abgefragt (`days=0` → alle Flüge seit 2025-01-01). `days=0` umgeht den 24h-Cache immer (force full refetch), da ein vorhandener Cache aus einer normalen `days=365`-Anfrage den vollen Abruf sonst fälschlich verhindert.
+`/api/pilots/{cid}/flights` antwortet **sofort** mit FriesenSpy-Daten + gecachten StatSim-Daten. StatSim-Update läuft als FastAPI `BackgroundTask`: normaler Aufruf → letzter 31-Tage-Chunk; `days=0` → volle 365 Tage (Force-Refresh). Status-Tracking via `_statsim_updating` und `_full_history_fetching` (In-Memory-Sets) verhindert parallele Doppel-Fetches. Response-Header `X-StatSim-Status: fresh | updating | no-key`.
+
+`/api/pilots/{cid}/live-track` gibt `position_history` des aktuell offenen Fluges zurück (logoff_time IS NULL). Wird vom Frontend beim ersten ◎-Klick geladen; danach wächst der Track mit jedem SSE-Update.
 
 ### `app/static/index.html`
 
 Single-File-SPA ohne Build-Step. Vier Tabs:
 
 - **LIVE** — EventSource(`/api/sse`) mit Reconnect; Callsign-Klick → Flugplan-Modal; ◎-Klick → `switchToMapAndCenter()`
-- **KARTE** — Leaflet.js; Marker mit Heading-Rotation; Double-RAF-Init beim Tab-Wechsel
-- **STATISTIKEN** — `/api/stats?days=N`; zeigt letzten Flug + Anzahl, sortiert nach Datum; Pilot-Klick → `openPilotFlights()` → `/api/pilots/{cid}/flights?days=365`; „Alle laden" → `loadAllFlights()` → `?days=0` (Button zeigt während des langen Fetches „Lade Historik…" und ist deaktiviert); ◎-Klick → Track-Modal; Plural-aware: `1 Flug` statt `1 Flüge`
+- **KARTE** — Leaflet.js; Marker mit Heading-Rotation; Double-RAF-Init beim Tab-Wechsel; Live-Track-Polyline pro Pilot (`liveTrackPoints`/`liveTrackLines`): beim ersten ◎-Klick oder Map-Init via `/api/pilots/{cid}/live-track` geladen, danach per SSE-Update erweitert; Track wird entfernt wenn Pilot offline geht
+- **STATISTIKEN** — `/api/stats?days=N`; zeigt Callsign + Pilot + geloggte Flüge (FS + ST) + letzter Flug; Pilot-Klick → `openPilotFlights()` → `/api/pilots/{cid}/flights?days=365` (sofort aus Cache, StatSim im Hintergrund); Badge „⟳ StatSim wird aktualisiert…" wenn `X-StatSim-Status: updating`; Auto-Refresh nach 10s; „Alle Flüge laden (letztes Jahr)" → `?days=0` (365-Tage-Force-Refresh, Auto-Refresh nach 15s); ◎-Klick → Track-Modal
 - **EVENTS** — `/api/events`; pro Pilot werden einzelne Flüge aufgelistet (Datum, Dauer, Callsign, Route DEP→ARR, Anzahl Punkte); Segmentierung basiert auf echten VATSIM-Session-Records (Fallback: 30-min-Gap); Karte zeigt alle Flüge aller Piloten gleichzeitig als separate Polylines; Klick auf einen Flug → `highlightEventFlight()` hebt den Track auf der Karte hervor und scrollt per `scrollIntoView` automatisch zur Karte; `searchEvents()` behandelt die `datetime-local`-Felder direkt als UTC (`value + ':00Z'`), da `setDefaultEventDates()` diese mit `toISOString().slice(0,16)` (UTC) befüllt — `new Date(value).toISOString()` würde den Wert fälschlich als Lokalzeit interpretieren
 
 Design: FriesenFlieger-Blau (`#04080f` Hintergrund, `#2d9cdb` Blau, `#D31141` Vereinsrot).
