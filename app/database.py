@@ -273,9 +273,8 @@ def get_live_positions(conn: sqlite3.Connection) -> list[dict]:
 def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
     """Letzter Flug + Anzahl Flüge pro Pilot (FriesenSpy + StatSim-Cache).
 
-    Der Zeitraum-Filter (days) bestimmt nur welche Piloten erscheinen und wann
-    ihr letzter Flug war. Die Fluganzahl wird immer über 365 Tage gezählt damit
-    sie mit der Drill-Down-Ansicht übereinstimmt.
+    Alle Werte (Sichtbarkeit, Fluganzahl, Dauer) werden auf den gewählten
+    Zeitraum (days) begrenzt.
     """
     rows = conn.execute(
         """
@@ -294,14 +293,14 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
             (SELECT COALESCE(SUM(duration_min), 0)
              FROM flights
              WHERE cid = p.cid
-               AND logon_time >= datetime('now', '-365 days')
+               AND logon_time >= datetime('now', ? || ' days')
                AND logoff_time IS NOT NULL) AS fs_duration_min,
             (SELECT COALESCE(SUM(duration_min), 0)
              FROM statsim_cache
              WHERE cid = p.cid
+               AND logon_time >= datetime('now', ? || ' days')
                AND logon_time != '')        AS st_duration_min
         FROM pilots p
-        -- Filter-Joins: bestimmen Sichtbarkeit und letzter-Flug-Datum
         LEFT JOIN flights f_filt
                ON f_filt.cid = p.cid
               AND f_filt.logon_time >= datetime('now', ? || ' days')
@@ -310,13 +309,13 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
                ON sc_filt.cid = p.cid
               AND sc_filt.logon_time >= datetime('now', ? || ' days')
               AND sc_filt.logon_time != ''
-        -- Count-Joins: immer 365 Tage (entspricht Drill-Down-Default)
         LEFT JOIN flights f_all
                ON f_all.cid = p.cid
-              AND f_all.logon_time >= datetime('now', '-365 days')
+              AND f_all.logon_time >= datetime('now', ? || ' days')
               AND f_all.logoff_time IS NOT NULL
         LEFT JOIN statsim_cache sc_all
                ON sc_all.cid = p.cid
+              AND sc_all.logon_time >= datetime('now', ? || ' days')
               AND sc_all.logon_time != ''
         WHERE f_filt.id IS NOT NULL
            OR sc_filt.statsim_id IS NOT NULL
@@ -328,7 +327,7 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
            )
         GROUP BY p.cid, p.name
         """,
-        (f"-{days}", f"-{days}", f"-{days}"),
+        (f"-{days}",) * 7,
     ).fetchall()
     result = []
     for r in rows:

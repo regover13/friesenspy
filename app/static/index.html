@@ -1202,7 +1202,10 @@
   <div class="fp-modal-box" onclick="event.stopPropagation()">
     <div class="fp-modal-header">
       <span class="fp-callsign-title" id="fld-callsign">—</span>
-      <button class="fp-close-btn" onclick="closeFldModal()">✕</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
+        <button class="fp-close-btn" onclick="closeFldModal()">✕</button>
+      </div>
     </div>
     <div class="fp-section">
       <div class="fp-section-title">Flugdetails</div>
@@ -1555,12 +1558,16 @@ function switchToMapAndCenter(callsign) {
 // ==========================================================================
 //  PILOT DRILL-DOWN
 // ==========================================================================
+function _statsDays() {
+  return document.getElementById('stats-days').value || '30';
+}
+
 async function openPilotFlights(cid) {
   const pilot = pilotStatsMap[cid];
   if (!pilot) return;
   const container = document.getElementById('stats-content');
   currentStatsCid = cid;
-  setUrlState({ tab: 'statistiken', cid });
+  setUrlState({ tab: 'statistiken', days: _statsDays(), cid });
 
   container.innerHTML = `
     <div class="flights-panel-header">
@@ -1583,7 +1590,7 @@ async function openPilotFlights(cid) {
 function closePilotFlights() {
   clearTimeout(_flightsRefreshTimer);
   currentStatsCid = null;
-  setUrlState({ tab: 'statistiken' });
+  setUrlState({ tab: 'statistiken', days: _statsDays() });
   fetchStats();
 }
 
@@ -1963,6 +1970,12 @@ async function fetchStats() {
   const container = document.getElementById('stats-content');
   container.innerHTML = `<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade Daten...</div>`;
 
+  // URL aktualisieren (ohne cid, wir sind auf der Übersicht)
+  const p = getUrlState();
+  if (p.get('tab') === 'statistiken' || !p.get('tab')) {
+    setUrlState({ tab: 'statistiken', days });
+  }
+
   try {
     const res  = await fetch(`/api/stats?days=${days}`);
     const data = await res.json();
@@ -2014,7 +2027,7 @@ function renderStatsSummary(stats, days) {
         <span class="stats-kpi-label">Aktivster Pilot (${best?.flight_count || 0} Flüge)</span>
       </div>
     </div>
-    <p class="stats-kpi-note">Flüge und Stunden immer über 365 Tage (unabhängig vom Zeitraum-Filter)</p>`;
+    `;
 }
 
 function renderStatsTable(stats, days) {
@@ -2378,6 +2391,11 @@ async function initFromUrl() {
   tabBtn.click();
 
   if (tab === 'statistiken') {
+    const urlDays = p.get('days');
+    if (urlDays) {
+      const sel = document.getElementById('stats-days');
+      if ([...sel.options].some(o => o.value === urlDays)) sel.value = urlDays;
+    }
     await fetchStats();
     const cid = p.get('cid');
     if (cid) {
