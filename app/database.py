@@ -352,6 +352,47 @@ def get_stats(
     return result
 
 
+def merge_fragmented_flights(flights: list[dict], gap_minutes: int = 5) -> list[dict]:
+    """Merge consecutive same-callsign flights where one lacks a flight plan.
+
+    Handles: pilot connects without FP (DEP/ARR empty), briefly disconnects,
+    reconnects with FP. FriesenSpy records two entries; this merges them into one.
+    Condition: same callsign, exactly one has no DEP/ARR, gap ≤ gap_minutes.
+    """
+    if len(flights) <= 1:
+        return list(flights)
+
+    ordered = sorted([dict(f) for f in flights], key=lambda f: f.get('logon_time') or '')
+    result = []
+    i = 0
+    while i < len(ordered):
+        curr = ordered[i]
+        if i + 1 < len(ordered):
+            nxt = ordered[i + 1]
+            cs_match = (curr.get('callsign') or '') == (nxt.get('callsign') or '') != ''
+            curr_no_fp = not (curr.get('departure') and curr.get('arrival'))
+            nxt_no_fp  = not (nxt.get('departure')  and nxt.get('arrival'))
+            # exactly one side has no flight plan
+            if cs_match and (curr_no_fp ^ nxt_no_fp):
+                try:
+                    gap = (_parse_iso(nxt['logon_time']) - _parse_iso(curr['logoff_time'])).total_seconds() / 60
+                    close = 0 <= gap <= gap_minutes
+                except Exception:
+                    close = False
+                if close:
+                    fp = nxt if curr_no_fp else curr
+                    merged = dict(fp)
+                    merged['logon_time']   = min(t for t in [curr['logon_time'],  nxt['logon_time']]  if t)
+                    merged['logoff_time']  = max(t for t in [curr.get('logoff_time', ''), nxt.get('logoff_time', '')] if t)
+                    merged['duration_min'] = (curr.get('duration_min') or 0) + (nxt.get('duration_min') or 0)
+                    result.append(merged)
+                    i += 2
+                    continue
+        result.append(curr)
+        i += 1
+    return result
+
+
 def get_live_flight_track(conn: sqlite3.Connection, cid: int) -> list[dict]:
     """Positions-Track des aktuell laufenden Fluges (logoff_time IS NULL)."""
     flight = conn.execute(

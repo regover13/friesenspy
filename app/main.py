@@ -24,6 +24,7 @@ from app.database import (
     get_statsim_flights_for_pilot,
     get_statsim_last_fetched,
     init_db,
+    merge_fragmented_flights,
     upsert_statsim_flights,
 )
 from app.geo import filter_event_pilots, segment_into_flights
@@ -179,17 +180,20 @@ async def get_events(
             conn2.close()
 
         if flight_rows:
+            merged_rows = merge_fragmented_flights(
+                [dict(r) for r in flight_rows]
+            )
             flights = []
-            for fr in flight_rows:
-                lo, lf = fr["logon_time"], fr["logoff_time"]
+            for fr in merged_rows:
+                lo, lf = fr["logon_time"], fr.get("logoff_time", "")
                 seg_positions = [p for p in positions if lo <= p.get("ts", "") <= lf]
                 flights.append({
                     "logon_time": lo,
                     "logoff_time": lf,
-                    "callsign": fr["callsign"],
-                    "departure": fr["departure"] or "",
-                    "arrival": fr["arrival"] or "",
-                    "aircraft": fr["aircraft_short"] or "",
+                    "callsign": fr.get("callsign") or "",
+                    "departure": fr.get("departure") or "",
+                    "arrival": fr.get("arrival") or "",
+                    "aircraft": fr.get("aircraft_short") or fr.get("aircraft") or "",
                     "positions": seg_positions,
                 })
         else:
@@ -247,7 +251,9 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
     statsim_status = "no-key"
     try:
         display_days = days if days > 0 else 99999
-        fs_flights = get_pilot_flights_friesenspy(conn, cid, display_days)
+        fs_flights = merge_fragmented_flights(
+            get_pilot_flights_friesenspy(conn, cid, display_days)
+        )
         statsim_flights: list[dict] = []
 
         if settings.STATSIM_API_KEY:
