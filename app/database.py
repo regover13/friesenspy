@@ -290,8 +290,16 @@ def get_stats(
                 (SELECT f2.callsign FROM flights f2 WHERE f2.cid = p.cid
                  ORDER BY f2.logon_time DESC LIMIT 1)
             ) AS last_callsign,
-            COUNT(DISTINCT f_filt.id)          AS fs_count,
-            COUNT(DISTINCT sc_filt.statsim_id) AS st_count,
+            COUNT(DISTINCT f_filt.id) AS fs_count,
+            COUNT(DISTINCT CASE
+              WHEN NOT EXISTS (
+                SELECT 1 FROM flights fx
+                WHERE fx.cid = p.cid
+                  AND fx.logon_time >= datetime('now', ? || ' days')
+                  AND fx.logoff_time IS NOT NULL
+                  AND substr(fx.logon_time, 1, 16) = substr(sc_filt.logon_time, 1, 16)
+              ) THEN sc_filt.statsim_id
+            END) AS st_count,
             MAX(f_filt.logon_time)             AS last_fs,
             MAX(CASE WHEN sc_filt.logon_time != '' THEN sc_filt.logon_time END) AS last_st,
             (SELECT COALESCE(SUM(duration_min), 0)
@@ -325,7 +333,7 @@ def get_stats(
            )
         GROUP BY p.cid, p.name
         """,
-        (f"-{days}", f"-{days}", prefix_pat, f"-{days}", f"-{days}", prefix_pat, f"-{days}"),
+        (f"-{days}", f"-{days}", prefix_pat, f"-{days}", f"-{days}", f"-{days}", prefix_pat, f"-{days}"),
     ).fetchall()
     result = []
     for r in rows:

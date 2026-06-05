@@ -1091,7 +1091,7 @@
           Lade Statistiken...
         </div>
       </div>
-      <div class="stats-disclaimer">Zeigt FriesenSpy-eigene Aufzeichnungen · Daten wachsen mit jedem erfassten Flug</div>
+      <div class="stats-disclaimer">Nur FRS*-Callsigns · FriesenSpy-Aufzeichnungen + StatSim-Historik · Daten wachsen mit jedem erfassten Flug</div>
     </div>
   </div>
 
@@ -2003,6 +2003,7 @@ function renderStatsSummary(stats, days) {
     : '—';
 
   return `
+    <p class="stats-kpi-note" style="margin-bottom:8px;">Nur Flüge mit FRS*-Callsign · FriesenSpy-Aufzeichnungen + StatSim-Daten</p>
     <div class="stats-kpi-row">
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${stats.length}</span>
