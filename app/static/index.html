@@ -1259,8 +1259,23 @@
 //  Constants & State
 // ==========================================================================
 const PILOT_COLORS = ['#2d9cdb', '#00d4e0', '#f0a500', '#ff6b6b', '#c084fc', '#fb923c'];
-const TILE_URL     = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-const TILE_ATTR    = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+// Karten-Layer
+const TILE_DARK_URL  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const TILE_DARK_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const TILE_OFM_URL   = 'https://nwy-tiles-api.prod.newaydata.com/tiles/{z}/{x}/{y}.png?path=latest/aero/latest';
+const TILE_OFM_ATTR  = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://www.openflightmaps.org">openflightmaps.org</a>';
+
+// Legacy alias (für bestehende Verwendungen ohne Layer-Control)
+const TILE_URL  = TILE_DARK_URL;
+const TILE_ATTR = TILE_DARK_ATTR;
+
+function _makeTileLayers() {
+  return {
+    ofm:  L.tileLayer(TILE_OFM_URL,  { attribution: TILE_OFM_ATTR,  subdomains: 'abcd', maxZoom: 13 }),
+    dark: L.tileLayer(TILE_DARK_URL, { attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19 }),
+  };
+}
 
 let liveMap        = null;  // Leaflet map instance for Karte tab
 let mapMarkers     = {};    // {callsign: marker}
@@ -1767,7 +1782,12 @@ async function openTrackModal(source, id, callsign, dep, arr) {
     requestAnimationFrame(() => {
       if (!trackMapInitialized) {
         trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6 });
-        L.tileLayer(TILE_URL, { attribution: TILE_ATTR, subdomains: 'abcd', maxZoom: 19 }).addTo(trackMap);
+        const trackLayers = _makeTileLayers();
+        trackLayers.ofm.addTo(trackMap);
+        L.control.layers(
+          { 'OpenFlightMap': trackLayers.ofm, 'Dark': trackLayers.dark },
+          {}, { position: 'topright', collapsed: true }
+        ).addTo(trackMap);
         trackMapInitialized = true;
       } else {
         trackMap.eachLayer(layer => {
@@ -1863,11 +1883,13 @@ function initLiveMap() {
     attributionControl: true,
   });
 
-  L.tileLayer(TILE_URL, {
-    attribution: TILE_ATTR,
-    subdomains: 'abcd',
-    maxZoom: 19,
-  }).addTo(liveMap);
+  const liveLayers = _makeTileLayers();
+  liveLayers.ofm.addTo(liveMap);
+  L.control.layers(
+    { 'OpenFlightMap': liveLayers.ofm, 'Dark': liveLayers.dark },
+    {},
+    { position: 'topright', collapsed: true }
+  ).addTo(liveMap);
 
   // Style Leaflet controls
   const styleEl = document.createElement('style');
@@ -2018,19 +2040,20 @@ async function fetchStats() {
 // ==========================================================================
 let _activityChart = null;
 
+const _DAY_NAMES = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+const _MON_NAMES = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+
 function _fmtChartLabel(period, grouping) {
   if (grouping === 'day') {
-    const [, m, d] = period.split('-');
-    return `${d}.${m}.`;
+    // period = YYYY-MM-DD → "Mo 05.06."
+    const d = new Date(period + 'T12:00:00Z');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    return `${_DAY_NAMES[d.getUTCDay()]} ${dd}.${mm}.`;
   }
-  if (grouping === 'week') {
-    const [y, w] = period.split('-W');
-    return `KW${w}`;
-  }
-  // month: YYYY-MM
-  const months = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  // month: YYYY-MM → "Jun '26"
   const [y, m] = period.split('-');
-  return `${months[parseInt(m, 10) - 1]} '${y.slice(2)}`;
+  return `${_MON_NAMES[parseInt(m, 10) - 1]} '${y.slice(2)}`;
 }
 
 async function fetchAndRenderChart(days) {
@@ -2045,40 +2068,76 @@ function renderActivityChart(data, grouping) {
   const wrap = document.getElementById('stats-activity-wrap');
   if (!wrap) return;
 
-  const labels   = data.map(d => _fmtChartLabel(d.period, grouping));
-  const fsData   = data.map(d => d.fs_count);
-  const stData   = data.map(d => d.st_count);
-  const totalMax = Math.max(...data.map(d => d.fs_count + d.st_count), 1);
+  const labels    = data.map(d => _fmtChartLabel(d.period, grouping));
+  const pilotData = data.map(d => d.pilot_count);
+  const flightData = data.map(d => d.flight_count);
+  const hoursData  = data.map(d => +(d.total_duration_min / 60).toFixed(1));
+  const avgDurData = data.map(d =>
+    d.flight_count > 0 ? +(d.total_duration_min / 60 / d.flight_count).toFixed(2) : null
+  );
 
   if (_activityChart) {
-    _activityChart.data.labels          = labels;
-    _activityChart.data.datasets[0].data = stData;
-    _activityChart.data.datasets[1].data = fsData;
+    _activityChart.data.labels = labels;
+    _activityChart.data.datasets[0].data = pilotData;
+    _activityChart.data.datasets[1].data = flightData;
+    _activityChart.data.datasets[2].data = hoursData;
+    _activityChart.data.datasets[3].data = avgDurData;
     _activityChart.update('none');
     return;
   }
 
   const ctx = document.getElementById('stats-activity-canvas').getContext('2d');
   _activityChart = new Chart(ctx, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels,
       datasets: [
         {
-          label: 'StatSim',
-          data: stData,
-          backgroundColor: 'rgba(211,17,65,0.55)',
-          borderColor: 'rgba(211,17,65,0.8)',
-          borderWidth: 1,
-          stack: 'a',
+          label: 'Piloten',
+          data: pilotData,
+          borderColor: '#2d9cdb',
+          backgroundColor: 'rgba(45,156,219,0.08)',
+          fill: true,
+          yAxisID: 'y',
+          tension: 0.35,
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 5,
         },
         {
-          label: 'FriesenSpy',
-          data: fsData,
-          backgroundColor: 'rgba(45,156,219,0.7)',
-          borderColor: 'rgba(45,156,219,0.9)',
-          borderWidth: 1,
-          stack: 'a',
+          label: 'Flüge',
+          data: flightData,
+          borderColor: '#00d4e0',
+          backgroundColor: 'transparent',
+          yAxisID: 'y',
+          tension: 0.35,
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+        },
+        {
+          label: 'Stunden',
+          data: hoursData,
+          borderColor: '#f0a500',
+          backgroundColor: 'transparent',
+          yAxisID: 'y1',
+          tension: 0.35,
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+        },
+        {
+          label: 'Ø Flugdauer (h)',
+          data: avgDurData,
+          borderColor: '#D31141',
+          backgroundColor: 'transparent',
+          yAxisID: 'y1',
+          tension: 0.35,
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          spanGaps: false,
         },
       ],
     },
@@ -2086,12 +2145,14 @@ function renderActivityChart(data, grouping) {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: {
           labels: {
             color: '#6b9ab8',
             font: { family: "'Exo 2', sans-serif", size: 10 },
-            boxWidth: 10, padding: 12,
+            boxWidth: 18, padding: 10,
+            usePointStyle: true,
           },
         },
         tooltip: {
@@ -2101,33 +2162,46 @@ function renderActivityChart(data, grouping) {
           titleColor: '#2d9cdb',
           bodyColor: '#d4e8f5',
           callbacks: {
-            title: items => items[0].label,
-            label: item => ` ${item.dataset.label}: ${item.raw}`,
+            label: item => item.raw != null
+              ? ` ${item.dataset.label}: ${item.raw}` : null,
           },
         },
       },
       scales: {
         x: {
-          stacked: true,
           grid: { color: 'rgba(45,156,219,0.05)' },
           ticks: {
             color: '#6b9ab8',
             font: { family: "'Courier Prime', monospace", size: 9 },
-            maxRotation: 0,
+            maxRotation: 45,
             autoSkip: true,
-            maxTicksLimit: 18,
+            maxTicksLimit: 20,
           },
         },
         y: {
-          stacked: true,
+          type: 'linear',
+          position: 'left',
           beginAtZero: true,
           grid: { color: 'rgba(45,156,219,0.07)' },
           ticks: {
             color: '#6b9ab8',
-            font: { family: "'Exo 2', sans-serif", size: 10 },
+            font: { size: 10 },
             stepSize: 1,
             maxTicksLimit: 6,
           },
+          title: { display: true, text: 'Anzahl', color: '#6b9ab8', font: { size: 9 } },
+        },
+        y1: {
+          type: 'linear',
+          position: 'right',
+          beginAtZero: true,
+          grid: { drawOnChartArea: false },
+          ticks: {
+            color: '#6b9ab8',
+            font: { size: 10 },
+            maxTicksLimit: 6,
+          },
+          title: { display: true, text: 'Stunden', color: '#6b9ab8', font: { size: 9 } },
         },
       },
     },
@@ -2409,15 +2483,13 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 
 function renderEventsMap(pilots, icaoStr, radiusKm) {
   if (!eventsMapInitialized) {
-    eventsMap = L.map('events-leaflet-map', {
-      center: [54.5, 8.5],
-      zoom:   6,
-    });
-    L.tileLayer(TILE_URL, {
-      attribution: TILE_ATTR,
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(eventsMap);
+    eventsMap = L.map('events-leaflet-map', { center: [54.5, 8.5], zoom: 6 });
+    const evLayers = _makeTileLayers();
+    evLayers.ofm.addTo(eventsMap);
+    L.control.layers(
+      { 'OpenFlightMap': evLayers.ofm, 'Dark': evLayers.dark },
+      {}, { position: 'topright', collapsed: true }
+    ).addTo(eventsMap);
     eventsMapInitialized = true;
   } else {
     // Clear previous layers except the tile layer
@@ -2621,6 +2693,8 @@ async function initFromUrl() {
       const pilot = pilotDataMap[cs] || pilotDataMap[fp];
       if (pilot) openFpModal(pilot);
     }
+  } else if (tab === 'karte') {
+    // Lazy init wird vom tab-click handler übernommen, nichts weiteres nötig
   } else if (tab === 'events') {
     const icao = p.get('icao');
     if (icao) {
@@ -2633,6 +2707,20 @@ async function initFromUrl() {
       if (end)   document.getElementById('ev-end').value   = end;
       await searchEvents();
     }
+  }
+
+  // Sicherstellen dass der korrekte Tab nach allen Async-Operationen aktiv ist
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  const finalBtn = document.querySelector(`[data-tab="${tab}"]`);
+  if (finalBtn) finalBtn.classList.add('active');
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.classList.remove('active');
+    p.style.opacity = '0';
+  });
+  const finalPanel = document.getElementById(`tab-${tab}`);
+  if (finalPanel) {
+    finalPanel.classList.add('active');
+    finalPanel.style.opacity = '1';
   }
 }
 

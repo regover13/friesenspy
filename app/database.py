@@ -359,36 +359,65 @@ def get_stats(
 def get_stats_activity(
     conn: sqlite3.Connection, days: int = 30, callsign_prefix: str = "FRS"
 ) -> dict:
-    """Flugaktivität über Zeit — für Chart im Statistiken-Tab.
+    """Flugaktivität über Zeit — für Liniendiagramm im Statistiken-Tab.
 
-    Gruppierung: ≤31 Tage → täglich, ≤93 Tage → wöchentlich, >93 Tage → monatlich.
+    Gruppierung: ≤93 Tage → täglich, >93 Tage → monatlich.
     Gibt alle Perioden mit Lücken gefüllt (0-Einträge) zurück.
+    Felder pro Periode: pilot_count, flight_count, total_duration_min.
     """
     prefix_pat = callsign_prefix + "%"
     today = date.today()
     start = today - timedelta(days=days)
 
-    if days <= 31:
+    if days <= 93:
         sql_fmt = "%Y-%m-%d"
         grouping = "day"
-    elif days <= 93:
-        sql_fmt = "%Y-%W"
-        grouping = "week"
     else:
         sql_fmt = "%Y-%m"
         grouping = "month"
 
+    # Flugzahlen
     fs = {r[0]: r[1] for r in conn.execute(
-        f"SELECT strftime(?, logon_time), COUNT(*) FROM flights "
-        f"WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL "
-        f"GROUP BY 1",
+        "SELECT strftime(?, logon_time), COUNT(*) FROM flights "
+        "WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL GROUP BY 1",
         (sql_fmt, f"-{days}"),
     ).fetchall()}
-
     st = {r[0]: r[1] for r in conn.execute(
-        f"SELECT strftime(?, logon_time), COUNT(*) FROM statsim_cache "
-        f"WHERE logon_time >= datetime('now', ? || ' days') AND logon_time != '' "
-        f"AND callsign LIKE ? GROUP BY 1",
+        "SELECT strftime(?, logon_time), COUNT(*) FROM statsim_cache "
+        "WHERE logon_time >= datetime('now', ? || ' days') AND logon_time != '' AND callsign LIKE ? GROUP BY 1",
+        (sql_fmt, f"-{days}", prefix_pat),
+    ).fetchall()}
+
+    # Unique Piloten pro Periode (aus beiden Quellen)
+    pilots_by_period: dict[str, set] = {}
+    for p, cid in conn.execute(
+        "SELECT strftime(?, logon_time), cid FROM flights "
+        "WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL",
+        (sql_fmt, f"-{days}"),
+    ).fetchall():
+        pilots_by_period.setdefault(p, set()).add(cid)
+    for p, cid in conn.execute(
+        "SELECT strftime(?, logon_time), cid FROM statsim_cache "
+        "WHERE logon_time >= datetime('now', ? || ' days') AND logon_time != '' AND callsign LIKE ?",
+        (sql_fmt, f"-{days}", prefix_pat),
+    ).fetchall():
+        pilots_by_period.setdefault(p, set()).add(cid)
+    pilot_count = {k: len(v) for k, v in pilots_by_period.items()}
+
+    # Flugdauer pro Periode
+    fs_dur = {r[0]: (r[1] or 0) for r in conn.execute(
+        "SELECT strftime(?, logon_time), SUM(COALESCE(duration_min, "
+        "CASE WHEN logoff_time IS NOT NULL "
+        "THEN CAST((JULIANDAY(logoff_time)-JULIANDAY(logon_time))*1440 AS INTEGER) END)) "
+        "FROM flights WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL GROUP BY 1",
+        (sql_fmt, f"-{days}"),
+    ).fetchall()}
+    st_dur = {r[0]: (r[1] or 0) for r in conn.execute(
+        "SELECT strftime(?, logon_time), SUM(COALESCE(duration_min, "
+        "CASE WHEN logoff_time IS NOT NULL AND logoff_time != '' "
+        "THEN CAST((JULIANDAY(logoff_time)-JULIANDAY(logon_time))*1440 AS INTEGER) END)) "
+        "FROM statsim_cache WHERE logon_time >= datetime('now', ? || ' days') "
+        "AND logon_time != '' AND callsign LIKE ? GROUP BY 1",
         (sql_fmt, f"-{days}", prefix_pat),
     ).fetchall()}
 
@@ -398,15 +427,6 @@ def get_stats_activity(
         cur = start
         while cur <= today:
             periods.append(cur.strftime(sql_fmt))
-            cur += timedelta(days=1)
-    elif grouping == "week":
-        seen: set[str] = set()
-        cur = start
-        while cur <= today:
-            wk = cur.strftime(sql_fmt)
-            if wk not in seen:
-                seen.add(wk)
-                periods.append(wk)
             cur += timedelta(days=1)
     else:
         y, m = start.year, start.month
@@ -418,7 +438,12 @@ def get_stats_activity(
                 y += 1
 
     data = [
-        {"period": p, "fs_count": fs.get(p, 0), "st_count": st.get(p, 0)}
+        {
+            "period": p,
+            "pilot_count": pilot_count.get(p, 0),
+            "flight_count": (fs.get(p, 0) or 0) + (st.get(p, 0) or 0),
+            "total_duration_min": (fs_dur.get(p, 0) or 0) + (st_dur.get(p, 0) or 0),
+        }
         for p in periods
     ]
     return {"grouping": grouping, "data": data}
