@@ -271,7 +271,12 @@ def get_live_positions(conn: sqlite3.Connection) -> list[dict]:
 
 
 def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
-    """Letzter Flug + Anzahl Flüge pro Pilot (FriesenSpy + StatSim-Cache)."""
+    """Letzter Flug + Anzahl Flüge pro Pilot (FriesenSpy + StatSim-Cache).
+
+    Der Zeitraum-Filter (days) bestimmt nur welche Piloten erscheinen und wann
+    ihr letzter Flug war. Die Fluganzahl wird immer über 365 Tage gezählt damit
+    sie mit der Drill-Down-Ansicht übereinstimmt.
+    """
     rows = conn.execute(
         """
         SELECT
@@ -282,22 +287,39 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
                 (SELECT f2.callsign FROM flights f2 WHERE f2.cid = p.cid
                  ORDER BY f2.logon_time DESC LIMIT 1)
             ) AS last_callsign,
-            COUNT(DISTINCT f.id)          AS fs_count,
-            COUNT(DISTINCT sc.statsim_id) AS st_count,
-            MAX(f.logon_time)             AS last_fs,
-            MAX(CASE WHEN sc.logon_time != '' THEN sc.logon_time END) AS last_st
+            COUNT(DISTINCT f_all.id)          AS fs_count,
+            COUNT(DISTINCT sc_all.statsim_id) AS st_count,
+            MAX(f_filt.logon_time)            AS last_fs,
+            MAX(CASE WHEN sc_filt.logon_time != '' THEN sc_filt.logon_time END) AS last_st
         FROM pilots p
-        LEFT JOIN flights f
-               ON f.cid = p.cid
-              AND f.logon_time >= datetime('now', ? || ' days')
-              AND f.logoff_time IS NOT NULL
-        LEFT JOIN statsim_cache sc
-               ON sc.cid = p.cid
-              AND sc.logon_time >= datetime('now', ? || ' days')
-              AND sc.logon_time != ''
+        -- Filter-Joins: bestimmen Sichtbarkeit und letzter-Flug-Datum
+        LEFT JOIN flights f_filt
+               ON f_filt.cid = p.cid
+              AND f_filt.logon_time >= datetime('now', ? || ' days')
+              AND f_filt.logoff_time IS NOT NULL
+        LEFT JOIN statsim_cache sc_filt
+               ON sc_filt.cid = p.cid
+              AND sc_filt.logon_time >= datetime('now', ? || ' days')
+              AND sc_filt.logon_time != ''
+        -- Count-Joins: immer 365 Tage (entspricht Drill-Down-Default)
+        LEFT JOIN flights f_all
+               ON f_all.cid = p.cid
+              AND f_all.logon_time >= datetime('now', '-365 days')
+              AND f_all.logoff_time IS NOT NULL
+        LEFT JOIN statsim_cache sc_all
+               ON sc_all.cid = p.cid
+              AND sc_all.logon_time != ''
+        WHERE f_filt.id IS NOT NULL
+           OR sc_filt.statsim_id IS NOT NULL
+           OR EXISTS (
+               SELECT 1 FROM flights fo
+               WHERE fo.cid = p.cid
+                 AND fo.logon_time >= datetime('now', ? || ' days')
+                 AND fo.logoff_time IS NULL
+           )
         GROUP BY p.cid, p.name
         """,
-        (f"-{days}", f"-{days}"),
+        (f"-{days}", f"-{days}", f"-{days}"),
     ).fetchall()
     result = []
     for r in rows:
