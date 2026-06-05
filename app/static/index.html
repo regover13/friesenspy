@@ -2519,6 +2519,14 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     // Update URL (preserve no modal params when switching tabs)
     setUrlState({ tab });
 
+    // Wenn Pilot-Drill-Down offen → zurück zur Übersicht
+    if (currentStatsCid !== null) {
+      clearTimeout(_flightsRefreshTimer);
+      currentStatsCid = null;
+      // fetchStats() unten via statsLoaded-Reset erzwingen
+      statsLoaded = false;
+    }
+
     // Update buttons
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
