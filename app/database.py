@@ -286,9 +286,9 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
                 (SELECT f2.callsign FROM flights f2 WHERE f2.cid = p.cid
                  ORDER BY f2.logon_time DESC LIMIT 1)
             ) AS last_callsign,
-            COUNT(DISTINCT f_all.id)          AS fs_count,
-            COUNT(DISTINCT sc_all.statsim_id) AS st_count,
-            MAX(f_filt.logon_time)            AS last_fs,
+            COUNT(DISTINCT f_filt.id)          AS fs_count,
+            COUNT(DISTINCT sc_filt.statsim_id) AS st_count,
+            MAX(f_filt.logon_time)             AS last_fs,
             MAX(CASE WHEN sc_filt.logon_time != '' THEN sc_filt.logon_time END) AS last_st,
             (SELECT COALESCE(SUM(duration_min), 0)
              FROM flights
@@ -309,14 +309,6 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
                ON sc_filt.cid = p.cid
               AND sc_filt.logon_time >= datetime('now', ? || ' days')
               AND sc_filt.logon_time != ''
-        LEFT JOIN flights f_all
-               ON f_all.cid = p.cid
-              AND f_all.logon_time >= datetime('now', ? || ' days')
-              AND f_all.logoff_time IS NOT NULL
-        LEFT JOIN statsim_cache sc_all
-               ON sc_all.cid = p.cid
-              AND sc_all.logon_time >= datetime('now', ? || ' days')
-              AND sc_all.logon_time != ''
         WHERE f_filt.id IS NOT NULL
            OR sc_filt.statsim_id IS NOT NULL
            OR EXISTS (
@@ -327,7 +319,7 @@ def get_stats(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
            )
         GROUP BY p.cid, p.name
         """,
-        (f"-{days}",) * 7,
+        (f"-{days}",) * 5,
     ).fetchall()
     result = []
     for r in rows:
