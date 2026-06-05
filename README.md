@@ -10,9 +10,10 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 
 - **Live-Tab** — Echtzeit-Liste aller Friesen online (SSE); Callsign klicken → Flugplan-Modal; ◎ klicken → direkt zur Karte mit Zentrierung; ⎘ Teilen — direkter Link zum Flugplan
 - **Karte** — Leaflet.js mit Flugzeug-Symbolen, Heading-Rotation, Popup mit Details; Live-Track des aktuellen Fluges als Polyline (aus `position_history`, wächst mit jedem SSE-Update)
-- **Statistiken** — KPI-Box (Piloten, Flüge, Stunden, Ø pro Tag, Aktivster Pilot, Ø Flugdauer); Callsign + Pilot + geloggte Flüge (FriesenSpy + StatSim) + letzter Flug (30/90/365 Tage); Pilot anklicken → Einzelflüge sofort aus Cache, StatSim-Update im Hintergrund mit Badge; „Alle laden" → 365-Tage-Refresh; ◎ → Track auf Karte; ⎘ Teilen im Drill-Down und Track-Modal
+- **Statistiken** — KPI-Box (Piloten, Flüge, Stunden, Ø pro Tag, Aktivster Pilot, Ø Flugdauer); Liniendiagramm (Piloten/Flüge/Stunden/Ø Flugdauer, täglich für 30/90 Tage mit Wochentag-Labels, monatlich für 365 Tage); Callsign + Pilot + geloggte Flüge + letzter Flug; Pilot anklicken → Einzelflüge sofort aus Cache, StatSim-Update im Hintergrund; „Alle laden" → 365-Tage-Refresh; ◎ → Track; ⎘ Teilen
 - **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei? Ergebnisse als einzelne Flüge pro Pilot (Datum, Dauer, Callsign, Route, Punkte); alle Tracks gleichzeitig auf Karte; Klick auf Flug → Hervorhebung + automatischer Scroll zur Karte; ⎘ Teilen nach erfolgter Suche
-- **URL Deep-Linking** — alle Zustände (Tab, Pilot, Track, Flugplan, Events-Filter) sind als URL-Hash teilbar; Seite neu laden öffnet denselben Zustand direkt
+- **URL Deep-Linking** — alle Zustände (Tab, Pilot, Track, Flugplan, Events-Filter, Zeitraum) sind als URL-Hash teilbar; Seite neu laden öffnet denselben Zustand direkt
+- **OpenFlightMap** — VFR-Luftfahrtkarte als Standard-Layer auf allen Karten (umschaltbar auf Dark CARTO, deckt West-/Zentraleuropa ab)
 - **StatSim-Integration** — Historische Flüge (letztes Jahr) via [StatSim API](https://statsim.net); sofortige Anzeige aus Cache, Hintergrund-Update des letzten 31-Tage-Chunks (API-Key nötig)
 - **Telegram-Alerts** — Optional: Nachricht wenn ein Friese online geht
 
@@ -152,6 +153,7 @@ FriesenSpy/
 | `/health` | GET | `{"status": "ok"}` |
 | `/api/live` | GET | Aktuelle Live-Positionen (inkl. Flugplan-Felder) |
 | `/api/stats?days=30` | GET | Letzter Flug + Fluganzahl pro Pilot |
+| `/api/stats/activity?days=30` | GET | Flugaktivität über Zeit (täglich/monatlich) |
 | `/api/pilots/{cid}/flights?days=365` | GET | Einzelflüge eines Piloten (FriesenSpy + StatSim); antwortet sofort aus Cache, StatSim-Update im Hintergrund; `days=0` = 365-Tage-Force-Refresh |
 | `/api/pilots/{cid}/live-track` | GET | GPS-Track des aktuell laufenden Fluges |
 | `/api/flights/{id}/track` | GET | GPS-Track eines FriesenSpy-Fluges |

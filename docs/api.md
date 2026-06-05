@@ -52,6 +52,36 @@ Aktuelle Live-Positionen aller online Friesen (Callsign-Prefix `FRS`).
 
 ---
 
+## GET /api/stats/activity
+
+Flugaktivität über Zeit — für das Liniendiagramm im Statistiken-Tab.
+
+**Query-Parameter**
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `days` | int | `30` | Zeitraum in Tagen |
+
+Gruppierung: ≤93 Tage → täglich (`%Y-%m-%d`), >93 Tage → monatlich (`%Y-%m`). Alle Perioden werden zurückgegeben (Lücken mit 0 aufgefüllt). Nur FRS*-Callsigns.
+
+**Response**
+
+```json
+{
+  "grouping": "day",
+  "data": [
+    {
+      "period": "2026-06-05",
+      "pilot_count": 3,
+      "flight_count": 8,
+      "total_duration_min": 420
+    }
+  ]
+}
+```
+
+---
+
 ## GET /api/stats
 
 Letzter Flug und Fluganzahl pro Pilot, absteigend nach Datum. Kombiniert FriesenSpy-Aufzeichnungen und gecachte StatSim-Daten.
