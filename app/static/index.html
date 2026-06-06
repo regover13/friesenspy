@@ -1289,13 +1289,18 @@ function _makeTileLayers() {
 
 // OFM ist nur bei Zoom 7–12 sinnvoll (unter 7 sparse, über 12 blank).
 // Außerhalb dieses Bereichs wird automatisch auf Satellit gewechselt.
-// Sobald der Nutzer manuell einen Layer wählt, wird Auto-Switch deaktiviert.
+// Manuell zu OFM zurückwechseln reaktiviert den Auto-Switch.
+// Manuell zu einem anderen Layer wechseln deaktiviert ihn.
 function _setupOFMAutoSwitch(map, layers) {
   const SWITCH_HIGH = 12; // > 12 → Satellit (OFM tiles blank)
   const SWITCH_LOW  = 7;  // < 7  → Satellit (OFM tiles sparse)
   let autoMode = true;
   let autoSwitching = false; // verhindert dass eigene Wechsel autoMode deaktivieren
-  map.on('baselayerchange', () => { if (!autoSwitching) autoMode = false; });
+  map.on('baselayerchange', (e) => {
+    if (autoSwitching) return;
+    // Manuell zurück zu OFM → Auto-Switch wieder einschalten
+    autoMode = (e.layer === layers.ofm);
+  });
   map.on('zoomend', () => {
     if (!autoMode) return;
     const z = map.getZoom();
