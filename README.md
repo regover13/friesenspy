@@ -304,6 +304,7 @@ FriesenSpy/
 | Endpoint | Methode | Beschreibung |
 |----------|---------|--------------|
 | `/` | GET | SPA (index.html) |
+| `/robots.txt` | GET | Bot-Indizierung gesperrt (`Disallow: /`) |
 | `/health` | GET | `{"status": "ok"}` |
 | `/api/live` | GET | Aktuelle Live-Positionen (inkl. Flugplan-Felder) |
 | `/api/stats?days=30` | GET | Letzter Flug + Fluganzahl pro Pilot |
