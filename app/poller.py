@@ -86,9 +86,9 @@ async def send_web_push_notifications(
             if resp is not None and getattr(resp, "status_code", None) == 410:
                 to_delete.append(sub["endpoint"])
             else:
-                logger.warning("WebPush failed for %s: %s", callsign, type(exc).__name__)
+                logger.warning("WebPush failed for %s: %s — %s", callsign, type(exc).__name__, exc)
         except Exception as exc:
-            logger.warning("WebPush error for %s: %s", callsign, type(exc).__name__)
+            logger.warning("WebPush error for %s: %s — %s", callsign, type(exc).__name__, exc)
 
     if to_delete:
         conn2 = get_connection(db_path)
