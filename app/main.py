@@ -127,6 +127,8 @@ async def push_subscribe(request: Request):
     auth = body.get("auth", "")
     if not endpoint or not p256dh or not auth:
         return JSONResponse({"error": "endpoint, p256dh and auth are required"}, status_code=400)
+    if "permanently-removed.invalid" in endpoint:
+        return JSONResponse({"error": "invalid push endpoint"}, status_code=400)
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
