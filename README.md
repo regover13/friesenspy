@@ -11,7 +11,7 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 - **Live-Tab** — Echtzeit-Liste aller Friesen online (SSE); Callsign klicken → Flugplan-Modal; ◎ klicken → direkt zur Karte mit Zentrierung; ⎘ Teilen — direkter Link zum Flugplan
 - **Karte** — Leaflet.js mit Flugzeug-Symbolen, Heading-Rotation, Popup mit Details; Live-Track des aktuellen Fluges als Polyline (aus `position_history`, wächst mit jedem SSE-Update)
 - **Statistiken** — KPI-Box (Piloten, Flüge, Stunden, Ø pro Tag, Aktivster Pilot, Ø Flugdauer); Liniendiagramm (Piloten/Flüge/Stunden/Ø Flugdauer, täglich für 30/90 Tage mit Wochentag-Labels, monatlich für 365 Tage); Callsign + Pilot + geloggte Flüge + letzter Flug; Pilot anklicken → Einzelflüge sofort aus Cache, StatSim-Update im Hintergrund; „Alle laden" → 365-Tage-Refresh; ◎ → Track; ⎘ Teilen
-- **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei? Karte oben (560px, OFM), Pilotenliste darunter; alle Tracks gleichzeitig sichtbar; Klick auf Flug → Hervorhebung + „↺ Alle Tracks"-Button; Callsign klicken → Flugdetail; ⎘ Teilen
+- **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei? Karte oben (560px, OFM), Pilotenliste darunter; alle Tracks gleichzeitig sichtbar; Klick auf Flug → Hervorhebung + „↺ Alle Tracks"-Button; Callsign klicken → Flugdetail; ⎘ Teilen; Filtereinstellungen immer in der URL; **StatSim-Fallback**: Piloten die per DEP/ARR im Flugplan gefunden werden (auch wenn FriesenSpy nicht aktiv war) erscheinen mit „◌ StatSim"-Badge ohne GPS-Track
 - **URL Deep-Linking** — alle Zustände (Tab, Pilot, Track, Flugplan, Events-Filter, Zeitraum) sind als URL-Hash teilbar; Seite neu laden öffnet denselben Zustand direkt
 - **Karten-Layer** — OpenFlightMap (VFR, auto-aktiv bei Zoom 7–12), OpenTopoMap, ESRI-Satellit, Light CARTO, Dark CARTO — alle manuell wählbar; außerhalb des OFM-Bereichs (Zoom ≤ 6 oder ≥ 13) automatischer Wechsel auf Satellit; **OpenAIP-Overlay** (Luftraum, Flugplätze, Navaids) als zusätzliche Checkbox — benötigt `OPENAIP_API_KEY` in config; **Layer-Präferenz** wird per `localStorage` gespeichert und in allen Karten (Live, Track, Events) übernommen
 - **StatSim-Integration** — Historische Flüge (letztes Jahr) via [StatSim API](https://statsim.net); sofortige Anzeige aus Cache, Hintergrund-Update des letzten 31-Tage-Chunks (API-Key nötig)
@@ -22,6 +22,20 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 ## Wie funktioniert das?
 
 FriesenSpy erkennt Friesen-Piloten automatisch am Callsign-Prefix **`FRS`** (konfigurierbar). VATSIM-Daten werden alle 15 Sekunden von der [VATSIM Data API](https://data.vatsim.net/v3/vatsim-data.json) abgerufen — kein Account, keine CID-Liste nötig.
+
+## Datenquellen und ihre Einschränkungen
+
+| | FriesenSpy (Live) | StatSim (Historisch) |
+|---|---|---|
+| **GPS-Track** | ✅ voller Track (alle 15 s) | ❌ nicht verfügbar |
+| **Event-Suche auf Karte** | ✅ Track sichtbar | ❌ nur in der Liste (◌ Badge) |
+| **Flugplan (DEP/ARR)** | ✅ | ✅ |
+| **Dauer** | ✅ | ✅ |
+| **Verfügbarkeit** | nur solange FriesenSpy läuft | letztes Jahr via API |
+| **Aufbewahrung GPS** | 90 Tage | — |
+| **Fluganzahl in Statistiken** | ✅ gezählt | ✅ gezählt (Duplikate gefiltert) |
+
+> Flüge die FriesenSpy live aufgezeichnet hat sind immer vollständiger als StatSim-Einträge. StatSim dient als Rückfall für Zeiträume vor dem Deployment oder bei Serverausfall.
 
 ## Stack
 
