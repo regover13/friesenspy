@@ -393,14 +393,26 @@ def get_stats_activity(
 
     # Früheres Fragment eines gemergten Fluges ausschließen (spiegelt merge_fragmented_flights):
     # gleicher Callsign + (gleicher nicht-leerer FP ODER aktueller ohne FP) + Nachfolger in 5 Min
-    _merge_excl = (
+    # Geo-geprüfte no-FP-Fragment-IDs (Python, weil SQL kein Haversine kann)
+    nofp_ids = _nofp_fragment_ids(conn, days)
+    # same-FP-Fragmente: in SQL erkennbar (gleicher nicht-leerer Flugplan, Lücke ≤ 5 Min)
+    _same_fp_excl = (
         " AND NOT EXISTS ("
         "SELECT 1 FROM flights f2"
         " WHERE f2.cid=f.cid AND f2.callsign=f.callsign AND f2.duration_min>5"
         " AND CAST((JULIANDAY(f2.logon_time)-JULIANDAY(f.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5"
-        " AND ((f.departure!='' AND f2.departure=f.departure AND f2.arrival=f.arrival)"
-        "  OR (f.departure='' AND f.arrival='' AND (f2.departure!='' OR f2.arrival!=''))))"
+        " AND f.departure!='' AND f2.departure=f.departure AND f2.arrival=f.arrival)"
     )
+    # no-FP-Fragmente: via Python-IDs (inkl. Geo-Check)
+    _nofp_excl = (
+        f" AND f.id NOT IN ({','.join(str(x) for x in nofp_ids)})" if nofp_ids else ""
+    )
+    _merge_excl = _same_fp_excl + _nofp_excl
+    # Fragment-Dauer-Bedingung für fs_dur: same-FP + geo-bestätigte no-FP-IDs
+    _frag_cond = "(frag.departure!='' AND f.departure=frag.departure AND f.arrival=frag.arrival)"
+    if nofp_ids:
+        _frag_cond += f" OR frag.id IN ({','.join(str(x) for x in nofp_ids)})"
+
     # StatSim-Einträge deduplizieren gegen bereits in FriesenSpy vorhandene Flüge
     _dedup = (
         " AND NOT EXISTS ("
@@ -446,10 +458,9 @@ def get_stats_activity(
         "SELECT strftime(?, f.logon_time),"
         " SUM(f.duration_min + COALESCE(("
         "  SELECT SUM(frag.duration_min) FROM flights frag"
-        "  WHERE frag.cid=f.cid AND frag.callsign=f.callsign AND frag.duration_min>5"
+        "  WHERE frag.cid=f.cid AND frag.callsign=f.callsign"
         "  AND CAST((JULIANDAY(f.logon_time)-JULIANDAY(frag.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5"
-        "  AND ((frag.departure!='' AND f.departure=frag.departure AND f.arrival=frag.arrival)"
-        "   OR (frag.departure='' AND frag.arrival='' AND (f.departure!='' OR f.arrival!='')))"
+        f"  AND ({_frag_cond})"
         " ),0))"
         " FROM flights f WHERE f.logon_time >= datetime('now', ? || ' days')"
         " AND f.logoff_time IS NOT NULL AND f.duration_min > 5" + _merge_excl + " GROUP BY 1",
@@ -493,12 +504,91 @@ def get_stats_activity(
     return {"grouping": grouping, "data": data}
 
 
-def merge_fragmented_flights(flights: list[dict], gap_minutes: int = 5) -> list[dict]:
+# Maximale Distanz (km) zwischen erster GPS-Position eines no-FP-Fragments
+# und dem Abflughafen des Folgeflugs, damit ein Merge erlaubt ist.
+_GEO_MERGE_KM = 10.0
+
+
+def _first_pos(
+    conn: sqlite3.Connection, cid: int, logon: str, logoff: str
+) -> tuple[float, float] | None:
+    """Erste GPS-Position eines Fluges aus position_history."""
+    row = conn.execute(
+        "SELECT latitude, longitude FROM position_history "
+        "WHERE cid=? AND ts>=? AND ts<=? ORDER BY ts ASC LIMIT 1",
+        (cid, logon, logoff),
+    ).fetchone()
+    return (row[0], row[1]) if row else None
+
+
+def _nofp_geo_ok(
+    conn: sqlite3.Connection, frag: dict, dep_icao: str
+) -> bool:
+    """True wenn die erste GPS-Position des no-FP-Fragments innerhalb _GEO_MERGE_KM
+    vom Abflughafen des Folgeflugs liegt. Fallback True wenn keine Daten vorhanden."""
+    from app.geo import haversine, icao_to_coords
+    dep_coords = icao_to_coords(dep_icao)
+    if dep_coords is None:
+        return True
+    cid = frag.get("cid")
+    if cid is None:
+        return True
+    pos = _first_pos(conn, int(cid), frag.get("logon_time") or "", frag.get("logoff_time") or "")
+    if pos is None:
+        return True
+    return haversine(pos[0], pos[1], dep_coords[0], dep_coords[1]) <= _GEO_MERGE_KM
+
+
+def _nofp_fragment_ids(conn: sqlite3.Connection, days: int) -> set[int]:
+    """IDs von no-FP-Flügen (duration > 5 Min) die als Merge-Fragmente gelten.
+
+    Kriterien:
+    - Leerer DEP+ARR, logoff_time gesetzt, duration_min > 5
+    - Folgeflug desselben Callsigns mit FP innerhalb 5 Min
+    - Erste GPS-Position innerhalb _GEO_MERGE_KM vom DEP des Folgeflugs
+    """
+    from app.geo import haversine, icao_to_coords
+    rows = conn.execute(
+        "SELECT f.id, f.cid, f.logon_time, f.logoff_time, f2.departure "
+        "FROM flights f "
+        "JOIN flights f2 ON f2.cid=f.cid AND f2.callsign=f.callsign "
+        "  AND f2.duration_min>5 "
+        "  AND CAST((JULIANDAY(f2.logon_time)-JULIANDAY(f.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5 "
+        "  AND (f2.departure!='' OR f2.arrival!='') "
+        "WHERE f.departure='' AND f.arrival='' "
+        "  AND f.duration_min>5 AND f.logoff_time IS NOT NULL "
+        "  AND f.logon_time >= datetime('now', ? || ' days')",
+        (f"-{days}",),
+    ).fetchall()
+    ids: set[int] = set()
+    for fid, cid, logon, logoff, dep in rows:
+        if not dep:
+            ids.add(fid)
+            continue
+        dep_coords = icao_to_coords(dep)
+        if dep_coords is None:
+            ids.add(fid)
+            continue
+        pos = _first_pos(conn, cid, logon, logoff)
+        if pos is None:
+            ids.add(fid)
+            continue
+        if haversine(pos[0], pos[1], dep_coords[0], dep_coords[1]) <= _GEO_MERGE_KM:
+            ids.add(fid)
+    return ids
+
+
+def merge_fragmented_flights(
+    flights: list[dict],
+    gap_minutes: int = 5,
+    conn: sqlite3.Connection | None = None,
+) -> list[dict]:
     """Merge consecutive same-callsign flights where one lacks a flight plan.
 
     Handles: pilot connects without FP (DEP/ARR empty), briefly disconnects,
     reconnects with FP. FriesenSpy records two entries; this merges them into one.
-    Condition: same callsign, exactly one has no DEP/ARR, gap ≤ gap_minutes.
+    Conditions: same callsign, exactly one has no DEP/ARR (or both same DEP+ARR),
+    gap ≤ gap_minutes. With conn: no-FP merges additional geo-check via _nofp_geo_ok.
     """
     if len(flights) <= 1:
         return list(flights)
@@ -518,13 +608,19 @@ def merge_fragmented_flights(flights: list[dict], gap_minutes: int = 5) -> list[
                 and (curr.get('departure') or '') == (nxt.get('departure') or '')
                 and (curr.get('arrival')   or '') == (nxt.get('arrival')   or '')
             )
-            # merge if exactly one has no FP, OR both have the same DEP+ARR (brief reconnect)
             if cs_match and ((curr_no_fp ^ nxt_no_fp) or same_fp):
                 try:
                     gap = (_parse_iso(nxt['logon_time']) - _parse_iso(curr['logoff_time'])).total_seconds() / 60
                     close = -2 <= gap <= gap_minutes
                 except Exception:
                     close = False
+                # Geo-Check für no-FP-Merges: erste GPS-Position des Fragments muss
+                # in der Nähe des Abflughafens des Folgeflugs liegen.
+                if close and conn is not None and (curr_no_fp ^ nxt_no_fp):
+                    frag = curr if curr_no_fp else nxt
+                    dep_icao = ((nxt if curr_no_fp else curr).get("departure") or "")
+                    if dep_icao:
+                        close = _nofp_geo_ok(conn, frag, dep_icao)
                 if close:
                     fp = nxt if curr_no_fp else curr
                     merged = dict(fp)

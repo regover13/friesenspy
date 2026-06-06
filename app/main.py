@@ -221,6 +221,7 @@ async def get_events(
         found_cids.add(cid)
         callsign = positions[0].get("callsign", "") if positions else ""
         conn2 = get_connection(settings.DB_PATH)
+        merged_rows: list[dict] = []
         try:
             name_row = conn2.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
             name = name_row["name"] if name_row else ""
@@ -236,13 +237,16 @@ async def get_events(
                    ORDER BY logon_time""",
                 (cid, end or "9999-12-31", start or "0000-01-01"),
             ).fetchall()
+            if flight_rows:
+                # cid zu den Dicts hinzufügen, damit der Geo-Check in merge möglich ist
+                merged_rows = merge_fragmented_flights(
+                    [dict(r, cid=cid) for r in flight_rows],
+                    conn=conn2,
+                )
         finally:
             conn2.close()
 
-        if flight_rows:
-            merged_rows = merge_fragmented_flights(
-                [dict(r) for r in flight_rows]
-            )
+        if merged_rows:
             flights = []
             for fr in merged_rows:
                 if (fr.get("duration_min") or 0) <= 5:
@@ -369,7 +373,8 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
         display_days = days if days > 0 else 99999
         fs_flights = [
             f for f in merge_fragmented_flights(
-                get_pilot_flights_friesenspy(conn, cid, display_days)
+                get_pilot_flights_friesenspy(conn, cid, display_days),
+                conn=conn,
             )
             if (f.get("duration_min") or 0) > 5
         ]
