@@ -106,7 +106,8 @@ async def send_web_push_notifications(
         if not sent and last_exc is not None:
             resp = getattr(last_exc, "response", None)
             sc = getattr(resp, "status_code", "?") if resp else type(last_exc).__name__
-            logger.warning("WebPush failed for %s: %s", callsign, sc)
+            cause = repr(getattr(last_exc, "__cause__", None))[:120]
+            logger.warning("WebPush failed for %s: %s cause=%s", callsign, sc, cause)
 
     if to_delete:
         conn2 = get_connection(db_path)
