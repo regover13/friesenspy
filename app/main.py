@@ -347,8 +347,12 @@ async def get_pilot_live_track(cid: int):
 
 
 @app.get("/api/flights/{flight_id}/track")
-async def get_flight_track(flight_id: int):
-    """Positionshistorie eines FriesenSpy-Fluges aus position_history."""
+async def get_flight_track(flight_id: int, logon: str = "", logoff: str = ""):
+    """Positionshistorie eines FriesenSpy-Fluges aus position_history.
+
+    logon/logoff können als Query-Params übergeben werden (nötig nach Merge
+    zweier Fragmente, wo die DB noch alte Zeiten hat).
+    """
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
@@ -357,8 +361,8 @@ async def get_flight_track(flight_id: int):
         ).fetchone()
         if not flight:
             raise HTTPException(status_code=404, detail="Flight not found")
-        logon = flight["logon_time"] or ""
-        logoff = flight["logoff_time"] or datetime.now(_timezone.utc).strftime(
+        effective_logon = logon or flight["logon_time"] or ""
+        effective_logoff = logoff or flight["logoff_time"] or datetime.now(_timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
         rows = conn.execute(
@@ -368,7 +372,7 @@ async def get_flight_track(flight_id: int):
             WHERE cid = ? AND ts >= ? AND ts <= ?
             ORDER BY ts
             """,
-            (flight["cid"], logon, logoff),
+            (flight["cid"], effective_logon, effective_logoff),
         ).fetchall()
     finally:
         conn.close()

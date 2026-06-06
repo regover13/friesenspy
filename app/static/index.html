@@ -1782,6 +1782,8 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
         <td><span class="td-map-btn track-btn"
               data-track-id="${trackId}"
               data-track-src="${f.source === 'friesenspy' ? 'friesenspy' : 'statsim'}"
+              data-logon="${escHtml(f.logon_time || '')}"
+              data-logoff="${escHtml(f.logoff_time || '')}"
               data-callsign="${escHtml(f.callsign || '')}"
               data-dep="${escHtml(dep)}"
               data-arr="${escHtml(arr)}"
@@ -1808,7 +1810,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       const id = el.dataset.trackId;
       const src = el.dataset.trackSrc;
       if (id && id !== 'null' && id !== 'undefined') {
-        openTrackModal(src, id, el.dataset.callsign, el.dataset.dep, el.dataset.arr);
+        openTrackModal(src, id, el.dataset.callsign, el.dataset.dep, el.dataset.arr, el.dataset.logon, el.dataset.logoff);
       }
     });
   });
@@ -1826,7 +1828,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
 let trackMap            = null;
 let trackMapInitialized = false;
 
-async function openTrackModal(source, id, callsign, dep, arr) {
+async function openTrackModal(source, id, callsign, dep, arr, logon, logoff) {
   document.getElementById('track-modal-title').textContent =
     `${(callsign || '').toUpperCase()}  ·  ${dep || '?'} → ${arr || '?'}`;
   document.getElementById('track-modal-info').textContent = 'Lade Track...';
@@ -1856,16 +1858,22 @@ async function openTrackModal(source, id, callsign, dep, arr) {
         });
       }
       trackMap.invalidateSize();
-      _loadAndDrawTrack(source, id);
+      _loadAndDrawTrack(source, id, logon, logoff);
     });
   });
 }
 
-async function _loadAndDrawTrack(source, id) {
+async function _loadAndDrawTrack(source, id, logon, logoff) {
   try {
-    const url = source === 'friesenspy'
+    let url = source === 'friesenspy'
       ? `/api/flights/${id}/track`
       : `/api/flights/statsim/${id}/track`;
+    if (source === 'friesenspy' && (logon || logoff)) {
+      const params = new URLSearchParams();
+      if (logon) params.set('logon', logon);
+      if (logoff) params.set('logoff', logoff);
+      url += '?' + params.toString();
+    }
     const res = await fetch(url);
     const positions = await res.json();
 
@@ -2748,7 +2756,8 @@ async function initFromUrl() {
         );
         openTrackModal(
           trackSrc, trackId,
-          btn?.dataset.callsign || '', btn?.dataset.dep || '', btn?.dataset.arr || ''
+          btn?.dataset.callsign || '', btn?.dataset.dep || '', btn?.dataset.arr || '',
+          btn?.dataset.logon || '', btn?.dataset.logoff || ''
         );
       }
     }
