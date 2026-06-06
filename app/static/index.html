@@ -1415,6 +1415,14 @@ function _makeTileLayers() {
   };
 }
 
+const _LAYER_PREF_KEY = 'friesenspy_layer';
+function _saveLayerPref(key) { try { localStorage.setItem(_LAYER_PREF_KEY, key); } catch(e) {} }
+function _loadLayerPref() { try { return localStorage.getItem(_LAYER_PREF_KEY); } catch(e) { return null; } }
+function _getPreferredLayer(layers) {
+  const pref = _loadLayerPref();
+  return (pref && layers[pref]) ? layers[pref] : layers.ofm;
+}
+
 // OFM ist nur bei Zoom 7–12 sinnvoll (unter 7 sparse, über 12 blank).
 // Außerhalb dieses Bereichs wird automatisch auf Satellit gewechselt.
 // Manuell zu OFM zurückwechseln reaktiviert den Auto-Switch.
@@ -1422,10 +1430,12 @@ function _makeTileLayers() {
 function _setupOFMAutoSwitch(map, layers) {
   const SWITCH_HIGH = 12; // > 12 → Satellit (OFM tiles blank)
   const SWITCH_LOW  = 7;  // < 7  → Satellit (OFM tiles sparse)
-  let autoMode = true;
+  let autoMode = (_loadLayerPref() || 'ofm') === 'ofm';
   let autoSwitching = false; // verhindert dass eigene Wechsel autoMode deaktivieren
   map.on('baselayerchange', (e) => {
     if (autoSwitching) return;
+    const key = Object.keys(layers).find(k => layers[k] === e.layer);
+    if (key) _saveLayerPref(key);
     // Manuell zurück zu OFM → Auto-Switch wieder einschalten
     autoMode = (e.layer === layers.ofm);
   });
@@ -2202,7 +2212,7 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff) {
       if (!trackMapInitialized) {
         trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
         const trackLayers = _makeTileLayers();
-        trackLayers.ofm.addTo(trackMap);
+        _getPreferredLayer(trackLayers).addTo(trackMap);
         const trackAIP = _makeAIPOverlay();
         L.control.layers(
           { 'OpenFlightMap': trackLayers.ofm, 'OpenTopo': trackLayers.topo, 'Satellit': trackLayers.sat, 'Light': trackLayers.light, 'Dark': trackLayers.dark },
@@ -2313,7 +2323,7 @@ async function initLiveMap() {
   });
 
   const liveLayers = _makeTileLayers();
-  liveLayers.ofm.addTo(liveMap);
+  _getPreferredLayer(liveLayers).addTo(liveMap);
   const liveAIP = _makeAIPOverlay();
   L.control.layers(
     { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Light': liveLayers.light, 'Dark': liveLayers.dark },
@@ -2916,7 +2926,7 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
   if (!eventsMapInitialized) {
     eventsMap = L.map('events-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
     const evLayers = _makeTileLayers();
-    evLayers.ofm.addTo(eventsMap);
+    _getPreferredLayer(evLayers).addTo(eventsMap);
     const evAIP = _makeAIPOverlay();
     L.control.layers(
       { 'OpenFlightMap': evLayers.ofm, 'OpenTopo': evLayers.topo, 'Satellit': evLayers.sat, 'Light': evLayers.light, 'Dark': evLayers.dark },
