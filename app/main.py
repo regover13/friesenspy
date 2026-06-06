@@ -295,7 +295,7 @@ async def get_events(
             statsim_rows = conn3.execute(
                 f"""
                 SELECT sc.cid, sc.callsign, sc.departure, sc.arrival, sc.aircraft,
-                       sc.logon_time, sc.logoff_time, sc.duration_min, p.name
+                       sc.logon_time, sc.logoff_time, sc.duration_min, sc.statsim_id, p.name
                 FROM statsim_cache sc
                 LEFT JOIN pilots p ON sc.cid = p.cid
                 WHERE (sc.departure IN ({placeholders}) OR sc.arrival IN ({placeholders}))
@@ -332,6 +332,7 @@ async def get_events(
                         "departure":   f.get("departure") or "",
                         "arrival":     f.get("arrival") or "",
                         "aircraft":    f.get("aircraft") or "",
+                        "statsim_id":  f.get("statsim_id"),
                         "positions":   [],
                         "source":      "statsim",
                     }

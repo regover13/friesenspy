@@ -253,9 +253,9 @@ Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe e
 }
 ```
 
-Jeder Flug-Eintrag enthält ein `source`-Feld: `"friesenspy"` für Flüge mit GPS-Track, `"statsim"` für Einträge aus dem StatSim-Cache (kein GPS-Track verfügbar, `positions: []`).
+Jeder Flug-Eintrag enthält ein `source`-Feld: `"friesenspy"` für Flüge mit GPS-Track aus `position_history`, `"statsim"` für Einträge aus dem StatSim-Cache (`positions: []`, Track wird im Frontend per `/api/flights/statsim/{statsim_id}/track` nachgeladen).
 
-**StatSim-Fallback:** Piloten die in `statsim_cache` per `departure` oder `arrival` im Zeitfenster gefunden werden, aber keine `position_history` haben (z.B. weil FriesenSpy zu diesem Zeitpunkt nicht lief), erscheinen ebenfalls in der Antwort — mit `source: "statsim"` und leerem `positions`-Array. Im Frontend erscheinen sie mit „◌ StatSim"-Badge ohne Kartentrack.
+**StatSim-Fallback:** Piloten die in `statsim_cache` per `departure` oder `arrival` im Zeitfenster gefunden werden, aber keine `position_history` haben (z.B. weil FriesenSpy zu diesem Zeitpunkt nicht lief), erscheinen ebenfalls in der Antwort — mit `source: "statsim"`. Das Frontend lädt den GPS-Track automatisch asynchron von StatSim nach und zeichnet ihn auf der Karte; Zeilen sind wie FriesenSpy-Flüge klickbar (Highlight). Falls kein Track verfügbar ist, erscheint nur das „◌ StatSim"-Badge ohne Kartendarstellung.
 
 `flights` enthält die Positionen des Piloten im Zeitfenster aufgeteilt in einzelne Flüge. Die Segmentierung basiert primär auf echten VATSIM-Session-Records aus der `flights`-Tabelle (Callsign, DEP/ARR, Flugzeugtyp aus dem Flugplan). `callsign`, `departure`, `arrival` und `aircraft` sind `null` wenn kein passender `flights`-Eintrag existiert — in diesem Fall wird als Fallback nach Zeitlücken von mehr als 30 Minuten segmentiert (z.B. für Positionen aus Zeiten vor FriesenSpy-Start). `positions` enthält alle aufgezeichneten Positionen des jeweiligen Fluges — nicht nur die im Radius.
 
@@ -276,6 +276,7 @@ Jeder Flug-Eintrag enthält ein `source`-Feld: `"friesenspy"` für Flüge mit GP
           "departure": "EDVK",
           "arrival": "EDDK",
           "aircraft": "C172",
+          "statsim_id": 28832100,
           "positions": [],
           "source": "statsim"
         }

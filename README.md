@@ -127,7 +127,7 @@ Du gibst einen **ICAO-Code** (z.B. `EDDK` für Köln/Bonn), einen **Radius in km
 **Was du siehst:**
 - **Karte** (oben) mit allen gefundenen GPS-Tracks gleichzeitig eingezeichnet
 - **Pilotenliste** (darunter) mit Callsign, Strecke und Flugdauer
-- Piloten ohne GPS-Track (StatSim-Treffer über Flugplan-DEP/ARR) erscheinen mit **◌ StatSim**-Badge — sie werden gefunden, aber ohne Kartendarstellung
+- Piloten die nur in StatSim gefunden werden, erscheinen mit **◌ StatSim**-Badge — GPS-Tracks werden automatisch von StatSim nachgeladen und auf der Karte angezeigt (falls verfügbar)
 
 **Was du tun kannst:**
 - **Track auf der Karte anklicken** oder **Flug-Zeile in der Pilotenliste anklicken** → hebt diesen Track farblich hervor, alle anderen werden transparent
