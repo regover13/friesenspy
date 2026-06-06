@@ -55,7 +55,7 @@ async def send_web_push_notifications(
     }
     data = _json.dumps(payload)
     pem = vapid_private_key.replace("\\n", "\n")
-    claims = {"sub": f"mailto:{vapid_contact_email}"}
+    claims = {"sub": vapid_contact_email}
 
     conn = get_connection(db_path)
     try:
