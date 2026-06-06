@@ -81,7 +81,7 @@ Interaktive Karte mit allen aktuell fliegenden Friesen.
 
 **Was du tun kannst:**
 - **Pilot anklicken** → klappt die Einzelflug-Liste für diesen Piloten auf; Daten kommen sofort aus dem lokalen Cache, ein Update von StatSim läuft automatisch im Hintergrund
-- **„Alle laden"** → erzwingt einen vollständigen 365-Tage-Refresh von StatSim für alle Piloten (dauert etwas länger)
+- **„Alle laden"** → erzwingt einen vollständigen 365-Tage-Refresh von StatSim für diesen Piloten (dauert etwas länger)
 - **◎** neben einem Einzelflug → öffnet den GPS-Track dieses Fluges auf der Karte
 - **⎘** neben einem Einzelflug → kopiert den Link zu genau diesem Flug
 
