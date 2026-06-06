@@ -57,6 +57,7 @@ DB_PATH=friesenspy.db                       # Lokal: relativer Pfad OK
 TELEGRAM_BOT_TOKEN=                         # Optional
 TELEGRAM_CHAT_ID=                           # Optional
 STATSIM_API_KEY=                            # Optional: historische Flüge via statsim.net
+OPENAIP_API_KEY=                            # Optional: OpenAIP-Overlay (Luftraum, Navaids)
 ```
 
 ### Tests
