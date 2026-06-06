@@ -61,6 +61,8 @@ Alle DB-Operationen sind synchron (SQLite ist thread-safe mit WAL). Verbindungen
 
 `merge_fragmented_flights(flights, gap_minutes=5)` — bereinigt kurze VATSIM-Disconnects in der Flughistorie: zwei aufeinanderfolgende Einträge gleichen Callsigns werden zusammengeführt wenn (a) genau einer keinen Flugplan hat oder (b) beide denselben DEP+ARR haben, und der Zeitabstand ≤ 5 Minuten beträgt.
 
+**Ghost-Flight-Filter:** Flüge mit `duration_min ≤ 5` werden in allen Ausgaben ignoriert — in `/api/pilots/{cid}/flights` (nach Merge), im Events-Endpoint und in `get_stats` (JOIN + Subquery). Kurze Fragmente, die durch Merge zu einem längeren Flug zusammengeführt werden, bleiben erhalten.
+
 ### `app/poller.py`
 
 `VatsimPoller` kapselt:
