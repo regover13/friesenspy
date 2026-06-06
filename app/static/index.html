@@ -652,10 +652,10 @@
     }
 
     #events-map-container {
-      height: 400px;
+      height: 560px;
       border: 1px solid var(--green-dim);
       box-shadow: 0 0 10px var(--green-glow);
-      margin-top: 20px;
+      margin-bottom: 20px;
       overflow: hidden;
       display: none;
     }
@@ -1150,10 +1150,6 @@
     </div>
 
     <div id="events-results" class="hidden">
-      <div class="panel">
-        <div id="events-summary" class="events-summary"></div>
-        <div id="events-pilots-list"></div>
-      </div>
       <div id="events-map-container" style="position:relative;">
         <div id="events-leaflet-map"></div>
         <button id="ev-reset-btn" class="hidden"
@@ -1161,6 +1157,10 @@
           style="position:absolute;top:10px;right:10px;z-index:1000;background:var(--bg-panel);border:1px solid var(--green-dim);color:var(--text-bright);font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.08em;padding:6px 12px;cursor:pointer;">
           ↺ Alle Tracks
         </button>
+      </div>
+      <div class="panel">
+        <div id="events-summary" class="events-summary"></div>
+        <div id="events-pilots-list"></div>
       </div>
     </div>
   </div>
