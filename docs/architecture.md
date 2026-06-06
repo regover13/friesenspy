@@ -59,7 +59,21 @@ Drei Indizes: `idx_ph_cid_ts`, `idx_ph_ts`, `idx_flights_cid`.
 
 Alle DB-Operationen sind synchron (SQLite ist thread-safe mit WAL). Verbindungen werden pro Request geöffnet und in `finally`-Blöcken geschlossen.
 
-`merge_fragmented_flights(flights, gap_minutes=5)` — bereinigt kurze VATSIM-Disconnects in der Flughistorie: zwei aufeinanderfolgende Einträge gleichen Callsigns werden zusammengeführt wenn (a) genau einer keinen Flugplan hat oder (b) beide denselben DEP+ARR haben, und der Zeitabstand ≤ 5 Minuten beträgt.
+**`merge_fragmented_flights(flights, gap_minutes=5, conn=None)`** — bereinigt kurze VATSIM-Disconnects in der Flughistorie. Zwei aufeinanderfolgende Einträge gleichen Callsigns werden zu einem zusammengeführt, wenn alle vier Bedingungen erfüllt sind:
+
+1. **Gleicher Callsign** (nicht leer)
+2. **Flugplan-Bedingung** — entweder (a) genau einer der beiden Einträge hat keinen Flugplan (leerer DEP+ARR), oder (b) beide haben denselben nicht-leeren DEP+ARR
+3. **Zeitabstand** ≤ 5 Minuten (Toleranz −2 Min für Überlappungen durch VATSIM-Jitter)
+4. **Geo-Check für no-FP-Merges** (nur wenn `conn` übergeben wird): Die erste GPS-Position des no-FP-Fragments in `position_history` muss innerhalb von **10 km** des DEP-Airports des Folgeflugs liegen (`_GEO_MERGE_KM = 10.0`, Haversine via `geo.py`, Airport-Koordinaten via `airportsdata`). Fallback auf Merge wenn keine GPS-Daten oder unbekannter ICAO-Code.
+
+Der Geo-Check unterscheidet:
+- **Pilot steht am GAT ohne Flugplan** (kein DEP/ARR), gibt Flugplan auf, reconnect → erste Position ≈ DEP-Airport → Merge ✓
+- **Pilot fliegt ohne Flugplan von A nach B**, landet, reconnect mit FP für B→C → erste Position ≈ A (Startflughafen), DEP von B→C ist B → Distanz A–B > 10 km → kein Merge ✓
+- **Gleicher DEP+ARR-Fall** (z.B. kurzer Verbindungsabbruch mid-flight mit identischem Flugplan) → kein Geo-Check nötig, Flugplan ist eindeutig ✓
+
+Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des späteren Fragments; duration_min wird addiert.
+
+Für den Chart (`get_stats_activity`) werden no-FP-Fragment-IDs via `_nofp_fragment_ids()` Python-seitig vorberechnet (SQL kann kein Haversine). Same-FP-Merges bleiben SQL-seitig (`NOT EXISTS`-Subquery).
 
 **Ghost-Flight-Filter:** Flüge mit `duration_min ≤ 5` werden in allen Ausgaben ignoriert — in `/api/pilots/{cid}/flights` (nach Merge), im Events-Endpoint, in `get_stats` (Pilotenliste, JOIN + Subquery für FriesenSpy und StatSim) und in `get_stats_activity` (Liniendiagramm, alle 6 Queries). Kurze Fragmente, die durch Merge zu einem längeren Flug zusammengeführt werden, bleiben erhalten.
 

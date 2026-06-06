@@ -30,6 +30,26 @@ Es wird kein VATSIM-Account benötigt. FriesenSpy liest ausschließlich öffentl
 
 > **Kurzflüge ≤ 5 Minuten** werden grundsätzlich herausgefiltert — kurze Verbindungsabbrüche und Test-Connects erscheinen weder in der Flugliste noch in den Statistiken oder Charts. Flüge, die FriesenSpy selbst aufgezeichnet hat und die auch in StatSim vorhanden sind, werden nie doppelt gezählt.
 
+### Wie FriesenSpy Flüge zählt
+
+VATSIM-Piloten trennen die Verbindung manchmal kurz, ohne dass ein echter Flugwechsel stattfindet. FriesenSpy erkennt solche Fragmente automatisch und fasst sie zu einem Flug zusammen.
+
+**Zwei Einträge werden zu einem Flug gemergt, wenn:**
+- gleicher Callsign
+- Zeitlücke ≤ 5 Minuten
+- und einer der folgenden Fälle zutrifft:
+
+| Fall | Beschreibung | Beispiel |
+|------|-------------|---------|
+| **Gleicher Flugplan** | Beide Einträge haben denselben DEP+ARR | Verbindungsabbruch mid-flight, sofort reconnect mit gleichem Plan |
+| **Kein Flugplan → Flugplan** | Erster Eintrag ohne DEP/ARR, zweiter mit Flugplan — **und** erste GPS-Position des ersten Eintrags liegt innerhalb 10 km des DEP-Airports | Pilot steht am GAT, gibt Flugplan auf, reconnect; oder Pilot startet, merkt nach 5 Min dass FP fehlt, reconnect |
+
+**Was nicht gemergt wird:**
+- Zwei Einträge mit **unterschiedlichen** Flugplänen (verschiedenes DEP oder ARR) → immer zwei separate Flüge
+- Kein-FP-Eintrag gefolgt von Flugplan, aber **Startposition > 10 km** vom DEP-Airport entfernt → zwei separate Flüge (Pilot war woanders)
+
+**Beispiel:** Pilot fliegt Bonn (EDKB) → Köln (EDDK) ohne Flugplan (20 Min), landet, reconnect mit Flugplan Köln (EDDK) → Düsseldorf (EDDL) — das sind **zwei Flüge**: der erste startete in Bonn (~11 km von EDDK entfernt, außerhalb der 10-km-Grenze).
+
 ---
 
 ## Die vier Tabs im Überblick
