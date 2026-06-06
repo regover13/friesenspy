@@ -3031,6 +3031,7 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
 
       const polyline = L.polyline(positions, { color, weight: 2, opacity: 0.7 }).addTo(eventsMap);
       polyline.bindTooltip(`${label} — ${f.logon_time ? f.logon_time.slice(0,10) : ''}`, { className: 'mono' });
+      polyline.on('click', () => highlightEventFlight(pilots, i, fi));
       window._eventPolylines[`${i}_${fi}`] = polyline;
       positions.forEach(p => bounds.push(p));
 
@@ -3069,6 +3070,7 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
           if (positions.length === 0) return;
           const polyline = L.polyline(positions, { color, weight: 2, opacity: 0.7 }).addTo(eventsMap);
           polyline.bindTooltip(`${label} — ${f.logon_time ? f.logon_time.slice(0,10) : ''} (StatSim)`, { className: 'mono' });
+          polyline.on('click', () => highlightEventFlight(pilots, i, fi));
           window._eventPolylines[`${i}_${fi}`] = polyline;
           positions.forEach(pt => window._eventAllBounds.push(pt));
           L.circleMarker(positions[0], {
