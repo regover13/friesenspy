@@ -122,16 +122,15 @@ async def frontend_config():
 async def push_subscribe(request: Request):
     """Browser-Push-Subscription speichern."""
     body = await request.json()
+    endpoint = body.get("endpoint", "")
+    p256dh = body.get("p256dh", "")
+    auth = body.get("auth", "")
+    if not endpoint or not p256dh or not auth:
+        return JSONResponse({"error": "endpoint, p256dh and auth are required"}, status_code=400)
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
-        upsert_push_subscription(
-            conn,
-            body["endpoint"],
-            body["p256dh"],
-            body["auth"],
-            body.get("pilot_filter"),
-        )
+        upsert_push_subscription(conn, endpoint, p256dh, auth, body.get("pilot_filter"))
         conn.commit()
     finally:
         conn.close()
