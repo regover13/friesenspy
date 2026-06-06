@@ -912,6 +912,22 @@
       border-color: var(--green-dim);
       box-shadow: 0 0 8px var(--green-glow);
     }
+    .help-btn {
+      background: none;
+      border: 1px solid var(--green-dim);
+      color: var(--text-label);
+      font-size: 0.78rem;
+      font-family: var(--text-display);
+      letter-spacing: 0.08em;
+      padding: 5px 10px;
+      text-decoration: none;
+      transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .help-btn:hover {
+      color: var(--green);
+      border-color: var(--green-dim);
+      box-shadow: 0 0 8px var(--green-glow);
+    }
     .notif-panel {
       position: fixed;
       top: 58px;
@@ -1151,6 +1167,7 @@
       <span class="logo-prefix">◈</span>FRIESENSPY
     </div>
     <div class="header-right">
+      <a href="https://github.com/regover13/friesenspy#readme" target="_blank" rel="noopener" class="help-btn" title="Hilfe &amp; Dokumentation (GitHub)">? HILFE</a>
       <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden>🔔</button>
       <div id="sse-badge" class="sse-badge disconnected">
         <div class="sse-dot"></div>
