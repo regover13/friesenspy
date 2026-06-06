@@ -307,9 +307,12 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
     statsim_status = "no-key"
     try:
         display_days = days if days > 0 else 99999
-        fs_flights = merge_fragmented_flights(
-            get_pilot_flights_friesenspy(conn, cid, display_days)
-        )
+        fs_flights = [
+            f for f in merge_fragmented_flights(
+                get_pilot_flights_friesenspy(conn, cid, display_days)
+            )
+            if (f.get("duration_min") or 0) > 5
+        ]
         statsim_flights: list[dict] = []
 
         if settings.STATSIM_API_KEY:
