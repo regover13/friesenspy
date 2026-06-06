@@ -339,6 +339,7 @@ def get_stats(
               AND sc_filt.logon_time >= datetime('now', ? || ' days')
               AND sc_filt.logon_time != ''
               AND sc_filt.callsign LIKE ?
+              AND sc_filt.duration_min > 5
         WHERE f_filt.id IS NOT NULL
            OR sc_filt.statsim_id IS NOT NULL
            OR EXISTS (
@@ -388,40 +389,45 @@ def get_stats_activity(
         sql_fmt = "%Y-%m"
         grouping = "month"
 
-    # Flugzahlen
+    # Flugzahlen (Ghost-Flüge ≤ 5 Min ausgeschlossen)
     fs = {r[0]: r[1] for r in conn.execute(
         "SELECT strftime(?, logon_time), COUNT(*) FROM flights "
-        "WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL GROUP BY 1",
+        "WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL "
+        "AND duration_min > 5 GROUP BY 1",
         (sql_fmt, f"-{days}"),
     ).fetchall()}
     st = {r[0]: r[1] for r in conn.execute(
         "SELECT strftime(?, logon_time), COUNT(*) FROM statsim_cache "
-        "WHERE logon_time >= datetime('now', ? || ' days') AND logon_time != '' AND callsign LIKE ? GROUP BY 1",
+        "WHERE logon_time >= datetime('now', ? || ' days') AND logon_time != '' "
+        "AND callsign LIKE ? AND duration_min > 5 GROUP BY 1",
         (sql_fmt, f"-{days}", prefix_pat),
     ).fetchall()}
 
-    # Unique Piloten pro Periode (aus beiden Quellen)
+    # Unique Piloten pro Periode (aus beiden Quellen, Ghost-Flüge ausgeschlossen)
     pilots_by_period: dict[str, set] = {}
     for p, cid in conn.execute(
         "SELECT strftime(?, logon_time), cid FROM flights "
-        "WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL",
+        "WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL "
+        "AND duration_min > 5",
         (sql_fmt, f"-{days}"),
     ).fetchall():
         pilots_by_period.setdefault(p, set()).add(cid)
     for p, cid in conn.execute(
         "SELECT strftime(?, logon_time), cid FROM statsim_cache "
-        "WHERE logon_time >= datetime('now', ? || ' days') AND logon_time != '' AND callsign LIKE ?",
+        "WHERE logon_time >= datetime('now', ? || ' days') AND logon_time != '' "
+        "AND callsign LIKE ? AND duration_min > 5",
         (sql_fmt, f"-{days}", prefix_pat),
     ).fetchall():
         pilots_by_period.setdefault(p, set()).add(cid)
     pilot_count = {k: len(v) for k, v in pilots_by_period.items()}
 
-    # Flugdauer pro Periode
+    # Flugdauer pro Periode (Ghost-Flüge ausgeschlossen)
     fs_dur = {r[0]: (r[1] or 0) for r in conn.execute(
         "SELECT strftime(?, logon_time), SUM(COALESCE(duration_min, "
         "CASE WHEN logoff_time IS NOT NULL "
         "THEN CAST((JULIANDAY(logoff_time)-JULIANDAY(logon_time))*1440 AS INTEGER) END)) "
-        "FROM flights WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL GROUP BY 1",
+        "FROM flights WHERE logon_time >= datetime('now', ? || ' days') "
+        "AND logoff_time IS NOT NULL AND duration_min > 5 GROUP BY 1",
         (sql_fmt, f"-{days}"),
     ).fetchall()}
     st_dur = {r[0]: (r[1] or 0) for r in conn.execute(
@@ -429,7 +435,7 @@ def get_stats_activity(
         "CASE WHEN logoff_time IS NOT NULL AND logoff_time != '' "
         "THEN CAST((JULIANDAY(logoff_time)-JULIANDAY(logon_time))*1440 AS INTEGER) END)) "
         "FROM statsim_cache WHERE logon_time >= datetime('now', ? || ' days') "
-        "AND logon_time != '' AND callsign LIKE ? GROUP BY 1",
+        "AND logon_time != '' AND callsign LIKE ? AND duration_min > 5 GROUP BY 1",
         (sql_fmt, f"-{days}", prefix_pat),
     ).fetchall()}
 
