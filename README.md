@@ -16,7 +16,7 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 - **Karten-Layer** — OpenFlightMap (VFR, auto-aktiv bei Zoom 7–12), OpenTopoMap, ESRI-Satellit, Light CARTO, Dark CARTO — alle manuell wählbar; außerhalb des OFM-Bereichs (Zoom ≤ 6 oder ≥ 13) automatischer Wechsel auf Satellit; **OpenAIP-Overlay** (Luftraum, Flugplätze, Navaids) als zusätzliche Checkbox — benötigt `OPENAIP_API_KEY` in config; **Layer-Präferenz** wird per `localStorage` gespeichert und in allen Karten (Live, Track, Events) übernommen
 - **StatSim-Integration** — Historische Flüge (letztes Jahr) via [StatSim API](https://statsim.net); sofortige Anzeige aus Cache, Hintergrund-Update des letzten 31-Tage-Chunks (API-Key nötig)
 - **Ghost-Flight-Filter** — Verbindungen ≤ 5 Minuten werden nicht als Flüge gewertet (weder in der Flugliste noch in Statistiken oder Event-Suche); kurze Reconnect-Fragmente die zu einem echten Flug gemergt werden sind davon ausgenommen
-- **Web Push Notifications** — Browser-Benachrichtigung wenn ein Friese online geht; funktioniert im Hintergrund (Desktop + Android); auf iOS als PWA (Hinweis wird angezeigt); Pilot-Filter wählbar (Alle Friesen = alle Checkboxen checked+disabled / Nur bestimmte Piloten = Auswahl mit Merken beim Umschalten); Bell-Icon 🔔 im Header — nur sichtbar wenn `VAPID_PUBLIC_KEY` gesetzt
+- **Web Push Notifications** — Browser-Benachrichtigung wenn ein Friese online geht; funktioniert im Hintergrund auf Desktop (WNS), Android (FCM) und iOS als PWA (APNs); Pilot-Filter wählbar (Alle Friesen = alle Checkboxen checked+disabled / Nur bestimmte Piloten = Auswahl mit Merken beim Umschalten); Bell-Icon 🔔 im Header — nur sichtbar wenn `VAPID_PUBLIC_KEY` gesetzt; „Push zurücksetzen"-Button im Panel deregistriert den Service Worker und erzwingt einen frischen Push-Token (hilfreich bei kaputten FCM-Registrierungen)
 - **Telegram-Alerts** — Optional: Nachricht wenn ein Friese online geht
 
 ## Wie funktioniert das?
@@ -74,8 +74,8 @@ TELEGRAM_BOT_TOKEN=                         # Optional
 TELEGRAM_CHAT_ID=                           # Optional
 STATSIM_API_KEY=                            # Optional: historische Flüge via statsim.net
 OPENAIP_API_KEY=                            # Optional: OpenAIP-Overlay (Luftraum, Navaids)
-VAPID_PUBLIC_KEY=                           # Optional: Web Push (aus generate_vapid.py)
-VAPID_PRIVATE_KEY=                          # Optional: Web Push Private Key (PEM mit \n)
+VAPID_PUBLIC_KEY=                           # Optional: Web Push Public Key (base64url)
+VAPID_PRIVATE_KEY=                          # Optional: Web Push Private Key (base64url, 43 Zeichen)
 VAPID_CONTACT_EMAIL=                        # Optional: mailto:... für Web Push
 ```
 
