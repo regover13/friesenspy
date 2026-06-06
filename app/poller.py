@@ -69,6 +69,8 @@ async def send_web_push_notifications(
     finally:
         conn.close()
 
+    logger.info("WebPush: %s online, %d subscription(s)", callsign, len(subscriptions))
+
     loop = asyncio.get_event_loop()
     to_delete: list[str] = []
 
@@ -87,6 +89,7 @@ async def send_web_push_notifications(
                     vapid_claims=claims,
                 ),
             )
+            logger.info("WebPush sent OK: %s", sub["endpoint"][:40])
         except WebPushException as exc:
             resp = getattr(exc, "response", None)
             if resp is not None and getattr(resp, "status_code", None) == 410:
