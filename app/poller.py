@@ -82,6 +82,7 @@ async def send_web_push_notifications(
                     data=data,
                     vapid_private_key=vapid_private_key,
                     vapid_claims=claims,
+                    ttl=3600,
                 ),
             )
             logger.info("WebPush sent OK: %s", sub["endpoint"][:40])
