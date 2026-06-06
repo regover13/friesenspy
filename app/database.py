@@ -307,6 +307,7 @@ def get_stats(
                 WHERE fx.cid = p.cid
                   AND fx.logon_time >= datetime('now', ? || ' days')
                   AND fx.logoff_time IS NOT NULL
+                  AND fx.duration_min > 5
                   AND substr(fx.logon_time, 1, 16) = substr(sc_filt.logon_time, 1, 16)
               ) THEN sc_filt.statsim_id
             END) AS st_count,
@@ -327,7 +328,8 @@ def get_stats(
              WHERE cid = p.cid
                AND logon_time >= datetime('now', ? || ' days')
                AND logon_time != ''
-               AND callsign LIKE ?)          AS st_duration_min
+               AND callsign LIKE ?
+               AND duration_min > 5)        AS st_duration_min
         FROM pilots p
         LEFT JOIN flights f_filt
                ON f_filt.cid = p.cid
@@ -389,7 +391,14 @@ def get_stats_activity(
         sql_fmt = "%Y-%m"
         grouping = "month"
 
-    # Flugzahlen (Ghost-Flüge ≤ 5 Min ausgeschlossen)
+    _dedup = (
+        " AND NOT EXISTS ("
+        "SELECT 1 FROM flights fx WHERE fx.cid = sc.cid"
+        " AND fx.logoff_time IS NOT NULL AND fx.duration_min > 5"
+        " AND substr(fx.logon_time,1,16)=substr(sc.logon_time,1,16))"
+    )
+
+    # Flugzahlen (Ghost-Flüge ≤ 5 Min ausgeschlossen; StatSim dedupliziert gegen FriesenSpy)
     fs = {r[0]: r[1] for r in conn.execute(
         "SELECT strftime(?, logon_time), COUNT(*) FROM flights "
         "WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL "
@@ -397,9 +406,9 @@ def get_stats_activity(
         (sql_fmt, f"-{days}"),
     ).fetchall()}
     st = {r[0]: r[1] for r in conn.execute(
-        "SELECT strftime(?, logon_time), COUNT(*) FROM statsim_cache "
-        "WHERE logon_time >= datetime('now', ? || ' days') AND logon_time != '' "
-        "AND callsign LIKE ? AND duration_min > 5 GROUP BY 1",
+        "SELECT strftime(?, sc.logon_time), COUNT(*) FROM statsim_cache sc "
+        "WHERE sc.logon_time >= datetime('now', ? || ' days') AND sc.logon_time != '' "
+        "AND sc.callsign LIKE ? AND sc.duration_min > 5" + _dedup + " GROUP BY 1",
         (sql_fmt, f"-{days}", prefix_pat),
     ).fetchall()}
 
@@ -413,15 +422,15 @@ def get_stats_activity(
     ).fetchall():
         pilots_by_period.setdefault(p, set()).add(cid)
     for p, cid in conn.execute(
-        "SELECT strftime(?, logon_time), cid FROM statsim_cache "
-        "WHERE logon_time >= datetime('now', ? || ' days') AND logon_time != '' "
-        "AND callsign LIKE ? AND duration_min > 5",
+        "SELECT strftime(?, sc.logon_time), sc.cid FROM statsim_cache sc "
+        "WHERE sc.logon_time >= datetime('now', ? || ' days') AND sc.logon_time != '' "
+        "AND sc.callsign LIKE ? AND sc.duration_min > 5" + _dedup,
         (sql_fmt, f"-{days}", prefix_pat),
     ).fetchall():
         pilots_by_period.setdefault(p, set()).add(cid)
     pilot_count = {k: len(v) for k, v in pilots_by_period.items()}
 
-    # Flugdauer pro Periode (Ghost-Flüge ausgeschlossen)
+    # Flugdauer pro Periode (Ghost-Flüge ausgeschlossen; StatSim dedupliziert)
     fs_dur = {r[0]: (r[1] or 0) for r in conn.execute(
         "SELECT strftime(?, logon_time), SUM(COALESCE(duration_min, "
         "CASE WHEN logoff_time IS NOT NULL "
@@ -431,11 +440,12 @@ def get_stats_activity(
         (sql_fmt, f"-{days}"),
     ).fetchall()}
     st_dur = {r[0]: (r[1] or 0) for r in conn.execute(
-        "SELECT strftime(?, logon_time), SUM(COALESCE(duration_min, "
-        "CASE WHEN logoff_time IS NOT NULL AND logoff_time != '' "
-        "THEN CAST((JULIANDAY(logoff_time)-JULIANDAY(logon_time))*1440 AS INTEGER) END)) "
-        "FROM statsim_cache WHERE logon_time >= datetime('now', ? || ' days') "
-        "AND logon_time != '' AND callsign LIKE ? AND duration_min > 5 GROUP BY 1",
+        "SELECT strftime(?, sc.logon_time), SUM(COALESCE(sc.duration_min, "
+        "CASE WHEN sc.logoff_time IS NOT NULL AND sc.logoff_time != '' "
+        "THEN CAST((JULIANDAY(sc.logoff_time)-JULIANDAY(sc.logon_time))*1440 AS INTEGER) END)) "
+        "FROM statsim_cache sc WHERE sc.logon_time >= datetime('now', ? || ' days') "
+        "AND sc.logon_time != '' AND sc.callsign LIKE ? AND sc.duration_min > 5"
+        + _dedup + " GROUP BY 1",
         (sql_fmt, f"-{days}", prefix_pat),
     ).fetchall()}
 

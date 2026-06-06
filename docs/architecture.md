@@ -61,7 +61,9 @@ Alle DB-Operationen sind synchron (SQLite ist thread-safe mit WAL). Verbindungen
 
 `merge_fragmented_flights(flights, gap_minutes=5)` — bereinigt kurze VATSIM-Disconnects in der Flughistorie: zwei aufeinanderfolgende Einträge gleichen Callsigns werden zusammengeführt wenn (a) genau einer keinen Flugplan hat oder (b) beide denselben DEP+ARR haben, und der Zeitabstand ≤ 5 Minuten beträgt.
 
-**Ghost-Flight-Filter:** Flüge mit `duration_min ≤ 5` werden in allen Ausgaben ignoriert — in `/api/pilots/{cid}/flights` (nach Merge), im Events-Endpoint, in `get_stats` (Pilotenliste, JOIN + Subquery für FriesenSpy und StatSim) und in `get_stats_activity` (Liniendiagramm, alle 6 Queries für FriesenSpy und StatSim). Kurze Fragmente, die durch Merge zu einem längeren Flug zusammengeführt werden, bleiben erhalten.
+**Ghost-Flight-Filter:** Flüge mit `duration_min ≤ 5` werden in allen Ausgaben ignoriert — in `/api/pilots/{cid}/flights` (nach Merge), im Events-Endpoint, in `get_stats` (Pilotenliste, JOIN + Subquery für FriesenSpy und StatSim) und in `get_stats_activity` (Liniendiagramm, alle 6 Queries). Kurze Fragmente, die durch Merge zu einem längeren Flug zusammengeführt werden, bleiben erhalten.
+
+**StatSim-Deduplizierung:** StatSim-Einträge, die denselben Piloten und dieselbe Abflugminute (`substr(logon_time,1,16)`) wie ein FriesenSpy-Flug abdecken, werden in `get_stats` (`st_count` via `NOT EXISTS`) und `get_stats_activity` (alle 3 StatSim-Queries) nicht doppelt gezählt. Dies verhindert, dass Flüge, die FriesenSpy selbst aufgezeichnet hat und die StatSim ebenfalls kennt, im Chart und in der Pilotenliste zweifach erscheinen.
 
 ### `app/poller.py`
 

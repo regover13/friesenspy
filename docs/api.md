@@ -62,7 +62,7 @@ Flugaktivität über Zeit — für das Liniendiagramm im Statistiken-Tab.
 |-----------|-----|---------|--------------|
 | `days` | int | `30` | Zeitraum in Tagen |
 
-Gruppierung: ≤93 Tage → täglich (`%Y-%m-%d`), >93 Tage → monatlich (`%Y-%m`). Alle Perioden werden zurückgegeben (Lücken mit 0 aufgefüllt). Nur FRS*-Callsigns. Ghost-Flüge (`duration_min ≤ 5`) werden ausgeschlossen.
+Gruppierung: ≤93 Tage → täglich (`%Y-%m-%d`), >93 Tage → monatlich (`%Y-%m`). Alle Perioden werden zurückgegeben (Lücken mit 0 aufgefüllt). Nur FRS*-Callsigns. Ghost-Flüge (`duration_min ≤ 5`) werden ausgeschlossen. StatSim-Einträge, die bereits in FriesenSpy vorhanden sind (gleiche CID + Minute), werden nicht doppelt gezählt.
 
 **Response**
 

@@ -28,7 +28,7 @@ FriesenSpy überwacht automatisch alle VATSIM-Verbindungen mit dem Callsign-Pref
 
 Es wird kein VATSIM-Account benötigt. FriesenSpy liest ausschließlich öffentliche Daten.
 
-> **Kurzflüge ≤ 5 Minuten** werden grundsätzlich herausgefiltert — kurze Verbindungsabbrüche und Test-Connects erscheinen weder in der Flugliste noch in den Statistiken.
+> **Kurzflüge ≤ 5 Minuten** werden grundsätzlich herausgefiltert — kurze Verbindungsabbrüche und Test-Connects erscheinen weder in der Flugliste noch in den Statistiken oder Charts. Flüge, die FriesenSpy selbst aufgezeichnet hat und die auch in StatSim vorhanden sind, werden nie doppelt gezählt.
 
 ---
 
