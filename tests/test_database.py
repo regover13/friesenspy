@@ -20,6 +20,7 @@ from app.database import (
     get_statsim_flights_for_pilot,
     get_statsim_last_fetched,
     init_db,
+    merge_fragmented_flights,
     open_flight,
     remove_live_position,
     save_position_history,
@@ -593,3 +594,63 @@ class TestStatSimCache:
         assert len(result) == 1
         assert result[0]["callsign"] == "FRS01"
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# merge_fragmented_flights
+# ---------------------------------------------------------------------------
+
+class TestMergeFragmentedFlights:
+    def _flight(self, callsign, dep, arr, logon, logoff, duration):
+        return {
+            "callsign": callsign,
+            "departure": dep,
+            "arrival": arr,
+            "logon_time": logon,
+            "logoff_time": logoff,
+            "duration_min": duration,
+            "aircraft_short": "B738",
+        }
+
+    def test_merge_one_missing_fp(self):
+        """Erster Flug ohne FP + zweiter mit FP innerhalb 5 Min → ein Flug."""
+        f1 = self._flight("FRS153", "",     "",     "2026-06-06T08:00:00Z", "2026-06-06T08:02:00Z", 2)
+        f2 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:04:00Z", "2026-06-06T08:55:00Z", 51)
+        result = merge_fragmented_flights([f1, f2])
+        assert len(result) == 1
+        assert result[0]["departure"] == "EDDN"
+        assert result[0]["arrival"] == "EDPH"
+        assert result[0]["logon_time"] == "2026-06-06T08:00:00Z"
+        assert result[0]["logoff_time"] == "2026-06-06T08:55:00Z"
+        assert result[0]["duration_min"] == 53
+
+    def test_merge_both_same_fp(self):
+        """Beide Flüge mit gleicher Route (kurzer Disconnect) → ein Flug."""
+        f1 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:00:00Z", "2026-06-06T08:06:00Z", 6)
+        f2 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:09:00Z", "2026-06-06T08:55:00Z", 46)
+        result = merge_fragmented_flights([f1, f2])
+        assert len(result) == 1
+        assert result[0]["departure"] == "EDDN"
+        assert result[0]["arrival"] == "EDPH"
+        assert result[0]["duration_min"] == 52
+
+    def test_no_merge_different_route(self):
+        """Zwei Flüge mit verschiedener Route → nicht mergen."""
+        f1 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:00:00Z", "2026-06-06T08:49:00Z", 49)
+        f2 = self._flight("FRS153", "EDPH", "EDDH", "2026-06-06T09:00:00Z", "2026-06-06T09:30:00Z", 30)
+        result = merge_fragmented_flights([f1, f2])
+        assert len(result) == 2
+
+    def test_no_merge_gap_too_large(self):
+        """Gleiche Route aber Gap > 5 Min → nicht mergen."""
+        f1 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:00:00Z", "2026-06-06T08:06:00Z", 6)
+        f2 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:20:00Z", "2026-06-06T09:00:00Z", 40)
+        result = merge_fragmented_flights([f1, f2])
+        assert len(result) == 2
+
+    def test_no_merge_different_callsign(self):
+        """Verschiedene Callsigns → nicht mergen."""
+        f1 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:00:00Z", "2026-06-06T08:04:00Z", 4)
+        f2 = self._flight("FRS154", "EDDN", "EDPH", "2026-06-06T08:06:00Z", "2026-06-06T08:50:00Z", 44)
+        result = merge_fragmented_flights([f1, f2])
+        assert len(result) == 2

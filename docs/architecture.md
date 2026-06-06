@@ -59,6 +59,8 @@ Drei Indizes: `idx_ph_cid_ts`, `idx_ph_ts`, `idx_flights_cid`.
 
 Alle DB-Operationen sind synchron (SQLite ist thread-safe mit WAL). Verbindungen werden pro Request geöffnet und in `finally`-Blöcken geschlossen.
 
+`merge_fragmented_flights(flights, gap_minutes=5)` — bereinigt kurze VATSIM-Disconnects in der Flughistorie: zwei aufeinanderfolgende Einträge gleichen Callsigns werden zusammengeführt wenn (a) genau einer keinen Flugplan hat oder (b) beide denselben DEP+ARR haben, und der Zeitabstand ≤ 5 Minuten beträgt.
+
 ### `app/poller.py`
 
 `VatsimPoller` kapselt:

@@ -469,8 +469,13 @@ def merge_fragmented_flights(flights: list[dict], gap_minutes: int = 5) -> list[
             cs_match = (curr.get('callsign') or '') == (nxt.get('callsign') or '') != ''
             curr_no_fp = not (curr.get('departure') and curr.get('arrival'))
             nxt_no_fp  = not (nxt.get('departure')  and nxt.get('arrival'))
-            # exactly one side has no flight plan
-            if cs_match and (curr_no_fp ^ nxt_no_fp):
+            same_fp = (
+                bool(curr.get('departure'))
+                and (curr.get('departure') or '') == (nxt.get('departure') or '')
+                and (curr.get('arrival')   or '') == (nxt.get('arrival')   or '')
+            )
+            # merge if exactly one has no FP, OR both have the same DEP+ARR (brief reconnect)
+            if cs_match and ((curr_no_fp ^ nxt_no_fp) or same_fp):
                 try:
                     gap = (_parse_iso(nxt['logon_time']) - _parse_iso(curr['logoff_time'])).total_seconds() / 60
                     close = -2 <= gap <= gap_minutes

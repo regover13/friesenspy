@@ -65,7 +65,7 @@ STATSIM_API_KEY=                            # Optional: historische Flüge via s
 pytest tests/ -v
 ```
 
-175 Tests, keine externen Abhängigkeiten (alles gemockt).
+180 Tests, keine externen Abhängigkeiten (alles gemockt).
 
 ---
 
