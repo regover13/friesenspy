@@ -50,6 +50,8 @@ VATSIM-Piloten trennen die Verbindung manchmal kurz, ohne dass ein echter Flugwe
 
 **Beispiel:** Pilot fliegt Bonn (EDKB) → Köln (EDDK) ohne Flugplan (20 Min), landet, reconnect mit Flugplan Köln (EDDK) → Düsseldorf (EDDL) — das sind **zwei Flüge**: der erste startete in Bonn (~11 km von EDDK entfernt, außerhalb der 10-km-Grenze).
 
+**Woher kommen die Airport-Koordinaten?** Der Geo-Check nutzt das Python-Package [`airportsdata`](https://github.com/mborsetti/airportsdata), das eine vollständige ICAO-Datenbank eingebettet enthält — inklusive aller deutschen Sonderlandeplätze und Kleinflugplätze (z.B. EDKB, EDKV, EDRV). Die Koordinaten stammen aus der [OurAirports](https://ourairports.com)-Datenbank. Es findet kein API-Call statt — die Abfrage ist offline und instant.
+
 ---
 
 ## Die vier Tabs im Überblick
@@ -279,7 +281,7 @@ FriesenSpy/
 │   ├── database.py    # SQLite WAL, alle DB-Funktionen
 │   ├── vatsim.py      # VATSIM-API-Client + Callsign-Filter
 │   ├── statsim.py     # StatSim API-Client (historische Flüge)
-│   ├── geo.py         # Haversine, ICAO→Koordinaten, Event-Filter
+│   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline), Event-Filter
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
 │   ├── poller.py      # APScheduler, Flug-State-Machine, SSE-Queue
 │   └── static/
