@@ -111,7 +111,7 @@ Single-File-SPA ohne Build-Step. Vier Tabs:
 
 **URL Deep-Linking** via `location.hash` (URLSearchParams): Tab, Pilot-CID, Zeitraum (days=), Track-ID/Source, Callsign (fp=), Events-Filter (icao/radius/start/end) werden im Hash gespeichert → Seite neu laden öffnet den gleichen Zustand. `initFromUrl()` wird beim Seitenstart nach `fetchLiveInitial()` ausgeführt; re-aktiviert den korrekten Tab am Ende aller Async-Operationen (Race-Condition-Schutz).
 
-**Karten-Layer**: OpenFlightMap (OFM, `nwy-tiles-api.prod.newaydata.com`) als Standard auf allen Leaflet-Instanzen (Live/Karte, Track-Modal, Events). Umschaltbar auf Dark CARTO via `L.control.layers()`. OFM deckt West-/Zentraleuropa ab (Zoom max. 13).
+**Karten-Layer**: OpenFlightMap (OFM, `nwy-tiles-api.prod.newaydata.com`) als Standard auf allen Leaflet-Instanzen (Live/Karte, Track-Modal, Events). Drei Layer wählbar via `L.control.layers()`: OFM (Luftfahrtkarte, native Tiles Zoom 6–11, `minZoom:6`), Satellit (ESRI World Imagery, alle Zoom-Stufen), Dark (CartoDB). **Auto-Switch**: Solange OFM aktiv ist, wechselt die Karte bei Zoom > 12 automatisch auf Satellit und zurück beim Rauszoomen (`_setupOFMAutoSwitch`). Manueller Layer-Wechsel deaktiviert das Auto-Switching dauerhaft für die Sitzung.
 
 Design: FriesenFlieger-Blau (`#04080f` Hintergrund, `#2d9cdb` Blau, `#D31141` Vereinsrot).
 

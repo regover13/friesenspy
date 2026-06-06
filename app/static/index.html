@@ -1265,16 +1265,45 @@ const TILE_DARK_URL  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r
 const TILE_DARK_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 const TILE_OFM_URL   = 'https://nwy-tiles-api.prod.newaydata.com/tiles/{z}/{x}/{y}.png?path=latest/aero/latest';
 const TILE_OFM_ATTR  = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://www.openflightmaps.org">openflightmaps.org</a>';
+const TILE_SAT_URL   = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const TILE_SAT_ATTR  = 'Tiles &copy; Esri &mdash; Esri, DigitalGlobe, GeoEye, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN';
 
 // Legacy alias (für bestehende Verwendungen ohne Layer-Control)
 const TILE_URL  = TILE_DARK_URL;
 const TILE_ATTR = TILE_DARK_ATTR;
 
+const OFM_NATIVE_MAX_ZOOM = 11; // OFM hat native Tiles bis Zoom 11; ab Zoom 13 Auto-Switch zu Satellit
+
 function _makeTileLayers() {
   return {
-    ofm:  L.tileLayer(TILE_OFM_URL,  { attribution: TILE_OFM_ATTR,  maxNativeZoom: 13, maxZoom: 19, minNativeZoom: 6 }),
+    ofm:  L.tileLayer(TILE_OFM_URL,  { attribution: TILE_OFM_ATTR,  maxNativeZoom: OFM_NATIVE_MAX_ZOOM, maxZoom: 19, minZoom: 6 }),
     dark: L.tileLayer(TILE_DARK_URL, { attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19 }),
+    sat:  L.tileLayer(TILE_SAT_URL,  { attribution: TILE_SAT_ATTR,  maxZoom: 19 }),
   };
+}
+
+// Ab Zoom 13 wechselt OFM automatisch zu Satellit (und zurück beim Rauszoomen).
+// Sobald der Nutzer manuell einen Layer wählt, wird Auto-Switch deaktiviert.
+function _setupOFMAutoSwitch(map, layers) {
+  const SWITCH_ZOOM = 12; // > 12 → Satellit, ≤ 12 → OFM
+  let autoMode = true;
+  let autoSwitching = false; // verhindert dass eigene Wechsel autoMode deaktivieren
+  map.on('baselayerchange', () => { if (!autoSwitching) autoMode = false; });
+  map.on('zoomend', () => {
+    if (!autoMode) return;
+    const z = map.getZoom();
+    if (z > SWITCH_ZOOM && map.hasLayer(layers.ofm)) {
+      autoSwitching = true;
+      map.removeLayer(layers.ofm);
+      layers.sat.addTo(map);
+      autoSwitching = false;
+    } else if (z <= SWITCH_ZOOM && map.hasLayer(layers.sat)) {
+      autoSwitching = true;
+      map.removeLayer(layers.sat);
+      layers.ofm.addTo(map);
+      autoSwitching = false;
+    }
+  });
 }
 
 let liveMap        = null;  // Leaflet map instance for Karte tab
@@ -1781,13 +1810,14 @@ async function openTrackModal(source, id, callsign, dep, arr) {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       if (!trackMapInitialized) {
-        trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6 });
+        trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
         const trackLayers = _makeTileLayers();
         trackLayers.ofm.addTo(trackMap);
         L.control.layers(
-          { 'OpenFlightMap': trackLayers.ofm, 'Dark': trackLayers.dark },
+          { 'OpenFlightMap': trackLayers.ofm, 'Satellit': trackLayers.sat, 'Dark': trackLayers.dark },
           {}, { position: 'topright', collapsed: true }
         ).addTo(trackMap);
+        _setupOFMAutoSwitch(trackMap, trackLayers);
         trackMapInitialized = true;
       } else {
         trackMap.eachLayer(layer => {
@@ -1879,6 +1909,7 @@ function initLiveMap() {
   liveMap = L.map('leaflet-map', {
     center:    [54.5, 8.5],
     zoom:      7,
+    minZoom:   6,
     zoomControl: true,
     attributionControl: true,
   });
@@ -1886,10 +1917,11 @@ function initLiveMap() {
   const liveLayers = _makeTileLayers();
   liveLayers.ofm.addTo(liveMap);
   L.control.layers(
-    { 'OpenFlightMap': liveLayers.ofm, 'Dark': liveLayers.dark },
+    { 'OpenFlightMap': liveLayers.ofm, 'Satellit': liveLayers.sat, 'Dark': liveLayers.dark },
     {},
     { position: 'topright', collapsed: true }
   ).addTo(liveMap);
+  _setupOFMAutoSwitch(liveMap, liveLayers);
 
   // Style Leaflet controls
   const styleEl = document.createElement('style');
@@ -2483,13 +2515,14 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 
 function renderEventsMap(pilots, icaoStr, radiusKm) {
   if (!eventsMapInitialized) {
-    eventsMap = L.map('events-leaflet-map', { center: [54.5, 8.5], zoom: 6 });
+    eventsMap = L.map('events-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
     const evLayers = _makeTileLayers();
     evLayers.ofm.addTo(eventsMap);
     L.control.layers(
-      { 'OpenFlightMap': evLayers.ofm, 'Dark': evLayers.dark },
+      { 'OpenFlightMap': evLayers.ofm, 'Satellit': evLayers.sat, 'Dark': evLayers.dark },
       {}, { position: 'topright', collapsed: true }
     ).addTo(eventsMap);
+    _setupOFMAutoSwitch(eventsMap, evLayers);
     eventsMapInitialized = true;
   } else {
     // Clear previous layers except the tile layer

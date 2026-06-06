@@ -13,7 +13,7 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 - **Statistiken** — KPI-Box (Piloten, Flüge, Stunden, Ø pro Tag, Aktivster Pilot, Ø Flugdauer); Liniendiagramm (Piloten/Flüge/Stunden/Ø Flugdauer, täglich für 30/90 Tage mit Wochentag-Labels, monatlich für 365 Tage); Callsign + Pilot + geloggte Flüge + letzter Flug; Pilot anklicken → Einzelflüge sofort aus Cache, StatSim-Update im Hintergrund; „Alle laden" → 365-Tage-Refresh; ◎ → Track; ⎘ Teilen
 - **Event-Suche** — Wer war bei einem Event in der Nähe von ICAO XY dabei? Karte oben (560px, OFM), Pilotenliste darunter; alle Tracks gleichzeitig sichtbar; Klick auf Flug → Hervorhebung + „↺ Alle Tracks"-Button; Callsign klicken → Flugdetail; ⎘ Teilen
 - **URL Deep-Linking** — alle Zustände (Tab, Pilot, Track, Flugplan, Events-Filter, Zeitraum) sind als URL-Hash teilbar; Seite neu laden öffnet denselben Zustand direkt
-- **OpenFlightMap** — VFR-Luftfahrtkarte als Standard-Layer auf allen Karten (umschaltbar auf Dark CARTO, deckt West-/Zentraleuropa ab)
+- **OpenFlightMap** — VFR-Luftfahrtkarte als Standard-Layer (Zoom 6–12); ab Zoom 13 automatischer Wechsel auf ESRI-Satellitenbild; manuell umschaltbar zwischen OFM, Satellit und Dark CARTO
 - **StatSim-Integration** — Historische Flüge (letztes Jahr) via [StatSim API](https://statsim.net); sofortige Anzeige aus Cache, Hintergrund-Update des letzten 31-Tage-Chunks (API-Key nötig)
 - **Telegram-Alerts** — Optional: Nachricht wenn ein Friese online geht
 
