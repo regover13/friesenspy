@@ -972,6 +972,17 @@
       width: 100%;
     }
     .notif-save-btn:hover { background: var(--green); color: #000; }
+    .notif-reset-btn {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 0.72rem;
+      cursor: pointer;
+      padding: 4px 0 0;
+      text-decoration: underline;
+      text-align: left;
+    }
+    .notif-reset-btn:hover { color: var(--amber); }
     .notif-hint {
       font-size: 0.8rem;
       color: var(--amber);
@@ -1172,6 +1183,7 @@
       Benachrichtigungen blockiert.<br>Bitte in den Browser-Einstellungen erlauben.
     </div>
     <button id="notif-install-btn" class="notif-install-btn" hidden>Als App installieren</button>
+    <button id="notif-reset-btn" class="notif-reset-btn" title="Service Worker neu registrieren und Seite neu laden">Push zurücksetzen</button>
   </div>
 
   <!-- =====================================================================
@@ -1685,6 +1697,21 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   saveBtn?.addEventListener('click', _saveNotifFilter);
+
+  document.getElementById('notif-reset-btn')?.addEventListener('click', async () => {
+    if (!confirm('Service Worker zurücksetzen und Seite neu laden?')) return;
+    try {
+      if (_pushSubscription) {
+        const ep = _pushSubscription.endpoint;
+        await _pushSubscription.unsubscribe().catch(() => {});
+        await fetch('/api/push/unsubscribe', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({endpoint: ep}) }).catch(() => {});
+        _pushSubscription = null;
+      }
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    } catch(e) {}
+    location.reload();
+  });
 
   installBtn?.addEventListener('click', async () => {
     if (!_deferredInstallPrompt) return;
