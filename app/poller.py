@@ -356,11 +356,11 @@ class VatsimPoller:
     # ------------------------------------------------------------------
 
     async def _daily_cleanup(self) -> None:
-        """position_history älter als 90 Tage löschen. Exceptions loggen."""
+        """position_history älter als 365 Tage löschen. Exceptions loggen."""
         try:
             conn = get_connection(self.db_path)
             try:
-                deleted = cleanup_old_history(conn, days=90)
+                deleted = cleanup_old_history(conn, days=365)
                 conn.commit()
             finally:
                 conn.close()

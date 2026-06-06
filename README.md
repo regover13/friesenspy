@@ -32,7 +32,7 @@ FriesenSpy erkennt Friesen-Piloten automatisch am Callsign-Prefix **`FRS`** (kon
 | **Flugplan (DEP/ARR)** | ✅ | ✅ |
 | **Dauer** | ✅ | ✅ |
 | **Verfügbarkeit** | nur solange FriesenSpy läuft | letztes Jahr via API |
-| **Aufbewahrung GPS** | 90 Tage | — |
+| **Aufbewahrung GPS** | 365 Tage | — |
 | **Fluganzahl in Statistiken** | ✅ gezählt | ✅ gezählt (Duplikate gefiltert) |
 
 > Flüge die FriesenSpy live aufgezeichnet hat sind immer vollständiger als StatSim-Einträge. StatSim dient als Rückfall für Zeiträume vor dem Deployment oder bei Serverausfall.
