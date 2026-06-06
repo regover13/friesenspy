@@ -319,11 +319,17 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
     finally:
         conn.close()
 
-    fs_logons = {(f.get("logon_time") or "")[:16] for f in fs_flights}
     result: list[dict] = [{"source": "friesenspy", **f} for f in fs_flights]
     for f in statsim_flights:
         lt = (f.get("logon_time") or "")[:16]
-        if lt not in fs_logons:
+        # Deduplizieren: StatSim-Flug unterdrücken wenn sein logon_time innerhalb eines
+        # FriesenSpy-Fluges liegt (nötig nach Merge, wo logon_time auf früheren Wert gesetzt wird)
+        covered = any(
+            (fs.get("logon_time") or "")[:16] <= lt <= (fs.get("logoff_time") or "")[:16]
+            for fs in fs_flights
+            if fs.get("logon_time") and fs.get("logoff_time")
+        )
+        if not covered:
             result.append({"source": "statsim", "id": None, **f})
     result.sort(key=lambda x: x.get("logon_time") or "", reverse=True)
     return JSONResponse(content=result, headers={"X-StatSim-Status": statsim_status})
