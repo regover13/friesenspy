@@ -290,8 +290,23 @@ def get_stats(
     gezählt (Piloten fliegen auch in anderen VAs).
     """
     prefix_pat = callsign_prefix + "%"
+
+    # Merge-Fragmente aus fs_count ausschließen (gleiche Logik wie get_stats_activity)
+    nofp_ids = _nofp_fragment_ids(conn, days)
+    _same_fp_excl_filt = (
+        " AND NOT EXISTS ("
+        "SELECT 1 FROM flights f2"
+        " WHERE f2.cid=f_filt.cid AND f2.callsign=f_filt.callsign AND f2.duration_min>5"
+        " AND CAST((JULIANDAY(f2.logon_time)-JULIANDAY(f_filt.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5"
+        " AND f_filt.departure!='' AND f2.departure=f_filt.departure AND f2.arrival=f_filt.arrival)"
+    )
+    _nofp_excl_filt = (
+        f" AND f_filt.id NOT IN ({','.join(str(x) for x in nofp_ids)})" if nofp_ids else ""
+    )
+    _merge_excl_filt = _same_fp_excl_filt + _nofp_excl_filt
+
     rows = conn.execute(
-        """
+        f"""
         SELECT
             p.cid,
             p.name,
@@ -335,7 +350,7 @@ def get_stats(
                ON f_filt.cid = p.cid
               AND f_filt.logon_time >= datetime('now', ? || ' days')
               AND f_filt.logoff_time IS NOT NULL
-              AND f_filt.duration_min > 5
+              AND f_filt.duration_min > 5{_merge_excl_filt}
         LEFT JOIN statsim_cache sc_filt
                ON sc_filt.cid = p.cid
               AND sc_filt.logon_time >= datetime('now', ? || ' days')
