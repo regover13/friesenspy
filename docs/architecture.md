@@ -104,6 +104,10 @@ Endpoints: `/api/live`, `/api/stats`, `/api/pilots/{cid}/flights`, `/api/pilots/
 
 `/api/pilots/{cid}/live-track` gibt `position_history` des aktuell offenen Fluges zurück (logoff_time IS NULL). Wird vom Frontend beim ersten ◎-Klick geladen; danach wächst der Track mit jedem SSE-Update.
 
+`/api/flights/{id}/track` akzeptiert optionale `logon`/`logoff`-Query-Params, die die DB-Zeitstempel überschreiben. Notwendig nach `merge_fragmented_flights`, wenn die DB noch die alten Zeiten der Ursprungsfragmente enthält.
+
+`/api/events` liefert neben FriesenSpy-Piloten auch einen **StatSim-Fallback**: Piloten aus `statsim_cache` die per DEP/ARR-Match im Zeitfenster gefunden werden, aber keine `position_history` haben, werden mit `source: "statsim"` und `positions: []` angehängt. Ghost-Flight-Filter (`duration_min > 5`) greift auch hier.
+
 ### `app/static/index.html`
 
 Single-File-SPA ohne Build-Step. Vier Tabs:

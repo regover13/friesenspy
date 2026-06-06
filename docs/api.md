@@ -171,6 +171,13 @@ GPS-Track des aktuell laufenden Fluges aus `position_history` (logoff_time IS NU
 
 GPS-Track eines FriesenSpy-Fluges aus der `position_history`-Tabelle.
 
+**Query-Parameter** (optional)
+
+| Parameter | Typ | Beschreibung |
+|-----------|-----|--------------|
+| `logon` | string | ISO8601 UTC — überschreibt den Logon-Zeitstempel aus der DB (nötig nach Flug-Merge, wo DB noch alte Zeiten hat) |
+| `logoff` | string | ISO8601 UTC — überschreibt den Logoff-Zeitstempel aus der DB |
+
 **Response**
 
 ```json
@@ -246,7 +253,37 @@ Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe e
 }
 ```
 
+Jeder Flug-Eintrag enthält ein `source`-Feld: `"friesenspy"` für Flüge mit GPS-Track, `"statsim"` für Einträge aus dem StatSim-Cache (kein GPS-Track verfügbar, `positions: []`).
+
+**StatSim-Fallback:** Piloten die in `statsim_cache` per `departure` oder `arrival` im Zeitfenster gefunden werden, aber keine `position_history` haben (z.B. weil FriesenSpy zu diesem Zeitpunkt nicht lief), erscheinen ebenfalls in der Antwort — mit `source: "statsim"` und leerem `positions`-Array. Im Frontend erscheinen sie mit „◌ StatSim"-Badge ohne Kartentrack.
+
 `flights` enthält die Positionen des Piloten im Zeitfenster aufgeteilt in einzelne Flüge. Die Segmentierung basiert primär auf echten VATSIM-Session-Records aus der `flights`-Tabelle (Callsign, DEP/ARR, Flugzeugtyp aus dem Flugplan). `callsign`, `departure`, `arrival` und `aircraft` sind `null` wenn kein passender `flights`-Eintrag existiert — in diesem Fall wird als Fallback nach Zeitlücken von mehr als 30 Minuten segmentiert (z.B. für Positionen aus Zeiten vor FriesenSpy-Start). `positions` enthält alle aufgezeichneten Positionen des jeweiligen Fluges — nicht nur die im Radius.
+
+**Erweitertes Response-Beispiel mit StatSim-Pilot:**
+
+```json
+{
+  "pilots": [
+    {
+      "cid": 1234567,
+      "callsign": "FRS22",
+      "name": "Max Mustermann",
+      "flights": [
+        {
+          "logon_time": "2026-04-02T17:55:00Z",
+          "logoff_time": "2026-04-02T19:30:00Z",
+          "callsign": "FRS22",
+          "departure": "EDVK",
+          "arrival": "EDDK",
+          "aircraft": "C172",
+          "positions": [],
+          "source": "statsim"
+        }
+      ]
+    }
+  ]
+}
+```
 
 ---
 
