@@ -74,27 +74,39 @@ async def send_web_push_notifications(
             "endpoint": sub["endpoint"],
             "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
         }
-        try:
-            await loop.run_in_executor(
-                None,
-                lambda s=sub_info: webpush(
-                    subscription_info=s,
-                    data=data,
-                    vapid_private_key=vapid_private_key,
-                    vapid_claims=claims,
-                    ttl=3600,
-                ),
-            )
-            logger.info("WebPush sent OK: %s", sub["endpoint"][:40])
-        except WebPushException as exc:
-            resp = getattr(exc, "response", None)
-            if resp is not None and getattr(resp, "status_code", None) == 410:
-                to_delete.append(sub["endpoint"])
-            else:
-                logger.warning("WebPush failed for %s: HTTP %s", callsign,
-                               getattr(getattr(exc, "response", None), "status_code", "?"))
-        except Exception as exc:
-            logger.warning("WebPush error for %s: %s", callsign, type(exc).__name__)
+        sent = False
+        last_exc = None
+        for attempt in range(2):
+            if attempt > 0:
+                await asyncio.sleep(5)
+            try:
+                await loop.run_in_executor(
+                    None,
+                    lambda s=sub_info: webpush(
+                        subscription_info=s,
+                        data=data,
+                        vapid_private_key=vapid_private_key,
+                        vapid_claims=claims,
+                        ttl=3600,
+                    ),
+                )
+                logger.info("WebPush sent OK: %s", sub["endpoint"][:40])
+                sent = True
+                break
+            except WebPushException as exc:
+                resp = getattr(exc, "response", None)
+                sc = getattr(resp, "status_code", None)
+                if sc == 410:
+                    to_delete.append(sub["endpoint"])
+                    break
+                last_exc = exc
+            except Exception as exc:
+                last_exc = exc
+                break
+        if not sent and last_exc is not None:
+            resp = getattr(last_exc, "response", None)
+            sc = getattr(resp, "status_code", "?") if resp else type(last_exc).__name__
+            logger.warning("WebPush failed for %s: %s", callsign, sc)
 
     if to_delete:
         conn2 = get_connection(db_path)
