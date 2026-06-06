@@ -2836,11 +2836,12 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 
     let flightRows = '';
     flights.forEach((f, fi) => {
-      const date = f.logon_time ? f.logon_time.slice(0, 10) : '—';
-      const pts  = (f.positions || []).length;
-      const dep  = f.departure || '';
-      const arr  = f.arrival   || '';
-      const cs   = f.callsign  || callsign;
+      const date    = f.logon_time ? f.logon_time.slice(0, 10) : '—';
+      const pts     = (f.positions || []).length;
+      const dep     = f.departure || '';
+      const arr     = f.arrival   || '';
+      const cs      = f.callsign  || callsign;
+      const isSt    = f.source === 'statsim';
       let dur = '—';
       if (f.logon_time && f.logoff_time) {
         try {
@@ -2850,10 +2851,16 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
           dur = `${h}:${String(m).padStart(2,'0')} h`;
         } catch(e) {}
       }
-      const route = dep && arr ? `${escHtml(dep)} → ${escHtml(arr)}` : '—';
-      // Flug-ID für Map-Highlight: pilotIndex_flightIndex
+      const route    = dep && arr ? `${escHtml(dep)} → ${escHtml(arr)}` : '—';
       const flightKey = `${i}_${fi}`;
-      flightRows += `<tr class="events-flight-row" data-flight-key="${flightKey}" style="cursor:pointer;" title="Klick → Flug auf Karte hervorheben">
+      const rowAttrs  = isSt
+        ? `style="opacity:0.75;" title="StatSim-Datensatz — kein Live-Track verfügbar"`
+        : `class="events-flight-row" data-flight-key="${flightKey}" style="cursor:pointer;" title="Klick → Flug auf Karte hervorheben"`;
+      const mapCell   = isSt
+        ? `<span class="source-badge" style="font-size:0.7rem;opacity:0.6;">◌ StatSim</span>`
+        : `<span class="td-map-btn" title="Auf Karte zeigen"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></span>`;
+      const ptsCell   = isSt ? '—' : pts;
+      flightRows += `<tr ${rowAttrs}>
         <td class="mono text-label">${escHtml(date)}</td>
         <td class="mono text-green td-callsign-link ev-cs-cell"
             data-cs="${escHtml(cs)}"
@@ -2862,12 +2869,12 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             data-arr="${escHtml(arr)}"
             data-dt="${escHtml(f.logon_time || '')}"
             data-dur="${escHtml(dur)}"
-            data-src="FriesenSpy"
+            data-src="${isSt ? 'StatSim' : 'FriesenSpy'}"
             title="Flugplan öffnen">${escHtml(cs)}</td>
         <td class="mono">${route}</td>
         <td class="mono">${dur}</td>
-        <td class="mono text-label">${pts}</td>
-        <td><span class="td-map-btn" title="Auf Karte zeigen"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></span></td>
+        <td class="mono text-label">${ptsCell}</td>
+        <td>${mapCell}</td>
       </tr>`;
     });
 
@@ -2906,7 +2913,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
     });
   });
 
-  // Klick auf Flug-Zeile → highlight auf Karte
+  // Klick auf Flug-Zeile → highlight auf Karte (nur FriesenSpy-Zeilen haben die Klasse)
   pilotList.querySelectorAll('.events-flight-row').forEach(row => {
     row.addEventListener('click', () => {
       const [pi, fi] = row.dataset.flightKey.split('_').map(Number);

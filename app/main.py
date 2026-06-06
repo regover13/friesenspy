@@ -214,7 +214,9 @@ async def get_events(
     pilot_map = filter_event_pilots(rows, icao_list, radius, start, end)
 
     pilots = []
+    found_cids: set[int] = set()
     for cid, positions in pilot_map.items():
+        found_cids.add(cid)
         callsign = positions[0].get("callsign", "") if positions else ""
         conn2 = get_connection(settings.DB_PATH)
         try:
@@ -253,10 +255,11 @@ async def get_events(
                     "arrival": fr.get("arrival") or "",
                     "aircraft": fr.get("aircraft_short") or fr.get("aircraft") or "",
                     "positions": seg_positions,
+                    "source": "friesenspy",
                 })
         else:
             # Fallback: Zeitlücken-Segmentierung (z.B. Positionen vor FriesenSpy-Start)
-            flights = segment_into_flights(positions)
+            flights = [dict(f, source="friesenspy") for f in segment_into_flights(positions)]
 
         pilots.append({
             "cid": cid,
@@ -264,6 +267,59 @@ async def get_events(
             "name": name,
             "flights": flights,
         })
+
+    # StatSim-Ergänzung: Piloten die per DEP/ARR im Zeitfenster gefunden werden,
+    # aber keine position_history haben (z.B. FriesenSpy war nicht aktiv)
+    if icao_list:
+        placeholders = ",".join("?" * len(icao_list))
+        conn3 = get_connection(settings.DB_PATH)
+        try:
+            statsim_rows = conn3.execute(
+                f"""
+                SELECT sc.cid, sc.callsign, sc.departure, sc.arrival, sc.aircraft,
+                       sc.logon_time, sc.logoff_time, sc.duration_min, p.name
+                FROM statsim_cache sc
+                LEFT JOIN pilots p ON sc.cid = p.cid
+                WHERE (sc.departure IN ({placeholders}) OR sc.arrival IN ({placeholders}))
+                  AND sc.logon_time != ''
+                  AND sc.logoff_time IS NOT NULL
+                  AND sc.duration_min > 5
+                  AND sc.logon_time <= ?
+                  AND sc.logoff_time >= ?
+                  AND sc.callsign LIKE ?
+                ORDER BY sc.cid, sc.logon_time
+                """,
+                (*icao_list, *icao_list, end or "9999-12-31", start or "0000-01-01",
+                 settings.CALLSIGN_PREFIX + "%"),
+            ).fetchall()
+        finally:
+            conn3.close()
+
+        statsim_by_cid: dict[int, list[dict]] = {}
+        for r in statsim_rows:
+            cid = r["cid"]
+            if cid not in found_cids:
+                statsim_by_cid.setdefault(cid, []).append(dict(r))
+
+        for cid, st_flights in statsim_by_cid.items():
+            pilots.append({
+                "cid": cid,
+                "callsign": st_flights[0].get("callsign") or "",
+                "name": st_flights[0].get("name") or "",
+                "flights": [
+                    {
+                        "logon_time":  f.get("logon_time") or "",
+                        "logoff_time": f.get("logoff_time") or "",
+                        "callsign":    f.get("callsign") or "",
+                        "departure":   f.get("departure") or "",
+                        "arrival":     f.get("arrival") or "",
+                        "aircraft":    f.get("aircraft") or "",
+                        "positions":   [],
+                        "source":      "statsim",
+                    }
+                    for f in st_flights
+                ],
+            })
 
     return {"pilots": pilots}
 
