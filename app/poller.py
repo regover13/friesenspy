@@ -56,8 +56,8 @@ async def send_web_push_notifications(
     data = _json.dumps(payload)
     # vapid_private_key ist ein base64url-kodierter roher EC-Skalar (32 Byte),
     # direkt kompatibel mit py_vapid Vapid02.from_string().
-    claims = {"sub": vapid_contact_email}
-
+    # Achtung: pywebpush modifiziert das claims-Dict in-place (fügt aud/exp hinzu)
+    # → immer ein frisches Dict pro Aufruf erstellen (im Lambda).
     conn = get_connection(db_path)
     try:
         subscriptions = get_push_subscriptions_for_pilot(conn, cid)
@@ -86,7 +86,7 @@ async def send_web_push_notifications(
                         subscription_info=s,
                         data=data,
                         vapid_private_key=vapid_private_key,
-                        vapid_claims=claims,
+                        vapid_claims={"sub": vapid_contact_email},
                         ttl=3600,
                     ),
                 )
@@ -107,7 +107,8 @@ async def send_web_push_notifications(
             resp = getattr(last_exc, "response", None)
             sc = getattr(resp, "status_code", "?") if resp else type(last_exc).__name__
             cause = repr(getattr(last_exc, "__cause__", None))[:120]
-            logger.warning("WebPush failed for %s: %s cause=%s", callsign, sc, cause)
+            args = repr(getattr(last_exc, "args", ()))[:200]
+            logger.warning("WebPush failed for %s: %s cause=%s args=%s", callsign, sc, cause, args)
 
     if to_delete:
         conn2 = get_connection(db_path)
