@@ -107,6 +107,12 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/api/frontend-config")
+async def frontend_config():
+    settings = get_settings()
+    return {"openaip_api_key": settings.OPENAIP_API_KEY}
+
+
 @app.get("/api/live")
 async def get_live(request: Request):
     """Aktuelle Live-Positionen aller online Friesen."""

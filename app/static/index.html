@@ -1267,6 +1267,10 @@ const TILE_OFM_URL   = 'https://nwy-tiles-api.prod.newaydata.com/tiles/{z}/{x}/{
 const TILE_OFM_ATTR  = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://www.openflightmaps.org">openflightmaps.org</a>';
 const TILE_SAT_URL   = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_SAT_ATTR  = 'Tiles &copy; Esri &mdash; Esri, DigitalGlobe, GeoEye, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN';
+const TILE_TOPO_URL  = 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+const TILE_TOPO_ATTR = 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)';
+const TILE_AIP_URL   = 'https://api.tiles.openaip.net/api/data/openaip/{z}/{x}/{y}.png?apiKey=';
+const TILE_AIP_ATTR  = '&copy; <a href="https://www.openaip.net">OpenAIP</a>';
 
 // Legacy alias (für bestehende Verwendungen ohne Layer-Control)
 const TILE_URL  = TILE_DARK_URL;
@@ -1277,32 +1281,45 @@ const OFM_NATIVE_MAX_ZOOM = 11; // OFM hat native Tiles bis Zoom 11; ab Zoom 13 
 function _makeTileLayers() {
   return {
     ofm:  L.tileLayer(TILE_OFM_URL,  { attribution: TILE_OFM_ATTR,  maxNativeZoom: OFM_NATIVE_MAX_ZOOM, maxZoom: 19, minZoom: 6 }),
+    topo: L.tileLayer(TILE_TOPO_URL, { attribution: TILE_TOPO_ATTR, subdomains: 'abc', maxZoom: 17 }),
     dark: L.tileLayer(TILE_DARK_URL, { attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19 }),
     sat:  L.tileLayer(TILE_SAT_URL,  { attribution: TILE_SAT_ATTR,  maxZoom: 19 }),
   };
 }
 
-// Ab Zoom 13 wechselt OFM automatisch zu Satellit (und zurück beim Rauszoomen).
+// OFM ist nur bei Zoom 7–12 sinnvoll (unter 7 sparse, über 12 blank).
+// Außerhalb dieses Bereichs wird automatisch auf Satellit gewechselt.
 // Sobald der Nutzer manuell einen Layer wählt, wird Auto-Switch deaktiviert.
 function _setupOFMAutoSwitch(map, layers) {
-  const SWITCH_ZOOM = 12; // > 12 → Satellit, ≤ 12 → OFM
+  const SWITCH_HIGH = 12; // > 12 → Satellit (OFM tiles blank)
+  const SWITCH_LOW  = 7;  // < 7  → Satellit (OFM tiles sparse)
   let autoMode = true;
   let autoSwitching = false; // verhindert dass eigene Wechsel autoMode deaktivieren
   map.on('baselayerchange', () => { if (!autoSwitching) autoMode = false; });
   map.on('zoomend', () => {
     if (!autoMode) return;
     const z = map.getZoom();
-    if (z > SWITCH_ZOOM && map.hasLayer(layers.ofm)) {
+    const inOFMRange = z >= SWITCH_LOW && z <= SWITCH_HIGH;
+    if (!inOFMRange && map.hasLayer(layers.ofm)) {
       autoSwitching = true;
       map.removeLayer(layers.ofm);
       layers.sat.addTo(map);
       autoSwitching = false;
-    } else if (z <= SWITCH_ZOOM && map.hasLayer(layers.sat)) {
+    } else if (inOFMRange && map.hasLayer(layers.sat)) {
       autoSwitching = true;
       map.removeLayer(layers.sat);
       layers.ofm.addTo(map);
       autoSwitching = false;
     }
+  });
+}
+
+let _openaipKey = '';
+
+function _makeAIPOverlay() {
+  if (!_openaipKey) return null;
+  return L.tileLayer(TILE_AIP_URL + _openaipKey, {
+    attribution: TILE_AIP_ATTR, maxZoom: 14, opacity: 0.8,
   });
 }
 
@@ -1813,9 +1830,10 @@ async function openTrackModal(source, id, callsign, dep, arr) {
         trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
         const trackLayers = _makeTileLayers();
         trackLayers.ofm.addTo(trackMap);
+        const trackAIP = _makeAIPOverlay();
         L.control.layers(
-          { 'OpenFlightMap': trackLayers.ofm, 'Satellit': trackLayers.sat, 'Dark': trackLayers.dark },
-          {}, { position: 'topright', collapsed: true }
+          { 'OpenFlightMap': trackLayers.ofm, 'OpenTopo': trackLayers.topo, 'Satellit': trackLayers.sat, 'Dark': trackLayers.dark },
+          trackAIP ? { 'OpenAIP': trackAIP } : {}, { position: 'topright', collapsed: true }
         ).addTo(trackMap);
         _setupOFMAutoSwitch(trackMap, trackLayers);
         trackMapInitialized = true;
@@ -1902,9 +1920,10 @@ async function fetchLiveInitial() {
 // ==========================================================================
 //  KARTE TAB — Leaflet
 // ==========================================================================
-function initLiveMap() {
+async function initLiveMap() {
   if (mapInitialized) return;
   mapInitialized = true;
+  await _configPromise;
 
   liveMap = L.map('leaflet-map', {
     center:    [54.5, 8.5],
@@ -1916,9 +1935,10 @@ function initLiveMap() {
 
   const liveLayers = _makeTileLayers();
   liveLayers.ofm.addTo(liveMap);
+  const liveAIP = _makeAIPOverlay();
   L.control.layers(
-    { 'OpenFlightMap': liveLayers.ofm, 'Satellit': liveLayers.sat, 'Dark': liveLayers.dark },
-    {},
+    { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Dark': liveLayers.dark },
+    liveAIP ? { 'OpenAIP': liveAIP } : {},
     { position: 'topright', collapsed: true }
   ).addTo(liveMap);
   _setupOFMAutoSwitch(liveMap, liveLayers);
@@ -2518,9 +2538,10 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
     eventsMap = L.map('events-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
     const evLayers = _makeTileLayers();
     evLayers.ofm.addTo(eventsMap);
+    const evAIP = _makeAIPOverlay();
     L.control.layers(
-      { 'OpenFlightMap': evLayers.ofm, 'Satellit': evLayers.sat, 'Dark': evLayers.dark },
-      {}, { position: 'topright', collapsed: true }
+      { 'OpenFlightMap': evLayers.ofm, 'OpenTopo': evLayers.topo, 'Satellit': evLayers.sat, 'Dark': evLayers.dark },
+      evAIP ? { 'OpenAIP': evAIP } : {}, { position: 'topright', collapsed: true }
     ).addTo(eventsMap);
     _setupOFMAutoSwitch(eventsMap, evLayers);
     eventsMapInitialized = true;
@@ -2653,8 +2674,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
       // Double RAF: first frame makes container visible, second frame
       // ensures layout is computed before Leaflet measures the container
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          initLiveMap();
+        requestAnimationFrame(async () => {
+          await initLiveMap();
           if (liveMap) {
             liveMap.invalidateSize();
             updateMap(liveData);
@@ -2768,6 +2789,10 @@ function setDefaultEventDates() {
   document.getElementById('ev-start').value = fmt(past);
 }
 setDefaultEventDates();
+
+const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cfg => {
+  _openaipKey = cfg.openaip_api_key || '';
+}).catch(() => {});
 
 const _liveInitialPromise = fetchLiveInitial();
 connectSSE();

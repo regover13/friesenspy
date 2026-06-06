@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     VATSIM_POLL_INTERVAL: int = 15
     DB_PATH: str = "/opt/friesenspy/data/friesenspy.db"
     STATSIM_API_KEY: str = ""
+    OPENAIP_API_KEY: str = ""
 
 
 @lru_cache(maxsize=1)
