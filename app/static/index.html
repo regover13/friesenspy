@@ -896,6 +896,99 @@
     }
 
     /* =====================================================================
+       NOTIFICATION BELL + PANEL
+       ===================================================================== */
+    .notif-btn {
+      background: none;
+      border: 1px solid var(--green-dim);
+      color: var(--text-label);
+      font-size: 1.15rem;
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .notif-btn:hover, .notif-btn.notif-active {
+      color: var(--green);
+      border-color: var(--green-dim);
+      box-shadow: 0 0 8px var(--green-glow);
+    }
+    .notif-panel {
+      position: fixed;
+      top: 58px;
+      right: 16px;
+      z-index: 9000;
+      background: var(--bg-panel);
+      border: 1px solid var(--green-dim);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+      padding: 16px;
+      min-width: 260px;
+      max-width: 320px;
+      font-size: 0.85rem;
+    }
+    .notif-panel-title {
+      font-size: 0.75rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      margin-bottom: 12px;
+    }
+    .notif-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      margin-bottom: 12px;
+    }
+    .notif-filter-section { margin-top: 10px; }
+    .notif-filter-title {
+      font-size: 0.75rem;
+      color: var(--text-label);
+      margin-bottom: 6px;
+    }
+    .notif-radio-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+    .notif-radio-row label { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    #notif-pilot-list {
+      max-height: 150px;
+      overflow-y: auto;
+      margin: 6px 0 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .notif-pilot-cb { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .notif-save-btn {
+      background: var(--green-dim);
+      border: 1px solid var(--green-dim);
+      color: var(--text-bright);
+      padding: 5px 14px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      width: 100%;
+    }
+    .notif-save-btn:hover { background: var(--green); color: #000; }
+    .notif-hint {
+      font-size: 0.8rem;
+      color: var(--amber);
+      line-height: 1.5;
+    }
+    .notif-hint strong { color: var(--text-bright); }
+    .notif-install-btn {
+      background: none;
+      border: 1px solid var(--green-dim);
+      color: var(--green);
+      padding: 5px 14px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    /* =====================================================================
        KARTE TAB — Map icon button in live table
        ===================================================================== */
     .td-map-btn {
@@ -1046,6 +1139,7 @@
       <span class="logo-prefix">◈</span>FRIESENSPY
     </div>
     <div class="header-right">
+      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden>🔔</button>
       <div id="sse-badge" class="sse-badge disconnected">
         <div class="sse-dot"></div>
         <span class="sse-label" id="sse-label">GETRENNT</span>
@@ -1053,6 +1147,31 @@
       <div class="utc-clock" id="utc-clock">00:00:00 UTC</div>
     </div>
   </header>
+
+  <!-- Notification Panel (fixed overlay) -->
+  <div id="notif-panel" class="notif-panel" hidden>
+    <div class="notif-panel-title">Benachrichtigungen</div>
+    <label class="notif-toggle-row">
+      <input type="checkbox" id="notif-enabled"> Beim Online-gehen benachrichtigen
+    </label>
+    <div id="notif-filter" class="notif-filter-section" hidden>
+      <div class="notif-filter-title">Benachrichtigen wenn:</div>
+      <div class="notif-radio-row">
+        <label><input type="radio" name="notif-filter-mode" value="all" checked> Alle Friesen</label>
+        <label><input type="radio" name="notif-filter-mode" value="select"> Nur bestimmte Piloten</label>
+      </div>
+      <div id="notif-pilot-list" hidden></div>
+      <button class="notif-save-btn" id="notif-save-btn">Speichern</button>
+    </div>
+    <div id="notif-ios-hint" class="notif-hint" hidden>
+      Für Benachrichtigungen auf dem iPhone:<br>
+      Tippe auf <strong>⬆</strong> → <strong>Zum Home-Bildschirm</strong>
+    </div>
+    <div id="notif-blocked-hint" class="notif-hint" hidden>
+      Benachrichtigungen blockiert.<br>Bitte in den Browser-Einstellungen erlauben.
+    </div>
+    <button id="notif-install-btn" class="notif-install-btn" hidden>Als App installieren</button>
+  </div>
 
   <!-- =====================================================================
        TAB NAVIGATION
@@ -1328,6 +1447,208 @@ function _setupOFMAutoSwitch(map, layers) {
 }
 
 let _openaipKey = '';
+let _vapidPublicKey = '';
+let _swRegistration = null;
+let _pushSubscription = null;
+let _deferredInstallPrompt = null;
+
+// ---- PWA install prompt (Android/Desktop) ----
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+  const btn = document.getElementById('notif-install-btn');
+  if (btn) btn.hidden = false;
+});
+
+// ---- Helpers ----
+function _urlBase64ToUint8Array(b64) {
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+function _bufToBase64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+
+// ---- Service Worker + Push ----
+async function _registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || !_vapidPublicKey) return;
+  try {
+    _swRegistration = await navigator.serviceWorker.register('/static/sw.js');
+    _pushSubscription = await _swRegistration.pushManager.getSubscription();
+    _updateNotifBtn();
+  } catch (e) {
+    console.warn('SW registration failed:', e);
+  }
+}
+
+function _updateNotifBtn() {
+  const btn = document.getElementById('notif-btn');
+  if (!btn) return;
+  btn.classList.toggle('notif-active', !!_pushSubscription);
+  const cb = document.getElementById('notif-enabled');
+  if (cb) cb.checked = !!_pushSubscription;
+}
+
+function _showNotifPanelContent() {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                    || !!window.navigator.standalone;
+  const iosHint     = document.getElementById('notif-ios-hint');
+  const blockedHint = document.getElementById('notif-blocked-hint');
+  const filterDiv   = document.getElementById('notif-filter');
+  const enabledCb   = document.getElementById('notif-enabled');
+
+  iosHint.hidden = true;
+  blockedHint.hidden = true;
+
+  if (isIOS && !isStandalone && !('PushManager' in window)) {
+    iosHint.hidden = false;
+    enabledCb.disabled = true;
+    filterDiv.hidden = true;
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    blockedHint.hidden = false;
+    enabledCb.disabled = true;
+    filterDiv.hidden = true;
+    return;
+  }
+  enabledCb.disabled = false;
+  enabledCb.checked = !!_pushSubscription;
+  filterDiv.hidden = !_pushSubscription;
+}
+
+async function _loadNotifPilotList() {
+  const container = document.getElementById('notif-pilot-list');
+  if (!container || container.children.length > 0) return;
+  try {
+    const res = await fetch('/api/stats?days=365');
+    const data = await res.json();
+    const pilots = data.pilots || data;
+    const savedFilter = JSON.parse(localStorage.getItem('notif_pilot_filter') || 'null');
+    container.innerHTML = pilots.map(p => {
+      const checked = !savedFilter || savedFilter.includes(p.cid) ? 'checked' : '';
+      const label = escHtml((p.last_callsign || '').toUpperCase() || String(p.cid));
+      return `<label class="notif-pilot-cb"><input type="checkbox" data-cid="${p.cid}" ${checked}> ${label}</label>`;
+    }).join('');
+  } catch (e) {}
+}
+
+async function _subscribePush(pilotFilter = null) {
+  if (!_swRegistration || !_vapidPublicKey) return;
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { _showNotifPanelContent(); return; }
+    _pushSubscription = await _swRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: _urlBase64ToUint8Array(_vapidPublicKey),
+    });
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: _pushSubscription.endpoint,
+        p256dh:   _bufToBase64(_pushSubscription.getKey('p256dh')),
+        auth:     _bufToBase64(_pushSubscription.getKey('auth')),
+        pilot_filter: pilotFilter,
+      }),
+    });
+    _updateNotifBtn();
+    document.getElementById('notif-filter').hidden = false;
+  } catch (e) {
+    console.warn('Push subscribe failed:', e);
+  }
+}
+
+async function _unsubscribePush() {
+  if (!_pushSubscription) return;
+  const endpoint = _pushSubscription.endpoint;
+  await _pushSubscription.unsubscribe();
+  _pushSubscription = null;
+  await fetch('/api/push/unsubscribe', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint }),
+  }).catch(() => {});
+  _updateNotifBtn();
+}
+
+async function _saveNotifFilter() {
+  if (!_pushSubscription) return;
+  const mode = document.querySelector('input[name="notif-filter-mode"]:checked')?.value;
+  let pilotFilter = null;
+  if (mode === 'select') {
+    const cbs = document.querySelectorAll('#notif-pilot-list input[type=checkbox]:checked');
+    pilotFilter = [...cbs].map(cb => Number(cb.dataset.cid));
+    localStorage.setItem('notif_pilot_filter', JSON.stringify(pilotFilter));
+  } else {
+    localStorage.removeItem('notif_pilot_filter');
+  }
+  await fetch('/api/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      endpoint: _pushSubscription.endpoint,
+      p256dh:   _bufToBase64(_pushSubscription.getKey('p256dh')),
+      auth:     _bufToBase64(_pushSubscription.getKey('auth')),
+      pilot_filter: pilotFilter,
+    }),
+  });
+  const saveBtn = document.getElementById('notif-save-btn');
+  if (saveBtn) {
+    saveBtn.textContent = '✓ Gespeichert';
+    setTimeout(() => { saveBtn.textContent = 'Speichern'; }, 2000);
+  }
+}
+
+// ---- Bell button wiring (after DOM ready) ----
+document.addEventListener('DOMContentLoaded', () => {
+  const notifBtn    = document.getElementById('notif-btn');
+  const notifPanel  = document.getElementById('notif-panel');
+  const enabledCb   = document.getElementById('notif-enabled');
+  const saveBtn     = document.getElementById('notif-save-btn');
+  const installBtn  = document.getElementById('notif-install-btn');
+
+  notifBtn?.addEventListener('click', e => {
+    e.stopPropagation();
+    notifPanel.hidden = !notifPanel.hidden;
+    if (!notifPanel.hidden) {
+      _showNotifPanelContent();
+      _loadNotifPilotList();
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!notifPanel?.hidden && !notifPanel.contains(e.target) && e.target !== notifBtn) {
+      notifPanel.hidden = true;
+    }
+  });
+
+  enabledCb?.addEventListener('change', async () => {
+    if (enabledCb.checked) await _subscribePush();
+    else await _unsubscribePush();
+    _showNotifPanelContent();
+  });
+
+  document.querySelectorAll('input[name="notif-filter-mode"]').forEach(r => {
+    r.addEventListener('change', () => {
+      document.getElementById('notif-pilot-list').hidden = r.value !== 'select';
+    });
+  });
+
+  saveBtn?.addEventListener('click', _saveNotifFilter);
+
+  installBtn?.addEventListener('click', async () => {
+    if (!_deferredInstallPrompt) return;
+    _deferredInstallPrompt.prompt();
+    const { outcome } = await _deferredInstallPrompt.userChoice;
+    if (outcome === 'accepted') {
+      installBtn.hidden = true;
+      _deferredInstallPrompt = null;
+    }
+  });
+});
 
 function _makeAIPOverlay() {
   if (!_openaipKey) return null;
@@ -2814,6 +3135,11 @@ setDefaultEventDates();
 
 const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cfg => {
   _openaipKey = cfg.openaip_api_key || '';
+  _vapidPublicKey = cfg.vapid_public_key || '';
+  if (_vapidPublicKey) {
+    document.getElementById('notif-btn').hidden = false;
+    _registerServiceWorker();
+  }
 }).catch(() => {});
 
 const _liveInitialPromise = fetchLiveInitial();

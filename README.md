@@ -15,6 +15,7 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 - **URL Deep-Linking** — alle Zustände (Tab, Pilot, Track, Flugplan, Events-Filter, Zeitraum) sind als URL-Hash teilbar; Seite neu laden öffnet denselben Zustand direkt
 - **Karten-Layer** — OpenFlightMap (VFR, auto-aktiv bei Zoom 7–12), OpenTopoMap, ESRI-Satellit, Light CARTO, Dark CARTO — alle manuell wählbar; außerhalb des OFM-Bereichs (Zoom ≤ 6 oder ≥ 13) automatischer Wechsel auf Satellit; **OpenAIP-Overlay** (Luftraum, Flugplätze, Navaids) als zusätzliche Checkbox — benötigt `OPENAIP_API_KEY` in config
 - **StatSim-Integration** — Historische Flüge (letztes Jahr) via [StatSim API](https://statsim.net); sofortige Anzeige aus Cache, Hintergrund-Update des letzten 31-Tage-Chunks (API-Key nötig)
+- **Web Push Notifications** — Browser-Benachrichtigung wenn ein Friese online geht; funktioniert im Hintergrund (Desktop + Android); auf iOS als PWA (Hinweis wird angezeigt); Pilot-Filter wählbar (Alle / bestimmte Piloten); Bell-Icon 🔔 im Header — nur sichtbar wenn `VAPID_PUBLIC_KEY` gesetzt
 - **Telegram-Alerts** — Optional: Nachricht wenn ein Friese online geht
 
 ## Wie funktioniert das?
@@ -58,6 +59,9 @@ TELEGRAM_BOT_TOKEN=                         # Optional
 TELEGRAM_CHAT_ID=                           # Optional
 STATSIM_API_KEY=                            # Optional: historische Flüge via statsim.net
 OPENAIP_API_KEY=                            # Optional: OpenAIP-Overlay (Luftraum, Navaids)
+VAPID_PUBLIC_KEY=                           # Optional: Web Push (aus generate_vapid.py)
+VAPID_PRIVATE_KEY=                          # Optional: Web Push Private Key (PEM mit \n)
+VAPID_CONTACT_EMAIL=                        # Optional: mailto:... für Web Push
 ```
 
 ### Tests

@@ -16,9 +16,11 @@ from app.config import get_settings
 from app.database import (
     cleanup_old_history,
     close_flight,
+    delete_push_subscription,
     ensure_pilot,
     get_connection,
     get_live_positions,
+    get_push_subscriptions_for_pilot,
     open_flight,
     remove_live_position,
     save_position_history,
@@ -30,6 +32,74 @@ from app.alerts import format_online_message, send_telegram_alert
 logger = logging.getLogger(__name__)
 
 
+async def send_web_push_notifications(
+    vapid_private_key: str,
+    vapid_contact_email: str,
+    db_path: str,
+    pilot: dict,
+) -> None:
+    """Push-Notification an alle passenden Subscriptions senden."""
+    import json as _json
+    from pywebpush import webpush, WebPushException
+
+    cid = pilot.get("cid")
+    callsign = pilot.get("callsign", "?")
+    dep = pilot.get("departure") or "?"
+    arr = pilot.get("arrival") or "?"
+    aircraft = pilot.get("aircraft_short") or pilot.get("aircraft") or ""
+
+    payload = {
+        "title": f"{callsign} ist online! ✈",
+        "body": f"{dep} → {arr}" + (f" · {aircraft}" if aircraft else ""),
+        "url": "/",
+    }
+    data = _json.dumps(payload)
+    pem = vapid_private_key.replace("\\n", "\n")
+    claims = {"sub": f"mailto:{vapid_contact_email}"}
+
+    conn = get_connection(db_path)
+    try:
+        subscriptions = get_push_subscriptions_for_pilot(conn, cid)
+    finally:
+        conn.close()
+
+    loop = asyncio.get_event_loop()
+    to_delete: list[str] = []
+
+    for sub in subscriptions:
+        sub_info = {
+            "endpoint": sub["endpoint"],
+            "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
+        }
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda s=sub_info: webpush(
+                    subscription_info=s,
+                    data=data,
+                    vapid_private_key=pem,
+                    vapid_claims=claims,
+                ),
+            )
+        except WebPushException as exc:
+            resp = getattr(exc, "response", None)
+            if resp is not None and getattr(resp, "status_code", None) == 410:
+                to_delete.append(sub["endpoint"])
+            else:
+                logger.warning("WebPush failed for %s: %s", callsign, type(exc).__name__)
+        except Exception as exc:
+            logger.warning("WebPush error for %s: %s", callsign, type(exc).__name__)
+
+    if to_delete:
+        conn2 = get_connection(db_path)
+        try:
+            for endpoint in to_delete:
+                delete_push_subscription(conn2, endpoint)
+            conn2.commit()
+        finally:
+            conn2.close()
+
+
 class VatsimPoller:
     def __init__(
         self,
@@ -38,12 +108,16 @@ class VatsimPoller:
         poll_interval: int = 15,
         telegram_token: str = "",
         telegram_chat_id: str = "",
+        vapid_private_key: str = "",
+        vapid_contact_email: str = "",
     ) -> None:
         self.db_path = db_path
         self.callsign_prefix = callsign_prefix
         self.poll_interval = poll_interval
         self.telegram_token = telegram_token
         self.telegram_chat_id = telegram_chat_id
+        self.vapid_private_key = vapid_private_key
+        self.vapid_contact_email = vapid_contact_email
         self._scheduler: AsyncIOScheduler | None = None
         self._http_client: httpx.AsyncClient | None = None
         # State: cid → flight_id (offene Flüge)
@@ -189,6 +263,17 @@ class VatsimPoller:
                         except Exception:
                             logger.exception("Error sending Telegram alert for cid=%s", cid)
 
+                    # Web Push notifications
+                    if self.vapid_private_key:
+                        asyncio.create_task(
+                            send_web_push_notifications(
+                                self.vapid_private_key,
+                                self.vapid_contact_email,
+                                self.db_path,
+                                pos,
+                            )
+                        )
+
                 # 2b. Still online pilots — update position
                 for cid in still_online:
                     pos = current[cid]
@@ -278,4 +363,6 @@ def create_poller() -> VatsimPoller:
         poll_interval=settings.VATSIM_POLL_INTERVAL,
         telegram_token=settings.TELEGRAM_BOT_TOKEN,
         telegram_chat_id=settings.TELEGRAM_CHAT_ID,
+        vapid_private_key=settings.VAPID_PRIVATE_KEY,
+        vapid_contact_email=settings.VAPID_CONTACT_EMAIL,
     )

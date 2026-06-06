@@ -1,6 +1,7 @@
 """SQLite WAL-Mode Datenbank-Layer für FriesenSpy."""
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 
@@ -80,6 +81,15 @@ CREATE TABLE IF NOT EXISTS statsim_cache (
     fetched_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sc_cid ON statsim_cache(cid);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint     TEXT UNIQUE NOT NULL,
+    p256dh       TEXT NOT NULL,
+    auth         TEXT NOT NULL,
+    pilot_filter TEXT DEFAULT NULL,
+    created_at   TEXT NOT NULL
+);
 """
 
 
@@ -615,3 +625,59 @@ def get_pilot_flights_friesenspy(
         (cid, f"-{days}"),
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Push Subscriptions
+# ---------------------------------------------------------------------------
+
+def upsert_push_subscription(
+    conn: sqlite3.Connection,
+    endpoint: str,
+    p256dh: str,
+    auth: str,
+    pilot_filter: list[int] | None = None,
+) -> None:
+    """Browser-Push-Subscription speichern oder aktualisieren."""
+    conn.execute(
+        """INSERT INTO push_subscriptions (endpoint, p256dh, auth, pilot_filter, created_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(endpoint) DO UPDATE SET
+               p256dh=excluded.p256dh,
+               auth=excluded.auth,
+               pilot_filter=excluded.pilot_filter""",
+        (
+            endpoint, p256dh, auth,
+            json.dumps(pilot_filter) if pilot_filter is not None else None,
+            _now_utc(),
+        ),
+    )
+
+
+def delete_push_subscription(conn: sqlite3.Connection, endpoint: str) -> None:
+    """Push-Subscription anhand des Endpoints löschen."""
+    conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+
+
+def get_push_subscriptions_for_pilot(
+    conn: sqlite3.Connection, cid: int
+) -> list[dict]:
+    """Alle Subscriptions die Notifications für diesen Piloten wollen.
+
+    Gibt Subscriptions zurück wenn pilot_filter IS NULL (alle) oder cid in der Filter-Liste.
+    """
+    rows = conn.execute(
+        "SELECT endpoint, p256dh, auth, pilot_filter FROM push_subscriptions"
+    ).fetchall()
+    result = []
+    for row in rows:
+        pf = row["pilot_filter"]
+        if pf is None:
+            result.append(dict(row))
+        else:
+            try:
+                if cid in json.loads(pf):
+                    result.append(dict(row))
+            except (json.JSONDecodeError, TypeError):
+                result.append(dict(row))
+    return result

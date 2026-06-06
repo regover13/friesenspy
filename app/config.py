@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     DB_PATH: str = "/opt/friesenspy/data/friesenspy.db"
     STATSIM_API_KEY: str = ""
     OPENAIP_API_KEY: str = ""
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""   # PEM mit \\n-Escaping (z.B. aus generate_vapid.py)
+    VAPID_CONTACT_EMAIL: str = ""
 
 
 @lru_cache(maxsize=1)

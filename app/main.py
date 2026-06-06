@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import (
+    delete_push_subscription,
     get_all_position_history,
     get_connection,
     get_live_flight_track,
@@ -26,6 +27,7 @@ from app.database import (
     get_statsim_last_fetched,
     init_db,
     merge_fragmented_flights,
+    upsert_push_subscription,
     upsert_statsim_flights,
 )
 from app.geo import filter_event_pilots, segment_into_flights
@@ -110,7 +112,44 @@ async def health():
 @app.get("/api/frontend-config")
 async def frontend_config():
     settings = get_settings()
-    return {"openaip_api_key": settings.OPENAIP_API_KEY}
+    return {
+        "openaip_api_key": settings.OPENAIP_API_KEY,
+        "vapid_public_key": settings.VAPID_PUBLIC_KEY,
+    }
+
+
+@app.post("/api/push/subscribe")
+async def push_subscribe(request: Request):
+    """Browser-Push-Subscription speichern."""
+    body = await request.json()
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        upsert_push_subscription(
+            conn,
+            body["endpoint"],
+            body["p256dh"],
+            body["auth"],
+            body.get("pilot_filter"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok"}
+
+
+@app.delete("/api/push/unsubscribe")
+async def push_unsubscribe(request: Request):
+    """Browser-Push-Subscription entfernen."""
+    body = await request.json()
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        delete_push_subscription(conn, body["endpoint"])
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok"}
 
 
 @app.get("/api/live")
