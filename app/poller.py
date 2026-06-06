@@ -54,16 +54,13 @@ async def send_web_push_notifications(
         "url": "/",
     }
     data = _json.dumps(payload)
-    # py_vapid 2.x erwartet den Rohschlüssel als base64url (32 Bytes), kein PEM-String
+    # py_vapid 2.x erwartet den privaten EC-Skalar (d) als base64url, kein PEM-String.
+    # Encoding.Raw funktioniert nicht für EC-Keys → private_numbers().private_value nutzen.
     import base64 as _b64
-    from cryptography.hazmat.primitives.serialization import (
-        load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
-    )
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
     _pem = vapid_private_key.replace("\\n", "\n").encode()
-    _raw = load_pem_private_key(_pem, password=None).private_bytes(
-        Encoding.Raw, PrivateFormat.Raw, NoEncryption()
-    )
-    vapid_key = _b64.urlsafe_b64encode(_raw).rstrip(b"=").decode()
+    _d = load_pem_private_key(_pem, password=None).private_numbers().private_value
+    vapid_key = _b64.urlsafe_b64encode(_d.to_bytes(32, "big")).rstrip(b"=").decode()
     claims = {"sub": vapid_contact_email}
 
     conn = get_connection(db_path)
