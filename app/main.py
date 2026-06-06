@@ -223,7 +223,7 @@ async def get_events(
             # Segmentierung über flights-Tabelle (exakter als Zeitlücke)
             flight_rows = conn2.execute(
                 """SELECT callsign, departure, arrival, aircraft_short,
-                          logon_time, logoff_time
+                          logon_time, logoff_time, duration_min
                    FROM flights
                    WHERE cid = ?
                      AND logoff_time IS NOT NULL
@@ -241,6 +241,8 @@ async def get_events(
             )
             flights = []
             for fr in merged_rows:
+                if (fr.get("duration_min") or 0) <= 5:
+                    continue
                 lo, lf = fr["logon_time"], fr.get("logoff_time", "")
                 seg_positions = [p for p in positions if lo <= p.get("ts", "") <= lf]
                 flights.append({
