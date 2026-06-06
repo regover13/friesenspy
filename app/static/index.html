@@ -905,6 +905,12 @@
       text-align: center;
       transition: color 0.15s, text-shadow 0.15s;
       user-select: none;
+      padding: 2px 8px;
+    }
+    .td-map-btn svg {
+      display: inline-block;
+      vertical-align: middle;
+      fill: currentColor;
     }
     .td-map-btn:hover {
       color: var(--green);
@@ -1487,7 +1493,7 @@ function renderLiveTable(pilots) {
             <td class="td-alt">${fmtAlt(p.altitude)}</td>
             <td class="td-gs">${fmtGS(p.groundspeed)}</td>
             <td class="td-time">${fmtOnlineTime(p.logon_time)}</td>
-            <td class="td-map-btn" data-cs="${escHtml(p.callsign || '')}">◎</td>
+            <td class="td-map-btn" data-cs="${escHtml(p.callsign || '')}"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></td>
           </tr>`;
   }
 
@@ -1779,7 +1785,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
               data-callsign="${escHtml(f.callsign || '')}"
               data-dep="${escHtml(dep)}"
               data-arr="${escHtml(arr)}"
-              title="Track anzeigen">◎</span></td>
+              title="Track anzeigen"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></span></td>
         <td>${sourceTag}</td>
       </tr>`;
     }
@@ -2485,7 +2491,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
         <td class="mono">${route}</td>
         <td class="mono">${dur}</td>
         <td class="mono text-label">${pts}</td>
-        <td><span class="td-map-btn" title="Auf Karte zeigen">◎</span></td>
+        <td><span class="td-map-btn" title="Auf Karte zeigen"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></span></td>
       </tr>`;
     });
 
@@ -2508,7 +2514,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             <th style="text-align:left;">Route</th>
             <th style="text-align:left;">Dauer</th>
             <th style="text-align:left;">Wegpunkte</th>
-            <th></th>
+            <th style="text-align:left;">Karte</th>
           </tr></thead>
           <tbody>${flightRows}</tbody>
         </table>` : ''}
