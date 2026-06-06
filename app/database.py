@@ -441,13 +441,18 @@ def get_stats_activity(
         pilots_by_period.setdefault(p, set()).add(cid)
     pilot_count = {k: len(v) for k, v in pilots_by_period.items()}
 
-    # Flugdauer pro Periode (Ghost-Flüge und Fragmente ausgeschlossen; StatSim dedupliziert)
+    # Flugdauer pro Periode: Hauptflug + Dauer gemergedter Fragmente (StatSim dedupliziert)
     fs_dur = {r[0]: (r[1] or 0) for r in conn.execute(
-        "SELECT strftime(?, f.logon_time), SUM(COALESCE(f.duration_min, "
-        "CASE WHEN f.logoff_time IS NOT NULL "
-        "THEN CAST((JULIANDAY(f.logoff_time)-JULIANDAY(f.logon_time))*1440 AS INTEGER) END)) "
-        "FROM flights f WHERE f.logon_time >= datetime('now', ? || ' days') "
-        "AND f.logoff_time IS NOT NULL AND f.duration_min > 5" + _merge_excl + " GROUP BY 1",
+        "SELECT strftime(?, f.logon_time),"
+        " SUM(f.duration_min + COALESCE(("
+        "  SELECT SUM(frag.duration_min) FROM flights frag"
+        "  WHERE frag.cid=f.cid AND frag.callsign=f.callsign AND frag.duration_min>5"
+        "  AND CAST((JULIANDAY(f.logon_time)-JULIANDAY(frag.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5"
+        "  AND ((frag.departure!='' AND f.departure=frag.departure AND f.arrival=frag.arrival)"
+        "   OR (frag.departure='' AND frag.arrival='' AND (f.departure!='' OR f.arrival!='')))"
+        " ),0))"
+        " FROM flights f WHERE f.logon_time >= datetime('now', ? || ' days')"
+        " AND f.logoff_time IS NOT NULL AND f.duration_min > 5" + _merge_excl + " GROUP BY 1",
         (sql_fmt, f"-{days}"),
     ).fetchall()}
     st_dur = {r[0]: (r[1] or 0) for r in conn.execute(
