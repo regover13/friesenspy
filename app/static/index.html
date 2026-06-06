@@ -2809,6 +2809,11 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 
   const pilots = data.pilots || [];
 
+  const urlParams = { tab: 'events', icao: icaoStr, radius: radiusKm };
+  if (startVal) urlParams.start = startVal;
+  if (endVal)   urlParams.end   = endVal;
+  setUrlState(urlParams);
+
   if (pilots.length === 0) {
     summary.innerHTML = 'Keine Treffer';
     summary.className   = 'events-summary not-found';
@@ -2816,11 +2821,6 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
     mapDiv.style.display = 'none';
     return;
   }
-
-  const urlParams = { tab: 'events', icao: icaoStr, radius: radiusKm };
-  if (startVal) urlParams.start = startVal;
-  if (endVal)   urlParams.end   = endVal;
-  setUrlState(urlParams);
 
   summary.innerHTML = `<span>${pilots.length} Friese${pilots.length !== 1 ? 'n' : ''} dabei</span>
     <button class="btn-share" style="margin-left:auto;" onclick="copyShareUrl(this)">⎘ Teilen</button>`;
