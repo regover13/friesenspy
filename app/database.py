@@ -391,6 +391,17 @@ def get_stats_activity(
         sql_fmt = "%Y-%m"
         grouping = "month"
 
+    # Früheres Fragment eines gemergten Fluges ausschließen (spiegelt merge_fragmented_flights):
+    # gleicher Callsign + (gleicher nicht-leerer FP ODER aktueller ohne FP) + Nachfolger in 5 Min
+    _merge_excl = (
+        " AND NOT EXISTS ("
+        "SELECT 1 FROM flights f2"
+        " WHERE f2.cid=f.cid AND f2.callsign=f.callsign AND f2.duration_min>5"
+        " AND CAST((JULIANDAY(f2.logon_time)-JULIANDAY(f.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5"
+        " AND ((f.departure!='' AND f2.departure=f.departure AND f2.arrival=f.arrival)"
+        "  OR (f.departure='' AND f.arrival='' AND (f2.departure!='' OR f2.arrival!=''))))"
+    )
+    # StatSim-Einträge deduplizieren gegen bereits in FriesenSpy vorhandene Flüge
     _dedup = (
         " AND NOT EXISTS ("
         "SELECT 1 FROM flights fx WHERE fx.cid = sc.cid"
@@ -398,11 +409,11 @@ def get_stats_activity(
         " AND substr(fx.logon_time,1,16)=substr(sc.logon_time,1,16))"
     )
 
-    # Flugzahlen (Ghost-Flüge ≤ 5 Min ausgeschlossen; StatSim dedupliziert gegen FriesenSpy)
+    # Flugzahlen (Ghost ≤ 5 Min und Merge-Fragmente ausgeschlossen; StatSim dedupliziert)
     fs = {r[0]: r[1] for r in conn.execute(
-        "SELECT strftime(?, logon_time), COUNT(*) FROM flights "
-        "WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL "
-        "AND duration_min > 5 GROUP BY 1",
+        "SELECT strftime(?, f.logon_time), COUNT(*) FROM flights f "
+        "WHERE f.logon_time >= datetime('now', ? || ' days') AND f.logoff_time IS NOT NULL "
+        "AND f.duration_min > 5" + _merge_excl + " GROUP BY 1",
         (sql_fmt, f"-{days}"),
     ).fetchall()}
     st = {r[0]: r[1] for r in conn.execute(
@@ -412,12 +423,12 @@ def get_stats_activity(
         (sql_fmt, f"-{days}", prefix_pat),
     ).fetchall()}
 
-    # Unique Piloten pro Periode (aus beiden Quellen, Ghost-Flüge ausgeschlossen)
+    # Unique Piloten pro Periode (Ghost-Flüge und Fragmente ausgeschlossen)
     pilots_by_period: dict[str, set] = {}
     for p, cid in conn.execute(
-        "SELECT strftime(?, logon_time), cid FROM flights "
-        "WHERE logon_time >= datetime('now', ? || ' days') AND logoff_time IS NOT NULL "
-        "AND duration_min > 5",
+        "SELECT strftime(?, f.logon_time), f.cid FROM flights f "
+        "WHERE f.logon_time >= datetime('now', ? || ' days') AND f.logoff_time IS NOT NULL "
+        "AND f.duration_min > 5" + _merge_excl,
         (sql_fmt, f"-{days}"),
     ).fetchall():
         pilots_by_period.setdefault(p, set()).add(cid)
@@ -430,13 +441,13 @@ def get_stats_activity(
         pilots_by_period.setdefault(p, set()).add(cid)
     pilot_count = {k: len(v) for k, v in pilots_by_period.items()}
 
-    # Flugdauer pro Periode (Ghost-Flüge ausgeschlossen; StatSim dedupliziert)
+    # Flugdauer pro Periode (Ghost-Flüge und Fragmente ausgeschlossen; StatSim dedupliziert)
     fs_dur = {r[0]: (r[1] or 0) for r in conn.execute(
-        "SELECT strftime(?, logon_time), SUM(COALESCE(duration_min, "
-        "CASE WHEN logoff_time IS NOT NULL "
-        "THEN CAST((JULIANDAY(logoff_time)-JULIANDAY(logon_time))*1440 AS INTEGER) END)) "
-        "FROM flights WHERE logon_time >= datetime('now', ? || ' days') "
-        "AND logoff_time IS NOT NULL AND duration_min > 5 GROUP BY 1",
+        "SELECT strftime(?, f.logon_time), SUM(COALESCE(f.duration_min, "
+        "CASE WHEN f.logoff_time IS NOT NULL "
+        "THEN CAST((JULIANDAY(f.logoff_time)-JULIANDAY(f.logon_time))*1440 AS INTEGER) END)) "
+        "FROM flights f WHERE f.logon_time >= datetime('now', ? || ' days') "
+        "AND f.logoff_time IS NOT NULL AND f.duration_min > 5" + _merge_excl + " GROUP BY 1",
         (sql_fmt, f"-{days}"),
     ).fetchall()}
     st_dur = {r[0]: (r[1] or 0) for r in conn.execute(
