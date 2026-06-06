@@ -54,7 +54,16 @@ async def send_web_push_notifications(
         "url": "/",
     }
     data = _json.dumps(payload)
-    pem = vapid_private_key.replace("\\n", "\n")
+    # py_vapid 2.x erwartet den Rohschlüssel als base64url (32 Bytes), kein PEM-String
+    import base64 as _b64
+    from cryptography.hazmat.primitives.serialization import (
+        load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
+    )
+    _pem = vapid_private_key.replace("\\n", "\n").encode()
+    _raw = load_pem_private_key(_pem, password=None).private_bytes(
+        Encoding.Raw, PrivateFormat.Raw, NoEncryption()
+    )
+    vapid_key = _b64.urlsafe_b64encode(_raw).rstrip(b"=").decode()
     claims = {"sub": vapid_contact_email}
 
     conn = get_connection(db_path)
@@ -77,7 +86,7 @@ async def send_web_push_notifications(
                 lambda s=sub_info: webpush(
                     subscription_info=s,
                     data=data,
-                    vapid_private_key=pem,
+                    vapid_private_key=vapid_key,
                     vapid_claims=claims,
                 ),
             )
@@ -86,9 +95,10 @@ async def send_web_push_notifications(
             if resp is not None and getattr(resp, "status_code", None) == 410:
                 to_delete.append(sub["endpoint"])
             else:
-                logger.warning("WebPush failed for %s: %s — %s", callsign, type(exc).__name__, exc)
+                logger.warning("WebPush failed for %s: HTTP %s", callsign,
+                               getattr(getattr(exc, "response", None), "status_code", "?"))
         except Exception as exc:
-            logger.warning("WebPush error for %s: %s — %s", callsign, type(exc).__name__, exc)
+            logger.warning("WebPush error for %s: %s", callsign, type(exc).__name__)
 
     if to_delete:
         conn2 = get_connection(db_path)
