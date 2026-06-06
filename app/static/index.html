@@ -961,6 +961,7 @@
       gap: 3px;
     }
     .notif-pilot-cb { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .notif-pilot-cb:has(input:disabled) { opacity: 0.55; cursor: default; }
     .notif-save-btn {
       background: var(--green-dim);
       border: 1px solid var(--green-dim);
@@ -1451,6 +1452,7 @@ let _vapidPublicKey = '';
 let _swRegistration = null;
 let _pushSubscription = null;
 let _deferredInstallPrompt = null;
+let _notifCustomFilter = null; // in-memory filter für "Nur bestimmte Piloten" (überlebt Radio-Wechsel)
 
 // ---- PWA install prompt (Android/Desktop) ----
 window.addEventListener('beforeinstallprompt', e => {
@@ -1519,20 +1521,46 @@ function _showNotifPanelContent() {
   filterDiv.hidden = !_pushSubscription;
 }
 
+function _applyNotifPilotListState() {
+  const container = document.getElementById('notif-pilot-list');
+  if (!container || container.children.length === 0) return;
+  const mode = document.querySelector('input[name="notif-filter-mode"]:checked')?.value || 'all';
+  const cbs = container.querySelectorAll('input[type=checkbox]');
+  container.hidden = false;
+  if (mode === 'all') {
+    cbs.forEach(cb => { cb.checked = true; cb.disabled = true; });
+  } else {
+    const filter = _notifCustomFilter ?? JSON.parse(localStorage.getItem('notif_pilot_filter') || 'null');
+    cbs.forEach(cb => {
+      const cid = Number(cb.dataset.cid);
+      cb.checked = !filter || filter.includes(cid);
+      cb.disabled = false;
+    });
+  }
+}
+
 async function _loadNotifPilotList() {
   const container = document.getElementById('notif-pilot-list');
-  if (!container || container.children.length > 0) return;
-  try {
-    const res = await fetch('/api/stats?days=365');
-    const data = await res.json();
-    const pilots = data.pilots || data;
-    const savedFilter = JSON.parse(localStorage.getItem('notif_pilot_filter') || 'null');
-    container.innerHTML = pilots.map(p => {
-      const checked = !savedFilter || savedFilter.includes(p.cid) ? 'checked' : '';
-      const label = escHtml((p.last_callsign || '').toUpperCase() || String(p.cid));
-      return `<label class="notif-pilot-cb"><input type="checkbox" data-cid="${p.cid}" ${checked}> ${label}</label>`;
-    }).join('');
-  } catch (e) {}
+  if (!container) return;
+  if (container.children.length === 0) {
+    try {
+      const res = await fetch('/api/stats?days=365');
+      const data = await res.json();
+      const pilots = data.pilots || data;
+      container.innerHTML = pilots.map(p => {
+        const label = escHtml((p.last_callsign || '').toUpperCase() || String(p.cid));
+        return `<label class="notif-pilot-cb"><input type="checkbox" data-cid="${p.cid}"> ${label}</label>`;
+      }).join('');
+      // Radio-Modus aus gespeichertem Filter wiederherstellen
+      const savedFilter = JSON.parse(localStorage.getItem('notif_pilot_filter') || 'null');
+      if (savedFilter) {
+        const selectRadio = document.querySelector('input[name="notif-filter-mode"][value="select"]');
+        if (selectRadio) selectRadio.checked = true;
+        _notifCustomFilter = savedFilter;
+      }
+    } catch (e) {}
+  }
+  _applyNotifPilotListState();
 }
 
 async function _subscribePush(pilotFilter = null) {
@@ -1581,8 +1609,10 @@ async function _saveNotifFilter() {
   if (mode === 'select') {
     const cbs = document.querySelectorAll('#notif-pilot-list input[type=checkbox]:checked');
     pilotFilter = [...cbs].map(cb => Number(cb.dataset.cid));
+    _notifCustomFilter = pilotFilter;
     localStorage.setItem('notif_pilot_filter', JSON.stringify(pilotFilter));
   } else {
+    _notifCustomFilter = null;
     localStorage.removeItem('notif_pilot_filter');
   }
   await fetch('/api/push/subscribe', {
@@ -1633,7 +1663,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.querySelectorAll('input[name="notif-filter-mode"]').forEach(r => {
     r.addEventListener('change', () => {
-      document.getElementById('notif-pilot-list').hidden = r.value !== 'select';
+      if (r.value === 'all') {
+        // Aktuellen "select"-Zustand merken bevor auf "all" gewechselt wird
+        const cbs = document.querySelectorAll('#notif-pilot-list input[type=checkbox]');
+        if (cbs.length) {
+          _notifCustomFilter = [...cbs].filter(cb => cb.checked).map(cb => Number(cb.dataset.cid));
+        }
+      }
+      _applyNotifPilotListState();
     });
   });
 
