@@ -1452,6 +1452,16 @@ function _getPreferredLayer(layers) {
   return (pref && layers[pref]) ? layers[pref] : layers.ofm;
 }
 
+const _AIP_PREF_KEY = 'friesenspy_aip';
+function _saveAIPPref(on) { try { localStorage.setItem(_AIP_PREF_KEY, on ? '1' : '0'); } catch(e) {} }
+function _loadAIPPref() { try { return localStorage.getItem(_AIP_PREF_KEY) === '1'; } catch(e) { return false; } }
+function _setupAIPPref(map, aipLayer) {
+  if (!aipLayer) return;
+  if (_loadAIPPref()) aipLayer.addTo(map);
+  map.on('overlayadd',    (e) => { if (e.layer === aipLayer) _saveAIPPref(true);  });
+  map.on('overlayremove', (e) => { if (e.layer === aipLayer) _saveAIPPref(false); });
+}
+
 // OFM ist nur bei Zoom 7–12 sinnvoll (unter 7 sparse, über 12 blank).
 // Außerhalb dieses Bereichs wird automatisch auf Satellit gewechselt.
 // Manuell zu OFM zurückwechseln reaktiviert den Auto-Switch.
@@ -2262,6 +2272,7 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff) {
           { 'OpenFlightMap': trackLayers.ofm, 'OpenTopo': trackLayers.topo, 'Satellit': trackLayers.sat, 'Light': trackLayers.light, 'Dark': trackLayers.dark },
           trackAIP ? { 'OpenAIP': trackAIP } : {}, { position: 'topright', collapsed: true }
         ).addTo(trackMap);
+        _setupAIPPref(trackMap, trackAIP);
         _setupOFMAutoSwitch(trackMap, trackLayers);
         trackMapInitialized = true;
       } else {
@@ -2374,6 +2385,7 @@ async function initLiveMap() {
     liveAIP ? { 'OpenAIP': liveAIP } : {},
     { position: 'topright', collapsed: true }
   ).addTo(liveMap);
+  _setupAIPPref(liveMap, liveAIP);
   _setupOFMAutoSwitch(liveMap, liveLayers);
 
   // Style Leaflet controls
@@ -2983,6 +2995,7 @@ function renderEventsMap(pilots, icaoStr, radiusKm) {
       { 'OpenFlightMap': evLayers.ofm, 'OpenTopo': evLayers.topo, 'Satellit': evLayers.sat, 'Light': evLayers.light, 'Dark': evLayers.dark },
       evAIP ? { 'OpenAIP': evAIP } : {}, { position: 'topright', collapsed: true }
     ).addTo(eventsMap);
+    _setupAIPPref(eventsMap, evAIP);
     _setupOFMAutoSwitch(eventsMap, evLayers);
     eventsMapInitialized = true;
   } else {
