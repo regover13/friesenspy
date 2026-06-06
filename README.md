@@ -104,9 +104,9 @@ Du gibst einen **ICAO-Code** (z.B. `EDDK` für Köln/Bonn), einen **Radius in km
 - Piloten ohne GPS-Track (StatSim-Treffer über Flugplan-DEP/ARR) erscheinen mit **◌ StatSim**-Badge — sie werden gefunden, aber ohne Kartendarstellung
 
 **Was du tun kannst:**
-- **Track auf der Karte anklicken** → hebt diesen Track farblich hervor, alle anderen werden transparent
+- **Track auf der Karte anklicken** oder **Flug-Zeile in der Pilotenliste anklicken** → hebt diesen Track farblich hervor, alle anderen werden transparent
 - **„↺ Alle Tracks"** → blendet alle Tracks wieder gleichmäßig ein
-- **Callsign anklicken** → öffnet die Flugdetails
+- **Callsign in der Pilotenliste anklicken** → öffnet das Flugdetail-Modal mit Strecke, Flugzeugtyp und weiteren Infos
 - **⎘** → Link zu dieser Event-Suche teilen — alle Filtereinstellungen stecken in der URL, der Empfänger sieht dasselbe Ergebnis
 
 > **Tipp:** Der ICAO-Code muss nicht exakt der Veranstaltungsort sein — ein Radius von 50–100 km um den nächsten Flughafen reicht in der Regel aus.
