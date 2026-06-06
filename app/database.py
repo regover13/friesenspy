@@ -316,7 +316,8 @@ def get_stats(
              FROM flights
              WHERE cid = p.cid
                AND logon_time >= datetime('now', ? || ' days')
-               AND logoff_time IS NOT NULL) AS fs_duration_min,
+               AND logoff_time IS NOT NULL
+               AND duration_min > 5) AS fs_duration_min,
             (SELECT COALESCE(SUM(
                COALESCE(duration_min,
                  CASE WHEN logoff_time IS NOT NULL AND logoff_time != ''
@@ -332,6 +333,7 @@ def get_stats(
                ON f_filt.cid = p.cid
               AND f_filt.logon_time >= datetime('now', ? || ' days')
               AND f_filt.logoff_time IS NOT NULL
+              AND f_filt.duration_min > 5
         LEFT JOIN statsim_cache sc_filt
                ON sc_filt.cid = p.cid
               AND sc_filt.logon_time >= datetime('now', ? || ' days')
