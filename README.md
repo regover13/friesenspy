@@ -144,7 +144,7 @@ Du gibst einen **ICAO-Code** (z.B. `EDDK`) oder **`global`** für weltweite Such
 
 ## 🔔 Benachrichtigungen (Push Notifications)
 
-FriesenSpy kann dich benachrichtigen, wenn ein Friese auf VATSIM online geht — auch wenn der Browser im Hintergrund läuft oder der PC gesperrt ist. Optional auch schon beim **Einreichen oder Ändern eines Flugplans** (Prefile), bevor der Pilot online geht — auch bei Änderungen an Abflugzeit, Abflug- oder Zielflughafen.
+FriesenSpy kann dich benachrichtigen, wenn ein Friese auf VATSIM online geht — auch wenn der Browser im Hintergrund läuft oder der PC gesperrt ist. Optional auch schon beim **Einreichen oder Ändern eines Flugplans** (Prefile), bevor der Pilot online geht — auch bei Änderungen an Abflugzeit, Abflug- oder Zielflughafen. Ist der Pilot bereits online, werden Prefile-Änderungen ignoriert.
 
 Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 
