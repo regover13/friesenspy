@@ -161,13 +161,14 @@ class VatsimPoller:
             seconds=self.poll_interval,
             id="vatsim_poll",
         )
-        self._scheduler.add_job(
-            self._daily_cleanup,
-            "cron",
-            hour=3,
-            minute=0,
-            id="daily_cleanup",
-        )
+        # Cleanup deaktiviert — position_history wird dauerhaft behalten
+        # self._scheduler.add_job(
+        #     self._daily_cleanup,
+        #     "cron",
+        #     hour=3,
+        #     minute=0,
+        #     id="daily_cleanup",
+        # )
         self._scheduler.add_job(
             self._sync_calendar,
             "interval",
