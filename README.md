@@ -122,10 +122,10 @@ Einzelflüge können aus zwei Quellen stammen — erkennbar am Badge:
 
 Wer von den Friesen war bei einem bestimmten Event dabei?
 
-Oben erscheint die **FriesenEvents-Liste** — alle Events aus dem FriesenFlieger-Google-Kalender der letzten 365 Tage. Ein Klick auf einen Eintrag füllt Datum, Uhrzeit und ICAO-Code automatisch ins Suchformular vor.
+Oben erscheint die **FriesenEvents-Liste** — Events aus dem FriesenFlieger-Google-Kalender, letzte 365 Tage und 90 Tage voraus, inkl. Wiederholungstermine. Ein Klick füllt Datum, Uhrzeit und ICAO-Code automatisch ins Suchformular vor. Events ohne erkannten ICAO-Code füllen das Feld mit `global` vor.
 
 **Wie es funktioniert:**
-Du gibst einen **ICAO-Code** (z.B. `EDDK` für Köln/Bonn), einen **Radius in km** und einen **Zeitraum** ein. FriesenSpy sucht dann alle Friesen-Flüge, deren Route durch diesen Bereich verlief oder die dort gestartet bzw. gelandet sind. Piloten werden gefunden, wenn ihr Flug das Zeitfenster **überlappt** (nicht nur vollständig darin liegt) — auch wer schon früher gestartet ist oder erst nach Event-Ende gelandet ist, erscheint in der Ergebnisliste.
+Du gibst einen **ICAO-Code** (z.B. `EDDK`) oder **`global`** für weltweite Suche ein, sowie einen **Zeitraum**. Bei ICAO-Suche wird zusätzlich ein **Radius in km** berücksichtigt. FriesenSpy sucht alle Friesen-Flüge, deren Route durch den Bereich verlief oder die dort gestartet/gelandet sind. Piloten werden gefunden, wenn ihr Flug das Zeitfenster **überlappt** — auch wer schon früher gestartet oder erst nach Event-Ende gelandet ist.
 
 **Was du siehst:**
 - **Karte** (oben) mit allen gefundenen GPS-Tracks gleichzeitig eingezeichnet
@@ -319,7 +319,7 @@ FriesenSpy/
 | `/api/flights/{id}/track` | GET | GPS-Track eines FriesenSpy-Fluges |
 | `/api/flights/statsim/{id}/track` | GET | GPS-Track eines StatSim-Fluges |
 | `/api/events?icao=EDDK&radius=150&start=...&end=...` | GET | Event-Teilnehmer mit Tracks (Overlap-Logik) |
-| `/api/calendar/events` | GET | FriesenEvents der letzten 365 Tage (Google-Kalender-Cache) |
+| `/api/calendar/events` | GET | FriesenEvents −365/+90 Tage, inkl. RRULE-Expansion (Google-Kalender-Cache) |
 | `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles) |
 | `/widget/preview` | GET | Vorschau + Einbettungscode für das Widget |
 | `/api/sse` | GET | Server-Sent Events Stream |

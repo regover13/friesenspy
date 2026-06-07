@@ -210,14 +210,14 @@ GPS-Track eines StatSim-Fluges (live von der StatSim API, nicht gecacht). Gibt `
 
 ## GET /api/events
 
-Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe eines Flughafens?
+Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe eines Flughafens — oder weltweit?
 
 **Query-Parameter**
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
-| `icao` | string | — | **Pflicht.** Kommagetrennte ICAO-Codes, z.B. `EDDK,EDDL` |
-| `radius` | float | `150.0` | Suchradius in km |
+| `icao` | string | — | **Pflicht.** Kommagetrennte ICAO-Codes, z.B. `EDDK,EDDL` — oder `global` für weltweite Suche ohne Radius-Filter |
+| `radius` | float | `150.0` | Suchradius in km (wird bei `icao=global` ignoriert) |
 | `start` | string | `""` | ISO8601 UTC, z.B. `2024-01-01T10:00:00Z` |
 | `end` | string | `""` | ISO8601 UTC, z.B. `2024-01-01T18:00:00Z` |
 
@@ -319,16 +319,16 @@ Ein Prefile ist ein eingereicher Flugplan ohne aktive VATSIM-Verbindung — der 
 
 ## GET /api/calendar/events
 
-FriesenEvents aus dem FriesenFlieger-Google-Kalender — historische Events der letzten 365 Tage, absteigend nach Startdatum.
+FriesenEvents aus dem FriesenFlieger-Google-Kalender — letzte 365 Tage + 90 Tage voraus, absteigend nach Startdatum.
 
-Der Kalender wird alle 6 Stunden automatisch synchronisiert. Ganztags-Events (ohne Uhrzeit) werden nicht gespeichert.
+Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungstermine werden expandiert (jede Wiederholung als eigener Eintrag). Ganztags-Events (ohne Uhrzeit) werden nicht gespeichert.
 
 **Response**
 
 ```json
 [
   {
-    "uid": "abc123@google.com",
+    "uid": "abc123@google.com_20260515T170000Z",
     "summary": "FriesenFlieger Stammtisch EDVK",
     "dtstart": "2026-05-15T17:00:00Z",
     "dtend": "2026-05-15T20:00:00Z",
@@ -337,7 +337,7 @@ Der Kalender wird alle 6 Stunden automatisch synchronisiert. Ganztags-Events (oh
 ]
 ```
 
-`location` enthält den ersten 4-buchstabigen ICAO-Code aus dem Google-Kalender-Feld „Ort" (leer wenn nicht erkannt). Zeiten sind immer UTC.
+`location` enthält den ersten 4-buchstabigen ICAO-Code aus dem Kalender-Feld „Ort", sonst aus dem Event-Titel (leer wenn nicht erkannt). Bei Events ohne ICAO wird `global` ins Suchfeld vorgefüllt. Zeiten sind immer UTC.
 
 ---
 
