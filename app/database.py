@@ -151,6 +151,16 @@ _PUSH_MIGRATIONS = [
     "ALTER TABLE push_subscriptions ADD COLUMN notify_prefiles INTEGER DEFAULT 0",
 ]
 
+_PREFILE_SIGS_MIGRATIONS = [
+    """CREATE TABLE IF NOT EXISTS prefile_sigs (
+        cid       INTEGER PRIMARY KEY,
+        deptime   TEXT,
+        departure TEXT,
+        arrival   TEXT,
+        saved_at  TEXT
+    )""",
+]
+
 _LIVE_POSITIONS_MIGRATIONS = [
     "ALTER TABLE live_positions ADD COLUMN flight_rules TEXT",
     "ALTER TABLE live_positions ADD COLUMN aircraft_icao TEXT",
@@ -188,6 +198,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _PUSH_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _PREFILE_SIGS_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -997,3 +1012,26 @@ def get_push_subscriptions_for_prefile(
             except (json.JSONDecodeError, TypeError):
                 result.append(dict(row))
     return result
+
+
+# ---------------------------------------------------------------------------
+# Prefile Signatures (Persistenz für Neustart-Robustheit)
+# ---------------------------------------------------------------------------
+
+def load_prefile_sigs(conn: sqlite3.Connection) -> dict:
+    """Gespeicherte Prefile-Signaturen laden (cid → (deptime, departure, arrival))."""
+    rows = conn.execute(
+        "SELECT cid, deptime, departure, arrival FROM prefile_sigs"
+    ).fetchall()
+    return {row["cid"]: (row["deptime"], row["departure"], row["arrival"]) for row in rows}
+
+
+def save_prefile_sigs(conn: sqlite3.Connection, sigs: dict) -> None:
+    """Aktuelle Prefile-Signaturen in die DB schreiben (DELETE+INSERT für Einfachheit)."""
+    now = _now_utc()
+    conn.execute("DELETE FROM prefile_sigs")
+    for cid, (deptime, departure, arrival) in sigs.items():
+        conn.execute(
+            "INSERT INTO prefile_sigs (cid, deptime, departure, arrival, saved_at) VALUES (?, ?, ?, ?, ?)",
+            (cid, deptime, departure, arrival, now),
+        )

@@ -22,9 +22,11 @@ from app.database import (
     get_live_positions,
     get_push_subscriptions_for_pilot,
     get_push_subscriptions_for_prefile,
+    load_prefile_sigs,
     open_flight,
     remove_live_position,
     save_position_history,
+    save_prefile_sigs,
     upsert_live_position,
 )
 from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_position
@@ -186,10 +188,15 @@ async def send_prefile_push_notifications(
                     ttl=3600,
                 ),
             )
+            logger.info("PrefilePush sent OK: %s", sub["endpoint"][:40])
         except WebPushException as exc:
             resp = getattr(exc, "response", None)
-            if getattr(resp, "status_code", None) == 410:
+            sc = getattr(resp, "status_code", None)
+            if sc == 410:
                 to_delete.append(sub["endpoint"])
+            else:
+                body_text = getattr(resp, "text", "")[:200] if resp else ""
+                logger.warning("PrefilePush failed for %s: HTTP %s — %s", callsign, sc, body_text)
         except Exception as exc:
             logger.warning("PrefilePush failed for %s: %r", callsign, exc)
 
@@ -239,6 +246,16 @@ class VatsimPoller:
     async def start(self) -> None:
         """HTTP-Client + Scheduler starten."""
         self._http_client = httpx.AsyncClient(timeout=30.0)
+        # Prefile-Signaturen aus DB laden → Neustart verpasst keine Änderungen mehr
+        conn = get_connection(self.db_path)
+        try:
+            self._prefile_sigs = load_prefile_sigs(conn)
+        except Exception:
+            logger.exception("Fehler beim Laden der Prefile-Signaturen aus DB")
+            self._prefile_sigs = None
+        finally:
+            conn.close()
+        logger.info("Prefile-Signaturen geladen: %d Einträge", len(self._prefile_sigs or {}))
         self._scheduler = AsyncIOScheduler()
         self._scheduler.add_job(
             self._poll_once,
@@ -323,6 +340,15 @@ class VatsimPoller:
                 ]
             self._prefile_sigs = {cid: _prefile_sig(p) for cid, p in current_map.items()}
             self.last_prefiles = current_prefiles
+            # Signaturen in DB persistieren (Neustart-Robustheit)
+            sig_conn = get_connection(self.db_path)
+            try:
+                save_prefile_sigs(sig_conn, self._prefile_sigs)
+                sig_conn.commit()
+            except Exception:
+                logger.exception("Fehler beim Speichern der Prefile-Signaturen")
+            finally:
+                sig_conn.close()
 
             # Build lookup: cid → position dict
             current: dict[int, dict] = {

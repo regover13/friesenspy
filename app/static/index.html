@@ -1988,11 +1988,16 @@ function escHtml(str) {
 async function fetchAndRenderPrefiles() {
   try {
     const res  = await fetch('/api/prefiles');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    if (!Array.isArray(data)) throw new Error('Unexpected response format');
     renderPrefiles(data);
   } catch (e) {
-    const c = document.getElementById('prefiles-content');
-    if (c) c.innerHTML = '<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden</div></div>';
+    if (_prefileData.length === 0) {
+      const c = document.getElementById('prefiles-content');
+      if (c) c.innerHTML = '<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden</div></div>';
+    }
+    // Bei vorhandenen Daten: alten Stand behalten, still retry beim nächsten Interval
   }
 }
 
