@@ -3502,10 +3502,10 @@ setInterval(fetchAndRenderPrefiles, 15000);
 connectSSE();
 initFromUrl();
 
-// Update online times every minute (SSE might not fire that often)
+// Update online times every 10s
 setInterval(() => {
   if (liveData.length > 0) renderLiveTable(liveData);
-}, 60000);
+}, 10000);
 
 </script>
 </body>
