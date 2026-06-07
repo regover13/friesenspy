@@ -722,7 +722,7 @@ async def widget(request: Request):
   <div class="bd">
     <div>{pilots_html}</div>
     {prefile_html}
-    <div class="ft">7&nbsp;Tage:&nbsp;{total_h:.1f}&nbsp;h&nbsp;·&nbsp;friesenspy.devprops.de</div>
+    <div class="ft">Flugstunden der letzten 7&nbsp;Tage:&nbsp;{total_h:.1f}&nbsp;h&nbsp;·&nbsp;friesenspy.devprops.de</div>
   </div>
 </a>
 </body>
