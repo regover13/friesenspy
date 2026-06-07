@@ -147,6 +147,10 @@ _CALENDAR_MIGRATIONS = [
     "DELETE FROM calendar_events WHERE uid NOT LIKE '%\\_2%T%Z' ESCAPE '\\'",
 ]
 
+_PUSH_MIGRATIONS = [
+    "ALTER TABLE push_subscriptions ADD COLUMN notify_prefiles INTEGER DEFAULT 0",
+]
+
 _LIVE_POSITIONS_MIGRATIONS = [
     "ALTER TABLE live_positions ADD COLUMN flight_rules TEXT",
     "ALTER TABLE live_positions ADD COLUMN aircraft_icao TEXT",
@@ -179,6 +183,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass  # Spalte existiert bereits
         for stmt in _CALENDAR_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _PUSH_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -893,18 +902,21 @@ def upsert_push_subscription(
     p256dh: str,
     auth: str,
     pilot_filter: list[int] | None = None,
+    notify_prefiles: bool = False,
 ) -> None:
     """Browser-Push-Subscription speichern oder aktualisieren."""
     conn.execute(
-        """INSERT INTO push_subscriptions (endpoint, p256dh, auth, pilot_filter, created_at)
-           VALUES (?, ?, ?, ?, ?)
+        """INSERT INTO push_subscriptions (endpoint, p256dh, auth, pilot_filter, notify_prefiles, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(endpoint) DO UPDATE SET
                p256dh=excluded.p256dh,
                auth=excluded.auth,
-               pilot_filter=excluded.pilot_filter""",
+               pilot_filter=excluded.pilot_filter,
+               notify_prefiles=excluded.notify_prefiles""",
         (
             endpoint, p256dh, auth,
             json.dumps(pilot_filter) if pilot_filter is not None else None,
+            1 if notify_prefiles else 0,
             _now_utc(),
         ),
     )
@@ -946,7 +958,32 @@ def get_push_subscriptions_for_pilot(
     Gibt Subscriptions zurück wenn pilot_filter IS NULL (alle) oder cid in der Filter-Liste.
     """
     rows = conn.execute(
-        "SELECT endpoint, p256dh, auth, pilot_filter FROM push_subscriptions"
+        "SELECT endpoint, p256dh, auth, pilot_filter, notify_prefiles FROM push_subscriptions"
+    ).fetchall()
+    result = []
+    for row in rows:
+        pf = row["pilot_filter"]
+        if pf is None:
+            result.append(dict(row))
+        else:
+            try:
+                if cid in json.loads(pf):
+                    result.append(dict(row))
+            except (json.JSONDecodeError, TypeError):
+                result.append(dict(row))
+    return result
+
+
+def get_push_subscriptions_for_prefile(
+    conn: sqlite3.Connection, cid: int
+) -> list[dict]:
+    """Subscriptions die Prefile-Notifications für diesen Piloten wollen.
+
+    Wie get_push_subscriptions_for_pilot, aber zusätzlich notify_prefiles = 1.
+    """
+    rows = conn.execute(
+        "SELECT endpoint, p256dh, auth, pilot_filter, notify_prefiles "
+        "FROM push_subscriptions WHERE notify_prefiles = 1"
     ).fetchall()
     result = []
     for row in rows:

@@ -21,6 +21,7 @@ from app.database import (
     get_connection,
     get_live_positions,
     get_push_subscriptions_for_pilot,
+    get_push_subscriptions_for_prefile,
     open_flight,
     remove_live_position,
     save_position_history,
@@ -109,6 +110,77 @@ async def send_web_push_notifications(
             cause = repr(getattr(last_exc, "__cause__", None))[:120]
             args = repr(getattr(last_exc, "args", ()))[:200]
             logger.warning("WebPush failed for %s: %s cause=%s args=%s", callsign, sc, cause, args)
+
+    if to_delete:
+        conn2 = get_connection(db_path)
+        try:
+            for endpoint in to_delete:
+                delete_push_subscription(conn2, endpoint)
+            conn2.commit()
+        finally:
+            conn2.close()
+
+
+async def send_prefile_push_notifications(
+    vapid_private_key: str,
+    vapid_contact_email: str,
+    db_path: str,
+    prefile: dict,
+) -> None:
+    """Push-Notification für neu eingereichten Flugplan an abonnierte Nutzer."""
+    import json as _json
+    from pywebpush import webpush, WebPushException
+
+    cid = prefile.get("cid")
+    callsign = prefile.get("callsign", "?")
+    fp = prefile.get("flight_plan") or {}
+    dep = fp.get("departure") or "?"
+    arr = fp.get("arrival") or "?"
+    aircraft = fp.get("aircraft_short") or fp.get("aircraft") or ""
+
+    payload = {
+        "title": f"{callsign} hat Flugplan eingereicht 📋",
+        "body": f"{dep} → {arr}" + (f" · {aircraft}" if aircraft else ""),
+        "url": "/",
+    }
+    data = _json.dumps(payload)
+
+    conn = get_connection(db_path)
+    try:
+        subscriptions = get_push_subscriptions_for_prefile(conn, cid)
+    finally:
+        conn.close()
+
+    if not subscriptions:
+        return
+
+    logger.info("PrefilePush: %s eingereicht, %d subscription(s)", callsign, len(subscriptions))
+
+    loop = asyncio.get_event_loop()
+    to_delete: list[str] = []
+
+    for sub in subscriptions:
+        sub_info = {
+            "endpoint": sub["endpoint"],
+            "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
+        }
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda s=sub_info: webpush(
+                    subscription_info=s,
+                    data=data,
+                    vapid_private_key=vapid_private_key,
+                    vapid_claims={"sub": vapid_contact_email},
+                    ttl=3600,
+                ),
+            )
+        except WebPushException as exc:
+            resp = getattr(exc, "response", None)
+            if getattr(resp, "status_code", None) == 410:
+                to_delete.append(sub["endpoint"])
+        except Exception as exc:
+            logger.warning("PrefilePush failed for %s: %r", callsign, exc)
 
     if to_delete:
         conn2 = get_connection(db_path)
@@ -217,9 +289,14 @@ class VatsimPoller:
 
             # Prefiles mit FRS*-Callsign aus dem Feed speichern
             prefix = self.callsign_prefix.upper()
+            prev_prefile_cids = {p.get("cid") for p in self.last_prefiles if p.get("cid")}
             self.last_prefiles = [
                 p for p in (vatsim_data.get("prefiles") or [])
                 if isinstance(p, dict) and p.get("callsign", "").upper().startswith(prefix)
+            ]
+            new_prefiles = [
+                p for p in self.last_prefiles
+                if p.get("cid") and p["cid"] not in prev_prefile_cids
             ]
 
             # Build lookup: cid → position dict
@@ -369,6 +446,21 @@ class VatsimPoller:
                 conn.close()
 
             self.sse_queue.put_nowait({"type": "positions", "data": live_positions})
+
+            # 4. Prefile-Benachrichtigungen für neu eingereichte Flugpläne
+            if self.vapid_private_key and new_prefiles:
+                for pf in new_prefiles:
+                    cid = pf.get("cid")
+                    if not cid:
+                        continue
+                    asyncio.create_task(
+                        send_prefile_push_notifications(
+                            self.vapid_private_key,
+                            self.vapid_contact_email,
+                            self.db_path,
+                            pf,
+                        )
+                    )
 
         except Exception:
             logger.exception("Error in _poll_once")

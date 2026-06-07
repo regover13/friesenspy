@@ -148,7 +148,11 @@ async def push_subscribe(request: Request):
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
-        upsert_push_subscription(conn, endpoint, p256dh, auth, body.get("pilot_filter"))
+        upsert_push_subscription(
+            conn, endpoint, p256dh, auth,
+            body.get("pilot_filter"),
+            notify_prefiles=bool(body.get("notify_prefiles", False)),
+        )
         conn.commit()
     finally:
         conn.close()

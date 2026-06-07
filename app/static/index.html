@@ -1190,6 +1190,9 @@
         <label><input type="radio" name="notif-filter-mode" value="select"> Nur bestimmte Piloten</label>
       </div>
       <div id="notif-pilot-list" hidden></div>
+      <label class="notif-toggle-row" style="margin-top:8px;">
+        <input type="checkbox" id="notif-prefiles"> Auch bei eingereichten Flugplänen
+      </label>
       <button class="notif-save-btn" id="notif-save-btn">Speichern</button>
     </div>
     <div id="notif-ios-hint" class="notif-hint" hidden>
@@ -1590,6 +1593,10 @@ function _showNotifPanelContent() {
   enabledCb.disabled = false;
   enabledCb.checked = !!_pushSubscription;
   filterDiv.hidden = !_pushSubscription;
+  const prefilesCb = document.getElementById('notif-prefiles');
+  if (prefilesCb) {
+    prefilesCb.checked = localStorage.getItem('notif_prefiles') === '1';
+  }
 }
 
 function _applyNotifPilotListState() {
@@ -1686,6 +1693,8 @@ async function _saveNotifFilter() {
     _notifCustomFilter = null;
     localStorage.removeItem('notif_pilot_filter');
   }
+  const notifyPrefiles = document.getElementById('notif-prefiles')?.checked ?? false;
+  localStorage.setItem('notif_prefiles', notifyPrefiles ? '1' : '0');
   await fetch('/api/push/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1694,6 +1703,7 @@ async function _saveNotifFilter() {
       p256dh:   _bufToBase64(_pushSubscription.getKey('p256dh')),
       auth:     _bufToBase64(_pushSubscription.getKey('auth')),
       pilot_filter: pilotFilter,
+      notify_prefiles: notifyPrefiles,
     }),
   });
   const saveBtn = document.getElementById('notif-save-btn');
