@@ -366,7 +366,7 @@ Browser-Push-Subscription speichern oder aktualisieren.
 | `p256dh` | string | ✓ | ECDH-Schlüssel (base64url) |
 | `auth` | string | ✓ | Auth-Secret (base64url) |
 | `pilot_filter` | int[] \| null | — | CID-Liste der zu benachrichtigenden Piloten; `null` = alle |
-| `notify_prefiles` | bool | — | Auch bei eingereichten oder geänderten Flugplänen benachrichtigen — feuert bei neuem Prefile oder Änderung von Abflugzeit, Abflug- oder Zielflughafen; wird unterdrückt wenn der Pilot bereits online ist (default: false) |
+| `notify_prefiles` | bool | — | Auch bei eingereichten oder geänderten Flugplänen benachrichtigen — feuert bei neuem Prefile oder Änderung von Abflugzeit, Abflug- oder Zielflughafen; wird unterdrückt wenn der Pilot bereits online ist (default: true) |
 
 **Response** `{"status": "ok"}`
 

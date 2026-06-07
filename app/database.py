@@ -902,7 +902,7 @@ def upsert_push_subscription(
     p256dh: str,
     auth: str,
     pilot_filter: list[int] | None = None,
-    notify_prefiles: bool = False,
+    notify_prefiles: bool = True,
 ) -> None:
     """Browser-Push-Subscription speichern oder aktualisieren."""
     conn.execute(
