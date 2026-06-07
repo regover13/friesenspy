@@ -1793,6 +1793,7 @@ let pilotStatsMap   = {};    // {cid: statsObj} für Drill-Down
 let currentStatsCid = null;
 let _statsSortBy  = 'last_flight';
 let _statsSortDir = 'desc';
+let _prefileRouteLine = null;
 let _flightsRefreshTimer = null;
 
 // ==========================================================================
@@ -1985,26 +1986,70 @@ async function fetchAndRenderPrefiles() {
   }
 }
 
+let _prefileData = [];
+
 function renderPrefiles(data) {
+  _prefileData = data || [];
   const container = document.getElementById('prefiles-content');
   if (!container) return;
   if (!data || data.length === 0) {
     container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Keine eingereichten Flugpläne</div></div>';
     return;
   }
-  let html = '<div class="live-table-wrap"><table><thead><tr><th>Callsign</th><th>Pilot</th><th>Route</th><th>Abflug (geplant)</th></tr></thead><tbody>';
-  data.forEach(p => {
+  let html = '<div class="live-table-wrap"><table><thead><tr><th>Callsign</th><th>Pilot</th><th>Route</th><th>Abflug (geplant)</th><th></th></tr></thead><tbody>';
+  data.forEach((p, i) => {
     const route = p.departure && p.arrival ? `${escHtml(p.departure)} → ${escHtml(p.arrival)}` : '—';
-    const dep = p.planned_deptime ? escHtml(String(p.planned_deptime).padStart(4,'0').replace(/(\d{2})(\d{2})/, '$1:$2') + ' UTC') : '—';
-    html += `<tr>
+    const dep = p.deptime ? escHtml(String(p.deptime).padStart(4,'0').replace(/(\d{2})(\d{2})/, '$1:$2') + ' UTC') : '—';
+    const mapBtn = (p.departure && p.arrival)
+      ? `<span class="td-map-btn" data-idx="${i}" title="Route auf Karte" style="cursor:pointer;color:var(--green-dim)">◎</span>`
+      : '';
+    html += `<tr data-idx="${i}" style="cursor:pointer;">
       <td class="mono text-green">${escHtml(p.callsign)}</td>
       <td>${escHtml(p.name || String(p.cid || ''))}</td>
       <td class="mono">${route}</td>
       <td class="mono text-label">${dep}</td>
+      <td style="text-align:center">${mapBtn}</td>
     </tr>`;
   });
   html += '</tbody></table></div>';
   container.innerHTML = html;
+
+  container.querySelectorAll('tr[data-idx]').forEach(tr => {
+    tr.addEventListener('click', (e) => {
+      if (e.target.classList.contains('td-map-btn')) return;
+      const p = _prefileData[+tr.dataset.idx];
+      if (p) openFpModal({ ...p, callsign: p.callsign });
+    });
+  });
+  container.querySelectorAll('.td-map-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const p = _prefileData[+btn.dataset.idx];
+      if (p) showPrefileRoute(p.departure, p.arrival);
+    });
+  });
+}
+
+async function showPrefileRoute(dep, arr) {
+  const tab = document.querySelector('.tab-btn[data-tab="karte"]');
+  if (tab) tab.click();
+  await new Promise(r => setTimeout(r, 300));
+  try {
+    const [r1, r2] = await Promise.all([
+      fetch(`/api/airport/${encodeURIComponent(dep)}`),
+      fetch(`/api/airport/${encodeURIComponent(arr)}`),
+    ]);
+    if (!r1.ok || !r2.ok) return;
+    const [a1, a2] = await Promise.all([r1.json(), r2.json()]);
+    if (!liveMap) await initLiveMap();
+    if (_prefileRouteLine) { _prefileRouteLine.remove(); _prefileRouteLine = null; }
+    _prefileRouteLine = L.polyline(
+      [[a1.lat, a1.lon], [a2.lat, a2.lon]],
+      { color: '#f0a500', weight: 2, dashArray: '6 4', opacity: 0.8 }
+    ).addTo(liveMap);
+    _prefileRouteLine.bindTooltip(`${dep} → ${arr}`, { permanent: false }).openTooltip();
+    liveMap.fitBounds(_prefileRouteLine.getBounds(), { padding: [40, 40] });
+  } catch (e) { /* silent */ }
 }
 
 // ==========================================================================
