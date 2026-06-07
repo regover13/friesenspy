@@ -716,14 +716,25 @@ async def widget(request: Request):
 
     prefile_html = ""
     if prefiles:
-        items = " &nbsp;·&nbsp; ".join(
-            f'<span>{_html.escape(str(p.get("callsign", "?")))}'
-            f'&nbsp;<span class="muted">'
-            f'{_html.escape(str((p.get("flight_plan") or {}).get("departure", "?")))}→'
-            f'{_html.escape(str((p.get("flight_plan") or {}).get("arrival", "?")))}'
-            f'</span></span>'
-            for p in prefiles
-        )
+        import re as _re
+        def _widget_prefile_item(p: dict) -> str:
+            fp = p.get("flight_plan") or {}
+            callsign = p.get("callsign", "?")
+            dep = fp.get("departure", "?")
+            arr = fp.get("arrival", "?")
+            deptime = fp.get("deptime", "")
+            remarks = fp.get("remarks", "") or ""
+            dof_m = _re.search(r'DOF/(\d{2})(\d{2})(\d{2})', remarks)
+            date_s = f"{dof_m.group(3)}.{dof_m.group(2)}." if dof_m else ""
+            time_s = f"{deptime[:2]}:{deptime[2:]}z" if len(deptime) == 4 else ""
+            when = " ".join(filter(None, [date_s, time_s]))
+            when_html = f'&nbsp;<span class="muted-time">{_html.escape(when)}</span>' if when else ""
+            return (
+                f'<span>{_html.escape(callsign)}'
+                f'&nbsp;<span class="muted">{_html.escape(dep)}→{_html.escape(arr)}</span>'
+                f'{when_html}</span>'
+            )
+        items = " &nbsp;·&nbsp; ".join(_widget_prefile_item(p) for p in prefiles)
         prefile_html = f'<div class="pf">geplant:&nbsp;{items}</div>'
 
     html = f"""<!DOCTYPE html>
@@ -742,6 +753,7 @@ async def widget(request: Request):
   .none{{color:#5577aa}}
   .muted{{color:#5577aa}}
   .pf{{font-size:10px;color:#104090;margin-top:2px}}
+  .muted-time{{color:#5577aa;font-size:9px}}
   .ft{{font-size:10px;color:#104090;margin-top:4px;border-top:1px solid rgba(5,48,128,0.2);padding-top:3px}}
 </style>
 </head>
