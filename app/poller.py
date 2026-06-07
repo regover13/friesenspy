@@ -217,7 +217,7 @@ class VatsimPoller:
         # SSE broadcast queue: asyncio.Queue für Updates
         self.sse_queue: asyncio.Queue = asyncio.Queue()
         # Aktuell eingereichte Flugpläne (VATSIM prefiles) mit FRS*-Callsign
-        self.last_prefiles: list = []
+        self.last_prefiles: list | None = None  # None = erster Poll, keine Notifications
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -289,15 +289,20 @@ class VatsimPoller:
 
             # Prefiles mit FRS*-Callsign aus dem Feed speichern
             prefix = self.callsign_prefix.upper()
-            prev_prefile_cids = {p.get("cid") for p in self.last_prefiles if p.get("cid")}
-            self.last_prefiles = [
+            current_prefiles = [
                 p for p in (vatsim_data.get("prefiles") or [])
                 if isinstance(p, dict) and p.get("callsign", "").upper().startswith(prefix)
             ]
-            new_prefiles = [
-                p for p in self.last_prefiles
-                if p.get("cid") and p["cid"] not in prev_prefile_cids
-            ]
+            if self.last_prefiles is None:
+                # Erster Poll nach Start — Baseline setzen, keine Notifications
+                new_prefiles = []
+            else:
+                prev_prefile_cids = {p.get("cid") for p in self.last_prefiles if p.get("cid")}
+                new_prefiles = [
+                    p for p in current_prefiles
+                    if p.get("cid") and p["cid"] not in prev_prefile_cids
+                ]
+            self.last_prefiles = current_prefiles
 
             # Build lookup: cid → position dict
             current: dict[int, dict] = {
