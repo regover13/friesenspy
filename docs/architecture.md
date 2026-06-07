@@ -83,7 +83,7 @@ Für den Chart (`get_stats_activity`) werden no-FP-Fragment-IDs via `_nofp_fragm
 ### `app/poller.py`
 
 `VatsimPoller` kapselt:
-- **APScheduler `AsyncIOScheduler`** mit vier Jobs: `vatsim_poll` (interval, 15s), `daily_cleanup` (cron, 03:00 — löscht `position_history` älter als 365 Tage), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start)
+- **APScheduler `AsyncIOScheduler`** mit drei aktiven Jobs: `vatsim_poll` (interval, 15s), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start). `daily_cleanup` ist deaktiviert — `position_history` wird dauerhaft behalten.
 - **`_active_flights: dict[int, int]`** — In-Memory State: CID → flight_id. Überlebt nicht einen Container-Neustart (Flüge die beim Restart offen sind, bleiben in der DB offen ohne Logoff-Zeit).
 - **`sse_queue: asyncio.Queue`** — Jeder SSE-Client hat eine eigene Verbindung zum selben Queue-Objekt. `put_nowait` blockiert nicht.
 - **`last_prefiles: list`** — aktuell eingereichte VATSIM-Prefile-Pläne mit FRS*-Callsign (In-Memory, aus dem letzten Poll-Zyklus)
