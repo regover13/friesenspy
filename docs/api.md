@@ -354,6 +354,34 @@ Die Seite enthält `<meta http-equiv="refresh" content="60">` (60-Sekunden-Auto-
 
 ---
 
+## POST /api/push/subscribe
+
+Browser-Push-Subscription speichern oder aktualisieren.
+
+**Body (JSON)**
+
+| Feld | Typ | Pflicht | Beschreibung |
+|------|-----|---------|--------------|
+| `endpoint` | string | ✓ | Push-Endpoint-URL des Browsers |
+| `p256dh` | string | ✓ | ECDH-Schlüssel (base64url) |
+| `auth` | string | ✓ | Auth-Secret (base64url) |
+| `pilot_filter` | int[] \| null | — | CID-Liste der zu benachrichtigenden Piloten; `null` = alle |
+| `notify_prefiles` | bool | — | Auch bei eingereichten Flugplänen benachrichtigen (default: false) |
+
+**Response** `{"status": "ok"}`
+
+---
+
+## DELETE /api/push/unsubscribe
+
+Push-Subscription entfernen.
+
+**Body (JSON):** `{"endpoint": "<url>"}`
+
+**Response** `{"status": "ok"}`
+
+---
+
 ## GET /api/sse
 
 Server-Sent Events Stream. Verbindung bleibt offen; bei jedem VATSIM-Poll-Zyklus (~15s) wird ein Event gesendet.
