@@ -295,7 +295,7 @@ Jeder Flug-Eintrag enthält ein `source`-Feld: `"friesenspy"` für Flüge mit GP
 
 Aktuelle VATSIM-Prefile-Flugpläne mit FRS*-Callsign (aus dem letzten VATSIM-Poll-Zyklus, ~15s alt).
 
-Ein Prefile ist ein eingereicher Flugplan ohne aktive VATSIM-Verbindung — der Pilot hat den Plan aufgegeben, ist aber noch nicht online.
+Ein Prefile ist ein eingereichter Flugplan ohne aktive VATSIM-Verbindung — der Pilot hat den Plan aufgegeben, ist aber noch nicht online. Das Feld `remarks` enthält ggf. `DOF/YYMMDD` (Date of Flight) für Flüge an einem anderen Tag als heute; die UI extrahiert daraus Datum und Uhrzeit.
 
 **Response**
 

@@ -58,13 +58,13 @@ VATSIM-Piloten trennen die Verbindung manchmal kurz, ohne dass ein echter Flugwe
 
 ### ✈ Live
 
-Zeigt alle Friesen, die gerade auf VATSIM fliegen — in Echtzeit, ohne Neuladen der Seite. Darunter erscheinen **eingereichte Flugpläne (Prefiles)**: Piloten, die bereits einen Plan aufgegeben haben, aber noch nicht verbunden sind.
+Zeigt alle Friesen, die gerade auf VATSIM fliegen — in Echtzeit, ohne Neuladen der Seite. Darunter erscheinen **eingereichte Flugpläne (Prefiles)**: Piloten, die bereits einen Plan aufgegeben haben, aber noch nicht verbunden sind. Die Liste aktualisiert sich alle 15 Sekunden automatisch.
 
 **Was du siehst:**
 - Callsign, Abflug- und Zielflughafen, Flugzeugtyp
 - Wie lange der Pilot bereits online ist
 - Aktuelle Position, Höhe, Geschwindigkeit und Kurs
-- Eingereichte Flugpläne (FRS*-Callsign, noch nicht online)
+- Eingereichte Flugpläne (FRS*-Callsign, noch nicht online) mit geplantem Datum und Uhrzeit (aus DOF-Feld)
 
 **Was du tun kannst:**
 - **Callsign anklicken** → öffnet das Flugplan-Modal mit allen Details (Route, Reiseflughöhe, Bemerkungen usw.)
@@ -144,7 +144,7 @@ Du gibst einen **ICAO-Code** (z.B. `EDDK`) oder **`global`** für weltweite Such
 
 ## 🔔 Benachrichtigungen (Push Notifications)
 
-FriesenSpy kann dich benachrichtigen, wenn ein Friese auf VATSIM online geht — auch wenn der Browser im Hintergrund läuft oder der PC gesperrt ist. Optional auch schon beim **Einreichen oder Ändern eines Flugplans** (Prefile), bevor der Pilot online geht — auch bei Änderungen an Abflugzeit, Abflug- oder Zielflughafen. Ist der Pilot bereits online, werden Prefile-Änderungen ignoriert.
+FriesenSpy kann dich benachrichtigen, wenn ein Friese auf VATSIM online geht — auch wenn der Browser im Hintergrund läuft oder der PC gesperrt ist. Optional auch schon beim **Einreichen oder Ändern eines Flugplans** (Prefile), bevor der Pilot online geht — auch bei Änderungen an Abflugzeit, Abflug- oder Zielflughafen. Die Notification enthält Datum und Uhrzeit des geplanten Fluges (aus dem DOF-Feld). Ist der Pilot bereits online, werden Prefile-Änderungen ignoriert.
 
 Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 
