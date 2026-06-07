@@ -2046,8 +2046,8 @@ function renderFriesenEvents(data) {
     return;
   }
   let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';
-  data.forEach(ev => {
-    html += `<tr style="cursor:pointer;" onclick="_prefillEventForm(${JSON.stringify(ev).replace(/'/g, '&#39;')})">
+  data.forEach((ev, i) => {
+    html += `<tr style="cursor:pointer;" data-event-idx="${i}">
       <td>${escHtml(ev.summary || '—')}</td>
       <td class="mono text-label">${_fmtEventDate(ev.dtstart)}</td>
       <td class="mono text-green">${escHtml(ev.location || '—')}</td>
@@ -2055,6 +2055,9 @@ function renderFriesenEvents(data) {
   });
   html += '</tbody></table></div>';
   container.innerHTML = html;
+  container.querySelectorAll('tr[data-event-idx]').forEach(tr => {
+    tr.addEventListener('click', () => _prefillEventForm(data[+tr.dataset.eventIdx]));
+  });
 }
 
 function _prefillEventForm(ev) {

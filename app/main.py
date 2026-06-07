@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import html as _html
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -598,7 +599,7 @@ async def widget():
     total_min = sum(s.get("total_duration_min", 0) for s in stats)
     total_h = total_min / 60
     pilots_html = " &nbsp;·&nbsp; ".join(
-        f'<span>{p.get("callsign") or p.get("name") or "?"}</span>'
+        f'<span>{_html.escape(str(p.get("callsign") or p.get("name") or "?"))}</span>'
         for p in live
     ) if live else '<span style="color:#6b9ab8">Niemand online</span>'
 
