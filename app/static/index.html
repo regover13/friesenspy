@@ -2113,7 +2113,8 @@ function _prefillEventForm(ev) {
     document.getElementById('ev-end').value = ev.dtend.slice(0, 16);
   }
   document.getElementById('ev-icao').value = ev.location || 'global';
-  document.getElementById('events-search-btn').scrollIntoView({ behavior: 'smooth' });
+  document.getElementById('events-results').classList.add('hidden');
+  searchEvents();
 }
 
 // ==========================================================================
