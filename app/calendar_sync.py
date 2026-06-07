@@ -60,7 +60,7 @@ async def fetch_and_parse_ical(client) -> list[dict]:
                 end_str = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         location_raw = str(comp.get("LOCATION") or "")
-        icao_match = re.search(r'\b[A-Z]{4}\b', location_raw)
+        icao_match = re.search(r'\b[A-Z]{4}\b', location_raw) or re.search(r'\b[A-Z]{4}\b', summary)
         icao = icao_match.group(0) if icao_match else ""
 
         events.append({
