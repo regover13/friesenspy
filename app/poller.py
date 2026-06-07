@@ -216,9 +216,10 @@ class VatsimPoller:
         self._active_flights: dict[int, int] = {}
         # SSE broadcast queue: asyncio.Queue für Updates
         self.sse_queue: asyncio.Queue = asyncio.Queue()
-        # Aktuell eingereichte Flugpläne (VATSIM prefiles) mit FRS*-Callsign
-        # cid → (deptime, departure, arrival) — None = erster Poll, keine Notifications
-        self.last_prefiles: dict | None = None
+        # Vollständige Prefile-Daten für die API (Liste von Dicts)
+        self.last_prefiles: list = []
+        # cid → (deptime, departure, arrival) für Änderungserkennung — None = erster Poll
+        self._prefile_sigs: dict | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -300,16 +301,17 @@ class VatsimPoller:
                 return (fp.get("deptime", ""), fp.get("departure", ""), fp.get("arrival", ""))
 
             current_map = {p["cid"]: p for p in current_prefiles if p.get("cid")}
-            if self.last_prefiles is None:
+            if self._prefile_sigs is None:
                 # Erster Poll nach Start — Baseline setzen, keine Notifications
                 new_prefiles = []
             else:
                 new_prefiles = [
                     p for cid, p in current_map.items()
-                    if cid not in self.last_prefiles
-                    or _prefile_sig(p) != self.last_prefiles[cid]
+                    if cid not in self._prefile_sigs
+                    or _prefile_sig(p) != self._prefile_sigs[cid]
                 ]
-            self.last_prefiles = {cid: _prefile_sig(p) for cid, p in current_map.items()}
+            self._prefile_sigs = {cid: _prefile_sig(p) for cid, p in current_map.items()}
+            self.last_prefiles = current_prefiles
 
             # Build lookup: cid → position dict
             current: dict[int, dict] = {
