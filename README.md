@@ -321,7 +321,7 @@ FriesenSpy/
 | `/api/flights/statsim/{id}/track` | GET | GPS-Track eines StatSim-Fluges |
 | `/api/events?icao=EDDK&radius=150&start=...&end=...` | GET | Event-Teilnehmer mit Tracks (Overlap-Logik) |
 | `/api/calendar/events` | GET | FriesenEvents letzte 365 Tage bis heute, inkl. RRULE-Expansion (Google-Kalender-Cache) |
-| `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles) |
+| `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles mit Datum/Uhrzeit) |
 | `/widget/preview` | GET | Vorschau + Einbettungscode für das Widget |
 | `/api/sse` | GET | Server-Sent Events Stream |
 

@@ -46,7 +46,7 @@ StatSim API: `https://api.statsim.net`, Auth: `X-API-Key` Header, max. 31 Tage p
 
 ### `app/database.py`
 
-SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Fünf Tabellen:
+SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Sieben Tabellen:
 
 | Tabelle | Inhalt |
 |---------|--------|
@@ -55,6 +55,8 @@ SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Fünf Tabellen:
 | `live_positions` | Aktuelle Position pro CID (UPSERT, maximal 1 Zeile pro CID) |
 | `position_history` | Jede einzelne VATSIM-Positions-Update (für Tracks + Events) |
 | `calendar_events` | FriesenFlieger Google-Kalender (alle 6h synchronisiert, UID als Primary Key) |
+| `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array, `notify_prefiles` Flag) |
+| `prefile_sigs` | Letzte bekannte Prefile-Signatur pro CID (`deptime`, `departure`, `arrival`) — wird nach jedem Poll persistiert, damit Container-Neustarts keine Änderungen verpassen |
 
 Drei Indizes: `idx_ph_cid_ts`, `idx_ph_ts`, `idx_flights_cid`.
 
@@ -87,6 +89,13 @@ Für den Chart (`get_stats_activity`) werden no-FP-Fragment-IDs via `_nofp_fragm
 - **`_active_flights: dict[int, int]`** — In-Memory State: CID → flight_id. Überlebt nicht einen Container-Neustart (Flüge die beim Restart offen sind, bleiben in der DB offen ohne Logoff-Zeit).
 - **`sse_queue: asyncio.Queue`** — Jeder SSE-Client hat eine eigene Verbindung zum selben Queue-Objekt. `put_nowait` blockiert nicht.
 - **`last_prefiles: list`** — aktuell eingereichte VATSIM-Prefile-Pläne mit FRS*-Callsign (In-Memory, aus dem letzten Poll-Zyklus)
+- **`_prefile_sigs: dict | None`** — CID → `(deptime, departure, arrival)` für Änderungserkennung. Wird beim Start aus `prefile_sigs`-DB-Tabelle geladen (nicht `None`) und nach jedem Poll gespeichert. Beim allerersten Start ohne DB-Einträge ist die Dict leer — keine Spam-Notifications. Container-Neustarts verpassen dadurch keine Prefile-Änderungen mehr.
+
+**Prefile Push-Notification-Logik:**
+- `_prefile_sig(p)` → `(deptime, departure, arrival)` — Änderungssignatur
+- Neuer oder geänderter Prefile → `asyncio.create_task(send_prefile_push_notifications(...))`
+- Unterdrückt wenn CID bereits in `_active_flights` (Pilot online — kein Prefile-Alert nötig)
+- Nur an Subscriptions mit `notify_prefiles = 1` (Filter in `get_push_subscriptions_for_prefile`)
 
 Die Flug-State-Machine in `_poll_once`:
 
@@ -236,5 +245,34 @@ CREATE TABLE statsim_cache (
     logoff_time  TEXT,
     duration_min INTEGER,
     fetched_at   TEXT NOT NULL
+);
+
+-- FriesenFlieger Google-Kalender (alle 6h synchronisiert)
+CREATE TABLE calendar_events (
+    uid      TEXT PRIMARY KEY,
+    summary  TEXT,
+    dtstart  TEXT,
+    dtend    TEXT,
+    location TEXT
+);
+
+-- Browser-Push-Subscriptions für Web Push Notifications
+CREATE TABLE push_subscriptions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint       TEXT UNIQUE NOT NULL,
+    p256dh         TEXT NOT NULL,
+    auth           TEXT NOT NULL,
+    pilot_filter   TEXT DEFAULT NULL,    -- JSON-Array von CIDs oder NULL = alle
+    notify_prefiles INTEGER DEFAULT 0,  -- 1 = auch Prefile-Änderungen benachrichtigen
+    created_at     TEXT NOT NULL
+);
+
+-- Letzte Prefile-Signaturen pro CID (persistiert für Neustart-Robustheit)
+CREATE TABLE prefile_sigs (
+    cid       INTEGER PRIMARY KEY,
+    deptime   TEXT,
+    departure TEXT,
+    arrival   TEXT,
+    saved_at  TEXT
 );
 ```
