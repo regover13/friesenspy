@@ -319,7 +319,7 @@ Ein Prefile ist ein eingereicher Flugplan ohne aktive VATSIM-Verbindung — der 
 
 ## GET /api/calendar/events
 
-FriesenEvents aus dem FriesenFlieger-Google-Kalender — letzte 365 Tage + 90 Tage voraus, absteigend nach Startdatum.
+FriesenEvents aus dem FriesenFlieger-Google-Kalender — letzte 365 Tage bis heute, absteigend nach Startdatum (neueste zuerst).
 
 Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungstermine werden expandiert (jede Wiederholung als eigener Eintrag). Ganztags-Events (ohne Uhrzeit) werden nicht gespeichert.
 
