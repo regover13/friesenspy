@@ -688,7 +688,7 @@ async def widget(request: Request):
             f'<span>{_html.escape(str(p.get("callsign", "?")))}'
             f'&nbsp;<span class="muted">'
             f'{_html.escape(str((p.get("flight_plan") or {}).get("departure", "?")))}→'
-            f'{_html.escape(str((p.get("flight_plan") or {}).get("arrival", "?")))})'
+            f'{_html.escape(str((p.get("flight_plan") or {}).get("arrival", "?")))}'
             f'</span></span>'
             for p in prefiles
         )
