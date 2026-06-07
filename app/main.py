@@ -420,7 +420,10 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
 
         if settings.STATSIM_API_KEY:
             # Immer gecachte Daten sofort zurückgeben
-            statsim_flights = get_statsim_flights_for_pilot(conn, cid, display_days)
+            statsim_flights = [
+                f for f in get_statsim_flights_for_pilot(conn, cid, display_days)
+                if (f.get("duration_min") or 0) > 5
+            ]
 
             if days == 0:
                 # Force full refresh (365 Tage) — Cooldown 24 h
