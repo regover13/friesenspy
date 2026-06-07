@@ -459,11 +459,12 @@ class VatsimPoller:
 
             self.sse_queue.put_nowait({"type": "positions", "data": live_positions})
 
-            # 4. Prefile-Benachrichtigungen für neu eingereichte Flugpläne
+            # 4. Prefile-Benachrichtigungen für neu eingereichte/geänderte Flugpläne
+            # Nur wenn Pilot NICHT bereits online ist (Prefile = Ankündigung, kein Duplikat)
             if self.vapid_private_key and new_prefiles:
                 for pf in new_prefiles:
                     cid = pf.get("cid")
-                    if not cid:
+                    if not cid or cid in self._active_flights:
                         continue
                     asyncio.create_task(
                         send_prefile_push_notifications(
