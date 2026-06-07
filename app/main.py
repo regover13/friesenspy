@@ -262,7 +262,8 @@ async def get_events(
         found_cids.add(cid)
         callsign = positions[0].get("callsign", "") if positions else ""
         conn2 = get_connection(settings.DB_PATH)
-        merged_rows: list[dict] = []
+        flights: list[dict] = []
+        name = ""
         try:
             name_row = conn2.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
             name = name_row["name"] if name_row else ""
@@ -279,40 +280,35 @@ async def get_events(
                 (cid, end or "9999-12-31", start or "0000-01-01"),
             ).fetchall()
             if flight_rows:
-                # cid zu den Dicts hinzufügen, damit der Geo-Check in merge möglich ist
                 merged_rows = merge_fragmented_flights(
                     [dict(r, cid=cid) for r in flight_rows],
                     conn=conn2,
                 )
+                for fr in merged_rows:
+                    if (fr.get("duration_min") or 0) <= 5:
+                        continue
+                    lo, lf = fr["logon_time"], fr.get("logoff_time", "")
+                    # Vollständigen Track laden (über Eventfenster hinaus — Overlap-Fix)
+                    full_pos = conn2.execute(
+                        "SELECT latitude, longitude, altitude, groundspeed, heading, ts "
+                        "FROM position_history WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts",
+                        (cid, lo, lf or "9999-12-31T23:59:59Z"),
+                    ).fetchall()
+                    flights.append({
+                        "logon_time": lo,
+                        "logoff_time": lf,
+                        "callsign": fr.get("callsign") or "",
+                        "departure": fr.get("departure") or "",
+                        "arrival": fr.get("arrival") or "",
+                        "aircraft": fr.get("aircraft_short") or fr.get("aircraft") or "",
+                        "positions": [dict(r) for r in full_pos],
+                        "source": "friesenspy",
+                    })
+            else:
+                # Fallback: Zeitlücken-Segmentierung (z.B. Positionen vor FriesenSpy-Start)
+                flights = [dict(f, source="friesenspy") for f in segment_into_flights(positions)]
         finally:
             conn2.close()
-
-        if merged_rows:
-            flights = []
-            for fr in merged_rows:
-                if (fr.get("duration_min") or 0) <= 5:
-                    continue
-                lo, lf = fr["logon_time"], fr.get("logoff_time", "")
-                # Vollständigen Track laden (über Eventfenster hinaus — Overlap-Fix)
-                full_pos = conn2.execute(
-                    "SELECT latitude, longitude, altitude, groundspeed, heading, ts "
-                    "FROM position_history WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts",
-                    (cid, lo, lf or "9999-12-31T23:59:59Z"),
-                ).fetchall()
-                seg_positions = [dict(r) for r in full_pos]
-                flights.append({
-                    "logon_time": lo,
-                    "logoff_time": lf,
-                    "callsign": fr.get("callsign") or "",
-                    "departure": fr.get("departure") or "",
-                    "arrival": fr.get("arrival") or "",
-                    "aircraft": fr.get("aircraft_short") or fr.get("aircraft") or "",
-                    "positions": seg_positions,
-                    "source": "friesenspy",
-                })
-        else:
-            # Fallback: Zeitlücken-Segmentierung (z.B. Positionen vor FriesenSpy-Start)
-            flights = [dict(f, source="friesenspy") for f in segment_into_flights(positions)]
 
         pilots.append({
             "cid": cid,
@@ -323,28 +319,47 @@ async def get_events(
 
     # StatSim-Ergänzung: Piloten die per DEP/ARR im Zeitfenster gefunden werden,
     # aber keine position_history haben (z.B. FriesenSpy war nicht aktiv)
-    if icao_list:
-        placeholders = ",".join("?" * len(icao_list))
+    if global_search or icao_list:
         conn3 = get_connection(settings.DB_PATH)
         try:
-            statsim_rows = conn3.execute(
-                f"""
-                SELECT sc.cid, sc.callsign, sc.departure, sc.arrival, sc.aircraft,
-                       sc.logon_time, sc.logoff_time, sc.duration_min, sc.statsim_id, p.name
-                FROM statsim_cache sc
-                LEFT JOIN pilots p ON sc.cid = p.cid
-                WHERE (sc.departure IN ({placeholders}) OR sc.arrival IN ({placeholders}))
-                  AND sc.logon_time != ''
-                  AND sc.logoff_time IS NOT NULL
-                  AND sc.duration_min > 5
-                  AND sc.logon_time <= ?
-                  AND sc.logoff_time >= ?
-                  AND sc.callsign LIKE ?
-                ORDER BY sc.cid, sc.logon_time
-                """,
-                (*icao_list, *icao_list, end or "9999-12-31", start or "0000-01-01",
-                 settings.CALLSIGN_PREFIX + "%"),
-            ).fetchall()
+            if global_search:
+                statsim_rows = conn3.execute(
+                    """
+                    SELECT sc.cid, sc.callsign, sc.departure, sc.arrival, sc.aircraft,
+                           sc.logon_time, sc.logoff_time, sc.duration_min, sc.statsim_id, p.name
+                    FROM statsim_cache sc
+                    LEFT JOIN pilots p ON sc.cid = p.cid
+                    WHERE sc.logon_time != ''
+                      AND sc.logoff_time IS NOT NULL
+                      AND sc.duration_min > 5
+                      AND sc.logon_time <= ?
+                      AND sc.logoff_time >= ?
+                      AND sc.callsign LIKE ?
+                    ORDER BY sc.cid, sc.logon_time
+                    """,
+                    (end or "9999-12-31", start or "0000-01-01",
+                     settings.CALLSIGN_PREFIX + "%"),
+                ).fetchall()
+            else:
+                placeholders = ",".join("?" * len(icao_list))
+                statsim_rows = conn3.execute(
+                    f"""
+                    SELECT sc.cid, sc.callsign, sc.departure, sc.arrival, sc.aircraft,
+                           sc.logon_time, sc.logoff_time, sc.duration_min, sc.statsim_id, p.name
+                    FROM statsim_cache sc
+                    LEFT JOIN pilots p ON sc.cid = p.cid
+                    WHERE (sc.departure IN ({placeholders}) OR sc.arrival IN ({placeholders}))
+                      AND sc.logon_time != ''
+                      AND sc.logoff_time IS NOT NULL
+                      AND sc.duration_min > 5
+                      AND sc.logon_time <= ?
+                      AND sc.logoff_time >= ?
+                      AND sc.callsign LIKE ?
+                    ORDER BY sc.cid, sc.logon_time
+                    """,
+                    (*icao_list, *icao_list, end or "9999-12-31", start or "0000-01-01",
+                     settings.CALLSIGN_PREFIX + "%"),
+                ).fetchall()
         finally:
             conn3.close()
 

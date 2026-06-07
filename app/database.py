@@ -926,14 +926,14 @@ def upsert_calendar_events(conn: sqlite3.Connection, events: list[dict]) -> None
 
 
 def get_calendar_events(conn: sqlite3.Connection, days_back: int = 365) -> list[dict]:
-    """FriesenEvents der letzten N Tage + 90 Tage voraus, neueste zuerst."""
+    """FriesenEvents der letzten N Tage, neueste zuerst."""
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    future = (now + timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_str = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
         "SELECT uid, summary, dtstart, dtend, location FROM calendar_events "
         "WHERE dtstart >= ? AND dtstart <= ? ORDER BY dtstart DESC",
-        (cutoff, future),
+        (cutoff, now_str),
     ).fetchall()
     return [dict(r) for r in rows]
 
