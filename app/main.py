@@ -236,6 +236,7 @@ async def get_events(
         end:    ISO8601 UTC, z.B. "2024-01-01T18:00:00Z"
     """
     icao_list = [code.strip().upper() for code in icao.split(",") if code.strip()]
+    global_search = icao_list == ["GLOBAL"]
 
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
@@ -244,7 +245,16 @@ async def get_events(
     finally:
         conn.close()
 
-    pilot_map = filter_event_pilots(rows, icao_list, radius, start, end)
+    if global_search:
+        from collections import defaultdict as _dd
+        _pm: dict = _dd(list)
+        for row in rows:
+            cid = row.get("cid")
+            if cid is not None:
+                _pm[cid].append(row)
+        pilot_map = dict(_pm)
+    else:
+        pilot_map = filter_event_pilots(rows, icao_list, radius, start, end)
 
     pilots = []
     found_cids: set[int] = set()

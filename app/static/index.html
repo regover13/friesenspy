@@ -1302,8 +1302,8 @@
       <div class="panel-title">Event-Analyse · Wer war dabei?</div>
       <div class="events-form">
         <div class="form-group">
-          <label for="ev-icao">ICAO-Codes (kommagetrennt)</label>
-          <input type="text" id="ev-icao" placeholder="EDDK, EDDL, EHAM" />
+          <label for="ev-icao">ICAO-Codes (kommagetrennt) oder "global"</label>
+          <input type="text" id="ev-icao" placeholder="EDDK, EDDL oder global" />
         </div>
         <div class="form-group">
           <label for="ev-radius">Radius</label>
@@ -2112,7 +2112,7 @@ function _prefillEventForm(ev) {
   if (ev.dtend) {
     document.getElementById('ev-end').value = ev.dtend.slice(0, 16);
   }
-  document.getElementById('ev-icao').value = ev.location || '';
+  document.getElementById('ev-icao').value = ev.location || 'global';
   document.getElementById('events-search-btn').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -3007,7 +3007,7 @@ async function searchEvents() {
   const end    = document.getElementById('ev-end').value;
 
   if (!icao) {
-    alert('Bitte mindestens einen ICAO-Code eingeben.');
+    alert('Bitte einen ICAO-Code eingeben oder "global" für weltweite Suche.');
     return;
   }
 
@@ -3061,7 +3061,10 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
     return;
   }
 
-  summary.innerHTML = `<span>${pilots.length} Friese${pilots.length !== 1 ? 'n' : ''} dabei</span>
+  const scopeLabel = icaoStr.trim().toUpperCase() === 'GLOBAL'
+    ? 'weltweit'
+    : `im Radius ${radiusKm} km um ${icaoStr.toUpperCase()}`;
+  summary.innerHTML = `<span>${pilots.length} Friese${pilots.length !== 1 ? 'n' : ''} ${scopeLabel}</span>
     <button class="btn-share" style="margin-left:auto;" onclick="copyShareUrl(this)">⎘ Teilen</button>`;
   summary.className   = 'events-summary found';
   summary.style.cssText = 'display:flex;align-items:center;gap:12px;';
