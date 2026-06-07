@@ -2963,7 +2963,6 @@ function renderStatsTable(stats, days) {
             <th>Pilot</th>
             <th style="cursor:pointer;" onclick="_statsSortClick('flight_count')">Geloggte Flüge${_sortIndicator('flight_count')}</th>
             <th style="cursor:pointer;" onclick="_statsSortClick('total_duration_min')">Flugzeit${_sortIndicator('total_duration_min')}</th>
-            <th style="cursor:pointer;" onclick="_statsSortClick('total_distance_nm')">Ges.-Distanz (nm)${_sortIndicator('total_distance_nm')}</th>
             <th style="cursor:pointer;" onclick="_statsSortClick('last_flight')">Letzter Flug${_sortIndicator('last_flight')}</th>
           </tr>
         </thead>
@@ -2978,14 +2977,12 @@ function renderStatsTable(stats, days) {
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
     const dur = totalMin ? `${h}h ${m}m` : '—';
-    const dist = s.total_distance_nm ? `${s.total_distance_nm.toLocaleString('de-DE')} nm` : '—';
     html += `
           <tr data-cid="${s.cid}" style="cursor:pointer;">
             <td class="mono text-green">${escHtml(cs)}</td>
             <td>${escHtml(s.name || String(s.cid))}</td>
             <td class="mono">${s.flight_count || 0}</td>
             <td class="mono">${dur}</td>
-            <td class="mono">${dist}</td>
             <td class="mono text-label">${lf}</td>
           </tr>`;
     pilotStatsMap[s.cid] = s;

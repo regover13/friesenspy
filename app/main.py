@@ -192,7 +192,7 @@ async def get_stats_activity_endpoint(days: int = 30):
         conn.close()
 
 
-_STATS_SORT_FIELDS = {"last_flight", "flight_count", "total_duration_min", "total_distance_nm"}
+_STATS_SORT_FIELDS = {"last_flight", "flight_count", "total_duration_min"}
 
 
 @app.get("/api/stats")

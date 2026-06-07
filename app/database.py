@@ -373,13 +373,6 @@ def get_stats(
             END) AS st_count,
             MAX(f_filt.logon_time)             AS last_fs,
             MAX(CASE WHEN sc_filt.logon_time != '' THEN sc_filt.logon_time END) AS last_st,
-            (SELECT COALESCE(SUM(f3.distance_nm), 0)
-             FROM flights f3
-             WHERE f3.cid = p.cid
-               AND f3.callsign LIKE ?
-               AND f3.logon_time >= datetime('now', ? || ' days')
-               AND f3.logoff_time IS NOT NULL
-               AND f3.duration_min > 5) AS total_distance_nm,
             (SELECT COALESCE(SUM(duration_min), 0)
              FROM flights
              WHERE cid = p.cid
@@ -422,8 +415,6 @@ def get_stats(
         """,
         (
             f"-{days}",    # st_count: fx.logon_time
-            prefix_pat,    # total_distance_nm: f3.callsign LIKE
-            f"-{days}",    # total_distance_nm: f3.logon_time
             f"-{days}",    # fs_duration_min: logon_time
             f"-{days}",    # st_duration_min: logon_time
             prefix_pat,    # st_duration_min: callsign LIKE
@@ -445,7 +436,6 @@ def get_stats(
             "st_count": r["st_count"],
             "flight_count": r["fs_count"] + r["st_count"],
             "total_duration_min": (r["fs_duration_min"] or 0) + (r["st_duration_min"] or 0),
-            "total_distance_nm": int(r["total_distance_nm"] or 0),
             "last_flight": last_flight,
         })
     return result

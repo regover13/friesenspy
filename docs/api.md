@@ -91,7 +91,7 @@ Letzter Flug und Fluganzahl pro Pilot. Kombiniert FriesenSpy-Aufzeichnungen und 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
 | `days` | int | `30` | Zeitraum in Tagen (30, 90, 365) |
-| `sort_by` | string | `last_flight` | Sortierfeld: `last_flight`, `flight_count`, `total_duration_min`, `total_distance_nm` |
+| `sort_by` | string | `last_flight` | Sortierfeld: `last_flight`, `flight_count`, `total_duration_min` |
 | `sort_dir` | string | `desc` | Sortierrichtung: `asc` oder `desc` |
 
 **Response**
@@ -106,13 +106,12 @@ Letzter Flug und Fluganzahl pro Pilot. Kombiniert FriesenSpy-Aufzeichnungen und 
     "st_count": 9,
     "flight_count": 12,
     "total_duration_min": 540,
-    "total_distance_nm": 1820,
     "last_flight": "2026-06-04T07:14:54Z"
   }
 ]
 ```
 
-`flight_count` = `fs_count` + `st_count`. `total_distance_nm` ist die Summe der GPS-gemessenen Streckendistanzen aller FriesenSpy-Flüge im Zeitraum (StatSim-Flüge haben keine GPS-Tracks und zählen nicht). StatSim-Daten sind nur vorhanden wenn der Pilot zuvor im Statistiken-Tab angeklickt wurde (lazy cache).
+`flight_count` = `fs_count` + `st_count`. StatSim-Daten sind nur vorhanden wenn der Pilot zuvor im Statistiken-Tab angeklickt wurde (lazy cache).
 
 ---
 
