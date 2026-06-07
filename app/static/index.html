@@ -2009,7 +2009,10 @@ function renderPrefiles(data) {
   let html = '<div class="live-table-wrap"><table><thead><tr><th>Callsign</th><th>Pilot</th><th>Route</th><th>Abflug (geplant)</th><th></th></tr></thead><tbody>';
   data.forEach((p, i) => {
     const route = p.departure && p.arrival ? `${escHtml(p.departure)} → ${escHtml(p.arrival)}` : '—';
-    const dep = p.deptime ? escHtml(String(p.deptime).padStart(4,'0').replace(/(\d{2})(\d{2})/, '$1:$2') + ' UTC') : '—';
+    const dofMatch = (p.remarks || '').match(/DOF\/(\d{2})(\d{2})(\d{2})/);
+    const dateStr = dofMatch ? `${dofMatch[3]}.${dofMatch[2]}.20${dofMatch[1]}, ` : '';
+    const timeStr = p.deptime ? String(p.deptime).padStart(4,'0').replace(/(\d{2})(\d{2})/, '$1:$2') + ' UTC' : '';
+    const dep = (dateStr || timeStr) ? escHtml(dateStr + timeStr) : '—';
     const mapBtn = (p.departure && p.arrival)
       ? `<span class="td-map-btn" data-idx="${i}" title="Route auf Karte" style="cursor:pointer;color:var(--green-dim)">◎</span>`
       : '';
@@ -3490,6 +3493,7 @@ const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cf
 
 const _liveInitialPromise = fetchLiveInitial();
 fetchAndRenderPrefiles();
+setInterval(fetchAndRenderPrefiles, 15000);
 connectSSE();
 initFromUrl();
 

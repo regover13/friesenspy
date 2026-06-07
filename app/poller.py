@@ -131,16 +131,27 @@ async def send_prefile_push_notifications(
     import json as _json
     from pywebpush import webpush, WebPushException
 
+    import re as _re
     cid = prefile.get("cid")
     callsign = prefile.get("callsign", "?")
     fp = prefile.get("flight_plan") or {}
     dep = fp.get("departure") or "?"
     arr = fp.get("arrival") or "?"
     aircraft = fp.get("aircraft_short") or fp.get("aircraft") or ""
+    deptime = fp.get("deptime") or ""
+    remarks = fp.get("remarks") or ""
+
+    dof_m = _re.search(r'DOF/(\d{2})(\d{2})(\d{2})', remarks)
+    if dof_m:
+        date_str = f"{dof_m.group(3)}.{dof_m.group(2)}.20{dof_m.group(1)}"
+    else:
+        date_str = ""
+    time_str = f"{deptime[:2]}:{deptime[2:]} UTC" if len(deptime) == 4 else ""
+    when = " · ".join(filter(None, [date_str, time_str]))
 
     payload = {
         "title": f"{callsign} hat Flugplan eingereicht 📋",
-        "body": f"{dep} → {arr}" + (f" · {aircraft}" if aircraft else ""),
+        "body": f"{dep} → {arr}" + (f" · {when}" if when else "") + (f" · {aircraft}" if aircraft else ""),
         "url": "/",
     }
     data = _json.dumps(payload)
