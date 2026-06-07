@@ -141,6 +141,12 @@ _FLIGHTS_MIGRATIONS = [
     "ALTER TABLE flights ADD COLUMN distance_nm REAL DEFAULT 0",
 ]
 
+_CALENDAR_MIGRATIONS = [
+    # UIDs wurden auf zusammengesetztes Format umgestellt (uid_YYYYMMDDTHHMMSSZ).
+    # Alte Einträge ohne dieses Suffix entfernen (idempotent).
+    "DELETE FROM calendar_events WHERE uid NOT LIKE '%\\_2%T%Z' ESCAPE '\\'",
+]
+
 _LIVE_POSITIONS_MIGRATIONS = [
     "ALTER TABLE live_positions ADD COLUMN flight_rules TEXT",
     "ALTER TABLE live_positions ADD COLUMN aircraft_icao TEXT",
@@ -172,6 +178,11 @@ def init_db(db_path: str) -> None:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
                 pass  # Spalte existiert bereits
+        for stmt in _CALENDAR_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
         conn.commit()
     finally:
         conn.close()
@@ -915,15 +926,14 @@ def upsert_calendar_events(conn: sqlite3.Connection, events: list[dict]) -> None
 
 
 def get_calendar_events(conn: sqlite3.Connection, days_back: int = 365) -> list[dict]:
-    """Vergangene FriesenEvents der letzten N Tage, neueste zuerst."""
-    cutoff = (
-        datetime.now(timezone.utc) - timedelta(days=days_back)
-    ).strftime("%Y-%m-%dT%H:%M:%SZ")
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """FriesenEvents der letzten N Tage + 90 Tage voraus, neueste zuerst."""
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    future = (now + timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
         "SELECT uid, summary, dtstart, dtend, location FROM calendar_events "
         "WHERE dtstart >= ? AND dtstart <= ? ORDER BY dtstart DESC",
-        (cutoff, now_str),
+        (cutoff, future),
     ).fetchall()
     return [dict(r) for r in rows]
 
