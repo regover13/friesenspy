@@ -320,7 +320,8 @@ FriesenSpy/
 | `/api/flights/statsim/{id}/track` | GET | GPS-Track eines StatSim-Fluges |
 | `/api/events?icao=EDDK&radius=150&start=...&end=...` | GET | Event-Teilnehmer mit Tracks (Overlap-Logik) |
 | `/api/calendar/events` | GET | FriesenEvents der letzten 365 Tage (Google-Kalender-Cache) |
-| `/widget` | GET | Einbettbares iframe-Widget für friesenflieger.de |
+| `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles) |
+| `/widget/preview` | GET | Vorschau + Einbettungscode für das Widget |
 | `/api/sse` | GET | Server-Sent Events Stream |
 
 Details: siehe [docs/api.md](docs/api.md)

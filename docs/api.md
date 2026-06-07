@@ -344,14 +344,14 @@ Der Kalender wird alle 6 Stunden automatisch synchronisiert. Ganztags-Events (oh
 
 ## GET /widget
 
-Einbettbares HTML-Widget für friesenflieger.de. Zeigt Anzahl online-Piloten mit Callsigns und 7-Tage-Flugstunden. Klickbar → öffnet friesenspy.devprops.de.
+Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*) und 7-Tage-Flugstunden. Design im hellen Stil von friesenflieger.de (bg `#d0e0f0`, Navy `#053080`, Vereinsrot `#D31141`). Klickbar → öffnet friesenspy.devprops.de.
 
 ```html
-<iframe src="https://friesenspy.devprops.de/widget" width="400" height="80"
-  style="border:none;background:transparent;" scrolling="no"></iframe>
+<iframe src="https://friesenspy.devprops.de/widget" width="420" height="88"
+  style="border:none;" scrolling="no"></iframe>
 ```
 
-Die Seite enthält `<meta http-equiv="refresh" content="60">` (60-Sekunden-Auto-Refresh) und wird mit `Access-Control-Allow-Origin: *` ausgeliefert.
+Die Seite enthält `<meta http-equiv="refresh" content="60">` (60-Sekunden-Auto-Refresh) und wird mit `Access-Control-Allow-Origin: *` ausgeliefert. Vorschau + Einbettungscode: `/widget/preview`.
 
 ---
 
