@@ -198,19 +198,19 @@ FriesenSpy kombiniert zwei Datenquellen:
 
 | | FriesenSpy (Live) | StatSim (Historisch) |
 |---|---|---|
-| **GPS-Track** | ✅ voller Track (alle 15 s aufgezeichnet) | ❌ nicht verfügbar |
-| **Event-Suche auf Karte** | ✅ Track sichtbar | ❌ nur in der Liste (◌ Badge) |
+| **GPS-Track** | ✅ lokal (alle 15 s aufgezeichnet) | ✅ lokal gecacht (ab erstem Abruf) |
+| **Event-Suche auf Karte** | ✅ Track sichtbar | ✅ Track sichtbar |
 | **Flugplan (DEP/ARR)** | ✅ | ✅ |
 | **Flugdauer** | ✅ | ✅ |
 | **Verfügbarkeit** | Nur wenn FriesenSpy läuft | Letztes Jahr via API |
-| **GPS-Aufbewahrung** | 365 Tage | — |
+| **GPS-Aufbewahrung** | 365 Tage | Dauerhaft (nach erstem Abruf) |
 | **Fluganzahl in Statistiken** | ✅ gezählt | ✅ gezählt (Duplikate gefiltert) |
 
 **FriesenSpy (Live):** Jede VATSIM-Position wird alle 15 Sekunden abgerufen und gespeichert. Das ergibt einen präzisen GPS-Track für jeden Flug. Flugdaten bleiben **365 Tage** in der Datenbank.
 
-**StatSim:** Eine öffentliche Datenbank mit historischen VATSIM-Flügen ([statsim.net](https://statsim.net)). FriesenSpy fragt StatSim ergänzend ab, um Flüge zu finden, die vor dem Start von FriesenSpy stattgefunden haben oder bei einem Serverausfall nicht aufgezeichnet wurden. StatSim liefert keine GPS-Tracks, nur Flugplan-Daten (Start, Ziel, Dauer).
+**StatSim:** Eine öffentliche Datenbank mit historischen VATSIM-Flügen ([statsim.net](https://statsim.net)). FriesenSpy fragt StatSim ergänzend ab, um Flüge zu finden, die vor dem Start von FriesenSpy stattgefunden haben oder bei einem Serverausfall nicht aufgezeichnet wurden. StatSim liefert GPS-Tracks, die beim ersten Abruf lokal gespeichert werden.
 
-> Flüge, die FriesenSpy live aufgezeichnet hat, sind immer vollständiger als StatSim-Einträge. StatSim dient als Rückfall für ältere Zeiträume.
+> FriesenSpy-Tracks enthalten dichtere Positionsdaten (15-Sekunden-Intervalle). StatSim dient als Rückfall für ältere Zeiträume oder bei Serverausfall.
 
 ---
 

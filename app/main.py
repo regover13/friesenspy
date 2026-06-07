@@ -25,7 +25,9 @@ from app.database import (
     get_stats_activity,
     get_statsim_flights_for_pilot,
     get_statsim_last_fetched,
+    get_statsim_positions,
     init_db,
+    save_statsim_positions,
     merge_fragmented_flights,
     upsert_push_subscription,
     upsert_statsim_flights,
@@ -500,9 +502,20 @@ async def get_flight_track(flight_id: int, logon: str = "", logoff: str = ""):
 
 @app.get("/api/flights/statsim/{statsim_id}/track")
 async def get_statsim_flight_track(statsim_id: int):
-    """Positionshistorie eines StatSim-Fluges (live von StatSim API)."""
-    settings = get_settings()
-    if not settings.STATSIM_API_KEY:
-        return []
-    async with _httpx.AsyncClient() as client:
-        return await fetch_flight_track(client, statsim_id, settings.STATSIM_API_KEY)
+    """Positionshistorie eines StatSim-Fluges (lokal gecacht, sonst von StatSim API)."""
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        cached = get_statsim_positions(conn, statsim_id)
+        if cached:
+            return cached
+        settings = get_settings()
+        if not settings.STATSIM_API_KEY:
+            return []
+        async with _httpx.AsyncClient() as client:
+            positions = await fetch_flight_track(client, statsim_id, settings.STATSIM_API_KEY)
+        if positions:
+            save_statsim_positions(conn, statsim_id, positions)
+            conn.commit()
+        return positions
+    finally:
+        conn.close()

@@ -82,6 +82,18 @@ CREATE TABLE IF NOT EXISTS statsim_cache (
 );
 CREATE INDEX IF NOT EXISTS idx_sc_cid ON statsim_cache(cid);
 
+CREATE TABLE IF NOT EXISTS statsim_position_history (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    statsim_id   INTEGER NOT NULL,
+    latitude     REAL,
+    longitude    REAL,
+    altitude     INTEGER,
+    groundspeed  INTEGER,
+    heading      INTEGER,
+    ts           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sph_statsim_id ON statsim_position_history(statsim_id);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     endpoint     TEXT UNIQUE NOT NULL,
@@ -751,6 +763,51 @@ def get_statsim_last_fetched(conn: sqlite3.Connection, cid: int) -> str | None:
         (cid,),
     ).fetchone()
     return row["ft"] if row else None
+
+
+def save_statsim_positions(
+    conn: sqlite3.Connection, statsim_id: int, positions: list[dict]
+) -> None:
+    """GPS-Track eines StatSim-Fluges lokal speichern (idempotent)."""
+    if not positions:
+        return
+    exists = conn.execute(
+        "SELECT 1 FROM statsim_position_history WHERE statsim_id = ? LIMIT 1",
+        (statsim_id,),
+    ).fetchone()
+    if exists:
+        return
+    conn.executemany(
+        """INSERT INTO statsim_position_history
+           (statsim_id, latitude, longitude, altitude, groundspeed, heading, ts)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        [
+            (
+                statsim_id,
+                p.get("latitude"),
+                p.get("longitude"),
+                p.get("altitude"),
+                p.get("groundspeed"),
+                p.get("heading"),
+                p.get("ts", ""),
+            )
+            for p in positions
+        ],
+    )
+
+
+def get_statsim_positions(
+    conn: sqlite3.Connection, statsim_id: int
+) -> list[dict]:
+    """Gecachten GPS-Track eines StatSim-Fluges zurückgeben."""
+    rows = conn.execute(
+        """SELECT latitude, longitude, altitude, groundspeed, heading, ts
+           FROM statsim_position_history
+           WHERE statsim_id = ?
+           ORDER BY ts""",
+        (statsim_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_pilot_flights_friesenspy(
