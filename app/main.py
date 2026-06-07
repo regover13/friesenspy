@@ -611,8 +611,10 @@ async def widget_preview():
 <html lang="de">
 <head>
 <meta charset="UTF-8">
+<meta name="color-scheme" content="light">
 <title>FriesenSpy Widget – Vorschau</title>
 <style>
+  :root{color-scheme:light}
   body{background:#d0e0f0;color:#053080;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;padding:32px;max-width:640px;margin:0 auto}
   h1{color:#053080;font-size:1.1rem;margin-bottom:4px;font-weight:700}
   p{font-size:0.85rem;color:#104090;margin-bottom:20px}
@@ -698,8 +700,10 @@ async def widget(request: Request):
 <html lang="de">
 <head>
 <meta charset="UTF-8">
+<meta name="color-scheme" content="light">
 <meta http-equiv="refresh" content="60">
 <style>
+  :root{{color-scheme:light}}
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{background:#d0e0f0;color:#053080;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:12px}}
   a{{color:inherit;text-decoration:none;display:block}}
