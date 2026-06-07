@@ -46,14 +46,15 @@ StatSim API: `https://api.statsim.net`, Auth: `X-API-Key` Header, max. 31 Tage p
 
 ### `app/database.py`
 
-SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Vier Tabellen:
+SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Fünf Tabellen:
 
 | Tabelle | Inhalt |
 |---------|--------|
 | `pilots` | CID + Name (INSERT OR IGNORE — niemals überschrieben) |
-| `flights` | Pro Flug: Callsign, Typ, DEP/ARR, Logon/Logoff, Dauer |
+| `flights` | Pro Flug: Callsign, Typ, DEP/ARR, Logon/Logoff, Dauer, `distance_nm` (GPS-Summe via Haversine) |
 | `live_positions` | Aktuelle Position pro CID (UPSERT, maximal 1 Zeile pro CID) |
 | `position_history` | Jede einzelne VATSIM-Positions-Update (für Tracks + Events) |
+| `calendar_events` | FriesenFlieger Google-Kalender (alle 6h synchronisiert, UID als Primary Key) |
 
 Drei Indizes: `idx_ph_cid_ts`, `idx_ph_ts`, `idx_flights_cid`.
 
@@ -82,9 +83,10 @@ Für den Chart (`get_stats_activity`) werden no-FP-Fragment-IDs via `_nofp_fragm
 ### `app/poller.py`
 
 `VatsimPoller` kapselt:
-- **APScheduler `AsyncIOScheduler`** mit zwei Jobs: `vatsim_poll` (interval, 15s) und `daily_cleanup` (cron, 03:00 — löscht `position_history` älter als 365 Tage)
+- **APScheduler `AsyncIOScheduler`** mit vier Jobs: `vatsim_poll` (interval, 15s), `daily_cleanup` (cron, 03:00 — löscht `position_history` älter als 365 Tage), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start)
 - **`_active_flights: dict[int, int]`** — In-Memory State: CID → flight_id. Überlebt nicht einen Container-Neustart (Flüge die beim Restart offen sind, bleiben in der DB offen ohne Logoff-Zeit).
 - **`sse_queue: asyncio.Queue`** — Jeder SSE-Client hat eine eigene Verbindung zum selben Queue-Objekt. `put_nowait` blockiert nicht.
+- **`last_prefiles: list`** — aktuell eingereichte VATSIM-Prefile-Pläne mit FRS*-Callsign (In-Memory, aus dem letzten Poll-Zyklus)
 
 Die Flug-State-Machine in `_poll_once`:
 
@@ -114,7 +116,7 @@ Telegram-Alert beim "Online gehen" eines Piloten. Alle VATSIM-Felder werden mit 
 
 FastAPI mit `lifespan`-Kontext-Manager (startup: DB init + Poller start; shutdown: Poller stop).
 
-Endpoints: `/api/live`, `/api/stats`, `/api/pilots/{cid}/flights`, `/api/pilots/{cid}/live-track`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/sse`.
+Endpoints: `/api/live`, `/api/prefiles`, `/api/stats`, `/api/stats/activity`, `/api/pilots/{cid}/flights`, `/api/pilots/{cid}/live-track`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/calendar/events`, `/widget`, `/api/sse`.
 
 `/api/pilots/{cid}/flights` antwortet **sofort** mit FriesenSpy-Daten + gecachten StatSim-Daten. StatSim-Update läuft als FastAPI `BackgroundTask`: normaler Aufruf → letzter 31-Tage-Chunk; `days=0` → volle 365 Tage (Force-Refresh). Status-Tracking via `_statsim_updating` und `_full_history_fetching` (In-Memory-Sets) verhindert parallele Doppel-Fetches. Response-Header `X-StatSim-Status: fresh | updating | no-key`.
 

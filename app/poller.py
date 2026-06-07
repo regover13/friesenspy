@@ -144,6 +144,8 @@ class VatsimPoller:
         self._active_flights: dict[int, int] = {}
         # SSE broadcast queue: asyncio.Queue für Updates
         self.sse_queue: asyncio.Queue = asyncio.Queue()
+        # Aktuell eingereichte Flugpläne (VATSIM prefiles) mit FRS*-Callsign
+        self.last_prefiles: list = []
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -165,6 +167,18 @@ class VatsimPoller:
             hour=3,
             minute=0,
             id="daily_cleanup",
+        )
+        self._scheduler.add_job(
+            self._sync_calendar,
+            "interval",
+            hours=6,
+            id="calendar_sync",
+        )
+        # Kalender beim Start sofort einmal laden
+        self._scheduler.add_job(
+            self._sync_calendar,
+            "date",
+            id="calendar_sync_initial",
         )
         self._scheduler.start()
 
@@ -199,6 +213,13 @@ class VatsimPoller:
             # 1. Fetch + filter
             vatsim_data = await fetch_vatsim_data(self._http_client)
             online_pilots = filter_friesen_pilots(self.callsign_prefix, vatsim_data)
+
+            # Prefiles mit FRS*-Callsign aus dem Feed speichern
+            prefix = self.callsign_prefix.upper()
+            self.last_prefiles = [
+                p for p in (vatsim_data.get("prefiles") or [])
+                if isinstance(p, dict) and p.get("callsign", "").upper().startswith(prefix)
+            ]
 
             # Build lookup: cid → position dict
             current: dict[int, dict] = {
@@ -350,6 +371,28 @@ class VatsimPoller:
 
         except Exception:
             logger.exception("Error in _poll_once")
+
+    # ------------------------------------------------------------------
+    # Calendar sync
+    # ------------------------------------------------------------------
+
+    async def _sync_calendar(self) -> None:
+        """FriesenFlieger Google-Kalender laden und in DB speichern."""
+        try:
+            from app.calendar_sync import fetch_and_parse_ical
+            from app.database import upsert_calendar_events
+            assert self._http_client is not None
+            events = await fetch_and_parse_ical(self._http_client)
+            if events:
+                conn = get_connection(self.db_path)
+                try:
+                    upsert_calendar_events(conn, events)
+                    conn.commit()
+                finally:
+                    conn.close()
+                logger.info("Calendar sync: %d events gespeichert", len(events))
+        except Exception:
+            logger.exception("Error in _sync_calendar")
 
     # ------------------------------------------------------------------
     # Daily cleanup

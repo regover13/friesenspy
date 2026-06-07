@@ -58,12 +58,13 @@ VATSIM-Piloten trennen die Verbindung manchmal kurz, ohne dass ein echter Flugwe
 
 ### ✈ Live
 
-Zeigt alle Friesen, die gerade auf VATSIM fliegen — in Echtzeit, ohne Neuladen der Seite.
+Zeigt alle Friesen, die gerade auf VATSIM fliegen — in Echtzeit, ohne Neuladen der Seite. Darunter erscheinen **eingereichte Flugpläne (Prefiles)**: Piloten, die bereits einen Plan aufgegeben haben, aber noch nicht verbunden sind.
 
 **Was du siehst:**
 - Callsign, Abflug- und Zielflughafen, Flugzeugtyp
 - Wie lange der Pilot bereits online ist
 - Aktuelle Position, Höhe, Geschwindigkeit und Kurs
+- Eingereichte Flugpläne (FRS*-Callsign, noch nicht online)
 
 **Was du tun kannst:**
 - **Callsign anklicken** → öffnet das Flugplan-Modal mit allen Details (Route, Reiseflughöhe, Bemerkungen usw.)
@@ -101,7 +102,7 @@ Interaktive Karte mit allen aktuell fliegenden Friesen.
 **Was du siehst:**
 - **KPI-Box** oben: Gesamtanzahl aktiver Piloten, Flüge, Flugstunden, Durchschnitt pro Tag, aktivster Pilot und durchschnittliche Flugdauer im gewählten Zeitraum
 - **Liniendiagramm**: Flugaktivität über Zeit — umschaltbar zwischen Piloten, Flügen, Stunden und Ø Flugdauer; wählbare Zeiträume: 30 Tage, 90 Tage (beide mit Wochentag-Labels) und 365 Tage (monatlich)
-- **Pilotenliste**: alle Piloten mit Anzahl geloggter Flüge und letztem Flugdatum
+- **Pilotenliste**: alle Piloten mit Anzahl geloggter Flüge, **Gesamtdistanz in Seemeilen** und letztem Flugdatum — sortierbar nach Flügen, Flugzeit, Distanz oder Datum (Klick auf Spaltenheader)
 
 **Was du tun kannst:**
 - **Pilot anklicken** → klappt die Einzelflug-Liste für diesen Piloten auf; Daten kommen sofort aus dem lokalen Cache, ein Update von StatSim läuft automatisch im Hintergrund
@@ -121,8 +122,10 @@ Einzelflüge können aus zwei Quellen stammen — erkennbar am Badge:
 
 Wer von den Friesen war bei einem bestimmten Event dabei?
 
+Oben erscheint die **FriesenEvents-Liste** — alle Events aus dem FriesenFlieger-Google-Kalender der letzten 365 Tage. Ein Klick auf einen Eintrag füllt Datum, Uhrzeit und ICAO-Code automatisch ins Suchformular vor.
+
 **Wie es funktioniert:**
-Du gibst einen **ICAO-Code** (z.B. `EDDK` für Köln/Bonn), einen **Radius in km** und einen **Zeitraum** ein. FriesenSpy sucht dann alle Friesen-Flüge, deren Route durch diesen Bereich verlief oder die dort gestartet bzw. gelandet sind.
+Du gibst einen **ICAO-Code** (z.B. `EDDK` für Köln/Bonn), einen **Radius in km** und einen **Zeitraum** ein. FriesenSpy sucht dann alle Friesen-Flüge, deren Route durch diesen Bereich verlief oder die dort gestartet bzw. gelandet sind. Piloten werden gefunden, wenn ihr Flug das Zeitfenster **überlappt** (nicht nur vollständig darin liegt) — auch wer schon früher gestartet ist oder erst nach Event-Ende gelandet ist, erscheint in der Ergebnisliste.
 
 **Was du siehst:**
 - **Karte** (oben) mit allen gefundenen GPS-Tracks gleichzeitig eingezeichnet
@@ -287,7 +290,8 @@ FriesenSpy/
 │   ├── statsim.py     # StatSim API-Client (historische Flüge)
 │   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline), Event-Filter
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
-│   ├── poller.py      # APScheduler, Flug-State-Machine, SSE-Queue
+│   ├── calendar_sync.py # FriesenFlieger Google-Kalender (iCal-Parser, alle 6h via Poller)
+│   ├── poller.py      # APScheduler, Flug-State-Machine, Kalender-Sync, SSE-Queue
 │   └── static/
 │       ├── index.html # Vanilla-JS-SPA (4 Tabs)
 │       └── favicon.ico
@@ -307,13 +311,16 @@ FriesenSpy/
 | `/robots.txt` | GET | Bot-Indizierung gesperrt (`Disallow: /`) |
 | `/health` | GET | `{"status": "ok"}` |
 | `/api/live` | GET | Aktuelle Live-Positionen (inkl. Flugplan-Felder) |
-| `/api/stats?days=30` | GET | Letzter Flug + Fluganzahl pro Pilot |
+| `/api/prefiles` | GET | Eingereichte VATSIM-Flugpläne (FRS*, noch nicht online) |
+| `/api/stats?days=30&sort_by=last_flight&sort_dir=desc` | GET | Letzter Flug + Fluganzahl + Distanz pro Pilot, sortierbar |
 | `/api/stats/activity?days=30` | GET | Flugaktivität über Zeit (täglich/monatlich) |
 | `/api/pilots/{cid}/flights?days=365` | GET | Einzelflüge eines Piloten (FriesenSpy + StatSim) |
 | `/api/pilots/{cid}/live-track` | GET | GPS-Track des aktuell laufenden Fluges |
 | `/api/flights/{id}/track` | GET | GPS-Track eines FriesenSpy-Fluges |
 | `/api/flights/statsim/{id}/track` | GET | GPS-Track eines StatSim-Fluges |
-| `/api/events?icao=EDDK&radius=150&start=...&end=...` | GET | Event-Teilnehmer mit Tracks |
+| `/api/events?icao=EDDK&radius=150&start=...&end=...` | GET | Event-Teilnehmer mit Tracks (Overlap-Logik) |
+| `/api/calendar/events` | GET | FriesenEvents der letzten 365 Tage (Google-Kalender-Cache) |
+| `/widget` | GET | Einbettbares iframe-Widget für friesenflieger.de |
 | `/api/sse` | GET | Server-Sent Events Stream |
 
 Details: siehe [docs/api.md](docs/api.md)

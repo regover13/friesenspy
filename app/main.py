@@ -17,6 +17,7 @@ from app.config import get_settings
 from app.database import (
     delete_push_subscription,
     get_all_position_history,
+    get_calendar_events,
     get_connection,
     get_live_flight_track,
     get_live_positions,
@@ -190,15 +191,30 @@ async def get_stats_activity_endpoint(days: int = 30):
         conn.close()
 
 
+_STATS_SORT_FIELDS = {"last_flight", "flight_count", "total_duration_min", "total_distance_nm"}
+
+
 @app.get("/api/stats")
-async def get_stats_endpoint(request: Request, days: int = 30):
-    """Flugstunden pro Pilot. ?days=30|90|365"""
+async def get_stats_endpoint(
+    request: Request,
+    days: int = 30,
+    sort_by: str = "last_flight",
+    sort_dir: str = "desc",
+):
+    """Flugstunden pro Pilot. ?days=30|90|365&sort_by=...&sort_dir=asc|desc"""
+    if sort_by not in _STATS_SORT_FIELDS:
+        sort_by = "last_flight"
+    reverse = sort_dir != "asc"
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
         stats = get_stats(conn, days=days, callsign_prefix=settings.CALLSIGN_PREFIX)
     finally:
         conn.close()
+    if sort_by == "last_flight":
+        stats.sort(key=lambda x: x.get("last_flight") or "", reverse=reverse)
+    else:
+        stats.sort(key=lambda x: x.get(sort_by) or 0, reverse=reverse)
     return stats
 
 
@@ -266,7 +282,13 @@ async def get_events(
                 if (fr.get("duration_min") or 0) <= 5:
                     continue
                 lo, lf = fr["logon_time"], fr.get("logoff_time", "")
-                seg_positions = [p for p in positions if lo <= p.get("ts", "") <= lf]
+                # Vollständigen Track laden (über Eventfenster hinaus — Overlap-Fix)
+                full_pos = conn2.execute(
+                    "SELECT latitude, longitude, altitude, groundspeed, heading, ts "
+                    "FROM position_history WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts",
+                    (cid, lo, lf or "9999-12-31T23:59:59Z"),
+                ).fetchall()
+                seg_positions = [dict(r) for r in full_pos]
                 flights.append({
                     "logon_time": lo,
                     "logoff_time": lf,
@@ -519,3 +541,90 @@ async def get_statsim_flight_track(statsim_id: int):
         return positions
     finally:
         conn.close()
+
+
+@app.get("/api/prefiles")
+async def get_prefiles(request: Request):
+    """Eingereichte VATSIM-Flugpläne mit FRS*-Callsign (aus letztem VATSIM-Poll)."""
+    poller: VatsimPoller = request.app.state.poller
+    settings = get_settings()
+    result = []
+    for p in poller.last_prefiles:
+        fp = p.get("flight_plan") or {}
+        cid = p.get("cid")
+        name = ""
+        if cid:
+            conn = get_connection(settings.DB_PATH)
+            try:
+                row = conn.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
+                if row:
+                    name = row["name"]
+            finally:
+                conn.close()
+        result.append({
+            "callsign": p.get("callsign", ""),
+            "cid": cid,
+            "name": name,
+            "departure": fp.get("departure", ""),
+            "arrival": fp.get("arrival", ""),
+            "route": fp.get("route", ""),
+            "planned_deptime": fp.get("deptime", ""),
+        })
+    return result
+
+
+@app.get("/api/calendar/events")
+async def get_calendar_events_endpoint():
+    """FriesenEvents der letzten 365 Tage aus dem Google-Kalender-Cache."""
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return get_calendar_events(conn, days_back=365)
+    finally:
+        conn.close()
+
+
+@app.get("/widget", include_in_schema=False)
+async def widget():
+    """Einbettbares iframe-Widget für friesenflieger.de."""
+    from fastapi.responses import HTMLResponse
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        live = get_live_positions(conn)
+        stats = get_stats(conn, days=7, callsign_prefix=settings.CALLSIGN_PREFIX)
+    finally:
+        conn.close()
+
+    total_min = sum(s.get("total_duration_min", 0) for s in stats)
+    total_h = total_min / 60
+    pilots_html = " &nbsp;·&nbsp; ".join(
+        f'<span>{p.get("callsign") or p.get("name") or "?"}</span>'
+        for p in live
+    ) if live else '<span style="color:#6b9ab8">Niemand online</span>'
+
+    html = f"""<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="refresh" content="60">
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#04080f;color:#d4e8f5;font-family:'Courier New',monospace;font-size:12px;padding:8px}}
+  a{{color:inherit;text-decoration:none;display:block}}
+  .hd{{color:#2d9cdb;font-weight:700;font-size:13px;margin-bottom:5px}}
+  .badge{{background:#2d9cdb;color:#04080f;padding:1px 6px;font-size:10px;margin-right:6px;font-weight:700}}
+  .ft{{margin-top:5px;font-size:10px;color:#6b9ab8;border-top:1px solid rgba(45,156,219,0.2);padding-top:4px}}
+</style>
+</head>
+<body>
+<a href="https://friesenspy.devprops.de" target="_blank">
+  <div class="hd">◈ FriesenSpy</div>
+  <div><span class="badge">{len(live)} online</span>{pilots_html}</div>
+  <div class="ft">7&nbsp;Tage:&nbsp;{total_h:.1f}&nbsp;h&nbsp;·&nbsp;friesenspy.devprops.de</div>
+</a>
+</body>
+</html>"""
+    return HTMLResponse(
+        content=html,
+        headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"},
+    )

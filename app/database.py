@@ -26,7 +26,16 @@ CREATE TABLE IF NOT EXISTS flights (
     arrival       TEXT,
     logon_time    TEXT,
     logoff_time   TEXT,
-    duration_min  INTEGER
+    duration_min  INTEGER,
+    distance_nm   REAL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS calendar_events (
+    uid      TEXT PRIMARY KEY,
+    summary  TEXT,
+    dtstart  TEXT,
+    dtend    TEXT,
+    location TEXT
 );
 
 CREATE TABLE IF NOT EXISTS live_positions (
@@ -128,6 +137,10 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
+_FLIGHTS_MIGRATIONS = [
+    "ALTER TABLE flights ADD COLUMN distance_nm REAL DEFAULT 0",
+]
+
 _LIVE_POSITIONS_MIGRATIONS = [
     "ALTER TABLE live_positions ADD COLUMN flight_rules TEXT",
     "ALTER TABLE live_positions ADD COLUMN aircraft_icao TEXT",
@@ -149,6 +162,11 @@ def init_db(db_path: str) -> None:
         conn.execute("PRAGMA foreign_keys=ON")
         conn.executescript(_DDL)
         # Migration: neue Spalten hinzufügen falls noch nicht vorhanden
+        for stmt in _FLIGHTS_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
         for stmt in _LIVE_POSITIONS_MIGRATIONS:
             try:
                 conn.execute(stmt)
@@ -197,20 +215,35 @@ def open_flight(
 
 
 def close_flight(conn: sqlite3.Connection, flight_id: int, logoff_time: str) -> None:
-    """Flug abschließen: logoff_time setzen, duration_min berechnen."""
+    """Flug abschließen: logoff_time setzen, duration_min und distance_nm berechnen."""
     row = conn.execute(
-        "SELECT logon_time FROM flights WHERE id = ?", (flight_id,)
+        "SELECT cid, logon_time FROM flights WHERE id = ?", (flight_id,)
     ).fetchone()
     if row is None:
         return
 
-    logon_dt = _parse_iso(row[0])
+    cid, logon_time = row[0], row[1]
+    logon_dt = _parse_iso(logon_time)
     logoff_dt = _parse_iso(logoff_time)
     duration_min = max(0, int((logoff_dt - logon_dt).total_seconds() / 60))
 
+    # GPS-Distanz aus position_history berechnen
+    from app.geo import haversine as _haversine
+    pos_rows = conn.execute(
+        "SELECT latitude, longitude FROM position_history "
+        "WHERE cid = ? AND ts >= ? AND ts <= ? AND latitude IS NOT NULL ORDER BY ts",
+        (cid, logon_time, logoff_time),
+    ).fetchall()
+    dist_km = 0.0
+    for i in range(1, len(pos_rows)):
+        p0, p1 = pos_rows[i - 1], pos_rows[i]
+        if p0[0] and p0[1] and p1[0] and p1[1]:
+            dist_km += _haversine(p0[0], p0[1], p1[0], p1[1])
+    distance_nm = round(dist_km / 1.852)
+
     conn.execute(
-        "UPDATE flights SET logoff_time = ?, duration_min = ? WHERE id = ?",
-        (logoff_time, duration_min, flight_id),
+        "UPDATE flights SET logoff_time = ?, duration_min = ?, distance_nm = ? WHERE id = ?",
+        (logoff_time, duration_min, distance_nm, flight_id),
     )
 
 
@@ -340,6 +373,13 @@ def get_stats(
             END) AS st_count,
             MAX(f_filt.logon_time)             AS last_fs,
             MAX(CASE WHEN sc_filt.logon_time != '' THEN sc_filt.logon_time END) AS last_st,
+            (SELECT COALESCE(SUM(f3.distance_nm), 0)
+             FROM flights f3
+             WHERE f3.cid = p.cid
+               AND f3.callsign LIKE ?
+               AND f3.logon_time >= datetime('now', ? || ' days')
+               AND f3.logoff_time IS NOT NULL
+               AND f3.duration_min > 5) AS total_distance_nm,
             (SELECT COALESCE(SUM(duration_min), 0)
              FROM flights
              WHERE cid = p.cid
@@ -360,6 +400,7 @@ def get_stats(
         FROM pilots p
         LEFT JOIN flights f_filt
                ON f_filt.cid = p.cid
+              AND f_filt.callsign LIKE ?
               AND f_filt.logon_time >= datetime('now', ? || ' days')
               AND f_filt.logoff_time IS NOT NULL
               AND f_filt.duration_min > 5{_merge_excl_filt}
@@ -379,7 +420,19 @@ def get_stats(
            )
         GROUP BY p.cid, p.name
         """,
-        (f"-{days}", f"-{days}", f"-{days}", prefix_pat, f"-{days}", f"-{days}", prefix_pat, f"-{days}"),
+        (
+            f"-{days}",    # st_count: fx.logon_time
+            prefix_pat,    # total_distance_nm: f3.callsign LIKE
+            f"-{days}",    # total_distance_nm: f3.logon_time
+            f"-{days}",    # fs_duration_min: logon_time
+            f"-{days}",    # st_duration_min: logon_time
+            prefix_pat,    # st_duration_min: callsign LIKE
+            prefix_pat,    # f_filt join: callsign LIKE
+            f"-{days}",    # f_filt join: logon_time
+            f"-{days}",    # sc_filt join: logon_time
+            prefix_pat,    # sc_filt join: callsign LIKE
+            f"-{days}",    # WHERE EXISTS: logon_time
+        ),
     ).fetchall()
     result = []
     for r in rows:
@@ -392,9 +445,9 @@ def get_stats(
             "st_count": r["st_count"],
             "flight_count": r["fs_count"] + r["st_count"],
             "total_duration_min": (r["fs_duration_min"] or 0) + (r["st_duration_min"] or 0),
+            "total_distance_nm": int(r["total_distance_nm"] or 0),
             "last_flight": last_flight,
         })
-    result.sort(key=lambda x: x["last_flight"] or "", reverse=True)
     return result
 
 
@@ -859,6 +912,30 @@ def upsert_push_subscription(
 def delete_push_subscription(conn: sqlite3.Connection, endpoint: str) -> None:
     """Push-Subscription anhand des Endpoints löschen."""
     conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+
+
+def upsert_calendar_events(conn: sqlite3.Connection, events: list[dict]) -> None:
+    """FriesenEvents aus iCal-Feed in DB schreiben (INSERT OR REPLACE)."""
+    for ev in events:
+        conn.execute(
+            "INSERT OR REPLACE INTO calendar_events (uid, summary, dtstart, dtend, location) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (ev["uid"], ev["summary"], ev["dtstart"], ev["dtend"], ev["location"]),
+        )
+
+
+def get_calendar_events(conn: sqlite3.Connection, days_back: int = 365) -> list[dict]:
+    """Vergangene FriesenEvents der letzten N Tage, neueste zuerst."""
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=days_back)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        "SELECT uid, summary, dtstart, dtend, location FROM calendar_events "
+        "WHERE dtstart >= ? AND dtstart <= ? ORDER BY dtstart DESC",
+        (cutoff, now_str),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_push_subscriptions_for_pilot(

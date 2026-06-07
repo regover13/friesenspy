@@ -84,13 +84,15 @@ Gruppierung: ≤93 Tage → täglich (`%Y-%m-%d`), >93 Tage → monatlich (`%Y-%
 
 ## GET /api/stats
 
-Letzter Flug und Fluganzahl pro Pilot, absteigend nach Datum. Kombiniert FriesenSpy-Aufzeichnungen und gecachte StatSim-Daten.
+Letzter Flug und Fluganzahl pro Pilot. Kombiniert FriesenSpy-Aufzeichnungen und gecachte StatSim-Daten.
 
 **Query-Parameter**
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
 | `days` | int | `30` | Zeitraum in Tagen (30, 90, 365) |
+| `sort_by` | string | `last_flight` | Sortierfeld: `last_flight`, `flight_count`, `total_duration_min`, `total_distance_nm` |
+| `sort_dir` | string | `desc` | Sortierrichtung: `asc` oder `desc` |
 
 **Response**
 
@@ -103,12 +105,14 @@ Letzter Flug und Fluganzahl pro Pilot, absteigend nach Datum. Kombiniert Friesen
     "fs_count": 3,
     "st_count": 9,
     "flight_count": 12,
+    "total_duration_min": 540,
+    "total_distance_nm": 1820,
     "last_flight": "2026-06-04T07:14:54Z"
   }
 ]
 ```
 
-`flight_count` = `fs_count` + `st_count`. StatSim-Daten sind nur vorhanden wenn der Pilot zuvor im Statistiken-Tab angeklickt wurde (lazy cache).
+`flight_count` = `fs_count` + `st_count`. `total_distance_nm` ist die Summe der GPS-gemessenen Streckendistanzen aller FriesenSpy-Flüge im Zeitraum (StatSim-Flüge haben keine GPS-Tracks und zählen nicht). StatSim-Daten sind nur vorhanden wenn der Pilot zuvor im Statistiken-Tab angeklickt wurde (lazy cache).
 
 ---
 
@@ -285,6 +289,69 @@ Jeder Flug-Eintrag enthält ein `source`-Feld: `"friesenspy"` für Flüge mit GP
   ]
 }
 ```
+
+---
+
+## GET /api/prefiles
+
+Aktuelle VATSIM-Prefile-Flugpläne mit FRS*-Callsign (aus dem letzten VATSIM-Poll-Zyklus, ~15s alt).
+
+Ein Prefile ist ein eingereicher Flugplan ohne aktive VATSIM-Verbindung — der Pilot hat den Plan aufgegeben, ist aber noch nicht online.
+
+**Response**
+
+```json
+[
+  {
+    "callsign": "FRS49",
+    "cid": 1602713,
+    "name": "Tobias EDKB",
+    "departure": "EDKB",
+    "arrival": "EDDK",
+    "route": "DCT",
+    "planned_deptime": "1345"
+  }
+]
+```
+
+`name` ist nur vorhanden wenn der Pilot FriesenSpy bekannt ist (zuvor als FRS* geflogen). `planned_deptime` ist im Format `HHMM` UTC.
+
+---
+
+## GET /api/calendar/events
+
+FriesenEvents aus dem FriesenFlieger-Google-Kalender — historische Events der letzten 365 Tage, absteigend nach Startdatum.
+
+Der Kalender wird alle 6 Stunden automatisch synchronisiert. Ganztags-Events (ohne Uhrzeit) werden nicht gespeichert.
+
+**Response**
+
+```json
+[
+  {
+    "uid": "abc123@google.com",
+    "summary": "FriesenFlieger Stammtisch EDVK",
+    "dtstart": "2026-05-15T17:00:00Z",
+    "dtend": "2026-05-15T20:00:00Z",
+    "location": "EDVK"
+  }
+]
+```
+
+`location` enthält den ersten 4-buchstabigen ICAO-Code aus dem Google-Kalender-Feld „Ort" (leer wenn nicht erkannt). Zeiten sind immer UTC.
+
+---
+
+## GET /widget
+
+Einbettbares HTML-Widget für friesenflieger.de. Zeigt Anzahl online-Piloten mit Callsigns und 7-Tage-Flugstunden. Klickbar → öffnet friesenspy.devprops.de.
+
+```html
+<iframe src="https://friesenspy.devprops.de/widget" width="400" height="80"
+  style="border:none;background:transparent;" scrolling="no"></iframe>
+```
+
+Die Seite enthält `<meta http-equiv="refresh" content="60">` (60-Sekunden-Auto-Refresh) und wird mit `Access-Control-Allow-Origin: *` ausgeliefert.
 
 ---
 

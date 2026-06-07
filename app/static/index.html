@@ -1228,6 +1228,17 @@
         </div>
       </div>
     </div>
+    <div class="panel" style="margin-top:16px;">
+      <div class="panel-title">Eingereichte Flugpläne (Prefile)</div>
+      <div id="prefiles-content">
+        <div class="loading">
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+          Lade...
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- =====================================================================
@@ -1276,6 +1287,17 @@
        TAB: EVENTS
        ===================================================================== -->
   <div id="tab-events" class="tab-panel">
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="panel-title">FriesenEvents</div>
+      <div id="friesenevents-content" style="max-height:220px;overflow-y:auto;">
+        <div class="loading">
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+          <div class="loading-dot"></div>
+          Lade Events...
+        </div>
+      </div>
+    </div>
     <div class="panel">
       <div class="panel-title">Event-Analyse · Wer war dabei?</div>
       <div class="events-form">
@@ -1769,6 +1791,8 @@ let sseSource      = null;
 let pilotDataMap   = {};    // {callsign: pilotObj} für Flugplan-Modal
 let pilotStatsMap   = {};    // {cid: statsObj} für Drill-Down
 let currentStatsCid = null;
+let _statsSortBy  = 'last_flight';
+let _statsSortDir = 'desc';
 let _flightsRefreshTimer = null;
 
 // ==========================================================================
@@ -1817,6 +1841,7 @@ function connectSSE() {
         liveData = msg.data;
         renderLiveTable(msg.data);
         updateMap(msg.data);
+        fetchAndRenderPrefiles();
       }
     } catch (_) { /* ignore parse errors */ }
   };
@@ -1944,6 +1969,105 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ==========================================================================
+//  PREFILES
+// ==========================================================================
+async function fetchAndRenderPrefiles() {
+  try {
+    const res  = await fetch('/api/prefiles');
+    const data = await res.json();
+    renderPrefiles(data);
+  } catch (e) {
+    const c = document.getElementById('prefiles-content');
+    if (c) c.innerHTML = '<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden</div></div>';
+  }
+}
+
+function renderPrefiles(data) {
+  const container = document.getElementById('prefiles-content');
+  if (!container) return;
+  if (!data || data.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Keine eingereichten Flugpläne</div></div>';
+    return;
+  }
+  let html = '<div class="live-table-wrap"><table><thead><tr><th>Callsign</th><th>Pilot</th><th>Route</th><th>Abflug (geplant)</th></tr></thead><tbody>';
+  data.forEach(p => {
+    const route = p.departure && p.arrival ? `${escHtml(p.departure)} → ${escHtml(p.arrival)}` : '—';
+    const dep = p.planned_deptime ? escHtml(String(p.planned_deptime).padStart(4,'0').replace(/(\d{2})(\d{2})/, '$1:$2') + ' UTC') : '—';
+    html += `<tr>
+      <td class="mono text-green">${escHtml(p.callsign)}</td>
+      <td>${escHtml(p.name || String(p.cid || ''))}</td>
+      <td class="mono">${route}</td>
+      <td class="mono text-label">${dep}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+
+// ==========================================================================
+//  FRIESENEVENTS
+// ==========================================================================
+let _friesenEventsLoaded = false;
+
+async function fetchFriesenEvents() {
+  if (_friesenEventsLoaded) return;
+  _friesenEventsLoaded = true;
+  try {
+    const res  = await fetch('/api/calendar/events');
+    const data = await res.json();
+    renderFriesenEvents(data);
+  } catch (e) {
+    const c = document.getElementById('friesenevents-content');
+    if (c) c.innerHTML = '<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden</div></div>';
+    _friesenEventsLoaded = false;
+  }
+}
+
+function _fmtEventDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  const dd   = String(d.getUTCDate()).padStart(2,'0');
+  const mm   = String(d.getUTCMonth() + 1).padStart(2,'0');
+  const yyyy = d.getUTCFullYear();
+  const hh   = String(d.getUTCHours()).padStart(2,'0');
+  const min  = String(d.getUTCMinutes()).padStart(2,'0');
+  return `${dd}.${mm}.${yyyy}, ${hh}:${min} UTC`;
+}
+
+function renderFriesenEvents(data) {
+  const container = document.getElementById('friesenevents-content');
+  if (!container) return;
+  if (!data || data.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Keine historischen Events gefunden</div></div>';
+    return;
+  }
+  let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';
+  data.forEach(ev => {
+    html += `<tr style="cursor:pointer;" onclick="_prefillEventForm(${JSON.stringify(ev).replace(/'/g, '&#39;')})">
+      <td>${escHtml(ev.summary || '—')}</td>
+      <td class="mono text-label">${_fmtEventDate(ev.dtstart)}</td>
+      <td class="mono text-green">${escHtml(ev.location || '—')}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+
+function _prefillEventForm(ev) {
+  if (ev.dtstart) {
+    document.getElementById('ev-start').value = ev.dtstart.slice(0, 16);
+  }
+  if (ev.dtend) {
+    document.getElementById('ev-end').value = ev.dtend.slice(0, 16);
+  }
+  if (ev.location) {
+    document.getElementById('ev-icao').value = ev.location;
+  }
+  document.getElementById('events-search-btn').scrollIntoView({ behavior: 'smooth' });
 }
 
 // ==========================================================================
@@ -2524,7 +2648,7 @@ async function fetchStats() {
   }
 
   try {
-    const res  = await fetch(`/api/stats?days=${days}`);
+    const res  = await fetch(`/api/stats?days=${days}&sort_by=${_statsSortBy}&sort_dir=${_statsSortDir}`);
     const data = await res.json();
     renderStatsTable(data, Number(days));
   } catch (e) {
@@ -2751,6 +2875,21 @@ function renderStatsSummary(stats, days) {
     `;
 }
 
+function _sortIndicator(field) {
+  if (_statsSortBy !== field) return '<span style="opacity:0.3"> ⇅</span>';
+  return _statsSortDir === 'asc' ? ' ▲' : ' ▼';
+}
+
+function _statsSortClick(field) {
+  if (_statsSortBy === field) {
+    _statsSortDir = _statsSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _statsSortBy  = field;
+    _statsSortDir = 'desc';
+  }
+  fetchStats();
+}
+
 function renderStatsTable(stats, days) {
   days = days || 30;
   const container = document.getElementById('stats-content');
@@ -2761,14 +2900,6 @@ function renderStatsTable(stats, days) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text">Keine Flugdaten vorhanden</div></div>`;
     return;
   }
-
-  // Sort by last_flight descending
-  const sorted = [...stats].sort((a, b) => {
-    if (!a.last_flight && !b.last_flight) return 0;
-    if (!a.last_flight) return 1;
-    if (!b.last_flight) return -1;
-    return b.last_flight.localeCompare(a.last_flight);
-  });
 
   let html = renderStatsSummary(stats, days);
   html += `
@@ -2782,22 +2913,31 @@ function renderStatsTable(stats, days) {
           <tr>
             <th>Callsign</th>
             <th>Pilot</th>
-            <th>Geloggte Flüge</th>
-            <th>Letzter Flug</th>
+            <th style="cursor:pointer;" onclick="_statsSortClick('flight_count')">Geloggte Flüge${_sortIndicator('flight_count')}</th>
+            <th style="cursor:pointer;" onclick="_statsSortClick('total_duration_min')">Flugzeit${_sortIndicator('total_duration_min')}</th>
+            <th style="cursor:pointer;" onclick="_statsSortClick('total_distance_nm')">Ges.-Distanz (nm)${_sortIndicator('total_distance_nm')}</th>
+            <th style="cursor:pointer;" onclick="_statsSortClick('last_flight')">Letzter Flug${_sortIndicator('last_flight')}</th>
           </tr>
         </thead>
         <tbody>`;
 
-  sorted.forEach((s) => {
+  stats.forEach((s) => {
     const lf = s.last_flight
       ? s.last_flight.slice(0, 16).replace('T', ' ') + ' UTC'
       : '—';
     const cs = (s.last_callsign || '').toUpperCase() || '—';
+    const totalMin = s.total_duration_min || 0;
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    const dur = totalMin ? `${h}h ${m}m` : '—';
+    const dist = s.total_distance_nm ? `${s.total_distance_nm.toLocaleString('de-DE')} nm` : '—';
     html += `
           <tr data-cid="${s.cid}" style="cursor:pointer;">
             <td class="mono text-green">${escHtml(cs)}</td>
             <td>${escHtml(s.name || String(s.cid))}</td>
             <td class="mono">${s.flight_count || 0}</td>
+            <td class="mono">${dur}</td>
+            <td class="mono">${dist}</td>
             <td class="mono text-label">${lf}</td>
           </tr>`;
     pilotStatsMap[s.cid] = s;
@@ -3174,6 +3314,10 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (tab === 'statistiken' && !statsLoaded) {
       statsLoaded = true;
       fetchStats();
+    }
+
+    if (tab === 'events') {
+      fetchFriesenEvents();
     }
   });
 });
