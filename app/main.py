@@ -613,39 +613,40 @@ async def widget_preview():
 <meta charset="UTF-8">
 <title>FriesenSpy Widget – Vorschau</title>
 <style>
-  body{background:#1a1a2e;color:#d4e8f5;font-family:'Courier New',monospace;padding:32px;max-width:640px;margin:0 auto}
-  h1{color:#2d9cdb;font-size:1.1rem;margin-bottom:4px}
-  p{font-size:0.8rem;color:#6b9ab8;margin-bottom:20px}
-  .preview-box{border:1px dashed rgba(45,156,219,0.4);padding:12px;background:rgba(45,156,219,0.04);margin-bottom:24px;border-radius:2px}
-  .preview-label{font-size:0.7rem;color:#6b9ab8;margin-bottom:8px;letter-spacing:0.1em;text-transform:uppercase}
-  iframe{width:100%;height:72px;border:none;display:block}
-  .code-box{background:#04080f;border:1px solid rgba(45,156,219,0.3);padding:12px;font-size:0.75rem;overflow-x:auto;white-space:pre;color:#a8d8f0;border-radius:2px;cursor:pointer;position:relative}
-  .copy-hint{position:absolute;top:8px;right:10px;font-size:0.65rem;color:#6b9ab8}
-  .copied{color:#2d9cdb!important}
-  .note{font-size:0.72rem;color:#6b9ab8;margin-top:12px;line-height:1.6}
+  body{background:#d0e0f0;color:#053080;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;padding:32px;max-width:640px;margin:0 auto}
+  h1{color:#053080;font-size:1.1rem;margin-bottom:4px;font-weight:700}
+  p{font-size:0.85rem;color:#104090;margin-bottom:20px}
+  .preview-box{border:1px solid rgba(5,48,128,0.3);padding:12px;background:rgba(255,255,255,0.5);margin-bottom:24px;border-radius:4px}
+  .preview-label{font-size:0.7rem;color:#5577aa;margin-bottom:8px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600}
+  iframe{width:100%;height:88px;border:none;display:block}
+  .code-box{background:#fff;border:1px solid rgba(5,48,128,0.25);padding:12px;font-size:0.75rem;overflow-x:auto;white-space:pre;color:#053080;border-radius:4px;cursor:pointer;position:relative;font-family:'Courier New',monospace}
+  .copy-hint{position:absolute;top:8px;right:10px;font-size:0.65rem;color:#5577aa}
+  .copied{color:#053080!important;font-weight:700}
+  .note{font-size:0.75rem;color:#5577aa;margin-top:12px;line-height:1.6}
+  a{color:#D31141}
 </style>
 </head>
 <body>
-<h1>◈ FriesenSpy Widget</h1>
+<h1>✈ FriesenSpy Widget</h1>
 <p>So sieht das Widget auf einer Webseite aus — aktualisiert sich automatisch alle 60 Sekunden.</p>
 <div class="preview-box">
   <div class="preview-label">Vorschau</div>
-  <iframe src="/widget" scrolling="no" style="height:90px"></iframe>
+  <iframe src="/widget" scrolling="no" style="height:88px"></iframe>
 </div>
 <div class="preview-label" style="margin-bottom:8px">Einbettungscode (klicken zum Kopieren)</div>
 <div class="code-box" onclick="copyCode(this)" title="Klicken zum Kopieren">
 <span class="copy-hint" id="hint">📋 kopieren</span>&lt;iframe
   src="https://friesenspy.devprops.de/widget"
-  width="420" height="72"
+  width="420" height="88"
   style="border:none;"
   scrolling="no"&gt;&lt;/iframe&gt;</div>
 <div class="note">
   ⚠ phpBB (unser Forum) erlaubt standardmäßig keine iframes in Beiträgen — der Code funktioniert nur auf externen Webseiten (z.B. friesenflieger.de).<br>
-  Direkter Link zum Widget: <a href="/widget" style="color:#2d9cdb">friesenspy.devprops.de/widget</a>
+  Direkter Link zum Widget: <a href="/widget">friesenspy.devprops.de/widget</a>
 </div>
 <script>
 function copyCode(el) {
-  const code = `<iframe\\n  src="https://friesenspy.devprops.de/widget"\\n  width="420" height="72"\\n  style="border:none;"\\n  scrolling="no"></iframe>`;
+  const code = `<iframe\\n  src="https://friesenspy.devprops.de/widget"\\n  width="420" height="88"\\n  style="border:none;"\\n  scrolling="no"></iframe>`;
   navigator.clipboard.writeText(code).then(() => {
     const h = document.getElementById('hint');
     h.textContent = '✓ kopiert';
@@ -679,19 +680,19 @@ async def widget(request: Request):
     pilots_html = " &nbsp;·&nbsp; ".join(
         f'<span>{_html.escape(str(p.get("callsign") or p.get("name") or "?"))}</span>'
         for p in live
-    ) if live else '<span style="color:#6b9ab8">Niemand online</span>'
+    ) if live else '<span class="none">Niemand online</span>'
 
     prefile_html = ""
     if prefiles:
         items = " &nbsp;·&nbsp; ".join(
             f'<span>{_html.escape(str(p.get("callsign", "?")))}'
-            f'&nbsp;<span style="color:#6b9ab8">'
+            f'&nbsp;<span class="muted">'
             f'{_html.escape(str((p.get("flight_plan") or {}).get("departure", "?")))}→'
             f'{_html.escape(str((p.get("flight_plan") or {}).get("arrival", "?")))})'
             f'</span></span>'
             for p in prefiles
         )
-        prefile_html = f'<div class="pf">✈ geplant:&nbsp;{items}</div>'
+        prefile_html = f'<div class="pf">geplant:&nbsp;{items}</div>'
 
     html = f"""<!DOCTYPE html>
 <html lang="de">
@@ -700,20 +701,29 @@ async def widget(request: Request):
 <meta http-equiv="refresh" content="60">
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
-  body{{background:#04080f;color:#d4e8f5;font-family:'Courier New',monospace;font-size:12px;padding:8px}}
+  body{{background:#d0e0f0;color:#053080;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:12px}}
   a{{color:inherit;text-decoration:none;display:block}}
-  .hd{{color:#2d9cdb;font-weight:700;font-size:13px;margin-bottom:4px}}
-  .badge{{background:#2d9cdb;color:#04080f;padding:1px 6px;font-size:10px;margin-right:6px;font-weight:700}}
-  .pf{{font-size:10px;color:#6b9ab8;margin-top:3px}}
-  .ft{{margin-top:4px;font-size:10px;color:#6b9ab8;border-top:1px solid rgba(45,156,219,0.2);padding-top:4px}}
+  .hd{{background:#053080;color:#fff;padding:4px 10px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px}}
+  .hd-title{{flex:1}}
+  .badge{{background:#D31141;color:#fff;padding:1px 6px;font-size:10px;font-weight:700;border-radius:2px}}
+  .bd{{padding:5px 10px 4px}}
+  .none{{color:#5577aa}}
+  .muted{{color:#5577aa}}
+  .pf{{font-size:10px;color:#104090;margin-top:2px}}
+  .ft{{font-size:10px;color:#104090;margin-top:4px;border-top:1px solid rgba(5,48,128,0.2);padding-top:3px}}
 </style>
 </head>
 <body>
 <a href="https://friesenspy.devprops.de" target="_blank">
-  <div class="hd">◈ FriesenSpy</div>
-  <div><span class="badge">{len(live)} online</span>{pilots_html}</div>
-  {prefile_html}
-  <div class="ft">7&nbsp;Tage:&nbsp;{total_h:.1f}&nbsp;h&nbsp;·&nbsp;friesenspy.devprops.de</div>
+  <div class="hd">
+    <span class="hd-title">✈ FriesenSpy</span>
+    <span class="badge">{len(live)}&nbsp;online</span>
+  </div>
+  <div class="bd">
+    <div>{pilots_html}</div>
+    {prefile_html}
+    <div class="ft">7&nbsp;Tage:&nbsp;{total_h:.1f}&nbsp;h&nbsp;·&nbsp;friesenspy.devprops.de</div>
+  </div>
 </a>
 </body>
 </html>"""
