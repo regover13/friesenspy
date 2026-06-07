@@ -3489,6 +3489,7 @@ const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cf
 }).catch(() => {});
 
 const _liveInitialPromise = fetchLiveInitial();
+fetchAndRenderPrefiles();
 connectSSE();
 initFromUrl();
 
