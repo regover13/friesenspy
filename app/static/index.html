@@ -726,6 +726,9 @@
       .logo { font-size: 1.6rem; }
       .tab-btn { padding: 10px 14px; font-size: 0.7rem; }
       .events-form { grid-template-columns: 1fr; }
+      .header-right { gap: 12px; }
+      .utc-clock { display: none; }
+      .help-btn { display: none; }
     }
 
     /* =====================================================================
@@ -3502,10 +3505,28 @@ setInterval(fetchAndRenderPrefiles, 15000);
 connectSSE();
 initFromUrl();
 
-// Update online times every 10s
+// Update online times + map every 10s
 setInterval(() => {
-  if (liveData.length > 0) renderLiveTable(liveData);
+  if (liveData.length > 0) {
+    renderLiveTable(liveData);
+    updateMap(liveData);
+  }
 }, 10000);
+
+// iOS PWA: SSE bricht bei Screen-Lock ab — bei Rückkehr sofort neu laden
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden) return;
+  try {
+    const res = await fetch('/api/live');
+    const data = await res.json();
+    liveData = data;
+    renderLiveTable(data);
+    updateMap(data);
+  } catch (_) {}
+  if (!sseSource || sseSource.readyState === EventSource.CLOSED) {
+    connectSSE();
+  }
+});
 
 </script>
 </body>
