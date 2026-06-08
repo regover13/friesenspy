@@ -3505,7 +3505,7 @@ setInterval(fetchAndRenderPrefiles, 15000);
 connectSSE();
 initFromUrl();
 
-// Update online times + map every 10s
+// Update online times + map every 10s (lokale Re-Render, kein Fetch)
 setInterval(() => {
   if (liveData.length > 0) {
     renderLiveTable(liveData);
@@ -3513,7 +3513,18 @@ setInterval(() => {
   }
 }, 10000);
 
-// iOS PWA: SSE bricht bei Screen-Lock ab — bei Rückkehr sofort neu laden
+// HTTP-Polling alle 15s als Fallback für iOS/PWA (SSE oft unzuverlässig)
+setInterval(async () => {
+  try {
+    const res = await fetch('/api/live');
+    const data = await res.json();
+    liveData = data;
+    renderLiveTable(data);
+    updateMap(data);
+  } catch (_) {}
+}, 15000);
+
+// Bei Rückkehr aus Hintergrund / Screen-Lock sofort neu laden
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) return;
   try {
@@ -3523,7 +3534,7 @@ document.addEventListener('visibilitychange', async () => {
     renderLiveTable(data);
     updateMap(data);
   } catch (_) {}
-  if (!sseSource || sseSource.readyState === EventSource.CLOSED) {
+  if (!sseSource || sseSource.readyState !== EventSource.OPEN) {
     connectSSE();
   }
 });
