@@ -2108,7 +2108,7 @@ function renderFriesenEvents(data) {
   const container = document.getElementById('friesenevents-content');
   if (!container) return;
   if (!data || data.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Keine historischen Events gefunden</div></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Keine Events gefunden</div></div>';
     return;
   }
   let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';

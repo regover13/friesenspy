@@ -630,7 +630,7 @@ async def get_calendar_events_endpoint():
     """FriesenEvents der letzten 365 Tage aus dem Google-Kalender-Cache."""
     conn = get_connection(get_settings().DB_PATH)
     try:
-        return get_calendar_events(conn, days_back=365)
+        return get_calendar_events(conn, days_back=365, days_ahead=90)
     finally:
         conn.close()
 
