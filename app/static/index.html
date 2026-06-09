@@ -1931,7 +1931,7 @@ function renderLiveTable(pilots) {
             <th>Callsign</th>
             <th>Pilot</th>
             <th>Muster</th>
-            <th>Route</th>
+            <th>Flugplan</th>
             <th>Höhe</th>
             <th>GS</th>
             <th>Online seit</th>
@@ -2014,7 +2014,7 @@ function renderPrefiles(data) {
     container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Keine eingereichten Flugpläne</div></div>';
     return;
   }
-  let html = '<div class="live-table-wrap"><table><thead><tr><th>Callsign</th><th>Pilot</th><th>Route</th><th>Abflug (geplant)</th><th></th></tr></thead><tbody>';
+  let html = '<div class="live-table-wrap"><table><thead><tr><th>Callsign</th><th>Pilot</th><th>Flugplan</th><th>Abflug (geplant)</th><th></th></tr></thead><tbody>';
   data.forEach((p, i) => {
     const route = p.departure && p.arrival ? `${escHtml(p.departure)} → ${escHtml(p.arrival)}` : '—';
     const dofMatch = (p.remarks || '').match(/DOF\/(\d{2})(\d{2})(\d{2})/);
@@ -2366,7 +2366,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   } else {
     html += `<div class="live-table-wrap"><table>
       <thead><tr>
-        <th>Callsign</th><th>Route</th><th>Datum</th><th>Dauer</th><th>Track</th><th>Quelle</th>
+        <th>Callsign</th><th>Flugplan</th><th>Datum</th><th>Dauer</th><th>Track</th><th>Quelle</th>
       </tr></thead><tbody>`;
 
     for (const f of flights) {
@@ -2621,7 +2621,7 @@ function buildPopupHtml(p) {
     <div class="popup-callsign">${escHtml((p.callsign || '').toUpperCase())}</div>
     <div class="popup-row">Pilot: <span>${escHtml(p.name || '—')}</span></div>
     <div class="popup-row">Muster: <span>${escHtml(p.aircraft || '—')}</span></div>
-    <div class="popup-row">Route: <span>${escHtml(fmtRoute(p.departure, p.arrival))}</span></div>
+    <div class="popup-row">Flugplan: <span>${escHtml(fmtRoute(p.departure, p.arrival))}</span></div>
     <div class="popup-row">Höhe: <span>${fmtAlt(p.altitude)}</span></div>
     <div class="popup-row">GS: <span>${fmtGS(p.groundspeed)}</span></div>
     <div class="popup-row">Online: <span>${fmtOnlineTime(p.logon_time)}</span></div>`;
@@ -3156,7 +3156,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
           <thead><tr>
             <th style="text-align:left;">Datum</th>
             <th style="text-align:left;">Callsign</th>
-            <th style="text-align:left;">Route</th>
+            <th style="text-align:left;">Flugplan</th>
             <th style="text-align:left;">Dauer</th>
             <th style="text-align:left;">Wegpunkte</th>
             <th style="text-align:left;">Karte</th>
