@@ -287,7 +287,8 @@ async def get_events(
             flight_rows = conn2.execute(
                 """SELECT callsign, departure, arrival, aircraft_short,
                           logon_time, logoff_time, duration_min, distance_nm,
-                          route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate
+                          route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate,
+                          deptime, enroute_time, fuel_time
                    FROM flights
                    WHERE cid = ?
                      AND logoff_time IS NOT NULL
@@ -328,6 +329,9 @@ async def get_events(
                         "cruise_tas": fr.get("cruise_tas") or "",
                         "flight_rules": fr.get("flight_rules") or "",
                         "alternate": fr.get("alternate") or "",
+                        "deptime": fr.get("deptime") or "",
+                        "enroute_time": fr.get("enroute_time") or "",
+                        "fuel_time": fr.get("fuel_time") or "",
                         "duration_min": fr.get("duration_min"),
                         "distance_nm": fr.get("distance_nm"),
                         "positions": [dict(r) for r in full_pos],

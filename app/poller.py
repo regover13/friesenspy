@@ -412,6 +412,9 @@ class VatsimPoller:
                         flight_rules=pos.get("flight_rules", ""),
                         aircraft_icao=pos.get("aircraft_icao", ""),
                         alternate=pos.get("alternate", ""),
+                        deptime=pos.get("deptime", ""),
+                        enroute_time=pos.get("enroute_time", ""),
+                        fuel_time=pos.get("fuel_time", ""),
                     )
                     upsert_live_position(
                         conn,

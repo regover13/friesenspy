@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS flights (
     cruise_tas    TEXT,
     flight_rules  TEXT,
     aircraft_icao TEXT,
-    alternate     TEXT
+    alternate     TEXT,
+    deptime       TEXT,
+    enroute_time  TEXT,
+    fuel_time     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS calendar_events (
@@ -153,6 +156,9 @@ _FLIGHTS_MIGRATIONS = [
     "ALTER TABLE flights ADD COLUMN flight_rules TEXT",
     "ALTER TABLE flights ADD COLUMN aircraft_icao TEXT",
     "ALTER TABLE flights ADD COLUMN alternate TEXT",
+    "ALTER TABLE flights ADD COLUMN deptime TEXT",
+    "ALTER TABLE flights ADD COLUMN enroute_time TEXT",
+    "ALTER TABLE flights ADD COLUMN fuel_time TEXT",
 ]
 
 _CALENDAR_MIGRATIONS = [
@@ -260,16 +266,21 @@ def open_flight(
     flight_rules: str = "",
     aircraft_icao: str = "",
     alternate: str = "",
+    deptime: str = "",
+    enroute_time: str = "",
+    fuel_time: str = "",
 ) -> int:
     """Neuen Flug eröffnen, flight.id zurückgeben."""
     cur = conn.execute(
         """
         INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, logon_time,
-                             route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao,
+                             alternate, deptime, enroute_time, fuel_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (cid, callsign, aircraft_short, departure, arrival, logon_time,
-         route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate),
+         route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao,
+         alternate, deptime, enroute_time, fuel_time),
     )
     return cur.lastrowid  # type: ignore[return-value]
 
@@ -320,15 +331,20 @@ def update_flight_plan(
     flight_rules: str = "",
     aircraft_icao: str = "",
     alternate: str = "",
+    deptime: str = "",
+    enroute_time: str = "",
+    fuel_time: str = "",
 ) -> None:
     """Flugplan (DEP/ARR + erweiterte Felder) eines laufenden Fluges setzen."""
     conn.execute(
         """UPDATE flights SET departure=?, arrival=?,
                               route=?, remarks=?, cruise_altitude=?, cruise_tas=?,
-                              flight_rules=?, aircraft_icao=?, alternate=?
+                              flight_rules=?, aircraft_icao=?, alternate=?,
+                              deptime=?, enroute_time=?, fuel_time=?
            WHERE id=?""",
         (departure, arrival, route, remarks, cruise_altitude, cruise_tas,
-         flight_rules, aircraft_icao, alternate, flight_id),
+         flight_rules, aircraft_icao, alternate,
+         deptime, enroute_time, fuel_time, flight_id),
     )
 
 
@@ -947,7 +963,8 @@ def get_pilot_flights_friesenspy(
         """
         SELECT id, cid, callsign, aircraft_short AS aircraft,
                departure, arrival, logon_time, logoff_time, duration_min, distance_nm,
-               route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate
+               route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate,
+               deptime, enroute_time, fuel_time
         FROM flights
         WHERE cid = ?
           AND logoff_time IS NOT NULL
