@@ -291,9 +291,8 @@ async def get_events(
                           deptime, enroute_time, fuel_time
                    FROM flights
                    WHERE cid = ?
-                     AND logoff_time IS NOT NULL
                      AND logon_time <= ?
-                     AND logoff_time >= ?
+                     AND (logoff_time IS NULL OR logoff_time >= ?)
                    ORDER BY logon_time""",
                 (cid, fetch_end, start or "0000-01-01"),
             ).fetchall()
@@ -306,7 +305,7 @@ async def get_events(
                 if end:
                     merged_rows = [fr for fr in merged_rows if (fr.get("logon_time") or "") <= end]
                 for fr in merged_rows:
-                    if (fr.get("distance_nm") or 0) <= 0.5 and (fr.get("duration_min") or 0) <= 5:
+                    if fr.get("logoff_time") and (fr.get("distance_nm") or 0) <= 0.5 and (fr.get("duration_min") or 0) <= 5:
                         continue
                     lo, lf = fr["logon_time"], fr.get("logoff_time", "")
                     # Vollständigen Track laden (über Eventfenster hinaus — Overlap-Fix)
