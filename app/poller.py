@@ -411,6 +411,7 @@ class VatsimPoller:
                         cruise_tas=pos.get("cruise_tas", ""),
                         flight_rules=pos.get("flight_rules", ""),
                         aircraft_icao=pos.get("aircraft_icao", ""),
+                        alternate=pos.get("alternate", ""),
                     )
                     upsert_live_position(
                         conn,
@@ -532,6 +533,7 @@ class VatsimPoller:
                                 cruise_tas=pos.get("cruise_tas", ""),
                                 flight_rules=pos.get("flight_rules", ""),
                                 aircraft_icao=pos.get("aircraft_icao", ""),
+                                alternate=pos.get("alternate", ""),
                             )
                             entry["dep"], entry["arr"] = new_dep, new_arr
                             logger.info("Flugplan nachgetragen CID %s: %s→%s", cid, new_dep, new_arr)
@@ -548,6 +550,7 @@ class VatsimPoller:
                                 cruise_tas=pos.get("cruise_tas", ""),
                                 flight_rules=pos.get("flight_rules", ""),
                                 aircraft_icao=pos.get("aircraft_icao", ""),
+                                alternate=pos.get("alternate", ""),
                             )
                             self._active_flights[cid] = {"id": new_id, "dep": new_dep, "arr": new_arr}
                             logger.info(

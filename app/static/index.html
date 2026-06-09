@@ -1426,6 +1426,7 @@
         <div class="fp-field"><span class="fp-label">Aircraft (ICAO)</span><span class="fp-val" id="fld-acicao">—</span></div>
         <div class="fp-field"><span class="fp-label">Departure</span><span class="fp-val" id="fld-dep">—</span></div>
         <div class="fp-field"><span class="fp-label">Arrival</span><span class="fp-val" id="fld-arr">—</span></div>
+        <div class="fp-field"><span class="fp-label">Alternate</span><span class="fp-val" id="fld-altn">—</span></div>
         <div class="fp-field"><span class="fp-label">Datum UTC</span><span class="fp-val" id="fld-dt">—</span></div>
         <div class="fp-field"><span class="fp-label">Dauer</span><span class="fp-val" id="fld-dur">—</span></div>
         <div class="fp-field"><span class="fp-label">Strecke</span><span class="fp-val" id="fld-dist">—</span></div>
@@ -2249,6 +2250,7 @@ function openFlightDetailModal(d) {
   setOpt('fld-acicao', d.acicao);
   document.getElementById('fld-dep').textContent   = d.dep    || '—';
   document.getElementById('fld-arr').textContent   = d.arr    || '—';
+  setOpt('fld-altn', d.altn);
   document.getElementById('fld-dt').textContent    = d.dt
     ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
   document.getElementById('fld-dur').textContent   = d.dur    || '—';
@@ -2419,6 +2421,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
           data-rules="${escHtml(f.flight_rules || '')}"
           data-dep="${escHtml(dep)}"
           data-arr="${escHtml(arr)}"
+          data-altn="${escHtml(f.alternate || '')}"
           data-dt="${escHtml(f.logon_time || '')}"
           data-dur="${escHtml(dur)}"
           data-dist="${escHtml(dist)}"
@@ -3174,6 +3177,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             data-rules="${escHtml(f.flight_rules || '')}"
             data-dep="${escHtml(dep)}"
             data-arr="${escHtml(arr)}"
+            data-altn="${escHtml(f.alternate || '')}"
             data-dt="${escHtml(f.logon_time || '')}"
             data-dur="${escHtml(dur)}"
             data-dist="${escHtml(evDist)}"

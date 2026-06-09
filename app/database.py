@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS flights (
     cruise_altitude TEXT,
     cruise_tas    TEXT,
     flight_rules  TEXT,
-    aircraft_icao TEXT
+    aircraft_icao TEXT,
+    alternate     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS calendar_events (
@@ -151,6 +152,7 @@ _FLIGHTS_MIGRATIONS = [
     "ALTER TABLE flights ADD COLUMN cruise_tas TEXT",
     "ALTER TABLE flights ADD COLUMN flight_rules TEXT",
     "ALTER TABLE flights ADD COLUMN aircraft_icao TEXT",
+    "ALTER TABLE flights ADD COLUMN alternate TEXT",
 ]
 
 _CALENDAR_MIGRATIONS = [
@@ -257,16 +259,17 @@ def open_flight(
     cruise_tas: str = "",
     flight_rules: str = "",
     aircraft_icao: str = "",
+    alternate: str = "",
 ) -> int:
     """Neuen Flug eröffnen, flight.id zurückgeben."""
     cur = conn.execute(
         """
         INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, logon_time,
-                             route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (cid, callsign, aircraft_short, departure, arrival, logon_time,
-         route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao),
+         route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate),
     )
     return cur.lastrowid  # type: ignore[return-value]
 
@@ -316,15 +319,16 @@ def update_flight_plan(
     cruise_tas: str = "",
     flight_rules: str = "",
     aircraft_icao: str = "",
+    alternate: str = "",
 ) -> None:
     """Flugplan (DEP/ARR + erweiterte Felder) eines laufenden Fluges setzen."""
     conn.execute(
         """UPDATE flights SET departure=?, arrival=?,
                               route=?, remarks=?, cruise_altitude=?, cruise_tas=?,
-                              flight_rules=?, aircraft_icao=?
+                              flight_rules=?, aircraft_icao=?, alternate=?
            WHERE id=?""",
         (departure, arrival, route, remarks, cruise_altitude, cruise_tas,
-         flight_rules, aircraft_icao, flight_id),
+         flight_rules, aircraft_icao, alternate, flight_id),
     )
 
 
@@ -943,7 +947,7 @@ def get_pilot_flights_friesenspy(
         """
         SELECT id, cid, callsign, aircraft_short AS aircraft,
                departure, arrival, logon_time, logoff_time, duration_min, distance_nm,
-               route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao
+               route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate
         FROM flights
         WHERE cid = ?
           AND logoff_time IS NOT NULL
