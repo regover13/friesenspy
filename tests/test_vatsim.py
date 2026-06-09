@@ -431,7 +431,7 @@ class TestPilotToPosition:
             "departure", "arrival", "latitude", "longitude", "altitude",
             "groundspeed", "heading", "logon_time",
             "flight_rules", "aircraft_icao", "alternate", "deptime",
-            "cruise_tas", "enroute_time", "fuel_time", "route", "remarks",
+            "cruise_altitude", "cruise_tas", "enroute_time", "fuel_time", "route", "remarks",
         }
         assert set(result.keys()) == expected_keys
 

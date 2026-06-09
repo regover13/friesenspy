@@ -172,7 +172,7 @@ class TestFlightRoundtrip:
     def test_open_flight_returns_id(self):
         conn = _make_conn()
         ensure_pilot(conn, 1, "Test Pilot")
-        flight_id = open_flight(conn, 1, "FFR001", "B738", "EDDH", "EDDF", _ts_offset())
+        flight_id = open_flight(conn, 1, "FRS001", "B738", "EDDH", "EDDF", _ts_offset())
         conn.commit()
         assert isinstance(flight_id, int)
         assert flight_id > 0
@@ -183,7 +183,7 @@ class TestFlightRoundtrip:
         ensure_pilot(conn, 1, "Test Pilot")
         logon = _ts_offset(-90)   # 90 minutes ago
         logoff = _ts_offset(0)    # now
-        flight_id = open_flight(conn, 1, "FFR001", "B738", "EDDH", "EDDF", logon)
+        flight_id = open_flight(conn, 1, "FRS001", "B738", "EDDH", "EDDF", logon)
         conn.commit()
         close_flight(conn, flight_id, logoff)
         conn.commit()
@@ -199,7 +199,7 @@ class TestFlightRoundtrip:
         ensure_pilot(conn, 1, "Test Pilot")
         logon = "2025-01-01T10:00:00Z"
         logoff = "2025-01-01T11:30:00Z"  # exactly 90 minutes
-        flight_id = open_flight(conn, 1, "FFR001", "B738", "EDDH", "EDDF", logon)
+        flight_id = open_flight(conn, 1, "FRS001", "B738", "EDDH", "EDDF", logon)
         conn.commit()
         close_flight(conn, flight_id, logoff)
         conn.commit()
@@ -216,7 +216,7 @@ class TestFlightRoundtrip:
     def test_logoff_time_null_before_close(self):
         conn = _make_conn()
         ensure_pilot(conn, 1, "Test Pilot")
-        flight_id = open_flight(conn, 1, "FFR001", "B738", "EDDH", "EDDF", _ts_offset())
+        flight_id = open_flight(conn, 1, "FRS001", "B738", "EDDH", "EDDF", _ts_offset())
         conn.commit()
         row = conn.execute("SELECT logoff_time, duration_min FROM flights WHERE id = ?", (flight_id,)).fetchone()
         assert row["logoff_time"] is None
@@ -229,7 +229,7 @@ class TestFlightRoundtrip:
 # ---------------------------------------------------------------------------
 
 class TestLivePosition:
-    def _insert(self, conn, cid=1001, callsign="FFR001"):
+    def _insert(self, conn, cid=1001, callsign="FRS001"):
         upsert_live_position(
             conn, cid, callsign, "B738", "EDDH", "EDDF",
             53.6, 9.98, 35000, 450, 180, _ts_offset(),
@@ -250,7 +250,7 @@ class TestLivePosition:
         conn.commit()
         # Update with different altitude
         upsert_live_position(
-            conn, 1001, "FFR001", "B738", "EDDH", "EDDF",
+            conn, 1001, "FRS001", "B738", "EDDH", "EDDF",
             53.7, 9.99, 36000, 460, 185, _ts_offset(),
         )
         conn.commit()
@@ -301,11 +301,11 @@ class TestPositionHistory:
         conn = _make_conn()
         ensure_pilot(conn, 1, "Test Pilot")
         conn.commit()
-        save_position_history(conn, 1, "FFR001", 53.6, 9.98, 35000, 450, 180)
+        save_position_history(conn, 1, "FRS001", 53.6, 9.98, 35000, 450, 180)
         conn.commit()
         rows = conn.execute("SELECT * FROM position_history WHERE cid = 1").fetchall()
         assert len(rows) == 1
-        assert rows[0]["callsign"] == "FFR001"
+        assert rows[0]["callsign"] == "FRS001"
         conn.close()
 
     def test_get_position_history_filters_by_cid(self):
@@ -318,7 +318,7 @@ class TestPositionHistory:
         ts2 = "2025-06-01T10:15:00Z"
         conn.execute(
             "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (1, "FFR001", 53.0, 9.0, 35000, 450, 90, ts1),
+            (1, "FRS001", 53.0, 9.0, 35000, 450, 90, ts1),
         )
         conn.execute(
             "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -340,7 +340,7 @@ class TestPositionHistory:
         ts2 = "2025-06-01T10:15:00Z"
         conn.execute(
             "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (1, "FFR001", 53.0, 9.0, 35000, 450, 90, ts1),
+            (1, "FRS001", 53.0, 9.0, 35000, 450, 90, ts1),
         )
         conn.execute(
             "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -362,11 +362,11 @@ class TestPositionHistory:
         ts_out = "2025-05-31T12:00:00Z"
         conn.execute(
             "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (1, "FFR001", 53.0, 9.0, 35000, 450, 90, ts_in),
+            (1, "FRS001", 53.0, 9.0, 35000, 450, 90, ts_in),
         )
         conn.execute(
             "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (1, "FFR001", 53.0, 9.0, 35000, 450, 90, ts_out),
+            (1, "FRS001", 53.0, 9.0, 35000, 450, 90, ts_out),
         )
         conn.commit()
 
@@ -401,12 +401,12 @@ class TestGetStats:
         logon2 = _ts_offset(-60 * 24 * 3)      # 3 days ago
         logoff2 = _ts_offset(-60 * 24 * 3 + 90)  # 3 days ago + 90 min
 
-        fid1 = open_flight(conn, 1, "FFR001", "B738", "EDDH", "EDDF", logon1)
+        fid1 = open_flight(conn, 1, "FRS001", "B738", "EDDH", "EDDF", logon1)
         conn.commit()
         close_flight(conn, fid1, logoff1)
         conn.commit()
 
-        fid2 = open_flight(conn, 1, "FFR001", "B738", "EDDF", "EDDH", logon2)
+        fid2 = open_flight(conn, 1, "FRS001", "B738", "EDDF", "EDDH", logon2)
         conn.commit()
         close_flight(conn, fid2, logoff2)
         conn.commit()
@@ -430,7 +430,7 @@ class TestGetStats:
         # Alice: 60 min — use recent timestamps so date filter matches
         alice_logon = _ts_offset(-60 * 24 * 2)
         alice_logoff = _ts_offset(-60 * 24 * 2 + 60)
-        fid = open_flight(conn, 1, "FFR001", "B738", "EDDH", "EDDF", alice_logon)
+        fid = open_flight(conn, 1, "FRS001", "B738", "EDDH", "EDDF", alice_logon)
         conn.commit()
         close_flight(conn, fid, alice_logoff)
         conn.commit()
@@ -438,7 +438,7 @@ class TestGetStats:
         # Bob: 30 min
         bob_logon = _ts_offset(-60 * 24 * 1)
         bob_logoff = _ts_offset(-60 * 24 * 1 + 30)
-        fid2 = open_flight(conn, 2, "FFR002", "C172", "EDHE", "EDXW", bob_logon)
+        fid2 = open_flight(conn, 2, "FRS002", "C172", "EDHE", "EDXW", bob_logon)
         conn.commit()
         close_flight(conn, fid2, bob_logoff)
         conn.commit()
@@ -459,7 +459,7 @@ class TestGetStats:
         conn.commit()
 
         # Open flight — never closed
-        open_flight(conn, 1, "FFR001", "B738", "EDDH", "EDDF", _ts_offset(-60))
+        open_flight(conn, 1, "FRS001", "B738", "EDDH", "EDDF", _ts_offset(-60))
         conn.commit()
 
         stats = get_stats(conn, days=365)
@@ -491,11 +491,11 @@ class TestCleanupOldHistory:
 
         conn.execute(
             "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (1, "FFR001", 53.0, 9.0, 35000, 450, 90, old_ts),
+            (1, "FRS001", 53.0, 9.0, 35000, 450, 90, old_ts),
         )
         conn.execute(
             "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (1, "FFR001", 53.0, 9.0, 35000, 450, 90, recent_ts),
+            (1, "FRS001", 53.0, 9.0, 35000, 450, 90, recent_ts),
         )
         conn.commit()
 
@@ -516,7 +516,7 @@ class TestCleanupOldHistory:
             old_ts = _ts_days_ago(100 + i)
             conn.execute(
                 "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (1, "FFR001", 53.0, 9.0, 35000, 450, 90, old_ts),
+                (1, "FRS001", 53.0, 9.0, 35000, 450, 90, old_ts),
             )
         conn.commit()
 
@@ -533,7 +533,7 @@ class TestCleanupOldHistory:
         recent_ts = _ts_days_ago(10)
         conn.execute(
             "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (1, "FFR001", 53.0, 9.0, 35000, 450, 90, recent_ts),
+            (1, "FRS001", 53.0, 9.0, 35000, 450, 90, recent_ts),
         )
         conn.commit()
 

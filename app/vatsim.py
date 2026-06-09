@@ -81,6 +81,7 @@ def pilot_to_position(pilot: dict) -> dict:
     aircraft_icao = fp.get("aircraft_icao", "") or fp.get("aircraft", "").split("/")[0] if fp.get("aircraft") else ""
     alternate = fp.get("alternate", "")
     deptime = fp.get("deptime", "")
+    cruise_altitude = fp.get("altitude", "")
     cruise_tas = fp.get("cruise_tas", "")
     enroute_time = fp.get("enroute_time", "")
     fuel_time = fp.get("fuel_time", "")
@@ -105,6 +106,7 @@ def pilot_to_position(pilot: dict) -> dict:
         "aircraft_icao": aircraft_icao,
         "alternate": alternate,
         "deptime": deptime,
+        "cruise_altitude": cruise_altitude,
         "cruise_tas": cruise_tas,
         "enroute_time": enroute_time,
         "fuel_time": fuel_time,

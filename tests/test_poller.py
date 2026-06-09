@@ -106,7 +106,7 @@ class TestStartStop:
             jobs = poller._scheduler.get_jobs()
             job_ids = {j.id for j in jobs}
             assert "vatsim_poll" in job_ids
-            assert "daily_cleanup" in job_ids
+            assert "calendar_sync" in job_ids
         finally:
             await poller.stop()
 

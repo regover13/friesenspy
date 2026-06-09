@@ -405,6 +405,12 @@ class VatsimPoller:
                         pos["departure"],
                         pos["arrival"],
                         pos["logon_time"],
+                        route=pos.get("route", ""),
+                        remarks=pos.get("remarks", ""),
+                        cruise_altitude=pos.get("cruise_altitude", ""),
+                        cruise_tas=pos.get("cruise_tas", ""),
+                        flight_rules=pos.get("flight_rules", ""),
+                        aircraft_icao=pos.get("aircraft_icao", ""),
                     )
                     upsert_live_position(
                         conn,
@@ -518,7 +524,15 @@ class VatsimPoller:
                     if (new_dep or new_arr) and (new_dep != old_dep or new_arr != old_arr):
                         if not (old_dep or old_arr):
                             # Kein alter Plan → Plan dem laufenden Flug zuweisen
-                            update_flight_plan(conn, entry["id"], new_dep, new_arr)
+                            update_flight_plan(
+                                conn, entry["id"], new_dep, new_arr,
+                                route=pos.get("route", ""),
+                                remarks=pos.get("remarks", ""),
+                                cruise_altitude=pos.get("cruise_altitude", ""),
+                                cruise_tas=pos.get("cruise_tas", ""),
+                                flight_rules=pos.get("flight_rules", ""),
+                                aircraft_icao=pos.get("aircraft_icao", ""),
+                            )
                             entry["dep"], entry["arr"] = new_dep, new_arr
                             logger.info("Flugplan nachgetragen CID %s: %s→%s", cid, new_dep, new_arr)
                         else:
@@ -528,6 +542,12 @@ class VatsimPoller:
                             new_id = open_flight(
                                 conn, cid, pos["callsign"],
                                 pos.get("aircraft_short", ""), new_dep, new_arr, now_str,
+                                route=pos.get("route", ""),
+                                remarks=pos.get("remarks", ""),
+                                cruise_altitude=pos.get("cruise_altitude", ""),
+                                cruise_tas=pos.get("cruise_tas", ""),
+                                flight_rules=pos.get("flight_rules", ""),
+                                aircraft_icao=pos.get("aircraft_icao", ""),
                             )
                             self._active_flights[cid] = {"id": new_id, "dep": new_dep, "arr": new_arr}
                             logger.info(

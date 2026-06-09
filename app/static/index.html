@@ -1418,16 +1418,28 @@
       </div>
     </div>
     <div class="fp-section">
-      <div class="fp-section-title">Flugdetails</div>
+      <div class="fp-section-title">Flight Details</div>
       <div class="fp-grid">
         <div class="fp-field"><span class="fp-label">Callsign</span><span class="fp-val" id="fld-cs">—</span></div>
+        <div class="fp-field"><span class="fp-label">Flight Rules</span><span class="fp-val" id="fld-rules">—</span></div>
         <div class="fp-field"><span class="fp-label">Aircraft</span><span class="fp-val" id="fld-ac">—</span></div>
+        <div class="fp-field"><span class="fp-label">Aircraft (ICAO)</span><span class="fp-val" id="fld-acicao">—</span></div>
         <div class="fp-field"><span class="fp-label">Departure</span><span class="fp-val" id="fld-dep">—</span></div>
         <div class="fp-field"><span class="fp-label">Arrival</span><span class="fp-val" id="fld-arr">—</span></div>
         <div class="fp-field"><span class="fp-label">Datum UTC</span><span class="fp-val" id="fld-dt">—</span></div>
         <div class="fp-field"><span class="fp-label">Dauer</span><span class="fp-val" id="fld-dur">—</span></div>
+        <div class="fp-field"><span class="fp-label">Altitude (ft)</span><span class="fp-val" id="fld-alt">—</span></div>
+        <div class="fp-field"><span class="fp-label">TAS (kt)</span><span class="fp-val" id="fld-tas">—</span></div>
         <div class="fp-field"><span class="fp-label">Quelle</span><span class="fp-val" id="fld-src">—</span></div>
       </div>
+    </div>
+    <div class="fp-section" id="fld-route-section">
+      <div class="fp-section-title">Route Details</div>
+      <div class="fp-route-text" id="fld-route">—</div>
+    </div>
+    <div class="fp-section" id="fld-remarks-section">
+      <div class="fp-section-title">Remarks</div>
+      <div class="fp-remarks-text" id="fld-remarks">—</div>
     </div>
   </div>
 </div>
@@ -2225,14 +2237,24 @@ document.getElementById('fp-modal').addEventListener('click', (e) => {
 // ==========================================================================
 function openFlightDetailModal(d) {
   document.getElementById('fld-callsign').textContent = d.cs || '—';
-  document.getElementById('fld-cs').textContent  = d.cs  || '—';
-  document.getElementById('fld-ac').textContent  = d.ac  || '—';
-  document.getElementById('fld-dep').textContent = d.dep || '—';
-  document.getElementById('fld-arr').textContent = d.arr || '—';
-  document.getElementById('fld-dt').textContent  = d.dt
+  document.getElementById('fld-cs').textContent    = d.cs     || '—';
+  document.getElementById('fld-rules').textContent = d.rules  || '—';
+  document.getElementById('fld-ac').textContent    = d.ac     || '—';
+  document.getElementById('fld-acicao').textContent= d.acicao || '—';
+  document.getElementById('fld-dep').textContent   = d.dep    || '—';
+  document.getElementById('fld-arr').textContent   = d.arr    || '—';
+  document.getElementById('fld-dt').textContent    = d.dt
     ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
-  document.getElementById('fld-dur').textContent = d.dur || '—';
-  document.getElementById('fld-src').textContent = d.src || '—';
+  document.getElementById('fld-dur').textContent   = d.dur    || '—';
+  document.getElementById('fld-alt').textContent   = d.alt    || '—';
+  document.getElementById('fld-tas').textContent   = d.tas    || '—';
+  document.getElementById('fld-src').textContent   = d.src    || '—';
+  const route   = d.route   || '';
+  const remarks = d.remarks || '';
+  document.getElementById('fld-route').textContent   = route   || '—';
+  document.getElementById('fld-remarks').textContent = remarks || '—';
+  document.getElementById('fld-route-section').style.display   = route   ? '' : 'none';
+  document.getElementById('fld-remarks-section').style.display = remarks ? '' : 'none';
   document.getElementById('fld-modal').classList.remove('hidden');
   document.addEventListener('keydown', _fldEscHandler);
 }
@@ -2384,10 +2406,16 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       html += `<tr class="flight-row" style="cursor:pointer;"
           data-cs="${escHtml(f.callsign || '—')}"
           data-ac="${escHtml(f.aircraft || '—')}"
+          data-acicao="${escHtml(f.aircraft_icao || '')}"
+          data-rules="${escHtml(f.flight_rules || '')}"
           data-dep="${escHtml(dep)}"
           data-arr="${escHtml(arr)}"
           data-dt="${escHtml(f.logon_time || '')}"
           data-dur="${escHtml(dur)}"
+          data-alt="${escHtml(f.cruise_altitude || '')}"
+          data-tas="${escHtml(f.cruise_tas || '')}"
+          data-route="${escHtml(f.route || '')}"
+          data-remarks="${escHtml(f.remarks || '')}"
           data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
         <td class="mono">${escHtml(f.callsign || '—')}</td>
         <td class="td-route text-green">${escHtml(dep)} → ${escHtml(arr)}</td>
@@ -3128,10 +3156,16 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
         <td class="mono td-callsign-link ev-cs-cell text-green"
             data-cs="${escHtml(cs)}"
             data-ac="${escHtml(f.aircraft || '—')}"
+            data-acicao="${escHtml(f.aircraft_icao || '')}"
+            data-rules="${escHtml(f.flight_rules || '')}"
             data-dep="${escHtml(dep)}"
             data-arr="${escHtml(arr)}"
             data-dt="${escHtml(f.logon_time || '')}"
             data-dur="${escHtml(dur)}"
+            data-alt="${escHtml(f.cruise_altitude || '')}"
+            data-tas="${escHtml(f.cruise_tas || '')}"
+            data-route="${escHtml(f.route || '')}"
+            data-remarks="${escHtml(f.remarks || '')}"
             data-src="${isSt ? 'StatSim' : 'FriesenSpy'}"
             title="Flugplan öffnen">${route}</td>
         <td class="mono">${dur}</td>

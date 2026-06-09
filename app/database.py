@@ -27,7 +27,13 @@ CREATE TABLE IF NOT EXISTS flights (
     logon_time    TEXT,
     logoff_time   TEXT,
     duration_min  INTEGER,
-    distance_nm   REAL DEFAULT 0
+    distance_nm   REAL DEFAULT 0,
+    route         TEXT,
+    remarks       TEXT,
+    cruise_altitude TEXT,
+    cruise_tas    TEXT,
+    flight_rules  TEXT,
+    aircraft_icao TEXT
 );
 
 CREATE TABLE IF NOT EXISTS calendar_events (
@@ -139,6 +145,12 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 
 _FLIGHTS_MIGRATIONS = [
     "ALTER TABLE flights ADD COLUMN distance_nm REAL DEFAULT 0",
+    "ALTER TABLE flights ADD COLUMN route TEXT",
+    "ALTER TABLE flights ADD COLUMN remarks TEXT",
+    "ALTER TABLE flights ADD COLUMN cruise_altitude TEXT",
+    "ALTER TABLE flights ADD COLUMN cruise_tas TEXT",
+    "ALTER TABLE flights ADD COLUMN flight_rules TEXT",
+    "ALTER TABLE flights ADD COLUMN aircraft_icao TEXT",
 ]
 
 _CALENDAR_MIGRATIONS = [
@@ -238,14 +250,23 @@ def open_flight(
     departure: str,
     arrival: str,
     logon_time: str,
+    *,
+    route: str = "",
+    remarks: str = "",
+    cruise_altitude: str = "",
+    cruise_tas: str = "",
+    flight_rules: str = "",
+    aircraft_icao: str = "",
 ) -> int:
     """Neuen Flug eröffnen, flight.id zurückgeben."""
     cur = conn.execute(
         """
-        INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, logon_time)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, logon_time,
+                             route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (cid, callsign, aircraft_short, departure, arrival, logon_time),
+        (cid, callsign, aircraft_short, departure, arrival, logon_time,
+         route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao),
     )
     return cur.lastrowid  # type: ignore[return-value]
 
@@ -283,11 +304,27 @@ def close_flight(conn: sqlite3.Connection, flight_id: int, logoff_time: str) -> 
     )
 
 
-def update_flight_plan(conn: sqlite3.Connection, flight_id: int, departure: str, arrival: str) -> None:
-    """Flugplan (DEP/ARR) eines laufenden Fluges nachträglich setzen."""
+def update_flight_plan(
+    conn: sqlite3.Connection,
+    flight_id: int,
+    departure: str,
+    arrival: str,
+    *,
+    route: str = "",
+    remarks: str = "",
+    cruise_altitude: str = "",
+    cruise_tas: str = "",
+    flight_rules: str = "",
+    aircraft_icao: str = "",
+) -> None:
+    """Flugplan (DEP/ARR + erweiterte Felder) eines laufenden Fluges setzen."""
     conn.execute(
-        "UPDATE flights SET departure=?, arrival=? WHERE id=?",
-        (departure, arrival, flight_id),
+        """UPDATE flights SET departure=?, arrival=?,
+                              route=?, remarks=?, cruise_altitude=?, cruise_tas=?,
+                              flight_rules=?, aircraft_icao=?
+           WHERE id=?""",
+        (departure, arrival, route, remarks, cruise_altitude, cruise_tas,
+         flight_rules, aircraft_icao, flight_id),
     )
 
 
@@ -904,7 +941,8 @@ def get_pilot_flights_friesenspy(
     rows = conn.execute(
         """
         SELECT id, cid, callsign, aircraft_short AS aircraft,
-               departure, arrival, logon_time, logoff_time, duration_min
+               departure, arrival, logon_time, logoff_time, duration_min,
+               route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao
         FROM flights
         WHERE cid = ?
           AND logoff_time IS NOT NULL
