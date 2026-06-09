@@ -72,7 +72,8 @@ def pilot_to_position(pilot: dict) -> dict:
     flight_plan = pilot.get("flight_plan")
     fp = flight_plan if (flight_plan and isinstance(flight_plan, dict)) else {}
 
-    aircraft = fp.get("aircraft_short", "")
+    aircraft_full = fp.get("aircraft", "")
+    aircraft = fp.get("aircraft_short", "") or (aircraft_full.split("/")[0] if aircraft_full else "")
     departure = fp.get("departure", "")
     arrival = fp.get("arrival", "")
 
