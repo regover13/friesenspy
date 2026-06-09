@@ -232,6 +232,10 @@ def init_db(db_path: str) -> None:
         if n:
             import logging as _log
             _log.getLogger(__name__).info("distance_nm für %d Flüge nachberechnet", n)
+        m = close_stale_flights(conn)
+        if m:
+            import logging as _log
+            _log.getLogger(__name__).info("Zombie-Flüge geschlossen: %d", m)
     finally:
         conn.close()
 
@@ -298,6 +302,46 @@ def open_flight(
          alternate, deptime, enroute_time, fuel_time),
     )
     return cur.lastrowid  # type: ignore[return-value]
+
+
+def close_stale_flights(conn: sqlite3.Connection, max_age_hours: int = 8) -> int:
+    """Schließt offene Flüge (logoff_time IS NULL) die älter als max_age_hours sind.
+
+    Nutzt den letzten position_history-Eintrag als logoff_time. Falls keine Positionen
+    vorhanden sind (Test-Connect), wird logon_time als logoff_time gesetzt (duration=0).
+    """
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    stale = conn.execute(
+        "SELECT id, cid, logon_time FROM flights WHERE logoff_time IS NULL AND logon_time < ?",
+        (cutoff,),
+    ).fetchall()
+    if not stale:
+        return 0
+
+    import logging as _log
+    log = _log.getLogger(__name__)
+    closed = 0
+    for fid, cid, logon_time in stale:
+        last_pos = conn.execute(
+            "SELECT MAX(ts) FROM position_history WHERE cid = ? AND ts >= ?",
+            (cid, logon_time),
+        ).fetchone()[0]
+        logoff_time = last_pos if last_pos else logon_time
+        logon_dt = _parse_iso(logon_time)
+        logoff_dt = _parse_iso(logoff_time)
+        duration_min = max(0, int((logoff_dt - logon_dt).total_seconds() / 60))
+        conn.execute(
+            "UPDATE flights SET logoff_time = ?, duration_min = ? WHERE id = ?",
+            (logoff_time, duration_min, fid),
+        )
+        log.info("Zombie-Flug id=%d (cid=%d) geschlossen: logoff=%s, dur=%d min", fid, cid, logoff_time, duration_min)
+        closed += 1
+    if closed:
+        conn.commit()
+    return closed
 
 
 def backfill_flight_distances(conn: sqlite3.Connection) -> int:
