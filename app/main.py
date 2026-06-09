@@ -487,11 +487,16 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
     statsim_status = "no-key"
     try:
         display_days = days if days > 0 else 99999
+        _raw = get_pilot_flights_friesenspy(conn, cid, display_days)
+        _seen: set[tuple] = set()
+        _deduped: list[dict] = []
+        for _f in _raw:
+            _key = (_f.get("logon_time"), _f.get("departure") or "", _f.get("arrival") or "")
+            if _key not in _seen:
+                _seen.add(_key)
+                _deduped.append(_f)
         fs_flights = [
-            f for f in merge_fragmented_flights(
-                get_pilot_flights_friesenspy(conn, cid, display_days),
-                conn=conn,
-            )
+            f for f in merge_fragmented_flights(_deduped, conn=conn)
             if (f.get("distance_nm") or 0) > 0.5 or (f.get("duration_min") or 0) > 5
         ]
         statsim_flights: list[dict] = []
