@@ -60,6 +60,8 @@ SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Sieben Tabellen:
 
 Drei Indizes: `idx_ph_cid_ts`, `idx_ph_ts`, `idx_flights_cid`.
 
+**`update_flight_plan(conn, flight_id, departure, arrival)`** — setzt DEP/ARR eines laufenden Fluges nachträglich, wenn der Pilot den Plan nach dem Verbindungsaufbau einreicht oder ändert. Wird ausschließlich vom Poller aufgerufen (Flugplanwechsel-Erkennung in `_poll_once`).
+
 Alle DB-Operationen sind synchron (SQLite ist thread-safe mit WAL). Verbindungen werden pro Request geöffnet und in `finally`-Blöcken geschlossen.
 
 **`merge_fragmented_flights(flights, gap_minutes=5, conn=None)`** — bereinigt kurze VATSIM-Disconnects in der Flughistorie. Zwei aufeinanderfolgende Einträge gleichen Callsigns werden zu einem zusammengeführt, wenn alle vier Bedingungen erfüllt sind:
@@ -86,7 +88,7 @@ Für den Chart (`get_stats_activity`) werden no-FP-Fragment-IDs via `_nofp_fragm
 
 `VatsimPoller` kapselt:
 - **APScheduler `AsyncIOScheduler`** mit drei aktiven Jobs: `vatsim_poll` (interval, 15s), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start). `daily_cleanup` ist deaktiviert — `position_history` wird dauerhaft behalten.
-- **`_active_flights: dict[int, int]`** — In-Memory State: CID → flight_id. Überlebt nicht einen Container-Neustart (Flüge die beim Restart offen sind, bleiben in der DB offen ohne Logoff-Zeit).
+- **`_active_flights: dict[int, dict]`** — In-Memory State: CID → `{"id": flight_id, "dep": departure, "arr": arrival}`. Überlebt nicht einen Container-Neustart (Flüge die beim Restart offen sind, bleiben in der DB offen ohne Logoff-Zeit).
 - **`sse_queue: asyncio.Queue`** — Jeder SSE-Client hat eine eigene Verbindung zum selben Queue-Objekt. `put_nowait` blockiert nicht.
 - **`last_prefiles: list`** — aktuell eingereichte VATSIM-Prefile-Pläne mit FRS*-Callsign (In-Memory, aus dem letzten Poll-Zyklus)
 - **`_prefile_sigs: dict | None`** — CID → `(deptime, departure, arrival)` für Änderungserkennung. Wird beim Start aus `prefile_sigs`-DB-Tabelle geladen (nicht `None`) und nach jedem Poll gespeichert. Beim allerersten Start ohne DB-Einträge ist die Dict leer — keine Spam-Notifications. Container-Neustarts verpassen dadurch keine Prefile-Änderungen mehr.
@@ -104,9 +106,13 @@ CIDs jetzt online: {A, B, C}
 CIDs vorher aktiv: {B, C, D}
 
 newly_online  = {A}       → open_flight, Alert
-still_online  = {B, C}    → update position
+still_online  = {B, C}    → update position + Flugplan-Check
 went_offline  = {D}       → close_flight
 ```
+
+**Flugplan-Änderungserkennung** (für `still_online`-Piloten): Pro Poll wird der aktuelle DEP/ARR aus dem VATSIM-Feed mit dem in `_active_flights` gespeicherten verglichen. Bei Abweichung:
+- **Kein alter Plan → neuer Plan**: `update_flight_plan()` setzt DEP/ARR im laufenden Flug-Record nach.
+- **Alter Plan → anderer Plan**: laufenden Flug sofort schließen (`close_flight`), neues Segment öffnen (`open_flight`). Behandelt Fälle wie Zwischenstopps oder Planänderung nach dem Start.
 
 Ein einziges `conn.commit()` am Ende — kein partieller Schreibzustand möglich.
 
@@ -143,7 +149,7 @@ Single-File-SPA ohne Build-Step. Vier Tabs:
 
 **OpenAIP-Overlay-Präferenz:** `_saveAIPPref(on)` / `_loadAIPPref()` / `_setupAIPPref(map, aipLayer)` — speichert ob das OpenAIP-Overlay aktiv war (Schlüssel `friesenspy_aip`, Wert `'1'`/`'0'`) in `localStorage`. Alle drei Karten rufen `_setupAIPPref` nach dem Layer-Control-Init auf: restauriert den gespeicherten Zustand und registriert `overlayadd`/`overlayremove`-Listener zum Speichern bei Änderung.
 
-- **LIVE** — EventSource(`/api/sse`) mit Reconnect; Callsign-Klick → Flugplan-Modal; ◎-Klick → `switchToMapAndCenter()`
+- **LIVE** — EventSource(`/api/sse`) mit Reconnect; Callsign-Klick oder **Flugplan-Zellen-Klick** → Flugplan-Modal; ◎-Klick → `switchToMapAndCenter()`
 - **KARTE** — Leaflet.js; Marker mit Heading-Rotation; Double-RAF-Init beim Tab-Wechsel; Live-Track-Polyline pro Pilot (`liveTrackPoints`/`liveTrackLines`): beim ersten ◎-Klick oder Map-Init via `/api/pilots/{cid}/live-track` geladen, danach per SSE-Update erweitert; Track wird entfernt wenn Pilot offline geht
 - **STATISTIKEN** — `/api/stats?days=N`; KPI-Box oben (Piloten, Flüge, Stunden, Ø/Tag, Aktivster Pilot, Ø Flugdauer — klickbar); Liniendiagramm via `/api/stats/activity?days=N` (Piloten/Flüge/Stunden/Ø Flugdauer, täglich für ≤93 Tage mit Wochentag-Labels, monatlich für 365 Tage, Dual-Y-Achse); Callsign + Pilot + geloggte Flüge (FS + ST) + letzter Flug; Pilot-Klick → `openPilotFlights()` → `/api/pilots/{cid}/flights?days=N` (sofort aus Cache, StatSim im Hintergrund); Badge „⟳ StatSim wird aktualisiert…" wenn `X-StatSim-Status: updating`; Auto-Refresh nach 10s; „Alle Flüge laden (letztes Jahr)" → `?days=0` (365-Tage-Force-Refresh); ◎-Klick → Track-Modal; ⎘ Teilen in Drill-Down und Track-Modal
 - **EVENTS** — `/api/events`; Layout: Karte oben (560px, OFM), Pilotenliste darunter; pro Pilot werden einzelne Flüge aufgelistet; Segmentierung basiert auf echten VATSIM-Session-Records (Fallback: 30-min-Gap); Karte zeigt alle Tracks aller Piloten gleichzeitig; Klick auf Flug → `highlightEventFlight()` hebt Track hervor, „↺ Alle Tracks"-Button setzt zurück; Callsign klicken → Flugdetail-Modal; ⎘ Teilen; `searchEvents()` behandelt `datetime-local` direkt als UTC
