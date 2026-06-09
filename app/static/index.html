@@ -3166,6 +3166,10 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
           const m  = Math.floor((ms % 3600000) / 60000);
           dur = `${h}:${String(m).padStart(2,'0')} h`;
         } catch(e) {}
+      } else if (f.duration_min != null) {
+        const h = Math.floor(f.duration_min / 60);
+        const m = f.duration_min % 60;
+        dur = `${h}:${String(m).padStart(2,'0')} h`;
       }
       const route    = dep && arr ? `${escHtml(dep)} → ${escHtml(arr)}` : '—';
       const evDistNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
