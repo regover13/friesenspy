@@ -297,10 +297,15 @@ async def get_events(
                 (cid, fetch_end, start or "0000-01-01"),
             ).fetchall()
             if flight_rows:
-                merged_rows = merge_fragmented_flights(
-                    [dict(r, cid=cid) for r in flight_rows],
-                    conn=conn2,
-                )
+                # Duplikate entfernen (gleiche logon_time+dep+arr, entstehen bei Container-Neustarts)
+                seen: set[tuple] = set()
+                deduped: list[dict] = []
+                for r in flight_rows:
+                    key = (r["logon_time"], r["departure"] or "", r["arrival"] or "")
+                    if key not in seen:
+                        seen.add(key)
+                        deduped.append(dict(r, cid=cid))
+                merged_rows = merge_fragmented_flights(deduped, conn=conn2)
                 # Nur Flüge behalten, die innerhalb des Eventfensters GESTARTET sind
                 if end:
                     merged_rows = [fr for fr in merged_rows if (fr.get("logon_time") or "") <= end]

@@ -274,7 +274,18 @@ def open_flight(
     enroute_time: str = "",
     fuel_time: str = "",
 ) -> int:
-    """Neuen Flug eröffnen, flight.id zurückgeben."""
+    """Neuen Flug eröffnen, flight.id zurückgeben.
+
+    Gibt die ID eines bestehenden offenen Fluges zurück wenn bereits ein Eintrag
+    mit gleicher (cid, logon_time) ohne logoff_time existiert — verhindert Duplikate
+    bei Container-Neustarts während ein Pilot online ist.
+    """
+    existing = conn.execute(
+        "SELECT id FROM flights WHERE cid = ? AND logon_time = ? AND logoff_time IS NULL",
+        (cid, logon_time),
+    ).fetchone()
+    if existing:
+        return existing[0]
     cur = conn.execute(
         """
         INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, logon_time,
