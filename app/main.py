@@ -286,7 +286,7 @@ async def get_events(
                 fetch_end = "9999-12-31"
             flight_rows = conn2.execute(
                 """SELECT callsign, departure, arrival, aircraft_short,
-                          logon_time, logoff_time, duration_min,
+                          logon_time, logoff_time, duration_min, distance_nm,
                           route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao
                    FROM flights
                    WHERE cid = ?
@@ -305,7 +305,7 @@ async def get_events(
                 if end:
                     merged_rows = [fr for fr in merged_rows if (fr.get("logon_time") or "") <= end]
                 for fr in merged_rows:
-                    if (fr.get("duration_min") or 0) <= 5:
+                    if (fr.get("distance_nm") or 0) <= 0.5 and (fr.get("duration_min") or 0) <= 5:
                         continue
                     lo, lf = fr["logon_time"], fr.get("logoff_time", "")
                     # Vollständigen Track laden (über Eventfenster hinaus — Overlap-Fix)
@@ -327,6 +327,8 @@ async def get_events(
                         "cruise_altitude": fr.get("cruise_altitude") or "",
                         "cruise_tas": fr.get("cruise_tas") or "",
                         "flight_rules": fr.get("flight_rules") or "",
+                        "duration_min": fr.get("duration_min"),
+                        "distance_nm": fr.get("distance_nm"),
                         "positions": [dict(r) for r in full_pos],
                         "source": "friesenspy",
                     })
@@ -465,7 +467,7 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
                 get_pilot_flights_friesenspy(conn, cid, display_days),
                 conn=conn,
             )
-            if (f.get("duration_min") or 0) > 5
+            if (f.get("distance_nm") or 0) > 0.5 or (f.get("duration_min") or 0) > 5
         ]
         statsim_flights: list[dict] = []
 

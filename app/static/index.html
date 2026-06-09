@@ -1428,6 +1428,7 @@
         <div class="fp-field"><span class="fp-label">Arrival</span><span class="fp-val" id="fld-arr">—</span></div>
         <div class="fp-field"><span class="fp-label">Datum UTC</span><span class="fp-val" id="fld-dt">—</span></div>
         <div class="fp-field"><span class="fp-label">Dauer</span><span class="fp-val" id="fld-dur">—</span></div>
+        <div class="fp-field"><span class="fp-label">Strecke</span><span class="fp-val" id="fld-dist">—</span></div>
         <div class="fp-field"><span class="fp-label">Altitude (ft)</span><span class="fp-val" id="fld-alt">—</span></div>
         <div class="fp-field"><span class="fp-label">TAS (kt)</span><span class="fp-val" id="fld-tas">—</span></div>
         <div class="fp-field"><span class="fp-label">Quelle</span><span class="fp-val" id="fld-src">—</span></div>
@@ -2251,6 +2252,7 @@ function openFlightDetailModal(d) {
   document.getElementById('fld-dt').textContent    = d.dt
     ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
   document.getElementById('fld-dur').textContent   = d.dur    || '—';
+  setOpt('fld-dist', d.dist);
   setOpt('fld-alt', d.alt);
   setOpt('fld-tas', d.tas);
   document.getElementById('fld-src').textContent   = d.src    || '—';
@@ -2393,7 +2395,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   } else {
     html += `<div class="live-table-wrap"><table>
       <thead><tr>
-        <th>Callsign</th><th>Flugplan</th><th>Datum</th><th>Dauer</th><th>Track</th><th>Quelle</th>
+        <th>Callsign</th><th>Flugplan</th><th>Datum</th><th>Dauer</th><th>Strecke</th><th>Track</th><th>Quelle</th>
       </tr></thead><tbody>`;
 
     for (const f of flights) {
@@ -2404,6 +2406,8 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       const dur = durMin != null
         ? `${Math.floor(durMin / 60)}:${String(durMin % 60).padStart(2, '0')} h`
         : '—';
+      const distNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
+      const dist = distNm != null && distNm > 0 ? `${distNm} nm` : '—';
       const sourceTag = f.source === 'friesenspy'
         ? `<span class="source-badge source-fs">● FriesenSpy</span>`
         : `<span class="source-badge source-st">○ StatSim</span>`;
@@ -2417,6 +2421,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
           data-arr="${escHtml(arr)}"
           data-dt="${escHtml(f.logon_time || '')}"
           data-dur="${escHtml(dur)}"
+          data-dist="${escHtml(dist)}"
           data-alt="${escHtml(f.cruise_altitude || '')}"
           data-tas="${escHtml(f.cruise_tas || '')}"
           data-route="${escHtml(f.route || '')}"
@@ -2426,6 +2431,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
         <td class="td-route text-green">${escHtml(dep)} → ${escHtml(arr)}</td>
         <td class="mono">${escHtml(dt)}</td>
         <td class="mono">${dur}</td>
+        <td class="mono">${dist}</td>
         <td><span class="td-map-btn track-btn"
               data-track-id="${trackId}"
               data-track-src="${f.source === 'friesenspy' ? 'friesenspy' : 'statsim'}"
@@ -3149,6 +3155,8 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
         } catch(e) {}
       }
       const route    = dep && arr ? `${escHtml(dep)} → ${escHtml(arr)}` : '—';
+      const evDistNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
+      const evDist   = evDistNm != null && evDistNm > 0 ? `${evDistNm} nm` : '—';
       const flightKey = `${i}_${fi}`;
       const rowAttrs = `class="events-flight-row" data-flight-key="${flightKey}" style="cursor:pointer;" title="Klick → Flug auf Karte hervorheben"`;
       const mapCell   = isSt
@@ -3167,6 +3175,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             data-arr="${escHtml(arr)}"
             data-dt="${escHtml(f.logon_time || '')}"
             data-dur="${escHtml(dur)}"
+            data-dist="${escHtml(evDist)}"
             data-alt="${escHtml(f.cruise_altitude || '')}"
             data-tas="${escHtml(f.cruise_tas || '')}"
             data-route="${escHtml(f.route || '')}"
@@ -3174,6 +3183,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             data-src="${isSt ? 'StatSim' : 'FriesenSpy'}"
             title="Flugplan öffnen">${route}</td>
         <td class="mono">${dur}</td>
+        <td class="mono">${evDist}</td>
         <td class="mono text-label">${ptsCell}</td>
         <td>${mapCell}</td>
       </tr>`;
@@ -3197,6 +3207,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             <th style="text-align:left;">Callsign</th>
             <th style="text-align:left;">Flugplan</th>
             <th style="text-align:left;">Dauer</th>
+            <th style="text-align:left;">Strecke</th>
             <th style="text-align:left;">Wegpunkte</th>
             <th style="text-align:left;">Karte</th>
           </tr></thead>

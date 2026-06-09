@@ -778,6 +778,7 @@ def merge_fragmented_flights(
                     merged['logon_time']   = min(t for t in [curr['logon_time'],  nxt['logon_time']]  if t)
                     merged['logoff_time']  = max(t for t in [curr.get('logoff_time', ''), nxt.get('logoff_time', '')] if t)
                     merged['duration_min'] = (curr.get('duration_min') or 0) + (nxt.get('duration_min') or 0)
+                    merged['distance_nm']  = (curr.get('distance_nm')  or 0) + (nxt.get('distance_nm')  or 0)
                     result.append(merged)
                     i += 2
                     continue
@@ -941,7 +942,7 @@ def get_pilot_flights_friesenspy(
     rows = conn.execute(
         """
         SELECT id, cid, callsign, aircraft_short AS aircraft,
-               departure, arrival, logon_time, logoff_time, duration_min,
+               departure, arrival, logon_time, logoff_time, duration_min, distance_nm,
                route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao
         FROM flights
         WHERE cid = ?
