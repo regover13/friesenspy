@@ -2493,7 +2493,8 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff) {
   history.replaceState(null, '', '#' + p.toString());
 
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
+    requestAnimationFrame(async () => {
+      await _configPromise;
       if (!trackMapInitialized) {
         trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
         const trackLayers = _makeTileLayers();
@@ -3241,8 +3242,9 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   results.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function renderEventsMap(pilots, icaoStr, radiusKm) {
+async function renderEventsMap(pilots, icaoStr, radiusKm) {
   if (!eventsMapInitialized) {
+    await _configPromise;
     eventsMap = L.map('events-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
     const evLayers = _makeTileLayers();
     _getPreferredLayer(evLayers).addTo(eventsMap);
