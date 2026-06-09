@@ -1947,10 +1947,10 @@ function renderLiveTable(pilots) {
     const isNew = !existing.has(p.callsign);
     html += `
           <tr data-callsign="${escHtml(p.callsign)}" ${isNew ? 'class="new-row"' : ''}>
-            <td class="td-callsign td-callsign-link" data-cs="${escHtml(p.callsign || '')}">${escHtml((p.callsign || '').toUpperCase())}</td>
+            <td class="td-callsign" data-cs="${escHtml(p.callsign || '')}">${escHtml((p.callsign || '').toUpperCase())}</td>
             <td>${escHtml(p.name || '—')}</td>
             <td class="mono">${escHtml(p.aircraft || '—')}</td>
-            <td class="td-route td-callsign-link" data-cs="${escHtml(p.callsign || '')}">${escHtml(fmtRoute(p.departure, p.arrival))}</td>
+            <td class="td-route td-callsign-link text-green" data-cs="${escHtml(p.callsign || '')}">${escHtml(fmtRoute(p.departure, p.arrival))}</td>
             <td class="td-alt">${fmtAlt(p.altitude)}</td>
             <td class="td-gs">${fmtGS(p.groundspeed)}</td>
             <td class="td-time">${fmtOnlineTime(p.logon_time)}</td>
@@ -2025,9 +2025,9 @@ function renderPrefiles(data) {
       ? `<span class="td-map-btn" data-idx="${i}" title="Route auf Karte" style="cursor:pointer;color:var(--green-dim)">◎</span>`
       : '';
     html += `<tr data-idx="${i}" style="cursor:pointer;">
-      <td class="mono text-green">${escHtml(p.callsign)}</td>
+      <td class="mono">${escHtml(p.callsign)}</td>
       <td>${escHtml(p.name || String(p.cid || ''))}</td>
-      <td class="mono">${route}</td>
+      <td class="mono text-green">${route}</td>
       <td class="mono text-label">${dep}</td>
       <td style="text-align:center">${mapBtn}</td>
     </tr>`;
@@ -2389,8 +2389,8 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
           data-dt="${escHtml(f.logon_time || '')}"
           data-dur="${escHtml(dur)}"
           data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
-        <td class="mono text-green">${escHtml(f.callsign || '—')}</td>
-        <td class="td-route">${escHtml(dep)} → ${escHtml(arr)}</td>
+        <td class="mono">${escHtml(f.callsign || '—')}</td>
+        <td class="td-route text-green">${escHtml(dep)} → ${escHtml(arr)}</td>
         <td class="mono">${escHtml(dt)}</td>
         <td class="mono">${dur}</td>
         <td><span class="td-map-btn track-btn"
@@ -3124,16 +3124,8 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
       const ptsCell   = isSt ? '—' : pts;
       flightRows += `<tr ${rowAttrs}>
         <td class="mono text-label">${escHtml(date)}</td>
-        <td class="mono text-green td-callsign-link ev-cs-cell"
-            data-cs="${escHtml(cs)}"
-            data-ac="${escHtml(f.aircraft || '—')}"
-            data-dep="${escHtml(dep)}"
-            data-arr="${escHtml(arr)}"
-            data-dt="${escHtml(f.logon_time || '')}"
-            data-dur="${escHtml(dur)}"
-            data-src="${isSt ? 'StatSim' : 'FriesenSpy'}"
-            title="Flugplan öffnen">${escHtml(cs)}</td>
-        <td class="mono td-callsign-link ev-cs-cell"
+        <td class="mono">${escHtml(cs)}</td>
+        <td class="mono td-callsign-link ev-cs-cell text-green"
             data-cs="${escHtml(cs)}"
             data-ac="${escHtml(f.aircraft || '—')}"
             data-dep="${escHtml(dep)}"
