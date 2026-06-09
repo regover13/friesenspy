@@ -2236,18 +2236,23 @@ document.getElementById('fp-modal').addEventListener('click', (e) => {
 //  FLIGHT DETAIL MODAL
 // ==========================================================================
 function openFlightDetailModal(d) {
+  function setOpt(id, value) {
+    const el = document.getElementById(id);
+    el.textContent = value || '—';
+    el.closest('.fp-field').style.display = value ? '' : 'none';
+  }
   document.getElementById('fld-callsign').textContent = d.cs || '—';
   document.getElementById('fld-cs').textContent    = d.cs     || '—';
-  document.getElementById('fld-rules').textContent = d.rules  || '—';
+  setOpt('fld-rules', d.rules);
   document.getElementById('fld-ac').textContent    = d.ac     || '—';
-  document.getElementById('fld-acicao').textContent= d.acicao || '—';
+  setOpt('fld-acicao', d.acicao);
   document.getElementById('fld-dep').textContent   = d.dep    || '—';
   document.getElementById('fld-arr').textContent   = d.arr    || '—';
   document.getElementById('fld-dt').textContent    = d.dt
     ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
   document.getElementById('fld-dur').textContent   = d.dur    || '—';
-  document.getElementById('fld-alt').textContent   = d.alt    || '—';
-  document.getElementById('fld-tas').textContent   = d.tas    || '—';
+  setOpt('fld-alt', d.alt);
+  setOpt('fld-tas', d.tas);
   document.getElementById('fld-src').textContent   = d.src    || '—';
   const route   = d.route   || '';
   const remarks = d.remarks || '';
