@@ -422,7 +422,7 @@ def get_stats(
     _same_fp_excl_filt = (
         " AND NOT EXISTS ("
         "SELECT 1 FROM flights f2"
-        " WHERE f2.cid=f_filt.cid AND f2.callsign=f_filt.callsign AND f2.duration_min>5"
+        " WHERE f2.cid=f_filt.cid AND f2.callsign=f_filt.callsign AND (f2.distance_nm>0.5 OR f2.duration_min>5)"
         " AND CAST((JULIANDAY(f2.logon_time)-JULIANDAY(f_filt.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5"
         " AND f_filt.departure!='' AND f2.departure=f_filt.departure AND f2.arrival=f_filt.arrival)"
     )
@@ -448,7 +448,7 @@ def get_stats(
                 WHERE fx.cid = p.cid
                   AND fx.logon_time >= datetime('now', ? || ' days')
                   AND fx.logoff_time IS NOT NULL
-                  AND fx.duration_min > 5
+                  AND (fx.distance_nm > 0.5 OR fx.duration_min > 5)
                   AND substr(fx.logon_time, 1, 16) = substr(sc_filt.logon_time, 1, 16)
               ) THEN sc_filt.statsim_id
             END) AS st_count,
@@ -459,7 +459,7 @@ def get_stats(
              WHERE cid = p.cid
                AND logon_time >= datetime('now', ? || ' days')
                AND logoff_time IS NOT NULL
-               AND duration_min > 5) AS fs_duration_min,
+               AND (distance_nm > 0.5 OR duration_min > 5)) AS fs_duration_min,
             (SELECT COALESCE(SUM(
                COALESCE(duration_min,
                  CASE WHEN logoff_time IS NOT NULL AND logoff_time != ''
@@ -477,7 +477,7 @@ def get_stats(
               AND f_filt.callsign LIKE ?
               AND f_filt.logon_time >= datetime('now', ? || ' days')
               AND f_filt.logoff_time IS NOT NULL
-              AND f_filt.duration_min > 5{_merge_excl_filt}
+              AND (f_filt.distance_nm > 0.5 OR f_filt.duration_min > 5){_merge_excl_filt}
         LEFT JOIN statsim_cache sc_filt
                ON sc_filt.cid = p.cid
               AND sc_filt.logon_time >= datetime('now', ? || ' days')
@@ -550,7 +550,7 @@ def get_stats_activity(
     _same_fp_excl = (
         " AND NOT EXISTS ("
         "SELECT 1 FROM flights f2"
-        " WHERE f2.cid=f.cid AND f2.callsign=f.callsign AND f2.duration_min>5"
+        " WHERE f2.cid=f.cid AND f2.callsign=f.callsign AND (f2.distance_nm>0.5 OR f2.duration_min>5)"
         " AND CAST((JULIANDAY(f2.logon_time)-JULIANDAY(f.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5"
         " AND f.departure!='' AND f2.departure=f.departure AND f2.arrival=f.arrival)"
     )
@@ -568,7 +568,7 @@ def get_stats_activity(
     _dedup = (
         " AND NOT EXISTS ("
         "SELECT 1 FROM flights fx WHERE fx.cid = sc.cid"
-        " AND fx.logoff_time IS NOT NULL AND fx.duration_min > 5"
+        " AND fx.logoff_time IS NOT NULL AND (fx.distance_nm > 0.5 OR fx.duration_min > 5)"
         " AND substr(fx.logon_time,1,16)=substr(sc.logon_time,1,16))"
     )
 
@@ -576,7 +576,7 @@ def get_stats_activity(
     fs = {r[0]: r[1] for r in conn.execute(
         "SELECT strftime(?, f.logon_time), COUNT(*) FROM flights f "
         "WHERE f.logon_time >= datetime('now', ? || ' days') AND f.logoff_time IS NOT NULL "
-        "AND f.duration_min > 5" + _merge_excl + " GROUP BY 1",
+        "AND (f.distance_nm > 0.5 OR f.duration_min > 5)" + _merge_excl + " GROUP BY 1",
         (sql_fmt, f"-{days}"),
     ).fetchall()}
     st = {r[0]: r[1] for r in conn.execute(
@@ -591,7 +591,7 @@ def get_stats_activity(
     for p, cid in conn.execute(
         "SELECT strftime(?, f.logon_time), f.cid FROM flights f "
         "WHERE f.logon_time >= datetime('now', ? || ' days') AND f.logoff_time IS NOT NULL "
-        "AND f.duration_min > 5" + _merge_excl,
+        "AND (f.distance_nm > 0.5 OR f.duration_min > 5)" + _merge_excl,
         (sql_fmt, f"-{days}"),
     ).fetchall():
         pilots_by_period.setdefault(p, set()).add(cid)
@@ -614,7 +614,7 @@ def get_stats_activity(
         f"  AND ({_frag_cond})"
         " ),0))"
         " FROM flights f WHERE f.logon_time >= datetime('now', ? || ' days')"
-        " AND f.logoff_time IS NOT NULL AND f.duration_min > 5" + _merge_excl + " GROUP BY 1",
+        " AND f.logoff_time IS NOT NULL AND (f.distance_nm > 0.5 OR f.duration_min > 5)" + _merge_excl + " GROUP BY 1",
         (sql_fmt, f"-{days}"),
     ).fetchall()}
     st_dur = {r[0]: (r[1] or 0) for r in conn.execute(
@@ -691,10 +691,10 @@ def _nofp_geo_ok(
 
 
 def _nofp_fragment_ids(conn: sqlite3.Connection, days: int) -> set[int]:
-    """IDs von no-FP-Flügen (duration > 5 Min) die als Merge-Fragmente gelten.
+    """IDs von no-FP-Flügen mit Bewegung die als Merge-Fragmente gelten.
 
     Kriterien:
-    - Leerer DEP+ARR, logoff_time gesetzt, duration_min > 5
+    - Leerer DEP+ARR, logoff_time gesetzt, distance_nm > 0.5 oder duration_min > 5
     - Folgeflug desselben Callsigns mit FP innerhalb 5 Min
     - Erste GPS-Position innerhalb _GEO_MERGE_KM vom DEP des Folgeflugs
     """
@@ -703,11 +703,11 @@ def _nofp_fragment_ids(conn: sqlite3.Connection, days: int) -> set[int]:
         "SELECT f.id, f.cid, f.logon_time, f.logoff_time, f2.departure "
         "FROM flights f "
         "JOIN flights f2 ON f2.cid=f.cid AND f2.callsign=f.callsign "
-        "  AND f2.duration_min>5 "
+        "  AND (f2.distance_nm>0.5 OR f2.duration_min>5) "
         "  AND CAST((JULIANDAY(f2.logon_time)-JULIANDAY(f.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5 "
         "  AND (f2.departure!='' OR f2.arrival!='') "
         "WHERE f.departure='' AND f.arrival='' "
-        "  AND f.duration_min>5 AND f.logoff_time IS NOT NULL "
+        "  AND (f.distance_nm>0.5 OR f.duration_min>5) AND f.logoff_time IS NOT NULL "
         "  AND f.logon_time >= datetime('now', ? || ' days')",
         (f"-{days}",),
     ).fetchall()
