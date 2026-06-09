@@ -228,6 +228,10 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         conn.commit()
+        n = backfill_flight_distances(conn)
+        if n:
+            import logging as _log
+            _log.getLogger(__name__).info("distance_nm für %d Flüge nachberechnet", n)
     finally:
         conn.close()
 
@@ -283,6 +287,38 @@ def open_flight(
          alternate, deptime, enroute_time, fuel_time),
     )
     return cur.lastrowid  # type: ignore[return-value]
+
+
+def backfill_flight_distances(conn: sqlite3.Connection) -> int:
+    """Berechnet distance_nm für abgeschlossene Flüge nach, die noch 0 haben aber position_history besitzen."""
+    from app.geo import haversine as _haversine
+    # SELECT: [0]=id, [1]=cid, [2]=logon_time, [3]=logoff_time
+    flights = conn.execute(
+        "SELECT id, cid, logon_time, logoff_time FROM flights "
+        "WHERE distance_nm = 0 AND logoff_time IS NOT NULL"
+    ).fetchall()
+    updated = 0
+    for f in flights:
+        fid, cid, logon_time, logoff_time = f[0], f[1], f[2], f[3]
+        pos_rows = conn.execute(
+            "SELECT latitude, longitude FROM position_history "
+            "WHERE cid = ? AND ts >= ? AND ts <= ? AND latitude IS NOT NULL ORDER BY ts",
+            (cid, logon_time, logoff_time),
+        ).fetchall()
+        if len(pos_rows) < 2:
+            continue
+        dist_km = 0.0
+        for i in range(1, len(pos_rows)):
+            p0, p1 = pos_rows[i - 1], pos_rows[i]
+            if p0[0] and p0[1] and p1[0] and p1[1]:
+                dist_km += _haversine(p0[0], p0[1], p1[0], p1[1])
+        distance_nm = round(dist_km / 1.852)
+        if distance_nm > 0:
+            conn.execute("UPDATE flights SET distance_nm = ? WHERE id = ?", (distance_nm, fid))
+            updated += 1
+    if updated:
+        conn.commit()
+    return updated
 
 
 def close_flight(conn: sqlite3.Connection, flight_id: int, logoff_time: str) -> None:
