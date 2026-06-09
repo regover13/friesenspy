@@ -326,8 +326,8 @@ def close_stale_flights(conn: sqlite3.Connection, max_age_hours: int = 8) -> int
     closed = 0
     for fid, cid, logon_time in stale:
         last_pos = conn.execute(
-            "SELECT MAX(ts) FROM position_history WHERE cid = ? AND ts >= ?",
-            (cid, logon_time),
+            "SELECT MAX(ts) FROM position_history WHERE cid = ? AND ts >= ? AND ts < ?",
+            (cid, logon_time, cutoff),
         ).fetchone()[0]
         logoff_time = last_pos if last_pos else logon_time
         logon_dt = _parse_iso(logon_time)
