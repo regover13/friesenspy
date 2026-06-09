@@ -817,8 +817,12 @@ def merge_fragmented_flights(
             )
             if cs_match and ((curr_no_fp ^ nxt_no_fp) or same_fp):
                 try:
-                    gap = (_parse_iso(nxt['logon_time']) - _parse_iso(curr['logoff_time'])).total_seconds() / 60
-                    close = -2 <= gap <= gap_minutes
+                    curr_loff = curr.get('logoff_time')
+                    if not curr_loff:
+                        close = False  # aktiver Flug kann nicht als Vorgänger gemergt werden
+                    else:
+                        gap = (_parse_iso(nxt['logon_time']) - _parse_iso(curr_loff)).total_seconds() / 60
+                        close = -2 <= gap <= gap_minutes
                 except Exception:
                     close = False
                 # Geo-Check für no-FP-Merges: erste GPS-Position des Fragments muss
@@ -832,7 +836,10 @@ def merge_fragmented_flights(
                     fp = nxt if curr_no_fp else curr
                     merged = dict(fp)
                     merged['logon_time']   = min(t for t in [curr['logon_time'],  nxt['logon_time']]  if t)
-                    merged['logoff_time']  = max(t for t in [curr.get('logoff_time', ''), nxt.get('logoff_time', '')] if t)
+                    # Wenn nxt noch aktiv ist (logoff_time = None), bleibt der Merge ebenfalls aktiv
+                    _c_loff = curr.get('logoff_time')
+                    _n_loff = nxt.get('logoff_time')
+                    merged['logoff_time']  = max(_c_loff, _n_loff) if _c_loff and _n_loff else None
                     merged['duration_min'] = (curr.get('duration_min') or 0) + (nxt.get('duration_min') or 0)
                     merged['distance_nm']  = (curr.get('distance_nm')  or 0) + (nxt.get('distance_nm')  or 0)
                     result.append(merged)
