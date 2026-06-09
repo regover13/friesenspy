@@ -27,6 +27,7 @@ from app.database import (
     remove_live_position,
     save_position_history,
     save_prefile_sigs,
+    update_flight_plan,
     upsert_live_position,
     upsert_statsim_flights,
 )
@@ -250,8 +251,8 @@ class VatsimPoller:
         self.vapid_contact_email = vapid_contact_email
         self._scheduler: AsyncIOScheduler | None = None
         self._http_client: httpx.AsyncClient | None = None
-        # State: cid → flight_id (offene Flüge)
-        self._active_flights: dict[int, int] = {}
+        # State: cid → {"id": flight_id, "dep": departure, "arr": arrival}
+        self._active_flights: dict[int, dict] = {}
         # SSE broadcast queue: asyncio.Queue für Updates
         self.sse_queue: asyncio.Queue = asyncio.Queue()
         # Vollständige Prefile-Daten für die API (Liste von Dicts)
@@ -438,7 +439,11 @@ class VatsimPoller:
                         pos["groundspeed"],
                         pos["heading"],
                     )
-                    self._active_flights[cid] = flight_id
+                    self._active_flights[cid] = {
+                        "id": flight_id,
+                        "dep": pos["departure"] or "",
+                        "arr": pos["arrival"] or "",
+                    }
 
                     # Telegram alert (only when token + chat_id configured)
                     if self.telegram_token and self.telegram_chat_id:
@@ -505,11 +510,35 @@ class VatsimPoller:
                         pos["groundspeed"],
                         pos["heading"],
                     )
+                    # Flugplan-Änderung prüfen
+                    entry = self._active_flights[cid]
+                    new_dep = pos.get("departure") or ""
+                    new_arr = pos.get("arrival") or ""
+                    old_dep, old_arr = entry["dep"], entry["arr"]
+                    if (new_dep or new_arr) and (new_dep != old_dep or new_arr != old_arr):
+                        if not (old_dep or old_arr):
+                            # Kein alter Plan → Plan dem laufenden Flug zuweisen
+                            update_flight_plan(conn, entry["id"], new_dep, new_arr)
+                            entry["dep"], entry["arr"] = new_dep, new_arr
+                            logger.info("Flugplan nachgetragen CID %s: %s→%s", cid, new_dep, new_arr)
+                        else:
+                            # Alter Plan vorhanden → neues Flug-Segment öffnen
+                            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                            close_flight(conn, entry["id"], now_str)
+                            new_id = open_flight(
+                                conn, cid, pos["callsign"],
+                                pos.get("aircraft_short", ""), new_dep, new_arr, now_str,
+                            )
+                            self._active_flights[cid] = {"id": new_id, "dep": new_dep, "arr": new_arr}
+                            logger.info(
+                                "Flugplanwechsel CID %s: %s→%s → %s→%s",
+                                cid, old_dep, old_arr, new_dep, new_arr,
+                            )
 
                 # 2c. Pilots who went offline
                 logoff_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 for cid in went_offline:
-                    flight_id = self._active_flights[cid]
+                    flight_id = self._active_flights[cid]["id"]
                     close_flight(conn, flight_id, logoff_time)
                     remove_live_position(conn, cid)
                     del self._active_flights[cid]

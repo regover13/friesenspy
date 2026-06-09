@@ -283,6 +283,14 @@ def close_flight(conn: sqlite3.Connection, flight_id: int, logoff_time: str) -> 
     )
 
 
+def update_flight_plan(conn: sqlite3.Connection, flight_id: int, departure: str, arrival: str) -> None:
+    """Flugplan (DEP/ARR) eines laufenden Fluges nachträglich setzen."""
+    conn.execute(
+        "UPDATE flights SET departure=?, arrival=? WHERE id=?",
+        (departure, arrival, flight_id),
+    )
+
+
 def upsert_live_position(
     conn: sqlite3.Connection,
     cid: int,
