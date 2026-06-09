@@ -6,7 +6,7 @@ import html as _html
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from datetime import timezone as _timezone
 
 import httpx as _httpx
@@ -272,6 +272,18 @@ async def get_events(
             name_row = conn2.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
             name = name_row["name"] if name_row else ""
             # Segmentierung über flights-Tabelle (exakter als Zeitlücke)
+            # Fetch-End um 12h erweitern damit Merge-Fragmente mitgeladen werden;
+            # nach dem Merge wird auf das echte Fenster (logon_time <= end) gefiltert.
+            if end:
+                try:
+                    fetch_end = (
+                        datetime.fromisoformat(end.replace("Z", "+00:00"))
+                        + timedelta(hours=12)
+                    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+                except Exception:
+                    fetch_end = end
+            else:
+                fetch_end = "9999-12-31"
             flight_rows = conn2.execute(
                 """SELECT callsign, departure, arrival, aircraft_short,
                           logon_time, logoff_time, duration_min
@@ -281,13 +293,16 @@ async def get_events(
                      AND logon_time <= ?
                      AND logoff_time >= ?
                    ORDER BY logon_time""",
-                (cid, end or "9999-12-31", start or "0000-01-01"),
+                (cid, fetch_end, start or "0000-01-01"),
             ).fetchall()
             if flight_rows:
                 merged_rows = merge_fragmented_flights(
                     [dict(r, cid=cid) for r in flight_rows],
                     conn=conn2,
                 )
+                # Nur Flüge behalten, die innerhalb des Eventfensters GESTARTET sind
+                if end:
+                    merged_rows = [fr for fr in merged_rows if (fr.get("logon_time") or "") <= end]
                 for fr in merged_rows:
                     if (fr.get("duration_min") or 0) <= 5:
                         continue
