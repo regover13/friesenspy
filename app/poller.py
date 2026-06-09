@@ -28,11 +28,31 @@ from app.database import (
     save_position_history,
     save_prefile_sigs,
     upsert_live_position,
+    upsert_statsim_flights,
 )
 from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_position
 from app.alerts import format_online_message, send_telegram_alert
+from app.statsim import fetch_pilot_flights
 
 logger = logging.getLogger(__name__)
+
+
+async def _load_statsim_history(cid: int, api_key: str, db_path: str) -> None:
+    """Lädt 365-Tage-History von StatSim für einen neu erkannten Piloten."""
+    try:
+        async with httpx.AsyncClient() as client:
+            flights = await fetch_pilot_flights(client, cid, api_key, days=365)
+        for f in flights:
+            f["cid"] = cid
+        conn = get_connection(db_path)
+        try:
+            upsert_statsim_flights(conn, flights)
+            conn.commit()
+        finally:
+            conn.close()
+        logger.info("StatSim history loaded for new pilot CID %s (%d flights)", cid, len(flights))
+    except Exception as e:
+        logger.warning("StatSim history load failed for CID %s: %s", cid, type(e).__name__)
 
 
 async def send_web_push_notifications(
@@ -370,7 +390,12 @@ class VatsimPoller:
                 # 2a. Newly online pilots
                 for cid in newly_online:
                     pos = current[cid]
-                    ensure_pilot(conn, cid, pos["name"])
+                    is_new_pilot = ensure_pilot(conn, cid, pos["name"])
+                    if is_new_pilot and get_settings().STATSIM_API_KEY:
+                        asyncio.create_task(
+                            _load_statsim_history(cid, get_settings().STATSIM_API_KEY, self.db_path)
+                        )
+                        logger.info("Neuer Pilot CID %s — StatSim 365-Tage-Load gestartet", cid)
                     flight_id = open_flight(
                         conn,
                         cid,

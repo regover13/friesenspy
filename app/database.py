@@ -221,12 +221,13 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def ensure_pilot(conn: sqlite3.Connection, cid: int, name: str) -> None:
-    """Pilot in pilots-Tabelle eintragen falls noch nicht vorhanden (INSERT OR IGNORE)."""
+def ensure_pilot(conn: sqlite3.Connection, cid: int, name: str) -> bool:
+    """Pilot in pilots-Tabelle eintragen falls noch nicht vorhanden. Gibt True zurück wenn neu."""
     conn.execute(
         "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)",
         (cid, name, _now_utc()),
     )
+    return conn.execute("SELECT changes()").fetchone()[0] == 1
 
 
 def open_flight(
