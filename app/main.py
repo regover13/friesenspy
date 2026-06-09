@@ -34,7 +34,7 @@ from app.database import (
     upsert_push_subscription,
     upsert_statsim_flights,
 )
-from app.geo import filter_event_pilots, segment_into_flights
+from app.geo import filter_event_pilots, haversine, segment_into_flights
 from app.poller import VatsimPoller, create_poller
 from app.statsim import fetch_flight_track, fetch_pilot_flights
 
@@ -314,6 +314,22 @@ async def get_events(
                         "FROM position_history WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts",
                         (cid, lo, lf or "9999-12-31T23:59:59Z"),
                     ).fetchall()
+                    # Dauer und Strecke für aktive Flüge on-the-fly berechnen
+                    duration = fr.get("duration_min")
+                    dist = fr.get("distance_nm") or 0
+                    if not lf:
+                        try:
+                            logon_dt = datetime.fromisoformat(lo.replace("Z", "+00:00"))
+                            duration = max(0, int((datetime.now(_timezone.utc) - logon_dt).total_seconds() / 60))
+                        except Exception:
+                            pass
+                        if len(full_pos) >= 2:
+                            dist_km = sum(
+                                haversine(full_pos[i][0], full_pos[i][1], full_pos[i + 1][0], full_pos[i + 1][1])
+                                for i in range(len(full_pos) - 1)
+                                if full_pos[i][0] and full_pos[i][1] and full_pos[i + 1][0] and full_pos[i + 1][1]
+                            )
+                            dist = round(dist_km / 1.852)
                     flights.append({
                         "logon_time": lo,
                         "logoff_time": lf,
@@ -331,8 +347,8 @@ async def get_events(
                         "deptime": fr.get("deptime") or "",
                         "enroute_time": fr.get("enroute_time") or "",
                         "fuel_time": fr.get("fuel_time") or "",
-                        "duration_min": fr.get("duration_min"),
-                        "distance_nm": fr.get("distance_nm"),
+                        "duration_min": duration,
+                        "distance_nm": dist,
                         "positions": [dict(r) for r in full_pos],
                         "source": "friesenspy",
                     })
