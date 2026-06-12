@@ -2887,7 +2887,7 @@ function renderActivityChart(data, grouping) {
           pointHoverRadius: 5,
         },
         {
-          label: 'Ø Flugdauer (h)',
+          label: 'Ø Online-Zeit (h)',
           data: avgDurData,
           borderColor: '#D31141',
           backgroundColor: 'transparent',
@@ -3000,11 +3000,11 @@ function renderStatsSummary(stats, days) {
       </div>
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${avgHoursDay}</span>
-        <span class="stats-kpi-label">Ø Stunden / Tag</span>
+        <span class="stats-kpi-label">Ø Online-Std / Tag</span>
       </div>
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${avgDur}</span>
-        <span class="stats-kpi-label">Ø Flugdauer</span>
+        <span class="stats-kpi-label">Ø Online-Zeit</span>
       </div>
       <div class="stats-kpi-card" style="min-width:160px;cursor:pointer;" onclick="openPilotFlights(${best?.cid})">
         <span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(best?.name || '—')}</span>
