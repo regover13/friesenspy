@@ -560,7 +560,10 @@ def get_stats(
                   AND fx.logon_time >= datetime('now', ? || ' days')
                   AND fx.logoff_time IS NOT NULL
                   AND (fx.distance_nm > 0.5 OR fx.duration_min > 5)
-                  AND substr(fx.logon_time, 1, 16) = substr(sc_filt.logon_time, 1, 16)
+                  AND (substr(fx.logon_time, 1, 16) = substr(sc_filt.logon_time, 1, 16)
+                    OR (fx.departure=sc_filt.departure AND fx.arrival=sc_filt.arrival
+                        AND sc_filt.departure!='' AND sc_filt.arrival!=''
+                        AND CAST((JULIANDAY(fx.logon_time)-JULIANDAY(sc_filt.logon_time))*1440 AS INTEGER) BETWEEN 0 AND 10))
               ) THEN sc_filt.statsim_id
             END) AS st_count,
             MAX(f_filt.logon_time)             AS last_fs,
@@ -675,12 +678,16 @@ def get_stats_activity(
     if nofp_ids:
         _frag_cond += f" OR frag.id IN ({','.join(str(x) for x in nofp_ids)})"
 
-    # StatSim-Einträge deduplizieren gegen bereits in FriesenSpy vorhandene Flüge
+    # StatSim-Einträge deduplizieren gegen bereits in FriesenSpy vorhandene Flüge.
+    # Zwei Fälle: (1) exakte Minuten-Übereinstimmung; (2) gleiche Strecke und FS-Logon
+    # bis 10 Min nach StatSim (Planwechsel nach Connect → neuer FS-Record, gleicher StatSim-Eintrag).
     _dedup = (
         " AND NOT EXISTS ("
         "SELECT 1 FROM flights fx WHERE fx.cid = sc.cid"
         " AND fx.logoff_time IS NOT NULL AND (fx.distance_nm > 0.5 OR fx.duration_min > 5)"
-        " AND substr(fx.logon_time,1,16)=substr(sc.logon_time,1,16))"
+        " AND (substr(fx.logon_time,1,16)=substr(sc.logon_time,1,16)"
+        "  OR (fx.departure=sc.departure AND fx.arrival=sc.arrival AND sc.departure!='' AND sc.arrival!=''"
+        "   AND CAST((JULIANDAY(fx.logon_time)-JULIANDAY(sc.logon_time))*1440 AS INTEGER) BETWEEN 0 AND 10)))"
     )
 
     # Flugzahlen (Ghost ≤ 5 Min und Merge-Fragmente ausgeschlossen; StatSim dedupliziert)

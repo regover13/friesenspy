@@ -549,16 +549,32 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
     finally:
         conn.close()
 
+    def _to_dt(s: str | None) -> datetime | None:
+        try:
+            return datetime.fromisoformat((s or "")[:19].rstrip("Z") + "+00:00")
+        except Exception:
+            return None
+
     result: list[dict] = [{"source": "friesenspy", **f} for f in fs_flights]
     for f in statsim_flights:
         lt = (f.get("logon_time") or "")[:16]
-        # Deduplizieren: StatSim-Flug unterdrücken wenn sein logon_time innerhalb eines
-        # FriesenSpy-Fluges liegt (nötig nach Merge, wo logon_time auf früheren Wert gesetzt wird)
-        covered = any(
-            (fs.get("logon_time") or "")[:16] <= lt <= (fs.get("logoff_time") or "")[:16]
-            for fs in fs_flights
-            if fs.get("logon_time") and fs.get("logoff_time")
-        )
+        st_dt  = _to_dt(f.get("logon_time"))
+        st_dep = f.get("departure") or ""
+        st_arr = f.get("arrival")   or ""
+        covered = False
+        for fs in fs_flights:
+            if not (fs.get("logon_time") and fs.get("logoff_time")):
+                continue
+            # StatSim-Logon liegt innerhalb des FriesenSpy-Fensters
+            if fs["logon_time"][:16] <= lt <= fs["logoff_time"][:16]:
+                covered = True
+                break
+            # FriesenSpy startet bis 10 Min nach StatSim mit gleicher Strecke
+            if st_dep and st_arr and st_dep == (fs.get("departure") or "") and st_arr == (fs.get("arrival") or ""):
+                fs_dt = _to_dt(fs["logon_time"])
+                if st_dt and fs_dt and 0 <= (fs_dt - st_dt).total_seconds() <= 600:
+                    covered = True
+                    break
         if not covered:
             result.append({"source": "statsim", "id": None, **f})
     result.sort(key=lambda x: x.get("logon_time") or "", reverse=True)
