@@ -16,16 +16,15 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import (
+    canonicalize_flights,
     delete_push_subscription,
     get_all_position_history,
     get_calendar_events,
     get_connection,
     get_live_flight_track,
     get_live_positions,
-    get_pilot_flights_friesenspy,
     get_stats,
     get_stats_activity,
-    get_statsim_flights_for_pilot,
     get_statsim_last_fetched,
     get_statsim_positions,
     init_db,
@@ -291,6 +290,7 @@ async def get_events(
                           deptime, enroute_time, fuel_time
                    FROM flights
                    WHERE cid = ?
+                     AND superseded_by IS NULL
                      AND logon_time <= ?
                      AND (logoff_time IS NULL OR logoff_time >= ?)
                    ORDER BY logon_time""",
@@ -487,27 +487,8 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
     statsim_status = "no-key"
     try:
         display_days = days if days > 0 else 99999
-        _raw = get_pilot_flights_friesenspy(conn, cid, display_days)
-        _seen: set[tuple] = set()
-        _deduped: list[dict] = []
-        for _f in _raw:
-            _key = (_f.get("logon_time"), _f.get("departure") or "", _f.get("arrival") or "")
-            if _key not in _seen:
-                _seen.add(_key)
-                _deduped.append(_f)
-        fs_flights = [
-            f for f in merge_fragmented_flights(_deduped, conn=conn)
-            if (f.get("distance_nm") or 0) > 0.5 or (f.get("duration_min") or 0) > 5
-        ]
-        statsim_flights: list[dict] = []
 
         if settings.STATSIM_API_KEY:
-            # Immer gecachte Daten sofort zurückgeben
-            statsim_flights = [
-                f for f in get_statsim_flights_for_pilot(conn, cid, display_days)
-                if (f.get("duration_min") or 0) > 5
-            ]
-
             if days == 0:
                 # Force full refresh (365 Tage) — Cooldown 24 h
                 if cid in _full_history_fetching:
@@ -546,38 +527,24 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
                                 _fetch_statsim_background, cid, settings.STATSIM_API_KEY, settings.DB_PATH, False
                             )
                         statsim_status = "updating"
+
+        # Eine Wahrheit: kanonische (gemergte, deduplizierte) Flüge dieses Piloten.
+        # callsign_prefix="" → alle Callsigns des Piloten (auch Nicht-FRS, wie bisher).
+        start = (
+            datetime.now(_timezone.utc) - timedelta(days=display_days)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Gecachte StatSim-Daten immer einbeziehen (gültige Wahrheit, identisch zu /api/stats);
+        # nur der Hintergrund-Fetch oben hängt am API-Key.
+        result = canonicalize_flights(
+            conn,
+            cids=[cid],
+            callsign_prefix="",
+            start=start,
+            include_statsim=True,
+        )
     finally:
         conn.close()
 
-    def _to_dt(s: str | None) -> datetime | None:
-        try:
-            return datetime.fromisoformat((s or "")[:19].rstrip("Z") + "+00:00")
-        except Exception:
-            return None
-
-    result: list[dict] = [{"source": "friesenspy", **f} for f in fs_flights]
-    for f in statsim_flights:
-        lt = (f.get("logon_time") or "")[:16]
-        st_dt  = _to_dt(f.get("logon_time"))
-        st_dep = f.get("departure") or ""
-        st_arr = f.get("arrival")   or ""
-        covered = False
-        for fs in fs_flights:
-            if not (fs.get("logon_time") and fs.get("logoff_time")):
-                continue
-            # StatSim-Logon liegt innerhalb des FriesenSpy-Fensters
-            if fs["logon_time"][:16] <= lt <= fs["logoff_time"][:16]:
-                covered = True
-                break
-            # FriesenSpy startet bis 10 Min nach StatSim mit gleicher Strecke
-            if st_dep and st_arr and st_dep == (fs.get("departure") or "") and st_arr == (fs.get("arrival") or ""):
-                fs_dt = _to_dt(fs["logon_time"])
-                if st_dt and fs_dt and 0 <= (fs_dt - st_dt).total_seconds() <= 600:
-                    covered = True
-                    break
-        if not covered:
-            result.append({"source": "statsim", "id": None, **f})
-    result.sort(key=lambda x: x.get("logon_time") or "", reverse=True)
     return JSONResponse(content=result, headers={"X-StatSim-Status": statsim_status})
 
 

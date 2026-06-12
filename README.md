@@ -220,6 +220,8 @@ FriesenSpy kombiniert zwei Datenquellen:
 
 > FriesenSpy-Tracks enthalten dichtere Positionsdaten (15-Sekunden-Intervalle). StatSim dient als Rückfall für ältere Zeiträume oder bei Serverausfall.
 
+**Wie ein „Flug" bestimmt wird.** Eine VATSIM-Verbindung ist über `(CID, Logon-Zeit)` eindeutig — das ist der Schlüssel für einen Flug. Container-Neustarts oder doppelte Aufzeichnungen können nie mehr Duplikate erzeugen (struktureller Unique-Index). Ein **vorübergehender Reconnect** (z. B. kurzer Netzausfall) erzeugt technisch zwei Verbindungen, wird aber zu **einem** Flug zusammengeführt, solange Callsign und Flugplan passen und der Reconnect geografisch plausibel anschließt (ein 10-Minuten-Ausfall, bei dem der Sim weiterfliegt, wird korrekt als ein Flug gewertet). Die Disconnect-Lücke zählt nicht zur Flugzeit. Alle Ansichten (Statistik, Events, Piloten-Detail) berechnen Flugzahl und -dauer aus **einer** gemeinsamen Funktion — die Zahlen stimmen überall überein. Fehlerhafte Altdaten werden reversibel bereinigt (markiert, nicht gelöscht).
+
 ---
 
 ## Für Entwickler

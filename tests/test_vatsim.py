@@ -429,7 +429,7 @@ class TestPilotToPosition:
         expected_keys = {
             "cid", "name", "callsign", "aircraft", "aircraft_short",
             "departure", "arrival", "latitude", "longitude", "altitude",
-            "groundspeed", "heading", "logon_time",
+            "groundspeed", "heading", "logon_time", "last_updated",
             "flight_rules", "aircraft_icao", "alternate", "deptime",
             "cruise_altitude", "cruise_tas", "enroute_time", "fuel_time", "route", "remarks",
         }

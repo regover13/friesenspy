@@ -8,8 +8,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.database import (
+    canonicalize_flights,
     cleanup_old_history,
     close_flight,
+    consolidate_flights,
     ensure_pilot,
     get_all_position_history,
     get_connection,
@@ -40,6 +42,11 @@ def _make_conn() -> sqlite3.Connection:
     # Tabellen anlegen (get_connection macht kein init_db)
     from app.database import _DDL
     conn.executescript(_DDL)
+    # Partieller Unique-Index (in init_db erst nach Konsolidierung angelegt; hier frische DB)
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_flights_session "
+        "ON flights(cid, logon_time) WHERE superseded_by IS NULL"
+    )
     conn.commit()
     return conn
 
@@ -641,10 +648,25 @@ class TestMergeFragmentedFlights:
         result = merge_fragmented_flights([f1, f2])
         assert len(result) == 2
 
-    def test_no_merge_gap_too_large(self):
-        """Gleiche Route aber Gap > 5 Min → nicht mergen."""
+    def test_merge_same_fp_within_window(self):
+        """Gleiche Route, 14-Min-Lücke (z.B. Netzausfall) → ein Flug (same-FP-Fenster 30 Min)."""
         f1 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:00:00Z", "2026-06-06T08:06:00Z", 6)
         f2 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:20:00Z", "2026-06-06T09:00:00Z", 40)
+        result = merge_fragmented_flights([f1, f2])
+        assert len(result) == 1
+        assert result[0]["duration_min"] == 46
+
+    def test_no_merge_gap_too_large(self):
+        """Gleiche Route aber Gap > 30 Min → nicht mergen (außerhalb same-FP-Fenster)."""
+        f1 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:00:00Z", "2026-06-06T08:06:00Z", 6)
+        f2 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:40:00Z", "2026-06-06T09:20:00Z", 40)
+        result = merge_fragmented_flights([f1, f2])
+        assert len(result) == 2
+
+    def test_no_merge_nofp_gap_over_window(self):
+        """no-FP-Fragment + Folgeflug mit Gap > 15 Min → nicht mergen (no-FP-Fenster 15 Min)."""
+        f1 = self._flight("FRS153", "", "", "2026-06-06T08:00:00Z", "2026-06-06T08:02:00Z", 2)
+        f2 = self._flight("FRS153", "EDDN", "EDPH", "2026-06-06T08:20:00Z", "2026-06-06T08:55:00Z", 35)
         result = merge_fragmented_flights([f1, f2])
         assert len(result) == 2
 
@@ -654,3 +676,90 @@ class TestMergeFragmentedFlights:
         f2 = self._flight("FRS154", "EDDN", "EDPH", "2026-06-06T08:06:00Z", "2026-06-06T08:50:00Z", 44)
         result = merge_fragmented_flights([f1, f2])
         assert len(result) == 2
+
+    def test_no_merge_teleport_exceeds_budget(self):
+        """Gleiche Route, kleine Lücke, aber Positionen ~1000 km auseinander → Distanz-Budget
+        gesprengt → nicht mergen (mit conn/Positionsdaten)."""
+        conn = _make_conn()
+        ensure_pilot(conn, 999, "Tester")
+        conn.execute(
+            "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,groundspeed,heading,ts) "
+            "VALUES (999,'FRS9',50.0,11.0,5000,200,90,'2026-06-06T08:05:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,groundspeed,heading,ts) "
+            "VALUES (999,'FRS9',60.0,11.0,5000,200,90,'2026-06-06T08:10:00Z')"
+        )
+        conn.commit()
+        f1 = dict(self._flight("FRS9", "EDDN", "EDPH", "2026-06-06T08:00:00Z", "2026-06-06T08:06:00Z", 6), cid=999)
+        f2 = dict(self._flight("FRS9", "EDDN", "EDPH", "2026-06-06T08:08:00Z", "2026-06-06T08:10:00Z", 2), cid=999)
+        result = merge_fragmented_flights([f1, f2], conn=conn)
+        conn.close()
+        assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# consolidate_flights
+# ---------------------------------------------------------------------------
+
+class TestConsolidateFlights:
+    def test_exact_duplicates_superseded(self):
+        """Drei identische (cid+logon_time) Flüge → einer aktiv, zwei superseded."""
+        conn = _make_conn()
+        conn.execute("DROP INDEX IF EXISTS idx_flights_session")  # Dubletten erst möglich machen
+        ensure_pilot(conn, 1, "P")
+        for _ in range(3):
+            conn.execute(
+                "INSERT INTO flights (cid,callsign,departure,arrival,logon_time,logoff_time,"
+                "duration_min,distance_nm) VALUES "
+                "(1,'FRS1','EDDN','EDPH','2026-06-06T08:00:00Z','2026-06-06T09:00:00Z',60,100)"
+            )
+        conn.commit()
+        marked = consolidate_flights(conn)
+        active = conn.execute(
+            "SELECT COUNT(*) FROM flights WHERE superseded_by IS NULL"
+        ).fetchone()[0]
+        conn.close()
+        assert marked == 2
+        assert active == 1
+
+    def test_zombie_logoff_shrunk_to_last_position(self):
+        """Aufgeblähter Logoff wird auf die letzte Position gekürzt."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        conn.execute(
+            "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm) VALUES "
+            "(1,1,'FRS1','EDDN','EDPH','2026-06-06T08:00:00Z','2026-06-06T11:20:00Z',200,100)"
+        )
+        for ts in ("2026-06-06T08:05:00Z", "2026-06-06T08:40:00Z"):
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1,'FRS1',50.0,11.0,5000,200,90,?)",
+                (ts,),
+            )
+        conn.commit()
+        consolidate_flights(conn)
+        row = conn.execute("SELECT duration_min FROM flights WHERE id=1").fetchone()
+        conn.close()
+        assert row["duration_min"] == 40  # 08:00 → 08:40
+
+    def test_multiple_open_keeps_earliest(self):
+        """Mehrere offene Flüge je cid → frühester bleibt aktiv, Rest superseded."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        conn.execute(
+            "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time) "
+            "VALUES (1,1,'FRS1','EDDN','EDPH','2026-06-06T08:00:00Z',NULL)"
+        )
+        conn.execute(
+            "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time) "
+            "VALUES (2,1,'FRS1','EDDN','EDPH','2026-06-06T08:05:00Z',NULL)"
+        )
+        conn.commit()
+        consolidate_flights(conn)
+        active = conn.execute(
+            "SELECT id FROM flights WHERE superseded_by IS NULL"
+        ).fetchall()
+        conn.close()
+        assert [r["id"] for r in active] == [1]

@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS flights (
     alternate     TEXT,
     deptime       TEXT,
     enroute_time  TEXT,
-    fuel_time     TEXT
+    fuel_time     TEXT,
+    superseded_by INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS calendar_events (
@@ -159,6 +160,8 @@ _FLIGHTS_MIGRATIONS = [
     "ALTER TABLE flights ADD COLUMN deptime TEXT",
     "ALTER TABLE flights ADD COLUMN enroute_time TEXT",
     "ALTER TABLE flights ADD COLUMN fuel_time TEXT",
+    # superseded_by: NULL = aktiver Flug; sonst id des Behalt-Records (reversibler Dedup).
+    "ALTER TABLE flights ADD COLUMN superseded_by INTEGER",
 ]
 
 _CALENDAR_MIGRATIONS = [
@@ -228,14 +231,28 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         conn.commit()
+        import logging as _log
+        _logger = _log.getLogger(__name__)
         n = backfill_flight_distances(conn)
         if n:
-            import logging as _log
-            _log.getLogger(__name__).info("distance_nm für %d Flüge nachberechnet", n)
+            _logger.info("distance_nm für %d Flüge nachberechnet", n)
         m = close_stale_flights(conn)
         if m:
-            import logging as _log
-            _log.getLogger(__name__).info("Zombie-Flüge geschlossen: %d", m)
+            _logger.info("Zombie-Flüge geschlossen: %d", m)
+        # Reihenfolge zwingend: erst exakte Duplikate markieren + Zombie-Logoffs korrigieren,
+        # DANN den partiellen Unique-Index anlegen (sonst Constraint-Verletzung).
+        s = consolidate_flights(conn)
+        if s:
+            _logger.info("Flüge konsolidiert (superseded markiert): %d", s)
+        # Strukturelle Dedup-Sperre: pro (cid, logon_time) nur EIN aktiver Flug.
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_flights_session "
+                "ON flights(cid, logon_time) WHERE superseded_by IS NULL"
+            )
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            _logger.error("Partieller Unique-Index konnte nicht angelegt werden: %s", exc)
     finally:
         conn.close()
 
@@ -280,28 +297,29 @@ def open_flight(
 ) -> int:
     """Neuen Flug eröffnen, flight.id zurückgeben.
 
-    Gibt die ID eines bestehenden offenen Fluges zurück wenn bereits ein Eintrag
-    mit gleicher (cid, logon_time) ohne logoff_time existiert — verhindert Duplikate
-    bei Container-Neustarts während ein Pilot online ist.
+    Eine VATSIM-Verbindung ist eindeutig über (cid, logon_time) bestimmt. Der partielle
+    Unique-Index idx_flights_session erzwingt pro (cid, logon_time) genau einen aktiven
+    (superseded_by IS NULL) Flug. INSERT … ON CONFLICT DO NOTHING macht ein erneutes
+    Öffnen derselben Verbindung (z. B. nach Container-Neustart) zum strukturellen No-Op;
+    die bestehende id wird zurückgegeben.
     """
-    existing = conn.execute(
-        "SELECT id FROM flights WHERE cid = ? AND logon_time = ? AND logoff_time IS NULL",
-        (cid, logon_time),
-    ).fetchone()
-    if existing:
-        return existing[0]
-    cur = conn.execute(
+    conn.execute(
         """
         INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, logon_time,
                              route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao,
                              alternate, deptime, enroute_time, fuel_time)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(cid, logon_time) WHERE superseded_by IS NULL DO NOTHING
         """,
         (cid, callsign, aircraft_short, departure, arrival, logon_time,
          route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao,
          alternate, deptime, enroute_time, fuel_time),
     )
-    return cur.lastrowid  # type: ignore[return-value]
+    row = conn.execute(
+        "SELECT id FROM flights WHERE cid = ? AND logon_time = ? AND superseded_by IS NULL",
+        (cid, logon_time),
+    ).fetchone()
+    return row[0]  # type: ignore[return-value]
 
 
 def close_stale_flights(conn: sqlite3.Connection, max_age_hours: int = 8) -> int:
@@ -325,9 +343,17 @@ def close_stale_flights(conn: sqlite3.Connection, max_age_hours: int = 8) -> int
     log = _log.getLogger(__name__)
     closed = 0
     for fid, cid, logon_time in stale:
+        # Obere Schranke = Beginn der nächsten Session desselben Piloten (falls vorhanden),
+        # damit der Logoff niemals Positionen eines späteren Fluges greift (Zombie-Inflation).
+        next_logon = conn.execute(
+            "SELECT MIN(logon_time) FROM flights "
+            "WHERE cid = ? AND logon_time > ? AND superseded_by IS NULL",
+            (cid, logon_time),
+        ).fetchone()[0]
+        upper = min(next_logon, cutoff) if next_logon else cutoff
         last_pos = conn.execute(
             "SELECT MAX(ts) FROM position_history WHERE cid = ? AND ts >= ? AND ts < ?",
-            (cid, logon_time, cutoff),
+            (cid, logon_time, upper),
         ).fetchone()[0]
         logoff_time = last_pos if last_pos else logon_time
         logon_dt = _parse_iso(logon_time)
@@ -407,6 +433,133 @@ def close_flight(conn: sqlite3.Connection, flight_id: int, logoff_time: str) -> 
         "UPDATE flights SET logoff_time = ?, duration_min = ?, distance_nm = ? WHERE id = ?",
         (logoff_time, duration_min, distance_nm, flight_id),
     )
+
+
+def _gps_distance_nm(
+    conn: sqlite3.Connection, cid: int, logon_time: str, logoff_time: str
+) -> int:
+    """GPS-Distanz (nm) eines Fluges aus position_history (Haversine-Summe)."""
+    from app.geo import haversine as _haversine
+    pos_rows = conn.execute(
+        "SELECT latitude, longitude FROM position_history "
+        "WHERE cid = ? AND ts >= ? AND ts <= ? AND latitude IS NOT NULL ORDER BY ts",
+        (cid, logon_time, logoff_time),
+    ).fetchall()
+    dist_km = 0.0
+    for i in range(1, len(pos_rows)):
+        p0, p1 = pos_rows[i - 1], pos_rows[i]
+        if p0[0] and p0[1] and p1[0] and p1[1]:
+            dist_km += _haversine(p0[0], p0[1], p1[0], p1[1])
+    return round(dist_km / 1.852)
+
+
+def consolidate_flights(
+    conn: sqlite3.Connection, *, statsim_correct: bool = True, shrink_margin_min: int = 10
+) -> int:
+    """Reversibler Cleanup von Duplikaten und Zombie-Logoffs.
+
+    Schritte:
+      A) Mehrere OFFENE Flüge je cid → frühesten (echter Connection-Start) behalten,
+         spätere (Reopen-Artefakte) als superseded_by markieren.
+      B) Exakte Duplikate (gleiche cid+logon_time) → niedrigste id behalten, Rest superseden.
+      C) Zombie-Logoffs korrigieren: Logoff = letzte Position, gedeckelt auf die nächste
+         Session — nur anwenden, wenn es die Dauer um ≥ shrink_margin_min verkürzt (nie verlängern).
+      D) StatSim-Backstop: weiterhin grob unplausible FS-Dauern auf StatSim-Wert korrigieren.
+
+    Reversibel: `UPDATE flights SET superseded_by = NULL`. Gibt Anzahl neu markierter Zeilen zurück.
+    """
+    marked = 0
+
+    # A) Mehrere offene Flüge je cid
+    open_by_cid: dict[int, list[int]] = {}
+    for fid, cid in conn.execute(
+        "SELECT id, cid FROM flights "
+        "WHERE logoff_time IS NULL AND superseded_by IS NULL ORDER BY cid, logon_time"
+    ).fetchall():
+        open_by_cid.setdefault(cid, []).append(fid)
+    for cid, ids in open_by_cid.items():
+        if len(ids) <= 1:
+            continue
+        keep_id = ids[0]  # frühester logon
+        for fid in ids[1:]:
+            conn.execute("UPDATE flights SET superseded_by = ? WHERE id = ?", (keep_id, fid))
+            marked += 1
+
+    # B) Exakte Duplikate (cid + logon_time)
+    for cid, logon in conn.execute(
+        "SELECT cid, logon_time FROM flights WHERE superseded_by IS NULL "
+        "GROUP BY cid, logon_time HAVING COUNT(*) > 1"
+    ).fetchall():
+        # Keeper-Priorität: offener (Live-)Flug zuerst, sonst niedrigste id.
+        # Die Dauer entscheidet NICHT (Zombies sind aufgebläht) — Schritt C korrigiert den Logoff.
+        ids = [r[0] for r in conn.execute(
+            "SELECT id FROM flights WHERE cid=? AND logon_time=? AND superseded_by IS NULL "
+            "ORDER BY (logoff_time IS NULL) DESC, id ASC",
+            (cid, logon),
+        ).fetchall()]
+        keep_id = ids[0]
+        for fid in ids[1:]:
+            conn.execute("UPDATE flights SET superseded_by = ? WHERE id = ?", (keep_id, fid))
+            marked += 1
+
+    # C) Zombie-Logoffs gedeckelt korrigieren
+    for fid, cid, logon, logoff, dur in conn.execute(
+        "SELECT id, cid, logon_time, logoff_time, duration_min FROM flights "
+        "WHERE superseded_by IS NULL AND logoff_time IS NOT NULL"
+    ).fetchall():
+        next_logon = conn.execute(
+            "SELECT MIN(logon_time) FROM flights "
+            "WHERE cid=? AND logon_time>? AND superseded_by IS NULL",
+            (cid, logon),
+        ).fetchone()[0]
+        if next_logon:
+            last_pos = conn.execute(
+                "SELECT MAX(ts) FROM position_history WHERE cid=? AND ts>=? AND ts<?",
+                (cid, logon, next_logon),
+            ).fetchone()[0]
+        else:
+            last_pos = conn.execute(
+                "SELECT MAX(ts) FROM position_history WHERE cid=? AND ts>=? AND ts<=?",
+                (cid, logon, logoff),
+            ).fetchone()[0]
+        if not last_pos:
+            continue
+        new_logoff = min(last_pos, logoff)
+        new_dur = max(0, int((_parse_iso(new_logoff) - _parse_iso(logon)).total_seconds() / 60))
+        if (dur or 0) - new_dur >= shrink_margin_min:
+            new_dist = _gps_distance_nm(conn, cid, logon, new_logoff)
+            conn.execute(
+                "UPDATE flights SET logoff_time=?, duration_min=?, distance_nm=? WHERE id=?",
+                (new_logoff, new_dur, new_dist, fid),
+            )
+
+    # D) StatSim-Backstop für weiterhin grob unplausible Dauern
+    if statsim_correct:
+        for fid, cid, logon, dur in conn.execute(
+            "SELECT id, cid, logon_time, duration_min FROM flights "
+            "WHERE superseded_by IS NULL AND logoff_time IS NOT NULL"
+        ).fetchall():
+            sc = conn.execute(
+                "SELECT duration_min FROM statsim_cache "
+                "WHERE cid=? AND duration_min IS NOT NULL "
+                "AND substr(logon_time,1,16)=substr(?,1,16) LIMIT 1",
+                (cid, logon),
+            ).fetchone()
+            if not sc or sc[0] is None:
+                continue
+            st_dur = sc[0]
+            if st_dur > 0 and (dur or 0) > st_dur * 2 + 10:
+                new_logoff = (_parse_iso(logon) + timedelta(minutes=st_dur)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
+                new_dist = _gps_distance_nm(conn, cid, logon, new_logoff)
+                conn.execute(
+                    "UPDATE flights SET logoff_time=?, duration_min=?, distance_nm=? WHERE id=?",
+                    (new_logoff, st_dur, new_dist, fid),
+                )
+
+    conn.commit()
+    return marked
 
 
 def update_flight_plan(
@@ -523,115 +676,51 @@ def get_stats(
     """Letzter Flug + Anzahl FRS*-Flüge pro Pilot (FriesenSpy + StatSim-Cache).
 
     Alle Werte werden auf den gewählten Zeitraum (days) und den konfigurierten
-    Callsign-Prefix begrenzt. StatSim-Einträge ohne FRS*-Callsign werden nicht
-    gezählt (Piloten fliegen auch in anderen VAs).
+    Callsign-Prefix begrenzt. Aggregiert über canonicalize_flights — dieselbe Wahrheit
+    wie alle anderen Views (keine eigene Merge-/Dedup-Logik mehr).
     """
     prefix_pat = callsign_prefix + "%"
+    start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Merge-Fragmente aus fs_count ausschließen (gleiche Logik wie get_stats_activity)
-    nofp_ids = _nofp_fragment_ids(conn, days)
-    _same_fp_excl_filt = (
-        " AND NOT EXISTS ("
-        "SELECT 1 FROM flights f2"
-        " WHERE f2.cid=f_filt.cid AND f2.callsign=f_filt.callsign AND (f2.distance_nm>0.5 OR f2.duration_min>5)"
-        " AND CAST((JULIANDAY(f2.logon_time)-JULIANDAY(f_filt.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5"
-        " AND f_filt.departure!='' AND f2.departure=f_filt.departure AND f2.arrival=f_filt.arrival)"
-    )
-    _nofp_excl_filt = (
-        f" AND f_filt.id NOT IN ({','.join(str(x) for x in nofp_ids)})" if nofp_ids else ""
-    )
-    _merge_excl_filt = _same_fp_excl_filt + _nofp_excl_filt
+    flights = canonicalize_flights(conn, callsign_prefix=callsign_prefix, start=start)
 
-    rows = conn.execute(
-        f"""
-        SELECT
-            p.cid,
-            p.name,
-            COALESCE(
-                (SELECT lp.callsign FROM live_positions lp WHERE lp.cid = p.cid),
-                (SELECT f2.callsign FROM flights f2 WHERE f2.cid = p.cid
-                 ORDER BY f2.logon_time DESC LIMIT 1)
-            ) AS last_callsign,
-            COUNT(DISTINCT f_filt.id) AS fs_count,
-            COUNT(DISTINCT CASE
-              WHEN NOT EXISTS (
-                SELECT 1 FROM flights fx
-                WHERE fx.cid = p.cid
-                  AND fx.logon_time >= datetime('now', ? || ' days')
-                  AND fx.logoff_time IS NOT NULL
-                  AND (fx.distance_nm > 0.5 OR fx.duration_min > 5)
-                  AND (substr(fx.logon_time, 1, 16) = substr(sc_filt.logon_time, 1, 16)
-                    OR (fx.departure=sc_filt.departure AND fx.arrival=sc_filt.arrival
-                        AND sc_filt.departure!='' AND sc_filt.arrival!=''
-                        AND CAST((JULIANDAY(fx.logon_time)-JULIANDAY(sc_filt.logon_time))*1440 AS INTEGER) BETWEEN 0 AND 10))
-              ) THEN sc_filt.statsim_id
-            END) AS st_count,
-            MAX(f_filt.logon_time)             AS last_fs,
-            MAX(CASE WHEN sc_filt.logon_time != '' THEN sc_filt.logon_time END) AS last_st,
-            (SELECT COALESCE(SUM(duration_min), 0)
-             FROM flights
-             WHERE cid = p.cid
-               AND logon_time >= datetime('now', ? || ' days')
-               AND logoff_time IS NOT NULL
-               AND (distance_nm > 0.5 OR duration_min > 5)) AS fs_duration_min,
-            (SELECT COALESCE(SUM(
-               COALESCE(duration_min,
-                 CASE WHEN logoff_time IS NOT NULL AND logoff_time != ''
-                 THEN CAST((JULIANDAY(logoff_time) - JULIANDAY(logon_time)) * 1440 AS INTEGER)
-                 END)), 0)
-             FROM statsim_cache
-             WHERE cid = p.cid
-               AND logon_time >= datetime('now', ? || ' days')
-               AND logon_time != ''
-               AND callsign LIKE ?
-               AND duration_min > 5)        AS st_duration_min
-        FROM pilots p
-        LEFT JOIN flights f_filt
-               ON f_filt.cid = p.cid
-              AND f_filt.callsign LIKE ?
-              AND f_filt.logon_time >= datetime('now', ? || ' days')
-              AND f_filt.logoff_time IS NOT NULL
-              AND (f_filt.distance_nm > 0.5 OR f_filt.duration_min > 5){_merge_excl_filt}
-        LEFT JOIN statsim_cache sc_filt
-               ON sc_filt.cid = p.cid
-              AND sc_filt.logon_time >= datetime('now', ? || ' days')
-              AND sc_filt.logon_time != ''
-              AND sc_filt.callsign LIKE ?
-              AND sc_filt.duration_min > 5
-        WHERE f_filt.id IS NOT NULL
-           OR sc_filt.statsim_id IS NOT NULL
-           OR EXISTS (
-               SELECT 1 FROM flights fo
-               WHERE fo.cid = p.cid
-                 AND fo.logon_time >= datetime('now', ? || ' days')
-                 AND fo.logoff_time IS NULL
-           )
-        GROUP BY p.cid, p.name
-        """,
-        (
-            f"-{days}",    # st_count: fx.logon_time
-            f"-{days}",    # fs_duration_min: logon_time
-            f"-{days}",    # st_duration_min: logon_time
-            prefix_pat,    # st_duration_min: callsign LIKE
-            prefix_pat,    # f_filt join: callsign LIKE
-            f"-{days}",    # f_filt join: logon_time
-            f"-{days}",    # sc_filt join: logon_time
-            prefix_pat,    # sc_filt join: callsign LIKE
-            f"-{days}",    # WHERE EXISTS: logon_time
-        ),
-    ).fetchall()
+    agg: dict[int, dict] = {}
+    for f in flights:
+        cid = f["cid"]
+        a = agg.setdefault(cid, {"fs": 0, "st": 0, "dur": 0, "last": None, "last_cs": ""})
+        if f.get("source") == "statsim":
+            a["st"] += 1
+        else:
+            a["fs"] += 1
+        a["dur"] += f.get("duration_min") or 0
+        lt = f.get("logon_time") or ""
+        if lt and (a["last"] is None or lt > a["last"]):
+            a["last"] = lt
+            a["last_cs"] = f.get("callsign") or a["last_cs"]
+
+    # Piloten mit (nur) laufendem offenen Flug ergänzen (erscheinen mit 0 abgeschlossenen Flügen).
+    for row in conn.execute(
+        "SELECT DISTINCT cid FROM flights WHERE logoff_time IS NULL AND superseded_by IS NULL "
+        "AND callsign LIKE ? AND logon_time >= ?",
+        (prefix_pat, start),
+    ).fetchall():
+        agg.setdefault(row[0], {"fs": 0, "st": 0, "dur": 0, "last": None, "last_cs": ""})
+
     result = []
-    for r in rows:
-        last_flight = max(filter(None, [r["last_fs"], r["last_st"]]), default=None)
+    for cid, a in agg.items():
+        name_row = conn.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
+        name = name_row["name"] if name_row else ""
+        live = conn.execute("SELECT callsign FROM live_positions WHERE cid = ?", (cid,)).fetchone()
+        last_callsign = (live["callsign"] if live else None) or a["last_cs"] or ""
         result.append({
-            "cid": r["cid"],
-            "name": r["name"],
-            "last_callsign": r["last_callsign"] or "",
-            "fs_count": r["fs_count"],
-            "st_count": r["st_count"],
-            "flight_count": r["fs_count"] + r["st_count"],
-            "total_duration_min": (r["fs_duration_min"] or 0) + (r["st_duration_min"] or 0),
-            "last_flight": last_flight,
+            "cid": cid,
+            "name": name,
+            "last_callsign": last_callsign,
+            "fs_count": a["fs"],
+            "st_count": a["st"],
+            "flight_count": a["fs"] + a["st"],
+            "total_duration_min": a["dur"],
+            "last_flight": a["last"],
         })
     return result
 
@@ -645,115 +734,39 @@ def get_stats_activity(
     Gibt alle Perioden mit Lücken gefüllt (0-Einträge) zurück.
     Felder pro Periode: pilot_count, flight_count, total_duration_min.
     """
-    prefix_pat = callsign_prefix + "%"
     today = date.today()
-    start = today - timedelta(days=days)
+    start_date = today - timedelta(days=days)
+    grouping = "day" if days <= 93 else "month"
+    # Gleiches Zeitfenster wie get_stats (rollierend now−days), damit beide Views übereinstimmen.
+    start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    if days <= 93:
-        sql_fmt = "%Y-%m-%d"
-        grouping = "day"
-    else:
-        sql_fmt = "%Y-%m"
-        grouping = "month"
+    # Eine Wahrheit: über canonicalize_flights aggregieren (kein eigener Merge-/Dedup-Code mehr).
+    flights = canonicalize_flights(conn, callsign_prefix=callsign_prefix, start=start)
 
-    # Früheres Fragment eines gemergten Fluges ausschließen (spiegelt merge_fragmented_flights):
-    # gleicher Callsign + (gleicher nicht-leerer FP ODER aktueller ohne FP) + Nachfolger in 5 Min
-    # Geo-geprüfte no-FP-Fragment-IDs (Python, weil SQL kein Haversine kann)
-    nofp_ids = _nofp_fragment_ids(conn, days)
-    # same-FP-Fragmente: in SQL erkennbar (gleicher nicht-leerer Flugplan, Lücke ≤ 5 Min)
-    _same_fp_excl = (
-        " AND NOT EXISTS ("
-        "SELECT 1 FROM flights f2"
-        " WHERE f2.cid=f.cid AND f2.callsign=f.callsign AND (f2.distance_nm>0.5 OR f2.duration_min>5)"
-        " AND CAST((JULIANDAY(f2.logon_time)-JULIANDAY(f.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5"
-        " AND f.departure!='' AND f2.departure=f.departure AND f2.arrival=f.arrival)"
-    )
-    # no-FP-Fragmente: via Python-IDs (inkl. Geo-Check)
-    _nofp_excl = (
-        f" AND f.id NOT IN ({','.join(str(x) for x in nofp_ids)})" if nofp_ids else ""
-    )
-    _merge_excl = _same_fp_excl + _nofp_excl
-    # Fragment-Dauer-Bedingung für fs_dur: same-FP + geo-bestätigte no-FP-IDs
-    _frag_cond = "(frag.departure!='' AND f.departure=frag.departure AND f.arrival=frag.arrival)"
-    if nofp_ids:
-        _frag_cond += f" OR frag.id IN ({','.join(str(x) for x in nofp_ids)})"
+    def _period(lt: str) -> str:
+        return lt[:10] if grouping == "day" else lt[:7]
 
-    # StatSim-Einträge deduplizieren gegen bereits in FriesenSpy vorhandene Flüge.
-    # Zwei Fälle: (1) exakte Minuten-Übereinstimmung; (2) gleiche Strecke und FS-Logon
-    # bis 10 Min nach StatSim (Planwechsel nach Connect → neuer FS-Record, gleicher StatSim-Eintrag).
-    _dedup = (
-        " AND NOT EXISTS ("
-        "SELECT 1 FROM flights fx WHERE fx.cid = sc.cid"
-        " AND fx.logoff_time IS NOT NULL AND (fx.distance_nm > 0.5 OR fx.duration_min > 5)"
-        " AND (substr(fx.logon_time,1,16)=substr(sc.logon_time,1,16)"
-        "  OR (fx.departure=sc.departure AND fx.arrival=sc.arrival AND sc.departure!='' AND sc.arrival!=''"
-        "   AND CAST((JULIANDAY(fx.logon_time)-JULIANDAY(sc.logon_time))*1440 AS INTEGER) BETWEEN 0 AND 10)))"
-    )
-
-    # Flugzahlen (Ghost ≤ 5 Min und Merge-Fragmente ausgeschlossen; StatSim dedupliziert)
-    fs = {r[0]: r[1] for r in conn.execute(
-        "SELECT strftime(?, f.logon_time), COUNT(*) FROM flights f "
-        "WHERE f.logon_time >= datetime('now', ? || ' days') AND f.logoff_time IS NOT NULL "
-        "AND (f.distance_nm > 0.5 OR f.duration_min > 5)" + _merge_excl + " GROUP BY 1",
-        (sql_fmt, f"-{days}"),
-    ).fetchall()}
-    st = {r[0]: r[1] for r in conn.execute(
-        "SELECT strftime(?, sc.logon_time), COUNT(*) FROM statsim_cache sc "
-        "WHERE sc.logon_time >= datetime('now', ? || ' days') AND sc.logon_time != '' "
-        "AND sc.callsign LIKE ? AND sc.duration_min > 5" + _dedup + " GROUP BY 1",
-        (sql_fmt, f"-{days}", prefix_pat),
-    ).fetchall()}
-
-    # Unique Piloten pro Periode (Ghost-Flüge und Fragmente ausgeschlossen)
+    counts: dict[str, int] = {}
+    durs: dict[str, int] = {}
     pilots_by_period: dict[str, set] = {}
-    for p, cid in conn.execute(
-        "SELECT strftime(?, f.logon_time), f.cid FROM flights f "
-        "WHERE f.logon_time >= datetime('now', ? || ' days') AND f.logoff_time IS NOT NULL "
-        "AND (f.distance_nm > 0.5 OR f.duration_min > 5)" + _merge_excl,
-        (sql_fmt, f"-{days}"),
-    ).fetchall():
-        pilots_by_period.setdefault(p, set()).add(cid)
-    for p, cid in conn.execute(
-        "SELECT strftime(?, sc.logon_time), sc.cid FROM statsim_cache sc "
-        "WHERE sc.logon_time >= datetime('now', ? || ' days') AND sc.logon_time != '' "
-        "AND sc.callsign LIKE ? AND sc.duration_min > 5" + _dedup,
-        (sql_fmt, f"-{days}", prefix_pat),
-    ).fetchall():
-        pilots_by_period.setdefault(p, set()).add(cid)
-    pilot_count = {k: len(v) for k, v in pilots_by_period.items()}
-
-    # Flugdauer pro Periode: Hauptflug + Dauer gemergedter Fragmente (StatSim dedupliziert)
-    fs_dur = {r[0]: (r[1] or 0) for r in conn.execute(
-        "SELECT strftime(?, f.logon_time),"
-        " SUM(f.duration_min + COALESCE(("
-        "  SELECT SUM(frag.duration_min) FROM flights frag"
-        "  WHERE frag.cid=f.cid AND frag.callsign=f.callsign"
-        "  AND CAST((JULIANDAY(f.logon_time)-JULIANDAY(frag.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5"
-        f"  AND ({_frag_cond})"
-        " ),0))"
-        " FROM flights f WHERE f.logon_time >= datetime('now', ? || ' days')"
-        " AND f.logoff_time IS NOT NULL AND (f.distance_nm > 0.5 OR f.duration_min > 5)" + _merge_excl + " GROUP BY 1",
-        (sql_fmt, f"-{days}"),
-    ).fetchall()}
-    st_dur = {r[0]: (r[1] or 0) for r in conn.execute(
-        "SELECT strftime(?, sc.logon_time), SUM(COALESCE(sc.duration_min, "
-        "CASE WHEN sc.logoff_time IS NOT NULL AND sc.logoff_time != '' "
-        "THEN CAST((JULIANDAY(sc.logoff_time)-JULIANDAY(sc.logon_time))*1440 AS INTEGER) END)) "
-        "FROM statsim_cache sc WHERE sc.logon_time >= datetime('now', ? || ' days') "
-        "AND sc.logon_time != '' AND sc.callsign LIKE ? AND sc.duration_min > 5"
-        + _dedup + " GROUP BY 1",
-        (sql_fmt, f"-{days}", prefix_pat),
-    ).fetchall()}
+    for f in flights:
+        lt = f.get("logon_time") or ""
+        if not lt:
+            continue
+        p = _period(lt)
+        counts[p] = counts.get(p, 0) + 1
+        durs[p] = durs.get(p, 0) + (f.get("duration_min") or 0)
+        pilots_by_period.setdefault(p, set()).add(f["cid"])
 
     # Lücken füllen
     periods: list[str] = []
     if grouping == "day":
-        cur = start
+        cur = start_date
         while cur <= today:
-            periods.append(cur.strftime(sql_fmt))
+            periods.append(cur.strftime("%Y-%m-%d"))
             cur += timedelta(days=1)
     else:
-        y, m = start.year, start.month
+        y, m = start_date.year, start_date.month
         while date(y, m, 1) <= today:
             periods.append(f"{y:04d}-{m:02d}")
             m += 1
@@ -764,18 +777,21 @@ def get_stats_activity(
     data = [
         {
             "period": p,
-            "pilot_count": pilot_count.get(p, 0),
-            "flight_count": (fs.get(p, 0) or 0) + (st.get(p, 0) or 0),
-            "total_duration_min": (fs_dur.get(p, 0) or 0) + (st_dur.get(p, 0) or 0),
+            "pilot_count": len(pilots_by_period.get(p, set())),
+            "flight_count": counts.get(p, 0),
+            "total_duration_min": durs.get(p, 0),
         }
         for p in periods
     ]
     return {"grouping": grouping, "data": data}
 
 
-# Maximale Distanz (km) zwischen erster GPS-Position eines no-FP-Fragments
-# und dem Abflughafen des Folgeflugs, damit ein Merge erlaubt ist.
-_GEO_MERGE_KM = 10.0
+# Reconnect-Merge-Parameter (Teil 3): Gap-Fenster + Distanz-Budget.
+_RECONNECT_GAP_SAME_FP_MIN = 30   # gleicher Flugplan trägt die Beweislast → großzügig
+_RECONNECT_GAP_NO_FP_MIN = 15     # ein Segment ohne FP → enger + Geo-Budget
+_MAX_GS_KT = 600.0                # Deckelung der plausiblen Geschwindigkeit
+_BUDGET_MARGIN_NM = 10.0          # Toleranz auf das Distanz-Budget
+_DIRECTION_TOLERANCE_KM = 20.0    # Toleranz der Richtungsprüfung (Fortschritt Richtung Ziel)
 
 
 def _first_pos(
@@ -790,61 +806,52 @@ def _first_pos(
     return (row[0], row[1]) if row else None
 
 
-def _nofp_geo_ok(
-    conn: sqlite3.Connection, frag: dict, dep_icao: str
+def _last_pos(
+    conn: sqlite3.Connection, cid: int, logon: str, logoff: str
+) -> tuple[float, float] | None:
+    """Letzte GPS-Position eines Fluges aus position_history."""
+    row = conn.execute(
+        "SELECT latitude, longitude FROM position_history "
+        "WHERE cid=? AND ts>=? AND ts<=? ORDER BY ts DESC LIMIT 1",
+        (cid, logon, logoff),
+    ).fetchone()
+    return (row[0], row[1]) if row else None
+
+
+def _segments_continuous(
+    conn: sqlite3.Connection, earlier: dict, later: dict, gap_min: float
 ) -> bool:
-    """True wenn die erste GPS-Position des no-FP-Fragments innerhalb _GEO_MERGE_KM
-    vom Abflughafen des Folgeflugs liegt. Fallback True wenn keine Daten vorhanden."""
-    from app.geo import haversine, icao_to_coords
-    dep_coords = icao_to_coords(dep_icao)
-    if dep_coords is None:
-        return True
-    cid = frag.get("cid")
-    if cid is None:
-        return True
-    pos = _first_pos(conn, int(cid), frag.get("logon_time") or "", frag.get("logoff_time") or "")
-    if pos is None:
-        return True
-    return haversine(pos[0], pos[1], dep_coords[0], dep_coords[1]) <= _GEO_MERGE_KM
+    """True wenn 'later' geografisch plausibel an 'earlier' anschließt (Reconnect).
 
-
-def _nofp_fragment_ids(conn: sqlite3.Connection, days: int) -> set[int]:
-    """IDs von no-FP-Flügen mit Bewegung die als Merge-Fragmente gelten.
-
-    Kriterien:
-    - Leerer DEP+ARR, logoff_time gesetzt, distance_nm > 0.5 oder duration_min > 5
-    - Folgeflug desselben Callsigns mit FP innerhalb 5 Min
-    - Erste GPS-Position innerhalb _GEO_MERGE_KM vom DEP des Folgeflugs
+    Distanz-Budget: der Abstand zwischen der letzten Position von 'earlier' und der ersten
+    Position von 'later' darf höchstens das in der Lücke zurücklegbare Budget betragen
+    (gap × Vmax + Marge) — löst den Fall „Pilot 10 Min ohne Netz, Sim fliegt weiter".
+    Richtung: 'later' soll nicht deutlich weiter vom Ziel entfernt sein als das Ende von
+    'earlier'. Fallback True, wenn keine Positionsdaten vorhanden sind.
     """
     from app.geo import haversine, icao_to_coords
-    rows = conn.execute(
-        "SELECT f.id, f.cid, f.logon_time, f.logoff_time, f2.departure "
-        "FROM flights f "
-        "JOIN flights f2 ON f2.cid=f.cid AND f2.callsign=f.callsign "
-        "  AND (f2.distance_nm>0.5 OR f2.duration_min>5) "
-        "  AND CAST((JULIANDAY(f2.logon_time)-JULIANDAY(f.logoff_time))*1440 AS INTEGER) BETWEEN -2 AND 5 "
-        "  AND (f2.departure!='' OR f2.arrival!='') "
-        "WHERE f.departure='' AND f.arrival='' "
-        "  AND (f.distance_nm>0.5 OR f.duration_min>5) AND f.logoff_time IS NOT NULL "
-        "  AND f.logon_time >= datetime('now', ? || ' days')",
-        (f"-{days}",),
-    ).fetchall()
-    ids: set[int] = set()
-    for fid, cid, logon, logoff, dep in rows:
-        if not dep:
-            ids.add(fid)
-            continue
-        dep_coords = icao_to_coords(dep)
-        if dep_coords is None:
-            ids.add(fid)
-            continue
-        pos = _first_pos(conn, cid, logon, logoff)
-        if pos is None:
-            ids.add(fid)
-            continue
-        if haversine(pos[0], pos[1], dep_coords[0], dep_coords[1]) <= _GEO_MERGE_KM:
-            ids.add(fid)
-    return ids
+    cid = earlier.get("cid") or later.get("cid")
+    if cid is None:
+        return True
+    last = _last_pos(conn, int(cid), earlier.get("logon_time") or "", earlier.get("logoff_time") or "")
+    first = _first_pos(
+        conn, int(cid), later.get("logon_time") or "",
+        later.get("logoff_time") or "9999-12-31T23:59:59Z",
+    )
+    if last is None or first is None:
+        return True  # keine Daten → permissiv (Flugplan/Window haben bereits gefiltert)
+    gap_nm = haversine(last[0], last[1], first[0], first[1]) / 1.852
+    budget_nm = (max(gap_min, 0.0) / 60.0) * _MAX_GS_KT + _BUDGET_MARGIN_NM
+    if gap_nm > budget_nm:
+        return False
+    arr = later.get("arrival") or earlier.get("arrival") or ""
+    arr_coords = icao_to_coords(arr) if arr else None
+    if arr_coords is not None:
+        d_last = haversine(last[0], last[1], arr_coords[0], arr_coords[1])
+        d_first = haversine(first[0], first[1], arr_coords[0], arr_coords[1])
+        if d_first > d_last + _DIRECTION_TOLERANCE_KM:
+            return False  # 'later' weiter vom Ziel weg → kein Fortschritt → kein Reconnect
+    return True
 
 
 def merge_fragmented_flights(
@@ -857,7 +864,10 @@ def merge_fragmented_flights(
     Handles: pilot connects without FP (DEP/ARR empty), briefly disconnects,
     reconnects with FP. FriesenSpy records two entries; this merges them into one.
     Conditions: same callsign, exactly one has no DEP/ARR (or both same DEP+ARR),
-    gap ≤ gap_minutes. With conn: no-FP merges additional geo-check via _nofp_geo_ok.
+    and gap within the per-case window (same-FP ≤ 30 min, no-FP ≤ 15 min). With conn:
+    additional geo-continuity check (distance budget + direction) gegen das Nachbarsegment.
+    `gap_minutes` ist nur noch eine untere Schranke/Fallback — die Obergrenze richtet sich
+    nach Flugplan-Gleichheit (siehe _RECONNECT_GAP_*).
     """
     if len(flights) <= 1:
         return list(flights)
@@ -878,22 +888,21 @@ def merge_fragmented_flights(
                 and (curr.get('arrival')   or '') == (nxt.get('arrival')   or '')
             )
             if cs_match and ((curr_no_fp ^ nxt_no_fp) or same_fp):
-                try:
-                    curr_loff = curr.get('logoff_time')
-                    if not curr_loff:
-                        close = False  # aktiver Flug kann nicht als Vorgänger gemergt werden
-                    else:
+                close = False
+                gap = None
+                curr_loff = curr.get('logoff_time')
+                if curr_loff:
+                    try:
                         gap = (_parse_iso(nxt['logon_time']) - _parse_iso(curr_loff)).total_seconds() / 60
-                        close = -2 <= gap <= gap_minutes
-                except Exception:
-                    close = False
-                # Geo-Check für no-FP-Merges: erste GPS-Position des Fragments muss
-                # in der Nähe des Abflughafens des Folgeflugs liegen.
-                if close and conn is not None and (curr_no_fp ^ nxt_no_fp):
-                    frag = curr if curr_no_fp else nxt
-                    dep_icao = ((nxt if curr_no_fp else curr).get("departure") or "")
-                    if dep_icao:
-                        close = _nofp_geo_ok(conn, frag, dep_icao)
+                    except Exception:
+                        gap = None
+                if gap is not None:
+                    # Flugplan = Hauptsignal: gleicher FP → großzügiges Fenster; sonst enger.
+                    window = _RECONNECT_GAP_SAME_FP_MIN if same_fp else _RECONNECT_GAP_NO_FP_MIN
+                    close = -2 <= gap <= window
+                    # Geo-Kontinuität (Distanz-Budget + Richtung) gegen das Nachbarsegment.
+                    if close and conn is not None:
+                        close = _segments_continuous(conn, curr, nxt, gap)
                 if close:
                     fp = nxt if curr_no_fp else curr
                     merged = dict(fp)
@@ -909,6 +918,139 @@ def merge_fragmented_flights(
                     continue
         result.append(curr)
         i += 1
+    return result
+
+
+def _dedup_statsim_against_fs(
+    fs_flights: list[dict], statsim_flights: list[dict]
+) -> list[dict]:
+    """StatSim-Flüge zurückgeben, die NICHT bereits durch einen FriesenSpy-Flug abgedeckt sind.
+
+    Abgedeckt = (a) StatSim-Logon liegt innerhalb eines FS-Fensters [logon, logoff], oder
+    (b) gleiche Strecke und FS-Logon bis 10 Min nach StatSim (Flugplanwechsel nach Connect).
+    Eine Stelle für die Regel — von canonicalize_flights und den Endpoints gemeinsam genutzt.
+    """
+    def _to_dt(s: str | None) -> datetime | None:
+        try:
+            return datetime.fromisoformat((s or "")[:19].rstrip("Z") + "+00:00")
+        except Exception:
+            return None
+
+    out: list[dict] = []
+    for f in statsim_flights:
+        lt = (f.get("logon_time") or "")[:16]
+        st_dt = _to_dt(f.get("logon_time"))
+        st_dep = f.get("departure") or ""
+        st_arr = f.get("arrival") or ""
+        covered = False
+        for fs in fs_flights:
+            if not (fs.get("logon_time") and fs.get("logoff_time")):
+                continue
+            if fs["logon_time"][:16] <= lt <= fs["logoff_time"][:16]:
+                covered = True
+                break
+            if st_dep and st_arr and st_dep == (fs.get("departure") or "") and st_arr == (fs.get("arrival") or ""):
+                fs_dt = _to_dt(fs["logon_time"])
+                if st_dt and fs_dt and 0 <= (fs_dt - st_dt).total_seconds() <= 600:
+                    covered = True
+                    break
+        if not covered:
+            out.append(f)
+    return out
+
+
+def canonicalize_flights(
+    conn: sqlite3.Connection,
+    *,
+    cids: list[int] | None = None,
+    callsign_prefix: str = "FRS",
+    start: str | None = None,
+    end: str | None = None,
+    include_statsim: bool = True,
+) -> list[dict]:
+    """Die EINZIGE Wahrheit für „echte Flüge": gemergt, dedupliziert, ghost-gefiltert.
+
+    Liefert eine Liste von Flug-Dicts (absteigend nach logon_time) mit Feld `source`
+    ('friesenspy' | 'statsim'). FriesenSpy-Flüge: nur aktive (superseded_by IS NULL),
+    abgeschlossene; Fragmente/Reconnects via merge_fragmented_flights zusammengeführt;
+    Test-Connects (≤0.5 nm und ≤5 min) verworfen. StatSim: nur Einträge, die NICHT bereits
+    durch einen FriesenSpy-Flug abgedeckt sind.
+
+    Alle Views (Statistik, Events, Piloten-Detail) nutzen diese Funktion → identische Zahlen.
+    `start`/`end` filtern nach logon_time (ISO8601 UTC). `cids` schränkt auf Piloten ein.
+    """
+    prefix_pat = callsign_prefix + "%"
+
+    fs_where = ["superseded_by IS NULL", "logoff_time IS NOT NULL", "callsign LIKE ?"]
+    fs_params: list = [prefix_pat]
+    if cids:
+        fs_where.append("cid IN (%s)" % ",".join("?" * len(cids)))
+        fs_params += list(cids)
+    if start:
+        fs_where.append("logon_time >= ?")
+        fs_params.append(start)
+    if end:
+        fs_where.append("logon_time <= ?")
+        fs_params.append(end)
+    rows = conn.execute(
+        "SELECT id, cid, callsign, aircraft_short AS aircraft, departure, arrival, "
+        "logon_time, logoff_time, duration_min, distance_nm, route, remarks, "
+        "cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate, "
+        "deptime, enroute_time, fuel_time FROM flights WHERE "
+        + " AND ".join(fs_where) + " ORDER BY cid, logon_time",
+        fs_params,
+    ).fetchall()
+
+    raw_by_cid: dict[int, list[dict]] = {}
+    for r in rows:
+        raw_by_cid.setdefault(r["cid"], []).append(dict(r))
+
+    fs_by_cid: dict[int, list[dict]] = {}
+    result: list[dict] = []
+    for cid, flights in raw_by_cid.items():
+        # Defensive Dedup gegen exakte (logon,dep,arr)-Wiederholungen (superseded greift bereits).
+        seen: set[tuple] = set()
+        dd: list[dict] = []
+        for f in flights:
+            k = (f.get("logon_time"), f.get("departure") or "", f.get("arrival") or "")
+            if k not in seen:
+                seen.add(k)
+                dd.append(f)
+        merged = merge_fragmented_flights(dd, conn=conn)
+        merged = [
+            f for f in merged
+            if (f.get("distance_nm") or 0) > 0.5 or (f.get("duration_min") or 0) > 5
+        ]
+        fs_by_cid[cid] = merged
+        for f in merged:
+            result.append({"source": "friesenspy", **f})
+
+    if include_statsim:
+        sc_where = ["logon_time != ''", "logoff_time IS NOT NULL", "duration_min > 5", "callsign LIKE ?"]
+        sc_params: list = [prefix_pat]
+        if cids:
+            sc_where.append("cid IN (%s)" % ",".join("?" * len(cids)))
+            sc_params += list(cids)
+        if start:
+            sc_where.append("logon_time >= ?")
+            sc_params.append(start)
+        if end:
+            sc_where.append("logon_time <= ?")
+            sc_params.append(end)
+        sc_rows = conn.execute(
+            "SELECT statsim_id, cid, callsign, departure, arrival, aircraft, "
+            "logon_time, logoff_time, duration_min FROM statsim_cache WHERE "
+            + " AND ".join(sc_where) + " ORDER BY cid, logon_time",
+            sc_params,
+        ).fetchall()
+        sc_by_cid: dict[int, list[dict]] = {}
+        for r in sc_rows:
+            sc_by_cid.setdefault(r["cid"], []).append(dict(r))
+        for cid, st_flights in sc_by_cid.items():
+            for f in _dedup_statsim_against_fs(fs_by_cid.get(cid, []), st_flights):
+                result.append({"source": "statsim", "id": None, **f})
+
+    result.sort(key=lambda x: x.get("logon_time") or "", reverse=True)
     return result
 
 
@@ -1073,6 +1215,7 @@ def get_pilot_flights_friesenspy(
         FROM flights
         WHERE cid = ?
           AND logoff_time IS NOT NULL
+          AND superseded_by IS NULL
           AND logon_time >= datetime('now', ? || ' days')
         ORDER BY logon_time DESC
         """,

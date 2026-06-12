@@ -62,7 +62,7 @@ Flugaktivität über Zeit — für das Liniendiagramm im Statistiken-Tab.
 |-----------|-----|---------|--------------|
 | `days` | int | `30` | Zeitraum in Tagen |
 
-Gruppierung: ≤93 Tage → täglich (`%Y-%m-%d`), >93 Tage → monatlich (`%Y-%m`). Alle Perioden werden zurückgegeben (Lücken mit 0 aufgefüllt). Nur FRS*-Callsigns. Ghost-Flüge (`duration_min ≤ 5`) werden ausgeschlossen. StatSim-Einträge, die bereits in FriesenSpy vorhanden sind (gleiche CID + Minute), werden nicht doppelt gezählt.
+Gruppierung: ≤93 Tage → täglich (`%Y-%m-%d`), >93 Tage → monatlich (`%Y-%m`). Alle Perioden werden zurückgegeben (Lücken mit 0 aufgefüllt). Nur FRS*-Callsigns. Aggregiert über `canonicalize_flights` — dieselbe kanonische Flugmenge wie `/api/stats` und `/api/pilots/{cid}/flights`: Reconnects/Fragmente sind zu einem Flug gemergt, Ghost-Flüge (`distance_nm ≤ 0.5 AND duration_min ≤ 5`) ausgeschlossen, StatSim-Duplikate dedupliziert. Dadurch stimmen die Zahlen über alle Views überein.
 
 **Response**
 
@@ -111,13 +111,13 @@ Letzter Flug und Fluganzahl pro Pilot. Kombiniert FriesenSpy-Aufzeichnungen und 
 ]
 ```
 
-`flight_count` = `fs_count` + `st_count`. StatSim-Daten sind nur vorhanden wenn der Pilot zuvor im Statistiken-Tab angeklickt wurde (lazy cache).
+`flight_count` = `fs_count` + `st_count`. StatSim-Daten sind nur vorhanden wenn der Pilot zuvor im Statistiken-Tab angeklickt wurde (lazy cache). Zählung und Dauer kommen aus `canonicalize_flights` (Reconnect-Merge + Dedup), identisch zu `/api/stats/activity` und der Piloten-Detailansicht.
 
 ---
 
 ## GET /api/pilots/{cid}/flights
 
-Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und StatSim-Historik. Antwortet **sofort** mit gecachten Daten; StatSim-Update läuft im Hintergrund (letzter 31-Tage-Chunk). Response-Header `X-StatSim-Status: fresh | updating | no-key`.
+Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und StatSim-Historik über `canonicalize_flights` (Reconnect-Merge + StatSim-Dedup, identisch zu den Statistik-Endpoints). Antwortet **sofort** mit gecachten Daten; StatSim-Update läuft im Hintergrund (letzter 31-Tage-Chunk). Response-Header `X-StatSim-Status: fresh | updating | no-key`.
 
 **Query-Parameter**
 

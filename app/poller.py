@@ -277,6 +277,23 @@ class VatsimPoller:
         finally:
             conn.close()
         logger.info("Prefile-Signaturen geladen: %d Einträge", len(self._prefile_sigs or {}))
+        # Rehydration: offene Flüge aus der DB in den In-Memory-State laden, damit ein
+        # Container-Neustart laufende Flüge adoptiert (kein Reopen-Duplikat, kein Zombie).
+        # init_db() hat zuvor konsolidiert → ≤ 1 offener Flug je cid.
+        conn = get_connection(self.db_path)
+        try:
+            for r in conn.execute(
+                "SELECT cid, id, departure, arrival FROM flights "
+                "WHERE logoff_time IS NULL AND superseded_by IS NULL"
+            ).fetchall():
+                self._active_flights[r["cid"]] = {
+                    "id": r["id"], "dep": r["departure"] or "", "arr": r["arrival"] or "",
+                }
+        except Exception:
+            logger.exception("Fehler bei der Rehydration offener Flüge")
+        finally:
+            conn.close()
+        logger.info("Rehydration: %d offene Flüge adoptiert", len(self._active_flights))
         self._scheduler = AsyncIOScheduler()
         self._scheduler.add_job(
             self._poll_once,
@@ -526,8 +543,10 @@ class VatsimPoller:
                     new_arr = pos.get("arrival") or ""
                     old_dep, old_arr = entry["dep"], entry["arr"]
                     if (new_dep or new_arr) and (new_dep != old_dep or new_arr != old_arr):
-                        if not (old_dep or old_arr):
-                            # Kein alter Plan → Plan dem laufenden Flug zuweisen
+                        if not (old_dep or old_arr) or new_dep == old_dep:
+                            # Kein alter Plan ODER gleicher Abflughafen (Planänderung am SELBEN Leg
+                            # — z. B. ARR/Route korrigiert) → Plan im laufenden Flug aktualisieren,
+                            # kein Split. Eine Connection bleibt ein Flug.
                             update_flight_plan(
                                 conn, entry["id"], new_dep, new_arr,
                                 route=pos.get("route", ""),
@@ -539,14 +558,18 @@ class VatsimPoller:
                                 alternate=pos.get("alternate", ""),
                             )
                             entry["dep"], entry["arr"] = new_dep, new_arr
-                            logger.info("Flugplan nachgetragen CID %s: %s→%s", cid, new_dep, new_arr)
+                            logger.info("Flugplan aktualisiert CID %s: %s→%s", cid, new_dep, new_arr)
                         else:
-                            # Alter Plan vorhanden → neues Flug-Segment öffnen
-                            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                            close_flight(conn, entry["id"], now_str)
+                            # Abflughafen GEÄNDERT → echtes neues Leg (Pilot gelandet, neu gefiled,
+                            # selbe VATSIM-Verbindung). Altes Segment schließen, neues mit
+                            # eindeutiger Mikrosekunden-logon_time öffnen — kollidiert nie mit dem
+                            # partiellen Unique-Index, sodass beide Legs erhalten bleiben.
+                            now_close = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                            now_logon = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+                            close_flight(conn, entry["id"], now_close)
                             new_id = open_flight(
                                 conn, cid, pos["callsign"],
-                                pos.get("aircraft_short", ""), new_dep, new_arr, now_str,
+                                pos.get("aircraft_short", ""), new_dep, new_arr, now_logon,
                                 route=pos.get("route", ""),
                                 remarks=pos.get("remarks", ""),
                                 cruise_altitude=pos.get("cruise_altitude", ""),
@@ -557,15 +580,27 @@ class VatsimPoller:
                             )
                             self._active_flights[cid] = {"id": new_id, "dep": new_dep, "arr": new_arr}
                             logger.info(
-                                "Flugplanwechsel CID %s: %s→%s → %s→%s",
+                                "Neues Leg CID %s: %s→%s → %s→%s",
                                 cid, old_dep, old_arr, new_dep, new_arr,
                             )
 
                 # 2c. Pilots who went offline
-                logoff_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                # Logoff = letzter echter Beleg (letzte gespeicherte Position dieses Fluges),
+                # nicht die Wanduhr. Der Pilot verschwand diesen Poll; zuletzt gesehen wurde er
+                # beim vorigen Poll → kein Über-Zählen, keine Inflation.
+                now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 for cid in went_offline:
                     flight_id = self._active_flights[cid]["id"]
-                    close_flight(conn, flight_id, logoff_time)
+                    row = conn.execute(
+                        "SELECT logon_time FROM flights WHERE id = ?", (flight_id,)
+                    ).fetchone()
+                    last_pos = None
+                    if row is not None:
+                        last_pos = conn.execute(
+                            "SELECT MAX(ts) FROM position_history WHERE cid = ? AND ts >= ?",
+                            (cid, row[0]),
+                        ).fetchone()[0]
+                    close_flight(conn, flight_id, last_pos or now_str)
                     remove_live_position(conn, cid)
                     del self._active_flights[cid]
 

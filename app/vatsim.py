@@ -103,6 +103,7 @@ def pilot_to_position(pilot: dict) -> dict:
         "groundspeed": pilot.get("groundspeed", 0),
         "heading": pilot.get("heading", 0),
         "logon_time": pilot.get("logon_time", ""),
+        "last_updated": pilot.get("last_updated", ""),
         "flight_rules": flight_rules,
         "aircraft_icao": aircraft_icao,
         "alternate": alternate,
