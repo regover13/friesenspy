@@ -1523,7 +1523,7 @@ function _setupOFMAutoSwitch(map, layers) {
     // Manuell zurück zu OFM → Auto-Switch wieder einschalten
     autoMode = (e.layer === layers.ofm);
   });
-  map.on('zoomend', () => {
+  function applyAuto() {
     if (!autoMode) return;
     const z = map.getZoom();
     const inOFMRange = z >= SWITCH_LOW && z <= SWITCH_HIGH;
@@ -1538,7 +1538,12 @@ function _setupOFMAutoSwitch(map, layers) {
       layers.ofm.addTo(map);
       autoSwitching = false;
     }
-  });
+  }
+  map.on('zoomend', applyAuto);
+  // Auch direkt aufrufbar (z. B. nach fitBounds, das bei gleichbleibendem Zoom kein
+  // zoomend feuert). Bewusst KEINE Erstauswertung hier, um Live-/Track-Karte unverändert
+  // zu lassen — die Events-Karte ruft _applyOFMAuto nach fitBounds explizit auf.
+  map._applyOFMAuto = applyAuto;
 }
 
 let _openaipKey = '';
@@ -3343,6 +3348,9 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
   if (bounds.length > 0) {
     window._eventAllBounds = bounds;
     eventsMap.fitBounds(bounds, { padding: [40, 40] });
+    // fitBounds feuert bei gleichbleibendem Zoom kein zoomend → Auto-Switch explizit auswerten
+    // (z. B. Zoom 6 → Satellit statt leerer OFM-Karte).
+    if (eventsMap._applyOFMAuto) eventsMap._applyOFMAuto();
   }
 
   // StatSim-Tracks asynchron nachladen
