@@ -506,9 +506,10 @@ def consolidate_flights(
     """Reversibler Cleanup von Duplikaten und Zombie-Logoffs.
 
     Schritte:
-      A) Mehrere OFFENE Flüge je cid → frühesten (echter Connection-Start) behalten,
-         spätere (Reopen-Artefakte) als superseded_by markieren.
-      B) Exakte Duplikate (gleiche cid+logon_time) → niedrigste id behalten, Rest superseden.
+      A) Mehrere OFFENE Flüge je cid → nur die JÜNGSTE (aktuelle Live-Verbindung) offen lassen;
+         ältere offene Flüge sind beendete Verbindungen (verpasster Disconnect, z. B. Reconnect
+         über einen Neustart) → gedeckelt schließen (kein supersede).
+      B) Exakte Duplikate (gleiche cid+logon_time) → besten behalten, Rest superseden.
       C) Zombie-Logoffs korrigieren: Logoff = letzte Position, gedeckelt auf die nächste
          Session — nur anwenden, wenn es die Dauer um ≥ shrink_margin_min verkürzt (nie verlängern).
       D) StatSim-Backstop: weiterhin grob unplausible FS-Dauern auf StatSim-Wert korrigieren.
@@ -524,20 +525,41 @@ def consolidate_flights(
 
     marked = 0
 
-    # A) Mehrere offene Flüge je cid
-    open_by_cid: dict[int, list[int]] = {}
-    for fid, cid in conn.execute(
-        "SELECT id, cid FROM flights "
+    # A) Mehrere offene Flüge je cid: nur die JÜNGSTE (= aktuelle, live Verbindung) offen lassen.
+    # Ältere offene Flüge sind beendete Verbindungen (Disconnect verpasst — z. B. der Pilot hat
+    # sich nach einem Container-Neustart neu verbunden, während die alte Session offen blieb).
+    # Diese wie Zombies schließen: Logoff = letzte Position, gedeckelt auf die nächste Session.
+    # KEIN supersede — der Read-Time-Merge fügt sie bei Bedarf wieder zu einem Flug zusammen.
+    # Gleiche logon_time (echte Duplikate) bleibt Schritt B überlassen.
+    open_by_cid: dict[int, list[tuple]] = {}
+    for fid, cid, logon in conn.execute(
+        "SELECT id, cid, logon_time FROM flights "
         "WHERE logoff_time IS NULL AND superseded_by IS NULL ORDER BY cid, logon_time"
     ).fetchall():
-        open_by_cid.setdefault(cid, []).append(fid)
-    for cid, ids in open_by_cid.items():
-        if len(ids) <= 1:
+        open_by_cid.setdefault(cid, []).append((fid, logon))
+    for cid, rows in open_by_cid.items():
+        if len(rows) <= 1:
             continue
-        keep_id = ids[0]  # frühester logon
-        for fid in ids[1:]:
-            conn.execute("UPDATE flights SET superseded_by = ? WHERE id = ?", (keep_id, fid))
-            marked += 1
+        latest_logon = rows[-1][1]  # rows sind nach logon_time aufsteigend sortiert
+        for fid, logon in rows:
+            if logon == latest_logon:
+                continue  # jüngste Verbindung offen lassen (gleiche logon → Schritt B)
+            next_logon = conn.execute(
+                "SELECT MIN(logon_time) FROM flights "
+                "WHERE cid=? AND logon_time>? AND superseded_by IS NULL",
+                (cid, logon),
+            ).fetchone()[0]
+            if next_logon:
+                last_pos = conn.execute(
+                    "SELECT MAX(ts) FROM position_history WHERE cid=? AND ts>=? AND ts<?",
+                    (cid, logon, next_logon),
+                ).fetchone()[0]
+            else:
+                last_pos = conn.execute(
+                    "SELECT MAX(ts) FROM position_history WHERE cid=? AND ts>=?",
+                    (cid, logon),
+                ).fetchone()[0]
+            close_flight(conn, fid, last_pos or logon)
 
     # B) Exakte Duplikate (cid + logon_time)
     for cid, logon in conn.execute(

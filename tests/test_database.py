@@ -744,25 +744,38 @@ class TestConsolidateFlights:
         conn.close()
         assert row["duration_min"] == 40  # 08:00 → 08:40
 
-    def test_multiple_open_keeps_earliest(self):
-        """Mehrere offene Flüge je cid → frühester bleibt aktiv, Rest superseded."""
+    def test_multiple_open_keeps_latest_closes_older(self):
+        """Mehrere offene Flüge je cid (verschiedene Verbindungen) → jüngster bleibt offen,
+        ältere werden gedeckelt geschlossen (nicht superseded). Read-time-Merge fügt zusammen."""
         conn = _make_conn()
+        conn.execute("DROP INDEX IF EXISTS idx_flights_session")
         ensure_pilot(conn, 1, "P")
+        # Alte Session (08:00) + Reconnect (10:00), beide offen.
         conn.execute(
             "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time) "
-            "VALUES (1,1,'FRS1','EDDN','EDPH','2026-06-06T08:00:00Z',NULL)"
+            "VALUES (1,1,'FRS1','EDDH','EDDM','2026-06-06T08:00:00Z',NULL)"
         )
         conn.execute(
             "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time) "
-            "VALUES (2,1,'FRS1','EDDN','EDPH','2026-06-06T08:05:00Z',NULL)"
+            "VALUES (2,1,'FRS1','EDDH','EDDM','2026-06-06T10:00:00Z',NULL)"
         )
+        # Positionen der alten Session bis 08:40 (danach disconnect-Lücke bis Reconnect 10:00)
+        for ts in ("2026-06-06T08:05:00Z", "2026-06-06T08:40:00Z"):
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1,'FRS1',50.0,11.0,5000,200,90,?)",
+                (ts,),
+            )
         conn.commit()
         consolidate_flights(conn)
-        active = conn.execute(
-            "SELECT id FROM flights WHERE superseded_by IS NULL"
-        ).fetchall()
+        open_ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM flights WHERE logoff_time IS NULL AND superseded_by IS NULL"
+        ).fetchall()]
+        old = conn.execute("SELECT logoff_time, superseded_by FROM flights WHERE id=1").fetchone()
         conn.close()
-        assert [r["id"] for r in active] == [1]
+        assert open_ids == [2]                       # jüngster bleibt offen
+        assert old["logoff_time"] == "2026-06-06T08:40:00Z"  # ältere gedeckelt geschlossen
+        assert old["superseded_by"] is None          # nicht superseded
 
     def test_keeper_prefers_non_ghost(self):
         """Bei gleicher logon_time wird der echte Flug behalten, nicht der 0-Min-Ghost
