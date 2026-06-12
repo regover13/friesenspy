@@ -2272,11 +2272,17 @@ function openFlightDetailModal(d) {
   document.getElementById('fld-remarks-section').style.display = remarks ? '' : 'none';
   document.getElementById('fld-modal').classList.remove('hidden');
   document.addEventListener('keydown', _fldEscHandler);
+  const _urlP = getUrlState();
+  _urlP.set('fld', d.dt || '');
+  history.replaceState(null, '', '#' + _urlP.toString());
 }
 
 function closeFldModal() {
   document.getElementById('fld-modal').classList.add('hidden');
   document.removeEventListener('keydown', _fldEscHandler);
+  const _urlP = getUrlState();
+  _urlP.delete('fld');
+  history.replaceState(null, '', '#' + _urlP.toString());
 }
 
 function _fldEscHandler(e) {
@@ -3509,6 +3515,12 @@ async function initFromUrl() {
           btn?.dataset.callsign || '', btn?.dataset.dep || '', btn?.dataset.arr || '',
           btn?.dataset.logon || '', btn?.dataset.logoff || ''
         );
+      } else {
+        const fld = p.get('fld');
+        if (fld) {
+          const row = [...document.querySelectorAll('.flight-row')].find(r => r.dataset.dt === fld);
+          if (row) openFlightDetailModal(row.dataset);
+        }
       }
     }
   } else if (tab === 'live') {
@@ -3532,6 +3544,11 @@ async function initFromUrl() {
       if (start) document.getElementById('ev-start').value = start;
       if (end)   document.getElementById('ev-end').value   = end;
       await searchEvents();
+      const fld = p.get('fld');
+      if (fld) {
+        const cell = [...document.querySelectorAll('.ev-cs-cell')].find(c => c.dataset.dt === fld);
+        if (cell) openFlightDetailModal(cell.dataset);
+      }
     }
   }
 
