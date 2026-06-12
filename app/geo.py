@@ -6,6 +6,18 @@ import math
 import airportsdata
 
 
+# airportsdata.load("ICAO") parst eine ~28.000-Flughäfen-Datenbank und ist teuer.
+# Einmal modulweit cachen (deterministisch → identische Ergebnisse, nur einmal geladen).
+_AIRPORTS_ICAO: dict | None = None
+
+
+def _airports_icao() -> dict:
+    global _AIRPORTS_ICAO
+    if _AIRPORTS_ICAO is None:
+        _AIRPORTS_ICAO = airportsdata.load("ICAO")
+    return _AIRPORTS_ICAO
+
+
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Berechnet Großkreis-Distanz zwischen zwei Koordinaten in km.
@@ -53,7 +65,7 @@ def icao_to_coords(icao: str) -> tuple[float, float] | None:
     """
     icao_upper = icao.upper()
     try:
-        airports = airportsdata.load("ICAO")
+        airports = _airports_icao()
         airport = airports.get(icao_upper)
         if airport is None:
             return None
