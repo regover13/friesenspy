@@ -3289,6 +3289,11 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
     });
   }
 
+  // Container war bei der Map-Initialisierung evtl. noch 0px groß (gerade erst eingeblendet)
+  // → Leaflet-Größe neu berechnen, sonst lädt nur eine Kachel (weiße Karte).
+  eventsMap.invalidateSize();
+  setTimeout(() => eventsMap && eventsMap.invalidateSize(), 100);
+
   // Globale Map für Polylines (für Highlight-Funktion)
   window._eventPolylines = {};
   window._eventAllBounds = [];
