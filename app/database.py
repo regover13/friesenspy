@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS flights (
     deptime       TEXT,
     enroute_time  TEXT,
     fuel_time     TEXT,
-    superseded_by INTEGER
+    superseded_by INTEGER,
+    block_min     INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS calendar_events (
@@ -162,6 +163,8 @@ _FLIGHTS_MIGRATIONS = [
     "ALTER TABLE flights ADD COLUMN fuel_time TEXT",
     # superseded_by: NULL = aktiver Flug; sonst id des Behalt-Records (reversibler Dedup).
     "ALTER TABLE flights ADD COLUMN superseded_by INTEGER",
+    # block_min: Bewegungszeit (erste bis letzte Bewegung) aus position_history.
+    "ALTER TABLE flights ADD COLUMN block_min INTEGER",
 ]
 
 _CALENDAR_MIGRATIONS = [
@@ -236,12 +239,16 @@ def init_db(db_path: str) -> None:
         n = backfill_flight_distances(conn)
         if n:
             _logger.info("distance_nm für %d Flüge nachberechnet", n)
+        b = backfill_block_minutes(conn)
+        if b:
+            _logger.info("block_min für %d Flüge nachberechnet", b)
         m = close_stale_flights(conn)
         if m:
             _logger.info("Zombie-Flüge geschlossen: %d", m)
-        # Reihenfolge zwingend: erst exakte Duplikate markieren + Zombie-Logoffs korrigieren,
-        # DANN den partiellen Unique-Index anlegen (sonst Constraint-Verletzung).
+        # Reihenfolge zwingend: erst konsolidieren (resettet superseded_by, markiert Duplikate,
+        # korrigiert Zombie-Logoffs), DANN den partiellen Unique-Index anlegen.
         s = consolidate_flights(conn)
+        conn.commit()
         if s:
             _logger.info("Flüge konsolidiert (superseded markiert): %d", s)
         # Strukturelle Dedup-Sperre: pro (cid, logon_time) nur EIN aktiver Flug.
@@ -402,6 +409,22 @@ def backfill_flight_distances(conn: sqlite3.Connection) -> int:
     return updated
 
 
+def backfill_block_minutes(conn: sqlite3.Connection) -> int:
+    """Berechnet block_min für abgeschlossene Flüge nach, die noch keins haben (NULL)."""
+    flights = conn.execute(
+        "SELECT id, cid, logon_time, logoff_time FROM flights "
+        "WHERE block_min IS NULL AND logoff_time IS NOT NULL"
+    ).fetchall()
+    updated = 0
+    for fid, cid, logon_time, logoff_time in flights:
+        block_min = _block_minutes(conn, cid, logon_time, logoff_time)
+        conn.execute("UPDATE flights SET block_min = ? WHERE id = ?", (block_min, fid))
+        updated += 1
+    if updated:
+        conn.commit()
+    return updated
+
+
 def close_flight(conn: sqlite3.Connection, flight_id: int, logoff_time: str) -> None:
     """Flug abschließen: logoff_time setzen, duration_min und distance_nm berechnen."""
     row = conn.execute(
@@ -429,9 +452,11 @@ def close_flight(conn: sqlite3.Connection, flight_id: int, logoff_time: str) -> 
             dist_km += _haversine(p0[0], p0[1], p1[0], p1[1])
     distance_nm = round(dist_km / 1.852)
 
+    block_min = _block_minutes(conn, cid, logon_time, logoff_time)
+
     conn.execute(
-        "UPDATE flights SET logoff_time = ?, duration_min = ?, distance_nm = ? WHERE id = ?",
-        (logoff_time, duration_min, distance_nm, flight_id),
+        "UPDATE flights SET logoff_time = ?, duration_min = ?, distance_nm = ?, block_min = ? WHERE id = ?",
+        (logoff_time, duration_min, distance_nm, block_min, flight_id),
     )
 
 
@@ -453,6 +478,28 @@ def _gps_distance_nm(
     return round(dist_km / 1.852)
 
 
+# Groundspeed-Schwelle (kt), ab der ein Flugzeug als „in Bewegung" gilt (Block-Zeit).
+_BLOCK_GS_KT = 2
+
+
+def _block_minutes(
+    conn: sqlite3.Connection, cid: int, logon_time: str, logoff_time: str
+) -> int:
+    """Block-/Bewegungszeit (Minuten): erste bis letzte Position mit groundspeed > _BLOCK_GS_KT
+    innerhalb [logon, logoff]. Keine Bewegung → 0. Gate-to-gate inkl. Taxi."""
+    rows = conn.execute(
+        "SELECT MIN(ts), MAX(ts) FROM position_history "
+        "WHERE cid = ? AND ts >= ? AND ts <= ? AND groundspeed > ?",
+        (cid, logon_time, logoff_time, _BLOCK_GS_KT),
+    ).fetchone()
+    if not rows or not rows[0] or not rows[1]:
+        return 0
+    try:
+        return max(0, int((_parse_iso(rows[1]) - _parse_iso(rows[0])).total_seconds() / 60))
+    except Exception:
+        return 0
+
+
 def consolidate_flights(
     conn: sqlite3.Connection, *, statsim_correct: bool = True, shrink_margin_min: int = 10
 ) -> int:
@@ -466,8 +513,15 @@ def consolidate_flights(
          Session — nur anwenden, wenn es die Dauer um ≥ shrink_margin_min verkürzt (nie verlängern).
       D) StatSim-Backstop: weiterhin grob unplausible FS-Dauern auf StatSim-Wert korrigieren.
 
-    Reversibel: `UPDATE flights SET superseded_by = NULL`. Gibt Anzahl neu markierter Zeilen zurück.
+    Reversibel: `UPDATE flights SET superseded_by = NULL`. Gibt Anzahl markierter Zeilen zurück.
+    Committet NICHT selbst — der Aufrufer committet (ermöglicht Dry-Run via rollback).
     """
+    # Selbst-korrigierend: bei jedem Lauf von vorn. Index droppen (sonst verbieten die
+    # transienten Mehrfach-Aktiven den Reset) und superseded_by zurücksetzen. superseded_by
+    # wird ausschließlich hier gesetzt → der Reset ist sicher. Index legt der Aufrufer neu an.
+    conn.execute("DROP INDEX IF EXISTS idx_flights_session")
+    conn.execute("UPDATE flights SET superseded_by = NULL")
+
     marked = 0
 
     # A) Mehrere offene Flüge je cid
@@ -490,11 +544,14 @@ def consolidate_flights(
         "SELECT cid, logon_time FROM flights WHERE superseded_by IS NULL "
         "GROUP BY cid, logon_time HAVING COUNT(*) > 1"
     ).fetchall():
-        # Keeper-Priorität: offener (Live-)Flug zuerst, sonst niedrigste id.
-        # Die Dauer entscheidet NICHT (Zombies sind aufgebläht) — Schritt C korrigiert den Logoff.
+        # Keeper-Priorität: (1) Flug mit echtem Inhalt zuerst (Ghost mit gleicher logon_time
+        # nicht behalten — sonst verschwindet der echte Flug, vgl. FRS123/09.06), (2) offener
+        # (Live-)Flug zuerst, (3) niedrigste id. Die Dauer entscheidet NICHT (Zombies sind
+        # aufgebläht) — Schritt C korrigiert den Logoff.
         ids = [r[0] for r in conn.execute(
             "SELECT id FROM flights WHERE cid=? AND logon_time=? AND superseded_by IS NULL "
-            "ORDER BY (logoff_time IS NULL) DESC, id ASC",
+            "ORDER BY (distance_nm > 0.5 OR duration_min > 5) DESC, "
+            "(logoff_time IS NULL) DESC, id ASC",
             (cid, logon),
         ).fetchall()]
         keep_id = ids[0]
@@ -558,7 +615,6 @@ def consolidate_flights(
                     (new_logoff, st_dur, new_dist, fid),
                 )
 
-    conn.commit()
     return marked
 
 
@@ -913,6 +969,7 @@ def merge_fragmented_flights(
                     merged['logoff_time']  = max(_c_loff, _n_loff) if _c_loff and _n_loff else None
                     merged['duration_min'] = (curr.get('duration_min') or 0) + (nxt.get('duration_min') or 0)
                     merged['distance_nm']  = (curr.get('distance_nm')  or 0) + (nxt.get('distance_nm')  or 0)
+                    merged['block_min']    = (curr.get('block_min')    or 0) + (nxt.get('block_min')    or 0)
                     result.append(merged)
                     i += 2
                     continue
@@ -994,7 +1051,7 @@ def canonicalize_flights(
         fs_params.append(end)
     rows = conn.execute(
         "SELECT id, cid, callsign, aircraft_short AS aircraft, departure, arrival, "
-        "logon_time, logoff_time, duration_min, distance_nm, route, remarks, "
+        "logon_time, logoff_time, duration_min, distance_nm, block_min, route, remarks, "
         "cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate, "
         "deptime, enroute_time, fuel_time FROM flights WHERE "
         + " AND ".join(fs_where) + " ORDER BY cid, logon_time",
@@ -1209,7 +1266,7 @@ def get_pilot_flights_friesenspy(
     rows = conn.execute(
         """
         SELECT id, cid, callsign, aircraft_short AS aircraft,
-               departure, arrival, logon_time, logoff_time, duration_min, distance_nm,
+               departure, arrival, logon_time, logoff_time, duration_min, distance_nm, block_min,
                route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate,
                deptime, enroute_time, fuel_time
         FROM flights

@@ -140,7 +140,8 @@ Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und St
     "aircraft": "PA24",
     "logon_time": "2026-06-04T07:14:54Z",
     "logoff_time": "2026-06-04T08:05:22Z",
-    "duration_min": 51
+    "duration_min": 51,
+    "block_min": 44
   },
   {
     "source": "statsim",
@@ -159,6 +160,8 @@ Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und St
 ```
 
 Sortiert nach `logon_time` absteigend. FriesenSpy-Einträge haben Vorrang bei Zeitstempel-Überschneidungen (±5 Min).
+
+`duration_min` = **Online-Zeit** (Verbindung logon→logoff). `block_min` = **Block-Zeit** (Bewegung erste→letzte GPS-Bewegung, gate-to-gate) — nur bei FriesenSpy-Flügen vorhanden, StatSim/Altflüge haben `null`.
 
 ---
 

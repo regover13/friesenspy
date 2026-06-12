@@ -1431,7 +1431,8 @@
         <div class="fp-field"><span class="fp-label">Enroute</span><span class="fp-val" id="fld-enroute">—</span></div>
         <div class="fp-field"><span class="fp-label">Fuel Endurance</span><span class="fp-val" id="fld-fuel">—</span></div>
         <div class="fp-field"><span class="fp-label">Datum UTC</span><span class="fp-val" id="fld-dt">—</span></div>
-        <div class="fp-field"><span class="fp-label">Dauer</span><span class="fp-val" id="fld-dur">—</span></div>
+        <div class="fp-field"><span class="fp-label">Online-Zeit</span><span class="fp-val" id="fld-dur">—</span></div>
+        <div class="fp-field"><span class="fp-label">Block-Zeit</span><span class="fp-val" id="fld-block">—</span></div>
         <div class="fp-field"><span class="fp-label">Strecke</span><span class="fp-val" id="fld-dist">—</span></div>
         <div class="fp-field"><span class="fp-label">Altitude (ft)</span><span class="fp-val" id="fld-alt">—</span></div>
         <div class="fp-field"><span class="fp-label">TAS (kt)</span><span class="fp-val" id="fld-tas">—</span></div>
@@ -2266,6 +2267,7 @@ function openFlightDetailModal(d) {
   document.getElementById('fld-dt').textContent    = d.dt
     ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
   document.getElementById('fld-dur').textContent   = d.dur    || '—';
+  document.getElementById('fld-block').textContent = d.block  || '—';
   setOpt('fld-dist', d.dist);
   setOpt('fld-alt', d.alt);
   setOpt('fld-tas', d.tas);
@@ -2415,7 +2417,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   } else {
     html += `<div class="live-table-wrap"><table>
       <thead><tr>
-        <th>Callsign</th><th>Flugplan</th><th>Datum</th><th>Dauer</th><th>Strecke</th><th>Track</th><th>Quelle</th>
+        <th>Callsign</th><th>Flugplan</th><th>Datum</th><th>Online</th><th>Block</th><th>Strecke</th><th>Track</th><th>Quelle</th>
       </tr></thead><tbody>`;
 
     for (const f of flights) {
@@ -2425,6 +2427,9 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       const durMin = f.duration_min;
       const dur = durMin != null
         ? `${Math.floor(durMin / 60)}:${String(durMin % 60).padStart(2, '0')} h`
+        : '—';
+      const blk = f.block_min != null
+        ? `${Math.floor(f.block_min / 60)}:${String(f.block_min % 60).padStart(2, '0')} h`
         : '—';
       const distNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
       const dist = distNm != null && distNm > 0 ? `${distNm} nm` : '—';
@@ -2445,6 +2450,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
           data-fuel="${escHtml(f.fuel_time || '')}"
           data-dt="${escHtml(f.logon_time || '')}"
           data-dur="${escHtml(dur)}"
+          data-block="${escHtml(blk)}"
           data-dist="${escHtml(dist)}"
           data-alt="${escHtml(f.cruise_altitude || '')}"
           data-tas="${escHtml(f.cruise_tas || '')}"
@@ -2455,6 +2461,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
         <td class="td-route text-green">${escHtml(dep)} → ${escHtml(arr)}</td>
         <td class="mono">${escHtml(dt)}</td>
         <td class="mono">${dur}</td>
+        <td class="mono">${blk}</td>
         <td class="mono">${dist}</td>
         <td><span class="td-map-btn track-btn"
               data-track-id="${trackId}"
@@ -2985,7 +2992,7 @@ function renderStatsSummary(stats, days) {
       </div>
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${totalHours.toFixed(1)}</span>
-        <span class="stats-kpi-label">Geloggte Stunden</span>
+        <span class="stats-kpi-label">Online-Stunden</span>
       </div>
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${avgFlightsDay}</span>
@@ -3046,7 +3053,7 @@ function renderStatsTable(stats, days) {
             <th>Callsign</th>
             <th>Pilot</th>
             <th style="cursor:pointer;" onclick="_statsSortClick('flight_count')">Geloggte Flüge${_sortIndicator('flight_count')}</th>
-            <th style="cursor:pointer;" onclick="_statsSortClick('total_duration_min')">Flugzeit${_sortIndicator('total_duration_min')}</th>
+            <th style="cursor:pointer;" onclick="_statsSortClick('total_duration_min')">Online${_sortIndicator('total_duration_min')}</th>
             <th style="cursor:pointer;" onclick="_statsSortClick('last_flight')">Letzter Flug${_sortIndicator('last_flight')}</th>
           </tr>
         </thead>
@@ -3183,6 +3190,9 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
         const m = f.duration_min % 60;
         dur = `${h}:${String(m).padStart(2,'0')} h`;
       }
+      const blk = f.block_min != null
+        ? `${Math.floor(f.block_min / 60)}:${String(f.block_min % 60).padStart(2,'0')} h`
+        : '—';
       const route    = dep && arr ? `${escHtml(dep)} → ${escHtml(arr)}` : '—';
       const evDistNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
       const evDist   = evDistNm != null && evDistNm > 0 ? `${evDistNm} nm` : '—';
@@ -3208,6 +3218,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             data-fuel="${escHtml(f.fuel_time || '')}"
             data-dt="${escHtml(f.logon_time || '')}"
             data-dur="${escHtml(dur)}"
+            data-block="${escHtml(blk)}"
             data-dist="${escHtml(evDist)}"
             data-alt="${escHtml(f.cruise_altitude || '')}"
             data-tas="${escHtml(f.cruise_tas || '')}"
@@ -3216,6 +3227,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             data-src="${isSt ? 'StatSim' : 'FriesenSpy'}"
             title="Flugplan öffnen">${route}</td>
         <td class="mono">${dur}</td>
+        <td class="mono">${blk}</td>
         <td class="mono">${evDist}</td>
         <td class="mono text-label">${ptsCell}</td>
         <td>${mapCell}</td>
@@ -3239,7 +3251,8 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             <th style="text-align:left;">Datum</th>
             <th style="text-align:left;">Callsign</th>
             <th style="text-align:left;">Flugplan</th>
-            <th style="text-align:left;">Dauer</th>
+            <th style="text-align:left;">Online</th>
+            <th style="text-align:left;">Block</th>
             <th style="text-align:left;">Strecke</th>
             <th style="text-align:left;">Wegpunkte</th>
             <th style="text-align:left;">Karte</th>

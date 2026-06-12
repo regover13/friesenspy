@@ -41,12 +41,16 @@ def main(argv: list[str]) -> int:
 
     conn = get_connection(db_path)
     try:
-        # superseded_by sicherstellen (auf roher Prod-DB evtl. noch nicht vorhanden).
-        try:
-            conn.execute("ALTER TABLE flights ADD COLUMN superseded_by INTEGER")
-            conn.commit()
-        except Exception:
-            pass
+        # Spalten sicherstellen (auf roher Prod-DB evtl. noch nicht vorhanden).
+        for ddl in (
+            "ALTER TABLE flights ADD COLUMN superseded_by INTEGER",
+            "ALTER TABLE flights ADD COLUMN block_min INTEGER",
+        ):
+            try:
+                conn.execute(ddl)
+                conn.commit()
+            except Exception:
+                pass
 
         before = _report(conn)
         print(f"DB: {db_path}")
@@ -66,6 +70,7 @@ def main(argv: list[str]) -> int:
             return 0
 
         marked = consolidate_flights(conn)
+        conn.commit()
         after = _report(conn)
         print(f"{marked} Zeilen als superseded markiert.")
         print(f"NACHHER: offen(aktiv)={after['active_open']}  "
@@ -74,6 +79,12 @@ def main(argv: list[str]) -> int:
             print("WARNUNG: es verbleiben aktive Dubletten — partieller Unique-Index "
                   "kann nicht angelegt werden!", file=sys.stderr)
             return 1
+        # Partiellen Unique-Index neu anlegen (consolidate_flights droppt ihn am Anfang).
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_flights_session "
+            "ON flights(cid, logon_time) WHERE superseded_by IS NULL"
+        )
+        conn.commit()
         return 0
     finally:
         conn.close()

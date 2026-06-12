@@ -763,3 +763,105 @@ class TestConsolidateFlights:
         ).fetchall()
         conn.close()
         assert [r["id"] for r in active] == [1]
+
+    def test_keeper_prefers_non_ghost(self):
+        """Bei gleicher logon_time wird der echte Flug behalten, nicht der 0-Min-Ghost
+        (Regression FRS123/09.06.)."""
+        conn = _make_conn()
+        conn.execute("DROP INDEX IF EXISTS idx_flights_session")
+        ensure_pilot(conn, 1, "P")
+        # Ghost zuerst (niedrigere id), dann echter Flug — gleiche logon_time.
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm) VALUES "
+            "(1,'FRS1','','','2026-06-06T06:00:00Z','2026-06-06T06:00:00Z',0,0)"
+        )
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm) VALUES "
+            "(1,'FRS1','LDPV','LIPQ','2026-06-06T06:00:00Z','2026-06-06T07:30:00Z',90,200)"
+        )
+        conn.commit()
+        consolidate_flights(conn)
+        active = conn.execute(
+            "SELECT departure, arrival FROM flights WHERE superseded_by IS NULL"
+        ).fetchall()
+        conn.close()
+        assert len(active) == 1
+        assert (active[0]["departure"], active[0]["arrival"]) == ("LDPV", "LIPQ")
+
+    def test_consolidate_rerunnable(self):
+        """Zweiter consolidate-Lauf ist idempotent (Reset + Neuberechnung)."""
+        conn = _make_conn()
+        conn.execute("DROP INDEX IF EXISTS idx_flights_session")
+        ensure_pilot(conn, 1, "P")
+        for _ in range(2):
+            conn.execute(
+                "INSERT INTO flights (cid,callsign,departure,arrival,logon_time,logoff_time,"
+                "duration_min,distance_nm) VALUES "
+                "(1,'FRS1','EDDN','EDPH','2026-06-06T08:00:00Z','2026-06-06T09:00:00Z',60,100)"
+            )
+        conn.commit()
+        consolidate_flights(conn)
+        n1 = conn.execute("SELECT COUNT(*) FROM flights WHERE superseded_by IS NOT NULL").fetchone()[0]
+        consolidate_flights(conn)
+        n2 = conn.execute("SELECT COUNT(*) FROM flights WHERE superseded_by IS NOT NULL").fetchone()[0]
+        conn.close()
+        assert n1 == 1 and n2 == 1
+
+
+# ---------------------------------------------------------------------------
+# Block-Zeit (Bewegungszeit)
+# ---------------------------------------------------------------------------
+
+class TestBlockMinutes:
+    def test_close_flight_sets_block_min(self):
+        """block_min = Spanne erster bis letzter Bewegung (groundspeed > Schwelle)."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        fid = open_flight(conn, 1, "FRS1", "B738", "EDDH", "EDDM", "2026-06-06T08:00:00Z")
+        # 08:00 parkt (GS0), 08:05 rollt los, 08:45 letzte Bewegung, 08:55 wieder GS0
+        for ts, gs in [
+            ("2026-06-06T08:00:00Z", 0), ("2026-06-06T08:05:00Z", 150),
+            ("2026-06-06T08:45:00Z", 150), ("2026-06-06T08:55:00Z", 0),
+        ]:
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1,'FRS1',50.0,11.0,1000,?,90,?)",
+                (gs, ts),
+            )
+        conn.commit()
+        close_flight(conn, fid, "2026-06-06T09:00:00Z")
+        row = conn.execute("SELECT duration_min, block_min FROM flights WHERE id=?", (fid,)).fetchone()
+        conn.close()
+        assert row["duration_min"] == 60   # 08:00 → 09:00 (Online)
+        assert row["block_min"] == 40       # 08:05 → 08:45 (Bewegung)
+
+    def test_close_flight_block_zero_without_movement(self):
+        """Reiner Stand (GS immer 0) → block_min = 0."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        fid = open_flight(conn, 1, "FRS1", "B738", "EDDH", "EDDM", "2026-06-06T08:00:00Z")
+        for ts in ("2026-06-06T08:10:00Z", "2026-06-06T08:30:00Z"):
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1,'FRS1',50.0,11.0,0,0,0,?)",
+                (ts,),
+            )
+        conn.commit()
+        close_flight(conn, fid, "2026-06-06T09:00:00Z")
+        row = conn.execute("SELECT block_min FROM flights WHERE id=?", (fid,)).fetchone()
+        conn.close()
+        assert row["block_min"] == 0
+
+    def test_merge_sums_block_min(self):
+        """Gemergte Segmente summieren block_min."""
+        f1 = {"callsign": "FRS1", "departure": "EDDN", "arrival": "EDPH",
+              "logon_time": "2026-06-06T08:00:00Z", "logoff_time": "2026-06-06T08:30:00Z",
+              "duration_min": 30, "block_min": 25}
+        f2 = {"callsign": "FRS1", "departure": "EDDN", "arrival": "EDPH",
+              "logon_time": "2026-06-06T08:33:00Z", "logoff_time": "2026-06-06T09:00:00Z",
+              "duration_min": 27, "block_min": 20}
+        res = merge_fragmented_flights([f1, f2])
+        assert len(res) == 1
+        assert res[0]["block_min"] == 45
