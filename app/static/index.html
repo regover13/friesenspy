@@ -1540,10 +1540,11 @@ function _setupOFMAutoSwitch(map, layers) {
     }
   }
   map.on('zoomend', applyAuto);
-  // Auch direkt aufrufbar (z. B. nach fitBounds, das bei gleichbleibendem Zoom kein
-  // zoomend feuert). Bewusst KEINE Erstauswertung hier, um Live-/Track-Karte unverändert
-  // zu lassen — die Events-Karte ruft _applyOFMAuto nach fitBounds explizit auf.
+  // Auch direkt aufrufbar (z. B. nach fitBounds, das bei gleichbleibendem Zoom kein zoomend
+  // feuert) + sofortige Erstauswertung für ALLE Karten, damit der Switch unabhängig vom
+  // Einstiegsweg (auch Direktlink auf niedriger Zoomstufe) konsistent greift.
   map._applyOFMAuto = applyAuto;
+  applyAuto();
 }
 
 let _openaipKey = '';
