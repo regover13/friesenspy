@@ -428,6 +428,31 @@ class TestPollTeamspeak:
             await poller._poll_teamspeak()  # darf nicht werfen
 
     @pytest.mark.asyncio
+    async def test_empty_first_poll_does_not_freeze_baseline(self, tmp_path):
+        """fetch liefert [] (Fehler/leerer Kanal) beim ersten Poll → Baseline bleibt None,
+        damit der nächste erfolgreiche Poll keinen False-Positive-Push-Storm auslöst."""
+        from app.database import init_db, get_connection, upsert_push_subscription
+        db = str(tmp_path / "t.db"); init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_ts=True)
+        conn.commit(); conn.close()
+        poller = self._ts_poller(db)
+        sent = []
+        # 1. Poll: leeres Ergebnis (z. B. transienter ServerQuery-Fehler) → keine Baseline.
+        with patch("app.poller.fetch_channel_clients", new=AsyncMock(return_value=[])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+        assert poller._ts_last_seen is None
+        # 2. Poll: Server erreichbar, FRS1 anwesend → wird zur Baseline, KEIN Push.
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(return_value=[{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)
+        assert poller._ts_last_seen == {"FRS1"}
+        assert sent == []
+
+    @pytest.mark.asyncio
     async def test_ts_job_registered_when_enabled(self, tmp_path):
         from app.database import init_db
         db = str(tmp_path / "t.db"); init_db(db)

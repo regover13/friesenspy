@@ -372,6 +372,11 @@ class VatsimPoller:
             )
             logger.info("TS-Login-Benachrichtigung aktiv (Kanal %d, %ds)",
                         self.ts_notify_channel_id, self.ts_poll_interval)
+            if self.ts_notify_channel_id == 0:
+                logger.warning(
+                    "TS_NOTIFY_CHANNEL_ID=0 → serverweites FRS-Tracking "
+                    "(kein Kanal-Filter). Falls unbeabsichtigt, Zielkanal-ID setzen."
+                )
         self._scheduler.start()
 
     async def stop(self) -> None:
@@ -699,7 +704,14 @@ class VatsimPoller:
 
             if self._ts_last_seen is None:
                 # Erster Poll nach Start — Baseline setzen, keine Notifications.
-                self._ts_last_seen = current
+                # fetch_channel_clients() liefert bei ServerQuery-Fehlern [] (silent fail).
+                # Aus einem leeren Ergebnis KEINE Baseline einfrieren: sonst würden bei einem
+                # transienten Startup-Fehler beim nächsten erfolgreichen Poll alle anwesenden
+                # Mitglieder als "neu beigetreten" gewertet → False-Positive-Push-Storm.
+                # Ein echt leerer Kanal ist ebenfalls unkritisch (nichts zu diffen); der erste
+                # echte Beitritt wird dann korrekt zur Baseline.
+                if current:
+                    self._ts_last_seen = current
                 return
 
             newly_joined = current - self._ts_last_seen
