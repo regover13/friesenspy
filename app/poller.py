@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timezone
 
 import httpx
+from pywebpush import webpush, WebPushException
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import get_settings
@@ -56,40 +57,24 @@ async def _load_statsim_history(cid: int, api_key: str, db_path: str) -> None:
         logger.warning("StatSim history load failed for CID %s: %s", cid, type(e).__name__)
 
 
-async def send_web_push_notifications(
+async def send_web_push(
     vapid_private_key: str,
     vapid_contact_email: str,
     db_path: str,
-    pilot: dict,
+    subscriptions: list[dict],
+    payload: dict,
+    label: str = "WebPush",
 ) -> None:
-    """Push-Notification an alle passenden Subscriptions senden."""
+    """Ein Payload-Dict an eine fertige Subscription-Liste senden.
+
+    Generischer Kern: Retry (1×), 410-Endpoint-Cleanup, Silent-Fail-Logging.
+    Wird von der VATSIM- und der TS-Seite gemeinsam genutzt.
+    """
     import json as _json
-    from pywebpush import webpush, WebPushException
 
-    cid = pilot.get("cid")
-    callsign = pilot.get("callsign", "?")
-    dep = pilot.get("departure") or "?"
-    arr = pilot.get("arrival") or "?"
-    aircraft = pilot.get("aircraft_short") or pilot.get("aircraft") or ""
-
-    payload = {
-        "title": f"{callsign} ist online! ✈",
-        "body": f"{dep} → {arr}" + (f" · {aircraft}" if aircraft else ""),
-        "url": "/",
-    }
+    if not subscriptions:
+        return
     data = _json.dumps(payload)
-    # vapid_private_key ist ein base64url-kodierter roher EC-Skalar (32 Byte),
-    # direkt kompatibel mit py_vapid Vapid02.from_string().
-    # Achtung: pywebpush modifiziert das claims-Dict in-place (fügt aud/exp hinzu)
-    # → immer ein frisches Dict pro Aufruf erstellen (im Lambda).
-    conn = get_connection(db_path)
-    try:
-        subscriptions = get_push_subscriptions_for_pilot(conn, cid)
-    finally:
-        conn.close()
-
-    logger.info("WebPush: %s online, %d subscription(s)", callsign, len(subscriptions))
-
     loop = asyncio.get_event_loop()
     to_delete: list[str] = []
 
@@ -114,7 +99,7 @@ async def send_web_push_notifications(
                         ttl=3600,
                     ),
                 )
-                logger.info("WebPush sent OK: %s", sub["endpoint"][:40])
+                logger.info("%s sent OK: %s", label, sub["endpoint"][:40])
                 sent = True
                 break
             except WebPushException as exc:
@@ -132,16 +117,47 @@ async def send_web_push_notifications(
             sc = getattr(resp, "status_code", "?") if resp else type(last_exc).__name__
             cause = repr(getattr(last_exc, "__cause__", None))[:120]
             args = repr(getattr(last_exc, "args", ()))[:200]
-            logger.warning("WebPush failed for %s: %s cause=%s args=%s", callsign, sc, cause, args)
+            logger.warning("%s failed: %s cause=%s args=%s", label, sc, cause, args)
 
     if to_delete:
-        conn2 = get_connection(db_path)
+        conn = get_connection(db_path)
         try:
             for endpoint in to_delete:
-                delete_push_subscription(conn2, endpoint)
-            conn2.commit()
+                delete_push_subscription(conn, endpoint)
+            conn.commit()
         finally:
-            conn2.close()
+            conn.close()
+
+
+async def send_web_push_notifications(
+    vapid_private_key: str,
+    vapid_contact_email: str,
+    db_path: str,
+    pilot: dict,
+) -> None:
+    """Push-Notification an alle passenden Subscriptions senden."""
+    cid = pilot.get("cid")
+    callsign = pilot.get("callsign", "?")
+    dep = pilot.get("departure") or "?"
+    arr = pilot.get("arrival") or "?"
+    aircraft = pilot.get("aircraft_short") or pilot.get("aircraft") or ""
+
+    payload = {
+        "title": f"{callsign} ist online! ✈",
+        "body": f"{dep} → {arr}" + (f" · {aircraft}" if aircraft else ""),
+        "url": "/",
+    }
+    conn = get_connection(db_path)
+    try:
+        subscriptions = get_push_subscriptions_for_pilot(conn, cid)
+    finally:
+        conn.close()
+
+    logger.info("WebPush: %s online, %d subscription(s)", callsign, len(subscriptions))
+    await send_web_push(
+        vapid_private_key, vapid_contact_email, db_path,
+        subscriptions, payload, label=f"WebPush[{callsign}]",
+    )
 
 
 async def send_prefile_push_notifications(

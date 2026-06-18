@@ -307,3 +307,51 @@ class TestCreatePoller:
             assert poller.callsign_prefix == "FRS"
         finally:
             get_settings.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# send_web_push (generisch)
+# ---------------------------------------------------------------------------
+
+class TestSendWebPush:
+    @pytest.mark.asyncio
+    async def test_sends_to_each_subscription(self, tmp_path):
+        from app.database import init_db
+        from app.poller import send_web_push
+
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        subs = [
+            {"endpoint": "https://x/1", "p256dh": "p1", "auth": "a1"},
+            {"endpoint": "https://x/2", "p256dh": "p2", "auth": "a2"},
+        ]
+        calls = []
+        with patch("app.poller.webpush", new=MagicMock(side_effect=lambda **kw: calls.append(kw))):
+            await send_web_push("priv", "mailto:x@y.z", db, subs, {"title": "T", "body": "B"})
+        assert len(calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_410_deletes_subscription(self, tmp_path):
+        from app.database import init_db, get_connection, upsert_push_subscription
+        from app.poller import send_web_push
+        from pywebpush import WebPushException
+
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "https://x/gone", "p", "a")
+        conn.commit()
+        conn.close()
+
+        resp = MagicMock()
+        resp.status_code = 410
+        exc = WebPushException("gone")
+        exc.response = resp
+        subs = [{"endpoint": "https://x/gone", "p256dh": "p", "auth": "a"}]
+        with patch("app.poller.webpush", new=MagicMock(side_effect=exc)):
+            await send_web_push("priv", "mailto:x@y.z", db, subs, {"title": "T", "body": "B"})
+
+        conn = get_connection(db)
+        left = conn.execute("SELECT COUNT(*) FROM push_subscriptions").fetchone()[0]
+        conn.close()
+        assert left == 0
