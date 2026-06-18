@@ -909,21 +909,65 @@ class TestTsConsent:
         assert get_ts_consent(conn, "FRS1")["visibility"] == "nobody"
 
 
-class TestTsPushSubscriptions:
-    def test_only_opted_in(self, tmp_path):
-        from app.database import (
-            init_db, get_connection, upsert_push_subscription,
-            get_ts_push_subscriptions,
-        )
-        db = str(tmp_path / "t.db")
-        init_db(db)
-        conn = get_connection(db)
-        upsert_push_subscription(conn, "e1", "p1", "a1", notify_ts=True, ts_self_frs="FRS9")
-        upsert_push_subscription(conn, "e2", "p2", "a2", notify_ts=False)
+class TestCidForCallsign:
+    def test_from_flights(self):
+        from app.database import cid_for_callsign, open_flight, ensure_pilot
+        conn = _make_conn()
+        ensure_pilot(conn, 111, "Tobias")
+        open_flight(conn, 111, "FRS49", "C172", "EDDW", "EDDH", _ts_offset(0))
+        assert cid_for_callsign(conn, "FRS49") == 111
+        assert cid_for_callsign(conn, "frs49") == 111  # case-insensitiv
+
+    def test_unknown_returns_none(self):
+        from app.database import cid_for_callsign
+        conn = _make_conn()
+        assert cid_for_callsign(conn, "FRS999") is None
+        assert cid_for_callsign(conn, "") is None
+
+    def test_live_position_preferred(self):
+        from app.database import cid_for_callsign, open_flight, upsert_live_position, ensure_pilot
+        conn = _make_conn()
+        ensure_pilot(conn, 111, "Tobias")
+        open_flight(conn, 111, "FRS49", "C172", "EDDW", "EDDH", _ts_offset(-10))
+        upsert_live_position(conn, 222, "FRS49", "C172", "EDDW", "EDDH",
+                             53.0, 8.0, 1000, 120, 90, _ts_offset(0))
+        assert cid_for_callsign(conn, "FRS49") == 222
+
+
+class TestGetTsPushSubscriptions:
+    def _db(self, tmp_path):
+        from app.database import init_db, get_connection
+        db = str(tmp_path / "t.db"); init_db(db)
+        return get_connection(db)
+
+    def test_only_notify_ts(self, tmp_path):
+        from app.database import upsert_push_subscription, get_ts_push_subscriptions
+        conn = self._db(tmp_path)
+        upsert_push_subscription(conn, "e1", "p", "a", notify_ts=True)
+        upsert_push_subscription(conn, "e2", "p", "a", notify_ts=False)
         conn.commit()
-        subs = get_ts_push_subscriptions(conn)
-        assert [s["endpoint"] for s in subs] == ["e1"]
-        assert subs[0]["ts_self_frs"] == "FRS9"
+        assert [s["endpoint"] for s in get_ts_push_subscriptions(conn, 111)] == ["e1"]
+        conn.close()
+
+    def test_pilot_filter_membership(self, tmp_path):
+        from app.database import upsert_push_subscription, get_ts_push_subscriptions
+        conn = self._db(tmp_path)
+        upsert_push_subscription(conn, "all", "p", "a", notify_ts=True, pilot_filter=None)
+        upsert_push_subscription(conn, "only111", "p", "a", notify_ts=True, pilot_filter=[111])
+        upsert_push_subscription(conn, "only999", "p", "a", notify_ts=True, pilot_filter=[999])
+        conn.commit()
+        eps = {s["endpoint"] for s in get_ts_push_subscriptions(conn, 111)}
+        assert eps == {"all", "only111"}
+        conn.close()
+
+    def test_unknown_cid_only_all(self, tmp_path):
+        from app.database import upsert_push_subscription, get_ts_push_subscriptions
+        conn = self._db(tmp_path)
+        upsert_push_subscription(conn, "all", "p", "a", notify_ts=True, pilot_filter=None)
+        upsert_push_subscription(conn, "only111", "p", "a", notify_ts=True, pilot_filter=[111])
+        conn.commit()
+        # cid None (reine TS-Leute) → nur pilot_filter NULL
+        assert [s["endpoint"] for s in get_ts_push_subscriptions(conn, None)] == ["all"]
         conn.close()
 
     def test_migrations_idempotent(self, tmp_path):
