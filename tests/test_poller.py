@@ -388,7 +388,7 @@ class TestPollTeamspeak:
         from app.database import init_db, get_connection, upsert_push_subscription
         db = str(tmp_path / "t.db"); init_db(db)
         conn = get_connection(db)
-        upsert_push_subscription(conn, "e1", "p1", "a1", notify_ts=True, ts_self_frs="FRS9")
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_ts=True)
         conn.commit(); conn.close()
         poller = self._ts_poller(db)  # dwell=0 → sofort
         poller._ts_streak = {}  # Baseline bereits gesetzt (leer)
@@ -532,6 +532,72 @@ class TestPollTeamspeak:
                 await asyncio.sleep(0)
         assert sent == []
         assert "FRS1" not in poller._ts_streak
+
+    @pytest.mark.asyncio
+    async def test_ts_respects_pilot_filter_include(self, tmp_path):
+        """FRS mit bekannter CID: nur Subs, deren pilot_filter die CID enthält (oder NULL)."""
+        from app.database import (init_db, get_connection, upsert_push_subscription,
+                                  open_flight, ensure_pilot)
+        db = str(tmp_path / "t.db"); init_db(db)
+        conn = get_connection(db)
+        ensure_pilot(conn, 111, "Max")
+        open_flight(conn, 111, "FRS1", "C172", "EDDW", "EDDH", "2026-06-18T10:00:00Z")
+        upsert_push_subscription(conn, "all", "p", "a", notify_ts=True, pilot_filter=None)
+        upsert_push_subscription(conn, "only111", "p", "a", notify_ts=True, pilot_filter=[111])
+        upsert_push_subscription(conn, "only999", "p", "a", notify_ts=True, pilot_filter=[999])
+        conn.commit(); conn.close()
+        poller = self._ts_poller(db)
+        poller._ts_streak = {}
+        sent = []
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(return_value=[{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)
+        assert len(sent) == 1
+        recipients = sent[0][3]  # (vapid, email, db, recipients, payload)
+        assert {r["endpoint"] for r in recipients} == {"all", "only111"}
+
+    @pytest.mark.asyncio
+    async def test_ts_unknown_frs_only_all(self, tmp_path):
+        """Reine TS-FRS ohne CID: nur pilot_filter NULL bekommt den Push."""
+        from app.database import init_db, get_connection, upsert_push_subscription
+        db = str(tmp_path / "t.db"); init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "all", "p", "a", notify_ts=True, pilot_filter=None)
+        upsert_push_subscription(conn, "only111", "p", "a", notify_ts=True, pilot_filter=[111])
+        conn.commit(); conn.close()
+        poller = self._ts_poller(db)
+        poller._ts_streak = {}
+        sent = []
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(return_value=[{"frs": "FRS9", "nick": "Gast/FRS9", "cid": 0}])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)
+        assert len(sent) == 1
+        assert {r["endpoint"] for r in sent[0][3]} == {"all"}
+
+    @pytest.mark.asyncio
+    async def test_ts_consent_nobody_suppresses(self, tmp_path):
+        from app.database import (init_db, get_connection, upsert_push_subscription,
+                                  upsert_ts_consent, open_flight, ensure_pilot)
+        db = str(tmp_path / "t.db"); init_db(db)
+        conn = get_connection(db)
+        ensure_pilot(conn, 111, "Max")
+        open_flight(conn, 111, "FRS1", "C172", "EDDW", "EDDH", "2026-06-18T10:00:00Z")
+        upsert_push_subscription(conn, "all", "p", "a", notify_ts=True, pilot_filter=None)
+        upsert_ts_consent(conn, "FRS1", "nobody", None)
+        conn.commit(); conn.close()
+        poller = self._ts_poller(db)
+        poller._ts_streak = {}
+        sent = []
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(return_value=[{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)
+        assert sent == []
 
     @pytest.mark.asyncio
     async def test_ts_job_registered_when_enabled(self, tmp_path):

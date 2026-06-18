@@ -7,16 +7,20 @@ from app.database import init_db, get_connection, get_ts_consent
 from manage_ts_consent import main
 
 
-def test_set_then_get(tmp_path, capsys):
+def test_set_everyone(tmp_path):
     db = str(tmp_path / "t.db")
     init_db(db)
-    rc = main(["--db", db, "set", "FRS135", "allowlist", "--allow", "FRS2", "FRS7"])
-    assert rc == 0
+    assert main(["--db", db, "set", "FRS135", "everyone"]) == 0
     conn = get_connection(db)
-    row = get_ts_consent(conn, "FRS135")
+    assert get_ts_consent(conn, "FRS135")["visibility"] == "everyone"
     conn.close()
-    assert row["visibility"] == "allowlist"
-    assert row["allowlist"] == ["FRS2", "FRS7"]
+
+
+def test_allowlist_rejected(tmp_path):
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    with pytest.raises(SystemExit):
+        main(["--db", db, "set", "FRS135", "allowlist"])
 
 
 def test_set_nobody(tmp_path):

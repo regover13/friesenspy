@@ -5,7 +5,7 @@ Seedet/zeigt Einwilligungen ohne Hand-SQL. Kein Web-UI (spec-konform).
 
 Beispiele:
   python manage_ts_consent.py set FRS135 nobody
-  python manage_ts_consent.py set FRS135 allowlist --allow FRS2 FRS7
+  python manage_ts_consent.py set FRS135 everyone
   python manage_ts_consent.py get FRS135
   python manage_ts_consent.py list
   python manage_ts_consent.py delete FRS135
@@ -18,7 +18,7 @@ import sys
 from app.config import get_settings
 from app.database import get_connection, get_ts_consent, upsert_ts_consent
 
-_VISIBILITIES = ("everyone", "nobody", "allowlist")
+_VISIBILITIES = ("everyone", "nobody")
 
 
 def _db_path(args: argparse.Namespace) -> str:
@@ -33,8 +33,6 @@ def main(argv: list[str] | None = None) -> int:
     p_set = sub.add_parser("set", help="Einwilligung setzen")
     p_set.add_argument("frs")
     p_set.add_argument("visibility", choices=_VISIBILITIES)
-    p_set.add_argument("--allow", nargs="*", default=None,
-                       help="Empfänger-FRS für visibility=allowlist")
 
     p_get = sub.add_parser("get", help="Einwilligung einer FRS anzeigen")
     p_get.add_argument("frs")
@@ -48,11 +46,9 @@ def main(argv: list[str] | None = None) -> int:
     conn = get_connection(_db_path(args))
     try:
         if args.cmd == "set":
-            allow = args.allow if args.visibility == "allowlist" else None
-            upsert_ts_consent(conn, args.frs, args.visibility, allow)
+            upsert_ts_consent(conn, args.frs, args.visibility, None)
             conn.commit()
-            print(f"OK: {args.frs} → {args.visibility}"
-                  + (f" {allow}" if allow else ""))
+            print(f"OK: {args.frs} → {args.visibility}")
         elif args.cmd == "get":
             row = get_ts_consent(conn, args.frs)
             print(row if row else f"{args.frs}: kein Eintrag (Default 'everyone')")

@@ -1468,13 +1468,48 @@ def upsert_ts_consent(
     )
 
 
-def get_ts_push_subscriptions(conn: sqlite3.Connection) -> list[dict]:
-    """Alle Subscriptions mit notify_ts = 1 (TS-Benachrichtigungen erwünscht)."""
+def cid_for_callsign(conn: sqlite3.Connection, callsign: str) -> int | None:
+    """CID zu einem FRS-/Callsign-String, oder None (nie auf VATSIM gesehen).
+
+    Quelle in Reihenfolge: aktuelle live_positions, jüngster flights-Eintrag,
+    statsim_cache. Vergleich case-insensitiv/getrimmt.
+    """
+    cs = (callsign or "").strip().upper()
+    if not cs:
+        return None
+    for q in (
+        "SELECT cid FROM live_positions WHERE UPPER(callsign) = ? LIMIT 1",
+        "SELECT cid FROM flights WHERE UPPER(callsign) = ? ORDER BY logon_time DESC LIMIT 1",
+        "SELECT cid FROM statsim_cache WHERE UPPER(callsign) = ? ORDER BY logon_time DESC LIMIT 1",
+    ):
+        row = conn.execute(q, (cs,)).fetchone()
+        if row is not None and row[0] is not None:
+            return int(row[0])
+    return None
+
+
+def get_ts_push_subscriptions(conn: sqlite3.Connection, cid: int | None) -> list[dict]:
+    """TS-Opt-in-Subscriptions (notify_ts = 1), gefiltert über pilot_filter.
+
+    pilot_filter NULL = alle; sonst nur wenn cid in der JSON-Liste. cid None
+    (reine TS-Leute ohne CID) → nur die NULL-Filter-Subscriptions. Defektes
+    pilot_filter-JSON wird (wie get_push_subscriptions_for_pilot) als "alle" gewertet.
+    """
     rows = conn.execute(
-        "SELECT endpoint, p256dh, auth, ts_self_frs "
-        "FROM push_subscriptions WHERE notify_ts = 1"
+        "SELECT endpoint, p256dh, auth, pilot_filter FROM push_subscriptions WHERE notify_ts = 1"
     ).fetchall()
-    return [dict(r) for r in rows]
+    result = []
+    for row in rows:
+        pf = row["pilot_filter"]
+        if pf is None:
+            result.append({"endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"]})
+        elif cid is not None:
+            try:
+                if cid in json.loads(pf):
+                    result.append({"endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"]})
+            except (json.JSONDecodeError, TypeError):
+                result.append({"endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"]})
+    return result
 
 
 # ---------------------------------------------------------------------------

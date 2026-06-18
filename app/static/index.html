@@ -1189,7 +1189,7 @@
       <input type="checkbox" id="notif-enabled"> Beim Online-gehen benachrichtigen
     </label>
     <div id="notif-filter" class="notif-filter-section" hidden>
-      <div class="notif-filter-title">Benachrichtigen wenn:</div>
+      <div class="notif-filter-title">Benachrichtigen wenn (gilt für Online, Flugplan &amp; TeamSpeak):</div>
       <div class="notif-radio-row">
         <label><input type="radio" name="notif-filter-mode" value="all" checked> Alle Friesen</label>
         <label><input type="radio" name="notif-filter-mode" value="select"> Nur bestimmte Piloten</label>
@@ -1200,10 +1200,6 @@
       </label>
       <label class="notif-toggle-row" style="margin-top:8px;">
         <input type="checkbox" id="notif-ts"> 🎧 Bei TeamSpeak-Beitritt benachrichtigen
-      </label>
-      <label class="notif-toggle-row" style="margin-top:6px; display:block;">
-        <span style="font-size:0.85em; opacity:0.8;">Eigene FRS-Nr. (optional, unterdrückt Pings über deine eigenen TeamSpeak-Beitritte):</span><br>
-        <input type="text" id="notif-ts-frs" placeholder="z. B. FRS49" autocapitalize="characters" style="margin-top:4px; width:130px;">
       </label>
       <button class="notif-save-btn" id="notif-save-btn">Speichern</button>
     </div>
@@ -1637,10 +1633,6 @@ function _showNotifPanelContent() {
   if (tsCb) {
     tsCb.checked = localStorage.getItem('notif_ts') === '1';
   }
-  const tsFrsInput = document.getElementById('notif-ts-frs');
-  if (tsFrsInput) {
-    tsFrsInput.value = localStorage.getItem('notif_ts_frs') || '';
-  }
 }
 
 function _applyNotifPilotListState() {
@@ -1741,9 +1733,6 @@ async function _saveNotifFilter() {
   localStorage.setItem('notif_prefiles', notifyPrefiles ? '1' : '0');
   const notifyTs = document.getElementById('notif-ts')?.checked ?? false;
   localStorage.setItem('notif_ts', notifyTs ? '1' : '0');
-  let tsSelfFrs = (document.getElementById('notif-ts-frs')?.value || '').trim().toUpperCase();
-  if (/^\d+[A-Z]?$/.test(tsSelfFrs)) tsSelfFrs = 'FRS' + tsSelfFrs;  // "49" → "FRS49"
-  localStorage.setItem('notif_ts_frs', tsSelfFrs);
   await fetch('/api/push/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1754,7 +1743,6 @@ async function _saveNotifFilter() {
       pilot_filter: pilotFilter,
       notify_prefiles: notifyPrefiles,
       notify_ts: notifyTs,
-      ts_self_frs: tsSelfFrs || null,
     }),
   });
   const saveBtn = document.getElementById('notif-save-btn');
