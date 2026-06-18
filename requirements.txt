@@ -9,4 +9,4 @@ pytest-asyncio>=0.23
 pywebpush>=2.0
 icalendar>=6.0
 recurring-ical-events>=3.0
-ts3>=2.0
+ts3>=1.0.11
