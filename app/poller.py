@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timezone
 
 import httpx
+from pywebpush import webpush, WebPushException
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import get_settings
@@ -22,6 +23,8 @@ from app.database import (
     get_live_positions,
     get_push_subscriptions_for_pilot,
     get_push_subscriptions_for_prefile,
+    get_ts_consent,
+    get_ts_push_subscriptions,
     load_prefile_sigs,
     open_flight,
     remove_live_position,
@@ -34,6 +37,8 @@ from app.database import (
 from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_position
 from app.alerts import format_online_message, send_telegram_alert
 from app.statsim import fetch_pilot_flights
+from app.teamspeak import fetch_channel_clients
+from app.ts_notify import recipients_for
 
 logger = logging.getLogger(__name__)
 
@@ -56,40 +61,24 @@ async def _load_statsim_history(cid: int, api_key: str, db_path: str) -> None:
         logger.warning("StatSim history load failed for CID %s: %s", cid, type(e).__name__)
 
 
-async def send_web_push_notifications(
+async def send_web_push(
     vapid_private_key: str,
     vapid_contact_email: str,
     db_path: str,
-    pilot: dict,
+    subscriptions: list[dict],
+    payload: dict,
+    label: str = "WebPush",
 ) -> None:
-    """Push-Notification an alle passenden Subscriptions senden."""
+    """Ein Payload-Dict an eine fertige Subscription-Liste senden.
+
+    Generischer Kern: Retry (1×), 410-Endpoint-Cleanup, Silent-Fail-Logging.
+    Wird von der VATSIM- und der TS-Seite gemeinsam genutzt.
+    """
     import json as _json
-    from pywebpush import webpush, WebPushException
 
-    cid = pilot.get("cid")
-    callsign = pilot.get("callsign", "?")
-    dep = pilot.get("departure") or "?"
-    arr = pilot.get("arrival") or "?"
-    aircraft = pilot.get("aircraft_short") or pilot.get("aircraft") or ""
-
-    payload = {
-        "title": f"{callsign} ist online! ✈",
-        "body": f"{dep} → {arr}" + (f" · {aircraft}" if aircraft else ""),
-        "url": "/",
-    }
+    if not subscriptions:
+        return
     data = _json.dumps(payload)
-    # vapid_private_key ist ein base64url-kodierter roher EC-Skalar (32 Byte),
-    # direkt kompatibel mit py_vapid Vapid02.from_string().
-    # Achtung: pywebpush modifiziert das claims-Dict in-place (fügt aud/exp hinzu)
-    # → immer ein frisches Dict pro Aufruf erstellen (im Lambda).
-    conn = get_connection(db_path)
-    try:
-        subscriptions = get_push_subscriptions_for_pilot(conn, cid)
-    finally:
-        conn.close()
-
-    logger.info("WebPush: %s online, %d subscription(s)", callsign, len(subscriptions))
-
     loop = asyncio.get_event_loop()
     to_delete: list[str] = []
 
@@ -114,7 +103,7 @@ async def send_web_push_notifications(
                         ttl=3600,
                     ),
                 )
-                logger.info("WebPush sent OK: %s", sub["endpoint"][:40])
+                logger.info("%s sent OK: %s", label, sub["endpoint"][:40])
                 sent = True
                 break
             except WebPushException as exc:
@@ -132,16 +121,53 @@ async def send_web_push_notifications(
             sc = getattr(resp, "status_code", "?") if resp else type(last_exc).__name__
             cause = repr(getattr(last_exc, "__cause__", None))[:120]
             args = repr(getattr(last_exc, "args", ()))[:200]
-            logger.warning("WebPush failed for %s: %s cause=%s args=%s", callsign, sc, cause, args)
+            logger.warning("%s failed: %s cause=%s args=%s", label, sc, cause, args)
 
     if to_delete:
-        conn2 = get_connection(db_path)
+        # In try/except, weil send_web_push als fire-and-forget create_task läuft: ein
+        # Cleanup-Fehler (z. B. DB kurz nicht erreichbar) darf keine "Task exception was
+        # never retrieved"-Warnung erzeugen.
         try:
-            for endpoint in to_delete:
-                delete_push_subscription(conn2, endpoint)
-            conn2.commit()
-        finally:
-            conn2.close()
+            conn = get_connection(db_path)
+            try:
+                for endpoint in to_delete:
+                    delete_push_subscription(conn, endpoint)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            logger.warning("%s: Endpoint-Cleanup fehlgeschlagen", label)
+
+
+async def send_web_push_notifications(
+    vapid_private_key: str,
+    vapid_contact_email: str,
+    db_path: str,
+    pilot: dict,
+) -> None:
+    """Push-Notification an alle passenden Subscriptions senden."""
+    cid = pilot.get("cid")
+    callsign = pilot.get("callsign", "?")
+    dep = pilot.get("departure") or "?"
+    arr = pilot.get("arrival") or "?"
+    aircraft = pilot.get("aircraft_short") or pilot.get("aircraft") or ""
+
+    payload = {
+        "title": f"{callsign} ist online! ✈",
+        "body": f"{dep} → {arr}" + (f" · {aircraft}" if aircraft else ""),
+        "url": "/",
+    }
+    conn = get_connection(db_path)
+    try:
+        subscriptions = get_push_subscriptions_for_pilot(conn, cid)
+    finally:
+        conn.close()
+
+    logger.info("WebPush: %s online, %d subscription(s)", callsign, len(subscriptions))
+    await send_web_push(
+        vapid_private_key, vapid_contact_email, db_path,
+        subscriptions, payload, label=f"WebPush[{callsign}]",
+    )
 
 
 async def send_prefile_push_notifications(
@@ -152,7 +178,6 @@ async def send_prefile_push_notifications(
 ) -> None:
     """Push-Notification für neu eingereichten Flugplan an abonnierte Nutzer."""
     import json as _json
-    from pywebpush import webpush, WebPushException
 
     import re as _re
     cid = prefile.get("cid")
@@ -241,6 +266,15 @@ class VatsimPoller:
         telegram_chat_id: str = "",
         vapid_private_key: str = "",
         vapid_contact_email: str = "",
+        ts_notify_enabled: bool = False,
+        ts_host: str = "127.0.0.1",
+        ts_query_port: int = 10011,
+        ts_query_user: str = "",
+        ts_query_pass: str = "",
+        ts_server_id: int = 1,
+        ts_notify_channel_id: int = 0,
+        ts_poll_interval: int = 30,
+        ts_rejoin_debounce_sec: int = 900,
     ) -> None:
         self.db_path = db_path
         self.callsign_prefix = callsign_prefix
@@ -249,6 +283,15 @@ class VatsimPoller:
         self.telegram_chat_id = telegram_chat_id
         self.vapid_private_key = vapid_private_key
         self.vapid_contact_email = vapid_contact_email
+        self.ts_notify_enabled = ts_notify_enabled
+        self.ts_host = ts_host
+        self.ts_query_port = ts_query_port
+        self.ts_query_user = ts_query_user
+        self.ts_query_pass = ts_query_pass
+        self.ts_server_id = ts_server_id
+        self.ts_notify_channel_id = ts_notify_channel_id
+        self.ts_poll_interval = ts_poll_interval
+        self.ts_rejoin_debounce_sec = ts_rejoin_debounce_sec
         self._scheduler: AsyncIOScheduler | None = None
         self._http_client: httpx.AsyncClient | None = None
         # State: cid → {"id": flight_id, "dep": departure, "arr": arrival}
@@ -259,6 +302,10 @@ class VatsimPoller:
         self.last_prefiles: list = []
         # cid → (deptime, departure, arrival) für Änderungserkennung — None = erster Poll
         self._prefile_sigs: dict | None = None
+        # TS-Login-Diff: FRS-Menge im Zielkanal beim letzten Poll. None = erster Poll (Baseline).
+        self._ts_last_seen: set[str] | None = None
+        # FRS → Zeitpunkt der letzten Benachrichtigung (Debounce gegen Re-Joins).
+        self._ts_last_notified: dict[str, datetime] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -321,6 +368,25 @@ class VatsimPoller:
             "date",
             id="calendar_sync_initial",
         )
+        if self.ts_notify_enabled and self.vapid_private_key:
+            self._scheduler.add_job(
+                self._poll_teamspeak,
+                "interval",
+                seconds=self.ts_poll_interval,
+                id="ts_poll",
+            )
+            logger.info("TS-Login-Benachrichtigung aktiv (Kanal %d, %ds)",
+                        self.ts_notify_channel_id, self.ts_poll_interval)
+            if self.ts_notify_channel_id == 0:
+                logger.warning(
+                    "TS_NOTIFY_CHANNEL_ID=0 → serverweites FRS-Tracking "
+                    "(kein Kanal-Filter). Falls unbeabsichtigt, Zielkanal-ID setzen."
+                )
+        elif self.ts_notify_enabled and not self.vapid_private_key:
+            logger.warning(
+                "TS_NOTIFY_ENABLED=true, aber kein VAPID_PRIVATE_KEY gesetzt → "
+                "ts_poll-Job NICHT registriert (WebPush nicht möglich)."
+            )
         self._scheduler.start()
 
     async def stop(self) -> None:
@@ -632,6 +698,73 @@ class VatsimPoller:
         except Exception:
             logger.exception("Error in _poll_once")
 
+    async def _poll_teamspeak(self) -> None:
+        """TS-ServerQuery pollen, neue FRS-Beitritte → WebPush. Exceptions nur loggen."""
+        try:
+            clients = await fetch_channel_clients(
+                host=self.ts_host,
+                port=self.ts_query_port,
+                user=self.ts_query_user,
+                password=self.ts_query_pass,
+                server_id=self.ts_server_id,
+                channel_id=self.ts_notify_channel_id,
+            )
+            if clients is None:
+                # ServerQuery nicht erreichbar / Login-Fehler → Poll überspringen, State
+                # unangetastet lassen. Ein leeres [] dagegen ist ein echt leerer Kanal und
+                # ein gültiger Zustand zum Diffen — nur None heißt "nicht abrufbar".
+                return
+            current = {c["frs"] for c in clients}
+            nick_by_frs = {c["frs"]: c["nick"] for c in clients}
+
+            if self._ts_last_seen is None:
+                # Erster erfolgreicher Poll nach Start — Baseline setzen (auch ein leerer
+                # Kanal ist eine gültige Baseline), keine Notifications.
+                self._ts_last_seen = current
+                return
+
+            newly_joined = current - self._ts_last_seen
+            self._ts_last_seen = current
+            if not newly_joined:
+                return
+
+            now = datetime.now(timezone.utc)
+            for frs in newly_joined:
+                last = self._ts_last_notified.get(frs)
+                if last and (now - last).total_seconds() < self.ts_rejoin_debounce_sec:
+                    continue
+                self._ts_last_notified[frs] = now
+
+                conn = get_connection(self.db_path)
+                try:
+                    consent = get_ts_consent(conn, frs)
+                    subs = get_ts_push_subscriptions(conn)
+                finally:
+                    conn.close()
+
+                recipients = recipients_for(consent, subs, frs)
+                if not recipients:
+                    continue
+
+                nick = nick_by_frs.get(frs, frs)
+                payload = {
+                    "title": f"🎧 {nick} ist im TeamSpeak",
+                    "body": "FriesenFlieger TeamSpeak",
+                    "url": "/",
+                }
+                asyncio.create_task(
+                    send_web_push(
+                        self.vapid_private_key,
+                        self.vapid_contact_email,
+                        self.db_path,
+                        recipients,
+                        payload,
+                        label=f"TSPush[{frs}]",
+                    )
+                )
+        except Exception:
+            logger.exception("Error in _poll_teamspeak")
+
     # ------------------------------------------------------------------
     # Calendar sync
     # ------------------------------------------------------------------
@@ -688,4 +821,13 @@ def create_poller() -> VatsimPoller:
         telegram_chat_id=settings.TELEGRAM_CHAT_ID,
         vapid_private_key=settings.VAPID_PRIVATE_KEY,
         vapid_contact_email=settings.VAPID_CONTACT_EMAIL,
+        ts_notify_enabled=settings.TS_NOTIFY_ENABLED,
+        ts_host=settings.TS_HOST,
+        ts_query_port=settings.TS_QUERY_PORT,
+        ts_query_user=settings.TS_QUERY_USER,
+        ts_query_pass=settings.TS_QUERY_PASS,
+        ts_server_id=settings.TS_SERVER_ID,
+        ts_notify_channel_id=settings.TS_NOTIFY_CHANNEL_ID,
+        ts_poll_interval=settings.TS_POLL_INTERVAL,
+        ts_rejoin_debounce_sec=settings.TS_REJOIN_DEBOUNCE_SEC,
     )

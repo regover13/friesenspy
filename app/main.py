@@ -151,6 +151,8 @@ async def push_subscribe(request: Request):
             conn, endpoint, p256dh, auth,
             body.get("pilot_filter"),
             notify_prefiles=bool(body.get("notify_prefiles", False)),
+            notify_ts=bool(body.get("notify_ts", False)),
+            ts_self_frs=(body.get("ts_self_frs") or None),
         )
         conn.commit()
     finally:

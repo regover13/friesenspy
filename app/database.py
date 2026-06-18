@@ -123,6 +123,13 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     pilot_filter TEXT DEFAULT NULL,
     created_at   TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ts_consent (
+    frs        TEXT PRIMARY KEY,
+    visibility TEXT DEFAULT 'everyone',
+    allowlist  TEXT,
+    updated_at TEXT
+);
 """
 
 
@@ -175,6 +182,8 @@ _CALENDAR_MIGRATIONS = [
 
 _PUSH_MIGRATIONS = [
     "ALTER TABLE push_subscriptions ADD COLUMN notify_prefiles INTEGER DEFAULT 0",
+    "ALTER TABLE push_subscriptions ADD COLUMN notify_ts INTEGER DEFAULT 0",
+    "ALTER TABLE push_subscriptions ADD COLUMN ts_self_frs TEXT",
 ]
 
 _PREFILE_SIGS_MIGRATIONS = [
@@ -1314,20 +1323,28 @@ def upsert_push_subscription(
     auth: str,
     pilot_filter: list[int] | None = None,
     notify_prefiles: bool = True,
+    notify_ts: bool = False,
+    ts_self_frs: str | None = None,
 ) -> None:
     """Browser-Push-Subscription speichern oder aktualisieren."""
     conn.execute(
-        """INSERT INTO push_subscriptions (endpoint, p256dh, auth, pilot_filter, notify_prefiles, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)
+        """INSERT INTO push_subscriptions
+               (endpoint, p256dh, auth, pilot_filter, notify_prefiles,
+                notify_ts, ts_self_frs, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(endpoint) DO UPDATE SET
                p256dh=excluded.p256dh,
                auth=excluded.auth,
                pilot_filter=excluded.pilot_filter,
-               notify_prefiles=excluded.notify_prefiles""",
+               notify_prefiles=excluded.notify_prefiles,
+               notify_ts=excluded.notify_ts,
+               ts_self_frs=excluded.ts_self_frs""",
         (
             endpoint, p256dh, auth,
             json.dumps(pilot_filter) if pilot_filter is not None else None,
             1 if notify_prefiles else 0,
+            1 if notify_ts else 0,
+            ts_self_frs,
             _now_utc(),
         ),
     )
@@ -1408,6 +1425,56 @@ def get_push_subscriptions_for_prefile(
             except (json.JSONDecodeError, TypeError):
                 result.append(dict(row))
     return result
+
+
+def get_ts_consent(conn: sqlite3.Connection, frs: str) -> dict | None:
+    """Einwilligungs-Eintrag für eine FRS-Nummer, oder None (= Default 'everyone').
+
+    allowlist wird aus JSON zu einer Liste geparst (oder []).
+    """
+    row = conn.execute(
+        "SELECT frs, visibility, allowlist, updated_at FROM ts_consent WHERE frs = ?",
+        (frs,),
+    ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    try:
+        d["allowlist"] = json.loads(d["allowlist"]) if d["allowlist"] else []
+    except (json.JSONDecodeError, TypeError):
+        d["allowlist"] = []
+    return d
+
+
+def upsert_ts_consent(
+    conn: sqlite3.Connection,
+    frs: str,
+    visibility: str,
+    allowlist: list[str] | None = None,
+) -> None:
+    """Einwilligung pro FRS setzen. visibility ∈ {'everyone','nobody','allowlist'}."""
+    conn.execute(
+        """INSERT INTO ts_consent (frs, visibility, allowlist, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(frs) DO UPDATE SET
+               visibility=excluded.visibility,
+               allowlist=excluded.allowlist,
+               updated_at=excluded.updated_at""",
+        (
+            frs, visibility,
+            json.dumps(allowlist) if allowlist is not None else None,
+            _now_utc(),
+        ),
+    )
+
+
+def get_ts_push_subscriptions(conn: sqlite3.Connection) -> list[dict]:
+    """Alle Subscriptions mit notify_ts = 1 (TS-Benachrichtigungen erwünscht)."""
+    rows = conn.execute(
+        "SELECT endpoint, p256dh, auth, ts_self_frs "
+        "FROM push_subscriptions WHERE notify_ts = 1"
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------

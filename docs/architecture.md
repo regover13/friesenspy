@@ -55,8 +55,9 @@ SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Sieben Tabellen:
 | `live_positions` | Aktuelle Position pro CID (UPSERT, maximal 1 Zeile pro CID) |
 | `position_history` | Jede einzelne VATSIM-Positions-Update (für Tracks + Events) |
 | `calendar_events` | FriesenFlieger Google-Kalender (alle 6h synchronisiert, UID als Primary Key) |
-| `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array, `notify_prefiles` Flag) |
+| `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array, `notify_prefiles` Flag, `notify_ts` Flag, `ts_self_frs`) |
 | `prefile_sigs` | Letzte bekannte Prefile-Signatur pro CID (`deptime`, `departure`, `arrival`) — wird nach jedem Poll persistiert, damit Container-Neustarts keine Änderungen verpassen |
+| `ts_consent` | Einwilligung pro FRS für TS-Login-Sichtbarkeit (`visibility` ∈ `everyone`/`nobody`/`allowlist`, `allowlist` als JSON-Array) — kein Eintrag = Default `everyone` |
 
 Drei Indizes: `idx_ph_cid_ts`, `idx_ph_ts`, `idx_flights_cid`.
 
@@ -94,11 +95,19 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 ### `app/poller.py`
 
 `VatsimPoller` kapselt:
-- **APScheduler `AsyncIOScheduler`** mit drei aktiven Jobs: `vatsim_poll` (interval, 15s), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start). `daily_cleanup` ist deaktiviert — `position_history` wird dauerhaft behalten.
+- **APScheduler `AsyncIOScheduler`** mit bis zu vier aktiven Jobs: `vatsim_poll` (interval, 15s), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start), sowie optional `ts_poll` (interval, `TS_POLL_INTERVAL`s) wenn `TS_NOTIFY_ENABLED=true` und VAPID konfiguriert ist. `daily_cleanup` ist deaktiviert — `position_history` wird dauerhaft behalten.
 - **`_active_flights: dict[int, dict]`** — In-Memory State: CID → `{"id": flight_id, "dep": departure, "arr": arrival}`. Wird beim Start in `PollerService.start()` aus der DB **rehydriert** (alle offenen Flüge `logoff_time IS NULL AND superseded_by IS NULL`), sodass ein Container-Neustart laufende Flüge adoptiert: Pilot noch online → `still_online` (kein neuer Flug); inzwischen offline → `went_offline` → korrekt geschlossen (kein Zombie). **Flugende:** Beim Offline-Gehen wird als `logoff_time` die letzte gespeicherte Position verwendet (nicht die Wanduhr). **Flugplanwechsel ohne Disconnect:** gleicher Abflughafen → `update_flight_plan` (selbes Leg); **geänderter** Abflughafen → echtes neues Leg (Pilot gelandet, neu gefiled) → altes Segment schließen, neues mit eindeutiger Mikrosekunden-`logon_time` öffnen (kollidiert nie mit dem Unique-Index).
 - **`sse_queue: asyncio.Queue`** — Jeder SSE-Client hat eine eigene Verbindung zum selben Queue-Objekt. `put_nowait` blockiert nicht.
 - **`last_prefiles: list`** — aktuell eingereichte VATSIM-Prefile-Pläne mit FRS*-Callsign (In-Memory, aus dem letzten Poll-Zyklus)
 - **`_prefile_sigs: dict | None`** — CID → `(deptime, departure, arrival)` für Änderungserkennung. Wird beim Start aus `prefile_sigs`-DB-Tabelle geladen (nicht `None`) und nach jedem Poll gespeichert. Beim allerersten Start ohne DB-Einträge ist die Dict leer — keine Spam-Notifications. Container-Neustarts verpassen dadurch keine Prefile-Änderungen mehr.
+
+**`send_web_push(vapid_private_key, vapid_contact_email, db_path, subscriptions, payload, label)`** — generischer WebPush-Kern, der von VATSIM-Online- und TS-Notifications gemeinsam genutzt wird. Führt für jede Subscription einen Send-Versuch aus (1× Retry nach 5 s), loggt Fehler, löscht 410-Endpoints aus der DB.
+
+**`_poll_teamspeak()`** — TS-Login-Benachrichtigungs-Job:
+1. `fetch_channel_clients` aufrufen → `None` bei Fehler (Poll überspringen, State unangetastet); `[]` ist ein gültig leerer Kanal
+2. Erster erfolgreicher Poll: `_ts_last_seen = current` als Baseline setzen, keine Notifications
+3. Diff: `newly_joined = current - _ts_last_seen`; `_ts_last_seen` aktualisieren
+4. Pro neu-joinender FRS: Debounce prüfen (`_ts_last_notified`, `TS_REJOIN_DEBOUNCE_SEC`); `get_ts_consent` + `get_ts_push_subscriptions` aus DB laden; `recipients_for` aufrufen; `send_web_push` als asyncio-Task starten
 
 **Prefile Push-Notification-Logik:**
 - `_prefile_sig(p)` → `(deptime, departure, arrival)` — Änderungssignatur
@@ -129,6 +138,24 @@ Ein einziges `conn.commit()` am Ende — kein partieller Schreibzustand möglich
 - `icao_to_coords(icao)` — ICAO → (lat, lon) via `airportsdata`-Package (keine Netzwerk-Anfrage, statische Daten)
 - `filter_event_pilots(rows, icao_list, radius_km, start_utc, end_utc)` — filtert `position_history`-Zeilen auf Piloten die im Zeitfenster innerhalb von `radius_km` um einen der ICAOs waren
 - `segment_into_flights(positions, flights_rows)` — gruppiert Positionen anhand echter VATSIM-Session-Records aus der `flights`-Tabelle; jedes Segment erhält `callsign`, `departure`, `arrival`, `aircraft` aus dem passenden `flights`-Eintrag. Fallback auf Zeitlücken-Segmentierung (30-min-Gap) wenn kein `flights`-Eintrag für eine Position gefunden wird (z.B. Altdaten vor FriesenSpy-Start)
+
+### `app/teamspeak.py`
+
+TeamSpeak-ServerQuery-Client für die TS-Login-Benachrichtigung (Phase 1). Baut pro Poll eine kurzlebige ServerQuery-Verbindung auf (kein dauerhafter Event-Thread, kein TS-Client-Prozess).
+
+- `parse_frs(nick)` — extrahiert die FRS-Nummer aus einem TS-Nickname via Regex (`FRS(\d+[A-Z]?)`), gibt `None` zurück wenn kein FRS-Tag gefunden wird. Portiert aus TSBot.
+- `_parse_clientlist(clients, channel_id)` — filtert die rohe ts3-clientlist: nur echte Clients (`client_type == "0"`), nur im Zielkanal (channel_id 0 = ganzer Server), nur Clients mit FRS-Tag. Gibt `[{frs, nick, cid}]` zurück.
+- `fetch_channel_clients(*, host, port, user, password, server_id, channel_id)` — async Wrapper: führt `_fetch_clients_sync` (login → use → clientlist → close) per `run_in_executor` aus. Gibt `None` bei Fehler zurück (kein Crash), damit der Caller zwischen nicht-erreichbarem Server (`None`) und echtem leeren Kanal (`[]`) unterscheiden kann.
+
+### `app/ts_notify.py`
+
+Reine Logik zur Empfänger-Auswahl für TS-Login-Benachrichtigungen (kein DB-, kein HTTP-Zugriff).
+
+- `recipients_for(consent, opted_in_subs, joining_frs)` — bestimmt anhand des Consent-Eintrags (aus `ts_consent`) und der opt-in-Subscription-Liste, welche Subscriptions über den Beitritt von `joining_frs` informiert werden sollen. Drei Sichtbarkeits-Modi:
+  - `everyone` (Default wenn kein Consent-Eintrag vorhanden): alle opt-in-Subscriptions
+  - `nobody`: keine Notifications
+  - `allowlist`: nur Subscriptions deren `ts_self_frs` in der Allowlist steht
+  - Unabhängig vom Modus: ein Subscriber mit `ts_self_frs == joining_frs` wird immer übersprungen (kein Selbst-Ping)
 
 ### `app/alerts.py`
 
@@ -187,6 +214,35 @@ Browser                     FastAPI                  VatsimPoller
    │                           │                          │
    │◄── data: {...}\n\n ────────│                          │
 ```
+
+## Datenfluss TS-Login-Benachrichtigung (Phase 1)
+
+```
+TeamSpeak-Server (port 10011)
+        │
+        ▼  alle TS_POLL_INTERVAL Sekunden (Default: 30s)
+  _poll_teamspeak (APScheduler Job: ts_poll)
+        │
+        ├─► fetch_channel_clients (ts3 ServerQuery, kurzlebige Verbindung)
+        │         None  → Poll überspringen (Server nicht erreichbar)
+        │         []    → gültiger leerer Kanal (Baseline oder Diff)
+        │         [...]  → FRS-Clients im Kanal
+        │
+        ├─► Diff gegen _ts_last_seen
+        │         Erster Poll → Baseline setzen, keine Notifications
+        │         newly_joined = current − last_seen
+        │
+        ├─► Pro neu-joinender FRS:
+        │         Debounce-Check (_ts_last_notified, TS_REJOIN_DEBOUNCE_SEC)
+        │         get_ts_consent(frs) → visibility + allowlist aus ts_consent
+        │         get_ts_push_subscriptions() → alle notify_ts=1 Subscriptions
+        │         recipients_for(consent, subs, frs) → gefilterte Empfänger
+        │
+        └─► send_web_push(recipients, payload)
+                  Payload: {"title": "🎧 <nick> ist im TeamSpeak", "body": "FriesenFlieger TeamSpeak"}
+```
+
+**Consent-Modell (Phase 1):** Admin setzt Einträge in `ts_consent` via `manage_ts_consent.py`. Kein Eintrag = Default `everyone`. Phase 2 (noch nicht implementiert) soll Consent aus einem Forumsprofil-Flag synchronisieren.
 
 ## Datenbankschema
 
@@ -277,6 +333,8 @@ CREATE TABLE push_subscriptions (
     auth           TEXT NOT NULL,
     pilot_filter   TEXT DEFAULT NULL,    -- JSON-Array von CIDs oder NULL = alle
     notify_prefiles INTEGER DEFAULT 0,  -- 1 = auch Prefile-Änderungen benachrichtigen
+    notify_ts      INTEGER DEFAULT 0,   -- 1 = TS-Login-Benachrichtigungen erwünscht
+    ts_self_frs    TEXT,                -- eigene FRS (kein Selbst-Ping bei TS-Login)
     created_at     TEXT NOT NULL
 );
 
@@ -287,5 +345,13 @@ CREATE TABLE prefile_sigs (
     departure TEXT,
     arrival   TEXT,
     saved_at  TEXT
+);
+
+-- TS-Login-Einwilligung pro FRS (Phase 1: Admin-gesetzt via manage_ts_consent.py)
+CREATE TABLE ts_consent (
+    frs        TEXT PRIMARY KEY,
+    visibility TEXT DEFAULT 'everyone',  -- everyone | nobody | allowlist
+    allowlist  TEXT,                     -- JSON-Array von FRS-Nummern (nur bei visibility=allowlist)
+    updated_at TEXT
 );
 ```

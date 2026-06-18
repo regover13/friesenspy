@@ -878,3 +878,56 @@ class TestBlockMinutes:
         res = merge_fragmented_flights([f1, f2])
         assert len(res) == 1
         assert res[0]["block_min"] == 45
+
+
+# ---------------------------------------------------------------------------
+# ts_consent + TS-Push-Subscriptions
+# ---------------------------------------------------------------------------
+
+class TestTsConsent:
+    def test_get_missing_returns_none(self):
+        from app.database import get_ts_consent
+        conn = _make_conn()
+        assert get_ts_consent(conn, "FRS1") is None
+
+    def test_upsert_and_get(self):
+        from app.database import get_ts_consent, upsert_ts_consent
+        conn = _make_conn()
+        upsert_ts_consent(conn, "FRS1", "allowlist", ["FRS2", "FRS3"])
+        conn.commit()
+        row = get_ts_consent(conn, "FRS1")
+        assert row["frs"] == "FRS1"
+        assert row["visibility"] == "allowlist"
+        assert row["allowlist"] == ["FRS2", "FRS3"]
+
+    def test_upsert_overwrites(self):
+        from app.database import get_ts_consent, upsert_ts_consent
+        conn = _make_conn()
+        upsert_ts_consent(conn, "FRS1", "everyone", None)
+        upsert_ts_consent(conn, "FRS1", "nobody", None)
+        conn.commit()
+        assert get_ts_consent(conn, "FRS1")["visibility"] == "nobody"
+
+
+class TestTsPushSubscriptions:
+    def test_only_opted_in(self, tmp_path):
+        from app.database import (
+            init_db, get_connection, upsert_push_subscription,
+            get_ts_push_subscriptions,
+        )
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_ts=True, ts_self_frs="FRS9")
+        upsert_push_subscription(conn, "e2", "p2", "a2", notify_ts=False)
+        conn.commit()
+        subs = get_ts_push_subscriptions(conn)
+        assert [s["endpoint"] for s in subs] == ["e1"]
+        assert subs[0]["ts_self_frs"] == "FRS9"
+        conn.close()
+
+    def test_migrations_idempotent(self, tmp_path):
+        from app.database import init_db
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        init_db(db)  # zweiter Lauf darf nicht werfen

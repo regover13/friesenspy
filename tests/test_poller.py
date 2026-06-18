@@ -307,3 +307,206 @@ class TestCreatePoller:
             assert poller.callsign_prefix == "FRS"
         finally:
             get_settings.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# send_web_push (generisch)
+# ---------------------------------------------------------------------------
+
+class TestSendWebPush:
+    @pytest.mark.asyncio
+    async def test_sends_to_each_subscription(self, tmp_path):
+        from app.database import init_db
+        from app.poller import send_web_push
+
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        subs = [
+            {"endpoint": "https://x/1", "p256dh": "p1", "auth": "a1"},
+            {"endpoint": "https://x/2", "p256dh": "p2", "auth": "a2"},
+        ]
+        calls = []
+        with patch("app.poller.webpush", new=MagicMock(side_effect=lambda **kw: calls.append(kw))):
+            await send_web_push("priv", "mailto:x@y.z", db, subs, {"title": "T", "body": "B"})
+        assert len(calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_410_deletes_subscription(self, tmp_path):
+        from app.database import init_db, get_connection, upsert_push_subscription
+        from app.poller import send_web_push
+        from pywebpush import WebPushException
+
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "https://x/gone", "p", "a")
+        conn.commit()
+        conn.close()
+
+        resp = MagicMock()
+        resp.status_code = 410
+        exc = WebPushException("gone")
+        exc.response = resp
+        subs = [{"endpoint": "https://x/gone", "p256dh": "p", "auth": "a"}]
+        with patch("app.poller.webpush", new=MagicMock(side_effect=exc)):
+            await send_web_push("priv", "mailto:x@y.z", db, subs, {"title": "T", "body": "B"})
+
+        conn = get_connection(db)
+        left = conn.execute("SELECT COUNT(*) FROM push_subscriptions").fetchone()[0]
+        conn.close()
+        assert left == 0
+
+
+# ---------------------------------------------------------------------------
+# _poll_teamspeak (TS-Login-Diff)
+# ---------------------------------------------------------------------------
+
+class TestPollTeamspeak:
+    def _ts_poller(self, db_path):
+        return VatsimPoller(
+            db_path=db_path, callsign_prefix="FRS", poll_interval=60,
+            vapid_private_key="priv", vapid_contact_email="mailto:x@y.z",
+            ts_notify_enabled=True, ts_poll_interval=30, ts_rejoin_debounce_sec=900,
+        )
+
+    @pytest.mark.asyncio
+    async def test_baseline_first_poll_no_push(self, tmp_path):
+        from app.database import init_db
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = self._ts_poller(db)
+        sent = []
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(return_value=[{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+        assert sent == []
+        assert poller._ts_last_seen == {"FRS1"}
+
+    @pytest.mark.asyncio
+    async def test_new_join_triggers_push(self, tmp_path):
+        from app.database import init_db, get_connection, upsert_push_subscription
+        db = str(tmp_path / "t.db"); init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_ts=True, ts_self_frs="FRS9")
+        conn.commit(); conn.close()
+        poller = self._ts_poller(db)
+        poller._ts_last_seen = set()  # Baseline überspringen
+        sent = []
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(return_value=[{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)  # create_task laufen lassen
+        assert len(sent) == 1
+
+    @pytest.mark.asyncio
+    async def test_debounce_suppresses_rejoin(self, tmp_path):
+        from app.database import init_db, get_connection, upsert_push_subscription
+        from datetime import datetime, timezone
+        db = str(tmp_path / "t.db"); init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_ts=True)
+        conn.commit(); conn.close()
+        poller = self._ts_poller(db)
+        poller._ts_last_seen = set()
+        poller._ts_last_notified["FRS1"] = datetime.now(timezone.utc)  # eben erst benachrichtigt
+        sent = []
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(return_value=[{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)
+        assert sent == []
+
+    @pytest.mark.asyncio
+    async def test_exception_does_not_propagate(self, tmp_path):
+        from app.database import init_db
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = self._ts_poller(db)
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(side_effect=RuntimeError("boom"))):
+            await poller._poll_teamspeak()  # darf nicht werfen
+
+    @pytest.mark.asyncio
+    async def test_fetch_error_first_poll_skips_no_baseline(self, tmp_path):
+        """Erst-Poll mit Abruf-Fehler (None): kein Baseline-Freeze, kein Push; der
+        nächste erfolgreiche Poll etabliert die echte Baseline (kein False-Positive)."""
+        from app.database import init_db
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = self._ts_poller(db)
+        sent = []
+        with patch("app.poller.fetch_channel_clients", new=AsyncMock(return_value=None)), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+        assert poller._ts_last_seen is None
+        assert sent == []
+        # nächster erfolgreicher Poll: Anwesende werden Baseline, KEIN Push
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(return_value=[{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)
+        assert poller._ts_last_seen == {"FRS1"}
+        assert sent == []
+
+    @pytest.mark.asyncio
+    async def test_mid_operation_fetch_error_preserves_baseline(self, tmp_path):
+        """Transienter Fehler (None) im Betrieb darf _ts_last_seen NICHT zurücksetzen
+        (sonst Push-Storm beim Recovery). Kein Push, State unverändert."""
+        from app.database import init_db
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = self._ts_poller(db)
+        poller._ts_last_seen = {"FRS1"}
+        sent = []
+        with patch("app.poller.fetch_channel_clients", new=AsyncMock(return_value=None)), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)
+        assert poller._ts_last_seen == {"FRS1"}
+        assert sent == []
+
+    @pytest.mark.asyncio
+    async def test_empty_channel_is_valid_baseline(self, tmp_path):
+        """Echt leerer Kanal ([]) beim Erst-Poll ist eine gültige (leere) Baseline; der
+        erste echte Beitritt danach löst genau einen Push aus (Hauptanwendungsfall)."""
+        from app.database import init_db, get_connection, upsert_push_subscription
+        db = str(tmp_path / "t.db"); init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_ts=True)
+        conn.commit(); conn.close()
+        poller = self._ts_poller(db)
+        sent = []
+        with patch("app.poller.fetch_channel_clients", new=AsyncMock(return_value=[])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+        assert poller._ts_last_seen == set()
+        assert sent == []
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(return_value=[{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)
+        assert poller._ts_last_seen == {"FRS1"}
+        assert len(sent) == 1
+
+    @pytest.mark.asyncio
+    async def test_ts_job_registered_when_enabled(self, tmp_path):
+        from app.database import init_db
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = self._ts_poller(db)
+        await poller.start()
+        try:
+            assert "ts_poll" in {j.id for j in poller._scheduler.get_jobs()}
+        finally:
+            await poller.stop()
+
+    @pytest.mark.asyncio
+    async def test_ts_job_absent_when_disabled(self, tmp_path):
+        from app.database import init_db
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = _make_poller(db_path=db)  # ts_notify_enabled default False
+        await poller.start()
+        try:
+            assert "ts_poll" not in {j.id for j in poller._scheduler.get_jobs()}
+        finally:
+            await poller.stop()
