@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     TS_SERVER_ID: int = 1
     TS_NOTIFY_CHANNEL_ID: int = 0   # 0 = ganzer Server
     TS_EXCLUDE_CHANNEL_IDS: str = ""  # Komma-separierte Kanal-IDs, die NIE benachrichtigen
+    # Verweildauer-Bestätigung: Anzahl zusätzlicher Polls, die eine FRS präsent bleiben muss,
+    # bevor benachrichtigt wird (0 = sofort beim ersten Erkennen; 1 = muss beim nächsten Poll
+    # noch da sein → unterdrückt kurzes "Reinschauen").
+    TS_MIN_DWELL_POLLS: int = 1
     TS_POLL_INTERVAL: int = 30
     TS_REJOIN_DEBOUNCE_SEC: int = 900
 

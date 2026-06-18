@@ -71,6 +71,7 @@ TS_QUERY_PASS=               # ServerQuery-Passwort
 TS_SERVER_ID=1               # Default: 1
 TS_NOTIFY_CHANNEL_ID=0       # Default: 0 = ganzer Server; sonst Kanal-ID
 TS_EXCLUDE_CHANNEL_IDS=      # CSV Kanal-IDs, die nie benachrichtigen (z. B. Verwaltung)
+TS_MIN_DWELL_POLLS=1         # Verweildauer: muss beim Folge-Poll noch da sein (0 = sofort)
 TS_POLL_INTERVAL=30          # Default: 30 Sekunden
 TS_REJOIN_DEBOUNCE_SEC=900   # Default: 900 s (15 min) Debounce gegen Re-Join-Spam
 ```

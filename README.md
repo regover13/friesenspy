@@ -207,6 +207,8 @@ python manage_ts_consent.py delete FRS135
 
 **Abonnieren:** Subscriber aktivieren TS-Benachrichtigungen selbst im Benachrichtigungs-Panel der PWA über die Checkbox „🎧 Bei TeamSpeak-Beitritt benachrichtigen" und tragen optional ihre eigene FRS-Nummer ein (verhindert Pings über eigene Beitritte). Technisch sendet das Panel `notify_ts=true` (und optional `ts_self_frs`) an `POST /api/push/subscribe`. Eine Subscription mit `ts_self_frs=FRS49` bekommt keine Benachrichtigung wenn FRS49 dem TS beitritt.
 
+**Verweildauer-Bestätigung:** `TS_MIN_DWELL_POLLS` (Default: 1) legt fest, wie viele *zusätzliche* Polls eine FRS präsent bleiben muss, bevor benachrichtigt wird. Bei `1` muss sie beim Folge-Poll noch da sein — kurzes „Reinschauen" (vor dem nächsten Poll wieder weg) löst dann **keine** Benachrichtigung aus (Kosten: bis zu ein Poll-Intervall mehr Verzögerung). `0` = sofort beim ersten Erkennen.
+
 **Debounce:** Ein schnelles Re-Join (z.B. TS-Client-Neustart) löst innerhalb von `TS_REJOIN_DEBOUNCE_SEC` Sekunden (Default: 900 s / 15 min) keine erneute Benachrichtigung aus.
 
 **Neue Abhängigkeit:** `ts3` (in `requirements.txt`). Das Paket wird nur beim TS-Poll geladen (lazy import); der Rest von FriesenSpy läuft ohne `ts3`.
@@ -222,6 +224,7 @@ TS_QUERY_PASS=               # ServerQuery-Passwort
 TS_SERVER_ID=1               # Default: 1
 TS_NOTIFY_CHANNEL_ID=0       # Default: 0 = ganzer Server; Kanal-ID für Zielkanal
 TS_EXCLUDE_CHANNEL_IDS=      # Komma-separierte Kanal-IDs, die NIE benachrichtigen (z. B. Verwaltung)
+TS_MIN_DWELL_POLLS=1         # Default: 1 = muss beim Folge-Poll noch da sein (0 = sofort)
 TS_POLL_INTERVAL=30          # Default: 30 Sekunden
 TS_REJOIN_DEBOUNCE_SEC=900   # Default: 900 s (15 min)
 ```
@@ -332,6 +335,7 @@ TS_QUERY_PASS=
 TS_SERVER_ID=1
 TS_NOTIFY_CHANNEL_ID=0                      # 0 = ganzer Server
 TS_EXCLUDE_CHANNEL_IDS=                     # Kanal-IDs (CSV), die nie benachrichtigen
+TS_MIN_DWELL_POLLS=1                        # muss beim Folge-Poll noch da sein (0 = sofort)
 TS_POLL_INTERVAL=30
 TS_REJOIN_DEBOUNCE_SEC=900
 ```

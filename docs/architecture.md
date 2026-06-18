@@ -103,11 +103,11 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 
 **`send_web_push(vapid_private_key, vapid_contact_email, db_path, subscriptions, payload, label)`** — generischer WebPush-Kern, der von VATSIM-Online- und TS-Notifications gemeinsam genutzt wird. Führt für jede Subscription einen Send-Versuch aus (1× Retry nach 5 s), loggt Fehler, löscht 410-Endpoints aus der DB.
 
-**`_poll_teamspeak()`** — TS-Login-Benachrichtigungs-Job:
+**`_poll_teamspeak()`** — TS-Login-Benachrichtigungs-Job (Verweildauer-/Streak-Modell):
 1. `fetch_channel_clients` aufrufen → `None` bei Fehler (Poll überspringen, State unangetastet); `[]` ist ein gültig leerer Kanal
-2. Erster erfolgreicher Poll: `_ts_last_seen = current` als Baseline setzen, keine Notifications
-3. Diff: `newly_joined = current - _ts_last_seen`; `_ts_last_seen` aktualisieren
-4. Pro neu-joinender FRS: Debounce prüfen (`_ts_last_notified`, `TS_REJOIN_DEBOUNCE_SEC`); `get_ts_consent` + `get_ts_push_subscriptions` aus DB laden; `recipients_for` aufrufen; `send_web_push` als asyncio-Task starten
+2. Erster erfolgreicher Poll: Baseline — präsente FRS in `_ts_streak` mit `_TS_BASELINE_STREAK` (sehr hoch) markieren, sodass sie die Schwelle nie treffen → keine Notifications
+3. Präsenz-Streak: je präsenter FRS `_ts_streak[frs] += 1`; abwesende FRS fallen aus dem Dict (Reset). Bestätigt = Streak erreicht erstmals `TS_MIN_DWELL_POLLS + 1` → erst dann Kandidat. Kurzes „Reinschauen" (vor dem Folge-Poll weg) erreicht die Schwelle nie.
+4. Pro bestätigter FRS: Debounce prüfen (`_ts_last_notified`, `TS_REJOIN_DEBOUNCE_SEC`); `get_ts_consent` + `get_ts_push_subscriptions` aus DB laden; `recipients_for` aufrufen; `send_web_push` als asyncio-Task starten
 
 **Prefile Push-Notification-Logik:**
 - `_prefile_sig(p)` → `(deptime, departure, arrival)` — Änderungssignatur
@@ -228,11 +228,12 @@ TeamSpeak-Server (port 10011)
         │         []    → gültiger leerer Kanal (Baseline oder Diff)
         │         [...]  → FRS-Clients im Kanal
         │
-        ├─► Diff gegen _ts_last_seen
-        │         Erster Poll → Baseline setzen, keine Notifications
-        │         newly_joined = current − last_seen
+        ├─► Präsenz-Streak (_ts_streak)
+        │         Erster Poll → Baseline (präsente FRS = _TS_BASELINE_STREAK), keine Notifications
+        │         je präsenter FRS: streak += 1; abwesende fallen raus
+        │         bestätigt = streak erreicht erstmals TS_MIN_DWELL_POLLS + 1
         │
-        ├─► Pro neu-joinender FRS:
+        ├─► Pro bestätigter FRS:
         │         Debounce-Check (_ts_last_notified, TS_REJOIN_DEBOUNCE_SEC)
         │         get_ts_consent(frs) → visibility + allowlist aus ts_consent
         │         get_ts_push_subscriptions() → alle notify_ts=1 Subscriptions
