@@ -124,13 +124,19 @@ async def send_web_push(
             logger.warning("%s failed: %s cause=%s args=%s", label, sc, cause, args)
 
     if to_delete:
-        conn = get_connection(db_path)
+        # In try/except, weil send_web_push als fire-and-forget create_task läuft: ein
+        # Cleanup-Fehler (z. B. DB kurz nicht erreichbar) darf keine "Task exception was
+        # never retrieved"-Warnung erzeugen.
         try:
-            for endpoint in to_delete:
-                delete_push_subscription(conn, endpoint)
-            conn.commit()
-        finally:
-            conn.close()
+            conn = get_connection(db_path)
+            try:
+                for endpoint in to_delete:
+                    delete_push_subscription(conn, endpoint)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            logger.warning("%s: Endpoint-Cleanup fehlgeschlagen", label)
 
 
 async def send_web_push_notifications(
@@ -172,7 +178,6 @@ async def send_prefile_push_notifications(
 ) -> None:
     """Push-Notification für neu eingereichten Flugplan an abonnierte Nutzer."""
     import json as _json
-    from pywebpush import webpush, WebPushException
 
     import re as _re
     cid = prefile.get("cid")
@@ -377,6 +382,11 @@ class VatsimPoller:
                     "TS_NOTIFY_CHANNEL_ID=0 → serverweites FRS-Tracking "
                     "(kein Kanal-Filter). Falls unbeabsichtigt, Zielkanal-ID setzen."
                 )
+        elif self.ts_notify_enabled and not self.vapid_private_key:
+            logger.warning(
+                "TS_NOTIFY_ENABLED=true, aber kein VAPID_PRIVATE_KEY gesetzt → "
+                "ts_poll-Job NICHT registriert (WebPush nicht möglich)."
+            )
         self._scheduler.start()
 
     async def stop(self) -> None:
