@@ -23,6 +23,7 @@ from app.database import (
     get_live_positions,
     get_push_subscriptions_for_pilot,
     get_push_subscriptions_for_prefile,
+    cid_for_callsign,
     get_ts_consent,
     get_ts_push_subscriptions,
     load_prefile_sigs,
@@ -38,7 +39,6 @@ from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_positi
 from app.alerts import format_online_message, send_telegram_alert
 from app.statsim import fetch_pilot_flights
 from app.teamspeak import fetch_channel_clients, parse_channel_ids
-from app.ts_notify import recipients_for
 
 logger = logging.getLogger(__name__)
 
@@ -761,11 +761,14 @@ class VatsimPoller:
                 conn = get_connection(self.db_path)
                 try:
                     consent = get_ts_consent(conn, frs)
-                    subs = get_ts_push_subscriptions(conn)
+                    if consent and consent.get("visibility") == "nobody":
+                        recipients = []  # Subjekt-Privacy: gar nicht über diese FRS melden
+                    else:
+                        cid = cid_for_callsign(conn, frs)
+                        recipients = get_ts_push_subscriptions(conn, cid)
                 finally:
                     conn.close()
 
-                recipients = recipients_for(consent, subs, frs)
                 if not recipients:
                     continue
 
