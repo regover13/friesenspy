@@ -98,3 +98,13 @@ class TestGetSettings:
         from app.config import get_settings, Settings  # noqa: PLC0415
 
         assert isinstance(get_settings(), Settings)
+
+
+class TestTsSettings:
+    def test_ts_defaults(self):
+        s = _make_settings()
+        assert s.TS_NOTIFY_ENABLED is False
+        assert s.TS_QUERY_PORT == 10011
+        assert s.TS_NOTIFY_CHANNEL_ID == 0
+        assert s.TS_POLL_INTERVAL == 30
+        assert s.TS_REJOIN_DEBOUNCE_SEC == 900

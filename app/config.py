@@ -20,6 +20,17 @@ class Settings(BaseSettings):
     VAPID_PRIVATE_KEY: str = ""   # PEM mit \\n-Escaping (z.B. aus generate_vapid.py)
     VAPID_CONTACT_EMAIL: str = ""
 
+    # TeamSpeak-ServerQuery (Phase 1: Login-Benachrichtigung)
+    TS_NOTIFY_ENABLED: bool = False
+    TS_HOST: str = "127.0.0.1"
+    TS_QUERY_PORT: int = 10011
+    TS_QUERY_USER: str = ""
+    TS_QUERY_PASS: str = ""
+    TS_SERVER_ID: int = 1
+    TS_NOTIFY_CHANNEL_ID: int = 0   # 0 = ganzer Server
+    TS_POLL_INTERVAL: int = 30
+    TS_REJOIN_DEBOUNCE_SEC: int = 900
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
