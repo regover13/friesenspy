@@ -37,7 +37,7 @@ from app.database import (
 from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_position
 from app.alerts import format_online_message, send_telegram_alert
 from app.statsim import fetch_pilot_flights
-from app.teamspeak import fetch_channel_clients
+from app.teamspeak import fetch_channel_clients, parse_channel_ids
 from app.ts_notify import recipients_for
 
 logger = logging.getLogger(__name__)
@@ -273,6 +273,7 @@ class VatsimPoller:
         ts_query_pass: str = "",
         ts_server_id: int = 1,
         ts_notify_channel_id: int = 0,
+        ts_exclude_channel_ids: frozenset[int] = frozenset(),
         ts_poll_interval: int = 30,
         ts_rejoin_debounce_sec: int = 900,
     ) -> None:
@@ -290,6 +291,7 @@ class VatsimPoller:
         self.ts_query_pass = ts_query_pass
         self.ts_server_id = ts_server_id
         self.ts_notify_channel_id = ts_notify_channel_id
+        self.ts_exclude_channel_ids = ts_exclude_channel_ids
         self.ts_poll_interval = ts_poll_interval
         self.ts_rejoin_debounce_sec = ts_rejoin_debounce_sec
         self._scheduler: AsyncIOScheduler | None = None
@@ -708,6 +710,7 @@ class VatsimPoller:
                 password=self.ts_query_pass,
                 server_id=self.ts_server_id,
                 channel_id=self.ts_notify_channel_id,
+                exclude_channel_ids=self.ts_exclude_channel_ids,
             )
             if clients is None:
                 # ServerQuery nicht erreichbar / Login-Fehler → Poll überspringen, State
@@ -828,6 +831,7 @@ def create_poller() -> VatsimPoller:
         ts_query_pass=settings.TS_QUERY_PASS,
         ts_server_id=settings.TS_SERVER_ID,
         ts_notify_channel_id=settings.TS_NOTIFY_CHANNEL_ID,
+        ts_exclude_channel_ids=parse_channel_ids(settings.TS_EXCLUDE_CHANNEL_IDS),
         ts_poll_interval=settings.TS_POLL_INTERVAL,
         ts_rejoin_debounce_sec=settings.TS_REJOIN_DEBOUNCE_SEC,
     )
