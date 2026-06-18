@@ -23,6 +23,8 @@ from app.database import (
     get_live_positions,
     get_push_subscriptions_for_pilot,
     get_push_subscriptions_for_prefile,
+    get_ts_consent,
+    get_ts_push_subscriptions,
     load_prefile_sigs,
     open_flight,
     remove_live_position,
@@ -35,6 +37,8 @@ from app.database import (
 from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_position
 from app.alerts import format_online_message, send_telegram_alert
 from app.statsim import fetch_pilot_flights
+from app.teamspeak import fetch_channel_clients
+from app.ts_notify import recipients_for
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +261,15 @@ class VatsimPoller:
         telegram_chat_id: str = "",
         vapid_private_key: str = "",
         vapid_contact_email: str = "",
+        ts_notify_enabled: bool = False,
+        ts_host: str = "127.0.0.1",
+        ts_query_port: int = 10011,
+        ts_query_user: str = "",
+        ts_query_pass: str = "",
+        ts_server_id: int = 1,
+        ts_notify_channel_id: int = 0,
+        ts_poll_interval: int = 30,
+        ts_rejoin_debounce_sec: int = 900,
     ) -> None:
         self.db_path = db_path
         self.callsign_prefix = callsign_prefix
@@ -265,6 +278,15 @@ class VatsimPoller:
         self.telegram_chat_id = telegram_chat_id
         self.vapid_private_key = vapid_private_key
         self.vapid_contact_email = vapid_contact_email
+        self.ts_notify_enabled = ts_notify_enabled
+        self.ts_host = ts_host
+        self.ts_query_port = ts_query_port
+        self.ts_query_user = ts_query_user
+        self.ts_query_pass = ts_query_pass
+        self.ts_server_id = ts_server_id
+        self.ts_notify_channel_id = ts_notify_channel_id
+        self.ts_poll_interval = ts_poll_interval
+        self.ts_rejoin_debounce_sec = ts_rejoin_debounce_sec
         self._scheduler: AsyncIOScheduler | None = None
         self._http_client: httpx.AsyncClient | None = None
         # State: cid → {"id": flight_id, "dep": departure, "arr": arrival}
@@ -275,6 +297,10 @@ class VatsimPoller:
         self.last_prefiles: list = []
         # cid → (deptime, departure, arrival) für Änderungserkennung — None = erster Poll
         self._prefile_sigs: dict | None = None
+        # TS-Login-Diff: FRS-Menge im Zielkanal beim letzten Poll. None = erster Poll (Baseline).
+        self._ts_last_seen: set[str] | None = None
+        # FRS → Zeitpunkt der letzten Benachrichtigung (Debounce gegen Re-Joins).
+        self._ts_last_notified: dict[str, datetime] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -337,6 +363,15 @@ class VatsimPoller:
             "date",
             id="calendar_sync_initial",
         )
+        if self.ts_notify_enabled and self.vapid_private_key:
+            self._scheduler.add_job(
+                self._poll_teamspeak,
+                "interval",
+                seconds=self.ts_poll_interval,
+                id="ts_poll",
+            )
+            logger.info("TS-Login-Benachrichtigung aktiv (Kanal %d, %ds)",
+                        self.ts_notify_channel_id, self.ts_poll_interval)
         self._scheduler.start()
 
     async def stop(self) -> None:
@@ -648,6 +683,67 @@ class VatsimPoller:
         except Exception:
             logger.exception("Error in _poll_once")
 
+    async def _poll_teamspeak(self) -> None:
+        """TS-ServerQuery pollen, neue FRS-Beitritte → WebPush. Exceptions nur loggen."""
+        try:
+            clients = await fetch_channel_clients(
+                host=self.ts_host,
+                port=self.ts_query_port,
+                user=self.ts_query_user,
+                password=self.ts_query_pass,
+                server_id=self.ts_server_id,
+                channel_id=self.ts_notify_channel_id,
+            )
+            current = {c["frs"] for c in clients}
+            nick_by_frs = {c["frs"]: c["nick"] for c in clients}
+
+            if self._ts_last_seen is None:
+                # Erster Poll nach Start — Baseline setzen, keine Notifications.
+                self._ts_last_seen = current
+                return
+
+            newly_joined = current - self._ts_last_seen
+            self._ts_last_seen = current
+            if not newly_joined:
+                return
+
+            now = datetime.now(timezone.utc)
+            for frs in newly_joined:
+                last = self._ts_last_notified.get(frs)
+                if last and (now - last).total_seconds() < self.ts_rejoin_debounce_sec:
+                    continue
+                self._ts_last_notified[frs] = now
+
+                conn = get_connection(self.db_path)
+                try:
+                    consent = get_ts_consent(conn, frs)
+                    subs = get_ts_push_subscriptions(conn)
+                finally:
+                    conn.close()
+
+                recipients = recipients_for(consent, subs, frs)
+                if not recipients:
+                    continue
+
+                nick = nick_by_frs.get(frs, frs)
+                payload = {
+                    "title": f"🎧 {nick} ist im TeamSpeak",
+                    "body": "FriesenFlieger TeamSpeak",
+                    "url": "/",
+                }
+                asyncio.create_task(
+                    send_web_push(
+                        self.vapid_private_key,
+                        self.vapid_contact_email,
+                        self.db_path,
+                        recipients,
+                        payload,
+                        label=f"TSPush[{frs}]",
+                    )
+                )
+        except Exception:
+            logger.exception("Error in _poll_teamspeak")
+
     # ------------------------------------------------------------------
     # Calendar sync
     # ------------------------------------------------------------------
@@ -704,4 +800,13 @@ def create_poller() -> VatsimPoller:
         telegram_chat_id=settings.TELEGRAM_CHAT_ID,
         vapid_private_key=settings.VAPID_PRIVATE_KEY,
         vapid_contact_email=settings.VAPID_CONTACT_EMAIL,
+        ts_notify_enabled=settings.TS_NOTIFY_ENABLED,
+        ts_host=settings.TS_HOST,
+        ts_query_port=settings.TS_QUERY_PORT,
+        ts_query_user=settings.TS_QUERY_USER,
+        ts_query_pass=settings.TS_QUERY_PASS,
+        ts_server_id=settings.TS_SERVER_ID,
+        ts_notify_channel_id=settings.TS_NOTIFY_CHANNEL_ID,
+        ts_poll_interval=settings.TS_POLL_INTERVAL,
+        ts_rejoin_debounce_sec=settings.TS_REJOIN_DEBOUNCE_SEC,
     )
