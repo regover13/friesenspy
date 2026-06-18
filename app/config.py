@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     TS_QUERY_PASS: str = ""
     TS_SERVER_ID: int = 1
     TS_NOTIFY_CHANNEL_ID: int = 0   # 0 = ganzer Server
+    TS_EXCLUDE_CHANNEL_IDS: str = ""  # Komma-separierte Kanal-IDs, die NIE benachrichtigen
     TS_POLL_INTERVAL: int = 30
     TS_REJOIN_DEBOUNCE_SEC: int = 900
 

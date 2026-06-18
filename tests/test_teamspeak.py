@@ -71,3 +71,50 @@ class TestFetchChannelClients:
                 server_id=1, channel_id=0,
             )
         assert out is None
+
+
+from app.teamspeak import parse_channel_ids
+
+
+class TestParseChannelIds:
+    def test_empty_is_empty_set(self):
+        assert parse_channel_ids("") == frozenset()
+        assert parse_channel_ids(None) == frozenset()
+
+    def test_parses_csv(self):
+        assert parse_channel_ids("12,13,14") == frozenset({12, 13, 14})
+
+    def test_ignores_whitespace_and_invalid(self):
+        assert parse_channel_ids(" 12 , , 13 ,abc, 14,") == frozenset({12, 13, 14})
+
+
+class TestExcludeChannels:
+    RAW = [
+        {"clid": "1", "cid": "7", "client_type": "0", "client_nickname": "Max/FRS1"},   # Gaststube
+        {"clid": "2", "cid": "12", "client_type": "0", "client_nickname": "Admin FRS2"}, # Verwaltung
+        {"clid": "3", "cid": "13", "client_type": "0", "client_nickname": "Boss FRS3"},  # Staff (unter Verwaltung)
+    ]
+
+    def test_excluded_channels_dropped(self):
+        out = _parse_clientlist(self.RAW, channel_id=0, exclude_channel_ids=frozenset({12, 13}))
+        assert [c["frs"] for c in out] == ["FRS1"]
+
+    def test_no_exclusion_keeps_all(self):
+        out = _parse_clientlist(self.RAW, channel_id=0)
+        assert {c["frs"] for c in out} == {"FRS1", "FRS2", "FRS3"}
+
+    @pytest.mark.asyncio
+    async def test_fetch_passes_exclusion_through(self):
+        captured = {}
+
+        def fake_sync(host, port, user, password, server_id, channel_id, exclude_channel_ids=frozenset()):
+            captured["exclude"] = exclude_channel_ids
+            return [{"frs": "FRS1", "nick": "Max/FRS1", "cid": 7}]
+
+        with patch("app.teamspeak._fetch_clients_sync", side_effect=fake_sync):
+            out = await fetch_channel_clients(
+                host="h", port=10011, user="u", password="p",
+                server_id=1, channel_id=0, exclude_channel_ids=frozenset({12, 13}),
+            )
+        assert captured["exclude"] == frozenset({12, 13})
+        assert out == [{"frs": "FRS1", "nick": "Max/FRS1", "cid": 7}]

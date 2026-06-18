@@ -185,7 +185,7 @@ FriesenSpy kann eine Web-Push-Benachrichtigung senden, wenn ein Friese dem Fries
 
 **Wie es funktioniert:**
 
-Alle `TS_POLL_INTERVAL` Sekunden (Default: 30 s) fragt FriesenSpy den TeamSpeak-Server über die ServerQuery-Schnittstelle (Port 10011) ab. Es wird verglichen, welche FRS-Nummern gerade im konfigurierten Kanal sitzen — neu Beigetretene lösen eine Push-Benachrichtigung aus. Der erste erfolgreiche Poll setzt nur die Baseline (keine Notification). Ein `TS_NOTIFY_CHANNEL_ID=0` überwacht den gesamten Server.
+Alle `TS_POLL_INTERVAL` Sekunden (Default: 30 s) fragt FriesenSpy den TeamSpeak-Server über die ServerQuery-Schnittstelle (Port 10011) ab. Es wird verglichen, welche FRS-Nummern gerade im konfigurierten Kanal sitzen — neu Beigetretene lösen eine Push-Benachrichtigung aus. Der erste erfolgreiche Poll setzt nur die Baseline (keine Notification). Ein `TS_NOTIFY_CHANNEL_ID=0` überwacht den gesamten Server. Mit `TS_EXCLUDE_CHANNEL_IDS` (komma-separierte Kanal-IDs) lassen sich einzelne Kanäle ausnehmen — z. B. der Verwaltungs-Baum, in dem Beitritte niemanden benachrichtigen sollen.
 
 **Datenschutz / Consent:** Ob jemand über TS-Beitritte anderer Friesen informiert werden darf, steuert der Admin über die Tabelle `ts_consent`:
 
@@ -221,6 +221,7 @@ TS_QUERY_USER=               # ServerQuery-Login
 TS_QUERY_PASS=               # ServerQuery-Passwort
 TS_SERVER_ID=1               # Default: 1
 TS_NOTIFY_CHANNEL_ID=0       # Default: 0 = ganzer Server; Kanal-ID für Zielkanal
+TS_EXCLUDE_CHANNEL_IDS=      # Komma-separierte Kanal-IDs, die NIE benachrichtigen (z. B. Verwaltung)
 TS_POLL_INTERVAL=30          # Default: 30 Sekunden
 TS_REJOIN_DEBOUNCE_SEC=900   # Default: 900 s (15 min)
 ```
@@ -330,6 +331,7 @@ TS_QUERY_USER=
 TS_QUERY_PASS=
 TS_SERVER_ID=1
 TS_NOTIFY_CHANNEL_ID=0                      # 0 = ganzer Server
+TS_EXCLUDE_CHANNEL_IDS=                     # Kanal-IDs (CSV), die nie benachrichtigen
 TS_POLL_INTERVAL=30
 TS_REJOIN_DEBOUNCE_SEC=900
 ```
