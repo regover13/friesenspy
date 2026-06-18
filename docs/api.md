@@ -370,6 +370,8 @@ Browser-Push-Subscription speichern oder aktualisieren.
 | `auth` | string | ✓ | Auth-Secret (base64url) |
 | `pilot_filter` | int[] \| null | — | CID-Liste der zu benachrichtigenden Piloten; `null` = alle |
 | `notify_prefiles` | bool | — | Auch bei eingereichten oder geänderten Flugplänen benachrichtigen — feuert bei neuem Prefile oder Änderung von Abflugzeit, Abflug- oder Zielflughafen; wird unterdrückt wenn der Pilot bereits online ist (default: true) |
+| `notify_ts` | bool | — | TS-Login-Benachrichtigungen für diesen Subscriber aktivieren (default: false) |
+| `ts_self_frs` | string | — | Eigene FRS-Nummer des Subscribers (z.B. `"FRS49"`) — wird beim TS-Login dieser FRS nicht benachrichtigt (kein Selbst-Ping) |
 
 **Response** `{"status": "ok"}`
 

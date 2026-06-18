@@ -15,6 +15,7 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
   - [Statistiken](#-statistiken)
   - [Event-Suche](#-event-suche)
 - [Benachrichtigungen](#-benachrichtigungen-push-notifications)
+- [TS-Login-Benachrichtigung](#ts-login-benachrichtigung-phase-1)
 - [Karten-Layer](#️-karten-layer)
 - [Links teilen & Deep-Linking](#-links-teilen--deep-linking)
 - [Woher kommen die Daten?](#woher-kommen-die-daten)
@@ -150,6 +151,8 @@ Du gibst einen **ICAO-Code** (z.B. `EDDK`) oder **`global`** für weltweite Such
 
 FriesenSpy kann dich benachrichtigen, wenn ein Friese auf VATSIM online geht — auch wenn der Browser im Hintergrund läuft oder der PC gesperrt ist. Optional auch schon beim **Einreichen oder Ändern eines Flugplans** (Prefile), bevor der Pilot online geht — auch bei Änderungen an Abflugzeit, Abflug- oder Zielflughafen. Die Notification enthält Datum und Uhrzeit des geplanten Fluges (aus dem DOF-Feld). Ist der Pilot bereits online, werden Prefile-Änderungen ignoriert.
 
+Zusätzlich kann FriesenSpy Push-Benachrichtigungen senden, wenn ein Friese dem **FriesenFlieger-TeamSpeak** beitritt (siehe [TS-Login-Benachrichtigung](#ts-login-benachrichtigung-phase-1)).
+
 Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 
 **Einrichten:**
@@ -171,6 +174,58 @@ Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 > **Hinweis bei „Nur bestimmte Piloten":** Neue Mitglieder der FriesenFlieger werden nicht automatisch in die Auswahl aufgenommen. Nach einem Neuzugang einmal das Panel öffnen, den neuen Piloten anhaken und erneut speichern.
 
 **„Push zurücksetzen"-Button** (kleiner Link unterhalb des Panels): Falls Benachrichtigungen nicht ankommen, obwohl sie aktiviert sind — dieser Button deregistriert den Service Worker und erzwingt eine frische Registrierung beim Push-Dienst. Danach einmal neu abonnieren.
+
+---
+
+---
+
+## TS-Login-Benachrichtigung (Phase 1)
+
+FriesenSpy kann eine Web-Push-Benachrichtigung senden, wenn ein Friese dem FriesenFlieger-TeamSpeak beitritt — auch wenn kein Browser offen ist. Das Feature ist **optional** und standardmäßig deaktiviert (`TS_NOTIFY_ENABLED=false`).
+
+**Wie es funktioniert:**
+
+Alle `TS_POLL_INTERVAL` Sekunden (Default: 30 s) fragt FriesenSpy den TeamSpeak-Server über die ServerQuery-Schnittstelle (Port 10011) ab. Es wird verglichen, welche FRS-Nummern gerade im konfigurierten Kanal sitzen — neu Beigetretene lösen eine Push-Benachrichtigung aus. Der erste erfolgreiche Poll setzt nur die Baseline (keine Notification). Ein `TS_NOTIFY_CHANNEL_ID=0` überwacht den gesamten Server.
+
+**Datenschutz / Consent:** Ob jemand über TS-Beitritte anderer Friesen informiert werden darf, steuert der Admin über die Tabelle `ts_consent`:
+
+| Sichtbarkeit | Bedeutung |
+|---|---|
+| `everyone` | Alle opt-in-Subscriber werden benachrichtigt (Default wenn kein Eintrag) |
+| `nobody` | Keine Benachrichtigungen für diese FRS |
+| `allowlist` | Nur die explizit aufgeführten FRS-Nummern werden benachrichtigt |
+
+Consent wird in Phase 1 vom Admin via CLI gesetzt (kein Web-UI):
+
+```bash
+python manage_ts_consent.py set FRS135 nobody
+python manage_ts_consent.py set FRS135 allowlist --allow FRS2 FRS7
+python manage_ts_consent.py get FRS135
+python manage_ts_consent.py list
+python manage_ts_consent.py delete FRS135
+```
+
+**Abonnieren:** Subscriber aktivieren TS-Benachrichtigungen über `POST /api/push/subscribe` mit `notify_ts=true` (und optional `ts_self_frs` für Kein-Selbst-Ping). Eine Subscription mit `ts_self_frs=FRS49` bekommt keine Benachrichtigung wenn FRS49 dem TS beitritt.
+
+**Debounce:** Ein schnelles Re-Join (z.B. TS-Client-Neustart) löst innerhalb von `TS_REJOIN_DEBOUNCE_SEC` Sekunden (Default: 900 s / 15 min) keine erneute Benachrichtigung aus.
+
+**Neue Abhängigkeit:** `ts3` (in `requirements.txt`). Das Paket wird nur beim TS-Poll geladen (lazy import); der Rest von FriesenSpy läuft ohne `ts3`.
+
+**config.env-Variablen:**
+
+```bash
+TS_NOTIFY_ENABLED=false      # Default: false — auf true setzen um Feature zu aktivieren
+TS_HOST=127.0.0.1            # Default: 127.0.0.1
+TS_QUERY_PORT=10011          # Default: 10011
+TS_QUERY_USER=               # ServerQuery-Login
+TS_QUERY_PASS=               # ServerQuery-Passwort
+TS_SERVER_ID=1               # Default: 1
+TS_NOTIFY_CHANNEL_ID=0       # Default: 0 = ganzer Server; Kanal-ID für Zielkanal
+TS_POLL_INTERVAL=30          # Default: 30 Sekunden
+TS_REJOIN_DEBOUNCE_SEC=900   # Default: 900 s (15 min)
+```
+
+> Voraussetzung: VAPID-Keys müssen konfiguriert sein (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CONTACT_EMAIL`). Der Job wird nur registriert wenn `TS_NOTIFY_ENABLED=true` **und** VAPID konfiguriert ist.
 
 ---
 
@@ -235,6 +290,7 @@ Pro Flug werden zwei Zeiten geführt: **Online-Zeit** (wie lange der Pilot mit V
 | Backend | Python 3.11, FastAPI, APScheduler |
 | Datenbank | SQLite (WAL-Mode) |
 | HTTP-Client | httpx (async) |
+| TS-Client | ts3 (ServerQuery, nur bei TS_NOTIFY_ENABLED) |
 | Frontend | Vanilla JS, Leaflet.js (Single-Page-App) |
 | Deployment | Docker, GitHub Actions → GHCR → SSH |
 
@@ -266,6 +322,16 @@ OPENAIP_API_KEY=                            # Optional: OpenAIP-Overlay (Luftrau
 VAPID_PUBLIC_KEY=                           # Optional: Web Push Public Key (base64url)
 VAPID_PRIVATE_KEY=                          # Optional: Web Push Private Key (base64url, 43 Zeichen)
 VAPID_CONTACT_EMAIL=                        # Optional: mailto:... für Web Push
+# TeamSpeak-Login-Benachrichtigung (alle optional, Default: deaktiviert)
+TS_NOTIFY_ENABLED=false
+TS_HOST=127.0.0.1
+TS_QUERY_PORT=10011
+TS_QUERY_USER=
+TS_QUERY_PASS=
+TS_SERVER_ID=1
+TS_NOTIFY_CHANNEL_ID=0                      # 0 = ganzer Server
+TS_POLL_INTERVAL=30
+TS_REJOIN_DEBOUNCE_SEC=900
 ```
 
 ### Tests
@@ -300,6 +366,8 @@ FriesenSpy/
 │   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline), Event-Filter
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
 │   ├── calendar_sync.py # FriesenFlieger Google-Kalender (iCal-Parser, alle 6h via Poller)
+│   ├── teamspeak.py   # TeamSpeak-ServerQuery-Client (FRS-Parsing, fetch_channel_clients)
+│   ├── ts_notify.py   # Empfänger-Auswahl für TS-Login-Notifications (recipients_for)
 │   ├── poller.py      # APScheduler, Flug-State-Machine, Kalender-Sync, SSE-Queue
 │   └── static/
 │       ├── index.html # Vanilla-JS-SPA (4 Tabs)
