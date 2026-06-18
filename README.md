@@ -187,25 +187,26 @@ FriesenSpy kann eine Web-Push-Benachrichtigung senden, wenn ein Friese dem Fries
 
 Alle `TS_POLL_INTERVAL` Sekunden (Default: 30 s) fragt FriesenSpy den TeamSpeak-Server über die ServerQuery-Schnittstelle (Port 10011) ab. Es wird verglichen, welche FRS-Nummern gerade im konfigurierten Kanal sitzen — neu Beigetretene lösen eine Push-Benachrichtigung aus. Der erste erfolgreiche Poll setzt nur die Baseline (keine Notification). Ein `TS_NOTIFY_CHANNEL_ID=0` überwacht den gesamten Server. Mit `TS_EXCLUDE_CHANNEL_IDS` (komma-separierte Kanal-IDs) lassen sich einzelne Kanäle ausnehmen — z. B. der Verwaltungs-Baum, in dem Beitritte niemanden benachrichtigen sollen.
 
-**Datenschutz / Consent:** Ob jemand über TS-Beitritte anderer Friesen informiert werden darf, steuert der Admin über die Tabelle `ts_consent`:
+**Datenschutz / Consent (Subjekt-Seite):** Ob über die TS-Beitritte einer Person überhaupt benachrichtigt werden darf, steuert der Admin über die Tabelle `ts_consent`:
 
 | Sichtbarkeit | Bedeutung |
 |---|---|
-| `everyone` | Alle opt-in-Subscriber werden benachrichtigt (Default wenn kein Eintrag) |
-| `nobody` | Keine Benachrichtigungen für diese FRS |
-| `allowlist` | Nur die explizit aufgeführten FRS-Nummern werden benachrichtigt |
+| `everyone` | Benachrichtigungen erlaubt (Default wenn kein Eintrag) |
+| `nobody` | Keine Benachrichtigungen über diese FRS |
 
-Consent wird in Phase 1 vom Admin via CLI gesetzt (kein Web-UI):
+Consent wird vom Admin via CLI gesetzt (kein Web-UI):
 
 ```bash
 python manage_ts_consent.py set FRS135 nobody
-python manage_ts_consent.py set FRS135 allowlist --allow FRS2 FRS7
+python manage_ts_consent.py set FRS135 everyone
 python manage_ts_consent.py get FRS135
 python manage_ts_consent.py list
 python manage_ts_consent.py delete FRS135
 ```
 
-**Abonnieren:** Subscriber aktivieren TS-Benachrichtigungen selbst im Benachrichtigungs-Panel der PWA über die Checkbox „🎧 Bei TeamSpeak-Beitritt benachrichtigen" und tragen optional ihre eigene FRS-Nummer ein (verhindert Pings über eigene Beitritte). Technisch sendet das Panel `notify_ts=true` (und optional `ts_self_frs`) an `POST /api/push/subscribe`. Eine Subscription mit `ts_self_frs=FRS49` bekommt keine Benachrichtigung wenn FRS49 dem TS beitritt.
+**Empfänger-Auswahl (eine für alles):** Die Piloten-Auswahl im Benachrichtigungs-Panel („Alle Friesen" / „Nur bestimmte Piloten") gilt für **Online, Flugplan UND TeamSpeak** gemeinsam. Beim Umschalten auf „Nur bestimmte" sind zunächst alle angehakt — du entfernst die Haken bei denen, die du *nicht* willst (auch bei dir selbst → kein Selbst-Ping, für alle drei Typen). Die Checkbox „🎧 Bei TeamSpeak-Beitritt benachrichtigen" steuert separat, ob TS-Pings überhaupt erwünscht sind. TS-Beitritte werden über das VATSIM-Callsign (= FRS-Nummer) der CID zugeordnet und gegen dieselbe Auswahl geprüft.
+
+Hinweis: Im Modus „Nur bestimmte" bekommen reine TS-Leute **ohne** VATSIM-Flug keinen Ping (nicht in der Liste). Im Modus „Alle" schon.
 
 **Verweildauer-Bestätigung:** `TS_MIN_DWELL_POLLS` (Default: 1) legt fest, wie viele *zusätzliche* Polls eine FRS präsent bleiben muss, bevor benachrichtigt wird. Bei `1` muss sie beim Folge-Poll noch da sein — kurzes „Reinschauen" (vor dem nächsten Poll wieder weg) löst dann **keine** Benachrichtigung aus (Kosten: bis zu ein Poll-Intervall mehr Verzögerung). `0` = sofort beim ersten Erkennen.
 
@@ -373,7 +374,6 @@ FriesenSpy/
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
 │   ├── calendar_sync.py # FriesenFlieger Google-Kalender (iCal-Parser, alle 6h via Poller)
 │   ├── teamspeak.py   # TeamSpeak-ServerQuery-Client (FRS-Parsing, fetch_channel_clients)
-│   ├── ts_notify.py   # Empfänger-Auswahl für TS-Login-Notifications (recipients_for)
 │   ├── poller.py      # APScheduler, Flug-State-Machine, Kalender-Sync, SSE-Queue
 │   └── static/
 │       ├── index.html # Vanilla-JS-SPA (4 Tabs)

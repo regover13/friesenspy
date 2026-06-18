@@ -47,7 +47,6 @@ mkdir -p /opt/friesenspy/data
 - `app/geo.py` — Haversine, ICAO→Koordinaten, Event-Filter
 - `app/alerts.py` — Telegram-Alerts (silent fail)
 - `app/teamspeak.py` — TeamSpeak-ServerQuery-Client (parse_frs, fetch_channel_clients)
-- `app/ts_notify.py` — Empfänger-Auswahl für TS-Login-Benachrichtigungen (recipients_for)
 - `app/poller.py` — APScheduler, Flug-State-Machine, SSE-Queue
 - `app/main.py` — FastAPI-App, REST + SSE-Endpoints
 - `app/static/index.html` — Vanilla-JS-SPA (4 Tabs)

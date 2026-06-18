@@ -55,9 +55,9 @@ SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Sieben Tabellen:
 | `live_positions` | Aktuelle Position pro CID (UPSERT, maximal 1 Zeile pro CID) |
 | `position_history` | Jede einzelne VATSIM-Positions-Update (für Tracks + Events) |
 | `calendar_events` | FriesenFlieger Google-Kalender (alle 6h synchronisiert, UID als Primary Key) |
-| `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array, `notify_prefiles` Flag, `notify_ts` Flag, `ts_self_frs`) |
+| `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array — gilt für Online/Flugplan/TS, `notify_prefiles` Flag, `notify_ts` Flag; `ts_self_frs` = tote Spalte, nicht mehr genutzt) |
 | `prefile_sigs` | Letzte bekannte Prefile-Signatur pro CID (`deptime`, `departure`, `arrival`) — wird nach jedem Poll persistiert, damit Container-Neustarts keine Änderungen verpassen |
-| `ts_consent` | Einwilligung pro FRS für TS-Login-Sichtbarkeit (`visibility` ∈ `everyone`/`nobody`/`allowlist`, `allowlist` als JSON-Array) — kein Eintrag = Default `everyone` |
+| `ts_consent` | Subjekt-Einwilligung pro FRS für TS-Login-Sichtbarkeit (`visibility` ∈ `everyone`/`nobody`; `allowlist`-Spalte existiert noch, wird aber nicht mehr ausgewertet) — kein Eintrag = Default `everyone` |
 
 Drei Indizes: `idx_ph_cid_ts`, `idx_ph_ts`, `idx_flights_cid`.
 
@@ -107,7 +107,7 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 1. `fetch_channel_clients` aufrufen → `None` bei Fehler (Poll überspringen, State unangetastet); `[]` ist ein gültig leerer Kanal
 2. Erster erfolgreicher Poll: Baseline — präsente FRS in `_ts_streak` mit `_TS_BASELINE_STREAK` (sehr hoch) markieren, sodass sie die Schwelle nie treffen → keine Notifications
 3. Präsenz-Streak: je präsenter FRS `_ts_streak[frs] += 1`; abwesende FRS fallen aus dem Dict (Reset). Bestätigt = Streak erreicht erstmals `TS_MIN_DWELL_POLLS + 1` → erst dann Kandidat. Kurzes „Reinschauen" (vor dem Folge-Poll weg) erreicht die Schwelle nie.
-4. Pro bestätigter FRS: Debounce prüfen (`_ts_last_notified`, `TS_REJOIN_DEBOUNCE_SEC`); `get_ts_consent` + `get_ts_push_subscriptions` aus DB laden; `recipients_for` aufrufen; `send_web_push` als asyncio-Task starten
+4. Pro bestätigter FRS: Debounce prüfen (`_ts_last_notified`, `TS_REJOIN_DEBOUNCE_SEC`); Subjekt-Privacy `get_ts_consent(frs)` (`visibility == 'nobody'` → keine Empfänger); sonst `cid_for_callsign(frs)` und `get_ts_push_subscriptions(conn, cid)` (notify_ts=1, gefiltert über denselben `pilot_filter` wie Online/Flugplan; `cid is None` → nur „Alle"-Subs); `send_web_push` als asyncio-Task starten
 
 **Prefile Push-Notification-Logik:**
 - `_prefile_sig(p)` → `(deptime, departure, arrival)` — Änderungssignatur
@@ -147,15 +147,13 @@ TeamSpeak-ServerQuery-Client für die TS-Login-Benachrichtigung (Phase 1). Baut 
 - `_parse_clientlist(clients, channel_id)` — filtert die rohe ts3-clientlist: nur echte Clients (`client_type == "0"`), nur im Zielkanal (channel_id 0 = ganzer Server), nur Clients mit FRS-Tag. Gibt `[{frs, nick, cid}]` zurück.
 - `fetch_channel_clients(*, host, port, user, password, server_id, channel_id)` — async Wrapper: führt `_fetch_clients_sync` (login → use → clientlist → close) per `run_in_executor` aus. Gibt `None` bei Fehler zurück (kein Crash), damit der Caller zwischen nicht-erreichbarem Server (`None`) und echtem leeren Kanal (`[]`) unterscheiden kann.
 
-### `app/ts_notify.py`
+### Empfänger-Auswahl (einheitlich, `app/database.py`)
 
-Reine Logik zur Empfänger-Auswahl für TS-Login-Benachrichtigungen (kein DB-, kein HTTP-Zugriff).
+Online, Flugplan und TS nutzen denselben empfängerseitigen `pilot_filter` (CID-Liste je Subscription; `NULL` = alle). Selbst-Ausschluss = eigenen CID weglassen (Modus „Nur bestimmte"). Es gibt kein separates `recipients_for`/`ts_self_frs` mehr.
 
-- `recipients_for(consent, opted_in_subs, joining_frs)` — bestimmt anhand des Consent-Eintrags (aus `ts_consent`) und der opt-in-Subscription-Liste, welche Subscriptions über den Beitritt von `joining_frs` informiert werden sollen. Drei Sichtbarkeits-Modi:
-  - `everyone` (Default wenn kein Consent-Eintrag vorhanden): alle opt-in-Subscriptions
-  - `nobody`: keine Notifications
-  - `allowlist`: nur Subscriptions deren `ts_self_frs` in der Allowlist steht
-  - Unabhängig vom Modus: ein Subscriber mit `ts_self_frs == joining_frs` wird immer übersprungen (kein Selbst-Ping)
+- `cid_for_callsign(conn, callsign)` — mappt eine FRS/Callsign (z. B. `FRS49`) auf die CID (Quelle: `live_positions` → jüngster `flights` → `statsim_cache`), oder `None` für reine TS-Leute ohne VATSIM-Flug.
+- `get_ts_push_subscriptions(conn, cid)` — TS-Opt-in-Subscriptions (`notify_ts = 1`), gefiltert über `pilot_filter` (NULL = alle; sonst nur wenn `cid` enthalten; `cid is None` → nur NULL-Filter). Spiegelt die Logik von `get_push_subscriptions_for_pilot`.
+- Subjekt-Privacy bleibt über `ts_consent` (`everyone`/`nobody`) in `_poll_teamspeak` vorgeschaltet.
 
 ### `app/alerts.py`
 
@@ -235,9 +233,9 @@ TeamSpeak-Server (port 10011)
         │
         ├─► Pro bestätigter FRS:
         │         Debounce-Check (_ts_last_notified, TS_REJOIN_DEBOUNCE_SEC)
-        │         get_ts_consent(frs) → visibility + allowlist aus ts_consent
-        │         get_ts_push_subscriptions() → alle notify_ts=1 Subscriptions
-        │         recipients_for(consent, subs, frs) → gefilterte Empfänger
+        │         get_ts_consent(frs) → visibility == 'nobody' ? keine Empfänger
+        │         cid_for_callsign(frs) → CID (oder None bei reinen TS-Leuten)
+        │         get_ts_push_subscriptions(conn, cid) → notify_ts=1 ∩ pilot_filter
         │
         └─► send_web_push(recipients, payload)
                   Payload: {"title": "🎧 <nick> ist im TeamSpeak", "body": "FriesenFlieger TeamSpeak"}
@@ -335,7 +333,7 @@ CREATE TABLE push_subscriptions (
     pilot_filter   TEXT DEFAULT NULL,    -- JSON-Array von CIDs oder NULL = alle
     notify_prefiles INTEGER DEFAULT 0,  -- 1 = auch Prefile-Änderungen benachrichtigen
     notify_ts      INTEGER DEFAULT 0,   -- 1 = TS-Login-Benachrichtigungen erwünscht
-    ts_self_frs    TEXT,                -- eigene FRS (kein Selbst-Ping bei TS-Login)
+    ts_self_frs    TEXT,                -- tote Spalte (nicht mehr genutzt; Selbst-Ausschluss via pilot_filter)
     created_at     TEXT NOT NULL
 );
 
@@ -351,8 +349,8 @@ CREATE TABLE prefile_sigs (
 -- TS-Login-Einwilligung pro FRS (Phase 1: Admin-gesetzt via manage_ts_consent.py)
 CREATE TABLE ts_consent (
     frs        TEXT PRIMARY KEY,
-    visibility TEXT DEFAULT 'everyone',  -- everyone | nobody | allowlist
-    allowlist  TEXT,                     -- JSON-Array von FRS-Nummern (nur bei visibility=allowlist)
+    visibility TEXT DEFAULT 'everyone',  -- everyone | nobody (ausgewertet); allowlist nicht mehr genutzt
+    allowlist  TEXT,                     -- tote Spalte (nicht mehr ausgewertet)
     updated_at TEXT
 );
 ```
