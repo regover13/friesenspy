@@ -23,3 +23,27 @@ def parse_frs(nick: str) -> str | None:
     """
     m = _FRS_RE.search(nick or "")
     return m.group(0).upper() if m else None
+
+
+def _parse_clientlist(clients: list[dict], channel_id: int) -> list[dict]:
+    """Rohe ts3-clientlist (Liste von Dicts) → [{frs, nick, cid}] für den Zielkanal.
+
+    channel_id == 0 ⇒ ganzer Server. Nur echte Clients (client_type == "0").
+    Clients ohne FRS-Tag werden verworfen (Phase 1 ist FRS-zentriert).
+    """
+    out: list[dict] = []
+    for c in clients:
+        if c.get("client_type") != "0":
+            continue
+        try:
+            cid = int(c.get("cid", 0))
+        except (ValueError, TypeError):
+            cid = 0
+        if channel_id != 0 and cid != channel_id:
+            continue
+        nick = c.get("client_nickname", "")
+        frs = parse_frs(nick)
+        if not frs:
+            continue
+        out.append({"frs": frs, "nick": nick, "cid": cid})
+    return out
