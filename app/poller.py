@@ -42,6 +42,10 @@ from app.ts_notify import recipients_for
 
 logger = logging.getLogger(__name__)
 
+# Beim Start bereits präsente FRS bekommen diesen (sehr hohen) Streak-Wert, damit sie die
+# Verweildauer-Schwelle nie exakt treffen und somit keine Baseline-Notification auslösen.
+_TS_BASELINE_STREAK = 1_000_000
+
 
 async def _load_statsim_history(cid: int, api_key: str, db_path: str) -> None:
     """Lädt 365-Tage-History von StatSim für einen neu erkannten Piloten."""
@@ -274,6 +278,7 @@ class VatsimPoller:
         ts_server_id: int = 1,
         ts_notify_channel_id: int = 0,
         ts_exclude_channel_ids: frozenset[int] = frozenset(),
+        ts_min_dwell_polls: int = 1,
         ts_poll_interval: int = 30,
         ts_rejoin_debounce_sec: int = 900,
     ) -> None:
@@ -292,6 +297,7 @@ class VatsimPoller:
         self.ts_server_id = ts_server_id
         self.ts_notify_channel_id = ts_notify_channel_id
         self.ts_exclude_channel_ids = ts_exclude_channel_ids
+        self.ts_min_dwell_polls = ts_min_dwell_polls
         self.ts_poll_interval = ts_poll_interval
         self.ts_rejoin_debounce_sec = ts_rejoin_debounce_sec
         self._scheduler: AsyncIOScheduler | None = None
@@ -304,8 +310,10 @@ class VatsimPoller:
         self.last_prefiles: list = []
         # cid → (deptime, departure, arrival) für Änderungserkennung — None = erster Poll
         self._prefile_sigs: dict | None = None
-        # TS-Login-Diff: FRS-Menge im Zielkanal beim letzten Poll. None = erster Poll (Baseline).
-        self._ts_last_seen: set[str] | None = None
+        # TS-Login: FRS → Anzahl konsekutiver Polls, in denen die FRS präsent war.
+        # None = vor dem ersten erfolgreichen Poll (Baseline noch nicht gesetzt).
+        # Beim Start präsente FRS werden mit _TS_BASELINE_STREAK markiert (lösen nie aus).
+        self._ts_streak: dict[str, int] | None = None
         # FRS → Zeitpunkt der letzten Benachrichtigung (Debounce gegen Re-Joins).
         self._ts_last_notified: dict[str, datetime] = {}
 
@@ -720,19 +728,31 @@ class VatsimPoller:
             current = {c["frs"] for c in clients}
             nick_by_frs = {c["frs"]: c["nick"] for c in clients}
 
-            if self._ts_last_seen is None:
+            if self._ts_streak is None:
                 # Erster erfolgreicher Poll nach Start — Baseline setzen (auch ein leerer
-                # Kanal ist eine gültige Baseline), keine Notifications.
-                self._ts_last_seen = current
+                # Kanal ist gültig). Präsente FRS bekommen einen hohen Streak, sodass sie die
+                # Verweildauer-Schwelle nie treffen → keine Baseline-Notification.
+                self._ts_streak = {frs: _TS_BASELINE_STREAK for frs in current}
                 return
 
-            newly_joined = current - self._ts_last_seen
-            self._ts_last_seen = current
-            if not newly_joined:
+            # Verweildauer-Bestätigung: Streak je präsenter FRS hochzählen; abwesende FRS
+            # fallen aus dem Dict (Streak-Reset). Benachrichtigt wird genau in dem Poll, in
+            # dem der Streak die Schwelle (min_dwell_polls + 1) erstmals erreicht — wer vorher
+            # wieder weg ist ("kurz reingeschaut"), erreicht sie nie.
+            threshold = self.ts_min_dwell_polls + 1
+            new_streak: dict[str, int] = {}
+            confirmed: list[str] = []
+            for frs in current:
+                n = self._ts_streak.get(frs, 0) + 1
+                new_streak[frs] = n
+                if n == threshold:
+                    confirmed.append(frs)
+            self._ts_streak = new_streak
+            if not confirmed:
                 return
 
             now = datetime.now(timezone.utc)
-            for frs in newly_joined:
+            for frs in confirmed:
                 last = self._ts_last_notified.get(frs)
                 if last and (now - last).total_seconds() < self.ts_rejoin_debounce_sec:
                     continue
@@ -832,6 +852,7 @@ def create_poller() -> VatsimPoller:
         ts_server_id=settings.TS_SERVER_ID,
         ts_notify_channel_id=settings.TS_NOTIFY_CHANNEL_ID,
         ts_exclude_channel_ids=parse_channel_ids(settings.TS_EXCLUDE_CHANNEL_IDS),
+        ts_min_dwell_polls=settings.TS_MIN_DWELL_POLLS,
         ts_poll_interval=settings.TS_POLL_INTERVAL,
         ts_rejoin_debounce_sec=settings.TS_REJOIN_DEBOUNCE_SEC,
     )
