@@ -205,7 +205,7 @@ python manage_ts_consent.py list
 python manage_ts_consent.py delete FRS135
 ```
 
-**Abonnieren:** Subscriber aktivieren TS-Benachrichtigungen über `POST /api/push/subscribe` mit `notify_ts=true` (und optional `ts_self_frs` für Kein-Selbst-Ping). Eine Subscription mit `ts_self_frs=FRS49` bekommt keine Benachrichtigung wenn FRS49 dem TS beitritt.
+**Abonnieren:** Subscriber aktivieren TS-Benachrichtigungen selbst im Benachrichtigungs-Panel der PWA über die Checkbox „🎧 Bei TeamSpeak-Beitritt benachrichtigen" und tragen optional ihre eigene FRS-Nummer ein (verhindert Pings über eigene Beitritte). Technisch sendet das Panel `notify_ts=true` (und optional `ts_self_frs`) an `POST /api/push/subscribe`. Eine Subscription mit `ts_self_frs=FRS49` bekommt keine Benachrichtigung wenn FRS49 dem TS beitritt.
 
 **Debounce:** Ein schnelles Re-Join (z.B. TS-Client-Neustart) löst innerhalb von `TS_REJOIN_DEBOUNCE_SEC` Sekunden (Default: 900 s / 15 min) keine erneute Benachrichtigung aus.
 
