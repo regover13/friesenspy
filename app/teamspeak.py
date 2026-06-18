@@ -47,3 +47,42 @@ def _parse_clientlist(clients: list[dict], channel_id: int) -> list[dict]:
             continue
         out.append({"frs": frs, "nick": nick, "cid": cid})
     return out
+
+
+def _fetch_clients_sync(
+    host: str, port: int, user: str, password: str,
+    server_id: int, channel_id: int,
+) -> list[dict]:
+    """Blockierend: kurzlebige ServerQuery-Verbindung, clientlist holen, filtern.
+
+    Lazy import von ts3, damit Modulimport und parse_frs ohne ts3 funktionieren.
+    """
+    import ts3  # type: ignore
+
+    conn = ts3.query.TS3Connection(host, port)
+    try:
+        conn.login(client_login_name=user, client_login_password=password)
+        conn.use(sid=server_id)
+        resp = conn.clientlist()
+        return _parse_clientlist(list(resp.parsed), channel_id)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+async def fetch_channel_clients(
+    *, host: str, port: int, user: str, password: str,
+    server_id: int, channel_id: int,
+) -> list[dict]:
+    """FRS-Clients im Zielkanal als [{frs, nick, cid}]. Bei Fehler [] (kein Crash)."""
+    loop = asyncio.get_event_loop()
+    try:
+        return await loop.run_in_executor(
+            None,
+            lambda: _fetch_clients_sync(host, port, user, password, server_id, channel_id),
+        )
+    except Exception as exc:
+        logger.warning("ServerQuery-Abruf fehlgeschlagen: %s", type(exc).__name__)
+        return []

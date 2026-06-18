@@ -46,3 +46,28 @@ class TestParseClientlist:
         out = _parse_clientlist(self.RAW, channel_id=0)
         assert all(c["frs"] for c in out)
         assert "serveradmin" not in [c["nick"] for c in out]
+
+
+from unittest.mock import patch
+from app.teamspeak import fetch_channel_clients
+
+
+class TestFetchChannelClients:
+    @pytest.mark.asyncio
+    async def test_returns_sync_result(self):
+        fake = [{"frs": "FRS1", "nick": "Max/FRS1", "cid": 5}]
+        with patch("app.teamspeak._fetch_clients_sync", return_value=fake):
+            out = await fetch_channel_clients(
+                host="h", port=10011, user="u", password="p",
+                server_id=1, channel_id=5,
+            )
+        assert out == fake
+
+    @pytest.mark.asyncio
+    async def test_swallows_exceptions(self):
+        with patch("app.teamspeak._fetch_clients_sync", side_effect=OSError("refused")):
+            out = await fetch_channel_clients(
+                host="h", port=10011, user="u", password="p",
+                server_id=1, channel_id=0,
+            )
+        assert out == []
