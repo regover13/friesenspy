@@ -699,19 +699,18 @@ class VatsimPoller:
                 server_id=self.ts_server_id,
                 channel_id=self.ts_notify_channel_id,
             )
+            if clients is None:
+                # ServerQuery nicht erreichbar / Login-Fehler → Poll überspringen, State
+                # unangetastet lassen. Ein leeres [] dagegen ist ein echt leerer Kanal und
+                # ein gültiger Zustand zum Diffen — nur None heißt "nicht abrufbar".
+                return
             current = {c["frs"] for c in clients}
             nick_by_frs = {c["frs"]: c["nick"] for c in clients}
 
             if self._ts_last_seen is None:
-                # Erster Poll nach Start — Baseline setzen, keine Notifications.
-                # fetch_channel_clients() liefert bei ServerQuery-Fehlern [] (silent fail).
-                # Aus einem leeren Ergebnis KEINE Baseline einfrieren: sonst würden bei einem
-                # transienten Startup-Fehler beim nächsten erfolgreichen Poll alle anwesenden
-                # Mitglieder als "neu beigetreten" gewertet → False-Positive-Push-Storm.
-                # Ein echt leerer Kanal ist ebenfalls unkritisch (nichts zu diffen); der erste
-                # echte Beitritt wird dann korrekt zur Baseline.
-                if current:
-                    self._ts_last_seen = current
+                # Erster erfolgreicher Poll nach Start — Baseline setzen (auch ein leerer
+                # Kanal ist eine gültige Baseline), keine Notifications.
+                self._ts_last_seen = current
                 return
 
             newly_joined = current - self._ts_last_seen

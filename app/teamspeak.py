@@ -75,8 +75,12 @@ def _fetch_clients_sync(
 async def fetch_channel_clients(
     *, host: str, port: int, user: str, password: str,
     server_id: int, channel_id: int,
-) -> list[dict]:
-    """FRS-Clients im Zielkanal als [{frs, nick, cid}]. Bei Fehler [] (kein Crash)."""
+) -> list[dict] | None:
+    """FRS-Clients im Zielkanal als [{frs, nick, cid}].
+
+    Gibt None bei Fehler zurück (kein Crash), damit der Caller zwischen einem
+    echten Fehler (None) und einem echt leeren Kanal ([]) unterscheiden kann.
+    """
     loop = asyncio.get_event_loop()
     try:
         return await loop.run_in_executor(
@@ -85,4 +89,4 @@ async def fetch_channel_clients(
         )
     except Exception as exc:
         logger.warning("ServerQuery-Abruf fehlgeschlagen: %s", type(exc).__name__)
-        return []
+        return None

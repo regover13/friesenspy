@@ -70,4 +70,4 @@ class TestFetchChannelClients:
                 host="h", port=10011, user="u", password="p",
                 server_id=1, channel_id=0,
             )
-        assert out == []
+        assert out is None
