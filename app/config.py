@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
     VATSIM_POLL_INTERVAL: int = 15
+    # Reconnect-Fenster für den Online-Push: geht ein Pilot innerhalb dieser Zeit erneut online
+    # (vPilot-Reconnect), wird das als Reconnect gewertet und NICHT erneut gepusht.
+    VATSIM_REJOIN_DEBOUNCE_SEC: int = 900
     DB_PATH: str = "/opt/friesenspy/data/friesenspy.db"
     STATSIM_API_KEY: str = ""
     OPENAIP_API_KEY: str = ""

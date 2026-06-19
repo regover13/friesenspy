@@ -356,6 +356,156 @@ class TestSendWebPush:
         conn.close()
         assert left == 0
 
+    @pytest.mark.asyncio
+    async def test_403_vapid_mismatch_deletes_subscription(self, tmp_path):
+        """403 mit VAPID-Mismatch-Body = veraltete Subscription → aufräumen wie 410."""
+        from app.database import init_db, get_connection, upsert_push_subscription
+        from app.poller import send_web_push
+        from pywebpush import WebPushException
+
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "https://x/stale", "p", "a")
+        conn.commit()
+        conn.close()
+
+        resp = MagicMock()
+        resp.status_code = 403
+        resp.text = ("the VAPID credentials in the authorization header "
+                     "do not correspond to the credentials used to create the subscriptions.")
+        exc = WebPushException("forbidden")
+        exc.response = resp
+        subs = [{"endpoint": "https://x/stale", "p256dh": "p", "auth": "a"}]
+        with patch("app.poller.webpush", new=MagicMock(side_effect=exc)):
+            await send_web_push("priv", "mailto:x@y.z", db, subs, {"title": "T", "body": "B"})
+
+        conn = get_connection(db)
+        left = conn.execute("SELECT COUNT(*) FROM push_subscriptions").fetchone()[0]
+        conn.close()
+        assert left == 0
+
+    @pytest.mark.asyncio
+    async def test_403_other_body_keeps_subscription(self, tmp_path):
+        """Ein 403 mit anderem Body wird NICHT als veraltete Subscription gelöscht."""
+        from app.database import init_db, get_connection, upsert_push_subscription
+        from app.poller import send_web_push
+        from pywebpush import WebPushException
+
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "https://x/keep", "p", "a")
+        conn.commit()
+        conn.close()
+
+        resp = MagicMock()
+        resp.status_code = 403
+        resp.text = "some other forbidden reason"
+        exc = WebPushException("forbidden")
+        exc.response = resp
+        subs = [{"endpoint": "https://x/keep", "p256dh": "p", "auth": "a"}]
+        with patch("app.poller.webpush", new=MagicMock(side_effect=exc)), \
+             patch("app.poller.asyncio.sleep", new=AsyncMock()):
+            await send_web_push("priv", "mailto:x@y.z", db, subs, {"title": "T", "body": "B"})
+
+        conn = get_connection(db)
+        left = conn.execute("SELECT COUNT(*) FROM push_subscriptions").fetchone()[0]
+        conn.close()
+        assert left == 1
+
+
+# ---------------------------------------------------------------------------
+# Online-Reconnect-Debounce
+# ---------------------------------------------------------------------------
+
+class TestOnlineRejoinDebounce:
+    def _vatsim_data(self):
+        return {
+            "pilots": [
+                {
+                    "cid": 1234567,
+                    "name": "Max Friesen",
+                    "callsign": "FRS001",
+                    "latitude": 53.6,
+                    "longitude": 9.98,
+                    "altitude": 35000,
+                    "groundspeed": 450,
+                    "heading": 180,
+                    "logon_time": "2026-06-04T10:00:00Z",
+                    "flight_plan": {
+                        "aircraft_short": "B738",
+                        "departure": "EDDH",
+                        "arrival": "EDDF",
+                    },
+                }
+            ]
+        }
+
+    @pytest.mark.asyncio
+    async def test_first_online_notifies(self, tmp_path):
+        from app.database import init_db
+
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = VatsimPoller(
+            db_path=db, callsign_prefix="FRS", poll_interval=60,
+            vapid_private_key="priv", vapid_contact_email="mailto:x@y.z",
+            vatsim_rejoin_debounce_sec=900,
+        )
+        poller._http_client = AsyncMock()
+        sent = []
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=self._vatsim_data())), \
+             patch("app.poller.send_web_push_notifications",
+                   new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_once()
+            await asyncio.sleep(0)  # create_task laufen lassen
+        assert len(sent) == 1
+        assert 1234567 in poller._online_last_notified
+
+    @pytest.mark.asyncio
+    async def test_reconnect_within_window_suppressed(self, tmp_path):
+        from datetime import datetime, timezone
+        from app.database import init_db
+
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = VatsimPoller(
+            db_path=db, callsign_prefix="FRS", poll_interval=60,
+            vapid_private_key="priv", vapid_contact_email="mailto:x@y.z",
+            vatsim_rejoin_debounce_sec=900,
+        )
+        poller._http_client = AsyncMock()
+        poller._online_last_notified[1234567] = datetime.now(timezone.utc)  # eben benachrichtigt
+        sent = []
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=self._vatsim_data())), \
+             patch("app.poller.send_web_push_notifications",
+                   new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_once()
+            await asyncio.sleep(0)
+        assert sent == []
+        # State-Machine läuft trotzdem: Pilot ist als aktiver Flug erfasst.
+        assert 1234567 in poller._active_flights
+
+    @pytest.mark.asyncio
+    async def test_reonline_after_window_notifies(self, tmp_path):
+        from datetime import datetime, timezone, timedelta
+        from app.database import init_db
+
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = VatsimPoller(
+            db_path=db, callsign_prefix="FRS", poll_interval=60,
+            vapid_private_key="priv", vapid_contact_email="mailto:x@y.z",
+            vatsim_rejoin_debounce_sec=900,
+        )
+        poller._http_client = AsyncMock()
+        poller._online_last_notified[1234567] = datetime.now(timezone.utc) - timedelta(seconds=1000)
+        sent = []
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=self._vatsim_data())), \
+             patch("app.poller.send_web_push_notifications",
+                   new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_once()
+            await asyncio.sleep(0)
+        assert len(sent) == 1
+
 
 # ---------------------------------------------------------------------------
 # _poll_teamspeak (TS-Login-Diff)

@@ -175,6 +175,8 @@ Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 
 **„Push zurücksetzen"-Button** (kleiner Link unterhalb des Panels): Falls Benachrichtigungen nicht ankommen, obwohl sie aktiviert sind — dieser Button deregistriert den Service Worker und erzwingt eine frische Registrierung beim Push-Dienst. Danach einmal neu abonnieren.
 
+**Reconnect-Debounce (Online):** Geht ein Pilot innerhalb von `VATSIM_REJOIN_DEBOUNCE_SEC` Sekunden (Default: 900 s / 15 min) erneut online, wird das als vPilot-Reconnect gewertet und löst **keine** zweite „ist online!"-Benachrichtigung aus. Erst nach Ablauf des Fensters gilt es als neue Session. Die Live-Anzeige/State-Machine bleibt davon unberührt — nur das Versenden wird gedämpft.
+
 ---
 
 ---
@@ -319,6 +321,7 @@ uvicorn app.main:app --reload
 SECRET_KEY=<beliebiger-zufalls-string>     # Pflicht
 CALLSIGN_PREFIX=FRS                         # Default: FRS
 VATSIM_POLL_INTERVAL=15                     # Sekunden, Default: 15
+VATSIM_REJOIN_DEBOUNCE_SEC=900              # s, Default: 900 (15 min) — Reconnect-Fenster Online-Push
 DB_PATH=friesenspy.db                       # Lokal: relativer Pfad OK
 TELEGRAM_BOT_TOKEN=                         # Optional
 TELEGRAM_CHAT_ID=                           # Optional

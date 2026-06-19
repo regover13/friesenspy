@@ -59,6 +59,7 @@ SECRET_KEY=<random-string>
 TELEGRAM_BOT_TOKEN=          # Optional
 TELEGRAM_CHAT_ID=            # Optional
 VATSIM_POLL_INTERVAL=15
+VATSIM_REJOIN_DEBOUNCE_SEC=900   # Default: 900 s (15 min) — Reconnect-Fenster Online-Push
 DB_PATH=/opt/friesenspy/data/friesenspy.db
 
 # TeamSpeak-Login-Benachrichtigung (Phase 1, alle Optional)

@@ -101,7 +101,7 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 - **`last_prefiles: list`** — aktuell eingereichte VATSIM-Prefile-Pläne mit FRS*-Callsign (In-Memory, aus dem letzten Poll-Zyklus)
 - **`_prefile_sigs: dict | None`** — CID → `(deptime, departure, arrival)` für Änderungserkennung. Wird beim Start aus `prefile_sigs`-DB-Tabelle geladen (nicht `None`) und nach jedem Poll gespeichert. Beim allerersten Start ohne DB-Einträge ist die Dict leer — keine Spam-Notifications. Container-Neustarts verpassen dadurch keine Prefile-Änderungen mehr.
 
-**`send_web_push(vapid_private_key, vapid_contact_email, db_path, subscriptions, payload, label)`** — generischer WebPush-Kern, der von VATSIM-Online- und TS-Notifications gemeinsam genutzt wird. Führt für jede Subscription einen Send-Versuch aus (1× Retry nach 5 s), loggt Fehler, löscht 410-Endpoints aus der DB.
+**`send_web_push(vapid_private_key, vapid_contact_email, db_path, subscriptions, payload, label)`** — generischer WebPush-Kern, der von VATSIM-Online- und TS-Notifications gemeinsam genutzt wird. Führt für jede Subscription einen Send-Versuch aus (1× Retry nach 5 s), loggt Fehler, löscht 410-Endpoints aus der DB — **sowie 403-Endpoints mit VAPID-Mismatch-Body** (`"do not correspond"`, d. h. mit alten VAPID-Keys angelegte, nie zustellbare Subscriptions; Client re-registriert beim nächsten Besuch). Derselbe 403-Cleanup gilt im Inline-Loop von `send_prefile_push_notifications`.
 
 **`_poll_teamspeak()`** — TS-Login-Benachrichtigungs-Job (Verweildauer-/Streak-Modell):
 1. `fetch_channel_clients` aufrufen → `None` bei Fehler (Poll überspringen, State unangetastet); `[]` ist ein gültig leerer Kanal
@@ -125,6 +125,8 @@ newly_online  = {A}       → open_flight, Alert
 still_online  = {B, C}    → update position + Flugplan-Check
 went_offline  = {D}       → close_flight
 ```
+
+**Online-Reconnect-Debounce:** Im `newly_online`-Zweig wird die Benachrichtigung (Telegram + WebPush) nur ausgelöst, wenn der Pilot nicht innerhalb von `VATSIM_REJOIN_DEBOUNCE_SEC` (Default 900 s) zuletzt schon gemeldet wurde (`_online_last_notified[cid]`). So erzeugt ein vPilot-Reconnect (offline → kurz darauf wieder `newly_online`) keinen zweiten „ist online!"-Ping. DB-/State-Logik (`open_flight`, `upsert_live_position`, `_active_flights`) läuft unabhängig weiter — nur das Versenden wird gedämpft.
 
 **Flugplan-Änderungserkennung** (für `still_online`-Piloten): Pro Poll wird der aktuelle DEP/ARR aus dem VATSIM-Feed mit dem in `_active_flights` gespeicherten verglichen. Bei Abweichung:
 - **Kein alter Plan → neuer Plan**: `update_flight_plan()` setzt DEP/ARR und alle Flugplan-Felder (Route, Remarks, Altitude, TAS, Flight Rules, Aircraft ICAO, Alternate, Off Block, Enroute, Fuel) im laufenden Flug-Record nach.

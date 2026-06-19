@@ -116,6 +116,11 @@ async def send_web_push(
                 if sc == 410:
                     to_delete.append(sub["endpoint"])
                     break
+                if sc == 403 and resp is not None and "do not correspond" in (getattr(resp, "text", "") or ""):
+                    # Subscription mit alten VAPID-Keys angelegt → mit aktuellen Keys nie zustellbar.
+                    # Aufräumen wie bei 410; der Client re-registriert beim nächsten Besuch.
+                    to_delete.append(sub["endpoint"])
+                    break
                 last_exc = exc
             except Exception as exc:
                 last_exc = exc
@@ -242,10 +247,11 @@ async def send_prefile_push_notifications(
         except WebPushException as exc:
             resp = getattr(exc, "response", None)
             sc = getattr(resp, "status_code", None)
-            if sc == 410:
+            body_text = getattr(resp, "text", "")[:200] if resp else ""
+            if sc == 410 or (sc == 403 and "do not correspond" in body_text):
+                # 410 = abgemeldet; 403 mit VAPID-Mismatch = alte Keys → beides aufräumen.
                 to_delete.append(sub["endpoint"])
             else:
-                body_text = getattr(resp, "text", "")[:200] if resp else ""
                 logger.warning("PrefilePush failed for %s: HTTP %s — %s", callsign, sc, body_text)
         except Exception as exc:
             logger.warning("PrefilePush failed for %s: %r", callsign, exc)
@@ -270,6 +276,7 @@ class VatsimPoller:
         telegram_chat_id: str = "",
         vapid_private_key: str = "",
         vapid_contact_email: str = "",
+        vatsim_rejoin_debounce_sec: int = 900,
         ts_notify_enabled: bool = False,
         ts_host: str = "127.0.0.1",
         ts_query_port: int = 10011,
@@ -289,6 +296,7 @@ class VatsimPoller:
         self.telegram_chat_id = telegram_chat_id
         self.vapid_private_key = vapid_private_key
         self.vapid_contact_email = vapid_contact_email
+        self.vatsim_rejoin_debounce_sec = vatsim_rejoin_debounce_sec
         self.ts_notify_enabled = ts_notify_enabled
         self.ts_host = ts_host
         self.ts_query_port = ts_query_port
@@ -310,6 +318,8 @@ class VatsimPoller:
         self.last_prefiles: list = []
         # cid → (deptime, departure, arrival) für Änderungserkennung — None = erster Poll
         self._prefile_sigs: dict | None = None
+        # cid → Zeitpunkt der letzten Online-Benachrichtigung (Debounce gegen vPilot-Reconnects).
+        self._online_last_notified: dict[int, datetime] = {}
         # TS-Login: FRS → Anzahl konsekutiver Polls, in denen die FRS präsent war.
         # None = vor dem ersten erfolgreichen Poll (Baseline noch nicht gesetzt).
         # Beim Start präsente FRS werden mit _TS_BASELINE_STREAK markiert (lösen nie aus).
@@ -548,34 +558,48 @@ class VatsimPoller:
                         "arr": pos["arrival"] or "",
                     }
 
-                    # Telegram alert (only when token + chat_id configured)
-                    if self.telegram_token and self.telegram_chat_id:
-                        message = format_online_message(
-                            pos["name"],
-                            pos["callsign"],
-                            pos["departure"],
-                            pos["arrival"],
-                        )
-                        try:
-                            await send_telegram_alert(
-                                message,
-                                self.telegram_token,
-                                self.telegram_chat_id,
-                                self._http_client,
-                            )
-                        except Exception:
-                            logger.exception("Error sending Telegram alert for cid=%s", cid)
+                    # Reconnect-Debounce: ging dieser Pilot innerhalb des Fensters schon einmal
+                    # online (vPilot-Reconnect), keine erneute Benachrichtigung. State/DB oben
+                    # läuft unabhängig weiter — nur das Versenden wird gedämpft.
+                    notify_now = datetime.now(timezone.utc)
+                    last_notified = self._online_last_notified.get(cid)
+                    is_rejoin = (
+                        last_notified is not None
+                        and (notify_now - last_notified).total_seconds() < self.vatsim_rejoin_debounce_sec
+                    )
+                    if is_rejoin:
+                        logger.info("Online-Reconnect CID %s innerhalb Debounce → keine Benachrichtigung", cid)
+                    else:
+                        self._online_last_notified[cid] = notify_now
 
-                    # Web Push notifications
-                    if self.vapid_private_key:
-                        asyncio.create_task(
-                            send_web_push_notifications(
-                                self.vapid_private_key,
-                                self.vapid_contact_email,
-                                self.db_path,
-                                pos,
+                        # Telegram alert (only when token + chat_id configured)
+                        if self.telegram_token and self.telegram_chat_id:
+                            message = format_online_message(
+                                pos["name"],
+                                pos["callsign"],
+                                pos["departure"],
+                                pos["arrival"],
                             )
-                        )
+                            try:
+                                await send_telegram_alert(
+                                    message,
+                                    self.telegram_token,
+                                    self.telegram_chat_id,
+                                    self._http_client,
+                                )
+                            except Exception:
+                                logger.exception("Error sending Telegram alert for cid=%s", cid)
+
+                        # Web Push notifications
+                        if self.vapid_private_key:
+                            asyncio.create_task(
+                                send_web_push_notifications(
+                                    self.vapid_private_key,
+                                    self.vapid_contact_email,
+                                    self.db_path,
+                                    pos,
+                                )
+                            )
 
                 # 2b. Still online pilots — update position
                 for cid in still_online:
@@ -847,6 +871,7 @@ def create_poller() -> VatsimPoller:
         telegram_chat_id=settings.TELEGRAM_CHAT_ID,
         vapid_private_key=settings.VAPID_PRIVATE_KEY,
         vapid_contact_email=settings.VAPID_CONTACT_EMAIL,
+        vatsim_rejoin_debounce_sec=settings.VATSIM_REJOIN_DEBOUNCE_SEC,
         ts_notify_enabled=settings.TS_NOTIFY_ENABLED,
         ts_host=settings.TS_HOST,
         ts_query_port=settings.TS_QUERY_PORT,
