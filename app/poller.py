@@ -326,6 +326,8 @@ class VatsimPoller:
         self._ts_streak: dict[str, int] | None = None
         # FRS → Zeitpunkt der letzten Benachrichtigung (Debounce gegen Re-Joins).
         self._ts_last_notified: dict[str, datetime] = {}
+        # Letzter TS-Client-Snapshot für die Live-Anzeige (FRS-getaggte Clients).
+        self.ts_clients: list[dict] = []
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -388,25 +390,27 @@ class VatsimPoller:
             "date",
             id="calendar_sync_initial",
         )
-        if self.ts_notify_enabled and self.vapid_private_key:
+        if self.ts_notify_enabled:
+            # Job läuft für die Live-Anzeige unabhängig von VAPID; Push-Versand ist in
+            # _poll_teamspeak separat durch vapid_private_key gegated.
             self._scheduler.add_job(
                 self._poll_teamspeak,
                 "interval",
                 seconds=self.ts_poll_interval,
                 id="ts_poll",
             )
-            logger.info("TS-Login-Benachrichtigung aktiv (Kanal %d, %ds)",
+            logger.info("TS-Überwachung aktiv (Kanal %d, %ds)",
                         self.ts_notify_channel_id, self.ts_poll_interval)
+            if not self.vapid_private_key:
+                logger.warning(
+                    "TS_NOTIFY_ENABLED=true, aber kein VAPID_PRIVATE_KEY gesetzt → "
+                    "Live-Anzeige aktiv, aber keine TS-Push-Benachrichtigungen."
+                )
             if self.ts_notify_channel_id == 0:
                 logger.warning(
                     "TS_NOTIFY_CHANNEL_ID=0 → serverweites FRS-Tracking "
                     "(kein Kanal-Filter). Falls unbeabsichtigt, Zielkanal-ID setzen."
                 )
-        elif self.ts_notify_enabled and not self.vapid_private_key:
-            logger.warning(
-                "TS_NOTIFY_ENABLED=true, aber kein VAPID_PRIVATE_KEY gesetzt → "
-                "ts_poll-Job NICHT registriert (WebPush nicht möglich)."
-            )
         self._scheduler.start()
 
     async def stop(self) -> None:
@@ -748,6 +752,14 @@ class VatsimPoller:
                 # ServerQuery nicht erreichbar / Login-Fehler → Poll überspringen, State
                 # unangetastet lassen. Ein leeres [] dagegen ist ein echt leerer Kanal und
                 # ein gültiger Zustand zum Diffen — nur None heißt "nicht abrufbar".
+                # Snapshot NICHT leeren: letzter Stand bleibt für die Anzeige stehen.
+                return
+            # Snapshot für die Live-Anzeige (FRS-getaggte Clients) — vor der Streak-/Notify-
+            # Logik und vor dem Baseline-return, damit die Anzeige auch beim ersten Poll und
+            # im reinen Display-Modus (ohne VAPID) Daten hat.
+            self.ts_clients = clients
+            # Anzeige ist unabhängig von Push: ohne VAPID keine Benachrichtigung, Snapshot steht.
+            if not self.vapid_private_key:
                 return
             current = {c["frs"] for c in clients}
             nick_by_frs = {c["frs"]: c["nick"] for c in clients}

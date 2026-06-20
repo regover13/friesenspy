@@ -1155,6 +1155,59 @@
       letter-spacing: 0.05em;
       margin-top: 4px;
     }
+
+    /* =====================================================================
+       TEAMSPEAK PANEL
+       ===================================================================== */
+    #ts-panel-title { display: flex; align-items: center; gap: 10px; }
+    .ts-count {
+      font-family: var(--text-mono);
+      font-weight: 700;
+      color: var(--bg-body);
+      background: #2db36a;
+      padding: 0 8px;
+      font-size: 0.72rem;
+      letter-spacing: 0;
+    }
+    .ts-connect-btn {
+      margin-left: auto;
+      font-family: var(--text-display);
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: none;
+      color: #2db36a;
+      border: 1px solid rgba(45,179,106,0.4);
+      padding: 4px 12px;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+    .ts-connect-btn:hover {
+      color: var(--bg-body);
+      background: #2db36a;
+      box-shadow: 0 0 12px rgba(45,179,106,0.5);
+    }
+    .ts-user-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 20px;
+    }
+    .ts-user {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--text-mono);
+      font-size: 0.9rem;
+      color: var(--text-bright);
+    }
+    .ts-dot {
+      width: 8px;
+      height: 8px;
+      background: #2db36a;
+      border-radius: 50% !important;
+      box-shadow: 0 0 6px rgba(45,179,106,0.8);
+      flex-shrink: 0;
+    }
   </style>
 </head>
 <body>
@@ -1238,6 +1291,10 @@
           Verbinde...
         </div>
       </div>
+    </div>
+    <div id="ts-panel" class="panel" style="margin-top:16px;" hidden>
+      <div class="panel-title" id="ts-panel-title">🎧 Im TeamSpeak</div>
+      <div id="ts-content"></div>
     </div>
     <div class="panel" style="margin-top:16px;">
       <div class="panel-title">Eingereichte Flugpläne (Prefile)</div>
@@ -1892,6 +1949,7 @@ function connectSSE() {
         renderLiveTable(msg.data);
         updateMap(msg.data);
         fetchAndRenderPrefiles();
+        fetchAndRenderTeamspeak();
       }
     } catch (_) { /* ignore parse errors */ }
   };
@@ -2107,6 +2165,47 @@ async function showPrefileRoute(dep, arr) {
     _prefileRouteLine.bindTooltip(`${dep} → ${arr}`, { permanent: false }).openTooltip();
     liveMap.fitBounds(_prefileRouteLine.getBounds(), { padding: [40, 40] });
   } catch (e) { /* silent */ }
+}
+
+// ==========================================================================
+//  TEAMSPEAK (Live-Anzeige)
+// ==========================================================================
+async function fetchAndRenderTeamspeak() {
+  try {
+    const res = await fetch('/api/teamspeak');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderTeamspeak(data);
+  } catch (e) {
+    // Bei Fehler letzten Stand behalten, still retry beim nächsten Interval
+  }
+}
+
+function renderTeamspeak(data) {
+  const panel = document.getElementById('ts-panel');
+  const title = document.getElementById('ts-panel-title');
+  const container = document.getElementById('ts-content');
+  if (!panel || !container) return;
+
+  // TS-Überwachung nicht aktiv → Panel komplett ausblenden
+  if (!data || !data.enabled) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  const users = data.users || [];
+  const connectBtn = data.connect_url
+    ? `<a class="ts-connect-btn" href="${escHtml(data.connect_url)}">▶ TeamSpeak öffnen</a>`
+    : '';
+
+  title.innerHTML = `🎧 Im TeamSpeak <span class="ts-count">${users.length}</span>${connectBtn}`;
+
+  if (users.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Niemand im TeamSpeak</div></div>';
+    return;
+  }
+  const items = users.map(u =>
+    `<span class="ts-user"><span class="ts-dot"></span>${escHtml(u.nick || u.frs)}</span>`
+  ).join('');
+  container.innerHTML = `<div class="ts-user-list">${items}</div>`;
 }
 
 // ==========================================================================
@@ -3630,6 +3729,8 @@ const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cf
 const _liveInitialPromise = fetchLiveInitial();
 fetchAndRenderPrefiles();
 setInterval(fetchAndRenderPrefiles, 15000);
+fetchAndRenderTeamspeak();
+setInterval(fetchAndRenderTeamspeak, 15000);
 connectSSE();
 initFromUrl();
 

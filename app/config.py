@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     TS_MIN_DWELL_POLLS: int = 1
     TS_POLL_INTERVAL: int = 30
     TS_REJOIN_DEBOUNCE_SEC: int = 900
+    # Öffentliche Adresse für den "TeamSpeak öffnen"-Link (ts3server://). TS_HOST ist intern
+    # (127.0.0.1), taugt nicht für Clients — daher separat. Leer = kein Link wird gezeigt.
+    TS_CONNECT_ADDRESS: str = ""
+    TS_CONNECT_PORT: int = 9987   # Standard-Voice-Port (nicht der ServerQuery-Port)
 
 
 @lru_cache(maxsize=1)

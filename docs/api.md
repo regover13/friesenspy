@@ -320,6 +320,30 @@ Ein Prefile ist ein eingereichter Flugplan ohne aktive VATSIM-Verbindung — der
 
 ---
 
+## GET /api/teamspeak
+
+Aktuell im FriesenFlieger-TeamSpeak befindliche FriesenFlieger (nur FRS*-getaggte Clients) aus dem letzten TS-Poll-Snapshot. Speist das Live-Tab-Panel „🎧 Im TeamSpeak" und den Widget-Zähler.
+
+Der Snapshot wird bei jedem erfolgreichen TS-Poll aktualisiert (`TS_POLL_INTERVAL`, Default 30 s). Ist der TeamSpeak kurzzeitig nicht erreichbar, bleibt der letzte Snapshot erhalten. Consent (`ts_consent`) wirkt **nicht** auf diese Anzeige (gilt nur für Push). Nicht-Friesen ohne FRS-Tag werden weder gezählt noch gelistet.
+
+**Response**
+
+```json
+{
+  "enabled": true,
+  "count": 2,
+  "users": [
+    {"frs": "FRS49", "nick": "Tobias/FRS49"},
+    {"frs": "FRS135", "nick": "Marco Weiß FRS135"}
+  ],
+  "connect_url": "ts3server://ts.devprops.de?port=9987"
+}
+```
+
+`enabled` spiegelt `TS_NOTIFY_ENABLED` — ist es `false`, blendet die UI das Panel aus. `connect_url` ist der `ts3server://`-Direktlink (leer, wenn `TS_CONNECT_ADDRESS` nicht gesetzt ist).
+
+---
+
 ## GET /api/calendar/events
 
 FriesenEvents aus dem FriesenFlieger-Google-Kalender — letzte 365 Tage bis heute, absteigend nach Startdatum (neueste zuerst).
@@ -346,7 +370,7 @@ Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungs
 
 ## GET /widget
 
-Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*) und 7-Tage-Flugstunden. Design im hellen Stil von friesenflieger.de (bg `#d0e0f0`, Navy `#053080`, Vereinsrot `#D31141`). Klickbar → öffnet friesenspy.devprops.de.
+Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*), 7-Tage-Flugstunden und — wenn `TS_NOTIFY_ENABLED=true` — einen TeamSpeak-Zähler-Badge `🎧 N im TS`. Design im hellen Stil von friesenflieger.de (bg `#d0e0f0`, Navy `#053080`, Vereinsrot `#D31141`). Klickbar → öffnet friesenspy.devprops.de.
 
 ```html
 <iframe src="https://friesenspy.devprops.de/widget" width="420" height="88"

@@ -770,3 +770,62 @@ class TestPollTeamspeak:
             assert "ts_poll" not in {j.id for j in poller._scheduler.get_jobs()}
         finally:
             await poller.stop()
+
+    @pytest.mark.asyncio
+    async def test_snapshot_set_on_baseline_poll(self, tmp_path):
+        """ts_clients wird auch im ersten (Baseline-)Poll gesetzt — für die Live-Anzeige."""
+        from app.database import init_db
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = self._ts_poller(db)
+        clients = [{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}]
+        with patch("app.poller.fetch_channel_clients", new=AsyncMock(return_value=clients)), \
+             patch("app.poller.send_web_push", new=AsyncMock()):
+            await poller._poll_teamspeak()
+        assert poller.ts_clients == clients
+
+    @pytest.mark.asyncio
+    async def test_snapshot_preserved_on_fetch_error(self, tmp_path):
+        """Abruf-Fehler (None) lässt den letzten Snapshot stehen (kein Flackern)."""
+        from app.database import init_db
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = self._ts_poller(db)
+        poller.ts_clients = [{"frs": "FRS9", "nick": "Old/FRS9", "cid": 0}]
+        with patch("app.poller.fetch_channel_clients", new=AsyncMock(return_value=None)), \
+             patch("app.poller.send_web_push", new=AsyncMock()):
+            await poller._poll_teamspeak()
+        assert poller.ts_clients == [{"frs": "FRS9", "nick": "Old/FRS9", "cid": 0}]
+
+    @pytest.mark.asyncio
+    async def test_display_only_without_vapid_sets_snapshot_no_push(self, tmp_path):
+        """Ohne VAPID: Snapshot für die Anzeige, aber keine Push-Tasks (Display-only)."""
+        from app.database import init_db
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = VatsimPoller(
+            db_path=db, callsign_prefix="FRS", poll_interval=60,
+            ts_notify_enabled=True, ts_poll_interval=30,
+        )  # kein vapid_private_key
+        clients = [{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}]
+        sent = []
+        with patch("app.poller.fetch_channel_clients", new=AsyncMock(return_value=clients)), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)
+        assert poller.ts_clients == clients
+        assert sent == []
+        # Streak/Notify-Logik wird im Display-only-Modus gar nicht erst betreten
+        assert poller._ts_streak is None
+
+    @pytest.mark.asyncio
+    async def test_ts_job_registered_for_display_without_vapid(self, tmp_path):
+        """ts_poll-Job läuft für die Live-Anzeige auch ohne VAPID."""
+        from app.database import init_db
+        db = str(tmp_path / "t.db"); init_db(db)
+        poller = VatsimPoller(
+            db_path=db, callsign_prefix="FRS", poll_interval=60,
+            ts_notify_enabled=True, ts_poll_interval=30,
+        )
+        await poller.start()
+        try:
+            assert "ts_poll" in {j.id for j in poller._scheduler.get_jobs()}
+        finally:
+            await poller.stop()

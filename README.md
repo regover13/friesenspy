@@ -78,6 +78,8 @@ Zeigt alle Friesen, die gerade auf VATSIM fliegen — in Echtzeit, ohne Neuladen
 
 Die Liste aktualisiert sich über eine permanente Server-Verbindung (Server-Sent Events) live im Hintergrund — du siehst neue Positionen, ohne die Seite neu laden zu müssen. Der farbige Punkt oben rechts im Header zeigt an, ob die Verbindung aktiv ist (grün = verbunden, rot = getrennt).
 
+**🎧 Im TeamSpeak:** Ist die TeamSpeak-Überwachung aktiv (`TS_NOTIFY_ENABLED=true`), erscheint im Live-Tab zusätzlich ein Panel mit allen Friesen (FRS*-getaggt), die gerade im FriesenFlieger-TeamSpeak sind, samt Anzahl. Ein **„▶ TeamSpeak öffnen"**-Button verbindet direkt mit dem Server (`ts3server://`-Link, sofern `TS_CONNECT_ADDRESS` gesetzt ist). Nicht-Friesen (ohne FRS-Tag) werden nicht angezeigt. Bei kurzzeitig nicht erreichbarem TeamSpeak bleibt der letzte Stand stehen.
+
 ---
 
 ### 🗺️ Karte
@@ -185,6 +187,8 @@ Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 
 FriesenSpy kann eine Web-Push-Benachrichtigung senden, wenn ein Friese dem FriesenFlieger-TeamSpeak beitritt — auch wenn kein Browser offen ist. Das Feature ist **optional** und standardmäßig deaktiviert (`TS_NOTIFY_ENABLED=false`).
 
+> 📡 **Wie komme ich ins TeamSpeak?** Login-Daten für den TeamSpeak und alle weiteren Kommunikationskanäle der FriesenFlieger findest du im Forum: [board.friesenflieger.de – TS & Kommunikationskanäle](https://board.friesenflieger.de/viewtopic.php?t=720).
+
 **Wie es funktioniert:**
 
 Alle `TS_POLL_INTERVAL` Sekunden (Default: 30 s) fragt FriesenSpy den TeamSpeak-Server über die ServerQuery-Schnittstelle (Port 10011) ab. Es wird verglichen, welche FRS-Nummern gerade im konfigurierten Kanal sitzen — neu Beigetretene lösen eine Push-Benachrichtigung aus. Der erste erfolgreiche Poll setzt nur die Baseline (keine Notification). Ein `TS_NOTIFY_CHANNEL_ID=0` überwacht den gesamten Server. Mit `TS_EXCLUDE_CHANNEL_IDS` (komma-separierte Kanal-IDs) lassen sich einzelne Kanäle ausnehmen — z. B. der Verwaltungs-Baum, in dem Beitritte niemanden benachrichtigen sollen.
@@ -230,9 +234,11 @@ TS_EXCLUDE_CHANNEL_IDS=      # Komma-separierte Kanal-IDs, die NIE benachrichtig
 TS_MIN_DWELL_POLLS=1         # Default: 1 = muss beim Folge-Poll noch da sein (0 = sofort)
 TS_POLL_INTERVAL=30          # Default: 30 Sekunden
 TS_REJOIN_DEBOUNCE_SEC=900   # Default: 900 s (15 min)
+TS_CONNECT_ADDRESS=          # Öffentliche Adresse für den "TeamSpeak öffnen"-Link (leer = kein Link)
+TS_CONNECT_PORT=9987         # Default: 9987 (Voice-Port, NICHT der ServerQuery-Port)
 ```
 
-> Voraussetzung: VAPID-Keys müssen konfiguriert sein (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CONTACT_EMAIL`). Der Job wird nur registriert wenn `TS_NOTIFY_ENABLED=true` **und** VAPID konfiguriert ist.
+> Der `ts_poll`-Job wird registriert, sobald `TS_NOTIFY_ENABLED=true` ist — die **Live-Anzeige** (Live-Tab-Panel + Widget-Zähler) funktioniert auch ohne VAPID. Für **Push-Benachrichtigungen** müssen zusätzlich die VAPID-Keys konfiguriert sein (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CONTACT_EMAIL`); fehlen sie, läuft nur die Anzeige.
 
 ---
 
@@ -343,6 +349,8 @@ TS_EXCLUDE_CHANNEL_IDS=                     # Kanal-IDs (CSV), die nie benachric
 TS_MIN_DWELL_POLLS=1                        # muss beim Folge-Poll noch da sein (0 = sofort)
 TS_POLL_INTERVAL=30
 TS_REJOIN_DEBOUNCE_SEC=900
+TS_CONNECT_ADDRESS=                         # Öffentliche Adresse für "TeamSpeak öffnen"-Link
+TS_CONNECT_PORT=9987                        # Voice-Port (Default 9987)
 ```
 
 ### Tests
@@ -399,6 +407,7 @@ FriesenSpy/
 | `/health` | GET | `{"status": "ok"}` |
 | `/api/live` | GET | Aktuelle Live-Positionen (inkl. Flugplan-Felder) |
 | `/api/prefiles` | GET | Eingereichte VATSIM-Flugpläne (FRS*, noch nicht online) |
+| `/api/teamspeak` | GET | Aktuell im TeamSpeak befindliche FRS + Anzahl + `connect_url` (letzter TS-Poll-Snapshot) |
 | `/api/stats?days=30&sort_by=last_flight&sort_dir=desc` | GET | Letzter Flug + Fluganzahl + Flugzeit pro Pilot, sortierbar |
 | `/api/stats/activity?days=30` | GET | Flugaktivität über Zeit (täglich/monatlich) |
 | `/api/pilots/{cid}/flights?days=365` | GET | Einzelflüge eines Piloten (FriesenSpy + StatSim) |
@@ -407,7 +416,7 @@ FriesenSpy/
 | `/api/flights/statsim/{id}/track` | GET | GPS-Track eines StatSim-Fluges |
 | `/api/events?icao=EDDK&radius=150&start=...&end=...` | GET | Event-Teilnehmer mit Tracks (Overlap-Logik) |
 | `/api/calendar/events` | GET | FriesenEvents letzte 365 Tage bis heute, inkl. RRULE-Expansion (Google-Kalender-Cache) |
-| `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles mit Datum/Uhrzeit) |
+| `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles + TS-Zähler `🎧 N im TS`) |
 | `/widget/preview` | GET | Vorschau + Einbettungscode für das Widget |
 | `/api/sse` | GET | Server-Sent Events Stream |
 

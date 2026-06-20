@@ -679,6 +679,33 @@ async def get_prefiles(request: Request):
     return result
 
 
+def _ts_connect_url(settings) -> str:
+    """ts3server://-Link aus der konfigurierten öffentlichen Adresse, oder "" wenn nicht gesetzt."""
+    addr = (settings.TS_CONNECT_ADDRESS or "").strip()
+    if not addr:
+        return ""
+    return f"ts3server://{addr}?port={settings.TS_CONNECT_PORT}"
+
+
+@app.get("/api/teamspeak")
+async def get_teamspeak(request: Request):
+    """Aktuell im TeamSpeak befindliche FriesenFlieger (FRS-getaggte Clients).
+
+    Liefert den letzten Snapshot des TS-Polls (nur FRS-getaggt). `enabled` zeigt an,
+    ob die TS-Überwachung überhaupt aktiv ist — der Client blendet das Panel sonst aus.
+    `connect_url` ist der ts3server://-Link (leer, wenn TS_CONNECT_ADDRESS nicht gesetzt).
+    """
+    poller: VatsimPoller = request.app.state.poller
+    settings = get_settings()
+    users = [{"frs": c["frs"], "nick": c["nick"]} for c in poller.ts_clients]
+    return {
+        "enabled": settings.TS_NOTIFY_ENABLED,
+        "count": len(users),
+        "users": users,
+        "connect_url": _ts_connect_url(settings),
+    }
+
+
 @app.get("/api/airport/{icao}")
 async def get_airport_coords(icao: str):
     """Koordinaten eines Flughafens via airportsdata (offline)."""
@@ -770,6 +797,11 @@ async def widget(request: Request):
 
     poller: VatsimPoller = request.app.state.poller
     prefiles = poller.last_prefiles
+    ts_count = len(poller.ts_clients)
+    ts_badge = (
+        f'<span class="badge ts-badge">🎧&nbsp;{ts_count}&nbsp;im&nbsp;TS</span>'
+        if settings.TS_NOTIFY_ENABLED else ''
+    )
 
     total_min = sum(s.get("total_duration_min", 0) for s in stats)
     total_h = total_min / 60
@@ -813,6 +845,7 @@ async def widget(request: Request):
   .hd{{background:#053080;color:#fff;padding:4px 10px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px}}
   .hd-title{{flex:1}}
   .badge{{background:#D31141;color:#fff;padding:1px 6px;font-size:10px;font-weight:700;border-radius:2px}}
+  .ts-badge{{background:#0a7a3a}}
   .bd{{padding:5px 10px 4px}}
   .none{{color:#5577aa}}
   .muted{{color:#5577aa}}
@@ -826,6 +859,7 @@ async def widget(request: Request):
   <div class="hd">
     <span class="hd-title">✈ FriesenSpy</span>
     <span class="badge">{len(live)}&nbsp;online</span>
+    {ts_badge}
   </div>
   <div class="bd">
     <div>{pilots_html}</div>
