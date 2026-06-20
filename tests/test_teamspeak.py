@@ -48,25 +48,6 @@ class TestParseClientlist:
         assert "serveradmin" not in [c["nick"] for c in out]
 
 
-class TestTsConnectUrl:
-    from types import SimpleNamespace as _NS
-
-    def test_empty_address_returns_empty(self):
-        from app.main import _ts_connect_url
-        s = self._NS(TS_CONNECT_ADDRESS="", TS_CONNECT_PORT=9987)
-        assert _ts_connect_url(s) == ""
-
-    def test_builds_ts3server_link(self):
-        from app.main import _ts_connect_url
-        s = self._NS(TS_CONNECT_ADDRESS="ts.example.de", TS_CONNECT_PORT=9988)
-        assert _ts_connect_url(s) == "ts3server://ts.example.de?port=9988"
-
-    def test_strips_whitespace(self):
-        from app.main import _ts_connect_url
-        s = self._NS(TS_CONNECT_ADDRESS="  ts.example.de  ", TS_CONNECT_PORT=9987)
-        assert _ts_connect_url(s) == "ts3server://ts.example.de?port=9987"
-
-
 from unittest.mock import patch
 from app.teamspeak import fetch_channel_clients
 

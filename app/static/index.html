@@ -1169,24 +1169,6 @@
       font-size: 0.72rem;
       letter-spacing: 0;
     }
-    .ts-connect-btn {
-      margin-left: auto;
-      font-family: var(--text-display);
-      font-size: 0.7rem;
-      font-weight: 500;
-      letter-spacing: 0.1em;
-      text-transform: none;
-      color: #2db36a;
-      border: 1px solid rgba(45,179,106,0.4);
-      padding: 4px 12px;
-      text-decoration: none;
-      transition: all 0.15s ease;
-    }
-    .ts-connect-btn:hover {
-      color: var(--bg-body);
-      background: #2db36a;
-      box-shadow: 0 0 12px rgba(45,179,106,0.5);
-    }
     .ts-user-list {
       display: flex;
       flex-wrap: wrap;
@@ -2192,18 +2174,14 @@ function renderTeamspeak(data) {
   panel.hidden = false;
 
   const users = data.users || [];
-  const connectBtn = data.connect_url
-    ? `<a class="ts-connect-btn" href="${escHtml(data.connect_url)}">▶ TeamSpeak öffnen</a>`
-    : '';
-
-  title.innerHTML = `🎧 Im TeamSpeak <span class="ts-count">${users.length}</span>${connectBtn}`;
+  title.innerHTML = `🎧 Im TeamSpeak <span class="ts-count">${users.length}</span>`;
 
   if (users.length === 0) {
     container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Niemand im TeamSpeak</div></div>';
     return;
   }
   const items = users.map(u =>
-    `<span class="ts-user"><span class="ts-dot"></span>${escHtml(u.nick || u.frs)}</span>`
+    `<span class="ts-user"><span class="ts-dot"></span>${escHtml(u.frs)}</span>`
   ).join('');
   container.innerHTML = `<div class="ts-user-list">${items}</div>`;
 }

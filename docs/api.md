@@ -326,6 +326,8 @@ Aktuell im FriesenFlieger-TeamSpeak befindliche FriesenFlieger (nur FRS*-getaggt
 
 Der Snapshot wird bei jedem erfolgreichen TS-Poll aktualisiert (`TS_POLL_INTERVAL`, Default 30 s). Ist der TeamSpeak kurzzeitig nicht erreichbar, bleibt der letzte Snapshot erhalten. Consent (`ts_consent`) wirkt **nicht** auf diese Anzeige (gilt nur für Push). Nicht-Friesen ohne FRS-Tag werden weder gezählt noch gelistet.
 
+Es wird bewusst **nur das FRS-Callsign** ausgegeben — Klarnamen und sonstige Nickname-Zusätze bleiben serverseitig und verlassen den Server nicht.
+
 **Response**
 
 ```json
@@ -333,14 +335,13 @@ Der Snapshot wird bei jedem erfolgreichen TS-Poll aktualisiert (`TS_POLL_INTERVA
   "enabled": true,
   "count": 2,
   "users": [
-    {"frs": "FRS49", "nick": "Tobias/FRS49"},
-    {"frs": "FRS135", "nick": "Marco Weiß FRS135"}
-  ],
-  "connect_url": "ts3server://ts.devprops.de?port=9987"
+    {"frs": "FRS49"},
+    {"frs": "FRS135"}
+  ]
 }
 ```
 
-`enabled` spiegelt `TS_NOTIFY_ENABLED` — ist es `false`, blendet die UI das Panel aus. `connect_url` ist der `ts3server://`-Direktlink (leer, wenn `TS_CONNECT_ADDRESS` nicht gesetzt ist).
+`enabled` spiegelt `TS_NOTIFY_ENABLED` — ist es `false`, blendet die UI das Panel aus.
 
 ---
 

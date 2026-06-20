@@ -75,8 +75,6 @@ TS_EXCLUDE_CHANNEL_IDS=      # CSV Kanal-IDs, die nie benachrichtigen (z. B. Ver
 TS_MIN_DWELL_POLLS=1         # Verweildauer: muss beim Folge-Poll noch da sein (0 = sofort)
 TS_POLL_INTERVAL=30          # Default: 30 Sekunden
 TS_REJOIN_DEBOUNCE_SEC=900   # Default: 900 s (15 min) Debounce gegen Re-Join-Spam
-TS_CONNECT_ADDRESS=          # Öffentliche Adresse für "TeamSpeak öffnen"-Link (ts3server://); leer = kein Link
-TS_CONNECT_PORT=9987         # Default: 9987 (Voice-Port, NICHT der ServerQuery-Port)
 ```
 
 Hinweis: Der `ts_poll`-Job läuft jetzt, sobald `TS_NOTIFY_ENABLED=true` (Live-Anzeige im

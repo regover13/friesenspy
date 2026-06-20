@@ -679,30 +679,20 @@ async def get_prefiles(request: Request):
     return result
 
 
-def _ts_connect_url(settings) -> str:
-    """ts3server://-Link aus der konfigurierten öffentlichen Adresse, oder "" wenn nicht gesetzt."""
-    addr = (settings.TS_CONNECT_ADDRESS or "").strip()
-    if not addr:
-        return ""
-    return f"ts3server://{addr}?port={settings.TS_CONNECT_PORT}"
-
-
 @app.get("/api/teamspeak")
 async def get_teamspeak(request: Request):
     """Aktuell im TeamSpeak befindliche FriesenFlieger (FRS-getaggte Clients).
 
     Liefert den letzten Snapshot des TS-Polls (nur FRS-getaggt). `enabled` zeigt an,
     ob die TS-Überwachung überhaupt aktiv ist — der Client blendet das Panel sonst aus.
-    `connect_url` ist der ts3server://-Link (leer, wenn TS_CONNECT_ADDRESS nicht gesetzt).
     """
     poller: VatsimPoller = request.app.state.poller
-    settings = get_settings()
-    users = [{"frs": c["frs"], "nick": c["nick"]} for c in poller.ts_clients]
+    # Bewusst nur das FRS-Callsign nach außen geben — Klarnamen/Nick-Zusätze bleiben serverseitig.
+    users = [{"frs": c["frs"]} for c in poller.ts_clients]
     return {
-        "enabled": settings.TS_NOTIFY_ENABLED,
+        "enabled": get_settings().TS_NOTIFY_ENABLED,
         "count": len(users),
         "users": users,
-        "connect_url": _ts_connect_url(settings),
     }
 
 
