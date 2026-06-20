@@ -11,7 +11,9 @@ import re
 
 logger = logging.getLogger(__name__)
 
-_FRS_RE = re.compile(r"FRS(\d+[A-Z]?)", re.IGNORECASE)
+# Einziges erlaubtes Suffix ist das optionale "N" (z. B. FRS13N) — andere Buchstaben
+# gibt es nicht und werden NICHT als Teil des Callsigns gewertet (FRS135A → FRS135).
+_FRS_RE = re.compile(r"FRS(\d+N?)", re.IGNORECASE)
 
 
 def parse_frs(nick: str) -> str | None:
@@ -19,7 +21,7 @@ def parse_frs(nick: str) -> str | None:
 
     Portiert aus TSBot/bot/ts_query.py:_parse_nickname. FRS-Nummer kann an beliebiger
     Stelle stehen (vor/nach Name, diverse Trennzeichen, Klammer-Suffix). Rückgabe in
-    Großbuchstaben, z. B. "FRS135" / "FRS135A".
+    Großbuchstaben, z. B. "FRS135" / "FRS13N". Einziges erlaubtes Suffix ist "N".
     """
     m = _FRS_RE.search(nick or "")
     return m.group(0).upper() if m else None

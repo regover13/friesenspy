@@ -14,7 +14,13 @@ class TestParseFrs:
         ("FRS22/Vorname Nachname", "FRS22"),
         ("Marco WeißFRS135(MSFS2024)", "FRS135"),
         ("frs7 lowercase", "FRS7"),
-        ("FRS135A", "FRS135A"),
+        ("FRS13N", "FRS13N"),
+        ("Tobias/FRS13N", "FRS13N"),
+        ("FRS13N | Tobias", "FRS13N"),
+        ("frs13n lowercase", "FRS13N"),
+        # Nur "N" ist ein gültiges Suffix — andere Buchstaben gehören nicht zum Callsign
+        ("FRS135A", "FRS135"),
+        ("FRS22X", "FRS22"),
         ("Nur ein Name", None),
         ("", None),
     ])
