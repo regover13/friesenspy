@@ -1210,6 +1210,8 @@
       border: 1px solid var(--green-dim);
       box-shadow: 0 0 14px var(--green-glow);
     }
+    /* display:flex oben überschreibt sonst das UA-[hidden] → Banner ließe sich nie ausblenden */
+    .install-banner[hidden] { display: none !important; }
     .install-banner-icon { font-size: 1.6rem; line-height: 1; flex-shrink: 0; }
     .install-banner-text {
       display: flex;
