@@ -113,6 +113,11 @@ async def lifespan(app: FastAPI):
 # App setup
 # ---------------------------------------------------------------------------
 
+# .webmanifest ist vielen mimetypes-DBs unbekannt → sonst als text/plain ausgeliefert.
+# Vor dem StaticFiles-Mount registrieren, damit guess_type den korrekten Typ liefert.
+import mimetypes as _mimetypes
+_mimetypes.add_type("application/manifest+json", ".webmanifest")
+
 app = FastAPI(title="FriesenSpy", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 

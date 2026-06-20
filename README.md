@@ -173,6 +173,8 @@ Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 | Android (Chrome) | Direkt im Browser abonnieren | Chrome empfohlen; Edge auf Android kann Probleme machen |
 | iPhone / iPad | Erst als App installieren, dann abonnieren | Safari → Teilen ⬆ → „Zum Home-Bildschirm" → App öffnen → 🔔 |
 
+**Als App installieren:** FriesenSpy ist eine PWA (Web-App-Manifest + Service Worker). Oben auf der Seite erscheint ein **Install-Banner** („📲 FriesenSpy als App installieren") — schließbar (merkt sich das Wegklicken), und ausgeblendet, sobald die App installiert ist. Auf Android/Desktop (Chrome/Edge) öffnet der Button den nativen Install-Dialog; auf iPhone/iPad zeigt der Banner die manuelle Anleitung (Safari → Teilen ⬆ → „Zum Home-Bildschirm"). Installiert läuft FriesenSpy im eigenen Fenster mit App-Icon.
+
 > **Hinweis bei „Nur bestimmte Piloten":** Neue Mitglieder der FriesenFlieger werden nicht automatisch in die Auswahl aufgenommen. Nach einem Neuzugang einmal das Panel öffnen, den neuen Piloten anhaken und erneut speichern.
 
 **„Push zurücksetzen"-Button** (kleiner Link unterhalb des Panels): Falls Benachrichtigungen nicht ankommen, obwohl sie aktiviert sind — dieser Button deregistriert den Service Worker und erzwingt eine frische Registrierung beim Push-Dienst. Danach einmal neu abonnieren.
@@ -383,6 +385,9 @@ FriesenSpy/
 │   ├── poller.py      # APScheduler, Flug-State-Machine, Kalender-Sync, SSE-Queue
 │   └── static/
 │       ├── index.html # Vanilla-JS-SPA (4 Tabs)
+│       ├── sw.js      # Service Worker (Web-Push + PWA)
+│       ├── manifest.webmanifest # PWA-Manifest (installierbar)
+│       ├── icon-192.png / icon-512.png / icon-maskable-512.png / apple-touch-icon.png
 │       └── favicon.ico
 ├── tests/             # pytest-Tests
 ├── docs/              # Architektur, API, Deployment

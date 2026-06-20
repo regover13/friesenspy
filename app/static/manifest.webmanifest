@@ -1,0 +1,16 @@
+{
+  "name": "FriesenSpy",
+  "short_name": "FriesenSpy",
+  "description": "VATSIM Live-Tracker für die FriesenFlieger",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#04080f",
+  "theme_color": "#04080f",
+  "lang": "de",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
