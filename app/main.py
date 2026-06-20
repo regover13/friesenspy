@@ -736,7 +736,7 @@ async def widget_preview():
   p{font-size:0.85rem;color:#104090;margin-bottom:20px}
   .preview-box{border:1px solid rgba(5,48,128,0.3);padding:12px;background:rgba(255,255,255,0.5);margin-bottom:24px;border-radius:4px}
   .preview-label{font-size:0.7rem;color:#5577aa;margin-bottom:8px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600}
-  iframe{width:100%;height:88px;border:none;display:block}
+  iframe{width:100%;min-height:88px;border:none;display:block}
   .code-box{background:#fff;border:1px solid rgba(5,48,128,0.25);padding:12px;font-size:0.75rem;overflow-x:auto;white-space:pre;color:#053080;border-radius:4px;cursor:pointer;position:relative;font-family:'Courier New',monospace}
   .copy-hint{position:absolute;top:8px;right:10px;font-size:0.65rem;color:#5577aa}
   .copied{color:#053080!important;font-weight:700}
@@ -749,22 +749,34 @@ async def widget_preview():
 <p>So sieht das Widget auf einer Webseite aus — aktualisiert sich automatisch alle 60 Sekunden.</p>
 <div class="preview-box">
   <div class="preview-label">Vorschau</div>
-  <iframe src="/widget" scrolling="no" style="height:88px"></iframe>
+  <iframe id="w-preview" src="/widget" scrolling="no"></iframe>
 </div>
 <div class="preview-label" style="margin-bottom:8px">Einbettungscode (klicken zum Kopieren)</div>
 <div class="code-box" onclick="copyCode(this)" title="Klicken zum Kopieren">
 <span class="copy-hint" id="hint">📋 kopieren</span>&lt;iframe
   src="https://friesenspy.devprops.de/widget"
-  width="420" height="88"
+  width="420" height="140"
   style="border:none;"
   scrolling="no"&gt;&lt;/iframe&gt;</div>
 <div class="note">
+  Die Höhe (<code>height</code>) ggf. anpassen — mit eingereichten Flugplänen wird das Widget höher.<br>
   ⚠ phpBB (unser Forum) erlaubt standardmäßig keine iframes in Beiträgen — der Code funktioniert nur auf externen Webseiten (z.B. friesenflieger.de).<br>
   Direkter Link zum Widget: <a href="/widget">friesenspy.devprops.de/widget</a>
 </div>
 <script>
+// Vorschau-iframe (same-origin) automatisch an den Inhalt anpassen, damit auch die
+// "geplant:"-Zeile (Flugpläne) und der TS-Zähler vollständig sichtbar sind.
+const _wf = document.getElementById('w-preview');
+function _fitPreview() {
+  try {
+    const h = _wf.contentWindow.document.body.scrollHeight;
+    if (h) _wf.style.height = h + 'px';
+  } catch (e) { /* same-origin sollte klappen; sonst min-height-Fallback */ }
+}
+_wf.addEventListener('load', _fitPreview);  // initial + bei jedem 60s-Auto-Refresh des Widgets
+setInterval(_fitPreview, 5000);             // fängt Inhalts-Reflow (neue Prefiles) zwischendurch ab
 function copyCode(el) {
-  const code = `<iframe\\n  src="https://friesenspy.devprops.de/widget"\\n  width="420" height="88"\\n  style="border:none;"\\n  scrolling="no"></iframe>`;
+  const code = `<iframe\\n  src="https://friesenspy.devprops.de/widget"\\n  width="420" height="140"\\n  style="border:none;"\\n  scrolling="no"></iframe>`;
   navigator.clipboard.writeText(code).then(() => {
     const h = document.getElementById('hint');
     h.textContent = '✓ kopiert';
