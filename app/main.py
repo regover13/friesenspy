@@ -161,8 +161,13 @@ async def push_subscribe(request: Request):
     p256dh = body.get("p256dh", "")
     auth = body.get("auth", "")
     if not endpoint or not p256dh or not auth:
+        _logger.warning(
+            "push/subscribe 400 (fehlende Felder): endpoint=%s p256dh=%s auth=%s",
+            (endpoint[:60] or "LEER"), bool(p256dh), bool(auth),
+        )
         return JSONResponse({"error": "endpoint, p256dh and auth are required"}, status_code=400)
     if "permanently-removed.invalid" in endpoint:
+        _logger.warning("push/subscribe 400 (permanently-removed.invalid): %s", endpoint[:80])
         return JSONResponse({"error": "invalid push endpoint"}, status_code=400)
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
