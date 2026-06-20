@@ -101,7 +101,7 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 - **`_active_flights: dict[int, dict]`** — In-Memory State: CID → `{"id": flight_id, "dep": departure, "arr": arrival}`. Wird beim Start in `PollerService.start()` aus der DB **rehydriert** (alle offenen Flüge `logoff_time IS NULL AND superseded_by IS NULL`), sodass ein Container-Neustart laufende Flüge adoptiert: Pilot noch online → `still_online` (kein neuer Flug); inzwischen offline → `went_offline` → korrekt geschlossen (kein Zombie). **Flugende:** Beim Offline-Gehen wird als `logoff_time` die letzte gespeicherte Position verwendet (nicht die Wanduhr). **Flugplanwechsel ohne Disconnect:** gleicher Abflughafen → `update_flight_plan` (selbes Leg); **geänderter** Abflughafen → echtes neues Leg (Pilot gelandet, neu gefiled) → altes Segment schließen, neues mit eindeutiger Mikrosekunden-`logon_time` öffnen (kollidiert nie mit dem Unique-Index).
 - **`sse_queue: asyncio.Queue`** — Jeder SSE-Client hat eine eigene Verbindung zum selben Queue-Objekt. `put_nowait` blockiert nicht.
 - **`last_prefiles: list`** — aktuell eingereichte VATSIM-Prefile-Pläne mit FRS*-Callsign (In-Memory, aus dem letzten Poll-Zyklus)
-- **`ts_clients: list[dict]`** — letzter TS-Poll-Snapshot der FRS-getaggten Clients (`{frs, nick, cid}`), In-Memory. Speist `/api/teamspeak` (Live-Tab-Panel) und den `/widget`-Zähler. Bleibt bei `None`-Abruf (TS nicht erreichbar) unverändert.
+- **`ts_clients: list[dict]`** — letzter TS-Poll-Snapshot der FRS-getaggten Clients (intern `{frs, nick, cid}`), In-Memory. Speist `/api/teamspeak` (Live-Tab-Panel) und den `/widget`-Zähler — **nach außen wird bewusst nur `frs` ausgegeben** (Klarnamen/Nick-Zusätze bleiben serverseitig). Bleibt bei `None`-Abruf (TS nicht erreichbar) unverändert.
 - **`_prefile_sigs: dict | None`** — CID → `(deptime, departure, arrival)` für Änderungserkennung. Wird beim Start aus `prefile_sigs`-DB-Tabelle geladen (nicht `None`) und nach jedem Poll gespeichert. Beim allerersten Start ohne DB-Einträge ist die Dict leer — keine Spam-Notifications. Container-Neustarts verpassen dadurch keine Prefile-Änderungen mehr.
 
 **`send_web_push(vapid_private_key, vapid_contact_email, db_path, subscriptions, payload, label)`** — generischer WebPush-Kern, der von VATSIM-Online- und TS-Notifications gemeinsam genutzt wird. Führt für jede Subscription einen Send-Versuch aus (1× Retry nach 5 s), loggt Fehler, löscht 410-Endpoints aus der DB — **sowie 403-Endpoints mit VAPID-Mismatch-Body** (`"do not correspond"`, d. h. mit alten VAPID-Keys angelegte, nie zustellbare Subscriptions; Client re-registriert beim nächsten Besuch). Derselbe 403-Cleanup gilt im Inline-Loop von `send_prefile_push_notifications`.
@@ -231,9 +231,13 @@ TeamSpeak-Server (port 10011)
   _poll_teamspeak (APScheduler Job: ts_poll)
         │
         ├─► fetch_channel_clients (ts3 ServerQuery, kurzlebige Verbindung)
-        │         None  → Poll überspringen (Server nicht erreichbar)
+        │         None  → Poll überspringen (Server nicht erreichbar, Snapshot bleibt)
         │         []    → gültiger leerer Kanal (Baseline oder Diff)
         │         [...]  → FRS-Clients im Kanal
+        │
+        ├─► self.ts_clients = clients  (Anzeige-Snapshot)
+        │         → /api/teamspeak (Live-Tab-Panel) + /widget-Zähler; nach außen nur frs
+        │         → ohne VAPID endet der Poll hier (reiner Display-Modus, keine Pushes)
         │
         ├─► Präsenz-Streak (_ts_streak)
         │         Erster Poll → Baseline (präsente FRS = _TS_BASELINE_STREAK), keine Notifications

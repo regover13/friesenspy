@@ -181,8 +181,6 @@ Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 
 ---
 
----
-
 ## TS-Login-Benachrichtigung (Phase 1)
 
 FriesenSpy kann eine Web-Push-Benachrichtigung senden, wenn ein Friese dem FriesenFlieger-TeamSpeak beitritt — auch wenn kein Browser offen ist. Das Feature ist **optional** und standardmäßig deaktiviert (`TS_NOTIFY_ENABLED=false`).
@@ -355,7 +353,7 @@ TS_REJOIN_DEBOUNCE_SEC=900
 pytest tests/ -v
 ```
 
-180 Tests, keine externen Abhängigkeiten (alles gemockt).
+261 Tests, keine externen Abhängigkeiten (alles gemockt).
 
 ### Deployment
 
