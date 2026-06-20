@@ -27,7 +27,9 @@ VATSIM Data API (15s)
 
 pydantic-settings liest `config.env` oder Umgebungsvariablen. `get_settings()` ist mit `@lru_cache` als Singleton implementiert — einmal geladen, für die Prozess-Lebensdauer gecacht.
 
-Pflichtfelder: `SECRET_KEY`. Optional: `STATSIM_API_KEY` für historische Flugdaten, `OPENAIP_API_KEY` für OpenAIP-Overlay im Frontend, `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_CONTACT_EMAIL` für Web Push Notifications.
+Pflichtfelder: `SECRET_KEY`. Optional: `STATSIM_API_KEY` für historische Flugdaten, `OPENAIP_API_KEY` für OpenAIP-Overlay im Frontend, `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_CONTACT_EMAIL` für Web Push Notifications, `LOG_LEVEL` (Default `INFO`).
+
+**Logging:** `configure_logging(LOG_LEVEL)` wird beim Lifespan-Startup aufgerufen und installiert via `logging.basicConfig(..., force=True)` einen Handler am Root-Logger. Ohne das hat der Root-Logger unter uvicorn keinen Handler, sodass Pythons Last-Resort-Handler nur `WARNING`+ ausgibt und App-`INFO`-Logs (z. B. `PrefilePush … sent OK`) verschluckt würden. Ungültiges Level → Fallback `INFO`.
 
 ### `app/vatsim.py`
 
@@ -55,7 +57,7 @@ SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Sieben Tabellen:
 | `live_positions` | Aktuelle Position pro CID (UPSERT, maximal 1 Zeile pro CID) |
 | `position_history` | Jede einzelne VATSIM-Positions-Update (für Tracks + Events) |
 | `calendar_events` | FriesenFlieger Google-Kalender (alle 6h synchronisiert, UID als Primary Key) |
-| `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array — gilt für Online/Flugplan/TS, `notify_prefiles` Flag, `notify_ts` Flag; `ts_self_frs` = tote Spalte, nicht mehr genutzt) |
+| `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array — gilt für Online/Flugplan/TS, `notify_prefiles` Flag, `notify_ts` Flag; `ts_self_frs` = tote Spalte, nicht mehr genutzt; `created_at` wird bei Re-Abo desselben Endpoints mit aktualisiert) |
 | `prefile_sigs` | Letzte bekannte Prefile-Signatur pro CID (`deptime`, `departure`, `arrival`) — wird nach jedem Poll persistiert, damit Container-Neustarts keine Änderungen verpassen |
 | `ts_consent` | Subjekt-Einwilligung pro FRS für TS-Login-Sichtbarkeit (`visibility` ∈ `everyone`/`nobody`; `allowlist`-Spalte existiert noch, wird aber nicht mehr ausgewertet) — kein Eintrag = Default `everyone` |
 
@@ -114,6 +116,9 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 - Neuer oder geänderter Prefile → `asyncio.create_task(send_prefile_push_notifications(...))`
 - Unterdrückt wenn CID bereits in `_active_flights` (Pilot online — kein Prefile-Alert nötig)
 - Nur an Subscriptions mit `notify_prefiles = 1` (Filter in `get_push_subscriptions_for_prefile`)
+- **Nicht rückwirkend:** Ein Push entsteht nur in dem Poll, in dem der Prefile neu auftaucht oder
+  sich die Signatur ändert. Ein bereits vorhandener Prefile löst beim nachträglichen Abonnieren
+  keine Benachrichtigung aus.
 
 Die Flug-State-Machine in `_poll_once`:
 

@@ -975,3 +975,35 @@ class TestGetTsPushSubscriptions:
         db = str(tmp_path / "t.db")
         init_db(db)
         init_db(db)  # zweiter Lauf darf nicht werfen
+
+
+class TestUpsertPushSubscriptionCreatedAt:
+    """created_at muss beim Re-Abo desselben Endpoints aktualisiert werden."""
+
+    def test_resubscribe_updates_created_at_and_keys(self, tmp_path, monkeypatch):
+        from app import database
+        from app.database import init_db, get_connection, upsert_push_subscription
+        db = str(tmp_path / "t.db"); init_db(db)
+        conn = get_connection(db)
+
+        monkeypatch.setattr(database, "_now_utc", lambda: "2026-01-01T00:00:00Z")
+        upsert_push_subscription(conn, "ep1", "p", "a")
+        conn.commit()
+        first = conn.execute(
+            "SELECT created_at FROM push_subscriptions WHERE endpoint='ep1'"
+        ).fetchone()[0]
+        assert first == "2026-01-01T00:00:00Z"
+
+        # Re-Abo desselben Endpoints zu späterem Zeitpunkt, neue Keys
+        monkeypatch.setattr(database, "_now_utc", lambda: "2026-02-02T12:00:00Z")
+        upsert_push_subscription(conn, "ep1", "p2", "a2")
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT created_at, p256dh, auth FROM push_subscriptions WHERE endpoint='ep1'"
+        ).fetchone()
+        assert row["created_at"] == "2026-02-02T12:00:00Z"   # aktualisiert
+        assert row["p256dh"] == "p2" and row["auth"] == "a2"  # Keys aktualisiert
+        # weiterhin nur eine Zeile (Upsert, kein Duplikat)
+        assert conn.execute("SELECT COUNT(*) FROM push_subscriptions").fetchone()[0] == 1
+        conn.close()

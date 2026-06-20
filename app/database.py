@@ -1338,7 +1338,8 @@ def upsert_push_subscription(
                pilot_filter=excluded.pilot_filter,
                notify_prefiles=excluded.notify_prefiles,
                notify_ts=excluded.notify_ts,
-               ts_self_frs=excluded.ts_self_frs""",
+               ts_self_frs=excluded.ts_self_frs,
+               created_at=excluded.created_at""",
         (
             endpoint, p256dh, auth,
             json.dumps(pilot_filter) if pilot_filter is not None else None,

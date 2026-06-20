@@ -323,6 +323,7 @@ CALLSIGN_PREFIX=FRS                         # Default: FRS
 VATSIM_POLL_INTERVAL=15                     # Sekunden, Default: 15
 VATSIM_REJOIN_DEBOUNCE_SEC=900              # s, Default: 900 (15 min) — Reconnect-Fenster Online-Push
 DB_PATH=friesenspy.db                       # Lokal: relativer Pfad OK
+LOG_LEVEL=INFO                              # Default: INFO — App-Logger (Push/Poll sichtbar)
 TELEGRAM_BOT_TOKEN=                         # Optional
 TELEGRAM_CHAT_ID=                           # Optional
 STATSIM_API_KEY=                            # Optional: historische Flüge via statsim.net

@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     VAPID_PUBLIC_KEY: str = ""
     VAPID_PRIVATE_KEY: str = ""   # PEM mit \\n-Escaping (z.B. aus generate_vapid.py)
     VAPID_CONTACT_EMAIL: str = ""
+    # Log-Level für die App-Logger. Default INFO, damit Push-/Poll-Logs sichtbar sind
+    # (unter uvicorn läuft der Root-Logger sonst auf WARNING → INFO-Zeilen verschwinden).
+    LOG_LEVEL: str = "INFO"
 
     # TeamSpeak-ServerQuery (Phase 1: Login-Benachrichtigung)
     TS_NOTIFY_ENABLED: bool = False

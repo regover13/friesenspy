@@ -39,6 +39,25 @@ from app.statsim import fetch_flight_track, fetch_pilot_flights
 
 _logger = logging.getLogger(__name__)
 
+
+def configure_logging(level: str = "INFO") -> None:
+    """Root-Logger konfigurieren, damit App-INFO-Logs sichtbar werden.
+
+    Unter uvicorn hat der Root-Logger keinen eigenen Handler — Pythons
+    Last-Resort-Handler gibt dann nur WARNING+ aus, weshalb INFO-Zeilen wie
+    "PrefilePush … sent OK" verschwinden. `force=True` (re)installiert einen
+    StreamHandler am Root-Logger und setzt das Level; uvicorns eigene benannte
+    Logger bleiben unberührt. Ungültiges Level → Fallback INFO.
+    """
+    resolved = getattr(logging, level.upper(), None)
+    if not isinstance(resolved, int):
+        resolved = logging.INFO
+    logging.basicConfig(
+        level=resolved,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        force=True,
+    )
+
 # CID → Zeitpunkt des letzten vollständigen StatSim-Abrufs (days=0).
 # Verloren beim Neustart → erstes days=0 nach Restart holt immer frische Daten.
 _full_history_fetched: dict[int, datetime] = {}
@@ -80,6 +99,7 @@ async def _fetch_statsim_background(cid: int, api_key: str, db_path: str, full: 
 async def lifespan(app: FastAPI):
     # Startup
     settings = get_settings()
+    configure_logging(settings.LOG_LEVEL)
     init_db(settings.DB_PATH)
     poller = create_poller()
     app.state.poller = poller
