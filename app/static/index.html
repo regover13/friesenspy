@@ -3849,9 +3849,15 @@ const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cf
 
 const _liveInitialPromise = fetchLiveInitial();
 fetchAndRenderPrefiles();
-setInterval(fetchAndRenderPrefiles, 15000);
 fetchAndRenderTeamspeak();
-setInterval(fetchAndRenderTeamspeak, 15000);
+// Nur als Fallback abfragen, wenn SSE getrennt ist — im Normalbetrieb treibt der
+// SSE-'positions'-Handler diese beiden Fetches bereits (sonst doppelte Last → 429).
+setInterval(() => {
+  if (!sseSource || sseSource.readyState !== EventSource.OPEN) fetchAndRenderPrefiles();
+}, 15000);
+setInterval(() => {
+  if (!sseSource || sseSource.readyState !== EventSource.OPEN) fetchAndRenderTeamspeak();
+}, 15000);
 connectSSE();
 initFromUrl();
 
