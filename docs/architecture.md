@@ -152,7 +152,7 @@ Ein einziges `conn.commit()` am Ende — kein partieller Schreibzustand möglich
 
 TeamSpeak-ServerQuery-Client für die TS-Login-Benachrichtigung (Phase 1). Baut pro Poll eine kurzlebige ServerQuery-Verbindung auf (kein dauerhafter Event-Thread, kein TS-Client-Prozess).
 
-- `parse_frs(nick)` — extrahiert die FRS-Nummer aus einem TS-Nickname via Regex (`FRS(\d+N?)`; einziges erlaubtes Suffix ist das optionale `N`, z. B. `FRS13N`), gibt `None` zurück wenn kein FRS-Tag gefunden wird. Portiert aus TSBot.
+- `parse_frs(nick)` — extrahiert die FRS-Nummer aus einem TS-Nickname via Regex (`FRS[\s_-]*(\d+N?)`; optionale Trennzeichen zwischen `FRS` und Zahl, sodass auch `FRS 144`/`FRS-144` erkannt werden; einziges erlaubtes Suffix ist das optionale `N`, z. B. `FRS13N`). Der Tag wird **normalisiert ohne Trennzeichen** zurückgegeben (`FRS 144` → `FRS144`), oder `None` wenn kein FRS-Tag gefunden wird. Portiert aus TSBot.
 - `_parse_clientlist(clients, channel_id)` — filtert die rohe ts3-clientlist: nur echte Clients (`client_type == "0"`), nur im Zielkanal (channel_id 0 = ganzer Server), nur Clients mit FRS-Tag. Gibt `[{frs, nick, cid}]` zurück.
 - `fetch_channel_clients(*, host, port, user, password, server_id, channel_id)` — async Wrapper: führt `_fetch_clients_sync` (login → use → clientlist → close) per `run_in_executor` aus. Gibt `None` bei Fehler zurück (kein Crash), damit der Caller zwischen nicht-erreichbarem Server (`None`) und echtem leeren Kanal (`[]`) unterscheiden kann.
 

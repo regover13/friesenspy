@@ -11,20 +11,23 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# Einziges erlaubtes Suffix ist das optionale "N" (z. B. FRS13N) — andere Buchstaben
-# gibt es nicht und werden NICHT als Teil des Callsigns gewertet (FRS135A → FRS135).
-_FRS_RE = re.compile(r"FRS(\d+N?)", re.IGNORECASE)
+# Zwischen "FRS" und der Zahl sind optionale Trennzeichen erlaubt (Space/Unterstrich/
+# Bindestrich), damit auch "FRS 144" / "FRS-144" erkannt werden. Einziges erlaubtes
+# Suffix ist das optionale "N" (z. B. FRS13N) — andere Buchstaben gehören NICHT zum
+# Callsign (FRS135A → FRS135).
+_FRS_RE = re.compile(r"FRS[\s_-]*(\d+N?)", re.IGNORECASE)
 
 
 def parse_frs(nick: str) -> str | None:
     """FRS-Nummer aus einem TS-Nickname extrahieren, oder None.
 
     Portiert aus TSBot/bot/ts_query.py:_parse_nickname. FRS-Nummer kann an beliebiger
-    Stelle stehen (vor/nach Name, diverse Trennzeichen, Klammer-Suffix). Rückgabe in
-    Großbuchstaben, z. B. "FRS135" / "FRS13N". Einziges erlaubtes Suffix ist "N".
+    Stelle stehen (vor/nach Name, diverse Trennzeichen, Klammer-Suffix). Der zurück-
+    gegebene Tag wird IMMER ohne Trennzeichen normalisiert ("FRS 144" → "FRS144") und
+    großgeschrieben, z. B. "FRS135" / "FRS13N". Einziges erlaubtes Suffix ist "N".
     """
     m = _FRS_RE.search(nick or "")
-    return m.group(0).upper() if m else None
+    return ("FRS" + m.group(1).upper()) if m else None
 
 
 def parse_channel_ids(raw: str) -> frozenset[int]:

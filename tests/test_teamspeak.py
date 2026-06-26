@@ -21,6 +21,13 @@ class TestParseFrs:
         # Nur "N" ist ein gültiges Suffix — andere Buchstaben gehören nicht zum Callsign
         ("FRS135A", "FRS135"),
         ("FRS22X", "FRS22"),
+        # Trennzeichen zwischen "FRS" und der Zahl werden normalisiert (Tag ohne Space)
+        ("Sascha Kehler/FRS 144  (2020)", "FRS144"),
+        ("FRS-144", "FRS144"),
+        ("FRS_144", "FRS144"),
+        ("frs 13n lowercase", "FRS13N"),
+        # Kein Treffer ohne Zahl direkt nach den Trennzeichen
+        ("FRS Stammtisch", None),
         ("Nur ein Name", None),
         ("", None),
     ])
