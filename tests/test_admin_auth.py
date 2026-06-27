@@ -17,9 +17,12 @@ from app.auth import (
 
 
 class FakeReq:
-    def __init__(self, cookies=None, body=None):
+    def __init__(self, cookies=None, body=None, headers=None, scheme="http", ip="1.2.3.4"):
         self.cookies = cookies or {}
         self._body = body or {}
+        self.headers = headers or {}
+        self.url = SimpleNamespace(scheme=scheme)
+        self.client = SimpleNamespace(host=ip)
 
     async def json(self):
         return self._body
@@ -87,5 +90,25 @@ class TestLoginLogout:
     def test_login_wrong_password_401(self, monkeypatch):
         _patch(monkeypatch)
         with pytest.raises(HTTPException) as e:
-            asyncio.run(main.admin_login(FakeReq(body={"password": "falsch"})))
+            asyncio.run(main.admin_login(FakeReq(body={"password": "falsch"}, ip="t-wrong")))
         assert e.value.status_code == 401
+
+    def test_secure_cookie_behind_https(self, monkeypatch):
+        _patch(monkeypatch)
+        resp = asyncio.run(main.admin_login(FakeReq(
+            body={"password": "harle15"}, headers={"x-forwarded-proto": "https"}, ip="t-https",
+        )))
+        cookie = resp.headers.get("set-cookie", "").lower()
+        assert "secure" in cookie and "path=/api/admin" in cookie
+
+    def test_login_rate_limited_after_failures(self, monkeypatch):
+        _patch(monkeypatch)
+        main._login_fails.pop("t-rl", None)
+        for _ in range(5):
+            with pytest.raises(HTTPException) as e:
+                asyncio.run(main.admin_login(FakeReq(body={"password": "x"}, ip="t-rl")))
+            assert e.value.status_code == 401
+        # 6. Versuch ist gebremst → 429 (auch mit korrektem Passwort)
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_login(FakeReq(body={"password": "harle15"}, ip="t-rl")))
+        assert e.value.status_code == 429
