@@ -36,6 +36,7 @@ from app.database import (
 from app.geo import filter_event_pilots, haversine, segment_into_flights
 from app.poller import VatsimPoller, create_poller
 from app.statsim import fetch_flight_track, fetch_pilot_flights
+from app.version import CHANGELOG, VERSION
 
 _logger = logging.getLogger(__name__)
 
@@ -155,6 +156,8 @@ async def frontend_config():
     return {
         "openaip_api_key": settings.OPENAIP_API_KEY,
         "vapid_public_key": settings.VAPID_PUBLIC_KEY,
+        "version": VERSION,
+        "changelog": CHANGELOG,
     }
 
 

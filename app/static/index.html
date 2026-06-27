@@ -206,6 +206,20 @@
       min-width: 120px;
       text-align: right;
     }
+    .app-version {
+      font-family: var(--text-mono);
+      font-size: 0.7rem;
+      color: var(--text-label);
+      opacity: 0.55;
+      background: transparent;
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      letter-spacing: 0.06em;
+      transition: opacity 0.15s ease, color 0.15s ease;
+    }
+    .app-version:hover { opacity: 1; color: var(--green); text-decoration: underline; }
+    .app-version[hidden] { display: none; }
 
     /* =====================================================================
        TAB NAVIGATION
@@ -1265,6 +1279,22 @@
       .install-banner-text { flex-basis: calc(100% - 80px); }
       .install-banner-btn { order: 3; }
     }
+    /* Changelog-Banner: gleiche Basis wie Install-Banner, anderer Akzent (Blau statt Grün) */
+    .changelog-banner { border-left: 3px solid var(--blue, #2d9cdb); }
+    .changelog-banner .install-banner-text strong { color: var(--blue, #2d9cdb); }
+    /* Versionsverlauf-Modal */
+    .changelog-entry { padding: 12px 0; border-bottom: 1px solid var(--green-grid); }
+    .changelog-entry:last-child { border-bottom: none; }
+    .changelog-entry-head {
+      display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px;
+    }
+    .changelog-entry-ver {
+      font-family: var(--text-mono); font-weight: 700; color: var(--blue, #2d9cdb); font-size: 0.95rem;
+    }
+    .changelog-entry-date { font-family: var(--text-mono); font-size: 0.75rem; color: var(--text-label); opacity: 0.7; }
+    .changelog-entry-title { font-size: 0.9rem; color: var(--text); }
+    .changelog-entry ul { margin: 0; padding-left: 18px; }
+    .changelog-entry li { margin: 3px 0; font-size: 0.85rem; line-height: 1.45; }
   </style>
 </head>
 <body>
@@ -1289,6 +1319,7 @@
         <span class="sse-label" id="sse-label">GETRENNT</span>
       </div>
       <div class="utc-clock" id="utc-clock">00:00:00 UTC</div>
+      <button id="app-version" class="app-version" title="Versionsverlauf anzeigen" hidden></button>
     </div>
   </header>
 
@@ -1335,6 +1366,19 @@
     </div>
     <button id="install-banner-btn" class="install-banner-btn">Installieren</button>
     <button id="install-banner-close" class="install-banner-close" title="Ausblenden">✕</button>
+  </div>
+
+  <!-- =====================================================================
+       CHANGELOG BANNER (Neuerungen dieser Version)
+       ===================================================================== -->
+  <div id="changelog-banner" class="install-banner changelog-banner" hidden>
+    <span class="install-banner-icon">✨</span>
+    <div class="install-banner-text">
+      <strong id="changelog-banner-title">Neu</strong>
+      <span id="changelog-banner-sub"></span>
+    </div>
+    <button id="changelog-banner-more" class="install-banner-btn">Verlauf</button>
+    <button id="changelog-banner-close" class="install-banner-close" title="Ausblenden">✕</button>
   </div>
 
   <!-- =====================================================================
@@ -1582,6 +1626,17 @@
   </div>
 </div>
 
+<!-- Versionsverlauf-Modal -->
+<div id="changelog-modal" class="fp-modal-overlay hidden">
+  <div class="fp-modal-box" onclick="event.stopPropagation()">
+    <div class="fp-modal-header">
+      <span class="fp-callsign-title">Versionsverlauf</span>
+      <button class="fp-close-btn" onclick="closeChangelogModal()">✕</button>
+    </div>
+    <div class="fp-section" id="changelog-modal-body"></div>
+  </div>
+</div>
+
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
@@ -1686,6 +1741,11 @@ let _swRegistration = null;
 let _pushSubscription = null;
 let _deferredInstallPrompt = null;
 let _notifCustomFilter = null; // in-memory filter für "Nur bestimmte Piloten" (überlebt Radio-Wechsel)
+
+// ---- Versionierung & Changelog ----
+let _version = '';
+let _changelog = [];
+const CHANGELOG_SEEN_KEY = 'fs_changelog_seen';  // Wert = zuletzt gesehene Version
 
 // ---- PWA install prompt (Android/Desktop) ----
 const INSTALL_DISMISS_KEY = 'fs_install_dismissed';
@@ -2003,6 +2063,82 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   _maybeShowInstallBanner();
 });
+
+// ==========================================================================
+//  Versionierung & Changelog (Header-Badge, Banner, Verlauf-Modal)
+// ==========================================================================
+function _fmtChangelogDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : (iso || '');
+}
+
+function _initVersionUI(version, changelog) {
+  _version = version || '';
+  _changelog = Array.isArray(changelog) ? changelog : [];
+  const badge = document.getElementById('app-version');
+  if (badge && _version) {
+    badge.textContent = 'v' + _version;
+    const top = _changelog[0];
+    badge.title = top && top.date
+      ? `Version ${_version} · ${_fmtChangelogDate(top.date)} — Verlauf anzeigen`
+      : 'Versionsverlauf anzeigen';
+    badge.hidden = false;
+    badge.addEventListener('click', openChangelogModal);
+  }
+  // Einmalige Verdrahtung der Banner-/Modal-Bedienelemente
+  document.getElementById('changelog-banner-close')?.addEventListener('click', _markChangelogSeen);
+  document.getElementById('changelog-banner-more')?.addEventListener('click', openChangelogModal);
+  document.getElementById('changelog-modal')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('changelog-modal')) closeChangelogModal();
+  });
+  _maybeShowChangelogBanner();
+}
+
+function _maybeShowChangelogBanner() {
+  if (!_changelog.length || !_version) return;
+  let seen = '';
+  try { seen = localStorage.getItem(CHANGELOG_SEEN_KEY) || ''; } catch (_) {}
+  if (seen === _version) return;  // diese Version schon gesehen → kein Banner
+  const entry = _changelog[0];
+  const banner = document.getElementById('changelog-banner');
+  if (!banner || !entry) return;
+  document.getElementById('changelog-banner-title').textContent =
+    `Neu in v${_version} · ${_fmtChangelogDate(entry.date)}`;
+  document.getElementById('changelog-banner-sub').textContent =
+    (entry.items || []).join('  ·  ');
+  banner.hidden = false;
+}
+
+function _markChangelogSeen() {
+  try { localStorage.setItem(CHANGELOG_SEEN_KEY, _version); } catch (_) {}
+  const banner = document.getElementById('changelog-banner');
+  if (banner) banner.hidden = true;
+}
+
+function openChangelogModal() {
+  const body = document.getElementById('changelog-modal-body');
+  if (body) {
+    body.innerHTML = _changelog.map(e => `
+      <div class="changelog-entry">
+        <div class="changelog-entry-head">
+          <span class="changelog-entry-ver">v${escHtml(e.version)}</span>
+          <span class="changelog-entry-date">${escHtml(_fmtChangelogDate(e.date))}</span>
+          <span class="changelog-entry-title">${escHtml(e.title || '')}</span>
+        </div>
+        <ul>${(e.items || []).map(it => `<li>${escHtml(it)}</li>`).join('')}</ul>
+      </div>`).join('');
+  }
+  document.getElementById('changelog-modal').classList.remove('hidden');
+  document.addEventListener('keydown', _changelogEscHandler);
+  _markChangelogSeen();  // Verlauf gesehen → Banner künftig nicht mehr anzeigen
+}
+
+function closeChangelogModal() {
+  document.getElementById('changelog-modal').classList.add('hidden');
+  document.removeEventListener('keydown', _changelogEscHandler);
+}
+
+function _changelogEscHandler(e) { if (e.key === 'Escape') closeChangelogModal(); }
 
 function _makeAIPOverlay() {
   if (!_openaipKey) return null;
@@ -3860,6 +3996,7 @@ const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cf
     document.getElementById('notif-btn').hidden = false;
     _registerServiceWorker();
   }
+  _initVersionUI(cfg.version, cfg.changelog);
 }).catch(() => {});
 
 const _liveInitialPromise = fetchLiveInitial();

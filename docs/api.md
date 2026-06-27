@@ -345,6 +345,34 @@ Es wird bewusst **nur das FRS-Callsign** ausgegeben — Klarnamen und sonstige N
 
 ---
 
+## GET /api/frontend-config
+
+Konfiguration + Versionsdaten für das Frontend (wird beim Seitenstart einmal geladen).
+
+**Response**
+
+```json
+{
+  "openaip_api_key": "…",
+  "vapid_public_key": "…",
+  "version": "1.0.0",
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-06-27",
+      "title": "Version 1.0: App-Installation & TeamSpeak",
+      "items": ["📲 …", "🎧 …"]
+    }
+  ]
+}
+```
+
+`version` + `changelog` stammen aus `app/CHANGELOG.json` (via `app/version.py`). `version` ist
+die neueste Version (`changelog[0].version`). Das Frontend zeigt damit die kleine Versionsnummer
+im Header, das Changelog-Banner (neueste Version, einmal pro Version) und den Versionsverlauf.
+
+---
+
 ## GET /api/calendar/events
 
 FriesenEvents aus dem FriesenFlieger-Google-Kalender — letzte 365 Tage bis heute, absteigend nach Startdatum (neueste zuerst).

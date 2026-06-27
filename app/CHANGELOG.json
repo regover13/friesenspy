@@ -1,0 +1,47 @@
+[
+  {
+    "version": "1.0.0",
+    "date": "2026-06-27",
+    "title": "Version 1.0: App-Installation & TeamSpeak",
+    "items": [
+      "📲 FriesenSpy ist jetzt als App installierbar (Home-Bildschirm) — inkl. Push-Benachrichtigungen.",
+      "🎧 TeamSpeak-Integration: Live-Anzeige, wer gerade im FriesenFlieger-TeamSpeak ist (nur FRS-Callsigns).",
+      "🔔 Optionale Push-Benachrichtigung, wenn ein Friese ins TeamSpeak kommt.",
+      "🐛 FRS-Tags mit Leerzeichen werden erkannt (z. B. „FRS 144“).",
+      "🐛 „Fehler beim Laden“ behoben (Rate-Limit / gepufferter Hintergrund-Rückstau).",
+      "⚡ Live-Updates erreichen jetzt zuverlässig alle Geräte gleichzeitig."
+    ]
+  },
+  {
+    "version": "0.9.0",
+    "date": "2026-06-06",
+    "title": "Luftraum-Overlay & Karten-Layer",
+    "items": [
+      "🗺️ OpenAIP-Overlay: Lufträume, Flugplätze und Navaids auf der Karte.",
+      "🧭 Zusätzliche Basislayer (OpenTopoMap, Satellit, Light) + automatischer Zoom-Wechsel.",
+      "💾 Der zuletzt gewählte Karten-Layer wird gemerkt."
+    ]
+  },
+  {
+    "version": "0.8.0",
+    "date": "2026-06-05",
+    "title": "Karte, Statistiken & Events",
+    "items": [
+      "🛰️ Live-Track jedes Fluges auf der Karte mit Flug-Drill-Down.",
+      "📊 Flugstatistiken inkl. StatSim-Historie (letztes Jahr) pro Pilot.",
+      "📅 Events-Ansicht mit allen Tracks und Flugliste.",
+      "🧩 Einbettbares Widget für friesenflieger.de."
+    ]
+  },
+  {
+    "version": "0.5.0",
+    "date": "2026-06-04",
+    "title": "Erste Version: Live-Tracker",
+    "items": [
+      "✈️ Live-Übersicht aller FriesenFlieger (FRS-Callsign) auf VATSIM, ohne Neuladen.",
+      "🛰️ GPS-Track-Aufzeichnung jedes Fluges (15-Sekunden-Takt).",
+      "📋 Eingereichte Flugpläne (Prefiles) im Blick.",
+      "🔔 Benachrichtigungen via Web-Push / Telegram, wenn ein Friese online geht."
+    ]
+  }
+]

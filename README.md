@@ -368,6 +368,19 @@ main branch
                     └─► SSH: docker compose pull + up -d
 ```
 
+### Versionierung & Changelog
+
+Die Versionsnummer + der Changelog liegen als Repo-Datei **`app/CHANGELOG.json`** (neueste Version
+zuerst; je Eintrag `version`, `date`, `title`, `items`). `app/version.py` liest sie ein, das Frontend
+bekommt sie über `/api/frontend-config`. Im Header erscheint eine kleine Versionsnummer (Klick öffnet
+den **Versionsverlauf**); bei einer neuen Version sehen Nutzer einmalig ein **Banner** mit den
+Neuerungen (per ✕ wegklickbar, gemerkt in `localStorage['fs_changelog_seen']`).
+
+**Neues Release veröffentlichen:** bei einer signifikanten Änderung in `app/CHANGELOG.json` einen
+neuen Eintrag **ganz oben** einfügen (semantische Version `MAJOR.MINOR.PATCH` + Datum + `items`).
+Schema: großes Feature → Minor/Major (z. B. TeamSpeak/PWA = 1.0.0), reiner Bugfix → Patch. Nach dem
+Deploy erscheint das Banner automatisch bei allen Nutzern, die die Version noch nicht gesehen haben.
+
 ### Projektstruktur
 
 ```
@@ -382,7 +395,9 @@ FriesenSpy/
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
 │   ├── calendar_sync.py # FriesenFlieger Google-Kalender (iCal-Parser, alle 6h via Poller)
 │   ├── teamspeak.py   # TeamSpeak-ServerQuery-Client (FRS-Parsing, fetch_channel_clients)
-│   ├── poller.py      # APScheduler, Flug-State-Machine, Kalender-Sync, SSE-Queue
+│   ├── poller.py      # APScheduler, Flug-State-Machine, Kalender-Sync, SSE-Fan-out
+│   ├── version.py     # liest CHANGELOG.json → VERSION + CHANGELOG
+│   ├── CHANGELOG.json # Versionsverlauf (Quelle für Header-Badge, Banner, Verlauf)
 │   └── static/
 │       ├── index.html # Vanilla-JS-SPA (4 Tabs)
 │       ├── sw.js      # Service Worker (Web-Push + PWA)
