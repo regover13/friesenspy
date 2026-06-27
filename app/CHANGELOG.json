@@ -1,5 +1,15 @@
 [
   {
+    "version": "6.2.0",
+    "date": "2026-06-27",
+    "title": "Event-Benachrichtigungen & manuelle Bummel",
+    "items": [
+      "🔔 Neuer „Events“-Schalter in den Benachrichtigungen: Erinnerung ~1 h vor jedem FriesenEvent per Push + Bummel-Start/Ergebnis-Benachrichtigungen — einzeln aktivierbar, Standard: aus.",
+      "🏁 Manuell angelegte Bummel (ohne Kalender-Termin) erscheinen jetzt auch im Events-Tab und sind anklickbar.",
+      "🔔 „Enthüllen“ im Admin sendet jetzt ebenfalls den Ergebnis-Push an Events-Abonnenten."
+    ]
+  },
+  {
     "version": "6.1.2",
     "date": "2026-06-27",
     "title": "FriesenFliegerBummel",

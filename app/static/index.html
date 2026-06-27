@@ -1402,6 +1402,9 @@
       <label class="notif-toggle-row" style="margin-top:8px;">
         <input type="checkbox" id="notif-ts"> 🎧 Bei TeamSpeak-Beitritt benachrichtigen
       </label>
+      <label class="notif-toggle-row" style="margin-top:8px;">
+        <input type="checkbox" id="notif-events"> 📅 Events (Erinnerung ~1 h vorher + Bummel-Start/Ergebnis)
+      </label>
       <div class="notif-filter-title" style="margin-top:12px;">Benachrichtigen wenn (gilt für Online, Flugplan &amp; TeamSpeak):</div>
       <div class="notif-radio-row">
         <label><input type="radio" name="notif-filter-mode" value="all" checked> Alle Friesen</label>
@@ -1933,6 +1936,10 @@ function _showNotifPanelContent() {
   if (tsCb) {
     tsCb.checked = localStorage.getItem('notif_ts') === '1';
   }
+  const eventsCb = document.getElementById('notif-events');
+  if (eventsCb) {
+    eventsCb.checked = localStorage.getItem('notif_events') === '1';
+  }
 }
 
 function _applyNotifPilotListState() {
@@ -2033,6 +2040,8 @@ async function _saveNotifFilter() {
   localStorage.setItem('notif_prefiles', notifyPrefiles ? '1' : '0');
   const notifyTs = document.getElementById('notif-ts')?.checked ?? false;
   localStorage.setItem('notif_ts', notifyTs ? '1' : '0');
+  const notifyEvents = document.getElementById('notif-events')?.checked ?? false;
+  localStorage.setItem('notif_events', notifyEvents ? '1' : '0');
   await fetch('/api/push/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2043,6 +2052,7 @@ async function _saveNotifFilter() {
       pilot_filter: pilotFilter,
       notify_prefiles: notifyPrefiles,
       notify_ts: notifyTs,
+      notify_events: notifyEvents,
     }),
   });
   const saveBtn = document.getElementById('notif-save-btn');
@@ -2555,8 +2565,29 @@ async function fetchFriesenEvents() {
   _friesenEventsLoaded = true;
   try {
     const res  = await fetch('/api/calendar/events');
-    const data = await res.json();
-    renderFriesenEvents(data);
+    const calEvents = await res.json();
+    // Manuell angelegte Bummel-Rennen ergänzen (toleriert Fehler)
+    let manualEvents = [];
+    try {
+      const racesRes = await fetch('/api/bummel/races');
+      const races = await racesRes.json();
+      manualEvents = (races || [])
+        .filter(r => r.source === 'manual')
+        .map(r => ({
+          summary: r.name,
+          dtstart: r.dtstart,
+          dtend: r.dtend,
+          // /api/bummel/races liefert route als Array; renderFriesenEvents erwartet CSV-String
+          route: Array.isArray(r.route) ? r.route.join(',') : (r.route || ''),
+          location: '',
+          is_bummel: 1,
+          _raceId: r.id,
+          _manual: true,
+        }));
+    } catch (_) { /* ignorieren */ }
+    const combined = [...calEvents, ...manualEvents]
+      .sort((a, b) => (b.dtstart || '').localeCompare(a.dtstart || ''));
+    renderFriesenEvents(combined);
   } catch (e) {
     const c = document.getElementById('friesenevents-content');
     if (c) c.innerHTML = '<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden</div></div>';
@@ -2586,9 +2617,10 @@ function renderFriesenEvents(data) {
   let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';
   data.forEach((ev, i) => {
     const badge = ev.is_bummel ? '<span class="bummel-badge">🏁 BUMMEL</span>' : '';
+    const manuelHint = ev._manual ? ' <span class="text-label" style="font-size:0.8em;">(manuell)</span>' : '';
     const icaoCell = ev.is_bummel && ev.route ? ev.route.replace(/,/g, ' → ') : (ev.location || '—');
     html += `<tr style="cursor:pointer;" data-event-idx="${i}">
-      <td>${escHtml(ev.summary || '—')}${badge}</td>
+      <td>${escHtml(ev.summary || '—')}${badge}${manuelHint}</td>
       <td class="mono text-label">${_fmtEventDate(ev.dtstart)}</td>
       <td class="mono text-green">${escHtml(icaoCell)}</td>
     </tr>`;
@@ -2639,9 +2671,9 @@ async function openBummel(ev) {
   _activeBummel = null;
   document.getElementById('events-results').classList.add('hidden');
   try {
-    // Kalendertermin → persistentes Rennen mappen (über calendar_uid)
+    // Kalendertermin → persistentes Rennen mappen (über _raceId für manuelle Events, sonst calendar_uid)
     const races = await (await fetch('/api/bummel/races')).json();
-    const race = (races || []).find(r => r.calendar_uid === ev.uid);
+    const race = ev._raceId ? { id: ev._raceId } : (races || []).find(r => r.calendar_uid === ev.uid);
     if (!race) {
       content.innerHTML = '<div class="empty-state"><div class="empty-state-text text-label">Kein Rennen zu diesem Termin gefunden</div></div>';
       return;
