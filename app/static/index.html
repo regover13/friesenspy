@@ -2780,6 +2780,22 @@ function copyBummelForumText(btn) {
   }).catch(() => {});
 }
 
+// Badge-Links je Pilot (Forum-PNG öffnen + BBCode kopieren).
+function _bummelBadgeLinks(raceId, cid) {
+  if (raceId == null) return '';
+  const url = `/api/bummel/race/${raceId}/badge/${cid}.png`;
+  return `<a class="btn-share" href="${url}" target="_blank" rel="noopener" title="Badge als Bild öffnen">🎖 Badge</a>`
+       + ` <button class="btn-share" onclick="copyBummelBadgeCode(${raceId}, ${cid}, this)" title="Forum-Code (BBCode) kopieren">📋 Forum</button>`;
+}
+function copyBummelBadgeCode(raceId, cid, btn) {
+  const code = `[img]${location.origin}/api/bummel/race/${raceId}/badge/${cid}.png[/img]`;
+  navigator.clipboard.writeText(code).then(() => {
+    const old = btn.textContent;
+    btn.textContent = '✓ kopiert';
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  }).catch(() => {});
+}
+
 // Baut den Ranking-HTML-Block (ohne äußeren Panel-Rahmen). inProgress optional (Live-Banner).
 function renderBummelStandings(data, inProgress) {
   const route = (data.route || []).join(' → ');
@@ -2789,7 +2805,7 @@ function renderBummelStandings(data, inProgress) {
     _bummelForumText = _buildBummelForumText(data);
     html += `<div class="bummel-avg-row">Durchschnittszeit: <strong>${_fmtMin(Math.round(data.average_min))}</strong> · wer am nächsten dran ist, gewinnt
       <button class="btn-share" style="margin-left:10px;" onclick="copyBummelForumText(this)">📋 Für Forum kopieren</button></div>`;
-    html += '<div class="live-table-wrap"><table><thead><tr><th>#</th><th>Pilot</th><th>Flugzeug</th><th>Beine</th><th>Block-Gesamtzeit</th><th>Abstand z. Schnitt</th></tr></thead><tbody>';
+    html += '<div class="live-table-wrap"><table><thead><tr><th>#</th><th>Pilot</th><th>Flugzeug</th><th>Beine</th><th>Block-Gesamtzeit</th><th>Abstand z. Schnitt</th><th>Badge</th></tr></thead><tbody>';
     data.complete.forEach(e => {
       const cls = e.rank === 1 ? 'bummel-rank-1' : '';
       const medal = e.rank === 1 ? '🏆 ' : '';
@@ -2800,6 +2816,7 @@ function renderBummelStandings(data, inProgress) {
         <td class="mono">${e.leg_count != null ? e.leg_count : '—'}</td>
         <td class="mono">${_fmtMin(e.total_min)}</td>
         <td class="mono">${e.delta === 0 ? '★ exakt' : '±' + _fmtMin(Math.round(e.delta))}</td>
+        <td>${_bummelBadgeLinks(data.id, e.cid)}</td>
       </tr>`;
     });
     html += '</tbody></table></div>';
@@ -2821,7 +2838,8 @@ function renderBummelStandings(data, inProgress) {
       const visited = (e.visited || []).join(', ') || '—';
       const missing = (e.missing || []).join(', ');
       return `${escHtml(e.name || e.callsign || ('CID ' + e.cid))} — besucht: ${escHtml(visited)}` +
-             (missing ? ` <span class="bi-missing">(fehlt: ${escHtml(missing)})</span>` : '');
+             (missing ? ` <span class="bi-missing">(fehlt: ${escHtml(missing)})</span>` : '') +
+             ` ${_bummelBadgeLinks(data.id, e.cid)}`;
     }).join('<br>');
     html += '</div>';
   }

@@ -145,6 +145,42 @@ def test_races_list_includes_source(db):
     assert races and races[0]["source"] == "manual"
 
 
+def test_badge_endpoint(db):
+    now = datetime.now(timezone.utc)
+    dtstart = _iso(now - timedelta(hours=5))
+    rid = asyncio.run(main.admin_create_race(FakeReq(body={
+        "route": "EDWF,EDWG,EDWR", "dtstart": dtstart, "dtend": _iso(now - timedelta(hours=1)),
+    })))["id"]
+    _seed_flights(db, dtstart)
+    view = asyncio.run(main.get_bummel_race_endpoint(rid))   # vorbei → Auto-Reveal
+    assert view["revealed"] is True
+    winner = view["complete"][0]["cid"]
+    other = view["complete"][1]["cid"]
+
+    png_w = asyncio.run(main.get_bummel_badge(rid, winner))
+    assert png_w.media_type == "image/png" and png_w.body[:8] == b"\x89PNG\r\n\x1a\n"
+    png_m = asyncio.run(main.get_bummel_badge(rid, other))
+    assert png_m.body[:8] == b"\x89PNG\r\n\x1a\n"
+    # Sieger-Badge ist größer als die Medaille
+    assert len(png_w.body) > len(png_m.body)
+
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.get_bummel_badge(rid, 999999))
+    assert e.value.status_code == 404
+
+
+def test_badge_404_before_reveal(db):
+    now = datetime.now(timezone.utc)
+    dtstart = _iso(now - timedelta(hours=1))
+    rid = asyncio.run(main.admin_create_race(FakeReq(body={
+        "route": "EDWF,EDWG,EDWR", "dtstart": dtstart, "dtend": _iso(now + timedelta(hours=3)),
+    })))["id"]
+    _seed_flights(db, dtstart)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.get_bummel_badge(rid, 100))
+    assert e.value.status_code == 404
+
+
 def test_winner_override(db):
     now = datetime.now(timezone.utc)
     dtstart = _iso(now - timedelta(hours=2))

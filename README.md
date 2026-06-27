@@ -171,6 +171,16 @@ Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzwelt
 - **Events-Tab:** Bummel-Termine tragen ein **🏁 BUMMEL**-Badge. Vor der Enthüllung sieht man Teilnahme und Fortschritt. Nach der Enthüllung öffnet ein Klick das vollständige Ranking (Platz, Pilot, Flugzeug, Beine, Block-Gesamtzeit, Abstand zum Schnitt) samt „unvollständig"-Liste — und **darunter die komplette normale Event-Ansicht** (Karte + alle Piloten im Umkreis, auch Nicht-Teilnehmer; gewertete Piloten tragen ihr Bummel-Standing als Badge). Im enthüllten Ranking erscheint außerdem ein **„Für Forum kopieren"**-Button — er erzeugt einen fertig formatierten Ergebnistext zum Einfügen in board.friesenflieger.de. Manuell angelegte Bummel (ohne Kalender-Termin) erscheinen ebenfalls in dieser Liste und sind anklickbar.
 - **Push-Benachrichtigungen:** FriesenSpy benachrichtigt (sofern Push aktiviert ist), wenn das Rennen **gestartet** wird — der Trigger ist der erste Pilot, der eine Blockzeit an einem Streckenflugplatz erreicht — und wenn die **Ergebnisse enthüllt** werden. Beide Ereignisse sind Latches (feuern nur einmal je Rennen) und können je Rennen über die Admin-Seite abgeschaltet werden. Diese Benachrichtigungen erreichen nur Abonnenten mit aktiviertem **„Events"-Schalter** (opt-in).
 
+### Badge fürs Forum
+
+Nach der Enthüllung eines Bummels bekommt jeder Teilnehmer ein **Badge-PNG**, das er als Bild in seine Forensignatur bei board.friesenflieger.de einbinden kann — über eine feste URL, die Foren direkt als Bild erkennen (`.png`-Suffix).
+
+- **Sieger (Rang 1):** großes Badge „Absoluter Durchschnitt!" (640×240 px) mit Callsign, Name, Flugzeugmuster, Block-Gesamtzeit und Zeitdifferenz zum Schnitt.
+- **Alle anderen Teilnehmer** (auch unvollständige): kleine Medaille „Voll daneben!" (380×150 px).
+- Beide Badges tragen die Fußzeile **friesenflieger.de**.
+
+Im enthüllten Ranking erscheinen je Pilot zwei Schaltflächen: **🎖 Badge** öffnet das PNG direkt; **📋 Forum** kopiert den fertigen BBCode `[img]…/badge/{cid}.png[/img]` in die Zwischenablage — zum direkten Einfügen in board.friesenflieger.de. Die Badges werden serverseitig mit Pillow gezeichnet und unter `data/badges/` gecacht. Vor der Enthüllung liefert der Endpoint 404.
+
 ### Verwaltung (Admin)
 
 Die Admin-Seite ist unter `/admin` erreichbar und passwortgeschützt. Das Passwort wird über `ADMIN_PASSWORD` in `config.env` gesetzt (leer = Admin-Bereich deaktiviert; niemals in git). Der Login setzt ein signiertes httponly-Cookie (`fs_admin`), das für die Browsersitzung gültig bleibt — ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort.
@@ -434,6 +444,7 @@ FriesenSpy/
 │   ├── statsim.py     # StatSim API-Client (historische Flüge)
 │   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline), Event-Filter
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
+│   ├── badge.py       # Badge-Rendering mit Pillow (Sieger-Badge + Medaille, data/badges/-Cache)
 │   ├── calendar_sync.py # FriesenFlieger Google-Kalender (iCal-Parser, alle 6h via Poller)
 │   ├── teamspeak.py   # TeamSpeak-ServerQuery-Client (FRS-Parsing, fetch_channel_clients)
 │   ├── poller.py      # APScheduler, Flug-State-Machine, Kalender-Sync, SSE-Fan-out
@@ -475,6 +486,7 @@ FriesenSpy/
 | `/api/bummel/races` | GET | Liste aller bekannten Bummel-Rennen (`id, name, route, dtstart, dtend, status, participant_count, calendar_uid`) |
 | `/api/bummel/race/{id}` | GET | Öffentliche Sicht eines Rennens — vor Enthüllung redigiert (keine Zeiten/Schnitt/Ranking), danach vollständiges Ergebnis |
 | `/api/bummel/active` | GET | Laufendes/wartendes Rennen als redigierte Sicht fürs Live-Banner — sonst `null`; bereits enthüllte Rennen erscheinen hier nicht mehr |
+| `/api/bummel/race/{id}/badge/{cid}.png` | GET | Badge-PNG für Forensignatur (Sieger oder Medaille); erst nach Enthüllung verfügbar, sonst 404 |
 | `/admin` | GET | Admin-Seite (passwortgeschützt, `ADMIN_PASSWORD`) |
 | `/api/admin/login` | POST | Admin-Login, setzt `fs_admin`-Cookie |
 | `/api/admin/logout` | POST | Cookie löschen |

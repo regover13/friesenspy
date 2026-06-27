@@ -525,6 +525,40 @@ Aktuell laufendes oder wartendes FriesenFliegerBummel-Rennen als redigierte (öf
 
 ---
 
+## GET /api/bummel/race/{race_id}/badge/{cid}.png
+
+Badge-PNG für die Forensignatur eines Bummel-Teilnehmers. Erst nach Enthüllung des Rennens verfügbar (kein Leak vor der Enthüllung).
+
+**Voraussetzungen — sonst `404`:**
+- Das Rennen mit `race_id` muss enthüllt sein (`revealed_at IS NOT NULL`).
+- `cid` muss Teilnehmer dieses Rennens sein (komplett oder unvollständig).
+
+**Response** — `image/png`
+
+Die Badge-Variante wird automatisch anhand des Rangs gewählt:
+
+| Variante | Bedingung | Größe | Inhalt |
+|----------|-----------|-------|--------|
+| **Sieger-Badge „Absoluter Durchschnitt!"** | Rang 1 | 640×240 px | Callsign, Name, Flugzeugmuster, Block-Gesamtzeit, Zeitdifferenz zum Schnitt, Fußzeile „friesenflieger.de" |
+| **Medaille „Voll daneben!"** | alle anderen (auch unvollständige) | 380×150 px | Callsign, Name, Flugzeugmuster, Fußzeile „friesenflieger.de" |
+
+**Caching:** Das fertige PNG wird serverseitig unter `data/badges/<race_id>_<cid>.png` gecacht; bei wiederholtem Aufruf wird die Datei direkt aus dem Cache ausgeliefert.
+
+**Response-Header:**
+```
+Content-Type: image/png
+Cache-Control: public, max-age=86400
+```
+
+**BBCode für board.friesenflieger.de:**
+```
+[img]https://friesenspy.devprops.de/api/bummel/race/{race_id}/badge/{cid}.png[/img]
+```
+
+Der **„📋 Forum"**-Button im enthüllten Ranking kopiert diesen BBCode direkt in die Zwischenablage. Der **„🎖 Badge"**-Button öffnet das PNG in einem neuen Tab.
+
+---
+
 ## GET /widget
 
 Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*), 7-Tage-Flugstunden und — wenn `TS_NOTIFY_ENABLED=true` — einen TeamSpeak-Zähler-Badge `🎧 N im TS`. Design im hellen Stil von friesenflieger.de (bg `#d0e0f0`, Navy `#053080`, Vereinsrot `#D31141`). Klickbar → öffnet friesenspy.devprops.de.

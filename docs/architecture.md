@@ -198,6 +198,17 @@ Online, Flugplan und TS nutzen denselben empfängerseitigen `pilot_filter` (CID-
 - `mark_event_reminded(conn, uid)` — Schreibt einen Eintrag in `event_reminders_sent` (`uid` + `sent_at = now()`). `INSERT OR IGNORE` — idempotenter Latch.
 - Subjekt-Privacy bleibt über `ts_consent` (`everyone`/`nobody`) in `_poll_teamspeak` vorgeschaltet.
 
+### `app/badge.py`
+
+Serverseitiges Badge-Rendering mit **Pillow** für Forensignaturen nach einem FriesenFliegerBummel.
+
+- **`render_winner_badge(callsign, name, aircraft, total_min, delta_min)`** — zeichnet das große Sieger-Badge „Absoluter Durchschnitt!" (640×240 px) mit Callsign, Name, Flugzeugmuster, Block-Gesamtzeit, Zeitdifferenz zum Schnitt und der Fußzeile „friesenflieger.de".
+- **`render_medal(callsign, name, aircraft)`** — zeichnet die kleine Medaille „Voll daneben!" (380×150 px) für alle anderen Teilnehmer (auch unvollständige), mit Fußzeile „friesenflieger.de".
+
+Beide Funktionen nutzen `ImageFont.load_default(size=…)` (Pillow ≥ 10) — keine gebündelten Schriftdateien, keine zusätzlichen apt-Pakete nötig. Abhängigkeit: **`pillow>=10.0`** in `requirements.txt`.
+
+**Badge-Endpoint (`GET /api/bummel/race/{race_id}/badge/{cid}.png` in `app/main.py`):** Prüft, ob das Rennen enthüllt ist (`revealed_at IS NOT NULL`) und ob die CID Teilnehmer ist — andernfalls `404` (kein Leak vor der Enthüllung). Rang 1 → `render_winner_badge`, alle anderen → `render_medal`. Das fertige PNG wird unter `data/badges/<race_id>_<cid>.png` gecacht; bei wiederholtem Aufruf wird die Datei direkt ausgeliefert. Response-Header: `Content-Type: image/png`, `Cache-Control: public, max-age=86400`.
+
 ### `app/alerts.py`
 
 Telegram-Alert beim "Online gehen" eines Piloten. Alle VATSIM-Felder werden mit `html.escape()` sanitized bevor sie in den `parse_mode=HTML` Telegram-Body eingebettet werden. Fehler werden nur als `type(e).__name__` geloggt (kein Full-Exception-String, der den Token in der Telegram-API-URL exponieren würde).
@@ -206,7 +217,7 @@ Telegram-Alert beim "Online gehen" eines Piloten. Alle VATSIM-Felder werden mit 
 
 FastAPI mit `lifespan`-Kontext-Manager (startup: DB init + Poller start; shutdown: Poller stop).
 
-Endpoints: `/api/live`, `/api/prefiles`, `/api/stats`, `/api/stats/activity`, `/api/pilots/{cid}/flights`, `/api/pilots/{cid}/live-track`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/calendar/events`, `/api/bummel/races`, `/api/bummel/race/{id}`, `/api/bummel/active`, `/admin` (statische `admin.html`), `/api/admin/login`, `/api/admin/logout`, `/api/admin/me`, `/api/admin/bummel/races` (GET/POST + Unterrouten für einzelne Rennen inkl. reveal/hide/push/override/preview — alle via `require_admin`-Dependency geschützt), `/widget`, `/api/sse`.
+Endpoints: `/api/live`, `/api/prefiles`, `/api/stats`, `/api/stats/activity`, `/api/pilots/{cid}/flights`, `/api/pilots/{cid}/live-track`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/calendar/events`, `/api/bummel/races`, `/api/bummel/race/{id}`, `/api/bummel/active`, `/api/bummel/race/{race_id}/badge/{cid}.png` (Badge-PNG via `app/badge.py`, Reveal-Gating + `data/badges/`-Cache), `/admin` (statische `admin.html`), `/api/admin/login`, `/api/admin/logout`, `/api/admin/me`, `/api/admin/bummel/races` (GET/POST + Unterrouten für einzelne Rennen inkl. reveal/hide/push/override/preview — alle via `require_admin`-Dependency geschützt), `/widget`, `/api/sse`.
 
 `/api/pilots/{cid}/flights` antwortet **sofort** mit FriesenSpy-Daten + gecachten StatSim-Daten. StatSim-Update läuft als FastAPI `BackgroundTask`: normaler Aufruf → letzter 31-Tage-Chunk; `days=0` → volle 365 Tage (Force-Refresh). Status-Tracking via `_statsim_updating` und `_full_history_fetching` (In-Memory-Sets) verhindert parallele Doppel-Fetches. Response-Header `X-StatSim-Status: fresh | updating | no-key`.
 
