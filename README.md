@@ -378,7 +378,8 @@ Neuerungen (per ✕ wegklickbar, gemerkt in `localStorage['fs_changelog_seen']`)
 
 **Neues Release veröffentlichen:** bei einer signifikanten Änderung in `app/CHANGELOG.json` einen
 neuen Eintrag **ganz oben** einfügen (semantische Version `MAJOR.MINOR.PATCH` + Datum + `items`).
-Schema: großes Feature → Minor/Major (z. B. TeamSpeak/PWA = 1.0.0), reiner Bugfix → Patch. Nach dem
+Schema: „großer Wurf" → Major (OpenAIP = 2.0.0, TeamSpeak = 3.0.0, PWA = 4.0.0), kleineres Feature →
+Minor, reiner Bugfix → Patch. Nach dem
 Deploy erscheint das Banner automatisch bei allen Nutzern, die die Version noch nicht gesehen haben.
 
 ### Projektstruktur

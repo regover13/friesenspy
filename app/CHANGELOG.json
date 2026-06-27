@@ -1,42 +1,84 @@
 [
   {
-    "version": "1.0.0",
+    "version": "4.2.0",
     "date": "2026-06-27",
-    "title": "Version 1.0: App-Installation & TeamSpeak",
+    "title": "Zuverlässigkeit & Versionsverlauf",
     "items": [
-      "📲 FriesenSpy ist jetzt als App installierbar (Home-Bildschirm) — inkl. Push-Benachrichtigungen.",
-      "🎧 TeamSpeak-Integration: Live-Anzeige, wer gerade im FriesenFlieger-TeamSpeak ist (nur FRS-Callsigns).",
-      "🔔 Optionale Push-Benachrichtigung, wenn ein Friese ins TeamSpeak kommt.",
-      "🐛 FRS-Tags mit Leerzeichen werden erkannt (z. B. „FRS 144“).",
-      "🐛 „Fehler beim Laden“ behoben (Rate-Limit / gepufferter Hintergrund-Rückstau).",
-      "⚡ Live-Updates erreichen jetzt zuverlässig alle Geräte gleichzeitig."
+      "🐛 „Fehler beim Laden“ / Rate-Limit-Probleme behoben (gepufferter Hintergrund-Rückstau).",
+      "⚡ Live-Updates erreichen jetzt zuverlässig alle Geräte gleichzeitig.",
+      "🆕 Versionsnummer im Header + dieser Versionsverlauf."
     ]
   },
   {
-    "version": "0.9.0",
+    "version": "4.1.0",
+    "date": "2026-06-26",
+    "title": "TeamSpeak: Tags mit Leerzeichen",
+    "items": [
+      "🐛 FRS-Tags mit Leerzeichen werden erkannt (z. B. „FRS 144“)."
+    ]
+  },
+  {
+    "version": "4.0.0",
+    "date": "2026-06-20",
+    "title": "Installierbare App (PWA)",
+    "highlight": true,
+    "items": [
+      "📲 FriesenSpy lässt sich als App installieren (Home-Bildschirm) — mit Install-Hinweis.",
+      "🔔 Web-Push-Benachrichtigungen funktionieren auch bei geschlossenem Browser."
+    ]
+  },
+  {
+    "version": "3.1.0",
+    "date": "2026-06-20",
+    "title": "TeamSpeak-Live-Anzeige",
+    "items": [
+      "🎧 Neuer Live-Bereich: Wer ist gerade im FriesenFlieger-TeamSpeak (nur FRS-Callsigns).",
+      "🧩 TeamSpeak-Zähler auch im einbettbaren Widget für friesenflieger.de."
+    ]
+  },
+  {
+    "version": "3.0.0",
+    "date": "2026-06-18",
+    "title": "TeamSpeak-Benachrichtigungen",
+    "highlight": true,
+    "items": [
+      "🔔 Optionale Push-Benachrichtigung, wenn ein Friese ins TeamSpeak kommt.",
+      "🎚️ Fein einstellbar: Verweildauer-Bestätigung, Kanal-Ausschluss, Opt-in und Empfänger-Filter."
+    ]
+  },
+  {
+    "version": "2.0.0",
     "date": "2026-06-06",
     "title": "Luftraum-Overlay & Karten-Layer",
+    "highlight": true,
     "items": [
       "🗺️ OpenAIP-Overlay: Lufträume, Flugplätze und Navaids auf der Karte.",
-      "🧭 Zusätzliche Basislayer (OpenTopoMap, Satellit, Light) + automatischer Zoom-Wechsel.",
-      "💾 Der zuletzt gewählte Karten-Layer wird gemerkt."
+      "🧭 Fünf Basislayer (OFM, Topo, Satellit, Light, Dark) + automatischer Zoom-Wechsel; die Layer-Wahl wird gemerkt."
     ]
   },
   {
-    "version": "0.8.0",
+    "version": "1.2.0",
     "date": "2026-06-05",
-    "title": "Karte, Statistiken & Events",
+    "title": "Live-Track auf der Karte",
     "items": [
-      "🛰️ Live-Track jedes Fluges auf der Karte mit Flug-Drill-Down.",
-      "📊 Flugstatistiken inkl. StatSim-Historie (letztes Jahr) pro Pilot.",
-      "📅 Events-Ansicht mit allen Tracks und Flugliste.",
-      "🧩 Einbettbares Widget für friesenflieger.de."
+      "🛰️ Der aktuelle Flugweg jedes Piloten wird live auf der Karte gezeichnet."
     ]
   },
   {
-    "version": "0.5.0",
+    "version": "1.1.0",
     "date": "2026-06-04",
-    "title": "Erste Version: Live-Tracker",
+    "title": "Statistiken, Flugdetails & StatSim",
+    "items": [
+      "📊 Flugstatistiken pro Pilot inkl. StatSim-Historie (letztes Jahr).",
+      "📅 Events-Ansicht mit allen Tracks.",
+      "🔎 Flugdetail-Fenster mit allen Flugplan-Feldern."
+    ]
+  },
+  {
+    "version": "1.0.0",
+    "date": "2026-06-04",
+    "title": "Erste Version: FriesenFlieger-Live-Tracker",
+    "highlight": true,
     "items": [
       "✈️ Live-Übersicht aller FriesenFlieger (FRS-Callsign) auf VATSIM, ohne Neuladen.",
       "🛰️ GPS-Track-Aufzeichnung jedes Fluges (15-Sekunden-Takt).",

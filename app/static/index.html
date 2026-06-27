@@ -1295,6 +1295,12 @@
     .changelog-entry-title { font-size: 0.9rem; color: var(--text); }
     .changelog-entry ul { margin: 0; padding-left: 18px; }
     .changelog-entry li { margin: 3px 0; font-size: 0.85rem; line-height: 1.45; }
+    .changelog-entry-major .changelog-entry-ver { color: var(--red, #D31141); }
+    .changelog-major-badge {
+      font-size: 0.65rem; letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--red, #D31141); border: 1px solid var(--red, #D31141);
+      border-radius: 2px; padding: 1px 5px; white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -2119,11 +2125,12 @@ function openChangelogModal() {
   const body = document.getElementById('changelog-modal-body');
   if (body) {
     body.innerHTML = _changelog.map(e => `
-      <div class="changelog-entry">
+      <div class="changelog-entry${e.highlight ? ' changelog-entry-major' : ''}">
         <div class="changelog-entry-head">
           <span class="changelog-entry-ver">v${escHtml(e.version)}</span>
           <span class="changelog-entry-date">${escHtml(_fmtChangelogDate(e.date))}</span>
           <span class="changelog-entry-title">${escHtml(e.title || '')}</span>
+          ${e.highlight ? '<span class="changelog-major-badge">★ Großes Update</span>' : ''}
         </div>
         <ul>${(e.items || []).map(it => `<li>${escHtml(it)}</li>`).join('')}</ul>
       </div>`).join('');

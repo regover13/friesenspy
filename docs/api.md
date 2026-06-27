@@ -355,13 +355,13 @@ Konfiguration + Versionsdaten für das Frontend (wird beim Seitenstart einmal ge
 {
   "openaip_api_key": "…",
   "vapid_public_key": "…",
-  "version": "1.0.0",
+  "version": "4.2.0",
   "changelog": [
     {
-      "version": "1.0.0",
+      "version": "4.2.0",
       "date": "2026-06-27",
-      "title": "Version 1.0: App-Installation & TeamSpeak",
-      "items": ["📲 …", "🎧 …"]
+      "title": "Zuverlässigkeit & Versionsverlauf",
+      "items": ["🐛 …", "⚡ …"]
     }
   ]
 }
