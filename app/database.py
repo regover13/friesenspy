@@ -157,6 +157,11 @@ CREATE TABLE IF NOT EXISTS bummel_overrides (
     updated_at       TEXT,
     PRIMARY KEY(race_id, cid)
 );
+
+CREATE TABLE IF NOT EXISTS event_reminders_sent (
+    uid     TEXT PRIMARY KEY,           -- calendar_events.uid, für den die ~1h-Erinnerung lief
+    sent_at TEXT
+);
 """
 
 
@@ -224,6 +229,8 @@ _PUSH_MIGRATIONS = [
     "ALTER TABLE push_subscriptions ADD COLUMN notify_prefiles INTEGER DEFAULT 0",
     "ALTER TABLE push_subscriptions ADD COLUMN notify_ts INTEGER DEFAULT 0",
     "ALTER TABLE push_subscriptions ADD COLUMN ts_self_frs TEXT",
+    # notify_events: Erinnerung ~1h vor Events + Bummel-Start/Ergebnis-Pushs (Default aus).
+    "ALTER TABLE push_subscriptions ADD COLUMN notify_events INTEGER DEFAULT 0",
 ]
 
 _PREFILE_SIGS_MIGRATIONS = [
@@ -1707,13 +1714,14 @@ def upsert_push_subscription(
     notify_prefiles: bool = True,
     notify_ts: bool = False,
     ts_self_frs: str | None = None,
+    notify_events: bool = False,
 ) -> None:
     """Browser-Push-Subscription speichern oder aktualisieren."""
     conn.execute(
         """INSERT INTO push_subscriptions
                (endpoint, p256dh, auth, pilot_filter, notify_prefiles,
-                notify_ts, ts_self_frs, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                notify_ts, ts_self_frs, notify_events, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(endpoint) DO UPDATE SET
                p256dh=excluded.p256dh,
                auth=excluded.auth,
@@ -1721,6 +1729,7 @@ def upsert_push_subscription(
                notify_prefiles=excluded.notify_prefiles,
                notify_ts=excluded.notify_ts,
                ts_self_frs=excluded.ts_self_frs,
+               notify_events=excluded.notify_events,
                created_at=excluded.created_at""",
         (
             endpoint, p256dh, auth,
@@ -1728,6 +1737,7 @@ def upsert_push_subscription(
             1 if notify_prefiles else 0,
             1 if notify_ts else 0,
             ts_self_frs,
+            1 if notify_events else 0,
             _now_utc(),
         ),
     )
@@ -2094,6 +2104,39 @@ def get_push_subscriptions_for_prefile(
             except (json.JSONDecodeError, TypeError):
                 result.append(dict(row))
     return result
+
+
+def get_push_subscriptions_for_events(conn: sqlite3.Connection) -> list[dict]:
+    """Subscriptions mit aktiviertem Events-Abo (notify_events=1) — für Event-Erinnerungen und
+    Bummel-Start/Ergebnis-Pushs. Kein pilot_filter (Events sind nicht pilotbezogen)."""
+    rows = conn.execute(
+        "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE notify_events = 1"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def events_due_for_reminder(
+    conn: sqlite3.Connection, now: str, lead_min: int = 60
+) -> list[dict]:
+    """FriesenEvents, deren Erinnerung jetzt fällig ist: dtstart liegt im Fenster (now, now+lead_min]
+    und es wurde noch keine Erinnerung verschickt (event_reminders_sent)."""
+    until = (_parse_iso(now) + timedelta(minutes=lead_min)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        "SELECT uid, summary, dtstart, dtend, location, route, is_bummel FROM calendar_events "
+        "WHERE dtstart > ? AND dtstart <= ? "
+        "AND uid NOT IN (SELECT uid FROM event_reminders_sent) "
+        "ORDER BY dtstart",
+        (now, until),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_event_reminded(conn: sqlite3.Connection, uid: str, ts: str) -> None:
+    """Erinnerung für ein Event als verschickt markieren (Dedup, idempotent)."""
+    conn.execute(
+        "INSERT OR IGNORE INTO event_reminders_sent (uid, sent_at) VALUES (?, ?)",
+        (uid, ts),
+    )
 
 
 def get_ts_consent(conn: sqlite3.Connection, frs: str) -> dict | None:

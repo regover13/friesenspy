@@ -26,6 +26,7 @@ from app.database import (
     delete_bummel_race,
     force_bummel_revealed,
     get_bummel_race,
+    get_push_subscriptions_for_events,
     list_bummel_overrides,
     list_bummel_races,
     public_bummel_view,
@@ -836,7 +837,7 @@ async def get_bummel_races():
                 "id": view["id"], "name": view["name"], "route": view["route"],
                 "dtstart": view["dtstart"], "dtend": view["dtend"],
                 "status": view["status"], "participant_count": view["participant_count"],
-                "calendar_uid": race.get("calendar_uid"),
+                "calendar_uid": race.get("calendar_uid"), "source": race.get("source"),
             })
         return out
     finally:
@@ -1051,12 +1052,29 @@ async def admin_delete_race(request: Request, race_id: int):
 
 @app.post("/api/admin/bummel/races/{race_id}/reveal")
 async def admin_reveal_race(request: Request, race_id: int):
-    """Notfall-Enthüllung: Ergebnisse sofort sichtbar machen."""
+    """Notfall-Enthüllung: Ergebnisse sofort sichtbar machen — und (einmalig) Ergebnis-Push
+    an die Events-Abonnenten, wie beim automatischen Enthüllen."""
     require_admin(request)
-    conn = get_connection(get_settings().DB_PATH)
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
     try:
+        race = get_bummel_race(conn, race_id)
+        if not race:
+            raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
+        was_revealed = bool(race.get("revealed_at"))
         force_bummel_revealed(conn, race_id, _now_iso())
         conn.commit()
+        # Push nur beim ERSTEN Enthüllen (latchend) + wenn fürs Rennen erlaubt + VAPID gesetzt.
+        if not was_revealed and race.get("push_enabled") and settings.VAPID_PRIVATE_KEY:
+            subs = get_push_subscriptions_for_events(conn)
+            if subs:
+                from app.poller import send_web_push
+                payload = {"title": race.get("name") or "FriesenFliegerBummel",
+                           "body": "Die Bummel-Ergebnisse sind da! 🏁", "url": "/"}
+                asyncio.create_task(send_web_push(
+                    settings.VAPID_PRIVATE_KEY, settings.VAPID_CONTACT_EMAIL, settings.DB_PATH,
+                    subs, payload, label="Bummel-Reveal(admin)",
+                ))
         return {"status": "ok"}
     finally:
         conn.close()

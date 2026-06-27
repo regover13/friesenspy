@@ -399,6 +399,8 @@ Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungs
 
 `route` ist die CSV aller erkannten ICAO-Codes (Reihenfolge erhaltend, dedupliziert; aus Ort, Titel und Beschreibung). `is_bummel` ist `1`, wenn das Stichwort „Bummel" im Titel oder der Beschreibung steht, die Strecke ≥ 2 Flugplätze hat und plausibel ist (kein Paar > 600 nm auseinander) — siehe `/api/bummel`.
 
+**Event-Erinnerungen:** Der Poller prüft alle 5 Minuten via `events_due_for_reminder`, welche Kalender-Events innerhalb der nächsten 60 Minuten beginnen (`dtstart` im Fenster `(jetzt, jetzt+60min]`), und sendet einmalig je Event einen Push an alle Abonnenten mit `notify_events=1`. Das Versenden wird durch die Tabelle `event_reminders_sent` als Latch abgesichert — ein Event löst die Erinnerung auch nach Container-Neustarts nur einmal aus.
+
 ---
 
 ## GET /api/bummel/races
@@ -417,7 +419,8 @@ Liste aller bekannten FriesenFliegerBummel-Rennen (aus `bummel_races`, persisten
     "dtend": "2026-06-27T20:00:00Z",
     "status": "revealed",
     "participant_count": 5,
-    "calendar_uid": "abc123@google.com_20260627T140000Z"
+    "calendar_uid": "abc123@google.com_20260627T140000Z",
+    "source": "calendar"
   }
 ]
 ```
@@ -429,6 +432,8 @@ Liste aller bekannten FriesenFliegerBummel-Rennen (aus `bummel_races`, persisten
 - `revealed` — Ergebnisse enthüllt (einmal enthüllt, bleibt es enthüllt)
 
 `dtend` ist der effektive Renn-Endtermin: aus dem Kalender-Event übernommen; fehlt er → Mitternacht UTC des Folgetags (00:00:00Z nach dem Starttag).
+
+`source` ∈ `calendar` | `manual`. Manuell angelegte Rennen (ohne Kalender-Termin) haben `source: "manual"` und `calendar_uid: null` — sie erscheinen in der Events-Tab-Liste und sind anklickbar.
 
 ---
 
@@ -547,6 +552,7 @@ Browser-Push-Subscription speichern oder aktualisieren.
 | `pilot_filter` | int[] \| null | — | CID-Liste der zu benachrichtigenden Piloten; `null` = alle. Gilt für **alle drei** Benachrichtigungstypen (Online, Flugplan, TS). Selbst-Ausschluss = eigenen CID weglassen. |
 | `notify_prefiles` | bool | — | Auch bei eingereichten oder geänderten Flugplänen benachrichtigen — feuert bei neuem Prefile oder Änderung von Abflugzeit, Abflug- oder Zielflughafen; wird unterdrückt wenn der Pilot bereits online ist (default: true) |
 | `notify_ts` | bool | — | TS-Login-Benachrichtigungen für diesen Subscriber aktivieren (default: false) |
+| `notify_events` | bool | — | Event-Erinnerungen (~1 h vor Beginn jedes FriesenEvents) und Bummel-Start/Ergebnis-Push aktivieren (default: false) |
 
 **Response** `{"status": "ok"}`
 

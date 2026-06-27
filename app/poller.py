@@ -404,6 +404,13 @@ class VatsimPoller:
             seconds=60,
             id="bummel_reveal_check",
         )
+        # Event-Erinnerung (~1 h vor Beginn) regelmäßig prüfen
+        self._scheduler.add_job(
+            self._check_event_reminders,
+            "interval",
+            minutes=5,
+            id="event_reminder_check",
+        )
         if self.ts_notify_enabled:
             # Job läuft für die Live-Anzeige unabhängig von VAPID; Push-Versand ist in
             # _poll_teamspeak separat durch vapid_private_key gegated.
@@ -912,7 +919,7 @@ class VatsimPoller:
             from datetime import datetime, timezone
             from app.database import (
                 update_bummel_reveals, update_bummel_starts,
-                get_bummel_race, get_all_push_subscriptions,
+                get_bummel_race, get_push_subscriptions_for_events,
             )
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             conn = get_connection(self.db_path)
@@ -931,7 +938,7 @@ class VatsimPoller:
                     if race and race.get("push_enabled"):
                         pushes.append({"title": race.get("name") or "FriesenFliegerBummel",
                                        "body": "Die Bummel-Ergebnisse sind da! 🏁", "url": "/"})
-                subscriptions = get_all_push_subscriptions(conn) if pushes else []
+                subscriptions = get_push_subscriptions_for_events(conn) if pushes else []
             finally:
                 conn.close()
             if started:
@@ -946,6 +953,41 @@ class VatsimPoller:
                     ))
         except Exception:
             logger.exception("Error in _check_bummel_reveals")
+
+    async def _check_event_reminders(self) -> None:
+        """Periodisch (~5 min): FriesenEvents, die in ~1 h beginnen, einmalig per Push erinnern.
+        Empfänger sind die Events-Abonnenten (notify_events). Latchend via event_reminders_sent."""
+        try:
+            from datetime import datetime, timezone
+            from app.database import (
+                events_due_for_reminder, mark_event_reminded,
+                get_push_subscriptions_for_events,
+            )
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            conn = get_connection(self.db_path)
+            try:
+                due = events_due_for_reminder(conn, now, lead_min=60)
+                subscriptions = get_push_subscriptions_for_events(conn) if due else []
+                for ev in due:
+                    mark_event_reminded(conn, ev["uid"], now)  # latchen, auch ohne Empfänger
+                conn.commit()
+            finally:
+                conn.close()
+            if due:
+                logger.info("Event-Erinnerung fällig: %s", [e["uid"] for e in due])
+            if due and subscriptions and self.vapid_private_key:
+                for ev in due:
+                    payload = {
+                        "title": "FriesenEvent",
+                        "body": f"🗓 In etwa 1 Std: {ev.get('summary') or 'FriesenEvent'}",
+                        "url": "/",
+                    }
+                    asyncio.create_task(send_web_push(
+                        self.vapid_private_key, self.vapid_contact_email, self.db_path,
+                        subscriptions, payload, label="Event-Erinnerung",
+                    ))
+        except Exception:
+            logger.exception("Error in _check_event_reminders")
 
     # ------------------------------------------------------------------
     # Daily cleanup

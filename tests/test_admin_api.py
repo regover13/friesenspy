@@ -36,7 +36,10 @@ def db(tmp_path, monkeypatch):
     init_db(p)
     monkeypatch.setattr(
         main, "get_settings",
-        lambda: SimpleNamespace(DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=SECRET, ADMIN_PASSWORD=PW),
+        lambda: SimpleNamespace(
+            DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=SECRET, ADMIN_PASSWORD=PW,
+            VAPID_PRIVATE_KEY="vapid", VAPID_CONTACT_EMAIL="mailto:test",
+        ),
     )
     return p
 
@@ -102,6 +105,44 @@ def test_create_list_override_and_reveal(db):
     # Wieder verbergen
     asyncio.run(main.admin_hide_race(FakeReq(), rid))
     assert asyncio.run(main.get_bummel_race_endpoint(rid))["revealed"] is False
+
+
+def test_admin_reveal_sends_push_once(db, monkeypatch):
+    from app.database import upsert_push_subscription
+    # Events-Abonnent anlegen (Empfänger)
+    conn = get_connection(db)
+    upsert_push_subscription(conn, "ep", "p", "a", notify_events=True)
+    conn.commit(); conn.close()
+
+    # send_web_push zählen (synchron beim Aufruf, unabhängig vom Task-Lauf)
+    count = {"n": 0}
+    async def _noop():
+        return None
+    def fake_send(*a, **k):
+        count["n"] += 1
+        return _noop()
+    monkeypatch.setattr("app.poller.send_web_push", fake_send)
+
+    now = datetime.now(timezone.utc)
+    res = asyncio.run(main.admin_create_race(FakeReq(body={
+        "route": "EDWF,EDWG,EDWR", "dtstart": _iso(now - timedelta(hours=2)),
+        "dtend": _iso(now + timedelta(hours=2)),
+    })))
+    rid = res["id"]
+
+    asyncio.run(main.admin_reveal_race(FakeReq(), rid))
+    assert count["n"] == 1                      # erster Reveal → ein Push
+    asyncio.run(main.admin_reveal_race(FakeReq(), rid))
+    assert count["n"] == 1                      # erneuter Reveal → kein weiterer Push (latchend)
+
+
+def test_races_list_includes_source(db):
+    now = datetime.now(timezone.utc)
+    asyncio.run(main.admin_create_race(FakeReq(body={
+        "route": "EDWF,EDWG", "dtstart": _iso(now - timedelta(hours=1)), "dtend": _iso(now + timedelta(hours=1)),
+    })))
+    races = asyncio.run(main.get_bummel_races())
+    assert races and races[0]["source"] == "manual"
 
 
 def test_winner_override(db):
