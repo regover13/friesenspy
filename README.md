@@ -14,6 +14,8 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
   - [Karte](#️-karte)
   - [Statistiken](#-statistiken)
   - [Event-Suche](#-event-suche)
+- [FriesenFliegerBummel](#-friesenfliegerbummel)
+  - [Verwaltung (Admin)](#verwaltung-admin)
 - [Benachrichtigungen](#-benachrichtigungen-push-notifications)
 - [TS-Login-Benachrichtigung](#ts-login-benachrichtigung-phase-1)
 - [Karten-Layer](#️-karten-layer)
@@ -166,7 +168,20 @@ Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzwelt
 
 **Was du siehst:**
 - **Live-Tab:** Solange ein Bummel läuft, zeigt ein Banner oben den aktuellen Teilnahme-Zwischenstand (wer dabei ist, wer gerade unterwegs ist) — ohne Zeiten, solange das Rennen noch nicht enthüllt ist.
-- **Events-Tab:** Bummel-Termine tragen ein **🏁 BUMMEL**-Badge. Vor der Enthüllung sieht man Teilnahme und Fortschritt. Nach der Enthüllung öffnet ein Klick das vollständige Ranking (Platz, Pilot, Flugzeug, Beine, Block-Gesamtzeit, Abstand zum Schnitt) samt „unvollständig"-Liste — und **darunter die komplette normale Event-Ansicht** (Karte + alle Piloten im Umkreis, auch Nicht-Teilnehmer; gewertete Piloten tragen ihr Bummel-Standing als Badge).
+- **Events-Tab:** Bummel-Termine tragen ein **🏁 BUMMEL**-Badge. Vor der Enthüllung sieht man Teilnahme und Fortschritt. Nach der Enthüllung öffnet ein Klick das vollständige Ranking (Platz, Pilot, Flugzeug, Beine, Block-Gesamtzeit, Abstand zum Schnitt) samt „unvollständig"-Liste — und **darunter die komplette normale Event-Ansicht** (Karte + alle Piloten im Umkreis, auch Nicht-Teilnehmer; gewertete Piloten tragen ihr Bummel-Standing als Badge). Im enthüllten Ranking erscheint außerdem ein **„Für Forum kopieren"**-Button — er erzeugt einen fertig formatierten Ergebnistext zum Einfügen in board.friesenflieger.de.
+- **Push-Benachrichtigungen:** FriesenSpy benachrichtigt (sofern Push aktiviert ist), wenn das Rennen **gestartet** wird — der Trigger ist der erste Pilot, der eine Blockzeit an einem Streckenflugplatz erreicht — und wenn die **Ergebnisse enthüllt** werden. Beide Ereignisse sind Latches (feuern nur einmal je Rennen) und können je Rennen über die Admin-Seite abgeschaltet werden.
+
+### Verwaltung (Admin)
+
+Die Admin-Seite ist unter `/admin` erreichbar und passwortgeschützt. Das Passwort wird über `ADMIN_PASSWORD` in `config.env` gesetzt (leer = Admin-Bereich deaktiviert; niemals in git). Der Login setzt ein signiertes httponly-Cookie (`fs_admin`), das für die Browsersitzung gültig bleibt — ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort.
+
+**Was die Admin-Seite kann:**
+- **Rennen manuell anlegen** — auch ohne Kalender-Termin, mit frei wählbarer Strecke, Start- und (optionalem) Endtermin sowie Anwesenheitsradius. Ein fehlendes `dtend` wird auf Mitternacht UTC des Starttags gesetzt.
+- **Rennen bearbeiten und löschen** — nachträgliche Korrekturen an Name, Strecke, Termin oder Radius; Löschen entfernt das Rennen dauerhaft.
+- **Enthüllung steuern** — Notfall-Enthüllung (sofort zeigen) oder wieder verbergen, z. B. um einen Fehler zu korrigieren, bevor das Ergebnis öffentlich wird.
+- **Teilnehmer-Korrekturen (Overrides)** — einzelne Piloten ausschließen (`exclude`), disqualifizieren (`disqualify`), manuell als Sieger markieren (`winner`) oder mit einer manuell eingegebenen Block-Zeit werten (`manual`). Overrides wirken auf alle öffentlichen Sichten; Durchschnitt und Ranking werden neu berechnet.
+- **Push-Benachrichtigungen je Rennen** — Start- und Enthüllungs-Push für ein einzelnes Rennen an- oder abschalten.
+- **Vorschau** — vollständige Wertung mit Zeiten und Ranking einsehen, solange das Rennen noch läuft — ohne die öffentliche Sicht zu enthüllen.
 
 ---
 
@@ -356,6 +371,7 @@ OPENAIP_API_KEY=                            # Optional: OpenAIP-Overlay (Luftrau
 VAPID_PUBLIC_KEY=                           # Optional: Web Push Public Key (base64url)
 VAPID_PRIVATE_KEY=                          # Optional: Web Push Private Key (base64url, 43 Zeichen)
 VAPID_CONTACT_EMAIL=                        # Optional: mailto:... für Web Push
+ADMIN_PASSWORD=                             # Optional: Admin-Seite aktivieren (leer = aus; nie in git!)
 # TeamSpeak-Login-Benachrichtigung (alle optional, Default: deaktiviert)
 TS_NOTIFY_ENABLED=false
 TS_HOST=127.0.0.1
@@ -422,6 +438,7 @@ FriesenSpy/
 │   ├── CHANGELOG.json # Versionsverlauf (Quelle für Header-Badge, Banner, Verlauf)
 │   └── static/
 │       ├── index.html # Vanilla-JS-SPA (4 Tabs)
+│       ├── admin.html # Admin-Verwaltung (passwortgeschützt, Bummel-Verwaltung)
 │       ├── sw.js      # Service Worker (Web-Push + PWA)
 │       ├── manifest.webmanifest # PWA-Manifest (installierbar)
 │       ├── icon-192.png / icon-512.png / icon-maskable-512.png / apple-touch-icon.png
@@ -455,6 +472,19 @@ FriesenSpy/
 | `/api/bummel/races` | GET | Liste aller bekannten Bummel-Rennen (`id, name, route, dtstart, dtend, status, participant_count, calendar_uid`) |
 | `/api/bummel/race/{id}` | GET | Öffentliche Sicht eines Rennens — vor Enthüllung redigiert (keine Zeiten/Schnitt/Ranking), danach vollständiges Ergebnis |
 | `/api/bummel/active` | GET | Laufendes/wartendes Rennen als redigierte Sicht fürs Live-Banner — sonst `null`; bereits enthüllte Rennen erscheinen hier nicht mehr |
+| `/admin` | GET | Admin-Seite (passwortgeschützt, `ADMIN_PASSWORD`) |
+| `/api/admin/login` | POST | Admin-Login, setzt `fs_admin`-Cookie |
+| `/api/admin/logout` | POST | Cookie löschen |
+| `/api/admin/me` | GET | Session prüfen (`{"admin":true}` oder 401) |
+| `/api/admin/bummel/races` | GET | Volle Rennen-Liste (inkl. `revealed_at`, `started_at`, `push_enabled`, `overrides[]`) |
+| `/api/admin/bummel/races` | POST | Manuelles Rennen anlegen |
+| `/api/admin/bummel/races/{id}` | POST/DELETE | Rennen bearbeiten / löschen |
+| `/api/admin/bummel/races/{id}/reveal` | POST | Notfall-Enthüllung |
+| `/api/admin/bummel/races/{id}/hide` | POST | Enthüllung zurücksetzen |
+| `/api/admin/bummel/races/{id}/push` | POST | Push für Rennen an/abschalten |
+| `/api/admin/bummel/races/{id}/override` | POST | Teilnehmer-Override setzen |
+| `/api/admin/bummel/races/{id}/override/{cid}` | DELETE | Override entfernen |
+| `/api/admin/bummel/races/{id}/preview` | GET | Vollständige Wertung (Admin-Vorschau) |
 | `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles + TS-Zähler `🎧 N im TS`) |
 | `/widget/preview` | GET | Vorschau + Einbettungscode für das Widget |
 | `/api/sse` | GET | Server-Sent Events Stream |

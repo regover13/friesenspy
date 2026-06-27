@@ -2679,13 +2679,14 @@ function renderBummelParticipants(view) {
   html += `<div class="bummel-sub mono text-label" style="margin:6px 0;">${view.participant_count} Teilnehmer bisher</div>`;
   const parts = view.participants || [];
   if (parts.length) {
-    html += '<div class="live-table-wrap"><table><thead><tr><th>Pilot</th><th>Callsign</th><th>Flugzeug</th><th>Start (UTC)</th><th>Fortschritt</th><th>Status</th></tr></thead><tbody>';
+    html += '<div class="live-table-wrap"><table><thead><tr><th>Pilot</th><th>CID</th><th>Callsign</th><th>Flugzeug</th><th>Start (UTC)</th><th>Fortschritt</th><th>Status</th></tr></thead><tbody>';
     parts.forEach(p => {
       const total = (p.visited || []).length + (p.missing || []).length;
       const miss = (p.missing || []).length ? ` <span class="bi-missing">(fehlt ${escHtml((p.missing || []).join(', '))})</span>` : '';
       const st = p.in_progress ? '🛫 unterwegs' : ((p.missing || []).length ? 'unvollständig' : '✓ alle Plätze');
       html += `<tr>
         <td>${escHtml(p.name || ('CID ' + p.cid))}</td>
+        <td class="mono text-label">${escHtml(p.cid)}</td>
         <td class="mono text-green">${escHtml(p.callsign || '')}</td>
         <td class="mono">${escHtml(p.aircraft || '—')}</td>
         <td class="mono text-label">${p.started ? escHtml(p.started.slice(11, 16)) : '—'}</td>
@@ -2724,13 +2725,36 @@ function _bummelStandingBadge(cid) {
   return `<span class="bummel-badge" title="Bummel-Wertung">🏁 unvollständig${missing ? ' — fehlt ' + escHtml(missing) : ''}</span>`;
 }
 
+// Forum-fertiger Ergebnistext (für „Für Forum kopieren").
+let _bummelForumText = '';
+function _buildBummelForumText(data) {
+  const route = (data.route || []).join(' → ');
+  let t = `🏁 FriesenFliegerBummel — ${route}\n`;
+  t += `Durchschnittszeit: ${_fmtMin(Math.round(data.average_min))}\n\n`;
+  (data.complete || []).forEach(e => {
+    const medal = e.rank === 1 ? '🏆 ' : '';
+    const abst = e.delta === 0 ? '★ exakt' : '±' + _fmtMin(Math.round(e.delta));
+    t += `${e.rank}. ${medal}${e.name || e.callsign || ('CID ' + e.cid)} (${e.aircraft || '?'}) — ${_fmtMin(e.total_min)} (${abst})\n`;
+  });
+  return t;
+}
+function copyBummelForumText(btn) {
+  navigator.clipboard.writeText(_bummelForumText).then(() => {
+    const old = btn.textContent;
+    btn.textContent = '✓ kopiert';
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  }).catch(() => {});
+}
+
 // Baut den Ranking-HTML-Block (ohne äußeren Panel-Rahmen). inProgress optional (Live-Banner).
 function renderBummelStandings(data, inProgress) {
   const route = (data.route || []).join(' → ');
   let html = `<div class="bummel-sub mono text-label" style="margin-bottom:8px;">Strecke: ${escHtml(route)}</div>`;
 
   if (data.count > 0) {
-    html += `<div class="bummel-avg-row">Durchschnittszeit: <strong>${_fmtMin(Math.round(data.average_min))}</strong> · wer am nächsten dran ist, gewinnt</div>`;
+    _bummelForumText = _buildBummelForumText(data);
+    html += `<div class="bummel-avg-row">Durchschnittszeit: <strong>${_fmtMin(Math.round(data.average_min))}</strong> · wer am nächsten dran ist, gewinnt
+      <button class="btn-share" style="margin-left:10px;" onclick="copyBummelForumText(this)">📋 Für Forum kopieren</button></div>`;
     html += '<div class="live-table-wrap"><table><thead><tr><th>#</th><th>Pilot</th><th>Flugzeug</th><th>Beine</th><th>Block-Gesamtzeit</th><th>Abstand z. Schnitt</th></tr></thead><tbody>';
     data.complete.forEach(e => {
       const cls = e.rank === 1 ? 'bummel-rank-1' : '';

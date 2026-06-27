@@ -134,16 +134,28 @@ CREATE TABLE IF NOT EXISTS ts_consent (
 );
 
 CREATE TABLE IF NOT EXISTS bummel_races (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    name         TEXT,
-    route        TEXT,                 -- CSV der Streckenflugplätze
-    dtstart      TEXT,
-    dtend        TEXT,                 -- effektiv (Mitternacht-Default bereits angewandt)
-    radius_km    REAL DEFAULT 10,
-    source       TEXT,                 -- 'calendar' | 'manual'
-    calendar_uid TEXT UNIQUE,          -- NULL für manuelle Rennen
-    revealed_at  TEXT,                 -- gesetzt = Ergebnisse enthüllt (latchend)
-    created_at   TEXT
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    name           TEXT,
+    route          TEXT,                 -- CSV der Streckenflugplätze
+    dtstart        TEXT,
+    dtend          TEXT,                 -- effektiv (Mitternacht-Default bereits angewandt)
+    radius_km      REAL DEFAULT 10,
+    source         TEXT,                 -- 'calendar' | 'manual'
+    calendar_uid   TEXT UNIQUE,          -- NULL für manuelle Rennen
+    revealed_at    TEXT,                 -- gesetzt = Ergebnisse enthüllt (latchend)
+    created_at     TEXT,
+    push_enabled   INTEGER DEFAULT 1,    -- Push-Benachrichtigungen für dieses Rennen aktiv
+    started_at     TEXT                  -- Latch: gesetzt wenn erster Pilot losgeflogen ist
+);
+
+CREATE TABLE IF NOT EXISTS bummel_overrides (
+    race_id          INTEGER,
+    cid              INTEGER,
+    action           TEXT,              -- 'exclude' | 'disqualify' | 'winner' | 'manual'
+    manual_total_min INTEGER,           -- nur für action='manual'
+    note             TEXT,
+    updated_at       TEXT,
+    PRIMARY KEY(race_id, cid)
 );
 """
 
@@ -224,6 +236,20 @@ _PREFILE_SIGS_MIGRATIONS = [
     )""",
 ]
 
+_BUMMEL_MIGRATIONS = [
+    "ALTER TABLE bummel_races ADD COLUMN push_enabled INTEGER DEFAULT 1",
+    "ALTER TABLE bummel_races ADD COLUMN started_at TEXT",
+    """CREATE TABLE IF NOT EXISTS bummel_overrides (
+        race_id          INTEGER,
+        cid              INTEGER,
+        action           TEXT,
+        manual_total_min INTEGER,
+        note             TEXT,
+        updated_at       TEXT,
+        PRIMARY KEY(race_id, cid)
+    )""",
+]
+
 _LIVE_POSITIONS_MIGRATIONS = [
     "ALTER TABLE live_positions ADD COLUMN flight_rules TEXT",
     "ALTER TABLE live_positions ADD COLUMN aircraft_icao TEXT",
@@ -266,6 +292,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _PREFILE_SIGS_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _BUMMEL_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -1253,6 +1284,73 @@ def update_bummel_reveals(
     return revealed
 
 
+def bummel_open_starters(
+    conn: sqlite3.Connection,
+    route_icaos: list[str],
+    radius_km: float,
+    *,
+    callsign_prefix: str = "FRS",
+) -> list[dict]:
+    """Offene Flüge, deren Start an einem Streckenflugplatz liegt — je Eintrag {cid, callsign,
+    moved}. ``moved`` = es gibt schon eine Position mit groundspeed > _BLOCK_GS_KT (Blockzeit
+    hat begonnen)."""
+    from app.geo import icao_to_coords
+    route_set = {(c or "").strip().upper() for c in route_icaos if c and c.strip()}
+    coords_map = {icao: icao_to_coords(icao) for icao in route_set}
+    rows = conn.execute(
+        "SELECT cid, callsign, departure, logon_time FROM flights "
+        "WHERE logoff_time IS NULL AND superseded_by IS NULL AND callsign LIKE ?",
+        (callsign_prefix + "%",),
+    ).fetchall()
+    out: list[dict] = []
+    for r in rows:
+        first = _first_pos(conn, int(r["cid"]), r["logon_time"] or "", "9999-12-31T23:59:59Z")
+        dep = _nearest_airport(coords_map, first, radius_km) or (r["departure"] or "").strip().upper()
+        if dep not in route_set:
+            continue
+        moved = conn.execute(
+            "SELECT 1 FROM position_history WHERE cid = ? AND ts >= ? AND groundspeed > ? LIMIT 1",
+            (r["cid"], r["logon_time"] or "", _BLOCK_GS_KT),
+        ).fetchone()
+        out.append({"cid": r["cid"], "callsign": r["callsign"] or "", "moved": moved is not None})
+    return out
+
+
+def update_bummel_starts(
+    conn: sqlite3.Connection, now: str, *, callsign_prefix: str = "FRS"
+) -> list[tuple[int, str]]:
+    """Start-Latch: markiert ein laufendes Rennen als gestartet, sobald der erste Pilot Blockzeit
+    erreicht (Bewegung an einem Streckenflugplatz). Gibt (race_id, callsign) der in diesem Lauf
+    neu gestarteten Rennen zurück — für den „… hat den Bummel gestartet"-Push."""
+    out: list[tuple[int, str]] = []
+    for race in list_bummel_races(conn):
+        if race["started_at"]:
+            continue
+        if now < (race["dtstart"] or ""):
+            continue
+        if (race["dtend"] or "") and now > race["dtend"]:
+            continue
+        route_icaos = [c for c in (race["route"] or "").split(",") if c.strip()]
+        moved = [
+            s for s in bummel_open_starters(
+                conn, route_icaos, race["radius_km"] or _BUMMEL_AIRPORT_RADIUS_KM,
+                callsign_prefix=callsign_prefix,
+            )
+            if s["moved"]
+        ]
+        if moved:
+            set_bummel_started(conn, race["id"], now)
+            out.append((race["id"], moved[0]["callsign"]))
+    conn.commit()
+    return out
+
+
+def get_all_push_subscriptions(conn: sqlite3.Connection) -> list[dict]:
+    """Alle Push-Subscriptions (für Broadcast-Benachrichtigungen wie Bummel-Start/-Enthüllung)."""
+    rows = conn.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions").fetchall()
+    return [dict(r) for r in rows]
+
+
 def compute_bummel_standings(
     conn: sqlite3.Connection,
     route_icaos: list[str],
@@ -1702,7 +1800,8 @@ def list_bummel_races(conn: sqlite3.Connection) -> list[dict]:
     """Alle Rennen, neueste zuerst (nach dtstart)."""
     rows = conn.execute(
         "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
-        "revealed_at, created_at FROM bummel_races ORDER BY dtstart DESC"
+        "revealed_at, created_at, push_enabled, started_at "
+        "FROM bummel_races ORDER BY dtstart DESC"
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -1710,7 +1809,8 @@ def list_bummel_races(conn: sqlite3.Connection) -> list[dict]:
 def get_bummel_race(conn: sqlite3.Connection, race_id: int) -> dict | None:
     row = conn.execute(
         "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
-        "revealed_at, created_at FROM bummel_races WHERE id = ?",
+        "revealed_at, created_at, push_enabled, started_at "
+        "FROM bummel_races WHERE id = ?",
         (race_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -1722,6 +1822,229 @@ def set_bummel_revealed(conn: sqlite3.Connection, race_id: int, ts: str) -> None
         "UPDATE bummel_races SET revealed_at = ? WHERE id = ? AND revealed_at IS NULL",
         (ts, race_id),
     )
+
+
+def force_bummel_revealed(conn: sqlite3.Connection, race_id: int, ts: str | None) -> None:
+    """Admin-Override: Enthüllung erzwingen (ts gesetzt) ODER wieder verbergen (ts=None).
+    Anders als set_bummel_revealed wird der Wert bedingungslos gesetzt."""
+    conn.execute("UPDATE bummel_races SET revealed_at = ? WHERE id = ?", (ts, race_id))
+
+
+def set_bummel_started(conn: sqlite3.Connection, race_id: int, ts: str) -> None:
+    """started_at latchen — setzt nur wenn noch NULL (analogon zu set_bummel_revealed)."""
+    conn.execute(
+        "UPDATE bummel_races SET started_at = ? WHERE id = ? AND started_at IS NULL",
+        (ts, race_id),
+    )
+
+
+def set_bummel_push_enabled(conn: sqlite3.Connection, race_id: int, enabled: bool) -> None:
+    """Push-Benachrichtigungen für ein Rennen aktivieren oder deaktivieren."""
+    conn.execute(
+        "UPDATE bummel_races SET push_enabled = ? WHERE id = ?",
+        (1 if enabled else 0, race_id),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Manuelle Renn-CRUD
+# ---------------------------------------------------------------------------
+
+def create_bummel_race(
+    conn: sqlite3.Connection,
+    *,
+    name: str,
+    route: str,
+    dtstart: str,
+    dtend: str | None,
+    radius_km: float = 10.0,
+) -> int:
+    """Manuelles Rennen anlegen. Gibt die neue id zurück."""
+    effective_end = _effective_dtend(dtstart, dtend)
+    cur = conn.execute(
+        "INSERT INTO bummel_races "
+        "(name, route, dtstart, dtend, radius_km, source, calendar_uid, revealed_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?, 'manual', NULL, NULL, ?)",
+        (name, route, dtstart, effective_end, radius_km, _now_utc()),
+    )
+    return cur.lastrowid  # type: ignore[return-value]
+
+
+_UPDATABLE_RACE_FIELDS = {"name", "route", "dtstart", "dtend", "radius_km"}
+
+
+def update_bummel_race(conn: sqlite3.Connection, race_id: int, **fields: object) -> None:
+    """Aktualisiert nur übergebene Felder aus {name, route, dtstart, dtend, radius_km}.
+    Wenn dtstart oder dtend geändert wird, wird dtend via _effective_dtend neu aufgelöst.
+    Unbekannte Felder werden ignoriert.
+    """
+    valid = {k: v for k, v in fields.items() if k in _UPDATABLE_RACE_FIELDS}
+    if not valid:
+        return
+    # dtend neu auflösen wenn dtstart oder dtend geändert wird
+    if "dtstart" in valid or "dtend" in valid:
+        current = get_bummel_race(conn, race_id)
+        if current is None:
+            return
+        new_dtstart = str(valid.get("dtstart", current["dtstart"]))
+        new_dtend = valid.get("dtend")  # None wenn nicht in fields
+        valid["dtend"] = _effective_dtend(new_dtstart, new_dtend)  # type: ignore[arg-type]
+    set_clause = ", ".join(f"{k} = ?" for k in valid)
+    values = list(valid.values()) + [race_id]
+    conn.execute(f"UPDATE bummel_races SET {set_clause} WHERE id = ?", values)
+
+
+def delete_bummel_race(conn: sqlite3.Connection, race_id: int) -> None:
+    """Löscht das Rennen und alle zugehörigen Overrides."""
+    conn.execute("DELETE FROM bummel_overrides WHERE race_id = ?", (race_id,))
+    conn.execute("DELETE FROM bummel_races WHERE id = ?", (race_id,))
+
+
+# ---------------------------------------------------------------------------
+# bummel_overrides CRUD
+# ---------------------------------------------------------------------------
+
+def upsert_bummel_override(
+    conn: sqlite3.Connection,
+    race_id: int,
+    cid: int,
+    action: str,
+    manual_total_min: int | None = None,
+    note: str | None = None,
+) -> None:
+    """Teilnehmer-Korrektur setzen oder aktualisieren. action ∈ 'exclude'|'disqualify'|'winner'|'manual'."""
+    conn.execute(
+        """INSERT INTO bummel_overrides (race_id, cid, action, manual_total_min, note, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(race_id, cid) DO UPDATE SET
+               action=excluded.action,
+               manual_total_min=excluded.manual_total_min,
+               note=excluded.note,
+               updated_at=excluded.updated_at""",
+        (race_id, cid, action, manual_total_min, note, _now_utc()),
+    )
+
+
+def list_bummel_overrides(conn: sqlite3.Connection, race_id: int) -> list[dict]:
+    """Alle Overrides für ein Rennen."""
+    rows = conn.execute(
+        "SELECT race_id, cid, action, manual_total_min, note, updated_at "
+        "FROM bummel_overrides WHERE race_id = ?",
+        (race_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_bummel_override(conn: sqlite3.Connection, race_id: int, cid: int) -> None:
+    """Einen einzelnen Override löschen."""
+    conn.execute(
+        "DELETE FROM bummel_overrides WHERE race_id = ? AND cid = ?",
+        (race_id, cid),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Override-Anwendung auf die Wertung (reine Funktion)
+# ---------------------------------------------------------------------------
+
+def apply_bummel_overrides(standings: dict, overrides: list[dict]) -> dict:
+    """Override-Anwendung auf eine compute_bummel_standings-Wertung.
+
+    Reine Funktion — das Eingabe-Dict wird nicht mutiert (tiefe Kopien).
+    Gibt ein neues standings-Dict zurück mit ``disqualified``-Liste (evtl. leer).
+
+    Reihenfolge der Schritte:
+    1. exclude  → cid aus complete UND incomplete entfernen
+    2. manual   → total_min setzen, aus incomplete nach complete verschieben
+    3. disqualify → cid aus complete in disqualified schieben
+    4. Schnitt, delta, rank neu berechnen
+    5. winner   → cid an Position 0 (rank 1) zwingen, forced_winner=True
+    6. participant_count = distinct cids in complete + incomplete + disqualified
+    """
+    import copy
+
+    result = copy.deepcopy(standings)
+    complete: list[dict] = result["complete"]
+    incomplete: list[dict] = result["incomplete"]
+    disqualified: list[dict] = []
+
+    # Schritt 1: exclude
+    exclude_cids = {ov["cid"] for ov in overrides if ov.get("action") == "exclude"}
+    if exclude_cids:
+        result["complete"] = [e for e in complete if e["cid"] not in exclude_cids]
+        result["incomplete"] = [e for e in incomplete if e["cid"] not in exclude_cids]
+        complete = result["complete"]
+        incomplete = result["incomplete"]
+
+    # Schritt 2: manual
+    for ov in overrides:
+        if ov.get("action") != "manual":
+            continue
+        cid = ov["cid"]
+        mtm = ov.get("manual_total_min")
+        if mtm is None:
+            continue
+        # Eintrag in complete oder incomplete suchen
+        entry = next((e for e in complete if e["cid"] == cid), None)
+        if entry is None:
+            inc_entry = next((e for e in incomplete if e["cid"] == cid), None)
+            if inc_entry is None:
+                continue  # Kein Stub — überspringen
+            incomplete.remove(inc_entry)
+            complete.append(inc_entry)
+            entry = inc_entry
+        entry["total_min"] = mtm
+
+    # Schritt 3: disqualify
+    disqualify_cids = {ov["cid"] for ov in overrides if ov.get("action") == "disqualify"}
+    if disqualify_cids:
+        new_complete: list[dict] = []
+        for e in complete:
+            if e["cid"] in disqualify_cids:
+                disqualified.append(e)
+            else:
+                new_complete.append(e)
+        result["complete"] = new_complete
+        complete = result["complete"]
+
+    # Schritt 4: Schnitt, delta, rank neu berechnen
+    if complete:
+        avg = sum(e["total_min"] for e in complete) / len(complete)
+        result["average_min"] = round(avg, 1)
+    else:
+        result["average_min"] = 0.0
+    result["count"] = len(complete)
+
+    for e in complete:
+        e["delta"] = round(abs(e["total_min"] - result["average_min"]), 1)
+    complete.sort(key=lambda e: (e["delta"], e["total_min"], e["cid"]))
+    for rank, e in enumerate(complete, 1):
+        e["rank"] = rank
+
+    # Schritt 5: winner
+    for ov in overrides:
+        if ov.get("action") != "winner":
+            continue
+        winner_cid = ov["cid"]
+        winner_idx = next((i for i, e in enumerate(complete) if e["cid"] == winner_cid), None)
+        if winner_idx is None:
+            continue
+        winner_entry = complete.pop(winner_idx)
+        winner_entry["forced_winner"] = True
+        complete.insert(0, winner_entry)
+        for rank, e in enumerate(complete, 1):
+            e["rank"] = rank
+
+    # Schritt 6: participant_count
+    all_cids = (
+        {e["cid"] for e in complete}
+        | {e["cid"] for e in incomplete}
+        | {e["cid"] for e in disqualified}
+    )
+    result["participant_count"] = len(all_cids)
+    result["disqualified"] = disqualified
+
+    return result
 
 
 def get_push_subscriptions_for_pilot(

@@ -1,5 +1,16 @@
 [
   {
+    "version": "6.1.0",
+    "date": "2026-06-27",
+    "title": "FriesenFliegerBummel: Verwaltung & Benachrichtigungen",
+    "items": [
+      "🏁 Rund um den FriesenFliegerBummel (es gewinnt, wer am dichtesten an der Durchschnittszeit aller liegt) gibt es jetzt eine Verwaltung — plus ein paar Extras für alle.",
+      "🔔 Push-Benachrichtigung, wenn ein Bummel startet („… hat den Bummel gestartet!“) und wenn die Ergebnisse enthüllt werden.",
+      "🛠️ Neue Admin-Seite: Rennen auch ohne Kalender anlegen, beenden/neu starten, Teilnehmer korrigieren (aus-/einschließen, disqualifizieren, Sieger setzen) und Pushes je Rennen abschalten.",
+      "📋 Endstand als forum-fertigen Text kopieren."
+    ]
+  },
+  {
     "version": "6.0.0",
     "date": "2026-06-27",
     "title": "FriesenFliegerBummel",

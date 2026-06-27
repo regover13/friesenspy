@@ -31,6 +31,16 @@ Pflichtfelder: `SECRET_KEY`. Optional: `STATSIM_API_KEY` für historische Flugda
 
 **Logging:** `configure_logging(LOG_LEVEL)` wird beim Lifespan-Startup aufgerufen und installiert via `logging.basicConfig(..., force=True)` einen Handler am Root-Logger. Ohne das hat der Root-Logger unter uvicorn keinen Handler, sodass Pythons Last-Resort-Handler nur `WARNING`+ ausgibt und App-`INFO`-Logs (z. B. `PrefilePush … sent OK`) verschluckt würden. Ungültiges Level → Fallback `INFO`.
 
+### `app/auth.py`
+
+Admin-Authentifizierung per signiertem httponly-Cookie.
+
+- **`ADMIN_PASSWORD`** (aus `config.py`) — leer = Admin-Bereich deaktiviert; gesetzt = Cookie-Login aktiv.
+- **Cookie `fs_admin`**: HMAC-SHA256-Signatur über das konfigurierte Passwort, signiert mit `SECRET_KEY` (stdlib `hmac`, kein Session-Store). Ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort, da die Signatur nicht mehr passt.
+- **`require_admin`** — FastAPI-Dependency, die das Cookie prüft und bei fehlendem oder ungültigem Cookie `401` zurückwirft. Schützt alle `/api/admin/*`-Endpoints.
+- **`POST /api/admin/login`** setzt das Cookie (httponly, SameSite=Strict); **`POST /api/admin/logout`** löscht es; **`GET /api/admin/me`** gibt `{"admin": true}` zurück wenn die Session gültig ist.
+- Die Admin-Seite selbst (`/admin` → `app/static/admin.html`) ist eine eigenständige Vanilla-JS-Seite; sie nutzt denselben Login-Flow und kommuniziert ausschließlich über die `/api/admin/*`-Endpoints.
+
 ### `app/vatsim.py`
 
 - `fetch_vatsim_data(client)` — HTTP GET auf die VATSIM Data API, gibt geparsten JSON-Dict zurück.
@@ -48,7 +58,7 @@ StatSim API: `https://api.statsim.net`, Auth: `X-API-Key` Header, max. 31 Tage p
 
 ### `app/database.py`
 
-SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Acht Tabellen:
+SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Zehn Tabellen:
 
 | Tabelle | Inhalt |
 |---------|--------|
@@ -57,7 +67,8 @@ SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Acht Tabellen:
 | `live_positions` | Aktuelle Position pro CID (UPSERT, maximal 1 Zeile pro CID) |
 | `position_history` | Jede einzelne VATSIM-Positions-Update (für Tracks + Events) |
 | `calendar_events` | FriesenFlieger Google-Kalender (alle 6h synchronisiert, UID als Primary Key); `route` (CSV aller ICAOs) + `is_bummel` (Flag) für die FriesenFliegerBummel-Erkennung |
-| `bummel_races` | Persistente Bummel-Rennen (vom Poller beim Kalender-Sync angelegt); `revealed_at` steuert die Fairness-Verdeckung — `NULL` = noch verborgen, Zeitstempel = enthüllt (Latch) |
+| `bummel_races` | Persistente Bummel-Rennen (vom Poller beim Kalender-Sync oder Admin manuell angelegt); `revealed_at` steuert die Fairness-Verdeckung — `NULL` = noch verborgen, Zeitstempel = enthüllt (Latch); `started_at` = Start-Latch (erster Pilot mit Blockzeit an einem Streckenflugplatz, `NULL` = noch kein Start); `push_enabled` steuert Push-Benachrichtigungen je Rennen (1 = an, 0 = aus); `source` ∈ `calendar` | `manual` |
+| `bummel_overrides` | Admin-Korrekturen pro Rennen + Pilot (PK `race_id + cid`); `action` ∈ `exclude` \| `disqualify` \| `winner` \| `manual`; bei `manual`: `manual_total_min` ersetzt die gemessene Block-Zeit; Overrides werden durch `apply_bummel_overrides` auf die Wertung angewendet |
 | `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array — gilt für Online/Flugplan/TS, `notify_prefiles` Flag, `notify_ts` Flag; `ts_self_frs` = tote Spalte, nicht mehr genutzt; `created_at` wird bei Re-Abo desselben Endpoints mit aktualisiert) |
 | `prefile_sigs` | Letzte bekannte Prefile-Signatur pro CID (`deptime`, `departure`, `arrival`) — wird nach jedem Poll persistiert, damit Container-Neustarts keine Änderungen verpassen |
 | `ts_consent` | Subjekt-Einwilligung pro FRS für TS-Login-Sichtbarkeit (`visibility` ∈ `everyone`/`nobody`; `allowlist`-Spalte existiert noch, wird aber nicht mehr ausgewertet) — kein Eintrag = Default `everyone` |
@@ -105,14 +116,18 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 
 - **`_bummel_anyone_in_progress(conn, race)`** — prüft, ob noch ein Teilnehmer aktiv unterwegs ist: offener Flug (`logoff_time IS NULL`), der vor `dtend` gestartet hat und dessen Start-Airport zur Strecke gehört.
 
-- **`update_bummel_reveals(conn)`** — Enthüllungs-Latch, aufgerufen vom Poller-Job `bummel_reveal_check` (alle 60 s). Durchläuft alle Rennen mit `revealed_at IS NULL`. Enthüllt (setzt `revealed_at = now()`) ein Rennen, sobald **beide** Bedingungen erfüllt sind: (1) `_effective_dtend` ist überschritten, (2) `_bummel_anyone_in_progress` liefert `False`. Ist noch ein Nachzügler in der Luft, wartet der Job weiter (`status = waiting`). **Einmal enthüllt bleibt enthüllt** — der Zeitstempel in `revealed_at` wird nie zurückgesetzt (`set_bummel_revealed`).
+- **`update_bummel_starts(conn)`** — Start-Latch, ebenfalls vom `bummel_reveal_check`-Job (alle 60 s) aufgerufen. Prüft alle Rennen mit `started_at IS NULL` und `status = running`; setzt `started_at = now()` sobald mindestens ein Teilnehmer eine Blockzeit an einem Streckenflugplatz aufweist (d. h. der erste Pilot hat abgehoben). Einmal gesetzt wird `started_at` nicht zurückgesetzt. Ist `push_enabled = 1`, löst der Job direkt einen `send_web_push`-Broadcast an alle Push-Subscriptions aus („FRSxx hat den Bummel gestartet!").
+
+- **`update_bummel_reveals(conn)`** — Enthüllungs-Latch, aufgerufen vom Poller-Job `bummel_reveal_check` (alle 60 s). Durchläuft alle Rennen mit `revealed_at IS NULL`. Enthüllt (setzt `revealed_at = now()`) ein Rennen, sobald **beide** Bedingungen erfüllt sind: (1) `_effective_dtend` ist überschritten, (2) `_bummel_anyone_in_progress` liefert `False`. Ist noch ein Nachzügler in der Luft, wartet der Job weiter (`status = waiting`). **Einmal enthüllt bleibt enthüllt** — der Zeitstempel in `revealed_at` wird nie zurückgesetzt (`set_bummel_revealed`). Ist `push_enabled = 1`, wird bei der Enthüllung ein `send_web_push`-Broadcast an alle Push-Subscriptions versandt.
+
+- **`apply_bummel_overrides(standings, overrides)`** — reine Funktion, wendet die Admin-Overrides aus der `bummel_overrides`-Tabelle auf die berechnete Wertung an. `exclude` entfernt den Piloten vollständig; `disqualify` belässt ihn in der Liste, zieht ihn aber aus Schnitt und Ranking heraus; `winner` setzt Rang 1 erzwungen; `manual` ersetzt `total_min` durch `manual_total_min` und rechnet Schnitt und Ranking neu. Wird von `public_bummel_view` und dem Admin-Preview-Endpoint gleichermaßen aufgerufen — Overrides wirken auf alle öffentlichen Sichten.
 
 **`app/calendar_sync.py` — `parse_route(location, summary, description)`.** Sammelt alle 4-buchstabigen ICAO-Codes aus Ort, Titel und Beschreibung (Reihenfolge erhaltend, dedupliziert) → `route`-CSV. `is_bummel` wird gesetzt, wenn „Bummel" in Titel/Beschreibung steht, die Strecke ≥ 2 Flugplätze hat **und** plausibel ist: `_route_is_plausible` lehnt ab, sobald zwei auflösbare Flugplätze weiter als 600 nm auseinanderliegen (fängt zufällig als ICAO erkannte Wörter ab; reale Bummel-Strecken liegen < 200 nm).
 
 ### `app/poller.py`
 
 `VatsimPoller` kapselt:
-- **APScheduler `AsyncIOScheduler`** mit bis zu fünf aktiven Jobs: `vatsim_poll` (interval, 15s), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start), `bummel_reveal_check` (interval, 60s — ruft `update_bummel_reveals` auf und enthüllt abgelaufene Rennen sobald keine Nachzügler mehr fliegen), sowie optional `ts_poll` (interval, `TS_POLL_INTERVAL`s) wenn `TS_NOTIFY_ENABLED=true`. Der `ts_poll`-Job ist **von VAPID entkoppelt** — er läuft für die Live-Anzeige auch ohne VAPID; ohne VAPID werden lediglich keine TS-Push-Benachrichtigungen versandt. `daily_cleanup` ist deaktiviert — `position_history` wird dauerhaft behalten.
+- **APScheduler `AsyncIOScheduler`** mit bis zu fünf aktiven Jobs: `vatsim_poll` (interval, 15s), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start), `bummel_reveal_check` (interval, 60s — ruft `update_bummel_starts` (Start-Latch + Start-Push) und `update_bummel_reveals` (Enthüllungs-Latch + Enthüllungs-Push) auf), sowie optional `ts_poll` (interval, `TS_POLL_INTERVAL`s) wenn `TS_NOTIFY_ENABLED=true`. Der `ts_poll`-Job ist **von VAPID entkoppelt** — er läuft für die Live-Anzeige auch ohne VAPID; ohne VAPID werden lediglich keine TS-Push-Benachrichtigungen versandt. `daily_cleanup` ist deaktiviert — `position_history` wird dauerhaft behalten.
 - **`_active_flights: dict[int, dict]`** — In-Memory State: CID → `{"id": flight_id, "dep": departure, "arr": arrival}`. Wird beim Start in `PollerService.start()` aus der DB **rehydriert** (alle offenen Flüge `logoff_time IS NULL AND superseded_by IS NULL`), sodass ein Container-Neustart laufende Flüge adoptiert: Pilot noch online → `still_online` (kein neuer Flug); inzwischen offline → `went_offline` → korrekt geschlossen (kein Zombie). **Flugende:** Beim Offline-Gehen wird als `logoff_time` die letzte gespeicherte Position verwendet (nicht die Wanduhr). **Flugplanwechsel ohne Disconnect:** gleicher Abflughafen → `update_flight_plan` (selbes Leg); **geänderter** Abflughafen → echtes neues Leg (Pilot gelandet, neu gefiled) → altes Segment schließen, neues mit eindeutiger Mikrosekunden-`logon_time` öffnen (kollidiert nie mit dem Unique-Index).
 - **`_sse_subscribers: set[asyncio.Queue]` (Per-Client-Fan-out)** — Jede SSE-Verbindung registriert über `subscribe_sse()` ihre **eigene** beschränkte Queue (`_SSE_QUEUE_MAXSIZE=50`) und deregistriert sie beim Disconnect über `unsubscribe_sse()` (im `finally` des Generators). `broadcast_sse(msg)` verteilt jedes Update an **alle** Queues (Iteration über Snapshot, `put_nowait`, non-blocking); bei voller Queue wird der älteste Eintrag verworfen (Drop-Oldest). So bekommt **jeder** Client jedes Update — früher teilten sich alle Clients **eine** Queue, sodass jede Nachricht nur **einen** Consumer erreichte. Der maxsize-Deckel begrenzt zugleich den serverseitigen Rückstau für einen gedrosselten Hintergrund-Tab.
 - **`last_prefiles: list`** — aktuell eingereichte VATSIM-Prefile-Pläne mit FRS*-Callsign (In-Memory, aus dem letzten Poll-Zyklus)
@@ -187,7 +202,7 @@ Telegram-Alert beim "Online gehen" eines Piloten. Alle VATSIM-Felder werden mit 
 
 FastAPI mit `lifespan`-Kontext-Manager (startup: DB init + Poller start; shutdown: Poller stop).
 
-Endpoints: `/api/live`, `/api/prefiles`, `/api/stats`, `/api/stats/activity`, `/api/pilots/{cid}/flights`, `/api/pilots/{cid}/live-track`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/calendar/events`, `/widget`, `/api/sse`.
+Endpoints: `/api/live`, `/api/prefiles`, `/api/stats`, `/api/stats/activity`, `/api/pilots/{cid}/flights`, `/api/pilots/{cid}/live-track`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/calendar/events`, `/api/bummel/races`, `/api/bummel/race/{id}`, `/api/bummel/active`, `/admin` (statische `admin.html`), `/api/admin/login`, `/api/admin/logout`, `/api/admin/me`, `/api/admin/bummel/races` (GET/POST + Unterrouten für einzelne Rennen inkl. reveal/hide/push/override/preview — alle via `require_admin`-Dependency geschützt), `/widget`, `/api/sse`.
 
 `/api/pilots/{cid}/flights` antwortet **sofort** mit FriesenSpy-Daten + gecachten StatSim-Daten. StatSim-Update läuft als FastAPI `BackgroundTask`: normaler Aufruf → letzter 31-Tage-Chunk; `days=0` → volle 365 Tage (Force-Refresh). Status-Tracking via `_statsim_updating` und `_full_history_fetching` (In-Memory-Sets) verhindert parallele Doppel-Fetches. Response-Header `X-StatSim-Status: fresh | updating | no-key`.
 
@@ -397,7 +412,7 @@ CREATE TABLE ts_consent (
     updated_at TEXT
 );
 
--- Persistente FriesenFliegerBummel-Rennen (vom Poller beim Kalender-Sync via upsert_calendar_bummel_race angelegt)
+-- Persistente FriesenFliegerBummel-Rennen (vom Poller beim Kalender-Sync oder Admin manuell angelegt)
 CREATE TABLE bummel_races (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     name         TEXT NOT NULL,
@@ -411,6 +426,20 @@ CREATE TABLE bummel_races (
     calendar_uid TEXT UNIQUE,            -- UID aus calendar_events (NULL für manuelle Einträge)
     revealed_at  TEXT DEFAULT NULL,      -- NULL = Ergebnisse noch verborgen;
                                          -- Zeitstempel = Enthüllungs-Latch (einmal gesetzt, nie zurückgesetzt)
+    started_at   TEXT DEFAULT NULL,      -- NULL = noch kein Start;
+                                         -- Zeitstempel = Start-Latch (erster Pilot mit Blockzeit, nie zurückgesetzt)
+    push_enabled INTEGER DEFAULT 1,      -- 1 = Start- und Enthüllungs-Push aktiv; 0 = deaktiviert
     created_at   TEXT NOT NULL
+);
+
+-- Admin-Korrekturen pro Rennen + Pilot (PK race_id + cid)
+CREATE TABLE bummel_overrides (
+    race_id          INTEGER NOT NULL REFERENCES bummel_races(id) ON DELETE CASCADE,
+    cid              INTEGER NOT NULL,
+    action           TEXT NOT NULL,      -- exclude | disqualify | winner | manual
+    manual_total_min INTEGER DEFAULT NULL, -- Manuelle Block-Zeit in Minuten (nur bei action = 'manual')
+    note             TEXT,               -- Optionale interne Notiz
+    updated_at       TEXT NOT NULL,
+    PRIMARY KEY (race_id, cid)
 );
 ```

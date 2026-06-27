@@ -906,19 +906,44 @@ class VatsimPoller:
     # ------------------------------------------------------------------
 
     async def _check_bummel_reveals(self) -> None:
-        """Periodisch prüfen, ob ein Rennen enthüllt werden kann (dtend erreicht, niemand
-        mehr unterwegs). Latchend — einmal enthüllt bleibt enthüllt."""
+        """Periodisch: Renn-Start erkennen (erste Blockzeit → Start-Push) und Enthüllung latchen
+        (dtend erreicht + niemand mehr unterwegs → Reveal-Push). Beides einmal je Rennen."""
         try:
             from datetime import datetime, timezone
-            from app.database import update_bummel_reveals
+            from app.database import (
+                update_bummel_reveals, update_bummel_starts,
+                get_bummel_race, get_all_push_subscriptions,
+            )
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             conn = get_connection(self.db_path)
             try:
+                started = update_bummel_starts(conn, now, callsign_prefix=self.callsign_prefix)
                 revealed = update_bummel_reveals(conn, now, callsign_prefix=self.callsign_prefix)
+                # Push-Payloads sammeln, solange die Verbindung offen ist (push_enabled je Rennen)
+                pushes: list[dict] = []
+                for rid, callsign in started:
+                    race = get_bummel_race(conn, rid)
+                    if race and race.get("push_enabled"):
+                        pushes.append({"title": race.get("name") or "FriesenFliegerBummel",
+                                       "body": f"{callsign} hat den Bummel gestartet!", "url": "/"})
+                for rid in revealed:
+                    race = get_bummel_race(conn, rid)
+                    if race and race.get("push_enabled"):
+                        pushes.append({"title": race.get("name") or "FriesenFliegerBummel",
+                                       "body": "Die Bummel-Ergebnisse sind da! 🏁", "url": "/"})
+                subscriptions = get_all_push_subscriptions(conn) if pushes else []
             finally:
                 conn.close()
+            if started:
+                logger.info("Bummel gestartet: %s", started)
             if revealed:
                 logger.info("Bummel enthüllt: Rennen %s", revealed)
+            if pushes and subscriptions and self.vapid_private_key:
+                for payload in pushes:
+                    asyncio.create_task(send_web_push(
+                        self.vapid_private_key, self.vapid_contact_email, self.db_path,
+                        subscriptions, payload, label="Bummel",
+                    ))
         except Exception:
             logger.exception("Error in _check_bummel_reveals")
 

@@ -8,19 +8,21 @@ import pytest
 from app.database import (
     _bummel_anyone_in_progress,
     _effective_dtend,
+    bummel_open_starters,
     get_bummel_race,
     get_connection,
     init_db,
     list_bummel_races,
     set_bummel_revealed,
     update_bummel_reveals,
+    update_bummel_starts,
     upsert_calendar_bummel_race,
 )
 from app.geo import icao_to_coords
 
 
-def _add_open_flight(conn, cid, dep_coord, logon, dep_fp="EDWF"):
-    """Offener Flug (logoff NULL) + eine GPS-Startposition am Flugplatz."""
+def _add_open_flight(conn, cid, dep_coord, logon, dep_fp="EDWF", gs=0):
+    """Offener Flug (logoff NULL) + eine GPS-Startposition am Flugplatz (gs=0 = steht noch)."""
     conn.execute(
         "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)", (cid, f"P{cid}", logon)
     )
@@ -32,8 +34,8 @@ def _add_open_flight(conn, cid, dep_coord, logon, dep_fp="EDWF"):
     )
     conn.execute(
         "INSERT INTO position_history (cid, latitude, longitude, altitude, groundspeed, heading, ts) "
-        "VALUES (?, ?, ?, 200, 0, 0, ?)",
-        (cid, dep_coord[0], dep_coord[1], logon),
+        "VALUES (?, ?, ?, 200, ?, 0, ?)",
+        (cid, dep_coord[0], dep_coord[1], gs, logon),
     )
     conn.commit()
 
@@ -152,3 +154,39 @@ class TestRevealLatch:
         # Späterer Lauf darf den Zeitstempel nicht überschreiben
         update_bummel_reveals(conn, "2026-06-27T23:00:00Z")
         assert get_bummel_race(conn, rid)["revealed_at"] == first
+
+
+class TestStartDetection:
+    def test_open_starters_moved_flag(self):
+        conn = _make_conn()
+        _add_open_flight(conn, 100, icao_to_coords("EDWF"), "2026-06-27T19:00:00Z", gs=120)  # bewegt
+        _add_open_flight(conn, 200, icao_to_coords("EDWF"), "2026-06-27T19:00:00Z", gs=0)    # steht
+        _add_open_flight(conn, 300, icao_to_coords("EDDH"), "2026-06-27T19:00:00Z", dep_fp="EDDH", gs=120)  # nicht Strecke
+        starters = bummel_open_starters(conn, ROUTE, 10)
+        by_cid = {s["cid"]: s for s in starters}
+        assert by_cid[100]["moved"] is True
+        assert by_cid[200]["moved"] is False
+        assert 300 not in by_cid  # ausserhalb der Strecke
+
+    def test_update_starts_latches_and_returns_callsign(self):
+        conn = _make_conn()
+        upsert_calendar_bummel_race(conn, {
+            "uid": "s1", "summary": "Bummel", "route": "EDWF,EDWG,EDWR",
+            "dtstart": "2026-06-27T18:00:00Z", "dtend": "2026-06-27T22:00:00Z",
+        })
+        rid = list_bummel_races(conn)[0]["id"]
+        _add_open_flight(conn, 49, icao_to_coords("EDWF"), "2026-06-27T19:00:00Z", gs=120)
+        started = update_bummel_starts(conn, "2026-06-27T19:05:00Z")
+        assert started == [(rid, "FRS49")]
+        assert get_bummel_race(conn, rid)["started_at"] == "2026-06-27T19:05:00Z"
+        # Latch: zweiter Lauf meldet nichts mehr
+        assert update_bummel_starts(conn, "2026-06-27T19:10:00Z") == []
+
+    def test_no_start_when_nobody_moved(self):
+        conn = _make_conn()
+        upsert_calendar_bummel_race(conn, {
+            "uid": "s2", "summary": "Bummel", "route": "EDWF,EDWG,EDWR",
+            "dtstart": "2026-06-27T18:00:00Z", "dtend": "2026-06-27T22:00:00Z",
+        })
+        _add_open_flight(conn, 49, icao_to_coords("EDWF"), "2026-06-27T19:00:00Z", gs=0)  # steht nur
+        assert update_bummel_starts(conn, "2026-06-27T19:05:00Z") == []

@@ -583,3 +583,181 @@ Alle 30 Sekunden wird ein SSE-Kommentar gesendet um Proxy-Timeouts zu verhindern
 ```
 
 **Reconnect:** Browser-`EventSource` reconnectet automatisch. Die SPA setzt zusätzlich einen 5-Sekunden-Fallback-Reconnect.
+
+---
+
+## Admin-Authentifizierung
+
+Alle Endpoints unter `/api/admin/*` sind durch ein signiertes httponly-Cookie (`fs_admin`) geschützt. Das Cookie wird beim Login gesetzt und per HMAC-SHA256 verifiziert (Passwort + `SECRET_KEY`). Ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort. Ist `ADMIN_PASSWORD` in `config.env` nicht konfiguriert (leer), geben alle Admin-Endpoints `403` zurück.
+
+### POST /api/admin/login
+
+Admin-Login und Cookie setzen.
+
+**Body (JSON)**
+
+```json
+{"password": "mein-passwort"}
+```
+
+**Responses**
+- `200 {"status": "ok"}` — Cookie `fs_admin` gesetzt (httponly, SameSite=Strict)
+- `401 {"detail": "Unauthorized"}` — falsches Passwort oder Admin deaktiviert
+
+---
+
+### POST /api/admin/logout
+
+Cookie löschen.
+
+**Response** `200 {"status": "ok"}`
+
+---
+
+### GET /api/admin/me
+
+Aktuelle Session prüfen.
+
+**Responses**
+- `200 {"admin": true}` — gültig eingeloggt
+- `401` — kein oder ungültiges Cookie
+
+---
+
+## Admin — Bummel-Verwaltung
+
+Alle folgenden Endpoints erfordern ein gültiges `fs_admin`-Cookie (gesetzt via `POST /api/admin/login`). Fehlt das Cookie oder ist es ungültig, wird `401` zurückgegeben.
+
+### GET /api/admin/bummel/races
+
+Volle Liste aller Bummel-Rennen inkl. interner Felder.
+
+**Response** — Array, neueste zuerst
+
+```json
+[
+  {
+    "id": 1,
+    "name": "FriesenFliegerBummel Ostfriesland",
+    "route": ["EDWF", "EDWG", "EDWR"],
+    "dtstart": "2026-06-27T14:00:00Z",
+    "dtend": "2026-06-27T20:00:00Z",
+    "radius_km": 10.0,
+    "source": "calendar",
+    "calendar_uid": "abc123@google.com_20260627T140000Z",
+    "status": "revealed",
+    "revealed_at": "2026-06-27T21:05:00Z",
+    "started_at": "2026-06-27T14:22:00Z",
+    "push_enabled": 1,
+    "participant_count": 5,
+    "overrides": [
+      {"cid": 400, "action": "disqualify", "manual_total_min": null, "note": "Falscher Flugplatz"}
+    ]
+  }
+]
+```
+
+`source` ∈ `calendar` | `manual`. `started_at` = Zeitstempel des Renn-Starts (erster Pilot mit Blockzeit an einem Streckenflugplatz); `null` = noch nicht gestartet. `push_enabled` = 1 (an) | 0 (aus).
+
+---
+
+### POST /api/admin/bummel/races
+
+Neues Rennen manuell anlegen (ohne Kalender-Termin).
+
+**Body (JSON)**
+
+| Feld | Typ | Pflicht | Beschreibung |
+|------|-----|---------|--------------|
+| `name` | string | ✓ | Renn-Name |
+| `route` | string | ✓ | CSV der Strecken-ICAOs, z.B. `"EDWF,EDWG,EDWR"` |
+| `dtstart` | string | ✓ | ISO8601 UTC — Renn-Beginn |
+| `dtend` | string | — | ISO8601 UTC — Renn-Ende; fehlt → Mitternacht UTC des Starttags |
+| `radius_km` | float | — | Anwesenheitsradius in km (Default: 10.0) |
+
+**Response** `{"id": 42}`
+
+---
+
+### POST /api/admin/bummel/races/{id}
+
+Felder eines bestehenden Rennens aktualisieren. Nur angegebene Felder werden geändert.
+
+**Body (JSON)** — gleiche Felder wie beim Anlegen, alle optional.
+
+**Response** `{"status": "ok"}` oder `404`.
+
+---
+
+### DELETE /api/admin/bummel/races/{id}
+
+Rennen dauerhaft löschen (inkl. aller Overrides).
+
+**Response** `{"status": "ok"}` oder `404`.
+
+---
+
+### POST /api/admin/bummel/races/{id}/reveal
+
+Rennen sofort enthüllen (Notfall-Enthüllung). Setzt `revealed_at = now()`.
+
+**Response** `{"status": "ok"}`
+
+---
+
+### POST /api/admin/bummel/races/{id}/hide
+
+Enthüllung zurücksetzen (wieder verbergen). Setzt `revealed_at = NULL`.
+
+**Response** `{"status": "ok"}`
+
+---
+
+### POST /api/admin/bummel/races/{id}/push
+
+Push-Benachrichtigungen für Start und Enthüllung dieses Rennens an- oder abschalten.
+
+**Body (JSON)**
+
+```json
+{"enabled": true}
+```
+
+**Response** `{"status": "ok"}`
+
+---
+
+### POST /api/admin/bummel/races/{id}/override
+
+Teilnehmer-Override setzen oder aktualisieren (PK `race_id + cid`).
+
+**Body (JSON)**
+
+| Feld | Typ | Pflicht | Beschreibung |
+|------|-----|---------|--------------|
+| `cid` | int | ✓ | VATSIM-CID des Piloten |
+| `action` | string | ✓ | `exclude` \| `disqualify` \| `winner` \| `manual` |
+| `manual_total_min` | int | — | Manuelle Block-Gesamtzeit in Minuten (nur bei `action = manual`) |
+| `note` | string | — | Interne Notiz |
+
+`exclude` = Pilot aus Wertung und Teilnehmerliste entfernen. `disqualify` = in Ergebnis sichtbar, zählt aber nicht in Schnitt/Ranking. `winner` = erzwungener Sieg (Rang 1). `manual` = eigene Block-Zeit statt gemessener (Schnitt/Ranking werden mit `manual_total_min` neu berechnet).
+
+**Response** `{"status": "ok"}`
+
+---
+
+### DELETE /api/admin/bummel/races/{id}/override/{cid}
+
+Override für einen Piloten entfernen.
+
+**Response** `{"status": "ok"}` oder `404`.
+
+---
+
+### GET /api/admin/bummel/races/{id}/preview
+
+Vollständige Wertung (mit Zeiten, Durchschnitt und Ranking) unabhängig vom Enthüllungsstatus. Overrides sind bereits angewendet. Nützlich um das Ergebnis zu prüfen, bevor enthüllt wird.
+
+**Response** — gleiches Format wie `GET /api/bummel/race/{id}` nach der Enthüllung (`revealed: true`)
+
+Gibt `404` zurück wenn die `id` nicht existiert.

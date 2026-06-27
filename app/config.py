@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     CALLSIGN_PREFIX: str = "FRS"
     SECRET_KEY: str
+    # Passwort für die Admin-Seite (/admin) — NIE in git, nur in config.env. Leer = Admin aus.
+    ADMIN_PASSWORD: str = ""
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
     VATSIM_POLL_INTERVAL: int = 15
