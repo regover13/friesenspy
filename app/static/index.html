@@ -2608,7 +2608,9 @@ function _prefillEventForm(ev) {
   if (ev.dtend) {
     document.getElementById('ev-end').value = ev.dtend.slice(0, 16);
   }
-  document.getElementById('ev-icao').value = ev.location || 'global';
+  // Volle Strecke suchen (alle ICAOs), nicht nur den ersten Code: deckt Mehr-Flugplatz-Events
+  // ab und ist robust gegen unauflösbare Codes wie FIR-Kürzel (z. B. EDWW → keine Koordinaten).
+  document.getElementById('ev-icao').value = ev.route || ev.location || 'global';
   document.getElementById('events-results').classList.add('hidden');
   document.getElementById('bummel-results').classList.add('hidden');
   _activeBummel = null;
