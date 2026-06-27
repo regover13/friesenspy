@@ -1,5 +1,13 @@
 [
   {
+    "version": "6.1.2",
+    "date": "2026-06-27",
+    "title": "Event-Suche: Teilnehmer auch bei Mehr-Flugplatz-Events",
+    "items": [
+      "🔎 Die Event-Suche durchsucht jetzt die ganze Strecke eines Termins statt nur den ersten Code — Events mit FIR-Kürzeln (z. B. EDWW) oder mehreren Flugplätzen zeigen wieder ihre Teilnehmer."
+    ]
+  },
+  {
     "version": "6.1.1",
     "date": "2026-06-27",
     "title": "Sicherheit: Admin-Bereich gehärtet",
