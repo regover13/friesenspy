@@ -175,9 +175,9 @@ Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzwelt
 
 Nach der Enthüllung eines Bummels bekommt jeder Teilnehmer ein **Badge-PNG**, das er als Bild in seine Forensignatur bei board.friesenflieger.de einbinden kann — über eine feste URL, die Foren direkt als Bild erkennen (`.png`-Suffix).
 
-- **Sieger (Rang 1):** großes Badge „Absoluter Durchschnitt!" (640×240 px) mit Callsign, Name, Flugzeugmuster, Block-Gesamtzeit und Zeitdifferenz zum Schnitt.
-- **Alle anderen Teilnehmer** (auch unvollständige): kleine Medaille „Voll daneben!" (380×150 px).
-- Beide Badges tragen die Fußzeile **friesenflieger.de**.
+- **Sieger (Rang 1):** Badge „Absoluter Durchschnitt!" mit Callsign, Name, Flugzeugmuster, Block-Gesamtzeit und Zeitdifferenz zum Schnitt.
+- **Alle anderen Teilnehmer** (auch unvollständige): Medaille „Voll daneben!".
+- Beide Badges sind **rund (256 px)** mit transparenten Rändern im echten FriesenFlieger-Look (Flugzeug, ostfriesische Inselkette, Vereinsfarben) und tragen die Fußzeile **friesenflieger.de**.
 
 Im enthüllten Ranking erscheinen je Pilot zwei Schaltflächen: **🎖 Badge** öffnet das PNG direkt; **📋 Forum** kopiert den fertigen BBCode `[img]…/badge/{cid}.png[/img]` in die Zwischenablage — zum direkten Einfügen in board.friesenflieger.de. Die Badges werden serverseitig mit Pillow gezeichnet und unter `data/badges/` gecacht. Vor der Enthüllung liefert der Endpoint 404.
 

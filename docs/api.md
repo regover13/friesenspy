@@ -535,12 +535,12 @@ Badge-PNG für die Forensignatur eines Bummel-Teilnehmers. Erst nach Enthüllung
 
 **Response** — `image/png`
 
-Die Badge-Variante wird automatisch anhand des Rangs gewählt:
+Beide Badges sind **rund (256 × 256 px)** mit transparenten Rändern und nutzen die FriesenFlieger-Markenhintergründe (Flugzeug, ostfriesische Inselkette, Vereinsfarben). Die Variante wird automatisch anhand des Rangs gewählt:
 
-| Variante | Bedingung | Größe | Inhalt |
-|----------|-----------|-------|--------|
-| **Sieger-Badge „Absoluter Durchschnitt!"** | Rang 1 | 640×240 px | Callsign, Name, Flugzeugmuster, Block-Gesamtzeit, Zeitdifferenz zum Schnitt, Fußzeile „friesenflieger.de" |
-| **Medaille „Voll daneben!"** | alle anderen (auch unvollständige) | 380×150 px | Callsign, Name, Flugzeugmuster, Fußzeile „friesenflieger.de" |
+| Variante | Bedingung | Inhalt |
+|----------|-----------|--------|
+| **Sieger-Badge „Absoluter Durchschnitt!"** (helle Kuppel) | Rang 1 | Callsign, Name, Flugzeugmuster, Block-Gesamtzeit, Zeitdifferenz zum Schnitt, Fußzeile „friesenflieger.de" |
+| **Medaille „Voll daneben!"** (navy Kern) | alle anderen (auch unvollständige) | Callsign, Name, Flugzeugmuster, Datum, Zeitdifferenz (falls komplett), Fußzeile „friesenflieger.de" |
 
 **Caching:** Das fertige PNG wird serverseitig unter `data/badges/<race_id>_<cid>.png` gecacht; bei wiederholtem Aufruf wird die Datei direkt aus dem Cache ausgeliefert.
 
