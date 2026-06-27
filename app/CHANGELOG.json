@@ -1,6 +1,6 @@
 [
   {
-    "version": "4.2.0",
+    "version": "5.2.0",
     "date": "2026-06-27",
     "title": "Zuverlässigkeit & Versionsverlauf",
     "items": [
@@ -10,7 +10,7 @@
     ]
   },
   {
-    "version": "4.1.0",
+    "version": "5.1.0",
     "date": "2026-06-26",
     "title": "TeamSpeak: Tags mit Leerzeichen",
     "items": [
@@ -18,7 +18,7 @@
     ]
   },
   {
-    "version": "4.0.0",
+    "version": "5.0.0",
     "date": "2026-06-20",
     "title": "Installierbare App (PWA)",
     "highlight": true,
@@ -28,7 +28,7 @@
     ]
   },
   {
-    "version": "3.1.0",
+    "version": "4.1.0",
     "date": "2026-06-20",
     "title": "TeamSpeak-Live-Anzeige",
     "items": [
@@ -37,7 +37,7 @@
     ]
   },
   {
-    "version": "3.0.0",
+    "version": "4.0.0",
     "date": "2026-06-18",
     "title": "TeamSpeak-Benachrichtigungen",
     "highlight": true,
@@ -47,7 +47,7 @@
     ]
   },
   {
-    "version": "2.0.0",
+    "version": "3.0.0",
     "date": "2026-06-06",
     "title": "Luftraum-Overlay & Karten-Layer",
     "highlight": true,
@@ -57,7 +57,7 @@
     ]
   },
   {
-    "version": "1.2.0",
+    "version": "2.2.0",
     "date": "2026-06-05",
     "title": "Live-Track auf der Karte",
     "items": [
@@ -65,13 +65,25 @@
     ]
   },
   {
-    "version": "1.1.0",
+    "version": "2.1.0",
     "date": "2026-06-04",
     "title": "Statistiken, Flugdetails & StatSim",
     "items": [
       "📊 Flugstatistiken pro Pilot inkl. StatSim-Historie (letztes Jahr).",
       "📅 Events-Ansicht mit allen Tracks.",
       "🔎 Flugdetail-Fenster mit allen Flugplan-Feldern."
+    ]
+  },
+  {
+    "version": "2.0.0",
+    "date": "2026-06-04",
+    "title": "Exakte Flugplan-Zuordnung",
+    "highlight": true,
+    "items": [
+      "🧭 Erkennt einzelne Flüge präziser als reine StatSim-/VATSIM-Daten: Eine Zwischenlandung mit neu aufgegebenem Flugplan zählt als eigener neuer Flug — nicht als ein durchgehender.",
+      "📐 Dahinter steckt eine ICAO-/GPS-Koordinatenerkennung (Haversine-Distanz): gleicher Abflughafen → selbes Leg, neuer Abflughafen → neuer Flug.",
+      "🔗 Kurze Reconnects desselben Piloten werden sauber zu einem Flug zusammengeführt (Stitching).",
+      "🎯 Ergebnis: korrekte Flüge, Strecken und Statistiken — auch bei komplexen Mehrbein-Sessions."
     ]
   },
   {
