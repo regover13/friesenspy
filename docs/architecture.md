@@ -200,12 +200,12 @@ Online, Flugplan und TS nutzen denselben empfängerseitigen `pilot_filter` (CID-
 
 ### `app/badge.py`
 
-Serverseitiges Badge-Rendering mit **Pillow** für Forensignaturen nach einem FriesenFliegerBummel.
+Serverseitiges Badge-Rendering mit **Pillow** für Forensignaturen nach einem FriesenFliegerBummel. Beide Badges sind **rund (256 px)** mit transparenten Rändern und nutzen die FriesenFlieger-Markenhintergründe aus `app/static/badge/` (`winner_bg.png` / `medal_bg.png` — Flugzeug, ostfriesische Inselkette, Vereinsfarben aus dem Repaint-Kit). Der Text wird zentriert in die ruhigen Zonen gelegt, strikt in der FF-Palette (Navy `#191D53`, Hellblau `#8FBFF1`, Rot `#8A1B1B`, Orange `#D75F28`).
 
-- **`render_winner_badge(callsign, name, aircraft, total_min, delta_min)`** — zeichnet das große Sieger-Badge „Absoluter Durchschnitt!" (640×240 px) mit Callsign, Name, Flugzeugmuster, Block-Gesamtzeit, Zeitdifferenz zum Schnitt und der Fußzeile „friesenflieger.de".
-- **`render_medal(callsign, name, aircraft)`** — zeichnet die kleine Medaille „Voll daneben!" (380×150 px) für alle anderen Teilnehmer (auch unvollständige), mit Fußzeile „friesenflieger.de".
+- **`render_winner_badge(d: dict)`** — Sieger-Badge „Absoluter Durchschnitt!" (helle Kuppel, dunkle Schrift) mit Callsign, Name, Flugzeugmuster, Block-Gesamtzeit und Zeitdifferenz zum Schnitt; Fußzeile „friesenflieger.de".
+- **`render_medal(d: dict)`** — Medaille „Voll daneben!" (navy Kern, helle Schrift) für alle anderen Teilnehmer (auch unvollständige), mit Flugzeugmuster, Datum und (bei kompletter Tour) Zeitdifferenz; Fußzeile „friesenflieger.de".
 
-Beide Funktionen nutzen `ImageFont.load_default(size=…)` (Pillow ≥ 10) — keine gebündelten Schriftdateien, keine zusätzlichen apt-Pakete nötig. Abhängigkeit: **`pillow>=10.0`** in `requirements.txt`.
+Beide Funktionen nutzen `ImageFont.load_default(size=…)` (Pillow ≥ 10) — keine gebündelten Schriftdateien, keine zusätzlichen apt-Pakete nötig. Fehlt ein Hintergrund-PNG, wird auf eine schlichte gezeichnete Scheibe zurückgefallen (Tests/lokal bleiben grün). Abhängigkeit: **`pillow>=10.0`** in `requirements.txt`.
 
 **Badge-Endpoint (`GET /api/bummel/race/{race_id}/badge/{cid}.png` in `app/main.py`):** Prüft, ob das Rennen enthüllt ist (`revealed_at IS NOT NULL`) und ob die CID Teilnehmer ist — andernfalls `404` (kein Leak vor der Enthüllung). Rang 1 → `render_winner_badge`, alle anderen → `render_medal`. Das fertige PNG wird unter `data/badges/<race_id>_<cid>.png` gecacht; bei wiederholtem Aufruf wird die Datei direkt ausgeliefert. Response-Header: `Content-Type: image/png`, `Cache-Control: public, max-age=86400`.
 

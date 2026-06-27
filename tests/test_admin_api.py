@@ -161,8 +161,16 @@ def test_badge_endpoint(db):
     assert png_w.media_type == "image/png" and png_w.body[:8] == b"\x89PNG\r\n\x1a\n"
     png_m = asyncio.run(main.get_bummel_badge(rid, other))
     assert png_m.body[:8] == b"\x89PNG\r\n\x1a\n"
-    # Sieger-Badge ist größer als die Medaille
-    assert len(png_w.body) > len(png_m.body)
+    # Beide rund, 256×256; Sieger hat helle Kuppel-Mitte, Medaille dunklen Navy-Kern
+    from io import BytesIO
+    from PIL import Image
+    iw = Image.open(BytesIO(png_w.body)).convert("RGBA")
+    im = Image.open(BytesIO(png_m.body)).convert("RGBA")
+    assert iw.size == (256, 256) and im.size == (256, 256)
+    assert iw.getpixel((0, 0))[3] == 0 and im.getpixel((0, 0))[3] == 0  # transparente Ecke (rund)
+    # Mitte: Sieger hell (hohe Summe), Medaille dunkel (niedrige Summe)
+    assert sum(iw.getpixel((128, 110))[:3]) > sum(im.getpixel((128, 110))[:3])
+    assert png_w.body != png_m.body
 
     with pytest.raises(HTTPException) as e:
         asyncio.run(main.get_bummel_badge(rid, 999999))

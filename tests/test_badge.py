@@ -1,6 +1,10 @@
 """Tests für die Bummel-Badge-Erzeugung (Pillow)."""
 from __future__ import annotations
 
+from io import BytesIO
+
+from PIL import Image
+
 from app.badge import render_medal, render_winner_badge
 
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -8,6 +12,24 @@ _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 def _is_png(b: bytes) -> bool:
     return isinstance(b, (bytes, bytearray)) and b[:8] == _PNG_MAGIC and len(b) > 500
+
+
+def _img(b: bytes) -> Image.Image:
+    return Image.open(BytesIO(b)).convert("RGBA")
+
+
+class TestRoundShape:
+    def test_winner_is_round_256(self):
+        im = _img(render_winner_badge({"callsign": "FRS49"}))
+        assert im.size == (256, 256)
+        assert im.getpixel((0, 0))[3] == 0          # Ecke transparent → rund
+        assert im.getpixel((128, 128))[3] >= 250    # Mitte deckend
+
+    def test_medal_is_round_256(self):
+        im = _img(render_medal({"callsign": "FRS1"}))
+        assert im.size == (256, 256)
+        assert im.getpixel((0, 0))[3] == 0
+        assert im.getpixel((128, 128))[3] >= 250
 
 
 class TestWinnerBadge:
