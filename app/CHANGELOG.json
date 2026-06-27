@@ -1,5 +1,14 @@
 [
   {
+    "version": "6.3.0",
+    "date": "2026-06-27",
+    "title": "Bummel-Badge fürs Forum",
+    "items": [
+      "🎖 Nach jedem Bummel gibt es ein Badge fürs Forum: der Sieger bekommt »Absoluter Durchschnitt!«, alle anderen »Voll daneben!« — als Bild mit fester URL für die Forensignatur.",
+      "📋 Im enthüllten Ranking einfach »🎖 Badge« klicken (Bild öffnen) oder »📋 Forum« klicken (fertigen BBCode in die Zwischenablage kopieren)."
+    ]
+  },
+  {
     "version": "6.2.0",
     "date": "2026-06-27",
     "title": "Event-Benachrichtigungen & manuelle Bummel",

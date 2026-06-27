@@ -12,7 +12,7 @@ from datetime import timezone as _timezone
 
 import httpx as _httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.auth import ADMIN_COOKIE, check_password, make_admin_token, verify_admin_token
@@ -858,6 +858,73 @@ async def get_bummel_race_endpoint(race_id: int):
         return _build_race_view(conn, race, now)
     finally:
         conn.close()
+
+
+def _fmt_de_date(iso: str) -> str:
+    try:
+        d = datetime.fromisoformat((iso or "").replace("Z", "+00:00"))
+        return d.strftime("%d.%m.%Y")
+    except Exception:
+        return ""
+
+
+@app.get("/api/bummel/race/{race_id}/badge/{cid}.png")
+async def get_bummel_badge(race_id: int, cid: int):
+    """Forum-Badge (PNG) für einen Teilnehmer — Sieger groß, sonst Medaille. Erst nach Enthüllung."""
+    import hashlib
+    import os
+    from app.badge import render_medal, render_winner_badge
+
+    now = datetime.now(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        update_bummel_reveals(conn, now, callsign_prefix=settings.CALLSIGN_PREFIX)
+        race = get_bummel_race(conn, race_id)
+        if not race:
+            raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
+        view = _build_race_view(conn, race, now)
+        if not view.get("revealed"):
+            raise HTTPException(status_code=404, detail="Ergebnisse noch nicht enthüllt")
+        complete = {e["cid"]: e for e in view.get("complete", [])}
+        incomplete = {e["cid"]: e for e in view.get("incomplete", [])}
+        entry = complete.get(cid) or incomplete.get(cid)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Teilnehmer nicht gefunden")
+        is_winner = cid in complete and entry.get("rank") == 1
+        d = {
+            "callsign": entry.get("callsign") or f"CID {cid}",
+            "name": entry.get("name") or "",
+            "aircraft": entry.get("aircraft") or "—",
+            "total_min": entry.get("total_min"),
+            "delta": entry.get("delta"),
+            "rank": entry.get("rank"),
+            "complete": cid in complete,
+            "date": _fmt_de_date(race.get("dtstart")),
+        }
+    finally:
+        conn.close()
+
+    # Cache: Dateiname enthält einen Hash über die ergebnisrelevanten Felder → Override/Reveal
+    # erzeugt automatisch ein frisches Bild.
+    cache_dir = os.path.join(os.path.dirname(settings.DB_PATH) or ".", "badges")
+    key = hashlib.md5(
+        f"{race.get('revealed_at')}|{is_winner}|{d['total_min']}|{d['delta']}|{d['aircraft']}|{d['callsign']}".encode()
+    ).hexdigest()[:10]
+    path = os.path.join(cache_dir, f"{race_id}_{cid}_{key}.png")
+    try:
+        with open(path, "rb") as fh:
+            png = fh.read()
+    except OSError:
+        png = render_winner_badge(d) if is_winner else render_medal(d)
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+            with open(path, "wb") as fh:
+                fh.write(png)
+        except OSError:
+            pass  # Cache optional — Bild wurde bereits erzeugt
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/api/bummel/active")
