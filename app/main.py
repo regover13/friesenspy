@@ -209,6 +209,7 @@ async def push_subscribe(request: Request):
             body.get("pilot_filter"),
             notify_prefiles=bool(body.get("notify_prefiles", False)),
             notify_ts=bool(body.get("notify_ts", False)),
+            notify_events=bool(body.get("notify_events", False)),
         )
         conn.commit()
     finally:

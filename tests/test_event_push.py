@@ -44,6 +44,34 @@ class TestNotifyEventsFlag:
         assert get_push_subscriptions_for_events(conn) == []
 
 
+class TestSubscribeEndpoint:
+    def test_subscribe_persists_notify_events(self, tmp_path, monkeypatch):
+        import asyncio
+        from types import SimpleNamespace
+        import app.main as main
+
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        monkeypatch.setattr(main, "get_settings",
+                            lambda: SimpleNamespace(DB_PATH=db, CALLSIGN_PREFIX="FRS"))
+
+        class FakeReq:
+            def __init__(self, body):
+                self._b = body
+
+            async def json(self):
+                return self._b
+
+        asyncio.run(main.push_subscribe(FakeReq(
+            {"endpoint": "e", "p256dh": "p", "auth": "a", "notify_events": True}
+        )))
+        c = get_connection(db)
+        try:
+            assert [s["endpoint"] for s in get_push_subscriptions_for_events(c)] == ["e"]
+        finally:
+            c.close()
+
+
 class TestEventReminders:
     def _ev(self, uid, dtstart):
         return {"uid": uid, "summary": f"Event {uid}", "dtstart": dtstart,
