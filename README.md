@@ -63,7 +63,7 @@ VATSIM-Piloten trennen die Verbindung manchmal kurz, ohne dass ein echter Flugwe
 
 ### ✈ Live
 
-Zeigt alle Friesen, die gerade auf VATSIM fliegen — in Echtzeit, ohne Neuladen der Seite. Darunter erscheinen **eingereichte Flugpläne (Prefiles)**: Piloten, die bereits einen Plan aufgegeben haben, aber noch nicht verbunden sind. Die Liste aktualisiert sich alle 15 Sekunden automatisch.
+Zeigt alle Friesen, die gerade auf VATSIM fliegen — in Echtzeit, ohne Neuladen der Seite. Darunter erscheinen **eingereichte Flugpläne (Prefiles)**: Piloten, die bereits einen Plan aufgegeben haben, aber noch nicht verbunden sind. Die Prefile-Liste aktualisiert sich etwa jede Minute automatisch (das TeamSpeak-Panel alle 30 Sekunden); die Live-Positionen darüber laufen in Echtzeit per Server-Sent-Events.
 
 **Was du siehst:**
 - Callsign, Abflug- und Zielflughafen, Flugzeugtyp

@@ -2073,8 +2073,9 @@ function connectSSE() {
         liveData = msg.data;
         renderLiveTable(msg.data);
         updateMap(msg.data);
-        fetchAndRenderPrefiles();
-        fetchAndRenderTeamspeak();
+        // Prefiles/TeamSpeak NICHT hier mitfeuern — sie laufen auf eigenem, langsamerem
+        // Takt (siehe setInterval unten). Sonst feuerte das Paar bei jedem 15s-Push und
+        // sprengte zusammen mit mehreren Geräten pro IP das geteilte /api/-Rate-Limit (429).
       }
     } catch (_) { /* ignore parse errors */ }
   };
@@ -2210,6 +2211,9 @@ function escHtml(str) {
 async function fetchAndRenderPrefiles() {
   try {
     const res  = await fetch('/api/prefiles');
+    // 429 = transientes Rate-Limit: alten Stand behalten, nächster Intervall-Tick
+    // versucht es erneut. Niemals als „Fehler beim Laden" anzeigen.
+    if (res.status === 429) return;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!Array.isArray(data)) throw new Error('Unexpected response format');
@@ -2298,6 +2302,7 @@ async function showPrefileRoute(dep, arr) {
 async function fetchAndRenderTeamspeak() {
   try {
     const res = await fetch('/api/teamspeak');
+    if (res.status === 429) return;  // transientes Rate-Limit: alten Stand behalten
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     renderTeamspeak(data);
@@ -3007,10 +3012,13 @@ function updateMap(pilots) {
 // ==========================================================================
 //  STATISTIKEN TAB
 // ==========================================================================
-async function fetchStats() {
+async function fetchStats(_isRetry = false) {
   const days = document.getElementById('stats-days').value;
   const container = document.getElementById('stats-content');
-  container.innerHTML = `<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade Daten...</div>`;
+  // Beim Retry den bestehenden Lade-/Tabelleninhalt stehen lassen (kein Flackern).
+  if (!_isRetry) {
+    container.innerHTML = `<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade Daten...</div>`;
+  }
 
   // URL aktualisieren (ohne cid, wir sind auf der Übersicht)
   const p = getUrlState();
@@ -3020,6 +3028,13 @@ async function fetchStats() {
 
   try {
     const res  = await fetch(`/api/stats?days=${days}&sort_by=${_statsSortBy}&sort_dir=${_statsSortDir}`);
+    // 429 = transientes Rate-Limit: einmal nach kurzer Pause erneut versuchen, statt
+    // sofort einen Fehler anzuzeigen. Inhalt bleibt unangetastet.
+    if (res.status === 429) {
+      if (!_isRetry) setTimeout(() => fetchStats(true), 1500);
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     renderStatsTable(data, Number(days));
   } catch (e) {
@@ -3850,14 +3865,12 @@ const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cf
 const _liveInitialPromise = fetchLiveInitial();
 fetchAndRenderPrefiles();
 fetchAndRenderTeamspeak();
-// Nur als Fallback abfragen, wenn SSE getrennt ist — im Normalbetrieb treibt der
-// SSE-'positions'-Handler diese beiden Fetches bereits (sonst doppelte Last → 429).
-setInterval(() => {
-  if (!sseSource || sseSource.readyState !== EventSource.OPEN) fetchAndRenderPrefiles();
-}, 15000);
-setInterval(() => {
-  if (!sseSource || sseSource.readyState !== EventSource.OPEN) fetchAndRenderTeamspeak();
-}, 15000);
+// Prefiles/TeamSpeak auf eigenem, langsamem Takt pollen — bewusst NICHT an den
+// SSE-'positions'-Push gekoppelt. Sonst feuert ein im Hintergrund gepufferter SSE-
+// Rückstau beim Wiederöffnen hunderte Frames auf einmal, was je Frame ein prefiles+
+// teamspeak-Paar auslöste → 429-Sturm. Diese Daten ändern sich ohnehin nur langsam.
+setInterval(fetchAndRenderPrefiles, 60000);
+setInterval(fetchAndRenderTeamspeak, 30000);
 connectSSE();
 initFromUrl();
 
