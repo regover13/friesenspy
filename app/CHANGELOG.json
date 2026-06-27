@@ -2,42 +2,15 @@
   {
     "version": "6.1.2",
     "date": "2026-06-27",
-    "title": "Event-Suche: Teilnehmer auch bei Mehr-Flugplatz-Events",
-    "items": [
-      "🔎 Die Event-Suche durchsucht jetzt die ganze Strecke eines Termins statt nur den ersten Code — Events mit FIR-Kürzeln (z. B. EDWW) oder mehreren Flugplätzen zeigen wieder ihre Teilnehmer."
-    ]
-  },
-  {
-    "version": "6.1.1",
-    "date": "2026-06-27",
-    "title": "Sicherheit: Admin-Bereich gehärtet",
-    "items": [
-      "🔒 Admin-Login mit Brute-Force-Bremse und sicherem Cookie (nur über HTTPS, kurze Laufzeit) abgesichert."
-    ]
-  },
-  {
-    "version": "6.1.0",
-    "date": "2026-06-27",
-    "title": "FriesenFliegerBummel: Verwaltung & Benachrichtigungen",
-    "items": [
-      "🏁 Rund um den FriesenFliegerBummel (es gewinnt, wer am dichtesten an der Durchschnittszeit aller liegt) gibt es jetzt eine Verwaltung — plus ein paar Extras für alle.",
-      "🔔 Push-Benachrichtigung, wenn ein Bummel startet („… hat den Bummel gestartet!“) und wenn die Ergebnisse enthüllt werden.",
-      "🛠️ Neue Admin-Seite: Rennen auch ohne Kalender anlegen, beenden/neu starten, Teilnehmer korrigieren (aus-/einschließen, disqualifizieren, Sieger setzen) und Pushes je Rennen abschalten.",
-      "📋 Endstand als forum-fertigen Text kopieren."
-    ]
-  },
-  {
-    "version": "6.0.0",
-    "date": "2026-06-27",
     "title": "FriesenFliegerBummel",
     "highlight": true,
     "items": [
-      "🏁 Neuer Event-Typ FriesenFliegerBummel: Es gewinnt nicht der Schnellste, sondern wer mit seiner Gesamt-Blockzeit am dichtesten an der Durchschnittszeit aller Teilnehmer liegt.",
-      "🗺️ Wird automatisch aus dem Kalender erkannt (Stichwort „Bummel“ + Strecke) — kein Admin-Aufwand. Reihenfolge und Richtung der Strecke sind egal, jeder Friese ist automatisch dabei.",
+      "🏁 Neuer Event-Typ FriesenFliegerBummel: Es gewinnt nicht der Schnellste, sondern wer mit seiner Gesamt-Blockzeit am dichtesten an der Durchschnittszeit aller liegt — automatisch aus dem Kalender erkannt, jeder Friese ist dabei.",
       "🛰️ Anwesenheit wird per GPS-Track erkannt (nicht per Flugplan) — ein Tippfehler im Flugplan kann eine Wertung nicht mehr verhindern.",
-      "📊 Live-Zwischenstand im Live-Tab, solange ein Bummel läuft; im Events-Tab das Ranking PLUS die gewohnte Event-Ansicht mit Karte und allen Piloten im Umkreis.",
-      "📱 Tabellen lassen sich auf dem Smartphone jetzt horizontal scrollen.",
-      "🔒 Während ein Bummel läuft, bleiben Zeiten und Durchschnitt verborgen — sie erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann."
+      "🔒 Fairness: Solange ein Bummel läuft, bleiben Zeiten und Durchschnitt verborgen — sie erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann.",
+      "📊 Im Events-Tab das Ranking PLUS die gewohnte Event-Ansicht mit Karte; Live-Zwischenstand und 🔔 Push-Benachrichtigung bei Start und Ergebnissen.",
+      "🛠️ Admin-Bereich: Rennen auch ohne Kalender anlegen, beenden/neu starten, Teilnehmer korrigieren (ausschließen/disqualifizieren/Sieger setzen); 📋 Endstand fürs Forum kopieren.",
+      "🔎 Event-Suche findet jetzt auch Teilnehmer bei Events mit mehreren oder ungewöhnlichen Flugplatz-Codes; 📱 Tabellen auf dem Smartphone horizontal scrollbar."
     ]
   },
   {
