@@ -5,6 +5,7 @@ import asyncio
 import html as _html
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from datetime import timezone as _timezone
@@ -888,6 +889,22 @@ async def get_bummel_active():
 # Admin-Auth (signiertes Cookie via SECRET_KEY) — schützt /api/admin/*
 # ---------------------------------------------------------------------------
 
+_ADMIN_COOKIE_PATH = "/api/admin"
+
+# Einfacher In-Process-Brute-Force-Schutz: max. N Fehlversuche je IP im Zeitfenster → 429.
+# Reicht für ein Einzel-Admin-Tool (ein uvicorn-Worker); resettet bei Neustart.
+_LOGIN_MAX_FAILS = 5
+_LOGIN_WINDOW_SEC = 60.0
+_login_fails: dict[str, list[float]] = {}
+
+
+def _login_rate_limited(ip: str) -> bool:
+    now = time.monotonic()
+    recent = [t for t in _login_fails.get(ip, []) if now - t < _LOGIN_WINDOW_SEC]
+    _login_fails[ip] = recent
+    return len(recent) >= _LOGIN_MAX_FAILS
+
+
 def require_admin(request: Request) -> None:
     """FastAPI-Dependency: wirft 401, wenn kein gültiges Admin-Cookie vorliegt."""
     settings = get_settings()
@@ -898,16 +915,27 @@ def require_admin(request: Request) -> None:
 
 @app.post("/api/admin/login")
 async def admin_login(request: Request):
-    """Admin-Login per Passwort → setzt ein signiertes httponly-Cookie."""
+    """Admin-Login per Passwort → setzt ein signiertes httponly-Cookie.
+
+    Mit Brute-Force-Bremse (Rate-Limit je IP) und secure-Cookie hinter HTTPS.
+    """
+    ip = request.client.host if request.client else "?"
+    if _login_rate_limited(ip):
+        raise HTTPException(status_code=429, detail="Zu viele Fehlversuche — bitte später erneut.")
     body = await request.json()
     settings = get_settings()
     if not check_password(body.get("password", ""), settings.ADMIN_PASSWORD):
+        _login_fails.setdefault(ip, []).append(time.monotonic())
+        _logger.warning("Admin-Login fehlgeschlagen von %s", ip)
         raise HTTPException(status_code=401, detail="Falsches Passwort")
+    _login_fails.pop(ip, None)  # Erfolg → Zähler zurücksetzen
     token = make_admin_token(settings.SECRET_KEY, settings.ADMIN_PASSWORD)
+    # secure nur hinter HTTPS (nginx setzt X-Forwarded-Proto); lokal über HTTP weiterhin nutzbar.
+    is_https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
     resp = JSONResponse({"status": "ok"})
     resp.set_cookie(
-        ADMIN_COOKIE, token, httponly=True, samesite="lax", path="/",
-        max_age=60 * 60 * 24 * 30,
+        ADMIN_COOKIE, token, httponly=True, secure=is_https, samesite="lax",
+        path=_ADMIN_COOKIE_PATH, max_age=60 * 60 * 24,
     )
     return resp
 
@@ -915,7 +943,7 @@ async def admin_login(request: Request):
 @app.post("/api/admin/logout")
 async def admin_logout():
     resp = JSONResponse({"status": "ok"})
-    resp.delete_cookie(ADMIN_COOKIE, path="/")
+    resp.delete_cookie(ADMIN_COOKIE, path=_ADMIN_COOKIE_PATH)
     return resp
 
 
