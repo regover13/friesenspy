@@ -46,6 +46,11 @@ logger = logging.getLogger(__name__)
 # Verweildauer-Schwelle nie exakt treffen und somit keine Baseline-Notification auslösen.
 _TS_BASELINE_STREAK = 1_000_000
 
+# Max. Anzahl gepufferter SSE-Updates pro Client. Nur der jüngste Stand zählt; bei einem
+# gedrosselten/hängenden Client wird der älteste verworfen (Drop-Oldest), statt unbegrenzt
+# zu wachsen — deckelt zugleich den Rückstau, der einen Hintergrund-Tab beim Wiederöffnen flutet.
+_SSE_QUEUE_MAXSIZE = 50
+
 
 async def _load_statsim_history(cid: int, api_key: str, db_path: str) -> None:
     """Lädt 365-Tage-History von StatSim für einen neu erkannten Piloten."""
@@ -312,8 +317,10 @@ class VatsimPoller:
         self._http_client: httpx.AsyncClient | None = None
         # State: cid → {"id": flight_id, "dep": departure, "arr": arrival}
         self._active_flights: dict[int, dict] = {}
-        # SSE broadcast queue: asyncio.Queue für Updates
-        self.sse_queue: asyncio.Queue = asyncio.Queue()
+        # SSE: jede aktive Client-Verbindung registriert ihre EIGENE Queue; broadcast_sse()
+        # verteilt jedes Update an alle. (Eine geteilte Queue lieferte jede Nachricht nur an
+        # EINEN Consumer → nicht alle Clients bekamen Updates.)
+        self._sse_subscribers: set[asyncio.Queue] = set()
         # Vollständige Prefile-Daten für die API (Liste von Dicts)
         self.last_prefiles: list = []
         # cid → (deptime, departure, arrival) für Änderungserkennung — None = erster Poll
@@ -419,6 +426,37 @@ class VatsimPoller:
             self._scheduler.shutdown(wait=False)
         if self._http_client:
             await self._http_client.aclose()
+
+    # ------------------------------------------------------------------
+    # SSE-Broadcast (Per-Client-Fan-out)
+    # ------------------------------------------------------------------
+
+    def subscribe_sse(self) -> asyncio.Queue:
+        """Registriert eine neue Client-Queue und gibt sie zurück."""
+        q: asyncio.Queue = asyncio.Queue(maxsize=_SSE_QUEUE_MAXSIZE)
+        self._sse_subscribers.add(q)
+        return q
+
+    def unsubscribe_sse(self, q: asyncio.Queue) -> None:
+        """Deregistriert eine Client-Queue (idempotent)."""
+        self._sse_subscribers.discard(q)
+
+    def broadcast_sse(self, message: dict) -> None:
+        """Verteilt ein Update an alle aktiven SSE-Clients (non-blocking).
+
+        Iteriert über einen Snapshot; der Loop ist synchron (kein await), läuft also nicht
+        mit subscribe/unsubscribe verschachtelt (Single-Event-Loop). Bei voller Client-Queue
+        wird der älteste Eintrag verworfen und der neueste eingesetzt (Drop-Oldest).
+        """
+        for q in list(self._sse_subscribers):
+            try:
+                q.put_nowait(message)
+            except asyncio.QueueFull:
+                try:
+                    q.get_nowait()
+                    q.put_nowait(message)
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # Core poll loop
@@ -715,7 +753,7 @@ class VatsimPoller:
             finally:
                 conn.close()
 
-            self.sse_queue.put_nowait({"type": "positions", "data": live_positions})
+            self.broadcast_sse({"type": "positions", "data": live_positions})
 
             # 4. Prefile-Benachrichtigungen für neu eingereichte/geänderte Flugpläne
             # Nur wenn Pilot NICHT bereits online ist (Prefile = Ankündigung, kein Duplikat)

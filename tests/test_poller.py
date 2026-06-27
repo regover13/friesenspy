@@ -47,17 +47,62 @@ class TestVatsimPollerInstantiation:
         assert poller._scheduler is None
         assert poller._http_client is None
         assert poller._active_flights == {}
-        assert isinstance(poller.sse_queue, asyncio.Queue)
+        assert poller._sse_subscribers == set()
 
     def test_custom_telegram_params(self):
         poller = _make_poller(telegram_token="tok123", telegram_chat_id="-100abc")
         assert poller.telegram_token == "tok123"
         assert poller.telegram_chat_id == "-100abc"
 
-    def test_sse_queue_is_unbounded(self):
-        """asyncio.Queue ohne maxsize-Parameter hat maxsize=0 (unbegrenzt)."""
+    def test_subscriber_queue_is_bounded(self):
+        """Jede Client-Queue ist beschränkt (Drop-Oldest gegen Rückstau)."""
+        from app.poller import _SSE_QUEUE_MAXSIZE
         poller = _make_poller()
-        assert poller.sse_queue.maxsize == 0
+        q = poller.subscribe_sse()
+        assert q.maxsize == _SSE_QUEUE_MAXSIZE
+        assert q in poller._sse_subscribers
+
+    def test_broadcast_reaches_all_subscribers(self):
+        """Kern-Fix: jeder registrierte Client bekommt dieselbe Nachricht (nicht nur einer)."""
+        poller = _make_poller()
+        q1 = poller.subscribe_sse()
+        q2 = poller.subscribe_sse()
+
+        msg = {"type": "positions", "data": [{"cid": 1}]}
+        poller.broadcast_sse(msg)
+
+        assert q1.get_nowait() == msg
+        assert q2.get_nowait() == msg
+
+    def test_unsubscribe_removes_queue(self):
+        """Nach unsubscribe_sse bekommt die Queue keine Broadcasts mehr."""
+        poller = _make_poller()
+        q = poller.subscribe_sse()
+        poller.unsubscribe_sse(q)
+        assert q not in poller._sse_subscribers
+
+        poller.broadcast_sse({"type": "positions", "data": []})
+        assert q.empty()
+        # idempotent: erneutes unsubscribe wirft nicht
+        poller.unsubscribe_sse(q)
+
+    def test_broadcast_drops_oldest_when_full(self):
+        """Bei voller Client-Queue wird der älteste verworfen, der neueste behalten."""
+        from app.poller import _SSE_QUEUE_MAXSIZE
+        poller = _make_poller()
+        q = poller.subscribe_sse()
+
+        for i in range(_SSE_QUEUE_MAXSIZE):
+            poller.broadcast_sse({"type": "positions", "data": [{"seq": i}]})
+        assert q.full()
+
+        poller.broadcast_sse({"type": "positions", "data": [{"seq": 999}]})
+        assert q.qsize() == _SSE_QUEUE_MAXSIZE  # Länge bleibt gedeckelt
+        # Ältester (seq=0) wurde verworfen → ältester verbleibender ist seq=1
+        assert q.get_nowait()["data"][0]["seq"] == 1
+        # Der neueste (seq=999) ist als letzter drin
+        items = [q.get_nowait() for _ in range(q.qsize())]
+        assert items[-1]["data"][0]["seq"] == 999
 
 
 # ---------------------------------------------------------------------------
@@ -143,10 +188,11 @@ class TestPollOnceExceptionHandling:
             await poller._poll_once()
 
     @pytest.mark.asyncio
-    async def test_sse_queue_not_updated_on_error(self):
-        """Bei einem VATSIM-Fehler wird nichts in die SSE-Queue geschrieben."""
+    async def test_no_broadcast_on_error(self):
+        """Bei einem VATSIM-Fehler wird nichts an die SSE-Clients gebroadcastet."""
         poller = _make_poller()
         poller._http_client = AsyncMock()
+        q = poller.subscribe_sse()
 
         with patch(
             "app.poller.fetch_vatsim_data",
@@ -154,7 +200,7 @@ class TestPollOnceExceptionHandling:
         ):
             await poller._poll_once()
 
-        assert poller.sse_queue.empty()
+        assert q.empty()
 
     @pytest.mark.asyncio
     async def test_poll_once_with_empty_pilots(self, tmp_path):
@@ -166,6 +212,7 @@ class TestPollOnceExceptionHandling:
 
         poller = _make_poller(db_path=db_file)
         poller._http_client = AsyncMock()
+        q = poller.subscribe_sse()
 
         empty_vatsim = {"pilots": [], "controllers": []}
         with patch(
@@ -174,8 +221,8 @@ class TestPollOnceExceptionHandling:
         ):
             await poller._poll_once()
 
-        assert not poller.sse_queue.empty()
-        event = poller.sse_queue.get_nowait()
+        assert not q.empty()
+        event = q.get_nowait()
         assert event["type"] == "positions"
         assert event["data"] == []
 
@@ -193,6 +240,7 @@ class TestPollOnceExceptionHandling:
             poll_interval=60,
         )
         poller._http_client = AsyncMock()
+        q = poller.subscribe_sse()
 
         vatsim_data = {
             "pilots": [
@@ -223,8 +271,8 @@ class TestPollOnceExceptionHandling:
 
         assert 1234567 in poller._active_flights
 
-        assert not poller.sse_queue.empty()
-        event = poller.sse_queue.get_nowait()
+        assert not q.empty()
+        event = q.get_nowait()
         assert event["type"] == "positions"
         assert len(event["data"]) == 1
         assert event["data"][0]["cid"] == 1234567
@@ -243,6 +291,7 @@ class TestPollOnceExceptionHandling:
             poll_interval=60,
         )
         poller._http_client = AsyncMock()
+        q = poller.subscribe_sse()
 
         vatsim_online = {
             "pilots": [
@@ -271,7 +320,7 @@ class TestPollOnceExceptionHandling:
             await poller._poll_once()
 
         assert 1234567 in poller._active_flights
-        poller.sse_queue.get_nowait()
+        q.get_nowait()
 
         vatsim_offline = {"pilots": []}
         with patch(
@@ -282,7 +331,7 @@ class TestPollOnceExceptionHandling:
 
         assert 1234567 not in poller._active_flights
 
-        event = poller.sse_queue.get_nowait()
+        event = q.get_nowait()
         assert event["type"] == "positions"
         assert event["data"] == []
 

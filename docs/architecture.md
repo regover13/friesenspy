@@ -99,7 +99,7 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 `VatsimPoller` kapselt:
 - **APScheduler `AsyncIOScheduler`** mit bis zu vier aktiven Jobs: `vatsim_poll` (interval, 15s), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start), sowie optional `ts_poll` (interval, `TS_POLL_INTERVAL`s) wenn `TS_NOTIFY_ENABLED=true`. Der `ts_poll`-Job ist **von VAPID entkoppelt** — er läuft für die Live-Anzeige auch ohne VAPID; ohne VAPID werden lediglich keine TS-Push-Benachrichtigungen versandt. `daily_cleanup` ist deaktiviert — `position_history` wird dauerhaft behalten.
 - **`_active_flights: dict[int, dict]`** — In-Memory State: CID → `{"id": flight_id, "dep": departure, "arr": arrival}`. Wird beim Start in `PollerService.start()` aus der DB **rehydriert** (alle offenen Flüge `logoff_time IS NULL AND superseded_by IS NULL`), sodass ein Container-Neustart laufende Flüge adoptiert: Pilot noch online → `still_online` (kein neuer Flug); inzwischen offline → `went_offline` → korrekt geschlossen (kein Zombie). **Flugende:** Beim Offline-Gehen wird als `logoff_time` die letzte gespeicherte Position verwendet (nicht die Wanduhr). **Flugplanwechsel ohne Disconnect:** gleicher Abflughafen → `update_flight_plan` (selbes Leg); **geänderter** Abflughafen → echtes neues Leg (Pilot gelandet, neu gefiled) → altes Segment schließen, neues mit eindeutiger Mikrosekunden-`logon_time` öffnen (kollidiert nie mit dem Unique-Index).
-- **`sse_queue: asyncio.Queue`** — Jeder SSE-Client hat eine eigene Verbindung zum selben Queue-Objekt. `put_nowait` blockiert nicht.
+- **`_sse_subscribers: set[asyncio.Queue]` (Per-Client-Fan-out)** — Jede SSE-Verbindung registriert über `subscribe_sse()` ihre **eigene** beschränkte Queue (`_SSE_QUEUE_MAXSIZE=50`) und deregistriert sie beim Disconnect über `unsubscribe_sse()` (im `finally` des Generators). `broadcast_sse(msg)` verteilt jedes Update an **alle** Queues (Iteration über Snapshot, `put_nowait`, non-blocking); bei voller Queue wird der älteste Eintrag verworfen (Drop-Oldest). So bekommt **jeder** Client jedes Update — früher teilten sich alle Clients **eine** Queue, sodass jede Nachricht nur **einen** Consumer erreichte. Der maxsize-Deckel begrenzt zugleich den serverseitigen Rückstau für einen gedrosselten Hintergrund-Tab.
 - **`last_prefiles: list`** — aktuell eingereichte VATSIM-Prefile-Pläne mit FRS*-Callsign (In-Memory, aus dem letzten Poll-Zyklus)
 - **`ts_clients: list[dict]`** — letzter TS-Poll-Snapshot der FRS-getaggten Clients (intern `{frs, nick, cid}`), In-Memory. Speist `/api/teamspeak` (Live-Tab-Panel) und den `/widget`-Zähler — **nach außen wird bewusst nur `frs` ausgegeben** (Klarnamen/Nick-Zusätze bleiben serverseitig). Bleibt bei `None`-Abruf (TS nicht erreichbar) unverändert.
 - **`_prefile_sigs: dict | None`** — CID → `(deptime, departure, arrival)` für Änderungserkennung. Wird beim Start aus `prefile_sigs`-DB-Tabelle geladen (nicht `None`) und nach jedem Poll gespeichert. Beim allerersten Start ohne DB-Einträge ist die Dict leer — keine Spam-Notifications. Container-Neustarts verpassen dadurch keine Prefile-Änderungen mehr.
@@ -210,18 +210,19 @@ Design: FriesenFlieger-Blau (`#04080f` Hintergrund, `#2d9cdb` Blau, `#D31141` Ve
 ```
 Browser                     FastAPI                  VatsimPoller
    │                           │                          │
-   │─── GET /api/sse ──────────►│                          │
+   │─── GET /api/sse ──────────►│── subscribe_sse() ──────►│  (eigene Queue registriert)
    │                           │                          │
-   │                           │◄─── sse_queue.get() ─────│
+   │                           │◄─── queue.get() ─────────│
    │                           │     (wartet bis Event)   │
    │                           │                          │
    │                           │    (15s später)          │
    │                           │    VATSIM poll ──────────►│
    │                           │                          │─ State-Machine
    │                           │                          │─ SQLite commit
-   │                           │◄─── put_nowait({...}) ───│
+   │                           │◄─ broadcast_sse({...}) ──│  (put_nowait je Client-Queue)
    │                           │                          │
    │◄── data: {...}\n\n ────────│                          │
+   │  (Disconnect → unsubscribe_sse() im finally)         │
 ```
 
 ## Datenfluss TS-Login-Benachrichtigung (Phase 1)

@@ -484,15 +484,23 @@ async def get_events(
 
 
 async def _event_generator(request: Request, poller: VatsimPoller):
-    """Async generator für SSE — sendet Live-Positions-Updates oder keepalives."""
-    while True:
-        if await request.is_disconnected():
-            break
-        try:
-            data = await asyncio.wait_for(poller.sse_queue.get(), timeout=30.0)
-            yield f"data: {json.dumps(data)}\n\n"
-        except asyncio.TimeoutError:
-            yield ": keepalive\n\n"
+    """Async generator für SSE — sendet Live-Positions-Updates oder keepalives.
+
+    Jede Verbindung registriert ihre eigene Queue (Per-Client-Fan-out) und deregistriert sie
+    beim Disconnect im finally — so bekommt JEDER Client jedes Update (statt nur einer).
+    """
+    queue = poller.subscribe_sse()
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                yield f"data: {json.dumps(data)}\n\n"
+            except asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+    finally:
+        poller.unsubscribe_sse(queue)
 
 
 @app.get("/api/sse")
