@@ -388,12 +388,135 @@ Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungs
     "summary": "FriesenFlieger Stammtisch EDVK",
     "dtstart": "2026-05-15T17:00:00Z",
     "dtend": "2026-05-15T20:00:00Z",
-    "location": "EDVK"
+    "location": "EDVK",
+    "route": "EDVK",
+    "is_bummel": 0
   }
 ]
 ```
 
 `location` enthält den ersten 4-buchstabigen ICAO-Code aus dem Kalender-Feld „Ort", sonst aus dem Event-Titel (leer wenn nicht erkannt). Bei Events ohne ICAO wird `global` ins Suchfeld vorgefüllt. Zeiten sind immer UTC.
+
+`route` ist die CSV aller erkannten ICAO-Codes (Reihenfolge erhaltend, dedupliziert; aus Ort, Titel und Beschreibung). `is_bummel` ist `1`, wenn das Stichwort „Bummel" im Titel oder der Beschreibung steht, die Strecke ≥ 2 Flugplätze hat und plausibel ist (kein Paar > 600 nm auseinander) — siehe `/api/bummel`.
+
+---
+
+## GET /api/bummel/races
+
+Liste aller bekannten FriesenFliegerBummel-Rennen (aus `bummel_races`, persistent gespeichert). Rennen werden beim Kalender-Sync automatisch angelegt.
+
+**Response** — Array, neueste zuerst
+
+```json
+[
+  {
+    "id": 1,
+    "name": "FriesenFliegerBummel Ostfriesland",
+    "route": ["EDWF", "EDWG", "EDWR"],
+    "dtstart": "2026-06-27T14:00:00Z",
+    "dtend": "2026-06-27T20:00:00Z",
+    "status": "revealed",
+    "participant_count": 5,
+    "calendar_uid": "abc123@google.com_20260627T140000Z"
+  }
+]
+```
+
+`status` ∈ `scheduled` | `running` | `waiting` | `revealed`.
+- `scheduled` — Rennen liegt in der Zukunft
+- `running` — zwischen `dtstart` und `dtend`
+- `waiting` — `dtend` überschritten, aber noch ein Teilnehmer unterwegs (Nachzügler)
+- `revealed` — Ergebnisse enthüllt (einmal enthüllt, bleibt es enthüllt)
+
+`dtend` ist der effektive Renn-Endtermin: aus dem Kalender-Event übernommen; fehlt er → Mitternacht UTC des Folgetags (00:00:00Z nach dem Starttag).
+
+---
+
+## GET /api/bummel/race/{id}
+
+Öffentliche Sicht eines einzelnen Rennens. **Vor der Enthüllung** werden Zeiten, Durchschnitt und Ranking serverseitig weggelassen (`public_bummel_view`) — sie sind nicht im JSON enthalten. Nach der Enthüllung kommen die vollständigen Ergebnisse.
+
+**Vor der Enthüllung** (`revealed: false`):
+
+```json
+{
+  "id": 1,
+  "name": "FriesenFliegerBummel Ostfriesland",
+  "route": ["EDWF", "EDWG", "EDWR"],
+  "dtstart": "2026-06-27T14:00:00Z",
+  "dtend": "2026-06-27T20:00:00Z",
+  "status": "running",
+  "revealed": false,
+  "participant_count": 3,
+  "in_progress": [
+    {"cid": 400, "callsign": "FRS400", "name": "Dora", "aircraft": "C172",
+     "departure": "EDWG", "arrival": "EDWR", "started": "2026-06-27T15:24:00Z"}
+  ],
+  "participants": [
+    {"cid": 300, "callsign": "FRS300", "name": "Cara", "aircraft": "C172",
+     "visited": ["EDWF","EDWG","EDWR"], "missing": [],
+     "leg_count": 2, "started": "2026-06-27T14:10:00Z", "in_progress": false},
+    {"cid": 400, "callsign": "FRS400", "name": "Dora", "aircraft": "C172",
+     "visited": ["EDWF","EDWG"], "missing": ["EDWR"],
+     "leg_count": 1, "started": "2026-06-27T15:24:00Z", "in_progress": true}
+  ]
+}
+```
+
+Sichtbar vor Enthüllung: Callsign, Name, Flugzeugtyp, Flugplan (Start/Ziel), Abflugzeit, besuchte/fehlende Flugplätze, Anzahl Beine, wer gerade fliegt.
+
+**Nicht sichtbar vor Enthüllung:** Block-/Gesamtzeiten, Durchschnitt, Abstand zum Schnitt, Ranking-Reihenfolge, Lande-/Logoff-Zeit, Online-Dauer, geflogene nm.
+
+**Nach der Enthüllung** (`revealed: true`) kommen zusätzlich:
+
+```json
+{
+  "revealed": true,
+  "average_min": 80.0,
+  "count": 3,
+  "complete": [
+    {"cid": 300, "name": "Cara", "callsign": "FRS300", "total_min": 80,
+     "aircraft": "C172", "leg_count": 2,
+     "visited": ["EDWF","EDWG","EDWR"], "missing": [], "legs": [],
+     "rank": 1, "delta": 0.0}
+  ],
+  "incomplete": [
+    {"cid": 500, "name": "Emil", "callsign": "FRS500", "total_min": 35,
+     "aircraft": "C172", "leg_count": 1,
+     "visited": ["EDWF","EDWG"], "missing": ["EDWR"], "legs": []}
+  ]
+}
+```
+
+`complete` ist aufsteigend nach `delta` (Abstand zur Durchschnittszeit) sortiert; `rank` 1 ist der Sieger. `incomplete`-Piloten haben noch nicht alle Flugplätze besucht und zählen nicht in den Schnitt.
+
+Gibt `404` zurück wenn die `id` nicht existiert.
+
+---
+
+## GET /api/bummel/active
+
+Aktuell laufendes oder wartendes FriesenFliegerBummel-Rennen als redigierte (öffentliche) Sicht — speist das Live-Banner. Gibt `null` zurück wenn gerade kein Rennen mit `status` ∈ `running` | `waiting` läuft. Bereits enthüllte Rennen erscheinen hier **nicht** mehr.
+
+**Response** — `null`, wenn kein aktives Rennen, sonst die redigierte Rennen-Sicht (identisches Format wie `GET /api/bummel/race/{id}` vor Enthüllung):
+
+```json
+{
+  "id": 1,
+  "name": "FriesenFliegerBummel Ostfriesland",
+  "route": ["EDWF", "EDWG", "EDWR"],
+  "dtstart": "2026-06-27T14:00:00Z",
+  "dtend": "2026-06-27T20:00:00Z",
+  "status": "running",
+  "revealed": false,
+  "participant_count": 3,
+  "in_progress": [
+    {"cid": 400, "callsign": "FRS400", "name": "Dora", "aircraft": "C172",
+     "departure": "EDWG", "arrival": "EDWR", "started": "2026-06-27T15:24:00Z"}
+  ],
+  "participants": ["..."]
+}
+```
 
 ---
 

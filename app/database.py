@@ -43,11 +43,13 @@ CREATE TABLE IF NOT EXISTS flights (
 );
 
 CREATE TABLE IF NOT EXISTS calendar_events (
-    uid      TEXT PRIMARY KEY,
-    summary  TEXT,
-    dtstart  TEXT,
-    dtend    TEXT,
-    location TEXT
+    uid       TEXT PRIMARY KEY,
+    summary   TEXT,
+    dtstart   TEXT,
+    dtend     TEXT,
+    location  TEXT,
+    route     TEXT,
+    is_bummel INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS live_positions (
@@ -130,6 +132,19 @@ CREATE TABLE IF NOT EXISTS ts_consent (
     allowlist  TEXT,
     updated_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS bummel_races (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT,
+    route        TEXT,                 -- CSV der Streckenflugplätze
+    dtstart      TEXT,
+    dtend        TEXT,                 -- effektiv (Mitternacht-Default bereits angewandt)
+    radius_km    REAL DEFAULT 10,
+    source       TEXT,                 -- 'calendar' | 'manual'
+    calendar_uid TEXT UNIQUE,          -- NULL für manuelle Rennen
+    revealed_at  TEXT,                 -- gesetzt = Ergebnisse enthüllt (latchend)
+    created_at   TEXT
+);
 """
 
 
@@ -150,6 +165,16 @@ def _parse_iso(ts: str) -> datetime:
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
     return dict(row)
+
+
+def _effective_dtend(dtstart: str, dtend: str | None) -> str:
+    """Effektives Renn-Ende. Fehlt ``dtend`` → Mitternacht UTC am Ende des Starttags
+    (00:00:00Z des Folgetags). Im Bummel-Kontext läuft alles in Zulu/UTC."""
+    if dtend:
+        return dtend
+    day = _parse_iso(dtstart).date()
+    midnight = datetime(day.year, day.month, day.day, tzinfo=timezone.utc) + timedelta(days=1)
+    return midnight.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +203,9 @@ _CALENDAR_MIGRATIONS = [
     # UIDs wurden auf zusammengesetztes Format umgestellt (uid_YYYYMMDDTHHMMSSZ).
     # Alte Einträge ohne dieses Suffix entfernen (idempotent).
     "DELETE FROM calendar_events WHERE uid NOT LIKE '%\\_2%T%Z' ESCAPE '\\'",
+    # route: CSV aller ICAOs der Strecke; is_bummel: FriesenFliegerBummel erkannt.
+    "ALTER TABLE calendar_events ADD COLUMN route TEXT",
+    "ALTER TABLE calendar_events ADD COLUMN is_bummel INTEGER DEFAULT 0",
 ]
 
 _PUSH_MIGRATIONS = [
@@ -1142,6 +1170,262 @@ def canonicalize_flights(
     return result
 
 
+# Umkreis (km), in dem die erste/letzte GPS-Position einem Streckenflugplatz zugeordnet wird.
+# Großzügig genug für Start/Landung (inkl. kurzem Endanflug bei Disconnect), aber klar unter
+# dem typischen Abstand zwischen zwei Bummel-Flugplätzen — `_nearest_airport` nimmt ohnehin
+# den nächstgelegenen, sodass eng beieinanderliegende Inselplätze korrekt getrennt werden.
+_BUMMEL_AIRPORT_RADIUS_KM = 10.0
+
+
+def _nearest_airport(
+    coords_map: dict[str, tuple[float, float] | None],
+    pos: tuple[float, float] | None,
+    radius_km: float,
+) -> str | None:
+    """Nächstgelegener Flugplatz aus ``coords_map`` zu ``pos`` innerhalb ``radius_km`` — sonst None."""
+    if pos is None:
+        return None
+    from app.geo import haversine
+    best, best_km = None, radius_km
+    for icao, c in coords_map.items():
+        if c is None:
+            continue
+        d = haversine(pos[0], pos[1], c[0], c[1])
+        if d <= best_km:
+            best, best_km = icao, d
+    return best
+
+
+def _bummel_anyone_in_progress(
+    conn: sqlite3.Connection,
+    route_icaos: list[str],
+    radius_km: float,
+    *,
+    started_before: str | None = None,
+    callsign_prefix: str = "FRS",
+) -> bool:
+    """True, wenn gerade noch ein Teilnehmer auf der Tour unterwegs ist (Enthüllung verschieben).
+
+    Ein „Nachzügler" = offener Flug (``logoff_time IS NULL``), dessen Start an einem
+    Streckenflugplatz liegt (GPS-erste-Position im Umkreis, Fallback Flugplan-DEP). Mit
+    ``started_before`` werden nur Flüge berücksichtigt, die vor diesem Zeitpunkt begonnen haben
+    (Nachzügler aus dem Rennen, keine verspäteten Neu-Connects nach dtend).
+    """
+    from app.geo import icao_to_coords
+    route_set = {(c or "").strip().upper() for c in route_icaos if c and c.strip()}
+    coords_map = {icao: icao_to_coords(icao) for icao in route_set}
+    rows = conn.execute(
+        "SELECT cid, departure, logon_time FROM flights "
+        "WHERE logoff_time IS NULL AND superseded_by IS NULL AND callsign LIKE ?",
+        (callsign_prefix + "%",),
+    ).fetchall()
+    for r in rows:
+        if started_before and (r["logon_time"] or "") > started_before:
+            continue
+        first = _first_pos(conn, int(r["cid"]), r["logon_time"] or "", "9999-12-31T23:59:59Z")
+        dep = _nearest_airport(coords_map, first, radius_km) or (r["departure"] or "").strip().upper()
+        if dep in route_set:
+            return True
+    return False
+
+
+def update_bummel_reveals(
+    conn: sqlite3.Connection, now: str, *, callsign_prefix: str = "FRS"
+) -> list[int]:
+    """Enthüllungs-Latch: enthüllt Rennen, deren dtend erreicht ist und bei denen niemand mehr
+    unterwegs ist. Gibt die IDs der in diesem Lauf neu enthüllten Rennen zurück (für Push)."""
+    revealed: list[int] = []
+    for race in list_bummel_races(conn):
+        if race["revealed_at"]:
+            continue
+        dtend = race["dtend"] or ""
+        if not dtend or now < dtend:
+            continue
+        route_icaos = [c for c in (race["route"] or "").split(",") if c.strip()]
+        if _bummel_anyone_in_progress(
+            conn, route_icaos, race["radius_km"] or _BUMMEL_AIRPORT_RADIUS_KM,
+            started_before=dtend, callsign_prefix=callsign_prefix,
+        ):
+            continue
+        set_bummel_revealed(conn, race["id"], now)
+        revealed.append(race["id"])
+    conn.commit()
+    return revealed
+
+
+def compute_bummel_standings(
+    conn: sqlite3.Connection,
+    route_icaos: list[str],
+    start: str,
+    end: str,
+    *,
+    cids: list[int] | None = None,
+) -> dict:
+    """Wertung für einen FriesenFliegerBummel.
+
+    Es gewinnt, wer mit der Summe seiner Gate-to-Gate-Blockzeiten am dichtesten an der
+    Durchschnittszeit aller KOMPLETTEN Touren liegt. Eine Tour gilt als komplett, wenn der
+    Pilot alle Flugplätze der Strecke besucht hat — Reihenfolge und Richtung egal (A→B = B→A,
+    auch alternative Routings). Gewertete Zeit je Flug: ``block_min`` (Gate-to-Gate inkl. Taxi),
+    Fallback ``duration_min`` (z. B. reine StatSim-Flüge).
+
+    Robust nach Wunsch: baut auf :func:`canonicalize_flights` auf (Reconnect-Fragmente gemergt,
+    Ghosts gefiltert, dedupliziert). Unvollständige Touren werden NIE still verworfen, sondern
+    separat mit ``visited``/``missing`` gelistet — sichtbares Kontrollnetz, falls ein geflogenes
+    Bein wegen eines abweichenden Flugplans nicht matcht.
+
+    Rückgabe::
+
+        {
+          "route": [ICAO, ...],                 # Reihenfolge wie im Termin, dedupliziert
+          "complete": [ {cid, name, callsign, total_min, visited, missing, legs,
+                         delta, rank}, ... ],   # aufsteigend nach delta
+          "incomplete": [ {... ohne delta/rank} ],
+          "average_min": float,                 # Schnitt über komplette Touren
+          "count": int,                         # Anzahl kompletter Touren
+        }
+    """
+    route_order: list[str] = []
+    for code in route_icaos:
+        c = (code or "").strip().upper()
+        if c and c not in route_order:
+            route_order.append(c)
+    route_set = set(route_order)
+
+    # GPS-Anwesenheit: tatsächlichen Start/Ziel je Flug aus der ersten/letzten Position ableiten.
+    # Macht die Wertung unabhängig vom gefilten Flugplan (Tippfehler) — der Flugplan dient nur
+    # noch als Fallback, wenn kein GPS-Track existiert (z. B. reine StatSim-Flüge).
+    from app.geo import icao_to_coords  # lazy: Import-Kosten/Zyklen vermeiden
+    coords_map = {icao: icao_to_coords(icao) for icao in route_order}
+
+    def _nearest_route_airport(pos: tuple[float, float] | None) -> str | None:
+        return _nearest_airport(coords_map, pos, _BUMMEL_AIRPORT_RADIUS_KM)
+
+    flights = canonicalize_flights(conn, start=start, end=end, cids=cids)
+
+    by_cid: dict[int, dict] = {}
+    for f in flights:
+        cid = f.get("cid")
+        if cid is None:
+            continue
+        fp_dep = (f.get("departure") or "").strip().upper()
+        fp_arr = (f.get("arrival") or "").strip().upper()
+        lo = f.get("logon_time") or ""
+        lf = f.get("logoff_time") or "9999-12-31T23:59:59Z"
+        # GPS gewinnt, wenn die erste/letzte Position eindeutig an einem Streckenflugplatz liegt;
+        # sonst zählt der Flugplan-Eintrag (Fallback).
+        dep = _nearest_route_airport(_first_pos(conn, int(cid), lo, lf)) or fp_dep
+        arr = _nearest_route_airport(_last_pos(conn, int(cid), lo, lf)) or fp_arr
+        # Nur Beine, deren Start UND Ziel zur Strecke gehören (Richtung egal).
+        if dep not in route_set or arr not in route_set or dep == arr:
+            continue
+        block = f.get("block_min")
+        minutes = int(block) if block else int(f.get("duration_min") or 0)
+        entry = by_cid.setdefault(cid, {
+            "cid": cid,
+            "name": "",
+            "callsign": f.get("callsign") or "",
+            "total_min": 0,
+            "_visited": set(),
+            "legs": [],
+        })
+        entry["total_min"] += minutes
+        entry["_visited"].update((dep, arr))
+        entry["legs"].append({
+            "departure": dep,
+            "arrival": arr,
+            "block_min": block,
+            "minutes": minutes,
+            "aircraft": f.get("aircraft") or "",
+            "logon_time": f.get("logon_time"),
+            "logoff_time": f.get("logoff_time"),
+            "source": f.get("source"),
+        })
+
+    for cid, entry in by_cid.items():
+        row = conn.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
+        entry["name"] = (row["name"] if row else "") or ""
+
+    complete: list[dict] = []
+    incomplete: list[dict] = []
+    for entry in by_cid.values():
+        visited = entry.pop("_visited")
+        entry["visited"] = [c for c in route_order if c in visited]
+        entry["missing"] = [c for c in route_order if c not in visited]
+        entry["leg_count"] = len(entry["legs"])
+        entry["aircraft"] = next((leg["aircraft"] for leg in entry["legs"] if leg["aircraft"]), "")
+        (complete if route_set.issubset(visited) else incomplete).append(entry)
+
+    count = len(complete)
+    average = (sum(e["total_min"] for e in complete) / count) if count else 0.0
+    for e in complete:
+        e["delta"] = round(abs(e["total_min"] - average), 1)
+    complete.sort(key=lambda e: (e["delta"], e["total_min"], e["cid"]))
+    for rank, e in enumerate(complete, 1):
+        e["rank"] = rank
+    incomplete.sort(key=lambda e: e["cid"])
+
+    return {
+        "route": route_order,
+        "complete": complete,
+        "incomplete": incomplete,
+        "average_min": round(average, 1),
+        "count": count,
+        "participant_count": len(complete) + len(incomplete),
+    }
+
+
+# Felder, die in der öffentlichen Sicht eines Teilnehmers vor Enthüllung erlaubt sind.
+# Bewusst OHNE total_min/block_min/delta/rank/distance/logoff/duration — alles, woraus sich
+# eine Zeit ableiten ließe, bleibt verborgen (Fairness: niemand kann seine Zeit darauf ausrichten).
+def public_bummel_view(standings: dict, in_progress: list[dict], revealed: bool) -> dict:
+    """Öffentliche Sicht auf ein Rennen.
+
+    ``revealed`` → volle Standings (Ranking, Zeiten, Schnitt, Sieger).
+    sonst → redigierte Teilnahme-Ansicht: nur Callsign/Name/Flugzeug/Fortschritt/Startzeit,
+    KEINE Zeiten/Schnitt/Abstände/Ränge/nm. Die „unterwegs"-Liste (``in_progress``) enthält nur
+    Start/Ziel/Startzeit (keine Block-Zeit) und ist daher auch live unbedenklich.
+    """
+    in_prog_cids = {p["cid"] for p in in_progress}
+    base: dict = {
+        "route": standings["route"],
+        "revealed": revealed,
+        "in_progress": in_progress,
+        "participant_count": len(
+            {e["cid"] for e in standings["complete"]}
+            | {e["cid"] for e in standings["incomplete"]}
+            | in_prog_cids
+        ),
+    }
+    if revealed:
+        base.update({
+            "complete": standings["complete"],
+            "incomplete": standings["incomplete"],
+            "average_min": standings["average_min"],
+            "count": standings["count"],
+        })
+        return base
+
+    participants = []
+    for e in standings["complete"] + standings["incomplete"]:
+        started = min(
+            (l["logon_time"] for l in e["legs"] if l.get("logon_time")), default=None
+        )
+        participants.append({
+            "cid": e["cid"],
+            "name": e["name"],
+            "callsign": e["callsign"],
+            "aircraft": e["aircraft"],
+            "visited": e["visited"],
+            "missing": e["missing"],
+            "leg_count": e["leg_count"],
+            "started": started,
+            "in_progress": e["cid"] in in_prog_cids,
+        })
+    base["participants"] = participants
+    return base
+
+
 def get_live_flight_track(conn: sqlite3.Connection, cid: int) -> list[dict]:
     """Positions-Track des aktuell laufenden Fluges (logoff_time IS NULL)."""
     flight = conn.execute(
@@ -1360,9 +1644,13 @@ def upsert_calendar_events(conn: sqlite3.Connection, events: list[dict]) -> None
     """FriesenEvents aus iCal-Feed in DB schreiben (INSERT OR REPLACE)."""
     for ev in events:
         conn.execute(
-            "INSERT OR REPLACE INTO calendar_events (uid, summary, dtstart, dtend, location) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (ev["uid"], ev["summary"], ev["dtstart"], ev["dtend"], ev["location"]),
+            "INSERT OR REPLACE INTO calendar_events "
+            "(uid, summary, dtstart, dtend, location, route, is_bummel) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                ev["uid"], ev["summary"], ev["dtstart"], ev["dtend"], ev["location"],
+                ev.get("route") or "", 1 if ev.get("is_bummel") else 0,
+            ),
         )
 
 
@@ -1372,11 +1660,68 @@ def get_calendar_events(conn: sqlite3.Connection, days_back: int = 365) -> list[
     cutoff = (now - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
     now_str = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
-        "SELECT uid, summary, dtstart, dtend, location FROM calendar_events "
+        "SELECT uid, summary, dtstart, dtend, location, route, is_bummel FROM calendar_events "
         "WHERE dtstart >= ? AND dtstart <= ? ORDER BY dtstart DESC",
         (cutoff, now_str),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Bummel-Rennen (persistent) — Kalender-synchronisiert oder manuell (Phase B)
+# ---------------------------------------------------------------------------
+
+def upsert_calendar_bummel_race(conn: sqlite3.Connection, ev: dict) -> None:
+    """Ein erkanntes Bummel-Kalenderevent als persistentes Rennen anlegen/aktualisieren.
+
+    Idempotent über ``calendar_uid``. ``dtend`` wird mit dem Mitternacht-Default aufgelöst.
+    ``revealed_at`` bleibt beim Update unangetastet (latchend).
+    """
+    conn.execute(
+        """INSERT INTO bummel_races
+               (name, route, dtstart, dtend, radius_km, source, calendar_uid, revealed_at, created_at)
+           VALUES (?, ?, ?, ?, ?, 'calendar', ?, NULL, ?)
+           ON CONFLICT(calendar_uid) DO UPDATE SET
+               name=excluded.name,
+               route=excluded.route,
+               dtstart=excluded.dtstart,
+               dtend=excluded.dtend""",
+        (
+            ev.get("summary") or "",
+            ev.get("route") or "",
+            ev.get("dtstart") or "",
+            _effective_dtend(ev.get("dtstart") or "", ev.get("dtend")),
+            10,
+            ev.get("uid"),
+            _now_utc(),
+        ),
+    )
+
+
+def list_bummel_races(conn: sqlite3.Connection) -> list[dict]:
+    """Alle Rennen, neueste zuerst (nach dtstart)."""
+    rows = conn.execute(
+        "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
+        "revealed_at, created_at FROM bummel_races ORDER BY dtstart DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_bummel_race(conn: sqlite3.Connection, race_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
+        "revealed_at, created_at FROM bummel_races WHERE id = ?",
+        (race_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def set_bummel_revealed(conn: sqlite3.Connection, race_id: int, ts: str) -> None:
+    """Enthüllung latchen — nur setzen, wenn noch nicht enthüllt (idempotent)."""
+    conn.execute(
+        "UPDATE bummel_races SET revealed_at = ? WHERE id = ? AND revealed_at IS NULL",
+        (ts, race_id),
+    )
 
 
 def get_push_subscriptions_for_pilot(

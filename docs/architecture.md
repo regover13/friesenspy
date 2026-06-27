@@ -48,7 +48,7 @@ StatSim API: `https://api.statsim.net`, Auth: `X-API-Key` Header, max. 31 Tage p
 
 ### `app/database.py`
 
-SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Sieben Tabellen:
+SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Acht Tabellen:
 
 | Tabelle | Inhalt |
 |---------|--------|
@@ -56,7 +56,8 @@ SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Sieben Tabellen:
 | `flights` | Pro Flug: Callsign, Typ (`aircraft_short`), DEP/ARR, Logon/Logoff, `duration_min` (Online-/Verbindungszeit), `block_min` (Bewegungszeit), `distance_nm` (GPS-Summe via Haversine), `superseded_by` (reversibler Dedup-Verweis), sowie vollständige Flugplan-Felder: `route`, `remarks`, `cruise_altitude`, `cruise_tas`, `flight_rules`, `aircraft_icao`, `alternate`, `deptime`, `enroute_time`, `fuel_time` (ab Aufzeichnungsdatum gefüllt, ältere Einträge NULL) |
 | `live_positions` | Aktuelle Position pro CID (UPSERT, maximal 1 Zeile pro CID) |
 | `position_history` | Jede einzelne VATSIM-Positions-Update (für Tracks + Events) |
-| `calendar_events` | FriesenFlieger Google-Kalender (alle 6h synchronisiert, UID als Primary Key) |
+| `calendar_events` | FriesenFlieger Google-Kalender (alle 6h synchronisiert, UID als Primary Key); `route` (CSV aller ICAOs) + `is_bummel` (Flag) für die FriesenFliegerBummel-Erkennung |
+| `bummel_races` | Persistente Bummel-Rennen (vom Poller beim Kalender-Sync angelegt); `revealed_at` steuert die Fairness-Verdeckung — `NULL` = noch verborgen, Zeitstempel = enthüllt (Latch) |
 | `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array — gilt für Online/Flugplan/TS, `notify_prefiles` Flag, `notify_ts` Flag; `ts_self_frs` = tote Spalte, nicht mehr genutzt; `created_at` wird bei Re-Abo desselben Endpoints mit aktualisiert) |
 | `prefile_sigs` | Letzte bekannte Prefile-Signatur pro CID (`deptime`, `departure`, `arrival`) — wird nach jedem Poll persistiert, damit Container-Neustarts keine Änderungen verpassen |
 | `ts_consent` | Subjekt-Einwilligung pro FRS für TS-Login-Sichtbarkeit (`visibility` ∈ `everyone`/`nobody`; `allowlist`-Spalte existiert noch, wird aber nicht mehr ausgewertet) — kein Eintrag = Default `everyone` |
@@ -94,10 +95,24 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 
 **StatSim-Deduplizierung:** an **einer** Stelle (`_dedup_statsim_against_fs`). Ein StatSim-Eintrag wird unterdrückt, wenn (a) sein Logon innerhalb eines FS-Fensters [logon, logoff] liegt, oder (b) gleiche Strecke und FS-Logon bis 10 Min nach StatSim (Flugplanwechsel nach Connect). Distanz/Track/Flugplan bleiben immer FriesenSpy (reicher); StatSim korrigiert nur kaputte FS-Dauern (siehe `consolidate_flights` Schritt D).
 
+**`compute_bummel_standings(conn, route_icaos, start, end, *, cids)` — FriesenFliegerBummel-Wertung.** Baut auf `canonicalize_flights` auf (Fragment-Merge/Ghost-Filter geerbt). **Anwesenheit GPS-basiert:** Start/Ziel je Flug werden aus der ersten/letzten Position (`_first_pos`/`_last_pos`) als nächstgelegener Streckenflugplatz im Umkreis `_BUMMEL_AIRPORT_RADIUS_KM` (10 km, via `icao_to_coords`/`haversine`) bestimmt — der gefilte **Flugplan dient nur als Fallback** ohne GPS-Track (z. B. reine StatSim-Flüge). Dadurch sind Flugplan-Tippfehler irrelevant. Gewertet werden Beine, deren (GPS- oder Fallback-)Start **und** Ziel zur Strecke gehören (Richtung egal); Zeit = Summe `block_min` (Fallback `duration_min`). **Komplett** = alle Streckenflugplätze besucht (Set-Inklusion, Reihenfolge/Richtung egal). Komplette Touren kommen ins Ranking (aufsteigend nach `|gesamt − schnitt|`), unvollständige werden separat mit `visited`/`missing` gelistet — bewusst, damit ein nicht erkanntes Bein sofort sichtbar ist, statt den Piloten still zu verwerfen. Jeder Standing-Eintrag trägt zusätzlich `aircraft` (repräsentatives Muster) und `leg_count`.
+
+**Fairness-Verdeckung und Enthüllungs-Logik (Bummel-Rennen).**
+
+- **`_effective_dtend(race)`** — gibt `dtend` aus `bummel_races` zurück. Fehlt es im Original-Kalendertermin, hat `upsert_calendar_bummel_race` es beim Anlegen auf Mitternacht UTC des Folgetags (00:00:00Z nach dem Starttag) gesetzt, sodass `_effective_dtend` immer einen gültigen Zeitstempel liefert.
+
+- **`public_bummel_view(conn, race)`** — zentrale Redigierfunktion. Prüft `revealed_at IS NULL`; ist die Enthüllung noch nicht erfolgt, werden aus der Antwort entfernt: Block-/Gesamtzeiten, Durchschnitt, Abstand zum Schnitt, Ranking-Reihenfolge, Lande-/Logoff-Zeit, Online-Dauer, geflogene nm. Sichtbar bleiben: Callsign, Name, Flugzeugtyp, Flugplan (Start/Ziel/Route), Abflugzeit, besuchte/fehlende Flugplätze, Anzahl Beine, wer gerade unterwegs ist. Die Redigierung passiert **serverseitig** — die Zeiten stehen vor Enthüllung nicht mal im JSON.
+
+- **`_bummel_anyone_in_progress(conn, race)`** — prüft, ob noch ein Teilnehmer aktiv unterwegs ist: offener Flug (`logoff_time IS NULL`), der vor `dtend` gestartet hat und dessen Start-Airport zur Strecke gehört.
+
+- **`update_bummel_reveals(conn)`** — Enthüllungs-Latch, aufgerufen vom Poller-Job `bummel_reveal_check` (alle 60 s). Durchläuft alle Rennen mit `revealed_at IS NULL`. Enthüllt (setzt `revealed_at = now()`) ein Rennen, sobald **beide** Bedingungen erfüllt sind: (1) `_effective_dtend` ist überschritten, (2) `_bummel_anyone_in_progress` liefert `False`. Ist noch ein Nachzügler in der Luft, wartet der Job weiter (`status = waiting`). **Einmal enthüllt bleibt enthüllt** — der Zeitstempel in `revealed_at` wird nie zurückgesetzt (`set_bummel_revealed`).
+
+**`app/calendar_sync.py` — `parse_route(location, summary, description)`.** Sammelt alle 4-buchstabigen ICAO-Codes aus Ort, Titel und Beschreibung (Reihenfolge erhaltend, dedupliziert) → `route`-CSV. `is_bummel` wird gesetzt, wenn „Bummel" in Titel/Beschreibung steht, die Strecke ≥ 2 Flugplätze hat **und** plausibel ist: `_route_is_plausible` lehnt ab, sobald zwei auflösbare Flugplätze weiter als 600 nm auseinanderliegen (fängt zufällig als ICAO erkannte Wörter ab; reale Bummel-Strecken liegen < 200 nm).
+
 ### `app/poller.py`
 
 `VatsimPoller` kapselt:
-- **APScheduler `AsyncIOScheduler`** mit bis zu vier aktiven Jobs: `vatsim_poll` (interval, 15s), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start), sowie optional `ts_poll` (interval, `TS_POLL_INTERVAL`s) wenn `TS_NOTIFY_ENABLED=true`. Der `ts_poll`-Job ist **von VAPID entkoppelt** — er läuft für die Live-Anzeige auch ohne VAPID; ohne VAPID werden lediglich keine TS-Push-Benachrichtigungen versandt. `daily_cleanup` ist deaktiviert — `position_history` wird dauerhaft behalten.
+- **APScheduler `AsyncIOScheduler`** mit bis zu fünf aktiven Jobs: `vatsim_poll` (interval, 15s), `calendar_sync` (interval, 6h — lädt FriesenFlieger-Google-Kalender), `calendar_sync_initial` (date, einmalig beim Start), `bummel_reveal_check` (interval, 60s — ruft `update_bummel_reveals` auf und enthüllt abgelaufene Rennen sobald keine Nachzügler mehr fliegen), sowie optional `ts_poll` (interval, `TS_POLL_INTERVAL`s) wenn `TS_NOTIFY_ENABLED=true`. Der `ts_poll`-Job ist **von VAPID entkoppelt** — er läuft für die Live-Anzeige auch ohne VAPID; ohne VAPID werden lediglich keine TS-Push-Benachrichtigungen versandt. `daily_cleanup` ist deaktiviert — `position_history` wird dauerhaft behalten.
 - **`_active_flights: dict[int, dict]`** — In-Memory State: CID → `{"id": flight_id, "dep": departure, "arr": arrival}`. Wird beim Start in `PollerService.start()` aus der DB **rehydriert** (alle offenen Flüge `logoff_time IS NULL AND superseded_by IS NULL`), sodass ein Container-Neustart laufende Flüge adoptiert: Pilot noch online → `still_online` (kein neuer Flug); inzwischen offline → `went_offline` → korrekt geschlossen (kein Zombie). **Flugende:** Beim Offline-Gehen wird als `logoff_time` die letzte gespeicherte Position verwendet (nicht die Wanduhr). **Flugplanwechsel ohne Disconnect:** gleicher Abflughafen → `update_flight_plan` (selbes Leg); **geänderter** Abflughafen → echtes neues Leg (Pilot gelandet, neu gefiled) → altes Segment schließen, neues mit eindeutiger Mikrosekunden-`logon_time` öffnen (kollidiert nie mit dem Unique-Index).
 - **`_sse_subscribers: set[asyncio.Queue]` (Per-Client-Fan-out)** — Jede SSE-Verbindung registriert über `subscribe_sse()` ihre **eigene** beschränkte Queue (`_SSE_QUEUE_MAXSIZE=50`) und deregistriert sie beim Disconnect über `unsubscribe_sse()` (im `finally` des Generators). `broadcast_sse(msg)` verteilt jedes Update an **alle** Queues (Iteration über Snapshot, `put_nowait`, non-blocking); bei voller Queue wird der älteste Eintrag verworfen (Drop-Oldest). So bekommt **jeder** Client jedes Update — früher teilten sich alle Clients **eine** Queue, sodass jede Nachricht nur **einen** Consumer erreichte. Der maxsize-Deckel begrenzt zugleich den serverseitigen Rückstau für einen gedrosselten Hintergrund-Tab.
 - **`last_prefiles: list`** — aktuell eingereichte VATSIM-Prefile-Pläne mit FRS*-Callsign (In-Memory, aus dem letzten Poll-Zyklus)
@@ -343,11 +358,13 @@ CREATE TABLE statsim_cache (
 
 -- FriesenFlieger Google-Kalender (alle 6h synchronisiert)
 CREATE TABLE calendar_events (
-    uid      TEXT PRIMARY KEY,
-    summary  TEXT,
-    dtstart  TEXT,
-    dtend    TEXT,
-    location TEXT
+    uid       TEXT PRIMARY KEY,
+    summary   TEXT,
+    dtstart   TEXT,
+    dtend     TEXT,
+    location  TEXT,
+    route     TEXT,        -- CSV aller ICAOs der Strecke (FriesenFliegerBummel)
+    is_bummel INTEGER DEFAULT 0
 );
 
 -- Browser-Push-Subscriptions für Web Push Notifications
@@ -378,5 +395,22 @@ CREATE TABLE ts_consent (
     visibility TEXT DEFAULT 'everyone',  -- everyone | nobody (ausgewertet); allowlist nicht mehr genutzt
     allowlist  TEXT,                     -- tote Spalte (nicht mehr ausgewertet)
     updated_at TEXT
+);
+
+-- Persistente FriesenFliegerBummel-Rennen (vom Poller beim Kalender-Sync via upsert_calendar_bummel_race angelegt)
+CREATE TABLE bummel_races (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    route        TEXT NOT NULL,          -- CSV der Strecken-ICAOs, z. B. "EDWF,EDWG,EDWR"
+    dtstart      TEXT NOT NULL,          -- ISO8601 UTC — Termin-Beginn aus dem Kalender
+    dtend        TEXT NOT NULL,          -- ISO8601 UTC — effektiver Renn-Endtermin:
+                                         --   aus Kalender übernommen; fehlt dtend im Termin
+                                         --   → Mitternacht UTC des Folgetags (_effective_dtend)
+    radius_km    REAL DEFAULT 10.0,      -- Anwesenheitsradius je Streckenflugplatz
+    source       TEXT DEFAULT 'calendar', -- 'calendar' | 'manual'
+    calendar_uid TEXT UNIQUE,            -- UID aus calendar_events (NULL für manuelle Einträge)
+    revealed_at  TEXT DEFAULT NULL,      -- NULL = Ergebnisse noch verborgen;
+                                         -- Zeitstempel = Enthüllungs-Latch (einmal gesetzt, nie zurückgesetzt)
+    created_at   TEXT NOT NULL
 );
 ```

@@ -397,6 +397,13 @@ class VatsimPoller:
             "date",
             id="calendar_sync_initial",
         )
+        # Bummel-Enthüllung regelmäßig prüfen (dtend erreicht + niemand mehr unterwegs)
+        self._scheduler.add_job(
+            self._check_bummel_reveals,
+            "interval",
+            seconds=60,
+            id="bummel_reveal_check",
+        )
         if self.ts_notify_enabled:
             # Job läuft für die Live-Anzeige unabhängig von VAPID; Push-Versand ist in
             # _poll_teamspeak separat durch vapid_private_key gegated.
@@ -870,22 +877,50 @@ class VatsimPoller:
     # ------------------------------------------------------------------
 
     async def _sync_calendar(self) -> None:
-        """FriesenFlieger Google-Kalender laden und in DB speichern."""
+        """FriesenFlieger Google-Kalender laden und in DB speichern.
+
+        Erkannte Bummel-Events (``is_bummel``) werden zusätzlich als persistente Rennen
+        (``bummel_races``) angelegt/aktualisiert — Basis für Verdeckung/Enthüllung.
+        """
         try:
             from app.calendar_sync import fetch_and_parse_ical
-            from app.database import upsert_calendar_events
+            from app.database import upsert_calendar_events, upsert_calendar_bummel_race
             assert self._http_client is not None
             events = await fetch_and_parse_ical(self._http_client)
             if events:
                 conn = get_connection(self.db_path)
                 try:
                     upsert_calendar_events(conn, events)
+                    for ev in events:
+                        if ev.get("is_bummel"):
+                            upsert_calendar_bummel_race(conn, ev)
                     conn.commit()
                 finally:
                     conn.close()
                 logger.info("Calendar sync: %d events gespeichert", len(events))
         except Exception:
             logger.exception("Error in _sync_calendar")
+
+    # ------------------------------------------------------------------
+    # Bummel-Enthüllung (Latch)
+    # ------------------------------------------------------------------
+
+    async def _check_bummel_reveals(self) -> None:
+        """Periodisch prüfen, ob ein Rennen enthüllt werden kann (dtend erreicht, niemand
+        mehr unterwegs). Latchend — einmal enthüllt bleibt enthüllt."""
+        try:
+            from datetime import datetime, timezone
+            from app.database import update_bummel_reveals
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            conn = get_connection(self.db_path)
+            try:
+                revealed = update_bummel_reveals(conn, now, callsign_prefix=self.callsign_prefix)
+            finally:
+                conn.close()
+            if revealed:
+                logger.info("Bummel enthüllt: Rennen %s", revealed)
+        except Exception:
+            logger.exception("Error in _check_bummel_reveals")
 
     # ------------------------------------------------------------------
     # Daily cleanup

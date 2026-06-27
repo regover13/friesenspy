@@ -149,6 +149,27 @@ Du gibst einen **ICAO-Code** (z.B. `EDDK`) oder **`global`** für weltweite Such
 
 ---
 
+## 🏁 FriesenFliegerBummel
+
+Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzweltmeister"-Rennen: Es gewinnt **nicht der Schnellste**, sondern wer mit der **Summe seiner Gate-to-Gate-Blockzeiten am dichtesten an der Durchschnittszeit aller Teilnehmer** liegt.
+
+**Automatische Erkennung — kein Admin-Aufwand:** Ein Termin im FriesenFlieger-Kalender wird als Bummel erkannt, sobald im **Titel oder in der Beschreibung** das Stichwort „Bummel" steht **und** mindestens **zwei Flugplätze** (ICAO-Codes) hinterlegt sind. Eine Plausibilitätsprüfung verhindert Fehlerkennungen: Liegen zwei Streckenflugplätze weiter als ~600 nm auseinander, wird der Termin nicht als Bummel gewertet.
+
+**Wertung (bewusst robust):**
+- **Teilnahme ohne Anmeldung** — jeder Friese, der die Strecke im Zeitfenster fliegt, ist automatisch dabei.
+- **Reihenfolge und Richtung egal:** Die Strecke `A–B–C` darf in beliebiger Richtung und Reihenfolge geflogen werden (auch alternative Routings wie `A→C→B`). Gewertet wird, wer **alle Flugplätze** der Strecke besucht hat.
+- **Gewertete Zeit** = Summe der Blockzeiten (erste bis letzte Bewegung, inkl. Taxi) aller Beine zwischen den Wettbewerbs-Flugplätzen. Tatsächlich geflogene Meilen, Warteschleifen und Umwege spielen keine Rolle.
+- **Niemand fällt still raus:** Piloten, die noch nicht alle Flugplätze besucht haben, werden separat als „unvollständig" mit den fehlenden Flugplätzen aufgelistet.
+- **GPS statt Flugplan:** Ob ein Pilot an einem Flugplatz war, erkennt FriesenSpy am **GPS-Track** (erste/letzte Position am Flugplatz), nicht am eingereichten Flugplan. Ein Tippfehler im Flugplan kann eine Wertung also nicht verhindern; der Flugplan dient nur als Rückfall, wenn kein Track vorliegt.
+
+**Fairness-Verdeckung — keine Zeitvorteile durch Nachschauen:** Solange das Rennen läuft, bleiben Durchschnittszeit, Einzelzeiten und das Ranking verborgen — ein noch nicht geflogener Pilot könnte seine Zeit sonst bewusst auf den Schnitt ausrichten. Sichtbar sind nur: wer teilnimmt, Callsign, Flugzeugtyp, Flugplan (Start/Ziel/Route), Abfluguhrzeit, Fortschritt (besuchte Flugplätze, fehlende Flugplätze, Anzahl Beine) und wer gerade unterwegs ist. Die vollständige Auswertung (Zeiten, Schnitt, Ranking) erscheint frühestens bei `dtend` — dem Renn-Ende aus dem Kalendertermin (fehlt es → Mitternacht UTC am Ende des Starttags) — und erst wenn keine Nachzügler mehr in der Luft sind. Einmal enthüllt, bleibt das Ergebnis dauerhaft sichtbar.
+
+**Was du siehst:**
+- **Live-Tab:** Solange ein Bummel läuft, zeigt ein Banner oben den aktuellen Teilnahme-Zwischenstand (wer dabei ist, wer gerade unterwegs ist) — ohne Zeiten, solange das Rennen noch nicht enthüllt ist.
+- **Events-Tab:** Bummel-Termine tragen ein **🏁 BUMMEL**-Badge. Vor der Enthüllung sieht man Teilnahme und Fortschritt. Nach der Enthüllung öffnet ein Klick das vollständige Ranking (Platz, Pilot, Flugzeug, Beine, Block-Gesamtzeit, Abstand zum Schnitt) samt „unvollständig"-Liste — und **darunter die komplette normale Event-Ansicht** (Karte + alle Piloten im Umkreis, auch Nicht-Teilnehmer; gewertete Piloten tragen ihr Bummel-Standing als Badge).
+
+---
+
 ## 🔔 Benachrichtigungen (Push Notifications)
 
 FriesenSpy kann dich benachrichtigen, wenn ein Friese auf VATSIM online geht — auch wenn der Browser im Hintergrund läuft oder der PC gesperrt ist. Optional auch schon beim **Einreichen oder Ändern eines Flugplans** (Prefile), bevor der Pilot online geht — auch bei Änderungen an Abflugzeit, Abflug- oder Zielflughafen. Die Notification enthält Datum und Uhrzeit des geplanten Fluges (aus dem DOF-Feld). Ist der Pilot bereits online, werden Prefile-Änderungen ignoriert.
@@ -430,7 +451,10 @@ FriesenSpy/
 | `/api/flights/{id}/track` | GET | GPS-Track eines FriesenSpy-Fluges |
 | `/api/flights/statsim/{id}/track` | GET | GPS-Track eines StatSim-Fluges |
 | `/api/events?icao=EDDK&radius=150&start=...&end=...` | GET | Event-Teilnehmer mit Tracks (Overlap-Logik) |
-| `/api/calendar/events` | GET | FriesenEvents letzte 365 Tage bis heute, inkl. RRULE-Expansion (Google-Kalender-Cache) |
+| `/api/calendar/events` | GET | FriesenEvents letzte 365 Tage bis heute, inkl. RRULE-Expansion + `route`/`is_bummel` (Google-Kalender-Cache) |
+| `/api/bummel/races` | GET | Liste aller bekannten Bummel-Rennen (`id, name, route, dtstart, dtend, status, participant_count, calendar_uid`) |
+| `/api/bummel/race/{id}` | GET | Öffentliche Sicht eines Rennens — vor Enthüllung redigiert (keine Zeiten/Schnitt/Ranking), danach vollständiges Ergebnis |
+| `/api/bummel/active` | GET | Laufendes/wartendes Rennen als redigierte Sicht fürs Live-Banner — sonst `null`; bereits enthüllte Rennen erscheinen hier nicht mehr |
 | `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles + TS-Zähler `🎧 N im TS`) |
 | `/widget/preview` | GET | Vorschau + Einbettungscode für das Widget |
 | `/api/sse` | GET | Server-Sent Events Stream |

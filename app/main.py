@@ -17,6 +17,11 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import (
     canonicalize_flights,
+    compute_bummel_standings,
+    get_bummel_race,
+    list_bummel_races,
+    public_bummel_view,
+    update_bummel_reveals,
     delete_push_subscription,
     get_all_position_history,
     get_calendar_events,
@@ -728,6 +733,126 @@ async def get_calendar_events_endpoint():
     conn = get_connection(get_settings().DB_PATH)
     try:
         return get_calendar_events(conn, days_back=365)
+    finally:
+        conn.close()
+
+
+def _open_bummel_legs(conn, route_set: set[str], start: str, end: str) -> list[dict]:
+    """Aktuell laufende Flüge (logoff_time IS NULL) auf einem Streckenbein.
+
+    Liefert die „gerade unterwegs"-Info fürs Live-Banner: Flüge ohne block_min/Wertung,
+    deren Start UND Ziel zur Strecke gehören. Provisorisch, bis der Flug abgeschlossen ist.
+    """
+    settings = get_settings()
+    rows = conn.execute(
+        "SELECT f.cid, f.callsign, f.departure, f.arrival, f.logon_time, f.aircraft_short, "
+        "p.name FROM flights f LEFT JOIN pilots p ON f.cid = p.cid "
+        "WHERE f.logoff_time IS NULL AND f.superseded_by IS NULL "
+        "AND f.callsign LIKE ? AND f.logon_time <= ?",
+        (settings.CALLSIGN_PREFIX + "%", end or "9999-12-31"),
+    ).fetchall()
+    out: list[dict] = []
+    for r in rows:
+        dep = (r["departure"] or "").strip().upper()
+        arr = (r["arrival"] or "").strip().upper()
+        if dep in route_set and arr in route_set and dep != arr:
+            out.append({
+                "cid": r["cid"],
+                "name": r["name"] or "",
+                "callsign": r["callsign"] or "",
+                "departure": dep,
+                "arrival": arr,
+                "logon_time": r["logon_time"],
+                "aircraft": r["aircraft_short"] or "",
+            })
+    return out
+
+
+def _race_status(race: dict, now: str) -> str:
+    """scheduled | running | waiting | revealed."""
+    if race.get("revealed_at"):
+        return "revealed"
+    if now < (race.get("dtstart") or ""):
+        return "scheduled"
+    if now < (race.get("dtend") or ""):
+        return "running"
+    return "waiting"  # dtend erreicht, aber noch nicht enthüllt (Nachzügler)
+
+
+def _build_race_view(conn, race: dict, now: str) -> dict:
+    """Öffentliche Sicht auf ein Rennen — vor Enthüllung redigiert (keine Zeiten/Schnitt)."""
+    route_icaos = [c for c in (race.get("route") or "").split(",") if c.strip()]
+    route_set = {c.strip().upper() for c in route_icaos}
+    standings = compute_bummel_standings(conn, route_icaos, race["dtstart"], race["dtend"])
+    in_progress = _open_bummel_legs(conn, route_set, race["dtstart"], race["dtend"])
+    view = public_bummel_view(standings, in_progress, revealed=bool(race.get("revealed_at")))
+    view["id"] = race["id"]
+    view["name"] = race.get("name") or ""
+    view["dtstart"] = race.get("dtstart")
+    view["dtend"] = race.get("dtend")
+    view["status"] = _race_status(race, now)
+    return view
+
+
+@app.get("/api/bummel/races")
+async def get_bummel_races():
+    """Liste aller Bummel-Rennen (Status + Teilnehmerzahl, keine Zeiten vor Enthüllung)."""
+    now = datetime.now(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        update_bummel_reveals(conn, now, callsign_prefix=get_settings().CALLSIGN_PREFIX)
+        out = []
+        for race in list_bummel_races(conn):
+            view = _build_race_view(conn, race, now)
+            out.append({
+                "id": view["id"], "name": view["name"], "route": view["route"],
+                "dtstart": view["dtstart"], "dtend": view["dtend"],
+                "status": view["status"], "participant_count": view["participant_count"],
+                "calendar_uid": race.get("calendar_uid"),
+            })
+        return out
+    finally:
+        conn.close()
+
+
+@app.get("/api/bummel/race/{race_id}")
+async def get_bummel_race_endpoint(race_id: int):
+    """Öffentliche Sicht eines Rennens — redigiert (keine Zeiten) bis zur Enthüllung."""
+    now = datetime.now(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        update_bummel_reveals(conn, now, callsign_prefix=get_settings().CALLSIGN_PREFIX)
+        race = get_bummel_race(conn, race_id)
+        if not race:
+            raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
+        return _build_race_view(conn, race, now)
+    finally:
+        conn.close()
+
+
+@app.get("/api/bummel/active")
+async def get_bummel_active():
+    """Aktuell laufendes/wartendes Rennen für das Live-Banner — sonst null.
+
+    Liefert die öffentliche (redigierte) Sicht; Zeiten/Schnitt erst nach Enthüllung. Ein bereits
+    enthülltes Rennen erscheint hier nicht mehr (Ergebnisse dann im Events-Tab).
+    """
+    now = datetime.now(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        update_bummel_reveals(conn, now, callsign_prefix=get_settings().CALLSIGN_PREFIX)
+        active = next(
+            (
+                r for r in list_bummel_races(conn)
+                if not r.get("revealed_at")
+                and (r.get("dtstart") or "") <= now
+                and r.get("route")
+            ),
+            None,
+        )
+        if not active:
+            return None
+        return _build_race_view(conn, active, now)
     finally:
         conn.close()
 

@@ -305,7 +305,67 @@
        ===================================================================== */
     .live-table-wrap {
       overflow-x: auto;
+      -webkit-overflow-scrolling: touch;   /* sanftes Trägheits-Scrollen auf iOS */
     }
+    /* Mobile-Scroll-Fix: Tabellen wuchsen nie über die Wrapper-Breite hinaus (width:100%
+       ohne min-width) → der overflow-x:auto-Wrapper hatte nichts zu scrollen, Zellen wurden
+       gequetscht. width:max-content lässt die Tabelle so breit wie ihr Inhalt werden, sodass
+       auf schmalen Screens horizontal gescrollt werden kann; min-width:100% füllt sie aus,
+       wenn der Inhalt schmaler als der Wrapper ist. */
+    .live-table-wrap table {
+      width: max-content;
+      min-width: 100%;
+    }
+    .live-table-wrap th,
+    .live-table-wrap td {
+      white-space: nowrap;
+    }
+
+    /* ---- FriesenFliegerBummel ---- */
+    .bummel-badge {
+      display: inline-block;
+      font-family: var(--text-display);
+      font-size: 0.6rem;
+      letter-spacing: 0.06em;
+      padding: 1px 6px;
+      margin-left: 6px;
+      border: 1px solid var(--green-dim);
+      border-radius: 3px;
+      color: var(--green);
+      white-space: nowrap;
+    }
+    #bummel-banner {
+      border: 1px solid var(--green-dim);
+      background: linear-gradient(180deg, rgba(45,156,219,0.10), rgba(45,156,219,0.02));
+      padding: 12px 14px;
+      margin-bottom: 16px;
+    }
+    #bummel-banner .bb-title {
+      font-family: var(--text-display);
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+      color: var(--green);
+      margin-bottom: 6px;
+    }
+    #bummel-banner .bb-sub {
+      font-family: var(--text-mono);
+      font-size: 0.78rem;
+      color: var(--text-label);
+      margin-bottom: 4px;
+    }
+    .bummel-rank-1 { color: #ffd24a; font-weight: 700; }
+    .bummel-avg-row {
+      font-family: var(--text-mono);
+      font-size: 0.8rem;
+      color: var(--text-label);
+      margin: 8px 0;
+    }
+    .bummel-incomplete {
+      margin-top: 12px;
+      font-size: 0.8rem;
+      color: var(--text-label);
+    }
+    .bummel-incomplete .bi-missing { color: #e0884a; }
 
     table {
       width: 100%;
@@ -1401,6 +1461,7 @@
        TAB: LIVE
        ===================================================================== -->
   <div id="tab-live" class="tab-panel active">
+    <div id="bummel-banner" hidden></div>
     <div class="panel">
       <div class="panel-title">Live-Positionen · FriesenFlieger auf VATSIM</div>
       <div id="live-content">
@@ -1511,6 +1572,13 @@
         <div class="form-group" style="justify-content:flex-end;">
           <button class="btn btn-primary" id="events-search-btn">Suchen</button>
         </div>
+      </div>
+    </div>
+
+    <div id="bummel-results" class="hidden">
+      <div class="panel">
+        <div class="panel-title" id="bummel-title">🏁 FriesenFliegerBummel</div>
+        <div id="bummel-content"></div>
       </div>
     </div>
 
@@ -2517,16 +2585,19 @@ function renderFriesenEvents(data) {
   }
   let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';
   data.forEach((ev, i) => {
+    const badge = ev.is_bummel ? '<span class="bummel-badge">🏁 BUMMEL</span>' : '';
+    const icaoCell = ev.is_bummel && ev.route ? ev.route.replace(/,/g, ' → ') : (ev.location || '—');
     html += `<tr style="cursor:pointer;" data-event-idx="${i}">
-      <td>${escHtml(ev.summary || '—')}</td>
+      <td>${escHtml(ev.summary || '—')}${badge}</td>
       <td class="mono text-label">${_fmtEventDate(ev.dtstart)}</td>
-      <td class="mono text-green">${escHtml(ev.location || '—')}</td>
+      <td class="mono text-green">${escHtml(icaoCell)}</td>
     </tr>`;
   });
   html += '</tbody></table></div>';
   container.innerHTML = html;
   container.querySelectorAll('tr[data-event-idx]').forEach(tr => {
-    tr.addEventListener('click', () => _prefillEventForm(data[+tr.dataset.eventIdx]));
+    const ev = data[+tr.dataset.eventIdx];
+    tr.addEventListener('click', () => ev.is_bummel ? openBummel(ev) : _prefillEventForm(ev));
   });
 }
 
@@ -2539,7 +2610,189 @@ function _prefillEventForm(ev) {
   }
   document.getElementById('ev-icao').value = ev.location || 'global';
   document.getElementById('events-results').classList.add('hidden');
+  document.getElementById('bummel-results').classList.add('hidden');
+  _activeBummel = null;
   searchEvents();
+}
+
+// ==========================================================================
+//  FRIESENFLIEGERBUMMEL — Ranking (Events-Tab) + Live-Banner (Live-Tab)
+// ==========================================================================
+function _fmtMin(m) {
+  if (m == null) return '—';
+  const h = Math.floor(m / 60), mm = m % 60;
+  return h > 0 ? `${h}h ${String(mm).padStart(2, '0')}m` : `${mm}m`;
+}
+
+// Aktiver Bummel-Kontext für die Annotation der normalen Event-Karten (null = normale Suche).
+let _activeBummel = null;
+
+async function openBummel(ev) {
+  const wrap = document.getElementById('bummel-results');
+  const content = document.getElementById('bummel-content');
+  const title = document.getElementById('bummel-title');
+  wrap.classList.remove('hidden');
+  title.textContent = `🏁 ${ev.summary || 'FriesenFliegerBummel'}`;
+  content.innerHTML = '<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade…</div>';
+  _activeBummel = null;
+  document.getElementById('events-results').classList.add('hidden');
+  try {
+    // Kalendertermin → persistentes Rennen mappen (über calendar_uid)
+    const races = await (await fetch('/api/bummel/races')).json();
+    const race = (races || []).find(r => r.calendar_uid === ev.uid);
+    if (!race) {
+      content.innerHTML = '<div class="empty-state"><div class="empty-state-text text-label">Kein Rennen zu diesem Termin gefunden</div></div>';
+      return;
+    }
+    const view = await (await fetch('/api/bummel/race/' + race.id)).json();
+
+    if (!view.revealed) {
+      // VERDECKT: nur Teilnahme/Fortschritt, KEIN Ranking, KEINE normale Event-Ansicht
+      // (deren Block-/Dauer-Spalten würden Zeiten leaken). Ergebnisse erst nach Enthüllung.
+      content.innerHTML = renderBummelParticipants(view);
+      return;
+    }
+
+    // ENTHÜLLT: volles Ranking + darunter die komplette normale Event-Ansicht mit Badges.
+    content.innerHTML = renderBummelStandings(view);
+    const byCid = new Map();
+    (view.complete || []).forEach(e => byCid.set(e.cid, { complete: true, rank: e.rank, total_min: e.total_min, delta: e.delta }));
+    (view.incomplete || []).forEach(e => byCid.set(e.cid, { complete: false, missing: e.missing || [] }));
+    _activeBummel = { byCid };
+    if (ev.dtstart) document.getElementById('ev-start').value = ev.dtstart.slice(0, 16);
+    if (ev.dtend)   document.getElementById('ev-end').value   = ev.dtend.slice(0, 16);
+    document.getElementById('ev-icao').value = ev.route || ev.location || 'global';
+    searchEvents();
+  } catch (e) {
+    content.innerHTML = '<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden</div></div>';
+  }
+}
+
+// Verdeckte Teilnahme-Ansicht (vor Enthüllung) — bewusst OHNE Zeiten/Schnitt/Ranking.
+function renderBummelParticipants(view) {
+  const route = (view.route || []).join(' → ');
+  const statusText = view.status === 'waiting'
+    ? 'Rennen beendet — warten auf Nachzügler. Ergebnisse erscheinen, sobald alle gelandet (oder offline) sind.'
+    : 'Rennen läuft — Ergebnisse und Ranking erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann.';
+  let html = `<div class="bummel-sub mono text-label" style="margin-bottom:6px;">Strecke: ${escHtml(route)}</div>`;
+  html += `<div class="bummel-avg-row">🔒 ${statusText}</div>`;
+  html += `<div class="bummel-sub mono text-label" style="margin:6px 0;">${view.participant_count} Teilnehmer bisher</div>`;
+  const parts = view.participants || [];
+  if (parts.length) {
+    html += '<div class="live-table-wrap"><table><thead><tr><th>Pilot</th><th>Callsign</th><th>Flugzeug</th><th>Start (UTC)</th><th>Fortschritt</th><th>Status</th></tr></thead><tbody>';
+    parts.forEach(p => {
+      const total = (p.visited || []).length + (p.missing || []).length;
+      const miss = (p.missing || []).length ? ` <span class="bi-missing">(fehlt ${escHtml((p.missing || []).join(', '))})</span>` : '';
+      const st = p.in_progress ? '🛫 unterwegs' : ((p.missing || []).length ? 'unvollständig' : '✓ alle Plätze');
+      html += `<tr>
+        <td>${escHtml(p.name || ('CID ' + p.cid))}</td>
+        <td class="mono text-green">${escHtml(p.callsign || '')}</td>
+        <td class="mono">${escHtml(p.aircraft || '—')}</td>
+        <td class="mono text-label">${p.started ? escHtml(p.started.slice(11, 16)) : '—'}</td>
+        <td class="mono">${(p.visited || []).length}/${total} Plätze${miss}</td>
+        <td>${st}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  } else {
+    html += '<div class="empty-state"><div class="empty-state-text text-label">Noch keine Teilnehmer erfasst</div></div>';
+  }
+  // Piloten, die gerade ein Bein fliegen, aber noch kein abgeschlossenes haben (nur unterwegs).
+  const known = new Set(parts.map(p => p.cid));
+  const flying = (view.in_progress || []).filter(p => !known.has(p.cid));
+  if (flying.length) {
+    html += '<div class="bummel-incomplete"><strong>🛫 Gerade unterwegs:</strong><br>';
+    html += flying.map(p =>
+      `${escHtml(p.name || p.callsign || ('CID ' + p.cid))} — ${escHtml(p.departure)} → ${escHtml(p.arrival)}`
+    ).join('<br>');
+    html += '</div>';
+  }
+  return html;
+}
+
+// Kleines Standing-Badge für eine Pilot-Karte in der normalen Event-Ansicht.
+function _bummelStandingBadge(cid) {
+  if (!_activeBummel) return '';
+  const s = _activeBummel.byCid.get(cid);
+  if (!s) return '';
+  if (s.complete) {
+    const medal = s.rank === 1 ? '🏆 ' : '';
+    const abst = s.delta === 0 ? '★ exakt' : '±' + _fmtMin(Math.round(s.delta));
+    return `<span class="bummel-badge" title="Bummel-Wertung">🏁 ${medal}Platz ${s.rank} · ${_fmtMin(s.total_min)} · ${abst}</span>`;
+  }
+  const missing = (s.missing || []).join(', ');
+  return `<span class="bummel-badge" title="Bummel-Wertung">🏁 unvollständig${missing ? ' — fehlt ' + escHtml(missing) : ''}</span>`;
+}
+
+// Baut den Ranking-HTML-Block (ohne äußeren Panel-Rahmen). inProgress optional (Live-Banner).
+function renderBummelStandings(data, inProgress) {
+  const route = (data.route || []).join(' → ');
+  let html = `<div class="bummel-sub mono text-label" style="margin-bottom:8px;">Strecke: ${escHtml(route)}</div>`;
+
+  if (data.count > 0) {
+    html += `<div class="bummel-avg-row">Durchschnittszeit: <strong>${_fmtMin(Math.round(data.average_min))}</strong> · wer am nächsten dran ist, gewinnt</div>`;
+    html += '<div class="live-table-wrap"><table><thead><tr><th>#</th><th>Pilot</th><th>Flugzeug</th><th>Beine</th><th>Block-Gesamtzeit</th><th>Abstand z. Schnitt</th></tr></thead><tbody>';
+    data.complete.forEach(e => {
+      const cls = e.rank === 1 ? 'bummel-rank-1' : '';
+      const medal = e.rank === 1 ? '🏆 ' : '';
+      html += `<tr class="${cls}">
+        <td class="mono">${e.rank}</td>
+        <td>${medal}${escHtml(e.name || e.callsign || ('CID ' + e.cid))}</td>
+        <td class="mono">${escHtml(e.aircraft || '—')}</td>
+        <td class="mono">${e.leg_count != null ? e.leg_count : '—'}</td>
+        <td class="mono">${_fmtMin(e.total_min)}</td>
+        <td class="mono">${e.delta === 0 ? '★ exakt' : '±' + _fmtMin(Math.round(e.delta))}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  } else {
+    html += '<div class="empty-state"><div class="empty-state-text text-label">Noch keine komplette Tour gewertet</div></div>';
+  }
+
+  if (inProgress && inProgress.length) {
+    html += '<div class="bummel-incomplete"><strong>🛫 Gerade unterwegs:</strong><br>';
+    html += inProgress.map(p =>
+      `${escHtml(p.name || p.callsign || ('CID ' + p.cid))} — ${escHtml(p.departure)} → ${escHtml(p.arrival)}`
+    ).join('<br>');
+    html += '</div>';
+  }
+
+  if (data.incomplete && data.incomplete.length) {
+    html += '<div class="bummel-incomplete"><strong>Unvollständig (noch nicht alle Flugplätze besucht):</strong><br>';
+    html += data.incomplete.map(e => {
+      const visited = (e.visited || []).join(', ') || '—';
+      const missing = (e.missing || []).join(', ');
+      return `${escHtml(e.name || e.callsign || ('CID ' + e.cid))} — besucht: ${escHtml(visited)}` +
+             (missing ? ` <span class="bi-missing">(fehlt: ${escHtml(missing)})</span>` : '');
+    }).join('<br>');
+    html += '</div>';
+  }
+  return html;
+}
+
+// --- Live-Banner: läuft oder wartet gerade ein Bummel? (verdeckt, keine Zeiten) ---
+async function fetchBummelActive() {
+  const banner = document.getElementById('bummel-banner');
+  if (!banner) return;
+  try {
+    const res = await fetch('/api/bummel/active');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const v = await res.json();
+    if (!v) { banner.hidden = true; banner.innerHTML = ''; return; }
+    const head = v.status === 'waiting'
+      ? `🏁 ${escHtml(v.name || 'FriesenFliegerBummel')} — wartet auf Nachzügler`
+      : `🏁 ${escHtml(v.name || 'FriesenFliegerBummel')} läuft gerade`;
+    let html = `<div class="bb-title">${head}</div>`;
+    html += `<div class="bb-sub">Strecke: ${escHtml((v.route || []).join(' → '))}</div>`;
+    html += `<div class="bb-sub">${v.participant_count} Teilnehmer · 🔒 Ergebnisse nach Renn-Ende</div>`;
+    if (v.in_progress && v.in_progress.length) {
+      html += `<div class="bb-sub">🛫 Unterwegs: ${v.in_progress.map(p => escHtml(p.name || p.callsign || ('CID ' + p.cid))).join(', ')}</div>`;
+    }
+    banner.innerHTML = html;
+    banner.hidden = false;
+  } catch (e) {
+    banner.hidden = true;
+  }
 }
 
 // ==========================================================================
@@ -3626,14 +3879,15 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 
     const flightWord = flights.length === 1 ? 'Flug' : 'Flüge';
     cardsHtml += `
-      <div class="pilot-card" style="flex-direction:column; align-items:flex-start; gap:6px;">
-        <div style="display:flex; align-items:center; gap:10px;">
+      <div class="pilot-card" data-cid="${p.cid}" style="flex-direction:column; align-items:flex-start; gap:6px;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
           <div class="pilot-card-dot" style="background:${color};"></div>
           <div>
             <span class="pilot-card-callsign">${escHtml(callsign)}</span>
             ${p.name ? `<span class="pilot-card-cid" style="margin-left:8px;">${escHtml(p.name)}</span>` : ''}
             <span class="pilot-card-cid" style="margin-left:8px;">CID ${p.cid}</span>
             <span class="pilot-card-detail" style="margin-left:8px;">${flights.length} ${flightWord}</span>
+            ${_bummelStandingBadge(p.cid)}
           </div>
         </div>
         ${flightRows ? `<table style="width:100%;margin-left:24px;font-size:0.8rem;">
@@ -3890,7 +4144,12 @@ document.getElementById('stats-refresh-btn').addEventListener('click', fetchStat
 document.getElementById('stats-days').addEventListener('change', fetchStats);
 
 // Events search
-document.getElementById('events-search-btn').addEventListener('click', searchEvents);
+document.getElementById('events-search-btn').addEventListener('click', () => {
+  // Manuelle Suche → kein Bummel-Kontext (Ranking + Standing-Badges ausblenden)
+  _activeBummel = null;
+  document.getElementById('bummel-results').classList.add('hidden');
+  searchEvents();
+});
 
 // Allow Enter key in ICAO input
 document.getElementById('ev-icao').addEventListener('keydown', e => {
@@ -4015,6 +4274,8 @@ fetchAndRenderTeamspeak();
 // teamspeak-Paar auslöste → 429-Sturm. Diese Daten ändern sich ohnehin nur langsam.
 setInterval(fetchAndRenderPrefiles, 60000);
 setInterval(fetchAndRenderTeamspeak, 30000);
+fetchBummelActive();
+setInterval(fetchBummelActive, 60000);  // Bummel-Banner langsam pollen (wie Prefiles)
 connectSSE();
 initFromUrl();
 
@@ -4050,6 +4311,7 @@ document.addEventListener('visibilitychange', async () => {
   if (!sseSource || sseSource.readyState !== EventSource.OPEN) {
     connectSSE();
   }
+  fetchBummelActive();
 });
 
 </script>

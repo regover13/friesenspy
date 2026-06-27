@@ -9,6 +9,50 @@ ICAL_URL = (
     "34pf9n1hci61gfbovjmhsa5qjc%40group.calendar.google.com/public/basic.ics"
 )
 
+_ICAO_RE = re.compile(r"\b[A-Z]{4}\b")
+
+# Plausibilitäts-Obergrenze: eine Bummel-Strecke liegt real bei <200 nm, praktisch nie über
+# 600 nm. Ein größerer Abstand zwischen zwei Streckenflugplätzen deutet auf einen falsch als
+# ICAO erkannten Begriff (ein 4-Buchstaben-Wort, das anderswo ein echter Flughafen ist) →
+# dann NICHT als Bummel aktivieren. 600 nm × 1.852 = 1111.2 km.
+_MAX_BUMMEL_SPAN_KM = 600 * 1.852
+
+
+def _route_is_plausible(route: list[str]) -> bool:
+    """True, wenn alle auflösbaren Streckenflugplätze innerhalb von ~600 nm zueinander liegen.
+
+    Nicht auflösbare ICAOs werden ignoriert (permissiv). Erst ein Paar jenseits der Grenze
+    macht die Strecke unplausibel.
+    """
+    from app.geo import haversine, icao_to_coords  # lazy: vermeidet Import-Kosten/Zyklen
+
+    coords = [c for c in (icao_to_coords(icao) for icao in route) if c is not None]
+    for i in range(len(coords)):
+        for j in range(i + 1, len(coords)):
+            if haversine(coords[i][0], coords[i][1], coords[j][0], coords[j][1]) > _MAX_BUMMEL_SPAN_KM:
+                return False
+    return True
+
+
+def parse_route(location: str, summary: str, description: str = "") -> tuple[str, bool]:
+    """Strecke + Bummel-Flag aus einem Termin ableiten.
+
+    Sammelt alle ICAO-Codes (vier Großbuchstaben) aus ``location``, dann ``summary``, dann
+    ``description`` — Reihenfolge erhaltend und dedupliziert → CSV (z. B. ``"EDWF,EDWG,EDWR"``).
+    ``is_bummel`` ist True, wenn ``"bummel"`` (case-insensitiv) im Titel ODER in der Beschreibung
+    steht UND die Strecke mindestens zwei Flugplätze hat — dann schalten sich die Bummel-
+    Funktionen frei. Die Beschreibung wird mit ausgewertet, damit ein Bummel auch erkannt wird,
+    wenn er nur dort steht.
+    """
+    route: list[str] = []
+    for text in (location or "", summary or "", description or ""):
+        for code in _ICAO_RE.findall(text):
+            if code not in route:
+                route.append(code)
+    keyword = "bummel" in (summary or "").lower() or "bummel" in (description or "").lower()
+    is_bummel = keyword and len(route) >= 2 and _route_is_plausible(route)
+    return ",".join(route), is_bummel
+
 
 async def fetch_and_parse_ical(client) -> list[dict]:
     """Holt den iCal-Feed und gibt Events als Dicts zurück.
@@ -63,11 +107,10 @@ async def fetch_and_parse_ical(client) -> list[dict]:
                 end_str = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         location_raw = str(comp.get("LOCATION") or "")
-        icao_match = (
-            re.search(r'\b[A-Z]{4}\b', location_raw)
-            or re.search(r'\b[A-Z]{4}\b', summary)
-        )
-        icao = icao_match.group(0) if icao_match else ""
+        description_raw = str(comp.get("DESCRIPTION") or "")
+        route, is_bummel = parse_route(location_raw, summary, description_raw)
+        # location bleibt der erste ICAO (Rückwärtskompatibilität: Event-Suche-Prefill).
+        icao = route.split(",")[0] if route else ""
 
         # Zusammengesetzter UID damit jede Wiederholung separat gespeichert wird
         dtstart_compact = start_dt.strftime("%Y%m%dT%H%M%SZ")
@@ -79,6 +122,8 @@ async def fetch_and_parse_ical(client) -> list[dict]:
             "dtstart": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "dtend": end_str,
             "location": icao,
+            "route": route,
+            "is_bummel": 1 if is_bummel else 0,
         })
 
     return events

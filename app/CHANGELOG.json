@@ -1,5 +1,19 @@
 [
   {
+    "version": "6.0.0",
+    "date": "2026-06-27",
+    "title": "FriesenFliegerBummel",
+    "highlight": true,
+    "items": [
+      "🏁 Neuer Event-Typ FriesenFliegerBummel: Es gewinnt nicht der Schnellste, sondern wer mit seiner Gesamt-Blockzeit am dichtesten an der Durchschnittszeit aller Teilnehmer liegt.",
+      "🗺️ Wird automatisch aus dem Kalender erkannt (Stichwort „Bummel“ + Strecke) — kein Admin-Aufwand. Reihenfolge und Richtung der Strecke sind egal, jeder Friese ist automatisch dabei.",
+      "🛰️ Anwesenheit wird per GPS-Track erkannt (nicht per Flugplan) — ein Tippfehler im Flugplan kann eine Wertung nicht mehr verhindern.",
+      "📊 Live-Zwischenstand im Live-Tab, solange ein Bummel läuft; im Events-Tab das Ranking PLUS die gewohnte Event-Ansicht mit Karte und allen Piloten im Umkreis.",
+      "📱 Tabellen lassen sich auf dem Smartphone jetzt horizontal scrollen.",
+      "🔒 Während ein Bummel läuft, bleiben Zeiten und Durchschnitt verborgen — sie erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann."
+    ]
+  },
+  {
     "version": "5.2.0",
     "date": "2026-06-27",
     "title": "Zuverlässigkeit & Versionsverlauf",
