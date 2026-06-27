@@ -14,14 +14,24 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.auth import ADMIN_COOKIE, check_password, make_admin_token, verify_admin_token
 from app.config import get_settings
 from app.database import (
+    apply_bummel_overrides,
     canonicalize_flights,
     compute_bummel_standings,
+    create_bummel_race,
+    delete_bummel_override,
+    delete_bummel_race,
+    force_bummel_revealed,
     get_bummel_race,
+    list_bummel_overrides,
     list_bummel_races,
     public_bummel_view,
+    set_bummel_push_enabled,
+    update_bummel_race,
     update_bummel_reveals,
+    upsert_bummel_override,
     delete_push_subscription,
     get_all_position_history,
     get_calendar_events,
@@ -148,6 +158,13 @@ async def robots_txt():
 @app.get("/")
 async def index():
     return FileResponse("app/static/index.html")
+
+
+@app.get("/admin", include_in_schema=False)
+async def admin_page():
+    """Admin-Seite (Login-Formular + Bummel-Rennverwaltung). Schutz erfolgt über die
+    /api/admin/*-Endpoints (Cookie); diese Seite selbst ist statisch."""
+    return FileResponse("app/static/admin.html")
 
 
 @app.get("/health")
@@ -779,18 +796,28 @@ def _race_status(race: dict, now: str) -> str:
     return "waiting"  # dtend erreicht, aber noch nicht enthüllt (Nachzügler)
 
 
-def _build_race_view(conn, race: dict, now: str) -> dict:
-    """Öffentliche Sicht auf ein Rennen — vor Enthüllung redigiert (keine Zeiten/Schnitt)."""
+def _build_race_view(conn, race: dict, now: str, *, force_reveal: bool = False) -> dict:
+    """Öffentliche Sicht auf ein Rennen — vor Enthüllung redigiert (keine Zeiten/Schnitt).
+
+    Admin-Korrekturen (``bummel_overrides``) werden auf die Wertung angewandt. ``force_reveal``
+    liefert die volle Sicht auch während des Rennens (nur für die Admin-Vorschau).
+    """
     route_icaos = [c for c in (race.get("route") or "").split(",") if c.strip()]
     route_set = {c.strip().upper() for c in route_icaos}
     standings = compute_bummel_standings(conn, route_icaos, race["dtstart"], race["dtend"])
+    overrides = list_bummel_overrides(conn, race["id"])
+    if overrides:
+        standings = apply_bummel_overrides(standings, overrides)
     in_progress = _open_bummel_legs(conn, route_set, race["dtstart"], race["dtend"])
-    view = public_bummel_view(standings, in_progress, revealed=bool(race.get("revealed_at")))
+    revealed = force_reveal or bool(race.get("revealed_at"))
+    view = public_bummel_view(standings, in_progress, revealed=revealed)
     view["id"] = race["id"]
     view["name"] = race.get("name") or ""
     view["dtstart"] = race.get("dtstart")
     view["dtend"] = race.get("dtend")
     view["status"] = _race_status(race, now)
+    if revealed and standings.get("disqualified"):
+        view["disqualified"] = standings["disqualified"]
     return view
 
 
@@ -853,6 +880,219 @@ async def get_bummel_active():
         if not active:
             return None
         return _build_race_view(conn, active, now)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Admin-Auth (signiertes Cookie via SECRET_KEY) — schützt /api/admin/*
+# ---------------------------------------------------------------------------
+
+def require_admin(request: Request) -> None:
+    """FastAPI-Dependency: wirft 401, wenn kein gültiges Admin-Cookie vorliegt."""
+    settings = get_settings()
+    token = request.cookies.get(ADMIN_COOKIE, "")
+    if not verify_admin_token(token, settings.SECRET_KEY, settings.ADMIN_PASSWORD):
+        raise HTTPException(status_code=401, detail="Admin-Login erforderlich")
+
+
+@app.post("/api/admin/login")
+async def admin_login(request: Request):
+    """Admin-Login per Passwort → setzt ein signiertes httponly-Cookie."""
+    body = await request.json()
+    settings = get_settings()
+    if not check_password(body.get("password", ""), settings.ADMIN_PASSWORD):
+        raise HTTPException(status_code=401, detail="Falsches Passwort")
+    token = make_admin_token(settings.SECRET_KEY, settings.ADMIN_PASSWORD)
+    resp = JSONResponse({"status": "ok"})
+    resp.set_cookie(
+        ADMIN_COOKIE, token, httponly=True, samesite="lax", path="/",
+        max_age=60 * 60 * 24 * 30,
+    )
+    return resp
+
+
+@app.post("/api/admin/logout")
+async def admin_logout():
+    resp = JSONResponse({"status": "ok"})
+    resp.delete_cookie(ADMIN_COOKIE, path="/")
+    return resp
+
+
+@app.get("/api/admin/me")
+async def admin_me(request: Request):
+    """Prüft, ob der Client als Admin eingeloggt ist (fürs Frontend)."""
+    require_admin(request)
+    return {"admin": True}
+
+
+# ---------------------------------------------------------------------------
+# Admin: Bummel-Rennverwaltung (alle geschützt via require_admin)
+# ---------------------------------------------------------------------------
+
+def _now_iso() -> str:
+    return datetime.now(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@app.get("/api/admin/bummel/races")
+async def admin_list_races(request: Request):
+    """Volle Renn-Liste für die Admin-Seite (inkl. Status, Overrides, Push-Schalter)."""
+    require_admin(request)
+    now = _now_iso()
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        out = []
+        for race in list_bummel_races(conn):
+            out.append({
+                **race,
+                "status": _race_status(race, now),
+                "overrides": list_bummel_overrides(conn, race["id"]),
+            })
+        return out
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/bummel/races/{race_id}/preview")
+async def admin_preview_race(request: Request, race_id: int):
+    """Volle Standings (mit Overrides) — auch während des laufenden Rennens (Admin vertraut)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        race = get_bummel_race(conn, race_id)
+        if not race:
+            raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
+        return _build_race_view(conn, race, _now_iso(), force_reveal=True)
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/bummel/races")
+async def admin_create_race(request: Request):
+    """Manuelles Rennen anlegen (ohne Kalender)."""
+    require_admin(request)
+    body = await request.json()
+    route = ",".join(c.strip().upper() for c in str(body.get("route", "")).replace(" ", ",").split(",") if c.strip())
+    if len(route.split(",")) < 2 or not body.get("dtstart"):
+        raise HTTPException(status_code=400, detail="route (≥2 ICAOs) und dtstart erforderlich")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        rid = create_bummel_race(
+            conn,
+            name=body.get("name") or "FriesenFliegerBummel",
+            route=route,
+            dtstart=body["dtstart"],
+            dtend=body.get("dtend") or "",
+            radius_km=float(body.get("radius_km") or 10),
+        )
+        conn.commit()
+        return {"status": "ok", "id": rid}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/bummel/races/{race_id}")
+async def admin_update_race(request: Request, race_id: int):
+    """Renn-Felder bearbeiten (name/route/dtstart/dtend/radius_km)."""
+    require_admin(request)
+    body = await request.json()
+    fields = {k: body[k] for k in ("name", "route", "dtstart", "dtend", "radius_km") if k in body}
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        if not get_bummel_race(conn, race_id):
+            raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
+        if fields:
+            update_bummel_race(conn, race_id, **fields)
+            conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/bummel/races/{race_id}")
+async def admin_delete_race(request: Request, race_id: int):
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        delete_bummel_race(conn, race_id)
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/bummel/races/{race_id}/reveal")
+async def admin_reveal_race(request: Request, race_id: int):
+    """Notfall-Enthüllung: Ergebnisse sofort sichtbar machen."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        force_bummel_revealed(conn, race_id, _now_iso())
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/bummel/races/{race_id}/hide")
+async def admin_hide_race(request: Request, race_id: int):
+    """Wieder verbergen / neu starten (revealed_at zurücksetzen)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        force_bummel_revealed(conn, race_id, None)
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/bummel/races/{race_id}/push")
+async def admin_toggle_push(request: Request, race_id: int):
+    """Push-Benachrichtigungen für dieses Rennen ein-/ausschalten."""
+    require_admin(request)
+    body = await request.json()
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        set_bummel_push_enabled(conn, race_id, bool(body.get("enabled")))
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/bummel/races/{race_id}/override")
+async def admin_set_override(request: Request, race_id: int):
+    """Teilnehmer-Korrektur setzen: action ∈ exclude|disqualify|winner|manual."""
+    require_admin(request)
+    body = await request.json()
+    action = body.get("action")
+    if action not in ("exclude", "disqualify", "winner", "manual"):
+        raise HTTPException(status_code=400, detail="action muss exclude|disqualify|winner|manual sein")
+    cid = body.get("cid")
+    if cid is None:
+        raise HTTPException(status_code=400, detail="cid erforderlich")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        upsert_bummel_override(
+            conn, race_id, int(cid), action,
+            manual_total_min=body.get("manual_total_min"),
+            note=body.get("note"),
+        )
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/bummel/races/{race_id}/override/{cid}")
+async def admin_delete_override(request: Request, race_id: int, cid: int):
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        delete_bummel_override(conn, race_id, cid)
+        conn.commit()
+        return {"status": "ok"}
     finally:
         conn.close()
 

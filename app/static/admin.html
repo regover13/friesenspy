@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FriesenSpy – Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;500;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border-radius: 0 !important;
+    }
+
+    :root {
+      --bg-body:      #04080f;
+      --bg-panel:     #071525;
+      --bg-panel-2:   #091b30;
+      --green:        #2d9cdb;
+      --green-dim:    rgba(45,156,219,0.3);
+      --green-glow:   rgba(45,156,219,0.2);
+      --green-faint:  rgba(45,156,219,0.08);
+      --green-grid:   rgba(45,156,219,0.05);
+      --cyan:         #D31141;
+      --amber:        #f0a500;
+      --red:          #ff5555;
+      --text-bright:  #d4e8f5;
+      --text-label:   #6b9ab8;
+      --text-mono:    'Courier Prime', monospace;
+      --text-display: 'Exo 2', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-body);
+      color: var(--text-bright);
+      font-family: var(--text-display);
+      font-weight: 300;
+      overflow-x: hidden;
+    }
+
+    body {
+      background:
+        radial-gradient(ellipse at 50% 40%, rgba(45,156,219,0.04) 0%, transparent 70%),
+        var(--bg-body);
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--green-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--green-grid) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .scanline {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      width: 100%;
+      height: 2px;
+      background: rgba(45,156,219,0.12);
+      animation: scanline 8s linear infinite;
+      top: -2px;
+    }
+
+    @keyframes scanline {
+      0%   { top: -2px; }
+      100% { top: 100vh; }
+    }
+
+    /* === LAYOUT === */
+    #app {
+      position: relative;
+      z-index: 1;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 16px 48px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 0 16px;
+      border-bottom: 1px solid var(--green-dim);
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .logo {
+      font-family: var(--text-display);
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--green);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-shadow: 0 0 20px rgba(45,156,219,0.5), 0 0 40px rgba(45,156,219,0.2);
+    }
+
+    .logo-admin {
+      font-size: 0.6rem;
+      font-weight: 300;
+      color: var(--text-label);
+      letter-spacing: 0.3em;
+      margin-left: 10px;
+      vertical-align: middle;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .utc-clock {
+      font-family: var(--text-mono);
+      font-size: 0.9rem;
+      color: var(--text-label);
+      letter-spacing: 0.08em;
+    }
+
+    .hidden { display: none !important; }
+
+    /* === PANELS === */
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--green-dim);
+      box-shadow: 0 0 10px var(--green-glow);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .panel-title {
+      font-family: var(--text-display);
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--green-grid);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    /* === BUTTONS === */
+    .btn {
+      font-family: var(--text-display);
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--green);
+      background: transparent;
+      border: 1px solid var(--green-dim);
+      padding: 7px 16px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      background: var(--green-faint);
+      border-color: var(--green);
+      box-shadow: 0 0 12px rgba(45,156,219,0.35);
+    }
+
+    .btn:active { background: rgba(45,156,219,0.15); }
+
+    .btn-primary {
+      color: var(--bg-body);
+      background: var(--green);
+      border-color: var(--green);
+      font-weight: 700;
+    }
+
+    .btn-primary:hover {
+      background: #5db8f0;
+      box-shadow: 0 0 20px rgba(45,156,219,0.6);
+    }
+
+    .btn-danger {
+      color: var(--red);
+      border-color: rgba(255,85,85,0.4);
+    }
+
+    .btn-danger:hover {
+      background: rgba(255,85,85,0.1);
+      border-color: var(--red);
+      box-shadow: 0 0 10px rgba(255,85,85,0.25);
+    }
+
+    .btn-warn {
+      color: var(--amber);
+      border-color: rgba(240,165,0,0.35);
+    }
+
+    .btn-warn:hover {
+      background: rgba(240,165,0,0.08);
+      border-color: var(--amber);
+    }
+
+    .btn-sm {
+      font-size: 0.65rem;
+      padding: 4px 11px;
+      letter-spacing: 0.1em;
+    }
+
+    /* === FORM ELEMENTS === */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .form-group label {
+      font-family: var(--text-display);
+      font-size: 0.62rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-label);
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    input[type="datetime-local"],
+    select,
+    textarea {
+      background: var(--bg-panel-2);
+      border: 1px solid var(--green-dim);
+      color: var(--text-bright);
+      font-family: var(--text-mono);
+      font-size: 0.85rem;
+      padding: 8px 12px;
+      outline: none;
+      appearance: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      width: 100%;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--green);
+      box-shadow: 0 0 8px var(--green-glow);
+    }
+
+    select option { background: var(--bg-panel-2); }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 14px;
+      align-items: end;
+    }
+
+    /* === BADGES === */
+    .badge {
+      display: inline-block;
+      font-family: var(--text-display);
+      font-size: 0.57rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border: 1px solid;
+      white-space: nowrap;
+    }
+
+    .badge-scheduled { color: var(--text-label);  border-color: rgba(107,154,184,0.35); }
+    .badge-running   { color: var(--green);        border-color: var(--green-dim); background: var(--green-faint); }
+    .badge-waiting   { color: var(--amber);        border-color: rgba(240,165,0,0.4); }
+    .badge-revealed  { color: #c97be8;             border-color: rgba(201,123,232,0.4); }
+    .badge-manual    { color: var(--text-label);   border-color: rgba(107,154,184,0.3); }
+    .badge-calendar  { color: var(--green);        border-color: var(--green-dim); }
+    .badge-push-on   { color: #2db36a;             border-color: rgba(45,179,106,0.4); }
+    .badge-push-off  { color: var(--text-label);   border-color: rgba(107,154,184,0.3); }
+
+    /* === RACE CARDS === */
+    .race-card {
+      background: var(--bg-panel-2);
+      border: 1px solid var(--green-dim);
+      border-left: 3px solid var(--green);
+      padding: 14px 16px;
+      margin-bottom: 10px;
+    }
+
+    .race-card.active {
+      border-color: var(--green);
+      box-shadow: 0 0 14px rgba(45,156,219,0.14);
+    }
+
+    .race-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+
+    .race-name {
+      font-family: var(--text-display);
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-bright);
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+
+    .race-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .race-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 22px;
+      margin-bottom: 10px;
+    }
+
+    .race-meta-item {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+    }
+
+    .meta-label {
+      font-family: var(--text-display);
+      font-size: 0.58rem;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: var(--text-label);
+    }
+
+    .meta-val {
+      font-family: var(--text-mono);
+      font-size: 0.8rem;
+      color: var(--text-bright);
+    }
+
+    .meta-route {
+      color: var(--green);
+      font-size: 0.82rem;
+    }
+
+    .race-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding-top: 10px;
+      border-top: 1px solid var(--green-grid);
+    }
+
+    /* === PREVIEW PANEL === */
+    #preview-panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--green);
+      box-shadow: 0 0 20px rgba(45,156,219,0.15);
+      padding: 20px;
+      margin: 24px 0 20px;
+    }
+
+    .preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--green-dim);
+      flex-wrap: wrap;
+    }
+
+    .preview-title-text {
+      font-family: var(--text-display);
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--green);
+    }
+
+    .preview-section {
+      margin-bottom: 18px;
+    }
+
+    .preview-section-title {
+      font-family: var(--text-display);
+      font-size: 0.6rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      margin-bottom: 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--green-grid);
+    }
+
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    .preview-table {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: collapse;
+      font-family: var(--text-mono);
+      font-size: 0.82rem;
+    }
+
+    .preview-table thead th {
+      font-family: var(--text-display);
+      font-size: 0.58rem;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--green-dim);
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .preview-table tbody tr { border-bottom: 1px solid var(--green-grid); }
+    .preview-table tbody tr:hover { background: rgba(45,156,219,0.04); }
+    .preview-table tbody td {
+      padding: 8px 10px;
+      color: var(--text-bright);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    .td-mono { font-family: var(--text-mono); color: var(--green); font-weight: 700; }
+    .td-time { color: var(--amber); }
+    .td-dim  { color: var(--text-label); font-size: 0.75rem; }
+    .td-rank1 { color: #ffd24a; font-weight: 700; }
+
+    /* === OVERRIDE UI === */
+    .override-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      margin-bottom: 14px;
+    }
+
+    .override-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--green-grid);
+      font-family: var(--text-mono);
+      font-size: 0.78rem;
+      flex-wrap: wrap;
+    }
+
+    .override-cid   { color: var(--text-label); }
+    .override-action { color: var(--amber); }
+    .override-note  { color: var(--text-label); font-size: 0.72rem; font-style: italic; }
+
+    .ov-add-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-end;
+      padding-top: 12px;
+      border-top: 1px dashed var(--green-grid);
+      margin-top: 10px;
+    }
+
+    .ov-add-form .form-group { min-width: 0; }
+    .ov-add-form input[type="number"] { width: 100px; }
+    .ov-add-form select              { min-width: 155px; width: auto; }
+    .ov-add-form input[type="text"]  { width: 190px; }
+    .ov-add-form .min-input          { width: 95px; }
+
+    /* === LOGIN === */
+    #login-screen {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      background:
+        radial-gradient(ellipse at 50% 40%, rgba(45,156,219,0.04) 0%, transparent 70%),
+        var(--bg-body);
+    }
+
+    #login-screen::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--green-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--green-grid) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+
+    .login-box {
+      position: relative;
+      z-index: 1;
+      background: var(--bg-panel);
+      border: 1px solid var(--green);
+      box-shadow: 0 0 40px rgba(45,156,219,0.2);
+      padding: 36px 40px;
+      width: min(380px, 92vw);
+    }
+
+    .login-logo {
+      font-family: var(--text-display);
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--green);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-align: center;
+      text-shadow: 0 0 16px rgba(45,156,219,0.5);
+      margin-bottom: 4px;
+    }
+
+    .login-sub {
+      font-family: var(--text-display);
+      font-size: 0.65rem;
+      color: var(--text-label);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .login-error {
+      color: var(--red);
+      font-family: var(--text-display);
+      font-size: 0.78rem;
+      margin-top: 12px;
+      text-align: center;
+      letter-spacing: 0.04em;
+      min-height: 20px;
+    }
+
+    /* === MODAL === */
+    #modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(4,8,15,0.86);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(2px);
+    }
+
+    .modal-box {
+      background: var(--bg-panel);
+      border: 1px solid var(--green-dim);
+      box-shadow: 0 0 40px rgba(45,156,219,0.18);
+      padding: 28px 32px;
+      max-width: 420px;
+      width: 90vw;
+      animation: modalIn 0.12s ease-out;
+    }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: scale(0.97) translateY(-6px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .modal-title {
+      font-family: var(--text-display);
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--text-bright);
+      margin-bottom: 10px;
+    }
+
+    .modal-text {
+      font-family: var(--text-display);
+      font-size: 0.84rem;
+      color: var(--text-label);
+      line-height: 1.55;
+      margin-bottom: 22px;
+    }
+
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* === TOAST === */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 20px;
+      z-index: 9500;
+      background: var(--bg-panel);
+      border: 1px solid var(--green-dim);
+      padding: 11px 20px;
+      font-family: var(--text-display);
+      font-size: 0.82rem;
+      letter-spacing: 0.05em;
+      max-width: 360px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+    }
+
+    #toast.toast-error { border-color: rgba(255,85,85,0.5); color: var(--red); }
+    #toast.toast-ok    { border-color: var(--green-dim);    color: var(--green); }
+
+    /* === MISC === */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-body); }
+    ::-webkit-scrollbar-thumb { background: var(--green-dim); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--green); }
+
+    .empty-hint {
+      font-family: var(--text-display);
+      font-size: 0.78rem;
+      color: var(--text-label);
+      letter-spacing: 0.08em;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 24px;
+      margin-bottom: 16px;
+    }
+
+    .status-row-item {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      font-family: var(--text-mono);
+      font-size: 0.82rem;
+    }
+
+    .kv-label {
+      font-family: var(--text-display);
+      font-size: 0.58rem;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: var(--text-label);
+    }
+
+    .new-race-form-inner {
+      background: var(--bg-panel-2);
+      border: 1px solid var(--green-dim);
+      padding: 18px;
+      margin-bottom: 20px;
+    }
+
+    .form-section-title {
+      font-family: var(--text-display);
+      font-size: 0.62rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      margin-bottom: 14px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--green-grid);
+    }
+
+    .quick-btns {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 640px) {
+      .race-card-header { flex-direction: column; }
+      .form-grid { grid-template-columns: 1fr; }
+      .login-box { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="scanline"></div>
+
+  <!-- ================================================================
+       LOGIN
+       ================================================================ -->
+  <div id="login-screen">
+    <div class="login-box">
+      <div class="login-logo">FriesenSpy</div>
+      <div class="login-sub">Admin-Bereich</div>
+      <form id="login-form">
+        <div class="form-group" style="margin-bottom:16px;">
+          <label for="pw-input">Passwort</label>
+          <input type="password" id="pw-input" autocomplete="current-password" autofocus placeholder="••••••••" />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;padding:10px 16px;">Anmelden</button>
+        <div class="login-error" id="login-error"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================================================================
+       ADMIN UI
+       ================================================================ -->
+  <div id="admin-ui" class="hidden">
+    <div id="app">
+      <header>
+        <div>
+          <span class="logo">FriesenSpy<span class="logo-admin">ADMIN</span></span>
+        </div>
+        <div class="header-right">
+          <span class="utc-clock" id="utc-clock">--:--:-- UTC</span>
+          <a href="/" class="btn btn-sm" style="text-decoration:none;">&#x2190; Zur App</a>
+          <button class="btn btn-sm btn-danger" id="logout-btn">Abmelden</button>
+        </div>
+      </header>
+
+      <div style="padding-top:24px;">
+
+        <!-- VORSCHAU (erscheint oberhalb der Liste) -->
+        <div id="preview-panel" class="hidden">
+          <div class="preview-header">
+            <span class="preview-title-text" id="preview-title-text">Wertung</span>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-sm" id="preview-reload-btn">&#x21BA; Neu laden</button>
+              <button class="btn btn-sm" id="preview-close-btn">&#x2715; Schliessen</button>
+            </div>
+          </div>
+          <div id="preview-content">
+            <div class="empty-hint">Lade Wertung...</div>
+          </div>
+        </div>
+
+        <!-- RENNEN LISTE -->
+        <div class="panel">
+          <div class="panel-title">
+            <span>FriesenFliegerBummel &ndash; Rennen</span>
+            <button class="btn btn-sm btn-primary" id="toggle-new-form-btn">+ Neues Rennen</button>
+          </div>
+
+          <div id="new-race-form" class="hidden">
+            <div class="new-race-form-inner">
+              <div class="form-section-title">Neues Rennen anlegen</div>
+              <form id="create-race-form">
+                <div class="form-grid" style="margin-bottom:14px;">
+                  <div class="form-group">
+                    <label for="nr-name">Name</label>
+                    <input type="text" id="nr-name" placeholder="z.B. Frühjahrsbummel 2026" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="nr-route">Strecke (ICAOs, kommagetrennt)</label>
+                    <input type="text" id="nr-route" placeholder="EDWB,EDWI,EDHS,EDXW" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="nr-dtstart">Start (UTC)</label>
+                    <input type="datetime-local" id="nr-dtstart" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="nr-dtend">Ende (UTC, optional)</label>
+                    <input type="datetime-local" id="nr-dtend" />
+                  </div>
+                  <div class="form-group">
+                    <label for="nr-radius">Radius (km)</label>
+                    <input type="number" id="nr-radius" value="10" min="1" max="200" />
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px;">
+                  <button type="submit" class="btn btn-primary btn-sm">Anlegen</button>
+                  <button type="button" class="btn btn-sm" id="cancel-new-form-btn">Abbrechen</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div id="races-container">
+            <div class="empty-hint">Lade Rennen...</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+       MODAL
+       ================================================================ -->
+  <div id="modal-overlay" class="hidden">
+    <div class="modal-box">
+      <div class="modal-title" id="modal-title">Sicher?</div>
+      <div class="modal-text"  id="modal-text"></div>
+      <div class="modal-actions">
+        <button class="btn btn-sm" id="modal-cancel-btn">Abbrechen</button>
+        <button class="btn btn-sm" id="modal-confirm-btn">Bestätigen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="hidden"></div>
+
+  <script>
+    'use strict';
+
+    // ====================================================================
+    // UTILITIES
+    // ====================================================================
+
+    function escH(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function escA(s) {
+      return String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    /** Format ISO UTC string for display: "2026-06-27 14:30 UTC" */
+    function fmtDt(iso) {
+      if (!iso) return '—';
+      return iso.slice(0, 16).replace('T', ' ') + ' UTC';
+    }
+
+    /** ISO UTC → value for datetime-local input (slice to minute) */
+    function isoToLocal(iso) {
+      if (!iso) return '';
+      return iso.slice(0, 16);
+    }
+
+    /** datetime-local value → ISO UTC string (append :00Z) */
+    function localToIso(val) {
+      if (!val) return null;
+      return val + ':00Z';
+    }
+
+    /** Minutes (number) → "Xh YYm" */
+    function fmtMin(min) {
+      if (min == null || min === '') return '—';
+      const m = Math.round(Number(min));
+      const h = Math.floor(m / 60);
+      const rm = m % 60;
+      if (h === 0) return rm + 'm';
+      return h + 'h ' + String(rm).padStart(2, '0') + 'm';
+    }
+
+    const STATUS_LABEL = { scheduled: 'Geplant', running: 'Läuft', waiting: 'Wartet', revealed: 'Enthüllt' };
+    function statusLabel(s) { return STATUS_LABEL[s] || s || '—'; }
+    function statusClass(s) { return 'badge badge-' + (s || 'scheduled'); }
+
+    // ====================================================================
+    // TOAST
+    // ====================================================================
+    let _toastTimer = null;
+    function toast(msg, isError) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = isError ? 'toast-error' : 'toast-ok';
+      el.classList.remove('hidden');
+      clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => el.classList.add('hidden'), 3800);
+    }
+
+    // ====================================================================
+    // MODAL
+    // ====================================================================
+    let _modalResolve = null;
+
+    function showModal(title, text, confirmLabel, isDanger) {
+      return new Promise(resolve => {
+        _modalResolve = resolve;
+        document.getElementById('modal-title').textContent = title;
+        document.getElementById('modal-text').textContent  = text;
+        const cb = document.getElementById('modal-confirm-btn');
+        cb.textContent = confirmLabel || 'Bestätigen';
+        cb.className   = 'btn btn-sm ' + (isDanger ? 'btn-danger' : 'btn-primary');
+        document.getElementById('modal-overlay').classList.remove('hidden');
+      });
+    }
+
+    function closeModal(result) {
+      document.getElementById('modal-overlay').classList.add('hidden');
+      if (_modalResolve) { _modalResolve(!!result); _modalResolve = null; }
+    }
+
+    document.getElementById('modal-cancel-btn').addEventListener('click',  () => closeModal(false));
+    document.getElementById('modal-confirm-btn').addEventListener('click', () => closeModal(true));
+    document.getElementById('modal-overlay').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-overlay')) closeModal(false);
+    });
+
+    // ====================================================================
+    // API
+    // ====================================================================
+    async function api(method, path, body) {
+      const opts = { method, credentials: 'same-origin', headers: {} };
+      if (body != null) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+      }
+      let res;
+      try {
+        res = await fetch(path, opts);
+      } catch (e) {
+        toast('Verbindungsfehler.', true);
+        return null;
+      }
+      if (res.status === 401) { showLogin(); return null; }
+      return res;
+    }
+
+    // ====================================================================
+    // AUTH
+    // ====================================================================
+    function showLogin() {
+      document.getElementById('login-screen').classList.remove('hidden');
+      document.getElementById('admin-ui').classList.add('hidden');
+      document.getElementById('login-error').textContent = '';
+    }
+
+    function showAdmin() {
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('admin-ui').classList.remove('hidden');
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const pw = document.getElementById('pw-input').value;
+      let res;
+      try {
+        res = await fetch('/api/admin/login', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw })
+        });
+      } catch {
+        document.getElementById('login-error').textContent = 'Verbindungsfehler.';
+        return;
+      }
+      if (res.ok) {
+        document.getElementById('pw-input').value = '';
+        showAdmin();
+        loadRaces();
+      } else {
+        document.getElementById('login-error').textContent = 'Falsches Passwort.';
+      }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await api('POST', '/api/admin/logout');
+      showLogin();
+    });
+
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/admin/me', { credentials: 'same-origin' });
+        if (res.ok) { showAdmin(); loadRaces(); }
+        else showLogin();
+      } catch { showLogin(); }
+    }
+
+    // ====================================================================
+    // UTC CLOCK
+    // ====================================================================
+    function tickClock() {
+      const n = new Date();
+      const pad = v => String(v).padStart(2, '0');
+      document.getElementById('utc-clock').textContent =
+        pad(n.getUTCHours()) + ':' + pad(n.getUTCMinutes()) + ':' + pad(n.getUTCSeconds()) + ' UTC';
+    }
+    setInterval(tickClock, 1000);
+    tickClock();
+
+    // ====================================================================
+    // STATE
+    // ====================================================================
+    let _races          = [];
+    let _activePreviewId = null;
+    let _editingId      = null;
+
+    // ====================================================================
+    // NEW RACE FORM
+    // ====================================================================
+    document.getElementById('toggle-new-form-btn').addEventListener('click', () => {
+      document.getElementById('new-race-form').classList.toggle('hidden');
+    });
+    document.getElementById('cancel-new-form-btn').addEventListener('click', () => {
+      document.getElementById('new-race-form').classList.add('hidden');
+      document.getElementById('create-race-form').reset();
+    });
+
+    document.getElementById('create-race-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const name    = document.getElementById('nr-name').value.trim();
+      const route   = document.getElementById('nr-route').value.trim();
+      const dtstart = document.getElementById('nr-dtstart').value;
+      const dtend   = document.getElementById('nr-dtend').value;
+      const radius  = parseFloat(document.getElementById('nr-radius').value);
+      if (!name || !route || !dtstart) { toast('Name, Strecke und Start sind erforderlich.', true); return; }
+      const body = { name, route, dtstart: localToIso(dtstart), radius_km: radius };
+      if (dtend) body.dtend = localToIso(dtend);
+      const res = await api('POST', '/api/admin/bummel/races', body);
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      toast('Rennen angelegt.');
+      document.getElementById('create-race-form').reset();
+      document.getElementById('new-race-form').classList.add('hidden');
+      await loadRaces();
+    });
+
+    // ====================================================================
+    // LOAD + RENDER RACES
+    // ====================================================================
+    async function loadRaces() {
+      const res = await api('GET', '/api/admin/bummel/races');
+      if (!res) return;
+      if (!res.ok) { toast('Fehler beim Laden der Rennen.', true); return; }
+      _races = await res.json();
+      renderRaces();
+    }
+
+    function renderRaces() {
+      const c = document.getElementById('races-container');
+      if (!_races.length) {
+        c.innerHTML = '<div class="empty-hint">Keine Rennen vorhanden.</div>';
+        return;
+      }
+      c.innerHTML = _races.map(r => renderRaceCard(r)).join('');
+    }
+
+    function renderRaceCard(r) {
+      if (_editingId === r.id) return renderEditForm(r);
+
+      const isActive = _activePreviewId === r.id;
+      const ovCount  = r.overrides ? r.overrides.length : 0;
+
+      const revealedBadge = r.revealed_at
+        ? `<span class="badge" style="color:#c97be8;border-color:rgba(201,123,232,0.4);">Enthüllt</span>`
+        : `<span class="badge badge-manual">Nicht enthüllt</span>`;
+      const pushBadge = r.push_enabled
+        ? '<span class="badge badge-push-on">Push an</span>'
+        : '<span class="badge badge-push-off">Push aus</span>';
+      const srcBadge = r.source === 'calendar'
+        ? '<span class="badge badge-calendar">Kalender</span>'
+        : '<span class="badge badge-manual">Manuell</span>';
+      const ovBadge = ovCount
+        ? `<span class="badge" style="color:var(--amber);border-color:rgba(240,165,0,0.3);">${ovCount} Override${ovCount > 1 ? 's' : ''}</span>`
+        : '';
+
+      const revealBtn = r.revealed_at
+        ? `<button class="btn btn-sm btn-warn" data-action="hide" data-id="${r.id}">Verbergen</button>`
+        : `<button class="btn btn-sm" data-action="reveal" data-id="${r.id}">Enthüllen</button>`;
+      const pushBtn = r.push_enabled
+        ? `<button class="btn btn-sm" data-action="push-off" data-id="${r.id}">Push aus</button>`
+        : `<button class="btn btn-sm" data-action="push-on" data-id="${r.id}">Push an</button>`;
+
+      return `
+        <div class="race-card${isActive ? ' active' : ''}" id="race-card-${r.id}">
+          <div class="race-card-header">
+            <div>
+              <div class="race-name">${escH(r.name)}</div>
+              <div class="race-badges">
+                <span class="${statusClass(r.status)}">${statusLabel(r.status)}</span>
+                ${srcBadge}
+                ${revealedBadge}
+                ${pushBadge}
+                ${ovBadge}
+              </div>
+            </div>
+          </div>
+          <div class="race-meta">
+            <div class="race-meta-item">
+              <span class="meta-label">Strecke</span>
+              <span class="meta-val meta-route">${escH(r.route)}</span>
+            </div>
+            <div class="race-meta-item">
+              <span class="meta-label">Start</span>
+              <span class="meta-val">${fmtDt(r.dtstart)}</span>
+            </div>
+            <div class="race-meta-item">
+              <span class="meta-label">Ende</span>
+              <span class="meta-val">${r.dtend ? fmtDt(r.dtend) : '—'}</span>
+            </div>
+            <div class="race-meta-item">
+              <span class="meta-label">Radius</span>
+              <span class="meta-val">${r.radius_km} km</span>
+            </div>
+          </div>
+          <div class="race-actions">
+            <button class="btn btn-sm btn-primary" data-action="preview" data-id="${r.id}">
+              ${isActive ? '&#x21BA; Wertung neu laden' : 'Vorschau / Wertung'}
+            </button>
+            ${revealBtn}
+            ${pushBtn}
+            <button class="btn btn-sm" data-action="edit" data-id="${r.id}">Bearbeiten</button>
+            <button class="btn btn-sm btn-danger" data-action="delete" data-id="${r.id}">Löschen</button>
+          </div>
+        </div>`;
+    }
+
+    function renderEditForm(r) {
+      return `
+        <div class="race-card active" id="race-card-${r.id}">
+          <div style="font-family:var(--text-display);font-size:0.63rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--green);margin-bottom:12px;">
+            Bearbeiten &mdash; ${escH(r.name)}
+          </div>
+          <div class="form-grid" style="margin-bottom:14px;">
+            <div class="form-group">
+              <label>Name</label>
+              <input type="text" id="edit-name-${r.id}" value="${escA(r.name)}" />
+            </div>
+            <div class="form-group">
+              <label>Strecke (ICAOs, kommagetrennt)</label>
+              <input type="text" id="edit-route-${r.id}" value="${escA(r.route)}" />
+            </div>
+            <div class="form-group">
+              <label>Start (UTC)</label>
+              <input type="datetime-local" id="edit-dtstart-${r.id}" value="${escA(isoToLocal(r.dtstart))}" />
+            </div>
+            <div class="form-group">
+              <label>Ende (UTC)</label>
+              <input type="datetime-local" id="edit-dtend-${r.id}" value="${escA(isoToLocal(r.dtend))}" />
+            </div>
+            <div class="form-group">
+              <label>Radius (km)</label>
+              <input type="number" id="edit-radius-${r.id}" value="${r.radius_km}" min="1" max="200" />
+            </div>
+          </div>
+          <div class="race-actions">
+            <button class="btn btn-sm btn-primary" data-action="save-edit" data-id="${r.id}">Speichern</button>
+            <button class="btn btn-sm" data-action="cancel-edit" data-id="${r.id}">Abbrechen</button>
+          </div>
+        </div>`;
+    }
+
+    // Delegated event handler for all race card actions
+    document.getElementById('races-container').addEventListener('click', async e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id     = parseInt(btn.dataset.id, 10);
+      switch (action) {
+        case 'preview':    await loadPreview(id);        break;
+        case 'reveal':     await doReveal(id);           break;
+        case 'hide':       await doHide(id);             break;
+        case 'push-on':    await doPush(id, true);       break;
+        case 'push-off':   await doPush(id, false);      break;
+        case 'edit':       startEdit(id);                break;
+        case 'cancel-edit':cancelEdit();                 break;
+        case 'save-edit':  await saveEdit(id);           break;
+        case 'delete':     await doDelete(id);           break;
+      }
+    });
+
+    // ====================================================================
+    // EDIT
+    // ====================================================================
+    function startEdit(id) {
+      _editingId = id;
+      if (_activePreviewId === id) closePreview();
+      else renderRaces();
+    }
+
+    function cancelEdit() {
+      _editingId = null;
+      renderRaces();
+    }
+
+    async function saveEdit(id) {
+      const body = {};
+      const name    = document.getElementById(`edit-name-${id}`).value.trim();
+      const route   = document.getElementById(`edit-route-${id}`).value.trim();
+      const dtstart = document.getElementById(`edit-dtstart-${id}`).value;
+      const dtend   = document.getElementById(`edit-dtend-${id}`).value;
+      const radius  = parseFloat(document.getElementById(`edit-radius-${id}`).value);
+      if (name)         body.name       = name;
+      if (route)        body.route      = route;
+      if (dtstart)      body.dtstart    = localToIso(dtstart);
+      if (dtend)        body.dtend      = localToIso(dtend);
+      if (!isNaN(radius)) body.radius_km = radius;
+      const res = await api('POST', `/api/admin/bummel/races/${id}`, body);
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      toast('Gespeichert.');
+      _editingId = null;
+      await loadRaces();
+      if (_activePreviewId === id) await loadPreview(id);
+    }
+
+    // ====================================================================
+    // DELETE
+    // ====================================================================
+    async function doDelete(id) {
+      const r = _races.find(x => x.id === id);
+      const ok = await showModal(
+        'Rennen löschen',
+        `„${r ? r.name : id}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
+        'Löschen',
+        true
+      );
+      if (!ok) return;
+      const res = await api('DELETE', `/api/admin/bummel/races/${id}`);
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      toast('Rennen gelöscht.');
+      if (_activePreviewId === id) closePreview();
+      await loadRaces();
+    }
+
+    // ====================================================================
+    // REVEAL / HIDE
+    // ====================================================================
+    async function doReveal(id) {
+      const r = _races.find(x => x.id === id);
+      const ok = await showModal(
+        'Ergebnis enthüllen',
+        `Die Wertung von „${r ? r.name : id}" für alle Teilnehmer sichtbar machen?`,
+        'Enthüllen',
+        false
+      );
+      if (!ok) return;
+      const res = await api('POST', `/api/admin/bummel/races/${id}/reveal`);
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      toast('Ergebnis enthüllt.');
+      await loadRaces();
+      if (_activePreviewId === id) await loadPreview(id);
+    }
+
+    async function doHide(id) {
+      const r = _races.find(x => x.id === id);
+      const ok = await showModal(
+        'Ergebnis verbergen',
+        `Die Wertung von „${r ? r.name : id}" wieder verbergen?`,
+        'Verbergen',
+        true
+      );
+      if (!ok) return;
+      const res = await api('POST', `/api/admin/bummel/races/${id}/hide`);
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      toast('Ergebnis verborgen.');
+      await loadRaces();
+      if (_activePreviewId === id) await loadPreview(id);
+    }
+
+    // ====================================================================
+    // PUSH
+    // ====================================================================
+    async function doPush(id, enabled) {
+      const res = await api('POST', `/api/admin/bummel/races/${id}/push`, { enabled });
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      toast(enabled ? 'Push aktiviert.' : 'Push deaktiviert.');
+      await loadRaces();
+    }
+
+    // ====================================================================
+    // PREVIEW
+    // ====================================================================
+    document.getElementById('preview-close-btn').addEventListener('click', closePreview);
+    document.getElementById('preview-reload-btn').addEventListener('click', () => {
+      if (_activePreviewId != null) loadPreview(_activePreviewId);
+    });
+
+    function closePreview() {
+      _activePreviewId = null;
+      document.getElementById('preview-panel').classList.add('hidden');
+      document.getElementById('preview-content').innerHTML = '';
+      renderRaces();
+    }
+
+    async function loadPreview(id) {
+      _activePreviewId = id;
+      const panel = document.getElementById('preview-panel');
+      panel.classList.remove('hidden');
+      document.getElementById('preview-content').innerHTML =
+        '<div class="empty-hint">Lade Wertung...</div>';
+
+      const race = _races.find(r => r.id === id);
+      document.getElementById('preview-title-text').textContent =
+        'Wertung: ' + (race ? race.name : id);
+
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      renderRaces(); // update active border on card
+
+      const res = await api('GET', `/api/admin/bummel/races/${id}/preview`);
+      if (!res) return;
+      if (!res.ok) {
+        document.getElementById('preview-content').innerHTML =
+          '<div class="empty-hint" style="color:var(--red);">Fehler beim Laden der Vorschau.</div>';
+        return;
+      }
+      const data = await res.json();
+      document.getElementById('preview-content').innerHTML = buildPreview(id, data);
+      // attach override events
+      attachPreviewEvents(id);
+    }
+
+    // ====================================================================
+    // BUILD PREVIEW HTML
+    // ====================================================================
+    function buildPreview(raceId, d) {
+      let html = '';
+
+      // Status-Zeile
+      html += '<div class="status-row">';
+      html += kv('Status', `<span class="${statusClass(d.status)}">${statusLabel(d.status)}</span>`);
+      html += kv('Ø Zeit',  `<span style="color:var(--amber);">${fmtMin(d.average_min)}</span>`);
+      html += kv('Fertig',  `<span style="color:var(--green);">${d.count || 0}</span>`);
+      if (d.route && d.route.length) {
+        html += kv('Route', `<span style="color:var(--green);font-family:var(--text-mono);font-size:0.82rem;">${escH(d.route.join(' → '))}</span>`);
+      }
+      html += '</div>';
+
+      // Unterwegs
+      if (d.in_progress && d.in_progress.length) {
+        html += section('Unterwegs (' + d.in_progress.length + ')',
+          tableWrap(
+            thRow(['Pilot', 'CID', 'Callsign', 'Von', 'Nach']),
+            d.in_progress.map(p =>
+              `<tr>
+                <td>${escH(p.name || '—')}</td>
+                <td class="td-dim">${escH(p.cid)}</td>
+                <td class="td-mono">${escH(p.callsign || '—')}</td>
+                <td>${escH(p.departure || '—')}</td>
+                <td>${escH(p.arrival || '—')}</td>
+              </tr>`
+            ).join('')
+          )
+        );
+      }
+
+      // Fertig / Wertung
+      if (d.complete && d.complete.length) {
+        html += section('Fertig – Wertung (' + d.complete.length + ')',
+          tableWrap(
+            thRow(['#', 'Pilot', 'CID', 'Callsign', 'Flugzeug', 'Beine', 'Gesamt', '+Ø', 'Flags', 'Aktionen']),
+            d.complete.map(p => {
+              const isFirst = p.rank === 1;
+              const delta   = p.delta != null
+                ? (p.delta >= 0 ? '+' : '') + fmtMin(p.delta)
+                : '—';
+              const flags   = [];
+              if (p.forced_winner) flags.push('<span class="badge" style="color:var(--amber);border-color:rgba(240,165,0,0.3);">Sieger manuell</span>');
+              return `<tr>
+                <td class="${isFirst ? 'td-rank1' : 'td-dim'}">#${p.rank}${isFirst ? ' ★' : ''}</td>
+                <td>${escH(p.name || '—')}</td>
+                <td class="td-dim">${escH(p.cid)}</td>
+                <td class="td-mono">${escH(p.callsign || '—')}</td>
+                <td class="td-dim">${escH(p.aircraft || '—')}</td>
+                <td class="td-dim">${p.leg_count != null ? p.leg_count : '—'}</td>
+                <td class="td-time">${fmtMin(p.total_min)}</td>
+                <td class="td-dim">${escH(delta)}</td>
+                <td>${flags.join(' ') || '—'}</td>
+                <td>${quickOverrideBtns(raceId, p.cid)}</td>
+              </tr>`;
+            }).join('')
+          )
+        );
+      }
+
+      // Unvollständig
+      if (d.incomplete && d.incomplete.length) {
+        html += section('Unvollständig (' + d.incomplete.length + ')',
+          tableWrap(
+            thRow(['Pilot', 'CID', 'Callsign', 'Flugzeug', 'Abgehakt', 'Fehlend', 'Aktionen']),
+            d.incomplete.map(p => {
+              const visited = (p.visited || []).join(', ') || '—';
+              const missing = (p.missing || []).join(', ') || '—';
+              return `<tr>
+                <td>${escH(p.name || '—')}</td>
+                <td class="td-dim">${escH(p.cid)}</td>
+                <td class="td-mono">${escH(p.callsign || '—')}</td>
+                <td class="td-dim">${escH(p.aircraft || '—')}</td>
+                <td style="color:var(--green);font-size:0.78rem;">${escH(visited)}</td>
+                <td style="color:#e0884a;font-size:0.78rem;">${escH(missing)}</td>
+                <td>${quickOverrideBtns(raceId, p.cid)}</td>
+              </tr>`;
+            }).join('')
+          )
+        );
+      }
+
+      // Disqualifiziert
+      if (d.disqualified && d.disqualified.length) {
+        html += section('Disqualifiziert (' + d.disqualified.length + ')',
+          tableWrap(
+            thRow(['Pilot', 'CID', 'Callsign', 'Aktionen']),
+            d.disqualified.map(p => `<tr>
+              <td>${escH(p.name || '—')}</td>
+              <td class="td-dim">${escH(p.cid)}</td>
+              <td class="td-mono">${escH(p.callsign || '—')}</td>
+              <td>${quickOverrideBtns(raceId, p.cid)}</td>
+            </tr>`).join('')
+          )
+        );
+      }
+
+      // Overrides
+      html += buildOverridesSection(raceId);
+
+      return html;
+    }
+
+    function kv(label, valHtml) {
+      return `<div class="status-row-item">
+        <span class="kv-label">${escH(label)}</span>
+        <span>${valHtml}</span>
+      </div>`;
+    }
+
+    function section(title, bodyHtml) {
+      return `<div class="preview-section">
+        <div class="preview-section-title">${escH(title)}</div>
+        ${bodyHtml}
+      </div>`;
+    }
+
+    function thRow(cols) {
+      return '<thead><tr>' + cols.map(c => `<th>${escH(c)}</th>`).join('') + '</tr></thead>';
+    }
+
+    function tableWrap(thead, tbody) {
+      return `<div class="table-wrap"><table class="preview-table">${thead}<tbody>${tbody}</tbody></table></div>`;
+    }
+
+    function quickOverrideBtns(raceId, cid) {
+      return `<div class="quick-btns">
+        <button class="btn btn-sm" style="font-size:0.6rem;padding:3px 8px;" data-ov-action="exclude"     data-ov-race="${raceId}" data-ov-cid="${escA(cid)}">Ausschl.</button>
+        <button class="btn btn-sm btn-warn" style="font-size:0.6rem;padding:3px 8px;" data-ov-action="disqualify"  data-ov-race="${raceId}" data-ov-cid="${escA(cid)}">Disq.</button>
+        <button class="btn btn-sm" style="font-size:0.6rem;padding:3px 8px;color:#ffd24a;border-color:rgba(255,210,74,0.35);" data-ov-action="winner" data-ov-race="${raceId}" data-ov-cid="${escA(cid)}">Sieger</button>
+      </div>`;
+    }
+
+    function buildOverridesSection(raceId) {
+      const race     = _races.find(r => r.id === raceId);
+      const overrides = (race && race.overrides) ? race.overrides : [];
+
+      const OV_LABELS = {
+        exclude:    'Ausgeschlossen',
+        disqualify: 'Disqualifiziert',
+        winner:     'Sieger (manuell)',
+        manual:     'Zeit manuell'
+      };
+
+      let listHtml = '';
+      if (overrides.length) {
+        listHtml = '<div class="override-list">' + overrides.map(ov => {
+          const aLabel = OV_LABELS[ov.action] || ov.action;
+          return `<div class="override-item">
+            <span class="override-cid">CID&nbsp;${escH(ov.cid)}</span>
+            <span class="override-action">${escH(aLabel)}</span>
+            ${ov.manual_total_min != null ? `<span style="color:var(--text-bright);">${fmtMin(ov.manual_total_min)}</span>` : ''}
+            ${ov.note ? `<span class="override-note">${escH(ov.note)}</span>` : ''}
+            <button class="btn btn-sm btn-danger" style="margin-left:auto;"
+              data-ov-remove="${ov.cid}" data-ov-race="${raceId}">Entfernen</button>
+          </div>`;
+        }).join('') + '</div>';
+      } else {
+        listHtml = '<div style="font-family:var(--text-display);font-size:0.75rem;color:var(--text-label);padding:6px 0 10px;">Keine Overrides gesetzt.</div>';
+      }
+
+      const addForm = `
+        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--green-grid);">
+          <div style="font-family:var(--text-display);font-size:0.6rem;letter-spacing:0.13em;text-transform:uppercase;color:var(--text-label);margin-bottom:10px;">Neuer Override</div>
+          <div class="ov-add-form">
+            <div class="form-group">
+              <label style="font-size:0.57rem;">CID</label>
+              <input type="number" id="ov-cid-${raceId}" placeholder="1234567" style="width:105px;" />
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.57rem;">Aktion</label>
+              <select id="ov-action-${raceId}" data-race="${raceId}" class="ov-action-select">
+                <option value="exclude">Ausschließen</option>
+                <option value="disqualify">Disqualifizieren</option>
+                <option value="winner">Zum Sieger</option>
+                <option value="manual">Zeit manuell</option>
+              </select>
+            </div>
+            <div class="form-group hidden" id="ov-min-group-${raceId}">
+              <label style="font-size:0.57rem;">Zeit (Minuten)</label>
+              <input type="number" id="ov-min-${raceId}" placeholder="120" min="1" class="min-input" />
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.57rem;">Notiz (optional)</label>
+              <input type="text" id="ov-note-${raceId}" placeholder="Grund..." style="width:190px;" />
+            </div>
+            <div class="form-group" style="justify-content:flex-end;">
+              <label>&nbsp;</label>
+              <button class="btn btn-sm btn-primary" data-ov-add="${raceId}">Anwenden</button>
+            </div>
+          </div>
+        </div>`;
+
+      return section('Overrides verwalten', listHtml + addForm);
+    }
+
+    // ====================================================================
+    // PREVIEW EVENTS (override buttons)
+    // ====================================================================
+    function attachPreviewEvents(raceId) {
+      const content = document.getElementById('preview-content');
+
+      // Quick override buttons in pilot rows
+      content.addEventListener('click', async e => {
+        const qbtn = e.target.closest('[data-ov-action]');
+        if (qbtn) {
+          const action = qbtn.dataset.ovAction;
+          const cid    = parseInt(qbtn.dataset.ovCid, 10);
+          const rid    = parseInt(qbtn.dataset.ovRace, 10);
+          await submitOverride(rid, { cid, action });
+          return;
+        }
+        const rbtn = e.target.closest('[data-ov-remove]');
+        if (rbtn) {
+          const cid = parseInt(rbtn.dataset.ovRemove, 10);
+          const rid = parseInt(rbtn.dataset.ovRace, 10);
+          await removeOverride(rid, cid);
+          return;
+        }
+        const abtn = e.target.closest('[data-ov-add]');
+        if (abtn) {
+          const rid = parseInt(abtn.dataset.ovAdd, 10);
+          await handleAddOverride(rid);
+          return;
+        }
+      }, { once: false });
+
+      // Show/hide manual minutes input
+      content.addEventListener('change', e => {
+        const sel = e.target.closest('.ov-action-select');
+        if (!sel) return;
+        const rid   = sel.dataset.race;
+        const group = document.getElementById(`ov-min-group-${rid}`);
+        if (sel.value === 'manual') group.classList.remove('hidden');
+        else group.classList.add('hidden');
+      });
+    }
+
+    async function handleAddOverride(raceId) {
+      const cidVal = document.getElementById(`ov-cid-${raceId}`).value;
+      const cid    = parseInt(cidVal, 10);
+      const action = document.getElementById(`ov-action-${raceId}`).value;
+      const note   = document.getElementById(`ov-note-${raceId}`).value.trim();
+      if (!cid) { toast('CID eingeben.', true); return; }
+      const body = { cid, action };
+      if (note) body.note = note;
+      if (action === 'manual') {
+        const min = parseFloat(document.getElementById(`ov-min-${raceId}`).value);
+        if (!min || min < 1) { toast('Zeit in Minuten eingeben.', true); return; }
+        body.manual_total_min = min;
+      }
+      await submitOverride(raceId, body);
+    }
+
+    async function submitOverride(raceId, body) {
+      const res = await api('POST', `/api/admin/bummel/races/${raceId}/override`, body);
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      toast('Override gesetzt.');
+      await loadRaces();
+      await loadPreview(raceId);
+    }
+
+    async function removeOverride(raceId, cid) {
+      const res = await api('DELETE', `/api/admin/bummel/races/${raceId}/override/${cid}`);
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler beim Entfernen.', true); return; }
+      toast('Override entfernt.');
+      await loadRaces();
+      await loadPreview(raceId);
+    }
+
+    // ====================================================================
+    // INIT
+    // ====================================================================
+    checkAuth();
+  </script>
+</body>
+</html>
