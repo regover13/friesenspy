@@ -1,5 +1,15 @@
 [
   {
+    "version": "6.9.0",
+    "date": "2026-06-28",
+    "title": "Bummel: sekundengenauer Abstand & Badge mit Event-Name",
+    "items": [
+      "📏 Der Abstand zum Schnitt erscheint jetzt mit Vorzeichen und sekundengenau (z. B. »+0:23« oder »−1:05«) — so ist auch bei gleicher Minuten-Blockzeit klar, wer näher dran ist; das entscheidet jetzt auch das Ranking bei Gleichstand.",
+      "🎖 Die Forum-Badges tragen jetzt Event-Name und Datum (auch der Sieger-Badge) — und aktualisieren sich sofort, wenn sich das Ergebnis ändert, statt ein veraltetes Bild zu zeigen.",
+      "🔤 Die Wertungsspalte heißt jetzt »Legs«."
+    ]
+  },
+  {
     "version": "6.8.0",
     "date": "2026-06-28",
     "title": "Bummel: Direkt-Link & Teilen",

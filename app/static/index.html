@@ -2701,7 +2701,7 @@ async function openBummel(ev) {
     // ENTHÜLLT: volles Ranking + darunter die komplette normale Event-Ansicht mit Badges.
     content.innerHTML = renderBummelStandings(view);
     const byCid = new Map();
-    (view.complete || []).forEach(e => byCid.set(e.cid, { complete: true, rank: e.rank, total_min: e.total_min, delta: e.delta }));
+    (view.complete || []).forEach(e => byCid.set(e.cid, { complete: true, rank: e.rank, total_min: e.total_min, delta: e.delta, delta_sec: e.delta_sec }));
     (view.incomplete || []).forEach(e => byCid.set(e.cid, { complete: false, missing: e.missing || [] }));
     _activeBummel = { byCid };
     if (ev.dtstart) document.getElementById('ev-start').value = ev.dtstart.slice(0, 16);
@@ -2764,7 +2764,7 @@ function _bummelStandingBadge(cid) {
   if (!s) return '';
   if (s.complete) {
     const medal = s.rank === 1 ? '🏆 ' : '';
-    const abst = s.delta === 0 ? '★ exakt' : '±' + _fmtMin(Math.round(s.delta));
+    const abst = _fmtSignedDelta(s.delta_sec);
     return `<span class="bummel-badge" title="Bummel-Wertung">🏁 ${medal}Platz ${s.rank} · ${_fmtMin(s.total_min)} · ${abst}</span>`;
   }
   const missing = (s.missing || []).join(', ');
@@ -2779,7 +2779,7 @@ function _buildBummelForumText(data) {
   t += `Durchschnittszeit: ${_fmtMin(Math.round(data.average_min))}\n\n`;
   (data.complete || []).forEach(e => {
     const medal = e.rank === 1 ? '🏆 ' : '';
-    const abst = e.delta === 0 ? '★ exakt' : '±' + _fmtMin(Math.round(e.delta));
+    const abst = _fmtSignedDelta(e.delta_sec);
     t += `${e.rank}. ${medal}${e.name || e.callsign || ('CID ' + e.cid)} (${e.aircraft || '?'}) — ${_fmtMin(e.total_min)} (${abst})\n`;
   });
   return t;
@@ -2809,6 +2809,15 @@ function copyBummelBadgeCode(raceId, cid, btn) {
 }
 
 // Baut den Ranking-HTML-Block (ohne äußeren Panel-Rahmen). inProgress optional (Live-Banner).
+// Signierter, sekundengenauer Abstand zum Schnitt: "+1:23" (über Schnitt) / "−0:18" (darunter)
+// / "★ exakt" (genau auf dem Schnitt). Löst Gleichstände bei gleicher Minuten-Blockzeit sichtbar.
+function _fmtSignedDelta(sec) {
+  if (sec == null) return '—';
+  if (sec === 0) return '★ exakt';
+  const a = Math.abs(sec);
+  return `${sec > 0 ? '+' : '−'}${Math.floor(a / 60)}:${String(a % 60).padStart(2, '0')}`;
+}
+
 function renderBummelStandings(data, inProgress) {
   const route = (data.route || []).join(' → ');
   let html = `<div class="bummel-sub mono text-label" style="margin-bottom:8px;">Strecke: ${escHtml(route)}
@@ -2818,7 +2827,7 @@ function renderBummelStandings(data, inProgress) {
     _bummelForumText = _buildBummelForumText(data);
     html += `<div class="bummel-avg-row">Durchschnittszeit: <strong>${_fmtMin(Math.round(data.average_min))}</strong> · wer am nächsten dran ist, gewinnt
       <button class="btn-share" style="margin-left:10px;" onclick="copyBummelForumText(this)">📋 Für Forum kopieren</button></div>`;
-    html += '<div class="live-table-wrap"><table><thead><tr><th>#</th><th>Pilot</th><th>Flugzeug</th><th>Beine</th><th>Block-Gesamtzeit</th><th>Abstand z. Schnitt</th><th>Badge</th></tr></thead><tbody>';
+    html += '<div class="live-table-wrap"><table><thead><tr><th>#</th><th>Pilot</th><th>Flugzeug</th><th>Legs</th><th>Block-Gesamtzeit</th><th>Abstand z. Schnitt</th><th>Badge</th></tr></thead><tbody>';
     data.complete.forEach(e => {
       const cls = e.rank === 1 ? 'bummel-rank-1' : '';
       const medal = e.rank === 1 ? '🏆 ' : '';
@@ -2828,7 +2837,7 @@ function renderBummelStandings(data, inProgress) {
         <td class="mono">${escHtml(e.aircraft || '—')}</td>
         <td class="mono">${e.leg_count != null ? e.leg_count : '—'}</td>
         <td class="mono">${_fmtMin(e.total_min)}</td>
-        <td class="mono">${e.delta === 0 ? '★ exakt' : '±' + _fmtMin(Math.round(e.delta))}</td>
+        <td class="mono">${_fmtSignedDelta(e.delta_sec)}</td>
         <td>${_bummelBadgeLinks(data.id, e.cid)}</td>
       </tr>`;
     });

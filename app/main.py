@@ -918,8 +918,10 @@ def _badge_entry_data(view: dict, race: dict, cid: int) -> tuple[dict, bool]:
         "aircraft": entry.get("aircraft") or "—",
         "total_min": entry.get("total_min"),
         "delta": entry.get("delta"),
+        "delta_sec": entry.get("delta_sec"),
         "rank": entry.get("rank"),
         "complete": cid in complete,
+        "event": race.get("name") or "FriesenFliegerBummel",
         "date": _fmt_de_date(race.get("dtstart")),
     }
     return d, is_winner
@@ -932,7 +934,7 @@ def _render_badge(d: dict, is_winner: bool) -> bytes:
 
 
 @app.get("/api/bummel/race/{race_id}/badge/{cid}.png")
-async def get_bummel_badge(race_id: int, cid: int):
+async def get_bummel_badge(request: Request, race_id: int, cid: int):
     """Forum-Badge (PNG) für einen Teilnehmer — Sieger groß, sonst Medaille. Erst nach Enthüllung."""
     import hashlib
     import os
@@ -952,12 +954,20 @@ async def get_bummel_badge(race_id: int, cid: int):
     finally:
         conn.close()
 
-    # Cache: Dateiname enthält einen Hash über die ergebnisrelevanten Felder → Override/Reveal
-    # erzeugt automatisch ein frisches Bild.
-    cache_dir = os.path.join(os.path.dirname(settings.DB_PATH) or ".", "badges")
+    # Hash über alle ergebnisrelevanten Felder. Dient (a) als Datei-Cache-Schlüssel und (b) als
+    # ETag: Ändert sich der Sieger (z. B. durch Admin-Override oder eine Wertungsänderung), ändert
+    # sich der ETag → der Browser/das Forum holt ein frisches Bild statt eines veralteten.
     key = hashlib.md5(
-        f"{race.get('revealed_at')}|{is_winner}|{d['total_min']}|{d['delta']}|{d['aircraft']}|{d['callsign']}".encode()
+        f"{race.get('revealed_at')}|{is_winner}|{d['total_min']}|{d.get('delta_sec')}|"
+        f"{d['aircraft']}|{d['callsign']}|{d.get('event')}".encode()
     ).hexdigest()[:10]
+    etag = f'"{key}"'
+    # no-cache erzwingt Revalidierung; passt der ETag noch, antwortet der Server mit 304 (kein
+    # erneuter Download), sonst mit dem frischen Bild.
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
+
+    cache_dir = os.path.join(os.path.dirname(settings.DB_PATH) or ".", "badges")
     path = os.path.join(cache_dir, f"{race_id}_{cid}_{key}.png")
     try:
         with open(path, "rb") as fh:
@@ -971,7 +981,7 @@ async def get_bummel_badge(race_id: int, cid: int):
         except OSError:
             pass  # Cache optional — Bild wurde bereits erzeugt
     return Response(content=png, media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "no-cache", "ETag": etag})
 
 
 @app.get("/api/admin/bummel/races/{race_id}/badge/{cid}.png")

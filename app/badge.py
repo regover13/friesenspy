@@ -104,6 +104,26 @@ def _footer(dr, fill):
     dr.text(((_S - w) / 2, int(_S * 0.86)), _BRAND, font=f, fill=fill)
 
 
+def _fmt_signed_delta(sec) -> str:
+    """Signierter, sekundengenauer Abstand zum Schnitt: '+1:23 zum Schnitt' / 'punktgenau'."""
+    if sec is None:
+        return ""
+    if sec == 0:
+        return "punktgenau"
+    a = abs(int(sec))
+    return f"{'+' if sec > 0 else '−'}{a // 60}:{a % 60:02d} zum Schnitt"
+
+
+def _event_caption(dr, d, fill):
+    """Event-Name (Überschrift) + Datum als Bildunterschrift unterhalb der Inselkette."""
+    ev = d.get("event") or ""
+    if ev:
+        _ctext(dr, int(_S * 0.750), ev, 20, fill, 0.82)
+    date = d.get("date") or ""
+    if date:
+        _ctext(dr, int(_S * 0.805), date, 16, fill, 0.70)
+
+
 def render_winner_badge(d: dict) -> bytes:
     """Sieger-Badge: helle Kuppel, dunkle Schrift (Navy/Rot)."""
     img = _load_bg("winner_bg.png") or _fallback_disk(_LBLUE)
@@ -113,15 +133,15 @@ def render_winner_badge(d: dict) -> bytes:
     _ctext(dr, int(_S * 0.220), "ABSOLUTER", 32, _RED, 0.42)
     _ctext(dr, int(_S * 0.295), "DURCHSCHNITT!", 32, _RED, 0.58)
 
-    _ctext(dr, int(_S * 0.405), d.get("callsign", ""), 64, _NAVY, 0.70)
+    _ctext(dr, int(_S * 0.400), d.get("callsign", ""), 60, _NAVY, 0.70)
     if d.get("name"):
-        _ctext(dr, int(_S * 0.530), d["name"], 24, _RED, 0.70)
+        _ctext(dr, int(_S * 0.510), d["name"], 24, _RED, 0.70)
 
-    delta = d.get("delta")
-    diff = "punktgenau" if delta in (0, 0.0) else f"±{_fmt_min(delta)} zum Schnitt"
+    diff = _fmt_signed_delta(d.get("delta_sec"))
     info = f"{d.get('aircraft', '—')} · {_fmt_min(d.get('total_min'))} · {diff}"
-    _ctext(dr, int(_S * 0.600), info, 20, _NAVY, 0.66)
+    _ctext(dr, int(_S * 0.585), info, 19, _NAVY, 0.70)
 
+    _event_caption(dr, d, _LBLUE)
     _footer(dr, _LBLUE)
     return _finish(img)
 
@@ -131,17 +151,18 @@ def render_medal(d: dict) -> bytes:
     img = _load_bg("medal_bg.png") or _fallback_disk(_NAVY)
     dr = ImageDraw.Draw(img)
 
-    _ctext(dr, int(_S * 0.235), "VOLL DANEBEN!", 34, _ORANGE, 0.78)
-    _ctext(dr, int(_S * 0.330), d.get("callsign", ""), 60, _LBLUE, 0.72)
+    _ctext(dr, int(_S * 0.215), "VOLL DANEBEN!", 34, _ORANGE, 0.78)
+    _ctext(dr, int(_S * 0.310), d.get("callsign", ""), 58, _LBLUE, 0.72)
     if d.get("name"):
-        _ctext(dr, int(_S * 0.460), d["name"], 24, _WHITE, 0.74)
+        _ctext(dr, int(_S * 0.430), d["name"], 24, _WHITE, 0.74)
 
-    if d.get("complete") and d.get("delta") is not None:
-        res = "punktgenau" if d["delta"] in (0, 0.0) else f"±{_fmt_min(d['delta'])} zum Schnitt"
+    if d.get("complete") and d.get("delta_sec") is not None:
+        res = _fmt_signed_delta(d["delta_sec"])
     else:
         res = "dabei gewesen"
-    _ctext(dr, int(_S * 0.545), f"{d.get('aircraft', '—')} · {d.get('date', '')}", 22, _LBLUE, 0.80)
-    _ctext(dr, int(_S * 0.600), res, 22, _LBLUE, 0.80)
+    _ctext(dr, int(_S * 0.520), d.get("aircraft", "—"), 22, _LBLUE, 0.80)
+    _ctext(dr, int(_S * 0.585), res, 20, _LBLUE, 0.80)
 
+    _event_caption(dr, d, _LBLUE)
     _footer(dr, _LBLUE)
     return _finish(img)

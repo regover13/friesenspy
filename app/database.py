@@ -643,6 +643,27 @@ def _block_minutes(
         return 0
 
 
+def _block_seconds(
+    conn: sqlite3.Connection, cid: int, logon_time: str, logoff_time: str
+) -> int:
+    """Block-/Bewegungszeit in SEKUNDEN (sekundengenaue Variante von _block_minutes).
+
+    Wird für die Bummel-Wertung gebraucht, damit der Abstand zum Schnitt auch bei gleicher
+    Minuten-Blockzeit unterscheidbar bleibt. 0, wenn keine bewegte Position vorliegt.
+    """
+    rows = conn.execute(
+        "SELECT MIN(ts), MAX(ts) FROM position_history "
+        "WHERE cid = ? AND ts >= ? AND ts <= ? AND groundspeed > ?",
+        (cid, logon_time, logoff_time, _BLOCK_GS_KT),
+    ).fetchone()
+    if not rows or not rows[0] or not rows[1]:
+        return 0
+    try:
+        return max(0, int((_parse_iso(rows[1]) - _parse_iso(rows[0])).total_seconds()))
+    except Exception:
+        return 0
+
+
 def consolidate_flights(
     conn: sqlite3.Connection, *, statsim_correct: bool = True, shrink_margin_min: int = 10
 ) -> int:
@@ -1533,11 +1554,14 @@ def compute_bummel_standings(
         arr = _nearest_route_airport(_last_pos(conn, int(cid), lo, lf)) or fp_arr
         block = f.get("block_min")
         minutes = int(block) if block else int(f.get("duration_min") or 0)
+        # Sekundengenaue Block-Zeit aus dem GPS-Track; Fallback Minuten*60 (StatSim / kein Track).
+        secs = _block_seconds(conn, int(cid), lo, lf) or minutes * 60
         legs_by_cid.setdefault(cid, []).append({
             "departure": dep,
             "arrival": arr,
             "block_min": block,
             "minutes": minutes,
+            "seconds": secs,
             "aircraft": f.get("aircraft") or "",
             "logon_time": f.get("logon_time") or "",
             "logoff_time": f.get("logoff_time"),
@@ -1561,8 +1585,10 @@ def compute_bummel_standings(
         tour = legs[start_idx:end_idx + 1]
         visited: set[str] = set()
         total = 0
+        total_secs = 0
         for l in tour:
             total += l["minutes"]
+            total_secs += l["seconds"]
             if l["departure"] in route_set:
                 visited.add(l["departure"])
             if l["arrival"] in route_set:
@@ -1573,6 +1599,7 @@ def compute_bummel_standings(
             "name": (row["name"] if row else "") or "",
             "callsign": tour[0]["callsign"],
             "total_min": total,
+            "total_sec": total_secs,
             "legs": [{k: v for k, v in l.items() if k != "callsign"} for l in tour],
             "leg_count": len(tour),
             "aircraft": next((l["aircraft"] for l in tour if l["aircraft"]), ""),
@@ -1583,9 +1610,12 @@ def compute_bummel_standings(
 
     count = len(complete)
     average = (sum(e["total_min"] for e in complete) / count) if count else 0.0
+    average_sec = (sum(e["total_sec"] for e in complete) / count) if count else 0.0
     for e in complete:
-        e["delta"] = round(abs(e["total_min"] - average), 1)
-    complete.sort(key=lambda e: (e["delta"], e["total_min"], e["cid"]))
+        e["delta"] = round(abs(e["total_min"] - average), 1)     # Minuten (Anzeige/Kompat)
+        e["delta_sec"] = round(e["total_sec"] - average_sec)      # SIGNIERT, sekundengenau
+    # Sekundengenaues Ranking: löst Gleichstände bei gleicher Minuten-Blockzeit auf.
+    complete.sort(key=lambda e: (abs(e["delta_sec"]), e["total_sec"], e["cid"]))
     for rank, e in enumerate(complete, 1):
         e["rank"] = rank
     incomplete.sort(key=lambda e: e["cid"])
@@ -1595,14 +1625,15 @@ def compute_bummel_standings(
         "complete": complete,
         "incomplete": incomplete,
         "average_min": round(average, 1),
+        "average_sec": round(average_sec),
         "count": count,
         "participant_count": len(complete) + len(incomplete),
     }
 
 
 # Felder, die in der öffentlichen Sicht eines Teilnehmers vor Enthüllung erlaubt sind.
-# Bewusst OHNE total_min/block_min/delta/rank/distance/logoff/duration — alles, woraus sich
-# eine Zeit ableiten ließe, bleibt verborgen (Fairness: niemand kann seine Zeit darauf ausrichten).
+# Bewusst OHNE total_min/total_sec/block_min/delta/delta_sec/rank/distance/logoff/duration —
+# alles, woraus sich eine Zeit ableiten ließe, bleibt verborgen (Fairness).
 def public_bummel_view(standings: dict, in_progress: list[dict], revealed: bool) -> dict:
     """Öffentliche Sicht auf ein Rennen.
 
