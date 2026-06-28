@@ -1,5 +1,13 @@
 [
   {
+    "version": "6.6.1",
+    "date": "2026-06-28",
+    "title": "Bummel-Teilen vereinheitlicht",
+    "items": [
+      "⎘ Der »Teilen«-Knopf beim Bummel sieht jetzt aus wie überall sonst und sitzt oben rechts im Bummel-Fenster — ein Klick kopiert den Direkt-Link in die Zwischenablage."
+    ]
+  },
+  {
     "version": "6.6.0",
     "date": "2026-06-28",
     "title": "Bummel: Zwischenlandungen & Frühstarter zählen",

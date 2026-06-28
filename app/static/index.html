@@ -1580,7 +1580,10 @@
 
     <div id="bummel-results" class="hidden">
       <div class="panel">
-        <div class="panel-title" id="bummel-title">🏁 FriesenFliegerBummel</div>
+        <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <span id="bummel-title">🏁 FriesenFliegerBummel</span>
+          <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
+        </div>
         <div id="bummel-content"></div>
       </div>
     </div>
@@ -2812,8 +2815,7 @@ function renderBummelStandings(data, inProgress) {
   if (data.count > 0) {
     _bummelForumText = _buildBummelForumText(data);
     html += `<div class="bummel-avg-row">Durchschnittszeit: <strong>${_fmtMin(Math.round(data.average_min))}</strong> · wer am nächsten dran ist, gewinnt
-      <button class="btn-share" style="margin-left:10px;" onclick="copyBummelForumText(this)">📋 Für Forum kopieren</button>
-      <button class="btn-share" style="margin-left:6px;" onclick="shareBummel(this)">🔗 Teilen</button></div>`;
+      <button class="btn-share" style="margin-left:10px;" onclick="copyBummelForumText(this)">📋 Für Forum kopieren</button></div>`;
     html += '<div class="live-table-wrap"><table><thead><tr><th>#</th><th>Pilot</th><th>Flugzeug</th><th>Beine</th><th>Block-Gesamtzeit</th><th>Abstand z. Schnitt</th><th>Badge</th></tr></thead><tbody>';
     data.complete.forEach(e => {
       const cls = e.rank === 1 ? 'bummel-rank-1' : '';
@@ -2889,31 +2891,6 @@ function getUrlState() {
 
 function setUrlState(params) {
   history.replaceState(null, '', '#' + new URLSearchParams(params).toString());
-}
-
-// Bummel teilen: native Web-Share-API (Deep-Link aus location.href, von openBummel gesetzt),
-// Fallback auf Zwischenablage. Button-Feedback wie copyShareUrl.
-async function shareBummel(btn) {
-  const url = location.href;
-  const title = document.getElementById('bummel-title');
-  const name = (title ? title.textContent : '') || 'FriesenFliegerBummel';
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: 'FriesenFliegerBummel', text: name, url });
-      return;
-    } catch (e) {
-      if (e && e.name === 'AbortError') return;  // Nutzer hat den Share-Dialog abgebrochen
-      // sonst: auf Clipboard-Fallback durchfallen
-    }
-  }
-  const orig = btn.textContent;
-  navigator.clipboard.writeText(url).then(() => {
-    btn.textContent = '✓ Kopiert!';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  }).catch(() => {
-    btn.textContent = '✗ Fehler';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  });
 }
 
 function copyShareUrl(btn) {
