@@ -10,7 +10,7 @@ Python 3.11, FastAPI, APScheduler, SQLite (WAL), httpx, pydantic-settings, airpo
 
 ```bash
 pip install -r requirements.txt
-# config.env anlegen (SECRET_KEY + FRIESENFLIEGER_CIDS erforderlich)
+# config.env anlegen (SECRET_KEY erforderlich; Friesen-Erkennung via CALLSIGN_PREFIX=FRS)
 uvicorn app.main:app --reload
 # http://localhost:8091
 ```
@@ -41,7 +41,7 @@ mkdir -p /opt/friesenspy/data
 
 ## Projektstruktur
 
-- `app/config.py` — pydantic-settings, FRIESENFLIEGER_CIDS
+- `app/config.py` — pydantic-settings, CALLSIGN_PREFIX (Friesen-Erkennung), ADMIN_PASSWORD, VAPID
 - `app/database.py` — SQLite WAL, alle DB-Funktionen
 - `app/vatsim.py` — VATSIM-API-Client
 - `app/geo.py` — Haversine, ICAO→Koordinaten, Event-Filter
@@ -54,7 +54,8 @@ mkdir -p /opt/friesenspy/data
 ## Konfiguration (config.env — NIE in git)
 
 ```bash
-FRIESENFLIEGER_CIDS=1234567,8901234,...
+# Friesen werden über das Callsign-Präfix erkannt (NICHT über eine CID-Liste).
+CALLSIGN_PREFIX=FRS              # Default: FRS
 SECRET_KEY=<random-string>
 TELEGRAM_BOT_TOKEN=          # Optional
 TELEGRAM_CHAT_ID=            # Optional

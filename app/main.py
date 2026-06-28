@@ -34,10 +34,17 @@ from app.database import (
     update_bummel_race,
     update_bummel_reveals,
     upsert_bummel_override,
+    delete_pilot,
     delete_push_subscription,
     get_all_position_history,
+    get_all_push_subscriptions,
+    get_app_setting,
     get_calendar_events,
     get_connection,
+    get_push_subscription_by_endpoint,
+    list_pilots,
+    set_app_setting,
+    upsert_pilot,
     get_live_flight_track,
     get_live_positions,
     get_stats,
@@ -51,7 +58,7 @@ from app.database import (
     upsert_statsim_flights,
 )
 from app.geo import filter_event_pilots, haversine, segment_into_flights
-from app.poller import VatsimPoller, create_poller
+from app.poller import VatsimPoller, create_poller, send_web_push
 from app.statsim import fetch_flight_track, fetch_pilot_flights
 from app.version import CHANGELOG, VERSION
 
@@ -174,14 +181,36 @@ async def health():
     return {"status": "ok"}
 
 
+def _resolve_banner_version(selected: str | None) -> str | None:
+    """Banner-Auswahl auf eine konkrete Changelog-Version (oder None = kein Banner) auflösen.
+
+    ``off`` → None; eine konkrete Version → diese (falls existent, sonst None);
+    ``auto``/leer → neuester Eintrag mit ``highlight: true`` (Fallback: neuester Eintrag).
+    """
+    if selected == "off":
+        return None
+    if selected and selected != "auto":
+        return selected if any(e.get("version") == selected for e in CHANGELOG) else None
+    for e in CHANGELOG:
+        if e.get("highlight"):
+            return e.get("version")
+    return CHANGELOG[0]["version"] if CHANGELOG else None
+
+
 @app.get("/api/frontend-config")
 async def frontend_config():
     settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        selected = get_app_setting(conn, "banner_version", "auto")
+    finally:
+        conn.close()
     return {
         "openaip_api_key": settings.OPENAIP_API_KEY,
         "vapid_public_key": settings.VAPID_PUBLIC_KEY,
         "version": VERSION,
         "changelog": CHANGELOG,
+        "banner_version": _resolve_banner_version(selected),
     }
 
 
@@ -868,12 +897,41 @@ def _fmt_de_date(iso: str) -> str:
         return ""
 
 
+def _badge_entry_data(view: dict, race: dict, cid: int) -> tuple[dict, bool]:
+    """Render-Daten + Sieger-Flag für einen Teilnehmer aus einer (enthüllten) Renn-Sicht.
+
+    Wirft 404, wenn die CID nicht teilgenommen hat.
+    """
+    complete = {e["cid"]: e for e in view.get("complete", [])}
+    incomplete = {e["cid"]: e for e in view.get("incomplete", [])}
+    entry = complete.get(cid) or incomplete.get(cid)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Teilnehmer nicht gefunden")
+    is_winner = cid in complete and entry.get("rank") == 1
+    d = {
+        "callsign": entry.get("callsign") or f"CID {cid}",
+        "name": entry.get("name") or "",
+        "aircraft": entry.get("aircraft") or "—",
+        "total_min": entry.get("total_min"),
+        "delta": entry.get("delta"),
+        "rank": entry.get("rank"),
+        "complete": cid in complete,
+        "date": _fmt_de_date(race.get("dtstart")),
+    }
+    return d, is_winner
+
+
+def _render_badge(d: dict, is_winner: bool) -> bytes:
+    """Badge-PNG erzeugen (Sieger groß, sonst Medaille)."""
+    from app.badge import render_medal, render_winner_badge
+    return render_winner_badge(d) if is_winner else render_medal(d)
+
+
 @app.get("/api/bummel/race/{race_id}/badge/{cid}.png")
 async def get_bummel_badge(race_id: int, cid: int):
     """Forum-Badge (PNG) für einen Teilnehmer — Sieger groß, sonst Medaille. Erst nach Enthüllung."""
     import hashlib
     import os
-    from app.badge import render_medal, render_winner_badge
 
     now = datetime.now(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     settings = get_settings()
@@ -886,22 +944,7 @@ async def get_bummel_badge(race_id: int, cid: int):
         view = _build_race_view(conn, race, now)
         if not view.get("revealed"):
             raise HTTPException(status_code=404, detail="Ergebnisse noch nicht enthüllt")
-        complete = {e["cid"]: e for e in view.get("complete", [])}
-        incomplete = {e["cid"]: e for e in view.get("incomplete", [])}
-        entry = complete.get(cid) or incomplete.get(cid)
-        if not entry:
-            raise HTTPException(status_code=404, detail="Teilnehmer nicht gefunden")
-        is_winner = cid in complete and entry.get("rank") == 1
-        d = {
-            "callsign": entry.get("callsign") or f"CID {cid}",
-            "name": entry.get("name") or "",
-            "aircraft": entry.get("aircraft") or "—",
-            "total_min": entry.get("total_min"),
-            "delta": entry.get("delta"),
-            "rank": entry.get("rank"),
-            "complete": cid in complete,
-            "date": _fmt_de_date(race.get("dtstart")),
-        }
+        d, is_winner = _badge_entry_data(view, race, cid)
     finally:
         conn.close()
 
@@ -916,7 +959,7 @@ async def get_bummel_badge(race_id: int, cid: int):
         with open(path, "rb") as fh:
             png = fh.read()
     except OSError:
-        png = render_winner_badge(d) if is_winner else render_medal(d)
+        png = _render_badge(d, is_winner)
         try:
             os.makedirs(cache_dir, exist_ok=True)
             with open(path, "wb") as fh:
@@ -925,6 +968,25 @@ async def get_bummel_badge(race_id: int, cid: int):
             pass  # Cache optional — Bild wurde bereits erzeugt
     return Response(content=png, media_type="image/png",
                     headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/api/admin/bummel/races/{race_id}/badge/{cid}.png")
+async def admin_bummel_badge(request: Request, race_id: int, cid: int):
+    """Badge-Vorschau für den Admin — funktioniert auch VOR der Enthüllung, immer frisch gerendert."""
+    require_admin(request)
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        race = get_bummel_race(conn, race_id)
+        if not race:
+            raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
+        view = _build_race_view(conn, race, _now_iso(), force_reveal=True)
+        d, is_winner = _badge_entry_data(view, race, cid)
+    finally:
+        conn.close()
+    png = _render_badge(d, is_winner)
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/bummel/active")
@@ -1021,6 +1083,149 @@ async def admin_me(request: Request):
     """Prüft, ob der Client als Admin eingeloggt ist (fürs Frontend)."""
     require_admin(request)
     return {"admin": True}
+
+
+# ---------------------------------------------------------------------------
+# Admin: Banner-/Hinweis-Verwaltung
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/banner")
+async def admin_get_banner(request: Request):
+    """Aktuelle Banner-Auswahl + alle Changelog-Einträge (für die Admin-Auswahl)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        selected = get_app_setting(conn, "banner_version", "auto")
+    finally:
+        conn.close()
+    entries = [
+        {"version": e.get("version"), "date": e.get("date", ""),
+         "title": e.get("title", ""), "highlight": bool(e.get("highlight"))}
+        for e in CHANGELOG
+    ]
+    return {"selected": selected, "entries": entries}
+
+
+@app.post("/api/admin/banner")
+async def admin_set_banner(request: Request):
+    """Banner-Auswahl setzen: ``auto`` | ``off`` | konkrete Version."""
+    require_admin(request)
+    body = await request.json()
+    version = str(body.get("version", "auto")).strip() or "auto"
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        set_app_setting(conn, "banner_version", version)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok", "selected": version, "resolved": _resolve_banner_version(version)}
+
+
+# ---------------------------------------------------------------------------
+# Admin: Push (Test ans eigene Gerät + Broadcast) & Piloten-Verwaltung
+# ---------------------------------------------------------------------------
+
+@app.post("/api/admin/push/test")
+async def admin_push_test(request: Request):
+    """Test-Benachrichtigung NUR an das angegebene (eigene) Gerät senden.
+
+    Der Browser meldet seinen eigenen Push-Endpoint; es wird ausschließlich an genau diese
+    eine Subscription gesendet — nie an andere Friesen.
+    """
+    require_admin(request)
+    settings = get_settings()
+    if not settings.VAPID_PRIVATE_KEY:
+        raise HTTPException(status_code=400, detail="VAPID nicht konfiguriert")
+    body = await request.json()
+    endpoint = str(body.get("endpoint", "")).strip()
+    if not endpoint:
+        raise HTTPException(status_code=400, detail="endpoint erforderlich")
+    conn = get_connection(settings.DB_PATH)
+    try:
+        sub = get_push_subscription_by_endpoint(conn, endpoint)
+    finally:
+        conn.close()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Bitte zuerst in der App Push aktivieren.")
+    payload = {"title": "FriesenSpy Test ✅", "body": "Test-Benachrichtigung vom Admin.", "url": "/"}
+    await send_web_push(
+        settings.VAPID_PRIVATE_KEY, settings.VAPID_CONTACT_EMAIL, settings.DB_PATH,
+        [sub], payload, label="Admin-Test",
+    )
+    return {"status": "ok", "sent": 1}
+
+
+@app.post("/api/admin/push/broadcast")
+async def admin_push_broadcast(request: Request):
+    """Freie Nachricht (Titel + Text) als Push an eine wählbare Zielgruppe senden."""
+    require_admin(request)
+    settings = get_settings()
+    if not settings.VAPID_PRIVATE_KEY:
+        raise HTTPException(status_code=400, detail="VAPID nicht konfiguriert")
+    body = await request.json()
+    title = str(body.get("title", "")).strip()
+    text = str(body.get("body", "")).strip()
+    audience = str(body.get("audience", "all")).strip()
+    if not title or not text:
+        raise HTTPException(status_code=400, detail="title und body erforderlich")
+    conn = get_connection(settings.DB_PATH)
+    try:
+        subs = (get_push_subscriptions_for_events(conn) if audience == "events"
+                else get_all_push_subscriptions(conn))
+    finally:
+        conn.close()
+    if subs:
+        payload = {"title": title, "body": text, "url": "/"}
+        await send_web_push(
+            settings.VAPID_PRIVATE_KEY, settings.VAPID_CONTACT_EMAIL, settings.DB_PATH,
+            subs, payload, label=f"Admin-Broadcast({audience})",
+        )
+    return {"status": "ok", "audience": audience, "sent": len(subs)}
+
+
+@app.get("/api/admin/pilots")
+async def admin_list_pilots(request: Request):
+    """Bekannte Piloten (cid, name, added_at) für die Admin-Verwaltung."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return list_pilots(conn)
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/pilots")
+async def admin_upsert_pilot(request: Request):
+    """Pilot anlegen oder Namen aktualisieren ({cid, name})."""
+    require_admin(request)
+    body = await request.json()
+    try:
+        cid = int(body.get("cid"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Gültige CID erforderlich")
+    name = str(body.get("name", "")).strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name erforderlich")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        upsert_pilot(conn, cid, name)
+        conn.commit()
+        return {"status": "ok", "cid": cid, "name": name}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/pilots/{cid}")
+async def admin_delete_pilot(request: Request, cid: int):
+    """Pilot aus der pilots-Tabelle entfernen."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        delete_pilot(conn, cid)
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------

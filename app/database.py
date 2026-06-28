@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS pilots (
     added_at  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT,
+    updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS flights (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     cid           INTEGER REFERENCES pilots(cid),
@@ -355,6 +361,51 @@ def ensure_pilot(conn: sqlite3.Connection, cid: int, name: str) -> bool:
         (cid, name, _now_utc()),
     )
     return conn.execute("SELECT changes()").fetchone()[0] == 1
+
+
+# ---------------------------------------------------------------------------
+# App-Settings (generisches Key/Value, z. B. Banner-Auswahl)
+# ---------------------------------------------------------------------------
+
+def get_app_setting(conn: sqlite3.Connection, key: str, default=None):
+    """Wert einer App-Einstellung lesen; ``default`` falls nicht gesetzt."""
+    row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+    return row[0] if row is not None else default
+
+
+def set_app_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
+    """App-Einstellung setzen/überschreiben (kein commit)."""
+    conn.execute(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        (key, value, _now_utc()),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Piloten-Verwaltung (Admin)
+# ---------------------------------------------------------------------------
+
+def list_pilots(conn: sqlite3.Connection) -> list[dict]:
+    """Alle bekannten Piloten (cid, name, added_at), nach Name sortiert."""
+    rows = conn.execute(
+        "SELECT cid, name, added_at FROM pilots ORDER BY name COLLATE NOCASE, cid"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_pilot(conn: sqlite3.Connection, cid: int, name: str) -> None:
+    """Pilot anlegen oder Namen aktualisieren (added_at bleibt beim Update erhalten)."""
+    conn.execute(
+        "INSERT INTO pilots (cid, name, added_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(cid) DO UPDATE SET name = excluded.name",
+        (cid, name, _now_utc()),
+    )
+
+
+def delete_pilot(conn: sqlite3.Connection, cid: int) -> None:
+    """Pilot aus der pilots-Tabelle entfernen."""
+    conn.execute("DELETE FROM pilots WHERE cid = ?", (cid,))
 
 
 def open_flight(
@@ -1356,6 +1407,15 @@ def get_all_push_subscriptions(conn: sqlite3.Connection) -> list[dict]:
     """Alle Push-Subscriptions (für Broadcast-Benachrichtigungen wie Bummel-Start/-Enthüllung)."""
     rows = conn.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions").fetchall()
     return [dict(r) for r in rows]
+
+
+def get_push_subscription_by_endpoint(conn: sqlite3.Connection, endpoint: str) -> dict | None:
+    """Genau eine Subscription anhand ihres Endpoints (für Test-Push nur ans eigene Gerät)."""
+    row = conn.execute(
+        "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE endpoint = ?",
+        (endpoint,),
+    ).fetchone()
+    return dict(row) if row is not None else None
 
 
 def compute_bummel_standings(

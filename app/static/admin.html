@@ -783,6 +783,66 @@
           </div>
         </div>
 
+        <!-- HINWEIS-BANNER -->
+        <div class="panel">
+          <div class="panel-title"><span>Hinweis-Banner (App-Startseite)</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Welcher Changelog-Eintrag wird den Nutzern als Banner gezeigt?
+          </p>
+          <div id="banner-options"><div class="empty-hint">Lade…</div></div>
+          <div style="margin-top:12px;">
+            <button class="btn btn-primary btn-sm" id="banner-save-btn">Speichern</button>
+          </div>
+        </div>
+
+        <!-- BENACHRICHTIGUNG SENDEN -->
+        <div class="panel">
+          <div class="panel-title"><span>Benachrichtigung senden</span></div>
+          <div style="margin-bottom:18px;">
+            <button class="btn btn-sm" id="push-test-btn">&#x1F514; Test an mich</button>
+            <span style="color:#8aa0b8;font-size:0.8rem;margin-left:8px;">Nur an dieses Gerät (Push muss in der App aktiv sein).</span>
+          </div>
+          <div class="form-section-title">Broadcast an Abonnenten</div>
+          <div class="form-grid" style="margin:10px 0 12px;">
+            <div class="form-group">
+              <label for="bc-title">Titel</label>
+              <input type="text" id="bc-title" placeholder="z.B. FriesenFlieger-News" />
+            </div>
+            <div class="form-group">
+              <label for="bc-audience">Zielgruppe</label>
+              <select id="bc-audience">
+                <option value="all">Alle Abonnenten</option>
+                <option value="events">Nur Events-Abonnenten</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:12px;">
+            <label for="bc-body">Nachricht</label>
+            <input type="text" id="bc-body" placeholder="Text der Benachrichtigung" />
+          </div>
+          <button class="btn btn-primary btn-sm" id="bc-send-btn">Broadcast senden</button>
+        </div>
+
+        <!-- PILOTEN -->
+        <div class="panel">
+          <div class="panel-title"><span>Piloten</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Bekannte Piloten — Namen pflegen, anlegen oder entfernen.
+          </p>
+          <div class="form-grid" style="margin-bottom:12px;">
+            <div class="form-group">
+              <label for="pilot-cid">CID</label>
+              <input type="number" id="pilot-cid" placeholder="1234567" />
+            </div>
+            <div class="form-group">
+              <label for="pilot-name">Name</label>
+              <input type="text" id="pilot-name" placeholder="Vorname Nachname" />
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="pilot-add-btn" style="margin-bottom:14px;">Anlegen / aktualisieren</button>
+          <div id="pilots-container"><div class="empty-hint">Lade Piloten…</div></div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -928,6 +988,8 @@
     function showAdmin() {
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('admin-ui').classList.remove('hidden');
+      loadBanner();
+      loadPilots();
     }
 
     document.getElementById('login-form').addEventListener('submit', async e => {
@@ -1343,7 +1405,7 @@
       if (d.complete && d.complete.length) {
         html += section('Fertig – Wertung (' + d.complete.length + ')',
           tableWrap(
-            thRow(['#', 'Pilot', 'CID', 'Callsign', 'Flugzeug', 'Beine', 'Gesamt', '+Ø', 'Flags', 'Aktionen']),
+            thRow(['#', 'Pilot', 'CID', 'Callsign', 'Flugzeug', 'Beine', 'Gesamt', '+Ø', 'Flags', 'Badge', 'Aktionen']),
             d.complete.map(p => {
               const isFirst = p.rank === 1;
               const delta   = p.delta != null
@@ -1361,6 +1423,7 @@
                 <td class="td-time">${fmtMin(p.total_min)}</td>
                 <td class="td-dim">${escH(delta)}</td>
                 <td>${flags.join(' ') || '—'}</td>
+                <td>${badgeCell(raceId, p.cid)}</td>
                 <td>${quickOverrideBtns(raceId, p.cid)}</td>
               </tr>`;
             }).join('')
@@ -1372,7 +1435,7 @@
       if (d.incomplete && d.incomplete.length) {
         html += section('Unvollständig (' + d.incomplete.length + ')',
           tableWrap(
-            thRow(['Pilot', 'CID', 'Callsign', 'Flugzeug', 'Abgehakt', 'Fehlend', 'Aktionen']),
+            thRow(['Pilot', 'CID', 'Callsign', 'Flugzeug', 'Abgehakt', 'Fehlend', 'Badge', 'Aktionen']),
             d.incomplete.map(p => {
               const visited = (p.visited || []).join(', ') || '—';
               const missing = (p.missing || []).join(', ') || '—';
@@ -1383,6 +1446,7 @@
                 <td class="td-dim">${escH(p.aircraft || '—')}</td>
                 <td style="color:var(--green);font-size:0.78rem;">${escH(visited)}</td>
                 <td style="color:#e0884a;font-size:0.78rem;">${escH(missing)}</td>
+                <td>${badgeCell(raceId, p.cid)}</td>
                 <td>${quickOverrideBtns(raceId, p.cid)}</td>
               </tr>`;
             }).join('')
@@ -1431,6 +1495,16 @@
 
     function tableWrap(thead, tbody) {
       return `<div class="table-wrap"><table class="preview-table">${thead}<tbody>${tbody}</tbody></table></div>`;
+    }
+
+    function badgeCell(raceId, cid) {
+      // 🎖 öffnet die Admin-Vorschau (funktioniert auch vor der Enthüllung);
+      // 📋 kopiert den öffentlichen Forum-BBCode (nach Enthüllung gültig).
+      const adminUrl = `/api/admin/bummel/races/${raceId}/badge/${escA(cid)}.png`;
+      return `<div class="quick-btns">
+        <a class="btn btn-sm" style="font-size:0.6rem;padding:3px 8px;text-decoration:none;" href="${adminUrl}" target="_blank" rel="noopener">🎖 Badge</a>
+        <button class="btn btn-sm" style="font-size:0.6rem;padding:3px 8px;" data-badge-race="${raceId}" data-badge-cid="${escA(cid)}">📋 Forum</button>
+      </div>`;
     }
 
     function quickOverrideBtns(raceId, cid) {
@@ -1533,6 +1607,19 @@
           await handleAddOverride(rid);
           return;
         }
+        const bbtn = e.target.closest('[data-badge-cid]');
+        if (bbtn) {
+          const cid = bbtn.dataset.badgeCid;
+          const rid = bbtn.dataset.badgeRace;
+          const code = `[img]${location.origin}/api/bummel/race/${rid}/badge/${cid}.png[/img]`;
+          try {
+            await navigator.clipboard.writeText(code);
+            const old = bbtn.textContent;
+            bbtn.textContent = '✓ kopiert';
+            setTimeout(() => { bbtn.textContent = old; }, 2000);
+          } catch { toast('Kopieren fehlgeschlagen.', true); }
+          return;
+        }
       }, { once: false });
 
       // Show/hide manual minutes input
@@ -1578,6 +1665,142 @@
       toast('Override entfernt.');
       await loadRaces();
       await loadPreview(raceId);
+    }
+
+    // ====================================================================
+    // HINWEIS-BANNER
+    // ====================================================================
+    let _bannerSelected = 'auto';
+
+    async function loadBanner() {
+      const res = await api('GET', '/api/admin/banner');
+      if (!res || !res.ok) return;
+      const data = await res.json();
+      _bannerSelected = data.selected || 'auto';
+      const opts = [
+        { value: 'auto', label: 'Automatisch (neuestes großes Update)' },
+        { value: 'off',  label: 'Kein Banner' },
+        ...data.entries.map(e => ({
+          value: e.version,
+          label: `v${e.version} — ${e.title || ''}${e.highlight ? ' ★' : ''}`,
+        })),
+      ];
+      document.getElementById('banner-options').innerHTML = opts.map(o => `
+        <label style="display:block;padding:5px 0;cursor:pointer;">
+          <input type="radio" name="banner-choice" value="${escA(o.value)}" ${o.value === _bannerSelected ? 'checked' : ''} />
+          ${escH(o.label)}
+        </label>`).join('');
+    }
+
+    document.getElementById('banner-save-btn').addEventListener('click', async () => {
+      const sel = document.querySelector('input[name="banner-choice"]:checked');
+      const version = sel ? sel.value : 'auto';
+      const res = await api('POST', '/api/admin/banner', { version });
+      if (!res) return;
+      if (!res.ok) { toast('Speichern fehlgeschlagen.', true); return; }
+      _bannerSelected = version;
+      toast('Banner gespeichert.');
+    });
+
+    // ====================================================================
+    // BENACHRICHTIGUNG (Test ans eigene Gerät + Broadcast)
+    // ====================================================================
+    document.getElementById('push-test-btn').addEventListener('click', async () => {
+      let sub = null;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        sub = await reg.pushManager.getSubscription();
+      } catch { /* SW evtl. nicht registriert */ }
+      if (!sub) { toast('Bitte zuerst in der App Push aktivieren.', true); return; }
+      const res = await api('POST', '/api/admin/push/test', { endpoint: sub.endpoint });
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      toast('Test-Benachrichtigung gesendet.');
+    });
+
+    document.getElementById('bc-send-btn').addEventListener('click', async () => {
+      const title    = document.getElementById('bc-title').value.trim();
+      const bodyText = document.getElementById('bc-body').value.trim();
+      const audience = document.getElementById('bc-audience').value;
+      if (!title || !bodyText) { toast('Titel und Nachricht sind erforderlich.', true); return; }
+      const audLabel = audience === 'events' ? 'alle Events-Abonnenten' : 'ALLE Abonnenten';
+      const ok = await showModal('Broadcast senden?',
+        `Diese Nachricht geht an ${audLabel}. Wirklich senden?`, 'Senden', true);
+      if (!ok) return;
+      const res = await api('POST', '/api/admin/push/broadcast', { title, body: bodyText, audience });
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      const data = await res.json();
+      toast(`Broadcast an ${data.sent} Gerät(e) gesendet.`);
+      document.getElementById('bc-title').value = '';
+      document.getElementById('bc-body').value = '';
+    });
+
+    // ====================================================================
+    // PILOTEN
+    // ====================================================================
+    async function loadPilots() {
+      const res = await api('GET', '/api/admin/pilots');
+      if (!res || !res.ok) return;
+      const pilots = await res.json();
+      const c = document.getElementById('pilots-container');
+      if (!pilots.length) { c.innerHTML = '<div class="empty-hint">Keine Piloten bekannt.</div>'; return; }
+      c.innerHTML = tableWrap(
+        thRow(['CID', 'Name', 'Seit', 'Aktionen']),
+        pilots.map(p => `<tr>
+          <td class="td-mono">${escH(p.cid)}</td>
+          <td><input type="text" value="${escA(p.name || '')}" data-pilot-name="${escA(p.cid)}" style="width:100%;box-sizing:border-box;" /></td>
+          <td class="td-dim">${escH((p.added_at || '').slice(0, 10))}</td>
+          <td><div class="quick-btns">
+            <button class="btn btn-sm" style="font-size:0.6rem;padding:3px 8px;" data-pilot-save="${escA(p.cid)}">Speichern</button>
+            <button class="btn btn-sm btn-danger" style="font-size:0.6rem;padding:3px 8px;" data-pilot-del="${escA(p.cid)}">Löschen</button>
+          </div></td>
+        </tr>`).join('')
+      );
+    }
+
+    document.getElementById('pilots-container').addEventListener('click', async e => {
+      const saveBtn = e.target.closest('[data-pilot-save]');
+      if (saveBtn) {
+        const cid = parseInt(saveBtn.dataset.pilotSave, 10);
+        const inp = document.querySelector(`[data-pilot-name="${cid}"]`);
+        await savePilot(cid, inp ? inp.value.trim() : '');
+        return;
+      }
+      const delBtn = e.target.closest('[data-pilot-del]');
+      if (delBtn) {
+        const cid = parseInt(delBtn.dataset.pilotDel, 10);
+        const ok = await showModal('Pilot löschen?', `CID ${cid} aus der Liste entfernen?`, 'Löschen', true);
+        if (!ok) return;
+        const res = await api('DELETE', `/api/admin/pilots/${cid}`);
+        if (!res) return;
+        if (!res.ok) { toast('Löschen fehlgeschlagen.', true); return; }
+        toast('Pilot entfernt.');
+        await loadPilots();
+      }
+    });
+
+    document.getElementById('pilot-add-btn').addEventListener('click', async () => {
+      const cid  = parseInt(document.getElementById('pilot-cid').value, 10);
+      const name = document.getElementById('pilot-name').value.trim();
+      if (!cid || !name) { toast('CID und Name erforderlich.', true); return; }
+      await savePilot(cid, name);
+      document.getElementById('pilot-cid').value = '';
+      document.getElementById('pilot-name').value = '';
+    });
+
+    async function savePilot(cid, name) {
+      if (!name) { toast('Name darf nicht leer sein.', true); return; }
+      const res = await api('POST', '/api/admin/pilots', { cid, name });
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      toast('Pilot gespeichert.');
+      await loadPilots();
+    }
+
+    // Service Worker registrieren (für „Test an mich" — selbe Subscription wie die App).
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw.js').catch(() => {});
     }
 
     // ====================================================================

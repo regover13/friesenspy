@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 import app.main as main
 from app.auth import ADMIN_COOKIE, make_admin_token
-from app.database import get_connection, init_db
+from app.database import get_connection, init_db, upsert_push_subscription
 
 SECRET = "s3cr3t"
 PW = "test-admin-pw"
@@ -202,3 +202,88 @@ def test_winner_override(db):
     prev = asyncio.run(main.admin_preview_race(FakeReq(), rid))
     assert prev["complete"][0]["cid"] == 200
     assert prev["complete"][0].get("forced_winner") is True
+
+
+# --- v6.4.0: Admin-Badge-Vorschau, Push test/broadcast, Piloten ---
+
+def test_admin_badge_before_reveal(db):
+    now = datetime.now(timezone.utc)
+    dtstart = _iso(now - timedelta(hours=1))
+    rid = asyncio.run(main.admin_create_race(FakeReq(body={
+        "route": "EDWF,EDWG,EDWR", "dtstart": dtstart, "dtend": _iso(now + timedelta(hours=3)),
+    })))["id"]
+    _seed_flights(db, dtstart)
+    # öffentlicher Endpoint: 404 vor Enthüllung
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.get_bummel_badge(rid, 100))
+    assert e.value.status_code == 404
+    # Admin-Vorschau liefert trotzdem ein PNG
+    resp = asyncio.run(main.admin_bummel_badge(FakeReq(), rid, 100))
+    assert resp.media_type == "image/png" and resp.body[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_admin_badge_requires_auth(db):
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.admin_bummel_badge(FakeReq(cookies={}), 1, 100))
+    assert e.value.status_code == 401
+
+
+def _capture_push(monkeypatch):
+    """send_web_push durch eine erfassende Async-Fake ersetzen."""
+    calls = []
+
+    async def fake(vpk, vce, dbp, subs, payload, label="x"):
+        calls.append({"subs": subs, "payload": payload, "label": label})
+
+    monkeypatch.setattr(main, "send_web_push", fake)
+    return calls
+
+
+def test_push_test_only_one_endpoint(db, monkeypatch):
+    calls = _capture_push(monkeypatch)
+    conn = get_connection(db)
+    upsert_push_subscription(conn, "my-ep", "p", "a")
+    upsert_push_subscription(conn, "other-ep", "p", "a")
+    conn.commit(); conn.close()
+    res = asyncio.run(main.admin_push_test(FakeReq(body={"endpoint": "my-ep"})))
+    assert res["sent"] == 1
+    assert len(calls) == 1
+    assert [s["endpoint"] for s in calls[0]["subs"]] == ["my-ep"]  # nur an mich
+
+
+def test_push_test_unknown_endpoint_404(db, monkeypatch):
+    _capture_push(monkeypatch)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.admin_push_test(FakeReq(body={"endpoint": "nope"})))
+    assert e.value.status_code == 404
+
+
+def test_broadcast_audience_selectable(db, monkeypatch):
+    calls = _capture_push(monkeypatch)
+    conn = get_connection(db)
+    upsert_push_subscription(conn, "ev", "p", "a", notify_events=True)
+    upsert_push_subscription(conn, "noev", "p", "a", notify_events=False)
+    conn.commit(); conn.close()
+    res_all = asyncio.run(main.admin_push_broadcast(FakeReq(body={"title": "T", "body": "B", "audience": "all"})))
+    assert res_all["sent"] == 2
+    res_ev = asyncio.run(main.admin_push_broadcast(FakeReq(body={"title": "T", "body": "B", "audience": "events"})))
+    assert res_ev["sent"] == 1
+    assert {s["endpoint"] for s in calls[1]["subs"]} == {"ev"}
+
+
+def test_pilots_crud(db):
+    asyncio.run(main.admin_upsert_pilot(FakeReq(body={"cid": 123, "name": "Tobias"})))
+    pilots = asyncio.run(main.admin_list_pilots(FakeReq()))
+    assert any(p["cid"] == 123 and p["name"] == "Tobias" for p in pilots)
+    asyncio.run(main.admin_upsert_pilot(FakeReq(body={"cid": 123, "name": "Tobi"})))
+    pilots = asyncio.run(main.admin_list_pilots(FakeReq()))
+    assert [p for p in pilots if p["cid"] == 123][0]["name"] == "Tobi"
+    asyncio.run(main.admin_delete_pilot(FakeReq(), 123))
+    pilots = asyncio.run(main.admin_list_pilots(FakeReq()))
+    assert all(p["cid"] != 123 for p in pilots)
+
+
+def test_pilots_requires_auth(db):
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.admin_list_pilots(FakeReq(cookies={})))
+    assert e.value.status_code == 401

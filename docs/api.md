@@ -363,13 +363,20 @@ Konfiguration + Versionsdaten für das Frontend (wird beim Seitenstart einmal ge
       "title": "Zuverlässigkeit & Versionsverlauf",
       "items": ["🐛 …", "⚡ …"]
     }
-  ]
+  ],
+  "banner_version": "6.4.0"
 }
 ```
 
 `version` + `changelog` stammen aus `app/CHANGELOG.json` (via `app/version.py`). `version` ist
 die neueste Version (`changelog[0].version`). Das Frontend zeigt damit die kleine Versionsnummer
 im Header, das Changelog-Banner (neueste Version, einmal pro Version) und den Versionsverlauf.
+
+`banner_version` ist die vom Server aufgelöste Version, deren Changelog-Eintrag als Startseiten-Banner
+angezeigt werden soll — oder `null`, wenn kein Banner erscheinen soll. Sie wird aus der Admin-Auswahl
+(`app_settings['banner_version']`) über `_resolve_banner_version` abgeleitet: `auto` → neuester Eintrag
+mit `highlight: true` (Fallback: neuester Eintrag), `off` → `null`, eine konkrete Version → genau diese
+(falls sie existiert, sonst `null`). Steuerbar über `GET`/`POST /api/admin/banner`.
 
 ---
 
@@ -556,6 +563,8 @@ Cache-Control: public, max-age=86400
 ```
 
 Der **„📋 Forum"**-Button im enthüllten Ranking kopiert diesen BBCode direkt in die Zwischenablage. Der **„🎖 Badge"**-Button öffnet das PNG in einem neuen Tab.
+
+> **Admin-Vorschau:** Für die Vorschau **vor** der Enthüllung gibt es `GET /api/admin/bummel/races/{race_id}/badge/{cid}.png` (siehe [Admin — Badge-Vorschau](#get-apiadminbummelracesrace_idbadgecidpng)) — sie umgeht das Reveal-Gate (require_admin), der öffentliche Endpoint hier liefert vor der Enthüllung weiter `404`.
 
 ---
 
@@ -801,3 +810,134 @@ Vollständige Wertung (mit Zeiten, Durchschnitt und Ranking) unabhängig vom Ent
 **Response** — gleiches Format wie `GET /api/bummel/race/{id}` nach der Enthüllung (`revealed: true`)
 
 Gibt `404` zurück wenn die `id` nicht existiert.
+
+---
+
+### GET /api/admin/bummel/races/{race_id}/badge/{cid}.png
+
+Badge-Vorschau eines Teilnehmers für den Admin — funktioniert **auch vor der Enthüllung** (umgeht das Reveal-Gate des öffentlichen Endpoints). Das Badge wird bei jedem Aufruf **frisch gerendert** (kein Cache).
+
+**Voraussetzungen — sonst `404`:**
+- Das Rennen mit `race_id` muss existieren.
+- `cid` muss Teilnehmer dieses Rennens sein.
+
+**Response** — `image/png`. Variante (Sieger-Badge vs. Medaille) wie beim öffentlichen Endpoint, anhand des Rangs.
+
+**Response-Header:**
+```
+Content-Type: image/png
+Cache-Control: no-store
+```
+
+Der öffentliche Endpoint `GET /api/bummel/race/{id}/badge/{cid}.png` bleibt vor der Enthüllung weiterhin `404`. In der Renn-Vorschau (`admin.html`) öffnet **🎖 Badge** diese Admin-Vorschau, **📋 Forum** kopiert den öffentlichen `[img]…[/img]`-BBCode.
+
+---
+
+## Admin — Hinweis-Banner
+
+Steuert, welcher Changelog-Eintrag auf der Startseite als Banner erscheint (gespeichert in `app_settings['banner_version']`). Die aufgelöste Version liefert `GET /api/frontend-config` im Feld `banner_version`.
+
+### GET /api/admin/banner
+
+Aktuelle Auswahl + alle Changelog-Einträge für die Admin-Auswahl.
+
+**Response**
+
+```json
+{
+  "selected": "auto",
+  "entries": [
+    {"version": "6.4.0", "date": "2026-06-28", "title": "Admin-Erweiterungen", "highlight": true}
+  ]
+}
+```
+
+`selected` ∈ `auto` | `off` | konkrete Version.
+
+### POST /api/admin/banner
+
+Banner-Auswahl setzen.
+
+**Body (JSON)**
+
+```json
+{"version": "auto"}
+```
+
+`version` ∈ `auto` (neuester Highlight-Eintrag, Default) | `off` (kein Banner) | konkrete Version (genau dieser Eintrag).
+
+**Response** `{"status": "ok", "selected": "auto", "resolved": "6.4.0"}` — `resolved` ist die aufgelöste Version (oder `null`).
+
+---
+
+## Admin — Push (Test & Broadcast)
+
+### POST /api/admin/push/test
+
+Test-Benachrichtigung **nur** an das angegebene (eigene) Gerät senden — nie an andere Friesen. Der Browser meldet seinen eigenen Push-Endpoint; gesendet wird ausschließlich an genau diese eine Subscription (Lookup via `get_push_subscription_by_endpoint`).
+
+**Body (JSON)**
+
+| Feld | Typ | Pflicht | Beschreibung |
+|------|-----|---------|--------------|
+| `endpoint` | string | ✓ | Push-Endpoint-URL des eigenen Browsers |
+
+**Responses**
+- `200 {"status": "ok", "sent": 1}`
+- `400` — VAPID nicht konfiguriert oder `endpoint` fehlt
+- `404` — Endpoint unbekannt (in der App zuerst Push aktivieren)
+
+### POST /api/admin/push/broadcast
+
+Freie Nachricht (Titel + Text) als Push an eine wählbare Zielgruppe senden.
+
+**Body (JSON)**
+
+| Feld | Typ | Pflicht | Beschreibung |
+|------|-----|---------|--------------|
+| `title` | string | ✓ | Titel der Benachrichtigung |
+| `body` | string | ✓ | Nachrichtentext |
+| `audience` | string | — | `all` (alle Abonnenten, Default) \| `events` (nur Events-Abonnenten, `notify_events = 1`) |
+
+**Responses**
+- `200 {"status": "ok", "audience": "all", "sent": <Anzahl Empfänger>}`
+- `400` — VAPID nicht konfiguriert oder `title`/`body` fehlt
+
+---
+
+## Admin — Piloten-Verwaltung
+
+Verwaltung der `pilots`-Tabelle (Namenspflege/manuelles Anlegen). **Keine Mitglieder-Allowlist** — Friesen werden weiter über das Callsign-Präfix `FRS` (`settings.CALLSIGN_PREFIX`) erkannt, die Tabelle füllt sich automatisch aus VATSIM.
+
+### GET /api/admin/pilots
+
+Alle bekannten Piloten, nach Name sortiert.
+
+**Response**
+
+```json
+[
+  {"cid": 1602713, "name": "Tobias EDKB", "added_at": "2026-06-04T07:14:54Z"}
+]
+```
+
+### POST /api/admin/pilots
+
+Pilot anlegen oder Namen aktualisieren (`added_at` bleibt beim Update erhalten).
+
+**Body (JSON)**
+
+| Feld | Typ | Pflicht | Beschreibung |
+|------|-----|---------|--------------|
+| `cid` | int | ✓ | VATSIM-CID |
+| `name` | string | ✓ | Anzeigename |
+
+**Responses**
+- `200 {"status": "ok", "cid": 1602713, "name": "Tobias EDKB"}`
+- `400` — ungültige `cid` oder fehlender `name`
+
+### DELETE /api/admin/pilots/{cid}
+
+Pilot aus der `pilots`-Tabelle entfernen.
+
+**Response** `{"status": "ok"}`

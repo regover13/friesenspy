@@ -1822,6 +1822,7 @@ let _notifCustomFilter = null; // in-memory filter für "Nur bestimmte Piloten" 
 // ---- Versionierung & Changelog ----
 let _version = '';
 let _changelog = [];
+let _bannerVersion = null;  // vom Server gewählter Banner-Eintrag (Version) oder null = aus
 const CHANGELOG_SEEN_KEY = 'fs_changelog_seen';  // Wert = zuletzt gesehene Version
 
 // ---- PWA install prompt (Android/Desktop) ----
@@ -2156,9 +2157,10 @@ function _fmtChangelogDate(iso) {
   return m ? `${m[3]}.${m[2]}.${m[1]}` : (iso || '');
 }
 
-function _initVersionUI(version, changelog) {
+function _initVersionUI(version, changelog, bannerVersion) {
   _version = version || '';
   _changelog = Array.isArray(changelog) ? changelog : [];
+  _bannerVersion = bannerVersion || null;
   const badge = document.getElementById('app-version');
   if (badge && _version) {
     badge.textContent = 'v' + _version;
@@ -2180,14 +2182,16 @@ function _initVersionUI(version, changelog) {
 
 function _maybeShowChangelogBanner() {
   if (!_changelog.length || !_version) return;
+  if (_bannerVersion == null) return;  // Admin hat den Banner ausgeschaltet
   let seen = '';
   try { seen = localStorage.getItem(CHANGELOG_SEEN_KEY) || ''; } catch (_) {}
   if (seen === _version) return;  // diese Version schon gesehen → kein Banner
-  const entry = _changelog[0];
+  // Server bestimmt, welcher Eintrag als Banner gilt (Admin-Auswahl / neuestes Highlight)
+  const entry = _changelog.find(e => e.version === _bannerVersion) || _changelog[0];
   const banner = document.getElementById('changelog-banner');
   if (!banner || !entry) return;
   document.getElementById('changelog-banner-title').textContent =
-    `Neu in v${_version} · ${_fmtChangelogDate(entry.date)}`;
+    `Neu · ${entry.title || _fmtChangelogDate(entry.date)}`;
   document.getElementById('changelog-banner-sub').textContent =
     (entry.items || []).join('  ·  ');
   banner.hidden = false;
@@ -4338,7 +4342,7 @@ const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cf
     document.getElementById('notif-btn').hidden = false;
     _registerServiceWorker();
   }
-  _initVersionUI(cfg.version, cfg.changelog);
+  _initVersionUI(cfg.version, cfg.changelog, cfg.banner_version);
 }).catch(() => {});
 
 const _liveInitialPromise = fetchLiveInitial();

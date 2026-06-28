@@ -58,11 +58,12 @@ StatSim API: `https://api.statsim.net`, Auth: `X-API-Key` Header, max. 31 Tage p
 
 ### `app/database.py`
 
-SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Elf Tabellen:
+SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Zwölf Tabellen:
 
 | Tabelle | Inhalt |
 |---------|--------|
-| `pilots` | CID + Name (INSERT OR IGNORE — niemals überschrieben) |
+| `pilots` | CID + Name; `list_pilots`/`upsert_pilot`/`delete_pilot` für die Admin-Piloten-Verwaltung (`upsert_pilot` aktualisiert den Namen via `ON CONFLICT`, `added_at` bleibt erhalten). Die Tabelle füllt sich auch automatisch aus VATSIM — die Verwaltung dient der Namenspflege, ist **keine** Mitglieder-Allowlist |
+| `app_settings` | Generischer Key-Value-Store (`key` PK, `value`, `updated_at`); `get_app_setting`/`set_app_setting`. Schlüssel `banner_version`: `auto` (Default) \| `off` \| konkrete Version — steuert den Startseiten-Hinweis-Banner |
 | `flights` | Pro Flug: Callsign, Typ (`aircraft_short`), DEP/ARR, Logon/Logoff, `duration_min` (Online-/Verbindungszeit), `block_min` (Bewegungszeit), `distance_nm` (GPS-Summe via Haversine), `superseded_by` (reversibler Dedup-Verweis), sowie vollständige Flugplan-Felder: `route`, `remarks`, `cruise_altitude`, `cruise_tas`, `flight_rules`, `aircraft_icao`, `alternate`, `deptime`, `enroute_time`, `fuel_time` (ab Aufzeichnungsdatum gefüllt, ältere Einträge NULL) |
 | `live_positions` | Aktuelle Position pro CID (UPSERT, maximal 1 Zeile pro CID) |
 | `position_history` | Jede einzelne VATSIM-Positions-Update (für Tracks + Events) |
@@ -194,6 +195,8 @@ Online, Flugplan und TS nutzen denselben empfängerseitigen `pilot_filter` (CID-
 - `cid_for_callsign(conn, callsign)` — mappt eine FRS/Callsign (z. B. `FRS49`) auf die CID (Quelle: `live_positions` → jüngster `flights` → `statsim_cache`), oder `None` für reine TS-Leute ohne VATSIM-Flug.
 - `get_ts_push_subscriptions(conn, cid)` — TS-Opt-in-Subscriptions (`notify_ts = 1`), gefiltert über `pilot_filter` (NULL = alle; sonst nur wenn `cid` enthalten; `cid is None` → nur NULL-Filter). Spiegelt die Logik von `get_push_subscriptions_for_pilot`.
 - `get_push_subscriptions_for_events(conn)` — Gibt alle Push-Subscriptions mit `notify_events = 1` zurück (ohne Pilot-Filter, da Event-Erinnerungen und Bummel-Benachrichtigungen pilot-unabhängig sind). Wird vom Poller für `event_reminder_check` sowie für Bummel-Start- und Enthüllungs-Push genutzt.
+- `get_push_subscription_by_endpoint(conn, endpoint)` — Gibt genau **eine** Subscription anhand ihres Endpoints zurück (oder `None`). Genutzt vom Admin-Test-Push (`POST /api/admin/push/test`), um ausschließlich ans eigene Gerät zu senden.
+- `get_all_push_subscriptions(conn)` — alle Subscriptions ungefiltert; genutzt vom Admin-Broadcast (`POST /api/admin/push/broadcast`, `audience = all`).
 - `events_due_for_reminder(conn)` — Gibt alle Kalender-Events zurück, deren `dtstart` im Fenster `(jetzt, jetzt+60min]` liegt und für die in `event_reminders_sent` noch kein Eintrag existiert. Vergangene Events werden nicht mehr zurückgegeben.
 - `mark_event_reminded(conn, uid)` — Schreibt einen Eintrag in `event_reminders_sent` (`uid` + `sent_at = now()`). `INSERT OR IGNORE` — idempotenter Latch.
 - Subjekt-Privacy bleibt über `ts_consent` (`everyone`/`nobody`) in `_poll_teamspeak` vorgeschaltet.
@@ -217,7 +220,15 @@ Telegram-Alert beim "Online gehen" eines Piloten. Alle VATSIM-Felder werden mit 
 
 FastAPI mit `lifespan`-Kontext-Manager (startup: DB init + Poller start; shutdown: Poller stop).
 
-Endpoints: `/api/live`, `/api/prefiles`, `/api/stats`, `/api/stats/activity`, `/api/pilots/{cid}/flights`, `/api/pilots/{cid}/live-track`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/calendar/events`, `/api/bummel/races`, `/api/bummel/race/{id}`, `/api/bummel/active`, `/api/bummel/race/{race_id}/badge/{cid}.png` (Badge-PNG via `app/badge.py`, Reveal-Gating + `data/badges/`-Cache), `/admin` (statische `admin.html`), `/api/admin/login`, `/api/admin/logout`, `/api/admin/me`, `/api/admin/bummel/races` (GET/POST + Unterrouten für einzelne Rennen inkl. reveal/hide/push/override/preview — alle via `require_admin`-Dependency geschützt), `/widget`, `/api/sse`.
+Endpoints: `/api/live`, `/api/prefiles`, `/api/stats`, `/api/stats/activity`, `/api/pilots/{cid}/flights`, `/api/pilots/{cid}/live-track`, `/api/flights/{id}/track`, `/api/flights/statsim/{id}/track`, `/api/events`, `/api/calendar/events`, `/api/bummel/races`, `/api/bummel/race/{id}`, `/api/bummel/active`, `/api/bummel/race/{race_id}/badge/{cid}.png` (Badge-PNG via `app/badge.py`, Reveal-Gating + `data/badges/`-Cache), `/admin` (statische `admin.html`), `/api/admin/login`, `/api/admin/logout`, `/api/admin/me`, `/api/admin/bummel/races` (GET/POST + Unterrouten für einzelne Rennen inkl. reveal/hide/push/override/preview — alle via `require_admin`-Dependency geschützt), `/api/admin/bummel/races/{race_id}/badge/{cid}.png` (Badge-Vorschau ohne Reveal-Gate), `/api/admin/banner` (GET/POST), `/api/admin/push/test`, `/api/admin/push/broadcast`, `/api/admin/pilots` (GET/POST), `/api/admin/pilots/{cid}` (DELETE), `/widget`, `/api/sse`.
+
+**Hinweis-Banner-Mechanik:** `_resolve_banner_version(selected)` löst die in `app_settings['banner_version']` gespeicherte Admin-Auswahl auf eine konkrete Changelog-Version (oder `None` = kein Banner) auf: `off` → `None`, eine konkrete Version → diese (falls in `CHANGELOG` vorhanden, sonst `None`), `auto`/leer → neuester Eintrag mit `highlight: true` (Fallback: neuester Eintrag). `GET /api/frontend-config` liefert das Ergebnis im Feld `banner_version`. `GET /api/admin/banner` gibt die aktuelle Auswahl + alle Changelog-Einträge (`version`, `date`, `title`, `highlight`) zurück; `POST /api/admin/banner` schreibt die Auswahl via `set_app_setting`.
+
+**Neue Admin-Endpoints (alle `require_admin`):**
+- `GET /api/admin/bummel/races/{race_id}/badge/{cid}.png` — Badge-Vorschau eines Teilnehmers ohne Reveal-Gate (`_build_race_view(..., force_reveal=True)` + `_badge_entry_data`/`_render_badge`); immer frisch gerendert, `Cache-Control: no-store`. `404` wenn Rennen/Teilnehmer fehlt.
+- `POST /api/admin/push/test` — sendet eine Test-Notification über `send_web_push` nur an die per `endpoint` adressierte Subscription (`get_push_subscription_by_endpoint`). Unbekannter Endpoint → `404`, kein VAPID → `400`.
+- `POST /api/admin/push/broadcast` — freie Nachricht (`title`, `body`) an `audience = all` (`get_all_push_subscriptions`) oder `events` (`get_push_subscriptions_for_events`); Antwort enthält `sent` (Empfängerzahl).
+- `GET/POST /api/admin/pilots` + `DELETE /api/admin/pilots/{cid}` — Piloten-Verwaltung über `list_pilots`/`upsert_pilot`/`delete_pilot`.
 
 `/api/pilots/{cid}/flights` antwortet **sofort** mit FriesenSpy-Daten + gecachten StatSim-Daten. StatSim-Update läuft als FastAPI `BackgroundTask`: normaler Aufruf → letzter 31-Tage-Chunk; `days=0` → volle 365 Tage (Force-Refresh). Status-Tracking via `_statsim_updating` und `_full_history_fetching` (In-Memory-Sets) verhindert parallele Doppel-Fetches. Response-Header `X-StatSim-Status: fresh | updating | no-key`.
 
@@ -253,10 +264,15 @@ Single-File-SPA ohne Build-Step. Vier Tabs:
 sie ein und stellt `VERSION` (= `CHANGELOG[0].version`) und `CHANGELOG` bereit; `/api/frontend-config`
 liefert beides ans Frontend. Im Header zeigt `#app-version` die kleine Versionsnummer (Klick →
 Versionsverlauf-Modal `#changelog-modal`, wiederverwendet die `.fp-modal-*`-Klassen). `#changelog-banner`
-(Basis-Styling vom Install-Banner) zeigt die Neuerungen der aktuellen Version **einmal pro Version**:
-es erscheint nur, wenn `localStorage['fs_changelog_seen'] !== version`; ✕ oder das Öffnen des Verlaufs
-setzt den Key auf die aktuelle Version. **Release-Workflow:** bei signifikanten Änderungen einen neuen
-Eintrag oben in `app/CHANGELOG.json` einfügen — das Banner erscheint dann automatisch bei allen Nutzern.
+(Basis-Styling vom Install-Banner) zeigt die Neuerungen **einmal pro Version**. Welcher Eintrag
+Banner ist, bestimmt jetzt der **Server**: `_initVersionUI(cfg.version, cfg.changelog, cfg.banner_version)`
+reicht das Feld `banner_version` aus `/api/frontend-config` an `_maybeShowChangelogBanner()` weiter — ist
+es `null`, erscheint **kein** Banner; sonst der Eintrag dieser Version. Das Seen-Gating pro App-Version
+bleibt: das Banner erscheint nur, wenn `localStorage['fs_changelog_seen'] !== version`; ✕ oder das Öffnen
+des Verlaufs setzt den Key auf die aktuelle Version. Die Banner-Auswahl (`auto`/`off`/Version) steuert der
+Admin über `/api/admin/banner`. **Release-Workflow:** bei signifikanten Änderungen einen neuen Eintrag oben
+in `app/CHANGELOG.json` einfügen — mit `highlight: true` erscheint er bei `banner_version = auto` automatisch
+als Banner bei allen Nutzern.
 
 Design: FriesenFlieger-Blau (`#04080f` Hintergrund, `#2d9cdb` Blau, `#D31141` Vereinsrot).
 
@@ -463,5 +479,12 @@ CREATE TABLE bummel_overrides (
 CREATE TABLE event_reminders_sent (
     uid      TEXT PRIMARY KEY,   -- Kalender-Event-UID (aus calendar_events.uid)
     sent_at  TEXT NOT NULL       -- ISO8601 UTC
+);
+
+-- Generischer Key-Value-Store (App-Einstellungen, z. B. banner_version)
+CREATE TABLE app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT,
+    updated_at TEXT
 );
 ```
