@@ -18,9 +18,10 @@ TOKEN = make_admin_token(SECRET, PW)
 
 
 class FakeReq:
-    def __init__(self, cookies=None, body=None):
+    def __init__(self, cookies=None, body=None, headers=None):
         self.cookies = cookies if cookies is not None else {ADMIN_COOKIE: TOKEN}
         self._body = body or {}
+        self.headers = headers or {}
 
     async def json(self):
         return self._body
@@ -157,9 +158,9 @@ def test_badge_endpoint(db):
     winner = view["complete"][0]["cid"]
     other = view["complete"][1]["cid"]
 
-    png_w = asyncio.run(main.get_bummel_badge(rid, winner))
+    png_w = asyncio.run(main.get_bummel_badge(FakeReq(), rid, winner))
     assert png_w.media_type == "image/png" and png_w.body[:8] == b"\x89PNG\r\n\x1a\n"
-    png_m = asyncio.run(main.get_bummel_badge(rid, other))
+    png_m = asyncio.run(main.get_bummel_badge(FakeReq(), rid, other))
     assert png_m.body[:8] == b"\x89PNG\r\n\x1a\n"
     # Beide rund, 256×256; Sieger hat helle Kuppel-Mitte, Medaille dunklen Navy-Kern
     from io import BytesIO
@@ -173,8 +174,26 @@ def test_badge_endpoint(db):
     assert png_w.body != png_m.body
 
     with pytest.raises(HTTPException) as e:
-        asyncio.run(main.get_bummel_badge(rid, 999999))
+        asyncio.run(main.get_bummel_badge(FakeReq(), rid, 999999))
     assert e.value.status_code == 404
+
+
+def test_badge_etag_revalidation(db):
+    """Badge nutzt no-cache + ETag → bei Sieger-/Override-Änderung sofort frisch, sonst 304."""
+    now = datetime.now(timezone.utc)
+    dtstart = _iso(now - timedelta(hours=5))
+    rid = asyncio.run(main.admin_create_race(FakeReq(body={
+        "route": "EDWF,EDWG,EDWR", "dtstart": dtstart, "dtend": _iso(now - timedelta(hours=1)),
+    })))["id"]
+    _seed_flights(db, dtstart)
+    cid = asyncio.run(main.get_bummel_race_endpoint(rid))["complete"][0]["cid"]
+
+    resp = asyncio.run(main.get_bummel_badge(FakeReq(), rid, cid))
+    etag = resp.headers.get("etag")
+    assert etag and resp.headers.get("cache-control") == "no-cache"
+    # Unveränderter ETag → 304 (kein erneuter Bild-Download)
+    resp304 = asyncio.run(main.get_bummel_badge(FakeReq(headers={"if-none-match": etag}), rid, cid))
+    assert resp304.status_code == 304
 
 
 def test_badge_404_before_reveal(db):
@@ -185,7 +204,7 @@ def test_badge_404_before_reveal(db):
     })))["id"]
     _seed_flights(db, dtstart)
     with pytest.raises(HTTPException) as e:
-        asyncio.run(main.get_bummel_badge(rid, 100))
+        asyncio.run(main.get_bummel_badge(FakeReq(), rid, 100))
     assert e.value.status_code == 404
 
 
@@ -215,7 +234,7 @@ def test_admin_badge_before_reveal(db):
     _seed_flights(db, dtstart)
     # öffentlicher Endpoint: 404 vor Enthüllung
     with pytest.raises(HTTPException) as e:
-        asyncio.run(main.get_bummel_badge(rid, 100))
+        asyncio.run(main.get_bummel_badge(FakeReq(), rid, 100))
     assert e.value.status_code == 404
     # Admin-Vorschau liefert trotzdem ein PNG
     resp = asyncio.run(main.admin_bummel_badge(FakeReq(), rid, 100))

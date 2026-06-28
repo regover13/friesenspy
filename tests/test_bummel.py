@@ -313,6 +313,45 @@ class TestRadiusParam:
         assert rudi["total_min"] == 60
 
 
+class TestSecondPrecision:
+    """Block-Gesamtzeit bleibt in Minuten, aber der Abstand ist sekundengenau (Tiebreak)."""
+
+    def test_total_sec_from_gps_track(self):
+        conn = _make_conn()
+        route = ["EDWF", "EDWG"]
+        f, g = icao_to_coords("EDWF"), icao_to_coords("EDWG")
+        # block_min in der DB ist 30, der GPS-Track aber 30:50 lang.
+        _add_flight(conn, 800, "Sven", "EDWF", "EDWG", 30,
+                    logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:31:00Z")
+        _add_position(conn, 800, f[0], f[1], "2026-06-27T11:00:00Z", gs=120)
+        _add_position(conn, 800, g[0], g[1], "2026-06-27T11:30:50Z", gs=120)
+
+        sven = _by_cid(compute_bummel_standings(conn, route, START, END)["complete"], 800)
+        assert sven["total_sec"] == 1850  # 30:50 sekundengenau aus dem Track
+        assert sven["total_min"] == 30     # Minuten-Anzeige bleibt
+
+    def test_seconds_break_minute_tie(self):
+        conn = _make_conn()
+        route = ["EDWF", "EDWG"]
+        f, g = icao_to_coords("EDWF"), icao_to_coords("EDWG")
+
+        def add(cid, name, last_ts):
+            _add_flight(conn, cid, name, "EDWF", "EDWG", 30,
+                        logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:40:00Z")
+            _add_position(conn, cid, f[0], f[1], "2026-06-27T11:00:00Z", gs=120)
+            _add_position(conn, cid, g[0], g[1], last_ts, gs=120)
+
+        add(810, "A", "2026-06-27T11:30:00Z")  # 1800 s
+        add(811, "B", "2026-06-27T11:30:40Z")  # 1840 s
+        add(812, "C", "2026-06-27T11:30:20Z")  # 1820 s = exakt der Schnitt
+
+        result = compute_bummel_standings(conn, route, START, END)
+        # average_sec = (1800+1840+1820)/3 = 1820 → C exakt → Sieger trotz gleicher Minuten
+        assert result["complete"][0]["cid"] == 812
+        assert result["complete"][0]["delta_sec"] == 0
+        assert {e["total_min"] for e in result["complete"]} == {30}  # alle nominell 30 min
+
+
 class TestPublicView:
     """Fairness-Verdeckung: vor Enthüllung dürfen KEINE Zeiten/Schnitt/Ränge im JSON stehen."""
 

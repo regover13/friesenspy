@@ -485,22 +485,25 @@ Sichtbar vor Enthüllung: Callsign, Name, Flugzeugtyp, Flugplan (Start/Ziel), Ab
 {
   "revealed": true,
   "average_min": 80.0,
+  "average_sec": 4800,
   "count": 3,
   "complete": [
     {"cid": 300, "name": "Cara", "callsign": "FRS300", "total_min": 80,
-     "aircraft": "C172", "leg_count": 2,
+     "total_sec": 4815, "aircraft": "C172", "leg_count": 2,
      "visited": ["EDWF","EDWG","EDWR"], "missing": [], "legs": [],
-     "rank": 1, "delta": 0.0}
+     "rank": 1, "delta": 0.0, "delta_sec": 15}
   ],
   "incomplete": [
     {"cid": 500, "name": "Emil", "callsign": "FRS500", "total_min": 35,
-     "aircraft": "C172", "leg_count": 1,
+     "total_sec": 2100, "aircraft": "C172", "leg_count": 1,
      "visited": ["EDWF","EDWG"], "missing": ["EDWR"], "legs": []}
   ]
 }
 ```
 
-`complete` ist aufsteigend nach `delta` (Abstand zur Durchschnittszeit) sortiert; `rank` 1 ist der Sieger. `incomplete`-Piloten haben noch nicht alle Flugplätze besucht und zählen nicht in den Schnitt.
+`complete` ist aufsteigend nach dem Abstand zum Schnitt sortiert; `rank` 1 ist der Sieger. Die Sortierung ist **sekundengenau** (Schlüssel `(|delta_sec|, total_sec, cid)`) und löst damit Gleichstände auf, die bei gleicher Minuten-Blockzeit entstünden. `incomplete`-Piloten haben noch nicht alle Flugplätze besucht und zählen nicht in den Schnitt.
+
+**Sekundengenaue Felder.** Zusätzlich zu `total_min`/`average_min`/`delta` (Minuten, für die Anzeige) liefert die enthüllte Sicht die sekundengenaue Variante: `total_sec` (Block-Gesamtzeit in Sekunden) und `delta_sec` (**signierter** Abstand zum Schnitt in Sekunden — positiv = über dem Schnitt, negativ = darunter, `0` = punktgenau) je Eintrag sowie `average_sec` auf Rennen-Ebene. Die Anzeige der Gesamtzeit/des Schnitts bleibt in Minuten; nur der Abstand wird signiert + sekundengenau gezeigt. Diese Sekunden-Felder erscheinen **erst nach der Enthüllung** (vor der Enthüllung von `public_bummel_view` zusammen mit allen Zeiten entfernt).
 
 Gibt `404` zurück wenn die `id` nicht existiert.
 
@@ -546,15 +549,18 @@ Beide Badges sind **rund (256 × 256 px)** mit transparenten Rändern und nutzen
 
 | Variante | Bedingung | Inhalt |
 |----------|-----------|--------|
-| **Sieger-Badge „Absoluter Durchschnitt!"** (helle Kuppel) | Rang 1 | Callsign, Name, Flugzeugmuster, Block-Gesamtzeit, Zeitdifferenz zum Schnitt, Fußzeile „friesenflieger.de" |
-| **Medaille „Voll daneben!"** (navy Kern) | alle anderen (auch unvollständige) | Callsign, Name, Flugzeugmuster, Datum, Zeitdifferenz (falls komplett), Fußzeile „friesenflieger.de" |
+| **Sieger-Badge „Absoluter Durchschnitt!"** (helle Kuppel) | Rang 1 | Callsign, Name, Flugzeugmuster, Block-Gesamtzeit, Abstand zum Schnitt, Event-Name + Datum, Fußzeile „friesenflieger.de" |
+| **Medaille „Voll daneben!"** (navy Kern) | alle anderen (auch unvollständige) | Callsign, Name, Flugzeugmuster, Event-Name + Datum, Abstand zum Schnitt (falls komplett), Fußzeile „friesenflieger.de" |
 
-**Caching:** Das fertige PNG wird serverseitig unter `data/badges/<race_id>_<cid>.png` gecacht; bei wiederholtem Aufruf wird die Datei direkt aus dem Cache ausgeliefert.
+Beide Badges tragen jetzt **Event-Name (Überschrift) und Datum** (auch der Sieger-Badge, der vorher kein Datum hatte). Der Abstand zum Schnitt wird **signiert + sekundengenau** formatiert (z. B. „+1:23 zum Schnitt", bei punktgenauem Treffer „punktgenau").
+
+**Caching (ETag + Revalidierung):** Aus den ergebnisrelevanten Feldern (inkl. `delta_sec` und `event`) wird ein Hash gebildet, der als `ETag` dient und in den serverseitigen Cache-Dateinamen einfließt (`data/badges/<race_id>_<cid>_<hash>.png`). Der Endpoint antwortet mit `Cache-Control: no-cache` + `ETag` (statt zuvor `public, max-age=86400`): Schickt der Client ein passendes `If-None-Match`, kommt `304 Not Modified` zurück. Ändert sich der Sieger (z. B. durch Admin-Override oder Wertungsänderung), ändert sich der ETag → Browser/Forum holen sofort ein frisches Bild statt eines bis zu einen Tag veralteten (behebt den Bug, dass ein alter Gewinner-Badge nach Wertungsänderung hängenblieb).
 
 **Response-Header:**
 ```
 Content-Type: image/png
-Cache-Control: public, max-age=86400
+Cache-Control: no-cache
+ETag: "<hash>"
 ```
 
 **BBCode für board.friesenflieger.de:**
