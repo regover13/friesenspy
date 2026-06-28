@@ -1,5 +1,15 @@
 [
   {
+    "version": "6.6.0",
+    "date": "2026-06-28",
+    "title": "Bummel: Zwischenlandungen & Frühstarter zählen",
+    "items": [
+      "🛬 Ein Bummel ist gemütlich: Wer mit Zwischenlandung fliegt, kommt jetzt trotzdem in die Wertung. Gezählt wird die Tour vom ersten Start bis zur letzten Landung an einem Streckenflugplatz — nur die reine Flugzeit der Beine, die Standzeit der Zwischenstopps zählt NICHT mit.",
+      "🕑 Frühstarter zählen mit: Wer schon vor dem offiziellen Event-Start losfliegt, aber währenddessen unterwegs ist, wird mit seiner vollen Blockzeit gewertet.",
+      "🎯 Der am Rennen eingestellte Radius wirkt jetzt in der Wertung — er bestimmt, wie nah Start/Landung an einem Streckenflugplatz liegen dürfen, um als dieser gewertet zu werden."
+    ]
+  },
+  {
     "version": "6.5.0",
     "date": "2026-06-28",
     "title": "Bummel teilen & übersichtlicher",

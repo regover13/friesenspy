@@ -195,18 +195,122 @@ class TestTimeMetric:
     def test_flights_outside_route_are_ignored(self):
         conn = _make_conn()
         route = ["EDWF", "EDWG", "EDWR"]
-        _add_flight(conn, 100, "Udo", "EDWF", "EDWG", 30)
-        _add_flight(conn, 100, "Udo", "EDWG", "EDWR", 30)  # komplett, total 60
-        # Flug komplett außerhalb der Strecke — darf NICHT mitzählen
-        _add_flight(conn, 100, "Udo", "EDDH", "EDDW", 99, distance_nm=300)
-        # Flug mit nur einem Endpunkt in der Strecke — darf NICHT mitzählen
-        _add_flight(conn, 100, "Udo", "EDWG", "EDDH", 77, distance_nm=200)
+        # Komplette Tour (zwei Beine), danach Fremdflüge, die NICHT mitzählen.
+        # Explizite Zeiten: die Fremdflüge liegen klar NACH dem Tour-Ende.
+        _add_flight(conn, 100, "Udo", "EDWF", "EDWG", 30,
+                    logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:30:00Z")
+        _add_flight(conn, 100, "Udo", "EDWG", "EDWR", 30,
+                    logon="2026-06-27T12:00:00Z", logoff="2026-06-27T12:30:00Z")  # total 60
+        # Flug komplett außerhalb der Strecke, nach der Tour — darf NICHT mitzählen
+        _add_flight(conn, 100, "Udo", "EDDH", "EDDW", 99, distance_nm=300,
+                    logon="2026-06-27T14:00:00Z", logoff="2026-06-27T14:40:00Z")
+        # Flug mit nur einem Endpunkt in der Strecke, nach der Tour — darf NICHT mitzählen
+        _add_flight(conn, 100, "Udo", "EDWG", "EDDH", 77, distance_nm=200,
+                    logon="2026-06-27T15:00:00Z", logoff="2026-06-27T15:40:00Z")
 
         result = compute_bummel_standings(conn, route, START, END)
 
         udo = _by_cid(result["complete"], 100)
         assert udo is not None
         assert udo["total_min"] == 60
+
+
+class TestTourWithStops:
+    """Bummel = gemütlich: Zwischenlandungen brechen die Wertung nicht (track-/tour-basiert).
+
+    Eine Tour zählt vom ersten Start an einem Routenplatz bis zum letzten Ziel an einem
+    Routenplatz; Zwischenstopps dazwischen sind erlaubt. Gewertet wird die Summe der reinen
+    Blockzeiten der Tour-Beine — die Bodenzeit der Zwischenstopps zählt NICHT mit.
+    """
+
+    def test_intermediate_stop_counts_as_complete(self):
+        conn = _make_conn()
+        route = ["EDWF", "EDWG"]
+        # EDWF -> EDDH (Zwischenstopp, nicht auf der Route) -> EDWG.
+        # Kein einzelnes Route↔Route-Bein, aber die Tour beginnt an EDWF und endet an EDWG.
+        _add_flight(conn, 100, "Stan", "EDWF", "EDDH", 30,
+                    logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:30:00Z")
+        _add_flight(conn, 100, "Stan", "EDDH", "EDWG", 30,
+                    logon="2026-06-27T13:00:00Z", logoff="2026-06-27T13:30:00Z")
+
+        result = compute_bummel_standings(conn, route, START, END)
+
+        stan = _by_cid(result["complete"], 100)
+        assert stan is not None, "Tour mit Zwischenstopp muss komplett sein"
+        assert set(stan["visited"]) == {"EDWF", "EDWG"}
+        # Summe der reinen Blockzeiten (30+30); die Bodenzeit in EDDH (11:30–13:00) zählt NICHT.
+        assert stan["total_min"] == 60
+
+    def test_legs_after_tour_end_are_excluded(self):
+        conn = _make_conn()
+        route = ["EDWF", "EDWG"]
+        _add_flight(conn, 100, "Udo", "EDWF", "EDWG", 40,
+                    logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:40:00Z")
+        # Späterer Flug NACH dem Tour-Ende (z. B. Platzrunde) — zählt nicht
+        _add_flight(conn, 100, "Udo", "EDWG", "EDDH", 99,
+                    logon="2026-06-27T15:00:00Z", logoff="2026-06-27T16:00:00Z")
+
+        result = compute_bummel_standings(conn, route, START, END)
+
+        udo = _by_cid(result["complete"], 100)
+        assert udo is not None
+        assert udo["total_min"] == 40
+
+
+class TestEarlyStart:
+    """Frühstarter: Flug beginnt vor Event-Start, ist aber im Fenster unterwegs → volle Blockzeit."""
+
+    def test_flight_started_before_window_counts(self):
+        conn = _make_conn()
+        route = ["EDWF", "EDWG"]
+        # logon 09:40 < START (10:00), logoff 10:20 liegt im Fenster → überlappt
+        _add_flight(conn, 600, "Frieda", "EDWF", "EDWG", 40,
+                    logon="2026-06-27T09:40:00Z", logoff="2026-06-27T10:20:00Z")
+
+        result = compute_bummel_standings(conn, route, START, END)
+
+        frieda = _by_cid(result["complete"], 600)
+        assert frieda is not None, "Frühstarter im Fenster muss gewertet werden"
+        assert frieda["total_min"] == 40  # volle Blockzeit, auch der Teil vor 10:00
+
+    def test_pure_pre_event_flight_excluded(self):
+        conn = _make_conn()
+        route = ["EDWF", "EDWG"]
+        # komplett vor dem Fenster (logoff 09:50 < START 10:00) → keine Überlappung
+        _add_flight(conn, 601, "Vera", "EDWF", "EDWG", 30,
+                    logon="2026-06-27T08:00:00Z", logoff="2026-06-27T09:50:00Z")
+
+        result = compute_bummel_standings(conn, route, START, END)
+
+        assert _by_cid(result["complete"], 601) is None
+        assert _by_cid(result["incomplete"], 601) is None
+
+
+class TestRadiusParam:
+    """Das pro Rennen gesetzte radius_km steuert die GPS-Zuordnung von Start/Ziel."""
+
+    def test_larger_radius_assigns_distant_position(self):
+        conn = _make_conn()
+        route = ["EDDH", "EDDM"]  # weit auseinander (~600 km) → eindeutige Zuordnung
+        h, m = icao_to_coords("EDDH"), icao_to_coords("EDDM")
+        assert h and m, "Test-Flugplätze müssen auflösbar sein"
+        # Flugplan-Ziel vertippt ("EDXX"); GPS endet ~16 km neben EDDM.
+        _add_flight(conn, 700, "Rudi", "EDDH", "EDXX", 60,
+                    logon="2026-06-27T11:00:00Z", logoff="2026-06-27T12:00:00Z")
+        _add_position(conn, 700, h[0], h[1], "2026-06-27T11:00:00Z")
+        _add_position(conn, 700, m[0] + 0.15, m[1], "2026-06-27T12:00:00Z")  # ~16,7 km
+
+        # Default-Radius (10 km): 16 km zu weit → Ziel bleibt der Tippfehler → nicht gewertet
+        narrow = compute_bummel_standings(conn, route, START, END)
+        assert _by_cid(narrow["complete"], 700) is None
+        assert _by_cid(narrow["incomplete"], 700) is None
+
+        # Renn-Radius 50 km: GPS ordnet EDDM zu → komplette Tour
+        wide = compute_bummel_standings(conn, route, START, END, radius_km=50)
+        rudi = _by_cid(wide["complete"], 700)
+        assert rudi is not None, "Mit größerem Radius muss EDDM erkannt werden"
+        assert set(rudi["visited"]) == {"EDDH", "EDDM"}
+        assert rudi["total_min"] == 60
 
 
 class TestPublicView:

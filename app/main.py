@@ -836,7 +836,10 @@ def _build_race_view(conn, race: dict, now: str, *, force_reveal: bool = False) 
     """
     route_icaos = [c for c in (race.get("route") or "").split(",") if c.strip()]
     route_set = {c.strip().upper() for c in route_icaos}
-    standings = compute_bummel_standings(conn, route_icaos, race["dtstart"], race["dtend"])
+    standings = compute_bummel_standings(
+        conn, route_icaos, race["dtstart"], race["dtend"],
+        radius_km=race.get("radius_km"),  # None/0 → Default-Umkreis in der Funktion
+    )
     overrides = list_bummel_overrides(conn, race["id"])
     if overrides:
         standings = apply_bummel_overrides(standings, overrides)
