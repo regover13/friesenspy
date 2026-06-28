@@ -1,5 +1,13 @@
 [
   {
+    "version": "6.9.4",
+    "date": "2026-06-28",
+    "title": "Hinweis-Banner bleibt nach dem Wegklicken weg",
+    "items": [
+      "🔔 Das Neuerungen-Banner erscheint nach dem Wegklicken nicht mehr bei jedem Update erneut — es kommt erst wieder, wenn sich der angezeigte Inhalt tatsächlich ändert."
+    ]
+  },
+  {
     "version": "6.9.3",
     "date": "2026-06-28",
     "title": "Admin: Tabellen-Optik an Statistiken angeglichen",
