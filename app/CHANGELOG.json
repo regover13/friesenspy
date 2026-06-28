@@ -1,5 +1,13 @@
 [
   {
+    "version": "6.9.2",
+    "date": "2026-06-28",
+    "title": "Event-Listen: horizontales Scrollen auf dem Handy",
+    "items": [
+      "📱 Die Flug-Tabellen in den Event-Listen lassen sich auf schmalen Bildschirmen (iOS/Handy) wieder horizontal scrollen — die Spalte »Flugplan« und alles dahinter wurde vorher abgeschnitten."
+    ]
+  },
+  {
     "version": "6.9.1",
     "date": "2026-06-28",
     "title": "Bummel: Badge-Zeichen, Teilen-Knopf & Admin-Ansicht",
