@@ -1,5 +1,13 @@
 [
   {
+    "version": "6.7.1",
+    "date": "2026-06-28",
+    "title": "Bummel verbergen hält jetzt",
+    "items": [
+      "🙈 Ein bereits beendetes Bummel-Ergebnis ließ sich nicht dauerhaft verbergen — die automatische Enthüllung machte es binnen einer Minute wieder sichtbar. »Verbergen« hält jetzt, bis das Ergebnis im Admin selbst wieder enthüllt wird."
+    ]
+  },
+  {
     "version": "6.7.0",
     "date": "2026-06-28",
     "title": "Admin: Test-Push repariert & Piloten-Callsigns",
