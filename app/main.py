@@ -31,6 +31,7 @@ from app.database import (
     list_bummel_races,
     public_bummel_view,
     set_bummel_push_enabled,
+    set_bummel_reveal_suppressed,
     update_bummel_race,
     update_bummel_reveals,
     upsert_bummel_override,
@@ -1343,6 +1344,7 @@ async def admin_reveal_race(request: Request, race_id: int):
             raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
         was_revealed = bool(race.get("revealed_at"))
         force_bummel_revealed(conn, race_id, _now_iso())
+        set_bummel_reveal_suppressed(conn, race_id, False)  # manuelles Enthüllen hebt Verbergen auf
         conn.commit()
         # Push nur beim ERSTEN Enthüllen (latchend) + wenn fürs Rennen erlaubt + VAPID gesetzt.
         if not was_revealed and race.get("push_enabled") and settings.VAPID_PRIVATE_KEY:
@@ -1362,11 +1364,20 @@ async def admin_reveal_race(request: Request, race_id: int):
 
 @app.post("/api/admin/bummel/races/{race_id}/hide")
 async def admin_hide_race(request: Request, race_id: int):
-    """Wieder verbergen / neu starten (revealed_at zurücksetzen)."""
+    """Wieder verbergen / neu starten (revealed_at zurücksetzen).
+
+    Bei einem bereits abgelaufenen Rennen würde der Auto-Reveal-Job (``update_bummel_reveals``)
+    es sonst binnen einer Minute wieder enthüllen — deshalb wird es zusätzlich dauerhaft
+    unterdrückt (``reveal_suppressed``). Ein noch laufendes Rennen wird nur verborgen und am
+    regulären Ende normal automatisch enthüllt.
+    """
     require_admin(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
+        race = get_bummel_race(conn, race_id)
         force_bummel_revealed(conn, race_id, None)
+        if race and (race.get("dtend") or "") and _now_iso() >= race["dtend"]:
+            set_bummel_reveal_suppressed(conn, race_id, True)
         conn.commit()
         return {"status": "ok"}
     finally:

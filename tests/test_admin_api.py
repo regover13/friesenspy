@@ -310,3 +310,50 @@ def test_pilots_requires_auth(db):
     with pytest.raises(HTTPException) as e:
         asyncio.run(main.admin_list_pilots(FakeReq(cookies={})))
     assert e.value.status_code == 401
+
+
+def _mk_race(db, *, dtstart, dtend, uid="r1"):
+    from app.database import list_bummel_races, upsert_calendar_bummel_race
+    conn = get_connection(db)
+    upsert_calendar_bummel_race(conn, {
+        "uid": uid, "summary": "B", "route": "EDWF,EDWG,EDWR",
+        "dtstart": dtstart, "dtend": dtend,
+    })
+    conn.commit()
+    rid = list_bummel_races(conn)[0]["id"]
+    conn.close()
+    return rid
+
+
+def test_hide_suppresses_expired_race_against_auto_reveal(db):
+    # Abgelaufenes Rennen (dtend in ferner Vergangenheit, unabhängig von der Systemuhr).
+    from app.database import get_bummel_race, update_bummel_reveals
+    rid = _mk_race(db, dtstart="2020-01-01T18:00:00Z", dtend="2020-01-01T20:00:00Z")
+    asyncio.run(main.admin_hide_race(FakeReq(), rid))
+    conn = get_connection(db)
+    assert get_bummel_race(conn, rid)["reveal_suppressed"] == 1
+    update_bummel_reveals(conn, "2020-01-02T00:00:00Z")  # Job würde sonst sofort enthüllen
+    assert get_bummel_race(conn, rid)["revealed_at"] is None  # bleibt verborgen
+    conn.close()
+
+
+def test_hide_running_race_does_not_suppress(db):
+    # Laufendes Rennen (dtend in ferner Zukunft) → nur verbergen, KEIN Dauer-Suppress.
+    from app.database import get_bummel_race
+    rid = _mk_race(db, dtstart="2099-01-01T18:00:00Z", dtend="2099-01-01T20:00:00Z")
+    asyncio.run(main.admin_hide_race(FakeReq(), rid))
+    conn = get_connection(db)
+    assert get_bummel_race(conn, rid)["reveal_suppressed"] == 0
+    conn.close()
+
+
+def test_reveal_clears_suppression(db):
+    # Manuelles Enthüllen hebt ein vorheriges Verbergen wieder auf.
+    from app.database import get_bummel_race
+    rid = _mk_race(db, dtstart="2020-01-01T18:00:00Z", dtend="2020-01-01T20:00:00Z")
+    asyncio.run(main.admin_hide_race(FakeReq(), rid))
+    asyncio.run(main.admin_reveal_race(FakeReq(), rid))
+    conn = get_connection(db)
+    row = get_bummel_race(conn, rid)
+    assert row["reveal_suppressed"] == 0 and row["revealed_at"] is not None
+    conn.close()

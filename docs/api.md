@@ -756,7 +756,7 @@ Rennen sofort enthüllen (Notfall-Enthüllung). Setzt `revealed_at = now()`.
 
 ### POST /api/admin/bummel/races/{id}/hide
 
-Enthüllung zurücksetzen (wieder verbergen). Setzt `revealed_at = NULL`.
+Enthüllung zurücksetzen (wieder verbergen). Setzt `revealed_at = NULL`. Ist das Rennen bereits abgelaufen (`now >= dtend`), wird zusätzlich `reveal_suppressed = 1` gesetzt, damit der automatische Enthüllungs-Job (`update_bummel_reveals`) es nicht binnen einer Minute wieder enthüllt. Ein noch laufendes Rennen wird nur verborgen und am regulären Ende normal automatisch enthüllt. Manuelles Enthüllen (`…/reveal`) hebt die Unterdrückung wieder auf.
 
 **Response** `{"status": "ok"}`
 

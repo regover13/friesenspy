@@ -14,6 +14,7 @@ from app.database import (
     init_db,
     list_bummel_races,
     set_bummel_revealed,
+    set_bummel_reveal_suppressed,
     update_bummel_reveals,
     update_bummel_starts,
     upsert_calendar_bummel_race,
@@ -154,6 +155,25 @@ class TestRevealLatch:
         # Späterer Lauf darf den Zeitstempel nicht überschreiben
         update_bummel_reveals(conn, "2026-06-27T23:00:00Z")
         assert get_bummel_race(conn, rid)["revealed_at"] == first
+
+    def test_suppressed_race_is_not_auto_revealed(self):
+        # „Verbergen" eines abgelaufenen Rennens muss halten: der Auto-Reveal-Job darf
+        # ein als verborgen markiertes Rennen NICHT wieder enthüllen.
+        conn = _make_conn()
+        rid = self._race(conn, "2026-06-27T22:00:00Z")
+        set_bummel_reveal_suppressed(conn, rid, True)
+        conn.commit()
+        update_bummel_reveals(conn, "2026-06-27T22:30:00Z")  # dtend längst vorbei
+        assert get_bummel_race(conn, rid)["revealed_at"] is None
+
+    def test_unsuppress_allows_auto_reveal_again(self):
+        conn = _make_conn()
+        rid = self._race(conn, "2026-06-27T22:00:00Z")
+        set_bummel_reveal_suppressed(conn, rid, True)
+        set_bummel_reveal_suppressed(conn, rid, False)  # wieder freigegeben
+        conn.commit()
+        update_bummel_reveals(conn, "2026-06-27T22:30:00Z")
+        assert get_bummel_race(conn, rid)["revealed_at"] == "2026-06-27T22:30:00Z"
 
 
 class TestStartDetection:

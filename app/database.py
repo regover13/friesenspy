@@ -151,7 +151,8 @@ CREATE TABLE IF NOT EXISTS bummel_races (
     revealed_at    TEXT,                 -- gesetzt = Ergebnisse enthüllt (latchend)
     created_at     TEXT,
     push_enabled   INTEGER DEFAULT 1,    -- Push-Benachrichtigungen für dieses Rennen aktiv
-    started_at     TEXT                  -- Latch: gesetzt wenn erster Pilot losgeflogen ist
+    started_at     TEXT,                 -- Latch: gesetzt wenn erster Pilot losgeflogen ist
+    reveal_suppressed INTEGER DEFAULT 0  -- 1 = manuell verborgen, übersteuert den Auto-Reveal
 );
 
 CREATE TABLE IF NOT EXISTS bummel_overrides (
@@ -252,6 +253,7 @@ _PREFILE_SIGS_MIGRATIONS = [
 _BUMMEL_MIGRATIONS = [
     "ALTER TABLE bummel_races ADD COLUMN push_enabled INTEGER DEFAULT 1",
     "ALTER TABLE bummel_races ADD COLUMN started_at TEXT",
+    "ALTER TABLE bummel_races ADD COLUMN reveal_suppressed INTEGER DEFAULT 0",
     """CREATE TABLE IF NOT EXISTS bummel_overrides (
         race_id          INTEGER,
         cid              INTEGER,
@@ -1355,8 +1357,8 @@ def update_bummel_reveals(
     unterwegs ist. Gibt die IDs der in diesem Lauf neu enthüllten Rennen zurück (für Push)."""
     revealed: list[int] = []
     for race in list_bummel_races(conn):
-        if race["revealed_at"]:
-            continue
+        if race["revealed_at"] or race.get("reveal_suppressed"):
+            continue  # bereits enthüllt ODER vom Admin manuell verborgen → nicht (wieder) enthüllen
         dtend = race["dtend"] or ""
         if not dtend or now < dtend:
             continue
@@ -1928,7 +1930,7 @@ def list_bummel_races(conn: sqlite3.Connection) -> list[dict]:
     """Alle Rennen, neueste zuerst (nach dtstart)."""
     rows = conn.execute(
         "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
-        "revealed_at, created_at, push_enabled, started_at "
+        "revealed_at, created_at, push_enabled, started_at, reveal_suppressed "
         "FROM bummel_races ORDER BY dtstart DESC"
     ).fetchall()
     return [dict(r) for r in rows]
@@ -1937,7 +1939,7 @@ def list_bummel_races(conn: sqlite3.Connection) -> list[dict]:
 def get_bummel_race(conn: sqlite3.Connection, race_id: int) -> dict | None:
     row = conn.execute(
         "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
-        "revealed_at, created_at, push_enabled, started_at "
+        "revealed_at, created_at, push_enabled, started_at, reveal_suppressed "
         "FROM bummel_races WHERE id = ?",
         (race_id,),
     ).fetchone()
@@ -1971,6 +1973,15 @@ def set_bummel_push_enabled(conn: sqlite3.Connection, race_id: int, enabled: boo
     conn.execute(
         "UPDATE bummel_races SET push_enabled = ? WHERE id = ?",
         (1 if enabled else 0, race_id),
+    )
+
+
+def set_bummel_reveal_suppressed(conn: sqlite3.Connection, race_id: int, suppressed: bool) -> None:
+    """Manuelles Verbergen latchen: ``suppressed=True`` hält ein bereits abgelaufenes Rennen
+    verborgen (übersteuert den Auto-Reveal in ``update_bummel_reveals``); ``False`` gibt es frei."""
+    conn.execute(
+        "UPDATE bummel_races SET reveal_suppressed = ? WHERE id = ?",
+        (1 if suppressed else 0, race_id),
     )
 
 
