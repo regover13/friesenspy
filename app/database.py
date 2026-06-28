@@ -1265,6 +1265,21 @@ def canonicalize_flights(
 # den nächstgelegenen, sodass eng beieinanderliegende Inselplätze korrekt getrennt werden.
 _BUMMEL_AIRPORT_RADIUS_KM = 10.0
 
+# Vorlauf (Stunden), mit dem Flüge VOR Event-Start geladen werden, damit Frühstarter erfasst
+# werden (Flug beginnt vor dtstart, ist aber im Eventfenster noch unterwegs). Großzügig genug
+# für jeden realistischen GA-Flug, begrenzt aber die geladene Datenmenge.
+_BUMMEL_EARLY_START_LOOKBACK_H = 12
+
+
+def _shift_iso(ts: str, *, hours: float) -> str:
+    """ISO8601-Zeitstempel (…Z) um ``hours`` verschieben; bei Parse-Fehler unverändert zurück."""
+    from datetime import datetime, timedelta
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return ts
+    return (dt + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 def _nearest_airport(
     coords_map: dict[str, tuple[float, float] | None],
@@ -1425,6 +1440,7 @@ def compute_bummel_standings(
     end: str,
     *,
     cids: list[int] | None = None,
+    radius_km: float | None = None,
 ) -> dict:
     """Wertung für einen FriesenFliegerBummel.
 
@@ -1433,6 +1449,16 @@ def compute_bummel_standings(
     Pilot alle Flugplätze der Strecke besucht hat — Reihenfolge und Richtung egal (A→B = B→A,
     auch alternative Routings). Gewertete Zeit je Flug: ``block_min`` (Gate-to-Gate inkl. Taxi),
     Fallback ``duration_min`` (z. B. reine StatSim-Flüge).
+
+    Track-/tour-basiert (Bummel = gemütlich): Die Tour eines Piloten reicht vom ersten Start an
+    einem Streckenflugplatz bis zum letzten Ziel an einem Streckenflugplatz — **Zwischenlandungen
+    dazwischen sind erlaubt** und brechen die Wertung nicht. Gewertet wird die Summe der reinen
+    Block-Zeiten der Tour-Beine, d. h. die Bodenzeit der Zwischenstopps zählt NICHT mit.
+
+    Frühstarter: Flüge, die VOR ``start`` begonnen haben, aber im Eventfenster noch unterwegs sind
+    (``logoff_time >= start``), werden mit voller Blockzeit erfasst (Vorlauf
+    ``_BUMMEL_EARLY_START_LOOKBACK_H``). ``radius_km`` steuert den Erfassungs-Umkreis um einen
+    Streckenflugplatz (Default ``_BUMMEL_AIRPORT_RADIUS_KM``).
 
     Robust nach Wunsch: baut auf :func:`canonicalize_flights` auf (Reconnect-Fragmente gemergt,
     Ghosts gefiltert, dedupliziert). Unvollständige Touren werden NIE still verworfen, sondern
@@ -1457,6 +1483,8 @@ def compute_bummel_standings(
             route_order.append(c)
     route_set = set(route_order)
 
+    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
+
     # GPS-Anwesenheit: tatsächlichen Start/Ziel je Flug aus der ersten/letzten Position ableiten.
     # Macht die Wertung unabhängig vom gefilten Flugplan (Tippfehler) — der Flugplan dient nur
     # noch als Fallback, wenn kein GPS-Track existiert (z. B. reine StatSim-Flüge).
@@ -1464,11 +1492,18 @@ def compute_bummel_standings(
     coords_map = {icao: icao_to_coords(icao) for icao in route_order}
 
     def _nearest_route_airport(pos: tuple[float, float] | None) -> str | None:
-        return _nearest_airport(coords_map, pos, _BUMMEL_AIRPORT_RADIUS_KM)
+        return _nearest_airport(coords_map, pos, radius)
 
-    flights = canonicalize_flights(conn, start=start, end=end, cids=cids)
+    # Frühstarter: mit Vorlauf laden, damit Flüge, die VOR dtstart begonnen haben, aber im
+    # Eventfenster noch unterwegs sind, erfasst werden. canonicalize_flights filtert nach
+    # logon_time; danach wird hier nach echter Überlappung (logoff_time >= start) gefiltert.
+    load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
+    flights = canonicalize_flights(conn, start=load_start, end=end, cids=cids)
+    flights = [f for f in flights if (f.get("logoff_time") or "") >= start]
 
-    by_cid: dict[int, dict] = {}
+    # Beine je Pilot sammeln (Endpunkte GPS-korrigiert, sonst Flugplan). Beine außerhalb der
+    # Strecke werden NICHT mehr sofort verworfen — sie können Zwischenstopps einer Tour sein.
+    legs_by_cid: dict[int, list[dict]] = {}
     for f in flights:
         cid = f.get("cid")
         if cid is None:
@@ -1477,48 +1512,56 @@ def compute_bummel_standings(
         fp_arr = (f.get("arrival") or "").strip().upper()
         lo = f.get("logon_time") or ""
         lf = f.get("logoff_time") or "9999-12-31T23:59:59Z"
-        # GPS gewinnt, wenn die erste/letzte Position eindeutig an einem Streckenflugplatz liegt;
-        # sonst zählt der Flugplan-Eintrag (Fallback).
         dep = _nearest_route_airport(_first_pos(conn, int(cid), lo, lf)) or fp_dep
         arr = _nearest_route_airport(_last_pos(conn, int(cid), lo, lf)) or fp_arr
-        # Nur Beine, deren Start UND Ziel zur Strecke gehören (Richtung egal).
-        if dep not in route_set or arr not in route_set or dep == arr:
-            continue
         block = f.get("block_min")
         minutes = int(block) if block else int(f.get("duration_min") or 0)
-        entry = by_cid.setdefault(cid, {
-            "cid": cid,
-            "name": "",
-            "callsign": f.get("callsign") or "",
-            "total_min": 0,
-            "_visited": set(),
-            "legs": [],
-        })
-        entry["total_min"] += minutes
-        entry["_visited"].update((dep, arr))
-        entry["legs"].append({
+        legs_by_cid.setdefault(cid, []).append({
             "departure": dep,
             "arrival": arr,
             "block_min": block,
             "minutes": minutes,
             "aircraft": f.get("aircraft") or "",
-            "logon_time": f.get("logon_time"),
+            "logon_time": f.get("logon_time") or "",
             "logoff_time": f.get("logoff_time"),
             "source": f.get("source"),
+            "callsign": f.get("callsign") or "",
         })
 
-    for cid, entry in by_cid.items():
-        row = conn.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
-        entry["name"] = (row["name"] if row else "") or ""
-
+    # Tour je Pilot: vom ersten Start an einem Streckenflugplatz bis zum letzten Ziel an einem
+    # Streckenflugplatz (Beine zeitlich geordnet). Zwischenstopps dazwischen sind erlaubt; ihre
+    # Bodenzeit fällt automatisch raus, da nur die Block-Zeit der Beine summiert wird.
     complete: list[dict] = []
     incomplete: list[dict] = []
-    for entry in by_cid.values():
-        visited = entry.pop("_visited")
-        entry["visited"] = [c for c in route_order if c in visited]
-        entry["missing"] = [c for c in route_order if c not in visited]
-        entry["leg_count"] = len(entry["legs"])
-        entry["aircraft"] = next((leg["aircraft"] for leg in entry["legs"] if leg["aircraft"]), "")
+    for cid, legs in legs_by_cid.items():
+        legs.sort(key=lambda l: l["logon_time"])
+        start_idx = next((i for i, l in enumerate(legs) if l["departure"] in route_set), None)
+        end_idx = next(
+            (i for i in range(len(legs) - 1, -1, -1) if legs[i]["arrival"] in route_set), None
+        )
+        if start_idx is None or end_idx is None or end_idx < start_idx:
+            continue  # keine an der Strecke beginnende UND endende Tour
+        tour = legs[start_idx:end_idx + 1]
+        visited: set[str] = set()
+        total = 0
+        for l in tour:
+            total += l["minutes"]
+            if l["departure"] in route_set:
+                visited.add(l["departure"])
+            if l["arrival"] in route_set:
+                visited.add(l["arrival"])
+        row = conn.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
+        entry = {
+            "cid": cid,
+            "name": (row["name"] if row else "") or "",
+            "callsign": tour[0]["callsign"],
+            "total_min": total,
+            "legs": [{k: v for k, v in l.items() if k != "callsign"} for l in tour],
+            "leg_count": len(tour),
+            "aircraft": next((l["aircraft"] for l in tour if l["aircraft"]), ""),
+            "visited": [c for c in route_order if c in visited],
+            "missing": [c for c in route_order if c not in visited],
+        }
         (complete if route_set.issubset(visited) else incomplete).append(entry)
 
     count = len(complete)
