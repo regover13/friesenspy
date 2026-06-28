@@ -2670,6 +2670,8 @@ async function openBummel(ev) {
   const content = document.getElementById('bummel-content');
   const title = document.getElementById('bummel-title');
   wrap.classList.remove('hidden');
+  // Bummel-View in den Sichtbereich holen (sonst scrollt searchEvents() unten zur Karte vorbei).
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
   title.textContent = `🏁 ${ev.summary || 'FriesenFliegerBummel'}`;
   content.innerHTML = '<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade…</div>';
   _activeBummel = null;
@@ -2682,6 +2684,8 @@ async function openBummel(ev) {
       content.innerHTML = '<div class="empty-state"><div class="empty-state-text text-label">Kein Rennen zu diesem Termin gefunden</div></div>';
       return;
     }
+    // Deep-Link: dieses Rennen ist teil- und wieder-aufrufbar (#tab=events&bummel=<id>).
+    setUrlState({ tab: 'events', bummel: race.id });
     const view = await (await fetch('/api/bummel/race/' + race.id)).json();
 
     if (!view.revealed) {
@@ -2808,7 +2812,8 @@ function renderBummelStandings(data, inProgress) {
   if (data.count > 0) {
     _bummelForumText = _buildBummelForumText(data);
     html += `<div class="bummel-avg-row">Durchschnittszeit: <strong>${_fmtMin(Math.round(data.average_min))}</strong> · wer am nächsten dran ist, gewinnt
-      <button class="btn-share" style="margin-left:10px;" onclick="copyBummelForumText(this)">📋 Für Forum kopieren</button></div>`;
+      <button class="btn-share" style="margin-left:10px;" onclick="copyBummelForumText(this)">📋 Für Forum kopieren</button>
+      <button class="btn-share" style="margin-left:6px;" onclick="shareBummel(this)">🔗 Teilen</button></div>`;
     html += '<div class="live-table-wrap"><table><thead><tr><th>#</th><th>Pilot</th><th>Flugzeug</th><th>Beine</th><th>Block-Gesamtzeit</th><th>Abstand z. Schnitt</th><th>Badge</th></tr></thead><tbody>';
     data.complete.forEach(e => {
       const cls = e.rank === 1 ? 'bummel-rank-1' : '';
@@ -2884,6 +2889,31 @@ function getUrlState() {
 
 function setUrlState(params) {
   history.replaceState(null, '', '#' + new URLSearchParams(params).toString());
+}
+
+// Bummel teilen: native Web-Share-API (Deep-Link aus location.href, von openBummel gesetzt),
+// Fallback auf Zwischenablage. Button-Feedback wie copyShareUrl.
+async function shareBummel(btn) {
+  const url = location.href;
+  const title = document.getElementById('bummel-title');
+  const name = (title ? title.textContent : '') || 'FriesenFliegerBummel';
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'FriesenFliegerBummel', text: name, url });
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;  // Nutzer hat den Share-Dialog abgebrochen
+      // sonst: auf Clipboard-Fallback durchfallen
+    }
+  }
+  const orig = btn.textContent;
+  navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = '✓ Kopiert!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    btn.textContent = '✗ Fehler';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  });
 }
 
 function copyShareUrl(btn) {
@@ -4007,8 +4037,9 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   mapDiv.style.display = 'block';
   renderEventsMap(pilots, icaoStr, radiusKm);
 
-  // Smooth scroll to results
-  results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Smooth scroll to results — aber nicht im Bummel-Kontext: dort hat openBummel() bereits
+  // auf das Ranking-Panel gescrollt, der Event-Scroll würde daran vorbeispringen.
+  if (!_activeBummel) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function renderEventsMap(pilots, icaoStr, radiusKm) {
@@ -4290,6 +4321,23 @@ async function initFromUrl() {
   } else if (tab === 'karte') {
     // Lazy init wird vom tab-click handler übernommen, nichts weiteres nötig
   } else if (tab === 'events') {
+    const bummelId = p.get('bummel');
+    if (bummelId) {
+      // Deep-Link auf ein konkretes Rennen: Race laden und Bummel-View direkt öffnen.
+      try {
+        const races = await (await fetch('/api/bummel/races')).json();
+        const race = (races || []).find(r => String(r.id) === String(bummelId));
+        if (race) {
+          await openBummel({
+            summary: race.name,
+            route: (race.route || []).join(','),
+            dtstart: race.dtstart,
+            dtend: race.dtend,
+            _raceId: race.id,
+          });
+        }
+      } catch (e) { /* ignorieren — Tab bleibt offen */ }
+    }
     const icao = p.get('icao');
     if (icao) {
       document.getElementById('ev-icao').value = icao;

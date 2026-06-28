@@ -768,6 +768,7 @@
                   <div class="form-group">
                     <label for="nr-radius">Radius (km)</label>
                     <input type="number" id="nr-radius" value="10" min="1" max="200" />
+                    <small style="display:block;margin-top:4px;color:var(--text-label);font-size:0.78em;line-height:1.3;">Toleranzbereich in km um jeden Flugplatz der Strecke. Ein GPS-Punkt zählt als Besuch dieses Flugplatzes, wenn er innerhalb des Radius liegt — bestimmt also, was als Start, Ziel oder Zwischenstopp gewertet wird. Standard: 10 km.</small>
                   </div>
                 </div>
                 <div style="display:flex;gap:8px;">
@@ -1194,6 +1195,7 @@
             <div class="form-group">
               <label>Radius (km)</label>
               <input type="number" id="edit-radius-${r.id}" value="${r.radius_km}" min="1" max="200" />
+              <small style="display:block;margin-top:4px;color:var(--text-label);font-size:0.78em;line-height:1.3;">Toleranzbereich in km um jeden Flugplatz der Strecke. Ein GPS-Punkt zählt als Besuch dieses Flugplatzes, wenn er innerhalb des Radius liegt — bestimmt also, was als Start, Ziel oder Zwischenstopp gewertet wird. Standard: 10 km.</small>
             </div>
           </div>
           <div class="race-actions">

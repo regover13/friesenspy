@@ -1,5 +1,15 @@
 [
   {
+    "version": "6.5.0",
+    "date": "2026-06-28",
+    "title": "Bummel teilen & übersichtlicher",
+    "items": [
+      "🔗 Neuer »Teilen«-Knopf im Bummel-Ranking: verschickt einen Direkt-Link, der genau dieses Ergebnis öffnet (am Handy über das native Teilen-Menü, sonst in die Zwischenablage kopiert).",
+      "🏁 Klick auf einen Bummel springt jetzt direkt zum Ranking statt zur Karte zu scrollen.",
+      "🛠️ Admin: Das Radius-Feld erklärt jetzt, was es bewirkt — der Toleranzbereich um jeden Streckenflugplatz, der bestimmt, was als Start, Ziel oder Zwischenstopp zählt."
+    ]
+  },
+  {
     "version": "6.4.0",
     "date": "2026-06-28",
     "title": "Admin: Banner-Verwaltung & mehr",
