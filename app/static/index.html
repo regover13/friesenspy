@@ -1826,7 +1826,7 @@ let _notifCustomFilter = null; // in-memory filter für "Nur bestimmte Piloten" 
 let _version = '';
 let _changelog = [];
 let _bannerVersion = null;  // vom Server gewählter Banner-Eintrag (Version) oder null = aus
-const CHANGELOG_SEEN_KEY = 'fs_changelog_seen';  // Wert = zuletzt gesehene Version
+const CHANGELOG_SEEN_KEY = 'fs_changelog_seen';  // Wert = zuletzt gesehene Banner-Version
 
 // ---- PWA install prompt (Android/Desktop) ----
 const INSTALL_DISMISS_KEY = 'fs_install_dismissed';
@@ -2188,7 +2188,7 @@ function _maybeShowChangelogBanner() {
   if (_bannerVersion == null) return;  // Admin hat den Banner ausgeschaltet
   let seen = '';
   try { seen = localStorage.getItem(CHANGELOG_SEEN_KEY) || ''; } catch (_) {}
-  if (seen === _version) return;  // diese Version schon gesehen → kein Banner
+  if (seen === _bannerVersion) return;  // dieses Banner schon gesehen → nicht erneut zeigen
   // Server bestimmt, welcher Eintrag als Banner gilt (Admin-Auswahl / neuestes Highlight)
   const entry = _changelog.find(e => e.version === _bannerVersion) || _changelog[0];
   const banner = document.getElementById('changelog-banner');
@@ -2201,7 +2201,7 @@ function _maybeShowChangelogBanner() {
 }
 
 function _markChangelogSeen() {
-  try { localStorage.setItem(CHANGELOG_SEEN_KEY, _version); } catch (_) {}
+  try { localStorage.setItem(CHANGELOG_SEEN_KEY, _bannerVersion || _version); } catch (_) {}
   const banner = document.getElementById('changelog-banner');
   if (banner) banner.hidden = true;
 }
