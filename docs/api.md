@@ -881,6 +881,8 @@ Test-Benachrichtigung **nur** an das angegebene (eigene) Gerät senden — nie a
 | Feld | Typ | Pflicht | Beschreibung |
 |------|-----|---------|--------------|
 | `endpoint` | string | ✓ | Push-Endpoint-URL des eigenen Browsers |
+| `title` | string | — | Titel als Vorschau (leer → Standard „FriesenSpy Test ✅") |
+| `body` | string | — | Text als Vorschau (leer → Standard-Testtext) |
 
 **Responses**
 - `200 {"status": "ok", "sent": 1}`
@@ -911,13 +913,13 @@ Verwaltung der `pilots`-Tabelle (Namenspflege/manuelles Anlegen). **Keine Mitgli
 
 ### GET /api/admin/pilots
 
-Alle bekannten Piloten, nach Name sortiert.
+Alle bekannten Piloten, nach Name sortiert. `callsigns` = sortierte Liste aller distinct FRS-Callsigns dieser CID aus der `flights`-Tabelle (leer, wenn keine Flüge) — zeigt, wenn eine CID mehrere Tags nutzt.
 
 **Response**
 
 ```json
 [
-  {"cid": 1602713, "name": "Tobias EDKB", "added_at": "2026-06-04T07:14:54Z"}
+  {"cid": 1602713, "name": "Tobias EDKB", "added_at": "2026-06-04T07:14:54Z", "callsigns": ["FRS49", "FRS 144"]}
 ]
 ```
 

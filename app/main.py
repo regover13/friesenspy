@@ -1150,7 +1150,10 @@ async def admin_push_test(request: Request):
         conn.close()
     if not sub:
         raise HTTPException(status_code=404, detail="Bitte zuerst in der App Push aktivieren.")
-    payload = {"title": "FriesenSpy Test ✅", "body": "Test-Benachrichtigung vom Admin.", "url": "/"}
+    # Titel/Text aus dem Broadcast-Formular als Vorschau übernehmen; sonst Standard-Testtext.
+    title = str(body.get("title", "")).strip() or "FriesenSpy Test ✅"
+    text = str(body.get("body", "")).strip() or "Test-Benachrichtigung vom Admin."
+    payload = {"title": title, "body": text, "url": "/"}
     await send_web_push(
         settings.VAPID_PRIVATE_KEY, settings.VAPID_CONTACT_EMAIL, settings.DB_PATH,
         [sub], payload, label="Admin-Test",
@@ -1188,11 +1191,12 @@ async def admin_push_broadcast(request: Request):
 
 @app.get("/api/admin/pilots")
 async def admin_list_pilots(request: Request):
-    """Bekannte Piloten (cid, name, added_at) für die Admin-Verwaltung."""
+    """Bekannte Piloten (cid, name, added_at, callsigns) für die Admin-Verwaltung."""
     require_admin(request)
-    conn = get_connection(get_settings().DB_PATH)
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
     try:
-        return list_pilots(conn)
+        return list_pilots(conn, callsign_prefix=settings.CALLSIGN_PREFIX)
     finally:
         conn.close()
 

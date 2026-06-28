@@ -1710,11 +1710,16 @@
     document.getElementById('push-test-btn').addEventListener('click', async () => {
       let sub = null;
       try {
-        const reg = await navigator.serviceWorker.ready;
+        // register() statt serviceWorker.ready: liefert die (auf /static/ gescopte) Registration
+        // direkt zurück. `ready` würde auf /admin nie auflösen (Seite außerhalb des SW-Scopes).
+        const reg = await navigator.serviceWorker.register('/static/sw.js');
         sub = await reg.pushManager.getSubscription();
       } catch { /* SW evtl. nicht registriert */ }
       if (!sub) { toast('Bitte zuerst in der App Push aktivieren.', true); return; }
-      const res = await api('POST', '/api/admin/push/test', { endpoint: sub.endpoint });
+      // Titel/Text aus dem Broadcast-Formular als Vorschau mitschicken (leer → Standardtext).
+      const title = document.getElementById('bc-title').value.trim();
+      const body  = document.getElementById('bc-body').value.trim();
+      const res = await api('POST', '/api/admin/push/test', { endpoint: sub.endpoint, title, body });
       if (!res) return;
       if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
       toast('Test-Benachrichtigung gesendet.');
@@ -1748,9 +1753,10 @@
       const c = document.getElementById('pilots-container');
       if (!pilots.length) { c.innerHTML = '<div class="empty-hint">Keine Piloten bekannt.</div>'; return; }
       c.innerHTML = tableWrap(
-        thRow(['CID', 'Name', 'Seit', 'Aktionen']),
+        thRow(['CID', 'Callsign', 'Name', 'Seit', 'Aktionen']),
         pilots.map(p => `<tr>
           <td class="td-mono">${escH(p.cid)}</td>
+          <td class="td-mono">${(p.callsigns && p.callsigns.length) ? escH(p.callsigns.join(', ')) : '<span class="td-dim">–</span>'}</td>
           <td><input type="text" value="${escA(p.name || '')}" data-pilot-name="${escA(p.cid)}" style="width:100%;box-sizing:border-box;" /></td>
           <td class="td-dim">${escH((p.added_at || '').slice(0, 10))}</td>
           <td><div class="quick-btns">
