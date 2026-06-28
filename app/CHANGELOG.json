@@ -1,5 +1,13 @@
 [
   {
+    "version": "6.4.0",
+    "date": "2026-06-28",
+    "title": "Admin: Banner-Verwaltung & mehr",
+    "items": [
+      "🛠️ Neue Admin-Werkzeuge: den Hinweis-Banner der Startseite frei wählen, Bummel-Badges schon vor der Enthüllung ansehen, Test- und Broadcast-Benachrichtigungen senden und Pilotennamen pflegen."
+    ]
+  },
+  {
     "version": "6.3.1",
     "date": "2026-06-28",
     "title": "Bummel-Badge im neuen Look",
@@ -18,16 +26,6 @@
     ]
   },
   {
-    "version": "6.2.0",
-    "date": "2026-06-27",
-    "title": "Event-Benachrichtigungen & manuelle Bummel",
-    "items": [
-      "🔔 Neuer „Events“-Schalter in den Benachrichtigungen: Erinnerung ~1 h vor jedem FriesenEvent per Push + Bummel-Start/Ergebnis-Benachrichtigungen — einzeln aktivierbar, Standard: aus.",
-      "🏁 Manuell angelegte Bummel (ohne Kalender-Termin) erscheinen jetzt auch im Events-Tab und sind anklickbar.",
-      "🔔 „Enthüllen“ im Admin sendet jetzt ebenfalls den Ergebnis-Push an Events-Abonnenten."
-    ]
-  },
-  {
     "version": "6.1.2",
     "date": "2026-06-27",
     "title": "FriesenFliegerBummel",
@@ -38,6 +36,8 @@
       "🔒 Fairness: Solange ein Bummel läuft, bleiben Zeiten und Durchschnitt verborgen — sie erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann.",
       "📊 Im Events-Tab das Ranking PLUS die gewohnte Event-Ansicht mit Karte; Live-Zwischenstand und 🔔 Push-Benachrichtigung bei Start und Ergebnissen.",
       "🛠️ Admin-Bereich: Rennen auch ohne Kalender anlegen, beenden/neu starten, Teilnehmer korrigieren (ausschließen/disqualifizieren/Sieger setzen); 📋 Endstand fürs Forum kopieren.",
+      "🔔 »Events«-Schalter in den Benachrichtigungen: Erinnerung ~1 h vor jedem FriesenEvent + Push bei Bummel-Start und -Ergebnis (einzeln aktivierbar).",
+      "🏁 Auch manuell (ohne Kalender-Termin) angelegte Bummel erscheinen im Events-Tab und sind anklickbar.",
       "🔎 Event-Suche findet jetzt auch Teilnehmer bei Events mit mehreren oder ungewöhnlichen Flugplatz-Codes; 📱 Tabellen auf dem Smartphone horizontal scrollbar."
     ]
   },

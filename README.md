@@ -192,6 +192,10 @@ Die Admin-Seite ist unter `/admin` erreichbar und passwortgeschützt. Das Passwo
 - **Teilnehmer-Korrekturen (Overrides)** — einzelne Piloten ausschließen (`exclude`), disqualifizieren (`disqualify`), manuell als Sieger markieren (`winner`) oder mit einer manuell eingegebenen Block-Zeit werten (`manual`). Overrides wirken auf alle öffentlichen Sichten; Durchschnitt und Ranking werden neu berechnet.
 - **Push-Benachrichtigungen je Rennen** — Start- und Enthüllungs-Push für ein einzelnes Rennen an- oder abschalten.
 - **Vorschau** — vollständige Wertung mit Zeiten und Ranking einsehen, solange das Rennen noch läuft — ohne die öffentliche Sicht zu enthüllen.
+- **Badge-Vorschau** — in der Renn-Vorschau je Teilnehmer **🎖 Badge** (öffnet das Badge-PNG, auch schon **vor** der Enthüllung) und **📋 Forum** (kopiert den öffentlichen `[img]…[/img]`-BBCode).
+- **Hinweis-Banner steuern** — bestimmen, welcher Changelog-Eintrag als Startseiten-Banner erscheint: `auto` (neuester Highlight-Eintrag), `off` (kein Banner) oder eine konkrete Version.
+- **Push-Test & Broadcast** — eine Test-Benachrichtigung nur ans eigene Gerät senden oder eine freie Nachricht (Titel + Text) an alle Abonnenten bzw. nur Events-Abonnenten.
+- **Piloten-Verwaltung** — bekannte Piloten auflisten, manuell anlegen oder umbenennen und löschen (Namenspflege; **keine** Mitglieder-Allowlist — Friesen werden weiter über das Callsign-Präfix `FRS` erkannt).
 
 ---
 
@@ -439,7 +443,7 @@ FriesenSpy/
 ├── app/
 │   ├── main.py        # FastAPI-App, REST + SSE-Endpoints
 │   ├── config.py      # pydantic-settings (liest config.env)
-│   ├── database.py    # SQLite WAL, alle DB-Funktionen
+│   ├── database.py    # SQLite WAL, alle DB-Funktionen (inkl. app_settings Key-Value-Tabelle, Pilots-CRUD)
 │   ├── vatsim.py      # VATSIM-API-Client + Callsign-Filter
 │   ├── statsim.py     # StatSim API-Client (historische Flüge)
 │   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline), Event-Filter
@@ -500,6 +504,12 @@ FriesenSpy/
 | `/api/admin/bummel/races/{id}/override` | POST | Teilnehmer-Override setzen |
 | `/api/admin/bummel/races/{id}/override/{cid}` | DELETE | Override entfernen |
 | `/api/admin/bummel/races/{id}/preview` | GET | Vollständige Wertung (Admin-Vorschau) |
+| `/api/admin/bummel/races/{race_id}/badge/{cid}.png` | GET | Badge-Vorschau ohne Reveal-Gate (immer frisch, `no-store`) |
+| `/api/admin/banner` | GET/POST | Hinweis-Banner-Auswahl lesen/setzen (`auto`/`off`/Version) |
+| `/api/admin/push/test` | POST | Test-Push nur ans eigene Gerät (`endpoint`) |
+| `/api/admin/push/broadcast` | POST | Freie Push-Nachricht (`title`, `body`, `audience`) |
+| `/api/admin/pilots` | GET/POST | Piloten auflisten / anlegen/umbenennen |
+| `/api/admin/pilots/{cid}` | DELETE | Pilot entfernen |
 | `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles + TS-Zähler `🎧 N im TS`) |
 | `/widget/preview` | GET | Vorschau + Einbettungscode für das Widget |
 | `/api/sse` | GET | Server-Sent Events Stream |
