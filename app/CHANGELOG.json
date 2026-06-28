@@ -1,5 +1,15 @@
 [
   {
+    "version": "6.9.1",
+    "date": "2026-06-28",
+    "title": "Bummel: Badge-Zeichen, Teilen-Knopf & Admin-Ansicht",
+    "items": [
+      "🔧 Badge: Das Minuszeichen beim Abstand und der Platzhalter für fehlende Werte (z. B. unbekanntes Flugzeug) werden wieder korrekt dargestellt — vorher erschienen leere Kästchen.",
+      "⎘ Nur noch ein Teilen-Knopf je Bummel — oben rechts in der Ansicht; er kopiert zuverlässig den Direkt-Link zu genau diesem Rennen.",
+      "🛠️ Admin-Wertungstabelle vereinheitlicht: »Legs«, »Block-Gesamtzeit« und der signierte, sekundengenaue Abstand wie in der öffentlichen Ansicht."
+    ]
+  },
+  {
     "version": "6.9.0",
     "date": "2026-06-28",
     "title": "Bummel: sekundengenauer Abstand & Badge mit Event-Name",

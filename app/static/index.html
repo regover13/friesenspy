@@ -1582,7 +1582,7 @@
       <div class="panel">
         <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
           <span id="bummel-title">🏁 FriesenFliegerBummel</span>
-          <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
+          <button class="btn-share" onclick="copyBummelShareHeader(this)">⎘ Teilen</button>
         </div>
         <div id="bummel-content"></div>
       </div>
@@ -2667,6 +2667,7 @@ function _fmtMin(m) {
 
 // Aktiver Bummel-Kontext für die Annotation der normalen Event-Karten (null = normale Suche).
 let _activeBummel = null;
+let _activeBummelId = null;  // id des gerade geöffneten Rennens (für den Teilen-Knopf im Header)
 
 async function openBummel(ev) {
   const wrap = document.getElementById('bummel-results');
@@ -2688,6 +2689,7 @@ async function openBummel(ev) {
       return;
     }
     // Deep-Link: dieses Rennen ist teil- und wieder-aufrufbar (#tab=events&bummel=<id>).
+    _activeBummelId = race.id;
     setUrlState({ tab: 'events', bummel: race.id });
     const view = await (await fetch('/api/bummel/race/' + race.id)).json();
 
@@ -2719,8 +2721,7 @@ function renderBummelParticipants(view) {
   const statusText = view.status === 'waiting'
     ? 'Rennen beendet — warten auf Nachzügler. Ergebnisse erscheinen, sobald alle gelandet (oder offline) sind.'
     : 'Rennen läuft — Ergebnisse und Ranking erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann.';
-  let html = `<div class="bummel-sub mono text-label" style="margin-bottom:6px;">Strecke: ${escHtml(route)}
-    <button class="btn-share" style="margin-left:10px;" onclick="copyBummelShareUrl(${view.id}, this)">⎘ Teilen</button></div>`;
+  let html = `<div class="bummel-sub mono text-label" style="margin-bottom:6px;">Strecke: ${escHtml(route)}</div>`;
   html += `<div class="bummel-avg-row">🔒 ${statusText}</div>`;
   html += `<div class="bummel-sub mono text-label" style="margin:6px 0;">${view.participant_count} Teilnehmer bisher</div>`;
   const parts = view.participants || [];
@@ -2815,13 +2816,12 @@ function _fmtSignedDelta(sec) {
   if (sec == null) return '—';
   if (sec === 0) return '★ exakt';
   const a = Math.abs(sec);
-  return `${sec > 0 ? '+' : '−'}${Math.floor(a / 60)}:${String(a % 60).padStart(2, '0')}`;
+  return `${sec > 0 ? '+' : '-'}${Math.floor(a / 60)}:${String(a % 60).padStart(2, '0')}`;
 }
 
 function renderBummelStandings(data, inProgress) {
   const route = (data.route || []).join(' → ');
-  let html = `<div class="bummel-sub mono text-label" style="margin-bottom:8px;">Strecke: ${escHtml(route)}
-    <button class="btn-share" style="margin-left:10px;" onclick="copyBummelShareUrl(${data.id}, this)">⎘ Teilen</button></div>`;
+  let html = `<div class="bummel-sub mono text-label" style="margin-bottom:8px;">Strecke: ${escHtml(route)}</div>`;
 
   if (data.count > 0) {
     _bummelForumText = _buildBummelForumText(data);
@@ -2951,6 +2951,11 @@ function copyBummelShareUrl(id, btn) {
     btn.textContent = '✗ Fehler';
     setTimeout(() => { btn.textContent = orig; }, 2000);
   });
+}
+
+// Teilen-Knopf oben rechts in der Bummel-View: teilt das gerade geöffnete Rennen.
+function copyBummelShareHeader(btn) {
+  if (_activeBummelId != null) copyBummelShareUrl(_activeBummelId, btn);
 }
 
 // ==========================================================================
@@ -3935,8 +3940,9 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   const scopeLabel = icaoStr.trim().toUpperCase() === 'GLOBAL'
     ? 'weltweit'
     : `im Radius ${radiusKm} km um ${icaoStr.toUpperCase()}`;
-  summary.innerHTML = `<span>${pilots.length} Friese${pilots.length !== 1 ? 'n' : ''} ${scopeLabel}</span>
-    <button class="btn-share" style="margin-left:auto;" onclick="copyShareUrl(this)">⎘ Teilen</button>`;
+  // Im Bummel-Kontext keinen zweiten Teilen-Knopf zeigen — der Bummel-Teilen-Knopf sitzt oben in der View.
+  summary.innerHTML = `<span>${pilots.length} Friese${pilots.length !== 1 ? 'n' : ''} ${scopeLabel}</span>`
+    + (_activeBummel ? '' : '<button class="btn-share" style="margin-left:auto;" onclick="copyShareUrl(this)">⎘ Teilen</button>');
   summary.className   = 'events-summary found';
   summary.style.cssText = 'display:flex;align-items:center;gap:12px;';
 

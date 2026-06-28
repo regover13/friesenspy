@@ -905,6 +905,14 @@
     }
 
     /** Minutes (number) → "Xh YYm" */
+    // Signierter, sekundengenauer Abstand zum Schnitt: '+1:23' / '-0:18' / '* exakt' / leer.
+    function fmtSignedDelta(sec) {
+      if (sec == null) return '—';
+      if (sec === 0) return '★ exakt';
+      const a = Math.abs(sec);
+      return (sec > 0 ? '+' : '-') + Math.floor(a / 60) + ':' + String(a % 60).padStart(2, '0');
+    }
+
     function fmtMin(min) {
       if (min == null || min === '') return '—';
       const m = Math.round(Number(min));
@@ -1409,12 +1417,10 @@
       if (d.complete && d.complete.length) {
         html += section('Fertig – Wertung (' + d.complete.length + ')',
           tableWrap(
-            thRow(['#', 'Pilot', 'CID', 'Callsign', 'Flugzeug', 'Beine', 'Gesamt', '+Ø', 'Flags', 'Badge', 'Aktionen']),
+            thRow(['#', 'Pilot', 'CID', 'Callsign', 'Flugzeug', 'Legs', 'Block-Gesamtzeit', 'Abstand z. Schnitt', 'Eingriff', 'Badge', 'Aktionen']),
             d.complete.map(p => {
               const isFirst = p.rank === 1;
-              const delta   = p.delta != null
-                ? (p.delta >= 0 ? '+' : '') + fmtMin(p.delta)
-                : '—';
+              const delta   = fmtSignedDelta(p.delta_sec);
               const flags   = [];
               if (p.forced_winner) flags.push('<span class="badge" style="color:var(--amber);border-color:rgba(240,165,0,0.3);">Sieger manuell</span>');
               return `<tr>
