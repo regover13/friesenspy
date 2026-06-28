@@ -1,5 +1,13 @@
 [
   {
+    "version": "6.9.3",
+    "date": "2026-06-28",
+    "title": "Admin: Tabellen-Optik an Statistiken angeglichen",
+    "items": [
+      "🎨 Die Tabellen im Admin-Bereich sehen jetzt aus wie unter »Statistiken« — gleicher linker Akzent-Balken, gleiche Schriftgrößen, Abstände und Hover-Farbe."
+    ]
+  },
+  {
     "version": "6.9.2",
     "date": "2026-06-28",
     "title": "Event-Listen: horizontales Scrollen auf dem Handy",
