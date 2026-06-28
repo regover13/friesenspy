@@ -915,7 +915,7 @@ def _badge_entry_data(view: dict, race: dict, cid: int) -> tuple[dict, bool]:
     d = {
         "callsign": entry.get("callsign") or f"CID {cid}",
         "name": entry.get("name") or "",
-        "aircraft": entry.get("aircraft") or "—",
+        "aircraft": entry.get("aircraft") or "",  # Badge setzt ASCII-Platzhalter (Pillow-Tofu)
         "total_min": entry.get("total_min"),
         "delta": entry.get("delta"),
         "delta_sec": entry.get("delta_sec"),

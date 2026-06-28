@@ -105,13 +105,17 @@ def _footer(dr, fill):
 
 
 def _fmt_signed_delta(sec) -> str:
-    """Signierter, sekundengenauer Abstand zum Schnitt: '+1:23 zum Schnitt' / 'punktgenau'."""
+    """Signierter, sekundengenauer Abstand zum Schnitt: '+1:23 zum Schnitt' / 'punktgenau'.
+
+    ASCII-Minus ('-'), weil der eingebettete Pillow-Default-Font typografische Sonderzeichen
+    (U+2212 −, U+2014 —) als leeres Kästchen rendert.
+    """
     if sec is None:
         return ""
     if sec == 0:
         return "punktgenau"
     a = abs(int(sec))
-    return f"{'+' if sec > 0 else '−'}{a // 60}:{a % 60:02d} zum Schnitt"
+    return f"{'+' if sec > 0 else '-'}{a // 60}:{a % 60:02d} zum Schnitt"
 
 
 def _event_caption(dr, d, fill):
@@ -138,7 +142,7 @@ def render_winner_badge(d: dict) -> bytes:
         _ctext(dr, int(_S * 0.510), d["name"], 24, _RED, 0.70)
 
     diff = _fmt_signed_delta(d.get("delta_sec"))
-    info = f"{d.get('aircraft', '—')} · {_fmt_min(d.get('total_min'))} · {diff}"
+    info = f"{d.get('aircraft') or 'k. A.'} · {_fmt_min(d.get('total_min'))} · {diff}"
     _ctext(dr, int(_S * 0.585), info, 19, _NAVY, 0.70)
 
     _event_caption(dr, d, _LBLUE)
@@ -160,7 +164,7 @@ def render_medal(d: dict) -> bytes:
         res = _fmt_signed_delta(d["delta_sec"])
     else:
         res = "dabei gewesen"
-    _ctext(dr, int(_S * 0.520), d.get("aircraft", "—"), 22, _LBLUE, 0.80)
+    _ctext(dr, int(_S * 0.520), d.get("aircraft") or "k. A.", 22, _LBLUE, 0.80)
     _ctext(dr, int(_S * 0.585), res, 20, _LBLUE, 0.80)
 
     _event_caption(dr, d, _LBLUE)
