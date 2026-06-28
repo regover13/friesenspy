@@ -4031,7 +4031,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             ${_bummelStandingBadge(p.cid)}
           </div>
         </div>
-        ${flightRows ? `<table style="width:100%;margin-left:24px;font-size:0.8rem;">
+        ${flightRows ? `<div class="live-table-wrap" style="width:100%;margin-left:24px;"><table style="font-size:0.8rem;">
           <thead><tr>
             <th style="text-align:left;">Datum</th>
             <th style="text-align:left;">Callsign</th>
@@ -4043,7 +4043,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             <th style="text-align:left;">Karte</th>
           </tr></thead>
           <tbody>${flightRows}</tbody>
-        </table>` : ''}
+        </table></div>` : ''}
       </div>`;
   });
   pilotList.innerHTML = cardsHtml;
