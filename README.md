@@ -319,7 +319,7 @@ Jeder Zustand in FriesenSpy ist als Link teilbar — der aktuelle Tab, ein geöf
 
 Das ⎘-Symbol neben Piloten und Flügen kopiert den fertigen Link direkt in die Zwischenablage. Wenn das Flugdetail-Modal geöffnet ist, enthält der kopierte Link auch genau diesen Flug — der Empfänger sieht beim Öffnen des Links das Modal direkt.
 
-Auch ein **FriesenFliegerBummel** ist teilbar: oben rechts im Bummel-Fenster kopiert derselbe **⎘ Teilen**-Knopf wie überall den Link in die Zwischenablage. Der Link (`#tab=events&bummel=<id>`) öffnet beim Empfänger direkt diesen Bummel.
+Auch ein **FriesenFliegerBummel** ist teilbar: in der Bummel-Ansicht (sowohl verdeckt als auch nach Enthüllung) kopiert ein **⎘ Teilen**-Knopf den Direkt-Link in die Zwischenablage. Der Link (`#tab=events&bummel=<id>`) öffnet beim Empfänger direkt diesen Bummel. Läuft oder wartet gerade ein Bummel, führt zudem ein **🏁 Zum Bummel**-Knopf im Live-Banner (Live-Tab) direkt in dieselbe Detailansicht.
 
 ---
 

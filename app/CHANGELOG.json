@@ -1,5 +1,15 @@
 [
   {
+    "version": "6.8.0",
+    "date": "2026-06-28",
+    "title": "Bummel: Direkt-Link & Teilen",
+    "items": [
+      "🏁 Läuft oder wartet ein Bummel, führt ein »Zum Bummel«-Knopf im Live-Banner direkt zur Detailansicht.",
+      "⎘ Teilen-Knopf in der Bummel-Ansicht: kopiert einen Direkt-Link, der beim Empfänger genau dieses Rennen öffnet.",
+      "🛠️ Admin: lange Listen (Banner-Auswahl, Rennen, Piloten) sind jetzt scrollbar."
+    ]
+  },
+  {
     "version": "6.7.1",
     "date": "2026-06-28",
     "title": "Bummel verbergen hält jetzt",
