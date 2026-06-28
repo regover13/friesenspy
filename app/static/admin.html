@@ -417,25 +417,30 @@
       min-width: 100%;
       border-collapse: collapse;
       font-family: var(--text-mono);
-      font-size: 0.82rem;
+      font-size: 0.85rem;
     }
 
     .preview-table thead th {
       font-family: var(--text-display);
-      font-size: 0.58rem;
-      letter-spacing: 0.13em;
+      font-size: 0.65rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
       text-transform: uppercase;
       color: var(--text-label);
-      padding: 6px 10px;
+      padding: 8px 12px;
       border-bottom: 1px solid var(--green-dim);
       text-align: left;
       white-space: nowrap;
     }
 
-    .preview-table tbody tr { border-bottom: 1px solid var(--green-grid); }
-    .preview-table tbody tr:hover { background: rgba(45,156,219,0.04); }
+    .preview-table tbody tr {
+      border-bottom: 1px solid var(--green-grid);
+      border-left: 3px solid var(--green);
+      transition: background 0.15s ease;
+    }
+    .preview-table tbody tr:hover { background: rgba(45,156,219,0.06); }
     .preview-table tbody td {
-      padding: 8px 10px;
+      padding: 10px 12px;
       color: var(--text-bright);
       vertical-align: middle;
       white-space: nowrap;
