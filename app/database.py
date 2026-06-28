@@ -386,12 +386,27 @@ def set_app_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
 # Piloten-Verwaltung (Admin)
 # ---------------------------------------------------------------------------
 
-def list_pilots(conn: sqlite3.Connection) -> list[dict]:
-    """Alle bekannten Piloten (cid, name, added_at), nach Name sortiert."""
+def list_pilots(conn: sqlite3.Connection, callsign_prefix: str = "FRS") -> list[dict]:
+    """Alle bekannten Piloten (cid, name, added_at, callsigns), nach Name sortiert.
+
+    ``callsigns`` ist die sortierte Liste der distinct Callsigns mit dem Präfix
+    ``callsign_prefix``, die diese CID in der ``flights``-Tabelle verwendet hat (leer, wenn keine).
+    Macht sichtbar, wenn eine CID mehrere FRS-Tags nutzt.
+    """
     rows = conn.execute(
-        "SELECT cid, name, added_at FROM pilots ORDER BY name COLLATE NOCASE, cid"
+        "SELECT p.cid, p.name, p.added_at, "
+        "(SELECT GROUP_CONCAT(DISTINCT f.callsign) FROM flights f "
+        " WHERE f.cid = p.cid AND f.callsign LIKE ?) AS callsigns "
+        "FROM pilots p ORDER BY p.name COLLATE NOCASE, p.cid",
+        (callsign_prefix + "%",),
     ).fetchall()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        d = dict(r)
+        cs = d.pop("callsigns") or ""
+        d["callsigns"] = sorted(c for c in cs.split(",") if c)
+        result.append(d)
+    return result
 
 
 def upsert_pilot(conn: sqlite3.Connection, cid: int, name: str) -> None:

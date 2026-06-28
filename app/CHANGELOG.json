@@ -1,5 +1,14 @@
 [
   {
+    "version": "6.7.0",
+    "date": "2026-06-28",
+    "title": "Admin: Test-Push repariert & Piloten-Callsigns",
+    "items": [
+      "🔔 »Test an mich« funktioniert wieder — der Knopf hing zuvor und sendete nichts. Er schickt jetzt den eingegebenen Titel + Text als Vorschau ans eigene Gerät (leer = Standard-Testtext).",
+      "🪪 Die Piloten-Liste im Admin zeigt je CID alle bekannten FRS-Callsigns — so sieht man sofort, wenn jemand mehrere Tags nutzt."
+    ]
+  },
+  {
     "version": "6.6.1",
     "date": "2026-06-28",
     "title": "Bummel-Teilen vereinheitlicht",

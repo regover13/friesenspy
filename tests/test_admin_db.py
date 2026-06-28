@@ -56,6 +56,38 @@ class TestPilotsCrud:
         assert 111 not in {p["cid"] for p in list_pilots(conn)}
 
 
+class TestPilotCallsigns:
+    """list_pilots liefert je CID alle bekannten FRS-Callsigns (distinct, sortiert)."""
+
+    def _add_flight(self, conn, cid, callsign, logon):
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, departure, arrival, logon_time, logoff_time) "
+            "VALUES (?, ?, 'EDDH', 'EDDW', ?, ?)",
+            (cid, callsign, logon, logon),
+        )
+
+    def test_list_pilots_includes_distinct_frs_callsigns(self, conn):
+        upsert_pilot(conn, 111, "Tobias")
+        upsert_pilot(conn, 222, "Arvind")  # keine Flüge
+        self._add_flight(conn, 111, "FRS123", "2026-06-01T10:00:00Z")
+        self._add_flight(conn, 111, "FRS 144", "2026-06-02T10:00:00Z")
+        self._add_flight(conn, 111, "FRS123", "2026-06-04T10:00:00Z")  # Duplikat → einmal
+        self._add_flight(conn, 111, "DLH400", "2026-06-03T10:00:00Z")  # kein FRS → ignoriert
+        conn.commit()
+
+        pilots = {p["cid"]: p for p in list_pilots(conn)}
+        assert pilots[111]["callsigns"] == ["FRS 144", "FRS123"]  # distinct, sortiert, nur FRS
+        assert pilots[222]["callsigns"] == []                     # keine Flüge → leer
+
+    def test_callsign_prefix_is_configurable(self, conn):
+        upsert_pilot(conn, 333, "Klaus")
+        self._add_flight(conn, 333, "DLH400", "2026-06-01T10:00:00Z")
+        self._add_flight(conn, 333, "FRS9", "2026-06-02T10:00:00Z")
+        conn.commit()
+        pilots = {p["cid"]: p for p in list_pilots(conn, callsign_prefix="DLH")}
+        assert pilots[333]["callsigns"] == ["DLH400"]
+
+
 class TestPushByEndpoint:
     def test_lookup_hit_and_miss(self, conn):
         upsert_push_subscription(conn, "ep1", "p256", "auth1")

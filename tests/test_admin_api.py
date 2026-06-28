@@ -251,6 +251,29 @@ def test_push_test_only_one_endpoint(db, monkeypatch):
     assert [s["endpoint"] for s in calls[0]["subs"]] == ["my-ep"]  # nur an mich
 
 
+def test_push_test_uses_title_and_body(db, monkeypatch):
+    calls = _capture_push(monkeypatch)
+    conn = get_connection(db)
+    upsert_push_subscription(conn, "my-ep", "p", "a")
+    conn.commit(); conn.close()
+    res = asyncio.run(main.admin_push_test(
+        FakeReq(body={"endpoint": "my-ep", "title": "Hallo Friesen", "body": "Probe 123"})))
+    assert res["sent"] == 1
+    assert calls[0]["payload"]["title"] == "Hallo Friesen"
+    assert calls[0]["payload"]["body"] == "Probe 123"
+
+
+def test_push_test_falls_back_to_default_text(db, monkeypatch):
+    calls = _capture_push(monkeypatch)
+    conn = get_connection(db)
+    upsert_push_subscription(conn, "my-ep", "p", "a")
+    conn.commit(); conn.close()
+    asyncio.run(main.admin_push_test(FakeReq(body={"endpoint": "my-ep"})))
+    # Ohne Felder: nicht-leerer Standard-Testtext
+    assert calls[0]["payload"]["title"].strip()
+    assert calls[0]["payload"]["body"].strip()
+
+
 def test_push_test_unknown_endpoint_404(db, monkeypatch):
     _capture_push(monkeypatch)
     with pytest.raises(HTTPException) as e:
