@@ -404,6 +404,13 @@ class VatsimPoller:
             seconds=60,
             id="bummel_reveal_check",
         )
+        # FriesenKutter: Start/Ziel/Feierabend-Pushs latchen
+        self._scheduler.add_job(
+            self._check_transport_events,
+            "interval",
+            seconds=60,
+            id="transport_event_check",
+        )
         # Event-Erinnerung (~1 h vor Beginn) regelmäßig prüfen
         self._scheduler.add_job(
             self._check_event_reminders,
@@ -891,7 +898,11 @@ class VatsimPoller:
         """
         try:
             from app.calendar_sync import fetch_and_parse_ical
-            from app.database import upsert_calendar_events, upsert_calendar_bummel_race
+            from app.database import (
+                upsert_calendar_events,
+                upsert_calendar_bummel_race,
+                upsert_calendar_transport_event,
+            )
             assert self._http_client is not None
             events = await fetch_and_parse_ical(self._http_client)
             if events:
@@ -901,6 +912,8 @@ class VatsimPoller:
                     for ev in events:
                         if ev.get("is_bummel"):
                             upsert_calendar_bummel_race(conn, ev)
+                        if ev.get("is_transport"):
+                            upsert_calendar_transport_event(conn, ev)
                     conn.commit()
                 finally:
                     conn.close()
@@ -953,6 +966,61 @@ class VatsimPoller:
                     ))
         except Exception:
             logger.exception("Error in _check_bummel_reveals")
+
+    async def _check_transport_events(self) -> None:
+        """Periodisch: FriesenKutter-Events latchen — Start (erster Flug), Ziel (Manifest voll)
+        und Feierabend (dtend erreicht). Jeweils einmal je Event ein Push an die Events-Abonnenten."""
+        try:
+            from datetime import datetime, timezone
+            from app.database import (
+                list_transport_events, compute_transport_progress,
+                set_transport_started, set_transport_goal_reached, set_transport_summarized,
+                get_push_subscriptions_for_events,
+            )
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            conn = get_connection(self.db_path)
+            pushes: list[dict] = []
+            try:
+                for ev in list_transport_events(conn):
+                    dtstart = ev.get("dtstart") or ""
+                    dtend = ev.get("dtend") or ""
+                    if now < dtstart:
+                        continue  # noch nicht gestartet
+                    name = ev.get("name") or "FriesenKutter"
+                    push_on = bool(ev.get("push_enabled"))
+                    progress = compute_transport_progress(
+                        conn, ev, now, callsign_prefix=self.callsign_prefix
+                    )
+                    if not ev.get("started_at") and progress["flight_count"] > 0:
+                        if set_transport_started(conn, ev["id"], now) and push_on:
+                            pushes.append({"title": name,
+                                           "body": "Der FriesenKutter läuft — Fracht wird geladen! 📦",
+                                           "url": "/"})
+                    target = progress["target_kg"]
+                    if target and not ev.get("goal_reached_at") and progress["total_kg"] >= target:
+                        if set_transport_goal_reached(conn, ev["id"], now) and push_on:
+                            pushes.append({"title": name,
+                                           "body": "Fracht komplett — Ziel erreicht! 🎯", "url": "/"})
+                    if dtend and now >= dtend and not ev.get("summarized_at"):
+                        if set_transport_summarized(conn, ev["id"], now) and push_on:
+                            tons = round(progress["total_kg"] / 1000, 2)
+                            pushes.append({
+                                "title": name,
+                                "body": f"Feierabend: {progress['loaded_count']} Frachtflüge, {tons} t bewegt ✅",
+                                "url": "/",
+                            })
+                conn.commit()
+                subscriptions = get_push_subscriptions_for_events(conn) if pushes else []
+            finally:
+                conn.close()
+            if pushes and subscriptions and self.vapid_private_key:
+                for payload in pushes:
+                    asyncio.create_task(send_web_push(
+                        self.vapid_private_key, self.vapid_contact_email, self.db_path,
+                        subscriptions, payload, label="FriesenKutter",
+                    ))
+        except Exception:
+            logger.exception("Error in _check_transport_events")
 
     async def _check_event_reminders(self) -> None:
         """Periodisch (~5 min): FriesenEvents, die in ~1 h beginnen, einmalig per Push erinnern.

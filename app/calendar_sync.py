@@ -34,24 +34,27 @@ def _route_is_plausible(route: list[str]) -> bool:
     return True
 
 
-def parse_route(location: str, summary: str, description: str = "") -> tuple[str, bool]:
-    """Strecke + Bummel-Flag aus einem Termin ableiten.
+def parse_route(location: str, summary: str, description: str = "") -> tuple[str, bool, bool]:
+    """Strecke + Bummel-/FriesenKutter-Flag aus einem Termin ableiten.
 
     Sammelt alle ICAO-Codes (vier Großbuchstaben) aus ``location``, dann ``summary``, dann
     ``description`` — Reihenfolge erhaltend und dedupliziert → CSV (z. B. ``"EDWF,EDWG,EDWR"``).
     ``is_bummel`` ist True, wenn ``"bummel"`` (case-insensitiv) im Titel ODER in der Beschreibung
-    steht UND die Strecke mindestens zwei Flugplätze hat — dann schalten sich die Bummel-
-    Funktionen frei. Die Beschreibung wird mit ausgewertet, damit ein Bummel auch erkannt wird,
-    wenn er nur dort steht.
+    steht UND die Strecke mindestens zwei Flugplätze hat. Analog ist ``is_transport`` True, wenn
+    ``"friesenkutter"`` (der FriesenKutter-Marker) im Titel/Beschreibung steht — dann wird das
+    Transportevent freigeschaltet. Die Beschreibung wird mit ausgewertet, damit ein Marker auch
+    erkannt wird, wenn er nur dort steht.
     """
     route: list[str] = []
     for text in (location or "", summary or "", description or ""):
         for code in _ICAO_RE.findall(text):
             if code not in route:
                 route.append(code)
-    keyword = "bummel" in (summary or "").lower() or "bummel" in (description or "").lower()
-    is_bummel = keyword and len(route) >= 2 and _route_is_plausible(route)
-    return ",".join(route), is_bummel
+    text_lc = (summary or "").lower() + "\n" + (description or "").lower()
+    plausible = len(route) >= 2 and _route_is_plausible(route)
+    is_bummel = "bummel" in text_lc and plausible
+    is_transport = "friesenkutter" in text_lc and plausible
+    return ",".join(route), is_bummel, is_transport
 
 
 async def fetch_and_parse_ical(client) -> list[dict]:
@@ -108,7 +111,7 @@ async def fetch_and_parse_ical(client) -> list[dict]:
 
         location_raw = str(comp.get("LOCATION") or "")
         description_raw = str(comp.get("DESCRIPTION") or "")
-        route, is_bummel = parse_route(location_raw, summary, description_raw)
+        route, is_bummel, is_transport = parse_route(location_raw, summary, description_raw)
         # location bleibt der erste ICAO (Rückwärtskompatibilität: Event-Suche-Prefill).
         icao = route.split(",")[0] if route else ""
 
@@ -124,6 +127,7 @@ async def fetch_and_parse_ical(client) -> list[dict]:
             "location": icao,
             "route": route,
             "is_bummel": 1 if is_bummel else 0,
+            "is_transport": 1 if is_transport else 0,
         })
 
     return events

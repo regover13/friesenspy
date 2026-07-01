@@ -15,6 +15,7 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
   - [Statistiken](#-statistiken)
   - [Event-Suche](#-event-suche)
 - [FriesenFliegerBummel](#-friesenfliegerbummel)
+- [FriesenKutter (Transportflüge)](#-friesenkutter-transportflüge)
   - [Verwaltung (Admin)](#verwaltung-admin)
 - [Benachrichtigungen](#-benachrichtigungen-push-notifications)
 - [TS-Login-Benachrichtigung](#ts-login-benachrichtigung-phase-1)
@@ -200,6 +201,19 @@ Die Admin-Seite ist unter `/admin` erreichbar und passwortgeschützt. Das Passwo
 - **Piloten-Verwaltung** — bekannte Piloten auflisten, manuell anlegen oder umbenennen und löschen (Namenspflege; **keine** Mitglieder-Allowlist — Friesen werden weiter über das Callsign-Präfix `FRS` erkannt).
 
 ---
+
+## 🦐 FriesenKutter (Transportflüge)
+
+Der **FriesenKutter** ist ein kleines „FSE für Friesen": ein Transportflug-Event, bei dem die Gruppe Nachschub zu einem Ziel fliegt (z.B. Wangerooge → Helgoland) und FriesenSpy **automatisch mitzählt, wie viel Fracht bewegt wurde** — ohne jede Vorbereitung, gespeist aus den ohnehin getrackten FRS-Flügen.
+
+**So läuft es:**
+
+- **Anlegen:** entweder ein Kalendertermin mit dem Stichwort **„FriesenKutter"** im Titel (wird automatisch erkannt, wie beim Bummel) — oder manuell im Admin. Beide erscheinen gemischt.
+- **Fracht-Manifest:** Jedes Event hat eine Frachtliste (z.B. *1 t Fischbrötchen + 500 kg Friesen Tee*), die zusammen das Ziel ergibt. Die eingehenden Flüge füllen sie **der Reihe nach** auf; jeder Flug bekommt seine Frachtart.
+- **Nur in eine Richtung:** Fracht zählt auf dem Weg **zum Ziel**. Der Rückflug fliegt leer und erscheint im Feed als „leer".
+- **Zuladung pro Flugzeugtyp:** Wie viel ein Flug lädt, hängt vom Muster ab (MTOW − Leergewicht − Tankfüllung, alles im Admin einstellbar). Für unbekannte Muster holt der Admin per Klick einen **KI-Vorschlag** (Claude); der Wert bleibt frei anpassbar.
+- **Anzeige:** Im Events-Tab zeigt eine Karte einen **segmentierten Ziel-Balken** je Frachtart und darunter den **Flug-Feed** (neueste oben), der sich live aktualisiert.
+- **Push:** Start des Events, erreichtes Ziel und eine Feierabend-Zusammenfassung („X Frachtflüge, Y t bewegt") gehen an die Events-Abonnenten.
 
 ## 🔔 Benachrichtigungen (Push Notifications)
 
@@ -393,6 +407,7 @@ VAPID_PUBLIC_KEY=                           # Optional: Web Push Public Key (bas
 VAPID_PRIVATE_KEY=                          # Optional: Web Push Private Key (base64url, 43 Zeichen)
 VAPID_CONTACT_EMAIL=                        # Optional: mailto:... für Web Push
 ADMIN_PASSWORD=                             # Optional: Admin-Seite aktivieren (leer = aus; nie in git!)
+ANTHROPIC_API_KEY=                          # Optional: FriesenKutter-Zuladungs-Vorschlag (Claude); denselben Key wie TSBot nutzen
 # TeamSpeak-Login-Benachrichtigung (alle optional, Default: deaktiviert)
 TS_NOTIFY_ENABLED=false
 TS_HOST=127.0.0.1

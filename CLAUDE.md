@@ -63,6 +63,7 @@ VATSIM_POLL_INTERVAL=15
 VATSIM_REJOIN_DEBOUNCE_SEC=900   # Default: 900 s (15 min) — Reconnect-Fenster Online-Push
 LOG_LEVEL=INFO                   # Default: INFO — App-Logger sichtbar (unter uvicorn sonst nur WARNING+)
 DB_PATH=/opt/friesenspy/data/friesenspy.db
+ANTHROPIC_API_KEY=               # Optional — FriesenKutter-Zuladungs-Vorschlag (Claude Haiku 4.5); denselben Key wie TSBot verwenden
 
 # TeamSpeak-Login-Benachrichtigung (Phase 1, alle Optional)
 TS_NOTIFY_ENABLED=false      # Default: false — Feature aktivieren

@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     dtend     TEXT,
     location  TEXT,
     route     TEXT,
-    is_bummel INTEGER DEFAULT 0
+    is_bummel INTEGER DEFAULT 0,
+    is_transport INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS live_positions (
@@ -169,6 +170,42 @@ CREATE TABLE IF NOT EXISTS event_reminders_sent (
     uid     TEXT PRIMARY KEY,           -- calendar_events.uid, für den die ~1h-Erinnerung lief
     sent_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS transport_events (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    name           TEXT NOT NULL,
+    route          TEXT NOT NULL,        -- CSV der Streckenflugplätze (wie bummel_races.route)
+    destination    TEXT,                 -- Ziel-ICAO: nur Flüge HIERHIN laden Fracht (Rückflug leer)
+    dtstart        TEXT NOT NULL,
+    dtend          TEXT NOT NULL,        -- effektiv (Mitternacht-Default bereits angewandt)
+    source         TEXT,                 -- 'calendar' | 'manual'
+    calendar_uid   TEXT UNIQUE,          -- NULL für manuelle Events
+    push_enabled   INTEGER DEFAULT 1,
+    started_at     TEXT,                 -- Latch: erster qualifizierender Flug
+    goal_reached_at TEXT,                -- Latch: Manifest voll
+    summarized_at  TEXT,                 -- Latch: Abschluss-Push gesendet
+    created_at     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS transport_cargo (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id  INTEGER NOT NULL,          -- REFERENCES transport_events(id)
+    position  INTEGER NOT NULL,          -- Beladungsreihenfolge
+    name      TEXT NOT NULL,             -- Frachtart, z. B. "Fischbrötchen"
+    target_kg REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_transport_cargo_event ON transport_cargo(event_id);
+
+CREATE TABLE IF NOT EXISTS aircraft_payloads (
+    type_code   TEXT PRIMARY KEY,        -- normalisiert (Uppercase, vor "/" gekürzt), z. B. "C172"
+    mtow_kg     REAL,                    -- editierbar, aus Claude vorbefüllt
+    empty_kg    REAL,
+    fuel_kg     REAL,                    -- Tankinhalt (editierbar) — Default halber Tank
+    payload_kg  REAL NOT NULL,           -- = max(0, mtow_kg − empty_kg − fuel_kg); direkt überschreibbar
+    source      TEXT,                    -- 'manual' | 'llm' | 'default'
+    make_model  TEXT,
+    updated_at  TEXT
+);
 """
 
 
@@ -230,6 +267,8 @@ _CALENDAR_MIGRATIONS = [
     # route: CSV aller ICAOs der Strecke; is_bummel: FriesenFliegerBummel erkannt.
     "ALTER TABLE calendar_events ADD COLUMN route TEXT",
     "ALTER TABLE calendar_events ADD COLUMN is_bummel INTEGER DEFAULT 0",
+    # is_transport: FriesenKutter-Transportevent (Stichwort "friesenkutter") erkannt.
+    "ALTER TABLE calendar_events ADD COLUMN is_transport INTEGER DEFAULT 0",
 ]
 
 _PUSH_MIGRATIONS = [
@@ -263,6 +302,11 @@ _BUMMEL_MIGRATIONS = [
         updated_at       TEXT,
         PRIMARY KEY(race_id, cid)
     )""",
+]
+
+_TRANSPORT_MIGRATIONS = [
+    # destination: Ziel-ICAO — nur Flüge dorthin laden Fracht (Rückflug leer).
+    "ALTER TABLE transport_events ADD COLUMN destination TEXT",
 ]
 
 _LIVE_POSITIONS_MIGRATIONS = [
@@ -312,6 +356,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _BUMMEL_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _TRANSPORT_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -1904,11 +1953,12 @@ def upsert_calendar_events(conn: sqlite3.Connection, events: list[dict]) -> None
     for ev in events:
         conn.execute(
             "INSERT OR REPLACE INTO calendar_events "
-            "(uid, summary, dtstart, dtend, location, route, is_bummel) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(uid, summary, dtstart, dtend, location, route, is_bummel, is_transport) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 ev["uid"], ev["summary"], ev["dtstart"], ev["dtend"], ev["location"],
                 ev.get("route") or "", 1 if ev.get("is_bummel") else 0,
+                1 if ev.get("is_transport") else 0,
             ),
         )
 
@@ -1919,7 +1969,8 @@ def get_calendar_events(conn: sqlite3.Connection, days_back: int = 365) -> list[
     cutoff = (now - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
     now_str = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
-        "SELECT uid, summary, dtstart, dtend, location, route, is_bummel FROM calendar_events "
+        "SELECT uid, summary, dtstart, dtend, location, route, is_bummel, is_transport "
+        "FROM calendar_events "
         "WHERE dtstart >= ? AND dtstart <= ? ORDER BY dtstart DESC",
         (cutoff, now_str),
     ).fetchall()
@@ -2068,6 +2119,372 @@ def delete_bummel_race(conn: sqlite3.Connection, race_id: int) -> None:
     """Löscht das Rennen und alle zugehörigen Overrides."""
     conn.execute("DELETE FROM bummel_overrides WHERE race_id = ?", (race_id,))
     conn.execute("DELETE FROM bummel_races WHERE id = ?", (race_id,))
+
+
+# ---------------------------------------------------------------------------
+# FriesenKutter — Transportflug-Events + Fracht-Manifest + Zuladungs-Tabelle
+# ---------------------------------------------------------------------------
+
+_TRANSPORT_DEFAULT_PAYLOAD_KEY = "transport_default_payload_kg"
+_TRANSPORT_DEFAULT_PAYLOAD_FALLBACK = 150.0
+
+
+def normalize_type_code(code: str | None) -> str:
+    """Flugzeugtyp auf einen Tabellen-Schlüssel normalisieren (Uppercase, vor '/' gekürzt)."""
+    if not code:
+        return ""
+    return code.split("/")[0].strip().upper()
+
+
+def transport_default_payload_kg(conn: sqlite3.Connection) -> float:
+    """Globaler Fallback-Zuladungswert (kg) für noch nicht gepflegte Flugzeugtypen."""
+    raw = get_app_setting(conn, _TRANSPORT_DEFAULT_PAYLOAD_KEY, None)
+    try:
+        return float(raw) if raw is not None else _TRANSPORT_DEFAULT_PAYLOAD_FALLBACK
+    except (TypeError, ValueError):
+        return _TRANSPORT_DEFAULT_PAYLOAD_FALLBACK
+
+
+def get_payload_map(conn: sqlite3.Connection) -> dict[str, float]:
+    """{type_code: payload_kg} über alle gepflegten Flugzeugtypen."""
+    rows = conn.execute("SELECT type_code, payload_kg FROM aircraft_payloads").fetchall()
+    return {r["type_code"]: (r["payload_kg"] or 0.0) for r in rows}
+
+
+def list_aircraft_payloads(conn: sqlite3.Connection) -> list[dict]:
+    """Alle Zuladungs-Zeilen (für die Admin-Tabelle), alphabetisch nach Typcode."""
+    rows = conn.execute(
+        "SELECT type_code, mtow_kg, empty_kg, fuel_kg, payload_kg, source, make_model, updated_at "
+        "FROM aircraft_payloads ORDER BY type_code"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_payload(
+    conn: sqlite3.Connection,
+    type_code: str,
+    *,
+    payload_kg: float | None = None,
+    mtow_kg: float | None = None,
+    empty_kg: float | None = None,
+    fuel_kg: float | None = None,
+    source: str = "manual",
+    make_model: str | None = None,
+) -> None:
+    """Zuladung eines Flugzeugtyps setzen/aktualisieren.
+
+    Ist ``payload_kg`` nicht direkt angegeben, wird es aus den Komponenten abgeleitet
+    (``max(0, mtow − empty − fuel)``). Der Typcode wird normalisiert gespeichert.
+    """
+    code = normalize_type_code(type_code)
+    if not code:
+        return
+    if payload_kg is None:
+        payload_kg = max(0.0, (mtow_kg or 0.0) - (empty_kg or 0.0) - (fuel_kg or 0.0))
+    conn.execute(
+        """INSERT INTO aircraft_payloads
+               (type_code, mtow_kg, empty_kg, fuel_kg, payload_kg, source, make_model, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(type_code) DO UPDATE SET
+               mtow_kg=excluded.mtow_kg, empty_kg=excluded.empty_kg, fuel_kg=excluded.fuel_kg,
+               payload_kg=excluded.payload_kg, source=excluded.source,
+               make_model=excluded.make_model, updated_at=excluded.updated_at""",
+        (code, mtow_kg, empty_kg, fuel_kg, payload_kg, source, make_model, _now_utc()),
+    )
+
+
+# --- Transport-Events (Kalender-synchronisiert oder manuell) ---------------
+
+_TRANSPORT_EVENT_COLS = (
+    "id, name, route, destination, dtstart, dtend, source, calendar_uid, push_enabled, "
+    "started_at, goal_reached_at, summarized_at, created_at"
+)
+
+
+def _default_destination(route: str) -> str:
+    """Heuristik: Ziel = letzter Flugplatz der Strecken-CSV (bei 'Wangerooge–Helgoland' = Helgoland)."""
+    parts = [normalize_type_code(c) for c in (route or "").split(",")]
+    parts = [c for c in parts if c]
+    return parts[-1] if parts else ""
+
+
+def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
+    """Ein erkanntes FriesenKutter-Kalenderevent als persistentes Transportevent anlegen/updaten.
+
+    Idempotent über ``calendar_uid``. ``dtend`` mit Mitternacht-Default. Das Fracht-Manifest wird
+    NICHT aus dem Kalender befüllt (im Admin nachpflegbar) — bis dahin ist es ein reiner Zähler.
+    """
+    route = ev.get("route") or ""
+    conn.execute(
+        """INSERT INTO transport_events
+               (name, route, destination, dtstart, dtend, source, calendar_uid, created_at)
+           VALUES (?, ?, ?, ?, ?, 'calendar', ?, ?)
+           ON CONFLICT(calendar_uid) DO UPDATE SET
+               name=excluded.name, route=excluded.route,
+               dtstart=excluded.dtstart, dtend=excluded.dtend""",
+        (
+            ev.get("summary") or "",
+            route,
+            _default_destination(route),   # Ziel-Default; im Admin korrigierbar (Update lässt es unangetastet)
+            ev.get("dtstart") or "",
+            _effective_dtend(ev.get("dtstart") or "", ev.get("dtend")),
+            ev.get("uid"),
+            _now_utc(),
+        ),
+    )
+
+
+def list_transport_events(conn: sqlite3.Connection) -> list[dict]:
+    """Alle Transport-Events (Kalender + manuell), neueste zuerst."""
+    rows = conn.execute(
+        f"SELECT {_TRANSPORT_EVENT_COLS} FROM transport_events ORDER BY dtstart DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_transport_event(conn: sqlite3.Connection, event_id: int) -> dict | None:
+    row = conn.execute(
+        f"SELECT {_TRANSPORT_EVENT_COLS} FROM transport_events WHERE id = ?", (event_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def create_transport_event(
+    conn: sqlite3.Connection,
+    *,
+    name: str,
+    route: str,
+    dtstart: str,
+    dtend: str | None,
+    destination: str | None = None,
+    cargo: list[dict] | None = None,
+) -> int:
+    """Manuelles Transportevent anlegen (+ optionales Fracht-Manifest). Gibt die neue id zurück.
+    Ohne ``destination`` wird der letzte Strecken-Flugplatz als Ziel angenommen."""
+    dest = normalize_type_code(destination) or _default_destination(route)
+    cur = conn.execute(
+        "INSERT INTO transport_events "
+        "(name, route, destination, dtstart, dtend, source, calendar_uid, created_at) "
+        "VALUES (?, ?, ?, ?, ?, 'manual', NULL, ?)",
+        (name, route, dest, dtstart, _effective_dtend(dtstart, dtend), _now_utc()),
+    )
+    event_id = int(cur.lastrowid)  # type: ignore[arg-type]
+    if cargo:
+        set_transport_cargo(conn, event_id, cargo)
+    return event_id
+
+
+_UPDATABLE_TRANSPORT_FIELDS = {"name", "route", "destination", "dtstart", "dtend"}
+
+
+def update_transport_event(conn: sqlite3.Connection, event_id: int, **fields: object) -> None:
+    """Aktualisiert {name, route, dtstart, dtend}. dtend wird bei Zeitänderung neu aufgelöst.
+    ``cargo`` (falls übergeben) ersetzt das gesamte Manifest."""
+    cargo = fields.pop("cargo", None)
+    valid = {k: v for k, v in fields.items() if k in _UPDATABLE_TRANSPORT_FIELDS}
+    if valid:
+        if "dtstart" in valid or "dtend" in valid:
+            current = get_transport_event(conn, event_id)
+            if current is not None:
+                new_start = str(valid.get("dtstart", current["dtstart"]))
+                valid["dtend"] = _effective_dtend(new_start, valid.get("dtend"))  # type: ignore[arg-type]
+        set_clause = ", ".join(f"{k} = ?" for k in valid)
+        conn.execute(
+            f"UPDATE transport_events SET {set_clause} WHERE id = ?",
+            list(valid.values()) + [event_id],
+        )
+    if cargo is not None:
+        set_transport_cargo(conn, event_id, cargo)  # type: ignore[arg-type]
+
+
+def delete_transport_event(conn: sqlite3.Connection, event_id: int) -> None:
+    """Event samt Fracht-Manifest löschen."""
+    conn.execute("DELETE FROM transport_cargo WHERE event_id = ?", (event_id,))
+    conn.execute("DELETE FROM transport_events WHERE id = ?", (event_id,))
+
+
+def get_transport_cargo(conn: sqlite3.Connection, event_id: int) -> list[dict]:
+    """Geordnetes Fracht-Manifest eines Events."""
+    rows = conn.execute(
+        "SELECT id, position, name, target_kg FROM transport_cargo "
+        "WHERE event_id = ? ORDER BY position, id",
+        (event_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_transport_cargo(conn: sqlite3.Connection, event_id: int, cargo: list[dict]) -> None:
+    """Fracht-Manifest eines Events komplett ersetzen. Zeilen ohne Name/Menge werden ignoriert."""
+    conn.execute("DELETE FROM transport_cargo WHERE event_id = ?", (event_id,))
+    pos = 0
+    for line in cargo:
+        name = (line.get("name") or "").strip()
+        try:
+            target = float(line.get("target_kg"))
+        except (TypeError, ValueError):
+            continue
+        if not name or target <= 0:
+            continue
+        conn.execute(
+            "INSERT INTO transport_cargo (event_id, position, name, target_kg) VALUES (?, ?, ?, ?)",
+            (event_id, pos, name, target),
+        )
+        pos += 1
+
+
+def _set_transport_latch(conn: sqlite3.Connection, event_id: int, column: str, ts: str) -> bool:
+    """Latch-Spalte setzen, nur wenn noch NULL. True, wenn in diesem Aufruf neu gesetzt."""
+    cur = conn.execute(
+        f"UPDATE transport_events SET {column} = ? WHERE id = ? AND {column} IS NULL",
+        (ts, event_id),
+    )
+    return cur.rowcount > 0
+
+
+def set_transport_started(conn: sqlite3.Connection, event_id: int, ts: str) -> bool:
+    return _set_transport_latch(conn, event_id, "started_at", ts)
+
+
+def set_transport_goal_reached(conn: sqlite3.Connection, event_id: int, ts: str) -> bool:
+    return _set_transport_latch(conn, event_id, "goal_reached_at", ts)
+
+
+def set_transport_summarized(conn: sqlite3.Connection, event_id: int, ts: str) -> bool:
+    return _set_transport_latch(conn, event_id, "summarized_at", ts)
+
+
+def compute_transport_progress(
+    conn: sqlite3.Connection,
+    event: dict,
+    now: str,
+    *,
+    callsign_prefix: str = "FRS",
+    radius_km: float | None = None,
+) -> dict:
+    """Live-Fortschritt eines FriesenKutter-Events.
+
+    Feed-relevant sind FRS-Flüge, deren Start UND Ziel (GPS-korrigiert, Flugplan als Fallback) auf
+    der Streckenmenge liegen (dep≠arr). **Fracht zählt nur in eine Richtung:** ein Flug ist
+    ``loaded`` (trägt Zuladung), wenn er am ``destination`` ankommt; Rückflüge zählen 0 kg,
+    erscheinen aber als leere Flüge im Feed. Zuladung je beladenem Flug aus ``aircraft_payloads``
+    (Fallback: globaler Default). Das Fracht-Manifest wird sequenziell nach Abflugzeit gefüllt;
+    jeder beladene Flug trägt die Frachtart, in die sein Anteil überwiegend floss. Der zurückgegebene
+    ``flights``-Feed ist absteigend (neueste oben).
+    """
+    from app.geo import icao_to_coords  # lazy
+
+    route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
+    coords_map = {icao: icao_to_coords(icao) for icao in route_set}
+    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
+    payload_map = get_payload_map(conn)
+    default_kg = transport_default_payload_kg(conn)
+
+    start = event.get("dtstart") or ""
+    end = min(now, event.get("dtend") or now)
+    load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
+    flights = canonicalize_flights(conn, start=load_start, end=end, callsign_prefix=callsign_prefix)
+    flights = [f for f in flights if (f.get("logoff_time") or "") >= start]
+
+    dest = normalize_type_code(event.get("destination"))
+
+    # Netzwerk-Flüge sammeln (dep & arr auf der Strecke, dep≠arr). „Beladen" = Ankunft am Ziel;
+    # Rückflüge (und Bein-zu-Bein ohne Ziel) sind leer (0 kg), erscheinen aber im Feed.
+    network: list[dict] = []
+    unmapped: set[str] = set()
+    for f in flights:
+        cid = f.get("cid")
+        if cid is None:
+            continue
+        lo = f.get("logon_time") or ""
+        lf = f.get("logoff_time") or "9999-12-31T23:59:59Z"
+        dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, lf), radius) \
+            or normalize_type_code(f.get("departure"))
+        arr = _nearest_airport(coords_map, _last_pos(conn, int(cid), lo, lf), radius) \
+            or normalize_type_code(f.get("arrival"))
+        if dep not in route_set or arr not in route_set or dep == arr:
+            continue
+        loaded = bool(dest) and arr == dest
+        type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
+        if loaded and type_code and type_code not in payload_map:
+            unmapped.add(type_code)
+        tonnage = round(payload_map.get(type_code, default_kg), 1) if loaded else 0.0
+        network.append({
+            "dep_time": lo,
+            "cid": cid,
+            "callsign": f.get("callsign") or "",
+            "aircraft": f.get("aircraft") or type_code,
+            "dep": dep,
+            "arr": arr,
+            "tonnage_kg": tonnage,
+            "loaded": loaded,
+        })
+
+    network.sort(key=lambda x: x["dep_time"])  # aufsteigend für die Manifest-Füllung
+
+    # Pilotennamen nachladen (eine Abfrage).
+    cids = {q["cid"] for q in network}
+    names: dict[int, str] = {}
+    if cids:
+        rows = conn.execute(
+            "SELECT cid, name FROM pilots WHERE cid IN (%s)" % ",".join("?" * len(cids)),
+            list(cids),
+        ).fetchall()
+        names = {r["cid"]: (r["name"] or "") for r in rows}
+
+    cargo = get_transport_cargo(conn, int(event["id"]))
+    cargo_targets = [c["target_kg"] for c in cargo]
+
+    # Sequenzielle Fracht-Zuordnung — NUR beladene Flüge füllen das Manifest.
+    idx, filled = 0, 0.0
+    for q in network:
+        q["name"] = names.get(q["cid"], "")
+        if not q["loaded"]:
+            q["cargo_name"] = None
+            continue
+        remaining = q["tonnage_kg"]
+        contributions: dict[int, float] = {}
+        while remaining > 0 and idx < len(cargo_targets):
+            space = cargo_targets[idx] - filled
+            take = min(space, remaining)
+            contributions[idx] = contributions.get(idx, 0.0) + take
+            filled += take
+            remaining -= take
+            if filled >= cargo_targets[idx] - 1e-9:
+                idx += 1
+                filled = 0.0
+        q["cargo_name"] = cargo[max(contributions, key=contributions.get)]["name"] if contributions else None
+
+    total_kg = round(sum(q["tonnage_kg"] for q in network), 1)
+    loaded_count = sum(1 for q in network if q["loaded"])
+
+    # Pro Frachtart geliefert = geclampter Anteil der kumulierten Gesamttonnage.
+    cargo_out: list[dict] = []
+    remaining_total = total_kg
+    for c in cargo:
+        delivered = min(c["target_kg"], max(0.0, remaining_total))
+        cargo_out.append({
+            "name": c["name"],
+            "target_kg": c["target_kg"],
+            "delivered_kg": round(delivered, 1),
+            "pct": round(100.0 * delivered / c["target_kg"], 1) if c["target_kg"] > 0 else 0.0,
+        })
+        remaining_total -= c["target_kg"]
+
+    target_kg = round(sum(cargo_targets), 1) if cargo_targets else None
+    progress_pct = round(100.0 * total_kg / target_kg, 1) if target_kg else None
+
+    return {
+        "route": sorted(route_set),
+        "destination": dest,
+        "flights": sorted(network, key=lambda x: x["dep_time"], reverse=True),  # neueste oben
+        "cargo": cargo_out,
+        "total_kg": total_kg,
+        "flight_count": len(network),
+        "loaded_count": loaded_count,
+        "target_kg": target_kg,
+        "progress_pct": progress_pct,
+        "unmapped_types": sorted(unmapped),
+    }
 
 
 # ---------------------------------------------------------------------------
