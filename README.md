@@ -51,6 +51,7 @@ VATSIM-Piloten trennen die Verbindung manchmal kurz, ohne dass ein echter Flugwe
 **Was nicht gemergt wird:**
 - Zwei Einträge mit **unterschiedlichen** Flugplänen (verschiedenes DEP oder ARR) → immer zwei separate Flüge
 - Kein-FP-Eintrag gefolgt von Flugplan, aber **Startposition > 10 km** vom DEP-Airport entfernt → zwei separate Flüge (Pilot war woanders)
+- Der erste Eintrag ist bereits **am Flugplan-Ziel gelandet** (letzte Position im 10-km-Umkreis, am Boden) → der Flugplan ist abgeflogen; ein späterer Eintrag ist ein **neuer Flug**. Das schützt vor allem den Fall „Rückflug mit stehengebliebenem (altem) Flugplan": er startet ebenfalls am alten Ziel und würde sonst fälschlich in den Hinflug gemergt.
 
 **Flugplan-Änderungserkennung während des Fluges:** Ändert ein Pilot seinen Flugplan während einer aktiven Verbindung, reagiert FriesenSpy sofort beim nächsten 15-Sekunden-Poll:
 - **Kein Plan → Plan eingereicht**: DEP/ARR wird dem laufenden Flug-Eintrag nachgetragen.
@@ -163,7 +164,7 @@ Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzwelt
 - **Reihenfolge und Richtung egal:** Die Strecke `A–B–C` darf in beliebiger Richtung und Reihenfolge geflogen werden (auch alternative Routings wie `A→C→B`). Gewertet wird, wer **alle Flugplätze** der Strecke besucht hat.
 - **Zwischenlandungen sind erlaubt (Bummel = gemütlich):** Wer mit Zwischenstopp fliegt (z.B. `A→X→B`), kommt trotzdem in die Wertung. Gezählt wird die **Tour** vom ersten Start an einem Streckenflugplatz bis zur letzten Landung an einem Streckenflugplatz; die **Standzeit der Zwischenstopps zählt nicht mit** (nur die reine Flugzeit der Beine).
 - **Frühstarter zählen mit:** Wer schon vor dem offiziellen Event-Start losfliegt, aber währenddessen unterwegs ist, wird mit seiner **vollen Blockzeit** gewertet.
-- **Gewertete Zeit** = Summe der Blockzeiten (erste bis letzte Bewegung, inkl. Taxi) der Tour-Beine. Tatsächlich geflogene Meilen, Warteschleifen und Umwege spielen keine Rolle.
+- **Gewertete Zeit** = Summe der Blockzeiten (Bewegungszeit gate-to-gate inkl. Taxi und kurzer Halte; längere Standphasen ab 10 min — z. B. eine Zwischenlandung ohne Disconnect — zählen nicht) der Tour-Beine. Tatsächlich geflogene Meilen, Warteschleifen und Umwege spielen keine Rolle.
 - **Niemand fällt still raus:** Piloten, die noch nicht alle Flugplätze besucht haben, werden separat als „unvollständig" mit den fehlenden Flugplätzen aufgelistet.
 - **GPS statt Flugplan:** Ob ein Pilot an einem Flugplatz war, erkennt FriesenSpy am **GPS-Track** (erste/letzte Position am Flugplatz), nicht am eingereichten Flugplan. Ein Tippfehler im Flugplan kann eine Wertung also nicht verhindern; der Flugplan dient nur als Rückfall, wenn kein Track vorliegt. Wie nah eine Position an einem Streckenflugplatz liegen muss, steuert der **Radius** des Rennens (Default 10 km — bewusst klein, damit Nachbarflugplätze nicht verwechselt werden).
 
@@ -363,7 +364,9 @@ FriesenSpy kombiniert zwei Datenquellen:
 
 **Wie ein „Flug" bestimmt wird.** Eine VATSIM-Verbindung ist über `(CID, Logon-Zeit)` eindeutig — das ist der Schlüssel für einen Flug. Container-Neustarts oder doppelte Aufzeichnungen können nie mehr Duplikate erzeugen (struktureller Unique-Index). Ein **vorübergehender Reconnect** (z. B. kurzer Netzausfall) erzeugt technisch zwei Verbindungen, wird aber zu **einem** Flug zusammengeführt, solange Callsign und Flugplan passen und der Reconnect geografisch plausibel anschließt (ein 10-Minuten-Ausfall, bei dem der Sim weiterfliegt, wird korrekt als ein Flug gewertet). Die Disconnect-Lücke zählt nicht zur Flugzeit. Alle Ansichten (Statistik, Events, Piloten-Detail) berechnen Flugzahl und -dauer aus **einer** gemeinsamen Funktion — die Zahlen stimmen überall überein. Fehlerhafte Altdaten werden reversibel bereinigt (markiert, nicht gelöscht).
 
-Pro Flug werden zwei Zeiten geführt: **Online-Zeit** (wie lange der Pilot mit VATSIM verbunden war, logon→logoff) und **Block-Zeit** (tatsächliche Bewegung von der ersten bis zur letzten Fahrt, gate-to-gate). So zählt z. B. langes Parken am Gate bei laufender Verbindung zwar in die Online-Zeit, nicht aber in die Block-Zeit. Block-Zeit gibt es nur für FriesenSpy-Aufzeichnungen (StatSim liefert keine GPS-Spur dafür).
+Pro Flug werden zwei Zeiten geführt: **Online-Zeit** (wie lange der Pilot mit VATSIM verbunden war, logon→logoff) und **Block-Zeit** (Summe der tatsächlichen Bewegung gate-to-gate; kurze Halte wie Rollhalt zählen mit, belegte Standphasen ab 10 min — etwa eine Zwischenlandung ohne Disconnect — nicht). So zählt z. B. langes Parken am Gate oder auf dem Vorfeld bei laufender Verbindung zwar in die Online-Zeit, nicht aber in die Block-Zeit. Block-Zeit gibt es nur für FriesenSpy-Aufzeichnungen (StatSim liefert keine GPS-Spur dafür).
+
+Verliert der VATSIM-Datenfeed einen Piloten kurzzeitig (Feed-Aussetzer), wird die Session beim Wiederauftauchen mit derselben Logon-Zeit nahtlos **wieder geöffnet** — es entstehen weder Duplikate noch verwaiste Tracks. Sollte dennoch einmal ein Flug ohne eigenen Eintrag bleiben (historischer Schaden), rekonstruiert der Server ihn beim Start automatisch aus StatSim + eigenem GPS-Track (`reconstruct_orphaned_flights`).
 
 ---
 

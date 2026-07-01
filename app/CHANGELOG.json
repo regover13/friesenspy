@@ -1,5 +1,17 @@
 [
   {
+    "version": "7.3.1",
+    "date": "2026-07-01",
+    "title": "Flug-Tracking: vier Datenintegritäts-Bugs vom Live-Test behoben",
+    "items": [
+      "🩹 Feed-Aussetzer zerstören keine Session mehr: taucht ein Pilot mit derselben Logon-Zeit wieder auf, wird sein Flug nahtlos wieder geöffnet — Folgeflüge verwaisen nicht mehr.",
+      "🔀 Rückflug mit stehengebliebenem (altem) Flugplan wird nicht mehr in den Hinflug gemergt: ein am Ziel gelandeter Flug gilt als abgeflogen.",
+      "⏱️ Blockzeit ist jetzt die Summe der echten Bewegungsabschnitte: Standphasen ab 10 min (z. B. Zwischenlandung ohne Disconnect) zählen nicht mehr mit — fair für den Bummel.",
+      "🧮 Unmögliche Blockzeiten (block > online) heilen sich beim Start selbst; Korrekturen von Logoff/Dauer rechnen die Blockzeit jetzt immer mit.",
+      "🛠️ Verwaiste GPS-Tracks (StatSim kennt den Flug, FriesenSpy hat den Track, aber keinen Eintrag) werden beim Start automatisch als echte Flüge rekonstruiert — inkl. Reiners fehlendem EDWG→EDXH vom 01.07."
+    ]
+  },
+  {
     "version": "7.3.0",
     "date": "2026-07-01",
     "title": "FriesenKutter: Fracht zählt ohne Disconnect",

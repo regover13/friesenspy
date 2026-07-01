@@ -337,6 +337,123 @@ class TestPollOnceExceptionHandling:
 
 
 # ---------------------------------------------------------------------------
+# Feed-Aussetzer: eine Poll-Runde ohne den Piloten darf die Session nicht zerstören
+# ---------------------------------------------------------------------------
+
+class TestFeedGlitchReopen:
+    """Regression Live-Test 2026-07-01 (Reiner, cid 1031301): ein einzelner VATSIM-Feed-
+    Aussetzer schloss den laufenden Flug; beim Wiederauftauchen mit GLEICHER logon_time
+    lief die Session gegen die bereits geschlossene flights-Zeile → alle Folgeflüge der
+    Session verwaisten (nur position_history lief weiter)."""
+
+    @pytest.fixture(autouse=True)
+    def _settings(self, monkeypatch):
+        # _poll_once liest get_settings() (STATSIM_API_KEY) — minimale gültige Settings.
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        from app.config import get_settings
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    def _pilot(self, logon_time: str, groundspeed: int = 120) -> dict:
+        return {
+            "cid": 1031301,
+            "name": "Reiner Friese",
+            "callsign": "FRS61",
+            "latitude": 53.78,
+            "longitude": 7.91,
+            "altitude": 1200,
+            "groundspeed": groundspeed,
+            "heading": 90,
+            "logon_time": logon_time,
+            "flight_plan": {
+                "aircraft_short": "BN2P",
+                "departure": "EDWG",
+                "arrival": "EDXH",
+            },
+        }
+
+    @staticmethod
+    def _logon() -> str:
+        from datetime import datetime, timedelta, timezone
+        return (datetime.now(timezone.utc) - timedelta(minutes=30)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+
+    @pytest.mark.asyncio
+    async def test_dropout_and_return_reopens_same_flight(self, tmp_path):
+        """Poll 1 online → Poll 2 Feed-Aussetzer (Flug wird geschlossen) → Poll 3 wieder da
+        (gleiche logon_time): dieselbe flights-Zeile muss wieder OFFEN sein — kein zweiter
+        Eintrag, kein Weiterlaufen gegen eine geschlossene Zeile."""
+        from app.database import get_connection, init_db
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+
+        online = {"pilots": [self._pilot(self._logon())]}
+        glitch = {"pilots": []}
+
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=online)):
+            await poller._poll_once()
+        fid = poller._active_flights[1031301]["id"]
+
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=glitch)):
+            await poller._poll_once()
+        assert 1031301 not in poller._active_flights  # Aussetzer → geschlossen
+
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=online)):
+            await poller._poll_once()
+
+        assert poller._active_flights[1031301]["id"] == fid  # gleiche Session, gleiche Zeile
+        conn = get_connection(db_file)
+        try:
+            rows = conn.execute(
+                "SELECT id, logoff_time FROM flights WHERE cid = 1031301"
+            ).fetchall()
+        finally:
+            conn.close()
+        assert len(rows) == 1
+        assert rows[0]["logoff_time"] is None  # wieder offen — Folgeflüge verwaisen nicht
+
+    @pytest.mark.asyncio
+    async def test_reopened_flight_closes_over_full_session(self, tmp_path):
+        """Nach Aussetzer + Wiederauftauchen: der endgültige Disconnect schließt den Flug
+        über die GESAMTE Session (Logoff = letzte Position), nicht über das Aussetzer-Fenster."""
+        from app.database import get_connection, init_db
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+
+        online = {"pilots": [self._pilot(self._logon())]}
+        offline = {"pilots": []}
+
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=online)):
+            await poller._poll_once()
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=offline)):
+            await poller._poll_once()  # Aussetzer
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=online)):
+            await poller._poll_once()  # wieder da → Reopen
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=offline)):
+            await poller._poll_once()  # echter Disconnect
+
+        conn = get_connection(db_file)
+        try:
+            row = conn.execute(
+                "SELECT logoff_time, duration_min FROM flights WHERE cid = 1031301"
+            ).fetchone()
+            last_pos = conn.execute(
+                "SELECT MAX(ts) FROM position_history WHERE cid = 1031301"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        assert row["logoff_time"] == last_pos  # letzte echte Position, nicht der Aussetzer
+
+
+# ---------------------------------------------------------------------------
 # create_poller factory
 # ---------------------------------------------------------------------------
 

@@ -220,6 +220,30 @@ class TestFlightRoundtrip:
         close_flight(conn, 99999, _ts_offset())  # should not raise
         conn.close()
 
+    def test_open_flight_reopens_closed_same_session(self):
+        """Gleiche VATSIM-Verbindung (cid+logon_time), aber die Zeile wurde zwischenzeitlich
+        geschlossen (Feed-Aussetzer): open_flight muss die Zeile RE-ÖFFNEN — die Verbindung
+        lebt nachweislich noch. Sonst laufen alle Folgeflüge der Session ins Leere (A1)."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "Test Pilot")
+        logon = "2026-07-01T17:04:16Z"
+        fid = open_flight(conn, 1, "FRS61", "BN2P", "EDWG", "EDXH", logon)
+        conn.commit()
+        close_flight(conn, fid, "2026-07-01T17:32:16Z")  # Aussetzer-Close
+        conn.commit()
+
+        fid2 = open_flight(conn, 1, "FRS61", "BN2P", "EDWG", "EDXH", logon)
+        conn.commit()
+        assert fid2 == fid  # dieselbe Session, dieselbe Zeile
+        row = conn.execute(
+            "SELECT logoff_time, duration_min, distance_nm, block_min FROM flights WHERE id = ?",
+            (fid,),
+        ).fetchone()
+        assert row["logoff_time"] is None       # wieder offen
+        assert row["duration_min"] is None      # wird beim echten Close neu berechnet
+        assert row["block_min"] is None
+        conn.close()
+
     def test_logoff_time_null_before_close(self):
         conn = _make_conn()
         ensure_pilot(conn, 1, "Test Pilot")
@@ -677,6 +701,68 @@ class TestMergeFragmentedFlights:
         result = merge_fragmented_flights([f1, f2])
         assert len(result) == 2
 
+    def test_no_merge_return_flight_with_stale_fp(self):
+        """Regression A3 (Ralf, Live-Test 2026-07-01): Hinflug EDWG→EDXH ist am Ziel GELANDET
+        (letzte Position im Zielradius, am Boden); der Rückflug startet 16 min später mit
+        stehengebliebenem Flugplan EDWG→EDXH ebenfalls in EDXH. Ein abgeflogener Flugplan
+        darf nicht als Reconnect fortgesetzt werden → ZWEI Flüge."""
+        conn = _make_conn()
+        ensure_pilot(conn, 999, "Ralf")
+        pos = [
+            # Segment A (Hinflug): Start EDWG, Landung + Abstellen EDXH
+            (53.78278, 7.91389, 0,  "2026-07-01T18:29:00Z"),
+            (53.95000, 7.91400, 85, "2026-07-01T18:38:00Z"),
+            (54.18500, 7.91580, 25, "2026-07-01T18:49:30Z"),
+            (54.18528, 7.91583, 0,  "2026-07-01T18:50:20Z"),
+            # Segment B (realer Rückflug): Start EDXH, Landung EDWG
+            (54.18528, 7.91583, 0,  "2026-07-01T19:06:40Z"),
+            (54.10000, 7.91500, 75, "2026-07-01T19:09:00Z"),
+            (53.80000, 7.91400, 70, "2026-07-01T19:18:00Z"),
+            (53.78278, 7.91389, 0,  "2026-07-01T19:20:00Z"),
+        ]
+        for lat, lon, gs, ts in pos:
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (999,'FRS102',?,?,1000,?,0,?)",
+                (lat, lon, gs, ts),
+            )
+        conn.commit()
+        f1 = dict(self._flight("FRS102", "EDWG", "EDXH",
+                               "2026-07-01T18:28:32Z", "2026-07-01T18:50:24Z", 21), cid=999)
+        f2 = dict(self._flight("FRS102", "EDWG", "EDXH",
+                               "2026-07-01T19:06:26Z", "2026-07-01T19:20:20Z", 13), cid=999)
+        result = merge_fragmented_flights([f1, f2], conn=conn)
+        conn.close()
+        assert len(result) == 2  # Hin- und Rückflug bleiben getrennt
+
+    def test_merge_still_works_for_midflight_reconnect(self):
+        """Gegentest zu A3: Disconnect MITTEN im Flug (letzte Position airborne, weit vor dem
+        Ziel) + Reconnect mit gleichem FP → weiterhin EIN Flug (der eigentliche Merge-Zweck)."""
+        conn = _make_conn()
+        ensure_pilot(conn, 998, "Tester")
+        pos = [
+            # Segment A: Start EDWG, Abbruch airborne ~20 km vor EDXH
+            (53.78278, 7.91389, 0,  "2026-07-01T18:00:30Z"),
+            (53.99000, 7.91400, 85, "2026-07-01T18:09:30Z"),
+            # Segment B: Wiedereinstieg kurz dahinter, Landung EDXH
+            (54.01000, 7.91500, 85, "2026-07-01T18:14:30Z"),
+            (54.18528, 7.91583, 0,  "2026-07-01T18:30:00Z"),
+        ]
+        for lat, lon, gs, ts in pos:
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (998,'FRS7',?,?,2000,?,0,?)",
+                (lat, lon, gs, ts),
+            )
+        conn.commit()
+        f1 = dict(self._flight("FRS7", "EDWG", "EDXH",
+                               "2026-07-01T18:00:00Z", "2026-07-01T18:10:00Z", 10), cid=998)
+        f2 = dict(self._flight("FRS7", "EDWG", "EDXH",
+                               "2026-07-01T18:14:00Z", "2026-07-01T18:30:10Z", 16), cid=998)
+        result = merge_fragmented_flights([f1, f2], conn=conn)
+        conn.close()
+        assert len(result) == 1  # echter Reconnect wird weiterhin gemergt
+
     def test_no_merge_teleport_exceeds_budget(self):
         """Gleiche Route, kleine Lücke, aber Positionen ~1000 km auseinander → Distanz-Budget
         gesprengt → nicht mergen (mit conn/Positionsdaten)."""
@@ -803,6 +889,94 @@ class TestConsolidateFlights:
         assert len(active) == 1
         assert (active[0]["departure"], active[0]["arrival"]) == ("LDPV", "LIPQ")
 
+    def test_zombie_shrink_recomputes_block_min(self):
+        """Schritt C: wird der Logoff gekürzt, muss block_min mit dem NEUEN Fenster
+        neu berechnet werden — sonst bleibt eine Blockzeit aus dem aufgeblähten Fenster
+        stehen (Regression A2, Live-Test 2026-07-01)."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        # Aufgeblähter Flug: logoff 11:20 (dur 200), stale block über das große Fenster.
+        conn.execute(
+            "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm,block_min) VALUES "
+            "(1,1,'FRS1','EDDN','EDPH','2026-06-06T08:00:00Z','2026-06-06T11:20:00Z',200,100,190)"
+        )
+        # Bewegung nur 08:05–08:40 → korrektes Fenster endet 08:40, Block = 35.
+        for ts in ("2026-06-06T08:05:00Z", "2026-06-06T08:40:00Z"):
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1,'FRS1',50.0,11.0,5000,200,90,?)",
+                (ts,),
+            )
+        conn.commit()
+        consolidate_flights(conn)
+        row = conn.execute("SELECT duration_min, block_min FROM flights WHERE id=1").fetchone()
+        conn.close()
+        assert row["duration_min"] == 40
+        assert row["block_min"] == 35  # 08:05 → 08:40, NICHT die alten 190
+
+    def test_statsim_correction_recomputes_block_min(self):
+        """Schritt D: die StatSim-Korrektur setzte logoff/duration/distance neu, ließ aber
+        block_min aus dem aufgeblähten Fenster stehen (Reiner id 277: duration 28,
+        block 92 — unmöglich). block_min muss mit dem korrigierten Fenster neu berechnet werden."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        # Doppelt geschlossene Session: logoff 18:43 (99 min), block 92 über das große Fenster.
+        conn.execute(
+            "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm,block_min) VALUES "
+            "(1,1,'FRS61','EDWG','EDXH','2026-07-01T17:04:16Z','2026-07-01T18:43:44Z',99,100,92)"
+        )
+        # Bewegung des ECHTEN Fluges 17:05–17:30, danach (verwaister Folgeflug) 18:15–18:40.
+        for ts in ("2026-07-01T17:05:00Z", "2026-07-01T17:30:00Z",
+                   "2026-07-01T18:15:00Z", "2026-07-01T18:40:00Z"):
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1,'FRS61',53.8,7.9,1000,80,90,?)",
+                (ts,),
+            )
+        # StatSim kennt die echte Dauer der Session-Verbindung: 28 min.
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(1,1,'FRS61','EDWG','EDXH','BN2P','2026-07-01T17:04:20Z',"
+            "'2026-07-01T17:32:20Z',28,'2026-07-01T19:00:00Z')"
+        )
+        conn.commit()
+        consolidate_flights(conn)
+        row = conn.execute(
+            "SELECT duration_min, block_min FROM flights WHERE id=1"
+        ).fetchone()
+        conn.close()
+        assert row["duration_min"] == 28
+        # Fenster [17:04:16, 17:32:16] → Bewegung 17:05–17:30 → 25 min, NICHT 92.
+        assert row["block_min"] == 25
+
+    def test_impossible_block_gt_duration_self_heals(self):
+        """Selbstheilung: block_min > duration_min ist physikalisch unmöglich (Blockzeit liegt
+        in [logon, logoff]) → consolidate rechnet block mit dem gespeicherten Fenster neu.
+        Exakt der Zustand von Flug id 277 nach dem Live-Test (duration 28, block 92)."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        conn.execute(
+            "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm,block_min) VALUES "
+            "(1,1,'FRS61','EDWG','EDXH','2026-07-01T17:04:16Z','2026-07-01T17:32:16Z',28,34,92)"
+        )
+        for ts in ("2026-07-01T17:05:00Z", "2026-07-01T17:30:00Z",
+                   "2026-07-01T18:15:00Z", "2026-07-01T18:40:00Z"):
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1,'FRS61',53.8,7.9,1000,80,90,?)",
+                (ts,),
+            )
+        conn.commit()
+        consolidate_flights(conn)
+        row = conn.execute("SELECT duration_min, block_min FROM flights WHERE id=1").fetchone()
+        conn.close()
+        assert row["duration_min"] == 28   # unangetastet — Fenster war konsistent
+        assert row["block_min"] == 25       # 17:05 → 17:30 im gespeicherten Fenster
+
     def test_consolidate_rerunnable(self):
         """Zweiter consolidate-Lauf ist idempotent (Reset + Neuberechnung)."""
         conn = _make_conn()
@@ -821,6 +995,166 @@ class TestConsolidateFlights:
         n2 = conn.execute("SELECT COUNT(*) FROM flights WHERE superseded_by IS NOT NULL").fetchone()[0]
         conn.close()
         assert n1 == 1 and n2 == 1
+
+
+# ---------------------------------------------------------------------------
+# reconstruct_orphaned_flights — verwaiste Tracks wieder mit flights-Zeile versehen
+# ---------------------------------------------------------------------------
+
+class TestReconstructOrphanedFlights:
+    """Reparatur des A1-Schadens (Live-Test 2026-07-01, Reiner cid 1031301): StatSim kennt
+    einen Flug, position_history besitzt den bewegten GPS-Track, aber es existiert kein
+    flights-Eintrag, der den Track „besitzt" → Eintrag aus den echten Belegen rekonstruieren."""
+
+    CID = 1031301
+
+    def _seed_reiner(self, conn):
+        ensure_pilot(conn, self.CID, "Reiner")
+        # Hinflug (nach StatSim-Korrektur): 17:04–17:32, geschlossen.
+        conn.execute(
+            "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm,block_min) VALUES "
+            "(277,?, 'FRS61','EDWG','EDXH','2026-07-01T17:04:16Z','2026-07-01T17:32:16Z',28,34,26)",
+            (self.CID,),
+        )
+        # Steh-Session nach echtem Reconnect: 18:43:47–18:57:54, 0 nm.
+        conn.execute(
+            "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm,block_min) VALUES "
+            "(284,?, 'FRS61','EDWG','EDXH','2026-07-01T18:43:47Z','2026-07-01T18:57:54Z',14,0,0)",
+            (self.CID,),
+        )
+        # StatSim: gedeckter Hinflug + UNGEDECKTER zweiter Flug 18:18–18:36.
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(90001,?,'FRS61','EDWG','EDXH','BN2P','2026-07-01T17:04:20Z',"
+            "'2026-07-01T17:32:20Z',28,'2026-07-01T20:00:00Z')",
+            (self.CID,),
+        )
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(90002,?,'FRS61','EDWG','EDXH','BN2P','2026-07-01T18:18:00Z',"
+            "'2026-07-01T18:36:00Z',18,'2026-07-01T20:00:00Z')",
+            (self.CID,),
+        )
+        # Verwaister Track: Bewegung zwischen den Sessions (Rückweg, Stand, zweiter Flug, Taxi).
+        samples = [
+            # Rückweg EDXH→EDWG (gehört NICHT zum zu rekonstruierenden Flug)
+            ("2026-07-01T17:40:00Z", 54.10, 7.915, 80),
+            ("2026-07-01T18:04:00Z", 53.79, 7.914, 60),
+            # Stand in EDWG (belegt, > 10 min)
+            ("2026-07-01T18:05:00Z", 53.78278, 7.91389, 0),
+            ("2026-07-01T18:16:00Z", 53.78278, 7.91389, 0),
+            # Zweiter Flug EDWG→EDXH: Taxi + Start 18:17:30, Reiseflug, Landung 18:36
+            ("2026-07-01T18:17:30Z", 53.78278, 7.91389, 8),
+            ("2026-07-01T18:20:00Z", 53.82, 7.914, 86),
+            ("2026-07-01T18:30:00Z", 54.05, 7.915, 84),
+            ("2026-07-01T18:36:00Z", 54.18, 7.9158, 40),
+            # Taxi-in bis zum Disconnect ~18:43:44
+            ("2026-07-01T18:40:00Z", 54.185, 7.9158, 10),
+            ("2026-07-01T18:43:44Z", 54.18528, 7.91583, 3),
+            # Neue Session (284): stationär
+            ("2026-07-01T18:44:00Z", 54.18528, 7.91583, 0),
+            ("2026-07-01T18:57:54Z", 54.18528, 7.91583, 0),
+        ]
+        for ts, lat, lon, gs in samples:
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (?,'FRS61',?,?,800,?,0,?)",
+                (self.CID, lat, lon, gs, ts),
+            )
+        conn.commit()
+
+    def test_reconstructs_missing_flight_from_track(self):
+        from app.database import reconstruct_orphaned_flights
+        conn = _make_conn()
+        self._seed_reiner(conn)
+        created = reconstruct_orphaned_flights(conn)
+        rows = conn.execute(
+            "SELECT * FROM flights WHERE cid=? AND superseded_by IS NULL ORDER BY logon_time",
+            (self.CID,),
+        ).fetchall()
+        assert created == 1
+        assert len(rows) == 3
+        rec = rows[1]  # zwischen Hinflug und Steh-Session
+        assert (rec["departure"], rec["arrival"]) == ("EDWG", "EDXH")
+        # Fenster deckt den Flug inkl. Taxi, kollidiert nicht mit 277/284
+        assert "2026-07-01T17:32:16Z" < rec["logon_time"] <= "2026-07-01T18:18:00Z"
+        assert "2026-07-01T18:36:00Z" <= rec["logoff_time"] < "2026-07-01T18:43:47Z"
+        assert rec["distance_nm"] > 20          # echter GPS-Track EDWG→EDXH (~24 nm)
+        assert 15 <= rec["block_min"] <= 30      # Bewegungszeit des Flugs, ohne Standphase
+        conn.close()
+
+    def test_idempotent_second_run_creates_nothing(self):
+        from app.database import reconstruct_orphaned_flights
+        conn = _make_conn()
+        self._seed_reiner(conn)
+        assert reconstruct_orphaned_flights(conn) == 1
+        assert reconstruct_orphaned_flights(conn) == 0  # jetzt gedeckt → No-Op
+        conn.close()
+
+    def test_canonicalize_lists_reconstructed_flight_separately(self):
+        """Nach der Reparatur: drei eigenständige Einträge — kein Merge mit dem Hinflug (Lücke
+        > Fenster) und kein Merge mit der Steh-Session (Hinflug war am Ziel gelandet)."""
+        from app.database import reconstruct_orphaned_flights
+        conn = _make_conn()
+        self._seed_reiner(conn)
+        reconstruct_orphaned_flights(conn)
+        flights = canonicalize_flights(conn, cids=[self.CID], include_statsim=True)
+        fs = [f for f in flights if f["source"] == "friesenspy"]
+        # Steh-Session 284 (14 min, 0 nm) übersteht den Ghost-Filter (Dauer > 5) als eigener
+        # Eintrag; entscheidend: der rekonstruierte Flug ist eigenständig EDWG→EDXH.
+        recs = [f for f in fs if f["logon_time"].startswith("2026-07-01T18:1")
+                or f["logon_time"].startswith("2026-07-01T18:0")]
+        assert len(recs) == 1
+        assert (recs[0]["departure"], recs[0]["arrival"]) == ("EDWG", "EDXH")
+        # Der StatSim-Eintrag 18:18 ist jetzt gedeckt → taucht nicht doppelt auf.
+        st_18 = [f for f in flights if f["source"] == "statsim"
+                 and f["logon_time"].startswith("2026-07-01T18:18")]
+        assert st_18 == []
+        conn.close()
+
+    def test_no_reconstruction_without_movement(self):
+        """StatSim-Flug ohne bewegten Track (z. B. Historie vor FriesenSpy) → kein Eintrag."""
+        from app.database import reconstruct_orphaned_flights
+        conn = _make_conn()
+        ensure_pilot(conn, 42, "Alt")
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(80001,42,'FRS9','EDDH','EDDF','C172','2025-11-01T10:00:00Z',"
+            "'2025-11-01T11:00:00Z',60,'2026-07-01T20:00:00Z')"
+        )
+        conn.commit()
+        assert reconstruct_orphaned_flights(conn) == 0
+        conn.close()
+
+    def test_no_reconstruction_for_open_session(self):
+        """Läuft gerade eine offene Session, die den StatSim-Flug enthält → kein Duplikat."""
+        from app.database import reconstruct_orphaned_flights
+        conn = _make_conn()
+        ensure_pilot(conn, 43, "Live")
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,departure,arrival,logon_time,logoff_time) "
+            "VALUES (43,'FRS8','EDWG','EDXH','2026-07-01T18:00:00Z',NULL)"
+        )
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(80002,43,'FRS8','EDWG','EDXH','BN2P','2026-07-01T18:18:00Z',"
+            "'2026-07-01T18:36:00Z',18,'2026-07-01T20:00:00Z')"
+        )
+        for ts, gs in (("2026-07-01T18:20:00Z", 80), ("2026-07-01T18:35:00Z", 70)):
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (43,'FRS8',53.9,7.914,900,?,0,?)",
+                (gs, ts),
+            )
+        conn.commit()
+        assert reconstruct_orphaned_flights(conn) == 0
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -866,6 +1200,62 @@ class TestBlockMinutes:
         row = conn.execute("SELECT block_min FROM flights WHERE id=?", (fid,)).fetchone()
         conn.close()
         assert row["block_min"] == 0
+
+    def test_block_excludes_long_stand_within_session(self):
+        """A4: Zwischenlandung OHNE Disconnect — belegte Standphasen (zusammenhängend
+        groundspeed ≤ Schwelle, ab Mindest-Standdauer) zählen NICHT als Blockzeit.
+        Block = Summe der bewegten Abschnitte, nicht „erste bis letzte Bewegung"."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        fid = open_flight(conn, 1, "FRS1", "BN2P", "EDWG", "EDXH", "2026-06-06T07:55:00Z")
+        samples = [
+            # Leg 1: Taxi + Flug 08:00–08:30
+            ("2026-06-06T08:00:00Z", 5), ("2026-06-06T08:05:00Z", 80),
+            ("2026-06-06T08:25:00Z", 60), ("2026-06-06T08:30:00Z", 10),
+            # Zwischenlandung: 43 min belegter Stillstand (Motor aus, Pause)
+            ("2026-06-06T08:31:00Z", 0), ("2026-06-06T08:45:00Z", 0),
+            ("2026-06-06T09:14:00Z", 0),
+            # Leg 2: Taxi + Flug 09:15–09:30, danach geparkt
+            ("2026-06-06T09:15:00Z", 8), ("2026-06-06T09:30:00Z", 90),
+            ("2026-06-06T09:45:00Z", 0),
+        ]
+        for ts, gs in samples:
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1,'FRS1',53.8,7.9,500,?,90,?)",
+                (gs, ts),
+            )
+        conn.commit()
+        close_flight(conn, fid, "2026-06-06T09:50:00Z")
+        row = conn.execute("SELECT block_min FROM flights WHERE id=?", (fid,)).fetchone()
+        conn.close()
+        # Bewegt: 08:00–08:30 (30) + Ränder der Standphase (08:30–08:31, 09:14–09:15 = 2)
+        # + 09:15–09:30 (15) = 47 min. NICHT 90 (erste bis letzte Bewegung).
+        assert row["block_min"] == 47
+
+    def test_block_keeps_short_stop(self):
+        """Kurzer Halt (unter der Mindest-Standdauer, z. B. Rollhalt) bleibt gate-to-gate
+        in der Blockzeit enthalten."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        fid = open_flight(conn, 1, "FRS1", "BN2P", "EDWG", "EDXH", "2026-06-06T07:55:00Z")
+        samples = [
+            ("2026-06-06T08:00:00Z", 10), ("2026-06-06T08:20:00Z", 15),
+            # 5 min Halt (Rollhalt) — unter der Schwelle → zählt mit
+            ("2026-06-06T08:21:00Z", 0), ("2026-06-06T08:26:00Z", 0),
+            ("2026-06-06T08:27:00Z", 60), ("2026-06-06T08:40:00Z", 70),
+        ]
+        for ts, gs in samples:
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1,'FRS1',53.8,7.9,500,?,90,?)",
+                (gs, ts),
+            )
+        conn.commit()
+        close_flight(conn, fid, "2026-06-06T08:45:00Z")
+        row = conn.execute("SELECT block_min FROM flights WHERE id=?", (fid,)).fetchone()
+        conn.close()
+        assert row["block_min"] == 40  # 08:00 → 08:40 durchgehend gate-to-gate
 
     def test_merge_sums_block_min(self):
         """Gemergte Segmente summieren block_min."""

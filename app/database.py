@@ -421,6 +421,12 @@ def init_db(db_path: str) -> None:
         conn.commit()
         if s:
             _logger.info("Flüge konsolidiert (superseded markiert): %d", s)
+        # Verwaiste Tracks (A1-Schaden): StatSim-Flug ohne deckenden FS-Flug, aber mit
+        # bewegtem GPS-Track → flights-Eintrag aus den echten Belegen rekonstruieren.
+        r = reconstruct_orphaned_flights(conn)
+        conn.commit()
+        if r:
+            _logger.info("Verwaiste Tracks rekonstruiert: %d Flug/Flüge", r)
         # Strukturelle Dedup-Sperre: pro (cid, logon_time) nur EIN aktiver Flug.
         try:
             conn.execute(
@@ -539,6 +545,11 @@ def open_flight(
     (superseded_by IS NULL) Flug. INSERT … ON CONFLICT DO NOTHING macht ein erneutes
     Öffnen derselben Verbindung (z. B. nach Container-Neustart) zum strukturellen No-Op;
     die bestehende id wird zurückgegeben.
+
+    Ist die bestehende Zeile bereits GESCHLOSSEN (Feed-Aussetzer: eine Poll-Runde ohne den
+    Piloten → close, nächste Runde wieder da), wird sie RE-GEÖFFNET — dieselbe logon_time
+    beweist, dass die Verbindung nie abriss (ein echter Reconnect bekäme eine neue).
+    duration/distance/block werden beim endgültigen Close ohnehin neu berechnet.
     """
     conn.execute(
         """
@@ -553,9 +564,15 @@ def open_flight(
          alternate, deptime, enroute_time, fuel_time),
     )
     row = conn.execute(
-        "SELECT id FROM flights WHERE cid = ? AND logon_time = ? AND superseded_by IS NULL",
+        "SELECT id, logoff_time FROM flights WHERE cid = ? AND logon_time = ? AND superseded_by IS NULL",
         (cid, logon_time),
     ).fetchone()
+    if row[1] is not None:  # logoff_time gesetzt → Aussetzer-Close → Session re-öffnen
+        conn.execute(
+            "UPDATE flights SET logoff_time = NULL, duration_min = NULL, "
+            "distance_nm = 0, block_min = NULL WHERE id = ?",
+            (row[0],),
+        )
     return row[0]  # type: ignore[return-value]
 
 
@@ -711,44 +728,65 @@ def _gps_distance_nm(
 # Groundspeed-Schwelle (kt), ab der ein Flugzeug als „in Bewegung" gilt (Block-Zeit).
 _BLOCK_GS_KT = 2
 
+# Mindestdauer (Sekunden) einer BELEGTEN Standphase (zusammenhängend groundspeed ≤ _BLOCK_GS_KT
+# zwischen zwei Bewegungen), ab der sie NICHT mehr als Blockzeit zählt — Zwischenlandung/
+# Abstellen ohne Disconnect. Kürzere Stopps (Rollhalt, Warteschlange) bleiben gate-to-gate
+# enthalten. Lücken OHNE Positionsdaten (Feed-Aussetzer) zählen weiterhin voll — abgezogen
+# wird nur nachweislicher Stillstand.
+_BLOCK_STAND_MIN_SEC = 600
+
 
 def _block_minutes(
     conn: sqlite3.Connection, cid: int, logon_time: str, logoff_time: str
 ) -> int:
-    """Block-/Bewegungszeit (Minuten): erste bis letzte Position mit groundspeed > _BLOCK_GS_KT
-    innerhalb [logon, logoff]. Keine Bewegung → 0. Gate-to-gate inkl. Taxi."""
-    rows = conn.execute(
-        "SELECT MIN(ts), MAX(ts) FROM position_history "
-        "WHERE cid = ? AND ts >= ? AND ts <= ? AND groundspeed > ?",
-        (cid, logon_time, logoff_time, _BLOCK_GS_KT),
-    ).fetchone()
-    if not rows or not rows[0] or not rows[1]:
-        return 0
-    try:
-        return max(0, int((_parse_iso(rows[1]) - _parse_iso(rows[0])).total_seconds() / 60))
-    except Exception:
-        return 0
+    """Block-/Bewegungszeit (Minuten): Summe der bewegten Abschnitte (groundspeed > _BLOCK_GS_KT)
+    innerhalb [logon, logoff]; belegte Standphasen ≥ _BLOCK_STAND_MIN_SEC zählen nicht
+    (Zwischenlandung ohne Disconnect). Keine Bewegung → 0. Gate-to-gate inkl. Taxi/kurzer Halte."""
+    return _block_seconds(conn, cid, logon_time, logoff_time) // 60
 
 
 def _block_seconds(
     conn: sqlite3.Connection, cid: int, logon_time: str, logoff_time: str
 ) -> int:
-    """Block-/Bewegungszeit in SEKUNDEN (sekundengenaue Variante von _block_minutes).
+    """Block-/Bewegungszeit in SEKUNDEN (sekundengenaue Basis von _block_minutes).
 
-    Wird für die Bummel-Wertung gebraucht, damit der Abstand zum Schnitt auch bei gleicher
-    Minuten-Blockzeit unterscheidbar bleibt. 0, wenn keine bewegte Position vorliegt.
+    Summe der Abschnitte zwischen aufeinanderfolgenden bewegten Positionen; liegt zwischen
+    zwei Bewegungen eine belegte Standphase ≥ _BLOCK_STAND_MIN_SEC (zusammenhängende Positionen
+    mit groundspeed ≤ _BLOCK_GS_KT), wird deren Dauer abgezogen — so zählt die Bodenzeit einer
+    Zwischenlandung ohne Disconnect nicht als Blockzeit (Bummel-Gerechtigkeit). Kurze Halte
+    bleiben enthalten; Datenlücken ohne Stillstands-Beleg zählen voll. Wird auch für die
+    Bummel-Wertung gebraucht (Abstand zum Schnitt sekundengenau). 0 ohne bewegte Position.
     """
     rows = conn.execute(
-        "SELECT MIN(ts), MAX(ts) FROM position_history "
-        "WHERE cid = ? AND ts >= ? AND ts <= ? AND groundspeed > ?",
-        (cid, logon_time, logoff_time, _BLOCK_GS_KT),
-    ).fetchone()
-    if not rows or not rows[0] or not rows[1]:
-        return 0
-    try:
-        return max(0, int((_parse_iso(rows[1]) - _parse_iso(rows[0])).total_seconds()))
-    except Exception:
-        return 0
+        "SELECT ts, groundspeed FROM position_history "
+        "WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts",
+        (cid, logon_time, logoff_time),
+    ).fetchall()
+    total = 0.0
+    prev_move = None           # Zeitpunkt der letzten bewegten Position
+    stand_first = stand_last = None  # belegter Stillstand seit prev_move
+    for ts, gs in rows:
+        if gs is None:
+            continue  # kein Beleg — weder Bewegung noch Stillstand
+        try:
+            t = _parse_iso(ts)
+        except Exception:
+            continue
+        if gs > _BLOCK_GS_KT:
+            if prev_move is not None:
+                gap = (t - prev_move).total_seconds()
+                stand = (
+                    (stand_last - stand_first).total_seconds()
+                    if stand_first is not None else 0.0
+                )
+                total += gap - stand if stand >= _BLOCK_STAND_MIN_SEC else gap
+            prev_move = t
+            stand_first = stand_last = None
+        elif prev_move is not None:
+            if stand_first is None:
+                stand_first = t
+            stand_last = t
+    return max(0, int(total))
 
 
 def consolidate_flights(
@@ -764,6 +802,8 @@ def consolidate_flights(
       C) Zombie-Logoffs korrigieren: Logoff = letzte Position, gedeckelt auf die nächste
          Session — nur anwenden, wenn es die Dauer um ≥ shrink_margin_min verkürzt (nie verlängern).
       D) StatSim-Backstop: weiterhin grob unplausible FS-Dauern auf StatSim-Wert korrigieren.
+      E) Selbstheilung: block_min > duration_min (unmöglich) → block mit dem gespeicherten
+         Fenster neu berechnen. C und D rechnen block_min bei Fenster-Korrekturen stets mit.
 
     Reversibel: `UPDATE flights SET superseded_by = NULL`. Gibt Anzahl markierter Zeilen zurück.
     Committet NICHT selbst — der Aufrufer committet (ermöglicht Dry-Run via rollback).
@@ -858,9 +898,10 @@ def consolidate_flights(
         new_dur = max(0, int((_parse_iso(new_logoff) - _parse_iso(logon)).total_seconds() / 60))
         if (dur or 0) - new_dur >= shrink_margin_min:
             new_dist = _gps_distance_nm(conn, cid, logon, new_logoff)
+            new_block = _block_minutes(conn, cid, logon, new_logoff)
             conn.execute(
-                "UPDATE flights SET logoff_time=?, duration_min=?, distance_nm=? WHERE id=?",
-                (new_logoff, new_dur, new_dist, fid),
+                "UPDATE flights SET logoff_time=?, duration_min=?, distance_nm=?, block_min=? WHERE id=?",
+                (new_logoff, new_dur, new_dist, new_block, fid),
             )
 
     # D) StatSim-Backstop für weiterhin grob unplausible Dauern
@@ -883,12 +924,128 @@ def consolidate_flights(
                     "%Y-%m-%dT%H:%M:%SZ"
                 )
                 new_dist = _gps_distance_nm(conn, cid, logon, new_logoff)
+                new_block = _block_minutes(conn, cid, logon, new_logoff)
                 conn.execute(
-                    "UPDATE flights SET logoff_time=?, duration_min=?, distance_nm=? WHERE id=?",
-                    (new_logoff, st_dur, new_dist, fid),
+                    "UPDATE flights SET logoff_time=?, duration_min=?, distance_nm=?, block_min=? WHERE id=?",
+                    (new_logoff, st_dur, new_dist, new_block, fid),
                 )
 
+    # E) Selbstheilung unmöglicher Blockzeiten: block_min > duration_min kann nicht sein
+    # (Blockzeit liegt in [logon, logoff]) — entsteht, wenn ein früherer Schritt/Codestand
+    # logoff/duration korrigierte, ohne block mitzuziehen. Mit dem GESPEICHERTEN Fenster
+    # neu berechnen.
+    for fid, cid, logon, logoff in conn.execute(
+        "SELECT id, cid, logon_time, logoff_time FROM flights "
+        "WHERE superseded_by IS NULL AND logoff_time IS NOT NULL "
+        "AND block_min IS NOT NULL AND duration_min IS NOT NULL AND block_min > duration_min"
+    ).fetchall():
+        conn.execute(
+            "UPDATE flights SET block_min=? WHERE id=?",
+            (_block_minutes(conn, cid, logon, logoff), fid),
+        )
+
     return marked
+
+
+# Rand (Minuten) um das StatSim-Fenster bei der Track-Rekonstruktion: StatSim kennt Start-/
+# Landezeit; Taxi-out/-in davor/danach gehören mit zum Flug (gedeckelt auf Nachbar-Sessions).
+_RECONSTRUCT_MARGIN_MIN = 10
+
+
+def reconstruct_orphaned_flights(conn: sqlite3.Connection) -> int:
+    """Verwaiste GPS-Tracks wieder mit einer flights-Zeile versehen (A1-Schadensreparatur).
+
+    Fall (Live-Test 2026-07-01, Reiner cid 1031301): ein Feed-Aussetzer schloss die laufende
+    Session; Folgeflüge derselben Verbindung liefen nur noch in position_history — StatSim
+    kennt den Flug, FriesenSpy besitzt den Track, aber es existiert kein flights-Eintrag.
+
+    Rekonstruiert für jeden StatSim-Flug (abgeschlossen, > 5 min, mit Strecke), der von KEINEM
+    aktiven FriesenSpy-Flug gedeckt ist und dessen Fenster (± _RECONSTRUCT_MARGIN_MIN, gedeckelt
+    auf die Nachbar-Sessions) nachweislich Flugbewegung in position_history enthält, einen
+    flights-Eintrag aus den echten Positionsdaten (Dauer/Distanz/Block aus dem Track).
+    Idempotent: einmal rekonstruiert ist der StatSim-Flug gedeckt. Gibt die Anzahl neu
+    angelegter Flüge zurück; committet NICHT selbst.
+    """
+    import logging as _log
+    log = _log.getLogger(__name__)
+    created = 0
+    st_rows = conn.execute(
+        "SELECT cid, callsign, departure, arrival, aircraft, logon_time, logoff_time, "
+        "duration_min FROM statsim_cache "
+        "WHERE logon_time != '' AND logoff_time IS NOT NULL AND duration_min > 5 "
+        "AND departure != '' AND arrival != '' ORDER BY cid, logon_time"
+    ).fetchall()
+    for st in st_rows:
+        cid, st_logon, st_logoff = st["cid"], st["logon_time"], st["logoff_time"]
+        # Laufende Session, die den StatSim-Flug enthalten kann → nichts rekonstruieren.
+        open_row = conn.execute(
+            "SELECT 1 FROM flights WHERE cid=? AND superseded_by IS NULL "
+            "AND logoff_time IS NULL AND logon_time <= ? LIMIT 1",
+            (cid, st_logon),
+        ).fetchone()
+        if open_row:
+            continue
+        fs = [dict(r) for r in conn.execute(
+            "SELECT departure, arrival, logon_time, logoff_time FROM flights "
+            "WHERE cid=? AND superseded_by IS NULL AND logoff_time IS NOT NULL",
+            (cid,),
+        ).fetchall()]
+        if not _dedup_statsim_against_fs(fs, [dict(st)]):
+            continue  # bereits durch einen FriesenSpy-Flug gedeckt
+        # Fenster: StatSim-Zeiten ± Taxi-Rand, gedeckelt auf die Nachbar-Sessions.
+        prev_logoff = conn.execute(
+            "SELECT MAX(logoff_time) FROM flights WHERE cid=? AND superseded_by IS NULL "
+            "AND logoff_time IS NOT NULL AND logoff_time <= ?",
+            (cid, st_logon),
+        ).fetchone()[0]
+        next_logon = conn.execute(
+            "SELECT MIN(logon_time) FROM flights WHERE cid=? AND superseded_by IS NULL "
+            "AND logon_time >= ?",
+            (cid, st_logon),
+        ).fetchone()[0]
+        lo = _shift_iso(st_logon, hours=-_RECONSTRUCT_MARGIN_MIN / 60.0)
+        if prev_logoff and prev_logoff > lo:
+            lo = prev_logoff
+        hi = _shift_iso(st_logoff, hours=_RECONSTRUCT_MARGIN_MIN / 60.0)
+        if next_logon and next_logon < hi:
+            hi = next_logon
+        # Beleg: der Track im Fenster muss echte Flugbewegung zeigen (kein Taxi-/Steh-Ghost).
+        airborne = conn.execute(
+            "SELECT COUNT(*) FROM position_history "
+            "WHERE cid=? AND ts>? AND ts<? AND groundspeed >= 40",
+            (cid, lo, hi),
+        ).fetchone()[0]
+        if airborne < 2:
+            continue
+        bounds = conn.execute(
+            "SELECT MIN(ts), MAX(ts) FROM position_history WHERE cid=? AND ts>? AND ts<?",
+            (cid, lo, hi),
+        ).fetchone()
+        logon_rec, logoff_rec = bounds[0], bounds[1]
+        if not logon_rec or not logoff_rec or logon_rec >= logoff_rec:
+            continue
+        clash = conn.execute(
+            "SELECT 1 FROM flights WHERE cid=? AND logon_time=? AND superseded_by IS NULL",
+            (cid, logon_rec),
+        ).fetchone()
+        if clash:
+            continue
+        duration = max(0, int((_parse_iso(logoff_rec) - _parse_iso(logon_rec)).total_seconds() / 60))
+        distance = _gps_distance_nm(conn, cid, logon_rec, logoff_rec)
+        block = _block_minutes(conn, cid, logon_rec, logoff_rec)
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
+            "logon_time, logoff_time, duration_min, distance_nm, block_min) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (cid, st["callsign"] or "", st["aircraft"] or "", st["departure"], st["arrival"],
+             logon_rec, logoff_rec, duration, distance, block),
+        )
+        created += 1
+        log.info(
+            "Verwaister Track rekonstruiert: cid=%s %s %s→%s [%s, %s] %d nm",
+            cid, st["callsign"], st["departure"], st["arrival"], logon_rec, logoff_rec, distance,
+        )
+    return created
 
 
 def update_flight_plan(
@@ -1121,6 +1278,10 @@ _RECONNECT_GAP_NO_FP_MIN = 15     # ein Segment ohne FP → enger + Geo-Budget
 _MAX_GS_KT = 600.0                # Deckelung der plausiblen Geschwindigkeit
 _BUDGET_MARGIN_NM = 10.0          # Toleranz auf das Distanz-Budget
 _DIRECTION_TOLERANCE_KM = 20.0    # Toleranz der Richtungsprüfung (Fortschritt Richtung Ziel)
+# „Abgeflogen": das frühere Segment endete GELANDET am FP-Ziel (Umkreis + am Boden) →
+# der Flugplan ist erfüllt, ein späteres Segment ist kein Reconnect dieses Fluges mehr.
+_ARRIVED_RADIUS_KM = 10.0         # Umkreis um das FP-Ziel für „am Ziel angekommen"
+_ARRIVED_MAX_GS_KT = 40.0         # darunter gilt die letzte Position als ausgerollt/am Boden
 
 
 def _first_pos(
@@ -1155,6 +1316,9 @@ def _segments_continuous(
     Distanz-Budget: der Abstand zwischen der letzten Position von 'earlier' und der ersten
     Position von 'later' darf höchstens das in der Lücke zurücklegbare Budget betragen
     (gap × Vmax + Marge) — löst den Fall „Pilot 10 Min ohne Netz, Sim fliegt weiter".
+    Abgeflogen: endete 'earlier' bereits GELANDET am FP-Ziel (Umkreis + am Boden), ist der
+    Flugplan erfüllt — 'later' ist dann ein NEUER Flug (z. B. Rückflug mit stehengebliebenem
+    FP, der ebenfalls „am Ziel" startet und daher die Richtungsprüfung passiert), kein Reconnect.
     Richtung: 'later' soll nicht deutlich weiter vom Ziel entfernt sein als das Ende von
     'earlier'. Fallback True, wenn keine Positionsdaten vorhanden sind.
     """
@@ -1162,7 +1326,12 @@ def _segments_continuous(
     cid = earlier.get("cid") or later.get("cid")
     if cid is None:
         return True
-    last = _last_pos(conn, int(cid), earlier.get("logon_time") or "", earlier.get("logoff_time") or "")
+    last_row = conn.execute(
+        "SELECT latitude, longitude, groundspeed FROM position_history "
+        "WHERE cid=? AND ts>=? AND ts<=? ORDER BY ts DESC LIMIT 1",
+        (int(cid), earlier.get("logon_time") or "", earlier.get("logoff_time") or ""),
+    ).fetchone()
+    last = (last_row[0], last_row[1]) if last_row else None
     first = _first_pos(
         conn, int(cid), later.get("logon_time") or "",
         later.get("logoff_time") or "9999-12-31T23:59:59Z",
@@ -1177,6 +1346,13 @@ def _segments_continuous(
     arr_coords = icao_to_coords(arr) if arr else None
     if arr_coords is not None:
         d_last = haversine(last[0], last[1], arr_coords[0], arr_coords[1])
+        last_gs = last_row[2]
+        if (
+            d_last <= _ARRIVED_RADIUS_KM
+            and last_gs is not None
+            and last_gs <= _ARRIVED_MAX_GS_KT
+        ):
+            return False  # 'earlier' war schon gelandet am Ziel → FP abgeflogen → kein Reconnect
         d_first = haversine(first[0], first[1], arr_coords[0], arr_coords[1])
         if d_first > d_last + _DIRECTION_TOLERANCE_KM:
             return False  # 'later' weiter vom Ziel weg → kein Fortschritt → kein Reconnect
