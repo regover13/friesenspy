@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.3.3",
+    "date": "2026-07-01",
+    "title": "KI-Sprüche: verständliches Hochdeutsch statt Platt-Vokabeln",
+    "items": [
+      "💬 Die KI-Sprüche (Flug-Einzeiler + Tagesend-Zusammenfassung) bleiben jetzt in klarem Hochdeutsch mit nur leichtem norddeutschen Einschlag — ein 'Moin' ist ok, obskure Platt-Wörter wie 'frünnen' sind tabu."
+    ]
+  },
+  {
     "version": "7.3.2",
     "date": "2026-07-01",
     "title": "Hotfix Serverstart + FriesenKutter-Feierabend wartet auf Nachzügler",

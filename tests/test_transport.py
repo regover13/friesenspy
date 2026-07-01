@@ -645,3 +645,24 @@ class TestAnyoneInProgress:
         ev = _event(conn)
         _add_flight(conn, 7, "EDWG", "EDXH", "BN2P", "2026-07-01T20:00:00Z")
         assert transport_anyone_in_progress(conn, ev, started_before=END) is False
+
+
+# --- KI-Sprüche: verständlich bleiben (Task #14) -----------------------------
+
+class TestQuipPromptVerstaendlich:
+    """Der System-Prompt der KI-Sprüche muss verständliches Hochdeutsch verlangen und darf
+    Plattdeutsch-Vokabular nicht mehr als Stilmittel anbieten (Live-Test: 'frünnen' in der
+    Tagesend-Zusammenfassung)."""
+
+    def test_prompt_verlangt_hochdeutsch_und_verbietet_platt(self):
+        from app.llm import _QUIP_SYSTEM
+        assert "Hochdeutsch" in _QUIP_SYSTEM
+        # Explizites Verbot ganzer Platt-Wörter/Sätze
+        assert "plattdeutsch" in _QUIP_SYSTEM.lower()
+        assert "KEINE" in _QUIP_SYSTEM or "keine platt" in _QUIP_SYSTEM.lower()
+
+    def test_prompt_bietet_platt_nicht_mehr_als_stilmittel_an(self):
+        from app.llm import _QUIP_SYSTEM
+        # Vorher stand dort: "mal mit plattdeutschem Anklang (z.B. 'Moin', 'dat', 'nich')" —
+        # 'dat'/'nich' dürfen nicht mehr als positive Beispiele auftauchen.
+        assert "mit plattdeutschem Anklang" not in _QUIP_SYSTEM
