@@ -6,7 +6,7 @@ SUMMARY UND >= 2 Flugplätze).
 """
 from __future__ import annotations
 
-from app.calendar_sync import parse_route
+from app.calendar_sync import parse_route, parse_cargo_lines
 
 
 class TestRouteExtraction:
@@ -85,6 +85,29 @@ class TestDescription:
     def test_keyword_in_description_but_one_icao_is_not_bummel(self):
         _, is_bummel, _ = parse_route("EDWF", "Treffen", "kleiner Bummel zum Kaffee")
         assert is_bummel is False
+
+
+class TestCargoLines:
+    def test_parses_comma_separated_items(self):
+        lines = parse_cargo_lines("Fracht: 1000 Krabbenbrötchen, 500 Friesentee")
+        assert lines == [
+            {"name": "Krabbenbrötchen", "target_kg": 1000.0},
+            {"name": "Friesentee", "target_kg": 500.0},
+        ]
+
+    def test_kg_suffix_and_decimal_comma(self):
+        lines = parse_cargo_lines("Fracht: 250,5 kg Filmrollen")
+        assert lines == [{"name": "Filmrollen", "target_kg": 250.5}]
+
+    def test_no_marker_returns_empty(self):
+        assert parse_cargo_lines("Diesmal als FriesenKutter: EDWG EDXH") == []
+
+    def test_only_first_line_after_marker(self):
+        lines = parse_cargo_lines("Fracht: 1000 Krabbenbrötchen\nWeitere Infos hier")
+        assert lines == [{"name": "Krabbenbrötchen", "target_kg": 1000.0}]
+
+    def test_empty_description(self):
+        assert parse_cargo_lines("") == []
 
 
 class TestDbRoundtrip:

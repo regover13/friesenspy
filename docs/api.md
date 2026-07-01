@@ -855,6 +855,8 @@ Der öffentliche Endpoint `GET /api/bummel/race/{id}/badge/{cid}.png` bleibt vor
 
 Alle Endpoints erfordern das Admin-Cookie (`require_admin`).
 
+> **Kalender-Fracht:** Ein Termin mit dem `friesenkutter`-Marker kann direkt in der Beschreibung eine Fracht-Zeile enthalten: `Fracht: 1000 Krabbenbrötchen, 500 Friesentee`. Beim Sync wird sie **einmalig** (nur beim erstmaligen Anlegen) gegen den Frachtart-Katalog abgeglichen und ins Manifest übernommen; ein später im Admin gepflegtes Manifest bleibt bei erneutem Sync unverändert.
+
 ### GET /api/admin/transport/events
 Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_kg}]`).
 

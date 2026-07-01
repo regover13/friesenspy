@@ -34,6 +34,41 @@ def _route_is_plausible(route: list[str]) -> bool:
     return True
 
 
+_CARGO_MARKER_RE = re.compile(r"fracht\s*:\s*(.+)", re.IGNORECASE)
+_CARGO_ITEM_RE = re.compile(r"^([\d]+(?:[.,]\d+)?)\s*(?:kg\s+)?(.+)$", re.IGNORECASE)
+
+
+def parse_cargo_lines(description: str) -> list[dict]:
+    """Fracht-Zeilen aus der Kalender-Beschreibung lesen (Marker ``Fracht:``, kommagetrennt).
+
+    Beispiel: ``"Fracht: 1000 Krabbenbrötchen, 500 Friesentee"`` →
+    ``[{"name": "Krabbenbrötchen", "target_kg": 1000.0}, {"name": "Friesentee", "target_kg": 500.0}]``.
+    Nur die erste Zeile nach dem Marker wird gelesen. Frachtnamen werden beim Speichern gegen den
+    Katalog abgeglichen (Emoji/Kappung); unbekannte Namen werden als Freitext übernommen.
+    Mehrere Frachtarten werden durch ``", "`` (Komma+Leerzeichen) getrennt — ein Komma ohne
+    Leerzeichen (z. B. ``"250,5"``) gilt als Dezimalkomma und trennt nicht.
+    """
+    if not description:
+        return []
+    m = _CARGO_MARKER_RE.search(description)
+    if not m:
+        return []
+    rest = m.group(1).split("\n", 1)[0]
+    out: list[dict] = []
+    for chunk in re.split(r",\s+", rest):
+        im = _CARGO_ITEM_RE.match(chunk.strip())
+        if not im:
+            continue
+        try:
+            kg = float(im.group(1).replace(",", "."))
+        except ValueError:
+            continue
+        name = im.group(2).strip()
+        if name and kg > 0:
+            out.append({"name": name, "target_kg": kg})
+    return out
+
+
 def parse_route(location: str, summary: str, description: str = "") -> tuple[str, bool, bool]:
     """Strecke + Bummel-/FriesenKutter-Flag aus einem Termin ableiten.
 
@@ -128,6 +163,7 @@ async def fetch_and_parse_ical(client) -> list[dict]:
             "route": route,
             "is_bummel": 1 if is_bummel else 0,
             "is_transport": 1 if is_transport else 0,
+            "cargo": parse_cargo_lines(description_raw) if is_transport else [],
         })
 
     return events

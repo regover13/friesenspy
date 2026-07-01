@@ -2245,11 +2245,30 @@ def _default_destination(route: str) -> str:
     return parts[-1] if parts else ""
 
 
+def _resolve_cargo_against_catalog(conn: sqlite3.Connection, lines: list[dict]) -> list[dict]:
+    """Aus dem Kalender geparste Fracht-Zeilen (nur name/target_kg) gegen den Katalog auflösen
+    (Emoji + Obergrenze pro Flug ergänzen). Unbekannte Namen bleiben Freitext ohne Emoji/Kappung."""
+    by_name = {c["name"].strip().lower(): c for c in list_cargo_catalog(conn)}
+    out = []
+    for line in lines:
+        cat = by_name.get((line.get("name") or "").strip().lower())
+        out.append({
+            "name": line["name"],
+            "target_kg": line["target_kg"],
+            "emoji": cat["emoji"] if cat else None,
+            "per_flight_max_kg": cat["per_flight_max_kg"] if cat else None,
+        })
+    return out
+
+
 def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
     """Ein erkanntes FriesenKutter-Kalenderevent als persistentes Transportevent anlegen/updaten.
 
-    Idempotent über ``calendar_uid``. ``dtend`` mit Mitternacht-Default. Das Fracht-Manifest wird
-    NICHT aus dem Kalender befüllt (im Admin nachpflegbar) — bis dahin ist es ein reiner Zähler.
+    Idempotent über ``calendar_uid``. ``dtend`` mit Mitternacht-Default. Enthält die Beschreibung
+    eine Fracht-Zeile (Marker ``Fracht: 1000 Krabbenbrötchen, 500 Friesentee``, geparst in
+    ``calendar_sync.parse_cargo_lines``), wird daraus **einmalig** das Manifest befüllt (Namen
+    gegen den Katalog abgeglichen) — nur solange noch **kein** Manifest existiert, damit spätere
+    Admin-Bearbeitungen bei erneutem Sync nicht überschrieben werden.
     """
     route = ev.get("route") or ""
     conn.execute(
@@ -2269,6 +2288,13 @@ def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
             _now_utc(),
         ),
     )
+    cargo_lines = ev.get("cargo") or []
+    if cargo_lines:
+        row = conn.execute(
+            "SELECT id FROM transport_events WHERE calendar_uid = ?", (ev.get("uid"),)
+        ).fetchone()
+        if row and not get_transport_cargo(conn, row[0]):
+            set_transport_cargo(conn, row[0], _resolve_cargo_against_catalog(conn, cargo_lines))
 
 
 def list_transport_events(conn: sqlite3.Connection) -> list[dict]:

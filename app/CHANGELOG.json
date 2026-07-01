@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.2.1",
+    "date": "2026-07-01",
+    "title": "FriesenKutter: Fracht direkt im Kalendertermin",
+    "items": [
+      "📅 Frachtart-Zeile in der Termin-Beschreibung (\"Fracht: 1000 Krabbenbrötchen, 500 Friesentee\") befüllt beim Kalender-Sync automatisch das Manifest — Namen werden gegen den Katalog abgeglichen (Emoji + Kappung).",
+      "Nur beim erstmaligen Anlegen: spätere Admin-Bearbeitungen werden bei erneutem Sync nicht überschrieben."
+    ]
+  },
+  {
     "version": "7.2.0",
     "date": "2026-07-01",
     "title": "FriesenKutter: Frachtart-Katalog & lustige KI-Sprüche",
