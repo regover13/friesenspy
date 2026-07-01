@@ -214,6 +214,8 @@ Der **FriesenKutter** ist ein kleines „FSE für Friesen": ein Transportflug-Ev
 - **Zuladung pro Flugzeugtyp:** Wie viel ein Flug lädt, hängt vom Muster ab (MTOW − Leergewicht − Tankfüllung, alles im Admin einstellbar). Für unbekannte Muster holt der Admin per Klick einen **KI-Vorschlag** (Claude); der Wert bleibt frei anpassbar.
 - **Anzeige:** Im Events-Tab zeigt eine Karte einen **segmentierten Ziel-Balken** je Frachtart und darunter den **Flug-Feed** (neueste oben), der sich live aktualisiert.
 - **Push:** Start des Events, erreichtes Ziel und eine Feierabend-Zusammenfassung („X Frachtflüge, Y t bewegt") gehen an die Events-Abonnenten.
+- **Frachtart-Katalog:** Im Admin pflegbare Frachtarten mit Emoji und optionaler Obergrenze pro Flug — z.B. Krabbenbrötchen 🦐 oder Filmrollen 🎞️ (max 100 kg). Ist eine Frachtart gedeckelt, nimmt der Rest der Zuladung eines Flugs automatisch die nächste Frachtart mit (Co-Load).
+- **Lustige KI-Sprüche (optional):** Ist der Schalter im Admin aktiv, schreibt Claude zu jedem Flug einen Einzeiler im Friesen-Humor — mit Bezug auf Vorname, Fleiß, Tempo und Umwege — plus eine launige Tagesend-Zusammenfassung.
 
 ## 🔔 Benachrichtigungen (Push Notifications)
 

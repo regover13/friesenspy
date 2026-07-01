@@ -20,6 +20,16 @@ from app.database import (
     init_db,
     set_transport_cargo,
     upsert_payload,
+    list_cargo_catalog,
+    upsert_cargo_catalog,
+    delete_cargo_catalog,
+    seed_cargo_catalog,
+    set_transport_quip,
+    get_transport_quips,
+    transport_quips_enabled,
+    flight_quip_context,
+    event_summary_context,
+    set_app_setting,
 )
 
 START = "2026-07-01T09:00:00Z"
@@ -118,6 +128,97 @@ class TestLlmResult:
     def test_build_result_never_negative(self):
         r = _build_result("Winzling", 400, 380, 100, crew_kg=85)
         assert r["payload_kg"] == 0.0
+
+
+# --- Phase 2: Co-Load-Kappung, Katalog, Kontext, Sprüche ------------------
+
+class TestCoLoad:
+    def test_per_flight_cap_spills_to_next_cargo(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=550)
+        conn.commit()
+        _add_flight(conn, 7, "EDWG", "EDXH", "C208", "2026-07-01T10:00:00Z")
+        ev = _event(conn, cargo=[
+            {"name": "Filmrollen", "target_kg": 300, "per_flight_max_kg": 100, "emoji": "🎞️"},
+            {"name": "Friesentee", "target_kg": 500, "emoji": "🫖"},
+        ])
+        p = compute_transport_progress(conn, ev, END)
+        film = next(c for c in p["cargo"] if c["name"] == "Filmrollen")
+        tee = next(c for c in p["cargo"] if c["name"] == "Friesentee")
+        assert film["delivered_kg"] == 100 and film["emoji"] == "🎞️"   # bei 100 gekappt
+        assert tee["delivered_kg"] == 450                               # Rest per Co-Load
+        f = p["flights"][0]
+        assert f["cargo_name"] == "Friesentee"                          # dominant (450 > 100)
+        assert [l["name"] for l in f["cargo_lines"]] == ["Friesentee", "Filmrollen"]
+
+
+class TestCatalog:
+    def test_seed_only_when_empty(self):
+        conn = _make_conn()
+        assert seed_cargo_catalog(conn) > 0
+        n = len(list_cargo_catalog(conn))
+        assert n > 0
+        assert seed_cargo_catalog(conn) == 0        # nicht erneut seeden
+        assert len(list_cargo_catalog(conn)) == n
+
+    def test_crud(self):
+        conn = _make_conn()
+        upsert_cargo_catalog(conn, name="Testfracht", emoji="🧪", per_flight_max_kg=50)
+        conn.commit()
+        r = next(x for x in list_cargo_catalog(conn) if x["name"] == "Testfracht")
+        assert r["emoji"] == "🧪" and r["per_flight_max_kg"] == 50
+        upsert_cargo_catalog(conn, id=r["id"], name="Testfracht", emoji="🔬", per_flight_max_kg=None)
+        conn.commit()
+        r2 = next(x for x in list_cargo_catalog(conn) if x["id"] == r["id"])
+        assert r2["emoji"] == "🔬" and r2["per_flight_max_kg"] is None
+        delete_cargo_catalog(conn, r["id"])
+        conn.commit()
+        assert not any(x["id"] == r["id"] for x in list_cargo_catalog(conn))
+
+
+class TestQuipContext:
+    def test_flight_context(self):
+        progress = {"flights": [
+            {"cid": 12, "loaded": True, "flight_key": "12:a"},
+            {"cid": 12, "loaded": True, "flight_key": "12:b"},
+        ]}
+        flight = {
+            "cid": 12, "name": "Anna Meyer", "callsign": "FRS12", "aircraft": "C172",
+            "dep": "EDDH", "arr": "EDDW", "tonnage_kg": 250, "distance_nm": 200, "block_min": 40,
+            "cargo_lines": [{"name": "Krabbenbrötchen", "emoji": "🦐", "kg": 250}],
+        }
+        ctx = flight_quip_context(flight, progress)
+        assert ctx["vorname"] == "Anna"
+        assert ctx["flights_tonight"] == 2
+        assert ctx["speed_kt"] == 300                # 200 / (40/60)
+        assert ctx["detour_ratio"] and ctx["detour_ratio"] > 1   # 200 nm ≫ Luftlinie EDDH-EDDW
+        assert "🦐 Krabbenbrötchen" in ctx["cargo"][0]
+
+    def test_summary_context(self):
+        progress = {
+            "flights": [
+                {"loaded": True, "name": "Anna Meyer"}, {"loaded": True, "name": "Anna Meyer"},
+                {"loaded": True, "name": "Bert"}, {"loaded": False, "name": "Cara"},
+            ],
+            "total_kg": 1000, "loaded_count": 3,
+            "cargo": [{"name": "Krabbenbrötchen", "emoji": "🦐", "delivered_kg": 600, "target_kg": 800}],
+            "route": ["EDWG", "EDXH"], "destination": "EDXH",
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert ctx["pilots"] == {"Anna": 2, "Bert": 1}
+        assert ctx["loaded_count"] == 3
+
+
+class TestQuipCache:
+    def test_toggle_and_cache(self):
+        conn = _make_conn()
+        assert transport_quips_enabled(conn) is False
+        set_app_setting(conn, "transport_quips_enabled", "1")
+        conn.commit()
+        assert transport_quips_enabled(conn) is True
+        set_transport_quip(conn, 5, "12:x", "Moin, dat lööpt!")
+        conn.commit()
+        assert get_transport_quips(conn, 5) == {"12:x": "Moin, dat lööpt!"}
 
 
 # --- Wertung / Manifest ----------------------------------------------------

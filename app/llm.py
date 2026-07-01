@@ -149,3 +149,88 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
     except (KeyError, TypeError, ValueError) as exc:
         logger.warning("Zuladungs-Vorschlag für %s: unvollständige Werte (%s)", code, exc)
         return None
+
+
+# ---------------------------------------------------------------------------
+# Lustige KI-Sprüche (Phase 2) — Claude Sonnet 5, kein Web-Search
+# ---------------------------------------------------------------------------
+
+_QUIP_SYSTEM = (
+    "Du bist der spitzbübische Bordfunker der virtuellen Airline FriesenFlieger. Du schreibst "
+    "kurze, trockene, herzliche Sprüche im ostfriesischen/norddeutschen Humor (gern mit "
+    "plattdeutschem Anklang wie 'Moin'). Nutze NUR die gelieferten Fakten, erfinde keine dazu. "
+    "Keine Hashtags, keine Anführungszeichen."
+)
+
+
+def _chat(system: str, user: str, max_tokens: int) -> str | None:
+    """Ein einfacher Sonnet-5-Aufruf ohne Tools (Denken aus, effort low) — Silent-Fail."""
+    from app.config import get_settings
+    api_key = get_settings().ANTHROPIC_API_KEY.strip()
+    if not api_key:
+        return None
+    try:
+        import anthropic
+    except ImportError:
+        return None
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model="claude-sonnet-5",
+            max_tokens=max_tokens,
+            thinking={"type": "disabled"},
+            output_config={"effort": "low"},
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        if getattr(resp, "stop_reason", None) == "refusal":
+            return None
+        parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
+        text = " ".join(t.strip() for t in parts if t).strip()
+        return text or None
+    except Exception as exc:  # noqa: BLE001 — Komfortpfad
+        logger.warning("Spruch-Generierung fehlgeschlagen: %s", exc)
+        return None
+
+
+def flight_quip(context: dict) -> str | None:
+    """Einen lustigen Einzeiler zu einem Frachtflug erzeugen (mit Piloten-Kontext)."""
+    c = context or {}
+    lines = [
+        f"Pilot-Vorname: {c.get('vorname') or '?'}",
+        f"Frachtflug heute Nr.: {c.get('flights_tonight')} (Fleiß)",
+        f"Muster: {c.get('aircraft') or '?'}",
+        f"Strecke: {c.get('route') or '?'}",
+        f"Fracht: {', '.join(c.get('cargo') or []) or '—'}",
+        f"Zuladung: {c.get('tonnage_kg')} kg",
+    ]
+    if c.get("speed_kt"):
+        lines.append(f"Tempo: {c['speed_kt']} kt")
+    if c.get("detour_ratio"):
+        extra = " (fliegt Umwege!)" if c["detour_ratio"] >= 1.3 else ""
+        lines.append(f"Umweg-Faktor: {c['detour_ratio']}x Luftlinie{extra}")
+    user = (
+        "Schreibe EINEN lustigen Einzeiler (genau ein Satz) zu diesem Frachtflug. Greif die "
+        "auffälligsten Fakten auf (z.B. Fleiß, Tempo, Umwege, Fracht). Fakten:\n- "
+        + "\n- ".join(lines)
+    )
+    return _chat(_QUIP_SYSTEM, user, 200)
+
+
+def event_summary(context: dict) -> str | None:
+    """Eine launige Tagesend-Zusammenfassung eines FriesenKutter-Events erzeugen."""
+    c = context or {}
+    pilots = ", ".join(f"{k}: {v}" for k, v in (c.get("pilots") or {}).items()) or "—"
+    lines = [
+        f"Event: {c.get('name') or '?'}",
+        f"Strecke: {c.get('route') or '?'} (Ziel {c.get('destination') or '?'})",
+        f"Gesamt bewegt: {c.get('total_kg')} kg in {c.get('loaded_count')} Frachtflügen",
+        f"Fracht: {', '.join(c.get('cargo') or []) or '—'}",
+        f"Piloten (Flüge): {pilots}",
+    ]
+    user = (
+        "Schreibe eine kurze, launige Tagesend-Zusammenfassung (1–2 Sätze) für die "
+        "Friesen — wie viel Fracht zusammen bewegt wurde, mit einem Augenzwinkern. Fakten:\n- "
+        + "\n- ".join(lines)
+    )
+    return _chat(_QUIP_SYSTEM, user, 400)

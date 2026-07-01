@@ -67,6 +67,10 @@ from app.database import (
     list_aircraft_payloads,
     upsert_payload,
     transport_default_payload_kg,
+    list_cargo_catalog,
+    upsert_cargo_catalog,
+    delete_cargo_catalog,
+    transport_quips_enabled,
 )
 from app.geo import filter_event_pilots, haversine, segment_into_flights
 from app.poller import VatsimPoller, create_poller, send_web_push
@@ -1610,6 +1614,7 @@ async def admin_transport_payloads(request: Request):
             "unmapped_types": sorted(unmapped),
             "default_kg": transport_default_payload_kg(conn),
             "llm_configured": _llm_configured(),
+            "quips_enabled": transport_quips_enabled(conn),
         }
     finally:
         conn.close()
@@ -1672,6 +1677,64 @@ async def admin_set_default_payload(request: Request):
         set_app_setting(conn, "transport_default_payload_kg", str(value))
         conn.commit()
         return {"status": "ok", "default_kg": value}
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/transport/catalog")
+async def admin_transport_catalog(request: Request):
+    """Frachtart-Katalog (Stammdaten) auflisten."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return list_cargo_catalog(conn)
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/transport/catalog")
+async def admin_upsert_catalog(request: Request):
+    """Frachtart im Katalog anlegen/ändern: name (Pflicht), emoji, per_flight_max_kg, id (für Update)."""
+    require_admin(request)
+    body = await request.json()
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name erforderlich")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        upsert_cargo_catalog(
+            conn, id=body.get("id"), name=name,
+            emoji=(body.get("emoji") or None), per_flight_max_kg=body.get("per_flight_max_kg"),
+        )
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/transport/catalog/{catalog_id}")
+async def admin_delete_catalog(request: Request, catalog_id: int):
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        delete_cargo_catalog(conn, catalog_id)
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/transport/quips-enabled")
+async def admin_set_quips_enabled(request: Request):
+    """Lustige KI-Sprüche global an-/ausschalten."""
+    require_admin(request)
+    body = await request.json()
+    enabled = bool(body.get("enabled"))
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        set_app_setting(conn, "transport_quips_enabled", "1" if enabled else "0")
+        conn.commit()
+        return {"status": "ok", "enabled": enabled}
     finally:
         conn.close()
 

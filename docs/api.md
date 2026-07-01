@@ -879,6 +879,20 @@ KI-Vorschlag (Claude Sonnet 5 mit **Web-Search**, Structured Output) für die Ko
 ### POST /api/admin/transport/default-payload
 Globalen Fallback-Zuladungswert setzen. Body: `default_kg`.
 
+### GET /api/admin/transport/catalog
+Frachtart-Katalog (Stammdaten): `[{id, name, emoji, per_flight_max_kg, position}]`.
+
+### POST /api/admin/transport/catalog
+Frachtart anlegen/ändern. Body: `name` (Pflicht), `emoji`, `per_flight_max_kg` (Obergrenze pro Flug für Co-Load; NULL = keine Kappung), `id` (für Update).
+
+### DELETE /api/admin/transport/catalog/{id}
+Frachtart aus dem Katalog entfernen (bestehende Event-Manifeste bleiben unverändert).
+
+### POST /api/admin/transport/quips-enabled
+Lustige KI-Sprüche global an-/ausschalten. Body: `enabled` (bool). Wirken nur mit `ANTHROPIC_API_KEY`.
+
+> **Event-Ausgabe (Phase 2):** `GET /api/transport/event/{id}` liefert zusätzlich je Frachtart `cargo[].emoji`, je Flug `cargo_lines` (`[{name, emoji, kg}]`, Co-Load) und `quip` (gecachter KI-Spruch, sonst `null`) sowie `summary_quip` (lustige Tagesend-Zusammenfassung).
+
 ## Admin — Hinweis-Banner
 
 Steuert, welcher Changelog-Eintrag auf der Startseite als Banner erscheint (gespeichert in `app_settings['banner_version']`). Die aufgelöste Version liefert `GET /api/frontend-config` im Feld `banner_version`.
