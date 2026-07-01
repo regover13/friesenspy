@@ -6,22 +6,34 @@ des Auftraggebers — sie sind reine Code-Diagnose bzw. eindeutig spezifizierte 
 
 ## Leitplanken (WICHTIG — bitte strikt einhalten)
 
-1. **Diagnose zuerst, Implementierung nur wo unten ausdrücklich freigegeben.** Für die
-   Bug-Themen (Gruppe A) erwartet der Auftraggeber einen **Analyse-Bericht mit Root Cause
-   (mit `datei:zeile`-Belegen) + konkretem Fix-Vorschlag (als Code/Diff) + Test-Skizze** —
-   aber **noch keinen Merge/Deploy**. Der Auftraggeber gibt jeden Logik-Fix vor dem Ausrollen
-   selbst frei.
-2. **Nur Gruppe B (die zwei kleinen Fixes) darfst du direkt umsetzen** — mit Test + Commit,
-   aber ebenfalls **kein `git push` / kein Deploy** ohne Freigabe. Lege sie als lokale Commits
-   auf einem eigenen Branch `fable/analyse-fixes` ab.
-3. **Niemals `git push origin main` oder irgendetwas deployen** in dieser Sitzung. Ein Push auf
-   main triggert automatisch den Produktions-Deploy (GHCR → VPS). Der Live-Betrieb läuft.
-4. **Tests müssen grün bleiben:** `python -m pytest -q` (aktueller Stand: 490 Tests). Neue
-   Tests im TDD-Stil (erst rot, dann grün).
-5. **Keine der Datenintegritäts-Bugs „schnell" fixen.** Es geht um die Flug-State-Machine, die
-   *alle* Ansichten speist (`canonicalize_flights` ist laut eigenem Docstring „die EINZIGE
-   Wahrheit für echte Flüge"). Ein vorschneller Fix kann Statistik, Bummel und Kutter
-   gleichzeitig verfälschen. Lieber gründlich analysieren als schnell patchen.
+Du darfst die Bugs **direkt beheben, committen, auf `main` pushen und deployen** (der
+Auftraggeber hat das ausdrücklich freigegeben). Aber sorgfältig und mit diesen Regeln:
+
+1. **Root Cause zuerst, dann fixen — kein Blind-Patch.** Es geht um die zentrale Flug-State-
+   Machine, die *alle* Ansichten speist (`canonicalize_flights` ist laut eigenem Docstring
+   „die EINZIGE Wahrheit für echte Flüge"). Ein vorschneller Fix kann Statistik, Bummel und
+   Kutter gleichzeitig verfälschen. Erst die Ursache mit `datei:zeile`-Belegen sicher belegen,
+   dann fixen. Für jeden Bug einen **kurzen Root-Cause-Absatz im Commit-Body** festhalten.
+2. **TDD:** je Fix zuerst einen fehlschlagenden Test (der den Bug reproduziert), dann den Fix.
+   Die **gesamte** Suite muss grün bleiben: `python -m pytest -q` (aktueller Stand: 490 Tests).
+3. **Versionierung ist Pflicht bei jedem Release** (stehende Projektregel): `app/CHANGELOG.json`
+   oben einen neuen Eintrag ergänzen (Struktur: `version`, `date`, `title`, `items`-Array) +
+   passenden Git-Tag `vX.Y.Z`. Schema: Bugfix = Patch (x.y.**Z**), Feature = Minor (x.**Y**.0),
+   großer Wurf = Major. Das Feld `"highlight": true` **nur** für Major-Releases setzen (nie für
+   Bugfixes/Minor). Aktuelle Top-Version steht in `app/CHANGELOG.json` — davon hochzählen.
+4. **Docs immer mitpflegen** (stehende Projektregel): bei Verhaltensänderungen `README.md`,
+   `docs/api.md`, `docs/architecture.md` und betroffene Docstrings aktualisieren.
+5. **Vor jedem Push `git fetch` + rebase auf `origin/main`** — es arbeiten **weitere Sessions
+   am selben Repo** (siehe `COORDINATION.md` im Repo-Root: dort Absprachen mitlesen und, falls
+   du etwas hinterlassen willst, eintragen). Niemals fremde, uncommittete Änderungen im
+   Arbeitsverzeichnis überschreiben.
+6. **Deploy:** Push auf `main` triggert automatisch GitHub Actions → GHCR → VPS-Deploy. Nach
+   **jedem** Deploy verifizieren: `gh run watch <id> --exit-status`, dann Health prüfen
+   (`ssh -i ~/.ssh/tsbot_server root@167.86.127.129 'curl -s http://127.0.0.1:8091/health'` →
+   erwartet `{"status":"ok"}`). Deploye in **sinnvollen Einheiten** (z. B. je Bug oder je
+   zusammengehörige Bug-Gruppe ein Commit/Deploy), nicht alles in einem Riesen-Commit.
+7. **Commit-Konvention:** deutsche, aussagekräftige Messages; am Ende die im Repo übliche
+   `Co-Authored-By`-Zeile beibehalten (an bestehenden Commits orientieren, `git log` ansehen).
 
 ## Projektkontext
 
@@ -49,7 +61,7 @@ die unten eingebetteten Beobachtungsdaten reichen für die Code-Analyse aus.
 
 ---
 
-## Gruppe A — Datenintegritäts-Bugs (Diagnose + Fix-Vorschlag, KEIN Deploy)
+## Gruppe A — Datenintegritäts-Bugs (analysieren, fixen, deployen)
 
 > Die vier Bugs in dieser Gruppe hängen alle am selben Codebereich (Flug-State-Machine,
 > Merge, Blockzeit) und sollten **zusammen** analysiert werden — vermutlich teils gemeinsame
@@ -126,13 +138,14 @@ längere stehende Phasen (zusammenhängende Lücken mit `groundspeed <= _BLOCK_G
 oberhalb einer sinnvollen Mindest-Standdauer) herausrechnen. Betrifft die Bummel-Wertung
 (Gerechtigkeit). Verwandt mit A2.
 
-**Deliverable Gruppe A:** ein strukturierter Bericht je Bug (A1–A4) mit: bestätigter/​widerlegter
-Verdachts-Ursache, exakten `datei:zeile`-Belegen, konkretem Fix (als Diff-Vorschlag), Test-Skizze,
-und einer Einschätzung, welche Bugs eine gemeinsame Wurzel haben. **Keine Deploys.**
+**Deliverable Gruppe A:** je Bug (A1–A4) die bestätigte/​widerlegte Ursache mit `datei:zeile`-
+Belegen, ein **umgesetzter Fix** (TDD, gesamte Suite grün) und eine Einschätzung, welche Bugs eine
+gemeinsame Wurzel haben (Ein-Fix-mehrere-Symptome bevorzugen). Fixes committen, mit
+Versionierung/Changelog + Docs, auf `main` pushen und deployen (Health nach jedem Deploy prüfen).
 
 ---
 
-## Gruppe B — Kleine, klar spezifizierte Fixes (umsetzen erlaubt, Branch `fable/analyse-fixes`, KEIN Push)
+## Gruppe B — Kleine, klar spezifizierte Fixes (umsetzen, pushen, deployen)
 
 ### B1 — Feierabend-Zusammenfassung feuert zu früh (Task #13)
 
@@ -196,8 +209,9 @@ Bericht vermerken, aber nicht eigenmächtig umbauen.
 ## Abschluss / Rückgabe
 
 Liefere am Ende:
-1. **Analyse-Bericht** (Gruppe A + C) als Markdown — pro Thema Root Cause, `datei:zeile`, Fix-Diff,
-   Test-Skizze, Risiko/Wechselwirkungen.
-2. **Gruppe-B-Fixes** als lokale Commits auf `fable/analyse-fixes` (mit Tests, grün), **ohne Push**.
-3. Eine **Priorisierungs-Empfehlung**: welcher Bug ist am gefährlichsten für die Datenqualität und
-   sollte zuerst gefixt werden, und welche teilen sich eine Wurzel (Ein-Fix-mehrere-Symptome).
+1. **Umgesetzte Fixes** (Gruppe A + B) — committet, mit Tests grün, Versionierung/Changelog + Docs
+   gepflegt, auf `main` gepusht und deployed (jeder Deploy per Health-Check verifiziert).
+2. **Analyse-/Abschlussbericht** als Markdown — pro Thema Root Cause (`datei:zeile`), was gefixt
+   wurde, Risiko/Wechselwirkungen; für Gruppe C (Machbarkeit) den Recherchebefund.
+3. Eine **Priorisierungs-/Wurzel-Übersicht**: welcher Bug war am gefährlichsten für die
+   Datenqualität, und welche teilten sich eine gemeinsame Ursache (Ein-Fix-mehrere-Symptome).
