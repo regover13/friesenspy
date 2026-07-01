@@ -1056,6 +1056,39 @@ class TestConsolidateFlights:
         # Fenster [17:04:16, 17:32:16] → Bewegung 17:05–17:30 → 25 min, NICHT 92.
         assert row["block_min"] == 25
 
+    def test_statsim_backstop_spares_legit_multileg_session(self):
+        """Schritt D darf eine legitime Multi-Leg-Session (eine Verbindung, mehrere Flüge)
+        nicht auf die Dauer des ERSTEN Beins schrumpfen: StatSim legt pro Flug eine Zeile
+        mit der SESSION-Anmeldung als logon_time an (duration = arrived − loggedOn) — bei
+        drei Beinen matchen also mehrere Zeilen dieselbe Minute. Maßgeblich ist die LÄNGSTE
+        (späteste Landung), nicht ein LIMIT-1-Zufallstreffer."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        # Legitime Session: 17:04–18:43 (99 min), Blockzeit konsistent.
+        conn.execute(
+            "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm,block_min) VALUES "
+            "(1,1,'FRS61','EDWG','EDXH','2026-07-01T17:04:16Z','2026-07-01T18:43:44Z',99,80,60)"
+        )
+        # StatSim: zwei Flüge derselben Session — beide mit Session-logon 17:04.
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(1,1,'FRS61','EDWG','EDXH','BN2P','2026-07-01T17:04:20Z',"
+            "'2026-07-01T17:32:20Z',28,'2026-07-01T20:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(2,1,'FRS61','EDWG','EDXH','BN2P','2026-07-01T17:04:20Z',"
+            "'2026-07-01T18:36:00Z',92,'2026-07-01T20:00:00Z')"
+        )
+        conn.commit()
+        consolidate_flights(conn)
+        row = conn.execute("SELECT duration_min FROM flights WHERE id=1").fetchone()
+        conn.close()
+        assert row["duration_min"] == 99  # 99 ≤ 2×92+10 → keine Korrektur
+
     def test_impossible_block_gt_duration_self_heals(self):
         """Selbstheilung: block_min > duration_min ist physikalisch unmöglich (Blockzeit liegt
         in [logon, logoff]) → consolidate rechnet block mit dem gespeicherten Fenster neu.
@@ -1128,7 +1161,10 @@ class TestReconstructOrphanedFlights:
             "(284,?, 'FRS61','EDWG','EDXH','2026-07-01T18:43:47Z','2026-07-01T18:57:54Z',14,0,0)",
             (self.CID,),
         )
-        # StatSim: gedeckter Hinflug + UNGEDECKTER zweiter Flug 18:18–18:36.
+        # StatSim in ECHTER API-Form (app/statsim.py): loggedOn = SESSION-Anmeldung — bei
+        # mehreren Flügen einer Verbindung für ALLE gleich (17:04!); arrived = Landezeit;
+        # duration = arrived − loggedOn (deshalb "92" beim zweiten Flug). Der Flugbeginn
+        # steht NIRGENDS — Anker für die Rekonstruktion muss die Landezeit sein.
         conn.execute(
             "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
             "logon_time,logoff_time,duration_min,fetched_at) VALUES "
@@ -1139,8 +1175,8 @@ class TestReconstructOrphanedFlights:
         conn.execute(
             "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
             "logon_time,logoff_time,duration_min,fetched_at) VALUES "
-            "(90002,?,'FRS61','EDWG','EDXH','BN2P','2026-07-01T18:18:00Z',"
-            "'2026-07-01T18:36:00Z',18,'2026-07-01T20:00:00Z')",
+            "(90002,?,'FRS61','EDWG','EDXH','BN2P','2026-07-01T17:04:20Z',"
+            "'2026-07-01T18:36:00Z',92,'2026-07-01T20:00:00Z')",
             (self.CID,),
         )
         # Verwaister Track: Bewegung zwischen den Sessions (Rückweg, Stand, zweiter Flug, Taxi).
@@ -1184,8 +1220,9 @@ class TestReconstructOrphanedFlights:
         assert len(rows) == 3
         rec = rows[1]  # zwischen Hinflug und Steh-Session
         assert (rec["departure"], rec["arrival"]) == ("EDWG", "EDXH")
-        # Fenster deckt den Flug inkl. Taxi, kollidiert nicht mit 277/284
-        assert "2026-07-01T17:32:16Z" < rec["logon_time"] <= "2026-07-01T18:18:00Z"
+        # Fenster beginnt NACH der belegten Standphase (Rückweg gehört nicht dazu) und
+        # kollidiert nicht mit 277/284.
+        assert "2026-07-01T18:16:00Z" <= rec["logon_time"] <= "2026-07-01T18:18:00Z"
         assert "2026-07-01T18:36:00Z" <= rec["logoff_time"] < "2026-07-01T18:43:47Z"
         assert rec["distance_nm"] > 20          # echter GPS-Track EDWG→EDXH (~24 nm)
         assert 15 <= rec["block_min"] <= 30      # Bewegungszeit des Flugs, ohne Standphase

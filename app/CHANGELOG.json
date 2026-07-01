@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.3.5",
+    "date": "2026-07-01",
+    "title": "Track-Rekonstruktion findet den Flug jetzt wirklich",
+    "items": [
+      "🧭 Die Rekonstruktion verwaister Flüge ankert jetzt an der StatSim-LANDEZEIT statt an der Anmeldezeit — StatSim meldet bei mehreren Flügen einer Verbindung für alle dieselbe Session-Anmeldung, dadurch galt Reiners fehlender Flug fälschlich als bereits erfasst.",
+      "🛡️ Der StatSim-Abgleich der Flugdauern kann eine echte Mehrfach-Flug-Session nicht mehr versehentlich auf die Dauer des ersten Beins kürzen."
+    ]
+  },
+  {
     "version": "7.3.4",
     "date": "2026-07-01",
     "title": "Nachfix: Rückflug-Merge vollständig gelöst + Reparatur ohne Neustart",
