@@ -66,6 +66,14 @@ class TestTypeHints:
         from app.llm import _TYPE_HINTS
         assert "BN2P" in _TYPE_HINTS and "Islander" in _TYPE_HINTS["BN2P"]
 
+    def test_wilga_and_ga_classics_hinted(self):
+        """Live-Befund 2026-07-02: 'PZ04' (PZL-104 Wilga) wurde nicht gefunden — ohne
+        Klartext-Hinweis scheitert die Recherche an der Designator-Identifikation."""
+        from app.llm import _TYPE_HINTS
+        assert "PZ04" in _TYPE_HINTS and "Wilga" in _TYPE_HINTS["PZ04"]
+        for code in ("DO27", "C185", "PA32", "AN2", "J3"):
+            assert code in _TYPE_HINTS, code
+
 
 class TestSuggestHardening:
     SPEC = json.dumps({"make_model": "Test", "mtow_kg": 1000.0,
