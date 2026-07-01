@@ -2653,9 +2653,10 @@ def transport_event_started(
     conn: sqlite3.Connection, event: dict, callsign_prefix: str = "FRS"
 ) -> bool:
     """True, sobald ein Friese von einem Streckenflugplatz abgeflogen ist — auch während der Flug
-    noch offen ist (kein Disconnect). ``compute_transport_progress`` ignoriert offene Flüge bewusst
-    (die GPS-Ankunft ist erst nach Disconnect verlässlich bestimmbar), das darf den Start-Push aber
-    nicht verzögern: der (Flugplan-)Abflugort genügt hierfür, ohne GPS-Korrektur."""
+    noch offen ist (kein Disconnect). ``compute_transport_progress`` nimmt offene Flüge seit dem
+    Live-Ankunfts-Latch zwar in den Feed auf, zählt sie dort aber erst mit Latch als beladen (ohne
+    verlässliche GPS-Ankunft) — das darf den Start-Push nicht verzögern: der (Flugplan-)Abflugort
+    genügt hierfür, ohne GPS-Korrektur."""
     route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
     if not route_set:
         return False
@@ -2677,11 +2678,17 @@ def compute_transport_progress(
 
     Feed-relevant sind FRS-Flüge, deren Start UND Ziel (GPS-korrigiert, Flugplan als Fallback) auf
     der Streckenmenge liegen (dep≠arr). **Fracht zählt nur in eine Richtung:** ein Flug ist
-    ``loaded`` (trägt Zuladung), wenn er am ``destination`` ankommt; Rückflüge zählen 0 kg,
-    erscheinen aber als leere Flüge im Feed. Zuladung je beladenem Flug aus ``aircraft_payloads``
-    (Fallback: globaler Default). Das Fracht-Manifest wird sequenziell nach Abflugzeit gefüllt;
-    jeder beladene Flug trägt die Frachtart, in die sein Anteil überwiegend floss. Der zurückgegebene
-    ``flights``-Feed ist absteigend (neueste oben).
+    ``loaded`` (trägt Zuladung), wenn er am ``destination`` ankommt **ODER** ein Live-Ankunfts-Latch
+    (``transport_live_arrivals``, gesetzt vom Poller via ``check_live_arrival`` — Boden + Zielradius,
+    auch ohne Disconnect) existiert; ein Latch hebt dabei auch den Strecken-Filter auf, sodass die
+    Fracht selbst dann gezählt bleibt, wenn der Pilot später außerhalb der Strecke disconnectet.
+    Zusätzlich werden aktuell **offene** (noch verbundene) Flüge mit Start auf der Strecke in den
+    Feed aufgenommen (``open_transport_flights``) — beladen nur mit Latch, da eine verlässliche
+    GPS-Ankunft erst nach Disconnect feststeht; ansonsten 0 kg, bis Latch oder Disconnect eintreten.
+    Rückflüge zählen 0 kg, erscheinen aber als leere Flüge im Feed. Zuladung je beladenem Flug aus
+    ``aircraft_payloads`` (Fallback: globaler Default). Das Fracht-Manifest wird nach Abflugzeit per
+    Co-Load gefüllt (Obergrenze pro Flug, Rest fließt in die nächste Frachtart); jeder beladene Flug
+    trägt seine Frachtart(en). Der zurückgegebene ``flights``-Feed ist absteigend (neueste oben).
     """
     from app.geo import icao_to_coords  # lazy
 
