@@ -1,5 +1,16 @@
 [
   {
+    "version": "7.2.0",
+    "date": "2026-07-01",
+    "title": "FriesenKutter: Frachtart-Katalog & lustige KI-Sprüche",
+    "highlight": true,
+    "items": [
+      "🧺 Frachtart-Katalog im Admin: zentrale Frachtarten mit Emoji + Obergrenze pro Flug — z.B. Krabbenbrötchen 🦐, Filmrollen 🎞️ (max 100 kg). Die Emojis erscheinen im Feed.",
+      "📦 Co-Load: schwere/heikle Fracht wird pro Flug gedeckelt, der Rest der Zuladung nimmt die nächste Frachtart mit — ein Flug kann mehrere Frachtarten tragen.",
+      "💬 Lustige KI-Sprüche (optional, im Admin aktivierbar): ein Spruch je Flug mit lokalem Bezug (Vorname, Fleiß, Tempo, Umwege) plus eine launige Tagesend-Zusammenfassung im Friesen-Humor."
+    ]
+  },
+  {
     "version": "7.1.0",
     "date": "2026-07-01",
     "title": "FriesenKutter: KI recherchiert Zuladungen im Web",

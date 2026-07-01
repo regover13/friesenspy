@@ -889,6 +889,35 @@
           <div id="ke-payloads-container" class="scroll-list"><div class="empty-hint">Lade Zuladungen…</div></div>
         </div>
 
+        <!-- FRIESENKUTTER — FRACHTART-KATALOG & SPRÜCHE -->
+        <div class="panel">
+          <div class="panel-title"><span>🦐 FriesenKutter &ndash; Frachtart-Katalog</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Stammdaten für Frachtarten (Emoji + optionale Obergrenze pro Flug für Co-Load).
+            Beim Event-Manifest wählbar; das Emoji erscheint im Feed.
+          </p>
+          <div class="form-grid" style="margin:6px 0 8px;">
+            <div class="form-group"><label for="kc-name">Name</label>
+              <input type="text" id="kc-name" placeholder="Krabbenbrötchen" /></div>
+            <div class="form-group"><label for="kc-emoji">Emoji</label>
+              <input type="text" id="kc-emoji" placeholder="🦐" maxlength="4" style="max-width:90px;" /></div>
+            <div class="form-group"><label for="kc-max">Max/Flug (kg, optional)</label>
+              <input type="number" id="kc-max" min="0" step="10" /></div>
+            <div class="form-group" style="justify-content:flex-end;">
+              <button class="btn btn-primary btn-sm" id="kc-add-btn">Hinzufügen</button>
+              <button class="btn btn-sm" id="kc-cancel-btn" style="display:none;">Abbrechen</button>
+            </div>
+          </div>
+          <div id="ke-catalog-container" class="scroll-list"><div class="empty-hint">Lade Katalog…</div></div>
+
+          <div class="form-section-title" style="margin-top:16px;">Lustige KI-Sprüche</div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:#cfe6e2;">
+            <input type="checkbox" id="ke-quips-toggle" />
+            Sprüche zu Flügen + Tagesend-Zusammenfassung erzeugen (Claude Sonnet 5)
+          </label>
+          <p id="ke-quips-hint" style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;"></p>
+        </div>
+
         <!-- HINWEIS-BANNER -->
         <div class="panel">
           <div class="panel-title"><span>Hinweis-Banner (App-Startseite)</span></div>
@@ -1947,7 +1976,15 @@
       document.querySelectorAll('#ke-cargo-rows .ke-cargo-row').forEach(r => {
         const name = r.querySelector('.ke-c-name').value.trim();
         const kg = parseFloat(r.querySelector('.ke-c-kg').value);
-        if (name && kg > 0) out.push({ name, target_kg: kg });
+        if (name && kg > 0) {
+          // Emoji + Max/Flug aus dem Katalog übernehmen (Freitext → ohne).
+          const cat = (_keCatalog || []).find(c => (c.name || '').toLowerCase() === name.toLowerCase());
+          out.push({
+            name, target_kg: kg,
+            emoji: cat ? cat.emoji : null,
+            per_flight_max_kg: cat ? cat.per_flight_max_kg : null,
+          });
+        }
       });
       return out;
     }
@@ -1995,8 +2032,11 @@
       loadKutterAdmin();
     });
 
+    let _keCatalog = [];
+    let _kcEditId = null;
+
     async function loadKutterAdmin() {
-      await Promise.all([loadKutterEventsAdmin(), loadKutterPayloads()]);
+      await Promise.all([loadKutterEventsAdmin(), loadKutterPayloads(), loadKutterCatalog()]);
     }
 
     async function loadKutterEventsAdmin() {
@@ -2060,6 +2100,12 @@
           + d.unmapped_types.map(t => '<a href="#" onclick="kePrefillType(\'' + escA(t) + '\');return false;" style="color:#e0a84a;text-decoration:underline;">' + escH(t) + '</a>').join(', ') + '</div>';
       } else { um.innerHTML = ''; }
       document.getElementById('kp-suggest-btn').style.display = d.llm_configured ? '' : 'none';
+      const qt = document.getElementById('ke-quips-toggle');
+      if (qt) { qt.checked = !!d.quips_enabled; qt.disabled = !d.llm_configured; }
+      const qh = document.getElementById('ke-quips-hint');
+      if (qh) qh.textContent = d.llm_configured
+        ? 'Sprüche werden im Hintergrund erzeugt und gecacht (je Flug ~1 Aufruf).'
+        : 'Benötigt ANTHROPIC_API_KEY auf dem Server (aktuell nicht konfiguriert).';
       const c = document.getElementById('ke-payloads-container');
       const rows = (d.payloads || []);
       _kePayloadRows = rows;
@@ -2133,6 +2179,79 @@
       ['kp-type', 'kp-mtow', 'kp-empty', 'kp-fuel', 'kp-crew', 'kp-payload'].forEach(i => document.getElementById(i).value = '');
       document.getElementById('kp-make-model').textContent = '';
       loadKutterPayloads();
+    });
+
+    // ====================================================================
+    // FRIESENKUTTER — Frachtart-Katalog + Sprüche-Schalter
+    // ====================================================================
+    async function loadKutterCatalog() {
+      const res = await api('GET', '/api/admin/transport/catalog');
+      if (!res || !res.ok) return;
+      _keCatalog = await res.json();
+      const dl = document.getElementById('ke-cargo-suggestions');
+      if (dl) dl.innerHTML = _keCatalog.map(c => '<option value="' + escA(c.name) + '"></option>').join('');
+      const c = document.getElementById('ke-catalog-container');
+      if (!_keCatalog.length) { c.innerHTML = '<div class="empty-hint">Katalog leer.</div>'; return; }
+      c.innerHTML = _keCatalog.map(x =>
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,0.08);">'
+        + '<div>' + (x.emoji ? escH(x.emoji) + ' ' : '') + '<b>' + escH(x.name) + '</b>'
+        + (x.per_flight_max_kg != null ? ' <span style="color:#8aa0b8;font-size:0.75rem;">max ' + Math.round(x.per_flight_max_kg) + ' kg/Flug</span>' : '') + '</div>'
+        + '<div style="display:flex;gap:6px;flex:none;">'
+        + '<button class="btn btn-sm" onclick="kcEdit(' + x.id + ')">Bearbeiten</button>'
+        + '<button class="btn btn-sm btn-danger" onclick="kcDelete(' + x.id + ')">✕</button></div></div>'
+      ).join('');
+    }
+
+    function kcEdit(id) {
+      const x = _keCatalog.find(c => c.id === id);
+      if (!x) return;
+      _kcEditId = id;
+      document.getElementById('kc-name').value = x.name || '';
+      document.getElementById('kc-emoji').value = x.emoji || '';
+      document.getElementById('kc-max').value = x.per_flight_max_kg != null ? Math.round(x.per_flight_max_kg) : '';
+      document.getElementById('kc-add-btn').textContent = 'Speichern';
+      document.getElementById('kc-cancel-btn').style.display = '';
+    }
+
+    function kcResetForm() {
+      _kcEditId = null;
+      ['kc-name', 'kc-emoji', 'kc-max'].forEach(i => document.getElementById(i).value = '');
+      document.getElementById('kc-add-btn').textContent = 'Hinzufügen';
+      document.getElementById('kc-cancel-btn').style.display = 'none';
+    }
+
+    document.getElementById('kc-cancel-btn').addEventListener('click', kcResetForm);
+
+    document.getElementById('kc-add-btn').addEventListener('click', async () => {
+      const name = document.getElementById('kc-name').value.trim();
+      if (!name) { toast('Name erforderlich.', true); return; }
+      const mx = document.getElementById('kc-max').value;
+      const body = {
+        name,
+        emoji: document.getElementById('kc-emoji').value.trim() || null,
+        per_flight_max_kg: mx === '' ? null : parseFloat(mx),
+      };
+      if (_kcEditId) body.id = _kcEditId;
+      const res = await api('POST', '/api/admin/transport/catalog', body);
+      if (!res || !res.ok) { toast('Fehler beim Speichern.', true); return; }
+      toast('Frachtart gespeichert.');
+      kcResetForm();
+      loadKutterCatalog();
+    });
+
+    async function kcDelete(id) {
+      const ok = await showModal('Frachtart löschen?', 'Aus dem Katalog entfernen (bestehende Manifeste bleiben unverändert).', 'Löschen', true);
+      if (!ok) return;
+      const res = await api('DELETE', '/api/admin/transport/catalog/' + id);
+      if (!res || !res.ok) { toast('Fehler beim Löschen.', true); return; }
+      toast('Frachtart gelöscht.');
+      loadKutterCatalog();
+    }
+
+    document.getElementById('ke-quips-toggle').addEventListener('change', async (e) => {
+      const res = await api('POST', '/api/admin/transport/quips-enabled', { enabled: e.target.checked });
+      if (!res || !res.ok) { toast('Fehler.', true); e.target.checked = !e.target.checked; return; }
+      toast(e.target.checked ? 'KI-Sprüche aktiviert.' : 'KI-Sprüche deaktiviert.');
     });
 
     // ====================================================================

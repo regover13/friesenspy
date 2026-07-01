@@ -972,15 +972,20 @@ class VatsimPoller:
         und Feierabend (dtend erreicht). Jeweils einmal je Event ein Push an die Events-Abonnenten."""
         try:
             from datetime import datetime, timezone
+            from app import llm
             from app.database import (
                 list_transport_events, compute_transport_progress,
                 set_transport_started, set_transport_goal_reached, set_transport_summarized,
+                set_transport_summary_quip, transport_quips_enabled,
+                event_summary_context, flight_quip_context,
                 get_push_subscriptions_for_events,
             )
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             conn = get_connection(self.db_path)
             pushes: list[dict] = []
+            quip_jobs: list[tuple] = []
             try:
+                do_quips = transport_quips_enabled(conn) and llm.is_configured()
                 for ev in list_transport_events(conn):
                     dtstart = ev.get("dtstart") or ""
                     dtend = ev.get("dtend") or ""
@@ -1002,13 +1007,23 @@ class VatsimPoller:
                             pushes.append({"title": name,
                                            "body": "Fracht komplett — Ziel erreicht! 🎯", "url": "/"})
                     if dtend and now >= dtend and not ev.get("summarized_at"):
-                        if set_transport_summarized(conn, ev["id"], now) and push_on:
+                        if set_transport_summarized(conn, ev["id"], now):
                             tons = round(progress["total_kg"] / 1000, 2)
-                            pushes.append({
-                                "title": name,
-                                "body": f"Feierabend: {progress['loaded_count']} Frachtflüge, {tons} t bewegt ✅",
-                                "url": "/",
-                            })
+                            body = f"Feierabend: {progress['loaded_count']} Frachtflüge, {tons} t bewegt ✅"
+                            if do_quips:
+                                summary = await asyncio.to_thread(
+                                    llm.event_summary, event_summary_context(ev, progress)
+                                )
+                                if summary:
+                                    set_transport_summary_quip(conn, ev["id"], summary)
+                                    body = summary
+                            if push_on:
+                                pushes.append({"title": name, "body": body, "url": "/"})
+                    # Pro-Flug-Sprüche für neue beladene Flüge ohne Cache sammeln (später async erzeugen).
+                    if do_quips:
+                        for f in progress["flights"]:
+                            if f.get("loaded") and not f.get("quip"):
+                                quip_jobs.append((ev["id"], f["flight_key"], flight_quip_context(f, progress)))
                 conn.commit()
                 subscriptions = get_push_subscriptions_for_events(conn) if pushes else []
             finally:
@@ -1019,8 +1034,28 @@ class VatsimPoller:
                         self.vapid_private_key, self.vapid_contact_email, self.db_path,
                         subscriptions, payload, label="FriesenKutter",
                     ))
+            # Max. 8 Sprüche je Lauf (Burst-Bremse); jeder in eigener Aufgabe (nicht blockierend).
+            for eid, fkey, ctx in quip_jobs[:8]:
+                asyncio.create_task(self._gen_flight_quip(eid, fkey, ctx))
         except Exception:
             logger.exception("Error in _check_transport_events")
+
+    async def _gen_flight_quip(self, event_id: int, flight_key: str, context: dict) -> None:
+        """Einen Flug-Spruch erzeugen (Sonnet 5, im Thread) und cachen. Silent-Fail."""
+        try:
+            from app import llm
+            from app.database import set_transport_quip
+            text = await asyncio.to_thread(llm.flight_quip, context)
+            if not text:
+                return
+            conn = get_connection(self.db_path)
+            try:
+                set_transport_quip(conn, event_id, flight_key, text)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            logger.exception("Error in _gen_flight_quip")
 
     async def _check_event_reminders(self) -> None:
         """Periodisch (~5 min): FriesenEvents, die in ~1 h beginnen, einmalig per Push erinnern.

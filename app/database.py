@@ -184,6 +184,7 @@ CREATE TABLE IF NOT EXISTS transport_events (
     started_at     TEXT,                 -- Latch: erster qualifizierender Flug
     goal_reached_at TEXT,                -- Latch: Manifest voll
     summarized_at  TEXT,                 -- Latch: Abschluss-Push gesendet
+    summary_quip   TEXT,                 -- lustige Tagesend-Zusammenfassung (KI, Phase 2)
     created_at     TEXT
 );
 
@@ -192,9 +193,27 @@ CREATE TABLE IF NOT EXISTS transport_cargo (
     event_id  INTEGER NOT NULL,          -- REFERENCES transport_events(id)
     position  INTEGER NOT NULL,          -- Beladungsreihenfolge
     name      TEXT NOT NULL,             -- Frachtart, z. B. "Fischbrötchen"
-    target_kg REAL NOT NULL
+    target_kg REAL NOT NULL,
+    emoji     TEXT,                      -- Snapshot aus dem Katalog (für den Feed)
+    per_flight_max_kg REAL               -- Obergrenze pro Flug (Co-Load); NULL = keine Kappung
 );
 CREATE INDEX IF NOT EXISTS idx_transport_cargo_event ON transport_cargo(event_id);
+
+CREATE TABLE IF NOT EXISTS cargo_catalog (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    name              TEXT NOT NULL,
+    emoji             TEXT,
+    per_flight_max_kg REAL,              -- NULL = keine Kappung
+    position          INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS transport_quips (
+    event_id   INTEGER NOT NULL,
+    flight_key TEXT NOT NULL,            -- "{cid}:{logon_time}" (stabil)
+    quip       TEXT,
+    created_at TEXT,
+    PRIMARY KEY(event_id, flight_key)
+);
 
 CREATE TABLE IF NOT EXISTS aircraft_payloads (
     type_code   TEXT PRIMARY KEY,        -- normalisiert (Uppercase, vor "/" gekürzt), z. B. "C172"
@@ -310,6 +329,10 @@ _TRANSPORT_MIGRATIONS = [
     "ALTER TABLE transport_events ADD COLUMN destination TEXT",
     # crew_kg: Pilot/Crew-Gewicht — zählt nicht als Fracht (payload = mtow − empty − fuel − crew).
     "ALTER TABLE aircraft_payloads ADD COLUMN crew_kg REAL",
+    # Phase 2: Fracht-Manifest um Emoji + Co-Load-Kappung, Event um Tagesend-Spruch.
+    "ALTER TABLE transport_cargo ADD COLUMN emoji TEXT",
+    "ALTER TABLE transport_cargo ADD COLUMN per_flight_max_kg REAL",
+    "ALTER TABLE transport_events ADD COLUMN summary_quip TEXT",
 ]
 
 _LIVE_POSITIONS_MIGRATIONS = [
@@ -368,6 +391,10 @@ def init_db(db_path: str) -> None:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
                 pass
+        try:
+            seed_cargo_catalog(conn)  # Frachtart-Katalog erstbefüllen (idempotent)
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
         import logging as _log
         _logger = _log.getLogger(__name__)
@@ -2207,7 +2234,7 @@ def upsert_payload(
 
 _TRANSPORT_EVENT_COLS = (
     "id, name, route, destination, dtstart, dtend, source, calendar_uid, push_enabled, "
-    "started_at, goal_reached_at, summarized_at, created_at"
+    "started_at, goal_reached_at, summarized_at, summary_quip, created_at"
 )
 
 
@@ -2314,17 +2341,25 @@ def delete_transport_event(conn: sqlite3.Connection, event_id: int) -> None:
 
 
 def get_transport_cargo(conn: sqlite3.Connection, event_id: int) -> list[dict]:
-    """Geordnetes Fracht-Manifest eines Events."""
+    """Geordnetes Fracht-Manifest eines Events (inkl. Emoji + Co-Load-Kappung)."""
     rows = conn.execute(
-        "SELECT id, position, name, target_kg FROM transport_cargo "
+        "SELECT id, position, name, target_kg, emoji, per_flight_max_kg FROM transport_cargo "
         "WHERE event_id = ? ORDER BY position, id",
         (event_id,),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
+def _opt_float(v) -> float | None:
+    try:
+        return float(v) if v is not None and str(v) != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
 def set_transport_cargo(conn: sqlite3.Connection, event_id: int, cargo: list[dict]) -> None:
-    """Fracht-Manifest eines Events komplett ersetzen. Zeilen ohne Name/Menge werden ignoriert."""
+    """Fracht-Manifest eines Events komplett ersetzen. Zeilen ohne Name/Menge werden ignoriert.
+    Je Zeile optional ``emoji`` und ``per_flight_max_kg`` (Obergrenze pro Flug, Co-Load)."""
     conn.execute("DELETE FROM transport_cargo WHERE event_id = ?", (event_id,))
     pos = 0
     for line in cargo:
@@ -2336,10 +2371,158 @@ def set_transport_cargo(conn: sqlite3.Connection, event_id: int, cargo: list[dic
         if not name or target <= 0:
             continue
         conn.execute(
-            "INSERT INTO transport_cargo (event_id, position, name, target_kg) VALUES (?, ?, ?, ?)",
-            (event_id, pos, name, target),
+            "INSERT INTO transport_cargo "
+            "(event_id, position, name, target_kg, emoji, per_flight_max_kg) VALUES (?, ?, ?, ?, ?, ?)",
+            (event_id, pos, name, target, (line.get("emoji") or None), _opt_float(line.get("per_flight_max_kg"))),
         )
         pos += 1
+
+
+# --- Frachtart-Katalog (Stammdaten, wiederverwendbar über Events) ----------
+
+_CARGO_SEED = [
+    ("Krabbenbrötchen", "🦐", None), ("Friesentee", "🫖", None), ("Filmrollen", "🎞️", 100.0),
+    ("Sonnenschirme", "⛱️", None), ("Strandkörbe", "🪑", None), ("Lebensmittel", "🧺", None),
+    ("Baumaterial", "🧱", None), ("Material für Offshore-Anlagen", "⚙️", None),
+    ("Heringe (für die Seehunde in EDWS)", "🐟", None), ("Passagiere", "🧳", None),
+    ("Seehund-Heuler", "🦭", None), ("Deichschafe", "🐑", None),
+    ("Rechtsdeichschaf", "🐑", None), ("Linksdeichschaf", "🐑", None),
+    ("Kluntje", "🍬", None), ("Teesahne", "🥛", None), ("Köm & Bommerlunder", "🥃", None),
+    ("Pharisäer", "☕", None), ("Reet fürs Reetdach", "🪵", None), ("Gummistiefel", "🥾", None),
+    ("Rettungswesten", "🦺", None), ("Wattwürmer", "🪱", None), ("Rollmops & Matjes", "🐟", None),
+    ("Butterkoken", "🍰", None), ("Grünkohl mit Pinkel", "🥬", None),
+    ("Leuchtturm-Glühbirnen", "💡", None), ("Ostfriesenwitze-Bücher", "📚", None),
+    ("Inselpost", "📦", None), ("Abgefüllte Nordseeluft", "💨", None), ("Strandspielzeug", "🏖️", None),
+]
+
+
+def list_cargo_catalog(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute(
+        "SELECT id, name, emoji, per_flight_max_kg, position FROM cargo_catalog ORDER BY position, id"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_cargo_catalog(conn: sqlite3.Connection, *, id: int | None = None, name: str,
+                         emoji: str | None = None, per_flight_max_kg=None) -> None:
+    name = (name or "").strip()
+    if not name:
+        return
+    if id:
+        conn.execute(
+            "UPDATE cargo_catalog SET name=?, emoji=?, per_flight_max_kg=? WHERE id=?",
+            (name, emoji or None, _opt_float(per_flight_max_kg), id),
+        )
+    else:
+        pos = conn.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM cargo_catalog").fetchone()[0]
+        conn.execute(
+            "INSERT INTO cargo_catalog (name, emoji, per_flight_max_kg, position) VALUES (?, ?, ?, ?)",
+            (name, emoji or None, _opt_float(per_flight_max_kg), pos),
+        )
+
+
+def delete_cargo_catalog(conn: sqlite3.Connection, catalog_id: int) -> None:
+    conn.execute("DELETE FROM cargo_catalog WHERE id = ?", (catalog_id,))
+
+
+def seed_cargo_catalog(conn: sqlite3.Connection) -> int:
+    """Katalog mit den Standard-Frachtarten befüllen — nur wenn er leer ist (idempotent)."""
+    if conn.execute("SELECT COUNT(*) FROM cargo_catalog").fetchone()[0]:
+        return 0
+    for pos, (name, emoji, mx) in enumerate(_CARGO_SEED):
+        conn.execute(
+            "INSERT INTO cargo_catalog (name, emoji, per_flight_max_kg, position) VALUES (?, ?, ?, ?)",
+            (name, emoji, mx, pos),
+        )
+    return len(_CARGO_SEED)
+
+
+# --- Lustige KI-Sprüche (Phase 2): Cache je Flug + Tagesend-Zusammenfassung ---
+
+def transport_quips_enabled(conn: sqlite3.Connection) -> bool:
+    return str(get_app_setting(conn, "transport_quips_enabled", "0")) in ("1", "true", "True")
+
+
+def get_transport_quips(conn: sqlite3.Connection, event_id: int) -> dict[str, str]:
+    """{flight_key: quip} für ein Event."""
+    rows = conn.execute(
+        "SELECT flight_key, quip FROM transport_quips WHERE event_id = ?", (event_id,)
+    ).fetchall()
+    return {r["flight_key"]: r["quip"] for r in rows if r["quip"]}
+
+
+def set_transport_quip(conn: sqlite3.Connection, event_id: int, flight_key: str, quip: str) -> None:
+    conn.execute(
+        "INSERT INTO transport_quips (event_id, flight_key, quip, created_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(event_id, flight_key) DO UPDATE SET quip=excluded.quip",
+        (event_id, flight_key, quip, _now_utc()),
+    )
+
+
+def set_transport_summary_quip(conn: sqlite3.Connection, event_id: int, quip: str) -> None:
+    conn.execute("UPDATE transport_events SET summary_quip = ? WHERE id = ?", (quip, event_id))
+
+
+def flight_quip_context(flight: dict, progress: dict) -> dict:
+    """Lokalen Kontext für einen Flug-Spruch aufbereiten (rein, testbar).
+
+    ``flight`` ist ein Eintrag aus ``compute_transport_progress()['flights']``. Liefert Vorname,
+    Anzahl bereits geflogener Frachtflüge heute (Fleiß), Tempo (kt), Umweg-Faktor (geflogene nm ÷
+    Luftlinie) und die Fracht (mit Emoji)."""
+    from app.geo import icao_to_coords, haversine  # lazy
+    cid = flight.get("cid")
+    name = (flight.get("name") or "").strip()
+    vorname = name.split()[0] if name else (flight.get("callsign") or "")
+    flights_tonight = sum(
+        1 for f in progress.get("flights", []) if f.get("cid") == cid and f.get("loaded")
+    )
+    dist = float(flight.get("distance_nm") or 0)
+    block = float(flight.get("block_min") or 0)
+    speed_kt = round(dist / (block / 60.0)) if block > 0 and dist > 0 else None
+    dep, arr = flight.get("dep"), flight.get("arr")
+    detour_ratio = None
+    dc, ac = icao_to_coords(dep or ""), icao_to_coords(arr or "")
+    if dc and ac and dist > 0:
+        direct_nm = haversine(dc[0], dc[1], ac[0], ac[1]) / 1.852
+        if direct_nm > 1:
+            detour_ratio = round(dist / direct_nm, 2)
+    cargo = [
+        f"{(c.get('emoji') or '').strip()} {c['name']} ({round(c['kg'])} kg)".strip()
+        for c in (flight.get("cargo_lines") or [])
+    ]
+    return {
+        "vorname": vorname,
+        "callsign": flight.get("callsign"),
+        "flights_tonight": flights_tonight,
+        "aircraft": flight.get("aircraft"),
+        "route": f"{dep}→{arr}",
+        "tonnage_kg": round(flight.get("tonnage_kg") or 0),
+        "cargo": cargo,
+        "speed_kt": speed_kt,
+        "detour_ratio": detour_ratio,
+    }
+
+
+def event_summary_context(event: dict, progress: dict) -> dict:
+    """Kontext für die lustige Tagesend-Zusammenfassung (rein, testbar)."""
+    flights = [f for f in progress.get("flights", []) if f.get("loaded")]
+    per_pilot: dict[str, int] = {}
+    for f in flights:
+        raw = (f.get("name") or f.get("callsign") or "?").strip()
+        who = raw.split()[0] if raw else "?"
+        per_pilot[who] = per_pilot.get(who, 0) + 1
+    return {
+        "name": event.get("name"),
+        "total_kg": progress.get("total_kg"),
+        "loaded_count": progress.get("loaded_count"),
+        "cargo": [
+            f"{(c.get('emoji') or '')} {c['name']} {round(c['delivered_kg'])}/{round(c['target_kg'])} kg".strip()
+            for c in progress.get("cargo", [])
+        ],
+        "pilots": per_pilot,
+        "route": " ↔ ".join(progress.get("route", [])),
+        "destination": progress.get("destination"),
+    }
 
 
 def _set_transport_latch(conn: sqlite3.Connection, event_id: int, column: str, ts: str) -> bool:
@@ -2427,6 +2610,9 @@ def compute_transport_progress(
             "arr": arr,
             "tonnage_kg": tonnage,
             "loaded": loaded,
+            "flight_key": f"{cid}:{lo}",
+            "distance_nm": f.get("distance_nm") or 0,
+            "block_min": f.get("block_min") or f.get("duration_min") or 0,
         })
 
     network.sort(key=lambda x: x["dep_time"])  # aufsteigend für die Manifest-Füllung
@@ -2443,42 +2629,59 @@ def compute_transport_progress(
 
     cargo = get_transport_cargo(conn, int(event["id"]))
     cargo_targets = [c["target_kg"] for c in cargo]
+    delivered = [0.0] * len(cargo)
+    _INF = float("inf")
 
-    # Sequenzielle Fracht-Zuordnung — NUR beladene Flüge füllen das Manifest.
-    idx, filled = 0, 0.0
+    # Co-Load-Füllung — NUR beladene Flüge. Jeder Flug verteilt seine Zuladung in Manifest-
+    # Reihenfolge über die noch nicht vollen Frachtarten, je Frachtart gekappt durch
+    # per_flight_max_kg (Obergrenze pro Flug); der Rest fließt in die nächste Frachtart (Co-Load).
     for q in network:
         q["name"] = names.get(q["cid"], "")
         if not q["loaded"]:
             q["cargo_name"] = None
+            q["cargo_lines"] = []
             continue
         remaining = q["tonnage_kg"]
-        contributions: dict[int, float] = {}
-        while remaining > 0 and idx < len(cargo_targets):
-            space = cargo_targets[idx] - filled
-            take = min(space, remaining)
-            contributions[idx] = contributions.get(idx, 0.0) + take
-            filled += take
-            remaining -= take
-            if filled >= cargo_targets[idx] - 1e-9:
-                idx += 1
-                filled = 0.0
-        q["cargo_name"] = cargo[max(contributions, key=contributions.get)]["name"] if contributions else None
+        contrib: dict[int, float] = {}
+        for i, c in enumerate(cargo):
+            if remaining <= 1e-9:
+                break
+            space = cargo_targets[i] - delivered[i]
+            if space <= 1e-9:
+                continue
+            cap = c.get("per_flight_max_kg")
+            cap = cap if (cap is not None and cap > 0) else _INF
+            add = min(remaining, cap, space)
+            if add <= 1e-9:
+                continue
+            delivered[i] += add
+            remaining -= add
+            contrib[i] = contrib.get(i, 0.0) + add
+        ordered = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
+        q["cargo_lines"] = [
+            {"name": cargo[i]["name"], "emoji": cargo[i].get("emoji"), "kg": round(kg, 1)}
+            for i, kg in ordered
+        ]
+        q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
+
+    # Gecachte KI-Sprüche je Flug anhängen (Phase 2; None wenn deaktiviert/noch nicht erzeugt).
+    quips = get_transport_quips(conn, int(event["id"]))
+    for q in network:
+        q["quip"] = quips.get(q["flight_key"])
 
     total_kg = round(sum(q["tonnage_kg"] for q in network), 1)
     loaded_count = sum(1 for q in network if q["loaded"])
 
-    # Pro Frachtart geliefert = geclampter Anteil der kumulierten Gesamttonnage.
+    # Pro Frachtart geliefert = tatsächlich zugeordnete Menge aus der Co-Load-Füllung.
     cargo_out: list[dict] = []
-    remaining_total = total_kg
-    for c in cargo:
-        delivered = min(c["target_kg"], max(0.0, remaining_total))
+    for i, c in enumerate(cargo):
         cargo_out.append({
             "name": c["name"],
+            "emoji": c.get("emoji"),
             "target_kg": c["target_kg"],
-            "delivered_kg": round(delivered, 1),
-            "pct": round(100.0 * delivered / c["target_kg"], 1) if c["target_kg"] > 0 else 0.0,
+            "delivered_kg": round(delivered[i], 1),
+            "pct": round(100.0 * delivered[i] / c["target_kg"], 1) if c["target_kg"] > 0 else 0.0,
         })
-        remaining_total -= c["target_kg"]
 
     target_kg = round(sum(cargo_targets), 1) if cargo_targets else None
     progress_pct = round(100.0 * total_kg / target_kg, 1) if target_kg else None
@@ -2494,6 +2697,7 @@ def compute_transport_progress(
         "target_kg": target_kg,
         "progress_pct": progress_pct,
         "unmapped_types": sorted(unmapped),
+        "summary_quip": event.get("summary_quip"),
     }
 
 
