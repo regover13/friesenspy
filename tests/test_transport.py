@@ -10,6 +10,7 @@ from __future__ import annotations
 import sqlite3
 
 from app.calendar_sync import parse_route
+from app.llm import _build_result
 from app.database import (
     compute_transport_progress,
     create_transport_event,
@@ -104,6 +105,19 @@ class TestPayloads:
         upsert_payload(conn, "BE58", payload_kg=999, mtow_kg=2500, empty_kg=1700, fuel_kg=300)
         conn.commit()
         assert get_payload_map(conn)["BE58"] == 999
+
+
+class TestLlmResult:
+    def test_build_result_subtracts_full_fuel_and_crew(self):
+        # volle Tanks (122) + Standard-Pilot (85) abgezogen: 1157-681-122-85 = 269
+        r = _build_result("Cessna 172", 1157, 681, 122)
+        assert r["payload_kg"] == 269
+        assert r["crew_kg"] == 85.0
+        assert r["fuel_full_kg"] == 122
+
+    def test_build_result_never_negative(self):
+        r = _build_result("Winzling", 400, 380, 100, crew_kg=85)
+        assert r["payload_kg"] == 0.0
 
 
 # --- Wertung / Manifest ----------------------------------------------------

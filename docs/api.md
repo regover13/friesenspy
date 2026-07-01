@@ -874,7 +874,7 @@ Zuladungs-Tabelle + globaler Fallback + beobachtete, noch nicht gepflegte Flugze
 Zuladung eines Typs setzen. Body: `type_code` (Pflicht), `mtow_kg`, `empty_kg`, `fuel_kg` (volle Tanks), `crew_kg` (Pilot/Crew, Default 85 — zählt nicht als Fracht), optional direktes `payload_kg` (überschreibt die Ableitung `max(0, mtow−empty−fuel−crew)`), `make_model`.
 
 ### GET /api/admin/transport/payloads/suggest?type=C172
-KI-Vorschlag (Claude Haiku 4.5, Structured Output) für die Komponenten eines Typs — recherchierte, dokumentierte POH-Werte (keine großzügigen Schätzungen): `{make_model, mtow_kg, empty_kg, fuel_full_kg, crew_kg, payload_kg}` (Zuladung = MTOW − Leer − volle Tanks − Crew). `400`, wenn `ANTHROPIC_API_KEY` fehlt.
+KI-Vorschlag (Claude Sonnet 5 mit **Web-Search**, Structured Output) für die Komponenten eines Typs — recherchiert dokumentierte Handbuch-/POH-Werte (keine Schätzungen): `{make_model, mtow_kg, empty_kg, fuel_full_kg, crew_kg, payload_kg}` (Zuladung = MTOW − Leer − volle Tanks − Crew). Dauer ~30 s (Web-Recherche). `400`, wenn `ANTHROPIC_API_KEY` fehlt.
 
 ### POST /api/admin/transport/default-payload
 Globalen Fallback-Zuladungswert setzen. Body: `default_kg`.

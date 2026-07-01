@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.1.0",
+    "date": "2026-07-01",
+    "title": "FriesenKutter: KI recherchiert Zuladungen im Web",
+    "items": [
+      "🔎 Der Zuladungs-Vorschlag im Admin recherchiert jetzt per Web-Suche (Claude Sonnet 5) die dokumentierten Handbuch-Werte eines Flugzeugtyps — statt aus dem Gedächtnis zu schätzen.",
+      "⏱️ Der »Vorschlag«-Knopf zeigt an, dass die Recherche ~30 s dauert."
+    ]
+  },
+  {
     "version": "7.0.1",
     "date": "2026-07-01",
     "title": "FriesenKutter: Zuladung ohne Pilot & genauere KI-Werte",
