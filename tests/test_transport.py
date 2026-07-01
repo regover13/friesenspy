@@ -36,6 +36,8 @@ from app.database import (
     get_transport_live_arrivals,
     active_transport_destinations,
     open_transport_flights,
+    transport_event_started,
+    check_live_arrival,
 )
 
 START = "2026-07-01T09:00:00Z"
@@ -438,3 +440,87 @@ class TestLiveArrivalLatch:
         conn.commit()
         open_flights = open_transport_flights(conn)
         assert {f["cid"] for f in open_flights} == {2}
+
+
+class TestTransportEventStarted:
+    """transport_event_started: Start-Latch soll schon beim Abflug feuern, nicht erst bei
+    Landung/Disconnect — compute_transport_progress ignoriert offene Flüge bewusst (GPS-Ankunft
+    erst nach Disconnect verlässlich), das darf den Start-Push aber nicht verzögern."""
+
+    def test_true_when_open_flight_departs_from_route(self):
+        conn = _make_conn()
+        ev = _event(conn)
+        _add_open_flight(conn, 61, "EDWG", "", "C208", START)  # gerade abgeflogen, noch in der Luft
+        assert transport_event_started(conn, ev) is True
+
+    def test_false_without_any_flight(self):
+        conn = _make_conn()
+        ev = _event(conn)
+        assert transport_event_started(conn, ev) is False
+
+    def test_false_when_open_flight_departs_elsewhere(self):
+        conn = _make_conn()
+        ev = _event(conn)
+        _add_open_flight(conn, 61, "EDDF", "", "C208", START)  # nicht auf der Strecke
+        assert transport_event_started(conn, ev) is False
+
+    def test_true_even_though_progress_flight_count_is_still_zero(self):
+        """Dokumentiert den Live-Test-Fall: Flug in der Luft, noch kein Disconnect ->
+        compute_transport_progress sieht (korrekt) noch keinen Flug, transport_event_started
+        aber schon."""
+        conn = _make_conn()
+        ev = _event(conn)
+        _add_open_flight(conn, 61, "EDWG", "", "C208", START)
+        progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
+        assert progress["flight_count"] == 0
+        assert transport_event_started(conn, ev) is True
+
+
+class TestCheckLiveArrival:
+    def _events(self, event_id, dest="EDXH"):
+        return [{"id": event_id, "destination": dest}]
+
+    def test_within_radius_and_slow_latches(self):
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = _event(conn)
+        lat, lon = icao_to_coords("EDXH")
+        check_live_arrival(conn, 42, START, lat, lon, 1.5, self._events(ev["id"]))
+        conn.commit()
+        assert get_transport_live_arrivals(conn, ev["id"]) == {(42, START)}
+
+    def test_within_radius_but_too_fast_does_not_latch(self):
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = _event(conn)
+        lat, lon = icao_to_coords("EDXH")
+        check_live_arrival(conn, 42, START, lat, lon, 120.0, self._events(ev["id"]))
+        conn.commit()
+        assert get_transport_live_arrivals(conn, ev["id"]) == set()
+
+    def test_outside_radius_does_not_latch(self):
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = _event(conn)
+        lat, lon = icao_to_coords("EDDF")  # Frankfurt, weit weg von EDXH
+        check_live_arrival(conn, 42, START, lat, lon, 0.0, self._events(ev["id"]))
+        conn.commit()
+        assert get_transport_live_arrivals(conn, ev["id"]) == set()
+
+    def test_no_active_events_does_not_latch(self):
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        lat, lon = icao_to_coords("EDXH")
+        check_live_arrival(conn, 42, START, lat, lon, 0.0, [])
+        conn.commit()
+        assert get_transport_live_arrivals(conn, 999) == set()
+
+    def test_idempotent_repeated_check(self):
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = _event(conn)
+        lat, lon = icao_to_coords("EDXH")
+        check_live_arrival(conn, 42, START, lat, lon, 1.0, self._events(ev["id"]))
+        check_live_arrival(conn, 42, START, lat, lon, 1.0, self._events(ev["id"]))
+        conn.commit()
+        assert get_transport_live_arrivals(conn, ev["id"]) == {(42, START)}
