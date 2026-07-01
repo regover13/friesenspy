@@ -210,8 +210,10 @@ def flight_quip(context: dict) -> str | None:
         extra = " (fliegt Umwege!)" if c["detour_ratio"] >= 1.3 else ""
         lines.append(f"Umweg-Faktor: {c['detour_ratio']}x Luftlinie{extra}")
     user = (
-        "Schreibe EINEN lustigen Einzeiler (genau ein Satz) zu diesem Frachtflug. Greif die "
-        "auffälligsten Fakten auf (z.B. Fleiß, Tempo, Umwege, Fracht). Fakten:\n- "
+        "Schreibe EINEN lustigen Einzeiler (genau ein Satz) zu diesem Frachtflug. Nutze die Fakten "
+        "als Ideen-Pool, aber greif NICHT bei jedem Flug alle auf — meistens reicht EIN Aspekt "
+        "(oder auch mal keiner, nur die Fracht/den Namen), sonst klingen alle Sprüche gleich "
+        "aufgezählt. Variation ist wichtiger als Vollständigkeit. Fakten:\n- "
         + "\n- ".join(lines)
     )
     return _chat(_QUIP_SYSTEM, user, 200)
