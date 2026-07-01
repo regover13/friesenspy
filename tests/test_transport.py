@@ -32,6 +32,10 @@ from app.database import (
     set_app_setting,
     upsert_calendar_transport_event,
     get_transport_cargo,
+    set_transport_live_arrival,
+    get_transport_live_arrivals,
+    active_transport_destinations,
+    open_transport_flights,
 )
 
 START = "2026-07-01T09:00:00Z"
@@ -62,6 +66,20 @@ def _add_flight(conn, cid, dep, arr, aircraft, logon, *, duration_min=30, callsi
         "logon_time, logoff_time, duration_min, distance_nm) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (cid, callsign, aircraft, dep, arr, logon, "2026-07-01T22:00:00Z", duration_min, 20.0),
+    )
+    conn.commit()
+
+
+def _add_open_flight(conn, cid, dep, arr, aircraft, logon, *, callsign=None):
+    callsign = callsign or f"FRS{cid:02d}"
+    conn.execute(
+        "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)",
+        (cid, f"Pilot{cid}", START),
+    )
+    conn.execute(
+        "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, logon_time) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (cid, callsign, aircraft, dep, arr, logon),
     )
     conn.commit()
 
@@ -370,3 +388,53 @@ class TestProgress:
         assert p["cargo"] == []
         assert p["target_kg"] is None and p["progress_pct"] is None
         assert p["total_kg"] == 250
+
+
+class TestLiveArrivalLatch:
+    def test_set_and_get_roundtrip(self):
+        conn = _make_conn()
+        ev = _event(conn)
+        set_transport_live_arrival(conn, 42, START, ev["id"], "2026-07-01T10:00:00Z")
+        conn.commit()
+        assert get_transport_live_arrivals(conn, ev["id"]) == {(42, START)}
+
+    def test_insert_or_ignore_is_idempotent(self):
+        conn = _make_conn()
+        ev = _event(conn)
+        set_transport_live_arrival(conn, 42, START, ev["id"], "2026-07-01T10:00:00Z")
+        set_transport_live_arrival(conn, 42, START, ev["id"], "2026-07-01T11:00:00Z")
+        conn.commit()
+        assert get_transport_live_arrivals(conn, ev["id"]) == {(42, START)}
+
+    def test_get_scoped_to_event(self):
+        conn = _make_conn()
+        ev1 = _event(conn)
+        ev2 = create_transport_event(
+            conn, name="Anderes Event", route="EDWF,EDWR", dtstart=START, dtend=END,
+        )
+        set_transport_live_arrival(conn, 42, START, ev1["id"], "2026-07-01T10:00:00Z")
+        conn.commit()
+        assert get_transport_live_arrivals(conn, ev2) == set()
+
+    def test_active_transport_destinations_filters_by_time_window(self):
+        conn = _make_conn()
+        ev = _event(conn)  # dtstart=START, dtend=END (siehe _event-Helfer)
+        active = active_transport_destinations(conn, "2026-07-01T12:00:00Z")  # innerhalb [START,END]
+        assert active == [{"id": ev["id"], "destination": "EDXH"}]
+        assert active_transport_destinations(conn, "2026-06-01T00:00:00Z") == []  # vor dtstart
+        assert active_transport_destinations(conn, "2026-08-01T00:00:00Z") == []  # nach dtend
+
+    def test_open_transport_flights_excludes_closed_and_wrong_prefix(self):
+        conn = _make_conn()
+        _add_flight(conn, 1, "EDWG", "EDXH", "C172", START)  # geschlossen (logoff gesetzt)
+        _add_open_flight(conn, 2, "EDWG", "", "C208", START)  # offen, FRS
+        conn.execute(
+            "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (3, 'Pilot3', ?)", (START,),
+        )
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, aircraft_short, departure, logon_time) "
+            "VALUES (3, 'DLH123', 'A320', 'EDDF', ?)", (START,),
+        )  # offen, aber KEIN FRS-Callsign
+        conn.commit()
+        open_flights = open_transport_flights(conn)
+        assert {f["cid"] for f in open_flights} == {2}

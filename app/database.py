@@ -215,6 +215,14 @@ CREATE TABLE IF NOT EXISTS transport_quips (
     PRIMARY KEY(event_id, flight_key)
 );
 
+CREATE TABLE IF NOT EXISTS transport_live_arrivals (
+    cid         INTEGER NOT NULL,
+    logon_time  TEXT NOT NULL,
+    event_id    INTEGER NOT NULL,
+    arrived_at  TEXT NOT NULL,
+    PRIMARY KEY (cid, logon_time, event_id)
+);
+
 CREATE TABLE IF NOT EXISTS aircraft_payloads (
     type_code   TEXT PRIMARY KEY,        -- normalisiert (Uppercase, vor "/" gekürzt), z. B. "C172"
     mtow_kg     REAL,                    -- editierbar, aus Claude vorbefüllt
@@ -2570,6 +2578,45 @@ def set_transport_goal_reached(conn: sqlite3.Connection, event_id: int, ts: str)
 
 def set_transport_summarized(conn: sqlite3.Connection, event_id: int, ts: str) -> bool:
     return _set_transport_latch(conn, event_id, "summarized_at", ts)
+
+
+def set_transport_live_arrival(
+    conn: sqlite3.Connection, cid: int, logon_time: str, event_id: int, arrived_at: str
+) -> None:
+    """Live-Ankunft dauerhaft latchen — einmal geschrieben, nie zurückgenommen."""
+    conn.execute(
+        "INSERT OR IGNORE INTO transport_live_arrivals (cid, logon_time, event_id, arrived_at) "
+        "VALUES (?, ?, ?, ?)",
+        (cid, logon_time, event_id, arrived_at),
+    )
+
+
+def get_transport_live_arrivals(conn: sqlite3.Connection, event_id: int) -> set[tuple[int, str]]:
+    """{(cid, logon_time)} mit Live-Ankunfts-Latch für dieses Event."""
+    rows = conn.execute(
+        "SELECT cid, logon_time FROM transport_live_arrivals WHERE event_id = ?", (event_id,)
+    ).fetchall()
+    return {(r["cid"], r["logon_time"]) for r in rows}
+
+
+def active_transport_destinations(conn: sqlite3.Connection, now: str) -> list[dict]:
+    """Aktuell laufende FriesenKutter-Events (dtstart <= now <= dtend) mit gesetztem Ziel."""
+    rows = conn.execute(
+        "SELECT id, destination FROM transport_events "
+        "WHERE dtstart <= ? AND dtend >= ? AND destination IS NOT NULL AND destination != ''",
+        (now, now),
+    ).fetchall()
+    return [{"id": r["id"], "destination": r["destination"]} for r in rows]
+
+
+def open_transport_flights(conn: sqlite3.Connection, callsign_prefix: str = "FRS") -> list[dict]:
+    """Aktuell offene (noch verbundene) FRS-Flüge — Basis für Live-Ankunft ohne Disconnect."""
+    rows = conn.execute(
+        "SELECT cid, callsign, aircraft_short AS aircraft, aircraft_icao, departure, arrival, logon_time "
+        "FROM flights WHERE logoff_time IS NULL AND superseded_by IS NULL AND callsign LIKE ?",
+        (callsign_prefix + "%",),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def compute_transport_progress(
