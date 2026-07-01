@@ -161,7 +161,7 @@ Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und St
 
 Sortiert nach `logon_time` absteigend. FriesenSpy-Einträge haben Vorrang bei Zeitstempel-Überschneidungen (±5 Min).
 
-`duration_min` = **Online-Zeit** (Verbindung logon→logoff). `block_min` = **Block-Zeit** (Bewegung erste→letzte GPS-Bewegung, gate-to-gate) — nur bei FriesenSpy-Flügen vorhanden, StatSim/Altflüge haben `null`.
+`duration_min` = **Online-Zeit** (Verbindung logon→logoff). `block_min` = **Block-Zeit** (Summe der GPS-Bewegungsabschnitte gate-to-gate; belegte Standphasen ≥ 10 min, z. B. eine Zwischenlandung ohne Disconnect, zählen nicht) — nur bei FriesenSpy-Flügen vorhanden, StatSim/Altflüge haben `null`.
 
 ---
 
