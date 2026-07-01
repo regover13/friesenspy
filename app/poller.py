@@ -995,6 +995,7 @@ class VatsimPoller:
                 set_transport_summary_quip, transport_quips_enabled,
                 event_summary_context, flight_quip_context,
                 get_push_subscriptions_for_events, transport_event_started,
+                transport_anyone_in_progress,
             )
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             conn = get_connection(self.db_path)
@@ -1025,7 +1026,14 @@ class VatsimPoller:
                         if set_transport_goal_reached(conn, ev["id"], now) and push_on:
                             pushes.append({"title": name,
                                            "body": "Fracht komplett — Ziel erreicht! 🎯", "url": "/"})
-                    if dtend and now >= dtend and not ev.get("summarized_at"):
+                    # Feierabend erst, wenn kein Nachzügler mehr unterwegs ist (Flug vor dtend
+                    # gestartet, noch offen, ohne Ankunfts-Latch) — sonst entstünde die
+                    # Zusammenfassung mit einem noch nicht finalen Ergebnis (Task #13).
+                    if dtend and now >= dtend and not ev.get("summarized_at") \
+                            and not transport_anyone_in_progress(
+                                conn, ev, started_before=dtend,
+                                callsign_prefix=self.callsign_prefix,
+                            ):
                         if set_transport_summarized(conn, ev["id"], now):
                             tons = round(progress["total_kg"] / 1000, 2)
                             body = f"Feierabend: {progress['loaded_count']} Frachtflüge, {tons} t bewegt ✅"

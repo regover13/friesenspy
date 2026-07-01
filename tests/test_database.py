@@ -1116,6 +1116,29 @@ class TestReconstructOrphanedFlights:
         assert st_18 == []
         conn.close()
 
+    def test_init_db_reconstruction_works_on_raw_connection(self, tmp_path):
+        """Regression Prod-Crash 2026-07-01 (v7.3.1): init_db nutzt eine rohe sqlite3-Connection
+        OHNE row_factory — die Rekonstruktion darf sich nicht auf benannten Zeilenzugriff
+        verlassen, sonst crasht der App-Start (TypeError: tuple indices), sobald statsim_cache
+        Daten enthält."""
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        conn = get_connection(db)
+        try:
+            self._seed_reiner(conn)
+        finally:
+            conn.close()
+        init_db(db)  # darf nicht crashen und muss den Flug rekonstruieren
+        conn = get_connection(db)
+        try:
+            n = conn.execute(
+                "SELECT COUNT(*) FROM flights WHERE cid=? AND superseded_by IS NULL",
+                (self.CID,),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        assert n == 3
+
     def test_no_reconstruction_without_movement(self):
         """StatSim-Flug ohne bewegten Track (z. B. Historie vor FriesenSpy) → kein Eintrag."""
         from app.database import reconstruct_orphaned_flights

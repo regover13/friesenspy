@@ -454,6 +454,93 @@ class TestFeedGlitchReopen:
 
 
 # ---------------------------------------------------------------------------
+# FriesenKutter: Feierabend-Zusammenfassung wartet auf Nachzügler (Task #13)
+# ---------------------------------------------------------------------------
+
+class TestTransportSummaryWaitsForLaggards:
+    @pytest.fixture(autouse=True)
+    def _settings(self, monkeypatch):
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        from app.config import get_settings
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    def _seed(self, db_file):
+        """Transport-Event mit abgelaufenem dtend + offener FRS-Flug von der Strecke."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import create_transport_event, get_connection
+
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        dtstart = (now - timedelta(hours=3)).strftime(fmt)
+        dtend = (now - timedelta(minutes=10)).strftime(fmt)
+        logon = (now - timedelta(hours=2)).strftime(fmt)
+        conn = get_connection(db_file)
+        try:
+            eid = create_transport_event(
+                conn, name="Helgoland-Nachschub", route="EDWG,EDXH",
+                dtstart=dtstart, dtend=dtend, destination="EDXH",
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (7, 'P', ?)",
+                (dtstart,),
+            )
+            conn.execute(
+                "INSERT INTO flights (cid, callsign, departure, arrival, logon_time) "
+                "VALUES (7, 'FRS07', 'EDWG', 'EDXH', ?)",
+                (logon,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return eid
+
+    @pytest.mark.asyncio
+    async def test_summary_deferred_while_pilot_in_progress(self, tmp_path):
+        """dtend erreicht, aber ein Pilot ist noch unterwegs → summarized_at bleibt leer;
+        erst wenn niemand mehr fliegt, wird der Feierabend gelatcht (finales Ergebnis)."""
+        from datetime import datetime, timezone
+        from app.database import get_connection, init_db
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        eid = self._seed(db_file)
+        poller = _make_poller(db_path=db_file)
+
+        await poller._check_transport_events()
+        conn = get_connection(db_file)
+        try:
+            row = conn.execute(
+                "SELECT summarized_at FROM transport_events WHERE id = ?", (eid,)
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row["summarized_at"] is None  # Nachzügler fliegt noch → kein Feierabend
+
+        # Nachzügler landet + disconnectet → Flug geschlossen
+        conn = get_connection(db_file)
+        try:
+            conn.execute(
+                "UPDATE flights SET logoff_time = ?, duration_min = 60 WHERE cid = 7",
+                (datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        await poller._check_transport_events()
+        conn = get_connection(db_file)
+        try:
+            row = conn.execute(
+                "SELECT summarized_at FROM transport_events WHERE id = ?", (eid,)
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row["summarized_at"] is not None  # jetzt final → Feierabend gelatcht
+
+
+# ---------------------------------------------------------------------------
 # create_poller factory
 # ---------------------------------------------------------------------------
 
