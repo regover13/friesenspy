@@ -2619,6 +2619,52 @@ def open_transport_flights(conn: sqlite3.Connection, callsign_prefix: str = "FRS
     return [dict(r) for r in rows]
 
 
+def check_live_arrival(
+    conn: sqlite3.Connection,
+    cid: int,
+    logon_time: str,
+    latitude: float,
+    longitude: float,
+    groundspeed: float,
+    events: list[dict],
+    *,
+    radius_km: float | None = None,
+) -> None:
+    """Prüft eine aktuelle Live-Position gegen bereits geladene, laufende FriesenKutter-Ziele
+    (``events``, aus :func:`active_transport_destinations`) und latcht einen Treffer dauerhaft
+    (``transport_live_arrivals``) — 'am Boden' (``groundspeed < _BLOCK_GS_KT``) und im Umkreis
+    (``radius_km``, Default ``_BUMMEL_AIRPORT_RADIUS_KM``) um ``destination``. Kein
+    Rückgängigmachen; ``events`` wird NICHT selbst nachgeladen (Aufrufer lädt einmal pro Poll)."""
+    if groundspeed is None or groundspeed >= _BLOCK_GS_KT:
+        return
+    from app.geo import haversine, icao_to_coords
+    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
+    now = _now_utc()
+    for ev in events:
+        dest = normalize_type_code(ev.get("destination"))
+        coords = icao_to_coords(dest) if dest else None
+        if not coords:
+            continue
+        if haversine(latitude, longitude, coords[0], coords[1]) <= radius:
+            set_transport_live_arrival(conn, cid, logon_time, ev["id"], now)
+
+
+def transport_event_started(
+    conn: sqlite3.Connection, event: dict, callsign_prefix: str = "FRS"
+) -> bool:
+    """True, sobald ein Friese von einem Streckenflugplatz abgeflogen ist — auch während der Flug
+    noch offen ist (kein Disconnect). ``compute_transport_progress`` ignoriert offene Flüge bewusst
+    (die GPS-Ankunft ist erst nach Disconnect verlässlich bestimmbar), das darf den Start-Push aber
+    nicht verzögern: der (Flugplan-)Abflugort genügt hierfür, ohne GPS-Korrektur."""
+    route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
+    if not route_set:
+        return False
+    return any(
+        normalize_type_code(f.get("departure")) in route_set
+        for f in open_transport_flights(conn, callsign_prefix)
+    )
+
+
 def compute_transport_progress(
     conn: sqlite3.Connection,
     event: dict,
