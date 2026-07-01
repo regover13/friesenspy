@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.3.0",
+    "date": "2026-07-01",
+    "title": "FriesenKutter: Fracht zählt ohne Disconnect",
+    "items": [
+      "📍 Fracht zählt jetzt, sobald du erkennbar am Boden (< 2 kt) im 10-km-Zielradius bist — kein Disconnect mehr nötig.",
+      "Einmal erkannt, bleibt der Zähler dauerhaft bestehen, auch wenn du danach weiterfliegst oder woanders disconnectest."
+    ]
+  },
+  {
     "version": "7.2.1",
     "date": "2026-07-01",
     "title": "FriesenKutter: Fracht direkt im Kalendertermin",

@@ -584,6 +584,11 @@ Alle FriesenKutter-Transport-Events (Kalender + manuell) mit kompaktem Live-Fort
 
 Voller Live-Zustand eines Events: obige Felder plus `flights` (chronologisch, **neueste zuerst**): `{dep_time, cid, callsign, name, aircraft, dep, arr, tonnage_kg, loaded, cargo_name}`. Beladene Flüge tragen `loaded: true` + `cargo_name` (die Frachtart, in die ihr Anteil überwiegend floss); Rückflüge `loaded: false`, `tonnage_kg: 0`, `cargo_name: null`.
 
+> **Ohne Disconnect (Live-Ankunft):** Ein noch offener (verbundener) Flug erscheint im Feed,
+> sobald sein Start auf der Strecke liegt; sobald er innerhalb 10 km um `destination` auf
+> < 2 kt abbremst, wird er sofort als beladen gezählt (`transport_live_arrivals`) — unabhängig
+> vom späteren Disconnect-Ort. Kein Zurücksetzen.
+
 ---
 
 ## GET /widget
