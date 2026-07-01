@@ -916,10 +916,15 @@ def consolidate_flights(
             "SELECT id, cid, logon_time, duration_min FROM flights "
             "WHERE superseded_by IS NULL AND logoff_time IS NOT NULL"
         ).fetchall():
+            # MAX statt LIMIT-1-Zufall: StatSim legt PRO FLUG eine Zeile mit der SESSION-
+            # Anmeldung als logon_time an (duration = arrived − loggedOn) — bei Multi-Leg-
+            # Sessions matchen mehrere Zeilen dieselbe Minute. Die längste (= späteste
+            # Landung) ist die beste Untergrenze der Session-Dauer; die des ersten Beins
+            # würde eine legitime Multi-Leg-Session fälschlich schrumpfen.
             sc = conn.execute(
-                "SELECT duration_min FROM statsim_cache "
+                "SELECT MAX(duration_min) FROM statsim_cache "
                 "WHERE cid=? AND duration_min IS NOT NULL "
-                "AND substr(logon_time,1,16)=substr(?,1,16) LIMIT 1",
+                "AND substr(logon_time,1,16)=substr(?,1,16)",
                 (cid, logon),
             ).fetchone()
             if not sc or sc[0] is None:
@@ -953,9 +958,11 @@ def consolidate_flights(
     return marked
 
 
-# Rand (Minuten) um das StatSim-Fenster bei der Track-Rekonstruktion: StatSim kennt Start-/
-# Landezeit; Taxi-out/-in davor/danach gehören mit zum Flug (gedeckelt auf Nachbar-Sessions).
-_RECONSTRUCT_MARGIN_MIN = 10
+# Track-Rekonstruktions-Parameter (siehe reconstruct_orphaned_flights):
+_RECONSTRUCT_MARGIN_MIN = 10        # Taxi-in-Rand nach der StatSim-Landezeit
+_RECONSTRUCT_COVER_MARGIN_MIN = 5   # Toleranz „Landung liegt in einem FS-Fenster" (gedeckt)
+_RECONSTRUCT_STAND_SEC = 300        # belegte Standphase, die zwei Beine einer Session trennt
+_RECONSTRUCT_MAX_LOOKBACK_H = 3     # Max-Rückblick vor der Landung ohne Session-Grenze
 
 
 def reconstruct_orphaned_flights(
@@ -967,13 +974,19 @@ def reconstruct_orphaned_flights(
     Session; Folgeflüge derselben Verbindung liefen nur noch in position_history — StatSim
     kennt den Flug, FriesenSpy besitzt den Track, aber es existiert kein flights-Eintrag.
 
-    Rekonstruiert für jeden StatSim-Flug (abgeschlossen, > 5 min, mit Strecke), der von KEINEM
-    aktiven FriesenSpy-Flug gedeckt ist und dessen Fenster (± _RECONSTRUCT_MARGIN_MIN, gedeckelt
-    auf die Nachbar-Sessions) nachweislich Flugbewegung in position_history enthält, einen
-    flights-Eintrag aus den echten Positionsdaten (Dauer/Distanz/Block aus dem Track).
-    Idempotent: einmal rekonstruiert ist der StatSim-Flug gedeckt. ``cids`` begrenzt den Lauf
-    auf einzelne Piloten (für den Aufruf direkt nach einem StatSim-Refresh). Gibt die Anzahl
-    neu angelegter Flüge zurück; committet NICHT selbst.
+    Anker ist die LANDEZEIT (``logoff_time`` = StatSims ``arrived``): StatSims ``loggedOn``
+    ist die SESSION-Anmeldung und bei mehreren Flügen einer Verbindung für alle gleich —
+    als Flugbeginn unbrauchbar (der zweite Flug „18:18–18:36" steht im Cache als
+    17:04→18:36). Kandidat ist jede StatSim-Landung mit Strecke, die in KEINEM aktiven
+    FriesenSpy-Fenster (± _RECONSTRUCT_COVER_MARGIN_MIN) liegt. Der Flugbeginn wird aus dem
+    Track abgeleitet: Rückwärtssuche von der Landung zur letzten belegten Standphase
+    (≥ _RECONSTRUCT_STAND_SEC zusammenhängend ≤ _BLOCK_GS_KT) — dort begann der Flug; ohne
+    Stand-Beleg ab der vorigen Session (gedeckelt auf _RECONSTRUCT_MAX_LOOKBACK_H). Das
+    Fenster endet Landung + _RECONSTRUCT_MARGIN_MIN (Taxi-in), gedeckelt auf die nächste
+    Session. Nur mit belegter Flugbewegung (≥ 2 Positionen ≥ 40 kt); Dauer/Distanz/Block
+    kommen aus den echten Positionsdaten. Idempotent: einmal rekonstruiert deckt die neue
+    Zeile die Landung. ``cids`` begrenzt den Lauf auf einzelne Piloten (Aufruf direkt nach
+    einem StatSim-Refresh). Gibt die Anzahl neu angelegter Flüge zurück; committet NICHT.
     """
     import logging as _log
     log = _log.getLogger(__name__)
@@ -983,7 +996,7 @@ def reconstruct_orphaned_flights(
     cur = conn.cursor()
     cur.row_factory = sqlite3.Row
     st_where = (
-        "logon_time != '' AND logoff_time IS NOT NULL AND duration_min > 5 "
+        "logoff_time IS NOT NULL AND logoff_time != '' "
         "AND departure != '' AND arrival != ''"
     )
     st_params: list = []
@@ -991,55 +1004,83 @@ def reconstruct_orphaned_flights(
         st_where += " AND cid IN (%s)" % ",".join("?" * len(cids))
         st_params = list(cids)
     st_rows = cur.execute(
-        "SELECT cid, callsign, departure, arrival, aircraft, logon_time, logoff_time, "
-        "duration_min FROM statsim_cache WHERE " + st_where + " ORDER BY cid, logon_time",
+        "SELECT cid, callsign, departure, arrival, aircraft, logon_time, logoff_time "
+        "FROM statsim_cache WHERE " + st_where + " ORDER BY cid, logoff_time",
         st_params,
     ).fetchall()
     for st in st_rows:
-        cid, st_logon, st_logoff = st["cid"], st["logon_time"], st["logoff_time"]
-        # Laufende Session, die den StatSim-Flug enthalten kann → nichts rekonstruieren.
+        cid, arrived = st["cid"], st["logoff_time"]
+        # Laufende Session, die diese Landung enthalten kann → Finger weg.
         open_row = conn.execute(
             "SELECT 1 FROM flights WHERE cid=? AND superseded_by IS NULL "
             "AND logoff_time IS NULL AND logon_time <= ? LIMIT 1",
-            (cid, st_logon),
+            (cid, arrived),
         ).fetchone()
         if open_row:
             continue
+        # Gedeckt: die Landung liegt (± Toleranz) in einem aktiven FS-Fenster. Die Toleranz
+        # fängt den Normalfall ab, dass StatSims arrived Sekunden NACH dem FS-Logoff
+        # (= letzte Position) liegt.
         fs = [dict(r) for r in cur.execute(
-            "SELECT departure, arrival, logon_time, logoff_time FROM flights "
+            "SELECT logon_time, logoff_time FROM flights "
             "WHERE cid=? AND superseded_by IS NULL AND logoff_time IS NOT NULL",
             (cid,),
         ).fetchall()]
-        if not _dedup_statsim_against_fs(fs, [dict(st)]):
-            continue  # bereits durch einen FriesenSpy-Flug gedeckt
-        # Fenster: StatSim-Zeiten ± Taxi-Rand, gedeckelt auf die Nachbar-Sessions.
-        prev_logoff = conn.execute(
-            "SELECT MAX(logoff_time) FROM flights WHERE cid=? AND superseded_by IS NULL "
-            "AND logoff_time IS NOT NULL AND logoff_time <= ?",
-            (cid, st_logon),
-        ).fetchone()[0]
-        next_logon = conn.execute(
-            "SELECT MIN(logon_time) FROM flights WHERE cid=? AND superseded_by IS NULL "
-            "AND logon_time >= ?",
-            (cid, st_logon),
-        ).fetchone()[0]
-        lo = _shift_iso(st_logon, hours=-_RECONSTRUCT_MARGIN_MIN / 60.0)
-        if prev_logoff and prev_logoff > lo:
-            lo = prev_logoff
-        hi = _shift_iso(st_logoff, hours=_RECONSTRUCT_MARGIN_MIN / 60.0)
+        cover = _RECONSTRUCT_COVER_MARGIN_MIN / 60.0
+        if any(
+            _shift_iso(f["logon_time"], hours=-cover) <= arrived
+            <= _shift_iso(f["logoff_time"], hours=cover)
+            for f in fs
+        ):
+            continue
+        # Fensterende: Landung + Taxi-Rand, gedeckelt auf die nächste Session.
+        hi = _shift_iso(arrived, hours=_RECONSTRUCT_MARGIN_MIN / 60.0)
+        next_logon = min((f["logon_time"] for f in fs if f["logon_time"] > arrived), default=None)
         if next_logon and next_logon < hi:
             hi = next_logon
-        # Beleg: der Track im Fenster muss echte Flugbewegung zeigen (kein Taxi-/Steh-Ghost).
+        # Harte Untergrenze: Ende der vorigen Session, gedeckelt auf einen Max-Rückblick.
+        lo = _shift_iso(arrived, hours=-_RECONSTRUCT_MAX_LOOKBACK_H)
+        prev_logoff = max((f["logoff_time"] for f in fs if f["logoff_time"] <= arrived), default=None)
+        if prev_logoff and prev_logoff > lo:
+            lo = prev_logoff
+        # Flugbeginn: Rückwärtssuche — die letzte belegte Standphase VOR der Landung trennt
+        # diesen Flug vom vorherigen Bein derselben verwaisten Session.
+        samples = conn.execute(
+            "SELECT ts, groundspeed FROM position_history "
+            "WHERE cid=? AND ts>? AND ts<? ORDER BY ts",
+            (cid, lo, hi),
+        ).fetchall()
+        if not samples:
+            continue
+        cut = None
+        stand_first = stand_last = None
+        for ts, gs in samples:
+            if gs is None:
+                continue
+            if gs > _BLOCK_GS_KT:
+                if (
+                    stand_first is not None and ts <= arrived
+                    and (_parse_iso(stand_last) - _parse_iso(stand_first)).total_seconds()
+                    >= _RECONSTRUCT_STAND_SEC
+                ):
+                    cut = ts
+                stand_first = stand_last = None
+            else:
+                if stand_first is None:
+                    stand_first = ts
+                stand_last = ts
+        start = cut or samples[0][0]
+        # Beleg: das Fenster muss echte Flugbewegung zeigen (kein Taxi-/Steh-Ghost).
         airborne = conn.execute(
             "SELECT COUNT(*) FROM position_history "
-            "WHERE cid=? AND ts>? AND ts<? AND groundspeed >= 40",
-            (cid, lo, hi),
+            "WHERE cid=? AND ts>=? AND ts<? AND groundspeed >= 40",
+            (cid, start, hi),
         ).fetchone()[0]
         if airborne < 2:
             continue
         bounds = conn.execute(
-            "SELECT MIN(ts), MAX(ts) FROM position_history WHERE cid=? AND ts>? AND ts<?",
-            (cid, lo, hi),
+            "SELECT MIN(ts), MAX(ts) FROM position_history WHERE cid=? AND ts>=? AND ts<?",
+            (cid, start, hi),
         ).fetchone()
         logon_rec, logoff_rec = bounds[0], bounds[1]
         if not logon_rec or not logoff_rec or logon_rec >= logoff_rec:

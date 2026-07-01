@@ -41,6 +41,18 @@ und Blockzeit kommen aus den echten Positionsdaten. Idempotent; kollidiert nicht
 Rekonstruktion deshalb zusätzlich **direkt nach jedem StatSim-Refresh** (cid-gefiltert) — z. B.
 beim Öffnen der Piloten-Flugliste im Statistiken-Tab, die im Hintergrund StatSim aktualisiert.
 Ein Container-Neustart ist nicht mehr nötig: Drill-down öffnen, kurz warten, neu laden.
+
+**Nachfix v7.3.5 (nach Praxis-Gegenprüfung „StatSim aktualisiert, kein neuer Flug"):** Die
+erste Fassung ankerte an StatSims `logon_time` — aber StatSims `loggedOn` ist die
+**Session-Anmeldung** und bei mehreren Flügen einer Verbindung für alle gleich
+(`app/statsim.py`, Mapping `loggedOn/arrived`; `duration = arrived − loggedOn` — daher stammt
+übrigens auch die „92" als StatSim-Dauer des zweiten Flugs: 17:04→18:36). Reiners fehlender
+Flug stand also als „17:04→18:36" im Cache, seine Anmeldezeit lag im Fenster von Flug 277 →
+„gedeckt" → übersprungen. Jetzt ankert die Rekonstruktion an der **Landezeit** und bestimmt den
+Flugbeginn per Rückwärtssuche im Track (letzte belegte Standphase ≥ 5 min). Dieselbe
+StatSim-Eigenschaft hätte künftig auch `consolidate_flights` Schritt D gefährlich gemacht
+(Multi-Leg-Session auf die Dauer des ersten Beins geschrumpft, LIMIT-1-Zufall) — jetzt zählt
+das `MAX(duration_min)` aller Zeilen derselben Anmelde-Minute (eigener Regressionstest).
 **Bitte gegenprüfen** (ich habe aus dieser Umgebung keinen Zugriff auf VPS/Domain):
 `ssh root@167.86.127.129 'curl -s http://127.0.0.1:8091/api/pilots/1031301/flights?days=7'`
 — erwartet: eigenständiger EDWG→EDXH-Flug ~18:16–18:43 UTC mit ~24 nm und GPS-Track.
