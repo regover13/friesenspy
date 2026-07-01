@@ -201,7 +201,8 @@ CREATE TABLE IF NOT EXISTS aircraft_payloads (
     mtow_kg     REAL,                    -- editierbar, aus Claude vorbefüllt
     empty_kg    REAL,
     fuel_kg     REAL,                    -- Tankinhalt (editierbar) — Default halber Tank
-    payload_kg  REAL NOT NULL,           -- = max(0, mtow_kg − empty_kg − fuel_kg); direkt überschreibbar
+    crew_kg     REAL,                    -- Pilot/Crew (editierbar) — Default 85 kg, zählt nicht als Fracht
+    payload_kg  REAL NOT NULL,           -- = max(0, mtow_kg − empty_kg − fuel_kg − crew_kg); direkt überschreibbar
     source      TEXT,                    -- 'manual' | 'llm' | 'default'
     make_model  TEXT,
     updated_at  TEXT
@@ -307,6 +308,8 @@ _BUMMEL_MIGRATIONS = [
 _TRANSPORT_MIGRATIONS = [
     # destination: Ziel-ICAO — nur Flüge dorthin laden Fracht (Rückflug leer).
     "ALTER TABLE transport_events ADD COLUMN destination TEXT",
+    # crew_kg: Pilot/Crew-Gewicht — zählt nicht als Fracht (payload = mtow − empty − fuel − crew).
+    "ALTER TABLE aircraft_payloads ADD COLUMN crew_kg REAL",
 ]
 
 _LIVE_POSITIONS_MIGRATIONS = [
@@ -2127,6 +2130,8 @@ def delete_bummel_race(conn: sqlite3.Connection, race_id: int) -> None:
 
 _TRANSPORT_DEFAULT_PAYLOAD_KEY = "transport_default_payload_kg"
 _TRANSPORT_DEFAULT_PAYLOAD_FALLBACK = 150.0
+# Standard-Pilotengewicht (kg): zählt bei der Zuladungs-Ableitung nicht als Fracht.
+_CREW_KG_DEFAULT = 85.0
 
 
 def normalize_type_code(code: str | None) -> str:
@@ -2154,7 +2159,7 @@ def get_payload_map(conn: sqlite3.Connection) -> dict[str, float]:
 def list_aircraft_payloads(conn: sqlite3.Connection) -> list[dict]:
     """Alle Zuladungs-Zeilen (für die Admin-Tabelle), alphabetisch nach Typcode."""
     rows = conn.execute(
-        "SELECT type_code, mtow_kg, empty_kg, fuel_kg, payload_kg, source, make_model, updated_at "
+        "SELECT type_code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model, updated_at "
         "FROM aircraft_payloads ORDER BY type_code"
     ).fetchall()
     return [dict(r) for r in rows]
@@ -2168,28 +2173,33 @@ def upsert_payload(
     mtow_kg: float | None = None,
     empty_kg: float | None = None,
     fuel_kg: float | None = None,
+    crew_kg: float | None = None,
     source: str = "manual",
     make_model: str | None = None,
 ) -> None:
     """Zuladung eines Flugzeugtyps setzen/aktualisieren.
 
     Ist ``payload_kg`` nicht direkt angegeben, wird es aus den Komponenten abgeleitet
-    (``max(0, mtow − empty − fuel)``). Der Typcode wird normalisiert gespeichert.
+    (``max(0, mtow − empty − fuel − crew)``) — der Pilot/die Crew zählt NICHT als Fracht.
+    Ohne ``crew_kg`` wird das Standard-Pilotengewicht (:data:`_CREW_KG_DEFAULT`) angesetzt und
+    gespeichert. Der Typcode wird normalisiert gespeichert.
     """
     code = normalize_type_code(type_code)
     if not code:
         return
+    if crew_kg is None:
+        crew_kg = _CREW_KG_DEFAULT
     if payload_kg is None:
-        payload_kg = max(0.0, (mtow_kg or 0.0) - (empty_kg or 0.0) - (fuel_kg or 0.0))
+        payload_kg = max(0.0, (mtow_kg or 0.0) - (empty_kg or 0.0) - (fuel_kg or 0.0) - (crew_kg or 0.0))
     conn.execute(
         """INSERT INTO aircraft_payloads
-               (type_code, mtow_kg, empty_kg, fuel_kg, payload_kg, source, make_model, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               (type_code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(type_code) DO UPDATE SET
                mtow_kg=excluded.mtow_kg, empty_kg=excluded.empty_kg, fuel_kg=excluded.fuel_kg,
-               payload_kg=excluded.payload_kg, source=excluded.source,
+               crew_kg=excluded.crew_kg, payload_kg=excluded.payload_kg, source=excluded.source,
                make_model=excluded.make_model, updated_at=excluded.updated_at""",
-        (code, mtow_kg, empty_kg, fuel_kg, payload_kg, source, make_model, _now_utc()),
+        (code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model, _now_utc()),
     )
 
 

@@ -88,9 +88,16 @@ class TestCalendarKeyword:
 class TestPayloads:
     def test_payload_derived_from_components(self):
         conn = _make_conn()
-        upsert_payload(conn, "be58", mtow_kg=2500, empty_kg=1700, fuel_kg=300)
+        upsert_payload(conn, "be58", mtow_kg=2500, empty_kg=1700, fuel_kg=300, crew_kg=0)
         conn.commit()
-        assert get_payload_map(conn)["BE58"] == 500  # 2500-1700-300, Typcode normalisiert
+        assert get_payload_map(conn)["BE58"] == 500  # 2500-1700-300-0, Typcode normalisiert
+
+    def test_default_crew_is_subtracted(self):
+        conn = _make_conn()
+        # Ohne crew_kg → Standard-Pilot (85 kg) zählt nicht als Fracht.
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=681, fuel_kg=61)
+        conn.commit()
+        assert get_payload_map(conn)["C172"] == 330  # 1157-681-61-85
 
     def test_direct_payload_overrides_components(self):
         conn = _make_conn()
