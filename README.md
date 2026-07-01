@@ -216,6 +216,7 @@ Der **FriesenKutter** ist ein kleines „FSE für Friesen": ein Transportflug-Ev
 - **Push:** Start des Events, erreichtes Ziel und eine Feierabend-Zusammenfassung („X Frachtflüge, Y t bewegt") gehen an die Events-Abonnenten.
 - **Frachtart-Katalog:** Im Admin pflegbare Frachtarten mit Emoji und optionaler Obergrenze pro Flug — z.B. Krabbenbrötchen 🦐 oder Filmrollen 🎞️ (max 100 kg). Ist eine Frachtart gedeckelt, nimmt der Rest der Zuladung eines Flugs automatisch die nächste Frachtart mit (Co-Load).
 - **Lustige KI-Sprüche (optional):** Ist der Schalter im Admin aktiv, schreibt Claude zu jedem Flug einen Einzeiler im Friesen-Humor — mit Bezug auf Vorname, Fleiß, Tempo und Umwege — plus eine launige Tagesend-Zusammenfassung.
+- **Fracht direkt im Kalendertermin:** Eine Zeile wie `Fracht: 1000 Krabbenbrötchen, 500 Friesentee` in der Termin-Beschreibung befüllt das Manifest beim Kalender-Sync automatisch (Namen gegen den Katalog abgeglichen). Nur beim erstmaligen Anlegen — spätere Admin-Bearbeitungen bleiben bei erneutem Sync erhalten.
 
 ## 🔔 Benachrichtigungen (Push Notifications)
 

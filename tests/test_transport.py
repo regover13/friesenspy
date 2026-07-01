@@ -30,6 +30,8 @@ from app.database import (
     flight_quip_context,
     event_summary_context,
     set_app_setting,
+    upsert_calendar_transport_event,
+    get_transport_cargo,
 )
 
 START = "2026-07-01T09:00:00Z"
@@ -207,6 +209,62 @@ class TestQuipContext:
         ctx = event_summary_context({"name": "Test"}, progress)
         assert ctx["pilots"] == {"Anna": 2, "Bert": 1}
         assert ctx["loaded_count"] == 3
+
+
+class TestCalendarCargo:
+    def _cal_ev(self, **overrides):
+        ev = {
+            "uid": "abc123", "summary": "FriesenKutter Helgoland", "route": "EDWG,EDXH",
+            "dtstart": START, "dtend": END, "cargo": [],
+        }
+        ev.update(overrides)
+        return ev
+
+    def test_resolves_against_catalog_on_first_sync(self):
+        conn = _make_conn()
+        upsert_cargo_catalog(conn, name="Krabbenbrötchen", emoji="🦐", per_flight_max_kg=None)
+        upsert_cargo_catalog(conn, name="Filmrollen", emoji="🎞️", per_flight_max_kg=100)
+        conn.commit()
+        ev = self._cal_ev(cargo=[
+            {"name": "Krabbenbrötchen", "target_kg": 1000.0},
+            {"name": "Filmrollen", "target_kg": 300.0},
+        ])
+        upsert_calendar_transport_event(conn, ev)
+        conn.commit()
+        eid = conn.execute("SELECT id FROM transport_events WHERE calendar_uid='abc123'").fetchone()[0]
+        cargo = get_transport_cargo(conn, eid)
+        krabben = next(c for c in cargo if c["name"] == "Krabbenbrötchen")
+        film = next(c for c in cargo if c["name"] == "Filmrollen")
+        assert krabben["emoji"] == "🦐" and krabben["per_flight_max_kg"] is None
+        assert film["emoji"] == "🎞️" and film["per_flight_max_kg"] == 100
+
+    def test_unknown_name_kept_as_freetext(self):
+        conn = _make_conn()
+        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Mysteriöses Gut", "target_kg": 42.0}]))
+        conn.commit()
+        eid = conn.execute("SELECT id FROM transport_events WHERE calendar_uid='abc123'").fetchone()[0]
+        cargo = get_transport_cargo(conn, eid)
+        assert cargo[0]["name"] == "Mysteriöses Gut" and cargo[0]["emoji"] is None
+
+    def test_resync_does_not_overwrite_existing_manifest(self):
+        conn = _make_conn()
+        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Krabbenbrötchen", "target_kg": 1000.0}]))
+        conn.commit()
+        eid = conn.execute("SELECT id FROM transport_events WHERE calendar_uid='abc123'").fetchone()[0]
+        set_transport_cargo(conn, eid, [{"name": "Vom Admin gepflegt", "target_kg": 5.0}])
+        conn.commit()
+        # Erneuter Sync mit (ggf. anderer) Fracht-Zeile aus dem Kalender darf das nicht überschreiben.
+        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Anderes Gut", "target_kg": 77.0}]))
+        conn.commit()
+        cargo = get_transport_cargo(conn, eid)
+        assert [c["name"] for c in cargo] == ["Vom Admin gepflegt"]
+
+    def test_no_cargo_marker_leaves_manifest_empty(self):
+        conn = _make_conn()
+        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[]))
+        conn.commit()
+        eid = conn.execute("SELECT id FROM transport_events WHERE calendar_uid='abc123'").fetchone()[0]
+        assert get_transport_cargo(conn, eid) == []
 
 
 class TestQuipCache:
