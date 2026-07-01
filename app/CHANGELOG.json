@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.3.9",
+    "date": "2026-07-02",
+    "title": "Zuladungs-Recherche: MSFS-Flotte + mehr Helis",
+    "items": [
+      "🚁 Weitere Hubschrauber als Klartext-Hinweis: UH1 (Huey), LAMA, H160, Bell 212/407, R66, Cabri G2.",
+      "🛩️ MSFS-Standardflotte & gängige Addons: SF50 Vision Jet, King Air 200/350/C90, C310/C414, Citation CJ4/Longitude, DHC-2 Beaver, Kodiak 100, PC-6 Porter, DC-3, Ju 52, ICON A5, VL-3, Extra 300."
+    ]
+  },
+  {
     "version": "7.3.8",
     "date": "2026-07-02",
     "title": "Zuladungs-Recherche kennt die GA-Klassiker",

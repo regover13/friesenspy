@@ -74,6 +74,16 @@ class TestTypeHints:
         for code in ("DO27", "C185", "PA32", "AN2", "J3"):
             assert code in _TYPE_HINTS, code
 
+    def test_msfs_fleet_and_more_helis_hinted(self):
+        """Nachforderung 2026-07-02: MSFS-Standardflotte + gängige Addons (Huey, Lama, H160,
+        Vision Jet, King Air, C310/C414, DC-3, Ju 52 …) als Klartext-Hinweise."""
+        from app.llm import _TYPE_HINTS
+        for code in ("UH1", "LAMA", "H160", "B407", "R66",
+                     "SF50", "BE20", "B350", "C310", "C414", "DC3", "JU52",
+                     "DHC2", "KODI", "SF25"):
+            assert code in _TYPE_HINTS, code
+        assert "Huey" in _TYPE_HINTS["UH1"]
+
 
 class TestSuggestHardening:
     SPEC = json.dumps({"make_model": "Test", "mtow_kg": 1000.0,
