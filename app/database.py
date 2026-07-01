@@ -423,10 +423,16 @@ def init_db(db_path: str) -> None:
             _logger.info("Flüge konsolidiert (superseded markiert): %d", s)
         # Verwaiste Tracks (A1-Schaden): StatSim-Flug ohne deckenden FS-Flug, aber mit
         # bewegtem GPS-Track → flights-Eintrag aus den echten Belegen rekonstruieren.
-        r = reconstruct_orphaned_flights(conn)
-        conn.commit()
-        if r:
-            _logger.info("Verwaiste Tracks rekonstruiert: %d Flug/Flüge", r)
+        # Defensive Kapselung: die Reparatur ist Komfort — ein Fehler hier darf den
+        # App-Start niemals verhindern (Prod-Vorfall 2026-07-01).
+        try:
+            r = reconstruct_orphaned_flights(conn)
+            conn.commit()
+            if r:
+                _logger.info("Verwaiste Tracks rekonstruiert: %d Flug/Flüge", r)
+        except Exception:
+            conn.rollback()
+            _logger.exception("Track-Rekonstruktion fehlgeschlagen — Start ohne Reparatur")
         # Strukturelle Dedup-Sperre: pro (cid, logon_time) nur EIN aktiver Flug.
         try:
             conn.execute(
@@ -969,7 +975,11 @@ def reconstruct_orphaned_flights(conn: sqlite3.Connection) -> int:
     import logging as _log
     log = _log.getLogger(__name__)
     created = 0
-    st_rows = conn.execute(
+    # Eigener Cursor mit Row-Factory: init_db ruft mit einer ROHEN Connection (Tupel-Zeilen)
+    # auf — benannter Zugriff muss unabhängig vom Aufrufer funktionieren.
+    cur = conn.cursor()
+    cur.row_factory = sqlite3.Row
+    st_rows = cur.execute(
         "SELECT cid, callsign, departure, arrival, aircraft, logon_time, logoff_time, "
         "duration_min FROM statsim_cache "
         "WHERE logon_time != '' AND logoff_time IS NOT NULL AND duration_min > 5 "
@@ -985,7 +995,7 @@ def reconstruct_orphaned_flights(conn: sqlite3.Connection) -> int:
         ).fetchone()
         if open_row:
             continue
-        fs = [dict(r) for r in conn.execute(
+        fs = [dict(r) for r in cur.execute(
             "SELECT departure, arrival, logon_time, logoff_time FROM flights "
             "WHERE cid=? AND superseded_by IS NULL AND logoff_time IS NOT NULL",
             (cid,),
@@ -2840,6 +2850,43 @@ def transport_event_started(
         normalize_type_code(f.get("departure")) in route_set
         for f in open_transport_flights(conn, callsign_prefix)
     )
+
+
+def transport_anyone_in_progress(
+    conn: sqlite3.Connection,
+    event: dict,
+    *,
+    started_before: str | None = None,
+    callsign_prefix: str = "FRS",
+    radius_km: float | None = None,
+) -> bool:
+    """True, wenn für dieses FriesenKutter-Event noch ein Friese unterwegs ist — dann muss die
+    Feierabend-Zusammenfassung warten (analog ``_bummel_anyone_in_progress`` beim Reveal).
+
+    Ein „Nachzügler" = offener Flug (``logoff_time IS NULL``), dessen Start an einem
+    Streckenflugplatz liegt (GPS-erste-Position im Umkreis, Fallback Flugplan-DEP) und der vor
+    ``started_before`` (dtend) begonnen hat — verspätete Neu-Connects nach dtend zählen nicht.
+    Flüge mit Live-Ankunfts-Latch (``transport_live_arrivals``) verzögern nicht: ihr Beitrag
+    steht fest (Zuladung hängt nur am Muster; der Latch überdauert jeden späteren Disconnect).
+    """
+    from app.geo import icao_to_coords
+    route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
+    if not route_set:
+        return False
+    coords_map = {icao: icao_to_coords(icao) for icao in route_set}
+    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
+    latched = get_transport_live_arrivals(conn, int(event["id"]))
+    for f in open_transport_flights(conn, callsign_prefix):
+        lo = f.get("logon_time") or ""
+        if started_before and lo > started_before:
+            continue
+        if (f.get("cid"), lo) in latched:
+            continue
+        first = _first_pos(conn, int(f["cid"]), lo, "9999-12-31T23:59:59Z")
+        dep = _nearest_airport(coords_map, first, radius) or normalize_type_code(f.get("departure"))
+        if dep in route_set:
+            return True
+    return False
 
 
 def compute_transport_progress(

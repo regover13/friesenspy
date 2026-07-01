@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.3.2",
+    "date": "2026-07-01",
+    "title": "Hotfix Serverstart + FriesenKutter-Feierabend wartet auf Nachzügler",
+    "items": [
+      "🚑 Hotfix: Die neue Track-Rekonstruktion (7.3.1) ließ den Serverstart mit vorhandenen StatSim-Daten abstürzen — behoben; die Reparatur läuft jetzt zusätzlich abgesichert (ein Fehler dort kann den Start nie mehr verhindern).",
+      "🕰️ FriesenKutter: Die Feierabend-Zusammenfassung wartet jetzt, bis kein Pilot mehr für das Event unterwegs ist — Nachzügler-Fracht zählt ins Endergebnis, statt eine vorschnelle (falsche) Bilanz zu erzeugen."
+    ]
+  },
+  {
     "version": "7.3.1",
     "date": "2026-07-01",
     "title": "Flug-Tracking: vier Datenintegritäts-Bugs vom Live-Test behoben",

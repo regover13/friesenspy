@@ -598,3 +598,50 @@ class TestLiveArrivalInProgress:
         tee = next(c for c in p["cargo"] if c["name"] == "Friesentee")
         assert film["delivered_kg"] == 100
         assert tee["delivered_kg"] == 450
+
+
+# --- Feierabend wartet auf Nachzügler (Task #13) ----------------------------
+
+class TestAnyoneInProgress:
+    """transport_anyone_in_progress: die Feierabend-Zusammenfassung darf erst entstehen,
+    wenn kein Pilot mehr für das Event unterwegs ist (analog Bummel-Reveal)."""
+
+    def test_open_flight_from_route_counts_as_in_progress(self):
+        from app.database import transport_anyone_in_progress
+        conn = _make_conn()
+        ev = _event(conn)
+        _add_open_flight(conn, 7, "EDWG", "EDXH", "BN2P", "2026-07-01T20:00:00Z")
+        assert transport_anyone_in_progress(conn, ev, started_before=END) is True
+
+    def test_latched_flight_does_not_delay(self):
+        """Live-Ankunfts-Latch fixiert den Beitrag → der Flug verzögert den Feierabend nicht."""
+        from app.database import transport_anyone_in_progress
+        conn = _make_conn()
+        ev = _event(conn)
+        logon = "2026-07-01T20:00:00Z"
+        _add_open_flight(conn, 7, "EDWG", "EDXH", "BN2P", logon)
+        set_transport_live_arrival(conn, 7, logon, ev["id"], "2026-07-01T21:00:00Z")
+        conn.commit()
+        assert transport_anyone_in_progress(conn, ev, started_before=END) is False
+
+    def test_late_connect_after_dtend_ignored(self):
+        """Neu-Connect NACH dtend ist kein Nachzügler des Events."""
+        from app.database import transport_anyone_in_progress
+        conn = _make_conn()
+        ev = _event(conn)
+        _add_open_flight(conn, 7, "EDWG", "EDXH", "BN2P", "2026-07-01T23:30:00Z")
+        assert transport_anyone_in_progress(conn, ev, started_before=END) is False
+
+    def test_offroute_open_flight_ignored(self):
+        from app.database import transport_anyone_in_progress
+        conn = _make_conn()
+        ev = _event(conn)
+        _add_open_flight(conn, 7, "EDDH", "EDDF", "B738", "2026-07-01T20:00:00Z")
+        assert transport_anyone_in_progress(conn, ev, started_before=END) is False
+
+    def test_closed_flights_do_not_block(self):
+        from app.database import transport_anyone_in_progress
+        conn = _make_conn()
+        ev = _event(conn)
+        _add_flight(conn, 7, "EDWG", "EDXH", "BN2P", "2026-07-01T20:00:00Z")
+        assert transport_anyone_in_progress(conn, ev, started_before=END) is False
