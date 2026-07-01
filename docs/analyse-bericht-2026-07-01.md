@@ -36,8 +36,11 @@ jedem Start (`init_db`) und rekonstruiert Flüge, die StatSim kennt, für die ab
 `flights`-Eintrag existiert, sofern der eigene GPS-Track im Fenster (StatSim-Zeiten ± 10 min
 Taxi-Rand, gedeckelt auf Nachbar-Sessions) **nachweislich Flugbewegung** zeigt. Dauer, Distanz
 und Blockzeit kommen aus den echten Positionsdaten. Idempotent; kollidiert nicht mit 277/284
-(die A3-Regel verhindert den Merge mit der Steh-Session; Lücke zu 277 > Merge-Fenster).
-→ Reiners Flug wurde damit beim Deploy von v7.3.2 auf dem VPS nachgetragen.
+(die Fertig-gelandet-Regel verhindert den Merge mit der Steh-Session; Lücke zu 277 > Merge-Fenster).
+→ Voraussetzung ist, dass der lokale `statsim_cache` den Flug kennt. Seit v7.3.4 läuft die
+Rekonstruktion deshalb zusätzlich **direkt nach jedem StatSim-Refresh** (cid-gefiltert) — z. B.
+beim Öffnen der Piloten-Flugliste im Statistiken-Tab, die im Hintergrund StatSim aktualisiert.
+Ein Container-Neustart ist nicht mehr nötig: Drill-down öffnen, kurz warten, neu laden.
 **Bitte gegenprüfen** (ich habe aus dieser Umgebung keinen Zugriff auf VPS/Domain):
 `ssh root@167.86.127.129 'curl -s http://127.0.0.1:8091/api/pilots/1031301/flights?days=7'`
 — erwartet: eigenständiger EDWG→EDXH-Flug ~18:16–18:43 UTC mit ~24 nm und GPS-Track.
@@ -68,11 +71,19 @@ Gap 282→286 (16 min) lag unter dem Same-FP-Fenster (30 min), Distanz-Budget tr
 (beide Positionen am selben Platz) → Merge. Folge: der echte Rückflug verschwand, im Kutter-Feed
 stand ein `EDWG→EDWG`-Flug (GPS-Start und -Ende Wangerooge), der aus der Wertung fiel.
 
-**Fix („Abgeflogen-Regel"):** `app/database.py:1321` — endete das frühere Segment **gelandet am
-FP-Ziel** (letzte Position ≤ 10 km `_ARRIVED_RADIUS_KM` **und** am Boden ≤ 40 kt
-`_ARRIVED_MAX_GS_KT`, `app/database.py:1293`), ist der Flugplan erfüllt; ein späteres Segment ist
-ein **neuer Flug**, kein Reconnect. Echte Mid-Flight-Reconnects (letzte Position airborne, vor dem
-Ziel) mergen unverändert — per Gegentest abgesichert.
+**Fix (v7.3.1, „Abgeflogen-Regel"):** endete das frühere Segment gelandet am FP-Ziel, ist der
+Flugplan erfüllt; ein späteres Segment ist ein neuer Flug. Echte Mid-Flight-Reconnects mergen
+unverändert (Gegentest).
+
+**Nachfix (v7.3.4, nach Praxis-Gegenprüfung des Auftraggebers):** Die FP-Ziel-Regel löste nur
+das Paar 282+286. Das Paar **286+287** verschmolz weiterhin: der Rückflug (stale FP EDWG→EDXH)
+landet am FP-**Start** EDWG — dort greift keine Ziel-Radius-Prüfung, und der nächste echte
+Hinflug macht „Fortschritt Richtung Ziel", passiert also auch die Richtungsprüfung. Die Regel
+wurde deshalb verallgemeinert („Fertig-gelandet-Regel", `app/database.py`): ein Segment, das
+nachweislich **geflogen** ist (Position ≥ 60 kt `_FLOWN_MIN_GS_KT`) und **am Boden endete**
+(letzte Position ≤ 40 kt `_LANDED_MAX_GS_KT`), ist abgeschlossen — egal wo es gelandet ist.
+Reine Boden-Segmente (Gate-Reconnect vor dem Neu-Filen) mergen weiterhin (Gegentest), ebenso
+Mid-Air-Reconnects. Integrationstest: Ralfs kompletter Abend (282/286/287) → drei Flüge.
 
 **Wechselwirkung (gewollt):** Landet ein Pilot, disconnectet auf der Rollbahn und reconnectet zum
 Taxi-in, wird das Taxi-Segment nicht mehr in den Flug gemergt; es fällt als Ghost (≤ 0,5 nm/

@@ -958,7 +958,9 @@ def consolidate_flights(
 _RECONSTRUCT_MARGIN_MIN = 10
 
 
-def reconstruct_orphaned_flights(conn: sqlite3.Connection) -> int:
+def reconstruct_orphaned_flights(
+    conn: sqlite3.Connection, *, cids: list[int] | None = None
+) -> int:
     """Verwaiste GPS-Tracks wieder mit einer flights-Zeile versehen (A1-Schadensreparatur).
 
     Fall (Live-Test 2026-07-01, Reiner cid 1031301): ein Feed-Aussetzer schloss die laufende
@@ -969,8 +971,9 @@ def reconstruct_orphaned_flights(conn: sqlite3.Connection) -> int:
     aktiven FriesenSpy-Flug gedeckt ist und dessen Fenster (± _RECONSTRUCT_MARGIN_MIN, gedeckelt
     auf die Nachbar-Sessions) nachweislich Flugbewegung in position_history enthält, einen
     flights-Eintrag aus den echten Positionsdaten (Dauer/Distanz/Block aus dem Track).
-    Idempotent: einmal rekonstruiert ist der StatSim-Flug gedeckt. Gibt die Anzahl neu
-    angelegter Flüge zurück; committet NICHT selbst.
+    Idempotent: einmal rekonstruiert ist der StatSim-Flug gedeckt. ``cids`` begrenzt den Lauf
+    auf einzelne Piloten (für den Aufruf direkt nach einem StatSim-Refresh). Gibt die Anzahl
+    neu angelegter Flüge zurück; committet NICHT selbst.
     """
     import logging as _log
     log = _log.getLogger(__name__)
@@ -979,11 +982,18 @@ def reconstruct_orphaned_flights(conn: sqlite3.Connection) -> int:
     # auf — benannter Zugriff muss unabhängig vom Aufrufer funktionieren.
     cur = conn.cursor()
     cur.row_factory = sqlite3.Row
+    st_where = (
+        "logon_time != '' AND logoff_time IS NOT NULL AND duration_min > 5 "
+        "AND departure != '' AND arrival != ''"
+    )
+    st_params: list = []
+    if cids:
+        st_where += " AND cid IN (%s)" % ",".join("?" * len(cids))
+        st_params = list(cids)
     st_rows = cur.execute(
         "SELECT cid, callsign, departure, arrival, aircraft, logon_time, logoff_time, "
-        "duration_min FROM statsim_cache "
-        "WHERE logon_time != '' AND logoff_time IS NOT NULL AND duration_min > 5 "
-        "AND departure != '' AND arrival != '' ORDER BY cid, logon_time"
+        "duration_min FROM statsim_cache WHERE " + st_where + " ORDER BY cid, logon_time",
+        st_params,
     ).fetchall()
     for st in st_rows:
         cid, st_logon, st_logoff = st["cid"], st["logon_time"], st["logoff_time"]
@@ -1288,10 +1298,12 @@ _RECONNECT_GAP_NO_FP_MIN = 15     # ein Segment ohne FP → enger + Geo-Budget
 _MAX_GS_KT = 600.0                # Deckelung der plausiblen Geschwindigkeit
 _BUDGET_MARGIN_NM = 10.0          # Toleranz auf das Distanz-Budget
 _DIRECTION_TOLERANCE_KM = 20.0    # Toleranz der Richtungsprüfung (Fortschritt Richtung Ziel)
-# „Abgeflogen": das frühere Segment endete GELANDET am FP-Ziel (Umkreis + am Boden) →
-# der Flugplan ist erfüllt, ein späteres Segment ist kein Reconnect dieses Fluges mehr.
-_ARRIVED_RADIUS_KM = 10.0         # Umkreis um das FP-Ziel für „am Ziel angekommen"
-_ARRIVED_MAX_GS_KT = 40.0         # darunter gilt die letzte Position als ausgerollt/am Boden
+# „Fertig gelandet": das frühere Segment ist nachweislich GEFLOGEN und endete AM BODEN →
+# der Flug ist abgeschlossen, ein späteres Segment ist kein Reconnect dieses Fluges mehr —
+# egal, WO gelandet wurde (deckt Landung am FP-Ziel UND den Rückflug mit stehengebliebenem
+# FP ab, der wieder am FP-Start landet — Live-Test 2026-07-01, FRS102).
+_LANDED_MAX_GS_KT = 40.0          # letzte Position darunter = ausgerollt/am Boden
+_FLOWN_MIN_GS_KT = 60.0           # mind. eine Position darüber = Segment ist wirklich geflogen
 
 
 def _first_pos(
@@ -1326,9 +1338,13 @@ def _segments_continuous(
     Distanz-Budget: der Abstand zwischen der letzten Position von 'earlier' und der ersten
     Position von 'later' darf höchstens das in der Lücke zurücklegbare Budget betragen
     (gap × Vmax + Marge) — löst den Fall „Pilot 10 Min ohne Netz, Sim fliegt weiter".
-    Abgeflogen: endete 'earlier' bereits GELANDET am FP-Ziel (Umkreis + am Boden), ist der
-    Flugplan erfüllt — 'later' ist dann ein NEUER Flug (z. B. Rückflug mit stehengebliebenem
-    FP, der ebenfalls „am Ziel" startet und daher die Richtungsprüfung passiert), kein Reconnect.
+    Fertig gelandet: ist 'earlier' nachweislich GEFLOGEN (Position ≥ _FLOWN_MIN_GS_KT) und
+    endete AM BODEN (letzte Position ≤ _LANDED_MAX_GS_KT), ist der Flug abgeschlossen —
+    'later' ist dann ein NEUER Flug, kein Reconnect. Gilt unabhängig vom Landeort: deckt die
+    Landung am FP-Ziel ebenso ab wie den Rückflug mit stehengebliebenem FP, der wieder am
+    FP-Start landet (dort griffe die Richtungsprüfung strukturell nie, weil der Folgeflug ja
+    Richtung FP-Ziel „Fortschritt" macht). Reine Boden-Segmente (nie geflogen, z. B.
+    Gate-Reconnect vor dem Neu-Filen) mergen weiterhin.
     Richtung: 'later' soll nicht deutlich weiter vom Ziel entfernt sein als das Ende von
     'earlier'. Fallback True, wenn keine Positionsdaten vorhanden sind.
     """
@@ -1352,17 +1368,20 @@ def _segments_continuous(
     budget_nm = (max(gap_min, 0.0) / 60.0) * _MAX_GS_KT + _BUDGET_MARGIN_NM
     if gap_nm > budget_nm:
         return False
+    last_gs = last_row[2]
+    if last_gs is not None and last_gs <= _LANDED_MAX_GS_KT:
+        flew = conn.execute(
+            "SELECT 1 FROM position_history "
+            "WHERE cid=? AND ts>=? AND ts<=? AND groundspeed >= ? LIMIT 1",
+            (int(cid), earlier.get("logon_time") or "", earlier.get("logoff_time") or "",
+             _FLOWN_MIN_GS_KT),
+        ).fetchone()
+        if flew is not None:
+            return False  # 'earlier' ist geflogen und gelandet → abgeschlossen → kein Reconnect
     arr = later.get("arrival") or earlier.get("arrival") or ""
     arr_coords = icao_to_coords(arr) if arr else None
     if arr_coords is not None:
         d_last = haversine(last[0], last[1], arr_coords[0], arr_coords[1])
-        last_gs = last_row[2]
-        if (
-            d_last <= _ARRIVED_RADIUS_KM
-            and last_gs is not None
-            and last_gs <= _ARRIVED_MAX_GS_KT
-        ):
-            return False  # 'earlier' war schon gelandet am Ziel → FP abgeflogen → kein Reconnect
         d_first = haversine(first[0], first[1], arr_coords[0], arr_coords[1])
         if d_first > d_last + _DIRECTION_TOLERANCE_KM:
             return False  # 'later' weiter vom Ziel weg → kein Fortschritt → kein Reconnect

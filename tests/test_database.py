@@ -763,6 +763,110 @@ class TestMergeFragmentedFlights:
         conn.close()
         assert len(result) == 1  # echter Reconnect wird weiterhin gemergt
 
+    def test_no_merge_after_landing_even_away_from_fp_arrival(self):
+        """Regression Live-Test 2026-07-01, Teil 2 (Ralf, 286+287): der Rückflug mit stehen-
+        gebliebenem FP EDWG→EDXH landet in EDWG — also am FP-START, nicht am FP-Ziel. Der
+        nächste echte Flug (gleicher FP, 2 min später) schließt geografisch nahtlos an und
+        fliegt Richtung Ziel → alle bisherigen Prüfungen passieren. Regel: ein Segment, das
+        GEFLOGEN ist und am Boden endete, ist abgeschlossen — egal wo es gelandet ist."""
+        conn = _make_conn()
+        ensure_pilot(conn, 997, "Ralf")
+        pos = [
+            # Segment A (realer Rückflug EDXH→EDWG, FP stale EDWG→EDXH): Landung EDWG
+            (54.18528, 7.91583, 0,  "2026-07-01T19:06:40Z"),
+            (54.10000, 7.91500, 75, "2026-07-01T19:09:00Z"),
+            (53.79000, 7.91400, 70, "2026-07-01T19:18:00Z"),
+            (53.78278, 7.91389, 5,  "2026-07-01T19:19:50Z"),
+            (53.78278, 7.91389, 0,  "2026-07-01T19:20:15Z"),
+            # Segment B (echter nächster Hinflug EDWG→EDXH)
+            (53.78278, 7.91389, 0,  "2026-07-01T19:22:40Z"),
+            (53.80000, 7.91400, 70, "2026-07-01T19:25:00Z"),
+            (54.10000, 7.91550, 80, "2026-07-01T19:33:00Z"),
+            (54.18528, 7.91583, 0,  "2026-07-01T19:38:30Z"),
+        ]
+        for lat, lon, gs, ts in pos:
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (997,'FRS102',?,?,1000,?,0,?)",
+                (lat, lon, gs, ts),
+            )
+        conn.commit()
+        f1 = dict(self._flight("FRS102", "EDWG", "EDXH",
+                               "2026-07-01T19:06:26Z", "2026-07-01T19:20:20Z", 13), cid=997)
+        f2 = dict(self._flight("FRS102", "EDWG", "EDXH",
+                               "2026-07-01T19:22:27Z", "2026-07-01T19:38:40Z", 16), cid=997)
+        result = merge_fragmented_flights([f1, f2], conn=conn)
+        conn.close()
+        assert len(result) == 2  # Rückflug und nächster Hinflug bleiben getrennt
+
+    def test_pure_ground_segment_still_merges(self):
+        """Gegentest: ein Segment, das NIE geflogen ist (Gate-Reconnect vor dem Neu-Filen,
+        alle Positionen ≤ Taxi-Tempo), merged weiterhin mit dem folgenden Flug."""
+        conn = _make_conn()
+        ensure_pilot(conn, 996, "Tester")
+        pos = [
+            # Segment A: steht am GAT in EDWG (nie geflogen)
+            (53.78278, 7.91389, 0, "2026-07-01T08:00:30Z"),
+            (53.78278, 7.91389, 0, "2026-07-01T08:02:00Z"),
+            # Segment B: Flug EDWG→EDXH
+            (53.78278, 7.91389, 8, "2026-07-01T08:05:30Z"),
+            (54.18528, 7.91583, 0, "2026-07-01T08:30:00Z"),
+        ]
+        for lat, lon, gs, ts in pos:
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (996,'FRS5',?,?,10,?,0,?)",
+                (lat, lon, gs, ts),
+            )
+        conn.commit()
+        f1 = dict(self._flight("FRS5", "", "", "2026-07-01T08:00:00Z", "2026-07-01T08:02:30Z", 2), cid=996)
+        f2 = dict(self._flight("FRS5", "EDWG", "EDXH", "2026-07-01T08:05:00Z", "2026-07-01T08:30:10Z", 25), cid=996)
+        result = merge_fragmented_flights([f1, f2], conn=conn)
+        conn.close()
+        assert len(result) == 1  # Gate-Reconnect bleibt EIN Flug
+
+    def test_ralf_full_day_yields_three_flights(self):
+        """Integration (Live-Test 2026-07-01, Ralf cid 1470798): 282 (Hinflug), 286 (realer
+        Rückflug mit stale FP), 287 (nächster Hinflug) → canonicalize_flights liefert DREI
+        eigenständige Flüge."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1470798, "Ralf")
+        flights = [
+            (282, "2026-07-01T18:28:32Z", "2026-07-01T18:50:24Z", 21),
+            (286, "2026-07-01T19:06:26Z", "2026-07-01T19:20:20Z", 13),
+            (287, "2026-07-01T19:22:27Z", "2026-07-01T19:38:40Z", 16),
+        ]
+        for fid, lo, lf, dur in flights:
+            conn.execute(
+                "INSERT INTO flights (id,cid,callsign,departure,arrival,logon_time,logoff_time,"
+                "duration_min,distance_nm) VALUES (?,1470798,'FRS102','EDWG','EDXH',?,?,?,24)",
+                (fid, lo, lf, dur),
+            )
+        pos = [
+            # 282: EDWG → EDXH, Landung + Disconnect in EDXH
+            (53.78278, 7.91389, 0,  "2026-07-01T18:29:00Z"),
+            (53.95000, 7.91400, 85, "2026-07-01T18:38:00Z"),
+            (54.18528, 7.91583, 0,  "2026-07-01T18:50:20Z"),
+            # 286: realer Rückflug EDXH → EDWG
+            (54.18528, 7.91583, 0,  "2026-07-01T19:06:40Z"),
+            (54.10000, 7.91500, 75, "2026-07-01T19:09:00Z"),
+            (53.78278, 7.91389, 0,  "2026-07-01T19:20:15Z"),
+            # 287: nächster Hinflug EDWG → EDXH
+            (53.78278, 7.91389, 0,  "2026-07-01T19:22:40Z"),
+            (54.00000, 7.91500, 80, "2026-07-01T19:30:00Z"),
+            (54.18528, 7.91583, 0,  "2026-07-01T19:38:30Z"),
+        ]
+        for lat, lon, gs, ts in pos:
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1470798,'FRS102',?,?,1000,?,0,?)",
+                (lat, lon, gs, ts),
+            )
+        conn.commit()
+        result = canonicalize_flights(conn, cids=[1470798], include_statsim=False)
+        conn.close()
+        assert len(result) == 3  # Hinflug, Rückflug, Hinflug — nichts verschmolzen
+
     def test_no_merge_teleport_exceeds_budget(self):
         """Gleiche Route, kleine Lücke, aber Positionen ~1000 km auseinander → Distanz-Budget
         gesprengt → nicht mergen (mit conn/Positionsdaten)."""
@@ -1138,6 +1242,16 @@ class TestReconstructOrphanedFlights:
         finally:
             conn.close()
         assert n == 3
+
+    def test_cids_filter_limits_scope(self):
+        """Mit cids=[…] rekonstruiert die Funktion nur für diese Piloten — Basis für den
+        Aufruf direkt nach einem StatSim-Refresh (kein Container-Neustart mehr nötig)."""
+        from app.database import reconstruct_orphaned_flights
+        conn = _make_conn()
+        self._seed_reiner(conn)
+        assert reconstruct_orphaned_flights(conn, cids=[999999]) == 0  # fremde cid → No-Op
+        assert reconstruct_orphaned_flights(conn, cids=[self.CID]) == 1
+        conn.close()
 
     def test_no_reconstruction_without_movement(self):
         """StatSim-Flug ohne bewegten Track (z. B. Historie vor FriesenSpy) → kein Eintrag."""
