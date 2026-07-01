@@ -137,7 +137,7 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 
 ### `app/llm.py`
 
-Schlanke Claude-API-Anbindung (offizielles `anthropic`-SDK, Modell `claude-haiku-4-5`) mit **Silent-Fail**: `suggest_aircraft_payload(type_code)` liefert per Structured Output (`messages.parse`, Pydantic-Schema) einen Zuladungs-Vorschlag (make_model, MTOW, Leergewicht, voller Tank → halber Tank + abgeleitete Zuladung) für den Admin. Ohne `ANTHROPIC_API_KEY` (mit TSBot geteilt) oder ohne `anthropic`-Paket → `None`, der Rest bleibt manuell pflegbar. Phase 2: lustige Flug-Kommentare über denselben Client.
+Schlanke Claude-API-Anbindung (offizielles `anthropic`-SDK, Modell `claude-sonnet-5`) mit **Silent-Fail**: `suggest_aircraft_payload(type_code)` **recherchiert per Web-Search** (serverseitiges `web_search`-Tool, `max_uses=3`) die dokumentierten Handbuch-/POH-Werte und liefert sie als Structured Output (`output_config.format`, Server-Tool-Loop über `pause_turn`). Rückgabe: make_model, MTOW, Leergewicht, volle Tanks, Crew (85 kg) und die abgeleitete Zuladung `max(0, mtow−empty−fuel−crew)`. Die reine Rechnung steckt in `_build_result` (testbar ohne API). Ohne `ANTHROPIC_API_KEY` (mit TSBot geteilt) oder ohne `anthropic`-Paket → `None`, der Rest bleibt manuell pflegbar. Dauer ~30 s (Web-Recherche). Phase 2: lustige Flug-Kommentare über denselben Client.
 
 ### `app/poller.py`
 

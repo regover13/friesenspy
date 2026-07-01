@@ -2098,16 +2098,24 @@
     document.getElementById('kp-suggest-btn').addEventListener('click', async () => {
       const type = document.getElementById('kp-type').value.trim();
       if (!type) { toast('Typcode eingeben.', true); return; }
-      toast('Hole KI-Vorschlag…');
-      const res = await api('GET', '/api/admin/transport/payloads/suggest?type=' + encodeURIComponent(type));
-      if (!res || !res.ok) { toast('Kein Vorschlag verfügbar.', true); return; }
-      const s = await res.json();
-      document.getElementById('kp-mtow').value = Math.round(s.mtow_kg);
-      document.getElementById('kp-empty').value = Math.round(s.empty_kg);
-      document.getElementById('kp-fuel').value = Math.round(s.fuel_full_kg);
-      document.getElementById('kp-crew').value = Math.round(s.crew_kg != null ? s.crew_kg : 85);
-      document.getElementById('kp-payload').value = '';  // leer → Zuladung automatisch berechnen
-      document.getElementById('kp-make-model').textContent = s.make_model + ' · volle Tanks, Pilot abgezogen';
+      const btn = document.getElementById('kp-suggest-btn');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = '🔎 recherchiert…';
+      toast('Recherchiere im Web (Claude Sonnet 5) — das dauert ~30 s.');
+      try {
+        const res = await api('GET', '/api/admin/transport/payloads/suggest?type=' + encodeURIComponent(type));
+        if (!res || !res.ok) { toast('Kein Vorschlag verfügbar.', true); return; }
+        const s = await res.json();
+        document.getElementById('kp-mtow').value = Math.round(s.mtow_kg);
+        document.getElementById('kp-empty').value = Math.round(s.empty_kg);
+        document.getElementById('kp-fuel').value = Math.round(s.fuel_full_kg);
+        document.getElementById('kp-crew').value = Math.round(s.crew_kg != null ? s.crew_kg : 85);
+        document.getElementById('kp-payload').value = '';  // leer → Zuladung automatisch berechnen
+        document.getElementById('kp-make-model').textContent = s.make_model + ' · volle Tanks, Pilot abgezogen';
+        toast('Vorschlag übernommen — bitte prüfen und speichern.');
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
     });
 
     document.getElementById('kp-save-btn').addEventListener('click', async () => {
