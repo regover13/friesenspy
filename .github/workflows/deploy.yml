@@ -54,3 +54,14 @@ jobs:
             docker compose pull
             docker compose up -d
             docker logout ghcr.io
+            # Health-Check: Deploy gilt erst als erfolgreich, wenn die App antwortet.
+            for i in $(seq 1 12); do
+              sleep 5
+              if curl -sf http://127.0.0.1:8091/health | grep -q '"status":"ok"'; then
+                echo "Health OK (Versuch $i)"
+                exit 0
+              fi
+            done
+            echo "Health-Check fehlgeschlagen — letzte Container-Logs:"
+            docker compose logs --tail 50
+            exit 1
