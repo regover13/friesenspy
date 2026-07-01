@@ -1,5 +1,16 @@
 [
   {
+    "version": "7.0.1",
+    "date": "2026-07-01",
+    "title": "FriesenKutter: Zuladung ohne Pilot & genauere KI-Werte",
+    "items": [
+      "🧑‍✈️ Die Zuladung zieht jetzt Pilot/Crew (Standard 85 kg) mit ab — vorher zählte das Pilotengewicht fälschlich als Fracht.",
+      "⛽ Der Tankwert im Admin steht jetzt eindeutig auf »volle Tanks« (vorher unklar, ob halb oder voll).",
+      "🔎 Der KI-Vorschlag recherchiert dokumentierte Handbuch-Werte, statt großzügig zu schätzen.",
+      "✏️ »Bearbeiten« in der Zuladungstabelle füllt jetzt alle Felder vor; ein leeres Zuladungsfeld rechnet automatisch (MTOW − Leer − Tank − Crew)."
+    ]
+  },
+  {
     "version": "7.0.0",
     "date": "2026-07-01",
     "title": "FriesenKutter: Transportflüge mit Fracht-Manifest",

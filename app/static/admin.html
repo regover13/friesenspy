@@ -873,10 +873,13 @@
               <input type="number" id="kp-mtow" min="0" step="1" /></div>
             <div class="form-group"><label for="kp-empty">Leergewicht (kg)</label>
               <input type="number" id="kp-empty" min="0" step="1" /></div>
-            <div class="form-group"><label for="kp-fuel">Tankinhalt (kg)</label>
+            <div class="form-group"><label for="kp-fuel">Tankinhalt (kg) — volle Tanks</label>
               <input type="number" id="kp-fuel" min="0" step="1" /></div>
+            <div class="form-group"><label for="kp-crew">Pilot/Crew (kg)</label>
+              <input type="number" id="kp-crew" min="0" step="1" placeholder="85" /></div>
             <div class="form-group"><label for="kp-payload">Zuladung (kg, überschreibt)</label>
-              <input type="number" id="kp-payload" min="0" step="1" /></div>
+              <input type="number" id="kp-payload" min="0" step="1" />
+              <small style="display:block;margin-top:4px;color:var(--text-label,#8aa0b8);font-size:0.78em;line-height:1.3;">Leer lassen → wird automatisch berechnet: MTOW − Leergewicht − Tank − Crew. Ein Wert hier überschreibt die Berechnung (freie Wunsch-Zuladung).</small></div>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:14px;">
             <button class="btn btn-sm" id="kp-suggest-btn">💡 KI-Vorschlag</button>
@@ -2044,6 +2047,8 @@
       loadKutterAdmin();
     }
 
+    let _kePayloadRows = [];
+
     async function loadKutterPayloads() {
       const res = await api('GET', '/api/admin/transport/payloads');
       if (!res || !res.ok) return;
@@ -2057,10 +2062,12 @@
       document.getElementById('kp-suggest-btn').style.display = d.llm_configured ? '' : 'none';
       const c = document.getElementById('ke-payloads-container');
       const rows = (d.payloads || []);
+      _kePayloadRows = rows;
       if (!rows.length) { c.innerHTML = '<div class="empty-hint">Noch keine Typen gepflegt.</div>'; return; }
-      c.innerHTML = '<table style="width:100%;font-size:0.8rem;"><thead><tr><th style="text-align:left;">Typ</th><th>MTOW</th><th>Leer</th><th>Tank</th><th>Zuladung</th><th></th></tr></thead><tbody>'
+      c.innerHTML = '<table style="width:100%;font-size:0.8rem;"><thead><tr><th style="text-align:left;">Typ</th><th>MTOW</th><th>Leer</th><th>Tank</th><th>Crew</th><th>Zuladung</th><th></th></tr></thead><tbody>'
         + rows.map(p => '<tr><td><b>' + escH(p.type_code) + '</b>' + (p.make_model ? '<br><span style="color:#8aa0b8;font-size:0.68rem;">' + escH(p.make_model) + '</span>' : '') + '</td>'
           + '<td>' + (p.mtow_kg ?? '—') + '</td><td>' + (p.empty_kg ?? '—') + '</td><td>' + (p.fuel_kg ?? '—') + '</td>'
+          + '<td>' + (p.crew_kg ?? '—') + '</td>'
           + '<td><b>' + Math.round(p.payload_kg) + ' kg</b></td>'
           + '<td><button class="btn btn-sm" onclick="kePrefillType(\'' + escA(p.type_code) + '\')">Bearbeiten</button></td></tr>').join('')
         + '</tbody></table>';
@@ -2068,7 +2075,14 @@
 
     function kePrefillType(code) {
       document.getElementById('kp-type').value = code;
-      const p = null;
+      const p = (_kePayloadRows || []).find(r => r.type_code === code);
+      const set = (id, v) => { document.getElementById(id).value = (v == null ? '' : Math.round(v)); };
+      set('kp-mtow', p ? p.mtow_kg : null);
+      set('kp-empty', p ? p.empty_kg : null);
+      set('kp-fuel', p ? p.fuel_kg : null);
+      set('kp-crew', p ? p.crew_kg : null);
+      document.getElementById('kp-payload').value = '';  // leer → aus Komponenten neu berechnen
+      document.getElementById('kp-make-model').textContent = p && p.make_model ? p.make_model : '';
       document.getElementById('kp-type').scrollIntoView({ behavior: 'smooth', block: 'center' });
       document.getElementById('kp-type').focus();
     }
@@ -2090,9 +2104,10 @@
       const s = await res.json();
       document.getElementById('kp-mtow').value = Math.round(s.mtow_kg);
       document.getElementById('kp-empty').value = Math.round(s.empty_kg);
-      document.getElementById('kp-fuel').value = Math.round(s.fuel_half_kg);
-      document.getElementById('kp-payload').value = '';
-      document.getElementById('kp-make-model').textContent = s.make_model + ' · halber Tank';
+      document.getElementById('kp-fuel').value = Math.round(s.fuel_full_kg);
+      document.getElementById('kp-crew').value = Math.round(s.crew_kg != null ? s.crew_kg : 85);
+      document.getElementById('kp-payload').value = '';  // leer → Zuladung automatisch berechnen
+      document.getElementById('kp-make-model').textContent = s.make_model + ' · volle Tanks, Pilot abgezogen';
     });
 
     document.getElementById('kp-save-btn').addEventListener('click', async () => {
@@ -2101,13 +2116,13 @@
       const num = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
       const body = {
         type_code: type, mtow_kg: num('kp-mtow'), empty_kg: num('kp-empty'),
-        fuel_kg: num('kp-fuel'), payload_kg: num('kp-payload'),
+        fuel_kg: num('kp-fuel'), crew_kg: num('kp-crew'), payload_kg: num('kp-payload'),
         make_model: document.getElementById('kp-make-model').textContent || null,
       };
       const res = await api('POST', '/api/admin/transport/payloads', body);
       if (!res || !res.ok) { toast('Fehler beim Speichern.', true); return; }
       toast('Zuladung gespeichert.');
-      ['kp-type', 'kp-mtow', 'kp-empty', 'kp-fuel', 'kp-payload'].forEach(i => document.getElementById(i).value = '');
+      ['kp-type', 'kp-mtow', 'kp-empty', 'kp-fuel', 'kp-crew', 'kp-payload'].forEach(i => document.getElementById(i).value = '');
       document.getElementById('kp-make-model').textContent = '';
       loadKutterPayloads();
     });

@@ -65,11 +65,15 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
 
     hint = _TYPE_HINTS.get(code, "")
     prompt = (
-        f"Gib typische reale Spezifikationen für den Flugzeugtyp mit ICAO-Code '{code}'"
+        f"Recherchiere die realen, dokumentierten Herstellerangaben für den Flugzeugtyp mit "
+        f"ICAO-Code '{code}'"
         + (f" ({hint})" if hint else "")
-        + ". Werte in Kilogramm: maximales Startgewicht (MTOW), Leergewicht (empty weight) und "
-        "die maximale Treibstoffmenge bei vollen Tanks (fuel_full). Nutze allgemein bekannte "
-        "Durchschnittswerte der gängigsten Variante."
+        + ". Nutze die Werte der gängigsten zertifizierten Variante aus dem Flughandbuch (POH) "
+        "bzw. Type Certificate Data Sheet. Alle Werte in Kilogramm: maximales Startgewicht "
+        "(MTOW), Standard-Leergewicht (empty weight) und die nutzbare Treibstoffmenge bei "
+        "VOLLEN Tanks (usable fuel, fuel_full). WICHTIG: Schätze NICHT großzügig, runde nicht "
+        "auf und erfinde keine Zahlen — verwende die dokumentierten Standardwerte. Wenn eine "
+        "Angabe unsicher ist, wähle den konservativen (niedrigeren) realistischen Wert."
     )
 
     try:
@@ -88,13 +92,15 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
         logger.warning("Zuladungs-Vorschlag für %s fehlgeschlagen: %s", code, exc)
         return None
 
-    fuel_half = round(spec.fuel_full_kg / 2, 1)
-    payload = max(0.0, spec.mtow_kg - spec.empty_kg - fuel_half)
+    # Pilot/Crew zählt nicht als Fracht → vom nutzbaren Gewicht abziehen (Wert = database._CREW_KG_DEFAULT).
+    crew = 85.0
+    # Volle Tanks als eindeutige Referenz (konservativ; der Admin kann den Tankwert reduzieren).
+    payload = max(0.0, spec.mtow_kg - spec.empty_kg - spec.fuel_full_kg - crew)
     return {
         "make_model": spec.make_model,
         "mtow_kg": round(spec.mtow_kg, 1),
         "empty_kg": round(spec.empty_kg, 1),
         "fuel_full_kg": round(spec.fuel_full_kg, 1),
-        "fuel_half_kg": fuel_half,
+        "crew_kg": crew,
         "payload_kg": round(payload, 1),
     }
