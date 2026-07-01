@@ -1657,7 +1657,9 @@ async def admin_transport_payload_suggest(request: Request, type: str):
     from app import llm
     if not llm.is_configured():
         raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY nicht konfiguriert")
-    suggestion = llm.suggest_aircraft_payload(type)
+    # Blockierender Sonnet-5-Aufruf (Web-Search, bis zu ~1-2 Min.) — in einen Thread auslagern,
+    # sonst haengt die Event-Loop und damit die GESAMTE App fuer die Dauer der Recherche.
+    suggestion = await asyncio.to_thread(llm.suggest_aircraft_payload, type)
     if suggestion is None:
         raise HTTPException(status_code=502, detail="Kein Vorschlag verfügbar")
     return suggestion
