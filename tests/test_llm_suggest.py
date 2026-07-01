@@ -80,7 +80,9 @@ class TestTypeHints:
         from app.llm import _TYPE_HINTS
         for code in ("UH1", "LAMA", "H160", "B407", "R66",
                      "SF50", "BE20", "B350", "C310", "C414", "DC3", "JU52",
-                     "DHC2", "KODI", "SF25"):
+                     "DHC2", "KODI", "SF25",
+                     # aus der msfsaddons-Liste des Auftraggebers ergänzt
+                     "GA8", "HUSK", "DHC3", "C337", "PTS2", "B105", "ALO3", "ST75"):
             assert code in _TYPE_HINTS, code
         assert "Huey" in _TYPE_HINTS["UH1"]
 
