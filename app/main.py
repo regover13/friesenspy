@@ -1476,7 +1476,7 @@ def _transport_event_meta(ev: dict, progress: dict) -> dict:
     return {
         "id": ev["id"], "name": ev["name"], "route": ev["route"],
         "destination": ev.get("destination"), "dtstart": ev["dtstart"], "dtend": ev["dtend"],
-        "source": ev.get("source"),
+        "source": ev.get("source"), "calendar_uid": ev.get("calendar_uid"),
         "total_kg": progress["total_kg"], "target_kg": progress["target_kg"],
         "progress_pct": progress["progress_pct"], "flight_count": progress["flight_count"],
         "loaded_count": progress["loaded_count"], "cargo": progress["cargo"],

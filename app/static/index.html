@@ -2668,7 +2668,11 @@ function renderFriesenEvents(data) {
   container.innerHTML = html;
   container.querySelectorAll('tr[data-event-idx]').forEach(tr => {
     const ev = data[+tr.dataset.eventIdx];
-    tr.addEventListener('click', () => ev.is_bummel ? openBummel(ev) : _prefillEventForm(ev));
+    tr.addEventListener('click', () => {
+      if (ev.is_bummel) openBummel(ev);
+      else if (ev.is_transport) openKutter(ev);
+      else _prefillEventForm(ev);
+    });
   });
 }
 
@@ -4341,6 +4345,19 @@ function _kutterDetailBody(d) {
     + (rows || '<tr><td colspan="6" style="color:var(--text-label)">Noch keine Flüge.</td></tr>')
     + '</tbody></table>';
   return summary + header + bar + feed;
+}
+
+async function openKutter(ev) {
+  // Kalendertermin → FriesenKutter-Event mappen (über calendar_uid, wie openBummel es für
+  // Bummel-Rennen tut) und die Live-Ansicht direkt öffnen, statt nur das Suchformular zu füllen.
+  await loadKutterEvents();
+  const panel = document.getElementById('kutter-panel');
+  if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  try {
+    const events = await (await fetch('/api/transport/events')).json();
+    const match = (events || []).find(k => k.calendar_uid === ev.uid);
+    if (match) await openKutterDetail(match.id);
+  } catch (e) { /* ignorieren — Panel bleibt sichtbar */ }
 }
 
 async function openKutterDetail(id) {
