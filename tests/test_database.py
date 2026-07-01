@@ -1135,6 +1135,70 @@ class TestConsolidateFlights:
 
 
 # ---------------------------------------------------------------------------
+# Ghost-Filter: belegte Steh-Sessions sind keine Flüge
+# ---------------------------------------------------------------------------
+
+class TestGhostFilter:
+    def test_standing_session_with_track_is_filtered(self):
+        """Live-Test 2026-07-01 (Reiner, „Flug" 284): 14 min verbunden, Track vorhanden,
+        aber NULL Bewegung (block 0, 0 nm) → kein Flug, egal wie lange die Session dauerte.
+        Die alte Dauer-Ausnahme (> 5 min) ließ solche Steh-Sessions als Flüge durch."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "P")
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm,block_min) VALUES "
+            "(1,'FRS61','EDWG','EDXH','2026-07-01T18:43:47Z','2026-07-01T18:57:54Z',14,0,0)"
+        )
+        for ts in ("2026-07-01T18:44:00Z", "2026-07-01T18:50:00Z", "2026-07-01T18:57:54Z"):
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (1,'FRS61',54.185,7.916,10,0,0,?)",
+                (ts,),
+            )
+        conn.commit()
+        result = canonicalize_flights(conn, cids=[1], include_statsim=False)
+        conn.close()
+        assert result == []  # belegter Stillstand → kein Flug
+
+    def test_old_flight_without_track_is_kept(self):
+        """Altflug aus der Vor-GPS-Ära: Dauer > 5 min, aber weder Positionen noch Distanz/
+        Block-Daten → bleibt erhalten (kein Beleg für Stillstand — im Zweifel echter Flug)."""
+        conn = _make_conn()
+        ensure_pilot(conn, 2, "Alt")
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm,block_min) VALUES "
+            "(2,'FRS9','EDDH','EDDF','2025-08-01T10:00:00Z','2025-08-01T10:45:00Z',45,0,NULL)"
+        )
+        conn.commit()
+        result = canonicalize_flights(conn, cids=[2], include_statsim=False)
+        conn.close()
+        assert len(result) == 1  # Altdaten ohne Track bleiben
+
+    def test_moved_flight_with_zero_distance_rounding_is_kept(self):
+        """Session mit Track UND Bewegung (block > 0), aber gerundeter 0-nm-Distanz
+        (z. B. Platzrunde/kurzes Rollen und zurück) → bleibt erhalten."""
+        conn = _make_conn()
+        ensure_pilot(conn, 3, "P")
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm,block_min) VALUES "
+            "(3,'FRS7','EDWG','EDWG','2026-07-01T10:00:00Z','2026-07-01T10:20:00Z',20,0,12)"
+        )
+        for ts, gs in (("2026-07-01T10:02:00Z", 15), ("2026-07-01T10:14:00Z", 20)):
+            conn.execute(
+                "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (3,'FRS7',53.783,7.914,10,?,0,?)",
+                (gs, ts),
+            )
+        conn.commit()
+        result = canonicalize_flights(conn, cids=[3], include_statsim=False)
+        conn.close()
+        assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
 # reconstruct_orphaned_flights — verwaiste Tracks wieder mit flights-Zeile versehen
 # ---------------------------------------------------------------------------
 
@@ -1245,12 +1309,14 @@ class TestReconstructOrphanedFlights:
         reconstruct_orphaned_flights(conn)
         flights = canonicalize_flights(conn, cids=[self.CID], include_statsim=True)
         fs = [f for f in flights if f["source"] == "friesenspy"]
-        # Steh-Session 284 (14 min, 0 nm) übersteht den Ghost-Filter (Dauer > 5) als eigener
-        # Eintrag; entscheidend: der rekonstruierte Flug ist eigenständig EDWG→EDXH.
+        # Entscheidend: der rekonstruierte Flug ist eigenständig EDWG→EDXH; die Steh-
+        # Session 284 fällt als belegter Stillstand aus der Flugliste.
         recs = [f for f in fs if f["logon_time"].startswith("2026-07-01T18:1")
                 or f["logon_time"].startswith("2026-07-01T18:0")]
         assert len(recs) == 1
         assert (recs[0]["departure"], recs[0]["arrival"]) == ("EDWG", "EDXH")
+        # Die Steh-Session 284 (14 min, 0 nm, Track belegt Stillstand) ist KEIN Flug mehr.
+        assert not any(f["logon_time"].startswith("2026-07-01T18:43") for f in fs)
         # Der StatSim-Eintrag 18:18 ist jetzt gedeckt → taucht nicht doppelt auf.
         st_18 = [f for f in flights if f["source"] == "statsim"
                  and f["logon_time"].startswith("2026-07-01T18:18")]
