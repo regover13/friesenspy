@@ -57,6 +57,16 @@ from app.database import (
     merge_fragmented_flights,
     upsert_push_subscription,
     upsert_statsim_flights,
+    compute_transport_progress,
+    create_transport_event,
+    delete_transport_event,
+    get_transport_event,
+    get_transport_cargo,
+    list_transport_events,
+    update_transport_event,
+    list_aircraft_payloads,
+    upsert_payload,
+    transport_default_payload_kg,
 )
 from app.geo import filter_event_pilots, haversine, segment_into_flights
 from app.poller import VatsimPoller, create_poller, send_web_push
@@ -1442,6 +1452,236 @@ async def admin_delete_override(request: Request, race_id: int, cid: int):
         return {"status": "ok"}
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# FriesenKutter — Transportflug-Events (öffentlich + Admin)
+# ---------------------------------------------------------------------------
+
+def _normalize_route(raw: str) -> str:
+    """Freitext ('EDWG EDXH' / 'edwg,edxh') → normalisierte ICAO-CSV."""
+    return ",".join(
+        c.strip().upper()
+        for c in str(raw or "").replace(" ", ",").split(",")
+        if c.strip()
+    )
+
+
+def _transport_event_meta(ev: dict, progress: dict) -> dict:
+    """Event-Metadaten + kompakter Fortschritt (ohne den vollen Flug-Feed) für Listen."""
+    return {
+        "id": ev["id"], "name": ev["name"], "route": ev["route"],
+        "destination": ev.get("destination"), "dtstart": ev["dtstart"], "dtend": ev["dtend"],
+        "source": ev.get("source"),
+        "total_kg": progress["total_kg"], "target_kg": progress["target_kg"],
+        "progress_pct": progress["progress_pct"], "flight_count": progress["flight_count"],
+        "loaded_count": progress["loaded_count"], "cargo": progress["cargo"],
+    }
+
+
+@app.get("/api/transport/events")
+async def transport_events():
+    """Alle FriesenKutter-Events (Kalender + manuell) mit kompaktem Live-Fortschritt."""
+    now = _now_iso()
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        prefix = get_settings().CALLSIGN_PREFIX
+        return [
+            _transport_event_meta(ev, compute_transport_progress(conn, ev, now, callsign_prefix=prefix))
+            for ev in list_transport_events(conn)
+        ]
+    finally:
+        conn.close()
+
+
+@app.get("/api/transport/event/{event_id}")
+async def transport_event_detail(event_id: int):
+    """Voller Live-Zustand eines Events: Zielbalken (cargo) + chronologischer Flug-Feed."""
+    now = _now_iso()
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        ev = get_transport_event(conn, event_id)
+        if not ev:
+            raise HTTPException(status_code=404, detail="Event nicht gefunden")
+        progress = compute_transport_progress(conn, ev, now, callsign_prefix=get_settings().CALLSIGN_PREFIX)
+        # unmapped_types nur für Admin relevant — aus der öffentlichen Sicht entfernen.
+        progress.pop("unmapped_types", None)
+        return {
+            "id": ev["id"], "name": ev["name"], "route": ev["route"],
+            "destination": ev.get("destination"), "dtstart": ev["dtstart"], "dtend": ev["dtend"],
+            "source": ev.get("source"), **progress,
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/transport/events")
+async def admin_transport_events(request: Request):
+    """Admin-Liste: Events inkl. Fracht-Manifest (zum Bearbeiten)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return [
+            {**ev, "cargo": get_transport_cargo(conn, ev["id"])}
+            for ev in list_transport_events(conn)
+        ]
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/transport/events")
+async def admin_create_transport_event(request: Request):
+    """Manuelles Transportevent anlegen (Strecke, Ziel, Zeitfenster, optionales Manifest)."""
+    require_admin(request)
+    body = await request.json()
+    route = _normalize_route(body.get("route", ""))
+    if len(route.split(",")) < 2 or not body.get("dtstart"):
+        raise HTTPException(status_code=400, detail="route (≥2 ICAOs) und dtstart erforderlich")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        eid = create_transport_event(
+            conn,
+            name=body.get("name") or "FriesenKutter",
+            route=route,
+            destination=str(body.get("destination") or "").strip().upper() or None,
+            dtstart=body["dtstart"],
+            dtend=body.get("dtend") or None,
+            cargo=body.get("cargo") or None,
+        )
+        conn.commit()
+        return {"status": "ok", "id": eid}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/transport/events/{event_id}")
+async def admin_update_transport_event(request: Request, event_id: int):
+    """Event bearbeiten (name/route/destination/dtstart/dtend/cargo). cargo ersetzt das Manifest."""
+    require_admin(request)
+    body = await request.json()
+    fields: dict = {}
+    for k in ("name", "dtstart", "dtend"):
+        if k in body:
+            fields[k] = body[k]
+    if "route" in body:
+        fields["route"] = _normalize_route(body["route"])
+    if "destination" in body:
+        fields["destination"] = str(body.get("destination") or "").strip().upper()
+    if "cargo" in body:
+        fields["cargo"] = body["cargo"]
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        if not get_transport_event(conn, event_id):
+            raise HTTPException(status_code=404, detail="Event nicht gefunden")
+        if fields:
+            update_transport_event(conn, event_id, **fields)
+            conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/transport/events/{event_id}")
+async def admin_delete_transport_event(request: Request, event_id: int):
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        delete_transport_event(conn, event_id)
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/transport/payloads")
+async def admin_transport_payloads(request: Request):
+    """Zuladungs-Tabelle + globaler Default + beobachtete, noch nicht gepflegte Flugzeugtypen."""
+    require_admin(request)
+    now = _now_iso()
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        prefix = get_settings().CALLSIGN_PREFIX
+        unmapped: set[str] = set()
+        for ev in list_transport_events(conn):
+            p = compute_transport_progress(conn, ev, now, callsign_prefix=prefix)
+            unmapped.update(p.get("unmapped_types") or [])
+        return {
+            "payloads": list_aircraft_payloads(conn),
+            "unmapped_types": sorted(unmapped),
+            "default_kg": transport_default_payload_kg(conn),
+            "llm_configured": _llm_configured(),
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/transport/payloads")
+async def admin_upsert_payload(request: Request):
+    """Zuladungs-Zeile speichern: type_code + Komponenten (mtow/empty/fuel) und/oder payload_kg."""
+    require_admin(request)
+    body = await request.json()
+    type_code = str(body.get("type_code") or "").strip()
+    if not type_code:
+        raise HTTPException(status_code=400, detail="type_code erforderlich")
+
+    def _num(key):
+        v = body.get(key)
+        try:
+            return float(v) if v is not None and str(v) != "" else None
+        except (TypeError, ValueError):
+            return None
+
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        upsert_payload(
+            conn, type_code,
+            payload_kg=_num("payload_kg"), mtow_kg=_num("mtow_kg"),
+            empty_kg=_num("empty_kg"), fuel_kg=_num("fuel_kg"),
+            source="manual", make_model=(body.get("make_model") or None),
+        )
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/transport/payloads/suggest")
+async def admin_transport_payload_suggest(request: Request, type: str):
+    """KI-Vorschlag (Claude) für die Zuladungs-Komponenten eines Flugzeugtyps."""
+    require_admin(request)
+    from app import llm
+    if not llm.is_configured():
+        raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY nicht konfiguriert")
+    suggestion = llm.suggest_aircraft_payload(type)
+    if suggestion is None:
+        raise HTTPException(status_code=502, detail="Kein Vorschlag verfügbar")
+    return suggestion
+
+
+@app.post("/api/admin/transport/default-payload")
+async def admin_set_default_payload(request: Request):
+    """Globalen Fallback-Zuladungswert (kg) für ungepflegte Flugzeugtypen setzen."""
+    require_admin(request)
+    body = await request.json()
+    try:
+        value = float(body.get("default_kg"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="default_kg (Zahl) erforderlich")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        set_app_setting(conn, "transport_default_payload_kg", str(value))
+        conn.commit()
+        return {"status": "ok", "default_kg": value}
+    finally:
+        conn.close()
+
+
+def _llm_configured() -> bool:
+    try:
+        from app import llm
+        return llm.is_configured()
+    except Exception:  # noqa: BLE001
+        return False
 
 
 @app.get("/widget/preview", include_in_schema=False)

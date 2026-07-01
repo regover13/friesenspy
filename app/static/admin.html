@@ -791,6 +791,101 @@
           </div>
         </div>
 
+        <!-- FRIESENKUTTER — EVENTS -->
+        <div class="panel">
+          <div class="panel-title">
+            <span>🦐 FriesenKutter &ndash; Transport-Events</span>
+            <button class="btn btn-sm btn-primary" id="ke-toggle-form-btn">+ Neues Event</button>
+          </div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Kalender-Events mit „FriesenKutter" im Titel erscheinen automatisch. Fracht zählt nur
+            auf dem Weg zum Ziel; der Rückflug ist leer.
+          </p>
+          <div id="ke-form" class="hidden">
+            <div class="new-race-form-inner">
+              <div class="form-section-title" id="ke-form-title">Neues Event anlegen</div>
+              <form id="ke-create-form">
+                <div class="form-grid" style="margin-bottom:14px;">
+                  <div class="form-group">
+                    <label for="ke-name">Name</label>
+                    <input type="text" id="ke-name" placeholder="z.B. Helgoland-Nachschub" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="ke-route">Strecke (ICAOs, kommagetrennt)</label>
+                    <input type="text" id="ke-route" placeholder="EDWG,EDXH" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="ke-dest">Ziel-ICAO (Fracht zählt hierhin)</label>
+                    <input type="text" id="ke-dest" placeholder="EDXH" />
+                  </div>
+                  <div class="form-group">
+                    <label for="ke-dtstart">Start (UTC)</label>
+                    <input type="datetime-local" id="ke-dtstart" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="ke-dtend">Ende (UTC, optional)</label>
+                    <input type="datetime-local" id="ke-dtend" />
+                  </div>
+                </div>
+                <div class="form-section-title">Fracht-Manifest (Reihenfolge = Beladung)</div>
+                <datalist id="ke-cargo-suggestions">
+                  <option value="Krabbenbrötchen"></option>
+                  <option value="Friesentee"></option>
+                  <option value="Filmrollen"></option>
+                  <option value="Sonnenschirme"></option>
+                  <option value="Strandkörbe"></option>
+                  <option value="Lebensmittel"></option>
+                  <option value="Baumaterial"></option>
+                  <option value="Material für Offshore-Anlagen"></option>
+                  <option value="Heringe (für die Seehunde in EDWS)"></option>
+                  <option value="Passagiere"></option>
+                </datalist>
+                <div id="ke-cargo-rows"></div>
+                <button type="button" class="btn btn-sm" id="ke-add-cargo-btn" style="margin:8px 0 14px;">+ Frachtart</button>
+                <div style="display:flex;gap:8px;">
+                  <button type="submit" class="btn btn-primary btn-sm">Speichern</button>
+                  <button type="button" class="btn btn-sm" id="ke-cancel-btn">Abbrechen</button>
+                </div>
+              </form>
+            </div>
+          </div>
+          <div id="ke-events-container" class="scroll-list"><div class="empty-hint">Lade Events…</div></div>
+        </div>
+
+        <!-- FRIESENKUTTER — ZULADUNGSTABELLE -->
+        <div class="panel">
+          <div class="panel-title"><span>🦐 FriesenKutter &ndash; Zuladung je Flugzeugtyp</span></div>
+          <div class="form-grid" style="margin:4px 0 12px;">
+            <div class="form-group">
+              <label for="ke-default-kg">Standard-Zuladung für ungepflegte Typen (kg)</label>
+              <input type="number" id="ke-default-kg" min="0" step="10" />
+            </div>
+            <div class="form-group" style="justify-content:flex-end;">
+              <button class="btn btn-sm" id="ke-default-save-btn">Standard speichern</button>
+            </div>
+          </div>
+          <div id="ke-unmapped" style="margin-bottom:10px;"></div>
+          <div class="form-section-title">Neuer/zu bearbeitender Typ</div>
+          <div class="form-grid" style="margin:6px 0 8px;">
+            <div class="form-group"><label for="kp-type">Typcode</label>
+              <input type="text" id="kp-type" placeholder="C172" /></div>
+            <div class="form-group"><label for="kp-mtow">MTOW (kg)</label>
+              <input type="number" id="kp-mtow" min="0" step="1" /></div>
+            <div class="form-group"><label for="kp-empty">Leergewicht (kg)</label>
+              <input type="number" id="kp-empty" min="0" step="1" /></div>
+            <div class="form-group"><label for="kp-fuel">Tankinhalt (kg)</label>
+              <input type="number" id="kp-fuel" min="0" step="1" /></div>
+            <div class="form-group"><label for="kp-payload">Zuladung (kg, überschreibt)</label>
+              <input type="number" id="kp-payload" min="0" step="1" /></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <button class="btn btn-sm" id="kp-suggest-btn">💡 KI-Vorschlag</button>
+            <button class="btn btn-primary btn-sm" id="kp-save-btn">Speichern</button>
+            <span id="kp-make-model" style="color:#8aa0b8;font-size:0.8rem;align-self:center;"></span>
+          </div>
+          <div id="ke-payloads-container" class="scroll-list"><div class="empty-hint">Lade Zuladungen…</div></div>
+        </div>
+
         <!-- HINWEIS-BANNER -->
         <div class="panel">
           <div class="panel-title"><span>Hinweis-Banner (App-Startseite)</span></div>
@@ -1006,6 +1101,7 @@
       document.getElementById('admin-ui').classList.remove('hidden');
       loadBanner();
       loadPilots();
+      loadKutterAdmin();
     }
 
     document.getElementById('login-form').addEventListener('submit', async e => {
@@ -1823,6 +1919,198 @@
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/static/sw.js').catch(() => {});
     }
+
+    // ====================================================================
+    // FRIESENKUTTER — Events + Zuladungstabelle
+    // ====================================================================
+    let _keEvents = [];
+    let _keEditingId = null;
+
+    function keCargoRow(name, kg) {
+      const div = document.createElement('div');
+      div.className = 'ke-cargo-row';
+      div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;';
+      div.innerHTML = '<input type="text" class="ke-c-name" list="ke-cargo-suggestions" placeholder="Frachtart, z.B. Krabbenbrötchen" style="flex:2;" />'
+        + '<input type="number" class="ke-c-kg" placeholder="kg" min="0" step="10" style="flex:1;" />'
+        + '<button type="button" class="btn btn-sm ke-c-del">✕</button>';
+      div.querySelector('.ke-c-name').value = name || '';
+      if (kg != null && kg !== '') div.querySelector('.ke-c-kg').value = kg;
+      div.querySelector('.ke-c-del').addEventListener('click', () => div.remove());
+      return div;
+    }
+
+    function keCollectCargo() {
+      const out = [];
+      document.querySelectorAll('#ke-cargo-rows .ke-cargo-row').forEach(r => {
+        const name = r.querySelector('.ke-c-name').value.trim();
+        const kg = parseFloat(r.querySelector('.ke-c-kg').value);
+        if (name && kg > 0) out.push({ name, target_kg: kg });
+      });
+      return out;
+    }
+
+    document.getElementById('ke-add-cargo-btn').addEventListener('click', () => {
+      document.getElementById('ke-cargo-rows').appendChild(keCargoRow('', ''));
+    });
+
+    function keResetForm() {
+      _keEditingId = null;
+      document.getElementById('ke-form-title').textContent = 'Neues Event anlegen';
+      document.getElementById('ke-create-form').reset();
+      document.getElementById('ke-cargo-rows').innerHTML = '';
+    }
+
+    document.getElementById('ke-toggle-form-btn').addEventListener('click', () => {
+      const f = document.getElementById('ke-form');
+      f.classList.toggle('hidden');
+      if (!f.classList.contains('hidden') && document.getElementById('ke-cargo-rows').children.length === 0) {
+        document.getElementById('ke-cargo-rows').appendChild(keCargoRow('', ''));
+      }
+    });
+    document.getElementById('ke-cancel-btn').addEventListener('click', () => {
+      document.getElementById('ke-form').classList.add('hidden');
+      keResetForm();
+    });
+
+    document.getElementById('ke-create-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const name = document.getElementById('ke-name').value.trim();
+      const route = document.getElementById('ke-route').value.trim();
+      const dest = document.getElementById('ke-dest').value.trim();
+      const dtstart = document.getElementById('ke-dtstart').value;
+      const dtend = document.getElementById('ke-dtend').value;
+      if (!name || !route || !dtstart) { toast('Name, Strecke und Start sind erforderlich.', true); return; }
+      const body = { name, route, destination: dest, dtstart: localToIso(dtstart), cargo: keCollectCargo() };
+      if (dtend) body.dtend = localToIso(dtend);
+      const path = _keEditingId ? '/api/admin/transport/events/' + _keEditingId : '/api/admin/transport/events';
+      const res = await api('POST', path, body);
+      if (!res) return;
+      if (!res.ok) { toast('Fehler: ' + await res.text(), true); return; }
+      toast(_keEditingId ? 'Event gespeichert.' : 'Event angelegt.');
+      document.getElementById('ke-form').classList.add('hidden');
+      keResetForm();
+      loadKutterAdmin();
+    });
+
+    async function loadKutterAdmin() {
+      await Promise.all([loadKutterEventsAdmin(), loadKutterPayloads()]);
+    }
+
+    async function loadKutterEventsAdmin() {
+      const res = await api('GET', '/api/admin/transport/events');
+      if (!res || !res.ok) return;
+      _keEvents = await res.json();
+      const c = document.getElementById('ke-events-container');
+      if (!_keEvents.length) { c.innerHTML = '<div class="empty-hint">Noch keine Events.</div>'; return; }
+      c.innerHTML = _keEvents.map(ev => {
+        const cargo = (ev.cargo || []).map(x => escH(x.name) + ' ' + Math.round(x.target_kg) + 'kg').join(', ') || '—';
+        const src = ev.source === 'calendar' ? '📅 Kalender' : '✎ manuell';
+        return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.08);">'
+          + '<div><div><b>' + escH(ev.name) + '</b> <span style="color:#8aa0b8;font-size:0.72rem;">' + src + '</span></div>'
+          + '<div style="color:#8aa0b8;font-size:0.76rem;">' + escH((ev.route || '').replace(/,/g, ' → '))
+          + ' · Ziel ' + escH(ev.destination || '—') + '</div>'
+          + '<div style="color:#8aa0b8;font-size:0.72rem;">' + escH(ev.dtstart) + ' → ' + escH(ev.dtend) + '</div>'
+          + '<div style="color:#8aa0b8;font-size:0.72rem;">Fracht: ' + cargo + '</div></div>'
+          + '<div style="display:flex;gap:6px;flex:none;">'
+          + '<button class="btn btn-sm" onclick="keEdit(' + ev.id + ')">Bearbeiten</button>'
+          + '<button class="btn btn-sm btn-danger" onclick="keDelete(' + ev.id + ')">Löschen</button></div></div>';
+      }).join('');
+    }
+
+    function keEdit(id) {
+      const ev = _keEvents.find(e => e.id === id);
+      if (!ev) return;
+      _keEditingId = id;
+      document.getElementById('ke-form-title').textContent = 'Event bearbeiten';
+      document.getElementById('ke-name').value = ev.name || '';
+      document.getElementById('ke-route').value = ev.route || '';
+      document.getElementById('ke-dest').value = ev.destination || '';
+      document.getElementById('ke-dtstart').value = isoToLocal(ev.dtstart);
+      document.getElementById('ke-dtend').value = isoToLocal(ev.dtend);
+      const rows = document.getElementById('ke-cargo-rows');
+      rows.innerHTML = '';
+      (ev.cargo || []).forEach(c => rows.appendChild(keCargoRow(c.name, Math.round(c.target_kg))));
+      if (!ev.cargo || !ev.cargo.length) rows.appendChild(keCargoRow('', ''));
+      document.getElementById('ke-form').classList.remove('hidden');
+      document.getElementById('ke-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    async function keDelete(id) {
+      const ok = await showModal('Event löschen?', 'Das Transport-Event wird entfernt.', 'Löschen', true);
+      if (!ok) return;
+      const res = await api('DELETE', '/api/admin/transport/events/' + id);
+      if (!res || !res.ok) { toast('Fehler beim Löschen.', true); return; }
+      toast('Event gelöscht.');
+      loadKutterAdmin();
+    }
+
+    async function loadKutterPayloads() {
+      const res = await api('GET', '/api/admin/transport/payloads');
+      if (!res || !res.ok) return;
+      const d = await res.json();
+      document.getElementById('ke-default-kg').value = d.default_kg;
+      const um = document.getElementById('ke-unmapped');
+      if (d.unmapped_types && d.unmapped_types.length) {
+        um.innerHTML = '<div style="color:#e0a84a;font-size:0.8rem;">Noch ungepflegt (nutzen Standard): '
+          + d.unmapped_types.map(t => '<a href="#" onclick="kePrefillType(\'' + escA(t) + '\');return false;" style="color:#e0a84a;text-decoration:underline;">' + escH(t) + '</a>').join(', ') + '</div>';
+      } else { um.innerHTML = ''; }
+      document.getElementById('kp-suggest-btn').style.display = d.llm_configured ? '' : 'none';
+      const c = document.getElementById('ke-payloads-container');
+      const rows = (d.payloads || []);
+      if (!rows.length) { c.innerHTML = '<div class="empty-hint">Noch keine Typen gepflegt.</div>'; return; }
+      c.innerHTML = '<table style="width:100%;font-size:0.8rem;"><thead><tr><th style="text-align:left;">Typ</th><th>MTOW</th><th>Leer</th><th>Tank</th><th>Zuladung</th><th></th></tr></thead><tbody>'
+        + rows.map(p => '<tr><td><b>' + escH(p.type_code) + '</b>' + (p.make_model ? '<br><span style="color:#8aa0b8;font-size:0.68rem;">' + escH(p.make_model) + '</span>' : '') + '</td>'
+          + '<td>' + (p.mtow_kg ?? '—') + '</td><td>' + (p.empty_kg ?? '—') + '</td><td>' + (p.fuel_kg ?? '—') + '</td>'
+          + '<td><b>' + Math.round(p.payload_kg) + ' kg</b></td>'
+          + '<td><button class="btn btn-sm" onclick="kePrefillType(\'' + escA(p.type_code) + '\')">Bearbeiten</button></td></tr>').join('')
+        + '</tbody></table>';
+    }
+
+    function kePrefillType(code) {
+      document.getElementById('kp-type').value = code;
+      const p = null;
+      document.getElementById('kp-type').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('kp-type').focus();
+    }
+
+    document.getElementById('ke-default-save-btn').addEventListener('click', async () => {
+      const v = parseFloat(document.getElementById('ke-default-kg').value);
+      if (!(v >= 0)) { toast('Zahl ≥ 0 erforderlich.', true); return; }
+      const res = await api('POST', '/api/admin/transport/default-payload', { default_kg: v });
+      if (!res || !res.ok) { toast('Fehler.', true); return; }
+      toast('Standard-Zuladung gespeichert.');
+    });
+
+    document.getElementById('kp-suggest-btn').addEventListener('click', async () => {
+      const type = document.getElementById('kp-type').value.trim();
+      if (!type) { toast('Typcode eingeben.', true); return; }
+      toast('Hole KI-Vorschlag…');
+      const res = await api('GET', '/api/admin/transport/payloads/suggest?type=' + encodeURIComponent(type));
+      if (!res || !res.ok) { toast('Kein Vorschlag verfügbar.', true); return; }
+      const s = await res.json();
+      document.getElementById('kp-mtow').value = Math.round(s.mtow_kg);
+      document.getElementById('kp-empty').value = Math.round(s.empty_kg);
+      document.getElementById('kp-fuel').value = Math.round(s.fuel_half_kg);
+      document.getElementById('kp-payload').value = '';
+      document.getElementById('kp-make-model').textContent = s.make_model + ' · halber Tank';
+    });
+
+    document.getElementById('kp-save-btn').addEventListener('click', async () => {
+      const type = document.getElementById('kp-type').value.trim();
+      if (!type) { toast('Typcode eingeben.', true); return; }
+      const num = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
+      const body = {
+        type_code: type, mtow_kg: num('kp-mtow'), empty_kg: num('kp-empty'),
+        fuel_kg: num('kp-fuel'), payload_kg: num('kp-payload'),
+        make_model: document.getElementById('kp-make-model').textContent || null,
+      };
+      const res = await api('POST', '/api/admin/transport/payloads', body);
+      if (!res || !res.ok) { toast('Fehler beim Speichern.', true); return; }
+      toast('Zuladung gespeichert.');
+      ['kp-type', 'kp-mtow', 'kp-empty', 'kp-fuel', 'kp-payload'].forEach(i => document.getElementById(i).value = '');
+      document.getElementById('kp-make-model').textContent = '';
+      loadKutterPayloads();
+    });
 
     // ====================================================================
     // INIT

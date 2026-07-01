@@ -1,5 +1,19 @@
 [
   {
+    "version": "7.0.0",
+    "date": "2026-07-01",
+    "title": "FriesenKutter: Transportflüge mit Fracht-Manifest",
+    "highlight": true,
+    "items": [
+      "🦐 Neu: FriesenKutter — Transportflug-Events. Fliegt Nachschub zu einem Ziel (z. B. Helgoland); die bewegte Fracht wird automatisch aus euren FRS-Flügen gezählt, ganz ohne Vorbereitung.",
+      "📦 Fracht-Manifest je Event (z. B. 1 t Fischbrötchen + 500 kg Friesen Tee): ein segmentierter Ziel-Balken füllt sich der Reihe nach, jeder Flug trägt seine Ladung.",
+      "🧭 Fracht zählt nur auf dem Hinweg zum Ziel — Rückflüge fliegen leer und erscheinen als »leer« im Feed (neueste oben).",
+      "🗓️ Events per Kalender-Stichwort »FriesenKutter« ODER manuell im Admin; Zuladung je Flugzeugtyp im Admin pflegbar (MTOW/Leergewicht/Tank getrennt), mit KI-Vorschlag.",
+      "🔔 Push zu Start, erreichtem Ziel und Feierabend-Zusammenfassung.",
+      "🧺 Vorschlagsliste für Frachtarten im Admin (Krabbenbrötchen, Friesentee, Filmrollen, Strandkörbe, Heringe für die Seehunde …)."
+    ]
+  },
+  {
     "version": "6.9.4",
     "date": "2026-06-28",
     "title": "Hinweis-Banner bleibt nach dem Wegklicken weg",

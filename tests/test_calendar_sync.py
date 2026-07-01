@@ -11,79 +11,79 @@ from app.calendar_sync import parse_route
 
 class TestRouteExtraction:
     def test_collects_all_icaos_from_location_in_order(self):
-        route, _ = parse_route("EDWF EDWG EDWR", "FriesenFliegerBummel")
+        route, _, _ = parse_route("EDWF EDWG EDWR", "FriesenFliegerBummel")
         assert route == "EDWF,EDWG,EDWR"
 
     def test_deduplicates_preserving_order(self):
-        route, _ = parse_route("EDWF, EDWF, EDWG", "Bummel")
+        route, _, _ = parse_route("EDWF, EDWF, EDWG", "Bummel")
         assert route == "EDWF,EDWG"
 
     def test_preserves_given_order(self):
-        route, _ = parse_route("EDWR EDWF", "Bummel")
+        route, _, _ = parse_route("EDWR EDWF", "Bummel")
         assert route == "EDWR,EDWF"
 
     def test_falls_back_to_summary_when_location_empty(self):
-        route, _ = parse_route("", "Bummel EDWF nach EDWG")
+        route, _, _ = parse_route("", "Bummel EDWF nach EDWG")
         assert route == "EDWF,EDWG"
 
     def test_single_icao_normal_event(self):
-        route, _ = parse_route("EDDH", "Stammtisch Hamburg")
+        route, _, _ = parse_route("EDDH", "Stammtisch Hamburg")
         assert route == "EDDH"
 
     def test_no_icao(self):
-        route, is_bummel = parse_route("", "Online-Briefing")
+        route, is_bummel, _ = parse_route("", "Online-Briefing")
         assert route == ""
         assert is_bummel is False
 
 
 class TestBummelDetection:
     def test_bummel_keyword_plus_two_icaos(self):
-        _, is_bummel = parse_route("EDWF EDWG", "FriesenFliegerBummel über die Inseln")
+        _, is_bummel, _ = parse_route("EDWF EDWG", "FriesenFliegerBummel über die Inseln")
         assert is_bummel is True
 
     def test_bummel_case_insensitive(self):
-        _, is_bummel = parse_route("EDWF EDWG", "großer BUMMEL")
+        _, is_bummel, _ = parse_route("EDWF EDWG", "großer BUMMEL")
         assert is_bummel is True
 
     def test_bummel_keyword_but_only_one_icao_is_not_bummel(self):
-        _, is_bummel = parse_route("EDWF", "FriesenFliegerBummel")
+        _, is_bummel, _ = parse_route("EDWF", "FriesenFliegerBummel")
         assert is_bummel is False
 
     def test_two_icaos_without_keyword_is_not_bummel(self):
-        _, is_bummel = parse_route("EDWF EDWG", "Gruppenflug Nordsee")
+        _, is_bummel, _ = parse_route("EDWF EDWG", "Gruppenflug Nordsee")
         assert is_bummel is False
 
 
 class TestPlausibility:
     def test_implausibly_far_apart_route_is_not_bummel(self):
         # EDDF (Frankfurt) und KJFK (New York) sind ~3300 nm auseinander → kein Bummel.
-        _, is_bummel = parse_route("EDDF KJFK", "FriesenFliegerBummel")
+        _, is_bummel, _ = parse_route("EDDF KJFK", "FriesenFliegerBummel")
         assert is_bummel is False
 
     def test_plausible_short_route_stays_bummel(self):
         # EDDH (Hamburg) und EDDB (Berlin) sind ~130 nm auseinander → plausibel.
-        _, is_bummel = parse_route("EDDH EDDB", "FriesenFliegerBummel")
+        _, is_bummel, _ = parse_route("EDDH EDDB", "FriesenFliegerBummel")
         assert is_bummel is True
 
     def test_route_csv_unchanged_by_plausibility(self):
-        route, _ = parse_route("EDDF KJFK", "FriesenFliegerBummel")
+        route, _, _ = parse_route("EDDF KJFK", "FriesenFliegerBummel")
         assert route == "EDDF,KJFK"
 
 
 class TestDescription:
     def test_keyword_in_description_activates_bummel(self):
-        route, is_bummel = parse_route(
+        route, is_bummel, _ = parse_route(
             "", "Gruppenflug", "Diesmal als FriesenFliegerBummel: EDWF EDWG EDWR"
         )
         assert is_bummel is True
         assert route == "EDWF,EDWG,EDWR"
 
     def test_icaos_collected_from_all_three_in_order(self):
-        route, _ = parse_route("EDWF", "Bummel EDWG", "Weiter nach EDWR")
+        route, _, _ = parse_route("EDWF", "Bummel EDWG", "Weiter nach EDWR")
         assert route == "EDWF,EDWG,EDWR"
 
     def test_keyword_in_description_but_one_icao_is_not_bummel(self):
-        _, is_bummel = parse_route("EDWF", "Treffen", "kleiner Bummel zum Kaffee")
+        _, is_bummel, _ = parse_route("EDWF", "Treffen", "kleiner Bummel zum Kaffee")
         assert is_bummel is False
 
 

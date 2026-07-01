@@ -574,6 +574,18 @@ Der **„📋 Forum"**-Button im enthüllten Ranking kopiert diesen BBCode direk
 
 ---
 
+## GET /api/transport/events
+
+Alle FriesenKutter-Transport-Events (Kalender + manuell) mit kompaktem Live-Fortschritt. Ein Event definiert eine ICAO-Streckenmenge (`route`) und ein `destination`; Fracht zählt nur bei Ankunft am Ziel (Rückflug leer). Das Ziel wird über ein **Fracht-Manifest** (Frachtart + kg) beschrieben, das die eingehenden Flüge der Reihe nach füllen.
+
+**Response** — Array je Event: `id, name, route, destination, dtstart, dtend, source` (`calendar`|`manual`), `total_kg`, `target_kg` (= Σ Manifest oder `null`), `progress_pct` (oder `null`), `flight_count`, `loaded_count`, `cargo` (`[{name, target_kg, delivered_kg, pct}]`).
+
+## GET /api/transport/event/{id}
+
+Voller Live-Zustand eines Events: obige Felder plus `flights` (chronologisch, **neueste zuerst**): `{dep_time, cid, callsign, name, aircraft, dep, arr, tonnage_kg, loaded, cargo_name}`. Beladene Flüge tragen `loaded: true` + `cargo_name` (die Frachtart, in die ihr Anteil überwiegend floss); Rückflüge `loaded: false`, `tonnage_kg: 0`, `cargo_name: null`.
+
+---
+
 ## GET /widget
 
 Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*), 7-Tage-Flugstunden und — wenn `TS_NOTIFY_ENABLED=true` — einen TeamSpeak-Zähler-Badge `🎧 N im TS`. Design im hellen Stil von friesenflieger.de (bg `#d0e0f0`, Navy `#053080`, Vereinsrot `#D31141`). Klickbar → öffnet friesenspy.devprops.de.
@@ -838,6 +850,34 @@ Cache-Control: no-store
 Der öffentliche Endpoint `GET /api/bummel/race/{id}/badge/{cid}.png` bleibt vor der Enthüllung weiterhin `404`. In der Renn-Vorschau (`admin.html`) öffnet **🎖 Badge** diese Admin-Vorschau, **📋 Forum** kopiert den öffentlichen `[img]…[/img]`-BBCode.
 
 ---
+
+## Admin — FriesenKutter (Transport-Events)
+
+Alle Endpoints erfordern das Admin-Cookie (`require_admin`).
+
+### GET /api/admin/transport/events
+Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_kg}]`).
+
+### POST /api/admin/transport/events
+Manuelles Event anlegen. Body: `name`, `route` (Freitext/ICAO-CSV, wird normalisiert; ≥2 ICAOs), `destination` (ICAO; leer → letzter Streckenplatz), `dtstart` (UTC, Pflicht), `dtend` (optional, sonst Mitternacht UTC), `cargo` (`[{name, target_kg}]`). → `{status, id}`.
+
+### POST /api/admin/transport/events/{id}
+Bearbeiten. Übergebene Felder aus `name/route/destination/dtstart/dtend` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest.
+
+### DELETE /api/admin/transport/events/{id}
+Event samt Manifest löschen.
+
+### GET /api/admin/transport/payloads
+Zuladungs-Tabelle + globaler Fallback + beobachtete, noch nicht gepflegte Flugzeugtypen. Response: `payloads` (`[{type_code, mtow_kg, empty_kg, fuel_kg, payload_kg, source, make_model}]`), `unmapped_types`, `default_kg`, `llm_configured`.
+
+### POST /api/admin/transport/payloads
+Zuladung eines Typs setzen. Body: `type_code` (Pflicht), `mtow_kg`, `empty_kg`, `fuel_kg`, optional direktes `payload_kg` (überschreibt die Ableitung `max(0, mtow−empty−fuel)`), `make_model`.
+
+### GET /api/admin/transport/payloads/suggest?type=C172
+KI-Vorschlag (Claude Haiku 4.5, Structured Output) für die Komponenten eines Typs: `{make_model, mtow_kg, empty_kg, fuel_full_kg, fuel_half_kg, payload_kg}`. `400`, wenn `ANTHROPIC_API_KEY` fehlt.
+
+### POST /api/admin/transport/default-payload
+Globalen Fallback-Zuladungswert setzen. Body: `default_kg`.
 
 ## Admin — Hinweis-Banner
 
