@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.3.7",
+    "date": "2026-07-02",
+    "title": "Zuladungs-Recherche: schneller fündig, dreht nie mehr ewig",
+    "items": [
+      "🚁 Der KI-Zuladungs-Vorschlag kennt jetzt auch Hubschrauber (AS65 Dauphin, EC135/145, R22/R44 u. a.) und gruppennahe Muster wie die BN-2 Islander als Klartext-Hinweis — die Recherche findet seltene Typcodes damit deutlich zuverlässiger.",
+      "⏱️ Die Recherche hat jetzt ein festes Zeitbudget (2 min je Anfrage, 5 min gesamt) — der Knopf kann nicht mehr viele Minuten drehen, bevor eine Antwort kommt."
+    ]
+  },
+  {
     "version": "7.3.6",
     "date": "2026-07-01",
     "title": "Steh-Sessions sind keine Flüge",

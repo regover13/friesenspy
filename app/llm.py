@@ -34,13 +34,36 @@ _SPEC_SCHEMA = {
     "additionalProperties": False,
 }
 
-# Kleine kuratierte Umschreibung gängiger ICAO-Typcodes → Klartext, damit der Prompt eindeutig ist.
+# Kleine kuratierte Umschreibung gängiger ICAO-Typcodes → Klartext, damit der Prompt eindeutig
+# ist. Ohne Hinweis muss das Modell den Code erst per Web-Suche identifizieren — bei obskuren
+# Codes (Live-Befund: 'AS65') dauert das lange und endet öfter ohne Ergebnis.
 _TYPE_HINTS = {
     "C172": "Cessna 172", "C182": "Cessna 182", "C208": "Cessna 208 Caravan",
+    "C152": "Cessna 152",
     "PA28": "Piper PA-28", "PA24": "Piper PA-24 Comanche", "PA34": "Piper PA-34 Seneca",
+    "PA18": "Piper PA-18 Super Cub",
     "BE58": "Beechcraft Baron 58", "BE36": "Beechcraft Bonanza 36", "PC12": "Pilatus PC-12",
-    "DA40": "Diamond DA40", "DA42": "Diamond DA42", "TBM9": "Daher TBM 900", "SR22": "Cirrus SR22",
+    "DA40": "Diamond DA40", "DA42": "Diamond DA42", "DA62": "Diamond DA62",
+    "TBM9": "Daher TBM 900", "SR22": "Cirrus SR22", "SR20": "Cirrus SR20",
+    "BN2P": "Britten-Norman BN-2 Islander (Kolben)",
+    "BN2T": "Britten-Norman BN-2T Turbine Islander",
+    "DHC6": "De Havilland Canada DHC-6 Twin Otter",
+    "DR40": "Robin DR400", "AQUI": "Aquila A210", "C42": "Comco Ikarus C42",
+    # Hubschrauber (ICAO-Typendesignatoren)
+    "AS65": "Aérospatiale/Airbus AS365 Dauphin (Hubschrauber)",
+    "AS50": "Airbus H125/AS350 Écureuil (Hubschrauber)",
+    "EC35": "Airbus H135/EC135 (Hubschrauber)",
+    "EC45": "Airbus H145/EC145 (Hubschrauber)",
+    "B06": "Bell 206 JetRanger (Hubschrauber)",
+    "R22": "Robinson R22 (Hubschrauber)", "R44": "Robinson R44 (Hubschrauber)",
+    "S76": "Sikorsky S-76 (Hubschrauber)",
 }
+
+# Recherche-Grenzen: großzügig (Web-Suche über seltene Muster darf dauern), aber ENDLICH —
+# ohne eigenen Timeout galt der SDK-Default (10 min) JE Aufruf, bei bis zu 6 Fortsetzungs-
+# runden drehte der Admin-Knopf im schlimmsten Fall eine Stunde.
+_SUGGEST_REQUEST_TIMEOUT_S = 120.0   # je API-Aufruf
+_SUGGEST_TOTAL_BUDGET_S = 300.0      # gesamte Recherche inkl. Fortsetzungsrunden
 
 
 def is_configured() -> bool:
@@ -104,20 +127,23 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
 
     hint = _TYPE_HINTS.get(code, "")
     prompt = (
-        f"Recherchiere im Web die realen, dokumentierten Herstellerangaben für den Flugzeugtyp "
-        f"mit ICAO-Code '{code}'"
+        f"Recherchiere im Web die realen, dokumentierten Herstellerangaben für den "
+        f"Luftfahrzeugtyp (Flugzeug oder Hubschrauber) mit ICAO-Typendesignator '{code}'"
         + (f" ({hint})" if hint else "")
-        + ". Nutze offizielle Quellen (Flughandbuch/POH, Type Certificate Data Sheet, "
-        "Hersteller-Datenblatt) der gängigsten zertifizierten Variante. Gib in Kilogramm: MTOW, "
-        "Standard-Leergewicht (empty weight) und die nutzbare Treibstoffmenge bei VOLLEN Tanks "
-        "(usable fuel). Schätze NICHT großzügig, runde nicht auf, erfinde keine Zahlen — nimm die "
-        "dokumentierten Werte; im Zweifel den konservativen (niedrigeren) realistischen Wert. "
-        "Antworte am Ende ausschließlich mit dem geforderten JSON."
+        + ". Identifiziere zuerst eindeutig, welches Muster sich hinter dem Designator verbirgt, "
+        "und nimm dessen gängigste zertifizierte Variante. Nutze offizielle Quellen "
+        "(Flughandbuch/POH, Type Certificate Data Sheet, Hersteller-Datenblatt). Gib in "
+        "Kilogramm: MTOW, Standard-Leergewicht (empty weight) und die nutzbare Treibstoffmenge "
+        "bei VOLLEN Tanks (usable fuel). Schätze NICHT großzügig, runde nicht auf, erfinde keine "
+        "Zahlen — nimm die dokumentierten Werte; im Zweifel den konservativen (niedrigeren) "
+        "realistischen Wert. Antworte am Ende ausschließlich mit dem geforderten JSON."
     )
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        import time as _time
+        client = anthropic.Anthropic(api_key=api_key, timeout=_SUGGEST_REQUEST_TIMEOUT_S)
         messages = [{"role": "user", "content": prompt}]
+        deadline = _time.monotonic() + _SUGGEST_TOTAL_BUDGET_S
         resp = None
         for _ in range(6):  # Server-Tool-Loop: bei pause_turn erneut senden, bis Claude fertig ist
             resp = client.messages.create(
@@ -128,6 +154,9 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
                 messages=messages,
             )
             if resp.stop_reason != "pause_turn":
+                break
+            if _time.monotonic() >= deadline:
+                logger.warning("Zuladungs-Vorschlag für %s: Zeitbudget erschöpft", code)
                 break
             messages.append({"role": "assistant", "content": resp.content})
         if resp is None or resp.stop_reason == "refusal":
