@@ -368,14 +368,6 @@
     .bummel-incomplete .bi-missing { color: #e0884a; }
 
     /* ---- FriesenKutter (Transportflug-Events) ---- */
-    .kutter-item {
-      display: flex; justify-content: space-between; align-items: center; gap: 10px;
-      padding: 9px 4px; border-bottom: 1px solid var(--green-dim); cursor: pointer;
-      font-family: var(--text-mono); font-size: 0.82rem;
-    }
-    .kutter-item:hover { background: rgba(120,220,160,0.06); }
-    .kutter-item .ki-sub { color: var(--text-label); font-size: 0.72rem; }
-    .kutter-item .ki-kg { color: #7ee6bd; font-weight: 700; }
     .kutter-bar { display: flex; gap: 3px; height: 16px; margin: 10px 0 6px; }
     .kutter-seg { position: relative; background: rgba(255,255,255,0.10); border-radius: 4px; overflow: hidden; }
     .kutter-seg > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg,#28b98f,#c8933a); }
@@ -1571,21 +1563,6 @@
         </div>
       </div>
     </div>
-    <div class="panel" id="kutter-panel" hidden style="margin-bottom:16px;">
-      <div class="panel-title">🦐 FriesenKutter · Transportflüge</div>
-      <div id="kutter-list"></div>
-      <div id="kutter-detail" class="hidden" style="margin-top:12px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
-          <span id="kutter-detail-title" style="font-family:var(--text-display);letter-spacing:0.06em;"></span>
-          <span style="display:flex;gap:8px;">
-            <button class="btn-share" onclick="copyKutterShareHeader(this)">⎘ Teilen</button>
-            <button class="btn-share" onclick="closeKutterDetail()">✕ Zu&shy;rück</button>
-          </span>
-        </div>
-        <div id="kutter-detail-body"></div>
-      </div>
-    </div>
-
     <div class="panel">
       <div class="panel-title">Event-Analyse · Wer war dabei?</div>
       <div class="events-form">
@@ -1621,6 +1598,16 @@
           <button class="btn-share" onclick="copyBummelShareHeader(this)">⎘ Teilen</button>
         </div>
         <div id="bummel-content"></div>
+      </div>
+    </div>
+
+    <div id="kutter-results" class="hidden">
+      <div class="panel">
+        <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <span id="kutter-title">🦐 FriesenKutter</span>
+          <button class="btn-share" onclick="copyKutterShareHeader(this)">⎘ Teilen</button>
+        </div>
+        <div id="kutter-content"></div>
       </div>
     </div>
 
@@ -2692,6 +2679,9 @@ function _prefillEventForm(ev) {
   document.getElementById('ev-icao').value = ev.route || ev.location || 'global';
   document.getElementById('events-results').classList.add('hidden');
   document.getElementById('bummel-results').classList.add('hidden');
+  document.getElementById('kutter-results').classList.add('hidden');
+  clearInterval(_kutterPollTimer);
+  _kutterPollTimer = null;
   _activeBummel = null;
   searchEvents();
 }
@@ -4281,27 +4271,6 @@ function _kColor(i) {
   return ['#28b98f', '#c8933a', '#3aa0d0', '#c9502e', '#8e7ad0', '#6aa84f'][i % 6];
 }
 
-async function loadKutterEvents() {
-  const panel = document.getElementById('kutter-panel');
-  if (!panel) return;
-  try {
-    const events = await fetch('/api/transport/events').then(r => r.json());
-    if (!Array.isArray(events) || events.length === 0) { panel.hidden = true; return; }
-    panel.hidden = false;
-    document.getElementById('kutter-list').innerHTML = events.map(_kutterRow).join('');
-  } catch (e) { panel.hidden = true; }
-}
-
-function _kutterRow(ev) {
-  const goal = ev.target_kg ? ' / ' + _kfmtT(ev.target_kg) : '';
-  const pct = ev.progress_pct != null ? ' · ' + Math.min(100, Math.round(ev.progress_pct)) + '%' : '';
-  const route = (ev.route || '').replace(/,/g, ' → ');
-  return '<div class="kutter-item" onclick="openKutterDetail(' + ev.id + ')">'
-    + '<div><div>' + _kesc(ev.name || 'FriesenKutter') + '</div>'
-    + '<div class="ki-sub">' + _kesc(route) + ' · ' + (ev.loaded_count || 0) + ' Frachtflüge</div></div>'
-    + '<div class="ki-kg">' + _kfmtT(ev.total_kg) + goal + pct + '</div></div>';
-}
-
 function _kCargoLabel(f) {
   if (!f.loaded) return '<td class="kf-empty">zurück</td>';
   const lines = f.cargo_lines || [];
@@ -4353,22 +4322,21 @@ function _kutterDetailBody(d) {
 
 async function openKutter(ev) {
   // Kalendertermin → FriesenKutter-Event mappen (über calendar_uid, wie openBummel es für
-  // Bummel-Rennen tut) und die Live-Ansicht direkt öffnen, statt nur das Suchformular zu füllen.
-  await loadKutterEvents();
-  const panel = document.getElementById('kutter-panel');
-  if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Bummel-Rennen tut) und die Live-Ansicht direkt öffnen — nur per Klick, genau wie Bummel.
   try {
     const events = await (await fetch('/api/transport/events')).json();
     const match = (events || []).find(k => k.calendar_uid === ev.uid);
     if (match) await openKutterDetail(match.id);
-  } catch (e) { /* ignorieren — Panel bleibt sichtbar */ }
+  } catch (e) { /* ignorieren */ }
 }
 
 async function openKutterDetail(id) {
   _kutterOpenId = id;
   setUrlState({ tab: 'events', kutter: id });
-  document.getElementById('kutter-list').classList.add('hidden');
-  document.getElementById('kutter-detail').classList.remove('hidden');
+  const wrap = document.getElementById('kutter-results');
+  wrap.classList.remove('hidden');
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('events-results').classList.add('hidden');
   await _refreshKutterDetail();
   clearInterval(_kutterPollTimer);
   _kutterPollTimer = setInterval(_refreshKutterDetail, 25000);
@@ -4378,7 +4346,6 @@ async function openKutterDetail(id) {
 async function openKutterById(id) {
   const tabBtn = document.querySelector('[data-tab="events"]');
   if (tabBtn) tabBtn.click();
-  await loadKutterEvents();
   await openKutterDetail(Number(id));
 }
 
@@ -4406,18 +4373,9 @@ async function _refreshKutterDetail() {
   if (_kutterOpenId == null) return;
   try {
     const d = await fetch('/api/transport/event/' + _kutterOpenId).then(r => r.json());
-    document.getElementById('kutter-detail-title').textContent = '🦐 ' + (d.name || 'FriesenKutter');
-    document.getElementById('kutter-detail-body').innerHTML = _kutterDetailBody(d);
+    document.getElementById('kutter-title').textContent = '🦐 ' + (d.name || 'FriesenKutter');
+    document.getElementById('kutter-content').innerHTML = _kutterDetailBody(d);
   } catch (e) {}
-}
-
-function closeKutterDetail() {
-  clearInterval(_kutterPollTimer);
-  _kutterPollTimer = null;
-  _kutterOpenId = null;
-  document.getElementById('kutter-detail').classList.add('hidden');
-  document.getElementById('kutter-list').classList.remove('hidden');
-  loadKutterEvents();
 }
 
 // ==========================================================================
@@ -4478,7 +4436,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
     if (tab === 'events') {
       fetchFriesenEvents();
-      loadKutterEvents();
     } else {
       // Beim Verlassen des Events-Tabs den FriesenKutter-Live-Poll stoppen.
       clearInterval(_kutterPollTimer);
@@ -4493,9 +4450,12 @@ document.getElementById('stats-days').addEventListener('change', fetchStats);
 
 // Events search
 document.getElementById('events-search-btn').addEventListener('click', () => {
-  // Manuelle Suche → kein Bummel-Kontext (Ranking + Standing-Badges ausblenden)
+  // Manuelle Suche → kein Bummel-/Kutter-Kontext (Ranking + Standing-Badges ausblenden)
   _activeBummel = null;
   document.getElementById('bummel-results').classList.add('hidden');
+  document.getElementById('kutter-results').classList.add('hidden');
+  clearInterval(_kutterPollTimer);
+  _kutterPollTimer = null;
   searchEvents();
 });
 
