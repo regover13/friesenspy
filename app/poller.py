@@ -34,6 +34,8 @@ from app.database import (
     update_flight_plan,
     upsert_live_position,
     upsert_statsim_flights,
+    active_transport_destinations,
+    check_live_arrival,
 )
 from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_position
 from app.alerts import format_online_message, send_telegram_alert
@@ -492,6 +494,7 @@ class VatsimPoller:
            - Neu online  → ensure_pilot, open_flight, upsert_live_position,
                            save_position_history, Telegram-Alert senden
            - Noch online → upsert_live_position, save_position_history
+           - Live-Ankunft (FriesenKutter) → check_live_arrival je Pilot gegen laufende Events
            - Offline     → close_flight, remove_live_position,
                            _active_flights[cid] entfernen
         3. SSE-Queue: get_live_positions() → {"type": "positions", "data": [...]}
@@ -747,7 +750,20 @@ class VatsimPoller:
                                 cid, old_dep, old_arr, new_dep, new_arr,
                             )
 
-                # 2c. Pilots who went offline
+                # 2c. Live-Ankunft prüfen (FriesenKutter, ohne Disconnect) — läuft im selben
+                # Poll-Takt mit, kein eigener Timer. Nutzt dieselben Live-Positionen, die 2a/2b
+                # gerade aktualisiert haben.
+                now_check = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                active_events = active_transport_destinations(conn, now_check)
+                if active_events:
+                    for cid in current_cids:
+                        pos = current[cid]
+                        check_live_arrival(
+                            conn, cid, pos["logon_time"], pos["latitude"], pos["longitude"],
+                            pos["groundspeed"], active_events,
+                        )
+
+                # 2d. Pilots who went offline
                 # Logoff = letzter echter Beleg (letzte gespeicherte Position dieses Fluges),
                 # nicht die Wanduhr. Der Pilot verschwand diesen Poll; zuletzt gesehen wurde er
                 # beim vorigen Poll → kein Über-Zählen, keine Inflation.
@@ -978,7 +994,7 @@ class VatsimPoller:
                 set_transport_started, set_transport_goal_reached, set_transport_summarized,
                 set_transport_summary_quip, transport_quips_enabled,
                 event_summary_context, flight_quip_context,
-                get_push_subscriptions_for_events,
+                get_push_subscriptions_for_events, transport_event_started,
             )
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             conn = get_connection(self.db_path)
@@ -996,7 +1012,10 @@ class VatsimPoller:
                     progress = compute_transport_progress(
                         conn, ev, now, callsign_prefix=self.callsign_prefix
                     )
-                    if not ev.get("started_at") and progress["flight_count"] > 0:
+                    if not ev.get("started_at") and (
+                        progress["flight_count"] > 0
+                        or transport_event_started(conn, ev, self.callsign_prefix)
+                    ):
                         if set_transport_started(conn, ev["id"], now) and push_on:
                             pushes.append({"title": name,
                                            "body": "Der FriesenKutter läuft — Fracht wird geladen! 📦",
