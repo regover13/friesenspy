@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.3.6",
+    "date": "2026-07-01",
+    "title": "Steh-Sessions sind keine Flüge",
+    "items": [
+      "🧹 Wer nur verbunden am Boden steht (Track vorhanden, aber null Bewegung und keine Strecke), taucht nicht mehr als 0-nm-„Flug\" in den Listen auf — egal wie lange die Session dauerte. Alte Flüge ohne GPS-Daten bleiben unangetastet."
+    ]
+  },
+  {
     "version": "7.3.5",
     "date": "2026-07-01",
     "title": "Track-Rekonstruktion findet den Flug jetzt wirklich",

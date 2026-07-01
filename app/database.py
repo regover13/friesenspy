@@ -1549,7 +1549,9 @@ def canonicalize_flights(
     Liefert eine Liste von Flug-Dicts (absteigend nach logon_time) mit Feld `source`
     ('friesenspy' | 'statsim'). FriesenSpy-Flüge: nur aktive (superseded_by IS NULL),
     abgeschlossene; Fragmente/Reconnects via merge_fragmented_flights zusammengeführt;
-    Test-Connects (≤0.5 nm und ≤5 min) verworfen. StatSim: nur Einträge, die NICHT bereits
+    Ghosts verworfen: Test-Connects (≤0.5 nm und ≤5 min) sowie belegte Steh-Sessions
+    (keine Strecke, Blockzeit 0, Track vorhanden — verbunden rumstehen ist kein Flug;
+    Altflüge ohne Positionsdaten bleiben). StatSim: nur Einträge, die NICHT bereits
     durch einen FriesenSpy-Flug abgedeckt sind.
 
     Alle Views (Statistik, Events, Piloten-Detail) nutzen diese Funktion → identische Zahlen.
@@ -1593,10 +1595,29 @@ def canonicalize_flights(
                 seen.add(k)
                 dd.append(f)
         merged = merge_fragmented_flights(dd, conn=conn)
-        merged = [
-            f for f in merged
-            if (f.get("distance_nm") or 0) > 0.5 or (f.get("duration_min") or 0) > 5
-        ]
+
+        def _is_ghost(f: dict) -> bool:
+            # Echte Strecke → Flug.
+            if (f.get("distance_nm") or 0) > 0.5:
+                return False
+            # Kurz-Connect ohne Strecke → Test-Connect.
+            if (f.get("duration_min") or 0) <= 5:
+                return True
+            # Länger verbunden, keine Strecke: eine Steh-Session ist KEIN Flug — aber nur
+            # verwerfen, wenn der Track den Stillstand BELEGT (Positionen vorhanden,
+            # Blockzeit 0). Altflüge ohne Positionsdaten bleiben (im Zweifel echter Flug).
+            if (f.get("block_min") or 0) > 0:
+                return False
+            lo, lf = f.get("logon_time"), f.get("logoff_time")
+            if not lo or not lf:
+                return False
+            has_pos = conn.execute(
+                "SELECT 1 FROM position_history WHERE cid=? AND ts>=? AND ts<=? LIMIT 1",
+                (cid, lo, lf),
+            ).fetchone()
+            return has_pos is not None
+
+        merged = [f for f in merged if not _is_ghost(f)]
         fs_by_cid[cid] = merged
         for f in merged:
             result.append({"source": "friesenspy", **f})
