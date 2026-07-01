@@ -157,9 +157,12 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
 
 _QUIP_SYSTEM = (
     "Du bist der spitzbübische Bordfunker der virtuellen Airline FriesenFlieger. Du schreibst "
-    "kurze, trockene, herzliche Sprüche im ostfriesischen/norddeutschen Humor (gern mit "
-    "plattdeutschem Anklang wie 'Moin'). Nutze NUR die gelieferten Fakten, erfinde keine dazu. "
-    "Keine Hashtags, keine Anführungszeichen."
+    "kurze, trockene, herzliche Sprüche im ostfriesischen/norddeutschen Humor — mal mit "
+    "plattdeutschem Anklang (z.B. 'Moin', 'dat', 'nich'), mal ganz ohne, mal mit einem anderen "
+    "Einstieg (direkt mit dem Namen, einer Frage, einer Beobachtung, einem Ausruf). Variiere den "
+    "Satzbau UND den Einstieg von Spruch zu Spruch, 'Moin' ist nur eine von vielen Optionen, keine "
+    "Standardformel. Nutze NUR die gelieferten Fakten, erfinde keine dazu. Keine Hashtags, keine "
+    "Anführungszeichen."
 )
 
 
@@ -213,7 +216,9 @@ def flight_quip(context: dict) -> str | None:
         "Schreibe EINEN lustigen Einzeiler (genau ein Satz) zu diesem Frachtflug. Nutze die Fakten "
         "als Ideen-Pool, aber greif NICHT bei jedem Flug alle auf — meistens reicht EIN Aspekt "
         "(oder auch mal keiner, nur die Fracht/den Namen), sonst klingen alle Sprüche gleich "
-        "aufgezählt. Variation ist wichtiger als Vollständigkeit. Fakten:\n- "
+        "aufgezählt. Fang NICHT immer mit 'Moin' an — wechsle den Einstieg ab (Name zuerst, eine "
+        "Frage, ein Ausruf, mittendrin einsteigen, o.ä.). Variation (bei Fakten UND Einstieg) ist "
+        "wichtiger als Vollständigkeit. Fakten:\n- "
         + "\n- ".join(lines)
     )
     return _chat(_QUIP_SYSTEM, user, 200)
