@@ -2698,9 +2698,11 @@ def compute_transport_progress(
     flights = [f for f in flights if (f.get("logoff_time") or "") >= start]
 
     dest = normalize_type_code(event.get("destination"))
+    live_arrivals = get_transport_live_arrivals(conn, int(event["id"]))
 
-    # Netzwerk-Flüge sammeln (dep & arr auf der Strecke, dep≠arr). „Beladen" = Ankunft am Ziel;
-    # Rückflüge (und Bein-zu-Bein ohne Ziel) sind leer (0 kg), erscheinen aber im Feed.
+    # Netzwerk-Flüge sammeln (dep & arr auf der Strecke, dep≠arr). „Beladen" = Ankunft am Ziel
+    # ODER ein Live-Ankunfts-Latch existiert (Fracht ohne Disconnect erkannt) — ein Latch hebt
+    # den Strecken-Filter auf, da die Fracht dann unabhängig vom finalen Disconnect-Ort zählt.
     network: list[dict] = []
     unmapped: set[str] = set()
     for f in flights:
@@ -2713,9 +2715,10 @@ def compute_transport_progress(
             or normalize_type_code(f.get("departure"))
         arr = _nearest_airport(coords_map, _last_pos(conn, int(cid), lo, lf), radius) \
             or normalize_type_code(f.get("arrival"))
-        if dep not in route_set or arr not in route_set or dep == arr:
+        has_latch = (cid, lo) in live_arrivals
+        if not has_latch and (dep not in route_set or arr not in route_set or dep == arr):
             continue
-        loaded = bool(dest) and arr == dest
+        loaded = bool(dest) and (arr == dest or has_latch)
         type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
         if loaded and type_code and type_code not in payload_map:
             unmapped.add(type_code)
@@ -2732,6 +2735,38 @@ def compute_transport_progress(
             "flight_key": f"{cid}:{lo}",
             "distance_nm": f.get("distance_nm") or 0,
             "block_min": f.get("block_min") or f.get("duration_min") or 0,
+        })
+
+    # Aktuell offene Flüge (noch verbunden) — bisher komplett ignoriert, da canonicalize_flights
+    # logoff_time IS NOT NULL verlangt. Zählen ab dem Live-Ankunfts-Latch, ohne Disconnect.
+    for f in open_transport_flights(conn, callsign_prefix):
+        cid = f.get("cid")
+        if cid is None:
+            continue
+        lo = f.get("logon_time") or ""
+        if lo < start:
+            continue
+        dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
+            or normalize_type_code(f.get("departure"))
+        if dep not in route_set or dep == dest:
+            continue
+        loaded = bool(dest) and (cid, lo) in live_arrivals
+        type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
+        if loaded and type_code and type_code not in payload_map:
+            unmapped.add(type_code)
+        tonnage = round(payload_map.get(type_code, default_kg), 1) if loaded else 0.0
+        network.append({
+            "dep_time": lo,
+            "cid": cid,
+            "callsign": f.get("callsign") or "",
+            "aircraft": f.get("aircraft") or type_code,
+            "dep": dep,
+            "arr": dest,
+            "tonnage_kg": tonnage,
+            "loaded": loaded,
+            "flight_key": f"{cid}:{lo}",
+            "distance_nm": 0,
+            "block_min": 0,
         })
 
     network.sort(key=lambda x: x["dep_time"])  # aufsteigend für die Manifest-Füllung

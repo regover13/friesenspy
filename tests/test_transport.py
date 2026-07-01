@@ -444,8 +444,8 @@ class TestLiveArrivalLatch:
 
 class TestTransportEventStarted:
     """transport_event_started: Start-Latch soll schon beim Abflug feuern, nicht erst bei
-    Landung/Disconnect — compute_transport_progress ignoriert offene Flüge bewusst (GPS-Ankunft
-    erst nach Disconnect verlässlich), das darf den Start-Push aber nicht verzögern."""
+    Landung/Disconnect — unabhängig davon, ob compute_transport_progress den offenen Flug schon
+    als beladen sieht (das hängt vom Live-Ankunfts-Latch ab, siehe TestLiveArrivalInProgress)."""
 
     def test_true_when_open_flight_departs_from_route(self):
         conn = _make_conn()
@@ -464,15 +464,19 @@ class TestTransportEventStarted:
         _add_open_flight(conn, 61, "EDDF", "", "C208", START)  # nicht auf der Strecke
         assert transport_event_started(conn, ev) is False
 
-    def test_true_even_though_progress_flight_count_is_still_zero(self):
-        """Dokumentiert den Live-Test-Fall: Flug in der Luft, noch kein Disconnect ->
-        compute_transport_progress sieht (korrekt) noch keinen Flug, transport_event_started
-        aber schon."""
+    def test_true_and_progress_shows_open_flight_unloaded_without_latch(self):
+        """Flug in der Luft, noch kein Disconnect und noch kein Live-Ankunfts-Latch ->
+        compute_transport_progress zeigt den Flug jetzt bereits im Feed (seit Task 4), aber
+        unbeladen (0 kg); transport_event_started feuert unabhängig davon schon beim Abflug."""
         conn = _make_conn()
         ev = _event(conn)
         _add_open_flight(conn, 61, "EDWG", "", "C208", START)
         progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
-        assert progress["flight_count"] == 0
+        assert progress["flight_count"] == 1
+        f = _feed_by_callsign(progress, "FRS61")
+        assert f is not None
+        assert f["loaded"] is False
+        assert f["tonnage_kg"] == 0
         assert transport_event_started(conn, ev) is True
 
 
@@ -524,3 +528,73 @@ class TestCheckLiveArrival:
         check_live_arrival(conn, 42, START, lat, lon, 1.0, self._events(ev["id"]))
         conn.commit()
         assert get_transport_live_arrivals(conn, ev["id"]) == {(42, START)}
+
+
+class TestLiveArrivalInProgress:
+    def test_open_flight_without_latch_shows_zero_kg(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=550)
+        _add_open_flight(conn, 9, "EDWG", "", "C208", START)
+        ev = _event(conn)
+        p = compute_transport_progress(conn, ev, END)
+        f = _feed_by_callsign(p, "FRS09")
+        assert f is not None
+        assert f["loaded"] is False
+        assert f["tonnage_kg"] == 0
+
+    def test_open_flight_with_latch_counts_immediately(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=550)
+        _add_open_flight(conn, 9, "EDWG", "", "C208", START)
+        ev = _event(conn)
+        set_transport_live_arrival(conn, 9, START, ev["id"], "2026-07-01T10:00:00Z")
+        conn.commit()
+        p = compute_transport_progress(conn, ev, END)
+        f = _feed_by_callsign(p, "FRS09")
+        assert f["loaded"] is True
+        assert f["tonnage_kg"] == 550
+
+    def test_latch_persists_after_disconnect_elsewhere(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=550)
+        ev = _event(conn)
+        _add_open_flight(conn, 9, "EDWG", "", "C208", START)
+        set_transport_live_arrival(conn, 9, START, ev["id"], "2026-07-01T10:00:00Z")
+        conn.commit()
+        # Pilot disconnectet spaeter ganz woanders (Ziel ausserhalb der Strecke) -- die Fracht
+        # bleibt trotzdem gezaehlt, weil der Latch bereits existiert.
+        conn.execute(
+            "UPDATE flights SET logoff_time=?, arrival='EDDH', duration_min=45, distance_nm=120 "
+            "WHERE cid=9",
+            (END,),
+        )
+        conn.commit()
+        p = compute_transport_progress(conn, ev, END)
+        f = _feed_by_callsign(p, "FRS09")
+        assert f is not None
+        assert f["loaded"] is True
+        assert f["tonnage_kg"] == 550
+
+    def test_open_flight_departing_from_destination_is_excluded(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=550)
+        _add_open_flight(conn, 9, "EDXH", "", "C208", START)  # startet BEREITS am Ziel
+        ev = _event(conn)
+        p = compute_transport_progress(conn, ev, END)
+        assert _feed_by_callsign(p, "FRS09") is None
+
+    def test_open_flight_participates_in_coload_fill(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=550)
+        ev = _event(conn, cargo=[
+            {"name": "Filmrollen", "target_kg": 300, "per_flight_max_kg": 100, "emoji": "🎞️"},
+            {"name": "Friesentee", "target_kg": 500, "emoji": "🫖"},
+        ])
+        _add_open_flight(conn, 9, "EDWG", "", "C208", START)
+        set_transport_live_arrival(conn, 9, START, ev["id"], "2026-07-01T10:00:00Z")
+        conn.commit()
+        p = compute_transport_progress(conn, ev, END)
+        film = next(c for c in p["cargo"] if c["name"] == "Filmrollen")
+        tee = next(c for c in p["cargo"] if c["name"] == "Friesentee")
+        assert film["delivered_kg"] == 100
+        assert tee["delivered_kg"] == 450
