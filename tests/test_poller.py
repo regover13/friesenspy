@@ -878,3 +878,88 @@ class TestPollTeamspeak:
             assert "ts_poll" in {j.id for j in poller._scheduler.get_jobs()}
         finally:
             await poller.stop()
+
+
+class TestKutterLiveArrivalHook:
+    @pytest.mark.asyncio
+    async def test_poll_once_latches_live_arrival_without_disconnect(self, tmp_path):
+        """Ein FRS-Pilot, der langsam (< 2 kt) im Zielradius eines laufenden Kutter-Events ist,
+        wird SOFORT gelatcht -- ohne dass er disconnecten muss."""
+        from app.database import (
+            init_db, get_connection, create_transport_event, get_transport_live_arrivals,
+        )
+        from app.geo import icao_to_coords
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = get_connection(db_file)
+        event_id = create_transport_event(
+            conn, name="Testkutter", route="EDWG,EDXH", destination="EDXH",
+            dtstart="2020-01-01T00:00:00Z", dtend="2030-01-01T00:00:00Z",
+        )
+        conn.commit()
+        conn.close()
+
+        lat, lon = icao_to_coords("EDXH")
+
+        poller = VatsimPoller(db_path=db_file, callsign_prefix="FRS", poll_interval=60)
+        poller._http_client = AsyncMock()
+        poller.subscribe_sse()
+
+        vatsim_data = {
+            "pilots": [{
+                "cid": 555,
+                "name": "Ludger Friesen",
+                "callsign": "FRS55",
+                "latitude": lat,
+                "longitude": lon,
+                "altitude": 0,
+                "groundspeed": 1,
+                "heading": 90,
+                "logon_time": "2026-07-01T09:00:00Z",
+                "flight_plan": {
+                    "aircraft_short": "C208", "departure": "EDWG", "arrival": "EDXH",
+                },
+            }]
+        }
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=vatsim_data)):
+            await poller._poll_once()
+
+        conn = get_connection(db_file)
+        try:
+            latches = get_transport_live_arrivals(conn, event_id)
+        finally:
+            conn.close()
+        assert (555, "2026-07-01T09:00:00Z") in latches
+
+    @pytest.mark.asyncio
+    async def test_poll_once_no_active_event_no_latch(self, tmp_path):
+        """Ohne laufendes Kutter-Event wird nichts gelatcht (kein Fehler, kein Latch)."""
+        from app.database import init_db, get_connection
+        from app.geo import icao_to_coords
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+
+        lat, lon = icao_to_coords("EDXH")
+        poller = VatsimPoller(db_path=db_file, callsign_prefix="FRS", poll_interval=60)
+        poller._http_client = AsyncMock()
+        poller.subscribe_sse()
+
+        vatsim_data = {
+            "pilots": [{
+                "cid": 555, "name": "Ludger Friesen", "callsign": "FRS55",
+                "latitude": lat, "longitude": lon, "altitude": 0, "groundspeed": 1, "heading": 90,
+                "logon_time": "2026-07-01T09:00:00Z",
+                "flight_plan": {"aircraft_short": "C208", "departure": "EDWG", "arrival": "EDXH"},
+            }]
+        }
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=vatsim_data)):
+            await poller._poll_once()  # darf NICHT werfen
+
+        conn = get_connection(db_file)
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM transport_live_arrivals").fetchone()
+        finally:
+            conn.close()
+        assert row[0] == 0
