@@ -117,6 +117,14 @@ async def _fetch_statsim_background(cid: int, api_key: str, db_path: str, full: 
         try:
             upsert_statsim_flights(conn, fresh)
             conn.commit()
+            # Frisch gecachte StatSim-Flüge können verwaiste eigene Tracks decken (A1-Schaden)
+            # → sofort rekonstruieren, nicht erst beim nächsten Container-Start.
+            try:
+                from app.database import reconstruct_orphaned_flights
+                if reconstruct_orphaned_flights(conn, cids=[cid]):
+                    conn.commit()
+            except Exception:
+                _logger.exception("Track-Rekonstruktion nach StatSim-Refresh fehlgeschlagen")
         finally:
             conn.close()
         if full:

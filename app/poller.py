@@ -65,6 +65,14 @@ async def _load_statsim_history(cid: int, api_key: str, db_path: str) -> None:
         try:
             upsert_statsim_flights(conn, flights)
             conn.commit()
+            # Frisch geladene StatSim-Historie kann verwaiste eigene Tracks decken (A1-Schaden)
+            # → sofort rekonstruieren, nicht erst beim nächsten Container-Start.
+            try:
+                from app.database import reconstruct_orphaned_flights
+                if reconstruct_orphaned_flights(conn, cids=[cid]):
+                    conn.commit()
+            except Exception:
+                logger.exception("Track-Rekonstruktion nach StatSim-Load fehlgeschlagen")
         finally:
             conn.close()
         logger.info("StatSim history loaded for new pilot CID %s (%d flights)", cid, len(flights))

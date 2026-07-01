@@ -51,7 +51,7 @@ VATSIM-Piloten trennen die Verbindung manchmal kurz, ohne dass ein echter Flugwe
 **Was nicht gemergt wird:**
 - Zwei Einträge mit **unterschiedlichen** Flugplänen (verschiedenes DEP oder ARR) → immer zwei separate Flüge
 - Kein-FP-Eintrag gefolgt von Flugplan, aber **Startposition > 10 km** vom DEP-Airport entfernt → zwei separate Flüge (Pilot war woanders)
-- Der erste Eintrag ist bereits **am Flugplan-Ziel gelandet** (letzte Position im 10-km-Umkreis, am Boden) → der Flugplan ist abgeflogen; ein späterer Eintrag ist ein **neuer Flug**. Das schützt vor allem den Fall „Rückflug mit stehengebliebenem (altem) Flugplan": er startet ebenfalls am alten Ziel und würde sonst fälschlich in den Hinflug gemergt.
+- Der erste Eintrag ist **geflogen und am Boden geendet** (gelandet — egal wo) → der Flug ist abgeschlossen; ein späterer Eintrag ist ein **neuer Flug**. Das schützt den Fall „Rückflug mit stehengebliebenem (altem) Flugplan" in beide Richtungen: weder wird der Rückflug in den gelandeten Hinflug gemergt, noch der nächste Hinflug in den gelandeten Rückflug. Reine Boden-Einträge (nie geflogen, z. B. Reconnect am Gate vor dem Neu-Filen) mergen weiterhin.
 
 **Flugplan-Änderungserkennung während des Fluges:** Ändert ein Pilot seinen Flugplan während einer aktiven Verbindung, reagiert FriesenSpy sofort beim nächsten 15-Sekunden-Poll:
 - **Kein Plan → Plan eingereicht**: DEP/ARR wird dem laufenden Flug-Eintrag nachgetragen.

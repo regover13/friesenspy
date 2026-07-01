@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.3.4",
+    "date": "2026-07-01",
+    "title": "Nachfix: Rückflug-Merge vollständig gelöst + Reparatur ohne Neustart",
+    "items": [
+      "🛬 Ein gelandeter Flug ist abgeschlossen — egal wo: auch der Folgeflug NACH dem Rückflug mit altem Flugplan bleibt jetzt ein eigener Flug (Ralfs drei Flüge vom 01.07. erscheinen wieder einzeln).",
+      "🔄 Verwaiste Tracks werden jetzt sofort nach jedem StatSim-Abgleich rekonstruiert (z. B. beim Öffnen der Piloten-Flugliste) — nicht mehr erst beim nächsten Server-Neustart."
+    ]
+  },
+  {
     "version": "7.3.3",
     "date": "2026-07-01",
     "title": "KI-Sprüche: verständliches Hochdeutsch statt Platt-Vokabeln",
