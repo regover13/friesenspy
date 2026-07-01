@@ -1576,7 +1576,10 @@
       <div id="kutter-detail" class="hidden" style="margin-top:12px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
           <span id="kutter-detail-title" style="font-family:var(--text-display);letter-spacing:0.06em;"></span>
-          <button class="btn-share" onclick="closeKutterDetail()">✕ Zu&shy;rück</button>
+          <span style="display:flex;gap:8px;">
+            <button class="btn-share" onclick="copyKutterShareHeader(this)">⎘ Teilen</button>
+            <button class="btn-share" onclick="closeKutterDetail()">✕ Zu&shy;rück</button>
+          </span>
         </div>
         <div id="kutter-detail-body"></div>
       </div>
@@ -4362,11 +4365,40 @@ async function openKutter(ev) {
 
 async function openKutterDetail(id) {
   _kutterOpenId = id;
+  setUrlState({ tab: 'events', kutter: id });
   document.getElementById('kutter-list').classList.add('hidden');
   document.getElementById('kutter-detail').classList.remove('hidden');
   await _refreshKutterDetail();
   clearInterval(_kutterPollTimer);
   _kutterPollTimer = setInterval(_refreshKutterDetail, 25000);
+}
+
+// Deep-Link-Einstieg (URL-Hash #tab=events&kutter=<id>) — Events-Tab aktivieren, dann öffnen.
+async function openKutterById(id) {
+  const tabBtn = document.querySelector('[data-tab="events"]');
+  if (tabBtn) tabBtn.click();
+  await loadKutterEvents();
+  await openKutterDetail(Number(id));
+}
+
+// Teilt EXPLIZIT den Deep-Link eines FriesenKutter-Events — unabhängig vom flüchtigen
+// location.href (analog copyBummelShareUrl).
+function copyKutterShareUrl(id, btn) {
+  const url = `${location.origin}${location.pathname}#tab=events&kutter=${id}`;
+  navigator.clipboard.writeText(url).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Kopiert!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✗ Fehler';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  });
+}
+
+// Teilen-Knopf oben rechts in der Kutter-Detail-View: teilt das gerade geöffnete Event.
+function copyKutterShareHeader(btn) {
+  if (_kutterOpenId != null) copyKutterShareUrl(_kutterOpenId, btn);
 }
 
 async function _refreshKutterDetail() {
@@ -4529,6 +4561,11 @@ async function initFromUrl() {
     if (bummelId) {
       // Deep-Link auf ein konkretes Rennen: Bummel-View direkt öffnen.
       await openBummelById(bummelId);
+    }
+    const kutterId = p.get('kutter');
+    if (kutterId) {
+      // Deep-Link auf ein konkretes FriesenKutter-Event: Live-Ansicht direkt öffnen.
+      await openKutterById(kutterId);
     }
     const icao = p.get('icao');
     if (icao) {
