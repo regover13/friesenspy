@@ -848,3 +848,48 @@ class TestCargoLosses:
         self._flown_flight(conn, 304, "2026-07-02T18:20:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
         assert detect_transport_losses(conn, ev) == 1
         assert detect_transport_losses(conn, ev) == 0       # idempotent
+
+
+class TestParticipants:
+    def test_statuses_and_sums(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
+        # Pilot 400: geliefert (geschlossen am Ziel) + gerade wieder unterwegs (offen, Richtung Ziel)
+        # Innerhalb des Event-Fensters (dtstart/dtend = START/END, 2026-07-01) — ein geschlossener
+        # Flug wird über canonicalize_flights' end-Filter geladen, anders als offene Flüge/Losses.
+        _add_flight(conn, 400, "EDWG", "EDXH", "C172", "2026-07-01T18:00:00Z", duration_min=25)
+        _add_open_flight(conn, 400, "EDWG", "EDXH", "C172", "2026-07-01T19:00:00Z")
+        # Pilot 401: offener Rückflug ab Ziel (dep == destination) → returning, keine Reservierung
+        _add_open_flight(conn, 401, "EDXH", "EDWG", "C172", "2026-07-01T19:05:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:30:00Z")
+        parts = {x["cid"]: x for x in p["participants"]}
+        assert parts[400]["status"] == "flying" and parts[400]["reserved_kg"] == 292.0
+        assert parts[400]["delivered_kg"] == 292.0 and parts[400]["flights"] == 2
+        assert parts[401]["status"] == "returning" and parts[401]["reserved_kg"] == 0.0
+
+    def test_arrived_status_with_latch(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
+        _add_open_flight(conn, 402, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
+        set_transport_live_arrival(conn, 402, "2026-07-02T18:05:00Z", ev["id"], "2026-07-02T18:30:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
+        assert p["participants"][0]["status"] == "arrived"
+
+
+class TestLossQuipContext:
+    def test_flight_context_carries_kutter_versunken(self):
+        f = {"cid": 1, "name": "Klaus Test", "callsign": "FRS22", "dep": "EDWG", "arr": "—",
+             "loaded": False, "loss_kind": "sunk", "lost_kg": 292.0,
+             "distance_nm": 0, "block_min": 0, "cargo_lines": []}
+        ctx = flight_quip_context(f, {"flights": [f]})
+        assert "Kutter versunken" in ctx["verlust"]
+
+    def test_summary_context_lists_losses(self):
+        prog = {"flights": [], "cargo": [], "route": ["EDWG", "EDXH"], "destination": "EDXH",
+                "total_kg": 0, "loaded_count": 0, "lost_total_kg": 292.0,
+                "losses": [{"name": "Klaus Test", "callsign": "FRS22", "loss_kind": "sunk",
+                            "lost_kg": 292.0, "cid": 1}]}
+        ctx = event_summary_context({"name": "Test"}, prog)
+        assert ctx["lost_total_kg"] == 292.0 and any("Kutter versunken" in v for v in ctx["verluste"])

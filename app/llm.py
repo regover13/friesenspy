@@ -263,7 +263,9 @@ _QUIP_SYSTEM = (
     "müsste (nichts wie 'frünnen', 'dat', 'nich', 'lütt'). Wechsle den Einstieg ab (direkt mit "
     "dem Namen, einer Frage, einer Beobachtung, einem Ausruf) und variiere den Satzbau von "
     "Spruch zu Spruch — 'Moin' ist nur eine von vielen Optionen, keine Standardformel. Nutze "
-    "NUR die gelieferten Fakten, erfinde keine dazu. Keine Hashtags, keine Anführungszeichen."
+    "NUR die gelieferten Fakten, erfinde keine dazu. Keine Hashtags, keine Anführungszeichen. "
+    "Steht im Kontext ein 'verlust': mach dich gutmütig darüber lustig. Ein versunkener Kutter "
+    "heißt IMMER 'Kutter versunken' — nie der Pilot, immer der Kutter geht unter."
 )
 
 
