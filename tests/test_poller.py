@@ -685,6 +685,157 @@ class TestTransportSummaryWaitsForLaggards:
 
 
 # ---------------------------------------------------------------------------
+# FriesenKutter: leeres Event pusht keinen Feierabend + kein KI-Aufruf (Task 2)
+# ---------------------------------------------------------------------------
+
+class TestTransportSummaryEmptyEventSuppressed:
+    @pytest.fixture(autouse=True)
+    def _settings(self, monkeypatch):
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from app.config import get_settings
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    def _poller(self, db_path):
+        return VatsimPoller(
+            db_path=db_path, callsign_prefix="FRS", poll_interval=60,
+            vapid_private_key="priv", vapid_contact_email="mailto:x@y.z",
+        )
+
+    def _seed_empty(self, db_file, quips_enabled=False):
+        """Transport-Event mit abgelaufenem dtend, aber OHNE jeden Flug (flight_count == 0)."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import create_transport_event, get_connection, set_app_setting
+
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        dtstart = (now - timedelta(hours=3)).strftime(fmt)
+        dtend = (now - timedelta(minutes=10)).strftime(fmt)
+        conn = get_connection(db_file)
+        try:
+            eid = create_transport_event(
+                conn, name="Helgoland-Nachschub", route="EDWG,EDXH",
+                dtstart=dtstart, dtend=dtend, destination="EDXH",
+            )
+            if quips_enabled:
+                set_app_setting(conn, "transport_quips_enabled", "1")
+            conn.commit()
+        finally:
+            conn.close()
+        return eid
+
+    def _seed_with_flight(self, db_file):
+        """Wie TestTransportSummaryWaitsForLaggards._seed, aber Flug bereits geschlossen
+        (Feierabend kann sofort latchen, kein Nachzügler-Wait nötig)."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import create_transport_event, get_connection, set_transport_started
+
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        dtstart = (now - timedelta(hours=3)).strftime(fmt)
+        dtend = (now - timedelta(minutes=10)).strftime(fmt)
+        logon = (now - timedelta(hours=2)).strftime(fmt)
+        logoff = (now - timedelta(hours=1)).strftime(fmt)
+        conn = get_connection(db_file)
+        try:
+            eid = create_transport_event(
+                conn, name="Helgoland-Nachschub", route="EDWG,EDXH",
+                dtstart=dtstart, dtend=dtend, destination="EDXH",
+            )
+            # Start-Latch schon gesetzt, damit dieser Test isoliert nur den Feierabend-Push
+            # prüft (Start-Push bleibt laut Auftrag unverändert und wird hier nicht getestet).
+            set_transport_started(conn, eid, dtstart)
+            conn.execute(
+                "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (7, 'P', ?)",
+                (dtstart,),
+            )
+            conn.execute(
+                "INSERT INTO flights (cid, callsign, departure, arrival, logon_time, "
+                "logoff_time, duration_min) VALUES (7, 'FRS07', 'EDWG', 'EDXH', ?, ?, 60)",
+                (logon, logoff),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return eid
+
+    @pytest.mark.asyncio
+    async def test_empty_event_no_push_but_latch_set(self, tmp_path):
+        """flight_count == 0 bei dtend: summarized_at wird trotzdem gesetzt (Latch), aber
+        es darf KEIN Feierabend-Push verschickt werden."""
+        from app.database import init_db, get_connection, upsert_push_subscription
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        eid = self._seed_empty(db_file)
+        conn = get_connection(db_file)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_events=True)
+        conn.commit(); conn.close()
+
+        poller = self._poller(db_file)
+        sent = []
+        with patch("app.poller.send_web_push",
+                   new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._check_transport_events()
+            await asyncio.sleep(0)
+
+        assert sent == []  # kein Feierabend-Push für ein leeres Event
+
+        conn = get_connection(db_file)
+        try:
+            row = conn.execute(
+                "SELECT summarized_at FROM transport_events WHERE id = ?", (eid,)
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row["summarized_at"] is not None  # Latch feuert trotzdem (Event abgeschlossen)
+
+    @pytest.mark.asyncio
+    async def test_empty_event_no_llm_call(self, tmp_path):
+        """flight_count == 0: selbst bei aktivierten KI-Sprüchen darf event_summary NICHT
+        aufgerufen werden (kein bezahlter LLM-Call für ein leeres Event)."""
+        from app.database import init_db, get_connection
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        self._seed_empty(db_file, quips_enabled=True)
+
+        poller = self._poller(db_file)
+        with patch("app.llm.event_summary") as mock_summary, \
+             patch("app.poller.send_web_push", new=AsyncMock()):
+            await poller._check_transport_events()
+            await asyncio.sleep(0)
+
+        mock_summary.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_event_with_flight_still_pushes_feierabend(self, tmp_path):
+        """Regression: ein Event mit mindestens einem qualifizierenden Flug (flight_count > 0)
+        produziert weiterhin den Feierabend-Push wie bisher."""
+        from app.database import init_db, get_connection, upsert_push_subscription
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        self._seed_with_flight(db_file)
+        conn = get_connection(db_file)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_events=True)
+        conn.commit(); conn.close()
+
+        poller = self._poller(db_file)
+        sent = []
+        with patch("app.poller.send_web_push",
+                   new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._check_transport_events()
+            await asyncio.sleep(0)
+
+        assert len(sent) == 1
+        payload = sent[0][4]  # send_web_push(priv, contact, db_path, subscriptions, payload, ...)
+        assert "Feierabend" in payload["body"]
+
+
+# ---------------------------------------------------------------------------
 # Auto-Recherche der Zuladung für neu gesehene Typcodes (v7.4.0)
 # ---------------------------------------------------------------------------
 

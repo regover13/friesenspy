@@ -1106,17 +1106,20 @@ class VatsimPoller:
                                 callsign_prefix=self.callsign_prefix,
                             ):
                         if set_transport_summarized(conn, ev["id"], now):
-                            tons = round(progress["total_kg"] / 1000, 2)
-                            body = f"Feierabend: {progress['loaded_count']} Frachtflüge, {tons} t bewegt ✅"
-                            if do_quips:
-                                summary = await asyncio.to_thread(
-                                    llm.event_summary, event_summary_context(ev, progress)
-                                )
-                                if summary:
-                                    set_transport_summary_quip(conn, ev["id"], summary)
-                                    body = summary
-                            if push_on:
-                                pushes.append({"title": name, "body": body, "url": "/"})
+                            if progress["flight_count"] > 0:
+                                tons = round(progress["total_kg"] / 1000, 2)
+                                body = f"Feierabend: {progress['loaded_count']} Frachtflüge, {tons} t bewegt ✅"
+                                if do_quips:
+                                    summary = await asyncio.to_thread(
+                                        llm.event_summary, event_summary_context(ev, progress)
+                                    )
+                                    if summary:
+                                        set_transport_summary_quip(conn, ev["id"], summary)
+                                        body = summary
+                                if push_on:
+                                    pushes.append({"title": name, "body": body, "url": "/"})
+                            # else: leeres Event — abgeschlossen (Latch), aber kein Push und
+                            # kein KI-Aufruf (kein bezahlter LLM-Call ohne jede Aktivität).
                     # Pro-Flug-Sprüche für neue beladene Flüge ohne Cache sammeln (später async erzeugen).
                     if do_quips:
                         for f in progress["flights"]:
