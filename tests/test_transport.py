@@ -873,6 +873,11 @@ class TestCargoLosses:
             {"name": "Friesentee", "target_kg": 500.0},
         ])
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        # Vorher liefert jemand — die Verlust-Aufschlüsselung zeigt trotzdem die VOLLE
+        # Bordladung (Restkapazität ist egal: die Ladung ist weg, nicht im Manifest).
+        from app.geo import icao_to_coords
+        alat, alon = icao_to_coords("EDXH")
+        self._flown_flight(conn, 308, "2026-07-01T17:30:00Z", end_lat=alat, end_lon=alon, end_gs=0)
         self._flown_flight(conn, 307, "2026-07-01T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
         detect_transport_losses(conn, ev)
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")

@@ -3343,9 +3343,10 @@ def compute_transport_progress(
         q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
 
     # Verlorene/zurückgebrachte Ladung aufschlüsseln (reine Anzeige, Nutzer-Wunsch 02.07.:
-    # „x Krabbenbrötchen, x Schafe · Kutter versunken"): was hätte der Flug nach denselben
-    # Co-Load-Regeln an Bord gehabt? Eigener Topf — ändert delivered/offen nicht.
-    lost_alloc = [0.0] * len(cargo)
+    # „x Krabbenbrötchen, x Schafe · Kutter versunken"): was hatte der Flug an Bord?
+    # Volle Zuladung in Manifest-Reihenfolge, nur pro-Flug-Kappungen — bewusst OHNE
+    # Restkapazitäts-Abzug (die Ladung ist weg, nicht ins Manifest geflossen); die Summe
+    # der Zeilen entspricht so dem angezeigten lost_kg. Ändert delivered/offen nicht.
     for q in network:
         if not q.get("loss_kind"):
             continue
@@ -3357,15 +3358,11 @@ def compute_transport_progress(
         for i, c in enumerate(cargo):
             if remaining <= 1e-9:
                 break
-            space = cargo_targets[i] - delivered[i] - lost_alloc[i]
-            if space <= 1e-9:
-                continue
             cap = c.get("per_flight_max_kg")
             cap = cap if (cap is not None and cap > 0) else _INF
-            add = min(remaining, cap, space)
+            add = min(remaining, cap, cargo_targets[i])
             if add <= 1e-9:
                 continue
-            lost_alloc[i] += add
             remaining -= add
             contrib[i] = contrib.get(i, 0.0) + add
         ordered = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)

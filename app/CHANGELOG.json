@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.5.4",
+    "date": "2026-07-02",
+    "title": "Verlust-Zeilen zeigen die volle Bordladung",
+    "items": [
+      "📦 Die Ladungs-Aufschlüsselung verlorener Flüge zeigt jetzt die komplette Bordladung (z. B. 252 Krabbenbrötchen + 40 Deichschafe bei 292 kg Zuladung) statt nur des Anteils, der noch ins Manifest gepasst hätte — die Zeilensumme entspricht damit dem angezeigten Verlustgewicht."
+    ]
+  },
+  {
     "version": "7.5.3",
     "date": "2026-07-02",
     "title": "Verluste greifen jetzt auch mit Flugplan zum Ziel",
