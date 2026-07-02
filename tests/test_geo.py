@@ -5,7 +5,15 @@ import math
 
 import pytest
 
-from app.geo import filter_event_pilots, haversine, icao_to_coords, segment_into_flights
+from app.geo import (
+    airport_elevation_ft,
+    filter_event_pilots,
+    haversine,
+    icao_to_coords,
+    nearest_airport_icao,
+    nearest_airport_icao_fast,
+    segment_into_flights,
+)
 
 
 class TestHaversine:
@@ -331,6 +339,56 @@ class TestFilterEventPilots:
         # Each pilot should have 2 positions
         assert len(result[100001]) == 2
         assert len(result[100002]) == 2
+
+
+class TestNearestAirportFast:
+    """nearest_airport_icao_fast muss byte-identisch zu nearest_airport_icao sein."""
+
+    # Streuung aus deutschen Plätzen, Grenzen, offenem Wasser, Antimeridian, Polnähe.
+    _COORDS = [
+        (50.8659, 7.14274),    # exakt EDDK
+        (50.87944, 6.7673),    # nahe Köln
+        (51.27083, 6.76472),   # nahe Düsseldorf
+        (53.63028, 10.01389),  # Hamburg
+        (48.3538, 11.7861),    # München-Gegend
+        (52.5, 13.4),          # Berlin
+        (0.0, 0.0),            # Golf von Guinea (offenes Wasser)
+        (30.0, -40.0),         # Mid-Atlantik
+        (-45.0, 170.0),        # Südpazifik / NZ-Gegend
+        (64.0, -22.0),         # Island-Gegend
+        (1.35, 103.99),        # Singapur-Gegend
+        (60.0, 179.9),         # nahe Antimeridian
+        (60.0, -179.9),        # nahe Antimeridian (Ostseite)
+        (89.0, 25.0),          # Polnähe
+    ]
+    _RADII = [0.0, 1.0, 5.0, 10.0, 50.0, 150.0]
+
+    def test_matches_linear_scan(self):
+        for lat, lon in self._COORDS:
+            for r in self._RADII:
+                fast = nearest_airport_icao_fast(lat, lon, r)
+                slow = nearest_airport_icao(lat, lon, r)
+                assert fast == slow, f"mismatch at ({lat},{lon}) r={r}: {fast!r} != {slow!r}"
+
+    def test_finds_eddk(self):
+        # Direkt am EDDK, kleiner Radius → EDDK.
+        assert nearest_airport_icao_fast(50.8659, 7.14274, 5.0) == "EDDK"
+
+    def test_ocean_returns_none(self):
+        # Mitten im Atlantik, kein Platz im Umkreis.
+        assert nearest_airport_icao_fast(30.0, -40.0, 50.0) is None
+
+    def test_elevation_eddk_plausible(self):
+        elev = airport_elevation_ft("EDDK")
+        assert elev is not None
+        # EDDK liegt bei ~302 ft.
+        assert 200 < elev < 400
+
+    def test_elevation_case_insensitive(self):
+        assert airport_elevation_ft("eddk") == airport_elevation_ft("EDDK")
+
+    def test_elevation_unknown_none(self):
+        assert airport_elevation_ft("XXXX") is None
 
 
 class TestSegmentIntoFlights:

@@ -200,3 +200,96 @@ def nearest_airport_icao(lat: float, lon: float, max_km: float) -> str | None:
         if d <= best_d:
             best, best_d = icao, d
     return best
+
+
+# Grad-Grid-Bucket-Index: jeder Flugplatz wird nach seiner Ganzzahl-Zelle
+# (floor(lat), floor(lon)) einsortiert. Eine Umkreis-Abfrage muss dann nur noch
+# die wenigen Zellen der Bounding-Box scannen statt aller ~28k Einträge — gedacht
+# für häufige Abfragen (Poll-Takt / Leg-Detektor). Einmal modulweit + faul gecacht.
+_AIRPORT_GRID: dict[tuple[int, int], list[tuple[int, str, float, float]]] | None = None
+
+
+def _airport_grid() -> dict[tuple[int, int], list[tuple[int, str, float, float]]]:
+    """Baut (faul, gecacht) den Grad-Grid-Bucket-Index auf.
+
+    Jeder Bucket-Eintrag ist ``(idx, icao, alat, alon)`` mit ``idx`` = Einfüge-Reihenfolge
+    aus ``_airports_icao()``. Der Index erlaubt es, Kandidaten in exakt derselben Reihenfolge
+    wie der Linearscan zu verarbeiten (identisches Tie-Breaking bei gleicher Distanz).
+    """
+    global _AIRPORT_GRID
+    if _AIRPORT_GRID is None:
+        grid: dict[tuple[int, int], list[tuple[int, str, float, float]]] = {}
+        for idx, (icao, a) in enumerate(_airports_icao().items()):
+            alat, alon = a.get("lat"), a.get("lon")
+            if alat is None or alon is None:
+                continue
+            key = (math.floor(alat), math.floor(alon))
+            grid.setdefault(key, []).append((idx, icao, alat, alon))
+        _AIRPORT_GRID = grid
+    return _AIRPORT_GRID
+
+
+def nearest_airport_icao_fast(lat: float, lon: float, max_km: float) -> str | None:
+    """Schnelle, Grid-indizierte Neuimplementierung von :func:`nearest_airport_icao`.
+
+    Liefert für jede Eingabe byte-identische Ergebnisse wie der Linearscan, scannt aber
+    nur die Buckets, die die ``max_km``-Bounding-Box abdecken (in Längengrad großzügig um
+    ``cos(lat)`` korrigiert, plus 1 Bucket Rand → Kandidatenmenge ist stets eine Obermenge
+    aller Plätze innerhalb ``max_km``). Rückgabe: ICAO des nächsten Platzes ≤ ``max_km`` oder None.
+    """
+    grid = _airport_grid()
+
+    # Grad-Spannweiten der Bounding-Box (großzügig, damit die Kandidatenmenge exakt bleibt).
+    lat_span = max_km / 111.0 + 0.01
+    coslat = math.cos(math.radians(lat))
+    if abs(coslat) < 1e-6:
+        lon_span = 360.0  # nahe Pol: alle Längengrade scannen
+    else:
+        lon_span = max_km / (111.0 * abs(coslat)) + 0.01
+
+    ilat0 = math.floor(lat - lat_span) - 1
+    ilat1 = math.floor(lat + lat_span) + 1
+    if lon_span >= 180.0:
+        ilon_range = range(-180, 180)
+    else:
+        ilon_range = range(math.floor(lon - lon_span) - 1, math.floor(lon + lon_span) + 2)
+
+    # Bucket-Keys sammeln (Set gegen Duplikate durch Längengrad-Wraparound bei ±180).
+    keys: set[tuple[int, int]] = set()
+    for ilat in range(ilat0, ilat1 + 1):
+        for ilon_raw in ilon_range:
+            ilon = ((ilon_raw + 180) % 360) - 180
+            keys.add((ilat, ilon))
+
+    candidates: list[tuple[int, str, float, float]] = []
+    for key in keys:
+        bucket = grid.get(key)
+        if bucket:
+            candidates.extend(bucket)
+    # Nach Einfüge-Index sortieren → identische Iterationsreihenfolge wie der Linearscan.
+    candidates.sort(key=lambda t: t[0])
+
+    best, best_d = None, max_km
+    for _idx, icao, alat, alon in candidates:
+        d = haversine(lat, lon, alat, alon)
+        if d <= best_d:
+            best, best_d = icao, d
+    return best
+
+
+def airport_elevation_ft(icao: str) -> float | None:
+    """Elevation (Höhe über MSL, in Fuß) eines Flugplatzes — oder None falls unbekannt.
+
+    Verwendet das ``"elevation"``-Feld aus airportsdata (bereits in Fuß). ICAO ist
+    case-insensitive (wie :func:`icao_to_coords`).
+    """
+    try:
+        airport = _airports_icao().get(icao.upper())
+    except Exception:
+        return None
+    if airport is None:
+        return None
+    elev = airport.get("elevation")
+    if elev is None:
+        return None
+    return float(elev)
