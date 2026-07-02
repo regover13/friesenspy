@@ -115,6 +115,8 @@ Das gemergde Ergebnis übernimmt logon_time des früheren, logoff_time des spät
 
 **StatSim-Deduplizierung:** an **einer** Stelle (`_dedup_statsim_against_fs`). Ein StatSim-Eintrag wird unterdrückt, wenn (a) sein Logon innerhalb eines FS-Fensters [logon, logoff] liegt, oder (b) gleiche Strecke und FS-Logon bis 10 Min nach StatSim (Flugplanwechsel nach Connect). Distanz/Track/Flugplan bleiben immer FriesenSpy (reicher); StatSim korrigiert nur kaputte FS-Dauern (siehe `consolidate_flights` Schritt D).
 
+**GPS-Leg-Erkennung (`app/gps_legs.py` + `recompute_gps_legs`/`audit_gps_vs_refile`, #23 — Phase 1, Schatten).** Ziel: Flüge/Etappen **rein aus GPS** erkennen (Landung = am Boden an einem Platz), statt aus Refile-Split/Disconnect. `detect_gps_legs(positions, *, nearest_airport, airport_elev_ft, radius_km, gap_minutes)` ist eine **reine, DB-freie** Zustandsmaschine `ON_GROUND → AIRBORNE → (tentativ) LANDED → ON_GROUND` über die ts-sortierten Positionen eines Piloten (vorsegmentiert an Zeitlücken > `gap_minutes`). **Höhe (AGL) ist das Leitsignal:** Abheben, wenn die Höhe > `_GPS_AIR_AGL_FT` (500 ft) über den Boden-Ausgangspunkt steigt; Groundspeed (`_GPS_FLYING_GS_KT` = 50 kt) ist nur **sekundärer Helfer** (fehlende Höhe) — so wird auch ein langsamer STOL/Heli erkannt und nicht als Ghost verworfen. **Landung wird NUR an einem Platz gewertet:** `groundspeed < 2 kt` UND AGL-Guard (`< _GPS_GROUND_AGL_FT` = 300 ft) UND im 10-km-Umkreis eines DB-Platzes; **kein Platz im Umkreis → keine Landung** (eine Außenlandung ist per GPS nicht von einem Absturz zu unterscheiden — bewusst nie als Ankunft). Eine Landung wird **endgültig**, wenn binnen `_GPS_ARRIVAL_DWELL` (180 s) kein erneutes Abheben folgt (Stop-and-Go/Platzrunde bleibt derselbe Leg); A→B→C an verschiedenen Plätzen = N Legs (Zwischenlandung ohne Refile — der eigentliche Mehrwert). Der Ghost-Filter fällt strukturell weg: ein Track, der nie abhebt, erzeugt keinen Leg. Airport-Auflösung im Poll-tauglichen Tempo über `geo.nearest_airport_icao_fast` (Grad-Grid-Bucket-Index statt 28k-Linearscan) + `geo.airport_elevation_ft`. `recompute_gps_legs(conn, cid, since)` läuft den Detektor über `position_history` und schreibt `gps_legs` **idempotent** (DELETE ab unterer Grenze + INSERT OR REPLACE; abgeschlossene Legs stabil, nur offener Tail neu). **Phase 1 ist rein additiv:** die Live-State-Machine, `flights` und alle Wertungen bleiben unangetastet; `audit_gps_vs_refile` (read-only) vergleicht die GPS-Legs im Admin (`GET /api/admin/gps-leg-audit`) gegen die heutige `canonicalize_flights`-Zählung (matches / extra / missing / arr_divergence / incomplete_rate / airborne_spawn_rate), damit die Schwellen vor der Aktivierung (Phase 2) geprüft werden können.
+
 **`compute_bummel_standings(conn, route_icaos, start, end, *, cids, radius_km)` — FriesenFliegerBummel-Wertung.** Baut auf `canonicalize_flights` auf (Fragment-Merge/Ghost-Filter geerbt). **Anwesenheit GPS-basiert:** Start/Ziel je Flug werden aus der ersten/letzten Position (`_first_pos`/`_last_pos`) als nächstgelegener Streckenflugplatz im Umkreis `radius_km` (Default `_BUMMEL_AIRPORT_RADIUS_KM` = 10 km; pro Rennen via `bummel_races.radius_km` überschreibbar) bestimmt — der gefilte **Flugplan dient nur als Fallback** ohne GPS-Track (z. B. reine StatSim-Flüge). Dadurch sind Flugplan-Tippfehler irrelevant. ⚠️ Ein zu großer `radius_km` (z. B. 100 km) ordnet Nachbarflugplätze fälschlich der Strecke zu — sinnvoll ist „klar unter dem Abstand zweier Streckenplätze".
 
 **Track-/tour-basiert (Bummel = gemütlich):** Statt jedes Bein einzeln zu prüfen, bildet die Wertung pro Pilot eine zeitlich geordnete **Tour** — vom ersten Bein, dessen Start auf der Strecke liegt, bis zum letzten Bein, dessen Ziel auf der Strecke liegt. **Zwischenlandungen dazwischen sind erlaubt** (z. B. EDPS→EDNX→EDMA) und brechen die Wertung nicht. Gewertete Zeit = Summe `block_min` (Fallback `duration_min`) der Tour-Beine; da `block_min` pro Flug zählt, fällt die **Bodenzeit der Zwischenstopps automatisch raus**. **Frühstarter:** Flüge werden mit Vorlauf `_BUMMEL_EARLY_START_LOOKBACK_H` (12 h) geladen und nach Überlappung mit dem Eventfenster (`logoff_time >= start`) gefiltert — wer vor `start` losfliegt, aber im Fenster unterwegs ist, zählt mit **voller Blockzeit**. **Komplett** = alle Streckenflugplätze in der Tour besucht (Set-Inklusion, Reihenfolge/Richtung egal). Komplette Touren kommen ins Ranking (aufsteigend nach dem Abstand zum Schnitt), unvollständige werden separat mit `visited`/`missing` gelistet — bewusst, damit ein nicht erkanntes Bein sofort sichtbar ist, statt den Piloten still zu verwerfen. Jeder Standing-Eintrag trägt zusätzlich `aircraft` (repräsentatives Muster) und `leg_count`.
@@ -422,6 +424,28 @@ CREATE TABLE position_history (
     groundspeed INTEGER,
     heading     INTEGER,
     ts          TEXT NOT NULL
+);
+
+-- GPS-erkannte Etappen (#23, ab v7.9.0). PHASE 1 = Schatten: rein additiv, on-demand
+-- befüllt (recompute_gps_legs), von keiner Wertung gelesen. UNIQUE(cid, takeoff_ts).
+CREATE TABLE gps_legs (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    cid              INTEGER NOT NULL,
+    callsign         TEXT,
+    dep_icao         TEXT,      -- NULL = Spawn in der Luft / Start ab Außenlandeplatz
+    arr_icao         TEXT,      -- NULL solange incomplete
+    takeoff_ts       TEXT NOT NULL,
+    landing_ts       TEXT,      -- NULL solange incomplete
+    complete         INTEGER NOT NULL DEFAULT 0,  -- 1 = an einem Platz gelandet
+    dep_source       TEXT,
+    arr_source       TEXT,
+    distance_nm      REAL DEFAULT 0,
+    block_sec        INTEGER DEFAULT 0,
+    duration_min     INTEGER DEFAULT 0,
+    max_altitude     INTEGER,
+    connection_logon TEXT,      -- logon_time der überlappenden flights-Connection
+    computed_at      TEXT,
+    UNIQUE(cid, takeoff_ts)
 );
 
 -- StatSim-Historik-Cache (24h TTL, lazy per Pilot)
