@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.5.1",
+    "date": "2026-07-02",
+    "title": "Teilnehmerliste: Muster auch auf dem Rückflug",
+    "items": [
+      "🛩️ Piloten, die im Event bisher nur auf dem Rückflug unterwegs sind, zeigen in der Teilnehmerliste jetzt ihr Flugzeugmuster (stand bisher leer)."
+    ]
+  },
+  {
     "version": "7.5.0",
     "date": "2026-07-02",
     "title": "FriesenKutter: Reservierung, Teilnehmerliste & verlorene Fracht",

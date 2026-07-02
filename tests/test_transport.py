@@ -883,6 +883,9 @@ class TestParticipants:
         assert parts[400]["status"] == "flying" and parts[400]["reserved_kg"] == 292.0
         assert parts[400]["delivered_kg"] == 292.0 and parts[400]["flights"] == 2
         assert parts[401]["status"] == "returning" and parts[401]["reserved_kg"] == 0.0
+        # Live-Befund 2026-07-02 (Demo): Nur-Rückflug-Teilnehmer haben ein Muster —
+        # es steht im offenen Flug, der Fallback-Zweig muss es übernehmen.
+        assert parts[401]["aircraft"] == "C172"
 
     def test_arrived_status_with_latch(self):
         conn = _make_conn()
