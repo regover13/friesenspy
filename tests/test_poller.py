@@ -454,6 +454,150 @@ class TestFeedGlitchReopen:
 
 
 # ---------------------------------------------------------------------------
+# FriesenKutter: Live-Ankunfts-Latch muss den Schlüssel des OFFENEN Legs treffen,
+# nicht den sitzungsweiten Feed-logon_time (Regression #22)
+# ---------------------------------------------------------------------------
+
+class TestLegSplitLatchKey:
+    """Regression #22: Landet ein Friese zwischendurch und refilet mit GEÄNDERTEM
+    Abflugort (selbe VATSIM-Verbindung, also gleichbleibender Feed-``logon_time``), schließt
+    der Poller das alte Leg und öffnet ein neues mit frischer Mikrosekunden-``logon_time``
+    (app/poller.py, ``self._active_flights[cid]``). Der Live-Ankunfts-Latch
+    (``check_live_arrival`` → ``transport_live_arrivals``, PK (cid, logon_time, event_id))
+    muss den ``logon_time`` DIESES offenen Legs bekommen — vorher bekam er den
+    sitzungsweiten Feed-Wert (= Leg 1), was zu einem Fehl-Latch unter falschem Schlüssel und
+    potenzieller Doppelzählung führte."""
+
+    @pytest.fixture(autouse=True)
+    def _settings(self, monkeypatch):
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        from app.config import get_settings
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    def _pilot(self, logon_time: str, dep: str, arr: str, lat: float, lon: float,
+               groundspeed: int) -> dict:
+        return {
+            "cid": 1031301,
+            "name": "Reiner Friese",
+            "callsign": "FRS61",
+            "latitude": lat,
+            "longitude": lon,
+            "altitude": 1200,
+            "groundspeed": groundspeed,
+            "heading": 90,
+            "logon_time": logon_time,
+            "flight_plan": {
+                "aircraft_short": "BN2P",
+                "departure": dep,
+                "arrival": arr,
+            },
+        }
+
+    @pytest.mark.asyncio
+    async def test_latch_uses_open_leg_logon_time_not_session_logon(self, tmp_path):
+        """Poll 1: Leg 1 (EDWG→EDDW), unterwegs. Poll 2: Refile mit geändertem Abflugort
+        (EDDW→EDXH) bei UNVERÄNDERTER Feed-logon_time (gleiche VATSIM-Verbindung) → Leg-Split,
+        Leg 1 wird geschlossen, Leg 2 bekommt eine neue logon_time. Poll 3: am Ziel EDXH,
+        am Boden → Latch feuert. Der Latch-Eintrag muss den logon_time-Wert von Leg 2 tragen,
+        nicht den ursprünglichen Session-Wert aus Poll 1/2."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import (
+            get_connection, init_db, create_transport_event, get_transport_event,
+            get_transport_live_arrivals, compute_transport_progress,
+        )
+        from app.geo import icao_to_coords
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        dtstart = (now - timedelta(hours=1)).strftime(fmt)
+        dtend = (now + timedelta(hours=1)).strftime(fmt)
+        # Session-logon_time bleibt über Poll 1+2 gleich — dieselbe VATSIM-Verbindung,
+        # nur ein Refile mit geändertem Abflugort (kein Reconnect).
+        session_logon = (now - timedelta(minutes=30)).strftime(fmt)
+
+        conn = get_connection(db_file)
+        try:
+            eid = create_transport_event(
+                conn, name="Helgoland-Nachschub", route="EDWG,EDDW,EDXH",
+                dtstart=dtstart, dtend=dtend, destination="EDXH",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+
+        # Poll 1: Leg 1, irgendwo unterwegs (weit weg vom Ziel), fliegt noch.
+        leg1 = {"pilots": [self._pilot(session_logon, "EDWG", "EDDW", 53.78, 7.91, 120)]}
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=leg1)):
+            await poller._poll_once()
+
+        assert 1031301 in poller._active_flights
+        leg1_id = poller._active_flights[1031301]["id"]
+        assert poller._active_flights[1031301]["logon_time"] == session_logon
+
+        # Poll 2: Refile mit geändertem Abflugort (EDDW statt EDWG) — SELBE Feed-logon_time
+        # (session_logon), Position bewusst unverändert (kein GPS-Sprung in diesem Poll,
+        # damit die Landung erst in Poll 3 sauber zugeordnet ist). Löst den Leg-Split aus.
+        leg2 = {"pilots": [self._pilot(session_logon, "EDDW", "EDXH", 53.78, 7.91, 120)]}
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=leg2)):
+            await poller._poll_once()
+
+        leg2_entry = poller._active_flights[1031301]
+        leg2_id = leg2_entry["id"]
+        leg2_logon = leg2_entry["logon_time"]
+        assert leg2_id != leg1_id  # neue flights-Zeile für Leg 2
+        assert leg2_logon != session_logon  # eigener (Mikrosekunden-)Schlüssel, nicht der Session-Wert
+
+        conn = get_connection(db_file)
+        try:
+            open_row = conn.execute(
+                "SELECT logon_time FROM flights WHERE id = ?", (leg2_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        assert open_row["logon_time"] == leg2_logon
+
+        # Poll 3: am Ziel EDXH angekommen, am Boden — kein weiterer Plan-Wechsel, derselbe
+        # offene Flug (Leg 2) läuft weiter. Der Latch muss jetzt feuern.
+        dest_lat, dest_lon = icao_to_coords("EDXH")
+        leg2_landed = {"pilots": [self._pilot(session_logon, "EDDW", "EDXH", dest_lat, dest_lon, 0)]}
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=leg2_landed)):
+            await poller._poll_once()
+
+        assert poller._active_flights[1031301]["id"] == leg2_id  # kein weiterer Split
+        assert poller._active_flights[1031301]["logon_time"] == leg2_logon
+
+        # Kern der Regression: GENAU EIN Latch-Eintrag, und dessen logon_time ist der des
+        # aktuell offenen Legs (Leg 2) — NICHT der ursprüngliche Session-/Leg-1-Wert.
+        conn = get_connection(db_file)
+        try:
+            latched = get_transport_live_arrivals(conn, eid)
+        finally:
+            conn.close()
+        assert latched == {(1031301, leg2_logon)}
+        assert session_logon not in {lo for (_, lo) in latched}
+
+        # Optional: die Fracht zählt genau einmal als geliefert (kein Doppel-Latch, keine
+        # Doppelzählung über den Leg-Split hinweg).
+        conn = get_connection(db_file)
+        try:
+            ev = get_transport_event(conn, eid)
+            progress = compute_transport_progress(conn, ev, dtend)
+        finally:
+            conn.close()
+        loaded_frs61 = [f for f in progress["flights"] if f["callsign"] == "FRS61" and f["loaded"]]
+        assert len(loaded_frs61) == 1
+        assert loaded_frs61[0]["tonnage_kg"] > 0
+
+
+# ---------------------------------------------------------------------------
 # FriesenKutter: Feierabend-Zusammenfassung wartet auf Nachzügler (Task #13)
 # ---------------------------------------------------------------------------
 
