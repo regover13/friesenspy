@@ -541,6 +541,208 @@ class TestTransportSummaryWaitsForLaggards:
 
 
 # ---------------------------------------------------------------------------
+# Auto-Recherche der Zuladung für neu gesehene Typcodes (v7.4.0)
+# ---------------------------------------------------------------------------
+
+class TestAutoPayloadResearch:
+    @pytest.fixture(autouse=True)
+    def _settings(self, monkeypatch):
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from app.config import get_settings
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    SUGGESTION = {"make_model": "PZL-104 Wilga", "mtow_kg": 1300.0, "empty_kg": 900.0,
+                  "fuel_full_kg": 140.0, "fuel_kg": 70.0, "crew_kg": 85.0, "payload_kg": 245.0}
+
+    def _pilot(self):
+        from datetime import datetime, timedelta, timezone
+        logon = (datetime.now(timezone.utc) - timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {
+            "cid": 777, "name": "Wilga-Pilot", "callsign": "FRS77",
+            "latitude": 53.78, "longitude": 7.91, "altitude": 900,
+            "groundspeed": 80, "heading": 90, "logon_time": logon,
+            "flight_plan": {"aircraft_short": "PZ04", "departure": "EDWG", "arrival": "EDXH"},
+        }
+
+    @pytest.mark.asyncio
+    async def test_poll_once_schedules_research_for_unknown_type(self, tmp_path):
+        from app.database import init_db
+        db_file = str(tmp_path / "t.db")
+        init_db(db_file)
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+        poller._auto_research_payload = AsyncMock()
+        data = {"pilots": [self._pilot()]}
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=data)):
+            await poller._poll_once()
+        poller._auto_research_payload.assert_called_once_with("PZ04")
+        # Zweiter Poll: bereits versucht → kein erneuter (teurer) Recherche-Start.
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=data)):
+            await poller._poll_once()
+        assert poller._auto_research_payload.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_poll_once_skips_known_type(self, tmp_path):
+        from app.database import get_connection, init_db, upsert_payload
+        db_file = str(tmp_path / "t.db")
+        init_db(db_file)
+        conn = get_connection(db_file)
+        try:
+            upsert_payload(conn, "PZ04", payload_kg=120)
+            conn.commit()
+        finally:
+            conn.close()
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+        poller._auto_research_payload = AsyncMock()
+        with patch("app.poller.fetch_vatsim_data",
+                   new=AsyncMock(return_value={"pilots": [self._pilot()]})):
+            await poller._poll_once()
+        poller._auto_research_payload.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auto_research_upserts_llm_row(self, tmp_path):
+        from app.database import get_connection, init_db
+        db_file = str(tmp_path / "t.db")
+        init_db(db_file)
+        poller = _make_poller(db_path=db_file)
+        with patch("app.llm.suggest_aircraft_payload", return_value=dict(self.SUGGESTION)):
+            await poller._auto_research_payload("PZ04")
+        conn = get_connection(db_file)
+        try:
+            row = conn.execute(
+                "SELECT source, fuel_kg, payload_kg, make_model FROM aircraft_payloads "
+                "WHERE type_code = 'PZ04'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row is not None
+        assert row["source"] == "llm"
+        assert row["fuel_kg"] == 70.0  # halbe Tankfüllung als Default
+
+    @pytest.mark.asyncio
+    async def test_auto_research_does_not_overwrite_manual(self, tmp_path):
+        from app.database import get_connection, init_db, upsert_payload
+        db_file = str(tmp_path / "t.db")
+        init_db(db_file)
+        conn = get_connection(db_file)
+        try:
+            upsert_payload(conn, "PZ04", payload_kg=123, source="manual")
+            conn.commit()
+        finally:
+            conn.close()
+        poller = _make_poller(db_path=db_file)
+        with patch("app.llm.suggest_aircraft_payload", return_value=dict(self.SUGGESTION)):
+            await poller._auto_research_payload("PZ04")
+        conn = get_connection(db_file)
+        try:
+            row = conn.execute(
+                "SELECT source, payload_kg FROM aircraft_payloads WHERE type_code = 'PZ04'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row["source"] == "manual"
+        assert row["payload_kg"] == 123  # manuell gepflegt → nie überschreiben
+
+
+# ---------------------------------------------------------------------------
+# Typ-Fallback ohne Flugplan (vatsim-radar-Prinzip, v7.4.0)
+# ---------------------------------------------------------------------------
+
+class TestAircraftTypeFallback:
+    @pytest.fixture(autouse=True)
+    def _settings(self, monkeypatch):
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        from app.config import get_settings
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    def _pilot_no_fp(self, logon: str) -> dict:
+        return {
+            "cid": 888, "name": "Ohne Plan", "callsign": "FRS88",
+            "latitude": 53.78, "longitude": 7.91, "altitude": 800,
+            "groundspeed": 75, "heading": 90, "logon_time": logon,
+            "flight_plan": None,
+        }
+
+    @pytest.mark.asyncio
+    async def test_last_known_type_fills_flight_and_live_position(self, tmp_path):
+        """Pilot ohne Flugplan: das zuletzt gefilte Muster aus früheren Flügen wird
+        übernommen — Anzeige und Kutter-Zuladung funktionieren ohne Plan."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import get_connection, init_db
+        db_file = str(tmp_path / "t.db")
+        init_db(db_file)
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        conn = get_connection(db_file)
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (888, 'Ohne Plan', ?)",
+                (now.strftime(fmt),),
+            )
+            conn.execute(
+                "INSERT INTO flights (cid,callsign,aircraft_short,aircraft_icao,departure,"
+                "arrival,logon_time,logoff_time,duration_min) VALUES "
+                "(888,'FRS88','PZ04','PZ04','EDWG','EDXH',?,?,30)",
+                ((now - timedelta(days=1)).strftime(fmt),
+                 (now - timedelta(days=1, minutes=-30)).strftime(fmt)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+        logon = (now - timedelta(minutes=10)).strftime(fmt)
+        with patch("app.poller.fetch_vatsim_data",
+                   new=AsyncMock(return_value={"pilots": [self._pilot_no_fp(logon)]})):
+            await poller._poll_once()
+        conn = get_connection(db_file)
+        try:
+            flight = conn.execute(
+                "SELECT aircraft_short FROM flights WHERE cid=888 AND logoff_time IS NULL"
+            ).fetchone()
+            live = conn.execute(
+                "SELECT aircraft FROM live_positions WHERE cid=888"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert flight["aircraft_short"] == "PZ04"
+        assert live["aircraft"] == "PZ04"
+
+    @pytest.mark.asyncio
+    async def test_prefile_type_wins_over_history(self, tmp_path):
+        """Liegt ein Prefile des Piloten vor, hat dessen Muster Vorrang vor der Historie."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import get_connection, init_db
+        db_file = str(tmp_path / "t.db")
+        init_db(db_file)
+        now = datetime.now(timezone.utc)
+        logon = (now - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        data = {
+            "pilots": [self._pilot_no_fp(logon)],
+            "prefiles": [{"cid": 888, "callsign": "FRS88",
+                          "flight_plan": {"aircraft_short": "BN2P",
+                                          "departure": "EDWG", "arrival": "EDXH",
+                                          "deptime": "1800"}}],
+        }
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=data)):
+            await poller._poll_once()
+        conn = get_connection(db_file)
+        try:
+            live = conn.execute("SELECT aircraft FROM live_positions WHERE cid=888").fetchone()
+        finally:
+            conn.close()
+        assert live["aircraft"] == "BN2P"
+
+
+# ---------------------------------------------------------------------------
 # create_poller factory
 # ---------------------------------------------------------------------------
 

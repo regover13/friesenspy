@@ -26,6 +26,7 @@ from app.database import (
     cid_for_callsign,
     get_ts_consent,
     get_ts_push_subscriptions,
+    last_known_aircraft,
     load_prefile_sigs,
     open_flight,
     remove_live_position,
@@ -345,6 +346,13 @@ class VatsimPoller:
         self._ts_last_notified: dict[str, datetime] = {}
         # Letzter TS-Client-Snapshot für die Live-Anzeige (FRS-getaggte Clients).
         self.ts_clients: list[dict] = []
+        # Typcodes, für die in dieser Prozess-Lebensdauer bereits eine Auto-Recherche lief —
+        # verhindert Wiederholungen/Kosten.
+        self._payload_research_attempted: set[str] = set()
+        # cid → (aircraft_short, aircraft_icao) aus früheren Flügen — Typ-Fallback für
+        # Piloten ohne Flugplan (der Feed führt den Typ nur im flight_plan). Prozess-Cache,
+        # damit nicht jeder Poll die flights-Tabelle abfragt.
+        self._last_type_cache: dict[int, tuple[str, str]] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -565,6 +573,26 @@ class VatsimPoller:
 
             conn = get_connection(self.db_path)
             try:
+                # Typ-Fallback ohne Flugplan (vatsim-radar-Prinzip): der öffentliche Feed
+                # führt den Flugzeugtyp NUR im flight_plan. Ohne Plan nehmen wir das
+                # Prefile des Piloten bzw. sein zuletzt gefiltes Muster aus früheren
+                # Flügen — damit funktionieren Anzeige und Kutter-Zuladung auch ohne Plan.
+                for cid, pos in current.items():
+                    if pos.get("aircraft_short"):
+                        continue
+                    fp = (current_map.get(cid) or {}).get("flight_plan") or {}
+                    short = fp.get("aircraft_short") or (fp.get("aircraft") or "").split("/")[0]
+                    icao = fp.get("aircraft_icao") or short
+                    if not short:
+                        cached = self._last_type_cache.get(cid)
+                        if cached is None:
+                            cached = last_known_aircraft(conn, cid)
+                            self._last_type_cache[cid] = cached
+                        short, icao = cached
+                    if short:
+                        pos["aircraft"] = pos["aircraft_short"] = short
+                        pos["aircraft_icao"] = icao or short
+
                 # 2a. Newly online pilots
                 for cid in newly_online:
                     pos = current[cid]
@@ -795,10 +823,28 @@ class VatsimPoller:
 
                 # 3. Push SSE update
                 live_positions = get_live_positions(conn)
+
+                # Neu gesehene Flugzeugtypen: Zuladung automatisch recherchieren + vorbefüllen
+                # (Admin kann die Werte jederzeit überschreiben; source='llm' kennzeichnet sie).
+                from app.database import get_payload_map, normalize_type_code
+                known_types = set(get_payload_map(conn).keys())
+                new_codes = []
+                for pos in current.values():
+                    code = normalize_type_code(pos.get("aircraft_icao") or pos.get("aircraft_short"))
+                    if code and code not in known_types and code not in self._payload_research_attempted:
+                        self._payload_research_attempted.add(code)
+                        new_codes.append(code)
             finally:
                 conn.close()
 
             self.broadcast_sse({"type": "positions", "data": live_positions})
+
+            # Auto-Recherche für neu gesehene Typcodes im Hintergrund anstoßen (nur mit Key)
+            if new_codes:
+                from app import llm
+                if llm.is_configured():
+                    for code in new_codes:
+                        asyncio.create_task(self._auto_research_payload(code))
 
             # 4. Prefile-Benachrichtigungen für neu eingereichte/geänderte Flugpläne
             # Nur wenn Pilot NICHT bereits online ist (Prefile = Ankündigung, kein Duplikat)
@@ -1091,6 +1137,35 @@ class VatsimPoller:
                 conn.close()
         except Exception:
             logger.exception("Error in _gen_flight_quip")
+
+    async def _auto_research_payload(self, type_code: str) -> None:
+        """Zuladung eines neu gesehenen Flugzeugtyps automatisch recherchieren und
+        vorbefüllen (source='llm'). Läuft im Hintergrund, Silent-Fail — der Admin kann
+        die Werte jederzeit überschreiben; manuell gepflegte Typen werden nie angefasst."""
+        try:
+            from app import llm
+            from app.database import get_payload_map, upsert_payload
+            s = await asyncio.to_thread(llm.suggest_aircraft_payload, type_code)
+            if not s:
+                logger.info("Auto-Zuladung: keine Daten für %s gefunden", type_code)
+                return
+            conn = get_connection(self.db_path)
+            try:
+                if type_code in get_payload_map(conn):
+                    return  # inzwischen (manuell) gepflegt → nicht überschreiben
+                upsert_payload(
+                    conn, type_code,
+                    mtow_kg=s.get("mtow_kg"), empty_kg=s.get("empty_kg"),
+                    fuel_kg=s.get("fuel_kg", s.get("fuel_full_kg")),
+                    crew_kg=s.get("crew_kg"), source="llm",
+                    make_model=s.get("make_model"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            logger.info("Auto-Zuladung vorbefüllt: %s (%s)", type_code, s.get("make_model"))
+        except Exception:
+            logger.exception("Error in _auto_research_payload (%s)", type_code)
 
     async def _check_event_reminders(self) -> None:
         """Periodisch (~5 min): FriesenEvents, die in ~1 h beginnen, einmalig per Push erinnern.

@@ -97,7 +97,7 @@ class TestSuggestHardening:
         fake = _fake_anthropic([_Resp("end_turn", self.SPEC)], calls)
         with patch.dict(sys.modules, {"anthropic": fake}):
             result = llm.suggest_aircraft_payload("C172")
-        assert result is not None and result["payload_kg"] == 215.0  # 1000-600-100-85
+        assert result is not None and result["payload_kg"] == 265.0  # 1000-600-50-85
         assert calls["init"].get("timeout") == llm._SUGGEST_REQUEST_TIMEOUT_S
         assert llm._SUGGEST_REQUEST_TIMEOUT_S <= 300  # endlich, nicht SDK-Default (10 min)
 

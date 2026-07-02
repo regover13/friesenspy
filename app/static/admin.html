@@ -411,6 +411,9 @@
     }
 
     .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* Standard-Mobile-Scroll (vereinbart): ohne width:max-content hat der Wrapper nichts
+       zu scrollen (Zellen werden gequetscht) — gleiche Regel wie .table-scroll in index.html. */
+    .table-wrap table { width: max-content; min-width: 100%; }
 
     .preview-table {
       width: max-content;
@@ -873,7 +876,7 @@
               <input type="number" id="kp-mtow" min="0" step="1" /></div>
             <div class="form-group"><label for="kp-empty">Leergewicht (kg)</label>
               <input type="number" id="kp-empty" min="0" step="1" /></div>
-            <div class="form-group"><label for="kp-fuel">Tankinhalt (kg)</label>
+            <div class="form-group"><label for="kp-fuel">Tankinhalt (kg) <span id="kp-fuel-max" style="color:#8aa0b8;font-weight:normal;"></span></label>
               <input type="number" id="kp-fuel" min="0" step="1" /></div>
             <div class="form-group"><label for="kp-crew">Pilot/Crew (kg)</label>
               <input type="number" id="kp-crew" min="0" step="1" placeholder="85" /></div>
@@ -2110,13 +2113,13 @@
       const rows = (d.payloads || []);
       _kePayloadRows = rows;
       if (!rows.length) { c.innerHTML = '<div class="empty-hint">Noch keine Typen gepflegt.</div>'; return; }
-      c.innerHTML = '<table style="width:100%;font-size:0.8rem;"><thead><tr><th style="text-align:left;">Typ</th><th>MTOW</th><th>Leer</th><th>Tank</th><th>Crew</th><th>Zuladung</th><th></th></tr></thead><tbody>'
+      c.innerHTML = '<div class="table-wrap"><table style="font-size:0.8rem;"><thead><tr><th style="text-align:left;">Typ</th><th>MTOW</th><th>Leer</th><th>Tank</th><th>Crew</th><th>Zuladung</th><th></th></tr></thead><tbody>'
         + rows.map(p => '<tr><td><b>' + escH(p.type_code) + '</b>' + (p.make_model ? '<br><span style="color:#8aa0b8;font-size:0.68rem;">' + escH(p.make_model) + '</span>' : '') + '</td>'
           + '<td>' + (p.mtow_kg ?? '—') + '</td><td>' + (p.empty_kg ?? '—') + '</td><td>' + (p.fuel_kg ?? '—') + '</td>'
           + '<td>' + (p.crew_kg ?? '—') + '</td>'
           + '<td><b>' + Math.round(p.payload_kg) + ' kg</b></td>'
           + '<td><button class="btn btn-sm" onclick="kePrefillType(\'' + escA(p.type_code) + '\')">Bearbeiten</button></td></tr>').join('')
-        + '</tbody></table>';
+        + '</tbody></table></div>';
     }
 
     function kePrefillType(code) {
@@ -2128,6 +2131,7 @@
       set('kp-fuel', p ? p.fuel_kg : null);
       set('kp-crew', p ? p.crew_kg : null);
       document.getElementById('kp-payload').value = '';  // leer → aus Komponenten neu berechnen
+      document.getElementById('kp-fuel-max').textContent = '';
       document.getElementById('kp-make-model').textContent = p && p.make_model ? p.make_model : '';
       document.getElementById('kp-type').scrollIntoView({ behavior: 'smooth', block: 'center' });
       document.getElementById('kp-type').focus();
@@ -2154,10 +2158,11 @@
         const s = await res.json();
         document.getElementById('kp-mtow').value = Math.round(s.mtow_kg);
         document.getElementById('kp-empty').value = Math.round(s.empty_kg);
-        document.getElementById('kp-fuel').value = Math.round(s.fuel_full_kg);
+        document.getElementById('kp-fuel').value = Math.round(s.fuel_kg != null ? s.fuel_kg : s.fuel_full_kg / 2);
+        document.getElementById('kp-fuel-max').textContent = '— max. ' + Math.round(s.fuel_full_kg) + ' kg (volle Tanks)';
         document.getElementById('kp-crew').value = Math.round(s.crew_kg != null ? s.crew_kg : 85);
         document.getElementById('kp-payload').value = '';  // leer → Zuladung automatisch berechnen
-        document.getElementById('kp-make-model').textContent = s.make_model + ' · volle Tanks, Pilot abgezogen';
+        document.getElementById('kp-make-model').textContent = s.make_model;
         toast('Vorschlag übernommen — bitte prüfen und speichern.');
       } finally {
         btn.disabled = false; btn.textContent = orig;
@@ -2177,6 +2182,7 @@
       if (!res || !res.ok) { toast('Fehler beim Speichern.', true); return; }
       toast('Zuladung gespeichert.');
       ['kp-type', 'kp-mtow', 'kp-empty', 'kp-fuel', 'kp-crew', 'kp-payload'].forEach(i => document.getElementById(i).value = '');
+      document.getElementById('kp-fuel-max').textContent = '';
       document.getElementById('kp-make-model').textContent = '';
       loadKutterPayloads();
     });
