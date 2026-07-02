@@ -24,6 +24,7 @@ from app.database import (
     init_db,
     merge_fragmented_flights,
     open_flight,
+    recompute_gps_legs,
     remove_live_position,
     save_position_history,
     upsert_live_position,
@@ -1669,3 +1670,146 @@ class TestUpsertPushSubscriptionCreatedAt:
         # weiterhin nur eine Zeile (Upsert, kein Duplikat)
         assert conn.execute("SELECT COUNT(*) FROM push_subscriptions").fetchone()[0] == 1
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# recompute_gps_legs — GPS-Leg-Schatten-Erfassung (Phase 1)
+# ---------------------------------------------------------------------------
+
+class TestGpsLegs:
+    """Schatten-Erfassung: recompute_gps_legs schreibt Legs idempotent aus position_history.
+
+    Nutzt echte deutsche Flugplätze (EDDK/EDDW/EDDH) mit ihren realen Koordinaten/Elevationen,
+    damit geo.nearest_airport_icao_fast/airport_elevation_ft auflösen. Track: Vollstopp <2 kt am
+    Ziel, gehalten > 180 s (Dwell), Abheben via AGL-Anstieg > 500 ft."""
+
+    CID = 4242
+
+    # Reale Koordinaten (aus airportsdata) — weit genug auseinander (~250 km / ~130 km).
+    A = (50.8659, 7.14274)    # EDDK, elev 302 ft
+    B = (53.0475, 8.78667)    # EDDW, elev 14 ft
+    C = (53.6304, 9.98823)    # EDDH, elev 53 ft
+
+    def _pos(self, conn, ts, lat, lon, alt, gs, callsign="FRS10"):
+        conn.execute(
+            "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+            "groundspeed,heading,ts) VALUES (?,?,?,?,?,?,0,?)",
+            (self.CID, callsign, lat, lon, alt, gs, ts),
+        )
+
+    def _seed_leg_a_to_b(self, conn):
+        """Vollständige Etappe EDDK → EDDW (Boden, Steigflug > 500 ft AGL, Landung + Dwell)."""
+        self._pos(conn, "2026-07-02T10:00:00Z", *self.A, 302, 0)     # Boden EDDK
+        self._pos(conn, "2026-07-02T10:01:00Z", *self.A, 302, 5)     # Boden EDDK
+        self._pos(conn, "2026-07-02T10:02:00Z", *self.A, 1200, 80)   # Abheben (AGL 898 > 500)
+        self._pos(conn, "2026-07-02T10:20:00Z", 52.0, 8.0, 5000, 120)  # Reiseflug
+        self._pos(conn, "2026-07-02T10:38:00Z", 53.0, 8.7, 500, 60)   # Anflug EDDW
+        self._pos(conn, "2026-07-02T10:40:00Z", *self.B, 20, 0)       # Touchdown EDDW (AGL 6)
+        self._pos(conn, "2026-07-02T10:44:00Z", *self.B, 20, 0)       # 240 s Dwell > 180 → Ankunft
+
+    def test_completed_leg_written_once(self):
+        conn = _make_conn()
+        ensure_pilot(conn, self.CID, "Tester")
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,departure,arrival,logon_time,logoff_time,"
+            "duration_min,distance_nm,block_min) VALUES "
+            "(?,'FRS10','EDDK','EDDW','2026-07-02T09:58:00Z','2026-07-02T10:50:00Z',52,0,0)",
+            (self.CID,),
+        )
+        self._seed_leg_a_to_b(conn)
+        conn.commit()
+
+        n = recompute_gps_legs(conn, self.CID)
+        assert n == 1
+        rows = conn.execute(
+            "SELECT dep_icao, arr_icao, takeoff_ts, landing_ts, complete, distance_nm, "
+            "duration_min, connection_logon, callsign FROM gps_legs WHERE cid=?",
+            (self.CID,),
+        ).fetchall()
+        conn.close()
+        assert len(rows) == 1
+        r = rows[0]
+        assert r["dep_icao"] == "EDDK"
+        assert r["arr_icao"] == "EDDW"
+        assert r["complete"] == 1
+        assert r["takeoff_ts"] == "2026-07-02T10:02:00Z"
+        assert r["landing_ts"] == "2026-07-02T10:40:00Z"
+        assert r["distance_nm"] > 0
+        assert r["duration_min"] > 0
+        assert r["connection_logon"] == "2026-07-02T09:58:00Z"
+        assert r["callsign"] == "FRS10"
+
+    def test_idempotent_recompute(self):
+        conn = _make_conn()
+        ensure_pilot(conn, self.CID, "Tester")
+        self._seed_leg_a_to_b(conn)
+        conn.commit()
+
+        cols = "dep_icao, arr_icao, takeoff_ts, landing_ts, complete, distance_nm"
+
+        n1 = recompute_gps_legs(conn, self.CID)
+        first = conn.execute(
+            f"SELECT {cols} FROM gps_legs WHERE cid=? ORDER BY takeoff_ts", (self.CID,)
+        ).fetchall()
+
+        n2 = recompute_gps_legs(conn, self.CID)
+        second = conn.execute(
+            f"SELECT {cols} FROM gps_legs WHERE cid=? ORDER BY takeoff_ts", (self.CID,)
+        ).fetchall()
+        conn.close()
+
+        assert n1 == n2 == 1
+        assert [dict(r) for r in first] == [dict(r) for r in second]
+
+    def test_open_tail_mutates_closed_leg_immutable(self):
+        conn = _make_conn()
+        ensure_pilot(conn, self.CID, "Tester")
+        # Leg 1: EDDK → EDDW komplett.
+        self._seed_leg_a_to_b(conn)
+        # Leg 2: erneutes Abheben ab EDDW, danach nur Reiseflug (keine Landung → offener Tail).
+        self._pos(conn, "2026-07-02T10:50:00Z", *self.B, 800, 80)     # Abheben (AGL 780 > 500)
+        self._pos(conn, "2026-07-02T11:00:00Z", 53.3, 9.3, 5000, 120)  # Reiseflug, noch in der Luft
+        conn.commit()
+
+        cols = "dep_icao, arr_icao, takeoff_ts, landing_ts, complete, distance_nm"
+        n = recompute_gps_legs(conn, self.CID)
+        assert n == 2
+        legs = conn.execute(
+            f"SELECT {cols} FROM gps_legs WHERE cid=? ORDER BY takeoff_ts", (self.CID,)
+        ).fetchall()
+        leg1_before = dict(legs[0])
+        assert legs[0]["complete"] == 1 and legs[0]["arr_icao"] == "EDDW"
+        assert legs[1]["complete"] == 0
+        assert legs[1]["arr_icao"] is None
+        assert legs[1]["landing_ts"] is None
+
+        # Tail landet nun in EDDH und wird > 180 s gehalten → Leg 2 wird komplett.
+        self._pos(conn, "2026-07-02T11:10:00Z", 53.6, 9.9, 400, 60)   # Anflug EDDH
+        self._pos(conn, "2026-07-02T11:12:00Z", *self.C, 60, 0)       # Touchdown EDDH (AGL 7)
+        self._pos(conn, "2026-07-02T11:16:00Z", *self.C, 60, 0)       # 240 s Dwell → Ankunft
+        conn.commit()
+
+        n2 = recompute_gps_legs(conn, self.CID)
+        assert n2 == 2
+        legs2 = conn.execute(
+            f"SELECT {cols} FROM gps_legs WHERE cid=? ORDER BY takeoff_ts", (self.CID,)
+        ).fetchall()
+        conn.close()
+        # Leg 1 inhaltlich unverändert.
+        assert dict(legs2[0]) == leg1_before
+        # Leg 2 nun abgeschlossen mit Ziel-ICAO.
+        assert legs2[1]["complete"] == 1
+        assert legs2[1]["arr_icao"] == "EDDH"
+        assert legs2[1]["landing_ts"] == "2026-07-02T11:12:00Z"
+
+    def test_empty_history_returns_zero(self):
+        conn = _make_conn()
+        ensure_pilot(conn, self.CID, "Tester")
+        conn.commit()
+        n = recompute_gps_legs(conn, self.CID)
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM gps_legs WHERE cid=?", (self.CID,)
+        ).fetchone()[0]
+        conn.close()
+        assert n == 0
+        assert rows == 0
