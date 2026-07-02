@@ -224,6 +224,19 @@ CREATE TABLE IF NOT EXISTS transport_live_arrivals (
     PRIMARY KEY (cid, logon_time, event_id)
 );
 
+CREATE TABLE IF NOT EXISTS transport_cargo_losses (
+    event_id   INTEGER NOT NULL,          -- REFERENCES transport_events(id)
+    cid        INTEGER NOT NULL,
+    logon_time TEXT NOT NULL,             -- Session des verlorenen Flugs (flight_key = cid:logon)
+    kind       TEXT NOT NULL,             -- 'returned' | 'stolen' | 'sunk'
+    type_code  TEXT,                      -- Muster; kg werden IMMER live aus aircraft_payloads gerechnet
+    callsign   TEXT,
+    dep        TEXT,                      -- Abflugplatz (fürs Feed-Rendering)
+    end_icao   TEXT,                      -- Landeplatz bei 'returned'/'stolen'; NULL bei 'sunk'
+    lost_at    TEXT,
+    PRIMARY KEY(event_id, cid, logon_time)
+);
+
 CREATE TABLE IF NOT EXISTS aircraft_payloads (
     type_code   TEXT PRIMARY KEY,        -- normalisiert (Uppercase, vor "/" gekürzt), z. B. "C172"
     mtow_kg     REAL,                    -- editierbar, aus Claude vorbefüllt
@@ -2897,6 +2910,87 @@ def get_transport_live_arrivals(conn: sqlite3.Connection, event_id: int) -> set[
     return {(r["cid"], r["logon_time"]) for r in rows}
 
 
+def record_transport_loss(conn, event_id, cid, logon_time, kind, type_code,
+                          callsign, dep, end_icao, lost_at) -> None:
+    """Fracht-Verlust latchen (idempotent via PK). kind: 'returned'|'stolen'|'sunk'."""
+    conn.execute(
+        "INSERT OR IGNORE INTO transport_cargo_losses "
+        "(event_id, cid, logon_time, kind, type_code, callsign, dep, end_icao, lost_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (event_id, cid, logon_time, kind, type_code, callsign, dep, end_icao, lost_at),
+    )
+
+
+def get_transport_losses(conn, event_id: int) -> list[dict]:
+    rows = conn.execute(
+        "SELECT event_id, cid, logon_time, kind, type_code, callsign, dep, end_icao, lost_at "
+        "FROM transport_cargo_losses WHERE event_id = ? ORDER BY lost_at",
+        (event_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") -> int:
+    """Neue Fracht-Verluste eines Events erkennen und latchen (idempotent, Poll-Takt-tauglich).
+
+    Kandidat = abgeschlossener Flug, der Richtung Ziel gestartet war (GPS-Erstposition auf der
+    Strecke, Fallback Flugplan-DEP; dep ≠ destination), ohne Live-Ankunfts-Latch und ohne
+    GPS-Ankunft am Ziel. Klassifikation per letzter Position:
+    am Boden am Abflugplatz → 'returned' · am Boden an anderem Platz → 'stolen' ·
+    sonst (in der Luft verschwunden / abseits jedes Platzes) → 'sunk' (Kutter versunken).
+    """
+    from app.geo import icao_to_coords, nearest_airport_icao
+    dest = normalize_type_code(event.get("destination"))
+    route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
+    if not dest or not route_set:
+        return 0
+    radius = event.get("radius_km") or _BUMMEL_AIRPORT_RADIUS_KM
+    coords_map = {icao: icao_to_coords(icao) for icao in route_set}
+    start = event.get("dtstart") or ""
+    now = _now_utc()
+    latched = get_transport_live_arrivals(conn, int(event["id"]))
+    existing = {(l["cid"], l["logon_time"]) for l in get_transport_losses(conn, int(event["id"]))}
+    load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
+    new = 0
+    # Kein Oberbegrenzer (`end`) auf die Abfrage: Kandidaten sind bereits abgeschlossene
+    # (logoff_time gesetzte) Flüge — in Produktion zwangsläufig in der Vergangenheit; ein
+    # Filter auf `now` (Wanduhrzeit) wäre hier nur redundant und würde Flüge, deren
+    # logon_time knapp vor dem realen "jetzt" liegt, aber nach Datenbank-Uhrzeit später als
+    # der Poll-Moment gilt, unnötig verwerfen.
+    for f in canonicalize_flights(conn, start=load_start, callsign_prefix=callsign_prefix):
+        cid, lo = f.get("cid"), f.get("logon_time") or ""
+        lf = f.get("logoff_time") or ""
+        if cid is None or not lf or lf < start:
+            continue
+        if (cid, lo) in latched or (cid, lo) in existing:
+            continue
+        dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, lf), radius) \
+            or normalize_type_code(f.get("departure"))
+        if dep not in route_set or dep == dest:
+            continue  # war nie mit Fracht Richtung Ziel unterwegs
+        arr = _nearest_airport(coords_map, _last_pos(conn, int(cid), lo, lf), radius)
+        if arr == dest:
+            continue  # GPS-Ankunft am Ziel → geliefert (compute zählt das als loaded)
+        row = conn.execute(
+            "SELECT latitude, longitude, groundspeed FROM position_history "
+            "WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT 1",
+            (cid, lo, lf),
+        ).fetchone()
+        kind, end_icao = "sunk", None
+        if row is not None and row["groundspeed"] is not None \
+                and row["groundspeed"] <= _LANDED_MAX_GS_KT:
+            end_icao = nearest_airport_icao(row["latitude"], row["longitude"], radius)
+            if end_icao == dep:
+                kind = "returned"
+            elif end_icao:
+                kind = "stolen"
+        type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
+        record_transport_loss(conn, int(event["id"]), int(cid), lo, kind, type_code,
+                              f.get("callsign") or "", dep, end_icao, now)
+        new += 1
+    return new
+
+
 def active_transport_destinations(conn: sqlite3.Connection, now: str) -> list[dict]:
     """Aktuell laufende FriesenKutter-Events (dtstart <= now <= dtend) mit gesetztem Ziel
     (inkl. ``radius_km`` — NULL, wenn das Event den Default-Umkreis nutzt)."""
@@ -3129,6 +3223,31 @@ def compute_transport_progress(
             "block_min": 0,
         })
 
+    # Fracht-Verluste anheften: Feed-Zeilen bekommen loss_kind; Verlust-Flüge, die der
+    # Strecken-Filter oben verworfen hat (woanders gelandet, dep==arr), erscheinen als
+    # eigener Eintrag. kg IMMER live aus aircraft_payloads (type_code, kein Snapshot).
+    losses = get_transport_losses(conn, int(event["id"]))
+    seen_keys = {q["flight_key"] for q in network}
+    loss_by_key: dict[str, dict] = {f"{l['cid']}:{l['logon_time']}": l for l in losses}
+    for q in network:
+        l = loss_by_key.get(q["flight_key"])
+        if l and not q["loaded"]:
+            q["loss_kind"] = l["kind"]
+            q["lost_kg"] = round(payload_map.get(normalize_type_code(l.get("type_code")), default_kg), 1) \
+                if l["kind"] in ("stolen", "sunk") else 0.0
+    for key, l in loss_by_key.items():
+        if key in seen_keys:
+            continue
+        tc = normalize_type_code(l.get("type_code"))
+        lost = round(payload_map.get(tc, default_kg), 1) if l["kind"] in ("stolen", "sunk") else 0.0
+        network.append({
+            "dep_time": l["logon_time"], "cid": l["cid"], "callsign": l.get("callsign") or "",
+            "aircraft": tc, "dep": l.get("dep") or "", "arr": l.get("end_icao") or "—",
+            "tonnage_kg": 0.0, "loaded": False, "in_air": False, "reserved_kg": 0.0,
+            "flight_key": key, "distance_nm": 0, "block_min": 0,
+            "loss_kind": l["kind"], "lost_kg": lost,
+        })
+
     network.sort(key=lambda x: x["dep_time"])  # aufsteigend für die Manifest-Füllung
 
     # Pilotennamen nachladen (eine Abfrage).
@@ -3237,6 +3356,8 @@ def compute_transport_progress(
         "reserved_total_kg": round(sum(reserved_alloc), 1),
         "unmapped_types": sorted(unmapped),
         "summary_quip": event.get("summary_quip"),
+        "losses": [q for q in network if q.get("loss_kind")],
+        "lost_total_kg": round(sum(q.get("lost_kg") or 0.0 for q in network), 1),
     }
 
 

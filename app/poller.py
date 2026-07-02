@@ -1049,7 +1049,7 @@ class VatsimPoller:
                 set_transport_summary_quip, transport_quips_enabled,
                 event_summary_context, flight_quip_context,
                 get_push_subscriptions_for_events, transport_event_started,
-                transport_anyone_in_progress,
+                transport_anyone_in_progress, detect_transport_losses,
             )
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             conn = get_connection(self.db_path)
@@ -1064,6 +1064,8 @@ class VatsimPoller:
                         continue  # noch nicht gestartet
                     name = ev.get("name") or "FriesenKutter"
                     push_on = bool(ev.get("push_enabled"))
+                    if ev.get("destination"):
+                        detect_transport_losses(conn, ev, callsign_prefix=self.callsign_prefix)
                     progress = compute_transport_progress(
                         conn, ev, now, callsign_prefix=self.callsign_prefix
                     )
