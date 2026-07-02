@@ -8,6 +8,7 @@ sequenziell nach Abflugzeit; jeder beladene Flug trägt die Frachtart, in die se
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -1197,3 +1198,73 @@ class TestTransportPushEnabled:
 
         res = client.post(f"/api/admin/transport/events/{ev['id']}/push", json={"enabled": False})
         assert res.status_code == 401
+
+
+# --- Status-Flags (Task 3, #25) --------------------------------------------
+
+def _iso(dt) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class TestTransportStatus:
+    """_transport_status (Analogon _race_status, main.py:844) + status-Feld in
+    GET /api/admin/transport/events (main.py:1656)."""
+
+    SECRET = "s3cr3t"
+    PW = "test-admin-pw"
+
+    def _app(self, tmp_path, monkeypatch):
+        p = str(tmp_path / "kutter_status.db")
+        init_db(p)
+        monkeypatch.setattr(
+            main, "get_settings",
+            lambda: SimpleNamespace(
+                DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=self.SECRET, ADMIN_PASSWORD=self.PW,
+                VAPID_PRIVATE_KEY="vapid", VAPID_CONTACT_EMAIL="mailto:test",
+            ),
+        )
+        return TestClient(main.app), p
+
+    def _admin_cookies(self):
+        return {ADMIN_COOKIE: make_admin_token(self.SECRET, self.PW)}
+
+    def test_scheduled_before_dtstart(self):
+        assert main._transport_status({"dtstart": START, "dtend": END}, "2026-07-01T08:00:00Z") == "scheduled"
+
+    def test_running_between_dtstart_and_dtend(self):
+        assert main._transport_status({"dtstart": START, "dtend": END}, "2026-07-01T12:00:00Z") == "running"
+
+    def test_waiting_after_dtend_without_summary(self):
+        assert main._transport_status({"dtstart": START, "dtend": END}, "2026-07-02T00:00:00Z") == "waiting"
+
+    def test_done_overrides_when_summarized_even_before_dtstart(self):
+        ev = {"dtstart": START, "dtend": END, "summarized_at": "2026-07-01T23:05:00Z"}
+        assert main._transport_status(ev, "2026-07-01T00:00:00Z") == "done"
+
+    def test_endpoint_returns_status_per_event(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        conn = get_connection(db)
+        now = datetime.now(timezone.utc)
+        scheduled_id = create_transport_event(
+            conn, name="Geplant", route="EDWG,EDXH", destination="EDXH",
+            dtstart=_iso(now + timedelta(hours=2)), dtend=_iso(now + timedelta(hours=4)),
+        )
+        running_id = create_transport_event(
+            conn, name="Laeuft", route="EDWG,EDXH", destination="EDXH",
+            dtstart=_iso(now - timedelta(hours=1)), dtend=_iso(now + timedelta(hours=1)),
+        )
+        done_id = create_transport_event(
+            conn, name="Fertig", route="EDWG,EDXH", destination="EDXH",
+            dtstart=_iso(now - timedelta(hours=5)), dtend=_iso(now - timedelta(hours=3)),
+        )
+        set_transport_summarized(conn, done_id, _iso(now - timedelta(hours=2)))
+        conn.commit()
+        conn.close()
+
+        client.cookies.update(self._admin_cookies())
+        res = client.get("/api/admin/transport/events")
+        assert res.status_code == 200
+        by_id = {ev["id"]: ev["status"] for ev in res.json()}
+        assert by_id[scheduled_id] == "scheduled"
+        assert by_id[running_id] == "running"
+        assert by_id[done_id] == "done"
