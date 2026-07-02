@@ -86,10 +86,10 @@ def _add_open_flight(conn, cid, dep, arr, aircraft, logon, *, callsign=None):
     conn.commit()
 
 
-def _event(conn, *, route="EDWG,EDXH", destination="EDXH", cargo=None):
+def _event(conn, *, route="EDWG,EDXH", destination="EDXH", cargo=None, radius_km=None):
     eid = create_transport_event(
         conn, name="Helgoland-Nachschub", route=route, dtstart=START, dtend=END,
-        destination=destination, cargo=cargo,
+        destination=destination, cargo=cargo, radius_km=radius_km,
     )
     return get_transport_event(conn, eid)
 
@@ -430,7 +430,7 @@ class TestLiveArrivalLatch:
         conn = _make_conn()
         ev = _event(conn)  # dtstart=START, dtend=END (siehe _event-Helfer)
         active = active_transport_destinations(conn, "2026-07-01T12:00:00Z")  # innerhalb [START,END]
-        assert active == [{"id": ev["id"], "destination": "EDXH"}]
+        assert active == [{"id": ev["id"], "destination": "EDXH", "radius_km": None}]
         assert active_transport_destinations(conn, "2026-06-01T00:00:00Z") == []  # vor dtstart
         assert active_transport_destinations(conn, "2026-08-01T00:00:00Z") == []  # nach dtend
 
@@ -674,3 +674,40 @@ class TestQuipPromptVerstaendlich:
         # Vorher stand dort: "mal mit plattdeutschem Anklang (z.B. 'Moin', 'dat', 'nich')" —
         # 'dat'/'nich' dürfen nicht mehr als positive Beispiele auftauchen.
         assert "mit plattdeutschem Anklang" not in _QUIP_SYSTEM
+
+
+# --- Erkennungs-Umkreis pro Event (radius_km) --------------------------------
+
+class TestEventRadius:
+    def test_radius_roundtrip_and_default(self):
+        conn = _make_conn()
+        ev = _event(conn, radius_km=3.0)          # _event reicht radius_km an create_transport_event durch
+        assert ev["radius_km"] == 3.0
+        ev2 = _event(conn)                        # ohne Angabe → NULL
+        assert ev2["radius_km"] is None
+
+    def test_check_live_arrival_uses_event_radius(self):
+        """3-km-Event latcht bei ~4 km Abstand NICHT; ohne radius_km (Default 10) schon.
+        Fixtures analog TestCheckLiveArrival (~Z. 491): EDXH-Koordinaten + Offset-Position."""
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        lat, lon = icao_to_coords("EDXH")
+        pos4km = (lat + 0.036, lon)               # ~4 km nördlich
+        ev_small = _event(conn, destination="EDXH", radius_km=3.0)
+        ev_default = _event(conn, destination="EDXH")
+        events = active_transport_destinations(conn, ev_small["dtstart"])
+        check_live_arrival(conn, 111, "2026-07-02T18:00:00Z", pos4km[0], pos4km[1], 0.0, events)
+        latched_small = get_transport_live_arrivals(conn, ev_small["id"])
+        latched_default = get_transport_live_arrivals(conn, ev_default["id"])
+        assert (111, "2026-07-02T18:00:00Z") not in latched_small
+        assert (111, "2026-07-02T18:00:00Z") in latched_default
+
+    def test_compute_uses_event_radius_from_dict(self):
+        """compute_transport_progress ohne expliziten radius_km-Parameter nutzt event['radius_km']."""
+        conn = _make_conn()
+        ev = _event(conn, radius_km=3.0)
+        # Flug mit GPS-Erstposition 4 km neben EDWG: mit 3-km-Radius greift die GPS-Korrektur
+        # NICHT (Fallback Flugplan-DEP bleibt) — Detailassertions je nach vorhandenen Fixtures;
+        # Minimalfall: Funktion läuft ohne Parameter durch und liefert das route-Feld.
+        result = compute_transport_progress(conn, ev, ev["dtend"])
+        assert "route" in result

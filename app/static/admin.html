@@ -822,6 +822,10 @@
                     <input type="text" id="ke-dest" placeholder="EDXH" />
                   </div>
                   <div class="form-group">
+                    <label for="ke-radius">Umkreis (km, leer = 10)</label>
+                    <input type="number" id="ke-radius" min="0.5" max="50" step="0.5" placeholder="10" />
+                  </div>
+                  <div class="form-group">
                     <label for="ke-dtstart">Start (UTC)</label>
                     <input type="datetime-local" id="ke-dtstart" required />
                   </div>
@@ -2025,6 +2029,8 @@
       if (!name || !route || !dtstart) { toast('Name, Strecke und Start sind erforderlich.', true); return; }
       const body = { name, route, destination: dest, dtstart: localToIso(dtstart), cargo: keCollectCargo() };
       if (dtend) body.dtend = localToIso(dtend);
+      const radius = document.getElementById('ke-radius').value;
+      body.radius_km = radius ? parseFloat(radius) : null;
       const path = _keEditingId ? '/api/admin/transport/events/' + _keEditingId : '/api/admin/transport/events';
       const res = await api('POST', path, body);
       if (!res) return;
@@ -2054,7 +2060,7 @@
         return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.08);">'
           + '<div><div><b>' + escH(ev.name) + '</b> <span style="color:#8aa0b8;font-size:0.72rem;">' + src + '</span></div>'
           + '<div style="color:#8aa0b8;font-size:0.76rem;">' + escH((ev.route || '').replace(/,/g, ' → '))
-          + ' · Ziel ' + escH(ev.destination || '—') + '</div>'
+          + ' · Ziel ' + escH(ev.destination || '—') + (ev.radius_km ? ' · Umkreis ' + ev.radius_km + ' km' : '') + '</div>'
           + '<div style="color:#8aa0b8;font-size:0.72rem;">' + escH(ev.dtstart) + ' → ' + escH(ev.dtend) + '</div>'
           + '<div style="color:#8aa0b8;font-size:0.72rem;">Fracht: ' + cargo + '</div></div>'
           + '<div style="display:flex;gap:6px;flex:none;">'
@@ -2071,6 +2077,7 @@
       document.getElementById('ke-name').value = ev.name || '';
       document.getElementById('ke-route').value = ev.route || '';
       document.getElementById('ke-dest').value = ev.destination || '';
+      document.getElementById('ke-radius').value = ev.radius_km ?? '';
       document.getElementById('ke-dtstart').value = isoToLocal(ev.dtstart);
       document.getElementById('ke-dtend').value = isoToLocal(ev.dtend);
       const rows = document.getElementById('ke-cargo-rows');

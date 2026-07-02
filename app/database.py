@@ -185,6 +185,7 @@ CREATE TABLE IF NOT EXISTS transport_events (
     goal_reached_at TEXT,                -- Latch: Manifest voll
     summarized_at  TEXT,                 -- Latch: Abschluss-Push gesendet
     summary_quip   TEXT,                 -- lustige Tagesend-Zusammenfassung (KI, Phase 2)
+    radius_km       REAL,                 -- Erkennungs-Umkreis km; NULL = Default 10
     created_at     TEXT
 );
 
@@ -341,6 +342,8 @@ _TRANSPORT_MIGRATIONS = [
     "ALTER TABLE transport_cargo ADD COLUMN emoji TEXT",
     "ALTER TABLE transport_cargo ADD COLUMN per_flight_max_kg REAL",
     "ALTER TABLE transport_events ADD COLUMN summary_quip TEXT",
+    # radius_km: Erkennungs-Umkreis pro Event, z. B. für kurze Strecken wie Wangerooge↔Harle.
+    "ALTER TABLE transport_events ADD COLUMN radius_km REAL",
 ]
 
 _LIVE_POSITIONS_MIGRATIONS = [
@@ -2535,7 +2538,7 @@ def upsert_payload(
 
 _TRANSPORT_EVENT_COLS = (
     "id, name, route, destination, dtstart, dtend, source, calendar_uid, push_enabled, "
-    "started_at, goal_reached_at, summarized_at, summary_quip, created_at"
+    "started_at, goal_reached_at, summarized_at, summary_quip, radius_km, created_at"
 )
 
 
@@ -2622,15 +2625,17 @@ def create_transport_event(
     dtend: str | None,
     destination: str | None = None,
     cargo: list[dict] | None = None,
+    radius_km: float | None = None,
 ) -> int:
     """Manuelles Transportevent anlegen (+ optionales Fracht-Manifest). Gibt die neue id zurück.
-    Ohne ``destination`` wird der letzte Strecken-Flugplatz als Ziel angenommen."""
+    Ohne ``destination`` wird der letzte Strecken-Flugplatz als Ziel angenommen.
+    Ohne ``radius_km`` gilt beim Erkennungs-Umkreis der Default (``_BUMMEL_AIRPORT_RADIUS_KM``)."""
     dest = normalize_type_code(destination) or _default_destination(route)
     cur = conn.execute(
         "INSERT INTO transport_events "
-        "(name, route, destination, dtstart, dtend, source, calendar_uid, created_at) "
-        "VALUES (?, ?, ?, ?, ?, 'manual', NULL, ?)",
-        (name, route, dest, dtstart, _effective_dtend(dtstart, dtend), _now_utc()),
+        "(name, route, destination, dtstart, dtend, source, calendar_uid, radius_km, created_at) "
+        "VALUES (?, ?, ?, ?, ?, 'manual', NULL, ?, ?)",
+        (name, route, dest, dtstart, _effective_dtend(dtstart, dtend), radius_km, _now_utc()),
     )
     event_id = int(cur.lastrowid)  # type: ignore[arg-type]
     if cargo:
@@ -2638,7 +2643,7 @@ def create_transport_event(
     return event_id
 
 
-_UPDATABLE_TRANSPORT_FIELDS = {"name", "route", "destination", "dtstart", "dtend"}
+_UPDATABLE_TRANSPORT_FIELDS = {"name", "route", "destination", "dtstart", "dtend", "radius_km"}
 
 
 def update_transport_event(conn: sqlite3.Connection, event_id: int, **fields: object) -> None:
@@ -2893,13 +2898,14 @@ def get_transport_live_arrivals(conn: sqlite3.Connection, event_id: int) -> set[
 
 
 def active_transport_destinations(conn: sqlite3.Connection, now: str) -> list[dict]:
-    """Aktuell laufende FriesenKutter-Events (dtstart <= now <= dtend) mit gesetztem Ziel."""
+    """Aktuell laufende FriesenKutter-Events (dtstart <= now <= dtend) mit gesetztem Ziel
+    (inkl. ``radius_km`` — NULL, wenn das Event den Default-Umkreis nutzt)."""
     rows = conn.execute(
-        "SELECT id, destination FROM transport_events "
+        "SELECT id, destination, radius_km FROM transport_events "
         "WHERE dtstart <= ? AND dtend >= ? AND destination IS NOT NULL AND destination != ''",
         (now, now),
     ).fetchall()
-    return [{"id": r["id"], "destination": r["destination"]} for r in rows]
+    return [{"id": r["id"], "destination": r["destination"], "radius_km": r["radius_km"]} for r in rows]
 
 
 def open_transport_flights(conn: sqlite3.Connection, callsign_prefix: str = "FRS") -> list[dict]:
@@ -2926,18 +2932,19 @@ def check_live_arrival(
     """Prüft eine aktuelle Live-Position gegen bereits geladene, laufende FriesenKutter-Ziele
     (``events``, aus :func:`active_transport_destinations`) und latcht einen Treffer dauerhaft
     (``transport_live_arrivals``) — 'am Boden' (``groundspeed < _BLOCK_GS_KT``) und im Umkreis
-    (``radius_km``, Default ``_BUMMEL_AIRPORT_RADIUS_KM``) um ``destination``. Kein
-    Rückgängigmachen; ``events`` wird NICHT selbst nachgeladen (Aufrufer lädt einmal pro Poll)."""
+    (``radius_km``-Parameter > ``event["radius_km"]`` > ``_BUMMEL_AIRPORT_RADIUS_KM``) um
+    ``destination``. Kein Rückgängigmachen; ``events`` wird NICHT selbst nachgeladen (Aufrufer
+    lädt einmal pro Poll)."""
     if groundspeed is None or groundspeed >= _BLOCK_GS_KT:
         return
     from app.geo import haversine, icao_to_coords
-    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
     now = _now_utc()
     for ev in events:
         dest = normalize_type_code(ev.get("destination"))
         coords = icao_to_coords(dest) if dest else None
         if not coords:
             continue
+        radius = radius_km or ev.get("radius_km") or _BUMMEL_AIRPORT_RADIUS_KM
         if haversine(latitude, longitude, coords[0], coords[1]) <= radius:
             set_transport_live_arrival(conn, cid, logon_time, ev["id"], now)
 
@@ -2981,7 +2988,7 @@ def transport_anyone_in_progress(
     if not route_set:
         return False
     coords_map = {icao: icao_to_coords(icao) for icao in route_set}
-    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
+    radius = radius_km or event.get("radius_km") or _BUMMEL_AIRPORT_RADIUS_KM
     latched = get_transport_live_arrivals(conn, int(event["id"]))
     for f in open_transport_flights(conn, callsign_prefix):
         lo = f.get("logon_time") or ""
@@ -3024,7 +3031,7 @@ def compute_transport_progress(
 
     route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
     coords_map = {icao: icao_to_coords(icao) for icao in route_set}
-    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
+    radius = radius_km or event.get("radius_km") or _BUMMEL_AIRPORT_RADIUS_KM
     payload_map = get_payload_map(conn)
     default_kg = transport_default_payload_kg(conn)
 
