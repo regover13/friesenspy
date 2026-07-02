@@ -40,6 +40,8 @@
       --bg-body:      #04080f;
       --bg-panel:     #071525;
       --bg-panel-2:   #091b30;
+      /* Historisch "--green" benannt, tatsächlich BLAU. App-Regel (02.07.2026):
+         dieses Blau ist Klickbarem vorbehalten (Links, klickbare Zeilen/Strecken). */
       --green:        #2d9cdb;
       --green-dim:    rgba(45,156,219,0.3);
       --green-glow:   rgba(45,156,219,0.2);
@@ -449,7 +451,7 @@
     .td-callsign {
       font-family: var(--text-mono);
       font-weight: 700;
-      color: var(--green);
+      /* neutral statt Blau: das Callsign ist KEIN Link (Blau = nur Klickbares) */
       text-transform: uppercase;
       letter-spacing: 0.05em;
       font-size: 0.9rem;
@@ -2810,7 +2812,7 @@ function renderBummelParticipants(view) {
       html += `<tr>
         <td>${escHtml(p.name || ('CID ' + p.cid))}</td>
         <td class="mono text-label">${escHtml(p.cid)}</td>
-        <td class="mono text-green">${escHtml(p.callsign || '')}</td>
+        <td class="mono">${escHtml(p.callsign || '')}</td>
         <td class="mono">${escHtml(p.aircraft || '—')}</td>
         <td class="mono text-label">${p.started ? escHtml(p.started.slice(11, 16)) : '—'}</td>
         <td class="mono">${(p.visited || []).length}/${total} Plätze${miss}</td>
@@ -2986,10 +2988,9 @@ async function fetchKutterActive() {
     const v = (events || []).find(k => k.dtstart <= now && now <= (k.dtend || ''));
     if (!v) { banner.hidden = true; banner.innerHTML = ''; return; }
     const d = await (await fetch('/api/transport/event/' + v.id)).json();
-    // Titel links, Teilen rechts oben — wie im Panel-Header der Kutter-/Bummel-Ansicht.
-    let html = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">`
-      + `<div class="bb-title">🦐 ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`
-      + `<button class="btn-share" onclick="copyKutterShareUrl(${d.id}, this)">🔗 Teilen</button></div>`;
+    // Exakte Bummel-Banner-Parität: kein Teilen hier — das gibt es rechts oben in der
+    // Events-Ansicht (Nutzer-Entscheidung 02.07.).
+    let html = `<div class="bb-title">🦐 ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
     html += `<div class="bb-sub">Strecke: ${escHtml((Array.isArray(d.route) ? d.route.join(' → ') : String(d.route || '').replace(/,/g, ' → ')))}</div>`;
     html += _kutterBarAndTotals(d);
     // Aktive Piloten: gerade unterwegs / angekommen (noch verbunden) / auf dem Rückflug.

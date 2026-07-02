@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.6.4",
+    "date": "2026-07-02",
+    "title": "Blau heißt klickbar",
+    "items": [
+      "🎨 Neue App-Regel: Das Blau ist Klickbarem vorbehalten. Callsigns in der Live-Tabelle und der Bummel-Teilnehmerliste sind jetzt neutral — blau bleiben nur Links (Strecke → Flugplan, klickbare Zeilen, Karten-Pins).",
+      "🔗 Der Kutter-Live-Block ist wieder exakt wie der Bummel-Banner: nur »Zum Kutter«, geteilt wird rechts oben in der Events-Ansicht."
+    ]
+  },
+  {
     "version": "7.6.3",
     "date": "2026-07-02",
     "title": "Teilen-Knopf im Live-Block",

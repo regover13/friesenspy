@@ -41,6 +41,9 @@ mkdir -p /opt/friesenspy/data
 
 ## UI-Standards (stehende Regeln — IMMER einhalten)
 
+- **Blau (#2d9cdb, CSS-Variable `--green` — historischer Name!) ist Klickbarem vorbehalten:**
+  Links, klickbare Strecken-Zellen, klickbare Zeilen. Callsigns und andere reine Anzeige-Texte
+  bleiben neutral (weiß/mono) — „blau = da passiert was beim Klick" muss überall stimmen.
 - **Breite Tabellen/Feeds sind auf dem Smartphone horizontal scrollbar, nie gequetscht:**
   jede Tabelle gehört in einen Wrapper mit `overflow-x: auto; -webkit-overflow-scrolling: touch`,
   und die Tabelle selbst braucht `width: max-content; min-width: 100%` (sonst hat der Wrapper
