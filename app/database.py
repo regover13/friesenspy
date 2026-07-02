@@ -3464,6 +3464,9 @@ def compute_transport_progress(
         p["delivered_kg"] = round(p["delivered_kg"], 1)
         p["reserved_kg"] = round(p["reserved_kg"], 1)
         p["lost_kg"] = round(p["lost_kg"], 1)
+        # Muster auf den reinen Typcode kürzen (rohes Flugplanfeld wie "AS65/L-SDGY/S" → "AS65")
+        # — konsistent für Live-Tabelle, Detail und Forum-Badge.
+        p["aircraft"] = normalize_type_code(p["aircraft"])
 
     return {
         "route": sorted(route_set),
