@@ -248,6 +248,27 @@ CREATE TABLE IF NOT EXISTS aircraft_payloads (
     make_model  TEXT,
     updated_at  TEXT
 );
+
+CREATE TABLE IF NOT EXISTS gps_legs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    cid             INTEGER NOT NULL,
+    callsign        TEXT,
+    dep_icao        TEXT,
+    arr_icao        TEXT,
+    takeoff_ts      TEXT NOT NULL,
+    landing_ts      TEXT,
+    complete        INTEGER NOT NULL DEFAULT 0,
+    dep_source      TEXT,
+    arr_source      TEXT,
+    distance_nm     REAL DEFAULT 0,
+    block_sec       INTEGER DEFAULT 0,
+    duration_min    INTEGER DEFAULT 0,
+    max_altitude    INTEGER,
+    connection_logon TEXT,
+    computed_at     TEXT,
+    UNIQUE(cid, takeoff_ts)
+);
+CREATE INDEX IF NOT EXISTS idx_gps_legs_cid ON gps_legs(cid);
 """
 
 
@@ -835,6 +856,141 @@ def _block_seconds(
                 stand_first = t
             stand_last = t
     return max(0, int(total))
+
+
+def recompute_gps_legs(
+    conn: sqlite3.Connection, cid: int, since: str | None = None
+) -> int:
+    """Erkennt GPS-Legs eines Piloten aus ``position_history`` und schreibt sie idempotent
+    nach ``gps_legs`` (Phase-1-Schatten-Erfassung, rein additiv).
+
+    Läuft den reinen Detektor :func:`app.gps_legs.detect_gps_legs` über die ts-sortierten
+    Positionen des ``cid`` (optional erst ab ``since``) und leitet je Leg die Speicher-Felder
+    ab: ``distance_nm``/``block_sec`` über die bestehenden Helfer, ``duration_min`` aus dem
+    Zeitfenster, ``connection_logon``/``callsign`` aus der überlappenden ``flights``-Connection
+    (Callsign sonst aus der Position nahe dem Takeoff). Für die Distanz-/Block-/Dauer-Fenster
+    gilt als Fenster-Ende das ``landing_ts`` (abgeschlossener Leg) bzw. der letzte Positions-ts
+    ab dem Takeoff (offener/unvollständiger Leg-Tail).
+
+    Idempotent: Abgeschlossene Legs bleiben inhaltlich stabil, nur der offene Tail wird neu
+    berechnet. ``DELETE`` ab ``since`` (bzw. ab dem ersten erkannten Takeoff) + ``INSERT OR
+    REPLACE`` auf ``UNIQUE(cid, takeoff_ts)`` → erneuter Lauf über dieselben Positionen erzeugt
+    identischen Zeileninhalt. Gibt die Anzahl geschriebener Legs zurück.
+    """
+    from app import geo
+
+    params: list = [cid]
+    sql = (
+        "SELECT latitude, longitude, altitude, groundspeed, ts, callsign "
+        "FROM position_history WHERE cid = ?"
+    )
+    if since is not None:
+        sql += " AND ts >= ?"
+        params.append(since)
+    sql += " ORDER BY ts"
+    rows = conn.execute(sql, params).fetchall()
+
+    positions = [
+        {
+            "latitude": r[0],
+            "longitude": r[1],
+            "altitude": r[2],
+            "groundspeed": r[3],
+            "ts": r[4],
+        }
+        for r in rows
+    ]
+    # Callsign je ts für die Position nahe dem Takeoff mitführen.
+    callsign_by_ts = {r[4]: r[5] for r in rows}
+    all_ts = [r[4] for r in rows]
+
+    from app.gps_legs import detect_gps_legs
+
+    legs = detect_gps_legs(
+        positions,
+        nearest_airport=geo.nearest_airport_icao_fast,
+        airport_elev_ft=geo.airport_elevation_ft,
+        radius_km=_BUMMEL_AIRPORT_RADIUS_KM,
+    )
+
+    computed_at = _now_utc()
+    records: list[dict] = []
+    for leg in legs:
+        takeoff_ts = leg["takeoff_ts"]
+        landing_ts = leg.get("landing_ts")
+        complete = bool(leg.get("complete"))
+
+        if complete and landing_ts:
+            end_ts = landing_ts
+        else:
+            # Offener/unvollständiger Leg: Fenster-Ende = letzter ts ab dem Takeoff.
+            tail = [t for t in all_ts if t >= takeoff_ts]
+            end_ts = tail[-1] if tail else takeoff_ts
+
+        distance_nm = _gps_distance_nm(conn, cid, takeoff_ts, end_ts)
+        block_sec = _block_seconds(conn, cid, takeoff_ts, end_ts)
+        try:
+            duration_min = max(
+                0,
+                int((_parse_iso(end_ts) - _parse_iso(takeoff_ts)).total_seconds() // 60),
+            )
+        except Exception:
+            duration_min = 0
+
+        flight_row = conn.execute(
+            "SELECT logon_time, callsign FROM flights "
+            "WHERE cid = ? AND logon_time <= ? "
+            "AND (logoff_time IS NULL OR logoff_time >= ?) "
+            "AND superseded_by IS NULL "
+            "ORDER BY logon_time DESC LIMIT 1",
+            (cid, takeoff_ts, takeoff_ts),
+        ).fetchone()
+        if flight_row is not None:
+            connection_logon = flight_row[0]
+            callsign = flight_row[1]
+        else:
+            connection_logon = None
+            callsign = callsign_by_ts.get(takeoff_ts)
+
+        records.append(
+            {
+                "cid": cid,
+                "callsign": callsign,
+                "dep_icao": leg.get("dep_icao"),
+                "arr_icao": leg.get("arr_icao"),
+                "takeoff_ts": takeoff_ts,
+                "landing_ts": landing_ts,
+                "complete": 1 if complete else 0,
+                "dep_source": leg.get("dep_source"),
+                "arr_source": leg.get("arr_source"),
+                "distance_nm": distance_nm,
+                "block_sec": block_sec,
+                "duration_min": duration_min,
+                "max_altitude": leg.get("max_altitude"),
+                "connection_logon": connection_logon,
+                "computed_at": computed_at,
+            }
+        )
+
+    # Idempotente Neuberechnung: alte Legs ab der unteren Grenze löschen, dann neu schreiben.
+    lower = since if since is not None else (records[0]["takeoff_ts"] if records else None)
+    if lower is not None:
+        conn.execute(
+            "DELETE FROM gps_legs WHERE cid = ? AND takeoff_ts >= ?", (cid, lower)
+        )
+    for rec in records:
+        conn.execute(
+            "INSERT OR REPLACE INTO gps_legs "
+            "(cid, callsign, dep_icao, arr_icao, takeoff_ts, landing_ts, complete, "
+            "dep_source, arr_source, distance_nm, block_sec, duration_min, max_altitude, "
+            "connection_logon, computed_at) "
+            "VALUES (:cid, :callsign, :dep_icao, :arr_icao, :takeoff_ts, :landing_ts, "
+            ":complete, :dep_source, :arr_source, :distance_nm, :block_sec, :duration_min, "
+            ":max_altitude, :connection_logon, :computed_at)",
+            rec,
+        )
+    conn.commit()
+    return len(records)
 
 
 def consolidate_flights(
