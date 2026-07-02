@@ -234,11 +234,36 @@ Duplikat-Schutz nötig; Definition „Landung" (Touch-and-Go? Durchstarten?); St
 Altdaten-Kompatibilität; Live-Anzeige von DEP/ARR vor dem Start braucht weiterhin den FP.
 → Eigene Design-Runde mit dem Auftraggeber (verwandt mit #16, das ausdrücklich ausgeklammert ist).
 
+## Nachträge aus dem Live-Betrieb (Abend/Nacht 01.–02.07., gleiche Session)
+
+- **v7.3.4** — Fertig-gelandet-Regel verallgemeinert (Ralfs 286+287 mergten weiter, weil der
+  Rückflug am FP-*Start* landet); Rekonstruktion läuft zusätzlich nach jedem StatSim-Refresh.
+- **v7.3.5** — Rekonstruktion ankert an der StatSim-**Landezeit** (loggedOn = Session-Login,
+  bei Multi-Leg für alle Flüge gleich → Deckungsprüfung lief ins Leere); consolidate Schritt D
+  nimmt MAX(duration) statt LIMIT-1-Zufall. → Reiners Flug erschien danach.
+- **v7.3.6** — Ghost-Filter: belegte Steh-Sessions (Track vorhanden, null Bewegung) sind keine
+  Flüge mehr (Reiners 14-min-Eintrag 284).
+- **v7.3.7–v7.3.10** — Zuladungs-Recherche gehärtet: endliches Zeitbudget (2 min/Call, 5 min
+  gesamt statt SDK-Default 10 min/Call), ~100 Klartext-Typ-Hinweise (Helis, MSFS-Flotte,
+  GA-Klassiker; Quellen: doc8643-Verifikation + PDFs des Auftraggebers), stop_reason-Logging.
+- **v7.4.0** — Tank-Default halbe Füllung (Max als Label, „volle Tanks"-Suffix auch aus
+  Bestandsdaten entfernt); **Auto-Recherche + Vorbefüllung** neu gesehener Typcodes
+  (source='llm', überschreibt nie Manuelles); **Typ ohne Flugplan** via Prefile → zuletzt
+  gefiltes Muster (vatsim-radar-Prinzip, schließt die C1-Lücke praktisch); Mobile-Scroll-
+  Standard in Kutter-Feed + Admin-Tabelle durchgesetzt und als stehende Regel in CLAUDE.md.
+
 ## Offene Punkte / Übergaben
 
-1. **Git-Tags:** `v7.3.1`–`v7.3.3` sind lokal in der Session gesetzt, aber der Git-Proxy dieser
-   Remote-Umgebung **verweigert Tag-Pushes** (nur Branch-Refs). Bitte einmal lokal nachziehen:
-   `git fetch && git tag -a v7.3.1 d633428 -m v7.3.1 && git tag -a v7.3.2 75091f0 -m v7.3.2 && git tag -a v7.3.3 653fd72 -m v7.3.3 && git push origin --tags`
-2. **Reiner-Rekonstruktion in Prod gegenprüfen** (Kommando oben unter A1).
-3. **B2-Sprüche live ansehen** (kein API-Key in der Sandbox).
-4. Diskussionstermine: GPS-only-Erfassung (oben) sowie die ausgeklammerten #7/#8/#15/#16/#18.
+1. **Git-Tags:** `v7.3.1`–`v7.4.0` sind lokal in der Session gesetzt, aber der Git-Proxy der
+   Remote-Umgebung **verweigert Tag-Pushes** (nur Branch-Refs). Bitte einmal lokal nachziehen —
+   Commits: v7.3.1=d633428, v7.3.2=75091f0, v7.3.3=653fd72, v7.3.4=abc670c, v7.3.5=b5ca669,
+   v7.3.6=daabf2f, v7.3.7=75e999e, v7.3.8=46f724b, v7.3.9=0580db8, v7.3.10=8f89718,
+   v7.4.0=fabb3b5 (`git tag -a <tag> <sha> -m <tag>` + `git push origin --tags`).
+2. **v7.4.0-Deploy gegenprüfen:** die GitHub-Verbindung der Session verlor am Ende ihre
+   Autorisierung — der letzte Run wurde nicht mehr aus der Sandbox verifiziert. Versions-Banner
+   sollte 7.4.0 zeigen; bei Fehlschlag käme die bekannte „Run failed"-Mail.
+3. **PZ04-Vorschlag erneut testen** (Hinweis seit v7.3.8; bei leerem Ergebnis steht der Grund
+   jetzt im Container-Log: `docker compose logs | grep stop_reason`).
+4. **B2-Sprüche live ansehen** (kein API-Key in der Sandbox).
+5. Diskussionstermine: **GPS-only-Flugerfassung** (Brainstorming-Zusammenfassung im Chat vom
+   01.07., Für/Wider oben) sowie die ausgeklammerten #7/#8/#15/#16/#18.

@@ -21,8 +21,11 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 - `app/llm.py`: `_QUIP_SYSTEM` (verständliches Hochdeutsch).
 - `.github/workflows/deploy.yml`: Deploy verifiziert jetzt selbst den Health-Endpoint
   (Fehlschlag + Container-Logs, wenn die App nicht antwortet).
-- Releases: v7.3.1 (Gruppe A), v7.3.2 (Hotfix Startcrash + B1), v7.3.3 (B2) — alle deployed,
-  Health verifiziert. Suite: 514 grün.
+- Releases: v7.3.1 (Gruppe A), v7.3.2 (Hotfix Startcrash + B1), v7.3.3 (B2), v7.3.4–v7.3.6
+  (Nachfixes Merge/Rekonstruktion/Ghost-Filter nach Praxis-Gegenprüfung), v7.3.7–v7.3.10
+  (Zuladungs-Recherche: Zeitbudget + Typ-Hinweise), v7.4.0 (halbe Tanks, Auto-Recherche,
+  Typ ohne Flugplan, Mobile-Scroll-Standard → stehende Regel in CLAUDE.md). Suite: 537 grün.
+  Details + offene Punkte: docs/analyse-bericht-2026-07-01.md.
 
 **Achtung für andere Sessions:**
 - Der Git-Proxy der Remote-Umgebung **verweigert Tag-Pushes** — Tags v7.3.1–v7.3.3 müssen
