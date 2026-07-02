@@ -64,6 +64,7 @@ from app.database import (
     get_transport_cargo,
     list_transport_events,
     update_transport_event,
+    set_transport_push_enabled,
     list_aircraft_payloads,
     upsert_payload,
     transport_default_payload_kg,
@@ -1718,6 +1719,20 @@ async def admin_update_transport_event(request: Request, event_id: int):
         if fields:
             update_transport_event(conn, event_id, **fields)
             conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/transport/events/{event_id}/push")
+async def admin_toggle_transport_push(request: Request, event_id: int):
+    """Push-Benachrichtigungen für dieses Transport-Event ein-/ausschalten."""
+    require_admin(request)
+    body = await request.json()
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        set_transport_push_enabled(conn, event_id, bool(body.get("enabled")))
+        conn.commit()
         return {"status": "ok"}
     finally:
         conn.close()

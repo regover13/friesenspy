@@ -2405,6 +2405,14 @@ def set_bummel_push_enabled(conn: sqlite3.Connection, race_id: int, enabled: boo
     )
 
 
+def set_transport_push_enabled(conn: sqlite3.Connection, event_id: int, enabled: bool) -> None:
+    """Push-Benachrichtigungen für ein Transport-Event aktivieren oder deaktivieren."""
+    conn.execute(
+        "UPDATE transport_events SET push_enabled = ? WHERE id = ?",
+        (1 if enabled else 0, event_id),
+    )
+
+
 def set_bummel_reveal_suppressed(conn: sqlite3.Connection, race_id: int, suppressed: bool) -> None:
     """Manuelles Verbergen latchen: ``suppressed=True`` hält ein bereits abgelaufenes Rennen
     verborgen (übersteuert den Auto-Reveal in ``update_bummel_reveals``); ``False`` gibt es frei."""
