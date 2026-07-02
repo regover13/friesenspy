@@ -16,12 +16,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Vom Nutzer gewählt: Sonnet 5 (recherchiert genauer als Haiku, unterstützt Web-Search-Dynamic-Filtering).
+# Vom Nutzer gewählt: Sonnet 5 (recherchiert genauer als Haiku).
 _MODEL = "claude-sonnet-5"
 # Standard-Pilotengewicht (kg) — zählt nicht als Fracht (Wert = database._CREW_KG_DEFAULT).
 _CREW_KG = 85.0
-# Serverseitiges Web-Search-Tool (kein Beta-Header nötig); max_uses begrenzt die Kosten.
-_WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 3}
+# Serverseitiges Web-Search-Tool, BEWUSST die Basis-Variante 20250305: das neuere
+# web_search_20260209 (Dynamic Filtering) erlaubt dem Modell code_execution-Runden über den
+# Suchergebnissen — Live-Messung 2026-07-02: EIN PZ04-Request drehte >9 min in Code-Runden
+# à 30–95 s und kam nie zurück; max_uses deckelt nur Suchen, nicht diese Code-Runden.
+# Basis-Tool, gleicher Prompt: 16 s, 1 Suche, ~0,07 $ — und korrektes Ergebnis.
+_WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3}
 _SPEC_SCHEMA = {
     "type": "object",
     "properties": {
@@ -195,18 +199,24 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
 
     try:
         import time as _time
-        client = anthropic.Anthropic(api_key=api_key, timeout=_SUGGEST_REQUEST_TIMEOUT_S)
+        # Streaming + max_retries=0: ein Nicht-Streaming-Call, der den Client-Timeout reißt,
+        # wird vom SDK still 2× wiederholt und JEDER abgebrochene Versuch serverseitig zu Ende
+        # gerechnet und berechnet (Live-Befund 2026-07-02: Dreifach-Billing pro Klick).
+        client = anthropic.Anthropic(
+            api_key=api_key, timeout=_SUGGEST_REQUEST_TIMEOUT_S, max_retries=0
+        )
         messages = [{"role": "user", "content": prompt}]
         deadline = _time.monotonic() + _SUGGEST_TOTAL_BUDGET_S
         resp = None
         for _ in range(6):  # Server-Tool-Loop: bei pause_turn erneut senden, bis Claude fertig ist
-            resp = client.messages.create(
+            with client.messages.stream(
                 model=_MODEL,
                 max_tokens=6000,
                 tools=[_WEB_SEARCH_TOOL],
                 output_config={"effort": "medium", "format": {"type": "json_schema", "schema": _SPEC_SCHEMA}},
                 messages=messages,
-            )
+            ) as stream:
+                resp = stream.get_final_message()
             if resp.stop_reason != "pause_turn":
                 break
             if _time.monotonic() >= deadline:

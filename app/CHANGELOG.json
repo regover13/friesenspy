@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.4.1",
+    "date": "2026-07-02",
+    "title": "Zuladungs-Recherche: schnell und günstig statt Endlosschleife",
+    "items": [
+      "🚀 Die KI-Recherche eines Flugzeugtyps antwortet jetzt in ~15–30 s statt minutenlang zu hängen: das neuere Web-Search-Tool (»Dynamic Filtering«) ließ das Modell die Suchergebnisse in endlosen Code-Runden nachbearbeiten — ein einziger PZ04-Aufruf drehte über 9 Minuten. Jetzt Basis-Web-Search: gleicher Treffer (PZL-104 Wilga), Bruchteil der Zeit.",
+      "💸 Kosten pro Recherche von bis zu ~1 € auf ~7 Cent gesenkt: Streaming hält die Verbindung offen (kein Client-Timeout mittendrin), und die stillen SDK-Wiederholungen sind aus — vorher wurde jeder abgebrochene Versuch serverseitig trotzdem zu Ende gerechnet und berechnet (bis zu 3× pro Klick)."
+    ]
+  },
+  {
     "version": "7.4.0",
     "date": "2026-07-02",
     "title": "Zuladung: halbe Tankfüllung als Standard + automatische Vorbefüllung",

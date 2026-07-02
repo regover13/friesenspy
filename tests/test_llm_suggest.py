@@ -39,17 +39,31 @@ class _Resp:
 
 
 def _fake_anthropic(responses: list[_Resp], calls: dict):
-    """Fake-anthropic-Modul: zeichnet Konstruktor-/create-Aufrufe auf, liefert responses."""
+    """Fake-anthropic-Modul: zeichnet Konstruktor-/stream-Aufrufe auf, liefert responses."""
     mod = types.ModuleType("anthropic")
+
+    class _Stream:
+        def __init__(self, resp):
+            self._resp = resp
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get_final_message(self):
+            return self._resp
 
     class Anthropic:
         def __init__(self, **kwargs):
             calls["init"] = kwargs
             self.messages = self
 
-        def create(self, **kwargs):
+        def stream(self, **kwargs):
+            calls["stream_kwargs"] = kwargs
             calls["create"] = calls.get("create", 0) + 1
-            return responses[min(calls["create"] - 1, len(responses) - 1)]
+            return _Stream(responses[min(calls["create"] - 1, len(responses) - 1)])
 
     mod.Anthropic = Anthropic
     return mod
@@ -100,6 +114,29 @@ class TestSuggestHardening:
         assert result is not None and result["payload_kg"] == 265.0  # 1000-600-50-85
         assert calls["init"].get("timeout") == llm._SUGGEST_REQUEST_TIMEOUT_S
         assert llm._SUGGEST_REQUEST_TIMEOUT_S <= 300  # endlich, nicht SDK-Default (10 min)
+
+    def test_uses_basic_web_search_tool(self):
+        """Live-Befund 2026-07-02: das neue web_search_20260209 (Dynamic Filtering) lässt das
+        Modell Suchergebnisse per code_execution nachbearbeiten — bei obskuren Typen (PZ04)
+        drehte EIN Request >9 min in Code-Runden à 30–95 s (Event-Trace) und riss 185
+        Web-Suchen/6,4M Tokens in zwei Tagen (~14 $). Das Basis-Tool web_search_20250305
+        liefert dasselbe Ergebnis in 16 s für ~0,07 $."""
+        from app.llm import _WEB_SEARCH_TOOL
+        assert _WEB_SEARCH_TOOL["type"] == "web_search_20250305"
+        assert _WEB_SEARCH_TOOL.get("max_uses", 99) <= 3
+
+    def test_streams_without_client_retries(self):
+        """Nicht-Streaming-Calls >120 s brachen im Client-Timeout ab; das SDK wiederholte
+        still 2× (Default) — jeder abgebrochene Versuch wurde serverseitig zu Ende gerechnet
+        und berechnet (Dreifach-Billing). Streaming hält die Verbindung; max_retries=0."""
+        from app import llm
+        calls: dict = {}
+        fake = _fake_anthropic([_Resp("end_turn", self.SPEC)], calls)
+        with patch.dict(sys.modules, {"anthropic": fake}):
+            result = llm.suggest_aircraft_payload("C172")
+        assert result is not None
+        assert calls["init"].get("max_retries") == 0
+        assert "stream_kwargs" in calls  # Streaming-Pfad, nicht messages.create
 
     def test_pause_loop_respects_total_budget(self, monkeypatch):
         """Erschöpftes Gesamtbudget beendet die Fortsetzungsschleife — kein Endlos-Drehen."""
