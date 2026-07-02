@@ -4320,8 +4320,14 @@ function _kColor(i) {
 
 function _kCargoLabel(f) {
   if (f.loss_kind) {
+    // Was war an Bord? (Co-Load-Aufschlüsselung wie bei gelieferten Flügen)
+    const lines = f.cargo_lines || [];
+    const cargoTxt = lines.length
+      ? lines.map(l => (l.emoji ? l.emoji + ' ' : '') + _kesc(l.name)
+          + (lines.length > 1 ? ' (' + Math.round(l.kg) + ')' : '')).join(' + ') + ' · '
+      : '';
     const quip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
-    return '<td class="kutter-loss">' + _kLossLabel(f.loss_kind) + quip + '</td>';
+    return '<td class="kutter-loss">' + cargoTxt + _kLossLabel(f.loss_kind) + quip + '</td>';
   }
   if (!f.loaded) return f.in_air ? '<td class="kf-empty">unterwegs zum Ziel</td>'
                                  : '<td class="kf-empty">zurück</td>';
