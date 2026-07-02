@@ -771,6 +771,22 @@ class TestReservation:
         assert p["cargo"][0]["reserved_kg"] == 100.0     # Kappung pro Flug
         assert p["cargo"][1]["reserved_kg"] == 192.0     # Co-Load-Rest
 
+    def test_reserved_flight_shows_cargo_lines(self):
+        """Der Live-Tab-Block zeigt, was ein unterwegs befindlicher Flug geladen hat —
+        volle Bordladung wie bei Verlust-Zeilen (Manifest-Reihenfolge, pro-Flug-Kappung)."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[
+            {"name": "Filmrollen", "target_kg": 500.0, "per_flight_max_kg": 100.0},
+            {"name": "Friesentee", "target_kg": 500.0},
+        ])
+        _add_open_flight(conn, 205, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 205)
+        assert f["in_air"] is True and f["loaded"] is False
+        lines = {l["name"]: l["kg"] for l in f["cargo_lines"]}
+        assert lines == {"Filmrollen": 100.0, "Friesentee": 192.0}
+
     def test_latch_converts_reservation_to_delivered(self):
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
@@ -919,6 +935,9 @@ class TestParticipants:
         # Live-Befund 2026-07-02 (Demo): Nur-Rückflug-Teilnehmer haben ein Muster —
         # es steht im offenen Flug, der Fallback-Zweig muss es übernehmen.
         assert parts[401]["aircraft"] == "C172"
+        # Der Live-Tab-Block zeigt Callsigns statt Namen — für alle Status-Arten gefüllt.
+        assert parts[400]["callsign"] == "FRS400"
+        assert parts[401]["callsign"] == "FRS401"
 
     def test_arrived_status_with_latch(self):
         conn = _make_conn()

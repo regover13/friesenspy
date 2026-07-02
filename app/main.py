@@ -1505,6 +1505,7 @@ def _transport_event_meta(ev: dict, progress: dict) -> dict:
         "progress_pct": progress["progress_pct"], "flight_count": progress["flight_count"],
         "loaded_count": progress["loaded_count"], "cargo": progress["cargo"],
         "reserved_total_kg": progress.get("reserved_total_kg", 0.0),
+        "lost_total_kg": progress.get("lost_total_kg", 0.0),
     }
 
 

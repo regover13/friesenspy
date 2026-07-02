@@ -1,5 +1,17 @@
 [
   {
+    "version": "7.6.0",
+    "date": "2026-07-02",
+    "title": "FriesenKutter im Live-Tab",
+    "items": [
+      "📡 Läuft ein FriesenKutter, erscheint er jetzt direkt im Live-Tab (wie der Bummel-Banner): Ziel-Balken mit Mengen und darunter, wer GERADE unterwegs ist — Callsign, Muster, aktuelle Ladung und Status (✈️ unterwegs / ✅ angekommen / ↩️ Rückflug). Aktualisiert sich alle 25 Sekunden.",
+      "🗺️ Jede Zeile hat einen Karten-Knopf: ein Klick springt zur Karte und zentriert auf den Piloten — man sieht sofort, wo er gerade ist.",
+      "🔗 Teilen-Button und »Zum Kutter«-Link (zur vollen Ansicht mit Flug-Feed) direkt im Live-Block.",
+      "🧹 Die Events-Ansicht zeigt weiterhin Balken, Mengen und den Flug-Feed — die Pro-Pilot-Summenliste ist dort entfallen (die Live-Übersicht zeigt nur noch, wer gerade was geladen hat).",
+      "📦 Auch unterwegs befindliche Flüge zeigen jetzt ihre Bordladung aufgeschlüsselt (z. B. »🦐 Krabbenbrötchen (252) + 🐑 Deichschafe (40)«)."
+    ]
+  },
+  {
     "version": "7.5.4",
     "date": "2026-07-02",
     "title": "Verlust-Zeilen zeigen die volle Bordladung",

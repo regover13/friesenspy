@@ -3217,7 +3217,7 @@ def compute_transport_progress(
     # Aktuell offene Flüge (noch verbunden) — bisher komplett ignoriert, da canonicalize_flights
     # logoff_time IS NOT NULL verlangt. Zählen ab dem Live-Ankunfts-Latch, ohne Disconnect.
     returning_cids: set[int] = set()
-    returning_aircraft: dict[int, str] = {}  # Muster für Nur-Rückflug-Teilnehmer (nicht im Feed)
+    returning_info: dict[int, dict] = {}  # Muster/Callsign für Nur-Rückflug-Teilnehmer (nicht im Feed)
     for f in open_transport_flights(conn, callsign_prefix):
         cid = f.get("cid")
         if cid is None:
@@ -3230,10 +3230,10 @@ def compute_transport_progress(
         if dep not in route_set or dep == dest:
             if dep == dest:
                 returning_cids.add(int(cid))
-                returning_aircraft.setdefault(
-                    int(cid),
-                    (f.get("aircraft") or normalize_type_code(f.get("aircraft_icao")) or ""),
-                )
+                returning_info.setdefault(int(cid), {
+                    "aircraft": f.get("aircraft") or normalize_type_code(f.get("aircraft_icao")) or "",
+                    "callsign": f.get("callsign") or "",
+                })
             continue
         loaded = bool(dest) and (cid, lo) in live_arrivals
         type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
@@ -3342,17 +3342,22 @@ def compute_transport_progress(
         ]
         q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
 
-    # Verlorene/zurückgebrachte Ladung aufschlüsseln (reine Anzeige, Nutzer-Wunsch 02.07.:
-    # „x Krabbenbrötchen, x Schafe · Kutter versunken"): was hatte der Flug an Bord?
-    # Volle Zuladung in Manifest-Reihenfolge, nur pro-Flug-Kappungen — bewusst OHNE
-    # Restkapazitäts-Abzug (die Ladung ist weg, nicht ins Manifest geflossen); die Summe
-    # der Zeilen entspricht so dem angezeigten lost_kg. Ändert delivered/offen nicht.
+    # Bordladung aufschlüsseln (reine Anzeige, Nutzer-Wunsch 02.07.: „x Krabbenbrötchen,
+    # x Schafe"): was hat/hatte der Flug an Bord? Gilt für Verlust-/Rückbringer-Zeilen UND
+    # für gerade unterwegs befindliche (reservierte) Flüge. Volle Zuladung in Manifest-
+    # Reihenfolge, nur pro-Flug-Kappungen — bewusst OHNE Restkapazitäts-Abzug; die Summe
+    # der Zeilen entspricht so dem angezeigten lost_kg/reserved_kg. Ändert delivered nicht.
     for q in network:
-        if not q.get("loss_kind"):
+        if q.get("loss_kind"):
+            carried = q.get("lost_kg") or 0.0
+            if carried <= 1e-9:  # 'returned' trägt Ladung, verliert sie aber nicht (lost_kg=0)
+                carried = round(payload_map.get(normalize_type_code(q.get("aircraft")), default_kg), 1)
+        elif q.get("in_air") and not q["loaded"]:
+            carried = q.get("reserved_kg") or 0.0
+        else:
             continue
-        carried = q.get("lost_kg") or 0.0
-        if carried <= 1e-9:  # 'returned' trägt Ladung, verliert sie aber nicht (lost_kg=0)
-            carried = round(payload_map.get(normalize_type_code(q.get("aircraft")), default_kg), 1)
+        if carried <= 1e-9:
+            continue
         remaining = carried
         contrib = {}
         for i, c in enumerate(cargo):
@@ -3420,10 +3425,12 @@ def compute_transport_progress(
     progress_pct = round(100.0 * total_kg / target_kg, 1) if target_kg else None
 
     # Teilnehmerliste (Bummel-Analogie): eine Zeile pro Pilot mit Summen + Live-Status.
+    # callsign = zuletzt gesehenes Rufzeichen — der Live-Tab-Block zeigt Callsigns statt Namen.
     parts: dict[int, dict] = {}
     for q in network:
         p = parts.setdefault(int(q["cid"]), {
-            "cid": int(q["cid"]), "name": q.get("name") or "", "aircraft": q.get("aircraft") or "",
+            "cid": int(q["cid"]), "name": q.get("name") or "", "callsign": q.get("callsign") or "",
+            "aircraft": q.get("aircraft") or "",
             "flights": 0, "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "status": "done",
         })
         p["flights"] += 1
@@ -3431,6 +3438,8 @@ def compute_transport_progress(
             p["aircraft"] = q["aircraft"]
         if q.get("name"):
             p["name"] = q["name"]
+        if q.get("callsign"):
+            p["callsign"] = q["callsign"]
         p["delivered_kg"] += q["tonnage_kg"]
         p["lost_kg"] += q.get("lost_kg") or 0.0
         if q.get("in_air"):
@@ -3438,14 +3447,18 @@ def compute_transport_progress(
             if not q["loaded"]:
                 p["reserved_kg"] += q.get("reserved_kg") or 0.0
     for rc in returning_cids:
+        info = returning_info.get(rc, {})
         if rc in parts and parts[rc]["status"] == "done":
             parts[rc]["status"] = "returning"
         elif rc not in parts:
-            parts[rc] = {"cid": rc, "name": names.get(rc, ""),
-                         "aircraft": returning_aircraft.get(rc, ""), "flights": 0,
+            parts[rc] = {"cid": rc, "name": names.get(rc, ""), "callsign": info.get("callsign", ""),
+                         "aircraft": info.get("aircraft", ""), "flights": 0,
                          "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "status": "returning"}
-        if rc in parts and not parts[rc]["aircraft"]:
-            parts[rc]["aircraft"] = returning_aircraft.get(rc, "")
+        if rc in parts:
+            if not parts[rc]["aircraft"]:
+                parts[rc]["aircraft"] = info.get("aircraft", "")
+            if not parts[rc]["callsign"]:
+                parts[rc]["callsign"] = info.get("callsign", "")
     participants = sorted(parts.values(), key=lambda x: (-x["delivered_kg"], x["name"]))
     for p in participants:
         p["delivered_kg"] = round(p["delivered_kg"], 1)
