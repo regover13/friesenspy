@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.4.2",
+    "date": "2026-07-02",
+    "title": "Zuladungs-Recherche auf Haiku umgestellt",
+    "items": [
+      "💸 Die Typcode-Recherche läuft jetzt auf Claude Haiku 4.5 statt Sonnet 5: ~4 statt ~7 Cent pro Recherche bei gleicher Geschwindigkeit (~20 s). Die Werte bleiben im Admin editierbar — bei Bedarf einfach nachkorrigieren. Die lustigen KI-Sprüche bleiben auf Sonnet 5 (die leben vom Humor)."
+    ]
+  },
+  {
     "version": "7.4.1",
     "date": "2026-07-02",
     "title": "Zuladungs-Recherche: schnell und günstig statt Endlosschleife",

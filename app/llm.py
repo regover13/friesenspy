@@ -1,7 +1,8 @@
 """Claude-API-Anbindung für FriesenSpy (aktuell: Zuladungs-Vorschlag pro Flugzeugtyp).
 
 Der Vorschlag **recherchiert per Web-Search** (serverseitiges Anthropic-Tool) die realen,
-dokumentierten Herstellerangaben und liefert sie als Structured Output. Modell: Claude Sonnet 5.
+dokumentierten Herstellerangaben und liefert sie als Structured Output. Modell: Haiku 4.5
+(Spec-Lookup); die KI-Sprüche laufen auf Sonnet 5.
 
 Bewusst mit Silent-Fail: der Vorschlag ist Komfort im Admin, kein kritischer Pfad. Ohne
 ``ANTHROPIC_API_KEY`` (mit TSBot geteilt) oder ohne ``anthropic``-Paket → ``None``; die
@@ -16,8 +17,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Vom Nutzer gewählt: Sonnet 5 (recherchiert genauer als Haiku).
-_MODEL = "claude-sonnet-5"
+# Spec-Lookup auf Haiku 4.5 (Nutzer-Entscheidung 2026-07-02: ~4 ct statt ~7 ct pro Recherche;
+# Live-Probe: 18,5 s, korrektes Wilga-Ergebnis). Achtung: Haiku 4.5 lehnt den effort-Parameter
+# mit 400 ab — output_config nur mit format befüllen. Die KI-Sprüche bleiben auf Sonnet 5
+# (kontextreicher Humor, siehe flight_quip/event_summary).
+_SUGGEST_MODEL = "claude-haiku-4-5"
 # Standard-Pilotengewicht (kg) — zählt nicht als Fracht (Wert = database._CREW_KG_DEFAULT).
 _CREW_KG = 85.0
 # Serverseitiges Web-Search-Tool, BEWUSST die Basis-Variante 20250305: das neuere
@@ -159,7 +163,7 @@ def _extract_spec(resp) -> dict | None:
 
 
 def suggest_aircraft_payload(type_code: str) -> dict | None:
-    """Vorschlag für die Zuladungs-Komponenten eines Flugzeugtyps — per Web-Recherche (Claude Sonnet 5).
+    """Vorschlag für die Zuladungs-Komponenten eines Flugzeugtyps — per Web-Recherche (Haiku 4.5).
 
     Rückgabe (kg, im Admin editierbar) oder ``None`` bei fehlendem Key/Paket/Fehler::
 
@@ -210,10 +214,10 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
         resp = None
         for _ in range(6):  # Server-Tool-Loop: bei pause_turn erneut senden, bis Claude fertig ist
             with client.messages.stream(
-                model=_MODEL,
+                model=_SUGGEST_MODEL,
                 max_tokens=6000,
                 tools=[_WEB_SEARCH_TOOL],
-                output_config={"effort": "medium", "format": {"type": "json_schema", "schema": _SPEC_SCHEMA}},
+                output_config={"format": {"type": "json_schema", "schema": _SPEC_SCHEMA}},
                 messages=messages,
             ) as stream:
                 resp = stream.get_final_message()
