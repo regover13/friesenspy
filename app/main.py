@@ -19,8 +19,10 @@ from app.auth import ADMIN_COOKIE, check_password, make_admin_token, verify_admi
 from app.config import get_settings
 from app.database import (
     apply_bummel_overrides,
+    audit_gps_vs_refile,
     canonicalize_flights,
     compute_bummel_standings,
+    recompute_gps_legs,
     create_bummel_race,
     delete_bummel_override,
     delete_bummel_race,
@@ -1159,6 +1161,55 @@ async def admin_get_banner(request: Request):
         for e in CHANGELOG
     ]
     return {"selected": selected, "entries": entries}
+
+
+@app.get("/api/admin/gps-leg-audit")
+async def admin_gps_leg_audit(request: Request, days: int = 30, cid: int | None = None):
+    """Read-only Phase-1-Audit: vergleicht die Refile-Flüge mit den im Schatten erfassten
+    GPS-Legs. Berechnet die Schatten-Legs on-demand (kein Poll-Impact) und liefert die
+    Kennzahlen von :func:`app.database.audit_gps_vs_refile`.
+
+    ``days`` (1..365) spannt das Fenster ``[jetzt-days, jetzt]``; ``cid`` schränkt optional
+    auf einen Piloten ein. Rein additiv: schreibt nur die Schatten-Tabelle ``gps_legs``,
+    fasst ``flights``/Wertungen nicht an.
+    """
+    require_admin(request)
+    settings = get_settings()
+    days = max(1, min(365, int(days)))
+    now = datetime.now(_timezone.utc)
+    end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    start = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    conn = get_connection(settings.DB_PATH)
+    try:
+        flights = canonicalize_flights(
+            conn, start=start, end=end, callsign_prefix=settings.CALLSIGN_PREFIX
+        )
+        scope_cids = sorted({
+            f["cid"] for f in flights
+            if f.get("source") == "friesenspy" and f.get("cid") is not None
+        })
+        if cid is not None:
+            # Explizit auf diesen Piloten einschränken (auch wenn er gar keine Flüge hat).
+            scope_cids = [cid]
+            audit_cids: list[int] | None = [cid]
+        else:
+            audit_cids = scope_cids or None
+
+        # On-demand Schatten-Berechnung (schreibt nur gps_legs, nie flights/Scoring).
+        for c in scope_cids:
+            recompute_gps_legs(conn, c, since=start)
+
+        result = audit_gps_vs_refile(
+            conn,
+            cids=audit_cids,
+            start=start,
+            end=end,
+            callsign_prefix=settings.CALLSIGN_PREFIX,
+        )
+    finally:
+        conn.close()
+    return result
 
 
 @app.post("/api/admin/banner")

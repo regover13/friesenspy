@@ -1849,6 +1849,147 @@ def canonicalize_flights(
     return result
 
 
+def audit_gps_vs_refile(
+    conn: sqlite3.Connection,
+    *,
+    cids: list[int] | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    callsign_prefix: str = "FRS",
+) -> dict:
+    """Vergleicht die heutigen Refile-Flüge (:func:`canonicalize_flights`) mit den im Schatten
+    erfassten ``gps_legs`` — REIN LESEND, ändert nichts (Phase-1-Audit).
+
+    Je FriesenSpy-Connection (StatSim hat keine ``position_history`` → keine GPS-Legs, aus den
+    Match-Nennern ausgeschlossen) werden die überlappenden GPS-Legs desselben ``cid`` gesucht,
+    deren ``takeoff_ts`` im Connection-Fenster ``[logon_time, logoff_time]`` liegt
+    (``logoff_time`` None → offenes Fenster). Klassifikation:
+
+    - 0 überlappende Legs → ``missing`` (Track fehlt / Detektor-Miss).
+    - ≥ 1 Legs → ``match``; das ERSTE Leg ist primär, jedes weitere ist ein ``extra`` Leg
+      (Intra-Connection-Zwischenlandung ohne Refile = der eigentliche Mehrwert).
+    - ``arr_divergence``: das letzte überlappende Leg hat ein nicht-leeres ``arr_icao``, das
+      (case-insensitiv) vom ``arrival`` der Connection abweicht (nur wenn ``arrival`` gesetzt).
+
+    Aggregat über ALLE GPS-Legs im Fenster (nicht nur die zugeordneten): ``incomplete_rate``
+    (Anteil ``complete=0``) und ``airborne_spawn_rate`` (Anteil ``dep_icao IS NULL``).
+
+    Gibt ein JSON-serialisierbares Dict zurück (siehe Doc/Plan Phase 1, Task 3).
+    """
+    flights = canonicalize_flights(
+        conn, cids=cids, callsign_prefix=callsign_prefix, start=start, end=end
+    )
+    fs_flights = [f for f in flights if f.get("source") == "friesenspy"]
+    statsim_count = sum(1 for f in flights if f.get("source") == "statsim")
+
+    # GPS-Legs im Fenster laden (nur vorhandene Filter anhängen).
+    leg_where: list[str] = []
+    leg_params: list = []
+    if cids:
+        leg_where.append("cid IN (%s)" % ",".join("?" * len(cids)))
+        leg_params += list(cids)
+    if start:
+        leg_where.append("takeoff_ts >= ?")
+        leg_params.append(start)
+    if end:
+        leg_where.append("takeoff_ts <= ?")
+        leg_params.append(end)
+    leg_sql = (
+        "SELECT cid, callsign, dep_icao, arr_icao, takeoff_ts, landing_ts, complete, "
+        "dep_source, arr_source FROM gps_legs"
+    )
+    if leg_where:
+        leg_sql += " WHERE " + " AND ".join(leg_where)
+    leg_sql += " ORDER BY cid, takeoff_ts"
+    leg_rows = [dict(r) for r in conn.execute(leg_sql, leg_params).fetchall()]
+
+    legs_by_cid: dict[int, list[dict]] = {}
+    for lr in leg_rows:
+        legs_by_cid.setdefault(lr["cid"], []).append(lr)
+
+    total_legs = len(leg_rows)
+    incomplete = sum(1 for lr in leg_rows if not lr.get("complete"))
+    airborne_spawn = sum(1 for lr in leg_rows if lr.get("dep_icao") is None)
+    incomplete_rate = round(incomplete / total_legs, 4) if total_legs else 0.0
+    airborne_spawn_rate = round(airborne_spawn / total_legs, 4) if total_legs else 0.0
+
+    matches = 0
+    missing = 0
+    extra_total = 0
+    arr_divergence = 0
+    flight_reports: list[dict] = []
+
+    for f in fs_flights:
+        cid = f.get("cid")
+        logon = f.get("logon_time")
+        logoff = f.get("logoff_time")
+        arr = (f.get("arrival") or "").strip()
+
+        overlapping = []
+        for lr in legs_by_cid.get(cid, []):
+            t = lr.get("takeoff_ts")
+            if t is None or logon is None:
+                continue
+            if t < logon:
+                continue
+            if logoff is not None and t > logoff:
+                continue
+            overlapping.append(lr)
+
+        n_legs = len(overlapping)
+        if n_legs >= 1:
+            matches += 1
+        else:
+            missing += 1
+        extra_total += max(0, n_legs - 1)
+
+        # arr_match / arr_divergence gegen das LETZTE überlappende Leg.
+        arr_match: bool | None = None
+        if n_legs >= 1 and arr:
+            last_arr = (overlapping[-1].get("arr_icao") or "").strip()
+            if last_arr:
+                arr_match = last_arr.upper() == arr.upper()
+                if not arr_match:
+                    arr_divergence += 1
+
+        flight_reports.append({
+            "cid": cid,
+            "callsign": f.get("callsign"),
+            "logon_time": logon,
+            "logoff_time": logoff,
+            "dep": f.get("departure"),
+            "arr": f.get("arrival"),
+            "n_legs": n_legs,
+            "arr_match": arr_match,
+            "legs": [
+                {
+                    "dep_icao": lr.get("dep_icao"),
+                    "arr_icao": lr.get("arr_icao"),
+                    "takeoff_ts": lr.get("takeoff_ts"),
+                    "landing_ts": lr.get("landing_ts"),
+                    "complete": bool(lr.get("complete")),
+                }
+                for lr in overlapping
+            ],
+        })
+
+    return {
+        "window": {"start": start, "end": end},
+        "summary": {
+            "flights": len(fs_flights),
+            "statsim_flights": statsim_count,
+            "gps_legs": total_legs,
+            "matches": matches,
+            "missing_gps_legs": missing,
+            "extra_gps_legs": extra_total,
+            "arr_divergence": arr_divergence,
+            "incomplete_rate": incomplete_rate,
+            "airborne_spawn_rate": airborne_spawn_rate,
+        },
+        "flights": flight_reports,
+    }
+
+
 # Umkreis (km), in dem die erste/letzte GPS-Position einem Streckenflugplatz zugeordnet wird.
 # Großzügig genug für Start/Landung (inkl. kurzem Endanflug bei Disconnect), aber klar unter
 # dem typischen Abstand zwischen zwei Bummel-Flugplätzen — `_nearest_airport` nimmt ohnehin

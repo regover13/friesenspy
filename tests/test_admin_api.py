@@ -376,3 +376,130 @@ def test_reveal_clears_suppression(db):
     row = get_bummel_race(conn, rid)
     assert row["reveal_suppressed"] == 0 and row["revealed_at"] is not None
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# GPS-Leg-Audit (Phase 1, Schatten): GET /api/admin/gps-leg-audit
+# ---------------------------------------------------------------------------
+
+class TestGpsLegAudit:
+    """Read-only Audit-Endpoint: Refile-Flüge vs. on-demand berechnete GPS-Legs.
+
+    Reale deutsche Plätze (EDDK/EDDW/EDDH) mit echten Koordinaten/Elevationen, damit der
+    Detektor (geo.nearest_airport_icao_fast/airport_elevation_ft) auflöst."""
+
+    CID = 5151
+    A = (50.8659, 7.14274)    # EDDK, elev 302 ft
+    B = (53.0475, 8.78667)    # EDDW, elev 14 ft
+    C = (53.6304, 9.98823)    # EDDH, elev 53 ft
+
+    @staticmethod
+    def _pilot(conn, cid, name="Tester"):
+        conn.execute(
+            "INSERT OR IGNORE INTO pilots (cid,name,added_at) VALUES (?,?,?)",
+            (cid, name, "2026-01-01T00:00:00Z"),
+        )
+
+    @staticmethod
+    def _flight(conn, cid, dep, arr, logon, logoff, dist=50.0, block=30):
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,aircraft_short,departure,arrival,logon_time,"
+            "logoff_time,duration_min,distance_nm,block_min) "
+            "VALUES (?,?,'C172',?,?,?,?,?,?,?)",
+            (cid, f"FRS{cid}", dep, arr, logon, logoff, block, dist, block),
+        )
+
+    def _pos(self, conn, cid, ts, lat, lon, alt, gs):
+        conn.execute(
+            "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+            "groundspeed,heading,ts) VALUES (?,?,?,?,?,?,0,?)",
+            (cid, f"FRS{cid}", lat, lon, alt, gs, ts),
+        )
+
+    def _leg_a_to_b(self, conn, cid, base):
+        """Sauberer Track EDDK → EDDW (Boden, Steigflug > 500 ft AGL, Landung + Dwell)."""
+        self._pos(conn, cid, _iso(base + timedelta(minutes=0)), *self.A, 302, 0)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=1)), *self.A, 302, 5)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=2)), *self.A, 1200, 80)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=20)), 52.0, 8.0, 5000, 120)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=38)), 53.0, 8.7, 500, 60)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=40)), *self.B, 20, 0)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=44)), *self.B, 20, 0)
+
+    def _leg_b_to_c(self, conn, cid, base):
+        """Anschluss EDDW → EDDH (Zwischenlandung ohne Refile)."""
+        self._pos(conn, cid, _iso(base + timedelta(minutes=50)), *self.B, 800, 80)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=60)), 53.3, 9.3, 5000, 120)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=70)), 53.6, 9.9, 400, 60)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=72)), *self.C, 60, 0)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=76)), *self.C, 60, 0)
+
+    def test_requires_admin(self, db):
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_gps_leg_audit(FakeReq(cookies={})))
+        assert e.value.status_code == 401
+
+    def test_match_single_leg(self, db):
+        now = datetime.now(timezone.utc)
+        base = now - timedelta(hours=2)
+        conn = get_connection(db)
+        self._pilot(conn, self.CID)
+        self._flight(
+            conn, self.CID, "EDDK", "EDDW",
+            _iso(base - timedelta(minutes=2)), _iso(base + timedelta(minutes=50)),
+        )
+        self._leg_a_to_b(conn, self.CID, base)
+        conn.commit(); conn.close()
+
+        res = asyncio.run(main.admin_gps_leg_audit(FakeReq()))
+        assert isinstance(res, dict)
+        assert set(res.keys()) == {"window", "summary", "flights"}
+        s = res["summary"]
+        assert s["flights"] == 1
+        assert s["matches"] == 1
+        assert s["missing_gps_legs"] == 0
+        assert s["extra_gps_legs"] == 0
+        fr = next(f for f in res["flights"] if f["cid"] == self.CID)
+        assert fr["n_legs"] == 1
+        assert fr["dep"] == "EDDK" and fr["arr"] == "EDDW"
+        assert fr["arr_match"] is True
+        assert fr["legs"][0]["dep_icao"] == "EDDK"
+        assert fr["legs"][0]["arr_icao"] == "EDDW"
+
+    def test_extra_leg_intra_connection(self, db):
+        now = datetime.now(timezone.utc)
+        base = now - timedelta(hours=3)
+        conn = get_connection(db)
+        self._pilot(conn, self.CID)
+        # EINE Connection (kein Refile), aber Track A→B→C mit zwei Landungen.
+        self._flight(
+            conn, self.CID, "EDDK", "EDDH",
+            _iso(base - timedelta(minutes=2)), _iso(base + timedelta(minutes=80)),
+        )
+        self._leg_a_to_b(conn, self.CID, base)
+        self._leg_b_to_c(conn, self.CID, base)
+        conn.commit(); conn.close()
+
+        res = asyncio.run(main.admin_gps_leg_audit(FakeReq()))
+        s = res["summary"]
+        assert s["extra_gps_legs"] >= 1
+        fr = next(f for f in res["flights"] if f["cid"] == self.CID)
+        assert fr["n_legs"] == 2
+
+    def test_missing_no_track(self, db):
+        now = datetime.now(timezone.utc)
+        base = now - timedelta(hours=2)
+        conn = get_connection(db)
+        self._pilot(conn, self.CID)
+        # Connection ohne jegliche position_history → kein GPS-Leg.
+        self._flight(
+            conn, self.CID, "EDDK", "EDDW",
+            _iso(base), _iso(base + timedelta(minutes=40)),
+        )
+        conn.commit(); conn.close()
+
+        res = asyncio.run(main.admin_gps_leg_audit(FakeReq()))
+        assert res["summary"]["missing_gps_legs"] >= 1
+        fr = next(f for f in res["flights"] if f["cid"] == self.CID)
+        assert fr["n_legs"] == 0
+        assert fr["arr_match"] is None
