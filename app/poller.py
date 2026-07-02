@@ -1064,7 +1064,11 @@ class VatsimPoller:
                         continue  # noch nicht gestartet
                     name = ev.get("name") or "FriesenKutter"
                     push_on = bool(ev.get("push_enabled"))
-                    if ev.get("destination"):
+                    # Nach dem Feierabend-Latch (summarized_at) ist die Wertung final — weitere
+                    # Verlust-Erkennung liefe nur noch ins Leere (und würde ohne diesen Guard bei
+                    # jedem Poll unnötig Flüge/Positionen für ein längst abgeschlossenes Event
+                    # laden). Zusätzlich zur end-Schranke in detect_transport_losses selbst.
+                    if ev.get("destination") and not ev.get("summarized_at"):
                         detect_transport_losses(conn, ev, callsign_prefix=self.callsign_prefix)
                     progress = compute_transport_progress(
                         conn, ev, now, callsign_prefix=self.callsign_prefix
