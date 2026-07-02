@@ -1020,6 +1020,22 @@ class TestKutterBadge:
         png = render_kutter_badge({"callsign": "FRS1"})
         assert png[:8] == _PNG_MAGIC
 
+    def test_ascii_fold_umlauts(self):
+        # Der Pillow-Default-Font kann keine Umlaute — vor dem Zeichnen nach ASCII falten.
+        from app.badge import _ascii
+        assert _ascii("Jörg über Sylt") == "Joerg ueber Sylt"
+        assert _ascii("Größe Straße Öl") == "Groesse Strasse Oel"
+        assert _ascii("Café résumé") == "Cafe resume"
+        assert _ascii("") == "" and _ascii(None) == ""
+
+    def test_render_with_umlaut_event(self):
+        from app.badge import render_kutter_badge
+        png = render_kutter_badge({
+            "callsign": "FRS49", "aircraft": "PA24", "delivered_kg": 200,
+            "event": "Material für die Offshore-Anlagen", "date": "02.07.2026",
+        })
+        assert png[:8] == _PNG_MAGIC
+
 
 class TestKutterBadgeEndpoints:
     """Integrationstests der Badge-Endpoints (Muster: tests/test_admin_api.py -- Fake-Settings +

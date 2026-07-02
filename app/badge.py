@@ -16,9 +16,24 @@ zurückgefallen (Tests/lokal ohne Assets bleiben grün).
 from __future__ import annotations
 
 import os
+import unicodedata
 from io import BytesIO
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
+
+# Der eingebettete Pillow-Default-Font kann keine Umlaute/diakritischen Zeichen (→ leeres
+# Kästchen). Deshalb VOR dem Zeichnen nach ASCII falten: deutsche Umlaute ausschreiben,
+# übrige Diakritika (é, ñ …) auf den Grundbuchstaben reduzieren, Rest-Non-ASCII fällt weg.
+_UMLAUT = str.maketrans({
+    "ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss",
+})
+
+
+def _ascii(text: str) -> str:
+    if not text:
+        return ""
+    text = text.translate(_UMLAUT)
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 # FriesenFlieger-Palette (Hex codes.txt)
 _NAVY = (25, 29, 83)      # 191D53 dunkelblau
@@ -61,6 +76,7 @@ def _fit_font(draw, text, max_w, start_size, min_size=10):
 
 def _ctext(draw, y, text, size, fill, max_w_frac=0.78):
     """Horizontal zentrierten Text (auf _S-Canvas) bei Oberkante y zeichnen."""
+    text = _ascii(text)
     if not text:
         return
     font = _fit_font(draw, text, int(_S * max_w_frac), size)
@@ -159,6 +175,7 @@ def _wrap_two(dr, text: str, font_size: int, max_w: int) -> list[str]:
     die die längere der beiden Zeilen minimiert (ein einzelnes langes Wort bleibt ungeteilt —
     ``_ctext`` verkleinert es dann).
     """
+    text = _ascii(text)
     if not text:
         return []
     if _text_w(dr, text, _font(font_size)) <= max_w:
