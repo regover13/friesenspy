@@ -777,8 +777,73 @@ function _kCargoLabel(f) {
 }
 ```
 
-- [ ] **Step 4: Smoke-Test** — `python -m pytest tests/ -q` (Backend unverändert grün); lokal `uvicorn app.main:app` starten, ein Test-Event ansehen (leerer Feed rendert ohne JS-Fehler; Browser-Konsole sauber).
-- [ ] **Step 5: Commit** — `git commit -m "feat(kutter): Live-Ansicht — unterwegs-Segment, Teilnehmerliste, Verlust-Status"`
+- [ ] **Step 4: Bummel-Parität in der Event-Liste + Panel-Umschaltung** (Live-Befund 02.07., vier Punkte):
+
+1. **KUTTER-Badge** — `renderFriesenEvents` (~Z. 2665): neben dem Bummel-Badge ergänzen:
+
+```javascript
+    const badge = ev.is_bummel ? '<span class="bummel-badge">🏁 BUMMEL</span>'
+      : ev.is_transport ? '<span class="bummel-badge">🦐 KUTTER</span>' : '';
+    const icaoCell = (ev.is_bummel || ev.is_transport) && ev.route
+      ? ev.route.replace(/,/g, ' → ') : (ev.location || '—');
+```
+
+2. **Manuelle Kutter-Events in die Liste mischen** — in `fetchFriesenEvents` (~Z. 2615–2633) analog zum Bummel-Merge einen zweiten Block ergänzen (Fehler tolerieren):
+
+```javascript
+    try {
+      const kuttersRes = await fetch('/api/transport/events');
+      const kutters = await kuttersRes.json();
+      manualEvents = manualEvents.concat((kutters || [])
+        .filter(k => k.source === 'manual')
+        .map(k => ({
+          summary: k.name,
+          dtstart: k.dtstart,
+          dtend: k.dtend,
+          route: k.route || '',
+          location: '',
+          is_transport: 1,
+          _kutterId: k.id,
+          _manual: true,
+        })));
+    } catch (_) { /* ignorieren */ }
+```
+   Klick-Handler (~Z. 2680): `else if (ev.is_transport) ev._kutterId ? openKutterDetail(ev._kutterId) : openKutter(ev);`
+
+3. **Karte + Piloten für den Zeitraum wie beim Bummel** — `openKutterDetail` (~Z. 4349–4359) darf `events-results` NICHT mehr verstecken; stattdessen wie `openBummel` die normale Event-Suche für Strecke + Zeitraum anstoßen. Die Zeile `document.getElementById('events-results').classList.add('hidden');` ersetzen durch (Muster aus `openBummel` übernehmen — dort werden die Suchfelder aus `ev.route`/`dtstart`/`dtend` befüllt und `searchEvents()` aufgerufen; beim Kutter kommen `route`/`dtstart`/`dtend` aus dem Detail-Response von `/api/transport/event/{id}`, der in `_refreshKutterDetail` ohnehin geladen wird):
+
+```javascript
+  // Wie beim Bummel: darunter die normale Event-Ansicht (Karte + Piloten des Zeitraums).
+  const d = _lastKutterDetail;  // von _refreshKutterDetail gesetzt
+  if (d && d.route && d.route.length) {
+    document.getElementById('event-icao').value = d.route.join(',');
+    if (d.dtstart) document.getElementById('event-start').value = isoToLocalInput(d.dtstart);
+    if (d.dtend) document.getElementById('event-end').value = isoToLocalInput(d.dtend);
+    searchEvents();
+  }
+```
+   (`_lastKutterDetail` als Modul-Variable in `_refreshKutterDetail` setzen. Die exakten Feld-IDs
+   und die Datums-Konvertierung aus `openBummel` übernehmen — NICHT raten, sondern den
+   `openBummel`-Block als Vorlage kopieren und anpassen. Falls `openBummel` einen Kontext-Flag wie
+   `_activeBummel` setzt, damit `searchEvents` nicht wegscrollt: gleiches Muster für den Kutter.)
+
+4. **Panel-Umschaltung in BEIDE Richtungen** — `openBummel` (~Z. 2718) blendet künftig das
+   Kutter-Panel aus und stoppt dessen Timer; `openKutterDetail` blendet umgekehrt das
+   Bummel-Panel aus:
+
+```javascript
+  // in openBummel, direkt am Anfang:
+  document.getElementById('kutter-results').classList.add('hidden');
+  clearInterval(_kutterPollTimer);
+  _kutterOpenId = null;
+  // in openKutterDetail, direkt am Anfang:
+  document.getElementById('bummel-results').classList.add('hidden');
+  _activeBummel = null; _activeBummelId = null;
+```
+   (Bummel-Timer analog stoppen, falls `openBummel` einen Poll-Timer setzt — nachsehen.)
+
+- [ ] **Step 5: Smoke-Test** — `python -m pytest tests/ -q` (Backend unverändert grün); lokal `uvicorn app.main:app` starten und prüfen: Kutter-Klick → Kutter-Panel + darunter Karte/Piloten; Bummel-Klick danach → Kutter-Panel weg, Bummel da; manuelles Kutter-Event erscheint mit 🦐-Badge in der Liste; Browser-Konsole ohne Fehler.
+- [ ] **Step 6: Commit** — `git commit -m "feat(kutter): Live-Ansicht — unterwegs-Segment, Teilnehmerliste, Verlust-Status, Bummel-Parität"`
 
 ---
 
