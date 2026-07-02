@@ -10,8 +10,8 @@ Modus: Schatten-Erfassung — **rein additiv, NULL Wertungsänderung**. Push ers
 |------|--------------|--------|
 | 1 | `detect_gps_legs` (reine Funktion) + Airport-Grid-Index (`nearest_airport_icao_fast`) | ✅ 264d6d1 (619 passed) |
 | 2 | Tabelle `gps_legs` + `recompute_gps_legs` (idempotent) | ✅ 4f78d50 (623 passed) |
-| 3 | Read-only Audit `audit_gps_vs_refile` + `GET /api/admin/gps-leg-audit` | ⬜ offen |
-| 4 | Docs/Changelog v7.9.0 + Push + CI + Prod-Health + Tag | ⬜ offen |
+| 3 | Read-only Audit `audit_gps_vs_refile` + `GET /api/admin/gps-leg-audit` | ✅ 9295130 (627 passed) |
+| 4 | Docs/Changelog v7.9.0 + Push + CI + Prod-Health + Tag | 🟡 Code+Docs fertig (627 passed); Push+Deploy: siehe GATE-Frage |
 
 ## Invarianten (dürfen NIE verletzt werden)
 - Live-Pfad / `flights` / State-Machine (poller.py) unangetastet.

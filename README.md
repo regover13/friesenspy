@@ -61,6 +61,15 @@ VATSIM-Piloten trennen die Verbindung manchmal kurz, ohne dass ein echter Flugwe
 
 **Woher kommen die Airport-Koordinaten?** Der Geo-Check nutzt das Python-Package [`airportsdata`](https://github.com/mborsetti/airportsdata), das eine vollständige ICAO-Datenbank eingebettet enthält — inklusive aller deutschen Sonderlandeplätze und Kleinflugplätze (z.B. EDKB, EDKV, EDRV). Die Koordinaten stammen aus der [OurAirports](https://ourairports.com)-Datenbank. Es findet kein API-Call statt — die Abfrage ist offline und instant.
 
+> **🛰️ GPS-Etappen-Erkennung (in Arbeit, ab v7.9.0 im Schatten).** Parallel entsteht eine
+> Erkennung von Flug-Etappen **rein aus den GPS-Positionen** (Abheben nach Höhe, Landung nur an
+> einem Flugplatz) — sie soll die obige refile-/disconnect-basierte Zählung künftig ablösen und
+> zerlegt auch eine **Zwischenlandung ohne Refile** in eigene Etappen. **Phase 1 ändert bewusst
+> noch keine Wertung:** die Etappen werden nur erfasst und über ein rein lesendes Admin-Audit
+> (`GET /api/admin/gps-leg-audit`) gegen die heutige Zählung geprüft. Details:
+> [`docs/architecture.md`](docs/architecture.md) → „GPS-Leg-Erkennung", Plan unter
+> `docs/superpowers/plans/2026-07-02-gps-leg-detection.md`.
+
 ---
 
 ## Die vier Tabs im Überblick

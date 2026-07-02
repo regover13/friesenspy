@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.9.0",
+    "date": "2026-07-02",
+    "title": "GPS-Etappen-Erkennung im Schatten (Vorarbeit, noch ohne Wertungswirkung)",
+    "items": [
+      "🛰️ Neu im Hintergrund: FriesenSpy erkennt Flug-Etappen jetzt rein aus den GPS-Positionen (Abheben nach Höhe, Landung nur an einem Flugplatz) — vorerst NUR zur Erfassung und zum Abgleich. An Statistik, Bummel und Kutter ändert sich bewusst noch nichts.",
+      "🔎 Für Admins gibt es ein neues, rein lesendes Audit, das die GPS-Etappen gegen die bisherige Flugzählung stellt (Zwischenlandungen ohne Refile, Trefferquote, Ausreißer) — die Datenbasis, um die Erkennung vor ihrer Aktivierung zu prüfen."
+    ]
+  },
+  {
     "version": "7.8.0",
     "date": "2026-07-02",
     "title": "Kutter: Push-Schalter + Status im Admin; 1h-Erinnerung auch manuell",

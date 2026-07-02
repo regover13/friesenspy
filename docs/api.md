@@ -1032,6 +1032,56 @@ Banner-Auswahl setzen.
 
 ---
 
+## Admin — GPS-Leg-Audit (Phase 1, Schatten)
+
+### GET /api/admin/gps-leg-audit
+
+Rein lesendes Audit für die GPS-basierte Etappen-Erkennung (#23, ab v7.9.0). Vergleicht die
+bisherige, refile-/disconnect-basierte Flugzählung (`canonicalize_flights`) mit den **im Schatten**
+erkannten GPS-Etappen (`gps_legs`). **Ändert keine Wertung** — die Etappen werden für das im
+Fenster liegende Piloten-Set **on-demand** neu berechnet (`recompute_gps_legs`, schreibt nur die
+Schatten-Tabelle `gps_legs`, nie `flights`) und dann verglichen. Kein Poll-Impact.
+
+**Query-Parameter**
+
+- `days` (int, Default `30`, 1..365) — Fenster `[jetzt − days, jetzt]` (nach `logon_time`/`takeoff_ts`).
+- `cid` (int, optional) — nur diesen Piloten prüfen.
+
+**Response**
+
+```json
+{
+  "window": {"start": "…Z", "end": "…Z"},
+  "summary": {
+    "flights": 42,            // FriesenSpy-Connections im Fenster (StatSim ausgenommen)
+    "statsim_flights": 3,
+    "gps_legs": 47,           // erkannte GPS-Etappen im Fenster
+    "matches": 40,            // Connections mit ≥ 1 überlappenden Etappe
+    "missing_gps_legs": 2,    // Connections ohne Etappe (Track fehlt / Detektor-Miss)
+    "extra_gps_legs": 5,      // Zwischenlandungen ohne Refile (Σ max(0, n−1) je Connection)
+    "arr_divergence": 1,      // Ziel-ICAO der letzten Etappe ≠ Flugplan-Arrival
+    "incomplete_rate": 0.0426,   // Anteil Etappen mit complete=0 (Disconnect mid-air)
+    "airborne_spawn_rate": 0.0213 // Anteil Etappen ohne dep_icao (Spawn in der Luft)
+  },
+  "flights": [
+    {
+      "cid": 1000001, "callsign": "FRS01",
+      "logon_time": "…Z", "logoff_time": "…Z",
+      "dep": "EDWF", "arr": "EDWG",
+      "n_legs": 2, "arr_match": true,
+      "legs": [
+        {"dep_icao": "EDWF", "arr_icao": "EDWI", "takeoff_ts": "…Z", "landing_ts": "…Z", "complete": true},
+        {"dep_icao": "EDWI", "arr_icao": "EDWG", "takeoff_ts": "…Z", "landing_ts": "…Z", "complete": true}
+      ]
+    }
+  ]
+}
+```
+
+`401` ohne gültiges Admin-Cookie.
+
+---
+
 ## Admin — Push (Test & Broadcast)
 
 ### POST /api/admin/push/test
