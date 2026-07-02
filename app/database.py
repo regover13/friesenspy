@@ -3209,6 +3209,7 @@ def compute_transport_progress(
     # Aktuell offene Flüge (noch verbunden) — bisher komplett ignoriert, da canonicalize_flights
     # logoff_time IS NOT NULL verlangt. Zählen ab dem Live-Ankunfts-Latch, ohne Disconnect.
     returning_cids: set[int] = set()
+    returning_aircraft: dict[int, str] = {}  # Muster für Nur-Rückflug-Teilnehmer (nicht im Feed)
     for f in open_transport_flights(conn, callsign_prefix):
         cid = f.get("cid")
         if cid is None:
@@ -3221,6 +3222,10 @@ def compute_transport_progress(
         if dep not in route_set or dep == dest:
             if dep == dest:
                 returning_cids.add(int(cid))
+                returning_aircraft.setdefault(
+                    int(cid),
+                    (f.get("aircraft") or normalize_type_code(f.get("aircraft_icao")) or ""),
+                )
             continue
         loaded = bool(dest) and (cid, lo) in live_arrivals
         type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
@@ -3388,8 +3393,11 @@ def compute_transport_progress(
         if rc in parts and parts[rc]["status"] == "done":
             parts[rc]["status"] = "returning"
         elif rc not in parts:
-            parts[rc] = {"cid": rc, "name": names.get(rc, ""), "aircraft": "", "flights": 0,
+            parts[rc] = {"cid": rc, "name": names.get(rc, ""),
+                         "aircraft": returning_aircraft.get(rc, ""), "flights": 0,
                          "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "status": "returning"}
+        if rc in parts and not parts[rc]["aircraft"]:
+            parts[rc]["aircraft"] = returning_aircraft.get(rc, "")
     participants = sorted(parts.values(), key=lambda x: (-x["delivered_kg"], x["name"]))
     for p in participants:
         p["delivered_kg"] = round(p["delivered_kg"], 1)
