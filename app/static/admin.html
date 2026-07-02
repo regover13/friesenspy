@@ -1258,9 +1258,6 @@
       const isActive = _activePreviewId === r.id;
       const ovCount  = r.overrides ? r.overrides.length : 0;
 
-      const revealedBadge = r.revealed_at
-        ? `<span class="badge" style="color:#c97be8;border-color:rgba(201,123,232,0.4);">Enthüllt</span>`
-        : `<span class="badge badge-manual">Nicht enthüllt</span>`;
       const pushBadge = r.push_enabled
         ? '<span class="badge badge-push-on">Push an</span>'
         : '<span class="badge badge-push-off">Push aus</span>';
@@ -1286,7 +1283,6 @@
               <div class="race-badges">
                 <span class="${statusClass(r.status)}">${statusLabel(r.status)}</span>
                 ${srcBadge}
-                ${revealedBadge}
                 ${pushBadge}
                 ${ovBadge}
               </div>

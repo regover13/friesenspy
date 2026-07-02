@@ -1,5 +1,15 @@
 [
   {
+    "version": "7.7.2",
+    "date": "2026-07-02",
+    "title": "Feinschliff: Badge-Umlaute, Doppel-Badge, Zählfehler",
+    "items": [
+      "🔤 Badges (Kutter + Bummel) zeigen Umlaute jetzt korrekt (»für«, »Größe«) statt leerer Kästchen — der Bild-Font kann keine Umlaute, deshalb werden sie sauber ausgeschrieben (ue/oe/ae).",
+      "🏷️ Im Admin steht bei enthüllten Bummel-Rennen der Status »Enthüllt« nur noch einmal (das doppelte Badge ist weg).",
+      "⚖️ FriesenKutter zählt eine Lieferung nicht mehr doppelt, wenn ein Pilot mitten im Flug mit geändertem Abflugort neu filed (Mehrbein-Session): Die Live-Ankunft wird jetzt am richtigen Flugabschnitt verbucht."
+    ]
+  },
+  {
     "version": "7.7.1",
     "date": "2026-07-02",
     "title": "Kutter-Badge aufgeräumt",

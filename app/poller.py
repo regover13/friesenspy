@@ -658,6 +658,10 @@ class VatsimPoller:
                         "id": flight_id,
                         "dep": pos["departure"] or "",
                         "arr": pos["arrival"] or "",
+                        # logon_time des AKTUELLEN Legs — der Live-Ankunfts-Latch muss denselben
+                        # Schlüssel treffen, den die flights-Zeile dieses Legs trägt (nicht den
+                        # sitzungsweiten Feed-Wert, der bei einem Leg-Split veraltet).
+                        "logon_time": pos["logon_time"],
                     }
 
                     # Reconnect-Debounce: ging dieser Pilot innerhalb des Fensters schon einmal
@@ -780,7 +784,10 @@ class VatsimPoller:
                                 aircraft_icao=pos.get("aircraft_icao", ""),
                                 alternate=pos.get("alternate", ""),
                             )
-                            self._active_flights[cid] = {"id": new_id, "dep": new_dep, "arr": new_arr}
+                            self._active_flights[cid] = {
+                                "id": new_id, "dep": new_dep, "arr": new_arr,
+                                "logon_time": now_logon,  # neues Leg → neuer Latch-Schlüssel
+                            }
                             logger.info(
                                 "Neues Leg CID %s: %s→%s → %s→%s",
                                 cid, old_dep, old_arr, new_dep, new_arr,
@@ -794,8 +801,12 @@ class VatsimPoller:
                 if active_events:
                     for cid in current_cids:
                         pos = current[cid]
+                        # logon_time des aktuell offenen Legs (nicht der sitzungsweite Feed-Wert):
+                        # nur so trifft der Latch denselben Schlüssel wie die flights-Zeile dieses
+                        # Legs — sonst Fehl-Latch + Doppelzählung bei Refile-Splits (#22).
+                        leg_logon = self._active_flights.get(cid, {}).get("logon_time") or pos["logon_time"]
                         check_live_arrival(
-                            conn, cid, pos["logon_time"], pos["latitude"], pos["longitude"],
+                            conn, cid, leg_logon, pos["latitude"], pos["longitude"],
                             pos["groundspeed"], active_events,
                         )
 
