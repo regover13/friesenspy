@@ -881,7 +881,7 @@ Zuladungs-Tabelle + globaler Fallback + beobachtete, noch nicht gepflegte Flugze
 Zuladung eines Typs setzen. Body: `type_code` (Pflicht), `mtow_kg`, `empty_kg`, `fuel_kg` (Tankinhalt, Default halbe Füllung), `crew_kg` (Pilot/Crew, Default 85 — zählt nicht als Fracht), optional direktes `payload_kg` (überschreibt die Ableitung `max(0, mtow−empty−fuel−crew)`), `make_model`.
 
 ### GET /api/admin/transport/payloads/suggest?type=C172
-KI-Vorschlag (Claude Sonnet 5 mit **Web-Search**, Structured Output) für die Komponenten eines Typs — recherchiert dokumentierte Handbuch-/POH-Werte (keine Schätzungen): `{make_model, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg}` (Zuladung = MTOW − Leer − halbe Tankfüllung − Crew; `fuel_kg` = halbe Füllung als Default, `fuel_full_kg` = Maximum, volle Tanks). Dauer ~30 s (Web-Recherche). `400`, wenn `ANTHROPIC_API_KEY` fehlt.
+KI-Vorschlag (Claude Sonnet 5 mit **Web-Search**, Structured Output) für die Komponenten eines Typs — recherchiert dokumentierte Handbuch-/POH-Werte (keine Schätzungen): `{make_model, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg}` (Zuladung = MTOW − Leer − halbe Tankfüllung − Crew; `fuel_kg` = halbe Füllung als Default, `fuel_full_kg` = Maximum, volle Tanks). Dauer ~15–30 s (Basis-Web-Search `web_search_20250305`, gestreamt, `max_retries=0` — das neuere Dynamic-Filtering-Tool drehte bei obskuren Typen minutenlang in code_execution-Runden, s. v7.4.1). `400`, wenn `ANTHROPIC_API_KEY` fehlt.
 
 ### POST /api/admin/transport/default-payload
 Globalen Fallback-Zuladungswert setzen. Body: `default_kg`.
