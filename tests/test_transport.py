@@ -47,6 +47,7 @@ from app.database import (
     get_transport_losses,
     detect_transport_losses,
     set_transport_summarized,
+    set_transport_push_enabled,
 )
 
 START = "2026-07-01T09:00:00Z"
@@ -1117,4 +1118,82 @@ class TestKutterBadgeEndpoints:
         client, db = self._app(tmp_path, monkeypatch)
         ev = self._seeded_event(db)
         res = client.get(f"/api/admin/transport/events/{ev['id']}/badge/500.png")
+        assert res.status_code == 401
+
+
+class TestTransportPushEnabled:
+    """set_transport_push_enabled (DB) + POST /api/admin/transport/events/{id}/push --
+    Analogon zu set_bummel_push_enabled / admin_toggle_push."""
+
+    SECRET = "s3cr3t"
+    PW = "test-admin-pw"
+
+    def _app(self, tmp_path, monkeypatch):
+        p = str(tmp_path / "kutter_push.db")
+        init_db(p)
+        monkeypatch.setattr(
+            main, "get_settings",
+            lambda: SimpleNamespace(
+                DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=self.SECRET, ADMIN_PASSWORD=self.PW,
+                VAPID_PRIVATE_KEY="vapid", VAPID_CONTACT_EMAIL="mailto:test",
+            ),
+        )
+        return TestClient(main.app), p
+
+    def _admin_cookies(self):
+        return {ADMIN_COOKIE: make_admin_token(self.SECRET, self.PW)}
+
+    def test_set_push_enabled_roundtrip(self):
+        conn = _make_conn()
+        ev = _event(conn)
+        assert ev["push_enabled"] == 1  # Default an
+
+        set_transport_push_enabled(conn, ev["id"], False)
+        conn.commit()
+        assert get_transport_event(conn, ev["id"])["push_enabled"] == 0
+
+        set_transport_push_enabled(conn, ev["id"], True)
+        conn.commit()
+        assert get_transport_event(conn, ev["id"])["push_enabled"] == 1
+
+    def test_toggle_push_endpoint_disable(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        conn = get_connection(db)
+        ev = _event(conn)
+        conn.commit()
+        conn.close()
+        client.cookies.update(self._admin_cookies())
+
+        res = client.post(f"/api/admin/transport/events/{ev['id']}/push", json={"enabled": False})
+        assert res.status_code == 200
+        assert res.json() == {"status": "ok"}
+
+        conn = get_connection(db)
+        assert get_transport_event(conn, ev["id"])["push_enabled"] == 0
+        conn.close()
+
+    def test_toggle_push_endpoint_enable(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        conn = get_connection(db)
+        ev = _event(conn)
+        set_transport_push_enabled(conn, ev["id"], False)
+        conn.commit()
+        conn.close()
+        client.cookies.update(self._admin_cookies())
+
+        res = client.post(f"/api/admin/transport/events/{ev['id']}/push", json={"enabled": True})
+        assert res.status_code == 200
+
+        conn = get_connection(db)
+        assert get_transport_event(conn, ev["id"])["push_enabled"] == 1
+        conn.close()
+
+    def test_toggle_push_endpoint_requires_auth(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        conn = get_connection(db)
+        ev = _event(conn)
+        conn.commit()
+        conn.close()
+
+        res = client.post(f"/api/admin/transport/events/{ev['id']}/push", json={"enabled": False})
         assert res.status_code == 401

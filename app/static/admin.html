@@ -2078,13 +2078,18 @@
       c.innerHTML = _keEvents.map(ev => {
         const cargo = (ev.cargo || []).map(x => escH(x.name) + ' ' + Math.round(x.target_kg) + 'kg').join(', ') || '—';
         const src = ev.source === 'calendar' ? '📅 Kalender' : '✎ manuell';
+        const pushOn = ev.push_enabled !== 0;
+        const pushBadge = pushOn
+          ? '<span class="badge badge-push-on">Push an</span>'
+          : '<span class="badge badge-push-off">Push aus</span>';
         return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.08);">'
-          + '<div><div><b>' + escH(ev.name) + '</b> <span style="color:#8aa0b8;font-size:0.72rem;">' + src + '</span></div>'
+          + '<div><div><b>' + escH(ev.name) + '</b> <span style="color:#8aa0b8;font-size:0.72rem;">' + src + '</span> ' + pushBadge + '</div>'
           + '<div style="color:#8aa0b8;font-size:0.76rem;">' + escH((ev.route || '').replace(/,/g, ' → '))
           + ' · Ziel ' + escH(ev.destination || '—') + (ev.radius_km ? ' · Umkreis ' + ev.radius_km + ' km' : '') + '</div>'
           + '<div style="color:#8aa0b8;font-size:0.72rem;">' + escH(ev.dtstart) + ' → ' + escH(ev.dtend) + '</div>'
           + '<div style="color:#8aa0b8;font-size:0.72rem;">Fracht: ' + cargo + '</div></div>'
           + '<div style="display:flex;gap:6px;flex:none;">'
+          + '<button class="btn btn-sm" onclick="keTogglePush(' + ev.id + ',' + (pushOn ? 'false' : 'true') + ')">' + (pushOn ? 'Push aus' : 'Push an') + '</button>'
           + '<button class="btn btn-sm" onclick="keEdit(' + ev.id + ')">Bearbeiten</button>'
           + '<button class="btn btn-sm btn-danger" onclick="keDelete(' + ev.id + ')">Löschen</button></div></div>';
       }).join('');
@@ -2115,6 +2120,13 @@
       const res = await api('DELETE', '/api/admin/transport/events/' + id);
       if (!res || !res.ok) { toast('Fehler beim Löschen.', true); return; }
       toast('Event gelöscht.');
+      loadKutterAdmin();
+    }
+
+    async function keTogglePush(id, enabled) {
+      const res = await api('POST', '/api/admin/transport/events/' + id + '/push', { enabled });
+      if (!res || !res.ok) { toast('Fehler beim Umschalten.', true); return; }
+      toast(enabled ? 'Push aktiviert.' : 'Push deaktiviert.');
       loadKutterAdmin();
     }
 
