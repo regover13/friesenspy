@@ -4426,6 +4426,7 @@ async function openKutterDetail(id) {
   wrap.classList.remove('hidden');
   wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('events-results').classList.add('hidden');
+  _lastKutterDetail = null; // Reset vor Refresh; sonst stale Event-Suche bei fehlgeschlagenem Fetch
   await _refreshKutterDetail();
   clearInterval(_kutterPollTimer);
   _kutterPollTimer = setInterval(_refreshKutterDetail, 25000);
