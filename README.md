@@ -219,6 +219,7 @@ Der **FriesenKutter** ist ein kleines „FSE für Friesen": ein Transportflug-Ev
 - **Lustige KI-Sprüche (optional):** Ist der Schalter im Admin aktiv, schreibt Claude zu jedem Flug einen Einzeiler im Friesen-Humor — mit Bezug auf Vorname, Fleiß, Tempo und Umwege — plus eine launige Tagesend-Zusammenfassung.
 - **Fracht direkt im Kalendertermin:** Eine Zeile wie `Fracht: 1000 Krabbenbrötchen, 500 Friesentee` in der Termin-Beschreibung befüllt das Manifest beim Kalender-Sync automatisch (Namen gegen den Katalog abgeglichen). Nur beim erstmaligen Anlegen — spätere Admin-Bearbeitungen bleiben bei erneutem Sync erhalten.
 - **Ohne Disconnect zählen:** Fracht wird bereits erfasst, sobald du erkennbar am Boden (< 2 kt Geschwindigkeit) im 10-km-Umkreis um das Ziel bist — du musst nicht disconnecten. Einmal erkannt, bleibt die Fracht dauerhaft gezählt, auch wenn du danach weiterfliegst.
+- **Reservierung, Teilnehmerliste & verlorene Fracht:** Wer Richtung Ziel abhebt, reserviert seine Zuladung sofort sichtbar im Balken (»davon X kg unterwegs«); eine Teilnehmerliste zeigt wer fliegt, angekommen ist oder zurückkehrt. Wer sein Ziel nie erreicht, verliert die Ladung — »Kutter versunken« oder »geklaut«, im Feed und in der Bilanz sichtbar. Der Erkennungs-Umkreis ist pro Event einstellbar (Standard 10 km, z.B. für kurze Strecken wie Wangerooge↔Harle).
 
 ## 🔔 Benachrichtigungen (Push Notifications)
 

@@ -1,5 +1,16 @@
 [
   {
+    "version": "7.5.0",
+    "date": "2026-07-02",
+    "title": "FriesenKutter: Reservierung, Teilnehmerliste & verlorene Fracht",
+    "items": [
+      "✈️ Wer startet, reserviert: Sobald ein Pilot Richtung Ziel unterwegs ist, erscheint seine Zuladung als helles Segment im Ziel-Balken und die offene Menge zeigt »davon X kg unterwegs« — schon beim Rollen, nicht erst bei Ankunft.",
+      "👥 Neue Teilnehmerliste in der Kutter-Ansicht: wer fliegt gerade mit wie viel Fracht, wer ist angekommen, wer auf dem Rückflug — mit Summen pro Pilot wie beim Bummel.",
+      "🌊 Verlorene Fracht: Wer sein Ziel nie erreicht, verliert die Ladung — »Kutter versunken« (unterwegs verschwunden) oder »geklaut« (am falschen Ort gelandet); wer umkehrt und zu Hause landet, bringt sie ehrlich zurück. Verluste erscheinen im Feed, in der Bilanz (»💀 X kg verloren«) und die Bord-KI spottet dazu.",
+      "📏 Erkennungs-Umkreis pro Event einstellbar (Standard 10 km) — für kurze Strecken wie Wangerooge↔Harle."
+    ]
+  },
+  {
     "version": "7.4.2",
     "date": "2026-07-02",
     "title": "Zuladungs-Recherche auf Haiku umgestellt",
