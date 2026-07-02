@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.6.1",
+    "date": "2026-07-02",
+    "title": "Sicherheits-Härtung im Live-Block",
+    "items": [
+      "🔒 Der Karten-Knopf im neuen Kutter-Live-Block übergibt das Callsign nicht mehr per Inline-JavaScript (theoretischer XSS-Vektor über manipulierte VATSIM-Callsigns) — jetzt sauber per data-Attribut und delegiertem Klick-Handler."
+    ]
+  },
+  {
     "version": "7.6.0",
     "date": "2026-07-02",
     "title": "FriesenKutter im Live-Tab",

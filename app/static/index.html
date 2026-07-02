@@ -3012,8 +3012,10 @@ async function fetchKutterActive() {
           ? a.lines.map(l => (l.emoji ? l.emoji + ' ' : '') + _kesc(l.name)
               + (a.lines.length > 1 ? ' (' + Math.round(l.kg) + ')' : '')).join(' + ')
           : (a.kg > 0 ? Math.round(a.kg) + ' kg' : 'leer');
+        // Kein Inline-onclick mit interpoliertem Callsign (XSS: HTML-Escaping schützt den
+        // JS-String-Kontext im Attribut nicht) — data-Attribut + delegierter Listener.
         const map = a.callsign
-          ? `<button class="btn-share" onclick="switchToMapAndCenter('${_kesc(a.callsign)}')" title="Auf der Karte zeigen">🗺️</button>`
+          ? `<button class="btn-share" data-callsign="${_kesc(a.callsign)}" title="Auf der Karte zeigen">🗺️</button>`
           : '';
         return `<tr><td class="mono text-green">${_kesc(a.callsign || '—')}</td><td class="mono">${_kesc(a.aircraft || '—')}</td>`
           + `<td>${load}</td><td>${a.status}</td><td>${map}</td></tr>`;
@@ -4755,6 +4757,11 @@ fetchBummelActive();
 setInterval(fetchBummelActive, 60000);  // Bummel-Banner langsam pollen (wie Prefiles)
 fetchKutterActive();
 setInterval(fetchKutterActive, 25000);  // Kutter-Live-Block im Kutter-Detail-Takt (Live-Aktualität)
+// Delegierter Karten-Klick des Kutter-Blocks (überlebt die innerHTML-Refreshs).
+document.getElementById('kutter-banner')?.addEventListener('click', e => {
+  const btn = e.target.closest('button[data-callsign]');
+  if (btn) switchToMapAndCenter(btn.dataset.callsign);
+});
 connectSSE();
 initFromUrl();
 
