@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import copy
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.database import (
     _DDL,
+    bummel_races_due_for_reminder,
     create_bummel_race,
     delete_bummel_override,
     delete_bummel_race,
@@ -19,6 +21,7 @@ from app.database import (
     init_db,
     list_bummel_overrides,
     list_bummel_races,
+    mark_event_reminded,
     set_bummel_push_enabled,
     set_bummel_started,
     update_bummel_race,
@@ -574,3 +577,40 @@ class TestApplyBummelOverridesEdgeCases:
             [_ov(300, "exclude"), _ov(100, "disqualify")],
         )
         assert result["participant_count"] == 2  # distinct: {200, 100}
+
+
+# ---------------------------------------------------------------------------
+# bummel_races_due_for_reminder (Task 4, #24) -- manuelle 1h-Erinnerung, push_enabled-gated
+# ---------------------------------------------------------------------------
+
+def _iso(dt) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class TestBummelRacesDueForReminder:
+    def test_manual_race_due_then_dedup_after_mark(self):
+        conn = _make_conn()
+        now = datetime.now(timezone.utc)
+        rid = _race(conn, name="Sommer-Bummel", dtstart=_iso(now + timedelta(minutes=30)))
+        conn.commit()
+
+        due = bummel_races_due_for_reminder(conn, _iso(now), lead_min=60)
+        assert [r["id"] for r in due] == [rid]
+
+        mark_event_reminded(conn, f"bummel:{rid}", _iso(now))
+        conn.commit()
+        assert bummel_races_due_for_reminder(conn, _iso(now), lead_min=60) == []
+
+    def test_push_disabled_excluded(self):
+        conn = _make_conn()
+        now = datetime.now(timezone.utc)
+        rid = _race(conn, dtstart=_iso(now + timedelta(minutes=30)))
+        set_bummel_push_enabled(conn, rid, False)
+        conn.commit()
+        assert bummel_races_due_for_reminder(conn, _iso(now), lead_min=60) == []
+
+    def test_outside_window_excluded(self):
+        conn = _make_conn()
+        now = datetime.now(timezone.utc)
+        _race(conn, dtstart=_iso(now + timedelta(minutes=90)))  # außerhalb 60-min-Fenster
+        assert bummel_races_due_for_reminder(conn, _iso(now), lead_min=60) == []

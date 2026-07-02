@@ -836,6 +836,144 @@ class TestTransportSummaryEmptyEventSuppressed:
 
 
 # ---------------------------------------------------------------------------
+# _check_event_reminders -- 1h-Erinnerung aus drei Quellen (Task 4, #24)
+# ---------------------------------------------------------------------------
+
+class TestCheckEventReminders:
+    """_check_event_reminders speist sich aus events_due_for_reminder (generisch),
+    bummel_races_due_for_reminder und transport_events_due_for_reminder -- je ein Push mit
+    quellenspezifischem Titel, latched über synthetische Keys (kein Doppel-Push)."""
+
+    def _poller(self, db_path):
+        return VatsimPoller(
+            db_path=db_path, callsign_prefix="FRS", poll_interval=60,
+            vapid_private_key="priv", vapid_contact_email="mailto:x@y.z",
+        )
+
+    @pytest.mark.asyncio
+    async def test_sends_for_all_three_sources_with_correct_titles(self, tmp_path):
+        from datetime import datetime, timedelta, timezone
+        from app.database import (
+            init_db, get_connection, upsert_push_subscription, upsert_calendar_events,
+            create_bummel_race, create_transport_event,
+        )
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        soon = (now + timedelta(minutes=30)).strftime(fmt)
+
+        conn = get_connection(db_file)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_events=True)
+        upsert_calendar_events(conn, [{
+            "uid": "gen1", "summary": "Stammtisch", "dtstart": soon, "dtend": "",
+            "location": "", "route": "", "is_bummel": 0, "is_transport": 0,
+        }])
+        create_bummel_race(conn, name="Bummel A", route="EDWF,EDWG", dtstart=soon, dtend=None)
+        create_transport_event(
+            conn, name="Kutter A", route="EDWG,EDXH", destination="EDXH",
+            dtstart=soon, dtend=None,
+        )
+        conn.commit()
+        conn.close()
+
+        poller = self._poller(db_file)
+        sent = []
+        with patch("app.poller.send_web_push",
+                   new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._check_event_reminders()
+            await asyncio.sleep(0)
+
+        assert len(sent) == 3
+        payloads = [call[4] for call in sent]
+        assert {p["title"] for p in payloads} == {
+            "FriesenEvent", "FriesenFliegerBummel", "FriesenKutter",
+        }
+        assert {p["body"] for p in payloads} == {
+            "🗓 In etwa 1 Std: Stammtisch",
+            "🗓 In etwa 1 Std: Bummel A",
+            "🗓 In etwa 1 Std: Kutter A",
+        }
+
+        conn = get_connection(db_file)
+        try:
+            n = conn.execute("SELECT COUNT(*) c FROM event_reminders_sent").fetchone()["c"]
+        finally:
+            conn.close()
+        assert n == 3  # generisch + bummel:{id} + kutter:{id} je einmal gelatcht
+
+    @pytest.mark.asyncio
+    async def test_push_disabled_bummel_and_kutter_excluded(self, tmp_path):
+        from datetime import datetime, timedelta, timezone
+        from app.database import (
+            init_db, get_connection, upsert_push_subscription,
+            create_bummel_race, create_transport_event,
+            set_bummel_push_enabled, set_transport_push_enabled,
+        )
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        now = datetime.now(timezone.utc)
+        soon = (now + timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        conn = get_connection(db_file)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_events=True)
+        bid = create_bummel_race(conn, name="Bummel A", route="EDWF,EDWG", dtstart=soon, dtend=None)
+        kid = create_transport_event(
+            conn, name="Kutter A", route="EDWG,EDXH", destination="EDXH",
+            dtstart=soon, dtend=None,
+        )
+        set_bummel_push_enabled(conn, bid, False)
+        set_transport_push_enabled(conn, kid, False)
+        conn.commit()
+        conn.close()
+
+        poller = self._poller(db_file)
+        with patch("app.poller.send_web_push", new=AsyncMock()) as mock_send:
+            await poller._check_event_reminders()
+            await asyncio.sleep(0)
+
+        mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_calendar_bummel_not_double_pushed(self, tmp_path):
+        """Kalender-Bummel (is_bummel=1 in calendar_events + Objekt in bummel_races) löst genau
+        EINEN Push aus, nicht zwei (generisch + Bummel)."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import (
+            init_db, get_connection, upsert_push_subscription, upsert_calendar_events,
+            upsert_calendar_bummel_race,
+        )
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        now = datetime.now(timezone.utc)
+        soon = (now + timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        conn = get_connection(db_file)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_events=True)
+        ev = {"uid": "cal-bummel", "summary": "FFB Juli", "dtstart": soon, "dtend": "",
+              "location": "", "route": "EDWF,EDWG", "is_bummel": 1, "is_transport": 0}
+        upsert_calendar_events(conn, [ev])
+        upsert_calendar_bummel_race(conn, ev)
+        conn.commit()
+        conn.close()
+
+        poller = self._poller(db_file)
+        sent = []
+        with patch("app.poller.send_web_push",
+                   new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._check_event_reminders()
+            await asyncio.sleep(0)
+
+        assert len(sent) == 1
+        payload = sent[0][4]
+        assert payload["title"] == "FriesenFliegerBummel"
+        assert payload["body"] == "🗓 In etwa 1 Std: FFB Juli"
+
+
+# ---------------------------------------------------------------------------
 # Auto-Recherche der Zuladung für neu gesehene Typcodes (v7.4.0)
 # ---------------------------------------------------------------------------
 
