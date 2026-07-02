@@ -181,3 +181,22 @@ def segment_into_flights(
         }
         for seg in segments
     ]
+
+
+def nearest_airport_icao(lat: float, lon: float, max_km: float) -> str | None:
+    """ICAO des nächstgelegenen Flugplatzes im Umkreis ``max_km`` — sonst None.
+
+    Linearer Scan über die airportsdata-Datenbank (~28k Einträge) mit grobem
+    Bounding-Box-Vorfilter; gedacht für seltene Ereignisse (Verlust-Klassifikation),
+    nicht für den Poll-Takt.
+    """
+    best, best_d = None, max_km
+    box = max_km / 111.0 + 0.01  # Grad-Näherung
+    for icao, a in _airports_icao().items():
+        alat, alon = a.get("lat"), a.get("lon")
+        if alat is None or alon is None or abs(alat - lat) > box:
+            continue
+        d = haversine(lat, lon, alat, alon)
+        if d <= best_d:
+            best, best_d = icao, d
+    return best

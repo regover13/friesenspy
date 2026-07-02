@@ -38,6 +38,9 @@ from app.database import (
     open_transport_flights,
     transport_event_started,
     check_live_arrival,
+    record_transport_loss,
+    get_transport_losses,
+    detect_transport_losses,
 )
 
 START = "2026-07-01T09:00:00Z"
@@ -63,11 +66,12 @@ def _add_flight(conn, cid, dep, arr, aircraft, logon, *, duration_min=30, callsi
         "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)",
         (cid, f"Pilot{cid}", START),
     )
+    logoff = _shift(logon, duration_min)
     conn.execute(
         "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
         "logon_time, logoff_time, duration_min, distance_nm) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (cid, callsign, aircraft, dep, arr, logon, "2026-07-01T22:00:00Z", duration_min, 20.0),
+        (cid, callsign, aircraft, dep, arr, logon, logoff, duration_min, 20.0),
     )
     conn.commit()
 
@@ -96,6 +100,21 @@ def _event(conn, *, route="EDWG,EDXH", destination="EDXH", cargo=None, radius_km
 
 def _feed_by_callsign(progress, callsign):
     return next((f for f in progress["flights"] if f["callsign"] == callsign), None)
+
+
+def _add_pos(conn, cid, ts, lat, lon, gs):
+    conn.execute(
+        "INSERT INTO position_history (cid, latitude, longitude, groundspeed, ts) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (cid, lat, lon, gs, ts),
+    )
+    conn.commit()
+
+
+def _shift(ts: str, minutes: int) -> str:
+    from datetime import datetime, timedelta
+    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    return (dt + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # --- Kalender-Stichwort ----------------------------------------------------
@@ -763,3 +782,69 @@ class TestReservation:
         assert f["loaded"] is True and f["tonnage_kg"] == 292.0 and f["reserved_kg"] == 0.0
         assert p["cargo"][0]["delivered_kg"] == 292.0
         assert p["reserved_total_kg"] == 0.0             # kein Doppelzählen
+
+
+# --- Fracht-Verluste: Kutter versunken, geklaut, zurückgebracht -------------
+
+class TestCargoLosses:
+    def _flown_flight(self, conn, cid, logon, *, end_lat, end_lon, end_gs, arrival="EDXH"):
+        """Geschlossener Flug ab EDWG Richtung Ziel mit Bewegungs-Track und letzter Position."""
+        from app.geo import icao_to_coords
+        dlat, dlon = icao_to_coords("EDWG")
+        _add_flight(conn, cid, "EDWG", arrival, "C172", logon, duration_min=30)
+        _add_pos(conn, cid, logon, dlat, dlon, 0)                      # Start am Platz
+        _add_pos(conn, cid, _shift(logon, 10), dlat + 0.2, dlon, 90)   # geflogen
+        _add_pos(conn, cid, _shift(logon, 30), end_lat, end_lon, end_gs)
+
+    def test_sunk_when_vanished_airborne(self):
+        conn = _make_conn()
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        self._flown_flight(conn, 300, "2026-07-02T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
+        n = detect_transport_losses(conn, ev)
+        assert n == 1
+        losses = get_transport_losses(conn, ev["id"])
+        assert losses[0]["kind"] == "sunk"
+        p = compute_transport_progress(conn, ev, "2026-07-02T20:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 300)
+        assert f["loss_kind"] == "sunk" and f["loaded"] is False
+        assert p["lost_total_kg"] == 292.0
+        assert p["cargo"][0]["delivered_kg"] == 0.0      # Menge bleibt offen
+
+    def test_stolen_when_landed_elsewhere(self):
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        wlat, wlon = icao_to_coords("EDWY")                 # Norderney — nicht auf der Route
+        self._flown_flight(conn, 301, "2026-07-02T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)
+        detect_transport_losses(conn, ev)
+        assert get_transport_losses(conn, ev["id"])[0]["kind"] == "stolen"
+        p = compute_transport_progress(conn, ev, "2026-07-02T20:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 301)
+        assert f["loss_kind"] == "stolen"                   # synthetischer Feed-Eintrag
+        assert p["lost_total_kg"] == 292.0
+
+    def test_returned_home_is_no_loss(self):
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        dlat, dlon = icao_to_coords("EDWG")
+        self._flown_flight(conn, 302, "2026-07-02T18:05:00Z", end_lat=dlat, end_lon=dlon, end_gs=0, arrival="EDWG")
+        detect_transport_losses(conn, ev)
+        assert get_transport_losses(conn, ev["id"])[0]["kind"] == "returned"
+        p = compute_transport_progress(conn, ev, "2026-07-02T20:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 302)
+        assert f["loss_kind"] == "returned"
+        assert p["lost_total_kg"] == 0.0                    # zurückgebracht ≠ verloren
+
+    def test_detection_is_idempotent_and_skips_delivered(self):
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        alat, alon = icao_to_coords("EDXH")
+        self._flown_flight(conn, 303, "2026-07-02T18:05:00Z", end_lat=alat, end_lon=alon, end_gs=0)
+        assert detect_transport_losses(conn, ev) == 0       # am Ziel gelandet → geliefert
+        self._flown_flight(conn, 304, "2026-07-02T18:20:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
+        assert detect_transport_losses(conn, ev) == 1
+        assert detect_transport_losses(conn, ev) == 0       # idempotent
