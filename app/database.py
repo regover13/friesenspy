@@ -3026,6 +3026,15 @@ def compute_transport_progress(
     ``aircraft_payloads`` (Fallback: globaler Default). Das Fracht-Manifest wird nach Abflugzeit per
     Co-Load gefüllt (Obergrenze pro Flug, Rest fließt in die nächste Frachtart); jeder beladene Flug
     trägt seine Frachtart(en). Der zurückgegebene ``flights``-Feed ist absteigend (neueste oben).
+
+    **Reservierung:** Sobald ein FRS-Pilot Richtung Ziel abhebt (``open_transport_flights``,
+    Start auf der Strecke), reserviert er seine volle Zuladung im Manifest — noch ohne Latch,
+    also vor jeder GPS-Bestätigung. Die Reservierung ist rein rechnerisch (kein DB-State, kein
+    eigenes Feld in ``flights``): sie füllt einen von ``delivered`` getrennten Topf
+    (``reserved_alloc``/``reserved_total_kg``), damit der gelieferte Fortschritt nie rückwärts
+    läuft, und verschwindet mit dem Flug (Latch, Landung anderswo, Disconnect). Die kg werden
+    dabei stets live aus ``aircraft_payloads`` (``payload_map``/``default_kg``) gelesen, nie
+    gesnapshottet.
     """
     from app.geo import icao_to_coords  # lazy
 
@@ -3076,6 +3085,8 @@ def compute_transport_progress(
             "arr": arr,
             "tonnage_kg": tonnage,
             "loaded": loaded,
+            "in_air": False,
+            "reserved_kg": 0.0,
             "flight_key": f"{cid}:{lo}",
             "distance_nm": f.get("distance_nm") or 0,
             "block_min": f.get("block_min") or f.get("duration_min") or 0,
@@ -3099,6 +3110,9 @@ def compute_transport_progress(
         if loaded and type_code and type_code not in payload_map:
             unmapped.add(type_code)
         tonnage = round(payload_map.get(type_code, default_kg), 1) if loaded else 0.0
+        reserved = 0.0 if loaded else round(payload_map.get(type_code, default_kg), 1)
+        if not loaded and type_code and type_code not in payload_map:
+            unmapped.add(type_code)   # reservierte Typen dem Admin ebenfalls melden
         network.append({
             "dep_time": lo,
             "cid": cid,
@@ -3108,6 +3122,8 @@ def compute_transport_progress(
             "arr": dest,
             "tonnage_kg": tonnage,
             "loaded": loaded,
+            "in_air": True,
+            "reserved_kg": reserved,
             "flight_key": f"{cid}:{lo}",
             "distance_nm": 0,
             "block_min": 0,
@@ -3162,6 +3178,29 @@ def compute_transport_progress(
         ]
         q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
 
+    # Reservierungen (offene Flüge Richtung Ziel, noch ohne Latch) in die Rest-Kapazität
+    # verteilen — gleiche Co-Load-Regeln, aber getrennt von `delivered`: der Fortschritt
+    # läuft nie rückwärts, die Reservierung verschwindet mit dem Flug.
+    reserved_alloc = [0.0] * len(cargo)
+    for q in network:
+        r = q.get("reserved_kg") or 0.0
+        if q["loaded"] or r <= 1e-9:
+            continue
+        remaining = r
+        for i, c in enumerate(cargo):
+            if remaining <= 1e-9:
+                break
+            space = cargo_targets[i] - delivered[i] - reserved_alloc[i]
+            if space <= 1e-9:
+                continue
+            cap = c.get("per_flight_max_kg")
+            cap = cap if (cap is not None and cap > 0) else _INF
+            add = min(remaining, cap, space)
+            if add <= 1e-9:
+                continue
+            reserved_alloc[i] += add
+            remaining -= add
+
     # Gecachte KI-Sprüche je Flug anhängen (Phase 2; None wenn deaktiviert/noch nicht erzeugt).
     quips = get_transport_quips(conn, int(event["id"]))
     for q in network:
@@ -3178,6 +3217,7 @@ def compute_transport_progress(
             "emoji": c.get("emoji"),
             "target_kg": c["target_kg"],
             "delivered_kg": round(delivered[i], 1),
+            "reserved_kg": round(reserved_alloc[i], 1),
             "pct": round(100.0 * delivered[i] / c["target_kg"], 1) if c["target_kg"] > 0 else 0.0,
         })
 
@@ -3194,6 +3234,7 @@ def compute_transport_progress(
         "loaded_count": loaded_count,
         "target_kg": target_kg,
         "progress_pct": progress_pct,
+        "reserved_total_kg": round(sum(reserved_alloc), 1),
         "unmapped_types": sorted(unmapped),
         "summary_quip": event.get("summary_quip"),
     }

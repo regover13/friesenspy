@@ -711,3 +711,55 @@ class TestEventRadius:
         # Minimalfall: Funktion läuft ohne Parameter durch und liefert das route-Feld.
         result = compute_transport_progress(conn, ev, ev["dtend"])
         assert "route" in result
+
+
+# --- Fracht-Reservierung ----------------------------------------------------
+
+class TestReservation:
+    def test_open_flight_reserves_payload(self):
+        """Offener Flug Richtung Ziel ohne Latch: 0 kg geliefert, aber reserviert."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)  # payload 292
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 200)
+        assert f["in_air"] is True and f["loaded"] is False
+        assert f["tonnage_kg"] == 0.0 and f["reserved_kg"] == 292.0
+        assert p["reserved_total_kg"] == 292.0
+        assert p["cargo"][0]["reserved_kg"] == 292.0
+        assert p["cargo"][0]["delivered_kg"] == 0.0      # Fortschritt unverändert
+
+    def test_reservation_capped_by_remaining_target(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 100.0}])
+        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
+        assert p["cargo"][0]["reserved_kg"] == 100.0     # gekappt auf offenen Bedarf
+        assert p["reserved_total_kg"] == 100.0
+        assert p["flights"][0]["reserved_kg"] == 292.0   # was er trägt, bleibt volle Zuladung
+
+    def test_reservation_respects_per_flight_cap_and_coload(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[
+            {"name": "Filmrollen", "target_kg": 500.0, "per_flight_max_kg": 100.0},
+            {"name": "Friesentee", "target_kg": 500.0},
+        ])
+        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
+        assert p["cargo"][0]["reserved_kg"] == 100.0     # Kappung pro Flug
+        assert p["cargo"][1]["reserved_kg"] == 192.0     # Co-Load-Rest
+
+    def test_latch_converts_reservation_to_delivered(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
+        set_transport_live_arrival(conn, 200, "2026-07-02T18:05:00Z", ev["id"], "2026-07-02T18:30:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 200)
+        assert f["loaded"] is True and f["tonnage_kg"] == 292.0 and f["reserved_kg"] == 0.0
+        assert p["cargo"][0]["delivered_kg"] == 292.0
+        assert p["reserved_total_kg"] == 0.0             # kein Doppelzählen
