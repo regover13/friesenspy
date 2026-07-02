@@ -395,6 +395,9 @@
     .kutter-quip { display:block; font-style: italic; color: #9fc9b6; font-size: 0.76rem; margin-top: 2px; white-space: normal; overflow-wrap: anywhere; }
     .kutter-feed td:last-child { max-width: 260px; white-space: normal; }
     .kutter-summary { font-style: italic; color: #ffe6c2; background: rgba(200,147,58,0.12); border-left: 3px solid #c8933a; padding: 8px 12px; border-radius: 0 8px 8px 0; margin-bottom: 10px; font-size: 0.85rem; line-height: 1.4; }
+    .kutter-seg > i.kseg-res { opacity: .5; background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,.35) 4px 8px); }
+    .kutter-feed td.kf-res { color: #9fc9e8; text-align: right; font-style: italic; }
+    .kutter-loss { color: #e8a9a0; }
 
     table {
       width: 100%;
@@ -2631,6 +2634,23 @@ async function fetchFriesenEvents() {
           _manual: true,
         }));
     } catch (_) { /* ignorieren */ }
+    // Manuell angelegte FriesenKutter-Events ergänzen (toleriert Fehler)
+    try {
+      const kuttersRes = await fetch('/api/transport/events');
+      const kutters = await kuttersRes.json();
+      manualEvents = manualEvents.concat((kutters || [])
+        .filter(k => k.source === 'manual')
+        .map(k => ({
+          summary: k.name,
+          dtstart: k.dtstart,
+          dtend: k.dtend,
+          route: k.route || '',
+          location: '',
+          is_transport: 1,
+          _kutterId: k.id,
+          _manual: true,
+        })));
+    } catch (_) { /* ignorieren */ }
     const combined = [...calEvents, ...manualEvents]
       .sort((a, b) => (b.dtstart || '').localeCompare(a.dtstart || ''));
     renderFriesenEvents(combined);
@@ -2662,9 +2682,11 @@ function renderFriesenEvents(data) {
   }
   let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';
   data.forEach((ev, i) => {
-    const badge = ev.is_bummel ? '<span class="bummel-badge">🏁 BUMMEL</span>' : '';
+    const badge = ev.is_bummel ? '<span class="bummel-badge">🏁 BUMMEL</span>'
+      : ev.is_transport ? '<span class="bummel-badge">🦐 KUTTER</span>' : '';
     const manuelHint = ev._manual ? ' <span class="text-label" style="font-size:0.8em;">(manuell)</span>' : '';
-    const icaoCell = ev.is_bummel && ev.route ? ev.route.replace(/,/g, ' → ') : (ev.location || '—');
+    const icaoCell = (ev.is_bummel || ev.is_transport) && ev.route
+      ? ev.route.replace(/,/g, ' → ') : (ev.location || '—');
     html += `<tr style="cursor:pointer;" data-event-idx="${i}">
       <td>${escHtml(ev.summary || '—')}${badge}${manuelHint}</td>
       <td class="mono text-label">${_fmtEventDate(ev.dtstart)}</td>
@@ -2677,7 +2699,7 @@ function renderFriesenEvents(data) {
     const ev = data[+tr.dataset.eventIdx];
     tr.addEventListener('click', () => {
       if (ev.is_bummel) openBummel(ev);
-      else if (ev.is_transport) openKutter(ev);
+      else if (ev.is_transport) ev._kutterId ? openKutterDetail(ev._kutterId) : openKutter(ev);
       else _prefillEventForm(ev);
     });
   });
@@ -2698,6 +2720,7 @@ function _prefillEventForm(ev) {
   document.getElementById('kutter-results').classList.add('hidden');
   clearInterval(_kutterPollTimer);
   _kutterPollTimer = null;
+  _kutterOpenId = null;
   _activeBummel = null;
   searchEvents();
 }
@@ -2716,6 +2739,10 @@ let _activeBummel = null;
 let _activeBummelId = null;  // id des gerade geöffneten Rennens (für den Teilen-Knopf im Header)
 
 async function openBummel(ev) {
+  document.getElementById('kutter-results').classList.add('hidden');
+  clearInterval(_kutterPollTimer);
+  _kutterPollTimer = null;
+  _kutterOpenId = null;
   const wrap = document.getElementById('bummel-results');
   const content = document.getElementById('bummel-content');
   const title = document.getElementById('bummel-title');
@@ -3986,9 +4013,9 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   const scopeLabel = icaoStr.trim().toUpperCase() === 'GLOBAL'
     ? 'weltweit'
     : `im Radius ${radiusKm} km um ${icaoStr.toUpperCase()}`;
-  // Im Bummel-Kontext keinen zweiten Teilen-Knopf zeigen — der Bummel-Teilen-Knopf sitzt oben in der View.
+  // Im Bummel-/Kutter-Kontext keinen zweiten Teilen-Knopf zeigen — der sitzt oben in der jeweiligen View.
   summary.innerHTML = `<span>${pilots.length} Friese${pilots.length !== 1 ? 'n' : ''} ${scopeLabel}</span>`
-    + (_activeBummel ? '' : '<button class="btn-share" style="margin-left:auto;" onclick="copyShareUrl(this)">⎘ Teilen</button>');
+    + ((_activeBummel || _kutterOpenId != null) ? '' : '<button class="btn-share" style="margin-left:auto;" onclick="copyShareUrl(this)">⎘ Teilen</button>');
   summary.className   = 'events-summary found';
   summary.style.cssText = 'display:flex;align-items:center;gap:12px;';
 
@@ -4114,9 +4141,10 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   mapDiv.style.display = 'block';
   renderEventsMap(pilots, icaoStr, radiusKm);
 
-  // Smooth scroll to results — aber nicht im Bummel-Kontext: dort hat openBummel() bereits
-  // auf das Ranking-Panel gescrollt, der Event-Scroll würde daran vorbeispringen.
-  if (!_activeBummel) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Smooth scroll to results — aber nicht im Bummel-/Kutter-Kontext: dort hat openBummel()/
+  // openKutterDetail() bereits auf das jeweilige Panel gescrollt, der Event-Scroll würde daran
+  // vorbeispringen.
+  if (!_activeBummel && _kutterOpenId == null) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function renderEventsMap(pilots, icaoStr, radiusKm) {
@@ -4270,6 +4298,7 @@ function highlightEventFlight(pilots, pilotIdx, flightIdx) {
 // ==========================================================================
 let _kutterPollTimer = null;
 let _kutterOpenId = null;
+let _lastKutterDetail = null;  // von _refreshKutterDetail gesetzt (route/dtstart/dtend fürs Suchfeld-Prefill)
 
 function _kesc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
@@ -4288,7 +4317,12 @@ function _kColor(i) {
 }
 
 function _kCargoLabel(f) {
-  if (!f.loaded) return '<td class="kf-empty">zurück</td>';
+  if (f.loss_kind) {
+    const quip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
+    return '<td class="kutter-loss">' + _kLossLabel(f.loss_kind) + quip + '</td>';
+  }
+  if (!f.loaded) return f.in_air ? '<td class="kf-empty">unterwegs zum Ziel</td>'
+                                 : '<td class="kf-empty">zurück</td>';
   const lines = f.cargo_lines || [];
   let label;
   if (lines.length) {
@@ -4301,31 +4335,68 @@ function _kCargoLabel(f) {
   return '<td>' + label + quip + '</td>';
 }
 
+function _kLossLabel(kind) {
+  return kind === 'sunk' ? '🌊 Kutter versunken'
+       : kind === 'stolen' ? '🏴‍☠️ geklaut'
+       : kind === 'returned' ? '↩️ zurückgebracht' : '';
+}
+
 function _kutterDetailBody(d) {
   const summary = d.summary_quip
     ? '<div class="kutter-summary">🦐 ' + _kesc(d.summary_quip) + '</div>' : '';
   let bar = '';
   if (d.cargo && d.cargo.length) {
     const totalTarget = d.cargo.reduce((s, c) => s + c.target_kg, 0) || 1;
-    const segs = d.cargo.map((c, i) =>
-      '<div class="kutter-seg" style="width:' + (100 * c.target_kg / totalTarget).toFixed(2)
-      + '%"><i style="width:' + Math.min(100, c.pct).toFixed(1) + '%;background:' + _kColor(i) + '"></i></div>'
-    ).join('');
+    const segs = d.cargo.map((c, i) => {
+      const pct = Math.min(100, c.pct);
+      const resPct = c.target_kg > 0 ? Math.min(100 - pct, 100 * (c.reserved_kg || 0) / c.target_kg) : 0;
+      const res = resPct > 0
+        ? '<i class="kseg-res" style="left:' + pct.toFixed(1) + '%;width:' + resPct.toFixed(1)
+          + '%;background-color:' + _kColor(i) + '"></i>' : '';
+      return '<div class="kutter-seg" style="width:' + (100 * c.target_kg / totalTarget).toFixed(2)
+        + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(i) + '"></i>' + res + '</div>';
+    }).join('');
     const legend = d.cargo.map((c, i) => {
       const mark = c.emoji ? c.emoji + ' '
         : '<span class="kl-dot" style="background:' + _kColor(i) + '"></span>';
-      return '<span>' + mark + _kesc(c.name) + ' ' + _kfmtT(c.delivered_kg) + ' / ' + _kfmtT(c.target_kg) + '</span>';
+      const res = (c.reserved_kg || 0) > 0 ? ' (+' + _kfmtT(c.reserved_kg) + ' ✈️)' : '';
+      return '<span>' + mark + _kesc(c.name) + ' ' + _kfmtT(c.delivered_kg) + ' / ' + _kfmtT(c.target_kg) + res + '</span>';
     }).join('');
     bar = '<div class="kutter-bar">' + segs + '</div><div class="kutter-legend">' + legend + '</div>';
   }
   const goal = d.target_kg ? ' / ' + _kfmtT(d.target_kg) : '';
   const pct = d.progress_pct != null ? ' · ' + Math.min(100, Math.round(d.progress_pct)) + '%' : '';
+  const open = d.target_kg ? Math.max(0, d.target_kg - d.total_kg) : null;
+  const inAir = d.reserved_total_kg || 0;
+  const openTxt = open != null
+    ? ' — offen: ' + _kfmtT(open) + (inAir > 0 ? ', davon ' + _kfmtT(inAir) + ' unterwegs ✈️' : '') : '';
+  const lostTxt = (d.lost_total_kg || 0) > 0
+    ? ' <span class="kutter-loss">💀 ' + _kfmtT(d.lost_total_kg) + ' verloren</span>' : '';
   const header = '<div class="kutter-total">📦 ' + _kfmtT(d.total_kg) + goal + pct
-    + ' — ' + (d.loaded_count || 0) + ' Frachtflüge (' + (d.flight_count || 0) + ' gesamt)</div>';
+    + ' — ' + (d.loaded_count || 0) + ' Frachtflüge (' + (d.flight_count || 0) + ' gesamt)'
+    + openTxt + lostTxt + '</div>';
+  let parts = '';
+  if (d.participants && d.participants.length) {
+    const prow = d.participants.map(p => {
+      const st = p.status === 'flying' ? '✈️ unterwegs mit ' + _kfmtT(p.reserved_kg)
+        : p.status === 'arrived' ? '✅ angekommen'
+        : p.status === 'returning' ? '↩️ Rückflug'
+        : 'fertig';
+      const lost = (p.lost_kg || 0) > 0
+        ? ' <span class="kutter-loss">💀 ' + _kfmtT(p.lost_kg) + '</span>' : '';
+      return '<tr><td>' + _kesc(p.name || ('CID ' + p.cid)) + '</td><td class="mono">' + _kesc(p.aircraft || '—')
+        + '</td><td class="mono">' + p.flights + '</td><td class="kf-kg">' + _kfmtT(p.delivered_kg)
+        + '</td><td>' + st + lost + '</td></tr>';
+    }).join('');
+    parts = '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Pilot</th><th>Muster</th>'
+      + '<th>Flüge</th><th>geliefert</th><th>Status</th></tr></thead><tbody>' + prow + '</tbody></table></div>';
+  }
   const rows = (d.flights || []).map(f => {
     const t = (f.dep_time || '').slice(11, 16);
     const kg = f.loaded ? '<td class="kf-kg">' + Math.round(f.tonnage_kg) + ' kg</td>'
-                        : '<td class="kf-empty">leer</td>';
+      : f.loss_kind ? '<td class="kf-empty kutter-loss">' + (f.lost_kg ? Math.round(f.lost_kg) + ' kg' : '—') + '</td>'
+      : f.in_air ? '<td class="kf-res">~' + Math.round(f.reserved_kg || 0) + ' kg ✈️</td>'
+      : '<td class="kf-empty">leer</td>';
     return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + _kesc(f.aircraft || '')
       + '</td><td>' + _kesc(f.dep) + '→' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';
   }).join('');
@@ -4333,7 +4404,7 @@ function _kutterDetailBody(d) {
     + '<th>Strecke</th><th>Fracht</th><th>Ladung</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="6" style="color:var(--text-label)">Noch keine Flüge.</td></tr>')
     + '</tbody></table></div>';
-  return summary + header + bar + feed;
+  return summary + header + bar + parts + feed;
 }
 
 async function openKutter(ev) {
@@ -4347,6 +4418,8 @@ async function openKutter(ev) {
 }
 
 async function openKutterDetail(id) {
+  document.getElementById('bummel-results').classList.add('hidden');
+  _activeBummel = null; _activeBummelId = null;
   _kutterOpenId = id;
   setUrlState({ tab: 'events', kutter: id });
   const wrap = document.getElementById('kutter-results');
@@ -4356,6 +4429,14 @@ async function openKutterDetail(id) {
   await _refreshKutterDetail();
   clearInterval(_kutterPollTimer);
   _kutterPollTimer = setInterval(_refreshKutterDetail, 25000);
+  // Wie beim Bummel: darunter die normale Event-Ansicht (Karte + Piloten des Zeitraums).
+  const d = _lastKutterDetail;  // von _refreshKutterDetail gesetzt
+  if (d && d.route && d.route.length) {
+    document.getElementById('ev-icao').value = d.route;
+    if (d.dtstart) document.getElementById('ev-start').value = d.dtstart.slice(0, 16);
+    if (d.dtend)   document.getElementById('ev-end').value   = d.dtend.slice(0, 16);
+    searchEvents();
+  }
 }
 
 // Deep-Link-Einstieg (URL-Hash #tab=events&kutter=<id>) — Events-Tab aktivieren, dann öffnen.
@@ -4389,6 +4470,7 @@ async function _refreshKutterDetail() {
   if (_kutterOpenId == null) return;
   try {
     const d = await fetch('/api/transport/event/' + _kutterOpenId).then(r => r.json());
+    _lastKutterDetail = d;
     document.getElementById('kutter-title').textContent = '🦐 ' + (d.name || 'FriesenKutter');
     document.getElementById('kutter-content').innerHTML = _kutterDetailBody(d);
   } catch (e) {}
@@ -4472,6 +4554,7 @@ document.getElementById('events-search-btn').addEventListener('click', () => {
   document.getElementById('kutter-results').classList.add('hidden');
   clearInterval(_kutterPollTimer);
   _kutterPollTimer = null;
+  _kutterOpenId = null;
   searchEvents();
 });
 
