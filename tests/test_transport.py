@@ -49,6 +49,8 @@ from app.database import (
     detect_transport_losses,
     set_transport_summarized,
     set_transport_push_enabled,
+    transport_events_due_for_reminder,
+    mark_event_reminded,
 )
 
 START = "2026-07-01T09:00:00Z"
@@ -1268,3 +1270,43 @@ class TestTransportStatus:
         assert by_id[scheduled_id] == "scheduled"
         assert by_id[running_id] == "running"
         assert by_id[done_id] == "done"
+
+
+# --- transport_events_due_for_reminder (Task 4, #24) -----------------------
+
+class TestTransportEventsDueForReminder:
+    def test_manual_event_due_then_dedup_after_mark(self):
+        conn = _make_conn()
+        now = datetime.now(timezone.utc)
+        eid = create_transport_event(
+            conn, name="Helgoland-Nachschub", route="EDWG,EDXH", destination="EDXH",
+            dtstart=_iso(now + timedelta(minutes=30)), dtend=None,
+        )
+        conn.commit()
+
+        due = transport_events_due_for_reminder(conn, _iso(now), lead_min=60)
+        assert [k["id"] for k in due] == [eid]
+
+        mark_event_reminded(conn, f"kutter:{eid}", _iso(now))
+        conn.commit()
+        assert transport_events_due_for_reminder(conn, _iso(now), lead_min=60) == []
+
+    def test_push_disabled_excluded(self):
+        conn = _make_conn()
+        now = datetime.now(timezone.utc)
+        eid = create_transport_event(
+            conn, name="Helgoland-Nachschub", route="EDWG,EDXH", destination="EDXH",
+            dtstart=_iso(now + timedelta(minutes=30)), dtend=None,
+        )
+        set_transport_push_enabled(conn, eid, False)
+        conn.commit()
+        assert transport_events_due_for_reminder(conn, _iso(now), lead_min=60) == []
+
+    def test_outside_window_excluded(self):
+        conn = _make_conn()
+        now = datetime.now(timezone.utc)
+        create_transport_event(
+            conn, name="Helgoland-Nachschub", route="EDWG,EDXH", destination="EDXH",
+            dtstart=_iso(now + timedelta(minutes=90)), dtend=None,  # außerhalb 60-min-Fenster
+        )
+        assert transport_events_due_for_reminder(conn, _iso(now), lead_min=60) == []

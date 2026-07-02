@@ -6,12 +6,16 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.database import (
+    bummel_races_due_for_reminder,
     events_due_for_reminder,
     get_connection,
     get_push_subscriptions_for_events,
     init_db,
     mark_event_reminded,
+    transport_events_due_for_reminder,
+    upsert_calendar_bummel_race,
     upsert_calendar_events,
+    upsert_calendar_transport_event,
     upsert_push_subscription,
 )
 
@@ -96,3 +100,47 @@ class TestEventReminders:
         mark_event_reminded(conn, "x", _iso(now))
         conn.commit()
         assert events_due_for_reminder(conn, _iso(now)) == []
+
+    def test_excludes_bummel_and_transport(self, conn):
+        """Bummel/Kutter-Kalenderevents werden jetzt über ihre eigenen Due-Funktionen erinnert
+        (bummel_races_due_for_reminder / transport_events_due_for_reminder) -- der generische
+        Pfad muss sie ausschließen, sonst gibt es einen Doppel-Push."""
+        now = datetime(2026, 6, 27, 20, 0, 0, tzinfo=timezone.utc)
+        upsert_calendar_events(conn, [
+            self._ev("generic", _iso(now + timedelta(minutes=30))),
+            {**self._ev("bummel", _iso(now + timedelta(minutes=30))), "is_bummel": 1},
+            {**self._ev("kutter", _iso(now + timedelta(minutes=30))), "is_transport": 1},
+        ])
+        conn.commit()
+        due = events_due_for_reminder(conn, _iso(now), lead_min=60)
+        assert {e["uid"] for e in due} == {"generic"}
+
+    def test_calendar_bummel_reminded_once_via_own_function_not_twice(self, conn):
+        """Kalender-Bummel: erscheint über bummel_races_due_for_reminder, NICHT über
+        events_due_for_reminder -- genau eine Erinnerung."""
+        now = datetime(2026, 6, 27, 20, 0, 0, tzinfo=timezone.utc)
+        soon = _iso(now + timedelta(minutes=30))
+        ev = {"uid": "cal-bummel", "summary": "FFB Juli", "dtstart": soon, "dtend": "",
+              "location": "", "route": "EDWF,EDWG", "is_bummel": 1, "is_transport": 0}
+        upsert_calendar_events(conn, [ev])
+        upsert_calendar_bummel_race(conn, ev)
+        conn.commit()
+
+        assert events_due_for_reminder(conn, _iso(now), lead_min=60) == []
+        due = bummel_races_due_for_reminder(conn, _iso(now), lead_min=60)
+        assert [r["name"] for r in due] == ["FFB Juli"]
+
+    def test_calendar_kutter_reminded_once_via_own_function_not_twice(self, conn):
+        """Kalender-Kutter: erscheint über transport_events_due_for_reminder, NICHT über
+        events_due_for_reminder -- genau eine Erinnerung."""
+        now = datetime(2026, 6, 27, 20, 0, 0, tzinfo=timezone.utc)
+        soon = _iso(now + timedelta(minutes=30))
+        ev = {"uid": "cal-kutter", "summary": "Kutter Juli", "dtstart": soon, "dtend": "",
+              "location": "", "route": "EDWG,EDXH", "is_bummel": 0, "is_transport": 1}
+        upsert_calendar_events(conn, [ev])
+        upsert_calendar_transport_event(conn, ev)
+        conn.commit()
+
+        assert events_due_for_reminder(conn, _iso(now), lead_min=60) == []
+        due = transport_events_due_for_reminder(conn, _iso(now), lead_min=60)
+        assert [k["name"] for k in due] == ["Kutter Juli"]

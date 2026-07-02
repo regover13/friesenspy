@@ -3703,13 +3703,49 @@ def get_push_subscriptions_for_events(conn: sqlite3.Connection) -> list[dict]:
 def events_due_for_reminder(
     conn: sqlite3.Connection, now: str, lead_min: int = 60
 ) -> list[dict]:
-    """FriesenEvents, deren Erinnerung jetzt fällig ist: dtstart liegt im Fenster (now, now+lead_min]
-    und es wurde noch keine Erinnerung verschickt (event_reminders_sent)."""
+    """Generische FriesenEvents, deren Erinnerung jetzt fällig ist: dtstart liegt im Fenster
+    (now, now+lead_min] und es wurde noch keine Erinnerung verschickt (event_reminders_sent).
+    Bummel- und Kutter-Kalenderevents (is_bummel/is_transport) sind ausgeschlossen -- die werden
+    über bummel_races_due_for_reminder / transport_events_due_for_reminder erinnert (sonst
+    Doppel-Push, da sie zusätzlich als eigenes Objekt in bummel_races/transport_events liegen)."""
     until = (_parse_iso(now) + timedelta(minutes=lead_min)).strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
         "SELECT uid, summary, dtstart, dtend, location, route, is_bummel FROM calendar_events "
         "WHERE dtstart > ? AND dtstart <= ? "
+        "AND is_bummel = 0 AND is_transport = 0 "
         "AND uid NOT IN (SELECT uid FROM event_reminders_sent) "
+        "ORDER BY dtstart",
+        (now, until),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def bummel_races_due_for_reminder(
+    conn: sqlite3.Connection, now: str, lead_min: int = 60
+) -> list[dict]:
+    """Bummel-Rennen (manuell + Kalender) mit dtstart in (now, now+lead_min], push_enabled=1,
+    noch nicht erinnert (synthetischer Dedup-Key 'bummel:{id}' in event_reminders_sent)."""
+    until = (_parse_iso(now) + timedelta(minutes=lead_min)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        "SELECT id, name, dtstart FROM bummel_races "
+        "WHERE dtstart > ? AND dtstart <= ? AND push_enabled = 1 "
+        "AND ('bummel:' || id) NOT IN (SELECT uid FROM event_reminders_sent) "
+        "ORDER BY dtstart",
+        (now, until),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def transport_events_due_for_reminder(
+    conn: sqlite3.Connection, now: str, lead_min: int = 60
+) -> list[dict]:
+    """Kutter-Events (manuell + Kalender) mit dtstart in (now, now+lead_min], push_enabled=1,
+    noch nicht erinnert (synthetischer Dedup-Key 'kutter:{id}' in event_reminders_sent)."""
+    until = (_parse_iso(now) + timedelta(minutes=lead_min)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        "SELECT id, name, dtstart FROM transport_events "
+        "WHERE dtstart > ? AND dtstart <= ? AND push_enabled = 1 "
+        "AND ('kutter:' || id) NOT IN (SELECT uid FROM event_reminders_sent) "
         "ORDER BY dtstart",
         (now, until),
     ).fetchall()

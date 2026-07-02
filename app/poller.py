@@ -1189,31 +1189,68 @@ class VatsimPoller:
             logger.exception("Error in _auto_research_payload (%s)", type_code)
 
     async def _check_event_reminders(self) -> None:
-        """Periodisch (~5 min): FriesenEvents, die in ~1 h beginnen, einmalig per Push erinnern.
-        Empfänger sind die Events-Abonnenten (notify_events). Latchend via event_reminders_sent."""
+        """Periodisch (~5 min): FriesenEvents, Bummel-Rennen und Kutter-Events, die in ~1 h
+        beginnen, einmalig per Push erinnern. Drei Quellen: generische Kalender-Events
+        (events_due_for_reminder), Bummel-Rennen (bummel_races_due_for_reminder) und
+        Kutter-Events (transport_events_due_for_reminder, manuell + Kalender, push_enabled-
+        gated). Kalender-Bummel/-Kutter sind aus der generischen Quelle ausgeschlossen, damit
+        es keinen Doppel-Push gibt. Empfänger sind die Events-Abonnenten (notify_events).
+        Latchend via event_reminders_sent (synthetische Keys 'bummel:{id}' / 'kutter:{id}')."""
         try:
             from datetime import datetime, timezone
             from app.database import (
-                events_due_for_reminder, mark_event_reminded,
+                events_due_for_reminder, bummel_races_due_for_reminder,
+                transport_events_due_for_reminder, mark_event_reminded,
                 get_push_subscriptions_for_events,
             )
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             conn = get_connection(self.db_path)
             try:
-                due = events_due_for_reminder(conn, now, lead_min=60)
-                subscriptions = get_push_subscriptions_for_events(conn) if due else []
-                for ev in due:
+                generic = events_due_for_reminder(conn, now, lead_min=60)
+                bummels = bummel_races_due_for_reminder(conn, now, lead_min=60)
+                kutters = transport_events_due_for_reminder(conn, now, lead_min=60)
+                any_due = bool(generic or bummels or kutters)
+                subscriptions = get_push_subscriptions_for_events(conn) if any_due else []
+                for ev in generic:
                     mark_event_reminded(conn, ev["uid"], now)  # latchen, auch ohne Empfänger
+                for r in bummels:
+                    mark_event_reminded(conn, f"bummel:{r['id']}", now)
+                for k in kutters:
+                    mark_event_reminded(conn, f"kutter:{k['id']}", now)
                 conn.commit()
             finally:
                 conn.close()
-            if due:
-                logger.info("Event-Erinnerung fällig: %s", [e["uid"] for e in due])
-            if due and subscriptions and self.vapid_private_key:
-                for ev in due:
+            if any_due:
+                logger.info(
+                    "Event-Erinnerung fällig: generic=%s bummel=%s kutter=%s",
+                    [e["uid"] for e in generic], [r["id"] for r in bummels],
+                    [k["id"] for k in kutters],
+                )
+            if any_due and subscriptions and self.vapid_private_key:
+                for ev in generic:
                     payload = {
                         "title": "FriesenEvent",
                         "body": f"🗓 In etwa 1 Std: {ev.get('summary') or 'FriesenEvent'}",
+                        "url": "/",
+                    }
+                    asyncio.create_task(send_web_push(
+                        self.vapid_private_key, self.vapid_contact_email, self.db_path,
+                        subscriptions, payload, label="Event-Erinnerung",
+                    ))
+                for r in bummels:
+                    payload = {
+                        "title": "FriesenFliegerBummel",
+                        "body": f"🗓 In etwa 1 Std: {r.get('name') or 'FriesenFliegerBummel'}",
+                        "url": "/",
+                    }
+                    asyncio.create_task(send_web_push(
+                        self.vapid_private_key, self.vapid_contact_email, self.db_path,
+                        subscriptions, payload, label="Event-Erinnerung",
+                    ))
+                for k in kutters:
+                    payload = {
+                        "title": "FriesenKutter",
+                        "body": f"🗓 In etwa 1 Std: {k.get('name') or 'FriesenKutter'}",
                         "url": "/",
                     }
                     asyncio.create_task(send_web_push(
