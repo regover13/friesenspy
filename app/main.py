@@ -852,6 +852,17 @@ def _race_status(race: dict, now: str) -> str:
     return "waiting"  # dtend erreicht, aber noch nicht enthüllt (Nachzügler)
 
 
+def _transport_status(ev: dict, now: str) -> str:
+    """scheduled | running | waiting | done (Feierabend-Bilanz erstellt)."""
+    if ev.get("summarized_at"):
+        return "done"
+    if now < (ev.get("dtstart") or ""):
+        return "scheduled"
+    if now < (ev.get("dtend") or ""):
+        return "running"
+    return "waiting"  # dtend erreicht, aber Feierabend noch nicht gelatcht (Nachzügler)
+
+
 def _build_race_view(conn, race: dict, now: str, *, force_reveal: bool = False) -> dict:
     """Öffentliche Sicht auf ein Rennen — vor Enthüllung redigiert (keine Zeiten/Schnitt).
 
@@ -1657,10 +1668,11 @@ async def admin_transport_badge(request: Request, event_id: int, cid: int):
 async def admin_transport_events(request: Request):
     """Admin-Liste: Events inkl. Fracht-Manifest (zum Bearbeiten)."""
     require_admin(request)
+    now = _now_iso()
     conn = get_connection(get_settings().DB_PATH)
     try:
         return [
-            {**ev, "cargo": get_transport_cargo(conn, ev["id"])}
+            {**ev, "status": _transport_status(ev, now), "cargo": get_transport_cargo(conn, ev["id"])}
             for ev in list_transport_events(conn)
         ]
     finally:
