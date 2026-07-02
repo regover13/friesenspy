@@ -805,14 +805,13 @@ class TestCargoLosses:
         assert n == 1
         losses = get_transport_losses(conn, ev["id"])
         assert losses[0]["kind"] == "sunk"
-        # compute-now VOR dem Flug-Logon: die Flug-GPS-Kette liegt außerhalb des Feeds, sodass
-        # die Zeile ausschließlich aus dem Loss-Latch synthetisiert wird — sonst würde der
-        # Flugplan-Fallback (arr==dest, siehe compute_transport_progress-Docstring) den Verlust
-        # mit "loaded" überdecken, da der Pilot EDXH filed hatte, bevor er verschwand.
-        p = compute_transport_progress(conn, ev, "2026-07-01T10:00:00Z")
+        # Der Pilot hatte EDXH gefilet — der GPS-belegte Verlust überstimmt die Lieferung,
+        # die nur am Flugplan-Text hängt (Live-Befund Demo 02.07.: sonst versinkt NIE jemand,
+        # der brav einen Plan zum Ziel aufgibt).
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 300)
-        assert f["loss_kind"] == "sunk" and f["loaded"] is False
-        assert p["lost_total_kg"] == 292.0
+        assert f["loss_kind"] == "sunk" and f["loaded"] is False and f["tonnage_kg"] == 0.0
+        assert p["lost_total_kg"] == 292.0 and p["total_kg"] == 0.0
         assert p["cargo"][0]["delivered_kg"] == 0.0      # Menge bleibt offen
 
     def test_stolen_when_landed_elsewhere(self):
@@ -824,10 +823,10 @@ class TestCargoLosses:
         self._flown_flight(conn, 301, "2026-07-01T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)
         detect_transport_losses(conn, ev)
         assert get_transport_losses(conn, ev["id"])[0]["kind"] == "stolen"
-        p = compute_transport_progress(conn, ev, "2026-07-01T10:00:00Z")  # vgl. Kommentar oben
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 301)
-        assert f["loss_kind"] == "stolen"                   # synthetischer Feed-Eintrag
-        assert p["lost_total_kg"] == 292.0
+        assert f["loss_kind"] == "stolen" and f["loaded"] is False
+        assert p["lost_total_kg"] == 292.0 and p["total_kg"] == 0.0
 
     def test_returned_home_is_no_loss(self):
         conn = _make_conn()
@@ -852,6 +851,35 @@ class TestCargoLosses:
         self._flown_flight(conn, 304, "2026-07-01T18:20:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
         assert detect_transport_losses(conn, ev) == 1
         assert detect_transport_losses(conn, ev) == 0       # idempotent
+
+    def test_detect_skips_flights_without_positions(self):
+        """Keine Position = keine Aussage: Flüge ohne jeden GPS-Track (z. B. StatSim-
+        rekonstruiert) dürfen nicht als versunken gelten — sonst würde der
+        Verlust-Override echte StatSim-Lieferungen kippen."""
+        conn = _make_conn()
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        _add_flight(conn, 306, "EDWG", "EDWL", "C172", "2026-07-01T18:05:00Z", duration_min=25)
+        assert detect_transport_losses(conn, ev) == 0
+        assert get_transport_losses(conn, ev["id"]) == []
+
+    def test_loss_shows_cargo_lines(self):
+        """Die Verlust-Zeile zeigt, WAS über Bord ging — Co-Load-Verteilung wie bei
+        einem beladenen Flug (Nutzer-Wunsch 02.07.: 'x Krabbenbrötchen, x Schafe |
+        Kutter versunken')."""
+        conn = _make_conn()
+        ev = _event(conn, cargo=[
+            {"name": "Filmrollen", "target_kg": 500.0, "per_flight_max_kg": 100.0},
+            {"name": "Friesentee", "target_kg": 500.0},
+        ])
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        self._flown_flight(conn, 307, "2026-07-01T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
+        detect_transport_losses(conn, ev)
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 307)
+        assert f["loss_kind"] == "sunk"
+        lines = {l["name"]: l["kg"] for l in f["cargo_lines"]}
+        assert lines == {"Filmrollen": 100.0, "Friesentee": 192.0}
 
     def test_no_loss_for_flight_after_event_window(self):
         """Ein Streckenflug lange nach dtend darf keinem alten Event als Verlust angelastet

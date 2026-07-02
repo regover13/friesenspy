@@ -2996,6 +2996,11 @@ def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") 
             "WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT 1",
             (cid, lo, lf),
         ).fetchone()
+        if row is None:
+            # Keine Position = keine Aussage: Flüge ohne jeden GPS-Track (z. B. StatSim-
+            # rekonstruiert) nicht als Verlust werten — der Verlust-Override in
+            # compute_transport_progress würde sonst echte StatSim-Lieferungen kippen.
+            continue
         kind, end_icao = "sunk", None
         if row is not None and row["groundspeed"] is not None \
                 and row["groundspeed"] <= _LANDED_MAX_GS_KT:
@@ -3180,8 +3185,8 @@ def compute_transport_progress(
         lf = f.get("logoff_time") or "9999-12-31T23:59:59Z"
         dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, lf), radius) \
             or normalize_type_code(f.get("departure"))
-        arr = _nearest_airport(coords_map, _last_pos(conn, int(cid), lo, lf), radius) \
-            or normalize_type_code(f.get("arrival"))
+        arr_gps = _nearest_airport(coords_map, _last_pos(conn, int(cid), lo, lf), radius)
+        arr = arr_gps or normalize_type_code(f.get("arrival"))
         has_latch = (cid, lo) in live_arrivals
         if not has_latch and (dep not in route_set or arr not in route_set or dep == arr):
             continue
@@ -3204,6 +3209,9 @@ def compute_transport_progress(
             "flight_key": f"{cid}:{lo}",
             "distance_nm": f.get("distance_nm") or 0,
             "block_min": f.get("block_min") or f.get("duration_min") or 0,
+            # Lieferung hängt NUR am Flugplan-Text (kein Latch, keine GPS-Ankunft am Ziel) —
+            # ein GPS-belegter Verlust darf so eine Lieferung überstimmen (interne Markierung).
+            "_fp_only": loaded and not has_latch and arr_gps != dest,
         })
 
     # Aktuell offene Flüge (noch verbunden) — bisher komplett ignoriert, da canonicalize_flights
@@ -3259,7 +3267,16 @@ def compute_transport_progress(
     loss_by_key: dict[str, dict] = {f"{l['cid']}:{l['logon_time']}": l for l in losses}
     for q in network:
         l = loss_by_key.get(q["flight_key"])
-        if l and not q["loaded"]:
+        if not l:
+            continue
+        if q["loaded"] and q.get("_fp_only") and l["kind"] in ("stolen", "sunk"):
+            # GPS-belegter Verlust überstimmt eine Lieferung, die NUR am Flugplan-Text hängt
+            # (Live-Befund 02.07.: sonst versinkt nie, wer brav einen Plan zum Ziel aufgibt).
+            # Latch-/GPS-Lieferungen bleiben unantastbar — die Verlust-Erkennung überspringt
+            # sie bereits beim Erfassen.
+            q["loaded"] = False
+            q["tonnage_kg"] = 0.0
+        if not q["loaded"]:
             q["loss_kind"] = l["kind"]
             q["lost_kg"] = round(payload_map.get(normalize_type_code(l.get("type_code")), default_kg), 1) \
                 if l["kind"] in ("stolen", "sunk") else 0.0
@@ -3325,6 +3342,39 @@ def compute_transport_progress(
         ]
         q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
 
+    # Verlorene/zurückgebrachte Ladung aufschlüsseln (reine Anzeige, Nutzer-Wunsch 02.07.:
+    # „x Krabbenbrötchen, x Schafe · Kutter versunken"): was hätte der Flug nach denselben
+    # Co-Load-Regeln an Bord gehabt? Eigener Topf — ändert delivered/offen nicht.
+    lost_alloc = [0.0] * len(cargo)
+    for q in network:
+        if not q.get("loss_kind"):
+            continue
+        carried = q.get("lost_kg") or 0.0
+        if carried <= 1e-9:  # 'returned' trägt Ladung, verliert sie aber nicht (lost_kg=0)
+            carried = round(payload_map.get(normalize_type_code(q.get("aircraft")), default_kg), 1)
+        remaining = carried
+        contrib = {}
+        for i, c in enumerate(cargo):
+            if remaining <= 1e-9:
+                break
+            space = cargo_targets[i] - delivered[i] - lost_alloc[i]
+            if space <= 1e-9:
+                continue
+            cap = c.get("per_flight_max_kg")
+            cap = cap if (cap is not None and cap > 0) else _INF
+            add = min(remaining, cap, space)
+            if add <= 1e-9:
+                continue
+            lost_alloc[i] += add
+            remaining -= add
+            contrib[i] = contrib.get(i, 0.0) + add
+        ordered = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
+        q["cargo_lines"] = [
+            {"name": cargo[i]["name"], "emoji": cargo[i].get("emoji"), "kg": round(kg, 1)}
+            for i, kg in ordered
+        ]
+        q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
+
     # Reservierungen (offene Flüge Richtung Ziel, noch ohne Latch) in die Rest-Kapazität
     # verteilen — gleiche Co-Load-Regeln, aber getrennt von `delivered`: der Fortschritt
     # läuft nie rückwärts, die Reservierung verschwindet mit dem Flug.
@@ -3352,6 +3402,7 @@ def compute_transport_progress(
     quips = get_transport_quips(conn, int(event["id"]))
     for q in network:
         q["quip"] = quips.get(q["flight_key"])
+        q.pop("_fp_only", None)  # interne Markierung nicht in die API-Antwort leaken
 
     total_kg = round(sum(q["tonnage_kg"] for q in network), 1)
     loaded_count = sum(1 for q in network if q["loaded"])

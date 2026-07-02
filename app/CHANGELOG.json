@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.5.3",
+    "date": "2026-07-02",
+    "title": "Verluste greifen jetzt auch mit Flugplan zum Ziel",
+    "items": [
+      "🌊 Wer mit Flugplan zum Ziel unterwegs war und nachweislich nie ankam (per GPS woanders gelandet oder in der Luft verschwunden), zählt jetzt wirklich als Verlust — vorher gewann immer der Flugplan und der Kutter konnte praktisch nie versinken. Echte Ankünfte (GPS/Live-Erkennung) bleiben unantastbar; Flüge ganz ohne GPS-Track werden nie als Verlust gewertet.",
+      "📦 Verlust- und Rückbringer-Zeilen im Feed zeigen jetzt, WAS an Bord war — z. B. »🦐 Krabbenbrötchen (252) + 🐑 Deichschafe (40) · 🌊 Kutter versunken«."
+    ]
+  },
+  {
     "version": "7.5.2",
     "date": "2026-07-02",
     "title": "Feed-Format: Verlust-Gewichte bündig",
