@@ -214,13 +214,14 @@ Der **FriesenKutter** ist ein kleines „FSE für Friesen": ein Transportflug-Ev
 - **Nur in eine Richtung:** Fracht zählt auf dem Weg **zum Ziel**. Der Rückflug fliegt leer und erscheint im Feed als „leer".
 - **Zuladung pro Flugzeugtyp:** Wie viel ein Flug lädt, hängt vom Muster ab (MTOW − Leergewicht − Tankfüllung, alles im Admin einstellbar). Für unbekannte Muster holt der Admin per Klick einen **KI-Vorschlag** (Claude); der Wert bleibt frei anpassbar.
 - **Anzeige:** Im Events-Tab zeigt eine Karte einen **segmentierten Ziel-Balken** je Frachtart und darunter den **Flug-Feed** (neueste oben), der sich live aktualisiert.
-- **Push:** Start des Events, erreichtes Ziel und eine Feierabend-Zusammenfassung („X Frachtflüge, Y t bewegt") gehen an die Events-Abonnenten.
+- **Push:** Start des Events, erreichtes Ziel und eine Feierabend-Zusammenfassung („X Frachtflüge, Y t bewegt") gehen an die Events-Abonnenten. Bleibt ein Event komplett ohne Frachtflug, entfällt die Feierabend-Zusammenfassung (und der dafür sonst nötige KI-Aufruf) — das Event gilt trotzdem als abgeschlossen. Push für ein einzelnes Event lässt sich im Admin an- oder abschalten (analog zum Bummel).
 - **Frachtart-Katalog:** Im Admin pflegbare Frachtarten mit Emoji und optionaler Obergrenze pro Flug — z.B. Krabbenbrötchen 🦐 oder Filmrollen 🎞️ (max 100 kg). Ist eine Frachtart gedeckelt, nimmt der Rest der Zuladung eines Flugs automatisch die nächste Frachtart mit (Co-Load).
 - **Lustige KI-Sprüche (optional):** Ist der Schalter im Admin aktiv, schreibt Claude zu jedem Flug einen Einzeiler im Friesen-Humor — mit Bezug auf Vorname, Fleiß, Tempo und Umwege — plus eine launige Tagesend-Zusammenfassung.
 - **Fracht direkt im Kalendertermin:** Eine Zeile wie `Fracht: 1000 Krabbenbrötchen, 500 Friesentee` in der Termin-Beschreibung befüllt das Manifest beim Kalender-Sync automatisch (Namen gegen den Katalog abgeglichen). Nur beim erstmaligen Anlegen — spätere Admin-Bearbeitungen bleiben bei erneutem Sync erhalten.
 - **Ohne Disconnect zählen:** Fracht wird bereits erfasst, sobald du erkennbar am Boden (< 2 kt Geschwindigkeit) im 10-km-Umkreis um das Ziel bist — du musst nicht disconnecten. Einmal erkannt, bleibt die Fracht dauerhaft gezählt, auch wenn du danach weiterfliegst.
 - **Reservierung, Teilnehmerliste & verlorene Fracht:** Wer Richtung Ziel abhebt, reserviert seine Zuladung sofort sichtbar im Balken (»davon X kg unterwegs«); eine Teilnehmerliste zeigt wer fliegt, angekommen ist oder zurückkehrt. Wer sein Ziel nie erreicht, verliert die Ladung — »Kutter versunken« oder »geklaut«, im Feed und in der Bilanz sichtbar. Der Erkennungs-Umkreis ist pro Event einstellbar (Standard 10 km, z.B. für kurze Strecken wie Wangerooge↔Harle).
 - **Forum-Badge nach der Feierabend-Bilanz:** Sobald ein Event abgeschlossen ist, bekommt jeder Teilnehmer ein rundes Badge-PNG „Voll beladen!" (Callsign, Flugzeugmuster, gelieferte kg) — bei verlorener Fracht zusätzlich mit Verlust-Titel **SPITZBOOV!** (geklaut), **BADEMESTER!** (versenkt) oder **SEEROVER!** (beides). Im Events-Tab erscheinen dafür je Teilnehmer **🎖 Badge** (öffnet das PNG) und **📋 Forum** (kopiert den BBCode) über dem Flug-Feed — analog zum Bummel-Badge.
+- **Status im Admin:** Die Admin-Event-Liste zeigt pro Event ein Status-Badge — **Geplant** (vor `dtstart`), **Läuft** (zwischen `dtstart` und `dtend`), **Wartet** (`dtend` erreicht, Feierabend-Bilanz aber noch nicht erstellt — z. B. Nachzügler in der Luft) oder **Feierabend** (Bilanz erstellt). Rein admin-seitig, keine Änderung am Piloten-Frontend.
 
 ## 🔔 Benachrichtigungen (Push Notifications)
 
@@ -228,7 +229,7 @@ FriesenSpy kann dich benachrichtigen, wenn ein Friese auf VATSIM online geht —
 
 Zusätzlich kann FriesenSpy Push-Benachrichtigungen senden, wenn ein Friese dem **FriesenFlieger-TeamSpeak** beitritt (siehe [TS-Login-Benachrichtigung](#ts-login-benachrichtigung-phase-1)).
 
-Über den **„Events"-Schalter** lassen sich außerdem **Event-Erinnerungen** aktivieren: FriesenSpy sendet dann ~1 h vor jedem FriesenEvent im Kalender einen Push — und benachrichtigt auch bei Bummel-Start und Ergebnisenthüllung. Dieser Schalter ist separat opt-in und standardmäßig deaktiviert.
+Über den **„Events"-Schalter** lassen sich außerdem **Event-Erinnerungen** aktivieren: FriesenSpy sendet dann ~1 h vor jedem FriesenEvent im Kalender einen Push — und benachrichtigt auch bei Bummel-Start und Ergebnisenthüllung. Die ~1h-Erinnerung speist sich aus drei Quellen (Kalender-Events, Bummel-Rennen, Kutter-Events) und läuft dadurch auch für **manuell** im Admin angelegte Bummel/Kutter (nicht nur Kalender-Termine); pro Rennen/Event lässt sich der Push im Admin abschalten, dann bleibt auch die Erinnerung aus. Dieser Schalter ist separat opt-in und standardmäßig deaktiviert.
 
 Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 
