@@ -8,7 +8,12 @@ sequenziell nach Abflugzeit; jeder beladene Flug trägt die Frachtart, in die se
 from __future__ import annotations
 
 import sqlite3
+from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
+
+import app.main as main
+from app.auth import ADMIN_COOKIE, make_admin_token
 from app.calendar_sync import parse_route
 from app.llm import _build_result
 from app.database import (
@@ -41,6 +46,7 @@ from app.database import (
     record_transport_loss,
     get_transport_losses,
     detect_transport_losses,
+    set_transport_summarized,
 )
 
 START = "2026-07-01T09:00:00Z"
@@ -964,3 +970,126 @@ class TestLossQuipContext:
                             "lost_kg": 292.0, "cid": 1}]}
         ctx = event_summary_context({"name": "Test"}, prog)
         assert ctx["lost_total_kg"] == 292.0 and any("Kutter versunken" in v for v in ctx["verluste"])
+
+
+# --- Kutter-Forum-Badge (#18) -----------------------------------------------
+
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+class TestKutterBadge:
+    """Forum-Abschluss-Badge pro Teilnehmer (analog Bummel-Badge, aber nach der Feierabend-Bilanz
+    statt nach Enthüllung eines Rennens)."""
+
+    def test_loss_label_none_without_loss(self):
+        from app.badge import _kutter_loss_label
+        assert _kutter_loss_label(0, 0) is None
+
+    def test_loss_label_stolen_only(self):
+        from app.badge import _kutter_loss_label
+        assert _kutter_loss_label(150, 0) == "SPITZBOOV!"
+
+    def test_loss_label_sunk_only(self):
+        from app.badge import _kutter_loss_label
+        assert _kutter_loss_label(0, 292) == "BADEMESTER!"
+
+    def test_loss_label_both(self):
+        from app.badge import _kutter_loss_label
+        assert _kutter_loss_label(150, 292) == "SEEROVER!"
+
+    def test_render_returns_png_without_loss(self):
+        from app.badge import render_kutter_badge
+        png = render_kutter_badge({
+            "callsign": "FRS49", "name": "Tobias", "aircraft": "C172",
+            "delivered_kg": 292, "stolen_kg": 0, "sunk_kg": 0,
+            "event": "Helgoland-Nachschub", "date": "01.07.2026",
+        })
+        assert png[:8] == _PNG_MAGIC and len(png) > 500
+
+    def test_render_returns_png_with_loss(self):
+        from app.badge import render_kutter_badge
+        png = render_kutter_badge({
+            "callsign": "FRS50", "aircraft": "C172", "delivered_kg": 0,
+            "stolen_kg": 150, "sunk_kg": 292,
+            "event": "Helgoland-Nachschub", "date": "01.07.2026",
+        })
+        assert png[:8] == _PNG_MAGIC and len(png) > 500
+
+    def test_render_handles_missing_fields(self):
+        from app.badge import render_kutter_badge
+        png = render_kutter_badge({"callsign": "FRS1"})
+        assert png[:8] == _PNG_MAGIC
+
+
+class TestKutterBadgeEndpoints:
+    """Integrationstests der Badge-Endpoints (Muster: tests/test_admin_api.py -- Fake-Settings +
+    Admin-Cookie via make_admin_token). TestClient ohne `with`-Block, damit `lifespan` (Poller-
+    Start) NICHT anläuft (kein Netzwerkzugriff waehrend der Tests)."""
+
+    SECRET = "s3cr3t"
+    PW = "test-admin-pw"
+
+    def _app(self, tmp_path, monkeypatch):
+        p = str(tmp_path / "kutter_badge.db")
+        init_db(p)
+        monkeypatch.setattr(
+            main, "get_settings",
+            lambda: SimpleNamespace(
+                DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=self.SECRET, ADMIN_PASSWORD=self.PW,
+                VAPID_PRIVATE_KEY="vapid", VAPID_CONTACT_EMAIL="mailto:test",
+            ),
+        )
+        return TestClient(main.app), p
+
+    def _admin_cookies(self):
+        return {ADMIN_COOKIE: make_admin_token(self.SECRET, self.PW)}
+
+    def _seeded_event(self, db_path):
+        conn = get_connection(db_path)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        _add_flight(conn, 500, "EDWG", "EDXH", "C172", "2026-07-01T18:00:00Z", duration_min=25)
+        conn.commit()
+        conn.close()
+        return ev
+
+    def test_404_before_summary(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        ev = self._seeded_event(db)
+        res = client.get(f"/api/transport/event/{ev['id']}/badge/500.png")
+        assert res.status_code == 404
+
+    def test_200_after_summary(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        ev = self._seeded_event(db)
+        conn = get_connection(db)
+        set_transport_summarized(conn, ev["id"], "2026-07-01T23:00:00Z")
+        conn.commit()
+        conn.close()
+        res = client.get(f"/api/transport/event/{ev['id']}/badge/500.png")
+        assert res.status_code == 200
+        assert res.headers["content-type"] == "image/png"
+        assert res.content[:8] == _PNG_MAGIC
+
+    def test_404_for_non_participant(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        ev = self._seeded_event(db)
+        conn = get_connection(db)
+        set_transport_summarized(conn, ev["id"], "2026-07-01T23:00:00Z")
+        conn.commit()
+        conn.close()
+        res = client.get(f"/api/transport/event/{ev['id']}/badge/999.png")
+        assert res.status_code == 404
+
+    def test_admin_endpoint_ok_without_summary(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        ev = self._seeded_event(db)
+        client.cookies.update(self._admin_cookies())
+        res = client.get(f"/api/admin/transport/events/{ev['id']}/badge/500.png")
+        assert res.status_code == 200
+        assert res.headers["content-type"] == "image/png"
+
+    def test_admin_endpoint_requires_auth(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        ev = self._seeded_event(db)
+        res = client.get(f"/api/admin/transport/events/{ev['id']}/badge/500.png")
+        assert res.status_code == 401

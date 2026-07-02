@@ -1,12 +1,14 @@
-"""Runde Badge-PNGs für FriesenFliegerBummel — Text per Pillow auf FF-Hintergründe.
+"""Runde Badge-PNGs für FriesenFliegerBummel + FriesenKutter — Text per Pillow auf FF-Hintergründe.
 
 Hintergründe (rund, FriesenFlieger-Markenoptik) liegen unter
 ``app/static/badge/`` (``winner_bg.png`` / ``medal_bg.png``); der Text wird
 zentriert in die ruhigen Zonen gelegt. Strikt die FriesenFlieger-Palette
-(``Hex codes.txt`` aus dem Repaint Kit). Zwei Varianten:
-  - ``render_winner_badge`` — Sieger „Absoluter Durchschnitt!" (helle Kuppel, dunkle Schrift).
-  - ``render_medal``        — Teilnahme „Voll daneben!" (navy Kern, helle Schrift).
-Beide tragen die Fußzeile „friesenflieger.de".
+(``Hex codes.txt`` aus dem Repaint Kit). Varianten:
+  - ``render_winner_badge`` — Bummel-Sieger „Absoluter Durchschnitt!" (helle Kuppel, dunkle Schrift).
+  - ``render_medal``        — Bummel-Teilnahme „Voll daneben!" (navy Kern, helle Schrift).
+  - ``render_kutter_badge`` — Kutter-Abschluss „Voll beladen!" (navy Kern), mit Verlust-Abschnitt
+    (SPITZBOOV!/BADEMESTER!/SEEROVER!), falls Fracht geklaut oder versenkt wurde.
+Alle tragen die Fußzeile „friesenflieger.de".
 
 Fehlt ein Hintergrund-PNG, wird auf eine schlichte gezeichnete Scheibe
 zurückgefallen (Tests/lokal ohne Assets bleiben grün).
@@ -144,6 +146,53 @@ def render_winner_badge(d: dict) -> bytes:
     diff = _fmt_signed_delta(d.get("delta_sec"))
     info = f"{d.get('aircraft') or 'k. A.'} · {_fmt_min(d.get('total_min'))} · {diff}"
     _ctext(dr, int(_S * 0.585), info, 19, _NAVY, 0.70)
+
+    _event_caption(dr, d, _LBLUE)
+    _footer(dr, _LBLUE)
+    return _finish(img)
+
+
+def _kutter_loss_label(stolen_kg: float, sunk_kg: float) -> str | None:
+    """Wählt den Verlust-Titel für den Kutter-Badge — pure Funktion, direkt testbar.
+
+    Beide 0 → kein Verlust (None). Nur geklaut → SPITZBOOV!, nur versenkt → BADEMESTER!,
+    beides → SEEROVER!.
+    """
+    if stolen_kg > 0 and sunk_kg > 0:
+        return "SEEROVER!"
+    if stolen_kg > 0:
+        return "SPITZBOOV!"
+    if sunk_kg > 0:
+        return "BADEMESTER!"
+    return None
+
+
+def render_kutter_badge(d: dict) -> bytes:
+    """Kutter-Abschluss-Badge (FriesenKutter-Transportevent) — navy Kern wie ``render_medal``,
+    zusätzlich ein Verlust-Abschnitt (geklaut/versenkt), falls die Fracht nicht ankam."""
+    img = _load_bg("medal_bg.png") or _fallback_disk(_NAVY)
+    dr = ImageDraw.Draw(img)
+
+    _ctext(dr, int(_S * 0.215), "VOLL BELADEN!", 34, _ORANGE, 0.78)
+    _ctext(dr, int(_S * 0.310), d.get("callsign", ""), 58, _LBLUE, 0.72)
+    if d.get("name"):
+        _ctext(dr, int(_S * 0.430), d["name"], 24, _WHITE, 0.74)
+    _ctext(dr, int(_S * 0.520), d.get("aircraft") or "k. A.", 22, _LBLUE, 0.80)
+
+    delivered_kg = int(round(d.get("delivered_kg") or 0))
+    _ctext(dr, int(_S * 0.585), f"{delivered_kg} kg geliefert", 20, _LBLUE, 0.80)
+
+    stolen_kg = d.get("stolen_kg") or 0
+    sunk_kg = d.get("sunk_kg") or 0
+    label = _kutter_loss_label(stolen_kg, sunk_kg)
+    if label:
+        _ctext(dr, int(_S * 0.648), label, 24, _ORANGE, 0.78)
+        pieces = []
+        if stolen_kg > 0:
+            pieces.append(f"{int(round(stolen_kg))} kg geklaut")
+        if sunk_kg > 0:
+            pieces.append(f"{int(round(sunk_kg))} kg versenkt")
+        _ctext(dr, int(_S * 0.706), ", ".join(pieces), 18, _WHITE, 0.85)
 
     _event_caption(dr, d, _LBLUE)
     _footer(dr, _LBLUE)

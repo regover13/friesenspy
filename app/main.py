@@ -1539,10 +1539,110 @@ async def transport_event_detail(event_id: int):
         return {
             "id": ev["id"], "name": ev["name"], "route": ev["route"],
             "destination": ev.get("destination"), "dtstart": ev["dtstart"], "dtend": ev["dtend"],
-            "source": ev.get("source"), **progress,
+            "source": ev.get("source"), "summarized_at": ev.get("summarized_at"), **progress,
         }
     finally:
         conn.close()
+
+
+def _kutter_badge_data(progress: dict, ev: dict, cid: int) -> dict:
+    """Render-Daten für einen Kutter-Badge aus einer bereits berechneten
+    ``compute_transport_progress``-Sicht. Wirft 404, wenn die CID nicht teilgenommen hat.
+
+    Verlust-kg pro Art (geklaut/versenkt) werden aus ``progress["losses"]`` für die CID
+    aufsummiert — ``returned`` (ehrlich zurückgebracht) zählt dabei NICHT als Verlust.
+    """
+    entry = next((p for p in progress.get("participants", []) if p["cid"] == cid), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Teilnehmer nicht gefunden")
+    stolen_kg = sum(
+        l.get("lost_kg") or 0.0 for l in progress.get("losses", [])
+        if l.get("cid") == cid and l.get("loss_kind") == "stolen"
+    )
+    sunk_kg = sum(
+        l.get("lost_kg") or 0.0 for l in progress.get("losses", [])
+        if l.get("cid") == cid and l.get("loss_kind") == "sunk"
+    )
+    return {
+        "callsign": entry.get("callsign") or f"CID {cid}",
+        "name": entry.get("name") or "",
+        "aircraft": entry.get("aircraft") or "",  # Badge setzt ASCII-Platzhalter (Pillow-Tofu)
+        "delivered_kg": entry.get("delivered_kg") or 0.0,
+        "stolen_kg": round(stolen_kg, 1),
+        "sunk_kg": round(sunk_kg, 1),
+        "event": ev.get("name") or "FriesenKutter",
+        "date": _fmt_de_date(ev.get("dtstart")),
+    }
+
+
+def _render_kutter_badge(d: dict) -> bytes:
+    from app.badge import render_kutter_badge
+    return render_kutter_badge(d)
+
+
+@app.get("/api/transport/event/{event_id}/badge/{cid}.png")
+async def get_transport_badge(request: Request, event_id: int, cid: int):
+    """Forum-Badge (PNG) für einen Kutter-Teilnehmer — erst nach der Feierabend-Bilanz
+    (``summarized_at``), damit kein Zwischenstand als "fertig" verewigt wird."""
+    import hashlib
+    import os
+
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        ev = get_transport_event(conn, event_id)
+        if not ev or not ev.get("summarized_at"):
+            raise HTTPException(status_code=404, detail="Event noch nicht abgeschlossen")
+        progress = compute_transport_progress(conn, ev, _now_iso(), callsign_prefix=settings.CALLSIGN_PREFIX)
+        d = _kutter_badge_data(progress, ev, cid)
+    finally:
+        conn.close()
+
+    # Hash über alle ergebnisrelevanten Felder — dient (a) als Datei-Cache-Schlüssel und (b) als
+    # ETag (analog Bummel-Badge): ändert sich die Bilanz nachträglich, ändert sich der ETag.
+    key = hashlib.md5(
+        f"{ev.get('summarized_at')}|{d['delivered_kg']}|{d['stolen_kg']}|{d['sunk_kg']}|"
+        f"{d['aircraft']}|{d['callsign']}|{d.get('event')}".encode()
+    ).hexdigest()[:10]
+    etag = f'"{key}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
+
+    cache_dir = os.path.join(os.path.dirname(settings.DB_PATH) or ".", "badges")
+    path = os.path.join(cache_dir, f"kutter_{event_id}_{cid}_{key}.png")
+    try:
+        with open(path, "rb") as fh:
+            png = fh.read()
+    except OSError:
+        png = _render_kutter_badge(d)
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+            with open(path, "wb") as fh:
+                fh.write(png)
+        except OSError:
+            pass  # Cache optional — Bild wurde bereits erzeugt
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "no-cache", "ETag": etag})
+
+
+@app.get("/api/admin/transport/events/{event_id}/badge/{cid}.png")
+async def admin_transport_badge(request: Request, event_id: int, cid: int):
+    """Badge-Vorschau für den Admin — funktioniert auch VOR der Feierabend-Bilanz, immer frisch
+    gerendert (kein Cache)."""
+    require_admin(request)
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        ev = get_transport_event(conn, event_id)
+        if not ev:
+            raise HTTPException(status_code=404, detail="Event nicht gefunden")
+        progress = compute_transport_progress(conn, ev, _now_iso(), callsign_prefix=settings.CALLSIGN_PREFIX)
+        d = _kutter_badge_data(progress, ev, cid)
+    finally:
+        conn.close()
+    png = _render_kutter_badge(d)
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/admin/transport/events")
