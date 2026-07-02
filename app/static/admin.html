@@ -835,6 +835,9 @@
                   </div>
                 </div>
                 <div class="form-section-title">Fracht-Manifest (Reihenfolge = Beladung)</div>
+                <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+                  Emoji + Max/Flug kommen beim Speichern aus dem Katalog (Snapshot) — spätere Katalog-Änderungen wirken nicht auf bestehende Events; erneutes Speichern übernimmt den aktuellen Stand.
+                </p>
                 <datalist id="ke-cargo-suggestions">
                   <option value="Krabbenbrötchen"></option>
                   <option value="Friesentee"></option>
@@ -1968,14 +1971,36 @@
     function keCargoRow(name, kg) {
       const div = document.createElement('div');
       div.className = 'ke-cargo-row';
-      div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;';
-      div.innerHTML = '<input type="text" class="ke-c-name" list="ke-cargo-suggestions" placeholder="Frachtart, z.B. Krabbenbrötchen" style="flex:2;" />'
+      div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;align-items:center;';
+      div.innerHTML = '<div style="flex:2;display:flex;flex-direction:column;gap:2px;">'
+        + '<input type="text" class="ke-c-name" list="ke-cargo-suggestions" placeholder="Frachtart, z.B. Krabbenbrötchen" />'
+        + '<span class="ke-c-hint" style="color:#8aa0b8;font-size:0.75rem;"></span>'
+        + '</div>'
         + '<input type="number" class="ke-c-kg" placeholder="kg" min="0" step="10" style="flex:1;" />'
         + '<button type="button" class="btn btn-sm ke-c-del">✕</button>';
-      div.querySelector('.ke-c-name').value = name || '';
+      const nameInput = div.querySelector('.ke-c-name');
+      const hintSpan = div.querySelector('.ke-c-hint');
+      nameInput.value = name || '';
       if (kg != null && kg !== '') div.querySelector('.ke-c-kg').value = kg;
+      // Hinweis initial aktualisieren (beim Befüllen bestehender Zeilen).
+      updateKeCargoHint(nameInput, hintSpan);
+      // Hinweis bei jedem Input aktualisieren.
+      nameInput.addEventListener('input', () => updateKeCargoHint(nameInput, hintSpan));
       div.querySelector('.ke-c-del').addEventListener('click', () => div.remove());
       return div;
+    }
+
+    function updateKeCargoHint(nameInput, hintSpan) {
+      const name = nameInput.value.trim();
+      if (!name) { hintSpan.textContent = ''; return; }
+      // Gegen Katalog abgleichen (case-insensitive).
+      const cat = (_keCatalog || []).find(c => (c.name || '').toLowerCase() === name.toLowerCase());
+      if (cat) {
+        const hint = (cat.emoji ? cat.emoji + ' ' : '') + (cat.per_flight_max_kg != null ? 'max ' + Math.round(cat.per_flight_max_kg) + ' kg/Flug' : '');
+        hintSpan.textContent = hint;
+      } else {
+        hintSpan.textContent = '';
+      }
     }
 
     function keCollectCargo() {
@@ -2202,7 +2227,10 @@
       if (!res || !res.ok) return;
       _keCatalog = await res.json();
       const dl = document.getElementById('ke-cargo-suggestions');
-      if (dl) dl.innerHTML = _keCatalog.map(c => '<option value="' + escA(c.name) + '"></option>').join('');
+      // Datalist aus Katalog aktualisieren (wenn nicht leer), sonst Fallback bewahren.
+      if (dl && _keCatalog.length) {
+        dl.innerHTML = _keCatalog.map(c => '<option value="' + escA(c.name) + '"></option>').join('');
+      }
       const c = document.getElementById('ke-catalog-container');
       if (!_keCatalog.length) { c.innerHTML = '<div class="empty-hint">Katalog leer.</div>'; return; }
       c.innerHTML = _keCatalog.map(x =>
