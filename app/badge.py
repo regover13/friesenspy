@@ -152,6 +152,48 @@ def render_winner_badge(d: dict) -> bytes:
     return _finish(img)
 
 
+def _wrap_two(dr, text: str, font_size: int, max_w: int) -> list[str]:
+    """Teilt ``text`` in höchstens zwei möglichst ausgewogene Zeilen, falls einzeilig zu breit.
+
+    Passt der Text in ``max_w``, bleibt es eine Zeile. Sonst wird an der Wortgrenze umbrochen,
+    die die längere der beiden Zeilen minimiert (ein einzelnes langes Wort bleibt ungeteilt —
+    ``_ctext`` verkleinert es dann).
+    """
+    if not text:
+        return []
+    if _text_w(dr, text, _font(font_size)) <= max_w:
+        return [text]
+    words = text.split()
+    if len(words) <= 1:
+        return [text]
+    best_i, best_max = 1, None
+    for i in range(1, len(words)):
+        w = max(
+            _text_w(dr, " ".join(words[:i]), _font(font_size)),
+            _text_w(dr, " ".join(words[i:]), _font(font_size)),
+        )
+        if best_max is None or w < best_max:
+            best_max, best_i = w, i
+    return [" ".join(words[:best_i]), " ".join(words[best_i:])]
+
+
+def _kutter_event_heading(dr, d, fill, center: float, size: int):
+    """Event-Name als große Überschrift ÜBER der Inselkette (bis zu zwei Zeilen), Datum darunter.
+
+    Der Zeilenblock wird vertikal um ``center`` (Anteil an ``_S``) zentriert; ``size`` ist die
+    Schriftgröße der Überschrift.
+    """
+    ev = d.get("event") or ""
+    lines = _wrap_two(dr, ev, size, int(_S * 0.82))
+    lh = (size + 6) / _S  # Zeilenhöhe als _S-Anteil
+    top = center - (len(lines) * lh) / 2
+    for i, ln in enumerate(lines):
+        _ctext(dr, int(_S * (top + i * lh)), ln, size, fill, 0.86)
+    date = d.get("date") or ""
+    if date:
+        _ctext(dr, int(_S * 0.775), date, 16, fill, 0.70)
+
+
 def _kutter_loss_label(stolen_kg: float, sunk_kg: float) -> str | None:
     """Wählt den Verlust-Titel für den Kutter-Badge — pure Funktion, direkt testbar.
 
@@ -173,28 +215,28 @@ def render_kutter_badge(d: dict) -> bytes:
     img = _load_bg("medal_bg.png") or _fallback_disk(_NAVY)
     dr = ImageDraw.Draw(img)
 
-    _ctext(dr, int(_S * 0.215), "VOLL BELADEN!", 34, _ORANGE, 0.78)
-    _ctext(dr, int(_S * 0.310), d.get("callsign", ""), 58, _LBLUE, 0.72)
-    if d.get("name"):
-        _ctext(dr, int(_S * 0.430), d["name"], 24, _WHITE, 0.74)
-    _ctext(dr, int(_S * 0.520), d.get("aircraft") or "k. A.", 22, _LBLUE, 0.80)
-
-    delivered_kg = int(round(d.get("delivered_kg") or 0))
-    _ctext(dr, int(_S * 0.585), f"{delivered_kg} kg geliefert", 20, _LBLUE, 0.80)
+    _ctext(dr, int(_S * 0.200), "VOLL BELADEN!", 32, _ORANGE, 0.78)
+    _ctext(dr, int(_S * 0.305), d.get("callsign", ""), 56, _LBLUE, 0.72)
+    # Typcode direkt unter dem Callsign (Name + kg entfallen bewusst).
+    _ctext(dr, int(_S * 0.415), d.get("aircraft") or "k. A.", 24, _LBLUE, 0.80)
 
     stolen_kg = d.get("stolen_kg") or 0
     sunk_kg = d.get("sunk_kg") or 0
     label = _kutter_loss_label(stolen_kg, sunk_kg)
     if label:
-        _ctext(dr, int(_S * 0.648), label, 24, _ORANGE, 0.78)
+        _ctext(dr, int(_S * 0.490), label, 22, _ORANGE, 0.78)
         pieces = []
         if stolen_kg > 0:
             pieces.append(f"{int(round(stolen_kg))} kg geklaut")
         if sunk_kg > 0:
             pieces.append(f"{int(round(sunk_kg))} kg versenkt")
-        _ctext(dr, int(_S * 0.706), ", ".join(pieces), 18, _WHITE, 0.85)
+        _ctext(dr, int(_S * 0.540), ", ".join(pieces), 16, _WHITE, 0.85)
+        ev_center, ev_size = 0.618, 24
+    else:
+        ev_center, ev_size = 0.555, 30
 
-    _event_caption(dr, d, _LBLUE)
+    # Event-Name als große Überschrift über die Inselkette.
+    _kutter_event_heading(dr, d, _LBLUE, ev_center, ev_size)
     _footer(dr, _LBLUE)
     return _finish(img)
 

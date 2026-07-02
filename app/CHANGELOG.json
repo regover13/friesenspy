@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.7.1",
+    "date": "2026-07-02",
+    "title": "Kutter-Badge aufgeräumt",
+    "items": [
+      "🎖 Das Kutter-Badge zeigt jetzt den Flugzeugtyp direkt unter dem Callsign; Name und gelieferte Kilos sind raus. Der Event-Name steht groß über der Inselkette (bei langen Namen zweizeilig)."
+    ]
+  },
+  {
     "version": "7.7.0",
     "date": "2026-07-02",
     "title": "Kutter-Forum-Badge & Manifest-Politur",
