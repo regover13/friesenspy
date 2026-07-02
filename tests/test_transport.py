@@ -954,6 +954,15 @@ class TestParticipants:
         p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
         assert p["participants"][0]["status"] == "arrived"
 
+    def test_aircraft_normalized_to_type_code(self):
+        # Rohes ICAO-Flugplanfeld (Typ + Ausrüstungssuffix) muss als reiner Typcode erscheinen —
+        # sonst steht in Live-Tabelle und Forum-Badge z. B. "AS65/L-SDGY/S" statt "AS65".
+        conn = _make_conn()
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
+        _add_flight(conn, 403, "EDWG", "EDXH", "AS65/L-SDGY/S", "2026-07-01T18:00:00Z", duration_min=25)
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:30:00Z")
+        assert {x["cid"]: x for x in p["participants"]}[403]["aircraft"] == "AS65"
+
 
 class TestLossQuipContext:
     def test_flight_context_carries_kutter_versunken(self):

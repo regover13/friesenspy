@@ -923,6 +923,13 @@ def _fmt_de_date(iso: str) -> str:
         return ""
 
 
+# Render-Version der Forum-Badges. Fließt in den ETag/Cache-Schlüssel von Kutter- UND Bummel-
+# Badge ein: Ändert sich NUR das Layout/Rendering (nicht die Daten), bleibt der datenbasierte
+# Hash sonst gleich und Browser/Forum zeigen per 304 das alte Bild. Bei jeder sichtbaren
+# Layout-Änderung an app/badge.py hochzählen — dann holen alle Clients frisch.
+_BADGE_RENDER_VERSION = "2"
+
+
 def _badge_entry_data(view: dict, race: dict, cid: int) -> tuple[dict, bool]:
     """Render-Daten + Sieger-Flag für einen Teilnehmer aus einer (enthüllten) Renn-Sicht.
 
@@ -980,8 +987,8 @@ async def get_bummel_badge(request: Request, race_id: int, cid: int):
     # ETag: Ändert sich der Sieger (z. B. durch Admin-Override oder eine Wertungsänderung), ändert
     # sich der ETag → der Browser/das Forum holt ein frisches Bild statt eines veralteten.
     key = hashlib.md5(
-        f"{race.get('revealed_at')}|{is_winner}|{d['total_min']}|{d.get('delta_sec')}|"
-        f"{d['aircraft']}|{d['callsign']}|{d.get('event')}".encode()
+        f"v{_BADGE_RENDER_VERSION}|{race.get('revealed_at')}|{is_winner}|{d['total_min']}|"
+        f"{d.get('delta_sec')}|{d['aircraft']}|{d['callsign']}|{d.get('event')}".encode()
     ).hexdigest()[:10]
     etag = f'"{key}"'
     # no-cache erzwingt Revalidierung; passt der ETag noch, antwortet der Server mit 304 (kein
@@ -1601,8 +1608,8 @@ async def get_transport_badge(request: Request, event_id: int, cid: int):
     # Hash über alle ergebnisrelevanten Felder — dient (a) als Datei-Cache-Schlüssel und (b) als
     # ETag (analog Bummel-Badge): ändert sich die Bilanz nachträglich, ändert sich der ETag.
     key = hashlib.md5(
-        f"{ev.get('summarized_at')}|{d['delivered_kg']}|{d['stolen_kg']}|{d['sunk_kg']}|"
-        f"{d['aircraft']}|{d['callsign']}|{d.get('event')}".encode()
+        f"v{_BADGE_RENDER_VERSION}|{ev.get('summarized_at')}|{d['delivered_kg']}|{d['stolen_kg']}|"
+        f"{d['sunk_kg']}|{d['aircraft']}|{d['callsign']}|{d.get('event')}".encode()
     ).hexdigest()[:10]
     etag = f'"{key}"'
     if request.headers.get("if-none-match") == etag:

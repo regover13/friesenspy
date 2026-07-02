@@ -1,5 +1,14 @@
 [
   {
+    "version": "7.7.3",
+    "date": "2026-07-02",
+    "title": "Badges: frische Bilder + sauberer Typcode",
+    "items": [
+      "🔄 Forum-Badges (Kutter + Bummel) werden nach einer Layout-Änderung jetzt garantiert frisch geladen — vorher konnten Browser/Forum über den Zwischenspeicher noch das alte Bild zeigen.",
+      "✈️ Auf dem Kutter-Badge (und in der Live-Tabelle) steht das Muster als reiner Typcode (»AS65« statt des rohen Flugplan-Feldes »AS65/L-SDGY/S«)."
+    ]
+  },
+  {
     "version": "7.7.2",
     "date": "2026-07-02",
     "title": "Feinschliff: Badge-Umlaute, Doppel-Badge, Zählfehler",
