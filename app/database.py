@@ -2971,12 +2971,13 @@ def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") 
     existing = {(l["cid"], l["logon_time"]) for l in get_transport_losses(conn, int(event["id"]))}
     load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
     new = 0
-    # Kein Oberbegrenzer (`end`) auf die Abfrage: Kandidaten sind bereits abgeschlossene
-    # (logoff_time gesetzte) Flüge — in Produktion zwangsläufig in der Vergangenheit; ein
-    # Filter auf `now` (Wanduhrzeit) wäre hier nur redundant und würde Flüge, deren
-    # logon_time knapp vor dem realen "jetzt" liegt, aber nach Datenbank-Uhrzeit später als
-    # der Poll-Moment gilt, unnötig verwerfen.
-    for f in canonicalize_flights(conn, start=load_start, callsign_prefix=callsign_prefix):
+    # Obergrenze wie compute_transport_progress: Verluste dürfen nur innerhalb des
+    # Event-Fensters entstehen. Ohne `end` wurde jeder spätere Streckenflug (auch Wochen nach
+    # dtend, z. B. ein ganz anderes Event auf derselben Route) fälschlich als Verlust dieses
+    # (längst abgeschlossenen) Events gelatcht — Alt-Events sammelten so fortlaufend
+    # Fremd-Verluste, zusätzlich unbeschränkte Poller-Last.
+    end = event.get("dtend") or now
+    for f in canonicalize_flights(conn, start=load_start, end=end, callsign_prefix=callsign_prefix):
         cid, lo = f.get("cid"), f.get("logon_time") or ""
         lf = f.get("logoff_time") or ""
         if cid is None or not lf or lf < start:

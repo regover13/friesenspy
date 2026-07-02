@@ -800,12 +800,16 @@ class TestCargoLosses:
         conn = _make_conn()
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        self._flown_flight(conn, 300, "2026-07-02T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
+        self._flown_flight(conn, 300, "2026-07-01T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
         n = detect_transport_losses(conn, ev)
         assert n == 1
         losses = get_transport_losses(conn, ev["id"])
         assert losses[0]["kind"] == "sunk"
-        p = compute_transport_progress(conn, ev, "2026-07-02T20:00:00Z")
+        # compute-now VOR dem Flug-Logon: die Flug-GPS-Kette liegt außerhalb des Feeds, sodass
+        # die Zeile ausschließlich aus dem Loss-Latch synthetisiert wird — sonst würde der
+        # Flugplan-Fallback (arr==dest, siehe compute_transport_progress-Docstring) den Verlust
+        # mit "loaded" überdecken, da der Pilot EDXH filed hatte, bevor er verschwand.
+        p = compute_transport_progress(conn, ev, "2026-07-01T10:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 300)
         assert f["loss_kind"] == "sunk" and f["loaded"] is False
         assert p["lost_total_kg"] == 292.0
@@ -817,10 +821,10 @@ class TestCargoLosses:
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         wlat, wlon = icao_to_coords("EDWY")                 # Norderney — nicht auf der Route
-        self._flown_flight(conn, 301, "2026-07-02T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)
+        self._flown_flight(conn, 301, "2026-07-01T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)
         detect_transport_losses(conn, ev)
         assert get_transport_losses(conn, ev["id"])[0]["kind"] == "stolen"
-        p = compute_transport_progress(conn, ev, "2026-07-02T20:00:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T10:00:00Z")  # vgl. Kommentar oben
         f = next(x for x in p["flights"] if x["cid"] == 301)
         assert f["loss_kind"] == "stolen"                   # synthetischer Feed-Eintrag
         assert p["lost_total_kg"] == 292.0
@@ -830,10 +834,10 @@ class TestCargoLosses:
         from app.geo import icao_to_coords
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
         dlat, dlon = icao_to_coords("EDWG")
-        self._flown_flight(conn, 302, "2026-07-02T18:05:00Z", end_lat=dlat, end_lon=dlon, end_gs=0, arrival="EDWG")
+        self._flown_flight(conn, 302, "2026-07-01T18:05:00Z", end_lat=dlat, end_lon=dlon, end_gs=0, arrival="EDWG")
         detect_transport_losses(conn, ev)
         assert get_transport_losses(conn, ev["id"])[0]["kind"] == "returned"
-        p = compute_transport_progress(conn, ev, "2026-07-02T20:00:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 302)
         assert f["loss_kind"] == "returned"
         assert p["lost_total_kg"] == 0.0                    # zurückgebracht ≠ verloren
@@ -843,11 +847,23 @@ class TestCargoLosses:
         from app.geo import icao_to_coords
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
         alat, alon = icao_to_coords("EDXH")
-        self._flown_flight(conn, 303, "2026-07-02T18:05:00Z", end_lat=alat, end_lon=alon, end_gs=0)
+        self._flown_flight(conn, 303, "2026-07-01T18:05:00Z", end_lat=alat, end_lon=alon, end_gs=0)
         assert detect_transport_losses(conn, ev) == 0       # am Ziel gelandet → geliefert
-        self._flown_flight(conn, 304, "2026-07-02T18:20:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
+        self._flown_flight(conn, 304, "2026-07-01T18:20:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
         assert detect_transport_losses(conn, ev) == 1
         assert detect_transport_losses(conn, ev) == 0       # idempotent
+
+    def test_no_loss_for_flight_after_event_window(self):
+        """Ein Streckenflug lange nach dtend darf keinem alten Event als Verlust angelastet
+        werden (Final-Review-Blocker: Alt-Events sammelten sonst fortlaufend Fremd-Verluste)."""
+        conn = _make_conn()
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        # dtend = 2026-07-01T23:00:00Z — dieser Flug liegt einen Tag danach.
+        self._flown_flight(conn, 305, "2026-07-02T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
+        n = detect_transport_losses(conn, ev)
+        assert n == 0
+        assert get_transport_losses(conn, ev["id"]) == []
 
 
 class TestParticipants:
