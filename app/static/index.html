@@ -398,6 +398,8 @@
     .kutter-seg > i.kseg-res { opacity: .5; background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,.35) 4px 8px); }
     .kutter-feed td.kf-res { color: #9fc9e8; text-align: right; font-style: italic; }
     .kutter-loss { color: #e8a9a0; }
+    /* Verlust-kg in der Fracht-Spalte bündig zu den anderen kg-Werten (kf-empty macht sonst kursiv/links). */
+    .kutter-feed td.kf-empty.kutter-loss { text-align: right; font-style: normal; }
 
     table {
       width: 100%;

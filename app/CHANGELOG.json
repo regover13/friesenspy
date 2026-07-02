@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.5.2",
+    "date": "2026-07-02",
+    "title": "Feed-Format: Verlust-Gewichte bündig",
+    "items": [
+      "📐 Die kg-Angabe verlorener Fracht steht im Flug-Feed jetzt rechtsbündig in einer Linie mit den übrigen Gewichten (war kursiv und linksbündig)."
+    ]
+  },
+  {
     "version": "7.5.1",
     "date": "2026-07-02",
     "title": "Teilnehmerliste: Muster auch auf dem Rückflug",
