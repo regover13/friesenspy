@@ -402,6 +402,10 @@
     .kutter-loss { color: #e8a9a0; }
     /* Verlust-kg in der Fracht-Spalte bündig zu den anderen kg-Werten (kf-empty macht sonst kursiv/links). */
     .kutter-feed td.kf-empty.kutter-loss { text-align: right; font-style: normal; }
+    /* Forum-Badges pro Teilnehmer (erst nach der Feierabend-Bilanz) — kompakter Block über dem Feed. */
+    .kutter-badges { margin: 4px 0 12px; font-size: 0.8rem; color: var(--text-label); }
+    .kutter-badges-title { font-weight: 600; color: var(--text-bright); margin-bottom: 4px; }
+    .kutter-badge-row { padding: 2px 0; }
 
     table {
       width: 100%;
@@ -4456,6 +4460,30 @@ function _kutterBarAndTotals(d) {
   return header + bar;
 }
 
+// Badge-Links je Kutter-Teilnehmer (Forum-PNG öffnen + BBCode kopieren) — nur nach der
+// Feierabend-Bilanz (summarized_at), analog _bummelBadgeLinks/copyBummelBadgeCode.
+function _kutterBadgeLinks(eventId, cid) {
+  const url = `/api/transport/event/${eventId}/badge/${cid}.png`;
+  return `<a class="btn-share" href="${url}" target="_blank" rel="noopener" title="Badge als Bild öffnen">🎖 Badge</a>`
+       + ` · <button class="btn-share" onclick="copyKutterBadgeCode(${eventId}, ${cid}, this)" title="Forum-Code (BBCode) kopieren">📋 Forum</button>`;
+}
+function copyKutterBadgeCode(eventId, cid, btn) {
+  const code = `[img]${location.origin}/api/transport/event/${eventId}/badge/${cid}.png[/img]`;
+  navigator.clipboard.writeText(code).then(() => {
+    const old = btn.textContent;
+    btn.textContent = '✓ kopiert';
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  }).catch(() => {});
+}
+function _kutterBadgeSection(d) {
+  if (!d.summarized_at || !(d.participants || []).length) return '';
+  const rows = d.participants.map(p =>
+    '<div class="kutter-badge-row">' + _kesc(p.callsign || ('CID ' + p.cid)) + ' — '
+      + _kutterBadgeLinks(d.id, p.cid) + '</div>'
+  ).join('');
+  return '<div class="kutter-badges"><div class="kutter-badges-title">🎖 Badges</div>' + rows + '</div>';
+}
+
 function _kutterDetailBody(d) {
   const summary = d.summary_quip
     ? '<div class="kutter-summary">🦐 ' + _kesc(d.summary_quip) + '</div>' : '';
@@ -4472,7 +4500,7 @@ function _kutterDetailBody(d) {
     + '<th>Strecke</th><th>Fracht</th><th>Ladung</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="6" style="color:var(--text-label)">Noch keine Flüge.</td></tr>')
     + '</tbody></table></div>';
-  return summary + _kutterBarAndTotals(d) + feed;
+  return summary + _kutterBarAndTotals(d) + _kutterBadgeSection(d) + feed;
 }
 
 async function openKutter(ev) {

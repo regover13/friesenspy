@@ -602,6 +602,54 @@ Zusätzliche Top-Level-Felder: `participants` (`[{cid, name, callsign, aircraft,
 > Abflugplatz → `returned`, am Boden anderswo → `stolen`, sonst (in der Luft verschwunden) →
 > `sunk`.
 
+`GET /api/transport/event/{id}` liefert außerdem `summarized_at` (Latch der Feierabend-Bilanz,
+`null` solange offen) — Voraussetzung für den Kutter-Badge (s. u.).
+
+---
+
+## GET /api/transport/event/{event_id}/badge/{cid}.png
+
+Forum-Badge (PNG) für einen FriesenKutter-Teilnehmer. Erst nach der Feierabend-Bilanz verfügbar
+(kein Zwischenstand als „fertig" verewigt).
+
+**Voraussetzungen — sonst `404`:**
+- Das Event mit `event_id` muss existieren und **abgeschlossen** sein (`summarized_at IS NOT NULL`).
+- `cid` muss Teilnehmer dieses Events sein (`participants` aus `compute_transport_progress`).
+
+**Response** — `image/png`
+
+Rund (256 × 256 px), transparenter Rand, navy Kern („Voll beladen!") wie die Bummel-Medaille:
+Callsign, Name, Flugzeugmuster, gelieferte kg, Event-Name + Datum, Fußzeile „friesenflieger.de".
+Hat der Teilnehmer Fracht verloren (`stolen_kg`/`sunk_kg` > 0, aus `losses` aufsummiert —
+`returned` zählt nicht als Verlust), erscheint zusätzlich ein Verlust-Titel: **SPITZBOOV!** (nur
+geklaut), **BADEMESTER!** (nur versenkt) oder **SEEROVER!** (beides), plus eine Mengen-Zeile
+(„150 kg geklaut, 292 kg versenkt").
+
+**Caching (ETag + Revalidierung):** Aus den ergebnisrelevanten Feldern (`summarized_at`,
+`delivered_kg`, `stolen_kg`, `sunk_kg`, `aircraft`, `callsign`, `event`) wird ein MD5-Hash
+gebildet, der als `ETag` dient und in den Cache-Dateinamen einfließt
+(`data/badges/kutter_<event_id>_<cid>_<hash>.png`). `Cache-Control: no-cache` + `ETag`; passendes
+`If-None-Match` → `304 Not Modified`.
+
+**Response-Header:**
+```
+Content-Type: image/png
+Cache-Control: no-cache
+ETag: "<hash>"
+```
+
+**BBCode für board.friesenflieger.de:**
+```
+[img]https://friesenspy.devprops.de/api/transport/event/{event_id}/badge/{cid}.png[/img]
+```
+
+Im Events-Tab erscheint nach der Bilanz je Teilnehmer **🎖 Badge** (öffnet das PNG) und
+**📋 Forum** (kopiert den BBCode) über dem Flug-Feed.
+
+> **Admin-Vorschau:** `GET /api/admin/transport/events/{event_id}/badge/{cid}.png` (siehe
+> [Admin — Kutter-Badge-Vorschau](#get-apiadmintransporteventsevent_idbadgecidpng)) funktioniert
+> auch **vor** der Bilanz — der öffentliche Endpoint hier liefert vorher weiter `404`.
+
 ---
 
 ## GET /widget
@@ -912,6 +960,28 @@ Frachtart aus dem Katalog entfernen (bestehende Event-Manifeste bleiben unverän
 Lustige KI-Sprüche global an-/ausschalten. Body: `enabled` (bool). Wirken nur mit `ANTHROPIC_API_KEY`.
 
 > **Event-Ausgabe (Phase 2):** `GET /api/transport/event/{id}` liefert zusätzlich je Frachtart `cargo[].emoji`, je Flug `cargo_lines` (`[{name, emoji, kg}]`, Co-Load) und `quip` (gecachter KI-Spruch, sonst `null`) sowie `summary_quip` (lustige Tagesend-Zusammenfassung).
+
+### GET /api/admin/transport/events/{event_id}/badge/{cid}.png
+
+Kutter-Badge-Vorschau eines Teilnehmers für den Admin — funktioniert **auch vor** der
+Feierabend-Bilanz (umgeht das `summarized_at`-Gate des öffentlichen Endpoints). Das Badge wird
+bei jedem Aufruf **frisch gerendert** (kein Cache).
+
+**Voraussetzungen — sonst `404`:**
+- Das Event mit `event_id` muss existieren.
+- `cid` muss Teilnehmer dieses Events sein.
+
+**Response** — `image/png`. Gleiches Layout wie beim öffentlichen Endpoint (navy Kern „Voll
+beladen!" + Verlust-Titel SPITZBOOV!/BADEMESTER!/SEEROVER!, falls Fracht verloren ging).
+
+**Response-Header:**
+```
+Content-Type: image/png
+Cache-Control: no-store
+```
+
+Der öffentliche Endpoint `GET /api/transport/event/{event_id}/badge/{cid}.png` bleibt vor der
+Bilanz weiterhin `404`.
 
 ## Admin — Hinweis-Banner
 
