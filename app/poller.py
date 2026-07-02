@@ -1105,7 +1105,8 @@ class VatsimPoller:
                     # Pro-Flug-Sprüche für neue beladene Flüge ohne Cache sammeln (später async erzeugen).
                     if do_quips:
                         for f in progress["flights"]:
-                            if f.get("loaded") and not f.get("quip"):
+                            if (f.get("loaded") or f.get("loss_kind") in ("stolen", "sunk")) \
+                                    and not f.get("quip"):
                                 quip_jobs.append((ev["id"], f["flight_key"], flight_quip_context(f, progress)))
                 conn.commit()
                 subscriptions = get_push_subscriptions_for_events(conn) if pushes else []

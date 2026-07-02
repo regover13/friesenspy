@@ -2835,6 +2835,15 @@ def flight_quip_context(flight: dict, progress: dict) -> dict:
         f"{(c.get('emoji') or '').strip()} {c['name']} ({round(c['kg'])} kg)".strip()
         for c in (flight.get("cargo_lines") or [])
     ]
+    loss_kind = flight.get("loss_kind")
+    verlust = None
+    if loss_kind == "sunk":
+        verlust = f"Kutter versunken — {round(flight.get('lost_kg') or 0)} kg Fracht verloren"
+    elif loss_kind == "stolen":
+        verlust = (f"am falschen Ort gelandet ({flight.get('arr')}) — "
+                   f"{round(flight.get('lost_kg') or 0)} kg Fracht geklaut")
+    elif loss_kind == "returned":
+        verlust = "umgedreht und Fracht heil zurückgebracht"
     return {
         "vorname": vorname,
         "callsign": flight.get("callsign"),
@@ -2845,6 +2854,7 @@ def flight_quip_context(flight: dict, progress: dict) -> dict:
         "cargo": cargo,
         "speed_kt": speed_kt,
         "detour_ratio": detour_ratio,
+        "verlust": verlust,
     }
 
 
@@ -2867,6 +2877,15 @@ def event_summary_context(event: dict, progress: dict) -> dict:
         "pilots": per_pilot,
         "route": " ↔ ".join(progress.get("route", [])),
         "destination": progress.get("destination"),
+        "lost_total_kg": progress.get("lost_total_kg", 0.0),
+        "verluste": [
+            (f"{(l.get('name') or l.get('callsign') or '?').split()[0]}: "
+             + ("Kutter versunken" if l.get("loss_kind") == "sunk"
+                else "Fracht geklaut" if l.get("loss_kind") == "stolen"
+                else "Fracht zurückgebracht")
+             + f" ({round(l.get('lost_kg') or 0)} kg)")
+            for l in progress.get("losses", [])
+        ],
     }
 
 
@@ -3188,6 +3207,7 @@ def compute_transport_progress(
 
     # Aktuell offene Flüge (noch verbunden) — bisher komplett ignoriert, da canonicalize_flights
     # logoff_time IS NOT NULL verlangt. Zählen ab dem Live-Ankunfts-Latch, ohne Disconnect.
+    returning_cids: set[int] = set()
     for f in open_transport_flights(conn, callsign_prefix):
         cid = f.get("cid")
         if cid is None:
@@ -3198,6 +3218,8 @@ def compute_transport_progress(
         dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
             or normalize_type_code(f.get("departure"))
         if dep not in route_set or dep == dest:
+            if dep == dest:
+                returning_cids.add(int(cid))
             continue
         loaded = bool(dest) and (cid, lo) in live_arrivals
         type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
@@ -3251,7 +3273,7 @@ def compute_transport_progress(
     network.sort(key=lambda x: x["dep_time"])  # aufsteigend für die Manifest-Füllung
 
     # Pilotennamen nachladen (eine Abfrage).
-    cids = {q["cid"] for q in network}
+    cids = {q["cid"] for q in network} | returning_cids
     names: dict[int, str] = {}
     if cids:
         rows = conn.execute(
@@ -3343,6 +3365,36 @@ def compute_transport_progress(
     target_kg = round(sum(cargo_targets), 1) if cargo_targets else None
     progress_pct = round(100.0 * total_kg / target_kg, 1) if target_kg else None
 
+    # Teilnehmerliste (Bummel-Analogie): eine Zeile pro Pilot mit Summen + Live-Status.
+    parts: dict[int, dict] = {}
+    for q in network:
+        p = parts.setdefault(int(q["cid"]), {
+            "cid": int(q["cid"]), "name": q.get("name") or "", "aircraft": q.get("aircraft") or "",
+            "flights": 0, "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "status": "done",
+        })
+        p["flights"] += 1
+        if q.get("aircraft"):
+            p["aircraft"] = q["aircraft"]
+        if q.get("name"):
+            p["name"] = q["name"]
+        p["delivered_kg"] += q["tonnage_kg"]
+        p["lost_kg"] += q.get("lost_kg") or 0.0
+        if q.get("in_air"):
+            p["status"] = "arrived" if q["loaded"] else "flying"
+            if not q["loaded"]:
+                p["reserved_kg"] += q.get("reserved_kg") or 0.0
+    for rc in returning_cids:
+        if rc in parts and parts[rc]["status"] == "done":
+            parts[rc]["status"] = "returning"
+        elif rc not in parts:
+            parts[rc] = {"cid": rc, "name": names.get(rc, ""), "aircraft": "", "flights": 0,
+                         "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "status": "returning"}
+    participants = sorted(parts.values(), key=lambda x: (-x["delivered_kg"], x["name"]))
+    for p in participants:
+        p["delivered_kg"] = round(p["delivered_kg"], 1)
+        p["reserved_kg"] = round(p["reserved_kg"], 1)
+        p["lost_kg"] = round(p["lost_kg"], 1)
+
     return {
         "route": sorted(route_set),
         "destination": dest,
@@ -3358,6 +3410,7 @@ def compute_transport_progress(
         "summary_quip": event.get("summary_quip"),
         "losses": [q for q in network if q.get("loss_kind")],
         "lost_total_kg": round(sum(q.get("lost_kg") or 0.0 for q in network), 1),
+        "participants": participants,
     }
 
 
