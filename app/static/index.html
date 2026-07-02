@@ -350,20 +350,20 @@
       color: var(--green);
       white-space: nowrap;
     }
-    #bummel-banner {
+    #bummel-banner, #kutter-banner {
       border: 1px solid var(--green-dim);
       background: linear-gradient(180deg, rgba(45,156,219,0.10), rgba(45,156,219,0.02));
       padding: 12px 14px;
       margin-bottom: 16px;
     }
-    #bummel-banner .bb-title {
+    #bummel-banner .bb-title, #kutter-banner .bb-title {
       font-family: var(--text-display);
       font-size: 0.8rem;
       letter-spacing: 0.06em;
       color: var(--green);
       margin-bottom: 6px;
     }
-    #bummel-banner .bb-sub {
+    #bummel-banner .bb-sub, #kutter-banner .bb-sub {
       font-family: var(--text-mono);
       font-size: 0.78rem;
       color: var(--text-label);
@@ -1499,6 +1499,7 @@
        ===================================================================== -->
   <div id="tab-live" class="tab-panel active">
     <div id="bummel-banner" hidden></div>
+    <div id="kutter-banner" hidden></div>
     <div class="panel">
       <div class="panel-title">Live-Positionen · FriesenFlieger auf VATSIM</div>
       <div id="live-content">
@@ -2971,6 +2972,67 @@ async function fetchBummelActive() {
   }
 }
 
+// --- Live-Tab-Block: läuft gerade ein FriesenKutter? (Analogie zum Bummel-Banner) ---
+// Zeigt Balken + Mengen + „wer ist gerade mit welcher Ladung unterwegs" (Callsign statt
+// Name, keine Bilanz — die steht im Flug-Feed der Events-Ansicht). 🗺️ springt zur Karte.
+async function fetchKutterActive() {
+  const banner = document.getElementById('kutter-banner');
+  if (!banner) return;
+  try {
+    const res = await fetch('/api/transport/events');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const events = await res.json();
+    const now = new Date().toISOString().slice(0, 19) + 'Z';
+    const v = (events || []).find(k => k.dtstart <= now && now <= (k.dtend || ''));
+    if (!v) { banner.hidden = true; banner.innerHTML = ''; return; }
+    const d = await (await fetch('/api/transport/event/' + v.id)).json();
+    let html = `<div class="bb-title">🦐 ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
+    html += `<div class="bb-sub">Strecke: ${escHtml((Array.isArray(d.route) ? d.route.join(' → ') : String(d.route || '').replace(/,/g, ' → ')))}</div>`;
+    html += _kutterBarAndTotals(d);
+    // Aktive Piloten: gerade unterwegs / angekommen (noch verbunden) / auf dem Rückflug.
+    const active = [];
+    (d.flights || []).forEach(f => {
+      if (!f.in_air) return;
+      active.push({
+        callsign: f.callsign, aircraft: f.aircraft,
+        kg: f.loaded ? f.tonnage_kg : (f.reserved_kg || 0),
+        lines: f.cargo_lines || [],
+        status: f.loaded ? '✅ angekommen' : '✈️ unterwegs',
+      });
+    });
+    (d.participants || []).forEach(p => {
+      if (p.status === 'returning') {
+        active.push({ callsign: p.callsign || '', aircraft: p.aircraft || '',
+                      kg: 0, lines: [], status: '↩️ Rückflug' });
+      }
+    });
+    if (active.length) {
+      const rows = active.map(a => {
+        const load = a.lines.length
+          ? a.lines.map(l => (l.emoji ? l.emoji + ' ' : '') + _kesc(l.name)
+              + (a.lines.length > 1 ? ' (' + Math.round(l.kg) + ')' : '')).join(' + ')
+          : (a.kg > 0 ? Math.round(a.kg) + ' kg' : 'leer');
+        const map = a.callsign
+          ? `<button class="btn-share" onclick="switchToMapAndCenter('${_kesc(a.callsign)}')" title="Auf der Karte zeigen">🗺️</button>`
+          : '';
+        return `<tr><td class="mono text-green">${_kesc(a.callsign || '—')}</td><td class="mono">${_kesc(a.aircraft || '—')}</td>`
+          + `<td>${load}</td><td>${a.status}</td><td>${map}</td></tr>`;
+      }).join('');
+      html += '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Callsign</th><th>Muster</th>'
+        + '<th>Ladung</th><th>Status</th><th>Karte</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    } else {
+      html += '<div class="bb-sub">Gerade niemand auf der Strecke unterwegs.</div>';
+    }
+    html += `<div style="margin-top:8px;display:flex;gap:8px;">`
+      + `<button class="btn-share" onclick="openKutterById(${d.id})">🦐 Zum Kutter</button>`
+      + `<button class="btn-share" onclick="copyKutterShareUrl(${d.id}, this)">🔗 Teilen</button></div>`;
+    banner.innerHTML = html;
+    banner.hidden = false;
+  } catch (e) {
+    banner.hidden = true;
+  }
+}
+
 // Events-Tab öffnen und ein konkretes Rennen direkt anzeigen (vom Live-Banner + Deep-Link genutzt).
 async function openBummelById(id) {
   const tabBtn = document.querySelector('[data-tab="events"]');
@@ -4349,9 +4411,8 @@ function _kLossLabel(kind) {
        : kind === 'returned' ? '↩️ zurückgebracht' : '';
 }
 
-function _kutterDetailBody(d) {
-  const summary = d.summary_quip
-    ? '<div class="kutter-summary">🦐 ' + _kesc(d.summary_quip) + '</div>' : '';
+// Balken + Mengen-Zeile — gemeinsam für die Events-Ansicht und den Live-Tab-Block.
+function _kutterBarAndTotals(d) {
   let bar = '';
   if (d.cargo && d.cargo.length) {
     const totalTarget = d.cargo.reduce((s, c) => s + c.target_kg, 0) || 1;
@@ -4383,22 +4444,12 @@ function _kutterDetailBody(d) {
   const header = '<div class="kutter-total">📦 ' + _kfmtT(d.total_kg) + goal + pct
     + ' — ' + (d.loaded_count || 0) + ' Frachtflüge (' + (d.flight_count || 0) + ' gesamt)'
     + openTxt + lostTxt + '</div>';
-  let parts = '';
-  if (d.participants && d.participants.length) {
-    const prow = d.participants.map(p => {
-      const st = p.status === 'flying' ? '✈️ unterwegs mit ' + _kfmtT(p.reserved_kg)
-        : p.status === 'arrived' ? '✅ angekommen'
-        : p.status === 'returning' ? '↩️ Rückflug'
-        : 'fertig';
-      const lost = (p.lost_kg || 0) > 0
-        ? ' <span class="kutter-loss">💀 ' + _kfmtT(p.lost_kg) + '</span>' : '';
-      return '<tr><td>' + _kesc(p.name || ('CID ' + p.cid)) + '</td><td class="mono">' + _kesc(p.aircraft || '—')
-        + '</td><td class="mono">' + p.flights + '</td><td class="kf-kg">' + _kfmtT(p.delivered_kg)
-        + '</td><td>' + st + lost + '</td></tr>';
-    }).join('');
-    parts = '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Pilot</th><th>Muster</th>'
-      + '<th>Flüge</th><th>geliefert</th><th>Status</th></tr></thead><tbody>' + prow + '</tbody></table></div>';
-  }
+  return header + bar;
+}
+
+function _kutterDetailBody(d) {
+  const summary = d.summary_quip
+    ? '<div class="kutter-summary">🦐 ' + _kesc(d.summary_quip) + '</div>' : '';
   const rows = (d.flights || []).map(f => {
     const t = (f.dep_time || '').slice(11, 16);
     const kg = f.loaded ? '<td class="kf-kg">' + Math.round(f.tonnage_kg) + ' kg</td>'
@@ -4412,7 +4463,7 @@ function _kutterDetailBody(d) {
     + '<th>Strecke</th><th>Fracht</th><th>Ladung</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="6" style="color:var(--text-label)">Noch keine Flüge.</td></tr>')
     + '</tbody></table></div>';
-  return summary + header + bar + parts + feed;
+  return summary + _kutterBarAndTotals(d) + feed;
 }
 
 async function openKutter(ev) {
@@ -4702,6 +4753,8 @@ setInterval(fetchAndRenderPrefiles, 60000);
 setInterval(fetchAndRenderTeamspeak, 30000);
 fetchBummelActive();
 setInterval(fetchBummelActive, 60000);  // Bummel-Banner langsam pollen (wie Prefiles)
+fetchKutterActive();
+setInterval(fetchKutterActive, 25000);  // Kutter-Live-Block im Kutter-Detail-Takt (Live-Aktualität)
 connectSSE();
 initFromUrl();
 
@@ -4738,6 +4791,7 @@ document.addEventListener('visibilitychange', async () => {
     connectSSE();
   }
   fetchBummelActive();
+  fetchKutterActive();
 });
 
 </script>
