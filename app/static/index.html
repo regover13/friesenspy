@@ -3014,20 +3014,23 @@ async function fetchKutterActive() {
           : (a.kg > 0 ? Math.round(a.kg) + ' kg' : 'leer');
         // Kein Inline-onclick mit interpoliertem Callsign (XSS: HTML-Escaping schützt den
         // JS-String-Kontext im Attribut nicht) — data-Attribut + delegierter Listener.
+        // Gleiches Pin-Symbol wie in der Live-Tabelle (td-map-btn), kein neues Icon.
         const map = a.callsign
-          ? `<button class="btn-share" data-callsign="${_kesc(a.callsign)}" title="Auf der Karte zeigen">🗺️</button>`
-          : '';
-        return `<tr><td class="mono text-green">${_kesc(a.callsign || '—')}</td><td class="mono">${_kesc(a.aircraft || '—')}</td>`
-          + `<td>${load}</td><td>${a.status}</td><td>${map}</td></tr>`;
+          ? `<td class="td-map-btn" data-callsign="${_kesc(a.callsign)}" title="Auf der Karte zeigen">`
+            + '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></td>'
+          : '<td></td>';
+        // Callsign neutral (keine Link-Farbe — es ist keiner; Links sind hier nur Pin + Zum Kutter).
+        return `<tr><td class="mono">${_kesc(a.callsign || '—')}</td><td class="mono">${_kesc(a.aircraft || '—')}</td>`
+          + `<td>${load}</td><td>${a.status}</td>${map}</tr>`;
       }).join('');
       html += '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Callsign</th><th>Muster</th>'
         + '<th>Ladung</th><th>Status</th><th>Karte</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     } else {
       html += '<div class="bb-sub">Gerade niemand auf der Strecke unterwegs.</div>';
     }
-    html += `<div style="margin-top:8px;display:flex;gap:8px;">`
-      + `<button class="btn-share" onclick="openKutterById(${d.id})">🦐 Zum Kutter</button>`
-      + `<button class="btn-share" onclick="copyKutterShareUrl(${d.id}, this)">🔗 Teilen</button></div>`;
+    // Exakt wie der Bummel-Banner: nur der Sprung zur vollen Ansicht — Teilen gibt es
+    // dort rechts oben im Panel-Header (wie überall).
+    html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openKutterById(${d.id})">🦐 Zum Kutter</button></div>`;
     banner.innerHTML = html;
     banner.hidden = false;
   } catch (e) {
@@ -4485,10 +4488,11 @@ async function openKutterDetail(id) {
   setUrlState({ tab: 'events', kutter: id });
   const wrap = document.getElementById('kutter-results');
   wrap.classList.remove('hidden');
-  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('events-results').classList.add('hidden');
   _lastKutterDetail = null; // Reset vor Refresh; sonst stale Event-Suche bei fehlgeschlagenem Fetch
   await _refreshKutterDetail();
+  // Erst NACH dem Rendern scrollen — vorher stimmen die Höhen nicht (Sprung vom Live-Tab).
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
   clearInterval(_kutterPollTimer);
   _kutterPollTimer = setInterval(_refreshKutterDetail, 25000);
   // Wie beim Bummel: darunter die normale Event-Ansicht (Karte + Piloten des Zeitraums).
@@ -4759,8 +4763,8 @@ fetchKutterActive();
 setInterval(fetchKutterActive, 25000);  // Kutter-Live-Block im Kutter-Detail-Takt (Live-Aktualität)
 // Delegierter Karten-Klick des Kutter-Blocks (überlebt die innerHTML-Refreshs).
 document.getElementById('kutter-banner')?.addEventListener('click', e => {
-  const btn = e.target.closest('button[data-callsign]');
-  if (btn) switchToMapAndCenter(btn.dataset.callsign);
+  const el = e.target.closest('[data-callsign]');
+  if (el) switchToMapAndCenter(el.dataset.callsign);
 });
 connectSSE();
 initFromUrl();

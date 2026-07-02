@@ -1,5 +1,15 @@
 [
   {
+    "version": "7.6.2",
+    "date": "2026-07-02",
+    "title": "Live-Block-Politur nach dem ersten Testblick",
+    "items": [
+      "📍 Der Karten-Sprung nutzt jetzt dasselbe Pin-Symbol wie die Live-Tabelle (kein neues Icon).",
+      "🎛️ Der Teilen-Knopf ist aus dem Live-Block raus — Teilen gibt es wie überall rechts oben in der Kutter-Ansicht; »Zum Kutter« funktioniert exakt wie »Zum Bummel«.",
+      "📐 Callsigns im Live-Block sind neutral statt in Link-Farbe (sie sind keine Links), und der Sprung zur Kutter-Ansicht scrollt erst nach dem Rendern (landet damit richtig)."
+    ]
+  },
+  {
     "version": "7.6.1",
     "date": "2026-07-02",
     "title": "Sicherheits-Härtung im Live-Block",
