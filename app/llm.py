@@ -124,13 +124,17 @@ def _build_result(make_model: str, mtow_kg: float, empty_kg: float, fuel_full_kg
                   crew_kg: float = _CREW_KG) -> dict:
     """Aus den recherchierten Rohwerten das Ergebnis-Dict bauen (reine, testbare Rechnung).
 
-    Zuladung = ``max(0, MTOW − Leergewicht − volle Tanks − Crew)`` — Pilot zählt nicht als Fracht.
+    Default-Betankung ist der HALBE Tank (Insel-Hopping): Zuladung =
+    ``max(0, MTOW − Leergewicht − fuel_full/2 − Crew)`` — Pilot zählt nicht als Fracht.
+    ``fuel_full_kg`` bleibt das Maximum (volle Tanks) fürs Label im Admin.
     """
-    payload = max(0.0, mtow_kg - empty_kg - fuel_full_kg - crew_kg)
+    fuel_kg = fuel_full_kg / 2.0
+    payload = max(0.0, mtow_kg - empty_kg - fuel_kg - crew_kg)
     return {
         "make_model": make_model,
         "mtow_kg": round(mtow_kg, 1),
         "empty_kg": round(empty_kg, 1),
+        "fuel_kg": round(fuel_kg, 1),
         "fuel_full_kg": round(fuel_full_kg, 1),
         "crew_kg": crew_kg,
         "payload_kg": round(payload, 1),
@@ -155,9 +159,11 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
 
     Rückgabe (kg, im Admin editierbar) oder ``None`` bei fehlendem Key/Paket/Fehler::
 
-        {"make_model", "mtow_kg", "empty_kg", "fuel_full_kg", "crew_kg", "payload_kg"}
+        {"make_model", "mtow_kg", "empty_kg", "fuel_kg", "fuel_full_kg", "crew_kg", "payload_kg"}
 
-    ``payload_kg`` = ``max(0, mtow − empty − fuel_full − crew)`` (volle Tanks, Pilot abgezogen).
+    Default-Betankung = halber Tank: ``fuel_kg = fuel_full_kg / 2`` (Vorbefüllung im Admin),
+    ``fuel_full_kg`` = Maximum (volle Tanks) fürs Label. ``payload_kg`` =
+    ``max(0, mtow − empty − fuel_kg − crew)`` (Pilot abgezogen).
     """
     code = (type_code or "").strip().upper()
     if not code:
@@ -216,7 +222,10 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
         return None
 
     if not spec:
-        logger.warning("Zuladungs-Vorschlag für %s: kein JSON erhalten", code)
+        logger.warning(
+            "Zuladungs-Vorschlag für %s: kein JSON erhalten (stop_reason=%s)",
+            code, getattr(resp, "stop_reason", None),
+        )
         return None
     try:
         return _build_result(

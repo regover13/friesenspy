@@ -399,6 +399,15 @@ def init_db(db_path: str) -> None:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
                 pass
+        # Alt-Daten: Suffix stammte aus dem Admin-Vorschlag bis v7.3.x (idempotent).
+        try:
+            conn.execute(
+                "UPDATE aircraft_payloads SET make_model = "
+                "REPLACE(make_model, ' · volle Tanks, Pilot abgezogen', '') "
+                "WHERE make_model LIKE '%volle Tanks%'"
+            )
+        except sqlite3.OperationalError:
+            pass
         try:
             seed_cargo_catalog(conn)  # Frachtart-Katalog erstbefüllen (idempotent)
         except sqlite3.OperationalError:
@@ -580,6 +589,23 @@ def open_flight(
             (row[0],),
         )
     return row[0]  # type: ignore[return-value]
+
+
+def last_known_aircraft(conn: sqlite3.Connection, cid: int) -> tuple[str, str]:
+    """Zuletzt bekanntes Muster eines Piloten aus früheren Flügen: (aircraft_short, aircraft_icao).
+
+    Fallback für Piloten OHNE Flugplan: der öffentliche VATSIM-Feed führt den Flugzeugtyp
+    ausschließlich im ``flight_plan`` (C1-Analyse) — wie vatsim-radar erinnern wir uns
+    deshalb an das zuletzt gefilte Muster desselben Piloten. ``("", "")`` wenn unbekannt.
+    """
+    row = conn.execute(
+        "SELECT aircraft_short, aircraft_icao FROM flights "
+        "WHERE cid = ? AND aircraft_short != '' ORDER BY logon_time DESC LIMIT 1",
+        (cid,),
+    ).fetchone()
+    if row is None:
+        return ("", "")
+    return (row[0] or "", row[1] or "")
 
 
 def close_stale_flights(conn: sqlite3.Connection, max_age_hours: int = 8) -> int:

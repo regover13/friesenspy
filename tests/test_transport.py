@@ -140,16 +140,24 @@ class TestPayloads:
 
 
 class TestLlmResult:
-    def test_build_result_subtracts_full_fuel_and_crew(self):
-        # volle Tanks (122) + Standard-Pilot (85) abgezogen: 1157-681-122-85 = 269
+    def test_build_result_uses_half_fuel_and_crew(self):
+        # halbe Tankfüllung als Default (122/2=61) + Standard-Pilot (85): 1157-681-61-85 = 330
         r = _build_result("Cessna 172", 1157, 681, 122)
-        assert r["payload_kg"] == 269
-        assert r["crew_kg"] == 85.0
+        assert r["payload_kg"] == 330.0
+        assert r["fuel_kg"] == 61.0
         assert r["fuel_full_kg"] == 122
+        assert r["crew_kg"] == 85.0
 
     def test_build_result_never_negative(self):
+        # auch mit halbem Tank negativ: 400-380-50-85 < 0 → 0.0
         r = _build_result("Winzling", 400, 380, 100, crew_kg=85)
         assert r["payload_kg"] == 0.0
+
+    def test_build_result_reports_full_tank_as_max(self):
+        # fuel_full_kg bleibt das Maximum (volle Tanks), fuel_kg ist exakt die Hälfte
+        r = _build_result("Cessna 208 Caravan", 3629, 2145, 1009)
+        assert r["fuel_full_kg"] == 1009
+        assert r["fuel_kg"] == 504.5
 
 
 # --- Phase 2: Co-Load-Kappung, Katalog, Kontext, Sprüche ------------------

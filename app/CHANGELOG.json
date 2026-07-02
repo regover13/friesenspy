@@ -1,5 +1,16 @@
 [
   {
+    "version": "7.4.0",
+    "date": "2026-07-02",
+    "title": "Zuladung: halbe Tankfüllung als Standard + automatische Vorbefüllung",
+    "items": [
+      "⛽ Der KI-Vorschlag rechnet die Zuladung jetzt mit HALBER Tankfüllung (Insel-Hopping-Standard) und trägt sie so ins Formular ein; der maximale Tankinhalt (volle Tanks) steht als Label neben dem Feld. Der Text »volle Tanks« verschwindet auch aus bestehenden Einträgen.",
+      "🤖 Neu erkannte Flugzeugtypen (Friese online mit ungepflegtem Typcode) werden automatisch im Hintergrund recherchiert und in der Zuladungs-Tabelle vorbefüllt (als KI-Vorschlag markiert) — der Admin kann alles jederzeit überschreiben, manuell gepflegte Typen werden nie angetastet.",
+      "🛩️ Flugzeugtyp auch OHNE Flugplan: wie bei vatsim-radar wird das Muster aus dem Prefile bzw. dem zuletzt gefilten Flugplan desselben Piloten übernommen — Anzeige und Kutter-Zuladung funktionieren damit auch ohne aufgegebenen Plan.",
+      "📱 FriesenKutter-Feed und Admin-Zuladungstabelle sind auf dem Smartphone wieder horizontal scrollbar (vereinbarter Tabellen-Standard, jetzt auch als stehende Regel in CLAUDE.md dokumentiert)."
+    ]
+  },
+  {
     "version": "7.3.10",
     "date": "2026-07-02",
     "title": "Zuladungs-Recherche: komplette MSFS-Bibliothek abgedeckt",

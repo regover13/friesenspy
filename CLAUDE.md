@@ -39,6 +39,14 @@ mkdir -p /opt/friesenspy/data
 # certbot: certbot --nginx -d friesenspy.devprops.de
 ```
 
+## UI-Standards (stehende Regeln — IMMER einhalten)
+
+- **Breite Tabellen/Feeds sind auf dem Smartphone horizontal scrollbar, nie gequetscht:**
+  jede Tabelle gehört in einen Wrapper mit `overflow-x: auto; -webkit-overflow-scrolling: touch`,
+  und die Tabelle selbst braucht `width: max-content; min-width: 100%` (sonst hat der Wrapper
+  nichts zu scrollen). Fertige Klassen: `.table-scroll` (index.html), `.table-wrap` (admin.html).
+  Gilt ausdrücklich auch für alle NEUEN Ansichten (z. B. kommende Kutter-Live-Ansicht).
+
 ## Projektstruktur
 
 - `app/config.py` — pydantic-settings, CALLSIGN_PREFIX (Friesen-Erkennung), ADMIN_PASSWORD, VAPID

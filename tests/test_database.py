@@ -1135,6 +1135,38 @@ class TestConsolidateFlights:
 
 
 # ---------------------------------------------------------------------------
+# last_known_aircraft — Typ-Fallback ohne Flugplan
+# ---------------------------------------------------------------------------
+
+class TestLastKnownAircraft:
+    def test_returns_most_recent_type(self):
+        from app.database import last_known_aircraft
+        conn = _make_conn()
+        ensure_pilot(conn, 5, "P")
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,aircraft_short,aircraft_icao,logon_time,"
+            "logoff_time) VALUES (5,'FRS5','C172','C172','2026-06-01T10:00:00Z','2026-06-01T11:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,aircraft_short,aircraft_icao,logon_time,"
+            "logoff_time) VALUES (5,'FRS5','PZ04','PZ04','2026-06-20T10:00:00Z','2026-06-20T11:00:00Z')"
+        )
+        conn.execute(  # neuester Flug OHNE Typ (ohne Plan) zählt nicht
+            "INSERT INTO flights (cid,callsign,aircraft_short,logon_time,logoff_time) "
+            "VALUES (5,'FRS5','','2026-06-25T10:00:00Z','2026-06-25T11:00:00Z')"
+        )
+        conn.commit()
+        assert last_known_aircraft(conn, 5) == ("PZ04", "PZ04")
+        conn.close()
+
+    def test_unknown_pilot_returns_empty(self):
+        from app.database import last_known_aircraft
+        conn = _make_conn()
+        assert last_known_aircraft(conn, 999999) == ("", "")
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Ghost-Filter: belegte Steh-Sessions sind keine Flüge
 # ---------------------------------------------------------------------------
 
