@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.6.3",
+    "date": "2026-07-02",
+    "title": "Teilen-Knopf im Live-Block",
+    "items": [
+      "🔗 Der Kutter-Live-Block hat wieder einen Teilen-Knopf — rechts oben neben dem Titel, wie in den Panel-Headern üblich."
+    ]
+  },
+  {
     "version": "7.6.2",
     "date": "2026-07-02",
     "title": "Live-Block-Politur nach dem ersten Testblick",

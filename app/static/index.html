@@ -2986,7 +2986,10 @@ async function fetchKutterActive() {
     const v = (events || []).find(k => k.dtstart <= now && now <= (k.dtend || ''));
     if (!v) { banner.hidden = true; banner.innerHTML = ''; return; }
     const d = await (await fetch('/api/transport/event/' + v.id)).json();
-    let html = `<div class="bb-title">🦐 ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
+    // Titel links, Teilen rechts oben — wie im Panel-Header der Kutter-/Bummel-Ansicht.
+    let html = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">`
+      + `<div class="bb-title">🦐 ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`
+      + `<button class="btn-share" onclick="copyKutterShareUrl(${d.id}, this)">🔗 Teilen</button></div>`;
     html += `<div class="bb-sub">Strecke: ${escHtml((Array.isArray(d.route) ? d.route.join(' → ') : String(d.route || '').replace(/,/g, ' → ')))}</div>`;
     html += _kutterBarAndTotals(d);
     // Aktive Piloten: gerade unterwegs / angekommen (noch verbunden) / auf dem Rückflug.
