@@ -1,5 +1,15 @@
 [
   {
+    "version": "7.7.0",
+    "date": "2026-07-02",
+    "title": "Kutter-Forum-Badge & Manifest-Politur",
+    "items": [
+      "🎖 Nach der Feierabend-Bilanz gibt es für jeden FriesenKutter-Teilnehmer ein rundes Forum-Badge (»VOLL BELADEN!«) mit Callsign, Muster und gelieferten Kilos — als Bild und Forum-Code (BBCode) direkt in der Kutter-Ansicht.",
+      "🏴‍☠️ Wer unterwegs Fracht verloren hat, bekommt zusätzlich einen Ehrentitel aufs Badge: SPITZBOOV! (geklaut), BADEMESTER! (Kutter versenkt) oder SEEROVER! (beides) — samt verlorener Menge.",
+      "📋 Im Admin zeigt der Manifest-Editor jetzt pro Frachtart die Obergrenze aus dem Katalog (»max 40 kg/Flug«), die Vorschlagsliste kommt aus dem gepflegten Katalog, und ein Hinweis erklärt: Emoji + Max/Flug werden beim Speichern als Snapshot übernommen."
+    ]
+  },
+  {
     "version": "7.6.4",
     "date": "2026-07-02",
     "title": "Blau heißt klickbar",
