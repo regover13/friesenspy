@@ -1,5 +1,16 @@
 [
   {
+    "version": "7.8.0",
+    "date": "2026-07-02",
+    "title": "Kutter: Push-Schalter + Status im Admin; 1h-Erinnerung auch manuell",
+    "items": [
+      "🔔 Push für ein einzelnes FriesenKutter-Event lässt sich im Admin jetzt an- und abschalten — genau wie beim Bummel.",
+      "🦐 Ein komplett leeres Kutter-Event (kein einziger Frachtflug) verschickt keinen Feierabend-Push mehr und löst keinen bezahlten KI-Aufruf mehr aus; abgeschlossen ist es trotzdem.",
+      "🏷️ Im Admin zeigt jedes Kutter-Event jetzt einen Status (Geplant / Läuft / Wartet / Feierabend) auf einen Blick.",
+      "🗓️ Die ~1h-Erinnerung vor einem Event greift jetzt auch bei manuell angelegten Bummel- und Kutter-Terminen (nicht mehr nur bei Kalender-Events) und richtet sich nach dem Push-Schalter des jeweiligen Rennens/Events."
+    ]
+  },
+  {
     "version": "7.7.3",
     "date": "2026-07-02",
     "title": "Badges: frische Bilder + sauberer Typcode",

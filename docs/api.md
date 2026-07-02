@@ -924,7 +924,7 @@ Alle Endpoints erfordern das Admin-Cookie (`require_admin`).
 > **Kalender-Fracht:** Ein Termin mit dem `friesenkutter`-Marker kann direkt in der Beschreibung eine Fracht-Zeile enthalten: `Fracht: 1000 Krabbenbrötchen, 500 Friesentee`. Beim Sync wird sie **einmalig** (nur beim erstmaligen Anlegen) gegen den Frachtart-Katalog abgeglichen und ins Manifest übernommen; ein später im Admin gepflegtes Manifest bleibt bei erneutem Sync unverändert.
 
 ### GET /api/admin/transport/events
-Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_kg}]`) und `radius_km` (Anwesenheitsradius in km; `null` = Default 10.0).
+Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_kg}]`), `radius_km` (Anwesenheitsradius in km; `null` = Default 10.0) und `status` (`scheduled` \| `running` \| `waiting` \| `done` — analog `_race_status` beim Bummel, siehe `_transport_status`; nur in der Admin-Sicht, kein Piloten-Frontend-Feld).
 
 ### POST /api/admin/transport/events
 Manuelles Event anlegen. Body: `name`, `route` (Freitext/ICAO-CSV, wird normalisiert; ≥2 ICAOs), `destination` (ICAO; leer → letzter Streckenplatz), `dtstart` (UTC, Pflicht), `dtend` (optional, sonst Mitternacht UTC), `cargo` (`[{name, target_kg}]`), `radius_km` (optional, 0.5–50; leer/fehlend = Default 10 km). → `{status, id}`.
@@ -934,6 +934,18 @@ Bearbeiten. Übergebene Felder aus `name/route/destination/dtstart/dtend/radius_
 
 ### DELETE /api/admin/transport/events/{id}
 Event samt Manifest löschen.
+
+### POST /api/admin/transport/events/{id}/push
+
+Push-Benachrichtigungen (Start, Ziel erreicht, Feierabend-Zusammenfassung, ~1h-Erinnerung) für dieses Event an- oder abschalten. Spiegelt `POST /api/admin/bummel/races/{id}/push`.
+
+**Body (JSON)**
+
+```json
+{"enabled": true}
+```
+
+**Response** `{"status": "ok"}`
 
 ### GET /api/admin/transport/payloads
 Zuladungs-Tabelle + globaler Fallback + beobachtete, noch nicht gepflegte Flugzeugtypen. Response: `payloads` (`[{type_code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model}]`), `unmapped_types`, `default_kg`, `llm_configured`.

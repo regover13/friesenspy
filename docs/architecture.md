@@ -70,7 +70,7 @@ SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Zwölf Tabellen:
 | `calendar_events` | FriesenFlieger Google-Kalender (alle 6h synchronisiert, UID als Primary Key); `route` (CSV aller ICAOs) + `is_bummel` (Flag) für die FriesenFliegerBummel-Erkennung |
 | `bummel_races` | Persistente Bummel-Rennen (vom Poller beim Kalender-Sync oder Admin manuell angelegt); `revealed_at` steuert die Fairness-Verdeckung — `NULL` = noch verborgen, Zeitstempel = enthüllt (Latch); `started_at` = Start-Latch (erster Pilot mit Blockzeit an einem Streckenflugplatz, `NULL` = noch kein Start); `push_enabled` steuert Push-Benachrichtigungen je Rennen (1 = an, 0 = aus); `source` ∈ `calendar` | `manual` |
 | `bummel_overrides` | Admin-Korrekturen pro Rennen + Pilot (PK `race_id + cid`); `action` ∈ `exclude` \| `disqualify` \| `winner` \| `manual`; bei `manual`: `manual_total_min` ersetzt die gemessene Block-Zeit; Overrides werden durch `apply_bummel_overrides` auf die Wertung angewendet |
-| `transport_events` | Persistente FriesenKutter-Transport-Events (Poller beim Kalender-Sync via Stichwort „friesenkutter" oder Admin manuell); `route` (ICAO-CSV), `destination` (Ziel-ICAO — nur Flüge dorthin laden Fracht), Latches `started_at`/`goal_reached_at`/`summarized_at` für die Pushs; `source` ∈ `calendar` \| `manual` |
+| `transport_events` | Persistente FriesenKutter-Transport-Events (Poller beim Kalender-Sync via Stichwort „friesenkutter" oder Admin manuell); `route` (ICAO-CSV), `destination` (Ziel-ICAO — nur Flüge dorthin laden Fracht), Latches `started_at`/`goal_reached_at`/`summarized_at` für die Pushs; `push_enabled` steuert Push-Benachrichtigungen je Event (1 = an, 0 = aus, analog `bummel_races.push_enabled`); `source` ∈ `calendar` \| `manual` |
 | `transport_cargo` | Fracht-Manifest je Event (geordnet): `position`, `name` (Frachtart), `target_kg`. Σ `target_kg` = Event-Ziel; leeres Manifest = reiner Zähler |
 | `aircraft_payloads` | Zuladung je Flugzeugtyp (Admin-editierbar): `mtow_kg`/`empty_kg`/`fuel_kg` (Tankinhalt; Default: halbe Füllung — der Vorschlag liefert volle Tanks als Maximum fürs Label)/`crew_kg` (Pilot, Default 85, zählt nicht als Fracht) → `payload_kg = max(0, mtow−empty−fuel−crew)`, direkt überschreibbar; `source` ∈ `manual` \| `llm` \| `default`; `make_model` (Klartext von Claude) |
 | `cargo_catalog` | Frachtart-Stammdaten (Phase 2): `name`, `emoji`, `per_flight_max_kg` (Obergrenze pro Flug für Co-Load). Beim Manifest wählbar; `set_transport_cargo` speichert Emoji/Max als Snapshot in `transport_cargo`. In `init_db` idempotent geseedet (`seed_cargo_catalog`) |
@@ -196,6 +196,11 @@ went_offline  = {D}       → close_flight
 
 Ein einziges `conn.commit()` am Ende — kein partieller Schreibzustand möglich.
 
+**Kutter-Status, leeres Event & 3-Quellen-Erinnerung (v7.8.0):**
+- `_transport_status(ev, now)` (`app/main.py`) liefert `scheduled` \| `running` \| `waiting` \| `done` — analog `_race_status` beim Bummel (`summarized_at` gesetzt → `done`; `now < dtstart` → `scheduled`; `now < dtend` → `running`; sonst `waiting` = `dtend` erreicht, Feierabend-Latch aber noch offen, z. B. Nachzügler in der Luft). Fließt nur ins `status`-Feld von `GET /api/admin/transport/events` — kein Piloten-Frontend-Feld.
+- `_check_transport_events` (`app/poller.py`) wrapt den Feierabend-Block (Zusammenfassungstext, optionaler KI-Aufruf, Push) jetzt in `progress["flight_count"] > 0`. Der `summarized_at`-Latch selbst wird weiterhin **unbedingt** gesetzt (Event bleibt abgeschlossen), aber ein komplett leeres Event verschickt keinen „0 Frachtflüge"-Push mehr und löst keinen bezahlten Claude-Aufruf mehr aus. Start- und Ziel-Push sind davon unberührt.
+- `_check_event_reminders` (`app/poller.py`) speist die ~1h-Erinnerung jetzt aus drei Quellen: `events_due_for_reminder` (generische Kalender-Events; schließt `is_bummel`/`is_transport` aus), `bummel_races_due_for_reminder` und `transport_events_due_for_reminder` (beide manuell + Kalender, `push_enabled`-gated). Dedup läuft über synthetische Keys `bummel:{id}` / `kutter:{id}` in der bestehenden `event_reminders_sent`-Tabelle (`uid` ist reiner Text, kein Fremdschlüssel — kein Schema-Umbau nötig).
+
 ### `app/geo.py`
 
 - `haversine(lat1, lon1, lat2, lon2)` — Großkreis-Abstand in km
@@ -259,6 +264,7 @@ Endpoints: `/api/live`, `/api/prefiles`, `/api/stats`, `/api/stats/activity`, `/
 - `POST /api/admin/push/test` — sendet eine Test-Notification über `send_web_push` nur an die per `endpoint` adressierte Subscription (`get_push_subscription_by_endpoint`). Unbekannter Endpoint → `404`, kein VAPID → `400`.
 - `POST /api/admin/push/broadcast` — freie Nachricht (`title`, `body`) an `audience = all` (`get_all_push_subscriptions`) oder `events` (`get_push_subscriptions_for_events`); Antwort enthält `sent` (Empfängerzahl).
 - `GET/POST /api/admin/pilots` + `DELETE /api/admin/pilots/{cid}` — Piloten-Verwaltung über `list_pilots`/`upsert_pilot`/`delete_pilot`.
+- `POST /api/admin/transport/events/{id}/push` — Push für ein Kutter-Event an-/abschalten (`set_transport_push_enabled`), spiegelt `POST /api/admin/bummel/races/{id}/push`.
 
 `/api/pilots/{cid}/flights` antwortet **sofort** mit FriesenSpy-Daten + gecachten StatSim-Daten. StatSim-Update läuft als FastAPI `BackgroundTask`: normaler Aufruf → letzter 31-Tage-Chunk; `days=0` → volle 365 Tage (Force-Refresh). Status-Tracking via `_statsim_updating` und `_full_history_fetching` (In-Memory-Sets) verhindert parallele Doppel-Fetches. Response-Header `X-StatSim-Status: fresh | updating | no-key`.
 
