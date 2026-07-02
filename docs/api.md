@@ -578,16 +578,29 @@ Der **„📋 Forum"**-Button im enthüllten Ranking kopiert diesen BBCode direk
 
 Alle FriesenKutter-Transport-Events (Kalender + manuell) mit kompaktem Live-Fortschritt. Ein Event definiert eine ICAO-Streckenmenge (`route`) und ein `destination`; Fracht zählt nur bei Ankunft am Ziel (Rückflug leer). Das Ziel wird über ein **Fracht-Manifest** (Frachtart + kg) beschrieben, das die eingehenden Flüge der Reihe nach füllen.
 
-**Response** — Array je Event: `id, name, route, destination, dtstart, dtend, source` (`calendar`|`manual`), `total_kg`, `target_kg` (= Σ Manifest oder `null`), `progress_pct` (oder `null`), `flight_count`, `loaded_count`, `cargo` (`[{name, target_kg, delivered_kg, pct}]`).
+**Response** — Array je Event: `id, name, route, destination, dtstart, dtend, source` (`calendar`|`manual`), `radius_km` (Anwesenheitsradius in km, Default 10.0), `total_kg`, `target_kg` (= Σ Manifest oder `null`), `progress_pct` (oder `null`), `flight_count`, `loaded_count`, `cargo` (`[{name, target_kg, delivered_kg, reserved_kg, pct}]`).
 
 ## GET /api/transport/event/{id}
 
-Voller Live-Zustand eines Events: obige Felder plus `flights` (chronologisch, **neueste zuerst**): `{dep_time, cid, callsign, name, aircraft, dep, arr, tonnage_kg, loaded, cargo_name}`. Beladene Flüge tragen `loaded: true` + `cargo_name` (die Frachtart, in die ihr Anteil überwiegend floss); Rückflüge `loaded: false`, `tonnage_kg: 0`, `cargo_name: null`.
+Voller Live-Zustand eines Events: obige Felder plus `flights` (chronologisch, **neueste zuerst**): `{dep_time, cid, callsign, name, aircraft, dep, arr, tonnage_kg, loaded, cargo_name, in_air, reserved_kg, loss_kind, lost_kg}`. Beladene Flüge tragen `loaded: true` + `cargo_name` (die Frachtart, in die ihr Anteil überwiegend floss); Rückflüge `loaded: false`, `tonnage_kg: 0`, `cargo_name: null`. `in_air: true` markiert einen noch offenen (verbundenen) Flug Richtung Ziel — solange er nicht beladen ist, trägt er seine volle Zuladung als `reserved_kg` (Reservierung, s. u.). `loss_kind` ∈ `sunk` (in der Luft verschwunden) \| `stolen` (am falschen Ort gelandet) \| `returned` (Ladung ehrlich zurückgebracht) \| `null` (kein Verlust); `lost_kg` > 0 nur bei `sunk`/`stolen`.
+
+Zusätzliche Top-Level-Felder: `participants` (`[{cid, name, aircraft, flights, delivered_kg, reserved_kg, lost_kg, status}]`, `status` ∈ `flying`\|`arrived`\|`returning`\|`done`, analog zur Bummel-Teilnehmerliste), `reserved_total_kg` (Σ aller offenen Reservierungen), `lost_total_kg` (Σ aller Verluste), `losses` (Teilmenge von `flights` mit gesetztem `loss_kind`).
+
+> **Reservierung (ab v7.5.0):** Sobald ein Pilot Richtung Ziel abhebt, reserviert er seine volle
+> Zuladung im Manifest (`cargo[].reserved_kg`), noch ohne GPS-Bestätigung — sichtbar schon beim
+> Rollen, nicht erst bei Ankunft. Die Reservierung verschwindet mit dem Flug (Latch, Landung
+> anderswo, Disconnect) und läuft nie rückwärts in den gelieferten Fortschritt.
 
 > **Ohne Disconnect (Live-Ankunft):** Ein noch offener (verbundener) Flug erscheint im Feed,
 > sobald sein Start auf der Strecke liegt; sobald er innerhalb 10 km um `destination` auf
 > < 2 kt abbremst, wird er sofort als beladen gezählt (`transport_live_arrivals`) — unabhängig
 > vom späteren Disconnect-Ort. Kein Zurücksetzen.
+
+> **Verlorene Fracht:** Ein Flug, der Richtung Ziel gestartet, aber nie dort angekommen ist,
+> wird vom Poller (`detect_transport_losses`, alle 60 s) als Verlust erkannt und dauerhaft
+> gelatcht (`transport_cargo_losses`) — Klassifikation per letzter Position: am Boden am
+> Abflugplatz → `returned`, am Boden anderswo → `stolen`, sonst (in der Luft verschwunden) →
+> `sunk`.
 
 ---
 
@@ -863,13 +876,13 @@ Alle Endpoints erfordern das Admin-Cookie (`require_admin`).
 > **Kalender-Fracht:** Ein Termin mit dem `friesenkutter`-Marker kann direkt in der Beschreibung eine Fracht-Zeile enthalten: `Fracht: 1000 Krabbenbrötchen, 500 Friesentee`. Beim Sync wird sie **einmalig** (nur beim erstmaligen Anlegen) gegen den Frachtart-Katalog abgeglichen und ins Manifest übernommen; ein später im Admin gepflegtes Manifest bleibt bei erneutem Sync unverändert.
 
 ### GET /api/admin/transport/events
-Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_kg}]`).
+Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_kg}]`) und `radius_km` (Anwesenheitsradius in km; `null` = Default 10.0).
 
 ### POST /api/admin/transport/events
-Manuelles Event anlegen. Body: `name`, `route` (Freitext/ICAO-CSV, wird normalisiert; ≥2 ICAOs), `destination` (ICAO; leer → letzter Streckenplatz), `dtstart` (UTC, Pflicht), `dtend` (optional, sonst Mitternacht UTC), `cargo` (`[{name, target_kg}]`). → `{status, id}`.
+Manuelles Event anlegen. Body: `name`, `route` (Freitext/ICAO-CSV, wird normalisiert; ≥2 ICAOs), `destination` (ICAO; leer → letzter Streckenplatz), `dtstart` (UTC, Pflicht), `dtend` (optional, sonst Mitternacht UTC), `cargo` (`[{name, target_kg}]`), `radius_km` (optional, 0.5–50; leer/fehlend = Default 10 km). → `{status, id}`.
 
 ### POST /api/admin/transport/events/{id}
-Bearbeiten. Übergebene Felder aus `name/route/destination/dtstart/dtend` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest.
+Bearbeiten. Übergebene Felder aus `name/route/destination/dtstart/dtend/radius_km` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest.
 
 ### DELETE /api/admin/transport/events/{id}
 Event samt Manifest löschen.
