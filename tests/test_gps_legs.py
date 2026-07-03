@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from app.geo import haversine
-from app.gps_legs import detect_gps_legs
+from app.gps_legs import collapse_same_airport, detect_gps_legs
 
 # Test-Flugplätze: icao -> (lat, lon, elevation_ft)
 AIRPORTS = {
@@ -366,3 +366,47 @@ class TestDetectGpsLegs:
         legs = run(track)
         assert legs[0]["segment"] == 0
         assert legs[-1]["segment"] == 1
+
+
+def _leg(dep, arr, to, ld, seg=0, complete=True, maxalt=1000):
+    return {"dep_icao": dep, "arr_icao": arr, "takeoff_ts": to, "landing_ts": ld,
+            "complete": complete, "dep_source": "gps" if dep else None,
+            "arr_source": "gps" if (arr and complete) else None, "max_altitude": maxalt, "segment": seg}
+
+
+class TestCollapseSameAirport:
+    def test_circuits_at_departure_then_cross_country(self):
+        legs = [_leg("EDDK","EDDK","t0","t1"), _leg("EDDK","EDDK","t2","t3"), _leg("EDDK","EDDW","t4","t5")]
+        out = collapse_same_airport(legs)
+        assert [(f["dep_icao"], f["arr_icao"], f["complete"]) for f in out] == [("EDDK","EDDW",True)]
+        assert out[0]["takeoff_ts"] == "t0" and out[0]["landing_ts"] == "t5"
+
+    def test_real_intermediate_landing_splits(self):
+        legs = [_leg("EDPS","EDNX","t0","t1"), _leg("EDNX","EDNX","t2","t3"), _leg("EDNX","EDMA","t4","t5")]
+        out = collapse_same_airport(legs)
+        assert [(f["dep_icao"], f["arr_icao"]) for f in out] == [("EDPS","EDNX"), ("EDNX","EDMA")]
+        assert out[0]["landing_ts"] == "t1" and out[1]["takeoff_ts"] == "t2"
+
+    def test_pure_circuits(self):
+        legs = [_leg("EDDX","EDDX","t0","t1"), _leg("EDDX","EDDX","t2","t3")]
+        out = collapse_same_airport(legs)
+        assert [(f["dep_icao"], f["arr_icao"], f["complete"]) for f in out] == [("EDDX","EDDX",True)]
+        assert out[0]["landing_ts"] == "t3"
+
+    def test_open_leg_stays_open(self):
+        legs = [_leg("EDDK","EDDK","t0","t1"), _leg("EDDK",None,"t2",None, complete=False)]
+        out = collapse_same_airport(legs)
+        assert out == [{"dep_icao":"EDDK","arr_icao":None,"takeoff_ts":"t0","landing_ts":None,
+                        "complete":False,"dep_source":"gps","arr_source":None,"max_altitude":1000}]
+
+    def test_segment_boundary_does_not_merge_same_airport(self):
+        legs = [_leg("EDDK","EDDK","t0","t1",seg=0), _leg("EDDK","EDDW","t9","t10",seg=1)]
+        out = collapse_same_airport(legs)
+        assert [(f["dep_icao"], f["arr_icao"]) for f in out] == [("EDDK","EDDK"), ("EDDK","EDDW")]
+
+    def test_spawn_in_air_dep_none(self):
+        out = collapse_same_airport([_leg(None,"EDDB","t0","t1")])
+        assert (out[0]["dep_icao"], out[0]["arr_icao"]) == (None, "EDDB")
+
+    def test_empty(self):
+        assert collapse_same_airport([]) == []

@@ -212,3 +212,59 @@ def _detect_segment(
     # ON_GROUND/INIT: nie abgehoben → kein Leg (Ghost strukturell gefiltert).
 
     return legs
+
+
+def collapse_same_airport(legs: list[dict]) -> list[dict]:
+    """Verschmilzt aufeinanderfolgende Roh-Legs am SELBEN Platz zu Flügen (Spec A).
+    Ein Flug = Abheben an X → Landung am nächsten ANDEREN Platz (oder offen). Wiederholte
+    Landungen am selben Platz zählen als eine Landung. Segment-Wechsel trennt immer."""
+    flights: list[dict] = []
+    cur: dict | None = None
+    cur_seg: int | None = None
+    pending_same_landing: str | None = None  # letzte Same-Airport-Landung (falls Flug am Boden endet)
+
+    for leg in legs:
+        seg = leg.get("segment", 0)
+        if cur is not None and seg != cur_seg:
+            _close_ground(flights, cur, pending_same_landing)
+            cur = None
+            pending_same_landing = None
+        if cur is None:
+            cur = {
+                "dep_icao": leg.get("dep_icao"),
+                "dep_source": leg.get("dep_source"),
+                "takeoff_ts": leg.get("takeoff_ts"),
+                "max_altitude": leg.get("max_altitude"),
+            }
+            cur_seg = seg
+            pending_same_landing = None
+        else:
+            cur["max_altitude"] = _update_max(cur["max_altitude"], leg.get("max_altitude"))
+
+        arr = leg.get("arr_icao")
+        if not leg.get("complete") or arr is None:
+            flights.append({**cur, "arr_icao": None, "landing_ts": None,
+                            "complete": False, "arr_source": None})
+            cur = None
+            pending_same_landing = None
+            continue
+        if arr == cur["dep_icao"]:
+            pending_same_landing = leg.get("landing_ts")   # Platzrunde → absorbieren
+            continue
+        flights.append({**cur, "arr_icao": arr, "landing_ts": leg.get("landing_ts"),
+                        "complete": True, "arr_source": leg.get("arr_source")})
+        cur = None
+        pending_same_landing = None
+
+    if cur is not None:
+        _close_ground(flights, cur, pending_same_landing)
+    return flights
+
+
+def _close_ground(flights: list[dict], cur: dict, pending_same_landing: str | None) -> None:
+    if pending_same_landing is not None:
+        flights.append({**cur, "arr_icao": cur["dep_icao"], "landing_ts": pending_same_landing,
+                        "complete": True, "arr_source": "gps"})
+    else:
+        flights.append({**cur, "arr_icao": None, "landing_ts": None,
+                        "complete": False, "arr_source": None})
