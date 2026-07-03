@@ -225,7 +225,18 @@ Test `tests/test_database.py`.
   der eigentliche Aufwand von 5b — nicht die Detektor-Reichweite.
 - **Schatten-Vorschau existiert (v7.9.2):** `GET /api/admin/gps-leg-audit?statsim=N` interpretiert die
   gecachten StatSim-Flüge bereits on-demand (in-memory, nichts gespeichert) — Basis, um vor dem
-  Backfill zu prüfen, ob die Treffer stimmen.
+  Backfill zu prüfen, ob die Treffer stimmen. **Bulk-Backfill-Endpoint existiert (v7.9.3):**
+  `POST /api/admin/statsim-backfill?limit=N` (gedrosselt, resumebar) füllt `statsim_position_history`.
+- **StatSim als GPS-Lückenfüller (Nutzer-Anforderung 2026-07-03):** StatSim soll nicht nur die alte
+  Historie abdecken, sondern **jede Lücke der FriesenSpy-Erfassung**. Regel: Wenn zu einem StatSim-Flug
+  **kein** FriesenSpy-Flug existiert — weil FriesenSpy währenddessen **down** war ODER der Pilot unter
+  einem **anderen (nicht-FRS) Callsign** flog —, dann **Track dieses Flugs holen + Legs ermitteln**, damit
+  GPS-only den Flug trotzdem als Etappen erfasst. Trigger = genau die StatSim-Flüge, die
+  `_dedup_statsim_against_fs` als „nicht durch FriesenSpy gedeckt" durchlässt (laufend, nicht nur beim
+  Bulk-Lauf). **Design-Detail:** der Fall „Friesen-Pilot unter Fremd-Callsign" erfordert, dass StatSim-
+  Flüge eines bekannten Friesen-`cid` auch dann erfasst werden, wenn ihr Callsign NICHT `FRS*` ist — der
+  heutige `callsign LIKE 'FRS%'`-Filter muss dafür um eine cid-basierte Zuordnung ergänzt werden (Friesen
+  = bekannter cid, nicht nur FRS-Präfix). Im Task entscheiden, wie die Friesen-cid-Menge bestimmt wird.
 - Ablage: `gps_legs` braucht einen StatSim-Schlüssel. Im Task entscheiden: (a) neue Spalte
   `statsim_id` (NULL für FriesenSpy) + `UNIQUE(statsim_id, takeoff_ts)`; oder (b) `source`-Kennung.
   `callsign`/Label aus `statsim_cache`.

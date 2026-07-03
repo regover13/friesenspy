@@ -11,6 +11,8 @@ from app.database import (
     audit_gps_vs_refile,
     canonicalize_flights,
     cleanup_old_history,
+    count_uncached_statsim,
+    get_uncached_statsim_ids,
     close_flight,
     consolidate_flights,
     ensure_pilot,
@@ -1877,3 +1879,45 @@ class TestStatsimGpsAudit:
         )
         conn.close()
         assert "statsim" not in res
+
+
+class TestStatsimBackfillSelection:
+    """Auswahl der StatSim-Flüge, deren Track noch nicht lokal gecacht ist (für den Backfill)."""
+
+    def _cache(self, conn, sid, cid, cs="FRS10", dur=60):
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(?,?,?,'EDDK','EDDW','C172','2026-07-02T09:58:00Z','2026-07-02T10:50:00Z',?,'x')",
+            (sid, cid, cs, dur),
+        )
+
+    def test_only_uncached_selected(self):
+        conn = _make_conn()
+        self._cache(conn, 501, 11)   # uncached
+        self._cache(conn, 502, 11)   # cached (hat eine Position)
+        self._cache(conn, 503, 12)   # uncached
+        conn.execute(
+            "INSERT INTO statsim_position_history (statsim_id,latitude,longitude,altitude,"
+            "groundspeed,heading,ts) VALUES (502,50.0,8.0,300,0,0,'2026-07-02T10:00:00Z')"
+        )
+        conn.commit()
+        ids = get_uncached_statsim_ids(conn, callsign_prefix="FRS", limit=10)
+        remaining = count_uncached_statsim(conn, callsign_prefix="FRS")
+        conn.close()
+        assert set(ids) == {501, 503}
+        assert remaining == 2
+
+    def test_limit_and_filters(self):
+        conn = _make_conn()
+        self._cache(conn, 601, 11)             # uncached, ok
+        self._cache(conn, 602, 11)             # uncached, ok
+        self._cache(conn, 603, 11, dur=3)      # duration_min <= 5 → raus
+        self._cache(conn, 604, 11, cs="XYZ99")  # falsches Präfix → raus
+        conn.commit()
+        ids = get_uncached_statsim_ids(conn, callsign_prefix="FRS", limit=1)
+        remaining = count_uncached_statsim(conn, callsign_prefix="FRS")
+        conn.close()
+        assert len(ids) == 1              # Limit greift
+        assert ids[0] in {601, 602}
+        assert remaining == 2             # nur die zwei gültigen uncachten

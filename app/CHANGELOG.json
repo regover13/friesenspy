@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.9.3",
+    "date": "2026-07-03",
+    "title": "StatSim-Tracks nachladen für die GPS-Etappen-Analyse",
+    "items": [
+      "🛰️ Neuer Admin-Endpoint holt die GPS-Tracks der importierten StatSim-Flüge gebündelt von der StatSim-API und legt sie lokal ab (gedrosselt, wiederholbar) — damit die GPS-Etappen-Erkennung auch die komplette StatSim-Historie im Schatten auswerten kann. Rein additiv, keine Wertungswirkung."
+    ]
+  },
+  {
     "version": "7.9.2",
     "date": "2026-07-03",
     "title": "GPS-Etappen-Audit: StatSim-Flüge im Schatten mit interpretieren",

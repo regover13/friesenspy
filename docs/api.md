@@ -1085,6 +1085,19 @@ Schatten-Tabelle `gps_legs`, nie `flights`) und dann verglichen. Kein Poll-Impac
 
 `401` ohne gültiges Admin-Cookie.
 
+### POST /api/admin/statsim-backfill
+
+Holt die GPS-Tracks importierter StatSim-Flüge **gebündelt** von der StatSim-API und cached sie in
+`statsim_position_history` — damit die GPS-Etappen-Erkennung auch StatSim-Flüge auswerten kann
+(#23 Task 5b, Schatten). Rein additiv, keine Wertung. Braucht `STATSIM_API_KEY`.
+
+**Query-Parameter**
+
+- `limit` (int, Default `40`, 1..150) — max. Flüge pro Aufruf (jüngste ohne lokalen Track zuerst).
+
+**Verhalten:** je Flug ein API-Abruf, gedrosselt (0,3 s). **Resumebar** — wiederholt aufrufen, bis
+`remaining` = 0. Response: `{ had_key, requested, fetched, empty, points, remaining }`. `401` ohne Admin.
+
 ---
 
 ## Admin — Push (Test & Broadcast)
