@@ -55,6 +55,8 @@ from app.database import (
     get_statsim_last_fetched,
     get_statsim_positions,
     init_db,
+    count_uncached_statsim,
+    get_uncached_statsim_ids,
     save_statsim_positions,
     merge_fragmented_flights,
     upsert_push_subscription,
@@ -734,6 +736,47 @@ async def get_statsim_flight_track(statsim_id: int):
         return positions
     finally:
         conn.close()
+
+
+@app.post("/api/admin/statsim-backfill")
+async def admin_statsim_backfill(request: Request, limit: int = 40):
+    """Holt die GPS-Tracks von bis zu ``limit`` StatSim-Flügen (jüngste ohne lokalen Track) von der
+    StatSim-API und cached sie in ``statsim_position_history`` — Grundlage für die GPS-Leg-Analyse
+    aller StatSim-Flüge (#23 Task 5b, Schatten). **Resumebar:** wiederholt aufrufen, bis
+    ``remaining`` = 0. Gedrosselt (0,3 s je Abruf). Rein additiv, keine Wertungswirkung.
+    """
+    require_admin(request)
+    settings = get_settings()
+    limit = max(1, min(150, int(limit)))
+    if not settings.STATSIM_API_KEY:
+        return {"had_key": False, "requested": 0, "fetched": 0, "empty": 0, "remaining": None}
+    conn = get_connection(settings.DB_PATH)
+    fetched = 0
+    empty = 0
+    points = 0
+    try:
+        ids = get_uncached_statsim_ids(conn, callsign_prefix=settings.CALLSIGN_PREFIX, limit=limit)
+        async with _httpx.AsyncClient() as client:
+            for sid in ids:
+                try:
+                    positions = await fetch_flight_track(client, sid, settings.STATSIM_API_KEY)
+                except Exception:
+                    positions = None
+                if positions:
+                    save_statsim_positions(conn, sid, positions)
+                    fetched += 1
+                    points += len(positions)
+                else:
+                    empty += 1
+                await asyncio.sleep(0.3)
+        conn.commit()
+        remaining = count_uncached_statsim(conn, callsign_prefix=settings.CALLSIGN_PREFIX)
+    finally:
+        conn.close()
+    return {
+        "had_key": True, "requested": len(ids), "fetched": fetched,
+        "empty": empty, "points": points, "remaining": remaining,
+    }
 
 
 @app.get("/api/prefiles")

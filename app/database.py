@@ -2619,6 +2619,40 @@ def get_statsim_positions(
     return [dict(r) for r in rows]
 
 
+_STATSIM_UNCACHED_WHERE = (
+    "logon_time != '' AND logoff_time IS NOT NULL AND duration_min > 5 "
+    "AND callsign LIKE ? "
+    "AND statsim_id NOT IN (SELECT DISTINCT statsim_id FROM statsim_position_history)"
+)
+
+
+def get_uncached_statsim_ids(
+    conn: sqlite3.Connection, *, callsign_prefix: str = "FRS", limit: int = 50
+) -> list[int]:
+    """StatSim-Flug-IDs (jüngste zuerst), deren GPS-Track noch NICHT lokal gecacht ist.
+
+    Für den Track-Backfill (#23 Task 5b): dieselben Filter wie ``canonicalize_flights``
+    (gültiger Zeitraum, Dauer > 5 min, FRS-Präfix). „Uncached" = keine Zeile in
+    ``statsim_position_history``.
+    """
+    rows = conn.execute(
+        "SELECT statsim_id FROM statsim_cache WHERE " + _STATSIM_UNCACHED_WHERE
+        + " ORDER BY logon_time DESC LIMIT ?",
+        (f"{callsign_prefix}%", int(limit)),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def count_uncached_statsim(
+    conn: sqlite3.Connection, *, callsign_prefix: str = "FRS"
+) -> int:
+    """Anzahl StatSim-Flüge ohne gecachten Track (Rest-Zähler für den Backfill-Fortschritt)."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM statsim_cache WHERE " + _STATSIM_UNCACHED_WHERE,
+        (f"{callsign_prefix}%",),
+    ).fetchone()[0]
+
+
 def get_pilot_flights_friesenspy(
     conn: sqlite3.Connection, cid: int, days: int = 90
 ) -> list[dict]:
