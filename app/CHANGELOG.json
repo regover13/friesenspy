@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.9.4",
+    "date": "2026-07-03",
+    "title": "StatSim-Backfill im Hintergrund",
+    "items": [
+      "🛰️ Der StatSim-Track-Backfill kann jetzt unbeaufsichtigt im Hintergrund durchlaufen (Admin) statt in vielen Einzelschritten — mit einem Fortschritts-Status. Rein additiv, keine Wertungswirkung."
+    ]
+  },
+  {
     "version": "7.9.3",
     "date": "2026-07-03",
     "title": "StatSim-Tracks nachladen für die GPS-Etappen-Analyse",

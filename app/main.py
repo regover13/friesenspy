@@ -738,18 +738,77 @@ async def get_statsim_flight_track(statsim_id: int):
         conn.close()
 
 
+_statsim_backfill_state = {"running": False, "fetched": 0, "remaining": None}
+
+
+async def _statsim_backfill_worker(db_path: str, api_key: str, prefix: str) -> None:
+    """Hintergrund-Schleife: holt uncachte StatSim-Tracks batchweise bis keine mehr übrig sind.
+    Seriell (ein Abruf nach dem anderen, 0,3 s Drossel) → keine DB-Sperr-Konflikte."""
+    try:
+        async with _httpx.AsyncClient() as client:
+            while True:
+                conn = get_connection(db_path)
+                try:
+                    ids = get_uncached_statsim_ids(conn, callsign_prefix=prefix, limit=50)
+                    if not ids:
+                        break
+                    got = 0
+                    for sid in ids:
+                        try:
+                            positions = await fetch_flight_track(client, sid, api_key)
+                        except Exception:
+                            positions = None
+                        if positions:
+                            save_statsim_positions(conn, sid, positions)
+                            conn.commit()
+                            got += 1
+                            _statsim_backfill_state["fetched"] += 1
+                        await asyncio.sleep(0.3)
+                    _statsim_backfill_state["remaining"] = count_uncached_statsim(
+                        conn, callsign_prefix=prefix
+                    )
+                finally:
+                    conn.close()
+                if got == 0:  # nur noch Flüge ohne API-Track → Abbruch (kein Endlos-Retry)
+                    break
+    except Exception:
+        _logger.exception("StatSim-Backfill-Worker abgebrochen")
+    finally:
+        _statsim_backfill_state["running"] = False
+
+
 @app.post("/api/admin/statsim-backfill")
-async def admin_statsim_backfill(request: Request, limit: int = 40):
-    """Holt die GPS-Tracks von bis zu ``limit`` StatSim-Flügen (jüngste ohne lokalen Track) von der
-    StatSim-API und cached sie in ``statsim_position_history`` — Grundlage für die GPS-Leg-Analyse
-    aller StatSim-Flüge (#23 Task 5b, Schatten). **Resumebar:** wiederholt aufrufen, bis
-    ``remaining`` = 0. Gedrosselt (0,3 s je Abruf). Rein additiv, keine Wertungswirkung.
+async def admin_statsim_backfill(request: Request, limit: int = 40, background: int = 0):
+    """Holt die GPS-Tracks von StatSim-Flügen (jüngste ohne lokalen Track) von der StatSim-API und
+    cached sie in ``statsim_position_history`` — Grundlage für die GPS-Leg-Analyse aller StatSim-Flüge
+    (#23 Task 5b, Schatten). Rein additiv, keine Wertungswirkung, gedrosselt (0,3 s je Abruf).
+
+    ``background=1`` startet eine serverseitige Schleife, die bis zur Erschöpfung durchläuft (nicht an
+    den Request gebunden) und sofort zurückkehrt — Fortschritt via ``GET …/statsim-backfill/status``.
+    Ohne ``background`` synchron bis ``limit`` Flüge; **resumebar** (wiederholt aufrufen bis
+    ``remaining`` = 0).
     """
     require_admin(request)
     settings = get_settings()
-    limit = max(1, min(150, int(limit)))
     if not settings.STATSIM_API_KEY:
         return {"had_key": False, "requested": 0, "fetched": 0, "empty": 0, "remaining": None}
+
+    if background:
+        if _statsim_backfill_state["running"]:
+            return {"had_key": True, "started": False, "already_running": True,
+                    **_statsim_backfill_state}
+        conn = get_connection(settings.DB_PATH)
+        try:
+            remaining = count_uncached_statsim(conn, callsign_prefix=settings.CALLSIGN_PREFIX)
+        finally:
+            conn.close()
+        _statsim_backfill_state.update({"running": True, "fetched": 0, "remaining": remaining})
+        asyncio.create_task(_statsim_backfill_worker(
+            settings.DB_PATH, settings.STATSIM_API_KEY, settings.CALLSIGN_PREFIX
+        ))
+        return {"had_key": True, "started": True, "remaining": remaining}
+
+    limit = max(1, min(150, int(limit)))
     conn = get_connection(settings.DB_PATH)
     fetched = 0
     empty = 0
@@ -777,6 +836,20 @@ async def admin_statsim_backfill(request: Request, limit: int = 40):
         "had_key": True, "requested": len(ids), "fetched": fetched,
         "empty": empty, "points": points, "remaining": remaining,
     }
+
+
+@app.get("/api/admin/statsim-backfill/status")
+async def admin_statsim_backfill_status(request: Request):
+    """Fortschritt des Hintergrund-Backfills: ``running``, in diesem Lauf ``fetched``, ``remaining``."""
+    require_admin(request)
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        remaining = count_uncached_statsim(conn, callsign_prefix=settings.CALLSIGN_PREFIX)
+    finally:
+        conn.close()
+    return {"running": _statsim_backfill_state["running"],
+            "fetched": _statsim_backfill_state["fetched"], "remaining": remaining}
 
 
 @app.get("/api/prefiles")
