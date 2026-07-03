@@ -1,8 +1,14 @@
 # GPS-only aktivieren (Phase 2) — Design-Spec
 
-> Freigegebenes Design (Brainstorming, 2026-07-03). Aktiviert die im Schatten validierte
-> GPS-Flugerkennung als **einzige Wahrheit** für Statistik, Piloten-Detail, Bummel und Kutter.
-> Ersetzt/aktualisiert den Phase-2-Teil von `docs/superpowers/plans/2026-07-02-gps-leg-detection.md`.
+> Freigegebenes Design (Brainstorming 2026-07-03) **+ eingearbeitetes Review** (Fable5, 2026-07-03).
+> Aktiviert die im Schatten validierte GPS-Flugerkennung als **einzige Wahrheit** für Statistik,
+> Piloten-Detail, Bummel und Kutter. Ersetzt/aktualisiert den Phase-2-Teil von
+> `docs/superpowers/plans/2026-07-02-gps-leg-detection.md`.
+>
+> **Review-Einarbeitung:** (a) Blockzeit behält Stand-Ausschluss (Widerspruch zu #17 behoben);
+> (b) symmetrischer `flights`-Fallback für track-lose Connections; (c) Kutter-Latch/Loss-Reconcile;
+> (d) Audit auf collapsed/no-180s + on-demand **plus persistenter Ergebnis-Cache**; (e) Fremd-Callsign-
+> Anzeige und (f) proaktiver Per-Import-Fetch → **Phase 2b**; (g) stille Semantik-Änderungen benannt.
 
 ## Ziel
 
@@ -10,7 +16,7 @@ Flüge, Ziele und Blockzeiten kommen **rein aus GPS** (Position → Landung am P
 Refile-Split oder Disconnect. Der Flugplan liefert nur noch Labels (Route/Remarks/Callsign/Muster).
 StatSim wird gleichberechtigt einbezogen und füllt Lücken der FriesenSpy-Erfassung.
 
-## Kern-Entscheidungen (Nutzer, 2026-07-03)
+## Kern-Entscheidungen (Nutzer, 2026-07-03; Review eingearbeitet)
 
 1. **Ein „Flug", eine Einheit.** Keine Trennung Flug/Etappe — alles heißt Flug.
 2. **Ein Flug geht von einem Boden-Platz zum nächsten *anderen* Boden-Platz.** Man bildet die Folge der
@@ -22,17 +28,20 @@ StatSim wird gleichberechtigt einbezogen und füllt Lücken der FriesenSpy-Erfas
    - **Touch-and-Gos** (nie `gs < 2`) sind gar keine Landung.
    - Beispiele: `EDDK`-Runden → EDDW = **EDDK→EDDW** (Runden am Startplatz verschmelzen); `A → B`-Runden
      `→ C` = **A→B, B→C** (B ist ein neuer Platz = echte Landung); reine `EDDK`-Runden = **EDDK→EDDK**.
-3. **On-demand statt Speicher.** Flüge sind eine reine Sicht auf die Positionshistorie, bei Bedarf
-   berechnet. Kein `gps_legs`-Table, kein Delete, keine `statsim_id`-Spalte.
-4. **Zwei Klassen von Flügen.** **Gewertet** (Statistik-KPI, Bummel, Kutter): **nur `FRS*`-Callsign** —
-   wie heute (FriesenSpy-Live + StatSim mit FRS-Callsign); FriesenSpy gewinnt bei cid+Zeit-Überlappung,
-   StatSim füllt Lücken. **Nur Anzeige:** **Fremd-Callsign-Flüge** eines Friesen-cid (nur in StatSim,
-   z. B. „DFGKC") erscheinen **ausschließlich in der Piloten-Detailansicht**, als **„nicht gewertet"
-   markiert** (neues Anzeige-Feature) — NICHT in KPI/Bummel/Kutter. Die **Flugerkennung greift bei beiden**
-   (Aufteilung in Flüge/Zwischenlandungen).
+3. **On-demand-Berechnung + persistenter Ergebnis-Cache.** Quelle der Wahrheit sind die **Positionen**;
+   Flüge werden bei Bedarf daraus berechnet (`detect_gps_legs` + Collapse). Für die **globale Statistik**
+   und eine **stabile, prüfbare Sicht** (Audit/GATE) werden die fertigen (collapsed) Flüge **materialisiert
+   zwischengespeichert** und **inkrementell nachgezogen** — kein Roh-`gps_legs`-Leg-Table mehr, aber auch
+   kein reines on-demand über die unbegrenzt wachsende `position_history` (siehe C/Performance).
+4. **Gewertet = nur `FRS*`-Callsign** (wie heute): FriesenSpy-Live + StatSim mit FRS-Callsign; FriesenSpy
+   gewinnt bei cid+Zeit-Überlappung, StatSim füllt Lücken. Fremd-Callsign-Flüge werden in Phase 2 **wie
+   heute nicht einbezogen**; die optionale **Nur-Anzeige** im Piloten-Detail ist **Phase 2b** (siehe unten).
 5. **Offener Flug** (Start real, keine Landung erkannt): zählt als Flug mit Ziel „offen" — **keine
-   erfundene Ankunft**. Bummel-Tour bleibt unvollständig, Kutter keine Lieferung.
-6. **Rückwirkend alles neu.** Bei Bummel/Kutter gab es bisher nur Tests → keine eingefrorenen Sieger.
+   erfundene Ankunft** — **aber erst, wenn die Verbindung beendet ist** (nicht live während des laufenden
+   Fluges, sonst hüpft die KPI live). Bummel-Tour bleibt unvollständig, Kutter keine Lieferung.
+6. **Rückwirkend alles neu.** Bei Bummel/Kutter gab es bisher nur Tests → keine eingefrorenen Sieger. Die
+   **Statistik-Historie** bleibt trotzdem vollständig: Connections/StatSim-Flüge **ohne verwertbaren Track**
+   werden per Flugplan-Fallback (Punkt b) übernommen, verschwinden also nicht.
 
 ## A — Flug-Modell: Runden-Collapse
 
@@ -63,48 +72,55 @@ Beispiele (verifiziert gewünscht):
 | EDPS → **Vollstopp(-Runden) an EDNX** → EDMA | **EDPS→EDNX**, **EDNX→EDMA** (2 Flüge — EDNX ist echte Zwischenlandung) |
 | EDPS → **Touch-and-Go an EDNX** (kein Vollstopp) → EDMA | **EDPS→EDMA** (1 Flug — keine Landung an EDNX) |
 
-`block_sec`/`duration_min`/`distance_nm` je Flug über das Fenster `[takeoff_ts, landing_ts]` (bestehende
-Helfer `_block_seconds`/`_gps_distance_nm`); Runden-Bodenzeit innerhalb des Fensters ist vernachlässigbar
-und wird bewusst nicht herausgerechnet. „Anzahl Flüge" = Anzahl so gebildeter Flüge.
+**Blockzeit/Dauer je Flug (Review a — Widerspruch zu #17 behoben):**
+- `duration_min` = `landing_ts − takeoff_ts` (bewusste Semantik-Änderung, siehe unten).
+- `block_sec` über das collapsed Fenster **mit Stand-Ausschluss** — die Stand-Heuristik `_BLOCK_STAND_MIN_SEC`
+  **bleibt** (entgegen der ersten Fassung). Sonst würde `collapse_same_airport` einen langen Bodenstand am
+  *selben* Platz (z. B. Vormittags-Runden in A, 3 h Mittagspause am Boden in A, nachmittags Flug nach B ⇒
+  ein Flug `A→B`) voll in die Blockzeit rechnen — genau **Bug #17 durch die Hintertür**. Mit Stand-Ausschluss
+  zählen kurze Bewegungen/Taxi, lange Bodenstände werden herausgerechnet → gate-to-gate bleibt korrekt,
+  auch bei Same-Airport-Stopps.
 
-## B — Quellen & zwei Klassen: FriesenSpy + StatSim, on-demand
+## B — Quellen & Wertungsklasse: FriesenSpy + StatSim
 
-**Gewertete Flüge** (`canonicalize_legs`, formgleich zu `canonicalize_flights`) — nur **`FRS*`-Callsign**,
-bei jedem Aufruf frisch:
+`canonicalize_legs(conn, *, cids, start, end, callsign_prefix)` liefert die **gewerteten** Flüge
+(nur `FRS*`-Callsign), formgleich zu `canonicalize_flights`:
 
 1. **FriesenSpy-Flüge:** je cid `position_history` im Fenster range-scannen → `detect_gps_legs`
    → `collapse_same_airport`.
-2. **StatSim-Flüge mit `FRS`-Callsign:** je Flug `statsim_position_history` → dito. Fehlt der Track,
-   **Fallback** auf den `statsim_cache`-Flugplan (dep/arr/`duration_min`), damit nie ein Flug verschwindet.
-3. **Dedup / Vorrang:** gleicher realer Flug in beiden Quellen (gleicher VATSIM-cid). Bei **cid +
+2. **StatSim-Flüge mit `FRS`-Callsign:** je Flug `statsim_position_history` → dito.
+3. **Fallback ohne verwertbaren Track (Review b — symmetrisch!):**
+   - **StatSim ohne Track** → `statsim_cache`-Flugplan (dep/arr/`duration_min`).
+   - **FriesenSpy-Connection ohne verwertbaren Track** (Poller-Downtime mitten im Flug, Track-Lücke > 30 min,
+     frühe Flüge vor der Positionserfassung) → die **`flights`-Zeile** wird als Flug übernommen
+     (dep/arr/`duration_min` aus dem Flugplan). So **verschwindet kein Alt-/Downtime-Flug** aus KPI/Detail
+     — der heutige Ghost-Schutz von `canonicalize_flights` bleibt erhalten.
+4. **Dedup / Vorrang:** gleicher realer Flug in beiden Quellen (gleicher VATSIM-cid). Bei **cid +
    Zeitüberlappung gewinnt FriesenSpy**; StatSim nur, wenn FriesenSpy im Fenster nichts hat (down). Hebt
-   das bestehende `_dedup_statsim_against_fs` auf Flug-Ebene.
+   das bestehende `_dedup_statsim_against_fs` auf Flug-Ebene. **Teil-Überlappung** (FriesenSpy deckt nur
+   einen Teil der StatSim-Session) darf den nicht gedeckten StatSim-Teil **nicht** verlieren (Testfall).
 
-**Nur-Anzeige-Flüge (Fremd-Callsign)** — StatSim-Flüge eines **Friesen-cid** mit **Nicht-`FRS`-Callsign**:
-separat geliefert (eigener Adapter/Flag `scored=False`), **ausschließlich für die Piloten-Detailansicht**,
-nie in KPI/Bummel/Kutter. `detect_gps_legs` + `collapse_same_airport` greifen identisch (Aufteilung/
-Zwischenlandungen sichtbar). **Friesen-cid** (self-maintaining): cids, die je als `FRS*` erfasst wurden /
-in der Piloten-Liste stehen — nur deren Fremd-Callsign-Flüge werden überhaupt angezeigt.
+**Track-Beschaffung:** Für StatSim-only-Flüge (FriesenSpy down) muss der GPS-Track in
+`statsim_position_history` vorliegen; das leistet der **bestehende Bulk-Backfill-Endpoint** (v7.9.3/7.9.4,
+gedrosselt/resumebar), in Phase 2 periodisch angestoßen. Der **proaktive Fetch je Import** ist **Phase 2b**.
 
-**Track-Beschaffung (Pflicht):** Für **jeden StatSim-only-Flug** (FRS-Callsign wenn FriesenSpy down
-*und* Fremd-Callsign) wird der GPS-Track **direkt** von der StatSim-API geladen und in
-`statsim_position_history` **gespeichert** — sonst greift die Flugerkennung nicht. Gespeichert wird nur der
-**Track** (Quelldaten); die Flüge/Legs bleiben **on-demand** berechnet.
+**Persistenz:** Quelle der Wahrheit sind die Positionen; die berechneten Flüge werden für die globale
+Statistik/Audit **materialisiert gecacht** (Kern-Entscheidung 3) — Neustart verliert nur den Cache
+(wird neu aufgebaut), nie Quelldaten.
 
-**Kein Persistenz-Zustand für Flüge:** Quelle der Wahrheit ist die Positionshistorie (persistent, WAL).
-Neustart/Absturz verliert nichts — der nächste Aufruf rechnet identisch neu; kein halb-geschriebener Zustand.
-
-## C — Adapter `canonicalize_legs` (formgleich)
+## C — Adapter `canonicalize_legs` (formgleich) + Ergebnis-Cache
 
 Liefert **exakt die Dict-Form** von `canonicalize_flights` → alle Konsumenten bleiben unverändert:
 
 - `departure = dep_icao`, `arrival = arr_icao` (leer = offen), `logon_time = takeoff_ts`,
   `logoff_time = landing_ts`, `block_min = block_sec // 60`, `duration_min`, `distance_nm`, `source`.
-- `route`/`remarks`/`callsign`/`aircraft` vom überlappenden `flights`- bzw. `statsim_cache`-Record
-  (Flugplan = nur Label), verknüpft über den Verbindungs-Logon.
-- **Optionaler Cache nur für die globale Statistik** (alle Piloten/ganze Historie ~1–3 s): kurzer
-  In-Memory-Cache mit TTL; nach Neustart kalt → eine langsamere Statistik-Seite, dann warm. Event-
-  scoped Aufrufe (Bummel/Kutter/Piloten-Detail) brauchen keinen Cache.
+- `route`/`remarks`/`callsign`/`aircraft` vom zugeordneten Flugplan (Abschnitt G).
+- **Persistenter Ergebnis-Cache (Review d/Performance):** `position_history` wächst unbegrenzt
+  (`daily_cleanup` ist aus). Reines on-demand über die *ganze* Historie würde jedes Jahr langsamer, ein
+  In-Memory-TTL-Cache hilft nur bei Wiederholung, nicht beim Kaltstart. Daher werden die fertigen
+  (collapsed) Flüge in einer **materialisierten Tabelle** gehalten und **inkrementell** aktualisiert
+  (nur neue/offene Verbindungen neu rechnen; abgeschlossene stabil). Event-scoped Aufrufe
+  (Bummel/Kutter/Piloten-Detail) können weiter direkt on-demand rechnen (wenige cids/Zeitfenster).
 
 ## D — Konsumenten-Verhalten
 
@@ -113,41 +129,39 @@ Zahlvergleich):
 
 1. **Statistik-KPI** (`get_stats`, `get_stats_activity`, Bestenlisten): **nur gewertete Flüge (`FRS*`)**.
    Anzahl Flüge = Anzahl Flüge (Runden absorbiert); Distanz/Dauer aus dem echten Track. Lokalflug `A→A`
-   zählt als ein Flug mit realer geflogener Distanz. Fremd-Callsign-Flüge fließen **nicht** ein.
-2. **Piloten-Detail** (`/api/pilots/{cid}/flights`): zeigt die gewerteten GPS-Flüge inkl. Zwischenlandungen
-   **und zusätzlich** die **Fremd-Callsign-Flüge** desselben cid, klar als **„nicht gewertet"** markiert
-   (neues Anzeige-Feature; `scored`-Flag). Beide mit Flugerkennung/Aufteilung.
-3. **Bummel** (`compute_bummel_standings`): Blockzeit-Summe je Tour aus den Flug-Blöcken; Zwischen-Boden-
-   zeit exkludiert (behebt Bug #17 zentral). Offener Flug → Tour unvollständig (Kontroll-Liste, nicht
-   gewertet). Die bereits vorhandene GPS-Endpunkt-Korrektur entfällt (die Flüge liefern dep/arr direkt).
-4. **Kutter** (`compute_transport_progress`): Lieferung, wenn ein Flug **am Ziel** landet; offen/anderswo
-   = keine Lieferung. Live-Latch (`transport_live_arrivals`) bleibt für Ankunft-ohne-Disconnect.
+   zählt als ein Flug. Offene Flüge zählen erst bei **beendeter Verbindung** (Kern 5).
+2. **Piloten-Detail** (`/api/pilots/{cid}/flights`): zeigt die gewerteten GPS-Flüge inkl. Zwischenlandungen.
+   (Die zusätzliche **Fremd-Callsign-Anzeige** „nicht gewertet" ist **Phase 2b**.)
+3. **Bummel** (`compute_bummel_standings`): Blockzeit-Summe je Tour aus den Flug-Blöcken **mit Stand-
+   Ausschluss** (Abschnitt A) — behebt Bug #17 zentral, auch bei Same-Airport-Stopps. Offener Flug → Tour
+   unvollständig (Kontroll-Liste, nicht gewertet). Die verstreute GPS-Endpunkt-Korrektur entfällt (die
+   Flüge liefern dep/arr direkt).
+4. **Kutter** (`compute_transport_progress`): Lieferung, wenn ein Flug **mit Start UND Ziel auf der Strecke**
+   (`dep ≠ arr`) am `destination` landet — die heutige Strecken-Bedingung **bleibt** (sonst würde ein
+   Zubringer/Spawn neben dem Ziel liefern). **Latch/Loss-Reconcile (Review c):** `transport_live_arrivals`
+   **und** `transport_cargo_losses` sind auf `(cid, logon_time = Verbindungs-Logon)` gekeyt, `canonicalize_legs`
+   setzt aber `logon_time = takeoff_ts`. Beide Latches werden dem GPS-Flug per **cid + Zeitfenster-Überlappung**
+   zugeordnet (Verbindungs-Logon ↔ überlappender GPS-Flug), sonst gehen live gelatchte Ankünfte/Verluste
+   verloren.
 
 **Wegfall nach der Umstellung:** Der **Refile-Leg-Split** trennt keine Flüge mehr (GPS tut das) — die
-refilte Flugplan-**Zeile bleibt** aber als Label-Zeitachse erhalten (Abschnitt G). Ebenso weg: die je
-Konsument verstreute dep/arr-Korrektur und die `_BLOCK_STAND_MIN_SEC`-Heuristik — die Flüge liefern das
-jetzt zentral. Der Phase-1-
-`gps_legs`-Table + `recompute_gps_legs` werden überflüssig (nur das Audit nutzte sie; es rechnet ohnehin
-on-demand). Sie werden entfernt oder als reines Debug-Artefakt belassen — im Plan entscheiden.
+refilte Flugplan-**Zeile bleibt** als Label-Zeitachse (Abschnitt G). Ebenso weg: die je Konsument
+verstreute dep/arr-Korrektur. **`_BLOCK_STAND_MIN_SEC` bleibt** (Korrektur ggü. erster Fassung, Review a).
+Der Phase-1-`gps_legs`-Table + `recompute_gps_legs` werden durch die **materialisierte Flug-Sicht** (C)
+ersetzt; der **Audit-Endpoint** wird entsprechend umgebaut (siehe GATE).
 
-## E — Bleibt persistent (unabhängig von on-demand)
+## E — Bleibt persistent
 
-- **`position_history` / `statsim_position_history`** — Quelle der Wahrheit (Poller schreibt 15 s;
-  StatSim per Backfill). Poller-Rehydration beim Start bleibt.
-- **Kutter-Live-Latch** `transport_live_arrivals` — nicht aus Positionen ableitbar (live vor Disconnect).
-- **`flights`** — Verbindungs-/Flugplan-Datensätze (Labels, Kutter-Reconcile).
+- **`position_history` / `statsim_position_history`** — Quelle der Wahrheit (Poller 15 s; StatSim-Backfill).
+- **Kutter-Latches** `transport_live_arrivals`, `transport_cargo_losses` — nicht aus Positionen ableitbar.
+- **`flights`** — Verbindungs-/Flugplan-Datensätze (Labels, Fallback b, Latch-Reconcile c).
+- **Materialisierte Flug-Sicht (Cache)** — abgeleitet, jederzeit aus den Positionen neu baubar.
 
-## F — Laufende Track-Beschaffung für StatSim-only-Flüge
+## F — StatSim-Track-Beschaffung (Bulk)
 
-Über den historischen Backfill hinaus wird der GPS-Track **jedes StatSim-only-Flugs** (eines Friesen-cid,
-für den es **keinen** FriesenSpy-Flug gibt — FriesenSpy down ODER Fremd-Callsign) **proaktiv/direkt** von
-der StatSim-API geladen und in `statsim_position_history` gespeichert, sobald der Flug importiert wird
-(nicht erst beim Track-Ansehen). Nur so greift die Flugerkennung für diese Flüge. Zwei Verwendungen:
-- **FRS-Callsign, FriesenSpy down** → **gewertet** (füllt die Erfassungslücke; KPI/Bummel/Kutter).
-- **Fremd-Callsign** → **nur Anzeige** im Piloten-Detail („nicht gewertet"), aber mit Aufteilung.
-
-Mechanik: der bestehende Backfill-Endpoint + die per-Pilot-StatSim-Fetch-Logik stellen den Track sicher
-(gedrosselt, idempotent). Die Legs bleiben on-demand.
+Für StatSim-only-Flüge (FriesenSpy down, FRS-Callsign) muss der Track lokal vorliegen. Das leistet der
+bestehende **Bulk-Backfill** (`POST /api/admin/statsim-backfill`, gedrosselt, resumebar, Hintergrund-Modus)
+— in Phase 2 periodisch/als Job angestoßen. Legs bleiben abgeleitet. *(Proaktiver Fetch je Import → Phase 2b.)*
 
 ## G — Flugplan-Zuordnung & Anzeige
 
@@ -163,57 +177,78 @@ Mechanik: der bestehende Backfill-Endpoint + die per-Pilot-StatSim-Fetch-Logik s
    B→C-Plan sagt trotzdem „Start B" → matcht das B→C-Bein, unabhängig vom Zeitpunkt.
 2. **Zeit-Fallback:** kein Startplatz-Match → zeitlich nächster Plan der Verbindung.
 3. **Kein Match / kein Plan → `—`.** Z. B. VFR ohne Plan; oder nur *ein* Plan A→C gefiled, GPS macht
-   A→B→C → das B→C-Bein bekommt `—` (kein erzwungenes Fehl-Label; der Pilot hat B→C nie gefiled).
+   A→B→C → das B→C-Bein bekommt `—` (kein erzwungenes Fehl-Label).
 
 **Datenbasis:** die Folge der `flights`/Prefile-Datensätze je Verbindung (jeder Refile = eigener
 Zeitstempel + gefilter dep/arr) bleibt als **Flugplan-Zeitachse** erhalten — nicht mehr als Leg-Grenze,
 nur fürs Labeln. StatSim liefert dep/arr/Muster aus `statsim_cache`.
 
-**Nur Label, nie Wertung:** Die Zuordnung beeinflusst ausschließlich die Anzeige. KPI/Bummel/Kutter
-laufen rein über GPS — eine gelegentliche Fehl-/`—`-Zuordnung des Plan-Labels kostet nie Punkte.
+**Nur Label, nie Wertung:** Die Zuordnung beeinflusst ausschließlich die Anzeige.
+
+## Bewusste Semantik-Änderungen (Review g)
+
+- **`duration_min`: online (logon→logoff) → takeoff→landing.** Die Stunden-KPI **schrumpft rückwirkend**
+  (Taxi-/Standzeit raus). Inhaltlich sinnvoller („echte Flugzeit"), aber bewusst so entschieden.
+- **Offene Flüge zählen mit** (heute filtert `logoff_time IS NOT NULL` sie weg) — **aber nur bei beendeter
+  Verbindung** (Kern 5), damit die KPI-Zahl nicht live während eines Fluges hüpft. „Frode" (gelandet) ist
+  ohnehin complete.
+- **`block_sec` behält den Stand-Ausschluss** (gate-to-gate inkl. Taxi, ohne lange Stände) — siehe A.
 
 ## Aktivierung & Verifikation
 
-- **Rückwirkend alles neu** (nur Tests bisher). Schrittweise Umstellung mit Vorher/Nachher-Zahlvergleich
-  je Konsument.
-- **Bummel-E2E „Frode":** landet am Ziel, bleibt verbunden → erscheint mit korrekter Blockzeit (Flug-
-  Fenster), OHNE Disconnect.
-- Release **v7.10.0** (Wertungsänderung → Minor/highlight). Docs (README, api.md, architecture.md),
-  Deploy Push→Actions→GHCR→SSH + Health-Check, Tag.
+- **GATE-Erweiterung (Review d — PFLICHT vor Aktivierung):** Das Audit muss die **collapsed + no-180s**-Sicht
+  zeigen (also genau das Aktivierungsverhalten), nicht mehr die Roh-Legs. Der Audit-Endpoint wird von
+  `recompute_gps_legs` + Tabelle auf die neue materialisierte/`canonicalize_legs`-Sicht umgebaut. Erst
+  danach validiert das GATE, was tatsächlich aktiviert wird (die bisherigen Roh-Leg-Zahlen — inkl. der
+  „95,8 % sauber"-Stichprobe — gelten nur für die Roh-Sicht und sind neu zu ziehen).
+- **Rückwirkend alles neu**; schrittweise Umstellung mit Vorher/Nachher-Zahlvergleich je Konsument.
+- **Bummel-E2E „Frode":** landet am Ziel, bleibt verbunden → erscheint mit korrekter Blockzeit ohne Disconnect.
+- Release **v7.10.0** (Wertungsänderung → Minor/highlight). Docs (README, api.md, architecture.md), Deploy
+  Push→Actions→GHCR→SSH + Health-Check, Tag.
+
+## Nicht in Phase 2 — Folgeschritt (Phase 2b)
+
+Damit Phase 2 schlank **„nur GPS für FRS"** bleibt (Review e/f):
+- **Fremd-Callsign-Anzeige** im Piloten-Detail: neue Anzeige-Klasse `scored=False`, Friesen-cid-Erkennung,
+  UI-Kennzeichnung „nicht gewertet". Berührt die Wertung nicht (Fremd-Callsign bleibt in Phase 2 einfach
+  ausgeschlossen wie heute).
+- **Proaktive StatSim-Track-Beschaffung je Import** (Automatik). Für „FRS-Callsign, FS down" reicht in
+  Phase 2 der periodische Bulk-Backfill.
 
 ## Fehlerbehandlung
 
-- Keine Positionen für einen cid → keine Flüge (kein Fehler).
-- StatSim ohne Track → Flugplan-Fallback (`statsim_cache`), Flug bleibt gelistet.
+- Keine Positionen für einen cid → keine GPS-Flüge; `flights`-Fallback (b) greift für gelistete Connections.
 - Spawn-in-der-Luft (`dep = None`) → Ziel bekannt, dep-Label aus Flugplan; ohne Flugplan bleibt dep leer.
-- **Disconnect + Reconnect:** eine Positions-Lücke im Track. `detect_gps_legs` trennt bei **Lücke > 30 min**
-  (`gap_minutes`, justierbar) in getrennte Flüge; eine Lücke **≤ 30 min** wird überbrückt = derselbe Flug
-  fortgesetzt. Landet der Pilot vor dem Disconnect an einem Platz und kommt später wieder, ist die Landung
-  ohnehin ein echter Wegpunkt (Trennung deckt sich mit der Realität). Reconnect **in der Luft** binnen
-  30 min → ein durchgehender Flug; nach > 30 min → 1. Segment endet „offen", 2. beginnt als Spawn-in-Luft.
-- **Absturz *abseits* eines Platzes** (`gs → 0`, kein DB-Platz im Umkreis) → **keine** Landung (per GPS
-  nicht von Pause/Slew/Außenlandung unterscheidbar) → Flug bleibt **offen** (Ziel „offen", nicht als Ankunft
-  gewertet). **Absturz *an/nahe* einem Platz** ist per GPS **nicht** von einer normalen Landung zu trennen
-  (`gs → 0` am Platz) → wird als Ankunft dort gezählt (ehrliche GPS-Grenze).
+- **Disconnect + Reconnect:** Positions-Lücke. `detect_gps_legs` trennt bei **Lücke > 30 min**
+  (`gap_minutes`, justierbar); Lücke **≤ 30 min** wird überbrückt = ein Flug. Landung vor dem Disconnect =
+  echter Wegpunkt (Trennung deckt sich mit der Realität). Reconnect **in der Luft** binnen 30 min → ein
+  durchgehender Flug; nach > 30 min → 1. Segment „offen", 2. beginnt als Spawn-in-Luft.
+- **Absturz *abseits* eines Platzes** (`gs → 0`, kein DB-Platz im Umkreis) → **keine** Landung → Flug bleibt
+  **offen** (nicht als Ankunft gewertet). **Absturz *an/nahe* einem Platz** ist per GPS nicht von einer
+  Landung zu trennen → wird als Ankunft gezählt (ehrliche GPS-Grenze).
 
 ## Testing
 
-- **`collapse_same_airport`** (rein, TDD): alle Tabellen-Beispiele oben (Runden am Start/Ziel/beides,
-  reine Runden, Zwischenlandung mit/ohne Runden, offener Schluss).
-- **`canonicalize_legs`**: Feld-für-Feld-Parität mit `canonicalize_flights`; nur `FRS`-Callsign gewertet;
-  StatSim-Fallback ohne Track; Dedup FriesenSpy-gewinnt bei Überlappung.
-- **Zwei-Klassen-Trennung**: Fremd-Callsign-Flug eines Friesen-cid erscheint im Piloten-Detail mit
-  `scored=False`, aber **nicht** in KPI/Bummel/Kutter (je ein Test pro Konsument, dass er ausgeschlossen ist).
+- **`collapse_same_airport`** (rein, TDD): alle Tabellen-Beispiele (Runden am Start/Ziel/beides, reine
+  Runden, Zwischenlandung mit/ohne Runden, offener Schluss); no-180s (sofortige Finalisierung).
+- **Blockzeit (Review a):** collapsed Flug mit langem Same-Airport-Stand → Stand wird **ausgeschlossen**
+  (`block_sec` enthält die 3-h-Pause NICHT); `block_min ≤ duration_min` bleibt gewahrt.
+- **`flights`-Fallback (Review b):** FriesenSpy-Connection ohne Track → erscheint als Flug (dep/arr aus Plan);
+  StatSim ohne Track → dito.
+- **Kutter-Latch-Reconcile (Review c):** live gelatchte Ankunft/Verlust (Key = Verbindungs-Logon) wird dem
+  GPS-Flug (`takeoff_ts`) korrekt zugeordnet; ohne Reconcile ginge sie verloren.
+- **`canonicalize_legs`**: Feld-für-Feld-Parität mit `canonicalize_flights`; nur `FRS` gewertet; Dedup
+  FriesenSpy-gewinnt bei Überlappung; **Teil-Überlappung** verliert den ungedeckten StatSim-Teil nicht.
 - **Flugplan-Zuordnung**: Startplatz-Match; **spät/in-der-Luft aufgegebener Refile** landet am richtigen
-  Bein; ein Plan A→C + GPS A→B→C → B→C-Bein zeigt `—`; VFR ohne Plan → `—`; StatSim → dep/arr/Muster gesetzt.
+  Bein; ein Plan A→C + GPS A→B→C → B→C-Bein `—`; VFR ohne Plan → `—`.
 - **Konsumenten**: `get_stats`/Bummel/Kutter mit Flügen; Bummel-„Frode"-E2E; Vorher/Nachher-Zahlvergleich
-  vor der Umstellung je Konsument.
+  je Konsument; offener Flug zählt erst bei beendeter Verbindung.
 
 ## Abgrenzung / YAGNI
 
-- Kein `gps_legs`-Speicher, keine Migration, kein Delete-Scoping (durch on-demand entfallen). Gespeichert
-  wird nur der **Track** (`statsim_position_history`), nicht die Flüge.
-- **Fremd-Callsign-Flüge werden nicht gewertet** (nur Anzeige) — kein Poller-Umbau, kein cid-basiertes
-  Live-Tracking. Live-Erfassung bleibt `FRS*`-gefiltert wie heute.
+- **Kein Roh-`gps_legs`-Leg-Table**, kein Delete-Scoping (Phase-1-`recompute` wird durch die materialisierte
+  Flug-Sicht ersetzt). Reines on-demand über die ganze Historie ist aus Performance-Gründen **nicht**
+  ausreichend — daher der inkrementelle Ergebnis-Cache.
+- **Fremd-Callsign-Anzeige und proaktiver Per-Import-Fetch → Phase 2b**, nicht Phase 2.
 - Kein manuelles Friesen-cid-Listing (self-maintaining über bekannte cids).
-- Kein Einfrieren alter Events (nur Tests bisher).
+- Kein Einfrieren alter Events (nur Tests bisher); Statistik-Historie via Fallback (b) erhalten.
