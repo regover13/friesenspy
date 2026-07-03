@@ -14,10 +14,9 @@ StatSim wird gleichberechtigt einbezogen und füllt Lücken der FriesenSpy-Erfas
 
 1. **Ein „Flug", eine Einheit.** Keine Trennung Flug/Etappe — alles heißt Flug.
 2. **Ein Flug geht von einem Boden-Platz zum nächsten *anderen* Boden-Platz.** Man bildet die Folge der
-   Boden-Plätze (jeder Vollstopp `gs < 2 kt`, endgültig nach > 180 s ohne Wiederabheben, an einem DB-Platz
-   im 10-km-Umkreis; sonst keine Landung — Außenlandungs-Regel aus Phase 1) und zieht **direkt
-   aufeinanderfolgende Wiederholungen *desselben* Platzes zu einem zusammen**. Jeder **Wechsel** zum
-   nächsten Platz = ein Flug. Daraus folgt:
+   Boden-Plätze (jeder Vollstopp `gs < 2 kt` an einem DB-Platz im 10-km-Umkreis; sonst keine Landung —
+   Außenlandungs-Regel aus Phase 1) und zieht **direkt aufeinanderfolgende Wiederholungen *desselben*
+   Platzes zu einem zusammen**. Jeder **Wechsel** zum nächsten Platz = ein Flug. Daraus folgt:
    - **Platzrunden** (mehrfach am selben Platz landen) zählen als **eine** Landung dort und fügen **keinen
      Extra-Flug** hinzu — aber **jeder neue Platz trennt** und ist eine echte (Zwischen-)Landung.
    - **Touch-and-Gos** (nie `gs < 2`) sind gar keine Landung.
@@ -37,13 +36,12 @@ StatSim wird gleichberechtigt einbezogen und füllt Lücken der FriesenSpy-Erfas
 
 ## A — Flug-Modell: Runden-Collapse
 
-**Was zählt als Landung (= Wegpunkt):** `detect_gps_legs` (bestehend, unverändert) erzeugt einen Roh-Leg
-nur bei einem **Vollstopp** (`gs < 2 kt`) an einem DB-Platz. Ein **Touch-and-Go** (nie `gs < 2`) taucht
-gar nicht auf. Eine Landung wird zudem erst **endgültig**, wenn danach **nicht binnen `_GPS_ARRIVAL_DWELL`
-(180 s)** wieder abgehoben wird — ein schneller Turnaround (< 180 s) gilt als Stop-and-Go derselben
-Session (kein Wegpunkt); ein echter Zwischenstopp (Tanken/Pause, > 180 s) an einem *anderen* Platz **ist**
-die Zwischenlandung. So wird sie bestimmt: Vollstopp > 180 s an einem Platz ≠ letzter Boden-Platz.
-Schwelle justierbar, falls sehr kurze echte Stopps auch zählen sollen.
+**Was zählt als Landung (= Wegpunkt):** ein **Vollstopp** (`gs < 2 kt`) an einem DB-Platz (10-km-Umkreis,
+AGL-Guard). Ein **Touch-and-Go** (nie `gs < 2`) taucht gar nicht auf. Eine Landung ist **sofort**
+endgültig — **kein 180-s-Dwell mehr** (`_GPS_ARRIVAL_DWELL` entfällt): wiederholte Landungen am *selben*
+Platz (Platzrunden, egal wie kurz der Taxi-back) fängt der `collapse_same_airport`-Schritt; ein Vollstopp
+an einem *neuen* Platz ist immer eine echte Zwischenlandung. `detect_gps_legs` wird dafür minimal
+angepasst (Dwell-Finalisierung raus; Landung finalisiert sofort, nächstes Abheben = neuer Roh-Leg).
 
 `detect_gps_legs` liefert pro Verbindung eine Liste von Roh-Legs (Abheben → Vollstopp-Landung). Ein
 **Nachschritt** `collapse_same_airport(legs)` fasst zusammen:
@@ -188,8 +186,15 @@ laufen rein über GPS — eine gelegentliche Fehl-/`—`-Zuordnung des Plan-Labe
 - Keine Positionen für einen cid → keine Flüge (kein Fehler).
 - StatSim ohne Track → Flugplan-Fallback (`statsim_cache`), Flug bleibt gelistet.
 - Spawn-in-der-Luft (`dep = None`) → Ziel bekannt, dep-Label aus Flugplan; ohne Flugplan bleibt dep leer.
-- Off-Airport-Landung / kein Platz im Umkreis → **keine** Landung (Absturz-Ambiguität, unverändert aus
-  Phase 1) → Flug bleibt offen.
+- **Disconnect + Reconnect:** eine Positions-Lücke im Track. `detect_gps_legs` trennt bei **Lücke > 30 min**
+  (`gap_minutes`, justierbar) in getrennte Flüge; eine Lücke **≤ 30 min** wird überbrückt = derselbe Flug
+  fortgesetzt. Landet der Pilot vor dem Disconnect an einem Platz und kommt später wieder, ist die Landung
+  ohnehin ein echter Wegpunkt (Trennung deckt sich mit der Realität). Reconnect **in der Luft** binnen
+  30 min → ein durchgehender Flug; nach > 30 min → 1. Segment endet „offen", 2. beginnt als Spawn-in-Luft.
+- **Absturz *abseits* eines Platzes** (`gs → 0`, kein DB-Platz im Umkreis) → **keine** Landung (per GPS
+  nicht von Pause/Slew/Außenlandung unterscheidbar) → Flug bleibt **offen** (Ziel „offen", nicht als Ankunft
+  gewertet). **Absturz *an/nahe* einem Platz** ist per GPS **nicht** von einer normalen Landung zu trennen
+  (`gs → 0` am Platz) → wird als Ankunft dort gezählt (ehrliche GPS-Grenze).
 
 ## Testing
 
