@@ -22,7 +22,6 @@ from app.database import (
     audit_gps_vs_refile,
     canonicalize_flights,
     compute_bummel_standings,
-    recompute_gps_legs,
     create_bummel_race,
     delete_bummel_override,
     delete_bummel_race,
@@ -1283,14 +1282,14 @@ async def admin_get_banner(request: Request):
 async def admin_gps_leg_audit(
     request: Request, days: int = 30, cid: int | None = None, statsim: int = 0
 ):
-    """Read-only Phase-1-Audit: vergleicht die Refile-Flüge mit den im Schatten erfassten
-    GPS-Legs. Berechnet die Schatten-Legs on-demand (kein Poll-Impact) und liefert die
-    Kennzahlen von :func:`app.database.audit_gps_vs_refile`.
+    """Read-only Audit: vergleicht die Refile-Flüge mit der collapsed GPS-Sicht aus
+    :func:`app.database.canonicalize_legs` (GPS-only Phase 2, #23, Task 6). Rechnet on-demand,
+    schreibt nichts — liefert die Kennzahlen von :func:`app.database.audit_gps_vs_refile`.
 
     ``days`` (1..365) spannt das Fenster ``[jetzt-days, jetzt]``; ``cid`` schränkt optional
     auf einen Piloten ein. ``statsim`` (0..500) hängt zusätzlich die GPS-Leg-Interpretation der
     jüngsten N StatSim-Flüge an (in-memory aus ``statsim_position_history``, nichts gespeichert).
-    Rein additiv: schreibt nur die Schatten-Tabelle ``gps_legs``, fasst ``flights``/Wertungen nicht an.
+    Rein additiv/lesend: fasst ``flights``/Wertungen nicht an.
     """
     require_admin(request)
     settings = get_settings()
@@ -1314,10 +1313,6 @@ async def admin_gps_leg_audit(
             audit_cids: list[int] | None = [cid]
         else:
             audit_cids = scope_cids or None
-
-        # On-demand Schatten-Berechnung (schreibt nur gps_legs, nie flights/Scoring).
-        for c in scope_cids:
-            recompute_gps_legs(conn, c, since=start)
 
         result = audit_gps_vs_refile(
             conn,

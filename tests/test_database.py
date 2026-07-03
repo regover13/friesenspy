@@ -1880,6 +1880,52 @@ class TestStatsimGpsAudit:
         conn.close()
         assert "statsim" not in res
 
+    SID2 = 99002
+    CID2 = 4244
+
+    def _seed_platzrunde(self, conn):
+        """Zwei Touch-and-gos am selben Platz EDDK (kein Zielwechsel) — muss als EIN
+        collapsed Flug (`match`) klassifiziert werden, NICHT als `zwischenlandung`
+        (Task 6, #23: Klassifikation auf collapsed statt Roh-Legs)."""
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(?,?,'FRS20','EDDK','EDDK','C172','2026-07-02T09:58:00Z','2026-07-02T10:20:00Z',22,'x')",
+            (self.SID2, self.CID2),
+        )
+        def spos2(ts, lat, lon, alt, gs):
+            conn.execute(
+                "INSERT INTO statsim_position_history (statsim_id,latitude,longitude,altitude,"
+                "groundspeed,heading,ts) VALUES (?,?,?,?,?,0,?)",
+                (self.SID2, lat, lon, alt, gs, ts),
+            )
+        spos2("2026-07-02T10:00:00Z", *self.A, 302, 0)
+        spos2("2026-07-02T10:01:00Z", *self.A, 302, 5)
+        spos2("2026-07-02T10:02:00Z", *self.A, 1200, 80)   # Abheben 1
+        spos2("2026-07-02T10:05:00Z", *self.A, 1000, 70)   # Platzrunde
+        spos2("2026-07-02T10:07:00Z", *self.A, 350, 1)     # Touchdown 1
+        spos2("2026-07-02T10:08:00Z", *self.A, 302, 0)     # Boden
+        spos2("2026-07-02T10:09:00Z", *self.A, 1200, 80)   # Abheben 2
+        spos2("2026-07-02T10:12:00Z", *self.A, 1000, 70)   # Platzrunde
+        spos2("2026-07-02T10:14:00Z", *self.A, 350, 1)     # Touchdown 2
+        spos2("2026-07-02T10:16:00Z", *self.A, 302, 0)     # Boden bis Ende
+
+    def test_statsim_platzrunde_is_match_not_zwischenlandung(self):
+        conn = _make_conn()
+        self._seed_platzrunde(conn)
+        conn.commit()
+        res = audit_gps_vs_refile(
+            conn, start="2026-07-01T00:00:00Z", end="2026-07-03T00:00:00Z",
+            statsim_sample=10,
+        )
+        conn.close()
+        st = res["statsim"]
+        flt = next(f for f in st["flights"] if f["statsim_id"] == self.SID2)
+        assert flt["n_legs"] == 1
+        assert flt["classification"] == "match"
+        assert flt["legs"][0]["dep_icao"] == "EDDK"
+        assert flt["legs"][0]["arr_icao"] == "EDDK"
+
 
 class TestStatsimBackfillSelection:
     """Auswahl der StatSim-Flüge, deren Track noch nicht lokal gecacht ist (für den Backfill)."""
