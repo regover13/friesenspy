@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.9.1",
+    "date": "2026-07-03",
+    "title": "GPS-Etappen-Erkennung: normale Steigflüge werden jetzt erkannt (Schatten-Fix)",
+    "items": [
+      "🛰️ Korrektur an der GPS-Etappen-Erkennung (weiterhin nur im Schatten, ohne Wertungswirkung): Die Boden-Referenz kletterte im Steigflug mit, sodass normal steigende Flugzeuge (z. B. eine C172) gar nicht als »abgehoben« erkannt wurden — nur rund jeder vierte Flug bekam überhaupt eine Etappe. Jetzt bleibt die Referenz auf Feldhöhe verankert, der Steigflug wird sauber erkannt und die Etappen (inkl. Zwischenlandungen) treffen zu."
+    ]
+  },
+  {
     "version": "7.9.0",
     "date": "2026-07-02",
     "title": "GPS-Etappen-Erkennung im Schatten (Vorarbeit, noch ohne Wertungswirkung)",
