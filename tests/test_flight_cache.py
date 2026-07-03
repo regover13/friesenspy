@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.database import (
     _DDL,
+    _FLIGHT_CACHE_COLUMNS,
     canonicalize_legs,
     ensure_pilot,
     get_cached_flights,
@@ -71,6 +72,38 @@ def _insert_flight(conn: sqlite3.Connection, **kw) -> int:
     return cur.lastrowid
 
 
+def _insert_statsim(conn: sqlite3.Connection, statsim_id: int, **kw) -> None:
+    """Rohe ``statsim_cache``-Zeile einfügen (Muster ``tests/test_canonicalize_legs.py``)."""
+    defaults = {
+        "cid": 0, "callsign": "", "departure": "", "arrival": "", "aircraft": "C172",
+        "logon_time": "", "logoff_time": None, "duration_min": 0, "fetched_at": "x",
+    }
+    row = {**defaults, **kw}
+    conn.execute(
+        "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+        "logon_time,logoff_time,duration_min,fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (statsim_id, row["cid"], row["callsign"], row["departure"], row["arrival"],
+         row["aircraft"], row["logon_time"], row["logoff_time"], row["duration_min"],
+         row["fetched_at"]),
+    )
+
+
+def _assert_field_parity(cached: dict, live: dict) -> None:
+    """Wert-für-Wert-Vergleich über ALLE Feld-Vertrags-Keys (``_FLIGHT_CACHE_COLUMNS``),
+    inkl. Typtreue: ``connection_closed`` muss auf BEIDEN Seiten ein echtes ``bool`` sein
+    (kein 0/1-Int-Leck aus der DB), und ein ``None`` auf der einen Seite darf nicht durch
+    einen zufällig gleichwertigen Nicht-None-Wert auf der anderen Seite verdeckt werden."""
+    for key in _FLIGHT_CACHE_COLUMNS:
+        c, l = cached.get(key), live.get(key)
+        if key == "connection_closed":
+            assert isinstance(c, bool), f"{key}: cached ist kein bool ({c!r})"
+            assert isinstance(l, bool), f"{key}: live ist kein bool ({l!r})"
+        assert (c is None) == (l is None), (
+            f"{key}: None-Zustand weicht ab (cached={c!r}, live={l!r})"
+        )
+        assert c == l, f"{key}: cached={c!r} != live={l!r}"
+
+
 def _insert_pos(conn: sqlite3.Connection, cid: int, ts: str, lat, lon, alt, gs, callsign="FRS") -> None:
     ensure_pilot(conn, cid, f"Pilot {cid}")
     conn.execute(
@@ -97,13 +130,26 @@ def _seed_fixed_track(conn: sqlite3.Connection, cid: int, callsign: str, base: s
 
 class TestCacheMatchesCanonicalizeLegs:
     def test_cache_matches_canonicalize_legs(self):
+        """Voll-Rebuild ≙ direkter ``canonicalize_legs``-Aufruf — feldscharf (ALLE 27
+        Feld-Vertrags-Keys, wert- und typtreu) über einen FriesenSpy- UND einen
+        StatSim-Flug (deckt beide Quell-Zweige, nicht nur den hartcodierten
+        friesenspy-Fall)."""
         conn = _make_conn()
-        cid = 5001
+        cid_fs = 5001
         _insert_flight(
-            conn, cid=cid, callsign="FRS50", departure="EDDK", arrival="EDDW",
+            conn, cid=cid_fs, callsign="FRS50", departure="EDDK", arrival="EDDW",
             logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:50:00Z",
         )
-        _seed_fixed_track(conn, cid, "FRS50")
+        _seed_fixed_track(conn, cid_fs, "FRS50")
+
+        # StatSim-Flug OHNE eigenen Track (Fallback-Zweig von canonicalize_legs) — belegt
+        # source=="statsim" wert-geprüft, nicht nur als hartcodierte Annahme.
+        cid_st = 5005
+        _insert_statsim(
+            conn, 9501, cid=cid_st, callsign="FRS54", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T08:00:00Z", logoff_time="2026-07-02T08:50:00Z",
+            duration_min=50,
+        )
         conn.commit()
 
         live = canonicalize_legs(conn)
@@ -111,22 +157,26 @@ class TestCacheMatchesCanonicalizeLegs:
         conn.close()
 
         assert live, "erwartete mindestens einen kanonischen Flug"
-        assert len(cached) == len(live)
+        sources = {f["source"] for f in live}
+        assert "friesenspy" in sources and "statsim" in sources, (
+            "Fixture muss beide Quell-Zweige abdecken, sonst ist der Round-Trip-Test "
+            f"unvollständig (gefundene sources: {sources})"
+        )
 
-        live_by_key = {(f["cid"], f["logon_time"]): f for f in live}
-        cached_by_key = {(f["cid"], f["logon_time"]): f for f in cached}
+        live_sorted = sorted(live, key=lambda f: (f["cid"], f["logon_time"]))
+        cached_sorted = sorted(cached, key=lambda f: (f["cid"], f["logon_time"]))
+        assert len(cached_sorted) == len(live_sorted)
+
+        live_by_key = {(f["cid"], f["logon_time"]): f for f in live_sorted}
+        cached_by_key = {(f["cid"], f["logon_time"]): f for f in cached_sorted}
         assert set(live_by_key) == set(cached_by_key)
 
         for key, l in live_by_key.items():
             c = cached_by_key[key]
-            assert c["departure"] == l["departure"]
-            assert c["arrival"] == l["arrival"]
-            assert c["distance_nm"] == l["distance_nm"]
-            assert c["block_min"] == l["block_min"]
+            _assert_field_parity(c, l)
 
-        target = next(f for f in cached if f["cid"] == cid)
-        assert target["source"] == "friesenspy"
-        assert isinstance(target["connection_closed"], bool)
+        assert next(f for f in cached if f["cid"] == cid_fs)["source"] == "friesenspy"
+        assert next(f for f in cached if f["cid"] == cid_st)["source"] == "statsim"
 
 
 class TestCacheIdempotent:
@@ -203,3 +253,76 @@ class TestIncrementalRefresh:
         assert any(f["cid"] == cid_new for f in result), "neuer Flug fehlt nach inkrementellem Refresh"
         # Der ältere Flug bleibt weiterhin sichtbar (nicht verloren gegangen).
         assert any(f["cid"] == cid_old for f in result)
+
+
+# Erkennbarer Marker-Wert für computed_at — beweist, dass eine Zeile beim inkrementellen
+# Refresh NICHT neu geschrieben wurde (ein echter Rewrite würde computed_at auf die aktuelle
+# Zeit setzen und den Marker damit überschreiben).
+_OLD_COMPUTED_AT_MARKER = "2000-01-01T00:00:00Z"
+
+
+class TestIncrementalRefreshLeavesOldFlightsUntouched:
+    def test_incremental_refresh_leaves_old_flights_untouched(self):
+        """FIX B (#23 Review): beide Test-Flüge des ursprünglichen Inkrement-Tests lagen
+        INNERHALB des 7-Tage-Fensters — das belegt NICHT, dass ein Flug AUSSERHALB des
+        Fensters beim inkrementellen Refresh unangetastet bleibt. Dieser Test bringt einen
+        abgeschlossenen Flug 10 Tage in die Vergangenheit (weit jenseits des 7-Tage-
+        Inkrementalfensters von rebuild_flight_cache), markiert dessen computed_at mit einem
+        eindeutigen Marker und beweist nach einem erzwungenen inkrementellen Refresh, dass
+        der Marker UNVERÄNDERT ist — der alte Flug wurde also nicht neu berechnet/geschrieben."""
+        conn = _make_conn()
+        now = datetime.now(timezone.utc)
+
+        cid_old = 5010
+        old_start = now - timedelta(days=10)
+        _insert_flight(
+            conn, cid=cid_old, callsign="FRS60", departure="EDDK", arrival="EDDW",
+            logon_time=(old_start - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            logoff_time=(old_start + timedelta(minutes=50)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        _seed_track(conn, cid_old, "FRS60", old_start)
+        conn.commit()
+
+        # Voll-Rebuild bringt den alten Flug einmalig in den Cache.
+        rebuild_flight_cache(conn, full=True)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM flight_cache WHERE cid = ?", (cid_old,)
+        ).fetchone()[0] == 1, "alter Flug muss nach Voll-Rebuild im Cache stehen"
+
+        # computed_at auf den Marker setzen. Da dies aktuell die EINZIGE Zeile ist, ist der
+        # Marker zugleich MAX(computed_at) — erzwingt also automatisch den inkrementellen
+        # Refresh-Pfad in get_cached_flights() (Schwelle 600s), ohne zusätzliche Manipulation.
+        conn.execute(
+            "UPDATE flight_cache SET computed_at = ? WHERE cid = ?",
+            (_OLD_COMPUTED_AT_MARKER, cid_old),
+        )
+        conn.commit()
+
+        # Neuer Flug, deutlich unter 7 Tage alt — muss den inkrementellen Refresh auslösen
+        # UND danach sichtbar sein (Positivkontrolle, analog zum bestehenden Inkrement-Test).
+        cid_new = 5011
+        new_start = now - timedelta(hours=2)
+        _insert_flight(
+            conn, cid=cid_new, callsign="FRS61", departure="EDDK", arrival="EDDW",
+            logon_time=(new_start - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            logoff_time=(new_start + timedelta(minutes=50)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        _seed_track(conn, cid_new, "FRS61", new_start)
+        conn.commit()
+
+        result = get_cached_flights(conn)  # loest wegen dem uralten MAX(computed_at) den Inkrement-Pfad aus
+
+        marker_after = conn.execute(
+            "SELECT computed_at FROM flight_cache WHERE cid = ?", (cid_old,)
+        ).fetchone()[0]
+        conn.close()
+
+        assert any(f["cid"] == cid_new for f in result), "neuer Flug fehlt nach inkrementellem Refresh"
+        assert any(f["cid"] == cid_old for f in result), (
+            "alter Flug ist nach inkrementellem Refresh aus dem Cache verschwunden"
+        )
+        assert marker_after == _OLD_COMPUTED_AT_MARKER, (
+            "computed_at des alten Flugs wurde beim inkrementellen Refresh angefasst — "
+            "das 7-Tage-Fenster schuetzt abgeschlossene aeltere Fluege NICHT wie erwartet "
+            f"(marker_after={marker_after!r})"
+        )
