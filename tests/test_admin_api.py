@@ -434,6 +434,20 @@ class TestGpsLegAudit:
         self._pos(conn, cid, _iso(base + timedelta(minutes=72)), *self.C, 60, 0)
         self._pos(conn, cid, _iso(base + timedelta(minutes=76)), *self.C, 60, 0)
 
+    def _platzrunde_a(self, conn, cid, base):
+        """Zwei Platzrunden am selben Platz EDDK (Touch-and-go, kein Dwell nötig) — muss zu
+        EINEM collapsed Flug werden (Spec A), nicht zwei Roh-Legs."""
+        self._pos(conn, cid, _iso(base + timedelta(minutes=0)), *self.A, 302, 0)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=1)), *self.A, 302, 5)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=2)), *self.A, 1200, 80)   # Abheben 1
+        self._pos(conn, cid, _iso(base + timedelta(minutes=5)), *self.A, 1000, 70)   # Platzrunde
+        self._pos(conn, cid, _iso(base + timedelta(minutes=7)), *self.A, 350, 1)     # Touchdown 1
+        self._pos(conn, cid, _iso(base + timedelta(minutes=8)), *self.A, 302, 0)     # Boden
+        self._pos(conn, cid, _iso(base + timedelta(minutes=9)), *self.A, 1200, 80)   # Abheben 2
+        self._pos(conn, cid, _iso(base + timedelta(minutes=12)), *self.A, 1000, 70)  # Platzrunde
+        self._pos(conn, cid, _iso(base + timedelta(minutes=14)), *self.A, 350, 1)    # Touchdown 2
+        self._pos(conn, cid, _iso(base + timedelta(minutes=16)), *self.A, 302, 0)    # Boden bis Ende
+
     def test_requires_admin(self, db):
         with pytest.raises(HTTPException) as e:
             asyncio.run(main.admin_gps_leg_audit(FakeReq(cookies={})))
@@ -485,6 +499,30 @@ class TestGpsLegAudit:
         assert s["extra_gps_legs"] >= 1
         fr = next(f for f in res["flights"] if f["cid"] == self.CID)
         assert fr["n_legs"] == 2
+
+    def test_platzrunde_collapses_to_one_match(self, db):
+        """Zwei Touch-and-gos am selben Platz (Platzrunde) sind EIN collapsed Flug — kein
+        `extra_gps_legs`, `n_legs` bleibt 1 (Task 6, #23: collapsed statt Roh-Legs)."""
+        now = datetime.now(timezone.utc)
+        base = now - timedelta(hours=2)
+        conn = get_connection(db)
+        self._pilot(conn, self.CID)
+        self._flight(
+            conn, self.CID, "EDDK", "EDDK",
+            _iso(base - timedelta(minutes=2)), _iso(base + timedelta(minutes=20)),
+        )
+        self._platzrunde_a(conn, self.CID, base)
+        conn.commit(); conn.close()
+
+        res = asyncio.run(main.admin_gps_leg_audit(FakeReq()))
+        s = res["summary"]
+        assert s["matches"] == 1
+        assert s["extra_gps_legs"] == 0
+        fr = next(f for f in res["flights"] if f["cid"] == self.CID)
+        assert fr["n_legs"] == 1
+        assert fr["legs"][0]["dep_icao"] == "EDDK"
+        assert fr["legs"][0]["arr_icao"] == "EDDK"
+        assert fr["arr_match"] is True
 
     def test_missing_no_track(self, db):
         now = datetime.now(timezone.utc)

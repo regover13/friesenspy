@@ -2429,30 +2429,43 @@ def audit_gps_vs_refile(
     callsign_prefix: str = "FRS",
     statsim_sample: int = 0,
 ) -> dict:
-    """Vergleicht die heutigen Refile-Flüge (:func:`canonicalize_flights`) mit den im Schatten
-    erfassten ``gps_legs`` — REIN LESEND, ändert nichts (Phase-1-Audit).
+    """Vergleicht die heutigen Refile-Flüge (:func:`canonicalize_flights`) mit der collapsed
+    GPS-Sicht aus :func:`canonicalize_legs` — REIN LESEND, ändert nichts (GPS-only Phase 2,
+    #23, Task 6). Ein Platzrunden-Track (mehrere Landungen am SELBEN Platz) zählt dabei als
+    EIN GPS-Flug, nicht als N Roh-Legs — das übernimmt ``collapse_same_airport`` bereits
+    innerhalb von ``canonicalize_legs``.
 
     ``statsim_sample`` > 0 hängt zusätzlich eine ``statsim``-Sektion an: die GPS-Leg-Interpretation
     der jüngsten bis zu ``statsim_sample`` StatSim-Flüge im Fenster, **on-demand aus
     ``statsim_position_history`` gerechnet (in-memory, NICHTS gespeichert)** — zeigt, wie StatSim-
-    Flüge unter GPS-only aussähen (Phase-2-Task 5b als Schatten). ``detect_gps_legs`` bleibt
+    Flüge unter GPS-only aussähen. ``detect_gps_legs`` + ``collapse_same_airport`` bleiben
     unverändert; nur die Datenquelle ist die StatSim-Positionstabelle.
 
-    Je FriesenSpy-Connection (StatSim hat keine ``position_history`` → keine GPS-Legs, aus den
-    Match-Nennern ausgeschlossen) werden die überlappenden GPS-Legs desselben ``cid`` gesucht,
-    deren ``takeoff_ts`` im Connection-Fenster ``[logon_time, logoff_time]`` liegt
-    (``logoff_time`` None → offenes Fenster). Klassifikation:
+    Je FriesenSpy-Connection (StatSim hat keine ``position_history`` → keine GPS-Sicht, aus den
+    Match-Nennern ausgeschlossen) werden die überlappenden ``canonicalize_legs``-Flüge desselben
+    ``cid`` gesucht, deren ``logon_time`` (= Takeoff) im Connection-Fenster
+    ``[logon_time, logoff_time]`` liegt (``logoff_time`` None → offenes Fenster). Aus der GPS-Sicht
+    werden dabei NUR echte Track-Treffer herangezogen — ``canonicalize_legs`` liefert für
+    Connections OHNE jeglichen Track einen Fallback-Flug (Spiegel der Connection selbst, damit die
+    Live-Ansicht auch ohne Track etwas anzuzeigen hat); dieser Fallback ist strukturell eindeutig
+    erkennbar (``gps_arrival`` leer UND ``logoff_time`` gesetzt — ein echter Track hat bei leerem
+    ``gps_arrival`` IMMER ein offenes ``logoff_time``, vgl. ``collapse_same_airport``) und zählt
+    hier NICHT als Treffer, sonst würde jede trackfreie Connection sich selbst „matchen". Klassi-
+    fikation:
 
-    - 0 überlappende Legs → ``missing`` (Track fehlt / Detektor-Miss).
-    - ≥ 1 Legs → ``match``; das ERSTE Leg ist primär, jedes weitere ist ein ``extra`` Leg
-      (Intra-Connection-Zwischenlandung ohne Refile = der eigentliche Mehrwert).
-    - ``arr_divergence``: das letzte überlappende Leg hat ein nicht-leeres ``arr_icao``, das
-      (case-insensitiv) vom ``arrival`` der Connection abweicht (nur wenn ``arrival`` gesetzt).
+    - 0 überlappende (echte) GPS-Flüge → ``missing`` (Track fehlt / Detektor-Miss).
+    - ≥ 1 → ``match``; das ERSTE ist primär, jedes weitere ist ein ``extra`` Flug
+      (Intra-Connection-Zwischenlandung an einem ANDEREN Platz ohne Refile — der eigentliche
+      Mehrwert; eine reine Platzrunde erzeugt dank Collapse KEINEN ``extra``).
+    - ``arr_divergence``: der letzte überlappende GPS-Flug hat ein nicht-leeres
+      ``gps_arrival``/``arrival``, das (case-insensitiv) vom ``arrival`` der Connection abweicht
+      (nur wenn ``arrival`` gesetzt).
 
-    Aggregat über ALLE GPS-Legs im Fenster (nicht nur die zugeordneten): ``incomplete_rate``
-    (Anteil ``complete=0``) und ``airborne_spawn_rate`` (Anteil ``dep_icao IS NULL``).
+    Aggregat über ALLE echten GPS-Flüge im Fenster (nicht nur die zugeordneten):
+    ``incomplete_rate`` (Anteil ohne Landung, ``gps_arrival`` leer) und ``airborne_spawn_rate``
+    (Anteil ``gps_departure IS NULL``).
 
-    Gibt ein JSON-serialisierbares Dict zurück (siehe Doc/Plan Phase 1, Task 3).
+    Gibt ein JSON-serialisierbares Dict zurück (Struktur unverändert ggü. der Roh-Leg-Sicht).
     """
     flights = canonicalize_flights(
         conn, cids=cids, callsign_prefix=callsign_prefix, start=start, end=end
@@ -2460,34 +2473,28 @@ def audit_gps_vs_refile(
     fs_flights = [f for f in flights if f.get("source") == "friesenspy"]
     statsim_count = sum(1 for f in flights if f.get("source") == "statsim")
 
-    # GPS-Legs im Fenster laden (nur vorhandene Filter anhängen).
-    leg_where: list[str] = []
-    leg_params: list = []
-    if cids:
-        leg_where.append("cid IN (%s)" % ",".join("?" * len(cids)))
-        leg_params += list(cids)
-    if start:
-        leg_where.append("takeoff_ts >= ?")
-        leg_params.append(start)
-    if end:
-        leg_where.append("takeoff_ts <= ?")
-        leg_params.append(end)
-    leg_sql = (
-        "SELECT cid, callsign, dep_icao, arr_icao, takeoff_ts, landing_ts, complete, "
-        "dep_source, arr_source FROM gps_legs"
+    # Collapsed GPS-Sicht im Fenster (Task 4). Fallback-Flüge (kein Track, Spiegel der
+    # Connection) strukturell ausschließen: ein echter Track hat bei leerem gps_arrival
+    # IMMER logoff_time=None (offener Leg-Tail), ein Fallback dagegen NIE (er wird nur für
+    # geschlossene Connections gebaut) — s. Docstring oben.
+    gps_flights_raw = canonicalize_legs(
+        conn, cids=cids, start=start, end=end, callsign_prefix=callsign_prefix
     )
-    if leg_where:
-        leg_sql += " WHERE " + " AND ".join(leg_where)
-    leg_sql += " ORDER BY cid, takeoff_ts"
-    leg_rows = [dict(r) for r in conn.execute(leg_sql, leg_params).fetchall()]
+    gps_view = [
+        gf for gf in gps_flights_raw
+        if gf.get("source") == "friesenspy"
+        and not (gf.get("gps_arrival") is None and gf.get("logoff_time") is not None)
+    ]
 
-    legs_by_cid: dict[int, list[dict]] = {}
-    for lr in leg_rows:
-        legs_by_cid.setdefault(lr["cid"], []).append(lr)
+    gps_by_cid: dict[int, list[dict]] = {}
+    for gf in gps_view:
+        gps_by_cid.setdefault(gf.get("cid"), []).append(gf)
+    for cid_key in gps_by_cid:
+        gps_by_cid[cid_key].sort(key=lambda x: x.get("logon_time") or "")
 
-    total_legs = len(leg_rows)
-    incomplete = sum(1 for lr in leg_rows if not lr.get("complete"))
-    airborne_spawn = sum(1 for lr in leg_rows if lr.get("dep_icao") is None)
+    total_legs = len(gps_view)
+    incomplete = sum(1 for gf in gps_view if not gf.get("gps_arrival"))
+    airborne_spawn = sum(1 for gf in gps_view if gf.get("gps_departure") is None)
     incomplete_rate = round(incomplete / total_legs, 4) if total_legs else 0.0
     airborne_spawn_rate = round(airborne_spawn / total_legs, 4) if total_legs else 0.0
 
@@ -2504,15 +2511,15 @@ def audit_gps_vs_refile(
         arr = (f.get("arrival") or "").strip()
 
         overlapping = []
-        for lr in legs_by_cid.get(cid, []):
-            t = lr.get("takeoff_ts")
+        for gf in gps_by_cid.get(cid, []):
+            t = gf.get("logon_time")
             if t is None or logon is None:
                 continue
             if t < logon:
                 continue
             if logoff is not None and t > logoff:
                 continue
-            overlapping.append(lr)
+            overlapping.append(gf)
 
         n_legs = len(overlapping)
         if n_legs >= 1:
@@ -2521,10 +2528,11 @@ def audit_gps_vs_refile(
             missing += 1
         extra_total += max(0, n_legs - 1)
 
-        # arr_match / arr_divergence gegen das LETZTE überlappende Leg.
+        # arr_match / arr_divergence gegen den LETZTEN überlappenden GPS-Flug.
         arr_match: bool | None = None
         if n_legs >= 1 and arr:
-            last_arr = (overlapping[-1].get("arr_icao") or "").strip()
+            last = overlapping[-1]
+            last_arr = (last.get("gps_arrival") or last.get("arrival") or "").strip()
             if last_arr:
                 arr_match = last_arr.upper() == arr.upper()
                 if not arr_match:
@@ -2541,13 +2549,13 @@ def audit_gps_vs_refile(
             "arr_match": arr_match,
             "legs": [
                 {
-                    "dep_icao": lr.get("dep_icao"),
-                    "arr_icao": lr.get("arr_icao"),
-                    "takeoff_ts": lr.get("takeoff_ts"),
-                    "landing_ts": lr.get("landing_ts"),
-                    "complete": bool(lr.get("complete")),
+                    "dep_icao": gf.get("gps_departure"),
+                    "arr_icao": gf.get("gps_arrival"),
+                    "takeoff_ts": gf.get("logon_time"),
+                    "landing_ts": gf.get("logoff_time"),
+                    "complete": bool(gf.get("gps_arrival")),
                 }
-                for lr in overlapping
+                for gf in overlapping
             ],
         })
 
@@ -2584,14 +2592,17 @@ def _statsim_gps_interpretation(
     limit: int,
 ) -> dict:
     """GPS-Leg-Interpretation der jüngsten StatSim-Flüge im Fenster — on-demand, in-memory
-    (NICHT gespeichert). ``detect_gps_legs`` läuft über ``statsim_position_history``.
+    (NICHT gespeichert). ``detect_gps_legs`` + ``collapse_same_airport`` laufen über
+    ``statsim_position_history`` (Task 6, #23: collapsed statt Roh-Legs — eine Platzrunde am
+    selben Platz ist EIN Flug, keine ``zwischenlandung``).
 
-    Klassifikation je Flug: ``match`` (1 kompletter Leg, Ziel == Flugplan), ``divergent``
-    (1 kompletter Leg, anderes Ziel), ``zwischenlandung`` (> 1 Leg), ``incomplete`` (Leg ohne
-    Landung) oder ``none`` (kein Leg / kein Track). Rückgabe enthält Stichprobengröße, Gesamtzahl
+    Klassifikation je Flug: ``match`` (1 kompletter collapsed Flug, Ziel == Flugplan),
+    ``divergent`` (1 kompletter collapsed Flug, anderes Ziel), ``zwischenlandung`` (> 1
+    collapsed Flug — echte Landung an einem ANDEREN Platz), ``incomplete`` (Flug ohne Landung)
+    oder ``none`` (kein Flug / kein Track). Rückgabe enthält Stichprobengröße, Gesamtzahl
     passender StatSim-Flüge und die Einzel-Interpretationen.
     """
-    from app.gps_legs import detect_gps_legs
+    from app.gps_legs import detect_gps_legs, collapse_same_airport
     from app import geo
 
     where = ["logon_time != ''", "logoff_time IS NOT NULL", "duration_min > 5", "callsign LIKE ?"]
@@ -2620,12 +2631,13 @@ def _statsim_gps_interpretation(
     flights: list[dict] = []
     for r in rows:
         positions = get_statsim_positions(conn, r["statsim_id"])
-        legs = detect_gps_legs(
+        raw_legs = detect_gps_legs(
             positions,
             nearest_airport=geo.nearest_airport_icao_fast,
             airport_elev_ft=geo.airport_elevation_ft,
             radius_km=_BUMMEL_AIRPORT_RADIUS_KM,
         )
+        legs = collapse_same_airport(raw_legs)
         plan_arr = (r["arrival"] or "").strip().upper()
         if not legs:
             cls = "none"
