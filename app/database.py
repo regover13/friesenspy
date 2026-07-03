@@ -1856,9 +1856,16 @@ def audit_gps_vs_refile(
     start: str | None = None,
     end: str | None = None,
     callsign_prefix: str = "FRS",
+    statsim_sample: int = 0,
 ) -> dict:
     """Vergleicht die heutigen Refile-Flüge (:func:`canonicalize_flights`) mit den im Schatten
     erfassten ``gps_legs`` — REIN LESEND, ändert nichts (Phase-1-Audit).
+
+    ``statsim_sample`` > 0 hängt zusätzlich eine ``statsim``-Sektion an: die GPS-Leg-Interpretation
+    der jüngsten bis zu ``statsim_sample`` StatSim-Flüge im Fenster, **on-demand aus
+    ``statsim_position_history`` gerechnet (in-memory, NICHTS gespeichert)** — zeigt, wie StatSim-
+    Flüge unter GPS-only aussähen (Phase-2-Task 5b als Schatten). ``detect_gps_legs`` bleibt
+    unverändert; nur die Datenquelle ist die StatSim-Positionstabelle.
 
     Je FriesenSpy-Connection (StatSim hat keine ``position_history`` → keine GPS-Legs, aus den
     Match-Nennern ausgeschlossen) werden die überlappenden GPS-Legs desselben ``cid`` gesucht,
@@ -1973,7 +1980,7 @@ def audit_gps_vs_refile(
             ],
         })
 
-    return {
+    result = {
         "window": {"start": start, "end": end},
         "summary": {
             "flights": len(fs_flights),
@@ -1988,6 +1995,95 @@ def audit_gps_vs_refile(
         },
         "flights": flight_reports,
     }
+    if statsim_sample > 0:
+        result["statsim"] = _statsim_gps_interpretation(
+            conn, cids=cids, start=start, end=end,
+            callsign_prefix=callsign_prefix, limit=statsim_sample,
+        )
+    return result
+
+
+def _statsim_gps_interpretation(
+    conn: sqlite3.Connection,
+    *,
+    cids: list[int] | None,
+    start: str | None,
+    end: str | None,
+    callsign_prefix: str,
+    limit: int,
+) -> dict:
+    """GPS-Leg-Interpretation der jüngsten StatSim-Flüge im Fenster — on-demand, in-memory
+    (NICHT gespeichert). ``detect_gps_legs`` läuft über ``statsim_position_history``.
+
+    Klassifikation je Flug: ``match`` (1 kompletter Leg, Ziel == Flugplan), ``divergent``
+    (1 kompletter Leg, anderes Ziel), ``zwischenlandung`` (> 1 Leg), ``incomplete`` (Leg ohne
+    Landung) oder ``none`` (kein Leg / kein Track). Rückgabe enthält Stichprobengröße, Gesamtzahl
+    passender StatSim-Flüge und die Einzel-Interpretationen.
+    """
+    from app.gps_legs import detect_gps_legs
+    from app import geo
+
+    where = ["logon_time != ''", "logoff_time IS NOT NULL", "duration_min > 5", "callsign LIKE ?"]
+    params: list = [f"{callsign_prefix}%"]
+    if cids:
+        where.append("cid IN (%s)" % ",".join("?" * len(cids)))
+        params += list(cids)
+    if start:
+        where.append("logon_time >= ?")
+        params.append(start)
+    if end:
+        where.append("logon_time <= ?")
+        params.append(end)
+    where_sql = " AND ".join(where)
+
+    total = conn.execute(
+        "SELECT COUNT(*) FROM statsim_cache WHERE " + where_sql, params
+    ).fetchone()[0]
+    rows = conn.execute(
+        "SELECT statsim_id, cid, callsign, departure, arrival FROM statsim_cache WHERE "
+        + where_sql + " ORDER BY logon_time DESC LIMIT ?",
+        params + [int(limit)],
+    ).fetchall()
+
+    counts = {"match": 0, "divergent": 0, "zwischenlandung": 0, "incomplete": 0, "none": 0}
+    flights: list[dict] = []
+    for r in rows:
+        positions = get_statsim_positions(conn, r["statsim_id"])
+        legs = detect_gps_legs(
+            positions,
+            nearest_airport=geo.nearest_airport_icao_fast,
+            airport_elev_ft=geo.airport_elevation_ft,
+            radius_km=_BUMMEL_AIRPORT_RADIUS_KM,
+        )
+        plan_arr = (r["arrival"] or "").strip().upper()
+        if not legs:
+            cls = "none"
+        elif len(legs) > 1:
+            cls = "zwischenlandung"
+        else:
+            leg = legs[0]
+            if not leg.get("complete") or not leg.get("arr_icao"):
+                cls = "incomplete"
+            else:
+                la = (leg["arr_icao"] or "").strip().upper()
+                cls = "match" if (plan_arr and la == plan_arr) else "divergent"
+        counts[cls] += 1
+        flights.append({
+            "statsim_id": r["statsim_id"],
+            "cid": r["cid"],
+            "callsign": r["callsign"],
+            "dep": r["departure"],
+            "arr": r["arrival"],
+            "n_legs": len(legs),
+            "classification": cls,
+            "legs": [
+                {"dep_icao": l.get("dep_icao"), "arr_icao": l.get("arr_icao"),
+                 "complete": bool(l.get("complete"))}
+                for l in legs
+            ],
+        })
+
+    return {"sampled": len(rows), "total": total, "summary": counts, "flights": flights}
 
 
 # Umkreis (km), in dem die erste/letzte GPS-Position einem Streckenflugplatz zugeordnet wird.

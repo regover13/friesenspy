@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.database import (
+    audit_gps_vs_refile,
     canonicalize_flights,
     cleanup_old_history,
     close_flight,
@@ -1813,3 +1814,66 @@ class TestGpsLegs:
         conn.close()
         assert n == 0
         assert rows == 0
+
+
+class TestStatsimGpsAudit:
+    """Schatten-Interpretation von StatSim-Flügen: audit_gps_vs_refile rechnet die GPS-Legs
+    on-demand aus statsim_position_history (in-memory, keine Speicherung) — zeigt, wie StatSim-
+    Flüge unter GPS-only interpretiert würden. Reale Plätze EDDK→EDDW."""
+
+    SID = 99001
+    CID = 4243
+    A = (50.8659, 7.14274)    # EDDK, elev 302
+    B = (53.0475, 8.78667)    # EDDW, elev 14
+
+    def _spos(self, conn, ts, lat, lon, alt, gs):
+        conn.execute(
+            "INSERT INTO statsim_position_history (statsim_id,latitude,longitude,altitude,"
+            "groundspeed,heading,ts) VALUES (?,?,?,?,?,0,?)",
+            (self.SID, lat, lon, alt, gs, ts),
+        )
+
+    def _seed(self, conn):
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(?,?,'FRS10','EDDK','EDDW','C172','2026-07-02T09:58:00Z','2026-07-02T10:50:00Z',52,'x')",
+            (self.SID, self.CID),
+        )
+        # Track: Boden EDDK → Steigflug (AGL > 500) → Reiseflug → Landung EDDW + Dwell > 180 s.
+        self._spos(conn, "2026-07-02T10:00:00Z", *self.A, 302, 0)
+        self._spos(conn, "2026-07-02T10:01:00Z", *self.A, 302, 5)
+        self._spos(conn, "2026-07-02T10:02:00Z", *self.A, 1200, 80)
+        self._spos(conn, "2026-07-02T10:20:00Z", 52.0, 8.0, 5000, 120)
+        self._spos(conn, "2026-07-02T10:38:00Z", 53.0, 8.7, 500, 60)
+        self._spos(conn, "2026-07-02T10:40:00Z", *self.B, 20, 0)
+        self._spos(conn, "2026-07-02T10:44:00Z", *self.B, 20, 0)
+
+    def test_statsim_leg_interpreted_in_audit(self):
+        conn = _make_conn()
+        self._seed(conn)
+        conn.commit()
+        res = audit_gps_vs_refile(
+            conn, start="2026-07-01T00:00:00Z", end="2026-07-03T00:00:00Z",
+            statsim_sample=10,
+        )
+        conn.close()
+        assert "statsim" in res
+        st = res["statsim"]
+        assert st["sampled"] >= 1
+        assert st["total"] >= 1
+        flt = next(f for f in st["flights"] if f["statsim_id"] == self.SID)
+        assert flt["n_legs"] == 1
+        assert flt["legs"][0]["dep_icao"] == "EDDK"
+        assert flt["legs"][0]["arr_icao"] == "EDDW"
+        assert flt["classification"] == "match"
+
+    def test_statsim_sample_zero_omits_section(self):
+        conn = _make_conn()
+        self._seed(conn)
+        conn.commit()
+        res = audit_gps_vs_refile(
+            conn, start="2026-07-01T00:00:00Z", end="2026-07-03T00:00:00Z",
+        )
+        conn.close()
+        assert "statsim" not in res

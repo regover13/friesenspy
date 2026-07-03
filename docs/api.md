@@ -1046,6 +1046,11 @@ Schatten-Tabelle `gps_legs`, nie `flights`) und dann verglichen. Kein Poll-Impac
 
 - `days` (int, Default `30`, 1..365) — Fenster `[jetzt − days, jetzt]` (nach `logon_time`/`takeoff_ts`).
 - `cid` (int, optional) — nur diesen Piloten prüfen.
+- `statsim` (int, Default `0`, 0..500) — > 0 hängt eine `statsim`-Sektion an: die GPS-Leg-Interpretation
+  der jüngsten N StatSim-Flüge im Fenster, **on-demand aus `statsim_position_history` gerechnet
+  (in-memory, nichts gespeichert)**. Zeigt, wie StatSim-Flüge unter GPS-only aussähen (Schatten-Vorschau
+  auf Phase-2-Task 5b). Pro Flug: `classification` ∈ `match`/`divergent`/`zwischenlandung`/`incomplete`/`none`
+  plus `legs`; dazu `sampled`/`total` und eine `summary`-Zählung je Klasse.
 
 **Response**
 
