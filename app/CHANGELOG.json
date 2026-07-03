@@ -1,5 +1,13 @@
 [
   {
+    "version": "7.9.2",
+    "date": "2026-07-03",
+    "title": "GPS-Etappen-Audit: StatSim-Flüge im Schatten mit interpretieren",
+    "items": [
+      "🛰️ Das Admin-Audit kann jetzt auch StatSim-Flüge testweise durch die GPS-Etappen-Erkennung schicken (Parameter »statsim«) — rein lesend, aus der vorhandenen StatSim-Positionshistorie gerechnet, nichts gespeichert und ohne jede Wertungswirkung. So wird sichtbar, wie die importierten StatSim-Flüge unter GPS-only aussähen (Vorschau auf die spätere Aktivierung), inkl. erkannter Zwischenlandungen."
+    ]
+  },
+  {
     "version": "7.9.1",
     "date": "2026-07-03",
     "title": "GPS-Etappen-Erkennung: normale Steigflüge werden jetzt erkannt (Schatten-Fix)",

@@ -1164,14 +1164,17 @@ async def admin_get_banner(request: Request):
 
 
 @app.get("/api/admin/gps-leg-audit")
-async def admin_gps_leg_audit(request: Request, days: int = 30, cid: int | None = None):
+async def admin_gps_leg_audit(
+    request: Request, days: int = 30, cid: int | None = None, statsim: int = 0
+):
     """Read-only Phase-1-Audit: vergleicht die Refile-Flüge mit den im Schatten erfassten
     GPS-Legs. Berechnet die Schatten-Legs on-demand (kein Poll-Impact) und liefert die
     Kennzahlen von :func:`app.database.audit_gps_vs_refile`.
 
     ``days`` (1..365) spannt das Fenster ``[jetzt-days, jetzt]``; ``cid`` schränkt optional
-    auf einen Piloten ein. Rein additiv: schreibt nur die Schatten-Tabelle ``gps_legs``,
-    fasst ``flights``/Wertungen nicht an.
+    auf einen Piloten ein. ``statsim`` (0..500) hängt zusätzlich die GPS-Leg-Interpretation der
+    jüngsten N StatSim-Flüge an (in-memory aus ``statsim_position_history``, nichts gespeichert).
+    Rein additiv: schreibt nur die Schatten-Tabelle ``gps_legs``, fasst ``flights``/Wertungen nicht an.
     """
     require_admin(request)
     settings = get_settings()
@@ -1206,6 +1209,7 @@ async def admin_gps_leg_audit(request: Request, days: int = 30, cid: int | None 
             start=start,
             end=end,
             callsign_prefix=settings.CALLSIGN_PREFIX,
+            statsim_sample=max(0, min(500, int(statsim))),
         )
     finally:
         conn.close()
