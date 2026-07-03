@@ -13,10 +13,14 @@ StatSim wird gleichberechtigt einbezogen und füllt Lücken der FriesenSpy-Erfas
 ## Kern-Entscheidungen (Nutzer, 2026-07-03)
 
 1. **Ein „Flug", eine Einheit.** Keine Trennung Flug/Etappe — alles heißt Flug.
-2. **Ein Flug geht von einem Platz zum nächsten *anderen* Platz.** Platzrunden/Touch-and-Go am selben
-   Platz — ob am Start, unterwegs oder am Ziel — erzeugen **keinen** neuen Flug; sie gehören zu dem Flug,
-   dessen Endpunkte die echten (verschiedenen) Plätze sind. Nur eine Landung an einem **anderen** Platz
-   trennt (echte Zwischenlandung = Kern von #23).
+2. **Ein Flug geht von einem Platz zum nächsten *anderen* Platz.** Trenner ist eine **echte Landung =
+   Vollstopp (`gs < 2 kt`) an einem Platz, dessen ICAO sich vom *letzten Boden-Platz* unterscheidet**
+   (im 10-km-Umkreis eines DB-Platzes; sonst keine Landung — Außenlandungs-Regel aus Phase 1). Das *ist*
+   zugleich die Definition einer echten Zwischenlandung. **Keinen** neuen Flug erzeugen nur: (a)
+   **wiederholte Vollstopps am *selben* Platz** (Platzrunden/Taxi-back — am Start, an einem Zwischenstopp
+   oder am Ziel) → kollabieren zu einem Wegpunkt; und (b) **Touch-and-Gos** (nie `gs < 2` → gar keine
+   Landung). Ein Vollstopp an einem **neuen** Platz trennt **immer** — auch wenn dort zusätzlich Runden
+   gedreht werden.
 3. **On-demand statt Speicher.** Flüge sind eine reine Sicht auf die Positionshistorie, bei Bedarf
    berechnet. Kein `gps_legs`-Table, kein Delete, keine `statsim_id`-Spalte.
 4. **Friese = bekannter cid** (je als FRS* geflogen / in der Piloten-Liste). Dessen StatSim-Flüge zählen,
@@ -27,8 +31,16 @@ StatSim wird gleichberechtigt einbezogen und füllt Lücken der FriesenSpy-Erfas
 
 ## A — Flug-Modell: Runden-Collapse
 
-`detect_gps_legs` (bestehend, unverändert) liefert pro Verbindung eine Liste von Roh-Legs
-(Abheben → Landung). Ein **Nachschritt** `collapse_same_airport(legs)` fasst zusammen:
+**Was zählt als Landung (= Wegpunkt):** `detect_gps_legs` (bestehend, unverändert) erzeugt einen Roh-Leg
+nur bei einem **Vollstopp** (`gs < 2 kt`) an einem DB-Platz. Ein **Touch-and-Go** (nie `gs < 2`) taucht
+gar nicht auf. Eine Landung wird zudem erst **endgültig**, wenn danach **nicht binnen `_GPS_ARRIVAL_DWELL`
+(180 s)** wieder abgehoben wird — ein schneller Turnaround (< 180 s) gilt als Stop-and-Go derselben
+Session (kein Wegpunkt); ein echter Zwischenstopp (Tanken/Pause, > 180 s) an einem *anderen* Platz **ist**
+die Zwischenlandung. So wird sie bestimmt: Vollstopp > 180 s an einem Platz ≠ letzter Boden-Platz.
+Schwelle justierbar, falls sehr kurze echte Stopps auch zählen sollen.
+
+`detect_gps_legs` liefert pro Verbindung eine Liste von Roh-Legs (Abheben → Vollstopp-Landung). Ein
+**Nachschritt** `collapse_same_airport(legs)` fasst zusammen:
 
 - Bilde die Platz-Zeitachse `[dep₀, arr₀, arr₁, …]` (Legs sind kontig: `legᵢ.dep == legᵢ₋₁.arr`).
 - Ziehe **aufeinanderfolgende gleiche Plätze** zusammen → Folge distinkter Plätze `[D₀, D₁, …]`.
@@ -40,11 +52,12 @@ Beispiele (verifiziert gewünscht):
 
 | Verlauf | Ergebnis |
 |---|---|
-| EDDK-Runden → EDDW | **EDDK→EDDW** (1 Flug) |
+| EDDK-Runden (Vollstopp) → EDDW | **EDDK→EDDW** (1 Flug) |
 | EDDK → EDDW mit Runden vor Landung | **EDDK→EDDW** |
 | EDDK-Runden → EDDW-Runden | **EDDK→EDDW** |
 | reine EDDK-Runden | **EDDK→EDDK** |
-| EDPS → **EDNX** → EDMA (echte Zwischenlandung, mit/ohne Runden) | **EDPS→EDNX**, **EDNX→EDMA** (2 Flüge) |
+| EDPS → **Vollstopp(-Runden) an EDNX** → EDMA | **EDPS→EDNX**, **EDNX→EDMA** (2 Flüge — EDNX ist echte Zwischenlandung) |
+| EDPS → **Touch-and-Go an EDNX** (kein Vollstopp) → EDMA | **EDPS→EDMA** (1 Flug — keine Landung an EDNX) |
 
 `block_sec`/`duration_min`/`distance_nm` je Flug über das Fenster `[takeoff_ts, landing_ts]` (bestehende
 Helfer `_block_seconds`/`_gps_distance_nm`); Runden-Bodenzeit innerhalb des Fensters ist vernachlässigbar
