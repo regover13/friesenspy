@@ -1785,6 +1785,32 @@ def _dedup_statsim_against_fs(
     return out
 
 
+def _is_ghost_row(conn: sqlite3.Connection, cid: int, f: dict) -> bool:
+    """Ghost-Erkennung für eine Connection-/Flug-Zeile (geteilt zwischen
+    :func:`canonicalize_flights` und dem Fallback-Pfad von :func:`canonicalize_legs`).
+
+    Echte Strecke (`distance_nm > 0.5`) → kein Ghost. Kurz-Connect ohne Strecke
+    (`duration_min <= 5`) → Test-Connect (Ghost). Länger verbunden, keine Strecke: eine
+    Steh-Session ist KEIN Flug — aber nur verwerfen, wenn der Track den Stillstand BELEGT
+    (Positionen im Connection-Fenster vorhanden, Blockzeit 0). Altflüge ohne Positionsdaten
+    bleiben (im Zweifel echter Flug).
+    """
+    if (f.get("distance_nm") or 0) > 0.5:
+        return False
+    if (f.get("duration_min") or 0) <= 5:
+        return True
+    if (f.get("block_min") or 0) > 0:
+        return False
+    lo, lf = f.get("logon_time"), f.get("logoff_time")
+    if not lo or not lf:
+        return False
+    has_pos = conn.execute(
+        "SELECT 1 FROM position_history WHERE cid=? AND ts>=? AND ts<=? LIMIT 1",
+        (cid, lo, lf),
+    ).fetchone()
+    return has_pos is not None
+
+
 def canonicalize_flights(
     conn: sqlite3.Connection,
     *,
@@ -1845,29 +1871,7 @@ def canonicalize_flights(
                 seen.add(k)
                 dd.append(f)
         merged = merge_fragmented_flights(dd, conn=conn)
-
-        def _is_ghost(f: dict) -> bool:
-            # Echte Strecke → Flug.
-            if (f.get("distance_nm") or 0) > 0.5:
-                return False
-            # Kurz-Connect ohne Strecke → Test-Connect.
-            if (f.get("duration_min") or 0) <= 5:
-                return True
-            # Länger verbunden, keine Strecke: eine Steh-Session ist KEIN Flug — aber nur
-            # verwerfen, wenn der Track den Stillstand BELEGT (Positionen vorhanden,
-            # Blockzeit 0). Altflüge ohne Positionsdaten bleiben (im Zweifel echter Flug).
-            if (f.get("block_min") or 0) > 0:
-                return False
-            lo, lf = f.get("logon_time"), f.get("logoff_time")
-            if not lo or not lf:
-                return False
-            has_pos = conn.execute(
-                "SELECT 1 FROM position_history WHERE cid=? AND ts>=? AND ts<=? LIMIT 1",
-                (cid, lo, lf),
-            ).fetchone()
-            return has_pos is not None
-
-        merged = [f for f in merged if not _is_ghost(f)]
+        merged = [f for f in merged if not _is_ghost_row(conn, cid, f)]
         fs_by_cid[cid] = merged
         for f in merged:
             result.append({"source": "friesenspy", **f})
@@ -1902,7 +1906,11 @@ def canonicalize_flights(
 
 
 def _positions_for_cid(
-    conn: sqlite3.Connection, cid: int, start: str | None, end: str | None
+    conn: sqlite3.Connection,
+    cid: int,
+    start: str | None,
+    end: str | None,
+    callsign_prefix: str = "FRS",
 ) -> list[dict]:
     """Positionen eines Piloten für :func:`canonicalize_legs` laden.
 
@@ -1912,6 +1920,12 @@ def _positions_for_cid(
     Positionsladung bewusst NICHT ein: ein Leg, das kurz nach ``end`` landet, soll nicht
     künstlich als offen erscheinen. Die eigentliche Fenster-Filterung (Überlappung mit
     ``[start, end]``) passiert auf Flug-Ebene in :func:`canonicalize_legs`.
+
+    ``callsign_prefix``: eine cid kann unter FRS- UND Nicht-FRS-Callsign geflogen sein
+    (``position_history`` führt ``callsign`` je Zeile). Bei gesetztem Prefix werden nur
+    Positionen mit passendem Callsign geladen, damit fremde Legs derselben cid nicht in die
+    FRS-gefilterte Antwort lecken. ``callsign_prefix=""`` liefert alle Positionen der cid
+    (Piloten-Detail sieht alles).
     """
     sql = (
         "SELECT latitude, longitude, altitude, groundspeed, ts, callsign "
@@ -1922,6 +1936,9 @@ def _positions_for_cid(
         lookback = (_parse_iso(start) - timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%SZ")
         sql += " AND ts >= ?"
         params.append(lookback)
+    if callsign_prefix:
+        sql += " AND callsign LIKE ?"
+        params.append(callsign_prefix + "%")
     sql += " ORDER BY ts"
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
@@ -1987,6 +2004,9 @@ def _statsim_plan(row: dict) -> dict:
     }
 
 
+_GPS_LEG_GAP_MINUTES = 30  # muss zum gap_minutes-Default von detect_gps_legs passen
+
+
 def _gps_flights_for_positions(
     positions: list[dict], *, plan_rows: list[dict], source: str
 ) -> list[dict]:
@@ -2019,15 +2039,33 @@ def _gps_flights_for_positions(
     callsign_by_ts = {p["ts"]: p.get("callsign") for p in positions if p.get("callsign")}
 
     out: list[dict] = []
-    for gf in gps_flights:
+    for i, gf in enumerate(gps_flights):
         takeoff_ts = gf.get("takeoff_ts")
         landing_ts = gf.get("landing_ts")
         if landing_ts:
             end_ts = landing_ts
         else:
-            # Offener/unvollständiger Leg: Fenster-Ende = letzter belegter ts ab Takeoff.
+            # Offener/unvollständiger Flug: struktureller Vertrag von _detect_segment — ein
+            # incomplete Leg entsteht AUSSCHLIESSLICH am Segment-Ende (Sample-Schleife endet
+            # noch airborne). Ein solcher offener Flug ist also IMMER der letzte Flug seines
+            # Zeit-Segments; ein evtl. Folgeflug gehört zwingend zum NÄCHSTEN Segment (Gap
+            # > 30 min, derselbe Schwellwert wie detect_gps_legs). Fenster-Ende daher: letzter
+            # belegter ts ab Takeoff, gekappt VOR der ersten Zeitlücke > 30 min danach (=
+            # Segment-Ende) — sonst würde ein Absturz→Reconnect-Segment (neuer Flug nach der
+            # Lücke) fälschlich in die Metriken dieses offenen Flugs mit hineingezählt (inkl.
+            # Haversine-Sprung Crash→Respawn UND der reinen Zeitlücke selbst in duration_min).
+            # Zusätzlich (redundante zweite Absicherung) am Takeoff des chronologisch nächsten
+            # Flugs gekappt, falls vorhanden (``gps_flights`` ist chronologisch geordnet).
             tail = [t for t in all_ts if t >= takeoff_ts]
-            end_ts = tail[-1] if tail else takeoff_ts
+            end_ts = tail[0] if tail else takeoff_ts
+            for prev_ts, cur_ts in zip(tail, tail[1:]):
+                gap_min = (_parse_iso(cur_ts) - _parse_iso(prev_ts)).total_seconds() / 60.0
+                if gap_min > _GPS_LEG_GAP_MINUTES:
+                    break
+                end_ts = cur_ts
+            next_takeoff = gps_flights[i + 1].get("takeoff_ts") if i + 1 < len(gps_flights) else None
+            if next_takeoff is not None and end_ts >= next_takeoff:
+                end_ts = takeoff_ts  # Sicherheitsnetz; strukturell sollte dieser Zweig nie greifen
 
         block_min = _block_seconds_positions(positions, takeoff_ts, end_ts) // 60
         distance_nm = _distance_nm_positions(positions, takeoff_ts, end_ts)
@@ -2044,7 +2082,10 @@ def _gps_flights_for_positions(
         plan_dep = plan.get("departure") if plan else None
         plan_arr = plan.get("arrival") if plan else None
         departure = gps_dep or plan_dep
-        arrival = gps_arr or plan_arr
+        # Kein Plan-Fallback für arrival: ein abgestürzter/offener Flug soll NICHT das
+        # geplante Ziel als arrival zeigen (sähe sonst wie gelandet aus, Bummel-/
+        # Kutter-Zielwertung). leer/None = offen.
+        arrival = gps_arr
 
         if source == "friesenspy":
             connection_closed = bool(plan.get("logoff_time")) if plan else False
@@ -2198,6 +2239,11 @@ def canonicalize_legs(
     → Sortierung ``logon_time`` absteigend.
 
     ``callsign_prefix=""`` liefert alle Callsigns (für die Piloten-Detail-Ansicht).
+
+    Hinweis ``connection_closed``: NICHT als „Flug nicht beendet" lesen. Ein gelandeter
+    GPS-Flug ohne Plan-Match liefert konservativ ``connection_closed=False`` (kein Beweis
+    für ein Connection-Ende vorhanden) — ob der FLUG selbst beendet ist, entscheidet allein
+    ``arrival``/``gps_arrival``/``logoff_time``, nicht dieses Feld.
     """
     prefix_pat = callsign_prefix + "%"
 
@@ -2205,13 +2251,17 @@ def canonicalize_legs(
     # Bewusst OHNE "logoff_time IS NOT NULL" (anders als canonicalize_flights): unter
     # GPS-only ist die Connection nicht mehr die Wahrheit für "abgeschlossen" — das
     # übernimmt connection_closed, das auch für noch offene Connections False liefert.
+    # Overlap-WHERE (Controller-Entscheidung, Brief war intern widersprüchlich): eine Zeile
+    # zählt, wenn sie NICHT vor `start` endet UND NICHT nach `end` beginnt — so werden auch
+    # Sessions gefangen, die vor `start` einloggen und über die Grenze fliegen (genau wofür
+    # der 12h-Lookback gedacht ist).
     fs_where = ["superseded_by IS NULL", "callsign LIKE ?"]
     fs_params: list = [prefix_pat]
     if cids:
         fs_where.append("cid IN (%s)" % ",".join("?" * len(cids)))
         fs_params += list(cids)
     if start:
-        fs_where.append("logon_time >= ?")
+        fs_where.append("(logoff_time IS NULL OR logoff_time >= ?)")
         fs_params.append(start)
     if end:
         fs_where.append("logon_time <= ?")
@@ -2247,7 +2297,7 @@ def canonicalize_legs(
     fs_intervals_by_cid: dict[int, list[tuple]] = {}
 
     for cid, rows in fs_by_cid.items():
-        positions = _positions_for_cid(conn, cid, start, end)
+        positions = _positions_for_cid(conn, cid, start, end, callsign_prefix=callsign_prefix)
         gps_flights = _gps_flights_for_positions(positions, plan_rows=rows, source="friesenspy")
         if gps_flights:
             for f in gps_flights:
@@ -2258,8 +2308,17 @@ def canonicalize_legs(
                     (f.get("logon_time"), coverage_end or f.get("logoff_time"))
                 )
         else:
-            # Keine GPS-Flüge trotz Zeilen → jede Zeile per _flightrow_as_flight übernehmen.
+            # Keine GPS-Flüge trotz Zeilen → nur GESCHLOSSENE, nicht-ghost Zeilen als eigenen
+            # Flug übernehmen. Eine offene Fallback-Zeile würde sonst ein (logon, ∞)-Dedup-
+            # Intervall erzeugen, das ALLE späteren StatSim-Flüge der cid unterdrückt; Test-
+            # Connects/belegte Steh-Sessions sind ohnehin kein Flug (Ghost-Regel wie
+            # canonicalize_flights). Offene/Ghost-Zeilen bleiben Teil von `rows` (plan_rows
+            # für _assign_flightplan im GPS-Zweig), fließen hier nur nicht als eigener Flug.
             for row in rows:
+                if row.get("logoff_time") is None:
+                    continue
+                if _is_ghost_row(conn, cid, row):
+                    continue
                 f = _flightrow_as_flight(row, "friesenspy")
                 fs_flights.append(f)
                 fs_intervals_by_cid.setdefault(cid, []).append(
@@ -2278,7 +2337,9 @@ def canonicalize_legs(
         sc_where.append("cid IN (%s)" % ",".join("?" * len(cids)))
         sc_params += list(cids)
     if start:
-        sc_where.append("logon_time >= ?")
+        # Overlap-WHERE analog FS (StatSim hat logoff_time immer gesetzt — die
+        # IS-NULL-Klausel greift dort nie, ist aber harmlos).
+        sc_where.append("(logoff_time IS NULL OR logoff_time >= ?)")
         sc_params.append(start)
     if end:
         sc_where.append("logon_time <= ?")
@@ -2303,7 +2364,10 @@ def canonicalize_legs(
         if gps_flights:
             for f in gps_flights:
                 f["cid"] = row["cid"]
-                f.pop("_coverage_end", None)
+                # _coverage_end bleibt vorerst im Dict (symmetrisch zur FS-Seite, FIX 6) —
+                # wird erst kurz vor der Rückgabe für die Dedup-Obergrenze genutzt und dann
+                # entfernt. Sonst bekäme ein offener StatSim-GPS-Flug hi=∞ und würde von
+                # jedem späteren FS-Flug fälschlich als "überdeckt" gewertet.
                 st_flights.append(f)
         else:
             st_flights.append(_flightrow_as_flight(row, "statsim"))
@@ -2312,7 +2376,9 @@ def canonicalize_legs(
 
     for f in st_flights:
         intervals = fs_intervals_by_cid.get(f.get("cid"), [])
-        if _overlaps_any(intervals, f.get("logon_time"), f.get("logoff_time")):
+        coverage_end = f.pop("_coverage_end", None)
+        hi = coverage_end or f.get("logoff_time")
+        if _overlaps_any(intervals, f.get("logon_time"), hi):
             continue
         result.append(f)
 
