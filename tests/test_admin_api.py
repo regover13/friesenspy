@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -40,6 +41,7 @@ def db(tmp_path, monkeypatch):
         lambda: SimpleNamespace(
             DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=SECRET, ADMIN_PASSWORD=PW,
             VAPID_PRIVATE_KEY="vapid", VAPID_CONTACT_EMAIL="mailto:test",
+            STATSIM_API_KEY=None,
         ),
     )
     return p
@@ -541,3 +543,103 @@ class TestGpsLegAudit:
         fr = next(f for f in res["flights"] if f["cid"] == self.CID)
         assert fr["n_legs"] == 0
         assert fr["arr_match"] is None
+
+
+# ---------------------------------------------------------------------------
+# Piloten-Detail: GET /api/pilots/{cid}/flights liefert GPS-Flüge (#23, Task 8)
+# ---------------------------------------------------------------------------
+
+class TestPilotFlightsEndpoint:
+    """Endpoint zeigt jetzt die kanonischen GPS-Flüge (inkl. Zwischenlandung) statt der
+    Refile-Flüge — Fremd-Callsigns (StatSim, Nicht-FRS) bleiben wie bisher sichtbar."""
+
+    CID = 6161
+    A = (50.8659, 7.14274)    # EDDK, elev 302 ft
+    B = (53.0475, 8.78667)    # EDDW, elev 14 ft
+    C = (53.6304, 9.98823)    # EDDH, elev 53 ft
+
+    @staticmethod
+    def _pilot(conn, cid, name="Tester"):
+        conn.execute(
+            "INSERT OR IGNORE INTO pilots (cid,name,added_at) VALUES (?,?,?)",
+            (cid, name, "2026-01-01T00:00:00Z"),
+        )
+
+    @staticmethod
+    def _flight(conn, cid, dep, arr, logon, logoff, dist=210.0, block=80):
+        conn.execute(
+            "INSERT INTO flights (cid,callsign,aircraft_short,departure,arrival,logon_time,"
+            "logoff_time,duration_min,distance_nm,block_min) "
+            "VALUES (?,?,'C172',?,?,?,?,?,?,?)",
+            (cid, f"FRS{cid}", dep, arr, logon, logoff, block, dist, block),
+        )
+
+    def _pos(self, conn, cid, ts, lat, lon, alt, gs):
+        conn.execute(
+            "INSERT INTO position_history (cid,callsign,latitude,longitude,altitude,"
+            "groundspeed,heading,ts) VALUES (?,?,?,?,?,?,0,?)",
+            (cid, f"FRS{cid}", lat, lon, alt, gs, ts),
+        )
+
+    def _leg_a_to_b(self, conn, cid, base):
+        """Sauberer Track EDDK → EDDW (Boden, Steigflug > 500 ft AGL, Landung + Dwell)."""
+        self._pos(conn, cid, _iso(base + timedelta(minutes=0)), *self.A, 302, 0)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=1)), *self.A, 302, 5)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=2)), *self.A, 1200, 80)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=20)), 52.0, 8.0, 5000, 120)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=38)), 53.0, 8.7, 500, 60)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=40)), *self.B, 20, 0)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=44)), *self.B, 20, 0)
+
+    def _leg_b_to_c(self, conn, cid, base):
+        """Anschluss EDDW → EDDH (Zwischenlandung ohne Refile)."""
+        self._pos(conn, cid, _iso(base + timedelta(minutes=50)), *self.B, 800, 80)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=60)), 53.3, 9.3, 5000, 120)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=70)), 53.6, 9.9, 400, 60)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=72)), *self.C, 60, 0)
+        self._pos(conn, cid, _iso(base + timedelta(minutes=76)), *self.C, 60, 0)
+
+    def test_gps_legs_with_intermediate_landing(self, db):
+        """Track A→B→C EINER Connection (kein Refile) ⇒ 2 Flug-Zeilen statt 1 Refile-Flug."""
+        now = datetime.now(timezone.utc)
+        base = now - timedelta(hours=3)
+        conn = get_connection(db)
+        self._pilot(conn, self.CID)
+        self._flight(
+            conn, self.CID, "EDDK", "EDDH",
+            _iso(base - timedelta(minutes=2)), _iso(base + timedelta(minutes=80)),
+        )
+        self._leg_a_to_b(conn, self.CID, base)
+        self._leg_b_to_c(conn, self.CID, base)
+        conn.commit(); conn.close()
+
+        resp = asyncio.run(main.get_pilot_flights(self.CID))
+        assert resp.headers.get("x-statsim-status") == "no-key"
+        body = json.loads(resp.body)
+
+        own = [f for f in body if f["cid"] == self.CID and f["source"] == "friesenspy"]
+        assert len(own) == 2  # Zwischenlandung → 2 Zeilen (nicht mehr 1 Refile-Flug)
+        assert all("gps_departure" in f and "plan_departure" in f for f in own)
+
+        legs = sorted(own, key=lambda f: f["logon_time"])
+        assert legs[0]["gps_departure"] == "EDDK" and legs[0]["gps_arrival"] == "EDDW"
+        assert legs[1]["gps_departure"] == "EDDW" and legs[1]["gps_arrival"] == "EDDH"
+
+    def test_foreign_callsign_statsim_flight_stays_visible(self, db):
+        """StatSim-Flug des Piloten unter einem Nicht-FRS-Callsign bleibt in der Antwort
+        (callsign_prefix="" wie bisher — kein Filtern auf Friesen-Präfix im Detail)."""
+        now = datetime.now(timezone.utc)
+        base = now - timedelta(hours=3)
+        conn = get_connection(db)
+        self._pilot(conn, self.CID)
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (70011, self.CID, "DFGKC", "EDDK", "EDDW", "C172",
+             _iso(base), _iso(base + timedelta(minutes=44)), 44, "x"),
+        )
+        conn.commit(); conn.close()
+
+        resp = asyncio.run(main.get_pilot_flights(self.CID))
+        body = json.loads(resp.body)
+        assert any(f["callsign"] == "DFGKC" and f["source"] == "statsim" for f in body)

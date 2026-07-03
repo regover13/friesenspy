@@ -21,6 +21,7 @@ from app.database import (
     apply_bummel_overrides,
     audit_gps_vs_refile,
     canonicalize_flights,
+    canonicalize_legs,
     compute_bummel_standings,
     create_bummel_race,
     delete_bummel_override,
@@ -652,19 +653,19 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
                             )
                         statsim_status = "updating"
 
-        # Eine Wahrheit: kanonische (gemergte, deduplizierte) Flüge dieses Piloten.
+        # Eine Wahrheit: kanonische GPS-Flüge dieses Piloten (GPS-only Phase 2, #23) — inkl.
+        # unrefilter Zwischenlandungen (je Leg eine eigene Zeile).
         # callsign_prefix="" → alle Callsigns des Piloten (auch Nicht-FRS, wie bisher).
         start = (
             datetime.now(_timezone.utc) - timedelta(days=display_days)
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
-        # Gecachte StatSim-Daten immer einbeziehen (gültige Wahrheit, identisch zu /api/stats);
-        # nur der Hintergrund-Fetch oben hängt am API-Key.
-        result = canonicalize_flights(
+        # Gecachte StatSim-Daten sind bei canonicalize_legs immer mit dabei (gültige Wahrheit,
+        # identisch zu /api/stats); nur der Hintergrund-Fetch oben hängt am API-Key.
+        result = canonicalize_legs(
             conn,
             cids=[cid],
             callsign_prefix="",
             start=start,
-            include_statsim=True,
         )
     finally:
         conn.close()
