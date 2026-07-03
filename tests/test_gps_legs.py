@@ -83,7 +83,7 @@ class TestDetectGpsLegs:
         assert leg["max_altitude"] == 5000
         assert set(leg.keys()) == {
             "dep_icao", "arr_icao", "takeoff_ts", "landing_ts",
-            "complete", "dep_source", "arr_source", "max_altitude",
+            "complete", "dep_source", "arr_source", "max_altitude", "segment",
         }
 
     def test_realistic_gradual_climb(self):
@@ -161,23 +161,28 @@ class TestDetectGpsLegs:
         assert legs[0]["complete"] is True
 
     def test_stop_and_go_merge(self):
-        """Vollstopp mit erneutem Abheben binnen 180 s → 1 Leg (eine Session)."""
+        """Vollstopp mit erneutem Abheben: OHNE Dwell/LANDED-Zwischenzustand sind das zwei
+        Roh-Legs X→X (das Zusammenführen zur einen Session macht erst collapse_same_airport,
+        Task 2)."""
         track = [
             p(0, 50.0, 7.0, 300, 0),
             p(15, 50.0, 7.0, 300, 0),
             p(30, 50.02, 7.05, 900, 60),    # Abheben
-            p(90, 50.0, 7.0, 300, 0),       # Aufsetzen X (tentativ)
-            p(120, 50.02, 7.05, 900, 60),   # erneutes Abheben (900-300=600>500) binnen 30 s
-            p(210, 50.0, 7.0, 300, 0),      # erneut Aufsetzen X
+            p(90, 50.0, 7.0, 300, 0),       # Aufsetzen X → Landung SOFORT final (Leg 1)
+            p(120, 50.02, 7.05, 900, 60),   # erneutes Abheben (900-300=600>500)
+            p(210, 50.0, 7.0, 300, 0),      # erneut Aufsetzen X → Landung final (Leg 2)
             p(270, 50.0, 7.0, 300, 0),
             p(330, 50.0, 7.0, 300, 0),
-            p(420, 50.0, 7.0, 300, 0),      # Dwell > 180 → endgültig
+            p(420, 50.0, 7.0, 300, 0),
         ]
         legs = run(track)
-        assert len(legs) == 1
+        assert len(legs) == 2
         assert legs[0]["dep_icao"] == "EDDX"
         assert legs[0]["arr_icao"] == "EDDX"
         assert legs[0]["complete"] is True
+        assert legs[1]["dep_icao"] == "EDDX"
+        assert legs[1]["arr_icao"] == "EDDX"
+        assert legs[1]["complete"] is True
 
     def test_go_around_never_below_2kt(self):
         """Go-around / Touch-and-Go (gs nie < 2) → keine Fehl-Landung, 1 Leg."""
@@ -334,3 +339,30 @@ class TestDetectGpsLegs:
 
     def test_empty_positions(self):
         assert run([]) == []
+
+    def test_immediate_finalize_no_dwell(self):
+        """Ohne Dwell: Vollstopp + sofortiges Wieder-Abheben am SELBEN Platz = zwei Roh-Legs."""
+        track = [
+            p(0, 50.0, 7.0, 300, 0), p(15, 50.0, 7.0, 300, 0),
+            p(30, 50.05, 7.05, 900, 60),      # Abheben EDDX
+            p(90, 50.0, 7.0, 300, 0),         # Vollstopp EDDX → Landung SOFORT final
+            p(105, 50.05, 7.05, 900, 60),     # Wieder-Abheben (früher: Stop-and-Go-Merge)
+            p(200, 52.7, 8.7, 5000, 150),
+            p(320, 53.5, 9.5, 200, 0),        # Landung EDDB
+            p(380, 53.5, 9.5, 200, 0),
+        ]
+        legs = run(track)
+        assert [(l["dep_icao"], l["arr_icao"]) for l in legs] == [("EDDX", "EDDX"), ("EDDX", "EDDB")]
+        assert all(l["segment"] == 0 for l in legs)
+
+    def test_segment_index_increments_on_gap(self):
+        """Positions-Lücke > 30 min → zweites Segment mit segment == 1."""
+        track = [
+            p(0, 52.0, 8.0, 100, 0), p(15, 52.0, 8.0, 100, 0),
+            p(30, 52.1, 8.05, 700, 60), p(120, 52.7, 8.7, 5000, 150),   # Segment 0, endet airborne
+            p(2520, 52.9, 8.9, 5000, 150), p(2600, 53.5, 9.5, 200, 0),  # 40-min-Lücke → Segment 1
+            p(2660, 53.5, 9.5, 200, 0), p(2720, 53.5, 9.5, 200, 0),
+        ]
+        legs = run(track)
+        assert legs[0]["segment"] == 0
+        assert legs[-1]["segment"] == 1
