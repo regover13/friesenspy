@@ -5,8 +5,8 @@
 > Design-Spec: `docs/superpowers/specs/2026-07-03-gps-only-phase2-aktivierung-design.md` (verbindlich).
 > **Rev. 2 (Fable-5-Review eingearbeitet):** Finalisierung am Touchdown statt LANDED-Zustand; reine
 > Block/Distanz-Helfer (StatSim-Quelle!); `connection_closed` für offene Flüge; Latch-Reconcile über das
-> Connection-Intervall; Piloten-Detail behält Fremd-Callsigns; Refile-Split bleibt; Zwischen-Release
-> v7.9.5 am GATE; UI-Task für Spec G; Fenster-Lookback; per-Flug-Dedup (Teil-Überlappung).
+> Connection-Intervall; Piloten-Detail behält Fremd-Callsigns; Refile-Split bleibt; GATE als lokale
+> Audit-Auswertung (kein Zwischen-Release); UI-Task für Spec G; Fenster-Lookback; per-Flug-Dedup (Teil-Überlappung).
 
 **Goal:** Statistik, Piloten-Detail, Bummel und Kutter lesen die GPS-erkannten Flüge (aus der
 Positionshistorie) statt der Refile-/Disconnect-basierten `canonicalize_flights`.
@@ -15,9 +15,10 @@ Positionshistorie) statt der Refile-/Disconnect-basierten `canonicalize_flights`
 `collapse_same_airport`) bilden aus Positionen die Flüge. Adapter `canonicalize_legs` liefert sie
 **formgleich** zu `canonicalize_flights` (FriesenSpy+StatSim, Fallback auf Flugplan-Zeilen ohne Track,
 Flugplan-Label Startplatz-primär, per-Flug-Dedup) und wird für die globale Statistik von einer
-materialisierten Tabelle `flight_cache` gepuffert. Audit wird auf die collapsed-Sicht umgebaut und als
-**Schatten-Release v7.9.5** deployed (GATE mit echten Prod-Zahlen). Danach Konsumenten-Umstellung,
-Kutter-Latch-Reconcile, UI (GPS+Plan nebeneinander), Cleanup, **v8.0.0**.
+materialisierten Tabelle `flight_cache` gepuffert. Audit wird auf die collapsed-Sicht umgebaut; das
+**GATE ist eine lokale Audit-Auswertung gegen Prod-Daten** (kein Zwischen-Release — der Controller läuft
+lokal). Danach Konsumenten-Umstellung, Kutter-Latch-Reconcile, UI (GPS+Plan nebeneinander), Cleanup,
+**einziges Release v8.0.0** am Ende.
 
 **Tech Stack:** Python 3.11, SQLite (WAL), FastAPI, pytest, airportsdata. stdlib-Muster wie bestehend.
 
@@ -444,11 +445,17 @@ Pseudo-Plan-Dict mit `id=None`).
 
 ---
 
-## Task 6: Audit auf collapsed-Sicht + Schatten-Release v7.9.5 (GATE)
+## Task 6: Audit auf collapsed-Sicht (GATE — lokale Auswertung, KEIN Zwischen-Release)
 
 **Files:** Modify `app/database.py` (`audit_gps_vs_refile:1852` + `_statsim_gps_interpretation`),
-`app/main.py` (`admin_gps_leg_audit:1282`; `recompute_gps_legs`-Loop `:1319-1320` entfernen),
-`app/CHANGELOG.json`, Docs. Test `tests/test_admin_api.py`, `tests/test_database.py`.
+`app/main.py` (`admin_gps_leg_audit:1282`; `recompute_gps_legs`-Loop `:1319-1320` entfernen).
+Test `tests/test_admin_api.py`, `tests/test_database.py`.
+
+> **Nutzer-Entscheidung (2026-07-03):** Das ursprünglich hier geplante Schatten-Release v7.9.5
+> **entfällt**. Der Controller läuft lokal auf derselben Maschine → das GATE braucht keinen Deploy.
+> GATE = **collapsed-Audit lokal auf dem Feature-Branch gegen Prod-Daten**, Zahlenbericht an den
+> Nutzer. Deployt wird erst v8.0.0 am Ende (Task 13), nach GATE-Freigabe. Diese Task ist damit rein
+> additiv/wertungsneutral (Konsumenten unberührt) und bleibt auf dem Branch (kein Merge, kein Tag).
 
 - [ ] **Step 1: Failing Test** — Audit-Kennzahlen kommen aus `canonicalize_legs`: ein Track mit
   Platzrunden zählt als **ein** Flug (collapsed), nicht N Roh-Legs; `401` ohne Admin bleibt; die
@@ -460,15 +467,13 @@ Pseudo-Plan-Dict mit `id=None`).
   `_statsim_gps_interpretation`: nach `detect_gps_legs` zusätzlich `collapse_same_airport`.
   Endpoint: `recompute_gps_legs`-Loop entfernen (Tabelle wird Task 12 entsorgt).
 - [ ] **Step 4: Run — PASS** (`python -m pytest tests/test_admin_api.py tests/test_database.py -q`).
-- [ ] **Step 5: Schatten-Release v7.9.5.** Changelog-Eintrag (Patch, kein highlight): „GPS-Etappen-Audit
-  zeigt jetzt die endgültige Flug-Sicht (Platzrunden zusammengefasst, Landung sofort) — weiterhin ohne
-  Wertungswirkung." **Alles bis hier ist wertungsneutral** (Konsumenten unberührt). Branch → main mergen,
-  Deploy + Health `== 7.9.5`, Tag `v7.9.5`.
-- [ ] **Step 6: Commit/Tag.**
+- [ ] **Step 5: Commit auf dem Branch** (kein Merge/Deploy/Tag).
 
-**⏸ GATE (Pflicht-Stopp):** Prod-Audit (`/api/admin/gps-leg-audit?days=365&statsim=500`) mit
-**collapsed-Zahlen** sichten — die früheren „95,8 %" galten der Roh-Sicht. Erst nach Freigabe des
-Nutzers weiter mit Task 7.
+**⏸ GATE (Pflicht-Stopp):** Der Controller wertet das **collapsed-Audit lokal gegen einen Prod-DB-
+Snapshot** aus (per SSH read-only nach lokal geholt; alternativ Tracks per HTTPS wie bei der
+v7.9.1-Verifikation) und liefert dem Nutzer einen **Zahlenbericht** (collapsed matches/missing/extra/
+arr_divergence + StatSim-Interpretation; die früheren „95,8 %" galten der Roh-Sicht). Erst nach
+Freigabe des Nutzers weiter mit Task 7.
 
 ---
 
