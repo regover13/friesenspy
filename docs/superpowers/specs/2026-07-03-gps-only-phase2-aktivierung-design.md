@@ -203,7 +203,8 @@ nur fürs Labeln. StatSim liefert dep/arr/Muster aus `statsim_cache`.
   „95,8 % sauber"-Stichprobe — gelten nur für die Roh-Sicht und sind neu zu ziehen).
 - **Rückwirkend alles neu**; schrittweise Umstellung mit Vorher/Nachher-Zahlvergleich je Konsument.
 - **Bummel-E2E „Frode":** landet am Ziel, bleibt verbunden → erscheint mit korrekter Blockzeit ohne Disconnect.
-- Release **v7.10.0** (Wertungsänderung → Minor/highlight). Docs (README, api.md, architecture.md), Deploy
+- Release **v8.0.0** (Major/highlight — Kern-Wahrheit ändert sich, Historie rückwirkend neu). Docs
+  (README, api.md, architecture.md), Deploy
   Push→Actions→GHCR→SSH + Health-Check, Tag.
 
 ## Nicht in Phase 2 — Folgeschritt (Phase 2b)
