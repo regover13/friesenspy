@@ -22,11 +22,13 @@ from app.database import (
     get_pilot_flights_friesenspy,
     get_position_history,
     get_stats,
+    get_stats_activity,
     get_statsim_flights_for_pilot,
     get_statsim_last_fetched,
     init_db,
     merge_fragmented_flights,
     open_flight,
+    rebuild_flight_cache,
     recompute_gps_legs,
     remove_live_position,
     save_position_history,
@@ -507,6 +509,145 @@ class TestGetStats:
         conn = _make_conn()
         stats = get_stats(conn, days=30)
         assert stats == []
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# get_stats / get_stats_activity — GPS-only Phase 2 (#23, Task 7): KPIs kommen jetzt aus
+# get_cached_flights (canonicalize_legs materialisiert). Fixtures analog
+# tests/test_flight_cache.py: reale Plätze EDDK/EDDW, echte GPS-Tracks statt reiner
+# Connection-Zeilen, damit der Leg-Detektor (app/gps_legs.py) tatsächlich greift.
+# ---------------------------------------------------------------------------
+
+EDDK = (50.8659, 7.14274)
+EDDW = (53.0475, 8.78667)
+
+
+def _iso(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _insert_pos_row(conn, cid, ts, lat, lon, alt, gs, callsign):
+    conn.execute(
+        "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, "
+        "groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+        (cid, callsign, lat, lon, alt, gs, ts),
+    )
+
+
+class TestGetStatsInProgressGpsLeg:
+    """Ein Flug ohne erkannte Landung zaehlt nur, wenn seine Connection beendet ist
+    (Absturz/Aussenlandung — der Flug hat stattgefunden). Ist die Connection noch offen,
+    fliegt der Pilot GERADE — noch nicht gewertet (Brief-Test Task 7)."""
+
+    def _seed_completed_flight(self, conn, cid, callsign, start_dt):
+        """Kompletter EDDK->EDDW-Track (Landung erkannt) — dieselbe Form wie
+        tests/test_flight_cache.py._TRACK_OFFSETS."""
+        fid = open_flight(conn, cid, callsign, "C172", "EDDK", "EDDW", _iso(start_dt))
+        conn.commit()
+        offsets = [
+            (0, *EDDK, 302, 0),
+            (1, *EDDK, 302, 5),
+            (2, *EDDK, 1200, 80),
+            (20, 52.0, 8.0, 5000, 120),
+            (38, 53.0, 8.7, 500, 60),
+            (40, *EDDW, 20, 0),
+            (44, *EDDW, 20, 0),
+        ]
+        for off, lat, lon, alt, gs in offsets:
+            _insert_pos_row(
+                conn, cid, _iso(start_dt + timedelta(minutes=off)), lat, lon, alt, gs, callsign
+            )
+        close_flight(conn, fid, _iso(start_dt + timedelta(minutes=44)))
+        conn.commit()
+        return fid
+
+    def _seed_inprogress_leg(self, conn, cid, callsign, start_dt):
+        """Startet in EDDW Richtung EDDK, bricht aber mitten im Reiseflug ab (kein
+        Boden-Sample mehr) — der Leg-Detektor liefert einen offenen (incomplete) Leg:
+        Abheben erkannt, keine Landung."""
+        fid = open_flight(conn, cid, callsign, "C172", "EDDW", "EDDK", _iso(start_dt))
+        conn.commit()
+        offsets = [
+            (0, *EDDW, 20, 0),
+            (1, *EDDW, 20, 5),
+            (2, *EDDW, 1200, 80),
+            (20, 52.0, 8.0, 5000, 120),
+        ]
+        for off, lat, lon, alt, gs in offsets:
+            _insert_pos_row(
+                conn, cid, _iso(start_dt + timedelta(minutes=off)), lat, lon, alt, gs, callsign
+            )
+        conn.commit()
+        return fid
+
+    def test_get_stats_counts_open_flight_only_after_connection_end(self):
+        """Brief-Test: (a) Connection von Flug B offen -> flight_count == 1 (nur Flug A);
+        (b) Connection von Flug B beendet -> flight_count == 2 (Flug B zaehlt jetzt, auch
+        ohne erkannte Landung)."""
+        conn = _make_conn()
+        cid = 9101
+        ensure_pilot(conn, cid, "Progress Pilot")
+        conn.commit()
+
+        now = datetime.now(timezone.utc)
+        start_a = now - timedelta(hours=3)
+        self._seed_completed_flight(conn, cid, "FRS91", start_a)
+
+        start_b = start_a + timedelta(minutes=44 + 30)
+        fid_b = self._seed_inprogress_leg(conn, cid, "FRS91", start_b)
+
+        # (a) Flug B ist noch in der Luft, Connection offen -> zaehlt noch nicht.
+        stats_open = get_stats(conn, days=30)
+        assert len(stats_open) == 1
+        assert stats_open[0]["cid"] == cid
+        assert stats_open[0]["flight_count"] == 1
+        assert stats_open[0]["fs_count"] == 1
+        # last_flight darf NICHT vom offenen Flug B verfaelscht werden (der liegt zeitlich
+        # nach Flug A).
+        assert stats_open[0]["last_flight"] is not None
+        assert stats_open[0]["last_flight"] < _iso(start_b)
+
+        activity_open = get_stats_activity(conn, days=30)
+        assert sum(p["flight_count"] for p in activity_open["data"]) == 1
+
+        # (b) Connection von Flug B wird beendet (Absturz/Aussenlandung, keine Landung
+        # erkannt) -> der Flug hat stattgefunden und zaehlt jetzt mit. Voller Cache-Rebuild
+        # erzwungen (die 600s-Frischeschwelle von get_cached_flights wuerde sonst die
+        # eben erst geschlossene Connection nicht sofort sehen — das ist Task-5-Verhalten,
+        # hier nur deterministisch erzwungen).
+        close_flight(conn, fid_b, _iso(start_b + timedelta(minutes=25)))
+        conn.commit()
+        rebuild_flight_cache(conn, full=True)
+
+        stats_closed = get_stats(conn, days=30)
+        assert len(stats_closed) == 1
+        assert stats_closed[0]["flight_count"] == 2
+        assert stats_closed[0]["fs_count"] == 2
+        assert stats_closed[0]["last_flight"] > stats_open[0]["last_flight"]
+
+        activity_closed = get_stats_activity(conn, days=30)
+        assert sum(p["flight_count"] for p in activity_closed["data"]) == 2
+        conn.close()
+
+    def test_get_stats_only_inprogress_pilot_appears_with_zero(self):
+        """Pilot fliegt GERADE und hat sonst keinen abgeschlossenen Flug -> erscheint
+        weiterhin in der Liste, aber mit 0 gewerteten Fluegen (nicht gar nicht)."""
+        conn = _make_conn()
+        cid = 9102
+        ensure_pilot(conn, cid, "Solo Progress Pilot")
+        conn.commit()
+
+        now = datetime.now(timezone.utc)
+        self._seed_inprogress_leg(conn, cid, "FRS92", now - timedelta(minutes=30))
+
+        stats = get_stats(conn, days=30)
+        assert len(stats) == 1
+        assert stats[0]["cid"] == cid
+        assert stats[0]["fs_count"] == 0
+        assert stats[0]["st_count"] == 0
+        assert stats[0]["flight_count"] == 0
+        assert stats[0]["last_flight"] is None
         conn.close()
 
 
