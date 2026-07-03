@@ -1921,3 +1921,169 @@ class TestStatsimBackfillSelection:
         assert len(ids) == 1              # Limit greift
         assert ids[0] in {601, 602}
         assert remaining == 2             # nur die zwei gültigen uncachten
+
+
+# ---------------------------------------------------------------------------
+# _block_seconds_positions / _distance_nm_positions — reine Varianten (#23 Task 3)
+#
+# Diese reinen Funktionen arbeiten auf einer bereits geladenen Positionsliste statt
+# selbst per SQL aus position_history (cid-gebunden) zu laden — Grundlage dafür, dass
+# GPS-Legs künftig auch aus statsim_position_history berechnet werden können.
+# ---------------------------------------------------------------------------
+
+_TRACK_BASE_DATE = "2026-01-01T"
+
+
+def _track_ts(t: str) -> str:
+    return f"{_TRACK_BASE_DATE}{t}Z"
+
+
+def _time_range(start: str, end: str, step_sec: int = 15) -> list[str]:
+    """HH:MM:SS-Zeitstempel im 15-s-Raster von start bis inkl. end."""
+    fmt = "%H:%M:%S"
+    t0 = datetime.strptime(start, fmt)
+    t1 = datetime.strptime(end, fmt)
+    out = []
+    t = t0
+    while t <= t1:
+        out.append(t.strftime(fmt))
+        t += timedelta(seconds=step_sec)
+    return out
+
+
+def _moving(start: str, end: str) -> list[dict]:
+    """Bewegte Positionen (groundspeed > _BLOCK_GS_KT) im 15-s-Raster."""
+    return [
+        {"latitude": 50.0, "longitude": 7.0, "groundspeed": 80, "ts": _track_ts(t)}
+        for t in _time_range(start, end)
+    ]
+
+
+def _standing(start: str, end: str) -> list[dict]:
+    """Stillstand-Positionen (groundspeed = 0) im 15-s-Raster."""
+    return [
+        {"latitude": 50.0, "longitude": 7.0, "groundspeed": 0, "ts": _track_ts(t)}
+        for t in _time_range(start, end)
+    ]
+
+
+@pytest.fixture
+def conn_with_track():
+    """Echter position_history-Track (Bewegung → 1 h Stand ≥ _BLOCK_STAND_MIN_SEC →
+    Bewegung) in einer In-Memory-DB — für den Äquivalenz-Test SQL-Wrapper vs. reine
+    Variante (Block-Sekunden UND GPS-Distanz)."""
+    conn = _make_conn()
+    cid = 9999
+    ensure_pilot(conn, cid, "Tester")
+    positions = (
+        _moving("09:00:00", "09:10:00")
+        + _standing("09:10:00", "10:10:00")
+        + _moving("10:10:00", "10:20:00")
+    )
+    for i, p in enumerate(positions):
+        # leichte Ortsänderung während Bewegung, damit die Distanz nicht trivial 0 ist.
+        lat = 50.0 + i * 0.001
+        conn.execute(
+            "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, "
+            "groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+            (cid, "FRS999", lat, p["longitude"], 1000, p["groundspeed"], p["ts"]),
+        )
+    conn.commit()
+    start_ts, end_ts = positions[0]["ts"], positions[-1]["ts"]
+    yield conn, cid, start_ts, end_ts
+    conn.close()
+
+
+class TestBlockSecondsPositions:
+    def test_block_seconds_positions_excludes_long_stand(self):
+        from app.database import _block_seconds_positions
+
+        # 3 Bewegungsphasen, dazwischen 1 h Stand (>= _BLOCK_STAND_MIN_SEC) → Stand ausgeschlossen.
+        pos = (
+            _moving("10:00:00", "10:10:00")        # 10 min Taxi/Flug
+            + _standing("10:10:00", "11:10:00")    # 1 h Stand gs=0
+            + _moving("11:10:00", "11:20:00")      # 10 min
+        )
+        secs = _block_seconds_positions(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs < 25 * 60  # deutlich unter Gesamtfenster (80 min)
+
+    def test_block_seconds_positions_short_stand_stays_included(self):
+        """Kurzer Halt (< _BLOCK_STAND_MIN_SEC) bleibt Teil der Blockzeit (gate-to-gate)."""
+        from app.database import _block_seconds_positions
+
+        pos = (
+            _moving("10:00:00", "10:05:00")     # 5 min
+            + _standing("10:05:00", "10:07:00")  # 2 min Halt, < 600 s
+            + _moving("10:07:00", "10:12:00")    # 5 min
+        )
+        secs = _block_seconds_positions(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 12 * 60  # komplettes Fenster gate-to-gate, kein Abzug
+
+    def test_no_movement_returns_zero(self):
+        from app.database import _block_seconds_positions
+
+        pos = _standing("09:00:00", "09:05:00")
+        secs = _block_seconds_positions(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 0
+
+    def test_window_filters_positions_outside_range(self):
+        """Positionen außerhalb [start_ts, end_ts] werden ignoriert (wie das bisherige SQL-WHERE)."""
+        from app.database import _block_seconds_positions
+
+        inside = _moving("10:00:00", "10:05:00")
+        outside_before = _moving("09:00:00", "09:05:00")
+        outside_after = _moving("11:00:00", "11:05:00")
+        pos = outside_before + inside + outside_after
+        secs = _block_seconds_positions(pos, inside[0]["ts"], inside[-1]["ts"])
+        assert secs == 5 * 60
+
+
+class TestDistanceNmPositions:
+    def test_distance_nm_positions_sums_haversine(self):
+        from app.database import _distance_nm_positions, _gps_distance_nm
+
+        pos = [
+            {"latitude": 53.6304, "longitude": 9.98823, "groundspeed": 0, "ts": _track_ts("10:00:00")},
+            {"latitude": 53.0475, "longitude": 8.78667, "groundspeed": 80, "ts": _track_ts("10:20:00")},
+        ]
+        dist = _distance_nm_positions(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert dist > 20  # EDDH → EDDW real ~65 nm
+
+    def test_distance_nm_positions_ignores_null_coords(self):
+        from app.database import _distance_nm_positions
+
+        pos = [
+            {"latitude": 53.6304, "longitude": 9.98823, "groundspeed": 0, "ts": _track_ts("10:00:00")},
+            {"latitude": None, "longitude": None, "groundspeed": 0, "ts": _track_ts("10:10:00")},
+            {"latitude": 53.0475, "longitude": 8.78667, "groundspeed": 80, "ts": _track_ts("10:20:00")},
+        ]
+        dist = _distance_nm_positions(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert dist == 0  # keine der beiden Segmente hat vollständige Koordinaten
+
+
+def test_wrappers_equal_pure(conn_with_track):
+    """SQL-Wrapper und reine Variante liefern identisch für denselben Track."""
+    from app.database import (
+        _block_seconds,
+        _block_seconds_positions,
+        _gps_distance_nm,
+        _distance_nm_positions,
+    )
+
+    conn, cid, start_ts, end_ts = conn_with_track
+    rows = conn.execute(
+        "SELECT latitude, longitude, groundspeed, ts FROM position_history "
+        "WHERE cid = ? ORDER BY ts",
+        (cid,),
+    ).fetchall()
+    positions = [
+        {"latitude": r[0], "longitude": r[1], "groundspeed": r[2], "ts": r[3]}
+        for r in rows
+    ]
+
+    assert _block_seconds(conn, cid, start_ts, end_ts) == _block_seconds_positions(
+        positions, start_ts, end_ts
+    )
+    assert _gps_distance_nm(conn, cid, start_ts, end_ts) == _distance_nm_positions(
+        positions, start_ts, end_ts
+    )
