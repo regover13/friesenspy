@@ -3,85 +3,102 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended)
 > oder superpowers:executing-plans, um diesen Plan Task-für-Task umzusetzen. Steps nutzen Checkbox-Syntax.
 > Design-Spec: `docs/superpowers/specs/2026-07-03-gps-only-phase2-aktivierung-design.md` (verbindlich).
+> **Rev. 2 (Fable-5-Review eingearbeitet):** Finalisierung am Touchdown statt LANDED-Zustand; reine
+> Block/Distanz-Helfer (StatSim-Quelle!); `connection_closed` für offene Flüge; Latch-Reconcile über das
+> Connection-Intervall; Piloten-Detail behält Fremd-Callsigns; Refile-Split bleibt; Zwischen-Release
+> v7.9.5 am GATE; UI-Task für Spec G; Fenster-Lookback; per-Flug-Dedup (Teil-Überlappung).
 
 **Goal:** Statistik, Piloten-Detail, Bummel und Kutter lesen die GPS-erkannten Flüge (aus der
-Positionshistorie, on-demand) statt der Refile-/Disconnect-basierten `canonicalize_flights`.
+Positionshistorie) statt der Refile-/Disconnect-basierten `canonicalize_flights`.
 
-**Architecture:** Zwei neue reine Funktionen (`detect_gps_legs` ohne 180-s-Dwell; `collapse_same_airport`)
-bilden aus Positionen die Flüge. Ein neuer Adapter `canonicalize_legs` liefert sie **formgleich** zu
-`canonicalize_flights` (nur `FRS`-Callsign; FriesenSpy+StatSim; Fallback auf die Flugplan-Zeile ohne Track;
-Flugplan-Label Startplatz-primär) und wird von einer materialisierten Ergebnistabelle gepuffert. Danach
-werden Audit + die vier Konsumenten umgestellt, der Kutter-Latch reconciled, aufgeräumt, `v8.0.0` deployed.
+**Architecture:** Zwei reine Funktionen (`detect_gps_legs` ohne 180-s-Dwell, Finalisierung am Touchdown;
+`collapse_same_airport`) bilden aus Positionen die Flüge. Adapter `canonicalize_legs` liefert sie
+**formgleich** zu `canonicalize_flights` (FriesenSpy+StatSim, Fallback auf Flugplan-Zeilen ohne Track,
+Flugplan-Label Startplatz-primär, per-Flug-Dedup) und wird für die globale Statistik von einer
+materialisierten Tabelle `flight_cache` gepuffert. Audit wird auf die collapsed-Sicht umgebaut und als
+**Schatten-Release v7.9.5** deployed (GATE mit echten Prod-Zahlen). Danach Konsumenten-Umstellung,
+Kutter-Latch-Reconcile, UI (GPS+Plan nebeneinander), Cleanup, **v8.0.0**.
 
 **Tech Stack:** Python 3.11, SQLite (WAL), FastAPI, pytest, airportsdata. stdlib-Muster wie bestehend.
 
 ## Global Constraints
 
-- **Landung** = Vollstopp `gs < 2 kt` an einem DB-Platz (10-km-Umkreis, AGL-Guard). **Kein 180-s-Dwell**
-  (Landung finalisiert sofort). Off-Airport/kein Platz → keine Landung → Flug „offen".
+- **Landung** = Vollstopp `gs < 2 kt` an einem DB-Platz (10-km-Umkreis, AGL-Guard `< 300 ft`).
+  **Kein 180-s-Dwell** — Finalisierung **sofort am Touchdown** (der `LANDED`-Zustand entfällt).
+  Off-Airport/kein Platz → keine Landung → Flug „offen".
 - **Ein Flug** = Boden-Platz → nächster **anderer** Boden-Platz. Wiederholte Landungen am **selben** Platz
-  (Platzrunden) = **eine** Landung dort (collapse), kein Extra-Flug. Segment-Grenze (Positions-Lücke
-  > 30 min) trennt **immer**.
-- **Gewertet nur `FRS*`-Callsign** (wie heute). Fremd-Callsign-Anzeige = **Phase 2b, NICHT hier**.
-- **`canonicalize_legs` MUSS dieselbe Dict-Form liefern wie `canonicalize_flights`** (Konsumenten unverändert).
-- **`_BLOCK_STAND_MIN_SEC` bleibt** (Block schließt lange Bodenstände aus — auch bei Same-Airport-Collapse;
-  behebt #17). `block_min ≤ duration_min` muss gewahrt bleiben.
-- **Offener Flug** zählt erst bei **beendeter Verbindung** (`logoff_time` gesetzt), nie live während des Flugs.
-- **`flights`-Fallback**: FriesenSpy-Connection ohne verwertbaren Track → `flights`-Zeile als Flug übernehmen
-  (kein Alt-Flug verschwindet). Symmetrisch zum StatSim-Fallback (`statsim_cache`).
-- **Kutter-Latch/Loss** (`transport_live_arrivals`, `transport_cargo_losses`) sind auf `(cid, logon_time =
-  Verbindungs-Logon)` gekeyt; `canonicalize_legs` setzt `logon_time = takeoff_ts` → **Reconcile per
-  cid+Zeitfenster** Pflicht, sonst gehen Live-Ankünfte/Verluste verloren.
+  (Platzrunden) = **eine** Landung dort (collapse). Segment-Grenze (Positions-Lücke > 30 min) trennt immer.
+- **Gewertet (KPI/Bummel/Kutter) nur `FRS*`-Callsign.** Das **Piloten-Detail zeigt weiterhin ALLE
+  Callsigns des Piloten** (heutiges Verhalten, `callsign_prefix=""`); die „nicht gewertet"-Kennzeichnung
+  ist Phase 2b.
+- **`canonicalize_legs` MUSS dieselbe Dict-Form liefern wie `canonicalize_flights`** (Konsumenten
+  unverändert), plus `gps_departure/gps_arrival/plan_departure/plan_arrival/connection_closed`.
+- **`_BLOCK_STAND_MIN_SEC` bleibt** (Block schließt lange Bodenstände aus; behebt #17).
+  `block_min ≤ duration_min` muss gewahrt bleiben. Block/Distanz für StatSim-Flüge werden aus den
+  **übergebenen Positionen** gerechnet (NIE aus `position_history` per cid — falsche Tabelle!).
+- **Offener Flug** (keine Landung) zählt in KPI erst bei **beendeter Verbindung**
+  (`connection_closed=True`), nie live während des Flugs.
+- **`flights`-Fallback:** Connection ohne verwertbaren Track → `flights`-Zeile als Flug (kein Alt-Flug
+  verschwindet). Symmetrisch: StatSim ohne Track → `statsim_cache`-Zeile.
+- **Kutter-Latch/Loss** sind auf `(cid, logon_time = VERBINDUNGS-Logon)` gekeyt — der liegt **vor** dem
+  Takeoff. Reconcile: das **Connection-Intervall** `[logon, logoff]` muss das Flug-Fenster überlappen
+  (NIE „Latch-Logon ∈ [takeoff, landing]" prüfen — das matcht nie).
 - **Kutter-Streckenbedingung bleibt**: Lieferung nur wenn `dep` UND `arr` auf `route_set` (`dep ≠ arr`)
-  ODER Latch existiert.
+  ODER Latch; mit Latch zählt nur das Bein, das am `destination` ankommt (oder offen ist) — nie das
+  Rückflug-Bein derselben Verbindung.
+- **Refile-Split im Poller BLEIBT** — er erzeugt die `flights`-Zeile je Refile = Label-Zeitachse für die
+  Startplatz-primäre Flugplan-Zuordnung (Spec G). Er hat keine Wertungswirkung mehr (Wertung liest GPS).
 - **`duration_min`** je Flug = `takeoff→landing` (bewusst; Stunden-KPI schrumpft rückwirkend).
-- Release je Meilenstein: Version hoch (`app/CHANGELOG.json` oben) + Git-Tag + Auto-Banner; Docs
-  (README, docs/api.md, docs/architecture.md) mitpflegen; Deploy Push→main→Actions→GHCR→SSH + Health-Check.
-- `VERSION` kommt aus `app/CHANGELOG.json[0].version` (`app/version.py`).
+- UI-Standards: Blau (`--green`) nur für Klickbares; breite Tabellen in `.table-scroll`-Wrapper.
+- Releases: v7.9.5 (Schatten, nach Task 6) und v8.0.0 (Aktivierung, Task 13). Version =
+  `app/CHANGELOG.json[0].version`; Tag + Banner; Docs (README, docs/api.md, docs/architecture.md);
+  Deploy Push→main→Actions→GHCR→SSH + Health-Check.
 
 ---
 
 ## Datei-/Verantwortungs-Struktur
 
-- `app/gps_legs.py` — reiner Detektor. **Modify:** `detect_gps_legs` (Dwell raus, `segment`-Stempel);
-  **Create:** `collapse_same_airport`.
+- `app/gps_legs.py` — reiner Detektor. **Modify:** `detect_gps_legs` (Dwell/`LANDED` raus, Touchdown-
+  Finalisierung, `segment`-Stempel); **Create:** `collapse_same_airport`.
 - `app/database.py` — **Create:** `canonicalize_legs` + Helfer (`_gps_flights_for_positions`,
-  `_assign_flightplan`, `_flights_rows_for_cids`, Result-Cache `rebuild_flight_cache`/`get_cached_flights`);
+  `_block_seconds_positions`, `_distance_nm_positions`, `_assign_flightplan`, `_overlaps_any`,
+  `_latch_hits_flight`), `flight_cache` (`rebuild_flight_cache`/`get_cached_flights`);
   **Modify:** `get_stats`, `get_stats_activity`, `compute_bummel_standings`, `compute_transport_progress`,
-  `detect_transport_losses`, `audit_gps_vs_refile`.
-- `app/main.py` — **Modify:** `/api/pilots/{cid}/flights`, `admin_gps_leg_audit`.
-- `tests/…` — je Task ein Testfile (siehe Tasks).
+  `detect_transport_losses`, `audit_gps_vs_refile` (+ `_statsim_gps_interpretation` auf collapsed).
+- `app/main.py` — **Modify:** `/api/pilots/{cid}/flights` (`:602-673`), `admin_gps_leg_audit` (`:1282-1324`).
+- `app/static/index.html` — **Modify:** Piloten-Flugliste (GPS+Plan nebeneinander, Spec G).
+- Tests je Task (siehe Tasks).
 
-Reihenfolge: **Detektor-Kern → Adapter/Cache → Audit/GATE → Konsumenten → Cleanup → Release.**
+Reihenfolge: **Detektor → Adapter/Cache → Audit → Schatten-Release+GATE → Konsumenten → UI → Cleanup → v8.0.0.**
 
 ---
 
-## Task 1: `detect_gps_legs` — 180-s-Dwell entfernen + `segment`-Stempel
+## Task 1: `detect_gps_legs` — Dwell raus, Finalisierung am Touchdown, `segment`-Stempel
 
 **Files:**
-- Modify: `app/gps_legs.py:18` (Konstante), `:130-238` (`_detect_segment` LANDED-Block + Segment-Schleife).
-- Test: `tests/test_gps_legs.py` (bestehende Datei — Dwell-abhängige Tests anpassen; neue Tests).
+- Modify: `app/gps_legs.py` (`:18` Konstante; `:174-190` AIRBORNE-Touchdown; `:196-235` LANDED-Block +
+  Segment-Ende-Finalisierung; Segment-Schleife in `detect_gps_legs`).
+- Test: `tests/test_gps_legs.py`.
 
 **Interfaces:**
-- Consumes: —
-- Produces: `detect_gps_legs(positions, *, nearest_airport, airport_elev_ft, radius_km=10.0, gap_minutes=30)`
-  → `list[dict]`; jeder Leg-Dict hat zusätzlich `"segment": int` (0-basiert je Zeit-Segment). Landung
-  finalisiert **sofort** (kein Dwell); Re-Takeoff = neuer Roh-Leg.
+- Produces: `detect_gps_legs(positions, *, nearest_airport, airport_elev_ft, radius_km=10.0,
+  gap_minutes=30)` → `list[dict]`; jeder Leg-Dict zusätzlich `"segment": int` (0-basiert je Zeit-Segment).
+  Landung finalisiert **am Touchdown-Sample** (kein `LANDED`-Zustand mehr); jedes erneute Abheben = neuer
+  Roh-Leg (normale, verankerte Abhebe-Erkennung ab `ON_GROUND`).
 
-- [ ] **Step 1: Failing test — sofortige Finalisierung + Segment-Stempel**
+- [ ] **Step 1: Failing Tests**
 
-In `tests/test_gps_legs.py` neuen Test ergänzen (nutzt vorhandene Helfer `p`, `_ts`, `run`, `AIRPORTS`):
+In `tests/test_gps_legs.py` in `TestDetectGpsLegs` ergänzen (Helfer `p`, `run` vorhanden):
 
 ```python
 def test_immediate_finalize_no_dwell(self):
-    """Ohne 180-s-Dwell: Landung + sofortiges Wieder-Abheben (< 180 s) an SELBEM Platz = zwei
-    Roh-Legs (X→X, X→…); Segment-Index 0 bei einem lückenlosen Track."""
+    """Ohne Dwell: Vollstopp + sofortiges Wieder-Abheben am SELBEN Platz = zwei Roh-Legs."""
     track = [
         p(0, 50.0, 7.0, 300, 0), p(15, 50.0, 7.0, 300, 0),
         p(30, 50.05, 7.05, 900, 60),      # Abheben EDDX
-        p(90, 50.0, 7.0, 300, 0),         # Landung EDDX
-        p(105, 50.05, 7.05, 900, 60),     # < 180 s später wieder ab (früher: Stop-and-Go-Merge)
-        p(200, 52.7, 8.7, 5000, 150),     # weg
+        p(90, 50.0, 7.0, 300, 0),         # Vollstopp EDDX → Landung SOFORT final
+        p(105, 50.05, 7.05, 900, 60),     # Wieder-Abheben (früher: Stop-and-Go-Merge)
+        p(200, 52.7, 8.7, 5000, 150),
         p(320, 53.5, 9.5, 200, 0),        # Landung EDDB
         p(380, 53.5, 9.5, 200, 0),
     ]
@@ -93,7 +110,7 @@ def test_segment_index_increments_on_gap(self):
     """Positions-Lücke > 30 min → zweites Segment mit segment == 1."""
     track = [
         p(0, 52.0, 8.0, 100, 0), p(15, 52.0, 8.0, 100, 0),
-        p(30, 52.1, 8.05, 700, 60), p(120, 52.7, 8.7, 5000, 150),  # Segment 0, endet airborne
+        p(30, 52.1, 8.05, 700, 60), p(120, 52.7, 8.7, 5000, 150),   # Segment 0, endet airborne
         p(2520, 52.9, 8.9, 5000, 150), p(2600, 53.5, 9.5, 200, 0),  # 40-min-Lücke → Segment 1
         p(2660, 53.5, 9.5, 200, 0), p(2720, 53.5, 9.5, 200, 0),
     ]
@@ -102,15 +119,16 @@ def test_segment_index_increments_on_gap(self):
     assert legs[-1]["segment"] == 1
 ```
 
-- [ ] **Step 2: Run — erwartet FAIL**
+- [ ] **Step 2: Run — FAIL erwartet**
 
 Run: `python -m pytest tests/test_gps_legs.py::TestDetectGpsLegs::test_immediate_finalize_no_dwell tests/test_gps_legs.py::TestDetectGpsLegs::test_segment_index_increments_on_gap -v`
-Expected: FAIL (`KeyError: 'segment'` bzw. falsche Leg-Aufteilung durch Dwell-Merge).
+Expected: FAIL (`KeyError: 'segment'`; und Merge-Verhalten des Dwells).
 
-- [ ] **Step 3: Dwell entfernen + Segment stempeln**
+- [ ] **Step 3: Implementieren**
 
 In `app/gps_legs.py`:
-1. `detect_gps_legs` (Segment-Schleife): Segment-Index an `_detect_segment` durchreichen und auf jeden Leg stempeln. Ersetze den Schleifenkörper (aktuell `for segment in _split_on_gaps(...): legs.extend(_detect_segment(...))`) durch:
+
+1. Segment-Schleife in `detect_gps_legs` ersetzen:
 
 ```python
     for seg_index, segment in enumerate(_split_on_gaps(positions, gap_minutes)):
@@ -120,66 +138,66 @@ In `app/gps_legs.py`:
         legs.extend(seg_legs)
 ```
 
-2. Im `LANDED`-Block (`:196-230`) das Dwell-Fenster entfernen: statt „`if elapsed > _GPS_ARRIVAL_DWELL_SEC:` … finalisieren" wird die Landung **sofort** finalisiert. Ersetze den Block ab `# Kein Re-Takeoff:` (Zeile 213–230) durch sofortiges Emit:
+2. Im `AIRBORNE`-Block (`:174-190`) den Touchdown-Kandidaten **sofort finalisieren** — statt
+   `state = "LANDED"; land_ts = ts; land_arr = ap; land_ground_ref = alt`:
 
 ```python
-            # Kein Re-Takeoff → Ankunft SOFORT endgültig (kein Dwell-Fenster).
-            emit_complete()
-            state = "ON_GROUND"
-            ground_ref_ft = land_ground_ref if land_ground_ref is not None else alt
-            dep_icao = land_arr
-            dep_source = "gps" if land_arr else None
-            takeoff_ts = None
-            max_alt = None
-            land_ts = None
-            land_arr = None
-            land_ground_ref = None
-            continue
+                    if agl_ok:
+                        # Landung SOFORT endgültig (kein Dwell/LANDED): emit + zurück ON_GROUND.
+                        land_ts = ts
+                        land_arr = ap
+                        emit_complete()
+                        state = "ON_GROUND"
+                        ground_ref_ft = alt
+                        dep_icao = ap
+                        dep_source = "gps"
+                        takeoff_ts = None
+                        max_alt = None
+                        land_ts = None
+                        land_arr = None
 ```
 
-Damit wird beim allerersten Sample nach der Landung (kein Steigen) sofort emittet; der `re_takeoff`-Zweig
-darüber (`:199-211`) bleibt unverändert (echtes Wieder-Steigen = Stop-and-Go innerhalb desselben Roh-Legs).
-Die Konstante `_GPS_ARRIVAL_DWELL_SEC` (Zeile 18) und `_parse_ts`-Nutzung im entfernten Block entfallen —
-Konstante löschen, falls nirgends sonst referenziert (`grep _GPS_ARRIVAL_DWELL_SEC app/`).
+3. Den **kompletten `LANDED`-Block** (`:196-230`) und die Segment-Ende-Finalisierung
+   `if state == "LANDED": emit_complete()` (`:233-235`) **löschen** — der Zustand existiert nicht mehr.
+   Ebenso die Variablen `land_ground_ref` und die Konstante `_GPS_ARRIVAL_DWELL_SEC` (`:18`) entfernen
+   (vorher `grep -rn "_GPS_ARRIVAL_DWELL" app/ tests/` — Rest-Referenzen mit anpassen).
+   **WICHTIG:** kein `re_takeoff`-Sonderpfad mehr — Wieder-Abheben läuft über die normale, verankerte
+   `ON_GROUND`-Erkennung (Min-Boden-Referenz). Ein steiler Steig direkt nach Landung darf die Landung
+   NICHT mehr verwerfen (genau das war der Fehler der ersten Planfassung).
 
 - [ ] **Step 4: Bestehende Dwell-abhängige Tests anpassen**
 
-`grep -n "180\|Dwell\|stop_and_go\|dwell" tests/test_gps_legs.py`. Betroffen sind u. a.
-`test_stop_and_go_merge`, `test_go_around_never_below_2kt`, `test_normal_a_to_b` (Dwell-Kommentare) sowie
-alle, die mehrfache Vollstopps am selben Platz als **einen** Leg erwarteten. Neue Erwartung: mehrfache
-Vollstopps am selben Platz = **mehrere Roh-Legs** `X→X` (der Collapse in Task 2 führt sie zusammen, nicht
-mehr der Detektor). Touch-and-Go (nie `gs<2`) bleibt **unverändert** ein Leg (keine Landung). Passe die
-Assertions dieser Tests auf die Roh-Leg-Sicht an (bzw. verschiebe „= ein Flug"-Erwartungen in Task 2).
+`grep -n "Dwell\|dwell\|180\|stop_and_go" tests/test_gps_legs.py`. Neue Erwartung: mehrfache Vollstopps
+am selben Platz = **mehrere Roh-Legs** `X→X` (Zusammenführen macht erst `collapse_same_airport`, Task 2).
+Betroffen u. a. `test_stop_and_go_merge` (jetzt 2 Legs statt 1), `test_normal_a_to_b`/`test_circuit_x_to_x`
+(Dwell-Zeilen im Track unnötig, Assertions ggf. auf Roh-Sicht), `test_heli_hover_over_airport_not_landing`
+(unverändert: AGL-Guard verhindert Landung), `test_finalize_landing_on_end` (Landung jetzt am Touchdown-
+Sample final — Assertion identisch). Touch-and-Go (nie `gs<2`) bleibt unverändert.
 
-- [ ] **Step 5: Run — alle grün**
-
-Run: `python -m pytest tests/test_gps_legs.py -v`
-Expected: PASS (alle, inkl. der zwei neuen).
+- [ ] **Step 5: Run — alle grün**   `python -m pytest tests/test_gps_legs.py -v`
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add app/gps_legs.py tests/test_gps_legs.py
-git commit -m "feat(gps-legs): detect_gps_legs ohne 180s-Dwell + segment-Stempel (#23 Phase 2)"
+git commit -m "feat(gps-legs): Finalisierung am Touchdown, kein Dwell/LANDED + segment-Stempel (#23)"
 ```
 
 ---
 
-## Task 2: `collapse_same_airport` — Roh-Legs zu Flügen verschmelzen
+## Task 2: `collapse_same_airport` — Roh-Legs zu Flügen
 
-**Files:**
-- Modify: `app/gps_legs.py` (neue Funktion + `_close_ground`-Helfer am Dateiende).
-- Test: `tests/test_gps_legs.py`.
+**Files:** Modify `app/gps_legs.py` (neue Funktion + `_close_ground`); Test `tests/test_gps_legs.py`.
 
 **Interfaces:**
-- Consumes: Leg-Dicts aus `detect_gps_legs` (Keys `dep_icao, arr_icao, takeoff_ts, landing_ts, complete,
-  dep_source, arr_source, max_altitude, segment`).
-- Produces: `collapse_same_airport(legs: list[dict]) -> list[dict]`. Jeder Flug-Dict:
-  `dep_icao, arr_icao, takeoff_ts, landing_ts, complete, dep_source, arr_source, max_altitude`.
-  Regeln: aufeinanderfolgende Landungen am **selben** Platz → ein Wegpunkt; **anderer** Platz = neuer Flug;
-  **Segment-Wechsel** schließt immer; offener Leg → offener Flug (`arr_icao=None, complete=False`).
+- Consumes: Leg-Dicts aus Task 1 (`dep_icao, arr_icao, takeoff_ts, landing_ts, complete, dep_source,
+  arr_source, max_altitude, segment`).
+- Produces: `collapse_same_airport(legs: list[dict]) -> list[dict]` — Flug-Dicts mit denselben Keys ohne
+  `segment`. Regeln: aufeinanderfolgende Landungen am **selben** Platz → ein Wegpunkt (Runden absorbiert,
+  `takeoff_ts` = erstes Abheben des Clusters); **anderer** Platz = neuer Flug; **Segment-Wechsel** schließt
+  immer; offener Leg → offener Flug.
 
-- [ ] **Step 1: Failing test — alle Spec-Beispiele**
+- [ ] **Step 1: Failing Tests — alle Spec-Beispiele**
 
 ```python
 from app.gps_legs import collapse_same_airport
@@ -191,17 +209,13 @@ def _leg(dep, arr, to, ld, seg=0, complete=True, maxalt=1000):
 
 class TestCollapseSameAirport:
     def test_circuits_at_departure_then_cross_country(self):
-        # EDDK-Runden → EDDW  == EDDK→EDDW
-        legs = [_leg("EDDK","EDDK","t0","t1"), _leg("EDDK","EDDK","t2","t3"),
-                _leg("EDDK","EDDW","t4","t5")]
+        legs = [_leg("EDDK","EDDK","t0","t1"), _leg("EDDK","EDDK","t2","t3"), _leg("EDDK","EDDW","t4","t5")]
         out = collapse_same_airport(legs)
         assert [(f["dep_icao"], f["arr_icao"], f["complete"]) for f in out] == [("EDDK","EDDW",True)]
         assert out[0]["takeoff_ts"] == "t0" and out[0]["landing_ts"] == "t5"
 
     def test_real_intermediate_landing_splits(self):
-        # EDPS → EDNX (mit Runden) → EDMA  == EDPS→EDNX, EDNX→EDMA
-        legs = [_leg("EDPS","EDNX","t0","t1"), _leg("EDNX","EDNX","t2","t3"),
-                _leg("EDNX","EDMA","t4","t5")]
+        legs = [_leg("EDPS","EDNX","t0","t1"), _leg("EDNX","EDNX","t2","t3"), _leg("EDNX","EDMA","t4","t5")]
         out = collapse_same_airport(legs)
         assert [(f["dep_icao"], f["arr_icao"]) for f in out] == [("EDPS","EDNX"), ("EDNX","EDMA")]
         assert out[0]["landing_ts"] == "t1" and out[1]["takeoff_ts"] == "t2"
@@ -219,35 +233,31 @@ class TestCollapseSameAirport:
                         "complete":False,"dep_source":"gps","arr_source":None,"max_altitude":1000}]
 
     def test_segment_boundary_does_not_merge_same_airport(self):
-        # Runden EDDK (Segment 0), > 30 min Lücke, dann EDDK→EDDW (Segment 1): ZWEI Flüge
         legs = [_leg("EDDK","EDDK","t0","t1",seg=0), _leg("EDDK","EDDW","t9","t10",seg=1)]
         out = collapse_same_airport(legs)
         assert [(f["dep_icao"], f["arr_icao"]) for f in out] == [("EDDK","EDDK"), ("EDDK","EDDW")]
 
     def test_spawn_in_air_dep_none(self):
-        legs = [_leg(None,"EDDB","t0","t1")]
-        out = collapse_same_airport(legs)
+        out = collapse_same_airport([_leg(None,"EDDB","t0","t1")])
         assert (out[0]["dep_icao"], out[0]["arr_icao"]) == (None, "EDDB")
 
     def test_empty(self):
         assert collapse_same_airport([]) == []
 ```
 
-- [ ] **Step 2: Run — FAIL** (`ImportError: cannot import name 'collapse_same_airport'`).
-
-Run: `python -m pytest tests/test_gps_legs.py::TestCollapseSameAirport -v`
+- [ ] **Step 2: Run — FAIL** (`ImportError`).  `python -m pytest tests/test_gps_legs.py::TestCollapseSameAirport -v`
 
 - [ ] **Step 3: Implementieren** (in `app/gps_legs.py`):
 
 ```python
 def collapse_same_airport(legs: list[dict]) -> list[dict]:
-    """Verschmilzt aufeinanderfolgende Roh-Legs am SELBEN Platz zu Flügen (siehe Spec A).
+    """Verschmilzt aufeinanderfolgende Roh-Legs am SELBEN Platz zu Flügen (Spec A).
     Ein Flug = Abheben an X → Landung am nächsten ANDEREN Platz (oder offen). Wiederholte
     Landungen am selben Platz zählen als eine Landung. Segment-Wechsel trennt immer."""
     flights: list[dict] = []
     cur: dict | None = None
     cur_seg: int | None = None
-    pending_same_landing: str | None = None  # letzte Same-Airport-Landung, falls Flug am Boden endet
+    pending_same_landing: str | None = None  # letzte Same-Airport-Landung (falls Flug am Boden endet)
 
     for leg in legs:
         seg = leg.get("segment", 0)
@@ -296,390 +306,339 @@ def _close_ground(flights: list[dict], cur: dict, pending_same_landing: str | No
                         "complete": False, "arr_source": None})
 ```
 
-- [ ] **Step 4: Run — PASS**
-
-Run: `python -m pytest tests/test_gps_legs.py -v`  Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add app/gps_legs.py tests/test_gps_legs.py
-git commit -m "feat(gps-legs): collapse_same_airport — Roh-Legs zu Fluegen (#23 Phase 2)"
-```
+- [ ] **Step 4: Run — PASS**   `python -m pytest tests/test_gps_legs.py -v`
+- [ ] **Step 5: Commit**  `git commit -m "feat(gps-legs): collapse_same_airport (#23)"`
 
 ---
 
-## Task 3: `canonicalize_legs` — GPS-Flüge formgleich zu `canonicalize_flights`
+## Task 3: Reine Block/Distanz-Helfer aus Positionslisten
 
-**Files:**
-- Modify: `app/database.py` (neue Funktionen; nutzt `detect_gps_legs`, `collapse_same_airport`,
-  `_block_seconds:817`, `_gps_distance_nm:779`, `get_statsim_positions:2608`, `_dedup_statsim_against_fs:1698`,
-  `geo.nearest_airport_icao_fast`, `geo.airport_elevation_ft`).
-- Test: `tests/test_canonicalize_legs.py` (neu).
+**Files:** Modify `app/database.py` (`_block_seconds:817-…`, `_gps_distance_nm:779-…` — Logik extrahieren);
+Test `tests/test_database.py`.
 
 **Interfaces:**
-- Consumes: `collapse_same_airport`, `detect_gps_legs` (Task 1/2).
-- Produces:
-  - `canonicalize_legs(conn, *, cids=None, start=None, end=None, callsign_prefix="FRS") -> list[dict]` —
-    **nur `FRS*`-Callsign**, formgleich zu `canonicalize_flights` (siehe Feld-Liste unten).
-  - `_gps_flights_for_positions(conn, cid, positions, source) -> list[dict]` (Helfer, rein je Positionsliste).
-  - `_assign_flightplan(flights_rows, gps_flight) -> dict | None` (Startplatz-primär, siehe Spec G).
+- Produces: `_block_seconds_positions(positions: list[dict], start_ts: str, end_ts: str) -> int` und
+  `_distance_nm_positions(positions: list[dict], start_ts: str, end_ts: str) -> int` — **rein**, arbeiten
+  auf einer bereits geladenen ts-sortierten Positionsliste (Keys `latitude, longitude, groundspeed, ts`).
+  Die bestehenden `_block_seconds`/`_gps_distance_nm` werden **dünne SQL-Wrapper**, die die Positionen
+  laden und die reine Variante rufen — **Logik 1:1 verschieben, nicht neu schreiben** (inkl.
+  `_BLOCK_STAND_MIN_SEC`-Stand-Ausschluss, Zeile 851). Grund: StatSim-Flüge liegen in
+  `statsim_position_history` — die cid-gebundenen SQL-Helfer wären dort schlicht falsch.
 
-**Feld-Parität (Pflicht):** ein `canonicalize_legs`-Flug-Dict MUSS mindestens dieselben Keys tragen wie
-`canonicalize_flights` (FriesenSpy-Zweig): `id, cid, callsign, aircraft, departure, arrival, logon_time,
-logoff_time, duration_min, distance_nm, block_min, route, remarks, cruise_altitude, cruise_tas,
-flight_rules, aircraft_icao, alternate, deptime, enroute_time, fuel_time, source`. Zusätzlich:
-`gps_departure`/`gps_arrival` (die GPS-Endpunkte, für die Anzeige-Spalte G). Belegung:
-`departure=gps_departure`, `arrival=gps_arrival` (leer = offen); `logon_time=takeoff_ts`,
-`logoff_time=landing_ts`; `route/remarks/cruise_*/…` vom zugeordneten Flugplan (`_assign_flightplan`), sonst
-leer/`None`; `id` = die `flights.id` der zugeordneten Connection (oder `None`).
-
-- [ ] **Step 1: Failing test — Parität, FRS-only, Fallback, Dedup**
-
-`tests/test_canonicalize_legs.py` (neu). Nutze `_make_conn` aus `tests/test_database.py`-Muster (In-Memory,
-reale Plätze EDDK 50.8659/7.14274, EDDW 53.0475/8.78667). Seed: eine FriesenSpy-`flights`-Zeile + dichter
-`position_history`-Track EDDK→EDDW; ein StatSim-Flug ohne Track (nur `statsim_cache`).
+- [ ] **Step 1: Failing Test**
 
 ```python
-def test_form_parity_and_fields(conn_with_fs_track):
-    conn = conn_with_fs_track          # FS-Flug EDDK→EDDW mit Track, callsign FRS10
-    legs = canonicalize_legs(conn, start="2026-07-01T00:00:00Z", end="2026-07-03T00:00:00Z")
-    ref = canonicalize_flights(conn, start="2026-07-01T00:00:00Z", end="2026-07-03T00:00:00Z")
-    assert set(k for f in ref for k in f) <= set(k for l in legs for k in l)   # keine Key fehlt
-    f = next(l for l in legs if l["callsign"] == "FRS10")
-    assert (f["departure"], f["arrival"]) == ("EDDK", "EDDW")
-    assert f["logon_time"] and f["logoff_time"]
-    assert f["source"] == "friesenspy"
-    assert f["block_min"] <= f["duration_min"]
+def test_block_seconds_positions_excludes_long_stand():
+    # 3 Bewegungsphasen, dazwischen 1 h Stand (>= _BLOCK_STAND_MIN_SEC) → Stand ausgeschlossen.
+    pos = (_moving("10:00:00", "10:10:00")          # 10 min Taxi/Flug
+           + _standing("10:10:00", "11:10:00")      # 1 h Stand gs=0
+           + _moving("11:10:00", "11:20:00"))       # 10 min
+    secs = _block_seconds_positions(pos, pos[0]["ts"], pos[-1]["ts"])
+    assert secs < 25 * 60                            # deutlich unter Gesamtfenster (80 min)
 
-def test_only_frs_scored(conn_with_foreign_statsim):
-    # StatSim-Flug callsign "DFGKC" (Friesen-cid) → NICHT in canonicalize_legs
-    legs = canonicalize_legs(conn_with_foreign_statsim, start=..., end=...)
-    assert all(l["callsign"].upper().startswith("FRS") for l in legs)
-
-def test_frs_connection_without_track_falls_back(conn_fs_no_track):
-    # FS-flights-Zeile FRS20 EDDK→EDDW, KEINE position_history → Flugplan-Fallback
-    legs = canonicalize_legs(conn_fs_no_track, start=..., end=...)
-    assert any(l["callsign"] == "FRS20" and l["departure"] == "EDDK" for l in legs)
-
-def test_statsim_fallback_without_track(conn_statsim_no_track):
-    legs = canonicalize_legs(conn_statsim_no_track, start=..., end=...)
-    assert any(l["source"] == "statsim" for l in legs)
-
-def test_dedup_friesenspy_wins(conn_fs_and_statsim_same_flight):
-    # gleicher cid+Zeit in FS (Track) und StatSim → nur EIN Flug, source friesenspy
-    legs = canonicalize_legs(conn_fs_and_statsim_same_flight, start=..., end=...)
-    same = [l for l in legs if l["cid"] == TEST_CID]
-    assert len(same) == 1 and same[0]["source"] == "friesenspy"
+def test_wrappers_equal_pure(conn_with_track):
+    # SQL-Wrapper und reine Variante liefern identisch fuer denselben Track.
+    ...
 ```
 
-(Fixtures als Modul-Helfer schreiben; Track-Seed analog `tests/test_database.py::TestStatsimGpsAudit._seed`.)
+(`_moving`/`_standing` als kleine Testhelfer, 15-s-Raster.)
 
-- [ ] **Step 2: Run — FAIL** (`ImportError`/`AttributeError`).
+- [ ] **Step 2: Run — FAIL** (`ImportError`).
+- [ ] **Step 3:** Schleifenkörper aus `_block_seconds` (ab dem Laden der Rows) in
+  `_block_seconds_positions` verschieben; `_block_seconds(conn, cid, lo, hi)` lädt Rows wie bisher und
+  delegiert. Analog `_gps_distance_nm` → `_distance_nm_positions` (Haversine-Summe). Keine Verhaltens-
+  Änderung für bestehende Aufrufer (bestehende Tests bleiben grün).
+- [ ] **Step 4: Run — PASS**  `python -m pytest tests/test_database.py -q`
+- [ ] **Step 5: Commit** `refactor(db): reine _block_seconds_positions/_distance_nm_positions (#23)`
 
-- [ ] **Step 3: Implementieren** (`app/database.py`), Kernlogik:
+---
 
-```python
-def canonicalize_legs(conn, *, cids=None, start=None, end=None, callsign_prefix="FRS"):
-    """GPS-erkannte Flüge, NUR FRS-Callsign, formgleich zu canonicalize_flights (Spec B/C/G)."""
-    from app import geo
-    prefix_pat = f"{callsign_prefix}%"
+## Task 4: `canonicalize_legs` — GPS-Flüge formgleich
 
-    # 1) FriesenSpy-Connections im Fenster (flights-Zeilen = Flugplan-Zeitachse + Fallback).
-    fs_rows = _flights_rows_for_cids(conn, cids=cids, prefix_pat=prefix_pat, start=start, end=end)
-    fs_by_cid = {}
-    for r in fs_rows:
-        fs_by_cid.setdefault(r["cid"], []).append(r)
+**Files:** Modify `app/database.py`; Test `tests/test_canonicalize_legs.py` (neu).
 
-    result = []
-    fs_covered = {}   # cid -> list[(takeoff_ts, landing_ts)] für Dedup gegen StatSim
+**Interfaces:**
+- Consumes: `detect_gps_legs`+`collapse_same_airport` (Task 1/2), reine Helfer (Task 3),
+  `get_statsim_positions:2608`, `geo.nearest_airport_icao_fast`, `geo.airport_elevation_ft`.
+- Produces: `canonicalize_legs(conn, *, cids=None, start=None, end=None, callsign_prefix="FRS")
+  -> list[dict]`. `callsign_prefix=""` liefert alle Callsigns (für Piloten-Detail).
 
-    for cid, rows in fs_by_cid.items():
-        positions = _positions_for_cid(conn, cid, start, end)          # position_history, ts-sortiert
-        gps_flights = _gps_flights_for_positions(conn, cid, positions, "friesenspy")
-        if gps_flights:
-            for gf in gps_flights:
-                fp = _assign_flightplan(rows, gf)
-                result.append(_to_flight_dict(gf, fp, source="friesenspy"))
-                fs_covered.setdefault(cid, []).append((gf["logon_time"], gf["logoff_time"]))
-        else:
-            # Fallback: Connection ohne verwertbaren Track → flights-Zeile(n) als Flug übernehmen.
-            for r in rows:
-                result.append(_flightrow_as_flight(r, source="friesenspy"))
-                fs_covered.setdefault(cid, []).append((r["logon_time"], r["logoff_time"]))
+**Feld-Vertrag (Pflicht):** jedes Flug-Dict trägt mindestens die `canonicalize_flights`-Keys
+(`id, cid, callsign, aircraft, departure, arrival, logon_time, logoff_time, duration_min, distance_nm,
+block_min, route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate, deptime,
+enroute_time, fuel_time, source`) **plus** `gps_departure, gps_arrival, plan_departure, plan_arrival,
+connection_closed`. Belegung: `departure=gps_departure` (Fallback: Flugplan), `arrival=gps_arrival`
+(leer = offen); `logon_time=takeoff_ts`, `logoff_time=landing_ts` (None = offen);
+`duration_min=(landing−takeoff)//60` (offen: bis letzter Positions-ts); `block_min` via
+`_block_seconds_positions//60`; `distance_nm` via `_distance_nm_positions`; `plan_*` + Labels
+(`route/remarks/aircraft/cruise_*/…`, `id`) vom Startplatz-primär zugeordneten Flugplan (Spec G), sonst
+`None`/`""`; `connection_closed` = `logoff_time` der zugeordneten Connection ist gesetzt (StatSim/
+Fallback: immer True).
 
-    # 2) StatSim (FRS-Callsign), dedupliziert gegen FS (cid + Zeitüberlappung).
-    st_rows = _statsim_rows_for_cids(conn, cids=cids, prefix_pat=prefix_pat, start=start, end=end)
-    for r in st_rows:
-        if _overlaps_any(fs_covered.get(r["cid"], []), r["logon_time"], r["logoff_time"]):
-            continue
-        positions = get_statsim_positions(conn, r["statsim_id"])
-        gps_flights = _gps_flights_for_positions(conn, r["cid"], positions, "statsim") if positions else []
-        if gps_flights:
-            for gf in gps_flights:
-                result.append(_to_flight_dict(gf, _statsim_plan(r), source="statsim"))
-        else:
-            result.append(_flightrow_as_flight(r, source="statsim"))   # Flugplan-Fallback
+**Ablauf (verbindlich):**
+1. **Fenster-Lookback:** Positionen ab `start − 12 h` laden (Flüge, die die `start`-Grenze schneiden,
+   nicht als Spawn-Artefakt anreißen); Ergebnis-Flüge filtern auf Überlappung mit `[start, end]`
+   (`takeoff_ts ≤ end` und (`landing_ts` fehlt oder `landing_ts ≥ start`)).
+2. **FriesenSpy:** `flights`-Zeilen im Fenster (WHERE wie `canonicalize_flights`: `callsign LIKE ?`,
+   Zeitfilter; `prefix=""` → alle) → cid-Menge. Je cid: Positionen → `detect_gps_legs` →
+   `collapse_same_airport` → Flug-Dicts. **Keine GPS-Flüge trotz Zeilen** → jede Zeile per
+   `_flightrow_as_flight` übernehmen (Fallback b).
+3. **StatSim:** Zeilen im Fenster (Filter analog). Je Zeile: `get_statsim_positions(statsim_id)` →
+   Detektor+Collapse → Flug-Dicts; ohne Track → `_flightrow_as_flight` (Flugplan-Fallback).
+4. **Dedup PRO FLUG (nicht pro Session):** ein StatSim-**Flug** wird verworfen, wenn sein Fenster ein
+   FriesenSpy-Flug-/Fallback-Intervall desselben cid überlappt (`_overlaps_any`; offene Intervalle:
+   `None`-Ende = ∞). **Teil-Überlappung:** StatSim-Flüge außerhalb der FS-Abdeckung (z. B. nach
+   FS-Absturz) **überleben**.
+5. Sortierung `logon_time` absteigend (wie `canonicalize_flights`).
 
-    result.sort(key=lambda x: x.get("logon_time") or "", reverse=True)
-    return result
-```
+Neue Helfer (alle in diesem Task, vollständig): `_positions_for_cid(conn, cid, start, end)`,
+`_gps_flights_for_positions(positions, *, plan_rows, source)` (rechnet Metriken über die **übergebene**
+Liste — Task-3-Helfer), `_assign_flightplan(plan_rows, gps_flight)` (Startplatz-Match primär, Zeit-Nähe
+sekundär, sonst `None`), `_flightrow_as_flight(row, source)`, `_overlaps_any(intervals, lo, hi)`
+(None-tolerant), `_statsim_plan(row)` (dep/arr/aircraft/callsign aus der `statsim_cache`-Zeile als
+Pseudo-Plan-Dict mit `id=None`).
 
-Helfer im selben Commit (vollständig ausformulieren):
-- `_positions_for_cid(conn, cid, start, end)` — `SELECT latitude, longitude, altitude, groundspeed, ts
-  FROM position_history WHERE cid=? AND ts>=? AND ts<=? ORDER BY ts` (start/end optional).
-- `_gps_flights_for_positions(conn, cid, positions, source)` — ruft `detect_gps_legs(positions,
-  nearest_airport=geo.nearest_airport_icao_fast, airport_elev_ft=geo.airport_elevation_ft,
-  radius_km=_BUMMEL_AIRPORT_RADIUS_KM)` + `collapse_same_airport`; je Flug `logon_time=takeoff_ts`,
-  `logoff_time=landing_ts`, `duration_min=(landing-takeoff)//60`, `distance_nm=_gps_distance_nm(...)`,
-  `block_min=_block_seconds(...)//60` (Fenster `[takeoff, landing]`; offener Flug: Fenster bis letzter ts,
-  `logoff_time=None`, `arrival=""`). `gps_departure=dep_icao`, `gps_arrival=arr_icao`.
-- `_assign_flightplan(rows, gf)` — Startplatz-primär: der `rows`-Datensatz, dessen `departure` == `gf`
-  GPS-dep; sonst zeitlich nächster (`logon_time` am dichtesten an `gf.logon_time`); sonst `None`.
-- `_to_flight_dict(gf, fp, source)` — baut das paritätische Dict: GPS-Felder + Labels aus `fp`
-  (`route, remarks, aircraft, cruise_*, flight_rules, aircraft_icao, alternate, deptime, enroute_time,
-  fuel_time`, `id=fp["id"]`), fehlende Keys mit `None`/`""`/`0`.
-- `_flightrow_as_flight(r, source)` — die `flights`- bzw. `statsim_cache`-Zeile als paritätisches Dict
-  (departure/arrival aus dem Flugplan, `gps_departure=None`, `gps_arrival=None`).
-- `_flights_rows_for_cids` / `_statsim_rows_for_cids` — wie `canonicalize_flights` (dieselben WHERE-Filter,
-  `callsign LIKE prefix_pat`, Zeitfenster), liefern die Roh-Zeilen inkl. `id`/`statsim_id`.
-- `_overlaps_any(intervals, lo, hi)` — True, wenn `[lo,hi]` eines der `(logon,logoff)`-Intervalle schneidet.
-
+- [ ] **Step 1: Failing Tests** (`tests/test_canonicalize_legs.py`, Fixtures analog
+  `TestStatsimGpsAudit._seed`; reale Plätze EDDK/EDDW):
+  - `test_form_parity_and_fields` — Key-Obermenge ggü. `canonicalize_flights`; `departure/arrival` = GPS;
+    `block_min ≤ duration_min`; `source="friesenspy"`.
+  - `test_prefix_empty_includes_foreign` — StatSim-Flug „DFGKC": mit `callsign_prefix=""` enthalten, mit
+    `"FRS"` nicht.
+  - `test_frs_connection_without_track_falls_back` — `flights`-Zeile ohne Positionen erscheint.
+  - `test_statsim_fallback_without_track` — dito StatSim.
+  - `test_dedup_partial_overlap_keeps_uncovered_statsim` — FS-Track deckt 10:00–10:30 (offener Flug),
+    StatSim hat zwei Flüge 10:05–10:25 und 10:40–11:20 → erster verworfen, **zweiter bleibt**.
+  - `test_connection_closed_flag` — offener GPS-Flug: Connection `logoff_time=None` → False;
+    Connection beendet → True.
+  - `test_plan_assignment_start_airport_primary` — zwei Plan-Zeilen (A→B, dann B→C in der Luft gefiled);
+    das B-Bein bekommt den B→C-Plan (`plan_departure="B"`), unabhängig vom Filing-Zeitpunkt; ein Bein
+    ohne Match → `plan_departure is None`.
+- [ ] **Step 2: Run — FAIL.**
+- [ ] **Step 3: Implementieren** gemäß Ablauf oben (Code-Gerüst wie Rev. 1, aber: Metriken aus
+  übergebenen Positionen; Dedup pro Flug nach Schritt 3; `connection_closed` aus der per
+  `_assign_flightplan`/Zeitüberlappung zugeordneten Connection-Zeile).
 - [ ] **Step 4: Run — PASS**  `python -m pytest tests/test_canonicalize_legs.py -v`
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add app/database.py tests/test_canonicalize_legs.py
-git commit -m "feat(db): canonicalize_legs — GPS-Fluege formgleich, FRS-only, Fallbacks, Dedup (#23)"
-```
+- [ ] **Step 5: Commit** `feat(db): canonicalize_legs — formgleich, Fallbacks, per-Flug-Dedup (#23)`
 
 ---
 
-## Task 4: Materialisierter Ergebnis-Cache (globale Statistik)
+## Task 5: Materialisierter `flight_cache` (globale Statistik)
 
-**Files:** Modify `app/database.py` (DDL + `rebuild_flight_cache`/`get_cached_flights`); Test
-`tests/test_flight_cache.py` (neu).
+**Files:** Modify `app/database.py` (DDL in `_SCHEMA` + Funktionen); Test `tests/test_flight_cache.py` (neu).
 
 **Interfaces:**
-- Consumes: `canonicalize_legs` (Task 3).
-- Produces: `get_cached_flights(conn, *, start, end, callsign_prefix="FRS") -> list[dict]` (liest den Cache,
-  baut ihn bei Bedarf inkrementell). Tabelle `flight_cache` (dieselben Dict-Felder als Spalten +
-  `computed_at`; Idempotenz-Key `(cid, logon_time)`).
+- Produces: `rebuild_flight_cache(conn, *, full: bool = False) -> int` und
+  `get_cached_flights(conn, *, start=None, end=None, callsign_prefix="FRS") -> list[dict]`.
+- Tabelle `flight_cache`: Spalten = Feld-Vertrag aus Task 4 + `computed_at`; `UNIQUE(cid, logon_time)`.
+- **Refresh-Regel (konkret):** `get_cached_flights` → Tabelle leer ⇒ Voll-Rebuild. Sonst: ist
+  `MAX(computed_at)` älter als **600 s** ⇒ inkrementeller Refresh: alle Flüge mit
+  `takeoff_ts ≥ now − 7 Tage` im Cache löschen und aus `canonicalize_legs(start=now−7d)` neu schreiben
+  (abgeschlossene ältere Flüge bleiben unangetastet). Nur **globale Statistik** nutzt den Cache;
+  Bummel/Kutter/Piloten-Detail rufen `canonicalize_legs` direkt (kleine cid-Mengen).
 
-- [ ] **Step 1: Failing test — Cache liefert identisch zu canonicalize_legs, ist idempotent**
+- [ ] **Step 1: Failing Tests** — `test_cache_matches_canonicalize_legs` (Voll-Rebuild ≙ live),
+  `test_cache_idempotent` (2× Rebuild identisch), `test_incremental_refresh_picks_up_new_flight`
+  (neuer Track nach erstem Build + `computed_at` künstlich alt ⇒ `get_cached_flights` enthält ihn).
+- [ ] **Step 2: Run — FAIL.**  - [ ] **Step 3: Implementieren.**  - [ ] **Step 4: Run — PASS.**
+- [ ] **Step 5: Commit** `feat(db): flight_cache mit inkrementellem Refresh (#23)`
+
+---
+
+## Task 6: Audit auf collapsed-Sicht + Schatten-Release v7.9.5 (GATE)
+
+**Files:** Modify `app/database.py` (`audit_gps_vs_refile:1852` + `_statsim_gps_interpretation`),
+`app/main.py` (`admin_gps_leg_audit:1282`; `recompute_gps_legs`-Loop `:1319-1320` entfernen),
+`app/CHANGELOG.json`, Docs. Test `tests/test_admin_api.py`, `tests/test_database.py`.
+
+- [ ] **Step 1: Failing Test** — Audit-Kennzahlen kommen aus `canonicalize_legs`: ein Track mit
+  Platzrunden zählt als **ein** Flug (collapsed), nicht N Roh-Legs; `401` ohne Admin bleibt; die
+  `statsim`-Sektion (`statsim_sample`) klassifiziert ebenfalls collapsed (Platzrunden-Track ⇒ `match`,
+  nicht `zwischenlandung`).
+- [ ] **Step 2: Run — FAIL.**
+- [ ] **Step 3:** `audit_gps_vs_refile` intern: je `canonicalize_flights`-Connection die überlappenden
+  `canonicalize_legs`-Flüge zuordnen → `matches/missing/extra/arr_divergence` daraus.
+  `_statsim_gps_interpretation`: nach `detect_gps_legs` zusätzlich `collapse_same_airport`.
+  Endpoint: `recompute_gps_legs`-Loop entfernen (Tabelle wird Task 12 entsorgt).
+- [ ] **Step 4: Run — PASS** (`python -m pytest tests/test_admin_api.py tests/test_database.py -q`).
+- [ ] **Step 5: Schatten-Release v7.9.5.** Changelog-Eintrag (Patch, kein highlight): „GPS-Etappen-Audit
+  zeigt jetzt die endgültige Flug-Sicht (Platzrunden zusammengefasst, Landung sofort) — weiterhin ohne
+  Wertungswirkung." **Alles bis hier ist wertungsneutral** (Konsumenten unberührt). Branch → main mergen,
+  Deploy + Health `== 7.9.5`, Tag `v7.9.5`.
+- [ ] **Step 6: Commit/Tag.**
+
+**⏸ GATE (Pflicht-Stopp):** Prod-Audit (`/api/admin/gps-leg-audit?days=365&statsim=500`) mit
+**collapsed-Zahlen** sichten — die früheren „95,8 %" galten der Roh-Sicht. Erst nach Freigabe des
+Nutzers weiter mit Task 7.
+
+---
+
+## Task 7: Statistik (`get_stats`, `get_stats_activity`)
+
+**Files:** Modify `app/database.py` (`get_stats:1418-1470`, `get_stats_activity:1473-1531`);
+Test `tests/test_database.py`.
+
+- [ ] **Step 1: Failing Tests**
 
 ```python
-def test_cache_matches_canonicalize_legs(conn_with_fs_track):
-    live = canonicalize_legs(conn_with_fs_track, start=S, end=E)
-    rebuild_flight_cache(conn_with_fs_track)
-    cached = get_cached_flights(conn_with_fs_track, start=S, end=E)
-    key = lambda f: (f["cid"], f["logon_time"], f["departure"], f["arrival"])
-    assert sorted(map(key, cached)) == sorted(map(key, live))
-
-def test_cache_idempotent(conn_with_fs_track):
-    rebuild_flight_cache(conn_with_fs_track)
-    a = get_cached_flights(conn_with_fs_track, start=S, end=E)
-    rebuild_flight_cache(conn_with_fs_track)
-    b = get_cached_flights(conn_with_fs_track, start=S, end=E)
-    assert a == b
+def test_get_stats_counts_open_flight_only_after_connection_end(conn_):
+    # Ein abgeschlossener GPS-Flug + ein offener Flug:
+    #  a) Connection noch offen (flights.logoff_time IS NULL)  -> flight_count == 1
+    #  b) Connection beendet                                    -> flight_count == 2
 ```
 
 - [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3: Implementieren.** DDL `flight_cache` (Spalten = Flug-Dict-Felder, `UNIQUE(cid, logon_time)`;
-  `flight_cache` in `_SCHEMA`/Migrationsliste ergänzen). `rebuild_flight_cache(conn, cids=None)`: ruft
-  `canonicalize_legs` (ganze bzw. cid-Menge), `DELETE`+`INSERT OR REPLACE` (abgeschlossene Flüge stabil,
-  offene/neue neu). `get_cached_flights`: SELECT im Fenster; ist der Cache leer/veraltet für das Fenster,
-  einmal `rebuild_flight_cache` (Kaltstart) und erneut lesen. **Nur globale Statistik nutzt den Cache**;
-  Event-scoped Aufrufe (Bummel/Kutter/Piloten-Detail, wenige cids) rufen `canonicalize_legs` direkt.
-- [ ] **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** `feat(db): materialisierter flight_cache fuer globale Statistik (#23)`.
+- [ ] **Step 3:** `canonicalize_flights(...)`-Aufrufe (Zeile 1430/1489) durch
+  `get_cached_flights(conn, start=start, callsign_prefix=callsign_prefix)` ersetzen. KPI-Aggregation:
+  Flüge mit `logoff_time is None` **und** `connection_closed=False` überspringen (in-progress);
+  offene Flüge mit `connection_closed=True` zählen (Ziel „offen"). Die bestehende
+  „Piloten mit nur offenem Flug"-Ergänzung (`:1447-1452`) auf dieselbe Regel umstellen.
+  Ergebnis-Keys unverändert.
+- [ ] **Step 4: Run — PASS**; Vorher/Nachher-Zahlvergleich `/api/stats` dokumentieren.
+- [ ] **Step 5: Commit** `feat(stats): KPI aus GPS-Fluegen (flight_cache) (#23)`
 
 ---
 
-## Task 5: Audit auf collapsed/no-180s umbauen (GATE)
+## Task 8: Piloten-Detail (`/api/pilots/{cid}/flights`)
 
-**Files:** Modify `app/database.py` (`audit_gps_vs_refile:1852`), `app/main.py`
-(`admin_gps_leg_audit:1282`, `recompute_gps_legs`-Call `:1320` entfernen). Test `tests/test_admin_api.py`.
+**Files:** Modify `app/main.py:602-673`; Test `tests/test_admin_api.py`.
 
-**Interfaces:** Consumes `canonicalize_legs`. Produces: das Audit vergleicht `canonicalize_flights`
-(heutige Zählung) gegen **`canonicalize_legs`** (collapsed/no-180s — das Aktivierungsverhalten), nicht mehr
-gegen die Roh-`gps_legs`-Tabelle.
-
-- [ ] **Step 1: Failing test** — `admin_gps_leg_audit` liefert Kennzahlen aus `canonicalize_legs`; ein Track
-  mit Platzrunden zählt als **ein** Flug (collapsed), nicht mehr als N Roh-Legs. `401` ohne Admin bleibt.
+- [ ] **Step 1: Failing Test** — Endpoint liefert GPS-Flüge inkl. Zwischenlandung (A→B→C ⇒ 2 Zeilen);
+  Fremd-Callsign-StatSim-Flug des Piloten **bleibt enthalten** (heutiges Verhalten); Felder
+  `gps_departure/plan_departure` vorhanden; `X-StatSim-Status`-Header bleibt.
 - [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3:** `audit_gps_vs_refile` intern von `gps_legs`-Tabelle auf `canonicalize_legs` umstellen
-  (Zuordnung je `canonicalize_flights`-Connection → überlappende `canonicalize_legs`-Flüge; `matches/
-  missing/extra/arr_divergence` neu daraus). Im Endpoint den `recompute_gps_legs`-Loop (`:1319-1320`)
-  entfernen. `recompute_gps_legs` + `gps_legs`-Tabelle sind danach ungenutzt → als toter Code markiert
-  (Entfernung in Task 10).
-- [ ] **Step 4: Run — PASS** (`python -m pytest tests/test_admin_api.py -v`).
-- [ ] **Step 5: Commit** `refactor(audit): GATE prueft collapsed/no-180s (canonicalize_legs) (#23)`.
-
-**⏸ GATE:** Prod-Audit neu ziehen (`?statsim=N`) → collapsed-Zahlen sichten; Schwellen/Regeln bestätigen,
-bevor die Konsumenten umgestellt werden (Tasks 6–9). Die früheren „95,8 %"-Zahlen galten der Roh-Sicht.
+- [ ] **Step 3:** `canonicalize_flights(conn, cids=[cid], callsign_prefix="", …)` (Zeile 663-669) durch
+  `canonicalize_legs(conn, cids=[cid], callsign_prefix="", start=start)` ersetzen —
+  **`callsign_prefix=""` beibehalten** (Fremd-Callsigns sichtbar wie heute; „nicht gewertet"-Badge = 2b).
+- [ ] **Step 4: Run — PASS.**  - [ ] **Step 5: Commit** `feat(api): Piloten-Detail aus GPS-Fluegen (#23)`
 
 ---
 
-## Task 6: Statistik umstellen (`get_stats`, `get_stats_activity`)
+## Task 9: Bummel (`compute_bummel_standings`)
 
-**Files:** Modify `app/database.py` (`get_stats:1418-1430`, `get_stats_activity:1473-1489`). Test
-`tests/test_database.py`.
+**Files:** Modify `app/database.py:2263-2359`; Test `tests/test_bummel.py`.
 
-**Interfaces:** Consumes `get_cached_flights` (Task 4).
+- [ ] **Step 1: Failing Test — „Frode"-E2E**: FRS-Flug landet am Bummel-Ziel (GPS), Verbindung endet
+  normal, kein separater Refile/Disconnect-Trick ⇒ erscheint in `standings["complete"]` mit `block_min`
+  aus dem Flug-Fenster.
+- [ ] **Step 2: Run — FAIL.**
+- [ ] **Step 3:** Zeile 2328 → `canonicalize_legs(conn, start=load_start, end=end, cids=cids)`.
+  GPS-Endpunkt-Korrektur (`:2334-2343`, `_nearest_route_airport`/`_first_pos`/`_last_pos`) entfernen —
+  `dep = f["departure"]`, `arr = f["arrival"]` (auf `route_set`-Mitgliedschaft wie bisher prüfen).
+  `secs = f["block_min"]*60` bzw. weiterhin `_block_seconds` (identische Quelle). Offener Flug (`arrival`
+  leer) fließt nicht als besuchter Platz ein ⇒ Tour ggf. unvollständig (bestehende `visited/missing`-Logik).
+- [ ] **Step 4: Run — PASS** (`python -m pytest tests/test_bummel.py tests/test_bummel_races.py -q`);
+  Vorher/Nachher-Zahlvergleich.
+- [ ] **Step 5: Commit** `feat(bummel): Wertung aus GPS-Fluegen (#23)`
 
-- [ ] **Step 1: Failing test — Vorher/Nachher + offene Flüge nur bei beendeter Verbindung**
+---
+
+## Task 10: Kutter (`compute_transport_progress`, `detect_transport_losses`) + Latch/Loss-Reconcile
+
+**Files:** Modify `app/database.py` (`compute_transport_progress:3560-3702`,
+`detect_transport_losses:3387-3415`, neuer Helfer `_latch_hits_flight`); Test `tests/test_transport.py`.
+
+**Reconcile-Regel (verbindlich):** Latch-Key = `(cid, VERBINDUNGS-logon)`; der Verbindungs-Logon liegt
+**vor** dem Takeoff. Ein Latch gehört zu einem GPS-Flug, wenn das **Connection-Intervall** des Latches das
+Flug-Fenster überlappt:
 
 ```python
-def test_get_stats_uses_gps_and_excludes_live_open_flight(conn_...):
-    # Pilot mit abgeschlossenem GPS-Flug + einem OFFENEN (logoff_time None, in-progress):
-    stats = get_stats(conn, days=30)
-    row = next(s for s in stats if s["cid"] == CID)
-    assert row["flight_count"] == 1   # offener in-progress zaehlt (noch) nicht
+def _latch_hits_flight(conn, latches: set[tuple[int, str]], cid: int,
+                       takeoff_ts: str, landing_ts: str | None) -> bool:
+    """True, wenn ein Live-Latch (cid, Verbindungs-Logon) zu diesem GPS-Flug gehört.
+    Zuordnung über Überlappung Connection-Intervall [logon, logoff] ↔ Flug-Fenster."""
+    end = landing_ts or "9999-12-31T23:59:59Z"
+    for c, lo in latches:
+        if c != cid or lo > end:
+            continue
+        row = conn.execute(
+            "SELECT logoff_time FROM flights WHERE cid = ? AND logon_time = ?", (cid, lo)
+        ).fetchone()
+        hi = (row[0] if row and row[0] else "9999-12-31T23:59:59Z")
+        if takeoff_ts <= hi:
+            return True
+    return False
 ```
 
+- [ ] **Step 1: Failing Tests**
+  - `test_live_latch_reconciled_to_gps_flight` — Latch mit Verbindungs-Logon **09:58**, GPS-Flug
+    [10:02, 10:40] ⇒ `delivered_kg > 0` (die alte `(cid, lo) in latches`-Prüfung findet nichts).
+  - `test_return_leg_not_double_counted` — Mehrbein-Connection Hin (landet am `destination`) + Rück:
+    nur das Hin-Bein `loaded` (Regel: Latch **und** (`arr == destination` **oder** Flug offen)).
+  - `test_delivery_requires_route_membership` — Landung neben dem Ziel, kein Latch ⇒ 0 kg.
 - [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3:** In `get_stats`/`get_stats_activity` den `canonicalize_flights(...)`-Aufruf (Zeile 1430 /
-  1489) durch `get_cached_flights(conn, start=start, callsign_prefix=callsign_prefix)` ersetzen.
-  Aggregation: offene Flüge (`logoff_time` None) nur zählen, wenn die **Verbindung beendet** ist — d. h.
-  überspringe Flüge mit `logoff_time is None` in der KPI-Aggregation (in-progress). `duration`-Summe nutzt
-  `duration_min` (jetzt takeoff→landing). Ergebnis-Keys unverändert (`fs_count/st_count/flight_count/…`).
-- [ ] **Step 4: Run — PASS**, plus manueller Vorher/Nachher-Vergleich auf Prod (`/api/stats` alt vs. neu).
-- [ ] **Step 5: Commit** `feat(stats): KPI aus GPS-Fluegen (canonicalize_legs/cache) (#23)`.
+- [ ] **Step 3:** Zeile 3604 → `canonicalize_legs(...)`. `dep/arr` direkt aus dem Flug
+  (`_nearest_airport`-Korrektur `:3621-3624` entfernen). Latch-Prüfungen `:3625` und `:3673` durch
+  `_latch_hits_flight(conn, live_arrivals, cid, f["logon_time"], f["logoff_time"])` ersetzen, `loaded`
+  zusätzlich an `arr == dest or not arr` binden (Rückflug-Bein zählt nie). Streckenbedingung `:3626`
+  unverändert. `detect_transport_losses` (`:3415`) ebenfalls auf `canonicalize_legs` + dieselbe
+  Zeitfenster-Zuordnung für vorhandene Loss-Zeilen (`:3700-3702`) umstellen; neue Loss-Zeilen behalten
+  den Verbindungs-Logon als Key (Poller schreibt ihn weiter — nur die Lese-Seite reconciled).
+- [ ] **Step 4: Run — PASS** (`python -m pytest tests/test_transport.py -q`); Vorher/Nachher.
+- [ ] **Step 5: Commit** `feat(kutter): GPS-Fluege + Latch/Loss-Reconcile ueber Connection-Intervall (#23)`
 
 ---
 
-## Task 7: Piloten-Detail umstellen (`/api/pilots/{cid}/flights`)
+## Task 11: UI — GPS-Start→Ziel und Flugplan nebeneinander (Spec G)
 
-**Files:** Modify `app/main.py:602-673`. Test `tests/test_admin_api.py` bzw. `tests/test_main.py`.
+**Files:** Modify `app/static/index.html` (Piloten-Flugliste / Track-Zeilen-Rendering);
+Test: Sichtprüfung + bestehende API-Tests (Rendering ist Vanilla-JS, kein JS-Testrunner im Repo).
 
-**Interfaces:** Consumes `canonicalize_legs`.
-
-- [ ] **Step 1: Failing test** — Endpoint liefert die GPS-Flüge des cid inkl. Zwischenlandungen; Felder
-  `departure/arrival` = GPS, `route`/`aircraft` als Label; `X-StatSim-Status`-Header bleibt.
-- [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3:** Zeile 663–669 den `canonicalize_flights(conn, cids=[cid], callsign_prefix="", …)`-Aufruf
-  durch `canonicalize_legs(conn, cids=[cid], start=start, callsign_prefix=settings.CALLSIGN_PREFIX)`
-  ersetzen. **`callsign_prefix` = FRS** (Fremd-Callsign-Anzeige ist Phase 2b, hier NICHT). Rückgabeform
-  unverändert (Liste von Flug-Dicts).
-- [ ] **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** `feat(api): Piloten-Detail zeigt GPS-Fluege (#23)`.
-
----
-
-## Task 8: Bummel umstellen (`compute_bummel_standings`)
-
-**Files:** Modify `app/database.py:2263-2359`. Test `tests/test_bummel.py`.
-
-**Interfaces:** Consumes `canonicalize_legs`.
-
-- [ ] **Step 1: Failing test — „Frode"-E2E**
-
-```python
-def test_frode_lands_stays_connected_scored_without_disconnect(conn_...):
-    # FRS-Flug landet am Bummel-Ziel, logoff_time gesetzt (Verbindung beendet), OHNE separaten Disconnect-
-    # Zombie. Erwartung: erscheint in standings["complete"] mit block_min aus dem GPS-Flugfenster.
-    res = compute_bummel_standings(conn, route_icaos=["EDDK","EDDW"], start=S, end=E)
-    assert any(c["cid"] == FRODE for c in res["complete"])
-```
-
-- [ ] **Step 2: Run — FAIL** (heute an Disconnect gebunden / andere Blockzeit).
-- [ ] **Step 3:** Zeile 2328 `canonicalize_flights(...)` → `canonicalize_legs(conn, start=load_start,
-  end=end, cids=cids)`. Die **GPS-Endpunkt-Korrektur (Zeile 2334–2343, `_nearest_route_airport`/`_first_pos`/
-  `_last_pos`)** entfällt — `dep`/`arr` kommen direkt aus dem Flug (`f["departure"]`/`f["arrival"]`). Block:
-  weiter `_block_seconds` bzw. `f["block_min"]*60` (bleibt gate-to-gate mit Stand-Ausschluss). Offener Flug
-  (`arrival` leer) → Tour bleibt unvollständig (bestehende `visited/missing`-Logik greift). Nested
-  `_nearest_route_airport`/`_first_pos`/`_last_pos`-Aufrufe hier entfernen.
-- [ ] **Step 4: Run — PASS** (`python -m pytest tests/test_bummel.py -v`), Vorher/Nachher-Zahlvergleich.
-- [ ] **Step 5: Commit** `feat(bummel): Wertung aus GPS-Fluegen, Endpunkt-Korrektur entfaellt (#23)`.
+- [ ] **Step 1:** Flug-Zeilen-Rendering der Piloten-Detailansicht anpassen:
+  - **Route-Zelle (klickbar, blau)** zeigt `gps_departure→gps_arrival` (Fallback `departure→arrival`);
+    offenes Ziel als „offen". Klick öffnet wie bisher den Track — `data-logon/data-logoff` tragen jetzt
+    automatisch das Bein-Fenster (`logon_time=takeoff_ts`), der bestehende `?logon=&logoff=`-Mechanismus
+    des Track-Endpoints schneidet damit genau das Bein.
+  - **Neue „Plan"-Spalte** daneben (reiner Text, NICHT blau): `plan_departure→plan_arrival`, sonst `—`.
+  - Tabelle bleibt im `.table-scroll`-Wrapper (mobil scrollbar); keine neuen klickbaren Blau-Elemente.
+- [ ] **Step 2:** Lokal `uvicorn app.main:app` + Piloten-Detail mit A→B→C-Testdaten sichten (2 Zeilen,
+  Plan-Spalte gefüllt/`—`).
+- [ ] **Step 3: Commit** `feat(ui): GPS-Route klickbar + Plan-Spalte daneben (Spec G) (#23)`
 
 ---
 
-## Task 9: Kutter umstellen + Latch/Loss-Reconcile
+## Task 12: Cleanup — toter Detektor-Speicher (Refile-Split BLEIBT)
 
-**Files:** Modify `app/database.py` (`compute_transport_progress:3560-3702`, `detect_transport_losses:3387-3415`).
-Test `tests/test_transport.py`.
+**Files:** Modify `app/database.py` (`recompute_gps_legs:861` + `gps_legs`-DDL entfernen; zugehörige
+Tests), `app/main.py` (Import), `docs/`. **NICHT anfassen:** Refile-Split im Poller (erzeugt die
+Label-Zeitachse für Spec G), `_BLOCK_STAND_MIN_SEC`, `merge_fragmented_flights`.
 
-**Interfaces:** Consumes `canonicalize_legs`. **Reconcile:** `transport_live_arrivals` (Key
-`(cid, logon_time=Verbindungs-Logon)`) und `transport_cargo_losses` (Key `(event_id, cid, logon_time)`)
-müssen dem GPS-Flug (`logon_time=takeoff_ts`) per **cid + Zeitfenster-Überlappung** zugeordnet werden.
-
-- [ ] **Step 1: Failing test — Live-Latch bleibt trotz takeoff_ts-Key**
-
-```python
-def test_live_latch_reconciled_to_gps_flight(conn_...):
-    # transport_live_arrivals hat (cid, VERBINDUNGS-logon); der GPS-Flug hat logon_time=takeoff_ts != das.
-    # Erwartung: loaded=True (Fracht geliefert), Latch wird ueber cid+Zeitfenster zugeordnet.
-    prog = compute_transport_progress(conn, event, now)
-    assert prog["delivered_kg"] > 0
-
-def test_delivery_requires_route_membership(conn_...):
-    # Flug landet NEBEN dem Ziel (nicht auf route_set), kein Latch → keine Lieferung.
-    prog = compute_transport_progress(conn, event_spawn_next_to_dest, now)
-    assert prog["delivered_kg"] == 0
-```
-
-- [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3:** Zeile 3604 `canonicalize_flights(...)` → `canonicalize_legs(...)`. `dep/arr` direkt aus dem
-  Flug (GPS), die `_nearest_airport`/`_first_pos`/`_last_pos`-Korrektur (3621–3624) entfällt. **Latch-
-  Reconcile:** statt `(cid, lo) in live_arrivals` (3625/3673) eine Hilfsfunktion
-  `_latch_hits(live_arrivals, cid, takeoff_ts, landing_ts)` — True, wenn ein Latch-`logon_time` desselben
-  cid **im Zeitfenster** `[takeoff_ts, landing_ts]` (bzw. der überlappenden Connection) liegt. **Strecken-
-  bedingung bleibt** (3626: `dep/arr ∈ route_set`, `dep≠arr`, oder Latch). Analog in `detect_transport_losses`
-  (3387–3415) den `canonicalize_flights`-Aufruf ersetzen und die Loss-Zuordnung (`f"{cid}:{logon_time}"`,
-  3700–3702) über dieselbe Zeitfenster-Überlappung reconcilen.
-- [ ] **Step 4: Run — PASS** (`python -m pytest tests/test_transport.py -v`), Vorher/Nachher.
-- [ ] **Step 5: Commit** `feat(kutter): Wertung aus GPS-Fluegen + Latch/Loss-Reconcile (#23)`.
+- [ ] **Step 1:** `grep -rn "recompute_gps_legs\|gps_legs" app/ tests/ docs/` — alle Referenzen erfassen.
+- [ ] **Step 2:** `recompute_gps_legs` + `gps_legs`-DDL + zugehörige Tests entfernen (`flight_cache` ist
+  der Ersatz); `DROP TABLE IF EXISTS gps_legs` in die Migrationsliste. Docs-Referenzen bereinigen.
+- [ ] **Step 3: Run** `python -m pytest tests/ -q` — alles grün.
+- [ ] **Step 4: Commit** `refactor: gps_legs-Rohspeicher entfernt, flight_cache ist Ersatz (#23)`
 
 ---
 
-## Task 10: Cleanup — Refile-Leg-Split, toter Detektor-Speicher
+## Task 13: Docs, Changelog v8.0.0, Deploy
 
-**Files:** Modify `app/poller.py` (Refile-Leg-Split ~768-794 aus Phase 1 — nur die **Leg-Trennung**, die
-Flugplan-Zeile bleibt), `app/database.py` (`recompute_gps_legs`, `gps_legs`-DDL — entfernen oder als
-Debug belassen; **`_BLOCK_STAND_MIN_SEC` NICHT anfassen**). Test: bestehende Suites grün halten.
-
-- [ ] **Step 1:** `grep -n "refile\|superseded_by\|gps_legs\|recompute_gps_legs" app/poller.py app/database.py`
-  — die durch GPS-Flüge ersetzte Refile-**Leg-Trennung** identifizieren (nicht die Flugplan-Speicherung!).
-- [ ] **Step 2:** Refile erzeugt weiterhin eine `flights`-Zeile (Label-Zeitachse, Spec G) — nur die
-  Leg-**Zählwirkung** entfällt (kommt jetzt aus GPS). `recompute_gps_legs` + `gps_legs`-Tabelle entfernen
-  (durch `flight_cache` ersetzt) **oder** als reines Debug-Artefakt belassen — entscheiden, dokumentieren.
-- [ ] **Step 3: Run** `python -m pytest tests/ -q` — **alles grün** (keine Regression).
-- [ ] **Step 4: Commit** `refactor: Refile-Leg-Split + toter gps_legs-Speicher entfernt (#23)`.
-
----
-
-## Task 11: Docs, Changelog v8.0.0, Deploy
-
-- [ ] **Step 1:** `app/CHANGELOG.json` oben neuer Eintrag **v8.0.0** (Major/highlight — Kern-Wahrheit ändert
-  sich, ganze Historie rückwirkend neu): „GPS-Etappen-
-  Erkennung aktiv — Flüge, Ziele und Blockzeiten kommen aus GPS (Statistik, Bummel, Kutter); Flugplan nur
-  noch als Label; Zwischenlandungen zählen." Docs: `docs/architecture.md` (`canonicalize_legs`,
-  `collapse_same_airport`, `flight_cache`, Latch-Reconcile), `docs/api.md` (Piloten-Detail/Audit-Änderung),
-  `README.md`.
-- [ ] **Step 2: Run** `python -m pytest tests/ -q` — grün; `python -c "from app.version import VERSION;
-  print(VERSION)"` == `8.0.0`.
-- [ ] **Step 3: Deploy** Push→main → `gh run watch <id> --exit-status --interval 20` → Prod-Health
-  `curl .../api/frontend-config` == `8.0.0` → Git-Tag `v8.0.0`.
-- [ ] **Step 4: Commit/Tag** (Changelog-Commit erzeugt den Deploy; Tag nach Health-Check).
-
-**⏸ Verifikation nach Deploy:** Statistik/Piloten/Bummel/Kutter konsistent (A→B→C = Zwischenlandung
-sichtbar; Platzrunde = 1 Flug; „Frode" gewertet ohne Disconnect; Kutter-Lieferung via Latch trotz
-takeoff_ts-Key). Prod == 8.0.0.
+- [ ] **Step 1:** `app/CHANGELOG.json` oben **v8.0.0** (Major/highlight): „GPS-Erkennung aktiv — Flüge,
+  Ziele und Blockzeiten kommen jetzt überall aus dem echten Flugweg (Statistik, Bummel, Kutter);
+  Zwischenlandungen zählen als eigene Flüge, Platzrunden nicht mehrfach; der Flugplan ist nur noch
+  Beschriftung." Docs: `docs/architecture.md` (`canonicalize_legs`, `collapse_same_airport`,
+  `flight_cache`, Latch-Reconcile, Semantik-Änderungen g), `docs/api.md` (Piloten-Detail-Felder,
+  Audit), `README.md`.
+- [ ] **Step 2: Run** `python -m pytest tests/ -q` grün; `python -c "from app.version import VERSION; print(VERSION)"` == `8.0.0`.
+- [ ] **Step 3: Deploy** Branch → main → `gh run watch <id> --exit-status --interval 20` → Prod-Health
+  `curl .../api/frontend-config` == `8.0.0` → Tag `v8.0.0`.
+- [ ] **Step 4: Verifikation nach Deploy:** A→B→C = 2 Flüge sichtbar; Platzrunde = 1 Flug; „Frode"
+  gewertet ohne Disconnect; Kutter-Lieferung via Latch trotz Verbindungs-Logon-Key; Piloten-Detail zeigt
+  GPS+Plan-Spalten; Fremd-Callsigns weiter sichtbar.
 
 ---
 
 ## Nicht in diesem Plan (Phase 2b)
 
-- **Fremd-Callsign-Anzeige** im Piloten-Detail (`scored=False`, cid-Erkennung, UI-Kennzeichnung).
-- **Proaktive StatSim-Track-Beschaffung je Import** (Automatik; Phase 2 nutzt den periodischen Bulk-Backfill).
+- **„Nicht gewertet"-Kennzeichnung** für Fremd-Callsign-Flüge im Piloten-Detail (Anzeige bleibt in
+  Phase 2 erhalten, nur die Markierung fehlt noch).
+- **Proaktive StatSim-Track-Beschaffung je Import** (Phase 2 nutzt den periodischen Bulk-Backfill).
 
 ## Verifikation (Self-Check des Plans)
 
-1. `python -m pytest tests/ -v` je Task grün.
-2. Spec-Abdeckung: A→Task 1/2; B/C→Task 3/4; G→Task 3 (`_assign_flightplan`); Audit/GATE→Task 5;
-   Konsumenten D→Task 6–9; Reconcile c→Task 9; Semantik g→Task 6 (offene Flüge) + Task 3 (`duration`);
-   Cleanup→Task 10; Release→Task 11.
-3. Nach Freigabe: subagent-driven-development, pro Task frischer Implementer (Task 1/2 reine Funktionen ggf.
-   Haiku/Sonnet; Task 3/9 Sonnet; Reviews Sonnet). Ledger `.superpowers/sdd/progress.md`.
+1. `python -m pytest tests/ -v` je Task grün; zwei Releases (v7.9.5 Schatten am GATE, v8.0.0 Aktivierung).
+2. Spec-Abdeckung: A→Task 1/2; a(Block)→Task 3; B/C→Task 4/5; G→Task 4 (`_assign_flightplan`) + Task 11
+   (UI); Audit/GATE(d)→Task 6; D→Task 7–10; c(Reconcile)→Task 10; b(Fallback)→Task 4;
+   g(Semantik)→Task 4/7; Teil-Überlappung→Task 4; Cleanup→Task 12; Release→Task 13.
+3. SDD-Modell-Matrix: Implementer Task 1/2/3 Sonnet (reine Funktionen, Code im Plan), Task 4–13 Sonnet;
+   **Task-Reviews Task 4 und Task 10 auf dem fähigsten Modell (Fable 5)**, übrige Reviews Sonnet;
+   **finaler Whole-Branch-Review Fable 5**. Ledger `.superpowers/sdd/progress.md`.
