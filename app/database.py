@@ -1901,6 +1901,425 @@ def canonicalize_flights(
     return result
 
 
+def _positions_for_cid(
+    conn: sqlite3.Connection, cid: int, start: str | None, end: str | None
+) -> list[dict]:
+    """Positionen eines Piloten für :func:`canonicalize_legs` laden.
+
+    Lookback: ab ``start - 12h`` (statt exakt ``start``), damit ein Leg, das die
+    ``start``-Grenze schneidet, nicht als Spawn-Artefakt in der Luft beginnt — der Detektor
+    bekommt genug Vorlauf, um den echten (früheren) Startplatz zu sehen. ``end`` grenzt die
+    Positionsladung bewusst NICHT ein: ein Leg, das kurz nach ``end`` landet, soll nicht
+    künstlich als offen erscheinen. Die eigentliche Fenster-Filterung (Überlappung mit
+    ``[start, end]``) passiert auf Flug-Ebene in :func:`canonicalize_legs`.
+    """
+    sql = (
+        "SELECT latitude, longitude, altitude, groundspeed, ts, callsign "
+        "FROM position_history WHERE cid = ?"
+    )
+    params: list = [cid]
+    if start:
+        lookback = (_parse_iso(start) - timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        sql += " AND ts >= ?"
+        params.append(lookback)
+    sql += " ORDER BY ts"
+    return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def _assign_flightplan(plan_rows: list[dict], gps_flight: dict) -> dict | None:
+    """Ordnet einem GPS-Flug die passende Flugplan-/Connection-Zeile zu (Spec G).
+
+    Primär: Startplatz-Match (``departure`` == ``gps_flight['dep_icao']``, case-insensitiv).
+    Mehrere Treffer: Zeit-Nähe (``logon_time`` am nächsten an ``takeoff_ts``) als Tie-Breaker.
+    Kein Startplatz bekannt oder kein Treffer → ``None`` — bewusst KEIN Fallback auf reine
+    Zeit-Nähe über alle Zeilen, sonst würde ein in der Luft nachgefiletes B→C-Bein fälschlich
+    dem ursprünglichen A→B-Plan zugeschlagen (unabhängig vom Filing-Zeitpunkt, Spec G).
+    """
+    if not plan_rows:
+        return None
+    dep = (gps_flight.get("dep_icao") or "").strip().upper()
+    if not dep:
+        return None
+    candidates = [r for r in plan_rows if (r.get("departure") or "").strip().upper() == dep]
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+
+    takeoff_ts = gps_flight.get("takeoff_ts")
+    if not takeoff_ts:
+        return candidates[0]
+
+    def _time_gap(r: dict) -> float:
+        lt = r.get("logon_time")
+        if not lt:
+            return float("inf")
+        try:
+            return abs((_parse_iso(lt) - _parse_iso(takeoff_ts)).total_seconds())
+        except Exception:
+            return float("inf")
+
+    return min(candidates, key=_time_gap)
+
+
+def _statsim_plan(row: dict) -> dict:
+    """Pseudo-Flugplan-Dict aus einer ``statsim_cache``-Zeile für :func:`_assign_flightplan`
+    (``id=None`` — StatSim liefert keine erweiterten Flugplan-Labels)."""
+    return {
+        "id": None,
+        "cid": row.get("cid"),
+        "callsign": row.get("callsign"),
+        "departure": row.get("departure"),
+        "arrival": row.get("arrival"),
+        "aircraft": row.get("aircraft"),
+        "logon_time": row.get("logon_time"),
+        "logoff_time": row.get("logoff_time"),
+        "route": None,
+        "remarks": None,
+        "cruise_altitude": None,
+        "cruise_tas": None,
+        "flight_rules": None,
+        "aircraft_icao": None,
+        "alternate": None,
+        "deptime": None,
+        "enroute_time": None,
+        "fuel_time": None,
+    }
+
+
+def _gps_flights_for_positions(
+    positions: list[dict], *, plan_rows: list[dict], source: str
+) -> list[dict]:
+    """GPS-Flüge (Task-1/2-Detektor + Collapse) über eine ÜBERGEBENE Positionsliste in
+    kanonische Flug-Dicts übersetzen — Metriken via Task-3-Helfer auf denselben Positionen
+    (``_block_seconds_positions`` / ``_distance_nm_positions``), damit die Funktion für
+    ``position_history`` (FriesenSpy) UND ``statsim_position_history``-Tracks (StatSim)
+    gleichermaßen funktioniert.
+
+    ``plan_rows``: Kandidaten-Flugpläne/Connections (``flights``-Zeilen bzw.
+    :func:`_statsim_plan`-Pseudo-Zeilen) für :func:`_assign_flightplan`. Trägt KEIN ``cid`` —
+    der Aufrufer kennt es aus dem Iterationskontext und setzt es. Enthält einen internen
+    Schlüssel ``_coverage_end`` (letzter belegter ts — für den Pro-Flug-Dedup in
+    :func:`canonicalize_legs`); der Aufrufer entfernt ihn vor der Rückgabe.
+    """
+    from app import geo
+    from app.gps_legs import detect_gps_legs, collapse_same_airport
+
+    legs = detect_gps_legs(
+        positions,
+        nearest_airport=geo.nearest_airport_icao_fast,
+        airport_elev_ft=geo.airport_elevation_ft,
+        radius_km=_BUMMEL_AIRPORT_RADIUS_KM,
+    )
+    gps_flights = collapse_same_airport(legs)
+    if not gps_flights:
+        return []
+
+    all_ts = sorted(p["ts"] for p in positions if p.get("ts"))
+    callsign_by_ts = {p["ts"]: p.get("callsign") for p in positions if p.get("callsign")}
+
+    out: list[dict] = []
+    for gf in gps_flights:
+        takeoff_ts = gf.get("takeoff_ts")
+        landing_ts = gf.get("landing_ts")
+        if landing_ts:
+            end_ts = landing_ts
+        else:
+            # Offener/unvollständiger Leg: Fenster-Ende = letzter belegter ts ab Takeoff.
+            tail = [t for t in all_ts if t >= takeoff_ts]
+            end_ts = tail[-1] if tail else takeoff_ts
+
+        block_min = _block_seconds_positions(positions, takeoff_ts, end_ts) // 60
+        distance_nm = _distance_nm_positions(positions, takeoff_ts, end_ts)
+        try:
+            duration_min = max(
+                0, int((_parse_iso(end_ts) - _parse_iso(takeoff_ts)).total_seconds() // 60)
+            )
+        except Exception:
+            duration_min = 0
+
+        plan = _assign_flightplan(plan_rows, gf)
+        gps_dep = gf.get("dep_icao")
+        gps_arr = gf.get("arr_icao")
+        plan_dep = plan.get("departure") if plan else None
+        plan_arr = plan.get("arrival") if plan else None
+        departure = gps_dep or plan_dep
+        arrival = gps_arr or plan_arr
+
+        if source == "friesenspy":
+            connection_closed = bool(plan.get("logoff_time")) if plan else False
+        else:
+            connection_closed = True
+
+        callsign = (plan.get("callsign") if plan else None) or callsign_by_ts.get(takeoff_ts)
+
+        out.append({
+            "id": plan.get("id") if plan else None,
+            "cid": plan.get("cid") if plan else None,
+            "callsign": callsign,
+            "aircraft": plan.get("aircraft") if plan else None,
+            "departure": departure,
+            "arrival": arrival,
+            "gps_departure": gps_dep,
+            "gps_arrival": gps_arr,
+            "plan_departure": plan_dep,
+            "plan_arrival": plan_arr,
+            "logon_time": takeoff_ts,
+            "logoff_time": landing_ts,
+            "duration_min": duration_min,
+            "distance_nm": distance_nm,
+            "block_min": block_min,
+            "route": (plan.get("route") if plan else None) or "",
+            "remarks": (plan.get("remarks") if plan else None) or "",
+            "cruise_altitude": plan.get("cruise_altitude") if plan else None,
+            "cruise_tas": plan.get("cruise_tas") if plan else None,
+            "flight_rules": plan.get("flight_rules") if plan else None,
+            "aircraft_icao": plan.get("aircraft_icao") if plan else None,
+            "alternate": plan.get("alternate") if plan else None,
+            "deptime": plan.get("deptime") if plan else None,
+            "enroute_time": plan.get("enroute_time") if plan else None,
+            "fuel_time": plan.get("fuel_time") if plan else None,
+            "connection_closed": connection_closed,
+            "source": source,
+            "_coverage_end": end_ts,
+        })
+    return out
+
+
+def _flightrow_as_flight(row: dict, source: str) -> dict:
+    """Fallback-Flug direkt aus einer ``flights``-/``statsim_cache``-Zeile OHNE GPS-Track.
+
+    GPS unbekannt (``gps_departure``/``gps_arrival`` = ``None``); ``departure``/``arrival``
+    kommen aus dem Flugplan der Zeile selbst. ``connection_closed``: FriesenSpy = ``logoff_time``
+    der Zeile gesetzt; StatSim = immer ``True`` (Spec — StatSim-Sessions werden grundsätzlich
+    erst abgeschlossen erfasst).
+    """
+    if source == "statsim":
+        return {
+            "id": None,
+            "cid": row.get("cid"),
+            "callsign": row.get("callsign"),
+            "aircraft": row.get("aircraft"),
+            "departure": row.get("departure"),
+            "arrival": row.get("arrival"),
+            "gps_departure": None,
+            "gps_arrival": None,
+            "plan_departure": row.get("departure"),
+            "plan_arrival": row.get("arrival"),
+            "logon_time": row.get("logon_time"),
+            "logoff_time": row.get("logoff_time"),
+            "duration_min": row.get("duration_min"),
+            "distance_nm": None,
+            "block_min": None,
+            "route": "",
+            "remarks": "",
+            "cruise_altitude": None,
+            "cruise_tas": None,
+            "flight_rules": None,
+            "aircraft_icao": None,
+            "alternate": None,
+            "deptime": None,
+            "enroute_time": None,
+            "fuel_time": None,
+            "connection_closed": True,
+            "source": source,
+        }
+
+    return {
+        "id": row.get("id"),
+        "cid": row.get("cid"),
+        "callsign": row.get("callsign"),
+        "aircraft": row.get("aircraft"),
+        "departure": row.get("departure"),
+        "arrival": row.get("arrival"),
+        "gps_departure": None,
+        "gps_arrival": None,
+        "plan_departure": row.get("departure"),
+        "plan_arrival": row.get("arrival"),
+        "logon_time": row.get("logon_time"),
+        "logoff_time": row.get("logoff_time"),
+        "duration_min": row.get("duration_min"),
+        "distance_nm": row.get("distance_nm"),
+        "block_min": row.get("block_min"),
+        "route": row.get("route"),
+        "remarks": row.get("remarks"),
+        "cruise_altitude": row.get("cruise_altitude"),
+        "cruise_tas": row.get("cruise_tas"),
+        "flight_rules": row.get("flight_rules"),
+        "aircraft_icao": row.get("aircraft_icao"),
+        "alternate": row.get("alternate"),
+        "deptime": row.get("deptime"),
+        "enroute_time": row.get("enroute_time"),
+        "fuel_time": row.get("fuel_time"),
+        "connection_closed": row.get("logoff_time") is not None,
+        "source": source,
+    }
+
+
+def _overlaps_any(
+    intervals: list[tuple], lo: str | None, hi: str | None
+) -> bool:
+    """True, wenn ``[lo, hi]`` eines der ``intervals`` (Liste von ``(start, end)``-Tupeln)
+    überlappt (lexikographischer ISO8601-UTC-Vergleich). ``None``-Ende — bei ``hi`` UND
+    innerhalb von ``intervals`` — bedeutet ein offenes Ende (∞)."""
+    if lo is None:
+        return False
+    _INF = "9999-12-31T23:59:59Z"
+    hi_eff = hi or _INF
+    for a, b in intervals:
+        if a is None:
+            continue
+        b_eff = b or _INF
+        if a <= hi_eff and lo <= b_eff:
+            return True
+    return False
+
+
+def canonicalize_legs(
+    conn: sqlite3.Connection,
+    *,
+    cids: list[int] | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    callsign_prefix: str = "FRS",
+) -> list[dict]:
+    """GPS-Pendant zu :func:`canonicalize_flights` — künftig die EINZIGE Wahrheit unter
+    GPS-only Phase 2 (#23). Formgleich: jedes Flug-Dict trägt mindestens dieselben Keys wie
+    ``canonicalize_flights`` PLUS ``gps_departure``, ``gps_arrival``, ``plan_departure``,
+    ``plan_arrival``, ``connection_closed``.
+
+    Ablauf: Fenster-Lookback (Positionen ab ``start - 12h``, gegen Spawn-Artefakte an der
+    Fensterkante) → je Pilot/StatSim-Flug Detektor + Collapse über die ECHTEN Positionen →
+    Flugplan-Zuordnung (Startplatz-primär, Spec G) → Fallback auf die reine Connection-/
+    StatSim-Zeile, wenn kein Track vorliegt (bzw. kein Leg erkannt wurde) → Ergebnis auf
+    Überlappung mit ``[start, end]`` gefiltert → StatSim-Flüge, die einen FriesenSpy-Flug
+    DESSELBEN cid überlappen, werden verworfen (PRO FLUG, nicht pro Session — Teil-
+    Überlappung, z. B. nach einem FS-Absturz, lässt den unüberdeckten StatSim-Rest überleben)
+    → Sortierung ``logon_time`` absteigend.
+
+    ``callsign_prefix=""`` liefert alle Callsigns (für die Piloten-Detail-Ansicht).
+    """
+    prefix_pat = callsign_prefix + "%"
+
+    # --- FriesenSpy: Connections im Fenster → cid-Menge -------------------------------
+    # Bewusst OHNE "logoff_time IS NOT NULL" (anders als canonicalize_flights): unter
+    # GPS-only ist die Connection nicht mehr die Wahrheit für "abgeschlossen" — das
+    # übernimmt connection_closed, das auch für noch offene Connections False liefert.
+    fs_where = ["superseded_by IS NULL", "callsign LIKE ?"]
+    fs_params: list = [prefix_pat]
+    if cids:
+        fs_where.append("cid IN (%s)" % ",".join("?" * len(cids)))
+        fs_params += list(cids)
+    if start:
+        fs_where.append("logon_time >= ?")
+        fs_params.append(start)
+    if end:
+        fs_where.append("logon_time <= ?")
+        fs_params.append(end)
+    fs_rows = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT id, cid, callsign, aircraft_short AS aircraft, departure, arrival, "
+            "logon_time, logoff_time, duration_min, distance_nm, block_min, route, remarks, "
+            "cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate, "
+            "deptime, enroute_time, fuel_time FROM flights WHERE "
+            + " AND ".join(fs_where)
+            + " ORDER BY cid, logon_time",
+            fs_params,
+        ).fetchall()
+    ]
+    fs_by_cid: dict[int, list[dict]] = {}
+    for r in fs_rows:
+        fs_by_cid.setdefault(r["cid"], []).append(r)
+
+    def _in_window(f: dict) -> bool:
+        takeoff = f.get("logon_time")
+        if takeoff is None:
+            return False
+        if end and takeoff > end:
+            return False
+        landing = f.get("logoff_time")
+        if start and landing is not None and landing < start:
+            return False
+        return True
+
+    fs_flights: list[dict] = []
+    fs_intervals_by_cid: dict[int, list[tuple]] = {}
+
+    for cid, rows in fs_by_cid.items():
+        positions = _positions_for_cid(conn, cid, start, end)
+        gps_flights = _gps_flights_for_positions(positions, plan_rows=rows, source="friesenspy")
+        if gps_flights:
+            for f in gps_flights:
+                f["cid"] = cid
+                coverage_end = f.pop("_coverage_end", None)
+                fs_flights.append(f)
+                fs_intervals_by_cid.setdefault(cid, []).append(
+                    (f.get("logon_time"), coverage_end or f.get("logoff_time"))
+                )
+        else:
+            # Keine GPS-Flüge trotz Zeilen → jede Zeile per _flightrow_as_flight übernehmen.
+            for row in rows:
+                f = _flightrow_as_flight(row, "friesenspy")
+                fs_flights.append(f)
+                fs_intervals_by_cid.setdefault(cid, []).append(
+                    (f.get("logon_time"), f.get("logoff_time"))
+                )
+
+    fs_flights = [f for f in fs_flights if _in_window(f)]
+    result: list[dict] = list(fs_flights)
+
+    # --- StatSim ------------------------------------------------------------------------
+    sc_where = [
+        "logon_time != ''", "logoff_time IS NOT NULL", "duration_min > 5", "callsign LIKE ?",
+    ]
+    sc_params: list = [prefix_pat]
+    if cids:
+        sc_where.append("cid IN (%s)" % ",".join("?" * len(cids)))
+        sc_params += list(cids)
+    if start:
+        sc_where.append("logon_time >= ?")
+        sc_params.append(start)
+    if end:
+        sc_where.append("logon_time <= ?")
+        sc_params.append(end)
+    sc_rows = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT statsim_id, cid, callsign, departure, arrival, aircraft, "
+            "logon_time, logoff_time, duration_min FROM statsim_cache WHERE "
+            + " AND ".join(sc_where)
+            + " ORDER BY cid, logon_time",
+            sc_params,
+        ).fetchall()
+    ]
+
+    st_flights: list[dict] = []
+    for row in sc_rows:
+        positions = get_statsim_positions(conn, row["statsim_id"])
+        gps_flights = _gps_flights_for_positions(
+            positions, plan_rows=[_statsim_plan(row)], source="statsim"
+        )
+        if gps_flights:
+            for f in gps_flights:
+                f["cid"] = row["cid"]
+                f.pop("_coverage_end", None)
+                st_flights.append(f)
+        else:
+            st_flights.append(_flightrow_as_flight(row, "statsim"))
+
+    st_flights = [f for f in st_flights if _in_window(f)]
+
+    for f in st_flights:
+        intervals = fs_intervals_by_cid.get(f.get("cid"), [])
+        if _overlaps_any(intervals, f.get("logon_time"), f.get("logoff_time")):
+            continue
+        result.append(f)
+
+    result.sort(key=lambda x: x.get("logon_time") or "", reverse=True)
+    return result
+
+
 def audit_gps_vs_refile(
     conn: sqlite3.Connection,
     *,
