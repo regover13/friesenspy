@@ -125,8 +125,10 @@ Zahlvergleich):
 4. **Kutter** (`compute_transport_progress`): Lieferung, wenn ein Flug **am Ziel** landet; offen/anderswo
    = keine Lieferung. Live-Latch (`transport_live_arrivals`) bleibt für Ankunft-ohne-Disconnect.
 
-**Wegfall nach der Umstellung:** Refile-Leg-Split (poller.py), die je Konsument verstreute dep/arr-
-Korrektur, die `_BLOCK_STAND_MIN_SEC`-Heuristik — die Flüge liefern das jetzt zentral. Der Phase-1-
+**Wegfall nach der Umstellung:** Der **Refile-Leg-Split** trennt keine Flüge mehr (GPS tut das) — die
+refilte Flugplan-**Zeile bleibt** aber als Label-Zeitachse erhalten (Abschnitt G). Ebenso weg: die je
+Konsument verstreute dep/arr-Korrektur und die `_BLOCK_STAND_MIN_SEC`-Heuristik — die Flüge liefern das
+jetzt zentral. Der Phase-1-
 `gps_legs`-Table + `recompute_gps_legs` werden überflüssig (nur das Audit nutzte sie; es rechnet ohnehin
 on-demand). Sie werden entfernt oder als reines Debug-Artefakt belassen — im Plan entscheiden.
 
@@ -148,6 +150,29 @@ der StatSim-API geladen und in `statsim_position_history` gespeichert, sobald de
 
 Mechanik: der bestehende Backfill-Endpoint + die per-Pilot-StatSim-Fetch-Logik stellen den Track sicher
 (gedrosselt, idempotent). Die Legs bleiben on-demand.
+
+## G — Flugplan-Zuordnung & Anzeige
+
+**Anzeige — GPS *und* Plan nebeneinander.** Jede Listenzeile = ein GPS-Flug (Bein):
+- **GPS-Start→Ziel** = die klickbare Route-Zelle (blau), Klick → Track **genau dieses Beins**
+  (`[takeoff_ts, landing_ts]`). **Immer vorhanden** (aus dem Track) — die Anzeige hängt nicht mehr am Plan.
+- **Flugplan-Start→Ziel** daneben als Kontext; `—`, wenn kein passender Plan. Route/Remarks/Muster als
+  Label vom zugeordneten Plan (**StatSim liefert nur Muster + Start→Ziel, keine Route/Remarks**).
+
+**Zuordnung Plan → Bein — Startplatz-primär (zeit-robust):**
+1. **Startplatz-Match (primär):** der Flugplan der Verbindung, dessen *gefilter Startplatz* == GPS-
+   Startplatz des Beins. Robust gegen **späten/vergessenen Refile**: ein erst in der Luft aufgegebener
+   B→C-Plan sagt trotzdem „Start B" → matcht das B→C-Bein, unabhängig vom Zeitpunkt.
+2. **Zeit-Fallback:** kein Startplatz-Match → zeitlich nächster Plan der Verbindung.
+3. **Kein Match / kein Plan → `—`.** Z. B. VFR ohne Plan; oder nur *ein* Plan A→C gefiled, GPS macht
+   A→B→C → das B→C-Bein bekommt `—` (kein erzwungenes Fehl-Label; der Pilot hat B→C nie gefiled).
+
+**Datenbasis:** die Folge der `flights`/Prefile-Datensätze je Verbindung (jeder Refile = eigener
+Zeitstempel + gefilter dep/arr) bleibt als **Flugplan-Zeitachse** erhalten — nicht mehr als Leg-Grenze,
+nur fürs Labeln. StatSim liefert dep/arr/Muster aus `statsim_cache`.
+
+**Nur Label, nie Wertung:** Die Zuordnung beeinflusst ausschließlich die Anzeige. KPI/Bummel/Kutter
+laufen rein über GPS — eine gelegentliche Fehl-/`—`-Zuordnung des Plan-Labels kostet nie Punkte.
 
 ## Aktivierung & Verifikation
 
@@ -174,6 +199,8 @@ Mechanik: der bestehende Backfill-Endpoint + die per-Pilot-StatSim-Fetch-Logik s
   StatSim-Fallback ohne Track; Dedup FriesenSpy-gewinnt bei Überlappung.
 - **Zwei-Klassen-Trennung**: Fremd-Callsign-Flug eines Friesen-cid erscheint im Piloten-Detail mit
   `scored=False`, aber **nicht** in KPI/Bummel/Kutter (je ein Test pro Konsument, dass er ausgeschlossen ist).
+- **Flugplan-Zuordnung**: Startplatz-Match; **spät/in-der-Luft aufgegebener Refile** landet am richtigen
+  Bein; ein Plan A→C + GPS A→B→C → B→C-Bein zeigt `—`; VFR ohne Plan → `—`; StatSim → dep/arr/Muster gesetzt.
 - **Konsumenten**: `get_stats`/Bummel/Kutter mit Flügen; Bummel-„Frode"-E2E; Vorher/Nachher-Zahlvergleich
   vor der Umstellung je Konsument.
 
