@@ -269,6 +269,40 @@ CREATE TABLE IF NOT EXISTS gps_legs (
     UNIQUE(cid, takeoff_ts)
 );
 CREATE INDEX IF NOT EXISTS idx_gps_legs_cid ON gps_legs(cid);
+
+CREATE TABLE IF NOT EXISTS flight_cache (
+    cache_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                INTEGER,              -- Flugplan-/Connection-id aus canonicalize_legs (kann NULL sein)
+    cid               INTEGER,
+    callsign          TEXT,
+    aircraft          TEXT,
+    departure         TEXT,
+    arrival           TEXT,
+    logon_time        TEXT NOT NULL,        -- takeoff_ts, immer gesetzt
+    logoff_time       TEXT,                 -- landing_ts, NULL bei offenem Flug
+    duration_min      INTEGER,
+    distance_nm       REAL,
+    block_min         INTEGER,
+    route             TEXT,
+    remarks           TEXT,
+    cruise_altitude   TEXT,
+    cruise_tas        TEXT,
+    flight_rules      TEXT,
+    aircraft_icao     TEXT,
+    alternate         TEXT,
+    deptime           TEXT,
+    enroute_time      TEXT,
+    fuel_time         TEXT,
+    source            TEXT,
+    gps_departure     TEXT,
+    gps_arrival       TEXT,
+    plan_departure    TEXT,
+    plan_arrival      TEXT,
+    connection_closed INTEGER,              -- 0/1
+    computed_at       TEXT,
+    UNIQUE(cid, logon_time)
+);
+CREATE INDEX IF NOT EXISTS idx_flight_cache_logon ON flight_cache(logon_time);
 """
 
 
@@ -2621,6 +2655,133 @@ def _statsim_gps_interpretation(
         })
 
     return {"sampled": len(rows), "total": total, "summary": counts, "flights": flights}
+
+
+# ---------------------------------------------------------------------------
+# flight_cache — materialisierte canonicalize_legs()-Ergebnisse (GPS-only Phase 2, #23)
+# ---------------------------------------------------------------------------
+#
+# Nur die GLOBALE Statistik (alle Piloten, großes Fenster) nutzt diesen Cache — dort wäre
+# canonicalize_legs() live zu teuer. Bummel/Kutter/Piloten-Detail (kleine cid-Mengen) rufen
+# canonicalize_legs() weiterhin direkt.
+
+_FLIGHT_CACHE_COLUMNS = [
+    "id", "cid", "callsign", "aircraft", "departure", "arrival", "logon_time", "logoff_time",
+    "duration_min", "distance_nm", "block_min", "route", "remarks", "cruise_altitude",
+    "cruise_tas", "flight_rules", "aircraft_icao", "alternate", "deptime", "enroute_time",
+    "fuel_time", "source", "gps_departure", "gps_arrival", "plan_departure", "plan_arrival",
+    "connection_closed",
+]
+
+# Inkrementelles Fenster: nur Flüge der letzten N Tage werden bei full=False neu berechnet;
+# ältere, abgeschlossene Flüge bleiben im Cache unangetastet.
+_FLIGHT_CACHE_INCREMENTAL_DAYS = 7
+
+# Refresh-Schwelle (Sekunden): ist der Cache älter, löst get_cached_flights() einen
+# inkrementellen Refresh aus.
+_FLIGHT_CACHE_MAX_AGE_SEC = 600
+
+
+def _write_flight_cache_rows(
+    conn: sqlite3.Connection, flights: list[dict], computed_at: str
+) -> None:
+    """Flug-Dicts (Feld-Vertrag von :func:`canonicalize_legs`) nach ``flight_cache`` schreiben.
+
+    ``INSERT OR REPLACE`` gegen ``UNIQUE(cid, logon_time)`` — ein erneuter Lauf über dieselben
+    Flüge erzeugt keine Dubletten (Idempotenz)."""
+    cols = _FLIGHT_CACHE_COLUMNS + ["computed_at"]
+    sql = (
+        f"INSERT OR REPLACE INTO flight_cache ({','.join(cols)}) VALUES "
+        f"({','.join(':' + c for c in cols)})"
+    )
+    for f in flights:
+        row = {c: f.get(c) for c in _FLIGHT_CACHE_COLUMNS}
+        row["connection_closed"] = 1 if row.get("connection_closed") else 0
+        row["computed_at"] = computed_at
+        conn.execute(sql, row)
+
+
+def rebuild_flight_cache(conn: sqlite3.Connection, *, full: bool = False) -> int:
+    """Materialisiert :func:`canonicalize_legs`-Ergebnisse in ``flight_cache``.
+
+    ``full=True`` ODER der Cache ist leer: kompletter Rebuild — ``flight_cache`` wird geleert
+    und mit ALLEN Flügen aus ``canonicalize_legs(conn)`` (kein Fenster, Default-Präfix "FRS")
+    neu befüllt.
+
+    ``full=False``: inkrementell — nur Flüge mit ``logon_time >= now - _FLIGHT_CACHE_INCREMENTAL_DAYS
+    Tage`` werden im Cache gelöscht und aus ``canonicalize_legs(conn, start=…)`` neu geschrieben;
+    ältere, bereits abgeschlossene Flüge bleiben unangetastet.
+
+    Gibt die Anzahl der in diesem Lauf geschriebenen Zeilen zurück.
+    """
+    is_empty = conn.execute("SELECT COUNT(*) FROM flight_cache").fetchone()[0] == 0
+    computed_at = _now_utc()
+
+    if full or is_empty:
+        conn.execute("DELETE FROM flight_cache")
+        flights = canonicalize_legs(conn)
+    else:
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=_FLIGHT_CACHE_INCREMENTAL_DAYS)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn.execute("DELETE FROM flight_cache WHERE logon_time >= ?", (cutoff,))
+        flights = canonicalize_legs(conn, start=cutoff)
+
+    _write_flight_cache_rows(conn, flights, computed_at)
+    conn.commit()
+    return len(flights)
+
+
+def get_cached_flights(
+    conn: sqlite3.Connection,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+    callsign_prefix: str = "FRS",
+) -> list[dict]:
+    """Liest Flüge aus ``flight_cache`` (Feld-Vertrag identisch zu :func:`canonicalize_legs`).
+
+    Refresh-Regel: ist der Cache leer, wird zuerst ein Voll-Rebuild ausgelöst; ist er nicht
+    leer, aber der jüngste ``computed_at``-Wert älter als ``_FLIGHT_CACHE_MAX_AGE_SEC``, ein
+    inkrementeller Refresh. Der Cache selbst wird IMMER mit dem Default-Präfix "FRS" materialisiert
+    — ``callsign_prefix``/``start``/``end`` filtern hier nur die AUSGABE.
+    """
+    is_empty = conn.execute("SELECT COUNT(*) FROM flight_cache").fetchone()[0] == 0
+    if is_empty:
+        rebuild_flight_cache(conn, full=True)
+    else:
+        max_computed = conn.execute(
+            "SELECT MAX(computed_at) FROM flight_cache"
+        ).fetchone()[0]
+        if max_computed is None:
+            rebuild_flight_cache(conn, full=True)
+        else:
+            age_sec = (datetime.now(timezone.utc) - _parse_iso(max_computed)).total_seconds()
+            if age_sec > _FLIGHT_CACHE_MAX_AGE_SEC:
+                rebuild_flight_cache(conn, full=False)
+
+    where = ["callsign LIKE ?"]
+    params: list = [callsign_prefix + "%"]
+    if start:
+        where.append("logon_time >= ?")
+        params.append(start)
+    if end:
+        where.append("logon_time <= ?")
+        params.append(end)
+
+    rows = conn.execute(
+        f"SELECT {','.join(_FLIGHT_CACHE_COLUMNS)} FROM flight_cache WHERE "
+        + " AND ".join(where)
+        + " ORDER BY logon_time DESC",
+        params,
+    ).fetchall()
+
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["connection_closed"] = bool(d["connection_closed"])
+        result.append(d)
+    return result
 
 
 # Umkreis (km), in dem die erste/letzte GPS-Position einem Streckenflugplatz zugeordnet wird.
