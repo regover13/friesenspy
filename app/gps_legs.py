@@ -164,9 +164,13 @@ def _detect_segment(
                 # dep_icao/dep_source stammen aus dem Boden-Cluster (bereits getrackt).
                 max_alt = _update_max(None, alt)
             else:
-                # Weiter am Boden: Boden-Referenz + dep-Kandidat aktualisieren.
+                # Weiter am Boden: dep-Kandidat aktualisieren. Die Boden-Referenz bleibt auf
+                # der Feldhöhe verankert (Minimum) — sie darf NICHT mit dem Steigflug mit-
+                # klettern, sonst bleibt (alt − ground_ref_ft) immer nur ein Sample-Schritt
+                # und ein normal steigendes Flugzeug (~200 ft/Sample) überschreitet die
+                # 500-ft-Schwelle nie → es würde nie ein Abheben erkannt.
                 if alt is not None:
-                    ground_ref_ft = alt
+                    ground_ref_ft = alt if ground_ref_ft is None else min(ground_ref_ft, alt)
                 dep_icao = nearest_airport(lat, lon, radius_km)
                 dep_source = "gps" if dep_icao else None
             continue
