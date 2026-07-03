@@ -218,10 +218,8 @@ class TestDedup:
             logon_time="2026-07-02T09:00:00Z", logoff_time=None,
         )
         # Track: spawnt bereits fliegend fernab jedes Platzes, bricht bei 10:30 ab (kein Landing).
-        for sec, ts in enumerate(
-            ["2026-07-02T10:00:00Z", "2026-07-02T10:10:00Z",
-             "2026-07-02T10:20:00Z", "2026-07-02T10:30:00Z"]
-        ):
+        for ts in ["2026-07-02T10:00:00Z", "2026-07-02T10:10:00Z",
+                   "2026-07-02T10:20:00Z", "2026-07-02T10:30:00Z"]:
             _insert_pos(conn, cid, ts, *REMOTE, 3000, 120, "FRS33")
 
         # Zwei StatSim-Flüge derselben cid: einer innerhalb der FS-Abdeckung (verworfen),
@@ -292,3 +290,153 @@ class TestPlanAssignment:
         assert assigned_ab is not None and assigned_ab["departure"] == "A"
         assert assigned_bc is not None and assigned_bc["departure"] == "B"
         assert assigned_none is None
+
+
+# --- Risiko-Review-Regressionstests (Fix 1-6, #23) ------------------------------------
+
+MID = (51.5, 7.5)  # ~40 nm von EDDK, außerhalb jedes Flugplatz-Radius (10 km).
+
+
+class TestCappedOpenFlightWindow:
+    def test_open_flight_isolated_from_followup_session(self):
+        """FIX 1: ein offener Flug (Absturz) darf NICHT bis in eine spätere, eigene Session
+        derselben cid hineinreichen (Gap > 30 min trennt in ein neues Segment/einen neuen
+        Flug) — sonst Doppelzählung inkl. Haversine-Sprung Crash→Respawn."""
+        conn = _make_conn()
+        cid = 4308
+        _insert_flight(
+            conn, cid=cid, callsign="FRS38", departure="", arrival="",
+            logon_time="2026-07-02T09:55:00Z", logoff_time=None,
+        )
+        # Segment 1: EDDK-Start, Absturz mitten im Flug (~10:30) — KEIN Landing.
+        for ts, lat, lon, alt, gs in [
+            ("2026-07-02T10:00:00Z", *EDDK, 302, 0),
+            ("2026-07-02T10:01:00Z", *EDDK, 302, 5),
+            ("2026-07-02T10:02:00Z", *EDDK, 1200, 80),
+            ("2026-07-02T10:15:00Z", *MID, 5000, 120),
+            ("2026-07-02T10:30:00Z", *MID, 5000, 120),
+        ]:
+            _insert_pos(conn, cid, ts, lat, lon, alt, gs, "FRS38")
+        # > 30 min Gap → neues Segment: Respawn fernab bei EDDW, voller EDDW→EDDK-Flug
+        # (eigener Flug derselben cid — genau das Doppelzählungs-Risiko aus FIX 1).
+        for ts, lat, lon, alt, gs in [
+            ("2026-07-02T12:00:00Z", *EDDW, 14, 0),
+            ("2026-07-02T12:01:00Z", *EDDW, 14, 5),
+            ("2026-07-02T12:02:00Z", *EDDW, 1200, 80),
+            ("2026-07-02T12:20:00Z", 52.0, 8.0, 5000, 120),
+            ("2026-07-02T12:38:00Z", 51.5, 7.6, 800, 90),
+            ("2026-07-02T12:40:00Z", *EDDK, 310, 0),
+            ("2026-07-02T12:44:00Z", *EDDK, 310, 0),
+        ]:
+            _insert_pos(conn, cid, ts, lat, lon, alt, gs, "FRS38")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        fs = [f for f in result if f["cid"] == cid and f["source"] == "friesenspy"]
+        assert len(fs) == 2, f"erwartete 2 Flüge (offen + Folgeflug), bekam {len(fs)}"
+        open_flight = next(f for f in fs if f["logoff_time"] is None)
+        followup = next(f for f in fs if f["logoff_time"] is not None)
+
+        # Segment 1 (offen) darf NICHT bis ans Ende von Segment 2 reichen (Absturz ~10:30,
+        # nicht bis 12:44).
+        assert open_flight["duration_min"] < 40, (
+            f"duration_min sollte nur Segment 1 umfassen, war {open_flight['duration_min']}"
+        )
+        assert open_flight["distance_nm"] < 100, (
+            "distance_nm sollte den Crash→Respawn-Sprung NICHT enthalten, war "
+            f"{open_flight['distance_nm']}"
+        )
+        # FIX 1 + 3 (Metrik-Konsistenz am offenen Flug).
+        assert open_flight["duration_min"] > 0
+        assert open_flight["block_min"] > 0
+        assert open_flight["block_min"] <= open_flight["duration_min"]
+
+        # Folgeflug bleibt unbeeinflusst als eigener, vollständiger Flug erkennbar.
+        assert followup["gps_departure"] == "EDDW"
+        assert followup["gps_arrival"] == "EDDK"
+
+
+class TestArrivalNoPlanFallback:
+    def test_crashed_flight_keeps_arrival_empty_despite_filed_destination(self):
+        """FIX 2: arrival = gps_arrival, KEIN Flugplan-Fallback. Ein abgestürzter/offener
+        Flug mit gefiletem Ziel darf nicht wie gelandet aussehen."""
+        conn = _make_conn()
+        cid = 4309
+        _insert_flight(
+            conn, cid=cid, callsign="FRS39", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time=None,
+        )
+        for ts, lat, lon, alt, gs in [
+            ("2026-07-02T10:00:00Z", *EDDK, 302, 0),
+            ("2026-07-02T10:01:00Z", *EDDK, 302, 5),
+            ("2026-07-02T10:02:00Z", *EDDK, 1200, 80),
+            ("2026-07-02T10:15:00Z", *MID, 5000, 120),
+            ("2026-07-02T10:30:00Z", *MID, 5000, 120),
+        ]:
+            _insert_pos(conn, cid, ts, lat, lon, alt, gs, "FRS39")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid)
+        assert flight["gps_departure"] == "EDDK"
+        assert not flight["gps_arrival"]
+        assert not flight["arrival"], "arrival darf NICHT auf das geplante Ziel zurückfallen"
+        assert flight["logoff_time"] is None
+        # Plan-Ziel bleibt separat sichtbar (nur nicht als arrival).
+        assert flight["plan_arrival"] == "EDDW"
+
+
+class TestPlanLabelsThroughPipeline:
+    def test_plan_labels_assigned_through_full_pipeline(self):
+        """Deckt die in Task 4 offen gelassene Test-Lücke (e): Plan-Labels (route/
+        plan_departure/id) müssen durch die VOLLE canonicalize_legs-Pipeline befüllt werden,
+        nicht nur isoliert über _assign_flightplan."""
+        conn = _make_conn()
+        cid = 4310
+        flight_id = _insert_flight(
+            conn, cid=cid, callsign="FRS40", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:50:00Z",
+            route="EDDK DKB EDDW", remarks="Testflug",
+        )
+        _seed_eddk_eddw_track(conn, cid, "FRS40")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid)
+        assert flight["id"] == flight_id
+        assert flight["plan_departure"] == "EDDK"
+        assert flight["route"] == "EDDK DKB EDDW"
+
+
+class TestCrashDedupSurvival:
+    def test_statsim_survives_after_crash_no_followup(self):
+        """FIX 1 + 3 + 6: FS-Track offen 10:00-10:30 (Absturz, KEIN Folgeflug) darf einen
+        StatSim-Flug im FS-dunklen Fenster danach nicht durch ein (fälschlich) unbegrenztes
+        Dedup-Intervall verschlucken."""
+        conn = _make_conn()
+        cid = 4311
+        _insert_flight(
+            conn, cid=cid, callsign="FRS41", departure="", arrival="",
+            logon_time="2026-07-02T09:00:00Z", logoff_time=None,
+        )
+        for ts in ["2026-07-02T10:00:00Z", "2026-07-02T10:10:00Z",
+                   "2026-07-02T10:20:00Z", "2026-07-02T10:30:00Z"]:
+            _insert_pos(conn, cid, ts, *REMOTE, 3000, 120, "FRS41")
+        _insert_statsim(
+            conn, 9403, cid=cid, callsign="FRS41", departure="EDDW", arrival="EDDK",
+            logon_time="2026-07-02T10:40:00Z", logoff_time="2026-07-02T11:20:00Z",
+            duration_min=40,
+        )
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        st_logons = {f["logon_time"] for f in result if f["source"] == "statsim" and f["cid"] == cid}
+        assert "2026-07-02T10:40:00Z" in st_logons
