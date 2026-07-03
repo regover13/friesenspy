@@ -776,22 +776,47 @@ def close_flight(conn: sqlite3.Connection, flight_id: int, logoff_time: str) -> 
     )
 
 
+def _distance_nm_positions(
+    positions: list[dict], start_ts: str, end_ts: str
+) -> int:
+    """GPS-Distanz (nm) aus einer bereits geladenen Positionsliste (Haversine-Summe).
+
+    Reine Funktion — arbeitet auf einer Liste von Dicts mit den Keys
+    ``latitude, longitude, groundspeed, ts`` (Reihenfolge wird intern nach ``ts``
+    sortiert; das Fenster wird intern auf ``start_ts <= ts <= end_ts`` gefiltert,
+    damit dieselbe Semantik wie das bisherige SQL-``WHERE`` reproduziert wird).
+    Quelle unabhängig von ``position_history``/cid — so auch für StatSim-Tracks
+    (``statsim_position_history``) nutzbar.
+    """
+    from app.geo import haversine as _haversine
+    window = sorted(
+        (p for p in positions if start_ts <= p["ts"] <= end_ts),
+        key=lambda p: p["ts"],
+    )
+    dist_km = 0.0
+    for i in range(1, len(window)):
+        p0, p1 = window[i - 1], window[i]
+        if p0["latitude"] and p0["longitude"] and p1["latitude"] and p1["longitude"]:
+            dist_km += _haversine(
+                p0["latitude"], p0["longitude"], p1["latitude"], p1["longitude"]
+            )
+    return round(dist_km / 1.852)
+
+
 def _gps_distance_nm(
     conn: sqlite3.Connection, cid: int, logon_time: str, logoff_time: str
 ) -> int:
-    """GPS-Distanz (nm) eines Fluges aus position_history (Haversine-Summe)."""
-    from app.geo import haversine as _haversine
+    """GPS-Distanz (nm) eines Fluges aus position_history (dünner SQL-Wrapper)."""
     pos_rows = conn.execute(
-        "SELECT latitude, longitude FROM position_history "
+        "SELECT latitude, longitude, ts FROM position_history "
         "WHERE cid = ? AND ts >= ? AND ts <= ? AND latitude IS NOT NULL ORDER BY ts",
         (cid, logon_time, logoff_time),
     ).fetchall()
-    dist_km = 0.0
-    for i in range(1, len(pos_rows)):
-        p0, p1 = pos_rows[i - 1], pos_rows[i]
-        if p0[0] and p0[1] and p1[0] and p1[1]:
-            dist_km += _haversine(p0[0], p0[1], p1[0], p1[1])
-    return round(dist_km / 1.852)
+    positions = [
+        {"latitude": r[0], "longitude": r[1], "groundspeed": None, "ts": r[2]}
+        for r in pos_rows
+    ]
+    return _distance_nm_positions(positions, logon_time, logoff_time)
 
 
 # Groundspeed-Schwelle (kt), ab der ein Flugzeug als „in Bewegung" gilt (Block-Zeit).
@@ -814,10 +839,17 @@ def _block_minutes(
     return _block_seconds(conn, cid, logon_time, logoff_time) // 60
 
 
-def _block_seconds(
-    conn: sqlite3.Connection, cid: int, logon_time: str, logoff_time: str
+def _block_seconds_positions(
+    positions: list[dict], start_ts: str, end_ts: str
 ) -> int:
-    """Block-/Bewegungszeit in SEKUNDEN (sekundengenaue Basis von _block_minutes).
+    """Block-/Bewegungszeit in SEKUNDEN aus einer bereits geladenen Positionsliste.
+
+    Reine Funktion — arbeitet auf einer Liste von Dicts mit den Keys
+    ``latitude, longitude, groundspeed, ts`` (wird intern nach ``ts`` sortiert; das
+    Fenster wird intern auf ``start_ts <= ts <= end_ts`` gefiltert, damit dieselbe
+    Semantik wie das bisherige SQL-``WHERE`` reproduziert wird). Quelle unabhängig
+    von ``position_history``/cid — so auch für StatSim-Tracks
+    (``statsim_position_history``) nutzbar.
 
     Summe der Abschnitte zwischen aufeinanderfolgenden bewegten Positionen; liegt zwischen
     zwei Bewegungen eine belegte Standphase ≥ _BLOCK_STAND_MIN_SEC (zusammenhängende Positionen
@@ -826,15 +858,15 @@ def _block_seconds(
     bleiben enthalten; Datenlücken ohne Stillstands-Beleg zählen voll. Wird auch für die
     Bummel-Wertung gebraucht (Abstand zum Schnitt sekundengenau). 0 ohne bewegte Position.
     """
-    rows = conn.execute(
-        "SELECT ts, groundspeed FROM position_history "
-        "WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts",
-        (cid, logon_time, logoff_time),
-    ).fetchall()
+    window = sorted(
+        (p for p in positions if start_ts <= p["ts"] <= end_ts),
+        key=lambda p: p["ts"],
+    )
     total = 0.0
     prev_move = None           # Zeitpunkt der letzten bewegten Position
     stand_first = stand_last = None  # belegter Stillstand seit prev_move
-    for ts, gs in rows:
+    for p in window:
+        ts, gs = p["ts"], p["groundspeed"]
         if gs is None:
             continue  # kein Beleg — weder Bewegung noch Stillstand
         try:
@@ -856,6 +888,26 @@ def _block_seconds(
                 stand_first = t
             stand_last = t
     return max(0, int(total))
+
+
+def _block_seconds(
+    conn: sqlite3.Connection, cid: int, logon_time: str, logoff_time: str
+) -> int:
+    """Block-/Bewegungszeit in SEKUNDEN (sekundengenaue Basis von _block_minutes).
+
+    Dünner SQL-Wrapper: lädt die Positionen von ``position_history`` und delegiert
+    an :func:`_block_seconds_positions`.
+    """
+    rows = conn.execute(
+        "SELECT ts, groundspeed FROM position_history "
+        "WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts",
+        (cid, logon_time, logoff_time),
+    ).fetchall()
+    positions = [
+        {"latitude": None, "longitude": None, "groundspeed": r[1], "ts": r[0]}
+        for r in rows
+    ]
+    return _block_seconds_positions(positions, logon_time, logoff_time)
 
 
 def recompute_gps_legs(
