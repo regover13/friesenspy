@@ -216,6 +216,16 @@ diese Erweiterung fehlten bei der Aktivierung ~1418 StatSim-Flüge (89 % der His
 Test `tests/test_database.py`.
 - `detect_gps_legs` bleibt **unverändert** (reine Funktion). Nur die Datenbeschaffung liest
   `statsim_position_history` je `statsim_id` statt `position_history` je `cid`.
+- **Track-Backfill (PFLICHT, 2026-07-03 verifiziert):** Die meisten StatSim-Tracks sind lokal NICHT
+  gecacht — `statsim_position_history` wird nur beim Track-Ansehen on-demand von der StatSim-API
+  gefüllt (Schatten-Audit v7.9.2: 343/400 Stichproben „none" = uncached; per Endpoint nachgeholt
+  liefern dieselben Flüge 144–204 Punkte und saubere Legs). Für vollständige StatSim-Legs müssen die
+  Tracks vorab **gebündelt von der StatSim-API geholt + gecacht** werden (`fetch_flight_track` /
+  `save_statsim_positions`, ~1400 Flüge; Rate-Limit/Backoff beachten, idempotent, resumebar). Das ist
+  der eigentliche Aufwand von 5b — nicht die Detektor-Reichweite.
+- **Schatten-Vorschau existiert (v7.9.2):** `GET /api/admin/gps-leg-audit?statsim=N` interpretiert die
+  gecachten StatSim-Flüge bereits on-demand (in-memory, nichts gespeichert) — Basis, um vor dem
+  Backfill zu prüfen, ob die Treffer stimmen.
 - Ablage: `gps_legs` braucht einen StatSim-Schlüssel. Im Task entscheiden: (a) neue Spalte
   `statsim_id` (NULL für FriesenSpy) + `UNIQUE(statsim_id, takeoff_ts)`; oder (b) `source`-Kennung.
   `callsign`/Label aus `statsim_cache`.
