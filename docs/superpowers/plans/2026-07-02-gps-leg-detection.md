@@ -197,8 +197,34 @@ Erst NACH Audit-Freigabe.
 
 ### Task 5: Adapter `canonicalize_legs` (formgleich)
 **Files:** Modify `app/database.py`; Test `tests/test_database.py`.
-- Dict-Form-Parität mit `canonicalize_flights`; Label-Reconcile via `connection_logon`; StatSim-Zweig
-  weiter mischen. TDD: Feld-für-Feld-Parität + Leg-Splitting (A→B→C = 3, Platzrunde = 1).
+- Dict-Form-Parität mit `canonicalize_flights`; Label-Reconcile via `connection_logon`; Leg-Splitting.
+- **StatSim-Sicherheitsnetz (PFLICHT):** `canonicalize_legs` MUSS StatSim-Flüge enthalten, auch wenn
+  (noch) kein StatSim-Leg existiert — dann über die bestehende Flugplan-/`duration_min`-Zeile
+  (`source=statsim`), genau wie heute `canonicalize_flights`. So verschwindet NIE ein StatSim-Flug,
+  unabhängig davon, ob Task 5b schon greift. (Wenn ein StatSim-Leg existiert, hat es Vorrang.)
+- TDD: Feld-für-Feld-Parität + Leg-Splitting (A→B→C = 3, Platzrunde = 1); StatSim-ohne-Leg bleibt gelistet.
+
+### Task 5b: StatSim-Legs — Detektor auch über `statsim_position_history`
+**Kontext/Befund (2026-07-03, verifiziert):** StatSim-Flüge haben dichte GPS-Tracks
+(`statsim_position_history`, gleiche Spalten wie `position_history`: lat/lon/altitude/groundspeed/
+heading/ts, ~15–26 s Abstand). `detect_gps_legs` läuft darauf UNVERÄNDERT korrekt (Stichprobe 5/5
+Legs trafen den Flugplan). StatSim bekommt heute nur deshalb keine Legs, weil `recompute_gps_legs`
+ausschließlich `position_history` je `cid` liest — reine Detektor-Reichweite, kein Datenmangel. Ohne
+diese Erweiterung fehlten bei der Aktivierung ~1418 StatSim-Flüge (89 % der Historie) in den GPS-Legs.
+**Files:** Modify `app/database.py` (`recompute_gps_legs` Quelle erweitern bzw. Geschwister
+`recompute_gps_legs_statsim(conn, statsim_id)`; `gps_legs`-Schema um StatSim-Bezug; Migration);
+Test `tests/test_database.py`.
+- `detect_gps_legs` bleibt **unverändert** (reine Funktion). Nur die Datenbeschaffung liest
+  `statsim_position_history` je `statsim_id` statt `position_history` je `cid`.
+- Ablage: `gps_legs` braucht einen StatSim-Schlüssel. Im Task entscheiden: (a) neue Spalte
+  `statsim_id` (NULL für FriesenSpy) + `UNIQUE(statsim_id, takeoff_ts)`; oder (b) `source`-Kennung.
+  `callsign`/Label aus `statsim_cache`.
+- **Kein Doppelzählen:** ein Flug ist entweder FriesenSpy- ODER StatSim-Quelle — die bestehende
+  `_dedup_statsim_against_fs`-Logik respektieren; StatSim-Legs nur für Flüge, die nicht schon
+  FriesenSpy-getrackt sind (FriesenSpy hat Vorrang).
+- Idempotent wie FriesenSpy (DELETE ab Grenze + INSERT OR REPLACE).
+- TDD: echter/synthetischer StatSim-Track → korrekte Legs (inkl. Zwischenlandung); Idempotenz;
+  deduplizierter Fall (kein Doppel-Leg, wenn FriesenSpy denselben Flug trackt).
 
 ### Task 6: Konsumenten schrittweise umstellen (je Vorher/Nachher-Zahlvergleich)
 **Files:** Modify `app/database.py` (get_stats, get_stats_activity, compute_bummel_standings,
