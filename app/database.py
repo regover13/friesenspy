@@ -1507,16 +1507,20 @@ def get_stats(
     """Letzter Flug + Anzahl FRS*-Flüge pro Pilot (FriesenSpy + StatSim-Cache).
 
     Alle Werte werden auf den gewählten Zeitraum (days) und den konfigurierten
-    Callsign-Prefix begrenzt. Aggregiert über canonicalize_flights — dieselbe Wahrheit
-    wie alle anderen Views (keine eigene Merge-/Dedup-Logik mehr).
+    Callsign-Prefix begrenzt. Aggregiert über get_cached_flights (GPS-Wahrheit,
+    canonicalize_legs materialisiert) — dieselbe Wahrheit wie alle anderen Views unter
+    GPS-only Phase 2 (#23). Ein Flug, der GERADE fliegt (kein Landepunkt erkannt UND die
+    Connection noch offen), wird NICHT gezählt — er ist noch nicht gewertet.
     """
     prefix_pat = callsign_prefix + "%"
     start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    flights = canonicalize_flights(conn, callsign_prefix=callsign_prefix, start=start)
+    flights = get_cached_flights(conn, start=start, callsign_prefix=callsign_prefix)
 
     agg: dict[int, dict] = {}
     for f in flights:
+        if f.get("logoff_time") is None and not f.get("connection_closed"):
+            continue  # in-progress: kein Landepunkt, Connection offen — noch nicht gewertet
         cid = f["cid"]
         a = agg.setdefault(cid, {"fs": 0, "st": 0, "dur": 0, "last": None, "last_cs": ""})
         if f.get("source") == "statsim":
@@ -1571,8 +1575,10 @@ def get_stats_activity(
     # Gleiches Zeitfenster wie get_stats (rollierend now−days), damit beide Views übereinstimmen.
     start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Eine Wahrheit: über canonicalize_flights aggregieren (kein eigener Merge-/Dedup-Code mehr).
-    flights = canonicalize_flights(conn, callsign_prefix=callsign_prefix, start=start)
+    # Eine Wahrheit: über get_cached_flights aggregieren (GPS-Wahrheit, kein eigener
+    # Merge-/Dedup-Code mehr). In-progress-Flüge (kein Landepunkt, Connection offen) werden
+    # wie in get_stats nicht gezählt — noch nicht gewertet.
+    flights = get_cached_flights(conn, start=start, callsign_prefix=callsign_prefix)
 
     def _period(lt: str) -> str:
         return lt[:10] if grouping == "day" else lt[:7]
@@ -1581,6 +1587,8 @@ def get_stats_activity(
     durs: dict[str, int] = {}
     pilots_by_period: dict[str, set] = {}
     for f in flights:
+        if f.get("logoff_time") is None and not f.get("connection_closed"):
+            continue  # in-progress: kein Landepunkt, Connection offen — noch nicht gewertet
         lt = f.get("logon_time") or ""
         if not lt:
             continue
