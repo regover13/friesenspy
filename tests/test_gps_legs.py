@@ -86,6 +86,35 @@ class TestDetectGpsLegs:
             "complete", "dep_source", "arr_source", "max_altitude",
         }
 
+    def test_realistic_gradual_climb(self):
+        """Realistischer Steigflug ~170 ft/Sample (C172, ~680 fpm): Boden-Referenz darf
+        NICHT mitklettern, sonst hebt kein normal steigendes Flugzeug je ab. 1 Leg A→B."""
+        track = [
+            p(0, 52.0, 8.0, 100, 0),        # Boden A
+            p(15, 52.0, 8.0, 100, 0),       # Boden A
+            p(30, 52.01, 8.01, 300, 40),    # Steig +200 (kumuliert 200), nahe A
+            p(45, 52.02, 8.02, 500, 55),    # +200 (kumuliert 400, <500), nahe A
+            p(60, 52.03, 8.03, 700, 70),    # +200 (kumuliert 600 > 500 → abgehoben), nahe A
+            p(75, 52.05, 8.05, 900, 80),    # kein Sample springt je > 500 ft
+            p(90, 52.10, 8.10, 1100, 90),
+            p(120, 52.30, 8.40, 1500, 120),
+            p(150, 52.60, 8.70, 2000, 130), # +500 (nicht > 500)
+            p(180, 52.90, 9.00, 2500, 130), # Reiseflug
+            p(240, 53.20, 9.30, 1500, 110), # Sinkflug (abwärts, triggert kein Abheben)
+            p(270, 53.40, 9.45, 700, 70),
+            p(300, 53.5, 9.5, 200, 0),      # Aufsetzen B
+            p(360, 53.5, 9.5, 200, 0),
+            p(420, 53.5, 9.5, 200, 0),
+            p(510, 53.5, 9.5, 200, 0),      # Dwell > 180 → endgültig
+        ]
+        legs = run(track)
+        assert len(legs) == 1
+        leg = legs[0]
+        assert leg["dep_icao"] == "EDDA"
+        assert leg["arr_icao"] == "EDDB"
+        assert leg["complete"] is True
+        assert leg["takeoff_ts"] == _ts(60)   # erstes Sample mit kumuliertem Anstieg > 500 ft
+
     def test_two_legs_a_b_c(self):
         """Zwischenlandung ohne Refile: A→B→C = 2 Legs."""
         track = [
