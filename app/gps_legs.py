@@ -18,10 +18,15 @@ _GPS_AIR_AGL_FT = 500        # AGL-Anstieg über Boden = abgehoben (Leitsignal)
 _GPS_CLIMB_MIN_AGL_FT = 100  # Mindest-AGL für den sekundären „schnell + steigend"-Abhebe-Trigger
 _GPS_BLOCK_GS_KT = 2         # Vollstopp-Schwelle (Touchdown-Kandidat)
 # Eine Landung am SELBEN Platz (X→X) wird nur dann als Zwischenlandung in den laufenden Flug
-# absorbiert (Stop-and-Go / Backtrack / Platzrunde), wenn der nächste Start binnen dieser Zeit
-# folgt. Längere Standzeit = echte Pause (Tanken/Kaffee) → der Flug wird als X→X abgeschlossen
-# und ab dem nächsten Start beginnt ein neuer Flug (sonst würde die Bodenpause als Flugzeit
-# verschluckt, #v8.1.0).
+# absorbiert (Stop-and-Go / Platzrunde), wenn der nächste Start binnen dieser Zeit folgt.
+# Sonst: Flug als X→X abschließen, ab dem nächsten Start ein neuer Flug.
+# BEWUSST KLEIN gehalten (kein größeres „Backtrack"-Budget): Wird ein X→X absorbiert, zählt die
+# Bodenzeit zwischen Landung und nächstem Start in ``duration_min`` als Flugzeit mit — genau der
+# Fehler, den v8.1.0 behebt (Reiner 41 min). Die beiden Fehlerrichtungen sind asymmetrisch: zu
+# klein → ein langer Taxi-Back wird in zwei Platzrunden-Flüge getrennt (kosmetisch); zu groß →
+# echte Pause wird als Flugzeit verschluckt (Korrektheitsfehler). Darum lieber knapp. Gemessen
+# wird Vollstopp → Takeoff-TRIGGER des nächsten Legs (nicht das Losrollen); die Trigger-Latenz
+# zehrt einen Teil des Budgets auf, das ist als konservativ gewollt.
 _GPS_STOP_AND_GO_MAX_SEC = 300
 
 
@@ -157,6 +162,8 @@ def _detect_segment(
             else:
                 state = "ON_GROUND"
                 ground_ref_ft = alt
+                prev_alt = alt   # Boden-Referenz seeden, damit der gs+steigend-Trigger schon
+                                 # ab dem nächsten Sample greifen kann (M1)
                 dep_icao = nearest_airport(lat, lon, radius_km)
                 dep_source = "gps" if dep_icao else None
             continue
@@ -238,7 +245,10 @@ def _detect_segment(
 def collapse_same_airport(legs: list[dict]) -> list[dict]:
     """Verschmilzt aufeinanderfolgende Roh-Legs am SELBEN Platz zu Flügen (Spec A).
     Ein Flug = Abheben an X → Landung am nächsten ANDEREN Platz (oder offen). Wiederholte
-    Landungen am selben Platz zählen als eine Landung. Segment-Wechsel trennt immer."""
+    Landungen am selben Platz zählen als EINE Landung, ABER nur solange der nächste Start binnen
+    ``_GPS_STOP_AND_GO_MAX_SEC`` folgt (Stop-and-Go); nach einer längeren Bodenpause wird der Flug
+    als X→X abgeschlossen und ab dem nächsten Start beginnt ein neuer Flug. Segment-Wechsel
+    trennt immer."""
     flights: list[dict] = []
     cur: dict | None = None
     cur_seg: int | None = None

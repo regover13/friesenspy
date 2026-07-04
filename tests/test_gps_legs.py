@@ -175,6 +175,27 @@ class TestDetectGpsLegs:
         assert len(legs) == 1
         assert legs[0]["takeoff_ts"] == _ts(60)
 
+    def test_retakeoff_after_fullstop_via_gs_trigger(self):
+        """Wieder-Abheben nach Vollstopp am selben Platz über den NEUEN gs+steigend-Trigger
+        (unter 500 ft): der prev_alt-Reset bei Landung muss den Trigger sauber neu scharfstellen."""
+        track = [
+            p(0, 50.0, 7.0, 300, 0),
+            p(15, 50.0, 7.0, 300, 0),
+            p(30, 50.02, 7.05, 900, 60),    # Abheben 1 (AGL 600 > 500)
+            p(90, 50.0, 7.0, 300, 0),       # Aufsetzen X → Leg 1 final, prev_alt=300
+            p(120, 50.01, 7.02, 450, 80),   # Wieder-Abheben: gs 80 + steigend, AGL 150 (<500)
+            p(180, 50.3, 7.3, 3000, 120),
+            p(300, 50.0, 7.0, 300, 0),      # Landung zurück auf X (EDDX)
+            p(360, 50.0, 7.0, 300, 0),
+            p(420, 50.0, 7.0, 300, 0),
+            p(510, 50.0, 7.0, 300, 0),      # Dwell > 180
+        ]
+        legs = run(track)
+        assert len(legs) == 2
+        assert legs[0]["takeoff_ts"] == _ts(30)
+        assert legs[1]["takeoff_ts"] == _ts(120)   # via gs+steigend, nicht erst bei 500 ft
+        assert legs[1]["dep_icao"] == "EDDX" and legs[1]["arr_icao"] == "EDDX"
+
     def test_two_legs_a_b_c(self):
         """Zwischenlandung ohne Refile: A→B→C = 2 Legs."""
         track = [
@@ -507,6 +528,24 @@ class TestCollapseSameAirport:
         out = collapse_same_airport(legs)
         assert [(f["dep_icao"], f["arr_icao"]) for f in out] == [("EDDX", "EDDB")]
         assert out[0]["takeoff_ts"] == "2026-07-01T08:00:00Z"
+
+    def test_stop_and_go_boundary_exactly_threshold_merges(self):
+        """Gap == genau _GPS_STOP_AND_GO_MAX_SEC (300 s) → noch Stop-and-Go (Schwelle inklusiv)."""
+        legs = [
+            _leg("EDDK", "EDDK", "2026-07-01T10:00:00Z", "2026-07-01T10:20:00Z"),
+            _leg("EDDK", "EDDW", "2026-07-01T10:25:00Z", "2026-07-01T10:50:00Z"),  # +300 s
+        ]
+        out = collapse_same_airport(legs)
+        assert [(f["dep_icao"], f["arr_icao"]) for f in out] == [("EDDK", "EDDW")]
+
+    def test_stop_and_go_boundary_one_second_over_splits(self):
+        """Gap == 301 s (eine Sekunde über der Schwelle) → Split in zwei Flüge."""
+        legs = [
+            _leg("EDDK", "EDDK", "2026-07-01T10:00:00Z", "2026-07-01T10:20:00Z"),
+            _leg("EDDK", "EDDW", "2026-07-01T10:25:01Z", "2026-07-01T10:50:00Z"),  # +301 s
+        ]
+        out = collapse_same_airport(legs)
+        assert [(f["dep_icao"], f["arr_icao"]) for f in out] == [("EDDK", "EDDK"), ("EDDK", "EDDW")]
 
     def test_pause_then_pause_two_circuits_split(self):
         """Zwei X→X mit langer Pause dazwischen → ZWEI X→X-Flüge (jeder eigener Flug)."""
