@@ -545,10 +545,11 @@
       height: 100%;
     }
 
-    /* Vollbild-Toggle für Kartenansichten (Karte-Tab, Events-Tab, Track-Modal) */
+    /* Vollbild-Toggle für Kartenansichten (Karte-Tab, Events-Tab, Track-Modal) — unten links,
+       damit es nicht mit Leaflets Zoom-Control (+/-, oben links) kollidiert. */
     .map-fullscreen-btn {
       position: absolute;
-      top: 10px;
+      bottom: 10px;
       left: 10px;
       z-index: 1000;
       background: var(--bg-panel);
