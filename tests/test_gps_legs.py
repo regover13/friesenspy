@@ -410,3 +410,52 @@ class TestCollapseSameAirport:
 
     def test_empty(self):
         assert collapse_same_airport([]) == []
+
+    # --- Dwell-basierte X→X-Trennung (#v8.1.0, echte ISO-Zeiten) --------------------------
+    def test_pause_splits_circuit_and_cross_country(self):
+        """Reiner-Fall: Platzrunde X→X, ~41 min Bodenpause, dann X→Y → ZWEI Flüge."""
+        legs = [
+            _leg("EDWG", "EDWG", "2026-07-01T17:12:28Z", "2026-07-01T17:37:43Z"),
+            _leg("EDWG", "EDXH", "2026-07-01T18:19:08Z", "2026-07-01T18:37:38Z"),
+        ]
+        out = collapse_same_airport(legs)
+        assert [(f["dep_icao"], f["arr_icao"], f["complete"]) for f in out] == [
+            ("EDWG", "EDWG", True), ("EDWG", "EDXH", True)]
+        assert out[0]["takeoff_ts"] == "2026-07-01T17:12:28Z"
+        assert out[0]["landing_ts"] == "2026-07-01T17:37:43Z"
+        assert out[1]["takeoff_ts"] == "2026-07-01T18:19:08Z"
+        assert out[1]["landing_ts"] == "2026-07-01T18:37:38Z"
+
+    def test_stop_and_go_short_gap_merges(self):
+        """X→X mit 60 s bis zum nächsten Start (echter Stop-and-Go) → EIN Flug X→Y."""
+        legs = [
+            _leg("EDDK", "EDDK", "2026-07-01T10:00:00Z", "2026-07-01T10:20:00Z"),
+            _leg("EDDK", "EDDW", "2026-07-01T10:21:00Z", "2026-07-01T10:50:00Z"),
+        ]
+        out = collapse_same_airport(legs)
+        assert [(f["dep_icao"], f["arr_icao"]) for f in out] == [("EDDK", "EDDW")]
+        assert out[0]["takeoff_ts"] == "2026-07-01T10:00:00Z"
+        assert out[0]["landing_ts"] == "2026-07-01T10:50:00Z"
+
+    def test_stop_and_go_series_merges(self):
+        """Serie kurzer Stop-and-Go (X→X, X→X, X→Y, alle Lücken klein) → EIN Flug X→Y."""
+        legs = [
+            _leg("EDDX", "EDDX", "2026-07-01T08:00:00Z", "2026-07-01T08:10:00Z"),
+            _leg("EDDX", "EDDX", "2026-07-01T08:11:00Z", "2026-07-01T08:20:00Z"),
+            _leg("EDDX", "EDDB", "2026-07-01T08:21:30Z", "2026-07-01T08:55:00Z"),
+        ]
+        out = collapse_same_airport(legs)
+        assert [(f["dep_icao"], f["arr_icao"]) for f in out] == [("EDDX", "EDDB")]
+        assert out[0]["takeoff_ts"] == "2026-07-01T08:00:00Z"
+
+    def test_pause_then_pause_two_circuits_split(self):
+        """Zwei X→X mit langer Pause dazwischen → ZWEI X→X-Flüge (jeder eigener Flug)."""
+        legs = [
+            _leg("EDDX", "EDDX", "2026-07-01T08:00:00Z", "2026-07-01T08:10:00Z"),
+            _leg("EDDX", "EDDX", "2026-07-01T09:30:00Z", "2026-07-01T09:45:00Z"),
+        ]
+        out = collapse_same_airport(legs)
+        assert [(f["dep_icao"], f["arr_icao"], f["complete"]) for f in out] == [
+            ("EDDX", "EDDX", True), ("EDDX", "EDDX", True)]
+        assert out[0]["landing_ts"] == "2026-07-01T08:10:00Z"
+        assert out[1]["takeoff_ts"] == "2026-07-01T09:30:00Z"

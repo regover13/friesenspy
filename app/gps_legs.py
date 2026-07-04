@@ -16,6 +16,12 @@ _GPS_FLYING_GS_KT = 50       # sekundärer Abhebe-Helfer (nur wenn Höhe fehlt);
 _GPS_GROUND_AGL_FT = 300     # AGL-Obergrenze für „am Boden" beim Landungs-Guard
 _GPS_AIR_AGL_FT = 500        # AGL-Anstieg über Boden = abgehoben (Leitsignal)
 _GPS_BLOCK_GS_KT = 2         # Vollstopp-Schwelle (Touchdown-Kandidat)
+# Eine Landung am SELBEN Platz (X→X) wird nur dann als Zwischenlandung in den laufenden Flug
+# absorbiert (Stop-and-Go / Backtrack / Platzrunde), wenn der nächste Start binnen dieser Zeit
+# folgt. Längere Standzeit = echte Pause (Tanken/Kaffee) → der Flug wird als X→X abgeschlossen
+# und ab dem nächsten Start beginnt ein neuer Flug (sonst würde die Bodenpause als Flugzeit
+# verschluckt, #v8.1.0).
+_GPS_STOP_AND_GO_MAX_SEC = 300
 
 
 def _parse_ts(ts: str) -> datetime:
@@ -223,7 +229,7 @@ def collapse_same_airport(legs: list[dict]) -> list[dict]:
     cur_seg: int | None = None
     pending_same_landing: str | None = None  # letzte Same-Airport-Landung (falls Flug am Boden endet)
 
-    for leg in legs:
+    for i, leg in enumerate(legs):
         seg = leg.get("segment", 0)
         if cur is not None and seg != cur_seg:
             _close_ground(flights, cur, pending_same_landing)
@@ -249,7 +255,18 @@ def collapse_same_airport(legs: list[dict]) -> list[dict]:
             pending_same_landing = None
             continue
         if arr == cur["dep_icao"]:
-            pending_same_landing = leg.get("landing_ts")   # Platzrunde → absorbieren
+            # Platzrunde/X→X: nur absorbieren (Stop-and-Go), wenn der nächste Leg desselben
+            # Segments kurz nach dieser Landung startet. Sonst = echte Bodenpause → Flug hier
+            # als X→X abschließen und ab dem nächsten Start neu beginnen (#v8.1.0).
+            nxt = legs[i + 1] if i + 1 < len(legs) else None
+            same_seg_next = nxt is not None and nxt.get("segment", 0) == cur_seg
+            if same_seg_next and _within_stop_and_go(leg.get("landing_ts"), nxt.get("takeoff_ts")):
+                pending_same_landing = leg.get("landing_ts")   # Stop-and-Go → absorbieren
+                continue
+            flights.append({**cur, "arr_icao": cur["dep_icao"], "landing_ts": leg.get("landing_ts"),
+                            "complete": True, "arr_source": "gps"})
+            cur = None
+            pending_same_landing = None
             continue
         flights.append({**cur, "arr_icao": arr, "landing_ts": leg.get("landing_ts"),
                         "complete": True, "arr_source": leg.get("arr_source")})
@@ -259,6 +276,19 @@ def collapse_same_airport(legs: list[dict]) -> list[dict]:
     if cur is not None:
         _close_ground(flights, cur, pending_same_landing)
     return flights
+
+
+def _within_stop_and_go(landing_ts: str | None, takeoff_ts: str | None) -> bool:
+    """True, wenn zwischen einer X→X-Landung und dem nächsten Start ≤ ``_GPS_STOP_AND_GO_MAX_SEC``
+    liegen (= Stop-and-Go, absorbieren). Fehlende/nicht parsbare Zeitstempel → True (konservativ
+    absorbieren, unverändertes Alt-Verhalten für degenerierte Eingaben)."""
+    if not landing_ts or not takeoff_ts:
+        return True
+    try:
+        gap = (_parse_ts(takeoff_ts) - _parse_ts(landing_ts)).total_seconds()
+    except Exception:
+        return True
+    return gap <= _GPS_STOP_AND_GO_MAX_SEC
 
 
 def _close_ground(flights: list[dict], cur: dict, pending_same_landing: str | None) -> None:
