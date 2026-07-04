@@ -4169,9 +4169,12 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
       const arr     = f.arrival   || '';
       const cs      = f.callsign  || callsign;
       const isSt    = f.source === 'statsim';
-      // Direkt die API-Zeitwerte nehmen (duration_min=Flugzeit, block_min=Blockzeit) statt
-      // einer eigenen ms-Differenz aus logon/logoff — sonst zwei unterschiedliche Zeit-
-      // Definitionen je nachdem, ob logoff_time gesetzt ist.
+      // Direkt die API-Zeitwerte nehmen statt einer eigenen ms-Differenz aus logon/logoff —
+      // sonst zwei unterschiedliche Zeit-Definitionen je nachdem, ob logoff_time gesetzt ist.
+      // ACHTUNG: /api/events liefert die Legacy-`flights`-Spalten, KEINE canonicalize_legs-
+      // Werte — duration_min ist hier die Verbindungszeit (logon→logoff, "Online"), NICHT
+      // die GPS-Flugzeit (die gibt es nur über /api/pilots/{cid}/flights, s. renderFlightsList).
+      // Echte Migration dieser Ansicht auf GPS-Flugzeit = Follow-up #33.
       const dur = f.duration_min != null
         ? `${Math.floor(f.duration_min / 60)}:${String(f.duration_min % 60).padStart(2,'0')} h`
         : '—';
@@ -4239,7 +4242,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             <th style="text-align:left;">Datum</th>
             <th style="text-align:left;">Callsign</th>
             <th style="text-align:left;">Strecke</th>
-            <th style="text-align:left;">Flugzeit</th>
+            <th style="text-align:left;">Online</th>
             <th style="text-align:left;">Block</th>
             <th style="text-align:left;">Distanz</th>
             <th style="text-align:left;">Wegpunkte</th>
