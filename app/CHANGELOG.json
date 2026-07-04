@@ -1,5 +1,18 @@
 [
   {
+    "version": "8.4.0",
+    "date": "2026-07-05",
+    "title": "Flugplan-Zuordnung jetzt zeitbasiert statt Startplatz-Match",
+    "highlight": true,
+    "items": [
+      "🗓️ Die Flugplan-Spalte zeigt jetzt den zum Landungszeitpunkt zuletzt gefileten Plan, statt nur bei passendem Startplatz zu matchen — eine Zwischenlandung ohne Refile zeigt jetzt bei ALLEN Etappen denselben (ggf. nicht mehr exakt passenden) Flugplan statt bei der zweiten Etappe leer zu bleiben. Betrifft auch StatSim-Flüge: der Track-Button funktioniert jetzt auch bei Folge-Etappen gesplitteter StatSim-Sessions.",
+      "⚠️ Wird der nächste Plan schon vor der Landung der aktuellen Etappe eingereicht, erscheint das jetzt bewusst sichtbar als Mismatch zwischen Flugplan- und GPS-Strecke — kein verstecktes Korrekturverhalten mehr.",
+      "🔗 Die Piloten-Kopfzeile in der Events-Ansicht ist jetzt anklickbar und öffnet die Piloten-Detailseite (vorher blau, aber ohne Funktion).",
+      "✈️ Einmalige Nachnormalisierung aller bestehenden StatSim-Flugzeugtyp-Einträge (Composite-Strings wie „A320/M-SDE3FGHIRWY/LB1“ → „A320“) — der Ingestion-Fix von v8.3.x griff nur bei neu geschriebenen Zeilen, ältere Flüge blieben sonst dauerhaft unnormalisiert.",
+      "📅 Kalender-Termine mit dem literalen Wort „ICAO“ als Label im Text (z. B. „ICAO: EDVE, EDBH“) zeigten „ICAO“ fälschlich als eigenen Streckenflugplatz — jetzt ausgeschlossen."
+    ]
+  },
+  {
     "version": "8.3.5",
     "date": "2026-07-04",
     "title": "Letzte „????“-Reste beseitigt (Live-Tab, Flugplan-Popup)",

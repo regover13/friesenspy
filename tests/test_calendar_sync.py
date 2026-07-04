@@ -35,6 +35,18 @@ class TestRouteExtraction:
         assert route == ""
         assert is_bummel is False
 
+    def test_literal_icao_label_word_excluded_from_route(self):
+        """Live-Fund: mehrere 'Montagsflüge'-Termine zeigten 'ICAO,EDVE,EDBH' statt
+        'EDVE,EDBH' -- der Kalendertext nutzt 'ICAO' als Label vor den echten Codes, das
+        Wort selbst matcht aber zufällig auch die 4-Großbuchstaben-Regel."""
+        route, _, _ = parse_route("ICAO: EDVE, EDBH", "Montagsflüge in Deutschland")
+        assert route == "EDVE,EDBH"
+
+    def test_icao_stopword_is_case_sensitive_lowercase_not_a_match_anyway(self):
+        # "icao" (klein) matcht die Regex ohnehin nicht (nur Großbuchstaben) -- Kontrollfall.
+        route, _, _ = parse_route("icao EDVE", "Montagsflüge in Deutschland")
+        assert route == "EDVE"
+
 
 class TestBummelDetection:
     def test_bummel_keyword_plus_two_icaos(self):

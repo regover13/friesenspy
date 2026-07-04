@@ -113,6 +113,41 @@ class TestInitDb:
         conn.close()
         assert mode == "wal"
 
+    def test_statsim_aircraft_backfill_normalizes_legacy_composite_string(self, tmp_path):
+        """Alt-Daten von vor #44 (v8.3.0): statsim_cache.aircraft trug noch den rohen
+        Composite-String (z. B. "A320/M-SDE3FGHIRWY/LB1" statt "A320"). Der Ingestion-Fix
+        heilt nur neu geschriebene Zeilen (Hintergrund-Refresh trifft nur die letzten 31
+        Tage) -- die einmalige, idempotente Nachnormalisierung in init_db muss auch
+        Bestandszeilen korrigieren, ohne bereits saubere Zeilen anzufassen."""
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = sqlite3.connect(db_file)
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id, cid, callsign, departure, arrival, "
+            "aircraft, logon_time, logoff_time, duration_min, fetched_at) VALUES "
+            "(1, 100, 'FRS90', 'EDDK', 'EDDW', 'A320/M-SDE3FGHIRWY/LB1', "
+            "'2026-01-01T10:00:00Z', '2026-01-01T11:00:00Z', 60, '2026-01-01T11:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id, cid, callsign, departure, arrival, "
+            "aircraft, logon_time, logoff_time, duration_min, fetched_at) VALUES "
+            "(2, 101, 'FRS91', 'EDDL', 'EDDH', 'C172', "
+            "'2026-01-01T10:00:00Z', '2026-01-01T11:00:00Z', 60, '2026-01-01T11:00:00Z')"
+        )
+        conn.commit()
+        conn.close()
+
+        init_db(db_file)  # zweiter Lauf: muss die Alt-Zeile nachnormalisieren
+
+        conn = sqlite3.connect(db_file)
+        rows = {
+            r[0]: r[1]
+            for r in conn.execute("SELECT statsim_id, aircraft FROM statsim_cache").fetchall()
+        }
+        conn.close()
+        assert rows[1] == "A320"
+        assert rows[2] == "C172"  # bereits normalisiert -> unveraendert
+
 
 # ---------------------------------------------------------------------------
 # get_connection

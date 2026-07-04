@@ -9,7 +9,7 @@ import sqlite3
 
 from app.database import (
     _DDL,
-    _assign_flightplan,
+    _flightplan_asof,
     canonicalize_legs,
     ensure_pilot,
     get_connection,
@@ -184,16 +184,30 @@ class TestFormParity:
 
 
 class TestAircraftFallback:
-    def test_no_plan_match_falls_back_to_last_known_aircraft(self):
-        """UI-Feedback 2026-07-04: GPS-Legs ohne Plan-Match (Startplatz weicht vom Flugplan
-        ab) zeigten Aircraft leer, obwohl der #11-Fallback (last_known_aircraft) existiert.
-        Die gespeicherte Connection-Zeile selbst zaehlt als "zuletzt bekanntes Muster"."""
+    def test_no_plan_at_all_falls_back_to_last_known_aircraft(self):
+        """UI-Feedback 2026-07-04: GPS-Legs ohne Plan-Match zeigten Aircraft leer, obwohl der
+        #11-Fallback (last_known_aircraft) existiert. Nutzer-Entscheidung 2026-07-05
+        (zeitbasierte Flugplan-Zuordnung): der alte Test simulierte "kein Plan-Match" ueber
+        einen abweichenden Startplatz (ZZZZ) -- das matcht unter der neuen Zeit-Regel jetzt
+        BEWUSST (ZZZZ ist ein echter, wenn auch unspezifischer, gefileter Plan). Um "wirklich
+        kein Plan vorhanden" zu testen, muss die aktuelle Session-Zeile GENUINE leer sein
+        (departure UND arrival beide "") -- nur dann liefert _flightplan_asof weiterhin None.
+        last_known_aircraft schaut unabhaengig vom Abfrage-Zeitfenster in die GESAMTE
+        flights-Tabelle -> eine aeltere, laengst geschlossene Session (weit vor WINDOW) mit
+        PA28 liefert den Fallback-Wert."""
         conn = _make_conn()
         cid = 4310
+        # Aeltere, abgeschlossene Session (weit vor WINDOW) -- fuer last_known_aircraft.
         _insert_flight(
             conn, cid=cid, callsign="FRS40", aircraft_short="PA28",
-            departure="ZZZZ", arrival="ZZZZ",
-            logon_time="2026-07-02T09:00:00Z", logoff_time="2026-07-02T09:50:00Z",
+            departure="EDDL", arrival="EDDK",
+            logon_time="2026-06-20T08:00:00Z", logoff_time="2026-06-20T08:50:00Z",
+        )
+        # Aktuelle Session im WINDOW: reiner Connect, noch KEIN Plan gefiled.
+        _insert_flight(
+            conn, cid=cid, callsign="FRS40", aircraft_short="",
+            departure="", arrival="",
+            logon_time="2026-07-02T09:00:00Z", logoff_time=None,
         )
         _seed_eddk_eddw_track(conn, cid, "FRS40")
         conn.commit()
@@ -202,18 +216,21 @@ class TestAircraftFallback:
         conn.close()
 
         flight = next(f for f in result if f["cid"] == cid and f["gps_departure"] == "EDDK")
-        assert flight["id"] is None  # kein Plan-Match (Startplatz ZZZZ != EDDK)
-        assert flight["aircraft"] == "PA28"
+        assert flight["id"] is None  # kein Plan-Match (Connect ohne Plan zaehlt nicht, Spec)
+        assert flight["aircraft"] == "PA28"  # last_known_aircraft-Fallback (#11)
 
 
 class TestStatsimCallsignFallback:
     def test_no_plan_match_falls_back_to_row_callsign(self):
-        """UI-Feedback: StatSim-GPS-Legs ohne Plan-Match (Track spawnt bereits fliegend fernab
-        jedes Platzes -> dep_icao unbekannt -> _assign_flightplan liefert None) zeigten
-        callsign leer. statsim_position_history hat KEINE callsign-Spalte -> callsign_by_ts
-        (Fallback in _gps_flights_for_positions) findet dort nie einen Treffer — anders als
-        bei FriesenSpy-Tracks (position_history hat callsign). Die statsim_cache-Zeile kennt
-        den Callsign aber längst (row.callsign), analog zum bestehenden Aircraft-Fallback."""
+        """UI-Feedback: StatSim-GPS-Legs ohne bekannten GPS-Startplatz (Track spawnt bereits
+        fliegend fernab jedes Platzes) zeigten callsign leer, wenn der Zeit-Match nicht
+        griff. Seit der zeitbasierten Zuordnung (2026-07-05) matcht dieser Fall zwar meist
+        ueber den Plan selbst (plan.get("callsign")), der Fallback bleibt aber als zweite
+        Absicherung fuer Faelle ganz ohne Plan-Match wichtig: statsim_position_history hat
+        KEINE callsign-Spalte -> callsign_by_ts (Fallback in _gps_flights_for_positions)
+        findet dort nie einen Treffer — anders als bei FriesenSpy-Tracks (position_history
+        hat callsign). Die statsim_cache-Zeile kennt den Callsign aber laengst
+        (row.callsign), analog zum bestehenden Aircraft-Fallback."""
         conn = _make_conn()
         cid = 4321
         _insert_statsim(
@@ -366,25 +383,263 @@ class TestConnectionClosedFlag:
         assert f_closed["connection_closed"] is True
 
 
-class TestPlanAssignment:
-    def test_plan_assignment_start_airport_primary(self):
-        # Zwei Plan-Zeilen: A→B (zuerst gefiled), B→C (ZEITLICH FRÜHER logon_time als A→B —
-        # beweist, dass die Zuordnung rein über den Startplatz läuft, nicht über Zeit-Reihenfolge).
+class TestFlightplanAsOf:
+    """Direkte Unit-Tests für die zeitbasierte Zuordnungsfunktion (Nutzer-Entscheidung
+    2026-07-05) — ersetzt die alte, Startplatz-primäre ``TestPlanAssignment`` (beruhte auf
+    dem inzwischen entfernten ``_assign_flightplan``)."""
+
+    def test_last_filed_plan_before_ts_wins_regardless_of_airports(self):
+        # A->B zuerst gefiled (09:00), B->C SPAETER (09:30) -- unabhaengig vom "passenden"
+        # Startplatz gewinnt an jedem ts >= 09:30 die zeitlich letzte Zeile (B->C).
         plan_rows = [
-            {"id": 1, "departure": "A", "arrival": "B", "logon_time": "2026-07-02T10:10:00Z"},
-            {"id": 2, "departure": "B", "arrival": "C", "logon_time": "2026-07-02T09:00:00Z"},
+            {"id": 1, "departure": "A", "arrival": "B", "logon_time": "2026-07-02T09:00:00Z"},
+            {"id": 2, "departure": "B", "arrival": "C", "logon_time": "2026-07-02T09:30:00Z"},
         ]
-        leg_ab = {"dep_icao": "A", "arr_icao": "B", "takeoff_ts": "2026-07-02T10:00:00Z"}
-        leg_bc = {"dep_icao": "B", "arr_icao": "C", "takeoff_ts": "2026-07-02T10:30:00Z"}
-        leg_no_match = {"dep_icao": "C", "arr_icao": "D", "takeoff_ts": "2026-07-02T11:00:00Z"}
+        assert _flightplan_asof(plan_rows, "2026-07-02T09:15:00Z")["id"] == 1
+        assert _flightplan_asof(plan_rows, "2026-07-02T09:30:00Z")["id"] == 2
+        assert _flightplan_asof(plan_rows, "2026-07-02T23:00:00Z")["id"] == 2
 
-        assigned_ab = _assign_flightplan(plan_rows, leg_ab)
-        assigned_bc = _assign_flightplan(plan_rows, leg_bc)
-        assigned_none = _assign_flightplan(plan_rows, leg_no_match)
+    def test_before_first_filing_returns_none(self):
+        plan_rows = [
+            {"id": 1, "departure": "A", "arrival": "B", "logon_time": "2026-07-02T09:00:00Z"},
+        ]
+        assert _flightplan_asof(plan_rows, "2026-07-02T08:59:59Z") is None
 
-        assert assigned_ab is not None and assigned_ab["departure"] == "A"
-        assert assigned_bc is not None and assigned_bc["departure"] == "B"
-        assert assigned_none is None
+    def test_empty_connect_row_does_not_count_as_match(self):
+        plan_rows = [
+            {"id": 1, "departure": "", "arrival": "", "logon_time": "2026-07-02T09:00:00Z"},
+        ]
+        assert _flightplan_asof(plan_rows, "2026-07-02T10:00:00Z") is None
+
+    def test_empty_row_ignored_when_later_real_plan_exists(self):
+        plan_rows = [
+            {"id": 1, "departure": "", "arrival": "", "logon_time": "2026-07-02T09:00:00Z"},
+            {"id": 2, "departure": "A", "arrival": "B", "logon_time": "2026-07-02T09:05:00Z"},
+        ]
+        # ts liegt NACH der leeren Zeile, aber nur die leere Zeile ist <= ts -> None.
+        assert _flightplan_asof(plan_rows, "2026-07-02T09:02:00Z") is None
+        assert _flightplan_asof(plan_rows, "2026-07-02T09:05:00Z")["id"] == 2
+
+    def test_no_plan_rows_returns_none(self):
+        assert _flightplan_asof([], "2026-07-02T09:00:00Z") is None
+
+    def test_whitespace_only_fields_count_as_empty(self):
+        plan_rows = [
+            {"id": 1, "departure": " ", "arrival": "", "logon_time": "2026-07-02T09:00:00Z"},
+        ]
+        assert _flightplan_asof(plan_rows, "2026-07-02T10:00:00Z") is None
+
+    def test_microsecond_logon_time_does_not_sort_before_second_precision(self):
+        """Grund fuer _parse_iso statt String-Vergleich: ein Refile-Split-Zeitstempel mit
+        Mikrosekunden (app/poller.py, "%Y-%m-%dT%H:%M:%S.%fZ") liegt real SPAETER als ein
+        Sekunden-Zeitstempel derselben Sekunde -- ein lexikographischer String-Vergleich
+        wuerde ihn faelschlich als "kleiner" werten (weil "." < "Z" in ASCII) und ihn damit
+        in den <= ts-Kandidatenkreis aufnehmen, obwohl er nach ts liegt."""
+        plan_rows = [
+            {"id": 1, "departure": "A", "arrival": "B", "logon_time": "2026-07-02T10:25:00Z"},
+            {"id": 2, "departure": "B", "arrival": "C", "logon_time": "2026-07-02T10:25:00.500000Z"},
+        ]
+        result = _flightplan_asof(plan_rows, "2026-07-02T10:25:00Z")
+        assert result is not None and result["id"] == 1
+
+
+class TestTimeBasedPlanAssignment:
+    """Integrationstests für die zeitbasierte Flugplan-Zuordnung (Nutzer-Entscheidung
+    2026-07-05, ersetzt Spec G / Startplatz-primär) durch die volle canonicalize_legs-
+    Pipeline."""
+
+    def test_single_plan_covers_intermediate_landing_frs96(self):
+        """FRS96: EIN Plan A(EDDK)->C(EDDL) gefiled, GPS erkennt eine Zwischenlandung in
+        EDDW (kein Refile) -> BEIDE Legs (EDDK->EDDW und EDDW->EDDL) bekommen denselben
+        Plan (vorher bekam das EDDW->EDDL-Bein kein Match, weil dessen GPS-Startplatz EDDW
+        nicht zum gefileten Startplatz EDDK passte)."""
+        conn = _make_conn()
+        cid = 5001
+        flight_id = _insert_flight(
+            conn, cid=cid, callsign="FRS50", departure="EDDK", arrival="EDDL",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T11:15:00Z",
+            route="EDDK DKB EDDL",
+        )
+        _seed_eddk_eddw_eddl_intermediate_landing_track(conn, cid, "FRS50")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        fs = [f for f in result if f["cid"] == cid and f["source"] == "friesenspy"]
+        assert len(fs) == 2
+        leg1 = next(f for f in fs if f["gps_departure"] == "EDDK")
+        leg2 = next(f for f in fs if f["gps_departure"] == "EDDW")
+
+        for leg in (leg1, leg2):
+            assert leg["id"] == flight_id
+            assert leg["plan_departure"] == "EDDK"
+            assert leg["plan_arrival"] == "EDDL"
+            assert leg["route"] == "EDDK DKB EDDL"
+
+    def test_two_real_refiled_plans_stay_exclusive(self):
+        """Regressionsschutz: ECHTES Refile mit Start-Wechsel (EDDK->EDDW abgeschlossen bei
+        der Landung, danach EDDW->EDDL neu gefiled) -- jedes Leg bekommt weiterhin GENAU
+        seinen eigenen Plan (bisheriges korrektes Verhalten bleibt erhalten, weil das zweite
+        Filing zeitlich klar NACH der Landung von Leg 1 liegt)."""
+        conn = _make_conn()
+        cid = 5002
+        id_ab = _insert_flight(
+            conn, cid=cid, callsign="FRS51", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:40:00Z",
+        )
+        id_bc = _insert_flight(
+            conn, cid=cid, callsign="FRS51", departure="EDDW", arrival="EDDL",
+            logon_time="2026-07-02T10:45:00Z", logoff_time=None,
+        )
+        _seed_eddk_eddw_eddl_intermediate_landing_track(conn, cid, "FRS51")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        fs = [f for f in result if f["cid"] == cid and f["source"] == "friesenspy"]
+        leg1 = next(f for f in fs if f["gps_departure"] == "EDDK")
+        leg2 = next(f for f in fs if f["gps_departure"] == "EDDW")
+        assert leg1["id"] == id_ab
+        assert leg2["id"] == id_bc
+
+    def test_premature_refile_before_landing_is_visible(self):
+        """Nutzer-Klarstellung: Pilot filed EDDW->EDDL bereits waehrend Leg 1 (EDDK->EDDW)
+        noch in der Luft ist (10:25, vor der Landung um 10:40) -- BEWUSST kein Schutz: Leg 1
+        bekommt den NEUEN (falsch anmutenden) Plan zugeordnet, sichtbar am Mismatch
+        plan_departure=EDDW != gps_departure=EDDK. Klarer Pilotenfehler, darf sichtbar sein."""
+        conn = _make_conn()
+        cid = 5003
+        _insert_flight(
+            conn, cid=cid, callsign="FRS52", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:25:00Z",
+        )
+        id_new = _insert_flight(
+            conn, cid=cid, callsign="FRS52", departure="EDDW", arrival="EDDL",
+            logon_time="2026-07-02T10:25:05Z", logoff_time=None,
+        )
+        _seed_eddk_eddw_eddl_intermediate_landing_track(conn, cid, "FRS52")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        fs = [f for f in result if f["cid"] == cid and f["source"] == "friesenspy"]
+        leg1 = next(f for f in fs if f["gps_departure"] == "EDDK")
+        leg2 = next(f for f in fs if f["gps_departure"] == "EDDW")
+
+        assert leg1["id"] == id_new
+        assert leg1["plan_departure"] == "EDDW"  # sichtbarer Mismatch -- akzeptiertes Verhalten
+        assert leg1["gps_departure"] == "EDDK"
+        assert leg2["id"] == id_new
+        assert leg2["plan_departure"] == "EDDW"
+        assert leg2["plan_arrival"] == "EDDL"
+
+    def test_pure_connect_without_ever_filing_shows_no_plan(self):
+        conn = _make_conn()
+        cid = 5004
+        _insert_flight(
+            conn, cid=cid, callsign="FRS53", departure="", arrival="",
+            logon_time="2026-07-02T09:55:00Z", logoff_time=None,
+        )
+        _seed_eddk_eddw_track(conn, cid, "FRS53")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid)
+        assert flight["id"] is None
+        assert flight["plan_departure"] is None
+        assert flight["route"] == ""
+
+    def test_early_leg_before_first_filing_has_no_plan_later_leg_does(self):
+        """Spontaner Kurzflug EDDK->EDDW (08:00-08:40) OHNE jeden Plan; erst waehrend des
+        Bodenaufenthalts in EDDW wird um 09:00 ERSTMALS ein Plan gefiled (EDDW->EDDK) --
+        das fruehe Leg bleibt planlos, das anschliessende Leg (Abflug 09:06) bekommt den
+        Plan."""
+        conn = _make_conn()
+        cid = 5005
+        _insert_flight(
+            conn, cid=cid, callsign="FRS54", departure="", arrival="",
+            logon_time="2026-07-02T07:55:00Z", logoff_time="2026-07-02T08:59:50Z",
+        )
+        id_return = _insert_flight(
+            conn, cid=cid, callsign="FRS54", departure="EDDW", arrival="EDDK",
+            logon_time="2026-07-02T09:00:00Z", logoff_time=None,
+        )
+        for ts, lat, lon, alt, gs in [
+            ("2026-07-02T08:00:00Z", *EDDK, 302, 0),
+            ("2026-07-02T08:01:00Z", *EDDK, 302, 10),
+            ("2026-07-02T08:03:00Z", *EDDK, 302, 12),
+            ("2026-07-02T08:05:00Z", *EDDK, 302, 15),
+            ("2026-07-02T08:06:00Z", *EDDK, 1200, 80),
+            ("2026-07-02T08:20:00Z", 52.0, 8.0, 5000, 120),
+            ("2026-07-02T08:38:00Z", 53.0, 8.7, 500, 60),
+            ("2026-07-02T08:40:00Z", *EDDW, 20, 0),
+            ("2026-07-02T08:48:00Z", *EDDW, 20, 0),
+            ("2026-07-02T08:56:00Z", *EDDW, 20, 0),
+            ("2026-07-02T09:00:00Z", *EDDW, 20, 0),
+            ("2026-07-02T09:06:00Z", *EDDW, 1200, 80),
+            ("2026-07-02T09:20:00Z", 52.0, 8.0, 5000, 120),
+            ("2026-07-02T09:38:00Z", 51.0, 7.3, 500, 60),
+            ("2026-07-02T09:40:00Z", *EDDK, 302, 0),
+            ("2026-07-02T09:44:00Z", *EDDK, 302, 0),
+        ]:
+            _insert_pos(conn, cid, ts, lat, lon, alt, gs, "FRS54")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        fs = [f for f in result if f["cid"] == cid and f["source"] == "friesenspy"]
+        assert len(fs) == 2, f"erwartete 2 Legs (EDDK->EDDW, EDDW->EDDK), bekam {len(fs)}"
+        early_leg = next(f for f in fs if f["gps_departure"] == "EDDK")
+        later_leg = next(f for f in fs if f["gps_departure"] == "EDDW")
+
+        assert early_leg["id"] is None
+        assert early_leg["plan_departure"] is None
+        assert later_leg["id"] == id_return
+        assert later_leg["plan_departure"] == "EDDW"
+        assert later_leg["plan_arrival"] == "EDDK"
+
+
+class TestStatsimIdPropagation:
+    def test_statsim_id_propagates_across_split_legs(self):
+        """StatSim-Pendant zum FRS96-Fix (Live-Fund FRS1116/CID 1637198): eine einzige
+        statsim_cache-Zeile (ein statsim_id), GPS-Track mit Zwischenlandung -> BEIDE
+        resultierenden Legs bekommen dieselbe statsim_id (vorher bekam nur das erste Leg
+        sie, das Folgebein hatte statsim_id=None -> toter Track-Button trotz vorhandenem
+        Track in statsim_position_history)."""
+        conn = _make_conn()
+        cid = 5006
+        _insert_statsim(
+            conn, 9601, cid=cid, callsign="FRS55", departure="EDDK", arrival="EDDL",
+            logon_time="2026-07-02T09:58:00Z", logoff_time="2026-07-02T11:15:00Z",
+            duration_min=77, aircraft="C172",
+        )
+        _insert_statsim_pos(conn, 9601, "2026-07-02T10:00:00Z", *EDDK, 302, 0)
+        _insert_statsim_pos(conn, 9601, "2026-07-02T10:06:00Z", *EDDK, 1200, 80)
+        _insert_statsim_pos(conn, 9601, "2026-07-02T10:20:00Z", 52.0, 8.0, 5000, 120)
+        _insert_statsim_pos(conn, 9601, "2026-07-02T10:38:00Z", 53.0, 8.7, 500, 60)
+        _insert_statsim_pos(conn, 9601, "2026-07-02T10:40:00Z", *EDDW, 20, 0)  # Touchdown EDDW
+        _insert_statsim_pos(conn, 9601, "2026-07-02T10:45:00Z", *EDDW, 20, 0)
+        _insert_statsim_pos(conn, 9601, "2026-07-02T10:46:00Z", *EDDW, 1300, 85)
+        _insert_statsim_pos(conn, 9601, "2026-07-02T10:50:00Z", 52.0, 7.5, 5000, 140)
+        _insert_statsim_pos(conn, 9601, "2026-07-02T11:08:00Z", 51.35, 6.85, 1500, 90)
+        _insert_statsim_pos(conn, 9601, "2026-07-02T11:15:00Z", *EDDL, 150, 0)  # Touchdown EDDL
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        st = [f for f in result if f["cid"] == cid and f["source"] == "statsim"]
+        assert len(st) == 2
+        leg1 = next(f for f in st if f["gps_departure"] == "EDDK")
+        leg2 = next(f for f in st if f["gps_departure"] == "EDDW")
+        assert leg1["statsim_id"] == 9601
+        assert leg2["statsim_id"] == 9601
 
 
 # --- Risiko-Review-Regressionstests (Fix 1-6, #23) ------------------------------------
@@ -491,7 +746,7 @@ class TestPlanLabelsThroughPipeline:
     def test_plan_labels_assigned_through_full_pipeline(self):
         """Deckt die in Task 4 offen gelassene Test-Lücke (e): Plan-Labels (route/
         plan_departure/id) müssen durch die VOLLE canonicalize_legs-Pipeline befüllt werden,
-        nicht nur isoliert über _assign_flightplan."""
+        nicht nur isoliert über _flightplan_asof."""
         conn = _make_conn()
         cid = 4310
         flight_id = _insert_flight(

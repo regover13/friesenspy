@@ -171,17 +171,35 @@ bestehende **Bulk-Backfill** (`POST /api/admin/statsim-backfill`, gedrosselt, re
 - **Flugplan-Start→Ziel** daneben als Kontext; `—`, wenn kein passender Plan. Route/Remarks/Muster als
   Label vom zugeordneten Plan (**StatSim liefert nur Muster + Start→Ziel, keine Route/Remarks**).
 
-**Zuordnung Plan → Bein — Startplatz-primär (zeit-robust):**
-1. **Startplatz-Match (primär):** der Flugplan der Verbindung, dessen *gefilter Startplatz* == GPS-
-   Startplatz des Beins. Robust gegen **späten/vergessenen Refile**: ein erst in der Luft aufgegebener
-   B→C-Plan sagt trotzdem „Start B" → matcht das B→C-Bein, unabhängig vom Zeitpunkt.
-2. **Zeit-Fallback:** kein Startplatz-Match → zeitlich nächster Plan der Verbindung.
-3. **Kein Match / kein Plan → `—`.** Z. B. VFR ohne Plan; oder nur *ein* Plan A→C gefiled, GPS macht
-   A→B→C → das B→C-Bein bekommt `—` (kein erzwungenes Fehl-Label).
+**Zuordnung Plan → Bein — zeitbasiert (Nutzer-Entscheidung 2026-07-05, ersetzt die ursprüngliche
+Startplatz-primäre Regel):**
+1. **Zuletzt gefilter Plan zum Landungszeitpunkt (primär und einzige Regel):** bei Landung eines
+   GPS-Beins (bzw. am geschätzten Ende `end_ts` eines noch offenen Beins) zählt die `flights`-Zeile
+   mit dem größten `logon_time <= end_ts` — unabhängig davon, ob deren gefilter Start/Ziel zum
+   GPS-Start/Ziel dieses Beins passt. Der Plan bleibt gültig, bis ein späteres Filing (spätere Zeile)
+   ihn ablöst. Beispiel (der ursprüngliche FRS96-Bugreport-Fall): nur *ein* Plan A→C gefiled, GPS
+   macht A→B→C (Zwischenlandung ohne Refile) → BEIDE Beine (A→B und B→C) bekommen denselben Plan A→C
+   zugeordnet, statt dass das B→C-Bein leer bleibt.
+2. **Kein Tie-Breaker nötig:** `(cid, logon_time)` ist durch den partiellen Unique-Index
+   `idx_flights_session` bereits eindeutig — zwei Zeilen derselben cid können nie dasselbe
+   `logon_time` tragen.
+3. **Kein Match / kein Plan → `—`.** Das gilt (a) wenn zum Landungszeitpunkt noch KEIN Plan gefiled
+   war (`end_ts` liegt vor der ersten Zeile), und (b) wenn die zeitlich letzte Zeile ein reiner
+   Connect ohne jemals gefileten Plan ist (`departure` UND `arrival` beide leer) — ein solcher Connect
+   zählt bewusst NICHT als Treffer, sonst entstünde am Beginn jeder neuen Verbindung fälschlich eine
+   „leere" Zuordnung statt `—`.
+4. **Bewusst akzeptierter Sonderfall (kein Schutz eingebaut):** filed ein Pilot den nächsten Plan
+   bereits, BEVOR er im aktuellen Ziel gelandet ist (Start-Wechsel-Refile mitten im Flug), bekommt
+   das noch nicht gelandete aktuelle Bein bereits den NEUEN Plan zugeordnet — sichtbar als Mismatch
+   zwischen `plan_departure` und `gps_departure`. Das ist ein klarer Pilotenfehler und darf laut
+   Entscheidung vom 2026-07-05 ausdrücklich sichtbar sein; die rechtzeitige Nachmeldung eines
+   vergessenen Refiles ist dagegen der Normalfall, den die Regel abbildet.
 
 **Datenbasis:** die Folge der `flights`/Prefile-Datensätze je Verbindung (jeder Refile = eigener
-Zeitstempel + gefilter dep/arr) bleibt als **Flugplan-Zeitachse** erhalten — nicht mehr als Leg-Grenze,
-nur fürs Labeln. StatSim liefert dep/arr/Muster aus `statsim_cache`.
+Zeitstempel + gefilter dep/arr) bildet bereits eine natürliche, chronologisch sortierte
+**Flugplan-Zeitachse** (SQL liefert sie via `ORDER BY cid, logon_time`) — genau diese Zeitachse ist
+jetzt die alleinige Grundlage der Zuordnung (nicht mehr Startplatz-Vergleich). StatSim liefert
+dep/arr/Muster aus `statsim_cache` (dort immer genau eine Zeile je Session, kein Refile-Verlauf).
 
 **Nur Label, nie Wertung:** Die Zuordnung beeinflusst ausschließlich die Anzeige.
 
@@ -240,8 +258,11 @@ Damit Phase 2 schlank **„nur GPS für FRS"** bleibt (Review e/f):
   GPS-Flug (`takeoff_ts`) korrekt zugeordnet; ohne Reconcile ginge sie verloren.
 - **`canonicalize_legs`**: Feld-für-Feld-Parität mit `canonicalize_flights`; nur `FRS` gewertet; Dedup
   FriesenSpy-gewinnt bei Überlappung; **Teil-Überlappung** verliert den ungedeckten StatSim-Teil nicht.
-- **Flugplan-Zuordnung**: Startplatz-Match; **spät/in-der-Luft aufgegebener Refile** landet am richtigen
-  Bein; ein Plan A→C + GPS A→B→C → B→C-Bein `—`; VFR ohne Plan → `—`.
+- **Flugplan-Zuordnung (zeitbasiert, Update 2026-07-05)**: zuletzt gefilter Plan zum Landungs-/
+  Beinende gewinnt; ein Plan A→C + GPS A→B→C → BEIDE Beine bekommen A→C (FRS96-Bugfix); zwei echte
+  Refiles (Start-Wechsel) → jedes Bein bekommt exklusiv seinen eigenen Plan; verfrühtes Refile vor
+  der eigenen Landung → sichtbar als Mismatch (kein Schutz, akzeptiertes Verhalten); reiner Connect
+  ohne Plan → `—`; Landung vor der ersten Filing → `—`.
 - **Konsumenten**: `get_stats`/Bummel/Kutter mit Flügen; Bummel-„Frode"-E2E; Vorher/Nachher-Zahlvergleich
   je Konsument; offener Flug zählt erst bei beendeter Verbindung.
 

@@ -462,6 +462,20 @@ def init_db(db_path: str) -> None:
             seed_cargo_catalog(conn)  # Frachtart-Katalog erstbefüllen (idempotent)
         except sqlite3.OperationalError:
             pass
+        # Alt-Daten: statsim_cache.aircraft vor #44 (v8.3.0) unnormalisiert gespeichert
+        # (Composite-String wie "A320/M-SDE3FGHIRWY/LB1" statt kurzem ICAO-Typ "A320").
+        # Der Ingestion-Fix (app/statsim.py:_normalize_flight) heilt nur Zeilen, die
+        # tatsächlich neu geschrieben werden (Hintergrund-Refresh trifft nur die letzten
+        # 31 Tage bzw. bei explizitem Voll-Reload) — ältere Flüge blieben sonst dauerhaft
+        # unnormalisiert stehen. Einmalige, idempotente Nachnormalisierung aller Bestandszeilen
+        # (WHERE-Klausel greift nach dem ersten Lauf nicht mehr).
+        try:
+            conn.execute(
+                "UPDATE statsim_cache SET aircraft = substr(aircraft, 1, instr(aircraft, '/') - 1) "
+                "WHERE aircraft LIKE '%/%'"
+            )
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
         import logging as _log
         _logger = _log.getLogger(__name__)
@@ -1829,44 +1843,52 @@ def _positions_for_cid(
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
-def _assign_flightplan(plan_rows: list[dict], gps_flight: dict) -> dict | None:
-    """Ordnet einem GPS-Flug die passende Flugplan-/Connection-Zeile zu (Spec G).
+def _flightplan_asof(plan_rows: list[dict], ts: str) -> dict | None:
+    """Ordnet einem Zeitpunkt (i. d. R. das Ende/die Landung eines GPS-Beins, ``end_ts``) den
+    zu diesem Moment zuletzt gefileten Flugplan zu (Nutzer-Entscheidung 2026-07-05, ersetzt
+    das bisherige Startplatz-Matching komplett).
 
-    Primär: Startplatz-Match (``departure`` == ``gps_flight['dep_icao']``, case-insensitiv).
-    Mehrere Treffer: Zeit-Nähe (``logon_time`` am nächsten an ``takeoff_ts``) als Tie-Breaker.
-    Kein Startplatz bekannt oder kein Treffer → ``None`` — bewusst KEIN Fallback auf reine
-    Zeit-Nähe über alle Zeilen, sonst würde ein in der Luft nachgefiletes B→C-Bein fälschlich
-    dem ursprünglichen A→B-Plan zugeschlagen (unabhängig vom Filing-Zeitpunkt, Spec G).
+    Regel: die ``flights``-Zeile mit dem größten ``logon_time <= ts`` gewinnt — unabhängig
+    davon, ob deren Start/Ziel zum GPS-Start/Ziel des Beins passt. Ein während des Fluges neu
+    gefileter Plan gilt ab sofort und wandert in jedes folgende Bein mit, bis der nächste
+    Refile ihn ersetzt (Realitäts-Abbild: ein vergessener Refile bleibt sichtbar bestehen).
+    Filed ein Pilot den nächsten Plan bereits VOR der eigenen Landung, erscheint das bewusst
+    als sichtbarer Mismatch (kein Schutz eingebaut — klarer Pilotenfehler, Nutzer-Entscheidung).
+
+    Eine Zeile OHNE jegliche Angabe (Startplatz UND Ziel leer — reiner Connect ohne je
+    gefileten Plan) zählt NICHT als Treffer → ``None`` (Anzeige ``—``), sonst entstünde am
+    Beginn jeder neuen Verbindung fälschlich eine „leere" Zuordnung statt ``—``.
+
+    Kein Tie-Breaker nötig: ``(cid, logon_time)`` ist durch den partiellen Unique-Index
+    ``idx_flights_session`` bereits eindeutig.
+
+    Zeitvergleich bewusst über :func:`_parse_iso` (datetime), NICHT über String-Vergleich:
+    manche ``logon_time``-Werte tragen Mikrosekunden (Refile-Split, ``app/poller.py``,
+    ``"%Y-%m-%dT%H:%M:%S.%fZ"``), andere nur Sekunden (VATSIM-Feed-Werte) — lexikographischer
+    String-Vergleich sortiert z. B. ``"...10:25:00.500000Z"`` fälschlich VOR ``"...10:25:00Z"``
+    (weil ``.`` < ``Z`` in ASCII), obwohl 10:25:00.5 real SPÄTER liegt als 10:25:00.
     """
-    if not plan_rows:
-        return None
-    dep = (gps_flight.get("dep_icao") or "").strip().upper()
-    if not dep:
-        return None
-    candidates = [r for r in plan_rows if (r.get("departure") or "").strip().upper() == dep]
-    if not candidates:
-        return None
-    if len(candidates) == 1:
-        return candidates[0]
-
-    takeoff_ts = gps_flight.get("takeoff_ts")
-    if not takeoff_ts:
-        return candidates[0]
-
-    def _time_gap(r: dict) -> float:
+    ts_dt = _parse_iso(ts)
+    candidates = []
+    for r in plan_rows:
         lt = r.get("logon_time")
         if not lt:
-            return float("inf")
+            continue
         try:
-            return abs((_parse_iso(lt) - _parse_iso(takeoff_ts)).total_seconds())
+            if _parse_iso(lt) <= ts_dt:
+                candidates.append(r)
         except Exception:
-            return float("inf")
-
-    return min(candidates, key=_time_gap)
+            continue
+    if not candidates:
+        return None
+    best = max(candidates, key=lambda r: _parse_iso(r["logon_time"]))
+    if not (best.get("departure") or "").strip() and not (best.get("arrival") or "").strip():
+        return None
+    return best
 
 
 def _statsim_plan(row: dict) -> dict:
-    """Pseudo-Flugplan-Dict aus einer ``statsim_cache``-Zeile für :func:`_assign_flightplan`
+    """Pseudo-Flugplan-Dict aus einer ``statsim_cache``-Zeile für :func:`_flightplan_asof`
     (``id=None`` — StatSim liefert keine erweiterten Flugplan-Labels)."""
     return {
         "id": None,
@@ -1904,7 +1926,7 @@ def _gps_flights_for_positions(
     gleichermaßen funktioniert.
 
     ``plan_rows``: Kandidaten-Flugpläne/Connections (``flights``-Zeilen bzw.
-    :func:`_statsim_plan`-Pseudo-Zeilen) für :func:`_assign_flightplan`. Trägt KEIN ``cid`` —
+    :func:`_statsim_plan`-Pseudo-Zeilen) für :func:`_flightplan_asof`. Trägt KEIN ``cid`` —
     der Aufrufer kennt es aus dem Iterationskontext und setzt es. Enthält einen internen
     Schlüssel ``_coverage_end`` (letzter belegter ts — für den Pro-Flug-Dedup in
     :func:`canonicalize_legs`); der Aufrufer entfernt ihn vor der Rückgabe.
@@ -1993,7 +2015,7 @@ def _gps_flights_for_positions(
         except Exception:
             duration_min = 0
 
-        plan = _assign_flightplan(plan_rows, gf)
+        plan = _flightplan_asof(plan_rows, end_ts)
         gps_dep = gf.get("dep_icao")
         gps_arr = gf.get("arr_icao")
         plan_dep = plan.get("departure") if plan else None
@@ -2155,7 +2177,8 @@ def canonicalize_legs(
 
     Ablauf: Fenster-Lookback (Positionen ab ``start - 12h``, gegen Spawn-Artefakte an der
     Fensterkante) → je Pilot/StatSim-Flug Detektor + Collapse über die ECHTEN Positionen →
-    Flugplan-Zuordnung (Startplatz-primär, Spec G) → Fallback auf die reine Connection-/
+    Flugplan-Zuordnung (zeitbasiert — zuletzt gefilter Plan zum Landungs-/Beinende, Spec G
+    aktualisiert 2026-07-05) → Fallback auf die reine Connection-/
     StatSim-Zeile, wenn kein Track vorliegt (bzw. kein Leg erkannt wurde) → Ergebnis auf
     Überlappung mit ``[start, end]`` gefiltert → StatSim-Flüge, die einen FriesenSpy-Flug
     DESSELBEN cid überlappen, werden verworfen (PRO FLUG, nicht pro Session — Teil-
@@ -2258,7 +2281,7 @@ def canonicalize_legs(
             # Intervall erzeugen, das ALLE späteren StatSim-Flüge der cid unterdrückt; Test-
             # Connects/belegte Steh-Sessions sind ohnehin kein Flug (Ghost-Regel wie
             # canonicalize_flights). Offene/Ghost-Zeilen bleiben Teil von `rows` (plan_rows
-            # für _assign_flightplan im GPS-Zweig), fließen hier nur nicht als eigener Flug.
+            # für _flightplan_asof im GPS-Zweig), fließen hier nur nicht als eigener Flug.
             for row in rows:
                 if row.get("logoff_time") is None:
                     continue

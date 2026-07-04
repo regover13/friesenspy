@@ -3358,6 +3358,19 @@ async function openPilotFlights(cid) {
   }
 }
 
+// Piloten-Detail aus der Events-Ansicht öffnen: die Piloten-Kopfzeile dort ist blau (klickbar
+// laut UI-Standard), führte aber bisher ins Leere. openPilotFlights() bricht still ab, wenn die
+// cid nicht in pilotStatsMap steckt (das aktuelle "Tage"-Fenster deckt das Event-Datum evtl.
+// nicht ab) — deshalb Tab-Wechsel + Tage-Dropdown auf Maximum (365) + fetchStats() zuerst,
+// exakt wie initFromUrl() das für #tab=statistiken&cid=... Deep-Links bereits etabliert hat.
+async function openPilotFromEvents(cid) {
+  document.querySelector('[data-tab="statistiken"]').click();
+  const sel = document.getElementById('stats-days');
+  if (sel) sel.value = '365';
+  await fetchStats();
+  await openPilotFlights(cid);
+}
+
 function closePilotFlights() {
   clearTimeout(_flightsRefreshTimer);
   currentStatsCid = null;
@@ -4300,7 +4313,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
           <div class="pilot-card-dot" style="background:${color};"></div>
           <div>
-            <span class="pilot-card-callsign">${escHtml(callsign)}</span>
+            <span class="pilot-card-callsign" style="cursor:pointer;" onclick="openPilotFromEvents(${p.cid})" title="Piloten-Detail öffnen">${escHtml(callsign)}</span>
             ${p.name ? `<span class="pilot-card-cid" style="margin-left:8px;">${escHtml(p.name)}</span>` : ''}
             <span class="pilot-card-cid" style="margin-left:8px;">CID ${p.cid}</span>
             <span class="pilot-card-detail" style="margin-left:8px;">${flights.length} ${flightWord}</span>

@@ -11,6 +11,13 @@ ICAL_URL = (
 
 _ICAO_RE = re.compile(r"\b[A-Z]{4}\b")
 
+# Wörter, die zwar auf die 4-Großbuchstaben-Regel passen, aber nie ein echter ICAO-Code sind
+# — typischerweise ein Label/Präfix im Kalendertext (z. B. "ICAO: EDVE, EDBH" oder "Ziel:
+# ICAO EDVE, EDBH"), das sonst fälschlich als eigener Streckenflugplatz mit in die Strecke
+# aufgenommen würde (Live-Fund: mehrere "Montagsflüge"-Termine zeigten "ICAO,EDVE,EDBH" statt
+# "EDVE,EDBH").
+_ROUTE_STOPWORDS = {"ICAO"}
+
 # Plausibilitäts-Obergrenze: eine Bummel-Strecke liegt real bei <200 nm, praktisch nie über
 # 600 nm. Ein größerer Abstand zwischen zwei Streckenflugplätzen deutet auf einen falsch als
 # ICAO erkannten Begriff (ein 4-Buchstaben-Wort, das anderswo ein echter Flughafen ist) →
@@ -74,6 +81,9 @@ def parse_route(location: str, summary: str, description: str = "") -> tuple[str
 
     Sammelt alle ICAO-Codes (vier Großbuchstaben) aus ``location``, dann ``summary``, dann
     ``description`` — Reihenfolge erhaltend und dedupliziert → CSV (z. B. ``"EDWF,EDWG,EDWR"``).
+    Das Wort ``"ICAO"`` selbst wird ausgeschlossen (``_ROUTE_STOPWORDS``) — es matcht zwar die
+    4-Großbuchstaben-Regel, ist aber kein echter Flugplatz, sondern typischerweise ein Label
+    im Kalendertext (z. B. ``"ICAO: EDVE, EDBH"``).
     ``is_bummel`` ist True, wenn ``"bummel"`` (case-insensitiv) im Titel ODER in der Beschreibung
     steht UND die Strecke mindestens zwei Flugplätze hat. Analog ist ``is_transport`` True, wenn
     ``"friesenkutter"`` (der FriesenKutter-Marker) im Titel/Beschreibung steht — dann wird das
@@ -83,7 +93,7 @@ def parse_route(location: str, summary: str, description: str = "") -> tuple[str
     route: list[str] = []
     for text in (location or "", summary or "", description or ""):
         for code in _ICAO_RE.findall(text):
-            if code not in route:
+            if code not in _ROUTE_STOPWORDS and code not in route:
                 route.append(code)
     text_lc = (summary or "").lower() + "\n" + (description or "").lower()
     plausible = len(route) >= 2 and _route_is_plausible(route)
