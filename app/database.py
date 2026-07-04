@@ -4224,29 +4224,40 @@ def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") 
         if cid is None or lo is None:
             continue
         cid = int(cid)
-        if _latch_hits_flight(conn, latched, cid, lo, f.get("logoff_time")):
-            continue
         conn_logon = _connection_logon_for_leg(conn, cid, lo)
         if conn_logon is None:
             continue  # kein Verbindungs-Key (z. B. StatSim) → kann nicht latch-kompatibel gemeldet werden
-        if (cid, conn_logon) in existing or (cid, conn_logon) in recorded_this_run:
-            continue
         conn_row = conn.execute(
             "SELECT logoff_time FROM flights WHERE cid = ? AND logon_time = ?", (cid, conn_logon)
         ).fetchone()
-        lf = conn_row[0] if conn_row and conn_row[0] else None
-        if not lf or lf < start:
+        # #23 Review I1: als Fenster-Ende für den Latch-Abgleich das Ende der ZUGRUNDE
+        # LIEGENDEN CONNECTION nutzen (nicht das Leg-eigene logoff_time, das bei einem
+        # versunkenen Kutter NIE gesetzt wird → end=∞ → ein Latch einer SPÄTEREN Reconnect-
+        # Connection derselben cid überlappt sonst immer und verdeckt den echten Verlust).
+        # Ist die Connection noch offen, bleibt das Leg-eigene logoff_time der Fallback
+        # (harmlos: eine noch offene Connection wird unten ohnehin nicht gemeldet).
+        leg_logoff = f.get("logoff_time") or ""
+        conn_logoff = conn_row[0] if conn_row and conn_row[0] else leg_logoff
+        if _latch_hits_flight(conn, latched, cid, lo, conn_logoff):
+            continue
+        if (cid, conn_logon) in existing or (cid, conn_logon) in recorded_this_run:
+            continue
+        conn_end = conn_row[0] if conn_row and conn_row[0] else None
+        if not conn_end or conn_end < start:
             continue  # Verbindung noch offen (kein Disconnect) oder vor dem Event-Fenster beendet
         dep = normalize_type_code(f.get("departure"))
         if dep not in route_set or dep == dest:
             continue  # war nie mit Fracht Richtung Ziel unterwegs
-        arr = normalize_type_code(f.get("arrival"))
-        if arr == dest:
-            continue  # GPS-Ankunft am Ziel → geliefert (compute zählt das als loaded)
+        # Bewusst gps_arrival statt arrival (#23 Review C2): der trackless Fallback setzt
+        # arrival aus dem FLUGPLAN — eine reine Plan-Angabe ohne GPS-Beleg darf eine echte
+        # Verlust-Erfassung nicht als "schon geliefert" überstimmen.
+        gps_arr = normalize_type_code(f.get("gps_arrival"))
+        if gps_arr == dest:
+            continue  # echte GPS-Ankunft am Ziel → geliefert (compute zählt das als loaded)
         row = conn.execute(
             "SELECT latitude, longitude, groundspeed FROM position_history "
             "WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT 1",
-            (cid, lo, lf),
+            (cid, lo, conn_end),
         ).fetchone()
         if row is None:
             # Keine Position = keine Aussage: Flüge ohne jeden GPS-Track (z. B. StatSim-
@@ -4259,6 +4270,10 @@ def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") 
             end_icao = nearest_airport_icao(row["latitude"], row["longitude"], radius)
             if end_icao == dep:
                 kind = "returned"
+            elif end_icao == dest:
+                # #23 Review M1: letzte Position am ZIEL (Zwischenlande-/Restweg-Klassifikation
+                # trifft hier zufällig den Zielplatz) — das Leg endete am Ziel, kein Verlust.
+                continue
             elif end_icao:
                 kind = "stolen"
         type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
@@ -4447,11 +4462,15 @@ def compute_transport_progress(
         has_latch = bool(dest) and _latch_hits_flight(conn, live_arrivals, int(cid), lo, lf)
         if not has_latch and (dep not in route_set or arr not in route_set or dep == arr):
             continue
-        # Ankunft am Ziel ODER (kein bekanntes, abweichendes Ziel UND Latch) — ein Rückflug-
-        # Bein mit GPS-belegter Landung anderswo (arr gesetzt, ≠ dest) zählt NIE als beladen,
-        # selbst wenn das Connection-Intervall des Hin-Legs noch überlappt (sonst würde ein
-        # Latch vom Hinflug fälschlich auch das Rückflug-Bein beladen zeigen).
-        loaded = bool(dest) and (arr == dest or not arr) and (arr == dest or has_latch)
+        # ECHTE GPS-Ankunft am Ziel ODER (kein bekanntes, abweichendes Ziel UND Latch) — ein
+        # Rückflug-Bein mit GPS-belegter Landung anderswo (arr gesetzt, ≠ dest) zählt NIE als
+        # beladen, selbst wenn das Connection-Intervall des Hin-Legs noch überlappt (sonst
+        # würde ein Latch vom Hinflug fälschlich auch das Rückflug-Bein beladen zeigen).
+        # Bewusst gps_arrival statt arrival (#23 Review C2): der trackless Fallback
+        # (_flightrow_as_flight) setzt arrival aus dem FLUGPLAN — eine reine Plan-Angabe ohne
+        # jeden GPS-Beleg darf NIE als Lieferung zählen ("Plan-Text-Lieferung ohne Flug").
+        gps_arr = normalize_type_code(f.get("gps_arrival"))
+        loaded = bool(dest) and (gps_arr == dest or not arr) and (gps_arr == dest or has_latch)
         type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
         if loaded and type_code and type_code not in payload_map:
             unmapped.add(type_code)
@@ -4477,6 +4496,13 @@ def compute_transport_progress(
 
     # Aktuell offene Flüge (noch verbunden) — bisher komplett ignoriert, da canonicalize_flights
     # logoff_time IS NOT NULL verlangt. Zählen ab dem Live-Ankunfts-Latch, ohne Disconnect.
+    # #23 Review C1: eine Connection, die bereits eine GELADENE geschlossene GPS-Leg-Zeile
+    # geliefert hat (Landung am Ziel erkannt), aber noch verbunden ist (flights.logoff_time
+    # NULL), taucht sonst HIER erneut auf (canonicalize_legs erlaubt logoff_time IS NULL im
+    # fs-WHERE) — Doppelzählung derselben Fracht. Nur bei bereits GELADENER Connection
+    # skippen: ein geschlossenes, NICHT geladenes Zwischenlande-Bein (arr ≠ dest) einer noch
+    # offenen Weiterreise darf die In-Air-Reservierung nicht unterdrücken.
+    loaded_conn_logons = {q["_conn_logon"] for q in network if q.get("loaded") and q.get("_conn_logon")}
     returning_cids: set[int] = set()
     returning_info: dict[int, dict] = {}  # Muster/Callsign für Nur-Rückflug-Teilnehmer (nicht im Feed)
     for f in open_transport_flights(conn, callsign_prefix):
@@ -4485,6 +4511,8 @@ def compute_transport_progress(
             continue
         lo = f.get("logon_time") or ""
         if lo < start:
+            continue
+        if lo in loaded_conn_logons:
             continue
         dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
             or normalize_type_code(f.get("departure"))
@@ -4533,15 +4561,25 @@ def compute_transport_progress(
     losses = get_transport_losses(conn, int(event["id"]))
     loss_by_conn: dict[str, dict] = {f"{l['cid']}:{l['logon_time']}": l for l in losses}
     seen_conn = {f"{q['cid']}:{q['_conn_logon']}" for q in network if q.get("_conn_logon")}
+    # #23 Review I2: mehrere nicht-geladene Feed-Zeilen derselben Connection teilen denselben
+    # `_conn_logon` (z. B. eine Mehrbein-Connection mit mehreren Zwischenlande-Beinen ohne
+    # Lieferung) — pro Connection-Loss-Key darf NUR EINE Zeile den Verlust tragen, sonst
+    # zählt lost_kg/lost_total_kg mehrfach. Gewählt wird die späteste (höchstes dep_time).
+    attach_target: dict[str, dict] = {}
     for q in network:
-        conn_key = f"{q['cid']}:{q['_conn_logon']}" if q.get("_conn_logon") else None
-        l = loss_by_conn.get(conn_key) if conn_key else None
-        if not l:
+        if q["loaded"] or not q.get("_conn_logon"):
             continue
-        if not q["loaded"]:
-            q["loss_kind"] = l["kind"]
-            q["lost_kg"] = round(payload_map.get(normalize_type_code(l.get("type_code")), default_kg), 1) \
-                if l["kind"] in ("stolen", "sunk") else 0.0
+        conn_key = f"{q['cid']}:{q['_conn_logon']}"
+        if conn_key not in loss_by_conn:
+            continue
+        current = attach_target.get(conn_key)
+        if current is None or q["dep_time"] > current["dep_time"]:
+            attach_target[conn_key] = q
+    for conn_key, q in attach_target.items():
+        l = loss_by_conn[conn_key]
+        q["loss_kind"] = l["kind"]
+        q["lost_kg"] = round(payload_map.get(normalize_type_code(l.get("type_code")), default_kg), 1) \
+            if l["kind"] in ("stolen", "sunk") else 0.0
     for key, l in loss_by_conn.items():
         if key in seen_conn:
             continue
