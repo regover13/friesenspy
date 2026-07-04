@@ -3346,6 +3346,18 @@ function scheduleFlightsRefresh(cid, pilotName, delayMs, fullLoad) {
   }, delayMs);
 }
 
+// „läuft" = tatsächlich live: kein Ziel/Abschluss UND letzte GPS-Position frisch (< 15 min).
+// Aus last_pos_ts (statisch, backend) gegen die lokale Uhr — NICHT aus connection_closed
+// (Flugplan-Begriff). Ein Wochen-altes offenes Leg (Track riss ab) ist damit NICHT live. #v8.1.0
+const _LIVE_MAX_AGE_MS = 15 * 60 * 1000;
+function _isLiveLeg(f) {
+  if (f.gps_arrival || f.logoff_time) return false;
+  const last = f.last_pos_ts;
+  if (!last) return false;
+  const age = Date.now() - Date.parse(last);
+  return age >= 0 && age < _LIVE_MAX_AGE_MS;
+}
+
 function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   const container = document.getElementById('stats-content');
   const fsCount = flights.filter(f => f.source === 'friesenspy').length;
@@ -3373,12 +3385,15 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       </tr></thead><tbody>`;
 
     for (const f of flights) {
+      const live = _isLiveLeg(f);
+      const distNm0 = f.distance_nm != null ? Math.round(f.distance_nm) : 0;
+      // Geister-Leg (0 min, ~0 nm, nicht live): Track riss direkt nach dem Start ab → nicht anzeigen.
+      if ((f.duration_min || 0) === 0 && distNm0 <= 1 && !live) continue;
       const dep = f.gps_departure || '????';
       const gpsArr = f.gps_arrival || '';
-      // Offen = GPS-Ankunft fehlt UND die Verbindung ist (laut Backend) noch nicht
-      // abgeschlossen. Ein geschlossener Flug ohne Ankunft (Absturz/Datenlücke) bleibt "????".
-      const isOpen = !gpsArr && !f.connection_closed;
-      const arrCell = isOpen ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '????');
+      // „läuft" NUR wenn tatsächlich live (offen UND letzte GPS-Position frisch). Alt/offen
+      // ohne Ankunft → „????". connection_closed steuert das NICHT mehr (Flugplan-Begriff).
+      const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '????');
       const planDep = f.plan_departure || '';
       const planArr = f.plan_arrival || '';
       const planText = (planDep || planArr) ? `${escHtml(planDep || '?')} → ${escHtml(planArr || '?')}` : '—';
@@ -3402,23 +3417,33 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       const unscoredBadge = unscored
         ? ` <span class="badge-unscored" title="Kein ${escHtml(_callsignPrefix)}-Callsign — zählt nicht in Statistik/Bummel/Kutter">nicht gewertet</span>`
         : '';
-      // #23/#31: GPS-Legs ohne zugeordneten Flugplan haben keine flights.id → kein Track-
-      // Endpoint verfügbar. Button dann sichtbar, aber deaktiviert statt totem Klick.
-      const trackId = f.source === 'friesenspy' ? f.id : f.statsim_id;
+      // Track IMMER über GPS ladbar (GPS-only): StatSim → statsim_id; FS mit Flugplan-id →
+      // flights-Endpoint; FS ohne id → cid-Fenster-Endpoint ('pilot'). last_pos_ts ist die
+      // Obergrenze (nie „now"), damit offene/alte Legs nicht Positionen späterer Flüge ziehen.
+      let trackSrc, trackId;
+      if (f.source === 'statsim') { trackSrc = 'statsim'; trackId = f.statsim_id; }
+      else if (f.id != null)      { trackSrc = 'friesenspy'; trackId = f.id; }
+      else                        { trackSrc = 'pilot'; trackId = f.cid; }
+      const trackUpper = f.last_pos_ts || f.logoff_time || '';
       const hasTrack = trackId != null;
       const trackIcon = `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
       const trackCell = hasTrack
         ? `<span class="td-map-btn track-btn"
               data-track-id="${trackId}"
-              data-track-src="${f.source === 'friesenspy' ? 'friesenspy' : 'statsim'}"
+              data-track-src="${trackSrc}"
               data-logon="${escHtml(f.logon_time || '')}"
-              data-logoff="${escHtml(f.logoff_time || '')}"
+              data-logoff="${escHtml(trackUpper)}"
               data-callsign="${escHtml(f.callsign || '')}"
               data-dep="${escHtml(dep)}"
               data-arr="${escHtml(gpsArr)}"
-              title="Track anzeigen">${trackIcon}</span>`
-        : `<span class="td-map-btn" style="opacity:0.25;cursor:default;" title="Kein Track — dieses GPS-Leg hat keinen zugeordneten Flugplan">${trackIcon}</span>`;
-      html += `<tr class="flight-row" style="cursor:pointer;"
+              title="GPS-Track anzeigen">${trackIcon}</span>`
+        : `<span class="td-map-btn" style="opacity:0.25;cursor:default;" title="Kein Track verfügbar">${trackIcon}</span>`;
+      // Plan-Zelle: klickbar (blau) NUR wenn ein Flugplan vorliegt → öffnet Flugplan-Detail.
+      const hasPlan = !!(planDep || planArr);
+      const planCell = hasPlan
+        ? `<td class="mono td-plan-link text-green" style="cursor:pointer;" title="Flugplan öffnen">${planText}</td>`
+        : `<td class="mono text-label">${planText}</td>`;
+      html += `<tr class="flight-row"
           data-cs="${escHtml(f.callsign || '—')}"
           data-ac="${escHtml(f.aircraft || '—')}"
           data-acicao="${escHtml(f.aircraft_icao || '')}"
@@ -3441,8 +3466,8 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
           data-remarks="${escHtml(f.remarks || '')}"
           data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
         <td class="mono">${escHtml(f.callsign || '—')}${unscoredBadge}</td>
-        <td class="td-route text-green">${escHtml(dep)} → ${arrCell}</td>
-        <td class="mono text-label">${planText}</td>
+        <td class="mono">${escHtml(dep)} → ${arrCell}</td>
+        ${planCell}
         <td class="mono">${escHtml(dt)}</td>
         <td class="mono">${dur}</td>
         <td class="mono">${blk}</td>
@@ -3475,9 +3500,11 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
     });
   });
 
-  container.querySelectorAll('.flight-row').forEach(tr => {
-    tr.addEventListener('click', () => {
-      openFlightDetailModal(tr.dataset);
+  // GPS-only: NUR die Plan-Zelle öffnet den Flugplan (Strecke=GPS ist reine Anzeige, nicht
+  // klickbar; Track öffnet den GPS-Track). Kein Zeilen-Klick mehr. #v8.1.0
+  container.querySelectorAll('.td-plan-link').forEach(td => {
+    td.addEventListener('click', () => {
+      openFlightDetailModal(td.closest('tr').dataset);
     });
   });
 }
@@ -3494,9 +3521,17 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff) {
   document.getElementById('track-modal-info').textContent = 'Lade Track...';
   document.getElementById('track-modal').classList.remove('hidden');
   document.addEventListener('keydown', _trackEscHandler);
+  // Deep-Link nur für id-basierte Tracks (friesenspy/statsim). 'pilot' (GPS-Leg ohne id) hängt
+  // am Zeitfenster, das nicht in der URL steht → nicht deep-linkbar, sonst würde ein Reload den
+  // ganzen cid-Track ohne Fenster laden.
   const p = getUrlState();
-  p.set('track', id);
-  p.set('src', source);
+  if (source === 'pilot') {
+    p.delete('track');
+    p.delete('src');
+  } else {
+    p.set('track', id);
+    p.set('src', source);
+  }
   history.replaceState(null, '', '#' + p.toString());
 
   requestAnimationFrame(() => {
@@ -3527,10 +3562,16 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff) {
 
 async function _loadAndDrawTrack(source, id, logon, logoff) {
   try {
-    let url = source === 'friesenspy'
-      ? `/api/flights/${id}/track`
-      : `/api/flights/statsim/${id}/track`;
-    if (source === 'friesenspy' && (logon || logoff)) {
+    // 'pilot' = GPS-Track rein über cid + Zeitfenster (GPS-Leg ohne flights-id, #v8.1.0).
+    let url;
+    if (source === 'statsim') {
+      url = `/api/flights/statsim/${id}/track`;
+    } else if (source === 'pilot') {
+      url = `/api/pilots/${id}/track`;
+    } else {
+      url = `/api/flights/${id}/track`;
+    }
+    if (source !== 'statsim' && (logon || logoff)) {
       const params = new URLSearchParams();
       if (logon) params.set('logon', logon);
       if (logoff) params.set('logoff', logoff);
