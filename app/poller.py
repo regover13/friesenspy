@@ -23,15 +23,18 @@ from app.database import (
     get_live_positions,
     get_push_subscriptions_for_pilot,
     get_push_subscriptions_for_prefile,
+    get_uncached_statsim_ids,
     cid_for_callsign,
     get_ts_consent,
     get_ts_push_subscriptions,
     last_known_aircraft,
     load_prefile_sigs,
     open_flight,
+    rebuild_flight_cache,
     remove_live_position,
     save_position_history,
     save_prefile_sigs,
+    save_statsim_positions,
     update_flight_plan,
     upsert_live_position,
     upsert_statsim_flights,
@@ -40,7 +43,7 @@ from app.database import (
 )
 from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_position
 from app.alerts import format_online_message, send_telegram_alert
-from app.statsim import fetch_pilot_flights
+from app.statsim import fetch_flight_track, fetch_pilot_flights
 from app.teamspeak import fetch_channel_clients, parse_channel_ids
 
 logger = logging.getLogger(__name__)
@@ -435,6 +438,28 @@ class VatsimPoller:
             "interval",
             minutes=5,
             id="event_reminder_check",
+        )
+        # flight_cache (#23 Phase 2): einmaliger Warm-up kurz nach Start (voller Rebuild,
+        # ~5,5 s — via to_thread, damit der erste /api/stats nach Deploy nicht synchron
+        # blockiert), danach periodischer inkrementeller Refresh (~0,5 s).
+        self._scheduler.add_job(
+            self._warmup_flight_cache,
+            "date",
+            id="flight_cache_warmup",
+        )
+        self._scheduler.add_job(
+            self._refresh_flight_cache,
+            "interval",
+            minutes=5,
+            id="flight_cache_refresh",
+        )
+        # StatSim (#23 Phase 2b): proaktives Nachladen der GPS-Tracks neuer StatSim-Flüge
+        # (kleine Batches, gedrosselt) — kein Voll-Backfill, der bleibt Admin-Aktion.
+        self._scheduler.add_job(
+            self._fetch_statsim_tracks,
+            "interval",
+            minutes=10,
+            id="statsim_track_fetch",
         )
         if self.ts_notify_enabled:
             # Job läuft für die Live-Anzeige unabhängig von VAPID; Push-Versand ist in
@@ -1001,6 +1026,93 @@ class VatsimPoller:
                 logger.info("Calendar sync: %d events gespeichert", len(events))
         except Exception:
             logger.exception("Error in _sync_calendar")
+
+    # ------------------------------------------------------------------
+    # flight_cache Warm-up + Refresh (#23 Phase 2)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _rebuild_flight_cache_sync(db_path: str, *, full: bool) -> int:
+        """Verbindung öffnen, Rebuild ausführen, Verbindung schließen — alles im selben
+        Thread (sqlite3-Connections sind an ihren Erzeuger-Thread gebunden; ``conn`` darf
+        NICHT auf dem Event-Loop-Thread erzeugt und dann in ``to_thread`` benutzt werden)."""
+        conn = get_connection(db_path)
+        try:
+            return rebuild_flight_cache(conn, full=full)
+        finally:
+            conn.close()
+
+    async def _warmup_flight_cache(self) -> None:
+        """Einmaliger voller Rebuild von ``flight_cache`` kurz nach App-Start (~5,5 s).
+
+        Läuft via ``asyncio.to_thread``, damit der synchrone Rebuild NICHT den Event-Loop
+        blockiert (sonst würde er den Poll und alle anderen Jobs für die Dauer anhalten).
+        Silent fail — ein fehlgeschlagener Warm-up darf den App-Start nicht gefährden;
+        ``get_cached_flights`` würde sonst beim ersten Request lazy nachziehen.
+        """
+        try:
+            n = await asyncio.to_thread(self._rebuild_flight_cache_sync, self.db_path, full=True)
+            logger.info("flight_cache Warm-up: %d Flüge materialisiert", n)
+        except Exception:
+            logger.exception("Error in _warmup_flight_cache")
+
+    async def _refresh_flight_cache(self) -> None:
+        """Periodischer inkrementeller Refresh von ``flight_cache`` (~0,5 s, letzte Tage).
+
+        Ebenfalls via ``asyncio.to_thread`` — auch der inkrementelle Rebuild ist synchroner
+        DB-Zugriff und soll den Event-Loop nicht blockieren.
+        """
+        try:
+            n = await asyncio.to_thread(self._rebuild_flight_cache_sync, self.db_path, full=False)
+            logger.debug("flight_cache Refresh: %d Flüge materialisiert", n)
+        except Exception:
+            logger.exception("Error in _refresh_flight_cache")
+
+    # ------------------------------------------------------------------
+    # StatSim: proaktives Track-Nachladen (#23 Phase 2b)
+    # ------------------------------------------------------------------
+
+    async def _fetch_statsim_tracks(self) -> None:
+        """Holt GPS-Tracks für die jüngsten noch ungecachten StatSim-Flüge nach.
+
+        Kleine Batches (20/Lauf), gedrosselt (~0,3 s je Abruf) — kein Voll-Backfill (der
+        bleibt eine Admin-Aktion, ``/api/admin/statsim-backfill``). Eine fehlschlagende
+        Flug-ID darf den Rest des Batches nicht verhindern. Silent skip ohne API-Key.
+        """
+        settings = get_settings()
+        if not settings.STATSIM_API_KEY:
+            return
+        try:
+            conn = get_connection(self.db_path)
+            try:
+                ids = get_uncached_statsim_ids(
+                    conn, callsign_prefix=self.callsign_prefix, limit=20
+                )
+                if not ids:
+                    return
+                assert self._http_client is not None
+                fetched = 0
+                for sid in ids:
+                    try:
+                        positions = await fetch_flight_track(
+                            self._http_client, sid, settings.STATSIM_API_KEY
+                        )
+                        if positions:
+                            save_statsim_positions(conn, sid, positions)
+                            fetched += 1
+                    except Exception:
+                        logger.warning(
+                            "StatSim Track-Nachladen fehlgeschlagen für Flug %s", sid
+                        )
+                    await asyncio.sleep(0.3)
+                conn.commit()
+                logger.info(
+                    "StatSim Track-Nachladen: %d/%d Flüge neu gecacht", fetched, len(ids)
+                )
+            finally:
+                conn.close()
+        except Exception:
+            logger.exception("Error in _fetch_statsim_tracks")
 
     # ------------------------------------------------------------------
     # Bummel-Enthüllung (Latch)
