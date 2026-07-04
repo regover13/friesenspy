@@ -1,5 +1,19 @@
 [
   {
+    "version": "8.0.0",
+    "date": "2026-07-04",
+    "highlight": true,
+    "title": "GPS-Erkennung aktiv: Flüge zählen jetzt am echten Flugweg",
+    "items": [
+      "🛰️ Flüge und Etappen werden jetzt aus dem GPS-Track erkannt (echte Landung am Flugplatz) statt am Verbindungsende oder Flugplanwechsel — das gilt jetzt überall: Statistik, Piloten-Detail, FriesenFliegerBummel UND FriesenKutter.",
+      "🛬 Eine Zwischenlandung ohne neuen Flugplan wird jetzt als eigener Flug erfasst, und die Ankunft zählt sofort — kein Disconnect mehr nötig.",
+      "📜 Die komplette Flug-Historie wurde rückwirkend nach dem neuen Verfahren neu bewertet — deshalb dieses große Update.",
+      "⏱️ Flugzeit (Abheben → Landung) und Blockzeit (gate-to-gate inkl. Taxi) werden jetzt sauber getrennt ausgewiesen.",
+      "🗺️ In den Fluglisten stehen GPS-Route und Flugplan jetzt nebeneinander; ein noch laufender Flug trägt ein „🛫 läuft“-Kennzeichen, Flüge unter fremdem (Nicht-FRS-)Callsign sind als „nicht gewertet“ markiert.",
+      "📍 Der Landeplatz-Radius wurde datenbasiert auf 4 km geschärft (genauere Platz-Zuordnung) — dafür entfällt der bisher pro Bummel/Kutter einstellbare Radius."
+    ]
+  },
+  {
     "version": "7.9.4",
     "date": "2026-07-03",
     "title": "StatSim-Backfill im Hintergrund",

@@ -34,41 +34,46 @@ Es wird kein VATSIM-Account benötigt. FriesenSpy liest ausschließlich öffentl
 
 > **Test-Connects** (keine Bewegung, kein Flugplan) werden herausgefiltert — ein Flug erscheint nur wenn er mindestens ~1 km zurückgelegt hat oder länger als 5 Minuten dauerte. Echte Kurzstrecken erscheinen damit vollständig. Flüge, die FriesenSpy selbst aufgezeichnet hat und die auch in StatSim vorhanden sind, werden nie doppelt gezählt.
 
-### Wie FriesenSpy Flüge zählt
+### Wie FriesenSpy Flüge zählt (GPS-only, seit v8.0.0)
 
-VATSIM-Piloten trennen die Verbindung manchmal kurz, ohne dass ein echter Flugwechsel stattfindet. FriesenSpy erkennt solche Fragmente automatisch und fasst sie zu einem Flug zusammen.
+Seit v8.0.0 ist der **GPS-Track die einzige Wahrheit** für „was ist ein Flug". FriesenSpy
+erkennt Abheben und Landung direkt aus den aufgezeichneten Positionen — nicht mehr aus dem
+Verbindungsende oder einem Flugplanwechsel:
 
-**Zwei Einträge werden zu einem Flug gemergt, wenn:**
-- gleicher Callsign
-- Zeitlücke ≤ 5 Minuten
-- und einer der folgenden Fälle zutrifft:
+- **Abheben** wird an der Höhe über dem Boden erkannt (nicht an der Geschwindigkeit — damit
+  auch ein langsam steigendes STOL/Heli sauber erfasst wird).
+- **Landung zählt nur an einem echten Flugplatz** (Umkreis-Check, siehe unten). Eine Außenlandung
+  ist per GPS nicht von einem Absturz zu unterscheiden — deshalb wird sie bewusst nie als Ankunft
+  gewertet; der Flug bleibt offen, bis der Pilot tatsächlich an einem Platz landet.
+- **Zwischenlandungen ohne neuen Flugplan** werden dadurch automatisch als eigene Flüge erfasst —
+  A → B → C ist jetzt garantiert zwei Flüge, auch wenn der Pilot nie neu gefiled hat.
+- **Die Ankunft zählt sofort**, sobald der GPS-Track sie zeigt — ein Disconnect ist dafür nicht
+  mehr nötig. Eine Platzrunde (mehrere Landungen am selben Platz, z.B. Touch-and-Go) bleibt dabei
+  weiterhin **ein** Flug, keine Mehrfachzählung.
+- Der **eingereichte Flugplan** (DEP/ARR) bleibt erhalten und wird weiterhin angezeigt — er ist
+  aber nur noch Beschriftung, keine Grundlage mehr für die Flugzählung selbst.
 
-| Fall | Beschreibung | Beispiel |
-|------|-------------|---------|
-| **Gleicher Flugplan** | Beide Einträge haben denselben DEP+ARR | Verbindungsabbruch mid-flight, sofort reconnect mit gleichem Plan |
-| **Kein Flugplan → Flugplan** | Erster Eintrag ohne DEP/ARR, zweiter mit Flugplan — **und** erste GPS-Position des ersten Eintrags liegt innerhalb 10 km des DEP-Airports | Pilot steht am GAT, gibt Flugplan auf, reconnect; oder Pilot startet, merkt nach 5 Min dass FP fehlt, reconnect |
+**Fallback ohne GPS-Track:** Fehlt ein Track (z. B. reine StatSim-Historie oder ein Serverausfall
+mitten im Flug), fällt FriesenSpy auf die klassische, refile-/disconnect-basierte Erkennung
+zurück (Reconnect-Merge über Callsign + Flugplan + Zeitlücke, wie zuvor) — Details dazu unter
+[`docs/architecture.md`](docs/architecture.md) → „GPS-Leg-Erkennung" / `canonicalize_legs`.
 
-**Was nicht gemergt wird:**
-- Zwei Einträge mit **unterschiedlichen** Flugplänen (verschiedenes DEP oder ARR) → immer zwei separate Flüge
-- Kein-FP-Eintrag gefolgt von Flugplan, aber **Startposition > 10 km** vom DEP-Airport entfernt → zwei separate Flüge (Pilot war woanders)
-- Der erste Eintrag ist **geflogen und am Boden geendet** (gelandet — egal wo) → der Flug ist abgeschlossen; ein späterer Eintrag ist ein **neuer Flug**. Das schützt den Fall „Rückflug mit stehengebliebenem (altem) Flugplan" in beide Richtungen: weder wird der Rückflug in den gelandeten Hinflug gemergt, noch der nächste Hinflug in den gelandeten Rückflug. Reine Boden-Einträge (nie geflogen, z. B. Reconnect am Gate vor dem Neu-Filen) mergen weiterhin.
+**Historie rückwirkend neu bewertet:** Mit der Aktivierung wurde die komplette bestehende
+Flug-Historie nach dem neuen Verfahren neu berechnet (kein Daten-Backfill nötig, die GPS-Tracks
+lagen bereits vor) — deshalb ist v8.0.0 ein Major-Release.
 
-**Flugplan-Änderungserkennung während des Fluges:** Ändert ein Pilot seinen Flugplan während einer aktiven Verbindung, reagiert FriesenSpy sofort beim nächsten 15-Sekunden-Poll:
-- **Kein Plan → Plan eingereicht**: DEP/ARR wird dem laufenden Flug-Eintrag nachgetragen.
-- **Plan A → Plan B** (z.B. nach Zwischenstopp): der laufende Flug wird sauber abgeschlossen und ein neues Segment mit dem neuen Flugplan geöffnet.
-
-**Beispiel:** Pilot fliegt Bonn (EDKB) → Köln (EDDK) ohne Flugplan (20 Min), landet, reconnect mit Flugplan Köln (EDDK) → Düsseldorf (EDDL) — das sind **zwei Flüge**: der erste startete in Bonn (~11 km von EDDK entfernt, außerhalb der 10-km-Grenze).
+**Flugzeit vs. Blockzeit:** Pro Flug werden zwei Zeiten unterschieden — **Flugzeit** (Abheben →
+Landung, reine Luftzeit) und **Blockzeit** (gate-to-gate: Bewegung inkl. Taxi, ab Losrollen bis
+zum Stillstand nach der Landung; belegte Standphasen ab 10 Minuten — z. B. eine Zwischenlandung
+ohne Disconnect — zählen nicht mit). Beide erscheinen getrennt in den Fluglisten.
 
 **Woher kommen die Airport-Koordinaten?** Der Geo-Check nutzt das Python-Package [`airportsdata`](https://github.com/mborsetti/airportsdata), das eine vollständige ICAO-Datenbank eingebettet enthält — inklusive aller deutschen Sonderlandeplätze und Kleinflugplätze (z.B. EDKB, EDKV, EDRV). Die Koordinaten stammen aus der [OurAirports](https://ourairports.com)-Datenbank. Es findet kein API-Call statt — die Abfrage ist offline und instant.
 
-> **🛰️ GPS-Etappen-Erkennung (in Arbeit, ab v7.9.0 im Schatten).** Parallel entsteht eine
-> Erkennung von Flug-Etappen **rein aus den GPS-Positionen** (Abheben nach Höhe, Landung nur an
-> einem Flugplatz) — sie soll die obige refile-/disconnect-basierte Zählung künftig ablösen und
-> zerlegt auch eine **Zwischenlandung ohne Refile** in eigene Etappen. **Phase 1 ändert bewusst
-> noch keine Wertung:** die Etappen werden nur erfasst und über ein rein lesendes Admin-Audit
-> (`GET /api/admin/gps-leg-audit`) gegen die heutige Zählung geprüft. Details:
-> [`docs/architecture.md`](docs/architecture.md) → „GPS-Leg-Erkennung", Plan unter
-> `docs/superpowers/plans/2026-07-02-gps-leg-detection.md`.
+> **Landeplatz-Radius:** Ein datenbasiert ermittelter, **fester Radius von 4 km** um einen
+> Flugplatz gilt für die gesamte Platz-Zuordnung (Flugerkennung, FriesenFliegerBummel,
+> FriesenKutter) — klein genug, um eng benachbarte Plätze (z. B. Ostfriesische Inseln) nicht zu
+> verwechseln. Es gibt **keinen** separat einstellbaren Radius mehr pro Bummel-Rennen oder
+> Kutter-Event.
 
 ---
 
@@ -136,6 +141,14 @@ Einzelflüge können aus zwei Quellen stammen — erkennbar am Badge:
 - **Kein Badge** = FriesenSpy hat den Flug live aufgezeichnet → voller GPS-Track auf der Karte verfügbar
 - **◌ StatSim** = Flug kommt aus der StatSim-Datenbank → kein GPS-Track, nur Flugplan-Daten (Start, Ziel, Dauer)
 
+**GPS-Route und Flugplan getrennt (seit v8.0.0):** Die Einzelflug-Liste zeigt zwei eigene Spalten
+— die tatsächlich geflogene **GPS-Route** (woher/wohin die Landung wirklich erkannt wurde) und
+daneben den **eingereichten Flugplan** (DEP/ARR), falls vorhanden; beide können bei einer
+Zwischenlandung ohne Refile auseinanderfallen. Ein noch nicht gelandeter (offener) Flug trägt ein
+**„🛫 läuft"**-Kennzeichen statt eines Ziels. Flüge unter einem **Nicht-`FRS`-Callsign** (z. B. ein
+anderes Rufzeichen desselben Piloten) erscheinen ebenfalls in der Liste, tragen aber ein **„nicht
+gewertet"**-Badge — sie zählen nicht in Statistik, FriesenFliegerBummel oder FriesenKutter.
+
 ---
 
 ### 🔍 Event-Suche
@@ -175,7 +188,7 @@ Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzwelt
 - **Frühstarter zählen mit:** Wer schon vor dem offiziellen Event-Start losfliegt, aber währenddessen unterwegs ist, wird mit seiner **vollen Blockzeit** gewertet.
 - **Gewertete Zeit** = Summe der Blockzeiten (Bewegungszeit gate-to-gate inkl. Taxi und kurzer Halte; längere Standphasen ab 10 min — z. B. eine Zwischenlandung ohne Disconnect — zählen nicht) der Tour-Beine. Tatsächlich geflogene Meilen, Warteschleifen und Umwege spielen keine Rolle.
 - **Niemand fällt still raus:** Piloten, die noch nicht alle Flugplätze besucht haben, werden separat als „unvollständig" mit den fehlenden Flugplätzen aufgelistet.
-- **GPS statt Flugplan:** Ob ein Pilot an einem Flugplatz war, erkennt FriesenSpy am **GPS-Track** (erste/letzte Position am Flugplatz), nicht am eingereichten Flugplan. Ein Tippfehler im Flugplan kann eine Wertung also nicht verhindern; der Flugplan dient nur als Rückfall, wenn kein Track vorliegt. Wie nah eine Position an einem Streckenflugplatz liegen muss, steuert der **Radius** des Rennens (Default 10 km — bewusst klein, damit Nachbarflugplätze nicht verwechselt werden).
+- **GPS statt Flugplan:** Ob ein Pilot an einem Flugplatz war, erkennt FriesenSpy am **GPS-Track** (erste/letzte Position am Flugplatz), nicht am eingereichten Flugplan. Ein Tippfehler im Flugplan kann eine Wertung also nicht verhindern; der Flugplan dient nur als Rückfall, wenn kein Track vorliegt. Wie nah eine Position an einem Streckenflugplatz liegen muss, steuert der **feste, globale 4-km-Radius** (siehe oben) — es gibt keinen separat einstellbaren Radius mehr pro Rennen.
 
 **Fairness-Verdeckung — keine Zeitvorteile durch Nachschauen:** Solange das Rennen läuft, bleiben Durchschnittszeit, Einzelzeiten und das Ranking verborgen — ein noch nicht geflogener Pilot könnte seine Zeit sonst bewusst auf den Schnitt ausrichten. Sichtbar sind nur: wer teilnimmt, Callsign, Flugzeugtyp, Flugplan (Start/Ziel/Route), Abfluguhrzeit, Fortschritt (besuchte Flugplätze, fehlende Flugplätze, Anzahl Legs) und wer gerade unterwegs ist. Die vollständige Auswertung (Zeiten, Schnitt, Ranking) erscheint frühestens bei `dtend` — dem Renn-Ende aus dem Kalendertermin (fehlt es → Mitternacht UTC am Ende des Starttags) — und erst wenn keine Nachzügler mehr in der Luft sind. Einmal enthüllt, bleibt das Ergebnis dauerhaft sichtbar.
 
@@ -227,8 +240,8 @@ Der **FriesenKutter** ist ein kleines „FSE für Friesen": ein Transportflug-Ev
 - **Frachtart-Katalog:** Im Admin pflegbare Frachtarten mit Emoji und optionaler Obergrenze pro Flug — z.B. Krabbenbrötchen 🦐 oder Filmrollen 🎞️ (max 100 kg). Ist eine Frachtart gedeckelt, nimmt der Rest der Zuladung eines Flugs automatisch die nächste Frachtart mit (Co-Load).
 - **Lustige KI-Sprüche (optional):** Ist der Schalter im Admin aktiv, schreibt Claude zu jedem Flug einen Einzeiler im Friesen-Humor — mit Bezug auf Vorname, Fleiß, Tempo und Umwege — plus eine launige Tagesend-Zusammenfassung.
 - **Fracht direkt im Kalendertermin:** Eine Zeile wie `Fracht: 1000 Krabbenbrötchen, 500 Friesentee` in der Termin-Beschreibung befüllt das Manifest beim Kalender-Sync automatisch (Namen gegen den Katalog abgeglichen). Nur beim erstmaligen Anlegen — spätere Admin-Bearbeitungen bleiben bei erneutem Sync erhalten.
-- **Ohne Disconnect zählen:** Fracht wird bereits erfasst, sobald du erkennbar am Boden (< 2 kt Geschwindigkeit) im 10-km-Umkreis um das Ziel bist — du musst nicht disconnecten. Einmal erkannt, bleibt die Fracht dauerhaft gezählt, auch wenn du danach weiterfliegst.
-- **Reservierung, Teilnehmerliste & verlorene Fracht:** Wer Richtung Ziel abhebt, reserviert seine Zuladung sofort sichtbar im Balken (»davon X kg unterwegs«); eine Teilnehmerliste zeigt wer fliegt, angekommen ist oder zurückkehrt. Wer sein Ziel nie erreicht, verliert die Ladung — »Kutter versunken« oder »geklaut«, im Feed und in der Bilanz sichtbar. Der Erkennungs-Umkreis ist pro Event einstellbar (Standard 10 km, z.B. für kurze Strecken wie Wangerooge↔Harle).
+- **Ohne Disconnect zählen:** Fracht wird bereits erfasst, sobald du am Ziel-Flugplatz landest (GPS-erkannte Landung) — du musst nicht disconnecten. Einmal erkannt, bleibt die Fracht dauerhaft gezählt, auch wenn du danach weiterfliegst.
+- **Reservierung, Teilnehmerliste & verlorene Fracht:** Wer Richtung Ziel abhebt, reserviert seine Zuladung sofort sichtbar im Balken (»davon X kg unterwegs«); eine Teilnehmerliste zeigt wer fliegt, angekommen ist oder zurückkehrt. Wer sein Ziel nie erreicht, verliert die Ladung — »Kutter versunken« oder »geklaut«, im Feed und in der Bilanz sichtbar. Der Erkennungs-Umkreis ist der feste, globale 4-km-Radius (siehe oben) — es gibt keinen separat einstellbaren Radius mehr pro Event.
 - **Forum-Badge nach der Feierabend-Bilanz:** Sobald ein Event abgeschlossen ist, bekommt jeder Teilnehmer ein rundes Badge-PNG „Voll beladen!" (Callsign, Flugzeugmuster, gelieferte kg) — bei verlorener Fracht zusätzlich mit Verlust-Titel **SPITZBOOV!** (geklaut), **BADEMESTER!** (versenkt) oder **SEEROVER!** (beides). Im Events-Tab erscheinen dafür je Teilnehmer **🎖 Badge** (öffnet das PNG) und **📋 Forum** (kopiert den BBCode) über dem Flug-Feed — analog zum Bummel-Badge.
 - **Status im Admin:** Die Admin-Event-Liste zeigt pro Event ein Status-Badge — **Geplant** (vor `dtstart`), **Läuft** (zwischen `dtstart` und `dtend`), **Wartet** (`dtend` erreicht, Feierabend-Bilanz aber noch nicht erstellt — z. B. Nachzügler in der Luft) oder **Feierabend** (Bilanz erstellt). Rein admin-seitig, keine Änderung am Piloten-Frontend.
 
@@ -374,9 +387,9 @@ FriesenSpy kombiniert zwei Datenquellen:
 
 > FriesenSpy-Tracks enthalten dichtere Positionsdaten (15-Sekunden-Intervalle). StatSim dient als Rückfall für ältere Zeiträume oder bei Serverausfall.
 
-**Wie ein „Flug" bestimmt wird.** Eine VATSIM-Verbindung ist über `(CID, Logon-Zeit)` eindeutig — das ist der Schlüssel für einen Flug. Container-Neustarts oder doppelte Aufzeichnungen können nie mehr Duplikate erzeugen (struktureller Unique-Index). Ein **vorübergehender Reconnect** (z. B. kurzer Netzausfall) erzeugt technisch zwei Verbindungen, wird aber zu **einem** Flug zusammengeführt, solange Callsign und Flugplan passen und der Reconnect geografisch plausibel anschließt (ein 10-Minuten-Ausfall, bei dem der Sim weiterfliegt, wird korrekt als ein Flug gewertet). Die Disconnect-Lücke zählt nicht zur Flugzeit. Alle Ansichten (Statistik, Events, Piloten-Detail) berechnen Flugzahl und -dauer aus **einer** gemeinsamen Funktion — die Zahlen stimmen überall überein. Fehlerhafte Altdaten werden reversibel bereinigt (markiert, nicht gelöscht).
+**Wie ein „Flug" bestimmt wird (GPS-only, seit v8.0.0).** Eine VATSIM-Verbindung ist über `(CID, Logon-Zeit)` eindeutig — Container-Neustarts oder doppelte Aufzeichnungen können nie mehr Duplikate erzeugen (struktureller Unique-Index). Die eigentliche **Flugzählung** läuft aber über `canonicalize_legs`: Abheben und Landung werden direkt aus dem GPS-Track erkannt, unabhängig davon, ob die Verbindung dabei getrennt wird. Eine Verbindung kann dadurch **mehrere** Flüge enthalten (Zwischenlandung ohne Refile), und ein Flug zählt bereits bei der GPS-Landung, nicht erst beim Disconnect. **Nur wenn kein GPS-Track vorliegt** (reine StatSim-Historie, Serverausfall mitten im Flug), fällt FriesenSpy auf die klassische refile-/disconnect-basierte Erkennung zurück: ein **vorübergehender Reconnect** (z. B. kurzer Netzausfall) erzeugt technisch zwei Verbindungen, wird aber zu **einem** Flug zusammengeführt, solange Callsign und Flugplan passen und der Reconnect geografisch plausibel anschließt. Alle Ansichten (Statistik, Events, Piloten-Detail, Bummel, Kutter) berechnen Flugzahl und -dauer aus **einer** gemeinsamen Funktion (`canonicalize_legs`, für die globale Statistik über den materialisierten `flight_cache`) — die Zahlen stimmen überall überein. Fehlerhafte Altdaten werden reversibel bereinigt (markiert, nicht gelöscht).
 
-Pro Flug werden zwei Zeiten geführt: **Online-Zeit** (wie lange der Pilot mit VATSIM verbunden war, logon→logoff) und **Block-Zeit** (Summe der tatsächlichen Bewegung gate-to-gate; kurze Halte wie Rollhalt zählen mit, belegte Standphasen ab 10 min — etwa eine Zwischenlandung ohne Disconnect — nicht). So zählt z. B. langes Parken am Gate oder auf dem Vorfeld bei laufender Verbindung zwar in die Online-Zeit, nicht aber in die Block-Zeit. Block-Zeit gibt es nur für FriesenSpy-Aufzeichnungen (StatSim liefert keine GPS-Spur dafür).
+Pro Flug werden zwei Zeiten geführt: **Flugzeit** (Abheben → Landung, `duration_min`) und **Blockzeit** (`block_min`, Summe der tatsächlichen Bewegung gate-to-gate inkl. Taxi; kurze Halte wie Rollhalt zählen mit, belegte Standphasen ab 10 min — etwa eine Zwischenlandung ohne Disconnect — nicht). So zählt z. B. langes Parken am Gate oder auf dem Vorfeld zwar in die Flugzeit, nicht aber in die Blockzeit. Blockzeit gibt es nur für FriesenSpy-Aufzeichnungen (StatSim liefert keine GPS-Spur dafür).
 
 Verliert der VATSIM-Datenfeed einen Piloten kurzzeitig (Feed-Aussetzer), wird die Session beim Wiederauftauchen mit derselben Logon-Zeit nahtlos **wieder geöffnet** — es entstehen weder Duplikate noch verwaiste Tracks. Sollte dennoch einmal ein Flug ohne eigenen Eintrag bleiben (historischer Schaden), rekonstruiert der Server ihn beim Start automatisch aus StatSim + eigenem GPS-Track (`reconstruct_orphaned_flights`).
 
@@ -447,7 +460,7 @@ TS_REJOIN_DEBOUNCE_SEC=900
 pytest tests/ -v
 ```
 
-261 Tests, keine externen Abhängigkeiten (alles gemockt).
+684 Tests, keine externen Abhängigkeiten (alles gemockt).
 
 ### Deployment
 
@@ -481,7 +494,8 @@ FriesenSpy/
 ├── app/
 │   ├── main.py        # FastAPI-App, REST + SSE-Endpoints
 │   ├── config.py      # pydantic-settings (liest config.env)
-│   ├── database.py    # SQLite WAL, alle DB-Funktionen (inkl. app_settings Key-Value-Tabelle, Pilots-CRUD)
+│   ├── database.py    # SQLite WAL, alle DB-Funktionen (inkl. canonicalize_legs, flight_cache, app_settings, Pilots-CRUD)
+│   ├── gps_legs.py    # Reiner GPS-Leg-Detektor (Abheben/Landung aus Positionen, ohne DB) + collapse_same_airport
 │   ├── vatsim.py      # VATSIM-API-Client + Callsign-Filter
 │   ├── statsim.py     # StatSim API-Client (historische Flüge)
 │   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline), Event-Filter
