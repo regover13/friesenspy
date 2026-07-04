@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.3.2",
+    "date": "2026-07-04",
+    "title": "Callsign fehlte bei StatSim-Flügen ohne erkannten Startplatz",
+    "items": [
+      "🏷️ StatSim-Flüge, deren GPS-Track schon fliegend spawnt (Startplatz nicht erkennbar), zeigten das Callsign leer — jetzt fällt es wie das Aircraft-Feld auf den in StatSim gespeicherten Wert zurück."
+    ]
+  },
+  {
     "version": "8.3.1",
     "date": "2026-07-04",
     "title": "StatSim-Backfill jetzt per Admin-Button auslösbar",

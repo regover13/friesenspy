@@ -206,6 +206,37 @@ class TestAircraftFallback:
         assert flight["aircraft"] == "PA28"
 
 
+class TestStatsimCallsignFallback:
+    def test_no_plan_match_falls_back_to_row_callsign(self):
+        """UI-Feedback: StatSim-GPS-Legs ohne Plan-Match (Track spawnt bereits fliegend fernab
+        jedes Platzes -> dep_icao unbekannt -> _assign_flightplan liefert None) zeigten
+        callsign leer. statsim_position_history hat KEINE callsign-Spalte -> callsign_by_ts
+        (Fallback in _gps_flights_for_positions) findet dort nie einen Treffer — anders als
+        bei FriesenSpy-Tracks (position_history hat callsign). Die statsim_cache-Zeile kennt
+        den Callsign aber längst (row.callsign), analog zum bestehenden Aircraft-Fallback."""
+        conn = _make_conn()
+        cid = 4321
+        _insert_statsim(
+            conn, 9501, cid=cid, callsign="DLH123", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:58:00Z", logoff_time="2026-07-02T10:35:00Z",
+            duration_min=37, aircraft="C172",
+        )
+        _insert_statsim_pos(conn, 9501, "2026-07-02T10:00:00Z", *REMOTE, 3000, 120)
+        _insert_statsim_pos(conn, 9501, "2026-07-02T10:10:00Z", 53.5, 6.0, 2500, 110)
+        _insert_statsim_pos(conn, 9501, "2026-07-02T10:20:00Z", 53.2, 7.5, 1000, 90)
+        _insert_statsim_pos(conn, 9501, "2026-07-02T10:28:00Z", 53.06, 8.7, 200, 40)
+        _insert_statsim_pos(conn, 9501, "2026-07-02T10:30:00Z", *EDDW, 14, 0)
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="", **WINDOW)
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid)
+        assert flight["gps_departure"] is None  # kein Platz beim Start erkannt (Spawn-in-Luft)
+        assert flight["gps_arrival"] == "EDDW"
+        assert flight["callsign"] == "DLH123"
+
+
 class TestPrefixFilter:
     def test_prefix_empty_includes_foreign(self):
         conn = _make_conn()

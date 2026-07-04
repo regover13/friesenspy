@@ -2313,6 +2313,13 @@ def canonicalize_legs(
                     # Kein Plan-Match (GPS-only-Leg): die statsim_cache-Zeile selbst kennt
                     # den Typ bereits (row.aircraft) -> kein last_known_aircraft-Umweg noetig.
                     f["aircraft"] = row.get("aircraft") or None
+                if not f.get("callsign"):
+                    # Kein Plan-Match (z. B. Spawn-in-der-Luft, dep_icao unbekannt) UND
+                    # statsim_position_history hat KEINE callsign-Spalte (anders als
+                    # position_history bei FriesenSpy) -> callsign_by_ts liefert für StatSim
+                    # nie einen Treffer. Ohne diesen Fallback bliebe die Zeile callsign-los,
+                    # obwohl die statsim_cache-Zeile ihn längst kennt (row.callsign).
+                    f["callsign"] = row.get("callsign") or None
                 # _coverage_end bleibt vorerst im Dict (symmetrisch zur FS-Seite, FIX 6) —
                 # wird erst kurz vor der Rückgabe für die Dedup-Obergrenze genutzt und dann
                 # entfernt. Sonst bekäme ein offener StatSim-GPS-Flug hi=∞ und würde von
