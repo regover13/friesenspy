@@ -1037,10 +1037,10 @@ Banner-Auswahl setzen.
 ### GET /api/admin/gps-leg-audit
 
 Rein lesendes Audit für die GPS-basierte Etappen-Erkennung (#23, ab v7.9.0). Vergleicht die
-bisherige, refile-/disconnect-basierte Flugzählung (`canonicalize_flights`) mit den **im Schatten**
-erkannten GPS-Etappen (`gps_legs`). **Ändert keine Wertung** — die Etappen werden für das im
-Fenster liegende Piloten-Set **on-demand** neu berechnet (`recompute_gps_legs`, schreibt nur die
-Schatten-Tabelle `gps_legs`, nie `flights`) und dann verglichen. Kein Poll-Impact.
+bisherige, refile-/disconnect-basierte Flugzählung (`canonicalize_flights`) mit den GPS-Etappen
+(`gps_legs`-Feldnamen in der Response, keine DB-Tabelle). **Ändert keine Wertung** — die Etappen
+werden für das im Fenster liegende Piloten-Set **on-demand** über `canonicalize_legs`/
+`detect_gps_legs` berechnet (nichts wird gespeichert) und dann verglichen. Kein Poll-Impact.
 
 **Query-Parameter**
 
