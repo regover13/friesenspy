@@ -18,6 +18,7 @@ from app.database import (
 
 EDDK = (50.8659, 7.14274)
 EDDW = (53.0475, 8.78667)
+EDDL = (51.2895, 6.76678)  # Düsseldorf, elev 147 ft — dritter Platz für die prev_end-Regression.
 # Fernab jedes Flugplatzes (Nordsee) — Detektor findet dort nie einen Platz im 10-km-Radius.
 REMOTE = (55.0, 2.0)
 
@@ -109,6 +110,33 @@ def _seed_eddk_eddw_track(conn: sqlite3.Connection, cid: int, callsign: str) -> 
     _insert_pos(conn, cid, "2026-07-02T10:38:00Z", 53.0, 8.7, 500, 60, callsign)
     _insert_pos(conn, cid, "2026-07-02T10:40:00Z", *EDDW, 20, 0, callsign)
     _insert_pos(conn, cid, "2026-07-02T10:44:00Z", *EDDW, 20, 0, callsign)
+
+
+def _seed_eddk_eddw_eddl_intermediate_landing_track(conn: sqlite3.Connection, cid: int, callsign: str) -> None:
+    """Echte Zwischenlandung: EDDK→EDDW→EDDL, EIN zusammenhängendes Zeit-Segment (alle
+    Sample-Lücken <= 30 min, s. ``_GPS_LEG_GAP_MINUTES``), Turnaround am Boden in EDDW
+    (10:40-10:46, 6 min) — deckt die ``prev_end``-Schranke in ``_gps_flights_for_positions``
+    ab (Test unten).
+    """
+    # --- Leg 1: EDDK -> EDDW (Taxi-out 10:00-10:06, Flug 10:06-10:40) ------------------
+    _insert_pos(conn, cid, "2026-07-02T10:00:00Z", *EDDK, 302, 0, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:01:00Z", *EDDK, 302, 10, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:03:00Z", *EDDK, 302, 12, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:05:00Z", *EDDK, 302, 15, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:06:00Z", *EDDK, 1200, 80, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:20:00Z", 52.0, 8.0, 5000, 120, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:38:00Z", 53.0, 8.7, 500, 60, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:40:00Z", *EDDW, 20, 0, callsign)  # Touchdown EDDW
+    # --- Turnaround EDDW: Rollen zum Stand, kurzer Halt, Rollen zum Start (6 min) ------
+    _insert_pos(conn, cid, "2026-07-02T10:41:00Z", *EDDW, 20, 5, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:43:00Z", *EDDW, 20, 0, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:45:00Z", *EDDW, 20, 8, callsign)
+    # --- Leg 2: EDDW -> EDDL (Abheben 10:46, Landung 11:10) ----------------------------
+    _insert_pos(conn, cid, "2026-07-02T10:46:00Z", *EDDW, 1300, 85, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:50:00Z", 52.0, 7.5, 5000, 140, callsign)
+    _insert_pos(conn, cid, "2026-07-02T11:00:00Z", 51.6, 7.0, 5000, 140, callsign)
+    _insert_pos(conn, cid, "2026-07-02T11:08:00Z", 51.35, 6.85, 1500, 90, callsign)
+    _insert_pos(conn, cid, "2026-07-02T11:10:00Z", *EDDL, 150, 0, callsign)  # Touchdown EDDL
 
 
 WINDOW = dict(start="2026-07-01T00:00:00Z", end="2026-07-03T00:00:00Z")
@@ -523,3 +551,62 @@ class TestRadiusKmParameter:
         flight = next(f for f in result if f["cid"] == cid)
         assert flight["gps_departure"] == "EDDK"
         assert flight["gps_arrival"] == "EDDW"
+
+
+# --- Härtung (#23, Review-Finding zu Task 4c): prev_end-Schranke -----------------------
+
+
+class TestPrevEndBoundary:
+    def test_second_leg_block_min_excludes_first_legs_airborne_time(self):
+        """Kern-Regression für die ``prev_end``-Schranke in ``_gps_flights_for_positions``
+        (KORREKTUR #23 Phase 2, Blockzeit gate-to-gate): bei einer ECHTEN Zwischenlandung
+        (zwei Legs im selben Zeit-Segment, Turnaround-Boden-Rollen <= 30 min) darf der
+        Rückwärts-Walk für ``block_start`` des ZWEITEN Legs nicht vor das Landungs-Ende des
+        ERSTEN Legs zurücklaufen — sonst würde die komplette Luftzeit von Leg 1 (Taxi +
+        Steigen + Reise + Sinken, ~34 min) fälschlich in die Blockzeit von Leg 2
+        mit hineingezählt (Doppelzählung).
+
+        Track (``_seed_eddk_eddw_eddl_intermediate_landing_track``): EDDK→EDDW (10:00-10:40,
+        Taxi-out ab 10:00, Airborne 10:06-10:40) → Turnaround in EDDW (10:40-10:46, 6 min,
+        <= 30 min) → EDDW→EDDL (Airborne 10:46-11:10).
+
+        Exakter erwarteter ``block_min`` von Leg 2 MIT ``prev_end``-Schranke: 27 (1620 s) —
+        die Blockzeit-Summe (s. ``_block_seconds_positions``) beginnt frühestens am
+        Landungs-ts von Leg 1 (10:40:00, = ``prev_end``) und deckt NUR den eigenen Turnaround
+        (10:40-10:46) + die eigene Airborne-Zeit (10:46-11:10) ab.
+
+        OHNE die ``prev_end``-Schranke würde der Rückwärts-Walk (Sample-Lücken hier überall
+        <= 18 min, also nie > ``_GPS_LEG_GAP_MINUTES``) ungebremst bis zum allerersten
+        Taxi-Sample von Leg 1 (10:00:00) zurücklaufen und ``block_min`` auf 67 (4020 s)
+        aufblähen — Leg 1s komplette Luftzeit (~34 min zusätzlich) wäre dann in Leg 2s
+        Blockzeit enthalten. Der Test würde also brechen (67 statt 27), wenn jemand die
+        Schranke entfernt — genau das soll er verhindern.
+        """
+        conn = _make_conn()
+        cid = 4314
+        _insert_flight(
+            conn, cid=cid, callsign="FRS44", departure="EDDK", arrival="EDDL",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T11:15:00Z",
+        )
+        _seed_eddk_eddw_eddl_intermediate_landing_track(conn, cid, "FRS44")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        fs = [f for f in result if f["cid"] == cid and f["source"] == "friesenspy"]
+        assert len(fs) == 2, f"erwartete 2 Legs (EDDK->EDDW, EDDW->EDDL), bekam {len(fs)}"
+        leg1 = next(f for f in fs if f["gps_departure"] == "EDDK")
+        leg2 = next(f for f in fs if f["gps_departure"] == "EDDW")
+
+        assert leg1["gps_arrival"] == "EDDW"
+        assert leg2["gps_arrival"] == "EDDL"
+
+        # Exakter Wert — bricht messbar (67 statt 27), sobald die prev_end-Schranke entfernt
+        # wird (s. Docstring oben für die Herleitung beider Zahlen).
+        assert leg2["duration_min"] == 24
+        assert leg2["block_min"] == 27
+        assert leg2["block_min"] < leg1["duration_min"] + leg2["duration_min"], (
+            "block_min von Leg 2 enthaelt vermutlich (Teile) der Luftzeit von Leg 1 "
+            "-- die prev_end-Schranke greift nicht mehr"
+        )
