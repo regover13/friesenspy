@@ -2065,7 +2065,7 @@ def _gps_flights_for_positions(
     :func:`canonicalize_legs`); der Aufrufer entfernt ihn vor der Rückgabe.
 
     ``radius_km``: Erkennungs-Umkreis für ``detect_gps_legs`` (Platz-Zuordnung Start/Ziel).
-    ``None`` → Default ``_BUMMEL_AIRPORT_RADIUS_KM`` (10 km, unverändertes Verhalten).
+    ``None`` → Default ``_BUMMEL_AIRPORT_RADIUS_KM`` (4 km, unverändertes Verhalten).
 
     Zwei Metriken je Flug (KORREKTUR #23 Phase 2): ``block_min`` = Blockzeit (gate-to-gate
     inkl. Taxi — Fenster beginnt am Rollbeginn, nicht erst am Abheben; lange Standphasen
@@ -2317,7 +2317,7 @@ def canonicalize_legs(
     ``radius_km``: Erkennungs-Umkreis für die Platz-Zuordnung (Start/Ziel) im GPS-Leg-
     Detektor, an ``_gps_flights_for_positions``/``detect_gps_legs`` durchgereicht (FriesenSpy-
     UND StatSim-Zweig gleichermaßen). ``None`` (Default) → ``_BUMMEL_AIRPORT_RADIUS_KM``
-    (10 km) — unverändertes Verhalten für die globale Statistik/den Cache.
+    (4 km) — unverändertes Verhalten für die globale Statistik/den Cache.
 
     Hinweis ``connection_closed``: NICHT als „Flug nicht beendet" lesen. Ein gelandeter
     GPS-Flug ohne Plan-Match liefert konservativ ``connection_closed=False`` (kein Beweis
@@ -2847,7 +2847,7 @@ def get_cached_flights(
 # Großzügig genug für Start/Landung (inkl. kurzem Endanflug bei Disconnect), aber klar unter
 # dem typischen Abstand zwischen zwei Bummel-Flugplätzen — `_nearest_airport` nimmt ohnehin
 # den nächstgelegenen, sodass eng beieinanderliegende Inselplätze korrekt getrennt werden.
-_BUMMEL_AIRPORT_RADIUS_KM = 10.0
+_BUMMEL_AIRPORT_RADIUS_KM = 4.0
 
 # Vorlauf (Stunden), mit dem Flüge VOR Event-Start geladen werden, damit Frühstarter erfasst
 # werden (Flug beginnt vor dtstart, ist aber im Eventfenster noch unterwegs). Großzügig genug
