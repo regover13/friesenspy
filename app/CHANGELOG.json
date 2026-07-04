@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.2.1",
+    "date": "2026-07-04",
+    "title": "Vollbild-Button verdeckte Zoom-Regler",
+    "items": [
+      "⛶ Der neue Vollbild-Button auf den Kartenansichten saß oben links direkt über Leaflets Zoom-Regler (+/-) — sitzt jetzt unten links, ohne Überlappung."
+    ]
+  },
+  {
     "version": "8.2.0",
     "date": "2026-07-04",
     "title": "Vollbild-Karten, aktuelle Events-Ansicht, Teilen-Link im Plan-Popup repariert",
