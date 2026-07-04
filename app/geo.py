@@ -143,46 +143,6 @@ def filter_event_pilots(
     return result
 
 
-def segment_into_flights(
-    positions: list[dict],
-    gap_minutes: int = 30,
-) -> list[dict]:
-    """Teilt eine flache Positions-Liste in einzelne Flüge auf.
-
-    Ein neuer Flug beginnt wenn zwischen zwei aufeinanderfolgenden
-    Positionen mehr als gap_minutes vergangen sind.
-
-    Returns:
-        Liste von Flug-Dicts: [{"logon_time", "logoff_time", "positions"}]
-    """
-    if not positions:
-        return []
-    sorted_pos = sorted(positions, key=lambda p: p.get("ts", ""))
-    segments: list[list[dict]] = []
-    current: list[dict] = [sorted_pos[0]]
-    for pos in sorted_pos[1:]:
-        try:
-            from datetime import datetime, timezone as _tz
-            dt_prev = datetime.fromisoformat(current[-1]["ts"].replace("Z", "+00:00"))
-            dt_curr = datetime.fromisoformat(pos["ts"].replace("Z", "+00:00"))
-            if (dt_curr - dt_prev).total_seconds() / 60 > gap_minutes:
-                segments.append(current)
-                current = []
-        except Exception:
-            pass
-        current.append(pos)
-    if current:
-        segments.append(current)
-    return [
-        {
-            "logon_time": seg[0].get("ts", ""),
-            "logoff_time": seg[-1].get("ts", ""),
-            "positions": seg,
-        }
-        for seg in segments
-    ]
-
-
 def nearest_airport_icao(lat: float, lon: float, max_km: float) -> str | None:
     """ICAO des nächstgelegenen Flugplatzes im Umkreis ``max_km`` — sonst None.
 

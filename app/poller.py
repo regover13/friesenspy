@@ -1083,6 +1083,12 @@ class VatsimPoller:
         Kleine Batches (20/Lauf), gedrosselt (~0,3 s je Abruf) — kein Voll-Backfill (der
         bleibt eine Admin-Aktion, ``/api/admin/statsim-backfill``). Eine fehlschlagende
         Flug-ID darf den Rest des Batches nicht verhindern. Silent skip ohne API-Key.
+
+        ``callsign_prefix=""`` (nicht ``self.callsign_prefix``): GPS-Track-Verarbeitung soll
+        für JEDEN Flug eines bekannten Piloten gleich ablaufen, unabhängig vom Callsign — der
+        Präfix entscheidet nur über die Wertung (Statistik/Bummel/Kutter), nicht darüber, ob
+        ein Track nachgeladen wird. Sonst bleiben Fremd-Callsign-Flüge bekannter Piloten
+        (z. B. bei einer anderen virtuellen Airline) dauerhaft ohne GPS-Split.
         """
         settings = get_settings()
         if not settings.STATSIM_API_KEY:
@@ -1091,7 +1097,7 @@ class VatsimPoller:
             conn = get_connection(self.db_path)
             try:
                 ids = get_uncached_statsim_ids(
-                    conn, callsign_prefix=self.callsign_prefix, limit=20
+                    conn, callsign_prefix="", limit=20
                 )
                 if not ids:
                     return

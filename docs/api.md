@@ -264,6 +264,10 @@ Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe e
 
 **Response**
 
+Flüge kommen seit v8.3.0 aus `canonicalize_legs` (#33) — dieselbe Wahrheit wie
+`/api/pilots/{cid}/flights` (Statistik/Piloten-Detail). Ein Flug kann jetzt in mehrere
+GPS-Legs aufgeteilt sein (z. B. Landung + echte Bodenpause + Weiterflug = zwei Einträge).
+
 ```json
 {
   "pilots": [
@@ -276,20 +280,22 @@ Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe e
           "logon_time": "2026-06-04T07:00:00Z",
           "logoff_time": "2026-06-04T10:20:00Z",
           "callsign": "FRS49",
-          "departure": "EDKB",
-          "arrival": "EDDK",
           "aircraft": "PA24",
-          "positions": [
-            {
-              "callsign": "FRS49",
-              "latitude": 50.865,
-              "longitude": 7.142,
-              "altitude": 2800,
-              "groundspeed": 95,
-              "heading": 270,
-              "ts": "2026-06-04T07:00:00Z"
-            }
-          ]
+          "aircraft_icao": "PA24",
+          "gps_departure": "EDKB",
+          "gps_arrival": "EDDK",
+          "plan_departure": "EDKB",
+          "plan_arrival": "EDDK",
+          "connection_closed": true,
+          "last_pos_ts": "2026-06-04T10:20:00Z",
+          "duration_min": 55,
+          "block_min": 62,
+          "distance_nm": 42,
+          "route": "DCT",
+          "id": 4711,
+          "statsim_id": null,
+          "cid": 1602713,
+          "source": "friesenspy"
         }
       ]
     }
@@ -297,38 +303,32 @@ Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe e
 }
 ```
 
-Jeder Flug-Eintrag enthält ein `source`-Feld: `"friesenspy"` für Flüge mit GPS-Track aus `position_history`, `"statsim"` für Einträge aus dem StatSim-Cache (`positions: []`, Track wird im Frontend per `/api/flights/statsim/{statsim_id}/track` nachgeladen).
+`gps_departure`/`gps_arrival` sind die tatsächlich per GPS erkannte Strecke, `plan_departure`/
+`plan_arrival` der eingereichte Flugplan (falls vorhanden — kann bei einer Zwischenlandung ohne
+Refile von der GPS-Route abweichen). `connection_closed` ist ein Flugplan-Begriff (VATSIM-Session
+beendet) — NICHT gleichbedeutend mit „gelandet"; ob der Flug selbst beendet ist, entscheidet
+`gps_arrival`/`logoff_time`. `last_pos_ts` ist die letzte belegte GPS-Position (Obergrenze für
+Live-Erkennung und Track-Nachladen, nie „jetzt"). `id`/`statsim_id`/`cid` identifizieren die
+Track-Quelle (s. u.). Positionen selbst sind **nicht mehr embedded** — das Frontend lädt den
+Track pro Flug bei Bedarf nach.
 
-**StatSim-Fallback:** Piloten die in `statsim_cache` per `departure` oder `arrival` im Zeitfenster gefunden werden, aber keine `position_history` haben (z.B. weil FriesenSpy zu diesem Zeitpunkt nicht lief), erscheinen ebenfalls in der Antwort — mit `source: "statsim"`. Das Frontend lädt den GPS-Track automatisch asynchron von StatSim nach und zeichnet ihn auf der Karte; Zeilen sind wie FriesenSpy-Flüge klickbar (Highlight). Falls kein Track verfügbar ist, erscheint nur das „◌ StatSim"-Badge ohne Kartendarstellung.
+Jeder Flug-Eintrag enthält ein `source`-Feld: `"friesenspy"` für live von FriesenSpy erkannte
+Flüge, `"statsim"` für Einträge aus dem StatSim-Cache. Der Track wird unabhängig von `source`
+nachgeladen — StatSim-Flüge bekommen ihren GPS-Track ebenso automatisch im Hintergrund nachgefüllt
+(`app/poller.py` `_fetch_statsim_tracks`, unabhängig vom Callsign-Präfix) und zeigen ihn dann
+identisch zu einem live aufgezeichneten Flug an:
+- `source == "statsim"` → `GET /api/flights/statsim/{statsim_id}/track`
+- `source == "friesenspy"` und `id` gesetzt → `GET /api/flights/{id}/track`
+- sonst (GPS-Leg ohne Flugplan-Zuordnung) → `GET /api/pilots/{cid}/track?logon=...&logoff=...`
 
-`flights` enthält die Positionen des Piloten im Zeitfenster aufgeteilt in einzelne Flüge. Die Segmentierung basiert primär auf echten VATSIM-Session-Records aus der `flights`-Tabelle (Callsign, DEP/ARR, Flugzeugtyp aus dem Flugplan). `callsign`, `departure`, `arrival` und `aircraft` sind `null` wenn kein passender `flights`-Eintrag existiert — in diesem Fall wird als Fallback nach Zeitlücken von mehr als 30 Minuten segmentiert (z.B. für Positionen aus Zeiten vor FriesenSpy-Start). `positions` enthält alle aufgezeichneten Positionen des jeweiligen Fluges — nicht nur die im Radius.
+**StatSim-Fallback:** Piloten die in `statsim_cache` per `departure` oder `arrival` im Zeitfenster
+gefunden werden, aber keine `position_history` haben (z. B. weil FriesenSpy zu diesem Zeitpunkt
+nicht lief), erscheinen ebenfalls in der Antwort — mit `source: "statsim"`.
 
-**Erweitertes Response-Beispiel mit StatSim-Pilot:**
-
-```json
-{
-  "pilots": [
-    {
-      "cid": 1234567,
-      "callsign": "FRS22",
-      "name": "Max Mustermann",
-      "flights": [
-        {
-          "logon_time": "2026-04-02T17:55:00Z",
-          "logoff_time": "2026-04-02T19:30:00Z",
-          "callsign": "FRS22",
-          "departure": "EDVK",
-          "arrival": "EDDK",
-          "aircraft": "C172",
-          "statsim_id": 28832100,
-          "positions": [],
-          "source": "statsim"
-        }
-      ]
-    }
-  ]
-}
-```
+**2-Klassen-Regel:** Flüge mit einem Callsign außerhalb des konfigurierten `CALLSIGN_PREFIX`
+(z. B. ein FriesenSpy-Pilot, der unter einem anderen virtuellen-Airline-Callsign fliegt)
+erscheinen HIER NICHT — die gehören nur in die Piloten-Statistik (`/api/pilots/{cid}/flights`,
+das dort `callsign_prefix=""` verwendet).
 
 ---
 
@@ -1142,6 +1142,11 @@ laufenden Betrieb übernimmt seit v8.0.0 zusätzlich ein periodischer Poller-Job
 StatSim-Importe automatisch (Phase 2b) — dieser Admin-Endpoint bleibt für einen gezielten
 Voll-Backfill (z. B. nach einem größeren StatSim-Sync) nützlich. Rein additiv, keine Wertung.
 Braucht `STATSIM_API_KEY`.
+
+Seit v8.3.0 filtert der Backfill (Admin-Endpoint UND periodischer Job) **nicht mehr** nach
+`CALLSIGN_PREFIX` — Flüge mit fremdem Callsign eines bekannten Piloten (z. B. bei einer anderen
+virtuellen Airline) bekommen ihren Track jetzt genauso nachgeladen. Der Präfix entscheidet nur
+über die Wertung (Statistik/Bummel/Kutter), nicht darüber, ob GPS-Split-Logik greift.
 
 **Query-Parameter**
 

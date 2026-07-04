@@ -12,7 +12,6 @@ from app.geo import (
     icao_to_coords,
     nearest_airport_icao,
     nearest_airport_icao_fast,
-    segment_into_flights,
 )
 
 
@@ -391,62 +390,3 @@ class TestNearestAirportFast:
         assert airport_elevation_ft("XXXX") is None
 
 
-class TestSegmentIntoFlights:
-    def test_empty_positions(self):
-        assert segment_into_flights([]) == []
-
-    def test_single_position(self):
-        pos = [{"ts": "2026-01-01T10:00:00Z", "latitude": 50.0, "longitude": 7.0}]
-        result = segment_into_flights(pos)
-        assert len(result) == 1
-        assert result[0]["logon_time"] == "2026-01-01T10:00:00Z"
-        assert result[0]["logoff_time"] == "2026-01-01T10:00:00Z"
-        assert len(result[0]["positions"]) == 1
-
-    def test_continuous_flight(self):
-        """Positions with <30 min gaps → single flight."""
-        positions = [
-            {"ts": "2026-01-01T10:00:00Z"},
-            {"ts": "2026-01-01T10:15:00Z"},
-            {"ts": "2026-01-01T10:30:00Z"},
-        ]
-        result = segment_into_flights(positions)
-        assert len(result) == 1
-        assert len(result[0]["positions"]) == 3
-
-    def test_two_sessions(self):
-        """Gap of >30 min → two separate flights."""
-        positions = [
-            {"ts": "2026-01-01T10:00:00Z"},
-            {"ts": "2026-01-01T10:15:00Z"},
-            {"ts": "2026-01-01T11:00:00Z"},  # 45 min gap → new flight
-            {"ts": "2026-01-01T11:15:00Z"},
-        ]
-        result = segment_into_flights(positions)
-        assert len(result) == 2
-        assert len(result[0]["positions"]) == 2
-        assert len(result[1]["positions"]) == 2
-
-    def test_logon_logoff_times(self):
-        """logon_time = first ts, logoff_time = last ts of each segment."""
-        positions = [
-            {"ts": "2026-01-01T10:00:00Z"},
-            {"ts": "2026-01-01T10:30:00Z"},
-            {"ts": "2026-01-01T12:00:00Z"},  # gap > 30 min → new segment
-            {"ts": "2026-01-01T12:20:00Z"},  # 20 min gap → still same segment
-        ]
-        result = segment_into_flights(positions)
-        assert result[0]["logon_time"] == "2026-01-01T10:00:00Z"
-        assert result[0]["logoff_time"] == "2026-01-01T10:30:00Z"
-        assert result[1]["logon_time"] == "2026-01-01T12:00:00Z"
-        assert result[1]["logoff_time"] == "2026-01-01T12:20:00Z"
-
-    def test_unsorted_input(self):
-        """Input positions need not be sorted — function sorts by ts."""
-        positions = [
-            {"ts": "2026-01-01T10:15:00Z"},
-            {"ts": "2026-01-01T10:00:00Z"},
-        ]
-        result = segment_into_flights(positions)
-        assert len(result) == 1
-        assert result[0]["logon_time"] == "2026-01-01T10:00:00Z"

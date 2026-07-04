@@ -1,5 +1,17 @@
 [
   {
+    "version": "8.3.0",
+    "date": "2026-07-04",
+    "title": "Event-Suche mit GPS-Split, StatSim-Bugfixes",
+    "items": [
+      "🔀 Die Event-Suche („Wer war dabei?“) zeigt Flüge jetzt genau wie die Statistik-Ansicht mit echtem GPS-Split — eine Landung mit anschließender Bodenpause und Weiterflug erscheint jetzt korrekt als zwei Flüge statt als einer (#33).",
+      "✈️ Neue Spalte „Aircraft“ in Statistik und Event-Suche direkt neben dem Callsign.",
+      "🛰️ GPS-Tracks von StatSim-Flügen mit einem anderen Callsign (z. B. bei einer anderen virtuellen Airline) werden jetzt ebenfalls automatisch nachgeladen — vorher blieben sie dauerhaft ohne Track, weil der Nachlade-Job fälschlich nach dem FriesenFlieger-Callsign filterte.",
+      "🔤 Das Aircraft-Feld bei StatSim-Flügen zeigt jetzt nur noch den kurzen Flugzeugtyp (z. B. „A320“) statt des vollen Flugplan-Strings.",
+      "❓ Fehlen GPS-Start und -Ziel komplett, steht jetzt „N/A“ statt der unschönen Anzeige „???? → ????“; das GPS-Detail-Fenster zeigt für fehlende Werte jetzt einheitlich „—“."
+    ]
+  },
+  {
     "version": "8.2.1",
     "date": "2026-07-04",
     "title": "Vollbild-Button verdeckte Zoom-Regler",

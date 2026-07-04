@@ -113,7 +113,7 @@ Interaktive Karte mit allen aktuell fliegenden Friesen.
 - Karte frei verschieben und zoomen
 - Karten-Layer wechseln (Auswahl oben rechts, siehe [Karten-Layer](#️-karten-layer))
 - Von einem anderen Tab aus mit ◎ direkt zu einem bestimmten Piloten springen
-- **⛶ Vollbild** (Button oben links) — Karte auf den ganzen Bildschirm vergrößern, **Esc** oder erneuter Klick verlässt es wieder
+- **⛶ Vollbild** (Button unten links) — Karte auf den ganzen Bildschirm vergrößern, **Esc** oder erneuter Klick verlässt es wieder
 
 ---
 
@@ -139,8 +139,8 @@ Interaktive Karte mit allen aktuell fliegenden Friesen.
 > **„Ich sehe nur 30 Tage Statistik"** — Das ist der Default. Oben links im Statistiken-Tab gibt es einen Umschalter für **30 / 90 / 365 Tage**. Für Piloten, die FriesenSpy noch nicht kannte, werden beim ersten Anklicken automatisch die letzten 31 Tage von StatSim geholt. Für das vollständige letzte Jahr einmal **„Alle Flüge laden (letztes Jahr)"** klicken — das dauert einige Sekunden.
 
 Einzelflüge können aus zwei Quellen stammen — erkennbar am Badge:
-- **Kein Badge** = FriesenSpy hat den Flug live aufgezeichnet → voller GPS-Track auf der Karte verfügbar
-- **◌ StatSim** = Flug kommt aus der StatSim-Datenbank → kein GPS-Track, nur Flugplan-Daten (Start, Ziel, Dauer)
+- **Kein Badge** = FriesenSpy hat den Flug live aufgezeichnet → GPS-Track sofort verfügbar
+- **◌ StatSim** = Flug kommt aus der StatSim-Datenbank → GPS-Track wird im Hintergrund automatisch nachgeladen (kann etwas dauern); bis dahin nur Flugplan-Daten (Start, Ziel, Dauer)
 
 **GPS-Route und Flugplan getrennt (seit v8.0.0):** Die Einzelflug-Liste zeigt zwei eigene Spalten
 — die tatsächlich geflogene **GPS-Route** (woher/wohin die Landung wirklich erkannt wurde) und
@@ -162,15 +162,15 @@ Oben erscheint die **FriesenEvents-Liste** — Events aus dem FriesenFlieger-Goo
 Du gibst einen **ICAO-Code** (z.B. `EDDK`) oder **`global`** für weltweite Suche ein, sowie einen **Zeitraum**. Bei ICAO-Suche wird zusätzlich ein **Radius in km** berücksichtigt. FriesenSpy sucht alle Friesen-Flüge, deren Route durch den Bereich verlief oder die dort gestartet/gelandet sind. Piloten werden gefunden, wenn ihr Flug das Zeitfenster **überlappt** — auch wer schon früher gestartet oder erst nach Event-Ende gelandet ist.
 
 **Was du siehst:**
-- **Karte** (oben) mit allen gefundenen GPS-Tracks gleichzeitig eingezeichnet
-- **Pilotenliste** (darunter) mit Callsign, Strecke und Flugdauer
+- **Karte** (oben) mit allen gefundenen GPS-Tracks gleichzeitig eingezeichnet (werden pro Flug nachgeladen, sobald die Suche fertig ist)
+- **Pilotenliste** (darunter), je Pilot eine Flugtabelle im selben Format wie in den Statistiken: Callsign, Aircraft, GPS-Strecke, Flugplan (falls vorhanden), Datum, Flugzeit, Blockzeit, Distanz, Track und Quelle
 - Piloten die nur in StatSim gefunden werden, erscheinen mit **◌ StatSim**-Badge — GPS-Tracks werden automatisch von StatSim nachgeladen und auf der Karte angezeigt (falls verfügbar)
 
 **Was du tun kannst:**
 - **Track auf der Karte anklicken** oder **Flug-Zeile in der Pilotenliste anklicken** → hebt diesen Track farblich hervor, alle anderen werden transparent
 - **„↺ Alle Tracks"** → blendet alle Tracks wieder gleichmäßig ein
-- **⛶ Vollbild** (Button oben links auf der Karte) — Esc oder erneuter Klick verlässt es wieder
-- **Callsign in der Pilotenliste anklicken** → öffnet das Flugdetail-Modal mit Strecke, Flugzeugtyp und weiteren Infos
+- **⛶ Vollbild** (Button unten links auf der Karte) — Esc oder erneuter Klick verlässt es wieder
+- **GPS-Strecke anklicken** → öffnet das GPS-Detail-Fenster (Start/Landung UTC, Distanz); **Flugplan anklicken** (falls vorhanden) → öffnet das Flugplan-Fenster; **Track-Symbol** → öffnet den GPS-Track in einem eigenen Fenster (mit **⛶ Vollbild**)
 - **⎘** → Link zu dieser Event-Suche teilen — alle Filtereinstellungen stecken in der URL, der Empfänger sieht dasselbe Ergebnis
 
 > **Tipp:** Der ICAO-Code muss nicht exakt der Veranstaltungsort sein — ein Radius von 50–100 km um den nächsten Flughafen reicht in der Regel aus.
