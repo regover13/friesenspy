@@ -960,6 +960,20 @@
           <button class="btn btn-primary btn-sm" id="bc-send-btn">Broadcast senden</button>
         </div>
 
+        <!-- STATSIM-BACKFILL -->
+        <div class="panel">
+          <div class="panel-title"><span>StatSim-GPS-Track-Nachladen</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Lädt GPS-Tracks für StatSim-Flüge nach, die noch keinen lokalen Track haben (z.&nbsp;B.
+            Flüge mit fremdem Callsign, die vor dem Backfill-Fix übersprungen wurden). Läuft im
+            Hintergrund am Stück durch statt nur alle 10 Minuten häppchenweise.
+          </p>
+          <div style="margin-bottom:8px;">
+            <button class="btn btn-sm" id="statsim-backfill-btn">⟳ Backfill starten</button>
+            <span id="statsim-backfill-status" style="color:#8aa0b8;font-size:0.82rem;margin-left:10px;"></span>
+          </div>
+        </div>
+
         <!-- PILOTEN -->
         <div class="panel">
           <div class="panel-title"><span>Piloten</span></div>
@@ -1136,6 +1150,9 @@
       loadBanner();
       loadPilots();
       loadKutterAdmin();
+      // Falls ein Backfill schon vor dem (Neu-)Laden dieser Seite lief (z. B. anderer Tab,
+      // vorheriger Login) — Status sofort zeigen und Polling bei Bedarf fortsetzen.
+      _pollStatsimBackfillStatus();
     }
 
     document.getElementById('login-form').addEventListener('submit', async e => {
@@ -1868,6 +1885,47 @@
       toast(`Broadcast an ${data.sent} Gerät(e) gesendet.`);
       document.getElementById('bc-title').value = '';
       document.getElementById('bc-body').value = '';
+    });
+
+    // ====================================================================
+    // STATSIM-BACKFILL
+    // ====================================================================
+    let _statsimBackfillPoll = null;
+
+    function _renderStatsimBackfillStatus(d) {
+      const el = document.getElementById('statsim-backfill-status');
+      if (!d || d.remaining == null) { el.textContent = ''; return; }
+      el.textContent = d.running
+        ? `⟳ läuft — ${d.fetched} geholt, ${d.remaining} verbleibend`
+        : (d.remaining > 0 ? `Pausiert — ${d.remaining} verbleibend` : '✓ Fertig — alle Tracks geladen.');
+    }
+
+    async function _pollStatsimBackfillStatus() {
+      const res = await api('GET', '/api/admin/statsim-backfill/status');
+      if (!res || !res.ok) return;
+      const data = await res.json();
+      console.log('[StatSim-Backfill]', data);
+      _renderStatsimBackfillStatus(data);
+      if (!data.running) {
+        clearInterval(_statsimBackfillPoll);
+        _statsimBackfillPoll = null;
+        if (data.remaining === 0) toast('StatSim-Backfill abgeschlossen.');
+      }
+    }
+
+    document.getElementById('statsim-backfill-btn').addEventListener('click', async () => {
+      const res = await api('POST', '/api/admin/statsim-backfill?background=1');
+      if (!res) return;
+      const data = await res.json();
+      if (!res.ok) { toast('Fehler beim Start.', true); return; }
+      if (data.had_key === false) { toast('Kein STATSIM_API_KEY konfiguriert.', true); return; }
+      toast(data.already_running
+        ? 'Backfill läuft bereits.'
+        : `Backfill gestartet — ${data.remaining} Flüge ausstehend.`);
+      _renderStatsimBackfillStatus({ running: true, fetched: data.fetched || 0, remaining: data.remaining });
+      if (!_statsimBackfillPoll) {
+        _statsimBackfillPoll = setInterval(_pollStatsimBackfillStatus, 3000);
+      }
     });
 
     // ====================================================================

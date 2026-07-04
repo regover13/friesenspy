@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.3.1",
+    "date": "2026-07-04",
+    "title": "StatSim-Backfill jetzt per Admin-Button auslösbar",
+    "items": [
+      "🛠️ Neuer Button in der Admin-Oberfläche stößt den StatSim-GPS-Track-Backfill an und zeigt den Fortschritt live an — vorher nur per Rohanfrage an die API auslösbar."
+    ]
+  },
+  {
     "version": "8.3.0",
     "date": "2026-07-04",
     "title": "Event-Suche mit GPS-Split, StatSim-Bugfixes",
