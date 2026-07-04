@@ -93,10 +93,18 @@ def _insert_pos(conn: sqlite3.Connection, cid: int, ts: str, lat, lon, alt, gs, 
 
 
 def _seed_eddk_eddw_track(conn: sqlite3.Connection, cid: int, callsign: str) -> None:
-    """Realer EDDK→EDDW-Flug (wie TestStatsimGpsAudit._seed), 10:00–10:44 UTC."""
+    """Realer EDDK→EDDW-Flug (wie TestStatsimGpsAudit._seed), 10:00–10:44 UTC.
+
+    Enthält einen erkennbaren Taxi-out (10:00–10:05, Boden-Rollen mit gs 10-15 kt VOR dem
+    Steigflug um 10:06) — deckt KORREKTUR 1 (#23 Phase 2, Blockzeit gate-to-gate inkl. Taxi)
+    ab: Abheben (``takeoff_ts``) erst bei 10:06, ``block_min`` muss die Taxi-Minuten davor
+    (10:00-10:06) mit einschließen, ``duration_min`` (reine Flugzeit) NICHT.
+    """
     _insert_pos(conn, cid, "2026-07-02T10:00:00Z", *EDDK, 302, 0, callsign)
-    _insert_pos(conn, cid, "2026-07-02T10:01:00Z", *EDDK, 302, 5, callsign)
-    _insert_pos(conn, cid, "2026-07-02T10:02:00Z", *EDDK, 1200, 80, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:01:00Z", *EDDK, 302, 10, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:03:00Z", *EDDK, 302, 12, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:05:00Z", *EDDK, 302, 15, callsign)
+    _insert_pos(conn, cid, "2026-07-02T10:06:00Z", *EDDK, 1200, 80, callsign)
     _insert_pos(conn, cid, "2026-07-02T10:20:00Z", 52.0, 8.0, 5000, 120, callsign)
     _insert_pos(conn, cid, "2026-07-02T10:38:00Z", 53.0, 8.7, 500, 60, callsign)
     _insert_pos(conn, cid, "2026-07-02T10:40:00Z", *EDDW, 20, 0, callsign)
@@ -139,7 +147,12 @@ class TestFormParity:
         assert flight["gps_arrival"] == "EDDW"
         assert flight["departure"] == "EDDK"
         assert flight["arrival"] == "EDDW"
-        assert flight["block_min"] <= flight["duration_min"]
+        # KORREKTUR 1 (#23 Phase 2): block_min (gate-to-gate inkl. Taxi) ist die GRÖSSERE
+        # Zeit, duration_min (reine Flugzeit Abheben->Landung) die KLEINERE — exakte Werte
+        # ausgerechnet aus _seed_eddk_eddw_track (Taxi 10:00-10:06, Flugzeit 10:06-10:40).
+        assert flight["duration_min"] == 34
+        assert flight["block_min"] == 37
+        assert flight["block_min"] >= flight["duration_min"]
 
 
 class TestPrefixFilter:
@@ -351,7 +364,9 @@ class TestCappedOpenFlightWindow:
         # FIX 1 + 3 (Metrik-Konsistenz am offenen Flug).
         assert open_flight["duration_min"] > 0
         assert open_flight["block_min"] > 0
-        assert open_flight["block_min"] <= open_flight["duration_min"]
+        # KORREKTUR 1 (#23 Phase 2): block_min (gate-to-gate inkl. Taxi vor dem Abheben um
+        # 10:02) ist >= duration_min (reine Flugzeit ab Abheben) — NICHT umgekehrt.
+        assert open_flight["block_min"] >= open_flight["duration_min"]
 
         # Folgeflug bleibt unbeeinflusst als eigener, vollständiger Flug erkennbar.
         assert followup["gps_departure"] == "EDDW"
@@ -440,3 +455,71 @@ class TestCrashDedupSurvival:
 
         st_logons = {f["logon_time"] for f in result if f["source"] == "statsim" and f["cid"] == cid}
         assert "2026-07-02T10:40:00Z" in st_logons
+
+
+# --- KORREKTUR 2 (#23 Phase 2): radius_km einstellbar durchreichen ---------------------
+
+# ~8 km nördlich von EDDW (53.0475, 8.78667) — verifiziert (siehe Task-Report): mit 6 km
+# Radius findet nearest_airport_icao_fast dort KEINEN Platz, mit 20 km Radius EDDW.
+OFF_EDDW_8KM = (53.119572072072074, 8.78667)
+
+
+class TestRadiusKmParameter:
+    def test_radius_km_controls_arrival_detection(self):
+        """Derselbe Track (Touchdown-Kandidat ~8 km von EDDW entfernt) wird je nach
+        ``radius_km`` als Landung an EDDW erkannt oder nicht — belegt, dass der Parameter
+        bis zu ``detect_gps_legs`` durchgereicht wird (nicht nur akzeptiert und ignoriert)."""
+        conn = _make_conn()
+        cid = 4312
+        _insert_flight(
+            conn, cid=cid, callsign="FRS42", departure="", arrival="",
+            logon_time="2026-07-02T09:55:00Z", logoff_time=None,
+        )
+        _insert_pos(conn, cid, "2026-07-02T10:00:00Z", *EDDK, 302, 0, "FRS42")
+        _insert_pos(conn, cid, "2026-07-02T10:01:00Z", *EDDK, 302, 5, "FRS42")
+        _insert_pos(conn, cid, "2026-07-02T10:02:00Z", *EDDK, 1200, 80, "FRS42")
+        _insert_pos(conn, cid, "2026-07-02T10:20:00Z", 52.0, 8.0, 5000, 120, "FRS42")
+        # Touchdown-Kandidat (Vollstopp) ~8 km von EDDW entfernt, niedrige Höhe (AGL-Guard
+        # erfüllt, sobald ein Platz im Umkreis gefunden wird).
+        _insert_pos(conn, cid, "2026-07-02T10:38:00Z", *OFF_EDDW_8KM, 50, 0, "FRS42")
+        conn.commit()
+
+        small_radius = canonicalize_legs(
+            conn, callsign_prefix="FRS", radius_km=6.0, **WINDOW
+        )
+        large_radius = canonicalize_legs(
+            conn, callsign_prefix="FRS", radius_km=20.0, **WINDOW
+        )
+        conn.close()
+
+        f_small = next(f for f in small_radius if f["cid"] == cid)
+        f_large = next(f for f in large_radius if f["cid"] == cid)
+
+        # Kleiner Radius: EDDW liegt außerhalb → keine Landung erkannt (offener Flug).
+        assert f_small["gps_arrival"] is None
+        assert f_small["logoff_time"] is None
+
+        # Größerer Radius: EDDW liegt innerhalb → Landung erkannt.
+        assert f_large["gps_arrival"] == "EDDW"
+        assert f_large["logoff_time"] == "2026-07-02T10:38:00Z"
+
+    def test_radius_km_none_keeps_default_behaviour(self):
+        """Ohne ``radius_km`` (None) bleibt das Default-Verhalten (10 km,
+        ``_BUMMEL_AIRPORT_RADIUS_KM``) unverändert — deckungsgleich mit dem realen
+        EDDK→EDDW-Track aus ``_seed_eddk_eddw_track`` (exakte Platz-Koordinaten, weit
+        innerhalb jedes plausiblen Radius)."""
+        conn = _make_conn()
+        cid = 4313
+        _insert_flight(
+            conn, cid=cid, callsign="FRS43", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:50:00Z",
+        )
+        _seed_eddk_eddw_track(conn, cid, "FRS43")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid)
+        assert flight["gps_departure"] == "EDDK"
+        assert flight["gps_arrival"] == "EDDW"
