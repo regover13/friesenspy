@@ -239,6 +239,7 @@ async def frontend_config():
         "version": VERSION,
         "changelog": CHANGELOG,
         "banner_version": _resolve_banner_version(selected),
+        "callsign_prefix": settings.CALLSIGN_PREFIX,
     }
 
 
