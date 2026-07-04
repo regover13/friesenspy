@@ -2050,7 +2050,7 @@ _GPS_LEG_GAP_MINUTES = 30  # muss zum gap_minutes-Default von detect_gps_legs pa
 
 
 def _gps_flights_for_positions(
-    positions: list[dict], *, plan_rows: list[dict], source: str
+    positions: list[dict], *, plan_rows: list[dict], source: str, radius_km: float | None = None
 ) -> list[dict]:
     """GPS-Flüge (Task-1/2-Detektor + Collapse) über eine ÜBERGEBENE Positionsliste in
     kanonische Flug-Dicts übersetzen — Metriken via Task-3-Helfer auf denselben Positionen
@@ -2063,6 +2063,16 @@ def _gps_flights_for_positions(
     der Aufrufer kennt es aus dem Iterationskontext und setzt es. Enthält einen internen
     Schlüssel ``_coverage_end`` (letzter belegter ts — für den Pro-Flug-Dedup in
     :func:`canonicalize_legs`); der Aufrufer entfernt ihn vor der Rückgabe.
+
+    ``radius_km``: Erkennungs-Umkreis für ``detect_gps_legs`` (Platz-Zuordnung Start/Ziel).
+    ``None`` → Default ``_BUMMEL_AIRPORT_RADIUS_KM`` (10 km, unverändertes Verhalten).
+
+    Zwei Metriken je Flug (KORREKTUR #23 Phase 2): ``block_min`` = Blockzeit (gate-to-gate
+    inkl. Taxi — Fenster beginnt am Rollbeginn, nicht erst am Abheben; lange Standphasen
+    ≥ ``_BLOCK_STAND_MIN_SEC`` zählen weiterhin NICHT, s. ``_block_seconds_positions``),
+    ``duration_min`` = reine Flugzeit (Abheben → Landung, ``[takeoff_ts, end_ts]``,
+    unverändert). Invariante: ``duration_min <= block_min`` (Flugzeit ist Teilmenge der
+    Blockzeit) — NICHT umgekehrt (das war der vorherige, falsche Vertrag).
     """
     from app import geo
     from app.gps_legs import detect_gps_legs, collapse_same_airport
@@ -2071,7 +2081,7 @@ def _gps_flights_for_positions(
         positions,
         nearest_airport=geo.nearest_airport_icao_fast,
         airport_elev_ft=geo.airport_elevation_ft,
-        radius_km=_BUMMEL_AIRPORT_RADIUS_KM,
+        radius_km=radius_km or _BUMMEL_AIRPORT_RADIUS_KM,
     )
     gps_flights = collapse_same_airport(legs)
     if not gps_flights:
@@ -2081,6 +2091,7 @@ def _gps_flights_for_positions(
     callsign_by_ts = {p["ts"]: p.get("callsign") for p in positions if p.get("callsign")}
 
     out: list[dict] = []
+    prev_end: str | None = None  # Ende (ts) des vorherigen Flugs — Block-Rückwärts-Walk-Grenze
     for i, gf in enumerate(gps_flights):
         takeoff_ts = gf.get("takeoff_ts")
         landing_ts = gf.get("landing_ts")
@@ -2109,7 +2120,21 @@ def _gps_flights_for_positions(
             if next_takeoff is not None and end_ts >= next_takeoff:
                 end_ts = takeoff_ts  # Sicherheitsnetz; strukturell sollte dieser Zweig nie greifen
 
-        block_min = _block_seconds_positions(positions, takeoff_ts, end_ts) // 60
+        # Block-Fenster nach vorn bis zum Rollbeginn erweitern (gate-to-gate inkl. Taxi):
+        # rückwärts durch zusammenhängende Positionen laufen (Lücke <= _GPS_LEG_GAP_MINUTES),
+        # aber nie vor das Ende des vorherigen Flugs (prev_end) — sonst würde Standzeit einer
+        # Zwischenlandung/eines Vorflugs fälschlich als Taxi dieses Flugs gezählt.
+        block_start = takeoff_ts
+        _prev = takeoff_ts
+        for t in reversed([x for x in all_ts if x < takeoff_ts]):
+            if prev_end is not None and t < prev_end:
+                break
+            if (_parse_iso(_prev) - _parse_iso(t)).total_seconds() / 60.0 > _GPS_LEG_GAP_MINUTES:
+                break
+            block_start = t
+            _prev = t
+
+        block_min = _block_seconds_positions(positions, block_start, end_ts) // 60
         distance_nm = _distance_nm_positions(positions, takeoff_ts, end_ts)
         try:
             duration_min = max(
@@ -2166,6 +2191,7 @@ def _gps_flights_for_positions(
             "source": source,
             "_coverage_end": end_ts,
         })
+        prev_end = end_ts
     return out
 
 
@@ -2265,6 +2291,7 @@ def canonicalize_legs(
     start: str | None = None,
     end: str | None = None,
     callsign_prefix: str = "FRS",
+    radius_km: float | None = None,
 ) -> list[dict]:
     """GPS-Pendant zu :func:`canonicalize_flights` — künftig die EINZIGE Wahrheit unter
     GPS-only Phase 2 (#23). Formgleich: jedes Flug-Dict trägt mindestens dieselben Keys wie
@@ -2281,6 +2308,11 @@ def canonicalize_legs(
     → Sortierung ``logon_time`` absteigend.
 
     ``callsign_prefix=""`` liefert alle Callsigns (für die Piloten-Detail-Ansicht).
+
+    ``radius_km``: Erkennungs-Umkreis für die Platz-Zuordnung (Start/Ziel) im GPS-Leg-
+    Detektor, an ``_gps_flights_for_positions``/``detect_gps_legs`` durchgereicht (FriesenSpy-
+    UND StatSim-Zweig gleichermaßen). ``None`` (Default) → ``_BUMMEL_AIRPORT_RADIUS_KM``
+    (10 km) — unverändertes Verhalten für die globale Statistik/den Cache.
 
     Hinweis ``connection_closed``: NICHT als „Flug nicht beendet" lesen. Ein gelandeter
     GPS-Flug ohne Plan-Match liefert konservativ ``connection_closed=False`` (kein Beweis
@@ -2340,7 +2372,9 @@ def canonicalize_legs(
 
     for cid, rows in fs_by_cid.items():
         positions = _positions_for_cid(conn, cid, start, end, callsign_prefix=callsign_prefix)
-        gps_flights = _gps_flights_for_positions(positions, plan_rows=rows, source="friesenspy")
+        gps_flights = _gps_flights_for_positions(
+            positions, plan_rows=rows, source="friesenspy", radius_km=radius_km
+        )
         if gps_flights:
             for f in gps_flights:
                 f["cid"] = cid
@@ -2401,7 +2435,7 @@ def canonicalize_legs(
     for row in sc_rows:
         positions = get_statsim_positions(conn, row["statsim_id"])
         gps_flights = _gps_flights_for_positions(
-            positions, plan_rows=[_statsim_plan(row)], source="statsim"
+            positions, plan_rows=[_statsim_plan(row)], source="statsim", radius_km=radius_km
         )
         if gps_flights:
             for f in gps_flights:
