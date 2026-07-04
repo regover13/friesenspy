@@ -1199,6 +1199,31 @@
     .source-fs { color: var(--green); border: 1px solid var(--green-dim); }
     .source-st { color: var(--cyan); border: 1px solid rgba(211,17,65,0.3); }
 
+    /* Offener/laufender GPS-Flug (kein logoff/GPS-Ankunft) — bewusst NICHT blau: reine Anzeige,
+       nichts Klickbares. */
+    .badge-live {
+      font-family: var(--text-display);
+      font-size: 0.62rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--amber);
+      border: 1px solid rgba(240,165,0,0.35);
+      padding: 2px 6px;
+      white-space: nowrap;
+    }
+    /* Phase-2b: Fremd-Callsign (kein CALLSIGN_PREFIX) in der Piloten-Detail-Flugliste — zaehlt
+       nicht in Statistik/Bummel/Kutter. Anzeige-only, KEIN Blau (= nichts Klickbares). */
+    .badge-unscored {
+      font-family: var(--text-display);
+      font-size: 0.6rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      border: 1px solid rgba(107,154,184,0.35);
+      padding: 2px 6px;
+      white-space: nowrap;
+    }
+
     /* =====================================================================
        ACTIVITY CHART
        ===================================================================== */
@@ -1731,16 +1756,18 @@
         <div class="fp-field"><span class="fp-label">Flight Rules</span><span class="fp-val" id="fld-rules">—</span></div>
         <div class="fp-field"><span class="fp-label">Aircraft</span><span class="fp-val" id="fld-ac">—</span></div>
         <div class="fp-field"><span class="fp-label">Aircraft (ICAO)</span><span class="fp-val" id="fld-acicao">—</span></div>
-        <div class="fp-field"><span class="fp-label">Departure</span><span class="fp-val" id="fld-dep">—</span></div>
-        <div class="fp-field"><span class="fp-label">Arrival</span><span class="fp-val" id="fld-arr">—</span></div>
+        <div class="fp-field"><span class="fp-label">GPS-Departure</span><span class="fp-val" id="fld-dep">—</span></div>
+        <div class="fp-field"><span class="fp-label">GPS-Arrival</span><span class="fp-val" id="fld-arr">—</span></div>
+        <div class="fp-field"><span class="fp-label">Plan-Departure</span><span class="fp-val" id="fld-plandep">—</span></div>
+        <div class="fp-field"><span class="fp-label">Plan-Arrival</span><span class="fp-val" id="fld-planarr">—</span></div>
         <div class="fp-field"><span class="fp-label">Alternate</span><span class="fp-val" id="fld-altn">—</span></div>
         <div class="fp-field"><span class="fp-label">Off Block UTC</span><span class="fp-val" id="fld-deptime">—</span></div>
         <div class="fp-field"><span class="fp-label">Enroute</span><span class="fp-val" id="fld-enroute">—</span></div>
         <div class="fp-field"><span class="fp-label">Fuel Endurance</span><span class="fp-val" id="fld-fuel">—</span></div>
         <div class="fp-field"><span class="fp-label">Datum UTC</span><span class="fp-val" id="fld-dt">—</span></div>
-        <div class="fp-field"><span class="fp-label">Online-Zeit</span><span class="fp-val" id="fld-dur">—</span></div>
+        <div class="fp-field"><span class="fp-label">Flugzeit</span><span class="fp-val" id="fld-dur">—</span></div>
         <div class="fp-field"><span class="fp-label">Block-Zeit</span><span class="fp-val" id="fld-block">—</span></div>
-        <div class="fp-field"><span class="fp-label">Strecke</span><span class="fp-val" id="fld-dist">—</span></div>
+        <div class="fp-field"><span class="fp-label">Distanz</span><span class="fp-val" id="fld-dist">—</span></div>
         <div class="fp-field"><span class="fp-label">Altitude (ft)</span><span class="fp-val" id="fld-alt">—</span></div>
         <div class="fp-field"><span class="fp-label">TAS (kt)</span><span class="fp-val" id="fld-tas">—</span></div>
         <div class="fp-field"><span class="fp-label">Quelle</span><span class="fp-val" id="fld-src">—</span></div>
@@ -2833,7 +2860,7 @@ function renderBummelParticipants(view) {
   if (flying.length) {
     html += '<div class="bummel-incomplete"><strong>🛫 Gerade unterwegs:</strong><br>';
     html += flying.map(p =>
-      `${escHtml(p.name || p.callsign || ('CID ' + p.cid))} — ${escHtml(p.departure)} → ${escHtml(p.arrival)}`
+      `${escHtml(p.name || p.callsign || ('CID ' + p.cid))} — ${escHtml(p.departure)} → ${escHtml(p.arrival) || 'in der Luft'}`
     ).join('<br>');
     html += '</div>';
   }
@@ -2931,7 +2958,7 @@ function renderBummelStandings(data, inProgress) {
   if (inProgress && inProgress.length) {
     html += '<div class="bummel-incomplete"><strong>🛫 Gerade unterwegs:</strong><br>';
     html += inProgress.map(p =>
-      `${escHtml(p.name || p.callsign || ('CID ' + p.cid))} — ${escHtml(p.departure)} → ${escHtml(p.arrival)}`
+      `${escHtml(p.name || p.callsign || ('CID ' + p.cid))} — ${escHtml(p.departure)} → ${escHtml(p.arrival) || 'in der Luft'}`
     ).join('<br>');
     html += '</div>';
   }
@@ -3183,6 +3210,8 @@ function openFlightDetailModal(d) {
   setOpt('fld-acicao', d.acicao);
   document.getElementById('fld-dep').textContent   = d.dep    || '—';
   document.getElementById('fld-arr').textContent   = d.arr    || '—';
+  setOpt('fld-plandep', d.plandep);
+  setOpt('fld-planarr', d.planarr);
   setOpt('fld-altn', d.altn);
   setOpt('fld-deptime', d.deptime);
   setOpt('fld-enroute', d.enroute);
@@ -3340,12 +3369,19 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   } else {
     html += `<div class="live-table-wrap"><table>
       <thead><tr>
-        <th>Callsign</th><th>Flugplan</th><th>Datum</th><th>Online</th><th>Block</th><th>Strecke</th><th>Track</th><th>Quelle</th>
+        <th>Callsign</th><th>Strecke</th><th>Plan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>
       </tr></thead><tbody>`;
 
     for (const f of flights) {
-      const dep = f.departure || '????';
-      const arr = f.arrival || '????';
+      const dep = f.gps_departure || '????';
+      const gpsArr = f.gps_arrival || '';
+      // Offen = GPS-Ankunft fehlt UND die Verbindung ist (laut Backend) noch nicht
+      // abgeschlossen. Ein geschlossener Flug ohne Ankunft (Absturz/Datenlücke) bleibt "????".
+      const isOpen = !gpsArr && !f.connection_closed;
+      const arrCell = isOpen ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '????');
+      const planDep = f.plan_departure || '';
+      const planArr = f.plan_arrival || '';
+      const planText = (planDep || planArr) ? `${escHtml(planDep || '?')} → ${escHtml(planArr || '?')}` : '—';
       const dt = f.logon_time ? f.logon_time.slice(0, 10) : '—';
       const durMin = f.duration_min;
       const dur = durMin != null
@@ -3359,14 +3395,38 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       const sourceTag = f.source === 'friesenspy'
         ? `<span class="source-badge source-fs">● FriesenSpy</span>`
         : `<span class="source-badge source-st">○ StatSim</span>`;
+      // Phase 2b: renderFlightsList zeigt (callsign_prefix='') auch Fremd-Callsigns — die
+      // zählen ohnehin nicht in Statistik/Bummel/Kutter (die filtern auf CALLSIGN_PREFIX).
+      const csUpper = (f.callsign || '').toUpperCase();
+      const unscored = csUpper && !csUpper.startsWith(_callsignPrefix);
+      const unscoredBadge = unscored
+        ? ` <span class="badge-unscored" title="Kein ${escHtml(_callsignPrefix)}-Callsign — zählt nicht in Statistik/Bummel/Kutter">nicht gewertet</span>`
+        : '';
+      // #23/#31: GPS-Legs ohne zugeordneten Flugplan haben keine flights.id → kein Track-
+      // Endpoint verfügbar. Button dann sichtbar, aber deaktiviert statt totem Klick.
       const trackId = f.source === 'friesenspy' ? f.id : f.statsim_id;
+      const hasTrack = trackId != null;
+      const trackIcon = `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
+      const trackCell = hasTrack
+        ? `<span class="td-map-btn track-btn"
+              data-track-id="${trackId}"
+              data-track-src="${f.source === 'friesenspy' ? 'friesenspy' : 'statsim'}"
+              data-logon="${escHtml(f.logon_time || '')}"
+              data-logoff="${escHtml(f.logoff_time || '')}"
+              data-callsign="${escHtml(f.callsign || '')}"
+              data-dep="${escHtml(dep)}"
+              data-arr="${escHtml(gpsArr)}"
+              title="Track anzeigen">${trackIcon}</span>`
+        : `<span class="td-map-btn" style="opacity:0.25;cursor:default;" title="Kein Track — dieses GPS-Leg hat keinen zugeordneten Flugplan">${trackIcon}</span>`;
       html += `<tr class="flight-row" style="cursor:pointer;"
           data-cs="${escHtml(f.callsign || '—')}"
           data-ac="${escHtml(f.aircraft || '—')}"
           data-acicao="${escHtml(f.aircraft_icao || '')}"
           data-rules="${escHtml(f.flight_rules || '')}"
           data-dep="${escHtml(dep)}"
-          data-arr="${escHtml(arr)}"
+          data-arr="${escHtml(gpsArr)}"
+          data-plandep="${escHtml(planDep)}"
+          data-planarr="${escHtml(planArr)}"
           data-altn="${escHtml(f.alternate || '')}"
           data-deptime="${escHtml(f.deptime || '')}"
           data-enroute="${escHtml(f.enroute_time || '')}"
@@ -3380,21 +3440,14 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
           data-route="${escHtml(f.route || '')}"
           data-remarks="${escHtml(f.remarks || '')}"
           data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
-        <td class="mono">${escHtml(f.callsign || '—')}</td>
-        <td class="td-route text-green">${escHtml(dep)} → ${escHtml(arr)}</td>
+        <td class="mono">${escHtml(f.callsign || '—')}${unscoredBadge}</td>
+        <td class="td-route text-green">${escHtml(dep)} → ${arrCell}</td>
+        <td class="mono text-label">${planText}</td>
         <td class="mono">${escHtml(dt)}</td>
         <td class="mono">${dur}</td>
         <td class="mono">${blk}</td>
         <td class="mono">${dist}</td>
-        <td><span class="td-map-btn track-btn"
-              data-track-id="${trackId}"
-              data-track-src="${f.source === 'friesenspy' ? 'friesenspy' : 'statsim'}"
-              data-logon="${escHtml(f.logon_time || '')}"
-              data-logoff="${escHtml(f.logoff_time || '')}"
-              data-callsign="${escHtml(f.callsign || '')}"
-              data-dep="${escHtml(dep)}"
-              data-arr="${escHtml(arr)}"
-              title="Track anzeigen"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></span></td>
+        <td>${trackCell}</td>
         <td>${sourceTag}</td>
       </tr>`;
     }
@@ -3809,7 +3862,7 @@ function renderActivityChart(data, grouping) {
           pointHoverRadius: 5,
         },
         {
-          label: 'Stunden',
+          label: 'Flugstunden',
           data: hoursData,
           borderColor: '#f0a500',
           backgroundColor: 'transparent',
@@ -3820,7 +3873,7 @@ function renderActivityChart(data, grouping) {
           pointHoverRadius: 5,
         },
         {
-          label: 'Ø Online-Zeit (h)',
+          label: 'Ø Flugzeit (h)',
           data: avgDurData,
           borderColor: '#D31141',
           backgroundColor: 'transparent',
@@ -3894,7 +3947,7 @@ function renderActivityChart(data, grouping) {
             font: { size: 10 },
             maxTicksLimit: 6,
           },
-          title: { display: true, text: 'Stunden', color: '#6b9ab8', font: { size: 9 } },
+          title: { display: true, text: 'Flugstunden', color: '#6b9ab8', font: { size: 9 } },
         },
       },
     },
@@ -3913,7 +3966,7 @@ function renderStatsSummary(stats, days) {
     : '—';
 
   return `
-    <p class="stats-kpi-note" style="margin-bottom:8px;">Nur Flüge mit FRS*-Callsign · FriesenSpy-Aufzeichnungen + StatSim-Daten</p>
+    <p class="stats-kpi-note" style="margin-bottom:8px;">Nur Flüge mit FRS*-Callsign · nur abgeschlossene Flüge · FriesenSpy-Aufzeichnungen + StatSim-Daten</p>
     <div class="stats-kpi-row">
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${stats.length}</span>
@@ -3925,7 +3978,7 @@ function renderStatsSummary(stats, days) {
       </div>
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${totalHours.toFixed(1)}</span>
-        <span class="stats-kpi-label">Online-Stunden</span>
+        <span class="stats-kpi-label">Flugstunden</span>
       </div>
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${avgFlightsDay}</span>
@@ -3933,11 +3986,11 @@ function renderStatsSummary(stats, days) {
       </div>
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${avgHoursDay}</span>
-        <span class="stats-kpi-label">Ø Online-Std / Tag</span>
+        <span class="stats-kpi-label">Ø Flugstd. / Tag</span>
       </div>
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${avgDur}</span>
-        <span class="stats-kpi-label">Ø Online-Zeit</span>
+        <span class="stats-kpi-label">Ø Flugzeit</span>
       </div>
       <div class="stats-kpi-card" style="min-width:160px;cursor:pointer;" onclick="openPilotFlights(${best?.cid})">
         <span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(best?.name || '—')}</span>
@@ -3986,7 +4039,7 @@ function renderStatsTable(stats, days) {
             <th>Callsign</th>
             <th>Pilot</th>
             <th style="cursor:pointer;" onclick="_statsSortClick('flight_count')">Geloggte Flüge${_sortIndicator('flight_count')}</th>
-            <th style="cursor:pointer;" onclick="_statsSortClick('total_duration_min')">Online${_sortIndicator('total_duration_min')}</th>
+            <th style="cursor:pointer;" onclick="_statsSortClick('total_duration_min')">Flugzeit${_sortIndicator('total_duration_min')}</th>
             <th style="cursor:pointer;" onclick="_statsSortClick('last_flight')">Letzter Flug${_sortIndicator('last_flight')}</th>
           </tr>
         </thead>
@@ -4107,27 +4160,27 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
     flights.forEach((f, fi) => {
       const date    = f.logon_time ? f.logon_time.slice(0, 10) : '—';
       const pts     = (f.positions || []).length;
+      // HINWEIS (#23): /api/events baut Flüge NICHT über canonicalize_legs, sondern direkt aus
+      // der `flights`-Tabelle — dort gibt es (anders als bei /api/pilots/{cid}/flights) KEINE
+      // getrennten gps_departure/plan_departure/connection_closed-Felder, nur das eine
+      // Flugplan-Feld departure/arrival. Deshalb hier bewusst KEINE separate Plan-Spalte und
+      // KEINE GPS-Bezeichnung — "läuft"-Erkennung ersatzweise über logoff_time==null.
       const dep     = f.departure || '';
       const arr     = f.arrival   || '';
       const cs      = f.callsign  || callsign;
       const isSt    = f.source === 'statsim';
-      let dur = '—';
-      if (f.logon_time && f.logoff_time) {
-        try {
-          const ms = new Date(f.logoff_time) - new Date(f.logon_time);
-          const h  = Math.floor(ms / 3600000);
-          const m  = Math.floor((ms % 3600000) / 60000);
-          dur = `${h}:${String(m).padStart(2,'0')} h`;
-        } catch(e) {}
-      } else if (f.duration_min != null) {
-        const h = Math.floor(f.duration_min / 60);
-        const m = f.duration_min % 60;
-        dur = `${h}:${String(m).padStart(2,'0')} h`;
-      }
+      // Direkt die API-Zeitwerte nehmen (duration_min=Flugzeit, block_min=Blockzeit) statt
+      // einer eigenen ms-Differenz aus logon/logoff — sonst zwei unterschiedliche Zeit-
+      // Definitionen je nachdem, ob logoff_time gesetzt ist.
+      const dur = f.duration_min != null
+        ? `${Math.floor(f.duration_min / 60)}:${String(f.duration_min % 60).padStart(2,'0')} h`
+        : '—';
       const blk = f.block_min != null
         ? `${Math.floor(f.block_min / 60)}:${String(f.block_min % 60).padStart(2,'0')} h`
         : '—';
-      const route    = dep && arr ? `${escHtml(dep)} → ${escHtml(arr)}` : '—';
+      const isOpen = !arr && !f.logoff_time;
+      const arrCell = isOpen ? `<span class="badge-live">🛫 läuft</span>` : escHtml(arr);
+      const route    = dep ? `${escHtml(dep)} → ${arrCell}` : '—';
       const evDistNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
       const evDist   = evDistNm != null && evDistNm > 0 ? `${evDistNm} nm` : '—';
       const flightKey = `${i}_${fi}`;
@@ -4185,10 +4238,10 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
           <thead><tr>
             <th style="text-align:left;">Datum</th>
             <th style="text-align:left;">Callsign</th>
-            <th style="text-align:left;">Flugplan</th>
-            <th style="text-align:left;">Online</th>
-            <th style="text-align:left;">Block</th>
             <th style="text-align:left;">Strecke</th>
+            <th style="text-align:left;">Flugzeit</th>
+            <th style="text-align:left;">Block</th>
+            <th style="text-align:left;">Distanz</th>
             <th style="text-align:left;">Wegpunkte</th>
             <th style="text-align:left;">Karte</th>
           </tr></thead>
@@ -4770,9 +4823,11 @@ function setDefaultEventDates() {
 }
 setDefaultEventDates();
 
+let _callsignPrefix = 'FRS'; // Fallback, bis /api/frontend-config geantwortet hat
 const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cfg => {
   _openaipKey = cfg.openaip_api_key || '';
   _vapidPublicKey = cfg.vapid_public_key || '';
+  _callsignPrefix = (cfg.callsign_prefix || 'FRS').toUpperCase();
   if (_vapidPublicKey) {
     document.getElementById('notif-btn').hidden = false;
     _registerServiceWorker();
