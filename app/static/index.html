@@ -1706,7 +1706,7 @@
         <div class="fp-field"><span class="fp-label">TAS (kt)</span><span class="fp-val" id="fp-tas">—</span></div>
         <div class="fp-field"><span class="fp-label">Enroute</span><span class="fp-val" id="fp-enroute">—</span></div>
         <div class="fp-field"><span class="fp-label">Fuel Endurance</span><span class="fp-val" id="fp-fuel">—</span></div>
-        <div class="fp-field"><span class="fp-label">Online seit</span><span class="fp-val" id="fp-logon">—</span></div>
+        <div class="fp-field"><span class="fp-label" id="fp-logon-label">Online seit</span><span class="fp-val" id="fp-logon">—</span></div>
       </div>
     </div>
     <div class="fp-section">
@@ -1739,7 +1739,7 @@
   </div>
 </div>
 
-<!-- Flight Detail Modal -->
+<!-- GPS Flight Detail Modal (reine GPS-Erfassung, kein Flugplan) -->
 <div id="fld-modal" class="fp-modal-overlay hidden">
   <div class="fp-modal-box" onclick="event.stopPropagation()">
     <div class="fp-modal-header">
@@ -1750,36 +1750,19 @@
       </div>
     </div>
     <div class="fp-section">
-      <div class="fp-section-title">Flight Details</div>
+      <div class="fp-section-title">GPS-Erfassung</div>
       <div class="fp-grid">
         <div class="fp-field"><span class="fp-label">Callsign</span><span class="fp-val" id="fld-cs">—</span></div>
-        <div class="fp-field"><span class="fp-label">Flight Rules</span><span class="fp-val" id="fld-rules">—</span></div>
         <div class="fp-field"><span class="fp-label">Aircraft</span><span class="fp-val" id="fld-ac">—</span></div>
-        <div class="fp-field"><span class="fp-label">Aircraft (ICAO)</span><span class="fp-val" id="fld-acicao">—</span></div>
         <div class="fp-field"><span class="fp-label">GPS-Departure</span><span class="fp-val" id="fld-dep">—</span></div>
         <div class="fp-field"><span class="fp-label">GPS-Arrival</span><span class="fp-val" id="fld-arr">—</span></div>
-        <div class="fp-field"><span class="fp-label">Plan-Departure</span><span class="fp-val" id="fld-plandep">—</span></div>
-        <div class="fp-field"><span class="fp-label">Plan-Arrival</span><span class="fp-val" id="fld-planarr">—</span></div>
-        <div class="fp-field"><span class="fp-label">Alternate</span><span class="fp-val" id="fld-altn">—</span></div>
-        <div class="fp-field"><span class="fp-label">Off Block UTC</span><span class="fp-val" id="fld-deptime">—</span></div>
-        <div class="fp-field"><span class="fp-label">Enroute</span><span class="fp-val" id="fld-enroute">—</span></div>
-        <div class="fp-field"><span class="fp-label">Fuel Endurance</span><span class="fp-val" id="fld-fuel">—</span></div>
-        <div class="fp-field"><span class="fp-label">Datum UTC</span><span class="fp-val" id="fld-dt">—</span></div>
+        <div class="fp-field"><span class="fp-label">Start UTC</span><span class="fp-val" id="fld-dt-start">—</span></div>
+        <div class="fp-field"><span class="fp-label">Landung UTC</span><span class="fp-val" id="fld-dt-land">—</span></div>
         <div class="fp-field"><span class="fp-label">Flugzeit</span><span class="fp-val" id="fld-dur">—</span></div>
         <div class="fp-field"><span class="fp-label">Block-Zeit</span><span class="fp-val" id="fld-block">—</span></div>
         <div class="fp-field"><span class="fp-label">Distanz</span><span class="fp-val" id="fld-dist">—</span></div>
-        <div class="fp-field"><span class="fp-label">Altitude (ft)</span><span class="fp-val" id="fld-alt">—</span></div>
-        <div class="fp-field"><span class="fp-label">TAS (kt)</span><span class="fp-val" id="fld-tas">—</span></div>
         <div class="fp-field"><span class="fp-label">Quelle</span><span class="fp-val" id="fld-src">—</span></div>
       </div>
-    </div>
-    <div class="fp-section" id="fld-route-section">
-      <div class="fp-section-title">Route Details</div>
-      <div class="fp-route-text" id="fld-route">—</div>
-    </div>
-    <div class="fp-section" id="fld-remarks-section">
-      <div class="fp-section-title">Remarks</div>
-      <div class="fp-remarks-text" id="fld-remarks">—</div>
     </div>
   </div>
 </div>
@@ -3153,7 +3136,8 @@ function fpSet(id, val) {
   el.className = 'fp-val' + (val ? '' : ' empty');
 }
 
-function openFpModal(pilot) {
+function openFpModal(pilot, opts) {
+  opts = opts || {};
   document.getElementById('fp-callsign-title').textContent = (pilot.callsign || '').toUpperCase();
   fpSet('fp-cs',      (pilot.callsign || '').toUpperCase());
   fpSet('fp-rules',   FP_RULES[pilot.flight_rules] || pilot.flight_rules);
@@ -3162,11 +3146,12 @@ function openFpModal(pilot) {
   fpSet('fp-arr',     pilot.arrival);
   fpSet('fp-alt-icao', pilot.alternate);
   fpSet('fp-deptime', pilot.deptime ? fmtHHMM(pilot.deptime) : '');
-  fpSet('fp-altft',   pilot.altitude ? pilot.altitude.toLocaleString('de') + ' ft' : '');
+  fpSet('fp-altft',   pilot.altitude ? Number(pilot.altitude).toLocaleString('de') + ' ft' : '');
   fpSet('fp-tas',     pilot.cruise_tas ? pilot.cruise_tas + ' kt' : '');
   fpSet('fp-enroute', pilot.enroute_time ? fmtHHMM(pilot.enroute_time) : '');
   fpSet('fp-fuel',    pilot.fuel_time ? fmtHHMM(pilot.fuel_time) : '');
-  fpSet('fp-logon',   fmtOnlineTime(pilot.logon_time));
+  document.getElementById('fp-logon-label').textContent = opts.logonLabel || 'Online seit';
+  fpSet('fp-logon',   opts.staticLogon || fmtOnlineTime(pilot.logon_time));
 
   const routeEl = document.getElementById('fp-route');
   routeEl.textContent = pilot.route || '—';
@@ -3176,13 +3161,20 @@ function openFpModal(pilot) {
 
   document.getElementById('fp-modal').classList.remove('hidden');
   document.addEventListener('keydown', _fpEscHandler);
-  setUrlState({ tab: 'live', fp: (pilot.callsign || '').toUpperCase() });
+  _fpModalDeepLink = opts.deepLink !== false;
+  if (_fpModalDeepLink) {
+    setUrlState({ tab: 'live', fp: (pilot.callsign || '').toUpperCase() });
+  }
 }
+
+let _fpModalDeepLink = true;
 
 function closeFpModal() {
   document.getElementById('fp-modal').classList.add('hidden');
   document.removeEventListener('keydown', _fpEscHandler);
-  setUrlState({ tab: 'live' });
+  if (_fpModalDeepLink) {
+    setUrlState({ tab: 'live' });
+  }
 }
 
 function _fpEscHandler(e) {
@@ -3195,46 +3187,53 @@ document.getElementById('fp-modal').addEventListener('click', (e) => {
 });
 
 // ==========================================================================
-//  FLIGHT DETAIL MODAL
+//  GPS FLIGHT DETAIL MODAL (reine GPS-Erfassung — kein Flugplan-Feld)
 // ==========================================================================
 function openFlightDetailModal(d) {
-  function setOpt(id, value) {
-    const el = document.getElementById(id);
-    el.textContent = value || '—';
-    el.closest('.fp-field').style.display = value ? '' : 'none';
-  }
   document.getElementById('fld-callsign').textContent = d.cs || '—';
   document.getElementById('fld-cs').textContent    = d.cs     || '—';
-  setOpt('fld-rules', d.rules);
   document.getElementById('fld-ac').textContent    = d.ac     || '—';
-  setOpt('fld-acicao', d.acicao);
   document.getElementById('fld-dep').textContent   = d.dep    || '—';
   document.getElementById('fld-arr').textContent   = d.arr    || '—';
-  setOpt('fld-plandep', d.plandep);
-  setOpt('fld-planarr', d.planarr);
-  setOpt('fld-altn', d.altn);
-  setOpt('fld-deptime', d.deptime);
-  setOpt('fld-enroute', d.enroute);
-  setOpt('fld-fuel',    d.fuel);
-  document.getElementById('fld-dt').textContent    = d.dt
+  document.getElementById('fld-dt-start').textContent = d.dt
     ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
+  document.getElementById('fld-dt-land').textContent  = d.dtend
+    ? d.dtend.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
   document.getElementById('fld-dur').textContent   = d.dur    || '—';
   document.getElementById('fld-block').textContent = d.block  || '—';
-  setOpt('fld-dist', d.dist);
-  setOpt('fld-alt', d.alt);
-  setOpt('fld-tas', d.tas);
+  document.getElementById('fld-dist').textContent  = d.dist   || '—';
   document.getElementById('fld-src').textContent   = d.src    || '—';
-  const route   = d.route   || '';
-  const remarks = d.remarks || '';
-  document.getElementById('fld-route').textContent   = route   || '—';
-  document.getElementById('fld-remarks').textContent = remarks || '—';
-  document.getElementById('fld-route-section').style.display   = route   ? '' : 'none';
-  document.getElementById('fld-remarks-section').style.display = remarks ? '' : 'none';
   document.getElementById('fld-modal').classList.remove('hidden');
   document.addEventListener('keydown', _fldEscHandler);
   const _urlP = getUrlState();
   _urlP.set('fld', d.dt || '');
   history.replaceState(null, '', '#' + _urlP.toString());
+}
+
+// ==========================================================================
+//  PLAN DETAIL MODAL (reine Flugplan-Sicht — nutzt das Standard-fp-modal)
+// ==========================================================================
+function openPlanDetailModal(d) {
+  openFpModal({
+    callsign: d.cs,
+    flight_rules: d.rules,
+    aircraft_icao: d.acicao,
+    aircraft: d.ac,
+    departure: d.plandep,
+    arrival: d.planarr,
+    alternate: d.altn,
+    deptime: d.deptime,
+    altitude: d.alt || null,
+    cruise_tas: d.tas,
+    enroute_time: d.enroute,
+    fuel_time: d.fuel,
+    route: d.route,
+    remarks: d.remarks,
+  }, {
+    deepLink: false,
+    logonLabel: 'Datum',
+    staticLogon: d.dt ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '',
+  });
 }
 
 function closeFldModal() {
@@ -3457,6 +3456,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
           data-enroute="${escHtml(f.enroute_time || '')}"
           data-fuel="${escHtml(f.fuel_time || '')}"
           data-dt="${escHtml(f.logon_time || '')}"
+          data-dtend="${escHtml(f.logoff_time || '')}"
           data-dur="${escHtml(dur)}"
           data-block="${escHtml(blk)}"
           data-dist="${escHtml(dist)}"
@@ -3466,7 +3466,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
           data-remarks="${escHtml(f.remarks || '')}"
           data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
         <td class="mono">${escHtml(f.callsign || '—')}${unscoredBadge}</td>
-        <td class="mono">${escHtml(dep)} → ${arrCell}</td>
+        <td class="mono td-gps-link text-green" style="cursor:pointer;" title="GPS-Erfassung öffnen">${escHtml(dep)} → ${arrCell}</td>
         ${planCell}
         <td class="mono">${escHtml(dt)}</td>
         <td class="mono">${dur}</td>
@@ -3500,11 +3500,16 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
     });
   });
 
-  // GPS-only: NUR die Plan-Zelle öffnet den Flugplan (Strecke=GPS ist reine Anzeige, nicht
-  // klickbar; Track öffnet den GPS-Track). Kein Zeilen-Klick mehr. #v8.1.0
-  container.querySelectorAll('.td-plan-link').forEach(td => {
+  // Standard-Ansicht: Strecke (GPS) öffnet die GPS-Erfassung, Plan (wenn vorhanden) öffnet
+  // den Flugplan, Track öffnet den GPS-Track. Kein Zeilen-Klick. #v8.1.0 / UI-Feedback 07-04
+  container.querySelectorAll('.td-gps-link').forEach(td => {
     td.addEventListener('click', () => {
       openFlightDetailModal(td.closest('tr').dataset);
+    });
+  });
+  container.querySelectorAll('.td-plan-link').forEach(td => {
+    td.addEventListener('click', () => {
+      openPlanDetailModal(td.closest('tr').dataset);
     });
   });
 }

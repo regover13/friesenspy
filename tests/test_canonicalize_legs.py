@@ -183,6 +183,29 @@ class TestFormParity:
         assert flight["block_min"] >= flight["duration_min"]
 
 
+class TestAircraftFallback:
+    def test_no_plan_match_falls_back_to_last_known_aircraft(self):
+        """UI-Feedback 2026-07-04: GPS-Legs ohne Plan-Match (Startplatz weicht vom Flugplan
+        ab) zeigten Aircraft leer, obwohl der #11-Fallback (last_known_aircraft) existiert.
+        Die gespeicherte Connection-Zeile selbst zaehlt als "zuletzt bekanntes Muster"."""
+        conn = _make_conn()
+        cid = 4310
+        _insert_flight(
+            conn, cid=cid, callsign="FRS40", aircraft_short="PA28",
+            departure="ZZZZ", arrival="ZZZZ",
+            logon_time="2026-07-02T09:00:00Z", logoff_time="2026-07-02T09:50:00Z",
+        )
+        _seed_eddk_eddw_track(conn, cid, "FRS40")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid and f["gps_departure"] == "EDDK")
+        assert flight["id"] is None  # kein Plan-Match (Startplatz ZZZZ != EDDK)
+        assert flight["aircraft"] == "PA28"
+
+
 class TestPrefixFilter:
     def test_prefix_empty_includes_foreign(self):
         conn = _make_conn()

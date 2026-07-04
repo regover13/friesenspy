@@ -8,7 +8,8 @@
       "🛫 Der Startpunkt wird genauer erkannt: schnelle Flugzeuge schon beim Steigen (nicht erst 500 ft hoch), langsame Muster (Wilga/Heli) weiter über die Höhe — ein Startlauf/Startabbruch löst keinen Scheinflug aus.",
       "📍 Der GPS-Track lässt sich jetzt in jeder Flugzeile öffnen — auch bei Flügen ohne zugeordneten Flugplan (vorher war der Track-Knopf dort tot).",
       "⏱️ Das „🛫 läuft“-Kennzeichen erscheint nur noch bei wirklich aktiven Flügen — ein Wochen-alter, mitten in der Luft abgebrochener Flug zeigt es nicht mehr.",
-      "🔵 In der Flugliste ist die GPS-Strecke reine Anzeige; anklickbar sind jetzt nur der Flugplan (Spalte „Plan“) und der GPS-Track — passend zur Regel „blau = klickbar“."
+      "🔵 In der Flugliste öffnet die GPS-Strecke jetzt ein eigenes Detail-Fenster (reine GPS-Erfassung inkl. Start- UND Landezeit UTC), der Flugplan (Spalte „Plan“) ein eigenes reines Flugplan-Fenster — beide klickbar, beide mit eigenem Teilen-Button.",
+      "✈️ Aircraft steht jetzt auch bei GPS-Flügen ohne passenden Flugplan-Eintrag — als Fallback zählt das zuletzt bekannte Muster desselben Piloten."
     ]
   },
   {
