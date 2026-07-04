@@ -15,6 +15,7 @@ from datetime import datetime
 _GPS_FLYING_GS_KT = 50       # sekundärer Abhebe-Helfer (nur wenn Höhe fehlt); NICHT 60
 _GPS_GROUND_AGL_FT = 300     # AGL-Obergrenze für „am Boden" beim Landungs-Guard
 _GPS_AIR_AGL_FT = 500        # AGL-Anstieg über Boden = abgehoben (Leitsignal)
+_GPS_CLIMB_MIN_AGL_FT = 100  # Mindest-AGL für den sekundären „schnell + steigend"-Abhebe-Trigger
 _GPS_BLOCK_GS_KT = 2         # Vollstopp-Schwelle (Touchdown-Kandidat)
 # Eine Landung am SELBEN Platz (X→X) wird nur dann als Zwischenlandung in den laufenden Flug
 # absorbiert (Stop-and-Go / Backtrack / Platzrunde), wenn der nächste Start binnen dieser Zeit
@@ -106,6 +107,7 @@ def _detect_segment(
 
     state = "INIT"
     ground_ref_ft: int | None = None   # Höhe am letzten Boden-Sample (Takeoff-Referenz)
+    prev_alt: int | None = None        # Höhe des Vor-Samples am Boden (für „steigend"-Prüfung)
     dep_icao: str | None = None
     dep_source: str | None = None
     takeoff_ts: str | None = None
@@ -160,10 +162,20 @@ def _detect_segment(
             continue
 
         if state == "ON_GROUND":
-            # Abheben zuerst gegen die BISHERIGE Boden-Referenz prüfen.
+            # Abheben prüfen: HÖHE ist das Leitsignal (STOL/Heli fliegen langsam), Groundspeed
+            # nur als sekundärer Trigger UND nur mit Steig-Nachweis (sonst würde ein Startlauf/
+            # abgebrochener Start bei gs>50 fälschlich als Abheben zählen — Geisterflug).
             took_off = False
             if alt is not None and ground_ref_ft is not None:
-                took_off = (alt - ground_ref_ft) > _GPS_AIR_AGL_FT
+                agl = alt - ground_ref_ft
+                climbing = (
+                    agl > _GPS_CLIMB_MIN_AGL_FT
+                    and prev_alt is not None and alt > prev_alt
+                )
+                took_off = (
+                    agl > _GPS_AIR_AGL_FT
+                    or (gs is not None and gs > _GPS_FLYING_GS_KT and climbing)
+                )
             else:
                 # Höhe nicht verfügbar → Groundspeed als sekundärer Helfer.
                 took_off = gs is not None and gs > _GPS_FLYING_GS_KT
@@ -173,6 +185,7 @@ def _detect_segment(
                 takeoff_ts = ts
                 # dep_icao/dep_source stammen aus dem Boden-Cluster (bereits getrackt).
                 max_alt = _update_max(None, alt)
+                prev_alt = None
             else:
                 # Weiter am Boden: dep-Kandidat aktualisieren. Die Boden-Referenz bleibt auf
                 # der Feldhöhe verankert (Minimum) — sie darf NICHT mit dem Steigflug mit-
@@ -183,6 +196,7 @@ def _detect_segment(
                     ground_ref_ft = alt if ground_ref_ft is None else min(ground_ref_ft, alt)
                 dep_icao = nearest_airport(lat, lon, radius_km)
                 dep_source = "gps" if dep_icao else None
+                prev_alt = alt   # Höhe dieses Boden-Samples für die nächste „steigend"-Prüfung
             continue
 
         if state == "AIRBORNE":
@@ -202,6 +216,7 @@ def _detect_segment(
                         emit_complete()
                         state = "ON_GROUND"
                         ground_ref_ft = alt
+                        prev_alt = alt
                         dep_icao = ap
                         dep_source = "gps"
                         takeoff_ts = None

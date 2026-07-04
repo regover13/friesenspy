@@ -113,7 +113,67 @@ class TestDetectGpsLegs:
         assert leg["dep_icao"] == "EDDA"
         assert leg["arr_icao"] == "EDDB"
         assert leg["complete"] is True
-        assert leg["takeoff_ts"] == _ts(60)   # erstes Sample mit kumuliertem Anstieg > 500 ft
+        # #v8.1.0: Abheben jetzt auch über „gs>50 UND steigend" — bei _ts(45) ist die C172 mit
+        # 55 kt durch 400 ft AGL steigend eindeutig in der Luft (früher/genauer als die reine
+        # 500-ft-Schwelle, die erst bei _ts(60) griff). Die geschützte Eigenschaft (verankerte
+        # Boden-Referenz → ein gradueller Steigflug hebt überhaupt ab, 1 Leg A→B) bleibt.
+        assert leg["takeoff_ts"] == _ts(45)
+
+    def test_fast_aircraft_takeoff_triggers_before_500ft(self):
+        """Schnelles Flugzeug: gs>50 UND steigend (AGL>100) → Abheben FRÜHER als bei 500 ft."""
+        track = [
+            p(0, 52.0, 8.0, 100, 0),
+            p(15, 52.0, 8.0, 100, 0),        # Boden A (prev_alt=100)
+            p(30, 52.02, 8.02, 250, 80),     # gs 80 + steigend, AGL 150 (<500) → Abheben HIER
+            p(45, 52.05, 8.05, 700, 100),    # AGL 600 (alte Logik hätte erst hier getriggert)
+            p(120, 52.7, 8.7, 5000, 150),
+            p(240, 53.5, 9.5, 200, 0),       # Landung B
+            p(300, 53.5, 9.5, 200, 0),
+            p(360, 53.5, 9.5, 200, 0),
+            p(450, 53.5, 9.5, 200, 0),       # Dwell > 180
+        ]
+        legs = run(track)
+        assert len(legs) == 1
+        assert legs[0]["takeoff_ts"] == _ts(30)
+        assert legs[0]["dep_icao"] == "EDDA"
+        assert legs[0]["arr_icao"] == "EDDB"
+
+    def test_ground_roll_high_gs_no_climb_no_takeoff(self):
+        """Startlauf/abgebrochener Start: gs>50 aber Höhe flach (nicht steigend) → KEIN Abheben,
+        erst wenn AGL > 500 (kein Geisterflug aus reinem Boden-Speed)."""
+        track = [
+            p(0, 52.0, 8.0, 100, 0),
+            p(15, 52.0, 8.0, 100, 5),
+            p(30, 52.005, 8.0, 100, 60),     # gs 60, aber alt flach (AGL 0) → KEIN Abheben
+            p(45, 52.010, 8.0, 100, 70),     # gs 70, alt flach → KEIN Abheben
+            p(60, 52.02, 8.02, 700, 90),     # AGL 600 > 500 → Abheben HIER
+            p(120, 52.7, 8.7, 5000, 150),
+            p(240, 53.5, 9.5, 200, 0),
+            p(300, 53.5, 9.5, 200, 0),
+            p(360, 53.5, 9.5, 200, 0),
+            p(450, 53.5, 9.5, 200, 0),
+        ]
+        legs = run(track)
+        assert len(legs) == 1
+        assert legs[0]["takeoff_ts"] == _ts(60)
+
+    def test_slow_wilga_takeoff_via_altitude_only(self):
+        """Langsame Wilga (<40 kt): gs-Trigger greift nie → Abheben allein über die 500-ft-Höhe."""
+        track = [
+            p(0, 52.0, 8.0, 100, 0),
+            p(15, 52.0, 8.0, 100, 5),
+            p(30, 52.005, 8.005, 300, 30),   # gs 30, AGL 200 (<500, gs<50) → noch kein Abheben
+            p(45, 52.010, 8.010, 500, 35),   # AGL 400 (<500), gs 35 → noch kein Abheben
+            p(60, 52.02, 8.02, 700, 38),     # AGL 600 > 500 → Abheben (nur über Höhe)
+            p(120, 52.7, 8.7, 3000, 40),
+            p(240, 53.5, 9.5, 200, 0),
+            p(300, 53.5, 9.5, 200, 0),
+            p(360, 53.5, 9.5, 200, 0),
+            p(450, 53.5, 9.5, 200, 0),
+        ]
+        legs = run(track)
+        assert len(legs) == 1
+        assert legs[0]["takeoff_ts"] == _ts(60)
 
     def test_two_legs_a_b_c(self):
         """Zwischenlandung ohne Refile: A→B→C = 2 Legs."""
