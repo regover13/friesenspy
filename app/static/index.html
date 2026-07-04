@@ -3265,8 +3265,9 @@ function openPlanDetailModal(d) {
     flight_rules: d.rules,
     aircraft_icao: d.acicao,
     aircraft: d.ac,
-    // d.plandep/planarr (Piloten-Detail, GPS+Plan getrennt) mit Fallback auf d.dep/arr
-    // (Events-Tab hat noch keinen GPS-Split, #33 — dort ist "dep"/"arr" bereits der Plan).
+    // d.plandep/planarr sind die eigentlichen Flugplan-Felder; d.dep/arr (GPS) nur als
+    // defensiver Fallback, falls diese Funktion je ohne Plan-Daten aufgerufen wird (die
+    // Plan-Zelle selbst ist nur klickbar, wenn planDep/planArr vorhanden sind — #33).
     departure: d.plandep || d.dep,
     arrival: d.planarr || d.arr,
     alternate: d.altn,
@@ -3409,6 +3410,138 @@ function _isLiveLeg(f) {
   return age >= 0 && age < _LIVE_MAX_AGE_MS;
 }
 
+// Gemeinsame Zeilen-Logik für renderFlightsList (Statistik/Piloten-Detail) UND
+// renderEventsResults (Event-Suche, #33) — EINE Wahrheit für Feld-Mapping/Darstellung,
+// damit beide Ansichten nicht auseinanderlaufen (das war genau das Diskrepanz-Problem vor #33).
+// ``rowAttrs`` sind zusätzliche Attribute für das <tr> (Klasse, Event-Klick-Verdrahtung etc.),
+// vom jeweiligen Aufrufer übergeben. Gibt '' zurück für Geister-Legs (Zeile überspringen).
+function _flightRowHtml(f, rowAttrs) {
+  const live = _isLiveLeg(f);
+  const distNm0 = f.distance_nm != null ? Math.round(f.distance_nm) : 0;
+  // Geister-Leg (0 min, ~0 nm, nicht live): Track riss direkt nach dem Start ab → nicht anzeigen.
+  if ((f.duration_min || 0) === 0 && distNm0 <= 1 && !live) return '';
+  const gpsDep = f.gps_departure || '';
+  const gpsArr = f.gps_arrival || '';
+  const dep = gpsDep || '????';
+  // „läuft" NUR wenn tatsächlich live (offen UND letzte GPS-Position frisch). Alt/offen
+  // ohne Ankunft → „????". connection_closed steuert das NICHT mehr (Flugplan-Begriff).
+  const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '????');
+  // Fehlen GPS-Dep UND -Arr komplett (und der Flug läuft nicht), sieht "???? → ????" als Route
+  // unschön aus — eine Zelle "N/A" statt zweier Platzhalter mit Pfeil dazwischen.
+  const routeCell = (!gpsDep && !gpsArr && !live) ? 'N/A' : `${escHtml(dep)} → ${arrCell}`;
+  const planDep = f.plan_departure || '';
+  const planArr = f.plan_arrival || '';
+  const planText = (planDep || planArr) ? `${escHtml(planDep || '?')} → ${escHtml(planArr || '?')}` : '—';
+  const dt = f.logon_time ? f.logon_time.slice(0, 10) : '—';
+  const durMin = f.duration_min;
+  const dur = durMin != null
+    ? `${Math.floor(durMin / 60)}:${String(durMin % 60).padStart(2, '0')} h`
+    : '—';
+  const blk = f.block_min != null
+    ? `${Math.floor(f.block_min / 60)}:${String(f.block_min % 60).padStart(2, '0')} h`
+    : '—';
+  const distNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
+  const dist = distNm != null && distNm > 0 ? `${distNm} nm` : '—';
+  const sourceTag = f.source === 'friesenspy'
+    ? `<span class="source-badge source-fs">● FriesenSpy</span>`
+    : `<span class="source-badge source-st">○ StatSim</span>`;
+  // Phase 2b: renderFlightsList zeigt (callsign_prefix='') auch Fremd-Callsigns — die
+  // zählen ohnehin nicht in Statistik/Bummel/Kutter (die filtern auf CALLSIGN_PREFIX).
+  const csUpper = (f.callsign || '').toUpperCase();
+  const unscored = csUpper && !csUpper.startsWith(_callsignPrefix);
+  const unscoredBadge = unscored
+    ? ` <span class="badge-unscored" title="Kein ${escHtml(_callsignPrefix)}-Callsign — zählt nicht in Statistik/Bummel/Kutter">nicht gewertet</span>`
+    : '';
+  // Track IMMER über GPS ladbar (GPS-only): StatSim → statsim_id; FS mit Flugplan-id →
+  // flights-Endpoint; FS ohne id → cid-Fenster-Endpoint ('pilot'). last_pos_ts ist die
+  // Obergrenze (nie „now"), damit offene/alte Legs nicht Positionen späterer Flüge ziehen.
+  let trackSrc, trackId;
+  if (f.source === 'statsim') { trackSrc = 'statsim'; trackId = f.statsim_id; }
+  else if (f.id != null)      { trackSrc = 'friesenspy'; trackId = f.id; }
+  else                        { trackSrc = 'pilot'; trackId = f.cid; }
+  const trackUpper = f.last_pos_ts || f.logoff_time || '';
+  const hasTrack = trackId != null;
+  const trackIcon = `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
+  const trackCell = hasTrack
+    ? `<span class="td-map-btn track-btn"
+          data-track-id="${trackId}"
+          data-track-src="${trackSrc}"
+          data-logon="${escHtml(f.logon_time || '')}"
+          data-logoff="${escHtml(trackUpper)}"
+          data-callsign="${escHtml(f.callsign || '')}"
+          data-dep="${escHtml(gpsDep)}"
+          data-arr="${escHtml(gpsArr)}"
+          title="GPS-Track anzeigen">${trackIcon}</span>`
+    : `<span class="td-map-btn" style="opacity:0.25;cursor:default;" title="Kein Track verfügbar">${trackIcon}</span>`;
+  // Plan-Zelle: klickbar (blau) NUR wenn ein Flugplan vorliegt → öffnet Flugplan-Detail.
+  const hasPlan = !!(planDep || planArr);
+  const planCell = hasPlan
+    ? `<td class="mono td-plan-link text-green" style="cursor:pointer;" title="Flugplan öffnen">${planText}</td>`
+    : `<td class="mono text-label">${planText}</td>`;
+  return `<tr ${rowAttrs}
+      data-cs="${escHtml(f.callsign || '—')}"
+      data-ac="${escHtml(f.aircraft || '—')}"
+      data-acicao="${escHtml(f.aircraft_icao || '')}"
+      data-rules="${escHtml(f.flight_rules || '')}"
+      data-dep="${escHtml(gpsDep)}"
+      data-arr="${escHtml(gpsArr)}"
+      data-plandep="${escHtml(planDep)}"
+      data-planarr="${escHtml(planArr)}"
+      data-altn="${escHtml(f.alternate || '')}"
+      data-deptime="${escHtml(f.deptime || '')}"
+      data-enroute="${escHtml(f.enroute_time || '')}"
+      data-fuel="${escHtml(f.fuel_time || '')}"
+      data-dt="${escHtml(f.logon_time || '')}"
+      data-dtend="${escHtml(f.logoff_time || '')}"
+      data-dur="${escHtml(dur)}"
+      data-block="${escHtml(blk)}"
+      data-dist="${escHtml(dist)}"
+      data-alt="${escHtml(f.cruise_altitude || '')}"
+      data-tas="${escHtml(f.cruise_tas || '')}"
+      data-route="${escHtml(f.route || '')}"
+      data-remarks="${escHtml(f.remarks || '')}"
+      data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
+    <td class="mono">${escHtml(f.callsign || '—')}${unscoredBadge}</td>
+    <td class="mono text-label">${escHtml(f.aircraft || '—')}</td>
+    <td class="mono td-gps-link text-green" style="cursor:pointer;" title="GPS-Erfassung öffnen">${routeCell}</td>
+    ${planCell}
+    <td class="mono">${escHtml(dt)}</td>
+    <td class="mono">${dur}</td>
+    <td class="mono">${blk}</td>
+    <td class="mono">${dist}</td>
+    <td>${trackCell}</td>
+    <td>${sourceTag}</td>
+  </tr>`;
+}
+
+// Klick-Verdrahtung für eine per _flightRowHtml gefüllte Tabelle: Strecke (GPS) → GPS-Erfassung,
+// Plan (wenn vorhanden) → Flugplan, Track → GPS-Track. stopPropagation auf allen drei, damit ein
+// evtl. Zeilen-Klick des Aufrufers (z. B. Events-Kartenhervorhebung) nicht zusätzlich feuert.
+function _wireFlightRowClicks(container) {
+  container.querySelectorAll('.track-btn').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = el.dataset.trackId;
+      const src = el.dataset.trackSrc;
+      if (id && id !== 'null' && id !== 'undefined') {
+        openTrackModal(src, id, el.dataset.callsign, el.dataset.dep, el.dataset.arr, el.dataset.logon, el.dataset.logoff);
+      }
+    });
+  });
+  container.querySelectorAll('.td-gps-link').forEach(td => {
+    td.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openFlightDetailModal(td.closest('tr').dataset);
+    });
+  });
+  container.querySelectorAll('.td-plan-link').forEach(td => {
+    td.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openPlanDetailModal(td.closest('tr').dataset);
+    });
+  });
+}
+
 function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   const container = document.getElementById('stats-content');
   const fsCount = flights.filter(f => f.source === 'friesenspy').length;
@@ -3432,101 +3565,11 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   } else {
     html += `<div class="live-table-wrap"><table>
       <thead><tr>
-        <th>Callsign</th><th>Strecke</th><th>Plan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>
+        <th>Callsign</th><th>Aircraft</th><th>Strecke</th><th>Plan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>
       </tr></thead><tbody>`;
 
     for (const f of flights) {
-      const live = _isLiveLeg(f);
-      const distNm0 = f.distance_nm != null ? Math.round(f.distance_nm) : 0;
-      // Geister-Leg (0 min, ~0 nm, nicht live): Track riss direkt nach dem Start ab → nicht anzeigen.
-      if ((f.duration_min || 0) === 0 && distNm0 <= 1 && !live) continue;
-      const dep = f.gps_departure || '????';
-      const gpsArr = f.gps_arrival || '';
-      // „läuft" NUR wenn tatsächlich live (offen UND letzte GPS-Position frisch). Alt/offen
-      // ohne Ankunft → „????". connection_closed steuert das NICHT mehr (Flugplan-Begriff).
-      const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '????');
-      const planDep = f.plan_departure || '';
-      const planArr = f.plan_arrival || '';
-      const planText = (planDep || planArr) ? `${escHtml(planDep || '?')} → ${escHtml(planArr || '?')}` : '—';
-      const dt = f.logon_time ? f.logon_time.slice(0, 10) : '—';
-      const durMin = f.duration_min;
-      const dur = durMin != null
-        ? `${Math.floor(durMin / 60)}:${String(durMin % 60).padStart(2, '0')} h`
-        : '—';
-      const blk = f.block_min != null
-        ? `${Math.floor(f.block_min / 60)}:${String(f.block_min % 60).padStart(2, '0')} h`
-        : '—';
-      const distNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
-      const dist = distNm != null && distNm > 0 ? `${distNm} nm` : '—';
-      const sourceTag = f.source === 'friesenspy'
-        ? `<span class="source-badge source-fs">● FriesenSpy</span>`
-        : `<span class="source-badge source-st">○ StatSim</span>`;
-      // Phase 2b: renderFlightsList zeigt (callsign_prefix='') auch Fremd-Callsigns — die
-      // zählen ohnehin nicht in Statistik/Bummel/Kutter (die filtern auf CALLSIGN_PREFIX).
-      const csUpper = (f.callsign || '').toUpperCase();
-      const unscored = csUpper && !csUpper.startsWith(_callsignPrefix);
-      const unscoredBadge = unscored
-        ? ` <span class="badge-unscored" title="Kein ${escHtml(_callsignPrefix)}-Callsign — zählt nicht in Statistik/Bummel/Kutter">nicht gewertet</span>`
-        : '';
-      // Track IMMER über GPS ladbar (GPS-only): StatSim → statsim_id; FS mit Flugplan-id →
-      // flights-Endpoint; FS ohne id → cid-Fenster-Endpoint ('pilot'). last_pos_ts ist die
-      // Obergrenze (nie „now"), damit offene/alte Legs nicht Positionen späterer Flüge ziehen.
-      let trackSrc, trackId;
-      if (f.source === 'statsim') { trackSrc = 'statsim'; trackId = f.statsim_id; }
-      else if (f.id != null)      { trackSrc = 'friesenspy'; trackId = f.id; }
-      else                        { trackSrc = 'pilot'; trackId = f.cid; }
-      const trackUpper = f.last_pos_ts || f.logoff_time || '';
-      const hasTrack = trackId != null;
-      const trackIcon = `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
-      const trackCell = hasTrack
-        ? `<span class="td-map-btn track-btn"
-              data-track-id="${trackId}"
-              data-track-src="${trackSrc}"
-              data-logon="${escHtml(f.logon_time || '')}"
-              data-logoff="${escHtml(trackUpper)}"
-              data-callsign="${escHtml(f.callsign || '')}"
-              data-dep="${escHtml(dep)}"
-              data-arr="${escHtml(gpsArr)}"
-              title="GPS-Track anzeigen">${trackIcon}</span>`
-        : `<span class="td-map-btn" style="opacity:0.25;cursor:default;" title="Kein Track verfügbar">${trackIcon}</span>`;
-      // Plan-Zelle: klickbar (blau) NUR wenn ein Flugplan vorliegt → öffnet Flugplan-Detail.
-      const hasPlan = !!(planDep || planArr);
-      const planCell = hasPlan
-        ? `<td class="mono td-plan-link text-green" style="cursor:pointer;" title="Flugplan öffnen">${planText}</td>`
-        : `<td class="mono text-label">${planText}</td>`;
-      html += `<tr class="flight-row"
-          data-cs="${escHtml(f.callsign || '—')}"
-          data-ac="${escHtml(f.aircraft || '—')}"
-          data-acicao="${escHtml(f.aircraft_icao || '')}"
-          data-rules="${escHtml(f.flight_rules || '')}"
-          data-dep="${escHtml(dep)}"
-          data-arr="${escHtml(gpsArr)}"
-          data-plandep="${escHtml(planDep)}"
-          data-planarr="${escHtml(planArr)}"
-          data-altn="${escHtml(f.alternate || '')}"
-          data-deptime="${escHtml(f.deptime || '')}"
-          data-enroute="${escHtml(f.enroute_time || '')}"
-          data-fuel="${escHtml(f.fuel_time || '')}"
-          data-dt="${escHtml(f.logon_time || '')}"
-          data-dtend="${escHtml(f.logoff_time || '')}"
-          data-dur="${escHtml(dur)}"
-          data-block="${escHtml(blk)}"
-          data-dist="${escHtml(dist)}"
-          data-alt="${escHtml(f.cruise_altitude || '')}"
-          data-tas="${escHtml(f.cruise_tas || '')}"
-          data-route="${escHtml(f.route || '')}"
-          data-remarks="${escHtml(f.remarks || '')}"
-          data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
-        <td class="mono">${escHtml(f.callsign || '—')}${unscoredBadge}</td>
-        <td class="mono td-gps-link text-green" style="cursor:pointer;" title="GPS-Erfassung öffnen">${escHtml(dep)} → ${arrCell}</td>
-        ${planCell}
-        <td class="mono">${escHtml(dt)}</td>
-        <td class="mono">${dur}</td>
-        <td class="mono">${blk}</td>
-        <td class="mono">${dist}</td>
-        <td>${trackCell}</td>
-        <td>${sourceTag}</td>
-      </tr>`;
+      html += _flightRowHtml(f, 'class="flight-row"');
     }
     html += `</tbody></table></div>`;
     const btnUpdating = statsimStatus === 'updating';
@@ -3541,29 +3584,9 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   html += `<div class="stats-disclaimer">FriesenSpy-Aufzeichnungen + StatSim-Daten</div>`;
   container.innerHTML = html;
 
-  container.querySelectorAll('.track-btn').forEach(el => {
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = el.dataset.trackId;
-      const src = el.dataset.trackSrc;
-      if (id && id !== 'null' && id !== 'undefined') {
-        openTrackModal(src, id, el.dataset.callsign, el.dataset.dep, el.dataset.arr, el.dataset.logon, el.dataset.logoff);
-      }
-    });
-  });
-
   // Standard-Ansicht: Strecke (GPS) öffnet die GPS-Erfassung, Plan (wenn vorhanden) öffnet
   // den Flugplan, Track öffnet den GPS-Track. Kein Zeilen-Klick. #v8.1.0 / UI-Feedback 07-04
-  container.querySelectorAll('.td-gps-link').forEach(td => {
-    td.addEventListener('click', () => {
-      openFlightDetailModal(td.closest('tr').dataset);
-    });
-  });
-  container.querySelectorAll('.td-plan-link').forEach(td => {
-    td.addEventListener('click', () => {
-      openPlanDetailModal(td.closest('tr').dataset);
-    });
-  });
+  _wireFlightRowClicks(container);
 }
 
 // ==========================================================================
@@ -4253,7 +4276,8 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   summary.className   = 'events-summary found';
   summary.style.cssText = 'display:flex;align-items:center;gap:12px;';
 
-  // Pilot cards
+  // Pilot cards — Flugtabelle im renderFlightsList-Schema (#33: /api/events liefert jetzt
+  // dieselben canonicalize_legs-Felder wie die Statistik-Ansicht, GPS-Split inklusive).
   let cardsHtml = '';
   pilots.forEach((p, i) => {
     const color    = PILOT_COLORS[i % PILOT_COLORS.length];
@@ -4262,70 +4286,9 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 
     let flightRows = '';
     flights.forEach((f, fi) => {
-      const date    = f.logon_time ? f.logon_time.slice(0, 10) : '—';
-      const pts     = (f.positions || []).length;
-      // HINWEIS (#23): /api/events baut Flüge NICHT über canonicalize_legs, sondern direkt aus
-      // der `flights`-Tabelle — dort gibt es (anders als bei /api/pilots/{cid}/flights) KEINE
-      // getrennten gps_departure/plan_departure/connection_closed-Felder, nur das eine
-      // Flugplan-Feld departure/arrival. Deshalb hier bewusst KEINE separate Plan-Spalte und
-      // KEINE GPS-Bezeichnung — "läuft"-Erkennung ersatzweise über logoff_time==null.
-      const dep     = f.departure || '';
-      const arr     = f.arrival   || '';
-      const cs      = f.callsign  || callsign;
-      const isSt    = f.source === 'statsim';
-      // Direkt die API-Zeitwerte nehmen statt einer eigenen ms-Differenz aus logon/logoff —
-      // sonst zwei unterschiedliche Zeit-Definitionen je nachdem, ob logoff_time gesetzt ist.
-      // ACHTUNG: /api/events liefert die Legacy-`flights`-Spalten, KEINE canonicalize_legs-
-      // Werte — duration_min ist hier die Verbindungszeit (logon→logoff, "Online"), NICHT
-      // die GPS-Flugzeit (die gibt es nur über /api/pilots/{cid}/flights, s. renderFlightsList).
-      // Echte Migration dieser Ansicht auf GPS-Flugzeit = Follow-up #33.
-      const dur = f.duration_min != null
-        ? `${Math.floor(f.duration_min / 60)}:${String(f.duration_min % 60).padStart(2,'0')} h`
-        : '—';
-      const blk = f.block_min != null
-        ? `${Math.floor(f.block_min / 60)}:${String(f.block_min % 60).padStart(2,'0')} h`
-        : '—';
-      const isOpen = !arr && !f.logoff_time;
-      const arrCell = isOpen ? `<span class="badge-live">🛫 läuft</span>` : escHtml(arr || '????');
-      const route    = dep ? `${escHtml(dep)} → ${arrCell}` : '—';
-      const evDistNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
-      const evDist   = evDistNm != null && evDistNm > 0 ? `${evDistNm} nm` : '—';
       const flightKey = `${i}_${fi}`;
       const rowAttrs = `class="events-flight-row" data-flight-key="${flightKey}" style="cursor:pointer;" title="Klick → Flug auf Karte hervorheben"`;
-      const mapCell   = isSt
-        ? `<span class="source-badge" style="font-size:0.7rem;opacity:0.6;">◌ StatSim</span>`
-        : `<span class="td-map-btn" title="Auf Karte zeigen"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></span>`;
-      const ptsCell   = isSt ? '—' : pts;
-      flightRows += `<tr ${rowAttrs}>
-        <td class="mono text-label">${escHtml(date)}</td>
-        <td class="mono">${escHtml(cs)}</td>
-        <td class="mono td-callsign-link ev-cs-cell text-green"
-            data-cs="${escHtml(cs)}"
-            data-ac="${escHtml(f.aircraft || '—')}"
-            data-acicao="${escHtml(f.aircraft_icao || '')}"
-            data-rules="${escHtml(f.flight_rules || '')}"
-            data-dep="${escHtml(dep)}"
-            data-arr="${escHtml(arr)}"
-            data-altn="${escHtml(f.alternate || '')}"
-            data-deptime="${escHtml(f.deptime || '')}"
-            data-enroute="${escHtml(f.enroute_time || '')}"
-            data-fuel="${escHtml(f.fuel_time || '')}"
-            data-dt="${escHtml(f.logon_time || '')}"
-            data-dur="${escHtml(dur)}"
-            data-block="${escHtml(blk)}"
-            data-dist="${escHtml(evDist)}"
-            data-alt="${escHtml(f.cruise_altitude || '')}"
-            data-tas="${escHtml(f.cruise_tas || '')}"
-            data-route="${escHtml(f.route || '')}"
-            data-remarks="${escHtml(f.remarks || '')}"
-            data-src="${isSt ? 'StatSim' : 'FriesenSpy'}"
-            title="Flugplan öffnen">${route}</td>
-        <td class="mono">${dur}</td>
-        <td class="mono">${blk}</td>
-        <td class="mono">${evDist}</td>
-        <td class="mono text-label">${ptsCell}</td>
-        <td>${mapCell}</td>
-      </tr>`;
+      flightRows += _flightRowHtml(f, rowAttrs);
     });
 
     const flightWord = flights.length === 1 ? 'Flug' : 'Flüge';
@@ -4343,14 +4306,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
         </div>
         ${flightRows ? `<div class="live-table-wrap" style="width:100%;margin-left:24px;"><table style="font-size:0.8rem;">
           <thead><tr>
-            <th style="text-align:left;">Datum</th>
-            <th style="text-align:left;">Callsign</th>
-            <th style="text-align:left;">Strecke</th>
-            <th style="text-align:left;">Online</th>
-            <th style="text-align:left;">Block</th>
-            <th style="text-align:left;">Distanz</th>
-            <th style="text-align:left;">Wegpunkte</th>
-            <th style="text-align:left;">Karte</th>
+            <th>Callsign</th><th>Aircraft</th><th>Strecke</th><th>Plan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>
           </tr></thead>
           <tbody>${flightRows}</tbody>
         </table></div>` : ''}
@@ -4358,13 +4314,10 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   });
   pilotList.innerHTML = cardsHtml;
 
-  // Klick auf Strecke → Flugplan-Modal (Events hat noch keinen GPS-Split, #33)
-  pilotList.querySelectorAll('.ev-cs-cell').forEach(td => {
-    td.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openPlanDetailModal(td.dataset);
-    });
-  });
+  // Strecke (GPS) → GPS-Erfassung, Plan (wenn vorhanden) → Flugplan, Track → GPS-Track —
+  // identisch zur Statistik-Ansicht (stopPropagation verhindert doppeltes Feuern mit dem
+  // Zeilen-Klick unten).
+  _wireFlightRowClicks(pilotList);
 
   // Klick auf Flug-Zeile → highlight auf Karte
   pilotList.querySelectorAll('.events-flight-row').forEach(row => {
@@ -4382,6 +4335,20 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   // openKutterDetail() bereits auf das jeweilige Panel gescrollt, der Event-Scroll würde daran
   // vorbeispringen.
   if (!_activeBummel && _kutterOpenId == null) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Track-URL für einen Flug — dieselbe Quellen-Auswahl wie der Track-Button in _flightRowHtml
+// (#33): StatSim → statsim_id, FriesenSpy mit Flugplan-id → flights-Endpoint, sonst →
+// cid-Fenster-Endpoint. null, wenn kein Track ladbar ist (kein statsim_id/id/cid).
+function _flightTrackUrl(f) {
+  const logon  = encodeURIComponent(f.logon_time || '');
+  const logoff = encodeURIComponent(f.last_pos_ts || f.logoff_time || '');
+  if (f.source === 'statsim') {
+    return f.statsim_id != null ? `/api/flights/statsim/${f.statsim_id}/track` : null;
+  }
+  if (f.id != null) return `/api/flights/${f.id}/track?logon=${logon}&logoff=${logoff}`;
+  if (f.cid != null) return `/api/pilots/${f.cid}/track?logon=${logon}&logoff=${logoff}`;
+  return null;
 }
 
 async function renderEventsMap(pilots, icaoStr, radiusKm) {
@@ -4418,71 +4385,34 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
   const resetBtn = document.getElementById('ev-reset-btn');
   if (resetBtn) resetBtn.classList.add('hidden');
 
-  const bounds = [];
-
   // Airport circles (approximate — we don't have coords here, show note)
   // If we had airport coords we'd draw circles; skip for now as API doesn't return them
 
-  // Ein Polyline pro Flug (nicht pro Pilot), alle mit gleicher Farbe des Piloten
-  pilots.forEach((p, i) => {
+  // Ein Polyline pro Flug (nicht pro Pilot), alle mit gleicher Farbe des Piloten. Tracks kommen
+  // nicht mehr eingebettet aus der Response (#33 — canonicalize_legs liefert keine positions)
+  // und werden pro Flug nachgeladen, für ALLE Quellen einheitlich über _flightTrackUrl.
+  const bounds = [];
+  const drawTasks = pilots.flatMap((p, i) => {
     const color   = PILOT_COLORS[i % PILOT_COLORS.length];
     const label   = p.callsign || p.name || String(p.cid);
     const flights = p.flights || [];
 
-    flights.forEach((f, fi) => {
-      const positions = (f.positions || [])
-        .filter(pos => pos.latitude != null && pos.longitude != null)
-        .map(pos => [pos.latitude, pos.longitude]);
-
-      if (positions.length === 0) return;
-
-      const polyline = L.polyline(positions, { color, weight: 2, opacity: 0.7 }).addTo(eventsMap);
-      polyline.bindTooltip(`${label} — ${f.logon_time ? f.logon_time.slice(0,10) : ''}`, { className: 'mono' });
-      polyline.on('click', () => highlightEventFlight(pilots, i, fi));
-      window._eventPolylines[`${i}_${fi}`] = polyline;
-      positions.forEach(p => bounds.push(p));
-
-      // Start-Marker
-      L.circleMarker(positions[0], {
-        radius: 4, color, fillColor: color, fillOpacity: 1, weight: 2,
-      }).bindTooltip(`${label} Start`, { className: 'mono' }).addTo(eventsMap);
-
-      // End-Marker
-      if (positions.length > 1) {
-        L.circleMarker(positions[positions.length - 1], {
-          radius: 4, color, fillColor: '#04080f', fillOpacity: 1, weight: 2,
-        }).bindTooltip(`${label} Ende`, { className: 'mono' }).addTo(eventsMap);
-      }
-    });
-  });
-
-  if (bounds.length > 0) {
-    window._eventAllBounds = bounds;
-    eventsMap.fitBounds(bounds, { padding: [40, 40] });
-    // fitBounds feuert bei gleichbleibendem Zoom kein zoomend → Auto-Switch explizit auswerten
-    // (z. B. Zoom 6 → Satellit statt leerer OFM-Karte).
-    if (eventsMap._applyOFMAuto) eventsMap._applyOFMAuto();
-  }
-
-  // StatSim-Tracks asynchron nachladen
-  const hasFSBounds = bounds.length > 0;
-  pilots.forEach((p, i) => {
-    const color = PILOT_COLORS[i % PILOT_COLORS.length];
-    const label = p.callsign || p.name || String(p.cid);
-    (p.flights || []).forEach((f, fi) => {
-      if (f.source !== 'statsim' || !f.statsim_id) return;
-      fetch(`/api/flights/statsim/${f.statsim_id}/track`)
+    return flights.map((f, fi) => {
+      const url = _flightTrackUrl(f);
+      if (!url) return Promise.resolve();
+      return fetch(url)
         .then(r => r.json())
         .then(pts => {
-          const positions = pts
+          const positions = (pts || [])
             .filter(pt => pt.latitude != null && pt.longitude != null)
             .map(pt => [pt.latitude, pt.longitude]);
           if (positions.length === 0) return;
           const polyline = L.polyline(positions, { color, weight: 2, opacity: 0.7 }).addTo(eventsMap);
-          polyline.bindTooltip(`${label} — ${f.logon_time ? f.logon_time.slice(0,10) : ''} (StatSim)`, { className: 'mono' });
+          polyline.bindTooltip(`${label} — ${f.logon_time ? f.logon_time.slice(0,10) : ''}`, { className: 'mono' });
           polyline.on('click', () => highlightEventFlight(pilots, i, fi));
           window._eventPolylines[`${i}_${fi}`] = polyline;
-          positions.forEach(pt => window._eventAllBounds.push(pt));
+          positions.forEach(pt => bounds.push(pt));
+
           L.circleMarker(positions[0], {
             radius: 4, color, fillColor: color, fillOpacity: 1, weight: 2,
           }).bindTooltip(`${label} Start`, { className: 'mono' }).addTo(eventsMap);
@@ -4491,13 +4421,19 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
               radius: 4, color, fillColor: '#04080f', fillOpacity: 1, weight: 2,
             }).bindTooltip(`${label} Ende`, { className: 'mono' }).addTo(eventsMap);
           }
-          if (!hasFSBounds && Object.keys(window._eventPolylines).length === 1) {
-            eventsMap.fitBounds(positions, { padding: [40, 40] });
-          }
         })
         .catch(() => {});
     });
   });
+
+  await Promise.all(drawTasks);
+  if (bounds.length > 0) {
+    window._eventAllBounds = bounds;
+    eventsMap.fitBounds(bounds, { padding: [40, 40] });
+    // fitBounds feuert bei gleichbleibendem Zoom kein zoomend → Auto-Switch explizit auswerten
+    // (z. B. Zoom 6 → Satellit statt leerer OFM-Karte).
+    if (eventsMap._applyOFMAuto) eventsMap._applyOFMAuto();
+  }
 }
 
 function resetEventFlights() {
@@ -4901,8 +4837,11 @@ async function initFromUrl() {
       await searchEvents();
       const pld = p.get('pld');
       if (pld) {
-        const cell = [...document.querySelectorAll('.ev-cs-cell')].find(c => c.dataset.dt === pld);
-        if (cell) openPlanDetailModal(cell.dataset);
+        // #33: Plan-Zelle liegt jetzt im renderFlightsList-Schema (.td-plan-link), die
+        // Daten-Attribute sitzen am <tr>, nicht mehr an der Zelle selbst (vgl. .ev-cs-cell alt).
+        const link = [...document.querySelectorAll('#events-pilots-list .td-plan-link')]
+          .find(td => td.closest('tr').dataset.dt === pld);
+        if (link) openPlanDetailModal(link.closest('tr').dataset);
       }
     }
   }

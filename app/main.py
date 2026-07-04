@@ -58,7 +58,6 @@ from app.database import (
     count_uncached_statsim,
     get_uncached_statsim_ids,
     save_statsim_positions,
-    merge_fragmented_flights,
     upsert_push_subscription,
     upsert_statsim_flights,
     compute_transport_progress,
@@ -77,7 +76,7 @@ from app.database import (
     delete_cargo_catalog,
     transport_quips_enabled,
 )
-from app.geo import filter_event_pilots, haversine, segment_into_flights
+from app.geo import filter_event_pilots
 from app.poller import VatsimPoller, create_poller, send_web_push
 from app.statsim import fetch_flight_track, fetch_pilot_flights
 from app.version import CHANGELOG, VERSION
@@ -354,6 +353,12 @@ async def get_events(
         radius: Suchradius in km (default 150)
         start:  ISO8601 UTC, z.B. "2024-01-01T10:00:00Z"
         end:    ISO8601 UTC, z.B. "2024-01-01T18:00:00Z"
+
+    Flüge kommen aus :func:`canonicalize_legs` — dieselbe Wahrheit wie Statistik/Piloten-
+    Detail/Bummel/Kutter (#33). Callsign-Filter bleibt FRS-Präfix (nicht `""`): position_history
+    (und damit `flights`) enthält ohnehin nur FRS-Sessions (Poller filtert per Callsign,
+    `filter_friesen_pilots`), aber `statsim_cache` kennt auch Fremd-Callsigns bekannter Piloten
+    — die gehören laut 2-Klassen-Regel nur in die Piloten-Statistik, nicht in die Event-Analyse.
     """
     icao_list = [code.strip().upper() for code in icao.split(",") if code.strip()]
     global_search = icao_list == ["GLOBAL"]
@@ -376,137 +381,30 @@ async def get_events(
     else:
         pilot_map = filter_event_pilots(rows, icao_list, radius, start, end)
 
-    pilots = []
-    found_cids: set[int] = set()
-    for cid, positions in pilot_map.items():
-        found_cids.add(cid)
-        callsign = positions[0].get("callsign", "") if positions else ""
-        conn2 = get_connection(settings.DB_PATH)
-        flights: list[dict] = []
-        name = ""
-        try:
-            name_row = conn2.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
-            name = name_row["name"] if name_row else ""
-            # Segmentierung über flights-Tabelle (exakter als Zeitlücke)
-            # Fetch-End um 12h erweitern damit Merge-Fragmente mitgeladen werden;
-            # nach dem Merge wird auf das echte Fenster (logon_time <= end) gefiltert.
-            if end:
-                try:
-                    fetch_end = (
-                        datetime.fromisoformat(end.replace("Z", "+00:00"))
-                        + timedelta(hours=12)
-                    ).strftime("%Y-%m-%dT%H:%M:%SZ")
-                except Exception:
-                    fetch_end = end
-            else:
-                fetch_end = "9999-12-31"
-            flight_rows = conn2.execute(
-                """SELECT callsign, departure, arrival, aircraft_short,
-                          logon_time, logoff_time, duration_min, distance_nm, block_min,
-                          route, remarks, cruise_altitude, cruise_tas, flight_rules, aircraft_icao, alternate,
-                          deptime, enroute_time, fuel_time
-                   FROM flights
-                   WHERE cid = ?
-                     AND superseded_by IS NULL
-                     AND logon_time <= ?
-                     AND (logoff_time IS NULL OR logoff_time >= ?)
-                   ORDER BY logon_time""",
-                (cid, fetch_end, start or "0000-01-01"),
-            ).fetchall()
-            if flight_rows:
-                # Duplikate entfernen (gleiche logon_time+dep+arr, entstehen bei Container-Neustarts)
-                seen: set[tuple] = set()
-                deduped: list[dict] = []
-                for r in flight_rows:
-                    key = (r["logon_time"], r["departure"] or "", r["arrival"] or "")
-                    if key not in seen:
-                        seen.add(key)
-                        deduped.append(dict(r, cid=cid))
-                merged_rows = merge_fragmented_flights(deduped, conn=conn2)
-                # Nur Flüge behalten, die innerhalb des Eventfensters GESTARTET sind
-                if end:
-                    merged_rows = [fr for fr in merged_rows if (fr.get("logon_time") or "") <= end]
-                for fr in merged_rows:
-                    if fr.get("logoff_time") and (fr.get("distance_nm") or 0) <= 0.5 and (fr.get("duration_min") or 0) <= 5:
-                        continue
-                    lo, lf = fr["logon_time"], fr.get("logoff_time", "")
-                    # Vollständigen Track laden (über Eventfenster hinaus — Overlap-Fix)
-                    full_pos = conn2.execute(
-                        "SELECT latitude, longitude, altitude, groundspeed, heading, ts "
-                        "FROM position_history WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts",
-                        (cid, lo, lf or "9999-12-31T23:59:59Z"),
-                    ).fetchall()
-                    # Dauer und Strecke für aktive Flüge on-the-fly berechnen
-                    duration = fr.get("duration_min")
-                    dist = fr.get("distance_nm") or 0
-                    if not lf:
-                        try:
-                            logon_dt = datetime.fromisoformat(lo.replace("Z", "+00:00"))
-                            duration = max(0, int((datetime.now(_timezone.utc) - logon_dt).total_seconds() / 60))
-                        except Exception:
-                            pass
-                        if len(full_pos) >= 2:
-                            dist_km = sum(
-                                haversine(full_pos[i][0], full_pos[i][1], full_pos[i + 1][0], full_pos[i + 1][1])
-                                for i in range(len(full_pos) - 1)
-                                if full_pos[i][0] and full_pos[i][1] and full_pos[i + 1][0] and full_pos[i + 1][1]
-                            )
-                            dist = round(dist_km / 1.852)
-                    flights.append({
-                        "logon_time": lo,
-                        "logoff_time": lf,
-                        "callsign": fr.get("callsign") or "",
-                        "departure": fr.get("departure") or "",
-                        "arrival": fr.get("arrival") or "",
-                        "aircraft": fr.get("aircraft_short") or fr.get("aircraft") or "",
-                        "aircraft_icao": fr.get("aircraft_icao") or "",
-                        "route": fr.get("route") or "",
-                        "remarks": fr.get("remarks") or "",
-                        "cruise_altitude": fr.get("cruise_altitude") or "",
-                        "cruise_tas": fr.get("cruise_tas") or "",
-                        "flight_rules": fr.get("flight_rules") or "",
-                        "alternate": fr.get("alternate") or "",
-                        "deptime": fr.get("deptime") or "",
-                        "enroute_time": fr.get("enroute_time") or "",
-                        "fuel_time": fr.get("fuel_time") or "",
-                        "duration_min": duration,
-                        "block_min": fr.get("block_min"),
-                        "distance_nm": dist,
-                        "positions": [dict(r) for r in full_pos],
-                        "source": "friesenspy",
-                    })
-            else:
-                # Fallback: Zeitlücken-Segmentierung (z.B. Positionen vor FriesenSpy-Start)
-                flights = [dict(f, source="friesenspy") for f in segment_into_flights(positions)]
-        finally:
-            conn2.close()
+    # callsign je cid aus der GPS-Nähe-Suche — Fallback-Anzeige, falls canonicalize_legs für
+    # diesen Piloten keinen Flug im Fenster liefert (Teilnahme bleibt GPS-belegt, seltener Randfall).
+    callsign_by_cid: dict[int, str] = {
+        cid: (positions[0].get("callsign", "") if positions else "")
+        for cid, positions in pilot_map.items()
+    }
 
-        pilots.append({
-            "cid": cid,
-            "callsign": callsign,
-            "name": name,
-            "flights": flights,
-        })
-
-    # StatSim-Ergänzung: Piloten die per DEP/ARR im Zeitfenster gefunden werden,
-    # aber keine position_history haben (z.B. FriesenSpy war nicht aktiv)
+    # StatSim-Ergänzung: Piloten, die per DEP/ARR im Zeitfenster gefunden werden, aber keine
+    # position_history haben (z.B. FriesenSpy war nicht aktiv) — nur zur cid-Ermittlung; die
+    # Flug-Dicts selbst liefert canonicalize_legs (deckt StatSim intern mit ab).
     if global_search or icao_list:
         conn3 = get_connection(settings.DB_PATH)
         try:
             if global_search:
                 statsim_rows = conn3.execute(
                     """
-                    SELECT sc.cid, sc.callsign, sc.departure, sc.arrival, sc.aircraft,
-                           sc.logon_time, sc.logoff_time, sc.duration_min, sc.statsim_id, p.name
+                    SELECT DISTINCT sc.cid, sc.callsign
                     FROM statsim_cache sc
-                    LEFT JOIN pilots p ON sc.cid = p.cid
                     WHERE sc.logon_time != ''
                       AND sc.logoff_time IS NOT NULL
                       AND sc.duration_min > 5
                       AND sc.logon_time <= ?
                       AND sc.logoff_time >= ?
                       AND sc.callsign LIKE ?
-                    ORDER BY sc.cid, sc.logon_time
                     """,
                     (end or "9999-12-31", start or "0000-01-01",
                      settings.CALLSIGN_PREFIX + "%"),
@@ -515,10 +413,8 @@ async def get_events(
                 placeholders = ",".join("?" * len(icao_list))
                 statsim_rows = conn3.execute(
                     f"""
-                    SELECT sc.cid, sc.callsign, sc.departure, sc.arrival, sc.aircraft,
-                           sc.logon_time, sc.logoff_time, sc.duration_min, sc.statsim_id, p.name
+                    SELECT DISTINCT sc.cid, sc.callsign
                     FROM statsim_cache sc
-                    LEFT JOIN pilots p ON sc.cid = p.cid
                     WHERE (sc.departure IN ({placeholders}) OR sc.arrival IN ({placeholders}))
                       AND sc.logon_time != ''
                       AND sc.logoff_time IS NOT NULL
@@ -526,7 +422,6 @@ async def get_events(
                       AND sc.logon_time <= ?
                       AND sc.logoff_time >= ?
                       AND sc.callsign LIKE ?
-                    ORDER BY sc.cid, sc.logon_time
                     """,
                     (*icao_list, *icao_list, end or "9999-12-31", start or "0000-01-01",
                      settings.CALLSIGN_PREFIX + "%"),
@@ -534,32 +429,70 @@ async def get_events(
         finally:
             conn3.close()
 
-        statsim_by_cid: dict[int, list[dict]] = {}
         for r in statsim_rows:
             cid = r["cid"]
-            if cid not in found_cids:
-                statsim_by_cid.setdefault(cid, []).append(dict(r))
+            if cid not in callsign_by_cid:
+                callsign_by_cid[cid] = r["callsign"] or ""
 
-        for cid, st_flights in statsim_by_cid.items():
+    all_cids = list(callsign_by_cid.keys())
+    if not all_cids:
+        return {"pilots": []}
+
+    conn2 = get_connection(settings.DB_PATH)
+    try:
+        all_flights = canonicalize_legs(
+            conn2, cids=all_cids, callsign_prefix=settings.CALLSIGN_PREFIX,
+            start=start, end=end,
+        )
+        flights_by_cid: dict[int, list[dict]] = {}
+        for f in all_flights:
+            flights_by_cid.setdefault(f["cid"], []).append(f)
+
+        pilots = []
+        for cid in all_cids:
+            name_row = conn2.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
+            name = name_row["name"] if name_row else ""
+            flights = flights_by_cid.get(cid, [])
+            callsign = (flights[0].get("callsign") if flights else "") or callsign_by_cid.get(cid, "")
             pilots.append({
                 "cid": cid,
-                "callsign": st_flights[0].get("callsign") or "",
-                "name": st_flights[0].get("name") or "",
+                "callsign": callsign,
+                "name": name,
                 "flights": [
                     {
-                        "logon_time":  f.get("logon_time") or "",
+                        "logon_time": f.get("logon_time") or "",
                         "logoff_time": f.get("logoff_time") or "",
-                        "callsign":    f.get("callsign") or "",
-                        "departure":   f.get("departure") or "",
-                        "arrival":     f.get("arrival") or "",
-                        "aircraft":    f.get("aircraft") or "",
-                        "statsim_id":  f.get("statsim_id"),
-                        "positions":   [],
-                        "source":      "statsim",
+                        "callsign": f.get("callsign") or "",
+                        "aircraft": f.get("aircraft") or "",
+                        "aircraft_icao": f.get("aircraft_icao") or "",
+                        "gps_departure": f.get("gps_departure") or "",
+                        "gps_arrival": f.get("gps_arrival") or "",
+                        "plan_departure": f.get("plan_departure") or "",
+                        "plan_arrival": f.get("plan_arrival") or "",
+                        "connection_closed": bool(f.get("connection_closed")),
+                        "last_pos_ts": f.get("last_pos_ts") or "",
+                        "duration_min": f.get("duration_min"),
+                        "block_min": f.get("block_min"),
+                        "distance_nm": f.get("distance_nm"),
+                        "route": f.get("route") or "",
+                        "remarks": f.get("remarks") or "",
+                        "cruise_altitude": f.get("cruise_altitude") or "",
+                        "cruise_tas": f.get("cruise_tas") or "",
+                        "flight_rules": f.get("flight_rules") or "",
+                        "alternate": f.get("alternate") or "",
+                        "deptime": f.get("deptime") or "",
+                        "enroute_time": f.get("enroute_time") or "",
+                        "fuel_time": f.get("fuel_time") or "",
+                        "id": f.get("id"),
+                        "statsim_id": f.get("statsim_id"),
+                        "cid": f.get("cid"),
+                        "source": f.get("source"),
                     }
-                    for f in st_flights
+                    for f in flights
                 ],
             })
+    finally:
+        conn2.close()
 
     return {"pilots": pilots}
 
@@ -822,18 +755,22 @@ async def admin_statsim_backfill(request: Request, limit: int = 40, background: 
     if not settings.STATSIM_API_KEY:
         return {"had_key": False, "requested": 0, "fetched": 0, "empty": 0, "remaining": None}
 
+    # callsign_prefix="" (nicht settings.CALLSIGN_PREFIX): Track-Backfill soll für JEDEN Flug
+    # eines bekannten Piloten laufen, unabhängig vom Callsign — der Präfix entscheidet nur
+    # über die Wertung, nicht darüber, ob GPS-Split-Logik angewendet wird (s. poller.py
+    # _fetch_statsim_tracks).
     if background:
         if _statsim_backfill_state["running"]:
             return {"had_key": True, "started": False, "already_running": True,
                     **_statsim_backfill_state}
         conn = get_connection(settings.DB_PATH)
         try:
-            remaining = count_uncached_statsim(conn, callsign_prefix=settings.CALLSIGN_PREFIX)
+            remaining = count_uncached_statsim(conn, callsign_prefix="")
         finally:
             conn.close()
         _statsim_backfill_state.update({"running": True, "fetched": 0, "remaining": remaining})
         asyncio.create_task(_statsim_backfill_worker(
-            settings.DB_PATH, settings.STATSIM_API_KEY, settings.CALLSIGN_PREFIX
+            settings.DB_PATH, settings.STATSIM_API_KEY, ""
         ))
         return {"had_key": True, "started": True, "remaining": remaining}
 
@@ -843,7 +780,7 @@ async def admin_statsim_backfill(request: Request, limit: int = 40, background: 
     empty = 0
     points = 0
     try:
-        ids = get_uncached_statsim_ids(conn, callsign_prefix=settings.CALLSIGN_PREFIX, limit=limit)
+        ids = get_uncached_statsim_ids(conn, callsign_prefix="", limit=limit)
         async with _httpx.AsyncClient() as client:
             for sid in ids:
                 try:
@@ -858,7 +795,7 @@ async def admin_statsim_backfill(request: Request, limit: int = 40, background: 
                     empty += 1
                 await asyncio.sleep(0.3)
         conn.commit()
-        remaining = count_uncached_statsim(conn, callsign_prefix=settings.CALLSIGN_PREFIX)
+        remaining = count_uncached_statsim(conn, callsign_prefix="")
     finally:
         conn.close()
     return {
@@ -874,7 +811,7 @@ async def admin_statsim_backfill_status(request: Request):
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
-        remaining = count_uncached_statsim(conn, callsign_prefix=settings.CALLSIGN_PREFIX)
+        remaining = count_uncached_statsim(conn, callsign_prefix="")
     finally:
         conn.close()
     return {"running": _statsim_backfill_state["running"],

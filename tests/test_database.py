@@ -1965,6 +1965,20 @@ class TestStatsimBackfillSelection:
         assert ids[0] in {601, 602}
         assert remaining == 2             # nur die zwei gültigen uncachten
 
+    def test_empty_prefix_includes_foreign_callsigns(self):
+        # Track-Backfill soll für JEDEN Flug eines bekannten Piloten laufen, unabhängig vom
+        # Callsign — der Präfix entscheidet nur über die Wertung, nicht über GPS-Split-Logik.
+        # callsign_prefix="" (LIKE '%') darf daher auch Fremd-Callsigns wie "DLH123" liefern.
+        conn = _make_conn()
+        self._cache(conn, 701, 11, cs="FRS10")
+        self._cache(conn, 702, 11, cs="DLH123")
+        conn.commit()
+        ids = get_uncached_statsim_ids(conn, callsign_prefix="", limit=10)
+        remaining = count_uncached_statsim(conn, callsign_prefix="")
+        conn.close()
+        assert set(ids) == {701, 702}
+        assert remaining == 2
+
 
 # ---------------------------------------------------------------------------
 # _block_seconds_positions / _distance_nm_positions — reine Varianten (#23 Task 3)
