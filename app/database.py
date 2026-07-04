@@ -4205,7 +4205,7 @@ def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") 
     route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
     if not dest or not route_set:
         return 0
-    radius = event.get("radius_km") or _BUMMEL_AIRPORT_RADIUS_KM
+    radius = _BUMMEL_AIRPORT_RADIUS_KM
     start = event.get("dtstart") or ""
     now = _now_utc()
     latched = get_transport_live_arrivals(conn, int(event["id"]))
@@ -4319,9 +4319,9 @@ def check_live_arrival(
     """Prüft eine aktuelle Live-Position gegen bereits geladene, laufende FriesenKutter-Ziele
     (``events``, aus :func:`active_transport_destinations`) und latcht einen Treffer dauerhaft
     (``transport_live_arrivals``) — 'am Boden' (``groundspeed < _BLOCK_GS_KT``) und im Umkreis
-    (``radius_km``-Parameter > ``event["radius_km"]`` > ``_BUMMEL_AIRPORT_RADIUS_KM``) um
-    ``destination``. Kein Rückgängigmachen; ``events`` wird NICHT selbst nachgeladen (Aufrufer
-    lädt einmal pro Poll)."""
+    (``radius_km``-Parameter, sonst ``_BUMMEL_AIRPORT_RADIUS_KM`` — kein per-Event-Override mehr,
+    s. #23) um ``destination``. Kein Rückgängigmachen; ``events`` wird NICHT selbst nachgeladen
+    (Aufrufer lädt einmal pro Poll)."""
     if groundspeed is None or groundspeed >= _BLOCK_GS_KT:
         return
     from app.geo import haversine, icao_to_coords
@@ -4331,7 +4331,7 @@ def check_live_arrival(
         coords = icao_to_coords(dest) if dest else None
         if not coords:
             continue
-        radius = radius_km or ev.get("radius_km") or _BUMMEL_AIRPORT_RADIUS_KM
+        radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
         if haversine(latitude, longitude, coords[0], coords[1]) <= radius:
             set_transport_live_arrival(conn, cid, logon_time, ev["id"], now)
 
@@ -4375,7 +4375,7 @@ def transport_anyone_in_progress(
     if not route_set:
         return False
     coords_map = {icao: icao_to_coords(icao) for icao in route_set}
-    radius = radius_km or event.get("radius_km") or _BUMMEL_AIRPORT_RADIUS_KM
+    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
     latched = get_transport_live_arrivals(conn, int(event["id"]))
     for f in open_transport_flights(conn, callsign_prefix):
         lo = f.get("logon_time") or ""
@@ -4427,7 +4427,7 @@ def compute_transport_progress(
 
     route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
     coords_map = {icao: icao_to_coords(icao) for icao in route_set}
-    radius = radius_km or event.get("radius_km") or _BUMMEL_AIRPORT_RADIUS_KM
+    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
     payload_map = get_payload_map(conn)
     default_kg = transport_default_payload_kg(conn)
 

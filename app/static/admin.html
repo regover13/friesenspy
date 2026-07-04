@@ -776,11 +776,6 @@
                     <label for="nr-dtend">Ende (UTC, optional)</label>
                     <input type="datetime-local" id="nr-dtend" />
                   </div>
-                  <div class="form-group">
-                    <label for="nr-radius">Radius (km)</label>
-                    <input type="number" id="nr-radius" value="10" min="1" max="200" />
-                    <small style="display:block;margin-top:4px;color:var(--text-label);font-size:0.78em;line-height:1.3;">Toleranzbereich in km um jeden Flugplatz der Strecke. Ein GPS-Punkt zählt als Besuch dieses Flugplatzes, wenn er innerhalb des Radius liegt — bestimmt also, was als Start, Ziel oder Zwischenstopp gewertet wird. Standard: 10 km.</small>
-                  </div>
                 </div>
                 <div style="display:flex;gap:8px;">
                   <button type="submit" class="btn btn-primary btn-sm">Anlegen</button>
@@ -821,10 +816,6 @@
                   <div class="form-group">
                     <label for="ke-dest">Ziel-ICAO (Fracht zählt hierhin)</label>
                     <input type="text" id="ke-dest" placeholder="EDXH" />
-                  </div>
-                  <div class="form-group">
-                    <label for="ke-radius">Umkreis (km, leer = 10)</label>
-                    <input type="number" id="ke-radius" min="0.5" max="50" step="0.5" placeholder="10" />
                   </div>
                   <div class="form-group">
                     <label for="ke-dtstart">Start (UTC)</label>
@@ -1220,9 +1211,8 @@
       const route   = document.getElementById('nr-route').value.trim();
       const dtstart = document.getElementById('nr-dtstart').value;
       const dtend   = document.getElementById('nr-dtend').value;
-      const radius  = parseFloat(document.getElementById('nr-radius').value);
       if (!name || !route || !dtstart) { toast('Name, Strecke und Start sind erforderlich.', true); return; }
-      const body = { name, route, dtstart: localToIso(dtstart), radius_km: radius };
+      const body = { name, route, dtstart: localToIso(dtstart) };
       if (dtend) body.dtend = localToIso(dtend);
       const res = await api('POST', '/api/admin/bummel/races', body);
       if (!res) return;
@@ -1302,10 +1292,6 @@
               <span class="meta-label">Ende</span>
               <span class="meta-val">${r.dtend ? fmtDt(r.dtend) : '—'}</span>
             </div>
-            <div class="race-meta-item">
-              <span class="meta-label">Radius</span>
-              <span class="meta-val">${r.radius_km} km</span>
-            </div>
           </div>
           <div class="race-actions">
             <button class="btn btn-sm btn-primary" data-action="preview" data-id="${r.id}">
@@ -1341,11 +1327,6 @@
             <div class="form-group">
               <label>Ende (UTC)</label>
               <input type="datetime-local" id="edit-dtend-${r.id}" value="${escA(isoToLocal(r.dtend))}" />
-            </div>
-            <div class="form-group">
-              <label>Radius (km)</label>
-              <input type="number" id="edit-radius-${r.id}" value="${r.radius_km}" min="1" max="200" />
-              <small style="display:block;margin-top:4px;color:var(--text-label);font-size:0.78em;line-height:1.3;">Toleranzbereich in km um jeden Flugplatz der Strecke. Ein GPS-Punkt zählt als Besuch dieses Flugplatzes, wenn er innerhalb des Radius liegt — bestimmt also, was als Start, Ziel oder Zwischenstopp gewertet wird. Standard: 10 km.</small>
             </div>
           </div>
           <div class="race-actions">
@@ -1394,12 +1375,10 @@
       const route   = document.getElementById(`edit-route-${id}`).value.trim();
       const dtstart = document.getElementById(`edit-dtstart-${id}`).value;
       const dtend   = document.getElementById(`edit-dtend-${id}`).value;
-      const radius  = parseFloat(document.getElementById(`edit-radius-${id}`).value);
       if (name)         body.name       = name;
       if (route)        body.route      = route;
       if (dtstart)      body.dtstart    = localToIso(dtstart);
       if (dtend)        body.dtend      = localToIso(dtend);
-      if (!isNaN(radius)) body.radius_km = radius;
       const res = await api('POST', `/api/admin/bummel/races/${id}`, body);
       if (!res) return;
       if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
@@ -2051,8 +2030,6 @@
       if (!name || !route || !dtstart) { toast('Name, Strecke und Start sind erforderlich.', true); return; }
       const body = { name, route, destination: dest, dtstart: localToIso(dtstart), cargo: keCollectCargo() };
       if (dtend) body.dtend = localToIso(dtend);
-      const radius = document.getElementById('ke-radius').value;
-      body.radius_km = radius ? parseFloat(radius) : null;
       const path = _keEditingId ? '/api/admin/transport/events/' + _keEditingId : '/api/admin/transport/events';
       const res = await api('POST', path, body);
       if (!res) return;
@@ -2090,7 +2067,7 @@
         return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,0.08);">'
           + '<div><div><b>' + escH(ev.name) + '</b> ' + statusBadge + '<span style="color:#8aa0b8;font-size:0.72rem;">' + src + '</span> ' + pushBadge + '</div>'
           + '<div style="color:#8aa0b8;font-size:0.76rem;">' + escH((ev.route || '').replace(/,/g, ' → '))
-          + ' · Ziel ' + escH(ev.destination || '—') + (ev.radius_km ? ' · Umkreis ' + ev.radius_km + ' km' : '') + '</div>'
+          + ' · Ziel ' + escH(ev.destination || '—') + '</div>'
           + '<div style="color:#8aa0b8;font-size:0.72rem;">' + escH(ev.dtstart) + ' → ' + escH(ev.dtend) + '</div>'
           + '<div style="color:#8aa0b8;font-size:0.72rem;">Fracht: ' + cargo + '</div></div>'
           + '<div style="display:flex;gap:6px;flex:none;">'
@@ -2108,7 +2085,6 @@
       document.getElementById('ke-name').value = ev.name || '';
       document.getElementById('ke-route').value = ev.route || '';
       document.getElementById('ke-dest').value = ev.destination || '';
-      document.getElementById('ke-radius').value = ev.radius_km ?? '';
       document.getElementById('ke-dtstart').value = isoToLocal(ev.dtstart);
       document.getElementById('ke-dtend').value = isoToLocal(ev.dtend);
       const rows = document.getElementById('ke-cargo-rows');

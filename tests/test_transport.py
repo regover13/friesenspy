@@ -731,22 +731,28 @@ class TestQuipPromptVerstaendlich:
         assert "mit plattdeutschem Anklang" not in _QUIP_SYSTEM
 
 
-# --- Erkennungs-Umkreis pro Event (radius_km) --------------------------------
+# --- Erkennungs-Umkreis: DB-Spalte bleibt, wirkt aber nirgends mehr per-Event (#23) ----------
+#
+# Der Per-Event-/Per-Rennen-Radius wurde ersatzlos gestrichen: es gilt überall der globale
+# 4-km-Standard (``_BUMMEL_AIRPORT_RADIUS_KM``). ``transport_events.radius_km`` bleibt als
+# Spalte bestehen (Drop erst in Task 12), wird aber nicht mehr gelesen/geschrieben.
 
 class TestEventRadius:
-    def test_radius_roundtrip_and_default(self):
+    def test_radius_column_roundtrip(self):
+        """Reine DB-Spalten-Probe (Speichern/Lesen) — die Spalte existiert weiter, hat aber
+        keinen funktionalen Effekt mehr (s. Klassen-Docstring)."""
         conn = _make_conn()
         ev = _event(conn, radius_km=3.0)          # _event reicht radius_km an create_transport_event durch
         assert ev["radius_km"] == 3.0
         ev2 = _event(conn)                        # ohne Angabe → NULL
         assert ev2["radius_km"] is None
 
-    def test_check_live_arrival_uses_event_radius(self):
-        """3-km-Event latcht bei ~3.5 km Abstand NICHT; ohne radius_km (Default 4 km,
-        ``_BUMMEL_AIRPORT_RADIUS_KM``) schon. Fixtures analog TestCheckLiveArrival
-        (~Z. 491): EDXH-Koordinaten + Offset-Position (0.0315° ≈ 3.5 km, verifiziert per
-        ``haversine`` — mit ~0.5 km Marge klar zwischen dem 3-km-Event-Radius und dem
-        4-km-Default, s. #23 Datenauswertung Standard-Radius 10->4 km)."""
+    def test_check_live_arrival_uses_global_radius_regardless_of_event_radius(self):
+        """#23: kein Per-Event-Radius mehr — check_live_arrival nutzt immer den globalen
+        4-km-Standard (``_BUMMEL_AIRPORT_RADIUS_KM``), auch wenn ``event['radius_km']`` einen
+        kleineren Wert trägt. Fixtures analog der alten Override-Probe: EDXH-Koordinaten +
+        Offset-Position (0.0315° ≈ 3.5 km, verifiziert per ``haversine`` — innerhalb des
+        4-km-Standards, außerhalb eines fiktiven 3-km-Radius)."""
         conn = _make_conn()
         from app.geo import icao_to_coords
         lat, lon = icao_to_coords("EDXH")
@@ -757,18 +763,10 @@ class TestEventRadius:
         check_live_arrival(conn, 111, "2026-07-02T18:00:00Z", pos3_5km[0], pos3_5km[1], 0.0, events)
         latched_small = get_transport_live_arrivals(conn, ev_small["id"])
         latched_default = get_transport_live_arrivals(conn, ev_default["id"])
-        assert (111, "2026-07-02T18:00:00Z") not in latched_small
+        # Beide latchen jetzt — event['radius_km']=3.0 wird ignoriert, der globale 4-km-Radius
+        # greift überall gleich.
+        assert (111, "2026-07-02T18:00:00Z") in latched_small
         assert (111, "2026-07-02T18:00:00Z") in latched_default
-
-    def test_compute_uses_event_radius_from_dict(self):
-        """compute_transport_progress ohne expliziten radius_km-Parameter nutzt event['radius_km']."""
-        conn = _make_conn()
-        ev = _event(conn, radius_km=3.0)
-        # Flug mit GPS-Erstposition 4 km neben EDWG: mit 3-km-Radius greift die GPS-Korrektur
-        # NICHT (Fallback Flugplan-DEP bleibt) — Detailassertions je nach vorhandenen Fixtures;
-        # Minimalfall: Funktion läuft ohne Parameter durch und liefert das route-Feld.
-        result = compute_transport_progress(conn, ev, ev["dtend"])
-        assert "route" in result
 
 
 # --- Fracht-Reservierung ----------------------------------------------------

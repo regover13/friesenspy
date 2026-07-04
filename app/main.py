@@ -1511,7 +1511,6 @@ async def admin_create_race(request: Request):
             route=route,
             dtstart=body["dtstart"],
             dtend=body.get("dtend") or "",
-            radius_km=float(body.get("radius_km") or 10),
         )
         conn.commit()
         return {"status": "ok", "id": rid}
@@ -1521,10 +1520,10 @@ async def admin_create_race(request: Request):
 
 @app.post("/api/admin/bummel/races/{race_id}")
 async def admin_update_race(request: Request, race_id: int):
-    """Renn-Felder bearbeiten (name/route/dtstart/dtend/radius_km)."""
+    """Renn-Felder bearbeiten (name/route/dtstart/dtend)."""
     require_admin(request)
     body = await request.json()
-    fields = {k: body[k] for k in ("name", "route", "dtstart", "dtend", "radius_km") if k in body}
+    fields = {k: body[k] for k in ("name", "route", "dtstart", "dtend") if k in body}
     conn = get_connection(get_settings().DB_PATH)
     try:
         if not get_bummel_race(conn, race_id):
@@ -1663,22 +1662,6 @@ def _normalize_route(raw: str) -> str:
         for c in str(raw or "").replace(" ", ",").split(",")
         if c.strip()
     )
-
-
-def _parse_radius_km(body: dict):
-    """radius_km aus dem Request-Body: fehlt → 'keine Änderung'; ''/None → NULL; sonst 0.5–50."""
-    if "radius_km" not in body:
-        return ...  # Ellipsis als Sentinel „nicht übergeben"
-    v = body.get("radius_km")
-    if v in (None, ""):
-        return None
-    try:
-        r = float(v)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="radius_km muss eine Zahl sein")
-    if not (0.5 <= r <= 50):
-        raise HTTPException(status_code=400, detail="radius_km muss zwischen 0.5 und 50 liegen")
-    return r
 
 
 def _transport_event_meta(ev: dict, progress: dict) -> dict:
@@ -1854,7 +1837,6 @@ async def admin_create_transport_event(request: Request):
     route = _normalize_route(body.get("route", ""))
     if len(route.split(",")) < 2 or not body.get("dtstart"):
         raise HTTPException(status_code=400, detail="route (≥2 ICAOs) und dtstart erforderlich")
-    radius = _parse_radius_km(body)
     conn = get_connection(get_settings().DB_PATH)
     try:
         eid = create_transport_event(
@@ -1865,7 +1847,6 @@ async def admin_create_transport_event(request: Request):
             dtstart=body["dtstart"],
             dtend=body.get("dtend") or None,
             cargo=body.get("cargo") or None,
-            radius_km=None if radius is ... else radius,
         )
         conn.commit()
         return {"status": "ok", "id": eid}
@@ -1888,9 +1869,6 @@ async def admin_update_transport_event(request: Request, event_id: int):
         fields["destination"] = str(body.get("destination") or "").strip().upper()
     if "cargo" in body:
         fields["cargo"] = body["cargo"]
-    radius = _parse_radius_km(body)
-    if radius is not ...:
-        fields["radius_km"] = radius
     conn = get_connection(get_settings().DB_PATH)
     try:
         if not get_transport_event(conn, event_id):
