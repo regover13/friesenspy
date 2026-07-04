@@ -427,7 +427,7 @@ mit `highlight: true` (Fallback: neuester Eintrag), `off` → `null`, eine konkr
 
 FriesenEvents aus dem FriesenFlieger-Google-Kalender — letzte 365 Tage bis heute, absteigend nach Startdatum (neueste zuerst).
 
-Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungstermine werden expandiert (jede Wiederholung als eigener Eintrag). Ganztags-Events (ohne Uhrzeit) werden nicht gespeichert.
+Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungstermine werden expandiert (jede Wiederholung als eigener Eintrag). Ganztags-Events (ohne Uhrzeit) werden nicht gespeichert. Termine, die im Google-Kalender gelöscht/storniert wurden, entfernt derselbe Sync-Lauf per Mark-and-Sweep (`delete_stale_calendar_events`) wieder aus der lokalen Kopie — sie verschwinden hier spätestens beim nächsten Sync.
 
 **Response**
 

@@ -1008,6 +1008,7 @@ class VatsimPoller:
                 upsert_calendar_events,
                 upsert_calendar_bummel_race,
                 upsert_calendar_transport_event,
+                delete_stale_calendar_events,
             )
             assert self._http_client is not None
             events = await fetch_and_parse_ical(self._http_client)
@@ -1015,6 +1016,7 @@ class VatsimPoller:
                 conn = get_connection(self.db_path)
                 try:
                     upsert_calendar_events(conn, events)
+                    deleted = delete_stale_calendar_events(conn, [ev["uid"] for ev in events])
                     for ev in events:
                         if ev.get("is_bummel"):
                             upsert_calendar_bummel_race(conn, ev)
@@ -1023,7 +1025,10 @@ class VatsimPoller:
                     conn.commit()
                 finally:
                     conn.close()
-                logger.info("Calendar sync: %d events gespeichert", len(events))
+                logger.info(
+                    "Calendar sync: %d events gespeichert, %d veraltete entfernt",
+                    len(events), deleted,
+                )
         except Exception:
             logger.exception("Error in _sync_calendar")
 

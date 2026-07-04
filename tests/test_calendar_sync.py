@@ -141,3 +141,90 @@ class TestDbRoundtrip:
         assert len(events) == 1
         assert events[0]["route"] == "EDWF,EDWG,EDWR"
         assert events[0]["is_bummel"] == 1
+
+
+class TestDeleteStaleCalendarEvents:
+    def _conn(self):
+        import sqlite3
+
+        from app.database import _DDL, get_connection, init_db
+
+        init_db(":memory:")
+        conn: sqlite3.Connection = get_connection(":memory:")
+        conn.executescript(_DDL)
+        conn.commit()
+        return conn
+
+    def _seed(self, conn, uid: str, dtstart: str):
+        from app.database import upsert_calendar_events
+
+        upsert_calendar_events(conn, [{
+            "uid": uid,
+            "summary": "Wunschradio",
+            "dtstart": dtstart,
+            "dtend": dtstart,
+            "location": "",
+            "route": "",
+            "is_bummel": 0,
+        }])
+
+    def test_uid_missing_from_active_set_is_removed(self):
+        from datetime import datetime, timedelta, timezone
+
+        from app.database import delete_stale_calendar_events, get_calendar_events
+
+        conn = self._conn()
+        recent = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._seed(conn, "stale_uid", recent)
+        conn.commit()
+
+        deleted = delete_stale_calendar_events(conn, active_uids=["some_other_uid"])
+        conn.commit()
+
+        assert deleted == 1
+        assert get_calendar_events(conn, days_back=365 * 30) == []
+
+    def test_uid_still_in_active_set_is_kept(self):
+        from datetime import datetime, timedelta, timezone
+
+        from app.database import delete_stale_calendar_events, get_calendar_events
+
+        conn = self._conn()
+        recent = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._seed(conn, "kept_uid", recent)
+        conn.commit()
+
+        deleted = delete_stale_calendar_events(conn, active_uids=["kept_uid"])
+        conn.commit()
+
+        assert deleted == 0
+        assert len(get_calendar_events(conn, days_back=365 * 30)) == 1
+
+    def test_event_outside_sync_window_is_not_touched(self):
+        from datetime import datetime, timedelta, timezone
+
+        from app.database import delete_stale_calendar_events
+
+        conn = self._conn()
+        far_past = (datetime.now(timezone.utc) - timedelta(days=400)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._seed(conn, "old_uid", far_past)
+        conn.commit()
+
+        deleted = delete_stale_calendar_events(conn, active_uids=["some_other_uid"])
+
+        assert deleted == 0
+
+    def test_empty_active_uids_is_a_noop(self):
+        from datetime import datetime, timedelta, timezone
+
+        from app.database import delete_stale_calendar_events, get_calendar_events
+
+        conn = self._conn()
+        recent = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._seed(conn, "any_uid", recent)
+        conn.commit()
+
+        deleted = delete_stale_calendar_events(conn, active_uids=[])
+
+        assert deleted == 0
+        assert len(get_calendar_events(conn, days_back=365 * 30)) == 1

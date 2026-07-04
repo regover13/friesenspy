@@ -537,11 +537,36 @@
       border: 1px solid var(--green-dim);
       box-shadow: 0 0 10px var(--green-glow);
       overflow: hidden;
+      position: relative;
     }
 
     #leaflet-map {
       width: 100%;
       height: 100%;
+    }
+
+    /* Vollbild-Toggle für Kartenansichten (Karte-Tab, Events-Tab, Track-Modal) */
+    .map-fullscreen-btn {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: var(--bg-panel);
+      border: 1px solid var(--green-dim);
+      color: var(--text-bright);
+      font-family: var(--text-display);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .map-is-fullscreen {
+      position: fixed !important;
+      inset: 0 !important;
+      z-index: 3000 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      border: none !important;
     }
 
     /* Override Leaflet popup styles for the radar aesthetic */
@@ -1259,6 +1284,7 @@
       flex-shrink: 0;
     }
     .btn-share:hover { border-color: var(--green); color: var(--green); background: var(--green-faint); }
+    .ev-row-selected { background: var(--green-faint); }
 
     /* =====================================================================
        STATISTIKEN — KPI SUMMARY BOX
@@ -1565,6 +1591,7 @@
   <div id="tab-karte" class="tab-panel">
     <div id="map-container">
       <div id="leaflet-map"></div>
+      <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('map-container', this, () => liveMap)">⛶ Vollbild</button>
     </div>
     <div class="panel" style="margin-top:16px;">
       <div class="panel-title">Karten-Legende</div>
@@ -1587,7 +1614,6 @@
           <option value="90">90 Tage</option>
           <option value="365">365 Tage</option>
         </select>
-        <button class="btn" id="stats-refresh-btn">Aktualisieren</button>
       </div>
       <div id="stats-content">
         <div class="loading">
@@ -1616,6 +1642,28 @@
         </div>
       </div>
     </div>
+    <div id="bummel-results" class="hidden">
+      <div class="panel">
+        <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <span id="bummel-title">🏁 FriesenFliegerBummel</span>
+          <button class="btn-share" onclick="copyBummelShareHeader(this)">⎘ Teilen</button>
+        </div>
+        <div id="bummel-content"></div>
+      </div>
+    </div>
+
+    <div id="kutter-results" class="hidden">
+      <div class="panel">
+        <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <span id="kutter-title">🦐 FriesenKutter</span>
+          <button class="btn-share" onclick="copyKutterShareHeader(this)">⎘ Teilen</button>
+        </div>
+        <div id="kutter-content"></div>
+      </div>
+    </div>
+
+    <!-- Steuert nur Karte + Liste unten (events-results) — deshalb direkt darüber, auch
+         wenn ein Bummel/Kutter-Panel darüber eingeblendet ist. -->
     <div class="panel">
       <div class="panel-title">Event-Analyse · Wer war dabei?</div>
       <div class="events-form">
@@ -1644,29 +1692,10 @@
       </div>
     </div>
 
-    <div id="bummel-results" class="hidden">
-      <div class="panel">
-        <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <span id="bummel-title">🏁 FriesenFliegerBummel</span>
-          <button class="btn-share" onclick="copyBummelShareHeader(this)">⎘ Teilen</button>
-        </div>
-        <div id="bummel-content"></div>
-      </div>
-    </div>
-
-    <div id="kutter-results" class="hidden">
-      <div class="panel">
-        <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <span id="kutter-title">🦐 FriesenKutter</span>
-          <button class="btn-share" onclick="copyKutterShareHeader(this)">⎘ Teilen</button>
-        </div>
-        <div id="kutter-content"></div>
-      </div>
-    </div>
-
     <div id="events-results" class="hidden">
       <div id="events-map-container" style="position:relative;">
         <div id="events-leaflet-map"></div>
+        <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('events-map-container', this, () => eventsMap)">⛶ Vollbild</button>
         <button id="ev-reset-btn" class="hidden"
           onclick="resetEventFlights()"
           style="position:absolute;top:10px;right:10px;z-index:1000;background:var(--bg-panel);border:1px solid var(--green-dim);color:var(--text-bright);font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.08em;padding:6px 12px;cursor:pointer;">
@@ -1730,8 +1759,9 @@
         <button class="fp-close-btn" onclick="closeTrackModal()">✕</button>
       </div>
     </div>
-    <div style="height:460px;position:relative;">
+    <div id="track-map-wrap" style="height:460px;position:relative;">
       <div id="track-leaflet-map" style="width:100%;height:100%;"></div>
+      <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('track-map-wrap', this, () => trackMap)">⛶ Vollbild</button>
     </div>
     <div class="fp-section" style="padding:10px 20px;">
       <div id="track-modal-info" class="text-label" style="font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.1em;"></div>
@@ -2534,7 +2564,7 @@ function renderPrefiles(data) {
     const timeStr = p.deptime ? String(p.deptime).padStart(4,'0').replace(/(\d{2})(\d{2})/, '$1:$2') + ' UTC' : '';
     const dep = (dateStr || timeStr) ? escHtml(dateStr + timeStr) : '—';
     const mapBtn = (p.departure && p.arrival)
-      ? `<span class="td-map-btn" data-idx="${i}" title="Route auf Karte" style="cursor:pointer;color:var(--green-dim)">◎</span>`
+      ? `<span class="td-map-btn" data-idx="${i}" title="Route auf Karte"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></span>`
       : '';
     html += `<tr data-idx="${i}" style="cursor:pointer;">
       <td class="mono">${escHtml(p.callsign)}</td>
@@ -2626,11 +2656,7 @@ function renderTeamspeak(data) {
 // ==========================================================================
 //  FRIESENEVENTS
 // ==========================================================================
-let _friesenEventsLoaded = false;
-
 async function fetchFriesenEvents() {
-  if (_friesenEventsLoaded) return;
-  _friesenEventsLoaded = true;
   try {
     const res  = await fetch('/api/calendar/events');
     const calEvents = await res.json();
@@ -2676,7 +2702,6 @@ async function fetchFriesenEvents() {
   } catch (e) {
     const c = document.getElementById('friesenevents-content');
     if (c) c.innerHTML = '<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden</div></div>';
-    _friesenEventsLoaded = false;
   }
 }
 
@@ -2690,6 +2715,17 @@ function _fmtEventDate(iso) {
   const hh   = String(d.getUTCHours()).padStart(2,'0');
   const min  = String(d.getUTCMinutes()).padStart(2,'0');
   return `${dd}.${mm}.${yyyy}, ${hh}:${min} UTC`;
+}
+
+// Merkt sich das zuletzt angeklickte Event über einen Neuladen der Liste hinweg (nur
+// laufzeitgebunden — bis zum App-/Seiten-Neustart, keine Persistenz nötig).
+let _lastClickedEventKey = null;
+
+function _eventKey(ev) {
+  if (ev.uid) return `uid:${ev.uid}`;
+  if (ev._raceId != null) return `race:${ev._raceId}`;
+  if (ev._kutterId != null) return `kutter:${ev._kutterId}`;
+  return `${ev.summary || ''}|${ev.dtstart || ''}`;
 }
 
 function renderFriesenEvents(data) {
@@ -2706,7 +2742,8 @@ function renderFriesenEvents(data) {
     const manuelHint = ev._manual ? ' <span class="text-label" style="font-size:0.8em;">(manuell)</span>' : '';
     const icaoCell = (ev.is_bummel || ev.is_transport) && ev.route
       ? ev.route.replace(/,/g, ' → ') : (ev.location || '—');
-    html += `<tr style="cursor:pointer;" data-event-idx="${i}">
+    const selected = _eventKey(ev) === _lastClickedEventKey ? ' ev-row-selected' : '';
+    html += `<tr class="${selected.trim()}" style="cursor:pointer;" data-event-idx="${i}">
       <td>${escHtml(ev.summary || '—')}${badge}${manuelHint}</td>
       <td class="mono text-label">${_fmtEventDate(ev.dtstart)}</td>
       <td class="mono text-green">${escHtml(icaoCell)}</td>
@@ -2717,6 +2754,7 @@ function renderFriesenEvents(data) {
   container.querySelectorAll('tr[data-event-idx]').forEach(tr => {
     const ev = data[+tr.dataset.eventIdx];
     tr.addEventListener('click', () => {
+      _lastClickedEventKey = _eventKey(ev);
       if (ev.is_bummel) openBummel(ev);
       else if (ev.is_transport) ev._kutterId ? openKutterDetail(ev._kutterId) : openKutter(ev);
       else _prefillEventForm(ev);
@@ -3161,6 +3199,7 @@ function openFpModal(pilot, opts) {
 
   document.getElementById('fp-modal').classList.remove('hidden');
   document.addEventListener('keydown', _fpEscHandler);
+  _fpModalPlanKey = null;
   _fpModalDeepLink = opts.deepLink !== false;
   if (_fpModalDeepLink) {
     setUrlState({ tab: 'live', fp: (pilot.callsign || '').toUpperCase() });
@@ -3168,11 +3207,17 @@ function openFpModal(pilot, opts) {
 }
 
 let _fpModalDeepLink = true;
+let _fpModalPlanKey = null;
 
 function closeFpModal() {
   document.getElementById('fp-modal').classList.add('hidden');
   document.removeEventListener('keydown', _fpEscHandler);
-  if (_fpModalDeepLink) {
+  if (_fpModalPlanKey !== null) {
+    const _urlP = getUrlState();
+    _urlP.delete('pld');
+    history.replaceState(null, '', '#' + _urlP.toString());
+    _fpModalPlanKey = null;
+  } else if (_fpModalDeepLink) {
     setUrlState({ tab: 'live' });
   }
 }
@@ -3219,8 +3264,10 @@ function openPlanDetailModal(d) {
     flight_rules: d.rules,
     aircraft_icao: d.acicao,
     aircraft: d.ac,
-    departure: d.plandep,
-    arrival: d.planarr,
+    // d.plandep/planarr (Piloten-Detail, GPS+Plan getrennt) mit Fallback auf d.dep/arr
+    // (Events-Tab hat noch keinen GPS-Split, #33 — dort ist "dep"/"arr" bereits der Plan).
+    departure: d.plandep || d.dep,
+    arrival: d.planarr || d.arr,
     alternate: d.altn,
     deptime: d.deptime,
     altitude: d.alt || null,
@@ -3234,6 +3281,10 @@ function openPlanDetailModal(d) {
     logonLabel: 'Datum',
     staticLogon: d.dt ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '',
   });
+  _fpModalPlanKey = d.dt || '';
+  const _urlP = getUrlState();
+  _urlP.set('pld', _fpModalPlanKey);
+  history.replaceState(null, '', '#' + _urlP.toString());
 }
 
 function closeFldModal() {
@@ -3798,6 +3849,12 @@ function updateMap(pilots) {
 //  STATISTIKEN TAB
 // ==========================================================================
 async function fetchStats(_isRetry = false) {
+  // Zeitraum-Änderung/Aktualisieren-Klick während eines offenen Piloten-Drill-Downs darf
+  // nicht zur Übersicht zurückspringen — stattdessen die Detail-Ansicht mit neuem Zeitraum
+  // neu laden.
+  if (currentStatsCid !== null) {
+    return openPilotFlights(currentStatsCid);
+  }
   const days = document.getElementById('stats-days').value;
   const container = document.getElementById('stats-content');
   // Beim Retry den bestehenden Lade-/Tabelleninhalt stehen lassen (kein Flackern).
@@ -4300,11 +4357,11 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   });
   pilotList.innerHTML = cardsHtml;
 
-  // Klick auf Callsign → Flugdetail-Modal
+  // Klick auf Strecke → Flugplan-Modal (Events hat noch keinen GPS-Split, #33)
   pilotList.querySelectorAll('.ev-cs-cell').forEach(td => {
     td.addEventListener('click', (e) => {
       e.stopPropagation();
-      openFlightDetailModal(td.dataset);
+      openPlanDetailModal(td.dataset);
     });
   });
 
@@ -4679,8 +4736,6 @@ async function _refreshKutterDetail() {
 // ==========================================================================
 //  TAB SWITCHING
 // ==========================================================================
-let statsLoaded = false;
-
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const tab = btn.dataset.tab;
@@ -4692,8 +4747,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (currentStatsCid !== null) {
       clearTimeout(_flightsRefreshTimer);
       currentStatsCid = null;
-      // fetchStats() unten via statsLoaded-Reset erzwingen
-      statsLoaded = false;
     }
 
     // Update buttons
@@ -4712,7 +4765,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
       panel.style.opacity = '1';
     });
 
-    // Lazy initialization
+    // Bei jedem Klick auf einen Nav-Tab die Daten neu laden — auch beim erneuten Klick
+    // auf den bereits aktiven Tab (kein separater "Aktualisieren"-Button pro Tab nötig).
+    if (tab === 'live') {
+      refreshLiveData();
+    }
+
     if (tab === 'karte') {
       // Double RAF: first frame makes container visible, second frame
       // ensures layout is computed before Leaflet measures the container
@@ -4721,14 +4779,13 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
           await initLiveMap();
           if (liveMap) {
             liveMap.invalidateSize();
-            updateMap(liveData);
           }
+          refreshLiveData();
         });
       });
     }
 
-    if (tab === 'statistiken' && !statsLoaded) {
-      statsLoaded = true;
+    if (tab === 'statistiken') {
       fetchStats();
     }
 
@@ -4743,7 +4800,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 // Stats controls
-document.getElementById('stats-refresh-btn').addEventListener('click', fetchStats);
 document.getElementById('stats-days').addEventListener('change', fetchStats);
 
 // Events search
@@ -4774,15 +4830,16 @@ async function initFromUrl() {
   const tabBtn = document.querySelector(`[data-tab="${tab}"]`);
   if (!tabBtn) return;
 
-  if (tab === 'statistiken') statsLoaded = true;  // prevent double-fetch
-  tabBtn.click();
-
   if (tab === 'statistiken') {
     const urlDays = p.get('days');
     if (urlDays) {
       const sel = document.getElementById('stats-days');
       if ([...sel.options].some(o => o.value === urlDays)) sel.value = urlDays;
     }
+  }
+  tabBtn.click();
+
+  if (tab === 'statistiken') {
     await fetchStats();
     const cid = p.get('cid');
     if (cid) {
@@ -4800,9 +4857,13 @@ async function initFromUrl() {
         );
       } else {
         const fld = p.get('fld');
+        const pld = p.get('pld');
         if (fld) {
           const row = [...document.querySelectorAll('.flight-row')].find(r => r.dataset.dt === fld);
           if (row) openFlightDetailModal(row.dataset);
+        } else if (pld) {
+          const row = [...document.querySelectorAll('.flight-row')].find(r => r.dataset.dt === pld);
+          if (row) openPlanDetailModal(row.dataset);
         }
       }
     }
@@ -4837,10 +4898,10 @@ async function initFromUrl() {
       if (start) document.getElementById('ev-start').value = start;
       if (end)   document.getElementById('ev-end').value   = end;
       await searchEvents();
-      const fld = p.get('fld');
-      if (fld) {
-        const cell = [...document.querySelectorAll('.ev-cs-cell')].find(c => c.dataset.dt === fld);
-        if (cell) openFlightDetailModal(cell.dataset);
+      const pld = p.get('pld');
+      if (pld) {
+        const cell = [...document.querySelectorAll('.ev-cs-cell')].find(c => c.dataset.dt === pld);
+        if (cell) openPlanDetailModal(cell.dataset);
       }
     }
   }
@@ -4913,8 +4974,7 @@ setInterval(() => {
   }
 }, 10000);
 
-// HTTP-Polling alle 15s als Fallback für iOS/PWA (SSE oft unzuverlässig)
-setInterval(async () => {
+async function refreshLiveData() {
   try {
     const res = await fetch('/api/live');
     const data = await res.json();
@@ -4922,18 +4982,41 @@ setInterval(async () => {
     renderLiveTable(data);
     updateMap(data);
   } catch (_) {}
-}, 15000);
+}
+
+// HTTP-Polling alle 15s als Fallback für iOS/PWA (SSE oft unzuverlässig)
+setInterval(refreshLiveData, 15000);
+
+// ==========================================================================
+//  KARTEN-VOLLBILD (Karte-Tab, Events-Tab, Track-Modal)
+// ==========================================================================
+function toggleMapFullscreen(wrapId, btn, getMap) {
+  const wrap = document.getElementById(wrapId);
+  const isFs = wrap.classList.toggle('map-is-fullscreen');
+  btn.textContent = isFs ? '✕ Vollbild verlassen' : '⛶ Vollbild';
+  document.body.style.overflow = isFs ? 'hidden' : '';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const map = getMap();
+    if (map) map.invalidateSize();
+  }));
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const fsWrap = document.querySelector('.map-is-fullscreen');
+  if (!fsWrap) return;
+  const btn = fsWrap.querySelector('.map-fullscreen-btn');
+  if (!btn) return;
+  btn.click();
+  // Verhindert, dass ein umgebendes Modal (z. B. Track-Modal) dasselbe Escape zusätzlich
+  // als "Modal schließen" auswertet — erstes Escape verlässt nur das Karten-Vollbild.
+  e.stopImmediatePropagation();
+});
 
 // Bei Rückkehr aus Hintergrund / Screen-Lock sofort neu laden
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) return;
-  try {
-    const res = await fetch('/api/live');
-    const data = await res.json();
-    liveData = data;
-    renderLiveTable(data);
-    updateMap(data);
-  } catch (_) {}
+  await refreshLiveData();
   if (!sseSource || sseSource.readyState !== EventSource.OPEN) {
     connectSSE();
   }
