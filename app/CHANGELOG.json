@@ -1,5 +1,20 @@
 [
   {
+    "version": "8.2.0",
+    "date": "2026-07-04",
+    "title": "Vollbild-Karten, aktuelle Events-Ansicht, Teilen-Link im Plan-Popup repariert",
+    "items": [
+      "⛶ Alle drei Kartenansichten (Karte-Tab, Event-Suche, Track-Fenster) lassen sich jetzt auf Vollbild vergrößern (Button oben links, Esc zum Verlassen).",
+      "🔗 Der „Teilen“-Button im Flugplan-Popup kopierte einen Link ohne den Flug selbst — behoben, das Popup trägt jetzt einen eigenen Deep-Link-Parameter.",
+      "📋 Das Flugplan-Popup im Events-Tab zeigte nach dem letzten Umbau nur noch die halbe Information (Flight Rules, Alternate, Route etc. fehlten) — wieder vollständig.",
+      "🗑️ Im Google-Kalender gelöschte Termine (z. B. ein abgesagtes „Wunschradio“-Event) verschwinden jetzt beim nächsten Kalender-Sync auch aus der FriesenEvents-Liste, statt für immer stehen zu bleiben.",
+      "🔄 Jeder Tab (Live/Karte/Statistik/Events) lädt seine Daten jetzt beim Anklicken neu — auch beim erneuten Klick auf einen bereits aktiven Tab. Der separate „Aktualisieren“-Button in Statistik entfällt dadurch (redundant); ein Zeitraum-Wechsel im Piloten-Drill-Down bleibt jetzt in der Detail-Ansicht statt zur Übersicht zu springen.",
+      "📌 Das zuletzt angeklickte Event in der FriesenEvents-Liste bleibt über einen Refresh hinweg hervorgehoben.",
+      "🧭 Das Such-Formular „Event-Analyse“ im Events-Tab sitzt jetzt direkt über der Karte, die es steuert (vorher lag bei offenem Bummel/Kutter-Panel ein anderer Block dazwischen).",
+      "🗺️ Das Karten-Symbol bei eingereichten Flugplänen (Prefile) entspricht jetzt dem einheitlichen Icon aus den übrigen Ansichten."
+    ]
+  },
+  {
     "version": "8.1.0",
     "date": "2026-07-04",
     "title": "GPS-Fluglisten: Track immer da, „läuft“ nur echt, Platzrunde + Pause getrennt",
