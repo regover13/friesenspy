@@ -3366,6 +3366,28 @@ def upsert_calendar_events(conn: sqlite3.Connection, events: list[dict]) -> None
         )
 
 
+def delete_stale_calendar_events(conn: sqlite3.Connection, active_uids: list[str]) -> int:
+    """Entfernt Kalender-Events im Sync-Fenster (365 Tage zurück, 90 Tage voraus — muss zum
+    Fenster in ``calendar_sync.fetch_and_parse_ical`` passen), die im aktuellen Sync-Lauf nicht
+    mehr geliefert wurden (z. B. im Google-Kalender gelöscht/storniert). ``upsert_calendar_events``
+    kennt nur INSERT OR REPLACE — ohne diesen Sweep bleiben gelöschte Termine für immer sichtbar
+    (#38, z. B. das "Wunschradio"-Event). Persistente Bummel-/Kutter-Events (``bummel_races``,
+    ``transport_events``) sind bewusst nicht betroffen — die bleiben, einmal erkannt, unabhängig
+    vom Kalenderstand bestehen."""
+    if not active_uids:
+        return 0
+    now = datetime.now(timezone.utc)
+    window_start = (now - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    window_end = (now + timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    placeholders = ",".join("?" * len(active_uids))
+    cur = conn.execute(
+        f"DELETE FROM calendar_events WHERE dtstart >= ? AND dtstart <= ? "
+        f"AND uid NOT IN ({placeholders})",
+        (window_start, window_end, *active_uids),
+    )
+    return cur.rowcount
+
+
 def get_calendar_events(conn: sqlite3.Connection, days_back: int = 365) -> list[dict]:
     """FriesenEvents der letzten N Tage, neueste zuerst."""
     now = datetime.now(timezone.utc)

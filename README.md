@@ -113,6 +113,7 @@ Interaktive Karte mit allen aktuell fliegenden Friesen.
 - Karte frei verschieben und zoomen
 - Karten-Layer wechseln (Auswahl oben rechts, siehe [Karten-Layer](#️-karten-layer))
 - Von einem anderen Tab aus mit ◎ direkt zu einem bestimmten Piloten springen
+- **⛶ Vollbild** (Button oben links) — Karte auf den ganzen Bildschirm vergrößern, **Esc** oder erneuter Klick verlässt es wieder
 
 ---
 
@@ -132,7 +133,7 @@ Interaktive Karte mit allen aktuell fliegenden Friesen.
 **Was du tun kannst:**
 - **Pilot anklicken** → klappt die Einzelflug-Liste für diesen Piloten auf; Daten kommen sofort aus dem lokalen Cache, ein Update von StatSim läuft automatisch im Hintergrund
 - **„Alle Flüge laden (letztes Jahr)"** → erzwingt einen vollständigen 365-Tage-Refresh von StatSim für diesen Piloten (dauert etwas länger)
-- **◎** neben einem Einzelflug → öffnet den GPS-Track dieses Fluges auf der Karte
+- **◎** neben einem Einzelflug → öffnet den GPS-Track dieses Fluges in einem eigenen Fenster (mit **⛶ Vollbild**)
 - **⎘** neben einem Einzelflug → kopiert den Link zu genau diesem Flug
 
 > **„Ich sehe nur 30 Tage Statistik"** — Das ist der Default. Oben links im Statistiken-Tab gibt es einen Umschalter für **30 / 90 / 365 Tage**. Für Piloten, die FriesenSpy noch nicht kannte, werden beim ersten Anklicken automatisch die letzten 31 Tage von StatSim geholt. Für das vollständige letzte Jahr einmal **„Alle Flüge laden (letztes Jahr)"** klicken — das dauert einige Sekunden.
@@ -155,7 +156,7 @@ gewertet"**-Badge — sie zählen nicht in Statistik, FriesenFliegerBummel oder 
 
 Wer von den Friesen war bei einem bestimmten Event dabei?
 
-Oben erscheint die **FriesenEvents-Liste** — Events aus dem FriesenFlieger-Google-Kalender, letzte 365 Tage bis heute, inkl. Wiederholungstermine, neueste zuerst. Ein Klick füllt Datum, Uhrzeit und ICAO-Code automatisch vor und **startet die Suche sofort**. Events ohne erkannten ICAO-Code suchen weltweit (`global`).
+Oben erscheint die **FriesenEvents-Liste** — Events aus dem FriesenFlieger-Google-Kalender, letzte 365 Tage bis heute, inkl. Wiederholungstermine, neueste zuerst. Ein Klick füllt Datum, Uhrzeit und ICAO-Code automatisch vor und **startet die Suche sofort**; das zuletzt angeklickte Event bleibt in der Liste hervorgehoben. Events ohne erkannten ICAO-Code suchen weltweit (`global`). Die Liste holt sich beim erneuten Öffnen des Events-Tabs automatisch frische Daten — im Google-Kalender gelöschte Termine verschwinden dadurch spätestens beim nächsten Kalender-Sync (alle 6h) auch hier.
 
 **Wie es funktioniert:**
 Du gibst einen **ICAO-Code** (z.B. `EDDK`) oder **`global`** für weltweite Suche ein, sowie einen **Zeitraum**. Bei ICAO-Suche wird zusätzlich ein **Radius in km** berücksichtigt. FriesenSpy sucht alle Friesen-Flüge, deren Route durch den Bereich verlief oder die dort gestartet/gelandet sind. Piloten werden gefunden, wenn ihr Flug das Zeitfenster **überlappt** — auch wer schon früher gestartet oder erst nach Event-Ende gelandet ist.
@@ -168,6 +169,7 @@ Du gibst einen **ICAO-Code** (z.B. `EDDK`) oder **`global`** für weltweite Such
 **Was du tun kannst:**
 - **Track auf der Karte anklicken** oder **Flug-Zeile in der Pilotenliste anklicken** → hebt diesen Track farblich hervor, alle anderen werden transparent
 - **„↺ Alle Tracks"** → blendet alle Tracks wieder gleichmäßig ein
+- **⛶ Vollbild** (Button oben links auf der Karte) — Esc oder erneuter Klick verlässt es wieder
 - **Callsign in der Pilotenliste anklicken** → öffnet das Flugdetail-Modal mit Strecke, Flugzeugtyp und weiteren Infos
 - **⎘** → Link zu dieser Event-Suche teilen — alle Filtereinstellungen stecken in der URL, der Empfänger sieht dasselbe Ergebnis
 
