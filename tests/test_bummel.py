@@ -87,15 +87,6 @@ def _by_cid(entries: list[dict], cid: int) -> dict | None:
     return next((e for e in entries if e["cid"] == cid), None)
 
 
-def _add_position(conn, cid, lat, lon, ts, alt=300, gs=0):
-    conn.execute(
-        "INSERT INTO position_history (cid, latitude, longitude, altitude, groundspeed, heading, ts) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (cid, lat, lon, alt, gs, 0, ts),
-    )
-    conn.commit()
-
-
 def _parse_iso(s: str) -> datetime:
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
@@ -113,16 +104,12 @@ def _add_realistic_track(
     *,
     flight_min: int = 30,
     callsign: str = "FRS123",
-    open_end: bool = False,
 ) -> str:
     """Schreibt einen echten GPS-Track dep->arr in ``position_history`` — Muster wie
     ``tests/test_canonicalize_legs.py::_seed_eddk_eddw_track`` (ON_GROUND -> Steigflug ->
     Reiseflug -> Sinkflug -> Aufsetzen -> ON_GROUND), damit ``detect_gps_legs`` Start/Ziel
     tatsächlich erkennt (ein simpler 2-Punkt-Track ohne Höhen-/Speed-Änderung löst unter dem
     GPS-only-Detektor KEINEN Start/keine Landung aus).
-
-    ``open_end=True`` lässt den letzten (rollenden) Boden-Punkt weg — für Szenarien, in denen
-    der Track kurz nach dem Aufsetzen endet (Verbindung bleibt technisch offen, wie bei „Frode").
 
     Gibt den ISO-Zeitpunkt des letzten geschriebenen Samples zurück.
     """
@@ -146,8 +133,7 @@ def _add_realistic_track(
         (desc_min, arr[0], arr[1], arr_elev + 500, 60),
         (touchdown_min, arr[0], arr[1], arr_elev, 0),
     ]
-    if not open_end:
-        points.append((end_min, arr[0], arr[1], arr_elev, 0))
+    points.append((end_min, arr[0], arr[1], arr_elev, 0))
     last_ts = start_ts
     for off_min, lat, lon, alt, gs in points:
         ts = _fmt_iso(t0 + timedelta(minutes=off_min))
