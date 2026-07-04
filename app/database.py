@@ -2931,7 +2931,7 @@ def update_bummel_reveals(
             continue
         route_icaos = [c for c in (race["route"] or "").split(",") if c.strip()]
         if _bummel_anyone_in_progress(
-            conn, route_icaos, race["radius_km"] or _BUMMEL_AIRPORT_RADIUS_KM,
+            conn, route_icaos, _BUMMEL_AIRPORT_RADIUS_KM,
             started_before=dtend, callsign_prefix=callsign_prefix,
         ):
             continue
@@ -2990,7 +2990,7 @@ def update_bummel_starts(
         route_icaos = [c for c in (race["route"] or "").split(",") if c.strip()]
         moved = [
             s for s in bummel_open_starters(
-                conn, route_icaos, race["radius_km"] or _BUMMEL_AIRPORT_RADIUS_KM,
+                conn, route_icaos, _BUMMEL_AIRPORT_RADIUS_KM,
                 callsign_prefix=callsign_prefix,
             )
             if s["moved"]
