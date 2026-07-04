@@ -3427,11 +3427,14 @@ function _flightRowHtml(f, rowAttrs) {
   // ohne Ankunft → „????". connection_closed steuert das NICHT mehr (Flugplan-Begriff).
   const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '????');
   // Fehlen GPS-Dep UND -Arr komplett (und der Flug läuft nicht), sieht "???? → ????" als Route
-  // unschön aus — eine Zelle "N/A" statt zweier Platzhalter mit Pfeil dazwischen.
-  const routeCell = (!gpsDep && !gpsArr && !live) ? 'N/A' : `${escHtml(dep)} → ${arrCell}`;
+  // unschön aus — eine zentrierte "—" statt zweier Platzhalter mit Pfeil dazwischen (einheitlich
+  // mit dem "—"-Platzhalter überall sonst in der Tabelle, kein Sonderzeichen wie "N/A" oder "?").
+  const routeCell = (!gpsDep && !gpsArr && !live)
+    ? `<span style="display:block;text-align:center;">—</span>`
+    : `${escHtml(dep)} → ${arrCell}`;
   const planDep = f.plan_departure || '';
   const planArr = f.plan_arrival || '';
-  const planText = (planDep || planArr) ? `${escHtml(planDep || '?')} → ${escHtml(planArr || '?')}` : '—';
+  const planText = (planDep || planArr) ? `${escHtml(planDep || '—')} → ${escHtml(planArr || '—')}` : '—';
   const dt = f.logon_time ? f.logon_time.slice(0, 10) : '—';
   const durMin = f.duration_min;
   const dur = durMin != null

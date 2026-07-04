@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.3.3",
+    "date": "2026-07-04",
+    "title": "Platzhalter für fehlende Werte vereinheitlicht",
+    "items": [
+      "➖ „N/A“ (Strecke ohne GPS-Daten) und „?“ (Flugplan mit nur einer bekannten Seite) durch das überall sonst verwendete „—“ ersetzt — bei komplett fehlender Strecke jetzt zentriert."
+    ]
+  },
+  {
     "version": "8.3.2",
     "date": "2026-07-04",
     "title": "Callsign fehlte bei StatSim-Flügen ohne erkannten Startplatz",
