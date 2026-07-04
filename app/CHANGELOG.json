@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.3.5",
+    "date": "2026-07-04",
+    "title": "Letzte „????“-Reste beseitigt (Live-Tab, Flugplan-Popup)",
+    "items": [
+      "➖ Auch in der Live-Tabelle und im Flugplan-Popup stand bei fehlendem Start/Ziel noch „????“ — jetzt überall im Frontend einheitlich „—“."
+    ]
+  },
+  {
     "version": "8.3.4",
     "date": "2026-07-04",
     "title": "„????“ bei einseitig fehlender GPS-Strecke ebenfalls vereinheitlicht",
