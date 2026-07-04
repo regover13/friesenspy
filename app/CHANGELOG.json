@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.3.4",
+    "date": "2026-07-04",
+    "title": "„????“ bei einseitig fehlender GPS-Strecke ebenfalls vereinheitlicht",
+    "items": [
+      "➖ Ist nur Start ODER nur Ziel per GPS bekannt, stand auf der anderen Seite noch „????“ — jetzt konsequent „—“ wie überall sonst in der Tabelle."
+    ]
+  },
+  {
     "version": "8.3.3",
     "date": "2026-07-04",
     "title": "Platzhalter für fehlende Werte vereinheitlicht",

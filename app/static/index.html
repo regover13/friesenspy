@@ -3422,16 +3422,16 @@ function _flightRowHtml(f, rowAttrs) {
   if ((f.duration_min || 0) === 0 && distNm0 <= 1 && !live) return '';
   const gpsDep = f.gps_departure || '';
   const gpsArr = f.gps_arrival || '';
-  const dep = gpsDep || '????';
-  // „läuft" NUR wenn tatsächlich live (offen UND letzte GPS-Position frisch). Alt/offen
-  // ohne Ankunft → „????". connection_closed steuert das NICHT mehr (Flugplan-Begriff).
-  const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '????');
-  // Fehlen GPS-Dep UND -Arr komplett (und der Flug läuft nicht), sieht "???? → ????" als Route
-  // unschön aus — eine zentrierte "—" statt zweier Platzhalter mit Pfeil dazwischen (einheitlich
-  // mit dem "—"-Platzhalter überall sonst in der Tabelle, kein Sonderzeichen wie "N/A" oder "?").
+  // Fehlender Wert überall einheitlich "—" (wie sonst in der Tabelle), kein Sonderzeichen wie
+  // "????"/"N/A"/"?". „läuft" NUR wenn tatsächlich live (offen UND letzte GPS-Position frisch).
+  // connection_closed steuert das NICHT mehr (Flugplan-Begriff).
+  const dep = escHtml(gpsDep || '—');
+  const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '—');
+  // Fehlen GPS-Dep UND -Arr komplett (und der Flug läuft nicht), sieht "— → —" als Route
+  // unschön aus — eine einzelne zentrierte "—" statt zweier Platzhalter mit Pfeil dazwischen.
   const routeCell = (!gpsDep && !gpsArr && !live)
     ? `<span style="display:block;text-align:center;">—</span>`
-    : `${escHtml(dep)} → ${arrCell}`;
+    : `${dep} → ${arrCell}`;
   const planDep = f.plan_departure || '';
   const planArr = f.plan_arrival || '';
   const planText = (planDep || planArr) ? `${escHtml(planDep || '—')} → ${escHtml(planArr || '—')}` : '—';
