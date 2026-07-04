@@ -4179,7 +4179,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
         ? `${Math.floor(f.block_min / 60)}:${String(f.block_min % 60).padStart(2,'0')} h`
         : '—';
       const isOpen = !arr && !f.logoff_time;
-      const arrCell = isOpen ? `<span class="badge-live">🛫 läuft</span>` : escHtml(arr);
+      const arrCell = isOpen ? `<span class="badge-live">🛫 läuft</span>` : escHtml(arr || '????');
       const route    = dep ? `${escHtml(dep)} → ${arrCell}` : '—';
       const evDistNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
       const evDist   = evDistNm != null && evDistNm > 0 ? `${evDistNm} nm` : '—';
