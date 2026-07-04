@@ -40,6 +40,28 @@ class TestNormalizeFlight:
         r = _normalize_flight(f)
         assert r["arrival"] == "B"
 
+    def test_aircraft_composite_string_shortened_to_icao_type(self):
+        # StatSim liefert das rohe Flugplan-Feld (wie VATSIM) — nur der ICAO-Typ vor dem
+        # ersten "/" wird übernommen, analog zu aircraft_short bei FriesenSpy-Flügen
+        # (app/vatsim.py:76). Sonst zeigen StatSim-Flüge Composite-Strings wie
+        # "A320/M-SDE3FGHIRWY/LB1" statt nur "A320".
+        f = {"id": 1, "callsign": "X", "departure": "A", "destination": "B",
+             "aircraft": "A320/M-SDE3FGHIRWY/LB1", "loggedOn": "", "arrived": None}
+        r = _normalize_flight(f)
+        assert r["aircraft"] == "A320"
+
+    def test_aircraft_already_short_unchanged(self):
+        f = {"id": 1, "callsign": "X", "departure": "A", "destination": "B",
+             "aircraft": "C172", "loggedOn": "", "arrived": None}
+        r = _normalize_flight(f)
+        assert r["aircraft"] == "C172"
+
+    def test_aircraft_empty_stays_empty(self):
+        f = {"id": 1, "callsign": "X", "departure": "A", "destination": "B",
+             "aircraft": "", "loggedOn": "", "arrived": None}
+        r = _normalize_flight(f)
+        assert r["aircraft"] == ""
+
 
 class TestFetchPilotFlights:
     @pytest.mark.asyncio

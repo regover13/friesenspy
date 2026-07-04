@@ -31,12 +31,17 @@ def _normalize_flight(f: dict) -> dict:
         except Exception:
             return ts[:19] + "Z" if len(ts) >= 19 else ts
 
+    # Kurzer ICAO-Typ statt Composite-String (z. B. "A320/M-SDE3FGHIRWY/LB1" → "A320") — analog
+    # zu aircraft_short bei FriesenSpy-Flügen (app/vatsim.py:76).
+    aircraft_full = f.get("aircraft", "") or ""
+    aircraft = aircraft_full.split("/")[0] if aircraft_full else aircraft_full
+
     return {
         "statsim_id": f.get("id"),
         "callsign": f.get("callsign", ""),
         "departure": f.get("departure", ""),
         "arrival": f.get("destination", ""),
-        "aircraft": f.get("aircraft", ""),
+        "aircraft": aircraft,
         "logon_time": _norm_ts(logon),
         "logoff_time": _norm_ts(arrived) if arrived else None,
         "duration_min": duration_min,
