@@ -4502,7 +4502,10 @@ def compute_transport_progress(
     # fs-WHERE) — Doppelzählung derselben Fracht. Nur bei bereits GELADENER Connection
     # skippen: ein geschlossenes, NICHT geladenes Zwischenlande-Bein (arr ≠ dest) einer noch
     # offenen Weiterreise darf die In-Air-Reservierung nicht unterdrücken.
-    loaded_conn_logons = {q["_conn_logon"] for q in network if q.get("loaded") and q.get("_conn_logon")}
+    loaded_conn_logons = {
+        (int(q["cid"]), q["_conn_logon"]) for q in network
+        if q.get("loaded") and q.get("_conn_logon") and q.get("cid") is not None
+    }
     returning_cids: set[int] = set()
     returning_info: dict[int, dict] = {}  # Muster/Callsign für Nur-Rückflug-Teilnehmer (nicht im Feed)
     for f in open_transport_flights(conn, callsign_prefix):
@@ -4512,7 +4515,7 @@ def compute_transport_progress(
         lo = f.get("logon_time") or ""
         if lo < start:
             continue
-        if lo in loaded_conn_logons:
+        if (int(cid), lo) in loaded_conn_logons:
             continue
         dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
             or normalize_type_code(f.get("departure"))
