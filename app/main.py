@@ -718,6 +718,34 @@ async def get_flight_track(flight_id: int, logon: str = "", logoff: str = ""):
     return [dict(r) for r in rows]
 
 
+@app.get("/api/pilots/{cid}/track")
+async def get_pilot_track_window(cid: int, logon: str = "", logoff: str = ""):
+    """Positions-Track eines GPS-Legs rein über cid + Zeitfenster (GPS-only, #v8.1.0).
+
+    Anders als ``/api/flights/{id}/track`` braucht dieser Endpoint KEINE ``flights``-Zeile —
+    er bedient GPS-Legs ohne zugeordneten Flugplan (``id=None``). Die Anzeige leitet den Track
+    damit ausschließlich aus GPS ab. ``logoff`` MUSS für offene Legs die letzte Positionszeit
+    (``last_pos_ts``) sein, NICHT „now" — sonst würden Positionen späterer Flüge mitgezogen.
+    """
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        effective_logon = logon or ""
+        effective_logoff = logoff or datetime.now(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        rows = conn.execute(
+            """
+            SELECT latitude, longitude, altitude, groundspeed, heading, ts
+            FROM position_history
+            WHERE cid = ? AND ts >= ? AND ts <= ?
+            ORDER BY ts
+            """,
+            (cid, effective_logon, effective_logoff),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
 @app.get("/api/flights/statsim/{statsim_id}/track")
 async def get_statsim_flight_track(statsim_id: int):
     """Positionshistorie eines StatSim-Fluges (lokal gecacht, sonst von StatSim API)."""

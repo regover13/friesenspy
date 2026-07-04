@@ -1706,7 +1706,7 @@
         <div class="fp-field"><span class="fp-label">TAS (kt)</span><span class="fp-val" id="fp-tas">—</span></div>
         <div class="fp-field"><span class="fp-label">Enroute</span><span class="fp-val" id="fp-enroute">—</span></div>
         <div class="fp-field"><span class="fp-label">Fuel Endurance</span><span class="fp-val" id="fp-fuel">—</span></div>
-        <div class="fp-field"><span class="fp-label">Online seit</span><span class="fp-val" id="fp-logon">—</span></div>
+        <div class="fp-field"><span class="fp-label" id="fp-logon-label">Online seit</span><span class="fp-val" id="fp-logon">—</span></div>
       </div>
     </div>
     <div class="fp-section">
@@ -1739,7 +1739,7 @@
   </div>
 </div>
 
-<!-- Flight Detail Modal -->
+<!-- GPS Flight Detail Modal (reine GPS-Erfassung, kein Flugplan) -->
 <div id="fld-modal" class="fp-modal-overlay hidden">
   <div class="fp-modal-box" onclick="event.stopPropagation()">
     <div class="fp-modal-header">
@@ -1750,36 +1750,19 @@
       </div>
     </div>
     <div class="fp-section">
-      <div class="fp-section-title">Flight Details</div>
+      <div class="fp-section-title">GPS-Erfassung</div>
       <div class="fp-grid">
         <div class="fp-field"><span class="fp-label">Callsign</span><span class="fp-val" id="fld-cs">—</span></div>
-        <div class="fp-field"><span class="fp-label">Flight Rules</span><span class="fp-val" id="fld-rules">—</span></div>
         <div class="fp-field"><span class="fp-label">Aircraft</span><span class="fp-val" id="fld-ac">—</span></div>
-        <div class="fp-field"><span class="fp-label">Aircraft (ICAO)</span><span class="fp-val" id="fld-acicao">—</span></div>
         <div class="fp-field"><span class="fp-label">GPS-Departure</span><span class="fp-val" id="fld-dep">—</span></div>
         <div class="fp-field"><span class="fp-label">GPS-Arrival</span><span class="fp-val" id="fld-arr">—</span></div>
-        <div class="fp-field"><span class="fp-label">Plan-Departure</span><span class="fp-val" id="fld-plandep">—</span></div>
-        <div class="fp-field"><span class="fp-label">Plan-Arrival</span><span class="fp-val" id="fld-planarr">—</span></div>
-        <div class="fp-field"><span class="fp-label">Alternate</span><span class="fp-val" id="fld-altn">—</span></div>
-        <div class="fp-field"><span class="fp-label">Off Block UTC</span><span class="fp-val" id="fld-deptime">—</span></div>
-        <div class="fp-field"><span class="fp-label">Enroute</span><span class="fp-val" id="fld-enroute">—</span></div>
-        <div class="fp-field"><span class="fp-label">Fuel Endurance</span><span class="fp-val" id="fld-fuel">—</span></div>
-        <div class="fp-field"><span class="fp-label">Datum UTC</span><span class="fp-val" id="fld-dt">—</span></div>
+        <div class="fp-field"><span class="fp-label">Start UTC</span><span class="fp-val" id="fld-dt-start">—</span></div>
+        <div class="fp-field"><span class="fp-label">Landung UTC</span><span class="fp-val" id="fld-dt-land">—</span></div>
         <div class="fp-field"><span class="fp-label">Flugzeit</span><span class="fp-val" id="fld-dur">—</span></div>
         <div class="fp-field"><span class="fp-label">Block-Zeit</span><span class="fp-val" id="fld-block">—</span></div>
         <div class="fp-field"><span class="fp-label">Distanz</span><span class="fp-val" id="fld-dist">—</span></div>
-        <div class="fp-field"><span class="fp-label">Altitude (ft)</span><span class="fp-val" id="fld-alt">—</span></div>
-        <div class="fp-field"><span class="fp-label">TAS (kt)</span><span class="fp-val" id="fld-tas">—</span></div>
         <div class="fp-field"><span class="fp-label">Quelle</span><span class="fp-val" id="fld-src">—</span></div>
       </div>
-    </div>
-    <div class="fp-section" id="fld-route-section">
-      <div class="fp-section-title">Route Details</div>
-      <div class="fp-route-text" id="fld-route">—</div>
-    </div>
-    <div class="fp-section" id="fld-remarks-section">
-      <div class="fp-section-title">Remarks</div>
-      <div class="fp-remarks-text" id="fld-remarks">—</div>
     </div>
   </div>
 </div>
@@ -3153,7 +3136,8 @@ function fpSet(id, val) {
   el.className = 'fp-val' + (val ? '' : ' empty');
 }
 
-function openFpModal(pilot) {
+function openFpModal(pilot, opts) {
+  opts = opts || {};
   document.getElementById('fp-callsign-title').textContent = (pilot.callsign || '').toUpperCase();
   fpSet('fp-cs',      (pilot.callsign || '').toUpperCase());
   fpSet('fp-rules',   FP_RULES[pilot.flight_rules] || pilot.flight_rules);
@@ -3162,11 +3146,12 @@ function openFpModal(pilot) {
   fpSet('fp-arr',     pilot.arrival);
   fpSet('fp-alt-icao', pilot.alternate);
   fpSet('fp-deptime', pilot.deptime ? fmtHHMM(pilot.deptime) : '');
-  fpSet('fp-altft',   pilot.altitude ? pilot.altitude.toLocaleString('de') + ' ft' : '');
+  fpSet('fp-altft',   pilot.altitude ? Number(pilot.altitude).toLocaleString('de') + ' ft' : '');
   fpSet('fp-tas',     pilot.cruise_tas ? pilot.cruise_tas + ' kt' : '');
   fpSet('fp-enroute', pilot.enroute_time ? fmtHHMM(pilot.enroute_time) : '');
   fpSet('fp-fuel',    pilot.fuel_time ? fmtHHMM(pilot.fuel_time) : '');
-  fpSet('fp-logon',   fmtOnlineTime(pilot.logon_time));
+  document.getElementById('fp-logon-label').textContent = opts.logonLabel || 'Online seit';
+  fpSet('fp-logon',   opts.staticLogon || fmtOnlineTime(pilot.logon_time));
 
   const routeEl = document.getElementById('fp-route');
   routeEl.textContent = pilot.route || '—';
@@ -3176,13 +3161,20 @@ function openFpModal(pilot) {
 
   document.getElementById('fp-modal').classList.remove('hidden');
   document.addEventListener('keydown', _fpEscHandler);
-  setUrlState({ tab: 'live', fp: (pilot.callsign || '').toUpperCase() });
+  _fpModalDeepLink = opts.deepLink !== false;
+  if (_fpModalDeepLink) {
+    setUrlState({ tab: 'live', fp: (pilot.callsign || '').toUpperCase() });
+  }
 }
+
+let _fpModalDeepLink = true;
 
 function closeFpModal() {
   document.getElementById('fp-modal').classList.add('hidden');
   document.removeEventListener('keydown', _fpEscHandler);
-  setUrlState({ tab: 'live' });
+  if (_fpModalDeepLink) {
+    setUrlState({ tab: 'live' });
+  }
 }
 
 function _fpEscHandler(e) {
@@ -3195,46 +3187,53 @@ document.getElementById('fp-modal').addEventListener('click', (e) => {
 });
 
 // ==========================================================================
-//  FLIGHT DETAIL MODAL
+//  GPS FLIGHT DETAIL MODAL (reine GPS-Erfassung — kein Flugplan-Feld)
 // ==========================================================================
 function openFlightDetailModal(d) {
-  function setOpt(id, value) {
-    const el = document.getElementById(id);
-    el.textContent = value || '—';
-    el.closest('.fp-field').style.display = value ? '' : 'none';
-  }
   document.getElementById('fld-callsign').textContent = d.cs || '—';
   document.getElementById('fld-cs').textContent    = d.cs     || '—';
-  setOpt('fld-rules', d.rules);
   document.getElementById('fld-ac').textContent    = d.ac     || '—';
-  setOpt('fld-acicao', d.acicao);
   document.getElementById('fld-dep').textContent   = d.dep    || '—';
   document.getElementById('fld-arr').textContent   = d.arr    || '—';
-  setOpt('fld-plandep', d.plandep);
-  setOpt('fld-planarr', d.planarr);
-  setOpt('fld-altn', d.altn);
-  setOpt('fld-deptime', d.deptime);
-  setOpt('fld-enroute', d.enroute);
-  setOpt('fld-fuel',    d.fuel);
-  document.getElementById('fld-dt').textContent    = d.dt
+  document.getElementById('fld-dt-start').textContent = d.dt
     ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
+  document.getElementById('fld-dt-land').textContent  = d.dtend
+    ? d.dtend.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
   document.getElementById('fld-dur').textContent   = d.dur    || '—';
   document.getElementById('fld-block').textContent = d.block  || '—';
-  setOpt('fld-dist', d.dist);
-  setOpt('fld-alt', d.alt);
-  setOpt('fld-tas', d.tas);
+  document.getElementById('fld-dist').textContent  = d.dist   || '—';
   document.getElementById('fld-src').textContent   = d.src    || '—';
-  const route   = d.route   || '';
-  const remarks = d.remarks || '';
-  document.getElementById('fld-route').textContent   = route   || '—';
-  document.getElementById('fld-remarks').textContent = remarks || '—';
-  document.getElementById('fld-route-section').style.display   = route   ? '' : 'none';
-  document.getElementById('fld-remarks-section').style.display = remarks ? '' : 'none';
   document.getElementById('fld-modal').classList.remove('hidden');
   document.addEventListener('keydown', _fldEscHandler);
   const _urlP = getUrlState();
   _urlP.set('fld', d.dt || '');
   history.replaceState(null, '', '#' + _urlP.toString());
+}
+
+// ==========================================================================
+//  PLAN DETAIL MODAL (reine Flugplan-Sicht — nutzt das Standard-fp-modal)
+// ==========================================================================
+function openPlanDetailModal(d) {
+  openFpModal({
+    callsign: d.cs,
+    flight_rules: d.rules,
+    aircraft_icao: d.acicao,
+    aircraft: d.ac,
+    departure: d.plandep,
+    arrival: d.planarr,
+    alternate: d.altn,
+    deptime: d.deptime,
+    altitude: d.alt || null,
+    cruise_tas: d.tas,
+    enroute_time: d.enroute,
+    fuel_time: d.fuel,
+    route: d.route,
+    remarks: d.remarks,
+  }, {
+    deepLink: false,
+    logonLabel: 'Datum',
+    staticLogon: d.dt ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '',
+  });
 }
 
 function closeFldModal() {
@@ -3346,6 +3345,18 @@ function scheduleFlightsRefresh(cid, pilotName, delayMs, fullLoad) {
   }, delayMs);
 }
 
+// „läuft" = tatsächlich live: kein Ziel/Abschluss UND letzte GPS-Position frisch (< 15 min).
+// Aus last_pos_ts (statisch, backend) gegen die lokale Uhr — NICHT aus connection_closed
+// (Flugplan-Begriff). Ein Wochen-altes offenes Leg (Track riss ab) ist damit NICHT live. #v8.1.0
+const _LIVE_MAX_AGE_MS = 15 * 60 * 1000;
+function _isLiveLeg(f) {
+  if (f.gps_arrival || f.logoff_time) return false;
+  const last = f.last_pos_ts;
+  if (!last) return false;
+  const age = Date.now() - Date.parse(last);
+  return age >= 0 && age < _LIVE_MAX_AGE_MS;
+}
+
 function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   const container = document.getElementById('stats-content');
   const fsCount = flights.filter(f => f.source === 'friesenspy').length;
@@ -3373,12 +3384,15 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       </tr></thead><tbody>`;
 
     for (const f of flights) {
+      const live = _isLiveLeg(f);
+      const distNm0 = f.distance_nm != null ? Math.round(f.distance_nm) : 0;
+      // Geister-Leg (0 min, ~0 nm, nicht live): Track riss direkt nach dem Start ab → nicht anzeigen.
+      if ((f.duration_min || 0) === 0 && distNm0 <= 1 && !live) continue;
       const dep = f.gps_departure || '????';
       const gpsArr = f.gps_arrival || '';
-      // Offen = GPS-Ankunft fehlt UND die Verbindung ist (laut Backend) noch nicht
-      // abgeschlossen. Ein geschlossener Flug ohne Ankunft (Absturz/Datenlücke) bleibt "????".
-      const isOpen = !gpsArr && !f.connection_closed;
-      const arrCell = isOpen ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '????');
+      // „läuft" NUR wenn tatsächlich live (offen UND letzte GPS-Position frisch). Alt/offen
+      // ohne Ankunft → „????". connection_closed steuert das NICHT mehr (Flugplan-Begriff).
+      const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '????');
       const planDep = f.plan_departure || '';
       const planArr = f.plan_arrival || '';
       const planText = (planDep || planArr) ? `${escHtml(planDep || '?')} → ${escHtml(planArr || '?')}` : '—';
@@ -3402,23 +3416,33 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       const unscoredBadge = unscored
         ? ` <span class="badge-unscored" title="Kein ${escHtml(_callsignPrefix)}-Callsign — zählt nicht in Statistik/Bummel/Kutter">nicht gewertet</span>`
         : '';
-      // #23/#31: GPS-Legs ohne zugeordneten Flugplan haben keine flights.id → kein Track-
-      // Endpoint verfügbar. Button dann sichtbar, aber deaktiviert statt totem Klick.
-      const trackId = f.source === 'friesenspy' ? f.id : f.statsim_id;
+      // Track IMMER über GPS ladbar (GPS-only): StatSim → statsim_id; FS mit Flugplan-id →
+      // flights-Endpoint; FS ohne id → cid-Fenster-Endpoint ('pilot'). last_pos_ts ist die
+      // Obergrenze (nie „now"), damit offene/alte Legs nicht Positionen späterer Flüge ziehen.
+      let trackSrc, trackId;
+      if (f.source === 'statsim') { trackSrc = 'statsim'; trackId = f.statsim_id; }
+      else if (f.id != null)      { trackSrc = 'friesenspy'; trackId = f.id; }
+      else                        { trackSrc = 'pilot'; trackId = f.cid; }
+      const trackUpper = f.last_pos_ts || f.logoff_time || '';
       const hasTrack = trackId != null;
       const trackIcon = `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
       const trackCell = hasTrack
         ? `<span class="td-map-btn track-btn"
               data-track-id="${trackId}"
-              data-track-src="${f.source === 'friesenspy' ? 'friesenspy' : 'statsim'}"
+              data-track-src="${trackSrc}"
               data-logon="${escHtml(f.logon_time || '')}"
-              data-logoff="${escHtml(f.logoff_time || '')}"
+              data-logoff="${escHtml(trackUpper)}"
               data-callsign="${escHtml(f.callsign || '')}"
               data-dep="${escHtml(dep)}"
               data-arr="${escHtml(gpsArr)}"
-              title="Track anzeigen">${trackIcon}</span>`
-        : `<span class="td-map-btn" style="opacity:0.25;cursor:default;" title="Kein Track — dieses GPS-Leg hat keinen zugeordneten Flugplan">${trackIcon}</span>`;
-      html += `<tr class="flight-row" style="cursor:pointer;"
+              title="GPS-Track anzeigen">${trackIcon}</span>`
+        : `<span class="td-map-btn" style="opacity:0.25;cursor:default;" title="Kein Track verfügbar">${trackIcon}</span>`;
+      // Plan-Zelle: klickbar (blau) NUR wenn ein Flugplan vorliegt → öffnet Flugplan-Detail.
+      const hasPlan = !!(planDep || planArr);
+      const planCell = hasPlan
+        ? `<td class="mono td-plan-link text-green" style="cursor:pointer;" title="Flugplan öffnen">${planText}</td>`
+        : `<td class="mono text-label">${planText}</td>`;
+      html += `<tr class="flight-row"
           data-cs="${escHtml(f.callsign || '—')}"
           data-ac="${escHtml(f.aircraft || '—')}"
           data-acicao="${escHtml(f.aircraft_icao || '')}"
@@ -3432,6 +3456,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
           data-enroute="${escHtml(f.enroute_time || '')}"
           data-fuel="${escHtml(f.fuel_time || '')}"
           data-dt="${escHtml(f.logon_time || '')}"
+          data-dtend="${escHtml(f.logoff_time || '')}"
           data-dur="${escHtml(dur)}"
           data-block="${escHtml(blk)}"
           data-dist="${escHtml(dist)}"
@@ -3441,8 +3466,8 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
           data-remarks="${escHtml(f.remarks || '')}"
           data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
         <td class="mono">${escHtml(f.callsign || '—')}${unscoredBadge}</td>
-        <td class="td-route text-green">${escHtml(dep)} → ${arrCell}</td>
-        <td class="mono text-label">${planText}</td>
+        <td class="mono td-gps-link text-green" style="cursor:pointer;" title="GPS-Erfassung öffnen">${escHtml(dep)} → ${arrCell}</td>
+        ${planCell}
         <td class="mono">${escHtml(dt)}</td>
         <td class="mono">${dur}</td>
         <td class="mono">${blk}</td>
@@ -3475,9 +3500,16 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
     });
   });
 
-  container.querySelectorAll('.flight-row').forEach(tr => {
-    tr.addEventListener('click', () => {
-      openFlightDetailModal(tr.dataset);
+  // Standard-Ansicht: Strecke (GPS) öffnet die GPS-Erfassung, Plan (wenn vorhanden) öffnet
+  // den Flugplan, Track öffnet den GPS-Track. Kein Zeilen-Klick. #v8.1.0 / UI-Feedback 07-04
+  container.querySelectorAll('.td-gps-link').forEach(td => {
+    td.addEventListener('click', () => {
+      openFlightDetailModal(td.closest('tr').dataset);
+    });
+  });
+  container.querySelectorAll('.td-plan-link').forEach(td => {
+    td.addEventListener('click', () => {
+      openPlanDetailModal(td.closest('tr').dataset);
     });
   });
 }
@@ -3494,9 +3526,17 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff) {
   document.getElementById('track-modal-info').textContent = 'Lade Track...';
   document.getElementById('track-modal').classList.remove('hidden');
   document.addEventListener('keydown', _trackEscHandler);
+  // Deep-Link nur für id-basierte Tracks (friesenspy/statsim). 'pilot' (GPS-Leg ohne id) hängt
+  // am Zeitfenster, das nicht in der URL steht → nicht deep-linkbar, sonst würde ein Reload den
+  // ganzen cid-Track ohne Fenster laden.
   const p = getUrlState();
-  p.set('track', id);
-  p.set('src', source);
+  if (source === 'pilot') {
+    p.delete('track');
+    p.delete('src');
+  } else {
+    p.set('track', id);
+    p.set('src', source);
+  }
   history.replaceState(null, '', '#' + p.toString());
 
   requestAnimationFrame(() => {
@@ -3527,10 +3567,16 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff) {
 
 async function _loadAndDrawTrack(source, id, logon, logoff) {
   try {
-    let url = source === 'friesenspy'
-      ? `/api/flights/${id}/track`
-      : `/api/flights/statsim/${id}/track`;
-    if (source === 'friesenspy' && (logon || logoff)) {
+    // 'pilot' = GPS-Track rein über cid + Zeitfenster (GPS-Leg ohne flights-id, #v8.1.0).
+    let url;
+    if (source === 'statsim') {
+      url = `/api/flights/statsim/${id}/track`;
+    } else if (source === 'pilot') {
+      url = `/api/pilots/${id}/track`;
+    } else {
+      url = `/api/flights/${id}/track`;
+    }
+    if (source !== 'statsim' && (logon || logoff)) {
       const params = new URLSearchParams();
       if (logon) params.set('logon', logon);
       if (logoff) params.set('logoff', logoff);

@@ -15,7 +15,19 @@ from datetime import datetime
 _GPS_FLYING_GS_KT = 50       # sekundärer Abhebe-Helfer (nur wenn Höhe fehlt); NICHT 60
 _GPS_GROUND_AGL_FT = 300     # AGL-Obergrenze für „am Boden" beim Landungs-Guard
 _GPS_AIR_AGL_FT = 500        # AGL-Anstieg über Boden = abgehoben (Leitsignal)
+_GPS_CLIMB_MIN_AGL_FT = 100  # Mindest-AGL für den sekundären „schnell + steigend"-Abhebe-Trigger
 _GPS_BLOCK_GS_KT = 2         # Vollstopp-Schwelle (Touchdown-Kandidat)
+# Eine Landung am SELBEN Platz (X→X) wird nur dann als Zwischenlandung in den laufenden Flug
+# absorbiert (Stop-and-Go / Platzrunde), wenn der nächste Start binnen dieser Zeit folgt.
+# Sonst: Flug als X→X abschließen, ab dem nächsten Start ein neuer Flug.
+# BEWUSST KLEIN gehalten (kein größeres „Backtrack"-Budget): Wird ein X→X absorbiert, zählt die
+# Bodenzeit zwischen Landung und nächstem Start in ``duration_min`` als Flugzeit mit — genau der
+# Fehler, den v8.1.0 behebt (Reiner 41 min). Die beiden Fehlerrichtungen sind asymmetrisch: zu
+# klein → ein langer Taxi-Back wird in zwei Platzrunden-Flüge getrennt (kosmetisch); zu groß →
+# echte Pause wird als Flugzeit verschluckt (Korrektheitsfehler). Darum lieber knapp. Gemessen
+# wird Vollstopp → Takeoff-TRIGGER des nächsten Legs (nicht das Losrollen); die Trigger-Latenz
+# zehrt einen Teil des Budgets auf, das ist als konservativ gewollt.
+_GPS_STOP_AND_GO_MAX_SEC = 300
 
 
 def _parse_ts(ts: str) -> datetime:
@@ -100,6 +112,7 @@ def _detect_segment(
 
     state = "INIT"
     ground_ref_ft: int | None = None   # Höhe am letzten Boden-Sample (Takeoff-Referenz)
+    prev_alt: int | None = None        # Höhe des Vor-Samples am Boden (für „steigend"-Prüfung)
     dep_icao: str | None = None
     dep_source: str | None = None
     takeoff_ts: str | None = None
@@ -149,15 +162,27 @@ def _detect_segment(
             else:
                 state = "ON_GROUND"
                 ground_ref_ft = alt
+                prev_alt = alt   # Boden-Referenz seeden, damit der gs+steigend-Trigger schon
+                                 # ab dem nächsten Sample greifen kann (M1)
                 dep_icao = nearest_airport(lat, lon, radius_km)
                 dep_source = "gps" if dep_icao else None
             continue
 
         if state == "ON_GROUND":
-            # Abheben zuerst gegen die BISHERIGE Boden-Referenz prüfen.
+            # Abheben prüfen: HÖHE ist das Leitsignal (STOL/Heli fliegen langsam), Groundspeed
+            # nur als sekundärer Trigger UND nur mit Steig-Nachweis (sonst würde ein Startlauf/
+            # abgebrochener Start bei gs>50 fälschlich als Abheben zählen — Geisterflug).
             took_off = False
             if alt is not None and ground_ref_ft is not None:
-                took_off = (alt - ground_ref_ft) > _GPS_AIR_AGL_FT
+                agl = alt - ground_ref_ft
+                climbing = (
+                    agl > _GPS_CLIMB_MIN_AGL_FT
+                    and prev_alt is not None and alt > prev_alt
+                )
+                took_off = (
+                    agl > _GPS_AIR_AGL_FT
+                    or (gs is not None and gs > _GPS_FLYING_GS_KT and climbing)
+                )
             else:
                 # Höhe nicht verfügbar → Groundspeed als sekundärer Helfer.
                 took_off = gs is not None and gs > _GPS_FLYING_GS_KT
@@ -167,6 +192,7 @@ def _detect_segment(
                 takeoff_ts = ts
                 # dep_icao/dep_source stammen aus dem Boden-Cluster (bereits getrackt).
                 max_alt = _update_max(None, alt)
+                prev_alt = None
             else:
                 # Weiter am Boden: dep-Kandidat aktualisieren. Die Boden-Referenz bleibt auf
                 # der Feldhöhe verankert (Minimum) — sie darf NICHT mit dem Steigflug mit-
@@ -177,6 +203,7 @@ def _detect_segment(
                     ground_ref_ft = alt if ground_ref_ft is None else min(ground_ref_ft, alt)
                 dep_icao = nearest_airport(lat, lon, radius_km)
                 dep_source = "gps" if dep_icao else None
+                prev_alt = alt   # Höhe dieses Boden-Samples für die nächste „steigend"-Prüfung
             continue
 
         if state == "AIRBORNE":
@@ -196,6 +223,7 @@ def _detect_segment(
                         emit_complete()
                         state = "ON_GROUND"
                         ground_ref_ft = alt
+                        prev_alt = alt
                         dep_icao = ap
                         dep_source = "gps"
                         takeoff_ts = None
@@ -217,13 +245,16 @@ def _detect_segment(
 def collapse_same_airport(legs: list[dict]) -> list[dict]:
     """Verschmilzt aufeinanderfolgende Roh-Legs am SELBEN Platz zu Flügen (Spec A).
     Ein Flug = Abheben an X → Landung am nächsten ANDEREN Platz (oder offen). Wiederholte
-    Landungen am selben Platz zählen als eine Landung. Segment-Wechsel trennt immer."""
+    Landungen am selben Platz zählen als EINE Landung, ABER nur solange der nächste Start binnen
+    ``_GPS_STOP_AND_GO_MAX_SEC`` folgt (Stop-and-Go); nach einer längeren Bodenpause wird der Flug
+    als X→X abgeschlossen und ab dem nächsten Start beginnt ein neuer Flug. Segment-Wechsel
+    trennt immer."""
     flights: list[dict] = []
     cur: dict | None = None
     cur_seg: int | None = None
     pending_same_landing: str | None = None  # letzte Same-Airport-Landung (falls Flug am Boden endet)
 
-    for leg in legs:
+    for i, leg in enumerate(legs):
         seg = leg.get("segment", 0)
         if cur is not None and seg != cur_seg:
             _close_ground(flights, cur, pending_same_landing)
@@ -249,7 +280,18 @@ def collapse_same_airport(legs: list[dict]) -> list[dict]:
             pending_same_landing = None
             continue
         if arr == cur["dep_icao"]:
-            pending_same_landing = leg.get("landing_ts")   # Platzrunde → absorbieren
+            # Platzrunde/X→X: nur absorbieren (Stop-and-Go), wenn der nächste Leg desselben
+            # Segments kurz nach dieser Landung startet. Sonst = echte Bodenpause → Flug hier
+            # als X→X abschließen und ab dem nächsten Start neu beginnen (#v8.1.0).
+            nxt = legs[i + 1] if i + 1 < len(legs) else None
+            same_seg_next = nxt is not None and nxt.get("segment", 0) == cur_seg
+            if same_seg_next and _within_stop_and_go(leg.get("landing_ts"), nxt.get("takeoff_ts")):
+                pending_same_landing = leg.get("landing_ts")   # Stop-and-Go → absorbieren
+                continue
+            flights.append({**cur, "arr_icao": cur["dep_icao"], "landing_ts": leg.get("landing_ts"),
+                            "complete": True, "arr_source": "gps"})
+            cur = None
+            pending_same_landing = None
             continue
         flights.append({**cur, "arr_icao": arr, "landing_ts": leg.get("landing_ts"),
                         "complete": True, "arr_source": leg.get("arr_source")})
@@ -259,6 +301,19 @@ def collapse_same_airport(legs: list[dict]) -> list[dict]:
     if cur is not None:
         _close_ground(flights, cur, pending_same_landing)
     return flights
+
+
+def _within_stop_and_go(landing_ts: str | None, takeoff_ts: str | None) -> bool:
+    """True, wenn zwischen einer X→X-Landung und dem nächsten Start ≤ ``_GPS_STOP_AND_GO_MAX_SEC``
+    liegen (= Stop-and-Go, absorbieren). Fehlende/nicht parsbare Zeitstempel → True (konservativ
+    absorbieren, unverändertes Alt-Verhalten für degenerierte Eingaben)."""
+    if not landing_ts or not takeoff_ts:
+        return True
+    try:
+        gap = (_parse_ts(takeoff_ts) - _parse_ts(landing_ts)).total_seconds()
+    except Exception:
+        return True
+    return gap <= _GPS_STOP_AND_GO_MAX_SEC
 
 
 def _close_ground(flights: list[dict], cur: dict, pending_same_landing: str | None) -> None:
