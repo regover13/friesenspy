@@ -155,6 +155,20 @@ class TestStartStop:
         finally:
             await poller.stop()
 
+    @pytest.mark.asyncio
+    async def test_scheduler_registers_flight_cache_and_statsim_jobs(self):
+        """#23 Phase 2: flight_cache Warm-up (einmalig) + Refresh (5 min) und das
+        proaktive StatSim-Track-Nachladen (10 min) müssen nach start() registriert sein."""
+        poller = _make_poller()
+        await poller.start()
+        try:
+            job_ids = {j.id for j in poller._scheduler.get_jobs()}
+            assert "flight_cache_warmup" in job_ids
+            assert "flight_cache_refresh" in job_ids
+            assert "statsim_track_fetch" in job_ids
+        finally:
+            await poller.stop()
+
 
 # ---------------------------------------------------------------------------
 # _poll_once exception handling
@@ -1802,3 +1816,146 @@ class TestKutterLiveArrivalHook:
         finally:
             conn.close()
         assert row[0] == 0
+
+
+# ---------------------------------------------------------------------------
+# flight_cache Warm-up + Refresh (#23 Phase 2)
+# ---------------------------------------------------------------------------
+
+class TestFlightCacheWarmupAndRefresh:
+    """_warmup_flight_cache/_refresh_flight_cache: synchroner Rebuild via to_thread,
+    darf den Event-Loop nicht blockieren (hier nur die Endwirkung geprüft: flight_cache
+    danach befüllt)."""
+
+    def _seed_completed_flight(self, db_file: str) -> None:
+        from datetime import datetime, timedelta, timezone
+        from app.database import ensure_pilot, open_flight, close_flight, get_connection
+
+        conn = get_connection(db_file)
+        try:
+            cid = 424242
+            ensure_pilot(conn, cid, "Cache Pilot")
+            conn.commit()
+            start = datetime.now(timezone.utc) - timedelta(hours=2)
+            fid = open_flight(
+                conn, cid, "FRS77", "C172", "EDDW", "EDDK",
+                start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            )
+            conn.commit()
+            close_flight(
+                conn, fid, (start + timedelta(minutes=44)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    @pytest.mark.asyncio
+    async def test_warmup_populates_flight_cache(self, tmp_path):
+        from app.database import init_db, get_connection
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        self._seed_completed_flight(db_file)
+
+        poller = _make_poller(db_path=db_file)
+        await poller._warmup_flight_cache()  # darf nicht werfen
+
+        conn = get_connection(db_file)
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM flight_cache").fetchone()[0]
+        finally:
+            conn.close()
+        assert count >= 1
+
+    @pytest.mark.asyncio
+    async def test_refresh_populates_flight_cache(self, tmp_path):
+        from app.database import init_db, get_connection
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        self._seed_completed_flight(db_file)
+
+        poller = _make_poller(db_path=db_file)
+        await poller._refresh_flight_cache()  # inkrementell, darf nicht werfen (Cache war leer)
+
+        conn = get_connection(db_file)
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM flight_cache").fetchone()[0]
+        finally:
+            conn.close()
+        assert count >= 1
+
+    @pytest.mark.asyncio
+    async def test_warmup_silent_fail_on_exception(self, tmp_path):
+        """Ein Fehler beim Rebuild darf nicht nach außen dringen (App-Start nicht gefährden)."""
+        db_file = str(tmp_path / "test.db")
+        from app.database import init_db
+        init_db(db_file)
+
+        poller = _make_poller(db_path=db_file)
+        with patch("app.poller.rebuild_flight_cache", side_effect=RuntimeError("boom")):
+            await poller._warmup_flight_cache()  # darf NICHT werfen
+
+
+# ---------------------------------------------------------------------------
+# StatSim: proaktives Track-Nachladen (#23 Phase 2b)
+# ---------------------------------------------------------------------------
+
+class TestFetchStatsimTracks:
+    """``get_settings`` wird hier direkt gepatcht (statt über Env-Var + lru_cache) — andere
+    Testmodule (tests/test_config.py) rufen ``importlib.reload(app.config)`` auf, wonach
+    ``app.poller.get_settings`` ein ANDERES Funktionsobjekt referenziert als ein frisch aus
+    ``app.config`` importiertes ``get_settings``; ``cache_clear()`` auf Letzterem träfe dann
+    nicht den von ``app.poller`` tatsächlich benutzten Cache (Testreihenfolge-abhängiges
+    Flake). Direktes Patchen von ``app.poller.get_settings`` umgeht das robust."""
+
+    @pytest.mark.asyncio
+    async def test_no_api_key_early_return(self, tmp_path):
+        """Ohne STATSIM_API_KEY: sofortiger, stiller Return — kein Crash, kein Fetch."""
+        from types import SimpleNamespace
+        from app.database import init_db
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+
+        fake_settings = SimpleNamespace(STATSIM_API_KEY="", CALLSIGN_PREFIX="FRS")
+        with patch("app.poller.get_settings", return_value=fake_settings), patch(
+            "app.poller.fetch_flight_track", new=AsyncMock()
+        ) as mock_fetch:
+            await poller._fetch_statsim_tracks()  # darf nicht werfen
+
+        mock_fetch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fetches_uncached_ids_and_saves_positions(self, tmp_path):
+        """Mit API-Key: ungecachte StatSim-IDs werden geholt und gespeichert; ein
+        fehlschlagender Einzel-Fetch killt den Batch nicht."""
+        from types import SimpleNamespace
+        from app.database import init_db
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+
+        fake_settings = SimpleNamespace(STATSIM_API_KEY="test-statsim-key", CALLSIGN_PREFIX="FRS")
+        with patch("app.poller.get_settings", return_value=fake_settings), patch(
+            "app.poller.get_uncached_statsim_ids", return_value=[101, 102]
+        ), patch(
+            "app.poller.fetch_flight_track",
+            new=AsyncMock(side_effect=[RuntimeError("boom"), [
+                {"latitude": 53.0, "longitude": 8.0, "altitude": 1000,
+                 "groundspeed": 90, "heading": 10, "ts": "2026-07-01T10:00:00Z"},
+            ]]),
+        ), patch("app.poller.save_statsim_positions") as mock_save, patch(
+            "app.poller.asyncio.sleep", new=AsyncMock()
+        ):
+            await poller._fetch_statsim_tracks()  # darf trotz Einzelfehler nicht werfen
+
+        # Nur die zweite (erfolgreiche) ID wurde gespeichert; die erste (Exception) nicht.
+        mock_save.assert_called_once()
+        assert mock_save.call_args[0][1] == 102
