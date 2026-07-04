@@ -2071,8 +2071,13 @@ def _gps_flights_for_positions(
     inkl. Taxi — Fenster beginnt am Rollbeginn, nicht erst am Abheben; lange Standphasen
     ≥ ``_BLOCK_STAND_MIN_SEC`` zählen weiterhin NICHT, s. ``_block_seconds_positions``),
     ``duration_min`` = reine Flugzeit (Abheben → Landung, ``[takeoff_ts, end_ts]``,
-    unverändert). Invariante: ``duration_min <= block_min`` (Flugzeit ist Teilmenge der
-    Blockzeit) — NICHT umgekehrt (das war der vorherige, falsche Vertrag).
+    unverändert). Regelfall: ``duration_min <= block_min`` (Flugzeit ist Teilmenge der
+    Blockzeit) — NICHT umgekehrt (das war der vorherige, falsche Vertrag). Das gilt aber
+    NUR, wenn tatsächlich eine Taxi-Phase VOR dem Abheben vorliegt — ohne sie (z. B.
+    Runway-Spawn direkt airborne/knapp am Boden, oder Taxi wird vor der 12h-Lookback-Kante
+    abgeschnitten) ist ``block_start == takeoff_ts`` und ``block_min`` kann dann KLEINER als
+    ``duration_min`` ausfallen (Standphasen ≥ ``_BLOCK_STAND_MIN_SEC`` innerhalb der Flugzeit
+    selbst ziehen ab, s. ``_block_seconds_positions``). Kein Code erzwingt die Relation.
     """
     from app import geo
     from app.gps_legs import detect_gps_legs, collapse_same_airport
@@ -2081,7 +2086,7 @@ def _gps_flights_for_positions(
         positions,
         nearest_airport=geo.nearest_airport_icao_fast,
         airport_elev_ft=geo.airport_elevation_ft,
-        radius_km=radius_km or _BUMMEL_AIRPORT_RADIUS_KM,
+        radius_km=radius_km if radius_km is not None else _BUMMEL_AIRPORT_RADIUS_KM,
     )
     gps_flights = collapse_same_airport(legs)
     if not gps_flights:
