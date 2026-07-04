@@ -689,3 +689,60 @@ class TestStatsimIdField:
         flight_fallback = next(f for f in result if f["cid"] == cid_fallback)
         assert "statsim_id" in flight_track and flight_track["statsim_id"] is None
         assert "statsim_id" in flight_fallback and flight_fallback["statsim_id"] is None
+
+
+class TestLastPosTsField:
+    def test_closed_gps_leg_last_pos_ts_is_landing(self):
+        """Geschlossener GPS-Flug: last_pos_ts = letzte belegte Position (hier = Landung EDDW)."""
+        conn = _make_conn()
+        cid = 4400
+        _insert_flight(
+            conn, cid=cid, callsign="FRS60", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:50:00Z",
+        )
+        _seed_eddk_eddw_track(conn, cid, "FRS60")
+        conn.commit()
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+        f = next(x for x in result if x["cid"] == cid)
+        assert "last_pos_ts" in f
+        # Ende des Legs = Touchdown EDDW (10:40); die Taxi-Dwell-Positionen danach (10:44)
+        # gehören nicht mehr zum Flug-Leg.
+        assert f["last_pos_ts"] == "2026-07-02T10:40:00Z"
+
+    def test_open_leg_last_pos_ts_not_none_and_before_now(self):
+        """Offener Leg (kein logoff): last_pos_ts trägt die letzte GPS-Position, NICHT None/now —
+        so kann das Frontend „läuft" auf Frische prüfen und der Track endet an der letzten Position."""
+        conn = _make_conn()
+        cid = 4401
+        # Offene Connection (logoff_time=None), Track endet mitten in der Luft (Disconnect).
+        _insert_flight(
+            conn, cid=cid, callsign="FRS61", departure="EDDK", arrival="",
+            logon_time="2026-07-02T09:55:00Z", logoff_time=None,
+        )
+        _insert_pos(conn, cid, "2026-07-02T10:00:00Z", *EDDK, 302, 0, "FRS61")
+        _insert_pos(conn, cid, "2026-07-02T10:01:00Z", *EDDK, 302, 12, "FRS61")
+        _insert_pos(conn, cid, "2026-07-02T10:06:00Z", *EDDK, 1200, 80, "FRS61")
+        _insert_pos(conn, cid, "2026-07-02T10:20:00Z", 52.0, 8.0, 5000, 120, "FRS61")  # letzte Pos, airborne
+        conn.commit()
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+        f = next(x for x in result if x["cid"] == cid)
+        assert f["logoff_time"] is None          # offen
+        assert f["last_pos_ts"] == "2026-07-02T10:20:00Z"  # letzte Position, nicht None
+
+    def test_fallback_flight_last_pos_ts_is_logoff(self):
+        """Trackloser Fallback-Flug: last_pos_ts = logoff_time der Connection."""
+        conn = _make_conn()
+        cid = 4402
+        _insert_flight(
+            conn, cid=cid, callsign="FRS62", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:50:00Z",
+            duration_min=55, distance_nm=210, block_min=50,
+        )
+        # keine position_history -> Fallback
+        conn.commit()
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+        f = next(x for x in result if x["cid"] == cid)
+        assert f["last_pos_ts"] == "2026-07-02T10:50:00Z"
