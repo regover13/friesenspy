@@ -4140,46 +4140,107 @@ def get_transport_losses(conn, event_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _latch_hits_flight(
+    conn: sqlite3.Connection,
+    latches: set[tuple[int, str]],
+    cid: int,
+    takeoff_ts: str,
+    landing_ts: str | None,
+) -> bool:
+    """True, wenn ein Live-Latch ``(cid, VERBINDUNGS-logon)`` zu diesem GPS-Flug gehört.
+
+    Latches werden vom Poller mit dem Verbindungs-Logon geschrieben (``check_live_arrival``
+    kennt nur die ``flights``-Session, nicht das GPS-Leg) — der liegt IMMER vor (oder auf) dem
+    Takeoff des Legs. Zuordnung daher über Überlappung: das Connection-Intervall
+    ``[logon, logoff]`` des Latches (aus ``flights`` nachgeschlagen) muss den Takeoff dieses
+    Legs einschließen.
+    """
+    end = landing_ts or "9999-12-31T23:59:59Z"
+    for c, lo in latches:
+        if c != cid or lo > end:
+            continue
+        row = conn.execute(
+            "SELECT logoff_time FROM flights WHERE cid = ? AND logon_time = ?", (cid, lo)
+        ).fetchone()
+        hi = (row[0] if row and row[0] else "9999-12-31T23:59:59Z")
+        if takeoff_ts <= hi:
+            return True
+    return False
+
+
+def _connection_logon_for_leg(conn: sqlite3.Connection, cid: int, takeoff_ts: str) -> str | None:
+    """Verbindungs-Logon (``flights.logon_time``) der Connection, die den Takeoff dieses GPS-Legs
+    umschließt — für den Loss-Key (der Poller latcht Verluste weiterhin unter dem Verbindungs-
+    Logon, nicht unter dem GPS-Takeoff). ``None``, wenn keine Connection gefunden wird (z. B.
+    StatSim-only Flüge ohne ``flights``-Zeile)."""
+    row = conn.execute(
+        "SELECT logon_time FROM flights WHERE cid = ? AND logon_time <= ? "
+        "AND (logoff_time IS NULL OR logoff_time >= ?) AND superseded_by IS NULL "
+        "ORDER BY logon_time DESC LIMIT 1",
+        (cid, takeoff_ts, takeoff_ts),
+    ).fetchone()
+    return row[0] if row else None
+
+
 def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") -> int:
     """Neue Fracht-Verluste eines Events erkennen und latchen (idempotent, Poll-Takt-tauglich).
 
-    Kandidat = abgeschlossener Flug, der Richtung Ziel gestartet war (GPS-Erstposition auf der
-    Strecke, Fallback Flugplan-DEP; dep ≠ destination), ohne Live-Ankunfts-Latch und ohne
-    GPS-Ankunft am Ziel. Klassifikation per letzter Position:
-    am Boden am Abflugplatz → 'returned' · am Boden an anderem Platz → 'stolen' ·
-    sonst (in der Luft verschwunden / abseits jedes Platzes) → 'sunk' (Kutter versunken).
+    Kandidat = ein GPS-Leg (:func:`canonicalize_legs`), das Richtung Ziel gestartet war (dep auf
+    der Strecke, ≠ destination), ohne Live-Ankunfts-Latch (Connection-Intervall-Reconcile, s.
+    :func:`_latch_hits_flight`) und ohne GPS-Ankunft am Ziel. Die Entscheidung wartet auf die
+    zugrunde liegende VERBINDUNG (``flights.logoff_time`` — echter VATSIM-Disconnect), NICHT auf
+    das GPS-Leg selbst: ein wirklich versunkener Kutter (Absturz/Verschwinden abseits jedes
+    Flugplatzes) registriert per GPS-Detektor NIE eine Landung (``detect_gps_legs`` schließt ein
+    Leg nur an einem erkannten Platz ab, s. app/gps_legs.py) und bliebe mit dem Leg-eigenen
+    ``logoff_time`` als Kriterium für immer „offen" — die Connection dagegen schließt beim
+    Disconnect zuverlässig, das ist das Signal, dass keine weiteren Daten mehr kommen.
+    Klassifikation per letzter Position bis zu diesem Verbindungsende: am Boden am
+    Abflugplatz → 'returned' · am Boden an anderem Platz → 'stolen' · sonst (in der Luft
+    verschwunden / abseits jedes Platzes) → 'sunk' (Kutter versunken). Gelatcht wird unter dem
+    VERBINDUNGS-Logon (:func:`_connection_logon_for_leg`), nicht dem GPS-Takeoff — der Poller
+    kennt beim Latch-Setzen nur die Connection.
     """
-    from app.geo import icao_to_coords, nearest_airport_icao
+    from app.geo import nearest_airport_icao
     dest = normalize_type_code(event.get("destination"))
     route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
     if not dest or not route_set:
         return 0
     radius = event.get("radius_km") or _BUMMEL_AIRPORT_RADIUS_KM
-    coords_map = {icao: icao_to_coords(icao) for icao in route_set}
     start = event.get("dtstart") or ""
     now = _now_utc()
     latched = get_transport_live_arrivals(conn, int(event["id"]))
     existing = {(l["cid"], l["logon_time"]) for l in get_transport_losses(conn, int(event["id"]))}
     load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
     new = 0
+    recorded_this_run: set[tuple[int, str]] = set()
     # Obergrenze wie compute_transport_progress: Verluste dürfen nur innerhalb des
     # Event-Fensters entstehen. Ohne `end` wurde jeder spätere Streckenflug (auch Wochen nach
     # dtend, z. B. ein ganz anderes Event auf derselben Route) fälschlich als Verlust dieses
     # (längst abgeschlossenen) Events gelatcht — Alt-Events sammelten so fortlaufend
     # Fremd-Verluste, zusätzlich unbeschränkte Poller-Last.
     end = event.get("dtend") or now
-    for f in canonicalize_flights(conn, start=load_start, end=end, callsign_prefix=callsign_prefix):
-        cid, lo = f.get("cid"), f.get("logon_time") or ""
-        lf = f.get("logoff_time") or ""
-        if cid is None or not lf or lf < start:
+    for f in canonicalize_legs(conn, start=load_start, end=end, callsign_prefix=callsign_prefix):
+        cid, lo = f.get("cid"), f.get("logon_time")
+        if cid is None or lo is None:
             continue
-        if (cid, lo) in latched or (cid, lo) in existing:
+        cid = int(cid)
+        if _latch_hits_flight(conn, latched, cid, lo, f.get("logoff_time")):
             continue
-        dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, lf), radius) \
-            or normalize_type_code(f.get("departure"))
+        conn_logon = _connection_logon_for_leg(conn, cid, lo)
+        if conn_logon is None:
+            continue  # kein Verbindungs-Key (z. B. StatSim) → kann nicht latch-kompatibel gemeldet werden
+        if (cid, conn_logon) in existing or (cid, conn_logon) in recorded_this_run:
+            continue
+        conn_row = conn.execute(
+            "SELECT logoff_time FROM flights WHERE cid = ? AND logon_time = ?", (cid, conn_logon)
+        ).fetchone()
+        lf = conn_row[0] if conn_row and conn_row[0] else None
+        if not lf or lf < start:
+            continue  # Verbindung noch offen (kein Disconnect) oder vor dem Event-Fenster beendet
+        dep = normalize_type_code(f.get("departure"))
         if dep not in route_set or dep == dest:
             continue  # war nie mit Fracht Richtung Ziel unterwegs
-        arr = _nearest_airport(coords_map, _last_pos(conn, int(cid), lo, lf), radius)
+        arr = normalize_type_code(f.get("arrival"))
         if arr == dest:
             continue  # GPS-Ankunft am Ziel → geliefert (compute zählt das als loaded)
         row = conn.execute(
@@ -4201,8 +4262,9 @@ def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") 
             elif end_icao:
                 kind = "stolen"
         type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
-        record_transport_loss(conn, int(event["id"]), int(cid), lo, kind, type_code,
+        record_transport_loss(conn, int(event["id"]), cid, conn_logon, kind, type_code,
                               f.get("callsign") or "", dep, end_icao, now)
+        recorded_this_run.add((cid, conn_logon))
         new += 1
     return new
 
@@ -4357,7 +4419,7 @@ def compute_transport_progress(
     start = event.get("dtstart") or ""
     end = min(now, event.get("dtend") or now)
     load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
-    flights = canonicalize_flights(conn, start=load_start, end=end, callsign_prefix=callsign_prefix)
+    flights = canonicalize_legs(conn, start=load_start, end=end, callsign_prefix=callsign_prefix)
     flights = [f for f in flights if (f.get("logoff_time") or "") >= start]
 
     dest = normalize_type_code(event.get("destination"))
@@ -4366,6 +4428,12 @@ def compute_transport_progress(
     # Netzwerk-Flüge sammeln (dep & arr auf der Strecke, dep≠arr). „Beladen" = Ankunft am Ziel
     # ODER ein Live-Ankunfts-Latch existiert (Fracht ohne Disconnect erkannt) — ein Latch hebt
     # den Strecken-Filter auf, da die Fracht dann unabhängig vom finalen Disconnect-Ort zählt.
+    # dep/arr kommen direkt aus canonicalize_legs (GPS-Wahrheit, Plan nur als dep-Fallback —
+    # arrival hat bewusst KEINEN Plan-Fallback, s. _gps_flights_for_positions) — keine eigene
+    # _nearest_airport-Korrektur mehr nötig.
+    # Latches tragen den VERBINDUNGS-Logon (Poller kennt nur die flights-Session), der VOR dem
+    # GPS-Takeoff liegt → Zuordnung über Connection-Intervall-Überlappung (_latch_hits_flight),
+    # nicht per exaktem (cid, lo)-Schlüsselvergleich.
     network: list[dict] = []
     unmapped: set[str] = set()
     for f in flights:
@@ -4373,15 +4441,17 @@ def compute_transport_progress(
         if cid is None:
             continue
         lo = f.get("logon_time") or ""
-        lf = f.get("logoff_time") or "9999-12-31T23:59:59Z"
-        dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, lf), radius) \
-            or normalize_type_code(f.get("departure"))
-        arr_gps = _nearest_airport(coords_map, _last_pos(conn, int(cid), lo, lf), radius)
-        arr = arr_gps or normalize_type_code(f.get("arrival"))
-        has_latch = (cid, lo) in live_arrivals
+        lf = f.get("logoff_time")
+        dep = normalize_type_code(f.get("departure"))
+        arr = normalize_type_code(f.get("arrival"))
+        has_latch = bool(dest) and _latch_hits_flight(conn, live_arrivals, int(cid), lo, lf)
         if not has_latch and (dep not in route_set or arr not in route_set or dep == arr):
             continue
-        loaded = bool(dest) and (arr == dest or has_latch)
+        # Ankunft am Ziel ODER (kein bekanntes, abweichendes Ziel UND Latch) — ein Rückflug-
+        # Bein mit GPS-belegter Landung anderswo (arr gesetzt, ≠ dest) zählt NIE als beladen,
+        # selbst wenn das Connection-Intervall des Hin-Legs noch überlappt (sonst würde ein
+        # Latch vom Hinflug fälschlich auch das Rückflug-Bein beladen zeigen).
+        loaded = bool(dest) and (arr == dest or not arr) and (arr == dest or has_latch)
         type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
         if loaded and type_code and type_code not in payload_map:
             unmapped.add(type_code)
@@ -4400,9 +4470,9 @@ def compute_transport_progress(
             "flight_key": f"{cid}:{lo}",
             "distance_nm": f.get("distance_nm") or 0,
             "block_min": f.get("block_min") or f.get("duration_min") or 0,
-            # Lieferung hängt NUR am Flugplan-Text (kein Latch, keine GPS-Ankunft am Ziel) —
-            # ein GPS-belegter Verlust darf so eine Lieferung überstimmen (interne Markierung).
-            "_fp_only": loaded and not has_latch and arr_gps != dest,
+            # Interne Markierung für den Loss-Reconcile unten (Verbindungs-Logon dieses Legs,
+            # unter dem der Poller Verluste latcht) — vor der Rückgabe entfernt.
+            "_conn_logon": _connection_logon_for_leg(conn, int(cid), lo),
         })
 
     # Aktuell offene Flüge (noch verbunden) — bisher komplett ignoriert, da canonicalize_flights
@@ -4448,31 +4518,32 @@ def compute_transport_progress(
             "flight_key": f"{cid}:{lo}",
             "distance_nm": 0,
             "block_min": 0,
+            # lo IST hier bereits der Verbindungs-Logon (open_transport_flights liest die
+            # flights-Tabelle direkt) — kein Reconcile nötig, nur einheitlicher Key fürs Loss-
+            # Attach unten.
+            "_conn_logon": lo,
         })
 
     # Fracht-Verluste anheften: Feed-Zeilen bekommen loss_kind; Verlust-Flüge, die der
     # Strecken-Filter oben verworfen hat (woanders gelandet, dep==arr), erscheinen als
     # eigener Eintrag. kg IMMER live aus aircraft_payloads (type_code, kein Snapshot).
+    # Losses sind unter dem VERBINDUNGS-Logon gelatcht (Poller-Konvention) — Zuordnung daher
+    # über `_conn_logon` (nicht `flight_key`, der ist der GPS-Leg-Takeoff und kann vom
+    # Verbindungs-Logon abweichen, s. Reconcile-Regel #23).
     losses = get_transport_losses(conn, int(event["id"]))
-    seen_keys = {q["flight_key"] for q in network}
-    loss_by_key: dict[str, dict] = {f"{l['cid']}:{l['logon_time']}": l for l in losses}
+    loss_by_conn: dict[str, dict] = {f"{l['cid']}:{l['logon_time']}": l for l in losses}
+    seen_conn = {f"{q['cid']}:{q['_conn_logon']}" for q in network if q.get("_conn_logon")}
     for q in network:
-        l = loss_by_key.get(q["flight_key"])
+        conn_key = f"{q['cid']}:{q['_conn_logon']}" if q.get("_conn_logon") else None
+        l = loss_by_conn.get(conn_key) if conn_key else None
         if not l:
             continue
-        if q["loaded"] and q.get("_fp_only") and l["kind"] in ("stolen", "sunk"):
-            # GPS-belegter Verlust überstimmt eine Lieferung, die NUR am Flugplan-Text hängt
-            # (Live-Befund 02.07.: sonst versinkt nie, wer brav einen Plan zum Ziel aufgibt).
-            # Latch-/GPS-Lieferungen bleiben unantastbar — die Verlust-Erkennung überspringt
-            # sie bereits beim Erfassen.
-            q["loaded"] = False
-            q["tonnage_kg"] = 0.0
         if not q["loaded"]:
             q["loss_kind"] = l["kind"]
             q["lost_kg"] = round(payload_map.get(normalize_type_code(l.get("type_code")), default_kg), 1) \
                 if l["kind"] in ("stolen", "sunk") else 0.0
-    for key, l in loss_by_key.items():
-        if key in seen_keys:
+    for key, l in loss_by_conn.items():
+        if key in seen_conn:
             continue
         tc = normalize_type_code(l.get("type_code"))
         lost = round(payload_map.get(tc, default_kg), 1) if l["kind"] in ("stolen", "sunk") else 0.0
@@ -4595,7 +4666,7 @@ def compute_transport_progress(
     quips = get_transport_quips(conn, int(event["id"]))
     for q in network:
         q["quip"] = quips.get(q["flight_key"])
-        q.pop("_fp_only", None)  # interne Markierung nicht in die API-Antwort leaken
+        q.pop("_conn_logon", None)  # interne Markierung nicht in die API-Antwort leaken
 
     total_kg = round(sum(q["tonnage_kg"] for q in network), 1)
     loaded_count = sum(1 for q in network if q["loaded"])

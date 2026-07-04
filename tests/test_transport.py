@@ -112,11 +112,15 @@ def _feed_by_callsign(progress, callsign):
     return next((f for f in progress["flights"] if f["callsign"] == callsign), None)
 
 
-def _add_pos(conn, cid, ts, lat, lon, gs):
+def _add_pos(conn, cid, ts, lat, lon, gs, *, alt=None, callsign=None):
+    # callsign MUSS gesetzt sein (FRS-Praefix) -- canonicalize_legs/_positions_for_cid filtert
+    # Positionen ohne passendes Callsign sonst komplett heraus (#23 GPS-only); ohne jede
+    # passende Position faellt der Flug auf den Connection-Fallback zurueck (kein GPS-Leg).
+    callsign = callsign or f"FRS{cid:02d}"
     conn.execute(
-        "INSERT INTO position_history (cid, latitude, longitude, groundspeed, ts) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (cid, lat, lon, gs, ts),
+        "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, groundspeed, ts) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (cid, callsign, lat, lon, alt, gs, ts),
     )
     conn.commit()
 
@@ -591,17 +595,24 @@ class TestLiveArrivalInProgress:
         assert f["loaded"] is True
         assert f["tonnage_kg"] == 550
 
-    def test_latch_persists_after_disconnect_elsewhere(self):
+    def test_latch_persists_after_disconnect_without_known_arrival(self):
+        """Latch bleibt gültig, wenn die Connection ohne belastbare GPS-/Flugplan-Ankunft endet
+        (kein Track, kein gefilter Zielflughafen — 'arr' bleibt leer). Ein GPS-BELEGT
+        abweichendes Ziel darf dagegen NIE mehr beladen zählen (Rückflug-Bein-Schutz, s.
+        TestReturnLegNotDoubleCounted) — dieser Fall wurde vorher hier fälschlich mitgetestet
+        (arrival='EDDH', ein bekanntes, abweichendes Ziel) und ist unter GPS-only bewusst
+        korrigiert worden (#23 Task 10)."""
         conn = _make_conn()
         upsert_payload(conn, "C208", payload_kg=550)
         ev = _event(conn)
         _add_open_flight(conn, 9, "EDWG", "", "C208", START)
         set_transport_live_arrival(conn, 9, START, ev["id"], "2026-07-01T10:00:00Z")
         conn.commit()
-        # Pilot disconnectet spaeter ganz woanders (Ziel ausserhalb der Strecke) -- die Fracht
-        # bleibt trotzdem gezaehlt, weil der Latch bereits existiert.
+        # Pilot disconnectet spaeter ohne verwertbare Ankunftsangabe (kein Flugplan-Ziel
+        # gefilt, kein GPS-Track) -- die Fracht bleibt trotzdem gezaehlt, weil der Latch
+        # bereits existiert und "arr" leer (nicht widersprüchlich) bleibt.
         conn.execute(
-            "UPDATE flights SET logoff_time=?, arrival='EDDH', duration_min=45, distance_nm=120 "
+            "UPDATE flights SET logoff_time=?, arrival='', duration_min=45, distance_nm=120 "
             "WHERE cid=9",
             (END,),
         )
@@ -816,14 +827,27 @@ class TestReservation:
 # --- Fracht-Verluste: Kutter versunken, geklaut, zurückgebracht -------------
 
 class TestCargoLosses:
-    def _flown_flight(self, conn, cid, logon, *, end_lat, end_lon, end_gs, arrival="EDXH"):
-        """Geschlossener Flug ab EDWG Richtung Ziel mit Bewegungs-Track und letzter Position."""
-        from app.geo import icao_to_coords
+    def _flown_flight(self, conn, cid, logon, *, end_lat, end_lon, end_gs, arrival="EDXH", end_alt=None):
+        """Geschlossene Connection ab EDWG Richtung Ziel mit einem echten, GPS-erkennbaren
+        Abflug (Taxi + Steigflug über die 500-ft-AGL-Schwelle, s. app/gps_legs.py) und einer
+        konfigurierbaren Endposition/-höhe/-geschwindigkeit. Eine Landung zählt für den
+        Detektor nur, wenn die Endposition innerhalb des Erkennungsradius EINES bekannten
+        Flugplatzes UND unter der Boden-AGL-Schwelle liegt — sonst bleibt das GPS-Leg trotz
+        bereits geschlossener Connection (``_add_flight`` setzt ``logoff_time`` fest) technisch
+        offen (kein Touchdown erkannt): genau der 'sunk'-Fall, ein abseits jedes Flugplatzes
+        verschwundener Kutter. ``end_alt`` default: erdnah (50 ft) bei ``end_gs < 2``
+        (Landeversuch), sonst Reiseflughöhe (weiterhin in der Luft)."""
+        from app.geo import icao_to_coords, airport_elevation_ft
         dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        if end_alt is None:
+            end_alt = 50 if (end_gs is not None and end_gs < 2) else 3000
         _add_flight(conn, cid, "EDWG", arrival, "C172", logon, duration_min=30)
-        _add_pos(conn, cid, logon, dlat, dlon, 0)                      # Start am Platz
-        _add_pos(conn, cid, _shift(logon, 10), dlat + 0.2, dlon, 90)   # geflogen
-        _add_pos(conn, cid, _shift(logon, 30), end_lat, end_lon, end_gs)
+        _add_pos(conn, cid, logon, dlat, dlon, 0, alt=delev)                     # Start am Platz
+        _add_pos(conn, cid, _shift(logon, 1), dlat, dlon, 12, alt=delev)         # Rollen
+        _add_pos(conn, cid, _shift(logon, 3), dlat, dlon, 80, alt=delev + 1200)  # Steigflug
+        _add_pos(conn, cid, _shift(logon, 15), dlat + 0.2, dlon, 120, alt=4500)  # Reiseflug
+        _add_pos(conn, cid, _shift(logon, 28), end_lat, end_lon, end_gs, alt=end_alt)  # Ende
 
     def test_sunk_when_vanished_airborne(self):
         conn = _make_conn()
@@ -926,6 +950,135 @@ class TestCargoLosses:
         n = detect_transport_losses(conn, ev)
         assert n == 0
         assert get_transport_losses(conn, ev["id"]) == []
+
+
+# --- GPS-Flüge + Latch-/Loss-Reconcile über das Connection-Intervall (#23 Task 10) ----------
+#
+# canonicalize_legs liefert je Flug den GPS-Takeoff als `logon_time` (Flug-Identität/flight_key)
+# — der Poller latcht Live-Ankünfte aber weiterhin unter dem VERBINDUNGS-Logon (`flights.logon_time`,
+# der Session-Start, meist ein paar Minuten VOR dem Takeoff wegen Taxi-Zeit). Diese Tests bauen
+# echte, per Höhe/Groundspeed erkennbare Tracks (Muster wie tests/test_canonicalize_legs.py) statt
+# der alten 2-3-Punkt-Tracks, die unter GPS-only keine Landung ergeben (s. Task-Brief #23).
+
+class TestGPSLegReconcile:
+    def _seed_leg(self, conn, cid, callsign, t0, dep_icao, *, arr_landing=True):
+        """Ein reales, GPS-erkennbares Leg ab ``dep_icao`` (Taxi 0–1 min, Steigflug über die
+        500-ft-AGL-Schwelle bei ``t0+4min`` — GPS-Takeoff). Ohne Endpunkt hier: Aufrufer hängt
+        Reiseflug/Landung selbst an (Verkettung für Mehrbein-Connections)."""
+        from app.geo import icao_to_coords, airport_elevation_ft
+        dlat, dlon = icao_to_coords(dep_icao)
+        delev = airport_elevation_ft(dep_icao) or 0
+        _add_pos(conn, cid, t0, dlat, dlon, 0, alt=delev, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, 1), dlat, dlon, 12, alt=delev, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, 4), dlat, dlon, 80, alt=delev + 1200, callsign=callsign)  # Takeoff
+
+    def _add_leg_landing(self, conn, cid, callsign, t0, arr_icao, *, cruise_min=18, gs=0, alt=None):
+        """Reiseflug + Landeanflug + Touchdown an ``arr_icao`` (relativ zum Leg-``t0``, s.
+        ``_seed_leg``). Gibt den Touchdown-``ts`` zurück (für Verkettung)."""
+        from app.geo import icao_to_coords, airport_elevation_ft
+        alat, alon = icao_to_coords(arr_icao)
+        aelev = airport_elevation_ft(arr_icao) or 0
+        if alt is None:
+            alt = aelev
+        _add_pos(conn, cid, _shift(t0, cruise_min), 54.0, 7.9, 120, alt=4000, callsign=callsign)
+        landing_ts = _shift(t0, cruise_min + 20)
+        _add_pos(conn, cid, _shift(t0, cruise_min + 18), alat, alon, 40, alt=500, callsign=callsign)
+        _add_pos(conn, cid, landing_ts, alat, alon, gs, alt=alt, callsign=callsign)
+        return landing_ts
+
+    def _insert_connection(self, conn, cid, callsign, dep, arr, logon, logoff, *, duration_min=60):
+        conn.execute(
+            "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)",
+            (cid, f"Pilot{cid}", START),
+        )
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
+            "logon_time, logoff_time, duration_min, distance_nm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (cid, callsign, "C172", dep, arr, logon, logoff, duration_min, 20.0),
+        )
+        conn.commit()
+
+    def test_live_latch_reconciled_to_gps_flight(self):
+        """Latch mit Verbindungs-Logon 09:58 (Session-Start), GPS-Flug/Takeoff aber erst 10:02
+        (Taxi-Zeit dazwischen) — Landung EDXH 10:40. Ein naiver ``(cid, lo)``-Vergleich mit
+        ``lo`` = GPS-Takeoff (der jetzige ``flight_key``) fände den Latch NICHT (Schlüssel-
+        Mismatch) und die Ankunft läge außerhalb der (bewusst auf EDWG verengten) Strecke —
+        ohne die Connection-Intervall-Reconcile (``_latch_hits_flight``) bliebe die Fracht
+        0 kg, obwohl der Kutter GPS-belegt am Ziel landet."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        conn_logon = "2026-07-01T09:58:00Z"
+        # `route` bewusst NUR der Abflugplatz -- ohne Latch würde der Strecken-Filter
+        # (arr=EDXH nicht in route_set) die Ankunft verwerfen; der Latch hebt ihn auf.
+        ev = _event(conn, route="EDWG", destination="EDXH")
+        self._insert_connection(conn, 500, "FRS500", "EDWG", "EDXH", conn_logon,
+                                _shift(conn_logon, 44), duration_min=44)
+        self._seed_leg(conn, 500, "FRS500", conn_logon, "EDWG")
+        landing_ts = self._add_leg_landing(conn, 500, "FRS500", conn_logon, "EDXH", cruise_min=22)
+        conn.commit()
+        assert landing_ts == "2026-07-01T10:40:00Z"
+        set_transport_live_arrival(conn, 500, conn_logon, ev["id"], "2026-07-01T10:35:00Z")
+        conn.commit()
+
+        p = compute_transport_progress(conn, ev, "2026-07-01T11:00:00Z")
+        f = _feed_by_callsign(p, "FRS500")
+        assert f is not None
+        assert f["dep_time"] == "2026-07-01T10:02:00Z"  # GPS-Takeoff, NICHT der Verbindungs-Logon
+        assert f["loaded"] is True
+        assert p["total_kg"] == 250
+
+    def test_return_leg_not_double_counted(self):
+        """Eine Mehrbein-Connection (Hin EDWG→EDXH landet am Ziel, Rück EDXH→EDWG) — der Latch
+        (Verbindungs-Logon) überlappt via Connection-Intervall BEIDE Beine, trotzdem darf NUR
+        das Hin-Bein beladen sein: ein GPS-belegtes, vom Ziel abweichendes Ankunfts-Bein zählt
+        nie, unabhängig vom Latch (sonst zählte die Fracht doppelt)."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
+        conn_logon = "2026-07-01T09:58:00Z"
+        conn_logoff = "2026-07-01T11:35:00Z"
+        self._insert_connection(conn, 501, "FRS501", "EDWG", "EDWG", conn_logon, conn_logoff,
+                                duration_min=97)
+        from app.geo import icao_to_coords
+        # Hin: EDWG -> EDXH
+        self._seed_leg(conn, 501, "FRS501", conn_logon, "EDWG")
+        hin_landing = self._add_leg_landing(conn, 501, "FRS501", conn_logon, "EDXH")
+        # Turnaround in EDXH (kurzer Boden-Aufenthalt, dann erneut abheben)
+        hlat, hlon = icao_to_coords("EDXH")
+        _add_pos(conn, 501, _shift(hin_landing, 3), hlat, hlon, 5, alt=8, callsign="FRS501")
+        # Rück: EDXH -> EDWG
+        self._seed_leg(conn, 501, "FRS501", _shift(hin_landing, 6), "EDXH")
+        self._add_leg_landing(conn, 501, "FRS501", _shift(hin_landing, 6), "EDWG")
+        conn.commit()
+        # Latch waehrend des Hin-Beins gesetzt (Verbindungs-Logon als Key, Poller-Konvention).
+        set_transport_live_arrival(conn, 501, conn_logon, ev["id"], "2026-07-01T10:35:00Z")
+        conn.commit()
+
+        p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
+        legs = [f for f in p["flights"] if f["cid"] == 501]
+        assert len(legs) == 2
+        hin = next(f for f in legs if f["arr"] == "EDXH")
+        rueck = next(f for f in legs if f["arr"] == "EDWG")
+        assert hin["loaded"] is True
+        assert rueck["loaded"] is False and rueck["tonnage_kg"] == 0.0
+        assert p["total_kg"] == 250  # nur einmal gezählt, nicht doppelt
+
+    def test_delivery_requires_route_membership(self):
+        """Landung neben dem Ziel (ein bekannter, aber streckenfremder Flughafen), kein Latch
+        → 0 kg: weder Strecken-Filter-Bypass noch ``loaded``."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
+        logon = "2026-07-01T09:58:00Z"
+        self._insert_connection(conn, 502, "FRS502", "EDWG", "EDDH", logon,
+                                _shift(logon, 60), duration_min=60)
+        self._seed_leg(conn, 502, "FRS502", logon, "EDWG")
+        self._add_leg_landing(conn, 502, "FRS502", logon, "EDDH")  # Hamburg -- nicht auf der Strecke
+        conn.commit()
+
+        p = compute_transport_progress(conn, ev, "2026-07-01T11:30:00Z")
+        assert _feed_by_callsign(p, "FRS502") is None
+        assert p["total_kg"] == 0
 
 
 class TestParticipants:
