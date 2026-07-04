@@ -1870,6 +1870,7 @@ def _statsim_plan(row: dict) -> dict:
     (``id=None`` — StatSim liefert keine erweiterten Flugplan-Labels)."""
     return {
         "id": None,
+        "statsim_id": row.get("statsim_id"),
         "cid": row.get("cid"),
         "callsign": row.get("callsign"),
         "departure": row.get("departure"),
@@ -2012,6 +2013,7 @@ def _gps_flights_for_positions(
 
         out.append({
             "id": plan.get("id") if plan else None,
+            "statsim_id": plan.get("statsim_id") if plan else None,
             "cid": plan.get("cid") if plan else None,
             "callsign": callsign,
             "aircraft": plan.get("aircraft") if plan else None,
@@ -2055,6 +2057,7 @@ def _flightrow_as_flight(row: dict, source: str) -> dict:
     if source == "statsim":
         return {
             "id": None,
+            "statsim_id": row.get("statsim_id"),
             "cid": row.get("cid"),
             "callsign": row.get("callsign"),
             "aircraft": row.get("aircraft"),
@@ -2085,6 +2088,7 @@ def _flightrow_as_flight(row: dict, source: str) -> dict:
 
     return {
         "id": row.get("id"),
+        "statsim_id": None,
         "cid": row.get("cid"),
         "callsign": row.get("callsign"),
         "aircraft": row.get("aircraft"),
@@ -2620,15 +2624,19 @@ def rebuild_flight_cache(conn: sqlite3.Connection, *, full: bool = False) -> int
     is_empty = conn.execute("SELECT COUNT(*) FROM flight_cache").fetchone()[0] == 0
     computed_at = _now_utc()
 
+    # Erst rechnen (canonicalize_legs, ~5,5 s bei großem Bestand), DANN DELETE+INSERT — die
+    # Schreib-Transaktion (und damit der Write-Lock) soll nur die kurze DB-Schreibphase
+    # umfassen, nicht die gesamte Berechnung (Deploy-Risiko "database is locked"). Semantisch
+    # identisch zu "DELETE zuerst": derselbe canonicalize_legs-Snapshot landet im Cache.
     if full or is_empty:
-        conn.execute("DELETE FROM flight_cache")
         flights = canonicalize_legs(conn)
+        conn.execute("DELETE FROM flight_cache")
     else:
         cutoff = (
             datetime.now(timezone.utc) - timedelta(days=_FLIGHT_CACHE_INCREMENTAL_DAYS)
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
-        conn.execute("DELETE FROM flight_cache WHERE logon_time >= ?", (cutoff,))
         flights = canonicalize_legs(conn, start=cutoff)
+        conn.execute("DELETE FROM flight_cache WHERE logon_time >= ?", (cutoff,))
 
     _write_flight_cache_rows(conn, flights, computed_at)
     conn.commit()

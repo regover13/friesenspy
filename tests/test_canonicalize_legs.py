@@ -610,3 +610,82 @@ class TestPrevEndBoundary:
             "block_min von Leg 2 enthaelt vermutlich (Teile) der Luftzeit von Leg 1 "
             "-- die prev_end-Schranke greift nicht mehr"
         )
+
+
+# --- FIX 1 (Whole-Branch-Review #23): statsim_id im Feld-Vertrag ------------------------
+# Die UI waehlt die Track-Button-ID via
+# `f.source === 'friesenspy' ? f.id : f.statsim_id` (app/static/index.html) -- fehlt
+# `statsim_id` im StatSim-Zweig, ist der Track-Button fuer JEDEN StatSim-Flug tot
+# (`undefined`). Deckt alle drei Erzeugungspfade ab: GPS-Track (StatSim + FriesenSpy) und
+# den Connection-Fallback OHNE Track (StatSim + FriesenSpy).
+
+class TestStatsimIdField:
+    def test_statsim_with_track_carries_statsim_id(self):
+        """StatSim-Flug MIT erkanntem GPS-Track: statsim_id muss die ID der statsim_cache-
+        Zeile tragen (Track-Button-Ziel in der UI)."""
+        conn = _make_conn()
+        cid = 4315
+        _insert_statsim(
+            conn, 9501, cid=cid, callsign="FRS45", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:58:00Z", logoff_time="2026-07-02T10:50:00Z",
+            duration_min=44,
+        )
+        _insert_statsim_pos(conn, 9501, "2026-07-02T10:00:00Z", *EDDK, 302, 0)
+        _insert_statsim_pos(conn, 9501, "2026-07-02T10:06:00Z", *EDDK, 1200, 80)
+        _insert_statsim_pos(conn, 9501, "2026-07-02T10:20:00Z", 52.0, 8.0, 5000, 120)
+        _insert_statsim_pos(conn, 9501, "2026-07-02T10:38:00Z", 53.0, 8.7, 500, 60)
+        _insert_statsim_pos(conn, 9501, "2026-07-02T10:40:00Z", *EDDW, 20, 0)
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid and f["source"] == "statsim")
+        assert flight["gps_departure"] == "EDDK", "Test-Vorbedingung: Track muss erkannt werden"
+        assert flight["statsim_id"] == 9501
+
+    def test_statsim_fallback_without_track_carries_statsim_id(self):
+        """StatSim-Fallback OHNE Track (kein erkanntes Leg): statsim_id muss trotzdem
+        gesetzt sein -- kommt hier aus `_flightrow_as_flight`, nicht aus dem GPS-Zweig."""
+        conn = _make_conn()
+        cid = 4316
+        _insert_statsim(
+            conn, 9502, cid=cid, callsign="FRS46", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:58:00Z", logoff_time="2026-07-02T10:50:00Z",
+            duration_min=52,
+        )
+        # Bewusst KEINE statsim_position_history-Zeilen -> Fallback-Pfad.
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid and f["source"] == "statsim")
+        assert flight["statsim_id"] == 9502
+
+    def test_friesenspy_flight_statsim_id_is_none(self):
+        """FriesenSpy-Flug (mit UND ohne Track) hat kein statsim_id -- Key muss dennoch
+        existieren (Symmetrie im Feld-Vertrag) und None sein."""
+        conn = _make_conn()
+        cid_track, cid_fallback = 4317, 4318
+        _insert_flight(
+            conn, cid=cid_track, callsign="FRS47", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:50:00Z",
+        )
+        _seed_eddk_eddw_track(conn, cid_track, "FRS47")
+        _insert_flight(
+            conn, cid=cid_fallback, callsign="FRS48", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:50:00Z",
+            duration_min=55, distance_nm=210, block_min=50,
+        )
+        # Bewusst KEINE position_history-Zeilen fuer cid_fallback -> Fallback-Pfad
+        # (duration_min/distance_nm > Ghost-Schwelle, s. `_is_ghost_row`).
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        flight_track = next(f for f in result if f["cid"] == cid_track)
+        flight_fallback = next(f for f in result if f["cid"] == cid_fallback)
+        assert "statsim_id" in flight_track and flight_track["statsim_id"] is None
+        assert "statsim_id" in flight_fallback and flight_fallback["statsim_id"] is None
