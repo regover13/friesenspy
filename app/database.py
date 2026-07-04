@@ -2084,6 +2084,7 @@ def _flightrow_as_flight(row: dict, source: str) -> dict:
             "fuel_time": None,
             "connection_closed": True,
             "source": source,
+            "last_pos_ts": row.get("logoff_time"),
         }
 
     return {
@@ -2115,6 +2116,7 @@ def _flightrow_as_flight(row: dict, source: str) -> dict:
         "fuel_time": row.get("fuel_time"),
         "connection_closed": row.get("logoff_time") is not None,
         "source": source,
+        "last_pos_ts": row.get("logoff_time"),
     }
 
 
@@ -2229,9 +2231,23 @@ def canonicalize_legs(
             positions, plan_rows=rows, source="friesenspy", radius_km=radius_km
         )
         if gps_flights:
+            fallback_aircraft: tuple[str, str] | None = None
             for f in gps_flights:
                 f["cid"] = cid
+                if not f.get("aircraft"):
+                    # #11-Fallback: kein Plan-Match (GPS-only-Leg) -> zuletzt bekanntes Muster
+                    # des Piloten, statt Aircraft leer zu lassen.
+                    if fallback_aircraft is None:
+                        fallback_aircraft = last_known_aircraft(conn, cid)
+                    short, icao = fallback_aircraft
+                    f["aircraft"] = short or None
+                    if not f.get("aircraft_icao"):
+                        f["aircraft_icao"] = icao or None
                 coverage_end = f.pop("_coverage_end", None)
+                # last_pos_ts = Zeit der letzten belegten Position dieses Legs (statisch,
+                # NICHT „now"). Frontend leitet daraus „läuft" (offen UND frisch) ab und nutzt
+                # es als Track-Obergrenze offener Legs (#v8.1.0).
+                f["last_pos_ts"] = coverage_end or f.get("logoff_time")
                 fs_flights.append(f)
                 fs_intervals_by_cid.setdefault(cid, []).append(
                     (f.get("logon_time"), coverage_end or f.get("logoff_time"))
@@ -2293,6 +2309,10 @@ def canonicalize_legs(
         if gps_flights:
             for f in gps_flights:
                 f["cid"] = row["cid"]
+                if not f.get("aircraft"):
+                    # Kein Plan-Match (GPS-only-Leg): die statsim_cache-Zeile selbst kennt
+                    # den Typ bereits (row.aircraft) -> kein last_known_aircraft-Umweg noetig.
+                    f["aircraft"] = row.get("aircraft") or None
                 # _coverage_end bleibt vorerst im Dict (symmetrisch zur FS-Seite, FIX 6) —
                 # wird erst kurz vor der Rückgabe für die Dedup-Obergrenze genutzt und dann
                 # entfernt. Sonst bekäme ein offener StatSim-GPS-Flug hi=∞ und würde von
@@ -2307,6 +2327,7 @@ def canonicalize_legs(
         intervals = fs_intervals_by_cid.get(f.get("cid"), [])
         coverage_end = f.pop("_coverage_end", None)
         hi = coverage_end or f.get("logoff_time")
+        f["last_pos_ts"] = coverage_end or f.get("logoff_time")
         if _overlaps_any(intervals, f.get("logon_time"), hi):
             continue
         result.append(f)
