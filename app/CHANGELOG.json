@@ -1,5 +1,17 @@
 [
   {
+    "version": "8.1.0",
+    "date": "2026-07-04",
+    "title": "GPS-Fluglisten: Track immer da, „läuft“ nur echt, Platzrunde + Pause getrennt",
+    "items": [
+      "🛬 Platzrunde/Zwischenlandung mit anschließender Bodenpause (Tanken/Kaffee) wird jetzt korrekt als eigener Flug erkannt statt mit dem nächsten Start verschmolzen — dadurch stimmt die Flugzeit wieder (vorher konnte eine Standzeit fälschlich als Flugzeit zählen).",
+      "🛫 Der Startpunkt wird genauer erkannt: schnelle Flugzeuge schon beim Steigen (nicht erst 500 ft hoch), langsame Muster (Wilga/Heli) weiter über die Höhe — ein Startlauf/Startabbruch löst keinen Scheinflug aus.",
+      "📍 Der GPS-Track lässt sich jetzt in jeder Flugzeile öffnen — auch bei Flügen ohne zugeordneten Flugplan (vorher war der Track-Knopf dort tot).",
+      "⏱️ Das „🛫 läuft“-Kennzeichen erscheint nur noch bei wirklich aktiven Flügen — ein Wochen-alter, mitten in der Luft abgebrochener Flug zeigt es nicht mehr.",
+      "🔵 In der Flugliste ist die GPS-Strecke reine Anzeige; anklickbar sind jetzt nur der Flugplan (Spalte „Plan“) und der GPS-Track — passend zur Regel „blau = klickbar“."
+    ]
+  },
+  {
     "version": "8.0.0",
     "date": "2026-07-04",
     "highlight": true,

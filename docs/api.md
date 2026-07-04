@@ -177,7 +177,8 @@ Sortiert nach `logon_time` absteigend. FriesenSpy-Einträge haben Vorrang bei Ze
 |------|--------------|
 | `gps_departure` / `gps_arrival` | Start-/Ziel-ICAO, wie es der GPS-Leg-Detektor erkannt hat (erste/letzte Position im 4-km-Umkreis eines Flugplatzes). `null`, wenn kein Track vorlag oder der Flug noch nicht gelandet ist. |
 | `plan_departure` / `plan_arrival` | DEP/ARR aus dem eingereichten Flugplan (reine Beschriftung, keine Grundlage mehr für die Flugzählung). Kann von `gps_*` abweichen, z. B. bei einer Zwischenlandung ohne Refile. |
-| `connection_closed` | `true`, wenn die zugrunde liegende VATSIM-Verbindung beendet ist (`logoff_time` gesetzt). **Kein** Indikator dafür, ob der Flug selbst fertig geflogen ist — das entscheidet allein `arrival`/`gps_arrival`/`logoff_time`. Ein Flug mit `gps_arrival: null` und `connection_closed: false` ist noch in der Luft ("läuft"); mit `gps_arrival: null` und `connection_closed: true` ist die Verbindung beendet, ohne dass eine Landung erkannt wurde (z. B. Absturz oder Datenlücke). |
+| `connection_closed` | `true`, wenn die zugrunde liegende VATSIM-Verbindung beendet ist (`logoff_time` gesetzt). **Kein** Indikator dafür, ob der Flug selbst fertig geflogen ist — das entscheidet allein `arrival`/`gps_arrival`/`logoff_time`, und „🛫 läuft" leitet das Frontend seit v8.1.0 aus `last_pos_ts` (Frische), nicht aus diesem Feld ab. |
+| `last_pos_ts` | (v8.1.0) ISO8601 UTC — Zeit der **letzten belegten Position** dieses Legs (statisch, nicht „now"). Für einen geschlossenen Flug = Landung/letzte Position; für einen offenen Flug = letzte empfangene Position. Das Frontend zeigt „🛫 läuft" nur, wenn der Flug offen ist **und** `last_pos_ts` frisch (< 15 min alt), und nutzt den Wert als Obergrenze beim Nachladen des GPS-Tracks offener Legs. |
 
 `departure`/`arrival` bleiben aus Kompatibilitätsgründen erhalten und entsprechen im Regelfall `gps_departure`/`gps_arrival` (Fallback auf den Flugplan, wenn kein GPS-Wert vorliegt).
 
@@ -190,6 +191,21 @@ Flüge unter einem **Nicht-`FRS`-Callsign** (`callsign_prefix=""` liefert sie mi
 ## GET /api/pilots/{cid}/live-track
 
 GPS-Track des aktuell laufenden Fluges aus `position_history` (logoff_time IS NULL). Leeres Array wenn der Pilot nicht online ist.
+
+**Response** — gleiches Format wie `/api/flights/{id}/track`
+
+---
+
+## GET /api/pilots/{cid}/track
+
+(v8.1.0) GPS-Track eines Legs rein über **cid + Zeitfenster** aus `position_history` — anders als `/api/flights/{id}/track` **ohne** `flights`-Zeile. Bedient GPS-Legs ohne zugeordneten Flugplan (`id = null`), sodass der Track in jeder Flugzeile ladbar ist (GPS-only).
+
+**Query-Parameter** (optional)
+
+| Parameter | Typ | Beschreibung |
+|-----------|-----|--------------|
+| `logon` | string | ISO8601 UTC — untere Fenstergrenze (Takeoff des Legs, `logon_time`) |
+| `logoff` | string | ISO8601 UTC — obere Fenstergrenze; für offene Legs die letzte Positionszeit (`last_pos_ts`), **nicht** „now", sonst würden Positionen späterer Flüge mitgezogen. Fehlt der Wert, wird „now" verwendet. |
 
 **Response** — gleiches Format wie `/api/flights/{id}/track`
 
