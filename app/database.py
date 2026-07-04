@@ -3002,13 +3002,17 @@ def compute_bummel_standings(
 
     Frühstarter: Flüge, die VOR ``start`` begonnen haben, aber im Eventfenster noch unterwegs sind
     (``logoff_time >= start``), werden mit voller Blockzeit erfasst (Vorlauf
-    ``_BUMMEL_EARLY_START_LOOKBACK_H``). ``radius_km`` steuert den Erfassungs-Umkreis um einen
-    Streckenflugplatz (Default ``_BUMMEL_AIRPORT_RADIUS_KM``).
+    ``_BUMMEL_EARLY_START_LOOKBACK_H``). ``radius_km`` wird nur noch entgegengenommen
+    (Abwärtskompatibilität der Signatur) — die Endpunkt-Erkennung liegt seit GPS-only Phase 2
+    (#23) vollständig bei :func:`canonicalize_legs` (fester Radius ``_BUMMEL_AIRPORT_RADIUS_KM``
+    im Leg-Detektor selbst), das Argument hat hier keine Wirkung mehr.
 
-    Robust nach Wunsch: baut auf :func:`canonicalize_flights` auf (Reconnect-Fragmente gemergt,
-    Ghosts gefiltert, dedupliziert). Unvollständige Touren werden NIE still verworfen, sondern
-    separat mit ``visited``/``missing`` gelistet — sichtbares Kontrollnetz, falls ein geflogenes
-    Bein wegen eines abweichenden Flugplans nicht matcht.
+    GPS-only (#23): baut auf :func:`canonicalize_legs` auf — die Landung wird direkt am
+    tatsächlichen GPS-Track erkannt (kein Warten auf Disconnect/Refile mehr nötig), Reconnect-
+    Fragmente/Ghosts sind bereits auf Ebene der Positions-Detektion bereinigt. Unvollständige
+    Touren werden NIE still verworfen, sondern separat mit ``visited``/``missing`` gelistet —
+    sichtbares Kontrollnetz, falls ein geflogenes Bein wegen eines abweichenden Flugplans nicht
+    matcht.
 
     Rückgabe::
 
@@ -3028,41 +3032,36 @@ def compute_bummel_standings(
             route_order.append(c)
     route_set = set(route_order)
 
-    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
-
-    # GPS-Anwesenheit: tatsächlichen Start/Ziel je Flug aus der ersten/letzten Position ableiten.
-    # Macht die Wertung unabhängig vom gefilten Flugplan (Tippfehler) — der Flugplan dient nur
-    # noch als Fallback, wenn kein GPS-Track existiert (z. B. reine StatSim-Flüge).
-    from app.geo import icao_to_coords  # lazy: Import-Kosten/Zyklen vermeiden
-    coords_map = {icao: icao_to_coords(icao) for icao in route_order}
-
-    def _nearest_route_airport(pos: tuple[float, float] | None) -> str | None:
-        return _nearest_airport(coords_map, pos, radius)
+    # radius_km bleibt als Parameter erhalten (main.py._build_race_view reicht weiterhin
+    # race["radius_km"] durch) — wirkt aber nicht mehr auf die Endpunkt-Zuordnung. Die GPS-
+    # Erkennung von Start/Ziel liegt seit GPS-only Phase 2 (#23) vollständig bei
+    # canonicalize_legs (fester Radius _BUMMEL_AIRPORT_RADIUS_KM im Leg-Detektor selbst).
 
     # Frühstarter: mit Vorlauf laden, damit Flüge, die VOR dtstart begonnen haben, aber im
-    # Eventfenster noch unterwegs sind, erfasst werden. canonicalize_flights filtert nach
+    # Eventfenster noch unterwegs sind, erfasst werden. canonicalize_legs filtert nach
     # logon_time; danach wird hier nach echter Überlappung (logoff_time >= start) gefiltert.
     load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
-    flights = canonicalize_flights(conn, start=load_start, end=end, cids=cids)
+    flights = canonicalize_legs(conn, start=load_start, end=end, cids=cids)
     flights = [f for f in flights if (f.get("logoff_time") or "") >= start]
 
-    # Beine je Pilot sammeln (Endpunkte GPS-korrigiert, sonst Flugplan). Beine außerhalb der
-    # Strecke werden NICHT mehr sofort verworfen — sie können Zwischenstopps einer Tour sein.
+    # Beine je Pilot sammeln (Endpunkte bereits GPS-korrigiert durch canonicalize_legs, sonst
+    # Flugplan-Fallback). Beine außerhalb der Strecke werden NICHT mehr sofort verworfen — sie
+    # können Zwischenstopps einer Tour sein.
     legs_by_cid: dict[int, list[dict]] = {}
     for f in flights:
         cid = f.get("cid")
         if cid is None:
             continue
-        fp_dep = (f.get("departure") or "").strip().upper()
-        fp_arr = (f.get("arrival") or "").strip().upper()
-        lo = f.get("logon_time") or ""
-        lf = f.get("logoff_time") or "9999-12-31T23:59:59Z"
-        dep = _nearest_route_airport(_first_pos(conn, int(cid), lo, lf)) or fp_dep
-        arr = _nearest_route_airport(_last_pos(conn, int(cid), lo, lf)) or fp_arr
+        dep = (f.get("departure") or "").strip().upper()
+        arr = (f.get("arrival") or "").strip().upper()
         block = f.get("block_min")
         minutes = int(block) if block else int(f.get("duration_min") or 0)
-        # Sekundengenaue Block-Zeit aus dem GPS-Track; Fallback Minuten*60 (StatSim / kein Track).
-        secs = _block_seconds(conn, int(cid), lo, lf) or minutes * 60
+        # Block-Zeit aus block_min (canonicalize_legs hat sie bereits pro Leg aus der
+        # richtigen Positionsquelle — position_history für FS, statsim_position_history für
+        # StatSim — gerechnet, offene Legs korrekt gekappt). Minutengenau statt wie zuvor
+        # sekundengenau (der alte cid-gebundene _block_seconds las NUR position_history und
+        # war für StatSim/offene Legs falsch) — akzeptierter Genauigkeitsverlust.
+        secs = minutes * 60
         legs_by_cid.setdefault(cid, []).append({
             "departure": dep,
             "arrival": arr,

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 from app.database import (
     compute_bummel_standings,
@@ -18,7 +19,7 @@ from app.database import (
     init_db,
     public_bummel_view,
 )
-from app.geo import icao_to_coords
+from app.geo import airport_elevation_ft, icao_to_coords
 
 START = "2026-06-27T10:00:00Z"
 END = "2026-06-27T20:00:00Z"
@@ -40,6 +41,9 @@ def _make_conn() -> sqlite3.Connection:
 _logon_counter = [0]
 
 
+_UNSET = object()
+
+
 def _add_flight(
     conn: sqlite3.Connection,
     cid: int,
@@ -51,12 +55,15 @@ def _add_flight(
     duration_min: int = 30,
     distance_nm: float = 50.0,
     logon: str | None = None,
-    logoff: str | None = None,
+    logoff: str | None = _UNSET,
     callsign: str = "FRS123",
 ) -> None:
-    """Schreibt einen abgeschlossenen Flug direkt in die flights-Tabelle.
+    """Schreibt eine Connection direkt in die flights-Tabelle.
 
-    logon-Zeiten werden automatisch eindeutig gewählt (partieller Unique-Index).
+    logon-Zeiten werden automatisch eindeutig gewählt (partieller Unique-Index). ``logoff``
+    ohne Angabe bekommt einen Default-Zeitstempel (abgeschlossene Connection); explizit
+    ``logoff=None`` übergeben lässt ``logoff_time`` NULL (Connection bleibt offen — z. B.
+    „Frode", der nach der GPS-Landung nicht disconnected).
     """
     conn.execute(
         "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)",
@@ -65,7 +72,7 @@ def _add_flight(
     if logon is None:
         _logon_counter[0] += 1
         logon = f"2026-06-27T1{_logon_counter[0] % 10}:0{_logon_counter[0] % 6}:00Z"
-    if logoff is None:
+    if logoff is _UNSET:
         logoff = "2026-06-27T19:59:00Z"
     conn.execute(
         "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
@@ -87,6 +94,71 @@ def _add_position(conn, cid, lat, lon, ts, alt=300, gs=0):
         (cid, lat, lon, alt, gs, 0, ts),
     )
     conn.commit()
+
+
+def _parse_iso(s: str) -> datetime:
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def _fmt_iso(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _add_realistic_track(
+    conn: sqlite3.Connection,
+    cid: int,
+    dep_icao: str,
+    arr_icao: str,
+    start_ts: str,
+    *,
+    flight_min: int = 30,
+    callsign: str = "FRS123",
+    open_end: bool = False,
+) -> str:
+    """Schreibt einen echten GPS-Track dep->arr in ``position_history`` — Muster wie
+    ``tests/test_canonicalize_legs.py::_seed_eddk_eddw_track`` (ON_GROUND -> Steigflug ->
+    Reiseflug -> Sinkflug -> Aufsetzen -> ON_GROUND), damit ``detect_gps_legs`` Start/Ziel
+    tatsächlich erkennt (ein simpler 2-Punkt-Track ohne Höhen-/Speed-Änderung löst unter dem
+    GPS-only-Detektor KEINEN Start/keine Landung aus).
+
+    ``open_end=True`` lässt den letzten (rollenden) Boden-Punkt weg — für Szenarien, in denen
+    der Track kurz nach dem Aufsetzen endet (Verbindung bleibt technisch offen, wie bei „Frode").
+
+    Gibt den ISO-Zeitpunkt des letzten geschriebenen Samples zurück.
+    """
+    dep = icao_to_coords(dep_icao)
+    arr = icao_to_coords(arr_icao)
+    assert dep and arr, f"Test-Flugplätze müssen auflösbar sein ({dep_icao}/{arr_icao})"
+    dep_elev = airport_elevation_ft(dep_icao) or 0
+    arr_elev = airport_elevation_ft(arr_icao) or 0
+    t0 = _parse_iso(start_ts)
+    mid_min = max(3, round(flight_min * 0.45))
+    desc_min = max(mid_min + 1, flight_min - 6)
+    touchdown_min = max(desc_min + 1, flight_min - 4)
+    end_min = flight_min
+    mid_lat = (dep[0] + arr[0]) / 2
+    mid_lon = (dep[1] + arr[1]) / 2
+    points = [
+        (0, dep[0], dep[1], dep_elev, 0),
+        (1, dep[0], dep[1], dep_elev, 5),
+        (2, dep[0], dep[1], dep_elev + 900, 80),
+        (mid_min, mid_lat, mid_lon, 5000, 120),
+        (desc_min, arr[0], arr[1], arr_elev + 500, 60),
+        (touchdown_min, arr[0], arr[1], arr_elev, 0),
+    ]
+    if not open_end:
+        points.append((end_min, arr[0], arr[1], arr_elev, 0))
+    last_ts = start_ts
+    for off_min, lat, lon, alt, gs in points:
+        ts = _fmt_iso(t0 + timedelta(minutes=off_min))
+        last_ts = ts
+        conn.execute(
+            "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, "
+            "groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+            (cid, callsign, lat, lon, alt, gs, ts),
+        )
+    conn.commit()
+    return last_ts
 
 
 class TestRanking:
@@ -287,69 +359,70 @@ class TestEarlyStart:
 
 
 class TestRadiusParam:
-    """Das pro Rennen gesetzte radius_km steuert die GPS-Zuordnung von Start/Ziel."""
+    """GPS-only Phase 2 (#23): die Endpunkt-Erkennung liegt jetzt vollständig bei
+    ``canonicalize_legs`` (fester Radius ``_BUMMEL_AIRPORT_RADIUS_KM`` im Leg-Detektor selbst).
+    Das race-eigene ``radius_km`` wirkt daher NICHT mehr auf die Wertung — es bleibt nur als
+    Parameter für Aufrufer-Kompatibilität (``main.py`` reicht weiterhin ``race["radius_km"]``
+    durch) erhalten, ist aber ein No-Op."""
 
-    def test_larger_radius_assigns_distant_position(self):
+    def test_radius_km_no_longer_affects_standings(self):
         conn = _make_conn()
         route = ["EDDH", "EDDM"]  # weit auseinander (~600 km) → eindeutige Zuordnung
-        h, m = icao_to_coords("EDDH"), icao_to_coords("EDDM")
-        assert h and m, "Test-Flugplätze müssen auflösbar sein"
-        # Flugplan-Ziel vertippt ("EDXX"); GPS endet ~16 km neben EDDM.
-        _add_flight(conn, 700, "Rudi", "EDDH", "EDXX", 60,
+        _add_flight(conn, 700, "Rudi", "EDDH", "EDDM", 60,
                     logon="2026-06-27T11:00:00Z", logoff="2026-06-27T12:00:00Z")
-        _add_position(conn, 700, h[0], h[1], "2026-06-27T11:00:00Z")
-        _add_position(conn, 700, m[0] + 0.15, m[1], "2026-06-27T12:00:00Z")  # ~16,7 km
+        _add_realistic_track(conn, 700, "EDDH", "EDDM", "2026-06-27T11:00:00Z",
+                              flight_min=60, callsign="FRS123")
 
-        # Default-Radius (10 km): 16 km zu weit → Ziel bleibt der Tippfehler → nicht gewertet
-        narrow = compute_bummel_standings(conn, route, START, END)
-        assert _by_cid(narrow["complete"], 700) is None
-        assert _by_cid(narrow["incomplete"], 700) is None
-
-        # Renn-Radius 50 km: GPS ordnet EDDM zu → komplette Tour
+        default = compute_bummel_standings(conn, route, START, END)
         wide = compute_bummel_standings(conn, route, START, END, radius_km=50)
-        rudi = _by_cid(wide["complete"], 700)
-        assert rudi is not None, "Mit größerem Radius muss EDDM erkannt werden"
-        assert set(rudi["visited"]) == {"EDDH", "EDDM"}
-        assert rudi["total_min"] == 60
+
+        # radius_km ist ein No-Op: identisches Ergebnis mit und ohne das Argument.
+        rudi_default = _by_cid(default["complete"], 700)
+        rudi_wide = _by_cid(wide["complete"], 700)
+        assert rudi_default is not None
+        assert rudi_wide is not None
+        assert rudi_default["total_min"] == rudi_wide["total_min"]
+        assert set(rudi_default["visited"]) == {"EDDH", "EDDM"}
 
 
-class TestSecondPrecision:
-    """Block-Gesamtzeit bleibt in Minuten, aber der Abstand ist sekundengenau (Tiebreak)."""
+class TestBlockTimeSource:
+    """GPS-only Phase 2 (#23): die Block-Zeit kommt jetzt ausschließlich aus ``block_min`` von
+    ``canonicalize_legs`` (pro Leg aus der richtigen Positionsquelle gerechnet — position_history
+    für FS, statsim_position_history für StatSim). ``total_sec`` ist dadurch bewusst nur noch
+    minutengenau (Vielfaches von 60) statt wie zuvor sekundengenau aus einem cid-gebundenen
+    ``position_history``-Zugriff, der für StatSim/offene Legs falsch war."""
 
-    def test_total_sec_from_gps_track(self):
+    def test_total_sec_is_block_min_times_sixty(self):
         conn = _make_conn()
         route = ["EDWF", "EDWG"]
-        f, g = icao_to_coords("EDWF"), icao_to_coords("EDWG")
-        # block_min in der DB ist 30, der GPS-Track aber 30:50 lang.
         _add_flight(conn, 800, "Sven", "EDWF", "EDWG", 30,
                     logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:31:00Z")
-        _add_position(conn, 800, f[0], f[1], "2026-06-27T11:00:00Z", gs=120)
-        _add_position(conn, 800, g[0], g[1], "2026-06-27T11:30:50Z", gs=120)
+        _add_realistic_track(conn, 800, "EDWF", "EDWG", "2026-06-27T11:00:00Z",
+                              flight_min=30, callsign="FRS123")
 
         sven = _by_cid(compute_bummel_standings(conn, route, START, END)["complete"], 800)
-        assert sven["total_sec"] == 1850  # 30:50 sekundengenau aus dem Track
-        assert sven["total_min"] == 30     # Minuten-Anzeige bleibt
+        assert sven is not None
+        assert sven["total_sec"] == sven["total_min"] * 60
+        assert sven["total_sec"] % 60 == 0
 
-    def test_seconds_break_minute_tie(self):
+    def test_ties_broken_by_cid_when_block_min_equal(self):
         conn = _make_conn()
         route = ["EDWF", "EDWG"]
-        f, g = icao_to_coords("EDWF"), icao_to_coords("EDWG")
 
-        def add(cid, name, last_ts):
+        def add(cid, name):
             _add_flight(conn, cid, name, "EDWF", "EDWG", 30,
                         logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:40:00Z")
-            _add_position(conn, cid, f[0], f[1], "2026-06-27T11:00:00Z", gs=120)
-            _add_position(conn, cid, g[0], g[1], last_ts, gs=120)
 
-        add(810, "A", "2026-06-27T11:30:00Z")  # 1800 s
-        add(811, "B", "2026-06-27T11:30:40Z")  # 1840 s
-        add(812, "C", "2026-06-27T11:30:20Z")  # 1820 s = exakt der Schnitt
+        # Kein GPS-Track: fallback auf das block_min der Connection (30 bei allen) —
+        # ohne Sekunden-Feinauflösung entscheidet der finale cid-Tiebreak.
+        add(812, "C")
+        add(810, "A")
+        add(811, "B")
 
         result = compute_bummel_standings(conn, route, START, END)
-        # average_sec = (1800+1840+1820)/3 = 1820 → C exakt → Sieger trotz gleicher Minuten
-        assert result["complete"][0]["cid"] == 812
-        assert result["complete"][0]["delta_sec"] == 0
-        assert {e["total_min"] for e in result["complete"]} == {30}  # alle nominell 30 min
+        assert {e["total_min"] for e in result["complete"]} == {30}
+        assert {e["total_sec"] for e in result["complete"]} == {1800}
+        assert [e["cid"] for e in result["complete"]] == [810, 811, 812]
 
 
 class TestPublicView:
@@ -399,25 +472,22 @@ class TestGpsPresence:
         """GPS erkennt EDWR, obwohl der Flugplan-ARR vertippt ist (Katastrophen-Schutz)."""
         conn = _make_conn()
         route = ["EDWF", "EDWG", "EDWR"]
-        f, g, r = icao_to_coords("EDWF"), icao_to_coords("EDWG"), icao_to_coords("EDWR")
-        assert f and g and r, "Test-Flugplätze müssen auflösbar sein"
 
-        # Bein 1: EDWF→EDWG, Flugplan korrekt, GPS an beiden Enden
+        # Bein 1: EDWF→EDWG, Flugplan korrekt, echter GPS-Track an beiden Enden.
         _add_flight(conn, 100, "Eva", "EDWF", "EDWG", 30,
                     logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:30:00Z")
-        _add_position(conn, 100, f[0], f[1], "2026-06-27T11:00:00Z")
-        _add_position(conn, 100, g[0], g[1], "2026-06-27T11:30:00Z")
-        # Bein 2: Flugplan-ARR vertippt ("EDXX"), aber GPS landet bei EDWR
+        _add_realistic_track(conn, 100, "EDWF", "EDWG", "2026-06-27T11:00:00Z",
+                              flight_min=30, callsign="FRS123")
+        # Bein 2: Flugplan-ARR vertippt ("EDXX"), aber der echte GPS-Track landet bei EDWR.
         _add_flight(conn, 100, "Eva", "EDWG", "EDXX", 30,
                     logon="2026-06-27T12:00:00Z", logoff="2026-06-27T12:30:00Z")
-        _add_position(conn, 100, g[0], g[1], "2026-06-27T12:00:00Z")
-        _add_position(conn, 100, r[0], r[1], "2026-06-27T12:30:00Z")
+        _add_realistic_track(conn, 100, "EDWG", "EDWR", "2026-06-27T12:00:00Z",
+                              flight_min=30, callsign="FRS123")
 
         result = compute_bummel_standings(conn, route, START, END)
         eva = _by_cid(result["complete"], 100)
         assert eva is not None, "GPS muss EDWR trotz Flugplan-Tippfehler erkennen"
         assert set(eva["visited"]) == {"EDWF", "EDWG", "EDWR"}
-        assert eva["total_min"] == 60
         # Das vertippte Bein wird auf den echten Zielflugplatz korrigiert
         assert any(l["arrival"] == "EDWR" for l in eva["legs"])
 
@@ -427,6 +497,59 @@ class TestGpsPresence:
         _add_flight(conn, 200, "Udo", "EDWF", "EDWG", 30)  # keine position_history
         result = compute_bummel_standings(conn, route, START, END)
         assert _by_cid(result["complete"], 200) is not None
+
+
+class TestFrodeGpsLandingWithoutDisconnect:
+    """Regression #23: „Frode" verschwand früher aus der Wertung, weil sein Flug bis zum
+    Disconnect offen blieb (``canonicalize_flights`` wartet auf die Connection-``logoff_time``).
+    Unter GPS-only (``canonicalize_legs``) wird die Landung direkt am Track erkannt — die
+    Connection selbst bleibt bewusst offen (``logoff_time IS NULL`` in ``flights``, kein
+    separater Refile/Disconnect-Trick), der Pilot ist im Spiel noch verbunden."""
+
+    def test_gps_landing_counts_even_though_connection_stays_open(self):
+        conn = _make_conn()
+        route = ["EDWF", "EDWG"]
+        # Connection bleibt technisch offen — Frode disconnected NICHT nach der Landung.
+        _add_flight(conn, 900, "Frode", "EDWF", "EDWG", None,
+                    logon="2026-06-27T11:00:00Z", logoff=None)
+        _add_realistic_track(conn, 900, "EDWF", "EDWG", "2026-06-27T11:00:00Z",
+                              flight_min=30, callsign="FRS123")
+
+        result = compute_bummel_standings(conn, route, START, END)
+
+        frode = _by_cid(result["complete"], 900)
+        assert frode is not None, "GPS-Landung muss trotz offener Connection zählen"
+        assert set(frode["visited"]) == {"EDWF", "EDWG"}
+        assert frode["total_min"] > 0
+        assert frode["total_sec"] == frode["total_min"] * 60
+
+
+class TestZwischenlandungGpsTrack:
+    """Zwischenlandung mit echtem GPS-Track (nicht nur Flugplan-Fallback wie
+    ``TestTourWithStops``): A -> Zwischenstopp (nicht auf der Route) -> B als eine Tour; die
+    Bodenzeit am Zwischenstopp zählt nicht in die Blockzeit."""
+
+    def test_intermediate_stop_via_gps_track_counts_as_complete_tour(self):
+        conn = _make_conn()
+        route = ["EDWF", "EDWG"]
+        # EDWF -> EDDH (Zwischenstopp, nicht auf der Route) -> EDWG, je echter GPS-Track.
+        _add_flight(conn, 950, "Stan", "EDWF", "EDDH", None,
+                    logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:30:00Z")
+        _add_realistic_track(conn, 950, "EDWF", "EDDH", "2026-06-27T11:00:00Z",
+                              flight_min=30, callsign="FRS123")
+        _add_flight(conn, 950, "Stan", "EDDH", "EDWG", None,
+                    logon="2026-06-27T13:00:00Z", logoff="2026-06-27T13:30:00Z")
+        _add_realistic_track(conn, 950, "EDDH", "EDWG", "2026-06-27T13:00:00Z",
+                              flight_min=30, callsign="FRS123")
+
+        result = compute_bummel_standings(conn, route, START, END)
+
+        stan = _by_cid(result["complete"], 950)
+        assert stan is not None, "Tour mit echtem GPS-Zwischenstopp muss komplett sein"
+        assert set(stan["visited"]) == {"EDWF", "EDWG"}
+        assert stan["leg_count"] == 2
+        # Reine Summe der beiden Block-Zeiten; die Bodenzeit in EDDH (11:xx–13:00) zählt NICHT.
+        assert stan["total_sec"] == stan["legs"][0]["seconds"] + stan["legs"][1]["seconds"]
 
 
 class TestFragmentMerge:
