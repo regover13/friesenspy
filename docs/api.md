@@ -62,7 +62,7 @@ Flugaktivität über Zeit — für das Liniendiagramm im Statistiken-Tab.
 |-----------|-----|---------|--------------|
 | `days` | int | `30` | Zeitraum in Tagen |
 
-Gruppierung: ≤93 Tage → täglich (`%Y-%m-%d`), >93 Tage → monatlich (`%Y-%m`). Alle Perioden werden zurückgegeben (Lücken mit 0 aufgefüllt). Nur FRS*-Callsigns. Aggregiert über `canonicalize_flights` — dieselbe kanonische Flugmenge wie `/api/stats` und `/api/pilots/{cid}/flights`: Reconnects/Fragmente sind zu einem Flug gemergt, Ghost-Flüge (`distance_nm ≤ 0.5 AND duration_min ≤ 5`) ausgeschlossen, StatSim-Duplikate dedupliziert. Dadurch stimmen die Zahlen über alle Views überein.
+Gruppierung: ≤93 Tage → täglich (`%Y-%m-%d`), >93 Tage → monatlich (`%Y-%m`). Alle Perioden werden zurückgegeben (Lücken mit 0 aufgefüllt). Nur FRS*-Callsigns. Aggregiert über `get_cached_flights` (`flight_cache`, materialisierte `canonicalize_legs`-Ergebnisse — GPS-only Phase 2, #23) — dieselbe kanonische Flugmenge wie `/api/stats` und (dort live über `canonicalize_legs`) `/api/pilots/{cid}/flights`: Flüge/Etappen sind aus dem GPS-Track erkannt (echte Landung am Platz), Reconnect-Fragmente ohne Track fallen weiterhin auf die klassische Refile-/Disconnect-Erkennung zurück. Ein noch nicht gelandeter Flug (`logoff_time IS NULL AND connection_closed = false`) wird nicht mitgezählt. Dadurch stimmen die Zahlen über alle Views überein.
 
 **Response**
 
@@ -111,13 +111,13 @@ Letzter Flug und Fluganzahl pro Pilot. Kombiniert FriesenSpy-Aufzeichnungen und 
 ]
 ```
 
-`flight_count` = `fs_count` + `st_count`. StatSim-Daten sind nur vorhanden wenn der Pilot zuvor im Statistiken-Tab angeklickt wurde (lazy cache). Zählung und Dauer kommen aus `canonicalize_flights` (Reconnect-Merge + Dedup), identisch zu `/api/stats/activity` und der Piloten-Detailansicht.
+`flight_count` = `fs_count` + `st_count`. StatSim-Daten sind nur vorhanden wenn der Pilot zuvor im Statistiken-Tab angeklickt wurde (lazy cache). Zählung und Dauer kommen aus `get_cached_flights` (`flight_cache`, materialisierte `canonicalize_legs`-Ergebnisse — GPS-only Phase 2, #23), identisch zu `/api/stats/activity`; die Piloten-Detailansicht (`/api/pilots/{cid}/flights`) ruft `canonicalize_legs` für ihren einen Piloten live (ungecacht) auf — gleiche Wahrheit, nur ohne den globalen Cache.
 
 ---
 
 ## GET /api/pilots/{cid}/flights
 
-Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und StatSim-Historik über `canonicalize_flights` (Reconnect-Merge + StatSim-Dedup, identisch zu den Statistik-Endpoints). Antwortet **sofort** mit gecachten Daten; StatSim-Update läuft im Hintergrund (letzter 31-Tage-Chunk). Response-Header `X-StatSim-Status: fresh | updating | no-key`.
+Alle Flüge eines Piloten — GPS-only Phase 2 (#23): die Antwort kommt direkt und live (ungecacht) aus `canonicalize_legs` (`callsign_prefix=""`, zeigt also auch Flüge unter einem Nicht-FRS-Callsign desselben Piloten). Abheben und Landung werden primär aus dem GPS-Track erkannt (echte Landung an einem Flugplatz, auch Zwischenlandungen ohne neuen Flugplan als eigene Zeile); fehlt ein Track, greift der refile-/disconnect-basierte Fallback (Reconnect-Merge). FriesenSpy-eigene Aufzeichnungen und StatSim-Historik werden dedupliziert kombiniert. Antwortet **sofort**; StatSim-Update läuft im Hintergrund (letzter 31-Tage-Chunk). Response-Header `X-StatSim-Status: fresh | updating | no-key`.
 
 **Query-Parameter**
 
@@ -137,6 +137,11 @@ Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und St
     "callsign": "FRS49",
     "departure": "EDKB",
     "arrival": "EDDK",
+    "gps_departure": "EDKB",
+    "gps_arrival": "EDDK",
+    "plan_departure": "EDKB",
+    "plan_arrival": "EDDK",
+    "connection_closed": true,
     "aircraft": "PA24",
     "logon_time": "2026-06-04T07:14:54Z",
     "logoff_time": "2026-06-04T08:05:22Z",
@@ -151,6 +156,11 @@ Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und St
     "callsign": "FRS49",
     "departure": "EDKB",
     "arrival": "EDDF",
+    "gps_departure": "EDKB",
+    "gps_arrival": "EDDF",
+    "plan_departure": "EDKB",
+    "plan_arrival": "EDDF",
+    "connection_closed": true,
     "aircraft": "PA24/L-SDGRY/S",
     "logon_time": "2026-06-01T14:30:00Z",
     "logoff_time": "2026-06-01T15:50:00Z",
@@ -161,7 +171,19 @@ Alle Flüge eines Piloten — kombiniert FriesenSpy-eigene Aufzeichnungen und St
 
 Sortiert nach `logon_time` absteigend. FriesenSpy-Einträge haben Vorrang bei Zeitstempel-Überschneidungen (±5 Min).
 
-`duration_min` = **Online-Zeit** (Verbindung logon→logoff). `block_min` = **Block-Zeit** (Summe der GPS-Bewegungsabschnitte gate-to-gate; belegte Standphasen ≥ 10 min, z. B. eine Zwischenlandung ohne Disconnect, zählen nicht) — nur bei FriesenSpy-Flügen vorhanden, StatSim/Altflüge haben `null`.
+**Neue Felder (GPS-only Phase 2, #23):**
+
+| Feld | Beschreibung |
+|------|--------------|
+| `gps_departure` / `gps_arrival` | Start-/Ziel-ICAO, wie es der GPS-Leg-Detektor erkannt hat (erste/letzte Position im 4-km-Umkreis eines Flugplatzes). `null`, wenn kein Track vorlag oder der Flug noch nicht gelandet ist. |
+| `plan_departure` / `plan_arrival` | DEP/ARR aus dem eingereichten Flugplan (reine Beschriftung, keine Grundlage mehr für die Flugzählung). Kann von `gps_*` abweichen, z. B. bei einer Zwischenlandung ohne Refile. |
+| `connection_closed` | `true`, wenn die zugrunde liegende VATSIM-Verbindung beendet ist (`logoff_time` gesetzt). **Kein** Indikator dafür, ob der Flug selbst fertig geflogen ist — das entscheidet allein `arrival`/`gps_arrival`/`logoff_time`. Ein Flug mit `gps_arrival: null` und `connection_closed: false` ist noch in der Luft ("läuft"); mit `gps_arrival: null` und `connection_closed: true` ist die Verbindung beendet, ohne dass eine Landung erkannt wurde (z. B. Absturz oder Datenlücke). |
+
+`departure`/`arrival` bleiben aus Kompatibilitätsgründen erhalten und entsprechen im Regelfall `gps_departure`/`gps_arrival` (Fallback auf den Flugplan, wenn kein GPS-Wert vorliegt).
+
+`duration_min` = **Flugzeit** (Abheben → Landung). `block_min` = **Blockzeit** (Summe der GPS-Bewegungsabschnitte gate-to-gate inkl. Taxi; belegte Standphasen ≥ 10 min, z. B. eine Zwischenlandung ohne Disconnect, zählen nicht) — nur bei FriesenSpy-Flügen vorhanden, StatSim/Altflüge haben `null`.
+
+Flüge unter einem **Nicht-`FRS`-Callsign** (`callsign_prefix=""` liefert sie mit) erscheinen ebenfalls in der Antwort, zählen aber nicht in Statistik, FriesenFliegerBummel oder FriesenKutter (das Frontend markiert sie als „nicht gewertet").
 
 ---
 
@@ -364,13 +386,18 @@ Konfiguration + Versionsdaten für das Frontend (wird beim Seitenstart einmal ge
       "items": ["🐛 …", "⚡ …"]
     }
   ],
-  "banner_version": "6.4.0"
+  "banner_version": "6.4.0",
+  "callsign_prefix": "FRS"
 }
 ```
 
 `version` + `changelog` stammen aus `app/CHANGELOG.json` (via `app/version.py`). `version` ist
 die neueste Version (`changelog[0].version`). Das Frontend zeigt damit die kleine Versionsnummer
 im Header, das Changelog-Banner (neueste Version, einmal pro Version) und den Versionsverlauf.
+
+`callsign_prefix` spiegelt `settings.CALLSIGN_PREFIX` (Default `FRS`) — das Frontend nutzt ihn
+seit GPS-only Phase 2 (#23), um in der Piloten-Detailliste Flüge unter einem Nicht-Präfix-Callsign
+als „nicht gewertet" zu markieren, statt den Präfix hart zu verdrahten.
 
 `banner_version` ist die vom Server aufgelöste Version, deren Changelog-Eintrag als Startseiten-Banner
 angezeigt werden soll — oder `null`, wenn kein Banner erscheinen soll. Sie wird aus der Admin-Auswahl
@@ -578,7 +605,7 @@ Der **„📋 Forum"**-Button im enthüllten Ranking kopiert diesen BBCode direk
 
 Alle FriesenKutter-Transport-Events (Kalender + manuell) mit kompaktem Live-Fortschritt. Ein Event definiert eine ICAO-Streckenmenge (`route`) und ein `destination`; Fracht zählt nur bei Ankunft am Ziel (Rückflug leer). Das Ziel wird über ein **Fracht-Manifest** (Frachtart + kg) beschrieben, das die eingehenden Flüge der Reihe nach füllen.
 
-**Response** — Array je Event: `id, name, route, destination, dtstart, dtend, source` (`calendar`|`manual`), `radius_km` (Anwesenheitsradius in km, Default 10.0), `total_kg`, `target_kg` (= Σ Manifest oder `null`), `progress_pct` (oder `null`), `flight_count`, `loaded_count`, `cargo` (`[{name, target_kg, delivered_kg, reserved_kg, pct}]`).
+**Response** — Array je Event: `id, name, route, destination, dtstart, dtend, source` (`calendar`|`manual`), `radius_km` (Legacy-Feld, seit GPS-only Phase 2/#23 wirkungslos — die Platz-Zuordnung nutzt überall den festen globalen 4-km-Radius; über die Admin-Endpoints nicht mehr setzbar, i. d. R. `null`), `total_kg`, `target_kg` (= Σ Manifest oder `null`), `progress_pct` (oder `null`), `flight_count`, `loaded_count`, `cargo` (`[{name, target_kg, delivered_kg, reserved_kg, pct}]`).
 
 ## GET /api/transport/event/{id}
 
@@ -592,9 +619,9 @@ Zusätzliche Top-Level-Felder: `participants` (`[{cid, name, callsign, aircraft,
 > anderswo, Disconnect) und läuft nie rückwärts in den gelieferten Fortschritt.
 
 > **Ohne Disconnect (Live-Ankunft):** Ein noch offener (verbundener) Flug erscheint im Feed,
-> sobald sein Start auf der Strecke liegt; sobald er innerhalb 10 km um `destination` auf
-> < 2 kt abbremst, wird er sofort als beladen gezählt (`transport_live_arrivals`) — unabhängig
-> vom späteren Disconnect-Ort. Kein Zurücksetzen.
+> sobald sein Start auf der Strecke liegt; sobald er innerhalb des festen 4-km-Radius um
+> `destination` auf < 2 kt abbremst, wird er sofort als beladen gezählt (`transport_live_arrivals`)
+> — unabhängig vom späteren Disconnect-Ort. Kein Zurücksetzen.
 
 > **Verlorene Fracht:** Ein Flug, der Richtung Ziel gestartet, aber nie dort angekommen ist,
 > wird vom Poller (`detect_transport_losses`, alle 60 s) als Verlust erkannt und dauerhaft
@@ -775,7 +802,7 @@ Volle Liste aller Bummel-Rennen inkl. interner Felder.
     "route": ["EDWF", "EDWG", "EDWR"],
     "dtstart": "2026-06-27T14:00:00Z",
     "dtend": "2026-06-27T20:00:00Z",
-    "radius_km": 10.0,
+    "radius_km": null,
     "source": "calendar",
     "calendar_uid": "abc123@google.com_20260627T140000Z",
     "status": "revealed",
@@ -790,7 +817,7 @@ Volle Liste aller Bummel-Rennen inkl. interner Felder.
 ]
 ```
 
-`source` ∈ `calendar` | `manual`. `started_at` = Zeitstempel des Renn-Starts (erster Pilot mit Blockzeit an einem Streckenflugplatz); `null` = noch nicht gestartet. `push_enabled` = 1 (an) | 0 (aus).
+`source` ∈ `calendar` | `manual`. `started_at` = Zeitstempel des Renn-Starts (erster Pilot mit Blockzeit an einem Streckenflugplatz); `null` = noch nicht gestartet. `push_enabled` = 1 (an) | 0 (aus). `radius_km` ist ein **Legacy-Feld** (seit GPS-only Phase 2/#23 wirkungslos, i. d. R. `null`) — die Platz-Zuordnung nutzt seit der Aktivierung überall den festen globalen 4-km-Radius aus dem GPS-Leg-Detektor; ein per-Rennen-Radius lässt sich über die Admin-Endpoints nicht mehr setzen.
 
 ---
 
@@ -806,7 +833,9 @@ Neues Rennen manuell anlegen (ohne Kalender-Termin).
 | `route` | string | ✓ | CSV der Strecken-ICAOs, z.B. `"EDWF,EDWG,EDWR"` |
 | `dtstart` | string | ✓ | ISO8601 UTC — Renn-Beginn |
 | `dtend` | string | — | ISO8601 UTC — Renn-Ende; fehlt → Mitternacht UTC des Starttags |
-| `radius_km` | float | — | Anwesenheitsradius in km (Default: 10.0) |
+
+**Kein `radius_km` mehr** (seit GPS-only Phase 2, #23) — die Anwesenheitsprüfung nutzt überall
+den festen globalen 4-km-Radius aus dem GPS-Leg-Detektor, kein per-Rennen-Override mehr.
 
 **Response** `{"id": 42}`
 
@@ -816,7 +845,7 @@ Neues Rennen manuell anlegen (ohne Kalender-Termin).
 
 Felder eines bestehenden Rennens aktualisieren. Nur angegebene Felder werden geändert.
 
-**Body (JSON)** — gleiche Felder wie beim Anlegen, alle optional.
+**Body (JSON)** — `name`/`route`/`dtstart`/`dtend`, alle optional (kein `radius_km` mehr, s. o.).
 
 **Response** `{"status": "ok"}` oder `404`.
 
@@ -924,13 +953,13 @@ Alle Endpoints erfordern das Admin-Cookie (`require_admin`).
 > **Kalender-Fracht:** Ein Termin mit dem `friesenkutter`-Marker kann direkt in der Beschreibung eine Fracht-Zeile enthalten: `Fracht: 1000 Krabbenbrötchen, 500 Friesentee`. Beim Sync wird sie **einmalig** (nur beim erstmaligen Anlegen) gegen den Frachtart-Katalog abgeglichen und ins Manifest übernommen; ein später im Admin gepflegtes Manifest bleibt bei erneutem Sync unverändert.
 
 ### GET /api/admin/transport/events
-Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_kg}]`), `radius_km` (Anwesenheitsradius in km; `null` = Default 10.0) und `status` (`scheduled` \| `running` \| `waiting` \| `done` — analog `_race_status` beim Bummel, siehe `_transport_status`; nur in der Admin-Sicht, kein Piloten-Frontend-Feld).
+Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_kg}]`), `radius_km` (Legacy-Feld — s. o., seit GPS-only Phase 2/#23 nicht mehr über die Admin-Endpoints setzbar, wirkt nicht mehr auf die Platz-Zuordnung) und `status` (`scheduled` \| `running` \| `waiting` \| `done` — analog `_race_status` beim Bummel, siehe `_transport_status`; nur in der Admin-Sicht, kein Piloten-Frontend-Feld).
 
 ### POST /api/admin/transport/events
-Manuelles Event anlegen. Body: `name`, `route` (Freitext/ICAO-CSV, wird normalisiert; ≥2 ICAOs), `destination` (ICAO; leer → letzter Streckenplatz), `dtstart` (UTC, Pflicht), `dtend` (optional, sonst Mitternacht UTC), `cargo` (`[{name, target_kg}]`), `radius_km` (optional, 0.5–50; leer/fehlend = Default 10 km). → `{status, id}`.
+Manuelles Event anlegen. Body: `name`, `route` (Freitext/ICAO-CSV, wird normalisiert; ≥2 ICAOs), `destination` (ICAO; leer → letzter Streckenplatz), `dtstart` (UTC, Pflicht), `dtend` (optional, sonst Mitternacht UTC), `cargo` (`[{name, target_kg}]`). → `{status, id}`. **Kein `radius_km` mehr** — die Platz-Zuordnung nutzt seit GPS-only Phase 2 (#23) überall den festen globalen 4-km-Radius (kein per-Event-Override mehr).
 
 ### POST /api/admin/transport/events/{id}
-Bearbeiten. Übergebene Felder aus `name/route/destination/dtstart/dtend/radius_km` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest.
+Bearbeiten. Übergebene Felder aus `name/route/destination/dtstart/dtend` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest. **Kein `radius_km` mehr** (s. o.).
 
 ### DELETE /api/admin/transport/events/{id}
 Event samt Manifest löschen.
@@ -1032,15 +1061,17 @@ Banner-Auswahl setzen.
 
 ---
 
-## Admin — GPS-Leg-Audit (Phase 1, Schatten)
+## Admin — GPS-Leg-Audit (Diagnose-Werkzeug, seit v7.9.0)
 
 ### GET /api/admin/gps-leg-audit
 
-Rein lesendes Audit für die GPS-basierte Etappen-Erkennung (#23, ab v7.9.0). Vergleicht die
-bisherige, refile-/disconnect-basierte Flugzählung (`canonicalize_flights`) mit den GPS-Etappen
-(`gps_legs`-Feldnamen in der Response, keine DB-Tabelle). **Ändert keine Wertung** — die Etappen
-werden für das im Fenster liegende Piloten-Set **on-demand** über `canonicalize_legs`/
-`detect_gps_legs` berechnet (nichts wird gespeichert) und dann verglichen. Kein Poll-Impact.
+Rein lesendes Diagnose-Audit für die GPS-basierte Etappen-Erkennung (#23). Ursprünglich (v7.9.0
+– v7.9.5) das Vorab-Audit vor der Aktivierung; seit v8.0.0 ist `canonicalize_legs` die **produktive**
+Wahrheit (Statistik/Bummel/Kutter/Piloten-Detail) — der Endpoint bleibt als **Diagnose-Werkzeug**
+erhalten, um die alte, refile-/disconnect-basierte Zählung (`canonicalize_flights`) weiterhin gegen
+die aktive GPS-Sicht zu vergleichen (z. B. zur Fehlersuche bei einem einzelnen Piloten/Zeitraum).
+**Ändert keine Wertung** — beide Sichten werden für das im Fenster liegende Piloten-Set **on-demand**
+berechnet (nichts wird gespeichert, kein Bezug zu `flight_cache`). Kein Poll-Impact.
 
 **Query-Parameter**
 
@@ -1088,8 +1119,13 @@ werden für das im Fenster liegende Piloten-Set **on-demand** über `canonicaliz
 ### POST /api/admin/statsim-backfill
 
 Holt die GPS-Tracks importierter StatSim-Flüge **gebündelt** von der StatSim-API und cached sie in
-`statsim_position_history` — damit die GPS-Etappen-Erkennung auch StatSim-Flüge auswerten kann
-(#23 Task 5b, Schatten). Rein additiv, keine Wertung. Braucht `STATSIM_API_KEY`.
+`statsim_position_history` — damit die GPS-Etappen-Erkennung (jetzt produktiv, #23) auch
+StatSim-Flüge aus GPS auswerten kann, statt auf den Flugplan-Fallback zurückzufallen. Für den
+laufenden Betrieb übernimmt seit v8.0.0 zusätzlich ein periodischer Poller-Job
+(`statsim_track_fetch`, alle 10 min, kleine Batches à 20 Flüge) das proaktive Nachladen neuer
+StatSim-Importe automatisch (Phase 2b) — dieser Admin-Endpoint bleibt für einen gezielten
+Voll-Backfill (z. B. nach einem größeren StatSim-Sync) nützlich. Rein additiv, keine Wertung.
+Braucht `STATSIM_API_KEY`.
 
 **Query-Parameter**
 
