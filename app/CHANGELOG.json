@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.4.1",
+    "date": "2026-07-05",
+    "title": "Flugplan verschwand bei schmalen Zeitfenstern (Events-Suche)",
+    "items": [
+      "🐛 In v8.4.0 konnte eine Verbindung, die kurz VOR einem eng gefassten Abfragefenster (z. B. Events-Suche) real endete, aus den Flugplan-Kandidaten herausfallen — das zugehörige, per GPS weiterhin „offen“ wirkende Bein blieb dann ohne Flugplan und mit falschem Aircraft-Typ. Die Kandidaten-Suche bekommt jetzt denselben 12-Stunden-Rückblick wie die GPS-Positionsladung."
+    ]
+  },
+  {
     "version": "8.4.0",
     "date": "2026-07-05",
     "title": "Flugplan-Zuordnung jetzt zeitbasiert statt Startplatz-Match",

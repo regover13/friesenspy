@@ -605,6 +605,69 @@ class TestTimeBasedPlanAssignment:
         assert later_leg["plan_arrival"] == "EDDK"
 
 
+class TestPlanRowsLookback:
+    def test_plan_candidate_closed_shortly_before_narrow_window_start_still_matches(self):
+        """Live-Fund 2026-07-05 (FRS61/CID 1031301, Events-Fenster ab 18:00): eine ECHTE,
+        laengst geschlossene Connection (logoff kurz nach dem letzten GPS-Sample) verschwand
+        aus den Flugplan-Kandidaten eines schmalen Abfragefensters, weil deren logoff_time
+        knapp VOR dem Fenster-`start` lag -- _flightplan_asof fand dadurch KEINEN Kandidaten
+        mehr fuer das (per GPS weiterhin "offene", weil kein Landing erkannte) Bein und der
+        Flugplan blieb leer (Aircraft fiel auf den global letzten bekannten Typ zurueck,
+        hier faelschlich SA65 statt des tatsaechlich gefileten EC45).
+
+        Eine ZWEITE, spaetere Connection (Reconnect + Refile, wie im Live-Fund id=257) haelt
+        die cid im schmalen Fenster "sichtbar" -- ohne sie wuerde die cid komplett aus
+        fs_by_cid herausfallen und das fruehe Bein gar nicht erst berechnet (ein noch
+        deutlicheres, aber anderes Symptom als das gemeldete "ohne Flugplan").
+
+        GPS-Track des ersten Beins bricht bewusst OHNE erkannte Landung ab (Positionen enden
+        waehrend des Streckenflugs) -- genau das reproduziert "gps_arrival leer trotz laengst
+        geschlossener Connection", der Fall, in dem _in_window() das Bein unabhaengig vom
+        Fenster durchlaesst (logoff_time im Ergebnis-Dict ist None, weil GPS keine Landung
+        sah)."""
+        conn = _make_conn()
+        cid = 5008
+        flight_id = _insert_flight(
+            conn, cid=cid, callsign="FRS56", departure="EDDK", arrival="EDDW",
+            aircraft_short="EC45",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:35:00Z",
+        )
+        # Reconnect + Refile Stunden spaeter, gleiche Strecke -- haelt die cid im schmalen
+        # Fenster praesent (wie id=257 im Live-Fund), OHNE selbst der Plan-Kandidat fuer das
+        # fruehe Bein zu sein (logon liegt NACH dem fruehen Beins-Ende, _flightplan_asof darf
+        # diese Zeile also nicht waehlen).
+        _insert_flight(
+            conn, cid=cid, callsign="FRS56", departure="EDDK", arrival="EDDW",
+            aircraft_short="EC45",
+            logon_time="2026-07-02T14:30:00Z", logoff_time="2026-07-02T15:10:00Z",
+        )
+        for ts, lat, lon, alt, gs in [
+            ("2026-07-02T10:00:00Z", *EDDK, 302, 0),
+            ("2026-07-02T10:01:00Z", *EDDK, 302, 10),
+            ("2026-07-02T10:03:00Z", *EDDK, 302, 12),
+            ("2026-07-02T10:05:00Z", *EDDK, 302, 15),
+            ("2026-07-02T10:06:00Z", *EDDK, 1200, 80),
+            ("2026-07-02T10:20:00Z", 52.0, 8.0, 5000, 120),
+        ]:
+            _insert_pos(conn, cid, ts, lat, lon, alt, gs, "FRS56")
+        conn.commit()
+
+        # Schmales Fenster ca. 3h40 NACH dem echten logoff (10:35) des fruehen Beins --
+        # innerhalb der 12h-Lookback-Grenze, genau wie im Live-Fund (Events-Fenster
+        # 18:00-20:00 desselben Tages, Connection-Ende ~15:xx).
+        narrow_window = dict(start="2026-07-02T14:00:00Z", end="2026-07-02T16:00:00Z")
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **narrow_window)
+        conn.close()
+
+        fs = [f for f in result if f["cid"] == cid and f["source"] == "friesenspy"]
+        early_leg = next(f for f in fs if f["logon_time"] < "2026-07-02T11:00:00Z")
+        assert early_leg["gps_arrival"] is None, "Testvorbedingung: GPS darf keine Landung sehen"
+        assert early_leg["id"] == flight_id
+        assert early_leg["plan_departure"] == "EDDK"
+        assert early_leg["plan_arrival"] == "EDDW"
+        assert early_leg["aircraft"] == "EC45"
+
+
 class TestStatsimIdPropagation:
     def test_statsim_id_propagates_across_split_legs(self):
         """StatSim-Pendant zum FRS96-Fix (Live-Fund FRS1116/CID 1637198): eine einzige

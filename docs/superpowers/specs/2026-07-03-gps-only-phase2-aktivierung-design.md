@@ -203,6 +203,17 @@ dep/arr/Muster aus `statsim_cache` (dort immer genau eine Zeile je Session, kein
 
 **Nur Label, nie Wertung:** Die Zuordnung beeinflusst ausschließlich die Anzeige.
 
+**Nachtrag (Bugfix 2026-07-05, Live-Fund FRS61/CID 1031301):** die Kandidaten-Zeilen (`plan_rows`
+für `_flightplan_asof`) wurden bei einem schmalen Abfragefenster (z. B. Events-Suche mit engem
+`start`/`end`) über dieselbe SQL-Klausel gefiltert wie die Flug-Zeilen selbst
+(`logoff_time IS NULL OR logoff_time >= start`) — OHNE den 12h-Rückblick, den GPS-Positionen
+(`_positions_for_cid`) bereits vor `start` bekommen. Eine Verbindung, die kurz VOR dem
+Fenster-`start` real geschlossen wurde, fiel dadurch aus den Plan-Kandidaten heraus, obwohl das
+zugehörige GPS-Bein (mangels erkannter Landung) weiterhin als „offen" im Ergebnis auftauchte —
+Folge: leeres Flugplan-Feld + falscher Aircraft-Fallback (globaler „zuletzt bekannter Typ" statt
+des tatsächlich gefileten). Fix: `plan_rows`-Filterung bekommt denselben 12h-Rückblick
+(`_PLAN_ROWS_LOOKBACK_H`) wie die Positionsladung.
+
 ## Bewusste Semantik-Änderungen (Review g)
 
 - **`duration_min`: online (logon→logoff) → takeoff→landing.** Die Stunden-KPI **schrumpft rückwirkend**
