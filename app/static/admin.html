@@ -2328,16 +2328,20 @@
         + '<th style="text-align:left;">Code</th><th style="text-align:left;">Name</th><th>Lat</th><th>Lon</th><th>Elev (ft)</th><th></th></tr></thead><tbody>'
         + rows.map(a => '<tr><td><b>' + escH(a.icao) + '</b></td><td>' + escH(a.name || '—') + '</td>'
           + '<td>' + a.lat + '</td><td>' + a.lon + '</td><td>' + (a.elevation_ft ?? '—') + '</td>'
-          + '<td><button class="btn btn-sm btn-danger" onclick="apDelete(\'' + escA(a.icao) + '\')">✕</button></td></tr>').join('')
+          + '<td><button class="btn btn-sm btn-danger" onclick="apDelete(this,\'' + escA(a.icao) + '\')">✕</button></td></tr>').join('')
         + '</tbody></table></div>';
     }
 
-    async function apDelete(icao) {
+    async function apDelete(btn, icao) {
       if (!confirm('Flugplatz "' + icao + '" wirklich löschen?')) return;
+      btn.disabled = true;
+      // #56/v8.6.2: der Response kommt jetzt sofort (flight_cache-Rebuild läuft im
+      // Hintergrund) -- die Deaktivierung dient trotzdem als sofortiges Klick-Feedback.
       const res = await api('DELETE', '/api/admin/airports/' + encodeURIComponent(icao));
-      if (!res || !res.ok) { toast('Fehler beim Löschen.', true); return; }
+      if (!res || !res.ok) { toast('Fehler beim Löschen.', true); btn.disabled = false; return; }
       toast('Flugplatz gelöscht.');
       loadCustomAirports();
+      if (_dgLoaded) loadDetectionGaps();
     }
 
     document.getElementById('ap-save-btn').addEventListener('click', async () => {
@@ -2353,27 +2357,33 @@
         icao, name: document.getElementById('ap-name').value.trim() || null,
         lat, lon, elevation_ft: elevRaw === '' ? null : parseFloat(elevRaw),
       };
-      let res = await api('POST', '/api/admin/airports', body);
-      if (res && res.status === 409) {
-        // #56: Code ist bereits in airportsdata bekannt -- Override explizit bestätigen lassen.
-        let detail = 'Code ist bereits bekannt.';
-        try { detail = (await res.json()).detail || detail; } catch (e) {}
-        const ok = await showModal('Standard-Flugplatz überschreiben?', detail, 'Überschreiben', true);
-        if (!ok) return;
-        res = await api('POST', '/api/admin/airports', { ...body, override: true });
+      const saveBtn = document.getElementById('ap-save-btn');
+      saveBtn.disabled = true;
+      try {
+        let res = await api('POST', '/api/admin/airports', body);
+        if (res && res.status === 409) {
+          // #56: Code ist bereits in airportsdata bekannt -- Override explizit bestätigen lassen.
+          let detail = 'Code ist bereits bekannt.';
+          try { detail = (await res.json()).detail || detail; } catch (e) {}
+          const ok = await showModal('Standard-Flugplatz überschreiben?', detail, 'Überschreiben', true);
+          if (!ok) return;
+          res = await api('POST', '/api/admin/airports', { ...body, override: true });
+        }
+        if (!res || !res.ok) {
+          let detail = 'Fehler beim Speichern.';
+          try { detail = (await res.json()).detail || detail; } catch (e) {}
+          toast(detail, true);
+          return;
+        }
+        toast('Flugplatz gespeichert.');
+        ['ap-icao', 'ap-name', 'ap-lat', 'ap-lon', 'ap-elev'].forEach(i => document.getElementById(i).value = '');
+        loadCustomAirports();
+        // Erkennungslücken nur neu laden, wenn die Liste schon einmal geöffnet wurde -- sonst
+        // würde jedes Flugplatz-Speichern ungefragt die teure Prüfung anstoßen (mehrere Sekunden).
+        if (_dgLoaded) loadDetectionGaps();
+      } finally {
+        saveBtn.disabled = false;
       }
-      if (!res || !res.ok) {
-        let detail = 'Fehler beim Speichern.';
-        try { detail = (await res.json()).detail || detail; } catch (e) {}
-        toast(detail, true);
-        return;
-      }
-      toast('Flugplatz gespeichert.');
-      ['ap-icao', 'ap-name', 'ap-lat', 'ap-lon', 'ap-elev'].forEach(i => document.getElementById(i).value = '');
-      loadCustomAirports();
-      // Erkennungslücken nur neu laden, wenn die Liste schon einmal geöffnet wurde -- sonst
-      // würde jedes Flugplatz-Speichern ungefragt die teure Prüfung anstoßen (mehrere Sekunden).
-      if (_dgLoaded) loadDetectionGaps();
     });
 
     // ====================================================================

@@ -1,5 +1,14 @@
 [
   {
+    "version": "8.6.2",
+    "date": "2026-07-05",
+    "title": "Flugplatz speichern/löschen: sofortige Antwort statt eingefrorenem Klick",
+    "items": [
+      "🐌 Speichern/Löschen eines Ergänzungs-Flugplatzes stieß bislang einen kompletten Neuaufbau des Flug-Caches über den GESAMTEN Bestand an (mehrere Sekunden, blockierend) — der läuft jetzt im Hintergrund, die Antwort kommt sofort.",
+      "🐛 Speichern- und Löschen-Button deaktivieren sich sofort nach dem Klick, statt unbemerkt auf die Serverantwort zu warten."
+    ]
+  },
+  {
     "version": "8.6.1",
     "date": "2026-07-05",
     "title": "Erkennungslücken-Prüfliste: schnellerer Track-Aufruf, Backlog-Fix, mehr Bedienkomfort",

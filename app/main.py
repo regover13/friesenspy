@@ -1971,13 +1971,27 @@ async def admin_set_default_payload(request: Request):
         conn.close()
 
 
-def _rebuild_and_reload_custom_airports(conn) -> None:
+def _reload_custom_airports_geo_cache(conn) -> None:
     """Nach jedem Admin-Write auf custom_airports: geo-Cache neu befüllen (Invalidierung =
-    Neuaufruf) und einen vollen flight_cache-Rebuild anstoßen — der inkrementelle Refresh
-    (#30, `_FLIGHT_CACHE_INCREMENTAL_DAYS`) fasst nur die letzten 7 Tage an, ein neuer/geänderter
-    Platz muss aber auch ältere, bislang fälschlich offene Flüge neu erkennen lassen (#50)."""
+    Neuaufruf) — billig, läuft synchron im Request."""
     geo.set_custom_airports(list_custom_airports(conn))
-    rebuild_flight_cache(conn, full=True)
+
+
+def _rebuild_flight_cache_background(db_path: str) -> None:
+    """Voller flight_cache-Rebuild (v8.6.2) als Hintergrund-Task NACH der Response — der
+    inkrementelle Refresh (#30, `_FLIGHT_CACHE_INCREMENTAL_DAYS`) fasst nur die letzten 7 Tage
+    an, ein neuer/geänderter Platz muss aber auch ältere, bislang fälschlich offene Flüge neu
+    erkennen lassen (#50). `canonicalize_legs(conn)` ohne Fenster ist teuer (mehrere Sekunden bei
+    >3000 StatSim-Flügen) — läuft daher NICHT mehr blockierend im Request (Fund: Admin-Speichern/
+    -Löschen fühlte sich dadurch eingefroren an). Eigene, frische DB-Connection: die des
+    Endpoints ist zu diesem Zeitpunkt bereits geschlossen (FastAPI führt BackgroundTasks NACH
+    dem Response-Close aus). Die Erkennungslücken-Prüfliste ist von dieser Verzögerung nicht
+    betroffen, da sie `canonicalize_legs` ohnehin live und unabhängig vom flight_cache aufruft."""
+    conn = get_connection(db_path)
+    try:
+        rebuild_flight_cache(conn, full=True)
+    finally:
+        conn.close()
 
 
 @app.get("/api/admin/airports")
@@ -1992,7 +2006,7 @@ async def admin_get_airports(request: Request):
 
 
 @app.post("/api/admin/airports")
-async def admin_upsert_airport(request: Request):
+async def admin_upsert_airport(request: Request, background_tasks: BackgroundTasks):
     """Ergänzungs-Flugplatz speichern: icao (Pflicht), lat/lon (Pflicht), name/elevation_ft optional.
 
     #56: ``override`` (optional, Body-Feld) erlaubt bewusstes Überschreiben eines bereits in
@@ -2035,21 +2049,23 @@ async def admin_upsert_airport(request: Request):
             elevation_ft=elevation_ft,
         )
         conn.commit()
-        _rebuild_and_reload_custom_airports(conn)
+        _reload_custom_airports_geo_cache(conn)
+        background_tasks.add_task(_rebuild_flight_cache_background, get_settings().DB_PATH)
         return {"status": "ok"}
     finally:
         conn.close()
 
 
 @app.delete("/api/admin/airports/{icao}")
-async def admin_delete_airport(icao: str, request: Request):
+async def admin_delete_airport(icao: str, request: Request, background_tasks: BackgroundTasks):
     """Löscht einen Ergänzungs-Flugplatz."""
     require_admin(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_custom_airport(conn, icao)
         conn.commit()
-        _rebuild_and_reload_custom_airports(conn)
+        _reload_custom_airports_geo_cache(conn)
+        background_tasks.add_task(_rebuild_flight_cache_background, get_settings().DB_PATH)
         return {"status": "ok"}
     finally:
         conn.close()
