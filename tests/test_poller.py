@@ -1117,9 +1117,10 @@ class TestAircraftTypeFallback:
         }
 
     @pytest.mark.asyncio
-    async def test_last_known_type_fills_flight_and_live_position(self, tmp_path):
-        """Pilot ohne Flugplan: das zuletzt gefilte Muster aus früheren Flügen wird
-        übernommen — Anzeige und Kutter-Zuladung funktionieren ohne Plan."""
+    async def test_no_history_type_leaves_aircraft_empty(self, tmp_path):
+        """#52: Pilot ohne (Live-)Flugplan bekommt KEIN Muster aus früheren Flügen mehr
+        untergeschoben (last_known_aircraft war zeitlich blind, s. Fund cid 1273634) — der Typ
+        bleibt ehrlich leer, auch wenn eine ältere Session des Piloten einen Typ kennt."""
         from datetime import datetime, timedelta, timezone
         from app.database import get_connection, init_db
         db_file = str(tmp_path / "t.db")
@@ -1158,8 +1159,8 @@ class TestAircraftTypeFallback:
             ).fetchone()
         finally:
             conn.close()
-        assert flight["aircraft_short"] == "PZ04"
-        assert live["aircraft"] == "PZ04"
+        assert flight["aircraft_short"] == ""
+        assert live["aircraft"] == ""
 
     @pytest.mark.asyncio
     async def test_prefile_type_wins_over_history(self, tmp_path):

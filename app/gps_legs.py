@@ -17,6 +17,12 @@ _GPS_GROUND_AGL_FT = 300     # AGL-Obergrenze für „am Boden" beim Landungs-Gu
 _GPS_AIR_AGL_FT = 500        # AGL-Anstieg über Boden = abgehoben (Leitsignal)
 _GPS_CLIMB_MIN_AGL_FT = 100  # Mindest-AGL für den sekundären „schnell + steigend"-Abhebe-Trigger
 _GPS_BLOCK_GS_KT = 2         # Vollstopp-Schwelle (Touchdown-Kandidat)
+# Spawn in der Luft (#49): manche StatSim-Aufzeichnungen beginnen erst im Climb-out direkt über
+# dem Abflugplatz (kein Boden-Sample vorhanden). Liegt der erste Punkt im Platz-Umkreis UND
+# darunter, gilt der Platz als Startplatz — PERMISSIV bei unbekannter Elevation (bewusst anders
+# als der Landungs-Guard/#53, der dort konservativ NICHT rettet: ein zu spät bemerkter Startplatz
+# ist harmlos falsch-positiv, eine zu Unrecht "gerettete" Landung wäre es nicht).
+_GPS_SPAWN_MAX_AGL_FT = 1500
 # Eine Landung am SELBEN Platz (X→X) wird nur dann als Zwischenlandung in den laufenden Flug
 # absorbiert (Stop-and-Go / Platzrunde), wenn der nächste Start binnen dieser Zeit folgt.
 # Sonst: Flug als X→X abschließen, ab dem nächsten Start ein neuer Flug.
@@ -73,6 +79,7 @@ def detect_gps_legs(
     airport_elev_ft,      # callable(icao) -> elevation ft (float) | None
     radius_km: float = 10.0,
     gap_minutes: int = 30,
+    rescue_before: str | None = None,
 ) -> list[dict]:
     """Erkennt Flug-Etappen aus GPS-Positionen (rein, DB-frei).
 
@@ -86,12 +93,23 @@ def detect_gps_legs(
     arr_source, max_altitude`` plus ``segment`` (0-basierter Index des Zeit-Segments, das
     ``detect_gps_legs`` nach Gaps > ``gap_minutes`` bildet). Rückgabe: Legs in chronologischer
     Reihenfolge.
+
+    ``rescue_before`` (#53): ISO8601-UTC-String oder ``None``. Endet ein Segment airborne (Track
+    riss ab, KEINE Landung unter der ``_GPS_BLOCK_GS_KT``-Schwelle gefunden), wird das Leg trotzdem
+    als gelandet gewertet, wenn der letzte Punkt im Platz-Umkreis UND unter ``_GPS_GROUND_AGL_FT``
+    liegt — sofern die Rettung zeitlich erlaubt ist: ``None`` erlaubt sie immer (StatSim-
+    Aufzeichnungsende ist immer ein echtes Ende), ein Timestamp erlaubt sie nur, wenn der letzte
+    Sample ÄLTER ist (Live-Guard — ein gerade laufender Anflug darf nicht fälschlich geschlossen
+    werden). ISO-Strings sind lexikografisch vergleichbar, ein einfacher String-Vergleich pro
+    Segment genügt (frühere Segmente enden ohnehin >``gap_minutes`` vor jedem folgenden).
     """
     legs: list[dict] = []
     # Segmentierung nach Zeitlücken implementiert die Gap-Regeln direkt: ein Segment-Ende
     # ist zugleich ein Gap-Ende (offen airborne → incomplete; tentativ gelandet → complete).
     for seg_index, segment in enumerate(_split_on_gaps(positions, gap_minutes)):
-        seg_legs = _detect_segment(segment, nearest_airport, airport_elev_ft, radius_km)
+        seg_legs = _detect_segment(
+            segment, nearest_airport, airport_elev_ft, radius_km, rescue_before=rescue_before
+        )
         for leg in seg_legs:
             leg["segment"] = seg_index
         legs.extend(seg_legs)
@@ -103,6 +121,8 @@ def _detect_segment(
     nearest_airport,
     airport_elev_ft,
     radius_km: float,
+    *,
+    rescue_before: str | None = None,
 ) -> list[dict]:
     """Zustandsmaschine für ein einzelnes (lückenfreies) Segment."""
     if not samples:
@@ -153,10 +173,18 @@ def _detect_segment(
 
         if state == "INIT":
             if gs is not None and gs >= _GPS_FLYING_GS_KT:
-                # Spawn-in-der-Luft: keine Boden-Referenz → direkt AIRBORNE, dep unbekannt.
+                # Spawn-in-der-Luft: keine Boden-Referenz. Trotzdem NICHT bedingungslos dep=None
+                # (#49) — liegt der erste Punkt im Platz-Umkreis (typisch: StatSim-Aufzeichnung
+                # beginnt erst im Climb-out direkt über dem Abflugplatz), zählt dieser Platz als
+                # Startplatz. Permissiv bei unbekannter Elevation (Kommentar bei der Konstante).
                 state = "AIRBORNE"
-                dep_icao = None
-                dep_source = None
+                ap = nearest_airport(lat, lon, radius_km)
+                dep_ok = False
+                if ap is not None:
+                    elev = airport_elev_ft(ap)
+                    dep_ok = alt is None or elev is None or (alt - elev) < _GPS_SPAWN_MAX_AGL_FT
+                dep_icao = ap if dep_ok else None
+                dep_source = "gps" if dep_ok else None
                 takeoff_ts = ts
                 max_alt = _update_max(None, alt)
             else:
@@ -235,8 +263,30 @@ def _detect_segment(
 
     # Segment-Ende (= Ende oder Gap): offene Zustände finalisieren.
     if state == "AIRBORNE":
-        # Rein in der Luft beendet → unvollständiger Leg (Disconnect mid-air).
-        emit_incomplete()
+        # Landungs-Rettung (#53): Track riss ab, BEVOR die reguläre gs<2-Touchdown-Erkennung
+        # greifen konnte — z. B. StatSim-Aufzeichnungsende oder FriesenSpy-Disconnect kurz vor
+        # dem Vollstopp. War der letzte Punkt trotzdem tief über einem Platz, ist der Flug dort
+        # nachweislich beendet (Absturz vs. sauberer Aufsetzer ist aus GPS nicht unterscheidbar,
+        # aber für die Zwecke hier irrelevant — "an diesem Platz beendet" stimmt so oder so).
+        # KONSERVATIV bei unbekannter Elevation/Höhe: keine Rettung (bewusst anders als der
+        # Spawn-Guard/#49, s. Kommentar dort).
+        rescued = False
+        last = samples[-1]
+        last_ts = last.get("ts")
+        rescue_allowed = rescue_before is None or (last_ts is not None and last_ts < rescue_before)
+        if rescue_allowed:
+            last_lat, last_lon, last_alt = last.get("latitude"), last.get("longitude"), last.get("altitude")
+            ap = nearest_airport(last_lat, last_lon, radius_km) if last_lat is not None and last_lon is not None else None
+            if ap is not None:
+                elev = airport_elev_ft(ap)
+                if elev is not None and last_alt is not None and (last_alt - elev) < _GPS_GROUND_AGL_FT:
+                    land_ts = last_ts
+                    land_arr = ap
+                    emit_complete()
+                    rescued = True
+        if not rescued:
+            # Rein in der Luft beendet → unvollständiger Leg (Disconnect mid-air).
+            emit_incomplete()
     # ON_GROUND/INIT: nie abgehoben → kein Leg (Ghost strukturell gefiltert).
 
     return legs

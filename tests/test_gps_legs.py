@@ -449,6 +449,223 @@ class TestDetectGpsLegs:
         assert legs[-1]["segment"] == 1
 
 
+# --- #49 Spawn-Guard + #53 Landungs-Rettung: dedizierte Test-Flugplätze ---------------------
+# EDMH: Elevation bekannt (1591 ft). ZZUNK: Elevation UNBEKANNT (z. B. ein custom_airports-
+# Eintrag ohne Höhenangabe) — für die Asymmetrie-Tests (#49 permissiv / #53 konservativ).
+_RESCUE_AIRPORTS = {
+    "EDMH": (49.0, 10.0, 1591.0),
+    "ZZUNK": (30.0, 30.0, None),
+}
+
+
+def _rescue_nearest(lat, lon, max_km):
+    best, best_d = None, max_km
+    for icao, (alat, alon, _elev) in _RESCUE_AIRPORTS.items():
+        d = haversine(lat, lon, alat, alon)
+        if d <= best_d:
+            best, best_d = icao, d
+    return best
+
+
+def _rescue_elev(icao):
+    a = _RESCUE_AIRPORTS.get(icao)
+    return a[2] if a else None
+
+
+class TestSpawnAirborneDeparture:
+    """#49: Spawn in der Luft (gs>=50 beim allerersten Sample) — der Startplatz wird jetzt
+    gesetzt, wenn der erste Punkt im Platz-Umkreis UND unter der AGL-Schranke liegt (permissiv
+    bei unbekannter Elevation), statt bedingungslos dep=None zu werfen."""
+
+    def test_airborne_spawn_within_radius_and_agl_matches_departure(self):
+        """Anker EDKF/FRS49: erster Punkt 0,5 km vom Platz, deutlich unter der 1500-ft-Schranke
+        (AGL hier: 2100-1591=509 ft) → Startplatz wird erkannt."""
+        track = [
+            p(0, 49.0045, 10.0, 2100, 107),   # Spawn airborne, 0,5 km von EDMH, AGL 509 ft
+            p(15, 49.05, 10.05, 3000, 100),
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+        )
+        assert legs[0]["dep_icao"] == "EDMH"
+        assert legs[0]["dep_source"] == "gps"
+
+    def test_airborne_spawn_outside_radius_stays_none(self):
+        """Anker FRS102/EDXH: erster Punkt 4,5 km vom Platz — bei PRODUKTIVEM radius_km=4.0
+        (nicht dem Test-Default 10.0!) liegt das außerhalb → dep bleibt None."""
+        track = [
+            p(0, 49.0405, 10.0, 2100, 107),   # 4,5 km von EDMH, außerhalb 4 km
+            p(15, 49.05, 10.05, 3000, 100),
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+        )
+        assert legs[0]["dep_icao"] is None
+        assert legs[0]["dep_source"] is None
+
+    def test_airborne_spawn_within_radius_but_above_agl_guard_stays_none(self):
+        """Platz im Umkreis, aber AGL 1600 ft > 1500-ft-Schranke → kein Startplatz."""
+        track = [
+            p(0, 49.0045, 10.0, 3191, 107),   # 0,5 km von EDMH, AGL 3191-1591=1600 > 1500
+            p(15, 49.05, 10.05, 3500, 100),
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+        )
+        assert legs[0]["dep_icao"] is None
+
+    def test_airborne_spawn_far_from_any_airport_stays_none(self):
+        """Anker BKPR (Reiseflug, >1000 km vom nächsten Platz) → kein Startplatz, egal welche
+        Höhe/gs."""
+        track = [
+            p(0, 10.0, 10.0, 20058, 298),      # >4000 km von jedem Test-Platz entfernt
+            p(15, 10.1, 10.1, 20060, 297),
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+        )
+        assert legs[0]["dep_icao"] is None
+
+    def test_airborne_spawn_unknown_elevation_is_permissive(self):
+        """Platz im Umkreis, Elevation UNBEKANNT → #49 ist bewusst permissiv (anders als #53):
+        Startplatz wird trotzdem gesetzt."""
+        track = [
+            p(0, 30.0045, 30.0, 5000, 107),    # 0,5 km von ZZUNK, Elevation unbekannt
+            p(15, 30.05, 30.05, 5500, 100),
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+        )
+        assert legs[0]["dep_icao"] == "ZZUNK"
+        assert legs[0]["dep_source"] == "gps"
+
+
+class TestTrackEndRescue:
+    """#53: Track endet airborne (keine gs<2-Landung mehr gefunden), letzter Punkt aber tief
+    über einem Platz → wird trotzdem als Landung gewertet (konservativ bei unbekannter
+    Elevation/Höhe, Live-Guard über ``rescue_before``)."""
+
+    def test_track_ends_airborne_near_airport_within_agl_rescues_landing(self):
+        """Anker EDMH/EDXF/ETHB/ENVA/LOIK: Track bricht mit gs>2 ab, letzter Punkt aber knapp
+        über dem Platz (hier AGL 1591+250-1591=250 ft < 300 ft) → gerettete Landung."""
+        track = [
+            p(0, 49.0, 10.0, 1591, 0),
+            p(15, 49.02, 10.02, 2000, 60),
+            p(30, 49.005, 10.005, 1841, 6),   # letzter Punkt: 0,5 km von EDMH, AGL 250 ft, gs 6
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+            rescue_before=None,
+        )
+        assert legs[0]["complete"] is True
+        assert legs[0]["arr_icao"] == "EDMH"
+        assert legs[0]["arr_source"] == "gps"
+        assert legs[0]["landing_ts"] == _ts(30)
+
+    def test_track_ends_airborne_high_agl_stays_open(self):
+        """Anker Salzwedel: letzter Punkt weit über der 300-ft-Schranke (hier AGL 1600 ft) —
+        echter Mitten-im-Flug-Disconnect, keine Rettung."""
+        track = [
+            p(0, 49.0, 10.0, 1591, 0),
+            p(15, 49.02, 10.02, 2000, 60),
+            p(30, 49.005, 10.005, 3191, 136),  # AGL 1600 ft, gs 136 — kein Landeversuch
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+            rescue_before=None,
+        )
+        assert legs[0]["complete"] is False
+        assert legs[0]["arr_icao"] is None
+
+    def test_track_ends_airborne_unknown_elevation_stays_open(self):
+        """#53 ist bewusst KONSERVATIV (anders als #49): Platz im Umkreis, aber Elevation
+        unbekannt → KEINE Rettung, Leg bleibt offen."""
+        track = [
+            p(0, 30.0, 30.0, 5000, 0),
+            p(15, 30.02, 30.02, 5500, 60),
+            p(30, 30.005, 30.005, 5000, 6),   # 0,5 km von ZZUNK, aber Elevation unbekannt
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+            rescue_before=None,
+        )
+        assert legs[0]["complete"] is False
+
+    def test_track_ends_airborne_no_airport_in_radius_stays_open(self):
+        """Kein Platz im Umkreis → keine Rettung möglich, Leg bleibt offen."""
+        track = [
+            p(0, 10.0, 10.0, 5000, 0),
+            p(15, 10.02, 10.02, 5200, 60),
+            p(30, 10.03, 10.03, 5100, 6),
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+            rescue_before=None,
+        )
+        assert legs[0]["complete"] is False
+
+    def test_rescue_before_none_always_rescues_even_if_last_ts_recent(self):
+        """StatSim-Fall: ``rescue_before=None`` rettet immer, unabhängig davon wie jung der
+        letzte Punkt ist (eine StatSim-Aufzeichnung ist immer beendet, kein "live")."""
+        track = [
+            p(0, 49.0, 10.0, 1591, 0),
+            p(15, 49.02, 10.02, 2000, 60),
+            p(30, 49.005, 10.005, 1841, 6),
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+            rescue_before=None,
+        )
+        assert legs[0]["complete"] is True
+
+    def test_rescue_before_blocks_rescue_when_last_ts_too_recent(self):
+        """Live-Guard: liegt der letzte Punkt NICHT vor ``rescue_before``, wird NICHT gerettet
+        (ein gerade laufender Anflug darf nicht fälschlich geschlossen werden)."""
+        track = [
+            p(0, 49.0, 10.0, 1591, 0),
+            p(15, 49.02, 10.02, 2000, 60),
+            p(30, 49.005, 10.005, 1841, 6),
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+            rescue_before=_ts(20),  # letzter Punkt (_ts(30)) liegt NACH rescue_before
+        )
+        assert legs[0]["complete"] is False
+
+    def test_rescue_before_allows_rescue_when_last_ts_older_than_cutoff(self):
+        """Liegt der letzte Punkt VOR ``rescue_before`` (außerhalb des Live-Fensters), wird
+        gerettet."""
+        track = [
+            p(0, 49.0, 10.0, 1591, 0),
+            p(15, 49.02, 10.02, 2000, 60),
+            p(30, 49.005, 10.005, 1841, 6),
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+            rescue_before=_ts(40),  # letzter Punkt (_ts(30)) liegt VOR rescue_before
+        )
+        assert legs[0]["complete"] is True
+
+    def test_rescued_x_to_x_landing_not_absorbed_as_stop_and_go(self):
+        """Eine gerettete Landung ist strukturell IMMER das letzte Leg ihres Segments — die
+        Stop-and-Go-Absorption (nächster Start binnen 300 s) darf hier nie greifen, auch wenn
+        die Rettung X→X wäre (Start- und geretteter „Landeplatz" identisch)."""
+        track = [
+            p(0, 49.0, 10.0, 1591, 0),
+            p(15, 49.02, 10.02, 2200, 60),      # Abheben EDMH
+            p(30, 49.005, 10.005, 1841, 6),     # Track bricht ab, gerettet an EDMH (X→X)
+        ]
+        legs = detect_gps_legs(
+            track, nearest_airport=_rescue_nearest, airport_elev_ft=_rescue_elev, radius_km=4.0,
+            rescue_before=None,
+        )
+        flights = collapse_same_airport(legs)
+        assert len(flights) == 1
+        assert flights[0]["dep_icao"] == "EDMH"
+        assert flights[0]["arr_icao"] == "EDMH"
+        assert flights[0]["complete"] is True
+
+
 def _leg(dep, arr, to, ld, seg=0, complete=True, maxalt=1000):
     return {"dep_icao": dep, "arr_icao": arr, "takeoff_ts": to, "landing_ts": ld,
             "complete": complete, "dep_source": "gps" if dep else None,

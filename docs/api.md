@@ -1040,6 +1040,53 @@ Cache-Control: no-store
 Der öffentliche Endpoint `GET /api/transport/event/{event_id}/badge/{cid}.png` bleibt vor der
 Bilanz weiterhin `404`.
 
+## Admin — Flugplätze (Ergänzungen)
+
+Verwaltung von `custom_airports` (v8.5.0, #50) — Plätzen, die in der Standard-Flugplatzdatenbank
+(`airportsdata`) fehlen (z. B. Segelfluggelände ohne offizielle ICAO-Kennung) und ohne die weder
+Start noch Landung dort per GPS erkannt werden. Alle Endpoints erfordern das Admin-Cookie
+(`require_admin`).
+
+### GET /api/admin/airports
+
+Liste aller Ergänzungs-Flugplätze.
+
+**Response**
+
+```json
+{
+  "airports": [
+    {"icao": "ZZSALZ", "name": "Segelfluggelände Salzwedel/Klein Gartz", "lat": 52.828, "lon": 11.316, "elevation_ft": 112.0, "updated_at": "2026-07-05T12:00:00Z"}
+  ]
+}
+```
+
+### POST /api/admin/airports
+
+Flugplatz anlegen/aktualisieren (Upsert nach `icao`).
+
+**Body (JSON)**
+
+```json
+{"icao": "zzsalz", "name": "Segelfluggelände Salzwedel/Klein Gartz", "lat": 52.828, "lon": 11.316, "elevation_ft": 112}
+```
+
+- `icao` (Pflicht) — beliebiger Code, wird `.strip().upper()` gespeichert; **kein** echter 4-Buchstaben-ICAO nötig (Platzhalter wie `ZZSALZ` erlaubt).
+- `lat`/`lon` (Pflicht, Zahl) — sonst `400`.
+- `elevation_ft` (optional) — `null`/leer lassen, wenn unbekannt. **Wirkt sich auf die GPS-Erkennung aus:** unbekannte Elevation macht den Spawn-Startplatz-Guard (#49) permissiv, die Landungs-Rettung am Track-Ende (#53) dagegen konservativ (keine Rettung ohne Höhenangabe).
+
+**Plausiprüfung:** Ist `icao` bereits in `airportsdata` bekannt, wird der Request mit `400` abgelehnt (Duplikat — der Platz braucht keinen Ergänzungs-Eintrag, er wird schon gefunden). Fund dieser Session: `EDXU` (Hüttenbusch) war fälschlich als „fehlend" vermutet worden, steckte aber schon in `airportsdata`.
+
+**Nebenwirkung:** Ein erfolgreicher Write ruft sofort `geo.set_custom_airports(...)` (Cache-Invalidierung, ohne Neustart wirksam) **und** `rebuild_flight_cache(conn, full=True)` auf — der neue/geänderte Platz muss auch ältere, bislang fälschlich offene oder platzlose Flüge neu erkennen lassen; der reguläre inkrementelle Refresh (7 Tage) würde das nicht leisten.
+
+**Response** `{"status": "ok"}`
+
+### DELETE /api/admin/airports/{icao}
+
+Flugplatz löschen. Gleiche Nebenwirkung (Cache-Invalidierung + voller `rebuild_flight_cache`) wie beim Anlegen/Ändern.
+
+**Response** `{"status": "ok"}`
+
 ## Admin — Hinweis-Banner
 
 Steuert, welcher Changelog-Eintrag auf der Startseite als Banner erscheint (gespeichert in `app_settings['banner_version']`). Die aufgelöste Version liefert `GET /api/frontend-config` im Feld `banner_version`.

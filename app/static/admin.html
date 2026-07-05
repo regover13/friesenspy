@@ -891,6 +891,32 @@
           <div id="ke-payloads-container" class="scroll-list"><div class="empty-hint">Lade Zuladungen…</div></div>
         </div>
 
+        <!-- ERGÄNZUNGS-FLUGPLÄTZE (custom_airports, #50) -->
+        <div class="panel">
+          <div class="panel-title"><span>🛬 Flugplätze (Ergänzungen)</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Plätze, die in der Standard-Datenbank (airportsdata) fehlen — z. B. Segelfluggelände
+            ohne offizielle ICAO-Kennung. Wird ein Code hier eingetragen, der bereits offiziell
+            bekannt ist, lehnt das Backend das ab (Duplikat).
+          </p>
+          <div class="form-grid" style="margin:6px 0 8px;">
+            <div class="form-group"><label for="ap-icao">Code</label>
+              <input type="text" id="ap-icao" placeholder="ZZSALZ" /></div>
+            <div class="form-group"><label for="ap-name">Name</label>
+              <input type="text" id="ap-name" placeholder="Segelfluggelände Salzwedel" /></div>
+            <div class="form-group"><label for="ap-lat">Breitengrad</label>
+              <input type="number" id="ap-lat" step="0.0001" placeholder="52.828" /></div>
+            <div class="form-group"><label for="ap-lon">Längengrad</label>
+              <input type="number" id="ap-lon" step="0.0001" placeholder="11.316" /></div>
+            <div class="form-group"><label for="ap-elev">Elevation (ft, optional)</label>
+              <input type="number" id="ap-elev" step="1" placeholder="112" /></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <button class="btn btn-primary btn-sm" id="ap-save-btn">Speichern</button>
+          </div>
+          <div id="ap-container" class="scroll-list"><div class="empty-hint">Lade Flugplätze…</div></div>
+        </div>
+
         <!-- FRIESENKUTTER — FRACHTART-KATALOG & SPRÜCHE -->
         <div class="panel">
           <div class="panel-title"><span>🦐 FriesenKutter &ndash; Frachtart-Katalog</span></div>
@@ -1150,6 +1176,7 @@
       loadBanner();
       loadPilots();
       loadKutterAdmin();
+      loadCustomAirports();
       // Falls ein Backfill schon vor dem (Neu-)Laden dieser Seite lief (z. B. anderer Tab,
       // vorheriger Login) — Status sofort zeigen und Polling bei Bedarf fortsetzen.
       _pollStatsimBackfillStatus();
@@ -2264,6 +2291,57 @@
       document.getElementById('kp-fuel-max').textContent = '';
       document.getElementById('kp-make-model').textContent = '';
       loadKutterPayloads();
+    });
+
+    // ====================================================================
+    // ERGÄNZUNGS-FLUGPLÄTZE (custom_airports, #50)
+    // ====================================================================
+    async function loadCustomAirports() {
+      const res = await api('GET', '/api/admin/airports');
+      if (!res || !res.ok) return;
+      const d = await res.json();
+      const rows = d.airports || [];
+      const c = document.getElementById('ap-container');
+      if (!rows.length) { c.innerHTML = '<div class="empty-hint">Noch keine Ergänzungs-Flugplätze.</div>'; return; }
+      c.innerHTML = '<div class="table-wrap"><table style="font-size:0.8rem;width:max-content;min-width:100%;"><thead><tr>'
+        + '<th style="text-align:left;">Code</th><th style="text-align:left;">Name</th><th>Lat</th><th>Lon</th><th>Elev (ft)</th><th></th></tr></thead><tbody>'
+        + rows.map(a => '<tr><td><b>' + escH(a.icao) + '</b></td><td>' + escH(a.name || '—') + '</td>'
+          + '<td>' + a.lat + '</td><td>' + a.lon + '</td><td>' + (a.elevation_ft ?? '—') + '</td>'
+          + '<td><button class="btn btn-sm btn-danger" onclick="apDelete(\'' + escA(a.icao) + '\')">✕</button></td></tr>').join('')
+        + '</tbody></table></div>';
+    }
+
+    async function apDelete(icao) {
+      if (!confirm('Flugplatz "' + icao + '" wirklich löschen?')) return;
+      const res = await api('DELETE', '/api/admin/airports/' + encodeURIComponent(icao));
+      if (!res || !res.ok) { toast('Fehler beim Löschen.', true); return; }
+      toast('Flugplatz gelöscht.');
+      loadCustomAirports();
+    }
+
+    document.getElementById('ap-save-btn').addEventListener('click', async () => {
+      const icao = document.getElementById('ap-icao').value.trim();
+      const lat = parseFloat(document.getElementById('ap-lat').value);
+      const lon = parseFloat(document.getElementById('ap-lon').value);
+      if (!icao) { toast('Code eingeben.', true); return; }
+      if (!(lat >= -90 && lat <= 90) || !(lon >= -180 && lon <= 180)) {
+        toast('Gültige Lat/Lon erforderlich.', true); return;
+      }
+      const elevRaw = document.getElementById('ap-elev').value;
+      const body = {
+        icao, name: document.getElementById('ap-name').value.trim() || null,
+        lat, lon, elevation_ft: elevRaw === '' ? null : parseFloat(elevRaw),
+      };
+      const res = await api('POST', '/api/admin/airports', body);
+      if (!res || !res.ok) {
+        let detail = 'Fehler beim Speichern.';
+        try { detail = (await res.json()).detail || detail; } catch (e) {}
+        toast(detail, true);
+        return;
+      }
+      toast('Flugplatz gespeichert.');
+      ['ap-icao', 'ap-name', 'ap-lat', 'ap-lon', 'ap-elev'].forEach(i => document.getElementById(i).value = '');
+      loadCustomAirports();
     });
 
     // ====================================================================

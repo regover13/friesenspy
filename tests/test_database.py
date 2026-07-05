@@ -148,6 +148,77 @@ class TestInitDb:
         assert rows[1] == "A320"
         assert rows[2] == "C172"  # bereits normalisiert -> unveraendert
 
+    def test_flights_aircraft_backfill_normalizes_legacy_composite_string(self, tmp_path):
+        """#51 (v8.5.0): flights.aircraft_short/aircraft_icao trugen vor dem Ingestion-Fix
+        (app/poller.py) manchmal einen Composite-String, weil der VATSIM-Feed dieses Feld
+        selbst schon so liefern kann (Fund: FRS61 id=288, "AS65/L-SDGY/S"). Analog zur
+        statsim_cache-Migration -- Bestandszeilen einmalig, idempotent nachnormalisieren."""
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = sqlite3.connect(db_file)
+        conn.execute(
+            "INSERT INTO pilots (cid, name, added_at) VALUES (200, 'P', '2026-01-01T00:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, aircraft_short, aircraft_icao, departure, "
+            "arrival, logon_time) VALUES (200, 'FRS61', 'AS65/L-SDGY/S', 'AS65/L', "
+            "'EDWG', 'EDXH', '2026-01-01T10:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, aircraft_short, aircraft_icao, departure, "
+            "arrival, logon_time) VALUES (200, 'FRS61', 'C172', 'C172', "
+            "'EDDK', 'EDDW', '2026-01-02T10:00:00Z')"
+        )
+        conn.commit()
+        conn.close()
+
+        init_db(db_file)  # zweiter Lauf: muss die Alt-Zeile nachnormalisieren
+
+        conn = sqlite3.connect(db_file)
+        rows = {
+            r[0]: (r[1], r[2])
+            for r in conn.execute(
+                "SELECT logon_time, aircraft_short, aircraft_icao FROM flights"
+            ).fetchall()
+        }
+        conn.close()
+        assert rows["2026-01-01T10:00:00Z"] == ("AS65", "AS65")
+        assert rows["2026-01-02T10:00:00Z"] == ("C172", "C172")  # bereits normalisiert
+
+    def test_custom_airports_seed_populates_default_rows(self, tmp_path):
+        """#50: die sechs in dieser Session bestätigten Ergänzungs-Flugplätze werden bei
+        leerer Tabelle automatisch angelegt."""
+        from app.database import list_custom_airports
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = get_connection(db_file)
+        rows = {r["icao"]: r for r in list_custom_airports(conn)}
+        conn.close()
+        assert set(rows) == {"EDHD", "LIVD", "EDLQ", "EXHB", "ZZSALZ", "CML5"}
+        assert rows["CML5"]["elevation_ft"] == 1118.0  # aus der Track-Landung (gs=0) abgeleitet
+
+    def test_custom_airports_seed_preserves_user_edits(self, tmp_path):
+        """Seed ist NUR ein Erstbefüllen (Guard: Tabelle leer) -- Admin-Änderungen/-Löschungen
+        dürfen von einem erneuten init_db-Lauf (z. B. App-Neustart) nie überschrieben werden."""
+        from app.database import list_custom_airports, upsert_custom_airport, delete_custom_airport
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = get_connection(db_file)
+        upsert_custom_airport(conn, "ZZSALZ", name="GEAENDERT", lat=1.0, lon=2.0, elevation_ft=999)
+        delete_custom_airport(conn, "CML5")
+        conn.commit()
+        conn.close()
+
+        init_db(db_file)  # zweiter Lauf darf die Edits NICHT rueckgaengig machen
+
+        conn = get_connection(db_file)
+        rows = {r["icao"]: r for r in list_custom_airports(conn)}
+        conn.close()
+        assert rows["ZZSALZ"]["name"] == "GEAENDERT"
+        assert rows["ZZSALZ"]["lat"] == 1.0
+        assert "CML5" not in rows  # bleibt geloescht
+        assert len(rows) == 5  # 6 Seed-Plaetze minus 1 geloescht, kein Re-Seed
+
 
 # ---------------------------------------------------------------------------
 # get_connection
@@ -1311,38 +1382,6 @@ class TestConsolidateFlights:
         n2 = conn.execute("SELECT COUNT(*) FROM flights WHERE superseded_by IS NOT NULL").fetchone()[0]
         conn.close()
         assert n1 == 1 and n2 == 1
-
-
-# ---------------------------------------------------------------------------
-# last_known_aircraft — Typ-Fallback ohne Flugplan
-# ---------------------------------------------------------------------------
-
-class TestLastKnownAircraft:
-    def test_returns_most_recent_type(self):
-        from app.database import last_known_aircraft
-        conn = _make_conn()
-        ensure_pilot(conn, 5, "P")
-        conn.execute(
-            "INSERT INTO flights (cid,callsign,aircraft_short,aircraft_icao,logon_time,"
-            "logoff_time) VALUES (5,'FRS5','C172','C172','2026-06-01T10:00:00Z','2026-06-01T11:00:00Z')"
-        )
-        conn.execute(
-            "INSERT INTO flights (cid,callsign,aircraft_short,aircraft_icao,logon_time,"
-            "logoff_time) VALUES (5,'FRS5','PZ04','PZ04','2026-06-20T10:00:00Z','2026-06-20T11:00:00Z')"
-        )
-        conn.execute(  # neuester Flug OHNE Typ (ohne Plan) zählt nicht
-            "INSERT INTO flights (cid,callsign,aircraft_short,logon_time,logoff_time) "
-            "VALUES (5,'FRS5','','2026-06-25T10:00:00Z','2026-06-25T11:00:00Z')"
-        )
-        conn.commit()
-        assert last_known_aircraft(conn, 5) == ("PZ04", "PZ04")
-        conn.close()
-
-    def test_unknown_pilot_returns_empty(self):
-        from app.database import last_known_aircraft
-        conn = _make_conn()
-        assert last_known_aircraft(conn, 999999) == ("", "")
-        conn.close()
 
 
 # ---------------------------------------------------------------------------

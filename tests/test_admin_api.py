@@ -643,3 +643,75 @@ class TestPilotFlightsEndpoint:
         resp = asyncio.run(main.get_pilot_flights(self.CID))
         body = json.loads(resp.body)
         assert any(f["callsign"] == "DFGKC" and f["source"] == "statsim" for f in body)
+
+
+class TestAdminAirports:
+    """#50: Admin-Endpoints für Ergänzungs-Flugplätze (custom_airports)."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_geo_cache(self):
+        from app import geo
+        geo.set_custom_airports([])
+        yield
+        geo.set_custom_airports([])
+
+    def test_airports_requires_admin(self, db):
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_get_airports(FakeReq(cookies={})))
+        assert e.value.status_code == 401
+
+    def test_airports_crud(self, db):
+        res = asyncio.run(main.admin_upsert_airport(FakeReq(body={
+            "icao": "zztest", "name": "Testplatz", "lat": 12.34, "lon": 56.78, "elevation_ft": 100,
+        })))
+        assert res["status"] == "ok"
+
+        listing = asyncio.run(main.admin_get_airports(FakeReq()))
+        rows = {r["icao"]: r for r in listing["airports"]}
+        assert "ZZTEST" in rows  # Code wird normalisiert (uppercase) gespeichert
+        assert rows["ZZTEST"]["name"] == "Testplatz"
+        assert rows["ZZTEST"]["lat"] == 12.34
+
+        # Update (gleicher Code, neue Werte)
+        asyncio.run(main.admin_upsert_airport(FakeReq(body={
+            "icao": "ZZTEST", "name": "Umbenannt", "lat": 12.34, "lon": 56.78, "elevation_ft": 200,
+        })))
+        listing2 = asyncio.run(main.admin_get_airports(FakeReq()))
+        rows2 = {r["icao"]: r for r in listing2["airports"]}
+        assert rows2["ZZTEST"]["name"] == "Umbenannt"
+        assert rows2["ZZTEST"]["elevation_ft"] == 200
+
+        # Löschen
+        asyncio.run(main.admin_delete_airport("ZZTEST", FakeReq()))
+        listing3 = asyncio.run(main.admin_get_airports(FakeReq()))
+        assert "ZZTEST" not in {r["icao"] for r in listing3["airports"]}
+
+    def test_airports_rejects_known_airportsdata_code(self, db):
+        """Plausiprüfung (Fund dieser Session): EDXU (Hüttenbusch) war fälschlich als
+        "fehlend" vermutet worden, steckte aber schon in airportsdata — muss abgelehnt werden."""
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_upsert_airport(FakeReq(body={
+                "icao": "EDXU", "name": "Huettenbusch", "lat": 53.287, "lon": 8.947, "elevation_ft": 10,
+            })))
+        assert e.value.status_code == 400
+
+    def test_airports_upsert_invalidates_geo_cache(self, db):
+        from app import geo
+        assert geo.icao_to_coords("ZZCACHE") is None
+        asyncio.run(main.admin_upsert_airport(FakeReq(body={
+            "icao": "ZZCACHE", "name": "Cache-Test", "lat": 5.0, "lon": 6.0, "elevation_ft": None,
+        })))
+        assert geo.icao_to_coords("ZZCACHE") == (5.0, 6.0)  # sofort aktuell, ohne Neustart
+
+        asyncio.run(main.admin_delete_airport("ZZCACHE", FakeReq()))
+        assert geo.icao_to_coords("ZZCACHE") is None  # nach dem Löschen wieder leer
+
+    def test_airports_upsert_triggers_flight_cache_rebuild(self, db, monkeypatch):
+        """Nach einem Admin-Write muss ein VOLLER Rebuild laufen (nicht der inkrementelle
+        7-Tage-Refresh) — sonst bleiben ältere, durch den neuen Platz betroffene Flüge kaputt."""
+        calls = []
+        monkeypatch.setattr("app.main.rebuild_flight_cache", lambda conn, full=False: calls.append(full))
+        asyncio.run(main.admin_upsert_airport(FakeReq(body={
+            "icao": "ZZREBUILD", "name": "x", "lat": 1.0, "lon": 1.0, "elevation_ft": None,
+        })))
+        assert calls == [True]

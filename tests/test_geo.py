@@ -10,8 +10,10 @@ from app.geo import (
     filter_event_pilots,
     haversine,
     icao_to_coords,
+    is_known_in_airportsdata,
     nearest_airport_icao,
     nearest_airport_icao_fast,
+    set_custom_airports,
 )
 
 
@@ -388,5 +390,72 @@ class TestNearestAirportFast:
 
     def test_elevation_unknown_none(self):
         assert airport_elevation_ft("XXXX") is None
+
+
+class TestCustomAirports:
+    """#50: Ergänzungs-Flugplätze (custom_airports) — Plätze, die in airportsdata fehlen,
+    werden von geo.py als ZWEITE Quelle konsultiert. ``_CUSTOM_AIRPORTS`` ist Modul-globaler
+    State -> autouse-Fixture setzt ihn vor UND nach jedem Test zurück (kein Leck in andere
+    Tests dieser oder anderer Testdateien)."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_custom_airports(self):
+        set_custom_airports([])
+        yield
+        set_custom_airports([])
+
+    def test_set_custom_airports_replaces_previous_cache(self):
+        set_custom_airports([{"icao": "ZZONE", "name": "Eins", "lat": 1.0, "lon": 1.0, "elevation_ft": 100.0}])
+        assert icao_to_coords("ZZONE") == (1.0, 1.0)
+        set_custom_airports([{"icao": "ZZTWO", "name": "Zwei", "lat": 2.0, "lon": 2.0, "elevation_ft": 200.0}])
+        assert icao_to_coords("ZZONE") is None  # alter Eintrag komplett ersetzt, nicht gemergt
+        assert icao_to_coords("ZZTWO") == (2.0, 2.0)
+
+    def test_icao_to_coords_and_elevation_resolve_custom_airport(self):
+        set_custom_airports([
+            {"icao": "ZZTEST", "name": "Test", "lat": 12.3456, "lon": 45.6789, "elevation_ft": 500.0},
+        ])
+        assert icao_to_coords("ZZTEST") == (12.3456, 45.6789)
+        assert icao_to_coords("zztest") == (12.3456, 45.6789)  # case-insensitive
+        assert airport_elevation_ft("ZZTEST") == 500.0
+
+    def test_icao_to_coords_custom_airport_unknown_elevation(self):
+        set_custom_airports([
+            {"icao": "ZZUNK", "name": "Unbekannt", "lat": 12.0, "lon": 45.0, "elevation_ft": None},
+        ])
+        assert icao_to_coords("ZZUNK") == (12.0, 45.0)
+        assert airport_elevation_ft("ZZUNK") is None
+
+    def test_nearest_airport_icao_finds_custom_airport_within_radius(self):
+        # Abgelegene Koordinate (Antarktis) -> kein realer Flugplatz in der Naehe.
+        set_custom_airports([
+            {"icao": "ZZREM", "name": "Remote", "lat": -80.0, "lon": 0.0, "elevation_ft": 50.0},
+        ])
+        assert nearest_airport_icao(-80.001, 0.001, 1.0) == "ZZREM"
+
+    def test_nearest_airport_icao_fast_finds_custom_airport_within_radius(self):
+        set_custom_airports([
+            {"icao": "ZZREM", "name": "Remote", "lat": -80.0, "lon": 0.0, "elevation_ft": 50.0},
+        ])
+        assert nearest_airport_icao_fast(-80.001, 0.001, 1.0) == "ZZREM"
+
+    def test_nearest_airport_prefers_closer_of_both_sources(self):
+        # Custom-Platz EXAKT an EDDKs Koordinaten (Distanz 0) -> bei Gleichstand gewinnt Custom
+        # (dokumentierte Nachrang-Reihenfolge, s. geo.py-Kommentare).
+        eddk_lat, eddk_lon = icao_to_coords("EDDK")
+        set_custom_airports([
+            {"icao": "ZZCLOSE", "name": "Genau an EDDK", "lat": eddk_lat, "lon": eddk_lon, "elevation_ft": 1.0},
+        ])
+        assert nearest_airport_icao(eddk_lat, eddk_lon, 5.0) == "ZZCLOSE"
+        assert nearest_airport_icao_fast(eddk_lat, eddk_lon, 5.0) == "ZZCLOSE"
+
+    def test_is_known_in_airportsdata_true_for_real_airport(self):
+        # Fund dieser Session: EDXU (Huettenbusch) war faelschlich als "fehlend" vermutet
+        # worden, steckte aber schon in airportsdata -> Plausipruefung (#50) muss das erkennen.
+        assert is_known_in_airportsdata("EDXU") is True
+        assert is_known_in_airportsdata("eddk") is True
+
+    def test_is_known_in_airportsdata_false_for_custom_placeholder(self):
+        assert is_known_in_airportsdata("ZZSALZ") is False
 
 

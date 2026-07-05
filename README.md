@@ -497,10 +497,10 @@ FriesenSpy/
 │   ├── main.py        # FastAPI-App, REST + SSE-Endpoints
 │   ├── config.py      # pydantic-settings (liest config.env)
 │   ├── database.py    # SQLite WAL, alle DB-Funktionen (inkl. canonicalize_legs, flight_cache, app_settings, Pilots-CRUD)
-│   ├── gps_legs.py    # Reiner GPS-Leg-Detektor (Abheben/Landung aus Positionen, ohne DB) + collapse_same_airport
+│   ├── gps_legs.py    # Reiner GPS-Leg-Detektor (Abheben/Landung aus Positionen, ohne DB) + collapse_same_airport; Spawn-Startplatz- und Landungs-Rettungs-Guards (#49/#53)
 │   ├── vatsim.py      # VATSIM-API-Client + Callsign-Filter
 │   ├── statsim.py     # StatSim API-Client (historische Flüge)
-│   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline), Event-Filter
+│   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline) + custom_airports (#50), Event-Filter
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
 │   ├── badge.py       # Badge-Rendering mit Pillow (Sieger-Badge + Medaille, data/badges/-Cache)
 │   ├── calendar_sync.py # FriesenFlieger Google-Kalender (iCal-Parser, alle 6h via Poller)

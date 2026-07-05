@@ -1,5 +1,18 @@
 [
   {
+    "version": "8.5.0",
+    "date": "2026-07-05",
+    "title": "Startplatz-Erkennung, Ergänzungs-Flugplätze, saubere Flugzeugtypen",
+    "highlight": true,
+    "items": [
+      "🛫 GPS-Legs, deren Aufzeichnung erst im Steigflug direkt über dem Abflugplatz beginnt (typisch bei StatSim), erkennen jetzt den Startplatz, statt ihn bedingungslos leer zu lassen.",
+      "🗺️ Neue Admin-Verwaltung für Ergänzungs-Flugplätze, die in der Standard-Flugplatzdatenbank fehlen (z. B. Segelfluggelände ohne offizielle Kennung) — inkl. sechs bereits bekannter Plätze und einer Plausiprüfung gegen Doppel-Einträge.",
+      "✈️ Flugzeugtyp-Felder werden jetzt konsequent normalisiert (kein „C172/L“ mehr statt „C172“), inkl. Nachnormalisierung aller Bestandsflüge.",
+      "🧹 Der Vermutungs-Fallback auf den zuletzt geflogenen Flugzeugtyp ohne Flugplan wurde entfernt — er konnte einen Typ aus der Zukunft des jeweiligen Fluges zeigen. Ohne Flugplan bleibt das Muster jetzt ehrlich leer statt geraten.",
+      "🛬 GPS-Tracks, die kurz vor der Landeschwelle abbrechen, aber tief über einem Flugplatz enden, werden jetzt als gelandet gewertet — mit Schutz gegen fälschliches Schließen eines gerade laufenden Anflugs."
+    ]
+  },
+  {
     "version": "8.4.2",
     "date": "2026-07-05",
     "title": "Events- und Statistik-Ansicht zeigten unterschiedliche Flugpläne",

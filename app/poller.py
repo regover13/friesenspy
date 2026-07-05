@@ -27,8 +27,8 @@ from app.database import (
     cid_for_callsign,
     get_ts_consent,
     get_ts_push_subscriptions,
-    last_known_aircraft,
     load_prefile_sigs,
+    normalize_type_code,
     open_flight,
     rebuild_flight_cache,
     remove_live_position,
@@ -352,10 +352,6 @@ class VatsimPoller:
         # Typcodes, für die in dieser Prozess-Lebensdauer bereits eine Auto-Recherche lief —
         # verhindert Wiederholungen/Kosten.
         self._payload_research_attempted: set[str] = set()
-        # cid → (aircraft_short, aircraft_icao) aus früheren Flügen — Typ-Fallback für
-        # Piloten ohne Flugplan (der Feed führt den Typ nur im flight_plan). Prozess-Cache,
-        # damit nicht jeder Poll die flights-Tabelle abfragt.
-        self._last_type_cache: dict[int, tuple[str, str]] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -598,25 +594,31 @@ class VatsimPoller:
 
             conn = get_connection(self.db_path)
             try:
-                # Typ-Fallback ohne Flugplan (vatsim-radar-Prinzip): der öffentliche Feed
-                # führt den Flugzeugtyp NUR im flight_plan. Ohne Plan nehmen wir das
-                # Prefile des Piloten bzw. sein zuletzt gefiltes Muster aus früheren
-                # Flügen — damit funktionieren Anzeige und Kutter-Zuladung auch ohne Plan.
+                # Typ-Fallback ohne Live-Flugplan (vatsim-radar-Prinzip): der öffentliche Feed
+                # führt den Flugzeugtyp NUR im flight_plan. Ohne Live-Plan nehmen wir das
+                # Prefile des Piloten (falls vorhanden) — damit funktionieren Anzeige und
+                # Kutter-Zuladung auch ohne Live-Plan. #52: KEIN Fallback mehr auf frühere
+                # eigene Flüge (last_known_aircraft war zeitlich blind — lieferte teils den
+                # GLOBAL neuesten gefileten Typ, auch aus der Zukunft des aktuellen Legs; der
+                # VATSIM-Feed führt ohne Flugplan grundsätzlich KEINE Typ-Info). Ohne
+                # Plan/Prefile bleibt der Typ ehrlich leer statt geraten.
                 for cid, pos in current.items():
+                    if not pos.get("aircraft_short"):
+                        fp = (current_map.get(cid) or {}).get("flight_plan") or {}
+                        short = fp.get("aircraft_short") or (fp.get("aircraft") or "").split("/")[0]
+                        icao = fp.get("aircraft_icao") or short
+                        if short:
+                            pos["aircraft"] = pos["aircraft_short"] = short
+                            pos["aircraft_icao"] = icao or short
+                    # #51: aircraft_short/aircraft_icao IMMER normalisieren — Composite-Strings
+                    # ("AS65/L-SDGY/S") kommen manchmal schon roh im aircraft_short-Feld des
+                    # VATSIM-Feeds selbst an (nicht nur im zusammengesetzten aircraft-Feld).
+                    # Zentral hier, damit alle nachgelagerten Schreiber (open_flight,
+                    # update_flight_plan, Refile-Split) automatisch einen sauberen Typ bekommen.
                     if pos.get("aircraft_short"):
-                        continue
-                    fp = (current_map.get(cid) or {}).get("flight_plan") or {}
-                    short = fp.get("aircraft_short") or (fp.get("aircraft") or "").split("/")[0]
-                    icao = fp.get("aircraft_icao") or short
-                    if not short:
-                        cached = self._last_type_cache.get(cid)
-                        if cached is None:
-                            cached = last_known_aircraft(conn, cid)
-                            self._last_type_cache[cid] = cached
-                        short, icao = cached
-                    if short:
-                        pos["aircraft"] = pos["aircraft_short"] = short
-                        pos["aircraft_icao"] = icao or short
+                        pos["aircraft_short"] = pos["aircraft"] = normalize_type_code(pos["aircraft_short"])
+                    if pos.get("aircraft_icao"):
+                        pos["aircraft_icao"] = normalize_type_code(pos["aircraft_icao"])
 
                 # 2a. Newly online pilots
                 for cid in newly_online:
@@ -862,7 +864,7 @@ class VatsimPoller:
 
                 # Neu gesehene Flugzeugtypen: Zuladung automatisch recherchieren + vorbefüllen
                 # (Admin kann die Werte jederzeit überschreiben; source='llm' kennzeichnet sie).
-                from app.database import get_payload_map, normalize_type_code
+                from app.database import get_payload_map
                 known_types = set(get_payload_map(conn).keys())
                 new_codes = []
                 for pos in current.values():

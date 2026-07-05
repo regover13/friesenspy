@@ -183,21 +183,18 @@ class TestFormParity:
         assert flight["block_min"] >= flight["duration_min"]
 
 
-class TestAircraftFallback:
-    def test_no_plan_at_all_falls_back_to_last_known_aircraft(self):
-        """UI-Feedback 2026-07-04: GPS-Legs ohne Plan-Match zeigten Aircraft leer, obwohl der
-        #11-Fallback (last_known_aircraft) existiert. Nutzer-Entscheidung 2026-07-05
-        (zeitbasierte Flugplan-Zuordnung): der alte Test simulierte "kein Plan-Match" ueber
-        einen abweichenden Startplatz (ZZZZ) -- das matcht unter der neuen Zeit-Regel jetzt
-        BEWUSST (ZZZZ ist ein echter, wenn auch unspezifischer, gefileter Plan). Um "wirklich
-        kein Plan vorhanden" zu testen, muss die aktuelle Session-Zeile GENUINE leer sein
-        (departure UND arrival beide "") -- nur dann liefert _flightplan_asof weiterhin None.
-        last_known_aircraft schaut unabhaengig vom Abfrage-Zeitfenster in die GESAMTE
-        flights-Tabelle -> eine aeltere, laengst geschlossene Session (weit vor WINDOW) mit
-        PA28 liefert den Fallback-Wert."""
+class TestNoAircraftWithoutPlan:
+    def test_no_plan_at_all_leaves_aircraft_none(self):
+        """Nutzer-Entscheidung 2026-07-05 (#52): last_known_aircraft war zeitlich blind (holte
+        den GLOBAL neuesten gefileten Typ, auch aus der Zukunft des Legs -- Fund cid 1273634).
+        Der VATSIM-Feed fuehrt ohne Flugplan grundsaetzlich KEINE Typ-Info (live verifiziert).
+        Fallback komplett entfernt: GPS-Legs ohne Plan-Match zeigen aircraft=None statt eines
+        (moeglicherweise falschen) geratenen Typs -- auch wenn eine aeltere, laengst
+        geschlossene Session desselben Piloten einen Typ kennt."""
         conn = _make_conn()
         cid = 4310
-        # Aeltere, abgeschlossene Session (weit vor WINDOW) -- fuer last_known_aircraft.
+        # Aeltere, abgeschlossene Session (weit vor WINDOW) -- darf NICHT mehr als Fallback
+        # herangezogen werden (frueher: last_known_aircraft).
         _insert_flight(
             conn, cid=cid, callsign="FRS40", aircraft_short="PA28",
             departure="EDDL", arrival="EDDK",
@@ -217,7 +214,112 @@ class TestAircraftFallback:
 
         flight = next(f for f in result if f["cid"] == cid and f["gps_departure"] == "EDDK")
         assert flight["id"] is None  # kein Plan-Match (Connect ohne Plan zaehlt nicht, Spec)
-        assert flight["aircraft"] == "PA28"  # last_known_aircraft-Fallback (#11)
+        assert flight["aircraft"] is None  # #52: kein Vermutungs-Fallback mehr
+
+
+class TestGpsRescueLiveGuard:
+    """#53 in der vollen canonicalize_legs-Pipeline: Landungs-Rettung am Track-Ende, mit dem
+    quellenabhängigen Live-Guard (FriesenSpy kann live sein, StatSim ist immer beendet).
+    Nutzt EDDK (302 ft) als Zielplatz — Track endet dort airborne mit gs>2 (Cutoff-Fall,
+    reale Anker EDMH/EDXF/ETHB/ENVA/LOIK dieser Session)."""
+
+    def _iso(self, dt) -> str:
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _seed_cutoff_track(self, conn, cid, callsign, base):
+        """Abheben EDDK, Reiseflug, dann Rückkehr zu EDDK mit gs=6 (Cutoff VOR der
+        gs<2-Landeschwelle) als letzter Punkt — 34 min nach ``base``."""
+        from datetime import timedelta
+        _insert_pos(conn, cid, self._iso(base), *EDDK, 302, 0, callsign)
+        _insert_pos(conn, cid, self._iso(base + timedelta(minutes=1)), *EDDK, 302, 10, callsign)
+        _insert_pos(conn, cid, self._iso(base + timedelta(minutes=2)), *EDDK, 1200, 80, callsign)
+        _insert_pos(conn, cid, self._iso(base + timedelta(minutes=10)), 52.0, 8.0, 5000, 120, callsign)
+        _insert_pos(conn, cid, self._iso(base + timedelta(minutes=34)), *EDDK, 552, 6, callsign)
+
+    def test_friesenspy_recent_open_leg_stays_open_within_live_window(self):
+        """Letzter Punkt < 15 min alt (Live-Fenster) → KEINE Rettung, Leg bleibt offen (ein
+        gerade laufender Anflug darf nicht fälschlich geschlossen werden)."""
+        from datetime import timedelta, timezone as _tz
+        from datetime import datetime as _dt
+        now = _dt.now(_tz.utc)
+        base = now - timedelta(minutes=40)  # letzter Punkt: base+34min = now-6min (< 15 min alt)
+        conn = _make_conn()
+        cid = 7001
+        _insert_flight(
+            conn, cid=cid, callsign="FRS70", departure="", arrival="",
+            logon_time=self._iso(base), logoff_time=None,
+        )
+        self._seed_cutoff_track(conn, cid, "FRS70", base)
+        conn.commit()
+
+        result = canonicalize_legs(
+            conn, callsign_prefix="FRS",
+            start=self._iso(now - timedelta(hours=2)), end=self._iso(now + timedelta(hours=1)),
+        )
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid)
+        assert flight["gps_arrival"] is None
+        assert flight["logoff_time"] is None
+
+    def test_friesenspy_old_open_leg_gets_rescued(self):
+        """Letzter Punkt > 15 min alt (außerhalb Live-Fenster) → Rettung greift, Leg wird mit
+        korrekten Metriken (landing_ts = letzter Punkt) geschlossen."""
+        from datetime import timedelta, timezone as _tz
+        from datetime import datetime as _dt
+        now = _dt.now(_tz.utc)
+        base = now - timedelta(minutes=60)  # letzter Punkt: base+34min = now-26min (> 15 min alt)
+        conn = _make_conn()
+        cid = 7002
+        _insert_flight(
+            conn, cid=cid, callsign="FRS71", departure="", arrival="",
+            logon_time=self._iso(base), logoff_time=None,
+        )
+        self._seed_cutoff_track(conn, cid, "FRS71", base)
+        conn.commit()
+
+        result = canonicalize_legs(
+            conn, callsign_prefix="FRS",
+            start=self._iso(now - timedelta(hours=2)), end=self._iso(now + timedelta(hours=1)),
+        )
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid)
+        assert flight["gps_arrival"] == "EDDK"
+        assert flight["logoff_time"] == self._iso(base + timedelta(minutes=34))
+        assert flight["duration_min"] == 32  # Abheben (base+2min) -> Rettung (base+34min)
+
+    def test_statsim_track_end_always_rescues_regardless_of_recency(self):
+        """StatSim-Aufzeichnung ist immer beendet (kein Live-Konzept) — Rettung greift auch,
+        wenn der letzte Punkt erst wenige Minuten alt ist. statsim_cache.logoff_time ist
+        gesetzt (StatSim kennt die Landung selbst), nur die GPS-Positionen erreichen die
+        gs<2-Schwelle nicht (realer Anker dieser Session: EDMH/EDXF/ETHB/ENVA/LOIK)."""
+        from datetime import timedelta, timezone as _tz
+        from datetime import datetime as _dt
+        now = _dt.now(_tz.utc)
+        base = now - timedelta(minutes=6)  # letzter Trackpunkt liegt bei "now" (< 15 min alt)
+        conn = _make_conn()
+        cid = 7003
+        statsim_id = 900001
+        _insert_statsim(
+            conn, statsim_id, cid=cid, callsign="FRS72", departure="", arrival="EDDK",
+            aircraft="C172", logon_time=self._iso(base), logoff_time=self._iso(now), duration_min=6,
+        )
+        _insert_statsim_pos(conn, statsim_id, self._iso(base), *EDDK, 302, 0)
+        _insert_statsim_pos(conn, statsim_id, self._iso(base + timedelta(minutes=1)), *EDDK, 1200, 80)
+        _insert_statsim_pos(conn, statsim_id, self._iso(base + timedelta(minutes=3)), 52.0, 8.0, 5000, 120)
+        _insert_statsim_pos(conn, statsim_id, self._iso(now), *EDDK, 552, 6)  # Cutoff, gs=6
+        conn.commit()
+
+        result = canonicalize_legs(
+            conn, callsign_prefix="FRS",
+            start=self._iso(now - timedelta(hours=1)), end=self._iso(now + timedelta(hours=1)),
+        )
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid and f["source"] == "statsim")
+        assert flight["gps_arrival"] == "EDDK"
+        assert flight["logoff_time"] == self._iso(now)
 
 
 class TestStatsimCallsignFallback:

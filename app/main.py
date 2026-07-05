@@ -75,7 +75,12 @@ from app.database import (
     upsert_cargo_catalog,
     delete_cargo_catalog,
     transport_quips_enabled,
+    list_custom_airports,
+    upsert_custom_airport,
+    delete_custom_airport,
+    rebuild_flight_cache,
 )
+from app import geo
 from app.geo import filter_event_pilots
 from app.poller import VatsimPoller, create_poller, send_web_push
 from app.statsim import fetch_flight_track, fetch_pilot_flights
@@ -153,6 +158,11 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.LOG_LEVEL)
     init_db(settings.DB_PATH)
+    conn = get_connection(settings.DB_PATH)
+    try:
+        geo.set_custom_airports(list_custom_airports(conn))  # #50: Ergänzungs-Flugplätze laden
+    finally:
+        conn.close()
     poller = create_poller()
     app.state.poller = poller
     await poller.start()
@@ -1955,6 +1965,80 @@ async def admin_set_default_payload(request: Request):
         set_app_setting(conn, "transport_default_payload_kg", str(value))
         conn.commit()
         return {"status": "ok", "default_kg": value}
+    finally:
+        conn.close()
+
+
+def _rebuild_and_reload_custom_airports(conn) -> None:
+    """Nach jedem Admin-Write auf custom_airports: geo-Cache neu befüllen (Invalidierung =
+    Neuaufruf) und einen vollen flight_cache-Rebuild anstoßen — der inkrementelle Refresh
+    (#30, `_FLIGHT_CACHE_INCREMENTAL_DAYS`) fasst nur die letzten 7 Tage an, ein neuer/geänderter
+    Platz muss aber auch ältere, bislang fälschlich offene Flüge neu erkennen lassen (#50)."""
+    geo.set_custom_airports(list_custom_airports(conn))
+    rebuild_flight_cache(conn, full=True)
+
+
+@app.get("/api/admin/airports")
+async def admin_get_airports(request: Request):
+    """Alle Ergänzungs-Flugplätze (Plätze, die in airportsdata fehlen)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return {"airports": list_custom_airports(conn)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/airports")
+async def admin_upsert_airport(request: Request):
+    """Ergänzungs-Flugplatz speichern: icao (Pflicht), lat/lon (Pflicht), name/elevation_ft optional."""
+    require_admin(request)
+    body = await request.json()
+    icao = str(body.get("icao") or "").strip()
+    if not icao:
+        raise HTTPException(status_code=400, detail="icao erforderlich")
+    # Plausiprüfung (#50): custom_airports darf nie einen Platz duplizieren, der bereits in
+    # airportsdata bekannt ist (Fund: EDXU/Hüttenbusch war fälschlich als "fehlend" vermutet
+    # worden, steckte aber schon in der Standard-Datenbank).
+    if geo.is_known_in_airportsdata(icao):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{icao.upper()} ist bereits in airportsdata bekannt — kein Ergänzungs-Eintrag nötig",
+        )
+    try:
+        lat = float(body.get("lat"))
+        lon = float(body.get("lon"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="lat/lon (Zahlen) erforderlich")
+    elev_raw = body.get("elevation_ft")
+    try:
+        elevation_ft = float(elev_raw) if elev_raw is not None and str(elev_raw) != "" else None
+    except (TypeError, ValueError):
+        elevation_ft = None
+
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        upsert_custom_airport(
+            conn, icao, name=(body.get("name") or None), lat=lat, lon=lon,
+            elevation_ft=elevation_ft,
+        )
+        conn.commit()
+        _rebuild_and_reload_custom_airports(conn)
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/airports/{icao}")
+async def admin_delete_airport(icao: str, request: Request):
+    """Löscht einen Ergänzungs-Flugplatz."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        delete_custom_airport(conn, icao)
+        conn.commit()
+        _rebuild_and_reload_custom_airports(conn)
+        return {"status": "ok"}
     finally:
         conn.close()
 

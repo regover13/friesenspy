@@ -18,6 +18,39 @@ def _airports_icao() -> dict:
     return _AIRPORTS_ICAO
 
 
+# Ergänzungs-Flugplätze (#50) — Plätze, die in airportsdata fehlen (z. B. Segelfluggelände ohne
+# offizielle ICAO-Kennung), admin-pflegbar über app.database.custom_airports. geo.py bleibt bewusst
+# DB-frei: der Aufrufer (main.py-Lifespan, Admin-Endpoints) befüllt diesen Cache per Push über
+# set_custom_airports() — Invalidierung ist einfach ein erneuter Aufruf, kein DB-Zugriff hier.
+# Wert-Tupel: (lat, lon, elevation_ft | None).
+_CUSTOM_AIRPORTS: dict[str, tuple[float, float, float | None]] = {}
+
+
+def set_custom_airports(rows: list[dict]) -> None:
+    """Ersetzt den Ergänzungs-Flugplatz-Cache komplett (Invalidierung = Neuaufruf).
+
+    ``rows`` wie von :func:`app.database.list_custom_airports` geliefert (Keys: ``icao``, ``lat``,
+    ``lon``, ``elevation_ft``). Codes werden uppercase gespeichert (Lookups sind case-insensitive).
+    """
+    global _CUSTOM_AIRPORTS
+    _CUSTOM_AIRPORTS = {
+        (r["icao"] or "").upper(): (r["lat"], r["lon"], r.get("elevation_ft"))
+        for r in rows
+        if r.get("icao") and r.get("lat") is not None and r.get("lon") is not None
+    }
+
+
+def is_known_in_airportsdata(icao: str) -> bool:
+    """True wenn ``icao`` bereits in der Standard-Datenbank (airportsdata) existiert —
+    UNABHÄNGIG von custom_airports. Für die Admin-Plausiprüfung (#50): ein Ergänzungs-Eintrag
+    darf nie einen Platz duplizieren, der schon offiziell bekannt ist (Fund: EDXU/Hüttenbusch
+    steckte bereits in airportsdata, war fälschlich als „fehlend" vermutet worden)."""
+    try:
+        return _airports_icao().get((icao or "").upper()) is not None
+    except Exception:
+        return False
+
+
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Berechnet Großkreis-Distanz zwischen zwei Koordinaten in km.
@@ -67,11 +100,14 @@ def icao_to_coords(icao: str) -> tuple[float, float] | None:
     try:
         airports = _airports_icao()
         airport = airports.get(icao_upper)
-        if airport is None:
-            return None
-        return (airport["lat"], airport["lon"])
+        if airport is not None:
+            return (airport["lat"], airport["lon"])
     except Exception:
         return None
+    custom = _CUSTOM_AIRPORTS.get(icao_upper)
+    if custom is not None:
+        return (custom[0], custom[1])
+    return None
 
 
 def filter_event_pilots(
@@ -159,6 +195,12 @@ def nearest_airport_icao(lat: float, lon: float, max_km: float) -> str | None:
         d = haversine(lat, lon, alat, alon)
         if d <= best_d:
             best, best_d = icao, d
+    # Ergänzungs-Flugplätze (#50) NACH airportsdata vergleichen — bei exaktem Distanz-
+    # Gleichstand gewinnt Custom (gleiche Nachrang-Reihenfolge wie in nearest_airport_icao_fast).
+    for icao, (alat, alon, _elev) in _CUSTOM_AIRPORTS.items():
+        d = haversine(lat, lon, alat, alon)
+        if d <= best_d:
+            best, best_d = icao, d
     return best
 
 
@@ -234,6 +276,14 @@ def nearest_airport_icao_fast(lat: float, lon: float, max_km: float) -> str | No
         d = haversine(lat, lon, alat, alon)
         if d <= best_d:
             best, best_d = icao, d
+    # Ergänzungs-Flugplätze (#50): nicht ins Grid einsortiert (würde die Cache-/Tie-Break-
+    # Invariante der Funktion stören), stattdessen linear nachgeprüft — die Custom-Liste ist
+    # klein (< 50 Einträge), das ist trivial. NACH airportsdata verglichen (identische
+    # Nachrang-Reihenfolge wie nearest_airport_icao) → bei Distanz-Gleichstand gewinnt Custom.
+    for icao, (alat, alon, _elev) in _CUSTOM_AIRPORTS.items():
+        d = haversine(lat, lon, alat, alon)
+        if d <= best_d:
+            best, best_d = icao, d
     return best
 
 
@@ -243,13 +293,15 @@ def airport_elevation_ft(icao: str) -> float | None:
     Verwendet das ``"elevation"``-Feld aus airportsdata (bereits in Fuß). ICAO ist
     case-insensitive (wie :func:`icao_to_coords`).
     """
+    icao_upper = icao.upper()
     try:
-        airport = _airports_icao().get(icao.upper())
+        airport = _airports_icao().get(icao_upper)
     except Exception:
         return None
-    if airport is None:
-        return None
-    elev = airport.get("elevation")
-    if elev is None:
-        return None
-    return float(elev)
+    if airport is not None:
+        elev = airport.get("elevation")
+        return float(elev) if elev is not None else None
+    custom = _CUSTOM_AIRPORTS.get(icao_upper)
+    if custom is not None and custom[2] is not None:
+        return float(custom[2])
+    return None

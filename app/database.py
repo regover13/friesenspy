@@ -249,6 +249,15 @@ CREATE TABLE IF NOT EXISTS aircraft_payloads (
     updated_at  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS custom_airports (
+    icao          TEXT PRIMARY KEY,     -- ICAO ODER Platzhalter-Code (z. B. "ZZSALZ", kein echter ICAO)
+    name          TEXT,                 -- reine Anzeige, keine Funktionswirkung
+    lat           REAL NOT NULL,
+    lon           REAL NOT NULL,
+    elevation_ft  REAL,                 -- NULL wenn unbekannt (macht Rettung/Spawn-Guard konservativ)
+    updated_at    TEXT
+);
+
 CREATE TABLE IF NOT EXISTS flight_cache (
     cache_id          INTEGER PRIMARY KEY AUTOINCREMENT,
     id                INTEGER,              -- Flugplan-/Connection-id aus canonicalize_legs (kann NULL sein)
@@ -462,6 +471,10 @@ def init_db(db_path: str) -> None:
             seed_cargo_catalog(conn)  # Frachtart-Katalog erstbefüllen (idempotent)
         except sqlite3.OperationalError:
             pass
+        try:
+            seed_custom_airports(conn)  # Ergänzungs-Flugplätze erstbefüllen (idempotent, #50)
+        except sqlite3.OperationalError:
+            pass
         # Alt-Daten: statsim_cache.aircraft vor #44 (v8.3.0) unnormalisiert gespeichert
         # (Composite-String wie "A320/M-SDE3FGHIRWY/LB1" statt kurzem ICAO-Typ "A320").
         # Der Ingestion-Fix (app/statsim.py:_normalize_flight) heilt nur Zeilen, die
@@ -473,6 +486,22 @@ def init_db(db_path: str) -> None:
             conn.execute(
                 "UPDATE statsim_cache SET aircraft = substr(aircraft, 1, instr(aircraft, '/') - 1) "
                 "WHERE aircraft LIKE '%/%'"
+            )
+        except sqlite3.OperationalError:
+            pass
+        # Alt-Daten: flights.aircraft_short/aircraft_icao vor #51 (v8.5.0) unnormalisiert
+        # gespeichert — der VATSIM-Feed liefert das Feld manchmal schon als Composite-String
+        # ("AS65/L-SDGY/S" statt "AS65"). Der Ingestion-Fix (app/poller.py) heilt nur künftig
+        # neu geschriebene Zeilen; einmalige, idempotente Nachnormalisierung der Bestandszeilen
+        # (analog zur statsim_cache-Migration oben, WHERE greift nach dem ersten Lauf nicht mehr).
+        try:
+            conn.execute(
+                "UPDATE flights SET aircraft_short = substr(aircraft_short, 1, instr(aircraft_short, '/') - 1) "
+                "WHERE aircraft_short LIKE '%/%'"
+            )
+            conn.execute(
+                "UPDATE flights SET aircraft_icao = substr(aircraft_icao, 1, instr(aircraft_icao, '/') - 1) "
+                "WHERE aircraft_icao LIKE '%/%'"
             )
         except sqlite3.OperationalError:
             pass
@@ -653,23 +682,6 @@ def open_flight(
             (row[0],),
         )
     return row[0]  # type: ignore[return-value]
-
-
-def last_known_aircraft(conn: sqlite3.Connection, cid: int) -> tuple[str, str]:
-    """Zuletzt bekanntes Muster eines Piloten aus früheren Flügen: (aircraft_short, aircraft_icao).
-
-    Fallback für Piloten OHNE Flugplan: der öffentliche VATSIM-Feed führt den Flugzeugtyp
-    ausschließlich im ``flight_plan`` (C1-Analyse) — wie vatsim-radar erinnern wir uns
-    deshalb an das zuletzt gefilte Muster desselben Piloten. ``("", "")`` wenn unbekannt.
-    """
-    row = conn.execute(
-        "SELECT aircraft_short, aircraft_icao FROM flights "
-        "WHERE cid = ? AND aircraft_short != '' ORDER BY logon_time DESC LIMIT 1",
-        (cid,),
-    ).fetchone()
-    if row is None:
-        return ("", "")
-    return (row[0] or "", row[1] or "")
 
 
 def close_stale_flights(conn: sqlite3.Connection, max_age_hours: int = 8) -> int:
@@ -1917,6 +1929,12 @@ def _statsim_plan(row: dict) -> dict:
 
 
 _GPS_LEG_GAP_MINUTES = 30  # muss zum gap_minutes-Default von detect_gps_legs passen
+# Live-Guard für die Landungs-Rettung (#53): ein FriesenSpy-Leg, dessen letzter Punkt jünger als
+# dieses Fenster ist, gilt als (noch) live und wird NICHT gerettet — sonst würde ein gerade
+# laufender Anflug fälschlich als abgeschlossen gewertet. Deckt sich mit dem Live-Fenster im
+# Frontend (``_LIVE_MAX_AGE_MS``, app/static/index.html). StatSim-Aufzeichnungen sind IMMER
+# beendet (kein "live"-Konzept) und werden ohne dieses Fenster gerettet.
+_GPS_RESCUE_LIVE_WINDOW_MIN = 15
 
 
 def _gps_flights_for_positions(
@@ -1952,11 +1970,19 @@ def _gps_flights_for_positions(
     from app import geo
     from app.gps_legs import detect_gps_legs, collapse_same_airport
 
+    # #53: StatSim-Aufzeichnungen sind immer beendet -> immer retten (rescue_before=None).
+    # FriesenSpy-Tracks können live sein -> nur retten, wenn der letzte Punkt außerhalb des
+    # Live-Fensters liegt (sonst würde ein laufender Anflug fälschlich geschlossen).
+    rescue_before = None if source == "statsim" else (
+        datetime.now(timezone.utc) - timedelta(minutes=_GPS_RESCUE_LIVE_WINDOW_MIN)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     legs = detect_gps_legs(
         positions,
         nearest_airport=geo.nearest_airport_icao_fast,
         airport_elev_ft=geo.airport_elevation_ft,
         radius_km=radius_km if radius_km is not None else _BUMMEL_AIRPORT_RADIUS_KM,
+        rescue_before=rescue_before,
     )
     gps_flights = collapse_same_airport(legs)
     if not gps_flights:
@@ -2274,18 +2300,11 @@ def canonicalize_legs(
             positions, plan_rows=rows, source="friesenspy", radius_km=radius_km
         )
         if gps_flights:
-            fallback_aircraft: tuple[str, str] | None = None
             for f in gps_flights:
                 f["cid"] = cid
-                if not f.get("aircraft"):
-                    # #11-Fallback: kein Plan-Match (GPS-only-Leg) -> zuletzt bekanntes Muster
-                    # des Piloten, statt Aircraft leer zu lassen.
-                    if fallback_aircraft is None:
-                        fallback_aircraft = last_known_aircraft(conn, cid)
-                    short, icao = fallback_aircraft
-                    f["aircraft"] = short or None
-                    if not f.get("aircraft_icao"):
-                        f["aircraft_icao"] = icao or None
+                # #52: kein Vermutungs-Fallback mehr — ohne Plan-Match (GPS-only-Leg) bleibt
+                # f["aircraft"] ehrlich None, statt einen (ggf. zeitlich falschen) Typ aus
+                # früheren Flügen des Piloten zu erraten.
                 coverage_end = f.pop("_coverage_end", None)
                 # last_pos_ts = Zeit der letzten belegten Position dieses Legs (statisch,
                 # NICHT „now"). Frontend leitet daraus „läuft" (offen UND frisch) ab und nutzt
@@ -2357,7 +2376,7 @@ def canonicalize_legs(
                 f["cid"] = row["cid"]
                 if not f.get("aircraft"):
                     # Kein Plan-Match (GPS-only-Leg): die statsim_cache-Zeile selbst kennt
-                    # den Typ bereits (row.aircraft) -> kein last_known_aircraft-Umweg noetig.
+                    # den Typ bereits (row.aircraft) -> kein Vermutungs-Fallback nötig (#52).
                     f["aircraft"] = row.get("aircraft") or None
                 if not f.get("callsign"):
                     # Kein Plan-Match (z. B. Spawn-in-der-Luft, dep_icao unbekannt) UND
@@ -3919,6 +3938,74 @@ def seed_cargo_catalog(conn: sqlite3.Connection) -> int:
             (name, emoji, mx, pos),
         )
     return len(_CARGO_SEED)
+
+
+# Reale, wiederholt angeflogene Plätze, die in ``airportsdata`` fehlen (Live-Funde 2026-07-05,
+# #50) — Segelfluggelände/UL-Felder ohne offizielle ICAO-Kennung bekommen einen Platzhalter-Code
+# (ZZSALZ). elevation_ft=None wo unbekannt (macht Spawn-Guard/#49 permissiv, Rettung/#53 konservativ).
+_CUSTOM_AIRPORTS_SEED: list[tuple[str, str, float, float, float | None]] = [
+    ("EDHD", "Eichsfeld Airfield", 51.409, 10.150, 1200.0),
+    ("LIVD", "Dobbiaco/Toblach", 46.727, 12.237, 3940.0),
+    ("EDLQ", "Beelen", 51.931, 8.085, 200.0),
+    ("EXHB", "UL-Flugfeld Gössenheim", 50.028, 9.771, 745.0),
+    ("ZZSALZ", "Segelfluggelände Salzwedel/Klein Gartz", 52.828, 11.316, 112.0),
+    ("CML5", "Region Thunder Bay, Ontario", 48.291, -89.543, 1118.0),
+]
+
+
+def seed_custom_airports(conn: sqlite3.Connection) -> int:
+    """Ergänzungs-Flugplätze erstbefüllen — NUR wenn die Tabelle leer ist (idempotent), damit
+    spätere Admin-Änderungen/-Löschungen nie durch einen Neustart überschrieben werden."""
+    if conn.execute("SELECT COUNT(*) FROM custom_airports").fetchone()[0]:
+        return 0
+    now = _now_utc()
+    for icao, name, lat, lon, elev in _CUSTOM_AIRPORTS_SEED:
+        conn.execute(
+            "INSERT INTO custom_airports (icao, name, lat, lon, elevation_ft, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (icao, name, lat, lon, elev, now),
+        )
+    return len(_CUSTOM_AIRPORTS_SEED)
+
+
+def list_custom_airports(conn: sqlite3.Connection) -> list[dict]:
+    """Alle Ergänzungs-Flugplätze (für die Admin-Tabelle), alphabetisch nach ICAO/Code."""
+    rows = conn.execute(
+        "SELECT icao, name, lat, lon, elevation_ft, updated_at FROM custom_airports ORDER BY icao"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_custom_airport(
+    conn: sqlite3.Connection,
+    icao: str,
+    *,
+    name: str | None,
+    lat: float,
+    lon: float,
+    elevation_ft: float | None,
+) -> str:
+    """Ergänzungs-Flugplatz setzen/aktualisieren. Code wird normalisiert gespeichert (Uppercase,
+    getrimmt) — beliebige Länge, kein echter ICAO-Code erforderlich (z. B. "ZZSALZ")."""
+    code = (icao or "").strip().upper()
+    if not code:
+        raise ValueError("icao darf nicht leer sein")
+    conn.execute(
+        """INSERT INTO custom_airports (icao, name, lat, lon, elevation_ft, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(icao) DO UPDATE SET
+               name=excluded.name, lat=excluded.lat, lon=excluded.lon,
+               elevation_ft=excluded.elevation_ft, updated_at=excluded.updated_at""",
+        (code, name, lat, lon, elevation_ft, _now_utc()),
+    )
+    return code
+
+
+def delete_custom_airport(conn: sqlite3.Connection, icao: str) -> int:
+    """Löscht einen Ergänzungs-Flugplatz. Gibt 1 zurück wenn eine Zeile gelöscht wurde, sonst 0."""
+    code = (icao or "").strip().upper()
+    cur = conn.execute("DELETE FROM custom_airports WHERE icao = ?", (code,))
+    return cur.rowcount
 
 
 # --- Lustige KI-Sprüche (Phase 2): Cache je Flug + Tagesend-Zusammenfassung ---
