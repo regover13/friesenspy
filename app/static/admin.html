@@ -1027,11 +1027,15 @@
           <div class="panel-title"><span>🔍 Erkennungslücken (Start/Landung)</span></div>
           <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
             Flüge, deren GPS-Start oder -Landung trotz bekanntem Flugplan fehlt — meist ein
-            Hinweis auf einen fehlenden Flugplatz oben. Wird der Platz ergänzt, verschwindet
-            der Flug automatisch. „Geprüft" blendet einen Einzelfall dauerhaft aus, wenn er
-            KEIN Datenfehler ist (z. B. Absturz oder abgerissene Aufzeichnung).
+            Hinweis auf einen fehlenden Flugplatz oben. Die Prüfung rechnet den GESAMTEN
+            Flugbestand neu durch und ist deshalb teuer (mehrere Sekunden) — sie lädt daher
+            NICHT automatisch beim Öffnen dieser Seite, sondern nur auf Klick. Wird ein Platz
+            ergänzt, verschwindet der betroffene Flug beim nächsten „Aktualisieren". „Geprüft"
+            blendet einen Einzelfall dauerhaft aus, wenn er KEIN Datenfehler ist (z. B. Absturz
+            oder abgerissene Aufzeichnung).
           </p>
-          <div id="dg-container" class="scroll-list"><div class="empty-hint">Lade Erkennungslücken…</div></div>
+          <button class="btn btn-sm" id="dg-refresh-btn" style="margin-bottom:10px;">🔍 Jetzt prüfen</button>
+          <div id="dg-container" class="scroll-list"><div class="empty-hint">Noch nicht geprüft.</div></div>
         </div>
 
       </div>
@@ -1191,7 +1195,9 @@
       loadPilots();
       loadKutterAdmin();
       loadCustomAirports();
-      loadDetectionGaps();
+      // Erkennungslücken NICHT automatisch laden -- der Check rechnet den gesamten
+      // Flugbestand neu durch (mehrere Sekunden) und läuft nur auf expliziten Klick
+      // ("🔍 Jetzt prüfen" / dg-refresh-btn).
       // Falls ein Backfill schon vor dem (Neu-)Laden dieser Seite lief (z. B. anderer Tab,
       // vorheriger Login) — Status sofort zeigen und Polling bei Bedarf fortsetzen.
       _pollStatsimBackfillStatus();
@@ -2365,12 +2371,20 @@
       toast('Flugplatz gespeichert.');
       ['ap-icao', 'ap-name', 'ap-lat', 'ap-lon', 'ap-elev'].forEach(i => document.getElementById(i).value = '');
       loadCustomAirports();
+      // Erkennungslücken nur neu laden, wenn die Liste schon einmal geöffnet wurde -- sonst
+      // würde jedes Flugplatz-Speichern ungefragt die teure Prüfung anstoßen (mehrere Sekunden).
+      if (_dgLoaded) loadDetectionGaps();
     });
 
     // ====================================================================
     // ERKENNUNGSLÜCKEN (v8.6.0)
     // ====================================================================
+    let _dgLoaded = false;  // true sobald einmal geladen -- nur dann lohnt sich ein Auto-Refresh
+
     async function loadDetectionGaps() {
+      _dgLoaded = true;
+      const c0 = document.getElementById('dg-container');
+      c0.innerHTML = '<div class="empty-hint">Prüfe…</div>';
       const res = await api('GET', '/api/admin/detection-gaps');
       if (!res || !res.ok) return;
       const d = await res.json();
@@ -2382,33 +2396,49 @@
         + '<th style="text-align:left;">Datum</th><th style="text-align:left;">Pilot</th>'
         + '<th style="text-align:left;">Callsign</th><th style="text-align:left;">Flugzeug</th>'
         + '<th style="text-align:left;">Plan-Strecke</th><th style="text-align:left;">GPS-Strecke</th>'
+        + '<th style="text-align:right;">Flugzeit</th>'
         + '<th style="text-align:left;">Fehlt</th><th style="text-align:left;">Quelle</th><th></th></tr></thead><tbody>'
         + rows.map(g => {
           const trackId = g.statsim_id || g.id;
+          // fast=1 + callsign/dep/arr direkt in der URL: index.html überspringt damit
+          // fetchStats()+openPilotFlights() (kompletter Statistik-/Piloten-Ladevorgang) und
+          // öffnet den Track direkt -- der Track selbst kommt ohnehin aus einem eigenen,
+          // leichten Endpoint (/api/flights/.../track bzw. /api/flights/statsim/.../track).
+          const dispCs  = g.callsign || '';
+          const dispDep = g.plan_departure || '';
+          const dispArr = g.plan_arrival || '';
           const href = trackId != null
-            ? `/#tab=statistiken&days=365&cid=${g.cid}&track=${trackId}&src=${g.source}`
+            ? `/#tab=statistiken&days=365&cid=${g.cid}&track=${trackId}&src=${g.source}&fast=1`
+              + `&callsign=${encodeURIComponent(dispCs)}&dep=${encodeURIComponent(dispDep)}`
+              + `&arr=${encodeURIComponent(dispArr)}`
             : `/#tab=statistiken&days=365&cid=${g.cid}`;
+          const pilotHref = `/#tab=statistiken&days=365&cid=${g.cid}`;
           return '<tr><td>' + fmtDt(g.logon_time) + '</td>'
             + '<td>' + escH(g.pilot_name || '—') + ' (' + g.cid + ')</td>'
             + '<td>' + escH(g.callsign || '—') + '</td><td>' + escH(g.aircraft || '—') + '</td>'
             + '<td>' + escH(g.plan_departure || '—') + ' → ' + escH(g.plan_arrival || '—') + '</td>'
             + '<td>' + escH(g.gps_departure || '—') + ' → ' + escH(g.gps_arrival || '—') + '</td>'
+            + '<td style="text-align:right;">' + (g.duration_min != null ? g.duration_min + ' min' : '—') + '</td>'
             + '<td>' + escH(missingTxt[g.missing] || g.missing) + '</td>'
             + '<td>' + escH(g.source || '—') + '</td>'
             + '<td style="white-space:nowrap;">'
             + '<a href="' + escA(href) + '" target="_blank" class="btn btn-sm">Ansehen</a> '
-            + '<button class="btn btn-sm" onclick="dgDismiss(' + g.cid + ',\'' + escA(g.logon_time) + '\')">✓ Geprüft</button>'
+            + '<a href="' + escA(pilotHref) + '" target="_blank" class="btn btn-sm">Pilot</a> '
+            + '<button class="btn btn-sm" onclick="dgDismiss(this,' + g.cid + ',\'' + escA(g.logon_time) + '\')">✓ Geprüft</button>'
             + '</td></tr>';
         }).join('')
         + '</tbody></table></div>';
     }
 
-    async function dgDismiss(cid, logonTime) {
+    async function dgDismiss(btn, cid, logonTime) {
+      btn.disabled = true;
       const res = await api('POST', '/api/admin/detection-gaps/dismiss', { cid, logon_time: logonTime });
-      if (!res || !res.ok) { toast('Fehler beim Markieren.', true); return; }
+      if (!res || !res.ok) { toast('Fehler beim Markieren.', true); btn.disabled = false; return; }
       toast('Als geprüft markiert.');
       loadDetectionGaps();
     }
+
+    document.getElementById('dg-refresh-btn').addEventListener('click', loadDetectionGaps);
 
     // ====================================================================
     // FRIESENKUTTER — Frachtart-Katalog + Sprüche-Schalter

@@ -1109,7 +1109,8 @@ Flug beim nächsten Laden automatisch verschwinden. Alle Endpoints erfordern das
       "pilot_name": "Max Muster", "callsign": "FRS96", "aircraft": "C172",
       "plan_departure": "EDST", "plan_arrival": "EDST",
       "gps_departure": null, "gps_arrival": null,
-      "missing": "both", "source": "statsim", "id": null, "statsim_id": 23617949
+      "missing": "both", "source": "statsim", "id": null, "statsim_id": 23617949,
+      "duration_min": 24
     }
   ]
 }

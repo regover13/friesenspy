@@ -2133,6 +2133,28 @@ class TestStatsimBackfillSelection:
         assert set(ids) == {701, 702}
         assert remaining == 2
 
+    def _cache_at(self, conn, sid, cid, logon_time, cs="FRS10", dur=60):
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id,cid,callsign,departure,arrival,aircraft,"
+            "logon_time,logoff_time,duration_min,fetched_at) VALUES "
+            "(?,?,?,'EDDK','EDDW','C172',?,'2026-07-02T10:50:00Z',?,'x')",
+            (sid, cid, cs, logon_time, dur),
+        )
+
+    def test_oldest_first_reverses_order(self):
+        """#61 (v8.6.1): Standard ist juengste zuerst -- oldest_first=True muss die aelteste
+        Zeile liefern, damit der Poller-Job Backlog-Starvation vermeiden kann."""
+        conn = _make_conn()
+        self._cache_at(conn, 801, 11, "2025-01-01T10:00:00Z")
+        self._cache_at(conn, 802, 11, "2026-06-01T10:00:00Z")
+        self._cache_at(conn, 803, 11, "2026-07-01T10:00:00Z")
+        conn.commit()
+        newest = get_uncached_statsim_ids(conn, callsign_prefix="", limit=1)
+        oldest = get_uncached_statsim_ids(conn, callsign_prefix="", limit=1, oldest_first=True)
+        conn.close()
+        assert newest == [803]
+        assert oldest == [801]
+
 
 # ---------------------------------------------------------------------------
 # _block_seconds_positions / _distance_nm_positions — reine Varianten (#23 Task 3)

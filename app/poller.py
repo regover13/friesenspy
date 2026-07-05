@@ -1081,7 +1081,8 @@ class VatsimPoller:
     # ------------------------------------------------------------------
 
     async def _fetch_statsim_tracks(self) -> None:
-        """Holt GPS-Tracks für die jüngsten noch ungecachten StatSim-Flüge nach.
+        """Holt GPS-Tracks für ungecachte StatSim-Flüge nach — je zur Hälfte jüngste UND
+        älteste zuerst.
 
         Kleine Batches (20/Lauf), gedrosselt (~0,3 s je Abruf) — kein Voll-Backfill (der
         bleibt eine Admin-Aktion, ``/api/admin/statsim-backfill``). Eine fehlschlagende
@@ -1092,6 +1093,13 @@ class VatsimPoller:
         Präfix entscheidet nur über die Wertung (Statistik/Bummel/Kutter), nicht darüber, ob
         ein Track nachgeladen wird. Sonst bleiben Fremd-Callsign-Flüge bekannter Piloten
         (z. B. bei einer anderen virtuellen Airline) dauerhaft ohne GPS-Split.
+
+        **Halb-und-halb-Split (v8.6.1, #61-Fund):** reine „jüngste zuerst"-Sortierung lässt
+        alten Backlog verhungern — solange laufend neue ungecachte Flüge importiert werden
+        (31-Tage-Refresh, neue Piloten), ist praktisch immer ein jüngerer Flug an der Reihe,
+        ein Flug von vor Monaten kommt so NIE dran (Fund: Flüge aus 01/2025 nach >1 Monat
+        immer noch ohne Track). Je die Hälfte des Batches jüngste/älteste zuerst garantiert,
+        dass der Backlog stetig schrumpft, ohne die Aktualität frischer Flüge zu opfern.
         """
         settings = get_settings()
         if not settings.STATSIM_API_KEY:
@@ -1099,9 +1107,17 @@ class VatsimPoller:
         try:
             conn = get_connection(self.db_path)
             try:
-                ids = get_uncached_statsim_ids(
-                    conn, callsign_prefix="", limit=20
+                half = 10
+                recent_ids = get_uncached_statsim_ids(conn, callsign_prefix="", limit=half)
+                old_ids = get_uncached_statsim_ids(
+                    conn, callsign_prefix="", limit=half, oldest_first=True
                 )
+                seen: set[int] = set()
+                ids: list[int] = []
+                for sid in recent_ids + old_ids:
+                    if sid not in seen:
+                        seen.add(sid)
+                        ids.append(sid)
                 if not ids:
                     return
                 assert self._http_client is not None

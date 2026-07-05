@@ -3713,6 +3713,10 @@ function closeTrackModal() {
   const p = getUrlState();
   p.delete('track');
   p.delete('src');
+  p.delete('fast');
+  p.delete('callsign');
+  p.delete('dep');
+  p.delete('arr');
   history.replaceState(null, '', '#' + p.toString());
 }
 
@@ -4793,12 +4797,21 @@ async function initFromUrl() {
   tabBtn.click();
 
   if (tab === 'statistiken') {
-    await fetchStats();
     const cid = p.get('cid');
-    if (cid) {
+    const trackId  = p.get('track');
+    const trackSrc = p.get('src');
+    if (cid && trackId && trackSrc && p.get('fast') === '1') {
+      // Schneller Deep-Link (z. B. Admin-Prüfliste "Erkennungslücken"): Track kommt ohnehin
+      // aus einem eigenen, leichten Endpoint -- der komplette Statistik-/Piloten-Ladevorgang
+      // (fetchStats + openPilotFlights) wird nur für die Anzeige-Beschriftung gebraucht, die
+      // hier bereits direkt in der URL mitgegeben wird.
+      openTrackModal(
+        trackSrc, trackId,
+        p.get('callsign') || '', p.get('dep') || '', p.get('arr') || '', '', ''
+      );
+    } else if (cid) {
+      await fetchStats();
       await openPilotFlights(Number(cid));
-      const trackId  = p.get('track');
-      const trackSrc = p.get('src');
       if (trackId && trackSrc) {
         const btn = document.querySelector(
           `.track-btn[data-track-id="${trackId}"][data-track-src="${trackSrc}"]`

@@ -1999,3 +1999,31 @@ class TestFetchStatsimTracks:
         # Nur die zweite (erfolgreiche) ID wurde gespeichert; die erste (Exception) nicht.
         mock_save.assert_called_once()
         assert mock_save.call_args[0][1] == 102
+
+    @pytest.mark.asyncio
+    async def test_splits_batch_between_newest_and_oldest(self, tmp_path):
+        """#61 (v8.6.1): reine "juengste zuerst"-Sortierung laesst alten Backlog verhungern --
+        der Job muss get_uncached_statsim_ids sowohl mit oldest_first=False (juengste) als
+        auch oldest_first=True (aelteste) aufrufen und beide Ergebnisse (dedupliziert) holen."""
+        from types import SimpleNamespace
+        from app.database import init_db
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+
+        def fake_uncached(conn, *, callsign_prefix, limit, oldest_first=False):
+            return [999] if oldest_first else [201, 202]
+
+        fake_settings = SimpleNamespace(STATSIM_API_KEY="test-statsim-key", CALLSIGN_PREFIX="FRS")
+        with patch("app.poller.get_settings", return_value=fake_settings), patch(
+            "app.poller.get_uncached_statsim_ids", side_effect=fake_uncached
+        ), patch(
+            "app.poller.fetch_flight_track", new=AsyncMock(return_value=[])
+        ) as mock_fetch, patch("app.poller.asyncio.sleep", new=AsyncMock()):
+            await poller._fetch_statsim_tracks()
+
+        fetched_ids = [call.args[1] for call in mock_fetch.call_args_list]
+        assert fetched_ids == [201, 202, 999]  # jüngste zuerst, dann der Backlog-Fund

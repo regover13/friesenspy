@@ -3365,17 +3365,26 @@ _STATSIM_UNCACHED_WHERE = (
 
 
 def get_uncached_statsim_ids(
-    conn: sqlite3.Connection, *, callsign_prefix: str = "FRS", limit: int = 50
+    conn: sqlite3.Connection, *, callsign_prefix: str = "FRS", limit: int = 50,
+    oldest_first: bool = False,
 ) -> list[int]:
-    """StatSim-Flug-IDs (jüngste zuerst), deren GPS-Track noch NICHT lokal gecacht ist.
+    """StatSim-Flug-IDs, deren GPS-Track noch NICHT lokal gecacht ist.
 
     Für den Track-Backfill (#23 Task 5b): dieselben Filter wie ``canonicalize_flights``
     (gültiger Zeitraum, Dauer > 5 min, FRS-Präfix). „Uncached" = keine Zeile in
     ``statsim_position_history``.
+
+    ``oldest_first`` (v8.6.1, #61-Fund): Standard ist „jüngste zuerst" (``ORDER BY
+    logon_time DESC``) — bei laufend neu importiertem StatSim-Bestand verhungert damit aber
+    der alte Backlog auf ewig: solange fast immer ein JÜNGERER ungecachter Flug existiert,
+    kommt ein Flug von vor Monaten nie an die Reihe (Fund: Flüge aus 01/2025 nach über einem
+    Monat immer noch ohne Track). ``oldest_first=True`` kehrt die Sortierung um, damit der
+    Aufrufer (``_fetch_statsim_tracks``) beide Enden bedienen kann.
     """
+    order = "ASC" if oldest_first else "DESC"
     rows = conn.execute(
         "SELECT statsim_id FROM statsim_cache WHERE " + _STATSIM_UNCACHED_WHERE
-        + " ORDER BY logon_time DESC LIMIT ?",
+        + f" ORDER BY logon_time {order} LIMIT ?",
         (f"{callsign_prefix}%", int(limit)),
     ).fetchall()
     return [r[0] for r in rows]
@@ -4100,6 +4109,7 @@ def list_gps_detection_gaps(conn: sqlite3.Connection) -> list[dict]:
             "source": f.get("source"),
             "id": f.get("id"),
             "statsim_id": f.get("statsim_id"),
+            "duration_min": f.get("duration_min"),
         })
 
     gaps.sort(key=lambda g: g["logon_time"], reverse=True)

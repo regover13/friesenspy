@@ -1,5 +1,18 @@
 [
   {
+    "version": "8.6.1",
+    "date": "2026-07-05",
+    "title": "Erkennungslücken-Prüfliste: schnellerer Track-Aufruf, Backlog-Fix, mehr Bedienkomfort",
+    "items": [
+      "🐌 Die Erkennungslücken-Prüfung rechnet den gesamten Flugbestand neu durch und ist teuer (mehrere Sekunden) — sie lädt deshalb nicht mehr automatisch beim Öffnen der Admin-Seite, sondern nur noch auf Klick auf „Jetzt prüfen“.",
+      "🛬 Das StatSim-Track-Nachladen im Hintergrund bediente bislang immer nur die jüngsten ungecachten Flüge zuerst — dadurch kamen alte Flüge (teils über ein Jahr) nie an die Reihe, solange laufend neue Flüge importiert wurden. Jeder Durchlauf bedient jetzt zur Hälfte die jüngsten UND die ältesten ungecachten Flüge, damit sich der Rückstand stetig abbaut.",
+      "⚡ Der „Ansehen“-Button in der Erkennungslücken-Prüfliste öffnet den Track jetzt direkt, ohne vorher die komplette Statistik- und Piloten-Ansicht zu laden.",
+      "🔗 Neuer „Pilot“-Button ruft gezielt die volle Piloten-Statistik auf.",
+      "⏱️ Neue Spalte zeigt die Flugzeit des jeweiligen Flugs an.",
+      "🐛 Der „✓ Geprüft“-Button deaktiviert sich sofort nach dem Klick, statt unbemerkt auf die Serverantwort zu warten."
+    ]
+  },
+  {
     "version": "8.6.0",
     "date": "2026-07-05",
     "title": "Erkennungslücken-Prüfliste, Flugplatz-Überschreibung, Flugzeugtyp-Nachtrag",
