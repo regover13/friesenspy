@@ -79,6 +79,8 @@ from app.database import (
     upsert_custom_airport,
     delete_custom_airport,
     rebuild_flight_cache,
+    list_gps_detection_gaps,
+    dismiss_gps_detection_gap,
 )
 from app import geo
 from app.geo import filter_event_pilots
@@ -1991,19 +1993,29 @@ async def admin_get_airports(request: Request):
 
 @app.post("/api/admin/airports")
 async def admin_upsert_airport(request: Request):
-    """Ergänzungs-Flugplatz speichern: icao (Pflicht), lat/lon (Pflicht), name/elevation_ft optional."""
+    """Ergänzungs-Flugplatz speichern: icao (Pflicht), lat/lon (Pflicht), name/elevation_ft optional.
+
+    #56: ``override`` (optional, Body-Feld) erlaubt bewusstes Überschreiben eines bereits in
+    airportsdata bekannten Codes — nötig, weil airportsdata selbst falsche Koordinaten führen
+    kann (Fund: EBUL/Ursel Air Base ~15 km daneben). Ohne ``override`` bleibt die Plausiprüfung
+    (#50) als Schutz gegen versehentliche Duplikate aktiv (409, damit das Frontend zwischen
+    „echter Fehler" (400) und „Bestätigung nötig" (409) unterscheiden kann).
+    """
     require_admin(request)
     body = await request.json()
     icao = str(body.get("icao") or "").strip()
     if not icao:
         raise HTTPException(status_code=400, detail="icao erforderlich")
-    # Plausiprüfung (#50): custom_airports darf nie einen Platz duplizieren, der bereits in
-    # airportsdata bekannt ist (Fund: EDXU/Hüttenbusch war fälschlich als "fehlend" vermutet
-    # worden, steckte aber schon in der Standard-Datenbank).
-    if geo.is_known_in_airportsdata(icao):
+    override = bool(body.get("override"))
+    if not override and geo.is_known_in_airportsdata(icao):
+        known_coords = geo.icao_to_coords(icao)
+        coords_txt = f" (dort: {known_coords[0]}, {known_coords[1]})" if known_coords else ""
         raise HTTPException(
-            status_code=400,
-            detail=f"{icao.upper()} ist bereits in airportsdata bekannt — kein Ergänzungs-Eintrag nötig",
+            status_code=409,
+            detail=(
+                f"{icao.upper()} ist bereits in airportsdata bekannt{coords_txt} — "
+                "mit override bewusst überschreiben?"
+            ),
         )
     try:
         lat = float(body.get("lat"))
@@ -2038,6 +2050,37 @@ async def admin_delete_airport(icao: str, request: Request):
         delete_custom_airport(conn, icao)
         conn.commit()
         _rebuild_and_reload_custom_airports(conn)
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/detection-gaps")
+async def admin_get_detection_gaps(request: Request):
+    """Flüge mit fehlendem GPS-Start/-Landung trotz bekanntem Flugplan — Kandidaten für
+    fehlende custom_airports-Einträge (v8.6.0)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return {"gaps": list_gps_detection_gaps(conn)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/detection-gaps/dismiss")
+async def admin_dismiss_detection_gap(request: Request):
+    """Markiert einen einzelnen Flug dauerhaft als „kein Datenfehler" (Absturz,
+    Recording-Lücke) — verschwindet aus der Prüfliste, unabhängig vom Flugplatz-Code."""
+    require_admin(request)
+    body = await request.json()
+    cid = body.get("cid")
+    logon_time = body.get("logon_time")
+    if cid is None or not logon_time:
+        raise HTTPException(status_code=400, detail="cid und logon_time erforderlich")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        dismiss_gps_detection_gap(conn, int(cid), str(logon_time))
+        conn.commit()
         return {"status": "ok"}
     finally:
         conn.close()

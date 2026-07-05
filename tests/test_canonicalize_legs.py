@@ -1264,3 +1264,98 @@ class TestLastPosTsField:
         conn.close()
         f = next(x for x in result if x["cid"] == cid)
         assert f["last_pos_ts"] == "2026-07-02T10:50:00Z"
+
+
+class TestGpsDetectionGaps:
+    """v8.6.0: Admin-Prüfliste für Flüge mit fehlendem GPS-Start/-Landung trotz bekanntem
+    Flugplan-Wert -- Kandidaten für fehlende custom_airports-Einträge."""
+
+    def _iso(self, dt) -> str:
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _recent(self, minutes_ago: int) -> str:
+        from datetime import datetime, timedelta, timezone
+        return self._iso(datetime.now(timezone.utc) - timedelta(minutes=minutes_ago))
+
+    def test_lists_missing_departure_and_arrival(self):
+        from app.database import list_gps_detection_gaps
+        conn = _make_conn()
+        cid = 5501
+        # Reiner Connect ohne jeden Track -> gps_departure UND gps_arrival fehlen,
+        # Plan kennt beide -> "both". distance_nm > 0.5 verhindert die Ghost-Erkennung
+        # (_is_ghost_row) fuer kurze Test-Connects.
+        _insert_flight(
+            conn, cid=cid, callsign="FRS55", departure="EDST", arrival="EDWQ",
+            logon_time=self._recent(120), logoff_time=self._recent(90),
+            duration_min=30, distance_nm=40.0,
+        )
+        conn.commit()
+
+        gaps = list_gps_detection_gaps(conn)
+        conn.close()
+
+        gap = next(g for g in gaps if g["cid"] == cid)
+        assert gap["missing"] == "both"
+        assert gap["plan_departure"] == "EDST"
+        assert gap["plan_arrival"] == "EDWQ"
+        assert gap["gps_departure"] is None
+        assert gap["gps_arrival"] is None
+        assert gap["pilot_name"] == f"Pilot {cid}"
+
+    def test_excludes_healthy_flights(self):
+        """Ein Flug mit vollständigem GPS-Track (Start UND Landung erkannt) taucht nicht auf."""
+        from app.database import list_gps_detection_gaps
+        conn = _make_conn()
+        cid = 5502
+        _insert_flight(
+            conn, cid=cid, callsign="FRS56", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:50:00Z",
+        )
+        _seed_eddk_eddw_track(conn, cid, "FRS56")
+        conn.commit()
+
+        gaps = list_gps_detection_gaps(conn)
+        conn.close()
+
+        assert not any(g["cid"] == cid for g in gaps)
+
+    def test_open_flight_not_counted_as_missing_arrival(self):
+        """Ein noch offener Flug (kein connection_closed) zählt nicht als Landungs-Lücke --
+        er ist schlicht noch nicht gelandet, kein Datenfehler."""
+        from app.database import list_gps_detection_gaps
+        conn = _make_conn()
+        cid = 5503
+        _insert_flight(
+            conn, cid=cid, callsign="FRS57", departure="EDST", arrival="EDWQ",
+            logon_time=self._recent(10), logoff_time=None,
+            duration_min=10, distance_nm=15.0,
+        )
+        conn.commit()
+
+        gaps = list_gps_detection_gaps(conn)
+        conn.close()
+
+        gap = next((g for g in gaps if g["cid"] == cid), None)
+        assert gap is None or gap["missing"] == "departure"
+
+    def test_excludes_dismissed(self):
+        from app.database import list_gps_detection_gaps, dismiss_gps_detection_gap
+        conn = _make_conn()
+        cid = 5504
+        logon = self._recent(120)
+        _insert_flight(
+            conn, cid=cid, callsign="FRS58", departure="EDST", arrival="EDWQ",
+            logon_time=logon, logoff_time=self._recent(90),
+            duration_min=30, distance_nm=40.0,
+        )
+        conn.commit()
+
+        gaps_before = list_gps_detection_gaps(conn)
+        assert any(g["cid"] == cid for g in gaps_before)
+
+        dismiss_gps_detection_gap(conn, cid, logon)
+        conn.commit()
+
+        gaps_after = list_gps_detection_gaps(conn)
+        conn.close()
+        assert not any(g["cid"] == cid for g in gaps_after)

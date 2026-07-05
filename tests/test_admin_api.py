@@ -688,12 +688,27 @@ class TestAdminAirports:
 
     def test_airports_rejects_known_airportsdata_code(self, db):
         """Plausiprüfung (Fund dieser Session): EDXU (Hüttenbusch) war fälschlich als
-        "fehlend" vermutet worden, steckte aber schon in airportsdata — muss abgelehnt werden."""
+        "fehlend" vermutet worden, steckte aber schon in airportsdata — muss OHNE override
+        abgelehnt werden (409: „Bestätigung nötig", nicht 400 „echter Fehler")."""
         with pytest.raises(HTTPException) as e:
             asyncio.run(main.admin_upsert_airport(FakeReq(body={
                 "icao": "EDXU", "name": "Huettenbusch", "lat": 53.287, "lon": 8.947, "elevation_ft": 10,
             })))
-        assert e.value.status_code == 400
+        assert e.value.status_code == 409
+
+    def test_airports_post_known_code_requires_override(self, db):
+        """#56: mit ``override: true`` wird ein bereits in airportsdata bekannter Code
+        (EBUL-Fall: falsche Koordinaten) trotzdem gespeichert und überschreibt damit den
+        Standard-Wert."""
+        from app import geo
+        real_lat, real_lon = geo.icao_to_coords("EDXU")
+        res = asyncio.run(main.admin_upsert_airport(FakeReq(body={
+            "icao": "EDXU", "name": "Huettenbusch (korrigiert)",
+            "lat": 53.30, "lon": 8.95, "elevation_ft": 12, "override": True,
+        })))
+        assert res["status"] == "ok"
+        assert geo.icao_to_coords("EDXU") == (53.30, 8.95)
+        assert geo.icao_to_coords("EDXU") != (real_lat, real_lon)
 
     def test_airports_upsert_invalidates_geo_cache(self, db):
         from app import geo
@@ -715,3 +730,41 @@ class TestAdminAirports:
             "icao": "ZZREBUILD", "name": "x", "lat": 1.0, "lon": 1.0, "elevation_ft": None,
         })))
         assert calls == [True]
+
+
+class TestAdminDetectionGaps:
+    """v8.6.0: Admin-Prüfliste für Erkennungslücken (GPS-Start/-Landung fehlt trotz Plan)."""
+
+    def _recent(self, minutes_ago):
+        from datetime import datetime, timedelta, timezone
+        return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+
+    def test_requires_admin(self, db):
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_get_detection_gaps(FakeReq(cookies={})))
+        assert e.value.status_code == 401
+
+    def test_dismiss_roundtrip(self, db):
+        from app.database import get_connection, ensure_pilot, open_flight, close_flight
+        conn = get_connection(db)
+        ensure_pilot(conn, 42, "Test Pilot")
+        logon = self._recent(120)
+        fid = open_flight(conn, 42, "FRS42", "C172", "EDST", "EDWQ", logon)
+        conn.commit()
+        close_flight(conn, fid, self._recent(90))
+        conn.execute("UPDATE flights SET distance_nm=40.0, duration_min=30 WHERE id=?", (fid,))
+        conn.commit()
+        conn.close()
+
+        listing = asyncio.run(main.admin_get_detection_gaps(FakeReq()))
+        assert any(g["cid"] == 42 for g in listing["gaps"])
+
+        res = asyncio.run(main.admin_dismiss_detection_gap(FakeReq(body={
+            "cid": 42, "logon_time": logon,
+        })))
+        assert res["status"] == "ok"
+
+        listing2 = asyncio.run(main.admin_get_detection_gaps(FakeReq()))
+        assert not any(g["cid"] == 42 for g in listing2["gaps"])

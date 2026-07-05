@@ -458,4 +458,33 @@ class TestCustomAirports:
     def test_is_known_in_airportsdata_false_for_custom_placeholder(self):
         assert is_known_in_airportsdata("ZZSALZ") is False
 
+    def test_custom_overrides_airportsdata_coords_and_elevation(self):
+        """#56: airportsdata kann selbst falsche Koordinaten fuehren (Fund: EBUL/Ursel Air
+        Base ~15 km daneben) -- ein custom_airports-Eintrag mit demselben Code muss den
+        Standard-Wert ueberschreiben, nicht nur bei fehlendem Code einspringen."""
+        real_lat, real_lon = icao_to_coords("EDDK")
+        real_elev = airport_elevation_ft("EDDK")
+        set_custom_airports([
+            {"icao": "EDDK", "name": "Override", "lat": 1.0, "lon": 1.0, "elevation_ft": 999.0},
+        ])
+        assert icao_to_coords("EDDK") == (1.0, 1.0)
+        assert icao_to_coords("EDDK") != (real_lat, real_lon)
+        assert airport_elevation_ft("EDDK") == 999.0
+        assert airport_elevation_ft("EDDK") != real_elev
+
+    def test_nearest_skips_shadowed_airportsdata_entry(self):
+        """#56: ein von custom_airports ueberschatteter airportsdata-Code darf bei seiner
+        ECHTEN Position nicht mehr gefunden werden -- sonst wuerde die falsche
+        airportsdata-Position (z.B. EBUL) weiterhin matchen."""
+        real_lat, real_lon = icao_to_coords("EDDK")
+        set_custom_airports([
+            {"icao": "EDDK", "name": "Override", "lat": -80.0, "lon": 0.0, "elevation_ft": 50.0},
+        ])
+        # An der ECHTEN airportsdata-Position darf EDDK nicht mehr matchen (uebersprungen).
+        assert nearest_airport_icao(real_lat, real_lon, 0.05) is None
+        assert nearest_airport_icao_fast(real_lat, real_lon, 0.05) is None
+        # An der NEUEN (Custom-)Position matcht EDDK weiterhin.
+        assert nearest_airport_icao(-80.001, 0.001, 1.0) == "EDDK"
+        assert nearest_airport_icao_fast(-80.001, 0.001, 1.0) == "EDDK"
+
 

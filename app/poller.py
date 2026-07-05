@@ -788,6 +788,7 @@ class VatsimPoller:
                                 cruise_tas=pos.get("cruise_tas", ""),
                                 flight_rules=pos.get("flight_rules", ""),
                                 aircraft_icao=pos.get("aircraft_icao", ""),
+                                aircraft_short=pos.get("aircraft_short", ""),
                                 alternate=pos.get("alternate", ""),
                             )
                             entry["dep"], entry["arr"] = new_dep, new_arr

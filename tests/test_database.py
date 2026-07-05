@@ -31,6 +31,7 @@ from app.database import (
     rebuild_flight_cache,
     remove_live_position,
     save_position_history,
+    update_flight_plan,
     upsert_live_position,
     upsert_statsim_flights,
 )
@@ -185,17 +186,64 @@ class TestInitDb:
         assert rows["2026-01-01T10:00:00Z"] == ("AS65", "AS65")
         assert rows["2026-01-02T10:00:00Z"] == ("C172", "C172")  # bereits normalisiert
 
+    def test_flights_backfill_aircraft_short_from_own_icao(self, tmp_path):
+        """#54: update_flight_plan() trug aircraft_short vor diesem Fix nie nach -- ein OHNE
+        Typ eröffnetes Leg, dessen Flugplan (aircraft_icao) später eintraf, blieb
+        aircraft_short dauerhaft leer (Fund: cid 1031301, flight id 250, aircraft_icao='B105').
+        Backfill übernimmt den Typ aus derselben Zeile (kein Fremdwert), normalisiert."""
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = sqlite3.connect(db_file)
+        conn.execute(
+            "INSERT INTO pilots (cid, name, added_at) VALUES (300, 'P', '2026-01-01T00:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, aircraft_short, aircraft_icao, departure, "
+            "arrival, logon_time) VALUES (300, 'FRS61', '', 'B105', "
+            "'EDVE', 'EDBH', '2026-06-29T18:24:13Z')"
+        )
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, aircraft_short, aircraft_icao, departure, "
+            "arrival, logon_time) VALUES (300, 'FRS61', 'C172', 'C172', "
+            "'EDDK', 'EDDW', '2026-01-02T10:00:00Z')"
+        )
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, aircraft_short, aircraft_icao, departure, "
+            "arrival, logon_time) VALUES (300, 'FRS61', '', '', "
+            "'EDDL', 'EDDH', '2026-01-03T10:00:00Z')"
+        )
+        conn.commit()
+        conn.close()
+
+        init_db(db_file)  # zweiter Lauf: muss aircraft_short aus aircraft_icao nachtragen
+
+        conn = sqlite3.connect(db_file)
+        rows = {
+            r[0]: r[1]
+            for r in conn.execute("SELECT logon_time, aircraft_short FROM flights").fetchall()
+        }
+        conn.close()
+        assert rows["2026-06-29T18:24:13Z"] == "B105"
+        assert rows["2026-01-02T10:00:00Z"] == "C172"  # bereits gesetzt -> unveraendert
+        assert rows["2026-01-03T10:00:00Z"] == ""  # kein aircraft_icao -> bleibt leer
+
     def test_custom_airports_seed_populates_default_rows(self, tmp_path):
-        """#50: die sechs in dieser Session bestätigten Ergänzungs-Flugplätze werden bei
-        leerer Tabelle automatisch angelegt."""
+        """#50/#55/#57/#58/#59: die in dieser und der Folge-Session bestätigten
+        Ergänzungs-Flugplätze werden bei leerer Tabelle automatisch angelegt. EBUL (#56,
+        Override eines bestehenden airportsdata-Eintrags) ist bewusst NICHT im Seed."""
         from app.database import list_custom_airports
         db_file = str(tmp_path / "test.db")
         init_db(db_file)
         conn = get_connection(db_file)
         rows = {r["icao"]: r for r in list_custom_airports(conn)}
         conn.close()
-        assert set(rows) == {"EDHD", "LIVD", "EDLQ", "EXHB", "ZZSALZ", "CML5"}
+        assert set(rows) == {
+            "EDHD", "LIVD", "EDLQ", "EXHB", "ZZSALZ", "CML5",
+            "EDST", "EDWD", "EDDX", "LOJB",
+        }
         assert rows["CML5"]["elevation_ft"] == 1118.0  # aus der Track-Landung (gs=0) abgeleitet
+        assert rows["EDST"]["elevation_ft"] == 1155.0
+        assert "EBUL" not in rows
 
     def test_custom_airports_seed_preserves_user_edits(self, tmp_path):
         """Seed ist NUR ein Erstbefüllen (Guard: Tabelle leer) -- Admin-Änderungen/-Löschungen
@@ -217,7 +265,7 @@ class TestInitDb:
         assert rows["ZZSALZ"]["name"] == "GEAENDERT"
         assert rows["ZZSALZ"]["lat"] == 1.0
         assert "CML5" not in rows  # bleibt geloescht
-        assert len(rows) == 5  # 6 Seed-Plaetze minus 1 geloescht, kein Re-Seed
+        assert len(rows) == 9  # 10 Seed-Plaetze minus 1 geloescht, kein Re-Seed
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +411,38 @@ class TestFlightRoundtrip:
         row = conn.execute("SELECT logoff_time, duration_min FROM flights WHERE id = ?", (flight_id,)).fetchone()
         assert row["logoff_time"] is None
         assert row["duration_min"] is None
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# update_flight_plan
+# ---------------------------------------------------------------------------
+
+class TestUpdateFlightPlan:
+    def test_fills_empty_aircraft_short(self):
+        """#54: ein OHNE Typ eröffnetes Leg (leerer aircraft_short) bekommt beim ersten
+        Plan-Update den Typ nachgetragen."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "Test Pilot")
+        fid = open_flight(conn, 1, "FRS001", "", "EDDH", "EDDF", _ts_offset())
+        conn.commit()
+        update_flight_plan(conn, fid, "EDDH", "EDDF", aircraft_icao="B105", aircraft_short="B105")
+        conn.commit()
+        row = conn.execute("SELECT aircraft_short FROM flights WHERE id = ?", (fid,)).fetchone()
+        assert row["aircraft_short"] == "B105"
+        conn.close()
+
+    def test_keeps_existing_aircraft_short_on_empty_new_value(self):
+        """Ein Plan-Update ohne bekannten Typ (leerer aircraft_short) darf einen bereits
+        gesetzten Typ nicht löschen."""
+        conn = _make_conn()
+        ensure_pilot(conn, 1, "Test Pilot")
+        fid = open_flight(conn, 1, "FRS001", "B738", "EDDH", "EDDF", _ts_offset())
+        conn.commit()
+        update_flight_plan(conn, fid, "EDDH", "EDDF", aircraft_short="")
+        conn.commit()
+        row = conn.execute("SELECT aircraft_short FROM flights WHERE id = ?", (fid,)).fetchone()
+        assert row["aircraft_short"] == "B738"
         conn.close()
 
 

@@ -291,6 +291,13 @@ CREATE TABLE IF NOT EXISTS flight_cache (
     UNIQUE(cid, logon_time)
 );
 CREATE INDEX IF NOT EXISTS idx_flight_cache_logon ON flight_cache(logon_time);
+
+CREATE TABLE IF NOT EXISTS gps_detection_dismissals (
+    cid           INTEGER NOT NULL,
+    logon_time    TEXT NOT NULL,
+    dismissed_at  TEXT,
+    PRIMARY KEY (cid, logon_time)
+);
 """
 
 
@@ -503,6 +510,26 @@ def init_db(db_path: str) -> None:
                 "UPDATE flights SET aircraft_icao = substr(aircraft_icao, 1, instr(aircraft_icao, '/') - 1) "
                 "WHERE aircraft_icao LIKE '%/%'"
             )
+        except sqlite3.OperationalError:
+            pass
+        # #54: update_flight_plan() hat aircraft_short vor diesem Fix nie mitgeschrieben — ein
+        # OHNE Typ eröffnetes Leg, dessen Flugplan (aircraft_icao) später eintraf, blieb
+        # aircraft_short dauerhaft leer. Die icao-Spalte stammt aus DERSELBEN Plan-Zeile (kein
+        # zeitlich blinder Fremdwert wie beim #52-Fehlertyp) — einmaliger, idempotenter Backfill
+        # (WHERE greift nach dem ersten Lauf nicht mehr).
+        try:
+            rows = conn.execute(
+                "SELECT id, aircraft_icao FROM flights "
+                "WHERE (aircraft_short IS NULL OR aircraft_short = '') "
+                "AND aircraft_icao IS NOT NULL AND aircraft_icao != ''"
+            ).fetchall()
+            for row in rows:
+                normalized = normalize_type_code(row[1])
+                if normalized:
+                    conn.execute(
+                        "UPDATE flights SET aircraft_short = ? WHERE id = ?",
+                        (normalized, row[0]),
+                    )
         except sqlite3.OperationalError:
             pass
         conn.commit()
@@ -1275,20 +1302,30 @@ def update_flight_plan(
     cruise_tas: str = "",
     flight_rules: str = "",
     aircraft_icao: str = "",
+    aircraft_short: str = "",
     alternate: str = "",
     deptime: str = "",
     enroute_time: str = "",
     fuel_time: str = "",
 ) -> None:
-    """Flugplan (DEP/ARR + erweiterte Felder) eines laufenden Fluges setzen."""
+    """Flugplan (DEP/ARR + erweiterte Felder) eines laufenden Fluges setzen.
+
+    #54: aircraft_short wird nur bei nicht-leerem neuen Wert überschrieben (COALESCE/NULLIF) —
+    ein Plan-Update ohne bekannten Typ (leerer String) darf einen bereits bekannten Typ nicht
+    löschen. Vorher wurde aircraft_short hier nie angefasst, sodass ein OHNE Typ eröffnetes Leg
+    (open_flight mit leerem aircraft_short) den Typ nie nachtragen konnte, selbst wenn ein
+    späterer Plan (aircraft_icao) ihn kannte.
+    """
     conn.execute(
         """UPDATE flights SET departure=?, arrival=?,
                               route=?, remarks=?, cruise_altitude=?, cruise_tas=?,
-                              flight_rules=?, aircraft_icao=?, alternate=?,
+                              flight_rules=?, aircraft_icao=?,
+                              aircraft_short=COALESCE(NULLIF(?, ''), aircraft_short),
+                              alternate=?,
                               deptime=?, enroute_time=?, fuel_time=?
            WHERE id=?""",
         (departure, arrival, route, remarks, cruise_altitude, cruise_tas,
-         flight_rules, aircraft_icao, alternate,
+         flight_rules, aircraft_icao, aircraft_short, alternate,
          deptime, enroute_time, fuel_time, flight_id),
     )
 
@@ -3950,6 +3987,14 @@ _CUSTOM_AIRPORTS_SEED: list[tuple[str, str, float, float, float | None]] = [
     ("EXHB", "UL-Flugfeld Gössenheim", 50.028, 9.771, 745.0),
     ("ZZSALZ", "Segelfluggelände Salzwedel/Klein Gartz", 52.828, 11.316, 112.0),
     ("CML5", "Region Thunder Bay, Ontario", 48.291, -89.543, 1118.0),
+    # #55/#57/#58/#59 (v8.6.0): Live-Track-Analyse Session 2026-07-05.
+    ("EDST", "Flugplatz Hahnweide", 48.6319, 9.4306, 1155.0),
+    ("EDWD", "Lemwerder", 53.1432, 8.6234, 19.0),
+    ("EDDX", "Bad Zwischenahn-Rostrup", 53.2103, 7.9888, 27.0),
+    ("LOJB", "Hospital Bludenz", 47.1594, 9.8212, 1974.0),
+    # EBUL (#56) bewusst NICHT im Seed: es überschreibt einen airportsdata-Eintrag mit
+    # falschen Koordinaten (Override) -- das soll eine bewusste Admin-Handlung bleiben,
+    # nicht automatisch bei jeder frischen Installation passieren.
 ]
 
 
@@ -4006,6 +4051,69 @@ def delete_custom_airport(conn: sqlite3.Connection, icao: str) -> int:
     code = (icao or "").strip().upper()
     cur = conn.execute("DELETE FROM custom_airports WHERE icao = ?", (code,))
     return cur.rowcount
+
+
+# --- Admin-Prüfliste "Erkennungslücken" (v8.6.0): Flüge, deren GPS-Start oder -Landung
+# trotz bekanntem Flugplan fehlt -- typischerweise ein Hinweis auf einen fehlenden
+# custom_airports-Eintrag (Fund-Muster dieser Session: EDST/EDWD/EDDX/LOJB). Live berechnet
+# über canonicalize_legs (kein eigener Cache), damit ein neu ergänzter Flugplatz sofort aus
+# der Liste verschwindet. "Geprüft" markiert Einzelfälle dauerhaft als kein Datenfehler
+# (Absturz, Recording-Lücke) -- gilt NUR für diesen einen Flug (Schlüssel cid+logon_time).
+
+def list_gps_detection_gaps(conn: sqlite3.Connection) -> list[dict]:
+    """Flüge mit fehlendem GPS-Start ODER fehlender GPS-Landung trotz bekanntem Flugplan-Wert,
+    ohne bereits als "geprüft" markierte Fälle. Neueste zuerst, auf 200 Zeilen gekappt."""
+    now = _now_utc()
+    flights = canonicalize_legs(conn, start="2000-01-01T00:00:00Z", end=now, callsign_prefix="")
+    dismissed = {
+        (r[0], r[1])
+        for r in conn.execute("SELECT cid, logon_time FROM gps_detection_dismissals").fetchall()
+    }
+    pilot_names = {
+        r[0]: r[1] for r in conn.execute("SELECT cid, name FROM pilots").fetchall()
+    }
+
+    gaps: list[dict] = []
+    for f in flights:
+        cid = f.get("cid")
+        logon_time = f.get("logon_time")
+        if cid is None or logon_time is None or (cid, logon_time) in dismissed:
+            continue
+        missing_dep = not f.get("gps_departure") and f.get("plan_departure")
+        missing_arr = (
+            not f.get("gps_arrival") and f.get("connection_closed") and f.get("plan_arrival")
+        )
+        if not missing_dep and not missing_arr:
+            continue
+        missing = "both" if (missing_dep and missing_arr) else ("departure" if missing_dep else "arrival")
+        gaps.append({
+            "cid": cid,
+            "logon_time": logon_time,
+            "pilot_name": pilot_names.get(cid),
+            "callsign": f.get("callsign"),
+            "aircraft": f.get("aircraft"),
+            "plan_departure": f.get("plan_departure"),
+            "plan_arrival": f.get("plan_arrival"),
+            "gps_departure": f.get("gps_departure"),
+            "gps_arrival": f.get("gps_arrival"),
+            "missing": missing,
+            "source": f.get("source"),
+            "id": f.get("id"),
+            "statsim_id": f.get("statsim_id"),
+        })
+
+    gaps.sort(key=lambda g: g["logon_time"], reverse=True)
+    return gaps[:200]
+
+
+def dismiss_gps_detection_gap(conn: sqlite3.Connection, cid: int, logon_time: str) -> None:
+    """Markiert einen Flug dauerhaft als "kein Datenfehler" -- taucht in der Prüfliste nicht
+    mehr auf, auch wenn seine GPS-Lücke bestehen bleibt. Gilt NUR für diesen einen Flug."""
+    conn.execute(
+        "INSERT INTO gps_detection_dismissals (cid, logon_time, dismissed_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(cid, logon_time) DO UPDATE SET dismissed_at=excluded.dismissed_at",
+        (cid, logon_time, _now_utc()),
+    )
 
 
 # --- Lustige KI-Sprüche (Phase 2): Cache je Flug + Tagesend-Zusammenfassung ---

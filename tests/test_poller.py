@@ -1189,6 +1189,45 @@ class TestAircraftTypeFallback:
             conn.close()
         assert live["aircraft"] == "BN2P"
 
+    @pytest.mark.asyncio
+    async def test_later_flight_plan_backfills_aircraft_short_on_same_leg(self, tmp_path):
+        """#54: Leg wird OHNE Flugplan eröffnet (aircraft_short bleibt leer). Trifft später
+        ein Plan für dieselbe Verbindung ein (kein Split, da old_dep/old_arr leer waren), muss
+        update_flight_plan() den Typ jetzt nachtragen (Fund: cid 1031301, flight id 250)."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import get_connection, init_db
+        db_file = str(tmp_path / "t.db")
+        init_db(db_file)
+        now = datetime.now(timezone.utc)
+        logon = (now - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+
+        no_plan = {"pilots": [self._pilot_no_fp(logon)]}
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=no_plan)):
+            await poller._poll_once()
+
+        with_plan = {
+            "pilots": [{
+                "cid": 888, "name": "Ohne Plan", "callsign": "FRS88",
+                "latitude": 53.78, "longitude": 7.91, "altitude": 800,
+                "groundspeed": 75, "heading": 90, "logon_time": logon,
+                "flight_plan": {"aircraft_short": "B105", "departure": "EDVE", "arrival": "EDBH"},
+            }],
+        }
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=with_plan)):
+            await poller._poll_once()
+
+        conn = get_connection(db_file)
+        try:
+            flight = conn.execute(
+                "SELECT aircraft_short FROM flights WHERE cid=888 AND logoff_time IS NULL"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert flight["aircraft_short"] == "B105"
+
 
 # ---------------------------------------------------------------------------
 # create_poller factory

@@ -891,32 +891,6 @@
           <div id="ke-payloads-container" class="scroll-list"><div class="empty-hint">Lade Zuladungen…</div></div>
         </div>
 
-        <!-- ERGÄNZUNGS-FLUGPLÄTZE (custom_airports, #50) -->
-        <div class="panel">
-          <div class="panel-title"><span>🛬 Flugplätze (Ergänzungen)</span></div>
-          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Plätze, die in der Standard-Datenbank (airportsdata) fehlen — z. B. Segelfluggelände
-            ohne offizielle ICAO-Kennung. Wird ein Code hier eingetragen, der bereits offiziell
-            bekannt ist, lehnt das Backend das ab (Duplikat).
-          </p>
-          <div class="form-grid" style="margin:6px 0 8px;">
-            <div class="form-group"><label for="ap-icao">Code</label>
-              <input type="text" id="ap-icao" placeholder="ZZSALZ" /></div>
-            <div class="form-group"><label for="ap-name">Name</label>
-              <input type="text" id="ap-name" placeholder="Segelfluggelände Salzwedel" /></div>
-            <div class="form-group"><label for="ap-lat">Breitengrad</label>
-              <input type="number" id="ap-lat" step="0.0001" placeholder="52.828" /></div>
-            <div class="form-group"><label for="ap-lon">Längengrad</label>
-              <input type="number" id="ap-lon" step="0.0001" placeholder="11.316" /></div>
-            <div class="form-group"><label for="ap-elev">Elevation (ft, optional)</label>
-              <input type="number" id="ap-elev" step="1" placeholder="112" /></div>
-          </div>
-          <div style="display:flex;gap:8px;margin-bottom:14px;">
-            <button class="btn btn-primary btn-sm" id="ap-save-btn">Speichern</button>
-          </div>
-          <div id="ap-container" class="scroll-list"><div class="empty-hint">Lade Flugplätze…</div></div>
-        </div>
-
         <!-- FRIESENKUTTER — FRACHTART-KATALOG & SPRÜCHE -->
         <div class="panel">
           <div class="panel-title"><span>🦐 FriesenKutter &ndash; Frachtart-Katalog</span></div>
@@ -1018,6 +992,46 @@
           </div>
           <button class="btn btn-primary btn-sm" id="pilot-add-btn" style="margin-bottom:14px;">Anlegen / aktualisieren</button>
           <div id="pilots-container" class="scroll-list"><div class="empty-hint">Lade Piloten…</div></div>
+        </div>
+
+        <!-- ERGÄNZUNGS-FLUGPLÄTZE (custom_airports, #50) -->
+        <div class="panel">
+          <div class="panel-title"><span>🛬 Flugplätze (Ergänzungen)</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Plätze, die in der Standard-Datenbank (airportsdata) fehlen — z. B. Segelfluggelände
+            ohne offizielle ICAO-Kennung — oder deren Koordinaten dort nachweislich falsch sind.
+            Ein hier eingetragener Code überschreibt airportsdata. Ist der Code bereits bekannt,
+            wird vor dem Überschreiben eine Bestätigung eingeblendet (Schutz gegen versehentliche
+            Duplikate).
+          </p>
+          <div class="form-grid" style="margin:6px 0 8px;">
+            <div class="form-group"><label for="ap-icao">Code</label>
+              <input type="text" id="ap-icao" placeholder="ZZSALZ" /></div>
+            <div class="form-group"><label for="ap-name">Name</label>
+              <input type="text" id="ap-name" placeholder="Segelfluggelände Salzwedel" /></div>
+            <div class="form-group"><label for="ap-lat">Breitengrad</label>
+              <input type="number" id="ap-lat" step="0.0001" placeholder="52.828" /></div>
+            <div class="form-group"><label for="ap-lon">Längengrad</label>
+              <input type="number" id="ap-lon" step="0.0001" placeholder="11.316" /></div>
+            <div class="form-group"><label for="ap-elev">Elevation (ft, optional)</label>
+              <input type="number" id="ap-elev" step="1" placeholder="112" /></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <button class="btn btn-primary btn-sm" id="ap-save-btn">Speichern</button>
+          </div>
+          <div id="ap-container" class="scroll-list"><div class="empty-hint">Lade Flugplätze…</div></div>
+        </div>
+
+        <!-- ERKENNUNGSLÜCKEN (v8.6.0) -->
+        <div class="panel">
+          <div class="panel-title"><span>🔍 Erkennungslücken (Start/Landung)</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Flüge, deren GPS-Start oder -Landung trotz bekanntem Flugplan fehlt — meist ein
+            Hinweis auf einen fehlenden Flugplatz oben. Wird der Platz ergänzt, verschwindet
+            der Flug automatisch. „Geprüft" blendet einen Einzelfall dauerhaft aus, wenn er
+            KEIN Datenfehler ist (z. B. Absturz oder abgerissene Aufzeichnung).
+          </p>
+          <div id="dg-container" class="scroll-list"><div class="empty-hint">Lade Erkennungslücken…</div></div>
         </div>
 
       </div>
@@ -1177,6 +1191,7 @@
       loadPilots();
       loadKutterAdmin();
       loadCustomAirports();
+      loadDetectionGaps();
       // Falls ein Backfill schon vor dem (Neu-)Laden dieser Seite lief (z. B. anderer Tab,
       // vorheriger Login) — Status sofort zeigen und Polling bei Bedarf fortsetzen.
       _pollStatsimBackfillStatus();
@@ -2332,7 +2347,15 @@
         icao, name: document.getElementById('ap-name').value.trim() || null,
         lat, lon, elevation_ft: elevRaw === '' ? null : parseFloat(elevRaw),
       };
-      const res = await api('POST', '/api/admin/airports', body);
+      let res = await api('POST', '/api/admin/airports', body);
+      if (res && res.status === 409) {
+        // #56: Code ist bereits in airportsdata bekannt -- Override explizit bestätigen lassen.
+        let detail = 'Code ist bereits bekannt.';
+        try { detail = (await res.json()).detail || detail; } catch (e) {}
+        const ok = await showModal('Standard-Flugplatz überschreiben?', detail, 'Überschreiben', true);
+        if (!ok) return;
+        res = await api('POST', '/api/admin/airports', { ...body, override: true });
+      }
       if (!res || !res.ok) {
         let detail = 'Fehler beim Speichern.';
         try { detail = (await res.json()).detail || detail; } catch (e) {}
@@ -2343,6 +2366,49 @@
       ['ap-icao', 'ap-name', 'ap-lat', 'ap-lon', 'ap-elev'].forEach(i => document.getElementById(i).value = '');
       loadCustomAirports();
     });
+
+    // ====================================================================
+    // ERKENNUNGSLÜCKEN (v8.6.0)
+    // ====================================================================
+    async function loadDetectionGaps() {
+      const res = await api('GET', '/api/admin/detection-gaps');
+      if (!res || !res.ok) return;
+      const d = await res.json();
+      const rows = d.gaps || [];
+      const c = document.getElementById('dg-container');
+      if (!rows.length) { c.innerHTML = '<div class="empty-hint">Keine Erkennungslücken offen.</div>'; return; }
+      const missingTxt = { departure: 'Start', arrival: 'Landung', both: 'Start + Landung' };
+      c.innerHTML = '<div class="table-wrap"><table style="font-size:0.8rem;width:max-content;min-width:100%;"><thead><tr>'
+        + '<th style="text-align:left;">Datum</th><th style="text-align:left;">Pilot</th>'
+        + '<th style="text-align:left;">Callsign</th><th style="text-align:left;">Flugzeug</th>'
+        + '<th style="text-align:left;">Plan-Strecke</th><th style="text-align:left;">GPS-Strecke</th>'
+        + '<th style="text-align:left;">Fehlt</th><th style="text-align:left;">Quelle</th><th></th></tr></thead><tbody>'
+        + rows.map(g => {
+          const trackId = g.statsim_id || g.id;
+          const href = trackId != null
+            ? `/#tab=statistiken&days=365&cid=${g.cid}&track=${trackId}&src=${g.source}`
+            : `/#tab=statistiken&days=365&cid=${g.cid}`;
+          return '<tr><td>' + fmtDt(g.logon_time) + '</td>'
+            + '<td>' + escH(g.pilot_name || '—') + ' (' + g.cid + ')</td>'
+            + '<td>' + escH(g.callsign || '—') + '</td><td>' + escH(g.aircraft || '—') + '</td>'
+            + '<td>' + escH(g.plan_departure || '—') + ' → ' + escH(g.plan_arrival || '—') + '</td>'
+            + '<td>' + escH(g.gps_departure || '—') + ' → ' + escH(g.gps_arrival || '—') + '</td>'
+            + '<td>' + escH(missingTxt[g.missing] || g.missing) + '</td>'
+            + '<td>' + escH(g.source || '—') + '</td>'
+            + '<td style="white-space:nowrap;">'
+            + '<a href="' + escA(href) + '" target="_blank" class="btn btn-sm">Ansehen</a> '
+            + '<button class="btn btn-sm" onclick="dgDismiss(' + g.cid + ',\'' + escA(g.logon_time) + '\')">✓ Geprüft</button>'
+            + '</td></tr>';
+        }).join('')
+        + '</tbody></table></div>';
+    }
+
+    async function dgDismiss(cid, logonTime) {
+      const res = await api('POST', '/api/admin/detection-gaps/dismiss', { cid, logon_time: logonTime });
+      if (!res || !res.ok) { toast('Fehler beim Markieren.', true); return; }
+      toast('Als geprüft markiert.');
+      loadDetectionGaps();
+    }
 
     // ====================================================================
     // FRIESENKUTTER — Frachtart-Katalog + Sprüche-Schalter

@@ -1,9 +1,19 @@
 [
   {
+    "version": "8.6.0",
+    "date": "2026-07-05",
+    "title": "Erkennungslücken-Prüfliste, Flugplatz-Überschreibung, Flugzeugtyp-Nachtrag",
+    "items": [
+      "🔍 Neue Admin-Prüfliste zeigt Flüge, deren GPS-Start oder -Landung trotz bekanntem Flugplan fehlt — meist ein Hinweis auf einen fehlenden Ergänzungs-Flugplatz. Einträge lassen sich als „kein Datenfehler“ dauerhaft ausblenden.",
+      "🛬 Ergänzungs-Flugplätze können jetzt auch einen bereits in der Standard-Datenbank bekannten Code bewusst überschreiben (mit Bestätigung) — nötig, wenn dessen Koordinaten dort nachweislich falsch sind.",
+      "✈️ Ein Flugzeugtyp, der erst nach dem Verbindungsaufbau per Flugplan bekannt wurde, wird jetzt auch nachträglich im laufenden Flug ergänzt (vorher blieb er dauerhaft leer, obwohl der Flugplan ihn kannte) — inkl. Nachtrag für betroffene Bestandsflüge.",
+      "🗂️ Admin-Oberfläche: die Flugplatz-Verwaltung sitzt jetzt bei den übrigen Verwaltungsfunktionen statt zwischen den FriesenKutter-Ansichten."
+    ]
+  },
+  {
     "version": "8.5.0",
     "date": "2026-07-05",
     "title": "Startplatz-Erkennung, Ergänzungs-Flugplätze, saubere Flugzeugtypen",
-    "highlight": true,
     "items": [
       "🛫 GPS-Legs, deren Aufzeichnung erst im Steigflug direkt über dem Abflugplatz beginnt (typisch bei StatSim), erkennen jetzt den Startplatz, statt ihn bedingungslos leer zu lassen.",
       "🗺️ Neue Admin-Verwaltung für Ergänzungs-Flugplätze, die in der Standard-Flugplatzdatenbank fehlen (z. B. Segelfluggelände ohne offizielle Kennung) — inkl. sechs bereits bekannter Plätze und einer Plausiprüfung gegen Doppel-Einträge.",

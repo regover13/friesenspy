@@ -1042,10 +1042,11 @@ Bilanz weiterhin `404`.
 
 ## Admin — Flugplätze (Ergänzungen)
 
-Verwaltung von `custom_airports` (v8.5.0, #50) — Plätzen, die in der Standard-Flugplatzdatenbank
-(`airportsdata`) fehlen (z. B. Segelfluggelände ohne offizielle ICAO-Kennung) und ohne die weder
-Start noch Landung dort per GPS erkannt werden. Alle Endpoints erfordern das Admin-Cookie
-(`require_admin`).
+Verwaltung von `custom_airports` (v8.5.0/#50, Override seit v8.6.0/#56) — Plätzen, die in der
+Standard-Flugplatzdatenbank (`airportsdata`) fehlen (z. B. Segelfluggelände ohne offizielle
+ICAO-Kennung) ODER deren `airportsdata`-Koordinaten nachweislich falsch sind (Fund: EBUL/Ursel
+Air Base ~15 km daneben). Ein hier eingetragener Code **überschreibt** `airportsdata` (geprüft
+zuerst). Alle Endpoints erfordern das Admin-Cookie (`require_admin`).
 
 ### GET /api/admin/airports
 
@@ -1074,8 +1075,9 @@ Flugplatz anlegen/aktualisieren (Upsert nach `icao`).
 - `icao` (Pflicht) — beliebiger Code, wird `.strip().upper()` gespeichert; **kein** echter 4-Buchstaben-ICAO nötig (Platzhalter wie `ZZSALZ` erlaubt).
 - `lat`/`lon` (Pflicht, Zahl) — sonst `400`.
 - `elevation_ft` (optional) — `null`/leer lassen, wenn unbekannt. **Wirkt sich auf die GPS-Erkennung aus:** unbekannte Elevation macht den Spawn-Startplatz-Guard (#49) permissiv, die Landungs-Rettung am Track-Ende (#53) dagegen konservativ (keine Rettung ohne Höhenangabe).
+- `override` (optional, `bool`, v8.6.0/#56) — `true` erlaubt das bewusste Überschreiben eines bereits in `airportsdata` bekannten Codes.
 
-**Plausiprüfung:** Ist `icao` bereits in `airportsdata` bekannt, wird der Request mit `400` abgelehnt (Duplikat — der Platz braucht keinen Ergänzungs-Eintrag, er wird schon gefunden). Fund dieser Session: `EDXU` (Hüttenbusch) war fälschlich als „fehlend" vermutet worden, steckte aber schon in `airportsdata`.
+**Plausiprüfung:** Ist `icao` bereits in `airportsdata` bekannt UND `override` nicht gesetzt, wird der Request mit **`409`** abgelehnt („Bestätigung nötig" — die Response nennt die dort hinterlegten Koordinaten). Mit `override: true` wird trotzdem gespeichert und überschreibt den Standard-Wert (Fund dieser Session: `EBUL`/Ursel Air Base führte in `airportsdata` Koordinaten, die ~15 km neben der echten Position lagen). Fund der Vorgänger-Session: `EDXU` (Hüttenbusch) war fälschlich als „fehlend" vermutet worden, steckte aber schon (korrekt) in `airportsdata` — dieser Fall bleibt ohne `override` weiterhin abgelehnt.
 
 **Nebenwirkung:** Ein erfolgreicher Write ruft sofort `geo.set_custom_airports(...)` (Cache-Invalidierung, ohne Neustart wirksam) **und** `rebuild_flight_cache(conn, full=True)` auf — der neue/geänderte Platz muss auch ältere, bislang fälschlich offene oder platzlose Flüge neu erkennen lassen; der reguläre inkrementelle Refresh (7 Tage) würde das nicht leisten.
 
@@ -1084,6 +1086,48 @@ Flugplatz anlegen/aktualisieren (Upsert nach `icao`).
 ### DELETE /api/admin/airports/{icao}
 
 Flugplatz löschen. Gleiche Nebenwirkung (Cache-Invalidierung + voller `rebuild_flight_cache`) wie beim Anlegen/Ändern.
+
+**Response** `{"status": "ok"}`
+
+## Admin — Erkennungslücken
+
+Prüfliste (v8.6.0) für Flüge, deren GPS-Start oder -Landung trotz bekanntem Flugplan fehlt —
+meist ein Hinweis auf einen fehlenden `custom_airports`-Eintrag. Berechnet **live** über
+`canonicalize_legs` (kein eigener Cache): ein neu ergänzter Flugplatz lässt den betroffenen
+Flug beim nächsten Laden automatisch verschwinden. Alle Endpoints erfordern das Admin-Cookie
+(`require_admin`).
+
+### GET /api/admin/detection-gaps
+
+**Response**
+
+```json
+{
+  "gaps": [
+    {
+      "cid": 1382870, "logon_time": "2025-07-18T18:40:38+00:00",
+      "pilot_name": "Max Muster", "callsign": "FRS96", "aircraft": "C172",
+      "plan_departure": "EDST", "plan_arrival": "EDST",
+      "gps_departure": null, "gps_arrival": null,
+      "missing": "both", "source": "statsim", "id": null, "statsim_id": 23617949
+    }
+  ]
+}
+```
+
+`missing` ∈ `departure` \| `arrival` \| `both`. Ein offener Flug (kein `connection_closed`) zählt
+nie als Landungs-Lücke — er ist schlicht noch nicht gelandet, kein Datenfehler. Neueste zuerst,
+auf 200 Zeilen gekappt.
+
+### POST /api/admin/detection-gaps/dismiss
+
+Markiert einen einzelnen Flug dauerhaft als „kein Datenfehler" (Absturz, abgerissene
+Aufzeichnung) — verschwindet aus der Prüfliste, unabhängig vom betroffenen Flugplatz-Code.
+
+**Body (JSON)** `{"cid": 1382870, "logon_time": "2025-07-18T18:40:38+00:00"}`
+
+Beide Felder Pflicht (`cid` + `logon_time` als Schlüssel, identisch zum `flight_cache`-Vertrag
+`UNIQUE(cid, logon_time)`), sonst `400`.
 
 **Response** `{"status": "ok"}`
 
