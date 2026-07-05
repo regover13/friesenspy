@@ -2201,16 +2201,22 @@ def canonicalize_legs(
     ``arrival``/``gps_arrival``/``logoff_time``, nicht dieses Feld.
     """
     prefix_pat = callsign_prefix + "%"
-    # Plan-Kandidaten (fs_where/sc_where "start"-Filter) bekommen denselben Rückblick wie die
-    # GPS-Positionen (_positions_for_cid, _PLAN_ROWS_LOOKBACK_H) — sonst kann eine Connection,
-    # deren reale logoff_time knapp VOR `start` liegt, aus den Flugplan-Kandidaten herausfallen,
-    # obwohl das zugehörige GPS-Bein (dank des Positions-Lookbacks) noch im Ergebnis auftaucht.
-    # Live-Fund 2026-07-05: FRS61-Flug ETHB→ETHS (Landung ~15:12) verschwand aus den
-    # Plan-Kandidaten eines Events-Fensters ab 18:00 desselben Tages und bekam dadurch KEINEN
-    # Flugplan mehr zugeordnet (_flightplan_asof fand keinen Kandidaten mit logon_time <=
-    # Bein-Ende) — sichtbar als leeres Flugplan-Feld + falscher Aircraft-Fallback.
+    # Plan-Kandidaten (fs_where/sc_where) bekommen an BEIDEN Rändern denselben Puffer
+    # (_PLAN_ROWS_LOOKBACK_H) wie die GPS-Positionen (_positions_for_cid) — die eigentliche
+    # Beinauswahl passiert erst auf Flug-Ebene (_in_window). Ohne den Puffer fällt ein
+    # Flugplan aus den Kandidaten, obwohl das zugehörige GPS-Bein im Ergebnis erscheint:
+    #   - start-Seite (Live-Fund 2026-07-05, FRS61 ETHB→ETHS, Landung ~15:12): eine Connection,
+    #     deren logoff_time knapp VOR `start` liegt, verschwand aus den Kandidaten → leeres
+    #     Flugplan-Feld + falscher Aircraft-Fallback.
+    #   - end-Seite (Live-Fund 2026-07-05, FRS119N LOWZ→LIME): ein Refile mit Startplatz-Wechsel
+    #     WÄHREND eines noch im Fenster gestarteten Beins erzeugt eine flights-Zeile, deren
+    #     logon_time (Poller-Erkennungszeit) NACH `end` liegt → das Bein bekam fälschlich den
+    #     alten Plan/Muster (zwei verschiedene "Wahrheiten" zwischen Statistik und Events).
     plan_lookback_start = (
         _shift_iso(start, hours=-_PLAN_ROWS_LOOKBACK_H) if start else None
+    )
+    plan_lookahead_end = (
+        _shift_iso(end, hours=_PLAN_ROWS_LOOKBACK_H) if end else None
     )
 
     # --- FriesenSpy: Connections im Fenster → cid-Menge -------------------------------
@@ -2229,9 +2235,9 @@ def canonicalize_legs(
     if plan_lookback_start:
         fs_where.append("(logoff_time IS NULL OR logoff_time >= ?)")
         fs_params.append(plan_lookback_start)
-    if end:
+    if plan_lookahead_end:
         fs_where.append("logon_time <= ?")
-        fs_params.append(end)
+        fs_params.append(plan_lookahead_end)
     fs_rows = [
         dict(r)
         for r in conn.execute(
@@ -2320,14 +2326,15 @@ def canonicalize_legs(
         sc_params += list(cids)
     if plan_lookback_start:
         # Overlap-WHERE analog FS (StatSim hat logoff_time immer gesetzt — die
-        # IS-NULL-Klausel greift dort nie, ist aber harmlos). Derselbe Lookback wie bei
-        # fs_where — jede statsim_cache-Zeile ist ihr eigener Plan (_statsim_plan), eine
-        # knapp vor `start` geschlossene Session soll ebenfalls nicht herausfallen.
+        # IS-NULL-Klausel greift dort nie, ist aber harmlos). Derselbe Puffer an BEIDEN
+        # Rändern wie bei fs_where — jede statsim_cache-Zeile ist ihr eigener Plan
+        # (_statsim_plan), eine knapp vor `start` bzw. knapp nach `end` liegende Session soll
+        # ebenfalls nicht herausfallen (die Beinauswahl erledigt _in_window).
         sc_where.append("(logoff_time IS NULL OR logoff_time >= ?)")
         sc_params.append(plan_lookback_start)
-    if end:
+    if plan_lookahead_end:
         sc_where.append("logon_time <= ?")
-        sc_params.append(end)
+        sc_params.append(plan_lookahead_end)
     sc_rows = [
         dict(r)
         for r in conn.execute(

@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.4.2",
+    "date": "2026-07-05",
+    "title": "Events- und Statistik-Ansicht zeigten unterschiedliche Flugpläne",
+    "items": [
+      "🐛 Derselbe Flug konnte in der Events-Suche einen anderen Flugplan (und Flugzeugtyp) zeigen als in der Statistik. Ursache: wurde während eines noch laufenden Beins ein neuer Flugplan mit Startplatz-Wechsel eingereicht und dessen Zeitstempel lag knapp nach dem Ende des Abfragefensters, fiel dieser korrekte Plan aus den Kandidaten — die Events-Ansicht griff dann auf den alten Plan zurück. Der Kandidaten-Rand bekommt jetzt am oberen Ende denselben 12-Stunden-Puffer wie am unteren (Spiegelfall zu v8.4.1)."
+    ]
+  },
+  {
     "version": "8.4.1",
     "date": "2026-07-05",
     "title": "Flugplan verschwand bei schmalen Zeitfenstern (Events-Suche)",

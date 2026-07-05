@@ -214,6 +214,15 @@ Folge: leeres Flugplan-Feld + falscher Aircraft-Fallback (globaler „zuletzt be
 des tatsächlich gefileten). Fix: `plan_rows`-Filterung bekommt denselben 12h-Rückblick
 (`_PLAN_ROWS_LOOKBACK_H`) wie die Positionsladung.
 
+**Nachtrag 2 (Bugfix 2026-07-05, Spiegelfall am `end`-Rand, Live-Fund FRS119N/CID 1976702):** dasselbe
+Problem am oberen Rand — der `logon_time <= end`-Filter der Plan-Kandidaten schnitt einen Refile weg,
+der WÄHREND eines noch im Fenster gestarteten Beins gefiled wurde und dessen `logon_time`
+(Poller-Erkennungszeit des Startplatz-Wechsels) knapp nach `end` lag. Das Bein bekam dadurch den
+alten Plan/Muster (EDMO→LOWZ, SR22) statt des korrekten (LOWZ→LIME, S22T) — sichtbar als „zwei
+verschiedene Wahrheiten" zwischen Statistik (kein `end`) und Events (`end` gesetzt). Fix: der
+`end`-Oberrand der Plan-Kandidaten bekommt denselben Puffer (`+_PLAN_ROWS_LOOKBACK_H`) wie der
+`start`-Unterrand; die eigentliche Beinauswahl (`_in_window`) nutzt weiterhin das echte `end`.
+
 ## Bewusste Semantik-Änderungen (Review g)
 
 - **`duration_min`: online (logon→logoff) → takeoff→landing.** Die Stunden-KPI **schrumpft rückwirkend**

@@ -667,6 +667,50 @@ class TestPlanRowsLookback:
         assert early_leg["plan_arrival"] == "EDDW"
         assert early_leg["aircraft"] == "EC45"
 
+    def test_refile_filed_after_narrow_window_end_still_labels_leg(self):
+        """Live-Fund 2026-07-05 (FRS119N/CID 1976702, Events-Fenster bis 20:00) --
+        Spiegelfall zum start-seitigen Bug oben: der Pilot flog EDDK->EDDW, landete, und
+        feilte beim Start in EDDW mit Startplatz-Wechsel NEU (EDDW->EDDL, anderer Muster
+        PA28). Der Refile erzeugt eine neue flights-Zeile, deren logon_time (Poller-Erkennung
+        des Startplatz-Wechsels) NACH dem Fenster-`end` liegt. Das zweite GPS-Bein startet
+        aber noch VOR `end` -- es ist also im Fenster, sein korrekter Flugplan aber nicht in
+        den Kandidaten (fs_where filterte `logon_time <= end`). Folge (buggy): das Bein
+        bekam faelschlich den ALTEN Plan EDDK->EDDW (Muster C172) statt EDDW->EDDL (PA28) --
+        genau die 'zwei verschiedenen Wahrheiten' zwischen Statistik (kein end) und Events
+        (end gesetzt).
+
+        Fix: der end-Oberrand fuer die Plan-Kandidaten bekommt denselben Puffer wie der
+        start-Unterrand -- die Beinauswahl (`_in_window`) nutzt weiterhin das echte `end`."""
+        conn = _make_conn()
+        cid = 5009
+        _insert_flight(
+            conn, cid=cid, callsign="FRS57", departure="EDDK", arrival="EDDW",
+            aircraft_short="C172",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:40:00Z",
+        )
+        # Refile mit Startplatz-Wechsel WAEHREND des zweiten Beins -- logon (Poller-Erkennung)
+        # liegt NACH dem schmalen Fenster-end (10:48), das Bein selbst startet aber 10:46.
+        id_refile = _insert_flight(
+            conn, cid=cid, callsign="FRS57", departure="EDDW", arrival="EDDL",
+            aircraft_short="PA28",
+            logon_time="2026-07-02T10:50:00Z", logoff_time=None,
+        )
+        _seed_eddk_eddw_eddl_intermediate_landing_track(conn, cid, "FRS57")
+        conn.commit()
+
+        # Fenster endet 10:48: Bein 2 (Takeoff 10:46) ist drin, der Refile (logon 10:50) nicht.
+        narrow_window = dict(start="2026-07-02T10:00:00Z", end="2026-07-02T10:48:00Z")
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **narrow_window)
+        conn.close()
+
+        fs = [f for f in result if f["cid"] == cid and f["source"] == "friesenspy"]
+        leg2 = next(f for f in fs if f["gps_departure"] == "EDDW")
+        assert leg2["gps_arrival"] == "EDDL"
+        assert leg2["id"] == id_refile
+        assert leg2["plan_departure"] == "EDDW"
+        assert leg2["plan_arrival"] == "EDDL"
+        assert leg2["aircraft"] == "PA28"
+
 
 class TestStatsimIdPropagation:
     def test_statsim_id_propagates_across_split_legs(self):
