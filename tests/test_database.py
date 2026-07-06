@@ -2420,3 +2420,63 @@ def test_wrappers_equal_pure(conn_with_track):
     assert _gps_distance_nm(conn, cid, start_ts, end_ts) == _distance_nm_positions(
         positions, start_ts, end_ts
     )
+
+
+# ---------------------------------------------------------------------------
+# Retention-Filter list_transport_events / list_bummel_races (#66 Task 2)
+# ---------------------------------------------------------------------------
+
+def _insert_transport_event(
+    conn: sqlite3.Connection, *, id: int, dtstart: str, dtend: str,
+    name: str = "Testkutter", route: str = "EDWO,EDWF",
+) -> None:
+    """Minimaler Insert-Helfer — Spalten aus dem `_DDL`-Block von `transport_events`
+    (NOT-NULL: name, route, dtstart, dtend). Explizite `id`, damit die Retention-Tests
+    unabhängig von der Insert-Reihenfolge gezielt filtern können."""
+    conn.execute(
+        "INSERT INTO transport_events (id, name, route, dtstart, dtend, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (id, name, route, dtstart, dtend, "2020-01-01T00:00:00Z"),
+    )
+    conn.commit()
+
+
+def _insert_bummel_race(
+    conn: sqlite3.Connection, *, id: int, dtstart: str, dtend: str,
+    name: str = "Testbummel", route: str = "EDWO,EDWF",
+) -> None:
+    """Minimaler Insert-Helfer — Spalten aus dem `_DDL`-Block von `bummel_races`."""
+    conn.execute(
+        "INSERT INTO bummel_races (id, name, route, dtstart, dtend, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (id, name, route, dtstart, dtend, "2020-01-01T00:00:00Z"),
+    )
+    conn.commit()
+
+
+def test_list_transport_events_retention():
+    conn = _make_conn()
+    import app.database as db
+
+    _insert_transport_event(conn, id=1, dtstart="2020-01-01T00:00:00Z", dtend="2020-01-01T02:00:00Z")
+    _insert_transport_event(conn, id=2, dtstart="2026-07-06T00:00:00Z", dtend="2026-07-06T02:00:00Z")
+
+    all_ev = db.list_transport_events(conn)
+    assert {e["id"] for e in all_ev} == {1, 2}
+
+    recent = db.list_transport_events(conn, since="2025-07-06T00:00:00Z")
+    assert {e["id"] for e in recent} == {2}
+
+
+def test_list_bummel_races_retention():
+    conn = _make_conn()
+    import app.database as db
+
+    _insert_bummel_race(conn, id=1, dtstart="2020-01-01T00:00:00Z", dtend="2020-01-01T02:00:00Z")
+    _insert_bummel_race(conn, id=2, dtstart="2026-07-06T00:00:00Z", dtend="2026-07-06T02:00:00Z")
+
+    all_races = db.list_bummel_races(conn)
+    assert {r["id"] for r in all_races} == {1, 2}
+
+    recent = db.list_bummel_races(conn, since="2025-07-06T00:00:00Z")
+    assert {r["id"] for r in recent} == {2}

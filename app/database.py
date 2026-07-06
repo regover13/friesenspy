@@ -3693,13 +3693,22 @@ def upsert_calendar_bummel_race(conn: sqlite3.Connection, ev: dict) -> None:
     )
 
 
-def list_bummel_races(conn: sqlite3.Connection) -> list[dict]:
-    """Alle Rennen, neueste zuerst (nach dtstart)."""
-    rows = conn.execute(
+def list_bummel_races(conn: sqlite3.Connection, *, since: str | None = None) -> list[dict]:
+    """Alle Rennen, neueste zuerst (nach dtstart). ``since`` (optional, nur Anzeige-Retention):
+    blendet Rennen aus, deren ``dtend`` davor liegt (NULL-Guard: offene Rennen bleiben sichtbar)."""
+    where, params = [], []
+    if since:
+        where.append("(dtend IS NULL OR dtend >= ?)")
+        params.append(since)
+    sql = (
         "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
         "revealed_at, created_at, push_enabled, started_at, reveal_suppressed "
-        "FROM bummel_races ORDER BY dtstart DESC"
-    ).fetchall()
+        "FROM bummel_races"
+    )
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY dtstart DESC"
+    rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -3826,6 +3835,10 @@ _CREW_KG_DEFAULT = 85.0
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
 _PROGRESS_SNAPSHOT_VERSION = "1"
+
+# Reine Anzeige-Retention (öffentliche Listen-Endpoints): Events/Rennen älter als das werden
+# ausgeblendet, nicht gelöscht. Nutzung erst in späteren Tasks (#66); hier nur die Konstante.
+_DATA_RETENTION_DAYS = 365
 
 
 def normalize_type_code(code: str | None) -> str:
@@ -3981,11 +3994,19 @@ def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
             set_transport_cargo(conn, row[0], _resolve_cargo_against_catalog(conn, cargo_lines))
 
 
-def list_transport_events(conn: sqlite3.Connection) -> list[dict]:
-    """Alle Transport-Events (Kalender + manuell), neueste zuerst."""
-    rows = conn.execute(
-        f"SELECT {_TRANSPORT_EVENT_COLS} FROM transport_events ORDER BY dtstart DESC"
-    ).fetchall()
+def list_transport_events(conn: sqlite3.Connection, *, since: str | None = None) -> list[dict]:
+    """Alle Transport-Events (Kalender + manuell), neueste zuerst. ``since`` (optional, nur
+    Anzeige-Retention): blendet Events aus, deren ``dtend`` davor liegt (NULL-Guard: Events
+    ohne dtend bleiben sichtbar)."""
+    where, params = [], []
+    if since:
+        where.append("(dtend IS NULL OR dtend >= ?)")
+        params.append(since)
+    sql = f"SELECT {_TRANSPORT_EVENT_COLS} FROM transport_events"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY dtstart DESC"
+    rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
 
 
