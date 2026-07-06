@@ -459,6 +459,8 @@ Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungs
 
 Liste aller bekannten FriesenFliegerBummel-Rennen (aus `bummel_races`, persistent gespeichert). Rennen werden beim Kalender-Sync automatisch angelegt.
 
+**Retention (v8.10.0, #66/#67):** zeigt nur Rennen der letzten 365 Tage (`dtend` innerhalb des Fensters bzw. `NULL`) — reine Anzeige-Grenze, nichts wird gelöscht; ältere Rennen bleiben in `GET /api/admin/bummel/races` (ungefiltert) sichtbar. Ein bereits enthülltes Rennen (`revealed_at` gesetzt **und** `now >= dtend`) wird aus einem beim ersten Abruf eingefrorenen Snapshot bedient statt bei jedem Request neu berechnet — Korrekturen greifen erst, sobald das Rennen im Admin erneut gespeichert wird.
+
 **Response** — Array, neueste zuerst
 
 ```json
@@ -622,6 +624,8 @@ Der **„📋 Forum"**-Button im enthüllten Ranking kopiert diesen BBCode direk
 ## GET /api/transport/events
 
 Alle FriesenKutter-Transport-Events (Kalender + manuell) mit kompaktem Live-Fortschritt. Ein Event definiert eine ICAO-Streckenmenge (`route`) und ein `destination`; Fracht zählt nur bei Ankunft am Ziel (Rückflug leer). Das Ziel wird über ein **Fracht-Manifest** (Frachtart + kg) beschrieben, das die eingehenden Flüge der Reihe nach füllen.
+
+**Retention (v8.10.0, #66/#67):** zeigt nur Events der letzten 365 Tage (`dtend` innerhalb des Fensters bzw. `NULL`) — reine Anzeige-Grenze, nichts wird gelöscht; ältere Events bleiben in `GET /api/admin/transport/events` (ungefiltert) sichtbar. Ein bereits abgeschlossenes Event (`summarized_at` gesetzt) wird aus einem beim Feierabend-Latch eingefrorenen Snapshot bedient statt bei jedem Request neu berechnet — Korrekturen greifen erst, sobald das Event im Admin erneut gespeichert wird.
 
 **Response** — Array je Event: `id, name, route, destination, dtstart, dtend, source` (`calendar`|`manual`), `radius_km` (Legacy-Feld, seit GPS-only Phase 2/#23 wirkungslos — die Platz-Zuordnung nutzt überall den festen globalen 4-km-Radius; über die Admin-Endpoints nicht mehr setzbar, i. d. R. `null`), `total_kg` (= Σ tatsächlich ins Manifest gelieferter Fracht, „durchgängig Netto" seit v8.8.0/#63 — Überschuss ohne Manifest-Platz zählt nicht; bei Events ohne Manifest schlichter Brutto-kg-Zähler), `target_kg` (= Σ Manifest oder `null`), `progress_pct` (oder `null`), `flight_count`, `loaded_count`, `cargo` (`[{name, target_kg, delivered_kg, reserved_kg, pct, per_flight_max_kg}]`; `per_flight_max_kg` = Obergrenze pro Flug oder `null`).
 

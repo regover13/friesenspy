@@ -1,5 +1,15 @@
 [
   {
+    "version": "8.10.0",
+    "date": "2026-07-07",
+    "title": "Kutter- und Bummel-Übersicht laden schneller — abgeschlossene Events eingefroren",
+    "items": [
+      "Der Fortschritt abgeschlossener FriesenKutter-Events und die Wertung enthüllter Bummel-Rennen werden jetzt beim Abschluss einmal gespeichert (Snapshot), statt bei jedem Aufruf neu berechnet zu werden. Die Event- und Bummel-Übersicht öffnet dadurch spürbar schneller und wird nicht mehr träge, je mehr abgeschlossene Events sich ansammeln.",
+      "Übersichten zeigen die Einträge der letzten 12 Monate; ältere werden ausgeblendet (nichts wird gelöscht).",
+      "Eine Korrektur an einem abgeschlossenen Event oder Rennen greift, sobald es im Admin erneut gespeichert wird."
+    ]
+  },
+  {
     "version": "8.9.2",
     "date": "2026-07-07",
     "title": "Impressum und Datenschutzerklärung ergänzt",
