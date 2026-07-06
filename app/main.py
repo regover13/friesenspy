@@ -65,6 +65,7 @@ from app.database import (
     delete_transport_event,
     get_transport_event,
     get_transport_cargo,
+    get_transport_quips,
     list_transport_events,
     update_transport_event,
     set_transport_push_enabled,
@@ -76,6 +77,8 @@ from app.database import (
     delete_cargo_catalog,
     transport_quips_enabled,
     clear_transport_quips,
+    get_progress_snapshot,
+    write_progress_snapshot,
     list_custom_airports,
     upsert_custom_airport,
     delete_custom_airport,
@@ -1669,16 +1672,61 @@ def _transport_event_meta(ev: dict, progress: dict) -> dict:
     }
 
 
+def _retention_since(now: str) -> str:
+    """Anzeige-Grenze für öffentliche Listen-Endpoints: ``now`` − ``_DATA_RETENTION_DAYS`` Tage
+    (#66/#67, ISO-Z). Reine Anzeigegrenze — nichts wird gelöscht."""
+    from app.database import _DATA_RETENTION_DAYS
+    dt = datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_timezone.utc)
+    return (dt - timedelta(days=_DATA_RETENTION_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _frozen_or_compute(conn, kind: str, ref_id: int, *, finished: bool, compute_fn, now: str) -> dict:
+    """Gemeinsamer Zugriffs-Helfer Kutter/Bummel (#66 §3): ein abgeschlossenes Event/Rennen wird
+    aus dem Snapshot bedient (Lazy-Freeze beim ersten Read, falls noch keiner existiert);
+    ein aktives wird immer live gerechnet."""
+    if finished:
+        snap = get_progress_snapshot(conn, kind, ref_id)
+        if snap is not None:
+            return snap
+        result = compute_fn()
+        write_progress_snapshot(conn, kind, ref_id, result, now)
+        conn.commit()
+        return result
+    return compute_fn()
+
+
+def _kutter_progress(conn, ev: dict, now: str, prefix: str) -> dict:
+    """Fortschritt eines Kutter-Events: eingefroren (abgeschlossen) oder live, danach frische
+    Überlagerung der NICHT eingefrorenen Felder — KI-Sprüche entstehen erst NACH dem
+    ``summarized_at``-Latch (Summary danach, Pro-Flug-Quips async), s. Spec §3."""
+    finished = bool(ev.get("summarized_at"))
+    progress = _frozen_or_compute(
+        conn, "kutter", ev["id"], finished=finished, now=now,
+        compute_fn=lambda: compute_transport_progress(
+            conn, ev, now, callsign_prefix=prefix, skip_open_probe=finished),
+    )
+    progress = dict(progress)
+    progress["summary_quip"] = ev.get("summary_quip")
+    quips = get_transport_quips(conn, ev["id"])
+    if quips:
+        for f in progress.get("flights", []):
+            q = quips.get(f.get("flight_key"))
+            if q:
+                f["quip"] = q
+    return progress
+
+
 @app.get("/api/transport/events")
 async def transport_events():
-    """Alle FriesenKutter-Events (Kalender + manuell) mit kompaktem Live-Fortschritt."""
+    """Alle FriesenKutter-Events (Kalender + manuell) mit kompaktem Fortschritt — letzte
+    ``_DATA_RETENTION_DAYS`` Tage (#67), abgeschlossene Events aus dem Snapshot (#66)."""
     now = _now_iso()
     conn = get_connection(get_settings().DB_PATH)
     try:
         prefix = get_settings().CALLSIGN_PREFIX
         return [
-            _transport_event_meta(ev, compute_transport_progress(conn, ev, now, callsign_prefix=prefix))
-            for ev in list_transport_events(conn)
+            _transport_event_meta(ev, _kutter_progress(conn, ev, now, prefix))
+            for ev in list_transport_events(conn, since=_retention_since(now))
         ]
     finally:
         conn.close()
@@ -1686,14 +1734,15 @@ async def transport_events():
 
 @app.get("/api/transport/event/{event_id}")
 async def transport_event_detail(event_id: int):
-    """Voller Live-Zustand eines Events: Zielbalken (cargo) + chronologischer Flug-Feed."""
+    """Voller Zustand eines Events: Zielbalken (cargo) + chronologischer Flug-Feed — abgeschlossen
+    aus dem Snapshot, aktiv live (#66)."""
     now = _now_iso()
     conn = get_connection(get_settings().DB_PATH)
     try:
         ev = get_transport_event(conn, event_id)
         if not ev:
             raise HTTPException(status_code=404, detail="Event nicht gefunden")
-        progress = compute_transport_progress(conn, ev, now, callsign_prefix=get_settings().CALLSIGN_PREFIX)
+        progress = _kutter_progress(conn, ev, now, get_settings().CALLSIGN_PREFIX)
         # unmapped_types nur für Admin relevant — aus der öffentlichen Sicht entfernen.
         progress.pop("unmapped_types", None)
         return {
@@ -1757,7 +1806,7 @@ async def get_transport_badge(request: Request, event_id: int, cid: int):
         ev = get_transport_event(conn, event_id)
         if not ev or not ev.get("summarized_at"):
             raise HTTPException(status_code=404, detail="Event noch nicht abgeschlossen")
-        progress = compute_transport_progress(conn, ev, _now_iso(), callsign_prefix=settings.CALLSIGN_PREFIX)
+        progress = _kutter_progress(conn, ev, _now_iso(), settings.CALLSIGN_PREFIX)
         d = _kutter_badge_data(progress, ev, cid)
     finally:
         conn.close()
@@ -1800,7 +1849,7 @@ async def admin_transport_badge(request: Request, event_id: int, cid: int):
         ev = get_transport_event(conn, event_id)
         if not ev:
             raise HTTPException(status_code=404, detail="Event nicht gefunden")
-        progress = compute_transport_progress(conn, ev, _now_iso(), callsign_prefix=settings.CALLSIGN_PREFIX)
+        progress = _kutter_progress(conn, ev, _now_iso(), settings.CALLSIGN_PREFIX)
         d = _kutter_badge_data(progress, ev, cid)
     finally:
         conn.close()
@@ -1912,7 +1961,7 @@ async def admin_transport_payloads(request: Request):
         prefix = get_settings().CALLSIGN_PREFIX
         unmapped: set[str] = set()
         for ev in list_transport_events(conn):
-            p = compute_transport_progress(conn, ev, now, callsign_prefix=prefix)
+            p = _kutter_progress(conn, ev, now, prefix)
             unmapped.update(p.get("unmapped_types") or [])
         return {
             "payloads": list_aircraft_payloads(conn),

@@ -1952,3 +1952,104 @@ class TestTransportEventsDueForReminder:
             dtstart=_iso(now + timedelta(minutes=90)), dtend=None,  # außerhalb 60-min-Fenster
         )
         assert transport_events_due_for_reminder(conn, _iso(now), lead_min=60) == []
+
+
+# --- Snapshot-Read + Overlays (#66 Task 4) ----------------------------------
+
+class TestKutterSnapshotEndpoints:
+    """`_frozen_or_compute`/`_kutter_progress`: abgeschlossene Events werden aus dem Snapshot
+    bedient (kein `compute_transport_progress`-Aufruf mehr), KI-Sprüche werden trotzdem frisch
+    überlagert (sie entstehen erst NACH dem Latch, s. Spec §3)."""
+
+    SECRET = "s3cr3t"
+    PW = "test-admin-pw"
+
+    _BASE_SNAPSHOT = {
+        "route": ["EDWG", "EDXH"], "destination": "EDXH", "flights": [],
+        "cargo": [], "total_kg": 42.0, "flight_count": 0, "loaded_count": 0,
+        "target_kg": None, "progress_pct": None, "reserved_total_kg": 0.0,
+        "unmapped_types": [], "summary_quip": None, "losses": [], "lost_total_kg": 0.0,
+        "participants": [],
+    }
+
+    def _app(self, tmp_path, monkeypatch):
+        p = str(tmp_path / "kutter_snapshot.db")
+        init_db(p)
+        monkeypatch.setattr(
+            main, "get_settings",
+            lambda: SimpleNamespace(
+                DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=self.SECRET, ADMIN_PASSWORD=self.PW,
+                VAPID_PRIVATE_KEY="vapid", VAPID_CONTACT_EMAIL="mailto:test",
+            ),
+        )
+        return TestClient(main.app), p
+
+    def _admin_cookies(self):
+        return {ADMIN_COOKIE: make_admin_token(self.SECRET, self.PW)}
+
+    def _summarized_event_with_snapshot(self, db_path, *, payload=None):
+        from app.database import write_progress_snapshot
+        conn = get_connection(db_path)
+        ev = _event(conn)
+        set_transport_summarized(conn, ev["id"], "2026-07-01T23:00:00Z")
+        conn.commit()
+        snap = dict(payload or self._BASE_SNAPSHOT)
+        write_progress_snapshot(conn, "kutter", ev["id"], snap, "2026-07-01T23:00:01Z")
+        conn.commit()
+        conn.close()
+        return ev
+
+    def _spy_compute(self, monkeypatch, called):
+        monkeypatch.setattr(
+            main, "compute_transport_progress",
+            lambda *a, **k: called.__setitem__("n", called["n"] + 1) or dict(self._BASE_SNAPSHOT),
+        )
+
+    def test_transport_events_uses_snapshot(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        self._summarized_event_with_snapshot(db)
+        called = {"n": 0}
+        self._spy_compute(monkeypatch, called)
+
+        res = client.get("/api/transport/events")
+
+        assert res.status_code == 200
+        assert called["n"] == 0
+        assert any(e["total_kg"] == 42.0 for e in res.json())
+
+    def test_kutter_snapshot_overlays_fresh_quips(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        flight_key = "500:2026-07-01T18:00:00Z"
+        payload = dict(self._BASE_SNAPSHOT, flights=[
+            {"cid": 500, "callsign": "FRS500", "flight_key": flight_key, "quip": None,
+             "loaded": True, "tonnage_kg": 250.0, "dep_time": "2026-07-01T18:00:00Z"},
+        ])
+        ev = self._summarized_event_with_snapshot(db, payload=payload)
+
+        from app.database import set_transport_summary_quip
+        conn = get_connection(db)
+        set_transport_summary_quip(conn, ev["id"], "Feierabend!")
+        set_transport_quip(conn, ev["id"], flight_key, "Guter Flug!")
+        conn.commit()
+        conn.close()
+
+        res = client.get(f"/api/transport/event/{ev['id']}")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["summary_quip"] == "Feierabend!"
+        assert body["flights"][0]["quip"] == "Guter Flug!"
+
+    def test_admin_payloads_unmapped_uses_snapshot(self, tmp_path, monkeypatch):
+        client, db = self._app(tmp_path, monkeypatch)
+        payload = dict(self._BASE_SNAPSHOT, unmapped_types=["PA28"])
+        self._summarized_event_with_snapshot(db, payload=payload)
+        called = {"n": 0}
+        self._spy_compute(monkeypatch, called)
+        client.cookies.update(self._admin_cookies())
+
+        res = client.get("/api/admin/transport/payloads")
+
+        assert res.status_code == 200
+        assert called["n"] == 0
+        assert res.json()["unmapped_types"] == ["PA28"]
