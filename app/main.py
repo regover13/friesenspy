@@ -75,6 +75,7 @@ from app.database import (
     upsert_cargo_catalog,
     delete_cargo_catalog,
     transport_quips_enabled,
+    clear_transport_quips,
     list_custom_airports,
     upsert_custom_airport,
     delete_custom_airport,
@@ -2189,6 +2190,21 @@ async def admin_set_quips_enabled(request: Request):
         set_app_setting(conn, "transport_quips_enabled", "1" if enabled else "0")
         conn.commit()
         return {"status": "ok", "enabled": enabled}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/transport/events/{event_id}/regenerate-quips")
+async def admin_regenerate_transport_quips(event_id: int, request: Request):
+    """Gecachte KI-Sprüche eines Events löschen → der Poller baut sie beim nächsten Durchlauf
+    (~60 s) neu, mit der aktuellen Spruch-Logik. Nötig, wenn ein bereits generierter Spruch
+    veraltet ist (z. B. Liefer-Text für einen inzwischen als geklaut/versunken erkannten Flug)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        cleared = clear_transport_quips(conn, event_id)
+        conn.commit()
+        return {"status": "ok", "cleared": cleared}
     finally:
         conn.close()
 

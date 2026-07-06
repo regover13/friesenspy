@@ -1019,6 +1019,9 @@ Frachtart aus dem Katalog entfernen (bestehende Event-Manifeste bleiben unverän
 ### POST /api/admin/transport/quips-enabled
 Lustige KI-Sprüche global an-/ausschalten. Body: `enabled` (bool). Wirken nur mit `ANTHROPIC_API_KEY`.
 
+### POST /api/admin/transport/events/{event_id}/regenerate-quips
+Löscht alle gecachten KI-Flug-Sprüche des Events und setzt den Tagesend-Spruch (`summary_quip`) zurück (`clear_transport_quips`). Der Poller baut sie beim nächsten Durchlauf (~60 s) neu — mit der aktuellen Spruch-Logik. Für den Fall, dass ein bereits generierter Spruch veraltet ist (z. B. Liefer-Text für einen inzwischen als geklaut/versunken erkannten Flug). Antwort: `{status, cleared}` (Anzahl gelöschter Flug-Sprüche).
+
 > **Event-Ausgabe (Phase 2):** `GET /api/transport/event/{id}` liefert zusätzlich je Frachtart `cargo[].emoji`, je Flug `cargo_lines` (`[{name, emoji, kg}]`, Co-Load) und `quip` (gecachter KI-Spruch, sonst `null`) sowie `summary_quip` (lustige Tagesend-Zusammenfassung).
 
 ### GET /api/admin/transport/events/{event_id}/badge/{cid}.png

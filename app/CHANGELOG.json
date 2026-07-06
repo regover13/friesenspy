@@ -1,5 +1,14 @@
 [
   {
+    "version": "8.8.6",
+    "date": "2026-07-06",
+    "title": "Kutter: Flug-Spruch erwähnt Diebstahl/Verlust statt Lieferung",
+    "items": [
+      "💬 Der KI-Einzeiler zu einem Frachtflug textete für einen geklauten oder versunkenen Flug trotzdem einen fröhlichen Liefer-Spruch („… hat 160 kg geladen …“), obwohl der Kontext den Verlust längst kannte. Ursache war derselbe Fehler wie beim Tagesend-Spruch (#67), nur an anderer Stelle: der Verlust wurde berechnet, aber nie in den Prompt übernommen. Jetzt greift der Spruch bei einem schiefgegangenen Flug den Verlust auf (versunken/geklaut/umgedreht) und klingt nicht mehr nach ordentlicher Auslieferung.",
+      "🔄 Neuer Admin-Knopf „Sprüche neu“ je Kutter-Event: löscht die gecachten KI-Sprüche, der Poller baut sie beim nächsten Durchlauf (~60 s) mit der aktuellen Logik neu. Nützlich, wenn ein bereits generierter Spruch veraltet ist."
+    ]
+  },
+  {
     "version": "8.8.5",
     "date": "2026-07-06",
     "title": "Kutter: „am Start“ statt „unterwegs“ für geparkte Piloten",

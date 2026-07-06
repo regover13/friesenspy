@@ -2213,6 +2213,7 @@
           + '<div style="color:#8aa0b8;font-size:0.72rem;">Fracht: ' + cargo + '</div></div>'
           + '<div style="display:flex;gap:6px;flex:none;">'
           + '<button class="btn btn-sm" onclick="keTogglePush(' + ev.id + ',' + (pushOn ? 'false' : 'true') + ')">' + (pushOn ? 'Push aus' : 'Push an') + '</button>'
+          + '<button class="btn btn-sm" onclick="keRegenQuips(' + ev.id + ')" title="Gecachte KI-Sprüche löschen — der Poller baut sie in ~60 s neu">🔄 Sprüche neu</button>'
           + '<button class="btn btn-sm" onclick="keEdit(' + ev.id + ')">Bearbeiten</button>'
           + '<button class="btn btn-sm btn-danger" onclick="keDelete(' + ev.id + ')">Löschen</button></div></div>';
       }).join('');
@@ -2250,6 +2251,16 @@
       if (!res || !res.ok) { toast('Fehler beim Umschalten.', true); return; }
       toast(enabled ? 'Push aktiviert.' : 'Push deaktiviert.');
       loadKutterAdmin();
+    }
+
+    async function keRegenQuips(id) {
+      const ok = await showModal('Sprüche neu generieren?',
+        'Alle gecachten KI-Sprüche dieses Events werden gelöscht. Der Poller baut sie beim nächsten Durchlauf (~60 s) neu — mit der aktuellen Spruch-Logik.', 'Neu generieren');
+      if (!ok) return;
+      const res = await api('POST', '/api/admin/transport/events/' + id + '/regenerate-quips', {});
+      if (!res || !res.ok) { toast('Fehler beim Zurücksetzen.', true); return; }
+      const data = await res.json();
+      toast((data.cleared || 0) + ' Sprüche gelöscht — Neuaufbau läuft in ~60 s.');
     }
 
     let _kePayloadRows = [];

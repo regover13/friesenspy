@@ -48,3 +48,40 @@ class TestEventSummaryPrompt:
         with patch.object(llm, "_chat", side_effect=fake_chat):
             llm.event_summary(context)
         assert "Verluste: keine — alles kam heil an" in captured["user"]
+
+
+class TestFlightQuipPrompt:
+    """#67-Folgefund: der EINZELflug-Spruch (flight_quip) ignorierte das im Kontext bereits
+    berechnete `verlust`-Feld und textete für einen geklauten/versunkenen Flug einen normalen
+    Liefer-Spruch."""
+
+    def _capture(self, context):
+        captured = {}
+
+        def fake_chat(system, user, max_tokens):
+            captured["user"] = user
+            return "Spruch"
+
+        with patch.object(llm, "_chat", side_effect=fake_chat):
+            result = llm.flight_quip(context)
+        assert result == "Spruch"
+        return captured["user"]
+
+    def test_prompt_frames_theft_when_loss_present(self):
+        user = self._capture({
+            "vorname": "Tobias", "callsign": "FRS49", "flights_tonight": 0,
+            "aircraft": "PZ04", "route": "EDWG→EDWZ", "tonnage_kg": 290,
+            "cargo": ["🪑 Strandkörbe (290 kg)"], "speed_kt": None, "detour_ratio": None,
+            "verlust": "am falschen Ort gelandet (EDWZ) — 290 kg Fracht geklaut",
+        })
+        assert "am falschen Ort gelandet (EDWZ) — 290 kg Fracht geklaut" in user
+        assert "DIESER FLUG GING SCHIEF" in user
+
+    def test_prompt_normal_delivery_has_no_loss_framing(self):
+        user = self._capture({
+            "vorname": "Marco", "callsign": "FRS135", "flights_tonight": 1,
+            "aircraft": "C172", "route": "EDWG→EDWY", "tonnage_kg": 160,
+            "cargo": ["⛱️ Sonnenschirme (120 kg)", "🪑 Strandkörbe (40 kg)"],
+            "speed_kt": 98, "detour_ratio": None, "verlust": None,
+        })
+        assert "GING SCHIEF" not in user

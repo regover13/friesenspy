@@ -4306,6 +4306,17 @@ def set_transport_summary_quip(conn: sqlite3.Connection, event_id: int, quip: st
     conn.execute("UPDATE transport_events SET summary_quip = ? WHERE id = ?", (quip, event_id))
 
 
+def clear_transport_quips(conn: sqlite3.Connection, event_id: int) -> int:
+    """Alle Flug-Sprüche eines Events löschen (und den Tagesend-Spruch zurücksetzen), damit der
+    Poller sie beim nächsten Durchlauf neu generiert (Bedingung dort: ``not f.get('quip')``).
+    Gebraucht, wenn sich die Spruch-Logik ändert und bereits gecachte Sprüche veraltet sind
+    (z. B. #67-Folgefund: Liefer-Spruch für einen geklauten Flug). Gibt die Anzahl gelöschter
+    Flug-Sprüche zurück."""
+    n = conn.execute("DELETE FROM transport_quips WHERE event_id = ?", (event_id,)).rowcount
+    conn.execute("UPDATE transport_events SET summary_quip = NULL WHERE id = ?", (event_id,))
+    return n
+
+
 def flight_quip_context(flight: dict, progress: dict) -> dict:
     """Lokalen Kontext für einen Flug-Spruch aufbereiten (rein, testbar).
 

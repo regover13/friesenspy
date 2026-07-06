@@ -312,12 +312,13 @@ def _chat(system: str, user: str, max_tokens: int) -> str | None:
 def flight_quip(context: dict) -> str | None:
     """Einen lustigen Einzeiler zu einem Frachtflug erzeugen (mit Piloten-Kontext)."""
     c = context or {}
+    verlust = c.get("verlust")
     lines = [
         f"Pilot-Vorname: {c.get('vorname') or '?'}",
         f"Frachtflug heute Nr.: {c.get('flights_tonight')} (Fleiß)",
         f"Muster: {c.get('aircraft') or '?'}",
         f"Strecke: {c.get('route') or '?'}",
-        f"Fracht: {', '.join(c.get('cargo') or []) or '—'}",
+        f"Fracht an Bord: {', '.join(c.get('cargo') or []) or '—'}",
         f"Zuladung: {c.get('tonnage_kg')} kg",
     ]
     if c.get("speed_kt"):
@@ -325,15 +326,31 @@ def flight_quip(context: dict) -> str | None:
     if c.get("detour_ratio"):
         extra = " (fliegt Umwege!)" if c["detour_ratio"] >= 1.3 else ""
         lines.append(f"Umweg-Faktor: {c['detour_ratio']}x Luftlinie{extra}")
-    user = (
-        "Schreibe EINEN lustigen Einzeiler (genau ein Satz) zu diesem Frachtflug. Nutze die Fakten "
-        "als Ideen-Pool, aber greif NICHT bei jedem Flug alle auf — meistens reicht EIN Aspekt "
-        "(oder auch mal keiner, nur die Fracht/den Namen), sonst klingen alle Sprüche gleich "
-        "aufgezählt. Fang NICHT immer mit 'Moin' an — wechsle den Einstieg ab (Name zuerst, eine "
-        "Frage, ein Ausruf, mittendrin einsteigen, o.ä.). Variation (bei Fakten UND Einstieg) ist "
-        "wichtiger als Vollständigkeit. Fakten:\n- "
-        + "\n- ".join(lines)
-    )
+    if verlust:
+        # #67-Folgefund (Live 06.07.): der Kontext liefert `verlust` (versunken/geklaut/
+        # zurückgebracht), aber der Prompt griff ihn nie auf → die KI textete einen normalen
+        # Liefer-Spruch für einen SCHIEFGEGANGENEN Flug ("hat 160 kg geladen …" obwohl geklaut).
+        # Bei gesetztem Verlust MUSS der Spruch das aufgreifen und darf NICHT nach Auslieferung
+        # klingen.
+        lines.append(f"WICHTIG — DIESER FLUG GING SCHIEF: {verlust}")
+        user = (
+            "Schreibe EINEN lustigen Einzeiler (genau ein Satz) zu diesem Frachtflug, der SCHIEFGING: "
+            "Die Fracht kam NICHT ordentlich beim Empfänger an (s. 'WICHTIG'). Der Spruch MUSS genau "
+            "DAS aufgreifen (versunken / geklaut / umgedreht) — er darf AUF KEINEN FALL so klingen, "
+            "als sei brav ausgeliefert worden (kein 'bringt … ans Ziel', kein 'liefert … aus'). Fang "
+            "NICHT immer mit 'Moin' an — wechsle den Einstieg ab. Fakten:\n- "
+            + "\n- ".join(lines)
+        )
+    else:
+        user = (
+            "Schreibe EINEN lustigen Einzeiler (genau ein Satz) zu diesem Frachtflug. Nutze die Fakten "
+            "als Ideen-Pool, aber greif NICHT bei jedem Flug alle auf — meistens reicht EIN Aspekt "
+            "(oder auch mal keiner, nur die Fracht/den Namen), sonst klingen alle Sprüche gleich "
+            "aufgezählt. Fang NICHT immer mit 'Moin' an — wechsle den Einstieg ab (Name zuerst, eine "
+            "Frage, ein Ausruf, mittendrin einsteigen, o.ä.). Variation (bei Fakten UND Einstieg) ist "
+            "wichtiger als Vollständigkeit. Fakten:\n- "
+            + "\n- ".join(lines)
+        )
     return _chat(_QUIP_SYSTEM, user, 200)
 
 

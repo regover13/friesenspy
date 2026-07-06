@@ -369,6 +369,23 @@ class TestQuipCache:
         conn.commit()
         assert get_transport_quips(conn, 5) == {"12:x": "Moin, dat lööpt!"}
 
+    def test_clear_transport_quips_removes_all_and_resets_summary(self):
+        from app.database import clear_transport_quips, set_transport_summary_quip
+        conn = _make_conn()
+        ev = _event(conn)
+        set_transport_quip(conn, ev["id"], "1:a", "alt")
+        set_transport_quip(conn, ev["id"], "2:b", "auch alt")
+        set_transport_summary_quip(conn, ev["id"], "Tagesend-Spruch")
+        set_transport_quip(conn, 999, "9:z", "Fremd-Event")   # anderes Event bleibt unberührt
+        conn.commit()
+        cleared = clear_transport_quips(conn, ev["id"])
+        conn.commit()
+        assert cleared == 2
+        assert get_transport_quips(conn, ev["id"]) == {}
+        assert get_transport_quips(conn, 999) == {"9:z": "Fremd-Event"}
+        row = conn.execute("SELECT summary_quip FROM transport_events WHERE id=?", (ev["id"],)).fetchone()
+        assert row["summary_quip"] is None
+
 
 # --- Wertung / Manifest ----------------------------------------------------
 
