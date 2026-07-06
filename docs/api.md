@@ -662,17 +662,20 @@ Forum-Badge (PNG) für einen FriesenKutter-Teilnehmer. Erst nach der Feierabend-
 **Response** — `image/png`
 
 Rund (256 × 256 px), transparenter Rand, navy Kern („Voll beladen!") wie die Bummel-Medaille:
-Callsign, Name, Flugzeugmuster, gelieferte kg, Event-Name + Datum, Fußzeile „friesenflieger.de".
-Hat der Teilnehmer Fracht verloren (`stolen_kg`/`sunk_kg` > 0, aus `losses` aufsummiert —
-`returned` zählt nicht als Verlust), erscheint zusätzlich ein Verlust-Titel: **SPITZBOOV!** (nur
-geklaut), **BADEMESTER!** (nur versenkt) oder **SEEROVER!** (beides), plus eine Mengen-Zeile
-(„150 kg geklaut, 292 kg versenkt").
+Callsign, Flugzeugmuster, **Gesamt-Tonnage des TEAMS** (v8.8.1/#64 — z. B. „1610 / 2810 kg Team",
+aus `progress["total_kg"]`/`["target_kg"]`, NICHT nur der Anteil dieses einen Piloten), Event-Name
++ Datum, Fußzeile „friesenflieger.de". Hat der Teilnehmer Fracht verloren (`stolen_kg`/`sunk_kg` >
+0, aus `losses` aufsummiert — `returned` zählt nicht als Verlust), erscheint zusätzlich ein
+Verlust-Titel: **SPITZBOOV!** (nur geklaut), **BADEMESTER!** (nur versenkt) oder **SEEROVER!**
+(beides), plus eine Mengen-Zeile („150 kg geklaut, 292 kg versenkt").
 
 **Caching (ETag + Revalidierung):** Aus den ergebnisrelevanten Feldern (`summarized_at`,
-`delivered_kg`, `stolen_kg`, `sunk_kg`, `aircraft`, `callsign`, `event`) wird ein MD5-Hash
-gebildet, der als `ETag` dient und in den Cache-Dateinamen einfließt
+`delivered_kg`, `stolen_kg`, `sunk_kg`, `aircraft`, `callsign`, `event`, `team_total_kg`) wird ein
+MD5-Hash gebildet, der als `ETag` dient und in den Cache-Dateinamen einfließt
 (`data/badges/kutter_<event_id>_<cid>_<hash>.png`). `Cache-Control: no-cache` + `ETag`; passendes
-`If-None-Match` → `304 Not Modified`.
+`If-None-Match` → `304 Not Modified`. Der Hash enthält außerdem `_BADGE_RENDER_VERSION` (in
+`app/main.py`) — eine Änderung am Badge-Rendering (z. B. Layout-Fix) erzwingt so automatisch die
+Neuerstellung aller gecachten Badges, ohne dass Dateien manuell gelöscht werden müssen.
 
 **Response-Header:**
 ```

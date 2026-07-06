@@ -186,6 +186,21 @@ class TestPayloads:
         conn.commit()
         assert get_payload_map(conn)["BE58"] == 999
 
+    def test_infinite_values_never_persisted(self):
+        # #64: ein Phantom-Typcode (z.B. Buchstabendreher AS65→SA65) lieferte über den
+        # KI-Vorschlag inf/nan-Werte, die dann die ganze Zuladungs-Liste beim JSON-Encoding
+        # sprengten (500 „Lade Zuladungen…" hängt). upsert_payload muss inf/nan zu None kappen,
+        # NIE roh in die DB schreiben.
+        conn = _make_conn()
+        upsert_payload(conn, "SA65", mtow_kg=4000, empty_kg=float("-inf"), fuel_kg=510)
+        conn.commit()
+        from app.database import list_aircraft_payloads
+        import json
+        rows = list_aircraft_payloads(conn)
+        row = next(r for r in rows if r["type_code"] == "SA65")
+        assert row["empty_kg"] is None       # nie roh gespeichert
+        json.dumps(rows)                     # muss ohne ValueError durchlaufen
+
 
 class TestLlmResult:
     def test_build_result_uses_half_fuel_and_crew(self):
@@ -1369,11 +1384,25 @@ class TestKutterBadge:
         from app.badge import _kutter_loss_label
         assert _kutter_loss_label(150, 292) == "SEEROVER!"
 
+    def test_team_kg_with_target(self):
+        # #64 (v8.8.1): Badge zeigt die Gesamt-Tonnage des TEAMS, nicht nur des Piloten.
+        from app.badge import _fmt_team_kg
+        assert _fmt_team_kg(1610.0, 2810.0) == "1610 / 2810 kg Team"
+
+    def test_team_kg_without_target(self):
+        from app.badge import _fmt_team_kg
+        assert _fmt_team_kg(950.0, None) == "950 kg Team"
+
+    def test_team_kg_missing_defaults_to_zero(self):
+        from app.badge import _fmt_team_kg
+        assert _fmt_team_kg(None, None) == "0 kg Team"
+
     def test_render_returns_png_without_loss(self):
         from app.badge import render_kutter_badge
         png = render_kutter_badge({
             "callsign": "FRS49", "name": "Tobias", "aircraft": "C172",
             "delivered_kg": 292, "stolen_kg": 0, "sunk_kg": 0,
+            "team_total_kg": 1610.0, "team_target_kg": 2810.0,
             "event": "Helgoland-Nachschub", "date": "01.07.2026",
         })
         assert png[:8] == _PNG_MAGIC and len(png) > 500
@@ -1475,6 +1504,20 @@ class TestKutterBadgeEndpoints:
         res = client.get(f"/api/admin/transport/events/{ev['id']}/badge/500.png")
         assert res.status_code == 200
         assert res.headers["content-type"] == "image/png"
+
+    def test_badge_data_includes_team_total(self, tmp_path, monkeypatch):
+        # #64 (v8.8.1): das Badge feiert die TEAM-Leistung, nicht nur den eigenen Anteil.
+        ev = {"name": "Test", "dtstart": "2026-07-01T18:00:00Z"}
+        progress = {
+            "participants": [{"cid": 500, "callsign": "FRS500", "aircraft": "C172", "delivered_kg": 250.0}],
+            "losses": [],
+            "total_kg": 1610.0,
+            "target_kg": 2810.0,
+        }
+        d = main._kutter_badge_data(progress, ev, 500)
+        assert d["delivered_kg"] == 250.0       # eigener Anteil bleibt erhalten
+        assert d["team_total_kg"] == 1610.0     # Gesamt-Team-Leistung neu dazu
+        assert d["team_target_kg"] == 2810.0
 
     def test_admin_endpoint_requires_auth(self, tmp_path, monkeypatch):
         client, db = self._app(tmp_path, monkeypatch)

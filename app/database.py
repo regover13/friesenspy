@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 
@@ -484,6 +485,26 @@ def init_db(db_path: str) -> None:
                 "REPLACE(make_model, ' · volle Tanks, Pilot abgezogen', '') "
                 "WHERE make_model LIKE '%volle Tanks%'"
             )
+        except sqlite3.OperationalError:
+            pass
+        # Alt-Daten (v8.8.1): inf/nan aus fehlerhaften KI-Zuladungs-Vorschlägen (Phantom-Typcode
+        # wie Buchstabendreher AS65→SA65) bereinigen — nicht-endliche Werte → NULL, sonst sprengt
+        # ein einziger die Zuladungs-Liste beim JSON-Encoding. SQLite kann inf nicht per SQL
+        # filtern, daher in Python. payload_kg ist NOT NULL → dort 0.0 (sicherer Fallback: „keine
+        # Zuladung", bis der Admin die Zeile neu speichert) statt NULL. Idempotent.
+        try:
+            _pl_cols = ("mtow_kg", "empty_kg", "fuel_kg", "crew_kg", "payload_kg")
+            for _row in conn.execute(
+                "SELECT rowid, " + ", ".join(_pl_cols) + " FROM aircraft_payloads"
+            ).fetchall():
+                _vals = tuple(_row)
+                _bad = [_pl_cols[i] for i, v in enumerate(_vals[1:])
+                        if isinstance(v, float) and not math.isfinite(v)]
+                if _bad:
+                    _sets = ", ".join(f"{c}={'0.0' if c == 'payload_kg' else 'NULL'}" for c in _bad)
+                    conn.execute(
+                        f"UPDATE aircraft_payloads SET {_sets} WHERE rowid=?", (_vals[0],)
+                    )
         except sqlite3.OperationalError:
             pass
         try:
@@ -3810,13 +3831,24 @@ def get_payload_map(conn: sqlite3.Connection) -> dict[str, float]:
     return {r["type_code"]: (r["payload_kg"] or 0.0) for r in rows}
 
 
+def _finite_or_none(v):
+    """``inf``/``nan`` → ``None`` (JSON-sicher), sonst unverändert. Härtung gegen kaputte
+    KI-Zuladungswerte: ``json.loads`` akzeptiert ``Infinity``/``NaN``, und ein einziger solcher
+    Wert in ``aircraft_payloads`` sprengte sonst die ganze Zuladungs-Liste beim Response-Encoding
+    (500, „Lade Zuladungen…" hängt) — v8.8.1."""
+    return None if isinstance(v, float) and not math.isfinite(v) else v
+
+
 def list_aircraft_payloads(conn: sqlite3.Connection) -> list[dict]:
-    """Alle Zuladungs-Zeilen (für die Admin-Tabelle), alphabetisch nach Typcode."""
+    """Alle Zuladungs-Zeilen (für die Admin-Tabelle), alphabetisch nach Typcode.
+
+    Nicht-endliche Werte (inf/nan) werden defensiv zu ``None`` — so kann kein einzelner kaputter
+    Datensatz die JSON-Serialisierung der ganzen Liste zum Absturz bringen (v8.8.1)."""
     rows = conn.execute(
         "SELECT type_code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model, updated_at "
         "FROM aircraft_payloads ORDER BY type_code"
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [{k: _finite_or_none(v) for k, v in dict(r).items()} for r in rows]
 
 
 def upsert_payload(
@@ -3841,6 +3873,12 @@ def upsert_payload(
     code = normalize_type_code(type_code)
     if not code:
         return
+    # Nicht-endliche Werte (inf/nan) nie speichern — sonst sprengt ein einziger die Zuladungs-
+    # Liste beim JSON-Encoding (v8.8.1, Härtung an der Eingangsseite).
+    mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg = (
+        _finite_or_none(mtow_kg), _finite_or_none(empty_kg), _finite_or_none(fuel_kg),
+        _finite_or_none(crew_kg), _finite_or_none(payload_kg),
+    )
     if crew_kg is None:
         crew_kg = _CREW_KG_DEFAULT
     if payload_kg is None:

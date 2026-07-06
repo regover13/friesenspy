@@ -149,6 +149,42 @@ class TestInitDb:
         assert rows[1] == "A320"
         assert rows[2] == "C172"  # bereits normalisiert -> unveraendert
 
+    def test_aircraft_payloads_backfill_sanitizes_infinite_values(self, tmp_path):
+        """#64 (v8.8.1): ein fehlerhafter KI-Zuladungs-Vorschlag (Phantom-Typcode, z.B.
+        Buchstabendreher AS65->SA65 im Flugplan) schrieb inf/nan in aircraft_payloads --
+        das sprengte GET /api/admin/transport/payloads beim JSON-Encoding (500, "Lade
+        Zuladungen..." haengt dauerhaft). Die einmalige Nachbereinigung muss Bestandszeilen
+        heilen: payload_kg ist NOT NULL -> 0.0-Fallback, andere Spalten -> NULL."""
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = sqlite3.connect(db_file)
+        conn.execute(
+            "INSERT INTO aircraft_payloads (type_code, mtow_kg, empty_kg, fuel_kg, crew_kg, "
+            "payload_kg, source, updated_at) VALUES ('SA65', 4000.0, ?, 510.0, 85.0, ?, "
+            "'llm', '2026-07-05T13:16:01Z')",
+            (float("-inf"), float("inf")),
+        )
+        conn.commit()
+        conn.close()
+
+        init_db(db_file)  # zweiter Lauf: muss die kaputte Alt-Zeile heilen
+
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        row = dict(conn.execute(
+            "SELECT mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg FROM aircraft_payloads "
+            "WHERE type_code='SA65'"
+        ).fetchone())
+        conn.close()
+        assert row["mtow_kg"] == 4000.0     # unveraendert, war schon endlich
+        assert row["empty_kg"] is None      # inf -> NULL
+        assert row["payload_kg"] == 0.0     # inf -> 0.0 (NOT NULL-Fallback)
+        import json
+        from app.database import get_connection, list_aircraft_payloads
+        conn = get_connection(db_file)
+        json.dumps(list_aircraft_payloads(conn))  # muss ohne ValueError durchlaufen
+        conn.close()
+
     def test_flights_aircraft_backfill_normalizes_legacy_composite_string(self, tmp_path):
         """#51 (v8.5.0): flights.aircraft_short/aircraft_icao trugen vor dem Ingestion-Fix
         (app/poller.py) manchmal einen Composite-String, weil der VATSIM-Feed dieses Feld

@@ -1035,7 +1035,7 @@ def _fmt_de_date(iso: str) -> str:
 # Badge ein: Ändert sich NUR das Layout/Rendering (nicht die Daten), bleibt der datenbasierte
 # Hash sonst gleich und Browser/Forum zeigen per 304 das alte Bild. Bei jeder sichtbaren
 # Layout-Änderung an app/badge.py hochzählen — dann holen alle Clients frisch.
-_BADGE_RENDER_VERSION = "2"
+_BADGE_RENDER_VERSION = "3"  # v8.8.1: Team-Tonnage + Footer-Layout-Fix (Kutter-Badge)
 
 
 def _badge_entry_data(view: dict, race: dict, cid: int) -> tuple[dict, bool]:
@@ -1717,6 +1717,10 @@ def _kutter_badge_data(progress: dict, ev: dict, cid: int) -> dict:
         "delivered_kg": entry.get("delivered_kg") or 0.0,
         "stolen_kg": round(stolen_kg, 1),
         "sunk_kg": round(sunk_kg, 1),
+        # Gesamt-Tonnage des EVENTS (Teamleistung, nicht nur dieser Pilot) — Nutzer-Wunsch
+        # 06.07.: der Kutter ist eine gemeinsame Leistung, das Badge soll sie feiern.
+        "team_total_kg": round(progress.get("total_kg") or 0.0, 1),
+        "team_target_kg": round(progress.get("target_kg") or 0.0, 1) if progress.get("target_kg") else None,
         "event": ev.get("name") or "FriesenKutter",
         "date": _fmt_de_date(ev.get("dtstart")),
     }
@@ -1749,7 +1753,7 @@ async def get_transport_badge(request: Request, event_id: int, cid: int):
     # ETag (analog Bummel-Badge): ändert sich die Bilanz nachträglich, ändert sich der ETag.
     key = hashlib.md5(
         f"v{_BADGE_RENDER_VERSION}|{ev.get('summarized_at')}|{d['delivered_kg']}|{d['stolen_kg']}|"
-        f"{d['sunk_kg']}|{d['aircraft']}|{d['callsign']}|{d.get('event')}".encode()
+        f"{d['sunk_kg']}|{d['aircraft']}|{d['callsign']}|{d.get('event')}|{d['team_total_kg']}".encode()
     ).hexdigest()[:10]
     etag = f'"{key}"'
     if request.headers.get("if-none-match") == etag:

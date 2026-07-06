@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -242,13 +243,22 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
         )
         return None
     try:
-        return _build_result(
-            str(spec.get("make_model") or code),
+        mtow, empty, fuel_full = (
             float(spec["mtow_kg"]), float(spec["empty_kg"]), float(spec["fuel_full_kg"]),
         )
     except (KeyError, TypeError, ValueError) as exc:
         logger.warning("Zuladungs-Vorschlag für %s: unvollständige Werte (%s)", code, exc)
         return None
+    # json.loads akzeptiert Infinity/NaN als Erweiterung und float() lässt sie durch — ein
+    # Phantom-Typcode (z. B. Buchstabendreher AS65→SA65) liefert dann inf/nan, was später die
+    # ganze Zuladungs-Liste beim JSON-Encoding sprengt. Nur endliche, positive Werte akzeptieren.
+    if not all(math.isfinite(v) and v > 0 for v in (mtow, empty, fuel_full)):
+        logger.warning(
+            "Zuladungs-Vorschlag für %s: unplausible Werte (mtow=%s empty=%s fuel=%s)",
+            code, mtow, empty, fuel_full,
+        )
+        return None
+    return _build_result(str(spec.get("make_model") or code), mtow, empty, fuel_full)
 
 
 # ---------------------------------------------------------------------------

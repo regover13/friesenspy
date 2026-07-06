@@ -116,10 +116,10 @@ def _finish(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-def _footer(dr, fill):
+def _footer(dr, fill, y_frac: float = 0.86):
     f = _font(20)
     w = _text_w(dr, _BRAND, f)
-    dr.text(((_S - w) / 2, int(_S * 0.86)), _BRAND, font=f, fill=fill)
+    dr.text(((_S - w) / 2, int(_S * y_frac)), _BRAND, font=f, fill=fill)
 
 
 def _fmt_signed_delta(sec) -> str:
@@ -194,11 +194,12 @@ def _wrap_two(dr, text: str, font_size: int, max_w: int) -> list[str]:
     return [" ".join(words[:best_i]), " ".join(words[best_i:])]
 
 
-def _kutter_event_heading(dr, d, fill, center: float, size: int):
+def _kutter_event_heading(dr, d, fill, center: float, size: int, date_y: float = 0.775):
     """Event-Name als große Überschrift ÜBER der Inselkette (bis zu zwei Zeilen), Datum darunter.
 
     Der Zeilenblock wird vertikal um ``center`` (Anteil an ``_S``) zentriert; ``size`` ist die
-    Schriftgröße der Überschrift.
+    Schriftgröße der Überschrift. ``date_y`` ist per Parameter einstellbar, weil der Kutter-Badge
+    (mit Team-Tonnage-Zeile, v8.8.1) weniger Platz hat als der Bummel-Badge.
     """
     ev = d.get("event") or ""
     lines = _wrap_two(dr, ev, size, int(_S * 0.82))
@@ -208,7 +209,7 @@ def _kutter_event_heading(dr, d, fill, center: float, size: int):
         _ctext(dr, int(_S * (top + i * lh)), ln, size, fill, 0.86)
     date = d.get("date") or ""
     if date:
-        _ctext(dr, int(_S * 0.775), date, 16, fill, 0.70)
+        _ctext(dr, int(_S * date_y), date, 16, fill, 0.70)
 
 
 def _kutter_loss_label(stolen_kg: float, sunk_kg: float) -> str | None:
@@ -226,6 +227,16 @@ def _kutter_loss_label(stolen_kg: float, sunk_kg: float) -> str | None:
     return None
 
 
+def _fmt_team_kg(total_kg, target_kg) -> str:
+    """'1610 / 2810 kg Team' (mit Ziel) oder '1610 kg Team' (ohne Ziel-Manifest) — pure Funktion,
+    direkt testbar. Zeigt die GESAMTE Team-Leistung des Events, nicht nur den eigenen Anteil
+    (Nutzer-Wunsch 06.07.: der Kutter ist eine gemeinsame Leistung)."""
+    total = int(round(total_kg or 0))
+    if target_kg:
+        return f"{total} / {int(round(target_kg))} kg Team"
+    return f"{total} kg Team"
+
+
 def render_kutter_badge(d: dict) -> bytes:
     """Kutter-Abschluss-Badge (FriesenKutter-Transportevent) — navy Kern wie ``render_medal``,
     zusätzlich ein Verlust-Abschnitt (geklaut/versenkt), falls die Fracht nicht ankam."""
@@ -234,27 +245,32 @@ def render_kutter_badge(d: dict) -> bytes:
 
     _ctext(dr, int(_S * 0.200), "VOLL BELADEN!", 32, _ORANGE, 0.78)
     _ctext(dr, int(_S * 0.305), d.get("callsign", ""), 56, _LBLUE, 0.72)
-    # Typcode direkt unter dem Callsign (Name + kg entfallen bewusst).
+    # Typcode direkt unter dem Callsign (Name entfällt bewusst).
     _ctext(dr, int(_S * 0.415), d.get("aircraft") or "k. A.", 24, _LBLUE, 0.80)
+    # Gesamt-Tonnage des TEAMS (nicht nur dieser Pilot) — v8.8.1.
+    _ctext(dr, int(_S * 0.468), _fmt_team_kg(d.get("team_total_kg"), d.get("team_target_kg")),
+           18, _WHITE, 0.85)
 
     stolen_kg = d.get("stolen_kg") or 0
     sunk_kg = d.get("sunk_kg") or 0
     label = _kutter_loss_label(stolen_kg, sunk_kg)
     if label:
-        _ctext(dr, int(_S * 0.490), label, 22, _ORANGE, 0.78)
+        _ctext(dr, int(_S * 0.525), label, 22, _ORANGE, 0.78)
         pieces = []
         if stolen_kg > 0:
             pieces.append(f"{int(round(stolen_kg))} kg geklaut")
         if sunk_kg > 0:
             pieces.append(f"{int(round(sunk_kg))} kg versenkt")
-        _ctext(dr, int(_S * 0.540), ", ".join(pieces), 16, _WHITE, 0.85)
-        ev_center, ev_size = 0.618, 24
+        _ctext(dr, int(_S * 0.572), ", ".join(pieces), 16, _WHITE, 0.85)
+        ev_center, ev_size = 0.650, 22
     else:
-        ev_center, ev_size = 0.555, 30
+        ev_center, ev_size = 0.590, 28
 
-    # Event-Name als große Überschrift über die Inselkette.
-    _kutter_event_heading(dr, d, _LBLUE, ev_center, ev_size)
-    _footer(dr, _LBLUE)
+    # Event-Name als große Überschrift über die Inselkette; Datum + Fußzeile enger zusammen
+    # (v8.8.1) — der ursprüngliche Abstand ließ „friesenflieger.de" in den unteren Ring der
+    # Kreisgrafik hineinlaufen (Fund 06.07., Live-Badge cid 1746912).
+    _kutter_event_heading(dr, d, _LBLUE, ev_center, ev_size, date_y=0.800)
+    _footer(dr, _LBLUE, y_frac=0.838)
     return _finish(img)
 
 

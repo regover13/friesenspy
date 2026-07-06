@@ -1,5 +1,15 @@
 [
   {
+    "version": "8.8.1",
+    "date": "2026-07-06",
+    "title": "Zuladungs-Tabelle repariert + Kutter-Badge zeigt Team-Tonnage",
+    "items": [
+      "🐛 Ein einzelner fehlerhafter KI-Zuladungs-Vorschlag (Phantom-Flugzeugtyp durch einen Buchstabendreher im Flugplan) hatte unbrauchbare Werte gespeichert und dadurch die gesamte Zuladungs-Tabelle im Admin-Bereich blockiert („Lade Zuladungen…“ ohne Ende). Kaputte Bestandsdaten werden jetzt automatisch bereinigt, und ein einzelner unplausibler KI-Vorschlag kann die Tabelle nicht mehr lahmlegen.",
+      "🎖 Das FriesenKutter-Forum-Badge zeigt jetzt zusätzlich die insgesamt vom Team gelieferte Tonnage (z. B. „1610 / 2810 kg Team“) — bisher stand dort gar keine Mengenangabe. Alle Kutter-Badges werden beim nächsten Aufruf automatisch neu erzeugt.",
+      "✏️ Layout-Korrektur am Kutter-Badge: die Fußzeile „friesenflieger.de“ lief bei manchen Events in den unteren Ring der Badge-Grafik hinein — jetzt sitzt sie sauber innerhalb des Rings."
+    ]
+  },
+  {
     "version": "8.8.0",
     "date": "2026-07-06",
     "title": "FriesenKutter: ehrlicher Fortschritt + sichtbare Kappung",
