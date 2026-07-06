@@ -92,9 +92,18 @@ eingefroren (die globale „Neu berechnung" ohne Knopf, ohne manuellen Schritt).
 Neuer Parameter `skip_open_probe: bool = False`. Ist er `True` (Aufrufer setzt ihn bei
 Events mit `summarized_at`), werden der zweite `canonicalize_legs`-Aufruf (`open_legs_probe`,
 `database.py:4798`) **und** der gesamte Offen-Flug-Zweig übersprungen (`current_leg_by_cid`
-bleibt leer, `open_transport_flights`-Schleife nicht betreten). Sicher, weil ein summarized-Event
-per Definition kein offenes qualifizierendes Leg mehr hat. Wirkt nur im Lazy-Freeze-Erstlauf
-(s. u.); der Normalfall liest den Snapshot.
+bleibt leer, `open_transport_flights`-Schleife nicht betreten). Wirkt nur im Freeze-Erstlauf
+(Eager wie Lazy, s. §4); der Normalfall liest den Snapshot.
+
+**Präzise Begründung (Fable-Review-Fund 8):** Ein summarized-Event hat _nicht_ zwingend
+gar keine offene Verbindung mehr — `transport_anyone_in_progress` (`database.py:4731`)
+überspringt Flüge mit Live-Ankunfts-Latch. Deren Fracht steckt aber bereits im geschlossenen
+GPS-Leg (C1-Mechanik, `database.py:4864–4873`) → die **Tonnage bleibt korrekt** ohne den
+Offen-Zweig. Der Offen-Zweig trägt bei einem abgeschlossenen Event nur noch die kosmetische
+`in_air:true/airborne`-Zeile bei (Pilot „unterwegs"), die eingefroren für immer falsch stünde.
+Deshalb ist `skip_open_probe` beim Freeze nicht nur billiger, sondern **richtiger**. Rest-Randfall
+(Latch OHNE geschlossenes GPS-Leg, z. B. trackless) ist selten; er wird bewusst hingenommen
+(dokumentiert unter „Nicht im Scope").
 
 ### 3. Universeller Zugriff: „eingefroren oder rechnen" (`app/main.py`)
 
@@ -113,28 +122,61 @@ _frozen_or_compute(conn, kind, ref_id, *, finished, compute_fn, now) -> dict:
     return compute_fn()                             # aktiv → live
 ```
 
-- **Kutter** (`/api/transport/events`, `/api/transport/event/{id}`, Badge-Endpoints):
-  `finished = bool(ev["summarized_at"])`,
+- **Kutter** (`/api/transport/events`, `/api/transport/event/{id}`, Badge-Endpoints
+  `main.py:1735/1780`, **und** `GET /api/admin/transport/payloads` `main.py:1900` — der rechnet
+  heute für `unmapped_types` jedes Event live durch, Fable-Fund 7): `finished = bool(ev["summarized_at"])`,
   `compute_fn = lambda: compute_transport_progress(conn, ev, now, callsign_prefix=prefix,
   skip_open_probe=finished)`.
-- **Bummel** (`/api/bummel/races`, `/api/bummel/race/{id}`, Badge-Endpoints):
-  `finished = bool(race["revealed_at"])`,
+- **Bummel** (`/api/bummel/races`, `/api/bummel/race/{id}`, Badge-Endpoints `main.py:1074/1125`):
+  `finished = bool(race["revealed_at"]) and now >= (race["dtend"] or "")`,
   `compute_fn = lambda: _build_race_view(conn, race, now, force_reveal=False)`.
-  Beim Lesen eines Bummel-Snapshots das zeitabhängige Feld `status` frisch überschreiben
-  (`_race_status(race, now)`), damit ein enthülltes Rennen nicht mit eingefrorenem Status-Text
-  hängt. (Kutter: analog `_transport_status` frisch, falls dort verwendet.)
+  **`now >= dtend` ist zwingend (Fable-Fund 2):** die Admin-Notfall-Enthüllung
+  (`admin_reveal_race`, `main.py:1530`) setzt `revealed_at` bedingungslos auch VOR `dtend` —
+  ein reines `bool(revealed_at)` fröre ein noch laufendes Rennen ein (spätere Legs/Teilnehmer
+  fehlten dauerhaft). Der Auto-Reveal (`update_bummel_reveals`) ist ohnehin auf `dtend` gegated.
+
+**Frische Überlagerung beim Snapshot-Read (zeitabhängige / nachlaufende Felder):**
+- **Status** frisch aus `_race_status(race, now)` (Bummel) bzw. `_transport_status(ev, now)`
+  (Kutter, falls dort verwendet) — nie der eingefrorene Text.
+- **Bummel-Metadaten:** Der List-Endpoint nimmt `name/route/dtstart/dtend` weiterhin aus der
+  **DB-Zeile `race`**, nicht aus dem eingefrorenen `view` (heute `view["name"]` etc.,
+  `main.py:1002–1005`) — so friert nur das Rechenergebnis ein, nie die Metadaten (Kutter macht
+  das via `_transport_event_meta(ev, …)` schon so). Fable-Fund 3.
+- **KI-Sprüche (Kutter, Fable-Fund 1 — KRITISCH):** `summary_quip` (aus `ev`) und die Pro-Flug-
+  `quip`-Felder (aus dem Quips-Store, `get_transport_quips`) werden beim Read **frisch
+  überlagert**, gehören also NICHT zur eingefrorenen Identität. Grund: die Quips entstehen erst
+  NACH dem `summarized`-Latch (Summary danach, Pro-Flug-Quips async, max. 8/Poll-Lauf) — ein zum
+  Latch-Zeitpunkt geschriebener Snapshot hätte sie noch nicht. Siehe auch §4 (Poller darf die
+  Quip-Erzeugung nicht abwürgen).
 
 Der List-Endpoint pickt aus dem (frozen oder live) Dict wie bisher seine Teilmenge
 (Kutter: Tonnage/Fortschritt; Bummel: `participant_count`/`status`).
+
+**Konsistenz-Hinweis (Fable-Fund 7):** `get_progress_snapshot` parst pro Read **frisch** aus
+`payload_json` (liefert nie ein geteiltes veränderliches Dict) — der Detail-Endpoint `pop`t
+`unmapped_types`, das darf einen späteren Read nicht beeinflussen.
 
 ### 4. Eager-Freeze im Poller (nur Kutter — Optimierung)
 
 Der Kutter-Poller hält beim Feierabend das frische `progress` bereits in der Hand. An der
 Stelle, wo `set_transport_summarized` erfolgreich latcht (`poller.py:1250`), zusätzlich
 `write_progress_snapshot(conn, "kutter", ev["id"], progress, now)` — spart den einmaligen
-langsamen Lazy-Erstlauf. **Poller-Gate**: trägt ein Event `summarized_at`, `detect_transport_losses`
-(schon gegated) **und** `compute_transport_progress` überspringen — der Endpoint bedient
-abgeschlossene Events aus dem Snapshot.
+langsamen Lazy-Erstlauf.
+
+**Eager == Lazy (Fable-Fund 8):** Damit der Eager-Snapshot identisch zum späteren Lazy-Recompute
+(`skip_open_probe=True`) ist, VOR dem Schreiben im `progress` alle `flights`-Einträge
+normalisieren: `in_air`/`airborne` → `False` (ein abgeschlossenes Event hat niemanden mehr
+„unterwegs"). Die Tonnage bleibt unverändert.
+
+**Poller-Gate (Fable-Fund 1 — Quips nicht abwürgen!):** Trägt ein Event `summarized_at`, werden
+`detect_transport_losses` (schon gegated) **und** `compute_transport_progress` übersprungen — der
+Endpoint bedient abgeschlossene Events aus dem Snapshot. **Aber:** die KI-Sprüche laufen NACH dem
+Latch weiter (Summary + Pro-Flug-Quips, max. 8/Lauf). Das Gate darf sie nicht stoppen — solange
+für das Event noch Quips fehlen, sammelt der Poller die offenen Quip-Jobs weiter, und zwar aus
+der **`flights`-Liste des Snapshots** (billiger Read), NICHT über einen erneuten Live-Compute.
+Erst wenn alle beladenen Flüge einen Quip haben, ist das Event für den Poller „ruhig". (Da die
+Quips beim Endpoint-Read ohnehin frisch überlagert werden (§3), muss der Snapshot dafür nicht neu
+geschrieben werden.)
 
 Bummel wird **lazy-only** eingefroren (der Reveal-Poller `_check_bummel_reveals` baut die View
 nicht selbst — die lebt in `main.py`). Ein enthülltes Rennen friert beim ersten Endpoint-Abruf
@@ -143,23 +185,32 @@ Korrektheitsfrage.
 
 ### 5. Invalidierung (Snapshot verwerfen)
 
-Ein Snapshot muss weg, sobald sich seine Eingaben ändern:
+Ein Snapshot muss weg, sobald sich seine Eingaben **bewusst** ändern (Daten-Edits/Overrides).
+Nicht-bewusste Hintergrund-Änderungen bleiben eingefroren (§ „Nicht im Scope", Nutzer-Wahl).
 
 **Kutter (`app/main.py`):**
-- `admin_update_transport_event` (`main.py:1840`) nach `update_transport_event` →
-  `delete_progress_snapshot(conn, "kutter", event_id)`.
+- `admin_update_transport_event` (`main.py:1840`) → `delete_progress_snapshot(conn, "kutter",
+  event_id)`. **Wichtig (Fable-Fund 5):** der Delete muss **unbedingt** feuern, auch wenn der
+  Body leer ist / `fields` leer bleibt (heute überspringt `main.py:1859` bei leerem Body das
+  Update). Damit ist ein „Event im Admin nur antippen + speichern" der bewusste **manuelle
+  Neuberechnungs-Hebel** für ein abgeschlossenes Event (nächster Read friert frisch ein).
 - `admin_delete_transport_event` (`main.py:1881`) → `delete_progress_snapshot` (Aufräumen).
-- Manifest/Zuladung: Event-`cargo` (Teil von `admin_update_transport_event`) → das eine Event
-  ist über den Delete oben ohnehin schon abgedeckt. Globale Payload-Map / Default-kg
-  (`/payloads`, `/default-payload`, `main.py:1916/1961`) wirken auf **alle** Kutter →
-  `delete_progress_snapshots(conn, "kutter")` (automatisch im Endpoint; Bummel unberührt).
+- Globale Payload-Map / Default-kg (`/payloads`, `/default-payload`, `main.py:1916/1961`) wirken
+  auf **alle** Kutter → `delete_progress_snapshots(conn, "kutter")` (automatisch; Bummel unberührt).
+- **Kalender-Sync (Fable-Fund 3):** `upsert_calendar_transport_event` (`database.py:3935`) läuft
+  bei jedem Sync (`ON CONFLICT … DO UPDATE`). NICHT pauschal invalidieren (löschte sonst bei
+  jedem Sync alle Kalender-Event-Snapshots) — nur bei **tatsächlicher Wertänderung** von
+  `route/dtstart/dtend/destination` vorher lesen + `delete_progress_snapshot` aufrufen.
 
 **Bummel (`app/main.py`):**
 - Override setzen/löschen (`/override`, `main.py:1597/1621`) → `delete_progress_snapshot("bummel", race_id)`.
-- Rennen bearbeiten (`main.py:1500`), verstecken (`/hide`, `main.py:1561` — hebt Reveal auf),
-  löschen (`main.py:1518`) → `delete_progress_snapshot("bummel", race_id)`.
+- Rennen bearbeiten (`main.py:1500`) → `delete_progress_snapshot("bummel", race_id)` (ebenfalls
+  unbedingt, als manueller Hebel); verstecken (`/hide`, `main.py:1561` — hebt Reveal auf) +
+  löschen (`main.py:1518`) → `delete_progress_snapshot`.
 - Reveal (`/reveal`, `main.py:1530`) braucht kein Delete (es gab noch keinen Snapshot; der
-  nächste Read friert frisch ein).
+  nächste Read friert frisch ein — sofern `now >= dtend`, s. §3).
+- **Kalender-Sync:** `upsert_calendar_bummel_race` (`database.py:3660`) analog Kutter — nur bei
+  echter Wertänderung invalidieren.
 
 ### 6. Globale Neuberechnung — ohne Button, via Versions-Konstante
 
@@ -182,8 +233,12 @@ Die 365-Tage-Grenze gilt **global für alle Daten** (Klärung 2026-07-06); Anzei
 angewandt auf die beiden Spezial-Event-Listen; die breite Anwendung (Statistik/Piloten) läuft
 in **#67**.
 
-- `list_transport_events(conn, *, since: str | None = None)` — mit `since`: `WHERE dtend >= ?`.
-- `list_bummel_races(conn, *, since: str | None = None)` — analog `WHERE dtend >= ?`.
+- `list_transport_events(conn, *, since: str | None = None)` — mit `since`:
+  `WHERE (dtend IS NULL OR dtend >= ?)` (NULL-Guard für Altbestände, Fable-Fund 9).
+- `list_bummel_races(conn, *, since: str | None = None)` — analog `WHERE (dtend IS NULL OR dtend >= ?)`.
+- Hinweis (Fable-Fund 9, geprüft): `update_bummel_reveals` iteriert intern seine EIGENE
+  ungefilterte `list_bummel_races(conn)` (`database.py:3041`) und bleibt vom Endpoint-`since`
+  unberührt — Reveal-Logik weiterhin korrekt.
 - **Öffentliche Endpoints** (`/api/transport/events`, `/api/bummel/races`) übergeben
   `since = now − _DATA_RETENTION_DAYS Tage`.
 - **Poller** übergibt `since=None` (Retention ist Anzeige-, keine Verarbeitungsgrenze;
@@ -202,7 +257,14 @@ JSON-Reads). #66 legt die Grundlage; #64 bleibt eigener Task.
 - Keine Änderung an der GPS-Leg-Erkennung (`_gps_flights_for_positions`) oder an der Wertung
   selbst (`compute_bummel_standings`, `compute_transport_progress`-Semantik).
 - Keine automatische Snapshot-Invalidierung bei Deploy/Code-Änderung — bewusst „friert ein";
-  Korrektur nur über den globalen Button oder gezielte Bearbeitung.
+  globale Neuberechnung ausschließlich über die Versions-Konstante `_PROGRESS_SNAPSHOT_VERSION`
+  (§6), gezielte über Event-/Rennen-Bearbeitung (§5). **Kein Admin-Button, kein Recompute-Endpoint.**
+- **Nach-Abschluss-Daten-Korrekturen bleiben eingefroren (Nutzer-Wahl 2026-07-06, Fable-Fund
+  4+5):** Ein nachgetragener `custom_airports`-Eintrag (`main.py:1979`) und ein verspätet
+  nachgeladener StatSim-Track (`poller.py:1083`) ändern ein bereits eingefrorenes Event
+  **nicht** automatisch. Wer das doch will, tippt das Event im Admin an + speichert (§5,
+  unbedingter Delete-Hook) → nächster Read rechnet frisch. Bewusst hingenommener Randfall, kein
+  Auto-Invalidierungs-Code.
 - Retention für Statistik/Piloten → #67.
 
 ## Tests
@@ -219,18 +281,33 @@ JSON-Reads). #66 legt die Grundlage; #64 bleibt eigener Task.
   `dtend < since`; ohne `since` alle).
 
 **`tests/test_poller.py`:**
-- `test_poller_writes_kutter_snapshot_on_summarize`.
+- `test_poller_writes_kutter_snapshot_on_summarize` (inkl. `in_air`/`airborne` im Snapshot auf
+  `False` normalisiert — Fable 8).
 - `test_poller_skips_compute_when_summarized` (kein `compute_transport_progress`-Aufruf mehr;
   Spy/Mock-Zähler).
+- `test_poller_still_generates_quips_after_summarize` (Snapshot beim Latch OHNE Quips geschrieben;
+  Folge-Poll erzeugt fehlende Pro-Flug-Quips weiter, obwohl compute gegated — Fable 1).
 
 **`tests/test_admin_api.py` / `tests/test_main.py`:**
 - `test_transport_events_uses_snapshot` (summarized-Event liefert Snapshot-Zahlen; `compute`
   nicht aufgerufen — Mock).
-- `test_bummel_race_lazy_freezes_on_first_read` (erster Read eines enthüllten Rennens schreibt
-  Snapshot; zweiter liest ihn, `compute_bummel_standings` nicht erneut aufgerufen).
-- `test_bummel_status_refreshed_from_snapshot` (Status stammt frisch, nicht eingefroren).
-- `test_admin_update_kutter_clears_snapshot` / `test_admin_bummel_override_clears_snapshot`.
+- `test_kutter_snapshot_overlays_fresh_quips` (nachträglich erzeugte `summary_quip`/Flug-`quip`
+  erscheinen beim Read, obwohl nicht im Snapshot — Fable 1).
+- `test_bummel_race_lazy_freezes_on_first_read` (erster Read eines enthüllten Rennens mit
+  `now >= dtend` schreibt Snapshot; zweiter liest ihn, `compute_bummel_standings` nicht erneut).
+- `test_bummel_force_reveal_before_dtend_not_frozen` (Force-Reveal vor `dtend` → `finished=False`,
+  kein Snapshot, weiter live — Fable 2).
+- `test_bummel_status_refreshed_from_snapshot` (Status frisch, nicht eingefroren).
+- `test_bummel_metadata_from_db_row_not_snapshot` (Rennen nach Reveal umbenannt → Liste zeigt
+  neuen Namen trotz altem Snapshot — Fable 3).
+- `test_admin_update_kutter_clears_snapshot` (auch bei **leerem** Body — Fable 5) /
+  `test_admin_bummel_override_clears_snapshot`.
 - `test_admin_payload_change_clears_all_kutter_snapshots`.
+- `test_calendar_sync_no_value_change_keeps_snapshot` / `test_calendar_sync_value_change_clears`
+  (Fable 3).
+- `test_kutter_badge_served_from_snapshot` (Badge rendert aus eingefrorenen `participants`/
+  `losses`; nach Versions-Bump frisch — Fable 10d).
+- `test_admin_payloads_unmapped_uses_snapshot` (kein Live-`compute` je Event mehr — Fable 7).
 
 ## Doku / Version (stehende Regeln)
 
@@ -251,8 +328,13 @@ JSON-Reads). #66 legt die Grundlage; #64 bleibt eigener Task.
    - `/api/transport/events` und `/api/bummel/races` messen: deutlich unter den alten Werten
      und **nicht** mit dem Alter/der Zahl abgeschlossener Einträge wachsend.
    - Kutter-Snapshots der Bestands-Events existieren nach ≤60 s (Poller-Eager) bzw. beim ersten
-     Abruf; Bummel-Snapshot nach erstem Abruf eines enthüllten Rennens.
-   - Globaler Button „Neu berechnen" leert die Tabelle; Zahlen danach identisch (bzw. nach
-     zwischenzeitlichem Bugfix korrigiert), `computed_at` frisch.
+     Abruf; Bummel-Snapshot nach erstem Abruf eines enthüllten Rennens (mit `now >= dtend`).
+   - **Versions-Bump** (`_PROGRESS_SNAPSHOT_VERSION` +1) + Deploy → Snapshots werden beim nächsten
+     Abruf frisch geschrieben, `computed_at` neu; Zahlen identisch (bzw. nach Bugfix korrigiert).
+   - **Event antippen + speichern** (auch ohne Feldänderung) verwirft dessen Snapshot → nächster
+     Read rechnet frisch (manueller Hebel).
+   - KI-Sprüche eines frisch abgeschlossenen Kutter-Events erscheinen vollständig, obwohl der
+     Snapshot beim Latch (vor der Quip-Erzeugung) geschrieben wurde (Read-Overlay + Poller
+     sammelt Quips weiter).
    - Ein künstlich >1 Jahr zurückdatiertes Event/Rennen erscheint nicht mehr im öffentlichen
      Listen-Endpoint, bleibt aber in der Admin-Liste.
