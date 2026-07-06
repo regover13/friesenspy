@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.8.4",
+    "date": "2026-07-06",
+    "title": "Kutter: Tagesend-Spruch ignorierte Verluste",
+    "items": [
+      "🐛 Der launige Abschluss-Spruch am Ende eines FriesenKutter-Events erwähnte selbst dann nie Verluste, wenn tatsächlich Fracht versunken oder gestohlen wurde — er konnte sogar fälschlich \"niemand versunken\" behaupten. Die Verlust-Fakten wurden zwar korrekt berechnet, aber nie an die KI weitergegeben. Der Spruch bekommt sie jetzt und muss Verluste explizit nennen, statt Vollständigkeit vorzutäuschen."
+    ]
+  },
+  {
     "version": "8.8.3",
     "date": "2026-07-06",
     "title": "Kutter: mehrere Flüge in einer Verbindung + widersprüchliche Sprüche",

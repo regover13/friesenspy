@@ -348,9 +348,17 @@ def event_summary(context: dict) -> str | None:
         f"Fracht: {', '.join(c.get('cargo') or []) or '—'}",
         f"Piloten (Flüge): {pilots}",
     ]
+    verluste = c.get("verluste") or []
+    if verluste:
+        lines.append(f"Verluste unterwegs ({round(c.get('lost_total_kg') or 0)} kg): " + "; ".join(verluste))
+    else:
+        lines.append("Verluste: keine — alles kam heil an")
     user = (
         "Schreibe eine kurze, launige Tagesend-Zusammenfassung (1–2 Sätze) für die "
-        "Friesen — wie viel Fracht zusammen bewegt wurde, mit einem Augenzwinkern. Fakten:\n- "
+        "Friesen — wie viel Fracht zusammen bewegt wurde, mit einem Augenzwinkern. "
+        "WICHTIG: Wenn es Verluste gab, MUSST du sie erwähnen (wer, versunken/geklaut, wie viel) "
+        "und darfst NICHT behaupten, alles sei heil angekommen oder niemand habe etwas verloren — "
+        "das wäre ein Widerspruch zu den Fakten. Fakten:\n- "
         + "\n- ".join(lines)
     )
     return _chat(_QUIP_SYSTEM, user, 400)
