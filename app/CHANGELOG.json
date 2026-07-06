@@ -1,5 +1,14 @@
 [
   {
+    "version": "8.8.7",
+    "date": "2026-07-06",
+    "title": "Kutter: frechere Verlust-Sprüche + Flüge lecken nicht mehr in fremde Events",
+    "items": [
+      "🏴‍☠️ Die KI-Sprüche zu misslungenen Frachtflügen sind jetzt deutlich frecher: ein Dieb wird augenzwinkernd zum Spitzbub auf Kaperfahrt, ein versunkener Kutter bekommt eine konkrete Nordsee-Szene (Fische machen Urlaub auf den versunkenen Strandkörben) — weiter für alle verständlich, aber mit deftigerem Nordton.",
+      "🐛 Ein gerade laufender Flug tauchte auch in ANDEREN, bereits beendeten Kutter-Events auf, wenn beide Events denselben Startflugplatz teilten (z. B. lief ein EDWG→EDWY-Flug im alten Test-Event EDWG→EDXP als „unterwegs“ mit). Der Live-Teil hatte keine Ober-Zeitgrenze — jetzt zählt ein offener Flug nur zum Event, wenn er vor dessen Ende begann."
+    ]
+  },
+  {
     "version": "8.8.6",
     "date": "2026-07-06",
     "title": "Kutter: Flug-Spruch erwähnt Diebstahl/Verlust statt Lieferung",

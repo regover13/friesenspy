@@ -4874,6 +4874,17 @@ def compute_transport_progress(
         lo = f.get("logon_time") or ""
         if lo < start:
             continue
+        # Ober-Zeitgrenze (Live-Fund 06.07.): eine noch offene Verbindung, die erst NACH dem
+        # Event-Ende (`end` = min(now, dtend)) begann, gehört nicht mehr zu diesem Event. Ohne
+        # diese Grenze zog der Offen-Zweig jeden gerade eingeloggten Abflieger eines Strecken-
+        # platzes in JEDES Event mit demselben Startplatz — auch in längst beendete (Fund:
+        # laufende EDWG→EDWY-Flüge tauchten im bereits abgelaufenen Test-Event EDWG→EDXP als
+        # „unterwegs" auf, weil beide EDWG teilen). Der geschlossene Zweig ist über
+        # `canonicalize_legs(end=…)` längst gebunden — nur der Offen-Zweig hatte oben keine
+        # Obergrenze. Bei laufendem Event ist `end == now`, greift also nie (keiner loggt in die
+        # Zukunft ein); nur bei beendetem Event blendet er Nachzügler korrekt aus.
+        if end and lo > end:
+            continue
         # #66: der "schon geliefert"-Skip darf nur greifen, solange seit der Lieferung KEIN
         # neues Leg begonnen hat (current_leg_by_cid leer für diese cid) — sonst würde er die
         # komplette restliche Lebensdauer der Verbindung blind ausblenden, selbst wenn seither

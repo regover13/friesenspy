@@ -334,11 +334,22 @@ def flight_quip(context: dict) -> str | None:
         # klingen.
         lines.append(f"WICHTIG — DIESER FLUG GING SCHIEF: {verlust}")
         user = (
-            "Schreibe EINEN lustigen Einzeiler (genau ein Satz) zu diesem Frachtflug, der SCHIEFGING: "
-            "Die Fracht kam NICHT ordentlich beim Empfänger an (s. 'WICHTIG'). Der Spruch MUSS genau "
-            "DAS aufgreifen (versunken / geklaut / umgedreht) — er darf AUF KEINEN FALL so klingen, "
-            "als sei brav ausgeliefert worden (kein 'bringt … ans Ziel', kein 'liefert … aus'). Fang "
-            "NICHT immer mit 'Moin' an — wechsle den Einstieg ab. Fakten:\n- "
+            "Schreibe EINEN frechen, spitzbübischen Einzeiler (genau ein Satz) zu diesem "
+            "SCHIEFGEGANGENEN Frachtflug. Die Fracht kam NICHT ordentlich an (s. 'WICHTIG') — nimm "
+            "den Piloten dafür augenzwinkernd auf die Schippe, statt es nur nüchtern zu berichten. "
+            "Bei GEKLAUT: tu, als hätte sich der Pilot als Spitzbub / Seeräuber die Ladung selbst "
+            "unter den Nagel gerissen (Kaperfahrt, krumme Tour, ab damit ins Versteck) — frech und "
+            "anklagend-augenzwinkernd, aber herzlich, nie wirklich beleidigend. Bei VERSUNKEN: der "
+            "KUTTER ist mitsamt Ladung in der Nordsee abgesoffen (IMMER der Kutter, NIE der Pilot!) — "
+            "mal konkret aus, was jetzt am Meeresgrund los ist: Fische, Krabben oder Seehunde freuen "
+            "sich über die Fracht, Neptun/der Klabautermann kriegt seinen Anteil, die Ladung dümpelt "
+            "in der Nordsee — nimm dabei die KONKRETE Fracht aufs Korn (z. B. Strandkörbe, auf denen "
+            "jetzt die Fische Urlaub machen). Gutmütig-schadenfroh. "
+            "Bei UMGEDREHT: neck ihn fürs Kneifen. Ein deftiger, spitzbübischer Nordtonfall passt hier "
+            "gut (Wörter wie 'Spitzbov', 'Kaperfahrt', 'Deern/Jung' sind ok) — aber weiter für alle "
+            "sofort verständlich, KEINE Wörter, die man übersetzen müsste. Der Spruch darf AUF KEINEN "
+            "FALL nach ordentlicher Auslieferung klingen (kein 'bringt … ans Ziel', kein 'liefert … "
+            "aus'). Fang NICHT immer mit 'Moin' an. Fakten:\n- "
             + "\n- ".join(lines)
         )
     else:

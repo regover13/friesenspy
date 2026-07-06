@@ -848,8 +848,8 @@ class TestReservation:
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)  # payload 292
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
-        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
-        p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
+        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 200)
         assert f["in_air"] is True and f["loaded"] is False
         assert f["tonnage_kg"] == 0.0 and f["reserved_kg"] == 292.0
@@ -861,8 +861,8 @@ class TestReservation:
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 100.0}])
-        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
-        p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
+        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
         assert p["cargo"][0]["reserved_kg"] == 100.0     # gekappt auf offenen Bedarf
         assert p["reserved_total_kg"] == 100.0
         # Durchgängig Netto (#63): reserved_kg je Flug ist die reservierbare Menge (was noch ins
@@ -877,8 +877,8 @@ class TestReservation:
             {"name": "Filmrollen", "target_kg": 500.0, "per_flight_max_kg": 100.0},
             {"name": "Friesentee", "target_kg": 500.0},
         ])
-        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
-        p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
+        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
         assert p["cargo"][0]["reserved_kg"] == 100.0     # Kappung pro Flug
         assert p["cargo"][1]["reserved_kg"] == 192.0     # Co-Load-Rest
 
@@ -908,11 +908,11 @@ class TestReservation:
         from app.geo import icao_to_coords, airport_elevation_ft
         dlat, dlon = icao_to_coords("EDWG")
         delev = airport_elevation_ft("EDWG") or 0
-        _add_open_flight(conn, 210, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
+        _add_open_flight(conn, 210, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
         # Zwei Boden-Samples bei gs 0 am Startplatz — nie abgehoben, also kein GPS-Leg.
-        _add_pos(conn, 210, "2026-07-02T18:05:00Z", dlat, dlon, 0, alt=delev, callsign="FRS210")
-        _add_pos(conn, 210, "2026-07-02T18:06:00Z", dlat, dlon, 0, alt=delev, callsign="FRS210")
-        p = compute_transport_progress(conn, ev, "2026-07-02T18:10:00Z")
+        _add_pos(conn, 210, "2026-07-01T18:05:00Z", dlat, dlon, 0, alt=delev, callsign="FRS210")
+        _add_pos(conn, 210, "2026-07-01T18:06:00Z", dlat, dlon, 0, alt=delev, callsign="FRS210")
+        p = compute_transport_progress(conn, ev, "2026-07-01T18:10:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 210)
         assert f["in_air"] is True and f["loaded"] is False    # weiterhin offene Reservierung
         assert f["airborne"] is False                           # aber NICHT „unterwegs"
@@ -927,7 +927,7 @@ class TestReservation:
         from app.geo import icao_to_coords, airport_elevation_ft
         dlat, dlon = icao_to_coords("EDWG")
         delev = airport_elevation_ft("EDWG") or 0
-        t0 = "2026-07-02T18:05:00Z"
+        t0 = "2026-07-01T18:05:00Z"
         _add_open_flight(conn, 211, "EDWG", "EDXH", "C172", t0)
         _add_pos(conn, 211, t0, dlat, dlon, 0, alt=delev, callsign="FRS211")
         _add_pos(conn, 211, _shift(t0, 1), dlat, dlon, 12, alt=delev, callsign="FRS211")
@@ -936,13 +936,34 @@ class TestReservation:
         f = next(x for x in p["flights"] if x["cid"] == 211)
         assert f["in_air"] is True and f["airborne"] is True
 
+    def test_open_flight_after_event_end_excluded(self):
+        """Live-Fund 06.07.: ein erst NACH dtend eingeloggter Flug eines Streckenplatzes darf nicht
+        mehr im (beendeten) Event auftauchen — sonst leckt jeder gerade fliegende EDWG-Abflieger in
+        jedes ältere Event mit demselben Startplatz."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])  # läuft START..END (01.07.)
+        _add_open_flight(conn, 220, "EDWG", "EDXH", "C172", "2026-07-02T10:00:00Z")  # NACH END
+        p = compute_transport_progress(conn, ev, "2026-07-02T10:30:00Z")  # now weit nach dtend
+        assert not any(f["cid"] == 220 for f in p["flights"])
+
+    def test_open_flight_within_window_still_shown_after_dtend(self):
+        """Gegenprobe: ein WÄHREND des Fensters gestarteter offener Flug bleibt, auch wenn now nach
+        dtend liegt — er gehört zum Event (nur echte Nachzügler fliegen raus)."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        _add_open_flight(conn, 221, "EDWG", "EDXH", "C172", "2026-07-01T20:00:00Z")  # innerhalb START..END
+        p = compute_transport_progress(conn, ev, "2026-07-02T10:30:00Z")
+        assert any(f["cid"] == 221 for f in p["flights"])
+
     def test_latch_converts_reservation_to_delivered(self):
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
-        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
-        set_transport_live_arrival(conn, 200, "2026-07-02T18:05:00Z", ev["id"], "2026-07-02T18:30:00Z")
-        p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
+        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
+        set_transport_live_arrival(conn, 200, "2026-07-01T18:05:00Z", ev["id"], "2026-07-01T18:30:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 200)
         assert f["loaded"] is True and f["tonnage_kg"] == 292.0 and f["reserved_kg"] == 0.0
         assert p["cargo"][0]["delivered_kg"] == 292.0
@@ -1071,7 +1092,7 @@ class TestCargoLosses:
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         # dtend = 2026-07-01T23:00:00Z — dieser Flug liegt einen Tag danach.
-        self._flown_flight(conn, 305, "2026-07-02T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
+        self._flown_flight(conn, 305, "2026-07-03T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
         n = detect_transport_losses(conn, ev)
         assert n == 0
         assert get_transport_losses(conn, ev["id"]) == []
@@ -1465,9 +1486,9 @@ class TestParticipants:
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
-        _add_open_flight(conn, 402, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
-        set_transport_live_arrival(conn, 402, "2026-07-02T18:05:00Z", ev["id"], "2026-07-02T18:30:00Z")
-        p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
+        _add_open_flight(conn, 402, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
+        set_transport_live_arrival(conn, 402, "2026-07-01T18:05:00Z", ev["id"], "2026-07-01T18:30:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
         assert p["participants"][0]["status"] == "arrived"
 
     def test_aircraft_normalized_to_type_code(self):
