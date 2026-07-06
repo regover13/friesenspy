@@ -56,6 +56,22 @@ mkdir -p /opt/friesenspy/data
   `overflow-x:hidden` am `body` schneidet den Überstand einfach ab, statt dass die innere
   Scrollbar greift. Jeder Flex-Item-Container um eine scrollbare Tabelle braucht zusätzlich
   `min-width: 0` (in admin.html bereits auf `.panel` gesetzt).
+  **Verschachtelungs-Falle (v8.6.6-Fund, wichtiger als die Flexbox-Falle oben):** steckt
+  `.table-wrap` INNERHALB einer vertikal begrenzten `.scroll-list` (`max-height:280px;
+  overflow-y:auto` — Piloten/Flugplätze/Erkennungslücken), braucht `.table-wrap` selbst
+  ZWINGEND dieselbe Höhenbegrenzung (`.scroll-list .table-wrap { max-height: 280px; overflow:
+  auto; }`). Ohne sie ist `.table-wrap` so hoch wie die GESAMTE Tabelle (bei vielen Zeilen
+  mehrere tausend Pixel) — seine horizontale Scrollbar sitzt dann an SEINEM EIGENEN unteren
+  Rand, weit unterhalb des durch `.scroll-list` sichtbar gemachten 280-px-Fensters, und ist
+  praktisch nie zu sehen (auch mit korrektem `overflow-x:auto`!). **Zusätzlich (unabhängiges
+  zweites Problem, gleicher Fund):** Windows/Edge/Chrome blenden eine technisch korrekt
+  scrollende Box trotzdem unsichtbar, wenn keine Scrollbar-Styles gesetzt sind (Overlay-
+  Scrollbar, nur bei aktivem Hover/Scrollen sichtbar) — `scrollbar-width`/`scrollbar-color`
+  (Firefox) + `::-webkit-scrollbar*` (Chrome/Edge/Safari) erzwingen eine dauerhaft sichtbare
+  Leiste. Beide Fixes sind nötig, einer allein reicht nicht — vor jeder neuen scrollbaren
+  Tabelle in `.scroll-list` beide prüfen. Bei vielen Spalten zusätzlich erwägen, Aktionen-
+  Buttons in eine eigene Zeile UNTER die Daten zu legen (`colspan`), statt in eine Spalte ganz
+  rechts, die sonst erst nach Scrollen erreichbar ist (Erkennungslücken-Muster).
 
 ## Projektstruktur
 

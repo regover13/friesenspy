@@ -333,6 +333,14 @@
       width: max-content;
       min-width: 100%;
     }
+    /* Windows/Edge/Chrome blenden Overlay-Scrollbars standardmäßig aus (nur beim aktiven
+       Hover/Scrollen sichtbar) — der Wrapper scrollt zwar technisch, aber ohne sichtbaren
+       Hinweis merkt niemand, dass mehr Inhalt da ist (v8.6.5-Folgefund, analog admin.html). */
+    .table-scroll { scrollbar-width: thin; scrollbar-color: var(--green-dim) var(--bg-panel-2); }
+    .table-scroll::-webkit-scrollbar { height: 10px; }
+    .table-scroll::-webkit-scrollbar-track { background: var(--bg-panel-2); }
+    .table-scroll::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 5px; }
+    .table-scroll::-webkit-scrollbar-thumb:hover { background: var(--green); }
 
     .live-table-wrap th,
     .live-table-wrap td {

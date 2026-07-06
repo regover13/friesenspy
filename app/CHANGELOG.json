@@ -1,5 +1,14 @@
 [
   {
+    "version": "8.6.6",
+    "date": "2026-07-06",
+    "title": "Admin-Scrollbar wirklich sichtbar + Aktionen unter der Zeile",
+    "items": [
+      "🐛 Der Scrollbar-Fix aus v8.6.5 reichte nicht: In verschachtelten Listen (Piloten, Flugplätze, Erkennungslücken) war der innere Tabellen-Wrapper so hoch wie die GESAMTE Tabelle — seine horizontale Scrollbar saß dadurch weit unterhalb des sichtbaren Fensters und war praktisch nie zu sehen. Zusätzlich blenden Windows/Edge/Chrome eine normale Scrollbar ohnehin nur beim Hovern ein — beide Ursachen sind jetzt behoben, die Scrollbar ist dauerhaft sichtbar.",
+      "📱 Erkennungslücken-Prüfliste: „Ansehen“/„Pilot“/„✓ Geprüft“ stehen jetzt direkt unter jeder Zeile statt in einer eigenen Spalte ganz rechts — kein Scrollen mehr nötig, um sie zu erreichen."
+    ]
+  },
+  {
     "version": "8.6.5",
     "date": "2026-07-06",
     "title": "StatSim-Mid-Air-Split-Merge + Admin-Scrollbar-Fix",

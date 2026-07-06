@@ -421,6 +421,21 @@
     /* Standard-Mobile-Scroll (vereinbart): ohne width:max-content hat der Wrapper nichts
        zu scrollen (Zellen werden gequetscht) — gleiche Regel wie .table-scroll in index.html. */
     .table-wrap table { width: max-content; min-width: 100%; }
+    /* Windows/Edge/Chrome blenden Overlay-Scrollbars standardmäßig aus (nur beim aktiven
+       Hover/Scrollen sichtbar) — der Wrapper scrollt zwar technisch, aber ohne sichtbaren
+       Hinweis merkt niemand, dass mehr Inhalt da ist (v8.6.5-Folgefund). Immer sichtbare,
+       zum Theme passende Scrollbar statt der versteckten Overlay-Variante. */
+    .table-wrap { scrollbar-width: thin; scrollbar-color: var(--green-dim) var(--bg-panel-2); }
+    .table-wrap::-webkit-scrollbar { height: 10px; }
+    .table-wrap::-webkit-scrollbar-track { background: var(--bg-panel-2); }
+    .table-wrap::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 5px; }
+    .table-wrap::-webkit-scrollbar-thumb:hover { background: var(--green); }
+
+    /* Erkennungslücken-Tabelle: Aktionen stehen in einer eigenen Zeile UNTER den Daten statt
+       in einer Spalte ganz rechts (Nutzer-Feedback v8.6.5) -- .dg-row + .dg-actions bilden je
+       ein Paar und sollen optisch als Einheit wirken. */
+    tr.dg-row td { border-bottom: none; padding-bottom: 4px; }
+    tr.dg-actions td { border-bottom: 1px solid var(--green-grid); padding-top: 0; padding-bottom: 10px; }
 
     .preview-table {
       width: max-content;
@@ -646,6 +661,15 @@
     }
     /* Lange, mit der Zeit wachsende Listen scrollbar machen (Banner-Auswahl, Rennen, Piloten). */
     .scroll-list { max-height: 280px; overflow-y: auto; }
+    /* Enthält .scroll-list eine breite Tabelle (.table-wrap, z. B. Piloten/Flugplätze/
+       Erkennungslücken), braucht der INNERE Wrapper eine EIGENE Höhenbegrenzung
+       (v8.6.5-Folgefund): ohne sie ist .table-wrap so hoch wie die GESAMTE Tabelle (bei
+       vielen Zeilen mehrere tausend Pixel) — seine horizontale Scrollbar sitzt dann am
+       eigenen unteren Rand, weit UNTERHALB des durch .scroll-list sichtbar gemachten
+       280-px-Fensters, und ist praktisch nie zu sehen. Mit derselben Höhenbegrenzung
+       übernimmt .table-wrap selbst beide Scrollrichtungen; der äußere .scroll-list-Rahmen
+       muss dann nicht mehr scrollen (kein doppelter Scrollbalken). */
+    .scroll-list .table-wrap { max-height: 280px; overflow: auto; }
 
     .status-row {
       display: flex;
@@ -2408,12 +2432,17 @@
       const c = document.getElementById('dg-container');
       if (!rows.length) { c.innerHTML = '<div class="empty-hint">Keine Erkennungslücken offen.</div>'; return; }
       const missingTxt = { departure: 'Start', arrival: 'Landung', both: 'Start + Landung' };
+      // Aktionen (Ansehen/Pilot/Geprüft) stehen in einer EIGENEN Zeile UNTER den Daten, nicht
+      // in einer eigenen Spalte ganz rechts -- bei den vielen Spalten dieser Tabelle saßen sie
+      // sonst genau dort, wo erst horizontal gescrollt werden musste (Nutzer-Feedback v8.6.5).
+      // Linksbündig in einer colspan-Zelle bleiben sie so auch im gescrollten Zustand am
+      // linken Rand sofort sichtbar. dgDismiss() entfernt beim Klick beide Zeilen als Paar.
       c.innerHTML = '<div class="table-wrap"><table style="font-size:0.8rem;width:max-content;min-width:100%;"><thead><tr>'
         + '<th style="text-align:left;">Datum</th><th style="text-align:left;">Pilot</th>'
         + '<th style="text-align:left;">Callsign</th><th style="text-align:left;">Flugzeug</th>'
         + '<th style="text-align:left;">Plan-Strecke</th><th style="text-align:left;">GPS-Strecke</th>'
         + '<th style="text-align:right;">Flugzeit</th>'
-        + '<th style="text-align:left;">Fehlt</th><th style="text-align:left;">Quelle</th><th></th></tr></thead><tbody>'
+        + '<th style="text-align:left;">Fehlt</th><th style="text-align:left;">Quelle</th></tr></thead><tbody>'
         + rows.map(g => {
           const trackId = g.statsim_id || g.id;
           // fast=1 + callsign/dep/arr direkt in der URL: index.html überspringt damit
@@ -2429,15 +2458,15 @@
               + `&arr=${encodeURIComponent(dispArr)}`
             : `/#tab=statistiken&days=365&cid=${g.cid}`;
           const pilotHref = `/#tab=statistiken&days=365&cid=${g.cid}`;
-          return '<tr><td>' + fmtDt(g.logon_time) + '</td>'
+          return '<tr class="dg-row"><td>' + fmtDt(g.logon_time) + '</td>'
             + '<td>' + escH(g.pilot_name || '—') + ' (' + g.cid + ')</td>'
             + '<td>' + escH(g.callsign || '—') + '</td><td>' + escH(g.aircraft || '—') + '</td>'
             + '<td>' + escH(g.plan_departure || '—') + ' → ' + escH(g.plan_arrival || '—') + '</td>'
             + '<td>' + escH(g.gps_departure || '—') + ' → ' + escH(g.gps_arrival || '—') + '</td>'
             + '<td style="text-align:right;">' + (g.duration_min != null ? g.duration_min + ' min' : '—') + '</td>'
             + '<td>' + escH(missingTxt[g.missing] || g.missing) + '</td>'
-            + '<td>' + escH(g.source || '—') + '</td>'
-            + '<td style="white-space:nowrap;">'
+            + '<td>' + escH(g.source || '—') + '</td></tr>'
+            + '<tr class="dg-actions"><td colspan="9">'
             + '<a href="' + escA(href) + '" target="_blank" class="btn btn-sm">Ansehen</a> '
             + '<a href="' + escA(pilotHref) + '" target="_blank" class="btn btn-sm">Pilot</a> '
             + '<button class="btn btn-sm" onclick="dgDismiss(this,' + g.cid + ',\'' + escA(g.logon_time) + '\')">✓ Geprüft</button>'
@@ -2451,12 +2480,16 @@
       const res = await api('POST', '/api/admin/detection-gaps/dismiss', { cid, logon_time: logonTime });
       if (!res || !res.ok) { toast('Fehler beim Markieren.', true); btn.disabled = false; return; }
       toast('Als geprüft markiert.');
-      // Nur die betroffene Zeile entfernen statt der teuren Komplett-Neuberechnung (canonicalize_legs
-      // über den gesamten Bestand) -- die übrigen Zeilen bleiben unverändert stehen, bis auf
-      // "Jetzt prüfen"/"Aktualisieren" geklickt wird.
-      const row = btn.closest('tr');
-      const tbody = row?.closest('tbody');
-      row?.remove();
+      // Nur das betroffene Zeilenpaar entfernen statt der teuren Komplett-Neuberechnung
+      // (canonicalize_legs über den gesamten Bestand) -- die übrigen Zeilen bleiben
+      // unverändert stehen, bis auf "Jetzt prüfen"/"Aktualisieren" geklickt wird.
+      // Aktionen-Zeile (dg-actions) UND die direkt vorangehende Datenzeile (dg-row) gehören
+      // als Paar zusammen (s. loadDetectionGaps) und werden gemeinsam entfernt.
+      const actionsRow = btn.closest('tr');
+      const dataRow = actionsRow?.previousElementSibling;
+      const tbody = actionsRow?.closest('tbody');
+      actionsRow?.remove();
+      dataRow?.remove();
       if (tbody && !tbody.querySelector('tr')) {
         document.getElementById('dg-container').innerHTML =
           '<div class="empty-hint">Keine Erkennungslücken offen.</div>';
