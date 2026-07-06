@@ -1265,6 +1265,53 @@ class TestGPSLegReconcile:
         assert zwischenlandung["loaded"] is False
         assert any(f["in_air"] for f in legs)   # offene Weiterreise bleibt als Reservierung erhalten
 
+    def test_new_leg_after_completed_return_not_shown_as_returning(self):
+        """#66 (Live-Fund 06.07., EDWG-EDXP-Test): Lieferung (EDWG->EDXH, geliefert) -> Rückflug
+        landet sauber (EDXH->EDWG) -> in DERSELBEN offenen Verbindung startet ein NEUER, davon
+        unabhängiger Flug (EDWG->irgendwohin, noch in der Luft). Die alte Heuristik nahm für
+        "Rückflug" immer die Erstposition der GESAMTEN Verbindung (EDXH, längst veraltet) und
+        zeigte den neuen Flug fälschlich weiter als "Rückflug". Mit dem GPS-Leg-basierten Dep
+        (aus dem bereits korrekt erkannten LAUFENDEN Leg) muss der neue Flug stattdessen normal
+        als "in der Luft"/reserviert erscheinen -- kein Rückflug mehr."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
+        conn_logon = "2026-07-01T09:58:00Z"
+        self._insert_connection(conn, 700, "FRS700", "EDWG", "EDWG", conn_logon, None,
+                                duration_min=97)
+        from app.geo import icao_to_coords
+        # Leg 1: EDWG -> EDXH (Lieferung, geliefert).
+        self._seed_leg(conn, 700, "FRS700", conn_logon, "EDWG")
+        hin_landing = self._add_leg_landing(conn, 700, "FRS700", conn_logon, "EDXH")
+        hlat, hlon = icao_to_coords("EDXH")
+        _add_pos(conn, 700, _shift(hin_landing, 3), hlat, hlon, 5, alt=8, callsign="FRS700")
+        # Leg 2: EDXH -> EDWG (echter Rückflug, landet sauber).
+        rueck_t0 = _shift(hin_landing, 6)
+        self._seed_leg(conn, 700, "FRS700", rueck_t0, "EDXH")
+        rueck_landing = self._add_leg_landing(conn, 700, "FRS700", rueck_t0, "EDWG")
+        glat, glon = icao_to_coords("EDWG")
+        _add_pos(conn, 700, _shift(rueck_landing, 3), glat, glon, 5, alt=6, callsign="FRS700")
+        # Leg 3: NEUER Start ab EDWG, noch in der Luft (kein Touchdown vor `now`) -- KEIN
+        # Rückflug, ein unabhängiger neuer Flug (in der realen Live-Situation ging es weiter zu
+        # einem event-fremden Flugplatz, hier bewusst offen gelassen).
+        neu_t0 = _shift(rueck_landing, 6)
+        self._seed_leg(conn, 700, "FRS700", neu_t0, "EDWG")
+        conn.commit()
+        # Aktuelle Live-Position: noch in der Luft (nicht gelandet) -> _returning_pilot_landed
+        # darf nicht greifen, unabhängig vom Test.
+        conn.execute(
+            "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
+            "VALUES (700, 'FRS700', 53.75, 7.87, 100)"
+        )
+        conn.commit()
+
+        p = compute_transport_progress(conn, ev, _shift(neu_t0, 10))
+        parts = {x["cid"]: x for x in p["participants"]}
+        assert parts[700]["status"] != "returning"
+        assert parts[700]["status"] == "flying"
+        legs = [f for f in p["flights"] if f["cid"] == 700]
+        assert any(f["in_air"] and not f.get("loaded") for f in legs)   # neuer Flug: Reservierung, kein Rückflug
+
     def test_multi_leg_loss_attached_once(self):
         """#23 Review I2: eine Mehrbein-Connection mit ZWEI nicht gelieferten Beinen (Hin+Rück,
         keins davon am Ziel) teilt denselben Verbindungs-Logon-Key -- der EINE gelatchte Verlust
@@ -1385,6 +1432,20 @@ class TestLossQuipContext:
              "distance_nm": 0, "block_min": 0, "cargo_lines": []}
         ctx = flight_quip_context(f, {"flights": [f]})
         assert "Kutter versunken" in ctx["verlust"]
+
+    def test_loss_context_tonnage_matches_carried_cargo_not_zero(self):
+        # #67 (Live-Fund 06.07.): tonnage_kg ist bei einem Verlust IMMER 0 (netto nichts
+        # geliefert) -- die Zuladung im Spruch-Kontext muss trotzdem die tatsächlich an Bord
+        # gewesene Fracht zeigen (aus cargo_lines), sonst widerspricht sich der Spruch selbst
+        # ("220 kg Sonnenschirme/Krabbenbrötchen an Bord ... Zuladung 0 Kilo").
+        f = {"cid": 1, "name": "Tobias", "callsign": "FRS49", "dep": "EDWG", "arr": "EDWL",
+             "loaded": False, "tonnage_kg": 0.0, "loss_kind": "stolen", "lost_kg": 290.0,
+             "distance_nm": 0, "block_min": 0,
+             "cargo_lines": [{"name": "Sonnenschirme", "emoji": "⛱️", "kg": 120.0},
+                             {"name": "Krabbenbrötchen", "emoji": "🦐", "kg": 100.0}]}
+        ctx = flight_quip_context(f, {"flights": [f]})
+        assert ctx["tonnage_kg"] == 220     # Summe der Bordladung, NICHT 0
+        assert "⛱️ Sonnenschirme" in ctx["cargo"][0]
 
     def test_summary_context_lists_losses(self):
         prog = {"flights": [], "cargo": [], "route": ["EDWG", "EDXH"], "destination": "EDXH",

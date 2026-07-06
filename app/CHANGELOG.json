@@ -1,5 +1,14 @@
 [
   {
+    "version": "8.8.3",
+    "date": "2026-07-06",
+    "title": "Kutter: mehrere Flüge in einer Verbindung + widersprüchliche Sprüche",
+    "items": [
+      "🐛 Blieb eine Verbindung nach einem Rückflug ohne Disconnect offen und der Pilot startete direkt zu einem weiteren, eigenständigen Flug, wurde dieser fälschlich weiter als „Rückflug\" gezeigt (oder verschwand sogar ganz aus der Live-Anzeige) — die Erkennung nahm bisher immer die allererste, längst veraltete Position der GESAMTEN Verbindung statt die des gerade laufenden Fluges. Jede offene Verbindung wird jetzt anhand ihres tatsächlich aktuellen, per GPS erkannten Fluges bewertet.",
+      "🐛 Der KI-Spruch zu einem verlorenen Flug (versunken/geklaut) widersprach sich selbst — er nannte die tatsächlich an Bord gewesene Fracht (z. B. „220 Kilo Sonnenschirme und Krabbenbrötchen\"), behauptete aber gleichzeitig „Zuladung 0 Kilo\". Die Zuladungs-Angabe im Spruch-Kontext zeigt jetzt konsistent die wirklich mitgeführte Fracht."
+    ]
+  },
+  {
     "version": "8.8.2",
     "date": "2026-07-06",
     "title": "Kutter: Rückflug-Status blieb nach der Landung hängen",

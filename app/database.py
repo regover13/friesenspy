@@ -4329,10 +4329,18 @@ def flight_quip_context(flight: dict, progress: dict) -> dict:
         direct_nm = haversine(dc[0], dc[1], ac[0], ac[1]) / 1.852
         if direct_nm > 1:
             detour_ratio = round(dist / direct_nm, 2)
+    cargo_lines = flight.get("cargo_lines") or []
     cargo = [
         f"{(c.get('emoji') or '').strip()} {c['name']} ({round(c['kg'])} kg)".strip()
-        for c in (flight.get("cargo_lines") or [])
+        for c in cargo_lines
     ]
+    # #67 (Live-Fund 06.07.): "Zuladung" aus der Summe der Bordladung (cargo_lines) ableiten,
+    # NICHT aus tonnage_kg direkt — bei einem Verlust (versunken/geklaut) ist tonnage_kg IMMER
+    # 0 (nichts wurde netto geliefert), obwohl cargo_lines weiterhin zeigt, was tatsächlich an
+    # Bord war. Beides gleichzeitig an die KI zu geben ("220 kg Fracht ... Zuladung: 0 kg")
+    # erzeugte widersprüchliche Sprüche. Für normale Lieferungen ist die Summe ohnehin identisch
+    # mit tonnage_kg (beide stammen aus derselben Co-Load-Verteilung) — kein Verhaltensunterschied.
+    onboard_kg = round(sum(c.get("kg") or 0 for c in cargo_lines))
     loss_kind = flight.get("loss_kind")
     verlust = None
     if loss_kind == "sunk":
@@ -4348,7 +4356,7 @@ def flight_quip_context(flight: dict, progress: dict) -> dict:
         "flights_tonight": flights_tonight,
         "aircraft": flight.get("aircraft"),
         "route": f"{dep}→{arr}",
-        "tonnage_kg": round(flight.get("tonnage_kg") or 0),
+        "tonnage_kg": onboard_kg,
         "cargo": cargo,
         "speed_kt": speed_kt,
         "detour_ratio": detour_ratio,
@@ -4612,22 +4620,19 @@ def open_transport_flights(conn: sqlite3.Connection, callsign_prefix: str = "FRS
     return [dict(r) for r in rows]
 
 
-def _returning_pilot_landed_on_route(
-    conn: sqlite3.Connection, cid: int, route_set: set[str], coords_map: dict, radius: float,
-) -> bool:
-    """True, wenn ein als „Rückflug" erkannter Pilot inzwischen wieder GELANDET auf der Strecke
-    ist (aktuelle Live-Position am Boden, im Umkreis eines Streckenflugplatzes — i. d. R. der
-    Ursprung). Die zugrundeliegende Verbindung bleibt dabei oft weiter offen (kein Disconnect
-    nach der Landung), sodass ``open_transport_flights`` sie unverändert weiter liefert — ohne
-    diesen Check würde die „Rückflug"-Markierung dauerhaft hängen bleiben, weil sie allein aus
-    der ERSTEN Position der Verbindung abgeleitet wird (#65, Fund 06.07. Live-Test EDWG-EDXP)."""
+def _returning_pilot_landed(conn: sqlite3.Connection, cid: int) -> bool:
+    """True, wenn ein als „Rückflug" erkannter Pilot inzwischen wieder GELANDET ist (aktuelle
+    Live-Position am Boden, ``groundspeed < _BLOCK_GS_KT``) — EGAL wo (#66: die Position spielt
+    für die Klassifikation ohnehin keine Rolle mehr, nur der Bewegungszustand). Die zugrunde
+    liegende Verbindung bleibt dabei oft weiter offen (kein Disconnect nach der Landung), sodass
+    ``open_transport_flights`` sie unverändert weiter liefert — ohne diesen Check würde die
+    „Rückflug"-Markierung dauerhaft hängen bleiben (#65, Fund 06.07. Live-Test EDWG-EDXP:
+    ursprünglich nur „Landung auf der Strecke" geprüft, was einen Zwischenstopp an einem
+    event-fremden Flugplatz — EDWL — übersah)."""
     row = conn.execute(
-        "SELECT latitude, longitude, groundspeed FROM live_positions WHERE cid=?", (cid,)
+        "SELECT groundspeed FROM live_positions WHERE cid=?", (cid,)
     ).fetchone()
-    if not row or row["groundspeed"] is None or row["groundspeed"] >= _BLOCK_GS_KT:
-        return False
-    here = _nearest_airport(coords_map, (row["latitude"], row["longitude"]), radius)
-    return here in route_set
+    return bool(row) and row["groundspeed"] is not None and row["groundspeed"] < _BLOCK_GS_KT
 
 
 def check_live_arrival(
@@ -4766,6 +4771,19 @@ def compute_transport_progress(
     flights = canonicalize_legs(conn, start=load_start, end=end, callsign_prefix=callsign_prefix)
     flights = [f for f in flights if (f.get("logoff_time") or "") >= start]
 
+    # #66: das aktuell laufende (noch nicht gelandete) Leg jedes Piloten separat auflösen — der
+    # obige `>= start`-Filter schließt es bewusst aus (offene Verbindungen behandelt weiter unten
+    # `open_transport_flights`), aber `canonicalize_legs` hat seinen GPS-Startpunkt bereits über
+    # den echten Leg-Detektor korrekt erkannt (`_gps_flights_for_positions`), inkl. der EIGENEN
+    # Abflugzeit dieses Legs — zuverlässiger als ihn aus der ersten Position der GANZEN
+    # Verbindung neu herzuleiten. Eigener Aufruf mit `end=now` (nicht durch `dtend` gekappt),
+    # damit ein Leg, das erst nach Event-Ende startete, nicht verloren geht.
+    open_legs_probe = canonicalize_legs(conn, start=load_start, end=now, callsign_prefix=callsign_prefix)
+    current_leg_by_cid: dict[int, dict] = {
+        int(f["cid"]): f for f in open_legs_probe
+        if f.get("cid") is not None and not f.get("logoff_time")
+    }
+
     dest = normalize_type_code(event.get("destination"))
     live_arrivals = get_transport_live_arrivals(conn, int(event["id"]))
 
@@ -4844,16 +4862,32 @@ def compute_transport_progress(
         lo = f.get("logon_time") or ""
         if lo < start:
             continue
-        if (int(cid), lo) in loaded_conn_logons:
+        # #66: der "schon geliefert"-Skip darf nur greifen, solange seit der Lieferung KEIN
+        # neues Leg begonnen hat (current_leg_by_cid leer für diese cid) — sonst würde er die
+        # komplette restliche Lebensdauer der Verbindung blind ausblenden, selbst wenn seither
+        # längst ein Rückflug UND ein weiteres, unabhängiges Leg passiert sind (Live-Fund
+        # 06.07.: Lieferung → Rückflug gelandet → neuer Flug wurde dadurch komplett verschluckt,
+        # nicht nur falsch als "Rückflug" markiert).
+        if (int(cid), lo) in loaded_conn_logons and int(cid) not in current_leg_by_cid:
             continue
-        dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
+        # #66: dep bevorzugt aus dem bereits GPS-erkannten LAUFENDEN Leg (current_leg_by_cid) —
+        # dessen eigener, korrekter Startpunkt, NICHT die Erstposition der gesamten Verbindung.
+        # Eine offene Verbindung kann mehrere Legs nacheinander enthalten (Rückflug gelandet,
+        # dann ein neuer, unabhängiger Weiterflug in DERSELBEN Verbindung ohne Disconnect) — die
+        # alte Heuristik nahm immer dieselbe, längst veraltete Erstposition und hätte den neuen
+        # Weiterflug fälschlich weiter als "Rückflug" gezeigt (Live-Fund 06.07., EDWG-EDXP-Test:
+        # Rückflug EDXP→EDWG bereits gelandet, danach EDWG→EDWL fälschlich als "Rückflug"
+        # markiert geblieben). Fallback (kein GPS-Leg erkannt, z. B. trackless) wie bisher.
+        current_leg = current_leg_by_cid.get(int(cid))
+        dep = (normalize_type_code(current_leg.get("departure")) if current_leg else None) \
+            or _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
             or normalize_type_code(f.get("departure"))
         if dep not in route_set or dep == dest:
-            # #65: eine Verbindung, die als "Rückflug" (dep==dest, Erstposition am Ziel) erkannt
-            # wurde, bleibt oft auch nach der Landung zurück auf der Strecke offen (kein
-            # Disconnect) -- ohne diesen Check würde "Rückflug" dauerhaft hängen bleiben, obwohl
-            # der Pilot längst wieder am Boden ist.
-            if dep == dest and not _returning_pilot_landed_on_route(conn, int(cid), route_set, coords_map, radius):
+            # #65: eine Verbindung, die als "Rückflug" (dep==dest) erkannt wurde, bleibt oft auch
+            # nach der Landung offen (kein Disconnect) -- ohne diesen Check würde "Rückflug"
+            # dauerhaft hängen bleiben, obwohl der Pilot längst wieder am Boden ist (irgendwo,
+            # nicht zwingend auf der Strecke — #66 verallgemeinert).
+            if dep == dest and not _returning_pilot_landed(conn, int(cid)):
                 returning_cids.add(int(cid))
                 returning_info.setdefault(int(cid), {
                     "aircraft": f.get("aircraft") or normalize_type_code(f.get("aircraft_icao")) or "",
