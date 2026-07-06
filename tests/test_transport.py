@@ -437,6 +437,45 @@ class TestProgress:
         assert by_dep_time["2026-07-01T10:30:00Z"]["cargo_name"] == "Fischbrötchen"
         assert by_dep_time["2026-07-01T11:00:00Z"]["cargo_name"] == "Friesen Tee"
 
+    def test_capped_overflow_not_credited_to_total(self):
+        # #63 „Balken lügt nicht": Fracht ohne Manifest-Platz (per_flight_max_kg-Kappung) zählt
+        # NICHT als geliefert. tonnage_kg je Flug = tatsächliche Gutschrift, nicht Musterzuladung.
+        conn = _make_conn()
+        self._seed(conn)
+        ev = _event(conn, cargo=[
+            {"name": "Inselpost", "target_kg": 1500, "per_flight_max_kg": 50},
+        ])
+        _add_delivered_flight(conn, 12, "EDWG", "C208", "2026-07-01T10:00:00Z", ev["id"])  # Muster 550
+        _add_delivered_flight(conn, 7, "EDWG", "C208", "2026-07-01T10:30:00Z", ev["id"])   # Muster 550
+        p = compute_transport_progress(conn, ev, END)
+
+        # Jeder Flug trägt nur 50 kg ins Manifest, die restlichen 500 verpuffen (keine weitere
+        # Frachtart) — der Gesamtwert bleibt 100, NICHT 1100 (die Summe der Musterzuladungen).
+        assert p["total_kg"] == 100
+        post = next(c for c in p["cargo"] if c["name"] == "Inselpost")
+        assert post["delivered_kg"] == 100
+        for f in p["flights"]:
+            if f["loaded"]:
+                assert f["tonnage_kg"] == 50       # belegt (Netto)
+                assert f["onboard_kg"] == 550      # an Bord (Musterzuladung) bleibt für „50 / 550 kg"
+        # Konsistenz-Invariante: Σ Flug-Gutschriften == total_kg == Σ delivered.
+        assert sum(f["tonnage_kg"] for f in p["flights"] if f["loaded"]) == p["total_kg"]
+        assert p["total_kg"] == sum(c["delivered_kg"] for c in p["cargo"])
+
+    def test_cargo_exposes_per_flight_max_kg(self):
+        # #63: per_flight_max_kg im API-Response fürs Kappungs-Badge in der Legende.
+        conn = _make_conn()
+        self._seed(conn)
+        ev = _event(conn, cargo=[
+            {"name": "Inselpost", "target_kg": 1500, "per_flight_max_kg": 50},
+            {"name": "Lebensmittel", "target_kg": 500},
+        ])
+        p = compute_transport_progress(conn, ev, END)
+        post = next(c for c in p["cargo"] if c["name"] == "Inselpost")
+        leb = next(c for c in p["cargo"] if c["name"] == "Lebensmittel")
+        assert post["per_flight_max_kg"] == 50
+        assert leb["per_flight_max_kg"] is None
+
     def test_no_manifest_is_plain_counter(self):
         conn = _make_conn()
         self._seed(conn)
@@ -794,7 +833,10 @@ class TestReservation:
         p = compute_transport_progress(conn, ev, "2026-07-02T19:00:00Z")
         assert p["cargo"][0]["reserved_kg"] == 100.0     # gekappt auf offenen Bedarf
         assert p["reserved_total_kg"] == 100.0
-        assert p["flights"][0]["reserved_kg"] == 292.0   # was er trägt, bleibt volle Zuladung
+        # Durchgängig Netto (#63): reserved_kg je Flug ist die reservierbare Menge (was noch ins
+        # Manifest passt) — die volle Musterzuladung bleibt separat als onboard_reserved_kg.
+        assert p["flights"][0]["reserved_kg"] == 100.0
+        assert p["flights"][0]["onboard_reserved_kg"] == 292.0
 
     def test_reservation_respects_per_flight_cap_and_coload(self):
         conn = _make_conn()

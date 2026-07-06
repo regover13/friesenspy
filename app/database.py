@@ -4678,10 +4678,14 @@ def compute_transport_progress(
     Zusätzlich werden aktuell **offene** (noch verbundene) Flüge mit Start auf der Strecke in den
     Feed aufgenommen (``open_transport_flights``) — beladen nur mit Latch, da eine verlässliche
     GPS-Ankunft erst nach Disconnect feststeht; ansonsten 0 kg, bis Latch oder Disconnect eintreten.
-    Rückflüge zählen 0 kg, erscheinen aber als leere Flüge im Feed. Zuladung je beladenem Flug aus
-    ``aircraft_payloads`` (Fallback: globaler Default). Das Fracht-Manifest wird nach Abflugzeit per
-    Co-Load gefüllt (Obergrenze pro Flug, Rest fließt in die nächste Frachtart); jeder beladene Flug
-    trägt seine Frachtart(en). Der zurückgegebene ``flights``-Feed ist absteigend (neueste oben).
+    Rückflüge zählen 0 kg, erscheinen aber als leere Flüge im Feed. Die Musterzuladung je beladenem
+    Flug stammt aus ``aircraft_payloads`` (Fallback: globaler Default) und dient als EINGANG der
+    Co-Load-Füllung: das Fracht-Manifest wird nach Abflugzeit befüllt (Obergrenze pro Flug via
+    ``per_flight_max_kg``, Rest fließt in die nächste Frachtart). **Durchgängig Netto (#63):** die
+    ausgewiesene Menge eines Flugs (``tonnage_kg``) ist die tatsächlich ins Manifest verteilte Summe,
+    nicht die Musterzuladung — Überschuss ohne Manifest-Platz (Kappung/volle Frachtarten) zählt nicht
+    als geliefert, sodass ``total_kg`` == Σ ``delivered`` gilt und der Fortschritt nie überzeichnet.
+    Jeder beladene Flug trägt seine Frachtart(en). Der ``flights``-Feed ist absteigend (neueste oben).
 
     **Reservierung:** Sobald ein FRS-Pilot Richtung Ziel abhebt (``open_transport_flights``,
     Start auf der Strecke), reserviert er seine volle Zuladung im Manifest — noch ohne Latch,
@@ -4815,6 +4819,7 @@ def compute_transport_progress(
             "loaded": loaded,
             "in_air": True,
             "reserved_kg": reserved,
+            "onboard_reserved_kg": reserved,  # Musterzuladung an Bord (#63) — reserved_kg wird auf Netto begrenzt
             "flight_key": f"{cid}:{lo}",
             "distance_nm": 0,
             "block_min": 0,
@@ -4907,6 +4912,16 @@ def compute_transport_progress(
             delivered[i] += add
             remaining -= add
             contrib[i] = contrib.get(i, 0.0) + add
+        # Durchgängig Netto (#63): die gutgeschriebene Menge dieses Flugs = die tatsächlich ins
+        # Manifest verteilte Summe, NICHT die volle Musterzuladung. Überschuss ohne Manifest-Platz
+        # (per_flight_max_kg-Kappung oder bereits volle Frachtarten) zählt nicht als geliefert —
+        # so gilt total_kg == Σ delivered und der Fortschrittsbalken überzeichnet nie. Die
+        # Musterzuladung diente nur als Eingang der Co-Load-Verteilung (remaining oben).
+        # OHNE Manifest (cargo leer) gibt es keine Frachtart zum Verteilen und keinen Balken, der
+        # überzeichnen könnte — dann bleibt die Musterzuladung als schlichter kg-Zähler stehen.
+        q["onboard_kg"] = q["tonnage_kg"]  # Musterzuladung merken — „an Bord"-Zahl für „belegt / an Bord"
+        if cargo:
+            q["tonnage_kg"] = round(sum(contrib.values()), 1)
         ordered = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
         q["cargo_lines"] = [
             {"name": cargo[i]["name"], "emoji": cargo[i].get("emoji"), "kg": round(kg, 1)}
@@ -4914,20 +4929,54 @@ def compute_transport_progress(
         ]
         q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
 
-    # Bordladung aufschlüsseln (reine Anzeige, Nutzer-Wunsch 02.07.: „x Krabbenbrötchen,
-    # x Schafe"): was hat/hatte der Flug an Bord? Gilt für Verlust-/Rückbringer-Zeilen UND
-    # für gerade unterwegs befindliche (reservierte) Flüge. Volle Zuladung in Manifest-
-    # Reihenfolge, nur pro-Flug-Kappungen — bewusst OHNE Restkapazitäts-Abzug; die Summe
-    # der Zeilen entspricht so dem angezeigten lost_kg/reserved_kg. Ändert delivered nicht.
+    # Reservierungen (offene Flüge Richtung Ziel, noch ohne Latch) in die Rest-Kapazität
+    # verteilen — gleiche Co-Load-Regeln wie Lieferungen, aber in einem von `delivered`
+    # getrennten Topf (`reserved_alloc`): der gelieferte Fortschritt läuft nie rückwärts, die
+    # Reservierung verschwindet mit dem Flug. **Durchgängig Netto (#63):** `reserved_kg` je Flug
+    # ist die tatsächlich reservierbare Menge (was noch ins Manifest passt), NICHT die volle
+    # Musterzuladung — die bleibt als `onboard_reserved_kg` erhalten (an-Bord-Zahl). Die
+    # Aufschlüsselung (`cargo_lines`) zeigt entsprechend die reservierten Frachtart-Anteile.
+    reserved_alloc = [0.0] * len(cargo)
     for q in network:
-        if q.get("loss_kind"):
-            carried = q.get("lost_kg") or 0.0
-            if carried <= 1e-9:  # 'returned' trägt Ladung, verliert sie aber nicht (lost_kg=0)
-                carried = round(payload_map.get(normalize_type_code(q.get("aircraft")), default_kg), 1)
-        elif q.get("in_air") and not q["loaded"]:
-            carried = q.get("reserved_kg") or 0.0
-        else:
+        onboard_res = q.get("onboard_reserved_kg") or 0.0
+        if q["loaded"] or q.get("loss_kind") or onboard_res <= 1e-9:
             continue
+        remaining = onboard_res
+        contrib = {}
+        for i, c in enumerate(cargo):
+            if remaining <= 1e-9:
+                break
+            space = cargo_targets[i] - delivered[i] - reserved_alloc[i]
+            if space <= 1e-9:
+                continue
+            cap = c.get("per_flight_max_kg")
+            cap = cap if (cap is not None and cap > 0) else _INF
+            add = min(remaining, cap, space)
+            if add <= 1e-9:
+                continue
+            reserved_alloc[i] += add
+            remaining -= add
+            contrib[i] = contrib.get(i, 0.0) + add
+        # OHNE Manifest keine Verteilung — dann bleibt die volle Reservierung als kg-Zähler.
+        q["reserved_kg"] = round(sum(contrib.values()), 1) if cargo else onboard_res
+        ordered = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
+        q["cargo_lines"] = [
+            {"name": cargo[i]["name"], "emoji": cargo[i].get("emoji"), "kg": round(kg, 1)}
+            for i, kg in ordered
+        ]
+        q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
+
+    # Verlust-Bordladung aufschlüsseln (reine Anzeige, Nutzer-Wunsch 02.07.: „x Krabbenbrötchen,
+    # x Schafe"): was war an Bord, als der Kutter versank/geklaut wurde bzw. zurückkam? Bewusst
+    # BRUTTO — volle Musterzuladung in Manifest-Reihenfolge, nur pro-Flug-Kappungen, OHNE
+    # Restkapazitäts-Abzug: ein Verlust betrifft die GANZE Ladung, nicht nur den Manifest-Anteil
+    # (anders als die Reservierung oben, die nur das zählt, was fürs Ziel noch gebraucht wird).
+    for q in network:
+        if not q.get("loss_kind"):
+            continue
+        carried = q.get("lost_kg") or 0.0
+        if carried <= 1e-9:  # 'returned' trägt Ladung, verliert sie aber nicht (lost_kg=0)
+            carried = round(payload_map.get(normalize_type_code(q.get("aircraft")), default_kg), 1)
         if carried <= 1e-9:
             continue
         remaining = carried
@@ -4949,29 +4998,6 @@ def compute_transport_progress(
         ]
         q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
 
-    # Reservierungen (offene Flüge Richtung Ziel, noch ohne Latch) in die Rest-Kapazität
-    # verteilen — gleiche Co-Load-Regeln, aber getrennt von `delivered`: der Fortschritt
-    # läuft nie rückwärts, die Reservierung verschwindet mit dem Flug.
-    reserved_alloc = [0.0] * len(cargo)
-    for q in network:
-        r = q.get("reserved_kg") or 0.0
-        if q["loaded"] or r <= 1e-9:
-            continue
-        remaining = r
-        for i, c in enumerate(cargo):
-            if remaining <= 1e-9:
-                break
-            space = cargo_targets[i] - delivered[i] - reserved_alloc[i]
-            if space <= 1e-9:
-                continue
-            cap = c.get("per_flight_max_kg")
-            cap = cap if (cap is not None and cap > 0) else _INF
-            add = min(remaining, cap, space)
-            if add <= 1e-9:
-                continue
-            reserved_alloc[i] += add
-            remaining -= add
-
     # Gecachte KI-Sprüche je Flug anhängen (Phase 2; None wenn deaktiviert/noch nicht erzeugt).
     quips = get_transport_quips(conn, int(event["id"]))
     for q in network:
@@ -4991,6 +5017,7 @@ def compute_transport_progress(
             "delivered_kg": round(delivered[i], 1),
             "reserved_kg": round(reserved_alloc[i], 1),
             "pct": round(100.0 * delivered[i] / c["target_kg"], 1) if c["target_kg"] > 0 else 0.0,
+            "per_flight_max_kg": c.get("per_flight_max_kg"),  # Kappungs-Badge in der UI (#63)
         })
 
     target_kg = round(sum(cargo_targets), 1) if cargo_targets else None

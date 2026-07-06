@@ -1,5 +1,15 @@
 [
   {
+    "version": "8.8.0",
+    "date": "2026-07-06",
+    "title": "FriesenKutter: ehrlicher Fortschritt + sichtbare Kappung",
+    "items": [
+      "⚖️ Der Fortschrittsbalken zählt jetzt nur noch, was wirklich ins Manifest passte („durchgängig Netto“). Bisher summierte er die volle Musterzuladung jedes angekommenen Fliegers — auch Fracht, die wegen einer Obergrenze pro Flug oder bereits voller Frachtarten gar keinen Platz mehr fand. Dadurch zeigte der Balken z. B. 85 %, obwohl real nur 57 % der bestellten Waren geliefert waren. Gesamtmenge, Prozent, „offen“-Angabe und die Piloten-Summen sind jetzt konsistent mit den einzelnen Frachtart-Balken.",
+      "🔢 Die FRACHT-Spalte zeigt jetzt „belegt / an Bord“: die tatsächlich fürs Event gebrauchte Menge, und — nur falls Fracht keinen Manifest-Platz mehr fand — dahinter die volle transportierte Ladung (z. B. „50 / 381 kg“; sonst bloß „911 kg“). So sieht man die Leistung des Piloten UND den ehrlichen Beitrag zum Ziel. Gilt genauso für unterwegs reservierte Flüge; die Ladungs-Aufschlüsselung nennt die kg jetzt auch bei nur einer Frachtart.",
+      "⚠ Ist für eine Frachtart eine Obergrenze pro Flug gesetzt, erscheint das jetzt als sichtbares Abzeichen in der Legende (z. B. „⚠ 50/Flug“), damit die Kappung nicht länger unsichtbar wirkt."
+    ]
+  },
+  {
     "version": "8.7.0",
     "date": "2026-07-06",
     "title": "Flugplätze: Radius-Override für Großflughäfen",
