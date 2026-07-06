@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.8.5",
+    "date": "2026-07-06",
+    "title": "Kutter: „am Start“ statt „unterwegs“ für geparkte Piloten",
+    "items": [
+      "🅿️ Ein FriesenKutter-Pilot, der am Streckenflugplatz eingeloggt, aber noch am Boden steht (Groundspeed 0, noch nicht abgehoben), wurde fälschlich als „unterwegs ✈️“ angezeigt. Er reserviert seine Fracht zwar schon, ist aber erst „am Start“. Die Anzeige trennt das jetzt sauber: „am Start 🅿️“, solange er am Boden geparkt ist, und „unterwegs ✈️“ erst nach dem tatsächlichen Abheben (erkanntes GPS-Leg). Reservierung und Zählung bleiben unverändert."
+    ]
+  },
+  {
     "version": "8.8.4",
     "date": "2026-07-06",
     "title": "Kutter: Tagesend-Spruch ignorierte Verluste",

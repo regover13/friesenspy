@@ -3063,7 +3063,8 @@ async function fetchKutterActive() {
         callsign: f.callsign, aircraft: f.aircraft,
         kg: f.loaded ? f.tonnage_kg : (f.reserved_kg || 0),
         lines: f.cargo_lines || [],
-        status: f.loaded ? '✅ angekommen' : '✈️ unterwegs',
+        // airborne trennt „wirklich abgehoben" von „am Streckenplatz geparkt, reserviert" (#62-Folgefund)
+        status: f.loaded ? '✅ angekommen' : (f.airborne ? '✈️ unterwegs' : '🅿️ am Start'),
       });
     });
     (d.participants || []).forEach(p => {
@@ -4538,8 +4539,10 @@ function _kCargoLabel(f) {
     const quip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
     return '<td class="kutter-loss">' + cargoTxt + _kLossLabel(f.loss_kind) + quip + '</td>';
   }
-  if (!f.loaded) return f.in_air ? '<td class="kf-empty">unterwegs zum Ziel</td>'
-                                 : '<td class="kf-empty">zurück</td>';
+  if (!f.loaded) return f.in_air
+    ? (f.airborne ? '<td class="kf-empty">unterwegs zum Ziel</td>'
+                  : '<td class="kf-empty">am Start (reserviert)</td>')
+    : '<td class="kf-empty">zurück</td>';
   const lines = f.cargo_lines || [];
   let label;
   if (lines.length) {
@@ -4588,7 +4591,7 @@ function _kutterBarAndTotals(d) {
   const open = d.target_kg ? Math.max(0, d.target_kg - d.total_kg) : null;
   const inAir = d.reserved_total_kg || 0;
   const openTxt = open != null
-    ? ' — offen: ' + _kfmtT(open) + (inAir > 0 ? ', davon ' + _kfmtT(inAir) + ' unterwegs ✈️' : '') : '';
+    ? ' — offen: ' + _kfmtT(open) + (inAir > 0 ? ', davon ' + _kfmtT(inAir) + ' reserviert' : '') : '';
   const lostTxt = (d.lost_total_kg || 0) > 0
     ? ' <span class="kutter-loss">💀 ' + _kfmtT(d.lost_total_kg) + ' verloren</span>' : '';
   const header = '<div class="kutter-total">📦 ' + _kfmtT(d.total_kg) + goal + pct
@@ -4635,7 +4638,7 @@ function _kutterDetailBody(d) {
     const t = (f.dep_time || '').slice(11, 16);
     const kg = f.loaded ? '<td class="kf-kg">' + _kDualKg(f.tonnage_kg, f.onboard_kg) + '</td>'
       : f.loss_kind ? '<td class="kf-empty kutter-loss">' + (f.lost_kg ? Math.round(f.lost_kg) + ' kg' : '—') + '</td>'
-      : f.in_air ? '<td class="kf-res">~' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + ' ✈️</td>'
+      : f.in_air ? '<td class="kf-res">~' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
       : '<td class="kf-empty">leer</td>';
     return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + _kesc(f.aircraft || '')
       + '</td><td>' + _kesc(f.dep) + '→' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';

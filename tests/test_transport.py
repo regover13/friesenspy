@@ -881,6 +881,44 @@ class TestReservation:
         lines = {l["name"]: l["kg"] for l in f["cargo_lines"]}
         assert lines == {"Filmrollen": 100.0, "Friesentee": 192.0}
 
+    def test_open_flight_on_ground_is_not_airborne(self):
+        """#62-Folgefund (Live 06.07.): ein am Streckenplatz GEPARKTER Pilot (gs 0, nie abgehoben,
+        kein offenes GPS-Leg) reserviert zwar schon seine Fracht, gilt aber als „am Start" —
+        `airborne` False. `in_air`/Reservierung bleiben unverändert (er zählt weiter als offen)."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)  # payload 292
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        from app.geo import icao_to_coords, airport_elevation_ft
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        _add_open_flight(conn, 210, "EDWG", "EDXH", "C172", "2026-07-02T18:05:00Z")
+        # Zwei Boden-Samples bei gs 0 am Startplatz — nie abgehoben, also kein GPS-Leg.
+        _add_pos(conn, 210, "2026-07-02T18:05:00Z", dlat, dlon, 0, alt=delev, callsign="FRS210")
+        _add_pos(conn, 210, "2026-07-02T18:06:00Z", dlat, dlon, 0, alt=delev, callsign="FRS210")
+        p = compute_transport_progress(conn, ev, "2026-07-02T18:10:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 210)
+        assert f["in_air"] is True and f["loaded"] is False    # weiterhin offene Reservierung
+        assert f["airborne"] is False                           # aber NICHT „unterwegs"
+        assert f["reserved_kg"] == 292.0
+
+    def test_open_flight_airborne_after_takeoff(self):
+        """Gegenprobe: sobald der GPS-Leg-Detektor ein offenes (abgehobenes) Leg erkennt, ist der
+        Flug „unterwegs" → `airborne` True."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        from app.geo import icao_to_coords, airport_elevation_ft
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        t0 = "2026-07-02T18:05:00Z"
+        _add_open_flight(conn, 211, "EDWG", "EDXH", "C172", t0)
+        _add_pos(conn, 211, t0, dlat, dlon, 0, alt=delev, callsign="FRS211")
+        _add_pos(conn, 211, _shift(t0, 1), dlat, dlon, 12, alt=delev, callsign="FRS211")
+        _add_pos(conn, 211, _shift(t0, 4), dlat, dlon, 80, alt=delev + 1200, callsign="FRS211")  # Takeoff, kein Touchdown
+        p = compute_transport_progress(conn, ev, _shift(t0, 10))
+        f = next(x for x in p["flights"] if x["cid"] == 211)
+        assert f["in_air"] is True and f["airborne"] is True
+
     def test_latch_converts_reservation_to_delivered(self):
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)

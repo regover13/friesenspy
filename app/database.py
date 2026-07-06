@@ -4832,6 +4832,7 @@ def compute_transport_progress(
             "tonnage_kg": tonnage,
             "loaded": loaded,
             "in_air": False,
+            "airborne": False,  # geschlossenes Bein (gelandet/zurück) — nie „unterwegs"
             "reserved_kg": 0.0,
             "flight_key": f"{cid}:{lo}",
             "distance_nm": f.get("distance_nm") or 0,
@@ -4912,6 +4913,11 @@ def compute_transport_progress(
             "tonnage_kg": tonnage,
             "loaded": loaded,
             "in_air": True,
+            # #62-Folgefund (Live 06.07.): `in_air` heißt nur „offene Reservierung Richtung Ziel",
+            # NICHT „abgehoben". Ein am Streckenplatz geparkter Pilot (gs 0, kein GPS-Leg) reserviert
+            # zwar schon, ist aber am Start — nicht unterwegs. `airborne` trennt beides fürs Frontend:
+            # True erst, wenn der GPS-Leg-Detektor ein offenes (abgehobenes) Leg erkannt hat.
+            "airborne": current_leg is not None,
             "reserved_kg": reserved,
             "onboard_reserved_kg": reserved,  # Musterzuladung an Bord (#63) — reserved_kg wird auf Netto begrenzt
             "flight_key": f"{cid}:{lo}",
