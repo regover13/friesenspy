@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Impressum — FriesenSpy</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;500;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-body:     #04080f;
+      --bg-panel:    #071525;
+      --accent:      #2d9cdb;
+      --text-bright: #d4e8f5;
+      --text-label:  #6b9ab8;
+      --mono: 'Courier Prime', monospace;
+      --display: 'Exo 2', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-body);
+      color: var(--text-bright);
+      font-family: var(--display);
+      font-weight: 300;
+      line-height: 1.65;
+      padding: 2rem 1.25rem 4rem;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 46rem; margin: 0 auto; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .back {
+      display: inline-block; font-family: var(--mono); font-size: 0.85rem;
+      letter-spacing: 0.05em; margin-bottom: 2rem; text-transform: uppercase;
+    }
+    h1 {
+      font-weight: 700; font-size: 1.8rem; letter-spacing: 0.02em;
+      padding-bottom: 0.6rem; margin-bottom: 1.6rem;
+      border-bottom: 1px solid rgba(45,156,219,0.25);
+    }
+    h2 {
+      font-weight: 500; font-size: 1.05rem; color: var(--text-label);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin: 2rem 0 0.5rem;
+    }
+    p { margin-bottom: 0.4rem; }
+    .addr { font-family: var(--mono); line-height: 1.9; }
+    .mail { color: var(--accent); }
+    .note {
+      margin-top: 2.5rem; padding-top: 1.2rem; font-size: 0.9rem;
+      color: var(--text-label); border-top: 1px solid rgba(45,156,219,0.15);
+    }
+    footer {
+      margin-top: 3rem; padding-top: 1.2rem; font-family: var(--mono);
+      font-size: 0.8rem; color: var(--text-label);
+      border-top: 1px solid rgba(45,156,219,0.15);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/">&larr; Zurück zu FriesenSpy</a>
+    <h1>Impressum</h1>
+
+    <h2>Angaben gemäß § 5 DDG</h2>
+    <p class="addr">
+      Tobias Wäschle<br />
+      Venloer Str. 156A<br />
+      50679 Köln
+    </p>
+
+    <h2>Kontakt</h2>
+    <p class="addr">E-Mail: <span class="mail" data-u="webmaster" data-d="devprops.de">webmaster&#160;(at)&#160;devprops.de</span></p>
+
+    <h2>Verantwortlich für den Inhalt</h2>
+    <p class="addr">Tobias Wäschle (Anschrift wie oben)</p>
+
+    <div class="note">
+      FriesenSpy ist ein privates, nicht-kommerzielles Hobby-Projekt für die
+      Flugsimulations-Gruppe „FriesenFlieger" und wird ohne Gewinnerzielungsabsicht
+      betrieben. Es handelt sich um kein journalistisch-redaktionell gestaltetes Angebot
+      im Sinne des § 18 Abs. 2 MStV.
+    </div>
+
+    <footer>
+      <a href="/datenschutz">Datenschutzerklärung</a> &nbsp;·&nbsp;
+      <a href="/">FriesenSpy</a>
+    </footer>
+  </div>
+  <script>
+    // E-Mail erst im Browser zusammensetzen — kein harvestbarer Klartext-String im HTML.
+    document.querySelectorAll('.mail').forEach(function (el) {
+      var addr = el.dataset.u + '@' + el.dataset.d;
+      var a = document.createElement('a');
+      a.href = 'mailto:' + addr;
+      a.textContent = addr;
+      a.className = 'mail';
+      el.replaceWith(a);
+    });
+  </script>
+</body>
+</html>

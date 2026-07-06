@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.9.1",
+    "date": "2026-07-07",
+    "title": "Impressum und Datenschutzerklärung ergänzt",
+    "items": [
+      "Rechtlich vorgeschriebene Seiten hinzugefügt: Impressum (§ 5 DDG) und Datenschutzerklärung (Art. 13 DSGVO), erreichbar über den Footer sowie unter /impressum bzw. /datenschutz. Wie die gesamte App sind sie von der Google-Suche ausgenommen; die Kontakt-E-Mail wird erst im Browser zusammengesetzt (Schutz vor Spam-Sammlern)."
+    ]
+  },
+  {
     "version": "8.9.0",
     "date": "2026-07-06",
     "title": "Live-Track zeigt jetzt den Rollbeginn — Taxi-out + Startlauf nicht mehr abgeschnitten",

@@ -216,6 +216,18 @@ async def admin_page():
     return FileResponse("app/static/admin.html")
 
 
+@app.get("/impressum", include_in_schema=False)
+async def impressum_page():
+    """Impressum (§ 5 DDG) — statische Seite."""
+    return FileResponse("app/static/impressum.html")
+
+
+@app.get("/datenschutz", include_in_schema=False)
+async def datenschutz_page():
+    """Datenschutzerklärung (Art. 13 DSGVO) — statische Seite."""
+    return FileResponse("app/static/datenschutz.html")
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
