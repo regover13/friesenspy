@@ -14,6 +14,7 @@ import pytest
 import app.main as main
 from app.database import (
     get_connection,
+    get_progress_snapshot,
     init_db,
     list_bummel_races,
     set_bummel_revealed,
@@ -118,3 +119,128 @@ def test_active_none_when_no_race(tmp_path, monkeypatch):
     init_db(db)
     _patch_settings(monkeypatch, db)
     assert asyncio.run(main.get_bummel_active()) is None
+
+
+# ---------------------------------------------------------------------------
+# #66 Task 5: Freeze abgeschlossener Rennen (revealed_at + now>=dtend) aus dem
+# progress_snapshot, Metadaten aus der DB-Zeile, Status immer frisch.
+# ---------------------------------------------------------------------------
+
+def test_bummel_race_lazy_freezes_on_first_read(tmp_path, monkeypatch):
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch_settings(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    dtstart = _iso(now - timedelta(hours=5))
+    dtend = _iso(now - timedelta(hours=1))
+    rid = _seed(db, dtstart=dtstart, dtend=dtend)
+    conn = get_connection(db)
+    set_bummel_revealed(conn, rid, dtend)
+    conn.commit()
+    conn.close()
+
+    calls = {"n": 0}
+    orig = main._build_race_view
+
+    def _spy(*a, **k):
+        calls["n"] += 1
+        return orig(*a, **k)
+
+    monkeypatch.setattr(main, "_build_race_view", _spy)
+
+    view1 = asyncio.run(main.get_bummel_race_endpoint(rid))
+    view2 = asyncio.run(main.get_bummel_race_endpoint(rid))
+
+    assert view1["status"] == "revealed"
+    assert view2["status"] == "revealed"
+    assert calls["n"] == 1  # zweiter Read kommt aus dem Snapshot
+
+    conn = get_connection(db)
+    snap = get_progress_snapshot(conn, "bummel", rid)
+    conn.close()
+    assert snap is not None
+
+
+def test_bummel_force_reveal_before_dtend_not_frozen(tmp_path, monkeypatch):
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch_settings(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    # dtend liegt noch in der Zukunft — revealed_at aber schon gesetzt (Admin-Override-Fall).
+    dtstart = _iso(now - timedelta(hours=1))
+    dtend = _iso(now + timedelta(hours=3))
+    rid = _seed(db, dtstart=dtstart, dtend=dtend)
+    conn = get_connection(db)
+    set_bummel_revealed(conn, rid, _iso(now))
+    conn.commit()
+    conn.close()
+
+    view = asyncio.run(main.get_bummel_race_endpoint(rid))
+
+    assert view["revealed"] is True  # bereits enthüllt (Override)
+    conn = get_connection(db)
+    snap = get_progress_snapshot(conn, "bummel", rid)
+    conn.close()
+    assert snap is None  # aber NICHT eingefroren, weil now < dtend
+
+
+def test_bummel_status_refreshed_from_snapshot(tmp_path, monkeypatch):
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch_settings(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    dtstart = _iso(now - timedelta(hours=5))
+    dtend = _iso(now - timedelta(hours=1))
+    rid = _seed(db, dtstart=dtstart, dtend=dtend)
+    conn = get_connection(db)
+    set_bummel_revealed(conn, rid, dtend)
+    conn.commit()
+    conn.close()
+
+    # Erster Read friert ein (Snapshot enthält status="revealed" wie berechnet).
+    asyncio.run(main.get_bummel_race_endpoint(rid))
+    conn = get_connection(db)
+    snap = get_progress_snapshot(conn, "bummel", rid)
+    conn.close()
+    assert snap is not None
+    # Snapshot manuell mit einem veralteten/falschen Status verfälschen.
+    conn = get_connection(db)
+    import json as _json
+    conn.execute(
+        "UPDATE progress_snapshot SET payload_json = ? WHERE kind='bummel' AND ref_id=?",
+        (_json.dumps(dict(snap, status="scheduled")), rid),
+    )
+    conn.commit()
+    conn.close()
+
+    view = asyncio.run(main.get_bummel_race_endpoint(rid))
+    assert view["status"] == "revealed"  # frisch aus _race_status, nicht aus dem (verfälschten) Snapshot
+
+
+def test_bummel_metadata_from_db_row_not_snapshot(tmp_path, monkeypatch):
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch_settings(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    dtstart = _iso(now - timedelta(hours=5))
+    dtend = _iso(now - timedelta(hours=1))
+    rid = _seed(db, dtstart=dtstart, dtend=dtend)
+    conn = get_connection(db)
+    set_bummel_revealed(conn, rid, dtend)
+    conn.commit()
+    conn.close()
+
+    # Erster Read friert ein.
+    asyncio.run(main.get_bummel_race_endpoint(rid))
+
+    # Rennen nach der Enthüllung umbenannt.
+    conn = get_connection(db)
+    conn.execute("UPDATE bummel_races SET name = ? WHERE id = ?", ("Neuer Name", rid))
+    conn.commit()
+    conn.close()
+
+    detail = asyncio.run(main.get_bummel_race_endpoint(rid))
+    assert detail["name"] == "Neuer Name"
+
+    races = asyncio.run(main.get_bummel_races())
+    assert races[0]["name"] == "Neuer Name"

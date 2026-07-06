@@ -1003,16 +1003,37 @@ def _build_race_view(conn, race: dict, now: str, *, force_reveal: bool = False) 
     return view
 
 
+def _bummel_view(conn, race: dict, now: str, *, force_reveal: bool = False) -> dict:
+    """Öffentliche Sicht auf ein Rennen — eingefroren (abgeschlossen) oder live, danach frische
+    Überlagerung von Status + Metadaten aus der DB-Zeile (#66 §3).
+
+    Ein Rennen gilt nur als abgeschlossen, wenn ``revealed_at`` gesetzt UND ``now >= dtend`` ist —
+    ein per Admin-Override VOR ``dtend`` erzwungenes Reveal friert NICHT ein (bleibt live)."""
+    finished = bool(race.get("revealed_at")) and now >= (race.get("dtend") or "")
+    view = _frozen_or_compute(
+        conn, "bummel", race["id"], finished=finished, now=now,
+        compute_fn=lambda: _build_race_view(conn, race, now, force_reveal=force_reveal),
+    )
+    view = dict(view)
+    view["status"] = _race_status(race, now)          # frisch
+    view["name"] = race.get("name") or ""              # Metadaten aus der DB-Zeile
+    view["route"] = race.get("route")
+    view["dtstart"] = race.get("dtstart")
+    view["dtend"] = race.get("dtend")
+    return view
+
+
 @app.get("/api/bummel/races")
 async def get_bummel_races():
-    """Liste aller Bummel-Rennen (Status + Teilnehmerzahl, keine Zeiten vor Enthüllung)."""
+    """Liste aller Bummel-Rennen (Status + Teilnehmerzahl, keine Zeiten vor Enthüllung) — letzte
+    ``_DATA_RETENTION_DAYS`` Tage (#67), abgeschlossene Rennen aus dem Snapshot (#66)."""
     now = datetime.now(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_connection(get_settings().DB_PATH)
     try:
         update_bummel_reveals(conn, now, callsign_prefix=get_settings().CALLSIGN_PREFIX)
         out = []
-        for race in list_bummel_races(conn):
-            view = _build_race_view(conn, race, now)
+        for race in list_bummel_races(conn, since=_retention_since(now)):
+            view = _bummel_view(conn, race, now)
             out.append({
                 "id": view["id"], "name": view["name"], "route": view["route"],
                 "dtstart": view["dtstart"], "dtend": view["dtend"],
@@ -1026,7 +1047,8 @@ async def get_bummel_races():
 
 @app.get("/api/bummel/race/{race_id}")
 async def get_bummel_race_endpoint(race_id: int):
-    """Öffentliche Sicht eines Rennens — redigiert (keine Zeiten) bis zur Enthüllung."""
+    """Öffentliche Sicht eines Rennens — redigiert (keine Zeiten) bis zur Enthüllung, abgeschlossen
+    aus dem Snapshot (#66)."""
     now = datetime.now(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_connection(get_settings().DB_PATH)
     try:
@@ -1034,7 +1056,7 @@ async def get_bummel_race_endpoint(race_id: int):
         race = get_bummel_race(conn, race_id)
         if not race:
             raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
-        return _build_race_view(conn, race, now)
+        return _bummel_view(conn, race, now)
     finally:
         conn.close()
 
@@ -1100,7 +1122,7 @@ async def get_bummel_badge(request: Request, race_id: int, cid: int):
         race = get_bummel_race(conn, race_id)
         if not race:
             raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
-        view = _build_race_view(conn, race, now)
+        view = _bummel_view(conn, race, now)
         if not view.get("revealed"):
             raise HTTPException(status_code=404, detail="Ergebnisse noch nicht enthüllt")
         d, is_winner = _badge_entry_data(view, race, cid)
