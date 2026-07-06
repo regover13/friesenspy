@@ -1359,3 +1359,106 @@ class TestGpsDetectionGaps:
         gaps_after = list_gps_detection_gaps(conn)
         conn.close()
         assert not any(g["cid"] == cid for g in gaps_after)
+
+
+class TestStatsimMidAirSplitContinuity:
+    """`_statsim_rows_continuous` — die Merge-Regel für StatSim-Mid-Air-Splits (Live-Fund
+    2026-07-06, KNF04WC). Direkte Unit-Tests auf die Entscheidung, plus ein Integrationstest
+    durch canonicalize_legs, der den Geister-Fall (gestartet-nie-gelandet) auflöst.
+    """
+
+    def _pos(self, ts, lat, lon, gs):
+        return {"ts": ts, "latitude": lat, "longitude": lon, "altitude": 5000, "groundspeed": gs}
+
+    def test_merges_when_both_sides_airborne_small_gap(self):
+        from app.database import _statsim_rows_continuous
+        row_a = {"departure": "EDDK", "arrival": "EDDL"}
+        row_b = {"departure": "EDDK", "arrival": "EDDL"}  # gleicher Plan → Fenster 30 min
+        pos_a = [self._pos("2026-07-02T10:10:00Z", 51.0, 7.0, 120),
+                 self._pos("2026-07-02T10:15:00Z", 51.1, 6.9, 120)]  # endet airborne
+        pos_b = [self._pos("2026-07-02T10:16:00Z", 51.12, 6.88, 120),  # 60 s später, airborne, näher EDDL
+                 self._pos("2026-07-02T10:20:00Z", 51.2, 6.82, 100)]
+        assert _statsim_rows_continuous(row_a, row_b, pos_a, pos_b) is True
+
+    def test_no_merge_when_b_starts_on_ground(self):
+        """Der Fehlmerge-Schutz (Option 3): B beginnt am Boden (Taxi/Startlauf) → ein separater
+        neuer Flug, KEIN Mid-Air-Split. Trotz kleiner Zeitlücke und Nähe nicht mergen."""
+        from app.database import _statsim_rows_continuous
+        row_a = {"departure": "EDDK", "arrival": "EDDL"}
+        row_b = {"departure": "EDDK", "arrival": "EDDL"}
+        pos_a = [self._pos("2026-07-02T10:10:00Z", 51.0, 7.0, 120),
+                 self._pos("2026-07-02T10:15:00Z", 51.1, 6.9, 120)]  # A endet airborne
+        pos_b = [self._pos("2026-07-02T10:16:00Z", 51.12, 6.88, 12),  # B startet am Boden (gs 12)
+                 self._pos("2026-07-02T10:20:00Z", 51.12, 6.88, 15)]
+        assert _statsim_rows_continuous(row_a, row_b, pos_a, pos_b) is False
+
+    def test_no_merge_when_a_ends_on_ground(self):
+        """Echte Zwischenlandung: A endet am Boden (gelandet) → abgeschlossen, kein Reconnect."""
+        from app.database import _statsim_rows_continuous
+        row_a = {"departure": "EDDK", "arrival": "EDDW"}
+        row_b = {"departure": "EDDW", "arrival": "EDDL"}
+        pos_a = [self._pos("2026-07-02T10:10:00Z", 51.0, 7.0, 120),
+                 self._pos("2026-07-02T10:40:00Z", *EDDW, 0)]  # A landet (gs 0)
+        pos_b = [self._pos("2026-07-02T10:46:00Z", *EDDW, 85),
+                 self._pos("2026-07-02T11:00:00Z", 51.3, 6.8, 120)]
+        assert _statsim_rows_continuous(row_a, row_b, pos_a, pos_b) is False
+
+    def test_no_merge_when_gap_exceeds_window(self):
+        """Zeitfenster: gleiche Plandaten → 30 min. Eine 40-min-Lücke trennt (kein Reconnect)."""
+        from app.database import _statsim_rows_continuous
+        row_a = {"departure": "EDDK", "arrival": "EDDL"}
+        row_b = {"departure": "EDDK", "arrival": "EDDL"}
+        pos_a = [self._pos("2026-07-02T10:00:00Z", 51.0, 7.0, 120),
+                 self._pos("2026-07-02T10:15:00Z", 51.1, 6.9, 120)]
+        pos_b = [self._pos("2026-07-02T10:55:00Z", 51.12, 6.88, 120),  # 40 min später
+                 self._pos("2026-07-02T11:00:00Z", 51.2, 6.82, 100)]
+        assert _statsim_rows_continuous(row_a, row_b, pos_a, pos_b) is False
+
+    def test_no_merge_when_b_earlier_than_a(self):
+        """Fehlsortierung (unzuverlässige StatSim-logon_time): B liegt real VOR A → gap < 0 →
+        nicht mergen (safe fallback aufs Einzel-Verhalten)."""
+        from app.database import _statsim_rows_continuous
+        row_a = {"departure": "EDDK", "arrival": "EDDL"}
+        row_b = {"departure": "EDDK", "arrival": "EDDL"}
+        pos_a = [self._pos("2026-07-02T10:16:00Z", 51.12, 6.88, 120)]
+        pos_b = [self._pos("2026-07-02T10:10:00Z", 51.0, 7.0, 120)]  # früher als A
+        assert _statsim_rows_continuous(row_a, row_b, pos_a, pos_b) is False
+
+    def test_ghost_leg_resolved_by_merge(self):
+        """Integration: StatSim schneidet EINEN Flug EDDK→EDDL mitten in der Luft in zwei ids —
+        id A endet airborne (kein Landing → Geister-Bein 'EDDK→—'), id B spawnt 60 s später
+        airborne und landet EDDL ('—→EDDL'). Nach dem Merge: EIN sauberes Bein EDDK→EDDL,
+        kein Geister-Bein mit gps_arrival=None mehr."""
+        conn = _make_conn()
+        cid = 5700
+        # id A: EDDK-Start + Steigflug, Track endet mitten im Reiseflug (kein Touchdown).
+        _insert_statsim(
+            conn, 9701, cid=cid, callsign="FRS60", departure="EDDK", arrival="EDDL",
+            logon_time="2026-07-02T09:58:00Z", logoff_time="2026-07-02T10:15:00Z",
+            duration_min=17, aircraft="C172",
+        )
+        _insert_statsim_pos(conn, 9701, "2026-07-02T10:00:00Z", *EDDK, 302, 0)
+        _insert_statsim_pos(conn, 9701, "2026-07-02T10:01:00Z", *EDDK, 302, 15)
+        _insert_statsim_pos(conn, 9701, "2026-07-02T10:03:00Z", *EDDK, 1200, 80)
+        _insert_statsim_pos(conn, 9701, "2026-07-02T10:10:00Z", 51.0, 7.0, 5000, 120)
+        _insert_statsim_pos(conn, 9701, "2026-07-02T10:15:00Z", 51.1, 6.9, 5000, 120)  # endet airborne
+        # id B: spawnt 60 s später airborne, sinkt, landet EDDL.
+        _insert_statsim(
+            conn, 9702, cid=cid, callsign="FRS60", departure="EDDK", arrival="EDDL",
+            logon_time="2026-07-02T10:14:00Z", logoff_time="2026-07-02T10:25:00Z",
+            duration_min=11, aircraft="C172",
+        )
+        _insert_statsim_pos(conn, 9702, "2026-07-02T10:16:00Z", 51.12, 6.88, 5000, 120)
+        _insert_statsim_pos(conn, 9702, "2026-07-02T10:20:00Z", 51.2, 6.82, 2000, 100)
+        _insert_statsim_pos(conn, 9702, "2026-07-02T10:23:00Z", 51.27, 6.78, 500, 60)
+        _insert_statsim_pos(conn, 9702, "2026-07-02T10:25:00Z", *EDDL, 150, 0)  # Touchdown EDDL
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        st = [f for f in result if f["cid"] == cid and f["source"] == "statsim"]
+        assert len(st) == 1                          # EIN Bein, kein Geister-Bein
+        assert st[0]["gps_departure"] == "EDDK"
+        assert st[0]["gps_arrival"] == "EDDL"
+        assert not any(f["gps_arrival"] is None for f in st)

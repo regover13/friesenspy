@@ -49,6 +49,13 @@ mkdir -p /opt/friesenspy/data
   und die Tabelle selbst braucht `width: max-content; min-width: 100%` (sonst hat der Wrapper
   nichts zu scrollen). Fertige Klassen: `.table-scroll` (index.html), `.table-wrap` (admin.html).
   Gilt ausdrücklich auch für alle NEUEN Ansichten (z. B. kommende Kutter-Live-Ansicht).
+  **Flexbox-Falle (v8.6.5-Fund):** liegt der Wrapper in einem Flex-Container (z. B. `#app` in
+  admin.html, `display:flex; flex-direction:column`), reicht `.table-wrap`/`.table-scroll`
+  allein NICHT — Flex-Items dürfen sich per CSS-Default nicht unter ihre Inhaltsbreite
+  schrumpfen (`min-width:auto`), eine breite Tabelle sprengt dann das ganze Flex-Item und
+  `overflow-x:hidden` am `body` schneidet den Überstand einfach ab, statt dass die innere
+  Scrollbar greift. Jeder Flex-Item-Container um eine scrollbare Tabelle braucht zusätzlich
+  `min-width: 0` (in admin.html bereits auf `.panel` gesetzt).
 
 ## Projektstruktur
 

@@ -1,5 +1,14 @@
 [
   {
+    "version": "8.6.5",
+    "date": "2026-07-06",
+    "title": "StatSim-Mid-Air-Split-Merge + Admin-Scrollbar-Fix",
+    "items": [
+      "🐛 StatSim schnitt manche durchgehenden Flüge mitten in der Luft in zwei Aufzeichnungen (Flugplan-Umplanung ohne Landung) — dadurch entstand ein Geister-Flugbein („gestartet, nie gelandet“). Beide Aufzeichnungen werden jetzt erkannt und zu einem Flug zusammengeführt, wenn beide Seiten der Naht nachweislich in der Luft sind (dieselben Regeln wie bei einem FriesenSpy-Verbindungsabbruch).",
+      "📱 Breite Tabellen im Admin-Bereich (z. B. Erkennungslücken, Flugplätze) hatten in Edge/Chrome keine horizontale Scrollbar mehr — der Inhalt wurde einfach abgeschnitten. Ursache war ein Flexbox-Effekt (Panels durften sich nicht unter ihre Inhaltsbreite schrumpfen)."
+    ]
+  },
+  {
     "version": "8.6.4",
     "date": "2026-07-06",
     "title": "Erkennungslücken-Prüfliste: Track öffnet direkt im Vollbild",

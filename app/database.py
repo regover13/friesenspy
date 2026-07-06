@@ -1628,6 +1628,72 @@ def _segments_continuous(
     return True
 
 
+def _statsim_rows_continuous(
+    row_a: dict, row_b: dict, positions_a: list[dict], positions_b: list[dict]
+) -> bool:
+    """StatSim-Pendant zu :func:`_segments_continuous`: True wenn ``row_b`` GPS-technisch
+    nahtlos an ``row_a`` anschließt — StatSim hat dann einen echten durchgehenden Flug
+    MITTEN IN DER LUFT in zwei ``statsim_id``s zerschnitten (Live-Fund 2026-07-06, KNF04WC
+    CYYR→KCAR→KOWD: StatSim wies eine 45-Minuten-Lücke zwischen den offiziellen logon_time/
+    logoff_time-Feldern aus, während die echten Positionen nur 60 Sekunden auseinanderlagen
+    — die Aufzeichnung lief über den Start in KCAR hinweg einfach in der zweiten ID weiter).
+
+    Nutzt DIESELBEN Zeit-/Distanz-/Richtungs-Regeln und -Konstanten wie der FriesenSpy-
+    Reconnect (``_segments_continuous``) — nur auf ``statsim_position_history`` statt
+    ``position_history``, mit bereits geladenen Positionslisten statt eigener SQL-Abfrage, und
+    mit den ECHTEN Positions-Zeitstempeln als Lückenmaß (die ``logon_time``/``logoff_time``-
+    Felder von ``statsim_cache`` sind dafür nachweislich unzuverlässig, s. o.).
+
+    EIN Unterschied zum FS-Reconnect: statt der einseitigen „Fertig gelandet"-Sperre gilt hier
+    ein SYMMETRISCHES Airborne-Kriterium — BEIDE Seiten der Naht müssen nachweislich in der
+    Luft sein (A endet mit ≥ ``_FLOWN_MIN_GS_KT``, B beginnt mit ≥ ``_FLOWN_MIN_GS_KT``). Bei
+    einem echten Mid-Air-Split fliegt das Flugzeug über die id-Grenze hinweg weiter (im Fund:
+    A 236 kt → B 241 kt). Ein SEPARATER neuer Flug B würde dagegen typischerweise am Boden
+    beginnen (Taxi/Startlauf, niedrige gs) → dann NICHT mergen. Anders als der FS-Reconnect
+    (durchgehende VATSIM-Verbindung, lückenlose Position) sitzt die StatSim-Naht per Definition
+    zwischen zwei GETRENNTEN Aufzeichnungen — „beide Seiten airborne" ist dort das ehrlichere
+    Kriterium und schließt zugleich die „Track A brach vor der Landung ab, B ist ein anderer
+    Flug"-Fehlmerge aus, OHNE das großzügige Zeit-/Distanzfenster (15/30 min) einzuengen.
+    """
+    from app.geo import haversine, icao_to_coords
+
+    if not positions_a or not positions_b:
+        return False
+    last, first = positions_a[-1], positions_b[0]
+    try:
+        gap_min = (_parse_iso(first["ts"]) - _parse_iso(last["ts"])).total_seconds() / 60.0
+    except Exception:
+        return False
+    if gap_min < 0:
+        return False
+    # Beide Seiten der Naht müssen airborne sein (s. Docstring). Deckt zugleich A's Landungs-
+    # sperre ab: liegt A's letzte gs ≥ 60, kann A nicht am Boden geendet haben.
+    if (last.get("groundspeed") or 0) < _FLOWN_MIN_GS_KT:
+        return False
+    if (first.get("groundspeed") or 0) < _FLOWN_MIN_GS_KT:
+        return False
+    same_fp = (
+        bool(row_a.get("departure"))
+        and (row_a.get("departure") or "") == (row_b.get("departure") or "")
+        and (row_a.get("arrival") or "") == (row_b.get("arrival") or "")
+    )
+    window = _RECONNECT_GAP_SAME_FP_MIN if same_fp else _RECONNECT_GAP_NO_FP_MIN
+    if gap_min > window:
+        return False
+    gap_nm = haversine(last["latitude"], last["longitude"], first["latitude"], first["longitude"]) / 1.852
+    budget_nm = (max(gap_min, 0.0) / 60.0) * _MAX_GS_KT + _BUDGET_MARGIN_NM
+    if gap_nm > budget_nm:
+        return False
+    arr = row_b.get("arrival") or row_a.get("arrival") or ""
+    arr_coords = icao_to_coords(arr) if arr else None
+    if arr_coords is not None:
+        d_last = haversine(last["latitude"], last["longitude"], arr_coords[0], arr_coords[1])
+        d_first = haversine(first["latitude"], first["longitude"], arr_coords[0], arr_coords[1])
+        if d_first > d_last + _DIRECTION_TOLERANCE_KM:
+            return False  # 'row_b' weiter vom Ziel weg → kein Fortschritt → kein Reconnect
+    return True
+
+
 def merge_fragmented_flights(
     flights: list[dict],
     gap_minutes: int = 5,
@@ -2402,33 +2468,61 @@ def canonicalize_legs(
         ).fetchall()
     ]
 
-    st_flights: list[dict] = []
+    # StatSim schneidet einen echten durchgehenden Flug manchmal MITTEN IN DER LUFT in zwei
+    # statsim_ids (Live-Fund 2026-07-06, KNF04WC CYYR→KCAR→KOWD — s. _statsim_rows_continuous).
+    # Verarbeitet man jede id isoliert, entsteht dabei ein Geister-Bein ("KCAR → —", gestartet
+    # aber nie gelandet, weil die Positionsdaten dieser id vor der Landung enden). Deshalb
+    # werden zeitlich benachbarte Zeilen DESSELBEN Piloten erst zu Clustern zusammengefasst
+    # (dieselben Reconnect-Regeln wie bei FriesenSpy-Verbindungsabbrüchen), bevor der
+    # Detektor läuft — Positionen werden aneinandergehängt, alle betroffenen Flugpläne
+    # gemeinsam als plan_rows übergeben (_flightplan_asof ordnet dann jedem erkannten Bein
+    # automatisch den zeitlich richtigen Plan zu, genau wie beim FriesenSpy-Zweig).
+    sc_by_cid: dict[int, list[dict]] = {}
     for row in sc_rows:
-        positions = get_statsim_positions(conn, row["statsim_id"])
-        gps_flights = _gps_flights_for_positions(
-            positions, plan_rows=[_statsim_plan(row)], source="statsim", radius_km=radius_km
-        )
-        if gps_flights:
-            for f in gps_flights:
-                f["cid"] = row["cid"]
-                if not f.get("aircraft"):
-                    # Kein Plan-Match (GPS-only-Leg): die statsim_cache-Zeile selbst kennt
-                    # den Typ bereits (row.aircraft) -> kein Vermutungs-Fallback nötig (#52).
-                    f["aircraft"] = row.get("aircraft") or None
-                if not f.get("callsign"):
-                    # Kein Plan-Match (z. B. Spawn-in-der-Luft, dep_icao unbekannt) UND
-                    # statsim_position_history hat KEINE callsign-Spalte (anders als
-                    # position_history bei FriesenSpy) -> callsign_by_ts liefert für StatSim
-                    # nie einen Treffer. Ohne diesen Fallback bliebe die Zeile callsign-los,
-                    # obwohl die statsim_cache-Zeile ihn längst kennt (row.callsign).
-                    f["callsign"] = row.get("callsign") or None
-                # _coverage_end bleibt vorerst im Dict (symmetrisch zur FS-Seite, FIX 6) —
-                # wird erst kurz vor der Rückgabe für die Dedup-Obergrenze genutzt und dann
-                # entfernt. Sonst bekäme ein offener StatSim-GPS-Flug hi=∞ und würde von
-                # jedem späteren FS-Flug fälschlich als "überdeckt" gewertet.
-                st_flights.append(f)
-        else:
-            st_flights.append(_flightrow_as_flight(row, "statsim"))
+        sc_by_cid.setdefault(row["cid"], []).append(row)
+
+    st_flights: list[dict] = []
+    for cid, rows in sc_by_cid.items():
+        row_positions = [get_statsim_positions(conn, r["statsim_id"]) for r in rows]
+        clusters: list[list[int]] = []
+        current = [0]
+        for i in range(1, len(rows)):
+            if _statsim_rows_continuous(rows[i - 1], rows[i], row_positions[i - 1], row_positions[i]):
+                current.append(i)
+            else:
+                clusters.append(current)
+                current = [i]
+        clusters.append(current)
+
+        for idx_list in clusters:
+            cluster_rows = [rows[i] for i in idx_list]
+            cluster_positions = [p for i in idx_list for p in row_positions[i]]
+            plan_rows = [_statsim_plan(r) for r in cluster_rows]
+            gps_flights = _gps_flights_for_positions(
+                cluster_positions, plan_rows=plan_rows, source="statsim", radius_km=radius_km
+            )
+            if gps_flights:
+                for f in gps_flights:
+                    f["cid"] = cid
+                    if not f.get("aircraft"):
+                        # Kein Plan-Match (GPS-only-Leg): die erste Zeile des Clusters kennt
+                        # den Typ bereits (row.aircraft) -> kein Vermutungs-Fallback nötig (#52).
+                        f["aircraft"] = cluster_rows[0].get("aircraft") or None
+                    if not f.get("callsign"):
+                        # Kein Plan-Match (z. B. Spawn-in-der-Luft, dep_icao unbekannt) UND
+                        # statsim_position_history hat KEINE callsign-Spalte (anders als
+                        # position_history bei FriesenSpy) -> callsign_by_ts liefert für StatSim
+                        # nie einen Treffer. Ohne diesen Fallback bliebe die Zeile callsign-los,
+                        # obwohl die statsim_cache-Zeile ihn längst kennt (row.callsign).
+                        f["callsign"] = cluster_rows[0].get("callsign") or None
+                    # _coverage_end bleibt vorerst im Dict (symmetrisch zur FS-Seite, FIX 6) —
+                    # wird erst kurz vor der Rückgabe für die Dedup-Obergrenze genutzt und dann
+                    # entfernt. Sonst bekäme ein offener StatSim-GPS-Flug hi=∞ und würde von
+                    # jedem späteren FS-Flug fälschlich als "überdeckt" gewertet.
+                    st_flights.append(f)
+            else:
+                for row in cluster_rows:
+                    st_flights.append(_flightrow_as_flight(row, "statsim"))
 
     st_flights = [f for f in st_flights if _in_window(f)]
 

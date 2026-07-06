@@ -139,6 +139,12 @@
       box-shadow: 0 0 10px var(--green-glow);
       padding: 20px;
       margin-bottom: 20px;
+      /* #app ist ein Flex-Container (column) — ohne min-width:0 dürfen sich Flex-Items
+         (jedes .panel) nicht unter ihre Content-Breite schrumpfen. Eine breite Tabelle
+         tief im Panel (z. B. Erkennungslücken, 10 Spalten) zwingt dadurch das ganze Panel
+         in die Breite; body{overflow-x:hidden} schneidet den Überstand dann einfach ab,
+         statt dass die innere .table-wrap-Scrollbar greift. */
+      min-width: 0;
     }
 
     .panel-title {
