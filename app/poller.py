@@ -1192,7 +1192,14 @@ class VatsimPoller:
 
     async def _check_transport_events(self) -> None:
         """Periodisch: FriesenKutter-Events latchen — Start (erster Flug), Ziel (Manifest voll)
-        und Feierabend (dtend erreicht). Jeweils einmal je Event ein Push an die Events-Abonnenten."""
+        und Feierabend (dtend erreicht). Jeweils einmal je Event ein Push an die Events-Abonnenten.
+
+        Abgeschlossene Events (``summarized_at`` gesetzt) werden NICHT mehr neu gerechnet — ihre
+        Wertung ist final und liegt als Snapshot vor (``progress_snapshot``, #66). Der Poller
+        springt für sie direkt zur Quip-Nachsammlung (Fable-Fund 1: die KI-Sprüche entstehen erst
+        NACH dem Latch, das Gate darf sie nicht abwürgen); der Endpoint-Read überlagert sie
+        ohnehin frisch (``app/main.py``), der Snapshot selbst muss dafür nicht neu geschrieben
+        werden."""
         try:
             from datetime import datetime, timezone
             from app import llm
@@ -1200,14 +1207,31 @@ class VatsimPoller:
                 list_transport_events, compute_transport_progress,
                 set_transport_started, set_transport_goal_reached, set_transport_summarized,
                 set_transport_summary_quip, transport_quips_enabled,
-                event_summary_context, flight_quip_context,
+                event_summary_context, flight_quip_context, get_transport_quips,
                 get_push_subscriptions_for_events, transport_event_started,
                 transport_anyone_in_progress, detect_transport_losses,
+                get_progress_snapshot, write_progress_snapshot,
             )
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             conn = get_connection(self.db_path)
             pushes: list[dict] = []
             quip_jobs: list[tuple] = []
+
+            def collect_quip_jobs(ev: dict, progress: dict) -> None:
+                """Fehlende Pro-Flug-Quip-Jobs aus ``progress['flights']`` sammeln und an
+                ``quip_jobs`` anhängen. Prüft gegen den AKTUELLEN Quip-Store
+                (``get_transport_quips``), NICHT gegen ein evtl. vorhandenes ``quip``-Feld in
+                ``progress`` selbst — bei einem eingefrorenen Snapshot wird dieses Feld nie
+                nachträglich aktualisiert, ein reiner Feld-Check würde also bei jedem Poll
+                dieselben (inzwischen evtl. längst erzeugten) Sprüche erneut anfordern. Von
+                BEIDEN Zweigen (aktiv + bereits abgeschlossen/summarized) genutzt, damit die
+                Logik nicht dupliziert/divergiert (#66 Task 6)."""
+                existing = get_transport_quips(conn, ev["id"])
+                for f in progress.get("flights", []):
+                    if (f.get("loaded") or f.get("loss_kind") in ("stolen", "sunk")) \
+                            and not existing.get(f.get("flight_key")):
+                        quip_jobs.append((ev["id"], f["flight_key"], flight_quip_context(f, progress)))
+
             try:
                 do_quips = transport_quips_enabled(conn) and llm.is_configured()
                 for ev in list_transport_events(conn):
@@ -1217,11 +1241,18 @@ class VatsimPoller:
                         continue  # noch nicht gestartet
                     name = ev.get("name") or "FriesenKutter"
                     push_on = bool(ev.get("push_enabled"))
-                    # Nach dem Feierabend-Latch (summarized_at) ist die Wertung final — weitere
-                    # Verlust-Erkennung liefe nur noch ins Leere (und würde ohne diesen Guard bei
-                    # jedem Poll unnötig Flüge/Positionen für ein längst abgeschlossenes Event
-                    # laden). Zusätzlich zur end-Schranke in detect_transport_losses selbst.
-                    if ev.get("destination") and not ev.get("summarized_at"):
+                    if ev.get("summarized_at"):
+                        # Abgeschlossen: Wertung ist final (Snapshot) — kein detect_losses, kein
+                        # teures compute mehr (der Endpoint bedient aus dem Snapshot). Nur noch
+                        # offene Pro-Flug-Quips nachsammeln, gespeist aus dem billigen
+                        # Snapshot-Read (KEIN erneutes compute_transport_progress).
+                        if do_quips:
+                            snap = get_progress_snapshot(conn, "kutter", ev["id"])
+                            if snap is not None:
+                                collect_quip_jobs(ev, snap)
+                        continue
+                    # --- nicht abgeschlossen: bisheriger Ablauf unverändert ---
+                    if ev.get("destination"):
                         detect_transport_losses(conn, ev, callsign_prefix=self.callsign_prefix)
                     progress = compute_transport_progress(
                         conn, ev, now, callsign_prefix=self.callsign_prefix
@@ -1242,12 +1273,21 @@ class VatsimPoller:
                     # Feierabend erst, wenn kein Nachzügler mehr unterwegs ist (Flug vor dtend
                     # gestartet, noch offen, ohne Ankunfts-Latch) — sonst entstünde die
                     # Zusammenfassung mit einem noch nicht finalen Ergebnis (Task #13).
-                    if dtend and now >= dtend and not ev.get("summarized_at") \
-                            and not transport_anyone_in_progress(
+                    if dtend and now >= dtend and not transport_anyone_in_progress(
                                 conn, ev, started_before=dtend,
                                 callsign_prefix=self.callsign_prefix,
                             ):
                         if set_transport_summarized(conn, ev["id"], now):
+                            # Eager-Freeze (#66 Task 6): niemand ist nach Abschluss mehr
+                            # „unterwegs" — in_air/airborne normalisieren (identisch zum
+                            # späteren Lazy-Recompute mit skip_open_probe=True), DANN als
+                            # Snapshot einfrieren. Quips fehlen hier bewusst noch (sie entstehen
+                            # erst danach) — der Endpoint-Read überlagert sie frisch, der
+                            # Snapshot muss dafür nicht neu geschrieben werden.
+                            for f in progress.get("flights", []):
+                                f["in_air"] = False
+                                f["airborne"] = False
+                            write_progress_snapshot(conn, "kutter", ev["id"], progress, now)
                             if progress["flight_count"] > 0:
                                 tons = round(progress["total_kg"] / 1000, 2)
                                 body = f"Feierabend: {progress['loaded_count']} Frachtflüge, {tons} t bewegt ✅"
@@ -1264,10 +1304,7 @@ class VatsimPoller:
                             # kein KI-Aufruf (kein bezahlter LLM-Call ohne jede Aktivität).
                     # Pro-Flug-Sprüche für neue beladene Flüge ohne Cache sammeln (später async erzeugen).
                     if do_quips:
-                        for f in progress["flights"]:
-                            if (f.get("loaded") or f.get("loss_kind") in ("stolen", "sunk")) \
-                                    and not f.get("quip"):
-                                quip_jobs.append((ev["id"], f["flight_key"], flight_quip_context(f, progress)))
+                        collect_quip_jobs(ev, progress)
                 conn.commit()
                 subscriptions = get_push_subscriptions_for_events(conn) if pushes else []
             finally:

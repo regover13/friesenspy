@@ -850,6 +850,205 @@ class TestTransportSummaryEmptyEventSuppressed:
 
 
 # ---------------------------------------------------------------------------
+# Kutter-Snapshot: Poller friert beim Feierabend ein + Gate + Quip-Fortführung
+# (#66 Task 6)
+# ---------------------------------------------------------------------------
+
+class TestTransportSnapshotFreeze:
+    @pytest.fixture(autouse=True)
+    def _settings(self, monkeypatch):
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        from app.config import get_settings
+        get_settings.cache_clear()
+        yield
+        get_settings.cache_clear()
+
+    def _poller(self, db_path):
+        return VatsimPoller(
+            db_path=db_path, callsign_prefix="FRS", poll_interval=60,
+            vapid_private_key="priv", vapid_contact_email="mailto:x@y.z",
+        )
+
+    def _seed_with_flight(self, db_file):
+        """Transport-Event mit abgelaufenem dtend + bereits geschlossenem FRS-Flug auf der
+        Strecke — Feierabend kann sofort latchen (kein Nachzügler-Wait nötig)."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import create_transport_event, get_connection, set_transport_started
+
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        dtstart = (now - timedelta(hours=3)).strftime(fmt)
+        dtend = (now - timedelta(minutes=10)).strftime(fmt)
+        logon = (now - timedelta(hours=2)).strftime(fmt)
+        logoff = (now - timedelta(hours=1)).strftime(fmt)
+        conn = get_connection(db_file)
+        try:
+            eid = create_transport_event(
+                conn, name="Helgoland-Nachschub", route="EDWG,EDXH",
+                dtstart=dtstart, dtend=dtend, destination="EDXH",
+            )
+            set_transport_started(conn, eid, dtstart)
+            conn.execute(
+                "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (7, 'P', ?)",
+                (dtstart,),
+            )
+            conn.execute(
+                "INSERT INTO flights (cid, callsign, departure, arrival, logon_time, "
+                "logoff_time, duration_min) VALUES (7, 'FRS07', 'EDWG', 'EDXH', ?, ?, 60)",
+                (logon, logoff),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return eid
+
+    @pytest.mark.asyncio
+    async def test_poller_writes_kutter_snapshot_on_summarize(self, tmp_path):
+        """dtend erreicht, niemand mehr unterwegs → Feierabend latcht → der Snapshot wird
+        EINMALIG geschrieben (Eager-Freeze), alle Flüge darin mit in_air/airborne == False
+        (Fable-Fund 8: ein abgeschlossenes Event hat niemanden mehr „unterwegs")."""
+        from app.database import init_db, get_connection, get_progress_snapshot
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        eid = self._seed_with_flight(db_file)
+        poller = self._poller(db_file)
+
+        with patch("app.poller.send_web_push", new=AsyncMock()):
+            await poller._check_transport_events()
+            await asyncio.sleep(0)
+
+        conn = get_connection(db_file)
+        try:
+            snap = get_progress_snapshot(conn, "kutter", eid)
+            row = conn.execute(
+                "SELECT summarized_at FROM transport_events WHERE id = ?", (eid,)
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert row["summarized_at"] is not None
+        assert snap is not None
+        assert snap["flights"]  # sanity: mindestens ein Flug im eingefrorenen Feed
+        assert all(not f.get("in_air") and not f.get("airborne") for f in snap["flights"])
+
+    @pytest.mark.asyncio
+    async def test_poller_skips_compute_when_summarized(self, tmp_path, monkeypatch):
+        """Event bereits summarized_at + Snapshot vorhanden → der Lauf ruft
+        compute_transport_progress NICHT mehr auf (Gate, #66 Task 6)."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import (
+            init_db, get_connection, create_transport_event, set_transport_summarized,
+            write_progress_snapshot,
+        )
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        dtstart = (now - timedelta(hours=3)).strftime(fmt)
+        dtend = (now - timedelta(minutes=10)).strftime(fmt)
+        conn = get_connection(db_file)
+        try:
+            eid = create_transport_event(
+                conn, name="Helgoland-Nachschub", route="EDWG,EDXH",
+                dtstart=dtstart, dtend=dtend, destination="EDXH",
+            )
+            set_transport_summarized(conn, eid, dtend)
+            write_progress_snapshot(conn, "kutter", eid, {
+                "flights": [], "total_kg": 42.0, "flight_count": 0, "loaded_count": 0,
+                "target_kg": None, "cargo": [], "losses": [], "lost_total_kg": 0.0,
+                "route": ["EDWG", "EDXH"], "destination": "EDXH",
+            }, dtend)
+            conn.commit()
+        finally:
+            conn.close()
+
+        called = {"n": 0}
+
+        def _spy(*a, **k):
+            called["n"] += 1
+            return {"flights": [], "total_kg": 0, "flight_count": 0, "loaded_count": 0,
+                    "target_kg": None}
+
+        monkeypatch.setattr("app.database.compute_transport_progress", _spy)
+
+        poller = self._poller(db_file)
+        with patch("app.poller.send_web_push", new=AsyncMock()):
+            await poller._check_transport_events()
+            await asyncio.sleep(0)
+
+        assert called["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_poller_still_generates_quips_after_summarize(self, tmp_path, monkeypatch):
+        """Summarized Event + Snapshot mit einem beladenen Flug ohne Quip, do_quips aktiv →
+        der Lauf sammelt/erzeugt den fehlenden Pro-Flug-Quip weiter (Fable-Fund 1: Quips dürfen
+        vom Gate nicht abgewürgt werden), OHNE compute_transport_progress aufzurufen."""
+        from unittest.mock import ANY
+        from datetime import datetime, timedelta, timezone
+        from app.database import (
+            init_db, get_connection, create_transport_event, set_transport_summarized,
+            write_progress_snapshot, set_app_setting,
+        )
+
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        dtstart = (now - timedelta(hours=3)).strftime(fmt)
+        dtend = (now - timedelta(minutes=10)).strftime(fmt)
+        flight_key = "7:2026-07-01T10:00:00Z"
+        conn = get_connection(db_file)
+        try:
+            eid = create_transport_event(
+                conn, name="Helgoland-Nachschub", route="EDWG,EDXH",
+                dtstart=dtstart, dtend=dtend, destination="EDXH",
+            )
+            set_app_setting(conn, "transport_quips_enabled", "1")
+            set_transport_summarized(conn, eid, dtend)
+            write_progress_snapshot(conn, "kutter", eid, {
+                "flights": [{
+                    "cid": 7, "callsign": "FRS07", "aircraft": "PZ04",
+                    "dep": "EDWG", "arr": "EDXH", "tonnage_kg": 120.0, "loaded": True,
+                    "in_air": False, "airborne": False, "flight_key": flight_key,
+                    "distance_nm": 20, "block_min": 30, "cargo_lines": [], "quip": None,
+                }],
+                "total_kg": 120.0, "flight_count": 1, "loaded_count": 1, "target_kg": None,
+                "cargo": [], "losses": [], "lost_total_kg": 0.0,
+                "route": ["EDWG", "EDXH"], "destination": "EDXH",
+            }, dtend)
+            conn.commit()
+        finally:
+            conn.close()
+
+        called_compute = {"n": 0}
+
+        def _spy(*a, **k):
+            called_compute["n"] += 1
+            return {}
+
+        monkeypatch.setattr("app.database.compute_transport_progress", _spy)
+
+        poller = self._poller(db_file)
+        gen_mock = AsyncMock()
+        with patch.object(VatsimPoller, "_gen_flight_quip", gen_mock), \
+                patch("app.poller.send_web_push", new=AsyncMock()):
+            await poller._check_transport_events()
+            await asyncio.sleep(0)
+
+        assert called_compute["n"] == 0
+        gen_mock.assert_called_once_with(eid, flight_key, ANY)
+
+        get_settings.cache_clear()
+
+
+# ---------------------------------------------------------------------------
 # _check_event_reminders -- 1h-Erinnerung aus drei Quellen (Task 4, #24)
 # ---------------------------------------------------------------------------
 
