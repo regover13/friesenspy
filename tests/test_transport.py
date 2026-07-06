@@ -936,6 +936,33 @@ class TestReservation:
         f = next(x for x in p["flights"] if x["cid"] == 211)
         assert f["in_air"] is True and f["airborne"] is True
 
+    def test_skip_open_probe_omits_open_branch(self):
+        """#66 Task 3: `skip_open_probe=True` (Aufrufer für ein bereits abgeschlossenes,
+        `summarized_at`-Event) überspringt den zweiten `canonicalize_legs`-Aufruf
+        (`open_legs_probe`) UND den gesamten Offen-Flug-Zweig (`open_transport_flights`) — ein
+        offener (abgehobener) Strecken-Flug ohne Ankunfts-Latch verschwindet dann aus dem Feed.
+        Ohne Flag ist er weiterhin da (identisches Verhalten wie heute)."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        from app.geo import icao_to_coords, airport_elevation_ft
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        t0 = "2026-07-01T18:05:00Z"
+        _add_open_flight(conn, 212, "EDWG", "EDXH", "C172", t0)
+        _add_pos(conn, 212, t0, dlat, dlon, 0, alt=delev, callsign="FRS212")
+        _add_pos(conn, 212, _shift(t0, 1), dlat, dlon, 12, alt=delev, callsign="FRS212")
+        _add_pos(conn, 212, _shift(t0, 4), dlat, dlon, 80, alt=delev + 1200, callsign="FRS212")  # Takeoff
+        now = _shift(t0, 10)
+
+        with_open = compute_transport_progress(conn, ev, now, skip_open_probe=False)
+        without = compute_transport_progress(conn, ev, now, skip_open_probe=True)
+
+        open_keys = {f["flight_key"] for f in with_open["flights"] if f.get("airborne")}
+        assert open_keys  # ohne Flag ist der offene Flug als airborne im Feed
+        assert not any(f.get("airborne") for f in without["flights"])  # mit Flag nicht mehr
+        assert not any(f["cid"] == 212 for f in without["flights"])  # verschwindet komplett
+
     def test_open_flight_after_event_end_excluded(self):
         """Live-Fund 06.07.: ein erst NACH dtend eingeloggter Flug eines Streckenplatzes darf nicht
         mehr im (beendeten) Event auftauchen — sonst leckt jeder gerade fliegende EDWG-Abflieger in

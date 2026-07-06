@@ -4778,6 +4778,7 @@ def compute_transport_progress(
     *,
     callsign_prefix: str = "FRS",
     radius_km: float | None = None,
+    skip_open_probe: bool = False,
 ) -> dict:
     """Live-Fortschritt eines FriesenKutter-Events.
 
@@ -4807,6 +4808,15 @@ def compute_transport_progress(
     läuft, und verschwindet mit dem Flug (Latch, Landung anderswo, Disconnect). Die kg werden
     dabei stets live aus ``aircraft_payloads`` (``payload_map``/``default_kg``) gelesen, nie
     gesnapshottet.
+
+    ``skip_open_probe`` (#66 Task 3): bei einem bereits ABGESCHLOSSENEN Event (``summarized_at``
+    gesetzt) überspringt der Aufrufer damit den zweiten, mit dem Event-Alter wachsenden
+    ``canonicalize_legs``-Aufruf (``open_legs_probe``) UND den gesamten Offen-Flug-Zweig
+    (``open_transport_flights``). Das ist beim Freeze nicht nur billiger, sondern auch
+    RICHTIGER: die Fracht eines abgeschlossenen Events steckt bereits im geschlossenen GPS-Leg
+    (C1-Mechanik oben) — der Offen-Zweig trägt nur noch die kosmetische
+    ``in_air``/``airborne``-Zeile bei, die eingefroren für immer fälschlich „unterwegs" anzeigen
+    würde (s. Spec `docs/superpowers/specs/2026-07-06-spezialevents-progress-snapshot-perf-design.md` §2).
     """
     from app.geo import icao_to_coords  # lazy
 
@@ -4829,11 +4839,14 @@ def compute_transport_progress(
     # Abflugzeit dieses Legs — zuverlässiger als ihn aus der ersten Position der GANZEN
     # Verbindung neu herzuleiten. Eigener Aufruf mit `end=now` (nicht durch `dtend` gekappt),
     # damit ein Leg, das erst nach Event-Ende startete, nicht verloren geht.
-    open_legs_probe = canonicalize_legs(conn, start=load_start, end=now, callsign_prefix=callsign_prefix)
-    current_leg_by_cid: dict[int, dict] = {
-        int(f["cid"]): f for f in open_legs_probe
-        if f.get("cid") is not None and not f.get("logoff_time")
-    }
+    if skip_open_probe:
+        current_leg_by_cid: dict[int, dict] = {}
+    else:
+        open_legs_probe = canonicalize_legs(conn, start=load_start, end=now, callsign_prefix=callsign_prefix)
+        current_leg_by_cid: dict[int, dict] = {
+            int(f["cid"]): f for f in open_legs_probe
+            if f.get("cid") is not None and not f.get("logoff_time")
+        }
 
     dest = normalize_type_code(event.get("destination"))
     live_arrivals = get_transport_live_arrivals(conn, int(event["id"]))
@@ -4901,95 +4914,102 @@ def compute_transport_progress(
     # fs-WHERE) — Doppelzählung derselben Fracht. Nur bei bereits GELADENER Connection
     # skippen: ein geschlossenes, NICHT geladenes Zwischenlande-Bein (arr ≠ dest) einer noch
     # offenen Weiterreise darf die In-Air-Reservierung nicht unterdrücken.
-    loaded_conn_logons = {
-        (int(q["cid"]), q["_conn_logon"]) for q in network
-        if q.get("loaded") and q.get("_conn_logon") and q.get("cid") is not None
-    }
     returning_cids: set[int] = set()
     returning_info: dict[int, dict] = {}  # Muster/Callsign für Nur-Rückflug-Teilnehmer (nicht im Feed)
-    for f in open_transport_flights(conn, callsign_prefix):
-        cid = f.get("cid")
-        if cid is None:
-            continue
-        lo = f.get("logon_time") or ""
-        if lo < start:
-            continue
-        # Ober-Zeitgrenze (Live-Fund 06.07.): eine noch offene Verbindung, die erst NACH dem
-        # Event-Ende (`end` = min(now, dtend)) begann, gehört nicht mehr zu diesem Event. Ohne
-        # diese Grenze zog der Offen-Zweig jeden gerade eingeloggten Abflieger eines Strecken-
-        # platzes in JEDES Event mit demselben Startplatz — auch in längst beendete (Fund:
-        # laufende EDWG→EDWY-Flüge tauchten im bereits abgelaufenen Test-Event EDWG→EDXP als
-        # „unterwegs" auf, weil beide EDWG teilen). Der geschlossene Zweig ist über
-        # `canonicalize_legs(end=…)` längst gebunden — nur der Offen-Zweig hatte oben keine
-        # Obergrenze. Bei laufendem Event ist `end == now`, greift also nie (keiner loggt in die
-        # Zukunft ein); nur bei beendetem Event blendet er Nachzügler korrekt aus.
-        if end and lo > end:
-            continue
-        # #66: der "schon geliefert"-Skip darf nur greifen, solange seit der Lieferung KEIN
-        # neues Leg begonnen hat (current_leg_by_cid leer für diese cid) — sonst würde er die
-        # komplette restliche Lebensdauer der Verbindung blind ausblenden, selbst wenn seither
-        # längst ein Rückflug UND ein weiteres, unabhängiges Leg passiert sind (Live-Fund
-        # 06.07.: Lieferung → Rückflug gelandet → neuer Flug wurde dadurch komplett verschluckt,
-        # nicht nur falsch als "Rückflug" markiert).
-        if (int(cid), lo) in loaded_conn_logons and int(cid) not in current_leg_by_cid:
-            continue
-        # #66: dep bevorzugt aus dem bereits GPS-erkannten LAUFENDEN Leg (current_leg_by_cid) —
-        # dessen eigener, korrekter Startpunkt, NICHT die Erstposition der gesamten Verbindung.
-        # Eine offene Verbindung kann mehrere Legs nacheinander enthalten (Rückflug gelandet,
-        # dann ein neuer, unabhängiger Weiterflug in DERSELBEN Verbindung ohne Disconnect) — die
-        # alte Heuristik nahm immer dieselbe, längst veraltete Erstposition und hätte den neuen
-        # Weiterflug fälschlich weiter als "Rückflug" gezeigt (Live-Fund 06.07., EDWG-EDXP-Test:
-        # Rückflug EDXP→EDWG bereits gelandet, danach EDWG→EDWL fälschlich als "Rückflug"
-        # markiert geblieben). Fallback (kein GPS-Leg erkannt, z. B. trackless) wie bisher.
-        current_leg = current_leg_by_cid.get(int(cid))
-        dep = (normalize_type_code(current_leg.get("departure")) if current_leg else None) \
-            or _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
-            or normalize_type_code(f.get("departure"))
-        if dep not in route_set or dep == dest:
-            # #65: eine Verbindung, die als "Rückflug" (dep==dest) erkannt wurde, bleibt oft auch
-            # nach der Landung offen (kein Disconnect) -- ohne diesen Check würde "Rückflug"
-            # dauerhaft hängen bleiben, obwohl der Pilot längst wieder am Boden ist (irgendwo,
-            # nicht zwingend auf der Strecke — #66 verallgemeinert).
-            if dep == dest and not _returning_pilot_landed(conn, int(cid)):
-                returning_cids.add(int(cid))
-                returning_info.setdefault(int(cid), {
-                    "aircraft": f.get("aircraft") or normalize_type_code(f.get("aircraft_icao")) or "",
-                    "callsign": f.get("callsign") or "",
-                })
-            continue
-        loaded = bool(dest) and (cid, lo) in live_arrivals
-        type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
-        if loaded and type_code and type_code not in payload_map:
-            unmapped.add(type_code)
-        tonnage = round(payload_map.get(type_code, default_kg), 1) if loaded else 0.0
-        reserved = 0.0 if loaded else round(payload_map.get(type_code, default_kg), 1)
-        if not loaded and type_code and type_code not in payload_map:
-            unmapped.add(type_code)   # reservierte Typen dem Admin ebenfalls melden
-        network.append({
-            "dep_time": lo,
-            "cid": cid,
-            "callsign": f.get("callsign") or "",
-            "aircraft": f.get("aircraft") or type_code,
-            "dep": dep,
-            "arr": dest,
-            "tonnage_kg": tonnage,
-            "loaded": loaded,
-            "in_air": True,
-            # #62-Folgefund (Live 06.07.): `in_air` heißt nur „offene Reservierung Richtung Ziel",
-            # NICHT „abgehoben". Ein am Streckenplatz geparkter Pilot (gs 0, kein GPS-Leg) reserviert
-            # zwar schon, ist aber am Start — nicht unterwegs. `airborne` trennt beides fürs Frontend:
-            # True erst, wenn der GPS-Leg-Detektor ein offenes (abgehobenes) Leg erkannt hat.
-            "airborne": current_leg is not None,
-            "reserved_kg": reserved,
-            "onboard_reserved_kg": reserved,  # Musterzuladung an Bord (#63) — reserved_kg wird auf Netto begrenzt
-            "flight_key": f"{cid}:{lo}",
-            "distance_nm": 0,
-            "block_min": 0,
-            # lo IST hier bereits der Verbindungs-Logon (open_transport_flights liest die
-            # flights-Tabelle direkt) — kein Reconcile nötig, nur einheitlicher Key fürs Loss-
-            # Attach unten.
-            "_conn_logon": lo,
-        })
+    if skip_open_probe:
+        # #66 Task 3: abgeschlossenes Event (Freeze) — der gesamte Offen-Flug-Zweig entfällt
+        # (`current_leg_by_cid` ist oben bereits leer). Die Fracht steckt bereits im geschlossenen
+        # GPS-Leg; übrig bliebe nur die kosmetische in_air/airborne-Zeile, die eingefroren für
+        # immer fälschlich „unterwegs" anzeigen würde (s. Docstring/Spec §2).
+        pass
+    else:
+        loaded_conn_logons = {
+            (int(q["cid"]), q["_conn_logon"]) for q in network
+            if q.get("loaded") and q.get("_conn_logon") and q.get("cid") is not None
+        }
+        for f in open_transport_flights(conn, callsign_prefix):
+            cid = f.get("cid")
+            if cid is None:
+                continue
+            lo = f.get("logon_time") or ""
+            if lo < start:
+                continue
+            # Ober-Zeitgrenze (Live-Fund 06.07.): eine noch offene Verbindung, die erst NACH dem
+            # Event-Ende (`end` = min(now, dtend)) begann, gehört nicht mehr zu diesem Event. Ohne
+            # diese Grenze zog der Offen-Zweig jeden gerade eingeloggten Abflieger eines Strecken-
+            # platzes in JEDES Event mit demselben Startplatz — auch in längst beendete (Fund:
+            # laufende EDWG→EDWY-Flüge tauchten im bereits abgelaufenen Test-Event EDWG→EDXP als
+            # „unterwegs" auf, weil beide EDWG teilen). Der geschlossene Zweig ist über
+            # `canonicalize_legs(end=…)` längst gebunden — nur der Offen-Zweig hatte oben keine
+            # Obergrenze. Bei laufendem Event ist `end == now`, greift also nie (keiner loggt in die
+            # Zukunft ein); nur bei beendetem Event blendet er Nachzügler korrekt aus.
+            if end and lo > end:
+                continue
+            # #66: der "schon geliefert"-Skip darf nur greifen, solange seit der Lieferung KEIN
+            # neues Leg begonnen hat (current_leg_by_cid leer für diese cid) — sonst würde er die
+            # komplette restliche Lebensdauer der Verbindung blind ausblenden, selbst wenn seither
+            # längst ein Rückflug UND ein weiteres, unabhängiges Leg passiert sind (Live-Fund
+            # 06.07.: Lieferung → Rückflug gelandet → neuer Flug wurde dadurch komplett verschluckt,
+            # nicht nur falsch als "Rückflug" markiert).
+            if (int(cid), lo) in loaded_conn_logons and int(cid) not in current_leg_by_cid:
+                continue
+            # #66: dep bevorzugt aus dem bereits GPS-erkannten LAUFENDEN Leg (current_leg_by_cid) —
+            # dessen eigener, korrekter Startpunkt, NICHT die Erstposition der gesamten Verbindung.
+            # Eine offene Verbindung kann mehrere Legs nacheinander enthalten (Rückflug gelandet,
+            # dann ein neuer, unabhängiger Weiterflug in DERSELBEN Verbindung ohne Disconnect) — die
+            # alte Heuristik nahm immer dieselbe, längst veraltete Erstposition und hätte den neuen
+            # Weiterflug fälschlich weiter als "Rückflug" gezeigt (Live-Fund 06.07., EDWG-EDXP-Test:
+            # Rückflug EDXP→EDWG bereits gelandet, danach EDWG→EDWL fälschlich als "Rückflug"
+            # markiert geblieben). Fallback (kein GPS-Leg erkannt, z. B. trackless) wie bisher.
+            current_leg = current_leg_by_cid.get(int(cid))
+            dep = (normalize_type_code(current_leg.get("departure")) if current_leg else None) \
+                or _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
+                or normalize_type_code(f.get("departure"))
+            if dep not in route_set or dep == dest:
+                # #65: eine Verbindung, die als "Rückflug" (dep==dest) erkannt wurde, bleibt oft auch
+                # nach der Landung offen (kein Disconnect) -- ohne diesen Check würde "Rückflug"
+                # dauerhaft hängen bleiben, obwohl der Pilot längst wieder am Boden ist (irgendwo,
+                # nicht zwingend auf der Strecke — #66 verallgemeinert).
+                if dep == dest and not _returning_pilot_landed(conn, int(cid)):
+                    returning_cids.add(int(cid))
+                    returning_info.setdefault(int(cid), {
+                        "aircraft": f.get("aircraft") or normalize_type_code(f.get("aircraft_icao")) or "",
+                        "callsign": f.get("callsign") or "",
+                    })
+                continue
+            loaded = bool(dest) and (cid, lo) in live_arrivals
+            type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
+            if loaded and type_code and type_code not in payload_map:
+                unmapped.add(type_code)
+            tonnage = round(payload_map.get(type_code, default_kg), 1) if loaded else 0.0
+            reserved = 0.0 if loaded else round(payload_map.get(type_code, default_kg), 1)
+            if not loaded and type_code and type_code not in payload_map:
+                unmapped.add(type_code)   # reservierte Typen dem Admin ebenfalls melden
+            network.append({
+                "dep_time": lo,
+                "cid": cid,
+                "callsign": f.get("callsign") or "",
+                "aircraft": f.get("aircraft") or type_code,
+                "dep": dep,
+                "arr": dest,
+                "tonnage_kg": tonnage,
+                "loaded": loaded,
+                "in_air": True,
+                # #62-Folgefund (Live 06.07.): `in_air` heißt nur „offene Reservierung Richtung Ziel",
+                # NICHT „abgehoben". Ein am Streckenplatz geparkter Pilot (gs 0, kein GPS-Leg) reserviert
+                # zwar schon, ist aber am Start — nicht unterwegs. `airborne` trennt beides fürs Frontend:
+                # True erst, wenn der GPS-Leg-Detektor ein offenes (abgehobenes) Leg erkannt hat.
+                "airborne": current_leg is not None,
+                "reserved_kg": reserved,
+                "onboard_reserved_kg": reserved,  # Musterzuladung an Bord (#63) — reserved_kg wird auf Netto begrenzt
+                "flight_key": f"{cid}:{lo}",
+                "distance_nm": 0,
+                "block_min": 0,
+                # lo IST hier bereits der Verbindungs-Logon (open_transport_flights liest die
+                # flights-Tabelle direkt) — kein Reconcile nötig, nur einheitlicher Key fürs Loss-
+                # Attach unten.
+                "_conn_logon": lo,
+            })
 
     # Fracht-Verluste anheften: Feed-Zeilen bekommen loss_kind; Verlust-Flüge, die der
     # Strecken-Filter oben verworfen hat (woanders gelandet, dep==arr), erscheinen als
