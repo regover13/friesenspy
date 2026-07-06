@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.8.8",
+    "date": "2026-07-06",
+    "title": "Kutter: Verlust zählt die echte Bordfracht, nicht die volle Musterzuladung",
+    "items": [
+      "🐛 Ein Verlust (versunken/geklaut) wurde mit der vollen Musterzuladung des Flugzeugs beziffert statt mit der tatsächlich mitgeführten Event-Fracht. Beispiel: eine PZ04 kann 290 kg tragen, aber ins Manifest passten (Pro-Flug-Obergrenzen) nur 120 kg Sonnenschirme + 40 kg Strandkörbe = 160 kg — angezeigt wurden trotzdem „290 kg verloren“, während die Aufschlüsselung nur 160 kg zeigte. Jetzt ist der Verlust die Netto-Summe der Frachtart-Anteile (160 kg), passend zur Aufschlüsselung und zur Reservierung. Gilt für Versenken und Klauen gleichermaßen."
+    ]
+  },
+  {
     "version": "8.8.7",
     "date": "2026-07-06",
     "title": "Kutter: frechere Verlust-Sprüche + Flüge lecken nicht mehr in fremde Events",

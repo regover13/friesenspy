@@ -1040,6 +1040,46 @@ class TestCargoLosses:
         assert f["loss_kind"] == "returned"
         assert p["lost_total_kg"] == 0.0                    # zurückgebracht ≠ verloren
 
+    def test_loss_kg_is_net_event_cargo_not_full_payload(self):
+        """Live-Fund 06.07.: die VERLORENE Menge ist die tatsächlich mitgeführte EVENT-Fracht
+        (Σ der pro-Flug-gekappten Frachtart-Anteile = cargo_lines), NICHT die volle Musterzuladung.
+        Szenario wie der Baltrum-Klau: 500 kg Musterzuladung, aber nur 120+40=160 kg passen als
+        Event-Fracht an Bord (Pro-Flug-Kappung) → 160 kg verloren, nicht 500 (früher: Brutto)."""
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        ev = _event(conn, cargo=[
+            {"name": "Sonnenschirme", "target_kg": 960.0, "per_flight_max_kg": 120.0},
+            {"name": "Strandkörbe", "target_kg": 400.0, "per_flight_max_kg": 40.0},
+        ])
+        upsert_payload(conn, "C172", payload_kg=500)  # deutlich mehr als 120+40
+        wlat, wlon = icao_to_coords("EDWY")           # Norderney — nicht auf der Route → stolen
+        self._flown_flight(conn, 303, "2026-07-01T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)
+        detect_transport_losses(conn, ev)
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 303)
+        assert f["loss_kind"] == "stolen"
+        assert f["lost_kg"] == 160.0                        # Netto (120+40), NICHT die 500 Brutto
+        assert p["lost_total_kg"] == 160.0
+        lines = {l["name"]: l["kg"] for l in f["cargo_lines"]}
+        assert lines == {"Sonnenschirme": 120.0, "Strandkörbe": 40.0}
+        assert round(sum(l["kg"] for l in f["cargo_lines"]), 1) == f["lost_kg"]  # Summe konsistent
+
+    def test_sunk_loss_kg_is_also_net(self):
+        """Gegenprobe zum Klau-Fall: das Netto gilt genauso fürs Versenken (gleicher Code-Zweig)."""
+        conn = _make_conn()
+        ev = _event(conn, cargo=[
+            {"name": "Sonnenschirme", "target_kg": 960.0, "per_flight_max_kg": 120.0},
+            {"name": "Strandkörbe", "target_kg": 400.0, "per_flight_max_kg": 40.0},
+        ])
+        upsert_payload(conn, "C172", payload_kg=500)
+        # abseits jedes Flugplatzes verschwunden (end_gs hoch, kein Touchdown) → sunk
+        self._flown_flight(conn, 304, "2026-07-01T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
+        detect_transport_losses(conn, ev)
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 304)
+        assert f["loss_kind"] == "sunk"
+        assert f["lost_kg"] == 160.0 and p["lost_total_kg"] == 160.0
+
     def test_detection_is_idempotent_and_skips_delivered(self):
         conn = _make_conn()
         from app.geo import icao_to_coords

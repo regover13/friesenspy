@@ -5096,12 +5096,14 @@ def compute_transport_progress(
     for q in network:
         if not q.get("loss_kind"):
             continue
-        carried = q.get("lost_kg") or 0.0
-        if carried <= 1e-9:  # 'returned' trägt Ladung, verliert sie aber nicht (lost_kg=0)
-            carried = round(payload_map.get(normalize_type_code(q.get("aircraft")), default_kg), 1)
-        if carried <= 1e-9:
+        # Musterzuladung = EINGANG der Verteilung (was das Flugzeug tragen konnte). 'returned'
+        # trägt lost_kg=0, zeigt aber trotzdem seine Bordladung → Fallback auf die Musterzuladung.
+        onboard = q.get("lost_kg") or 0.0
+        if onboard <= 1e-9:
+            onboard = round(payload_map.get(normalize_type_code(q.get("aircraft")), default_kg), 1)
+        if onboard <= 1e-9:
             continue
-        remaining = carried
+        remaining = onboard
         contrib = {}
         for i, c in enumerate(cargo):
             if remaining <= 1e-9:
@@ -5119,6 +5121,15 @@ def compute_transport_progress(
             for i, kg in ordered
         ]
         q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
+        # Netto-Verlust (Fix Live 06.07.): die VERLORENE Menge = Σ der tatsächlich zugeordneten
+        # Event-Frachtart-Anteile (= cargo_lines), NICHT die volle Musterzuladung. Überschuss-
+        # Kapazität, die keiner Manifest-Frachtart entspricht (Pro-Flug-Kappung oder nur wenige
+        # Frachtarten), war nie Event-Fracht und darf nicht als „verloren" zählen. Konsistent mit
+        # reserved_kg/tonnage_kg (durchgängig Netto, #63). Fund: PZ04 mit 290 kg Musterzuladung,
+        # aber nur 120+40=160 kg Event-Fracht an Bord → „290 kg verloren" war falsch, korrekt 160.
+        # Bei Event OHNE Manifest bleibt die Musterzuladung als schlichter kg-Zähler.
+        if q["loss_kind"] in ("stolen", "sunk"):
+            q["lost_kg"] = round(sum(contrib.values()), 1) if cargo else onboard
 
     # Gecachte KI-Sprüche je Flug anhängen (Phase 2; None wenn deaktiviert/noch nicht erzeugt).
     quips = get_transport_quips(conn, int(event["id"]))
