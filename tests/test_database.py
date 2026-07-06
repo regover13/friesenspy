@@ -267,6 +267,23 @@ class TestInitDb:
         assert "CML5" not in rows  # bleibt geloescht
         assert len(rows) == 9  # 10 Seed-Plaetze minus 1 geloescht, kein Re-Seed
 
+    def test_custom_airports_radius_km_roundtrip(self, tmp_path):
+        """#62: radius_km ist optional -- ohne Angabe bleibt es NULL (Standardradius der
+        aufrufenden Funktion gilt), mit Angabe wird es unveraendert gespeichert/gelesen."""
+        from app.database import list_custom_airports, upsert_custom_airport
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = get_connection(db_file)
+        upsert_custom_airport(conn, "EHAM", name="Schiphol", lat=52.3086, lon=4.76389,
+                               elevation_ft=-11.0, radius_km=8.0)
+        upsert_custom_airport(conn, "ZZSALZ2", name="Ohne Radius", lat=1.0, lon=2.0,
+                               elevation_ft=None)
+        conn.commit()
+        rows = {r["icao"]: r for r in list_custom_airports(conn)}
+        conn.close()
+        assert rows["EHAM"]["radius_km"] == 8.0
+        assert rows["ZZSALZ2"]["radius_km"] is None
+
 
 # ---------------------------------------------------------------------------
 # get_connection

@@ -1,5 +1,14 @@
 [
   {
+    "version": "8.7.0",
+    "date": "2026-07-06",
+    "title": "Flugplätze: Radius-Override für Großflughäfen",
+    "items": [
+      "🛬 Neues optionales Feld „Radius (km)“ bei den Ergänzungs-Flugplätzen: erweitert den Erkennungsradius NUR für einen einzelnen Code, unabhängig von seinen Koordinaten. Löst den EHAM/Schiphol-Fall — der tatsächliche Abhebepunkt lag nach langem Rollweg 6,6 km vom airportsdata-Referenzpunkt entfernt, außerhalb des 4-km-Standardradius, obwohl die Koordinate selbst korrekt war.",
+      "✏️ Breitengrad/Längengrad dürfen beim Speichern jetzt leer bleiben, wenn der Code schon bekannte Koordinaten hat (airportsdata oder ein bestehender Eintrag) — praktisch für einen reinen Radius-Override, ohne Koordinaten eintippen zu müssen, die man selbst nicht genau kennt."
+    ]
+  },
+  {
     "version": "8.6.6",
     "date": "2026-07-06",
     "title": "Admin-Scrollbar wirklich sichtbar + Aktionen unter der Zeile",

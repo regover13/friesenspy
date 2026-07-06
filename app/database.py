@@ -255,6 +255,7 @@ CREATE TABLE IF NOT EXISTS custom_airports (
     lat           REAL NOT NULL,
     lon           REAL NOT NULL,
     elevation_ft  REAL,                 -- NULL wenn unbekannt (macht Rettung/Spawn-Guard konservativ)
+    radius_km     REAL,                 -- NULL = Standard-Suchradius (Großflughafen-Override, #62)
     updated_at    TEXT
 );
 
@@ -421,6 +422,12 @@ _LIVE_POSITIONS_MIGRATIONS = [
     "ALTER TABLE live_positions ADD COLUMN remarks TEXT",
 ]
 
+_CUSTOM_AIRPORTS_MIGRATIONS = [
+    # #62: Radius-Override für Großflughäfen (z. B. EHAM) -- der Abhebe-/Aufsetzpunkt kann
+    # weiter vom airportsdata-Referenzpunkt entfernt liegen als der globale Standardradius.
+    "ALTER TABLE custom_airports ADD COLUMN radius_km REAL",
+]
+
 
 def init_db(db_path: str) -> None:
     """Datenbank initialisieren: WAL-Mode setzen, Tabellen/Indizes anlegen (IF NOT EXISTS)."""
@@ -461,6 +468,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _TRANSPORT_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _CUSTOM_AIRPORTS_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -4119,7 +4131,8 @@ def seed_custom_airports(conn: sqlite3.Connection) -> int:
 def list_custom_airports(conn: sqlite3.Connection) -> list[dict]:
     """Alle Ergänzungs-Flugplätze (für die Admin-Tabelle), alphabetisch nach ICAO/Code."""
     rows = conn.execute(
-        "SELECT icao, name, lat, lon, elevation_ft, updated_at FROM custom_airports ORDER BY icao"
+        "SELECT icao, name, lat, lon, elevation_ft, radius_km, updated_at "
+        "FROM custom_airports ORDER BY icao"
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -4132,19 +4145,28 @@ def upsert_custom_airport(
     lat: float,
     lon: float,
     elevation_ft: float | None,
+    radius_km: float | None = None,
 ) -> str:
     """Ergänzungs-Flugplatz setzen/aktualisieren. Code wird normalisiert gespeichert (Uppercase,
-    getrimmt) — beliebige Länge, kein echter ICAO-Code erforderlich (z. B. "ZZSALZ")."""
+    getrimmt) — beliebige Länge, kein echter ICAO-Code erforderlich (z. B. "ZZSALZ").
+
+    ``radius_km`` (#62): NULL = Standard-Suchradius der aufrufenden Funktion (z. B.
+    ``_BUMMEL_AIRPORT_RADIUS_KM``). Gesetzt überschreibt es NUR den Suchradius für diesen
+    Code (z. B. Großflughäfen wie EHAM, deren Abhebepunkt weiter als der Standardradius vom
+    Referenzpunkt entfernt liegen kann) -- unabhängig davon, ob lat/lon selbst korrekt/neu
+    sind oder unverändert von airportsdata übernommen wurden.
+    """
     code = (icao or "").strip().upper()
     if not code:
         raise ValueError("icao darf nicht leer sein")
     conn.execute(
-        """INSERT INTO custom_airports (icao, name, lat, lon, elevation_ft, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)
+        """INSERT INTO custom_airports (icao, name, lat, lon, elevation_ft, radius_km, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(icao) DO UPDATE SET
                name=excluded.name, lat=excluded.lat, lon=excluded.lon,
-               elevation_ft=excluded.elevation_ft, updated_at=excluded.updated_at""",
-        (code, name, lat, lon, elevation_ft, _now_utc()),
+               elevation_ft=excluded.elevation_ft, radius_km=excluded.radius_km,
+               updated_at=excluded.updated_at""",
+        (code, name, lat, lon, elevation_ft, radius_km, _now_utc()),
     )
     return code
 

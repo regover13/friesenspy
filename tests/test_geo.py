@@ -487,4 +487,38 @@ class TestCustomAirports:
         assert nearest_airport_icao(-80.001, 0.001, 1.0) == "EDDK"
         assert nearest_airport_icao_fast(-80.001, 0.001, 1.0) == "EDDK"
 
+    def test_radius_km_none_keeps_default_radius_behavior(self):
+        """Ohne radius_km-Override verhaelt sich ein custom_airports-Eintrag wie vor #62:
+        jenseits des uebergebenen max_km wird er nicht mehr gefunden."""
+        set_custom_airports([
+            {"icao": "ZZFAR", "name": "Weit weg", "lat": -80.0, "lon": 0.0, "elevation_ft": 10.0},
+        ])
+        # ~6 km entfernt (0.054 Breitengrad * ~111 km/Grad), aber max_km ist nur 4.
+        assert nearest_airport_icao(-80.054, 0.0, 4.0) is None
+        assert nearest_airport_icao_fast(-80.054, 0.0, 4.0) is None
+
+    def test_radius_km_override_extends_match_beyond_default_radius(self):
+        """#62: ein eigener radius_km erlaubt den Treffer auch jenseits des uebergebenen
+        max_km -- fuer Grossflughaefen (z. B. EHAM/Schiphol), deren Abhebepunkt weiter als
+        der Standardradius vom Referenzpunkt entfernt liegen kann."""
+        set_custom_airports([
+            {"icao": "ZZFAR", "name": "Weit weg", "lat": -80.0, "lon": 0.0,
+             "elevation_ft": 10.0, "radius_km": 8.0},
+        ])
+        assert nearest_airport_icao(-80.054, 0.0, 4.0) == "ZZFAR"
+        assert nearest_airport_icao_fast(-80.054, 0.0, 4.0) == "ZZFAR"
+
+    def test_radius_km_override_still_prefers_nearer_match(self):
+        """Ein grosszuegiger radius_km darf einen tatsaechlich naeheren Treffer nicht
+        verdraengen -- 'nearest' bleibt 'nearest', der eigene Radius entscheidet nur ueber
+        die Zulassung als Kandidat, nicht ueber den Vorrang."""
+        set_custom_airports([
+            {"icao": "ZZFAR", "name": "Weit weg", "lat": -80.0, "lon": 0.0,
+             "elevation_ft": 10.0, "radius_km": 8.0},  # ~6 km von der Anfrageposition
+            {"icao": "ZZNEAR", "name": "Naeher dran", "lat": -80.044, "lon": 0.0,
+             "elevation_ft": 5.0},  # ~1.1 km entfernt, kein eigener Radius (Standard reicht)
+        ])
+        assert nearest_airport_icao(-80.054, 0.0, 4.0) == "ZZNEAR"
+        assert nearest_airport_icao_fast(-80.054, 0.0, 4.0) == "ZZNEAR"
+
 

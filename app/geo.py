@@ -22,7 +22,7 @@ def _airports_icao() -> dict:
 # offizielle ICAO-Kennung), admin-pflegbar über app.database.custom_airports. geo.py bleibt bewusst
 # DB-frei: der Aufrufer (main.py-Lifespan, Admin-Endpoints) befüllt diesen Cache per Push über
 # set_custom_airports() — Invalidierung ist einfach ein erneuter Aufruf, kein DB-Zugriff hier.
-# Wert-Tupel: (lat, lon, elevation_ft | None).
+# Wert-Tupel: (lat, lon, elevation_ft | None, radius_km | None).
 #
 # #56: custom_airports ist seit diesem Fix ein OVERRIDE (nicht mehr nur ein Fallback für
 # gänzlich fehlende Codes) — geprüft VOR airportsdata. Grund: airportsdata kann selbst falsche
@@ -32,18 +32,25 @@ def _airports_icao() -> dict:
 # nearest_airport_icao*-Funktionen überspringen dafür jeden airportsdata-Eintrag, dessen Code
 # in _CUSTOM_AIRPORTS auftaucht (sonst würde die falsche airportsdata-Position weiterhin
 # gefunden, nur eben in Konkurrenz zur richtigen Custom-Position).
-_CUSTOM_AIRPORTS: dict[str, tuple[float, float, float | None]] = {}
+#
+# #62: ``radius_km`` überschreibt NUR den Suchradius für diesen Code, unabhängig von lat/lon
+# (die dabei unverändert von airportsdata übernommen werden können — Fund: EHAM/Schiphol, wo
+# der tatsächliche Abhebepunkt bei langem Rollweg mehrere km vom Referenzpunkt entfernt liegen
+# kann, die Koordinate selbst aber korrekt ist). ``None`` = der von der aufrufenden Funktion
+# übergebene Standardradius gilt unverändert (rückwärtskompatibel für alle bisherigen Einträge).
+_CUSTOM_AIRPORTS: dict[str, tuple[float, float, float | None, float | None]] = {}
 
 
 def set_custom_airports(rows: list[dict]) -> None:
     """Ersetzt den Ergänzungs-Flugplatz-Cache komplett (Invalidierung = Neuaufruf).
 
     ``rows`` wie von :func:`app.database.list_custom_airports` geliefert (Keys: ``icao``, ``lat``,
-    ``lon``, ``elevation_ft``). Codes werden uppercase gespeichert (Lookups sind case-insensitive).
+    ``lon``, ``elevation_ft``, ``radius_km``). Codes werden uppercase gespeichert (Lookups sind
+    case-insensitive).
     """
     global _CUSTOM_AIRPORTS
     _CUSTOM_AIRPORTS = {
-        (r["icao"] or "").upper(): (r["lat"], r["lon"], r.get("elevation_ft"))
+        (r["icao"] or "").upper(): (r["lat"], r["lon"], r.get("elevation_ft"), r.get("radius_km"))
         for r in rows
         if r.get("icao") and r.get("lat") is not None and r.get("lon") is not None
     }
@@ -208,9 +215,16 @@ def nearest_airport_icao(lat: float, lon: float, max_km: float) -> str | None:
             best, best_d = icao, d
     # Ergänzungs-Flugplätze (#50/#56) NACH airportsdata vergleichen — bei exaktem Distanz-
     # Gleichstand gewinnt Custom (gleiche Nachrang-Reihenfolge wie in nearest_airport_icao_fast).
-    for icao, (alat, alon, _elev) in _CUSTOM_AIRPORTS.items():
+    # #62: ein Code mit eigenem radius_km darf auch dann als Kandidat zählen, wenn er weiter
+    # als max_km entfernt liegt (best_d startet bei max_km) — er gewinnt trotzdem nur, wenn er
+    # NÄHER als der bisher beste Treffer ist (echtes "nearest", nicht "erster Treffer im
+    # eigenen Radius").
+    for icao, (alat, alon, _elev, radius_km) in _CUSTOM_AIRPORTS.items():
+        effective_radius = radius_km if radius_km is not None else max_km
         d = haversine(lat, lon, alat, alon)
-        if d <= best_d:
+        if d > effective_radius:
+            continue
+        if best is None or d <= best_d:
             best, best_d = icao, d
     return best
 
@@ -293,9 +307,14 @@ def nearest_airport_icao_fast(lat: float, lon: float, max_km: float) -> str | No
     # Invariante der Funktion stören), stattdessen linear nachgeprüft — die Custom-Liste ist
     # klein (< 50 Einträge), das ist trivial. NACH airportsdata verglichen (identische
     # Nachrang-Reihenfolge wie nearest_airport_icao) → bei Distanz-Gleichstand gewinnt Custom.
-    for icao, (alat, alon, _elev) in _CUSTOM_AIRPORTS.items():
+    # #62: radius_km-Override analog zu nearest_airport_icao — Kandidat zählt auch jenseits von
+    # max_km, gewinnt aber nur bei tatsächlich kürzerer Distanz als der bisher beste Treffer.
+    for icao, (alat, alon, _elev, radius_km) in _CUSTOM_AIRPORTS.items():
+        effective_radius = radius_km if radius_km is not None else max_km
         d = haversine(lat, lon, alat, alon)
-        if d <= best_d:
+        if d > effective_radius:
+            continue
+        if best is None or d <= best_d:
             best, best_d = icao, d
     return best
 

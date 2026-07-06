@@ -755,6 +755,71 @@ class TestAdminAirports:
         asyncio.run(bg())   # simuliert das, was FastAPI nach dem Response-Send tut
         assert calls == [True]
 
+    def test_airports_radius_only_override_reuses_known_airportsdata_coords(self, db):
+        """#62: Grossflughafen-Fall (EHAM/Schiphol) -- lat/lon duerfen leer bleiben, wenn der
+        Code schon in airportsdata bekannt ist. Die Koordinaten werden automatisch uebernommen,
+        nur radius_km wird tatsaechlich neu gesetzt (reiner Radius-Override, keine Korrektur der
+        an sich schon korrekten Koordinate)."""
+        from app import geo
+        real_lat, real_lon = geo.icao_to_coords("EHAM")
+        res, _ = _upsert_airport({
+            "icao": "EHAM", "name": "Schiphol", "lat": None, "lon": None,
+            "elevation_ft": None, "radius_km": 8.0, "override": True,
+        })
+        assert res["status"] == "ok"
+        assert geo.icao_to_coords("EHAM") == (real_lat, real_lon)
+
+        listing = asyncio.run(main.admin_get_airports(FakeReq()))
+        rows = {r["icao"]: r for r in listing["airports"]}
+        assert rows["EHAM"]["lat"] == real_lat
+        assert rows["EHAM"]["lon"] == real_lon
+        assert rows["EHAM"]["radius_km"] == 8.0
+
+    def test_airports_known_code_without_override_still_409_even_without_coords(self, db):
+        """Die 409-Plausipruefung (#50) muss VOR der lat/lon-Autofuell-Logik (#62) greifen --
+        sonst koennte ein Radius-Override versehentlich einen bekannten Code ohne bewusste
+        Bestaetigung anlegen."""
+        with pytest.raises(HTTPException) as e:
+            _upsert_airport({
+                "icao": "EHAM", "name": "Schiphol", "lat": None, "lon": None,
+                "elevation_ft": None, "radius_km": 8.0,
+            })
+        assert e.value.status_code == 409
+
+    def test_airports_missing_coords_and_unknown_code_requires_lat_lon(self, db):
+        """Ein Code, der NIRGENDS bekannt ist (weder airportsdata noch custom_airports), kann
+        nicht ohne Koordinaten angelegt werden -- 400, nicht stillschweigend None speichern."""
+        with pytest.raises(HTTPException) as e:
+            _upsert_airport({
+                "icao": "ZZBRANDNEU", "name": "x", "lat": None, "lon": None, "elevation_ft": None,
+            })
+        assert e.value.status_code == 400
+
+    def test_airports_radius_km_must_be_positive(self, db):
+        with pytest.raises(HTTPException) as e:
+            _upsert_airport({
+                "icao": "ZZRADTEST", "name": "x", "lat": 1.0, "lon": 1.0,
+                "elevation_ft": None, "radius_km": 0,
+            })
+        assert e.value.status_code == 400
+
+    def test_airports_lat_lon_optional_on_update_keeps_existing_custom_coords(self, db):
+        """Ein zweites Speichern desselben Codes darf lat/lon leer lassen und behaelt dann die
+        beim ERSTEN Mal gesetzten (custom) Koordinaten -- nicht nur bei airportsdata-Codes."""
+        _upsert_airport({
+            "icao": "ZZKEEP", "name": "Erstanlage", "lat": 3.0, "lon": 4.0, "elevation_ft": 50,
+        })
+        res, _ = _upsert_airport({
+            "icao": "ZZKEEP", "name": "Nur Radius geaendert", "lat": None, "lon": None,
+            "elevation_ft": None, "radius_km": 6.0,
+        })
+        assert res["status"] == "ok"
+        listing = asyncio.run(main.admin_get_airports(FakeReq()))
+        rows = {r["icao"]: r for r in listing["airports"]}
+        assert rows["ZZKEEP"]["lat"] == 3.0
+        assert rows["ZZKEEP"]["lon"] == 4.0
+        assert rows["ZZKEEP"]["radius_km"] == 6.0
+
 
 class TestAdminDetectionGaps:
     """v8.6.0: Admin-Prüfliste für Erkennungslücken (GPS-Start/-Landung fehlt trotz Plan)."""

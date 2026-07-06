@@ -1032,19 +1032,24 @@
             ohne offizielle ICAO-Kennung — oder deren Koordinaten dort nachweislich falsch sind.
             Ein hier eingetragener Code überschreibt airportsdata. Ist der Code bereits bekannt,
             wird vor dem Überschreiben eine Bestätigung eingeblendet (Schutz gegen versehentliche
-            Duplikate).
+            Duplikate). Breitengrad/Längengrad können leer bleiben, wenn der Code schon bekannte
+            Koordinaten hat (airportsdata oder ein bestehender Eintrag hier) — dann reicht z. B.
+            nur ein größerer Radius (Großflughäfen wie EHAM/Schiphol, deren Abhebepunkt weiter
+            als der Standardradius vom Referenzpunkt entfernt liegen kann).
           </p>
           <div class="form-grid" style="margin:6px 0 8px;">
             <div class="form-group"><label for="ap-icao">Code</label>
               <input type="text" id="ap-icao" placeholder="ZZSALZ" /></div>
             <div class="form-group"><label for="ap-name">Name</label>
               <input type="text" id="ap-name" placeholder="Segelfluggelände Salzwedel" /></div>
-            <div class="form-group"><label for="ap-lat">Breitengrad</label>
+            <div class="form-group"><label for="ap-lat">Breitengrad (leer = bekannt übernehmen)</label>
               <input type="number" id="ap-lat" step="0.0001" placeholder="52.828" /></div>
-            <div class="form-group"><label for="ap-lon">Längengrad</label>
+            <div class="form-group"><label for="ap-lon">Längengrad (leer = bekannt übernehmen)</label>
               <input type="number" id="ap-lon" step="0.0001" placeholder="11.316" /></div>
             <div class="form-group"><label for="ap-elev">Elevation (ft, optional)</label>
               <input type="number" id="ap-elev" step="1" placeholder="112" /></div>
+            <div class="form-group"><label for="ap-radius">Radius (km, optional)</label>
+              <input type="number" id="ap-radius" step="0.5" placeholder="Standard: 4" /></div>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:14px;">
             <button class="btn btn-primary btn-sm" id="ap-save-btn">Speichern</button>
@@ -2355,9 +2360,10 @@
       const c = document.getElementById('ap-container');
       if (!rows.length) { c.innerHTML = '<div class="empty-hint">Noch keine Ergänzungs-Flugplätze.</div>'; return; }
       c.innerHTML = '<div class="table-wrap"><table style="font-size:0.8rem;width:max-content;min-width:100%;"><thead><tr>'
-        + '<th style="text-align:left;">Code</th><th style="text-align:left;">Name</th><th>Lat</th><th>Lon</th><th>Elev (ft)</th><th></th></tr></thead><tbody>'
+        + '<th style="text-align:left;">Code</th><th style="text-align:left;">Name</th><th>Lat</th><th>Lon</th><th>Elev (ft)</th><th>Radius (km)</th><th></th></tr></thead><tbody>'
         + rows.map(a => '<tr><td><b>' + escH(a.icao) + '</b></td><td>' + escH(a.name || '—') + '</td>'
           + '<td>' + a.lat + '</td><td>' + a.lon + '</td><td>' + (a.elevation_ft ?? '—') + '</td>'
+          + '<td>' + (a.radius_km ?? '—') + '</td>'
           + '<td><button class="btn btn-sm btn-danger" onclick="apDelete(this,\'' + escA(a.icao) + '\')">✕</button></td></tr>').join('')
         + '</tbody></table></div>';
     }
@@ -2376,16 +2382,25 @@
 
     document.getElementById('ap-save-btn').addEventListener('click', async () => {
       const icao = document.getElementById('ap-icao').value.trim();
-      const lat = parseFloat(document.getElementById('ap-lat').value);
-      const lon = parseFloat(document.getElementById('ap-lon').value);
+      const latRaw = document.getElementById('ap-lat').value;
+      const lonRaw = document.getElementById('ap-lon').value;
       if (!icao) { toast('Code eingeben.', true); return; }
-      if (!(lat >= -90 && lat <= 90) || !(lon >= -180 && lon <= 180)) {
-        toast('Gültige Lat/Lon erforderlich.', true); return;
+      // #62: leer = bekannte Koordinaten übernehmen (Backend löst das auf); nur wenn
+      // MINDESTENS eines ausgefüllt ist, muss das Paar vollständig und gültig sein.
+      let lat = null, lon = null;
+      if (latRaw !== '' || lonRaw !== '') {
+        lat = parseFloat(latRaw);
+        lon = parseFloat(lonRaw);
+        if (!(lat >= -90 && lat <= 90) || !(lon >= -180 && lon <= 180)) {
+          toast('Gültige Lat/Lon erforderlich (oder beide leer lassen).', true); return;
+        }
       }
       const elevRaw = document.getElementById('ap-elev').value;
+      const radiusRaw = document.getElementById('ap-radius').value;
       const body = {
         icao, name: document.getElementById('ap-name').value.trim() || null,
         lat, lon, elevation_ft: elevRaw === '' ? null : parseFloat(elevRaw),
+        radius_km: radiusRaw === '' ? null : parseFloat(radiusRaw),
       };
       const saveBtn = document.getElementById('ap-save-btn');
       saveBtn.disabled = true;
@@ -2406,7 +2421,7 @@
           return;
         }
         toast('Flugplatz gespeichert.');
-        ['ap-icao', 'ap-name', 'ap-lat', 'ap-lon', 'ap-elev'].forEach(i => document.getElementById(i).value = '');
+        ['ap-icao', 'ap-name', 'ap-lat', 'ap-lon', 'ap-elev', 'ap-radius'].forEach(i => document.getElementById(i).value = '');
         loadCustomAirports();
         // Erkennungslücken nur neu laden, wenn die Liste schon einmal geöffnet wurde -- sonst
         // würde jedes Flugplatz-Speichern ungefragt die teure Prüfung anstoßen (mehrere Sekunden).

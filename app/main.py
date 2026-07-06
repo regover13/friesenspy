@@ -2007,13 +2007,20 @@ async def admin_get_airports(request: Request):
 
 @app.post("/api/admin/airports")
 async def admin_upsert_airport(request: Request, background_tasks: BackgroundTasks):
-    """Ergänzungs-Flugplatz speichern: icao (Pflicht), lat/lon (Pflicht), name/elevation_ft optional.
+    """Ergänzungs-Flugplatz speichern: icao (Pflicht), lat/lon/name/elevation_ft/radius_km optional.
 
     #56: ``override`` (optional, Body-Feld) erlaubt bewusstes Überschreiben eines bereits in
     airportsdata bekannten Codes — nötig, weil airportsdata selbst falsche Koordinaten führen
     kann (Fund: EBUL/Ursel Air Base ~15 km daneben). Ohne ``override`` bleibt die Plausiprüfung
     (#50) als Schutz gegen versehentliche Duplikate aktiv (409, damit das Frontend zwischen
     „echter Fehler" (400) und „Bestätigung nötig" (409) unterscheiden kann).
+
+    #62: lat/lon dürfen leer bleiben, wenn der Code bereits irgendwo bekannt ist (Custom-Eintrag
+    ODER airportsdata) — dann werden die bereits bekannten Koordinaten übernommen. Das erlaubt
+    einen reinen Radius-Override (``radius_km``, z. B. für Großflughäfen wie EHAM, deren
+    Abhebepunkt weiter als der Standardradius vom Referenzpunkt entfernt liegen kann), ohne
+    Koordinaten erneut eintippen zu müssen, die man selbst gar nicht genau kennt. Ist der Code
+    nirgends bekannt, bleiben lat/lon Pflicht (400).
     """
     require_admin(request)
     body = await request.json()
@@ -2031,22 +2038,44 @@ async def admin_upsert_airport(request: Request, background_tasks: BackgroundTas
                 "mit override bewusst überschreiben?"
             ),
         )
-    try:
-        lat = float(body.get("lat"))
-        lon = float(body.get("lon"))
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="lat/lon (Zahlen) erforderlich")
+    lat_raw, lon_raw = body.get("lat"), body.get("lon")
+    if lat_raw in (None, "") and lon_raw in (None, ""):
+        known_coords = geo.icao_to_coords(icao)
+        if known_coords is None:
+            raise HTTPException(
+                status_code=400,
+                detail="lat/lon erforderlich (Code ist nirgends mit bekannten Koordinaten hinterlegt)",
+            )
+        lat, lon = known_coords
+    else:
+        try:
+            lat = float(lat_raw)
+            lon = float(lon_raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="lat/lon (Zahlen) erforderlich")
     elev_raw = body.get("elevation_ft")
-    try:
-        elevation_ft = float(elev_raw) if elev_raw is not None and str(elev_raw) != "" else None
-    except (TypeError, ValueError):
-        elevation_ft = None
+    if elev_raw is None or str(elev_raw) == "":
+        elevation_ft = geo.airport_elevation_ft(icao)
+    else:
+        try:
+            elevation_ft = float(elev_raw)
+        except (TypeError, ValueError):
+            elevation_ft = None
+    radius_raw = body.get("radius_km")
+    radius_km: float | None = None
+    if radius_raw not in (None, ""):
+        try:
+            radius_km = float(radius_raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="radius_km muss eine Zahl sein")
+        if radius_km <= 0:
+            raise HTTPException(status_code=400, detail="radius_km muss > 0 sein")
 
     conn = get_connection(get_settings().DB_PATH)
     try:
         upsert_custom_airport(
             conn, icao, name=(body.get("name") or None), lat=lat, lon=lon,
-            elevation_ft=elevation_ft,
+            elevation_ft=elevation_ft, radius_km=radius_km,
         )
         conn.commit()
         _reload_custom_airports_geo_cache(conn)
