@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.6.4",
+    "date": "2026-07-06",
+    "title": "Erkennungslücken-Prüfliste: Track öffnet direkt im Vollbild",
+    "items": [
+      "🗺️ Der „Ansehen“-Button in der Erkennungslücken-Prüfliste öffnet die Karte jetzt direkt maximiert, statt erst den „⛶ Vollbild“-Button klicken zu müssen."
+    ]
+  },
+  {
     "version": "8.6.3",
     "date": "2026-07-05",
     "title": "Geprüft-Button: Zeile verschwindet sofort, ohne alles neu zu laden",

@@ -3611,7 +3611,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
 let trackMap            = null;
 let trackMapInitialized = false;
 
-async function openTrackModal(source, id, callsign, dep, arr, logon, logoff) {
+async function openTrackModal(source, id, callsign, dep, arr, logon, logoff, autoFullscreen) {
   document.getElementById('track-modal-title').textContent =
     `${(callsign || '').toUpperCase()}  ·  ${dep || '?'} → ${arr || '?'}`;
   document.getElementById('track-modal-info').textContent = 'Lade Track...';
@@ -3649,6 +3649,15 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff) {
         trackMap.eachLayer(layer => {
           if (!(layer instanceof L.TileLayer)) trackMap.removeLayer(layer);
         });
+      }
+      // autoFullscreen (z. B. Admin-Prüfliste "Erkennungslücken" → "Ansehen"): Karte direkt
+      // maximiert öffnen statt erst den "⛶ Vollbild"-Button klicken zu müssen. Nur einschalten,
+      // wenn nicht schon im Vollbild (kein Doppel-Toggle beim erneuten Öffnen).
+      const wrap = document.getElementById('track-map-wrap');
+      if (autoFullscreen && wrap && !wrap.classList.contains('map-is-fullscreen')) {
+        const fsBtn = wrap.querySelector('.map-fullscreen-btn') ||
+          document.querySelector('#track-modal .map-fullscreen-btn');
+        if (fsBtn) toggleMapFullscreen('track-map-wrap', fsBtn, () => trackMap);
       }
       trackMap.invalidateSize();
       _loadAndDrawTrack(source, id, logon, logoff);
@@ -4807,7 +4816,8 @@ async function initFromUrl() {
       // hier bereits direkt in der URL mitgegeben wird.
       openTrackModal(
         trackSrc, trackId,
-        p.get('callsign') || '', p.get('dep') || '', p.get('arr') || '', '', ''
+        p.get('callsign') || '', p.get('dep') || '', p.get('arr') || '', '', '',
+        true  // autoFullscreen: direkt maximiert öffnen
       );
     } else if (cid) {
       await fetchStats();
