@@ -79,6 +79,8 @@ from app.database import (
     clear_transport_quips,
     get_progress_snapshot,
     write_progress_snapshot,
+    delete_progress_snapshot,
+    delete_progress_snapshots,
     list_custom_airports,
     upsert_custom_airport,
     delete_custom_airport,
@@ -1546,7 +1548,10 @@ async def admin_update_race(request: Request, race_id: int):
             raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
         if fields:
             update_bummel_race(conn, race_id, **fields)
-            conn.commit()
+        # Unbedingt (auch bei leerem Body) — "Rennen antippen + speichern" ist der bewusste
+        # manuelle Neuberechnungs-Hebel für ein bereits eingefrorenes Rennen (#66 Task 7).
+        delete_progress_snapshot(conn, "bummel", race_id)
+        conn.commit()
         return {"status": "ok"}
     finally:
         conn.close()
@@ -1558,6 +1563,7 @@ async def admin_delete_race(request: Request, race_id: int):
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_bummel_race(conn, race_id)
+        delete_progress_snapshot(conn, "bummel", race_id)
         conn.commit()
         return {"status": "ok"}
     finally:
@@ -1611,6 +1617,7 @@ async def admin_hide_race(request: Request, race_id: int):
         force_bummel_revealed(conn, race_id, None)
         if race and (race.get("dtend") or "") and _now_iso() >= race["dtend"]:
             set_bummel_reveal_suppressed(conn, race_id, True)
+        delete_progress_snapshot(conn, "bummel", race_id)
         conn.commit()
         return {"status": "ok"}
     finally:
@@ -1649,6 +1656,7 @@ async def admin_set_override(request: Request, race_id: int):
             manual_total_min=body.get("manual_total_min"),
             note=body.get("note"),
         )
+        delete_progress_snapshot(conn, "bummel", race_id)
         conn.commit()
         return {"status": "ok"}
     finally:
@@ -1661,6 +1669,7 @@ async def admin_delete_override(request: Request, race_id: int, cid: int):
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_bummel_override(conn, race_id, cid)
+        delete_progress_snapshot(conn, "bummel", race_id)
         conn.commit()
         return {"status": "ok"}
     finally:
@@ -1941,7 +1950,10 @@ async def admin_update_transport_event(request: Request, event_id: int):
             raise HTTPException(status_code=404, detail="Event nicht gefunden")
         if fields:
             update_transport_event(conn, event_id, **fields)
-            conn.commit()
+        # Unbedingt (auch bei leerem Body) — "Event antippen + speichern" ist der bewusste
+        # manuelle Neuberechnungs-Hebel für ein bereits eingefrorenes Event (#66 Task 7).
+        delete_progress_snapshot(conn, "kutter", event_id)
+        conn.commit()
         return {"status": "ok"}
     finally:
         conn.close()
@@ -1967,6 +1979,7 @@ async def admin_delete_transport_event(request: Request, event_id: int):
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_transport_event(conn, event_id)
+        delete_progress_snapshot(conn, "kutter", event_id)
         conn.commit()
         return {"status": "ok"}
     finally:
@@ -2020,6 +2033,8 @@ async def admin_upsert_payload(request: Request):
             empty_kg=_num("empty_kg"), fuel_kg=_num("fuel_kg"), crew_kg=_num("crew_kg"),
             source="manual", make_model=(body.get("make_model") or None),
         )
+        # Zuladungs-Änderung wirkt auf ALLE Kutter-Events (#66 Task 7) — global invalidieren.
+        delete_progress_snapshots(conn, "kutter")
         conn.commit()
         return {"status": "ok"}
     finally:
@@ -2053,6 +2068,8 @@ async def admin_set_default_payload(request: Request):
     conn = get_connection(get_settings().DB_PATH)
     try:
         set_app_setting(conn, "transport_default_payload_kg", str(value))
+        # Globaler Fallback wirkt auf ALLE Kutter-Events (#66 Task 7) — global invalidieren.
+        delete_progress_snapshots(conn, "kutter")
         conn.commit()
         return {"status": "ok", "default_kg": value}
     finally:

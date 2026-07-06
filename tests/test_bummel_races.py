@@ -95,6 +95,48 @@ class TestCalendarRaceCrud:
         assert get_bummel_race(conn, rid)["revealed_at"] == "2026-06-28T00:05:00Z"
 
 
+class TestCalendarSyncSnapshotInvalidation:
+    """#66 Task 7: `upsert_calendar_bummel_race` läuft bei JEDEM Kalender-Sync — ein
+    eingefrorener Snapshot darf deshalb nur bei tatsächlicher Wertänderung (route/dtstart/
+    dtend) verworfen werden, nicht bei jedem (identischen) Re-Sync."""
+
+    def _ev(self, **overrides):
+        ev = {
+            "uid": "bummel_sync_1", "summary": "FriesenFliegerBummel Ostfriesland",
+            "route": "EDWF,EDWG,EDWR", "dtstart": "2026-06-27T18:00:00Z", "dtend": "",
+        }
+        ev.update(overrides)
+        return ev
+
+    def test_calendar_sync_no_value_change_keeps_snapshot(self):
+        from app.database import get_progress_snapshot, write_progress_snapshot
+        conn = _make_conn()
+        upsert_calendar_bummel_race(conn, self._ev())
+        rid = list_bummel_races(conn)[0]["id"]
+        write_progress_snapshot(conn, "bummel", rid, {"complete": []}, "t")
+        conn.commit()
+
+        # Identischer Re-Sync (gleiche route/dtstart/dtend) → Snapshot bleibt.
+        upsert_calendar_bummel_race(conn, self._ev())
+        conn.commit()
+
+        assert get_progress_snapshot(conn, "bummel", rid) == {"complete": []}
+
+    def test_calendar_sync_value_change_clears_snapshot(self):
+        from app.database import get_progress_snapshot, write_progress_snapshot
+        conn = _make_conn()
+        upsert_calendar_bummel_race(conn, self._ev())
+        rid = list_bummel_races(conn)[0]["id"]
+        write_progress_snapshot(conn, "bummel", rid, {"complete": []}, "t")
+        conn.commit()
+
+        # Geänderte Strecke im Kalender → echte Wertänderung → Snapshot muss weg.
+        upsert_calendar_bummel_race(conn, self._ev(route="EDWF,EDWG,EDXH"))
+        conn.commit()
+
+        assert get_progress_snapshot(conn, "bummel", rid) is None
+
+
 ROUTE = ["EDWF", "EDWG", "EDWR"]
 
 

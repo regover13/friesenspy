@@ -3671,7 +3671,17 @@ def upsert_calendar_bummel_race(conn: sqlite3.Connection, ev: dict) -> None:
 
     Idempotent über ``calendar_uid``. ``dtend`` wird mit dem Mitternacht-Default aufgelöst.
     ``revealed_at`` bleibt beim Update unangetastet (latchend).
+
+    #66 Task 7: Läuft bei JEDEM Kalender-Sync — ein eingefrorener ``progress_snapshot`` darf
+    deshalb NICHT pauschal verworfen werden. Vor dem Upsert wird die vorhandene Zeile (falls es
+    schon eine gibt) gelesen; ändert sich ``route``/``dtstart``/``dtend`` durch den Upsert
+    TATSÄCHLICH, wird gezielt der Snapshot dieses Rennens gelöscht.
     """
+    uid = ev.get("uid")
+    before = conn.execute(
+        "SELECT id, route, dtstart, dtend FROM bummel_races WHERE calendar_uid = ?",
+        (uid,),
+    ).fetchone()
     conn.execute(
         """INSERT INTO bummel_races
                (name, route, dtstart, dtend, radius_km, source, calendar_uid, revealed_at, created_at)
@@ -3687,10 +3697,21 @@ def upsert_calendar_bummel_race(conn: sqlite3.Connection, ev: dict) -> None:
             ev.get("dtstart") or "",
             _effective_dtend(ev.get("dtstart") or "", ev.get("dtend")),
             10,
-            ev.get("uid"),
+            uid,
             _now_utc(),
         ),
     )
+    if before:
+        after = conn.execute(
+            "SELECT route, dtstart, dtend FROM bummel_races WHERE id = ?",
+            (before["id"],),
+        ).fetchone()
+        if (
+            after["route"] != before["route"]
+            or after["dtstart"] != before["dtstart"]
+            or after["dtend"] != before["dtend"]
+        ):
+            delete_progress_snapshot(conn, "bummel", before["id"])
 
 
 def list_bummel_races(conn: sqlite3.Connection, *, since: str | None = None) -> list[dict]:
@@ -3966,8 +3987,20 @@ def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
     ``calendar_sync.parse_cargo_lines``), wird daraus **einmalig** das Manifest befüllt (Namen
     gegen den Katalog abgeglichen) — nur solange noch **kein** Manifest existiert, damit spätere
     Admin-Bearbeitungen bei erneutem Sync nicht überschrieben werden.
+
+    #66 Task 7: Läuft bei JEDEM Kalender-Sync — ein eingefrorener ``progress_snapshot`` darf
+    deshalb NICHT pauschal verworfen werden. Vor dem Upsert wird die vorhandene Zeile (falls es
+    schon eine gibt) gelesen; ändert sich ``route``/``dtstart``/``dtend``/``destination`` durch
+    den Upsert TATSÄCHLICH, wird gezielt der Snapshot dieses Events gelöscht. ``destination`` wird
+    vom ``ON CONFLICT``-Zweig bewusst nicht überschrieben (Admin-Korrektur bleibt erhalten) — der
+    Vergleich deckt trotzdem ab, falls sich das künftig ändert.
     """
     route = ev.get("route") or ""
+    uid = ev.get("uid")
+    before = conn.execute(
+        "SELECT id, route, dtstart, dtend, destination FROM transport_events WHERE calendar_uid = ?",
+        (uid,),
+    ).fetchone()
     conn.execute(
         """INSERT INTO transport_events
                (name, route, destination, dtstart, dtend, source, calendar_uid, created_at)
@@ -3981,10 +4014,22 @@ def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
             _default_destination(route),   # Ziel-Default; im Admin korrigierbar (Update lässt es unangetastet)
             ev.get("dtstart") or "",
             _effective_dtend(ev.get("dtstart") or "", ev.get("dtend")),
-            ev.get("uid"),
+            uid,
             _now_utc(),
         ),
     )
+    if before:
+        after = conn.execute(
+            "SELECT route, dtstart, dtend, destination FROM transport_events WHERE id = ?",
+            (before["id"],),
+        ).fetchone()
+        if (
+            after["route"] != before["route"]
+            or after["dtstart"] != before["dtstart"]
+            or after["dtend"] != before["dtend"]
+            or after["destination"] != before["destination"]
+        ):
+            delete_progress_snapshot(conn, "kutter", before["id"])
     cargo_lines = ev.get("cargo") or []
     if cargo_lines:
         row = conn.execute(

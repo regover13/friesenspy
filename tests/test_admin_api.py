@@ -11,7 +11,15 @@ from fastapi import HTTPException
 
 import app.main as main
 from app.auth import ADMIN_COOKIE, make_admin_token
-from app.database import get_connection, init_db, upsert_push_subscription
+from app.database import (
+    create_transport_event,
+    get_connection,
+    get_progress_snapshot,
+    init_db,
+    upsert_bummel_override,
+    upsert_push_subscription,
+    write_progress_snapshot,
+)
 
 SECRET = "s3cr3t"
 PW = "test-admin-pw"
@@ -857,3 +865,155 @@ class TestAdminDetectionGaps:
 
         listing2 = asyncio.run(main.admin_get_detection_gaps(FakeReq()))
         assert not any(g["cid"] == 42 for g in listing2["gaps"])
+
+
+# ---------------------------------------------------------------------------
+# #66 Task 7: Snapshot-Invalidierung bei Admin-Edit/Payload/Override.
+# ---------------------------------------------------------------------------
+
+class TestSnapshotInvalidation:
+    """Ein eingefrorener ``progress_snapshot`` (Kutter oder Bummel) muss verworfen werden,
+    sobald die zugrunde liegenden Daten BEWUSST geändert werden — auch beim manuellen Neu-
+    berechnungs-Hebel "Event/Rennen antippen + (leer) speichern"."""
+
+    def _kutter_event(self, db):
+        conn = get_connection(db)
+        eid = create_transport_event(
+            conn, name="Kutter", route="EDWG,EDXH", destination="EDXH",
+            dtstart="2026-07-01T09:00:00Z", dtend="2026-07-01T23:00:00Z",
+        )
+        write_progress_snapshot(conn, "kutter", eid, {"total_kg": 42.0}, "2026-07-01T23:00:01Z")
+        conn.commit()
+        conn.close()
+        return eid
+
+    def test_admin_update_kutter_clears_snapshot(self, db):
+        eid = self._kutter_event(db)
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "kutter", eid) is not None
+        conn.close()
+
+        # LEERER Body — heute überspringt der `if fields:`-Guard das Update, der Snapshot-
+        # Delete muss trotzdem feuern (manueller Neuberechnungs-Hebel).
+        res = asyncio.run(main.admin_update_transport_event(FakeReq(body={}), eid))
+        assert res["status"] == "ok"
+
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "kutter", eid) is None
+        conn.close()
+
+    def test_admin_update_kutter_clears_snapshot_with_fields(self, db):
+        eid = self._kutter_event(db)
+        res = asyncio.run(main.admin_update_transport_event(FakeReq(body={"name": "Neuer Name"}), eid))
+        assert res["status"] == "ok"
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "kutter", eid) is None
+        conn.close()
+
+    def test_admin_delete_transport_event_clears_snapshot(self, db):
+        eid = self._kutter_event(db)
+        asyncio.run(main.admin_delete_transport_event(FakeReq(), eid))
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "kutter", eid) is None
+        conn.close()
+
+    def test_admin_payload_change_clears_all_kutter_snapshots(self, db):
+        conn = get_connection(db)
+        e1 = create_transport_event(
+            conn, name="A", route="EDWG,EDXH", destination="EDXH",
+            dtstart="2026-07-01T09:00:00Z", dtend="2026-07-01T23:00:00Z",
+        )
+        e2 = create_transport_event(
+            conn, name="B", route="EDWG,EDXH", destination="EDXH",
+            dtstart="2026-07-02T09:00:00Z", dtend="2026-07-02T23:00:00Z",
+        )
+        write_progress_snapshot(conn, "kutter", e1, {"total_kg": 1.0}, "t")
+        write_progress_snapshot(conn, "kutter", e2, {"total_kg": 2.0}, "t")
+        conn.commit()
+        conn.close()
+
+        res = asyncio.run(main.admin_upsert_payload(FakeReq(body={"type_code": "C172", "payload_kg": 300})))
+        assert res["status"] == "ok"
+
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "kutter", e1) is None
+        assert get_progress_snapshot(conn, "kutter", e2) is None
+        conn.close()
+
+    def test_admin_default_payload_change_clears_all_kutter_snapshots(self, db):
+        conn = get_connection(db)
+        eid = create_transport_event(
+            conn, name="A", route="EDWG,EDXH", destination="EDXH",
+            dtstart="2026-07-01T09:00:00Z", dtend="2026-07-01T23:00:00Z",
+        )
+        write_progress_snapshot(conn, "kutter", eid, {"total_kg": 1.0}, "t")
+        conn.commit()
+        conn.close()
+
+        res = asyncio.run(main.admin_set_default_payload(FakeReq(body={"default_kg": 250})))
+        assert res["status"] == "ok"
+
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "kutter", eid) is None
+        conn.close()
+
+    def _bummel_race(self, db):
+        now = datetime.now(timezone.utc)
+        dtstart = _iso(now - timedelta(hours=5))
+        dtend = _iso(now - timedelta(hours=1))
+        res = asyncio.run(main.admin_create_race(FakeReq(body={
+            "route": "EDWF,EDWG,EDWR", "dtstart": dtstart, "dtend": dtend,
+        })))
+        rid = res["id"]
+        conn = get_connection(db)
+        write_progress_snapshot(conn, "bummel", rid, {"complete": []}, "t")
+        conn.commit()
+        conn.close()
+        return rid
+
+    def test_admin_bummel_override_clears_snapshot(self, db):
+        rid = self._bummel_race(db)
+        asyncio.run(main.admin_set_override(FakeReq(body={"cid": 200, "action": "exclude"}), rid))
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "bummel", rid) is None
+        conn.close()
+
+    def test_admin_bummel_override_delete_clears_snapshot(self, db):
+        rid = self._bummel_race(db)
+        conn = get_connection(db)
+        upsert_bummel_override(conn, rid, 200, "exclude")
+        conn.commit()
+        conn.close()
+        # Snapshot nach dem Setzen erneut einfrieren (der Test prüft gezielt den Delete-Hook).
+        conn = get_connection(db)
+        write_progress_snapshot(conn, "bummel", rid, {"complete": []}, "t")
+        conn.commit()
+        conn.close()
+
+        asyncio.run(main.admin_delete_override(FakeReq(), rid, 200))
+
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "bummel", rid) is None
+        conn.close()
+
+    def test_admin_bummel_edit_clears_snapshot_even_with_empty_body(self, db):
+        rid = self._bummel_race(db)
+        res = asyncio.run(main.admin_update_race(FakeReq(body={}), rid))
+        assert res["status"] == "ok"
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "bummel", rid) is None
+        conn.close()
+
+    def test_admin_bummel_hide_clears_snapshot(self, db):
+        rid = self._bummel_race(db)
+        asyncio.run(main.admin_hide_race(FakeReq(), rid))
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "bummel", rid) is None
+        conn.close()
+
+    def test_admin_bummel_delete_clears_snapshot(self, db):
+        rid = self._bummel_race(db)
+        asyncio.run(main.admin_delete_race(FakeReq(), rid))
+        conn = get_connection(db)
+        assert get_progress_snapshot(conn, "bummel", rid) is None
+        conn.close()

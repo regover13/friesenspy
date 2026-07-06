@@ -358,6 +358,50 @@ class TestCalendarCargo:
         assert get_transport_cargo(conn, eid) == []
 
 
+class TestCalendarSyncSnapshotInvalidation:
+    """#66 Task 7: `upsert_calendar_transport_event` läuft bei JEDEM Kalender-Sync — ein
+    eingefrorener Snapshot darf deshalb nur bei tatsächlicher Wertänderung (route/dtstart/
+    dtend/destination) verworfen werden, nicht bei jedem (identischen) Re-Sync."""
+
+    def _cal_ev(self, **overrides):
+        ev = {
+            "uid": "kutter_sync_1", "summary": "FriesenKutter Helgoland", "route": "EDWG,EDXH",
+            "dtstart": START, "dtend": END, "cargo": [],
+        }
+        ev.update(overrides)
+        return ev
+
+    def test_calendar_sync_no_value_change_keeps_snapshot(self):
+        from app.database import get_progress_snapshot, write_progress_snapshot
+        conn = _make_conn()
+        upsert_calendar_transport_event(conn, self._cal_ev())
+        conn.commit()
+        eid = conn.execute("SELECT id FROM transport_events WHERE calendar_uid='kutter_sync_1'").fetchone()[0]
+        write_progress_snapshot(conn, "kutter", eid, {"total_kg": 99.0}, "t")
+        conn.commit()
+
+        # Identischer Re-Sync (gleiche route/dtstart/dtend/destination) → Snapshot bleibt.
+        upsert_calendar_transport_event(conn, self._cal_ev())
+        conn.commit()
+
+        assert get_progress_snapshot(conn, "kutter", eid) == {"total_kg": 99.0}
+
+    def test_calendar_sync_value_change_clears_snapshot(self):
+        from app.database import get_progress_snapshot, write_progress_snapshot
+        conn = _make_conn()
+        upsert_calendar_transport_event(conn, self._cal_ev())
+        conn.commit()
+        eid = conn.execute("SELECT id FROM transport_events WHERE calendar_uid='kutter_sync_1'").fetchone()[0]
+        write_progress_snapshot(conn, "kutter", eid, {"total_kg": 99.0}, "t")
+        conn.commit()
+
+        # Geänderte Strecke im Kalender → echte Wertänderung → Snapshot muss weg.
+        upsert_calendar_transport_event(conn, self._cal_ev(route="EDWG,EDWO,EDXH"))
+        conn.commit()
+
+        assert get_progress_snapshot(conn, "kutter", eid) is None
+
+
 class TestQuipCache:
     def test_toggle_and_cache(self):
         conn = _make_conn()
