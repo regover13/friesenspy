@@ -167,6 +167,7 @@ class TestFormParity:
         }
         gps_extra_keys = {
             "gps_departure", "gps_arrival", "plan_departure", "plan_arrival", "connection_closed",
+            "block_start",
         }
         assert canonical_flights_keys | gps_extra_keys <= set(flight.keys())
 
@@ -181,6 +182,27 @@ class TestFormParity:
         assert flight["duration_min"] == 34
         assert flight["block_min"] == 37
         assert flight["block_min"] >= flight["duration_min"]
+
+    def test_block_start_is_roll_begin_before_takeoff(self):
+        """#62: block_start = Rollbeginn (erstes Taxi-Sample 10:00), NICHT das Abheben
+        (logon_time/takeoff_ts 10:06). Das Frontend nutzt block_start als Track-Untergrenze,
+        damit Taxi-out + Startlauf sichtbar werden."""
+        conn = _make_conn()
+        cid = 4302
+        _insert_flight(
+            conn, cid=cid, callsign="FRS31", departure="EDDK", arrival="EDDW",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:50:00Z",
+        )
+        _seed_eddk_eddw_track(conn, cid, "FRS31")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        flight = next(f for f in result if f["cid"] == cid)
+        assert flight["logon_time"] == "2026-07-02T10:06:00Z"   # Abheben (takeoff_ts)
+        assert flight["block_start"] == "2026-07-02T10:00:00Z"  # Rollbeginn (erstes Taxi-Sample)
+        assert flight["block_start"] < flight["logon_time"]
 
 
 class TestNoAircraftWithoutPlan:

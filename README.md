@@ -67,6 +67,11 @@ Landung, reine Luftzeit) und **Blockzeit** (gate-to-gate: Bewegung inkl. Taxi, a
 zum Stillstand nach der Landung; belegte Standphasen ab 10 Minuten — z. B. eine Zwischenlandung
 ohne Disconnect — zählen nicht mit). Beide erscheinen getrennt in den Fluglisten.
 
+**Der GPS-Track zeigt seit v8.9.0 den Rollbeginn** — bei eigenen Live-Aufzeichnungen beginnt die
+Track-Linie am Losrollen (Taxi-out + Startlauf), nicht mehr erst am Abheben. Das Ende bleibt
+unverändert, da die Landung ohnehin erst beim Vollstopp am Gate gewertet wird (der Taxi-in ist
+also enthalten). StatSim-Tracks zeigten das Rollen schon immer.
+
 **Woher kommen die Airport-Koordinaten?** Der Geo-Check nutzt das Python-Package [`airportsdata`](https://github.com/mborsetti/airportsdata), das eine vollständige ICAO-Datenbank eingebettet enthält — inklusive aller deutschen Sonderlandeplätze und Kleinflugplätze (z.B. EDKB, EDKV, EDRV). Die Koordinaten stammen aus der [OurAirports](https://ourairports.com)-Datenbank. Es findet kein API-Call statt — die Abfrage ist offline und instant.
 
 > **Landeplatz-Radius:** Ein datenbasiert ermittelter, **fester Radius von 4 km** um einen

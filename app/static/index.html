@@ -3492,7 +3492,7 @@ function _flightRowHtml(f, rowAttrs) {
     ? `<span class="td-map-btn track-btn"
           data-track-id="${trackId}"
           data-track-src="${trackSrc}"
-          data-logon="${escHtml(f.logon_time || '')}"
+          data-logon="${escHtml(f.block_start || f.logon_time || '')}"
           data-logoff="${escHtml(trackUpper)}"
           data-callsign="${escHtml(f.callsign || '')}"
           data-dep="${escHtml(gpsDep)}"
@@ -4380,7 +4380,8 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 // (#33): StatSim → statsim_id, FriesenSpy mit Flugplan-id → flights-Endpoint, sonst →
 // cid-Fenster-Endpoint. null, wenn kein Track ladbar ist (kein statsim_id/id/cid).
 function _flightTrackUrl(f) {
-  const logon  = encodeURIComponent(f.logon_time || '');
+  // block_start = Rollbeginn (#62) als Track-Untergrenze, Fallback logon_time (Abheben).
+  const logon  = encodeURIComponent(f.block_start || f.logon_time || '');
   const logoff = encodeURIComponent(f.last_pos_ts || f.logoff_time || '');
   if (f.source === 'statsim') {
     return f.statsim_id != null ? `/api/flights/statsim/${f.statsim_id}/track` : null;

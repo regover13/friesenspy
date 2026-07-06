@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.9.0",
+    "date": "2026-07-06",
+    "title": "Live-Track zeigt jetzt den Rollbeginn — Taxi-out + Startlauf nicht mehr abgeschnitten",
+    "items": [
+      "🛫 Der GPS-Track eines FriesenSpy-aufgezeichneten Fluges begann bisher erst am Abheben (dem Punkt, an dem „gestartet“ erkannt wurde) — das gesamte Rollen zum Start und der Startlauf fehlten. Jetzt beginnt der Track am Rollbeginn, sodass Taxi-out und Startlauf sichtbar sind. Das Ende bleibt unverändert: die Landung wird ohnehin erst beim Vollstopp am Gate gewertet, der Taxi-in ist also schon enthalten. StatSim-Tracks zeigten den Rollbeginn schon immer (sie werden ungefenstert geladen) — die Änderung betrifft die eigenen Live-Aufzeichnungen."
+    ]
+  },
+  {
     "version": "8.8.8",
     "date": "2026-07-06",
     "title": "Kutter: Verlust zählt die echte Bordfracht, nicht die volle Musterzuladung",

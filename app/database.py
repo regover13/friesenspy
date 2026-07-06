@@ -2212,6 +2212,12 @@ def _gps_flights_for_positions(
             "plan_arrival": plan_arr,
             "logon_time": takeoff_ts,
             "logoff_time": landing_ts,
+            # block_start = Rollbeginn (Rückwärts-Walk ab takeoff_ts bis zum ersten
+            # zusammenhängenden Sample, begrenzt durch prev_end/30-min-Lücke). Dient dem
+            # Frontend als Track-Untergrenze (#62), damit Taxi-out + Startlauf sichtbar sind —
+            # takeoff_ts (Abheben) schnitt sie bisher ab. Nur relevant für die gefensterten
+            # FriesenSpy-Track-Endpoints; der StatSim-Track lädt ohnehin ungefenstert.
+            "block_start": block_start,
             "duration_min": duration_min,
             "distance_nm": distance_nm,
             "block_min": block_min,

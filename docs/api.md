@@ -179,6 +179,7 @@ Sortiert nach `logon_time` absteigend. FriesenSpy-Einträge haben Vorrang bei Ze
 | `plan_departure` / `plan_arrival` | DEP/ARR aus dem eingereichten Flugplan (reine Beschriftung, keine Grundlage mehr für die Flugzählung). Kann von `gps_*` abweichen, z. B. bei einer Zwischenlandung ohne Refile — oder wenn der Pilot bereits vor der Landung des aktuellen Beins den nächsten Plan eingereicht hat (zeitbasierte Zuordnung, Stand 2026-07-05). |
 | `connection_closed` | `true`, wenn die zugrunde liegende VATSIM-Verbindung beendet ist (`logoff_time` gesetzt). **Kein** Indikator dafür, ob der Flug selbst fertig geflogen ist — das entscheidet allein `arrival`/`gps_arrival`/`logoff_time`, und „🛫 läuft" leitet das Frontend seit v8.1.0 aus `last_pos_ts` (Frische), nicht aus diesem Feld ab. |
 | `last_pos_ts` | (v8.1.0) ISO8601 UTC — Zeit der **letzten belegten Position** dieses Legs (statisch, nicht „now"). Für einen geschlossenen Flug = Landung/letzte Position; für einen offenen Flug = letzte empfangene Position. Das Frontend zeigt „🛫 läuft" nur, wenn der Flug offen ist **und** `last_pos_ts` frisch (< 15 min alt), und nutzt den Wert als Obergrenze beim Nachladen des GPS-Tracks offener Legs. |
+| `block_start` | (v8.9.0) ISO8601 UTC — **Rollbeginn** (Rückwärts-Walk ab dem Abheben `logon_time` bis zum ersten zusammenhängenden Sample, begrenzt durch das Ende des Vorflugs/eine 30-min-Lücke). Das Frontend nutzt ihn als **Untergrenze** beim Nachladen des GPS-Tracks der gefensterten FriesenSpy-Endpoints (`/api/flights/{id}/track`, `/api/pilots/{cid}/track`), damit Taxi-out + Startlauf sichtbar sind, statt erst am Abheben zu beginnen. Ohne Track/bei Fallback-Zeilen nicht gesetzt → das Frontend fällt auf `logon_time` zurück. |
 
 `departure`/`arrival` bleiben aus Kompatibilitätsgründen erhalten und entsprechen im Regelfall `gps_departure`/`gps_arrival` (Fallback auf den Flugplan, wenn kein GPS-Wert vorliegt).
 
@@ -204,7 +205,7 @@ GPS-Track des aktuell laufenden Fluges aus `position_history` (logoff_time IS NU
 
 | Parameter | Typ | Beschreibung |
 |-----------|-----|--------------|
-| `logon` | string | ISO8601 UTC — untere Fenstergrenze (Takeoff des Legs, `logon_time`) |
+| `logon` | string | ISO8601 UTC — untere Fenstergrenze. Das Frontend übergibt seit v8.9.0 den **Rollbeginn** (`block_start`, Fallback `logon_time`/Takeoff), damit Taxi-out + Startlauf im Track erscheinen. |
 | `logoff` | string | ISO8601 UTC — obere Fenstergrenze; für offene Legs die letzte Positionszeit (`last_pos_ts`), **nicht** „now", sonst würden Positionen späterer Flüge mitgezogen. Fehlt der Wert, wird „now" verwendet. |
 
 **Response** — gleiches Format wie `/api/flights/{id}/track`
@@ -288,6 +289,7 @@ GPS-Legs aufgeteilt sein (z. B. Landung + echte Bodenpause + Weiterflug = zwei E
           "plan_arrival": "EDDK",
           "connection_closed": true,
           "last_pos_ts": "2026-06-04T10:20:00Z",
+          "block_start": "2026-06-04T09:20:00Z",
           "duration_min": 55,
           "block_min": 62,
           "distance_nm": 42,
