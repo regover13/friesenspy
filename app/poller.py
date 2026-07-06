@@ -1278,22 +1278,25 @@ class VatsimPoller:
                                 callsign_prefix=self.callsign_prefix,
                             ):
                         if set_transport_summarized(conn, ev["id"], now):
-                            # Eager-Freeze (#66 Task 6): niemand ist nach Abschluss mehr
-                            # „unterwegs" — in_air/airborne normalisieren (identisch zum
-                            # späteren Lazy-Recompute mit skip_open_probe=True), DANN als
-                            # Snapshot einfrieren. Quips fehlen hier bewusst noch (sie entstehen
-                            # erst danach) — der Endpoint-Read überlagert sie frisch, der
-                            # Snapshot muss dafür nicht neu geschrieben werden.
-                            for f in progress.get("flights", []):
-                                f["in_air"] = False
-                                f["airborne"] = False
-                            write_progress_snapshot(conn, "kutter", ev["id"], progress, now)
-                            if progress["flight_count"] > 0:
-                                tons = round(progress["total_kg"] / 1000, 2)
-                                body = f"Feierabend: {progress['loaded_count']} Frachtflüge, {tons} t bewegt ✅"
+                            # Eager-Freeze (#66): den FINALEN Fortschritt einmal mit
+                            # skip_open_probe=True rechnen und einfrieren — exakt identisch zum
+                            # späteren Lazy-Recompute des Endpoints. So bleibt KEIN
+                            # Offen-Zweig-Artefakt hängen (reserved_*, participants-Status
+                            # „unterwegs", flight_count) — ein reines in_air/airborne-Normalisieren
+                            # hätte diese Felder übersehen (Review-Fund 2). Quips fehlen hier
+                            # bewusst noch (entstehen erst danach) — der Endpoint-Read überlagert
+                            # sie frisch, der Snapshot muss dafür nicht neu geschrieben werden.
+                            frozen = compute_transport_progress(
+                                conn, ev, now, callsign_prefix=self.callsign_prefix,
+                                skip_open_probe=True,
+                            )
+                            write_progress_snapshot(conn, "kutter", ev["id"], frozen, now)
+                            if frozen["flight_count"] > 0:
+                                tons = round(frozen["total_kg"] / 1000, 2)
+                                body = f"Feierabend: {frozen['loaded_count']} Frachtflüge, {tons} t bewegt ✅"
                                 if do_quips:
                                     summary = await asyncio.to_thread(
-                                        llm.event_summary, event_summary_context(ev, progress)
+                                        llm.event_summary, event_summary_context(ev, frozen)
                                     )
                                     if summary:
                                         set_transport_summary_quip(conn, ev["id"], summary)

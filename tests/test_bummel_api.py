@@ -241,6 +241,10 @@ def test_bummel_metadata_from_db_row_not_snapshot(tmp_path, monkeypatch):
 
     detail = asyncio.run(main.get_bummel_race_endpoint(rid))
     assert detail["name"] == "Neuer Name"
+    # #66 Review-Fund 1: `route` MUSS ein Array bleiben (public_bummel_view liefert [ICAO,…]);
+    # ein Überlagern mit dem DB-CSV-String bräche `route.join(...)` im Frontend.
+    assert isinstance(detail["route"], list)
 
     races = asyncio.run(main.get_bummel_races())
     assert races[0]["name"] == "Neuer Name"
+    assert isinstance(races[0]["route"], list)

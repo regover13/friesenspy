@@ -1019,7 +1019,11 @@ def _bummel_view(conn, race: dict, now: str, *, force_reveal: bool = False) -> d
     view = dict(view)
     view["status"] = _race_status(race, now)          # frisch
     view["name"] = race.get("name") or ""              # Metadaten aus der DB-Zeile
-    view["route"] = race.get("route")
+    # `route` NICHT aus der DB-Zeile überlagern: die berechnete/eingefrorene View liefert `route`
+    # als Array (public_bummel_view: [ICAO, …]), die DB-Zeile aber als CSV-String — ein Überlagern
+    # bräche das Frontend (`route.join(...)` auf einem String → TypeError, alle Bummel-Ansichten).
+    # Eine Routen-Änderung invalidiert den Snapshot ohnehin (Admin-Edit/Kalender-Sync), daher ist
+    # eine frische Überlagerung hier nicht nötig (#66 Review-Fund 1).
     view["dtstart"] = race.get("dtstart")
     view["dtend"] = race.get("dtend")
     return view
