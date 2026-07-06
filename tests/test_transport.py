@@ -1323,6 +1323,42 @@ class TestParticipants:
         assert parts[400]["callsign"] == "FRS400"
         assert parts[401]["callsign"] == "FRS401"
 
+    def test_returning_pilot_disappears_after_landing_back_on_route(self):
+        # #65 (Live-Fund 06.07., EDWG-EDXP-Test): eine als "Rückflug" erkannte Verbindung
+        # (dep==destination laut Erstposition) bleibt oft OHNE Disconnect offen, auch nachdem
+        # der Pilot wieder auf der Strecke (i. d. R. am Ursprung) gelandet ist -- "Rückflug"
+        # blieb dann dauerhaft hängen. Eine aktuelle Live-Position am Boden auf der Strecke
+        # muss den Teilnehmer aus der Live-Anzeige verschwinden lassen (fertig, nichts mehr
+        # zu berichten), statt ewig "returning" zu zeigen.
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
+        _add_open_flight(conn, 401, "EDXH", "EDWG", "C172", "2026-07-01T19:05:00Z")
+        # Live-Position: am Boden (gs < 2kt) bei EDWG (Streckenflugplatz, Ursprung) -- gelandet.
+        conn.execute(
+            "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
+            "VALUES (401, 'FRS401', 53.78278, 7.91389, 0)"
+        )
+        conn.commit()
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:30:00Z")
+        parts = {x["cid"]: x for x in p["participants"]}
+        assert 401 not in parts   # verschwunden, nicht mehr als "returning" hängen geblieben
+
+    def test_returning_pilot_still_shown_while_still_airborne(self):
+        # Gegenprobe: noch in der Luft (gs hoch) -> weiterhin "returning" wie gehabt.
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
+        _add_open_flight(conn, 401, "EDXH", "EDWG", "C172", "2026-07-01T19:05:00Z")
+        conn.execute(
+            "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
+            "VALUES (401, 'FRS401', 53.75, 7.87, 110)"
+        )
+        conn.commit()
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:30:00Z")
+        parts = {x["cid"]: x for x in p["participants"]}
+        assert parts[401]["status"] == "returning"
+
     def test_arrived_status_with_latch(self):
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)

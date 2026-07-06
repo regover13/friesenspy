@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.8.2",
+    "date": "2026-07-06",
+    "title": "Kutter: Rückflug-Status blieb nach der Landung hängen",
+    "items": [
+      "🐛 Ein Pilot, der auf dem Rückflug zur Strecke erkannt wurde (\"↩️ Rückflug\"), blieb in der Live-Anzeige dauerhaft in diesem Status hängen, selbst nachdem er längst wieder gelandet war — solange die Verbindung ohne Disconnect offen blieb (Live-Fund 06.07. beim EDWG-Testflug). Die Erkennung prüft jetzt zusätzlich die aktuelle Live-Position: ist der Pilot am Boden auf der Strecke, verschwindet die Zeile — statt für immer \"Rückflug\" zu zeigen."
+    ]
+  },
+  {
     "version": "8.8.1",
     "date": "2026-07-06",
     "title": "Zuladungs-Tabelle repariert + Kutter-Badge zeigt Team-Tonnage",

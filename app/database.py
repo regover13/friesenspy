@@ -4612,6 +4612,24 @@ def open_transport_flights(conn: sqlite3.Connection, callsign_prefix: str = "FRS
     return [dict(r) for r in rows]
 
 
+def _returning_pilot_landed_on_route(
+    conn: sqlite3.Connection, cid: int, route_set: set[str], coords_map: dict, radius: float,
+) -> bool:
+    """True, wenn ein als „Rückflug" erkannter Pilot inzwischen wieder GELANDET auf der Strecke
+    ist (aktuelle Live-Position am Boden, im Umkreis eines Streckenflugplatzes — i. d. R. der
+    Ursprung). Die zugrundeliegende Verbindung bleibt dabei oft weiter offen (kein Disconnect
+    nach der Landung), sodass ``open_transport_flights`` sie unverändert weiter liefert — ohne
+    diesen Check würde die „Rückflug"-Markierung dauerhaft hängen bleiben, weil sie allein aus
+    der ERSTEN Position der Verbindung abgeleitet wird (#65, Fund 06.07. Live-Test EDWG-EDXP)."""
+    row = conn.execute(
+        "SELECT latitude, longitude, groundspeed FROM live_positions WHERE cid=?", (cid,)
+    ).fetchone()
+    if not row or row["groundspeed"] is None or row["groundspeed"] >= _BLOCK_GS_KT:
+        return False
+    here = _nearest_airport(coords_map, (row["latitude"], row["longitude"]), radius)
+    return here in route_set
+
+
 def check_live_arrival(
     conn: sqlite3.Connection,
     cid: int,
@@ -4831,7 +4849,11 @@ def compute_transport_progress(
         dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
             or normalize_type_code(f.get("departure"))
         if dep not in route_set or dep == dest:
-            if dep == dest:
+            # #65: eine Verbindung, die als "Rückflug" (dep==dest, Erstposition am Ziel) erkannt
+            # wurde, bleibt oft auch nach der Landung zurück auf der Strecke offen (kein
+            # Disconnect) -- ohne diesen Check würde "Rückflug" dauerhaft hängen bleiben, obwohl
+            # der Pilot längst wieder am Boden ist.
+            if dep == dest and not _returning_pilot_landed_on_route(conn, int(cid), route_set, coords_map, radius):
                 returning_cids.add(int(cid))
                 returning_info.setdefault(int(cid), {
                     "aircraft": f.get("aircraft") or normalize_type_code(f.get("aircraft_icao")) or "",
