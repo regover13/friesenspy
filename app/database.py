@@ -300,6 +300,15 @@ CREATE TABLE IF NOT EXISTS gps_detection_dismissals (
     dismissed_at  TEXT,
     PRIMARY KEY (cid, logon_time)
 );
+
+CREATE TABLE IF NOT EXISTS progress_snapshot (
+    kind         TEXT NOT NULL,
+    ref_id       INTEGER NOT NULL,
+    code_version TEXT NOT NULL,
+    computed_at  TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (kind, ref_id)
+);
 """
 
 
@@ -3814,6 +3823,10 @@ _TRANSPORT_DEFAULT_PAYLOAD_FALLBACK = 150.0
 # Standard-Pilotengewicht (kg): zählt bei der Zuladungs-Ableitung nicht als Fracht.
 _CREW_KG_DEFAULT = 85.0
 
+# Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
+# _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
+_PROGRESS_SNAPSHOT_VERSION = "1"
+
 
 def normalize_type_code(code: str | None) -> str:
     """Flugzeugtyp auf einen Tabellen-Schlüssel normalisieren (Uppercase, vor '/' gekürzt)."""
@@ -5596,3 +5609,50 @@ def save_prefile_sigs(conn: sqlite3.Connection, sigs: dict) -> None:
             "INSERT INTO prefile_sigs (cid, deptime, departure, arrival, saved_at) VALUES (?, ?, ?, ?, ?)",
             (cid, deptime, departure, arrival, now),
         )
+
+
+# ---------------------------------------------------------------------------
+# Progress-Snapshot (eingefrorener Fortschritt abgeschlossener Spezial-Events —
+# Kutter & Bummel gleichrangig, #66)
+# ---------------------------------------------------------------------------
+
+def get_progress_snapshot(conn: sqlite3.Connection, kind: str, ref_id: int) -> dict | None:
+    """Eingefrorenes Payload lesen — nur bei passender ``_PROGRESS_SNAPSHOT_VERSION``.
+
+    Wird pro Aufruf frisch aus ``payload_json`` geparst (nie ein geteiltes, veränderliches
+    Dict), damit Aufrufer das Ergebnis gefahrlos mutieren können."""
+    row = conn.execute(
+        "SELECT payload_json FROM progress_snapshot WHERE kind=? AND ref_id=? AND code_version=?",
+        (kind, ref_id, _PROGRESS_SNAPSHOT_VERSION),
+    ).fetchone()
+    return json.loads(row[0]) if row else None
+
+
+def write_progress_snapshot(
+    conn: sqlite3.Connection, kind: str, ref_id: int, payload: dict, computed_at: str
+) -> None:
+    """Fortschritt einfrieren (INSERT OR REPLACE, stampt die aktuelle Code-Version).
+
+    Achtung: mutiert ``payload`` (poppt die interne Markierung ``_conn_logon`` aus jedem
+    Flights-Eintrag) — Aufrufer, die das Dict danach noch weiterverwenden, müssen vorher
+    selbst kopieren."""
+    for f in payload.get("flights", []) or []:
+        if isinstance(f, dict):
+            f.pop("_conn_logon", None)  # interne Markierung nie einfrieren (Sicherung)
+    conn.execute(
+        "INSERT OR REPLACE INTO progress_snapshot (kind, ref_id, code_version, computed_at, payload_json) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (kind, ref_id, _PROGRESS_SNAPSHOT_VERSION, computed_at, json.dumps(payload)),
+    )
+
+
+def delete_progress_snapshot(conn: sqlite3.Connection, kind: str, ref_id: int) -> None:
+    """Einzelnen Snapshot verwerfen (z. B. bei Admin-Korrektur an einem abgeschlossenen Event)."""
+    conn.execute("DELETE FROM progress_snapshot WHERE kind=? AND ref_id=?", (kind, ref_id))
+
+
+def delete_progress_snapshots(conn: sqlite3.Connection, kind: str) -> int:
+    """Alle Snapshots einer Art verwerfen (z. B. globale Zuladungs-Änderung). Liefert die
+    Anzahl gelöschter Zeilen."""
+    cur = conn.execute("DELETE FROM progress_snapshot WHERE kind=?", (kind,))
+    return cur.rowcount

@@ -2022,6 +2022,53 @@ class TestUpsertPushSubscriptionCreatedAt:
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# progress_snapshot (Kutter/Bummel-Fortschritt einfrieren, #66 Task 1)
+# ---------------------------------------------------------------------------
+
+class TestProgressSnapshot:
+    def test_progress_snapshot_roundtrip(self):
+        conn = _make_conn()
+        from app.database import (
+            write_progress_snapshot, get_progress_snapshot, delete_progress_snapshot,
+        )
+        payload = {"total_kg": 1234.5, "flights": [{"cid": 1, "callsign": "FRS1"}]}
+        write_progress_snapshot(conn, "kutter", 7, payload, "2026-07-06T10:00:00Z")
+        got = get_progress_snapshot(conn, "kutter", 7)
+        assert got == payload
+        # frisch geparst, kein geteiltes Objekt:
+        got["total_kg"] = 0
+        assert get_progress_snapshot(conn, "kutter", 7)["total_kg"] == 1234.5
+        delete_progress_snapshot(conn, "kutter", 7)
+        assert get_progress_snapshot(conn, "kutter", 7) is None
+
+    def test_snapshot_ignored_when_version_stale(self):
+        conn = _make_conn()
+        import app.database as db
+        db.write_progress_snapshot(conn, "bummel", 3, {"x": 1}, "2026-07-06T10:00:00Z")
+        conn.execute("UPDATE progress_snapshot SET code_version = 'OLD' WHERE kind='bummel' AND ref_id=3")
+        assert db.get_progress_snapshot(conn, "bummel", 3) is None
+
+    def test_delete_progress_snapshots_by_kind(self):
+        conn = _make_conn()
+        import app.database as db
+        db.write_progress_snapshot(conn, "kutter", 1, {"a": 1}, "t")
+        db.write_progress_snapshot(conn, "kutter", 2, {"a": 2}, "t")
+        db.write_progress_snapshot(conn, "bummel", 1, {"b": 1}, "t")
+        n = db.delete_progress_snapshots(conn, "kutter")
+        assert n == 2
+        assert db.get_progress_snapshot(conn, "kutter", 1) is None
+        assert db.get_progress_snapshot(conn, "bummel", 1) == {"b": 1}
+
+    def test_write_snapshot_strips_conn_logon(self):
+        conn = _make_conn()
+        import app.database as db
+        payload = {"flights": [{"cid": 1, "_conn_logon": "x"}], "total_kg": 5}
+        db.write_progress_snapshot(conn, "kutter", 9, payload, "t")
+        got = db.get_progress_snapshot(conn, "kutter", 9)
+        assert "_conn_logon" not in got["flights"][0]
+
+
 class TestStatsimGpsAudit:
     """Schatten-Interpretation von StatSim-Flügen: audit_gps_vs_refile rechnet die GPS-Legs
     on-demand aus statsim_position_history (in-memory, keine Speicherung) — zeigt, wie StatSim-
