@@ -2445,7 +2445,16 @@
       const res = await api('POST', '/api/admin/detection-gaps/dismiss', { cid, logon_time: logonTime });
       if (!res || !res.ok) { toast('Fehler beim Markieren.', true); btn.disabled = false; return; }
       toast('Als geprüft markiert.');
-      loadDetectionGaps();
+      // Nur die betroffene Zeile entfernen statt der teuren Komplett-Neuberechnung (canonicalize_legs
+      // über den gesamten Bestand) -- die übrigen Zeilen bleiben unverändert stehen, bis auf
+      // "Jetzt prüfen"/"Aktualisieren" geklickt wird.
+      const row = btn.closest('tr');
+      const tbody = row?.closest('tbody');
+      row?.remove();
+      if (tbody && !tbody.querySelector('tr')) {
+        document.getElementById('dg-container').innerHTML =
+          '<div class="empty-hint">Keine Erkennungslücken offen.</div>';
+      }
     }
 
     document.getElementById('dg-refresh-btn').addEventListener('click', loadDetectionGaps);

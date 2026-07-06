@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.6.3",
+    "date": "2026-07-05",
+    "title": "Geprüft-Button: Zeile verschwindet sofort, ohne alles neu zu laden",
+    "items": [
+      "🐌 „✓ Geprüft“ stieß bislang die teure Komplett-Neuberechnung der ganzen Erkennungslücken-Liste an — jetzt verschwindet nur die betroffene Zeile, der Rest bleibt unverändert stehen."
+    ]
+  },
+  {
     "version": "8.6.2",
     "date": "2026-07-05",
     "title": "Flugplatz speichern/löschen: sofortige Antwort statt eingefrorenem Klick",
