@@ -511,15 +511,18 @@ def init_db(db_path: str) -> None:
                 "JOIN transport_cargo c ON c.event_id = e.id "
                 "WHERE c.departure IS NULL OR c.departure = ''"
             ).fetchall()
+            # Positionale Indizes (0=id, 1=route, 2=destination): die init_db-Verbindung liefert
+            # Tupel, keine sqlite3.Row — `_r["route"]` würde crashen (Live-Fund v8.14.0).
             for _r in _rows:
-                _deps = _normalize_icao_list(_r["route"], exclude=_r["destination"])
+                _deps = _normalize_icao_list(_r[1], exclude=_r[2])
                 if _deps:
                     conn.execute(
                         "UPDATE transport_cargo SET departure = ? WHERE event_id = ? "
                         "AND (departure IS NULL OR departure = '')",
-                        (_deps, _r["id"]),
+                        (_deps, _r[0]),
                     )
-        except sqlite3.OperationalError:
+        except Exception:
+            # Eine Migration darf den App-Start NIEMALS verhindern (nur diesen Backfill überspringen).
             pass
         # Alt-Daten (v8.8.1): inf/nan aus fehlerhaften KI-Zuladungs-Vorschlägen (Phantom-Typcode
         # wie Buchstabendreher AS65→SA65) bereinigen — nicht-endliche Werte → NULL, sonst sprengt

@@ -1232,6 +1232,24 @@ class TestZeilenStattStrecke:
                      (deps, eid))
         assert get_transport_cargo(conn, eid)[0]["departure"] == "EDWG"       # Startplatz zugewiesen
 
+    def test_init_db_backfill_over_existing_event_does_not_crash(self, tmp_path):
+        # Regression v8.14.0 (Live-Fund): der Backfill in init_db lief über Tupel-Zeilen (keine
+        # sqlite3.Row) — `_r["route"]` crashte den App-Start bei bestehenden Events. Hier wird der
+        # ECHTE init_db-Pfad über ein vorhandenes Event mit NULL-Cargo ausgeführt.
+        p = str(tmp_path / "backfill.db")
+        init_db(p)
+        conn = get_connection(p)
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Alt", "target_kg": 100}],  # departure NULL
+        )
+        conn.commit(); conn.close()
+        init_db(p)  # Backfill läuft über das bestehende Event — darf NICHT crashen
+        conn = get_connection(p)
+        dep = get_transport_cargo(conn, eid)[0]["departure"]
+        conn.close()
+        assert dep == "EDWG"
+
 
 # --- Fracht-Verluste: Kutter versunken, geklaut, zurückgebracht -------------
 

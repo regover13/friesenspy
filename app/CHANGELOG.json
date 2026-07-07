@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.14.1",
+    "date": "2026-07-07",
+    "title": "Fix: Start scheiterte bei bestehenden Events (v8.14.0-Migration)",
+    "items": [
+      "Die Datenmigration aus v8.14.0 brach den App-Start ab, sobald bereits Events vorhanden waren (Tupel- statt benannter Spaltenzugriff). Behoben; eine Migration kann den Start jetzt grundsätzlich nicht mehr verhindern."
+    ]
+  },
+  {
     "version": "8.14.0",
     "date": "2026-07-07",
     "title": "FriesenKutter: Startplätze direkt an der Fracht statt eigenem Strecken-Feld",
