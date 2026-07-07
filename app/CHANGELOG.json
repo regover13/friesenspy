@@ -1,5 +1,15 @@
 [
   {
+    "version": "8.13.0",
+    "date": "2026-07-07",
+    "title": "FriesenKutter: verschiedene Waren je Startplatz",
+    "items": [
+      "Eine Frachtart kann jetzt an einen Startplatz gebunden werden — dann lädt sie nur, wer dort startet (z. B. ab EDDW Äpfel, ab EDWG Birnen, alle zum selben Ziel). So steht die Ware durch den Startort fest, statt sich über die Abflugreihenfolge zwischen den Startplätzen zu verschieben. Ohne Bindung bleibt eine Frachtart geteilt (von jedem Startplatz ladbar) — das bisherige Verhalten ist unverändert.",
+      "Im Kalendertermin bindet ein Startplatz am Marker die Fracht: „Fracht EDDW: 500 Äpfel“ und „Fracht EDWG: 300 Birnen“ (je eigene Zeile); „Fracht:“ ohne Kürzel bleibt geteilt. Im Admin-Manifest gibt es dafür je Frachtart ein Startplatz-Feld (leer = geteilt).",
+      "Der Fortschritt wird bei gebundener Fracht je Startplatz gruppiert angezeigt, mit einem Gesamt-Balken darüber. Ein gelieferter Flug ohne erkennbaren Startplatz (z. B. Aufzeichnung erst in der Luft) wird nicht mehr fälschlich mit 0 kg gewertet, sondern füllt wie bisher den Gesamt-Topf."
+    ]
+  },
+  {
     "version": "8.12.1",
     "date": "2026-07-07",
     "title": "FriesenKutter: Rückgabe an jedem Wegpunkt + saubere Zwischenlandungen",

@@ -41,7 +41,9 @@ def _route_is_plausible(route: list[str]) -> bool:
     return True
 
 
-_CARGO_MARKER_RE = re.compile(r"fracht\s*:\s*(.+)", re.IGNORECASE)
+# Optionaler Startplatz-ICAO direkt am Marker (#15 Sub-Projekt B): ``Fracht EDDW: …`` bindet die
+# Fracht an EDDW, ``Fracht: …`` bleibt geteilt. Gruppe 1 = ICAO (optional), Gruppe 2 = Frachtliste.
+_CARGO_MARKER_RE = re.compile(r"fracht(?:\s+([A-Za-z]{4}))?\s*:\s*(.+)", re.IGNORECASE)
 _CARGO_ITEM_RE = re.compile(r"^([\d]+(?:[.,]\d+)?)\s*(?:kg\s+)?(.+)$", re.IGNORECASE)
 
 
@@ -57,22 +59,24 @@ def parse_cargo_lines(description: str) -> list[dict]:
     """
     if not description:
         return []
-    m = _CARGO_MARKER_RE.search(description)
-    if not m:
-        return []
-    rest = m.group(1).split("\n", 1)[0]
     out: list[dict] = []
-    for chunk in re.split(r",\s+", rest):
-        im = _CARGO_ITEM_RE.match(chunk.strip())
-        if not im:
-            continue
-        try:
-            kg = float(im.group(1).replace(",", "."))
-        except ValueError:
-            continue
-        name = im.group(2).strip()
-        if name and kg > 0:
-            out.append({"name": name, "target_kg": kg})
+    for m in _CARGO_MARKER_RE.finditer(description):
+        dep = (m.group(1) or "").upper() or None   # Startplatz-Bindung; None = geteilt
+        rest = m.group(2)                          # `.+` matcht bereits nur bis zum Zeilenende
+        for chunk in re.split(r",\s+", rest):
+            im = _CARGO_ITEM_RE.match(chunk.strip())
+            if not im:
+                continue
+            try:
+                kg = float(im.group(1).replace(",", "."))
+            except ValueError:
+                continue
+            name = im.group(2).strip()
+            if name and kg > 0:
+                item = {"name": name, "target_kg": kg}
+                if dep:
+                    item["departure"] = dep
+                out.append(item)
     return out
 
 
@@ -90,8 +94,14 @@ def parse_route(location: str, summary: str, description: str = "") -> tuple[str
     Transportevent freigeschaltet. Die Beschreibung wird mit ausgewertet, damit ein Marker auch
     erkannt wird, wenn er nur dort steht.
     """
+    # #15 Sub-Projekt B: Fracht-Marker-Zeilen (``Fracht EDDW: …``) VOR der ICAO-Sammlung aus der
+    # Beschreibung entfernen — sonst wanderte der Startplatz-ICAO (oder ein Tippfehler darin) in
+    # die Route. Ein echter Startplatz steht ohnehin in location/summary; ein nur im Marker
+    # genannter ICAO gehört nicht in die Strecke (macht die Startort-Validierung sonst zahnlos und
+    # kann via Plausibilitätsprüfung das ganze Event deaktivieren).
+    desc_for_route = _CARGO_MARKER_RE.sub("", description or "")
     route: list[str] = []
-    for text in (location or "", summary or "", description or ""):
+    for text in (location or "", summary or "", desc_for_route):
         for code in _ICAO_RE.findall(text):
             if code not in _ROUTE_STOPWORDS and code not in route:
                 route.append(code)

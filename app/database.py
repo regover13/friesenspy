@@ -197,7 +197,8 @@ CREATE TABLE IF NOT EXISTS transport_cargo (
     name      TEXT NOT NULL,             -- Frachtart, z. B. "Fischbrötchen"
     target_kg REAL NOT NULL,
     emoji     TEXT,                      -- Snapshot aus dem Katalog (für den Feed)
-    per_flight_max_kg REAL               -- Obergrenze pro Flug (Co-Load); NULL = keine Kappung
+    per_flight_max_kg REAL,              -- Obergrenze pro Flug (Co-Load); NULL = keine Kappung
+    departure TEXT                       -- #15 Sub-Projekt B: gebundener Startplatz-ICAO; NULL = geteilt
 );
 CREATE INDEX IF NOT EXISTS idx_transport_cargo_event ON transport_cargo(event_id);
 
@@ -418,6 +419,9 @@ _TRANSPORT_MIGRATIONS = [
     "ALTER TABLE transport_events ADD COLUMN summary_quip TEXT",
     # radius_km: Erkennungs-Umkreis pro Event, z. B. für kurze Strecken wie Wangerooge↔Harle.
     "ALTER TABLE transport_events ADD COLUMN radius_km REAL",
+    # departure (#15 Sub-Projekt B): Startplatz-ICAO, an den diese Frachtart gebunden ist.
+    # NULL = geteilt (jeder Startplatz lädt sie — Legacy-Verhalten).
+    "ALTER TABLE transport_cargo ADD COLUMN departure TEXT",
 ]
 
 _LIVE_POSITIONS_MIGRATIONS = [
@@ -3855,7 +3859,7 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "1"
+_PROGRESS_SNAPSHOT_VERSION = "2"  # "2" (#15 Sub-Projekt B): cargo-Payload trägt jetzt `departure`
 
 # Reine Anzeige-Retention (öffentliche Listen-Endpoints): Events/Rennen älter als das werden
 # ausgeblendet, nicht gelöscht. Nutzung erst in späteren Tasks (#66); hier nur die Konstante.
@@ -3975,6 +3979,7 @@ def _resolve_cargo_against_catalog(conn: sqlite3.Connection, lines: list[dict]) 
             "target_kg": line["target_kg"],
             "emoji": cat["emoji"] if cat else None,
             "per_flight_max_kg": cat["per_flight_max_kg"] if cat else None,
+            "departure": line.get("departure"),  # #15 Sub-Projekt B: Startplatz-Bindung durchreichen
         })
     return out
 
@@ -4033,10 +4038,13 @@ def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
     cargo_lines = ev.get("cargo") or []
     if cargo_lines:
         row = conn.execute(
-            "SELECT id FROM transport_events WHERE calendar_uid = ?", (ev.get("uid"),)
+            "SELECT id, destination FROM transport_events WHERE calendar_uid = ?", (ev.get("uid"),)
         ).fetchone()
         if row and not get_transport_cargo(conn, row[0]):
-            set_transport_cargo(conn, row[0], _resolve_cargo_against_catalog(conn, cargo_lines))
+            set_transport_cargo(
+                conn, row[0], _resolve_cargo_against_catalog(conn, cargo_lines),
+                valid_departures=_cargo_valid_departures(route, row["destination"]),
+            )
 
 
 def list_transport_events(conn: sqlite3.Connection, *, since: str | None = None) -> list[dict]:
@@ -4085,7 +4093,7 @@ def create_transport_event(
     )
     event_id = int(cur.lastrowid)  # type: ignore[arg-type]
     if cargo:
-        set_transport_cargo(conn, event_id, cargo)
+        set_transport_cargo(conn, event_id, cargo, valid_departures=_cargo_valid_departures(route, dest))
     return event_id
 
 
@@ -4109,7 +4117,15 @@ def update_transport_event(conn: sqlite3.Connection, event_id: int, **fields: ob
             list(valid.values()) + [event_id],
         )
     if cargo is not None:
-        set_transport_cargo(conn, event_id, cargo)  # type: ignore[arg-type]
+        # #15 Sub-Projekt B: Startplatz-Bindung gegen die (ggf. gerade aktualisierte) Route +
+        # Ziel validieren — ein streckenfremder oder == Ziel gesetzter Startplatz fällt auf
+        # geteilt (NULL) zurück, statt eine tote gebundene Zeile anzulegen.
+        ev_now = get_transport_event(conn, event_id)
+        valid_deps = (
+            _cargo_valid_departures(ev_now.get("route"), ev_now.get("destination"))
+            if ev_now else None
+        )
+        set_transport_cargo(conn, event_id, cargo, valid_departures=valid_deps)  # type: ignore[arg-type]
 
 
 def delete_transport_event(conn: sqlite3.Connection, event_id: int) -> None:
@@ -4121,7 +4137,7 @@ def delete_transport_event(conn: sqlite3.Connection, event_id: int) -> None:
 def get_transport_cargo(conn: sqlite3.Connection, event_id: int) -> list[dict]:
     """Geordnetes Fracht-Manifest eines Events (inkl. Emoji + Co-Load-Kappung)."""
     rows = conn.execute(
-        "SELECT id, position, name, target_kg, emoji, per_flight_max_kg FROM transport_cargo "
+        "SELECT id, position, name, target_kg, emoji, per_flight_max_kg, departure FROM transport_cargo "
         "WHERE event_id = ? ORDER BY position, id",
         (event_id,),
     ).fetchall()
@@ -4135,9 +4151,30 @@ def _opt_float(v) -> float | None:
         return None
 
 
-def set_transport_cargo(conn: sqlite3.Connection, event_id: int, cargo: list[dict]) -> None:
+def _cargo_valid_departures(route: str | None, destination: str | None) -> set[str]:
+    """Gültige Startplätze für gebundene Fracht (#15 Sub-Projekt B): alle Streckenflugplätze
+    AUSSER dem Ziel (ein am Ziel startender Flug ist per dep==dest-Rückflug-Filter nie beladen —
+    eine daran gebundene Zeile wäre tot und blockierte goal_reached für immer)."""
+    dest = normalize_type_code(destination)
+    return {
+        c for c in (normalize_type_code(x) for x in (route or "").split(",")) if c and c != dest
+    }
+
+
+def set_transport_cargo(
+    conn: sqlite3.Connection,
+    event_id: int,
+    cargo: list[dict],
+    *,
+    valid_departures: set[str] | None = None,
+) -> None:
     """Fracht-Manifest eines Events komplett ersetzen. Zeilen ohne Name/Menge werden ignoriert.
-    Je Zeile optional ``emoji`` und ``per_flight_max_kg`` (Obergrenze pro Flug, Co-Load)."""
+    Je Zeile optional ``emoji`` und ``per_flight_max_kg`` (Obergrenze pro Flug, Co-Load) sowie
+    ``departure`` (#15 Sub-Projekt B): Startplatz-ICAO, an den die Frachtart gebunden ist; NULL =
+    geteilt. ``departure`` wird ``normalize_type_code``-normalisiert; ist ``valid_departures``
+    gesetzt und der Startplatz NICHT darin (streckenfremd bzw. == Ziel — der Aufrufer schließt das
+    Ziel aus), fällt die Zeile auf ``NULL`` (geteilt) zurück, statt eine tote, nie erreichbare
+    gebundene Zeile anzulegen."""
     conn.execute("DELETE FROM transport_cargo WHERE event_id = ?", (event_id,))
     pos = 0
     for line in cargo:
@@ -4148,10 +4185,15 @@ def set_transport_cargo(conn: sqlite3.Connection, event_id: int, cargo: list[dic
             continue
         if not name or target <= 0:
             continue
+        dep = normalize_type_code(line.get("departure")) or None
+        if dep and valid_departures is not None and dep not in valid_departures:
+            dep = None
         conn.execute(
             "INSERT INTO transport_cargo "
-            "(event_id, position, name, target_kg, emoji, per_flight_max_kg) VALUES (?, ?, ?, ?, ?, ?)",
-            (event_id, pos, name, target, (line.get("emoji") or None), _opt_float(line.get("per_flight_max_kg"))),
+            "(event_id, position, name, target_kg, emoji, per_flight_max_kg, departure) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (event_id, pos, name, target, (line.get("emoji") or None),
+             _opt_float(line.get("per_flight_max_kg")), dep),
         )
         pos += 1
 
@@ -5206,6 +5248,23 @@ def compute_transport_progress(
     delivered = [0.0] * len(cargo)
     _INF = float("inf")
 
+    # #15 Sub-Projekt B: Fracht je Startplatz. Eine Frachtart-Zeile ist für einen Flug füllbar,
+    # wenn sie geteilt ist (departure NULL) ODER an seinen Startplatz gebunden ist. **Latch-
+    # Fallback:** ein GELADENER Flug ohne verwertbaren Startplatz (`dep` leer/streckenfremd — der
+    # Live-Ankunfts-Latch hebt den Strecken-Filter auf, `dep` kann dann leer oder außerhalb der
+    # Route sein) füllt ALLE Zeilen (Degradation aufs Gesamt-Topf-Verhalten), damit eine echte,
+    # gelatchte Ankunft nie still 0 kg liefert. Reservierungen/Verluste haben `dep` stets in
+    # `route_set` (Offen-Zweig/`detect_transport_losses` verlangen das) — dort greift der Fallback
+    # nie.
+    cargo_departures = [c.get("departure") for c in cargo]
+
+    def _fillable(flight: dict, i: int) -> bool:
+        dep_ = flight.get("dep")
+        if flight.get("loaded") and (not dep_ or dep_ not in route_set):
+            return True
+        cd = cargo_departures[i]
+        return cd is None or cd == dep_
+
     # Co-Load-Füllung — NUR beladene Flüge. Jeder Flug verteilt seine Zuladung in Manifest-
     # Reihenfolge über die noch nicht vollen Frachtarten, je Frachtart gekappt durch
     # per_flight_max_kg (Obergrenze pro Flug); der Rest fließt in die nächste Frachtart (Co-Load).
@@ -5220,6 +5279,8 @@ def compute_transport_progress(
         for i, c in enumerate(cargo):
             if remaining <= 1e-9:
                 break
+            if not _fillable(q, i):
+                continue
             space = cargo_targets[i] - delivered[i]
             if space <= 1e-9:
                 continue
@@ -5265,6 +5326,8 @@ def compute_transport_progress(
         for i, c in enumerate(cargo):
             if remaining <= 1e-9:
                 break
+            if not _fillable(q, i):
+                continue
             space = cargo_targets[i] - delivered[i] - reserved_alloc[i]
             if space <= 1e-9:
                 continue
@@ -5305,6 +5368,8 @@ def compute_transport_progress(
         for i, c in enumerate(cargo):
             if remaining <= 1e-9:
                 break
+            if not _fillable(q, i):
+                continue
             cap = c.get("per_flight_max_kg")
             cap = cap if (cap is not None and cap > 0) else _INF
             add = min(remaining, cap, cargo_targets[i])
@@ -5348,6 +5413,7 @@ def compute_transport_progress(
             "reserved_kg": round(reserved_alloc[i], 1),
             "pct": round(100.0 * delivered[i] / c["target_kg"], 1) if c["target_kg"] > 0 else 0.0,
             "per_flight_max_kg": c.get("per_flight_max_kg"),  # Kappungs-Badge in der UI (#63)
+            "departure": c.get("departure"),  # #15 Sub-Projekt B: Startplatz-Gruppierung; NULL = geteilt
         })
 
     target_kg = round(sum(cargo_targets), 1) if cargo_targets else None

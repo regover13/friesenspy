@@ -400,6 +400,9 @@
     .kutter-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.74rem; color: var(--text-label); margin-bottom: 10px; }
     .kutter-legend .kl-dot { display:inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: #28b98f; vertical-align: middle; }
     .kutter-legend .kl-cap { display:inline-block; padding: 0 5px; border-radius: 3px; font-size: 0.68rem; font-weight: 600; color: #c8933a; background: rgba(200,147,58,0.15); white-space: nowrap; vertical-align: middle; }
+    /* Fracht je Startplatz (#15 Sub-Projekt B): Gruppen-Überschrift — neutral (kein Klick-Blau). */
+    .kutter-grp-h { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.03em; color: var(--text-label); margin: 8px 0 2px; }
+    .kutter-grp-h.kutter-grp-total { color: var(--text-bright); }
     .kutter-feed td.kf-empty { color: var(--text-label); font-style: italic; }
     .kutter-feed td.kf-kg { color: #7ee6bd; text-align: right; }
     .kutter-total { font-family: var(--text-mono); font-size: 0.82rem; color: var(--text-bright); margin-bottom: 4px; }
@@ -4637,29 +4640,58 @@ function _kLossLabel(kind) {
 }
 
 // Balken + Mengen-Zeile — gemeinsam für die Events-Ansicht und den Live-Tab-Block.
+// Einen Balken + Legende für eine Frachtart-Teilmenge rendern. `items` = [{c, gi}] mit gi =
+// globaler Index in d.cargo (für stabile Farben über Gesamt- und Startplatz-Blöcke hinweg).
+function _kSegLegend(items, totalTarget) {
+  totalTarget = totalTarget || 1;
+  const segs = items.map(({ c, gi }) => {
+    const pct = Math.min(100, c.pct);
+    const resPct = c.target_kg > 0 ? Math.min(100 - pct, 100 * (c.reserved_kg || 0) / c.target_kg) : 0;
+    const res = resPct > 0
+      ? '<i class="kseg-res" style="left:' + pct.toFixed(1) + '%;width:' + resPct.toFixed(1)
+        + '%;background-color:' + _kColor(gi) + '"></i>' : '';
+    return '<div class="kutter-seg" style="width:' + (100 * c.target_kg / totalTarget).toFixed(2)
+      + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i>' + res + '</div>';
+  }).join('');
+  const legend = items.map(({ c, gi }) => {
+    const mark = c.emoji ? c.emoji + ' '
+      : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
+    const res = (c.reserved_kg || 0) > 0 ? ' (+' + _kfmtT(c.reserved_kg) + ' ✈️)' : '';
+    const cap = c.per_flight_max_kg != null
+      ? ' <span class="kl-cap" title="Obergrenze pro Flug — Überschuss zählt nicht als geliefert">⚠ '
+        + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
+    return '<span>' + mark + _kesc(c.name) + cap + ' ' + _kfmtT(c.delivered_kg) + ' / ' + _kfmtT(c.target_kg) + res + '</span>';
+  }).join('');
+  return '<div class="kutter-bar">' + segs + '</div><div class="kutter-legend">' + legend + '</div>';
+}
+
 function _kutterBarAndTotals(d) {
   let bar = '';
   if (d.cargo && d.cargo.length) {
+    const items = d.cargo.map((c, i) => ({ c, gi: i }));
     const totalTarget = d.cargo.reduce((s, c) => s + c.target_kg, 0) || 1;
-    const segs = d.cargo.map((c, i) => {
-      const pct = Math.min(100, c.pct);
-      const resPct = c.target_kg > 0 ? Math.min(100 - pct, 100 * (c.reserved_kg || 0) / c.target_kg) : 0;
-      const res = resPct > 0
-        ? '<i class="kseg-res" style="left:' + pct.toFixed(1) + '%;width:' + resPct.toFixed(1)
-          + '%;background-color:' + _kColor(i) + '"></i>' : '';
-      return '<div class="kutter-seg" style="width:' + (100 * c.target_kg / totalTarget).toFixed(2)
-        + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(i) + '"></i>' + res + '</div>';
-    }).join('');
-    const legend = d.cargo.map((c, i) => {
-      const mark = c.emoji ? c.emoji + ' '
-        : '<span class="kl-dot" style="background:' + _kColor(i) + '"></span>';
-      const res = (c.reserved_kg || 0) > 0 ? ' (+' + _kfmtT(c.reserved_kg) + ' ✈️)' : '';
-      const cap = c.per_flight_max_kg != null
-        ? ' <span class="kl-cap" title="Obergrenze pro Flug — Überschuss zählt nicht als geliefert">⚠ '
-          + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
-      return '<span>' + mark + _kesc(c.name) + cap + ' ' + _kfmtT(c.delivered_kg) + ' / ' + _kfmtT(c.target_kg) + res + '</span>';
-    }).join('');
-    bar = '<div class="kutter-bar">' + segs + '</div><div class="kutter-legend">' + legend + '</div>';
+    // Nach Startplatz gruppieren ('' = geteilt). Gibt es KEINE gebundene Fracht (Legacy/rein
+    // geteilt), bleibt es ein einziger Balken wie bisher — sonst Gesamtbalken + je Startplatz
+    // ein Block (#15 Sub-Projekt B).
+    const groups = new Map();
+    items.forEach(it => {
+      const k = it.c.departure || '';
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(it);
+    });
+    const hasBound = [...groups.keys()].some(k => k);
+    if (!hasBound) {
+      bar = _kSegLegend(items, totalTarget);
+    } else {
+      bar = '<div class="kutter-grp-h kutter-grp-total">Gesamt</div>' + _kSegLegend(items, totalTarget);
+      const keys = [...groups.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
+      keys.forEach(k => {
+        const grp = groups.get(k);
+        const gt = grp.reduce((s, it) => s + it.c.target_kg, 0) || 1;
+        const label = k ? '🛫 ab ' + _kesc(k) : 'Alle Startplätze';
+        bar += '<div class="kutter-grp-h">' + label + '</div>' + _kSegLegend(grp, gt);
+      });
+    }
   }
   const goal = d.target_kg ? ' / ' + _kfmtT(d.target_kg) : '';
   const pct = d.progress_pct != null ? ' · ' + Math.min(100, Math.round(d.progress_pct)) + '%' : '';

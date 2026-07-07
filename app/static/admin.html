@@ -2085,20 +2085,24 @@
     let _keEvents = [];
     let _keEditingId = null;
 
-    function keCargoRow(name, kg) {
+    function keCargoRow(name, kg, departure) {
       const div = document.createElement('div');
       div.className = 'ke-cargo-row';
-      div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;align-items:center;';
-      div.innerHTML = '<div style="flex:2;display:flex;flex-direction:column;gap:2px;">'
+      div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;align-items:center;flex-wrap:wrap;';
+      div.innerHTML = '<div style="flex:2;min-width:140px;display:flex;flex-direction:column;gap:2px;">'
         + '<input type="text" class="ke-c-name" list="ke-cargo-suggestions" placeholder="Frachtart, z.B. Krabbenbrötchen" />'
         + '<span class="ke-c-hint" style="color:#8aa0b8;font-size:0.75rem;"></span>'
         + '</div>'
-        + '<input type="number" class="ke-c-kg" placeholder="kg" min="0" step="10" style="flex:1;" />'
+        + '<input type="number" class="ke-c-kg" placeholder="kg" min="0" step="10" style="flex:1;min-width:70px;" />'
+        + '<input type="text" class="ke-c-dep" placeholder="Start ICAO" maxlength="4" '
+        + 'title="Startplatz, an den diese Fracht gebunden ist — leer = von jedem Startplatz ladbar" '
+        + 'style="flex:1;min-width:82px;text-transform:uppercase;" />'
         + '<button type="button" class="btn btn-sm ke-c-del">✕</button>';
       const nameInput = div.querySelector('.ke-c-name');
       const hintSpan = div.querySelector('.ke-c-hint');
       nameInput.value = name || '';
       if (kg != null && kg !== '') div.querySelector('.ke-c-kg').value = kg;
+      if (departure) div.querySelector('.ke-c-dep').value = departure;
       // Hinweis initial aktualisieren (beim Befüllen bestehender Zeilen).
       updateKeCargoHint(nameInput, hintSpan);
       // Hinweis bei jedem Input aktualisieren.
@@ -2125,6 +2129,7 @@
       document.querySelectorAll('#ke-cargo-rows .ke-cargo-row').forEach(r => {
         const name = r.querySelector('.ke-c-name').value.trim();
         const kg = parseFloat(r.querySelector('.ke-c-kg').value);
+        const dep = (r.querySelector('.ke-c-dep').value || '').trim().toUpperCase();
         if (name && kg > 0) {
           // Emoji + Max/Flug aus dem Katalog übernehmen (Freitext → ohne).
           const cat = (_keCatalog || []).find(c => (c.name || '').toLowerCase() === name.toLowerCase());
@@ -2132,6 +2137,7 @@
             name, target_kg: kg,
             emoji: cat ? cat.emoji : null,
             per_flight_max_kg: cat ? cat.per_flight_max_kg : null,
+            departure: dep || null,   // #15 Sub-Projekt B: Startplatz-Bindung; leer = geteilt
           });
         }
       });
@@ -2169,7 +2175,22 @@
       const dtstart = document.getElementById('ke-dtstart').value;
       const dtend = document.getElementById('ke-dtend').value;
       if (!name || !route || !dtstart) { toast('Name, Strecke und Start sind erforderlich.', true); return; }
-      const body = { name, route, destination: dest, dtstart: localToIso(dtstart), cargo: keCollectCargo() };
+      const cargo = keCollectCargo();
+      // #15 Sub-Projekt B: warnen, wenn ein Fracht-Startplatz nicht (mehr) in der Strecke liegt
+      // bzw. das Ziel ist — solche Zeilen werden serverseitig auf „geteilt" (NULL) zurückgesetzt.
+      const routeSet = new Set(route.toUpperCase().split(/[,\s]+/).filter(Boolean));
+      const destU = dest.toUpperCase();
+      const strange = [...new Set(cargo
+        .filter(c => c.departure && (!routeSet.has(c.departure) || c.departure === destU))
+        .map(c => c.departure))];
+      if (strange.length) {
+        const ok = await showModal('Startplatz nicht in der Strecke',
+          'Diese Fracht-Startplätze liegen nicht in der Strecke bzw. sind das Ziel: ' + strange.join(', ')
+          + '. Sie werden als „geteilt" (von jedem Startplatz ladbar) gespeichert. Trotzdem speichern?',
+          'Speichern', false);
+        if (!ok) return;
+      }
+      const body = { name, route, destination: dest, dtstart: localToIso(dtstart), cargo };
       if (dtend) body.dtend = localToIso(dtend);
       const path = _keEditingId ? '/api/admin/transport/events/' + _keEditingId : '/api/admin/transport/events';
       const res = await api('POST', path, body);
@@ -2197,7 +2218,8 @@
       const c = document.getElementById('ke-events-container');
       if (!_keEvents.length) { c.innerHTML = '<div class="empty-hint">Noch keine Events.</div>'; return; }
       c.innerHTML = _keEvents.map(ev => {
-        const cargo = (ev.cargo || []).map(x => escH(x.name) + ' ' + Math.round(x.target_kg) + 'kg').join(', ') || '—';
+        const cargo = (ev.cargo || []).map(x => escH(x.name) + ' ' + Math.round(x.target_kg) + 'kg'
+          + (x.departure ? ' ‹' + escH(x.departure) + '›' : '')).join(', ') || '—';
         const statusBadge = '<span class="badge badge-' + (ev.status || 'scheduled') + '">'
           + (KE_STATUS_LABEL[ev.status] || ev.status || '—') + '</span> ';
         const src = ev.source === 'calendar' ? '📅 Kalender' : '✎ manuell';
@@ -2231,7 +2253,7 @@
       document.getElementById('ke-dtend').value = isoToLocal(ev.dtend);
       const rows = document.getElementById('ke-cargo-rows');
       rows.innerHTML = '';
-      (ev.cargo || []).forEach(c => rows.appendChild(keCargoRow(c.name, Math.round(c.target_kg))));
+      (ev.cargo || []).forEach(c => rows.appendChild(keCargoRow(c.name, Math.round(c.target_kg), c.departure)));
       if (!ev.cargo || !ev.cargo.length) rows.appendChild(keCargoRow('', ''));
       document.getElementById('ke-form').classList.remove('hidden');
       document.getElementById('ke-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });

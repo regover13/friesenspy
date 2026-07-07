@@ -121,6 +121,38 @@ class TestCargoLines:
     def test_empty_description(self):
         assert parse_cargo_lines("") == []
 
+    def test_departure_marker_binds_cargo(self):
+        lines = parse_cargo_lines("Fracht EDDW: 500 Äpfel, 200 Nüsse")
+        assert lines == [
+            {"name": "Äpfel", "target_kg": 500.0, "departure": "EDDW"},
+            {"name": "Nüsse", "target_kg": 200.0, "departure": "EDDW"},
+        ]
+
+    def test_plain_marker_stays_shared(self):
+        assert parse_cargo_lines("Fracht: 500 Äpfel") == [{"name": "Äpfel", "target_kg": 500.0}]
+
+    def test_multiple_departure_markers(self):
+        lines = parse_cargo_lines("Fracht EDDW: 500 Äpfel\nFracht EDWG: 300 Birnen")
+        assert lines == [
+            {"name": "Äpfel", "target_kg": 500.0, "departure": "EDDW"},
+            {"name": "Birnen", "target_kg": 300.0, "departure": "EDWG"},
+        ]
+
+    def test_lowercase_departure_marker_uppercased(self):
+        assert parse_cargo_lines("Fracht edwg: 300 Birnen") == [
+            {"name": "Birnen", "target_kg": 300.0, "departure": "EDWG"},
+        ]
+
+    def test_cargo_marker_icao_not_added_to_route(self):
+        # #15 B3: der Startort-ICAO im Fracht-Marker darf NICHT in die Route wandern (sonst wäre
+        # die Startort-Validierung zahnlos bzw. ein Tippfehler könnte das Event deaktivieren).
+        route, _, is_transport = parse_route(
+            "EDWG, EDXH", "FriesenKutter Nachschub",
+            "Fracht EDWG: 300 Birnen\nFracht EDZZ: 100 Müll",
+        )
+        assert route == "EDWG,EDXH"       # EDZZ (nur im Fracht-Marker) ist NICHT dabei
+        assert is_transport is True
+
 
 class TestDbRoundtrip:
     def test_route_and_is_bummel_persist(self):

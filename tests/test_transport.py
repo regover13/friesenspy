@@ -1041,6 +1041,133 @@ class TestReservation:
         assert p["reserved_total_kg"] == 0.0             # kein Doppelzählen
 
 
+# --- Fracht je Startplatz (#15 Sub-Projekt B) ------------------------------
+
+class TestCargoPerDeparture:
+    def test_departure_roundtrip(self):
+        conn = _make_conn()
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDDW,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "EDDW"},
+                   {"name": "Birnen", "target_kg": 300, "departure": "EDWG"}],
+        )
+        by = {c["name"]: c for c in get_transport_cargo(conn, eid)}
+        assert by["Äpfel"]["departure"] == "EDDW"
+        assert by["Birnen"]["departure"] == "EDWG"
+
+    def test_departure_normalized(self):
+        conn = _make_conn()
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "edwg "}],
+        )
+        assert get_transport_cargo(conn, eid)[0]["departure"] == "EDWG"
+
+    def test_departure_not_in_route_becomes_shared(self):
+        conn = _make_conn()
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "EDDW"}],  # EDDW nicht in route
+        )
+        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+
+    def test_departure_equal_destination_becomes_shared(self):
+        conn = _make_conn()
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "EDXH"}],  # == Ziel → tote Zeile verhindert
+        )
+        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+
+    def test_no_departure_is_shared_null(self):
+        conn = _make_conn()
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Äpfel", "target_kg": 500}],
+        )
+        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+
+    def test_update_event_validates_departure(self):
+        from app.database import update_transport_event
+        conn = _make_conn()
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Alt", "target_kg": 100}],
+        )
+        update_transport_event(
+            conn, eid, cargo=[{"name": "Neu", "target_kg": 100, "departure": "EDDW"}],  # nicht in route
+        )
+        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+
+
+class TestCoLoadPerDeparture:
+    def _ev(self, conn):
+        upsert_payload(conn, "C172", payload_kg=250)
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDDW,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "EDDW"},
+                   {"name": "Birnen", "target_kg": 300, "departure": "EDWG"}],
+        )
+        return get_transport_event(conn, eid)
+
+    def test_delivery_fills_only_its_origin(self):
+        conn = _make_conn()
+        ev = self._ev(conn)
+        _add_delivered_flight(conn, 800, "EDDW", "C172", "2026-07-01T10:00:00Z", ev["id"])
+        _add_delivered_flight(conn, 801, "EDWG", "C172", "2026-07-01T10:05:00Z", ev["id"])
+        p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
+        cargo = {c["name"]: c for c in p["cargo"]}
+        assert cargo["Äpfel"]["delivered_kg"] == 250.0
+        assert cargo["Birnen"]["delivered_kg"] == 250.0
+        assert p["total_kg"] == 500.0
+        fa = next(f for f in p["flights"] if f["cid"] == 800)
+        fb = next(f for f in p["flights"] if f["cid"] == 801)
+        assert [l["name"] for l in fa["cargo_lines"]] == ["Äpfel"]   # EDDW → nur Äpfel
+        assert [l["name"] for l in fb["cargo_lines"]] == ["Birnen"]  # EDWG → nur Birnen
+
+    def test_latch_fallback_unknown_dep_fills_all(self):
+        conn = _make_conn()
+        ev = self._ev(conn)
+        # dep leer (Airborne-Spawn/trackless), aber gelatchte Ankunft → füllt ALLE Zeilen (nicht 0).
+        _add_delivered_flight(conn, 802, "", "C172", "2026-07-01T10:00:00Z", ev["id"])
+        p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
+        f = next(f for f in p["flights"] if f["cid"] == 802)
+        assert f["tonnage_kg"] == 250.0                              # NICHT still 0 kg
+        assert [l["name"] for l in f["cargo_lines"]] == ["Äpfel"]    # füllt von vorne
+
+    def test_legacy_all_null_unchanged(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDDW,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Äpfel", "target_kg": 500}, {"name": "Birnen", "target_kg": 300}],  # alle NULL
+        )
+        ev = get_transport_event(conn, eid)
+        _add_delivered_flight(conn, 803, "EDWG", "C172", "2026-07-01T10:00:00Z", ev["id"])
+        p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
+        cargo = {c["name"]: c for c in p["cargo"]}
+        # Geteilter Topf: der EDWG-Flug füllt von vorne (Äpfel) — unverändertes Alt-Verhalten.
+        assert cargo["Äpfel"]["delivered_kg"] == 250.0
+        assert cargo["Birnen"]["delivered_kg"] == 0.0
+
+    def test_reservation_respects_origin(self):
+        conn = _make_conn()
+        ev = self._ev(conn)
+        _add_open_flight(conn, 804, "EDWG", "EDXH", "C172", "2026-07-01T10:00:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T10:30:00Z")
+        cargo = {c["name"]: c for c in p["cargo"]}
+        assert cargo["Birnen"]["reserved_kg"] == 250.0   # EDWG-Reservierung → nur Birnen
+        assert cargo["Äpfel"]["reserved_kg"] == 0.0
+
+    def test_cargo_response_exposes_departure(self):
+        conn = _make_conn()
+        ev = self._ev(conn)
+        p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
+        cargo = {c["name"]: c for c in p["cargo"]}
+        assert cargo["Äpfel"]["departure"] == "EDDW"
+        assert cargo["Birnen"]["departure"] == "EDWG"
+
+
 # --- Fracht-Verluste: Kutter versunken, geklaut, zurückgebracht -------------
 
 class TestCargoLosses:
