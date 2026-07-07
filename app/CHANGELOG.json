@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.16.3",
+    "date": "2026-07-07",
+    "title": "Doppelte Plätze in der Bummel-Strecke werden entfernt",
+    "items": [
+      "Gibt man in der Bummel-Strecke denselben Flugplatz mehrfach ein, wird die Dublette jetzt entfernt (Reihenfolge bleibt erhalten) — beim Kutter-Startplatz war das schon so. Leerzeichen oder Komma als Trenner sind beide erlaubt, ein Trenner am Ende ist unkritisch."
+    ]
+  },
+  {
     "version": "8.16.2",
     "date": "2026-07-07",
     "title": "Mehrere Ziele im Ziel-Feld werden jetzt abgelehnt",
