@@ -1250,6 +1250,18 @@ class VatsimPoller:
                             snap = get_progress_snapshot(conn, "kutter", ev["id"])
                             if snap is not None:
                                 collect_quip_jobs(ev, snap)
+                                # Abschlussspruch nachziehen, falls er fehlt (#69): der Latch-Block
+                                # unten erzeugt summary_quip nur EINMAL beim Feierabend-Übergang;
+                                # nach „Sprüche neu" (clear_transport_quips setzt ihn auf NULL) ist
+                                # dieser Zweig hier per early continue der EINZIGE Weg zurück. Nur
+                                # bei echter Aktivität (flight_count>0) — kein bezahlter LLM-Call
+                                # für ein leeres Event. Kontext aus dem Snapshot, kein Recompute.
+                                if not ev.get("summary_quip") and snap.get("flight_count", 0) > 0:
+                                    summary = await asyncio.to_thread(
+                                        llm.event_summary, event_summary_context(ev, snap)
+                                    )
+                                    if summary:
+                                        set_transport_summary_quip(conn, ev["id"], summary)
                         continue
                     # --- nicht abgeschlossen: bisheriger Ablauf unverändert ---
                     if ev.get("destination"):

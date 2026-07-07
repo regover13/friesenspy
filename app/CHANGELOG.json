@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.10.1",
+    "date": "2026-07-07",
+    "title": "Abschlussspruch abgeschlossener Kutter wird nach „Sprüche neu“ wieder erzeugt",
+    "items": [
+      "Nach einem Klick auf „Sprüche neu“ blieb der lustige Abschlussspruch eines bereits abgeschlossenen FriesenKutters dauerhaft leer — die Pro-Flug-Sprüche kamen zurück, der Tagesend-Spruch nicht. Jetzt wird auch der Abschlussspruch neu erzeugt, sobald er fehlt (aus dem gespeicherten Snapshot, ohne Neuberechnung)."
+    ]
+  },
+  {
     "version": "8.10.0",
     "date": "2026-07-07",
     "title": "Kutter- und Bummel-Übersicht laden schneller — abgeschlossene Events eingefroren",

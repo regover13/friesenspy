@@ -1047,6 +1047,80 @@ class TestTransportSnapshotFreeze:
 
         get_settings.cache_clear()
 
+    @pytest.mark.asyncio
+    async def test_poller_regenerates_summary_quip_after_clear(self, tmp_path, monkeypatch):
+        """#69: Summarized Event, Snapshot mit beladenem Flug, aber summary_quip=NULL (Zustand
+        nach „Sprüche neu") + do_quips aktiv → der Lauf erzeugt den Abschlussspruch NEU und
+        speichert ihn (Kontext aus dem Snapshot), OHNE compute_transport_progress aufzurufen.
+        Ohne den Fix bleibt summary_quip dauerhaft leer (Latch-Block ist per early continue
+        unerreichbar)."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import (
+            init_db, get_connection, create_transport_event, set_transport_summarized,
+            write_progress_snapshot, set_app_setting,
+        )
+
+        monkeypatch.setenv("SECRET_KEY", "test-secret")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        dtstart = (now - timedelta(hours=3)).strftime(fmt)
+        dtend = (now - timedelta(minutes=10)).strftime(fmt)
+        flight_key = "7:2026-07-01T10:00:00Z"
+        conn = get_connection(db_file)
+        try:
+            eid = create_transport_event(
+                conn, name="Helgoland-Nachschub", route="EDWG,EDXH",
+                dtstart=dtstart, dtend=dtend, destination="EDXH",
+            )
+            set_app_setting(conn, "transport_quips_enabled", "1")
+            set_transport_summarized(conn, eid, dtend)  # summary_quip bleibt NULL
+            write_progress_snapshot(conn, "kutter", eid, {
+                "flights": [{
+                    "cid": 7, "callsign": "FRS07", "aircraft": "PZ04",
+                    "dep": "EDWG", "arr": "EDXH", "tonnage_kg": 120.0, "loaded": True,
+                    "in_air": False, "airborne": False, "flight_key": flight_key,
+                    "distance_nm": 20, "block_min": 30, "cargo_lines": [], "quip": None,
+                }],
+                "total_kg": 120.0, "flight_count": 1, "loaded_count": 1, "target_kg": None,
+                "cargo": [], "losses": [], "lost_total_kg": 0.0,
+                "route": ["EDWG", "EDXH"], "destination": "EDXH",
+            }, dtend)
+            conn.commit()
+        finally:
+            conn.close()
+
+        called_compute = {"n": 0}
+
+        def _spy(*a, **k):
+            called_compute["n"] += 1
+            return {}
+
+        monkeypatch.setattr("app.database.compute_transport_progress", _spy)
+
+        poller = self._poller(db_file)
+        with patch("app.llm.event_summary", return_value="Was für ein Feierabend!") as mock_summary, \
+                patch.object(VatsimPoller, "_gen_flight_quip", AsyncMock()), \
+                patch("app.poller.send_web_push", new=AsyncMock()):
+            await poller._check_transport_events()
+            await asyncio.sleep(0)
+
+        assert called_compute["n"] == 0  # kein teures Recompute — Kontext aus Snapshot
+        mock_summary.assert_called_once()
+        conn = get_connection(db_file)
+        row = conn.execute(
+            "SELECT summary_quip FROM transport_events WHERE id = ?", (eid,)
+        ).fetchone()
+        conn.close()
+        assert row["summary_quip"] == "Was für ein Feierabend!"
+
+        get_settings.cache_clear()
+
 
 # ---------------------------------------------------------------------------
 # _check_event_reminders -- 1h-Erinnerung aus drei Quellen (Task 4, #24)

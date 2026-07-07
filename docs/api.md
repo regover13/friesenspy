@@ -1028,6 +1028,8 @@ Lustige KI-Sprüche global an-/ausschalten. Body: `enabled` (bool). Wirken nur m
 ### POST /api/admin/transport/events/{event_id}/regenerate-quips
 Löscht alle gecachten KI-Flug-Sprüche des Events und setzt den Tagesend-Spruch (`summary_quip`) zurück (`clear_transport_quips`). Der Poller baut sie beim nächsten Durchlauf (~60 s) neu — mit der aktuellen Spruch-Logik. Für den Fall, dass ein bereits generierter Spruch veraltet ist (z. B. Liefer-Text für einen inzwischen als geklaut/versunken erkannten Flug). Antwort: `{status, cleared}` (Anzahl gelöschter Flug-Sprüche).
 
+> **Auch für abgeschlossene Events (v8.10.1, #69):** Bei einem bereits abgeschlossenen Event (`summarized_at` gesetzt) zieht der Poller sowohl die Pro-Flug-Sprüche als auch den fehlenden Tagesend-Spruch (`summary_quip`) aus dem eingefrorenen Snapshot nach — ohne den Fortschritt neu zu berechnen. Der `summary_quip` wird nur bei echter Aktivität (`flight_count > 0`) erzeugt (kein bezahlter LLM-Call für ein leeres Event). Der reguläre Feierabend-Latch erzeugt den Abschlussspruch nur einmal beim Übergang; dieser Nachzieh-Pfad ist nach „Sprüche neu" der einzige Weg zurück.
+
 > **Event-Ausgabe (Phase 2):** `GET /api/transport/event/{id}` liefert zusätzlich je Frachtart `cargo[].emoji`, je Flug `cargo_lines` (`[{name, emoji, kg}]`, Co-Load) und `quip` (gecachter KI-Spruch, sonst `null`) sowie `summary_quip` (lustige Tagesend-Zusammenfassung).
 
 ### GET /api/admin/transport/events/{event_id}/badge/{cid}.png
