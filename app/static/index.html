@@ -3952,6 +3952,7 @@ async function fetchStats(_isRetry = false) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     renderStatsTable(data, Number(days));
+    fetchSpecialEventStats(Number(days));
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden der Statistiken</div></div>`;
   }
@@ -4304,7 +4305,6 @@ function renderStatsTable(stats, days) {
     tr.addEventListener('click', () => openPilotFlights(Number(tr.dataset.cid)));
   });
   fetchAndRenderChart(days);
-  fetchSpecialEventStats(days);
 }
 
 // ==========================================================================
