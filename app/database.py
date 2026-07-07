@@ -4736,12 +4736,15 @@ def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") 
         if row is not None and row["groundspeed"] is not None \
                 and row["groundspeed"] <= _LANDED_MAX_GS_KT:
             end_icao = nearest_airport_icao(row["latitude"], row["longitude"], radius)
-            if end_icao == dep:
-                kind = "returned"
-            elif end_icao == dest:
+            if end_icao == dest:
                 # #23 Review M1: letzte Position am ZIEL (Zwischenlande-/Restweg-Klassifikation
                 # trifft hier zufällig den Zielplatz) — das Leg endete am Ziel, kein Verlust.
                 continue
+            elif end_icao in route_set:
+                # Bug X (#15A): Rückgabe an JEDEM Strecken-Wegpunkt (inkl. Abflugplatz), nicht
+                # nur am ursprünglichen dep — der Kutter steht sicher an einem Netz-Platz. Nur
+                # Plätze AUSSERHALB der Strecke gelten als geklaut.
+                kind = "returned"
             elif end_icao:
                 kind = "stolen"
         type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
@@ -5153,6 +5156,38 @@ def compute_transport_progress(
             "flight_key": key, "distance_nm": 0, "block_min": 0,
             "loss_kind": l["kind"], "lost_kg": lost,
         })
+
+    # Bug Y (#15A): geschlossene Phantom-Zwischenbeine einer noch fortlaufenden oder gelieferten
+    # Reise aus dem FEED entfernen (reine Anzeige). Eine Reise durch einen Wegpunkt ist EINE
+    # Zeile, kein 0-kg-Leerflug je Zwischenlandung. Die entfernten Zeilen tragen 0 kg geliefert
+    # (loaded=False) UND keine Reservierung (geschlossen, kein onboard_reserved_kg) — delivered/
+    # reserved/total bleiben daher unverändert (Invariante, getestet). Pro Verbindung bleibt die
+    # aussagekräftige Zeile: Lieferung (loaded), offene Reise (in_air) oder Verlust (loss_kind).
+    # Ein Rückflug-Bein (dep == destination) bleibt IMMER sichtbar (leerer 0-kg-Rückflug), auch
+    # wenn dieselbe Verbindung eine Lieferungs-Geschwisterzeile trägt.
+    kept_conn_keys = {
+        (q["cid"], q["_conn_logon"]) for q in network
+        if (q.get("loaded") or q.get("in_air")) and q.get("cid") is not None and q.get("_conn_logon")
+    }
+    suppressed_conn_keys: set = set()
+    kept_network = []
+    for q in network:
+        key = (q.get("cid"), q.get("_conn_logon"))
+        if (not q.get("loaded") and not q.get("in_air") and not q.get("loss_kind")
+                and q.get("dep") != dest               # Rückflug (dep==dest) nie unterdrücken
+                and q.get("cid") is not None and q.get("_conn_logon")
+                and key in kept_conn_keys):
+            suppressed_conn_keys.add(key)
+            continue
+        kept_network.append(q)
+    network = kept_network
+    # Y2: ein an einem Wegpunkt geparkter, noch offener Flug, dessen Verbindung bereits ein
+    # Strecken-Bein abgeschlossen hat (Phantom oben unterdrückt), ist „unterwegs", nicht
+    # „am Start" — airborne für die Feed-Kennzeichnung (✈️ statt 🅿️) setzen.
+    for q in network:
+        if q.get("in_air") and not q.get("airborne") \
+                and (q.get("cid"), q.get("_conn_logon")) in suppressed_conn_keys:
+            q["airborne"] = True
 
     network.sort(key=lambda x: x["dep_time"])  # aufsteigend für die Manifest-Füllung
 

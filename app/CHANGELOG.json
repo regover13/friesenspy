@@ -1,5 +1,14 @@
 [
   {
+    "version": "8.12.1",
+    "date": "2026-07-07",
+    "title": "FriesenKutter: Rückgabe an jedem Wegpunkt + saubere Zwischenlandungen",
+    "items": [
+      "Gibt ein Kutter-Pilot seine Ladung an einem Strecken-Wegpunkt ab (loggt dort aus), zählt das jetzt korrekt als „zurückgegeben“ (kein Verlust) — vorher galt nur der Abflugplatz als sicherer Rückgabeort, jeder andere Wegpunkt wurde fälschlich als „geklaut“ gewertet. Als Diebstahl zählt nur noch eine Landung abseits der Strecke.",
+      "Eine Zwischenlandung an einem Wegpunkt bleibt jetzt „unterwegs“ als eine durchgehende Reise, statt einen zusätzlichen 0-kg-Leerflug im Feed zu erzeugen. Ein am Wegpunkt geparkter Pilot wird als „unterwegs“ statt „am Start“ angezeigt. Rückflüge bleiben wie bisher als eigene 0-kg-Zeile sichtbar. Die gelieferten und reservierten Mengen ändern sich dadurch nicht — reine Anzeige."
+    ]
+  },
+  {
     "version": "8.12.0",
     "date": "2026-07-07",
     "title": "Einheitliche 365-Tage-Anzeigegrenze für Statistik, Piloten und Event-Analyse",

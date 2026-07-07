@@ -1111,6 +1111,23 @@ class TestCargoLosses:
         assert f["loss_kind"] == "returned"
         assert p["lost_total_kg"] == 0.0                    # zurückgebracht ≠ verloren
 
+    def test_returned_at_route_waypoint_not_stolen(self):
+        """Bug X (#15A): Logout an einem Strecken-Wegpunkt ≠ Abflugplatz ist 'returned'
+        (kg-neutral), NICHT 'stolen'. Nur Plätze AUSSERHALB der Strecke werden geklaut."""
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        ev = _event(conn, route="EDWG,EDXP,EDXH", destination="EDXH",
+                    cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        xlat, xlon = icao_to_coords("EDXP")   # Wegpunkt: ≠ Abflug EDWG, ≠ Ziel EDXH
+        self._flown_flight(conn, 310, "2026-07-01T18:05:00Z",
+                           end_lat=xlat, end_lon=xlon, end_gs=0, arrival="EDXP")
+        detect_transport_losses(conn, ev)
+        assert get_transport_losses(conn, ev["id"])[0]["kind"] == "returned"
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 310)
+        assert f["loss_kind"] == "returned"
+        assert p["lost_total_kg"] == 0.0                    # Wegpunkt-Rückgabe ≠ Verlust
+
     def test_loss_kg_is_net_event_cargo_not_full_payload(self):
         """Live-Fund 06.07.: die VERLORENE Menge ist die tatsächlich mitgeführte EVENT-Fracht
         (Σ der pro-Flug-gekappten Frachtart-Anteile = cargo_lines), NICHT die volle Musterzuladung.
@@ -1432,7 +1449,9 @@ class TestGPSLegReconcile:
         """#23 Review C1 (Gegenprobe -- nicht zu breit fixen): ein geschlossenes Zwischenlande-
         Bein (arr != dest, daher NICHT beladen) darf die offene Weiterreise derselben, noch
         verbundenen Connection NICHT unterdrücken -- der Skip greift nur, wenn die Connection
-        bereits eine GELADENE Zeile geliefert hat."""
+        bereits eine GELADENE Zeile geliefert hat.
+        Bug Y (#15A) aktualisiert: das Zwischenlande-Bein selbst ist KEIN eigener Phantom-
+        Leerflug mehr (eine Reise), die offene Weiterreise-Reservierung bleibt aber erhalten."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
         ev = _event(conn, route="EDWG,EDWY,EDXH", destination="EDXH")
@@ -1448,9 +1467,38 @@ class TestGPSLegReconcile:
 
         p = compute_transport_progress(conn, ev, _shift(t1, 10))
         legs = [f for f in p["flights"] if f["cid"] == 601]
-        zwischenlandung = next(f for f in legs if f["arr"] == "EDWY")
-        assert zwischenlandung["loaded"] is False
+        # Bug Y: kein geschlossenes Phantom-Zwischenbein (arr=EDWY) mehr im Feed.
+        assert not any(f["arr"] == "EDWY" and not f["in_air"] for f in legs)
         assert any(f["in_air"] for f in legs)   # offene Weiterreise bleibt als Reservierung erhalten
+
+    def test_intermediate_landing_parked_is_one_underway_row(self):
+        """Bug Y (#15A): Zwischenlandung an einem Wegpunkt (Verbindung offen, danach GEPARKT,
+        kein zweiter Start) erzeugt KEINEN Phantom-0-kg-Leerflug — der Pilot erscheint als EINE
+        Zeile 'unterwegs' (airborne=True), nicht 'am Start'. Fracht-/Reservierungssummen
+        unberührt (Anzeige-only, `total_kg`/`reserved_total_kg` gleich)."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        ev = _event(conn, route="EDWG,EDWY,EDXH", destination="EDXH",
+                    cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        from app.geo import icao_to_coords, airport_elevation_ft
+        t0 = "2026-07-01T09:58:00Z"
+        _add_open_flight(conn, 610, "EDWG", "EDXH", "C172", t0, callsign="FRS610")
+        self._seed_leg(conn, 610, "FRS610", t0, "EDWG")
+        landing_ts = self._add_leg_landing(conn, 610, "FRS610", t0, "EDWY", cruise_min=18)
+        wlat, wlon = icao_to_coords("EDWY")
+        welev = airport_elevation_ft("EDWY") or 0
+        # Geparkt am Wegpunkt (gs 0), noch verbunden — kein zweiter Start.
+        _add_pos(conn, 610, _shift(landing_ts, 5), wlat, wlon, 0, alt=welev, callsign="FRS610")
+        conn.commit()
+
+        p = compute_transport_progress(conn, ev, _shift(landing_ts, 15))
+        legs = [f for f in p["flights"] if f["cid"] == 610]
+        assert len(legs) == 1                          # kein Phantom-Leerflug
+        f = legs[0]
+        assert f["in_air"] is True and f["loaded"] is False
+        assert f["airborne"] is True                   # 'unterwegs', nicht 'am Start'
+        assert f["reserved_kg"] == 250.0
+        assert p["reserved_total_kg"] == 250.0 and p["total_kg"] == 0.0
 
     def test_new_leg_after_completed_return_not_shown_as_returning(self):
         """#66 (Live-Fund 06.07., EDWG-EDXP-Test): Lieferung (EDWG->EDXH, geliefert) -> Rückflug
