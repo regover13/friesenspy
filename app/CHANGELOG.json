@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.11.1",
+    "date": "2026-07-07",
+    "title": "Spezial-Events-Kennzahlen sitzen jetzt über der Flugaktivität",
+    "items": [
+      "Die neue Kennzahlen-Sektion für FriesenKutter und FriesenFliegerBummel steht jetzt direkt über dem Flugaktivitäts-Diagramm statt ganz unten. FriesenBummel bekam sein Symbol 🏁 (wie 🦐 beim FriesenKutter), und die Verlust-Kacheln „Versunken“ und „Geklaut“ tragen einen kleinen Totenkopf 💀."
+    ]
+  },
+  {
     "version": "8.11.0",
     "date": "2026-07-07",
     "title": "Neue Spezial-Events-Kennzahlen im Statistiken-Tab",

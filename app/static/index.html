@@ -1635,11 +1635,6 @@
       </div>
       <div class="stats-disclaimer">Nur FRS*-Callsigns · FriesenSpy-Aufzeichnungen + StatSim-Historik · Daten wachsen mit jedem erfassten Flug</div>
     </div>
-
-    <div class="panel" id="special-events-panel" style="display:none;">
-      <div class="panel-title">Spezial-Events</div>
-      <div id="special-events-content"></div>
-    </div>
   </div>
 
   <!-- =====================================================================
@@ -3926,8 +3921,6 @@ async function fetchStats(_isRetry = false) {
   // nicht zur Übersicht zurückspringen — stattdessen die Detail-Ansicht mit neuem Zeitraum
   // neu laden.
   if (currentStatsCid !== null) {
-    // Spezial-Events-Panel liegt unter dem Drill-Down und muss dem Zeitraumwechsel folgen.
-    fetchSpecialEventStats(Number(document.getElementById('stats-days').value));
     return openPilotFlights(currentStatsCid);
   }
   const days = document.getElementById('stats-days').value;
@@ -3978,8 +3971,9 @@ function _fmtAvgMin(min) {
 }
 
 function renderSpecialEventStats(data) {
-  const panel = document.getElementById('special-events-panel');
-  const box   = document.getElementById('special-events-content');
+  // Vorhandenen Block entfernen (Re-Render bei Zeitraumwechsel).
+  const old = document.getElementById('special-events-inline');
+  if (old) old.remove();
   const k = (data && data.kutter) || {};
   const b = (data && data.bummel) || {};
   const rows = [];
@@ -3989,30 +3983,38 @@ function renderSpecialEventStats(data) {
       ${_kpiCard(k.participations, 'Teilnahmen')}
       ${_kpiCard(k.flights, 'Flüge')}
       ${_kpiCard(_fmtTons(k.delivered_kg), 'Tonnage')}
-      ${_kpiCard(_fmtTons(k.sunk_kg), 'Versunken', `${k.sunk_count || 0} Kutter`)}
-      ${_kpiCard(_fmtTons(k.stolen_kg), 'Geklaut', `${k.stolen_count || 0} Ladungen`)}
+      ${_kpiCard(_fmtTons(k.sunk_kg), '💀 Versunken', `${k.sunk_count || 0} Kutter`)}
+      ${_kpiCard(_fmtTons(k.stolen_kg), '💀 Geklaut', `${k.stolen_count || 0} Ladungen`)}
     </div>`);
   }
   if ((b.race_count || 0) > 0) {
-    rows.push(`<div class="stats-kpi-row" style="border-bottom:none;margin-bottom:0;">
-      ${_kpiCard(b.race_count, '🛩 FriesenBummel')}
+    rows.push(`<div class="stats-kpi-row">
+      ${_kpiCard(b.race_count, '🏁 FriesenBummel')}
       ${_kpiCard(b.participations, 'Teilnahmen')}
       ${_kpiCard(b.legs, 'Flüge')}
       ${_kpiCard(_fmtAvgMin(b.avg_absolute_min), 'Ø Absoluter Durchschnitt')}
     </div>`);
   }
-  if (rows.length === 0) { panel.style.display = 'none'; box.innerHTML = ''; return; }
-  box.innerHTML = rows.join('');
-  panel.style.display = '';
+  if (rows.length === 0) return;
+  // Direkt ÜBER den „Flugaktivität"-Chart einhängen (Nutzerwunsch: nicht ganz unten).
+  const anchor = document.getElementById('stats-activity-wrap');
+  if (!anchor || !anchor.parentNode) return;
+  const block = document.createElement('div');
+  block.id = 'special-events-inline';
+  block.innerHTML =
+    `<div class="stats-chart-title" style="margin-bottom:10px;">Spezial-Events</div>` + rows.join('');
+  anchor.parentNode.insertBefore(block, anchor);
 }
 
 async function fetchSpecialEventStats(days) {
   try {
     const res = await fetch(`/api/stats/special-events?days=${days}`);
-    if (!res.ok) { document.getElementById('special-events-panel').style.display = 'none'; return; }
+    const old = document.getElementById('special-events-inline');
+    if (!res.ok) { if (old) old.remove(); return; }
     renderSpecialEventStats(await res.json());
   } catch (e) {
-    document.getElementById('special-events-panel').style.display = 'none';
+    const old = document.getElementById('special-events-inline');
+    if (old) old.remove();
   }
 }
 
