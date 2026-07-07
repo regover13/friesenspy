@@ -1063,13 +1063,15 @@ class TestCargoPerDeparture:
         )
         assert get_transport_cargo(conn, eid)[0]["departure"] == "EDWG"
 
-    def test_departure_not_in_route_becomes_shared(self):
+    def test_departure_kept_and_route_derived(self):
+        # #84: kein „streckenfremd → geteilt" mehr — die Route wird aus den Startplätzen ABGELEITET.
         conn = _make_conn()
         eid = create_transport_event(
-            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "EDDW"}],  # EDDW nicht in route
+            conn, name="X", dtstart=START, dtend=END, destination="EDXH",  # keine route übergeben
+            cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "EDDW"}],
         )
-        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+        assert get_transport_cargo(conn, eid)[0]["departure"] == "EDDW"
+        assert set(get_transport_event(conn, eid)["route"].split(",")) == {"EDDW", "EDXH"}
 
     def test_departure_equal_destination_becomes_shared(self):
         conn = _make_conn()
@@ -1087,17 +1089,19 @@ class TestCargoPerDeparture:
         )
         assert get_transport_cargo(conn, eid)[0]["departure"] is None
 
-    def test_update_event_validates_departure(self):
+    def test_update_rederives_route_from_cargo(self):
+        # #84: nach einem Cargo-Update wird die Route frisch aus den Startplätzen + Ziel abgeleitet.
         from app.database import update_transport_event
         conn = _make_conn()
         eid = create_transport_event(
-            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Alt", "target_kg": 100}],
+            conn, name="X", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Alt", "target_kg": 100, "departure": "EDWG"}],
         )
         update_transport_event(
-            conn, eid, cargo=[{"name": "Neu", "target_kg": 100, "departure": "EDDW"}],  # nicht in route
+            conn, eid, cargo=[{"name": "Neu", "target_kg": 100, "departure": "EDDW"}],
         )
-        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+        assert get_transport_cargo(conn, eid)[0]["departure"] == "EDDW"
+        assert set(get_transport_event(conn, eid)["route"].split(",")) == {"EDDW", "EDXH"}
 
 
 class TestCoLoadPerDeparture:
@@ -1166,6 +1170,67 @@ class TestCoLoadPerDeparture:
         cargo = {c["name"]: c for c in p["cargo"]}
         assert cargo["Äpfel"]["departure"] == "EDDW"
         assert cargo["Birnen"]["departure"] == "EDWG"
+
+
+class TestZeilenStattStrecke:
+    def test_normalize_icao_list(self):
+        from app.database import _normalize_icao_list
+        assert _normalize_icao_list("eddw, edwg") == "EDDW,EDWG"
+        assert _normalize_icao_list("EDWG, EDDW") == "EDDW,EDWG"        # stabil sortiert
+        assert _normalize_icao_list("EDDW, EDDW") == "EDDW"            # dedup
+        assert _normalize_icao_list("EDDW/EDWG") == "EDDW/EDWG"        # NICHT an '/' verstümmelt
+        assert _normalize_icao_list("") is None and _normalize_icao_list(None) is None
+        assert _normalize_icao_list("EDWG,EDXH", exclude="EDXH") == "EDWG"  # Ziel entfernt
+        assert _normalize_icao_list(["EDWG", "eddw"]) == "EDDW,EDWG"        # Liste-Eingabe
+
+    def test_derive_route(self):
+        from app.database import _derive_route
+        cargo = [{"departure": "EDDW"}, {"departure": "EDWG,EDXP"}]
+        assert _derive_route(cargo, "EDXH") == "EDDW,EDWG,EDXH,EDXP"    # Vereinigung + Ziel, sortiert
+        # geteilte (NULL) Zeile → existing_route als Sicherheitsnetz (kein Kollaps auf {Ziel})
+        assert _derive_route([{"departure": None}], "EDXH", existing_route="EDWG,EDXH") == "EDWG,EDXH"
+
+    def test_multi_departure_both_start_places_load(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        eid = create_transport_event(
+            conn, name="X", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Äpfel", "target_kg": 1000, "departure": "EDDW, EDWG"}],
+        )
+        ev = get_transport_event(conn, eid)
+        assert set(ev["route"].split(",")) == {"EDDW", "EDWG", "EDXH"}   # Route abgeleitet
+        _add_delivered_flight(conn, 900, "EDDW", "C172", "2026-07-01T10:00:00Z", ev["id"])
+        _add_delivered_flight(conn, 901, "EDWG", "C172", "2026-07-01T10:05:00Z", ev["id"])
+        p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
+        assert {c["name"]: c["delivered_kg"] for c in p["cargo"]}["Äpfel"] == 500.0
+        assert p["total_kg"] == 500.0
+
+    def test_flight_from_unlisted_place_does_not_load(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        eid = create_transport_event(
+            conn, name="X", route="EDDW,EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Äpfel", "target_kg": 1000, "departure": "EDDW"}],  # nur EDDW
+        )
+        ev = get_transport_event(conn, eid)
+        _add_delivered_flight(conn, 902, "EDWG", "C172", "2026-07-01T10:00:00Z", ev["id"])  # EDWG ≠ EDDW
+        p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
+        f = next(f for f in p["flights"] if f["cid"] == 902)
+        assert f["tonnage_kg"] == 0.0                                   # EDWG lädt Äpfel nicht
+
+    def test_migration_backfill_logic(self):
+        from app.database import _normalize_icao_list
+        conn = _make_conn()
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+            cargo=[{"name": "Alt", "target_kg": 100}],  # departure NULL (geteilt, Alt-Modell)
+        )
+        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+        ev = get_transport_event(conn, eid)
+        deps = _normalize_icao_list(ev["route"], exclude=ev["destination"])   # Backfill-Kern
+        conn.execute("UPDATE transport_cargo SET departure = ? WHERE event_id = ? AND departure IS NULL",
+                     (deps, eid))
+        assert get_transport_cargo(conn, eid)[0]["departure"] == "EDWG"       # Startplatz zugewiesen
 
 
 # --- Fracht-Verluste: Kutter versunken, geklaut, zurückgebracht -------------
@@ -1895,6 +1960,51 @@ class TestKutterBadge:
             "event": "Material für die Offshore-Anlagen", "date": "02.07.2026",
         })
         assert png[:8] == _PNG_MAGIC
+
+
+class TestKutterCreateValidation:
+    """#84: Manuelles Event verlangt Ziel + Manifest mit Startplätzen; Route wird abgeleitet."""
+    SECRET = "s3cr3t"
+    PW = "test-admin-pw"
+
+    def _app(self, tmp_path, monkeypatch):
+        p = str(tmp_path / "kutter_val.db")
+        init_db(p)
+        monkeypatch.setattr(main, "get_settings", lambda: SimpleNamespace(
+            DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=self.SECRET, ADMIN_PASSWORD=self.PW,
+            VAPID_PRIVATE_KEY="vapid", VAPID_CONTACT_EMAIL="mailto:test"))
+        return TestClient(main.app), p
+
+    def _post(self, client, body):
+        client.cookies.update({ADMIN_COOKIE: make_admin_token(self.SECRET, self.PW)})
+        return client.post("/api/admin/transport/events", json=body)
+
+    def test_requires_destination(self, tmp_path, monkeypatch):
+        client, _ = self._app(tmp_path, monkeypatch)
+        r = self._post(client, {"dtstart": START,
+                                "cargo": [{"name": "A", "target_kg": 100, "departure": "EDWG"}]})
+        assert r.status_code == 400
+
+    def test_requires_cargo(self, tmp_path, monkeypatch):
+        client, _ = self._app(tmp_path, monkeypatch)
+        r = self._post(client, {"dtstart": START, "destination": "EDXH", "cargo": []})
+        assert r.status_code == 400
+
+    def test_requires_start_place_per_cargo(self, tmp_path, monkeypatch):
+        client, _ = self._app(tmp_path, monkeypatch)
+        r = self._post(client, {"dtstart": START, "destination": "EDXH",
+                                "cargo": [{"name": "A", "target_kg": 100}]})  # kein Startplatz
+        assert r.status_code == 400
+
+    def test_valid_create_derives_route(self, tmp_path, monkeypatch):
+        client, dbp = self._app(tmp_path, monkeypatch)
+        r = self._post(client, {"dtstart": START, "destination": "EDXH",
+                                "cargo": [{"name": "Äpfel", "target_kg": 500, "departure": "EDWG"}]})
+        assert r.status_code == 200
+        conn = get_connection(dbp)
+        ev = get_transport_event(conn, r.json()["id"])
+        conn.close()
+        assert set(ev["route"].split(",")) == {"EDWG", "EDXH"}
 
 
 class TestKutterBadgeEndpoints:

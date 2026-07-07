@@ -500,6 +500,27 @@ def init_db(db_path: str) -> None:
             )
         except sqlite3.OperationalError:
             pass
+        # #84: Alt-Events (v8.13.0) ins „Zeilen-statt-Strecke"-Modell überführen — jede geteilte
+        # (NULL) Fracht-Zeile bekommt die Startplätze IHRES Events (Route ohne Ziel) eingetragen.
+        # Alle Alt-Events haben genau einen Start + ein Ziel (Nutzer-Fakt 2026-07-07), die Zuordnung
+        # ist eindeutig. Idempotent-äquivalent: „alle Nicht-Ziel-Route-Plätze" ist funktional
+        # dasselbe wie geteilt (ein Flug-dep liegt ohnehin in route_set).
+        try:
+            _rows = conn.execute(
+                "SELECT DISTINCT e.id, e.route, e.destination FROM transport_events e "
+                "JOIN transport_cargo c ON c.event_id = e.id "
+                "WHERE c.departure IS NULL OR c.departure = ''"
+            ).fetchall()
+            for _r in _rows:
+                _deps = _normalize_icao_list(_r["route"], exclude=_r["destination"])
+                if _deps:
+                    conn.execute(
+                        "UPDATE transport_cargo SET departure = ? WHERE event_id = ? "
+                        "AND (departure IS NULL OR departure = '')",
+                        (_deps, _r["id"]),
+                    )
+        except sqlite3.OperationalError:
+            pass
         # Alt-Daten (v8.8.1): inf/nan aus fehlerhaften KI-Zuladungs-Vorschlägen (Phantom-Typcode
         # wie Buchstabendreher AS65→SA65) bereinigen — nicht-endliche Werte → NULL, sonst sprengt
         # ein einziger die Zuladungs-Liste beim JSON-Encoding. SQLite kann inf nicht per SQL
@@ -3859,7 +3880,7 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "2"  # "2" (#15 Sub-Projekt B): cargo-Payload trägt jetzt `departure`
+_PROGRESS_SNAPSHOT_VERSION = "3"  # "3" (#84): cargo.departure ist jetzt eine Startplatz-LISTE (CSV)
 
 # Reine Anzeige-Retention (öffentliche Listen-Endpoints): Events/Rennen älter als das werden
 # ausgeblendet, nicht gelöscht. Nutzung erst in späteren Tasks (#66); hier nur die Konstante.
@@ -4041,10 +4062,17 @@ def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
             "SELECT id, destination FROM transport_events WHERE calendar_uid = ?", (ev.get("uid"),)
         ).fetchone()
         if row and not get_transport_cargo(conn, row[0]):
-            set_transport_cargo(
-                conn, row[0], _resolve_cargo_against_catalog(conn, cargo_lines),
-                valid_departures=_cargo_valid_departures(route, row["destination"]),
-            )
+            resolved = _resolve_cargo_against_catalog(conn, cargo_lines)
+            # #84: Cargo-Startplätze auf die (distanz-gefilterte) Route beschneiden — ein von
+            # `parse_route` verworfener Marker-ICAO (Tippfehler/fern) degradiert seine Zeile auf
+            # geteilt (NULL), statt tote, nie füllbare Fracht anzulegen.
+            route_places = {c.strip().upper() for c in (route or "").split(",") if c.strip()}
+            for line in resolved:
+                dep = line.get("departure")
+                if dep:
+                    kept = [c for c in dep.split(",") if c.strip().upper() in route_places]
+                    line["departure"] = ",".join(kept) if kept else None
+            set_transport_cargo(conn, row[0], resolved, destination=row["destination"])
 
 
 def list_transport_events(conn: sqlite3.Connection, *, since: str | None = None) -> list[dict]:
@@ -4074,17 +4102,21 @@ def create_transport_event(
     conn: sqlite3.Connection,
     *,
     name: str,
-    route: str,
+    route: str | None = None,
     dtstart: str,
     dtend: str | None,
     destination: str | None = None,
     cargo: list[dict] | None = None,
     radius_km: float | None = None,
 ) -> int:
-    """Manuelles Transportevent anlegen (+ optionales Fracht-Manifest). Gibt die neue id zurück.
-    Ohne ``destination`` wird der letzte Strecken-Flugplatz als Ziel angenommen.
-    Ohne ``radius_km`` gilt beim Erkennungs-Umkreis der Default (``_BUMMEL_AIRPORT_RADIUS_KM``)."""
+    """Manuelles Transportevent anlegen (+ Fracht-Manifest). Gibt die neue id zurück.
+    #84: ``route`` wird i. d. R. NICHT mehr übergeben, sondern aus den Startplätzen der Fracht-
+    Zeilen + ``destination`` abgeleitet (``_derive_route``); wird ``route`` explizit gesetzt (Tests /
+    Altpfade), bleibt sie erhalten. Ohne ``destination`` gilt weiter der letzte Strecken-Flugplatz
+    als Default (Altpfad); der Admin-Endpoint macht ``destination`` zur Pflicht."""
     dest = normalize_type_code(destination) or _default_destination(route)
+    if not route:
+        route = _derive_route(cargo, dest)
     cur = conn.execute(
         "INSERT INTO transport_events "
         "(name, route, destination, dtstart, dtend, source, calendar_uid, radius_km, created_at) "
@@ -4093,16 +4125,19 @@ def create_transport_event(
     )
     event_id = int(cur.lastrowid)  # type: ignore[arg-type]
     if cargo:
-        set_transport_cargo(conn, event_id, cargo, valid_departures=_cargo_valid_departures(route, dest))
+        set_transport_cargo(conn, event_id, cargo, destination=dest)
     return event_id
 
 
-_UPDATABLE_TRANSPORT_FIELDS = {"name", "route", "destination", "dtstart", "dtend", "radius_km"}
+# #84: `route` NICHT mehr direkt setzbar — sie wird aus dem Manifest abgeleitet (sonst könnte ein
+# gecachtes altes admin.html die abgeleitete Route überschreiben).
+_UPDATABLE_TRANSPORT_FIELDS = {"name", "destination", "dtstart", "dtend", "radius_km"}
 
 
 def update_transport_event(conn: sqlite3.Connection, event_id: int, **fields: object) -> None:
-    """Aktualisiert {name, route, dtstart, dtend}. dtend wird bei Zeitänderung neu aufgelöst.
-    ``cargo`` (falls übergeben) ersetzt das gesamte Manifest."""
+    """Aktualisiert {name, destination, dtstart, dtend}. dtend wird bei Zeitänderung neu aufgelöst.
+    ``cargo`` (falls übergeben) ersetzt das gesamte Manifest. #84: die ``route`` wird danach IMMER
+    frisch aus dem aktuellen Manifest + Ziel abgeleitet (auch bei reiner Name-/Ziel-Änderung)."""
     cargo = fields.pop("cargo", None)
     valid = {k: v for k, v in fields.items() if k in _UPDATABLE_TRANSPORT_FIELDS}
     if valid:
@@ -4116,16 +4151,18 @@ def update_transport_event(conn: sqlite3.Connection, event_id: int, **fields: ob
             f"UPDATE transport_events SET {set_clause} WHERE id = ?",
             list(valid.values()) + [event_id],
         )
+    ev_now = get_transport_event(conn, event_id)
+    dest = ev_now.get("destination") if ev_now else None
     if cargo is not None:
-        # #15 Sub-Projekt B: Startplatz-Bindung gegen die (ggf. gerade aktualisierte) Route +
-        # Ziel validieren — ein streckenfremder oder == Ziel gesetzter Startplatz fällt auf
-        # geteilt (NULL) zurück, statt eine tote gebundene Zeile anzulegen.
-        ev_now = get_transport_event(conn, event_id)
-        valid_deps = (
-            _cargo_valid_departures(ev_now.get("route"), ev_now.get("destination"))
-            if ev_now else None
+        set_transport_cargo(conn, event_id, cargo, destination=dest)  # type: ignore[arg-type]
+    # Route immer aus dem aktuellen Manifest + Ziel neu ableiten (#84); existing_route als
+    # Sicherheitsnetz, falls noch eine geteilte (NULL) Zeile existiert (Kalender-Fracht:).
+    if ev_now:
+        cur_cargo = get_transport_cargo(conn, event_id)
+        conn.execute(
+            "UPDATE transport_events SET route = ? WHERE id = ?",
+            (_derive_route(cur_cargo, dest, existing_route=ev_now.get("route")), event_id),
         )
-        set_transport_cargo(conn, event_id, cargo, valid_departures=valid_deps)  # type: ignore[arg-type]
 
 
 def delete_transport_event(conn: sqlite3.Connection, event_id: int) -> None:
@@ -4151,14 +4188,50 @@ def _opt_float(v) -> float | None:
         return None
 
 
-def _cargo_valid_departures(route: str | None, destination: str | None) -> set[str]:
-    """Gültige Startplätze für gebundene Fracht (#15 Sub-Projekt B): alle Streckenflugplätze
-    AUSSER dem Ziel (ein am Ziel startender Flug ist per dep==dest-Rückflug-Filter nie beladen —
-    eine daran gebundene Zeile wäre tot und blockierte goal_reached für immer)."""
-    dest = normalize_type_code(destination)
-    return {
-        c for c in (normalize_type_code(x) for x in (route or "").split(",")) if c and c != dest
-    }
+def _normalize_icao_list(raw, *, exclude: str | None = None) -> str | None:
+    """Kommagetrennte ICAO-Liste normalisieren (#84): je Code trimmen + uppercasen, deduplizieren,
+    STABIL sortieren, als CSV zurückgeben (oder ``None`` wenn leer). Akzeptiert String oder Liste.
+    Bewusst NICHT ``normalize_type_code`` — das schneidet an ``/`` ab und ließe Innen-Leerzeichen
+    stehen, würde eine Multi-Platz-Liste also still verstümmeln. ``exclude`` (z. B. das Ziel) wird
+    entfernt (ein am Ziel startender Flug ist per Rückflug-Filter nie füllbar)."""
+    if raw is None:
+        return None
+    parts = raw if isinstance(raw, (list, tuple, set)) else str(raw).replace(";", ",").split(",")
+    ex = (exclude or "").strip().upper()
+    out: list[str] = []
+    for p in parts:
+        code = str(p).strip().upper()
+        if code and code != ex and code not in out:
+            out.append(code)
+    return ",".join(sorted(out)) if out else None
+
+
+def _derive_route(cargo: list[dict] | None, destination: str | None,
+                  existing_route: str | None = None) -> str:
+    """Route (#84) aus den Startplätzen aller Fracht-Zeilen + Ziel ableiten → stabil sortierte CSV
+    (stabile Sortierung: sonst churnte der #66-Freeze-Vergleich per Routen-String). Zeilen ohne
+    ``departure`` (geteilt — nur Kalender-``Fracht:`` bzw. nicht-migrierte Alt-Events) tragen nichts
+    bei; existiert eine solche Zeile, fließt als Sicherheitsnetz die ``existing_route`` mit ein,
+    damit ein Edit an einem geteilten Event seine Route nicht verliert."""
+    dest = (destination or "").strip().upper()
+    places: list[str] = []
+    has_shared = False
+    for line in (cargo or []):
+        dep = _normalize_icao_list(line.get("departure"), exclude=dest)
+        if dep:
+            for c in dep.split(","):
+                if c not in places:
+                    places.append(c)
+        else:
+            has_shared = True
+    if has_shared and existing_route:
+        for c in (existing_route or "").split(","):
+            c = c.strip().upper()
+            if c and c != dest and c not in places:
+                places.append(c)
+    if dest and dest not in places:
+        places.append(dest)
+    return ",".join(sorted(places))
 
 
 def set_transport_cargo(
@@ -4166,15 +4239,13 @@ def set_transport_cargo(
     event_id: int,
     cargo: list[dict],
     *,
-    valid_departures: set[str] | None = None,
+    destination: str | None = None,
 ) -> None:
     """Fracht-Manifest eines Events komplett ersetzen. Zeilen ohne Name/Menge werden ignoriert.
-    Je Zeile optional ``emoji`` und ``per_flight_max_kg`` (Obergrenze pro Flug, Co-Load) sowie
-    ``departure`` (#15 Sub-Projekt B): Startplatz-ICAO, an den die Frachtart gebunden ist; NULL =
-    geteilt. ``departure`` wird ``normalize_type_code``-normalisiert; ist ``valid_departures``
-    gesetzt und der Startplatz NICHT darin (streckenfremd bzw. == Ziel — der Aufrufer schließt das
-    Ziel aus), fällt die Zeile auf ``NULL`` (geteilt) zurück, statt eine tote, nie erreichbare
-    gebundene Zeile anzulegen."""
+    Je Zeile optional ``emoji``, ``per_flight_max_kg`` (Co-Load-Kappung) und ``departure`` (#84:
+    kommagetrennte Startplatz-LISTE, an die die Frachtart gebunden ist; leer = geteilt). Die
+    Startplatz-Liste wird via :func:`_normalize_icao_list` normalisiert; ``destination`` wird aus ihr
+    entfernt (ein am Ziel startender Flug ist per Rückflug-Filter nie füllbar)."""
     conn.execute("DELETE FROM transport_cargo WHERE event_id = ?", (event_id,))
     pos = 0
     for line in cargo:
@@ -4185,9 +4256,7 @@ def set_transport_cargo(
             continue
         if not name or target <= 0:
             continue
-        dep = normalize_type_code(line.get("departure")) or None
-        if dep and valid_departures is not None and dep not in valid_departures:
-            dep = None
+        dep = _normalize_icao_list(line.get("departure"), exclude=destination)
         conn.execute(
             "INSERT INTO transport_cargo "
             "(event_id, position, name, target_kg, emoji, per_flight_max_kg, departure) "
@@ -5256,14 +5325,17 @@ def compute_transport_progress(
     # gelatchte Ankunft nie still 0 kg liefert. Reservierungen/Verluste haben `dep` stets in
     # `route_set` (Offen-Zweig/`detect_transport_losses` verlangen das) — dort greift der Fallback
     # nie.
-    cargo_departures = [c.get("departure") for c in cargo]
+    # #84: departure ist jetzt eine (ggf. leere) Menge von Startplätzen je Zeile.
+    cargo_departures = [
+        {c for c in (c_.get("departure") or "").split(",") if c} for c_ in cargo
+    ]
 
     def _fillable(flight: dict, i: int) -> bool:
         dep_ = flight.get("dep")
         if flight.get("loaded") and (not dep_ or dep_ not in route_set):
             return True
-        cd = cargo_departures[i]
-        return cd is None or cd == dep_
+        deps = cargo_departures[i]
+        return (not deps) or (dep_ in deps)
 
     # Co-Load-Füllung — NUR beladene Flüge. Jeder Flug verteilt seine Zuladung in Manifest-
     # Reihenfolge über die noch nicht vollen Frachtarten, je Frachtart gekappt durch

@@ -1,5 +1,15 @@
 [
   {
+    "version": "8.14.0",
+    "date": "2026-07-07",
+    "title": "FriesenKutter: Startplätze direkt an der Fracht statt eigenem Strecken-Feld",
+    "items": [
+      "Der Kutter-Editor hat kein eigenes „Strecke“-Feld mehr. Stattdessen trägt jede Frachtart ihre Startplätze direkt (kommagetrennt, z. B. „ab EDDW, EDWG“) — dieselbe Ware kann so von mehreren Startplätzen kommen. Die Strecke ergibt sich automatisch aus den Startplätzen der Fracht plus dem Ziel. Ein Feld weniger, weniger verwirrend.",
+      "Ein Event braucht jetzt ein Ziel und mindestens eine Frachtart mit Startplatz (Pflicht). Im Kalender bindet ein Startplatz-Marker mehrere Plätze: „Fracht EDDW, EDWG: 500 Äpfel“; ein weit entfernter oder unbekannter Marker-Platz wird verworfen und kippt das Event nicht mehr.",
+      "Bestehende Events werden automatisch ins neue Modell überführt (der bisherige Startplatz wird jeder geteilten Frachtart zugewiesen) — nichts geht verloren, sie bleiben editierbar."
+    ]
+  },
+  {
     "version": "8.13.0",
     "date": "2026-07-07",
     "title": "FriesenKutter: verschiedene Waren je Startplatz",

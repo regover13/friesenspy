@@ -4688,7 +4688,7 @@ function _kutterBarAndTotals(d) {
       keys.forEach(k => {
         const grp = groups.get(k);
         const gt = grp.reduce((s, it) => s + it.c.target_kg, 0) || 1;
-        const label = k ? '🛫 ab ' + _kesc(k) : 'Alle Startplätze';
+        const label = k ? '🛫 ab ' + _kesc(k.split(',').join(', ')) : 'Alle Startplätze';
         bar += '<div class="kutter-grp-h">' + label + '</div>' + _kSegLegend(grp, gt);
       });
     }

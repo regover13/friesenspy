@@ -41,9 +41,27 @@ def _route_is_plausible(route: list[str]) -> bool:
     return True
 
 
-# Optionaler Startplatz-ICAO direkt am Marker (#15 Sub-Projekt B): ``Fracht EDDW: …`` bindet die
-# Fracht an EDDW, ``Fracht: …`` bleibt geteilt. Gruppe 1 = ICAO (optional), Gruppe 2 = Frachtliste.
-_CARGO_MARKER_RE = re.compile(r"fracht(?:\s+([A-Za-z]{4}))?\s*:\s*(.+)", re.IGNORECASE)
+def _marker_place_ok(code: str, base: list[str]) -> bool:
+    """#84: ein Fracht-Marker-Startplatz kommt nur in die Route, wenn er auflösbar ist UND innerhalb
+    ``_MAX_BUMMEL_SPAN_KM`` zu jedem auflösbaren Basis-Platz liegt — Tippfehler-Schutz: ein ferner
+    Falsch-ICAO wird verworfen (degradiert später nur seine Fracht-Zeile auf geteilt), statt die
+    Route/das Event zu sprengen. Basis leer/nicht auflösbar → permissiv (True)."""
+    from app.geo import haversine, icao_to_coords  # lazy
+    c = icao_to_coords(code)
+    if c is None:
+        return False
+    for b in base:
+        bc = icao_to_coords(b)
+        if bc and haversine(c[0], c[1], bc[0], bc[1]) > _MAX_BUMMEL_SPAN_KM:
+            return False
+    return True
+
+
+# Optionale Startplatz-LISTE direkt am Marker (#84): ``Fracht EDDW, EDWG: …`` bindet die Fracht an
+# {EDDW, EDWG}, ``Fracht: …`` bleibt geteilt. Gruppe 1 = ICAO-Liste (optional), Gruppe 2 = Frachtliste.
+_CARGO_MARKER_RE = re.compile(
+    r"fracht(?:\s+([A-Za-z]{4}(?:\s*,\s*[A-Za-z]{4})*))?\s*:\s*(.+)", re.IGNORECASE
+)
 _CARGO_ITEM_RE = re.compile(r"^([\d]+(?:[.,]\d+)?)\s*(?:kg\s+)?(.+)$", re.IGNORECASE)
 
 
@@ -61,7 +79,9 @@ def parse_cargo_lines(description: str) -> list[dict]:
         return []
     out: list[dict] = []
     for m in _CARGO_MARKER_RE.finditer(description):
-        dep = (m.group(1) or "").upper() or None   # Startplatz-Bindung; None = geteilt
+        # #84: Startplatz-LISTE (CSV) — normalisiert (upper, dedup, sortiert); None = geteilt.
+        raw = m.group(1)
+        dep = ",".join(sorted({c.strip().upper() for c in raw.split(",") if c.strip()})) if raw else None
         rest = m.group(2)                          # `.+` matcht bereits nur bis zum Zeilenende
         for chunk in re.split(r",\s+", rest):
             im = _CARGO_ITEM_RE.match(chunk.strip())
@@ -94,19 +114,27 @@ def parse_route(location: str, summary: str, description: str = "") -> tuple[str
     Transportevent freigeschaltet. Die Beschreibung wird mit ausgewertet, damit ein Marker auch
     erkannt wird, wenn er nur dort steht.
     """
-    # #15 Sub-Projekt B: Fracht-Marker-Zeilen (``Fracht EDDW: …``) VOR der ICAO-Sammlung aus der
-    # Beschreibung entfernen — sonst wanderte der Startplatz-ICAO (oder ein Tippfehler darin) in
-    # die Route. Ein echter Startplatz steht ohnehin in location/summary; ein nur im Marker
-    # genannter ICAO gehört nicht in die Strecke (macht die Startort-Validierung sonst zahnlos und
-    # kann via Plausibilitätsprüfung das ganze Event deaktivieren).
+    # Basis-Route (#84): ICAOs aus location/summary/description OHNE die Fracht-Marker-Zeilen. Die
+    # Plausibilität wird NUR hieraus berechnet — ein ferner Marker-Tippfehler darf das Event nicht
+    # via Distanzprüfung deaktivieren (Fable-Fund).
     desc_for_route = _CARGO_MARKER_RE.sub("", description or "")
-    route: list[str] = []
+    base: list[str] = []
     for text in (location or "", summary or "", desc_for_route):
         for code in _ICAO_RE.findall(text):
-            if code not in _ROUTE_STOPWORDS and code not in route:
-                route.append(code)
+            if code not in _ROUTE_STOPWORDS and code not in base:
+                base.append(code)
+    plausible = len(base) >= 2 and _route_is_plausible(base)
+    # Gültige Fracht-Marker-Startplätze (#84) in die Route aufnehmen — nur auflösbar UND nah genug
+    # (Tippfehler-Schutz). Einfügen VOR dem letzten Basis-Platz, damit _default_destination weiter
+    # den mutmaßlichen Zielplatz am Routenende trifft.
+    extra: list[str] = []
+    for m in _CARGO_MARKER_RE.finditer(description or ""):
+        for code in _ICAO_RE.findall(m.group(1) or ""):
+            if code not in _ROUTE_STOPWORDS and code not in base and code not in extra \
+                    and _marker_place_ok(code, base):
+                extra.append(code)
+    route = (base[:-1] + extra + base[-1:]) if (extra and base) else (base + extra)
     text_lc = (summary or "").lower() + "\n" + (description or "").lower()
-    plausible = len(route) >= 2 and _route_is_plausible(route)
     is_bummel = "bummel" in text_lc and plausible
     is_transport = "friesenkutter" in text_lc and plausible
     return ",".join(route), is_bummel, is_transport

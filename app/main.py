@@ -1976,21 +1976,49 @@ async def admin_transport_events(request: Request):
         conn.close()
 
 
+def _validate_transport_manifest(destination: str, cargo: list) -> str | None:
+    """#84: ein manuelles Kutter-Event verlangt ein Ziel + ein Manifest mit Startplätzen je Ware.
+    Gibt eine Fehlermeldung zurück oder ``None``. Jede Fracht-Zeile (Name + Menge > 0) braucht
+    mind. einen Startplatz ≠ Ziel; ohne solche Zeile wäre die abgeleitete Route nur das Ziel und
+    kein Flug zählte."""
+    from app.database import _normalize_icao_list
+    if not destination:
+        return "Ziel-ICAO erforderlich."
+    rows = 0
+    for line in (cargo or []):
+        name = (line.get("name") or "").strip()
+        try:
+            kg = float(line.get("target_kg"))
+        except (TypeError, ValueError):
+            continue
+        if not name or kg <= 0:
+            continue
+        rows += 1
+        if not _normalize_icao_list(line.get("departure"), exclude=destination):
+            return f"Frachtart „{name}“ braucht mindestens einen Startplatz (nicht das Ziel)."
+    if rows == 0:
+        return "Mindestens eine Frachtart mit Menge erforderlich."
+    return None
+
+
 @app.post("/api/admin/transport/events")
 async def admin_create_transport_event(request: Request):
-    """Manuelles Transportevent anlegen (Strecke, Ziel, Zeitfenster, optionales Manifest)."""
+    """Manuelles Transportevent anlegen (Ziel, Zeitfenster, Manifest mit Startplätzen je Ware).
+    #84: keine Strecke mehr — die Route wird aus den Startplätzen der Fracht + Ziel abgeleitet."""
     require_admin(request)
     body = await request.json()
-    route = _normalize_route(body.get("route", ""))
-    if len(route.split(",")) < 2 or not body.get("dtstart"):
-        raise HTTPException(status_code=400, detail="route (≥2 ICAOs) und dtstart erforderlich")
+    dest = str(body.get("destination") or "").strip().upper()
+    if not body.get("dtstart"):
+        raise HTTPException(status_code=400, detail="dtstart erforderlich")
+    err = _validate_transport_manifest(dest, body.get("cargo") or [])
+    if err:
+        raise HTTPException(status_code=400, detail=err)
     conn = get_connection(get_settings().DB_PATH)
     try:
         eid = create_transport_event(
             conn,
             name=body.get("name") or "FriesenKutter",
-            route=route,
-            destination=str(body.get("destination") or "").strip().upper() or None,
+            destination=dest,
             dtstart=body["dtstart"],
             dtend=body.get("dtend") or None,
             cargo=body.get("cargo") or None,
@@ -2003,23 +2031,29 @@ async def admin_create_transport_event(request: Request):
 
 @app.post("/api/admin/transport/events/{event_id}")
 async def admin_update_transport_event(request: Request, event_id: int):
-    """Event bearbeiten (name/route/destination/dtstart/dtend/cargo). cargo ersetzt das Manifest."""
+    """Event bearbeiten (name/destination/dtstart/dtend/cargo). cargo ersetzt das Manifest.
+    #84: keine Strecke mehr — die Route wird aus den Startplätzen abgeleitet."""
     require_admin(request)
     body = await request.json()
     fields: dict = {}
     for k in ("name", "dtstart", "dtend"):
         if k in body:
             fields[k] = body[k]
-    if "route" in body:
-        fields["route"] = _normalize_route(body["route"])
     if "destination" in body:
         fields["destination"] = str(body.get("destination") or "").strip().upper()
     if "cargo" in body:
         fields["cargo"] = body["cargo"]
     conn = get_connection(get_settings().DB_PATH)
     try:
-        if not get_transport_event(conn, event_id):
+        cur = get_transport_event(conn, event_id)
+        if not cur:
             raise HTTPException(status_code=404, detail="Event nicht gefunden")
+        # #84: wird das Manifest geändert, gegen das (ggf. neue) Ziel validieren.
+        if "cargo" in body:
+            dest = fields.get("destination", cur.get("destination")) or ""
+            err = _validate_transport_manifest(dest, body["cargo"])
+            if err:
+                raise HTTPException(status_code=400, detail=err)
         if fields:
             update_transport_event(conn, event_id, **fields)
         # Unbedingt (auch bei leerem Body) — "Event antippen + speichern" ist der bewusste

@@ -840,12 +840,8 @@
                     <input type="text" id="ke-name" placeholder="z.B. Helgoland-Nachschub" required />
                   </div>
                   <div class="form-group">
-                    <label for="ke-route">Strecke (ICAOs, kommagetrennt)</label>
-                    <input type="text" id="ke-route" placeholder="EDWG,EDXH" required />
-                  </div>
-                  <div class="form-group">
                     <label for="ke-dest">Ziel-ICAO (Fracht zählt hierhin)</label>
-                    <input type="text" id="ke-dest" placeholder="EDXH" />
+                    <input type="text" id="ke-dest" placeholder="EDXH" required />
                   </div>
                   <div class="form-group">
                     <label for="ke-dtstart">Start (UTC)</label>
@@ -2094,9 +2090,9 @@
         + '<span class="ke-c-hint" style="color:#8aa0b8;font-size:0.75rem;"></span>'
         + '</div>'
         + '<input type="number" class="ke-c-kg" placeholder="kg" min="0" step="10" style="flex:1;min-width:70px;" />'
-        + '<input type="text" class="ke-c-dep" placeholder="Start ICAO" maxlength="4" '
-        + 'title="Startplatz, an den diese Fracht gebunden ist — leer = von jedem Startplatz ladbar" '
-        + 'style="flex:1;min-width:82px;text-transform:uppercase;" />'
+        + '<input type="text" class="ke-c-dep" placeholder="Start ICAO(s), z.B. EDDW, EDWG" '
+        + 'title="Startplatz/-plätze dieser Fracht (kommagetrennt). Pflicht — die Route entsteht daraus." '
+        + 'style="flex:1;min-width:120px;text-transform:uppercase;" />'
         + '<button type="button" class="btn btn-sm ke-c-del">✕</button>';
       const nameInput = div.querySelector('.ke-c-name');
       const hintSpan = div.querySelector('.ke-c-hint');
@@ -2170,27 +2166,17 @@
     document.getElementById('ke-create-form').addEventListener('submit', async e => {
       e.preventDefault();
       const name = document.getElementById('ke-name').value.trim();
-      const route = document.getElementById('ke-route').value.trim();
-      const dest = document.getElementById('ke-dest').value.trim();
+      const dest = document.getElementById('ke-dest').value.trim().toUpperCase();
       const dtstart = document.getElementById('ke-dtstart').value;
       const dtend = document.getElementById('ke-dtend').value;
-      if (!name || !route || !dtstart) { toast('Name, Strecke und Start sind erforderlich.', true); return; }
       const cargo = keCollectCargo();
-      // #15 Sub-Projekt B: warnen, wenn ein Fracht-Startplatz nicht (mehr) in der Strecke liegt
-      // bzw. das Ziel ist — solche Zeilen werden serverseitig auf „geteilt" (NULL) zurückgesetzt.
-      const routeSet = new Set(route.toUpperCase().split(/[,\s]+/).filter(Boolean));
-      const destU = dest.toUpperCase();
-      const strange = [...new Set(cargo
-        .filter(c => c.departure && (!routeSet.has(c.departure) || c.departure === destU))
-        .map(c => c.departure))];
-      if (strange.length) {
-        const ok = await showModal('Startplatz nicht in der Strecke',
-          'Diese Fracht-Startplätze liegen nicht in der Strecke bzw. sind das Ziel: ' + strange.join(', ')
-          + '. Sie werden als „geteilt" (von jedem Startplatz ladbar) gespeichert. Trotzdem speichern?',
-          'Speichern', false);
-        if (!ok) return;
+      // #84: keine Strecke mehr — die Route wird serverseitig aus den Startplätzen der Fracht + Ziel
+      // abgeleitet. Ziel + mind. eine Frachtart mit Startplatz sind Pflicht.
+      if (!name || !dest || !dtstart) { toast('Name, Ziel und Start sind erforderlich.', true); return; }
+      if (!cargo.length || cargo.some(c => !c.departure)) {
+        toast('Jede Frachtart braucht eine Menge und mindestens einen Startplatz.', true); return;
       }
-      const body = { name, route, destination: dest, dtstart: localToIso(dtstart), cargo };
+      const body = { name, destination: dest, dtstart: localToIso(dtstart), cargo };
       if (dtend) body.dtend = localToIso(dtend);
       const path = _keEditingId ? '/api/admin/transport/events/' + _keEditingId : '/api/admin/transport/events';
       const res = await api('POST', path, body);
@@ -2247,7 +2233,6 @@
       _keEditingId = id;
       document.getElementById('ke-form-title').textContent = 'Event bearbeiten';
       document.getElementById('ke-name').value = ev.name || '';
-      document.getElementById('ke-route').value = ev.route || '';
       document.getElementById('ke-dest').value = ev.destination || '';
       document.getElementById('ke-dtstart').value = isoToLocal(ev.dtstart);
       document.getElementById('ke-dtend').value = isoToLocal(ev.dtend);

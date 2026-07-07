@@ -143,14 +143,29 @@ class TestCargoLines:
             {"name": "Birnen", "target_kg": 300.0, "departure": "EDWG"},
         ]
 
-    def test_cargo_marker_icao_not_added_to_route(self):
-        # #15 B3: der Startort-ICAO im Fracht-Marker darf NICHT in die Route wandern (sonst wäre
-        # die Startort-Validierung zahnlos bzw. ein Tippfehler könnte das Event deaktivieren).
+    def test_multi_icao_marker_binds_both(self):
+        # #84: kommagetrennte Startplatz-Liste am Marker.
+        assert parse_cargo_lines("Fracht EDDW, EDWG: 500 Äpfel") == [
+            {"name": "Äpfel", "target_kg": 500.0, "departure": "EDDW,EDWG"},
+        ]
+
+    def test_near_cargo_marker_icao_added_to_route(self):
+        # #84: ein naher Marker-Startplatz kommt in die Route, das Ziel bleibt am Ende.
         route, _, is_transport = parse_route(
-            "EDWG, EDXH", "FriesenKutter Nachschub",
-            "Fracht EDWG: 300 Birnen\nFracht EDZZ: 100 Müll",
+            "EDWG, EDXH", "FriesenKutter", "Fracht EDWL: 300 Birnen"  # EDWL nah an EDWG
         )
-        assert route == "EDWG,EDXH"       # EDZZ (nur im Fracht-Marker) ist NICHT dabei
+        assert set(route.split(",")) == {"EDWG", "EDWL", "EDXH"}
+        assert route.split(",")[-1] == "EDXH"   # Ziel am Ende (für _default_destination)
+        assert is_transport is True
+
+    def test_far_cargo_marker_icao_rejected_but_event_survives(self):
+        # #84: ein gültiger, aber FERNER Marker-ICAO wird aus der Route verworfen (Distanzfilter) —
+        # kippt aber das Event NICHT (Plausibilität nur aus location/summary).
+        route, _, is_transport = parse_route(
+            "EDWG, EDXH", "FriesenKutter Nachschub", "Fracht KJFK: 300 Bier"  # New York = fern
+        )
+        assert "KJFK" not in route.split(",")
+        assert route == "EDWG,EDXH"
         assert is_transport is True
 
 
