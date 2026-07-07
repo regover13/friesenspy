@@ -2024,6 +2024,14 @@ class TestKutterCreateValidation:
         conn.close()
         assert set(ev["route"].split(",")) == {"EDWG", "EDXH"}
 
+    def test_airports_check_endpoint(self, tmp_path, monkeypatch):
+        # #77: unbekannte ICAOs werden gemeldet, bekannte nicht.
+        client, _ = self._app(tmp_path, monkeypatch)
+        r = client.get("/api/airports/check?codes=EDWG, edxh, EDZZ")
+        assert r.status_code == 200
+        unknown = r.json()["unknown"]
+        assert "EDZZ" in unknown and "EDWG" not in unknown and "EDXH" not in unknown
+
 
 class TestKutterBadgeEndpoints:
     """Integrationstests der Badge-Endpoints (Muster: tests/test_admin_api.py -- Fake-Settings +

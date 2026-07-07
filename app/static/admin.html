@@ -723,6 +723,16 @@
       .form-grid { grid-template-columns: 1fr; }
       .login-box { padding: 24px 20px; }
     }
+    /* #78: mobil-tauglicher Frachtart-Picker (ersetzt die native datalist). */
+    .ke-c-picker { display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+      max-height: 200px; overflow-y: auto; background: #0d1b2a;
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; margin-top: 2px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.5); }
+    .ke-c-opt { padding: 9px 10px; cursor: pointer; font-size: 0.86rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .ke-c-opt:last-child { border-bottom: none; }
+    .ke-c-opt:hover, .ke-c-opt.sel { background: rgba(45,156,219,0.18); }
+    .ke-c-optcap { color: #8aa0b8; font-size: 0.72rem; }
   </style>
 </head>
 <body>
@@ -1308,6 +1318,14 @@
       const dtstart = document.getElementById('nr-dtstart').value;
       const dtend   = document.getElementById('nr-dtend').value;
       if (!name || !route || !dtstart) { toast('Name, Strecke und Start sind erforderlich.', true); return; }
+      // #77: unbekannte Streckenplätze warnen (nicht hart blocken).
+      const unknown = await checkUnknownIcaos(route.split(/[,\s]+/));
+      if (unknown.length) {
+        const ok = await showModal('Unbekannte Flugplätze',
+          'Diese Codes sind keine bekannten Plätze (airportsdata/eigene): ' + unknown.join(', ')
+          + '. Tippfehler? Trotzdem speichern?', 'Speichern', false);
+        if (!ok) return;
+      }
       const body = { name, route, dtstart: localToIso(dtstart) };
       if (dtend) body.dtend = localToIso(dtend);
       const res = await api('POST', '/api/admin/bummel/races', body);
@@ -2084,9 +2102,11 @@
     function keCargoRow(name, kg, departure) {
       const div = document.createElement('div');
       div.className = 'ke-cargo-row';
-      div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;align-items:center;flex-wrap:wrap;';
-      div.innerHTML = '<div style="flex:2;min-width:140px;display:flex;flex-direction:column;gap:2px;">'
-        + '<input type="text" class="ke-c-name" list="ke-cargo-suggestions" placeholder="Frachtart, z.B. Krabbenbrötchen" />'
+      div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;align-items:flex-start;flex-wrap:wrap;';
+      // #78: eigener Picker statt nativer datalist (mobil zuverlässig). Freitext bleibt erlaubt.
+      div.innerHTML = '<div style="flex:2;min-width:140px;position:relative;display:flex;flex-direction:column;gap:2px;">'
+        + '<input type="text" class="ke-c-name" autocomplete="off" placeholder="Frachtart, z.B. Krabbenbrötchen" />'
+        + '<div class="ke-c-picker"></div>'
         + '<span class="ke-c-hint" style="color:#8aa0b8;font-size:0.75rem;"></span>'
         + '</div>'
         + '<input type="number" class="ke-c-kg" placeholder="kg" min="0" step="10" style="flex:1;min-width:70px;" />'
@@ -2099,12 +2119,42 @@
       nameInput.value = name || '';
       if (kg != null && kg !== '') div.querySelector('.ke-c-kg').value = kg;
       if (departure) div.querySelector('.ke-c-dep').value = departure;
-      // Hinweis initial aktualisieren (beim Befüllen bestehender Zeilen).
       updateKeCargoHint(nameInput, hintSpan);
-      // Hinweis bei jedem Input aktualisieren.
-      nameInput.addEventListener('input', () => updateKeCargoHint(nameInput, hintSpan));
+      wireCargoPicker(nameInput, div.querySelector('.ke-c-picker'), hintSpan);
       div.querySelector('.ke-c-del').addEventListener('click', () => div.remove());
       return div;
+    }
+
+    // #78: Frachtart-Such-Picker. Tippen filtert die Katalog-Vorschläge; Antippen füllt das Feld.
+    // Freitext bleibt erlaubt (nicht im Katalog stehende Namen werden akzeptiert). mousedown (nicht
+    // click) für die Auswahl, damit die Auswahl VOR dem blur greift; blur schließt zeitverzögert.
+    function wireCargoPicker(input, picker, hintSpan) {
+      function renderPicker() {
+        const q = input.value.trim().toLowerCase();
+        const items = (_keCatalog || []).filter(c => (c.name || '').toLowerCase().includes(q)).slice(0, 40);
+        picker.innerHTML = '';
+        if (!items.length) { picker.style.display = 'none'; return; }
+        items.forEach(c => {
+          const o = document.createElement('div');
+          o.className = 'ke-c-opt';
+          o.dataset.name = c.name;   // sicher (keine Attribut-Escaping-Falle)
+          o.innerHTML = (c.emoji ? c.emoji + ' ' : '') + escH(c.name)
+            + (c.per_flight_max_kg != null ? ' <span class="ke-c-optcap">max ' + Math.round(c.per_flight_max_kg) + ' kg/Flug</span>' : '');
+          picker.appendChild(o);
+        });
+        picker.style.display = 'block';
+      }
+      input.addEventListener('focus', renderPicker);
+      input.addEventListener('input', () => { renderPicker(); updateKeCargoHint(input, hintSpan); });
+      picker.addEventListener('mousedown', e => {
+        const opt = e.target.closest('.ke-c-opt');
+        if (!opt) return;
+        e.preventDefault();
+        input.value = opt.dataset.name;
+        updateKeCargoHint(input, hintSpan);
+        picker.style.display = 'none';
+      });
+      input.addEventListener('blur', () => { setTimeout(() => { picker.style.display = 'none'; }, 150); });
     }
 
     function updateKeCargoHint(nameInput, hintSpan) {
@@ -2163,6 +2213,17 @@
       keResetForm();
     });
 
+    // #77: ICAO-Liste gegen die bekannten Plätze prüfen; gibt die unbekannten zurück.
+    async function checkUnknownIcaos(codes) {
+      const list = [...new Set((codes || []).map(c => (c || '').trim().toUpperCase()).filter(Boolean))];
+      if (!list.length) return [];
+      try {
+        const res = await fetch('/api/airports/check?codes=' + encodeURIComponent(list.join(',')));
+        if (!res.ok) return [];
+        return (await res.json()).unknown || [];
+      } catch (e) { return []; }
+    }
+
     document.getElementById('ke-create-form').addEventListener('submit', async e => {
       e.preventDefault();
       const name = document.getElementById('ke-name').value.trim();
@@ -2175,6 +2236,14 @@
       if (!name || !dest || !dtstart) { toast('Name, Ziel und Start sind erforderlich.', true); return; }
       if (!cargo.length || cargo.some(c => !c.departure)) {
         toast('Jede Frachtart braucht eine Menge und mindestens einen Startplatz.', true); return;
+      }
+      // #77: unbekannte Flugplätze (Ziel + Startplätze) warnen, nicht hart blocken.
+      const unknown = await checkUnknownIcaos([dest].concat(cargo.flatMap(c => (c.departure || '').split(','))));
+      if (unknown.length) {
+        const ok = await showModal('Unbekannte Flugplätze',
+          'Diese Codes sind keine bekannten Plätze (airportsdata/eigene): ' + unknown.join(', ')
+          + '. Tippfehler? Trotzdem speichern?', 'Speichern', false);
+        if (!ok) return;
       }
       const body = { name, destination: dest, dtstart: localToIso(dtstart), cargo };
       if (dtend) body.dtend = localToIso(dtend);

@@ -967,6 +967,20 @@ async def get_airport_coords(icao: str):
     return {"icao": icao.upper(), "lat": coords[0], "lon": coords[1]}
 
 
+@app.get("/api/airports/check")
+async def check_airports(codes: str = ""):
+    """#77: eine kommagetrennte ICAO-Liste gegen die bekannten Plätze (airportsdata + eigene
+    `custom_airports`) prüfen. Gibt die UNBEKANNTEN Codes zurück (`{"unknown": [...]}`) — für die
+    Warnung an den Platz-Eingaben in Kutter- und Bummel-Editor. Offline, kein Auth nötig."""
+    from app.geo import icao_to_coords
+    unknown: list[str] = []
+    for raw in codes.split(","):
+        c = raw.strip().upper()
+        if c and c not in unknown and icao_to_coords(c) is None:
+            unknown.append(c)
+    return {"unknown": unknown}
+
+
 @app.get("/api/calendar/events")
 async def get_calendar_events_endpoint():
     """FriesenEvents der letzten 365 Tage aus dem Google-Kalender-Cache."""

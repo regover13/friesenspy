@@ -1,5 +1,14 @@
 [
   {
+    "version": "8.15.0",
+    "date": "2026-07-07",
+    "title": "Flugplatz-Prüfung + such-barer Frachtart-Picker im Admin",
+    "items": [
+      "Beim Speichern eines Kutter- oder Bummel-Events werden unbekannte Flugplatz-Codes (Ziel, Startplätze, Strecke) gegen die bekannten Plätze geprüft und vor dem Speichern gewarnt — Tippfehler fallen so früher auf. Bekannte Plätze sind alle aus airportsdata plus die selbst gepflegten Ergänzungs-Flugplätze.",
+      "Die Frachtart-Auswahl im Manifest-Editor ist jetzt ein eigener, mobil-tauglicher Such-Picker: Tippen filtert die Katalog-Vorschläge (mit Emoji + Kappung), Antippen füllt das Feld. Freitext bleibt erlaubt. Ersetzt die native Vorschlagsliste, die auf dem Smartphone unzuverlässig war."
+    ]
+  },
+  {
     "version": "8.14.1",
     "date": "2026-07-07",
     "title": "Fix: Start scheiterte bei bestehenden Events (v8.14.0-Migration)",

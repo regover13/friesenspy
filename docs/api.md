@@ -1120,6 +1120,15 @@ Flugplatz löschen. Gleiche Nebenwirkung (Cache-Invalidierung + voller `rebuild_
 
 **Response** `{"status": "ok"}`
 
+### GET /api/airports/check (v8.15.0/#77)
+
+Prüft eine kommagetrennte ICAO-Liste (`?codes=EDWG,EDXH,…`) gegen die bekannten Plätze
+(`airportsdata` + eigene `custom_airports`) und gibt die **unbekannten** zurück. Offline, kein
+Auth. Genutzt von den Admin-Editoren (Kutter + Bummel), um beim Speichern vor Tippfehler-ICAOs zu
+warnen (weiche Warnung, kein Hard-Block).
+
+**Response** `{"unknown": ["EDZZ", …]}`
+
 ## Admin — Erkennungslücken
 
 Prüfliste (v8.6.0) für Flüge, deren GPS-Start oder -Landung trotz bekanntem Flugplan fehlt —
