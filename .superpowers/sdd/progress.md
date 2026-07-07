@@ -1,26 +1,19 @@
-# SDD-Ledger — Fix v8.1.0 (GPS-Anzeige entkoppeln + Detektor-Korrekturen)
+# SDD-Ledger — #64 Spezial-Events-KPIs im Statistiken-Tab
 
-Branch: feat/gps-display-decouple  (Baseline: 687 tests grün)
-Plan: C:\Users\Tobias\.claude\plans\spicy-splashing-newell.md
+Plan: docs/superpowers/plans/2026-07-07-spezialevents-kpi-statistiken.md
+Basis vor Task 1: fb2c419
 
-## Tasks
-- [x] T1: collapse_same_airport — X->X nur Stop-and-Go absorbieren (a5b5708) [Fable clean]
-- [x] T2: Takeoff-Trigger AGL>500 OR (gs>50 UND steigend) (2872504) [Fable clean]
-- [x] Fable-Review-Nachbesserungen T1/T2 (M1/M3/M4 gefixt; I1 = Doku, Schwelle bewusst 300s)
-- [x] T3: last_pos_ts-Feld (database.py) + cid-Track-Endpoint (main.py) — is_live/Ghost = Frontend
-- [~] T4: /api/events -> canonicalize_legs (#33) — VERSCHOBEN auf v8.2.0 (Nutzer-Entscheidung:
-      scoring-nah, kein Testnetz, groesser -> separat mit Charakterisierungs-Tests)
-- [x] T5 (Piloten-Detail): renderFlightsList GPS-only entkoppelt (Track immer via last_pos_ts,
-      laeuft via _isLiveLeg, Strecke neutral / Plan klickbar / Track klickbar, Ghost-Filter)
-      -- Events-Tabelle Teil von v8.2.0.
-- [x] T6: Changelog v8.1.0 + Docs (api.md/architecture.md) ; Deploy/Verify offen
-- [x] SUMMEN-GATE (Snapshot v8.0.0 vs Branch): legs 1978->2031 (+53 Platzrunden-Splits),
-      block -0.16%, dur +0.47% (genauerer frueher Takeoff), keine absurden Sprünge,
-      dur>block-Verletzungen 4->2 (Fix-Ziel), Reiner 01.07 korrekt 2 Legs. SAUBER.
-
-Design-Notiz: is_live + dur=0-Ghost-Filter sind FRONTEND-Sache (zeitabhaengig, aus last_pos_ts +
-duration_min/distance_nm) — haelt canonicalize_legs deterministisch + cache-sicher.
-Bekannter Minor (Fable M2, nicht gefixt): ground_ref min-verankert + AGL>100 ohne Mindeststeigrate
--> bei alt-Glitch/Hochgebirgsplatz + gs>50 theoretisch Ghost-Takeoff. Braucht Datenfehler; niedrige Prio.
-
-## Log
+- Task 1: complete (commit e7e4250, review clean — 2 reine Aggregatfunktionen + 4 Tests, 848 grün)
+- Task 2: complete (commit cc52ffe, review clean — Endpoint + NULL-dtend-Guard + 2 Tests, 850 grün)
+  - Minor (fürs finale Review, MUSS wegen Symmetrie): Bummel-Zweig nur indirekt (Null-Fall)
+    getestet → im Whole-Branch-Review einen Bummel-Wiring-Test ergänzen (revealed_at+now>=dtend
+    → korrekte race_count/participations/legs/avg).
+- Task 3: complete (commits 5dc3dbe + Fix 237bf56, review clean — Panel + KPI-Render; Important-Fund
+  (early-return-Kopplung) gefixt: fetchSpecialEventStats jetzt in fetchStats unabhängig, 850 grün)
+- Task 4: complete (commit a8f40ae, JSON valide v8.11.0 — api.md + architecture.md + CHANGELOG)
+- Bummel-Wiring-Test ergänzt (commit 2f2bd97, Symmetrie-Lücke geschlossen, 851 grün)
+- Finales Whole-Branch-Review (fable): GO-MIT-ÄNDERUNGEN, keine KRITISCH.
+  - WICHTIG-1 (Blau-Regel): Nutzer wählt neutral/weiß → .stats-kpi-value global auf --text-bright
+    (beide Panels), HINWEIS-2 (Drill-Down-Panel folgt Zeitraum) mitgenommen (commit 97aa967).
+  - HINWEIS-3/4 (nicht-enthülltes-Rennen-Test, Fehlerpfad-Panel) optional, bewusst offen gelassen.
+- Alle Tasks + Fixes fertig, 851 grün. Offen: Tag v8.11.0 + Push (nach Nutzer-OK).
