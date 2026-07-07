@@ -1355,6 +1355,8 @@
         return;
       }
       c.innerHTML = _races.map(r => renderRaceCard(r)).join('');
+      // #77-Erweiterung: Autocomplete an den (dynamisch gerenderten) Bearbeiten-Strecken-Feldern.
+      c.querySelectorAll('input[id^="edit-route-"]').forEach(inp => wireIcaoPicker(inp));
     }
 
     function renderRaceCard(r) {
@@ -2228,7 +2230,7 @@
     // #77-Erweiterung: Autocomplete-Picker für ICAO-Felder (Ziel, Startplätze, Bummel-Strecke).
     // Vervollständigt das AKTUELLE Token (nach dem letzten Komma/Leerzeichen) — für Einzel- UND
     // Mehrfach-ICAO-Felder. Serverabfrage (/api/airports/search), debounced.
-    function wireIcaoPicker(input) {
+    function wireIcaoPicker(input, multi = true) {
       if (!input || input._icaoWired) return;
       input._icaoWired = true;
       const rel = document.createElement('div');
@@ -2270,7 +2272,8 @@
       picker.addEventListener('mousedown', e => {
         const o = e.target.closest('.ke-c-opt'); if (!o) return;
         e.preventDefault();
-        input.value = token().pre + o.dataset.icao;
+        // Bei Mehrfach-Feldern den Trenner gleich anhängen — kein Komma-Tippen nötig.
+        input.value = multi ? (token().pre + o.dataset.icao + ', ') : o.dataset.icao;
         picker.style.display = 'none';
         input.focus();
       });
@@ -2280,8 +2283,8 @@
     // Statische ICAO-Felder (Kutter-Ziel + Bummel-Strecke) einmalig verdrahten.
     (function initIcaoPickers() {
       const doWire = () => {
-        wireIcaoPicker(document.getElementById('ke-dest'));
-        wireIcaoPicker(document.getElementById('nr-route'));
+        wireIcaoPicker(document.getElementById('ke-dest'), false);  // Ziel = einzelner Platz
+        wireIcaoPicker(document.getElementById('nr-route'));         // Strecke = mehrere (default)
       };
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', doWire);
       else doWire();

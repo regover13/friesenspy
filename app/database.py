@@ -4199,7 +4199,12 @@ def _normalize_icao_list(raw, *, exclude: str | None = None) -> str | None:
     entfernt (ein am Ziel startender Flug ist per Rückflug-Filter nie füllbar)."""
     if raw is None:
         return None
-    parts = raw if isinstance(raw, (list, tuple, set)) else str(raw).replace(";", ",").split(",")
+    # Trennung an Komma, Semikolon UND Leerzeichen — der Startort darf mit jedem Trenner getippt
+    # werden (Nutzer-Wunsch: „space statt/oder komma"). Ohne `re` (nicht importiert): Trenner erst
+    # auf Komma vereinheitlichen, dann splitten.
+    parts = raw if isinstance(raw, (list, tuple, set)) else (
+        str(raw).replace(";", ",").replace(" ", ",").replace("\t", ",").split(",")
+    )
     ex = (exclude or "").strip().upper()
     out: list[str] = []
     for p in parts:

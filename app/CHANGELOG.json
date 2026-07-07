@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.16.1",
+    "date": "2026-07-07",
+    "title": "Autocomplete: auch beim Bummel-Bearbeiten + kein Komma-Tippen mehr",
+    "items": [
+      "Das Flugplatz-Autocomplete greift jetzt auch im Bummel-Bearbeiten-Formular (vorher nur beim Neu-Anlegen). Nach einer Auswahl wird der Trenner automatisch angehängt — du kannst sofort den nächsten Platz tippen, ohne selbst ein Komma zu setzen. Startplätze dürfen mit Komma ODER Leerzeichen getrennt werden."
+    ]
+  },
+  {
     "version": "8.16.0",
     "date": "2026-07-07",
     "title": "Flugplatz-Autocomplete an den Platz-Eingaben",
