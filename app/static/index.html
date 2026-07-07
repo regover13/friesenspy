@@ -1319,7 +1319,7 @@
     .stats-kpi-value {
       font-family: var(--text-mono);
       font-size: 1.15rem;
-      color: var(--green);
+      color: var(--text-bright);   /* neutral/weiß — Blau (--green) ist Klickbarem vorbehalten */
       font-weight: 700;
     }
     .stats-kpi-label {
@@ -3926,6 +3926,8 @@ async function fetchStats(_isRetry = false) {
   // nicht zur Übersicht zurückspringen — stattdessen die Detail-Ansicht mit neuem Zeitraum
   // neu laden.
   if (currentStatsCid !== null) {
+    // Spezial-Events-Panel liegt unter dem Drill-Down und muss dem Zeitraumwechsel folgen.
+    fetchSpecialEventStats(Number(document.getElementById('stats-days').value));
     return openPilotFlights(currentStatsCid);
   }
   const days = document.getElementById('stats-days').value;
