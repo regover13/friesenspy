@@ -67,6 +67,26 @@ def is_known_in_airportsdata(icao: str) -> bool:
         return False
 
 
+def search_airports(q: str, limit: int = 20) -> list[dict]:
+    """#77-Erweiterung: ICAO-Präfix-Suche über airportsdata + `custom_airports`. Gibt bis zu
+    ``limit`` Treffer als ``{icao, name}`` (alphabetisch) zurück — für das Autocomplete an den
+    Platz-Eingaben. Leerer/zu kurzer Query → leer."""
+    q = (q or "").strip().upper()
+    if not q:
+        return []
+    try:
+        airports = _airports_icao()
+    except Exception:
+        airports = {}
+    codes = {c for c in _CUSTOM_AIRPORTS if c.startswith(q)}
+    codes |= {c for c in airports if c.startswith(q)}
+    out = []
+    for c in sorted(codes)[:limit]:
+        info = airports.get(c) or {}
+        out.append({"icao": c, "name": info.get("name") or ""})
+    return out
+
+
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Berechnet Großkreis-Distanz zwischen zwei Koordinaten in km.

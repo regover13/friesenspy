@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.16.0",
+    "date": "2026-07-07",
+    "title": "Flugplatz-Autocomplete an den Platz-Eingaben",
+    "items": [
+      "Ziel, Startplätze (Kutter) und Strecke (Bummel) haben jetzt ein Autocomplete: Tippen schlägt passende ICAO-Codes samt Flugplatznamen vor (aus airportsdata + den eigenen Ergänzungs-Plätzen), Antippen füllt ein. Bei mehreren Plätzen wird jeweils der gerade getippte Code vervollständigt. Freitext bleibt möglich."
+    ]
+  },
+  {
     "version": "8.15.0",
     "date": "2026-07-07",
     "title": "Flugplatz-Prüfung + such-barer Frachtart-Picker im Admin",

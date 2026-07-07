@@ -2032,6 +2032,15 @@ class TestKutterCreateValidation:
         unknown = r.json()["unknown"]
         assert "EDZZ" in unknown and "EDWG" not in unknown and "EDXH" not in unknown
 
+    def test_airports_search_endpoint(self, tmp_path, monkeypatch):
+        # #77-Erweiterung: Präfix-Suche fürs Autocomplete.
+        client, _ = self._app(tmp_path, monkeypatch)
+        r = client.get("/api/airports/search?q=edw")
+        assert r.status_code == 200
+        codes = [x["icao"] for x in r.json()["results"]]
+        assert "EDWG" in codes and all(c.startswith("EDW") for c in codes)
+        assert client.get("/api/airports/search?q=").json()["results"] == []
+
 
 class TestKutterBadgeEndpoints:
     """Integrationstests der Badge-Endpoints (Muster: tests/test_admin_api.py -- Fake-Settings +

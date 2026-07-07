@@ -1129,6 +1129,15 @@ warnen (weiche Warnung, kein Hard-Block).
 
 **Response** `{"unknown": ["EDZZ", …]}`
 
+### GET /api/airports/search (v8.16.0/#77)
+
+ICAO-**Präfix-Suche** (`?q=EDW`) über `airportsdata` + eigene `custom_airports`, bis zu 20 Treffer
+mit Flugplatznamen. Offline, kein Auth. Speist das Autocomplete an den Platz-Eingaben (Kutter-Ziel
++ -Startplätze, Bummel-Strecke); bei Mehrfach-ICAO-Feldern wird das gerade getippte Token
+vervollständigt.
+
+**Response** `{"results": [{"icao": "EDWG", "name": "Wangerooge Airport"}, …]}`
+
 ## Admin — Erkennungslücken
 
 Prüfliste (v8.6.0) für Flüge, deren GPS-Start oder -Landung trotz bekanntem Flugplan fehlt —

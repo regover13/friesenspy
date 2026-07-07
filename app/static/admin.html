@@ -2121,6 +2121,7 @@
       if (departure) div.querySelector('.ke-c-dep').value = departure;
       updateKeCargoHint(nameInput, hintSpan);
       wireCargoPicker(nameInput, div.querySelector('.ke-c-picker'), hintSpan);
+      wireIcaoPicker(div.querySelector('.ke-c-dep'));   // #77-Erweiterung: Startplatz-Autocomplete
       div.querySelector('.ke-c-del').addEventListener('click', () => div.remove());
       return div;
     }
@@ -2223,6 +2224,68 @@
         return (await res.json()).unknown || [];
       } catch (e) { return []; }
     }
+
+    // #77-Erweiterung: Autocomplete-Picker für ICAO-Felder (Ziel, Startplätze, Bummel-Strecke).
+    // Vervollständigt das AKTUELLE Token (nach dem letzten Komma/Leerzeichen) — für Einzel- UND
+    // Mehrfach-ICAO-Felder. Serverabfrage (/api/airports/search), debounced.
+    function wireIcaoPicker(input) {
+      if (!input || input._icaoWired) return;
+      input._icaoWired = true;
+      const rel = document.createElement('div');
+      rel.style.cssText = 'position:relative;'
+        + (input.style.flex ? 'flex:' + input.style.flex + ';' : '')
+        + (input.style.minWidth ? 'min-width:' + input.style.minWidth + ';' : '');
+      input.parentNode.insertBefore(rel, input);
+      rel.appendChild(input);
+      input.style.flex = ''; input.style.minWidth = ''; input.style.width = '100%';
+      const picker = document.createElement('div');
+      picker.className = 'ke-c-picker';
+      rel.appendChild(picker);
+      let timer = null;
+      function token() {
+        const v = input.value, i = Math.max(v.lastIndexOf(','), v.lastIndexOf(' '));
+        return { pre: v.slice(0, i + 1), tok: v.slice(i + 1).trim().toUpperCase() };
+      }
+      async function render() {
+        const tok = token().tok;
+        if (tok.length < 1) { picker.style.display = 'none'; return; }
+        let items = [];
+        try {
+          const res = await fetch('/api/airports/search?q=' + encodeURIComponent(tok));
+          if (res.ok) items = (await res.json()).results || [];
+        } catch (e) {}
+        picker.innerHTML = '';
+        if (!items.length) { picker.style.display = 'none'; return; }
+        items.forEach(it => {
+          const o = document.createElement('div');
+          o.className = 'ke-c-opt'; o.dataset.icao = it.icao;
+          o.innerHTML = '<b>' + escH(it.icao) + '</b>'
+            + (it.name ? ' <span class="ke-c-optcap">' + escH(it.name) + '</span>' : '');
+          picker.appendChild(o);
+        });
+        picker.style.display = 'block';
+      }
+      input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(render, 160); });
+      input.addEventListener('focus', render);
+      picker.addEventListener('mousedown', e => {
+        const o = e.target.closest('.ke-c-opt'); if (!o) return;
+        e.preventDefault();
+        input.value = token().pre + o.dataset.icao;
+        picker.style.display = 'none';
+        input.focus();
+      });
+      input.addEventListener('blur', () => setTimeout(() => { picker.style.display = 'none'; }, 160));
+    }
+
+    // Statische ICAO-Felder (Kutter-Ziel + Bummel-Strecke) einmalig verdrahten.
+    (function initIcaoPickers() {
+      const doWire = () => {
+        wireIcaoPicker(document.getElementById('ke-dest'));
+        wireIcaoPicker(document.getElementById('nr-route'));
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', doWire);
+      else doWire();
+    })();
 
     document.getElementById('ke-create-form').addEventListener('submit', async e => {
       e.preventDefault();

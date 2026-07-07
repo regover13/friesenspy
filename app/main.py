@@ -981,6 +981,14 @@ async def check_airports(codes: str = ""):
     return {"unknown": unknown}
 
 
+@app.get("/api/airports/search")
+async def search_airports_endpoint(q: str = ""):
+    """#77-Erweiterung: ICAO-Präfix-Suche (airportsdata + `custom_airports`) fürs Autocomplete an
+    den Platz-Eingaben. `?q=EDW` → bis zu 20 Treffer `{results: [{icao, name}]}`. Offline."""
+    from app.geo import search_airports
+    return {"results": search_airports(q, limit=20)}
+
+
 @app.get("/api/calendar/events")
 async def get_calendar_events_endpoint():
     """FriesenEvents der letzten 365 Tage aus dem Google-Kalender-Cache."""
