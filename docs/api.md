@@ -60,7 +60,7 @@ Flugaktivität über Zeit — für das Liniendiagramm im Statistiken-Tab.
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
-| `days` | int | `30` | Zeitraum in Tagen |
+| `days` | int | `30` | Zeitraum in Tagen; serverseitig auf `1…365` geklemmt (#67, globale Anzeigegrenze) |
 
 Gruppierung: ≤93 Tage → täglich (`%Y-%m-%d`), >93 Tage → monatlich (`%Y-%m`). Alle Perioden werden zurückgegeben (Lücken mit 0 aufgefüllt). Nur FRS*-Callsigns. Aggregiert über `get_cached_flights` (`flight_cache`, materialisierte `canonicalize_legs`-Ergebnisse — GPS-only Phase 2, #23) — dieselbe kanonische Flugmenge wie `/api/stats` und (dort live über `canonicalize_legs`) `/api/pilots/{cid}/flights`: Flüge/Etappen sind aus dem GPS-Track erkannt (echte Landung am Platz), Reconnect-Fragmente ohne Track fallen weiterhin auf die klassische Refile-/Disconnect-Erkennung zurück. Ein noch nicht gelandeter Flug (`logoff_time IS NULL AND connection_closed = false`) wird nicht mitgezählt. Dadurch stimmen die Zahlen über alle Views überein.
 
@@ -90,7 +90,7 @@ Letzter Flug und Fluganzahl pro Pilot. Kombiniert FriesenSpy-Aufzeichnungen und 
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
-| `days` | int | `30` | Zeitraum in Tagen (30, 90, 365) |
+| `days` | int | `30` | Zeitraum in Tagen (UI: 30, 90, 365); serverseitig auf `1…365` geklemmt (#67, globale Anzeigegrenze) |
 | `sort_by` | string | `last_flight` | Sortierfeld: `last_flight`, `flight_count`, `total_duration_min` |
 | `sort_dir` | string | `desc` | Sortierrichtung: `asc` oder `desc` |
 
@@ -136,7 +136,7 @@ Alle Flüge eines Piloten — GPS-only Phase 2 (#23): die Antwort kommt direkt u
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
-| `days` | int | `365` | Zeitraum in Tagen; `0` = Force-Refresh aller 365 Tage |
+| `days` | int | `365` | Anzeigefenster in Tagen; serverseitig auf `1…365` geklemmt (#67). `0` = „letztes Jahr": zeigt genau 365 Tage **und** stößt den vollen StatSim-Refresh an (früher ungekappt). Ältere Legs bleiben in der DB, werden aber nicht angezeigt. |
 
 **Response**
 
@@ -273,8 +273,10 @@ Event-Suche: Wer von den Friesen war in einem bestimmten Zeitraum in der Nähe e
 |-----------|-----|---------|--------------|
 | `icao` | string | — | **Pflicht.** Kommagetrennte ICAO-Codes, z.B. `EDDK,EDDL` — oder `global` für weltweite Suche ohne Radius-Filter |
 | `radius` | float | `150.0` | Suchradius in km (wird bei `icao=global` ignoriert) |
-| `start` | string | `""` | ISO8601 UTC, z.B. `2024-01-01T10:00:00Z` |
+| `start` | string | `""` | ISO8601 UTC, z.B. `2024-01-01T10:00:00Z`. Serverseitig auf frühestens `now − 365 Tage` angehoben (#67); ein leerer/älterer Wert wird auf diese Grenze gesetzt. |
 | `end` | string | `""` | ISO8601 UTC, z.B. `2024-01-01T18:00:00Z` |
+
+**Retention (#67):** Die Event-Analyse durchsucht nur die letzten 365 Tage — das UI lässt kein älteres Datum wählen (`min`-Attribut + Hinweis „Nur die letzten 365 Tage sind durchsuchbar."), das Backend klemmt `start` zusätzlich. Ältere Positionen bleiben in der DB (der tägliche Cleanup ist deaktiviert), sind aber nicht durchsuchbar. Verhindert irreführende Teil-Treffer aus einem bewusst ausgeblendeten Zeitraum.
 
 **Response**
 

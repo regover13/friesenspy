@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.12.0",
+    "date": "2026-07-07",
+    "title": "Einheitliche 365-Tage-Anzeigegrenze für Statistik, Piloten und Event-Analyse",
+    "items": [
+      "Statistiken, Piloten-Flugliste und die Event-Analyse zeigen jetzt einheitlich höchstens die letzten 365 Tage — genau wie schon die Kutter- und Bummel-Übersichten. Der Button „Alle Flüge laden (letztes Jahr)“ lädt jetzt tatsächlich genau ein Jahr, und in der Event-Analyse ist kein Start-/Ende-Datum älter als 365 Tage mehr wählbar (Hinweis „Nur die letzten 365 Tage sind durchsuchbar.“)."
+    ]
+  },
+  {
     "version": "8.11.1",
     "date": "2026-07-07",
     "title": "Spezial-Events-Kennzahlen sitzen jetzt über der Flugaktivität",
@@ -29,7 +37,7 @@
     "title": "Kutter- und Bummel-Übersicht laden schneller — abgeschlossene Events eingefroren",
     "items": [
       "Der Fortschritt abgeschlossener FriesenKutter-Events und die Wertung enthüllter Bummel-Rennen werden jetzt beim Abschluss einmal gespeichert (Snapshot), statt bei jedem Aufruf neu berechnet zu werden. Die Event- und Bummel-Übersicht öffnet dadurch spürbar schneller und wird nicht mehr träge, je mehr abgeschlossene Events sich ansammeln.",
-      "Übersichten zeigen die Einträge der letzten 12 Monate; ältere werden ausgeblendet (nichts wird gelöscht).",
+      "Übersichten zeigen die Einträge der letzten 12 Monate.",
       "Eine Korrektur an einem abgeschlossenen Event oder Rennen greift, sobald es im Admin erneut gespeichert wird."
     ]
   },

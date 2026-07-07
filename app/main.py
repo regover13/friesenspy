@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from app.auth import ADMIN_COOKIE, check_password, make_admin_token, verify_admin_token
 from app.config import get_settings
 from app.database import (
+    _DATA_RETENTION_DAYS,
     aggregate_bummel_kpis,
     aggregate_kutter_kpis,
     apply_bummel_overrides,
@@ -335,6 +336,7 @@ async def get_live(request: Request):
 @app.get("/api/stats/activity")
 async def get_stats_activity_endpoint(days: int = 30):
     """Flugaktivität über Zeit für Chart — gruppiert nach Tag/Woche/Monat."""
+    days = _clamp_retention_days(days)  # #67: nie über die globale 365-Tage-Anzeigegrenze
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
@@ -356,6 +358,7 @@ async def get_stats_endpoint(
     """Flugstunden pro Pilot. ?days=30|90|365&sort_by=...&sort_dir=asc|desc"""
     if sort_by not in _STATS_SORT_FIELDS:
         sort_by = "last_flight"
+    days = _clamp_retention_days(days)  # #67: nie über die globale 365-Tage-Anzeigegrenze
     reverse = sort_dir != "asc"
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
@@ -435,6 +438,11 @@ async def get_events(
     """
     icao_list = [code.strip().upper() for code in icao.split(",") if code.strip()]
     global_search = icao_list == ["GLOBAL"]
+
+    # #67: kein Suchfenster älter als die globale 365-Tage-Anzeigegrenze. Die älteren Positionen
+    # bleiben in der DB (Cleanup deaktiviert), sind aber nicht durchsuchbar — verhindert
+    # irreführende Teil-Treffer aus einem Zeitraum, der bewusst ausgeblendet ist.
+    start = _clamp_retention_start(start, _now_iso())
 
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
@@ -618,7 +626,9 @@ async def get_pilot_flights(cid: int, days: int = 90, background_tasks: Backgrou
     conn = get_connection(settings.DB_PATH)
     statsim_status = "no-key"
     try:
-        display_days = days if days > 0 else 99999
+        # #67: „letztes Jahr" (days=0) und jeder größere Wert werden auf die globale 365-Tage-
+        # Anzeigegrenze gekappt — ältere Legs bleiben in der DB, werden aber nicht angezeigt.
+        display_days = _clamp_retention_days(days) if days > 0 else _DATA_RETENTION_DAYS
 
         if settings.STATSIM_API_KEY:
             if days == 0:
@@ -1756,6 +1766,21 @@ def _retention_since(now: str) -> str:
     from app.database import _DATA_RETENTION_DAYS
     dt = datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_timezone.utc)
     return (dt - timedelta(days=_DATA_RETENTION_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _clamp_retention_days(days: int) -> int:
+    """Zeitraum-Parameter auf die globale Anzeigegrenze klemmen (#67): 1 … ``_DATA_RETENTION_DAYS``.
+    Ältere Daten bleiben in der DB (Cleanup ist deaktiviert), werden aber nicht angezeigt."""
+    from app.database import _DATA_RETENTION_DAYS
+    return max(1, min(days, _DATA_RETENTION_DAYS))
+
+
+def _clamp_retention_start(start: str, now: str) -> str:
+    """Events-Startgrenze (#67): kein Start älter als ``now`` − ``_DATA_RETENTION_DAYS``. Ein leerer
+    oder zu alter Start wird auf die Grenze angehoben — die älteren Daten existieren weiterhin,
+    sind aber nicht durchsuchbar. String-Vergleich ist gültig (beide ISO-Z, gleiche Länge)."""
+    floor = _retention_since(now)
+    return floor if (not start or start < floor) else start
 
 
 def _frozen_or_compute(conn, kind: str, ref_id: int, *, finished: bool, compute_fn, now: str) -> dict:

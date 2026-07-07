@@ -1700,6 +1700,9 @@
           <button class="btn btn-primary" id="events-search-btn">Suchen</button>
         </div>
       </div>
+      <div style="font-size:0.75rem;color:var(--text-dim);margin-top:2px;">
+        Nur die letzten 365 Tage sind durchsuchbar.
+      </div>
     </div>
 
     <div id="events-results" class="hidden">
@@ -5003,6 +5006,11 @@ function setDefaultEventDates() {
   const fmt  = d => d.toISOString().slice(0, 16);
   document.getElementById('ev-end').value   = fmt(now);
   document.getElementById('ev-start').value = fmt(past);
+  // #67: kein Datum älter als 365 Tage wählbar (globale Anzeigegrenze; die Daten bleiben in
+  // der DB erhalten, sind aber nicht durchsuchbar). Backend klemmt zusätzlich serverseitig.
+  const floor = fmt(new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000));
+  document.getElementById('ev-start').min = floor;
+  document.getElementById('ev-end').min   = floor;
 }
 setDefaultEventDates();
 

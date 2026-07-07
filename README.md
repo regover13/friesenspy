@@ -251,7 +251,7 @@ Der **FriesenKutter** ist ein kleines „FSE für Friesen": ein Transportflug-Ev
 - **Reservierung, Teilnehmerliste & verlorene Fracht:** Wer Richtung Ziel abhebt, reserviert seine Zuladung sofort sichtbar im Balken (»davon X kg unterwegs«); eine Teilnehmerliste zeigt wer fliegt, angekommen ist oder zurückkehrt. Wer sein Ziel nie erreicht, verliert die Ladung — »Kutter versunken« oder »geklaut«, im Feed und in der Bilanz sichtbar. Der Erkennungs-Umkreis ist der feste, globale 4-km-Radius (siehe oben) — es gibt keinen separat einstellbaren Radius mehr pro Event.
 - **Forum-Badge nach der Feierabend-Bilanz:** Sobald ein Event abgeschlossen ist, bekommt jeder Teilnehmer ein rundes Badge-PNG „Voll beladen!" (Callsign, Flugzeugmuster, gelieferte kg) — bei verlorener Fracht zusätzlich mit Verlust-Titel **SPITZBOOV!** (geklaut), **BADEMESTER!** (versenkt) oder **SEEROVER!** (beides). Im Events-Tab erscheinen dafür je Teilnehmer **🎖 Badge** (öffnet das PNG) und **📋 Forum** (kopiert den BBCode) über dem Flug-Feed — analog zum Bummel-Badge.
 - **Status im Admin:** Die Admin-Event-Liste zeigt pro Event ein Status-Badge — **Geplant** (vor `dtstart`), **Läuft** (zwischen `dtstart` und `dtend`), **Wartet** (`dtend` erreicht, Feierabend-Bilanz aber noch nicht erstellt — z. B. Nachzügler in der Luft) oder **Feierabend** (Bilanz erstellt). Rein admin-seitig, keine Änderung am Piloten-Frontend.
-- **Eingefroren nach Feierabend (v8.10.0):** Der Fortschritt eines Events mit erstellter Bilanz wird beim Abschluss einmal gespeichert (Snapshot) statt bei jedem Aufruf neu berechnet — die Übersicht lädt dadurch spürbar schneller. Eine nachträgliche Korrektur greift, sobald das Event im Admin erneut gespeichert wird (auch ohne Feldänderung). Übersichten zeigen zudem nur die letzten 12 Monate (ältere Events werden ausgeblendet, nicht gelöscht).
+- **Eingefroren nach Feierabend (v8.10.0):** Der Fortschritt eines Events mit erstellter Bilanz wird beim Abschluss einmal gespeichert (Snapshot) statt bei jedem Aufruf neu berechnet — die Übersicht lädt dadurch spürbar schneller. Eine nachträgliche Korrektur greift, sobald das Event im Admin erneut gespeichert wird (auch ohne Feldänderung). Übersichten zeigen zudem nur die letzten 12 Monate.
 
 ## 🔔 Benachrichtigungen (Push Notifications)
 
@@ -386,10 +386,9 @@ FriesenSpy kombiniert zwei Datenquellen:
 | **Flugplan (DEP/ARR)** | ✅ | ✅ |
 | **Flugdauer** | ✅ | ✅ |
 | **Verfügbarkeit** | Nur wenn FriesenSpy läuft | Letztes Jahr via API |
-| **GPS-Aufbewahrung** | Dauerhaft | Dauerhaft (nach erstem Abruf) |
 | **Fluganzahl in Statistiken** | ✅ gezählt | ✅ gezählt (Duplikate gefiltert) |
 
-**FriesenSpy (Live):** Jede VATSIM-Position wird alle 15 Sekunden abgerufen und gespeichert. Das ergibt einen präzisen GPS-Track für jeden Flug. Flugdaten bleiben **dauerhaft** in der Datenbank.
+**FriesenSpy (Live):** Jede VATSIM-Position wird alle 15 Sekunden abgerufen und gespeichert. Das ergibt einen präzisen GPS-Track für jeden Flug.
 
 **StatSim:** Eine öffentliche Datenbank mit historischen VATSIM-Flügen ([statsim.net](https://statsim.net)). FriesenSpy fragt StatSim ergänzend ab, um Flüge zu finden, die vor dem Start von FriesenSpy stattgefunden haben oder bei einem Serverausfall nicht aufgezeichnet wurden. StatSim liefert GPS-Tracks, die beim ersten Abruf lokal gespeichert werden.
 
