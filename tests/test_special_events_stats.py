@@ -1,0 +1,86 @@
+"""Wiring-Test für GET /api/stats/special-events — Aggregation über abgeschlossene Spezial-Events."""
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import app.main as main
+from app.database import (
+    get_connection, init_db, create_transport_event, set_transport_summarized,
+    write_progress_snapshot,
+)
+
+
+def _iso(dt): return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _patch(monkeypatch, db):
+    monkeypatch.setattr(main, "get_settings",
+                        lambda: SimpleNamespace(DB_PATH=db, CALLSIGN_PREFIX="FRS"))
+
+
+def test_special_events_only_finished_in_window(tmp_path, monkeypatch):
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    conn = get_connection(db)
+
+    # (a) abgeschlossener Kutter IM Fenster, mit Fracht + Verlusten
+    dtend_ok = _iso(now - timedelta(days=2))
+    eid = create_transport_event(conn, name="Nachschub", route="EDWG,EDXH",
+                                 dtstart=_iso(now - timedelta(days=2, hours=3)),
+                                 dtend=dtend_ok, destination="EDXH")
+    set_transport_summarized(conn, eid, dtend_ok)
+    write_progress_snapshot(conn, "kutter", eid, {
+        "flight_count": 3, "total_kg": 900.0,
+        "participants": [{"cid": 1}, {"cid": 2}],
+        "losses": [{"loss_kind": "sunk", "lost_kg": 200.0}],
+        "flights": [], "cargo": [], "route": ["EDWG", "EDXH"], "destination": "EDXH",
+        "target_kg": None, "loaded_count": 2,
+    }, dtend_ok)
+
+    # (b) abgeschlossener Kutter AUSSERHALB des 30-Tage-Fensters -> zählt nicht
+    dtend_old = _iso(now - timedelta(days=200))
+    eid2 = create_transport_event(conn, name="Alt", route="EDWG,EDXH",
+                                  dtstart=_iso(now - timedelta(days=200, hours=3)),
+                                  dtend=dtend_old, destination="EDXH")
+    set_transport_summarized(conn, eid2, dtend_old)
+    write_progress_snapshot(conn, "kutter", eid2, {
+        "flight_count": 9, "total_kg": 5000.0, "participants": [{"cid": 9}],
+        "losses": [], "flights": [], "cargo": [], "route": ["EDWG", "EDXH"],
+        "destination": "EDXH", "target_kg": None, "loaded_count": 9,
+    }, dtend_old)
+
+    # (c) laufender Kutter (kein summarized_at) -> zählt nicht
+    create_transport_event(conn, name="Laeuft", route="EDWG,EDXH",
+                           dtstart=_iso(now - timedelta(hours=1)),
+                           dtend=_iso(now + timedelta(hours=3)), destination="EDXH")
+    conn.commit()
+    conn.close()
+
+    res = asyncio.run(main.get_special_events_stats(days=30))
+
+    assert res["kutter"]["event_count"] == 1          # nur (a)
+    assert res["kutter"]["flights"] == 3
+    assert res["kutter"]["participations"] == 2
+    assert res["kutter"]["delivered_kg"] == 900.0
+    assert res["kutter"]["sunk_kg"] == 200.0 and res["kutter"]["sunk_count"] == 1
+    assert res["kutter"]["stolen_count"] == 0
+    # Bummel leer -> Nullstruktur
+    assert res["bummel"]["race_count"] == 0
+    assert res["bummel"]["avg_absolute_min"] is None
+
+
+def test_special_events_shape(tmp_path, monkeypatch):
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch(monkeypatch, db)
+    res = asyncio.run(main.get_special_events_stats(days=365))
+    assert set(res.keys()) == {"kutter", "bummel"}
+    assert set(res["kutter"].keys()) == {
+        "event_count", "participations", "flights", "delivered_kg",
+        "sunk_kg", "sunk_count", "stolen_kg", "stolen_count"}
+    assert set(res["bummel"].keys()) == {
+        "race_count", "participations", "legs", "avg_absolute_min"}

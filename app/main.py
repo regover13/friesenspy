@@ -18,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from app.auth import ADMIN_COOKIE, check_password, make_admin_token, verify_admin_token
 from app.config import get_settings
 from app.database import (
+    aggregate_bummel_kpis,
+    aggregate_kutter_kpis,
     apply_bummel_overrides,
     audit_gps_vs_refile,
     canonicalize_flights,
@@ -366,6 +368,47 @@ async def get_stats_endpoint(
     else:
         stats.sort(key=lambda x: x.get(sort_by) or 0, reverse=reverse)
     return stats
+
+
+@app.get("/api/stats/special-events")
+async def get_special_events_stats(days: int = 30):
+    """Aggregierte Kennzahlen beider Spezial-Events (FriesenKutter + FriesenFliegerBummel) im
+    Zeitfenster — NUR abgeschlossene Events/Rennen, bedient aus den #66-Snapshots (kein
+    Track-Recompute). ?days=30|90|365."""
+    if days not in (30, 90, 365):
+        days = 30
+    now = _now_iso()
+    since = (datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_timezone.utc)
+             - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    settings = get_settings()
+    prefix = settings.CALLSIGN_PREFIX
+    conn = get_connection(settings.DB_PATH)
+    try:
+        # --- FriesenKutter: abgeschlossen (summarized_at) & dtend im Fenster ---
+        k_progresses = []
+        for ev in list_transport_events(conn, since=since):
+            if not ev.get("summarized_at") or (ev.get("dtend") or "") < since:
+                continue
+            p = _kutter_progress(conn, ev, now, prefix)
+            if (p.get("flight_count") or 0) > 0:
+                k_progresses.append(p)
+        kutter = aggregate_kutter_kpis(k_progresses)
+
+        # --- FriesenFliegerBummel: revealed_at & now>=dtend & dtend im Fenster ---
+        update_bummel_reveals(conn, now, callsign_prefix=prefix)
+        b_views = []
+        for race in list_bummel_races(conn, since=since):
+            dtend = race.get("dtend") or ""
+            if not race.get("revealed_at") or now < dtend or dtend < since:
+                continue
+            v = _bummel_view(conn, race, now)
+            if (v.get("participant_count") or 0) > 0:
+                b_views.append(v)
+        bummel = aggregate_bummel_kpis(b_views)
+
+        return {"kutter": kutter, "bummel": bummel}
+    finally:
+        conn.close()
 
 
 @app.get("/api/events")
