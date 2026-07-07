@@ -31,6 +31,13 @@ liest die **fertigen** Progress-/View-Dicts (`_kutter_progress` / `_bummel_view`
 **Nur Events mit echter Aktivität zählen** (verhindert, dass leere Test-Events die Anzahl
 verfälschen): Kutter nur mit `flight_count > 0`, Bummel nur mit `participant_count > 0`.
 
+**NULL-`dtend`-Guard (Fable-Fund, WICHTIG — sonst 500):** Das Schema erlaubt `dtend = NULL`
+(Legacy-Zeilen); ein Python-Vergleich `dtend >= since` bzw. `now >= dtend` auf `None` wirft
+`TypeError` → 500 für den ganzen Endpoint. Daher: `since` als Parameter an `list_transport_events`
+/`list_bummel_races` übergeben (der SQL-`since`-Filter mit NULL-Guard existiert schon, #66) und im
+Python-Filter defensiv `(row.get("dtend") or "")` verwenden. **NULL-`dtend`-Events werden
+ausgeschlossen** (ein reguläres Spezial-Event ist nie ohne effektives Ende abgeschlossen).
+
 ## Kacheln (Reihenfolge exakt)
 
 Die **erste Kachel jeder Zeile ist die Eventart** — Label = Eventname, Wert = Anzahl
@@ -61,6 +68,21 @@ in „Flüge" (Kachel 3) mitgezählt.
 
 „Absoluter Durchschnitt" ist die Bummel-Terminologie für die Zeit, an der sich der Sieger
 orientiert (`average_min` je Rennen). Kachel 4 = arithmetisches Mittel dieser Renn-Durchschnitte.
+**`count>0`-Filter ist zwingend** (Fable-Fund): `average_min` ist bei 0 kompletten Touren `0.0`
+(nicht `None`) — ohne den Filter würden Null-Rennen den Ø nach unten ziehen.
+
+**Definition Teilnahmen vs. Flüge (Fable-Fund, WICHTIG — messen bewusst verschiedene Mengen):**
+„Teilnahmen" = `participant_count` der eingefrorenen View (inkl. zum Freeze-Zeitpunkt nur als
+*unterwegs* gemeldeter Piloten, **exkl. disqualifizierter** — konsistent mit dem, was die Renn-
+Detailseite/`/api/bummel/races` zeigt). „Flüge" = nur die **gewerteten Tour-Legs**
+(`Σ leg_count`, erster Strecken-Start bis letzte Strecken-Landung — Positionierungs-/`in_progress`-
+Legs zählen nicht). Beide Definitionen bewusst so übernehmen (keine Sonder-Neuberechnung),
+Disqualifizierte werden **nicht** extra eingerechnet.
+
+**Achtung „Flüge"-Semantik unterscheidet sich zwischen den Untergruppen** (Fable-Fund, Doku):
+Kutter „Flüge" = **alle** `network`-Zeilen (Hin-/Rückflüge + separate Verlust-Einträge); Bummel
+„Flüge" = **nur Tour-Legs**. Beides je Event-Logik korrekt; die gleiche Kachel-Beschriftung ist
+Absicht (Aktivitäts-Zahl), die unterschiedliche Zählbasis in `docs/api.md` festhalten.
 
 ## Backend
 
@@ -83,6 +105,12 @@ Verlust-Aufschlüsselung: aus `progress["losses"]` (Liste mit `loss_kind` ∈ su
 `lost_kg`). `sunk_kg = Σ lost_kg where loss_kind=="sunk"`, `sunk_count = count(...)`; stolen analog.
 `returned` wird ignoriert.
 
+**Defensive Feld-Zugriffe (Fable-Fund):** Snapshots sind JSON-Payloads — durchgängig `.get(...)`
+mit Defaults verwenden: `progress.get("losses", [])`, `progress.get("participants", [])`,
+`view.get("complete", [])` / `view.get("incomplete", [])`, je Teilnehmer
+`e.get("leg_count", len(e.get("legs", [])))`. Schützt gegen Payload-Drift ohne Versions-Bump.
+`avg_absolute_min` ist `None`, wenn kein Rennen `count>0` hat (Frontend zeigt „—").
+
 ### `app/main.py` — ein Endpoint
 
 ```
@@ -92,11 +120,17 @@ GET /api/stats/special-events?days=30|90|365   (öffentlich, kein Admin)
     "bummel": {race_count, participations, legs, avg_absolute_min} }
 ```
 
-- `days` validieren (Whitelist `{30,90,365}`, Default 30 — wie `/api/stats`).
-- Kutter: `list_transport_events(conn)` → filter `summarized_at` & `dtend>=since`, je Event
-  `_kutter_progress(conn, ev, now, prefix)`, nur `flight_count>0` behalten → `aggregate_kutter_kpis`.
-- Bummel: `list_bummel_races(conn)` → filter `revealed_at` & `now>=dtend` & `dtend>=since`, je
-  Rennen `_bummel_view(conn, race, now)`, nur `participant_count>0` → `aggregate_bummel_kpis`.
+- `days` validieren (Whitelist `{30,90,365}`, Default 30). **Anders als `/api/stats`** (das
+  `days` gar nicht validiert): die Whitelist ist hier nötig, weil `days>365` die 365-Tage-
+  Retention der Snapshots überschreiten würde (Fable-Fund — Wording korrigiert).
+- Kutter: `list_transport_events(conn, since=since)` → filter `summarized_at` gesetzt &
+  `(dtend or "")>=since`, je Event `_kutter_progress(conn, ev, now, prefix)`, nur `flight_count>0`
+  behalten → `aggregate_kutter_kpis`.
+- Bummel: **zuerst `update_bummel_reveals(conn, now)`** (Fable-Fund — alle bestehenden Bummel-
+  Endpoints latchen Reveals vor dem Lesen; sonst hinkt der KPI dem Poll-Intervall hinterher),
+  dann `list_bummel_races(conn, since=since)` → filter `revealed_at` gesetzt & `now>=(dtend or "")`
+  & `(dtend or "")>=since`, je Rennen `_bummel_view(conn, race, now)`, nur `participant_count>0`
+  → `aggregate_bummel_kpis`.
 
 ## Frontend (`app/static/index.html`)
 
@@ -137,6 +171,20 @@ Neues Panel **„Spezial-Events"** unter den bestehenden Flug-Statistiken, optis
 - Git-Tag `v8.11.0`; vor `git push origin main` kurze Nutzer-Bestätigung.
 - `docs/api.md`: neuer Abschnitt `GET /api/stats/special-events`.
 - `docs/architecture.md`: Aggregatfunktionen + Datenquelle (Snapshot-Reuse) dokumentieren.
+
+## Kosten & Datenhorizont (Fable-Fund, präzisiert)
+
+„Billig" gilt, weil `/api/transport/events` und `/api/bummel/races` denselben 365-Tage-Bestand
+ohnehin bei jedem Aufruf iterieren und lazy-freezen — der KPI-Endpoint erzeugt keinen neuen
+Compute-Bestand. Zwei bewusst akzeptierte Vorbehalte:
+
+- **Erste Anfrage nach `_PROGRESS_SNAPSHOT_VERSION`-Bump ist teuer:** dann sind alle Snapshots
+  ungültig und die erste 365-Tage-Anfrage rechnet jedes Event einmal neu (ein `canonicalize_legs`
+  je Event, seriell) — identisch zum Verhalten von `/api/transport/events`, kein neuer Kostenpfad.
+- **KPI-Zahlen = exakt die eingefrorenen Event-Bilanzen.** Für Alt-Events, die vor #66
+  abgeschlossen wurden und deren `position_history` unter der früheren Retention bereits gelöscht
+  war, gilt der (ggf. datenhorizont-bedingt unvollständige) Snapshot-Stand — konsistent mit dem,
+  was die Event-Detailseiten heute zeigen, aber keine rückwirkend „perfekte" Bilanz.
 
 ## Bewusst NICHT im Scope
 
