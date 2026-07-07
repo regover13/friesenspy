@@ -2014,6 +2014,12 @@ class TestKutterCreateValidation:
                                 "cargo": [{"name": "A", "target_kg": 100}]})  # kein Startplatz
         assert r.status_code == 400
 
+    def test_rejects_multiple_destinations(self, tmp_path, monkeypatch):
+        client, _ = self._app(tmp_path, monkeypatch)
+        r = self._post(client, {"dtstart": START, "destination": "EDXH, EDWY",  # zwei Ziele
+                                "cargo": [{"name": "A", "target_kg": 100, "departure": "EDWG"}]})
+        assert r.status_code == 400
+
     def test_valid_create_derives_route(self, tmp_path, monkeypatch):
         client, dbp = self._app(tmp_path, monkeypatch)
         r = self._post(client, {"dtstart": START, "destination": "EDXH",

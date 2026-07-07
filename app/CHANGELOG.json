@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.16.2",
+    "date": "2026-07-07",
+    "title": "Mehrere Ziele im Ziel-Feld werden jetzt abgelehnt",
+    "items": [
+      "Trug man versehentlich mehr als ein Ziel-ICAO ins Ziel-Feld ein, wurde das als ein kaputter Code gespeichert und die Zählung still verfälscht. Das wird jetzt beim Speichern mit klarer Meldung abgelehnt (ein Kutter-Event hat genau ein Ziel)."
+    ]
+  },
+  {
     "version": "8.16.1",
     "date": "2026-07-07",
     "title": "Autocomplete: auch beim Bummel-Bearbeiten + kein Komma-Tippen mehr",

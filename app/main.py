@@ -2006,6 +2006,11 @@ def _validate_transport_manifest(destination: str, cargo: list) -> str | None:
     from app.database import _normalize_icao_list
     if not destination:
         return "Ziel-ICAO erforderlich."
+    # Genau EIN Ziel — mehrere würden als ein kaputter Code gespeichert und die Zählung still
+    # verfälschen (mehrere Ziele sind bewusst nicht unterstützt).
+    dest_codes = _normalize_icao_list(destination)
+    if dest_codes and "," in dest_codes:
+        return "Nur ein Ziel-ICAO erlaubt (mehrere Ziele werden nicht unterstützt)."
     rows = 0
     for line in (cargo or []):
         name = (line.get("name") or "").strip()
