@@ -109,13 +109,20 @@ Fortschritts-/Verlustzahlen bleiben identisch. Das ist eine Invariante und wird 
 alle gelten:
 - `loaded` ist False, **und**
 - sie trägt **kein** `loss_kind` (ist nicht der Verlust-Träger ihrer Verbindung), **und**
+- `dep` ≠ `destination` — ein Bein, das **am Ziel gestartet** ist, ist ein leerer **Rückflug**
+  (0 kg) und bleibt **immer** sichtbar (Nutzer-Definition 2026-07-07), **und**
 - dieselbe Verbindung (`_conn_logon`) ist im Feed bereits durch eine **behaltene** Zeile
   vertreten — entweder eine **Lieferung** (`loaded=True`) derselben Verbindung **oder** eine
   **offene Reservierung** derselben Verbindung (noch verbunden).
 
-Damit bleibt pro Verbindung genau die *eine* aussagekräftige Zeile: Lieferung, offene Reise oder
-Verlust. Ein eigenständiger Rückflug (Verbindung zu, keine Reservierung, keine Lieferung) hat
-keine behaltene Geschwister-Zeile und bleibt daher wie bisher sichtbar — außerhalb des Scopes.
+Damit bleibt pro Verbindung genau die *eine* aussagekräftige Zeile plus jeder echte Rückflug:
+Lieferung, offene Reise, Verlust — und ein Rückflug (`dep == dest`) als eigene 0-kg-Zeile.
+
+**Rückflug bleibt sichtbar — auch im selben Connection-Umlauf.** Liefert ein Pilot EDDW→EDWY und
+fliegt **ohne Logout** zurück (EDWY→EDDW in derselben Verbindung), so trägt das Rückflug-Bein
+zwar eine behaltene Geschwister-Zeile (die Lieferung), wird aber wegen `dep == dest` **nicht**
+unterdrückt. Ebenso bleibt ein eigenständiger Rückflug (eigene Verbindung, keine Reservierung,
+keine Lieferung) sichtbar.
 
 **Y2 — „am Start" → „unterwegs".** Ein an einem Wegpunkt geparkter Pilot, dessen offene
 Verbindung **schon mindestens ein Strecken-Bein abgeschlossen** hat (erkennbar an einem
@@ -174,6 +181,8 @@ Live-Takt rutschen Nr. 2/3/4 eine Sorte nach vorne (2 Äpfel+1 Birne / 3 Birnen 
   identisch (Anzeige-only).
 - Eigenständiger Rückflug (keine Geschwister-Zeile) bleibt sichtbar (kein versehentliches
   Ausblenden).
+- Rückflug im selben Umlauf: Lieferung EDDW→EDWY + Rückflug EDWY→EDDW ohne Logout — die
+  Rückflug-Zeile (`dep == dest`) bleibt trotz behaltener Lieferungs-Geschwisterzeile sichtbar.
 - Verlust-Träger-Zeile einer geschlossenen Verbindung wird nicht unterdrückt.
 
 ## Stehende Regeln (Projekt)
