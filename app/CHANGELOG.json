@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.11.0",
+    "date": "2026-07-07",
+    "title": "Neue Spezial-Events-Kennzahlen im Statistiken-Tab",
+    "items": [
+      "Der Statistiken-Tab zeigt jetzt eine eigene Sektion \"Spezial-Events\" mit Kennzahlen für beide Spezial-Events: FriesenKutter (Teilnahmen, Flüge, gelieferte Tonnage, versunkene und geklaute Fracht) und FriesenFliegerBummel (Teilnahmen, Flüge, Ø absoluter Durchschnitt). Die Zahlen richten sich nach dem gewählten Zeitraum und umfassen nur abgeschlossene Events."
+    ]
+  },
+  {
     "version": "8.10.1",
     "date": "2026-07-07",
     "title": "Abschlussspruch abgeschlossener Kutter wird nach „Sprüche neu“ wieder erzeugt",

@@ -115,6 +115,19 @@ Letzter Flug und Fluganzahl pro Pilot. Kombiniert FriesenSpy-Aufzeichnungen und 
 
 ---
 
+## GET /api/stats/special-events
+
+Aggregierte Kennzahlen beider Spezial-Events im Zeitfenster (`?days=30|90|365`, Default 30, Whitelist —
+`days>365` würde die Snapshot-Retention überschreiten). NUR abgeschlossene Events/Rennen, bedient aus den
+#66-Snapshots (kein Track-Recompute). Antwort:
+`{"kutter": {event_count, participations, flights, delivered_kg, sunk_kg, sunk_count, stolen_kg, stolen_count},
+  "bummel": {race_count, participations, legs, avg_absolute_min}}`.
+Abgrenzung: Kutter „Flüge" = alle Flug-/Verlust-Zeilen (`flight_count`); Bummel „Flüge" = gewertete Tour-Legs
+(`Σ leg_count`). `returned` (zurückgebracht) ist kein Verlust (0 kg). `avg_absolute_min` ist `null` ohne
+gewertetes Rennen. NULL-`dtend`-Events werden ausgeschlossen.
+
+---
+
 ## GET /api/pilots/{cid}/flights
 
 Alle Flüge eines Piloten — GPS-only Phase 2 (#23): die Antwort kommt direkt und live (ungecacht) aus `canonicalize_legs` (`callsign_prefix=""`, zeigt also auch Flüge unter einem Nicht-FRS-Callsign desselben Piloten). Abheben und Landung werden primär aus dem GPS-Track erkannt (echte Landung an einem Flugplatz, auch Zwischenlandungen ohne neuen Flugplan als eigene Zeile); fehlt ein Track, greift der refile-/disconnect-basierte Fallback (Reconnect-Merge). FriesenSpy-eigene Aufzeichnungen und StatSim-Historik werden dedupliziert kombiniert. Antwortet **sofort**; StatSim-Update läuft im Hintergrund (letzter 31-Tage-Chunk). Response-Header `X-StatSim-Status: fresh | updating | no-key`.
