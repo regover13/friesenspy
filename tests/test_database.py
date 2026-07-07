@@ -2480,3 +2480,68 @@ def test_list_bummel_races_retention():
 
     recent = db.list_bummel_races(conn, since="2025-07-06T00:00:00Z")
     assert {r["id"] for r in recent} == {2}
+
+
+# ---------------------------------------------------------------------------
+# Aggregatfunktionen (Task 1: Spezial-Events-KPI-Statistiken)
+# ---------------------------------------------------------------------------
+
+from app.database import aggregate_kutter_kpis, aggregate_bummel_kpis
+
+
+def test_aggregate_kutter_kpis_sums_and_splits_losses():
+    progresses = [
+        {  # aktives, gültiges Event
+            "flight_count": 4, "total_kg": 1200.0,
+            "participants": [{"cid": 1}, {"cid": 2}],
+            "losses": [
+                {"loss_kind": "sunk", "lost_kg": 300.0},
+                {"loss_kind": "stolen", "lost_kg": 150.0},
+                {"loss_kind": "returned", "lost_kg": 0.0},  # kein Verlust, ignoriert
+            ],
+        },
+        {  # leeres Event -> zählt NICHT (flight_count 0)
+            "flight_count": 0, "total_kg": 0.0, "participants": [], "losses": [],
+        },
+    ]
+    r = aggregate_kutter_kpis(progresses)
+    assert r["event_count"] == 1
+    assert r["participations"] == 2
+    assert r["flights"] == 4          # inkl. Verlust-Zeilen (Teil von flight_count)
+    assert r["delivered_kg"] == 1200.0
+    assert r["sunk_kg"] == 300.0 and r["sunk_count"] == 1
+    assert r["stolen_kg"] == 150.0 and r["stolen_count"] == 1
+
+
+def test_aggregate_kutter_kpis_empty_is_zero():
+    r = aggregate_kutter_kpis([])
+    assert r == {"event_count": 0, "participations": 0, "flights": 0,
+                 "delivered_kg": 0.0, "sunk_kg": 0.0, "sunk_count": 0,
+                 "stolen_kg": 0.0, "stolen_count": 0}
+
+
+def test_aggregate_bummel_kpis_sums_legs_and_avg():
+    views = [
+        {"participant_count": 3, "count": 2, "average_min": 90.0,
+         "complete": [{"leg_count": 3}, {"leg_count": 3}],
+         "incomplete": [{"leg_count": 1}]},
+        {"participant_count": 2, "count": 1, "average_min": 60.0,
+         "complete": [{"leg_count": 2}], "incomplete": []},
+        {"participant_count": 0, "count": 0, "average_min": 0.0,  # leer -> ignoriert
+         "complete": [], "incomplete": []},
+    ]
+    r = aggregate_bummel_kpis(views)
+    assert r["race_count"] == 2
+    assert r["participations"] == 5
+    assert r["legs"] == 3 + 3 + 1 + 2      # 9
+    assert r["avg_absolute_min"] == 75.0   # (90 + 60) / 2
+
+
+def test_aggregate_bummel_kpis_avg_none_without_scored_race():
+    views = [{"participant_count": 2, "count": 0, "average_min": 0.0,
+              "complete": [], "incomplete": [{"leg_count": 1}, {"leg_count": 1}]}]
+    r = aggregate_bummel_kpis(views)
+    assert r["race_count"] == 1
+    assert r["participations"] == 2
+    assert r["legs"] == 2
+    assert r["avg_absolute_min"] is None

@@ -4491,6 +4491,63 @@ def event_summary_context(event: dict, progress: dict) -> dict:
     }
 
 
+def aggregate_kutter_kpis(progresses: list[dict]) -> dict:
+    """Aggregiert fertige compute_transport_progress-/Snapshot-Dicts abgeschlossener Kutter-Events
+    zu KPI-Summen. Rein (keine DB). Nur Events mit flight_count>0 zählen (leere Test-Events
+    verfälschen die Anzahl nicht). `returned`-Verluste sind kg-neutral und werden nicht als
+    Verlust gezählt (aber ihre Flug-Zeile steckt in flight_count)."""
+    event_count = participations = flights = 0
+    delivered_kg = sunk_kg = stolen_kg = 0.0
+    sunk_count = stolen_count = 0
+    for p in progresses:
+        if (p.get("flight_count") or 0) <= 0:
+            continue
+        event_count += 1
+        participations += len(p.get("participants", []))
+        flights += p.get("flight_count") or 0
+        delivered_kg += p.get("total_kg") or 0.0
+        for l in p.get("losses", []):
+            kg = l.get("lost_kg") or 0.0
+            if l.get("loss_kind") == "sunk":
+                sunk_kg += kg
+                sunk_count += 1
+            elif l.get("loss_kind") == "stolen":
+                stolen_kg += kg
+                stolen_count += 1
+    return {
+        "event_count": event_count,
+        "participations": participations,
+        "flights": flights,
+        "delivered_kg": round(delivered_kg, 1),
+        "sunk_kg": round(sunk_kg, 1), "sunk_count": sunk_count,
+        "stolen_kg": round(stolen_kg, 1), "stolen_count": stolen_count,
+    }
+
+
+def aggregate_bummel_kpis(views: list[dict]) -> dict:
+    """Aggregiert fertige _bummel_view-/Snapshot-Dicts abgeschlossener (enthüllter) Rennen zu
+    KPI-Summen. Rein (keine DB). Nur Rennen mit participant_count>0 zählen. „Flüge" = gewertete
+    Tour-Legs (Σ leg_count über complete+incomplete). „Ø Absoluter Durchschnitt" = Mittel der
+    average_min NUR über Rennen mit count>0 (average_min ist bei 0 Touren 0.0, nicht None)."""
+    race_count = participations = legs = 0
+    avg_values: list[float] = []
+    for v in views:
+        if (v.get("participant_count") or 0) <= 0:
+            continue
+        race_count += 1
+        participations += v.get("participant_count") or 0
+        for e in list(v.get("complete", [])) + list(v.get("incomplete", [])):
+            legs += e.get("leg_count", len(e.get("legs", []) or []))
+        if (v.get("count") or 0) > 0:
+            avg_values.append(v.get("average_min") or 0.0)
+    return {
+        "race_count": race_count,
+        "participations": participations,
+        "legs": legs,
+        "avg_absolute_min": round(sum(avg_values) / len(avg_values), 1) if avg_values else None,
+    }
+
+
 def _set_transport_latch(conn: sqlite3.Connection, event_id: int, column: str, ts: str) -> bool:
     """Latch-Spalte setzen, nur wenn noch NULL. True, wenn in diesem Aufruf neu gesetzt."""
     cur = conn.execute(
