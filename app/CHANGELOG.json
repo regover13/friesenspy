@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.16.4",
+    "date": "2026-07-07",
+    "title": "Bummel-Strecke darf Plätze wiederholen (Rundkurs)",
+    "items": [
+      "Korrektur zu v8.16.3: In der Bummel-Strecke bleiben Wiederholungen und Reihenfolge erhalten — eine Strecke ist eine Sequenz und darf legitim wieder am Start enden (z. B. EDWG, EDWA, EDWB, EDWA, EDWG). Nur beim Kutter-Startplatz (einer Menge von Ladeplätzen) werden Dubletten weiterhin entfernt."
+    ]
+  },
+  {
     "version": "8.16.3",
     "date": "2026-07-07",
     "title": "Doppelte Plätze in der Bummel-Strecke werden entfernt",

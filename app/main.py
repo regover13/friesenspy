@@ -1760,15 +1760,16 @@ async def admin_delete_override(request: Request, race_id: int, cid: int):
 # ---------------------------------------------------------------------------
 
 def _normalize_route(raw: str) -> str:
-    """Freitext ('EDWG EDWA EDWA' / 'edwg,edxh') → normalisierte, **deduplizierte** ICAO-CSV.
-    Reihenfolge bleibt erhalten (beim Bummel ist die Strecke eine Sequenz); Trenner Komma,
-    Semikolon ODER Leerzeichen; leere Teile entfallen."""
-    out: list[str] = []
-    for c in str(raw or "").replace(";", ",").replace(" ", ",").split(","):
-        c = c.strip().upper()
-        if c and c not in out:
-            out.append(c)
-    return ",".join(out)
+    """Freitext ('EDWG EDWA EDWG' / 'edwg,edxh') → normalisierte ICAO-CSV. **Reihenfolge UND
+    Wiederholungen bleiben erhalten** — eine Bummel-Strecke ist eine Sequenz und darf legitim
+    Plätze wiederholen bzw. wieder am Start enden (Rundkurs). Trenner Komma/Semikolon/Leerzeichen;
+    leere Teile entfallen. (Kutter-Startplätze werden dagegen als Menge dedupliziert, s.
+    _normalize_icao_list.)"""
+    return ",".join(
+        c.strip().upper()
+        for c in str(raw or "").replace(";", ",").replace(" ", ",").split(",")
+        if c.strip()
+    )
 
 
 def _transport_event_meta(ev: dict, progress: dict) -> dict:
