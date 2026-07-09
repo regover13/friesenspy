@@ -406,6 +406,9 @@
     /* Fracht je Startplatz (#15 Sub-Projekt B): Gruppen-Überschrift — neutral (kein Klick-Blau). */
     .kutter-grp-h { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.03em; color: var(--text-label); margin: 8px 0 2px; }
     .kutter-grp-h.kutter-grp-total { color: var(--text-bright); }
+    /* Abschnitts-Überschrift über den Startplatz-Teilbalken: Trennlinie oben grenzt die
+       Aufschlüsselung sichtbar vom Gesamtblock ab (gegen den „überladen"-Eindruck). */
+    .kutter-grp-h.kutter-grp-section { color: var(--text-bright); margin-top: 14px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.10); }
     .kutter-feed td.kf-empty { color: var(--text-label); font-style: italic; }
     .kutter-feed td.kf-kg { color: #7ee6bd; text-align: right; }
     .kutter-total { font-family: var(--text-mono); font-size: 0.82rem; color: var(--text-bright); margin-bottom: 4px; }
@@ -3087,7 +3090,7 @@ async function fetchKutterActive() {
     // Flugplan, sondern die Aneinanderreihung der Ladeplätze). Stattdessen prominent NUR das Ziel,
     // wohin alle Fracht soll; die Reise je Fracht (Ladeplatz → Ziel) steht in der Tabelle unten.
     html += `<div class="bb-sub" style="font-weight:600;font-size:1.05em;">🎯 Ziel: ${escHtml(d.destination || '—')}</div>`;
-    html += _kutterBarAndTotals(d);
+    html += _kutterBarAndTotals(d, false);  // Live: nur Gesamtbalken; Aufschlüsselung steckt im Detail
     // Aktive Piloten: gerade unterwegs / angekommen (noch verbunden) / auf dem Rückflug.
     const active = [];
     (d.flights || []).forEach(f => {
@@ -4713,14 +4716,16 @@ function _kSegLegend(items, totalTarget, sub) {
   return '<div class="' + barCls + '">' + segs + '</div><div class="' + legCls + '">' + legend + '</div>';
 }
 
-function _kutterBarAndTotals(d) {
+function _kutterBarAndTotals(d, showBreakdown = true) {
   let bar = '';
   if (d.cargo && d.cargo.length) {
     const items = d.cargo.map((c, i) => ({ c, gi: i }));
     const totalTarget = d.cargo.reduce((s, c) => s + c.target_kg, 0) || 1;
     // Nach Startplatz gruppieren ('' = geteilt). Gibt es KEINE gebundene Fracht (Legacy/rein
     // geteilt), bleibt es ein einziger Balken wie bisher — sonst Gesamtbalken + je Startplatz
-    // ein Block (#15 Sub-Projekt B).
+    // ein Block (#15 Sub-Projekt B). `showBreakdown=false` (kompakter Live-Banner) zeigt NUR den
+    // einen Gesamtbalken — die Aufschlüsselung je Abholplatz lebt in der Detail-Ansicht, damit
+    // der Live-Banner nicht überladen wirkt (Nutzer-Fund 09.07.: „Live = Kurzblick, Detail = Tiefe").
     const groups = new Map();
     items.forEach(it => {
       const k = it.c.departure || '';
@@ -4728,10 +4733,13 @@ function _kutterBarAndTotals(d) {
       groups.get(k).push(it);
     });
     const hasBound = [...groups.keys()].some(k => k);
-    if (!hasBound) {
+    if (!hasBound || !showBreakdown) {
       bar = _kSegLegend(items, totalTarget);
     } else {
       bar = '<div class="kutter-grp-h kutter-grp-total">Gesamt</div>' + _kSegLegend(items, totalTarget);
+      // Überschrift über die untergeordneten Startplatz-Blöcke — trennt „das große Ganze" (Gesamt)
+      // sichtbar von der Aufschlüsselung, damit die Teilbalken nicht als flache, überladene Liste wirken.
+      bar += '<div class="kutter-grp-h kutter-grp-section">Je Abholplatz</div>';
       const keys = [...groups.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
       keys.forEach(k => {
         const grp = groups.get(k);

@@ -49,6 +49,30 @@ class TestEventSummaryPrompt:
             llm.event_summary(context)
         assert "Verluste: keine — alles kam heil an" in captured["user"]
 
+    def test_prompt_frames_destination_not_route_chain(self):
+        # Live-Fund 09.07.: die KI textete „auf der Runde EDWG-EDWL-EDXH-EDXP", weil der Prompt die
+        # Streckenplätze als Kette fütterte. Jetzt: Ziel als Anker, Abholplätze getrennt, plus
+        # explizite Ansage, es NICHT als Runde darzustellen.
+        captured = {}
+
+        def fake_chat(system, user, max_tokens):
+            captured["user"] = user
+            return "Spruch"
+
+        context = {
+            "name": "Multi-Kutter", "destination": "EDWG",
+            "pickups": ["EDWL", "EDXH", "EDXP"],
+            "total_kg": 618, "loaded_count": 4, "cargo": ["🦐 Krabbenbrötchen 368/500 kg"],
+            "pilots": {"Tobias": 4}, "lost_total_kg": 0.0, "verluste": [],
+        }
+        with patch.object(llm, "_chat", side_effect=fake_chat):
+            llm.event_summary(context)
+        u = captured["user"]
+        assert "EDWG" in u                              # Ziel als Anker
+        assert "EDWL, EDXH, EDXP" in u                   # Abholplätze getrennt gelistet
+        assert "KEINE geflogene Route" in u             # Anti-Runde-Ansage steht im Prompt
+        assert "↔" not in u                             # keine irreführende Pfeil-Kette mehr
+
 
 class TestFlightQuipPrompt:
     """#67-Folgefund: der EINZELflug-Spruch (flight_quip) ignorierte das im Kontext bereits

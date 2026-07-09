@@ -4676,8 +4676,11 @@ def event_summary_context(event: dict, progress: dict) -> dict:
             for c in progress.get("cargo", [])
         ],
         "pilots": per_pilot,
-        "route": " ↔ ".join(progress.get("route", [])),
+        # KEINE Routen-Kette mehr (irreführend, #12/Live-Fund 09.07.): die aneinandergereihten
+        # Streckenplätze — inkl. Ziel — verleiteten die KI zu „auf der Runde A-B-C-D", obwohl es keine
+        # geflogene Runde ist. Stattdessen Ziel als Anker + Abholplätze (Route ohne Ziel) getrennt.
         "destination": progress.get("destination"),
+        "pickups": [p for p in progress.get("route", []) if p != progress.get("destination")],
         "lost_total_kg": progress.get("lost_total_kg", 0.0),
         "verluste": [
             (f"{(l.get('name') or l.get('callsign') or '?').split()[0]}: "

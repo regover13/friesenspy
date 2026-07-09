@@ -1,5 +1,15 @@
 [
   {
+    "version": "8.22.1",
+    "date": "2026-07-10",
+    "title": "FriesenKutter: aufgeräumte Live-Ansicht + ehrlicher Feierabend-Text",
+    "items": [
+      "🧹 Der Live-Banner zeigt jetzt nur noch den Gesamtbalken — die Aufschlüsselung je Abholplatz ist in die Detail-Ansicht (Events) gewandert, wo Platz dafür ist. Der Kurzblick in Live wirkt dadurch deutlich ruhiger; die Tiefe bleibt einen Klick entfernt.",
+      "🏷️ Über den Teilbalken je Abholplatz steht in der Detail-Ansicht jetzt die Überschrift „Je Abholplatz“ mit Trennlinie — die Aufschlüsselung ist klar vom Gesamtblock abgesetzt.",
+      "🦐 Der launige Feierabend-Text erfindet keine „Runde EDWG-EDWL-EDXH-EDXP“ mehr: Die KI bekommt das Ziel als Anker und die Abholplätze getrennt, plus die klare Ansage, dass das keine geflogene Rundstrecke ist."
+    ]
+  },
+  {
     "version": "8.22.0",
     "date": "2026-07-09",
     "title": "FriesenKutter: Beladung schon am Boden am Abholplatz sichtbar",

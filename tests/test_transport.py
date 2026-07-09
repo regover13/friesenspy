@@ -2026,6 +2026,16 @@ class TestLossQuipContext:
         ctx = event_summary_context({"name": "Test"}, prog)
         assert ctx["lost_total_kg"] == 292.0 and any("Kutter versunken" in v for v in ctx["verluste"])
 
+    def test_summary_context_pickups_exclude_destination(self):
+        # #12/Live-Fund: keine irreführende Routen-Kette mehr — Ziel als Anker, Abholplätze (Route
+        # ohne Ziel) getrennt, damit die KI keine „Runde A-B-C-D" erfindet.
+        prog = {"flights": [], "cargo": [], "route": ["EDWG", "EDWL", "EDXH", "EDXP"],
+                "destination": "EDWG", "total_kg": 0, "loaded_count": 0}
+        ctx = event_summary_context({"name": "Test"}, prog)
+        assert ctx["destination"] == "EDWG"
+        assert ctx["pickups"] == ["EDWL", "EDXH", "EDXP"]   # Ziel NICHT in den Abholplätzen
+        assert "route" not in ctx                            # keine Ketten-Route mehr im Kontext
+
 
 # --- Kutter-Forum-Badge (#18) -----------------------------------------------
 

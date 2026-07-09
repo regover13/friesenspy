@@ -371,7 +371,8 @@ def event_summary(context: dict) -> str | None:
     pilots = ", ".join(f"{k}: {v}" for k, v in (c.get("pilots") or {}).items()) or "—"
     lines = [
         f"Event: {c.get('name') or '?'}",
-        f"Strecke: {c.get('route') or '?'} (Ziel {c.get('destination') or '?'})",
+        f"Ziel (dorthin geht ALLE Fracht): {c.get('destination') or '?'}",
+        f"Abholplätze (Fracht wird dort geladen): {', '.join(c.get('pickups') or []) or '—'}",
         f"Gesamt bewegt: {c.get('total_kg')} kg in {c.get('loaded_count')} Frachtflügen",
         f"Fracht: {', '.join(c.get('cargo') or []) or '—'}",
         f"Piloten (Flüge): {pilots}",
@@ -384,6 +385,9 @@ def event_summary(context: dict) -> str | None:
     user = (
         "Schreibe eine kurze, launige Tagesend-Zusammenfassung (1–2 Sätze) für die "
         "Friesen — wie viel Fracht zusammen bewegt wurde, mit einem Augenzwinkern. "
+        "Die Abholplätze sind KEINE geflogene Route oder Rundstrecke — jeder Kutter fliegt von genau "
+        "EINEM Abholplatz zum Ziel. Stelle es NIEMALS als Runde/Streckenkette dar (kein »auf der Runde "
+        "A-B-C-D«) und reihe die Plätze nicht mit Pfeilen/Bindestrichen aneinander. "
         "WICHTIG: Wenn es Verluste gab, MUSST du sie erwähnen (wer, versunken/geklaut, wie viel) "
         "und darfst NICHT behaupten, alles sei heil angekommen oder niemand habe etwas verloren — "
         "das wäre ein Widerspruch zu den Fakten. Fakten:\n- "
