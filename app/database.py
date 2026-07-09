@@ -245,6 +245,7 @@ CREATE TABLE IF NOT EXISTS aircraft_payloads (
     mtow_kg     REAL,                    -- editierbar, aus Claude vorbefüllt
     empty_kg    REAL,
     fuel_kg     REAL,                    -- Tankinhalt (editierbar) — Default halber Tank
+    fuel_full_kg REAL,                   -- max. Tankinhalt (volle Tanks); fuel_kg = Hälfte davon
     crew_kg     REAL,                    -- Pilot/Crew (editierbar) — Default 85 kg, zählt nicht als Fracht
     payload_kg  REAL NOT NULL,           -- = max(0, mtow_kg − empty_kg − fuel_kg − crew_kg); direkt überschreibbar
     source      TEXT,                    -- 'manual' | 'llm' | 'default'
@@ -414,6 +415,8 @@ _TRANSPORT_MIGRATIONS = [
     "ALTER TABLE transport_events ADD COLUMN destination TEXT",
     # crew_kg: Pilot/Crew-Gewicht — zählt nicht als Fracht (payload = mtow − empty − fuel − crew).
     "ALTER TABLE aircraft_payloads ADD COLUMN crew_kg REAL",
+    # fuel_full_kg: max. Tankinhalt (volle Tanks); fuel_kg bleibt das Rechenfeld (Hälfte davon).
+    "ALTER TABLE aircraft_payloads ADD COLUMN fuel_full_kg REAL",
     # Phase 2: Fracht-Manifest um Emoji + Co-Load-Kappung, Event um Tagesend-Spruch.
     "ALTER TABLE transport_cargo ADD COLUMN emoji TEXT",
     "ALTER TABLE transport_cargo ADD COLUMN per_flight_max_kg REAL",
@@ -601,6 +604,16 @@ def init_db(db_path: str) -> None:
                         "UPDATE flights SET aircraft_short = ? WHERE id = ?",
                         (normalized, row[0]),
                     )
+        except sqlite3.OperationalError:
+            pass
+        # Alt-Daten: fuel_full_kg gab es vor v8.17.0 nicht — fuel_kg war bislang schon der
+        # halbe Tank, also fuel_full_kg = fuel_kg * 2 (idempotent, WHERE greift nach dem
+        # ersten Lauf nicht mehr).
+        try:
+            conn.execute(
+                "UPDATE aircraft_payloads SET fuel_full_kg = fuel_kg * 2 "
+                "WHERE fuel_full_kg IS NULL AND fuel_kg IS NOT NULL"
+            )
         except sqlite3.OperationalError:
             pass
         # Kuratierte Flugzeug-Specs vorbefüllen (idempotent, überschreibt nie manuelle Zeilen).
@@ -3932,8 +3945,8 @@ def list_aircraft_payloads(conn: sqlite3.Connection) -> list[dict]:
     Nicht-endliche Werte (inf/nan) werden defensiv zu ``None`` — so kann kein einzelner kaputter
     Datensatz die JSON-Serialisierung der ganzen Liste zum Absturz bringen (v8.8.1)."""
     rows = conn.execute(
-        "SELECT type_code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model, updated_at "
-        "FROM aircraft_payloads ORDER BY type_code"
+        "SELECT type_code, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg, source, "
+        "make_model, updated_at FROM aircraft_payloads ORDER BY type_code"
     ).fetchall()
     return [{k: _finite_or_none(v) for k, v in dict(r).items()} for r in rows]
 
@@ -3979,10 +3992,10 @@ def seed_curated_payloads(conn: sqlite3.Connection) -> int:
         r = _build_result(str(spec.get("make_model") or code), mtow, empty, fuel_full)
         cur = conn.execute(
             """INSERT OR IGNORE INTO aircraft_payloads
-                   (type_code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'curated', ?, ?)""",
-            (code, r["mtow_kg"], r["empty_kg"], r["fuel_kg"], r["crew_kg"], r["payload_kg"],
-             r["make_model"], _now_utc()),
+                   (type_code, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg, source, make_model, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'curated', ?, ?)""",
+            (code, r["mtow_kg"], r["empty_kg"], r["fuel_kg"], r["fuel_full_kg"], r["crew_kg"],
+             r["payload_kg"], r["make_model"], _now_utc()),
         )
         inserted += cur.rowcount
     return inserted
@@ -3996,6 +4009,7 @@ def upsert_payload(
     mtow_kg: float | None = None,
     empty_kg: float | None = None,
     fuel_kg: float | None = None,
+    fuel_full_kg: float | None = None,
     crew_kg: float | None = None,
     source: str = "manual",
     make_model: str | None = None,
@@ -4012,9 +4026,9 @@ def upsert_payload(
         return
     # Nicht-endliche Werte (inf/nan) nie speichern — sonst sprengt ein einziger die Zuladungs-
     # Liste beim JSON-Encoding (v8.8.1, Härtung an der Eingangsseite).
-    mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg = (
+    mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg = (
         _finite_or_none(mtow_kg), _finite_or_none(empty_kg), _finite_or_none(fuel_kg),
-        _finite_or_none(crew_kg), _finite_or_none(payload_kg),
+        _finite_or_none(fuel_full_kg), _finite_or_none(crew_kg), _finite_or_none(payload_kg),
     )
     if crew_kg is None:
         crew_kg = _CREW_KG_DEFAULT
@@ -4022,13 +4036,13 @@ def upsert_payload(
         payload_kg = max(0.0, (mtow_kg or 0.0) - (empty_kg or 0.0) - (fuel_kg or 0.0) - (crew_kg or 0.0))
     conn.execute(
         """INSERT INTO aircraft_payloads
-               (type_code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               (type_code, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg, source, make_model, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(type_code) DO UPDATE SET
                mtow_kg=excluded.mtow_kg, empty_kg=excluded.empty_kg, fuel_kg=excluded.fuel_kg,
-               crew_kg=excluded.crew_kg, payload_kg=excluded.payload_kg, source=excluded.source,
-               make_model=excluded.make_model, updated_at=excluded.updated_at""",
-        (code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model, _now_utc()),
+               fuel_full_kg=excluded.fuel_full_kg, crew_kg=excluded.crew_kg, payload_kg=excluded.payload_kg,
+               source=excluded.source, make_model=excluded.make_model, updated_at=excluded.updated_at""",
+        (code, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg, source, make_model, _now_utc()),
     )
 
 

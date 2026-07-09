@@ -2600,3 +2600,44 @@ def test_seed_idempotent(tmp_path, monkeypatch):
     cnt = conn.execute("SELECT COUNT(*) c FROM aircraft_payloads WHERE type_code='ZTST'").fetchone()["c"]
     assert cnt == 1
     conn.close()
+
+
+def test_upsert_stores_fuel_full(tmp_path):
+    from app import database
+    db = str(tmp_path / "t.db"); database.init_db(db)
+    conn = database.get_connection(db)
+    database.upsert_payload(conn, "ZFUL", mtow_kg=1000, empty_kg=600, fuel_kg=50,
+                            fuel_full_kg=100, crew_kg=85, source="manual")
+    conn.commit()
+    row = conn.execute("SELECT fuel_kg, fuel_full_kg FROM aircraft_payloads WHERE type_code='ZFUL'").fetchone()
+    assert abs(row["fuel_kg"] - 50) < 0.5
+    assert abs(row["fuel_full_kg"] - 100) < 0.5
+    conn.close()
+
+
+def test_fuel_full_backfill(tmp_path):
+    from app import database
+    db = str(tmp_path / "t.db"); database.init_db(db)
+    conn = database.get_connection(db)
+    conn.execute("INSERT INTO aircraft_payloads (type_code, fuel_kg, payload_kg, fuel_full_kg, source) "
+                 "VALUES ('ZBACK', 60, 100, NULL, 'manual')")
+    conn.commit(); conn.close()
+    database.init_db(db)  # Backfill läuft erneut (idempotent)
+    conn = database.get_connection(db)
+    row = conn.execute("SELECT fuel_full_kg FROM aircraft_payloads WHERE type_code='ZBACK'").fetchone()
+    assert abs(row["fuel_full_kg"] - 120) < 0.5
+    conn.close()
+
+
+def test_seed_stores_fuel_full(tmp_path, monkeypatch):
+    from app import database
+    db = str(tmp_path / "t.db"); database.init_db(db)
+    conn = database.get_connection(db)
+    monkeypatch.setattr(database, "load_curated_specs", lambda: {
+        "ZTST": {"make_model": "Test-Muster", "mtow_kg": 1111, "empty_kg": 743, "fuel_full_kg": 144},
+    })
+    database.seed_curated_payloads(conn); conn.commit()
+    row = conn.execute("SELECT fuel_kg, fuel_full_kg FROM aircraft_payloads WHERE type_code='ZTST'").fetchone()
+    assert abs(row["fuel_full_kg"] - 144) < 0.5   # Max
+    assert abs(row["fuel_kg"] - 72) < 0.5          # Hälfte
+    conn.close()
