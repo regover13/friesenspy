@@ -40,6 +40,7 @@ from app.database import (
     get_transport_cargo,
     set_transport_live_arrival,
     get_transport_live_arrivals,
+    _latch_hits_flight,
     active_transport_destinations,
     open_transport_flights,
     transport_event_started,
@@ -569,7 +570,7 @@ class TestLiveArrivalLatch:
         ev = _event(conn)
         set_transport_live_arrival(conn, 42, START, ev["id"], "2026-07-01T10:00:00Z")
         conn.commit()
-        assert get_transport_live_arrivals(conn, ev["id"]) == {(42, START)}
+        assert set(get_transport_live_arrivals(conn, ev["id"])) == {(42, START)}
 
     def test_insert_or_ignore_is_idempotent(self):
         conn = _make_conn()
@@ -577,7 +578,7 @@ class TestLiveArrivalLatch:
         set_transport_live_arrival(conn, 42, START, ev["id"], "2026-07-01T10:00:00Z")
         set_transport_live_arrival(conn, 42, START, ev["id"], "2026-07-01T11:00:00Z")
         conn.commit()
-        assert get_transport_live_arrivals(conn, ev["id"]) == {(42, START)}
+        assert set(get_transport_live_arrivals(conn, ev["id"])) == {(42, START)}
 
     def test_get_scoped_to_event(self):
         conn = _make_conn()
@@ -587,7 +588,7 @@ class TestLiveArrivalLatch:
         )
         set_transport_live_arrival(conn, 42, START, ev1["id"], "2026-07-01T10:00:00Z")
         conn.commit()
-        assert get_transport_live_arrivals(conn, ev2) == set()
+        assert set(get_transport_live_arrivals(conn, ev2)) == set()
 
     def test_active_transport_destinations_filters_by_time_window(self):
         conn = _make_conn()
@@ -662,7 +663,7 @@ class TestCheckLiveArrival:
         lat, lon = icao_to_coords("EDXH")
         check_live_arrival(conn, 42, START, lat, lon, 1.5, self._events(ev["id"]))
         conn.commit()
-        assert get_transport_live_arrivals(conn, ev["id"]) == {(42, START)}
+        assert set(get_transport_live_arrivals(conn, ev["id"])) == {(42, START)}
 
     def test_within_radius_but_too_fast_does_not_latch(self):
         from app.geo import icao_to_coords
@@ -671,7 +672,7 @@ class TestCheckLiveArrival:
         lat, lon = icao_to_coords("EDXH")
         check_live_arrival(conn, 42, START, lat, lon, 120.0, self._events(ev["id"]))
         conn.commit()
-        assert get_transport_live_arrivals(conn, ev["id"]) == set()
+        assert set(get_transport_live_arrivals(conn, ev["id"])) == set()
 
     def test_outside_radius_does_not_latch(self):
         from app.geo import icao_to_coords
@@ -680,7 +681,7 @@ class TestCheckLiveArrival:
         lat, lon = icao_to_coords("EDDF")  # Frankfurt, weit weg von EDXH
         check_live_arrival(conn, 42, START, lat, lon, 0.0, self._events(ev["id"]))
         conn.commit()
-        assert get_transport_live_arrivals(conn, ev["id"]) == set()
+        assert set(get_transport_live_arrivals(conn, ev["id"])) == set()
 
     def test_no_active_events_does_not_latch(self):
         from app.geo import icao_to_coords
@@ -688,7 +689,7 @@ class TestCheckLiveArrival:
         lat, lon = icao_to_coords("EDXH")
         check_live_arrival(conn, 42, START, lat, lon, 0.0, [])
         conn.commit()
-        assert get_transport_live_arrivals(conn, 999) == set()
+        assert set(get_transport_live_arrivals(conn, 999)) == set()
 
     def test_idempotent_repeated_check(self):
         from app.geo import icao_to_coords
@@ -698,7 +699,55 @@ class TestCheckLiveArrival:
         check_live_arrival(conn, 42, START, lat, lon, 1.0, self._events(ev["id"]))
         check_live_arrival(conn, 42, START, lat, lon, 1.0, self._events(ev["id"]))
         conn.commit()
-        assert get_transport_live_arrivals(conn, ev["id"]) == {(42, START)}
+        assert set(get_transport_live_arrivals(conn, ev["id"])) == {(42, START)}
+
+
+class TestLatchHitsFlight:
+    """#6: Der Live-Ankunfts-Latch gehört zu GENAU dem liefernden Leg (``arrived_at`` in dessen
+    Zeitfenster), NICHT zum ganzen Verbindungsintervall. Vorher matchte ein Latch jedes Folge-Leg
+    derselben Verbindung → echte Verluste unsichtbar, noch fliegende Folge-Legs „schon geliefert"."""
+
+    CONN = "2026-07-09T16:00:00Z"
+
+    def test_delivering_leg_matches(self):
+        latches = {(42, self.CONN): "2026-07-09T16:09:30Z"}  # arrived_at im Leg-Fenster
+        assert _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
+
+    def test_leg_after_arrival_does_not_match(self):
+        # DER BUG: ein Folge-Leg, das NACH der Ankunft startet, matcht nicht mehr.
+        latches = {(42, self.CONN): "2026-07-09T16:09:30Z"}
+        assert not _latch_hits_flight(latches, 42, "2026-07-09T16:15:00Z", "2026-07-09T16:25:00Z")
+
+    def test_wrong_cid_does_not_match(self):
+        latches = {(42, self.CONN): "2026-07-09T16:09:30Z"}
+        assert not _latch_hits_flight(latches, 99, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
+
+    def test_later_reconnect_latch_excluded_by_prefilter(self):
+        # Latch einer SPÄTEREN Verbindung (logon nach dem Leg-Takeoff) darf ein früheres Leg nie treffen.
+        latches = {(42, "2026-07-09T17:00:00Z"): "2026-07-09T17:05:00Z"}
+        assert not _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
+
+    def test_slack_tolerates_arrived_shortly_after_landing(self):
+        latches = {(42, self.CONN): "2026-07-09T16:11:00Z"}  # 60 s nach landing → innerhalb Slack
+        assert _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
+
+    def test_arrived_far_after_landing_does_not_match(self):
+        latches = {(42, self.CONN): "2026-07-09T16:13:00Z"}  # 180 s nach landing → über Slack
+        assert not _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
+
+    def test_open_leg_no_landing_matches_on_lower_bound(self):
+        # Offenes/trackless Leg (landing_ts None) → nur die Untergrenze takeoff<=arrived_at zählt.
+        latches = {(42, self.CONN): "2026-07-09T16:09:30Z"}
+        assert _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", None)
+
+    def test_bruchsekunden_landing_kein_string_kippen(self):
+        # arrived_at (sekundengenau) vs. landing_ts mit Bruchsekunden — datetime-Vergleich, kein
+        # String-Kippen an der Sekundengrenze.
+        latches = {(42, self.CONN): "2026-07-09T16:10:00Z"}
+        assert _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:09:59.9317Z")
+
+    def test_empty_latches(self):
+        assert not _latch_hits_flight({}, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
 
 
 class TestLiveArrivalInProgress:

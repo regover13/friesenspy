@@ -4779,12 +4779,19 @@ def set_transport_live_arrival(
     )
 
 
-def get_transport_live_arrivals(conn: sqlite3.Connection, event_id: int) -> set[tuple[int, str]]:
-    """{(cid, logon_time)} mit Live-Ankunfts-Latch für dieses Event."""
+def get_transport_live_arrivals(
+    conn: sqlite3.Connection, event_id: int
+) -> dict[tuple[int, str], str]:
+    """{(cid, logon_time): arrived_at} mit Live-Ankunfts-Latch für dieses Event.
+
+    ``arrived_at`` (der Ziel-Ankunfts-Zeitpunkt) wird von :func:`_latch_hits_flight` genutzt, um den
+    Latch an GENAU das liefernde GPS-Leg zu binden (#6). Membership-Aufrufer (``(cid, lo) in …``)
+    funktionieren unverändert weiter (dict-Key-Test)."""
     rows = conn.execute(
-        "SELECT cid, logon_time FROM transport_live_arrivals WHERE event_id = ?", (event_id,)
+        "SELECT cid, logon_time, arrived_at FROM transport_live_arrivals WHERE event_id = ?",
+        (event_id,),
     ).fetchall()
-    return {(r["cid"], r["logon_time"]) for r in rows}
+    return {(r["cid"], r["logon_time"]): r["arrived_at"] for r in rows}
 
 
 def record_transport_loss(conn, event_id, cid, logon_time, kind, type_code,
@@ -4807,30 +4814,52 @@ def get_transport_losses(conn, event_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+# #6: `arrived_at` (per _now_utc(), sekundengenau) wird im selben Poll-Takt ERST NACH
+# save_position_history erzeugt und kann daher minimal NACH dem GPS-`landing_ts` des liefernden
+# Legs liegen; ein Vollstopp knapp außerhalb des 4-km-Latch-Radius (aber im 10-km-Leg-Radius)
+# kann ihn um Poll-Takte verzögern. Dieser Slack federt das an der OBEREN Grenze ab (nur nach oben).
+_LATCH_SLACK_SEC = 120
+
+
 def _latch_hits_flight(
-    conn: sqlite3.Connection,
-    latches: set[tuple[int, str]],
+    latches: dict[tuple[int, str], str],
     cid: int,
     takeoff_ts: str,
     landing_ts: str | None,
 ) -> bool:
-    """True, wenn ein Live-Latch ``(cid, VERBINDUNGS-logon)`` zu diesem GPS-Flug gehört.
+    """True, wenn ein Live-Ankunfts-Latch zu GENAU diesem GPS-Leg gehört (#6).
 
-    Latches werden vom Poller mit dem Verbindungs-Logon geschrieben (``check_live_arrival``
-    kennt nur die ``flights``-Session, nicht das GPS-Leg) — der liegt IMMER vor (oder auf) dem
-    Takeoff des Legs. Zuordnung daher über Überlappung: das Connection-Intervall
-    ``[logon, logoff]`` des Latches (aus ``flights`` nachgeschlagen) muss den Takeoff dieses
-    Legs einschließen.
-    """
-    end = landing_ts or "9999-12-31T23:59:59Z"
-    for c, lo in latches:
-        if c != cid or lo > end:
+    Der Latch trägt ``arrived_at`` = Zeitpunkt der Ziel-Ankunfts-Erkennung (:func:`check_live_arrival`
+    latcht nur am Boden im ZIELradius). Ein Latch gehört zu dem Leg, in dessen eigenem Lebensfenster
+    ``[takeoff_ts, landing_ts (+Slack)]`` ``arrived_at`` liegt — NICHT zum ganzen Connection-Intervall
+    (das war der #6-Bug: jedes Folge-Leg derselben Verbindung matchte, wodurch echte Verluste und noch
+    fliegende Folge-Legs fälschlich als „schon geliefert" galten).
+
+    Untergrenze ``takeoff_ts <= arrived_at`` ist scharf (der eigentliche Fix — ein Leg, das erst NACH
+    der Ankunft startet, darf nie matchen). Der Connection-Logon des Latches liegt per Konstruktion
+    vor/auf dem Leg-Takeoff → ``lo <= takeoff_ts`` als Vorfilter. Vergleich als datetime (Bruchsekunden
+    kippen String-Vergleich an der Sekundengrenze)."""
+    if not takeoff_ts:
+        return False
+    try:
+        to = _parse_iso(takeoff_ts)
+    except (ValueError, AttributeError):
+        return False
+    lend = None
+    if landing_ts:
+        try:
+            lend = _parse_iso(landing_ts) + timedelta(seconds=_LATCH_SLACK_SEC)
+        except (ValueError, AttributeError):
+            lend = None
+    for (c, lo), arrived_at in latches.items():
+        if c != cid or not lo or not arrived_at:
             continue
-        row = conn.execute(
-            "SELECT logoff_time FROM flights WHERE cid = ? AND logon_time = ?", (cid, lo)
-        ).fetchone()
-        hi = (row[0] if row and row[0] else "9999-12-31T23:59:59Z")
-        if takeoff_ts <= hi:
+        try:
+            lo_dt = _parse_iso(lo)
+            arr = _parse_iso(arrived_at)
+        except (ValueError, AttributeError):
+            continue
+        if lo_dt <= to and to <= arr and (lend is None or arr <= lend):
             return True
     return False
 
@@ -4905,7 +4934,7 @@ def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") 
         # (harmlos: eine noch offene Connection wird unten ohnehin nicht gemeldet).
         leg_logoff = f.get("logoff_time") or ""
         conn_logoff = conn_row[0] if conn_row and conn_row[0] else leg_logoff
-        if _latch_hits_flight(conn, latched, cid, lo, conn_logoff):
+        if _latch_hits_flight(latched, cid, lo, conn_logoff):
             continue
         if (cid, conn_logon) in existing or (cid, conn_logon) in recorded_this_run:
             continue
@@ -5174,7 +5203,7 @@ def compute_transport_progress(
         lf = f.get("logoff_time")
         dep = normalize_type_code(f.get("departure"))
         arr = normalize_type_code(f.get("arrival"))
-        has_latch = bool(dest) and _latch_hits_flight(conn, live_arrivals, int(cid), lo, lf)
+        has_latch = bool(dest) and _latch_hits_flight(live_arrivals, int(cid), lo, lf)
         if not has_latch and (dep not in route_set or arr not in route_set or dep == arr):
             continue
         # ECHTE GPS-Ankunft am Ziel ODER (kein bekanntes, abweichendes Ziel UND Latch) — ein

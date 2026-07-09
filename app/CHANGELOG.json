@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.19.0",
+    "date": "2026-07-09",
+    "title": "FriesenKutter: Verlust-Erkennung nach Mehrfach-Flug repariert (#6)",
+    "items": [
+      "🛠️ Ein FriesenKutter, der einmal am Ziel geliefert hat und auf derselben VATSIM-Verbindung weiterfliegt, wurde danach fälschlich als „schon angekommen“ behandelt — Folge-Flüge verschwanden aus der Live-Ansicht und ein späterer Verlust (geklaut/versunken) wurde gar nicht mehr erkannt. Der „Angekommen“-Merker hängt jetzt am tatsächlich liefernden Flug statt an der ganzen Verbindung; Folge-Flüge bleiben sichtbar und Verluste werden wieder korrekt erfasst. Der Fix wirkt rückwirkend, auch auf bereits betroffene laufende Events."
+    ]
+  },
+  {
     "version": "8.18.0",
     "date": "2026-07-09",
     "title": "Sofort-Fixes: Startplatz-Trennung, ehrliche Push-Restzeit, klareres Feed-Wort",

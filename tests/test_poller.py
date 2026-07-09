@@ -624,7 +624,7 @@ class TestLegSplitLatchKey:
             latched = get_transport_live_arrivals(conn, eid)
         finally:
             conn.close()
-        assert latched == {(1031301, leg2_logon)}
+        assert set(latched) == {(1031301, leg2_logon)}
         assert session_logon not in {lo for (_, lo) in latched}
 
         # Optional: die Fracht zählt genau einmal als geliefert (kein Doppel-Latch, keine
