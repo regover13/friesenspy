@@ -30,6 +30,7 @@ from app.database import (
     load_prefile_sigs,
     normalize_type_code,
     open_flight,
+    _parse_iso,
     rebuild_flight_cache,
     remove_live_position,
     save_position_history,
@@ -47,6 +48,23 @@ from app.statsim import fetch_flight_track, fetch_pilot_flights
 from app.teamspeak import fetch_channel_clients, parse_channel_ids
 
 logger = logging.getLogger(__name__)
+
+
+def _lead_phrase(dtstart: str, now: str) -> str:
+    """Restzeit bis ``dtstart`` als gestufter Erinnerungs-Text (#2). Rein, testbar.
+
+    Der Erinnerungs-Job feuert, sobald ``dtstart`` im 60-min-Fenster liegt — normal ~55-60 min
+    vorher, bei einem knapp vor Beginn angelegten Event aber sofort. Statt eines harten
+    „In etwa 1 Std" formuliert dieser Helfer die tatsächliche Restzeit gestuft:
+    > 45 min → „In etwa 1 Std" · 10-45 min → „In etwa X min" (X auf 5 gerundet) · < 10 min →
+    „In wenigen Minuten"."""
+    mins = (_parse_iso(dtstart) - _parse_iso(now)).total_seconds() / 60
+    if mins > 45:
+        return "In etwa 1 Std"
+    if mins >= 10:
+        return f"In etwa {int(round(mins / 5) * 5)} min"
+    return "In wenigen Minuten"
+
 
 # Beim Start bereits präsente FRS bekommen diesen (sehr hohen) Streak-Wert, damit sie die
 # Verweildauer-Schwelle nie exakt treffen und somit keine Baseline-Notification auslösen.
@@ -1425,7 +1443,7 @@ class VatsimPoller:
                 for ev in generic:
                     payload = {
                         "title": "FriesenEvent",
-                        "body": f"🗓 In etwa 1 Std: {ev.get('summary') or 'FriesenEvent'}",
+                        "body": f"🗓 {_lead_phrase(ev['dtstart'], now)}: {ev.get('summary') or 'FriesenEvent'}",
                         "url": "/",
                     }
                     asyncio.create_task(send_web_push(
@@ -1435,7 +1453,7 @@ class VatsimPoller:
                 for r in bummels:
                     payload = {
                         "title": "FriesenFliegerBummel",
-                        "body": f"🗓 In etwa 1 Std: {r.get('name') or 'FriesenFliegerBummel'}",
+                        "body": f"🗓 {_lead_phrase(r['dtstart'], now)}: {r.get('name') or 'FriesenFliegerBummel'}",
                         "url": "/",
                     }
                     asyncio.create_task(send_web_push(
@@ -1445,7 +1463,7 @@ class VatsimPoller:
                 for k in kutters:
                     payload = {
                         "title": "FriesenKutter",
-                        "body": f"🗓 In etwa 1 Std: {k.get('name') or 'FriesenKutter'}",
+                        "body": f"🗓 {_lead_phrase(k['dtstart'], now)}: {k.get('name') or 'FriesenKutter'}",
                         "url": "/",
                     }
                     asyncio.create_task(send_web_push(

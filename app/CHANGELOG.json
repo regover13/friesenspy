@@ -1,5 +1,15 @@
 [
   {
+    "version": "8.18.0",
+    "date": "2026-07-09",
+    "title": "Sofort-Fixes: Startplatz-Trennung, ehrliche Push-Restzeit, klareres Feed-Wort",
+    "items": [
+      "🅿️ Beim Anlegen eines Kutter-Events lassen sich mehrere Startplätze jetzt auch mit Leerzeichen trennen (nicht nur Komma) — die Tippfehler-Warnung meckert „EDXH EDXP“ nicht mehr fälschlich an. (Das Speichern verstand beide Trenner schon immer.)",
+      "🗓 Die Event-Erinnerung nennt jetzt die echte Restzeit statt pauschal „In etwa 1 Std“: über 45 min „In etwa 1 Std“, darunter „In etwa X min“, unter 10 min „In wenigen Minuten“. Wichtig bei kurzfristig angelegten Events — gilt für FriesenEvents, Bummel und Kutter.",
+      "🈳 Ein Kutter-Flug ohne Fracht im Ruhezustand heißt im Live-Feed jetzt einheitlich „leer“ statt „zurück“ (das unterstellte fälschlich einen Heimflug — es kann genauso ein Leerflug zur Insel sein)."
+    ]
+  },
+  {
     "version": "8.17.0",
     "date": "2026-07-09",
     "title": "Zuladungen aus kuratiertem Datensatz + editierbarer Name & max. Tankinhalt",

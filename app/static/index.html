@@ -4620,7 +4620,7 @@ function _kCargoLabel(f) {
   if (!f.loaded) return f.in_air
     ? (f.airborne ? '<td class="kf-empty">unterwegs zum Ziel</td>'
                   : '<td class="kf-empty">am Start (reserviert)</td>')
-    : '<td class="kf-empty">zurück</td>';
+    : '<td class="kf-empty">leer</td>';
   const lines = f.cargo_lines || [];
   let label;
   if (lines.length) {

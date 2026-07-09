@@ -2307,7 +2307,7 @@
         toast('Jede Frachtart braucht eine Menge und mindestens einen Startplatz.', true); return;
       }
       // #77: unbekannte Flugplätze (Ziel + Startplätze) warnen, nicht hart blocken.
-      const unknown = await checkUnknownIcaos([dest].concat(cargo.flatMap(c => (c.departure || '').split(','))));
+      const unknown = await checkUnknownIcaos([dest].concat(cargo.flatMap(c => (c.departure || '').split(/[,\s]+/))));
       if (unknown.length) {
         const ok = await showModal('Unbekannte Flugplätze',
           'Diese Codes sind keine bekannten Plätze (airportsdata/eigene): ' + unknown.join(', ')

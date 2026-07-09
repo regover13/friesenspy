@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.poller import VatsimPoller, create_poller, _TS_BASELINE_STREAK
+from app.poller import VatsimPoller, create_poller, _TS_BASELINE_STREAK, _lead_phrase
 
 
 # ---------------------------------------------------------------------------
@@ -26,6 +26,35 @@ def _make_poller(db_path: str = ":memory:", **kwargs) -> VatsimPoller:
         poll_interval=60,
         **kwargs,
     )
+
+
+# ---------------------------------------------------------------------------
+# _lead_phrase — gestufte Restzeit-Formulierung für Event-Erinnerungs-Push (#2)
+# ---------------------------------------------------------------------------
+
+_NOW = "2026-07-09T16:00:00Z"
+
+
+def _dt(minutes: int) -> str:
+    """dtstart-ISO für `minutes` nach _NOW."""
+    from datetime import timedelta
+    from app.database import _parse_iso
+    return (_parse_iso(_NOW) + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@pytest.mark.parametrize("minutes,expected", [
+    (60, "In etwa 1 Std"),    # Obergrenze: der Job feuert nie früher als ~60 min vorher
+    (46, "In etwa 1 Std"),    # knapp über 45
+    (45, "In etwa 45 min"),   # genau 45 → Minuten-Zweig
+    (25, "In etwa 25 min"),
+    (23, "In etwa 25 min"),   # Rundung auf 5 (23 → 25)
+    (22, "In etwa 20 min"),   # Rundung auf 5 (22 → 20)
+    (10, "In etwa 10 min"),   # genau 10 → Minuten-Zweig
+    (9,  "In wenigen Minuten"),  # unter 10
+    (1,  "In wenigen Minuten"),
+])
+def test_lead_phrase_stufen(minutes, expected):
+    assert _lead_phrase(_dt(minutes), _NOW) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -1178,9 +1207,9 @@ class TestCheckEventReminders:
             "FriesenEvent", "FriesenFliegerBummel", "FriesenKutter",
         }
         assert {p["body"] for p in payloads} == {
-            "🗓 In etwa 1 Std: Stammtisch",
-            "🗓 In etwa 1 Std: Bummel A",
-            "🗓 In etwa 1 Std: Kutter A",
+            "🗓 In etwa 30 min: Stammtisch",
+            "🗓 In etwa 30 min: Bummel A",
+            "🗓 In etwa 30 min: Kutter A",
         }
 
         conn = get_connection(db_file)
@@ -1257,7 +1286,7 @@ class TestCheckEventReminders:
         assert len(sent) == 1
         payload = sent[0][4]
         assert payload["title"] == "FriesenFliegerBummel"
-        assert payload["body"] == "🗓 In etwa 1 Std: FFB Juli"
+        assert payload["body"] == "🗓 In etwa 30 min: FFB Juli"
 
 
 # ---------------------------------------------------------------------------
