@@ -122,12 +122,17 @@ nur noch für Push-Benachrichtigungen nötig, nicht für die Anzeige.
 In einer Claude-Code-**Cloud-Session** (claude.ai/code) bekommt CLI-`git` normalerweise ein
 kurzlebiges, scoped GitHub-Installations-Token über den Proxy — es liegt KEIN Key/PAT dauerhaft
 im Container (so soll es sein). Schlägt die Token-Ausstellung beim Container-Start fehl, stehen in
-`GITHUB_TOKEN`/`GH_TOKEN` nur Platzhalter und `git push/fetch` bricht mit
+`GITHUB_TOKEN`/`GH_TOKEN` nur Platzhalter und **`git push` bricht** mit
 `could not read Username/Password … terminal prompts disabled` ab. Das ist ein
 Provisionierungs-Fehler der Session, **kein** Repo-, Netz- oder Setup-Bug (github.com ist über den
 Egress-Proxy erreichbar; MCP-GitHub-Tools funktionieren derweil weiter, anderer Auth-Pfad).
 
-**Schnelltest zu Session-Beginn:** `git ls-remote origin` — geht das ohne Prompt, geht auch `push`.
+**Wichtig — nur der SCHREIBpfad ist betroffen:** Dieses Repo ist **public**, deshalb funktionieren
+`clone`/`fetch`/`git ls-remote origin` **immer anonym, ganz ohne Credential**. Ein erfolgreicher
+Lesetest beweist also NICHT, dass `push` geht — das war der reale Fall (Klonen ging, Push nicht).
+**Schnelltest zu Session-Beginn deshalb mit dem Schreibpfad:** `git push --dry-run origin HEAD`
+— authentifiziert und prüft die Refs, überträgt/ändert aber nichts. Geht das ohne Prompt, geht
+auch der echte `push`.
 
 **Recovery, in dieser Reihenfolge:**
 1. **Dauerhafter Fix (nur der Nutzer):** GitHub-App-Verbindung in claude.ai/code → GitHub-Integration
