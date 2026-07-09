@@ -116,3 +116,31 @@ TS_REJOIN_DEBOUNCE_SEC=900   # Default: 900 s (15 min) Debounce gegen Re-Join-Sp
 Hinweis: Der `ts_poll`-Job läuft jetzt, sobald `TS_NOTIFY_ENABLED=true` (Live-Anzeige im
 Live-Tab + Widget-Zähler, gespeist aus `poller.ts_clients` via `/api/teamspeak`). VAPID ist
 nur noch für Push-Benachrichtigungen nötig, nicht für die Anzeige.
+
+## Cloud-Session: wenn CLI-`git` kein Credential hat (Fallback)
+
+In einer Claude-Code-**Cloud-Session** (claude.ai/code) bekommt CLI-`git` normalerweise ein
+kurzlebiges, scoped GitHub-Installations-Token über den Proxy — es liegt KEIN Key/PAT dauerhaft
+im Container (so soll es sein). Schlägt die Token-Ausstellung beim Container-Start fehl, stehen in
+`GITHUB_TOKEN`/`GH_TOKEN` nur Platzhalter und `git push/fetch` bricht mit
+`could not read Username/Password … terminal prompts disabled` ab. Das ist ein
+Provisionierungs-Fehler der Session, **kein** Repo-, Netz- oder Setup-Bug (github.com ist über den
+Egress-Proxy erreichbar; MCP-GitHub-Tools funktionieren derweil weiter, anderer Auth-Pfad).
+
+**Schnelltest zu Session-Beginn:** `git ls-remote origin` — geht das ohne Prompt, geht auch `push`.
+
+**Recovery, in dieser Reihenfolge:**
+1. **Dauerhafter Fix (nur der Nutzer):** GitHub-App-Verbindung in claude.ai/code → GitHub-Integration
+   für `regover13/friesenspy` neu autorisieren. Danach stellt jede neue Session ihr Token wieder
+   korrekt aus. Das ist der eigentliche Hebel — aus der Session heraus NICHT reparierbar.
+2. **Frische Cloud-Session** starten (war es ein einmaliger Ausstellungs-Fehler, ist sie sauber).
+3. **Ohne CLI-git trotzdem liefern:** Doku/Einzeldateien via GitHub-**MCP-Tools** direkt committen;
+   ganze Code-Stände über den **Bundle-Weg** übergeben. Beides funktioniert nachweislich.
+4. NICHT tun: 8× mit Backoff retryen, Session-Ingress-Token als Credential missbrauchen, oder
+   dauerhaft einen PAT/SSH-Key in der Cloud hinterlegen.
+
+**Signatur-„Fehler" `%G? = N` ist ein False Positive:** Die Commit-Signatur-Prüfung passiert im
+Cloud-**Harness**, nicht im Repo (dieses Repo hat KEINE eigenen git-Hooks und keine
+`gpg.ssh.allowedSignersFile`). Der Sandbox fehlt nur die `allowedSignersFile` für die lokale
+*Verifikation* — die Commits tragen trotzdem eine gültige SSH-Signatur. Kein History-Rewrite
+deswegen (ändert nur SHAs bereits gepushter Branches).
