@@ -890,6 +890,35 @@
           <div id="ke-events-container" class="scroll-list"><div class="empty-hint">Lade Events…</div></div>
         </div>
 
+        <!-- FRIESENKUTTER — FRACHTART-KATALOG & SPRÜCHE (steht bewusst VOR der Zuladungstabelle, #15) -->
+        <div class="panel">
+          <div class="panel-title"><span>🦐 FriesenKutter &ndash; Frachtart-Katalog</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Stammdaten für Frachtarten (Emoji + optionale Obergrenze pro Flug für Co-Load).
+            Beim Event-Manifest wählbar; das Emoji erscheint im Feed.
+          </p>
+          <div class="form-grid" style="margin:6px 0 8px;">
+            <div class="form-group"><label for="kc-name">Name</label>
+              <input type="text" id="kc-name" placeholder="Krabbenbrötchen" /></div>
+            <div class="form-group"><label for="kc-emoji">Emoji</label>
+              <input type="text" id="kc-emoji" placeholder="🦐" maxlength="4" style="max-width:90px;" /></div>
+            <div class="form-group"><label for="kc-max">Max/Flug (kg, optional)</label>
+              <input type="number" id="kc-max" min="0" step="10" /></div>
+            <div class="form-group" style="justify-content:flex-end;">
+              <button class="btn btn-primary btn-sm" id="kc-add-btn">Hinzufügen</button>
+              <button class="btn btn-sm" id="kc-cancel-btn" style="display:none;">Abbrechen</button>
+            </div>
+          </div>
+          <div id="ke-catalog-container" class="scroll-list"><div class="empty-hint">Lade Katalog…</div></div>
+
+          <div class="form-section-title" style="margin-top:16px;">Lustige KI-Sprüche</div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:#cfe6e2;">
+            <input type="checkbox" id="ke-quips-toggle" />
+            Sprüche zu Flügen + Tagesend-Zusammenfassung erzeugen (Claude Sonnet 5)
+          </label>
+          <p id="ke-quips-hint" style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;"></p>
+        </div>
+
         <!-- FRIESENKUTTER — ZULADUNGSTABELLE -->
         <div class="panel">
           <div class="panel-title"><span>🦐 FriesenKutter &ndash; Zuladung je Flugzeugtyp</span></div>
@@ -928,35 +957,6 @@
             <button class="btn btn-primary btn-sm" id="kp-save-btn">Speichern</button>
           </div>
           <div id="ke-payloads-container" class="scroll-list"><div class="empty-hint">Lade Zuladungen…</div></div>
-        </div>
-
-        <!-- FRIESENKUTTER — FRACHTART-KATALOG & SPRÜCHE -->
-        <div class="panel">
-          <div class="panel-title"><span>🦐 FriesenKutter &ndash; Frachtart-Katalog</span></div>
-          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Stammdaten für Frachtarten (Emoji + optionale Obergrenze pro Flug für Co-Load).
-            Beim Event-Manifest wählbar; das Emoji erscheint im Feed.
-          </p>
-          <div class="form-grid" style="margin:6px 0 8px;">
-            <div class="form-group"><label for="kc-name">Name</label>
-              <input type="text" id="kc-name" placeholder="Krabbenbrötchen" /></div>
-            <div class="form-group"><label for="kc-emoji">Emoji</label>
-              <input type="text" id="kc-emoji" placeholder="🦐" maxlength="4" style="max-width:90px;" /></div>
-            <div class="form-group"><label for="kc-max">Max/Flug (kg, optional)</label>
-              <input type="number" id="kc-max" min="0" step="10" /></div>
-            <div class="form-group" style="justify-content:flex-end;">
-              <button class="btn btn-primary btn-sm" id="kc-add-btn">Hinzufügen</button>
-              <button class="btn btn-sm" id="kc-cancel-btn" style="display:none;">Abbrechen</button>
-            </div>
-          </div>
-          <div id="ke-catalog-container" class="scroll-list"><div class="empty-hint">Lade Katalog…</div></div>
-
-          <div class="form-section-title" style="margin-top:16px;">Lustige KI-Sprüche</div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:#cfe6e2;">
-            <input type="checkbox" id="ke-quips-toggle" />
-            Sprüche zu Flügen + Tagesend-Zusammenfassung erzeugen (Claude Sonnet 5)
-          </label>
-          <p id="ke-quips-hint" style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;"></p>
         </div>
 
         <!-- HINWEIS-BANNER -->

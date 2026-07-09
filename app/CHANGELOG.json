@@ -1,5 +1,16 @@
 [
   {
+    "version": "8.21.0",
+    "date": "2026-07-09",
+    "title": "FriesenKutter Live: klares Ziel, Strecke je Ladung, ruhigere Teilbalken",
+    "items": [
+      "🎯 Der Live-Banner zeigt jetzt prominent nur noch das Ziel, wohin alle Fracht soll — die alte Pfeil-Kette der Startplätze ist raus (sie war weder der geflogene Weg noch der Flugplan und hat im Test verwirrt). Auch in der Event-Liste steht bei Kutter-Events „Ziel: …“ statt der Ketten-Route.",
+      "🚚 Die Live-Tabelle hat eine neue Spalte „Strecke“: Ladeplatz → Ziel, also die Reise der Ladung — unabhängig davon, wohin der Flieger gerade tatsächlich fliegt.",
+      "📊 Die Teil-Fortschrittsbalken je Startplatz sind jetzt dünner und gedämpft, damit der Gesamtbalken optisch führt und die Aufschlüsselung untergeordnet bleibt.",
+      "🛠️ Admin: „Frachtart-Katalog“ steht jetzt über „Zuladung je Flugzeugtyp“ (Frachtarten pflegt man zuerst)."
+    ]
+  },
+  {
     "version": "8.20.0",
     "date": "2026-07-09",
     "title": "FriesenKutter: verlorene Fracht zählt ehrlich und ist wirklich weg (#7/#8)",

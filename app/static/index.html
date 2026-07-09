@@ -397,6 +397,9 @@
     .kutter-bar { display: flex; gap: 3px; height: 16px; margin: 10px 0 6px; }
     .kutter-seg { position: relative; background: rgba(255,255,255,0.10); border-radius: 4px; overflow: hidden; }
     .kutter-seg > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg,#28b98f,#c8933a); }
+    /* Teil-Balken je Startplatz (#13): dünner + gedämpft, damit der Gesamtbalken optisch führt. */
+    .kutter-bar--sub { height: 9px; gap: 2px; margin: 4px 0 3px; opacity: 0.78; }
+    .kutter-legend--sub { font-size: 0.66rem; opacity: 0.72; gap: 10px; margin-bottom: 6px; }
     .kutter-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.74rem; color: var(--text-label); margin-bottom: 10px; }
     .kutter-legend .kl-dot { display:inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; background: #28b98f; vertical-align: middle; }
     .kutter-legend .kl-cap { display:inline-block; padding: 0 5px; border-radius: 3px; font-size: 0.68rem; font-weight: 600; color: #c8933a; background: rgba(200,147,58,0.15); white-space: nowrap; vertical-align: middle; }
@@ -2711,6 +2714,7 @@ async function fetchFriesenEvents() {
           dtstart: k.dtstart,
           dtend: k.dtend,
           route: k.route || '',
+          destination: k.destination || '',
           location: '',
           is_transport: 1,
           _kutterId: k.id,
@@ -2761,8 +2765,19 @@ function renderFriesenEvents(data) {
     const badge = ev.is_bummel ? '<span class="bummel-badge">🏁 BUMMEL</span>'
       : ev.is_transport ? '<span class="bummel-badge">🦐 KUTTER</span>' : '';
     const manuelHint = ev._manual ? ' <span class="text-label" style="font-size:0.8em;">(manuell)</span>' : '';
-    const icaoCell = (ev.is_bummel || ev.is_transport) && ev.route
-      ? ev.route.replace(/,/g, ' → ') : (ev.location || '—');
+    // Kutter: kein Routen-Kettentext (irreführend, s. #12) — nur das Ziel, wohin die Fracht soll.
+    // Fallback (Kalender-Events ohne destination): letzter ICAO der Route = Default-Ziel.
+    let icaoCell;
+    if (ev.is_transport) {
+      const dest = ev.destination
+        || (ev.route ? ev.route.split(',').map(s => s.trim()).filter(Boolean).pop() : '')
+        || '';
+      icaoCell = dest ? 'Ziel: ' + dest : '—';
+    } else if (ev.is_bummel && ev.route) {
+      icaoCell = ev.route.replace(/,/g, ' → ');
+    } else {
+      icaoCell = ev.location || '—';
+    }
     const selected = _eventKey(ev) === _lastClickedEventKey ? ' ev-row-selected' : '';
     html += `<tr class="${selected.trim()}" style="cursor:pointer;" data-event-idx="${i}">
       <td>${escHtml(ev.summary || '—')}${badge}${manuelHint}</td>
@@ -3064,7 +3079,10 @@ async function fetchKutterActive() {
     // Exakte Bummel-Banner-Parität: kein Teilen hier — das gibt es rechts oben in der
     // Events-Ansicht (Nutzer-Entscheidung 02.07.).
     let html = `<div class="bb-title">🦐 ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
-    html += `<div class="bb-sub">Strecke: ${escHtml((Array.isArray(d.route) ? d.route.join(' → ') : String(d.route || '').replace(/,/g, ' → ')))}</div>`;
+    // Kein Strecken-Kettentext mehr (verwirrte im Live-Test — war weder geflogene Strecke noch
+    // Flugplan, sondern die Aneinanderreihung der Ladeplätze). Stattdessen prominent NUR das Ziel,
+    // wohin alle Fracht soll; die Reise je Fracht (Ladeplatz → Ziel) steht in der Tabelle unten.
+    html += `<div class="bb-sub" style="font-weight:600;font-size:1.05em;">🎯 Ziel: ${escHtml(d.destination || '—')}</div>`;
     html += _kutterBarAndTotals(d);
     // Aktive Piloten: gerade unterwegs / angekommen (noch verbunden) / auf dem Rückflug.
     const active = [];
@@ -3074,6 +3092,9 @@ async function fetchKutterActive() {
         callsign: f.callsign, aircraft: f.aircraft,
         kg: f.loaded ? f.tonnage_kg : (f.reserved_kg || 0),
         lines: f.cargo_lines || [],
+        // Strecke = Reise der Ladung: Ladeplatz (f.dep) → Ziel (d.destination). NICHT der geflogene
+        // GPS-Weg und NICHT der Flugplan (f.arr) — nur „von wo aufgeladen, wohin geliefert" (#12).
+        dep: f.dep || '', dest: d.destination || '',
         // airborne trennt „wirklich abgehoben" von „am Streckenplatz geparkt, reserviert" (#62-Folgefund)
         status: f.loaded ? '✅ angekommen' : (f.airborne ? '✈️ unterwegs' : '🅿️ am Start'),
       });
@@ -3081,7 +3102,7 @@ async function fetchKutterActive() {
     (d.participants || []).forEach(p => {
       if (p.status === 'returning') {
         active.push({ callsign: p.callsign || '', aircraft: p.aircraft || '',
-                      kg: 0, lines: [], status: '↩️ Rückflug' });
+                      kg: 0, lines: [], dep: '', dest: '', status: '↩️ Rückflug' });
       }
     });
     if (active.length) {
@@ -3097,12 +3118,16 @@ async function fetchKutterActive() {
           ? `<td class="td-map-btn" data-callsign="${_kesc(a.callsign)}" title="Auf der Karte zeigen">`
             + '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></td>'
           : '<td></td>';
+        // Strecke = Ladeplatz → Ziel (Reise der Ladung). Neutral (mono), kein Link — kein Klick dahinter.
+        const strecke = (a.dep && a.dest)
+          ? `${_kesc(a.dep)} → ${_kesc(a.dest)}`
+          : '—';
         // Callsign neutral (keine Link-Farbe — es ist keiner; Links sind hier nur Pin + Zum Kutter).
         return `<tr><td class="mono">${_kesc(a.callsign || '—')}</td><td class="mono">${_kesc(a.aircraft || '—')}</td>`
-          + `<td>${load}</td><td>${a.status}</td>${map}</tr>`;
+          + `<td>${load}</td><td class="mono">${strecke}</td><td>${a.status}</td>${map}</tr>`;
       }).join('');
       html += '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Callsign</th><th>Muster</th>'
-        + '<th>Ladung</th><th>Status</th><th>Karte</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+        + '<th>Ladung</th><th>Strecke</th><th>Status</th><th>Karte</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     } else {
       html += '<div class="bb-sub">Gerade niemand auf der Strecke unterwegs.</div>';
     }
@@ -4642,7 +4667,9 @@ function _kLossLabel(kind) {
 // Balken + Mengen-Zeile — gemeinsam für die Events-Ansicht und den Live-Tab-Block.
 // Einen Balken + Legende für eine Frachtart-Teilmenge rendern. `items` = [{c, gi}] mit gi =
 // globaler Index in d.cargo (für stabile Farben über Gesamt- und Startplatz-Blöcke hinweg).
-function _kSegLegend(items, totalTarget) {
+// `sub`=true → Teil-Balken je Startplatz: dünner + gedämpfte Legende, damit der Gesamtbalken
+// optisch führt und die Teilbalken untergeordnet wirken (#13).
+function _kSegLegend(items, totalTarget, sub) {
   totalTarget = totalTarget || 1;
   const segs = items.map(({ c, gi }) => {
     const pct = Math.min(100, c.pct);
@@ -4662,7 +4689,9 @@ function _kSegLegend(items, totalTarget) {
         + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
     return '<span>' + mark + _kesc(c.name) + cap + ' ' + _kfmtT(c.delivered_kg) + ' / ' + _kfmtT(c.target_kg) + res + '</span>';
   }).join('');
-  return '<div class="kutter-bar">' + segs + '</div><div class="kutter-legend">' + legend + '</div>';
+  const barCls = sub ? 'kutter-bar kutter-bar--sub' : 'kutter-bar';
+  const legCls = sub ? 'kutter-legend kutter-legend--sub' : 'kutter-legend';
+  return '<div class="' + barCls + '">' + segs + '</div><div class="' + legCls + '">' + legend + '</div>';
 }
 
 function _kutterBarAndTotals(d) {
@@ -4689,7 +4718,7 @@ function _kutterBarAndTotals(d) {
         const grp = groups.get(k);
         const gt = grp.reduce((s, it) => s + it.c.target_kg, 0) || 1;
         const label = k ? '🛫 ab ' + _kesc(k.split(',').join(', ')) : 'Alle Startplätze';
-        bar += '<div class="kutter-grp-h">' + label + '</div>' + _kSegLegend(grp, gt);
+        bar += '<div class="kutter-grp-h">' + label + '</div>' + _kSegLegend(grp, gt, true);
       });
     }
   }
