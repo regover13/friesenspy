@@ -2545,3 +2545,58 @@ def test_aggregate_bummel_kpis_avg_none_without_scored_race():
     assert r["participations"] == 2
     assert r["legs"] == 2
     assert r["avg_absolute_min"] is None
+
+
+def test_seed_inserts_curated(tmp_path, monkeypatch):
+    from app import database
+    db = str(tmp_path / "t.db")
+    database.init_db(db)
+    conn = database.get_connection(db)
+    monkeypatch.setattr(database, "load_curated_specs", lambda: {
+        "ZTST": {"make_model": "Test-Muster", "mtow_kg": 1111, "empty_kg": 743, "fuel_full_kg": 144},
+    })
+    inserted = database.seed_curated_payloads(conn)
+    conn.commit()
+    assert inserted == 1
+    row = conn.execute("SELECT source, make_model, payload_kg FROM aircraft_payloads WHERE type_code='ZTST'").fetchone()
+    assert row["source"] == "curated"
+    assert row["make_model"] == "Test-Muster"
+    # payload = 1111 - 743 - 144/2 - 85 = 211
+    assert abs(row["payload_kg"] - 211.0) < 0.5
+    conn.close()
+
+
+def test_seed_skips_existing_manual(tmp_path, monkeypatch):
+    from app import database
+    db = str(tmp_path / "t.db")
+    database.init_db(db)
+    conn = database.get_connection(db)
+    database.upsert_payload(conn, "ZTST", payload_kg=999.0, make_model="Handpflege", source="manual")
+    conn.commit()
+    monkeypatch.setattr(database, "load_curated_specs", lambda: {
+        "ZTST": {"make_model": "Test-Muster", "mtow_kg": 1111, "empty_kg": 743, "fuel_full_kg": 144},
+    })
+    inserted = database.seed_curated_payloads(conn)
+    conn.commit()
+    assert inserted == 0
+    row = conn.execute("SELECT source, make_model, payload_kg FROM aircraft_payloads WHERE type_code='ZTST'").fetchone()
+    assert row["source"] == "manual"
+    assert row["make_model"] == "Handpflege"
+    assert abs(row["payload_kg"] - 999.0) < 0.5
+    conn.close()
+
+
+def test_seed_idempotent(tmp_path, monkeypatch):
+    from app import database
+    db = str(tmp_path / "t.db")
+    database.init_db(db)
+    conn = database.get_connection(db)
+    monkeypatch.setattr(database, "load_curated_specs", lambda: {
+        "ZTST": {"make_model": "Test-Muster", "mtow_kg": 1111, "empty_kg": 743, "fuel_full_kg": 144},
+    })
+    database.seed_curated_payloads(conn); conn.commit()
+    inserted2 = database.seed_curated_payloads(conn); conn.commit()
+    assert inserted2 == 0
+    cnt = conn.execute("SELECT COUNT(*) c FROM aircraft_payloads WHERE type_code='ZTST'").fetchone()["c"]
+    assert cnt == 1
+    conn.close()

@@ -5,6 +5,7 @@ import json
 import math
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -601,6 +602,11 @@ def init_db(db_path: str) -> None:
                         (normalized, row[0]),
                     )
         except sqlite3.OperationalError:
+            pass
+        # Kuratierte Flugzeug-Specs vorbefüllen (idempotent, überschreibt nie manuelle Zeilen).
+        try:
+            seed_curated_payloads(conn)
+        except Exception:  # noqa: BLE001 — Seeding ist Komfort, nie den Start blockieren
             pass
         conn.commit()
         import logging as _log
@@ -3930,6 +3936,56 @@ def list_aircraft_payloads(conn: sqlite3.Connection) -> list[dict]:
         "FROM aircraft_payloads ORDER BY type_code"
     ).fetchall()
     return [{k: _finite_or_none(v) for k, v in dict(r).items()} for r in rows]
+
+
+_CURATED_SPECS_PATH = Path(__file__).parent / "data" / "aircraft_specs.json"
+
+
+def load_curated_specs() -> dict[str, dict]:
+    """Kuratierte Flugzeug-Specs aus dem Repo laden.
+
+    Rückgabe: ``{type_code: {"make_model", "mtow_kg", "empty_kg", "fuel_full_kg"}}``.
+    Bei fehlender/kaputter Datei ``{}`` (Silent-Fail — Seeding ist Komfort, kein kritischer Pfad).
+    """
+    try:
+        with open(_CURATED_SPECS_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def seed_curated_payloads(conn: sqlite3.Connection) -> int:
+    """Fehlende kuratierte Flugzeugtypen in ``aircraft_payloads`` einfügen (idempotent).
+
+    Nur ``INSERT OR IGNORE`` → bestehende Zeilen (insb. ``source='manual'``) bleiben
+    unangetastet. Werte werden über ``llm._build_result`` gerechnet (halber Tank, Crew 85).
+    Rückgabe: Anzahl neu eingefügter Zeilen.
+    """
+    from app.llm import _build_result  # lazy: reine Rechnung, vermeidet Modul-Kopplung
+    inserted = 0
+    for raw_code, spec in load_curated_specs().items():
+        code = normalize_type_code(raw_code)
+        if not code or not isinstance(spec, dict):
+            continue
+        try:
+            mtow, empty, fuel_full = (
+                float(spec["mtow_kg"]), float(spec["empty_kg"]), float(spec["fuel_full_kg"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not all(math.isfinite(v) and v > 0 for v in (mtow, empty, fuel_full)):
+            continue
+        r = _build_result(str(spec.get("make_model") or code), mtow, empty, fuel_full)
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO aircraft_payloads
+                   (type_code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'curated', ?, ?)""",
+            (code, r["mtow_kg"], r["empty_kg"], r["fuel_kg"], r["crew_kg"], r["payload_kg"],
+             r["make_model"], _now_utc()),
+        )
+        inserted += cur.rowcount
+    return inserted
 
 
 def upsert_payload(
