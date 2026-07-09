@@ -1,0 +1,650 @@
+{
+  "A400": {
+    "make_model": "Airbus A400M Atlas",
+    "mtow_kg": 141000.0,
+    "empty_kg": 78600.0,
+    "fuel_full_kg": 50500.0
+  },
+  "ALO3": {
+    "make_model": "Aerospatiale SA 316B Alouette III",
+    "mtow_kg": 2200.0,
+    "empty_kg": 1230.0,
+    "fuel_full_kg": 456.0
+  },
+  "AN2": {
+    "make_model": "Antonov An-2",
+    "mtow_kg": 5500.0,
+    "empty_kg": 3330.0,
+    "fuel_full_kg": 860.0
+  },
+  "AQUI": {
+    "make_model": "Aquila A210",
+    "mtow_kg": 750.0,
+    "empty_kg": 500.0,
+    "fuel_full_kg": 79.0
+  },
+  "AS50": {
+    "make_model": "Airbus H125 (AS350 B3)",
+    "mtow_kg": 2250.0,
+    "empty_kg": 1175.0,
+    "fuel_full_kg": 425.0
+  },
+  "AS65": {
+    "make_model": "Airbus/Aérospatiale AS365 N3 Dauphin",
+    "mtow_kg": 4300.0,
+    "empty_kg": 2400.0,
+    "fuel_full_kg": 930.0
+  },
+  "AT8T": {
+    "make_model": "Air Tractor AT-802A",
+    "mtow_kg": 7257.0,
+    "empty_kg": 3062.0,
+    "fuel_full_kg": 770.0
+  },
+  "B06": {
+    "make_model": "Bell 206B-3 JetRanger III",
+    "mtow_kg": 1452.0,
+    "empty_kg": 775.0,
+    "fuel_full_kg": 280.0
+  },
+  "B105": {
+    "make_model": "MBB/Airbus Bo 105 CBS",
+    "mtow_kg": 2500.0,
+    "empty_kg": 1300.0,
+    "fuel_full_kg": 456.0
+  },
+  "B212": {
+    "make_model": "Bell 212",
+    "mtow_kg": 5080.0,
+    "empty_kg": 2516.0,
+    "fuel_full_kg": 990.7
+  },
+  "B222": {
+    "make_model": "Bell 222B",
+    "mtow_kg": 3650.0,
+    "empty_kg": 2204.0,
+    "fuel_full_kg": 710.0
+  },
+  "B350": {
+    "make_model": "Beechcraft King Air 350i",
+    "mtow_kg": 6804.0,
+    "empty_kg": 4123.0,
+    "fuel_full_kg": 1641.1
+  },
+  "B407": {
+    "make_model": "Bell 407 (GXi)",
+    "mtow_kg": 2268.0,
+    "empty_kg": 1224.0,
+    "fuel_full_kg": 386.0
+  },
+  "B47G": {
+    "make_model": "Bell 47G-3B-1",
+    "mtow_kg": 1338.0,
+    "empty_kg": 826.0,
+    "fuel_full_kg": 155.0
+  },
+  "B47J": {
+    "make_model": "Bell 47J Ranger",
+    "mtow_kg": 1293.0,
+    "empty_kg": 831.0,
+    "fuel_full_kg": 94.0
+  },
+  "BE18": {
+    "make_model": "Beechcraft D18S (Twin Beech)",
+    "mtow_kg": 3969.0,
+    "empty_kg": 2617.0,
+    "fuel_full_kg": 560.0
+  },
+  "BE20": {
+    "make_model": "Beechcraft King Air 200",
+    "mtow_kg": 5670.0,
+    "empty_kg": 3675.0,
+    "fuel_full_kg": 1671.5
+  },
+  "BE33": {
+    "make_model": "Beechcraft Bonanza F33A",
+    "mtow_kg": 1542.0,
+    "empty_kg": 1000.0,
+    "fuel_full_kg": 217.7
+  },
+  "BE35": {
+    "make_model": "Beechcraft Bonanza V35B",
+    "mtow_kg": 1548.0,
+    "empty_kg": 1000.0,
+    "fuel_full_kg": 217.7
+  },
+  "BE36": {
+    "make_model": "Beechcraft A36 Bonanza",
+    "mtow_kg": 1656.0,
+    "empty_kg": 1019.0,
+    "fuel_full_kg": 201.0
+  },
+  "BE58": {
+    "make_model": "Beechcraft Baron G58",
+    "mtow_kg": 2556.0,
+    "empty_kg": 1774.0,
+    "fuel_full_kg": 386.5
+  },
+  "BE9L": {
+    "make_model": "Beechcraft King Air C90GTx",
+    "mtow_kg": 4581.0,
+    "empty_kg": 3005.0,
+    "fuel_full_kg": 1167.0
+  },
+  "BN2P": {
+    "make_model": "Britten-Norman BN-2B Islander (piston)",
+    "mtow_kg": 2993.0,
+    "empty_kg": 1925.0,
+    "fuel_full_kg": 370.1
+  },
+  "BN2T": {
+    "make_model": "Britten-Norman BN-2T Turbine Islander (standard-length)",
+    "mtow_kg": 2994.0,
+    "empty_kg": 1699.0,
+    "fuel_full_kg": 496.0
+  },
+  "C140": {
+    "make_model": "Cessna 140",
+    "mtow_kg": 658.0,
+    "empty_kg": 365.0,
+    "fuel_full_kg": 70.8
+  },
+  "C152": {
+    "make_model": "Cessna 152",
+    "mtow_kg": 758.0,
+    "empty_kg": 501.0,
+    "fuel_full_kg": 67.0
+  },
+  "C160": {
+    "make_model": "Transall C-160D",
+    "mtow_kg": 51000.0,
+    "empty_kg": 29000.0,
+    "fuel_full_kg": 15200.0
+  },
+  "C162": {
+    "make_model": "Cessna 162 Skycatcher",
+    "mtow_kg": 599.0,
+    "empty_kg": 377.0,
+    "fuel_full_kg": 65.0
+  },
+  "C170": {
+    "make_model": "Cessna 170B",
+    "mtow_kg": 998.0,
+    "empty_kg": 553.0,
+    "fuel_full_kg": 101.0
+  },
+  "C172": {
+    "make_model": "Cessna 172S Skyhawk",
+    "mtow_kg": 1180.0,
+    "empty_kg": 748.0,
+    "fuel_full_kg": 147.0
+  },
+  "C180": {
+    "make_model": "Cessna 180K Skywagon",
+    "mtow_kg": 1270.0,
+    "empty_kg": 733.0,
+    "fuel_full_kg": 163.0
+  },
+  "C182": {
+    "make_model": "Cessna 182T Skylane",
+    "mtow_kg": 1410.0,
+    "empty_kg": 821.0,
+    "fuel_full_kg": 250.4
+  },
+  "C185": {
+    "make_model": "Cessna A185F Skywagon",
+    "mtow_kg": 1519.0,
+    "empty_kg": 727.0,
+    "fuel_full_kg": 239.5
+  },
+  "C206": {
+    "make_model": "Cessna U206G Stationair",
+    "mtow_kg": 1633.0,
+    "empty_kg": 883.0,
+    "fuel_full_kg": 239.5
+  },
+  "C207": {
+    "make_model": "Cessna 207 Stationair 8",
+    "mtow_kg": 1724.0,
+    "empty_kg": 862.0,
+    "fuel_full_kg": 217.7
+  },
+  "C208": {
+    "make_model": "Cessna 208B Grand Caravan EX",
+    "mtow_kg": 3985.0,
+    "empty_kg": 2075.0,
+    "fuel_full_kg": 1009.0
+  },
+  "C210": {
+    "make_model": "Cessna 210N Centurion",
+    "mtow_kg": 1800.0,
+    "empty_kg": 1023.0,
+    "fuel_full_kg": 244.9
+  },
+  "C25C": {
+    "make_model": "Cessna Citation CJ4",
+    "mtow_kg": 7762.0,
+    "empty_kg": 4672.0,
+    "fuel_full_kg": 2644.0
+  },
+  "C310": {
+    "make_model": "Cessna 310R",
+    "mtow_kg": 2585.0,
+    "empty_kg": 1642.0,
+    "fuel_full_kg": 500.8
+  },
+  "C337": {
+    "make_model": "Cessna 337G Skymaster",
+    "mtow_kg": 1996.0,
+    "empty_kg": 1204.0,
+    "fuel_full_kg": 408.2
+  },
+  "C414": {
+    "make_model": "Cessna 414A Chancellor",
+    "mtow_kg": 3068.0,
+    "empty_kg": 1984.0,
+    "fuel_full_kg": 544.3
+  },
+  "C42": {
+    "make_model": "Comco Ikarus C42 C",
+    "mtow_kg": 560.0,
+    "empty_kg": 285.0,
+    "fuel_full_kg": 47.0
+  },
+  "C700": {
+    "make_model": "Cessna Citation Longitude",
+    "mtow_kg": 17917.0,
+    "empty_kg": 10906.0,
+    "fuel_full_kg": 6564.4
+  },
+  "COL4": {
+    "make_model": "Cessna 400 Corvalis TTx",
+    "mtow_kg": 1633.0,
+    "empty_kg": 1168.0,
+    "fuel_full_kg": 277.0
+  },
+  "DA20": {
+    "make_model": "Diamond DA20-C1 Eclipse",
+    "mtow_kg": 800.0,
+    "empty_kg": 528.0,
+    "fuel_full_kg": 65.0
+  },
+  "DA40": {
+    "make_model": "Diamond DA40 XLT (Lycoming/Avgas)",
+    "mtow_kg": 1200.0,
+    "empty_kg": 792.0,
+    "fuel_full_kg": 136.0
+  },
+  "DA42": {
+    "make_model": "Diamond DA42-VI Twin Star",
+    "mtow_kg": 1785.0,
+    "empty_kg": 1247.0,
+    "fuel_full_kg": 237.0
+  },
+  "DA50": {
+    "make_model": "Diamond DA50 RG",
+    "mtow_kg": 1999.0,
+    "empty_kg": 1450.0,
+    "fuel_full_kg": 148.0
+  },
+  "DA62": {
+    "make_model": "Diamond DA62 (US 7-seat, 2300 kg)",
+    "mtow_kg": 2300.0,
+    "empty_kg": 1598.0,
+    "fuel_full_kg": 262.0
+  },
+  "DC3": {
+    "make_model": "Douglas DC-3 (ziviles Standardmuster)",
+    "mtow_kg": 11431.0,
+    "empty_kg": 7650.0,
+    "fuel_full_kg": 2176.0
+  },
+  "DHC2": {
+    "make_model": "de Havilland Canada DHC-2 Beaver Mk.I (Landversion)",
+    "mtow_kg": 2313.0,
+    "empty_kg": 1275.0,
+    "fuel_full_kg": 258.0
+  },
+  "DHC3": {
+    "make_model": "de Havilland Canada DHC-3 Otter (Kolbenmotor)",
+    "mtow_kg": 3629.0,
+    "empty_kg": 2110.0,
+    "fuel_full_kg": 587.9
+  },
+  "DHC6": {
+    "make_model": "Viking/DHC DHC-6-400 Twin Otter",
+    "mtow_kg": 5669.0,
+    "empty_kg": 3265.0,
+    "fuel_full_kg": 1264.3
+  },
+  "DO27": {
+    "make_model": "Dornier Do 27",
+    "mtow_kg": 1570.0,
+    "empty_kg": 1070.0,
+    "fuel_full_kg": 152.4
+  },
+  "DO28": {
+    "make_model": "Dornier Do 28 D-2 Skyservant",
+    "mtow_kg": 3842.0,
+    "empty_kg": 2340.0,
+    "fuel_full_kg": 418.0
+  },
+  "DR40": {
+    "make_model": "Robin DR400/180 Regent",
+    "mtow_kg": 1100.0,
+    "empty_kg": 605.0,
+    "fuel_full_kg": 78.0
+  },
+  "DV20": {
+    "make_model": "Diamond DV20 Katana",
+    "mtow_kg": 750.0,
+    "empty_kg": 515.0,
+    "fuel_full_kg": 65.3
+  },
+  "E300": {
+    "make_model": "Extra 300L",
+    "mtow_kg": 950.0,
+    "empty_kg": 677.0,
+    "fuel_full_kg": 144.0
+  },
+  "EC25": {
+    "make_model": "Airbus H225 Super Puma",
+    "mtow_kg": 11000.0,
+    "empty_kg": 5260.0,
+    "fuel_full_kg": 2070.0
+  },
+  "EC30": {
+    "make_model": "Airbus H130 (EC130 T2)",
+    "mtow_kg": 2427.0,
+    "empty_kg": 1380.0,
+    "fuel_full_kg": 422.4
+  },
+  "EC35": {
+    "make_model": "Airbus H135",
+    "mtow_kg": 3100.0,
+    "empty_kg": 1670.0,
+    "fuel_full_kg": 741.5
+  },
+  "EC45": {
+    "make_model": "Airbus H145 (D3)",
+    "mtow_kg": 3800.0,
+    "empty_kg": 1895.0,
+    "fuel_full_kg": 723.0
+  },
+  "FDCT": {
+    "make_model": "Flight Design CTLS",
+    "mtow_kg": 599.0,
+    "empty_kg": 367.0,
+    "fuel_full_kg": 95.0
+  },
+  "G115": {
+    "make_model": "Grob G115 C2",
+    "mtow_kg": 920.0,
+    "empty_kg": 650.0,
+    "fuel_full_kg": 72.0
+  },
+  "G21": {
+    "make_model": "Grumman G-21A Goose",
+    "mtow_kg": 4220.0,
+    "empty_kg": 2800.0,
+    "fuel_full_kg": 925.3
+  },
+  "G2CA": {
+    "make_model": "Guimbal Cabri G2",
+    "mtow_kg": 700.0,
+    "empty_kg": 419.0,
+    "fuel_full_kg": 122.0
+  },
+  "GA8": {
+    "make_model": "GippsAero GA8 Airvan",
+    "mtow_kg": 1815.0,
+    "empty_kg": 862.0,
+    "fuel_full_kg": 239.5
+  },
+  "H160": {
+    "make_model": "Airbus H160",
+    "mtow_kg": 6050.0,
+    "empty_kg": 4050.0,
+    "fuel_full_kg": 1120.0
+  },
+  "H269": {
+    "make_model": "Schweizer 300C",
+    "mtow_kg": 930.0,
+    "empty_kg": 499.0,
+    "fuel_full_kg": 88.0
+  },
+  "H47": {
+    "make_model": "Boeing CH-47D Chinook",
+    "mtow_kg": 22680.0,
+    "empty_kg": 10150.0,
+    "fuel_full_kg": 3172.8
+  },
+  "H60": {
+    "make_model": "Sikorsky UH-60L Black Hawk",
+    "mtow_kg": 10659.0,
+    "empty_kg": 4819.0,
+    "fuel_full_kg": 1094.1
+  },
+  "HUSK": {
+    "make_model": "Aviat A-1 Husky",
+    "mtow_kg": 998.0,
+    "empty_kg": 652.0,
+    "fuel_full_kg": 141.5
+  },
+  "ICON": {
+    "make_model": "ICON A5",
+    "mtow_kg": 685.0,
+    "empty_kg": 490.0,
+    "fuel_full_kg": 54.0
+  },
+  "J3": {
+    "make_model": "Piper J-3 Cub",
+    "mtow_kg": 593.0,
+    "empty_kg": 308.0,
+    "fuel_full_kg": 32.7
+  },
+  "JU52": {
+    "make_model": "Junkers Ju 52/3m",
+    "mtow_kg": 10500.0,
+    "empty_kg": 6590.0,
+    "fuel_full_kg": 1760.8
+  },
+  "KODI": {
+    "make_model": "Daher/Quest Kodiak 100 Series III",
+    "mtow_kg": 3100.0,
+    "empty_kg": 1522.0,
+    "fuel_full_kg": 972.5
+  },
+  "LAMA": {
+    "make_model": "Aerospatiale SA 315B Lama",
+    "mtow_kg": 1950.0,
+    "empty_kg": 1021.0,
+    "fuel_full_kg": 460.0
+  },
+  "M20P": {
+    "make_model": "Mooney M20J 201",
+    "mtow_kg": 1243.0,
+    "empty_kg": 758.0,
+    "fuel_full_kg": 174.0
+  },
+  "P51": {
+    "make_model": "North American P-51D Mustang",
+    "mtow_kg": 4173.0,
+    "empty_kg": 3465.0,
+    "fuel_full_kg": 501.0
+  },
+  "PA18": {
+    "make_model": "Piper PA-18-150 Super Cub",
+    "mtow_kg": 900.0,
+    "empty_kg": 476.0,
+    "fuel_full_kg": 98.0
+  },
+  "PA24": {
+    "make_model": "Piper PA-24-250 Comanche",
+    "mtow_kg": 1451.0,
+    "empty_kg": 859.0,
+    "fuel_full_kg": 244.9
+  },
+  "PA28": {
+    "make_model": "Piper PA-28-181 Archer III",
+    "mtow_kg": 1156.0,
+    "empty_kg": 727.0,
+    "fuel_full_kg": 130.6
+  },
+  "PA30": {
+    "make_model": "Piper PA-30 Twin Comanche",
+    "mtow_kg": 1693.0,
+    "empty_kg": 1124.0,
+    "fuel_full_kg": 310.3
+  },
+  "PA32": {
+    "make_model": "Piper PA-32-301 Saratoga",
+    "mtow_kg": 1650.0,
+    "empty_kg": 999.0,
+    "fuel_full_kg": 288.5
+  },
+  "PA34": {
+    "make_model": "Piper PA-34-220T Seneca V",
+    "mtow_kg": 2155.0,
+    "empty_kg": 1548.0,
+    "fuel_full_kg": 332.0
+  },
+  "PA44": {
+    "make_model": "Piper PA-44-180 Seminole",
+    "mtow_kg": 1730.0,
+    "empty_kg": 1183.0,
+    "fuel_full_kg": 293.9
+  },
+  "PC12": {
+    "make_model": "Pilatus PC-12 NGX",
+    "mtow_kg": 4500.0,
+    "empty_kg": 2605.0,
+    "fuel_full_kg": 1233.9
+  },
+  "PC6T": {
+    "make_model": "Pilatus PC-6/B2-H4 Turbo Porter",
+    "mtow_kg": 2750.0,
+    "empty_kg": 1250.0,
+    "fuel_full_kg": 917.8
+  },
+  "PTS1": {
+    "make_model": "Pitts S-1S Special",
+    "mtow_kg": 499.0,
+    "empty_kg": 327.0,
+    "fuel_full_kg": 54.0
+  },
+  "PTS2": {
+    "make_model": "Pitts S-2B Special",
+    "mtow_kg": 737.0,
+    "empty_kg": 533.0,
+    "fuel_full_kg": 76.0
+  },
+  "PZ04": {
+    "make_model": "PZL-104 Wilga 35A",
+    "mtow_kg": 1300.0,
+    "empty_kg": 830.0,
+    "fuel_full_kg": 137.0
+  },
+  "R22": {
+    "make_model": "Robinson R22 Beta II",
+    "mtow_kg": 621.0,
+    "empty_kg": 376.0,
+    "fuel_full_kg": 78.9
+  },
+  "R44": {
+    "make_model": "Robinson R44 Raven II",
+    "mtow_kg": 1134.0,
+    "empty_kg": 683.0,
+    "fuel_full_kg": 127.9
+  },
+  "R66": {
+    "make_model": "Robinson R66 Turbine",
+    "mtow_kg": 1225.0,
+    "empty_kg": 635.0,
+    "fuel_full_kg": 221.9
+  },
+  "S64": {
+    "make_model": "Sikorsky/Erickson S-64E Aircrane (Skycrane)",
+    "mtow_kg": 19051.0,
+    "empty_kg": 8724.0,
+    "fuel_full_kg": 1202.0
+  },
+  "S76": {
+    "make_model": "Sikorsky S-76C++",
+    "mtow_kg": 4773.0,
+    "empty_kg": 2695.0,
+    "fuel_full_kg": 857.0
+  },
+  "SF25": {
+    "make_model": "Scheibe SF-25C Falke",
+    "mtow_kg": 650.0,
+    "empty_kg": 435.0,
+    "fuel_full_kg": 40.0
+  },
+  "SF50": {
+    "make_model": "Cirrus SF50 Vision Jet G2+",
+    "mtow_kg": 2722.0,
+    "empty_kg": 1620.0,
+    "fuel_full_kg": 893.5
+  },
+  "SPIT": {
+    "make_model": "Supermarine Spitfire Mk IX",
+    "mtow_kg": 3402.0,
+    "empty_kg": 2291.0,
+    "fuel_full_kg": 278.0
+  },
+  "SR20": {
+    "make_model": "Cirrus SR20 G6",
+    "mtow_kg": 1360.0,
+    "empty_kg": 938.0,
+    "fuel_full_kg": 152.4
+  },
+  "SR22": {
+    "make_model": "Cirrus SR22 G6 (non-turbo)",
+    "mtow_kg": 1550.0,
+    "empty_kg": 1023.0,
+    "fuel_full_kg": 250.4
+  },
+  "ST75": {
+    "make_model": "Boeing-Stearman Model 75 (PT-17)",
+    "mtow_kg": 1232.0,
+    "empty_kg": 878.0,
+    "fuel_full_kg": 125.2
+  },
+  "TBM9": {
+    "make_model": "Daher TBM 900",
+    "mtow_kg": 3354.0,
+    "empty_kg": 2075.0,
+    "fuel_full_kg": 887.0
+  },
+  "TIGM": {
+    "make_model": "De Havilland DH.82A Tiger Moth",
+    "mtow_kg": 816.0,
+    "empty_kg": 512.0,
+    "fuel_full_kg": 54.4
+  },
+  "UH1": {
+    "make_model": "Bell UH-1H Iroquois (Huey)",
+    "mtow_kg": 4309.0,
+    "empty_kg": 2358.0,
+    "fuel_full_kg": 668.6
+  },
+  "VL3": {
+    "make_model": "JMB Aircraft VL-3 (600-kg-LSA-Version)",
+    "mtow_kg": 600.0,
+    "empty_kg": 360.0,
+    "fuel_full_kg": 101.0
+  },
+  "XCUB": {
+    "make_model": "CubCrafters XCub",
+    "mtow_kg": 1013.0,
+    "empty_kg": 551.0,
+    "fuel_full_kg": 125.2
+  },
+  "YK52": {
+    "make_model": "Jakowlew Jak-52",
+    "mtow_kg": 1305.0,
+    "empty_kg": 998.0,
+    "fuel_full_kg": 88.0
+  }
+}
