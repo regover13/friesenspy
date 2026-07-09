@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.21.1",
+    "date": "2026-07-09",
+    "title": "FriesenKutter: verlorene Fracht ist jetzt je Frachtart im Balken sichtbar",
+    "items": [
+      "💀 Der Fortschrittsbalken zeigt verlorene Fracht (versunken/geklaut) jetzt je Frachtart als eigenen dunklen Abschnitt und die Legende schreibt „💀 X kg verloren“ dahinter. Vorher stand nur die Gesamtsumme unten — eine Zeile wie „🎞️ Filmrollen 0 / 200 kg“ sah aus, als wären noch volle 200 kg lieferbar, obwohl z. B. 100 kg unwiederbringlich versunken waren. Jetzt bleibt am Balkenende nur der wirklich noch lieferbare Rest leer."
+    ]
+  },
+  {
     "version": "8.21.0",
     "date": "2026-07-09",
     "title": "FriesenKutter Live: klares Ziel, Strecke je Ladung, ruhigere Teilbalken",

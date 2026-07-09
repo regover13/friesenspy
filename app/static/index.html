@@ -413,6 +413,8 @@
     .kutter-feed td:last-child { max-width: 260px; white-space: normal; }
     .kutter-summary { font-style: italic; color: #ffe6c2; background: rgba(200,147,58,0.12); border-left: 3px solid #c8933a; padding: 8px 12px; border-radius: 0 8px 8px 0; margin-bottom: 10px; font-size: 0.85rem; line-height: 1.4; }
     .kutter-seg > i.kseg-res { opacity: .5; background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,.35) 4px 8px); }
+    /* Verloren (versunken/geklaut): dunkel + „tote" Schraffur — liest sich als weg, nicht als offen (#8). */
+    .kutter-seg > i.kseg-lost { background: rgba(70,74,82,0.85); background-image: repeating-linear-gradient(45deg, transparent 0 3px, rgba(232,169,160,.55) 3px 6px); }
     .kutter-feed td.kf-res { color: #9fc9e8; text-align: right; font-style: italic; }
     .kutter-loss { color: #e8a9a0; }
     /* Verlust-kg in der Fracht-Spalte bündig zu den anderen kg-Werten (kf-empty macht sonst kursiv/links). */
@@ -4673,21 +4675,32 @@ function _kSegLegend(items, totalTarget, sub) {
   totalTarget = totalTarget || 1;
   const segs = items.map(({ c, gi }) => {
     const pct = Math.min(100, c.pct);
-    const resPct = c.target_kg > 0 ? Math.min(100 - pct, 100 * (c.reserved_kg || 0) / c.target_kg) : 0;
+    // Verloren (versunken/geklaut) belegt einen eigenen Balken-Abschnitt zwischen „geliefert" und
+    // „reserviert": delivered + lost + reserved ≤ target (Netto-Pool #8), der Rest bleibt leer =
+    // wirklich noch lieferbar. So sieht man, dass 100 kg verloren die 200 kg NICHT mehr voll lieferbar
+    // lassen (#8-Anzeige-Nachzug) — statt fälschlich „noch alles offen".
+    const lostPct = c.target_kg > 0 ? Math.min(100 - pct, 100 * (c.lost_kg || 0) / c.target_kg) : 0;
+    const resPct = c.target_kg > 0 ? Math.min(100 - pct - lostPct, 100 * (c.reserved_kg || 0) / c.target_kg) : 0;
+    const lost = lostPct > 0
+      ? '<i class="kseg-lost" style="left:' + pct.toFixed(1) + '%;width:' + lostPct.toFixed(1) + '%"></i>' : '';
     const res = resPct > 0
-      ? '<i class="kseg-res" style="left:' + pct.toFixed(1) + '%;width:' + resPct.toFixed(1)
+      ? '<i class="kseg-res" style="left:' + (pct + lostPct).toFixed(1) + '%;width:' + resPct.toFixed(1)
         + '%;background-color:' + _kColor(gi) + '"></i>' : '';
     return '<div class="kutter-seg" style="width:' + (100 * c.target_kg / totalTarget).toFixed(2)
-      + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i>' + res + '</div>';
+      + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i>' + lost + res + '</div>';
   }).join('');
   const legend = items.map(({ c, gi }) => {
     const mark = c.emoji ? c.emoji + ' '
       : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
     const res = (c.reserved_kg || 0) > 0 ? ' (+' + _kfmtT(c.reserved_kg) + ' ✈️)' : '';
+    // Verlust je Frachtart sichtbar machen (vorher stand nur die Gesamt-Summe unten) — sonst wirkt
+    // „0 / 200" wie voll offen, obwohl ein Teil unwiederbringlich weg ist (#8).
+    const lost = (c.lost_kg || 0) > 0
+      ? ' <span class="kutter-loss">💀 ' + _kfmtT(c.lost_kg) + ' verloren</span>' : '';
     const cap = c.per_flight_max_kg != null
       ? ' <span class="kl-cap" title="Obergrenze pro Flug — Überschuss zählt nicht als geliefert">⚠ '
         + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
-    return '<span>' + mark + _kesc(c.name) + cap + ' ' + _kfmtT(c.delivered_kg) + ' / ' + _kfmtT(c.target_kg) + res + '</span>';
+    return '<span>' + mark + _kesc(c.name) + cap + ' ' + _kfmtT(c.delivered_kg) + ' / ' + _kfmtT(c.target_kg) + res + lost + '</span>';
   }).join('');
   const barCls = sub ? 'kutter-bar kutter-bar--sub' : 'kutter-bar';
   const legCls = sub ? 'kutter-legend kutter-legend--sub' : 'kutter-legend';
