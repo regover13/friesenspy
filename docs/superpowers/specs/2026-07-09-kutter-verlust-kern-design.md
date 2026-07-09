@@ -61,7 +61,14 @@ Neue Signatur nimmt das dict (`latches: dict[tuple[int, str], str]`). Match-Logi
 - **Vorfilter (Connection-Scoping behalten):** `c == cid and lo <= takeoff_ts` — verhindert
   Zuordnung eines Latches einer anderen/späteren Connection.
 - **Positiver Match (NEU, gegen `arrived_at` statt Connection-Logoff):**
-  `takeoff_ts <= arrived_at and (landing_ts is None or arrived_at <= landing_ts)`.
+  `takeoff_ts <= arrived_at and (landing_ts is None or arrived_at <= landing_ts + _LATCH_SLACK)`.
+- **`_LATCH_SLACK` (NEU, Fable-Härtung):** `arrived_at` wird in `check_live_arrival` per `_now_utc()`
+  erzeugt, und zwar erst NACH `save_position_history` im selben Poll — es kann daher 1 s (oder bei
+  einem Vollstopp knapp außerhalb des 4-km-Latch-Radius, aber innerhalb der 10-km-Leg-Detektor-Grenze
+  auch mehrere Poll-Takte) NACH dem `landing_ts` des liefernden Legs liegen. Ohne Toleranz wäre der
+  Match flaky. Slack = großzügig ein Poll-Intervall-Puffer, konkret **120 s** (≈ 2× Poll-Takt) auf
+  die OBERE Grenze. Nur nach oben, nie nach unten (`takeoff_ts <= arrived_at` bleibt scharf — ein
+  Folge-Leg, das erst nach der Ankunft startet, darf nie matchen).
 - Die interne `SELECT logoff_time FROM flights ...`-Nachschau **entfällt** (kein Connection-Lookup
   mehr nötig).
 
@@ -89,6 +96,17 @@ Kutter-Testklasse erweitern) und/oder `tests/test_poller.py`.
   weiterhin als `loaded` erkannt.
 - **Trackless Fallback:** Leg == Connection (arrived_at im Connection-Fenster) → unverändert
   `loaded`.
+- **Slack-Randfall (Fable):** `arrived_at` liegt bis zu `_LATCH_SLACK` NACH `landing_ts` des
+  liefernden Legs → matcht trotzdem (`loaded`); `arrived_at` deutlich später (> Slack, echtes
+  Folge-Leg) → matcht NICHT.
+
+**Bestehende Tests anpassen (Fable-Fund — der set→dict-Wechsel bricht 9 Asserts, mechanisch):**
+`get_transport_live_arrivals` liefert künftig ein dict statt Set. Set-EQUALITY-Vergleiche brechen
+(`dict != set`):
+- `D:\User\Tobias\OneDrive\Claude\FriesenSpy\tests\test_transport.py:572, 580, 590, 665, 674, 683, 691, 701`
+- `D:\User\Tobias\OneDrive\Claude\FriesenSpy\tests\test_poller.py:627`
+Fix mechanisch: entweder Assert gegen `set(latched)` bzw. `set(latched.keys())` vergleichen, oder
+gegen das erwartete dict. Membership-Nutzungen (`in`) bleiben unverändert grün.
 
 ---
 
@@ -117,6 +135,17 @@ Reserved-Fill (5479-5509), Verlust-Fill (5516-5554, brutto + poollos).
 - Die je-Flug-Ausgabe (`q["lost_kg"]`/`q["cargo_lines"]` für Verlust-Zeilen) = Σ der tatsächlich in
   `lost[i]` zugeordneten `contrib`-Werte (netto), NICHT das rohe Ziel. Löst #7.
 
+**Umsetzungs-Hinweise (Fable, keine Designfehler — beim Coden beachten):**
+- Der Delivered-Pass macht heute `if not q["loaded"]: cargo_lines=[]; continue` (`database.py:5433-5436`).
+  Die stolen/sunk-Behandlung muss **vor** diesem `continue` greifen (sonst werden Verlust-Zeilen
+  übersprungen).
+- `q["lost_kg"]` wird beim Loss-Attach (`database.py:5344`) mit der vollen Musterzuladung vorbelegt
+  und dient heute als Verteil-Eingang (`5521`). Im Merge diesen Wert als **Input** nehmen und am
+  Ende mit der Netto-Summe **überschreiben**.
+- Bewusste, gewollte Anzeige-Änderung: die `cargo_lines` von stolen/sunk werden künftig **netto**
+  statt brutto (die „was war an Bord"-Zahl schrumpft auf das real fürs Event Relevante) — genau die
+  #7-Korrektur, die der Nutzer wollte.
+
 ### B5 — Reserved-Fill zieht `lost[i]` zusätzlich ab
 
 Datei: `database.py:5491`. Space-Formel:
@@ -133,10 +162,10 @@ gegen das rohe Ziel (Entscheidung „Target bleibt Maßstab").
 
 ### B7 — Nicht angefasst (Entscheidung „Target bleibt Maßstab")
 
-- `poller.py:1280-1284` (`goal_reached_at` gegen rohes `target_kg`) — UNVERÄNDERT. Ein durch
+- `poller.py:1298-1302` (`goal_reached_at` gegen rohes `target_kg`) — UNVERÄNDERT. Ein durch
   Verluste unvollendbares Event latcht `goal_reached_at` nicht; das ist gewollt.
-- `poller.py:1285-1320` (`summarized_at`/Feierabend) — UNVERÄNDERT, hängt an `dtend`, schließt
-  normal ab.
+- `poller.py:1303-1334` (`summarized_at`/Feierabend) — UNVERÄNDERT, hängt an `dtend` +
+  `transport_anyone_in_progress` (1306-1309), schließt normal ab.
 - Badge (`main.py:1886-1917`) — profitiert automatisch von der Netto-Korrektur (summiert
   `stolen_kg`/`sunk_kg` aus `progress["losses"]`), keine Logikänderung.
 - Kein `deliverable_kg`-Feld, kein eigener Abschluss-Zustand (bewusst nicht gewählt).
