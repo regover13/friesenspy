@@ -1372,6 +1372,7 @@ class VatsimPoller:
                     conn, type_code,
                     mtow_kg=s.get("mtow_kg"), empty_kg=s.get("empty_kg"),
                     fuel_kg=s.get("fuel_kg", s.get("fuel_full_kg")),
+                    fuel_full_kg=s.get("fuel_full_kg"),
                     crew_kg=s.get("crew_kg"), source="llm",
                     make_model=s.get("make_model"),
                 )

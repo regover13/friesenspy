@@ -1344,6 +1344,27 @@ class TestAutoPayloadResearch:
         assert row["fuel_kg"] == 70.0  # halbe Tankfüllung als Default
 
     @pytest.mark.asyncio
+    async def test_auto_research_stores_fuel_full_kg(self, tmp_path):
+        """Task 2c: Auto-Zuladung schreibt den max. Tankinhalt (fuel_full_kg) mit,
+        das Rechenfeld fuel_kg bleibt die Hälfte (aus der Suggestion übernommen)."""
+        from app.database import get_connection, init_db
+        db_file = str(tmp_path / "t.db")
+        init_db(db_file)
+        poller = _make_poller(db_path=db_file)
+        with patch("app.llm.suggest_aircraft_payload", return_value=dict(self.SUGGESTION)):
+            await poller._auto_research_payload("PZ04")
+        conn = get_connection(db_file)
+        try:
+            row = conn.execute(
+                "SELECT fuel_kg, fuel_full_kg FROM aircraft_payloads WHERE type_code = 'PZ04'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row is not None
+        assert row["fuel_full_kg"] == 140.0  # voller Tank aus der Suggestion
+        assert row["fuel_kg"] == 70.0        # Rechenfeld bleibt halber Tank
+
+    @pytest.mark.asyncio
     async def test_auto_research_does_not_overwrite_manual(self, tmp_path):
         from app.database import get_connection, init_db, upsert_payload
         db_file = str(tmp_path / "t.db")
