@@ -2602,6 +2602,39 @@ def test_seed_idempotent(tmp_path, monkeypatch):
     conn.close()
 
 
+def test_seed_overwrites_llm_but_not_manual(tmp_path, monkeypatch):
+    """M1: kuratierte Werte ersetzen automatisch recherchierte (source='llm') Zeilen,
+    lassen 'manual' aber unangetastet."""
+    from app import database
+    db = str(tmp_path / "t.db")
+    database.init_db(db)
+    conn = database.get_connection(db)
+    # eine auto-recherchierte (llm) und eine handgepflegte (manual) Zeile
+    database.upsert_payload(conn, "ZLLM", mtow_kg=999, empty_kg=888, fuel_kg=10,
+                            fuel_full_kg=20, payload_kg=1, source="llm", make_model="Alt-LLM")
+    database.upsert_payload(conn, "ZMAN", mtow_kg=500, empty_kg=300, fuel_kg=5,
+                            fuel_full_kg=10, payload_kg=99, source="manual", make_model="Handpflege")
+    conn.commit()
+    monkeypatch.setattr(database, "load_curated_specs", lambda: {
+        "ZLLM": {"make_model": "Kuratiert", "mtow_kg": 1111, "empty_kg": 743, "fuel_full_kg": 144},
+        "ZMAN": {"make_model": "Kuratiert", "mtow_kg": 1111, "empty_kg": 743, "fuel_full_kg": 144},
+    })
+    database.seed_curated_payloads(conn); conn.commit()
+    llm = conn.execute("SELECT source, make_model, mtow_kg, fuel_full_kg, fuel_kg FROM aircraft_payloads WHERE type_code='ZLLM'").fetchone()
+    man = conn.execute("SELECT source, make_model, mtow_kg FROM aircraft_payloads WHERE type_code='ZMAN'").fetchone()
+    # llm-Zeile: auf kuratierte Werte gehoben
+    assert llm["source"] == "curated"
+    assert llm["make_model"] == "Kuratiert"
+    assert abs(llm["mtow_kg"] - 1111) < 0.5
+    assert abs(llm["fuel_full_kg"] - 144) < 0.5
+    assert abs(llm["fuel_kg"] - 72) < 0.5   # halber Tank
+    # manual-Zeile: unangetastet
+    assert man["source"] == "manual"
+    assert man["make_model"] == "Handpflege"
+    assert abs(man["mtow_kg"] - 500) < 0.5
+    conn.close()
+
+
 def test_upsert_stores_fuel_full(tmp_path):
     from app import database
     db = str(tmp_path / "t.db"); database.init_db(db)

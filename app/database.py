@@ -3969,14 +3969,17 @@ def load_curated_specs() -> dict[str, dict]:
 
 
 def seed_curated_payloads(conn: sqlite3.Connection) -> int:
-    """Fehlende kuratierte Flugzeugtypen in ``aircraft_payloads`` einfügen (idempotent).
+    """Kuratierte Flugzeugtypen in ``aircraft_payloads`` einpflegen (idempotent).
 
-    Nur ``INSERT OR IGNORE`` → bestehende Zeilen (insb. ``source='manual'``) bleiben
-    unangetastet. Werte werden über ``llm._build_result`` gerechnet (halber Tank, Crew 85).
-    Rückgabe: Anzahl neu eingefügter Zeilen.
+    Fehlende Typen werden eingefügt; bestehende **automatisch recherchierte** Zeilen
+    (``source`` ``'llm'``/``'default'``/``NULL``) werden mit den kuratierten Werten
+    ÜBERSCHRIEBEN (Max-Tank nachtragen + Tankfüllung korrigieren). ``source='manual'``
+    (Handpflege) und bereits ``'curated'`` bleiben unangetastet — dadurch idempotent und
+    verlustfrei. Werte über ``llm._build_result`` (halber Tank, Crew 85).
+    Rückgabe: Anzahl eingefügter/aktualisierter Zeilen.
     """
     from app.llm import _build_result  # lazy: reine Rechnung, vermeidet Modul-Kopplung
-    inserted = 0
+    written = 0
     for raw_code, spec in load_curated_specs().items():
         code = normalize_type_code(raw_code)
         if not code or not isinstance(spec, dict):
@@ -3991,14 +3994,21 @@ def seed_curated_payloads(conn: sqlite3.Connection) -> int:
             continue
         r = _build_result(str(spec.get("make_model") or code), mtow, empty, fuel_full)
         cur = conn.execute(
-            """INSERT OR IGNORE INTO aircraft_payloads
+            """INSERT INTO aircraft_payloads
                    (type_code, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg, source, make_model, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'curated', ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'curated', ?, ?)
+               ON CONFLICT(type_code) DO UPDATE SET
+                   mtow_kg=excluded.mtow_kg, empty_kg=excluded.empty_kg, fuel_kg=excluded.fuel_kg,
+                   fuel_full_kg=excluded.fuel_full_kg, crew_kg=excluded.crew_kg,
+                   payload_kg=excluded.payload_kg, source='curated', make_model=excluded.make_model,
+                   updated_at=excluded.updated_at
+               WHERE aircraft_payloads.source IS NULL
+                  OR aircraft_payloads.source IN ('llm', 'default')""",
             (code, r["mtow_kg"], r["empty_kg"], r["fuel_kg"], r["fuel_full_kg"], r["crew_kg"],
              r["payload_kg"], r["make_model"], _now_utc()),
         )
-        inserted += cur.rowcount
-    return inserted
+        written += cur.rowcount
+    return written
 
 
 def upsert_payload(
