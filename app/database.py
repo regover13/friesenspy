@@ -5432,6 +5432,10 @@ def compute_transport_progress(
     cargo = get_transport_cargo(conn, int(event["id"]))
     cargo_targets = [c["target_kg"] for c in cargo]
     delivered = [0.0] * len(cargo)
+    # #7/#8: verlorene (stolen/sunk) Menge je Frachtart — netto verteilt wie `delivered`, verbraucht
+    # denselben Pool dauerhaft (target − delivered − lost_alloc). `returned` fließt hier NICHT ein
+    # (Ware kam heil zurück). Der Pool-Abzug macht verlorene Ware unwiederbringlich (kein Nachschub).
+    lost_alloc = [0.0] * len(cargo)
     _INF = float("inf")
 
     # #15 Sub-Projekt B: Fracht je Startplatz. Eine Frachtart-Zeile ist für einen Flug füllbar,
@@ -5457,20 +5461,36 @@ def compute_transport_progress(
     # Co-Load-Füllung — NUR beladene Flüge. Jeder Flug verteilt seine Zuladung in Manifest-
     # Reihenfolge über die noch nicht vollen Frachtarten, je Frachtart gekappt durch
     # per_flight_max_kg (Obergrenze pro Flug); der Rest fließt in die nächste Frachtart (Co-Load).
+    # Co-Load-Füllung — beladene Flüge UND Verluste (stolen/sunk) in EINEM chronologischen Durchlauf
+    # (network nach dep_time). Beide ziehen aus DEMSELBEN Frachtart-Pool: `space = target − delivered
+    # − lost_alloc`. Dadurch (#7) zählt ein Verlust nur, was zu seinem dep_time real noch im Topf war
+    # (netto statt brutto), und (#8) verlorene Ware bleibt für ALLE späteren Flüge (delivered ODER
+    # reserved) dauerhaft aus dem Pool. `returned` ist KEIN Pool-Verbrauch → wird hier übersprungen
+    # (dessen Brutto-Bordladungs-Anzeige folgt weiter unten, unverändert).
     for q in network:
         q["name"] = names.get(q["cid"], "")
-        if not q["loaded"]:
+        is_loss = q.get("loss_kind") in ("stolen", "sunk")
+        if not q["loaded"] and not is_loss:
             q["cargo_name"] = None
             q["cargo_lines"] = []
             continue
-        remaining = q["tonnage_kg"]
+        # Eingang der Verteilung: Lieferung → Musterzuladung; Verlust → Bordladung (lost_kg wurde beim
+        # Loss-Attach mit der Musterzuladung vorbelegt, Fallback: Musterzuladung des Typs).
+        if is_loss:
+            remaining = q.get("lost_kg") or 0.0
+            if remaining <= 1e-9:
+                remaining = round(payload_map.get(normalize_type_code(q.get("aircraft")), default_kg), 1)
+        else:
+            remaining = q["tonnage_kg"]
+        loss_input = remaining
+        pool = lost_alloc if is_loss else delivered
         contrib: dict[int, float] = {}
         for i, c in enumerate(cargo):
             if remaining <= 1e-9:
                 break
             if not _fillable(q, i):
                 continue
-            space = cargo_targets[i] - delivered[i]
+            space = cargo_targets[i] - delivered[i] - lost_alloc[i]
             if space <= 1e-9:
                 continue
             cap = c.get("per_flight_max_kg")
@@ -5478,25 +5498,26 @@ def compute_transport_progress(
             add = min(remaining, cap, space)
             if add <= 1e-9:
                 continue
-            delivered[i] += add
+            pool[i] += add
             remaining -= add
             contrib[i] = contrib.get(i, 0.0) + add
-        # Durchgängig Netto (#63): die gutgeschriebene Menge dieses Flugs = die tatsächlich ins
-        # Manifest verteilte Summe, NICHT die volle Musterzuladung. Überschuss ohne Manifest-Platz
-        # (per_flight_max_kg-Kappung oder bereits volle Frachtarten) zählt nicht als geliefert —
-        # so gilt total_kg == Σ delivered und der Fortschrittsbalken überzeichnet nie. Die
-        # Musterzuladung diente nur als Eingang der Co-Load-Verteilung (remaining oben).
-        # OHNE Manifest (cargo leer) gibt es keine Frachtart zum Verteilen und keinen Balken, der
-        # überzeichnen könnte — dann bleibt die Musterzuladung als schlichter kg-Zähler stehen.
-        q["onboard_kg"] = q["tonnage_kg"]  # Musterzuladung merken — „an Bord"-Zahl für „belegt / an Bord"
-        if cargo:
-            q["tonnage_kg"] = round(sum(contrib.values()), 1)
         ordered = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
         q["cargo_lines"] = [
             {"name": cargo[i]["name"], "emoji": cargo[i].get("emoji"), "kg": round(kg, 1)}
             for i, kg in ordered
         ]
         q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
+        if is_loss:
+            # Netto-Verlustmenge (#7): Σ der tatsächlich zugeordneten Frachtart-Anteile statt der
+            # vollen Musterzuladung. Ohne Manifest bleibt die Eingangs-Bordladung als kg-Zähler.
+            q["lost_kg"] = round(sum(contrib.values()), 1) if cargo else loss_input
+        else:
+            # Durchgängig Netto (#63): gutgeschriebene Menge = ins Manifest verteilte Summe, NICHT die
+            # Musterzuladung; Überschuss ohne Manifest-Platz zählt nicht als geliefert (total_kg == Σ
+            # delivered). OHNE Manifest bleibt die Musterzuladung als schlichter kg-Zähler.
+            q["onboard_kg"] = q["tonnage_kg"]  # „an Bord"-Zahl für „belegt / an Bord"
+            if cargo:
+                q["tonnage_kg"] = round(sum(contrib.values()), 1)
 
     # Reservierungen (offene Flüge Richtung Ziel, noch ohne Latch) in die Rest-Kapazität
     # verteilen — gleiche Co-Load-Regeln wie Lieferungen, aber in einem von `delivered`
@@ -5517,7 +5538,7 @@ def compute_transport_progress(
                 break
             if not _fillable(q, i):
                 continue
-            space = cargo_targets[i] - delivered[i] - reserved_alloc[i]
+            space = cargo_targets[i] - delivered[i] - lost_alloc[i] - reserved_alloc[i]
             if space <= 1e-9:
                 continue
             cap = c.get("per_flight_max_kg")
@@ -5537,13 +5558,13 @@ def compute_transport_progress(
         ]
         q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
 
-    # Verlust-Bordladung aufschlüsseln (reine Anzeige, Nutzer-Wunsch 02.07.: „x Krabbenbrötchen,
-    # x Schafe"): was war an Bord, als der Kutter versank/geklaut wurde bzw. zurückkam? Bewusst
-    # BRUTTO — volle Musterzuladung in Manifest-Reihenfolge, nur pro-Flug-Kappungen, OHNE
-    # Restkapazitäts-Abzug: ein Verlust betrifft die GANZE Ladung, nicht nur den Manifest-Anteil
-    # (anders als die Reservierung oben, die nur das zählt, was fürs Ziel noch gebraucht wird).
+    # 'returned'-Bordladung aufschlüsseln (reine Anzeige, Nutzer-Wunsch 02.07.: „x Krabbenbrötchen"):
+    # was war an Bord, als der Kutter heil umkehrte? Bewusst BRUTTO (volle Musterzuladung in Manifest-
+    # Reihenfolge, nur pro-Flug-Kappungen, OHNE Restkapazitäts-Abzug). 'returned' verbraucht KEINEN
+    # Pool und trägt lost_kg=0 — reine Anzeige. stolen/sunk laufen NICHT hier, sondern netto im
+    # gemeinsamen Delivered/Verlust-Pool oben (#7/#8).
     for q in network:
-        if not q.get("loss_kind"):
+        if q.get("loss_kind") != "returned":
             continue
         # Musterzuladung = EINGANG der Verteilung (was das Flugzeug tragen konnte). 'returned'
         # trägt lost_kg=0, zeigt aber trotzdem seine Bordladung → Fallback auf die Musterzuladung.
@@ -5572,15 +5593,7 @@ def compute_transport_progress(
             for i, kg in ordered
         ]
         q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
-        # Netto-Verlust (Fix Live 06.07.): die VERLORENE Menge = Σ der tatsächlich zugeordneten
-        # Event-Frachtart-Anteile (= cargo_lines), NICHT die volle Musterzuladung. Überschuss-
-        # Kapazität, die keiner Manifest-Frachtart entspricht (Pro-Flug-Kappung oder nur wenige
-        # Frachtarten), war nie Event-Fracht und darf nicht als „verloren" zählen. Konsistent mit
-        # reserved_kg/tonnage_kg (durchgängig Netto, #63). Fund: PZ04 mit 290 kg Musterzuladung,
-        # aber nur 120+40=160 kg Event-Fracht an Bord → „290 kg verloren" war falsch, korrekt 160.
-        # Bei Event OHNE Manifest bleibt die Musterzuladung als schlichter kg-Zähler.
-        if q["loss_kind"] in ("stolen", "sunk"):
-            q["lost_kg"] = round(sum(contrib.values()), 1) if cargo else onboard
+        # 'returned' behält lost_kg=0 (kein Verlust) — die Bordladung oben ist reine Anzeige.
 
     # Gecachte KI-Sprüche je Flug anhängen (Phase 2; None wenn deaktiviert/noch nicht erzeugt).
     quips = get_transport_quips(conn, int(event["id"]))
@@ -5600,6 +5613,7 @@ def compute_transport_progress(
             "target_kg": c["target_kg"],
             "delivered_kg": round(delivered[i], 1),
             "reserved_kg": round(reserved_alloc[i], 1),
+            "lost_kg": round(lost_alloc[i], 1),  # #7/#8: unwiederbringlich verloren (stolen/sunk), zeigt warum <100 %
             "pct": round(100.0 * delivered[i] / c["target_kg"], 1) if c["target_kg"] > 0 else 0.0,
             "per_flight_max_kg": c.get("per_flight_max_kg"),  # Kappungs-Badge in der UI (#63)
             "departure": c.get("departure"),  # #15 Sub-Projekt B: Startplatz-Gruppierung; NULL = geteilt

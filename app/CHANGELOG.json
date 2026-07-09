@@ -1,5 +1,15 @@
 [
   {
+    "version": "8.20.0",
+    "date": "2026-07-09",
+    "title": "FriesenKutter: verlorene Fracht zählt ehrlich und ist wirklich weg (#7/#8)",
+    "items": [
+      "🦐 Eine gestohlene oder versunkene Ladung wird jetzt mit der tatsächlich mitgeführten Menge gewertet (netto), nicht mehr mit der aufgeblähten vollen Frachtart-Menge — ein Klau nach einer Teillieferung zählt nur noch den Rest, der real an Bord war.",
+      "🈳 Verlorene Ware verschwindet dauerhaft aus dem ladbaren Vorrat: Sie kann nicht mehr erneut geladen oder reserviert werden (vorher bot das System dieselbe Fracht wieder an). Ein Event, in dem Fracht verloren ging, kann dadurch sichtbar unter 100 % bleiben — der Balken lügt nicht mehr; je Frachtart zeigt „X kg verloren“, warum.",
+      "↩️ Heil zurückgebrachte Fracht (umgekehrt und an einem Streckenplatz abgestellt) bleibt davon unberührt und weiter voll verfügbar."
+    ]
+  },
+  {
     "version": "8.19.0",
     "date": "2026-07-09",
     "title": "FriesenKutter: Verlust-Erkennung nach Mehrfach-Flug repariert (#6)",

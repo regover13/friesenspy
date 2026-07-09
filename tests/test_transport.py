@@ -1472,6 +1472,66 @@ class TestCargoLosses:
         lines = {l["name"]: l["kg"] for l in f["cargo_lines"]}
         assert lines == {"Filmrollen": 100.0, "Friesentee": 192.0}
 
+    # -- #7/#8: Verlust netto gegen den Pool, verlorene Ware dauerhaft raus --------------------
+
+    def test_stolen_capped_by_remaining_after_delivery(self):
+        """#7: die verlorene Menge ist auf den zum dep_time noch offenen Rest (target − delivered)
+        gedeckelt, NICHT auf das volle Frachtziel. Payload 300, Ziel 500: ein früherer Flug liefert
+        300, ein späterer Klau kann nur die restlichen 200 mitgenommen haben (früher: 300 brutto)."""
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        ev = _event(conn, cargo=[{"name": "Krabben", "target_kg": 500.0}])
+        upsert_payload(conn, "C172", payload_kg=300)
+        alat, alon = icao_to_coords("EDXH")
+        self._flown_flight(conn, 100, "2026-07-01T17:30:00Z", end_lat=alat, end_lon=alon, end_gs=0)  # liefert 300
+        wlat, wlon = icao_to_coords("EDWY")
+        self._flown_flight(conn, 101, "2026-07-01T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)  # klaut den Rest
+        detect_transport_losses(conn, ev)
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+        b = next(x for x in p["flights"] if x["cid"] == 101)
+        assert b["loss_kind"] == "stolen"
+        assert b["lost_kg"] == 200.0                 # netto Rest (500−300), NICHT 300 brutto
+        assert p["cargo"][0]["delivered_kg"] == 300.0
+        assert p["cargo"][0]["lost_kg"] == 200.0     # #7/#8: neues Feld je Frachtart
+
+    def test_lost_cargo_removed_from_reservable_pool(self):
+        """#8: nach einem Verlust ist die verlorene Ware für spätere offene Flüge NICHT mehr
+        reservierbar (target − delivered − lost). Ziel 500, 300 geliefert + 200 geklaut = Pool leer
+        → ein danach gestarteter offener Flug reserviert 0 (vorher bot er die Ware erneut an)."""
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        ev = _event(conn, cargo=[{"name": "Krabben", "target_kg": 500.0}])
+        upsert_payload(conn, "C172", payload_kg=300)
+        alat, alon = icao_to_coords("EDXH")
+        self._flown_flight(conn, 100, "2026-07-01T17:30:00Z", end_lat=alat, end_lon=alon, end_gs=0)
+        wlat, wlon = icao_to_coords("EDWY")
+        self._flown_flight(conn, 101, "2026-07-01T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)
+        detect_transport_losses(conn, ev)
+        _add_open_flight(conn, 102, "EDWG", "EDXH", "C172", "2026-07-01T18:30:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+        cargo = p["cargo"][0]
+        assert cargo["delivered_kg"] == 300.0 and cargo["lost_kg"] == 200.0
+        o = next(x for x in p["flights"] if x["cid"] == 102)
+        assert o["reserved_kg"] == 0.0               # Pool voll (300+200=500) → nichts mehr reservierbar
+
+    def test_returned_does_not_consume_pool(self):
+        """'returned' (Ware heil an einem Streckenplatz abgestellt) verbraucht den Pool NICHT —
+        lost_kg=0, und ein späterer offener Flug kann die Frachtart weiter voll reservieren."""
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        ev = _event(conn, cargo=[{"name": "Krabben", "target_kg": 500.0}])
+        upsert_payload(conn, "C172", payload_kg=300)
+        glat, glon = icao_to_coords("EDWG")          # Rückkehr an Streckenplatz EDWG (≠ Ziel) → returned
+        self._flown_flight(conn, 100, "2026-07-01T17:30:00Z", end_lat=glat, end_lon=glon, end_gs=0)
+        detect_transport_losses(conn, ev)
+        _add_open_flight(conn, 102, "EDWG", "EDXH", "C172", "2026-07-01T18:30:00Z")
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+        r = next(x for x in p["flights"] if x["cid"] == 100)
+        assert r["loss_kind"] == "returned"
+        assert p["cargo"][0]["lost_kg"] == 0.0       # kein Pool-Verbrauch
+        o = next(x for x in p["flights"] if x["cid"] == 102)
+        assert o["reserved_kg"] == 300.0             # voller Payload weiter reservierbar
+
     def test_no_loss_for_flight_after_event_window(self):
         """Ein Streckenflug lange nach dtend darf keinem alten Event als Verlust angelastet
         werden (Final-Review-Blocker: Alt-Events sammelten sonst fortlaufend Fremd-Verluste)."""
