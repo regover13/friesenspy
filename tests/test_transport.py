@@ -141,6 +141,17 @@ def _add_pos(conn, cid, ts, lat, lon, gs, *, alt=None, callsign=None):
     conn.commit()
 
 
+def _set_live_pos(conn, cid, lat, lon, gs, *, callsign=None):
+    """Aktuelle Live-Position setzen (live_positions) — Quelle für _current_pos / Boden-Beladung."""
+    callsign = callsign or f"FRS{cid:02d}"
+    conn.execute(
+        "INSERT OR REPLACE INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (cid, callsign, lat, lon, gs),
+    )
+    conn.commit()
+
+
 def _shift(ts: str, minutes: int) -> str:
     from datetime import datetime, timedelta
     dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
@@ -1924,18 +1935,17 @@ class TestParticipants:
         assert parts[400]["callsign"] == "FRS400"
         assert parts[401]["callsign"] == "FRS401"
 
-    def test_returning_pilot_disappears_after_landing_back_on_route(self):
-        # #65 (Live-Fund 06.07., EDWG-EDXP-Test): eine als "Rückflug" erkannte Verbindung
-        # (dep==destination laut Erstposition) bleibt oft OHNE Disconnect offen, auch nachdem
-        # der Pilot wieder auf der Strecke (i. d. R. am Ursprung) gelandet ist -- "Rückflug"
-        # blieb dann dauerhaft hängen. Eine aktuelle Live-Position am Boden auf der Strecke
-        # muss den Teilnehmer aus der Live-Anzeige verschwinden lassen (fertig, nichts mehr
-        # zu berichten), statt ewig "returning" zu zeigen.
+    def test_returning_pilot_at_pickup_shows_loading_not_returning(self):
+        # #65 + #5 (GPS-only Boden-Beladung): eine als "Rückflug" erkannte Verbindung bleibt oft
+        # OHNE Disconnect offen. Landet der Pilot am Boden an einem ABHOLPLATZ (hier EDWG), zeigt
+        # er seit #5 dort "lädt" (bereit für die nächste Runde) — die aktuelle GPS-Position gewinnt.
+        # Der ursprüngliche #65-Bug ("hängt ewig als returning") bleibt behoben: er ist NICHT
+        # returning, sondern ein normaler ladender Flug am Abholplatz.
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
         _add_open_flight(conn, 401, "EDXH", "EDWG", "C172", "2026-07-01T19:05:00Z")
-        # Live-Position: am Boden (gs < 2kt) bei EDWG (Streckenflugplatz, Ursprung) -- gelandet.
+        # Live-Position: am Boden (gs < 2kt) bei EDWG (Abholplatz).
         conn.execute(
             "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
             "VALUES (401, 'FRS401', 53.78278, 7.91389, 0)"
@@ -1943,7 +1953,14 @@ class TestParticipants:
         conn.commit()
         p = compute_transport_progress(conn, ev, "2026-07-01T19:30:00Z")
         parts = {x["cid"]: x for x in p["participants"]}
-        assert 401 not in parts   # verschwunden, nicht mehr als "returning" hängen geblieben
+        # #65 bleibt behoben: nicht mehr als "returning" hängen geblieben.
+        assert 401 not in parts or parts[401]["status"] != "returning"
+        # #5: als ladend am Abholplatz sichtbar (aktuelle Position EDWG gewinnt, nicht Plan-EDXH).
+        f = _feed_by_callsign(p, "FRS401")
+        assert f is not None
+        assert f["dep"] == "EDWG"
+        assert f["airborne"] is False
+        assert f["loaded"] is False
 
     def test_returning_pilot_still_shown_while_still_airborne(self):
         # Gegenprobe: noch in der Luft (gs hoch) -> weiterhin "returning" wie gehabt.
@@ -2532,3 +2549,69 @@ class TestKutterSnapshotEndpoints:
         assert res.status_code == 200
         assert called["n"] == 0
         assert res.json()["unmapped_types"] == ["PA28"]
+
+
+class TestGroundLoading:
+    """#5: geparkt am Abholplatz -> sichtbar als ladend, dep aus AKTUELLER Live-Position."""
+
+    def _load_event(self, conn):
+        return _event(
+            conn, route="EDXH,EDWG", destination="EDWG",
+            cargo=[{"name": "Filmrollen", "target_kg": 200, "emoji": "🎞️", "departure": "EDXH"}],
+        )
+
+    def test_parked_at_pickup_shows_loading_from_live_pos_not_plan(self):
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        # Flugplan bewusst FALSCH/veraltet (EDXP->EDWK), real steht der Pilot in EDXH:
+        _add_open_flight(conn, 61, "EDXP", "EDWK", "C208", START)
+        lat, lon = icao_to_coords("EDXH")
+        _set_live_pos(conn, 61, lat, lon, 0)  # am Boden in EDXH
+        progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
+        f = _feed_by_callsign(progress, "FRS61")
+        assert f is not None
+        assert f["dep"] == "EDXH"          # Live-Position gewinnt, nicht der Plan (EDXP)
+        assert f["airborne"] is False
+        assert f["loaded"] is False
+        assert f["reserved_kg"] > 0
+
+    def test_parked_at_destination_not_loading(self):
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        _add_open_flight(conn, 62, "EDXH", "EDWG", "C208", START)
+        lat, lon = icao_to_coords("EDWG")  # am ZIEL geparkt
+        _set_live_pos(conn, 62, lat, lon, 0)
+        progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
+        assert _feed_by_callsign(progress, "FRS62") is None
+
+    def test_parked_off_route_invisible(self):
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        _add_open_flight(conn, 63, "EDXH", "EDWG", "C208", START)
+        lat, lon = icao_to_coords("EDDF")  # weit weg von jedem Streckenplatz
+        _set_live_pos(conn, 63, lat, lon, 0)
+        progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
+        assert _feed_by_callsign(progress, "FRS63") is None
+
+    def test_airborne_over_pickup_uses_leg_not_ground(self):
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        _add_open_flight(conn, 64, "EDXH", "EDWG", "C208", START)
+        lat, lon = icao_to_coords("EDXH")
+        _set_live_pos(conn, 64, lat, lon, 120)  # in der Luft -> Boden-Zweig darf nicht greifen
+        progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
+        f = _feed_by_callsign(progress, "FRS64")
+        assert f is not None            # sichtbar (Plan-Notnagel EDXH), aber nicht wegen Boden-Position
+        assert f["airborne"] is False   # kein GPS-Leg erkannt -> weiterhin nicht „abgehoben"
+
+    def test_no_live_position_falls_back_to_plan(self):
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        _add_open_flight(conn, 65, "EDXH", "EDWG", "C208", START)  # keine Live-Position
+        progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
+        f = _feed_by_callsign(progress, "FRS65")
+        assert f is not None and f["dep"] == "EDXH"   # Notnagel Plan greift, regressionsfrei

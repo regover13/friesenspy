@@ -5019,6 +5019,20 @@ def _returning_pilot_landed(conn: sqlite3.Connection, cid: int) -> bool:
     return bool(row) and row["groundspeed"] is not None and row["groundspeed"] < _BLOCK_GS_KT
 
 
+def _current_pos(conn: sqlite3.Connection, cid: int) -> tuple[float, float, float] | None:
+    """(lat, lon, groundspeed) der AKTUELLEN Live-Position (live_positions), oder None.
+
+    Quelle der GPS-only Boden-Beladung (#5): eine Zeile je aktuell verbundener CID, vom Poller
+    jede Runde aktualisiert. Fehlt sie (Pilot gerade offline / erste Runde) oder fehlen die
+    Koordinaten, gilt None (Aufrufer fällt dann auf _first_pos/Flugplan zurück)."""
+    row = conn.execute(
+        "SELECT latitude, longitude, groundspeed FROM live_positions WHERE cid = ?", (cid,)
+    ).fetchone()
+    if not row or row["latitude"] is None or row["longitude"] is None:
+        return None
+    return (row["latitude"], row["longitude"], row["groundspeed"])
+
+
 def check_live_arrival(
     conn: sqlite3.Connection,
     cid: int,
@@ -5295,9 +5309,22 @@ def compute_transport_progress(
             # Rückflug EDXP→EDWG bereits gelandet, danach EDWG→EDWL fälschlich als "Rückflug"
             # markiert geblieben). Fallback (kein GPS-Leg erkannt, z. B. trackless) wie bisher.
             current_leg = current_leg_by_cid.get(int(cid))
-            dep = (normalize_type_code(current_leg.get("departure")) if current_leg else None) \
-                or _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
-                or normalize_type_code(f.get("departure"))
+            # GPS-only Boden-Beladung (#5): den Abholplatz bestimmt vorrangig die AKTUELLE Position,
+            # NICHT der (evtl. veraltete) Flugplan und nicht die erste Position der Verbindung.
+            if current_leg:
+                dep = normalize_type_code(current_leg.get("departure"))  # abgehoben → GPS-Leg-Start
+            else:
+                gpos = _current_pos(conn, int(cid))
+                if gpos and gpos[2] is not None and gpos[2] < _BLOCK_GS_KT:
+                    # Am Boden: die aktuelle Position ist MASSGEBLICH. Liegt sie an keinem
+                    # Streckenplatz, steht der Pilot dort nicht — dann bleibt dep None (unsichtbar),
+                    # KEIN Rückfall auf den Flugplan (sonst würde ein alter Plan ihn falsch verorten).
+                    dep = _nearest_airport(coords_map, (gpos[0], gpos[1]), radius)
+                else:
+                    # Keine verwertbare Boden-Position (offline / erste Runde / in der Luft ohne
+                    # erkanntes Leg): alter GPS-Fallback, Flugplan nur als letzter Notnagel.
+                    dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
+                        or normalize_type_code(f.get("departure"))
             if dep not in route_set or dep == dest:
                 # #65: eine Verbindung, die als "Rückflug" (dep==dest) erkannt wurde, bleibt oft auch
                 # nach der Landung offen (kein Disconnect) -- ohne diesen Check würde "Rückflug"
