@@ -248,7 +248,7 @@ CREATE TABLE IF NOT EXISTS aircraft_payloads (
     fuel_full_kg REAL,                   -- max. Tankinhalt (volle Tanks); fuel_kg = Hälfte davon
     crew_kg     REAL,                    -- Pilot/Crew (editierbar) — Default 85 kg, zählt nicht als Fracht
     payload_kg  REAL NOT NULL,           -- = max(0, mtow_kg − empty_kg − fuel_kg − crew_kg); direkt überschreibbar
-    source      TEXT,                    -- 'manual' | 'llm' | 'default'
+    source      TEXT,                    -- 'manual' | 'llm' | 'curated' | 'default'
     make_model  TEXT,
     updated_at  TEXT
 );

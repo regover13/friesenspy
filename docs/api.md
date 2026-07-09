@@ -1018,13 +1018,13 @@ Push-Benachrichtigungen (Start, Ziel erreicht, Feierabend-Zusammenfassung, ~1h-E
 **Response** `{"status": "ok"}`
 
 ### GET /api/admin/transport/payloads
-Zuladungs-Tabelle + globaler Fallback + beobachtete, noch nicht gepflegte Flugzeugtypen. Response: `payloads` (`[{type_code, mtow_kg, empty_kg, fuel_kg, crew_kg, payload_kg, source, make_model}]`), `unmapped_types`, `default_kg`, `llm_configured`.
+Zuladungs-Tabelle + globaler Fallback + beobachtete, noch nicht gepflegte Flugzeugtypen. Response: `payloads` (`[{type_code, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg, source, make_model}]`; `fuel_full_kg` = max. Tankinhalt, `fuel_kg` = halber Tank fürs Rechnen), `unmapped_types`, `default_kg`, `llm_configured`.
 
 ### POST /api/admin/transport/payloads
-Zuladung eines Typs setzen. Body: `type_code` (Pflicht), `mtow_kg`, `empty_kg`, `fuel_kg` (Tankinhalt, Default halbe Füllung), `crew_kg` (Pilot/Crew, Default 85 — zählt nicht als Fracht), optional direktes `payload_kg` (überschreibt die Ableitung `max(0, mtow−empty−fuel−crew)`), `make_model`.
+Zuladung eines Typs setzen. Body: `type_code` (Pflicht), `mtow_kg`, `empty_kg`, `fuel_kg` (Tankinhalt fürs Rechnen = halber Tank), `fuel_full_kg` (max. Tankinhalt, volle Tanks — im Admin ändert das Max-Feld automatisch `fuel_kg` auf die Hälfte), `crew_kg` (Pilot/Crew, Default 85 — zählt nicht als Fracht), optional direktes `payload_kg` (überschreibt die Ableitung `max(0, mtow−empty−fuel−crew)`), `make_model` (editierbar).
 
 ### GET /api/admin/transport/payloads/suggest?type=C172
-KI-Vorschlag (Claude Haiku 4.5 mit **Web-Search**, Structured Output; seit v7.4.2) für die Komponenten eines Typs — recherchiert dokumentierte Handbuch-/POH-Werte (keine Schätzungen): `{make_model, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg}` (Zuladung = MTOW − Leer − halbe Tankfüllung − Crew; `fuel_kg` = halbe Füllung als Default, `fuel_full_kg` = Maximum, volle Tanks). Dauer ~15–30 s (Basis-Web-Search `web_search_20250305`, gestreamt, `max_retries=0` — das neuere Dynamic-Filtering-Tool drehte bei obskuren Typen minutenlang in code_execution-Runden, s. v7.4.1). `400`, wenn `ANTHROPIC_API_KEY` fehlt.
+KI-Vorschlag (Claude Haiku 4.5 mit **Web-Search**, Structured Output; seit v7.4.2) für die Komponenten eines Typs — recherchiert dokumentierte Handbuch-/POH-Werte (keine Schätzungen): `{make_model, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg}` (Zuladung = MTOW − Leer − halbe Tankfüllung − Crew; `fuel_kg` = halbe Füllung als Default, `fuel_full_kg` = Maximum, volle Tanks). Dauer ~15–30 s (Basis-Web-Search `web_search_20250305`, gestreamt, `max_retries=0` — das neuere Dynamic-Filtering-Tool drehte bei obskuren Typen minutenlang in code_execution-Runden, s. v7.4.1). `400`, wenn `ANTHROPIC_API_KEY` fehlt. **Seit v8.17.0** sind die ~108 gängigen GA-/Privat-/Hubschraubermuster (inkl. Transall C-160, A400M) aus einem kuratierten Repo-Datensatz (`app/data/aircraft_specs.json`) beim Start vorbefüllt (`source='curated'`), sodass dieser Suggest-Call nur noch als Fallback für seltene, unbekannte Muster feuert.
 
 ### POST /api/admin/transport/default-payload
 Globalen Fallback-Zuladungswert setzen. Body: `default_kg`.

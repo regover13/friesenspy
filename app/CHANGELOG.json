@@ -1,5 +1,15 @@
 [
   {
+    "version": "8.17.0",
+    "date": "2026-07-09",
+    "title": "Zuladungen aus kuratiertem Datensatz + editierbarer Name & max. Tankinhalt",
+    "items": [
+      "Die Zuladungs-Werte der ~108 gängigen Flugzeug- und Hubschraubermuster (GA/Privat/Helis, inkl. Transall C-160 und A400M) kommen jetzt aus einem im Repo gepflegten Datensatz und werden beim Start sofort und kostenlos vorbefüllt — die teure Live-Web-Recherche läuft nur noch für seltene, unbekannte Muster. Viele Werte stammen aus FSEconomy (sim-authentisch).",
+      "Der max. Tankinhalt (volle Tanks) wird jetzt gespeichert; das Rechenfeld nimmt automatisch den halben Tank (Insel-Hopping). Gilt auch für Auto-Erkennung, KI-Vorschlag und bestehende Einträge.",
+      "Im Admin lässt sich der Muster-Name jetzt direkt bearbeiten (Eingabefeld statt reiner Anzeige)."
+    ]
+  },
+  {
     "version": "8.16.4",
     "date": "2026-07-07",
     "title": "Bummel-Strecke darf Plätze wiederholen (Rundkurs)",
