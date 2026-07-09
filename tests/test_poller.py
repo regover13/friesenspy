@@ -1284,7 +1284,7 @@ class TestAutoPayloadResearch:
             "cid": 777, "name": "Wilga-Pilot", "callsign": "FRS77",
             "latitude": 53.78, "longitude": 7.91, "altitude": 900,
             "groundspeed": 80, "heading": 90, "logon_time": logon,
-            "flight_plan": {"aircraft_short": "PZ04", "departure": "EDWG", "arrival": "EDXH"},
+            "flight_plan": {"aircraft_short": "ZZ01", "departure": "EDWG", "arrival": "EDXH"},
         }
 
     @pytest.mark.asyncio
@@ -1298,7 +1298,7 @@ class TestAutoPayloadResearch:
         data = {"pilots": [self._pilot()]}
         with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=data)):
             await poller._poll_once()
-        poller._auto_research_payload.assert_called_once_with("PZ04")
+        poller._auto_research_payload.assert_called_once_with("ZZ01")
         # Zweiter Poll: bereits versucht → kein erneuter (teurer) Recherche-Start.
         with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=data)):
             await poller._poll_once()
@@ -1311,7 +1311,7 @@ class TestAutoPayloadResearch:
         init_db(db_file)
         conn = get_connection(db_file)
         try:
-            upsert_payload(conn, "PZ04", payload_kg=120)
+            upsert_payload(conn, "ZZ01", payload_kg=120)
             conn.commit()
         finally:
             conn.close()
@@ -1330,12 +1330,12 @@ class TestAutoPayloadResearch:
         init_db(db_file)
         poller = _make_poller(db_path=db_file)
         with patch("app.llm.suggest_aircraft_payload", return_value=dict(self.SUGGESTION)):
-            await poller._auto_research_payload("PZ04")
+            await poller._auto_research_payload("ZZ01")
         conn = get_connection(db_file)
         try:
             row = conn.execute(
                 "SELECT source, fuel_kg, payload_kg, make_model FROM aircraft_payloads "
-                "WHERE type_code = 'PZ04'"
+                "WHERE type_code = 'ZZ01'"
             ).fetchone()
         finally:
             conn.close()
@@ -1352,11 +1352,11 @@ class TestAutoPayloadResearch:
         init_db(db_file)
         poller = _make_poller(db_path=db_file)
         with patch("app.llm.suggest_aircraft_payload", return_value=dict(self.SUGGESTION)):
-            await poller._auto_research_payload("PZ04")
+            await poller._auto_research_payload("ZZ01")
         conn = get_connection(db_file)
         try:
             row = conn.execute(
-                "SELECT fuel_kg, fuel_full_kg FROM aircraft_payloads WHERE type_code = 'PZ04'"
+                "SELECT fuel_kg, fuel_full_kg FROM aircraft_payloads WHERE type_code = 'ZZ01'"
             ).fetchone()
         finally:
             conn.close()
@@ -1371,17 +1371,17 @@ class TestAutoPayloadResearch:
         init_db(db_file)
         conn = get_connection(db_file)
         try:
-            upsert_payload(conn, "PZ04", payload_kg=123, source="manual")
+            upsert_payload(conn, "ZZ01", payload_kg=123, source="manual")
             conn.commit()
         finally:
             conn.close()
         poller = _make_poller(db_path=db_file)
         with patch("app.llm.suggest_aircraft_payload", return_value=dict(self.SUGGESTION)):
-            await poller._auto_research_payload("PZ04")
+            await poller._auto_research_payload("ZZ01")
         conn = get_connection(db_file)
         try:
             row = conn.execute(
-                "SELECT source, payload_kg FROM aircraft_payloads WHERE type_code = 'PZ04'"
+                "SELECT source, payload_kg FROM aircraft_payloads WHERE type_code = 'ZZ01'"
             ).fetchone()
         finally:
             conn.close()

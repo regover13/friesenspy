@@ -2167,7 +2167,8 @@ async def admin_upsert_payload(request: Request):
         upsert_payload(
             conn, type_code,
             payload_kg=_num("payload_kg"), mtow_kg=_num("mtow_kg"),
-            empty_kg=_num("empty_kg"), fuel_kg=_num("fuel_kg"), crew_kg=_num("crew_kg"),
+            empty_kg=_num("empty_kg"), fuel_kg=_num("fuel_kg"),
+            fuel_full_kg=_num("fuel_full_kg"), crew_kg=_num("crew_kg"),
             source="manual", make_model=(body.get("make_model") or None),
         )
         # Zuladungs-Änderung wirkt auf ALLE Kutter-Events (#66 Task 7) — global invalidieren.

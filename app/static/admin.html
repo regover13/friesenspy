@@ -907,11 +907,15 @@
           <div class="form-grid" style="margin:6px 0 8px;">
             <div class="form-group"><label for="kp-type">Typcode</label>
               <input type="text" id="kp-type" placeholder="C172" /></div>
+            <div class="form-group"><label for="kp-make-model">Muster/Name</label>
+              <input type="text" id="kp-make-model" placeholder="z. B. Aerostar 600" /></div>
             <div class="form-group"><label for="kp-mtow">MTOW (kg)</label>
               <input type="number" id="kp-mtow" min="0" step="1" /></div>
             <div class="form-group"><label for="kp-empty">Leergewicht (kg)</label>
               <input type="number" id="kp-empty" min="0" step="1" /></div>
-            <div class="form-group"><label for="kp-fuel">Tankinhalt (kg) <span id="kp-fuel-max" style="color:#8aa0b8;font-weight:normal;"></span></label>
+            <div class="form-group"><label for="kp-fuel-full">max. Tankinhalt (kg, volle Tanks)</label>
+              <input type="number" id="kp-fuel-full" min="0" step="1" /></div>
+            <div class="form-group"><label for="kp-fuel">Tankinhalt (kg, halber Tank → Rechnung)</label>
               <input type="number" id="kp-fuel" min="0" step="1" /></div>
             <div class="form-group"><label for="kp-crew">Pilot/Crew (kg)</label>
               <input type="number" id="kp-crew" min="0" step="1" placeholder="85" /></div>
@@ -922,7 +926,6 @@
           <div style="display:flex;gap:8px;margin-bottom:14px;">
             <button class="btn btn-sm" id="kp-suggest-btn">💡 KI-Vorschlag</button>
             <button class="btn btn-primary btn-sm" id="kp-save-btn">Speichern</button>
-            <span id="kp-make-model" style="color:#8aa0b8;font-size:0.8rem;align-self:center;"></span>
           </div>
           <div id="ke-payloads-container" class="scroll-list"><div class="empty-hint">Lade Zuladungen…</div></div>
         </div>
@@ -2428,9 +2431,9 @@
       const rows = (d.payloads || []);
       _kePayloadRows = rows;
       if (!rows.length) { c.innerHTML = '<div class="empty-hint">Noch keine Typen gepflegt.</div>'; return; }
-      c.innerHTML = '<div class="table-wrap"><table style="font-size:0.8rem;"><thead><tr><th style="text-align:left;">Typ</th><th>MTOW</th><th>Leer</th><th>Tank</th><th>Crew</th><th>Zuladung</th><th></th></tr></thead><tbody>'
+      c.innerHTML = '<div class="table-wrap"><table style="font-size:0.8rem;"><thead><tr><th style="text-align:left;">Typ</th><th>MTOW</th><th>Leer</th><th>Tank ½/max</th><th>Crew</th><th>Zuladung</th><th></th></tr></thead><tbody>'
         + rows.map(p => '<tr><td><b>' + escH(p.type_code) + '</b>' + (p.make_model ? '<br><span style="color:#8aa0b8;font-size:0.68rem;">' + escH(p.make_model) + '</span>' : '') + '</td>'
-          + '<td>' + (p.mtow_kg ?? '—') + '</td><td>' + (p.empty_kg ?? '—') + '</td><td>' + (p.fuel_kg ?? '—') + '</td>'
+          + '<td>' + (p.mtow_kg ?? '—') + '</td><td>' + (p.empty_kg ?? '—') + '</td><td>' + (p.fuel_kg ?? '—') + (p.fuel_full_kg != null ? ' <span style="color:#8aa0b8;">/ ' + Math.round(p.fuel_full_kg) + '</span>' : '') + '</td>'
           + '<td>' + (p.crew_kg ?? '—') + '</td>'
           + '<td><b>' + Math.round(p.payload_kg) + ' kg</b></td>'
           + '<td><button class="btn btn-sm" onclick="kePrefillType(\'' + escA(p.type_code) + '\')">Bearbeiten</button></td></tr>').join('')
@@ -2443,11 +2446,11 @@
       const set = (id, v) => { document.getElementById(id).value = (v == null ? '' : Math.round(v)); };
       set('kp-mtow', p ? p.mtow_kg : null);
       set('kp-empty', p ? p.empty_kg : null);
+      set('kp-fuel-full', p ? p.fuel_full_kg : null);
       set('kp-fuel', p ? p.fuel_kg : null);
       set('kp-crew', p ? p.crew_kg : null);
       document.getElementById('kp-payload').value = '';  // leer → aus Komponenten neu berechnen
-      document.getElementById('kp-fuel-max').textContent = '';
-      document.getElementById('kp-make-model').textContent = p && p.make_model ? p.make_model : '';
+      document.getElementById('kp-make-model').value = p && p.make_model ? p.make_model : '';
       document.getElementById('kp-type').scrollIntoView({ behavior: 'smooth', block: 'center' });
       document.getElementById('kp-type').focus();
     }
@@ -2473,32 +2476,35 @@
         const s = await res.json();
         document.getElementById('kp-mtow').value = Math.round(s.mtow_kg);
         document.getElementById('kp-empty').value = Math.round(s.empty_kg);
+        document.getElementById('kp-fuel-full').value = Math.round(s.fuel_full_kg);
         document.getElementById('kp-fuel').value = Math.round(s.fuel_kg != null ? s.fuel_kg : s.fuel_full_kg / 2);
-        document.getElementById('kp-fuel-max').textContent = '— max. ' + Math.round(s.fuel_full_kg) + ' kg (volle Tanks)';
         document.getElementById('kp-crew').value = Math.round(s.crew_kg != null ? s.crew_kg : 85);
         document.getElementById('kp-payload').value = '';  // leer → Zuladung automatisch berechnen
-        document.getElementById('kp-make-model').textContent = s.make_model;
+        document.getElementById('kp-make-model').value = s.make_model;
         toast('Vorschlag übernommen — bitte prüfen und speichern.');
       } finally {
         btn.disabled = false; btn.textContent = orig;
       }
     });
 
+    document.getElementById('kp-fuel-full').addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      document.getElementById('kp-fuel').value = (v >= 0) ? Math.round(v / 2) : '';
+    });
     document.getElementById('kp-save-btn').addEventListener('click', async () => {
       const type = document.getElementById('kp-type').value.trim();
       if (!type) { toast('Typcode eingeben.', true); return; }
       const num = id => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
       const body = {
         type_code: type, mtow_kg: num('kp-mtow'), empty_kg: num('kp-empty'),
-        fuel_kg: num('kp-fuel'), crew_kg: num('kp-crew'), payload_kg: num('kp-payload'),
-        make_model: document.getElementById('kp-make-model').textContent || null,
+        fuel_kg: num('kp-fuel'), fuel_full_kg: num('kp-fuel-full'),
+        crew_kg: num('kp-crew'), payload_kg: num('kp-payload'),
+        make_model: document.getElementById('kp-make-model').value.trim() || null,
       };
       const res = await api('POST', '/api/admin/transport/payloads', body);
       if (!res || !res.ok) { toast('Fehler beim Speichern.', true); return; }
       toast('Zuladung gespeichert.');
-      ['kp-type', 'kp-mtow', 'kp-empty', 'kp-fuel', 'kp-crew', 'kp-payload'].forEach(i => document.getElementById(i).value = '');
-      document.getElementById('kp-fuel-max').textContent = '';
-      document.getElementById('kp-make-model').textContent = '';
+      ['kp-type', 'kp-make-model', 'kp-mtow', 'kp-empty', 'kp-fuel-full', 'kp-fuel', 'kp-crew', 'kp-payload'].forEach(i => document.getElementById(i).value = '');
       loadKutterPayloads();
     });
 

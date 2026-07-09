@@ -79,6 +79,19 @@ def test_requires_admin(db):
     assert e.value.status_code == 401
 
 
+def test_upsert_payload_persists_make_model_and_fuel_full(db):
+    asyncio.run(main.admin_upsert_payload(FakeReq(body={
+        "type_code": "AEST", "mtow_kg": 2767, "empty_kg": 1700,
+        "fuel_kg": 100, "fuel_full_kg": 200, "crew_kg": 85, "make_model": "Aerostar 600",
+    })))
+    res = asyncio.run(main.admin_transport_payloads(FakeReq()))
+    row = next(p for p in res["payloads"] if p["type_code"] == "AEST")
+    assert row["make_model"] == "Aerostar 600"
+    assert abs(row["fuel_full_kg"] - 200) < 0.5
+    assert abs(row["fuel_kg"] - 100) < 0.5
+    assert row["source"] == "manual"
+
+
 def test_create_list_override_and_reveal(db):
     now = datetime.now(timezone.utc)
     dtstart = _iso(now - timedelta(hours=2))
