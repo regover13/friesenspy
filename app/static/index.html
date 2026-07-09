@@ -3100,7 +3100,9 @@ async function fetchKutterActive() {
         // GPS-Weg und NICHT der Flugplan (f.arr) — nur „von wo aufgeladen, wohin geliefert" (#12).
         dep: f.dep || '', dest: d.destination || '',
         // airborne trennt „wirklich abgehoben" von „am Streckenplatz geparkt, reserviert" (#62-Folgefund)
-        status: f.loaded ? '✅ angekommen' : (f.airborne ? '✈️ unterwegs' : '🅿️ am Start'),
+        status: f.loaded ? '✅ angekommen'
+              : (f.airborne ? '✈️ unterwegs'
+                 : '🅿️ lädt' + (f.dep ? ' in ' + _kesc(f.dep) : '')),
       });
     });
     (d.participants || []).forEach(p => {
@@ -4648,7 +4650,7 @@ function _kCargoLabel(f) {
   }
   if (!f.loaded) return f.in_air
     ? (f.airborne ? '<td class="kf-empty">unterwegs zum Ziel</td>'
-                  : '<td class="kf-empty">am Start (reserviert)</td>')
+                  : '<td class="kf-empty">lädt (reserviert)</td>')
     : '<td class="kf-empty">leer</td>';
   const lines = f.cargo_lines || [];
   let label;
