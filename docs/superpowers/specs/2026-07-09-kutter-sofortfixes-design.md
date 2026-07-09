@@ -15,8 +15,9 @@ gefahrlos zusammen ausliefern lassen.
 **Problem:** Beim Anlegen/Speichern eines Kutter-Events prüft die Client-Warnung „Unbekannte
 Flugplätze" die Startplätze mit `.split(',')` (nur Komma). Mehrere ICAOs mit Leerzeichen
 getrennt („EDXH EDXP") bleiben ein Token → falsche „keine bekannten Plätze"-Warnung. Das
-echte Speichern ist NICHT betroffen (`_normalize_icao_list`, `app/database.py:4285` splittet
-bereits an Komma/Semikolon/Space).
+echte Speichern ist NICHT betroffen (`_normalize_icao_list`, def
+`D:\User\Tobias\OneDrive\Claude\FriesenSpy\app\database.py:4274`, Split-Logik bei :4285 —
+splittet bereits an Komma/Semikolon/Space/Tab).
 
 **Fix:** `app/static/admin.html:2310`
 
@@ -38,9 +39,10 @@ Beginn angelegten Event stimmt „1 Std" grob nicht (Live-Fund: Push 6 min vor S
 **Fix:** neuer reiner Helfer in `app/poller.py`:
 
 ```python
+from app.database import _parse_iso  # lebt in database.py:327, in poller.py NICHT importiert
+
 def _lead_phrase(dtstart: str, now: str) -> str:
     """Restzeit bis dtstart als gestufter Text. Rein, testbar."""
-    from datetime import datetime, timezone
     mins = (_parse_iso(dtstart) - _parse_iso(now)).total_seconds() / 60
     if mins > 45:
         return "In etwa 1 Std"
@@ -49,8 +51,10 @@ def _lead_phrase(dtstart: str, now: str) -> str:
     return "In wenigen Minuten"
 ```
 
-(`_parse_iso` wie in `database.py`/`poller.py` bereits verwendet; falls im Poller nicht
-verfügbar, lokal parsen.)
+`_parse_iso` existiert nur in `D:\User\Tobias\OneDrive\Claude\FriesenSpy\app\database.py:327` und
+ist in `D:\User\Tobias\OneDrive\Claude\FriesenSpy\app\poller.py` **nicht** importiert — daher
+zwingend `from app.database import _parse_iso` ergänzen (Alternative: lokal via
+`datetime.fromisoformat` nach Z-Strip). Kein separater `datetime`-Import im Helfer nötig.
 
 Stufen (vom Nutzer abgenommen):
 - `> 45 min` → „In etwa 1 Std"
@@ -70,13 +74,16 @@ Body wird zu z. B. `f"🗓 {_lead_phrase(ev['dtstart'], now)}: {name}"`.
 einer Stelle „zurück" (unterstellt Heimflug-Richtung), an anderer schon „leer". „zurück" ist
 irreführend, weil derselbe Zustand ein Leerflug ZUR Insel sein kann.
 
-**Fix:** `app/static/index.html:4623` (Live-Feed, `_kFlightCargoCell`) — Text „zurück" → „leer"
-(vereinheitlicht mit `index.html:4749`, das denselben Zustand schon „leer" nennt). `_kLossLabel`
-und der loss_kind `'returned'` („↩️ zurückgebracht", `index.html:4639`) bleiben unberührt —
-anderer, korrekter Begriff.
+**Fix:** `D:\User\Tobias\OneDrive\Claude\FriesenSpy\app\static\index.html:4623` (Live-Feed,
+Funktion `_kCargoLabel`, def bei `index.html:4609`, einziger Aufrufer `_kutterDetailBody`
+`index.html:4751`) — Text „zurück" → „leer" (vereinheitlicht mit `index.html:4749`, das denselben
+Zustand `!loaded && !loss_kind && !in_air` schon „leer" nennt; beide Texte landen sogar in
+derselben Tabellenzeile). `_kLossLabel` und der loss_kind `'returned'` („↩️ zurückgebracht",
+`index.html:4636–4639`) bleiben unberührt — getrennter Codepfad (`f.loss_kind` greift vor dem
+`!f.loaded`-Zweig), anderer korrekter Begriff.
 
 Hinweis: Beim Umsetzen die tatsächliche Zeile per Grep bestätigen (Text `>zurück<` in
-`app/static/index.html`), da Zeilennummern driften.
+`D:\User\Tobias\OneDrive\Claude\FriesenSpy\app\static\index.html`), da Zeilennummern driften.
 
 **Test:** keiner nötig (String-Änderung).
 
