@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.22.0",
+    "date": "2026-07-09",
+    "title": "FriesenKutter: Beladung schon am Boden am Abholplatz sichtbar",
+    "items": [
+      "🅿️ Ein Kutter-Pilot, der am Abholplatz am Boden steht, erscheint jetzt schon vor dem Start als „🅿️ lädt in <Platz>“ mit seiner reservierten Fracht — nicht erst nach dem Abheben. Der Abholplatz kommt aus der aktuellen GPS-Position; ein veralteter oder fremder Flugplan spielt keine Rolle mehr (GPS-only). Landet ein zurückgekehrter Pilot wieder an einem Abholplatz, zeigt er dort ebenfalls „lädt“ (bereit für die nächste Runde) statt zu verschwinden."
+    ]
+  },
+  {
     "version": "8.21.2",
     "date": "2026-07-09",
     "title": "FriesenKutter: Verlust-Marker in den Teil-Balken kleiner",
