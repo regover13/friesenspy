@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.21.2",
+    "date": "2026-07-09",
+    "title": "FriesenKutter: Verlust-Marker in den Teil-Balken kleiner",
+    "items": [
+      "💀 Der „X kg verloren“-Marker erscheint in den Startplatz-Teilbalken jetzt kleiner als im Gesamt-Block — der wiederholte Totenkopf je Startplatz wiegt dadurch optisch weniger, die maßgebliche Angabe bleibt der Gesamt-Block. Balken und Zahlen sonst unverändert."
+    ]
+  },
+  {
     "version": "8.21.1",
     "date": "2026-07-09",
     "title": "FriesenKutter: verlorene Fracht ist jetzt je Frachtart im Balken sichtbar",

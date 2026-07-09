@@ -417,6 +417,8 @@
     .kutter-seg > i.kseg-lost { background: rgba(70,74,82,0.85); background-image: repeating-linear-gradient(45deg, transparent 0 3px, rgba(232,169,160,.55) 3px 6px); }
     .kutter-feed td.kf-res { color: #9fc9e8; text-align: right; font-style: italic; }
     .kutter-loss { color: #e8a9a0; }
+    /* Verlust-Marker in den Teil-Balken (je Startplatz) kleiner — untergeordnet zum Gesamt-Block. */
+    .kutter-loss--sm { font-size: 0.82em; opacity: 0.85; }
     /* Verlust-kg in der Fracht-Spalte bündig zu den anderen kg-Werten (kf-empty macht sonst kursiv/links). */
     .kutter-feed td.kf-empty.kutter-loss { text-align: right; font-style: normal; }
     /* Forum-Badges pro Teilnehmer (erst nach der Feierabend-Bilanz) — kompakter Block über dem Feed. */
@@ -4695,8 +4697,10 @@ function _kSegLegend(items, totalTarget, sub) {
     const res = (c.reserved_kg || 0) > 0 ? ' (+' + _kfmtT(c.reserved_kg) + ' ✈️)' : '';
     // Verlust je Frachtart sichtbar machen (vorher stand nur die Gesamt-Summe unten) — sonst wirkt
     // „0 / 200" wie voll offen, obwohl ein Teil unwiederbringlich weg ist (#8).
+    // Verlust bleibt in Gesamt UND Teilmengen sichtbar; in den Teilmengen (sub) nur kleiner, damit die
+    // wiederholten Totenköpfe dort nicht so schwer wiegen (Nutzer-Wunsch — nicht entfernen, verkleinern).
     const lost = (c.lost_kg || 0) > 0
-      ? ' <span class="kutter-loss">💀 ' + _kfmtT(c.lost_kg) + ' verloren</span>' : '';
+      ? ' <span class="kutter-loss' + (sub ? ' kutter-loss--sm' : '') + '">💀 ' + _kfmtT(c.lost_kg) + ' verloren</span>' : '';
     const cap = c.per_flight_max_kg != null
       ? ' <span class="kl-cap" title="Obergrenze pro Flug — Überschuss zählt nicht als geliefert">⚠ '
         + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
