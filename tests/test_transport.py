@@ -1877,6 +1877,85 @@ class TestGPSLegReconcile:
         legs = [f for f in p["flights"] if f["cid"] == 700]
         assert any(f["in_air"] and not f.get("loaded") for f in legs)   # neuer Flug: Reservierung, kein Rückflug
 
+    def test_new_leg_after_delivery_not_stuck_on_arrived(self):
+        """FRS102-Fund (10.07.): Lieferung EDWG->EDXH MIT Live-Ankunfts-Latch, danach startet in
+        DERSELBEN offenen Verbindung ein NEUER Flug ab einem Streckenplatz (EDWG, ≠ Ziel), noch in
+        der Luft und NACH der Ankunft. Der Latch trägt den Verbindungs-Logon und überlappt weiter,
+        aber das neue Leg begann nach `arrived_at` -- es darf NICHT mehr als beladen/„angekommen"
+        gelten. Der offene Zweig (compute_transport_progress) testete den Latch verbindungsweit
+        (`(cid, lo) in live_arrivals`) statt ans laufende Leg gebunden (`_latch_hits_flight`, wie
+        schon im geschlossenen Zweig + detect_transport_losses seit #6/v8.19.0) — Folge: der Status
+        blieb bis zum Disconnect dauerhaft auf „angekommen" hängen. Regressionsschutz für den
+        #6-Nachzug."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
+        conn_logon = "2026-07-01T09:58:00Z"
+        self._insert_connection(conn, 702, "FRS702", "EDWG", "EDWG", conn_logon, None,
+                                duration_min=97)
+        from app.geo import icao_to_coords
+        # Leg 1: EDWG -> EDXH (Lieferung). Latch wird WÄHREND Leg 1 gesetzt (kurz vor Touchdown).
+        self._seed_leg(conn, 702, "FRS702", conn_logon, "EDWG")
+        hin_landing = self._add_leg_landing(conn, 702, "FRS702", conn_logon, "EDXH")
+        set_transport_live_arrival(conn, 702, conn_logon, ev["id"], _shift(hin_landing, -3))
+        hlat, hlon = icao_to_coords("EDXH")
+        _add_pos(conn, 702, _shift(hin_landing, 3), hlat, hlon, 5, alt=8, callsign="FRS702")
+        # Leg 2: NEUER Start ab EDWG (Streckenplatz ≠ Ziel), Takeoff NACH der Ankunft, noch in der Luft.
+        neu_t0 = _shift(hin_landing, 6)
+        self._seed_leg(conn, 702, "FRS702", neu_t0, "EDWG")
+        conn.execute(
+            "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
+            "VALUES (702, 'FRS702', 53.75, 7.87, 100)"
+        )
+        conn.commit()
+
+        p = compute_transport_progress(conn, ev, _shift(neu_t0, 10))
+        legs = [f for f in p["flights"] if f["cid"] == 702]
+        in_air = [f for f in legs if f.get("in_air")]
+        assert in_air, "erwarte eine offene In-Air-Zeile für das neue Leg von FRS702"
+        # DER BUG: das nach der Ankunft gestartete Leg darf nicht „angekommen"/loaded sein.
+        assert all(not f.get("loaded") for f in in_air), \
+            "In-Air-Folgeleg fälschlich als 'angekommen' (loaded=True) — Latch nicht ans Leg gebunden"
+        assert in_air[0]["airborne"] is True             # 'unterwegs', nicht 'angekommen'
+        assert in_air[0]["reserved_kg"] == 250.0         # reserviert wieder korrekt, statt loaded
+        # Teilnehmer-Status ebenfalls 'flying', nicht 'arrived'.
+        parts = {x["cid"]: x for x in p["participants"]}
+        assert parts[702]["status"] == "flying"
+
+    def test_stale_incomplete_open_leg_does_not_keep_arrived(self):
+        """Fable-Review-Fund (10.07.): Mehrere OFFENE Legs derselben Verbindung — ein incomplete
+        Leg (Track-Gap >30 min, endet airborne, nie geschlossen; `gps_legs.emit_incomplete`) plus
+        das tatsächlich laufende Leg. `current_leg_by_cid` muss das NEUESTE offene Leg wählen. Die
+        frühere Dict-Comprehension nahm über die absteigend sortierte canonicalize_legs-Liste
+        (last-wins) das ÄLTESTE — dann stammte der Takeoff aus dem veralteten Leg (VOR der Ankunft),
+        die Latch-Demotion (`leg_takeoff > arrived_at`) griff nicht und der Status hing erneut auf
+        „angekommen". Regressionsschutz für die Leg-Auswahl `:5196`."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
+        conn_logon = "2026-07-01T09:58:00Z"
+        self._insert_connection(conn, 703, "FRS703", "EDWG", "EDXH", conn_logon, None,
+                                duration_min=200)
+        # Leg A: alt, endet airborne (kein Touchdown) -> incomplete/offen. Takeoff ~10:02.
+        self._seed_leg(conn, 703, "FRS703", "2026-07-01T09:58:00Z", "EDWG")
+        # Latch: Ankunft ZWISCHEN Leg A und Leg D, unter dem Verbindungs-Logon (Poller-Konvention).
+        set_transport_live_arrival(conn, 703, conn_logon, ev["id"], "2026-07-01T11:30:00Z")
+        # Leg D: NEUER Start ~13:02 (>30 min Gap -> eigenes Segment), airborne -> das AKTUELLE Leg.
+        self._seed_leg(conn, 703, "FRS703", "2026-07-01T13:00:00Z", "EDWG")
+        conn.execute(
+            "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
+            "VALUES (703, 'FRS703', 53.75, 7.87, 100)"
+        )
+        conn.commit()
+
+        p = compute_transport_progress(conn, ev, "2026-07-01T13:15:00Z")
+        legs = [f for f in p["flights"] if f["cid"] == 703]
+        in_air = [f for f in legs if f.get("in_air")]
+        assert in_air, "erwarte eine offene In-Air-Zeile für FRS703"
+        # Das aktuelle (neueste) Leg startete lange NACH der Ankunft -> nicht mehr „angekommen".
+        assert all(not f.get("loaded") for f in in_air), \
+            "veraltetes incomplete Leg hält den Status fälschlich auf 'angekommen' (falsche Leg-Auswahl)"
+
     def test_multi_leg_loss_attached_once(self):
         """#23 Review I2: eine Mehrbein-Connection mit ZWEI nicht gelieferten Beinen (Hin+Rück,
         keins davon am Ziel) teilt denselben Verbindungs-Logon-Key -- der EINE gelatchte Verlust

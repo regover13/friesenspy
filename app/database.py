@@ -5193,10 +5193,20 @@ def compute_transport_progress(
         current_leg_by_cid: dict[int, dict] = {}
     else:
         open_legs_probe = canonicalize_legs(conn, start=load_start, end=now, callsign_prefix=callsign_prefix)
-        current_leg_by_cid: dict[int, dict] = {
-            int(f["cid"]): f for f in open_legs_probe
-            if f.get("cid") is not None and not f.get("logoff_time")
-        }
+        # `open_legs_probe` ist absteigend nach logon_time sortiert (canonicalize_legs, Z. ~2633).
+        # Bei MEHREREN offenen Legs derselben cid (z. B. ein incomplete Leg aus einem Track-Gap
+        # >30 min bzw. einem Poller-/VPS-Ausfall, das nie geschlossen wurde, PLUS das tatsächlich
+        # laufende) muss das NEUESTE gewinnen — das ist das aktuelle Leg, aus dem dep/airborne und
+        # die Latch-Demotion (unten) abgeleitet werden. Die frühere Dict-Comprehension ließ über die
+        # absteigende Liste „last-wins" gewinnen = das ÄLTESTE Leg; ein veraltetes, längst
+        # abgeschlossenes Leg lieferte dann Takeoff/dep und ließ „angekommen" hängen (Fable-Review
+        # 10.07.). „erstes gewinnt" über die absteigende Liste = neuestes offenes Leg.
+        current_leg_by_cid: dict[int, dict] = {}
+        for _leg in open_legs_probe:
+            _cid = _leg.get("cid")
+            if _cid is None or _leg.get("logoff_time"):
+                continue
+            current_leg_by_cid.setdefault(int(_cid), _leg)
 
     dest = normalize_type_code(event.get("destination"))
     live_arrivals = get_transport_live_arrivals(conn, int(event["id"]))
@@ -5340,7 +5350,27 @@ def compute_transport_progress(
                         "callsign": f.get("callsign") or "",
                     })
                 continue
+            # `(cid, lo) in live_arrivals` matcht per Konstruktion exakt die flights-Zeile DIESES
+            # offenen Legs — der Poller latcht unter demselben `logon_time` (Refile-Split #22). Das
+            # bleibt die richtige Grundprüfung und darf NICHT durch einen GPS-Takeoff-Vergleich
+            # ersetzt werden (Latch-Key = flights-Logon, NICHT der canonicalize-Leg-Takeoff — andere
+            # Zeitachse).
             loaded = bool(dest) and (cid, lo) in live_arrivals
+            # #6-Nachzug (Live-Fund FRS102, 10.07.): Fliegt der Pilot in DERSELBEN flights-Zeile nach
+            # der Lieferung GPS-erkannt weiter (canonicalize_legs splittet rein visuell — kein neuer
+            # flights-Eintrag mangels Refile), blieb das neue Leg über den reinen Membership-Test
+            # dauerhaft „angekommen". Deshalb zusätzlich demoten, wenn der Takeoff des AKTUELL
+            # laufenden GPS-Legs klar NACH dem gelatchten Ankunftszeitpunkt liegt (+Slack gegen
+            # Uhr-Jitter): dann gehört die Lieferung zu einem FRÜHEREN Leg, das aktuelle ist neu.
+            if loaded and current_leg:
+                arrived_at = live_arrivals.get((cid, lo))
+                leg_takeoff = current_leg.get("logon_time")
+                if arrived_at and leg_takeoff:
+                    try:
+                        if _parse_iso(leg_takeoff) > _parse_iso(arrived_at) + timedelta(seconds=_LATCH_SLACK_SEC):
+                            loaded = False
+                    except (ValueError, AttributeError):
+                        pass
             type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
             if loaded and type_code and type_code not in payload_map:
                 unmapped.add(type_code)

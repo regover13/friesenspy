@@ -1,5 +1,14 @@
 [
   {
+    "version": "8.25.0",
+    "date": "2026-07-10",
+    "title": "FriesenKutter: Status bleibt nicht mehr auf „angekommen“ hängen",
+    "items": [
+      "🛬 Ein Kutter-Pilot, der geliefert hat und danach — ohne sich neu einzuloggen — weiterfliegt, wurde in der Live-Ansicht dauerhaft als „✅ angekommen“ gezeigt, obwohl er längst wieder unterwegs war (Fund an FRS102). Ursache: die Ankunft war an die ganze VATSIM-Verbindung gebunden statt an das konkret liefernde Leg. Jetzt wechselt der Status korrekt auf „✈️ unterwegs“, sobald ein neuer Flug nach der Lieferung startet.",
+      "🧭 Zusätzlich abgesichert: Fliegt ein Pilot mit einer Lücke im Track (z. B. kurzer Verbindungsabbruch oder Server-Ausfall über 30 min), wird für Status, Abflugplatz und Ankunft jetzt zuverlässig das aktuelle Leg herangezogen, nicht ein veraltetes."
+    ]
+  },
+  {
     "version": "8.24.0",
     "date": "2026-07-10",
     "title": "FriesenKutter-Detailansicht zeigt jetzt auch das Ziel",
