@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.23.0",
+    "date": "2026-07-10",
+    "title": "Versionsverlauf teilbar — Deep-Link",
+    "items": [
+      "🔗 Der Versionsverlauf hat jetzt einen „⎘ Teilen“-Knopf: Er kopiert einen direkten Link (…/#changelog=1), der beim Öffnen sofort das Verlauf-Fenster anzeigt. So lässt sich der Changelog verlinken oder als Lesezeichen ablegen, ohne erst auf die Versionsnummer tippen zu müssen."
+    ]
+  },
+  {
     "version": "8.22.1",
     "date": "2026-07-10",
     "title": "FriesenKutter: aufgeräumte Live-Ansicht + ehrlicher Feierabend-Text",

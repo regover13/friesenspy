@@ -1833,6 +1833,7 @@
   <div class="fp-modal-box" onclick="event.stopPropagation()">
     <div class="fp-modal-header">
       <span class="fp-callsign-title">Versionsverlauf</span>
+      <button class="btn-share" style="margin-left:auto; margin-right:12px;" onclick="copyChangelogShareUrl(this)">⎘ Teilen</button>
       <button class="fp-close-btn" onclick="closeChangelogModal()">✕</button>
     </div>
     <div class="fp-section" id="changelog-modal-body"></div>
@@ -3182,6 +3183,20 @@ function setUrlState(params) {
 
 function copyShareUrl(btn) {
   navigator.clipboard.writeText(location.href).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Kopiert!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✗ Fehler';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  });
+}
+
+// Teilt den Deep-Link auf den Versionsverlauf (#changelog=1) — öffnet das Modal beim Laden.
+function copyChangelogShareUrl(btn) {
+  const url = `${location.origin}${location.pathname}#changelog=1`;
+  navigator.clipboard.writeText(url).then(() => {
     const orig = btn.textContent;
     btn.textContent = '✓ Kopiert!';
     setTimeout(() => { btn.textContent = orig; }, 2000);
@@ -4975,6 +4990,14 @@ document.getElementById('ev-icao').addEventListener('keydown', e => {
 // ==========================================================================
 async function initFromUrl() {
   const p = getUrlState();
+
+  // Deep-Link auf den Versionsverlauf (#changelog=1) — unabhängig vom aktiven Tab.
+  // _changelog wird erst nach /api/frontend-config befüllt, daher auf das Config-Promise warten.
+  if (p.get('changelog')) {
+    await _configPromise;
+    openChangelogModal();
+  }
+
   const tab = p.get('tab');
   if (!tab) return;
 
