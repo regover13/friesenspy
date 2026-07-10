@@ -5322,6 +5322,11 @@ def compute_transport_progress(
             # Rückflug EDXP→EDWG bereits gelandet, danach EDWG→EDWL fälschlich als "Rückflug"
             # markiert geblieben). Fallback (kein GPS-Leg erkannt, z. B. trackless) wie bisher.
             current_leg = current_leg_by_cid.get(int(cid))
+            # `dep_from_ground_pos` = der Abholplatz stammt aus der AKTUELLEN Live-Boden-Position
+            # (der Pilot steht JETZT nachweislich dort). Nur dann darf ein alter „am Ziel angekommen"-
+            # Latch als widerlegt gelten (A3-Fix unten) — bei trackless/Fallback-dep bleibt der Latch
+            # maßgeblich (Bestandsverhalten, s. test_open_flight_with_latch_counts_immediately).
+            dep_from_ground_pos = False
             # GPS-only Boden-Beladung (#5): den Abholplatz bestimmt vorrangig die AKTUELLE Position,
             # NICHT der (evtl. veraltete) Flugplan und nicht die erste Position der Verbindung.
             if current_leg:
@@ -5333,6 +5338,7 @@ def compute_transport_progress(
                     # Streckenplatz, steht der Pilot dort nicht — dann bleibt dep None (unsichtbar),
                     # KEIN Rückfall auf den Flugplan (sonst würde ein alter Plan ihn falsch verorten).
                     dep = _nearest_airport(coords_map, (gpos[0], gpos[1]), radius)
+                    dep_from_ground_pos = True
                 else:
                     # Keine verwertbare Boden-Position (offline / erste Runde / in der Luft ohne
                     # erkanntes Leg): alter GPS-Fallback, Flugplan nur als letzter Notnagel.
@@ -5371,6 +5377,14 @@ def compute_transport_progress(
                             loaded = False
                     except (ValueError, AttributeError):
                         pass
+            elif loaded and dep_from_ground_pos:
+                # A3-Fix (Fable-Analyse 10.07.): Der Pilot steht laut aktueller Live-Position am Boden
+                # an einem ABHOLPLATZ (dep≠dest — am Ziel Geparkte gehen oben in den Rückflug-Zweig).
+                # Das widerspricht dem „am Ziel angekommen"-Latch: wer nachweislich am Abholplatz
+                # parkt, ist nicht angekommen, sondern lädt. Ohne dies zählte ein alter/spurioser
+                # Latch die volle Zuladung als geliefert (Phantom-Fracht) und zeigte „✅ angekommen".
+                # Der Latch selbst bleibt gesetzt (Zähl-Fallback bei trackless/Disconnect unberührt).
+                loaded = False
             type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
             if loaded and type_code and type_code not in payload_map:
                 unmapped.add(type_code)

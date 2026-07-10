@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.25.1",
+    "date": "2026-07-10",
+    "title": "FriesenKutter: kein „angekommen“ mehr am Abholplatz",
+    "items": [
+      "🅿️ Ein Kutter-Pilot, der zurück am Abholplatz am Boden steht (z. B. nach einer Lieferung oder weil er dort gestartet ist), zeigte in seltenen Fällen fälschlich „✅ angekommen“ — und seine volle Zuladung wurde dann als geliefert mitgezählt, obwohl er am Abholplatz stand und nichts abgeliefert hatte. Jetzt gilt: Wer laut aktueller Position am Abholplatz steht, ist nicht „angekommen“, sondern „🅿️ lädt“. Die Lieferbilanz zählt nur noch echte Ankünfte am Ziel."
+    ]
+  },
+  {
     "version": "8.25.0",
     "date": "2026-07-10",
     "title": "FriesenKutter: Status bleibt nicht mehr auf „angekommen“ hängen",

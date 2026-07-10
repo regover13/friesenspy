@@ -785,6 +785,32 @@ class TestLiveArrivalInProgress:
         assert f["loaded"] is True
         assert f["tonnage_kg"] == 550
 
+    def test_parked_at_pickup_with_live_pos_and_latch_not_arrived(self):
+        """A3-Fix (Fable-Analyse 10.07., chirurgisch): Ein Pilot, dessen AKTUELLE Live-Position ihn
+        am Boden an einem ABHOLPLATZ (≠ Ziel) zeigt, darf mit einem alten/spuriosen Live-Ankunfts-
+        Latch NICHT „angekommen" sein und seine Zuladung NICHT als geliefert zählen — er steht
+        demonstrativ am Abholplatz, nicht am Ziel. Er lädt (reserviert). Der offene Zweig erreicht
+        die loaded-Berechnung ohnehin nur für dep≠dest (dep==dest → Rückflug-Zweig). Ohne den Fix
+        zählte er 250 kg Phantom-Fracht. Abgrenzung zu `test_open_flight_with_latch_counts_immediately`:
+        OHNE Live-Position (trackless) vertraut der Code weiter dem Latch (Bestandsverhalten)."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        ev = _event(conn, route="EDXH,EDWG", destination="EDWG")  # Abholplatz EDXH, Ziel EDWG
+        logon = "2026-07-01T10:00:00Z"
+        _add_open_flight(conn, 12, "EDXH", "EDWG", "C172", logon, callsign="FRS12")
+        from app.geo import icao_to_coords
+        la, lo = icao_to_coords("EDXH")
+        _set_live_pos(conn, 12, la, lo, 0, callsign="FRS12")            # geparkt am Abholplatz
+        set_transport_live_arrival(conn, 12, logon, ev["id"], logon)   # alter/spurioser Latch
+        conn.commit()
+        p = compute_transport_progress(conn, ev, _shift(logon, 10))
+        f = _feed_by_callsign(p, "FRS12")
+        assert f is not None and f["in_air"]
+        assert f["loaded"] is False        # NICHT angekommen — er steht am Abholplatz
+        assert f["airborne"] is False      # geparkt → „🅿️ lädt", nicht „unterwegs"
+        assert f["reserved_kg"] == 250.0   # reserviert statt fälschlich geliefert
+        assert p["total_kg"] == 0.0        # KEINE Phantom-Fracht
+
     def test_latch_persists_after_disconnect_without_known_arrival(self):
         """Latch bleibt gültig, wenn die Connection ohne belastbare GPS-/Flugplan-Ankunft endet
         (kein Track, kein gefilter Zielflughafen — 'arr' bleibt leer). Ein GPS-BELEGT
