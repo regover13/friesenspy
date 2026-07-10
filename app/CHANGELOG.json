@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.24.0",
+    "date": "2026-07-10",
+    "title": "FriesenKutter-Detailansicht zeigt jetzt auch das Ziel",
+    "items": [
+      "🎯 In der Kutter-Detailansicht (Events) steht jetzt — wie schon im Live-Banner — oben prominent „🎯 Ziel: <Platz>“, wohin die Fracht soll. Bisher fehlte die Überschrift dort; man sah nur Balken und Flugliste, ohne das Ziel auf einen Blick."
+    ]
+  },
+  {
     "version": "8.23.1",
     "date": "2026-07-10",
     "title": "Neue Versionen erscheinen sofort — kein Nachladen mehr nötig",
