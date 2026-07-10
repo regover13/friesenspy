@@ -1703,36 +1703,36 @@ class TestGPSLegReconcile:
 
     def test_second_delivery_run_shows_enroute_not_arrived(self):
         """Physikalisch echter FRS102-Ablauf in EINER flights-Zeile (KEIN Refile → ein einziger
-        Verbindungs-Logon über alle GPS-Legs): Leg 1 EDWG→EDXH liefert (Latch), Leg 2 EDXH→EDWG
-        Rückflug landet sauber, Leg 3 EDWG→EDXH startet eine ZWEITE Lieferrunde und ist noch in der
-        Luft. Der alte Latch (Verbindungs-Logon) überlappt Leg 3 weiter → der reine Membership-Test
-        zeigte Leg 3 dauerhaft „✅ angekommen", obwohl der Pilot gerade erst wieder Richtung Ziel
-        unterwegs ist. Korrekt ist „✈️ unterwegs" + Reservierung, bis er erneut landet. (Realistische
-        Variante von `test_new_leg_after_delivery_not_stuck_on_arrived`, mit echtem Rückflug-Leg statt
-        Positions-Sprung.)"""
+        Verbindungs-Logon über alle GPS-Legs). ECHTE Richtung des Live-Events: Fracht wird am
+        Abholplatz EDXH aufgenommen und zum ZIEL EDWG geliefert; der Rückweg ist EDWG→EDXH. Leg 1
+        EDXH→EDWG liefert (Latch am Ziel EDWG), Leg 2 EDWG→EDXH Rückflug landet sauber am Abholplatz,
+        Leg 3 EDXH→EDWG startet eine ZWEITE Lieferrunde und ist noch in der Luft. Der alte Latch
+        (Verbindungs-Logon) überlappt Leg 3 weiter → der reine Membership-Test zeigte Leg 3 dauerhaft
+        „✅ angekommen", obwohl der Pilot gerade erst wieder Richtung Ziel unterwegs ist. Korrekt ist
+        „✈️ unterwegs" + Reservierung, bis er erneut landet."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
+        ev = _event(conn, route="EDXH,EDWG", destination="EDWG")  # Abholplatz EDXH → Ziel EDWG
         conn_logon = "2026-07-01T09:58:00Z"
         from app.geo import icao_to_coords
-        # EINE offene Verbindung, KEIN Refile (dep/arr bleiben EDWG/EDXH über alle Legs).
-        self._insert_connection(conn, 800, "FRS800", "EDWG", "EDXH", conn_logon, None,
+        # EINE offene Verbindung, KEIN Refile (dep/arr bleiben EDXH/EDWG über alle Legs).
+        self._insert_connection(conn, 800, "FRS800", "EDXH", "EDWG", conn_logon, None,
                                 duration_min=300)
-        # Leg 1: EDWG → EDXH, liefert. Latch während Leg 1.
-        self._seed_leg(conn, 800, "FRS800", conn_logon, "EDWG")
-        l1 = self._add_leg_landing(conn, 800, "FRS800", conn_logon, "EDXH")
+        # Leg 1: EDXH → EDWG, liefert am Ziel. Latch während Leg 1.
+        self._seed_leg(conn, 800, "FRS800", conn_logon, "EDXH")
+        l1 = self._add_leg_landing(conn, 800, "FRS800", conn_logon, "EDWG")
         set_transport_live_arrival(conn, 800, conn_logon, ev["id"], _shift(l1, -3))
-        hlat, hlon = icao_to_coords("EDXH")
-        _add_pos(conn, 800, _shift(l1, 3), hlat, hlon, 5, alt=8, callsign="FRS800")
-        # Leg 2: EDXH → EDWG (echter Rückflug), landet EDWG.
-        r2 = _shift(l1, 6)
-        self._seed_leg(conn, 800, "FRS800", r2, "EDXH")
-        l2 = self._add_leg_landing(conn, 800, "FRS800", r2, "EDWG")
         glat, glon = icao_to_coords("EDWG")
-        _add_pos(conn, 800, _shift(l2, 3), glat, glon, 5, alt=6, callsign="FRS800")
-        # Leg 3: EDWG → EDXH (ZWEITE Lieferrunde), airborne, noch kein Touchdown.
+        _add_pos(conn, 800, _shift(l1, 3), glat, glon, 5, alt=6, callsign="FRS800")
+        # Leg 2: EDWG → EDXH (echter Rückflug zum Abholplatz), landet EDXH.
+        r2 = _shift(l1, 6)
+        self._seed_leg(conn, 800, "FRS800", r2, "EDWG")
+        l2 = self._add_leg_landing(conn, 800, "FRS800", r2, "EDXH")
+        hlat, hlon = icao_to_coords("EDXH")
+        _add_pos(conn, 800, _shift(l2, 3), hlat, hlon, 5, alt=8, callsign="FRS800")
+        # Leg 3: EDXH → EDWG (ZWEITE Lieferrunde zum Ziel), airborne, noch kein Touchdown.
         t3 = _shift(l2, 6)
-        self._seed_leg(conn, 800, "FRS800", t3, "EDWG")
+        self._seed_leg(conn, 800, "FRS800", t3, "EDXH")
         conn.execute(
             "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
             "VALUES (800, 'FRS800', 53.9, 7.9, 110)"
