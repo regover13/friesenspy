@@ -1701,6 +1701,54 @@ class TestGPSLegReconcile:
         assert f["loaded"] is True
         assert p["total_kg"] == 250
 
+    def test_second_delivery_run_shows_enroute_not_arrived(self):
+        """Physikalisch echter FRS102-Ablauf in EINER flights-Zeile (KEIN Refile → ein einziger
+        Verbindungs-Logon über alle GPS-Legs): Leg 1 EDWG→EDXH liefert (Latch), Leg 2 EDXH→EDWG
+        Rückflug landet sauber, Leg 3 EDWG→EDXH startet eine ZWEITE Lieferrunde und ist noch in der
+        Luft. Der alte Latch (Verbindungs-Logon) überlappt Leg 3 weiter → der reine Membership-Test
+        zeigte Leg 3 dauerhaft „✅ angekommen", obwohl der Pilot gerade erst wieder Richtung Ziel
+        unterwegs ist. Korrekt ist „✈️ unterwegs" + Reservierung, bis er erneut landet. (Realistische
+        Variante von `test_new_leg_after_delivery_not_stuck_on_arrived`, mit echtem Rückflug-Leg statt
+        Positions-Sprung.)"""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", payload_kg=250)
+        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
+        conn_logon = "2026-07-01T09:58:00Z"
+        from app.geo import icao_to_coords
+        # EINE offene Verbindung, KEIN Refile (dep/arr bleiben EDWG/EDXH über alle Legs).
+        self._insert_connection(conn, 800, "FRS800", "EDWG", "EDXH", conn_logon, None,
+                                duration_min=300)
+        # Leg 1: EDWG → EDXH, liefert. Latch während Leg 1.
+        self._seed_leg(conn, 800, "FRS800", conn_logon, "EDWG")
+        l1 = self._add_leg_landing(conn, 800, "FRS800", conn_logon, "EDXH")
+        set_transport_live_arrival(conn, 800, conn_logon, ev["id"], _shift(l1, -3))
+        hlat, hlon = icao_to_coords("EDXH")
+        _add_pos(conn, 800, _shift(l1, 3), hlat, hlon, 5, alt=8, callsign="FRS800")
+        # Leg 2: EDXH → EDWG (echter Rückflug), landet EDWG.
+        r2 = _shift(l1, 6)
+        self._seed_leg(conn, 800, "FRS800", r2, "EDXH")
+        l2 = self._add_leg_landing(conn, 800, "FRS800", r2, "EDWG")
+        glat, glon = icao_to_coords("EDWG")
+        _add_pos(conn, 800, _shift(l2, 3), glat, glon, 5, alt=6, callsign="FRS800")
+        # Leg 3: EDWG → EDXH (ZWEITE Lieferrunde), airborne, noch kein Touchdown.
+        t3 = _shift(l2, 6)
+        self._seed_leg(conn, 800, "FRS800", t3, "EDWG")
+        conn.execute(
+            "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
+            "VALUES (800, 'FRS800', 53.9, 7.9, 110)"
+        )
+        conn.commit()
+
+        p = compute_transport_progress(conn, ev, _shift(t3, 10))
+        in_air = [f for f in p["flights"] if f["cid"] == 800 and f.get("in_air")]
+        assert len(in_air) == 1
+        f = in_air[0]
+        assert f["loaded"] is False        # NICHT „angekommen" — er ist erst wieder unterwegs
+        assert f["airborne"] is True       # „✈️ unterwegs"
+        assert f["reserved_kg"] == 250.0   # reserviert die 2.-Runden-Fracht
+        parts = {x["cid"]: x for x in p["participants"]}
+        assert parts[800]["status"] == "flying"
+
     def test_return_leg_not_double_counted(self):
         """Eine Mehrbein-Connection (Hin EDWG→EDXH landet am Ziel, Rück EDXH→EDWG) — der Latch
         (Verbindungs-Logon) überlappt via Connection-Intervall BEIDE Beine, trotzdem darf NUR
