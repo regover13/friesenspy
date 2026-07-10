@@ -212,28 +212,35 @@ async def robots_txt():
     return PlainTextResponse("User-agent: *\nDisallow: /\n")
 
 
+# HTML-Einstiegsseiten NICHT heuristisch cachen lassen: sonst sieht ein Nutzer nach einem
+# Deploy weiter das alte index.html (mit frischen API-Daten, aber altem Markup/JS) — genau der
+# „neue Version im Changelog, aber neuer Button fehlt“-Effekt. `no-cache` erzwingt eine
+# Revalidierung bei jedem Aufruf; dank ETag/Last-Modified von FileResponse ist das billig (304).
+_HTML_NO_CACHE = {"Cache-Control": "no-cache"}
+
+
 @app.get("/")
 async def index():
-    return FileResponse("app/static/index.html")
+    return FileResponse("app/static/index.html", headers=_HTML_NO_CACHE)
 
 
 @app.get("/admin", include_in_schema=False)
 async def admin_page():
     """Admin-Seite (Login-Formular + Bummel-Rennverwaltung). Schutz erfolgt über die
     /api/admin/*-Endpoints (Cookie); diese Seite selbst ist statisch."""
-    return FileResponse("app/static/admin.html")
+    return FileResponse("app/static/admin.html", headers=_HTML_NO_CACHE)
 
 
 @app.get("/impressum", include_in_schema=False)
 async def impressum_page():
     """Impressum (§ 5 DDG) — statische Seite."""
-    return FileResponse("app/static/impressum.html")
+    return FileResponse("app/static/impressum.html", headers=_HTML_NO_CACHE)
 
 
 @app.get("/datenschutz", include_in_schema=False)
 async def datenschutz_page():
     """Datenschutzerklärung (Art. 13 DSGVO) — statische Seite."""
-    return FileResponse("app/static/datenschutz.html")
+    return FileResponse("app/static/datenschutz.html", headers=_HTML_NO_CACHE)
 
 
 @app.get("/health")

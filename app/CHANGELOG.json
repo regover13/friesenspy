@@ -1,5 +1,13 @@
 [
   {
+    "version": "8.23.1",
+    "date": "2026-07-10",
+    "title": "Neue Versionen erscheinen sofort — kein Nachladen mehr nötig",
+    "items": [
+      "♻️ Die Einstiegsseiten werden jetzt mit „no-cache“ ausgeliefert: Nach einem Update zeigt der Browser sofort die neue Oberfläche, statt das alte HTML weiterzucachen (der Grund, warum der v8.23.0-Teilen-Knopf zunächst unsichtbar blieb, obwohl der Changelog schon die neue Version meldete). Dank ETag bleibt das Nachladen schlank."
+    ]
+  },
+  {
     "version": "8.23.0",
     "date": "2026-07-10",
     "title": "Versionsverlauf teilbar — Deep-Link",
