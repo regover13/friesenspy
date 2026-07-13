@@ -415,3 +415,13 @@ def test_callback_self_cleanup_removes_stale(env):
                               "iat": time.time(), "nonce": nonce, "cs": cs})
         env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
     assert list(_forum_callsigns(env)) == ["FRS49"]   # FRS49N bereinigt
+
+
+def test_callback_empty_cs_removes_all_own_rows(env):
+    # Erst ein Rufzeichen setzen, dann Login mit leerer cs-Liste → alle eigenen Zeilen weg (F4).
+    for nonce, cs in (("f1", ["FRS5"]), ("f2", [])):
+        env.client.cookies.set("fs_sso_state", "st8")
+        tok = _mint_incoming({"sub": 1, "name": "T", "cid": "1602713", "is_admin": False,
+                              "iat": time.time(), "nonce": nonce, "cs": cs})
+        env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
+    assert _forum_callsigns(env) == {}

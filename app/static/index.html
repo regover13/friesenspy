@@ -2308,7 +2308,8 @@ function _claimPushOwnership() {
     method: 'POST', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ endpoint: _pushSubscription.endpoint }),
-  }).catch(() => { _pushOwnershipClaimed = false; });
+  }).then(r => { if (!r.ok) _pushOwnershipClaimed = false; })   // HTTP-Fehler → nächster Tick erneut
+    .catch(() => { _pushOwnershipClaimed = false; });
 }
 
 document.addEventListener('DOMContentLoaded', () => {

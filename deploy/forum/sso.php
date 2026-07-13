@@ -118,16 +118,33 @@ $cs_cols = '';
 foreach ($CS_FIELDS as $i => $f) {
     $cs_cols .= ', ' . $f . ' AS fs_cs' . $i;
 }
+// Fehlertoleranz: Wäre eines der Callsign-Profilfelder nicht vorhanden (falsch benannt / nicht
+// angelegt), würde phpBB die Query sonst mit einem Fatal abbrechen — und der GESAMTE Login
+// hinge. sql_return_on_error(true) liefert stattdessen `false`; dann lesen wir nur die CID.
+$db->sql_return_on_error(true);
 $sql = 'SELECT ' . $CID_FIELD . ' AS fs_cid' . $cs_cols . '
     FROM ' . PROFILE_FIELDS_DATA_TABLE . '
     WHERE user_id = ' . (int) $uid;
 $res = $db->sql_query($sql);
-$row = $db->sql_fetchrow($res);
-$db->sql_freeresult($res);
+if ($res === false) {
+    // Ein Callsign-Feld fehlt/ist umbenannt → Rückfall auf die reine CID-Query (Rufzeichen leer).
+    $res = $db->sql_query('SELECT ' . $CID_FIELD . ' AS fs_cid
+        FROM ' . PROFILE_FIELDS_DATA_TABLE . '
+        WHERE user_id = ' . (int) $uid);
+}
+$db->sql_return_on_error(false);
+$row = $res ? $db->sql_fetchrow($res) : false;
+if ($res !== false) {
+    $db->sql_freeresult($res);
+}
 if ($row) {
     $cid = (string) $row['fs_cid'];
-    // Nicht-leere, getrimmte, großgeschriebene, deduplizierte Rufzeichen sammeln.
+    // Nicht-leere, getrimmte, großgeschriebene, deduplizierte Rufzeichen sammeln (nur falls die
+    // Spalte vorhanden war — bei der Fallback-Query fehlen die fs_csN).
     foreach ($CS_FIELDS as $i => $f) {
+        if (!isset($row['fs_cs' . $i])) {
+            continue;
+        }
         $v = strtoupper(trim((string) $row['fs_cs' . $i]));
         if ($v !== '' && !in_array($v, $cs, true)) {
             $cs[] = $v;

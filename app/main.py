@@ -1602,18 +1602,28 @@ async def forum_callback(request: Request):
                 v = cs.strip().upper()
                 if 0 < len(v) <= 16 and v not in clean:
                     clean.append(v)
-        conn = get_connection(settings.DB_PATH)
+        # Callsign-Map ist Nice-to-have: ein DB-Fehler (z. B. „database is locked") darf den
+        # Login NICHT scheitern lassen — der nächste Login holt es nach (Fable-Fund F3).
         try:
-            for v in clean:
-                upsert_forum_callsign(conn, v, cid_int)
-            placeholders = ",".join("?" * len(clean)) or "NULL"
-            conn.execute(
-                f"DELETE FROM forum_callsign WHERE cid = ? AND callsign NOT IN ({placeholders})",
-                (cid_int, *clean),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+            conn = get_connection(settings.DB_PATH)
+            try:
+                for v in clean:
+                    upsert_forum_callsign(conn, v, cid_int)
+                if clean:
+                    placeholders = ",".join("?" * len(clean))
+                    conn.execute(
+                        f"DELETE FROM forum_callsign WHERE cid = ? AND callsign NOT IN ({placeholders})",
+                        (cid_int, *clean),
+                    )
+                else:
+                    # Keine Rufzeichen mehr im Profil → alle Alt-Zeilen dieser CID entfernen (F4).
+                    conn.execute("DELETE FROM forum_callsign WHERE cid = ?", (cid_int,))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            _logger.warning("forum_callsign-Persistierung fehlgeschlagen (Login läuft weiter)",
+                            exc_info=True)
     resp = RedirectResponse("/", status_code=302)
     resp.set_cookie(USER_COOKIE, user_token, httponly=True, secure=_is_https(request),
                     samesite="lax", path="/", max_age=settings.USER_SESSION_MAX_AGE_SEC)

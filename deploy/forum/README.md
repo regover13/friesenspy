@@ -74,3 +74,8 @@ rm /var/www/bb_friesen/sso.php
   Whitelist geprüft.
 - `sso.php` **mit echtem Secret niemals** öffentlich weitergeben oder in git committen (die
   Vorlage im Repo enthält nur einen Platzhalter).
+- **Wichtig (Vertrauensanker):** Das VATSIM-CID-Profilfeld (`pf_phpbb_vatsimid`) ist die
+  alleinige Identitätsquelle für FriesenSpy. Es **muss** so konfiguriert sein, dass Mitglieder
+  es **nicht selbst** ändern können (nur Moderatoren/Admins) — sonst könnte jemand eine fremde
+  CID eintragen und damit fremde Benachrichtigungs-Einstellungen setzen. Das FRS-Rufzeichenfeld
+  ist unkritischer, sollte aber ebenfalls gepflegt/kontrolliert sein.
