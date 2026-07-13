@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +149,12 @@ CREATE TABLE IF NOT EXISTS pilot_visibility (
     cid        INTEGER PRIMARY KEY,
     mode       TEXT NOT NULL DEFAULT 'everyone',   -- 'everyone' | 'allowlist' | 'nobody'
     allowlist  TEXT,                               -- JSON-Liste erlaubter CIDs (nur bei 'allowlist')
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS forum_callsign (
+    callsign   TEXT PRIMARY KEY,                   -- UPPER, getrimmt (z. B. 'FRS49N')
+    cid        INTEGER NOT NULL,
     updated_at TEXT
 );
 
@@ -6111,6 +6120,42 @@ def set_pilot_visibility(conn: sqlite3.Connection, cid: int, mode: str,
                mode=excluded.mode, allowlist=excluded.allowlist, updated_at=excluded.updated_at""",
         (cid, mode, stored, _now_utc()),
     )
+
+
+# ---------------------------------------------------------------------------
+# Forum-Callsign-Map (autoritatives Callsign→CID aus dem Forum-Login)
+# ---------------------------------------------------------------------------
+
+def upsert_forum_callsign(conn: sqlite3.Connection, callsign: str, cid: int) -> None:
+    """Autoritatives Callsign→CID aus dem Forum. UPPER/trim.
+
+    Kollision (Callsign wechselt den Owner) wird geloggt; last-write-wins (Callsigns sind im
+    Forum je Mitglied eindeutig).
+    """
+    cs = (callsign or "").strip().upper()
+    if not cs:
+        return
+    prev = conn.execute("SELECT cid FROM forum_callsign WHERE callsign = ?", (cs,)).fetchone()
+    if prev is not None and int(prev["cid"]) != int(cid):
+        logger.warning("forum_callsign-Kollision: %s war CID %s, jetzt CID %s",
+                       cs, prev["cid"], cid)
+    conn.execute(
+        """INSERT INTO forum_callsign (callsign, cid, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(callsign) DO UPDATE SET cid=excluded.cid, updated_at=excluded.updated_at""",
+        (cs, int(cid), _now_utc()),
+    )
+
+
+def cid_for_callsign_authoritative(conn: sqlite3.Connection, callsign: str) -> int | None:
+    """Zuerst die autoritative Forum-Map, sonst Fallback auf cid_for_callsign
+    (live_positions/flights/statsim)."""
+    cs = (callsign or "").strip().upper()
+    if not cs:
+        return None
+    row = conn.execute("SELECT cid FROM forum_callsign WHERE callsign = ?", (cs,)).fetchone()
+    if row is not None:
+        return int(row["cid"])
+    return cid_for_callsign(conn, cs)
 
 
 def cid_for_callsign(conn: sqlite3.Connection, callsign: str) -> int | None:

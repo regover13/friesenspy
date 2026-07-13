@@ -1,6 +1,7 @@
 """Tests für app/database.py — alle Tests mit In-Memory-DB (:memory:)."""
 from __future__ import annotations
 
+import logging
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,7 @@ import pytest
 from app.database import (
     audit_gps_vs_refile,
     canonicalize_flights,
+    cid_for_callsign_authoritative,
     cleanup_old_history,
     count_uncached_statsim,
     get_uncached_statsim_ids,
@@ -34,6 +36,7 @@ from app.database import (
     remove_live_position,
     save_position_history,
     update_flight_plan,
+    upsert_forum_callsign,
     upsert_live_position,
     upsert_statsim_flights,
 )
@@ -95,6 +98,27 @@ def test_pilot_visibility_invalid_mode_raises():
     conn = _make_conn()
     with pytest.raises(ValueError):
         set_pilot_visibility(conn, 111, "bogus")
+
+
+# ---------------------------------------------------------------------------
+# forum_callsign (autoritatives Callsign→CID)
+# ---------------------------------------------------------------------------
+
+def test_forum_callsign_authoritative():
+    conn = _make_conn()
+    assert cid_for_callsign_authoritative(conn, "FRS49") is None
+    upsert_forum_callsign(conn, "frs49", 1602713)          # UPPER/trim
+    assert cid_for_callsign_authoritative(conn, "FRS49") == 1602713
+    assert cid_for_callsign_authoritative(conn, " frs49 ") == 1602713
+
+
+def test_forum_callsign_collision_keeps_last_and_warns(caplog):
+    conn = _make_conn()
+    upsert_forum_callsign(conn, "FRS99", 111)
+    with caplog.at_level(logging.WARNING):
+        upsert_forum_callsign(conn, "FRS99", 222)          # anderer Owner → Warnung
+    assert cid_for_callsign_authoritative(conn, "FRS99") == 222
+    assert any("FRS99" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
