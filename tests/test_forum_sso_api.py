@@ -200,6 +200,16 @@ def test_gate_always_allows_auth_and_legal_paths(env):
         assert env.client.get(path, follow_redirects=False).status_code in (200, 302)
 
 
+def test_gate_on_allows_public_badges(env):
+    # Forum-eingebettete Badge-PNGs bleiben bei aktivem Gate erreichbar (nicht vom Gate geblockt).
+    # `/widget` ist über denselben Allowlist-Präfix-Mechanismus abgedeckt wie die anderen Pfade.
+    env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
+    main._reset_gate_cache()
+    # Badge-Pfad erreicht die Route (404 mangels Event), wird NICHT vom Gate mit 401 geblockt.
+    r = env.client.get("/api/transport/999999/badge/1.png", follow_redirects=False)
+    assert r.status_code != 401
+
+
 # --- Task 5: Frontend-Markup wird ausgeliefert ------------------------------
 
 def test_index_serves_userbox_markup(env):

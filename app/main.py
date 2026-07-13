@@ -223,7 +223,7 @@ async def no_index_header(request: Request, call_next):
 _GATE_ALLOW_PREFIXES = (
     "/auth/", "/static/", "/health", "/robots.txt", "/favicon",
     "/impressum", "/datenschutz", "/admin", "/api/admin/",
-    "/manifest", "/sw.js", "/api/me",
+    "/manifest", "/sw.js", "/api/me", "/widget",
 )
 
 # Break-glass-Kopie des Admin-Cookies auf ``path=/`` — das eigentliche Admin-Cookie liegt auf
@@ -246,7 +246,9 @@ async def forum_login_gate(request: Request, call_next):
     """Bei aktivem Board-Login: nicht-eingeloggte Anfragen abweisen (HTML → Login-Redirect,
     sonst 401). Ohne Schalter/Secrets völlig inaktiv (Default), daher kein Einfluss im Normalbetrieb."""
     path = request.url.path
-    if not path.startswith(_GATE_ALLOW_PREFIXES):
+    # Öffentliche Badge-PNGs (in Foren-Beiträge eingebettet) bleiben auch bei aktivem Gate
+    # erreichbar — Cross-Site-<img> sendet das SameSite=Lax-Cookie sonst nicht mit.
+    if not path.startswith(_GATE_ALLOW_PREFIXES) and "/badge/" not in path:
         settings = get_settings()
         if _forum_login_active_cached(settings) and not _request_is_authenticated(request, settings):
             wants_html = request.method == "GET" and "text/html" in request.headers.get("accept", "")
