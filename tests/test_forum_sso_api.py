@@ -40,6 +40,12 @@ def _admin_site_cookie() -> dict:
     return {"fs_admin_site": make_admin_token(SECRET, PW)}
 
 
+def _user_cookie(is_admin: bool = True) -> dict:
+    # FriesenSpy-Session-Cookie (fs_user), wie es der Callback nach Forum-Login setzt.
+    exp = time.time() + 3600
+    return {"fs_user": forum_sso.make_user_token(SECRET, 9, "Pilot", "1234567", is_admin, exp)}
+
+
 def _mint_incoming(claims: dict, secret: str = SSO) -> str:
     import base64
     import hashlib
@@ -215,11 +221,31 @@ def test_gate_on_allows_public_badges(env):
 def test_index_serves_userbox_markup(env):
     r = env.client.get("/", headers={"accept": "text/html"})
     assert r.status_code == 200
-    assert "userBox" in r.text
-    assert "/auth/forum/logout" in r.text
+    assert "userBox" in r.text            # Name des eingeloggten Nutzers
+    assert "/auth/forum/logout" not in r.text  # kein Abmelden-Button (Nutzer-Entscheidung)
 
 
 def test_admin_page_serves_toggle_markup(env):
     r = env.client.get("/admin")
     assert r.status_code == 200
     assert "forumLoginToggle" in r.text
+
+
+# --- Admin-Ablösung: Events-Gruppe = Admin, Passwort nur Fallback -----------
+
+def test_admin_access_via_forum_events_admin(env):
+    # Forum-Session mit is_admin (Events-Gruppe) → Admin-Panel ohne Passwort.
+    r = env.client.get("/api/admin/me", cookies=_user_cookie(is_admin=True))
+    assert r.status_code == 200 and r.json() == {"admin": True}
+
+
+def test_forum_non_admin_denied_admin(env):
+    # Forum-Session ohne is_admin → kein Admin-Zugang.
+    r = env.client.get("/api/admin/me", cookies=_user_cookie(is_admin=False))
+    assert r.status_code == 401
+
+
+def test_password_admin_still_works_as_fallback(env):
+    # Passwort-Cookie (Break-glass) funktioniert weiterhin.
+    r = env.client.get("/api/admin/me", cookies=_admin_cookie())
+    assert r.status_code == 200

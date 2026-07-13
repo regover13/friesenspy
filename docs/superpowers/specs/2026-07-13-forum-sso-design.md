@@ -110,16 +110,20 @@ FriesenSpy-Flügen/Kutter-Beiträgen verknüpft, ohne Zutun des Piloten.
 
 1. **Wer ist Admin?** → Mitglieder der Forum-Gruppe **„Events" (`g=8`)**. `sso.php` setzt
    `is_admin=true`, wenn der Nutzer in Gruppe 8 ist (Prüfung per phpBB-`group_memberships`).
+   Dieses `is_admin` schaltet in FriesenSpy das **Admin-Panel** frei (`require_admin` akzeptiert
+   eine `fs_user`-Session mit `is_admin`) — Events-Mitglieder brauchen **kein** Passwort mehr.
 2. **Forum-Account ↔ VATSIM-CID** → geklärt. Profilfeld „VatSim-ID", bestätigt (2026-07-13,
    rein lesend): `field_ident = phpbb_vatsimid` → Schlüssel **`pf_phpbb_vatsimid`**; `sso.php`
    liest ihn über den phpBB-Profilfeld-Manager aus. CID landet automatisch im Token.
-3. **Alt-Admin-Passwort** → **behalten** (Break-glass). Nötig, weil der Board-Login
-   *einschaltbar* sein soll: bei ausgeschaltetem Board-Login und als Notzugang bei Forum-
-   Ausfall bleibt das bisherige Admin-Passwort der Weg hinein.
-4. **Session-Dauer / Logout** → an die **Forum-Session koppeln**: Wer sich im Forum abmeldet,
-   soll auch in FriesenSpy nicht mehr drin sein. FriesenSpy-Session daher **kurz** halten und
-   still über `sso.php` nachvalidieren (siehe 6.2). **Logout-Button in FriesenSpy meldet nur
-   FriesenSpy ab** (das Forum bleibt eingeloggt).
+3. **Alt-Admin-Passwort** → **behalten, aber nur als Fallback** (Break-glass): greift, wenn
+   **keine** Events-Gruppe erkannt wird (Board-Login aus, Forum-Ausfall, Nicht-Events-Admin).
+   Ist eine Events-`fs_user`-Session da, ist kein Passwort nötig (siehe #1).
+4. **Session-Dauer / Logout** → FriesenSpy-Session **20 min** (`USER_SESSION_MAX_AGE_SEC=1200`).
+   Ein sofortiges Spiegeln des Forum-Logouts geht domainübergreifend nicht; nach spätestens
+   20 min (bzw. beim nächsten Ablauf) greift der Forum-Logout, weil die Neu-Anmeldung dann über
+   `sso.php` läuft und dort kein Login mehr besteht. **Kein Abmelden-Button** in FriesenSpy
+   (Nutzer-Entscheidung) — bei aktivem Board-Login würde er ohnehin sofort per SSO
+   wieder anmelden; „richtig raus" = Forum-Logout.
 
 ## 6. Admin-Schalter „Board-Login" (einschaltbar)
 

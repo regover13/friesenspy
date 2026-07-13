@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     SSO_SECRET: str = ""            # GETEILT mit sso.php; niemals in git
     FORUM_SSO_URL: str = ""         # z.B. https://board.friesenflieger.de/sso.php
     FORUM_SSO_CALLBACK: str = ""    # absolute URL zu /auth/forum/callback (muss der Whitelist in sso.php entsprechen)
-    USER_SESSION_MAX_AGE_SEC: int = 3600  # kurze FriesenSpy-Session → spiegelt Forum-Logout verzögert
+    USER_SESSION_MAX_AGE_SEC: int = 1200  # 20 min — kurze FriesenSpy-Session; Forum-Logout greift spätestens dann
 
 
 @lru_cache(maxsize=1)

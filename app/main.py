@@ -1370,11 +1370,20 @@ def _login_rate_limited(ip: str) -> bool:
 
 
 def require_admin(request: Request) -> None:
-    """FastAPI-Dependency: wirft 401, wenn kein gültiges Admin-Cookie vorliegt."""
+    """FastAPI-Dependency: wirft 401, wenn keine Admin-Berechtigung vorliegt.
+
+    Zwei Wege gelten als Admin:
+    1. Forum-SSO-Session (``fs_user``) mit ``is_admin`` — Mitglied der Forum-Gruppe „Events".
+    2. Passwort-Admin-Cookie (``fs_admin``) — Fallback/Break-glass, wenn keine Events-Gruppe
+       erkannt wird (Board-Login aus, Forum-Ausfall, Nicht-Events-Admin).
+    """
     settings = get_settings()
-    token = request.cookies.get(ADMIN_COOKIE, "")
-    if not verify_admin_token(token, settings.SECRET_KEY, settings.ADMIN_PASSWORD):
-        raise HTTPException(status_code=401, detail="Admin-Login erforderlich")
+    claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
+    if claims and claims.get("is_admin"):
+        return
+    if verify_admin_token(request.cookies.get(ADMIN_COOKIE, ""), settings.SECRET_KEY, settings.ADMIN_PASSWORD):
+        return
+    raise HTTPException(status_code=401, detail="Admin-Login erforderlich")
 
 
 @app.post("/api/admin/login")
