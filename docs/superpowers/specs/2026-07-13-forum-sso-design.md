@@ -139,15 +139,32 @@ FriesenSpy, nicht am Forum.
 - Folge fürs Ausrollen: Datei einmal kopieren, dann **gefahrlos testen** (Schalter an → prüfen
   → bei Problemen sofort wieder aus). Kein Big-Bang.
 
-### 6.2 Forum-Session spiegeln (zu Entscheidung #4)
+### 6.2 Session-Verhalten (umgesetzt)
 
-Ein *sofortiges* Spiegeln des Forum-Logouts ist domainübergreifend nur über den Browser
-möglich (FriesenSpy kann die Forum-Session nicht serverseitig einsehen). Pragmatisch:
-FriesenSpy-Session kurz halten (z. B. 30–60 min); läuft sie ab, **still per Redirect über
-`sso.php` nachvalidieren** — ist der Nutzer im Forum noch eingeloggt, ist das nahtlos (kein
-Passwort); ist er dort ausgeloggt, landet er auf der Forum-Login-Seite und ist damit auch aus
-FriesenSpy effektiv ausgesperrt. Kompromiss: die Aussperrung greift verzögert (Länge des
-Nachvalidierungs-Intervalls), nicht in derselben Sekunde. **Zur Abnahme:** Intervall ok?
+FriesenSpy-Session **20 min** (`USER_SESSION_MAX_AGE_SEC=1200`), mit zwei Verfeinerungen, damit
+aktive Nutzer nicht ständig rausfliegen und lapsende Sessions sich selbst heilen:
+
+- **Sliding-Session:** `GET /api/me` erneuert bei gültigem Login das `fs_user`-Cookie mit
+  frischem 20-min-Ablauf. Die SPA pingt `/api/me` alle **5 min** → ein offener Tab bleibt
+  eingeloggt, ohne 20-min-Unterbrechung.
+- **Auto-Reauth:** meldet `/api/me` „nicht mehr eingeloggt", NACHDEM man eingeloggt war
+  (Session/Forum-Login weg), leitet die SPA **still** über `/auth/forum/login` neu an — bei
+  noch aktivem Forum-Login praktisch unsichtbar, sonst landet man auf der Forum-Anmeldung.
+
+**Forum-Logout-Spiegelung:** Ein sofortiges Spiegeln geht domainübergreifend nicht. Für einen
+**aktiven** Tab hält Sliding die Session am Leben (Forum-Logout wirkt erst, wenn der Tab
+untätig/geschlossen ist und die 20 min ablaufen). Für **untätige/geschlossene** Tabs greift der
+Forum-Logout nach spätestens 20 min (Ablauf → Auto-Reauth → Forum kein Login mehr). Bewusster
+Kompromiss zugunsten von „bleibt eingeloggt, solange man aktiv ist".
+
+### 6.3 Name-Chip & Admin-Login-Link (umgesetzt)
+
+- **Name-Chip** (oben rechts) erscheint nur, wenn der Board-Login **aktiv** ist — `/api/me`
+  liefert `board_login_active`; ein altes `fs_user`-Cookie zählt bei ausgeschaltetem Schalter
+  nicht (kein Name auf der öffentlichen App). **Kein Abmelden-Button.**
+- **„Mit Forum anmelden"-Link** auf der Admin-Login-Seite (`/admin`): erscheint nur bei aktivem
+  Board-Login (Frontend liest `board_login_active` aus `/api/me`, das allowlisted ist) und führt
+  auf `/auth/forum/login`. Events-Mitglieder kommen so ohne Passwort ins Admin-Panel.
 
 ## 7. Nicht-Ziele (YAGNI)
 
@@ -181,13 +198,23 @@ Forum und ist jederzeit spurlos entfernbar (Datei löschen → Zustand wie vorhe
 **Ausdrücklich nicht nötig:** keine phpBB-Extension, kein Core-Patch, kein Hook, kein
 Datenbank-Schema-Eingriff, kein Eingriff ins manuelle Update-Prozedere des Forums.
 
-### 8.1 Auf FriesenSpy-Seite (zur Vollständigkeit)
+### 8.1 Auf FriesenSpy-Seite (umgesetzt)
 
-- Neues Auth-Modul (analog `app/auth.py`): `/auth/forum/login` (Redirect zum Forum),
-  `/auth/forum/callback` (Token prüfen → eigene Session), `logout`.
-- Admin-Schalter `forum_login_enabled` in `app_settings` + Umschalter im Admin-Tab.
-- Gate (nur wenn Schalter EIN): nicht eingeloggte Anfragen → Login-Redirect.
-- `SSO_SECRET` in FriesenSpys `config.env` (bereits gitignoriert).
+- **Token-Primitiven** `app/forum_sso.py` (HMAC, `typ`-Trennung, iat/exp/nonce).
+- **Endpoints** (`app/main.py`): `GET /auth/forum/login` (state-Cookie + Redirect zum Forum),
+  `GET /auth/forum/callback` (Token prüfen → `fs_user`-Session), `GET /auth/forum/logout`,
+  `GET /api/me` (Login-Status + `board_login_active`; **Sliding**: erneuert das Cookie).
+- **Gate-Middleware** (nur wenn Schalter EIN): nicht eingeloggte Anfragen → Login-Redirect
+  (HTML) bzw. 401 (API). Allowlist inkl. `/auth/`, `/static/`, `/admin`, `/api/admin/`,
+  `/api/me`, `/widget`, Badge-PNGs, Rechtstexte. **Break-glass-Cookie** `fs_admin_site` (path=/).
+- **Admin-Schalter** `forum_login_enabled` in `app_settings` + Umschalter im Admin-Tab.
+- **Admin-Ablösung:** `require_admin` akzeptiert eine `fs_user`-Session mit `is_admin`
+  (Events-Gruppe) → kein Passwort nötig; `ADMIN_PASSWORD` nur noch Fallback. Admin-Login-Seite
+  zeigt einen **„Mit Forum anmelden"-Link** (bei aktivem Board-Login).
+- **Frontend:** Name-Chip nur bei aktivem Board-Login, kein Abmelden-Button; SPA pingt `/api/me`
+  alle 5 min (Sliding) und macht **Auto-Reauth** bei Session-Verlust.
+- `SSO_SECRET`/`FORUM_SSO_URL`/`FORUM_SSO_CALLBACK`/`USER_SESSION_MAX_AGE_SEC` in `config.env`
+  (gitignoriert). Version **v9.0.0**.
 
 ## 9. Wie invasiv ist `sso.php`? (Einschätzung für den Forum-Admin)
 
