@@ -305,7 +305,16 @@ def test_visibility_default_everyone(env):
     assert r.status_code == 200
     body = r.json()
     assert body["mode"] == "everyone" and body["allowlist"] == []
+    assert set(body["services"]) == {"online", "prefile", "ts"}
     assert isinstance(body["pilots"], list)
+
+
+def test_visibility_services_roundtrip(env):
+    _enable(env)
+    env.client.post("/api/me/visibility", cookies=_user_cookie(),
+                    json={"mode": "nobody", "services": ["ts", "online"]})
+    got = env.client.get("/api/me/visibility", cookies=_user_cookie()).json()
+    assert got["mode"] == "nobody" and set(got["services"]) == {"ts", "online"}
 
 
 def test_visibility_set_and_read_allowlist(env):

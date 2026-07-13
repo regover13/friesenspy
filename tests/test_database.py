@@ -123,6 +123,20 @@ def test_visible_recipients_modes():
     assert visible_recipients(conn, None, subs) == subs            # unbekanntes Subjekt
 
 
+def test_visible_recipients_service_filter():
+    conn = _make_conn()
+    subs = _subs(10, 20)
+    set_pilot_visibility(conn, 5, "nobody", services=["ts"])       # nur TS eingeschränkt
+    assert visible_recipients(conn, 5, subs, "ts") == []           # TS → unterdrückt
+    assert visible_recipients(conn, 5, subs, "online") == subs     # Online ausgenommen → alle
+    assert visible_recipients(conn, 5, subs, "prefile") == subs    # Flugplan ausgenommen → alle
+    assert visible_recipients(conn, 5, subs, None) == []           # ohne Service-Filter → gilt
+    # Default (services=None) gilt für alle:
+    set_pilot_visibility(conn, 6, "nobody")
+    assert get_pilot_visibility(conn, 6)["services"] == ["online", "prefile", "ts"]
+    assert visible_recipients(conn, 6, subs, "online") == []
+
+
 # ---------------------------------------------------------------------------
 # forum_callsign (autoritatives Callsign→CID)
 # ---------------------------------------------------------------------------

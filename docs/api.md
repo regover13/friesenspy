@@ -768,13 +768,13 @@ Ordnet ein bereits bestehendes Push-Abo dem eingeloggten Nutzer zu (Owner-Backfi
 
 Subjekt-Sichtbarkeit des eingeloggten Nutzers + Picker-Kandidaten. Nur eingeloggt (sonst `401`; das Login-Gate schützt `/api/me/*` nicht — die Cookie-Prüfung erfolgt im Endpoint).
 
-**Response** `{ "mode": "everyone"|"allowlist"|"nobody", "allowlist": int[], "pilots": [{"cid": int, "callsign": string}] }`
+**Response** `{ "mode": "everyone"|"allowlist"|"nobody", "allowlist": int[], "services": string[], "pilots": [{"cid": int, "callsign": string}] }` — `services` ⊆ `["online","prefile","ts"]`: für welche Aktivitäten die Einschränkung gilt (Default alle).
 
 ## POST /api/me/visibility
 
 Sichtbarkeit setzen („Wer darf über mich benachrichtigt werden?"). Nur eingeloggt.
 
-**Body (JSON)** `{ "mode": "everyone"|"allowlist"|"nobody", "allowlist"?: int[] }` — `allowlist` nur bei `mode="allowlist"` (leere Liste erlaubt = niemand; auf 500 Einträge gekappt). Ungültiger `mode` → `400`. Wirkt auf Online-, Flugplan-, TeamSpeak-Push und den Telegram-Online-Kanal (dort nur `everyone` → Alert).
+**Body (JSON)** `{ "mode": "everyone"|"allowlist"|"nobody", "allowlist"?: int[], "services"?: string[] }` — `allowlist` nur bei `mode="allowlist"` (leere Liste erlaubt = niemand; auf 500 Einträge gekappt). `services` (nur bei restriktivem Modus) wählt, für welche Aktivitäten (`online`/`prefile`/`ts`) die Einschränkung gilt — nicht genannte Services bleiben bei „alle". Fehlt `services`, gilt die Einschränkung für alle drei. Ungültiger `mode` → `400`. Wirkt auf Online-, Flugplan-, TeamSpeak-Push und den Telegram-Online-Kanal (dort nur `everyone`/Service ausgenommen → Alert).
 
 **Response** `{"status": "ok", "mode": ...}`
 

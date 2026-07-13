@@ -1681,13 +1681,15 @@ async def api_me_visibility(request: Request):
         raise HTTPException(status_code=401, detail="Nicht eingeloggt")
     conn = get_connection(settings.DB_PATH)
     try:
-        vis = get_pilot_visibility(conn, cid) or {"mode": "everyone", "allowlist": []}
+        vis = get_pilot_visibility(conn, cid) or {
+            "mode": "everyone", "allowlist": [], "services": ["online", "prefile", "ts"]}
         pilots = [{"cid": p["cid"],
                    "callsign": (p["callsigns"][0] if p["callsigns"] else p["name"])}
                   for p in list_pilots(conn, settings.CALLSIGN_PREFIX)]
     finally:
         conn.close()
-    return {"mode": vis["mode"], "allowlist": vis.get("allowlist", []), "pilots": pilots}
+    return {"mode": vis["mode"], "allowlist": vis.get("allowlist", []),
+            "services": vis.get("services", ["online", "prefile", "ts"]), "pilots": pilots}
 
 
 @app.post("/api/me/visibility")
@@ -1706,9 +1708,13 @@ async def api_me_visibility_set(request: Request):
         # Ganzzahlen filtern, Länge kappen (leere Liste erlaubt = effektiv niemand).
         allowlist = [int(x) for x in (body.get("allowlist") or [])
                      if str(x).lstrip("-").isdigit()][:500]
+    # services: für welche Aktivitäten die Einschränkung gilt (nur bei restriktivem Modus).
+    services = None
+    if mode != "everyone" and body.get("services") is not None:
+        services = [s for s in body.get("services") if s in ("online", "prefile", "ts")]
     conn = get_connection(settings.DB_PATH)
     try:
-        set_pilot_visibility(conn, cid, mode, allowlist)
+        set_pilot_visibility(conn, cid, mode, allowlist, services)
         conn.commit()
     finally:
         conn.close()

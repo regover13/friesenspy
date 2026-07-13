@@ -207,7 +207,7 @@ async def send_web_push_notifications(
     conn = get_connection(db_path)
     try:
         subscriptions = get_push_subscriptions_for_pilot(conn, cid)
-        subscriptions = visible_recipients(conn, cid, subscriptions)   # Subjekt-Sichtbarkeit
+        subscriptions = visible_recipients(conn, cid, subscriptions, "online")  # Subjekt-Sichtbarkeit
     finally:
         conn.close()
 
@@ -255,7 +255,7 @@ async def send_prefile_push_notifications(
     conn = get_connection(db_path)
     try:
         subscriptions = get_push_subscriptions_for_prefile(conn, cid)
-        subscriptions = visible_recipients(conn, cid, subscriptions)   # Subjekt-Sichtbarkeit
+        subscriptions = visible_recipients(conn, cid, subscriptions, "prefile")  # Subjekt-Sichtbarkeit
     finally:
         conn.close()
 
@@ -730,7 +730,8 @@ class VatsimPoller:
                         # öffentlichen Telegram-Kanal bespielen — 'nobody'/'allowlist' → kein
                         # Kanal-Alert (Broadcast kann keine Allowlist bedienen; F6).
                         _vis = get_pilot_visibility(conn, cid)
-                        _tg_allowed = (not _vis) or _vis["mode"] == "everyone"
+                        _tg_allowed = (not _vis) or _vis["mode"] == "everyone" \
+                            or ("online" not in _vis["services"])
 
                         # Telegram alert (only when token + chat_id configured)
                         if self.telegram_token and self.telegram_chat_id and _tg_allowed:
@@ -993,7 +994,7 @@ class VatsimPoller:
                 try:
                     subject_cid = cid_for_callsign_authoritative(conn, frs)
                     recipients = get_ts_push_subscriptions(conn, subject_cid)
-                    recipients = visible_recipients(conn, subject_cid, recipients)
+                    recipients = visible_recipients(conn, subject_cid, recipients, "ts")
                 finally:
                     conn.close()
 

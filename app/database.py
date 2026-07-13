@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS pilot_visibility (
     cid        INTEGER PRIMARY KEY,
     mode       TEXT NOT NULL DEFAULT 'everyone',   -- 'everyone' | 'allowlist' | 'nobody'
     allowlist  TEXT,                               -- JSON-Liste erlaubter CIDs (nur bei 'allowlist')
+    services   TEXT,                               -- JSON-Liste betroffener Services; NULL = alle
     updated_at TEXT
 );
 
@@ -403,6 +404,12 @@ _PUSH_MIGRATIONS = [
     "ALTER TABLE push_subscriptions ADD COLUMN owner_cid INTEGER DEFAULT NULL",
 ]
 
+_VISIBILITY_MIGRATIONS = [
+    # services: JSON-Liste der Services, für die die Sichtbarkeits-Einschränkung gilt
+    # (NULL = alle — Backward-Compat für Zeilen vor dieser Spalte).
+    "ALTER TABLE pilot_visibility ADD COLUMN services TEXT",
+]
+
 _PREFILE_SIGS_MIGRATIONS = [
     """CREATE TABLE IF NOT EXISTS prefile_sigs (
         cid       INTEGER PRIMARY KEY,
@@ -489,6 +496,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _PUSH_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _VISIBILITY_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -6102,13 +6114,19 @@ def upsert_ts_consent(
 # Subjekt-Sichtbarkeit (pilot_visibility) — „wer darf über mich benachrichtigt werden?"
 # ---------------------------------------------------------------------------
 
+# Services, für die eine Sichtbarkeits-Einschränkung gelten kann (Online/Flugplan/TeamSpeak).
+VISIBILITY_SERVICES = ("online", "prefile", "ts")
+
+
 def get_pilot_visibility(conn: sqlite3.Connection, cid: int) -> dict | None:
     """Subjekt-Sichtbarkeit einer CID, oder None (= Default 'everyone').
 
-    Rückgabe: ``{"mode": str, "allowlist": list[int]}``. Defektes allowlist-JSON → ``[]``.
+    Rückgabe: ``{"mode": str, "allowlist": list[int], "services": list[str]}``. Defektes
+    allowlist-JSON → ``[]``. ``services`` = für welche Services die Einschränkung gilt; Spalte
+    NULL (Alt-Zeile) → alle drei (Backward-Compat).
     """
     row = conn.execute(
-        "SELECT mode, allowlist FROM pilot_visibility WHERE cid = ?", (cid,)
+        "SELECT mode, allowlist, services FROM pilot_visibility WHERE cid = ?", (cid,)
     ).fetchone()
     if row is None:
         return None
@@ -6116,42 +6134,63 @@ def get_pilot_visibility(conn: sqlite3.Connection, cid: int) -> dict | None:
         allow = json.loads(row["allowlist"]) if row["allowlist"] else []
     except (json.JSONDecodeError, TypeError):
         allow = []
-    return {"mode": row["mode"], "allowlist": [int(x) for x in allow]}
+    raw_svc = row["services"]
+    if raw_svc is None:
+        services = list(VISIBILITY_SERVICES)          # NULL = gilt für alle
+    else:
+        try:
+            services = [str(s) for s in json.loads(raw_svc) if s in VISIBILITY_SERVICES]
+        except (json.JSONDecodeError, TypeError):
+            services = list(VISIBILITY_SERVICES)
+    return {"mode": row["mode"], "allowlist": [int(x) for x in allow], "services": services}
 
 
 def set_pilot_visibility(conn: sqlite3.Connection, cid: int, mode: str,
-                         allowlist: list[int] | None = None) -> None:
+                         allowlist: list[int] | None = None,
+                         services: list[str] | None = None) -> None:
     """Sichtbarkeit setzen. ``mode`` ∈ {'everyone','allowlist','nobody'}.
 
-    Bei ``everyone``/``nobody`` wird die allowlist genullt; eine leere allowlist bei
-    ``allowlist`` ist erlaubt (= effektiv niemand).
+    Bei ``everyone`` werden allowlist und services genullt (keine Einschränkung). Bei
+    ``nobody``/``allowlist`` legt ``services`` fest, für welche Services die Einschränkung gilt
+    (``None`` = alle). Eine leere allowlist bei ``allowlist`` ist erlaubt (= effektiv niemand).
     """
     if mode not in ("everyone", "allowlist", "nobody"):
         raise ValueError(f"invalid visibility mode: {mode}")
-    stored = (json.dumps([int(x) for x in allowlist])
-              if (mode == "allowlist" and allowlist) else None)
+    stored_allow = (json.dumps([int(x) for x in allowlist])
+                    if (mode == "allowlist" and allowlist) else None)
+    if mode == "everyone":
+        stored_svc = None
+    else:
+        svc = list(VISIBILITY_SERVICES) if services is None else \
+            [s for s in services if s in VISIBILITY_SERVICES]
+        stored_svc = json.dumps(svc)                  # auch "[]" explizit speichern (= keiner)
     conn.execute(
-        """INSERT INTO pilot_visibility (cid, mode, allowlist, updated_at)
-           VALUES (?, ?, ?, ?)
+        """INSERT INTO pilot_visibility (cid, mode, allowlist, services, updated_at)
+           VALUES (?, ?, ?, ?, ?)
            ON CONFLICT(cid) DO UPDATE SET
-               mode=excluded.mode, allowlist=excluded.allowlist, updated_at=excluded.updated_at""",
-        (cid, mode, stored, _now_utc()),
+               mode=excluded.mode, allowlist=excluded.allowlist,
+               services=excluded.services, updated_at=excluded.updated_at""",
+        (cid, mode, stored_allow, stored_svc, _now_utc()),
     )
 
 
 def visible_recipients(conn: sqlite3.Connection, subject_cid: int | None,
-                       recipients: list[dict]) -> list[dict]:
-    """Filtert Empfänger nach der Subjekt-Sichtbarkeit von ``subject_cid``.
+                       recipients: list[dict], service: str | None = None) -> list[dict]:
+    """Filtert Empfänger nach der Subjekt-Sichtbarkeit von ``subject_cid`` für einen ``service``.
 
     ``recipients``: dicts mit mind. ``owner_cid``. Regeln: ``subject_cid`` None oder Modus
-    ``everyone`` (bzw. kein Eintrag) → unverändert; ``nobody`` → ``[]``; ``allowlist`` → nur
-    Empfänger, deren ``owner_cid`` in der Liste steht (``owner_cid`` None nie).
+    ``everyone`` (bzw. kein Eintrag) → unverändert; gilt die Einschränkung nicht für diesen
+    ``service`` → unverändert; ``nobody`` → ``[]``; ``allowlist`` → nur Empfänger, deren
+    ``owner_cid`` in der Liste steht (``owner_cid`` None nie). ``service=None`` → Service-Filter
+    übersprungen (Einschränkung gilt).
     """
     if subject_cid is None:
         return recipients
     vis = get_pilot_visibility(conn, subject_cid)
     if not vis or vis["mode"] == "everyone":
         return recipients
+    if service is not None and service not in vis["services"]:
+        return recipients                             # dieser Service ist ausgenommen → alle
     if vis["mode"] == "nobody":
         return []
     allow = set(vis["allowlist"])

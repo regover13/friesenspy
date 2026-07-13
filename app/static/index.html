@@ -1549,6 +1549,12 @@
           <label><input type="radio" name="visibility-mode" value="allowlist"> Nur bestimmte</label>
           <label><input type="radio" name="visibility-mode" value="nobody"> Keiner</label>
         </div>
+        <div id="visibility-services" hidden style="margin-top:8px; font-size:0.8rem;">
+          <span style="color:var(--text-dim);">Gilt für:</span>
+          <label class="notif-pilot-cb" style="display:inline-flex; margin-left:6px;"><input type="checkbox" id="vis-svc-online" checked> Online</label>
+          <label class="notif-pilot-cb" style="display:inline-flex; margin-left:10px;"><input type="checkbox" id="vis-svc-prefile" checked> Flugplan</label>
+          <label class="notif-pilot-cb" style="display:inline-flex; margin-left:10px;"><input type="checkbox" id="vis-svc-ts" checked> TeamSpeak</label>
+        </div>
         <div id="visibility-pilot-list" hidden></div>
         <div class="notif-hint" style="color:var(--text-dim); margin:6px 0 8px;">
           Betrifft nur Push-Benachrichtigungen über deine Aktivität — nicht die Live-Anzeige.
@@ -2268,7 +2274,9 @@ function _renderVisibilityPilots(allowlist) {
 function _applyVisibilityModeUI() {
   const mode = document.querySelector('input[name="visibility-mode"]:checked')?.value || 'everyone';
   const list = document.getElementById('visibility-pilot-list');
+  const svc = document.getElementById('visibility-services');
   if (list) list.hidden = (mode !== 'allowlist');
+  if (svc) svc.hidden = (mode === 'everyone');   // „Gilt für" nur bei Einschränkung
 }
 
 function loadVisibility() {
@@ -2280,6 +2288,13 @@ function loadVisibility() {
       const radio = document.querySelector(
         `input[name="visibility-mode"][value="${d.mode || 'everyone'}"]`);
       if (radio) radio.checked = true;
+      const svcs = new Set(d.services || ['online', 'prefile', 'ts']);
+      const so = document.getElementById('vis-svc-online');
+      const sp = document.getElementById('vis-svc-prefile');
+      const st = document.getElementById('vis-svc-ts');
+      if (so) so.checked = svcs.has('online');
+      if (sp) sp.checked = svcs.has('prefile');
+      if (st) st.checked = svcs.has('ts');
       _renderVisibilityPilots(d.allowlist || []);
       _applyVisibilityModeUI();
     })
@@ -2292,6 +2307,12 @@ function saveVisibility() {
   if (mode === 'allowlist') {
     body.allowlist = [...document.querySelectorAll(
       '#visibility-pilot-list input[type=checkbox]:checked')].map(cb => Number(cb.dataset.cid));
+  }
+  if (mode !== 'everyone') {
+    body.services = [];
+    if (document.getElementById('vis-svc-online')?.checked) body.services.push('online');
+    if (document.getElementById('vis-svc-prefile')?.checked) body.services.push('prefile');
+    if (document.getElementById('vis-svc-ts')?.checked) body.services.push('ts');
   }
   const btn = document.getElementById('visibility-save-btn');
   fetch('/api/me/visibility', {
