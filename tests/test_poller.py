@@ -1994,15 +1994,16 @@ class TestPollTeamspeak:
         assert {r["endpoint"] for r in sent[0][3]} == {"all"}
 
     @pytest.mark.asyncio
-    async def test_ts_consent_nobody_suppresses(self, tmp_path):
+    async def test_ts_visibility_nobody_suppresses(self, tmp_path):
+        # Subjekt-Sichtbarkeit 'nobody' (löst ts_consent ab): FRS1→cid 111 über den Flug.
         from app.database import (init_db, get_connection, upsert_push_subscription,
-                                  upsert_ts_consent, open_flight, ensure_pilot)
+                                  set_pilot_visibility, open_flight, ensure_pilot)
         db = str(tmp_path / "t.db"); init_db(db)
         conn = get_connection(db)
         ensure_pilot(conn, 111, "Max")
         open_flight(conn, 111, "FRS1", "C172", "EDDW", "EDDH", "2026-06-18T10:00:00Z")
         upsert_push_subscription(conn, "all", "p", "a", notify_ts=True, pilot_filter=None)
-        upsert_ts_consent(conn, "FRS1", "nobody", None)
+        set_pilot_visibility(conn, 111, "nobody")
         conn.commit(); conn.close()
         poller = self._ts_poller(db)
         poller._ts_streak = {}
@@ -2013,6 +2014,30 @@ class TestPollTeamspeak:
             await poller._poll_teamspeak()
             await asyncio.sleep(0)
         assert sent == []
+
+    @pytest.mark.asyncio
+    async def test_ts_visibility_allowlist_filters_by_owner(self, tmp_path):
+        # allowlist [20]: nur das Abo mit owner_cid 20 wird über FRS1 (cid 111) benachrichtigt.
+        from app.database import (init_db, get_connection, upsert_push_subscription,
+                                  set_pilot_visibility, open_flight, ensure_pilot)
+        db = str(tmp_path / "t.db"); init_db(db)
+        conn = get_connection(db)
+        ensure_pilot(conn, 111, "Max")
+        open_flight(conn, 111, "FRS1", "C172", "EDDW", "EDDH", "2026-06-18T10:00:00Z")
+        upsert_push_subscription(conn, "s10", "p", "a", notify_ts=True, pilot_filter=None, owner_cid=10)
+        upsert_push_subscription(conn, "s20", "p", "a", notify_ts=True, pilot_filter=None, owner_cid=20)
+        set_pilot_visibility(conn, 111, "allowlist", [20])
+        conn.commit(); conn.close()
+        poller = self._ts_poller(db)
+        poller._ts_streak = {}
+        sent = []
+        with patch("app.poller.fetch_channel_clients",
+                   new=AsyncMock(return_value=[{"frs": "FRS1", "nick": "Max/FRS1", "cid": 0}])), \
+             patch("app.poller.send_web_push", new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._poll_teamspeak()
+            await asyncio.sleep(0)
+        assert len(sent) == 1
+        assert {r["endpoint"] for r in sent[0][3]} == {"s20"}
 
     @pytest.mark.asyncio
     async def test_ts_job_registered_when_enabled(self, tmp_path):
@@ -2350,3 +2375,49 @@ class TestFetchStatsimTracks:
 
         fetched_ids = [call.args[1] for call in mock_fetch.call_args_list]
         assert fetched_ids == [201, 202, 999]  # jüngste zuerst, dann der Backlog-Fund
+
+
+# ---------------------------------------------------------------------------
+# Subjekt-Sichtbarkeit im Online-Push-Pfad (Task 4)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_online_push_nobody_suppresses_all(tmp_path):
+    from app.database import (init_db, get_connection, upsert_push_subscription,
+                              set_pilot_visibility)
+    from app.poller import send_web_push_notifications
+    db = str(tmp_path / "t.db"); init_db(db)
+    conn = get_connection(db)
+    upsert_push_subscription(conn, "any", "p", "a", pilot_filter=None, owner_cid=5)
+    set_pilot_visibility(conn, 111, "nobody")
+    conn.commit(); conn.close()
+    captured = []
+    with patch("app.poller.send_web_push",
+               new=AsyncMock(side_effect=lambda *a, **k: captured.append(a))):
+        await send_web_push_notifications(
+            "priv", "mailto:x@y.z", db,
+            {"cid": 111, "callsign": "FRS1", "departure": "EDDW", "arrival": "EDDH"},
+        )
+    # send_web_push wird mit leerer Empfängerliste aufgerufen (Positional arg [3] = subscriptions)
+    assert captured and captured[0][3] == []
+
+
+@pytest.mark.asyncio
+async def test_online_push_allowlist_filters_by_owner(tmp_path):
+    from app.database import (init_db, get_connection, upsert_push_subscription,
+                              set_pilot_visibility)
+    from app.poller import send_web_push_notifications
+    db = str(tmp_path / "t.db"); init_db(db)
+    conn = get_connection(db)
+    upsert_push_subscription(conn, "s10", "p", "a", pilot_filter=None, owner_cid=10)
+    upsert_push_subscription(conn, "s20", "p", "a", pilot_filter=None, owner_cid=20)
+    set_pilot_visibility(conn, 111, "allowlist", [20])
+    conn.commit(); conn.close()
+    captured = []
+    with patch("app.poller.send_web_push",
+               new=AsyncMock(side_effect=lambda *a, **k: captured.append(a))):
+        await send_web_push_notifications(
+            "priv", "mailto:x@y.z", db,
+            {"cid": 111, "callsign": "FRS1", "departure": "EDDW", "arrival": "EDDH"},
+        )
+    assert captured and {r["endpoint"] for r in captured[0][3]} == {"s20"}

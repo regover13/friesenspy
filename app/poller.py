@@ -24,9 +24,10 @@ from app.database import (
     get_push_subscriptions_for_pilot,
     get_push_subscriptions_for_prefile,
     get_uncached_statsim_ids,
-    cid_for_callsign,
-    get_ts_consent,
+    cid_for_callsign_authoritative,
+    get_pilot_visibility,
     get_ts_push_subscriptions,
+    visible_recipients,
     load_prefile_sigs,
     normalize_type_code,
     open_flight,
@@ -206,6 +207,7 @@ async def send_web_push_notifications(
     conn = get_connection(db_path)
     try:
         subscriptions = get_push_subscriptions_for_pilot(conn, cid)
+        subscriptions = visible_recipients(conn, cid, subscriptions)   # Subjekt-Sichtbarkeit
     finally:
         conn.close()
 
@@ -253,6 +255,7 @@ async def send_prefile_push_notifications(
     conn = get_connection(db_path)
     try:
         subscriptions = get_push_subscriptions_for_prefile(conn, cid)
+        subscriptions = visible_recipients(conn, cid, subscriptions)   # Subjekt-Sichtbarkeit
     finally:
         conn.close()
 
@@ -723,8 +726,14 @@ class VatsimPoller:
                     else:
                         self._online_last_notified[cid] = notify_now
 
+                        # Subjekt-Sichtbarkeit: nur bei 'everyone' (oder kein Eintrag) den
+                        # öffentlichen Telegram-Kanal bespielen — 'nobody'/'allowlist' → kein
+                        # Kanal-Alert (Broadcast kann keine Allowlist bedienen; F6).
+                        _vis = get_pilot_visibility(conn, cid)
+                        _tg_allowed = (not _vis) or _vis["mode"] == "everyone"
+
                         # Telegram alert (only when token + chat_id configured)
-                        if self.telegram_token and self.telegram_chat_id:
+                        if self.telegram_token and self.telegram_chat_id and _tg_allowed:
                             message = format_online_message(
                                 pos["name"],
                                 pos["callsign"],
@@ -982,12 +991,9 @@ class VatsimPoller:
 
                 conn = get_connection(self.db_path)
                 try:
-                    consent = get_ts_consent(conn, frs)
-                    if consent and consent.get("visibility") == "nobody":
-                        recipients = []  # Subjekt-Privacy: gar nicht über diese FRS melden
-                    else:
-                        cid = cid_for_callsign(conn, frs)
-                        recipients = get_ts_push_subscriptions(conn, cid)
+                    subject_cid = cid_for_callsign_authoritative(conn, frs)
+                    recipients = get_ts_push_subscriptions(conn, subject_cid)
+                    recipients = visible_recipients(conn, subject_cid, recipients)
                 finally:
                     conn.close()
 

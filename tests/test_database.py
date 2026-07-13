@@ -27,6 +27,7 @@ from app.database import (
     get_ts_push_subscriptions,
     set_pilot_visibility,
     set_push_subscription_owner,
+    visible_recipients,
     upsert_push_subscription,
     get_position_history,
     get_stats,
@@ -102,6 +103,24 @@ def test_pilot_visibility_invalid_mode_raises():
     conn = _make_conn()
     with pytest.raises(ValueError):
         set_pilot_visibility(conn, 111, "bogus")
+
+
+def _subs(*owners):
+    return [{"endpoint": f"e{o}", "owner_cid": o} for o in owners]
+
+
+def test_visible_recipients_modes():
+    conn = _make_conn()
+    subs = _subs(10, 20, None)
+    assert visible_recipients(conn, 5, subs) == subs               # kein Eintrag → everyone
+    set_pilot_visibility(conn, 5, "everyone")
+    assert visible_recipients(conn, 5, subs) == subs
+    set_pilot_visibility(conn, 5, "nobody")
+    assert visible_recipients(conn, 5, subs) == []
+    set_pilot_visibility(conn, 5, "allowlist", [20])
+    got = visible_recipients(conn, 5, subs)
+    assert [s["owner_cid"] for s in got] == [20]                   # None nie in allowlist
+    assert visible_recipients(conn, None, subs) == subs            # unbekanntes Subjekt
 
 
 # ---------------------------------------------------------------------------

@@ -6139,6 +6139,25 @@ def set_pilot_visibility(conn: sqlite3.Connection, cid: int, mode: str,
     )
 
 
+def visible_recipients(conn: sqlite3.Connection, subject_cid: int | None,
+                       recipients: list[dict]) -> list[dict]:
+    """Filtert Empfänger nach der Subjekt-Sichtbarkeit von ``subject_cid``.
+
+    ``recipients``: dicts mit mind. ``owner_cid``. Regeln: ``subject_cid`` None oder Modus
+    ``everyone`` (bzw. kein Eintrag) → unverändert; ``nobody`` → ``[]``; ``allowlist`` → nur
+    Empfänger, deren ``owner_cid`` in der Liste steht (``owner_cid`` None nie).
+    """
+    if subject_cid is None:
+        return recipients
+    vis = get_pilot_visibility(conn, subject_cid)
+    if not vis or vis["mode"] == "everyone":
+        return recipients
+    if vis["mode"] == "nobody":
+        return []
+    allow = set(vis["allowlist"])
+    return [r for r in recipients if r.get("owner_cid") in allow]
+
+
 # ---------------------------------------------------------------------------
 # Forum-Callsign-Map (autoritatives Callsign→CID aus dem Forum-Login)
 # ---------------------------------------------------------------------------
