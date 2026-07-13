@@ -54,7 +54,10 @@ $ADMIN_GID  = 8;
 // Diese Datei liegt IM Forum-Verzeichnis, deshalb können wir phpBBs Kern einbinden.
 // `IN_PHPBB` ist eine Pflicht-Konstante, sonst verweigert phpBB das Laden.
 define('IN_PHPBB', true);
-$phpbb_root_path = __DIR__ . '/';           // Verzeichnis dieser Datei = phpBB-Wurzel
+// WICHTIG: relativer Pfad './' (nicht __DIR__)! phpBB baut aus $phpbb_root_path ALLE URLs
+// (CSS/JS/Formular-Action). Ein absoluter Dateisystempfad zerlegt das Layout und führt zu
+// falschen Links wie /var/www/.../ucp.php. Das Skript liegt im Docroot -> './' ist korrekt.
+$phpbb_root_path = './';
 $phpEx = 'php';
 include($phpbb_root_path . 'common.' . $phpEx);                    // phpBB-Grundgerüst
 include($phpbb_root_path . 'includes/functions_user.' . $phpEx);  // liefert group_memberships()
@@ -99,17 +102,16 @@ $uid = (int) $user->data['user_id'];
 
 // --- Daten des eingeloggten Nutzers einsammeln ------------------------------
 
-// VATSIM-CID aus dem Profilfeld "VatSim-ID" lesen (leer lassen, falls nicht gepflegt).
+// VATSIM-CID direkt aus der Profilfeld-Tabelle lesen (robust; die Manager-API liefert je nach
+// phpBB-Version verschachtelte Strukturen). $CID_FIELD ist der Spaltenname (aus der Config,
+// kein Nutzer-Input -> unbedenklich). Leer, falls nicht gepflegt.
 $cid = '';
-try {
-    $pf   = $phpbb_container->get('profilefields.manager');
-    $data = $pf->grab_profile_fields_data($uid);
-    if (isset($data[$uid][$CID_FIELD]['value'])) {
-        $cid = (string) $data[$uid][$CID_FIELD]['value'];
-    }
-} catch (\Exception $e) {
-    $cid = '';   // Im Zweifel ohne CID weitermachen (FriesenSpy kommt damit klar).
-}
+$sql = 'SELECT ' . $CID_FIELD . ' AS fs_cid
+    FROM ' . PROFILE_FIELDS_DATA_TABLE . '
+    WHERE user_id = ' . (int) $uid;
+$res = $db->sql_query($sql);
+$cid = (string) $db->sql_fetchfield('fs_cid');
+$db->sql_freeresult($res);
 
 // Admin-Flag: Ist der Nutzer Mitglied der Gruppe "Events"? -> dann in FriesenSpy Admin.
 // group_memberships() gibt die Treffer zurück; leer = kein Mitglied.
