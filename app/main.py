@@ -2,21 +2,32 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import html as _html
 import json
 import logging
+import secrets
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from datetime import timezone as _timezone
+from urllib.parse import quote
 
 import httpx as _httpx
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import (
+    FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 
 from app.auth import ADMIN_COOKIE, check_password, make_admin_token, verify_admin_token
 from app.config import get_settings
+from app.forum_sso import (
+    USER_COOKIE,
+    make_user_token,
+    verify_sso_token,
+    verify_user_token,
+)
 from app.database import (
     _DATA_RETENTION_DAYS,
     aggregate_bummel_kpis,
@@ -168,6 +179,11 @@ async def lifespan(app: FastAPI):
     # Startup
     settings = get_settings()
     configure_logging(settings.LOG_LEVEL)
+    if settings.SSO_SECRET and settings.SSO_SECRET == settings.SECRET_KEY:
+        _logger.warning(
+            "SSO_SECRET == SECRET_KEY — bitte UNTERSCHIEDLICHE Geheimnisse verwenden "
+            "(Token-Trennung greift zwar über das typ-Feld, gleiche Secrets sind aber unsauber)."
+        )
     init_db(settings.DB_PATH)
     conn = get_connection(settings.DB_PATH)
     try:
@@ -200,6 +216,40 @@ async def no_index_header(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     return response
+
+
+# Pfade, die auch bei aktivem Gate IMMER erreichbar bleiben (Login-Flow, Break-glass,
+# Rechtstexte, PWA-Assets, Health).
+_GATE_ALLOW_PREFIXES = (
+    "/auth/", "/static/", "/health", "/robots.txt", "/favicon",
+    "/impressum", "/datenschutz", "/admin", "/api/admin/login",
+    "/api/admin/logout", "/manifest", "/sw.js", "/api/me",
+)
+
+
+def _request_is_authenticated(request: Request, settings) -> bool:
+    if verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY):
+        return True
+    # Break-glass: gültiges Admin-Cookie zählt auch als eingeloggt.
+    if verify_admin_token(request.cookies.get(ADMIN_COOKIE, ""),
+                          settings.SECRET_KEY, settings.ADMIN_PASSWORD):
+        return True
+    return False
+
+
+@app.middleware("http")
+async def forum_login_gate(request: Request, call_next):
+    """Bei aktivem Board-Login: nicht-eingeloggte Anfragen abweisen (HTML → Login-Redirect,
+    sonst 401). Ohne Schalter/Secrets völlig inaktiv (Default), daher kein Einfluss im Normalbetrieb."""
+    path = request.url.path
+    if not path.startswith(_GATE_ALLOW_PREFIXES):
+        settings = get_settings()
+        if _forum_login_active_cached(settings) and not _request_is_authenticated(request, settings):
+            wants_html = request.method == "GET" and "text/html" in request.headers.get("accept", "")
+            if wants_html:
+                return RedirectResponse("/auth/forum/login", status_code=302)
+            return JSONResponse({"detail": "Login erforderlich"}, status_code=401)
+    return await call_next(request)
 
 
 # ---------------------------------------------------------------------------
@@ -1360,6 +1410,164 @@ async def admin_me(request: Request):
     """Prüft, ob der Client als Admin eingeloggt ist (fürs Frontend)."""
     require_admin(request)
     return {"admin": True}
+
+
+# ---------------------------------------------------------------------------
+# Forum-SSO (Board-Login) — Schalter, Helfer, Endpoints
+# ---------------------------------------------------------------------------
+
+# Gate-Aktiv-Status mit kurzem TTL cachen (Middleware läuft pro Request, auch für Assets).
+_gate_cache: dict[str, float | bool] = {"val": False, "ts": 0.0}
+_GATE_TTL_SEC = 5.0
+
+
+def _reset_gate_cache() -> None:
+    """Cache verwerfen — nach jedem Schalter-Wechsel (und in Tests) aufrufen."""
+    _gate_cache["ts"] = 0.0
+
+
+def _forum_sso_configured(settings) -> bool:
+    """True, wenn alle Bridge-Secrets gesetzt sind. ``getattr`` mit Default, damit die
+    global laufende Gate-Middleware auch mit knapp gemockten Settings (Tests) nicht bricht."""
+    return bool(getattr(settings, "SSO_SECRET", "") and getattr(settings, "FORUM_SSO_URL", "")
+                and getattr(settings, "FORUM_SSO_CALLBACK", ""))
+
+
+def _forum_login_active(conn, settings) -> bool:
+    """True nur, wenn die Bridge konfiguriert ist UND der Admin-Schalter AN steht."""
+    if not _forum_sso_configured(settings):
+        return False
+    return get_app_setting(conn, "forum_login_enabled", "0") == "1"
+
+
+def _forum_login_active_cached(settings) -> bool:
+    # Ohne konfigurierte Bridge gar nicht erst die DB anfassen (Default-/Normalbetrieb).
+    if not _forum_sso_configured(settings):
+        return False
+    now = time.monotonic()
+    if now - float(_gate_cache["ts"]) > _GATE_TTL_SEC:
+        conn = get_connection(settings.DB_PATH)
+        try:
+            _gate_cache["val"] = get_app_setting(conn, "forum_login_enabled", "0") == "1"
+        finally:
+            conn.close()
+        _gate_cache["ts"] = now
+    return bool(_gate_cache["val"])
+
+
+@app.get("/api/admin/forum-login")
+async def admin_get_forum_login(request: Request):
+    """Board-Login-Status für die Admin-Oberfläche."""
+    require_admin(request)
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        enabled = get_app_setting(conn, "forum_login_enabled", "0") == "1"
+    finally:
+        conn.close()
+    return {"enabled": enabled, "configured": _forum_sso_configured(settings)}
+
+
+@app.post("/api/admin/forum-login")
+async def admin_set_forum_login(request: Request):
+    """Board-Login an-/ausschalten (Admin)."""
+    require_admin(request)
+    body = await request.json()
+    enabled = bool(body.get("enabled"))
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        set_app_setting(conn, "forum_login_enabled", "1" if enabled else "0")
+        conn.commit()
+    finally:
+        conn.close()
+    _reset_gate_cache()
+    return {"status": "ok", "enabled": enabled}
+
+
+# Einmal-Nonce-Store gegen Replay des eingehenden SSO-Tokens (In-Process, TTL = Token-Frische).
+_used_sso_nonces: dict[str, float] = {}
+
+
+def _consume_sso_nonce(nonce: str) -> bool:
+    """True beim ERSTEN Sehen eines Nonce; False, wenn schon verbraucht. Prunt alte Einträge."""
+    from app.forum_sso import SSO_TOKEN_MAX_AGE_SEC
+    now = time.monotonic()
+    for k, t in list(_used_sso_nonces.items()):
+        if now - t > SSO_TOKEN_MAX_AGE_SEC + 5:
+            _used_sso_nonces.pop(k, None)
+    if not nonce or nonce in _used_sso_nonces:
+        return False
+    _used_sso_nonces[nonce] = now
+    return True
+
+
+def _is_https(request: Request) -> bool:
+    return request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+
+
+@app.get("/auth/forum/login")
+async def forum_login(request: Request):
+    """Startet den Board-Login: Redirect zur Forum-Bridge mit state + Callback."""
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        active = _forum_login_active(conn, settings)
+    finally:
+        conn.close()
+    if not active:
+        return RedirectResponse("/", status_code=302)
+    state = secrets.token_urlsafe(24)
+    target = (f"{settings.FORUM_SSO_URL}?redirect={quote(settings.FORUM_SSO_CALLBACK, safe='')}"
+              f"&state={quote(state, safe='')}")
+    resp = RedirectResponse(target, status_code=302)
+    resp.set_cookie("fs_sso_state", state, httponly=True, secure=_is_https(request),
+                    samesite="lax", path="/auth/forum", max_age=300)
+    return resp
+
+
+@app.get("/auth/forum/callback")
+async def forum_callback(request: Request):
+    """Nimmt das signierte Token der Bridge entgegen → eigene FriesenSpy-Session."""
+    settings = get_settings()
+    token = request.query_params.get("token", "")
+    state = request.query_params.get("state", "")
+    cookie_state = request.cookies.get("fs_sso_state", "")
+    if not state or not cookie_state or not hmac.compare_digest(state, cookie_state):
+        raise HTTPException(status_code=400, detail="Ungültiger SSO-Status")
+    claims = verify_sso_token(token, settings.SSO_SECRET)
+    if claims is None:
+        raise HTTPException(status_code=401, detail="Ungültiges SSO-Token")
+    if not _consume_sso_nonce(str(claims.get("nonce", ""))):
+        raise HTTPException(status_code=401, detail="SSO-Token bereits verwendet")
+    exp = time.time() + settings.USER_SESSION_MAX_AGE_SEC
+    user_token = make_user_token(
+        settings.SECRET_KEY, claims.get("sub"), str(claims.get("name", "")),
+        str(claims.get("cid", "")), bool(claims.get("is_admin")), exp,
+    )
+    resp = RedirectResponse("/", status_code=302)
+    resp.set_cookie(USER_COOKIE, user_token, httponly=True, secure=_is_https(request),
+                    samesite="lax", path="/", max_age=settings.USER_SESSION_MAX_AGE_SEC)
+    resp.delete_cookie("fs_sso_state", path="/auth/forum")
+    return resp
+
+
+@app.get("/auth/forum/logout")
+async def forum_logout():
+    """Meldet NUR FriesenSpy ab (Forum-Session bleibt)."""
+    resp = RedirectResponse("/", status_code=302)
+    resp.delete_cookie(USER_COOKIE, path="/")
+    return resp
+
+
+@app.get("/api/me")
+async def api_me(request: Request):
+    """Login-Status für das Frontend (aus dem eigenen Session-Cookie)."""
+    settings = get_settings()
+    claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
+    if not claims:
+        return {"logged_in": False}
+    return {"logged_in": True, "name": claims.get("name", ""),
+            "cid": claims.get("cid", ""), "is_admin": bool(claims.get("is_admin"))}
 
 
 # ---------------------------------------------------------------------------

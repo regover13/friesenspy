@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     TS_POLL_INTERVAL: int = 30
     TS_REJOIN_DEBOUNCE_SEC: int = 900
 
+    # Forum-SSO (Board-Login) — Bridge sso.php auf board.friesenflieger.de.
+    # Alle leer/Default = Board-Login inaktiv (unabhängig vom Admin-Schalter).
+    SSO_SECRET: str = ""            # GETEILT mit sso.php; niemals in git
+    FORUM_SSO_URL: str = ""         # z.B. https://board.friesenflieger.de/sso.php
+    FORUM_SSO_CALLBACK: str = ""    # absolute URL zu /auth/forum/callback (muss der Whitelist in sso.php entsprechen)
+    USER_SESSION_MAX_AGE_SEC: int = 3600  # kurze FriesenSpy-Session → spiegelt Forum-Logout verzögert
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
