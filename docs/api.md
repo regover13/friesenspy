@@ -749,7 +749,34 @@ Browser-Push-Subscription speichern oder aktualisieren.
 | `notify_ts` | bool | — | TS-Login-Benachrichtigungen für diesen Subscriber aktivieren (default: false) |
 | `notify_events` | bool | — | Event-Erinnerungen (~1 h vor Beginn jedes FriesenEvents) und Bummel-Start/Ergebnis-Push aktivieren (default: false) |
 
+Bei aktivem Board-Login setzt der Server zusätzlich `owner_cid` = CID des eingeloggten Nutzers (aus dem `fs_user`-Cookie, **nie** aus dem Body) — nötig für die Subjekt-Allowlist („Nur bestimmte").
+
 **Response** `{"status": "ok"}`
+
+---
+
+## POST /api/push/claim
+
+Ordnet ein bereits bestehendes Push-Abo dem eingeloggten Nutzer zu (Owner-Backfill, last-login-wins). Für Abos, die vor dem Login-Rollout angelegt wurden. Nur bei aktivem Board-Login und eingeloggtem Nutzer wirksam; anonym → No-op.
+
+**Body (JSON)** `{ "endpoint": string }`
+**Response** `{"status": "ok"}` bzw. `{"status": "skipped"}`
+
+---
+
+## GET /api/me/visibility
+
+Subjekt-Sichtbarkeit des eingeloggten Nutzers + Picker-Kandidaten. Nur eingeloggt (sonst `401`; das Login-Gate schützt `/api/me/*` nicht — die Cookie-Prüfung erfolgt im Endpoint).
+
+**Response** `{ "mode": "everyone"|"allowlist"|"nobody", "allowlist": int[], "pilots": [{"cid": int, "callsign": string}] }`
+
+## POST /api/me/visibility
+
+Sichtbarkeit setzen („Wer darf über mich benachrichtigt werden?"). Nur eingeloggt.
+
+**Body (JSON)** `{ "mode": "everyone"|"allowlist"|"nobody", "allowlist"?: int[] }` — `allowlist` nur bei `mode="allowlist"` (leere Liste erlaubt = niemand; auf 500 Einträge gekappt). Ungültiger `mode` → `400`. Wirkt auf Online-, Flugplan-, TeamSpeak-Push und den Telegram-Online-Kanal (dort nur `everyone` → Alert).
+
+**Response** `{"status": "ok", "mode": ...}`
 
 ---
 

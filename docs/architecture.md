@@ -86,9 +86,11 @@ SQLite mit WAL-Mode und `PRAGMA foreign_keys=ON`. Wichtigste Tabellen (Auszug):
 | `gps_detection_dismissals` | Admin-Prüfliste „Erkennungslücken" (v8.6.0): `(cid, logon_time)` markiert einen einzelnen Flug dauerhaft als „kein Datenfehler" (Absturz, abgerissene Aufzeichnung) — blendet ihn aus `list_gps_detection_gaps` aus, unabhängig vom betroffenen Flugplatz-Code. Kein Cache: die Prüfliste selbst ruft `canonicalize_legs` live auf, damit ein neu ergänzter `custom_airports`-Eintrag den betroffenen Flug sofort verschwinden lässt. |
 | `cargo_catalog` | Frachtart-Stammdaten (Phase 2): `name`, `emoji`, `per_flight_max_kg` (Obergrenze pro Flug für Co-Load). Beim Manifest wählbar; `set_transport_cargo` speichert Emoji/Max als Snapshot in `transport_cargo`. In `init_db` idempotent geseedet (`seed_cargo_catalog`) |
 | `transport_quips` | Cache der lustigen KI-Sprüche je Flug (PK `event_id + flight_key` mit `flight_key = "{cid}:{logon_time}"`). Tagesend-Zusammenfassung liegt in `transport_events.summary_quip` |
-| `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array — gilt für Online/Flugplan/TS, `notify_prefiles` Flag, `notify_ts` Flag, `notify_events` Flag; `ts_self_frs` = tote Spalte, nicht mehr genutzt; `created_at` wird bei Re-Abo desselben Endpoints mit aktualisiert) |
+| `push_subscriptions` | Browser-Push-Subscriptions (Endpoint, ECDH-Keys, `pilot_filter` als JSON-Array — gilt für Online/Flugplan/TS, `notify_prefiles`/`notify_ts`/`notify_events` Flags, `owner_cid` = Besitzer-CID aus dem Forum-Login für die Subjekt-Allowlist; `ts_self_frs` = tote Spalte; `created_at` wird bei Re-Abo mit aktualisiert). `owner_cid` wird beim Konflikt per `COALESCE` nur mit Nicht-NULL überschrieben (anonymer Re-Subscribe löscht den Owner nicht) |
+| `pilot_visibility` | **Subjekt-Sichtbarkeit** pro CID („wer darf über mich benachrichtigt werden?"): `mode` ∈ `everyone`/`allowlist`/`nobody`, `allowlist` als JSON-CID-Liste. Kein Eintrag = Default `everyone`. Löst `ts_consent` als Subjekt-Privacy ab und gilt für **alle** Push-Pfade (Online/Flugplan/TS) + den Telegram-Online-Kanal |
+| `forum_callsign` | Autoritative Callsign→CID-Map aus dem Forum-Login (`callsign` PK UPPER, `cid`); beim Callback gefüllt/selbst-bereinigt. Quelle für `cid_for_callsign_authoritative` (TS-Subjektauflösung) |
 | `prefile_sigs` | Letzte bekannte Prefile-Signatur pro CID (`deptime`, `departure`, `arrival`) — wird nach jedem Poll persistiert, damit Container-Neustarts keine Änderungen verpassen |
-| `ts_consent` | Subjekt-Einwilligung pro FRS für TS-Login-Sichtbarkeit (`visibility` ∈ `everyone`/`nobody`; `allowlist`-Spalte existiert noch, wird aber nicht mehr ausgewertet) — kein Eintrag = Default `everyone` |
+| `ts_consent` | **VERALTET** — seit dem Subjekt-Sichtbarkeits-Release nicht mehr ausgewertet (durch `pilot_visibility` abgelöst). Tabelle bleibt als tote Struktur; `manage_ts_consent.py` warnt beim Aufruf |
 | `event_reminders_sent` | Gesendete Event-Erinnerungen (Latch-Tabelle): `uid` (Kalender-Event-UID als PRIMARY KEY) + `sent_at` — verhindert, dass eine Erinnerung mehrfach versandt wird; idempotent über Container-Neustarts |
 | `flight_cache` | Materialisierte `canonicalize_legs`-Ergebnisse (GPS-only Phase 2, #23) für die globale Statistik; `UNIQUE(cid, logon_time)`, Feldvertrag identisch zu `canonicalize_legs` plus `computed_at`. Vom Poller warmgehalten (`flight_cache_warmup` beim Start, `flight_cache_refresh` alle 5 min) und bei Bedarf von `get_cached_flights` selbst nachgezogen |
 | `statsim_position_history` | Lokal gecachte GPS-Tracks importierter StatSim-Flüge (`statsim_id` + Positionsreihe) — Voraussetzung dafür, dass die GPS-Leg-Erkennung auch StatSim-Flüge auswerten kann statt auf den Flugplan-Fallback zurückzufallen; befüllt vom proaktiven Poller-Job `statsim_track_fetch` und dem Admin-Bulk-Backfill `POST /api/admin/statsim-backfill` |
@@ -200,7 +202,7 @@ Schlanke Claude-API-Anbindung (offizielles `anthropic`-SDK) mit **Silent-Fail**:
 1a. Erfolgreicher Abruf → `self.ts_clients = clients` (Anzeige-Snapshot, **vor** der Notify-Logik). Ist kein VAPID gesetzt, endet der Poll hier (reiner Display-Modus, keine Benachrichtigung)
 2. Erster erfolgreicher Poll: Baseline — präsente FRS in `_ts_streak` mit `_TS_BASELINE_STREAK` (sehr hoch) markieren, sodass sie die Schwelle nie treffen → keine Notifications
 3. Präsenz-Streak: je präsenter FRS `_ts_streak[frs] += 1`; abwesende FRS fallen aus dem Dict (Reset). Bestätigt = Streak erreicht erstmals `TS_MIN_DWELL_POLLS + 1` → erst dann Kandidat. Kurzes „Reinschauen" (vor dem Folge-Poll weg) erreicht die Schwelle nie.
-4. Pro bestätigter FRS: Debounce prüfen (`_ts_last_notified`, `TS_REJOIN_DEBOUNCE_SEC`); Subjekt-Privacy `get_ts_consent(frs)` (`visibility == 'nobody'` → keine Empfänger); sonst `cid_for_callsign(frs)` und `get_ts_push_subscriptions(conn, cid)` (notify_ts=1, gefiltert über denselben `pilot_filter` wie Online/Flugplan; `cid is None` → nur „Alle"-Subs); `send_web_push` als asyncio-Task starten
+4. Pro bestätigter FRS: Debounce prüfen (`_ts_last_notified`, `TS_REJOIN_DEBOUNCE_SEC`); `subject_cid = cid_for_callsign_authoritative(frs)` (Forum-Map vor flights/live/statsim); `get_ts_push_subscriptions(conn, subject_cid)` (notify_ts=1, gefiltert über denselben `pilot_filter` wie Online/Flugplan; `cid is None` → nur „Alle"-Subs); dann `visible_recipients(conn, subject_cid, …)` (Subjekt-Sichtbarkeit); `send_web_push` als asyncio-Task starten
 
 **Prefile Push-Notification-Logik:**
 - `_prefile_sig(p)` → `(deptime, departure, arrival)` — Änderungssignatur
@@ -266,7 +268,7 @@ Online, Flugplan und TS nutzen denselben empfängerseitigen `pilot_filter` (CID-
 - `get_all_push_subscriptions(conn)` — alle Subscriptions ungefiltert; genutzt vom Admin-Broadcast (`POST /api/admin/push/broadcast`, `audience = all`).
 - `events_due_for_reminder(conn)` — Gibt alle Kalender-Events zurück, deren `dtstart` im Fenster `(jetzt, jetzt+60min]` liegt und für die in `event_reminders_sent` noch kein Eintrag existiert. Vergangene Events werden nicht mehr zurückgegeben.
 - `mark_event_reminded(conn, uid)` — Schreibt einen Eintrag in `event_reminders_sent` (`uid` + `sent_at = now()`). `INSERT OR IGNORE` — idempotenter Latch.
-- Subjekt-Privacy bleibt über `ts_consent` (`everyone`/`nobody`) in `_poll_teamspeak` vorgeschaltet.
+- **Subjekt-Sichtbarkeit** (`pilot_visibility`, Modi `everyone`/`allowlist`/`nobody`) wird über den Helfer `visible_recipients(conn, subject_cid, recipients)` in **allen drei** Push-Pfaden (Online/Flugplan/TS) sowie am Telegram-Online-Kanal (`everyone` → Alert) vorgeschaltet. `nobody` → leer; `allowlist` → nur Empfänger, deren `owner_cid` in der Liste steht (Alt-Abos ohne Owner nie). Löst die alte `ts_consent`-Vorschaltung ab.
 
 ### `app/badge.py`
 
@@ -409,15 +411,15 @@ TeamSpeak-Server (port 10011)
         │
         ├─► Pro bestätigter FRS:
         │         Debounce-Check (_ts_last_notified, TS_REJOIN_DEBOUNCE_SEC)
-        │         get_ts_consent(frs) → visibility == 'nobody' ? keine Empfänger
-        │         cid_for_callsign(frs) → CID (oder None bei reinen TS-Leuten)
-        │         get_ts_push_subscriptions(conn, cid) → notify_ts=1 ∩ pilot_filter
+        │         subject_cid = cid_for_callsign_authoritative(frs)  (Forum-Map → flights/live/statsim)
+        │         get_ts_push_subscriptions(conn, subject_cid) → notify_ts=1 ∩ pilot_filter
+        │         visible_recipients(conn, subject_cid, …) → Subjekt-Sichtbarkeit (nobody/allowlist)
         │
         └─► send_web_push(recipients, payload)
                   Payload: {"title": "🎧 <nick> ist im TeamSpeak", "body": "FriesenFlieger TeamSpeak"}
 ```
 
-**Consent-Modell (Phase 1):** Admin setzt Einträge in `ts_consent` via `manage_ts_consent.py`. Kein Eintrag = Default `everyone`. Phase 2 (noch nicht implementiert) soll Consent aus einem Forumsprofil-Flag synchronisieren.
+**Subjekt-Sichtbarkeit:** Mitglieder stellen über den Board-Login in FriesenSpy selbst ein, wer über sie benachrichtigt wird (`pilot_visibility`, Modi `everyone`/`allowlist`/`nobody`) — für alle Push-Pfade + den Telegram-Online-Kanal. Die frühere `ts_consent`-Tabelle samt `manage_ts_consent.py` ist damit **veraltet** (nicht mehr ausgewertet). Voraussetzung für die TS-Auflösung ist die beim Login gefüllte `forum_callsign`-Map; ist ein TS-Kürzel nicht auflösbar, greift die Sichtbarkeit dort nicht (Rollout-Voraussetzung: `sso.php` v2 aktiv, Callsign-Profilfelder gepflegt).
 
 ## Datenbankschema
 

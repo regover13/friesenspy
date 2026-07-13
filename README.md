@@ -268,6 +268,8 @@ Zusätzlich kann FriesenSpy Push-Benachrichtigungen senden, wenn ein Friese dem 
 
 Das Bell-Symbol 🔔 oben rechts im Header öffnet das Benachrichtigungs-Panel.
 
+**Wer darf über mich benachrichtigt werden? (bei aktivem Board-Login):** Eingeloggte Mitglieder finden im Benachrichtigungs-Panel einen Sichtbarkeits-Regler — **Alle / Nur bestimmte / Keiner**. Damit bestimmt jeder selbst, wer über seine eigene Aktivität (Online, Flugplan, TeamSpeak) per Push benachrichtigt wird; „Keiner"/„Nur bestimmte" unterdrücken auch die Ankündigung im öffentlichen Telegram-Online-Kanal. Die Live-Anzeige bleibt unberührt. Grundlage ist die Identität aus dem Forum-Login (VATSIM-CID + FRS-Rufzeichen); Push-Abos werden dabei dem eingeloggten Mitglied zugeordnet (`owner_cid`), damit „Nur bestimmte" greifen kann. Die alte `manage_ts_consent.py`-Steuerung ist damit abgelöst.
+
 **Einrichten:**
 1. 🔔 klicken → Panel öffnet sich
 2. „Beim Online-gehen benachrichtigen" aktivieren
