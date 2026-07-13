@@ -35,6 +35,11 @@ def _admin_cookie() -> dict:
     return {"fs_admin": make_admin_token(SECRET, PW)}
 
 
+def _admin_site_cookie() -> dict:
+    # Break-glass-Cookie auf path=/ — das sendet ein echter Browser auch für "/".
+    return {"fs_admin_site": make_admin_token(SECRET, PW)}
+
+
 def _mint_incoming(claims: dict, secret: str = SSO) -> str:
     import base64
     import hashlib
@@ -169,9 +174,23 @@ def test_gate_on_allows_logged_in_user(env):
 def test_gate_on_allows_break_glass_admin(env):
     env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
     main._reset_gate_cache()
+    # nur das Break-glass-Cookie (path=/, so wie es ein Browser für "/" sendet), kein fs_user
     r = env.client.get("/", headers={"accept": "text/html"},
-                       cookies=_admin_cookie(), follow_redirects=False)
+                       cookies=_admin_site_cookie(), follow_redirects=False)
     assert r.status_code == 200
+
+
+def test_admin_login_sets_break_glass_site_cookie(env):
+    r = env.client.post("/api/admin/login", json={"password": PW}, follow_redirects=False)
+    assert r.status_code == 200
+    assert "fs_admin_site" in r.cookies
+
+
+def test_callback_non_ascii_state_returns_400_not_500(env):
+    # Fable-Review F2: Non-ASCII-state → 400, nicht 500 (compare_digest auf Bytes).
+    env.client.cookies.set("fs_sso_state", "st8")
+    r = env.client.get("/auth/forum/callback?token=x&state=%C3%A4", follow_redirects=False)
+    assert r.status_code == 400
 
 
 def test_gate_always_allows_auth_and_legal_paths(env):

@@ -222,16 +222,20 @@ async def no_index_header(request: Request, call_next):
 # Rechtstexte, PWA-Assets, Health).
 _GATE_ALLOW_PREFIXES = (
     "/auth/", "/static/", "/health", "/robots.txt", "/favicon",
-    "/impressum", "/datenschutz", "/admin", "/api/admin/login",
-    "/api/admin/logout", "/manifest", "/sw.js", "/api/me",
+    "/impressum", "/datenschutz", "/admin", "/api/admin/",
+    "/manifest", "/sw.js", "/api/me",
 )
+
+# Break-glass-Kopie des Admin-Cookies auf ``path=/`` — das eigentliche Admin-Cookie liegt auf
+# ``/api/admin`` und würde vom Browser für ``/`` nie mitgesendet (Fable-Review F1).
+_SITE_ADMIN_COOKIE = "fs_admin_site"
 
 
 def _request_is_authenticated(request: Request, settings) -> bool:
     if verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY):
         return True
-    # Break-glass: gültiges Admin-Cookie zählt auch als eingeloggt.
-    if verify_admin_token(request.cookies.get(ADMIN_COOKIE, ""),
+    # Break-glass: gültiges Admin-Cookie (path=/) zählt auch als eingeloggt.
+    if verify_admin_token(request.cookies.get(_SITE_ADMIN_COOKIE, ""),
                           settings.SECRET_KEY, settings.ADMIN_PASSWORD):
         return True
     return False
@@ -1395,6 +1399,12 @@ async def admin_login(request: Request):
         ADMIN_COOKIE, token, httponly=True, secure=is_https, samesite="lax",
         path=_ADMIN_COOKIE_PATH, max_age=60 * 60 * 24,
     )
+    # Break-glass-Kopie auf path=/ — damit ein eingeloggter Admin die App auch bei aktivem
+    # Board-Login (und Forum-Ausfall) ohne Forum-Login sehen kann (Fable-Review F1).
+    resp.set_cookie(
+        _SITE_ADMIN_COOKIE, token, httponly=True, secure=is_https, samesite="lax",
+        path="/", max_age=60 * 60 * 24,
+    )
     return resp
 
 
@@ -1402,6 +1412,7 @@ async def admin_login(request: Request):
 async def admin_logout():
     resp = JSONResponse({"status": "ok"})
     resp.delete_cookie(ADMIN_COOKIE, path=_ADMIN_COOKIE_PATH)
+    resp.delete_cookie(_SITE_ADMIN_COOKIE, path="/")
     return resp
 
 
@@ -1532,7 +1543,8 @@ async def forum_callback(request: Request):
     token = request.query_params.get("token", "")
     state = request.query_params.get("state", "")
     cookie_state = request.cookies.get("fs_sso_state", "")
-    if not state or not cookie_state or not hmac.compare_digest(state, cookie_state):
+    if (not state or not cookie_state
+            or not hmac.compare_digest(state.encode("utf-8"), cookie_state.encode("utf-8"))):
         raise HTTPException(status_code=400, detail="Ungültiger SSO-Status")
     claims = verify_sso_token(token, settings.SSO_SECRET)
     if claims is None:
