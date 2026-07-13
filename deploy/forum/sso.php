@@ -69,8 +69,10 @@ $user->setup();
 // FriesenSpy hängt zwei Werte an die URL:
 //   redirect = wohin das Token zurückgeschickt werden soll
 //   state    = eine Zufallsmarke, die FriesenSpy beim Rücksprung wiedererkennt (CSRF-Schutz)
-$redirect = isset($_GET['redirect']) ? (string) $_GET['redirect'] : '';
-$state    = isset($_GET['state'])    ? (string) $_GET['state']    : '';
+// WICHTIG: phpBB verbietet den direkten Zugriff auf $_GET/$_POST/$_SERVER ("deactivated
+// super globals"). Eingaben deshalb IMMER über die Request-Klasse ($request) lesen.
+$redirect = $request->variable('redirect', '');
+$state    = $request->variable('state', '');
 
 // Sicherheitsriegel: Wir leiten NUR an die eine, fest hinterlegte Adresse zurück.
 // (hash_equals vergleicht zeitkonstant — kein Rateln über Antwortzeiten.)
@@ -85,7 +87,9 @@ if (!hash_equals($CALLBACK, $redirect)) {
 // sein normales Login-Formular; nach erfolgreichem Login kommt der Besucher
 // automatisch wieder auf genau diese Seite (dieselbe URL) zurück.
 if ((int) $user->data['user_id'] === ANONYMOUS) {
-    login_box(build_url(array('redirect')) . '&redirect=' . urlencode($_SERVER['REQUEST_URI']));
+    // Nach dem Login zurück auf genau diese URL (mit redirect+state). $request->server()
+    // statt $_SERVER (deactivated super globals).
+    login_box($request->server('REQUEST_URI'));
     exit;
 }
 
