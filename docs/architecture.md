@@ -41,6 +41,15 @@ Admin-Authentifizierung per signiertem httponly-Cookie.
 - **`POST /api/admin/login`** setzt das Cookie (httponly, SameSite=Strict); **`POST /api/admin/logout`** löscht es; **`GET /api/admin/me`** gibt `{"admin": true}` zurück wenn die Session gültig ist.
 - Die Admin-Seite selbst (`/admin` → `app/static/admin.html`) ist eine eigenständige Vanilla-JS-Seite; sie nutzt denselben Login-Flow und kommuniziert ausschließlich über die `/api/admin/*`-Endpoints.
 
+### `app/forum_sso.py` (Board-Login, optional)
+
+Token-Primitiven für den optionalen Login über das phpBB-Forum (`board.friesenflieger.de`). Zwei HMAC-signierte Token im Format `base64url(payload).hmac_sha256_hex`, strikt getrennt über ein `typ`-Feld:
+
+- **Eingehendes SSO-Token (`typ="sso"`)** — von der Bridge `deploy/forum/sso.php` (liegt neben phpBB, liest nur Session/Profil/Gruppe, schreibt nie ins Forum). Signiert mit dem geteilten `SSO_SECRET`, kurzlebig (`iat` ≤ 60 s), mit Einmal-`nonce`. `verify_sso_token` prüft Signatur/Typ/Frische/Nonce.
+- **FriesenSpy-Session (`typ="user"`, Cookie `fs_user`)** — nach erfolgreichem Login, signiert mit `SECRET_KEY`, mit `exp`. `make_user_token`/`verify_user_token`.
+
+Der Flow (`/auth/forum/login` → Bridge → `/auth/forum/callback`) und die **Gate-Middleware** (`forum_login_gate` in `app/main.py`, mit Allowlist + Break-glass-Cookie `fs_admin_site` auf `path=/`) leben in `app/main.py`. Aktiv nur, wenn der Admin-Schalter `forum_login_enabled` AN ist **und** die Bridge konfiguriert ist (sonst No-op, öffentlicher Normalbetrieb). Design: `docs/superpowers/specs/2026-07-13-forum-sso-design.md`.
+
 ### `app/vatsim.py`
 
 - `fetch_vatsim_data(client)` — HTTP GET auf die VATSIM Data API, gibt geparsten JSON-Dict zurück.

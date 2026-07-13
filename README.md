@@ -218,6 +218,10 @@ Im enthüllten Ranking erscheinen je Pilot zwei Schaltflächen: **🎖 Badge** �
 
 Die Admin-Seite ist unter `/admin` erreichbar und passwortgeschützt. Das Passwort wird über `ADMIN_PASSWORD` in `config.env` gesetzt (leer = Admin-Bereich deaktiviert; niemals in git). Der Login setzt ein signiertes httponly-Cookie (`fs_admin`), das für die Browsersitzung gültig bleibt — ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort.
 
+#### Board-Login (Forum-SSO, optional)
+
+Ist der **Board-Login** aktiv (Admin-Tab → „Board-Login“, Standard AUS), ist die gesamte App nur für eingeloggte Forum-Mitglieder (`board.friesenflieger.de`, phpBB) sichtbar. Der Login läuft im Forum — das Passwort erreicht FriesenSpy nie: eine kleine Bridge-Datei `sso.php` (aus `deploy/forum/`, neben phpBB kopiert) liefert per Redirect ein kurzlebiges, HMAC-signiertes Token mit Benutzername, VATSIM-CID (aus dem Forum-Profil) und Admin-Flag (Forum-Gruppe „Events“). FriesenSpy prüft es (`SSO_SECRET`, Frische ≤ 60 s, Einmal-Nonce, `state`) und legt eine eigene kurze Session (`fs_user`) an. Das `ADMIN_PASSWORD` bleibt als Break-glass-Zugang erhalten. Details: `docs/superpowers/specs/2026-07-13-forum-sso-design.md` und `deploy/forum/README.md`.
+
 **Was die Admin-Seite kann:**
 - **Rennen manuell anlegen** — auch ohne Kalender-Termin, mit frei wählbarer Strecke, Start- und (optionalem) Endtermin sowie Anwesenheitsradius. Ein fehlendes `dtend` wird auf Mitternacht UTC des Starttags gesetzt.
 - **Rennen bearbeiten und löschen** — nachträgliche Korrekturen an Name, Strecke, Termin oder Radius; Löschen entfernt das Rennen dauerhaft.
@@ -448,6 +452,11 @@ VAPID_PRIVATE_KEY=                          # Optional: Web Push Private Key (ba
 VAPID_CONTACT_EMAIL=                        # Optional: mailto:... für Web Push
 ADMIN_PASSWORD=                             # Optional: Admin-Seite aktivieren (leer = aus; nie in git!)
 ANTHROPIC_API_KEY=                          # Optional: FriesenKutter-Zuladungs-Vorschlag (Claude); denselben Key wie TSBot nutzen
+# Board-Login (Forum-SSO) — optional; alle leer = Board-Login inaktiv
+SSO_SECRET=                                 # GETEILT mit sso.php auf dem Forum; niemals in git
+FORUM_SSO_URL=                              # z.B. https://board.friesenflieger.de/sso.php
+FORUM_SSO_CALLBACK=                         # z.B. https://friesenspy.devprops.de/auth/forum/callback
+USER_SESSION_MAX_AGE_SEC=3600              # kurze FriesenSpy-Session (spiegelt Forum-Logout verzögert)
 # TeamSpeak-Login-Benachrichtigung (alle optional, Default: deaktiviert)
 TS_NOTIFY_ENABLED=false
 TS_HOST=127.0.0.1
@@ -468,7 +477,7 @@ TS_REJOIN_DEBOUNCE_SEC=900
 pytest tests/ -v
 ```
 
-684 Tests, keine externen Abhängigkeiten (alles gemockt).
+971 Tests, keine externen Abhängigkeiten (alles gemockt).
 
 ### Deployment
 

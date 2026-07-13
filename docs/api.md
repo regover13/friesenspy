@@ -787,6 +787,32 @@ Alle 30 Sekunden wird ein SSE-Kommentar gesendet um Proxy-Timeouts zu verhindern
 
 ---
 
+## Board-Login (Forum-SSO)
+
+Optionaler Login über das phpBB-Forum, an-/abschaltbar per Admin-Schalter (`forum_login_enabled`, Default AUS). Nur aktiv, wenn zusätzlich `SSO_SECRET`, `FORUM_SSO_URL` und `FORUM_SSO_CALLBACK` gesetzt sind. Ist der Board-Login aktiv, verlangt eine Gate-Middleware für die gesamte App (außer Login-Flow, Rechtstexten, PWA-Assets, `/api/me` und `/api/admin/*`) eine gültige Session (`fs_user`) oder ein Break-glass-Admin-Cookie.
+
+### GET /auth/forum/login
+
+Startet den Login: erzeugt ein `state`, setzt `fs_sso_state` (httponly) und leitet zur Forum-Bridge `FORUM_SSO_URL` weiter. Bei inaktivem Board-Login → `302` nach `/`.
+
+### GET /auth/forum/callback
+
+Nimmt das signierte Token der Bridge entgegen (`?token=…&state=…`). Prüft `state` gegen das Cookie, verifiziert die HMAC-Signatur (`SSO_SECRET`), Frische (≤ 60 s) und Einmal-`nonce`, legt die eigene Session `fs_user` an und leitet nach `/`. Fehlerfälle: `400` (state), `401` (Token/Nonce).
+
+### GET /auth/forum/logout
+
+Meldet **nur** FriesenSpy ab (löscht `fs_user`); die Forum-Session bleibt. `302` nach `/`.
+
+### GET /api/me
+
+Login-Status fürs Frontend: `{ "logged_in": bool, "name": str, "cid": str, "is_admin": bool }` aus dem `fs_user`-Cookie (kein Cookie → `{ "logged_in": false }`). Nicht durch das Gate blockiert.
+
+### GET/POST /api/admin/forum-login
+
+Board-Login-Status lesen bzw. schalten (require_admin). `GET` → `{ "enabled": bool, "configured": bool }`; `POST` Body `{ "enabled": bool }` → setzt `forum_login_enabled`.
+
+---
+
 ## Admin-Authentifizierung
 
 Alle Endpoints unter `/api/admin/*` sind durch ein signiertes httponly-Cookie (`fs_admin`) geschützt. Das Cookie wird beim Login gesetzt und per HMAC-SHA256 verifiziert (Passwort + `SECRET_KEY`). Ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort. Ist `ADMIN_PASSWORD` in `config.env` nicht konfiguriert (leer), geben alle Admin-Endpoints `403` zurück.
