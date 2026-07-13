@@ -2196,15 +2196,30 @@ async function _saveNotifFilter() {
 }
 
 // ---- Bell button wiring (after DOM ready) ----
-// Board-Login: eingeloggten Nutzer anzeigen (Name + Abmelden), sonst nichts.
-fetch('/api/me', { credentials: 'same-origin' })
-  .then(r => r.json())
-  .then(d => {
-    if (!d || !d.logged_in) return;
-    document.getElementById('userName').textContent = d.name || ('CID ' + (d.cid || '—'));
-    document.getElementById('userBox').hidden = false;
-  })
-  .catch(() => { /* still */ });
+// Board-Login: eingeloggten Nutzer anzeigen + Session frisch halten.
+// - Sliding (Option 3): /api/me erneuert serverseitig das Session-Cookie; wir pingen alle 5 min,
+//   damit ein offener Tab nicht nach 20 min rausfliegt.
+// - Auto-Reauth (Option 1): meldet /api/me "nicht mehr eingeloggt", NACHDEM wir eingeloggt waren
+//   (Session/Forum-Login weg), leiten wir still über /auth/forum/login neu an — bei noch
+//   aktivem Forum-Login praktisch unsichtbar, sonst landet man auf der Forum-Anmeldung.
+let _fsWasLoggedIn = false;
+function fsRefreshSession() {
+  fetch('/api/me', { credentials: 'same-origin' })
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.logged_in) {
+        _fsWasLoggedIn = true;
+        document.getElementById('userName').textContent = d.name || ('CID ' + (d.cid || '—'));
+        document.getElementById('userBox').hidden = false;
+      } else if (_fsWasLoggedIn) {
+        _fsWasLoggedIn = false;
+        window.location.href = '/auth/forum/login';
+      }
+    })
+    .catch(() => { /* Netz weg -> nächster Tick */ });
+}
+fsRefreshSession();
+setInterval(fsRefreshSession, 5 * 60 * 1000);
 
 document.addEventListener('DOMContentLoaded', () => {
   const notifBtn    = document.getElementById('notif-btn');

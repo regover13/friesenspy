@@ -1586,15 +1586,28 @@ async def forum_logout():
 async def api_me(request: Request):
     """Login-Status für das Frontend. Nur relevant, wenn der Board-Login aktiv ist — ein evtl.
     noch gültiges ``fs_user``-Cookie zählt NICHT, wenn der Schalter aus (oder nicht konfiguriert)
-    ist (sonst zeigt der Name-Chip trotz öffentlicher App weiter einen Namen)."""
+    ist (sonst zeigt der Name-Chip trotz öffentlicher App weiter einen Namen).
+
+    **Sliding-Session:** Bei gültigem Login wird das ``fs_user``-Cookie mit frischem Ablauf neu
+    gesetzt. Weil die SPA ``/api/me`` periodisch pingt, bleibt ein aktiver Tab so eingeloggt,
+    ohne alle 20 min unterbrochen zu werden."""
     settings = get_settings()
     if not _forum_login_active_cached(settings):
-        return {"logged_in": False}
+        return JSONResponse({"logged_in": False})
     claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
     if not claims:
-        return {"logged_in": False}
-    return {"logged_in": True, "name": claims.get("name", ""),
-            "cid": claims.get("cid", ""), "is_admin": bool(claims.get("is_admin"))}
+        return JSONResponse({"logged_in": False})
+    resp = JSONResponse({"logged_in": True, "name": claims.get("name", ""),
+                         "cid": claims.get("cid", ""), "is_admin": bool(claims.get("is_admin"))})
+    exp = time.time() + settings.USER_SESSION_MAX_AGE_SEC
+    resp.set_cookie(
+        USER_COOKIE,
+        make_user_token(settings.SECRET_KEY, claims.get("sub"), str(claims.get("name", "")),
+                        str(claims.get("cid", "")), bool(claims.get("is_admin")), exp),
+        httponly=True, secure=_is_https(request), samesite="lax", path="/",
+        max_age=settings.USER_SESSION_MAX_AGE_SEC,
+    )
+    return resp
 
 
 # ---------------------------------------------------------------------------

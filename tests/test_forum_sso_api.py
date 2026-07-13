@@ -155,6 +155,15 @@ def test_me_false_when_board_login_off(env):
     assert env.client.get("/api/me").json()["logged_in"] is False
 
 
+def test_me_slides_session_cookie(env):
+    # Sliding-Session: /api/me erneuert bei gültigem Login das fs_user-Cookie.
+    env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
+    main._reset_gate_cache()
+    r = env.client.get("/api/me", cookies=_user_cookie(is_admin=True))
+    assert r.json()["logged_in"] is True
+    assert "fs_user" in r.cookies
+
+
 # --- Task 4: Gate-Middleware ------------------------------------------------
 
 def _login(env, is_admin=False):
