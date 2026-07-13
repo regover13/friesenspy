@@ -399,6 +399,8 @@ _PUSH_MIGRATIONS = [
     "ALTER TABLE push_subscriptions ADD COLUMN ts_self_frs TEXT",
     # notify_events: Erinnerung ~1h vor Events + Bummel-Start/Ergebnis-Pushs (Default aus).
     "ALTER TABLE push_subscriptions ADD COLUMN notify_events INTEGER DEFAULT 0",
+    # owner_cid: Besitzer-CID des Abos (aus dem Forum-Login) — für die Subjekt-Allowlist.
+    "ALTER TABLE push_subscriptions ADD COLUMN owner_cid INTEGER DEFAULT NULL",
 ]
 
 _PREFILE_SIGS_MIGRATIONS = [
@@ -3641,13 +3643,19 @@ def upsert_push_subscription(
     notify_ts: bool = False,
     ts_self_frs: str | None = None,
     notify_events: bool = False,
+    owner_cid: int | None = None,
 ) -> None:
-    """Browser-Push-Subscription speichern oder aktualisieren."""
+    """Browser-Push-Subscription speichern oder aktualisieren.
+
+    ``owner_cid`` (aus dem Forum-Login) wird beim Konflikt nur überschrieben, wenn er nicht NULL
+    ist (``COALESCE``) — ein anonymer Re-Subscribe (ausgeloggt) löscht einen gesetzten Besitzer
+    NICHT aus (Backfill-Robustheit); ein eingeloggter Re-Subscribe überschreibt (last-login-wins).
+    """
     conn.execute(
         """INSERT INTO push_subscriptions
                (endpoint, p256dh, auth, pilot_filter, notify_prefiles,
-                notify_ts, ts_self_frs, notify_events, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                notify_ts, ts_self_frs, notify_events, owner_cid, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(endpoint) DO UPDATE SET
                p256dh=excluded.p256dh,
                auth=excluded.auth,
@@ -3656,6 +3664,7 @@ def upsert_push_subscription(
                notify_ts=excluded.notify_ts,
                ts_self_frs=excluded.ts_self_frs,
                notify_events=excluded.notify_events,
+               owner_cid=COALESCE(excluded.owner_cid, push_subscriptions.owner_cid),
                created_at=excluded.created_at""",
         (
             endpoint, p256dh, auth,
@@ -3664,9 +3673,16 @@ def upsert_push_subscription(
             1 if notify_ts else 0,
             ts_self_frs,
             1 if notify_events else 0,
+            owner_cid,
             _now_utc(),
         ),
     )
+
+
+def set_push_subscription_owner(conn: sqlite3.Connection, endpoint: str, owner_cid: int) -> None:
+    """Owner-CID eines bestehenden Abos setzen (Backfill nach Login, last-login-wins)."""
+    conn.execute("UPDATE push_subscriptions SET owner_cid = ? WHERE endpoint = ?",
+                 (int(owner_cid), endpoint))
 
 
 def delete_push_subscription(conn: sqlite3.Connection, endpoint: str) -> None:
@@ -5930,7 +5946,8 @@ def get_push_subscriptions_for_pilot(
     Gibt Subscriptions zurück wenn pilot_filter IS NULL (alle) oder cid in der Filter-Liste.
     """
     rows = conn.execute(
-        "SELECT endpoint, p256dh, auth, pilot_filter, notify_prefiles FROM push_subscriptions"
+        "SELECT endpoint, p256dh, auth, pilot_filter, notify_prefiles, owner_cid "
+        "FROM push_subscriptions"
     ).fetchall()
     result = []
     for row in rows:
@@ -5954,7 +5971,7 @@ def get_push_subscriptions_for_prefile(
     Wie get_push_subscriptions_for_pilot, aber zusätzlich notify_prefiles = 1.
     """
     rows = conn.execute(
-        "SELECT endpoint, p256dh, auth, pilot_filter, notify_prefiles "
+        "SELECT endpoint, p256dh, auth, pilot_filter, notify_prefiles, owner_cid "
         "FROM push_subscriptions WHERE notify_prefiles = 1"
     ).fetchall()
     result = []
@@ -6186,19 +6203,25 @@ def get_ts_push_subscriptions(conn: sqlite3.Connection, cid: int | None) -> list
     pilot_filter-JSON wird (wie get_push_subscriptions_for_pilot) als "alle" gewertet.
     """
     rows = conn.execute(
-        "SELECT endpoint, p256dh, auth, pilot_filter FROM push_subscriptions WHERE notify_ts = 1"
+        "SELECT endpoint, p256dh, auth, pilot_filter, owner_cid "
+        "FROM push_subscriptions WHERE notify_ts = 1"
     ).fetchall()
+
+    def _rec(row):
+        return {"endpoint": row["endpoint"], "p256dh": row["p256dh"],
+                "auth": row["auth"], "owner_cid": row["owner_cid"]}
+
     result = []
     for row in rows:
         pf = row["pilot_filter"]
         if pf is None:
-            result.append({"endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"]})
+            result.append(_rec(row))
         elif cid is not None:
             try:
                 if cid in json.loads(pf):
-                    result.append({"endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"]})
+                    result.append(_rec(row))
             except (json.JSONDecodeError, TypeError):
-                result.append({"endpoint": row["endpoint"], "p256dh": row["p256dh"], "auth": row["auth"]})
+                result.append(_rec(row))
     return result
 
 

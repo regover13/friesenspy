@@ -23,7 +23,11 @@ from app.database import (
     get_live_positions,
     get_pilot_flights_friesenspy,
     get_pilot_visibility,
+    get_push_subscriptions_for_pilot,
+    get_ts_push_subscriptions,
     set_pilot_visibility,
+    set_push_subscription_owner,
+    upsert_push_subscription,
     get_position_history,
     get_stats,
     get_stats_activity,
@@ -119,6 +123,43 @@ def test_forum_callsign_collision_keeps_last_and_warns(caplog):
         upsert_forum_callsign(conn, "FRS99", 222)          # anderer Owner → Warnung
     assert cid_for_callsign_authoritative(conn, "FRS99") == 222
     assert any("FRS99" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# push_subscriptions.owner_cid + Backfill
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def push_conn(tmp_path):
+    """Voll-migriertes Schema (init_db legt _DDL + alle Migrationen inkl. owner_cid an)."""
+    from app.database import init_db, get_connection
+    db = str(tmp_path / "push.db")
+    init_db(db)
+    c = get_connection(db)
+    yield c
+    c.close()
+
+
+def test_push_owner_cid_and_backfill(push_conn):
+    conn = push_conn
+    upsert_push_subscription(conn, "e1", "p", "a", owner_cid=None)   # anonym
+    set_push_subscription_owner(conn, "e1", 555)
+    subs = get_push_subscriptions_for_pilot(conn, 999)              # pilot_filter NULL → alle
+    assert subs and subs[0]["owner_cid"] == 555
+    # Re-Subscribe ohne Owner (ausgeloggt) darf gesetzten Owner NICHT löschen (COALESCE):
+    upsert_push_subscription(conn, "e1", "p", "a", owner_cid=None)
+    assert get_push_subscriptions_for_pilot(conn, 999)[0]["owner_cid"] == 555
+    # Re-Subscribe mit Owner überschreibt (last-login-wins):
+    upsert_push_subscription(conn, "e1", "p", "a", owner_cid=777)
+    assert get_push_subscriptions_for_pilot(conn, 999)[0]["owner_cid"] == 777
+
+
+def test_ts_push_subscriptions_carry_owner_cid(push_conn):
+    conn = push_conn
+    upsert_push_subscription(conn, "t1", "p", "a", notify_ts=True, owner_cid=42)
+    conn.commit()
+    subs = get_ts_push_subscriptions(conn, None)                    # pilot_filter NULL → alle
+    assert subs and subs[0]["owner_cid"] == 42
 
 
 # ---------------------------------------------------------------------------
