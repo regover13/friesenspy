@@ -2129,7 +2129,7 @@ async function _loadNotifPilotList() {
     try {
       const res = await fetch('/api/stats?days=365');
       const data = await res.json();
-      const pilots = data.pilots || data;
+      const pilots = _sortByCallsign(data.pilots || data, 'last_callsign');
       container.innerHTML = pilots.map(p => {
         const label = escHtml((p.last_callsign || '').toUpperCase() || String(p.cid));
         return `<label class="notif-pilot-cb"><input type="checkbox" data-cid="${p.cid}"> ${label}</label>`;
@@ -2257,6 +2257,13 @@ fsRefreshSession();
 setInterval(fsRefreshSession, 5 * 60 * 1000);
 
 // --- Subjekt-Sichtbarkeit: „Wer darf über mich benachrichtigt werden?" ------
+// Piloten-Listen nach Callsign sortieren — numerisch-bewusst (FRS49 < FRS93 < FRS142).
+function _sortByCallsign(arr, key) {
+  return arr.slice().sort((a, b) =>
+    String(a[key] || a.cid).localeCompare(String(b[key] || b.cid), undefined,
+                                          { numeric: true, sensitivity: 'base' }));
+}
+
 let _visibilityPilots = [];
 let _pushOwnershipClaimed = false;
 
@@ -2284,7 +2291,7 @@ function loadVisibility() {
     .then(r => r.ok ? r.json() : null)
     .then(d => {
       if (!d) return;
-      _visibilityPilots = d.pilots || [];
+      _visibilityPilots = _sortByCallsign(d.pilots || [], 'callsign');
       const radio = document.querySelector(
         `input[name="visibility-mode"][value="${d.mode || 'everyone'}"]`);
       if (radio) radio.checked = true;
