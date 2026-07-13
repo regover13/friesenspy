@@ -110,9 +110,9 @@ FriesenSpy-Flügen/Kutter-Beiträgen verknüpft, ohne Zutun des Piloten.
 
 1. **Wer ist Admin?** → Mitglieder der Forum-Gruppe **„Events" (`g=8`)**. `sso.php` setzt
    `is_admin=true`, wenn der Nutzer in Gruppe 8 ist (Prüfung per phpBB-`group_memberships`).
-2. **Forum-Account ↔ VATSIM-CID** → geklärt. Profilfeld heißt **„VatSim-ID"**; `sso.php`
-   liest es über den phpBB-Profilfeld-Manager aus (Feldname statt hartkodiertem `field_ident`,
-   damit robust). CID landet automatisch im Token.
+2. **Forum-Account ↔ VATSIM-CID** → geklärt. Profilfeld „VatSim-ID", bestätigt (2026-07-13,
+   rein lesend): `field_ident = phpbb_vatsimid` → Schlüssel **`pf_phpbb_vatsimid`**; `sso.php`
+   liest ihn über den phpBB-Profilfeld-Manager aus. CID landet automatisch im Token.
 3. **Alt-Admin-Passwort** → **behalten** (Break-glass). Nötig, weil der Board-Login
    *einschaltbar* sein soll: bei ausgeschaltetem Board-Login und als Notzugang bei Forum-
    Ausfall bleibt das bisherige Admin-Passwort der Weg hinein.
@@ -216,7 +216,7 @@ if ((int)$user->data['user_id'] === ANONYMOUS) {   // nicht eingeloggt → phpBB
 // CID aus Profilfeld "VatSim-ID"
 $pf   = $phpbb_container->get('profilefields.manager');
 $data = $pf->grab_profile_fields_data((int)$user->data['user_id']);
-$cid  = $data[$user->data['user_id']]['pf_vatsim_id']['value'] ?? '';   // Feldname bestätigen
+$cid  = $data[$user->data['user_id']]['pf_phpbb_vatsimid']['value'] ?? '';   // „VatSim-ID", bestätigt
 
 // Admin = Mitglied der Gruppe "Events" (g=8)
 $is_admin = !empty(group_memberships(8, (int)$user->data['user_id']));

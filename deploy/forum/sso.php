@@ -37,7 +37,7 @@ if ((int) $user->data['user_id'] === ANONYMOUS) {
 
 $uid = (int) $user->data['user_id'];
 
-// VATSIM-CID aus dem Profilfeld lesen (Feldname aus der Config).
+// VATSIM-CID aus dem Profilfeld lesen (Schlüssel pf_phpbb_vatsimid, aus der Config).
 $cid = '';
 try {
     $pf   = $phpbb_container->get('profilefields.manager');

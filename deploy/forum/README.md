@@ -9,8 +9,8 @@ phpBB** abgelegt und **verändert das Forum nicht** (kein Patch, keine Extension
 2. `sso_config.sample.php` → `sso_config.php` daneben kopieren und ausfüllen:
    - `sso_secret`: langer Zufallsstring, **identisch** zu `SSO_SECRET` in FriesenSpys `config.env`.
    - `callback`: `https://friesenspy.devprops.de/auth/forum/callback`.
-   - `cid_field`: interner Feldname des Profilfelds „VatSim-ID"
-     (bestätigen mit `SELECT field_ident FROM phpbb_profile_fields;`).
+   - `cid_field`: Schlüssel des Profilfelds „VatSim-ID" — bestätigt: `pf_phpbb_vatsimid`
+     (field_ident `phpbb_vatsimid`).
    - `admin_gid`: `8` (Gruppe „Events").
 3. Testen (als eingeloggtes Forum-Mitglied):
    `https://board.friesenflieger.de/sso.php?redirect=https://friesenspy.devprops.de/auth/forum/callback&state=test`

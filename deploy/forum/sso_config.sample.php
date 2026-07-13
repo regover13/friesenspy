@@ -5,9 +5,9 @@ return [
     'sso_secret'   => 'HIER-LANGES-GEHEIMNIS-EINSETZEN',
     // Erlaubtes Rücksprung-Ziel (muss FORUM_SSO_CALLBACK in FriesenSpy entsprechen):
     'callback'     => 'https://friesenspy.devprops.de/auth/forum/callback',
-    // Interner phpBB-Feldname des VATSIM-CID-Profilfelds „VatSim-ID"
-    // (per `SELECT field_ident FROM phpbb_profile_fields;` bestätigen):
-    'cid_field'    => 'pf_vatsim_id',
+    // Schlüssel des VATSIM-CID-Profilfelds „VatSim-ID" im phpBB-Profilfeld-Manager.
+    // Bestätigt am 2026-07-13: field_ident = phpbb_vatsimid → Schlüssel pf_phpbb_vatsimid.
+    'cid_field'    => 'pf_phpbb_vatsimid',
     // phpBB-Gruppen-ID, die FriesenSpy-Admin ergibt (Gruppe „Events"):
     'admin_gid'    => 8,
 ];
