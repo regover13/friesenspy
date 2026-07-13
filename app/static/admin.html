@@ -1034,6 +1034,20 @@
         </div>
 
         <!-- ERGÄNZUNGS-FLUGPLÄTZE (custom_airports, #50) -->
+        <!-- BOARD-LOGIN (v9) -->
+        <div class="panel">
+          <div class="panel-title"><span>🔐 Board-Login</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Ist der Board-Login an, ist FriesenSpy nur für eingeloggte Forum-Mitglieder sichtbar
+            (Admin = Forum-Gruppe „Events"). Das Admin-Passwort bleibt als Notzugang bestehen.
+          </p>
+          <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer;">
+            <input type="checkbox" id="forumLoginToggle" />
+            <span>Board-Login aktiv</span>
+          </label>
+          <p id="forumLoginState" style="color:#8aa0b8;font-size:0.82rem;margin:0;">…</p>
+        </div>
+
         <div class="panel">
           <div class="panel-title"><span>🛬 Flugplätze (Ergänzungen)</span></div>
           <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
@@ -1236,6 +1250,7 @@
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('admin-ui').classList.remove('hidden');
       loadBanner();
+      loadForumLogin();
       loadPilots();
       loadKutterAdmin();
       loadCustomAirports();
@@ -1283,6 +1298,29 @@
         else showLogin();
       } catch { showLogin(); }
     }
+
+    // ====================================================================
+    // BOARD-LOGIN (Forum-SSO an-/ausschalten)
+    // ====================================================================
+    async function loadForumLogin() {
+      try {
+        const r = await fetch('/api/admin/forum-login', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const d = await r.json();
+        const cb = document.getElementById('forumLoginToggle');
+        const st = document.getElementById('forumLoginState');
+        cb.checked = d.enabled;
+        cb.disabled = !d.configured;
+        st.textContent = d.configured
+          ? (d.enabled ? 'Aktiv — App ist login-geschützt.' : 'Aus — App ist öffentlich.')
+          : 'Nicht konfiguriert (SSO_SECRET / FORUM_SSO_URL / FORUM_SSO_CALLBACK fehlen).';
+      } catch { /* still */ }
+    }
+    document.getElementById('forumLoginToggle').addEventListener('change', async e => {
+      const res = await api('POST', '/api/admin/forum-login', { enabled: e.target.checked });
+      if (res && res.ok) toast('Board-Login ' + (e.target.checked ? 'aktiviert' : 'deaktiviert') + '.');
+      loadForumLogin();
+    });
 
     // ====================================================================
     // UTC CLOCK

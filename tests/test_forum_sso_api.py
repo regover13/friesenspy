@@ -179,3 +179,18 @@ def test_gate_always_allows_auth_and_legal_paths(env):
     main._reset_gate_cache()
     for path in ("/auth/forum/login", "/impressum", "/datenschutz", "/health"):
         assert env.client.get(path, follow_redirects=False).status_code in (200, 302)
+
+
+# --- Task 5: Frontend-Markup wird ausgeliefert ------------------------------
+
+def test_index_serves_userbox_markup(env):
+    r = env.client.get("/", headers={"accept": "text/html"})
+    assert r.status_code == 200
+    assert "userBox" in r.text
+    assert "/auth/forum/logout" in r.text
+
+
+def test_admin_page_serves_toggle_markup(env):
+    r = env.client.get("/admin")
+    assert r.status_code == 200
+    assert "forumLoginToggle" in r.text
