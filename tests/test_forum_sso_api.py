@@ -280,3 +280,94 @@ def test_password_admin_still_works_as_fallback(env):
     # Passwort-Cookie (Break-glass) funktioniert weiterhin.
     r = env.client.get("/api/admin/me", cookies=_admin_cookie())
     assert r.status_code == 200
+
+
+# --- Task 5: Subjekt-Sichtbarkeit + owner_cid --------------------------------
+
+def _enable(env):
+    """Board-Login scharfschalten (forum_login_enabled=1) + Gate-Cache leeren."""
+    conn = get_connection(env.db)
+    set_app_setting(conn, "forum_login_enabled", "1")
+    conn.commit(); conn.close()
+    main._reset_gate_cache()
+
+
+def test_visibility_requires_login(env):
+    _enable(env)
+    # Anonym trotz aktivem Gate → 401 aus dem Endpoint (das Gate schützt /api/me/* NICHT).
+    r = env.client.get("/api/me/visibility")
+    assert r.status_code == 401
+
+
+def test_visibility_default_everyone(env):
+    _enable(env)
+    r = env.client.get("/api/me/visibility", cookies=_user_cookie())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["mode"] == "everyone" and body["allowlist"] == []
+    assert isinstance(body["pilots"], list)
+
+
+def test_visibility_set_and_read_allowlist(env):
+    _enable(env)
+    r = env.client.post("/api/me/visibility", cookies=_user_cookie(),
+                        json={"mode": "allowlist", "allowlist": [111, 222]})
+    assert r.status_code == 200
+    got = env.client.get("/api/me/visibility", cookies=_user_cookie()).json()
+    assert got["mode"] == "allowlist" and got["allowlist"] == [111, 222]
+
+
+def test_visibility_invalid_mode_400(env):
+    _enable(env)
+    r = env.client.post("/api/me/visibility", cookies=_user_cookie(), json={"mode": "bogus"})
+    assert r.status_code == 400
+
+
+def test_visibility_allowlist_empty_allowed(env):
+    _enable(env)
+    r = env.client.post("/api/me/visibility", cookies=_user_cookie(),
+                        json={"mode": "allowlist", "allowlist": []})
+    assert r.status_code == 200
+    assert env.client.get("/api/me/visibility", cookies=_user_cookie()).json()["allowlist"] == []
+
+
+def test_visibility_allowlist_capped_at_500(env):
+    _enable(env)
+    env.client.post("/api/me/visibility", cookies=_user_cookie(),
+                    json={"mode": "allowlist", "allowlist": list(range(600))})
+    assert len(env.client.get("/api/me/visibility", cookies=_user_cookie()).json()["allowlist"]) == 500
+
+
+def test_board_login_off_treated_as_logged_out(env):
+    # Schalter AUS: gültiges fs_user-Cookie darf NICHT als eingeloggt zählen (F8).
+    r = env.client.get("/api/me/visibility", cookies=_user_cookie())
+    assert r.status_code == 401
+
+
+def test_subscribe_sets_owner_from_cookie_ignores_body(env):
+    _enable(env)
+    r = env.client.post("/api/push/subscribe", cookies=_user_cookie(),
+                        json={"endpoint": "ep", "p256dh": "p", "auth": "a", "owner_cid": 999})
+    assert r.status_code == 200
+    conn = get_connection(env.db)
+    row = conn.execute("SELECT owner_cid FROM push_subscriptions WHERE endpoint=?", ("ep",)).fetchone()
+    conn.close()
+    assert row["owner_cid"] == 1234567          # aus dem Cookie, nicht 999 aus dem Body
+
+
+def test_push_claim_logged_in_and_anonymous(env):
+    # Anonym + Schalter AUS → No-op (skipped), kein Owner.
+    conn = get_connection(env.db)
+    conn.execute("INSERT INTO push_subscriptions (endpoint, p256dh, auth, created_at) "
+                 "VALUES ('c1','p','a','2026-07-13T00:00:00Z')")
+    conn.commit(); conn.close()
+    r = env.client.post("/api/push/claim", json={"endpoint": "c1"})
+    assert r.json()["status"] == "skipped"
+    # Eingeloggt (Schalter AN) → Owner gesetzt.
+    _enable(env)
+    r = env.client.post("/api/push/claim", cookies=_user_cookie(), json={"endpoint": "c1"})
+    assert r.json()["status"] == "ok"
+    conn = get_connection(env.db)
+    row = conn.execute("SELECT owner_cid FROM push_subscriptions WHERE endpoint='c1'").fetchone()
+    conn.close()
+    assert row["owner_cid"] == 1234567

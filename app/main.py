@@ -59,6 +59,9 @@ from app.database import (
     get_calendar_events,
     get_connection,
     get_push_subscription_by_endpoint,
+    get_pilot_visibility,
+    set_pilot_visibility,
+    set_push_subscription_owner,
     list_pilots,
     set_app_setting,
     upsert_pilot,
@@ -363,6 +366,7 @@ async def push_subscribe(request: Request):
             notify_prefiles=bool(body.get("notify_prefiles", False)),
             notify_ts=bool(body.get("notify_ts", False)),
             notify_events=bool(body.get("notify_events", False)),
+            owner_cid=_current_cid(request, settings),   # nur aus dem Cookie, nie aus dem Body
         )
         conn.commit()
     finally:
@@ -1477,6 +1481,24 @@ def _forum_login_active_cached(settings) -> bool:
     return bool(_gate_cache["val"])
 
 
+def _current_cid(request: Request, settings) -> int | None:
+    """CID des eingeloggten Forum-Nutzers oder None.
+
+    Das Login-Gate schützt ``/api/me/*`` NICHT (steht in der Allowlist) — diese Prüfung im
+    Endpoint ist die alleinige Verteidigung. Bei ausgeschaltetem Board-Login zählt ein evtl. noch
+    gültiges ``fs_user``-Cookie NICHT (Gleichlauf mit ``/api/me``). Die CID kommt als String aus
+    einem freien phpBB-Profilfeld → trimmen, auf Ziffern prüfen, zu int. Break-glass-Admin ohne
+    CID / Tippfehler-CID → None.
+    """
+    if not _forum_login_active_cached(settings):
+        return None
+    claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
+    if not claims:
+        return None
+    raw = str(claims.get("cid", "")).strip()
+    return int(raw) if raw.isdigit() else None
+
+
 @app.get("/api/admin/forum-login")
 async def admin_get_forum_login(request: Request):
     """Board-Login-Status für die Admin-Oberfläche."""
@@ -1609,6 +1631,72 @@ async def api_me(request: Request):
         max_age=settings.USER_SESSION_MAX_AGE_SEC,
     )
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Subjekt-Sichtbarkeit — „Wer darf über mich benachrichtigt werden?"
+# ---------------------------------------------------------------------------
+
+@app.get("/api/me/visibility")
+async def api_me_visibility(request: Request):
+    """Aktuelle Sichtbarkeit + Picker-Kandidaten (Mitglieder-Registry). Nur eingeloggt."""
+    settings = get_settings()
+    cid = _current_cid(request, settings)
+    if cid is None:
+        raise HTTPException(status_code=401, detail="Nicht eingeloggt")
+    conn = get_connection(settings.DB_PATH)
+    try:
+        vis = get_pilot_visibility(conn, cid) or {"mode": "everyone", "allowlist": []}
+        pilots = [{"cid": p["cid"],
+                   "callsign": (p["callsigns"][0] if p["callsigns"] else p["name"])}
+                  for p in list_pilots(conn, settings.CALLSIGN_PREFIX)]
+    finally:
+        conn.close()
+    return {"mode": vis["mode"], "allowlist": vis.get("allowlist", []), "pilots": pilots}
+
+
+@app.post("/api/me/visibility")
+async def api_me_visibility_set(request: Request):
+    """Sichtbarkeit setzen (everyone/allowlist/nobody). Nur eingeloggt."""
+    settings = get_settings()
+    cid = _current_cid(request, settings)
+    if cid is None:
+        raise HTTPException(status_code=401, detail="Nicht eingeloggt")
+    body = await request.json()
+    mode = body.get("mode")
+    if mode not in ("everyone", "allowlist", "nobody"):
+        raise HTTPException(status_code=400, detail="Ungültiger Modus")
+    allowlist = None
+    if mode == "allowlist":
+        # Ganzzahlen filtern, Länge kappen (leere Liste erlaubt = effektiv niemand).
+        allowlist = [int(x) for x in (body.get("allowlist") or [])
+                     if str(x).lstrip("-").isdigit()][:500]
+    conn = get_connection(settings.DB_PATH)
+    try:
+        set_pilot_visibility(conn, cid, mode, allowlist)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok", "mode": mode}
+
+
+@app.post("/api/push/claim")
+async def api_push_claim(request: Request):
+    """Backfill: bestehendes Push-Abo dem eingeloggten Nutzer zuordnen (last-login-wins).
+    Anonym → No-op."""
+    settings = get_settings()
+    cid = _current_cid(request, settings)
+    body = await request.json()
+    endpoint = body.get("endpoint", "")
+    if cid is None or not endpoint:
+        return {"status": "skipped"}
+    conn = get_connection(settings.DB_PATH)
+    try:
+        set_push_subscription_owner(conn, endpoint, cid)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------
