@@ -2092,15 +2092,15 @@ function _showNotifPanelContent() {
   filterDiv.hidden = !_pushSubscription;
   const prefilesCb = document.getElementById('notif-prefiles');
   if (prefilesCb) {
-    prefilesCb.checked = localStorage.getItem('notif_prefiles') === '1';
+    prefilesCb.checked = localStorage.getItem('notif_prefiles') !== '0';   // Default: an
   }
   const tsCb = document.getElementById('notif-ts');
   if (tsCb) {
-    tsCb.checked = localStorage.getItem('notif_ts') === '1';
+    tsCb.checked = localStorage.getItem('notif_ts') !== '0';   // Default: an
   }
   const eventsCb = document.getElementById('notif-events');
   if (eventsCb) {
-    eventsCb.checked = localStorage.getItem('notif_events') === '1';
+    eventsCb.checked = localStorage.getItem('notif_events') !== '0';   // Default: an
   }
 }
 
