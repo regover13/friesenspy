@@ -272,7 +272,158 @@ git commit -m "feat: idempotentes Seeding kuratierter Zuladungen in init_db"
 
 ---
 
-### Task 3: Admin-UI — editierbares Muster-Namensfeld
+### Task 2b: Neue Spalte `fuel_full_kg` (max. Tankinhalt) + Halb-Tank im Rechenfeld
+
+**Nachträgliche Anforderung (Nutzer):** Der MAXIMALE Tankinhalt wird als eigenes Feld
+gespeichert; das Rechenfeld `fuel_kg` bleibt der HALBE Tank (`fuel_full_kg/2`). Gilt auch für
+bestehende DB-Zeilen (Backfill `fuel_full_kg = fuel_kg*2`, weil `fuel_kg` bisher schon halb war).
+
+**Files:**
+- Modify: `app/database.py` (DDL `aircraft_payloads`, `_TRANSPORT_MIGRATIONS`, `init_db`-Backfill, `upsert_payload`, `seed_curated_payloads`, `list_aircraft_payloads`)
+- Test: `tests/test_database.py`
+
+**Interfaces:**
+- Produces: `aircraft_payloads.fuel_full_kg` (REAL, max. Tank, kg); `upsert_payload(..., fuel_full_kg=None)`; `list_aircraft_payloads` liefert `fuel_full_kg` mit.
+
+- [ ] **Step 1: Failing-Tests schreiben** (ans Ende von `tests/test_database.py`)
+
+```python
+def test_upsert_stores_fuel_full(tmp_path):
+    from app import database
+    db = str(tmp_path / "t.db"); database.init_db(db)
+    conn = database.get_connection(db)
+    database.upsert_payload(conn, "ZFUL", mtow_kg=1000, empty_kg=600, fuel_kg=50,
+                            fuel_full_kg=100, crew_kg=85, source="manual")
+    conn.commit()
+    row = conn.execute("SELECT fuel_kg, fuel_full_kg FROM aircraft_payloads WHERE type_code='ZFUL'").fetchone()
+    assert abs(row["fuel_kg"] - 50) < 0.5
+    assert abs(row["fuel_full_kg"] - 100) < 0.5
+    conn.close()
+
+
+def test_fuel_full_backfill(tmp_path):
+    from app import database
+    db = str(tmp_path / "t.db"); database.init_db(db)
+    conn = database.get_connection(db)
+    conn.execute("INSERT INTO aircraft_payloads (type_code, fuel_kg, payload_kg, fuel_full_kg, source) "
+                 "VALUES ('ZBACK', 60, 100, NULL, 'manual')")
+    conn.commit(); conn.close()
+    database.init_db(db)  # Backfill läuft erneut (idempotent)
+    conn = database.get_connection(db)
+    row = conn.execute("SELECT fuel_full_kg FROM aircraft_payloads WHERE type_code='ZBACK'").fetchone()
+    assert abs(row["fuel_full_kg"] - 120) < 0.5
+    conn.close()
+
+
+def test_seed_stores_fuel_full(tmp_path, monkeypatch):
+    from app import database
+    db = str(tmp_path / "t.db"); database.init_db(db)
+    conn = database.get_connection(db)
+    monkeypatch.setattr(database, "load_curated_specs", lambda: {
+        "ZTST": {"make_model": "Test-Muster", "mtow_kg": 1111, "empty_kg": 743, "fuel_full_kg": 144},
+    })
+    database.seed_curated_payloads(conn); conn.commit()
+    row = conn.execute("SELECT fuel_kg, fuel_full_kg FROM aircraft_payloads WHERE type_code='ZTST'").fetchone()
+    assert abs(row["fuel_full_kg"] - 144) < 0.5   # Max
+    assert abs(row["fuel_kg"] - 72) < 0.5          # Hälfte
+    conn.close()
+```
+
+- [ ] **Step 2: Tests laufen lassen — müssen fehlschlagen**
+
+Run: `python -m pytest tests/test_database.py -k "fuel_full or backfill" -v`
+Expected: FAIL (Spalte/Parameter fehlt).
+
+- [ ] **Step 3: Implementieren**
+
+(a) DDL: in der `CREATE TABLE IF NOT EXISTS aircraft_payloads`-Definition nach der `fuel_kg`-Zeile ergänzen:
+```sql
+    fuel_full_kg REAL,                   -- max. Tankinhalt (volle Tanks); fuel_kg = Hälfte davon
+```
+
+(b) `_TRANSPORT_MIGRATIONS` (die Liste mit dem `crew_kg`-ALTER) um einen Eintrag ergänzen:
+```python
+    "ALTER TABLE aircraft_payloads ADD COLUMN fuel_full_kg REAL",
+```
+
+(c) `init_db`: bei den übrigen Backfills (nach dem `make_model`-Cleanup, vor `seed_curated_payloads`) einfügen:
+```python
+        try:
+            conn.execute(
+                "UPDATE aircraft_payloads SET fuel_full_kg = fuel_kg * 2 "
+                "WHERE fuel_full_kg IS NULL AND fuel_kg IS NOT NULL"
+            )
+        except sqlite3.OperationalError:
+            pass
+```
+
+(d) `upsert_payload`: Parameter `fuel_full_kg: float | None = None` ergänzen, per `_finite_or_none` härten, in INSERT-Spaltenliste + VALUES + ON CONFLICT DO UPDATE aufnehmen (analog zu `fuel_kg`).
+
+(e) `seed_curated_payloads`: in der INSERT-Anweisung die Spalte `fuel_full_kg` ergänzen und `r["fuel_full_kg"]` (Max) mitschreiben — `fuel_kg` bleibt `r["fuel_kg"]` (Hälfte):
+```python
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO aircraft_payloads
+                   (type_code, mtow_kg, empty_kg, fuel_kg, fuel_full_kg, crew_kg, payload_kg, source, make_model, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'curated', ?, ?)""",
+            (code, r["mtow_kg"], r["empty_kg"], r["fuel_kg"], r["fuel_full_kg"], r["crew_kg"],
+             r["payload_kg"], r["make_model"], _now_utc()),
+        )
+```
+
+(f) `list_aircraft_payloads`: `fuel_full_kg` in die SELECT-Spaltenliste aufnehmen (damit das Admin es bekommt).
+
+- [ ] **Step 4: Tests grün**
+
+Run: `python -m pytest tests/test_database.py -q`
+Expected: PASS (inkl. der bestehenden Seeding-Tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/database.py tests/test_database.py
+git commit -m "feat: max. Tankinhalt (fuel_full_kg) speichern; Rechenfeld bleibt halber Tank"
+```
+
+---
+
+### Task 2c: Poller-Auto-Erkennung schreibt `fuel_full_kg` mit
+
+**Anforderung (Nutzer):** Auch die automatische Erkennung/AI-Abfrage soll den max. Tank speichern
+und das Rechenfeld auf die Hälfte setzen. `fuel_kg` ist dort schon die Hälfte (aus `_build_result`);
+es fehlt nur die Weitergabe von `fuel_full_kg`.
+
+**Files:**
+- Modify: `app/poller.py` (`_auto_research_payload`, ~Zeile 1371)
+- Test: `tests/test_poller.py`
+
+- [ ] **Step 1: Test** — in `tests/test_poller.py` (nutzt das dortige Poller-Test-Setup; die
+  vorhandenen Tests patchen `app.llm.suggest_aircraft_payload`). Ein Test, der eine Suggestion mit
+  `fuel_kg` (halb) UND `fuel_full_kg` (voll) mockt, `_auto_research_payload` auslöst und prüft, dass
+  die geschriebene Zeile beide Werte hat (`fuel_full_kg` = voll, `fuel_kg` = halb). An das bestehende
+  Mock-Muster (`patch("app.llm.suggest_aircraft_payload", return_value={...})`) anlehnen.
+
+- [ ] **Step 2: Test fehlschlägt** (`fuel_full_kg` wird nicht geschrieben → NULL).
+
+- [ ] **Step 3: Implementieren** — den `upsert_payload`-Aufruf in `_auto_research_payload` um eine
+  Zeile ergänzen:
+```python
+                upsert_payload(
+                    conn, type_code,
+                    mtow_kg=s.get("mtow_kg"), empty_kg=s.get("empty_kg"),
+                    fuel_kg=s.get("fuel_kg", s.get("fuel_full_kg")),
+                    fuel_full_kg=s.get("fuel_full_kg"),
+                    crew_kg=s.get("crew_kg"), source="llm",
+                    make_model=s.get("make_model"),
+                )
+```
+
+- [ ] **Step 4: Tests grün** — `python -m pytest tests/test_poller.py -q`
+
+- [ ] **Step 5: Commit** — `git add app/poller.py tests/test_poller.py` + `git commit -m "feat: Auto-Zuladung speichert max. Tankinhalt mit (Rechenfeld bleibt halb)"`
+
+---
+
+### Task 3: Admin-UI — editierbares Muster-Namensfeld + max. Tankinhalt
 
 **Files:**
 - Modify: `app/static/admin.html` (Formularfeld statt Anzeige-`<span>`; 4 JS-Stellen von `.textContent` auf `.value`)
