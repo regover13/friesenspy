@@ -10,9 +10,12 @@ from fastapi import HTTPException
 import app.main as main
 from app.auth import (
     ADMIN_COOKIE,
+    CONFIRM_COOKIE,
     check_password,
     make_admin_token,
+    make_confirm_token,
     verify_admin_token,
+    verify_confirm_token,
 )
 
 
@@ -51,6 +54,42 @@ class TestTokenCrypto:
         assert check_password("", "") is False  # unkonfiguriert → nie erlaubt
 
 
+class TestConfirmTokenCrypto:
+    NOW = 1_000_000
+
+    def test_roundtrip(self):
+        tok = make_confirm_token("secret", "pw", self.NOW + 600)
+        assert verify_confirm_token(tok, "secret", "pw", self.NOW) is True
+
+    def test_expired_fails(self):
+        tok = make_confirm_token("secret", "pw", self.NOW - 1)
+        assert verify_confirm_token(tok, "secret", "pw", self.NOW) is False
+
+    def test_wrong_password_fails(self):
+        tok = make_confirm_token("secret", "pw", self.NOW + 600)
+        assert verify_confirm_token(tok, "secret", "anders", self.NOW) is False
+
+    def test_wrong_secret_fails(self):
+        tok = make_confirm_token("secret", "pw", self.NOW + 600)
+        assert verify_confirm_token(tok, "other", "pw", self.NOW) is False
+
+    def test_tampered_expiry_fails(self):
+        # Ablaufzeit im Klartext hochsetzen, Signatur bleibt alt → ungültig.
+        tok = make_confirm_token("secret", "pw", self.NOW + 10)
+        _, _, sig = tok.partition(".")
+        forged = f"{self.NOW + 99999}.{sig}"
+        assert verify_confirm_token(forged, "secret", "pw", self.NOW) is False
+
+    def test_empty_password_never_verifies(self):
+        tok = make_confirm_token("secret", "", self.NOW + 600)
+        assert verify_confirm_token(tok, "secret", "", self.NOW) is False
+
+    def test_garbage_token_fails(self):
+        assert verify_confirm_token("", "secret", "pw", self.NOW) is False
+        assert verify_confirm_token("nodot", "secret", "pw", self.NOW) is False
+        assert verify_confirm_token("abc.def", "secret", "pw", self.NOW) is False
+
+
 def _patch(monkeypatch, password="test-admin-pw"):
     monkeypatch.setattr(
         main, "get_settings",
@@ -75,6 +114,62 @@ class TestRequireAdmin:
         tok = make_admin_token("s3cr3t", "")
         with pytest.raises(HTTPException):
             main.require_admin(FakeReq(cookies={ADMIN_COOKIE: tok}))
+
+
+class TestRequireConfirm:
+    def _admin_cookie(self):
+        return make_admin_token("s3cr3t", "test-admin-pw")
+
+    def test_valid_confirm_cookie_passes(self, monkeypatch):
+        _patch(monkeypatch)
+        import time as _t
+        tok = make_confirm_token("s3cr3t", "test-admin-pw", int(_t.time()) + 600)
+        main.require_confirm(FakeReq(cookies={CONFIRM_COOKIE: tok}))  # kein Raise
+
+    def test_missing_confirm_cookie_403(self, monkeypatch):
+        _patch(monkeypatch)
+        with pytest.raises(HTTPException) as e:
+            main.require_confirm(FakeReq(cookies={ADMIN_COOKIE: self._admin_cookie()}))
+        assert e.value.status_code == 403
+        assert e.value.detail == "confirm_required"
+
+    def test_expired_confirm_cookie_403(self, monkeypatch):
+        _patch(monkeypatch)
+        import time as _t
+        tok = make_confirm_token("s3cr3t", "test-admin-pw", int(_t.time()) - 5)
+        with pytest.raises(HTTPException) as e:
+            main.require_confirm(FakeReq(cookies={CONFIRM_COOKIE: tok}))
+        assert e.value.status_code == 403
+
+
+class TestConfirmEndpoint:
+    def test_confirm_sets_cookie(self, monkeypatch):
+        _patch(monkeypatch)
+        tok = make_admin_token("s3cr3t", "test-admin-pw")
+        resp = asyncio.run(main.admin_confirm(FakeReq(
+            cookies={ADMIN_COOKIE: tok}, body={"password": "test-admin-pw"}, ip="t-cf-ok",
+        )))
+        cookie = resp.headers.get("set-cookie", "")
+        assert CONFIRM_COOKIE in cookie
+        # Das gesetzte Confirm-Cookie validiert anschließend gegen require_confirm.
+        import re, time as _t
+        m = re.search(r"fs_confirm=([^;]+)", cookie)
+        assert m and verify_confirm_token(m.group(1), "s3cr3t", "test-admin-pw", int(_t.time()))
+
+    def test_confirm_wrong_password_401(self, monkeypatch):
+        _patch(monkeypatch)
+        tok = make_admin_token("s3cr3t", "test-admin-pw")
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_confirm(FakeReq(
+                cookies={ADMIN_COOKIE: tok}, body={"password": "falsch"}, ip="t-cf-wrong",
+            )))
+        assert e.value.status_code == 401
+
+    def test_confirm_requires_admin_login(self, monkeypatch):
+        _patch(monkeypatch)
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_confirm(FakeReq(body={"password": "test-admin-pw"}, ip="t-cf-noadm")))
+        assert e.value.status_code == 401
 
 
 class TestLoginLogout:

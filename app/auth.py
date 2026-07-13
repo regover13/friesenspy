@@ -31,3 +31,36 @@ def check_password(candidate: str, password: str) -> bool:
     if not password:
         return False
     return hmac.compare_digest(candidate or "", password)
+
+
+CONFIRM_COOKIE = "fs_confirm"
+
+
+def make_confirm_token(secret_key: str, password: str, expires_at: int) -> str:
+    """Kurzlebiges Step-up-Token für kritische Aktionen.
+
+    Signiert Ablaufzeit UND Passwort mit ``SECRET_KEY`` — eine Passwort-/Key-Änderung
+    invalidiert das Token sofort. Format: ``<expires>.<hexsig>``.
+    """
+    msg = f"fs-confirm:{int(expires_at)}:{password or ''}".encode("utf-8")
+    sig = hmac.new((secret_key or "").encode("utf-8"), msg, hashlib.sha256).hexdigest()
+    return f"{int(expires_at)}.{sig}"
+
+
+def verify_confirm_token(token: str, secret_key: str, password: str, now: int) -> bool:
+    """True, wenn ``token`` gültig, noch nicht abgelaufen und zum aktuellen Passwort passt.
+
+    ``now`` ist die aktuelle Unix-Zeit (Sekunden) — Aufrufer reicht sie herein, damit
+    die Funktion selbst zeitunabhängig testbar bleibt.
+    """
+    if not password or not token or "." not in token:
+        return False
+    exp_str, _, _sig = token.partition(".")
+    try:
+        expires_at = int(exp_str)
+    except ValueError:
+        return False
+    if expires_at < int(now):
+        return False
+    expected = make_confirm_token(secret_key, password, expires_at)
+    return hmac.compare_digest(token, expected)

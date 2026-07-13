@@ -1109,6 +1109,11 @@
     <div class="modal-box">
       <div class="modal-title" id="modal-title">Sicher?</div>
       <div class="modal-text"  id="modal-text"></div>
+      <div id="modal-pw-wrap" class="hidden" style="margin-bottom:18px;">
+        <label for="modal-pw-input" style="display:block; font-family:var(--text-display); font-size:0.78rem; color:var(--text-label); margin-bottom:6px;">Admin-Passwort zur Bestätigung</label>
+        <input type="password" id="modal-pw-input" autocomplete="current-password" placeholder="••••••••" />
+        <div class="login-error" id="modal-pw-error" style="min-height:1em; margin-top:6px;"></div>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-sm" id="modal-cancel-btn">Abbrechen</button>
         <button class="btn btn-sm" id="modal-confirm-btn">Bestätigen</button>
@@ -1195,26 +1200,100 @@
     // MODAL
     // ====================================================================
     let _modalResolve = null;
+    let _modalNeedsPw = false;          // aktueller Dialog verlangt Passwort-Step-up
+    let _modalBusy    = false;          // Passwort wird gerade geprüft
+    // Bis zu diesem Zeitpunkt (epoch ms) ist das Passwort-Zeitfenster gültig → keine erneute
+    // Abfrage. Rein clientseitige Optimierung; der Server entscheidet über das fs_confirm-Cookie
+    // final (bei abgelaufenem Cookie greift der 403-Fallback in api()).
+    let _confirmValidUntil = 0;
 
+    // Einfacher Bestätigungsdialog (kein Passwort) — unverändertes Verhalten.
     function showModal(title, text, confirmLabel, isDanger) {
+      return _openModal(title, text, confirmLabel, isDanger, false);
+    }
+
+    // Kritische Aktion: zeigt IMMER den Dialog. Innerhalb des gültigen Zeitfensters ohne
+    // Passwortfeld, sonst mit Passwortfeld (Step-up). Löst mit true auf, wenn bestätigt.
+    function confirmCritical(title, text, confirmLabel, isDanger) {
+      const needsPw = Date.now() >= _confirmValidUntil;
+      return _openModal(title, text, confirmLabel, isDanger !== false, needsPw);
+    }
+
+    function _openModal(title, text, confirmLabel, isDanger, needsPw) {
       return new Promise(resolve => {
         _modalResolve = resolve;
+        _modalNeedsPw = !!needsPw;
+        _modalBusy    = false;
         document.getElementById('modal-title').textContent = title;
         document.getElementById('modal-text').textContent  = text;
         const cb = document.getElementById('modal-confirm-btn');
         cb.textContent = confirmLabel || 'Bestätigen';
         cb.className   = 'btn btn-sm ' + (isDanger ? 'btn-danger' : 'btn-primary');
+        cb.disabled = false;
+        const wrap = document.getElementById('modal-pw-wrap');
+        const pw   = document.getElementById('modal-pw-input');
+        document.getElementById('modal-pw-error').textContent = '';
+        pw.value = '';
+        wrap.classList.toggle('hidden', !needsPw);
         document.getElementById('modal-overlay').classList.remove('hidden');
+        if (needsPw) setTimeout(() => pw.focus(), 30);
       });
     }
 
     function closeModal(result) {
+      if (_modalBusy) return;
       document.getElementById('modal-overlay').classList.add('hidden');
       if (_modalResolve) { _modalResolve(!!result); _modalResolve = null; }
     }
 
+    // Klick auf „Bestätigen": ohne Passwortfeld direkt schließen; mit Feld erst das Passwort
+    // gegen /api/admin/confirm prüfen (Zeitfenster setzen) und nur bei Erfolg schließen.
+    async function _onModalConfirm() {
+      if (_modalBusy) return;
+      if (!_modalNeedsPw) { closeModal(true); return; }
+      const pw  = document.getElementById('modal-pw-input');
+      const err = document.getElementById('modal-pw-error');
+      const cb  = document.getElementById('modal-confirm-btn');
+      if (!pw.value) { err.textContent = 'Bitte Passwort eingeben.'; pw.focus(); return; }
+      _modalBusy = true;
+      cb.disabled = true;
+      err.textContent = 'Prüfe …';
+      let res;
+      try {
+        res = await fetch('/api/admin/confirm', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw.value })
+        });
+      } catch {
+        _modalBusy = false; cb.disabled = false; err.textContent = 'Verbindungsfehler.';
+        return;
+      }
+      if (res.ok) {
+        let ttl = 7200;
+        try { const d = await res.json(); if (d && d.ttl) ttl = d.ttl; } catch {}
+        _confirmValidUntil = Date.now() + ttl * 1000;
+        _modalBusy = false;
+        closeModal(true);
+      } else if (res.status === 401) {
+        _modalBusy = false; cb.disabled = false;
+        err.textContent = 'Falsches Passwort.';
+        pw.select();
+      } else if (res.status === 429) {
+        _modalBusy = false; cb.disabled = false;
+        err.textContent = 'Zu viele Fehlversuche — bitte später erneut.';
+      } else {
+        _modalBusy = false; cb.disabled = false;
+        err.textContent = 'Fehler — bitte erneut versuchen.';
+      }
+    }
+
     document.getElementById('modal-cancel-btn').addEventListener('click',  () => closeModal(false));
-    document.getElementById('modal-confirm-btn').addEventListener('click', () => closeModal(true));
+    document.getElementById('modal-confirm-btn').addEventListener('click', _onModalConfirm);
+    document.getElementById('modal-pw-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); _onModalConfirm(); }
+    });
     document.getElementById('modal-overlay').addEventListener('click', e => {
       if (e.target === document.getElementById('modal-overlay')) closeModal(false);
     });
@@ -1236,6 +1315,28 @@
         return null;
       }
       if (res.status === 401) { showLogin(); return null; }
+      // Step-up-Fallback: kritische Aktion, aber das Bestätigungs-Zeitfenster ist serverseitig
+      // abgelaufen (Cookie weg) — Passwort abfragen und Aktion einmalig wiederholen.
+      if (res.status === 403) {
+        let detail = '';
+        try { detail = ((await res.clone().json()) || {}).detail || ''; } catch {}
+        if (detail === 'confirm_required') {
+          _confirmValidUntil = 0;
+          const ok = await _openModal(
+            'Bestätigung erforderlich',
+            'Bitte gib das Admin-Passwort ein, um diese Aktion auszuführen.',
+            'Bestätigen', true, true
+          );
+          if (!ok) return res;
+          try {
+            res = await fetch(path, opts);
+          } catch (e) {
+            toast('Verbindungsfehler.', true);
+            return null;
+          }
+          if (res.status === 401) { showLogin(); return null; }
+        }
+      }
       return res;
     }
 
@@ -1561,7 +1662,7 @@
     // ====================================================================
     async function doDelete(id) {
       const r = _races.find(x => x.id === id);
-      const ok = await showModal(
+      const ok = await confirmCritical(
         'Rennen löschen',
         `„${r ? r.name : id}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
         'Löschen',
@@ -1581,7 +1682,7 @@
     // ====================================================================
     async function doReveal(id) {
       const r = _races.find(x => x.id === id);
-      const ok = await showModal(
+      const ok = await confirmCritical(
         'Ergebnis enthüllen',
         `Die Wertung von „${r ? r.name : id}" für alle Teilnehmer sichtbar machen?`,
         'Enthüllen',
@@ -1956,6 +2057,9 @@
     }
 
     async function removeOverride(raceId, cid) {
+      const ok = await confirmCritical('Korrektur entfernen?',
+        `Die Teilnehmer-Korrektur für CID ${cid} zurücknehmen?`, 'Entfernen', true);
+      if (!ok) return;
       const res = await api('DELETE', `/api/admin/bummel/races/${raceId}/override/${cid}`);
       if (!res) return;
       if (!res.ok) { const t = await res.text(); toast('Fehler beim Entfernen.', true); return; }
@@ -2026,7 +2130,7 @@
       const audience = document.getElementById('bc-audience').value;
       if (!title || !bodyText) { toast('Titel und Nachricht sind erforderlich.', true); return; }
       const audLabel = audience === 'events' ? 'alle Events-Abonnenten' : 'ALLE Abonnenten';
-      const ok = await showModal('Broadcast senden?',
+      const ok = await confirmCritical('Broadcast senden?',
         `Diese Nachricht geht an ${audLabel}. Wirklich senden?`, 'Senden', true);
       if (!ok) return;
       const res = await api('POST', '/api/admin/push/broadcast', { title, body: bodyText, audience });
@@ -2114,7 +2218,7 @@
       const delBtn = e.target.closest('[data-pilot-del]');
       if (delBtn) {
         const cid = parseInt(delBtn.dataset.pilotDel, 10);
-        const ok = await showModal('Pilot löschen?', `CID ${cid} aus der Liste entfernen?`, 'Löschen', true);
+        const ok = await confirmCritical('Pilot löschen?', `CID ${cid} aus der Liste entfernen?`, 'Löschen', true);
         if (!ok) return;
         const res = await api('DELETE', `/api/admin/pilots/${cid}`);
         if (!res) return;
@@ -2432,7 +2536,7 @@
     }
 
     async function keDelete(id) {
-      const ok = await showModal('Event löschen?', 'Das Transport-Event wird entfernt.', 'Löschen', true);
+      const ok = await confirmCritical('Event löschen?', 'Das Transport-Event wird entfernt.', 'Löschen', true);
       if (!ok) return;
       const res = await api('DELETE', '/api/admin/transport/events/' + id);
       if (!res || !res.ok) { toast('Fehler beim Löschen.', true); return; }
@@ -2577,7 +2681,9 @@
     }
 
     async function apDelete(btn, icao) {
-      if (!confirm('Flugplatz "' + icao + '" wirklich löschen?')) return;
+      const ok = await confirmCritical('Flugplatz löschen?',
+        `Flugplatz „${icao}" wirklich löschen?`, 'Löschen', true);
+      if (!ok) return;
       btn.disabled = true;
       // #56/v8.6.2: der Response kommt jetzt sofort (flight_cache-Rebuild läuft im
       // Hintergrund) -- die Deaktivierung dient trotzdem als sofortiges Klick-Feedback.
@@ -2783,7 +2889,7 @@
     });
 
     async function kcDelete(id) {
-      const ok = await showModal('Frachtart löschen?', 'Aus dem Katalog entfernen (bestehende Manifeste bleiben unverändert).', 'Löschen', true);
+      const ok = await confirmCritical('Frachtart löschen?', 'Aus dem Katalog entfernen (bestehende Manifeste bleiben unverändert).', 'Löschen', true);
       if (!ok) return;
       const res = await api('DELETE', '/api/admin/transport/catalog/' + id);
       if (!res || !res.ok) { toast('Fehler beim Löschen.', true); return; }

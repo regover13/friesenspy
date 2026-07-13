@@ -20,7 +20,15 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 
-from app.auth import ADMIN_COOKIE, check_password, make_admin_token, verify_admin_token
+from app.auth import (
+    ADMIN_COOKIE,
+    CONFIRM_COOKIE,
+    check_password,
+    make_admin_token,
+    make_confirm_token,
+    verify_admin_token,
+    verify_confirm_token,
+)
 from app.config import get_settings
 from app.forum_sso import (
     USER_COOKIE,
@@ -1360,6 +1368,11 @@ async def get_bummel_active():
 
 _ADMIN_COOKIE_PATH = "/api/admin"
 
+# Step-up-Bestätigung für kritische Aktionen (Löschen, Push/Veröffentlichen): nach einmaliger
+# Passworteingabe gilt ein Zeitfenster, in dem keine erneute Passwortabfrage nötig ist (der
+# Bestätigungsdialog erscheint trotzdem weiterhin bei jeder kritischen Aktion, nur ohne Feld).
+_CONFIRM_TTL_SEC = 2 * 60 * 60
+
 # Einfacher In-Process-Brute-Force-Schutz: max. N Fehlversuche je IP im Zeitfenster → 429.
 # Reicht für ein Einzel-Admin-Tool (ein uvicorn-Worker); resettet bei Neustart.
 _LOGIN_MAX_FAILS = 5
@@ -1389,6 +1402,21 @@ def require_admin(request: Request) -> None:
     if verify_admin_token(request.cookies.get(ADMIN_COOKIE, ""), settings.SECRET_KEY, settings.ADMIN_PASSWORD):
         return
     raise HTTPException(status_code=401, detail="Admin-Login erforderlich")
+
+
+def require_confirm(request: Request) -> None:
+    """Step-up-Dependency für kritische Aktionen (Löschen, Push/Veröffentlichen).
+
+    Setzt ``require_admin`` voraus (Aufrufer prüft das zuerst) und verlangt zusätzlich ein
+    frisches Bestätigungs-Token (``fs_confirm``), das der Nutzer über ``/api/admin/confirm``
+    durch erneute Passworteingabe erhält. Fehlt/abgelaufen → 403 mit ``confirm_required``,
+    worauf das Frontend die Passwortabfrage zeigt und die Aktion wiederholt.
+    """
+    settings = get_settings()
+    token = request.cookies.get(CONFIRM_COOKIE, "")
+    if verify_confirm_token(token, settings.SECRET_KEY, settings.ADMIN_PASSWORD, int(time.time())):
+        return
+    raise HTTPException(status_code=403, detail="confirm_required")
 
 
 @app.post("/api/admin/login")
@@ -1424,11 +1452,41 @@ async def admin_login(request: Request):
     return resp
 
 
+@app.post("/api/admin/confirm")
+async def admin_confirm(request: Request):
+    """Step-up-Bestätigung: prüft das Passwort erneut und setzt ein kurzlebiges Confirm-Cookie.
+
+    Danach sind kritische Aktionen (Löschen, Push/Veröffentlichen) für ``_CONFIRM_TTL_SEC``
+    Sekunden ohne erneute Abfrage möglich. Nutzt dieselbe IP-Brute-Force-Bremse wie der Login.
+    """
+    require_admin(request)  # nur eingeloggte Admins dürfen bestätigen
+    ip = request.client.host if request.client else "?"
+    if _login_rate_limited(ip):
+        raise HTTPException(status_code=429, detail="Zu viele Fehlversuche — bitte später erneut.")
+    body = await request.json()
+    settings = get_settings()
+    if not check_password(body.get("password", ""), settings.ADMIN_PASSWORD):
+        _login_fails.setdefault(ip, []).append(time.monotonic())
+        _logger.warning("Admin-Bestätigung fehlgeschlagen von %s", ip)
+        raise HTTPException(status_code=401, detail="Falsches Passwort")
+    _login_fails.pop(ip, None)
+    expires_at = int(time.time()) + _CONFIRM_TTL_SEC
+    token = make_confirm_token(settings.SECRET_KEY, settings.ADMIN_PASSWORD, expires_at)
+    is_https = request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+    resp = JSONResponse({"status": "ok", "ttl": _CONFIRM_TTL_SEC})
+    resp.set_cookie(
+        CONFIRM_COOKIE, token, httponly=True, secure=is_https, samesite="lax",
+        path=_ADMIN_COOKIE_PATH, max_age=_CONFIRM_TTL_SEC,
+    )
+    return resp
+
+
 @app.post("/api/admin/logout")
 async def admin_logout():
     resp = JSONResponse({"status": "ok"})
     resp.delete_cookie(ADMIN_COOKIE, path=_ADMIN_COOKIE_PATH)
     resp.delete_cookie(_SITE_ADMIN_COOKIE, path="/")
+    resp.delete_cookie(CONFIRM_COOKIE, path=_ADMIN_COOKIE_PATH)
     return resp
 
 
@@ -1866,6 +1924,7 @@ async def admin_push_test(request: Request):
 async def admin_push_broadcast(request: Request):
     """Freie Nachricht (Titel + Text) als Push an eine wählbare Zielgruppe senden."""
     require_admin(request)
+    require_confirm(request)
     settings = get_settings()
     if not settings.VAPID_PRIVATE_KEY:
         raise HTTPException(status_code=400, detail="VAPID nicht konfiguriert")
@@ -1927,6 +1986,7 @@ async def admin_upsert_pilot(request: Request):
 async def admin_delete_pilot(request: Request, cid: int):
     """Pilot aus der pilots-Tabelle entfernen."""
     require_admin(request)
+    require_confirm(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_pilot(conn, cid)
@@ -2024,6 +2084,7 @@ async def admin_update_race(request: Request, race_id: int):
 @app.delete("/api/admin/bummel/races/{race_id}")
 async def admin_delete_race(request: Request, race_id: int):
     require_admin(request)
+    require_confirm(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_bummel_race(conn, race_id)
@@ -2039,6 +2100,7 @@ async def admin_reveal_race(request: Request, race_id: int):
     """Notfall-Enthüllung: Ergebnisse sofort sichtbar machen — und (einmalig) Ergebnis-Push
     an die Events-Abonnenten, wie beim automatischen Enthüllen."""
     require_admin(request)
+    require_confirm(request)
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
@@ -2130,6 +2192,7 @@ async def admin_set_override(request: Request, race_id: int):
 @app.delete("/api/admin/bummel/races/{race_id}/override/{cid}")
 async def admin_delete_override(request: Request, race_id: int, cid: int):
     require_admin(request)
+    require_confirm(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_bummel_override(conn, race_id, cid)
@@ -2498,6 +2561,7 @@ async def admin_toggle_transport_push(request: Request, event_id: int):
 @app.delete("/api/admin/transport/events/{event_id}")
 async def admin_delete_transport_event(request: Request, event_id: int):
     require_admin(request)
+    require_confirm(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_transport_event(conn, event_id)
@@ -2717,6 +2781,7 @@ async def admin_upsert_airport(request: Request, background_tasks: BackgroundTas
 async def admin_delete_airport(icao: str, request: Request, background_tasks: BackgroundTasks):
     """Löscht einen Ergänzungs-Flugplatz."""
     require_admin(request)
+    require_confirm(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_custom_airport(conn, icao)
@@ -2793,6 +2858,7 @@ async def admin_upsert_catalog(request: Request):
 @app.delete("/api/admin/transport/catalog/{catalog_id}")
 async def admin_delete_catalog(request: Request, catalog_id: int):
     require_admin(request)
+    require_confirm(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_cargo_catalog(conn, catalog_id)

@@ -1,5 +1,16 @@
 [
   {
+    "version": "9.2.0",
+    "date": "2026-07-13",
+    "highlight": false,
+    "title": "Passwort-Rückfrage bei kritischen Admin-Aktionen",
+    "items": [
+      "🔐 Kritische Aktionen im Adminportal (alles Löschen sowie Push an alle Geräte und das Enthüllen von Renn-Ergebnissen) verlangen jetzt zuerst das Admin-Passwort — gedacht als Schutz, seit das ganze Event-Team Zugriff hat. Nach einmaliger Eingabe gilt ein 2-Stunden-Fenster, in dem nicht erneut nach dem Passwort gefragt wird.",
+      "✅ Jede dieser Aktionen zeigt weiterhin einen Bestätigungsdialog — im Zeitfenster ohne Passwortfeld, sonst mit. Anlegen und Bearbeiten (Rennen, Piloten, Flugplätze, Zuladungen …) bleibt wie gewohnt ohne Rückfrage.",
+      "🛡️ Die Prüfung läuft serverseitig, nicht nur im Browser — ein Umgehen per Direktaufruf ist damit ausgeschlossen."
+    ]
+  },
+  {
     "version": "9.1.0",
     "date": "2026-07-13",
     "highlight": false,
