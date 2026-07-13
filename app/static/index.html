@@ -1152,6 +1152,9 @@
       scrollbar-width: thin;
       scrollbar-color: var(--green-dim) transparent;
     }
+    /* [hidden] muss die display:flex-Regel oben schlagen (sonst bleibt die Liste bei
+       „Alle"/„Keiner" sichtbar UND anklickbar). ID+Attribut > reine ID. */
+    #notif-pilot-list[hidden], #visibility-pilot-list[hidden] { display: none; }
     #notif-pilot-list::-webkit-scrollbar, #visibility-pilot-list::-webkit-scrollbar { width: 8px; }
     #notif-pilot-list::-webkit-scrollbar-thumb,
     #visibility-pilot-list::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 4px; }
@@ -1536,20 +1539,22 @@
       <div id="notif-pilot-list" hidden></div>
       <button class="notif-save-btn" id="notif-save-btn">Speichern</button>
     </div>
-    <div id="visibility-section" class="notif-filter-section" hidden
-         style="border-top:1px solid rgba(45,156,219,0.2); margin-top:14px; padding-top:12px;">
-      <div class="notif-filter-title">🔒 Wer darf über mich benachrichtigt werden?</div>
-      <div class="notif-radio-row">
-        <label><input type="radio" name="visibility-mode" value="everyone" checked> Alle</label>
-        <label><input type="radio" name="visibility-mode" value="allowlist"> Nur bestimmte</label>
-        <label><input type="radio" name="visibility-mode" value="nobody"> Keiner</label>
+    <div id="visibility-section" hidden
+         style="border-top:1px solid rgba(45,156,219,0.2); margin-top:14px; padding-top:10px;">
+      <a href="#" id="visibility-toggle"
+         style="color:var(--green); cursor:pointer; text-decoration:none; font-size:0.82rem; font-weight:500;">🔒 Wer darf über mich benachrichtigt werden? <span id="visibility-caret">›</span></a>
+      <div id="visibility-body" class="notif-filter-section" hidden style="margin-top:10px;">
+        <div class="notif-radio-row">
+          <label><input type="radio" name="visibility-mode" value="everyone" checked> Alle</label>
+          <label><input type="radio" name="visibility-mode" value="allowlist"> Nur bestimmte</label>
+          <label><input type="radio" name="visibility-mode" value="nobody"> Keiner</label>
+        </div>
+        <div id="visibility-pilot-list" hidden></div>
+        <div class="notif-hint" style="color:var(--text-dim); margin:6px 0 8px;">
+          Betrifft nur Push-Benachrichtigungen über deine Aktivität — nicht die Live-Anzeige.
+        </div>
+        <button class="notif-save-btn" id="visibility-save-btn">Speichern</button>
       </div>
-      <div id="visibility-pilot-list" hidden></div>
-      <div class="notif-hint" style="color:var(--text-dim); margin:6px 0 8px;">
-        Betrifft nur Push- &amp; Telegram-Benachrichtigungen über deine Aktivität — nicht die
-        Live-Anzeige. Nur eingeloggte Mitglieder mit eigenem Abo profitieren effektiv.
-      </div>
-      <button class="notif-save-btn" id="visibility-save-btn">Speichern</button>
     </div>
     <div id="notif-ios-hint" class="notif-hint" hidden>
       Für Benachrichtigungen auf dem iPhone:<br>
@@ -2369,6 +2374,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   document.getElementById('visibility-save-btn')?.addEventListener('click', saveVisibility);
+
+  document.getElementById('visibility-toggle')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const body = document.getElementById('visibility-body');
+    const caret = document.getElementById('visibility-caret');
+    if (!body) return;
+    body.hidden = !body.hidden;
+    if (caret) caret.textContent = body.hidden ? '›' : '⌄';
+  });
 
   document.getElementById('notif-reset-btn')?.addEventListener('click', async () => {
     if (!confirm('Service Worker zurücksetzen und Seite neu laden?')) return;
