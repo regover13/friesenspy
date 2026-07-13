@@ -142,6 +142,13 @@ CREATE TABLE IF NOT EXISTS ts_consent (
     updated_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS pilot_visibility (
+    cid        INTEGER PRIMARY KEY,
+    mode       TEXT NOT NULL DEFAULT 'everyone',   -- 'everyone' | 'allowlist' | 'nobody'
+    allowlist  TEXT,                               -- JSON-Liste erlaubter CIDs (nur bei 'allowlist')
+    updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS bummel_races (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     name           TEXT,
@@ -6062,6 +6069,47 @@ def upsert_ts_consent(
             json.dumps(allowlist) if allowlist is not None else None,
             _now_utc(),
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Subjekt-Sichtbarkeit (pilot_visibility) — „wer darf über mich benachrichtigt werden?"
+# ---------------------------------------------------------------------------
+
+def get_pilot_visibility(conn: sqlite3.Connection, cid: int) -> dict | None:
+    """Subjekt-Sichtbarkeit einer CID, oder None (= Default 'everyone').
+
+    Rückgabe: ``{"mode": str, "allowlist": list[int]}``. Defektes allowlist-JSON → ``[]``.
+    """
+    row = conn.execute(
+        "SELECT mode, allowlist FROM pilot_visibility WHERE cid = ?", (cid,)
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        allow = json.loads(row["allowlist"]) if row["allowlist"] else []
+    except (json.JSONDecodeError, TypeError):
+        allow = []
+    return {"mode": row["mode"], "allowlist": [int(x) for x in allow]}
+
+
+def set_pilot_visibility(conn: sqlite3.Connection, cid: int, mode: str,
+                         allowlist: list[int] | None = None) -> None:
+    """Sichtbarkeit setzen. ``mode`` ∈ {'everyone','allowlist','nobody'}.
+
+    Bei ``everyone``/``nobody`` wird die allowlist genullt; eine leere allowlist bei
+    ``allowlist`` ist erlaubt (= effektiv niemand).
+    """
+    if mode not in ("everyone", "allowlist", "nobody"):
+        raise ValueError(f"invalid visibility mode: {mode}")
+    stored = (json.dumps([int(x) for x in allowlist])
+              if (mode == "allowlist" and allowlist) else None)
+    conn.execute(
+        """INSERT INTO pilot_visibility (cid, mode, allowlist, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(cid) DO UPDATE SET
+               mode=excluded.mode, allowlist=excluded.allowlist, updated_at=excluded.updated_at""",
+        (cid, mode, stored, _now_utc()),
     )
 
 

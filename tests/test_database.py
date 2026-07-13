@@ -20,6 +20,8 @@ from app.database import (
     get_connection,
     get_live_positions,
     get_pilot_flights_friesenspy,
+    get_pilot_visibility,
+    set_pilot_visibility,
     get_position_history,
     get_stats,
     get_stats_activity,
@@ -66,6 +68,33 @@ def _ts_offset(minutes: int = 0) -> str:
 def _ts_days_ago(days: int) -> str:
     dt = datetime.now(timezone.utc) - timedelta(days=days)
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---------------------------------------------------------------------------
+# pilot_visibility (Subjekt-Sichtbarkeit)
+# ---------------------------------------------------------------------------
+
+def test_pilot_visibility_default_and_roundtrip():
+    conn = _make_conn()
+    # Kein Eintrag → None (= Default 'everyone')
+    assert get_pilot_visibility(conn, 111) is None
+    # allowlist round-trip
+    set_pilot_visibility(conn, 111, "allowlist", [222, 333])
+    v = get_pilot_visibility(conn, 111)
+    assert v["mode"] == "allowlist" and v["allowlist"] == [222, 333]
+    # everyone nullt die allowlist
+    set_pilot_visibility(conn, 111, "everyone")
+    v = get_pilot_visibility(conn, 111)
+    assert v["mode"] == "everyone" and v["allowlist"] == []
+    # nobody
+    set_pilot_visibility(conn, 111, "nobody")
+    assert get_pilot_visibility(conn, 111)["mode"] == "nobody"
+
+
+def test_pilot_visibility_invalid_mode_raises():
+    conn = _make_conn()
+    with pytest.raises(ValueError):
+        set_pilot_visibility(conn, 111, "bogus")
 
 
 # ---------------------------------------------------------------------------
