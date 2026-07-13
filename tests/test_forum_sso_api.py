@@ -23,7 +23,7 @@ def env(tmp_path, monkeypatch):
     settings = SimpleNamespace(
         DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=SECRET, ADMIN_PASSWORD=PW,
         SSO_SECRET=SSO, FORUM_SSO_URL=FORUM_URL, FORUM_SSO_CALLBACK=CALLBACK,
-        USER_SESSION_MAX_AGE_SEC=3600,
+        USER_SESSION_MAX_AGE_SEC=3600, OPENAIP_API_KEY="", VAPID_PUBLIC_KEY="",
     )
     monkeypatch.setattr(main, "get_settings", lambda: settings)
     main._reset_gate_cache()  # Task 4 stellt diesen Helfer bereit
@@ -107,7 +107,8 @@ def test_callback_sets_user_cookie(env):
     env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
     main._reset_gate_cache()
     me = env.client.get("/api/me")
-    assert me.json() == {"logged_in": True, "name": "Tobias", "cid": "1401925", "is_admin": True}
+    assert me.json() == {"logged_in": True, "board_login_active": True,
+                         "name": "Tobias", "cid": "1401925", "is_admin": True}
 
 
 def test_callback_rejects_state_mismatch(env):
@@ -162,6 +163,14 @@ def test_me_slides_session_cookie(env):
     r = env.client.get("/api/me", cookies=_user_cookie(is_admin=True))
     assert r.json()["logged_in"] is True
     assert "fs_user" in r.cookies
+
+
+def test_me_exposes_board_login_active(env):
+    # Steuert den „mit Forum anmelden"-Link auf der Admin-Login-Seite (allowlisted, auch ohne Login).
+    assert env.client.get("/api/me").json()["board_login_active"] is False
+    env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
+    main._reset_gate_cache()
+    assert env.client.get("/api/me").json()["board_login_active"] is True
 
 
 # --- Task 4: Gate-Middleware ------------------------------------------------

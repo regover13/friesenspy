@@ -753,6 +753,10 @@
         <button type="submit" class="btn btn-primary" style="width:100%;padding:10px 16px;">Anmelden</button>
         <div class="login-error" id="login-error"></div>
       </form>
+      <a id="forum-login-link" href="/auth/forum/login" class="btn"
+         style="display:none;width:100%;padding:10px 16px;margin-top:14px;box-sizing:border-box;text-align:center;text-decoration:none;">
+        🔐 Mit Forum anmelden
+      </a>
     </div>
   </div>
 
@@ -1244,6 +1248,15 @@
       document.getElementById('login-screen').classList.remove('hidden');
       document.getElementById('admin-ui').classList.add('hidden');
       document.getElementById('login-error').textContent = '';
+      // „Mit Forum anmelden"-Link nur zeigen, wenn der Board-Login aktiv ist (/api/me ist
+      // allowlisted und auch bei aktivem Gate ohne Login erreichbar).
+      fetch('/api/me', { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(c => {
+          const el = document.getElementById('forum-login-link');
+          if (el) el.style.display = (c && c.board_login_active) ? 'block' : 'none';
+        })
+        .catch(() => {});
     }
 
     function showAdmin() {

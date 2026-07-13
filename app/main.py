@@ -1593,12 +1593,13 @@ async def api_me(request: Request):
     ohne alle 20 min unterbrochen zu werden."""
     settings = get_settings()
     if not _forum_login_active_cached(settings):
-        return JSONResponse({"logged_in": False})
+        return JSONResponse({"logged_in": False, "board_login_active": False})
     claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
     if not claims:
-        return JSONResponse({"logged_in": False})
-    resp = JSONResponse({"logged_in": True, "name": claims.get("name", ""),
-                         "cid": claims.get("cid", ""), "is_admin": bool(claims.get("is_admin"))})
+        return JSONResponse({"logged_in": False, "board_login_active": True})
+    resp = JSONResponse({"logged_in": True, "board_login_active": True,
+                         "name": claims.get("name", ""), "cid": claims.get("cid", ""),
+                         "is_admin": bool(claims.get("is_admin"))})
     exp = time.time() + settings.USER_SESSION_MAX_AGE_SEC
     resp.set_cookie(
         USER_COOKIE,
