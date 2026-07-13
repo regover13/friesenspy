@@ -1575,6 +1575,7 @@ async def admin_get_forum_login(request: Request):
 async def admin_set_forum_login(request: Request):
     """Board-Login an-/ausschalten (Admin)."""
     require_admin(request)
+    require_confirm(request)
     body = await request.json()
     enabled = bool(body.get("enabled"))
     conn = get_connection(get_settings().DB_PATH)
@@ -1872,6 +1873,7 @@ async def admin_gps_leg_audit(
 async def admin_set_banner(request: Request):
     """Banner-Auswahl setzen: ``auto`` | ``off`` | konkrete Version."""
     require_admin(request)
+    require_confirm(request)
     body = await request.json()
     version = str(body.get("version", "auto")).strip() or "auto"
     conn = get_connection(get_settings().DB_PATH)
@@ -2632,6 +2634,7 @@ async def admin_upsert_payload(request: Request):
 async def admin_transport_payload_suggest(request: Request, type: str):
     """KI-Vorschlag (Claude) für die Zuladungs-Komponenten eines Flugzeugtyps."""
     require_admin(request)
+    require_confirm(request)
     from app import llm
     if not llm.is_configured():
         raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY nicht konfiguriert")
@@ -2872,6 +2875,7 @@ async def admin_delete_catalog(request: Request, catalog_id: int):
 async def admin_set_quips_enabled(request: Request):
     """Lustige KI-Sprüche global an-/ausschalten."""
     require_admin(request)
+    require_confirm(request)
     body = await request.json()
     enabled = bool(body.get("enabled"))
     conn = get_connection(get_settings().DB_PATH)
@@ -2889,6 +2893,7 @@ async def admin_regenerate_transport_quips(event_id: int, request: Request):
     (~60 s) neu, mit der aktuellen Spruch-Logik. Nötig, wenn ein bereits generierter Spruch
     veraltet ist (z. B. Liefer-Text für einen inzwischen als geklaut/versunken erkannten Flug)."""
     require_admin(request)
+    require_confirm(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         cleared = clear_transport_quips(conn, event_id)

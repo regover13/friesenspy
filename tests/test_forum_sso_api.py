@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import forum_sso, main
-from app.auth import make_admin_token
+from app.auth import make_admin_token, make_confirm_token
 from app.database import get_connection, init_db, set_app_setting
 
 SECRET = "s3cr3t-key"
@@ -32,7 +32,11 @@ def env(tmp_path, monkeypatch):
 
 
 def _admin_cookie() -> dict:
-    return {"fs_admin": make_admin_token(SECRET, PW)}
+    # Admin-Cookie + fern-gültiges Step-up-Token (POST /forum-login verlangt jetzt require_confirm).
+    return {
+        "fs_admin": make_admin_token(SECRET, PW),
+        "fs_confirm": make_confirm_token(SECRET, PW, 9_999_999_999),
+    }
 
 
 def _admin_site_cookie() -> dict:

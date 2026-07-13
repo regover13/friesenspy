@@ -1429,8 +1429,15 @@
       } catch { /* still */ }
     }
     document.getElementById('forumLoginToggle').addEventListener('change', async e => {
-      const res = await api('POST', '/api/admin/forum-login', { enabled: e.target.checked });
-      if (res && res.ok) toast('Board-Login ' + (e.target.checked ? 'aktiviert' : 'deaktiviert') + '.');
+      const desired = e.target.checked;
+      const ok = await confirmCritical('Board-Login ändern?',
+        desired
+          ? 'Danach ist die App nur noch für eingeloggte Forum-Mitglieder sichtbar. Fortfahren?'
+          : 'Danach ist die App wieder öffentlich sichtbar (kein Forum-Login nötig). Fortfahren?',
+        'Ändern', true);
+      if (!ok) { loadForumLogin(); return; }   // Auswahl zurücksetzen
+      const res = await api('POST', '/api/admin/forum-login', { enabled: desired });
+      if (res && res.ok) toast('Board-Login ' + (desired ? 'aktiviert' : 'deaktiviert') + '.');
       loadForumLogin();
     });
 
@@ -2096,6 +2103,9 @@
     document.getElementById('banner-save-btn').addEventListener('click', async () => {
       const sel = document.querySelector('input[name="banner-choice"]:checked');
       const version = sel ? sel.value : 'auto';
+      const ok = await confirmCritical('Hinweis-Banner speichern?',
+        'Die Banner-Auswahl auf der App-Startseite wird für alle Nutzer geändert.', 'Speichern', false);
+      if (!ok) return;
       const res = await api('POST', '/api/admin/banner', { version });
       if (!res) return;
       if (!res.ok) { toast('Speichern fehlgeschlagen.', true); return; }
@@ -2552,8 +2562,8 @@
     }
 
     async function keRegenQuips(id) {
-      const ok = await showModal('Sprüche neu generieren?',
-        'Alle gecachten KI-Sprüche dieses Events werden gelöscht. Der Poller baut sie beim nächsten Durchlauf (~60 s) neu — mit der aktuellen Spruch-Logik.', 'Neu generieren');
+      const ok = await confirmCritical('Sprüche neu generieren?',
+        'Alle gecachten KI-Sprüche dieses Events werden gelöscht. Der Poller baut sie beim nächsten Durchlauf (~60 s) neu — mit der aktuellen Spruch-Logik.', 'Neu generieren', false);
       if (!ok) return;
       const res = await api('POST', '/api/admin/transport/events/' + id + '/regenerate-quips', {});
       if (!res || !res.ok) { toast('Fehler beim Zurücksetzen.', true); return; }
@@ -2619,6 +2629,9 @@
     document.getElementById('kp-suggest-btn').addEventListener('click', async () => {
       const type = document.getElementById('kp-type').value.trim();
       if (!type) { toast('Typcode eingeben.', true); return; }
+      const ok = await confirmCritical('KI-Vorschlag anfordern?',
+        `Claude (Sonnet 5) recherchiert die Zuladungs-Werte für „${type}" im Web — das kostet ein paar Cent pro Anfrage.`, 'Anfordern', false);
+      if (!ok) return;
       const btn = document.getElementById('kp-suggest-btn');
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = '🔎 recherchiert…';
@@ -2898,9 +2911,16 @@
     }
 
     document.getElementById('ke-quips-toggle').addEventListener('change', async (e) => {
-      const res = await api('POST', '/api/admin/transport/quips-enabled', { enabled: e.target.checked });
-      if (!res || !res.ok) { toast('Fehler.', true); e.target.checked = !e.target.checked; return; }
-      toast(e.target.checked ? 'KI-Sprüche aktiviert.' : 'KI-Sprüche deaktiviert.');
+      const desired = e.target.checked;
+      const ok = await confirmCritical('KI-Sprüche umschalten?',
+        desired
+          ? 'Sprüche zu Flügen und die Tagesend-Zusammenfassung werden künftig per Claude (Sonnet 5) erzeugt (kostenpflichtig). Aktivieren?'
+          : 'Es werden keine neuen KI-Sprüche/Zusammenfassungen mehr erzeugt. Deaktivieren?',
+        'Umschalten', false);
+      if (!ok) { e.target.checked = !desired; return; }   // Auswahl zurücksetzen
+      const res = await api('POST', '/api/admin/transport/quips-enabled', { enabled: desired });
+      if (!res || !res.ok) { toast('Fehler.', true); e.target.checked = !desired; return; }
+      toast(desired ? 'KI-Sprüche aktiviert.' : 'KI-Sprüche deaktiviert.');
     });
 
     // ====================================================================

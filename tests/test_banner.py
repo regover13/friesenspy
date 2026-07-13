@@ -7,17 +7,20 @@ from types import SimpleNamespace
 import pytest
 
 import app.main as main
-from app.auth import ADMIN_COOKIE, make_admin_token
+from app.auth import ADMIN_COOKIE, CONFIRM_COOKIE, make_admin_token, make_confirm_token
 from app.database import init_db
 
 SECRET = "s3cr3t"
 PW = "test-admin-pw"
 TOKEN = make_admin_token(SECRET, PW)
+CONFIRM_TOKEN = make_confirm_token(SECRET, PW, 9_999_999_999)
 
 
 class FakeReq:
     def __init__(self, cookies=None, body=None):
-        self.cookies = cookies if cookies is not None else {ADMIN_COOKIE: TOKEN}
+        self.cookies = cookies if cookies is not None else {
+            ADMIN_COOKIE: TOKEN, CONFIRM_COOKIE: CONFIRM_TOKEN,
+        }
         self._body = body or {}
 
     async def json(self):
