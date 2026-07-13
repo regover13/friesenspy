@@ -165,9 +165,10 @@ Forum und ist jederzeit spurlos entfernbar (Datei löschen → Zustand wie vorhe
      mit Rücksprung auf sich selbst — den Login macht also phpBB, nicht wir;
    - baut für eingeloggte Nutzer das signierte Token (Abschnitt 4.2) und leitet zum
      FriesenSpy-Callback zurück; das `redirect`-Ziel wird gegen eine feste Whitelist geprüft.
-2. **Kleine Config-Datei** (z. B. `/var/www/bb_friesen/sso_config.php`, außerhalb der
-   Web-Auslieferung lesbar) mit dem gemeinsamen `SSO_SECRET`. **Nicht** in git, **nicht** in
-   phpBBs `config.php`.
+2. **Vier Werte im Kopf von `sso.php`** anpassen (`$SSO_SECRET`, `$CALLBACK`, `$CID_FIELD`,
+   `$ADMIN_GID`). Das Secret steht direkt in der Datei — sicher, weil PHP ausgeführt und nicht
+   als Quelltext ausgeliefert wird (wie phpBBs `config.php`). Keine zweite Datei. Die Datei mit
+   echtem Secret **nicht** committen/öffentlich weitergeben.
 3. **Nichts weiter** — Gruppe „Events" (`g=8`) und Profilfeld „VatSim-ID" existieren bereits,
    werden nur *gelesen*. (Den internen `field_ident` liest `sso.php` dynamisch über den
    Feld-Namen; ein einmaliger rein lesender Blick zur Bestätigung schadet nicht, ist aber
@@ -202,7 +203,7 @@ $user->session_begin();               // aktuelle Login-Session lesen
 $auth->acl($user->data);
 $user->setup();
 
-$secret   = require __DIR__ . '/sso_config.php';   // SSO_SECRET
+$secret   = $SSO_SECRET;   // aus dem EINSTELLUNGEN-Block oben in derselben Datei
 $allowed  = 'https://friesenspy.devprops.de/auth/forum/callback';
 $redirect = (string)($_GET['redirect'] ?? '');
 $state    = (string)($_GET['state'] ?? '');
