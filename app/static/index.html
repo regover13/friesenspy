@@ -1144,14 +1144,19 @@
       margin-bottom: 8px;
     }
     .notif-radio-row label { cursor: pointer; display: flex; align-items: center; gap: 6px; }
-    #notif-pilot-list {
+    #notif-pilot-list, #visibility-pilot-list {
       max-height: 150px;
       overflow-y: auto;
       margin: 6px 0 8px;
       display: flex;
       flex-direction: column;
       gap: 3px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--green-dim) transparent;
     }
+    #notif-pilot-list::-webkit-scrollbar, #visibility-pilot-list::-webkit-scrollbar { width: 8px; }
+    #notif-pilot-list::-webkit-scrollbar-thumb,
+    #visibility-pilot-list::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 4px; }
     .notif-pilot-cb { display: flex; align-items: center; gap: 6px; cursor: pointer; }
     .notif-pilot-cb:has(input:disabled) { opacity: 0.55; cursor: default; }
     .notif-save-btn {
@@ -1532,6 +1537,21 @@
       </div>
       <div id="notif-pilot-list" hidden></div>
       <button class="notif-save-btn" id="notif-save-btn">Speichern</button>
+    </div>
+    <div id="visibility-section" class="notif-filter-section" hidden
+         style="border-top:1px solid rgba(45,156,219,0.2); margin-top:14px; padding-top:12px;">
+      <div class="notif-filter-title">🔒 Wer darf über mich benachrichtigt werden?</div>
+      <div class="notif-radio-row">
+        <label><input type="radio" name="visibility-mode" value="everyone" checked> Alle</label>
+        <label><input type="radio" name="visibility-mode" value="allowlist"> Nur bestimmte</label>
+        <label><input type="radio" name="visibility-mode" value="nobody"> Keiner</label>
+      </div>
+      <div id="visibility-pilot-list" hidden></div>
+      <div class="notif-hint" style="color:var(--text-dim); margin:6px 0 8px;">
+        Betrifft nur Push- &amp; Telegram-Benachrichtigungen über deine Aktivität — nicht die
+        Live-Anzeige. Nur eingeloggte Mitglieder mit eigenem Abo profitieren effektiv.
+      </div>
+      <button class="notif-save-btn" id="visibility-save-btn">Speichern</button>
     </div>
     <div id="notif-ios-hint" class="notif-hint" hidden>
       Für Benachrichtigungen auf dem iPhone:<br>
@@ -2211,6 +2231,12 @@ function fsRefreshSession() {
         _fsWasLoggedIn = true;
         document.getElementById('userName').textContent = d.name || ('CID ' + (d.cid || '—'));
         document.getElementById('userBox').hidden = false;
+        // Sichtbarkeits-Panel nur für eingeloggte Mitglieder (CID bekannt).
+        const vs = document.getElementById('visibility-section');
+        if (vs && d.cid) {
+          if (vs.hidden) { vs.hidden = false; loadVisibility(); }
+        }
+        _claimPushOwnership();   // bestehendes Abo dem Nutzer zuordnen (Backfill)
       } else if (_fsWasLoggedIn) {
         _fsWasLoggedIn = false;
         window.location.href = '/auth/forum/login';
@@ -2220,6 +2246,72 @@ function fsRefreshSession() {
 }
 fsRefreshSession();
 setInterval(fsRefreshSession, 5 * 60 * 1000);
+
+// --- Subjekt-Sichtbarkeit: „Wer darf über mich benachrichtigt werden?" ------
+let _visibilityPilots = [];
+let _pushOwnershipClaimed = false;
+
+function _renderVisibilityPilots(allowlist) {
+  const c = document.getElementById('visibility-pilot-list');
+  if (!c) return;
+  const allow = new Set(allowlist || []);
+  c.innerHTML = _visibilityPilots.map(p =>
+    `<label class="notif-pilot-cb"><input type="checkbox" data-cid="${p.cid}"` +
+    `${allow.has(p.cid) ? ' checked' : ''}> ` +
+    `${escHtml((p.callsign || '').toUpperCase() || ('CID ' + p.cid))}</label>`
+  ).join('');
+}
+
+function _applyVisibilityModeUI() {
+  const mode = document.querySelector('input[name="visibility-mode"]:checked')?.value || 'everyone';
+  const list = document.getElementById('visibility-pilot-list');
+  if (list) list.hidden = (mode !== 'allowlist');
+}
+
+function loadVisibility() {
+  fetch('/api/me/visibility', { credentials: 'same-origin' })
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      if (!d) return;
+      _visibilityPilots = d.pilots || [];
+      const radio = document.querySelector(
+        `input[name="visibility-mode"][value="${d.mode || 'everyone'}"]`);
+      if (radio) radio.checked = true;
+      _renderVisibilityPilots(d.allowlist || []);
+      _applyVisibilityModeUI();
+    })
+    .catch(() => {});
+}
+
+function saveVisibility() {
+  const mode = document.querySelector('input[name="visibility-mode"]:checked')?.value || 'everyone';
+  const body = { mode };
+  if (mode === 'allowlist') {
+    body.allowlist = [...document.querySelectorAll(
+      '#visibility-pilot-list input[type=checkbox]:checked')].map(cb => Number(cb.dataset.cid));
+  }
+  const btn = document.getElementById('visibility-save-btn');
+  fetch('/api/me/visibility', {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(r => {
+    if (!btn) return;
+    const t = btn.textContent;
+    btn.textContent = r.ok ? '✓ Gespeichert' : 'Fehler';
+    setTimeout(() => { btn.textContent = t; }, 1500);
+  }).catch(() => {});
+}
+
+function _claimPushOwnership() {
+  if (_pushOwnershipClaimed || !_fsWasLoggedIn || !_pushSubscription) return;
+  _pushOwnershipClaimed = true;
+  fetch('/api/push/claim', {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint: _pushSubscription.endpoint }),
+  }).catch(() => { _pushOwnershipClaimed = false; });
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   const notifBtn    = document.getElementById('notif-btn');
@@ -2263,6 +2355,21 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   saveBtn?.addEventListener('click', _saveNotifFilter);
+
+  document.querySelectorAll('input[name="visibility-mode"]').forEach(r => {
+    r.addEventListener('change', () => {
+      _applyVisibilityModeUI();
+      // Beim Wechsel auf „Nur bestimmte" alle anhaken (wie der Empfänger-Picker) — außer es
+      // ist bereits eine Auswahl gesetzt.
+      if (r.value === 'allowlist') {
+        const cbs = document.querySelectorAll('#visibility-pilot-list input[type=checkbox]');
+        if (cbs.length && ![...cbs].some(cb => cb.checked)) {
+          cbs.forEach(cb => { cb.checked = true; });
+        }
+      }
+    });
+  });
+  document.getElementById('visibility-save-btn')?.addEventListener('click', saveVisibility);
 
   document.getElementById('notif-reset-btn')?.addEventListener('click', async () => {
     if (!confirm('Service Worker zurücksetzen und Seite neu laden?')) return;
