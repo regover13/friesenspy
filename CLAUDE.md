@@ -2,6 +2,13 @@
 
 VATSIM Live-Tracker für die FriesenFlieger-Gruppe.
 
+## Unterschrift (nur auf ausdrückliche Anforderung)
+
+Wenn — und NUR wenn — der Nutzer eine Unterschrift ausdrücklich anfordert (z. B.
+„unterschreibe", „mit Unterschrift", „mit deinem Logo"), Nachrichten und E-Mails mit
+`🤖 Claude` signieren. NIEMALS von selbst unterschreiben: ohne diese ausdrückliche
+Aufforderung bleibt jede Nachricht/E-Mail ohne Signatur.
+
 ## Stack
 
 Python 3.11, FastAPI, APScheduler, SQLite (WAL), httpx, pydantic-settings, airportsdata, ts3
