@@ -371,3 +371,47 @@ def test_push_claim_logged_in_and_anonymous(env):
     row = conn.execute("SELECT owner_cid FROM push_subscriptions WHERE endpoint='c1'").fetchone()
     conn.close()
     assert row["owner_cid"] == 1234567
+
+
+# --- Task 6: Callback speichert Forum-Callsign(s) ---------------------------
+
+def _forum_callsigns(env):
+    conn = get_connection(env.db)
+    rows = {r["callsign"]: r["cid"]
+            for r in conn.execute("SELECT callsign, cid FROM forum_callsign").fetchall()}
+    conn.close()
+    return rows
+
+
+def test_callback_writes_forum_callsign(env):
+    env.client.cookies.set("fs_sso_state", "st8")
+    tok = _mint_incoming({"sub": 1, "name": "T", "cid": "1602713", "is_admin": False,
+                          "iat": time.time(), "nonce": "cs1", "cs": ["FRS49", "frs49n", ""]})
+    r = env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
+    assert r.status_code == 302
+    assert _forum_callsigns(env) == {"FRS49": 1602713, "FRS49N": 1602713}  # UPPER, leer verworfen
+
+
+def test_callback_without_cs_no_rows(env):
+    env.client.cookies.set("fs_sso_state", "st8")
+    tok = _mint_incoming({"sub": 1, "name": "T", "cid": "1602713", "is_admin": False,
+                          "iat": time.time(), "nonce": "cs2"})
+    r = env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
+    assert r.status_code == 302 and _forum_callsigns(env) == {}
+
+
+def test_callback_defective_cs_ignored(env):
+    env.client.cookies.set("fs_sso_state", "st8")
+    tok = _mint_incoming({"sub": 1, "name": "T", "cid": "999", "is_admin": False,
+                          "iat": time.time(), "nonce": "cs3", "cs": [123, {"x": 1}, "FRS7"]})
+    r = env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
+    assert r.status_code == 302 and list(_forum_callsigns(env)) == ["FRS7"]
+
+
+def test_callback_self_cleanup_removes_stale(env):
+    for nonce, cs in (("a", ["FRS49", "FRS49N"]), ("b", ["FRS49"])):
+        env.client.cookies.set("fs_sso_state", "st8")
+        tok = _mint_incoming({"sub": 1, "name": "T", "cid": "1602713", "is_admin": False,
+                              "iat": time.time(), "nonce": nonce, "cs": cs})
+        env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
+    assert list(_forum_callsigns(env)) == ["FRS49"]   # FRS49N bereinigt

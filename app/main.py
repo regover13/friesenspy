@@ -62,6 +62,7 @@ from app.database import (
     get_pilot_visibility,
     set_pilot_visibility,
     set_push_subscription_owner,
+    upsert_forum_callsign,
     list_pilots,
     set_app_setting,
     upsert_pilot,
@@ -1589,6 +1590,30 @@ async def forum_callback(request: Request):
         settings.SECRET_KEY, claims.get("sub"), str(claims.get("name", "")),
         str(claims.get("cid", "")), bool(claims.get("is_admin")), exp,
     )
+    # Autoritative Callsign→CID-Map aus dem Forum-Profil (Token v2, Feld `cs`) pflegen —
+    # defensiv (nur Liste, nur String-Einträge, plausible Länge) + eigene Alt-Zeilen bereinigen.
+    raw_cid = str(claims.get("cid", "")).strip()
+    cs_list = claims.get("cs")
+    if raw_cid.isdigit() and isinstance(cs_list, list):
+        cid_int = int(raw_cid)
+        clean: list[str] = []
+        for cs in cs_list:
+            if isinstance(cs, str):
+                v = cs.strip().upper()
+                if 0 < len(v) <= 16 and v not in clean:
+                    clean.append(v)
+        conn = get_connection(settings.DB_PATH)
+        try:
+            for v in clean:
+                upsert_forum_callsign(conn, v, cid_int)
+            placeholders = ",".join("?" * len(clean)) or "NULL"
+            conn.execute(
+                f"DELETE FROM forum_callsign WHERE cid = ? AND callsign NOT IN ({placeholders})",
+                (cid_int, *clean),
+            )
+            conn.commit()
+        finally:
+            conn.close()
     resp = RedirectResponse("/", status_code=302)
     resp.set_cookie(USER_COOKIE, user_token, httponly=True, secure=_is_https(request),
                     samesite="lax", path="/", max_age=settings.USER_SESSION_MAX_AGE_SEC)
