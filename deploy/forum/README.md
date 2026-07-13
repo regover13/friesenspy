@@ -8,6 +8,12 @@ Lesen von Session/Profil/Gruppe). Löschen = Zustand exakt wie vorher.
 > Das Secret muss identisch zu `SSO_SECRET` in FriesenSpys `config.env` sein — steht in der
 > Datei, die du erhältst, bereits drin. Du musst sie nur ablegen und die Rechte setzen.
 
+> **v2 (Callsign):** Die Bridge liest jetzt zusätzlich die Profilfelder `pf_phpbb_callsign`,
+> `pf_phpbb_last_cs` und `pf_phpbb_alt_cs` (FRS-Rufzeichen) und legt sie ins Login-Token —
+> weiterhin **rein lesend**, kein Schreibzugriff. FriesenSpy nutzt sie, um Mitglieder eindeutig
+> ihrem TeamSpeak-Callsign zuzuordnen. Fehlt eines der Felder, funktioniert alles weiter (das
+> Rufzeichen bleibt dann nur leer). Update = einfach die neue Datei über die alte legen.
+
 ## Warum 640 (wichtig)
 
 phpBB läuft als Benutzer `www-data`, der Mitglied der Gruppe `www-bb_friesen` ist. Damit

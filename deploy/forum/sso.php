@@ -18,8 +18,8 @@
  *       FriesenSpy prüft die Signatur und weiß dann sicher, wer angemeldet ist.
  *
  *  WICHTIG / SICHERHEIT:
- *    - Diese Datei LIEST nur (Login-Status, Profilfeld, Gruppe). Sie schreibt
- *      NICHTS ins Forum und verändert phpBB nicht. Löschen = alles wie vorher.
+ *    - Diese Datei LIEST nur (Login-Status, Profilfelder: CID + Rufzeichen, Gruppe). Sie
+ *      schreibt NICHTS ins Forum und verändert phpBB nicht. Löschen = alles wie vorher.
  *    - Das Geheimnis ($SSO_SECRET) steht direkt unten drin. Das ist sicher,
  *      weil PHP auf dem Server AUSGEFÜHRT und nie als Quelltext ausgeliefert
  *      wird — genau wie das DB-Passwort in phpBBs eigener config.php.
@@ -46,6 +46,11 @@ $CID_FIELD  = 'pf_phpbb_vatsimid';
 
 // (4) Forum-Gruppen-ID, deren Mitglieder in FriesenSpy Admin-Rechte bekommen (Gruppe "Events").
 $ADMIN_GID  = 8;
+
+// (5) Profilfelder mit dem/den FRS-Rufzeichen. Alle nicht-leeren Werte kommen (großgeschrieben,
+//     dedupliziert) als Liste `cs` ins Token — FriesenSpy nutzt sie, um Mitglieder eindeutig
+//     ihrem TeamSpeak-Callsign zuzuordnen (Benachrichtigungs-Sichtbarkeit). Rein lesend.
+$CS_FIELDS  = array('pf_phpbb_callsign', 'pf_phpbb_last_cs', 'pf_phpbb_alt_cs');
 
 // =================================================================================
 
@@ -105,13 +110,30 @@ $uid = (int) $user->data['user_id'];
 // VATSIM-CID direkt aus der Profilfeld-Tabelle lesen (robust; die Manager-API liefert je nach
 // phpBB-Version verschachtelte Strukturen). $CID_FIELD ist der Spaltenname (aus der Config,
 // kein Nutzer-Input -> unbedenklich). Leer, falls nicht gepflegt.
+// In derselben Zeile lesen wir auch die FRS-Rufzeichen-Felder (Spaltennamen aus der Config,
+// kein Nutzer-Input -> unbedenklich). Aliasse fs_cs0/fs_cs1/... je Feld.
 $cid = '';
-$sql = 'SELECT ' . $CID_FIELD . ' AS fs_cid
+$cs  = array();
+$cs_cols = '';
+foreach ($CS_FIELDS as $i => $f) {
+    $cs_cols .= ', ' . $f . ' AS fs_cs' . $i;
+}
+$sql = 'SELECT ' . $CID_FIELD . ' AS fs_cid' . $cs_cols . '
     FROM ' . PROFILE_FIELDS_DATA_TABLE . '
     WHERE user_id = ' . (int) $uid;
 $res = $db->sql_query($sql);
-$cid = (string) $db->sql_fetchfield('fs_cid');
+$row = $db->sql_fetchrow($res);
 $db->sql_freeresult($res);
+if ($row) {
+    $cid = (string) $row['fs_cid'];
+    // Nicht-leere, getrimmte, großgeschriebene, deduplizierte Rufzeichen sammeln.
+    foreach ($CS_FIELDS as $i => $f) {
+        $v = strtoupper(trim((string) $row['fs_cs' . $i]));
+        if ($v !== '' && !in_array($v, $cs, true)) {
+            $cs[] = $v;
+        }
+    }
+}
 
 // Admin-Flag: Ist der Nutzer Mitglied der Gruppe "Events"? -> dann in FriesenSpy Admin.
 // group_memberships() gibt die Treffer zurück; leer = kein Mitglied.
@@ -128,6 +150,7 @@ $payload = array(
     'sub'      => $uid,
     'name'     => (string) $user->data['username'],
     'cid'      => $cid,
+    'cs'       => $cs,                 // Liste der FRS-Rufzeichen (kann leer sein)
     'is_admin' => (bool) $is_admin,
     'iat'      => time(),
     'nonce'    => bin2hex(random_bytes(16)),
