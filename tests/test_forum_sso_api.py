@@ -103,6 +103,9 @@ def test_callback_sets_user_cookie(env):
     r = env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"] == "/"
     assert "fs_user" in r.cookies
+    # /api/me spiegelt den Login nur bei AKTIVEM Board-Login:
+    env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
+    main._reset_gate_cache()
     me = env.client.get("/api/me")
     assert me.json() == {"logged_in": True, "name": "Tobias", "cid": "1401925", "is_admin": True}
 
@@ -133,12 +136,22 @@ def test_callback_rejects_replayed_nonce(env):
 
 
 def test_logout_clears_user_cookie(env):
+    env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
+    main._reset_gate_cache()
     env.client.cookies.set("fs_sso_state", "st8")
     tok = _mint_incoming({"sub": 1, "name": "x", "cid": "", "is_admin": False,
                           "iat": time.time(), "nonce": "n3"})
     env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
+    assert env.client.get("/api/me").json()["logged_in"] is True
     r = env.client.get("/auth/forum/logout", follow_redirects=False)
     assert r.status_code == 302
+    assert env.client.get("/api/me").json()["logged_in"] is False
+
+
+def test_me_false_when_board_login_off(env):
+    # Altes fs_user-Cookie, aber Board-Login AUS → kein Name (logged_in false).
+    env.client.cookies.update(_user_cookie(is_admin=False))
+    main._reset_gate_cache()
     assert env.client.get("/api/me").json()["logged_in"] is False
 
 

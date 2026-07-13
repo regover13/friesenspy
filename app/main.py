@@ -1584,8 +1584,12 @@ async def forum_logout():
 
 @app.get("/api/me")
 async def api_me(request: Request):
-    """Login-Status für das Frontend (aus dem eigenen Session-Cookie)."""
+    """Login-Status für das Frontend. Nur relevant, wenn der Board-Login aktiv ist — ein evtl.
+    noch gültiges ``fs_user``-Cookie zählt NICHT, wenn der Schalter aus (oder nicht konfiguriert)
+    ist (sonst zeigt der Name-Chip trotz öffentlicher App weiter einen Namen)."""
     settings = get_settings()
+    if not _forum_login_active_cached(settings):
+        return {"logged_in": False}
     claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
     if not claims:
         return {"logged_in": False}
