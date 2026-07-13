@@ -1,33 +1,70 @@
-# FriesenSpy Board-Login-Bridge (`sso.php`)
+# FriesenSpy Board-Login-Bridge (`sso.php`) — Installation für den Forum-Admin
 
-Diese **eine Datei** macht den phpBB-Forum-Login als SSO für FriesenSpy nutzbar. Sie wird
-**neben phpBB** abgelegt und **verändert das Forum nicht** (kein Patch, keine Extension, nur
-Lesen).
+Diese **eine Datei** macht den phpBB-Forum-Login als SSO für FriesenSpy nutzbar. Sie liegt
+**neben phpBB** im Docroot und **verändert das Forum nicht** (kein Patch, keine Extension, nur
+Lesen von Session/Profil/Gruppe). Löschen = Zustand exakt wie vorher.
 
-## Installation (durch den Forum-Admin)
+> **Du bekommst die fertige `sso.php` mit eingetragenem Secret separat von Tobias.**
+> Das Secret muss identisch zu `SSO_SECRET` in FriesenSpys `config.env` sein — steht in der
+> Datei, die du erhältst, bereits drin. Du musst sie nur ablegen und die Rechte setzen.
 
-1. `sso.php` in den Forum-Docroot kopieren: `/var/www/bb_friesen/sso.php`.
-2. Oben im **EINSTELLUNGEN-Block** die vier Werte anpassen:
-   - `$SSO_SECRET`: langer Zufallsstring, **identisch** zu `SSO_SECRET` in FriesenSpys `config.env`.
-   - `$CALLBACK`: `https://friesenspy.devprops.de/auth/forum/callback`.
-   - `$CID_FIELD`: `pf_phpbb_vatsimid` (Profilfeld „VatSim-ID“ — bereits bestätigt, meist unverändert).
-   - `$ADMIN_GID`: `8` (Gruppe „Events“).
-3. Testen (als eingeloggtes Forum-Mitglied):
-   `https://board.friesenflieger.de/sso.php?redirect=https://friesenspy.devprops.de/auth/forum/callback&state=test`
-   → leitet mit `?token=…&state=test` zurück.
-4. In FriesenSpy: Admin → **Board-Login** einschalten.
+## Warum 640 (wichtig)
 
-Das Secret steht direkt in `sso.php` — das ist sicher, weil PHP **ausgeführt** und nicht als
-Quelltext ausgeliefert wird (genau wie in phpBBs eigener `config.php`). Deshalb: `sso.php`
-**nicht** öffentlich weitergeben/committen, sobald das echte Secret drinsteht.
+phpBB läuft als Benutzer `www-data`, der Mitglied der Gruppe `www-bb_friesen` ist. Damit
+`www-data` die Datei **lesen** kann, aber sie **nicht welt-lesbar** ist (sie enthält das
+Secret — wie phpBBs eigene `config.php`), gehört sie Gruppe `www-bb_friesen` mit Rechten `640`.
 
-## Sicherheit
+## Schritte (auf dem Forum-Server, Shell-Zugang mit Gruppe `www-bb_friesen` oder root)
+
+```bash
+# 1) Datei ins Home hochladen (von deinem Rechner):
+scp sso.php <user>@<forum-server>:~/sso.php
+
+# 2) An ihren Platz verschieben:
+mv ~/sso.php /var/www/bb_friesen/sso.php
+
+# 3) Gruppe + Rechte setzen (nicht welt-lesbar, www-data liest über die Gruppe):
+chgrp www-bb_friesen /var/www/bb_friesen/sso.php
+chmod 640          /var/www/bb_friesen/sso.php
+
+# 4) Ergebnis prüfen — sollte so aussehen: -rw-r----- ... www-bb_friesen ...
+ls -l /var/www/bb_friesen/sso.php
+
+# 5) PHP-Syntax prüfen — muss "No syntax errors detected" liefern:
+php -l /var/www/bb_friesen/sso.php
+```
+
+## Funktionstest (im Browser, als eingeloggtes Forum-Mitglied)
+
+```
+https://board.friesenflieger.de/sso.php?redirect=https://friesenspy.devprops.de/auth/forum/callback&state=test
+```
+
+- **Nicht eingeloggt:** phpBBs normale Anmeldeseite erscheint (mit korrektem Layout) → nach
+  Login geht es weiter.
+- **Eingeloggt:** leitet sofort zurück auf `…/auth/forum/callback?token=…&state=test`.
+  (Bei `state=test` zeigt FriesenSpy danach „Ungültiger SSO-Status" — das ist **korrekt**, weil
+  der manuelle Aufruf den echten Login-Schritt überspringt. Der echte Weg über FriesenSpy
+  funktioniert.)
+
+## Scharfschalten
+
+Erst wenn die Datei liegt: **Tobias** schaltet in FriesenSpy (Admin-Tab → „Board-Login") den
+Schalter **an**. Ab dann ist die App nur noch für eingeloggte Forum-Mitglieder sichtbar;
+Mitglieder der Gruppe **„Events"** sind automatisch FriesenSpy-Admin.
+
+## Entfernen / Rückbau
+
+```bash
+rm /var/www/bb_friesen/sso.php
+```
+→ Forum exakt wie vorher. In FriesenSpy den Schalter ausschalten.
+
+## Sicherheit (kurz)
 
 - Das Forum-Passwort verlässt das Forum nie; der Login passiert in phpBB.
-- Das Token ist ≤ 60 s gültig, trägt einen Einmal-`nonce` (Replay-Schutz), ist mit
-  `$SSO_SECRET` HMAC-signiert und mit `typ:"sso"` typgebunden. Das `redirect`-Ziel wird gegen
-  die feste `$CALLBACK`-Whitelist geprüft.
-
-## Entfernen
-
-`sso.php` löschen → Forum ist exakt wie vorher. In FriesenSpy den Schalter ausschalten.
+- Das Token ist ≤ 60 s gültig, trägt einen Einmal-`nonce` (Replay-Schutz), ist mit dem Secret
+  HMAC-signiert und mit `typ:"sso"` typgebunden; das `redirect`-Ziel wird gegen eine feste
+  Whitelist geprüft.
+- `sso.php` **mit echtem Secret niemals** öffentlich weitergeben oder in git committen (die
+  Vorlage im Repo enthält nur einen Platzhalter).
