@@ -1,5 +1,16 @@
 [
   {
+    "version": "9.1.0",
+    "date": "2026-07-13",
+    "highlight": false,
+    "title": "Selbst bestimmen, wer über mich benachrichtigt wird",
+    "items": [
+      "🔒 Eingeloggte Mitglieder legen im Benachrichtigungs-Panel selbst fest, wer über ihre Aktivität (Online, Flugplan, TeamSpeak) per Push benachrichtigt wird: Alle, nur bestimmte Mitglieder oder niemand. „Nur bestimmte“/„Keiner“ unterdrücken auch die Ankündigung im Telegram-Kanal. Die Live-Anzeige bleibt unberührt.",
+      "🪪 Das FRS-Rufzeichen kommt jetzt aus dem Forum-Profil — dadurch ist die Zuordnung eindeutig, und der Selbst-Ausschluss wirkt auch auf TeamSpeak. Setzt aktiven Board-Login voraus.",
+      "🔤 Nebenbei: Schriften werden jetzt lokal ausgeliefert (keine Google-Fonts-Einbindung mehr) — datensparsamer."
+    ]
+  },
+  {
     "version": "9.0.0",
     "date": "2026-07-13",
     "highlight": false,
