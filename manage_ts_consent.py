@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Admin-CLI für die ts_consent-Tabelle (FriesenSpy Phase 1).
 
+⚠️  VERALTET: 'ts_consent' wird seit dem Subjekt-Sichtbarkeits-Release nicht mehr ausgewertet —
+der Poller nutzt 'pilot_visibility'. Dieses Tool hat KEINE Wirkung mehr; der Selbst-Ausschluss
+läuft über den Board-Login (index.html → „Wer darf über mich benachrichtigt werden?").
+
 Seedet/zeigt Einwilligungen ohne Hand-SQL. Kein Web-UI (spec-konform).
 
 Beispiele:
@@ -43,6 +47,13 @@ def main(argv: list[str] | None = None) -> int:
     p_del.add_argument("frs")
 
     args = parser.parse_args(argv)
+    print(
+        "⚠️  VERALTET: Die Tabelle 'ts_consent' wird seit dem Subjekt-Sichtbarkeits-Release\n"
+        "   NICHT mehr ausgewertet (der Poller nutzt 'pilot_visibility'). Änderungen hier haben\n"
+        "   KEINE Wirkung mehr. Selbst-Ausschluss läuft jetzt über den Board-Login (Nutzer stellt\n"
+        "   in FriesenSpy „Wer darf über mich benachrichtigt werden?“ ein).",
+        file=sys.stderr,
+    )
     conn = get_connection(_db_path(args))
     try:
         if args.cmd == "set":
