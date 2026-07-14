@@ -1689,7 +1689,7 @@
     // ====================================================================
     async function doReveal(id) {
       const r = _races.find(x => x.id === id);
-      const ok = await confirmCritical(
+      const ok = await showModal(
         'Ergebnis enthüllen',
         `Die Wertung von „${r ? r.name : id}" für alle Teilnehmer sichtbar machen?`,
         'Enthüllen',

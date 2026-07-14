@@ -5,7 +5,7 @@
     "highlight": false,
     "title": "Passwort-Rückfrage bei kritischen Admin-Aktionen",
     "items": [
-      "🔐 Kritische Aktionen im Adminportal verlangen jetzt zuerst das Admin-Passwort — gedacht als Schutz, seit das ganze Event-Team Zugriff hat. Betroffen: alles Löschen; Push an alle Geräte; Renn-Ergebnisse enthüllen; das Hinweis-Banner der Startseite ändern; den Board-Login umschalten; sowie die kostenpflichtigen KI-Funktionen (Zuladungs-Vorschlag, Sprüche an/aus, Sprüche neu erzeugen). Nach einmaliger Eingabe gilt ein 2-Stunden-Fenster ohne erneute Abfrage.",
+      "🔐 Kritische Aktionen im Adminportal verlangen jetzt zuerst das Admin-Passwort — gedacht als Schutz, seit das ganze Event-Team Zugriff hat. Betroffen: alles Löschen; Push an alle Geräte; das Hinweis-Banner der Startseite ändern; den Board-Login umschalten; sowie die kostenpflichtigen KI-Funktionen (Zuladungs-Vorschlag, Sprüche an/aus, Sprüche neu erzeugen). Nach einmaliger Eingabe gilt ein 2-Stunden-Fenster ohne erneute Abfrage.",
       "✅ Jede dieser Aktionen zeigt weiterhin einen Bestätigungsdialog — im Zeitfenster ohne Passwortfeld, sonst mit. Normales Anlegen und Bearbeiten (Rennen, Piloten, Flugplätze, Zuladungen …) bleibt ohne Rückfrage.",
       "🛡️ Die Prüfung läuft serverseitig, nicht nur im Browser — ein Umgehen per Direktaufruf ist damit ausgeschlossen."
     ]

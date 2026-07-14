@@ -2102,7 +2102,6 @@ async def admin_reveal_race(request: Request, race_id: int):
     """Notfall-Enthüllung: Ergebnisse sofort sichtbar machen — und (einmalig) Ergebnis-Push
     an die Events-Abonnenten, wie beim automatischen Enthüllen."""
     require_admin(request)
-    require_confirm(request)
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
