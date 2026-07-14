@@ -115,6 +115,39 @@ def test_callback_sets_user_cookie(env):
                          "name": "Tobias", "cid": "1401925", "is_admin": True}
 
 
+def test_login_to_admin_roundtrip(env):
+    # Voller Round-Trip: Login mit ?next=/admin merkt das Ziel, der Callback leitet dorthin.
+    env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
+    main._reset_gate_cache()
+    login = env.client.get("/auth/forum/login?next=/admin", follow_redirects=False)
+    assert login.status_code == 302 and "fs_sso_next" in login.cookies
+    # state-Cookie stammt aus derselben Login-Antwort (im Client-Jar) — Callback nutzt es mit.
+    state = env.client.cookies.get("fs_sso_state")
+    tok = _mint_incoming({"sub": 74, "name": "Tobias", "cid": "1401925",
+                          "is_admin": True, "iat": time.time(), "nonce": "rt-admin"})
+    r = env.client.get(f"/auth/forum/callback?token={tok}&state={state}", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/admin"
+
+
+def test_callback_redirects_to_next(env):
+    env.client.cookies.set("fs_sso_state", "st8")
+    env.client.cookies.set("fs_sso_next", "/admin", path="/auth/forum")
+    tok = _mint_incoming({"sub": 74, "name": "Tobias", "cid": "1401925",
+                          "is_admin": True, "iat": time.time(), "nonce": "n-next"})
+    r = env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/admin"
+
+
+def test_callback_ignores_unsafe_next(env):
+    # Open-Redirect-Versuch (protokoll-relative URL) → Fallback auf "/".
+    env.client.cookies.set("fs_sso_state", "st8")
+    env.client.cookies.set("fs_sso_next", "//evil.example.com", path="/auth/forum")
+    tok = _mint_incoming({"sub": 74, "name": "T", "cid": "1", "is_admin": False,
+                          "iat": time.time(), "nonce": "n-evil"})
+    r = env.client.get(f"/auth/forum/callback?token={tok}&state=st8", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/"
+
+
 def test_callback_rejects_state_mismatch(env):
     env.client.cookies.set("fs_sso_state", "st8")
     tok = _mint_incoming({"iat": time.time(), "nonce": "n2", "sub": 1, "name": "x",

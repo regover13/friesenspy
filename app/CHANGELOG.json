@@ -1,5 +1,13 @@
 [
   {
+    "version": "9.2.2",
+    "date": "2026-07-14",
+    "title": "Nach Forum-Login vom Admin-Bereich zurück zum Admin",
+    "items": [
+      "🔐 Wer sich auf der Admin-Seite über „Mit Forum anmelden“ einloggt, landet jetzt wieder im Admin-Bereich statt auf der FriesenSpy-Startseite. Der Login merkt sich das Ziel und leitet nach erfolgreichem Board-Login dorthin zurück."
+    ]
+  },
+  {
     "version": "9.2.1",
     "date": "2026-07-14",
     "title": "Benachrichtigungs-Panel auf dem Smartphone scrollbar",

@@ -1609,9 +1609,26 @@ def _is_https(request: Request) -> bool:
     return request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
 
 
+def _safe_next_path(raw: str) -> str | None:
+    """Sanitize a post-login redirect target to a SEITENINTERNEN Pfad (kein Open-Redirect).
+
+    Erlaubt nur Pfade, die mit genau EINEM ``/`` beginnen (keine ``//host``- oder
+    ``/\\host``-Protokoll-relativen URLs) und keine Steuer-/Whitespace-Zeichen enthalten
+    (Header-Injection). Alles andere → ``None`` (Aufrufer nimmt dann den Default ``/``)."""
+    if not raw or not raw.startswith("/") or raw.startswith(("//", "/\\")):
+        return None
+    if any(c.isspace() for c in raw):
+        return None
+    return raw
+
+
 @app.get("/auth/forum/login")
 async def forum_login(request: Request):
-    """Startet den Board-Login: Redirect zur Forum-Bridge mit state + Callback."""
+    """Startet den Board-Login: Redirect zur Forum-Bridge mit state + Callback.
+
+    Ein optionaler ``next``-Parameter (seiteninterner Pfad) merkt sich, wohin nach erfolgreichem
+    Login zurückgeleitet wird — z. B. ``/admin``, wenn der Login auf der Admin-Seite gestartet
+    wurde. Er wird kurzlebig als Cookie mitgeführt (wie ``state``) und im Callback ausgewertet."""
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
@@ -1626,6 +1643,10 @@ async def forum_login(request: Request):
     resp = RedirectResponse(target, status_code=302)
     resp.set_cookie("fs_sso_state", state, httponly=True, secure=_is_https(request),
                     samesite="lax", path="/auth/forum", max_age=300)
+    next_path = _safe_next_path(request.query_params.get("next", ""))
+    if next_path:
+        resp.set_cookie("fs_sso_next", next_path, httponly=True, secure=_is_https(request),
+                        samesite="lax", path="/auth/forum", max_age=300)
     return resp
 
 
@@ -1683,10 +1704,13 @@ async def forum_callback(request: Request):
         except Exception:
             _logger.warning("forum_callsign-Persistierung fehlgeschlagen (Login läuft weiter)",
                             exc_info=True)
-    resp = RedirectResponse("/", status_code=302)
+    # Nach erfolgreichem Login zum gemerkten Ziel (z. B. /admin) zurück, sonst zur Startseite.
+    dest = _safe_next_path(request.cookies.get("fs_sso_next", "")) or "/"
+    resp = RedirectResponse(dest, status_code=302)
     resp.set_cookie(USER_COOKIE, user_token, httponly=True, secure=_is_https(request),
                     samesite="lax", path="/", max_age=settings.USER_SESSION_MAX_AGE_SEC)
     resp.delete_cookie("fs_sso_state", path="/auth/forum")
+    resp.delete_cookie("fs_sso_next", path="/auth/forum")
     return resp
 
 
