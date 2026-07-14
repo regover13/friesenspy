@@ -1,5 +1,13 @@
 [
   {
+    "version": "9.2.3",
+    "date": "2026-07-14",
+    "title": "Sichtbarkeits-Picker respektiert die 365-Tage-Grenze",
+    "items": [
+      "🐛 Im Benachrichtigungs-Panel zeigte die untere Liste („Wer darf über mich benachrichtigt werden?“) mehr Piloten als die obere Ziel-Liste — nämlich auch solche, deren letzter Flug länger als 365 Tage her ist. Beide Picker nutzen jetzt dieselbe Quelle und dieselbe 365-Tage-Grenze wie der Rest der App; ein länger inaktiver Pilot erscheint in keiner der beiden Listen mehr."
+    ]
+  },
+  {
     "version": "9.2.2",
     "date": "2026-07-14",
     "title": "Nach Forum-Login vom Admin-Bereich zurück zum Admin",
