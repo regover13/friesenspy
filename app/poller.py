@@ -18,6 +18,7 @@ from app.database import (
     cleanup_old_history,
     close_flight,
     delete_push_subscription,
+    record_push_delivery,
     ensure_pilot,
     get_connection,
     get_live_positions,
@@ -123,6 +124,8 @@ async def send_web_push(
     data = _json.dumps(payload)
     loop = asyncio.get_event_loop()
     to_delete: list[str] = []
+    ok_endpoints: list[str] = []
+    fail_endpoints: dict[str, str] = {}
 
     for sub in subscriptions:
         sub_info = {
@@ -147,6 +150,7 @@ async def send_web_push(
                 )
                 logger.info("%s sent OK: %s", label, sub["endpoint"][:40])
                 sent = True
+                ok_endpoints.append(sub["endpoint"])
                 break
             except WebPushException as exc:
                 resp = getattr(exc, "response", None)
@@ -169,21 +173,23 @@ async def send_web_push(
             cause = repr(getattr(last_exc, "__cause__", None))[:120]
             args = repr(getattr(last_exc, "args", ()))[:200]
             logger.warning("%s failed: %s cause=%s args=%s", label, sc, cause, args)
+            fail_endpoints[sub["endpoint"]] = str(sc)
 
-    if to_delete:
+    if to_delete or ok_endpoints or fail_endpoints:
         # In try/except, weil send_web_push als fire-and-forget create_task läuft: ein
-        # Cleanup-Fehler (z. B. DB kurz nicht erreichbar) darf keine "Task exception was
-        # never retrieved"-Warnung erzeugen.
+        # DB-Fehler (z. B. DB kurz nicht erreichbar) darf keine "Task exception was
+        # never retrieved"-Warnung erzeugen. Erfolg/Fehler-Diagnose ist unkritisch.
         try:
             conn = get_connection(db_path)
             try:
                 for endpoint in to_delete:
                     delete_push_subscription(conn, endpoint)
+                record_push_delivery(conn, ok_endpoints, fail_endpoints)
                 conn.commit()
             finally:
                 conn.close()
         except Exception:
-            logger.warning("%s: Endpoint-Cleanup fehlgeschlagen", label)
+            logger.warning("%s: Endpoint-Cleanup/Diagnose fehlgeschlagen", label)
 
 
 async def send_web_push_notifications(

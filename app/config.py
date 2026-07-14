@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     # Passwort für die Admin-Seite (/admin) — NIE in git, nur in config.env. Leer = Admin aus.
     ADMIN_PASSWORD: str = ""
+    # Extra-Passwort für die unauffällige Push-Diagnose (/admin/push-overview) — zusätzlich zum
+    # Admin-Login. Leer = Feature komplett aus (Seite/Endpoint = 404, Link unsichtbar).
+    PUSH_OVERVIEW_PASSWORD: str = ""
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
     VATSIM_POLL_INTERVAL: int = 15

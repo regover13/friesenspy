@@ -1,5 +1,15 @@
 [
   {
+    "version": "9.3.0",
+    "date": "2026-07-14",
+    "title": "Unauffällige Push-Diagnose für Admins",
+    "items": [
+      "🔎 Neue, versteckte Diagnose-Seite (unscheinbarer Link ganz unten im Admin-Bereich, eigenes Extra-Passwort via PUSH_OVERVIEW_PASSWORD): zeigt alle Push-Abos mit ihrer Auswahl (Flugpläne/TeamSpeak/Events, Piloten-Filter), aufgeteilt nach eingeloggt/anonym, Geräte-Plattform (aus dem Endpoint abgeleitet) und wer sich unsichtbar geschaltet hat.",
+      "🟢 Zustell-Status je Abo: Bei jedem echten Versand wird das Ergebnis des Push-Dienst-Handshakes festgehalten (zuletzt zugestellt / fehlerhaft mit HTTP-Code / noch nie gesendet). Hinweis: Ob der Nutzer die Meldung tatsächlich sieht, kann Web-Push technisch nicht zurückmelden — angezeigt wird nur die Zustellung an den Push-Dienst.",
+      "🔒 Feature ist komplett aus, solange PUSH_OVERVIEW_PASSWORD leer ist (Seite und Endpoint antworten dann mit 404)."
+    ]
+  },
+  {
     "version": "9.2.3",
     "date": "2026-07-14",
     "title": "Sichtbarkeits-Picker respektiert die 365-Tage-Grenze",

@@ -402,6 +402,13 @@ _PUSH_MIGRATIONS = [
     "ALTER TABLE push_subscriptions ADD COLUMN notify_events INTEGER DEFAULT 0",
     # owner_cid: Besitzer-CID des Abos (aus dem Forum-Login) — für die Subjekt-Allowlist.
     "ALTER TABLE push_subscriptions ADD COLUMN owner_cid INTEGER DEFAULT NULL",
+    # Zustellungs-Diagnose (Push-Overview): Ergebnis des jeweils letzten echten Versands.
+    # last_ok_at = letzter erfolgreicher Handshake mit dem Push-Dienst (kein Beweis, dass der
+    # Nutzer die Meldung gesehen hat — das kann Web-Push nicht zurückmelden). last_fail_at/
+    # last_status = letzter fehlgeschlagener Versand + HTTP-Code (410 löscht das Abo ohnehin).
+    "ALTER TABLE push_subscriptions ADD COLUMN last_ok_at TEXT",
+    "ALTER TABLE push_subscriptions ADD COLUMN last_fail_at TEXT",
+    "ALTER TABLE push_subscriptions ADD COLUMN last_status TEXT",
 ]
 
 _VISIBILITY_MIGRATIONS = [
@@ -3216,6 +3223,57 @@ def get_push_subscription_by_endpoint(conn: sqlite3.Connection, endpoint: str) -
         (endpoint,),
     ).fetchone()
     return dict(row) if row is not None else None
+
+
+def record_push_delivery(
+    conn: sqlite3.Connection,
+    ok_endpoints: list[str],
+    fail_endpoints: dict[str, str] | None = None,
+) -> None:
+    """Ergebnis des letzten Versands je Endpoint festhalten (Push-Diagnose).
+
+    ``ok_endpoints`` → last_ok_at = jetzt. ``fail_endpoints`` → {endpoint: status} setzt
+    last_fail_at = jetzt und last_status. Gebündelter Einzel-Write auf dem Fire-and-forget-Pfad;
+    Fehler beim Schreiben werden vom Aufrufer geschluckt (Diagnose ist nie kritisch).
+    """
+    now = _now_utc()
+    for ep in ok_endpoints:
+        conn.execute(
+            "UPDATE push_subscriptions SET last_ok_at = ? WHERE endpoint = ?", (now, ep)
+        )
+    for ep, status in (fail_endpoints or {}).items():
+        conn.execute(
+            "UPDATE push_subscriptions SET last_fail_at = ?, last_status = ? WHERE endpoint = ?",
+            (now, str(status)[:40], ep),
+        )
+
+
+def get_push_overview(conn: sqlite3.Connection) -> list[dict]:
+    """Alle Abos mit ihrer Auswahl + Zustellungs-Diagnose (für die Admin-Push-Übersicht)."""
+    rows = conn.execute(
+        "SELECT endpoint, owner_cid, pilot_filter, notify_prefiles, notify_ts, "
+        "notify_events, ts_self_frs, created_at, last_ok_at, last_fail_at, last_status "
+        "FROM push_subscriptions ORDER BY created_at"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_visibility_restrictions(conn: sqlite3.Connection) -> list[dict]:
+    """Piloten, die sich (teilweise) unsichtbar geschaltet haben (mode <> 'everyone')."""
+    rows = conn.execute(
+        "SELECT cid, mode, allowlist, services, updated_at FROM pilot_visibility "
+        "WHERE mode <> 'everyone' ORDER BY updated_at DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_ts_consent_restrictions(conn: sqlite3.Connection) -> list[dict]:
+    """TeamSpeak-Sichtbarkeit: Einträge, die nicht 'everyone' sind."""
+    rows = conn.execute(
+        "SELECT frs, visibility, allowlist, updated_at FROM ts_consent "
+        "WHERE visibility <> 'everyone' ORDER BY updated_at DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def compute_bummel_standings(
