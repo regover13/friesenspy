@@ -1114,7 +1114,23 @@
       min-width: 260px;
       max-width: 320px;
       font-size: 0.85rem;
+      /* Panel darf nie höher als der sichtbare Bildschirm werden, sonst ist der
+         untere Teil (Speichern-Buttons) auf dem Smartphone abgeschnitten und
+         unerreichbar. 100dvh berücksichtigt die dynamische Browser-Leiste (iOS). */
+      max-height: calc(100vh - 58px - 16px);
+      max-height: calc(100dvh - 58px - 16px);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: var(--green-dim) transparent;
     }
+    .notif-panel::-webkit-scrollbar { width: 8px; }
+    .notif-panel::-webkit-scrollbar-thumb {
+      background: var(--green-dim);
+      border-radius: 4px;
+    }
+    .notif-panel::-webkit-scrollbar-track { background: transparent; }
     .notif-panel-title {
       font-size: 0.75rem;
       letter-spacing: 0.15em;
