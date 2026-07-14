@@ -2975,7 +2975,8 @@ async def widget_preview():
   style="border:none;"
   scrolling="no"&gt;&lt;/iframe&gt;</div>
 <div class="note">
-  Der Hintergrund ist <strong>transparent</strong> — das Widget übernimmt die Farbe der Stelle, an der es sitzt. Es ist für <strong>helle</strong> Hintergründe gemacht; auf dunklen ist die Schrift nicht lesbar.<br>
+  Der Hintergrund ist <strong>transparent</strong> — das Widget übernimmt die Farbe der Stelle, an der es sitzt.<br>
+  Auf einem <strong>dunklen</strong> Hintergrund <code>?dark=1</code> anhängen (<code>…/widget?dark=1</code>) — dann ist die Schrift hell. Ohne den Parameter ist sie dunkel, für helle Hintergründe.<br>
   <strong>Breite:</strong> mindestens 300&nbsp;px, sonst brechen Titel und Fußzeile um. <strong>Höhe:</strong> 90&nbsp;px reichen meist; mit mehreren Piloten und Flugplänen ggf. auf 110&nbsp;px erhöhen.<br>
   ⚠ phpBB (unser Forum) erlaubt standardmäßig keine iframes in Beiträgen — der Code funktioniert nur auf externen Webseiten (z.B. friesenflieger.de) oder direkt im Template.<br>
   Direkter Link zum Widget: <a href="/widget">friesenspy.devprops.de/widget</a>
@@ -3017,8 +3018,23 @@ _FF_ORANGE = "#D75F28"
 
 @app.get("/widget", include_in_schema=False)
 async def widget(request: Request):
-    """Einbettbares iframe-Widget für friesenflieger.de."""
+    """Einbettbares iframe-Widget für friesenflieger.de.
+
+    ``?dark=1`` schaltet auf helle Schrift für dunkle Einbettungen. Nötig, weil der
+    Hintergrund transparent ist und das iframe von außen nicht erkennen kann, ob die
+    einbettende Seite gerade hell oder dunkel läuft (z. B. der Dark-Mode-Schalter des
+    Forums) — die Seite muss es uns beim Einbetten mitgeben.
+    """
     from fastapi.responses import HTMLResponse
+    dark = request.query_params.get("dark", "").lower() in ("1", "true", "yes", "on")
+    # Schrift/Trennlinie je Modus; Flächen bleiben transparent. Farben aus der FF-Palette.
+    fg = _FF_LBLUE if dark else "#053080"
+    fg_dim = "#6f93bd" if dark else "#5577aa"
+    fg_pf = "#a8cdf5" if dark else "#104090"
+    rule = "rgba(143,191,241,0.28)" if dark else "rgba(5,48,128,0.2)"
+    # Die Navy-Box würde auf dunklem Grund mit dem Hintergrund verschwimmen — ein
+    # hellblauer Rand hält sie sichtbar, ohne die Farbe zu wechseln.
+    side_border = f"1px solid {_FF_LBLUE}" if dark else "1px solid transparent"
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
@@ -3075,20 +3091,21 @@ async def widget(request: Request):
   /* Transparent: das Widget übernimmt den Hintergrund der einbettenden Seite
      (Homepage, Forum-Kästen, …) — keine feste Farbe, die irgendwo als Fleck sitzt. */
   html,body{{background:transparent}}
-  body{{color:#053080;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:12px}}
+  body{{color:{fg};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:12px}}
   a{{color:inherit;text-decoration:none;display:block}}
   .w{{display:flex;align-items:center;gap:10px;padding:3px 2px}}
   .main{{flex:1;min-width:0}}
-  .side{{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0}}
+  /* Beide Zähler in EINER Box; als Block untereinander sind die Labels
+     automatisch gleich breit (Boxbreite richtet sich nach dem längeren). */
+  .side{{background:{_FF_NAVY};color:#fff;border:{side_border};padding:3px 7px;border-radius:2px;display:flex;flex-direction:column;gap:2px;flex-shrink:0}}
   .ttl{{font-weight:700;font-size:12px;line-height:1.35}}
   .pilots{{line-height:1.35}}
-  .badge{{background:{_FF_RED};color:#fff;padding:1px 6px;font-size:10px;font-weight:700;border-radius:2px;white-space:nowrap}}
-  .ts-badge{{background:{_FF_ORANGE}}}
-  .none{{color:#5577aa}}
-  .muted{{color:#5577aa}}
-  .pf{{font-size:10px;color:#104090;line-height:1.35}}
-  .muted-time{{color:#5577aa;font-size:9px}}
-  .ft{{font-size:10px;color:#104090;margin-top:2px;border-top:1px solid rgba(5,48,128,0.2);padding-top:2px;line-height:1.3}}
+  .badge{{display:block;font-size:10px;font-weight:700;white-space:nowrap;text-align:center;line-height:1.4}}
+  .none{{color:{fg_dim}}}
+  .muted{{color:{fg_dim}}}
+  .pf{{font-size:10px;color:{fg_pf};line-height:1.35}}
+  .muted-time{{color:{fg_dim};font-size:9px}}
+  .ft{{font-size:10px;color:{fg_pf};margin-top:2px;border-top:1px solid {rule};padding-top:2px;line-height:1.3}}
 </style>
 </head>
 <body>

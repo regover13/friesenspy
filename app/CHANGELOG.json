@@ -1,5 +1,15 @@
 [
   {
+    "version": "9.2.5",
+    "date": "2026-07-14",
+    "highlight": false,
+    "title": "Widget: Zähler in einer Box, und ein Schalter für dunkle Seiten",
+    "items": [
+      "🎨 Die Zähler „online“ und „im TS“ stehen jetzt gemeinsam in einer dunkelblauen Box (FF-Navy #191D53) statt in zwei verschiedenfarbigen Kästchen — beide Labels gleich breit.",
+      "🌙 Neu: `?dark=1` an die Widget-Adresse angehängt schaltet auf helle Schrift, für die Einbettung auf dunklen Seiten (z. B. das Forum im Dark Mode). Ohne den Parameter bleibt es wie bisher dunkel auf hell."
+    ]
+  },
+  {
     "version": "9.2.4",
     "date": "2026-07-14",
     "highlight": false,

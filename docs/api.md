@@ -724,15 +724,26 @@ Im Events-Tab erscheint nach der Bilanz je Teilnehmer **🎖 Badge** (öffnet da
 
 Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*), 7-Tage-Flugstunden und — wenn `TS_NOTIFY_ENABLED=true` — einen TeamSpeak-Zähler-Badge `🎧 N im TS`. Klickbar → öffnet friesenspy.devprops.de.
 
-**Hintergrund transparent** (seit v9.2.0): Das Widget bringt keine eigene Flächenfarbe mit,
+**Hintergrund transparent** (seit v9.2.4): Das Widget bringt keine eigene Flächenfarbe mit,
 sondern übernimmt die der einbettenden Seite — damit passt es ohne Anpassung auf die Homepage
 (`#d0e0f0`) wie in beliebige Forum-Kästen. Zuvor war `#d0e0f0` fest verdrahtet und saß in
-andersfarbigen Containern als sichtbarer Fleck. **Folge:** Auf einem *dunklen* Hintergrund ist
-die Schrift (Navy `#053080`) nicht lesbar — das Widget ist für helle Einbettungen gedacht.
+andersfarbigen Containern als sichtbarer Fleck.
 
-Die Zähler-Badges nutzen die FriesenFlieger-Palette (`Hex codes.txt` aus dem Repaint Kit, dieselbe
-Quelle wie `app/badge.py`): online = FF-Rot `#8A1B1B`, TeamSpeak = FF-Orange `#D75F28`. Ein Grün
-gibt es in der Marke nicht.
+Die beiden Zähler stehen gemeinsam in **einer** Box rechts neben der Pilotenliste, in FF-Navy
+`#191D53`; als Blöcke untereinander sind die Labels automatisch gleich breit. Farben aus der
+FriesenFlieger-Palette (`Hex codes.txt` aus dem Repaint Kit, dieselbe Quelle wie `app/badge.py`) —
+ein Grün gibt es in der Marke nicht.
+
+**Query-Parameter**
+
+| Parameter | Wirkung |
+|-----------|---------|
+| `dark=1` | Helle Schrift (FF-Hellblau `#8FBFF1`) für **dunkle** Einbettungen; die Zähler-Box erhält einen hellblauen Rand, damit sie auf dunklem Grund nicht verschwimmt. Akzeptiert `1`/`true`/`yes`/`on`. |
+
+Ohne den Parameter rendert das Widget in dunkler Schrift (Navy `#053080`) für helle Hintergründe.
+Der Parameter ist nötig, weil der Hintergrund transparent ist: Das iframe kann von außen nicht
+erkennen, ob die einbettende Seite gerade hell oder dunkel läuft (z. B. der Dark-Mode-Schalter des
+Forums) — die einbettende Seite muss es beim Setzen der `src` mitgeben.
 
 ```html
 <iframe src="https://friesenspy.devprops.de/widget" width="300" height="90"
