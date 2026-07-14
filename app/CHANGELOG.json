@@ -1,5 +1,13 @@
 [
   {
+    "version": "9.2.1",
+    "date": "2026-07-14",
+    "title": "Benachrichtigungs-Panel auf dem Smartphone scrollbar",
+    "items": [
+      "📱 Das Benachrichtigungs-Panel (🔔) war auf dem Smartphone unten abgeschnitten — die „Speichern“-Buttons und die Push-Sichtbarkeit waren nicht erreichbar, weil das Panel höher als der Bildschirm wurde und sich nicht scrollen ließ. Das Panel ist jetzt auf die Bildschirmhöhe begrenzt und innen vertikal scrollbar (mit dauerhaft sichtbarer Scrollleiste)."
+    ]
+  },
+  {
     "version": "9.2.0",
     "date": "2026-07-13",
     "highlight": false,
