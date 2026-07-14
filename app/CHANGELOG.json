@@ -1,5 +1,16 @@
 [
   {
+    "version": "9.2.4",
+    "date": "2026-07-14",
+    "highlight": false,
+    "title": "Widget fügt sich überall ein — und ist flacher",
+    "items": [
+      "🎨 Das einbettbare Widget hat keinen eigenen Hintergrund mehr, sondern übernimmt den der Seite, auf der es sitzt. Vorher war die Farbe der Homepage (#d0e0f0) fest verdrahtet — in andersfarbigen Kästen (z. B. im Forum) saß es dadurch als sichtbarer Fleck. Gilt für helle Hintergründe.",
+      "📐 Flacher: Die Zähler „online“ und „im TS“ stehen jetzt seitlich neben der Pilotenliste statt in einer eigenen Zeile darüber. Ohne Flugpläne braucht das Widget nur noch 56 statt 80 px Höhe; der Titel bricht nicht mehr um.",
+      "🎨 Die Zähler tragen jetzt die FriesenFlieger-Farben aus dem Repaint Kit (Rot #8A1B1B, Orange #D75F28) — das bisherige Grün des TS-Zählers gehört nicht zur Marke."
+    ]
+  },
+  {
     "version": "9.2.3",
     "date": "2026-07-14",
     "title": "Sichtbarkeits-Picker respektiert die 365-Tage-Grenze",

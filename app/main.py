@@ -2971,12 +2971,13 @@ async def widget_preview():
 <div class="code-box" onclick="copyCode(this)" title="Klicken zum Kopieren">
 <span class="copy-hint" id="hint">📋 kopieren</span>&lt;iframe
   src="https://friesenspy.devprops.de/widget"
-  width="420" height="140"
+  width="300" height="90"
   style="border:none;"
   scrolling="no"&gt;&lt;/iframe&gt;</div>
 <div class="note">
-  Die Höhe (<code>height</code>) ggf. anpassen — mit eingereichten Flugplänen wird das Widget höher.<br>
-  ⚠ phpBB (unser Forum) erlaubt standardmäßig keine iframes in Beiträgen — der Code funktioniert nur auf externen Webseiten (z.B. friesenflieger.de).<br>
+  Der Hintergrund ist <strong>transparent</strong> — das Widget übernimmt die Farbe der Stelle, an der es sitzt. Es ist für <strong>helle</strong> Hintergründe gemacht; auf dunklen ist die Schrift nicht lesbar.<br>
+  <strong>Breite:</strong> mindestens 300&nbsp;px, sonst brechen Titel und Fußzeile um. <strong>Höhe:</strong> 90&nbsp;px reichen meist; mit mehreren Piloten und Flugplänen ggf. auf 110&nbsp;px erhöhen.<br>
+  ⚠ phpBB (unser Forum) erlaubt standardmäßig keine iframes in Beiträgen — der Code funktioniert nur auf externen Webseiten (z.B. friesenflieger.de) oder direkt im Template.<br>
   Direkter Link zum Widget: <a href="/widget">friesenspy.devprops.de/widget</a>
 </div>
 <script>
@@ -2992,7 +2993,7 @@ function _fitPreview() {
 _wf.addEventListener('load', _fitPreview);  // initial + bei jedem 60s-Auto-Refresh des Widgets
 setInterval(_fitPreview, 5000);             // fängt Inhalts-Reflow (neue Prefiles) zwischendurch ab
 function copyCode(el) {
-  const code = `<iframe\\n  src="https://friesenspy.devprops.de/widget"\\n  width="420" height="140"\\n  style="border:none;"\\n  scrolling="no"></iframe>`;
+  const code = `<iframe\\n  src="https://friesenspy.devprops.de/widget"\\n  width="300" height="90"\\n  style="border:none;"\\n  scrolling="no"></iframe>`;
   navigator.clipboard.writeText(code).then(() => {
     const h = document.getElementById('hint');
     h.textContent = '✓ kopiert';
@@ -3004,6 +3005,14 @@ function copyCode(el) {
 </body>
 </html>"""
     return HTMLResponse(content=html, headers={"Cache-Control": "no-cache"})
+
+
+# FriesenFlieger-Palette (Hex codes.txt aus dem Repaint Kit) — dieselbe Quelle wie
+# app/badge.py. Nur diese vier Farben; ein Grün gibt es in der Marke nicht.
+_FF_LBLUE = "#8FBFF1"
+_FF_NAVY = "#191D53"
+_FF_RED = "#8A1B1B"
+_FF_ORANGE = "#D75F28"
 
 
 @app.get("/widget", include_in_schema=False)
@@ -3063,31 +3072,38 @@ async def widget(request: Request):
 <meta http-equiv="refresh" content="60">
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
-  body{{background:#d0e0f0;color:#053080;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:12px}}
+  /* Transparent: das Widget übernimmt den Hintergrund der einbettenden Seite
+     (Homepage, Forum-Kästen, …) — keine feste Farbe, die irgendwo als Fleck sitzt. */
+  html,body{{background:transparent}}
+  body{{color:#053080;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:12px}}
   a{{color:inherit;text-decoration:none;display:block}}
-  .hd{{background:#053080;color:#fff;padding:4px 10px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px}}
-  .hd-title{{flex:1}}
-  .badge{{background:#D31141;color:#fff;padding:1px 6px;font-size:10px;font-weight:700;border-radius:2px}}
-  .ts-badge{{background:#0a7a3a}}
-  .bd{{padding:5px 10px 4px}}
+  .w{{display:flex;align-items:center;gap:10px;padding:3px 2px}}
+  .main{{flex:1;min-width:0}}
+  .side{{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0}}
+  .ttl{{font-weight:700;font-size:12px;line-height:1.35}}
+  .pilots{{line-height:1.35}}
+  .badge{{background:{_FF_RED};color:#fff;padding:1px 6px;font-size:10px;font-weight:700;border-radius:2px;white-space:nowrap}}
+  .ts-badge{{background:{_FF_ORANGE}}}
   .none{{color:#5577aa}}
   .muted{{color:#5577aa}}
-  .pf{{font-size:10px;color:#104090;margin-top:2px}}
+  .pf{{font-size:10px;color:#104090;line-height:1.35}}
   .muted-time{{color:#5577aa;font-size:9px}}
-  .ft{{font-size:10px;color:#104090;margin-top:4px;border-top:1px solid rgba(5,48,128,0.2);padding-top:3px}}
+  .ft{{font-size:10px;color:#104090;margin-top:2px;border-top:1px solid rgba(5,48,128,0.2);padding-top:2px;line-height:1.3}}
 </style>
 </head>
 <body>
 <a href="https://friesenspy.devprops.de" target="_blank">
-  <div class="hd">
-    <span class="hd-title">✈ FriesenSpy</span>
-    <span class="badge">{len(live)}&nbsp;online</span>
-    {ts_badge}
-  </div>
-  <div class="bd">
-    <div>{pilots_html}</div>
-    {prefile_html}
-    <div class="ft">Flugstunden der letzten 7&nbsp;Tage:&nbsp;{total_h:.1f}&nbsp;h&nbsp;·&nbsp;FriesenSpy.devprops.de</div>
+  <div class="w">
+    <div class="main">
+      <div class="ttl">✈ FriesenSpy</div>
+      <div class="pilots">{pilots_html}</div>
+      {prefile_html}
+      <div class="ft">7&nbsp;Tage:&nbsp;{total_h:.1f}&nbsp;h&nbsp;·&nbsp;FriesenSpy.devprops.de</div>
+    </div>
+    <div class="side">
+      <span class="badge">{len(live)}&nbsp;online</span>
+      {ts_badge}
+    </div>
   </div>
 </a>
 </body>

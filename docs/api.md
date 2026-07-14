@@ -722,12 +722,26 @@ Im Events-Tab erscheint nach der Bilanz je Teilnehmer **🎖 Badge** (öffnet da
 
 ## GET /widget
 
-Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*), 7-Tage-Flugstunden und — wenn `TS_NOTIFY_ENABLED=true` — einen TeamSpeak-Zähler-Badge `🎧 N im TS`. Design im hellen Stil von friesenflieger.de (bg `#d0e0f0`, Navy `#053080`, Vereinsrot `#D31141`). Klickbar → öffnet friesenspy.devprops.de.
+Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*), 7-Tage-Flugstunden und — wenn `TS_NOTIFY_ENABLED=true` — einen TeamSpeak-Zähler-Badge `🎧 N im TS`. Klickbar → öffnet friesenspy.devprops.de.
+
+**Hintergrund transparent** (seit v9.2.0): Das Widget bringt keine eigene Flächenfarbe mit,
+sondern übernimmt die der einbettenden Seite — damit passt es ohne Anpassung auf die Homepage
+(`#d0e0f0`) wie in beliebige Forum-Kästen. Zuvor war `#d0e0f0` fest verdrahtet und saß in
+andersfarbigen Containern als sichtbarer Fleck. **Folge:** Auf einem *dunklen* Hintergrund ist
+die Schrift (Navy `#053080`) nicht lesbar — das Widget ist für helle Einbettungen gedacht.
+
+Die Zähler-Badges nutzen die FriesenFlieger-Palette (`Hex codes.txt` aus dem Repaint Kit, dieselbe
+Quelle wie `app/badge.py`): online = FF-Rot `#8A1B1B`, TeamSpeak = FF-Orange `#D75F28`. Ein Grün
+gibt es in der Marke nicht.
 
 ```html
-<iframe src="https://friesenspy.devprops.de/widget" width="420" height="88"
+<iframe src="https://friesenspy.devprops.de/widget" width="300" height="90"
   style="border:none;" scrolling="no"></iframe>
 ```
+
+**Maße:** Ab **300 px** Breite bleiben Titel, Pilotenliste und Fußzeile einzeilig; darunter
+brechen sie um (bei 220 px wächst das Widget auf 127 px Höhe). Höhe je nach Inhalt: 56 px
+(niemand online), ~70 px (mit einem Flugplan), ~83 px (mehrere Piloten + Flugpläne).
 
 Die Seite enthält `<meta http-equiv="refresh" content="60">` (60-Sekunden-Auto-Refresh) und wird mit `Access-Control-Allow-Origin: *` ausgeliefert. Vorschau + Einbettungscode: `/widget/preview`.
 
