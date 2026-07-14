@@ -722,7 +722,7 @@ Im Events-Tab erscheint nach der Bilanz je Teilnehmer **🎖 Badge** (öffnet da
 
 ## GET /widget
 
-Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*), 7-Tage-Flugstunden und — wenn `TS_NOTIFY_ENABLED=true` — einen TeamSpeak-Zähler-Badge `🎧 N im TS`. Design im hellen Stil von friesenflieger.de (bg `#d0e0f0`, Navy `#053080`). Die beiden Zähler-Badges sitzen in der Kopfzeile beim Schriftzug, in FF-Hellblau `#8FBFF1` auf FF-Navy `#191D53` (Palette: `Hex codes.txt` aus dem Repaint Kit, dieselbe Quelle wie `app/badge.py` — ein Grün gibt es dort nicht). Klickbar → öffnet friesenspy.devprops.de.
+Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*), 7-Tage-Flugstunden und — wenn `TS_NOTIFY_ENABLED=true` — einen TeamSpeak-Zähler-Badge `🎧 N im TS`. Design im hellen Stil von friesenflieger.de (bg `#d0e0f0`, Navy `#053080`). Die beiden Zähler-Badges sitzen in der Kopfzeile beim Schriftzug, in FF-Hellblau `#8FBFF1` auf FF-Navy `#191D53` (Palette: `Hex codes.txt` aus dem Repaint Kit, dieselbe Quelle wie `app/badge.py` — ein Grün gibt es dort nicht). Ihre Symbole (Flugzeug für online, Kopfhörer für TS) sind Inline-SVG mit `fill="currentColor"` statt Emoji: Ein Farb-Emoji bringt eigene Farben mit und liegt blass auf dem hellblauen Badge. Klickbar → öffnet friesenspy.devprops.de.
 
 Der Hintergrund ist **bewusst nicht transparent**: Die eigene helle Fläche hält das Widget auch
 dann lesbar, wenn die einbettende Seite auf Dark Mode steht (z. B. das Forum). Preis dafür ist,

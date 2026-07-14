@@ -69,6 +69,21 @@ def test_keine_markenfremden_badge_farben(widget_env):
     assert "#D31141" not in html   # früheres Badge-Rot
 
 
+def test_badge_symbole_sind_svg_statt_emoji(widget_env):
+    """Ein Farb-Emoji bringt eigene Farben mit und liegt blass auf dem hellblauen Badge;
+    das SVG übernimmt per currentColor die Navy-Schriftfarbe."""
+    html = _render(widget_env)
+    assert "🎧" not in html
+    assert html.count('fill="currentColor"') == 2   # Flugzeug (online) + Headset (TS)
+
+
+def test_online_badge_traegt_das_flugzeug(widget_env):
+    html = _render(widget_env)
+    online = html.split('<span class="badge">')[1].split("</span>")[0]
+    assert main._ICON_PLANE in online
+    assert "online" in online
+
+
 def test_dunkler_balken_bleibt_um_die_badges_stehen(widget_env):
     """Die Kopfzeile ist höher gepolstert als die Badges — der Balken rahmt sie."""
     html = _render(widget_env)

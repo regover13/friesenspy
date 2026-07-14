@@ -3013,6 +3013,20 @@ _FF_NAVY = "#191D53"
 _FF_RED = "#8A1B1B"
 _FF_ORANGE = "#D75F28"
 
+# Badge-Symbole als SVG statt als Emoji: ein Farb-Emoji (🎧) liegt blass auf dem hellblauen
+# Badge, weil es seine eigenen Farben mitbringt. `fill="currentColor"` übernimmt dagegen die
+# Schriftfarbe des Badges (Navy) und bleibt bei 9 px sauber lesbar.
+_ICON_PLANE = (
+    '<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+    '<path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1'
+    'v-1.5L13 19v-5.5L21 16z"/></svg>'
+)
+_ICON_HEADSET = (
+    '<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+    '<path d="M12 3a9 9 0 0 0-9 9v5a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H5v-1a7 7 0 '
+    '0 1 14 0v1h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-5a9 9 0 0 0-9-9z"/></svg>'
+)
+
 
 @app.get("/widget", include_in_schema=False)
 async def widget(request: Request):
@@ -3030,7 +3044,7 @@ async def widget(request: Request):
     prefiles = poller.last_prefiles
     ts_count = len(poller.ts_clients)
     ts_badge = (
-        f'<span class="badge ts-badge">🎧&nbsp;{ts_count}&nbsp;im&nbsp;TS</span>'
+        f'<span class="badge ts-badge">{_ICON_HEADSET}{ts_count}&nbsp;im&nbsp;TS</span>'
         if settings.TS_NOTIFY_ENABLED else ''
     )
 
@@ -3077,7 +3091,7 @@ async def widget(request: Request):
   .hd-title{{flex:1}}
   /* Beide Zähler in FF-Hellblau auf dunklem Text. Das Padding der .hd-Zeile lässt den
      dunkelblauen Balken rundum stehen, die Badges sitzen als helle Felder darin. */
-  .badge{{background:{_FF_LBLUE};color:{_FF_NAVY};padding:1px 6px;font-size:10px;font-weight:700;border-radius:2px}}
+  .badge{{background:{_FF_LBLUE};color:{_FF_NAVY};padding:1px 6px;font-size:10px;font-weight:700;border-radius:2px;display:inline-flex;align-items:center;gap:3px}}
   .ts-badge{{background:{_FF_LBLUE}}}
   .bd{{padding:5px 10px 4px}}
   .none{{color:#5577aa}}
@@ -3091,7 +3105,7 @@ async def widget(request: Request):
 <a href="https://friesenspy.devprops.de" target="_blank">
   <div class="hd">
     <span class="hd-title">✈ FriesenSpy</span>
-    <span class="badge">{len(live)}&nbsp;online</span>
+    <span class="badge">{_ICON_PLANE}{len(live)}&nbsp;online</span>
     {ts_badge}
   </div>
   <div class="bd">

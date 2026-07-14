@@ -1,11 +1,12 @@
 [
   {
-    "version": "9.2.6",
+    "version": "9.2.7",
     "date": "2026-07-14",
     "highlight": false,
     "title": "Widget: Zähler in FriesenFlieger-Farben",
     "items": [
-      "🎨 Die Zähler „online“ und „im TS“ im einbettbaren Widget tragen jetzt beide FF-Hellblau (#8FBFF1) mit dunkelblauer Schrift, eingefasst von der dunklen Kopfzeile. Vorher waren sie rot und grün — ein Grün gibt es in der FriesenFlieger-Palette gar nicht. Layout und Hintergrund bleiben wie gewohnt."
+      "🎨 Die Zähler „online“ und „im TS“ im einbettbaren Widget tragen jetzt beide FF-Hellblau (#8FBFF1) mit dunkelblauer Schrift, eingefasst von der dunklen Kopfzeile. Vorher waren sie rot und grün — ein Grün gibt es in der FriesenFlieger-Palette gar nicht. Layout und Hintergrund bleiben wie gewohnt.",
+      "✈ Die beiden Zähler haben kleine Symbole bekommen: ein Flugzeug für „online“, einen Kopfhörer für „im TS“. Sie sind in derselben dunkelblauen Farbe gezeichnet wie die Beschriftung — das bisherige Kopfhörer-Emoji brachte eigene Farben mit und lag blass auf dem hellen Badge."
     ]
   },
   {
