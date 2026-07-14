@@ -1,9 +1,9 @@
-"""Tests für das einbettbare /widget — Transparenz, Hell/Dunkel-Schalter, FF-Palette.
+"""Tests für das einbettbare /widget — Layout-Grundgerüst und FF-Palette.
 
-Hintergrund: Das Widget hatte die Hintergrundfarbe der Homepage fest verdrahtet und saß
-in andersfarbigen Containern (z. B. dem rosa Regeln-Kasten des Forums) als sichtbarer
-Fleck. Seit v9.2.4 ist die Fläche transparent — dadurch kann das iframe aber nicht mehr
-wissen, ob die einbettende Seite hell oder dunkel ist; dafür gibt es `?dark=1`.
+Das Widget bringt bewusst seine eigene helle Fläche mit (#d0e0f0, die Farbe von
+friesenflieger.de) statt transparent zu sein: dadurch bleibt es auch dann lesbar, wenn
+die einbettende Seite auf Dark Mode steht. Die Zähler sitzen zusammen mit dem
+Schriftzug in der dunkelblauen Kopfzeile.
 """
 from __future__ import annotations
 
@@ -17,8 +17,7 @@ from app.database import init_db
 
 
 class FakeReq:
-    def __init__(self, query=None, poller=None):
-        self.query_params = query or {}
+    def __init__(self, poller=None):
         self.app = SimpleNamespace(state=SimpleNamespace(poller=poller))
 
 
@@ -28,9 +27,7 @@ def widget_env(tmp_path, monkeypatch):
     init_db(p)
     monkeypatch.setattr(
         main, "get_settings",
-        lambda: SimpleNamespace(
-            DB_PATH=p, CALLSIGN_PREFIX="FRS", TS_NOTIFY_ENABLED=True,
-        ),
+        lambda: SimpleNamespace(DB_PATH=p, CALLSIGN_PREFIX="FRS", TS_NOTIFY_ENABLED=True),
     )
     monkeypatch.setattr(main, "get_live_positions", lambda conn: [{"callsign": "FRS49"}])
     monkeypatch.setattr(
@@ -40,60 +37,44 @@ def widget_env(tmp_path, monkeypatch):
     return SimpleNamespace(poller=SimpleNamespace(last_prefiles=[], ts_clients=["a"]))
 
 
-def _render(env, query=None):
-    resp = asyncio.run(main.widget(FakeReq(query=query, poller=env.poller)))
+def _render(env):
+    resp = asyncio.run(main.widget(FakeReq(poller=env.poller)))
     return resp.body.decode("utf-8")
 
 
-def test_hintergrund_ist_transparent(widget_env):
-    """Kern der Änderung: keine eigene Flächenfarbe, sonst sitzt das Widget als Fleck."""
+def test_bringt_eigene_helle_flaeche_mit(widget_env):
+    """Eigene Fläche statt transparent — sonst wäre die Schrift im Dark Mode unlesbar."""
     html = _render(widget_env)
-    assert "html,body{background:transparent}" in html
-    assert "#d0e0f0" not in html  # die alte, fest verdrahtete Homepage-Farbe
+    assert "background:#d0e0f0" in html
 
 
-def test_hell_ist_der_standard(widget_env):
-    """Ohne Parameter: dunkle Schrift für helle Seiten (Homepage, Forum im Light Mode)."""
+def test_zaehler_sitzen_in_der_kopfzeile_beim_schriftzug(widget_env):
     html = _render(widget_env)
-    assert "color:#053080" in html
-    assert f"color:{main._FF_LBLUE}" not in html
+    kopf = html.split('<div class="hd">')[1].split("</div>")[0]
+    assert "FriesenSpy" in kopf
+    assert "online" in kopf and "TS" in kopf
 
 
-@pytest.mark.parametrize("wert", ["1", "true", "yes", "on", "TRUE", "On"])
-def test_dark_schaltet_auf_helle_schrift(widget_env, wert):
-    html = _render(widget_env, {"dark": wert})
-    assert f"color:{main._FF_LBLUE}" in html   # helle Schrift für dunkle Seiten
-    assert "color:#053080" not in html
-
-
-@pytest.mark.parametrize("wert", ["0", "false", "", "nein"])
-def test_dark_bleibt_aus_bei_anderen_werten(widget_env, wert):
-    html = _render(widget_env, {"dark": wert})
-    assert "color:#053080" in html
-
-
-def test_dark_gibt_der_zaehler_box_einen_rand(widget_env):
-    """Die Navy-Box würde auf dunklem Grund sonst mit dem Hintergrund verschwimmen."""
-    hell = _render(widget_env)
-    dunkel = _render(widget_env, {"dark": "1"})
-    assert f"border:1px solid {main._FF_LBLUE}" in dunkel
-    assert "border:1px solid transparent" in hell
-
-
-def test_zaehler_stehen_in_einer_gemeinsamen_navy_box(widget_env):
+def test_badges_sind_ff_hellblau_auf_navy(widget_env):
+    """Beide Zähler tragen dieselbe FF-Hellblau-Fläche mit dunklem Text."""
     html = _render(widget_env)
-    assert f".side{{background:{main._FF_NAVY}" in html
-    # beide Zähler liegen in derselben Box (im Markup mit &nbsp; statt Leerzeichen)
-    side = html.split('<div class="side">')[1].split('</div>')[0]
-    assert "online" in side and "TS" in side
-    assert side.count('class="badge') == 2
+    assert f".badge{{background:{main._FF_LBLUE};color:{main._FF_NAVY}" in html
+    assert f".ts-badge{{background:{main._FF_LBLUE}}}" in html
 
 
-def test_keine_markenfremden_farben(widget_env):
-    """Nur die FF-Palette: das frühere TS-Grün und das alte Rot sind raus."""
-    for html in (_render(widget_env), _render(widget_env, {"dark": "1"})):
-        assert "#0a7a3a" not in html   # Grün — gibt es in der FF-Palette nicht
-        assert "#D31141" not in html   # altes Badge-Rot, nicht aus dem Repaint Kit
+def test_keine_markenfremden_badge_farben(widget_env):
+    """Grün gibt es in der FF-Palette nicht; das alte Badge-Rot stammt nicht aus dem Kit."""
+    html = _render(widget_env)
+    assert "#0a7a3a" not in html   # früheres TS-Grün
+    assert "#D31141" not in html   # früheres Badge-Rot
+
+
+def test_dunkler_balken_bleibt_um_die_badges_stehen(widget_env):
+    """Die Kopfzeile ist höher gepolstert als die Badges — der Balken rahmt sie."""
+    html = _render(widget_env)
+    assert ".hd{background:#053080" in html
+    assert "padding:4px 10px" in html   # Kopfzeile
+    assert "padding:1px 6px" in html    # Badges, kleiner -> Balken bleibt sichtbar
 
 
 def test_ts_badge_fehlt_wenn_teamspeak_aus(tmp_path, monkeypatch):
@@ -107,5 +88,5 @@ def test_ts_badge_fehlt_wenn_teamspeak_aus(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "get_stats", lambda conn, days, callsign_prefix: [])
     poller = SimpleNamespace(last_prefiles=[], ts_clients=[])
     html = asyncio.run(main.widget(FakeReq(poller=poller))).body.decode("utf-8")
-    assert "im TS" not in html
+    assert "im&nbsp;TS" not in html
     assert "online" in html

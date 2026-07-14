@@ -722,37 +722,17 @@ Im Events-Tab erscheint nach der Bilanz je Teilnehmer **🎖 Badge** (öffnet da
 
 ## GET /widget
 
-Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*), 7-Tage-Flugstunden und — wenn `TS_NOTIFY_ENABLED=true` — einen TeamSpeak-Zähler-Badge `🎧 N im TS`. Klickbar → öffnet friesenspy.devprops.de.
+Einbettbares HTML-Widget für friesenflieger.de. Zeigt online-Piloten mit Callsigns, eingereichte Prefile-Flugpläne (FRS*), 7-Tage-Flugstunden und — wenn `TS_NOTIFY_ENABLED=true` — einen TeamSpeak-Zähler-Badge `🎧 N im TS`. Design im hellen Stil von friesenflieger.de (bg `#d0e0f0`, Navy `#053080`). Die beiden Zähler-Badges sitzen in der Kopfzeile beim Schriftzug, in FF-Hellblau `#8FBFF1` auf FF-Navy `#191D53` (Palette: `Hex codes.txt` aus dem Repaint Kit, dieselbe Quelle wie `app/badge.py` — ein Grün gibt es dort nicht). Klickbar → öffnet friesenspy.devprops.de.
 
-**Hintergrund transparent** (seit v9.2.4): Das Widget bringt keine eigene Flächenfarbe mit,
-sondern übernimmt die der einbettenden Seite — damit passt es ohne Anpassung auf die Homepage
-(`#d0e0f0`) wie in beliebige Forum-Kästen. Zuvor war `#d0e0f0` fest verdrahtet und saß in
-andersfarbigen Containern als sichtbarer Fleck.
-
-Die beiden Zähler stehen gemeinsam in **einer** Box rechts neben der Pilotenliste, in FF-Navy
-`#191D53`; als Blöcke untereinander sind die Labels automatisch gleich breit. Farben aus der
-FriesenFlieger-Palette (`Hex codes.txt` aus dem Repaint Kit, dieselbe Quelle wie `app/badge.py`) —
-ein Grün gibt es in der Marke nicht.
-
-**Query-Parameter**
-
-| Parameter | Wirkung |
-|-----------|---------|
-| `dark=1` | Helle Schrift (FF-Hellblau `#8FBFF1`) für **dunkle** Einbettungen; die Zähler-Box erhält einen hellblauen Rand, damit sie auf dunklem Grund nicht verschwimmt. Akzeptiert `1`/`true`/`yes`/`on`. |
-
-Ohne den Parameter rendert das Widget in dunkler Schrift (Navy `#053080`) für helle Hintergründe.
-Der Parameter ist nötig, weil der Hintergrund transparent ist: Das iframe kann von außen nicht
-erkennen, ob die einbettende Seite gerade hell oder dunkel läuft (z. B. der Dark-Mode-Schalter des
-Forums) — die einbettende Seite muss es beim Setzen der `src` mitgeben.
+Der Hintergrund ist **bewusst nicht transparent**: Die eigene helle Fläche hält das Widget auch
+dann lesbar, wenn die einbettende Seite auf Dark Mode steht (z. B. das Forum). Preis dafür ist,
+dass es auf einem andersfarbigen Untergrund als hellblaues Feld sichtbar bleibt — es gehört
+deshalb an eine helle Stelle.
 
 ```html
-<iframe src="https://friesenspy.devprops.de/widget" width="300" height="90"
+<iframe src="https://friesenspy.devprops.de/widget" width="420" height="88"
   style="border:none;" scrolling="no"></iframe>
 ```
-
-**Maße:** Ab **300 px** Breite bleiben Titel, Pilotenliste und Fußzeile einzeilig; darunter
-brechen sie um (bei 220 px wächst das Widget auf 127 px Höhe). Höhe je nach Inhalt: 56 px
-(niemand online), ~70 px (mit einem Flugplan), ~83 px (mehrere Piloten + Flugpläne).
 
 Die Seite enthält `<meta http-equiv="refresh" content="60">` (60-Sekunden-Auto-Refresh) und wird mit `Access-Control-Allow-Origin: *` ausgeliefert. Vorschau + Einbettungscode: `/widget/preview`.
 
