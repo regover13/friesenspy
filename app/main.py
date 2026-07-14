@@ -2193,7 +2193,6 @@ async def admin_set_override(request: Request, race_id: int):
 @app.delete("/api/admin/bummel/races/{race_id}/override/{cid}")
 async def admin_delete_override(request: Request, race_id: int, cid: int):
     require_admin(request)
-    require_confirm(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
         delete_bummel_override(conn, race_id, cid)

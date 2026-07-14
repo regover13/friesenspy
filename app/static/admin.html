@@ -2064,7 +2064,7 @@
     }
 
     async function removeOverride(raceId, cid) {
-      const ok = await confirmCritical('Korrektur entfernen?',
+      const ok = await showModal('Korrektur entfernen?',
         `Die Teilnehmer-Korrektur für CID ${cid} zurücknehmen?`, 'Entfernen', true);
       if (!ok) return;
       const res = await api('DELETE', `/api/admin/bummel/races/${raceId}/override/${cid}`);
