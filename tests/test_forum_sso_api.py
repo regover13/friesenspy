@@ -1,5 +1,6 @@
 """Endpoint- + Gate-Tests für den Forum-SSO (Board-Login)."""
 import time
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -7,7 +8,9 @@ from fastapi.testclient import TestClient
 
 from app import forum_sso, main
 from app.auth import make_admin_token, make_confirm_token
-from app.database import get_connection, init_db, set_app_setting
+from app.database import (
+    close_flight, ensure_pilot, get_connection, init_db, open_flight, set_app_setting,
+)
 
 SECRET = "s3cr3t-key"
 SSO = "shared-forum-secret"
@@ -344,6 +347,35 @@ def test_visibility_default_everyone(env):
     assert body["mode"] == "everyone" and body["allowlist"] == []
     assert set(body["services"]) == {"online", "prefile", "ts"}
     assert isinstance(body["pilots"], list)
+
+
+def _ts(minutes_ago: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_visibility_picker_limited_to_active_365_days(env):
+    # Picker-Kandidaten müssen dieselbe 365-Tage-Grenze wie /api/stats einhalten: ein Pilot,
+    # dessen letzter Flug > 365 Tage her ist, darf NICHT mehr im Sichtbarkeits-Picker stehen
+    # (vorher tauchte so einer nur hier auf — der FRS1525-Bug).
+    _enable(env)
+    conn = get_connection(env.db)
+    try:
+        ensure_pilot(conn, 111, "Aktiver Pilot")
+        ensure_pilot(conn, 222, "Inaktiver Pilot")
+        conn.commit()
+        # Aktiv: Flug vor 5 Tagen.
+        fid_a = open_flight(conn, 111, "FRS111", "B738", "EDDH", "EDDF", _ts(60 * 24 * 5))
+        conn.commit(); close_flight(conn, fid_a, _ts(60 * 24 * 5 - 60)); conn.commit()
+        # Inaktiv: Flug vor ~400 Tagen (außerhalb der 365-Tage-Grenze).
+        fid_i = open_flight(conn, 222, "FRS222", "C172", "EDHE", "EDXW", _ts(60 * 24 * 400))
+        conn.commit(); close_flight(conn, fid_i, _ts(60 * 24 * 400 - 30)); conn.commit()
+    finally:
+        conn.close()
+    pilots = env.client.get("/api/me/visibility", cookies=_user_cookie()).json()["pilots"]
+    cids = {p["cid"] for p in pilots}
+    assert 111 in cids          # aktiver Pilot bleibt wählbar
+    assert 222 not in cids      # > 365 Tage inaktiv → nicht mehr im Picker
 
 
 def test_visibility_services_roundtrip(env):

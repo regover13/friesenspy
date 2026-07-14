@@ -1766,9 +1766,13 @@ async def api_me_visibility(request: Request):
     try:
         vis = get_pilot_visibility(conn, cid) or {
             "mode": "everyone", "allowlist": [], "services": ["online", "prefile", "ts"]}
-        pilots = [{"cid": p["cid"],
-                   "callsign": (p["callsigns"][0] if p["callsigns"] else p["name"])}
-                  for p in list_pilots(conn, settings.CALLSIGN_PREFIX)]
+        # Picker-Kandidaten = AKTIVE Piloten der globalen 365-Tage-Anzeigegrenze (#67) — exakt
+        # dieselbe Quelle wie die Benachrichtigungs-Zielliste (/api/stats?days=365), damit beide
+        # Picker identisch sind. Ein länger als 365 Tage inaktiver Pilot (z. B. FRS1525) tauchte
+        # sonst NUR hier auf (list_pilots kannte die ganze Historie ohne Zeitgrenze).
+        pilots = [{"cid": p["cid"], "callsign": p["last_callsign"] or p["name"]}
+                  for p in get_stats(conn, days=_DATA_RETENTION_DAYS,
+                                     callsign_prefix=settings.CALLSIGN_PREFIX)]
     finally:
         conn.close()
     return {"mode": vis["mode"], "allowlist": vis.get("allowlist", []),
