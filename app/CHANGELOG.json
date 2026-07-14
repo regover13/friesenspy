@@ -1,5 +1,14 @@
 [
   {
+    "version": "9.2.8",
+    "date": "2026-07-14",
+    "highlight": false,
+    "title": "Widget: normale Schriftgröße auf dem iPhone",
+    "items": [
+      "📱 Im eingebetteten Widget war die Schrift auf iPhone/iPad viel zu groß — die Fußzeile stand größer da als der Text der Seite ringsum. Safari hielt das Widget für eine Desktop-Seite und hat die Schrift selbsttätig vergrößert; das ist jetzt abgestellt. Am Desktop ändert sich nichts."
+    ]
+  },
+  {
     "version": "9.2.7",
     "date": "2026-07-14",
     "highlight": false,

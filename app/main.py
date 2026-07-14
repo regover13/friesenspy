@@ -3085,6 +3085,11 @@ async def widget(request: Request):
 <meta http-equiv="refresh" content="60">
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
+  /* iOS/Safari bläst Text in einem iframe sonst selbsttätig auf ("Text Autosizing"): es hält
+     das Dokument für eine Desktop-Seite und vergrößert die Schrift, damit sie "lesbar" wird —
+     im Forum stand die 10-px-Fußzeile dadurch größer da als der Text der Seite ringsum.
+     100% = Schriftgrößen so lassen, wie sie hier definiert sind. Chrome zeigt den Effekt nicht. */
+  html{{-webkit-text-size-adjust:100%;text-size-adjust:100%}}
   body{{background:#d0e0f0;color:#053080;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:12px}}
   a{{color:inherit;text-decoration:none;display:block}}
   .hd{{background:#053080;color:#fff;padding:4px 10px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px}}

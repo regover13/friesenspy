@@ -69,6 +69,14 @@ def test_keine_markenfremden_badge_farben(widget_env):
     assert "#D31141" not in html   # früheres Badge-Rot
 
 
+def test_schrift_wird_auf_ios_nicht_aufgeblasen(widget_env):
+    """Ohne text-size-adjust vergrößert iOS/Safari die Schrift im iframe selbsttätig —
+    im Forum stand die 10-px-Fußzeile dadurch größer da als der Text der Seite ringsum."""
+    html = _render(widget_env)
+    assert "-webkit-text-size-adjust:100%" in html
+    assert "text-size-adjust:100%" in html
+
+
 def test_badge_symbole_sind_svg_statt_emoji(widget_env):
     """Ein Farb-Emoji bringt eigene Farben mit und liegt blass auf dem hellblauen Badge;
     das SVG übernimmt per currentColor die Navy-Schriftfarbe."""
