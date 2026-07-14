@@ -50,7 +50,7 @@ def _admin_site_cookie() -> dict:
 def _user_cookie(is_admin: bool = True) -> dict:
     # FriesenSpy-Session-Cookie (fs_user), wie es der Callback nach Forum-Login setzt.
     exp = time.time() + 3600
-    return {"fs_user": forum_sso.make_user_token(SECRET, 9, "Pilot", "1234567", is_admin, exp)}
+    return {"fs_user": forum_sso.make_user_token(SECRET, "Pilot", "1234567", is_admin, exp)}
 
 
 def _mint_incoming(claims: dict, secret: str = SSO) -> str:

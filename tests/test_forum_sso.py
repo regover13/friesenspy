@@ -54,21 +54,22 @@ def test_verify_sso_token_rejects_garbage():
 
 
 def test_user_token_roundtrip():
-    tok = forum_sso.make_user_token(KEY, 74, "Tobias", "1401925", True, exp=2000.0)
+    tok = forum_sso.make_user_token(KEY, "Tobias", "1401925", True, exp=2000.0)
     claims = forum_sso.verify_user_token(tok, KEY, now=1999.0)
     assert claims is not None
-    assert claims["sub"] == 74
+    # Datenminimierung: die interne Forum-User-ID (sub) darf NICHT im Cookie landen.
+    assert "sub" not in claims
     assert claims["cid"] == "1401925"
     assert claims["is_admin"] is True
 
 
 def test_user_token_expired():
-    tok = forum_sso.make_user_token(KEY, 74, "T", "1", False, exp=1000.0)
+    tok = forum_sso.make_user_token(KEY, "T", "1", False, exp=1000.0)
     assert forum_sso.verify_user_token(tok, KEY, now=1000.0) is None
 
 
 def test_user_token_wrong_key():
-    tok = forum_sso.make_user_token(KEY, 74, "T", "1", False, exp=5000.0)
+    tok = forum_sso.make_user_token(KEY, "T", "1", False, exp=5000.0)
     assert forum_sso.verify_user_token(tok, "other-key", now=1000.0) is None
 
 
@@ -106,7 +107,7 @@ def test_verify_sso_token_requires_typ_sso():
 
 def test_user_token_not_accepted_as_sso_even_with_same_secret():
     # F3-Kern: User-Token (typ=user) darf bei GLEICHEM Secret nicht als SSO-Token durchgehen.
-    tok = forum_sso.make_user_token(SSO, 1, "x", "1", True, exp=1e12)
+    tok = forum_sso.make_user_token(SSO, "x", "1", True, exp=1e12)
     assert forum_sso.verify_sso_token(tok, SSO, now=1000.0) is None
 
 

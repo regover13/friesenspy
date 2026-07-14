@@ -1667,7 +1667,7 @@ async def forum_callback(request: Request):
         raise HTTPException(status_code=401, detail="SSO-Token bereits verwendet")
     exp = time.time() + settings.USER_SESSION_MAX_AGE_SEC
     user_token = make_user_token(
-        settings.SECRET_KEY, claims.get("sub"), str(claims.get("name", "")),
+        settings.SECRET_KEY, str(claims.get("name", "")),
         str(claims.get("cid", "")), bool(claims.get("is_admin")), exp,
     )
     # Autoritative Callsign→CID-Map aus dem Forum-Profil (Token v2, Feld `cs`) pflegen —
@@ -1743,7 +1743,7 @@ async def api_me(request: Request):
     exp = time.time() + settings.USER_SESSION_MAX_AGE_SEC
     resp.set_cookie(
         USER_COOKIE,
-        make_user_token(settings.SECRET_KEY, claims.get("sub"), str(claims.get("name", "")),
+        make_user_token(settings.SECRET_KEY, str(claims.get("name", "")),
                         str(claims.get("cid", "")), bool(claims.get("is_admin")), exp),
         httponly=True, secure=_is_https(request), samesite="lax", path="/",
         max_age=settings.USER_SESSION_MAX_AGE_SEC,

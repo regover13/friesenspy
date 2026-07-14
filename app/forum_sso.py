@@ -93,10 +93,14 @@ def verify_sso_token(token: str, sso_secret: str, now: float | None = None) -> d
     return claims
 
 
-def make_user_token(secret_key: str, sub, name: str, cid: str, is_admin: bool,
+def make_user_token(secret_key: str, name: str, cid: str, is_admin: bool,
                     exp: float) -> str:
-    """Eigenes FriesenSpy-Session-Cookie (``typ="user"``, signiert mit ``SECRET_KEY``), Ablauf ``exp``."""
-    return _encode({"typ": "user", "sub": sub, "name": name, "cid": cid,
+    """Eigenes FriesenSpy-Session-Cookie (``typ="user"``, signiert mit ``SECRET_KEY``), Ablauf ``exp``.
+
+    Die interne Forum-User-ID (``sub`` des eingehenden SSO-Tokens) wird bewusst NICHT ins Cookie
+    übernommen — sie wurde nirgends ausgewertet (Berechtigung läuft über ``cid``/``is_admin``),
+    also Datenminimierung (Art. 5 Abs. 1 c DSGVO)."""
+    return _encode({"typ": "user", "name": name, "cid": cid,
                     "is_admin": bool(is_admin), "exp": int(exp)}, secret_key)
 
 
