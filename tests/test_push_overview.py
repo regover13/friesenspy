@@ -94,6 +94,31 @@ def test_overview_ok(db):
     assert d["suppressed_pilots"][0]["mode"] == "nobody"
 
 
+def test_visibility_allowlist_resolved_to_names(db):
+    """Erlaubte-Spalte: CIDs sind fuer Menschen unlesbar — es muessen Namen ankommen."""
+    _seed(db)
+    conn = get_connection(db)
+    conn.execute("INSERT OR IGNORE INTO pilots (cid,name,added_at) VALUES (?,?,?)",
+                 (67890, "Bernd", "2026-01-01T00:00:00Z"))
+    set_pilot_visibility(conn, 4242, "allowlist", [12345, 67890], ["online", "ts"])
+    conn.commit()
+    conn.close()
+
+    d = asyncio.run(main.admin_push_overview(FakeReq(headers={"x-overview-pass": DIAG_PW})))
+    row = next(v for v in d["suppressed_pilots"] if v["cid"] == 4242)
+    assert row["allowlist"] == ["Anna", "Bernd"]          # nicht [12345, 67890]
+    assert row["services"] == ["Online", "TeamSpeak"]     # nicht '["online", "ts"]'
+
+
+def test_visibility_nobody_has_empty_allowlist(db):
+    """mode=nobody hat keine Allowlist — leere Liste, kein roher None-Durchgriff."""
+    _seed(db)
+    row = asyncio.run(main.admin_push_overview(
+        FakeReq(headers={"x-overview-pass": DIAG_PW})))["suppressed_pilots"][0]
+    assert row["allowlist"] == []
+    assert row["services"] == ["Online", "Flugplan", "TeamSpeak"]
+
+
 def test_overview_wrong_password(db):
     _seed(db)
     with pytest.raises(HTTPException) as ei:

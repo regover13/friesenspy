@@ -2080,18 +2080,21 @@ function render(d){
   h+=`<div class="sub">Auswahl-Beliebtheit: Flugpläne ${t.will_prefiles} · TeamSpeak ${t.will_ts} · Events ${t.will_events}${d.vapid_configured?'':' · <span style="color:#ff6b6b">VAPID nicht konfiguriert!</span>'}</div>`;
 
   h+='<h2>Abos &amp; Auswahl</h2>';
+  h+='<div class="sub">„Online“ ist die Grundfunktion und hat keinen Schalter — jedes Abo bekommt sie, '+
+     'die Spalte „Piloten“ sagt für wen. Flugpläne und TS sind Zusatz-Optionen für dieselben Piloten. '+
+     'Events gilt pauschal, unabhängig von der Piloten-Auswahl.</div>';
   if(!d.subscriptions.length){h+='<div class="empty">Keine Abos.</div>';}
   else{
     h+='<div class="table-scroll"><table><thead><tr>'+
-      '<th>Status</th><th>Wer</th><th>Plattform</th><th>Piloten-Filter</th>'+
-      '<th>Flugpläne</th><th>TS</th><th>Events</th><th>TS-Kürzel</th>'+
+      '<th>Status</th><th>Wer</th><th>Plattform</th><th>Piloten</th>'+
+      '<th>Online</th><th>Flugpläne</th><th>TS</th><th>Events</th><th>TS-Kürzel</th>'+
       '<th>angelegt</th><th>letzte OK</th><th>letzter Fehler</th></tr></thead><tbody>';
     for(const s of d.subscriptions){
       const who=s.owner_name?esc(s.owner_name):'<span class="muted">anonym</span>';
       const flt=s.pilot_filter.length?esc(s.pilot_filter.join(', ')):'<span class="muted">alle</span>';
       const fail=s.last_fail_at?ago(s.last_fail_at)+(s.last_status?' ('+esc(s.last_status)+')':''):'';
       h+=`<tr><td>${health(s.health)}</td><td>${who}</td><td>${esc(s.platform)}</td><td>${flt}</td>`+
-         `<td>${b(s.notify_prefiles)}</td><td>${b(s.notify_ts)}</td><td>${b(s.notify_events)}</td>`+
+         `<td>${b(true)}</td><td>${b(s.notify_prefiles)}</td><td>${b(s.notify_ts)}</td><td>${b(s.notify_events)}</td>`+
          `<td class="mono">${esc(s.ts_self_frs||'')}</td><td class="muted">${ago(s.created_at)}</td>`+
          `<td class="muted">${ago(s.last_ok_at)}</td><td class="muted">${fail}</td></tr>`;
     }
@@ -2101,9 +2104,11 @@ function render(d){
   h+='<h2>Piloten mit eingeschränkter Sichtbarkeit</h2>';
   if(!d.suppressed_pilots.length){h+='<div class="empty">Niemand — alle sichtbar für jeden.</div>';}
   else{
-    h+='<div class="table-scroll"><table><thead><tr><th>Wer</th><th>Modus</th><th>Erlaubte</th><th>Dienste</th><th>geändert</th></tr></thead><tbody>';
+    h+='<div class="table-scroll"><table><thead><tr><th>Wer</th><th>Modus</th><th>Erlaubte</th><th>gilt für</th><th>geändert</th></tr></thead><tbody>';
     for(const v of d.suppressed_pilots){
-      h+=`<tr><td>${esc(v.who)}</td><td>${esc(v.mode)}</td><td class="mono">${esc(v.allowlist||'')}</td><td class="mono">${esc(v.services||'alle')}</td><td class="muted">${ago(v.updated_at)}</td></tr>`;
+      const allow=v.allowlist.length?esc(v.allowlist.join(', ')):'<span class="muted">niemand</span>';
+      const svc=v.services.length?esc(v.services.join(', ')):'<span class="muted">keinen</span>';
+      h+=`<tr><td>${esc(v.who)}</td><td>${esc(v.mode)}</td><td>${allow}</td><td>${svc}</td><td class="muted">${ago(v.updated_at)}</td></tr>`;
     }
     h+='</tbody></table></div>';
   }
@@ -2113,7 +2118,8 @@ function render(d){
   else{
     h+='<div class="table-scroll"><table><thead><tr><th>FRS</th><th>Sichtbarkeit</th><th>Erlaubte</th><th>geändert</th></tr></thead><tbody>';
     for(const t of d.suppressed_ts){
-      h+=`<tr><td>${esc(t.who)}</td><td>${esc(t.visibility)}</td><td class="mono">${esc(t.allowlist||'')}</td><td class="muted">${ago(t.updated_at)}</td></tr>`;
+      const allow=t.allowlist.length?esc(t.allowlist.join(', ')):'<span class="muted">niemand</span>';
+      h+=`<tr><td>${esc(t.who)}</td><td>${esc(t.visibility)}</td><td>${allow}</td><td class="muted">${ago(t.updated_at)}</td></tr>`;
     }
     h+='</tbody></table></div>';
   }
@@ -2126,6 +2132,9 @@ document.getElementById('pw').focus();
 </script>
 </body>
 </html>"""
+
+
+_SERVICE_LABELS = {"online": "Online", "prefile": "Flugplan", "ts": "TeamSpeak"}
 
 
 def _push_platform(endpoint: str) -> str:
@@ -2228,14 +2237,25 @@ async def admin_push_overview(request: Request):
         "health_unknown": sum(1 for s in out_subs if s["health"] == "unknown"),
     }
 
+    def _service_labels(raw) -> list[str]:
+        """JSON-Liste der Services in lesbare Labels (``["online","ts"]`` → ``Online, TeamSpeak``)."""
+        if not raw:
+            return []
+        try:
+            return [_SERVICE_LABELS.get(s, s) for s in json.loads(raw)]
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return []
+
     out_vis = [{
         "who": _name(v.get("cid")), "cid": v.get("cid"), "mode": v.get("mode"),
-        "allowlist": v.get("allowlist"), "services": v.get("services"),
+        # CIDs zu Namen auflösen — roh sind sie für Menschen unlesbar (wie pilot_filter).
+        "allowlist": _filter_names(v.get("allowlist")),
+        "services": _service_labels(v.get("services")),
         "updated_at": v.get("updated_at"),
     } for v in vis]
     out_ts = [{
         "who": t.get("frs"), "visibility": t.get("visibility"),
-        "allowlist": t.get("allowlist"), "updated_at": t.get("updated_at"),
+        "allowlist": _filter_names(t.get("allowlist")), "updated_at": t.get("updated_at"),
     } for t in ts]
 
     return {
