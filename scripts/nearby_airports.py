@@ -14,6 +14,7 @@ import airportsdata
 import argparse
 import csv
 import sys
+import time
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,11 +77,48 @@ def parse_ourairports(rows: Iterable[dict]) -> list[AirportRef]:
     return refs
 
 
+OURAIRPORTS_URL = "https://davidmegginson.github.io/ourairports-data/airports.csv"
+CACHE_PATH = Path(__file__).resolve().parent / ".cache" / "ourairports.csv"
+CACHE_MAX_AGE_DAYS = 30
+
+
+def _cached_ourairports() -> Path | None:
+    """Pfad zum OurAirports-Abzug; laedt ihn bei Bedarf. ``None`` = nicht verfuegbar.
+
+    Ohne Netz wird ein vorhandener (auch alter) Cache weiterverwendet — ein veralteter
+    Abzug ist brauchbarer als gar keine Gegenprobe, solange wir es sagen.
+    """
+    if CACHE_PATH.exists():
+        age_days = (time.time() - CACHE_PATH.stat().st_mtime) / 86400.0
+        if age_days < CACHE_MAX_AGE_DAYS:
+            return CACHE_PATH
+    try:
+        import httpx
+
+        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        response = httpx.get(OURAIRPORTS_URL, timeout=60.0, follow_redirects=True)
+        response.raise_for_status()
+        CACHE_PATH.write_bytes(response.content)
+        return CACHE_PATH
+    except Exception as exc:  # Netz weg, DNS, 404 — kein Grund, die Analyse abzubrechen
+        if CACHE_PATH.exists():
+            print("  ! OurAirports-Update fehlgeschlagen (%s) — nutze alten Cache" % exc, file=sys.stderr)
+            return CACHE_PATH
+        print("  ! OurAirports nicht verfuegbar (%s) — nur airportsdata" % exc, file=sys.stderr)
+        return None
+
+
 def load_ourairports(path: Path | str | None = None) -> list[AirportRef]:
-    """OurAirports laden. ``path`` gesetzt → genau diese Datei (Tests: Fixture, kein Netz)."""
-    if path is None:
-        raise NotImplementedError("Cache/Download folgt in Task 4")
-    with open(path, encoding="utf-8", newline="") as handle:
+    """OurAirports laden. ``path`` gesetzt → genau diese Datei (Tests: Fixture, kein Netz).
+
+    Ohne ``path``: Cache unter ``scripts/.cache/``, bei Bedarf frisch geladen. Ist die
+    Quelle nicht verfuegbar, kommt eine LEERE Liste zurück — das Werkzeug arbeitet dann
+    nur mit airportsdata weiter und sagt das im Report (``oa_available``).
+    """
+    source = Path(path) if path is not None else _cached_ourairports()
+    if source is None:
+        return []
+    with open(source, encoding="utf-8", newline="") as handle:
         return parse_ourairports(csv.DictReader(handle))
 
 

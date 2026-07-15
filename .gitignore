@@ -18,6 +18,9 @@ config.env
 # Claude Code Worktrees
 .claude/worktrees/
 
+# OurAirports-Abzug für scripts/nearby_airports.py (12 MB, jederzeit neu ladbar)
+scripts/.cache/
+
 # IDE
 .vscode/
 .idea/
