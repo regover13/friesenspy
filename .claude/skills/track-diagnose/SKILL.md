@@ -180,9 +180,19 @@ beginnen. Geprüft wird der Randpunkt, um den es geht.
 in_der_luft = (AGL > 300 ft)  ODER  (groundspeed >= 50 kt)
 ```
 
-AGL gegen die Elevation des Soll-Platzes; fehlt der Code in beiden Quellen, gegen die des
-nächstgelegenen. Beide Signale nötig, keines genügt: von 184 Enden erkennt **13 nur die Höhe**
-(Groundspeed sagt fälschlich „Boden" — Wilga fliegt ~40 kt Reise), **5 nur die Groundspeed**.
+Beide Signale nötig, keines genügt: von 184 Enden erkennt **13 nur die Höhe** (Groundspeed sagt
+fälschlich „Boden" — Wilga fliegt ~40 kt Reise), **5 nur die Groundspeed**.
+
+**AGL wird gegen den nächstgelegenen Platz gerechnet, NICHT gegen den Soll-Platz.** Der Punkt
+steht in dieser Liste per Definition *nicht* am Soll-Platz — sonst wäre es keine Lücke. Die
+Soll-Elevation ist damit die unzuverlässigste verfügbare Basis. Der Detektor macht es genauso
+(`app/gps_legs.py:183`: Elevation immer über `nearest_airport(...)`).
+
+> **Der ETUO-Beleg:** Flugzeug steht mit gs 0 in Bad Gandersheim (EDVA, 791 ft). Der Flugplan
+> sagt Gütersloh (ETUO, 236 ft) — 118 km entfernt. Gegen den Soll-Platz gerechnet ergibt das
+> 543 ft Scheinhöhe → „in der Luft" → Trivialgruppe E → **ein echter Kandidat verschwindet
+> lautlos**. Gegen EDVA gerechnet: −12 ft, also am Boden → Fall D. Diese Basiswahl war in einer
+> früheren Fassung falsch und wurde erst im Abschluss-Review gefunden.
 
 Kein Bodenpunkt → **Fall E**, Ende.
 
