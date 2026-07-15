@@ -1393,6 +1393,69 @@ Freie Nachricht (Titel + Text) als Push an eine wählbare Zielgruppe senden.
 
 ---
 
+## Admin — Push-Diagnose (versteckt)
+
+Zustell-Diagnose über alle Push-Abos. **Nur aktiv, wenn `PUSH_OVERVIEW_PASSWORD` gesetzt ist** — sonst antworten Seite und Endpoint mit `404` (Feature existiert dann schlicht nicht). Erreichbar über einen unscheinbaren „· · ·"-Link ganz unten in `admin.html`.
+
+Der Zugang verlangt **zwei** Nachweise: den normalen Admin-Login *und* das Extra-Passwort aus `PUSH_OVERVIEW_PASSWORD` (Header `X-Overview-Pass`). Da `require_admin` auch die Forum-Gruppe „Events" als Admin akzeptiert, das Extra-Passwort aber nur aus `config.env` stammt, engt es den Kreis auf den Betreiber ein.
+
+### GET /admin/push-overview
+
+Die HTML-Seite selbst (Passwort-Formular + Rendering). Nutzt `require_admin_page` statt `require_admin`: Das Admin-Cookie `fs_admin` liegt auf `path=/api/admin` und wird für eine Seite unter `/admin/…` vom Browser **nie** mitgesendet — geprüft wird deshalb die Break-glass-Kopie `fs_admin_site` (`path=/`) bzw. eine Forum-Session mit Admin-Recht.
+
+Reihenfolge der Prüfung: erst 404-Abschaltung, dann Admin-Login. Andersherum verriete ein `401` bei abgeschaltetem Feature, dass unter der URL überhaupt etwas liegt.
+
+**Responses**
+- `200` — HTML-Seite
+- `401` — kein Admin-Login
+- `404` — `PUSH_OVERVIEW_PASSWORD` leer (Feature aus)
+
+### GET /api/admin/push/overview
+
+Die Daten dahinter. Admin-Cookie **und** Header `X-Overview-Pass` erforderlich.
+
+**Response**
+
+```json
+{
+  "vapid_configured": true,
+  "totals": {"abos": 3, "personen": 1, "eingeloggt": 1, "anonym": 2,
+             "will_prefiles": 2, "will_ts": 2, "will_events": 2,
+             "health_ok": 1, "health_fail": 1, "health_unknown": 1},
+  "subscriptions": [
+    {"owner_cid": 1602713, "owner_name": "Tobias EDKB", "platform": "Chrome / Android",
+     "pilot_filter": ["Anna"], "notify_prefiles": true, "notify_ts": false,
+     "notify_events": true, "ts_self_frs": "FRS01", "created_at": "2026-07-15T05:54:36Z",
+     "last_ok_at": "2026-07-15T05:54:36Z", "last_fail_at": null, "last_status": null,
+     "health": "ok"}
+  ],
+  "suppressed_pilots": [
+    {"who": "CID 999", "cid": 999, "mode": "nobody", "allowlist": null,
+     "services": "[\"online\", \"prefile\", \"ts\"]", "updated_at": "2026-07-15T05:54:36Z"}
+  ],
+  "suppressed_ts": []
+}
+```
+
+`owner_cid`/`owner_name` = `null` → anonymes Abo (kein Forum-Login). `pilot_filter` = `[]` → keine Einschränkung („alle"); CIDs werden zu Namen aufgelöst. `platform` wird aus dem Host des Push-Endpoints abgeleitet (kein Tracking). `suppressed_pilots`/`suppressed_ts` listen nur Einträge mit `mode`/`visibility` ≠ `everyone`.
+
+**`health` je Abo** — aus `last_ok_at`/`last_fail_at` (bei jedem Versand in `send_web_push` via `record_push_delivery` fortgeschrieben):
+
+| Wert | Bedeutung |
+|------|-----------|
+| `ok` | letzter Versand vom Push-Dienst angenommen |
+| `fail` | letzter Versand fehlgeschlagen (`last_status` = HTTP-Code; `410` löscht das Abo ohnehin) |
+| `unknown` | noch nie gesendet |
+
+> **Wichtig:** `ok` bedeutet nur, dass der **Push-Dienst** die Nachricht angenommen hat — ob der Nutzer sie tatsächlich sieht, kann Web-Push technisch nicht zurückmelden.
+
+**Responses**
+- `200` — siehe oben
+- `401` — kein Admin-Login oder falsches/fehlendes `X-Overview-Pass`
+- `404` — `PUSH_OVERVIEW_PASSWORD` leer (Feature aus)
+
+---
+
 ## Admin — Piloten-Verwaltung
 
 Verwaltung der `pilots`-Tabelle (Namenspflege/manuelles Anlegen). **Keine Mitglieder-Allowlist** — Friesen werden weiter über das Callsign-Präfix `FRS` (`settings.CALLSIGN_PREFIX`) erkannt, die Tabelle füllt sich automatisch aus VATSIM.

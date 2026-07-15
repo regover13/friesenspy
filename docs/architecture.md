@@ -38,6 +38,7 @@ Admin-Authentifizierung per signiertem httponly-Cookie.
 - **`ADMIN_PASSWORD`** (aus `config.py`) — leer = Admin-Bereich deaktiviert; gesetzt = Cookie-Login aktiv.
 - **Cookie `fs_admin`**: HMAC-SHA256-Signatur über das konfigurierte Passwort, signiert mit `SECRET_KEY` (stdlib `hmac`, kein Session-Store). Ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort, da die Signatur nicht mehr passt.
 - **`require_admin`** — FastAPI-Dependency, die das Cookie prüft und bei fehlendem oder ungültigem Cookie `401` zurückwirft. Schützt alle `/api/admin/*`-Endpoints.
+- **`require_admin_page`** — dasselbe für HTML-Seiten **außerhalb** von `/api/admin` (bisher nur `/admin/push-overview`). Nötig, weil `fs_admin` auf `path=/api/admin` liegt und vom Browser für eine Seite unter `/admin/…` nie mitgesendet wird: `require_admin` würde dort jeden echten Admin aussperren. Geprüft wird stattdessen die Break-glass-Kopie `fs_admin_site` (`path=/`) bzw. eine Forum-Session mit Admin-Recht. **Für jede neue Seite außerhalb von `/api/admin` diese Variante nehmen.**
 - **`POST /api/admin/login`** setzt das Cookie (httponly, SameSite=Strict); **`POST /api/admin/logout`** löscht es; **`GET /api/admin/me`** gibt `{"admin": true}` zurück wenn die Session gültig ist.
 - Die Admin-Seite selbst (`/admin` → `app/static/admin.html`) ist eine eigenständige Vanilla-JS-Seite; sie nutzt denselben Login-Flow und kommuniziert ausschließlich über die `/api/admin/*`-Endpoints.
 
