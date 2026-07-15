@@ -10,10 +10,13 @@ Rein und offline: kein DB-Zugriff, kein SSH, keine ``custom_airports``.
 """
 from __future__ import annotations
 
+import airportsdata
 import csv
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.geo import haversine
 
 
 @dataclass(frozen=True)
@@ -86,3 +89,125 @@ def find_code(code: str, refs: Sequence[AirportRef]) -> AirportRef | None:
         if want in ref.codes:
             return ref
     return None
+
+
+@dataclass(frozen=True)
+class Hit:
+    """Ein Platz mit gemessener Distanz zum untersuchten Punkt."""
+
+    ref: AirportRef
+    distance_km: float
+    agl_ft: float | None
+
+
+@dataclass(frozen=True)
+class Measurement:
+    """Reines Messergebnis — enthält bewusst KEINE Bewertung und keine Empfehlung.
+
+    ``ad_target``/``oa_target`` sind ``None``, wenn der Soll-Code in der jeweiligen Quelle
+    fehlt. Das ist Alltag, kein Fehler: EDHX steht nur in OurAirports, ETUO nur in
+    airportsdata.
+    """
+
+    lat: float
+    lon: float
+    alt_ft: float | None
+    icao: str | None
+    ad_nearest: list[Hit]
+    oa_nearest: list[Hit]
+    ad_target: Hit | None
+    oa_target: Hit | None
+    source_delta_km: dict[str, float]
+    oa_available: bool
+
+
+def airportsdata_refs() -> list[AirportRef]:
+    """Alle Plätze aus ``airportsdata``.
+
+    Bewusst die Rohquelle: sie kennt keine ``custom_airports``. Über ``icao_to_coords()`` zu
+    gehen wäre ein Fehler — das bezieht Overrides ein und macht jeden Vergleich „weicht der
+    Override ab?" zu 0 km.
+    """
+    return [
+        AirportRef(
+            code=code,
+            name=str(entry.get("name") or ""),
+            lat=entry["lat"],
+            lon=entry["lon"],
+            elevation_ft=entry.get("elevation"),
+            codes=frozenset({code}),
+        )
+        for code, entry in airportsdata.load("ICAO").items()
+    ]
+
+
+def _hit(lat: float, lon: float, alt_ft: float | None, ref: AirportRef) -> Hit:
+    agl = None
+    if alt_ft is not None and ref.elevation_ft is not None:
+        agl = alt_ft - ref.elevation_ft
+    return Hit(ref=ref, distance_km=haversine(lat, lon, ref.lat, ref.lon), agl_ft=agl)
+
+
+def nearest(
+    lat: float,
+    lon: float,
+    refs: Sequence[AirportRef],
+    *,
+    alt_ft: float | None = None,
+    limit: int = 5,
+) -> list[Hit]:
+    """Die ``limit`` nächsten Plätze, aufsteigend nach Distanz. DIE Umkehrfrage."""
+    hits = [_hit(lat, lon, alt_ft, ref) for ref in refs]
+    hits.sort(key=lambda h: h.distance_km)
+    return hits[:limit]
+
+
+def measure(
+    lat: float,
+    lon: float,
+    *,
+    alt_ft: float | None = None,
+    icao: str | None = None,
+    ad_refs: Sequence[AirportRef] | None = None,
+    oa_refs: Sequence[AirportRef] | None = None,
+) -> Measurement:
+    """Punkt gegen beide Referenzquellen messen. Ohne ``ad_refs``/``oa_refs`` werden sie geladen."""
+    ad = list(ad_refs) if ad_refs is not None else airportsdata_refs()
+    oa = list(oa_refs) if oa_refs is not None else load_ourairports()
+
+    # Soll-Code in BEIDEN Quellen unabhängig suchen: ein Code kann in einer fehlen und in der
+    # anderen stehen (EDHX nur OurAirports, ETUO nur airportsdata). None heißt „diese Quelle
+    # kennt ihn nicht" — kein Fehler, sondern selbst ein Befund.
+    ad_target = oa_target = None
+    if icao:
+        found_ad = find_code(icao, ad)
+        if found_ad is not None:
+            ad_target = _hit(lat, lon, alt_ft, found_ad)
+        found_oa = find_code(icao, oa)
+        if found_oa is not None:
+            oa_target = _hit(lat, lon, alt_ft, found_oa)
+
+    # Quellen-Abweichung für alle Codes, die in dieser Messung vorkommen.
+    codes = {h.ref.code for h in nearest(lat, lon, ad, limit=5)}
+    codes |= {h.ref.code for h in nearest(lat, lon, oa, limit=5)}
+    if icao:
+        codes.add(icao.strip().upper())
+    delta: dict[str, float] = {}
+    for code in codes:
+        in_ad = find_code(code, ad)
+        in_oa = find_code(code, oa)
+        if in_ad is not None and in_oa is not None:
+            delta[code] = haversine(in_ad.lat, in_ad.lon, in_oa.lat, in_oa.lon)
+
+    return Measurement(
+        lat=lat,
+        lon=lon,
+        alt_ft=alt_ft,
+        icao=(icao or "").strip().upper() or None,
+        ad_nearest=nearest(lat, lon, ad, alt_ft=alt_ft),
+        oa_nearest=nearest(lat, lon, oa, alt_ft=alt_ft),
+        ad_target=ad_target,
+        oa_target=oa_target,
+        source_delta_km=delta,
+        oa_available=bool(oa),
+    )
