@@ -24,7 +24,7 @@ Alle drei Fehler haben dieselbe Ursache: Die Reihenfolge der Prüfung und die Tr
 
 **Triage zuerst, dann Einzelfall — ein Ablauf, nicht zwei.** Die Erkennungslücken-Liste hat
 163 offene Fälle (184 Enden, da 29 Fälle beide Enden vermissen). Sie einzeln durchzugehen wäre
-Verschwendung: **74,5 % sind rein mechanisch abzuhaken** (gemessen 2026-07-15, siehe unten). Der
+Verschwendung: **86,4 % sind rein mechanisch abzuhaken** (gemessen 2026-07-15, siehe unten). Der
 Batch misst Schritt 0 und Schritt 1 über alle Fälle und sortiert die trivialen aus; übrig bleiben
 die echten Fragen, die einzeln beurteilt werden.
 
@@ -35,13 +35,13 @@ fast umsonst ab.
 
 | Triage-Befund (184 Enden) | Anzahl | Anteil |
 |---|---|---|
-| **E** — kein Bodenpunkt (Track beginnt/endet in der Luft) | 128 | 69,6 % |
-| **Kandidat** — braucht Urteil | **23** | **12,5 %** |
+| **E** — kein Bodenpunkt (Track beginnt/endet in der Luft) | 126 | 68,5 % |
+| **Kandidat** — braucht Urteil | **25** | **13,6 %** |
 | **Zu dünn** — Track hat < 3 Punkte | 19 | 10,3 % |
 | **ZZZZ** — Flugplan-Platzhalter, kein Platz | 11 | 6,0 % |
 | **D** — Punkt liegt an einem anderen Platz | 3 | 1,6 % |
 
-**87,5 % mechanisch abgehakt, 23 echte Fragen.** Die Kandidaten zeigen keine Häufung — also kein
+**86,4 % mechanisch abgehakt (159 von 184), 25 echte Fragen.** Die Kandidaten zeigen keine Häufung — also kein
 zweiter Belgien-Fall in Sicht.
 
 **Der Skill endet beim Urteil.** Er liefert Diagnose, Belege und ggf. einen konkreten
@@ -116,7 +116,7 @@ nichts gebraucht.
 **Schnittstelle:**
 
 ```bash
-python scripts/nearby_airports.py <lat> <lon> [--alt <ft MSL>] [--icao <Soll-Code>]
+python -m scripts.nearby_airports <lat> <lon> [--alt <ft MSL>] [--icao <Soll-Code>]
 ```
 
 **Ausgabe, drei Blöcke:**
@@ -170,7 +170,7 @@ EDDH   15.05 km   (Standardradius 4.0 km — außerhalb)
 ### A — Triage (die Liste)
 
 1. Export ziehen (`docker exec`, siehe oben) → `gaps.json`
-2. `python scripts/triage_gaps.py gaps.json` → gruppierte Befunde
+2. `python -m scripts.triage_gaps gaps.json` → gruppierte Befunde
 3. Trivialgruppen (E, ZZZZ) dem Nutzer als Sammelbefund melden — nicht einzeln durchkauen
 4. Kandidatenliste als Arbeitsvorrat für B
 

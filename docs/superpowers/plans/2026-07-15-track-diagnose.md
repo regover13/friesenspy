@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ein Skill, der die Erkennungslücken-Liste abarbeitbar macht: erst Triage über alle Fälle (74,5 % sind mechanisch abzuhaken), dann Einzeldiagnose der übrigen — mit einem Messwerkzeug für die Zahlen und einer festen Prüfreihenfolge für die Deutung.
+**Goal:** Ein Skill, der die Erkennungslücken-Liste abarbeitbar macht: erst Triage über alle Fälle (86,4 % sind mechanisch abzuhaken), dann Einzeldiagnose der übrigen — mit einem Messwerkzeug für die Zahlen und einer festen Prüfreihenfolge für die Deutung.
 
 **Architecture:** Strikte Trennung von Messung und Urteil. `scripts/nearby_airports.py` ist rein, offline und ohne DB-Zugriff: Punkt rein, Messwerte raus (nächste Plätze laut airportsdata und OurAirports, Quellen-Abweichung, Distanz zum Soll-Code). `scripts/triage_gaps.py` legt eine Schleife darum: JSON-Export rein, gruppierte Befunde raus — es implementiert Schritt 0 und Schritt 1 der Prüfreihenfolge, die reine Messungen sind. Schritt 2 braucht Kontext und bleibt beim Assistenten; die Fallunterscheidung steht als Prosa in `.claude/skills/track-diagnose/SKILL.md`. Detektor-Schwellen werden aus `app/gps_legs.py` und `app/database.py` **importiert**, nie abgeschrieben — so wird ein Test rot, statt dass der Skill still veraltet.
 
@@ -952,7 +952,7 @@ Liest den JSON-Export (siehe SKILL.md), misst je Fall das fragliche Ende und gru
 Schritt 0 und Schritt 1 der Pruefreihenfolge — beides reine Messungen. Schritt 2 braucht
 Kontext und bleibt beim Assistenten.
 
-**Sortiert, entscheidet aber nichts.** Auch ein Sammelbefund „128x Fall E" wird vom Nutzer
+**Sortiert, entscheidet aber nichts.** Auch ein Sammelbefund „126x Fall E" wird vom Nutzer
 abgehakt, nicht von hier.
 
 Rein: JSON rein, Gruppen raus. Kein DB-Zugriff, kein SSH.
@@ -1134,7 +1134,7 @@ git add scripts/triage_gaps.py tests/fixtures/gaps_mini.json tests/test_triage_g
 git commit -m "feat: Triage der Erkennungsluecken-Liste
 
 Misst Schritt 0/1 der Pruefreihenfolge ueber alle Faelle und gruppiert. Gemessen
-am Stand 2026-07-15: 87,5 Prozent der 184 Enden sind mechanisch abzuhaken, 23
+am Stand 2026-07-15: 86,4 Prozent der 184 Enden sind mechanisch abzuhaken, 25
 brauchen ein Urteil.
 
 Zwei Regeln, die beim Entwurf real falsch waren und jetzt Tests haben:
@@ -1172,14 +1172,14 @@ description: Use when working through the FriesenSpy Erkennungslücken list (/ad
 Beantwortet: *Warum hängt dieser Flug an Platz X?* — für die ganze Liste oder einen Einzelfall.
 
 **Erst triagieren, dann einzeln prüfen.** Die Lückenliste hatte am 2026-07-15 163 Fälle
-(184 Enden, weil 29 Fälle beide Enden vermissen). **87,5 % davon sind rein mechanisch abzuhaken.**
+(184 Enden, weil 29 Fälle beide Enden vermissen). **86,4 % davon sind rein mechanisch abzuhaken.**
 Wer sie einzeln durchgeht, hört drei von vier Mal „Aufzeichnungslücke, nichts zu tun".
 
 **Dieser Skill trägt nichts ein.** Er liefert Diagnose, Belege und ggf. einen konkreten
 Vorschlag (ICAO, Koordinate, Radius, Grund). Das Eintragen macht der Nutzer über die Admin-UI —
 jeder Write stößt einen vollen `rebuild_flight_cache` an, und genau die Fälle, die „klar"
 aussahen, waren die falschen. Für die Triage gilt dasselbe: sie sortiert, sie entscheidet nicht.
-Auch ein Sammelbefund „128× Fall E" wird vom Nutzer abgehakt.
+Auch ein Sammelbefund „126× Fall E" wird vom Nutzer abgehakt.
 
 **Nicht Teil dieses Skills:** das Vollaudit der gesamten Historie (Modus-Cluster über viele Flüge
 je Platz). Andere Frage, andere Fallstricke.
@@ -1258,7 +1258,7 @@ python -m scripts.triage_gaps gaps.json --gruppe E      # eine Gruppe im Detail
 ### A3. Berichten
 
 Trivialgruppen als **Sammelbefund** melden (nicht einzeln durchkauen), Kandidaten als Arbeitsvorrat
-für Ablauf B. Stand 2026-07-15: 128× E, 19× zu dünn, 11× ZZZZ, 3× D — **23 Kandidaten**.
+für Ablauf B. Stand 2026-07-15: 126× E, 19× zu dünn, 11× ZZZZ, 3× D — **25 Kandidaten**.
 
 ## Ablauf B — Einzelfall
 
@@ -1474,7 +1474,7 @@ OurAirports — der Belgien-Fund widerlegt das (848 von 24253 Codes > 3 km)."
 
 - [ ] `python -m pytest tests/ -q` → 1063 passed
 - [ ] `python -m scripts.nearby_airports 53.49527 10.00085 --alt 2209 --icao EDDH` → 15.05 km, „außerhalb", AGL 2156 ft, „überschritten"
-- [ ] Echter Triage-Lauf: Export ziehen (siehe SKILL.md), dann `python -m scripts.triage_gaps gaps.json` → Größenordnung 184 Enden aus 163 Fällen, ~23 Kandidaten. **Weicht das stark ab, ist das ein Befund, kein Grund zum Nachjustieren** — die Liste ändert sich mit jedem Flug, aber ein Sprung von 23 auf 100 Kandidaten hieße, dass eine Gruppenregel nicht greift.
+- [ ] Echter Triage-Lauf: Export ziehen (siehe SKILL.md), dann `python -m scripts.triage_gaps gaps.json` → Größenordnung 184 Enden aus 163 Fällen, ~25 Kandidaten. **Weicht das stark ab, ist das ein Befund, kein Grund zum Nachjustieren** — die Liste ändert sich mit jedem Flug, aber ein Sprung von 25 auf 100 Kandidaten hieße, dass eine Gruppenregel nicht greift.
 - [ ] `git status --short` → keine ungewollten Dateien; `scripts/.cache/` fehlt (ignoriert)
 - [ ] **Nicht** getan: kein Version-Bump, kein Tag, kein Changelog, keine Änderung an `docs/api.md` / `docs/architecture.md`
 - [ ] **Nicht** angefasst: die vier unversionierten Nutzer-Dateien (`friesenkutter-*.html`, `docs/superpowers/{plans,specs}/2026-07-13-subjekt-sichtbarkeit*`)
