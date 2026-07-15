@@ -78,6 +78,11 @@ falsch ist, sondern die Logik.
     dort stehen, in Ankunftsreihenfolge (Entscheidung 5). Dieselbe Mechanik trägt den Musterwechsel
     am Boden.
 
+14. **Erfasst wird, wer an einem teilnehmenden Platz einloggt oder landet** (Ladeplatz oder Ziel).
+    Wer **leer** an einem fremden Platz steht, fällt aus den Listen, bis er wieder an einem
+    teilnehmenden Platz auftaucht. Wer Ware trägt, bleibt immer sichtbar. Damit entfällt der
+    Streckenfilter aus der Buchung — s. „Wer in der Liste steht". *(Nutzer 16.07.)*
+
 Unverändert (berechtigte Domänen-Komplexität): Zuladung je Muster (`aircraft_payloads`),
 Pro-Flug-Kappung `per_flight_max_kg` (#63), Frachtart-Katalog, KI-Sprüche, Push, Badge,
 GPS-only-Wahrheit (#23), „Target bleibt Maßstab".
@@ -217,26 +222,77 @@ Manifest` ist; der Erhaltungssatz ist zugleich die Abschlussbedingung.
 hängende Sessions und setzt `logoff_time` auf die letzte Position. Die Ware eines Piloten, der nie
 sauber ausloggt, fällt damit spätestens nach 8 h in einen End-Stapel.
 
+### Wer in der Liste steht (Nutzer-Entscheidung 16.07.)
+
+**Erfasst wird ein FRS-Pilot, sobald er an einem teilnehmenden Platz — Ladeplatz oder Ziel — einloggt
+oder landet.** Er verschwindet wieder, sobald er **leer** an einem fremden Platz steht, und kommt
+zurück, wenn er erneut an einem teilnehmenden Platz auftaucht.
+
+Formal, **ohne neues Gedächtnis**:
+
+```
+sichtbar  =  letzter Bodenkontakt ∈ (Ladeplätze ∪ {Ziel})   ODER   Ladung > 0
+```
+
+Beide Werte führt das Modell ohnehin: Die Ladung *ist* der Flieger-Stapel, der letzte Bodenkontakt
+*ist* der Wert, den der Logout-Ort braucht. Die Regel kostet kein Feld.
+
+**Damit entfällt der Streckenfilter** (`if not has_latch and (dep not in route_set or arr not in
+route_set or dep == arr): continue`, `database.py:5397`). Er ist heute ein **Buchungs**-Filter: Er
+entscheidet, ob ein Flug überhaupt zählt — und genau deshalb musste der Latch ihn wieder aufheben
+(die einzige Stelle, an der der Latch je etwas „rettete"). Die Erfassung ist ein reiner
+**Sichtbarkeits**-Filter. Was gebucht wird, entscheidet die Ware, nicht die Strecke: Wer am
+Ladeplatz landet, lädt — auch wenn er von einem fremden Platz kam.
+
+**Ein leerer Pilot in der Luft, dessen letzter Bodenkontakt fremd war, ist unsichtbar** — auch wenn
+er gerade zum Ladeplatz zurückfliegt. Das ist kein Versehen, sondern #23: Wir unterstellen kein Ziel.
+Er taucht auf, wenn er landet.
+
 ### Der Live-Status = Ort × Ladung
 
 Keine eigene Wahrheit mehr, kein Ziel unterstellt (der Flugplan bleibt draußen, #23):
 
 | Ort | An Bord | Status |
 |---|---|---|
-| Boden, Ladeplatz | egal | `🅿️ lädt in EDWG` |
-| Luft | > 0 kg | `✈️ unterwegs · 800 kg` |
-| Luft | 0 kg | `✈️ noch dabei` |
-| Boden, fremder Platz | > 0 kg | `⏸ steht in EDDW · 800 kg` |
+| Boden, Ladeplatz | egal | `🅿️ lädt in EDWG · 800 kg` |
+| Boden, Ziel | 0 kg | `🅿️ steht in EDXH · 0 kg` |
+| Boden, fremder Platz | > 0 kg | `🅿️ steht in EDDW · 800 kg` |
 | Boden, fremder Platz | 0 kg | nicht in der Liste |
-| Ziel | — | gezählt, fällt aus der Liste |
+| Luft | > 0 kg | `✈️ unterwegs · 800 kg` |
+| Luft | 0 kg, letzter Platz teilnehmend | `✈️ dabei` |
+| Luft | 0 kg, letzter Platz fremd | nicht in der Liste |
+
+**Zwei Zeichen, nicht drei** (Nutzer 16.07.): **🅿️ heißt parken** — am Boden, egal wo und egal warum.
+**✈️** heißt in der Luft. Das ist exakt die Trennung, die der Feed schon heute macht
+(`index.html:5017`: `f.airborne ? ' ✈️' : ' 🅿️'`).
+
+Die Bedeutung trägt das **Wort**, nicht das Symbol:
+
+- **lädt** — dort liegt ein Stapel, er nimmt gerade Ware auf
+- **steht** — hier gibt es nichts zu holen (Ziel oder fremder Platz)
+- **unterwegs** — trägt Ware
+- **dabei** — fliegt leer
+
+**Am Boden steht immer eine Menge**, denn ob dieser Pilot beladen ist, sieht man ihm sonst nicht an.
+`✈️ dabei` braucht keine: Es *bedeutet* leer.
+
+„Boden, Ziel, > 0 kg" fehlt, weil es den Fall nicht gibt: Die Landung am Ziel liefert alles, und ein
+frisch eingeloggter Pilot hat einen leeren Stapel. `🅿️ steht in EDXH · 0 kg` ist deshalb der einzige
+Zustand am Ziel — und er ist kein Widerspruch zum gezählten Balken, sondern seine Folge.
+
+**Korrektur gegenüber dem ersten Entwurf:** Dort fiel der Pilot am Ziel aus der Liste („gezählt,
+fällt aus der Liste") — ein Rest des `arrived`-Denkens, das Ankommen für einen Abschied hielt. Das
+Ziel ist ein teilnehmender Platz; wer dort steht, ist offensichtlich noch dabei und holt gleich die
+nächste Fuhre. Ebenso war „Luft, 0 kg → dabei" pauschal formuliert und hätte jeden leeren
+FRS-Flug irgendwo in Deutschland gezeigt.
 
 - **`arrived` entfällt ersatzlos.** Im sauberen Pfad ~0 s sichtbar (Latch und Leg-Schließung fallen
   ins selbe `gs<2`-Sample; gemessen 14/22 deckungsgleich). Eine Lieferung ist eine Tatsache im
   Balken, kein Zustand.
-- **`returning` → `noch dabei`.** Der Name war eine Unterstellung über die Richtung. Die
+- **`returning` → `dabei`.** Der Name war eine Unterstellung über die Richtung. Die
   **Funktion** bleibt und ist die eigentliche Anforderung: *man sieht, wer noch mitmacht.* Damit
   entfällt auch **Z2** (feuerte für Positionierungsflüge).
-- **`⏸ steht in …` ist neu.** Wer mit Ware zwischenlandet, ist heute unsichtbar, obwohl er Teil des
+- **`🅿️ steht in …` ist neu.** Wer mit Ware zwischenlandet, ist heute unsichtbar, obwohl er Teil des
   Abends ist.
 - **`unterwegs` wird ehrlich:** heißt „trägt Ware", nicht „fliegt vermutlich zum Ziel" — mit Menge.
 
@@ -352,7 +408,7 @@ Daraus werden die Tests. `scripts/kutter_stapel_prototyp.py` rechnet die Migrati
 
 **Anzupassen:** `test_arrived_status_with_latch` (L2133) → Status entfällt;
 `test_returning_pilot_still_shown_while_still_airborne` (L2118) und `test_statuses_and_sums` (L2068)
-→ `returning` heißt jetzt `noch dabei` und bleibt sichtbar.
+→ `returning` heißt jetzt `dabei` und bleibt sichtbar.
 
 **Zu prüfen (echte Verhaltensänderung, kein reiner Testumbau):** `test_latched_flight_does_not_delay`
 (L880) und `test_open_flight_from_route_counts_as_in_progress` (L873) — das Feierabend-Kriterium
