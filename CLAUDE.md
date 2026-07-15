@@ -91,6 +91,9 @@ mkdir -p /opt/friesenspy/data
 # Friesen werden über das Callsign-Präfix erkannt (NICHT über eine CID-Liste).
 CALLSIGN_PREFIX=FRS              # Default: FRS
 SECRET_KEY=<random-string>
+PUSH_OVERVIEW_PASSWORD=          # Optional — Extra-Passwort für die versteckte Push-Diagnose
+                                 # (/admin/push-overview, unscheinbarer Link ganz unten im Admin).
+                                 # Leer = Feature komplett aus (Seite/Endpoint = 404).
 TELEGRAM_BOT_TOKEN=          # Optional
 TELEGRAM_CHAT_ID=            # Optional
 VATSIM_POLL_INTERVAL=15

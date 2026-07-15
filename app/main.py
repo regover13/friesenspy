@@ -63,6 +63,9 @@ from app.database import (
     delete_push_subscription,
     get_all_position_history,
     get_all_push_subscriptions,
+    get_push_overview,
+    list_visibility_restrictions,
+    list_ts_consent_restrictions,
     get_app_setting,
     get_calendar_events,
     get_connection,
@@ -1404,6 +1407,23 @@ def require_admin(request: Request) -> None:
     raise HTTPException(status_code=401, detail="Admin-Login erforderlich")
 
 
+def require_admin_page(request: Request) -> None:
+    """Admin-Prüfung für HTML-Seiten AUSSERHALB von ``/api/admin``.
+
+    ``require_admin`` prüft ``fs_admin`` — das liegt auf ``path=/api/admin`` und wird für eine
+    Seite unter ``/admin/...`` vom Browser nie mitgesendet. Hier zählt deshalb die
+    Break-glass-Kopie ``fs_admin_site`` (``path=/``) oder eine Forum-Session mit Admin-Recht.
+    """
+    settings = get_settings()
+    claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
+    if claims and claims.get("is_admin"):
+        return
+    if verify_admin_token(request.cookies.get(_SITE_ADMIN_COOKIE, ""),
+                          settings.SECRET_KEY, settings.ADMIN_PASSWORD):
+        return
+    raise HTTPException(status_code=401, detail="Admin-Login erforderlich")
+
+
 def require_confirm(request: Request) -> None:
     """Step-up-Dependency für kritische Aktionen (Löschen, Push/Veröffentlichen).
 
@@ -1977,6 +1997,273 @@ async def admin_push_broadcast(request: Request):
             subs, payload, label=f"Admin-Broadcast({audience})",
         )
     return {"status": "ok", "audience": audience, "sent": len(subs)}
+
+
+_PUSH_OVERVIEW_HTML = """<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Push-Diagnose</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0e1720;color:#d6e2ee;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;padding:24px;max-width:1100px;margin:0 auto}
+  h1{font-size:1.1rem;margin-bottom:4px}
+  .sub{color:#6f8296;font-size:.8rem;margin-bottom:20px}
+  input{background:#16232f;border:1px solid #2a3d4e;color:#d6e2ee;border-radius:6px;padding:9px 12px;font-size:.95rem;width:220px}
+  button{background:#2d9cdb;color:#fff;border:0;border-radius:6px;padding:9px 16px;font-size:.9rem;cursor:pointer;margin-left:8px}
+  button:hover{filter:brightness(1.08)}
+  .err{color:#ff6b6b;font-size:.85rem;min-height:1.2em;margin-top:8px}
+  .cards{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}
+  .card{background:#16232f;border:1px solid #223343;border-radius:8px;padding:10px 14px;min-width:120px}
+  .card .n{font-size:1.4rem;font-weight:700}
+  .card .l{color:#6f8296;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
+  h2{font-size:.92rem;margin:22px 0 8px;color:#9fb3c6}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #223343;border-radius:8px;scrollbar-width:thin;scrollbar-color:#3a4d5e #16232f}
+  .table-scroll::-webkit-scrollbar{height:10px}
+  .table-scroll::-webkit-scrollbar-thumb{background:#3a4d5e;border-radius:5px}
+  table{width:max-content;min-width:100%;border-collapse:collapse;font-size:.83rem}
+  th,td{text-align:left;padding:7px 11px;white-space:nowrap;border-bottom:1px solid #1c2b38}
+  th{background:#132030;color:#8ea3b6;font-weight:600;position:sticky;top:0}
+  td.mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .muted{color:#6f8296}
+  .yes{color:#57c97a}
+  .no{color:#3f5266}
+  .empty{color:#6f8296;padding:12px;font-size:.85rem}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<h1>Push-Diagnose</h1>
+<div class="sub">Zugriff nur mit Admin-Login + Extra-Passwort. Kein Beweis, dass Nutzer Meldungen sehen — nur der Zustell-Handshake mit dem Push-Dienst.</div>
+<div id="gate">
+  <input type="password" id="pw" placeholder="Diagnose-Passwort" autocomplete="off">
+  <button id="go">Anzeigen</button>
+  <div class="err" id="err"></div>
+</div>
+<div id="out" class="hidden"></div>
+<script>
+'use strict';
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function ago(iso){if(!iso)return '';const d=new Date(iso.replace(' ','T'));if(isNaN(d))return esc(iso);const m=Math.floor((Date.now()-d.getTime())/60000);if(m<60)return m+' min';const h=Math.floor(m/60);if(h<48)return h+' h';return Math.floor(h/24)+' d';}
+function b(v){return v?'<span class="yes">✔</span>':'<span class="no">–</span>';}
+function health(h){return h==='ok'?'🟢':h==='fail'?'🔴':'⚪';}
+
+const gate=document.getElementById('gate'),out=document.getElementById('out'),errEl=document.getElementById('err');
+
+async function load(){
+  const pw=document.getElementById('pw').value;
+  errEl.textContent='';
+  let r;
+  try{r=await fetch('/api/admin/push/overview',{headers:{'X-Overview-Pass':pw},credentials:'same-origin'});}
+  catch(e){errEl.textContent='Netzwerkfehler.';return;}
+  if(r.status===401){errEl.textContent='Falsches Passwort (oder Admin-Login abgelaufen).';return;}
+  if(!r.ok){errEl.textContent='Fehler '+r.status+'.';return;}
+  const d=await r.json();
+  render(d);
+  gate.classList.add('hidden');out.classList.remove('hidden');
+}
+
+function render(d){
+  const t=d.totals;
+  const card=(n,l)=>`<div class="card"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  let h=`<div class="cards">
+    ${card(t.abos,'Abos')}
+    ${card(t.personen,'Personen')}
+    ${card(t.eingeloggt,'eingeloggt')}
+    ${card(t.anonym,'anonym')}
+    ${card(t.health_ok,'🟢 zugestellt')}
+    ${card(t.health_fail,'🔴 fehlerhaft')}
+    ${card(t.health_unknown,'⚪ ungesendet')}
+  </div>`;
+  h+=`<div class="sub">Auswahl-Beliebtheit: Flugpläne ${t.will_prefiles} · TeamSpeak ${t.will_ts} · Events ${t.will_events}${d.vapid_configured?'':' · <span style="color:#ff6b6b">VAPID nicht konfiguriert!</span>'}</div>`;
+
+  h+='<h2>Abos &amp; Auswahl</h2>';
+  if(!d.subscriptions.length){h+='<div class="empty">Keine Abos.</div>';}
+  else{
+    h+='<div class="table-scroll"><table><thead><tr>'+
+      '<th>Status</th><th>Wer</th><th>Plattform</th><th>Piloten-Filter</th>'+
+      '<th>Flugpläne</th><th>TS</th><th>Events</th><th>TS-Kürzel</th>'+
+      '<th>angelegt</th><th>letzte OK</th><th>letzter Fehler</th></tr></thead><tbody>';
+    for(const s of d.subscriptions){
+      const who=s.owner_name?esc(s.owner_name):'<span class="muted">anonym</span>';
+      const flt=s.pilot_filter.length?esc(s.pilot_filter.join(', ')):'<span class="muted">alle</span>';
+      const fail=s.last_fail_at?ago(s.last_fail_at)+(s.last_status?' ('+esc(s.last_status)+')':''):'';
+      h+=`<tr><td>${health(s.health)}</td><td>${who}</td><td>${esc(s.platform)}</td><td>${flt}</td>`+
+         `<td>${b(s.notify_prefiles)}</td><td>${b(s.notify_ts)}</td><td>${b(s.notify_events)}</td>`+
+         `<td class="mono">${esc(s.ts_self_frs||'')}</td><td class="muted">${ago(s.created_at)}</td>`+
+         `<td class="muted">${ago(s.last_ok_at)}</td><td class="muted">${fail}</td></tr>`;
+    }
+    h+='</tbody></table></div>';
+  }
+
+  h+='<h2>Piloten mit eingeschränkter Sichtbarkeit</h2>';
+  if(!d.suppressed_pilots.length){h+='<div class="empty">Niemand — alle sichtbar für jeden.</div>';}
+  else{
+    h+='<div class="table-scroll"><table><thead><tr><th>Wer</th><th>Modus</th><th>Erlaubte</th><th>Dienste</th><th>geändert</th></tr></thead><tbody>';
+    for(const v of d.suppressed_pilots){
+      h+=`<tr><td>${esc(v.who)}</td><td>${esc(v.mode)}</td><td class="mono">${esc(v.allowlist||'')}</td><td class="mono">${esc(v.services||'alle')}</td><td class="muted">${ago(v.updated_at)}</td></tr>`;
+    }
+    h+='</tbody></table></div>';
+  }
+
+  h+='<h2>TeamSpeak-Sichtbarkeit</h2>';
+  if(!d.suppressed_ts.length){h+='<div class="empty">Keine Einschränkungen.</div>';}
+  else{
+    h+='<div class="table-scroll"><table><thead><tr><th>FRS</th><th>Sichtbarkeit</th><th>Erlaubte</th><th>geändert</th></tr></thead><tbody>';
+    for(const t of d.suppressed_ts){
+      h+=`<tr><td>${esc(t.who)}</td><td>${esc(t.visibility)}</td><td class="mono">${esc(t.allowlist||'')}</td><td class="muted">${ago(t.updated_at)}</td></tr>`;
+    }
+    h+='</tbody></table></div>';
+  }
+  out.innerHTML=h;
+}
+
+document.getElementById('go').addEventListener('click',load);
+document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')load();});
+document.getElementById('pw').focus();
+</script>
+</body>
+</html>"""
+
+
+def _push_platform(endpoint: str) -> str:
+    """Plattform aus dem Push-Endpoint-Host ableiten (kostenlos, kein Tracking)."""
+    from urllib.parse import urlparse
+    host = (urlparse(endpoint or "").netloc or "").lower()
+    if "fcm.googleapis.com" in host or "android.googleapis.com" in host:
+        return "Chrome / Android"
+    if "mozilla.com" in host:
+        return "Firefox"
+    if "apple.com" in host:
+        return "Apple (Safari/iOS)"
+    if "windows.com" in host or "wns" in host:
+        return "Windows / Edge"
+    return host or "?"
+
+
+def _push_health(last_ok: str | None, last_fail: str | None) -> str:
+    """Zustellungs-Zustand aus den letzten Versand-Zeitstempeln (ISO, lexikografisch sortierbar)."""
+    if last_fail and (not last_ok or last_fail > last_ok):
+        return "fail"
+    if last_ok:
+        return "ok"
+    return "unknown"
+
+
+def _require_push_overview(request: Request) -> None:
+    """Admin-Login PLUS Extra-Passwort (per Header) für die Push-Diagnose.
+
+    Ist ``PUSH_OVERVIEW_PASSWORD`` leer, existiert das Feature nicht (404) — hält es unauffällig.
+    """
+    require_admin(request)
+    settings = get_settings()
+    if not settings.PUSH_OVERVIEW_PASSWORD:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not check_password(request.headers.get("x-overview-pass", ""), settings.PUSH_OVERVIEW_PASSWORD):
+        raise HTTPException(status_code=401, detail="Falsches Diagnose-Passwort")
+
+
+@app.get("/api/admin/push/overview")
+async def admin_push_overview(request: Request):
+    """Push-Abos + Auswahl + Zustellungs-Diagnose + Unsichtbarkeits-Einstellungen (JSON)."""
+    _require_push_overview(request)
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        subs = get_push_overview(conn)
+        vis = list_visibility_restrictions(conn)
+        ts = list_ts_consent_restrictions(conn)
+        names = {p["cid"]: p.get("name") for p in list_pilots(conn, callsign_prefix=settings.CALLSIGN_PREFIX)}
+    finally:
+        conn.close()
+
+    def _name(cid) -> str:
+        try:
+            cid_i = int(cid)
+        except (TypeError, ValueError):
+            return "?"
+        return names.get(cid_i) or f"CID {cid_i}"
+
+    def _filter_names(pf) -> list[str]:
+        if not pf:
+            return []
+        try:
+            return [_name(c) for c in json.loads(pf)]
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return []
+
+    out_subs = []
+    for s in subs:
+        oc = s.get("owner_cid")
+        out_subs.append({
+            "owner_cid": oc,
+            "owner_name": _name(oc) if oc is not None else None,
+            "platform": _push_platform(s.get("endpoint", "")),
+            "pilot_filter": _filter_names(s.get("pilot_filter")),
+            "notify_prefiles": bool(s.get("notify_prefiles")),
+            "notify_ts": bool(s.get("notify_ts")),
+            "notify_events": bool(s.get("notify_events")),
+            "ts_self_frs": s.get("ts_self_frs"),
+            "created_at": s.get("created_at"),
+            "last_ok_at": s.get("last_ok_at"),
+            "last_fail_at": s.get("last_fail_at"),
+            "last_status": s.get("last_status"),
+            "health": _push_health(s.get("last_ok_at"), s.get("last_fail_at")),
+        })
+
+    logged_in = sum(1 for s in out_subs if s["owner_cid"] is not None)
+    distinct_people = len({s["owner_cid"] for s in out_subs if s["owner_cid"] is not None})
+    totals = {
+        "abos": len(out_subs),
+        "eingeloggt": logged_in,
+        "anonym": len(out_subs) - logged_in,
+        "personen": distinct_people,
+        "will_prefiles": sum(1 for s in out_subs if s["notify_prefiles"]),
+        "will_ts": sum(1 for s in out_subs if s["notify_ts"]),
+        "will_events": sum(1 for s in out_subs if s["notify_events"]),
+        "health_ok": sum(1 for s in out_subs if s["health"] == "ok"),
+        "health_fail": sum(1 for s in out_subs if s["health"] == "fail"),
+        "health_unknown": sum(1 for s in out_subs if s["health"] == "unknown"),
+    }
+
+    out_vis = [{
+        "who": _name(v.get("cid")), "cid": v.get("cid"), "mode": v.get("mode"),
+        "allowlist": v.get("allowlist"), "services": v.get("services"),
+        "updated_at": v.get("updated_at"),
+    } for v in vis]
+    out_ts = [{
+        "who": t.get("frs"), "visibility": t.get("visibility"),
+        "allowlist": t.get("allowlist"), "updated_at": t.get("updated_at"),
+    } for t in ts]
+
+    return {
+        "vapid_configured": bool(settings.VAPID_PRIVATE_KEY),
+        "totals": totals,
+        "subscriptions": out_subs,
+        "suppressed_pilots": out_vis,
+        "suppressed_ts": out_ts,
+    }
+
+
+@app.get("/admin/push-overview", include_in_schema=False)
+async def admin_push_overview_page(request: Request):
+    """Unauffällige Diagnose-Seite: fragt das Extra-Passwort ab und rendert die Übersicht.
+
+    Reihenfolge: erst die 404-Abschaltung, dann der Admin-Login. Andersherum bekäme ein
+    Nicht-Admin bei abgeschaltetem Feature ein 401 statt 404 — und damit den Hinweis, dass
+    unter dieser URL überhaupt etwas liegt.
+
+    ``require_admin_page`` statt ``require_admin``: diese Seite liegt nicht unter
+    ``/api/admin``, wo das eigentliche Admin-Cookie gilt.
+    """
+    from fastapi.responses import HTMLResponse
+    settings = get_settings()
+    if not settings.PUSH_OVERVIEW_PASSWORD:
+        raise HTTPException(status_code=404, detail="Not found")
+    require_admin_page(request)
+    return HTMLResponse(content=_PUSH_OVERVIEW_HTML)
 
 
 @app.get("/api/admin/pilots")
