@@ -239,6 +239,11 @@ ORDER BY logon_time;
 Stand 2026-07-15: 2104 FRS-Legs, 101 sichtbare Lücken, **vier blinde Fälle**. Untergrenzwert —
 `flight_cache` filtert auf `CALLSIGN_PREFIX`, die Lückenliste läuft über alle Callsigns.
 
+> **Zwei Zahlen, die nicht verwechselt werden dürfen:** Die 101 hier stammen aus `flight_cache`
+> (nur FRS-Callsigns), die 163 Fälle der Triage aus `list_gps_detection_gaps` (alle Callsigns,
+> gekappt bei 200 — `app/database.py:4708`). Verschiedene Grundgesamtheiten, keine Widersprüche.
+> Wegen der Kappung ist auch 163 möglicherweise nicht alles.
+
 Ohne Flugplan verschiebt sich zweierlei: **Fall D entfällt** (wo kein Soll ist, kann nichts
 abweichen), und **Fall A wird zur Recherche** — kein Code sagt, wie der Platz heißt. Dann
 bleiben OurAirports und Websuche.
