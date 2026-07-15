@@ -80,7 +80,15 @@ python scripts/nearby_airports.py <lat> <lon> [--alt <ft MSL>] [--icao <Soll-Cod
 
 Mit `--icao` zusätzlich die gezielte Soll-Prüfung: Distanz des Punktes zum Flugplan-Code, in
 beiden Quellen. Die Gegenüberstellung von Soll-Distanz und Nächster-Platz-Distanz **ist** der
-Fall-D-Nachweis (EDHX: 132,7 km zum Soll gegen 0,2 km zu EDXH).
+Fall-D-Nachweis (EDHX: 132,70 km zum Soll laut OurAirports gegen 0,16 km zu EDXH).
+
+**Ein Code kann in einer Quelle fehlen und in der anderen stehen** — das ist kein Sonderfall,
+sondern Alltag: `EDHX` steht nur in OurAirports, `ETUO` nur in airportsdata. Beide Blöcke müssen
+deshalb unabhängig „nicht vorhanden" melden können, ohne dass der andere Block ausfällt.
+
+**OurAirports-Codes werden über `ident`, `icao_code` *und* `gps_code` gematcht.** Verlässt man
+sich auf `icao_code`, verschwinden reale Plätze: `EDHX` (Bad Bramstedt Heliport) und `EBMO`
+(Moorsele) stehen unter `ident`, ihr `icao_code`-Feld ist leer.
 
 **Schwellen werden aus `app/gps_legs.py` importiert, nie abgeschrieben** — `_GPS_SPAWN_MAX_AGL_FT`
 (1500), `_GPS_GROUND_AGL_FT` (300) — ebenso `_BUMMEL_AIRPORT_RADIUS_KM` (4,0) aus
@@ -95,10 +103,14 @@ EDDH   15.05 km   (Standardradius 4.0 km — außerhalb)
 
 **Quellen:**
 
-- airportsdata über `app.geo.airportsdata_coords()` — bewusst **nicht** `icao_to_coords()`, das
-  würde `custom_airports` einbeziehen und jeden Override-Vergleich auf 0 km drücken (#78-Fund).
-  Die Nachbarschaftssuche läuft ebenfalls über reines airportsdata: das Werkzeug misst gegen die
-  Referenzquellen, den Custom-Stand zeigt der Ablauf separat.
+- airportsdata über `airportsdata.load("ICAO")` — die Rohquelle, per Definition ohne
+  `custom_airports`, und die einzige, die auch Name und Elevation liefert (die das Werkzeug für
+  die Nachbarliste und AGL braucht). Bewusst **nicht** `app.geo.icao_to_coords()`: das bezieht
+  `custom_airports` ein und drückt jeden Override-Vergleich auf 0 km (#78-Fund).
+  `app.geo.airportsdata_coords()` (v9.5.0) wäre semantisch dasselbe, liefert aber nur `(lat, lon)`
+  — es zusätzlich aufzurufen prüfte dieselbe Eigenschaft zweimal und verschleierte, dass die
+  Rohquelle bereits die Garantie ist. Aus `app.geo` kommt nur `haversine`.
+  Das Werkzeug misst gegen die Referenzquellen; den Custom-Stand zeigt der Ablauf separat.
 - OurAirports als unabhängige Gegenprobe, Vollabzug von
   `https://davidmegginson.github.io/ourairports-data/airports.csv` (~12 MB), gecacht nach
   `scripts/.cache/ourairports.csv` (in `.gitignore`), mit Altersprüfung. Ohne Netz arbeitet das
@@ -166,6 +178,13 @@ Kein Bodenpunkt → **Fall E**, Ende.
 sondern „welcher Platz liegt am nächsten", in beiden Quellen. Anderer Platz unter 1 km →
 **Fall D**, Ende. *(Rettete EDHX und ETUO.)*
 
+> **Warum diese Reihenfolge nicht verhandelbar ist — der EDHX-Beleg:** `EDHX` steht **nicht in
+> airportsdata** und erfüllt damit *formal das Kriterium von Fall A* („Code fehlt → Ergänzung").
+> Wer bei Schritt 2 einsteigt, trägt einen Platz ein. Schritt 1 zeigt: der Bodenpunkt liegt
+> 0,16 km von **EDXH** (Helgoland-Düne) — der Pilot hatte den Code verdreht. `EDHX` existiert
+> real, aber als *Bad Bramstedt Heliport*, 132,70 km entfernt (nur in OurAirports, dort ohne
+> `icao_code`). **Fall D schlägt Fall A**, immer.
+
 **Schritt 2 — Erst jetzt der Code.** Fehlt er in airportsdata → **A**. Steht er drin, liegt aber
 über 3 km weg, während OurAirports auf dem Punkt sitzt → **B**. Deckt airportsdata sich mit
 OurAirports und der Punkt liegt trotzdem draußen → **C**. Ist airportsdata ohnehin näher, als ein
@@ -178,7 +197,7 @@ zuletzt, was mit dem Code los ist.**
 
 | Fall | Befund | Handlung | Referenz |
 |---|---|---|---|
-| **A** | Code steht nicht in airportsdata | Ergänzung, Grund `Fehlt in airportsdata` | EDEN, EDWT |
+| **A** | Code steht nicht in airportsdata — **und Schritt 1 hat keinen anderen Platz gefunden** | Ergänzung, Grund `Fehlt in airportsdata` | EDEN, EDWT |
 | **B** | Code steht drin, aber weit weg; OurAirports liegt auf dem Punkt | Koordinaten-Override, Grund `airportsdata-Koordinate falsch` | EBKT, EBBR, ELLX |
 | **C** | Koordinate stimmt (AD deckt sich mit OA), echter Bodenpunkt trotzdem außerhalb 4 km | Radius-Override, Grund `Abhebepunkt außerhalb Standardradius` | EDDF, EHAM |
 | **D** | Der Bodenpunkt gehört zu einem *anderen* Platz | nichts eintragen | EDHX, ETUO |
@@ -209,12 +228,18 @@ der eigentliche Preis eines Radius-Overrides.
 `tests/test_nearby_airports.py`, Regressionsfälle aus realen Punkten (nicht aus erfundenen Zahlen —
 so dokumentieren sie zugleich, wogegen das Werkzeug schützt):
 
-| Test | Erwartung | Deckt ab |
+Alle Werte am 2026-07-15 aus der Produktions-DB und den beiden Referenzquellen **gemessen**, nicht
+geschätzt:
+
+| Punkt (aus `statsim_position_history`) | Erwartung | Deckt ab |
 |---|---|---|
-| EDHX-Punkt (Helgoland-Düne) | nächster Platz EDXH < 1 km; Soll-Code EDHX > 100 km | Fall D |
-| ETUO-Punkt | nächster Platz EDVA < 1 km | Fall D |
-| EDDH-Punkt, `--alt 2209` | außerhalb 4 km **und** über 1500 ft AGL | Fall E |
-| EBKT-Punkt | Abweichung AD↔OA ≈ 37 km | Fall B |
+| **EDHX** `54.18665 / 7.91488` (Track 29258369, gs 0, 7 ft) | `--icao EDHX`: in airportsdata **nicht vorhanden**, in OurAirports 132,70 km; nächster Platz **EDXH 0,16 km** | Fall D schlägt Fall A |
+| **ETUO** `51.85449 / 10.02288` (Track 23066993, gs 0, 779 ft) | `--icao ETUO`: airportsdata 118,05 km, in OurAirports **nicht vorhanden**; nächster Platz **EDVA 0,19 km** | Fall D, einseitige Quelle |
+| **EDDH** `53.49527 / 10.00085 --alt 2209` (Track 28133172, gs 217) | EDDH **15,05 km** (> 4,0 km) **und** AGL **2156 ft** (> 1500 ft) | Fall E, Schwellen-Import |
+| **EBKT** `50.82005 / 3.2163` (Track 28531653, gs 0, 71 ft) | airportsdata 37,20 km, OurAirports 0,49 km, **Delta AD↔OA 37,00 km**; nächster AD-Platz ist EBMO 6,06 km | Fall B |
+
+Der EBKT-Test hält zusätzlich fest, dass Schritt 1 hier **nicht** greift: EBMO liegt 6,06 km weg,
+über der 1-km-Schwelle — sonst wäre der Belgien-Fund fälschlich als Fall D abgetan worden.
 
 Der OurAirports-Loader bekommt in Tests eine kleine Fixture-CSV — kein Netz, kein 12-MB-Download.
 
