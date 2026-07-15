@@ -435,8 +435,20 @@ nennt OurAirports als Quelle, deckt sich aber nachweislich nicht damit.
 ## Offene Punkte (nicht blockierend)
 
 - Der airportsdata-Belgienfehler ist **upstream nicht gemeldet**. Eigenes Thema.
-- Legs über Track-Lücken zusammenführen (LKLB-Muster) — echte Design-Entscheidung mit Risiko: eine
-  reale Zwischenlandung darf nie verschluckt werden. Eigenes Thema.
+- **Reconnect-Sessions zusammenführen (Task #1)** — war als „LKLB-Muster" nur vermutet, ist am
+  2026-07-15 belegt und vermessen: **16 der 148 offenen Lücken (~11 %) sind Reconnect-Artefakte**,
+  entsprechend ca. 8 zerschnittenen Flügen. `canonicalize_legs` rechnet pro `statsim_id`; bricht
+  die Verbindung mitten im Flug ab, entstehen zwei Sessions — die erste endet airborne (keine
+  Landung), die zweite hebt nie ab (keine Landung). Ein Reconnect erzeugt also **zwei** Lücken,
+  beide Phantome.
+
+  Beweis NAL3WK (04.08.2025): Session `23901295` endet 14:28:16 bei **231 ft / 80 kt** im
+  Endanflug auf Hamburg, Session `23902523` beginnt 14:29:02 bei **49 ft / 27 kt** am Boden.
+  **46 Sekunden Lücke**, die Landung liegt darin. Zusammengeführt ein sauberer Flug.
+
+  Risiko unverändert: Eine echte Zwischenlandung darf nie verschluckt werden — die Regel darf
+  nicht allein an der Zeitlücke hängen, sondern muss den Zustand an der Nahtstelle prüfen.
+  Eigener Spec, eigene Tests; erste echte App-Verhaltensänderung dieses Themenkomplexes.
 - **Die Lückenliste ist bei 200 Zeilen gekappt** (`app/database.py:4708`). Beim Testlauf lagen
   200 Zeilen an — es könnten also mehr offene Fälle existieren, als die Liste zeigt. Ob die
   Kappung stört, zeigt sich erst, wenn die 21 Kandidaten abgearbeitet sind.

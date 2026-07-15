@@ -147,11 +147,23 @@ python -m scripts.triage_gaps gaps.json --gruppe E      # eine Gruppe im Detail
 > der Pilot war nicht woanders, der Track zeigt den Start nicht. Beim ersten echten Einsatz
 > waren **alle drei** D-Befunde in Wahrheit Rollen-Tracks.
 
+> **Gruppe „ZZZZ" wird ZULETZT geprüft** — nach „E" und „Kein Flug", nicht davor. Der
+> Platzhalter sagt nur, dass der Flugplan keinen Code nennt (Piloten schreiben ihn beim Start
+> vom Acker); er erklärt **nicht**, warum nichts erkannt wurde. Wer ihn früh prüft, hakt Fälle
+> als trivial ab, die in Wahrheit „in der Luft" oder „nur Rollen" sind — die schlechtere
+> Erklärung gewinnt.
+>
+> Bleibt nach beiden Prüfungen ein **sauberer Bodenpunkt** übrig, ist der Fall gerade **nicht
+> trivial**: Dort stand jemand am Boden, und airportsdata kennt den Platz nicht — das ZZLANGE-
+> Muster (Fall A, Pseudo-Code). Solche Enden zählen deshalb zu `GRUPPEN_FUER_MENSCHEN` und
+> **nicht** als mechanisch abgehakt. Ein Namensvorschlag ist unmöglich (kein Soll-Code), Fall D
+> entfällt (wo kein Soll ist, kann nichts abweichen).
+
 ### A3. Berichten
 
 Trivialgruppen als **Sammelbefund** melden (nicht einzeln durchkauen), Kandidaten als Arbeitsvorrat
-für Ablauf B. Stand 2026-07-15, 183 Enden aus 162 Fällen: 125× E, 19× zu dünn, 12× Kein Flug,
-11× ZZZZ, 4× Mehrdeutig, 0× D — **12 Kandidaten**; 167 von 183 mechanisch abgehakt (91,3 %).
+für Ablauf B. Stand 2026-07-15, 183 Enden aus 162 Fällen: 132× E, 19× zu dünn, 16× Kein Flug,
+4× Mehrdeutig, 0× ZZZZ, 0× D — **12 Kandidaten**; 167 von 183 mechanisch abgehakt (91,3 %).
 
 ## Ablauf B — Einzelfall
 

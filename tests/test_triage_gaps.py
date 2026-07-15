@@ -72,10 +72,36 @@ def test_ein_punkt_track_schlaegt_nachbarschaft(faelle, ad, oa):
     assert _gruppe(faelle, ad, oa, 27831625, "departure") == GRUPPE_DUENN
 
 
-def test_zzzz_schlaegt_luft(faelle, ad, oa):
-    """27404430 ist mit gs 147 auch in der Luft. ZZZZ ist die stärkere Aussage:
-    es gibt keinen Platz zu finden."""
-    assert _gruppe(faelle, ad, oa, 27404430, "departure") == GRUPPE_ZZZZ
+def test_zzzz_ohne_bodenpunkt_wird_als_luft_erklaert(faelle, ad, oa):
+    """27404430 hat ZZZZ im Flugplan UND beginnt mit gs 147 in der Luft. Frueher gewann
+    ZZZZ — das war falsch: „in der Luft" erklaert, WARUM nichts erkannt wurde, ZZZZ sagt
+    nur, dass der Plan keinen Code nennt. Die Erklaerung schlaegt den Platzhalter."""
+    assert _gruppe(faelle, ad, oa, 27404430, "departure") == GRUPPE_LUFT
+
+
+def test_zzzz_mit_bodenpunkt_ist_kein_muell(ad, oa):
+    """ZZZZ heisst „der Platz hat keinen ICAO-Code" — Piloten schreiben es, wenn sie von
+    einem Acker starten. Steht dort ein sauberer Bodenpunkt und wurde trotzdem kein Platz
+    erkannt, ist das GENAU das ZZLANGE-Muster: ein Platz, den airportsdata nicht kennt.
+
+    Solche Faelle duerfen NICHT als Trivialgruppe abgehakt werden — sie brauchen ein Urteil
+    (welcher Platz ist das? Pseudo-Code vergeben?). Am 2026-07-15 existierte zufaellig kein
+    solcher Fall (alle 11 ZZZZ waren in der Luft oder nur Rollen); der Test sichert, dass
+    der naechste nicht lautlos verschwindet."""
+    ende = Ende(statsim_id=99001, callsign="FRS1", seite="departure", soll="ZZZZ",
+                punkt={"lat": 53.5383, "lon": 8.5388, "alt": 10, "gs": 0}, punkte=200,
+                min_alt=10, max_alt=3000)   # echter Flug, sauberer Bodenpunkt
+    assert triagiere(ende, ad, oa).gruppe == GRUPPE_ZZZZ
+
+
+def test_zzzz_zaehlt_nicht_als_mechanisch_abgehakt():
+    """Die Gruppen, die ein menschliches Urteil brauchen, muessen aus der
+    Mechanisch-Quote heraus — sonst meldet der Bericht mehr erledigt, als es ist."""
+    from scripts.triage_gaps import GRUPPEN_FUER_MENSCHEN
+    assert GRUPPE_ZZZZ in GRUPPEN_FUER_MENSCHEN
+    assert GRUPPE_KANDIDAT in GRUPPEN_FUER_MENSCHEN
+    assert GRUPPE_MEHRDEUTIG in GRUPPEN_FUER_MENSCHEN
+    assert GRUPPE_LUFT not in GRUPPEN_FUER_MENSCHEN
 
 
 def test_eddh_spawn_in_der_luft(faelle, ad, oa):

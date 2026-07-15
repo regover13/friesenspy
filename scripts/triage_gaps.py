@@ -36,6 +36,12 @@ GRUPPE_KANDIDAT = "Kandidat"
 GRUPPE_MEHRDEUTIG = "Mehrdeutig"
 GRUPPE_KEIN_FLUG = "Kein Flug"
 
+# Gruppen, die ein menschliches Urteil brauchen und deshalb NICHT als mechanisch abgehakt
+# zählen. Sonst meldet der Bericht mehr erledigt, als es ist — und ein echter Fund geht in
+# einer Trivialgruppe unter. ZZZZ steht hier, weil ein Platzhalter MIT Bodenpunkt gerade kein
+# Müll ist, sondern ein Platz ohne ICAO-Code (Fall A).
+GRUPPEN_FUER_MENSCHEN = (GRUPPE_KANDIDAT, GRUPPE_MEHRDEUTIG, GRUPPE_ZZZZ)
+
 # Der Detektor braucht mindestens einen Zustandswechsel (ON_GROUND -> AIRBORNE -> ON_GROUND).
 # Bei weniger Samples ist jede Aussage über Start/Landung bedeutungslos.
 MIN_TRACKPUNKTE = 3
@@ -145,9 +151,6 @@ def triagiere(
     if ende.punkte < MIN_TRACKPUNKTE:
         return Befund(ende, GRUPPE_DUENN, "Track hat nur %d Punkt(e)" % ende.punkte)
 
-    if (ende.soll or "").upper() == PLATZHALTER_CODE:
-        return Befund(ende, GRUPPE_ZZZZ, "Flugplan-Platzhalter — kein Platz")
-
     lat, lon = ende.punkt["lat"], ende.punkt["lon"]
     # Die Nachbarsuche fragt BEWUSST NUR airportsdata, nicht OurAirports: Schritt 1 muss gegen
     # die Quelle prüfen, die der Detektor selbst benutzt. Ein Platz, den nur OurAirports kennt,
@@ -200,6 +203,25 @@ def triagiere(
                 % (spanne, _GPS_CLIMB_MIN_AGL_FT),
             )
 
+    # ZZZZ ERST HIER, nach „in der Luft" und „Kein Flug". Der Platzhalter sagt nur, dass der
+    # Flugplan keinen Code nennt (Piloten schreiben ihn beim Start vom Acker) — er erklärt
+    # NICHT, warum nichts erkannt wurde. Wer ihn vorher prüft, hakt Fälle als trivial ab, die
+    # in Wahrheit „in der Luft" oder „nur Rollen" sind: die schlechtere Erklärung gewinnt.
+    #
+    # Bleibt nach beiden Prüfungen ein sauberer Bodenpunkt übrig, ist der Fall gerade NICHT
+    # trivial: Dort stand jemand am Boden, und airportsdata kennt den Platz nicht — das ist
+    # das ZZLANGE-Muster (Fall A, Pseudo-Code). Solche Enden gehören zum Menschen, nicht in
+    # den Papierkorb; ein Namensvorschlag ist nicht möglich, weil kein Soll-Code existiert.
+    # Fall D entfällt hier ebenfalls: Wo kein Soll ist, kann nichts davon abweichen.
+    if (ende.soll or "").upper() == PLATZHALTER_CODE:
+        nah = nearest(lat, lon, ad_refs, limit=1)
+        wo = " (nächster Platz: %s %.2f km)" % (nah[0].ref.code, nah[0].distance_km) if nah else ""
+        return Befund(
+            ende, GRUPPE_ZZZZ,
+            "Flugplan nennt keinen Platz (ZZZZ), aber der Bodenpunkt ist echt — "
+            "Platz vermutlich unbekannt%s" % wo,
+        )
+
     if nachbarn:
         hit = nachbarn[0]
         if hit.ref.code != (ende.soll or "").upper() and hit.distance_km < NACHBAR_MAX_KM:
@@ -226,8 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("%d Enden aus %d Fällen\n" % (len(befunde), len(faelle)))
     for gruppe, anzahl in zaehler.most_common():
         print("  %-10s %4d  (%4.1f%%)" % (gruppe, anzahl, 100.0 * anzahl / len(befunde)))
-    # Mehrdeutig zählt NICHT als mechanisch abgehakt — wie Kandidat ein Fall für den Menschen.
-    mechanisch = len(befunde) - zaehler[GRUPPE_KANDIDAT] - zaehler[GRUPPE_MEHRDEUTIG]
+    mechanisch = len(befunde) - sum(zaehler[g] for g in GRUPPEN_FUER_MENSCHEN)
     print("\n  mechanisch abgehakt: %d von %d" % (mechanisch, len(befunde)))
 
     zeigen = args.gruppe or GRUPPE_KANDIDAT
