@@ -101,3 +101,34 @@ def test_agl_wird_nur_mit_alt_und_bekannter_elevation_gerechnet(ad_refs, oa_refs
     mit = measure(*EBKT_PUNKT, alt_ft=71, icao="EBKT", ad_refs=ad_refs, oa_refs=oa_refs)
     assert mit.ad_nearest[0].ref.code == "EBMO"
     assert mit.ad_nearest[0].agl_ft == pytest.approx(5, abs=1)
+
+
+from app.database import _BUMMEL_AIRPORT_RADIUS_KM
+from app.gps_legs import _GPS_SPAWN_MAX_AGL_FT
+from scripts.nearby_airports import format_report
+
+# Track 28133172 (FRS96, TBM9, EDDH->EDDM): erster Punkt, bereits airborne mit 217 kt.
+EDDH_PUNKT = (53.49527, 10.00085)
+
+
+def test_eddh_spawn_in_der_luft_reisst_beide_schwellen(ad_refs, oa_refs):
+    """Der Punkt liegt 15,05 km von EDDH und 2156 ft über Platzhöhe. Ein Radius-Override
+    wuerde NICHT helfen: die Spawn-Rettung (#49) verlangt zusaetzlich < 1500 ft AGL.
+    Beide Schwellen werden importiert — aendert jemand sie, wird dieser Test rot, statt
+    dass der Skill still falsch wird."""
+    m = measure(*EDDH_PUNKT, alt_ft=2209, icao="EDDH", ad_refs=ad_refs, oa_refs=oa_refs)
+
+    assert m.ad_target.distance_km == pytest.approx(15.05, abs=0.05)
+    assert m.ad_target.distance_km > _BUMMEL_AIRPORT_RADIUS_KM
+    assert m.ad_target.agl_ft == pytest.approx(2156, abs=1)
+    assert m.ad_target.agl_ft > _GPS_SPAWN_MAX_AGL_FT
+
+    report = format_report(m)
+    assert "außerhalb" in report
+    assert "überschritten" in report
+
+
+def test_report_meldet_fehlenden_code_statt_zu_verschweigen(ad_refs, oa_refs):
+    report = format_report(measure(*EDHX_PUNKT, icao="EDHX", ad_refs=ad_refs, oa_refs=oa_refs))
+    assert "nicht vorhanden" in report
+    assert "EDXH" in report

@@ -11,12 +11,16 @@ Rein und offline: kein DB-Zugriff, kein SSH, keine ``custom_airports``.
 from __future__ import annotations
 
 import airportsdata
+import argparse
 import csv
+import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.database import _BUMMEL_AIRPORT_RADIUS_KM
 from app.geo import haversine
+from app.gps_legs import _GPS_GROUND_AGL_FT, _GPS_SPAWN_MAX_AGL_FT
 
 
 @dataclass(frozen=True)
@@ -211,3 +215,96 @@ def measure(
         source_delta_km=delta,
         oa_available=bool(oa),
     )
+
+
+def _threshold_notes(hit: Hit) -> list[str]:
+    """Messwert gegen Detektor-Schwelle stellen — beschreibend, NICHT bewertend.
+
+    Die Schwellen werden importiert, nie abgeschrieben: aendert jemand den Detektor,
+    aendert sich diese Ausgabe mit.
+    """
+    notes = []
+    inside = hit.distance_km <= _BUMMEL_AIRPORT_RADIUS_KM
+    notes.append(
+        "Standardradius %.1f km — %s" % (_BUMMEL_AIRPORT_RADIUS_KM, "innerhalb" if inside else "außerhalb")
+    )
+    if hit.agl_ft is not None:
+        notes.append(
+            "Spawn-Grenze %d ft — %s"
+            % (_GPS_SPAWN_MAX_AGL_FT, "darunter" if hit.agl_ft < _GPS_SPAWN_MAX_AGL_FT else "überschritten")
+        )
+        notes.append(
+            "Bodengrenze %d ft — %s"
+            % (_GPS_GROUND_AGL_FT, "darunter" if hit.agl_ft < _GPS_GROUND_AGL_FT else "darüber")
+        )
+    return notes
+
+
+def _format_hits(hits: Sequence[Hit]) -> list[str]:
+    lines = []
+    for hit in hits:
+        agl = "  AGL %6.0f ft" % hit.agl_ft if hit.agl_ft is not None else " " * 14
+        lines.append(
+            "  %-8s %9.2f km%s   elev %6s ft   %s"
+            % (hit.ref.code, hit.distance_km, agl, _fmt_elev(hit.ref.elevation_ft), hit.ref.name[:38])
+        )
+    return lines
+
+
+def _fmt_elev(value: float | None) -> str:
+    return "?" if value is None else "%.0f" % value
+
+
+def format_report(m: Measurement) -> str:
+    """Messergebnis als Text. Reine Darstellung — kein Urteil, keine Empfehlung."""
+    out: list[str] = []
+    alt = "" if m.alt_ft is None else "  (alt %.0f ft MSL)" % m.alt_ft
+    out.append("Punkt: %.5f, %.5f%s" % (m.lat, m.lon, alt))
+
+    if m.icao:
+        out.append("")
+        out.append("Soll-Code laut Flugplan: %s" % m.icao)
+        for label, hit in (("airportsdata", m.ad_target), ("OurAirports", m.oa_target)):
+            if hit is None:
+                out.append("  %-13s in dieser Quelle nicht vorhanden" % label)
+                continue
+            out.append("  %-13s %9.2f km   %s" % (label, hit.distance_km, hit.ref.name[:40]))
+            for note in _threshold_notes(hit):
+                out.append("  %-13s   (%s)" % ("", note))
+
+    out.append("")
+    out.append("Nächste Plaetze laut airportsdata:")
+    out.extend(_format_hits(m.ad_nearest))
+
+    out.append("")
+    if not m.oa_available:
+        out.append("Nächste Plaetze laut OurAirports: -- nicht geladen (kein Netz/Cache)")
+    else:
+        out.append("Nächste Plaetze laut OurAirports:")
+        out.extend(_format_hits(m.oa_nearest))
+
+    if m.source_delta_km:
+        out.append("")
+        out.append("Abweichung airportsdata <-> OurAirports:")
+        for code, delta in sorted(m.source_delta_km.items(), key=lambda kv: -kv[1]):
+            out.append("  %-8s %9.2f km" % (code, delta))
+
+    return "\n".join(out)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Messwerkzeug für die Track-Diagnose — misst, urteilt nicht.",
+    )
+    parser.add_argument("lat", type=float)
+    parser.add_argument("lon", type=float)
+    parser.add_argument("--alt", type=float, default=None, help="Höhe in ft MSL (für AGL)")
+    parser.add_argument("--icao", default=None, help="Soll-Code aus dem Flugplan")
+    args = parser.parse_args(argv)
+
+    print(format_report(measure(args.lat, args.lon, alt_ft=args.alt, icao=args.icao)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
