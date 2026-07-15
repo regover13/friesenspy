@@ -1,33 +1,55 @@
-# SDD-Ledger — Kuratierter Flugzeug-Spec-Datensatz (v8.17.0)
+# SDD-Ledger — FriesenKutter Stapel-Modell
 
-Plan: docs/superpowers/plans/2026-07-09-aircraft-specs-dataset.md
-Spec: docs/superpowers/specs/2026-07-09-aircraft-specs-dataset-design.md
-Basis vor Task 1: 5809617
+Plan: docs/superpowers/plans/2026-07-16-kutter-stapel-modell.md
+Spec: docs/superpowers/specs/2026-07-15-kutter-stapel-modell-design.md (14 Entscheidungen, alle bestaetigt)
+Basis vor Task 1: 7d58e1f
+Branch: main (stehende Nutzer-Regel: kein PR-Umweg; nur vor `git push origin main` bestaetigen lassen)
 
-Ausführungsreihenfolge (Abhängigkeit: Validierungstest braucht Loader):
-Task 2 (Loader+Seed) → Research (parallel) + Task 1 (JSON+Validierung, Human-Gate) → Task 3 (Admin-UI) → Task 4 (Docs/Version) → Whole-Branch-Review
+Reihenfolge: 1 -> 2 -> 3 -> 4 -> 5 (reine Funktion) -> 6 (Adapter) -> 7 GATE -> 8 -> 9 -> 10 -> 11 -> 12
+             -> Whole-Branch-Review (Opus)
 
-- Task 2: complete (commit 5273879, 5 Seeding-Tests + Regression 207 grün, Review CLEAN — Spec ✅ / Qualität Approved)
-  - Minor (fürs finale Review): (a) DDL-Kommentar app/database.py:250 nennt 'curated' nicht → in Task 4 Docs nachziehen; (b) Seeding dupliziert Spalten-Mapping via rohem INSERT statt upsert_payload (bewusst, INSERT OR IGNORE nötig).
-- Research (~106 Specs): complete — 5 Chunks gemerged → scratchpad/aircraft_specs.final.json, 106 Einträge, 0 Plausibilitäts-Warnungen, 6 low + 43 med Konfidenz. Scope: nichts entfernt (nur echte IFR-Airliner wären raus, sind aber nicht dabei; DC3/JU52 bleiben). Offen: A320(M)+Transall als spätere Ergänzung möglich.
-- FSEconomy-Abgleich: FSE-Configs (kg-Gewichte, Gallonen-Tanks) gegen Datensatz gematcht. 57 verifizierte Treffer → FSE-Werte übernommen (sim-authentisch), Rest = Recherche. A320 auf NUTZER-Wunsch zurück auf Recherche (78000/42400/19000, NICHT FSE). Finaler Datensatz: scratchpad/aircraft_specs.final.json, 108 Einträge, 0 Warnungen.
-- Task 2b (NEUE Nutzer-Anforderung): fuel_full_kg-Spalte (max. Tank) + fuel_kg=Hälfte + Backfill fuel_full=fuel_kg*2. Plan ergänzt. Implementer läuft. Basis: 5273879.
-- A320 auf NUTZER-Wunsch KOMPLETT entfernt (Airliner) — 107 Einträge, Transall (C160) bleibt.
-- A400M Atlas (ICAO A400) wird ergänzt = der gemeinte "Transall-Nachfolger" (Nutzer meinte nicht A320/A300, sondern A400M). Research läuft (chunkG). Danach 108 Einträge.
-- Task 2b: complete (commit fb79696, 902 grün, Review CLEAN — Spec ✅ / Qualität Approved, Spaltenausrichtung 10/10 geprüft).
-  - WICHTIG für Task 3: admin_upsert_payload (main.py:2167) muss fuel_full_kg aus dem Body an upsert_payload weiterreichen (Reviewer-Hinweis).
-- Task 2c: Poller fuel_full_kg — Implementer läuft (Basis fb79696).
-- A400M gemergt → Datensatz FINAL: scratchpad/aircraft_specs.final.json, 108 Einträge, 0 Plausibilitäts-Fehler.
-- Task 1: complete (commit ee229fa, 108er-Datensatz eingebacken + Validierung, 130 grün).
-- Task 2c: complete (commit fab6ae2, Poller schreibt fuel_full_kg mit).
-- Task 3: complete (commit dac9eec, Admin-UI: Namensfeld + Max-Tank-Feld + Auto-Halbierung + main.py-Weiterleitung + Tabelle; 907 grün). Poller-Tests von PZ04→ZZ01 umgestellt (PZ04 jetzt vorbefüllt). Review läuft.
-- Task 3: Review CLEAN (Spec ✅ / Qualität Approved, JS-Konsistenz geprüft).
-- Task 4: complete (commit fca42a0, CHANGELOG v8.17.0 + api.md + architecture.md + README + DDL-Kommentar 'curated'; 907 grün).
-- ALLE TASKS FERTIG. Commits 5273879..fca42a0.
-- Finales Whole-Branch-Review (Opus): GO, keine Critical/Important. 2 Minor by-design:
-  - M1: INSERT OR IGNORE ersetzt bestehende source='llm'-Zeilen (geflogene Typen) NICHT durch kuratierte Werte → beim User offen gestellt.
-  - M2: reiner API-Call nur mit fuel_full_kg ohne fuel_kg → fuel_kg=None (über UI unerreichbar).
-- M1 umgesetzt (commit 8bcaa51): Seeding hebt llm/default-Zeilen auf kuratierte Werte, manual bleibt; +Test, 908 grün.
-- FERTIG & DEPLOYED: Tag v8.17.0 gepusht (8bcaa51), main gepusht (2ca6134..8bcaa51). GitHub Actions → GHCR → VPS läuft.
+## ⏸ GATE bei Task 7 — NICHT ueberspringen
+Die Migration muss 1610 / 1120 / 1090 zeigen (Events #1, #81, #136), bevor Task 8 irgendeinen
+produktiven Pfad anfasst. Stimmen die Zahlen nicht, liegt der Fehler in Task 1-6 -> zurueck, nicht
+vorwaerts. #123 darf abweichen (618 -> 417, einzige CSV-Zeile im Bestand).
+
+## Bekannter Zwischenzustand (kein Defekt)
+Task 1-5 bauen app/transport_stacks.py neben dem alten Kern auf. Bis Task 8 rechnet der Kutter
+weiter mit dem alten Modell + Latch. Das ist Absicht (Big Bang: der Latch kann nicht halb weg).
+
+## Vorab behoben (Pre-Flight-Scan, Commit s.u.)
+PLANFEHLER Umlaute — identisch zum track-diagnose-Lauf: die python-Bloecke schrieben ASCII-Ersatz
+("fuer", "laedt", "Fischbroetchen"), obwohl die Global Constraint des Plans selbst UND das Repo
+echte Umlaute verlangen — auch in TESTDATEN (tests/test_transport.py:1436 "Strandkörbe";
+app/database.py:4510 Seed; app/database.py:212 Kommentar "Fischbrötchen").
+170 Zeilen in python-Bloecken gezogen, Ausgabe-Strings + Assertions gemeinsam. Verifiziert:
+kein Identifier mit Umlaut, "Fischbrötchen" 29x konsistent, Spaltenausrichtung im Task-7-
+Erwartungsblock nachgezogen (Umlaut = 1 Zeichen statt 2).
+
+## Stehende Schreibregel fuer JEDEN Dispatch
+- Docstrings / Kommentare / Doku / Ausgabe-Strings / Testdaten = ECHTE Umlaute
+- Identifier (def-, Variablen-, Testnamen) = ASCII        <- Repo hat NIRGENDS Umlaute in def-Namen
+- Commit-Messages = ASCII                                  <- Repo-Konvention
+
+- Task 1: offen
+- Task 2: offen
 - Task 3: offen
 - Task 4: offen
+- Task 5: offen
+- Task 6: offen
+- Task 7: offen (GATE)
+- Task 8: offen
+- Task 9: offen
+- Task 10: offen
+- Task 11: offen
+- Task 12: offen
+
+## Minor-Funde fuers finale Review
+(noch keine)
+
+---
+
+## Vorheriger Lauf (abgeschlossen + gepusht): Skill "track-diagnose"
+6 Tasks + Whole-Branch-Review, Commits 9a35e96..289d434. Details in der Git-Historie
+(6889534 "fix: Code-Review-Findings track-diagnose"). Offen geblieben: Task #2 der Aufgabenliste
+(Praxis-Regeln vom 15.07. in die SKILL.md nachtragen) — gehoert NICHT zu diesem Plan.
