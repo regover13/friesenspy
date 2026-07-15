@@ -879,6 +879,33 @@ def test_der_wartende_laedt_nach_wenn_ware_zurueckkommt():
     _assert_erhaltung(r)
 
 
+def test_von_zwei_wartenden_laedt_der_laenger_stehende():
+    """Entscheidung 5, der einzige Fall, in dem die Ankunftsreihenfolge überhaupt befragt wird.
+
+    Bei nur EINEM Wartenden ist die Sortierung wirkungslos: `_load_standing` läuft nach jedem
+    Ereignis, der Erste hat den Stapel also leergeräumt, bevor der Zweite überhaupt einloggt.
+    Erst wenn ZWEI am leeren Stapel stehen und Ware zurückkommt, entscheidet der Schlüssel,
+    wer sie bekommt.
+
+    Die später angekommene CID ist absichtlich die KLEINERE (3 vor 2): sonst wären Ankunfts-
+    und CID-Reihenfolge identisch und ein `sorted(standing)` ohne `since` bliebe grün.
+    """
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),                              # nimmt alle 800
+            _ev("login", 3, "2026-07-01T09:01:00Z", "EDWG"),          # wartet, größere CID
+            _ev("login", 2, "2026-07-01T09:02:00Z", "EDWG"),          # wartet, aber später da
+            _ev("logout", 1, "2026-07-01T09:03:00Z"),                 # gibt 800 zurück
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["onboard"][3]["Fischbrötchen"] == 800.0   # stand länger da
+    assert r["onboard"][2]["Fischbrötchen"] == 0.0     # kleinere CID, aber zu spät
+    _assert_erhaltung(r)
+
+
 def test_musterwechsel_am_boden_laedt_mit_der_neuen_kapazitaet():
     """Entscheidung 11: Am Boden wird umgeladen. Braucht keine eigene Regel — der Musterwechsel
     IST ein Logout (Ladung fällt ab) plus ein Login (lädt neu, mit neuer Kapazität)."""
@@ -935,7 +962,29 @@ Ersetze in `_take` den Schleifenrumpf:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_transport_stacks.py -v`
-Expected: PASS (22 passed)
+Expected: PASS (23 passed)
+
+- [ ] **Step 4b: Beweisen, dass der Reihenfolge-Test wirklich beißt** (Mutationsprobe)
+
+`test_von_zwei_wartenden_laedt_der_laenger_stehende` ist der **einzige** Test im ganzen Plan, der
+die Ankunftsreihenfolge überhaupt befragt. Ein Test, der eine Regel nur scheinbar schützt, ist
+schlimmer als keiner — deshalb wird er hier gegengeprüft, nicht geglaubt.
+
+Ändere in `app/transport_stacks.py` die Sortierzeile in `_load_standing` **vorübergehend**:
+
+```python
+    # NUR ZUR PROBE — danach zurückdrehen:
+    for cid in sorted(standing):                    # statt: key=lambda c: (state["since"].get(c, ""), c)
+```
+
+Run: `pytest tests/test_transport_stacks.py -v`
+Expected: **FAIL** in `test_von_zwei_wartenden_laedt_der_laenger_stehende`
+(`assert 0.0 == 800.0` — CID 2 hätte geladen, obwohl CID 3 länger stand)
+
+Bleibt der Test dabei **grün**, prüft er die Reihenfolge nicht und ist wertlos — dann melden,
+nicht weitergehen. Danach die Zeile zurückdrehen und erneut `pytest tests/test_transport_stacks.py -v`
+laufen lassen: wieder 23 grün. Den Mutations-Output (rot) und den Rückdreh-Output (grün) in den
+Bericht aufnehmen.
 
 - [ ] **Step 5: Commit**
 
