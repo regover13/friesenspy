@@ -72,6 +72,11 @@ falsch ist, sondern die Logik.
 12. **Verschwinden Positionen (365-Tage-Cleanup), verschwinden die Events desselben Zeitraums mit** —
     vollständig, aus allen Sichten. Kein Event überlebt seine Rohdaten. (Der Job ist heute
     deaktiviert; die Regel gilt für jede Reaktivierung.)
+13. **Der Wartende lädt nach.** Steht jemand an einem leeren Stapel und ein anderer gibt dort beim
+    Logout Ware zurück, lädt der Wartende — er steht ja am Platz, und Ware ist da. Folgt aus „Laden
+    ist ein Zustand"; technisch: Nach jedem Ereignis, das einen Stapel auffüllt, laden alle, die
+    dort stehen, in Ankunftsreihenfolge (Entscheidung 5). Dieselbe Mechanik trägt den Musterwechsel
+    am Boden.
 
 Unverändert (berechtigte Domänen-Komplexität): Zuladung je Muster (`aircraft_payloads`),
 Pro-Flug-Kappung `per_flight_max_kg` (#63), Frachtart-Katalog, KI-Sprüche, Push, Badge,
@@ -347,15 +352,8 @@ Feierabend nicht. Muss explizit getestet werden.
 
 ## Offen
 
-Fachlich ist alles entschieden. Ein Punkt folgt aus „Laden ist ein Zustand" und ist hier so
-festgeschrieben, aber nie ausdrücklich bestätigt worden:
-
-- **Der Wartende lädt nach.** Steht jemand an einem leeren Stapel und ein anderer gibt dort beim
-  Logout Ware zurück, lädt der Wartende — er steht ja am Platz, und Ware ist da. Technisch: Nach
-  jedem Ereignis, das einen Stapel auffüllt, laden alle, die dort stehen, in Ankunftsreihenfolge
-  (Entscheidung 5). Dieselbe Mechanik trägt den Musterwechsel am Boden.
-
-Implementierungsseitig offen (gehört in den Plan, nicht hierher): die künftige Rolle von
+Fachlich ist alles entschieden. Offen ist nur noch Implementierungsseitiges (gehört in den Plan,
+nicht hierher): die künftige Rolle von
 `transport_losses` als Tabelle (Quelle vs. reiner Quip-/Push-Latch — sonst entstehen wieder zwei
 Klassifikations-Wahrheiten), und der Feld-Vertrag zum Frontend (`reserved_kg`, `in_air`, `airborne`,
 `status === 'returning'` in `index.html`) beim Wechsel auf Snapshot-Version 4.
