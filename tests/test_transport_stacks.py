@@ -114,3 +114,78 @@ def test_wer_zuerst_kommt_laedt_zuerst_der_zweite_hat_pech():
     assert r["onboard"][1]["Fischbrötchen"] == 800.0
     assert r["onboard"][2]["Fischbrötchen"] == 0.0
     _assert_erhaltung(r)
+
+
+def test_s1_normalfall_landung_am_ziel_liefert():
+    """S1: EDWG -> EDXH. Heute wie neu 800 kg."""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDXH"),
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["stacks"][DEST]["Fischbrötchen"] == 800.0
+    assert _sum_onboard(r["onboard"]) == 0.0
+    _assert_erhaltung(r)
+
+
+def test_s2_milchmann_erste_ladung_bleibt_an_bord():
+    """S2: EDWG -> EDWZ -> EDXH. HEUTE: 0 Fisch + 500 Tee (die erste Ladung verschwindet).
+    Stapel-Modell: 800 Fisch + 200 Tee = 1000 (die Zuladung ist die Grenze)."""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),                               # lädt 800 Fisch
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDWZ"),         # Ladeplatz: füllt auf
+            _ev("takeoff", 1, "2026-07-01T09:40:00Z"),
+            _ev("landing", 1, "2026-07-01T10:10:00Z", "EDXH"),         # liefert alles
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["stacks"][DEST]["Fischbrötchen"] == 800.0
+    assert r["stacks"][DEST]["Friesen Tee"] == 200.0     # nur 200 passten noch in die 1000 kg
+    assert r["stacks"]["EDWZ"]["Friesen Tee"] == 300.0   # der Rest liegt weiter in EDWZ
+    _assert_erhaltung(r)
+
+
+def test_s3_zwischenlandung_am_fremden_platz_aendert_nichts():
+    """S3: EDWG -> EDDW(fremd) -> EDXH. HEUTE ohne Latch 0 kg, mit Latch 1000 kg (Tee, der nie
+    an Bord war). Stapel-Modell: 800 Fisch — EDDW hat keinen Stapel."""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDDW"),   # fremd: nichts passiert
+            _ev("takeoff", 1, "2026-07-01T09:40:00Z"),
+            _ev("landing", 1, "2026-07-01T10:10:00Z", "EDXH"),
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["stacks"][DEST]["Fischbrötchen"] == 800.0
+    assert r["stacks"][DEST]["Friesen Tee"] == 0.0       # Tee war nie an Bord
+    assert r["stacks"]["EDWZ"]["Friesen Tee"] == 500.0
+    _assert_erhaltung(r)
+
+
+def test_landung_am_ziel_liefert_sofort_ohne_disconnect():
+    """Der Latch beantwortete 'hat er geliefert?' — das Modell weiß es beim Touchdown."""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDXH"),
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["stacks"][DEST]["Fischbrötchen"] == 800.0   # kein logout nötig
+    assert r["position"][1] == "EDXH"                     # steht am Ziel, bleibt sichtbar

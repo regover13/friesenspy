@@ -85,10 +85,23 @@ def derive_stacks(
         elif kind == "takeoff":
             position[cid] = None                 # unterwegs. Lädt NICHT.
         elif kind == "landing":
-            position[cid] = e.get("airport")
+            airport = e.get("airport")
+            position[cid] = airport
             since[cid] = ts
             if e.get("airport"):
                 last_ground[cid] = e["airport"]
+            if airport == destination:
+                # Landung am Ziel: der GESAMTE Flieger-Stapel geht in den Ziel-Stapel, sofort.
+                # Kein Disconnect nötig — genau die Frage, die früher der Latch beantwortete.
+                load = onboard.get(cid) or {}
+                for name, kg in list(load.items()):
+                    if kg <= _EPS:
+                        continue
+                    stacks[destination][name] += kg
+                    movements.append({"ts": ts, "cid": cid, "kind": "deliver",
+                                      "airport": destination, "name": name, "kg": kg})
+                onboard[cid] = _empty()
+            # Landung woanders: NICHTS. Die Ladung bleibt an Bord (Milchmann/Zwischenlandung).
         elif kind == "logout":
             position.pop(cid, None)
             since.pop(cid, None)
