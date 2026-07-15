@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ein Skill, der die Frage „Warum hängt dieser Flug an Platz X?" reproduzierbar beantwortet — mit einem Messwerkzeug für die Zahlen und einer festen Prüfreihenfolge für die Deutung.
+**Goal:** Ein Skill, der die Erkennungslücken-Liste abarbeitbar macht: erst Triage über alle Fälle (74,5 % sind mechanisch abzuhaken), dann Einzeldiagnose der übrigen — mit einem Messwerkzeug für die Zahlen und einer festen Prüfreihenfolge für die Deutung.
 
-**Architecture:** Strikte Trennung von Messung und Urteil. `scripts/nearby_airports.py` ist rein, offline und ohne DB-Zugriff: Punkt rein, Messwerte raus (nächste Plätze laut airportsdata und OurAirports, Quellen-Abweichung, Distanz zum Soll-Code). Die Fallunterscheidung steht als Prosa in `.claude/skills/track-diagnose/SKILL.md` und bleibt beim Assistenten, wo der Kontext ist. Detektor-Schwellen werden aus `app/gps_legs.py` und `app/database.py` **importiert**, nie abgeschrieben — so wird ein Test rot, statt dass der Skill still veraltet.
+**Architecture:** Strikte Trennung von Messung und Urteil. `scripts/nearby_airports.py` ist rein, offline und ohne DB-Zugriff: Punkt rein, Messwerte raus (nächste Plätze laut airportsdata und OurAirports, Quellen-Abweichung, Distanz zum Soll-Code). `scripts/triage_gaps.py` legt eine Schleife darum: JSON-Export rein, gruppierte Befunde raus — es implementiert Schritt 0 und Schritt 1 der Prüfreihenfolge, die reine Messungen sind. Schritt 2 braucht Kontext und bleibt beim Assistenten; die Fallunterscheidung steht als Prosa in `.claude/skills/track-diagnose/SKILL.md`. Detektor-Schwellen werden aus `app/gps_legs.py` und `app/database.py` **importiert**, nie abgeschrieben — so wird ein Test rot, statt dass der Skill still veraltet.
 
 **Tech Stack:** Python 3.11, `airportsdata`, `httpx` (nur für den OurAirports-Download), `pytest`, stdlib `csv`/`argparse`/`dataclasses`.
 
@@ -26,10 +26,13 @@
 
 | Datei | Verantwortung |
 |---|---|
-| `scripts/nearby_airports.py` | Messwerkzeug: Referenzquellen laden, Distanzen messen, Report rendern. Einzige neue Logik. |
+| `scripts/nearby_airports.py` | Messwerkzeug: Referenzquellen laden, Distanzen messen, Report rendern. |
+| `scripts/triage_gaps.py` | Batch: JSON-Export → Schritt 0/1 je Ende → gruppierte Befunde. Nutzt `measure()`. |
 | `tests/fixtures/ourairports_mini.csv` | Fünf echte OurAirports-Zeilen (EBKT, EBMO, EDHX, EDVA, EDXH) — macht die Tests netzfrei. |
+| `tests/fixtures/gaps_mini.json` | Fünf echte Lückenfälle, je einer pro Triage-Gruppe. |
 | `tests/test_nearby_airports.py` | Regressionstests aus den vier realen Fällen. |
-| `.claude/skills/track-diagnose/SKILL.md` | Ablauf, SQL, Fallunterscheidung. Kein Code. |
+| `tests/test_triage_gaps.py` | Gruppierungstests gegen die JSON-Fixture. |
+| `.claude/skills/track-diagnose/SKILL.md` | Ablauf, Export-Snippet, SQL, Fallunterscheidung. Kein Code. |
 | `.gitignore` | Ergänzung: `scripts/.cache/` |
 | `README.md:75` | Korrektur der Falschaussage zur Koordinatenherkunft. |
 
@@ -780,7 +783,369 @@ faellt das Werkzeug auf airportsdata zurueck, statt abzubrechen."
 
 ---
 
-### Task 5: SKILL.md und README-Korrektur
+### Task 5: Triage über die Lückenliste
+
+**Files:**
+- Create: `scripts/triage_gaps.py`
+- Create: `tests/fixtures/gaps_mini.json`
+- Create: `tests/test_triage_gaps.py`
+
+**Interfaces:**
+- Consumes: `measure`, `nearest`, `find_code`, `airportsdata_refs`, `load_ourairports`, `AirportRef`, `Hit` (Tasks 1–4)
+- Produces:
+  - `Ende` (frozen dataclass): `statsim_id: int`, `callsign: str`, `seite: str`, `soll: str | None`, `punkt: dict`, `punkte: int`
+  - `enden_aus_export(faelle: Sequence[dict]) -> list[Ende]`
+  - `Befund` (frozen dataclass): `ende: Ende`, `gruppe: str`, `begruendung: str`
+  - `triagiere(ende: Ende, ad_refs, oa_refs) -> Befund`
+  - `main(argv: Sequence[str] | None = None) -> int`
+
+Gruppen-Konstanten: `GRUPPE_DUENN = "Zu dünn"`, `GRUPPE_ZZZZ = "ZZZZ"`, `GRUPPE_LUFT = "E"`, `GRUPPE_ANDERER = "D"`, `GRUPPE_KANDIDAT = "Kandidat"`.
+
+- [ ] **Step 1: Fixture anlegen**
+
+Sechs **echte** Fälle aus dem Export vom 2026-07-15, einer je Gruppe. Exakt übernehmen.
+
+Create `tests/fixtures/gaps_mini.json`:
+
+```json
+[
+ {"statsim_id": 27831625, "callsign": "FRS96", "missing": "both",
+  "plan_departure": "EDDM", "plan_arrival": "EDNR",
+  "logon_time": "2026-03-31T18:34:07Z", "punkte": 1,
+  "first": {"ts": "2026-03-31T19:31:00+00:00", "lat": 49.14175, "lon": 12.08123, "alt": 1263, "gs": 0},
+  "last":  {"ts": "2026-03-31T19:31:00+00:00", "lat": 49.14175, "lon": 12.08123, "alt": 1263, "gs": 0}},
+ {"statsim_id": 27404430, "callsign": "FRS116", "missing": "departure",
+  "plan_departure": "ZZZZ", "plan_arrival": "EDAC",
+  "logon_time": "2026-03-06T19:50:59+00:00", "punkte": 138,
+  "first": {"ts": "2026-03-06T19:50:59+00:00", "lat": 51.13781, "lon": 13.00038, "alt": 1681, "gs": 147},
+  "last":  {"ts": "2026-03-06T20:25:29+00:00", "lat": 50.97776, "lon": 12.5079, "alt": 641, "gs": 0}},
+ {"statsim_id": 28133172, "callsign": "FRS96", "missing": "departure",
+  "plan_departure": "EDDH", "plan_arrival": "EDDM",
+  "logon_time": "2026-04-18T14:10:09+00:00", "punkte": 329,
+  "first": {"ts": "2026-04-18T14:10:09+00:00", "lat": 53.49527, "lon": 10.00085, "alt": 2209, "gs": 217},
+  "last":  {"ts": "2026-04-18T15:35:24+00:00", "lat": 48.35364, "lon": 11.80488, "alt": 1480, "gs": 0}},
+ {"statsim_id": 26626195, "callsign": "FRS119N", "missing": "both",
+  "plan_departure": "EDLJ", "plan_arrival": "EDLI",
+  "logon_time": "2026-01-20T19:08:27Z", "punkte": 6,
+  "first": {"ts": "2026-01-20T20:43:32+00:00", "lat": 51.96475, "lon": 8.54481, "alt": 455, "gs": 28},
+  "last":  {"ts": "2026-01-20T20:54:18+00:00", "lat": 51.96554, "lon": 8.54987, "alt": 467, "gs": 0}},
+ {"statsim_id": 28099919, "callsign": "FRS177", "missing": "both",
+  "plan_departure": "RCLM", "plan_arrival": "VHHX",
+  "logon_time": "2026-04-16T14:32:24+00:00", "punkte": 303,
+  "first": {"ts": "2026-04-16T14:30:24+00:00", "lat": 20.70407, "lon": 116.72727, "alt": 9, "gs": 0},
+  "last":  {"ts": "2026-04-16T15:48:54+00:00", "lat": 22.32407, "lon": 114.19682, "alt": 33, "gs": 0}},
+ {"statsim_id": 25216444, "callsign": "FRS125", "missing": "both",
+  "plan_departure": "ETNJ", "plan_arrival": "EDWI",
+  "logon_time": "2025-10-28T20:11:31+00:00", "punkte": 18,
+  "first": {"ts": "2025-10-28T20:10:31+00:00", "lat": 53.40635, "lon": 7.90957, "alt": 4401, "gs": 22},
+  "last":  {"ts": "2025-10-28T20:19:27+00:00", "lat": 53.42051, "lon": 7.912, "alt": 143, "gs": 68}}
+]
+```
+
+- [ ] **Step 2: Failing Tests schreiben**
+
+Create `tests/test_triage_gaps.py`:
+
+```python
+"""Triage-Tests: sechs echte Faelle aus dem Export vom 2026-07-15, einer je Gruppe.
+
+Jeder Test sichert eine Regel ab, die beim Entwurf real falsch war. Siehe
+docs/superpowers/specs/2026-07-15-track-diagnose-design.md
+"""
+import json
+from pathlib import Path
+
+import pytest
+
+from scripts.nearby_airports import airportsdata_refs, load_ourairports
+from scripts.triage_gaps import (
+    GRUPPE_ANDERER,
+    GRUPPE_DUENN,
+    GRUPPE_KANDIDAT,
+    GRUPPE_LUFT,
+    GRUPPE_ZZZZ,
+    enden_aus_export,
+    triagiere,
+)
+
+FIXTURE = Path(__file__).parent / "fixtures" / "gaps_mini.json"
+OA_FIXTURE = Path(__file__).parent / "fixtures" / "ourairports_mini.csv"
+
+
+@pytest.fixture(scope="module")
+def faelle():
+    return json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def ad():
+    return airportsdata_refs()
+
+
+@pytest.fixture(scope="module")
+def oa():
+    return load_ourairports(OA_FIXTURE)
+
+
+def _gruppe(faelle, ad, oa, statsim_id, seite):
+    for ende in enden_aus_export(faelle):
+        if ende.statsim_id == statsim_id and ende.seite == seite:
+            return triagiere(ende, ad, oa).gruppe
+    raise AssertionError("Ende %s/%s nicht im Export" % (statsim_id, seite))
+
+
+def test_both_erzeugt_zwei_enden(faelle):
+    enden = [e for e in enden_aus_export(faelle) if e.statsim_id == 25216444]
+    assert sorted(e.seite for e in enden) == ["arrival", "departure"]
+    # 29 der 163 Faelle vermissen beide Enden; eines kann trivial sein, das andere nicht.
+    assert len(enden_aus_export(faelle)) == 10   # 6 Faelle, 4 davon "both"
+
+
+def test_ein_punkt_track_schlaegt_nachbarschaft(faelle, ad, oa):
+    """27831625 hat EINEN Trackpunkt, und EDNR liegt 0,06 km daneben. Ohne die
+    Punktzahl-Pruefung waere das ein Fall-D-Befund — formal richtig gemessen und
+    trotzdem Unsinn. Sechs der urspruenglich neun D-Befunde waren solche Tracks."""
+    assert _gruppe(faelle, ad, oa, 27831625, "departure") == GRUPPE_DUENN
+
+
+def test_zzzz_schlaegt_luft(faelle, ad, oa):
+    """27404430 ist mit gs 147 auch in der Luft. ZZZZ ist die staerkere Aussage:
+    es gibt keinen Platz zu finden."""
+    assert _gruppe(faelle, ad, oa, 27404430, "departure") == GRUPPE_ZZZZ
+
+
+def test_eddh_spawn_in_der_luft(faelle, ad, oa):
+    assert _gruppe(faelle, ad, oa, 28133172, "departure") == GRUPPE_LUFT
+
+
+def test_stol_langsam_aber_hoch_ist_nicht_am_boden(faelle, ad, oa):
+    """FRS125 ab ETNJ: gs 22 — nach einer groundspeed-zentrierten Regel ein Bodenpunkt.
+    Die Hoehe sagt 4401 ft. Hoehe ist das Leitsignal (app/gps_legs.py:4), sonst werden
+    STOL-Fluege (Wilga, ~40 kt Reise) systematisch fehlklassifiziert. Gemessen: 13 der
+    184 Enden erkennt nur die Hoehe."""
+    assert _gruppe(faelle, ad, oa, 25216444, "departure") == GRUPPE_LUFT
+
+
+def test_punkt_an_anderem_platz(faelle, ad, oa):
+    assert _gruppe(faelle, ad, oa, 26626195, "departure") == GRUPPE_ANDERER
+
+
+def test_bodenpunkt_ohne_nachbarn_bleibt_kandidat(faelle, ad, oa):
+    """RCLM: Bodenpunkt, naechster bekannter Platz 302 km weit. Genau so ein Fall
+    braucht ein Urteil — er darf NICHT wegtriagiert werden."""
+    assert _gruppe(faelle, ad, oa, 28099919, "departure") == GRUPPE_KANDIDAT
+```
+
+- [ ] **Step 3: RED verifizieren**
+
+Run: `python -m pytest tests/test_triage_gaps.py -v`
+Expected: FAIL — `ModuleNotFoundError: No module named 'scripts.triage_gaps'`
+
+- [ ] **Step 4: Implementieren**
+
+Create `scripts/triage_gaps.py`:
+
+```python
+"""Triage der Erkennungsluecken-Liste (Skill ``track-diagnose``).
+
+Liest den JSON-Export (siehe SKILL.md), misst je Fall das fragliche Ende und gruppiert nach
+Schritt 0 und Schritt 1 der Pruefreihenfolge — beides reine Messungen. Schritt 2 braucht
+Kontext und bleibt beim Assistenten.
+
+**Sortiert, entscheidet aber nichts.** Auch ein Sammelbefund „128x Fall E" wird vom Nutzer
+abgehakt, nicht von hier.
+
+Rein: JSON rein, Gruppen raus. Kein DB-Zugriff, kein SSH.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+from app.gps_legs import _GPS_FLYING_GS_KT, _GPS_GROUND_AGL_FT
+from scripts.nearby_airports import (
+    AirportRef,
+    airportsdata_refs,
+    find_code,
+    load_ourairports,
+    nearest,
+)
+
+GRUPPE_DUENN = "Zu dünn"
+GRUPPE_ZZZZ = "ZZZZ"
+GRUPPE_LUFT = "E"
+GRUPPE_ANDERER = "D"
+GRUPPE_KANDIDAT = "Kandidat"
+
+# Der Detektor braucht mindestens einen Zustandswechsel (ON_GROUND -> AIRBORNE -> ON_GROUND).
+# Bei weniger Samples ist jede Aussage ueber Start/Landung bedeutungslos.
+MIN_TRACKPUNKTE = 3
+# Flugplan-Platzhalter fuer „kein ICAO" — kein Platz, also nichts zu finden.
+PLATZHALTER_CODE = "ZZZZ"
+# Ab hier gilt ein Nachbarplatz als „der Punkt gehoert dorthin" (Schritt 1).
+NACHBAR_MAX_KM = 1.0
+
+
+@dataclass(frozen=True)
+class Ende:
+    """Ein zu pruefendes Ende eines Falls. ``missing: "both"`` ergibt zwei davon."""
+
+    statsim_id: int
+    callsign: str
+    seite: str            # "departure" | "arrival"
+    soll: str | None
+    punkt: dict
+    punkte: int
+
+
+@dataclass(frozen=True)
+class Befund:
+    ende: Ende
+    gruppe: str
+    begruendung: str
+
+
+def enden_aus_export(faelle: Sequence[dict]) -> list[Ende]:
+    """JSON-Export → zu pruefende Enden. ``both`` ergibt zwei (Start und Ziel)."""
+    enden: list[Ende] = []
+    for fall in faelle:
+        missing = fall.get("missing")
+        for seite, punkt_key, soll_key in (
+            ("departure", "first", "plan_departure"),
+            ("arrival", "last", "plan_arrival"),
+        ):
+            if missing not in (seite, "both"):
+                continue
+            enden.append(
+                Ende(
+                    statsim_id=fall["statsim_id"],
+                    callsign=fall.get("callsign") or "",
+                    seite=seite,
+                    soll=(fall.get(soll_key) or None),
+                    punkt=fall[punkt_key],
+                    punkte=int(fall.get("punkte") or 0),
+                )
+            )
+    return enden
+
+
+def _in_der_luft(punkt: dict, basis: AirportRef | None) -> tuple[bool, str]:
+    """Hoehe fuehrt, Groundspeed hilft — wie im Detektor (app/gps_legs.py:4).
+
+    Groundspeed allein genuegt NICHT: STOL/Heli fliegen langsam (Wilga ~40 kt Reise), eine
+    gs-zentrierte Regel wertet sie als Bodenpunkt. Gemessen an 184 Enden: 13 erkennt nur die
+    Hoehe, 5 nur die Groundspeed — beide Signale sind noetig.
+    """
+    alt = punkt.get("alt")
+    gs = punkt.get("gs") or 0
+    if alt is not None and basis is not None and basis.elevation_ft is not None:
+        agl = alt - basis.elevation_ft
+        if agl > _GPS_GROUND_AGL_FT:
+            return True, "AGL %.0f ft (> %d)" % (agl, _GPS_GROUND_AGL_FT)
+    if gs >= _GPS_FLYING_GS_KT:
+        return True, "gs %d kt (>= %d)" % (gs, _GPS_FLYING_GS_KT)
+    return False, ""
+
+
+def triagiere(
+    ende: Ende,
+    ad_refs: Sequence[AirportRef],
+    oa_refs: Sequence[AirportRef],
+) -> Befund:
+    """Schritt 0 und Schritt 1 der Pruefreihenfolge. Erste greifende Gruppe gewinnt."""
+    if ende.punkte < MIN_TRACKPUNKTE:
+        return Befund(ende, GRUPPE_DUENN, "Track hat nur %d Punkt(e)" % ende.punkte)
+
+    if (ende.soll or "").upper() == PLATZHALTER_CODE:
+        return Befund(ende, GRUPPE_ZZZZ, "Flugplan-Platzhalter — kein Platz")
+
+    # AGL-Basis: bevorzugt der Soll-Platz, sonst der naechstgelegene (bei fehlendem Code).
+    lat, lon = ende.punkt["lat"], ende.punkt["lon"]
+    nachbarn = nearest(lat, lon, ad_refs, limit=1)
+    basis = find_code(ende.soll or "", ad_refs) or find_code(ende.soll or "", oa_refs)
+    if basis is None and nachbarn:
+        basis = nachbarn[0].ref
+
+    luft, warum = _in_der_luft(ende.punkt, basis)
+    if luft:
+        return Befund(ende, GRUPPE_LUFT, "kein Bodenpunkt: %s" % warum)
+
+    if nachbarn:
+        hit = nachbarn[0]
+        if hit.ref.code != (ende.soll or "").upper() and hit.distance_km < NACHBAR_MAX_KM:
+            return Befund(
+                ende, GRUPPE_ANDERER,
+                "Punkt liegt %.2f km an %s (Soll: %s)" % (hit.distance_km, hit.ref.code, ende.soll),
+            )
+        return Befund(ende, GRUPPE_KANDIDAT, "naechster Platz: %s %.2f km" % (hit.ref.code, hit.distance_km))
+    return Befund(ende, GRUPPE_KANDIDAT, "kein Platz in Reichweite")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Triage der Erkennungsluecken — sortiert, urteilt nicht.")
+    parser.add_argument("export", type=Path, help="gaps.json (siehe SKILL.md)")
+    parser.add_argument("--gruppe", default=None, help="nur diese Gruppe ausgeben")
+    args = parser.parse_args(argv)
+
+    faelle = json.loads(args.export.read_text(encoding="utf-8"))
+    ad, oa = airportsdata_refs(), load_ourairports()
+    befunde = [triagiere(e, ad, oa) for e in enden_aus_export(faelle)]
+
+    zaehler = Counter(b.gruppe for b in befunde)
+    print("%d Enden aus %d Faellen\n" % (len(befunde), len(faelle)))
+    for gruppe, anzahl in zaehler.most_common():
+        print("  %-10s %4d  (%4.1f%%)" % (gruppe, anzahl, 100.0 * anzahl / len(befunde)))
+    mechanisch = len(befunde) - zaehler[GRUPPE_KANDIDAT]
+    print("\n  mechanisch abgehakt: %d von %d" % (mechanisch, len(befunde)))
+
+    zeigen = args.gruppe or GRUPPE_KANDIDAT
+    print("\n--- %s ---" % zeigen)
+    for b in befunde:
+        if b.gruppe != zeigen:
+            continue
+        print("  %-9s %-8s %-9s soll=%-6s  %s"
+              % (b.ende.statsim_id, b.ende.callsign, b.ende.seite, b.ende.soll or "-", b.begruendung))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+- [ ] **Step 5: GREEN verifizieren**
+
+Run: `python -m pytest tests/test_triage_gaps.py -v`
+Expected: PASS (7 Tests).
+
+- [ ] **Step 6: Volle Suite**
+
+Run: `python -m pytest tests/ -q`
+Expected: 1063 passed (1047 bestehende + 9 aus Task 1–3 + 7 neue).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add scripts/triage_gaps.py tests/fixtures/gaps_mini.json tests/test_triage_gaps.py
+git commit -m "feat: Triage der Erkennungsluecken-Liste
+
+Misst Schritt 0/1 der Pruefreihenfolge ueber alle Faelle und gruppiert. Gemessen
+am Stand 2026-07-15: 87,5 Prozent der 184 Enden sind mechanisch abzuhaken, 23
+brauchen ein Urteil.
+
+Zwei Regeln, die beim Entwurf real falsch waren und jetzt Tests haben:
+- Punktzahl vor Nachbarschaft (6 von 9 D-Befunden waren Ein-Punkt-Tracks)
+- Hoehe vor Groundspeed (13 Enden waeren als Bodenpunkt fehlklassifiziert;
+  STOL fliegt langsam)"
+```
+
+---
+
+### Task 6: SKILL.md und README-Korrektur
 
 **Files:**
 - Create: `.claude/skills/track-diagnose/SKILL.md`
@@ -797,19 +1162,24 @@ Create `.claude/skills/track-diagnose/SKILL.md`:
 ````markdown
 ---
 name: track-diagnose
-description: Use when analyzing why a FriesenSpy flight's departure or arrival airport was not recognized from GPS — diagnosing entries in the Erkennungslücken list (/admin), tracks where an airport seems missing or misplaced, or flights without a flight plan. Produces a verdict with evidence, never enters corrections.
+description: Use when working through the FriesenSpy Erkennungslücken list (/admin) or analyzing why a flight's departure/arrival airport was not recognized from GPS — triaging the whole list, diagnosing a single track where an airport seems missing or misplaced, or finding flights without a flight plan. Produces verdicts with evidence, never enters corrections.
 ---
 
 # FriesenSpy — Track-Diagnose
 
 ## Überblick
 
-Beantwortet: *Warum hängt dieser Flug an Platz X?* Ein Track rein, ein begründetes Urteil raus.
+Beantwortet: *Warum hängt dieser Flug an Platz X?* — für die ganze Liste oder einen Einzelfall.
+
+**Erst triagieren, dann einzeln prüfen.** Die Lückenliste hatte am 2026-07-15 163 Fälle
+(184 Enden, weil 29 Fälle beide Enden vermissen). **87,5 % davon sind rein mechanisch abzuhaken.**
+Wer sie einzeln durchgeht, hört drei von vier Mal „Aufzeichnungslücke, nichts zu tun".
 
 **Dieser Skill trägt nichts ein.** Er liefert Diagnose, Belege und ggf. einen konkreten
 Vorschlag (ICAO, Koordinate, Radius, Grund). Das Eintragen macht der Nutzer über die Admin-UI —
 jeder Write stößt einen vollen `rebuild_flight_cache` an, und genau die Fälle, die „klar"
-aussahen, waren die falschen.
+aussahen, waren die falschen. Für die Triage gilt dasselbe: sie sortiert, sie entscheidet nicht.
+Auch ein Sammelbefund „128× Fall E" wird vom Nutzer abgehakt.
 
 **Nicht Teil dieses Skills:** das Vollaudit der gesamten Historie (Modus-Cluster über viele Flüge
 je Platz). Andere Frage, andere Fallstricke.
@@ -836,11 +1206,66 @@ Stolpersteine:
   `/api/flights/statsim/{id}/track`.
 - **Niemals schreiben.** Korrekturen laufen über die Admin-UI beim Nutzer.
 
-## Ablauf
+## Ablauf A — Triage (die ganze Liste)
+
+### A1. Export ziehen
+
+Die Lückenliste **muss aus der App kommen**, nicht per SQL nachgebaut: `list_gps_detection_gaps`
+ruft `canonicalize_legs` über die ganze Historie. Nachgebaut triagiert man eine andere Liste als
+die, die im Admin steht.
+
+```bash
+ssh -i ~/.ssh/tsbot_server root@167.86.127.129 "docker exec friesenspy-friesenspy-1 python -c '
+import json
+from app import geo
+from app.config import get_settings
+from app.database import get_connection, list_gps_detection_gaps, list_custom_airports
+conn = get_connection(get_settings().DB_PATH)
+geo.set_custom_airports(list_custom_airports(conn))
+out = []
+for g in list_gps_detection_gaps(conn):
+    sid = g.get("statsim_id")
+    if not sid: continue
+    rows = conn.execute("SELECT ts, latitude, longitude, altitude, groundspeed FROM statsim_position_history WHERE statsim_id=? ORDER BY ts", (sid,)).fetchall()
+    if not rows: continue
+    f, l = rows[0], rows[-1]
+    out.append({"statsim_id": sid, "callsign": g["callsign"], "missing": g["missing"],
+      "plan_departure": g["plan_departure"], "plan_arrival": g["plan_arrival"],
+      "logon_time": g["logon_time"], "punkte": len(rows),
+      "first": {"ts": f[0], "lat": f[1], "lon": f[2], "alt": f[3], "gs": f[4]},
+      "last":  {"ts": l[0], "lat": l[1], "lon": l[2], "alt": l[3], "gs": l[4]}})
+print(json.dumps(out))
+'" > gaps.json
+```
+
+Dauert ~18 s, liefert ~75 KB für 163 Fälle.
+
+> **`geo.set_custom_airports(...)` ist PFLICHT, nicht Deko.** `docker exec python -c` startet einen
+> frischen Prozess; `geo._CUSTOM_AIRPORTS` wird sonst nie befüllt (das macht der Lifespan,
+> `app/main.py:204`). Ohne die Zeile fehlen **sämtliche** Korrekturen: der erste Testlauf lieferte
+> 199 statt 163 Fälle — 36 Phantom-Lücken an längst gefixten Plätzen (EDEN, EBBR, ELLX, EDDF).
+
+> **Niemals die DB kopieren.** 42 MB mit Push-Subscriptions, Pilotennamen und Tokens; die Triage
+> braucht davon nichts.
+
+### A2. Triagieren
+
+```bash
+python scripts/triage_gaps.py gaps.json                 # Zusammenfassung + Kandidaten
+python scripts/triage_gaps.py gaps.json --gruppe E      # eine Gruppe im Detail
+```
+
+### A3. Berichten
+
+Trivialgruppen als **Sammelbefund** melden (nicht einzeln durchkauen), Kandidaten als Arbeitsvorrat
+für Ablauf B. Stand 2026-07-15: 128× E, 19× zu dünn, 11× ZZZZ, 3× D — **23 Kandidaten**.
+
+## Ablauf B — Einzelfall
 
 ### 1. Fall aufnehmen
 
-Der Nutzer gibt meist eine Track-URL: `…/#tab=statistiken&track=<statsim_id>&src=statsim`.
+Einstieg ist ein Kandidat aus der Triage oder eine Track-URL vom Nutzer:
+`…/#tab=statistiken&track=<statsim_id>&src=statsim`.
 
 ```sql
 SELECT * FROM statsim_cache WHERE statsim_id = <id>;
@@ -887,12 +1312,22 @@ jeweils gegen die importierten Detektor-Schwellen (4 km Radius, 1500 ft Spawn, 3
 Je Ende, nicht je Track: Ein Track kann am Ziel sauber aufsetzen und am Start in der Luft
 beginnen. Geprüft wird der Randpunkt, um den es geht.
 
-Bodenkontakt zeigt sich an der **Groundspeed** (`_GPS_BLOCK_GS_KT` = 2 kt, Vollstopp) und an
-über mehrere Samples **konstanter Höhe** (= Platzelevation). Nicht primär an AGL: Höhe über
-Grund setzt eine bekannte Platz-Elevation voraus — die es bei einem fehlenden oder falsch
-verorteten Platz gerade nicht gibt.
+**Höhe führt, Groundspeed hilft** — dieselbe Gewichtung wie im Detektor (`app/gps_legs.py:4`:
+*„Höhe (AGL) ist das Leitsignal, Groundspeed nur sekundär — STOL/Heli fliegen langsam"*):
+
+```
+in_der_luft = (AGL > 300 ft)  ODER  (groundspeed >= 50 kt)
+```
+
+AGL gegen die Elevation des Soll-Platzes; fehlt der Code in beiden Quellen, gegen die des
+nächstgelegenen. Beide Signale nötig, keines genügt: von 184 Enden erkennt **13 nur die Höhe**
+(Groundspeed sagt fälschlich „Boden" — Wilga fliegt ~40 kt Reise), **5 nur die Groundspeed**.
 
 Kein Bodenpunkt → **Fall E**, Ende.
+
+**Vorgelagert: hat der Track überhaupt genug Punkte?** Unter 3 Samples ist kein Zustandswechsel
+möglich und jede Aussage bedeutungslos — auch eine gemessene. Sechs von neun vermeintlichen
+D-Befunden waren Ein-Punkt-Tracks.
 
 > Beispiel EDDH (Track 28133172): erster Punkt 2209 ft, 217 kt, 15 km vom Platz — der VATSIM-
 > Logon lag 9 Sekunden davor, der Pilot verband sich im Steigflug. Es gab nie einen Startpunkt;
@@ -1015,7 +1450,7 @@ Neu:
 - [ ] **Step 3: Volle Suite**
 
 Run: `python -m pytest tests/ -q`
-Expected: 1056 passed (1047 bestehende + 9 neue).
+Expected: 1063 passed (1047 bestehende + 16 neue).
 
 - [ ] **Step 4: Skill-Verfügbarkeit prüfen**
 
@@ -1037,8 +1472,9 @@ OurAirports — der Belgien-Fund widerlegt das (848 von 24253 Codes > 3 km)."
 
 ## Verifikation zum Schluss
 
-- [ ] `python -m pytest tests/ -q` → 1056 passed
+- [ ] `python -m pytest tests/ -q` → 1063 passed
 - [ ] `python scripts/nearby_airports.py 53.49527 10.00085 --alt 2209 --icao EDDH` → 15.05 km, „ausserhalb", AGL 2156 ft, „ueberschritten"
+- [ ] Echter Triage-Lauf: Export ziehen (siehe SKILL.md), dann `python scripts/triage_gaps.py gaps.json` → Größenordnung 184 Enden aus 163 Fällen, ~23 Kandidaten. **Weicht das stark ab, ist das ein Befund, kein Grund zum Nachjustieren** — die Liste ändert sich mit jedem Flug, aber ein Sprung von 23 auf 100 Kandidaten hieße, dass eine Gruppenregel nicht greift.
 - [ ] `git status --short` → keine ungewollten Dateien; `scripts/.cache/` fehlt (ignoriert)
 - [ ] **Nicht** getan: kein Version-Bump, kein Tag, kein Changelog, keine Änderung an `docs/api.md` / `docs/architecture.md`
 - [ ] **Nicht** angefasst: die vier unversionierten Nutzer-Dateien (`friesenkutter-*.html`, `docs/superpowers/{plans,specs}/2026-07-13-subjekt-sichtbarkeit*`)

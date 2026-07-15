@@ -22,22 +22,46 @@ Alle drei Fehler haben dieselbe Ursache: Die Reihenfolge der Prüfung und die Tr
 
 ## Abgrenzung
 
-**Nur Einzelfall-Diagnose.** Ein Track rein, ein begründetes Urteil raus. Das Vollaudit der
-gesamten Historie (Modus-Cluster über viele Flüge je Platz) ist ausdrücklich **nicht** Teil dieses
-Skills — es ist eine andere Frage mit anderen Fallstricken und wurde einmalig gebraucht.
+**Triage zuerst, dann Einzelfall — ein Ablauf, nicht zwei.** Die Erkennungslücken-Liste hat
+163 offene Fälle (184 Enden, da 29 Fälle beide Enden vermissen). Sie einzeln durchzugehen wäre
+Verschwendung: **74,5 % sind rein mechanisch abzuhaken** (gemessen 2026-07-15, siehe unten). Der
+Batch misst Schritt 0 und Schritt 1 über alle Fälle und sortiert die trivialen aus; übrig bleiben
+die echten Fragen, die einzeln beurteilt werden.
+
+Das funktioniert, weil **Schritt 0 und Schritt 1 reine Messungen sind** — „gibt es an diesem Ende
+einen Bodenpunkt?" und „welcher Platz liegt am nächsten?" brauchen keinen Kontext. Erst Schritt 2
+braucht Urteilskraft. Die Prüfreihenfolge ist damit zugleich die Triage-Logik; der Batch fällt
+fast umsonst ab.
+
+| Triage-Befund (184 Enden) | Anzahl | Anteil |
+|---|---|---|
+| **E** — kein Bodenpunkt (Track beginnt/endet in der Luft) | 128 | 69,6 % |
+| **Kandidat** — braucht Urteil | **23** | **12,5 %** |
+| **Zu dünn** — Track hat < 3 Punkte | 19 | 10,3 % |
+| **ZZZZ** — Flugplan-Platzhalter, kein Platz | 11 | 6,0 % |
+| **D** — Punkt liegt an einem anderen Platz | 3 | 1,6 % |
+
+**87,5 % mechanisch abgehakt, 23 echte Fragen.** Die Kandidaten zeigen keine Häufung — also kein
+zweiter Belgien-Fall in Sicht.
 
 **Der Skill endet beim Urteil.** Er liefert Diagnose, Belege und ggf. einen konkreten
-Eintragsvorschlag (ICAO, Koordinate, Radius, Grund), trägt aber **nichts ein**. Das Eintragen
-bleibt beim Nutzer über die Admin-UI. Begründung: Genau die Fälle, die „klar" aussahen (EDHX,
-ETUO), waren die falschen — und jeder Write stößt einen vollen `rebuild_flight_cache` an.
+Eintragsvorschlag (ICAO, Koordinate, Radius, Grund), trägt aber **nichts ein** — das bleibt beim
+Nutzer über die Admin-UI. Begründung: Genau die Fälle, die „klar" aussahen (EDHX, ETUO), waren die
+falschen, und jeder Write stößt einen vollen `rebuild_flight_cache` an. Für die Triage gilt
+dasselbe: sie sortiert nach Messkriterien, sie entscheidet nichts.
+
+**Nicht Teil dieses Skills:** das Vollaudit der gesamten Historie (Modus-Cluster über viele Flüge
+je Platz). Andere Frage, andere Fallstricke, einmalig gebraucht.
 
 ## Artefakte
 
 | Datei | Zweck |
 |---|---|
-| `.claude/skills/track-diagnose/SKILL.md` | Ablauf, fertige SQL-Abfragen, Fallunterscheidung |
+| `.claude/skills/track-diagnose/SKILL.md` | Ablauf, Export-Snippet, SQL, Fallunterscheidung |
 | `scripts/nearby_airports.py` | Messwerkzeug (rein, offline, kein DB-Zugriff) |
+| `scripts/triage_gaps.py` | Batch: liest den JSON-Export, misst Schritt 0/1, gruppiert |
 | `tests/test_nearby_airports.py` | Regressionstests aus den realen Fällen |
+| `tests/test_triage_gaps.py` | Triage-Tests gegen eine JSON-Fixture |
 | `README.md` (Korrektur) | Falschaussage zur Koordinatenherkunft richtigstellen |
 
 Der Skill liegt **im Repo**, nicht user-global: er kennt Tabellennamen, Detektor-Schwellen und die
@@ -62,6 +86,30 @@ Stolpersteine, die in den Skill gehören, weil sie real Zeit gekostet haben:
 - `flight_cache` hat **keine** Spalte `statsim_id`.
 - Der API-Weg (`/api/flights/statsim/{id}/track`) ist **kein** Ersatz: die Endpoints verlangen
   Login (globale Middleware), auch die vermeintlich öffentlichen.
+
+### Export für die Triage (`docker exec`)
+
+Die Lückenliste **muss aus der App kommen**, nicht per SQL nachgebaut: `list_gps_detection_gaps`
+ruft `canonicalize_legs` über die gesamte Historie — in SQL nachgebildet triagierte man eine
+andere Liste als die, die im Admin steht. Der Container hat die Funktion; abgerufen wird nur das
+Ergebnis:
+
+```bash
+ssh -i ~/.ssh/tsbot_server root@167.86.127.129 \
+  "docker exec friesenspy-friesenspy-1 python -c '<Export-Snippet>'" > gaps.json
+```
+
+Gemessen: ~18 s Laufzeit, **75 KB JSON** für 163 Fälle. Bewusst **kein** Abzug der DB (42 MB, mit
+Push-Subscriptions, Pilotennamen, Tokens) — für eine Triage von Positionsrändern wird davon
+nichts gebraucht.
+
+> **Fallstrick, der real zugeschlagen hat:** `docker exec python -c` startet einen **frischen
+> Prozess**. `geo._CUSTOM_AIRPORTS` wird aber erst beim App-Start über `set_custom_airports()`
+> befüllt (`app/main.py:204`) — im Ad-hoc-Prozess ist der Cache **leer**, und sämtliche
+> `custom_airports`-Korrekturen existieren nicht. Der erste Testlauf lieferte deshalb 199 statt
+> 163 Fälle: **36 Phantom-Lücken** an längst korrigierten Plätzen (EDEN, EBBR, ELLX, EDDF, EDHD,
+> EDST). Das Export-Snippet **muss** darum mit
+> `geo.set_custom_airports(list_custom_airports(conn))` beginnen.
 
 ## Das Messwerkzeug (`scripts/nearby_airports.py`)
 
@@ -119,29 +167,82 @@ EDDH   15.05 km   (Standardradius 4.0 km — außerhalb)
 
 ## Ablauf
 
-**Zwei Einstiege:**
+### A — Triage (die Liste)
 
-1. **Aus der Erkennungslücken-Liste** — der Normalfall. Jede Zeile ist bereits eine Soll/Ist-
-   Gegenüberstellung: `plan_departure` gesetzt, `gps_departure` leer.
-2. **Blinde Fälle ohne Flugplan** — siehe unten.
+1. Export ziehen (`docker exec`, siehe oben) → `gaps.json`
+2. `python scripts/triage_gaps.py gaps.json` → gruppierte Befunde
+3. Trivialgruppen (E, ZZZZ) dem Nutzer als Sammelbefund melden — nicht einzeln durchkauen
+4. Kandidatenliste als Arbeitsvorrat für B
+
+`triage_gaps.py` ist dünn: Es liest den JSON-Export, wählt je Fall das fragliche Ende
+(`missing: "departure"` → erster Punkt, `"arrival"` → letzter, `"both"` → beide, ergibt zwei
+Enden) und ruft `measure()` aus `nearby_airports.py`. Die Gruppierung ist Schritt 0 und Schritt 1
+der Prüfreihenfolge, sonst nichts:
+
+Die Gruppen werden **in dieser Reihenfolge** geprüft; die erste, die greift, gewinnt:
+
+| # | Gruppe | Kriterium (rein mechanisch) |
+|---|---|---|
+| 1 | **Zu dünn** | Track hat < 3 Punkte — der Detektor braucht mindestens einen Zustandswechsel (ON_GROUND → AIRBORNE → ON_GROUND); bei einem einzigen Sample ist jede weitere Aussage bedeutungslos |
+| 2 | **ZZZZ** | Soll-Code ist `ZZZZ` — Flugplan-Platzhalter, es gibt keinen Platz zu finden |
+| 3 | **E** | Randpunkt ist in der Luft (Kriterium unten) |
+| 4 | **D** | nächster Platz ≠ Soll-Code und unter 1 km |
+| 5 | **Kandidat** | alles übrige — braucht Schritt 2 und damit ein Urteil |
+
+**Reihenfolge 1 vor 4 ist nicht kosmetisch:** Sechs der ursprünglich neun D-Befunde waren
+Ein-Punkt-Tracks. Fall 27831625 (FRS96, ein einziges Sample) hätte als „Punkt gehört zu EDNR,
+0,06 km" gemeldet werden müssen — formal korrekt gemessen und trotzdem Unsinn.
+
+**„In der Luft" (Gruppe E) — Höhe führt, Groundspeed hilft:**
+
+```
+in_der_luft = (AGL > _GPS_GROUND_AGL_FT)  ODER  (groundspeed >= _GPS_FLYING_GS_KT)
+```
+
+AGL wird gegen die Elevation des Soll-Platzes gerechnet; fehlt der Code in beiden Quellen, gegen
+die des nächstgelegenen Platzes. Beide Signale sind nötig und keines genügt allein — gemessen an
+den 184 Enden: **13 Enden erkennt nur die Höhe** (Groundspeed sagt fälschlich „Boden"), **5 nur
+die Groundspeed**.
+
+Das ist dieselbe Gewichtung wie im Detektor (`app/gps_legs.py:4`: *„Höhe (AGL) ist das Leitsignal,
+Groundspeed nur sekundär — STOL/Heli fliegen langsam"*). Ein erster Entwurf dieser Triage nahm
+Groundspeed als Leitsignal und hätte FRS125 ab ETNJ mit `gs 22` als Bodenpunkt gewertet — bei
+4401 ft. Wilga-Reisegeschwindigkeit liegt bei rund 40 kt; eine gs-zentrierte Regel klassifiziert
+STOL-Flüge systematisch falsch.
+
+Kein DB-Zugriff: JSON rein, Gruppen raus. Damit genauso testbar wie das Messwerkzeug.
+
+### B — Einzelfall (ein Kandidat)
+
+Einstieg ist entweder ein Kandidat aus A oder eine Track-URL vom Nutzer
+(`…&track=<statsim_id>&src=statsim`).
 
 Der Skill zieht Trackpunkte und `statsim_cache`-Metadaten (departure, arrival, logon/logoff) per
-SQL, bestimmt die Randpunkte und ruft dann das Werkzeug mit Punkt + Soll-Code auf. Bei
-`missing: "both"` zwei Läufe: Startpunkt gegen `plan_departure`, Endpunkt gegen `plan_arrival`.
+SQL, prüft den aktuellen `custom_airports`-Stand, bestimmt die Randpunkte und ruft dann das
+Werkzeug mit Punkt + Soll-Code auf. Bei `missing: "both"` zwei Läufe: Startpunkt gegen
+`plan_departure`, Endpunkt gegen `plan_arrival`. Dann die Prüfreihenfolge.
 
-### Blinde Fälle ohne Flugplan
+### C — Blinde Fälle ohne Flugplan
+
+Eigener Einstieg, weil weder die Liste noch die Triage sie zeigt.
 
 `list_gps_detection_gaps` (`app/database.py:4683`) meldet einen Fall nur, wenn eine Soll-Angabe
 existiert: `missing_dep = not gps_departure and plan_departure`. **Ein Flug ohne Flugplan, dessen
 Start nicht erkannt wird, ist für die Liste unsichtbar.** Da FriesenSpy seit #23 GPS-only ist,
 werden solche Flüge trotzdem gewertet — nur geprüft werden sie nie.
 
-Gemessen (2026-07-15): 2104 FRS-Legs, 101 sichtbare Lücken, **vier blinde Fälle** — u. a. FRS145
-(08.06., 25 Minuten, weder Start noch Ziel irgendwo vermerkt). Untergrenzwert: `flight_cache`
-filtert auf `CALLSIGN_PREFIX`, die Lückenliste läuft über alle Callsigns.
+Gemessen (2026-07-15) über `flight_cache` (FRS-Callsigns): 2104 Legs, **vier blinde Fälle** —
+u. a. FRS145 (08.06., 25 Minuten, weder Start noch Ziel irgendwo vermerkt). Untergrenzwert:
+`flight_cache` filtert auf `CALLSIGN_PREFIX`, die Lückenliste läuft über alle Callsigns.
 
 Der Skill enthält die SQL-Abfrage, die diese Fälle findet. Die App wird **nicht** umgebaut — bei
 vier Fällen wäre das ein eigenes Feature mit eigenem Design, kein Nebenprodukt.
+
+> **Zwei Zahlen, die nicht verwechselt werden dürfen:** `flight_cache` hat 2104 Legs, aber nur
+> FRS-Callsigns; die Erkennungslücken-Liste läuft über **alle** Callsigns und ist bei 200 Zeilen
+> gekappt (`gaps[:200]`, `app/database.py:4708`). Die 163 offenen Fälle stammen aus der Liste, die
+> vier blinden Fälle aus `flight_cache` — sie sind nicht Teil derselben Grundgesamtheit. Wegen der
+> Kappung ist auch 163 möglicherweise nicht alles.
 
 Ohne Flugplan verschiebt sich die Analyse zweifach: **Fall D entfällt** (wo kein Soll ist, kann
 nichts abweichen), und **Fall A wird zur Recherche** — der Bodenpunkt liegt irgendwo, kein Platz in
@@ -243,6 +344,23 @@ Der EBKT-Test hält zusätzlich fest, dass Schritt 1 hier **nicht** greift: EBMO
 
 Der OurAirports-Loader bekommt in Tests eine kleine Fixture-CSV — kein Netz, kein 12-MB-Download.
 
+**`tests/test_triage_gaps.py`** gegen `tests/fixtures/gaps_mini.json` — sechs **echte** Fälle aus
+dem Export vom 2026-07-15, einer je Gruppe:
+
+| `statsim_id` | Fall | Erwartung |
+|---|---|---|
+| 27831625 | FRS96, **1 Punkt**, Soll EDDM | **Zu dünn** — *obwohl* EDNR nur 0,06 km entfernt liegt. Der Test beweist, dass die Punktzahl vor der Nachbarschaft geprüft wird. |
+| 27404430 | FRS116, Soll `ZZZZ`, gs 147 | **ZZZZ** — *obwohl* der Punkt auch in der Luft ist. Beweist Reihenfolge 2 vor 3. |
+| 28133172 | FRS96, EDDH, 2209 ft / 217 kt | **E** — der Fall, der diesen Skill ausgelöst hat |
+| 26626195 | FRS119N, Soll EDLJ, Punkt 0,03 km an EDLI | **D** |
+| 28099919 | FRS177, Soll RCLM, Bodenpunkt, nächster Platz 302 km | **Kandidat** |
+| 25216444 | FRS125, `missing: "both"`, gs 22 bei **4401 ft** | zwei Enden; das Start-Ende ist **E** — der STOL-Test: mit Groundspeed als Leitsignal wäre es fälschlich ein Bodenpunkt |
+
+Die Fixture ist 2,6 KB groß und enthält nur Callsigns und Positionen — keine Pilotennamen.
+
+Der `both`-Test ist doppelt wertvoll: 29 der 163 Fälle vermissen beide Enden, und ein Ende kann
+trivial sein, während das andere ein Kandidat ist.
+
 Der EDDH-Test hängt an den importierten Konstanten: Ändert jemand `_GPS_SPAWN_MAX_AGL_FT`, ohne an
 den Skill zu denken, wird der Test **rot**, statt dass der Skill still falsch wird. Das ist die
 Absicherung dafür, dass ein Skill Wissen über Code enthält.
@@ -267,9 +385,21 @@ nennt OurAirports als Quelle, deckt sich aber nachweislich nicht damit.
   falls es je gebraucht wird).
 - **Kein Vollaudit-Werkzeug** (Modus-Cluster) — andere Frage, andere Fallstricke.
 - **Kein automatisches Eintragen**, auch nicht für „klare" Fälle.
+- **Kein Abzug der Produktions-DB.** Der Export liefert 75 KB statt 42 MB; ein Vollabzug zöge
+  Push-Subscriptions, Pilotennamen und Tokens auf lokale Platten, ohne dass die Triage davon
+  irgendetwas braucht.
+- **Kein Dismiss/Schreiben aus der Triage.** Auch ein Sammelbefund „115× Fall E" wird vom Nutzer
+  abgehakt, nicht vom Skill.
 
 ## Offene Punkte (nicht blockierend)
 
 - Der airportsdata-Belgienfehler ist **upstream nicht gemeldet**. Eigenes Thema.
 - Legs über Track-Lücken zusammenführen (LKLB-Muster) — echte Design-Entscheidung mit Risiko: eine
   reale Zwischenlandung darf nie verschluckt werden. Eigenes Thema.
+- **Die Lückenliste ist bei 200 Zeilen gekappt** (`app/database.py:4708`). Beim Testlauf lagen
+  200 Zeilen an — es könnten also mehr offene Fälle existieren, als die Liste zeigt. Ob die
+  Kappung stört, zeigt sich erst, wenn die 47 Kandidaten abgearbeitet sind.
+- **115 Fälle „Track beginnt in der Luft" sind ein eigener Befund.** Sie sind keine Datenfehler,
+  aber 62,5 % der Liste. Ob man sie dauerhaft anders behandelt (z. B. gar nicht erst als Lücke
+  melden, wenn der Randpunkt airborne ist), ist eine Produktentscheidung — nicht Teil dieses
+  Skills, aber einen eigenen Gedanken wert.
