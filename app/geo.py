@@ -67,6 +67,23 @@ def is_known_in_airportsdata(icao: str) -> bool:
         return False
 
 
+def airportsdata_coords(icao: str) -> tuple[float, float] | None:
+    """(lat, lon) NUR aus der Standard-Datenbank (airportsdata) — ohne ``custom_airports``.
+
+    Gegenstück zu :func:`icao_to_coords`, das bei einem Override (#56) bewusst den
+    Custom-Wert liefert. Für die Frage „weicht der Custom-Eintrag von airportsdata ab?"
+    ist genau der ungeschminkte Standard-Wert nötig — mit ``icao_to_coords`` vergliche man
+    den Override mit sich selbst (immer 0 km). ``None``, wenn der Code dort nicht existiert.
+    """
+    try:
+        airport = _airports_icao().get((icao or "").upper())
+    except Exception:
+        return None
+    if airport is None:
+        return None
+    return (airport["lat"], airport["lon"])
+
+
 def search_airports(q: str, limit: int = 20) -> list[dict]:
     """#77-Erweiterung: ICAO-Präfix-Suche über airportsdata + `custom_airports`. Gibt bis zu
     ``limit`` Treffer als ``{icao, name}`` (alphabetisch) zurück — für das Autocomplete an den

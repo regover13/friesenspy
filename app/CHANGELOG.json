@@ -1,5 +1,15 @@
 [
   {
+    "version": "9.5.0",
+    "date": "2026-07-15",
+    "highlight": false,
+    "title": "Flugplatz-Ergänzungen mit Begründung",
+    "items": [
+      "📝 Die Ergänzungs-Flugplätze im Admin haben jetzt ein Feld „Grund“: warum wurde der Platz ergänzt oder überschrieben? Das Feld ist optional und schlägt beim Tippen die bereits vergebenen Gründe vor, damit sich gleiche Fälle gleich benennen.",
+      "🏷️ Die 13 bestehenden Einträge wurden automatisch beschriftet — abgeleitet aus den Daten selbst: fehlt der Code in der Standard-Flugplatzdatenbank, war es eine Ergänzung; weicht die Koordinate ab, stand der Platz dort am falschen Ort; ist sie unverändert, ging es nur um einen größeren Suchradius."
+    ]
+  },
+  {
     "version": "9.4.0",
     "date": "2026-07-15",
     "highlight": false,

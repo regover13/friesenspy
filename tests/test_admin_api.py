@@ -728,6 +728,29 @@ class TestAdminAirports:
         listing3 = asyncio.run(main.admin_get_airports(FakeReq()))
         assert "ZZTEST" not in {r["icao"] for r in listing3["airports"]}
 
+    def test_airports_post_stores_reason(self, db):
+        """#78: der Grund wird durchgereicht und wieder ausgeliefert -- er speist im Admin
+        das Autocomplete auf die bereits vergebenen Gründe."""
+        _upsert_airport({
+            "icao": "ZZREASON", "name": "Mit Grund", "lat": 1.0, "lon": 2.0,
+            "elevation_ft": 50, "reason": "Fehlt in airportsdata",
+        })
+        listing = asyncio.run(main.admin_get_airports(FakeReq()))
+        rows = {r["icao"]: r for r in listing["airports"]}
+        assert rows["ZZREASON"]["reason"] == "Fehlt in airportsdata"
+
+    def test_airports_post_without_reason_stays_null(self, db):
+        """#78: ein fehlender Grund darf das Speichern NIE blockieren -- der Eintrag selbst
+        ist die Funktion, der Grund nur Dokumentation."""
+        res, _ = _upsert_airport({
+            "icao": "ZZNOREASON", "name": "Ohne Grund", "lat": 3.0, "lon": 4.0,
+            "elevation_ft": None,
+        })
+        assert res["status"] == "ok"
+        listing = asyncio.run(main.admin_get_airports(FakeReq()))
+        rows = {r["icao"]: r for r in listing["airports"]}
+        assert rows["ZZNOREASON"]["reason"] is None
+
     def test_airports_rejects_known_airportsdata_code(self, db):
         """Plausiprüfung (Fund dieser Session): EDXU (Hüttenbusch) war fälschlich als
         "fehlend" vermutet worden, steckte aber schon in airportsdata — muss OHNE override

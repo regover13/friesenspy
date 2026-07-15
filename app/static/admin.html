@@ -1075,6 +1075,12 @@
               <input type="number" id="ap-elev" step="1" placeholder="112" /></div>
             <div class="form-group"><label for="ap-radius">Radius (km, optional)</label>
               <input type="number" id="ap-radius" step="0.5" placeholder="Standard: 4" /></div>
+            <!-- #78: Grund — Freitext mit Vorschlägen aus den bereits vergebenen Gründen
+                 (datalist wird von loadCustomAirports() gefüllt, kein eigener Endpoint). -->
+            <div class="form-group"><label for="ap-reason">Grund (optional)</label>
+              <input type="text" id="ap-reason" list="ap-reason-list"
+                     placeholder="Fehlt in airportsdata" autocomplete="off" />
+              <datalist id="ap-reason-list"></datalist></div>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:14px;">
             <button class="btn btn-primary btn-sm" id="ap-save-btn">Speichern</button>
@@ -2690,12 +2696,21 @@
       const d = await res.json();
       const rows = d.airports || [];
       const c = document.getElementById('ap-container');
+      // #78: Vorschlagsliste für das Grund-Feld aus den bereits vergebenen Gründen ableiten —
+      // kein eigener Endpoint nötig, die Zeilen liegen hier ohnehin schon vor. Läuft VOR dem
+      // Leer-Abbruch unten, damit die Liste auch bei leerer Tabelle definiert (leer) ist.
+      const dl = document.getElementById('ap-reason-list');
+      if (dl) {
+        const reasons = [...new Set(rows.map(a => (a.reason || '').trim()).filter(Boolean))].sort();
+        dl.innerHTML = reasons.map(r => '<option value="' + escA(r) + '"></option>').join('');
+      }
       if (!rows.length) { c.innerHTML = '<div class="empty-hint">Noch keine Ergänzungs-Flugplätze.</div>'; return; }
       c.innerHTML = '<div class="table-wrap"><table style="font-size:0.8rem;width:max-content;min-width:100%;"><thead><tr>'
-        + '<th style="text-align:left;">Code</th><th style="text-align:left;">Name</th><th>Lat</th><th>Lon</th><th>Elev (ft)</th><th>Radius (km)</th><th></th></tr></thead><tbody>'
+        + '<th style="text-align:left;">Code</th><th style="text-align:left;">Name</th><th>Lat</th><th>Lon</th><th>Elev (ft)</th><th>Radius (km)</th><th style="text-align:left;">Grund</th><th></th></tr></thead><tbody>'
         + rows.map(a => '<tr><td><b>' + escH(a.icao) + '</b></td><td>' + escH(a.name || '—') + '</td>'
           + '<td>' + a.lat + '</td><td>' + a.lon + '</td><td>' + (a.elevation_ft ?? '—') + '</td>'
           + '<td>' + (a.radius_km ?? '—') + '</td>'
+          + '<td>' + escH(a.reason || '—') + '</td>'
           + '<td><button class="btn btn-sm btn-danger" onclick="apDelete(this,\'' + escA(a.icao) + '\')">✕</button></td></tr>').join('')
         + '</tbody></table></div>';
     }
@@ -2735,6 +2750,7 @@
         icao, name: document.getElementById('ap-name').value.trim() || null,
         lat, lon, elevation_ft: elevRaw === '' ? null : parseFloat(elevRaw),
         radius_km: radiusRaw === '' ? null : parseFloat(radiusRaw),
+        reason: document.getElementById('ap-reason').value.trim() || null,
       };
       const saveBtn = document.getElementById('ap-save-btn');
       saveBtn.disabled = true;
@@ -2755,7 +2771,7 @@
           return;
         }
         toast('Flugplatz gespeichert.');
-        ['ap-icao', 'ap-name', 'ap-lat', 'ap-lon', 'ap-elev', 'ap-radius'].forEach(i => document.getElementById(i).value = '');
+        ['ap-icao', 'ap-name', 'ap-lat', 'ap-lon', 'ap-elev', 'ap-radius', 'ap-reason'].forEach(i => document.getElementById(i).value = '');
         loadCustomAirports();
         // Erkennungslücken nur neu laden, wenn die Liste schon einmal geöffnet wurde -- sonst
         // würde jedes Flugplatz-Speichern ungefragt die teure Prüfung anstoßen (mehrere Sekunden).

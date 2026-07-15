@@ -274,6 +274,7 @@ CREATE TABLE IF NOT EXISTS custom_airports (
     lon           REAL NOT NULL,
     elevation_ft  REAL,                 -- NULL wenn unbekannt (macht Rettung/Spawn-Guard konservativ)
     radius_km     REAL,                 -- NULL = Standard-Suchradius (Großflughafen-Override, #62)
+    reason        TEXT,                 -- WARUM ergänzt/überschrieben (#78); NULL erlaubt, nie Pflicht
     updated_at    TEXT
 );
 
@@ -473,7 +474,60 @@ _CUSTOM_AIRPORTS_MIGRATIONS = [
     # #62: Radius-Override für Großflughäfen (z. B. EHAM) -- der Abhebe-/Aufsetzpunkt kann
     # weiter vom airportsdata-Referenzpunkt entfernt liegen als der globale Standardradius.
     "ALTER TABLE custom_airports ADD COLUMN radius_km REAL",
+    # #78: Grund der Ergänzung/Überschreibung -- dokumentiert, WARUM ein Eintrag existiert.
+    "ALTER TABLE custom_airports ADD COLUMN reason TEXT",
 ]
+
+# #78: die drei Standard-Gründe. Bewusst Freitext in der DB (kein Enum/CHECK): neue Gründe
+# sollen durch Benutzung entstehen können, das Admin-UI schlägt die vorhandenen nur vor.
+REASON_MISSING = "Fehlt in airportsdata"
+REASON_WRONG_COORDS = "airportsdata-Koordinate falsch"
+REASON_RADIUS = "Abhebepunkt außerhalb Standardradius"
+
+# Ab dieser Abweichung gilt eine Custom-Koordinate als bewusst korrigiert (statt unverändert
+# von airportsdata übernommen). Keine Grauzone in der Praxis: EHAM (reiner Radius-Override)
+# liegt bei 0,00 km, der nächstkleinere echte Korrekturfall (EBUL) bei 15,0 km.
+_REASON_COORD_DELTA_KM = 1.0
+
+
+def _derive_custom_airport_reason(icao: str, lat: float, lon: float) -> str:
+    """Grund eines Ergänzungs-Flugplatzes AUS DEN DATEN ableiten (#78).
+
+    Bewusst datengetrieben statt über eine gepflegte Code-Liste: so ist die Zuordnung auch
+    für Einträge korrekt, die es beim Schreiben dieses Codes noch gar nicht gab.
+
+    - Code fehlt in airportsdata            -> Ergänzung
+    - Koordinate weicht > 1 km ab           -> airportsdata steht am falschen Ort
+    - Koordinate praktisch unverändert      -> nur radius_km gesetzt (Großflughafen-Fall)
+    """
+    from app.geo import airportsdata_coords, haversine  # lokal wie überall in dieser Datei
+
+    ad = airportsdata_coords(icao)
+    if ad is None:
+        return REASON_MISSING
+    if haversine(lat, lon, ad[0], ad[1]) > _REASON_COORD_DELTA_KM:
+        return REASON_WRONG_COORDS
+    return REASON_RADIUS
+
+
+def migrate_custom_airport_reasons(conn: sqlite3.Connection) -> int:
+    """Bestandseinträge ohne Grund nachträglich beschriften (#78, idempotent).
+
+    Fasst NUR Zeilen mit ``reason IS NULL`` an -- ein vom Admin gepflegter Text überlebt
+    daher jeden weiteren ``init_db``-Lauf. Gibt die Anzahl beschrifteter Zeilen zurück.
+    """
+    rows = conn.execute(
+        "SELECT icao, lat, lon FROM custom_airports WHERE reason IS NULL"
+    ).fetchall()
+    n = 0
+    for row in rows:
+        icao, lat, lon = row[0], row[1], row[2]
+        conn.execute(
+            "UPDATE custom_airports SET reason = ? WHERE icao = ? AND reason IS NULL",
+            (_derive_custom_airport_reason(icao, lat, lon), icao),
+        )
+        n += 1
+    return n
 
 
 def init_db(db_path: str) -> None:
@@ -588,6 +642,10 @@ def init_db(db_path: str) -> None:
             pass
         try:
             seed_custom_airports(conn)  # Ergänzungs-Flugplätze erstbefüllen (idempotent, #50)
+        except sqlite3.OperationalError:
+            pass
+        try:
+            migrate_custom_airport_reasons(conn)  # #78: Bestandseinträge nachbeschriften
         except sqlite3.OperationalError:
             pass
         # Alt-Daten: statsim_cache.aircraft vor #44 (v8.3.0) unnormalisiert gespeichert
@@ -4533,9 +4591,10 @@ def seed_custom_airports(conn: sqlite3.Connection) -> int:
     now = _now_utc()
     for icao, name, lat, lon, elev in _CUSTOM_AIRPORTS_SEED:
         conn.execute(
-            "INSERT INTO custom_airports (icao, name, lat, lon, elevation_ft, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (icao, name, lat, lon, elev, now),
+            "INSERT INTO custom_airports (icao, name, lat, lon, elevation_ft, reason, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            # Alle Seed-Plätze fehlen in airportsdata -- das ist ihre Existenzberechtigung (#50).
+            (icao, name, lat, lon, elev, REASON_MISSING, now),
         )
     return len(_CUSTOM_AIRPORTS_SEED)
 
@@ -4543,7 +4602,7 @@ def seed_custom_airports(conn: sqlite3.Connection) -> int:
 def list_custom_airports(conn: sqlite3.Connection) -> list[dict]:
     """Alle Ergänzungs-Flugplätze (für die Admin-Tabelle), alphabetisch nach ICAO/Code."""
     rows = conn.execute(
-        "SELECT icao, name, lat, lon, elevation_ft, radius_km, updated_at "
+        "SELECT icao, name, lat, lon, elevation_ft, radius_km, reason, updated_at "
         "FROM custom_airports ORDER BY icao"
     ).fetchall()
     return [dict(r) for r in rows]
@@ -4558,6 +4617,7 @@ def upsert_custom_airport(
     lon: float,
     elevation_ft: float | None,
     radius_km: float | None = None,
+    reason: str | None = None,
 ) -> str:
     """Ergänzungs-Flugplatz setzen/aktualisieren. Code wird normalisiert gespeichert (Uppercase,
     getrimmt) — beliebige Länge, kein echter ICAO-Code erforderlich (z. B. "ZZSALZ").
@@ -4567,18 +4627,22 @@ def upsert_custom_airport(
     Code (z. B. Großflughäfen wie EHAM, deren Abhebepunkt weiter als der Standardradius vom
     Referenzpunkt entfernt liegen kann) -- unabhängig davon, ob lat/lon selbst korrekt/neu
     sind oder unverändert von airportsdata übernommen wurden.
+
+    ``reason`` (#78): freier Grundtext, NULL erlaubt -- reine Dokumentation, nie Pflicht (der
+    Eintrag selbst ist die Funktion, ein fehlender Grund darf nichts blockieren).
     """
     code = (icao or "").strip().upper()
     if not code:
         raise ValueError("icao darf nicht leer sein")
     conn.execute(
-        """INSERT INTO custom_airports (icao, name, lat, lon, elevation_ft, radius_km, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
+        """INSERT INTO custom_airports
+               (icao, name, lat, lon, elevation_ft, radius_km, reason, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(icao) DO UPDATE SET
                name=excluded.name, lat=excluded.lat, lon=excluded.lon,
                elevation_ft=excluded.elevation_ft, radius_km=excluded.radius_km,
-               updated_at=excluded.updated_at""",
-        (code, name, lat, lon, elevation_ft, radius_km, _now_utc()),
+               reason=excluded.reason, updated_at=excluded.updated_at""",
+        (code, name, lat, lon, elevation_ft, radius_km, (reason or None), _now_utc()),
     )
     return code
 

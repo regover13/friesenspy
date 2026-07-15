@@ -7,6 +7,7 @@ import pytest
 
 from app.geo import (
     airport_elevation_ft,
+    airportsdata_coords,
     filter_event_pilots,
     haversine,
     icao_to_coords,
@@ -457,6 +458,25 @@ class TestCustomAirports:
 
     def test_is_known_in_airportsdata_false_for_custom_placeholder(self):
         assert is_known_in_airportsdata("ZZSALZ") is False
+
+    def test_airportsdata_coords_ignores_custom_override(self):
+        """#78: liefert den REINEN airportsdata-Wert, unbeeinflusst von custom_airports.
+
+        Die Grund-Migration muss unterscheiden, ob ein Override die Koordinate korrigiert
+        (EBUL/EBKT) oder sie unveraendert laesst und nur radius_km setzt (EHAM). Dafuer ist
+        ``icao_to_coords`` untauglich: es liefert bei einem Override den Custom-Wert, der
+        Vergleich waere also immer 0 km und JEDER Override sahe wie ein Radius-Fall aus.
+        """
+        real = icao_to_coords("EDDK")
+        set_custom_airports([
+            {"icao": "EDDK", "name": "Override", "lat": 1.0, "lon": 1.0, "elevation_ft": None},
+        ])
+        assert icao_to_coords("EDDK") == (1.0, 1.0)   # Custom gewinnt (#56)
+        assert airportsdata_coords("EDDK") == real    # ... airportsdata bleibt sichtbar
+        assert airportsdata_coords("eddk") == real    # case-insensitive wie icao_to_coords
+
+    def test_airportsdata_coords_none_for_unknown_code(self):
+        assert airportsdata_coords("ZZSALZ") is None
 
     def test_custom_overrides_airportsdata_coords_and_elevation(self):
         """#56: airportsdata kann selbst falsche Koordinaten fuehren (Fund: EBUL/Ursel Air

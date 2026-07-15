@@ -3086,6 +3086,9 @@ async def admin_upsert_airport(request: Request, background_tasks: BackgroundTas
         upsert_custom_airport(
             conn, icao, name=(body.get("name") or None), lat=lat, lon=lon,
             elevation_ft=elevation_ft, radius_km=radius_km,
+            # #78: Grund ist reine Dokumentation -- kein Pflichtfeld, keine Validierung
+            # (Freitext, das Admin-UI schlägt nur die bereits vergebenen Gründe vor).
+            reason=(str(body.get("reason") or "").strip() or None),
         )
         conn.commit()
         _reload_custom_airports_geo_cache(conn)

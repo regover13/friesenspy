@@ -1136,6 +1136,14 @@ ICAO-Kennung) ODER deren `airportsdata`-Koordinaten nachweislich falsch sind (Fu
 Air Base ~15 km daneben). Ein hier eingetragener Code **überschreibt** `airportsdata` (geprüft
 zuerst). Alle Endpoints erfordern das Admin-Cookie (`require_admin`).
 
+Seit v9.5.0/#78 trägt jeder Eintrag optional einen `reason` (Grund). Bestandseinträge wurden
+einmalig **aus den Daten** beschriftet, nicht aus einer gepflegten Code-Liste
+(`migrate_custom_airport_reasons`, idempotent, `WHERE reason IS NULL` — ein vom Admin
+gepflegter Text überlebt jeden `init_db`-Lauf): Code nicht in `airportsdata` → Ergänzung;
+Koordinate weicht > 1 km ab → `airportsdata` steht am falschen Ort; Koordinate praktisch
+unverändert → reiner Radius-Override. Die Regel ist damit auch für künftige Einträge korrekt,
+die beim Schreiben der Migration noch niemand kannte.
+
 ### GET /api/admin/airports
 
 Liste aller Ergänzungs-Flugplätze.
@@ -1145,7 +1153,7 @@ Liste aller Ergänzungs-Flugplätze.
 ```json
 {
   "airports": [
-    {"icao": "ZZSALZ", "name": "Segelfluggelände Salzwedel/Klein Gartz", "lat": 52.828, "lon": 11.316, "elevation_ft": 112.0, "radius_km": null, "updated_at": "2026-07-05T12:00:00Z"}
+    {"icao": "ZZSALZ", "name": "Segelfluggelände Salzwedel/Klein Gartz", "lat": 52.828, "lon": 11.316, "elevation_ft": 112.0, "radius_km": null, "reason": "Fehlt in airportsdata", "updated_at": "2026-07-05T12:00:00Z"}
   ]
 }
 ```
@@ -1157,7 +1165,7 @@ Flugplatz anlegen/aktualisieren (Upsert nach `icao`).
 **Body (JSON)**
 
 ```json
-{"icao": "zzsalz", "name": "Segelfluggelände Salzwedel/Klein Gartz", "lat": 52.828, "lon": 11.316, "elevation_ft": 112, "radius_km": null}
+{"icao": "zzsalz", "name": "Segelfluggelände Salzwedel/Klein Gartz", "lat": 52.828, "lon": 11.316, "elevation_ft": 112, "radius_km": null, "reason": "Fehlt in airportsdata"}
 ```
 
 - `icao` (Pflicht) — beliebiger Code, wird `.strip().upper()` gespeichert; **kein** echter 4-Buchstaben-ICAO nötig (Platzhalter wie `ZZSALZ` erlaubt).
@@ -1165,6 +1173,7 @@ Flugplatz anlegen/aktualisieren (Upsert nach `icao`).
 - `elevation_ft` (optional) — `null`/leer lassen, um die bereits bekannte Elevation zu übernehmen (Custom-Eintrag oder `airportsdata`, analog lat/lon) bzw. `null` zu speichern, falls auch dort unbekannt. **Wirkt sich auf die GPS-Erkennung aus:** unbekannte Elevation macht den Spawn-Startplatz-Guard (#49) permissiv, die Landungs-Rettung am Track-Ende (#53) dagegen konservativ (keine Rettung ohne Höhenangabe).
 - `radius_km` (optional, Zahl > 0, v8.7.0/#62) — überschreibt NUR den Suchradius für diesen Code (unabhängig von lat/lon), sonst `400`. `null`/leer lassen = Standardradius der aufrufenden Funktion (i. d. R. 4 km). Für Großflughäfen, deren tatsächlicher Abhebe-/Aufsetzpunkt weiter vom Referenzpunkt entfernt liegen kann als der Standardradius (Fund: EHAM/Schiphol — Abhebepunkt nach langem Rollweg 6,6 km entfernt, die Koordinate selbst aber korrekt).
 - `override` (optional, `bool`, v8.6.0/#56) — `true` erlaubt das bewusste Überschreiben eines bereits in `airportsdata` bekannten Codes.
+- `reason` (optional, Text, v9.5.0/#78) — **warum** dieser Eintrag existiert. Reine Dokumentation, **nie Pflicht** und ohne Wirkung auf die Erkennung: der Eintrag selbst ist die Funktion, ein fehlender Grund darf nichts blockieren. Freitext ohne Enum/Validierung — das Admin-UI bietet per `<datalist>` die bereits vergebenen Gründe als Autocomplete an (abgeleitet aus `GET /api/admin/airports`, **kein eigener Endpoint**), sodass neue Gründe durch Benutzung entstehen und alte konsistent wiederverwendet werden. Die drei eingeführten Standard-Gründe: `Fehlt in airportsdata` (Ergänzung), `airportsdata-Koordinate falsch` (Override, Fund: EBUL/EBKT/EBBR/ELLX/EBAW), `Abhebepunkt außerhalb Standardradius` (reiner Radius-Override, Fund: EHAM).
 
 **Plausiprüfung:** Ist `icao` bereits in `airportsdata` bekannt UND `override` nicht gesetzt, wird der Request mit **`409`** abgelehnt („Bestätigung nötig" — die Response nennt die dort hinterlegten Koordinaten), **auch wenn lat/lon leer sind** (die 409-Prüfung läuft vor der Koordinaten-Autofüllung). Mit `override: true` wird trotzdem gespeichert und überschreibt den Standard-Wert (Fund dieser Session: `EBUL`/Ursel Air Base führte in `airportsdata` Koordinaten, die ~15 km neben der echten Position lagen). Fund der Vorgänger-Session: `EDXU` (Hüttenbusch) war fälschlich als „fehlend" vermutet worden, steckte aber schon (korrekt) in `airportsdata` — dieser Fall bleibt ohne `override` weiterhin abgelehnt.
 

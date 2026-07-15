@@ -506,7 +506,7 @@ FriesenSpy/
 │   ├── gps_legs.py    # Reiner GPS-Leg-Detektor (Abheben/Landung aus Positionen, ohne DB) + collapse_same_airport; Spawn-Startplatz- und Landungs-Rettungs-Guards (#49/#53)
 │   ├── vatsim.py      # VATSIM-API-Client + Callsign-Filter
 │   ├── statsim.py     # StatSim API-Client (historische Flüge)
-│   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline) + custom_airports (#50, Override seit #56, Radius-Override seit #62), Event-Filter
+│   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline) + custom_airports (#50, Override seit #56, Radius-Override seit #62, Grund seit #78), Event-Filter
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
 │   ├── badge.py       # Badge-Rendering mit Pillow (Sieger-Badge + Medaille, data/badges/-Cache)
 │   ├── calendar_sync.py # FriesenFlieger Google-Kalender (iCal-Parser, alle 6h via Poller)

@@ -447,6 +447,87 @@ class TestInitDb:
         assert rows["EHAM"]["radius_km"] == 8.0
         assert rows["ZZSALZ2"]["radius_km"] is None
 
+    def test_custom_airports_reason_roundtrip(self, tmp_path):
+        """#78: ``reason`` dokumentiert, WARUM ein Platz ergaenzt/ueberschrieben wurde.
+        Optional -- ohne Angabe bleibt es NULL (ein fehlender Grund darf nie das Speichern
+        blockieren, der Eintrag selbst ist die Funktion)."""
+        from app.database import list_custom_airports, upsert_custom_airport
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = get_connection(db_file)
+        upsert_custom_airport(conn, "ZZTEST1", name="Mit Grund", lat=1.0, lon=2.0,
+                              elevation_ft=None, reason="Fehlt in airportsdata")
+        upsert_custom_airport(conn, "ZZTEST2", name="Ohne Grund", lat=3.0, lon=4.0,
+                              elevation_ft=None)
+        conn.commit()
+        rows = {r["icao"]: r for r in list_custom_airports(conn)}
+        conn.close()
+        assert rows["ZZTEST1"]["reason"] == "Fehlt in airportsdata"
+        assert rows["ZZTEST2"]["reason"] is None
+
+    def test_custom_airports_seed_has_reasons(self, tmp_path):
+        """#78: die Seed-Plaetze fehlen alle in airportsdata -- sie tragen entsprechend
+        von Anfang an den passenden Grund."""
+        from app.database import list_custom_airports
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = get_connection(db_file)
+        rows = {r["icao"]: r for r in list_custom_airports(conn)}
+        conn.close()
+        assert rows["EDST"]["reason"] == "Fehlt in airportsdata"
+        assert rows["ZZSALZ"]["reason"] == "Fehlt in airportsdata"
+
+    def test_custom_airports_reason_migration_derives_from_airportsdata(self, tmp_path):
+        """#78: Bestandseintraege ohne Grund bekommen ihn AUS DEN DATEN abgeleitet, nicht
+        aus einer gepflegten Namensliste -- so ist die Migration auch fuer Eintraege korrekt,
+        die beim Schreiben dieses Codes niemand kennt.
+
+        Regel: Code nicht in airportsdata -> Ergaenzung. Koordinate weicht > 1 km ab ->
+        Koordinatenfehler. Sonst (Koordinate praktisch unveraendert) -> Radius-Fall.
+        """
+        from app.database import list_custom_airports, upsert_custom_airport
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = get_connection(db_file)
+        # ZZSALZ: kein airportsdata-Eintrag -> Ergaenzung
+        # EBUL:   in airportsdata, aber ~15 km daneben -> Koordinate korrigiert
+        # EHAM:   in airportsdata, Koordinate identisch, nur radius_km -> Radius-Fall
+        upsert_custom_airport(conn, "EBUL", name="Ursel", lat=51.1442, lon=3.4756,
+                              elevation_ft=95.0)
+        upsert_custom_airport(conn, "EHAM", name="Schiphol", lat=52.3086, lon=4.76389,
+                              elevation_ft=-11.0, radius_km=10.0)
+        conn.execute("UPDATE custom_airports SET reason = NULL")  # Alt-Zustand vor #78
+        conn.commit()
+        conn.close()
+
+        init_db(db_file)  # Migration muss die Gruende nachtragen
+
+        conn = get_connection(db_file)
+        rows = {r["icao"]: r for r in list_custom_airports(conn)}
+        conn.close()
+        assert rows["ZZSALZ"]["reason"] == "Fehlt in airportsdata"
+        assert rows["EBUL"]["reason"] == "airportsdata-Koordinate falsch"
+        assert rows["EHAM"]["reason"] == "Abhebepunkt außerhalb Standardradius"
+
+    def test_custom_airports_reason_migration_preserves_admin_text(self, tmp_path):
+        """#78: die Migration fasst NUR Zeilen ohne Grund an (WHERE reason IS NULL) --
+        ein vom Admin gepflegter Text ueberlebt jeden weiteren init_db-Lauf."""
+        from app.database import list_custom_airports, upsert_custom_airport
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        conn = get_connection(db_file)
+        upsert_custom_airport(conn, "ZZSALZ", name="Salzwedel", lat=52.828, lon=11.316,
+                              elevation_ft=112.0, reason="Von Hand gepruefter Sonderfall")
+        conn.commit()
+        conn.close()
+
+        init_db(db_file)
+
+        conn = get_connection(db_file)
+        rows = {r["icao"]: r for r in list_custom_airports(conn)}
+        conn.close()
+        assert rows["ZZSALZ"]["reason"] == "Von Hand gepruefter Sonderfall"
+
 
 # ---------------------------------------------------------------------------
 # get_connection
