@@ -13,7 +13,7 @@ from scripts.nearby_airports import airportsdata_refs, find_code, load_ourairpor
 FIXTURE = Path(__file__).parent / "fixtures" / "ourairports_mini.csv"
 
 # Referenzpunkte, gemessen am 2026-07-15 aus statsim_position_history (alle groundspeed 0):
-EDHX_PUNKT = (54.18665, 7.91488)    # Track 29258369, 7 ft   — Helgoland-Duene
+EDHX_PUNKT = (54.18665, 7.91488)    # Track 29258369, 7 ft   — Helgoland-Düne
 ETUO_PUNKT = (51.85449, 10.02288)   # Track 23066993, 779 ft — Bad Gandersheim
 EBKT_PUNKT = (50.82005, 3.2163)     # Track 28531653, 71 ft  — Kortrijk-Wevelgem
 
@@ -54,9 +54,9 @@ def oa_refs():
 
 
 def test_edhx_fall_d_schlaegt_fall_a(ad_refs, oa_refs):
-    """EDHX fehlt in airportsdata und erfuellt damit FORMAL das Kriterium von Fall A
-    („Code fehlt → Ergaenzung"). Der Bodenpunkt liegt aber 0,16 km von EDXH — der Pilot
-    hatte den Code verdreht. Deshalb kommt Schritt 1 (wohin gehoert der Punkt?) vor
+    """EDHX fehlt in airportsdata und erfüllt damit FORMAL das Kriterium von Fall A
+    („Code fehlt → Ergänzung"). Der Bodenpunkt liegt aber 0,16 km von EDXH — der Pilot
+    hatte den Code verdreht. Deshalb kommt Schritt 1 (wohin gehört der Punkt?) vor
     Schritt 2 (was ist mit dem Code?). Dieser Test IST diese Regel."""
     m = measure(*EDHX_PUNKT, icao="EDHX", ad_refs=ad_refs, oa_refs=oa_refs)
 
@@ -69,7 +69,7 @@ def test_edhx_fall_d_schlaegt_fall_a(ad_refs, oa_refs):
 
 def test_etuo_soll_code_nur_in_airportsdata(ad_refs, oa_refs):
     """Spiegelbild zu EDHX: ETUO steht in airportsdata, aber NICHT in OurAirports.
-    Beide Bloecke muessen unabhaengig „fehlt" melden koennen."""
+    Beide Blöcke müssen unabhängig „fehlt" melden können."""
     m = measure(*ETUO_PUNKT, icao="ETUO", ad_refs=ad_refs, oa_refs=oa_refs)
 
     assert m.ad_target is not None
@@ -80,9 +80,9 @@ def test_etuo_soll_code_nur_in_airportsdata(ad_refs, oa_refs):
 
 
 def test_ebkt_quellen_weichen_um_37_km_ab(ad_refs, oa_refs):
-    """Der Belgien-Fund. Wichtig ist die zweite Haelfte: der naechste airportsdata-Platz
-    ist EBMO in 6,06 km — ueber der 1-km-Schwelle von Schritt 1. Waere er naeher, waere
-    der Fund faelschlich als Fall D abgetan worden."""
+    """Der Belgien-Fund. Wichtig ist die zweite Hälfte: der nächste airportsdata-Platz
+    ist EBMO in 6,06 km — über der 1-km-Schwelle von Schritt 1. Wäre er näher, wäre
+    der Fund fälschlich als Fall D abgetan worden."""
     m = measure(*EBKT_PUNKT, icao="EBKT", ad_refs=ad_refs, oa_refs=oa_refs)
 
     assert m.ad_target.distance_km == pytest.approx(37.20, abs=0.05)
@@ -97,7 +97,7 @@ def test_agl_wird_nur_mit_alt_und_bekannter_elevation_gerechnet(ad_refs, oa_refs
     assert ohne.ad_nearest[0].agl_ft is None
 
     # EBMO liegt laut airportsdata auf 66 ft (gemessen 2026-07-15 — nicht aus OurAirports
-    # uebernehmen, die Quellen koennen bei der Elevation auseinanderlaufen).
+    # übernehmen, die Quellen können bei der Elevation auseinanderlaufen).
     mit = measure(*EBKT_PUNKT, alt_ft=71, icao="EBKT", ad_refs=ad_refs, oa_refs=oa_refs)
     assert mit.ad_nearest[0].ref.code == "EBMO"
     assert mit.ad_nearest[0].agl_ft == pytest.approx(5, abs=1)
