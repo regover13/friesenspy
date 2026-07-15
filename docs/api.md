@@ -379,7 +379,7 @@ Ein Prefile ist ein eingereichter Flugplan ohne aktive VATSIM-Verbindung — der
 
 Aktuell im FriesenFlieger-TeamSpeak befindliche FriesenFlieger (nur FRS*-getaggte Clients) aus dem letzten TS-Poll-Snapshot. Speist das Live-Tab-Panel „🎧 Im TeamSpeak" und den Widget-Zähler.
 
-Der Snapshot wird bei jedem erfolgreichen TS-Poll aktualisiert (`TS_POLL_INTERVAL`, Default 30 s). Ist der TeamSpeak kurzzeitig nicht erreichbar, bleibt der letzte Snapshot erhalten. Consent (`ts_consent`) wirkt **nicht** auf diese Anzeige (gilt nur für Push). Nicht-Friesen ohne FRS-Tag werden weder gezählt noch gelistet.
+Der Snapshot wird bei jedem erfolgreichen TS-Poll aktualisiert (`TS_POLL_INTERVAL`, Default 30 s). Ist der TeamSpeak kurzzeitig nicht erreichbar, bleibt der letzte Snapshot erhalten. Die Subjekt-Sichtbarkeit (`pilot_visibility`) wirkt **nicht** auf diese Anzeige (gilt nur für Push). Nicht-Friesen ohne FRS-Tag werden weder gezählt noch gelistet.
 
 Es wird bewusst **nur das FRS-Callsign** ausgegeben — Klarnamen und sonstige Nickname-Zusätze bleiben serverseitig und verlassen den Server nicht.
 
@@ -1425,7 +1425,7 @@ Die Daten dahinter. Admin-Cookie **und** Header `X-Overview-Pass` erforderlich.
   "subscriptions": [
     {"owner_cid": 1602713, "owner_name": "Tobias EDKB", "platform": "Chrome / Android",
      "pilot_filter": ["Anna"], "notify_prefiles": true, "notify_ts": false,
-     "notify_events": true, "ts_self_frs": "FRS01", "created_at": "2026-07-15T05:54:36Z",
+     "notify_events": true, "created_at": "2026-07-15T05:54:36Z",
      "last_ok_at": "2026-07-15T05:54:36Z", "last_fail_at": null, "last_status": null,
      "health": "ok"}
   ],

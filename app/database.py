@@ -138,12 +138,9 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     created_at   TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS ts_consent (
-    frs        TEXT PRIMARY KEY,
-    visibility TEXT DEFAULT 'everyone',
-    allowlist  TEXT,
-    updated_at TEXT
-);
+-- Hinweis: 'ts_consent' (Phase 1) ist ersatzlos entfallen — 'pilot_visibility' hat es abgelöst
+-- (Subjekt-Sichtbarkeit). Bestehende DBs behalten ihre Tabelle unangetastet; sie wird von
+-- keinem Code mehr gelesen oder geschrieben. Neue DBs legen sie nicht mehr an.
 
 CREATE TABLE IF NOT EXISTS pilot_visibility (
     cid        INTEGER PRIMARY KEY,
@@ -3252,7 +3249,7 @@ def get_push_overview(conn: sqlite3.Connection) -> list[dict]:
     """Alle Abos mit ihrer Auswahl + Zustellungs-Diagnose (für die Admin-Push-Übersicht)."""
     rows = conn.execute(
         "SELECT endpoint, owner_cid, pilot_filter, notify_prefiles, notify_ts, "
-        "notify_events, ts_self_frs, created_at, last_ok_at, last_fail_at, last_status "
+        "notify_events, created_at, last_ok_at, last_fail_at, last_status "
         "FROM push_subscriptions ORDER BY created_at"
     ).fetchall()
     return [dict(r) for r in rows]
@@ -3263,15 +3260,6 @@ def list_visibility_restrictions(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         "SELECT cid, mode, allowlist, services, updated_at FROM pilot_visibility "
         "WHERE mode <> 'everyone' ORDER BY updated_at DESC"
-    ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def list_ts_consent_restrictions(conn: sqlite3.Connection) -> list[dict]:
-    """TeamSpeak-Sichtbarkeit: Einträge, die nicht 'everyone' sind."""
-    rows = conn.execute(
-        "SELECT frs, visibility, allowlist, updated_at FROM ts_consent "
-        "WHERE visibility <> 'everyone' ORDER BY updated_at DESC"
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -3711,7 +3699,6 @@ def upsert_push_subscription(
     pilot_filter: list[int] | None = None,
     notify_prefiles: bool = True,
     notify_ts: bool = False,
-    ts_self_frs: str | None = None,
     notify_events: bool = False,
     owner_cid: int | None = None,
 ) -> None:
@@ -3720,19 +3707,21 @@ def upsert_push_subscription(
     ``owner_cid`` (aus dem Forum-Login) wird beim Konflikt nur überschrieben, wenn er nicht NULL
     ist (``COALESCE``) — ein anonymer Re-Subscribe (ausgeloggt) löscht einen gesetzten Besitzer
     NICHT aus (Backfill-Robustheit); ein eingeloggter Re-Subscribe überschreibt (last-login-wins).
+
+    Die Spalte ``ts_self_frs`` wird nicht mehr beschrieben (Selbst-Ausschluss läuft über
+    ``pilot_filter``); sie bleibt in bestehenden DBs als NULL stehen.
     """
     conn.execute(
         """INSERT INTO push_subscriptions
                (endpoint, p256dh, auth, pilot_filter, notify_prefiles,
-                notify_ts, ts_self_frs, notify_events, owner_cid, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                notify_ts, notify_events, owner_cid, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(endpoint) DO UPDATE SET
                p256dh=excluded.p256dh,
                auth=excluded.auth,
                pilot_filter=excluded.pilot_filter,
                notify_prefiles=excluded.notify_prefiles,
                notify_ts=excluded.notify_ts,
-               ts_self_frs=excluded.ts_self_frs,
                notify_events=excluded.notify_events,
                owner_cid=COALESCE(excluded.owner_cid, push_subscriptions.owner_cid),
                created_at=excluded.created_at""",
@@ -3741,7 +3730,6 @@ def upsert_push_subscription(
             json.dumps(pilot_filter) if pilot_filter is not None else None,
             1 if notify_prefiles else 0,
             1 if notify_ts else 0,
-            ts_self_frs,
             1 if notify_events else 0,
             owner_cid,
             _now_utc(),
@@ -6124,47 +6112,6 @@ def mark_event_reminded(conn: sqlite3.Connection, uid: str, ts: str) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO event_reminders_sent (uid, sent_at) VALUES (?, ?)",
         (uid, ts),
-    )
-
-
-def get_ts_consent(conn: sqlite3.Connection, frs: str) -> dict | None:
-    """Einwilligungs-Eintrag für eine FRS-Nummer, oder None (= Default 'everyone').
-
-    allowlist wird aus JSON zu einer Liste geparst (oder []).
-    """
-    row = conn.execute(
-        "SELECT frs, visibility, allowlist, updated_at FROM ts_consent WHERE frs = ?",
-        (frs,),
-    ).fetchone()
-    if row is None:
-        return None
-    d = dict(row)
-    try:
-        d["allowlist"] = json.loads(d["allowlist"]) if d["allowlist"] else []
-    except (json.JSONDecodeError, TypeError):
-        d["allowlist"] = []
-    return d
-
-
-def upsert_ts_consent(
-    conn: sqlite3.Connection,
-    frs: str,
-    visibility: str,
-    allowlist: list[str] | None = None,
-) -> None:
-    """Einwilligung pro FRS setzen. visibility ∈ {'everyone','nobody','allowlist'}."""
-    conn.execute(
-        """INSERT INTO ts_consent (frs, visibility, allowlist, updated_at)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(frs) DO UPDATE SET
-               visibility=excluded.visibility,
-               allowlist=excluded.allowlist,
-               updated_at=excluded.updated_at""",
-        (
-            frs, visibility,
-            json.dumps(allowlist) if allowlist is not None else None,
-            _now_utc(),
-        ),
     )
 
 

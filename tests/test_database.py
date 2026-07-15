@@ -2020,35 +2020,6 @@ class TestBlockMinutes:
         assert res[0]["block_min"] == 45
 
 
-# ---------------------------------------------------------------------------
-# ts_consent + TS-Push-Subscriptions
-# ---------------------------------------------------------------------------
-
-class TestTsConsent:
-    def test_get_missing_returns_none(self):
-        from app.database import get_ts_consent
-        conn = _make_conn()
-        assert get_ts_consent(conn, "FRS1") is None
-
-    def test_upsert_and_get(self):
-        from app.database import get_ts_consent, upsert_ts_consent
-        conn = _make_conn()
-        upsert_ts_consent(conn, "FRS1", "allowlist", ["FRS2", "FRS3"])
-        conn.commit()
-        row = get_ts_consent(conn, "FRS1")
-        assert row["frs"] == "FRS1"
-        assert row["visibility"] == "allowlist"
-        assert row["allowlist"] == ["FRS2", "FRS3"]
-
-    def test_upsert_overwrites(self):
-        from app.database import get_ts_consent, upsert_ts_consent
-        conn = _make_conn()
-        upsert_ts_consent(conn, "FRS1", "everyone", None)
-        upsert_ts_consent(conn, "FRS1", "nobody", None)
-        conn.commit()
-        assert get_ts_consent(conn, "FRS1")["visibility"] == "nobody"
-
-
 class TestCidForCallsign:
     def test_from_flights(self):
         from app.database import cid_for_callsign, open_flight, ensure_pilot

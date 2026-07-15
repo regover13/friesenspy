@@ -1,11 +1,11 @@
 [
   {
-    "version": "9.3.1",
+    "version": "9.4.0",
     "date": "2026-07-15",
     "highlight": false,
     "title": "Wartung an der Admin-Oberfläche",
     "items": [
-      "🔧 Lesbarkeitskorrekturen im Admin-Bereich. Für den normalen Betrieb ändert sich nichts."
+      "🔧 Aufräumarbeiten im Admin-Bereich: nicht mehr genutzte Reste der alten TeamSpeak-Einwilligung entfernt (durch die Sichtbarkeits-Einstellung im Benachrichtigungs-Panel längst abgelöst). Für den normalen Betrieb ändert sich nichts."
     ]
   },
   {

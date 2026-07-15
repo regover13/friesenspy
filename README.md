@@ -307,22 +307,9 @@ FriesenSpy kann eine Web-Push-Benachrichtigung senden, wenn ein Friese dem Fries
 
 Alle `TS_POLL_INTERVAL` Sekunden (Default: 30 s) fragt FriesenSpy den TeamSpeak-Server über die ServerQuery-Schnittstelle (Port 10011) ab. Es wird verglichen, welche FRS-Nummern gerade im konfigurierten Kanal sitzen — neu Beigetretene lösen eine Push-Benachrichtigung aus. Der erste erfolgreiche Poll setzt nur die Baseline (keine Notification). Ein `TS_NOTIFY_CHANNEL_ID=0` überwacht den gesamten Server. Mit `TS_EXCLUDE_CHANNEL_IDS` (komma-separierte Kanal-IDs) lassen sich einzelne Kanäle ausnehmen — z. B. der Verwaltungs-Baum, in dem Beitritte niemanden benachrichtigen sollen.
 
-**Datenschutz / Consent (Subjekt-Seite):** Ob über die TS-Beitritte einer Person überhaupt benachrichtigt werden darf, steuert der Admin über die Tabelle `ts_consent`:
+**Datenschutz / Consent (Subjekt-Seite):** Ob über die TS-Beitritte einer Person benachrichtigt werden darf, entscheidet sie seit der Subjekt-Sichtbarkeit **selbst** im Benachrichtigungs-Panel („Wer darf über mich benachrichtigt werden?" → Alle / Nur bestimmte / Keiner, siehe oben). Die Einstellung gilt für alle Push-Pfade gemeinsam, nicht nur für TeamSpeak.
 
-| Sichtbarkeit | Bedeutung |
-|---|---|
-| `everyone` | Benachrichtigungen erlaubt (Default wenn kein Eintrag) |
-| `nobody` | Keine Benachrichtigungen über diese FRS |
-
-Consent wird vom Admin via CLI gesetzt (kein Web-UI):
-
-```bash
-python manage_ts_consent.py set FRS135 nobody
-python manage_ts_consent.py set FRS135 everyone
-python manage_ts_consent.py get FRS135
-python manage_ts_consent.py list
-python manage_ts_consent.py delete FRS135
-```
+Die frühere Admin-Steuerung über die Tabelle `ts_consent` und das CLI `manage_ts_consent.py` ist entfernt — sie wurde seit dem Subjekt-Sichtbarkeits-Release ohnehin nicht mehr ausgewertet. Bestehende Datenbanken behalten die tote Tabelle; kein Code liest sie noch.
 
 **Empfänger-Auswahl (eine für alles):** Die Piloten-Auswahl im Benachrichtigungs-Panel („Alle Friesen" / „Nur bestimmte Piloten") gilt für **Online, Flugplan UND TeamSpeak** gemeinsam. Beim Umschalten auf „Nur bestimmte" sind zunächst alle angehakt — du entfernst die Haken bei denen, die du *nicht* willst (auch bei dir selbst → kein Selbst-Ping, für alle drei Typen). Die Checkbox „🎧 Bei TeamSpeak-Beitritt benachrichtigen" steuert separat, ob TS-Pings überhaupt erwünscht sind. TS-Beitritte werden über das VATSIM-Callsign (= FRS-Nummer) der CID zugeordnet und gegen dieselbe Auswahl geprüft.
 

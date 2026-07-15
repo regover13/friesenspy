@@ -54,11 +54,11 @@ def _seed(db):
     # eingeloggtes Abo (Chrome/FCM), zugestellt
     upsert_push_subscription(conn, "https://fcm.googleapis.com/fcm/send/ABC", "p", "a",
                              pilot_filter=[12345], notify_prefiles=True, notify_ts=False,
-                             notify_events=True, ts_self_frs="FRS01", owner_cid=12345)
+                             notify_events=True, owner_cid=12345)
     # anonymes Abo (Firefox), fehlgeschlagen
     upsert_push_subscription(conn, "https://updates.push.services.mozilla.com/wpush/v2/XYZ", "p", "a",
                              pilot_filter=None, notify_prefiles=False, notify_ts=True,
-                             notify_events=False, ts_self_frs=None, owner_cid=None)
+                             notify_events=False, owner_cid=None)
     record_push_delivery(conn, ["https://fcm.googleapis.com/fcm/send/ABC"],
                          {"https://updates.push.services.mozilla.com/wpush/v2/XYZ": "403"})
     set_pilot_visibility(conn, 999, "nobody", None, None)

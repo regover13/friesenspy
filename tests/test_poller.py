@@ -1622,6 +1622,71 @@ class TestSendWebPush:
         assert left == 0
 
     @pytest.mark.asyncio
+    async def test_erfolg_wird_in_der_db_vermerkt(self, tmp_path):
+        """Zustell-Diagnose: ein geglückter Versand schreibt last_ok_at.
+
+        Deckt die Verdrahtung send_web_push → record_push_delivery ab. Ohne sie bliebe die
+        Push-Diagnose ewig auf „⚪ ungesendet" stehen, ohne dass es jemandem auffiele.
+        """
+        from app.database import init_db, get_connection, upsert_push_subscription
+        from app.poller import send_web_push
+
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "https://x/ok", "p", "a")
+        conn.commit()
+        conn.close()
+
+        subs = [{"endpoint": "https://x/ok", "p256dh": "p", "auth": "a"}]
+        with patch("app.poller.webpush", new=MagicMock()):
+            await send_web_push("priv", "mailto:x@y.z", db, subs, {"title": "T", "body": "B"})
+
+        conn = get_connection(db)
+        row = conn.execute(
+            "SELECT last_ok_at, last_fail_at, last_status FROM push_subscriptions "
+            "WHERE endpoint = ?", ("https://x/ok",)
+        ).fetchone()
+        conn.close()
+        assert row["last_ok_at"] is not None      # nicht mehr "ungesendet"
+        assert row["last_fail_at"] is None
+        assert row["last_status"] is None
+
+    @pytest.mark.asyncio
+    async def test_fehler_wird_mit_status_vermerkt(self, tmp_path):
+        """Zustell-Diagnose: ein Fehlschlag schreibt last_fail_at + HTTP-Code."""
+        from app.database import init_db, get_connection, upsert_push_subscription
+        from app.poller import send_web_push
+        from pywebpush import WebPushException
+
+        db = str(tmp_path / "t.db")
+        init_db(db)
+        conn = get_connection(db)
+        upsert_push_subscription(conn, "https://x/bad", "p", "a")
+        conn.commit()
+        conn.close()
+
+        resp = MagicMock()
+        resp.status_code = 400
+        resp.text = ""
+        exc = WebPushException("bad request")
+        exc.response = resp
+        subs = [{"endpoint": "https://x/bad", "p256dh": "p", "auth": "a"}]
+        with patch("app.poller.webpush", new=MagicMock(side_effect=exc)), \
+             patch("app.poller.asyncio.sleep", new=AsyncMock()):
+            await send_web_push("priv", "mailto:x@y.z", db, subs, {"title": "T", "body": "B"})
+
+        conn = get_connection(db)
+        row = conn.execute(
+            "SELECT last_ok_at, last_fail_at, last_status FROM push_subscriptions "
+            "WHERE endpoint = ?", ("https://x/bad",)
+        ).fetchone()
+        conn.close()
+        assert row["last_ok_at"] is None
+        assert row["last_fail_at"] is not None
+        assert row["last_status"] == "400"        # der Code landet sichtbar in der Spalte
+
+    @pytest.mark.asyncio
     async def test_403_vapid_mismatch_deletes_subscription(self, tmp_path):
         """403 mit VAPID-Mismatch-Body = veraltete Subscription → aufräumen wie 410."""
         from app.database import init_db, get_connection, upsert_push_subscription

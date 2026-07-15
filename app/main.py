@@ -65,7 +65,6 @@ from app.database import (
     get_all_push_subscriptions,
     get_push_overview,
     list_visibility_restrictions,
-    list_ts_consent_restrictions,
     get_app_setting,
     get_calendar_events,
     get_connection,
@@ -2087,7 +2086,7 @@ function render(d){
   else{
     h+='<div class="table-scroll"><table><thead><tr>'+
       '<th>Status</th><th>Wer</th><th>Plattform</th><th>Piloten</th>'+
-      '<th>Online</th><th>Flugpläne</th><th>TS</th><th>Events</th><th>TS-Kürzel</th>'+
+      '<th>Online</th><th>Flugpläne</th><th>TS</th><th>Events</th>'+
       '<th>angelegt</th><th>letzte OK</th><th>letzter Fehler</th></tr></thead><tbody>';
     for(const s of d.subscriptions){
       const who=s.owner_name?esc(s.owner_name):'<span class="muted">anonym</span>';
@@ -2095,7 +2094,7 @@ function render(d){
       const fail=s.last_fail_at?ago(s.last_fail_at)+(s.last_status?' ('+esc(s.last_status)+')':''):'';
       h+=`<tr><td>${health(s.health)}</td><td>${who}</td><td>${esc(s.platform)}</td><td>${flt}</td>`+
          `<td>${b(true)}</td><td>${b(s.notify_prefiles)}</td><td>${b(s.notify_ts)}</td><td>${b(s.notify_events)}</td>`+
-         `<td class="mono">${esc(s.ts_self_frs||'')}</td><td class="muted">${ago(s.created_at)}</td>`+
+         `<td class="muted">${ago(s.created_at)}</td>`+
          `<td class="muted">${ago(s.last_ok_at)}</td><td class="muted">${fail}</td></tr>`;
     }
     h+='</tbody></table></div>';
@@ -2113,16 +2112,6 @@ function render(d){
     h+='</tbody></table></div>';
   }
 
-  h+='<h2>TeamSpeak-Sichtbarkeit</h2>';
-  if(!d.suppressed_ts.length){h+='<div class="empty">Keine Einschränkungen.</div>';}
-  else{
-    h+='<div class="table-scroll"><table><thead><tr><th>FRS</th><th>Sichtbarkeit</th><th>Erlaubte</th><th>geändert</th></tr></thead><tbody>';
-    for(const t of d.suppressed_ts){
-      const allow=t.allowlist.length?esc(t.allowlist.join(', ')):'<span class="muted">niemand</span>';
-      h+=`<tr><td>${esc(t.who)}</td><td>${esc(t.visibility)}</td><td>${allow}</td><td class="muted">${ago(t.updated_at)}</td></tr>`;
-    }
-    h+='</tbody></table></div>';
-  }
   out.innerHTML=h;
 }
 
@@ -2183,7 +2172,6 @@ async def admin_push_overview(request: Request):
     try:
         subs = get_push_overview(conn)
         vis = list_visibility_restrictions(conn)
-        ts = list_ts_consent_restrictions(conn)
         names = {p["cid"]: p.get("name") for p in list_pilots(conn, callsign_prefix=settings.CALLSIGN_PREFIX)}
     finally:
         conn.close()
@@ -2214,7 +2202,6 @@ async def admin_push_overview(request: Request):
             "notify_prefiles": bool(s.get("notify_prefiles")),
             "notify_ts": bool(s.get("notify_ts")),
             "notify_events": bool(s.get("notify_events")),
-            "ts_self_frs": s.get("ts_self_frs"),
             "created_at": s.get("created_at"),
             "last_ok_at": s.get("last_ok_at"),
             "last_fail_at": s.get("last_fail_at"),
@@ -2253,17 +2240,12 @@ async def admin_push_overview(request: Request):
         "services": _service_labels(v.get("services")),
         "updated_at": v.get("updated_at"),
     } for v in vis]
-    out_ts = [{
-        "who": t.get("frs"), "visibility": t.get("visibility"),
-        "allowlist": _filter_names(t.get("allowlist")), "updated_at": t.get("updated_at"),
-    } for t in ts]
 
     return {
         "vapid_configured": bool(settings.VAPID_PRIVATE_KEY),
         "totals": totals,
         "subscriptions": out_subs,
         "suppressed_pilots": out_vis,
-        "suppressed_ts": out_ts,
     }
 
 
