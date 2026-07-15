@@ -320,10 +320,19 @@ als Bedingung an den Job, nicht in eine Fußnote.
 
 ## Tests
 
+**Vorlage:** `scripts/kutter_ladung_szenarien.py` — die Szenarien S1–S5, S3b und S8 mit echten
+GPS-Tracks, lauffähig gegen den Produktionscode (`python -m scripts.kutter_ladung_szenarien`).
+Daraus werden die Tests. `scripts/kutter_stapel_prototyp.py` rechnet die Migration nach.
+
 **Neu (der Kern):**
 - Erhaltungssatz: `Σ Stapel + Σ Ladung == Σ Manifest` nach jedem Ereignis — über alle Szenarien.
-- Die sechs Szenarien S1–S6 aus dem Artifact mit echten Tracks (Milchmann, Zwischenlandung fremd,
-  Logout am Ladeplatz/fremd/in der Luft), plus S7 (auffüllen → Logout → alles zurück, Bilanz 1300).
+- Die Szenarien S1–S6 (Milchmann, Zwischenlandung fremd, Logout am Ladeplatz/fremd/in der Luft),
+  plus S7 (auffüllen → Logout → alles zurück, Bilanz 1300) und **S8** (Logout in der Luft mit
+  sofortigem Wiedereinstieg → `versenkt`, nicht `zurück`).
+- Event-Ende: `Σ Flieger-Stapel == 0` — ein beladener Pilot verhindert `summarized_at`; nach 8 h
+  räumt `close_stale_flights` ab.
+- Der Wartende lädt nach (Entscheidung 13): Stapel leer, jemand gibt zurück → der Stehende lädt.
+- Musterwechsel am Boden (umladen) und in der Luft (ignoriert).
 - Regressionswerte der Migration: #1 = 1610, #81 = 1120, #136 = 1090 (siehe oben).
 - Plausibilitätsprüfung: Mehrfach-ICAO wird abgewiesen (Server + Kalender-Parser).
 - „Zweiter hat Pech": Stapel 800, zwei Flieger à 1000 → 800 / 0.
@@ -346,9 +355,23 @@ als Bedingung an den Job, nicht in eine Fußnote.
 → `returning` heißt jetzt `noch dabei` und bleibt sichtbar.
 
 **Zu prüfen (echte Verhaltensänderung, kein reiner Testumbau):** `test_latched_flight_does_not_delay`
-(L880) — der Latch signalisiert `transport_anyone_in_progress`, dass eine noch offene Verbindung
-fertig ist. Neu: „unterwegs" = trägt Ware; wer geliefert hat, trägt nichts mehr und verzögert den
-Feierabend nicht. Muss explizit getestet werden.
+(L880) und `test_open_flight_from_route_counts_as_in_progress` (L873) — das Feierabend-Kriterium
+wechselt von „offener Flug auf der Strecke" zu „trägt Ware" (Entscheidung 10). Ein leerer Pilot
+verzögert nicht mehr, ein beladener sehr wohl — auch über `dtend` hinaus.
+
+**Vollständige Betroffenheits-Liste** (aus dem Fable-Review, verifiziert — die Auswahl oben ist
+nicht erschöpfend):
+
+| Gruppe | Tests | Warum |
+|---|---|---|
+| `TestGPSLegReconcile` (L1663–2064) | ~8, u. a. L1701, L1730, L1778, L1954, L1999, L2033 | Latch-Reconcile / `arrived`-Demotion — Bug-Klasse entfällt |
+| `TestReservation` (L975–1130) | 7+ | Reservierung ist kein eigener Mechanismus mehr |
+| `TestCargoLosses` | L1410, L1467, L1608, L1632 | Latch-Kopplung bzw. die entfallende Positions-Eigenprüfung |
+| CSV / geteilter Topf (Entscheidung 6) | L1162, L1170, L1218, L1228, L1279 | `departure IS NULL` und Mehrfach-ICAO entfallen |
+| Boden-Beladung / Feed | L788, L1878, `TestGroundLoading` (L2717 ff.) | „lädt" bekommt neue Semantik (beansprucht echte Stapelware) |
+
+Nicht betroffen und unverändert: Zuladungs-Rechnung (`TestPayloads`), Kalender-Stichwort,
+Badge-Rendering, Snapshot-Endpoints als Mechanik.
 
 ## Offen
 
