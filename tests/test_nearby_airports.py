@@ -113,8 +113,8 @@ EDDH_PUNKT = (53.49527, 10.00085)
 
 def test_eddh_spawn_in_der_luft_reisst_beide_schwellen(ad_refs, oa_refs):
     """Der Punkt liegt 15,05 km von EDDH und 2156 ft über Platzhöhe. Ein Radius-Override
-    wuerde NICHT helfen: die Spawn-Rettung (#49) verlangt zusaetzlich < 1500 ft AGL.
-    Beide Schwellen werden importiert — aendert jemand sie, wird dieser Test rot, statt
+    würde NICHT helfen: die Spawn-Rettung (#49) verlangt zusätzlich < 1500 ft AGL.
+    Beide Schwellen werden importiert — ändert jemand sie, wird dieser Test rot, statt
     dass der Skill still falsch wird."""
     m = measure(*EDDH_PUNKT, alt_ft=2209, icao="EDDH", ad_refs=ad_refs, oa_refs=oa_refs)
 

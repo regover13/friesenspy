@@ -220,8 +220,8 @@ def measure(
 def _threshold_notes(hit: Hit) -> list[str]:
     """Messwert gegen Detektor-Schwelle stellen — beschreibend, NICHT bewertend.
 
-    Die Schwellen werden importiert, nie abgeschrieben: aendert jemand den Detektor,
-    aendert sich diese Ausgabe mit.
+    Die Schwellen werden importiert, nie abgeschrieben: ändert jemand den Detektor,
+    ändert sich diese Ausgabe mit.
     """
     notes = []
     inside = hit.distance_km <= _BUMMEL_AIRPORT_RADIUS_KM
@@ -273,14 +273,14 @@ def format_report(m: Measurement) -> str:
                 out.append("  %-13s   (%s)" % ("", note))
 
     out.append("")
-    out.append("Nächste Plaetze laut airportsdata:")
+    out.append("Nächste Plätze laut airportsdata:")
     out.extend(_format_hits(m.ad_nearest))
 
     out.append("")
     if not m.oa_available:
-        out.append("Nächste Plaetze laut OurAirports: -- nicht geladen (kein Netz/Cache)")
+        out.append("Nächste Plätze laut OurAirports: -- nicht geladen (kein Netz/Cache)")
     else:
-        out.append("Nächste Plaetze laut OurAirports:")
+        out.append("Nächste Plätze laut OurAirports:")
         out.extend(_format_hits(m.oa_nearest))
 
     if m.source_delta_km:

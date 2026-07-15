@@ -369,7 +369,7 @@ class Measurement:
 
 
 def airportsdata_refs() -> list[AirportRef]:
-    """Alle Plaetze aus ``airportsdata``.
+    """Alle Plätze aus ``airportsdata``.
 
     Bewusst die Rohquelle: sie kennt keine ``custom_airports``. Über ``icao_to_coords()`` zu
     gehen wäre ein Fehler — das bezieht Overrides ein und macht jeden Vergleich „weicht der
@@ -403,7 +403,7 @@ def nearest(
     alt_ft: float | None = None,
     limit: int = 5,
 ) -> list[Hit]:
-    """Die ``limit`` nächsten Plaetze, aufsteigend nach Distanz. DIE Umkehrfrage."""
+    """Die ``limit`` nächsten Plätze, aufsteigend nach Distanz. DIE Umkehrfrage."""
     hits = [_hit(lat, lon, alt_ft, ref) for ref in refs]
     hits.sort(key=lambda h: h.distance_km)
     return hits[:limit]
@@ -511,8 +511,8 @@ EDDH_PUNKT = (53.49527, 10.00085)
 
 def test_eddh_spawn_in_der_luft_reisst_beide_schwellen(ad_refs, oa_refs):
     """Der Punkt liegt 15,05 km von EDDH und 2156 ft über Platzhöhe. Ein Radius-Override
-    wuerde NICHT helfen: die Spawn-Rettung (#49) verlangt zusaetzlich < 1500 ft AGL.
-    Beide Schwellen werden importiert — aendert jemand sie, wird dieser Test rot, statt
+    würde NICHT helfen: die Spawn-Rettung (#49) verlangt zusätzlich < 1500 ft AGL.
+    Beide Schwellen werden importiert — ändert jemand sie, wird dieser Test rot, statt
     dass der Skill still falsch wird."""
     m = measure(*EDDH_PUNKT, alt_ft=2209, icao="EDDH", ad_refs=ad_refs, oa_refs=oa_refs)
 
@@ -553,8 +553,8 @@ from app.gps_legs import _GPS_GROUND_AGL_FT, _GPS_SPAWN_MAX_AGL_FT
 def _threshold_notes(hit: Hit) -> list[str]:
     """Messwert gegen Detektor-Schwelle stellen — beschreibend, NICHT bewertend.
 
-    Die Schwellen werden importiert, nie abgeschrieben: aendert jemand den Detektor,
-    aendert sich diese Ausgabe mit.
+    Die Schwellen werden importiert, nie abgeschrieben: ändert jemand den Detektor,
+    ändert sich diese Ausgabe mit.
     """
     notes = []
     inside = hit.distance_km <= _BUMMEL_AIRPORT_RADIUS_KM
@@ -606,14 +606,14 @@ def format_report(m: Measurement) -> str:
                 out.append("  %-13s   (%s)" % ("", note))
 
     out.append("")
-    out.append("Nächste Plaetze laut airportsdata:")
+    out.append("Nächste Plätze laut airportsdata:")
     out.extend(_format_hits(m.ad_nearest))
 
     out.append("")
     if not m.oa_available:
-        out.append("Nächste Plaetze laut OurAirports: -- nicht geladen (kein Netz/Cache)")
+        out.append("Nächste Plätze laut OurAirports: -- nicht geladen (kein Netz/Cache)")
     else:
-        out.append("Nächste Plaetze laut OurAirports:")
+        out.append("Nächste Plätze laut OurAirports:")
         out.extend(_format_hits(m.oa_nearest))
 
     if m.source_delta_km:
