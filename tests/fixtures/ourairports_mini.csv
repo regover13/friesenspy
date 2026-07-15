@@ -1,0 +1,6 @@
+"id","ident","type","name","latitude_deg","longitude_deg","elevation_ft","continent","iso_country","iso_region","municipality","scheduled_service","icao_code","iata_code","gps_code","local_code","home_link","wikipedia_link","keywords"
+"2161","EBKT","medium_airport","Kortrijk-Wevelgem International Airport","50.818878","3.209551","55","EU","BE","BE-VWV","Wevelgem","no","EBKT","KJK","EBKT","","http://www.kortrijkairport.be","https://en.wikipedia.org/wiki/Flanders_International_Airport","Kortrijk, Courtrai"
+"29042","EBMO","small_airport","Moorsele Airfield","50.851285","3.147669","66","EU","BE","BE-VWV","Wevelgem","no","","","EBMO","","","https://en.wikipedia.org/wiki/Moorsele_Airfield",""
+"308606","EDHX","heliport","Bad Bramstedt Heliport","53.9428","9.9055","118","EU","DE","DE-SH","Bad Bramstedt","no","","","EDHX","","","",""
+"28511","EDVA","small_airport","Bad Gandersheim Airfield","51.854168","10.025556","791","EU","DE","DE-NI","Bad Gandersheim","no","EDVA","","EDVA","","","https://en.wikipedia.org/wiki/Bad_Gandersheim_Aerodrome","Gandersheim-Seesen"
+"28591","EDXH","small_airport","Helgoland-Düne Airport","54.18528","7.915833","8","EU","DE","DE-SH","Helgoland","yes","EDXH","HGL","EDXH","","https://www.flugplatz-helgoland.de/","https://en.wikipedia.org/wiki/Heligoland_Airport",""
