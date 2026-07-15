@@ -54,10 +54,89 @@ def derive_stacks(
             stacks.setdefault(dep, _empty())
             stacks[dep][c["name"]] += float(c.get("target_kg") or 0.0)
 
+    onboard: dict[int, dict[str, float]] = {}
+    position: dict[int, str | None] = {}
+    last_ground: dict[int, str | None] = {}   # letzter Bodenkontakt (Sichtbarkeit, Entscheidung 14)
+    since: dict[int, str] = {}                # seit wann steht er dort (Ankunftsreihenfolge)
+    capacity: dict[int, float] = {}
+    movements: list[dict] = []
+
+    state = {
+        "manifest": manifest, "order": order, "stacks": stacks, "onboard": onboard,
+        "position": position, "since": since, "capacity": capacity, "empty": _empty,
+        "loading_airports": loading_airports, "destination": destination, "movements": movements,
+    }
+
+    for e in events:
+        cid = int(e["cid"])
+        kind = e["kind"]
+        ts = e["ts"]
+        if e.get("capacity_kg") is not None:
+            capacity[cid] = float(e["capacity_kg"])
+
+        if kind == "login":
+            # Ein frisch eingeloggter Pilot trägt nichts: die Ladung ist eine Ableitung, kein
+            # Speicher — beim letzten Logout hat sie einen End-Stapel gefunden.
+            onboard[cid] = _empty()
+            position[cid] = e.get("airport")     # None = in der Luft eingeloggt
+            since[cid] = ts
+            if e.get("airport"):
+                last_ground[cid] = e["airport"]
+        elif kind == "takeoff":
+            position[cid] = None                 # unterwegs. Lädt NICHT.
+        elif kind == "landing":
+            position[cid] = e.get("airport")
+            since[cid] = ts
+            if e.get("airport"):
+                last_ground[cid] = e["airport"]
+        elif kind == "logout":
+            position.pop(cid, None)
+            since.pop(cid, None)
+            onboard.pop(cid, None)
+
+        _load_standing(state, ts)
+
     return {
         "stacks": stacks,
-        "onboard": {},
-        "position": {},
-        "last_ground": {},
-        "movements": [],
+        "onboard": onboard,
+        "position": position,
+        "last_ground": last_ground,
+        "movements": movements,
     }
+
+
+def _load_standing(state: dict, ts: str) -> None:
+    """Alle, die gerade an einem Ladeplatz stehen, laden auf — in Ankunftsreihenfolge.
+
+    Wird nach JEDEM Ereignis aufgerufen. Das trägt zwei Entscheidungen ohne eigene Regel:
+    'Laden ist ein Zustand' (4) und 'der Wartende lädt nach' (13) — kommt Ware auf einen Stapel,
+    an dem jemand steht, nimmt er sie beim nächsten Durchlauf mit.
+    """
+    standing = [c for c, p in state["position"].items() if p in state["loading_airports"]]
+    for cid in sorted(standing, key=lambda c: (state["since"].get(c, ""), c)):
+        _take(state, cid, state["position"][cid], ts)
+
+
+def _take(state: dict, cid: int, airport: str, ts: str) -> None:
+    """Vom Stapel dieses Platzes nehmen, soweit Platz im Flieger ist — Manifest-Reihenfolge."""
+    stack = state["stacks"].get(airport)
+    if not stack:
+        return
+    load = state["onboard"].setdefault(cid, state["empty"]())
+    free = state["capacity"].get(cid, 0.0) - sum(load.values())
+    for c in state["manifest"]:
+        if free <= _EPS:
+            break
+        name = c["name"]
+        available = stack.get(name, 0.0)
+        if available <= _EPS:
+            continue
+        take = min(available, free)
+        if take <= _EPS:
+            continue
+        stack[name] -= take
+        load[name] = load.get(name, 0.0) + take
+        free -= take
+        state["movements"].append(
+            {"ts": ts, "cid": cid, "kind": "load", "airport": airport, "name": name, "kg": take}
+        )

@@ -57,3 +57,60 @@ def test_ziel_gestohlen_versenkt_sind_auch_stapel():
 
     assert DEST in r["stacks"] and STOLEN in r["stacks"] and SUNK in r["stacks"]
     assert _sum_stacks({k: v for k, v in r["stacks"].items() if k in (DEST, STOLEN, SUNK)}) == 0.0
+
+
+def test_login_am_ladeplatz_laedt_sofort():
+    """Entscheidung 4: Am Boden wird geladen — auch ohne je gelandet zu sein.
+
+    Kein neues Verhalten: schon heute reserviert ein am Ladeplatz geparkter Pilot seine volle
+    Zuladung (tests/test_transport.py::test_open_flight_on_ground_is_not_airborne, reserved_kg
+    == 292.0). Neu ist nur, dass aus der flüchtigen Reservierung eine echte Ladung wird.
+    """
+    r = derive_stacks(manifest=MANIFEST, events=[_ev("login", 1, T0, "EDWG")],
+                      destination=DEST, loading_airports=LOADING)
+
+    assert r["onboard"][1]["Fischbrötchen"] == 800.0
+    assert r["stacks"]["EDWG"]["Fischbrötchen"] == 0.0
+    _assert_erhaltung(r)
+
+
+def test_abflug_laedt_nie_nur_die_position_wechselt():
+    """Spec: 'Der Abflug lädt nie' — 'beim Abheben laden' ist NICHT bilanzgleich."""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[_ev("login", 1, T0, "EDWG"), _ev("takeoff", 1, "2026-07-01T09:05:00Z")],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["position"][1] is None                      # unterwegs
+    assert r["onboard"][1]["Fischbrötchen"] == 800.0    # beim Login geladen, nicht beim Abflug
+    _assert_erhaltung(r)
+
+
+def test_wer_am_fremden_platz_einloggt_laedt_nichts():
+    r = derive_stacks(manifest=MANIFEST, events=[_ev("login", 1, T0, "EDDW")],
+                      destination=DEST, loading_airports=LOADING)
+
+    assert _sum_onboard(r["onboard"]) == 0.0
+    assert r["stacks"]["EDWG"]["Fischbrötchen"] == 800.0
+
+
+def test_wer_in_der_luft_einloggt_laedt_nichts():
+    r = derive_stacks(manifest=MANIFEST, events=[_ev("login", 1, T0, None)],
+                      destination=DEST, loading_airports=LOADING)
+
+    assert r["position"][1] is None
+    assert _sum_onboard(r["onboard"]) == 0.0
+
+
+def test_wer_zuerst_kommt_laedt_zuerst_der_zweite_hat_pech():
+    """Entscheidung 5: Kein Teilen, keine Quote."""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[_ev("login", 1, T0, "EDWG"), _ev("login", 2, "2026-07-01T09:01:00Z", "EDWG")],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["onboard"][1]["Fischbrötchen"] == 800.0
+    assert r["onboard"][2]["Fischbrötchen"] == 0.0
+    _assert_erhaltung(r)
