@@ -1,9 +1,9 @@
-"""Messwerkzeug fuer die Track-Diagnose (Skill ``track-diagnose``).
+"""Messwerkzeug für die Track-Diagnose (Skill ``track-diagnose``).
 
-Punkt rein, Messwerte raus: naechste Flugplaetze laut airportsdata und OurAirports,
+Punkt rein, Messwerte raus: nächste Flugplätze laut airportsdata und OurAirports,
 Abweichung beider Quellen, Distanz zum Soll-Code aus dem Flugplan.
 
-**Dieses Werkzeug faellt kein Urteil.** Es meldet „ausserhalb", nicht „also Radius-Override".
+**Dieses Werkzeug fällt kein Urteil.** Es meldet „außerhalb", nicht „also Radius-Override".
 Die Fallunterscheidung steht in ``.claude/skills/track-diagnose/SKILL.md``.
 
 Rein und offline: kein DB-Zugriff, kein SSH, keine ``custom_airports``.
@@ -20,9 +20,9 @@ from pathlib import Path
 class AirportRef:
     """Ein Flugplatz aus einer Referenzquelle.
 
-    ``code`` ist der Anzeige-Code. ``codes`` enthaelt ALLE Codes, unter denen der Platz
+    ``code`` ist der Anzeige-Code. ``codes`` enthält ALLE Codes, unter denen der Platz
     auffindbar ist — bei OurAirports sind das ``ident``, ``icao_code`` und ``gps_code``,
-    die auseinanderfallen koennen (EDHX/EBMO haben ein leeres ``icao_code``).
+    die auseinanderfallen können (EDHX/EBMO haben ein leeres ``icao_code``).
     """
 
     code: str
@@ -36,7 +36,7 @@ class AirportRef:
 def parse_ourairports(rows: Iterable[dict]) -> list[AirportRef]:
     """OurAirports-CSV-Zeilen (DictReader) → AirportRef-Liste.
 
-    Zeilen ohne brauchbare Koordinate oder ganz ohne Code werden uebersprungen.
+    Zeilen ohne brauchbare Koordinate oder ganz ohne Code werden übersprungen.
     """
     refs: list[AirportRef] = []
     for row in rows:
@@ -78,7 +78,7 @@ def load_ourairports(path: Path | str | None = None) -> list[AirportRef]:
 
 
 def find_code(code: str, refs: Sequence[AirportRef]) -> AirportRef | None:
-    """Platz per Code suchen (case-insensitiv, ueber alle Alias-Codes). None = nicht vorhanden."""
+    """Platz per Code suchen (case-insensitiv, über alle Alias-Codes). None = nicht vorhanden."""
     want = (code or "").strip().upper()
     if not want:
         return None
