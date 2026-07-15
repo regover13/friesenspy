@@ -77,7 +77,7 @@ Create `tests/fixtures/ourairports_mini.csv`:
 Create `tests/test_nearby_airports.py`:
 
 ```python
-"""Regressionstests fuer das Messwerkzeug der Track-Diagnose.
+"""Regressionstests für das Messwerkzeug der Track-Diagnose.
 
 Alle Erwartungswerte wurden am 2026-07-15 gemessen (Produktions-DB + airportsdata +
 OurAirports-Vollabzug). Weicht ein Wert ab, ist das ein Befund — kein Grund, die Zahl
@@ -127,12 +127,12 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'scripts.nearby_airport
 Create `scripts/nearby_airports.py`:
 
 ```python
-"""Messwerkzeug fuer die Track-Diagnose (Skill ``track-diagnose``).
+"""Messwerkzeug für die Track-Diagnose (Skill ``track-diagnose``).
 
-Punkt rein, Messwerte raus: naechste Flugplaetze laut airportsdata und OurAirports,
+Punkt rein, Messwerte raus: nächste Flugplätze laut airportsdata und OurAirports,
 Abweichung beider Quellen, Distanz zum Soll-Code aus dem Flugplan.
 
-**Dieses Werkzeug faellt kein Urteil.** Es meldet „ausserhalb", nicht „also Radius-Override".
+**Dieses Werkzeug fällt kein Urteil.** Es meldet „außerhalb", nicht „also Radius-Override".
 Die Fallunterscheidung steht in ``.claude/skills/track-diagnose/SKILL.md``.
 
 Rein und offline: kein DB-Zugriff, kein SSH, keine ``custom_airports``.
@@ -149,9 +149,9 @@ from pathlib import Path
 class AirportRef:
     """Ein Flugplatz aus einer Referenzquelle.
 
-    ``code`` ist der Anzeige-Code. ``codes`` enthaelt ALLE Codes, unter denen der Platz
+    ``code`` ist der Anzeige-Code. ``codes`` enthält ALLE Codes, unter denen der Platz
     auffindbar ist — bei OurAirports sind das ``ident``, ``icao_code`` und ``gps_code``,
-    die auseinanderfallen koennen (EDHX/EBMO haben ein leeres ``icao_code``).
+    die auseinanderfallen können (EDHX/EBMO haben ein leeres ``icao_code``).
     """
 
     code: str
@@ -165,7 +165,7 @@ class AirportRef:
 def parse_ourairports(rows: Iterable[dict]) -> list[AirportRef]:
     """OurAirports-CSV-Zeilen (DictReader) → AirportRef-Liste.
 
-    Zeilen ohne brauchbare Koordinate oder ganz ohne Code werden uebersprungen.
+    Zeilen ohne brauchbare Koordinate oder ganz ohne Code werden übersprungen.
     """
     refs: list[AirportRef] = []
     for row in rows:
@@ -207,7 +207,7 @@ def load_ourairports(path: Path | str | None = None) -> list[AirportRef]:
 
 
 def find_code(code: str, refs: Sequence[AirportRef]) -> AirportRef | None:
-    """Platz per Code suchen (case-insensitiv, ueber alle Alias-Codes). None = nicht vorhanden."""
+    """Platz per Code suchen (case-insensitiv, über alle Alias-Codes). None = nicht vorhanden."""
     want = (code or "").strip().upper()
     if not want:
         return None
@@ -257,7 +257,7 @@ Append to `tests/test_nearby_airports.py`:
 from scripts.nearby_airports import airportsdata_refs, measure
 
 # Referenzpunkte, gemessen am 2026-07-15 aus statsim_position_history (alle groundspeed 0):
-EDHX_PUNKT = (54.18665, 7.91488)    # Track 29258369, 7 ft   — Helgoland-Duene
+EDHX_PUNKT = (54.18665, 7.91488)    # Track 29258369, 7 ft   — Helgoland-Düne
 ETUO_PUNKT = (51.85449, 10.02288)   # Track 23066993, 779 ft — Bad Gandersheim
 EBKT_PUNKT = (50.82005, 3.2163)     # Track 28531653, 71 ft  — Kortrijk-Wevelgem
 
@@ -273,9 +273,9 @@ def oa_refs():
 
 
 def test_edhx_fall_d_schlaegt_fall_a(ad_refs, oa_refs):
-    """EDHX fehlt in airportsdata und erfuellt damit FORMAL das Kriterium von Fall A
-    („Code fehlt → Ergaenzung"). Der Bodenpunkt liegt aber 0,16 km von EDXH — der Pilot
-    hatte den Code verdreht. Deshalb kommt Schritt 1 (wohin gehoert der Punkt?) vor
+    """EDHX fehlt in airportsdata und erfüllt damit FORMAL das Kriterium von Fall A
+    („Code fehlt → Ergänzung"). Der Bodenpunkt liegt aber 0,16 km von EDXH — der Pilot
+    hatte den Code verdreht. Deshalb kommt Schritt 1 (wohin gehört der Punkt?) vor
     Schritt 2 (was ist mit dem Code?). Dieser Test IST diese Regel."""
     m = measure(*EDHX_PUNKT, icao="EDHX", ad_refs=ad_refs, oa_refs=oa_refs)
 
@@ -288,7 +288,7 @@ def test_edhx_fall_d_schlaegt_fall_a(ad_refs, oa_refs):
 
 def test_etuo_soll_code_nur_in_airportsdata(ad_refs, oa_refs):
     """Spiegelbild zu EDHX: ETUO steht in airportsdata, aber NICHT in OurAirports.
-    Beide Bloecke muessen unabhaengig „fehlt" melden koennen."""
+    Beide Blöcke müssen unabhängig „fehlt" melden können."""
     m = measure(*ETUO_PUNKT, icao="ETUO", ad_refs=ad_refs, oa_refs=oa_refs)
 
     assert m.ad_target is not None
@@ -299,9 +299,9 @@ def test_etuo_soll_code_nur_in_airportsdata(ad_refs, oa_refs):
 
 
 def test_ebkt_quellen_weichen_um_37_km_ab(ad_refs, oa_refs):
-    """Der Belgien-Fund. Wichtig ist die zweite Haelfte: der naechste airportsdata-Platz
-    ist EBMO in 6,06 km — ueber der 1-km-Schwelle von Schritt 1. Waere er naeher, waere
-    der Fund faelschlich als Fall D abgetan worden."""
+    """Der Belgien-Fund. Wichtig ist die zweite Hälfte: der nächste airportsdata-Platz
+    ist EBMO in 6,06 km — über der 1-km-Schwelle von Schritt 1. Wäre er näher, wäre
+    der Fund fälschlich als Fall D abgetan worden."""
     m = measure(*EBKT_PUNKT, icao="EBKT", ad_refs=ad_refs, oa_refs=oa_refs)
 
     assert m.ad_target.distance_km == pytest.approx(37.20, abs=0.05)
@@ -316,7 +316,7 @@ def test_agl_wird_nur_mit_alt_und_bekannter_elevation_gerechnet(ad_refs, oa_refs
     assert ohne.ad_nearest[0].agl_ft is None
 
     # EBMO liegt laut airportsdata auf 66 ft (gemessen 2026-07-15 — nicht aus OurAirports
-    # uebernehmen, die Quellen koennen bei der Elevation auseinanderlaufen).
+    # übernehmen, die Quellen können bei der Elevation auseinanderlaufen).
     mit = measure(*EBKT_PUNKT, alt_ft=71, icao="EBKT", ad_refs=ad_refs, oa_refs=oa_refs)
     assert mit.ad_nearest[0].ref.code == "EBMO"
     assert mit.ad_nearest[0].agl_ft == pytest.approx(5, abs=1)
@@ -349,7 +349,7 @@ class Hit:
 
 @dataclass(frozen=True)
 class Measurement:
-    """Reines Messergebnis — enthaelt bewusst KEINE Bewertung und keine Empfehlung.
+    """Reines Messergebnis — enthält bewusst KEINE Bewertung und keine Empfehlung.
 
     ``ad_target``/``oa_target`` sind ``None``, wenn der Soll-Code in der jeweiligen Quelle
     fehlt. Das ist Alltag, kein Fehler: EDHX steht nur in OurAirports, ETUO nur in
@@ -371,8 +371,8 @@ class Measurement:
 def airportsdata_refs() -> list[AirportRef]:
     """Alle Plaetze aus ``airportsdata``.
 
-    Bewusst die Rohquelle: sie kennt keine ``custom_airports``. Ueber ``icao_to_coords()`` zu
-    gehen waere ein Fehler — das bezieht Overrides ein und macht jeden Vergleich „weicht der
+    Bewusst die Rohquelle: sie kennt keine ``custom_airports``. Über ``icao_to_coords()`` zu
+    gehen wäre ein Fehler — das bezieht Overrides ein und macht jeden Vergleich „weicht der
     Override ab?" zu 0 km.
     """
     return [
@@ -403,7 +403,7 @@ def nearest(
     alt_ft: float | None = None,
     limit: int = 5,
 ) -> list[Hit]:
-    """Die ``limit`` naechsten Plaetze, aufsteigend nach Distanz. DIE Umkehrfrage."""
+    """Die ``limit`` nächsten Plaetze, aufsteigend nach Distanz. DIE Umkehrfrage."""
     hits = [_hit(lat, lon, alt_ft, ref) for ref in refs]
     hits.sort(key=lambda h: h.distance_km)
     return hits[:limit]
@@ -422,7 +422,7 @@ def measure(
     ad = list(ad_refs) if ad_refs is not None else airportsdata_refs()
     oa = list(oa_refs) if oa_refs is not None else load_ourairports()
 
-    # Soll-Code in BEIDEN Quellen unabhaengig suchen: ein Code kann in einer fehlen und in der
+    # Soll-Code in BEIDEN Quellen unabhängig suchen: ein Code kann in einer fehlen und in der
     # anderen stehen (EDHX nur OurAirports, ETUO nur airportsdata). None heisst „diese Quelle
     # kennt ihn nicht" — kein Fehler, sondern selbst ein Befund.
     ad_target = oa_target = None
@@ -434,7 +434,7 @@ def measure(
         if found_oa is not None:
             oa_target = _hit(lat, lon, alt_ft, found_oa)
 
-    # Quellen-Abweichung fuer alle Codes, die in dieser Messung vorkommen.
+    # Quellen-Abweichung für alle Codes, die in dieser Messung vorkommen.
     codes = {h.ref.code for h in nearest(lat, lon, ad, limit=5)}
     codes |= {h.ref.code for h in nearest(lat, lon, oa, limit=5)}
     if icao:
@@ -510,7 +510,7 @@ EDDH_PUNKT = (53.49527, 10.00085)
 
 
 def test_eddh_spawn_in_der_luft_reisst_beide_schwellen(ad_refs, oa_refs):
-    """Der Punkt liegt 15,05 km von EDDH und 2156 ft ueber Platzhoehe. Ein Radius-Override
+    """Der Punkt liegt 15,05 km von EDDH und 2156 ft über Platzhöhe. Ein Radius-Override
     wuerde NICHT helfen: die Spawn-Rettung (#49) verlangt zusaetzlich < 1500 ft AGL.
     Beide Schwellen werden importiert — aendert jemand sie, wird dieser Test rot, statt
     dass der Skill still falsch wird."""
@@ -522,8 +522,8 @@ def test_eddh_spawn_in_der_luft_reisst_beide_schwellen(ad_refs, oa_refs):
     assert m.ad_target.agl_ft > _GPS_SPAWN_MAX_AGL_FT
 
     report = format_report(m)
-    assert "ausserhalb" in report
-    assert "ueberschritten" in report
+    assert "außerhalb" in report
+    assert "überschritten" in report
 
 
 def test_report_meldet_fehlenden_code_statt_zu_verschweigen(ad_refs, oa_refs):
@@ -559,16 +559,16 @@ def _threshold_notes(hit: Hit) -> list[str]:
     notes = []
     inside = hit.distance_km <= _BUMMEL_AIRPORT_RADIUS_KM
     notes.append(
-        "Standardradius %.1f km — %s" % (_BUMMEL_AIRPORT_RADIUS_KM, "innerhalb" if inside else "ausserhalb")
+        "Standardradius %.1f km — %s" % (_BUMMEL_AIRPORT_RADIUS_KM, "innerhalb" if inside else "außerhalb")
     )
     if hit.agl_ft is not None:
         notes.append(
             "Spawn-Grenze %d ft — %s"
-            % (_GPS_SPAWN_MAX_AGL_FT, "darunter" if hit.agl_ft < _GPS_SPAWN_MAX_AGL_FT else "ueberschritten")
+            % (_GPS_SPAWN_MAX_AGL_FT, "darunter" if hit.agl_ft < _GPS_SPAWN_MAX_AGL_FT else "überschritten")
         )
         notes.append(
             "Bodengrenze %d ft — %s"
-            % (_GPS_GROUND_AGL_FT, "darunter" if hit.agl_ft < _GPS_GROUND_AGL_FT else "darueber")
+            % (_GPS_GROUND_AGL_FT, "darunter" if hit.agl_ft < _GPS_GROUND_AGL_FT else "darüber")
         )
     return notes
 
@@ -606,14 +606,14 @@ def format_report(m: Measurement) -> str:
                 out.append("  %-13s   (%s)" % ("", note))
 
     out.append("")
-    out.append("Naechste Plaetze laut airportsdata:")
+    out.append("Nächste Plaetze laut airportsdata:")
     out.extend(_format_hits(m.ad_nearest))
 
     out.append("")
     if not m.oa_available:
-        out.append("Naechste Plaetze laut OurAirports: -- nicht geladen (kein Netz/Cache)")
+        out.append("Nächste Plaetze laut OurAirports: -- nicht geladen (kein Netz/Cache)")
     else:
-        out.append("Naechste Plaetze laut OurAirports:")
+        out.append("Nächste Plaetze laut OurAirports:")
         out.extend(_format_hits(m.oa_nearest))
 
     if m.source_delta_km:
@@ -627,11 +627,11 @@ def format_report(m: Measurement) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Messwerkzeug fuer die Track-Diagnose — misst, urteilt nicht.",
+        description="Messwerkzeug für die Track-Diagnose — misst, urteilt nicht.",
     )
     parser.add_argument("lat", type=float)
     parser.add_argument("lon", type=float)
-    parser.add_argument("--alt", type=float, default=None, help="Hoehe in ft MSL (fuer AGL)")
+    parser.add_argument("--alt", type=float, default=None, help="Höhe in ft MSL (für AGL)")
     parser.add_argument("--icao", default=None, help="Soll-Code aus dem Flugplan")
     args = parser.parse_args(argv)
 
@@ -685,7 +685,7 @@ Modify `.gitignore` — nach dem Block `# Claude Code Worktrees` anhängen:
 
 ```gitignore
 
-# OurAirports-Abzug fuer scripts/nearby_airports.py (12 MB, jederzeit neu ladbar)
+# OurAirports-Abzug für scripts/nearby_airports.py (12 MB, jederzeit neu ladbar)
 scripts/.cache/
 ```
 
@@ -729,7 +729,7 @@ def load_ourairports(path: Path | str | None = None) -> list[AirportRef]:
     """OurAirports laden. ``path`` gesetzt → genau diese Datei (Tests: Fixture, kein Netz).
 
     Ohne ``path``: Cache unter ``scripts/.cache/``, bei Bedarf frisch geladen. Ist die
-    Quelle nicht verfuegbar, kommt eine LEERE Liste zurueck — das Werkzeug arbeitet dann
+    Quelle nicht verfuegbar, kommt eine LEERE Liste zurück — das Werkzeug arbeitet dann
     nur mit airportsdata weiter und sagt das im Report (``oa_available``).
     """
     source = Path(path) if path is not None else _cached_ourairports()
@@ -753,7 +753,7 @@ Expected: PASS (9 Tests) — die Fixture-Tests übergeben weiterhin einen Pfad, 
 - [ ] **Step 4: Download real verifizieren**
 
 Run: `python scripts/nearby_airports.py 53.49527 10.00085 --alt 2209 --icao EDDH`
-Expected: Erster Lauf lädt ~12 MB nach `scripts/.cache/ourairports.csv`. Report zeigt EDDH 15.05 km / „ausserhalb" / AGL 2156 ft / „ueberschritten".
+Expected: Erster Lauf lädt ~12 MB nach `scripts/.cache/ourairports.csv`. Report zeigt EDDH 15.05 km / „außerhalb" / AGL 2156 ft / „überschritten".
 
 Run: `git status --short`
 Expected: `scripts/.cache/` taucht **nicht** auf.
@@ -847,7 +847,7 @@ Create `tests/fixtures/gaps_mini.json`:
 Create `tests/test_triage_gaps.py`:
 
 ```python
-"""Triage-Tests: sechs echte Faelle aus dem Export vom 2026-07-15, einer je Gruppe.
+"""Triage-Tests: sechs echte Fälle aus dem Export vom 2026-07-15, einer je Gruppe.
 
 Jeder Test sichert eine Regel ab, die beim Entwurf real falsch war. Siehe
 docs/superpowers/specs/2026-07-15-track-diagnose-design.md
@@ -897,13 +897,13 @@ def _gruppe(faelle, ad, oa, statsim_id, seite):
 def test_both_erzeugt_zwei_enden(faelle):
     enden = [e for e in enden_aus_export(faelle) if e.statsim_id == 25216444]
     assert sorted(e.seite for e in enden) == ["arrival", "departure"]
-    # 29 der 163 Faelle vermissen beide Enden; eines kann trivial sein, das andere nicht.
-    assert len(enden_aus_export(faelle)) == 10   # 6 Faelle, 4 davon "both"
+    # 29 der 163 Fälle vermissen beide Enden; eines kann trivial sein, das andere nicht.
+    assert len(enden_aus_export(faelle)) == 10   # 6 Fälle, 4 davon "both"
 
 
 def test_ein_punkt_track_schlaegt_nachbarschaft(faelle, ad, oa):
     """27831625 hat EINEN Trackpunkt, und EDNR liegt 0,06 km daneben. Ohne die
-    Punktzahl-Pruefung waere das ein Fall-D-Befund — formal richtig gemessen und
+    Punktzahl-Prüfung wäre das ein Fall-D-Befund — formal richtig gemessen und
     trotzdem Unsinn. Sechs der urspruenglich neun D-Befunde waren solche Tracks."""
     assert _gruppe(faelle, ad, oa, 27831625, "departure") == GRUPPE_DUENN
 
@@ -920,9 +920,9 @@ def test_eddh_spawn_in_der_luft(faelle, ad, oa):
 
 def test_stol_langsam_aber_hoch_ist_nicht_am_boden(faelle, ad, oa):
     """FRS125 ab ETNJ: gs 22 — nach einer groundspeed-zentrierten Regel ein Bodenpunkt.
-    Die Hoehe sagt 4401 ft. Hoehe ist das Leitsignal (app/gps_legs.py:4), sonst werden
-    STOL-Fluege (Wilga, ~40 kt Reise) systematisch fehlklassifiziert. Gemessen: 13 der
-    184 Enden erkennt nur die Hoehe."""
+    Die Höhe sagt 4401 ft. Höhe ist das Leitsignal (app/gps_legs.py:4), sonst werden
+    STOL-Flüge (Wilga, ~40 kt Reise) systematisch fehlklassifiziert. Gemessen: 13 der
+    184 Enden erkennt nur die Höhe."""
     assert _gruppe(faelle, ad, oa, 25216444, "departure") == GRUPPE_LUFT
 
 
@@ -931,7 +931,7 @@ def test_punkt_an_anderem_platz(faelle, ad, oa):
 
 
 def test_bodenpunkt_ohne_nachbarn_bleibt_kandidat(faelle, ad, oa):
-    """RCLM: Bodenpunkt, naechster bekannter Platz 302 km weit. Genau so ein Fall
+    """RCLM: Bodenpunkt, nächster bekannter Platz 302 km weit. Genau so ein Fall
     braucht ein Urteil — er darf NICHT wegtriagiert werden."""
     assert _gruppe(faelle, ad, oa, 28099919, "departure") == GRUPPE_KANDIDAT
 ```
@@ -983,17 +983,17 @@ GRUPPE_ANDERER = "D"
 GRUPPE_KANDIDAT = "Kandidat"
 
 # Der Detektor braucht mindestens einen Zustandswechsel (ON_GROUND -> AIRBORNE -> ON_GROUND).
-# Bei weniger Samples ist jede Aussage ueber Start/Landung bedeutungslos.
+# Bei weniger Samples ist jede Aussage über Start/Landung bedeutungslos.
 MIN_TRACKPUNKTE = 3
-# Flugplan-Platzhalter fuer „kein ICAO" — kein Platz, also nichts zu finden.
+# Flugplan-Platzhalter für „kein ICAO" — kein Platz, also nichts zu finden.
 PLATZHALTER_CODE = "ZZZZ"
-# Ab hier gilt ein Nachbarplatz als „der Punkt gehoert dorthin" (Schritt 1).
+# Ab hier gilt ein Nachbarplatz als „der Punkt gehört dorthin" (Schritt 1).
 NACHBAR_MAX_KM = 1.0
 
 
 @dataclass(frozen=True)
 class Ende:
-    """Ein zu pruefendes Ende eines Falls. ``missing: "both"`` ergibt zwei davon."""
+    """Ein zu prüfendes Ende eines Falls. ``missing: "both"`` ergibt zwei davon."""
 
     statsim_id: int
     callsign: str
@@ -1011,7 +1011,7 @@ class Befund:
 
 
 def enden_aus_export(faelle: Sequence[dict]) -> list[Ende]:
-    """JSON-Export → zu pruefende Enden. ``both`` ergibt zwei (Start und Ziel)."""
+    """JSON-Export → zu prüfende Enden. ``both`` ergibt zwei (Start und Ziel)."""
     enden: list[Ende] = []
     for fall in faelle:
         missing = fall.get("missing")
@@ -1035,11 +1035,11 @@ def enden_aus_export(faelle: Sequence[dict]) -> list[Ende]:
 
 
 def _in_der_luft(punkt: dict, basis: AirportRef | None) -> tuple[bool, str]:
-    """Hoehe fuehrt, Groundspeed hilft — wie im Detektor (app/gps_legs.py:4).
+    """Höhe fuehrt, Groundspeed hilft — wie im Detektor (app/gps_legs.py:4).
 
     Groundspeed allein genuegt NICHT: STOL/Heli fliegen langsam (Wilga ~40 kt Reise), eine
     gs-zentrierte Regel wertet sie als Bodenpunkt. Gemessen an 184 Enden: 13 erkennt nur die
-    Hoehe, 5 nur die Groundspeed — beide Signale sind noetig.
+    Höhe, 5 nur die Groundspeed — beide Signale sind noetig.
     """
     alt = punkt.get("alt")
     gs = punkt.get("gs") or 0
@@ -1082,7 +1082,7 @@ def triagiere(
                 ende, GRUPPE_ANDERER,
                 "Punkt liegt %.2f km an %s (Soll: %s)" % (hit.distance_km, hit.ref.code, ende.soll),
             )
-        return Befund(ende, GRUPPE_KANDIDAT, "naechster Platz: %s %.2f km" % (hit.ref.code, hit.distance_km))
+        return Befund(ende, GRUPPE_KANDIDAT, "nächster Platz: %s %.2f km" % (hit.ref.code, hit.distance_km))
     return Befund(ende, GRUPPE_KANDIDAT, "kein Platz in Reichweite")
 
 
@@ -1097,7 +1097,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     befunde = [triagiere(e, ad, oa) for e in enden_aus_export(faelle)]
 
     zaehler = Counter(b.gruppe for b in befunde)
-    print("%d Enden aus %d Faellen\n" % (len(befunde), len(faelle)))
+    print("%d Enden aus %d Fällen\n" % (len(befunde), len(faelle)))
     for gruppe, anzahl in zaehler.most_common():
         print("  %-10s %4d  (%4.1f%%)" % (gruppe, anzahl, 100.0 * anzahl / len(befunde)))
     mechanisch = len(befunde) - zaehler[GRUPPE_KANDIDAT]
@@ -1473,7 +1473,7 @@ OurAirports — der Belgien-Fund widerlegt das (848 von 24253 Codes > 3 km)."
 ## Verifikation zum Schluss
 
 - [ ] `python -m pytest tests/ -q` → 1063 passed
-- [ ] `python scripts/nearby_airports.py 53.49527 10.00085 --alt 2209 --icao EDDH` → 15.05 km, „ausserhalb", AGL 2156 ft, „ueberschritten"
+- [ ] `python scripts/nearby_airports.py 53.49527 10.00085 --alt 2209 --icao EDDH` → 15.05 km, „außerhalb", AGL 2156 ft, „überschritten"
 - [ ] Echter Triage-Lauf: Export ziehen (siehe SKILL.md), dann `python scripts/triage_gaps.py gaps.json` → Größenordnung 184 Enden aus 163 Fällen, ~23 Kandidaten. **Weicht das stark ab, ist das ein Befund, kein Grund zum Nachjustieren** — die Liste ändert sich mit jedem Flug, aber ein Sprung von 23 auf 100 Kandidaten hieße, dass eine Gruppenregel nicht greift.
 - [ ] `git status --short` → keine ungewollten Dateien; `scripts/.cache/` fehlt (ignoriert)
 - [ ] **Nicht** getan: kein Version-Bump, kein Tag, kein Changelog, keine Änderung an `docs/api.md` / `docs/architecture.md`
