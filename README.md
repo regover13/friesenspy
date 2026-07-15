@@ -72,7 +72,9 @@ Track-Linie am Losrollen (Taxi-out + Startlauf), nicht mehr erst am Abheben. Das
 unverändert, da die Landung ohnehin erst beim Vollstopp am Gate gewertet wird (der Taxi-in ist
 also enthalten). StatSim-Tracks zeigten das Rollen schon immer.
 
-**Woher kommen die Airport-Koordinaten?** Der Geo-Check nutzt das Python-Package [`airportsdata`](https://github.com/mborsetti/airportsdata), das eine vollständige ICAO-Datenbank eingebettet enthält — inklusive aller deutschen Sonderlandeplätze und Kleinflugplätze (z.B. EDKB, EDKV, EDRV). Die Koordinaten stammen aus der [OurAirports](https://ourairports.com)-Datenbank. Es findet kein API-Call statt — die Abfrage ist offline und instant.
+**Woher kommen die Airport-Koordinaten?** Der Geo-Check nutzt das Python-Package [`airportsdata`](https://github.com/mborsetti/airportsdata), das eine vollständige ICAO-Datenbank eingebettet enthält — inklusive aller deutschen Sonderlandeplätze und Kleinflugplätze (z.B. EDKB, EDKV, EDRV). Es findet kein API-Call statt — die Abfrage ist offline und instant.
+
+> **Die Koordinaten sind nicht durchweg korrekt.** `airportsdata` nennt [OurAirports](https://ourairports.com) als Quelle, deckt sich aber nachweislich nicht damit: Bei 848 von 24.253 gemeinsamen Codes liegen beide Datenbanken mehr als 3 km auseinander (3,5 %). Belgien ist mit 34 % der Plätze der schlimmste Fall in Europa (EBBR 42 km, EBKT 37 km, ELLX 29 km — alle nach Südwesten verschoben), Deutschland mit 1 von 452 der beste. Bekannte Fehler werden über `custom_airports` überschrieben (siehe #56/#62); zur Diagnose einzelner Fälle gibt es den Skill `track-diagnose`.
 
 > **Landeplatz-Radius:** Ein datenbasiert ermittelter, **fester Radius von 4 km** um einen
 > Flugplatz gilt für die gesamte Platz-Zuordnung (Flugerkennung, FriesenFliegerBummel,
