@@ -1407,6 +1407,23 @@ def require_admin(request: Request) -> None:
     raise HTTPException(status_code=401, detail="Admin-Login erforderlich")
 
 
+def require_admin_page(request: Request) -> None:
+    """Admin-Prüfung für HTML-Seiten AUSSERHALB von ``/api/admin``.
+
+    ``require_admin`` prüft ``fs_admin`` — das liegt auf ``path=/api/admin`` und wird für eine
+    Seite unter ``/admin/...`` vom Browser nie mitgesendet. Hier zählt deshalb die
+    Break-glass-Kopie ``fs_admin_site`` (``path=/``) oder eine Forum-Session mit Admin-Recht.
+    """
+    settings = get_settings()
+    claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
+    if claims and claims.get("is_admin"):
+        return
+    if verify_admin_token(request.cookies.get(_SITE_ADMIN_COOKIE, ""),
+                          settings.SECRET_KEY, settings.ADMIN_PASSWORD):
+        return
+    raise HTTPException(status_code=401, detail="Admin-Login erforderlich")
+
+
 def require_confirm(request: Request) -> None:
     """Step-up-Dependency für kritische Aktionen (Löschen, Push/Veröffentlichen).
 
@@ -2232,11 +2249,20 @@ async def admin_push_overview(request: Request):
 
 @app.get("/admin/push-overview", include_in_schema=False)
 async def admin_push_overview_page(request: Request):
-    """Unauffällige Diagnose-Seite: fragt das Extra-Passwort ab und rendert die Übersicht."""
+    """Unauffällige Diagnose-Seite: fragt das Extra-Passwort ab und rendert die Übersicht.
+
+    Reihenfolge: erst die 404-Abschaltung, dann der Admin-Login. Andersherum bekäme ein
+    Nicht-Admin bei abgeschaltetem Feature ein 401 statt 404 — und damit den Hinweis, dass
+    unter dieser URL überhaupt etwas liegt.
+
+    ``require_admin_page`` statt ``require_admin``: diese Seite liegt nicht unter
+    ``/api/admin``, wo das eigentliche Admin-Cookie gilt.
+    """
     from fastapi.responses import HTMLResponse
     settings = get_settings()
     if not settings.PUSH_OVERVIEW_PASSWORD:
         raise HTTPException(status_code=404, detail="Not found")
+    require_admin_page(request)
     return HTMLResponse(content=_PUSH_OVERVIEW_HTML)
 
 

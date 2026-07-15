@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 
 import app.main as main
 from app.auth import ADMIN_COOKIE, make_admin_token
+from app.main import _SITE_ADMIN_COOKIE as SITE_COOKIE
 from app.database import (
     get_connection,
     init_db,
@@ -126,9 +127,37 @@ def test_overview_disabled_when_password_unset(db):
 
 
 def test_page_served_when_configured(db):
-    resp = asyncio.run(main.admin_push_overview_page(FakeReq()))
+    """Seite lädt mit dem site-weiten Admin-Cookie (path=/), das der Browser hierhin schickt."""
+    resp = asyncio.run(main.admin_push_overview_page(FakeReq(cookies={SITE_COOKIE: TOKEN})))
     assert isinstance(resp, HTMLResponse)
     assert b"Diagnose-Passwort" in resp.body
+
+
+def test_page_requires_admin(db):
+    """Ohne Admin-Login gibt es nicht mal das Passwort-Formular zu sehen."""
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(main.admin_push_overview_page(FakeReq(cookies={})))
+    assert ei.value.status_code == 401
+
+
+def test_page_needs_site_cookie_not_api_cookie(db):
+    """Regression: fs_admin liegt auf path=/api/admin und erreicht /admin/... nie.
+
+    Die Seite darf sich deshalb NICHT auf require_admin verlassen — täte sie es, wäre sie für
+    jeden echten Admin tot (401 trotz gültigem Login).
+    """
+    with pytest.raises(HTTPException):
+        asyncio.run(main.admin_push_overview_page(FakeReq(cookies={ADMIN_COOKIE: TOKEN})))
+    resp = asyncio.run(main.admin_push_overview_page(FakeReq(cookies={SITE_COOKIE: TOKEN})))
+    assert isinstance(resp, HTMLResponse)
+
+
+@pytest.mark.parametrize("db", [""], indirect=True)
+def test_page_404_beats_admin_check_when_disabled(db):
+    """Feature aus → 404 auch ohne Admin-Login (kein 401, das die URL verraten würde)."""
+    with pytest.raises(HTTPException) as ei:
+        asyncio.run(main.admin_push_overview_page(FakeReq(cookies={})))
+    assert ei.value.status_code == 404
 
 
 @pytest.mark.parametrize("db", [""], indirect=True)
