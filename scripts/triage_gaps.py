@@ -33,6 +33,7 @@ GRUPPE_ZZZZ = "ZZZZ"
 GRUPPE_LUFT = "E"
 GRUPPE_ANDERER = "D"
 GRUPPE_KANDIDAT = "Kandidat"
+GRUPPE_MEHRDEUTIG = "Mehrdeutig"
 
 # Der Detektor braucht mindestens einen Zustandswechsel (ON_GROUND -> AIRBORNE -> ON_GROUND).
 # Bei weniger Samples ist jede Aussage über Start/Landung bedeutungslos.
@@ -53,6 +54,9 @@ class Ende:
     soll: str | None
     punkt: dict
     punkte: int
+    # True, wenn dieselbe statsim_id mehrfach im Export vorkommt (mehrere Legs einer Session,
+    # siehe enden_aus_export). Dann sind first/last nicht dem richtigen Leg zuordenbar.
+    mehrdeutig: bool = False
 
 
 @dataclass(frozen=True)
@@ -63,7 +67,17 @@ class Befund:
 
 
 def enden_aus_export(faelle: Sequence[dict]) -> list[Ende]:
-    """JSON-Export → zu prüfende Enden. ``both`` ergibt zwei (Start und Ziel)."""
+    """JSON-Export → zu prüfende Enden. ``both`` ergibt zwei (Start und Ziel).
+
+    Mehrere Legs derselben Session teilen sich dieselbe ``statsim_id`` (``detect_gps_legs``
+    trennt an Zeitlücken > 30 min, ``app/gps_legs.py:53``) — der Export liefert dann zwei
+    Fälle mit identischer ID, aber je EIGENEM ``first``/``last``. Ohne Kennzeichnung würde das
+    zweite Leg mit dem Randpunkt des ersten gemessen (Fehlrichtung, die teuer sein kann — es
+    erbt z. B. „E" vom airborne Start des ersten Segments). Solche Enden bekommen
+    ``mehrdeutig=True`` und werden in ``triagiere()`` VOR jeder anderen Prüfung aussortiert.
+    """
+    zaehler_ids = Counter(fall["statsim_id"] for fall in faelle)
+    mehrfach = {sid for sid, anzahl in zaehler_ids.items() if anzahl > 1}
     enden: list[Ende] = []
     for fall in faelle:
         missing = fall.get("missing")
@@ -80,7 +94,12 @@ def enden_aus_export(faelle: Sequence[dict]) -> list[Ende]:
                     seite=seite,
                     soll=(fall.get(soll_key) or None),
                     punkt=fall[punkt_key],
-                    punkte=int(fall.get("punkte") or 0),
+                    # Hart statt weich (int(fall.get("punkte") or 0)): ein fehlendes Feld soll
+                    # laut auffallen, nicht still in die teure Richtung (Trivialgruppe „Zu
+                    # dünn") wegfallen — anders als ein fehlendes punkt_key, das ebenfalls
+                    # hart failt.
+                    punkte=int(fall["punkte"]),
+                    mehrdeutig=fall["statsim_id"] in mehrfach,
                 )
             )
     return enden
@@ -110,14 +129,18 @@ def triagiere(
     oa_refs: Sequence[AirportRef],
 ) -> Befund:
     """Schritt 0 und Schritt 1 der Prüfreihenfolge. Erste greifende Gruppe gewinnt."""
+    if ende.mehrdeutig:
+        return Befund(
+            ende, GRUPPE_MEHRDEUTIG,
+            "mehrere Legs teilen sich diese statsim_id — Randpunkte nicht zuordenbar, manuell prüfen",
+        )
+
     if ende.punkte < MIN_TRACKPUNKTE:
         return Befund(ende, GRUPPE_DUENN, "Track hat nur %d Punkt(e)" % ende.punkte)
 
     if (ende.soll or "").upper() == PLATZHALTER_CODE:
         return Befund(ende, GRUPPE_ZZZZ, "Flugplan-Platzhalter — kein Platz")
 
-    # AGL-Basis: bevorzugt der Soll-Platz (aus BEIDER Quellen — Elevation ist Elevation),
-    # sonst der nächstgelegene Platz bei ganz unbekanntem Code.
     lat, lon = ende.punkt["lat"], ende.punkt["lon"]
     # Die Nachbarsuche fragt BEWUSST NUR airportsdata, nicht OurAirports: Schritt 1 muss gegen
     # die Quelle prüfen, die der Detektor selbst benutzt. Ein Platz, den nur OurAirports kennt,
@@ -128,9 +151,26 @@ def triagiere(
     # mit hoher Wahrscheinlichkeit derselbe Platz (EDSV fehlt in airportsdata, OurAirports führt
     # ihn ohne ICAO-Code). Als Fall D wäre dieser Eintrags-Kandidat still wegsortiert worden.
     nachbarn = nearest(lat, lon, ad_refs, limit=1)
-    basis = find_code(ende.soll or "", ad_refs) or find_code(ende.soll or "", oa_refs)
-    if basis is None and nachbarn:
-        basis = nachbarn[0].ref
+
+    # AGL-Basis: bevorzugt der nächstgelegene Platz, der Soll-Platz nur als Rückfall, wenn es
+    # gar keinen Nachbarn gibt (praktisch nie — airportsdata deckt die ganze Welt ab). Der Punkt
+    # steht in dieser Liste per Definition NICHT am Soll-Platz — die Soll-Elevation ist damit die
+    # unzuverlässigste verfügbare Basis, nicht die naheliegendste. Die Elevation muss von dem
+    # Platz kommen, der AM PUNKT liegt, genau wie es der Detektor selbst macht
+    # (app/gps_legs.py:183 und :242 holen die Elevation immer über nearest_airport(...) →
+    # airport_elev_ft(ap), nie vom Flugplan-Platz).
+    # Beleg ETUO (Track 23066993, Punkt 51.85449/10.02288, alt 779 ft, gs 0 — das Flugzeug steht
+    # in Bad Gandersheim): Basis ETUO laut airportsdata liegt 236 ft hoch, aber 118 km entfernt
+    # → AGL 543 ft → Fall E, weggeworfen. Der echte Platz am Punkt, EDVA, liegt 791 ft hoch und
+    # nur 0,19 km entfernt → AGL −12 ft → der Punkt steht am Boden, Fall D. 555 ft Scheinhöhe
+    # allein durch die falsche Basis — genau der teure Fehler (ein echter Kandidat verschwindet
+    # still in der Trivialgruppe).
+    # Keinen Distanzdeckel einbauen (z. B. „Basis nur wenn < 4 km"): das kippt den STOL-Fall
+    # 25216444 von E auf Kandidat, weil der Punkt weit von jedem bekannten Platz liegt und ohne
+    # Nachbar-Fallback nur noch die Groundspeed als Signal übrig bliebe.
+    basis = nachbarn[0].ref if nachbarn else None
+    if basis is None:
+        basis = find_code(ende.soll or "", ad_refs) or find_code(ende.soll or "", oa_refs)
 
     luft, warum = _in_der_luft(ende.punkt, basis)
     if luft:
@@ -162,7 +202,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("%d Enden aus %d Fällen\n" % (len(befunde), len(faelle)))
     for gruppe, anzahl in zaehler.most_common():
         print("  %-10s %4d  (%4.1f%%)" % (gruppe, anzahl, 100.0 * anzahl / len(befunde)))
-    mechanisch = len(befunde) - zaehler[GRUPPE_KANDIDAT]
+    # Mehrdeutig zählt NICHT als mechanisch abgehakt — wie Kandidat ein Fall für den Menschen.
+    mechanisch = len(befunde) - zaehler[GRUPPE_KANDIDAT] - zaehler[GRUPPE_MEHRDEUTIG]
     print("\n  mechanisch abgehakt: %d von %d" % (mechanisch, len(befunde)))
 
     zeigen = args.gruppe or GRUPPE_KANDIDAT

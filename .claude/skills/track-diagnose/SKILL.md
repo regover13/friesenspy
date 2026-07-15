@@ -10,7 +10,7 @@ description: Use when working through the FriesenSpy Erkennungslücken list (/ad
 Beantwortet: *Warum hängt dieser Flug an Platz X?* — für die ganze Liste oder einen Einzelfall.
 
 **Erst triagieren, dann einzeln prüfen.** Die Lückenliste hatte am 2026-07-15 163 Fälle
-(184 Enden, weil 29 Fälle beide Enden vermissen). **86,4 % davon sind rein mechanisch abzuhaken.**
+(184 Enden, weil 21 Fälle beide Enden vermissen). **86,4 % davon sind rein mechanisch abzuhaken.**
 Wer sie einzeln durchgeht, hört drei von vier Mal „Aufzeichnungslücke, nichts zu tun".
 
 **Dieser Skill trägt nichts ein.** Er liefert Diagnose, Belege und ggf. einen konkreten
@@ -52,8 +52,14 @@ Die Lückenliste **muss aus der App kommen**, nicht per SQL nachgebaut: `list_gp
 ruft `canonicalize_legs` über die ganze Historie. Nachgebaut triagiert man eine andere Liste als
 die, die im Admin steht.
 
+**Nicht** als `ssh "docker exec python -c '<Snippet>'"` — das Snippet steckt dann in einer
+doppelt gequoteten `ssh "..."`-Zeile und enthält selbst unescapte `"`. Die Shell frisst alle
+Anführungszeichen, `sid = g.get(statsim_id)` wird zu `NameError`, der SQL-String zerfällt. Ein
+Here-Doc hat keine Quoting-Ebene mehr und läuft deshalb sauber:
+
 ```bash
-ssh -i ~/.ssh/tsbot_server root@167.86.127.129 "docker exec friesenspy-friesenspy-1 python -c '
+ssh -i ~/.ssh/tsbot_server root@167.86.127.129 \
+  'docker exec -i friesenspy-friesenspy-1 python -' <<'PY' > gaps.json
 import json
 from app import geo
 from app.config import get_settings
@@ -63,18 +69,26 @@ geo.set_custom_airports(list_custom_airports(conn))
 out = []
 for g in list_gps_detection_gaps(conn):
     sid = g.get("statsim_id")
-    if not sid: continue
-    rows = conn.execute("SELECT ts, latitude, longitude, altitude, groundspeed FROM statsim_position_history WHERE statsim_id=? ORDER BY ts", (sid,)).fetchall()
-    if not rows: continue
+    if not sid:
+        continue
+    rows = conn.execute(
+        "SELECT ts, latitude, longitude, altitude, groundspeed "
+        "FROM statsim_position_history WHERE statsim_id=? ORDER BY ts", (sid,)
+    ).fetchall()
+    if not rows:
+        continue
     f, l = rows[0], rows[-1]
     out.append({"statsim_id": sid, "callsign": g["callsign"], "missing": g["missing"],
-      "plan_departure": g["plan_departure"], "plan_arrival": g["plan_arrival"],
-      "logon_time": g["logon_time"], "punkte": len(rows),
-      "first": {"ts": f[0], "lat": f[1], "lon": f[2], "alt": f[3], "gs": f[4]},
-      "last":  {"ts": l[0], "lat": l[1], "lon": l[2], "alt": l[3], "gs": l[4]}})
+                "plan_departure": g["plan_departure"], "plan_arrival": g["plan_arrival"],
+                "logon_time": g["logon_time"], "punkte": len(rows),
+                "first": {"ts": f[0], "lat": f[1], "lon": f[2], "alt": f[3], "gs": f[4]},
+                "last": {"ts": l[0], "lat": l[1], "lon": l[2], "alt": l[3], "gs": l[4]}})
 print(json.dumps(out))
-'" > gaps.json
+PY
 ```
+
+Wichtig: `docker exec -i` (Eingabe muss durchgereicht werden) und `python -` (liest das Skript
+von stdin) — ohne `-i` kommt das Here-Doc nie im Container an.
 
 Dauert ~18 s, liefert ~75 KB für 163 Fälle.
 
@@ -93,10 +107,19 @@ python -m scripts.triage_gaps gaps.json                 # Zusammenfassung + Kand
 python -m scripts.triage_gaps gaps.json --gruppe E      # eine Gruppe im Detail
 ```
 
+> **Einschränkung: mehrere Legs derselben `statsim_id`.** Eine Session kann mehrere Legs
+> erzeugen (`detect_gps_legs` trennt an Zeitlücken > 30 min, `app/gps_legs.py:53`), und alle
+> erben dieselbe `statsim_id`. Der Export enthält dann zwei Fälle mit identischer ID, aber
+> je eigenem `first`/`last` — würde man beide messen, bekäme das zweite Leg den Randpunkt des
+> ersten zugeordnet (Fehlrichtung, potenziell teuer). Solche Enden landen unter `--gruppe
+> Mehrdeutig`, werden VOR jeder anderen Prüfung aussortiert und zählen nicht als mechanisch
+> abgehakt — wie Kandidaten ein Fall für den Menschen.
+
 ### A3. Berichten
 
 Trivialgruppen als **Sammelbefund** melden (nicht einzeln durchkauen), Kandidaten als Arbeitsvorrat
-für Ablauf B. Stand 2026-07-15: 126× E, 19× zu dünn, 11× ZZZZ, 3× D — **25 Kandidaten**.
+für Ablauf B. Stand 2026-07-15 (nach FIX 1 + FIX 4): 126× E, 19× zu dünn, 11× ZZZZ, 4× Mehrdeutig,
+3× D — **21 Kandidaten**.
 
 ## Ablauf B — Einzelfall
 

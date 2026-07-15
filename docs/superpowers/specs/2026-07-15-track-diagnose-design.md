@@ -23,7 +23,7 @@ Alle drei Fehler haben dieselbe Ursache: Die Reihenfolge der Prüfung und die Tr
 ## Abgrenzung
 
 **Triage zuerst, dann Einzelfall — ein Ablauf, nicht zwei.** Die Erkennungslücken-Liste hat
-163 offene Fälle (184 Enden, da 29 Fälle beide Enden vermissen). Sie einzeln durchzugehen wäre
+163 offene Fälle (184 Enden, da 21 Fälle beide Enden vermissen). Sie einzeln durchzugehen wäre
 Verschwendung: **86,4 % sind rein mechanisch abzuhaken** (gemessen 2026-07-15, siehe unten). Der
 Batch misst Schritt 0 und Schritt 1 über alle Fälle und sortiert die trivialen aus; übrig bleiben
 die echten Fragen, die einzeln beurteilt werden.
@@ -33,16 +33,24 @@ einen Bodenpunkt?" und „welcher Platz liegt am nächsten?" brauchen keinen Kon
 braucht Urteilskraft. Die Prüfreihenfolge ist damit zugleich die Triage-Logik; der Batch fällt
 fast umsonst ab.
 
+**Nachmessung (finales Review, nach FIX 1 + FIX 4):**
+
 | Triage-Befund (184 Enden) | Anzahl | Anteil |
 |---|---|---|
 | **E** — kein Bodenpunkt (Track beginnt/endet in der Luft) | 126 | 68,5 % |
-| **Kandidat** — braucht Urteil | **25** | **13,6 %** |
+| **Kandidat** — braucht Urteil | **21** | **11,4 %** |
 | **Zu dünn** — Track hat < 3 Punkte | 19 | 10,3 % |
 | **ZZZZ** — Flugplan-Platzhalter, kein Platz | 11 | 6,0 % |
+| **Mehrdeutig** — mehrere Legs teilen sich dieselbe statsim_id | 4 | 2,2 % |
 | **D** — Punkt liegt an einem anderen Platz | 3 | 1,6 % |
 
-**86,4 % mechanisch abgehakt (159 von 184), 25 echte Fragen.** Die Kandidaten zeigen keine Häufung — also kein
-zweiter Belgien-Fall in Sicht.
+**86,4 % mechanisch abgehakt (159 von 184), 21 echte Fragen.** Die Kandidaten zeigen keine Häufung — also kein
+zweiter Belgien-Fall in Sicht. Die Verschiebung gegenüber der ursprünglichen Messung (126 E / 25
+Kandidaten / 19 dünn / 11 ZZZZ / 3 D) kommt ausschließlich aus FIX 4 (4 Enden mit mehrfach
+vorkommender `statsim_id` wandern von Kandidat nach Mehrdeutig ab) — die absoluten und
+prozentualen mechanisch-abgehakt-Zahlen bleiben unverändert (159 von 184, 86,4 %). FIX 1 (AGL-
+Basiswahl) ändert für den Export vom 2026-07-15 keine Gruppenzugehörigkeit — die betroffenen
+Fälle lagen in dieser Stichprobe nicht an der Gruppengrenze.
 
 **Der Skill endet beim Urteil.** Er liefert Diagnose, Belege und ggf. einen konkreten
 Eintragsvorschlag (ICAO, Koordinate, Radius, Grund), trägt aber **nichts ein** — das bleibt beim
@@ -183,6 +191,7 @@ Die Gruppen werden **in dieser Reihenfolge** geprüft; die erste, die greift, ge
 
 | # | Gruppe | Kriterium (rein mechanisch) |
 |---|---|---|
+| 0 | **Mehrdeutig** | dieselbe `statsim_id` kommt mehrfach im Export vor — Randpunkte nicht zuordenbar |
 | 1 | **Zu dünn** | Track hat < 3 Punkte — der Detektor braucht mindestens einen Zustandswechsel (ON_GROUND → AIRBORNE → ON_GROUND); bei einem einzigen Sample ist jede weitere Aussage bedeutungslos |
 | 2 | **ZZZZ** | Soll-Code ist `ZZZZ` — Flugplan-Platzhalter, es gibt keinen Platz zu finden |
 | 3 | **E** | Randpunkt ist in der Luft (Kriterium unten) |
@@ -193,16 +202,38 @@ Die Gruppen werden **in dieser Reihenfolge** geprüft; die erste, die greift, ge
 Ein-Punkt-Tracks. Fall 27831625 (FRS96, ein einziges Sample) hätte als „Punkt gehört zu EDNR,
 0,06 km" gemeldet werden müssen — formal korrekt gemessen und trotzdem Unsinn.
 
+**Einschränkung (finales Review): mehrdeutige `statsim_id` — Gruppe 0.** Eine Session kann
+mehrere Legs erzeugen (`detect_gps_legs` trennt an Zeitlücken > 30 min, `app/gps_legs.py:53`),
+und alle Legs erben dieselbe `statsim_id`. Der Export nimmt für jeden Fall `rows[0]`/`rows[-1]`
+der ganzen Session — bei mehreren Legs stehen dann zwei Fälle mit identischer ID im Export,
+aber jeweils mit einem EIGENEN `first`/`last`. Ohne Kennzeichnung würde das zweite Leg mit dem
+Randpunkt des ersten gemessen — eine Fehlrichtung, die teuer werden kann (das zweite Leg erbt
+z. B. „E" vom airborne Start des ersten Segments, obwohl es selbst einen sauberen Bodenpunkt
+hätte). Solche Enden werden VOR jeder anderen Prüfung als `Mehrdeutig` markiert und zählen —
+wie Kandidaten — nicht als mechanisch abgehakt.
+
 **„In der Luft" (Gruppe E) — Höhe führt, Groundspeed hilft:**
 
 ```
 in_der_luft = (AGL > _GPS_GROUND_AGL_FT)  ODER  (groundspeed >= _GPS_FLYING_GS_KT)
 ```
 
-AGL wird gegen die Elevation des Soll-Platzes gerechnet; fehlt der Code in beiden Quellen, gegen
-die des nächstgelegenen Platzes. Beide Signale sind nötig und keines genügt allein — gemessen an
-den 184 Enden: **13 Enden erkennt nur die Höhe** (Groundspeed sagt fälschlich „Boden"), **5 nur
-die Groundspeed**.
+**AGL-Basis (finales Review, FIX 1): der nächstgelegene Platz, NICHT der Soll-Platz.** Der
+ursprüngliche Entwurf rechnete AGL bevorzugt gegen die Elevation des Soll-Platzes — ein Fehler:
+der Punkt steht in dieser Liste per Definition NICHT am Soll-Platz, die Soll-Elevation ist damit
+die unzuverlässigste verfügbare Basis. Beleg ETUO (Track 23066993, Punkt 51.85449/10.02288,
+alt 779 ft, gs 0, Flugzeug steht in Bad Gandersheim): Basis ETUO laut airportsdata liegt 236 ft
+hoch, aber 118 km entfernt → AGL 543 ft → Fall E, ein echter Fall-D-Kandidat wäre still
+verschwunden. Der echte Platz am Punkt, EDVA, liegt 791 ft hoch und nur 0,19 km entfernt →
+AGL −12 ft → der Punkt steht am Boden. Die Elevation muss von dem Platz kommen, der AM PUNKT
+liegt — genau wie es der Detektor selbst macht (`app/gps_legs.py:183` und `:242` holen die
+Elevation immer über `nearest_airport(...)` → `airport_elev_ft(ap)`, nie vom Flugplan-Platz).
+Der Soll-Platz bleibt nur Rückfall, wenn es gar keinen Nachbarn gibt (praktisch nie). Kein
+Distanzdeckel auf den Nachbarn (z. B. „Basis nur wenn < 4 km"): das kippt den STOL-Fall
+25216444 von E auf Kandidat, weil dessen Punkt weit von jedem bekannten Platz liegt.
+
+Beide Signale sind nötig und keines genügt allein — gemessen an den 184 Enden: **13 Enden
+erkennt nur die Höhe** (Groundspeed sagt fälschlich „Boden"), **5 nur die Groundspeed**.
 
 Das ist dieselbe Gewichtung wie im Detektor (`app/gps_legs.py:4`: *„Höhe (AGL) ist das Leitsignal,
 Groundspeed nur sekundär — STOL/Heli fliegen langsam"*). Ein erster Entwurf dieser Triage nahm
@@ -358,12 +389,22 @@ dem Export vom 2026-07-15, einer je Gruppe:
 
 Die Fixture ist 2,6 KB groß und enthält nur Callsigns und Positionen — keine Pilotennamen.
 
-Der `both`-Test ist doppelt wertvoll: 29 der 163 Fälle vermissen beide Enden, und ein Ende kann
+Der `both`-Test ist doppelt wertvoll: 21 der 163 Fälle vermissen beide Enden, und ein Ende kann
 trivial sein, während das andere ein Kandidat ist.
 
-Der EDDH-Test hängt an den importierten Konstanten: Ändert jemand `_GPS_SPAWN_MAX_AGL_FT`, ohne an
-den Skill zu denken, wird der Test **rot**, statt dass der Skill still falsch wird. Das ist die
-Absicherung dafür, dass ein Skill Wissen über Code enthält.
+**Korrektur (finales Review):** Die ursprüngliche Behauptung hier war falsch. Ein Mutationstest
+zeigt: Ändert man `_GPS_FLYING_GS_KT` (50→60), `_GPS_GROUND_AGL_FT` (300→500),
+`_GPS_SPAWN_MAX_AGL_FT` (1500→1000) oder `_BUMMEL_AIRPORT_RADIUS_KM` (4.0→8.0) einzeln, bleiben
+**alle** oben genannten Tests grün — auch der EDDH-Test. Der Grund: Assertions wie
+`assert m.ad_target.agl_ft > _GPS_SPAWN_MAX_AGL_FT` importieren beide Seiten des Vergleichs
+(Messwert *und* Schwelle) und bewegen sich mit der Konstante mit. Wer die Zahl ändert, bekommt
+also **keinen** roten Test — nur die SKILL.md, die dieselben Schwellen im Fließtext ausschreibt
+(„4 km Radius, 1500 ft Spawn, 300 ft Boden"; „AGL > 300 ft ODER groundspeed >= 50 kt"), veraltet
+still. Der Mechanismus, der das wirklich abfängt, ist
+`tests/test_triage_gaps.py::test_skill_md_zahlen_stimmen_mit_den_detektor_konstanten`: er prüft
+die **im SKILL.md-Text stehenden Zahlen** gegen die importierten Konstanten und wird rot, wenn
+eine Konstante sich ändert, ohne dass die SKILL.md nachgezogen wird — verifiziert per Mutation
+aller vier Konstanten (siehe `final-fix-report.md`).
 
 Vorgehen nach TDD: Test schreiben, RED verifizieren, dann implementieren.
 
@@ -388,7 +429,7 @@ nennt OurAirports als Quelle, deckt sich aber nachweislich nicht damit.
 - **Kein Abzug der Produktions-DB.** Der Export liefert 75 KB statt 42 MB; ein Vollabzug zöge
   Push-Subscriptions, Pilotennamen und Tokens auf lokale Platten, ohne dass die Triage davon
   irgendetwas braucht.
-- **Kein Dismiss/Schreiben aus der Triage.** Auch ein Sammelbefund „115× Fall E" wird vom Nutzer
+- **Kein Dismiss/Schreiben aus der Triage.** Auch ein Sammelbefund „126× Fall E" wird vom Nutzer
   abgehakt, nicht vom Skill.
 
 ## Offene Punkte (nicht blockierend)
@@ -398,8 +439,8 @@ nennt OurAirports als Quelle, deckt sich aber nachweislich nicht damit.
   reale Zwischenlandung darf nie verschluckt werden. Eigenes Thema.
 - **Die Lückenliste ist bei 200 Zeilen gekappt** (`app/database.py:4708`). Beim Testlauf lagen
   200 Zeilen an — es könnten also mehr offene Fälle existieren, als die Liste zeigt. Ob die
-  Kappung stört, zeigt sich erst, wenn die 47 Kandidaten abgearbeitet sind.
-- **115 Fälle „Track beginnt in der Luft" sind ein eigener Befund.** Sie sind keine Datenfehler,
-  aber 62,5 % der Liste. Ob man sie dauerhaft anders behandelt (z. B. gar nicht erst als Lücke
-  melden, wenn der Randpunkt airborne ist), ist eine Produktentscheidung — nicht Teil dieses
-  Skills, aber einen eigenen Gedanken wert.
+  Kappung stört, zeigt sich erst, wenn die 21 Kandidaten abgearbeitet sind.
+- **126 Fälle „Track beginnt/endet in der Luft" sind ein eigener Befund.** Sie sind keine
+  Datenfehler, aber 68,5 % der Liste. Ob man sie dauerhaft anders behandelt (z. B. gar nicht erst
+  als Lücke melden, wenn der Randpunkt airborne ist), ist eine Produktentscheidung — nicht Teil
+  dieses Skills, aber einen eigenen Gedanken wert.
