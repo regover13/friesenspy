@@ -13,7 +13,7 @@ from scripts.nearby_airports import find_code, load_ourairports
 FIXTURE = Path(__file__).parent / "fixtures" / "ourairports_mini.csv"
 
 
-def test_fixture_lädt_alle_fünf_plätze():
+def test_fixture_laedt_alle_fuenf_plaetze():
     refs = load_ourairports(FIXTURE)
     assert len(refs) == 5
 
