@@ -904,12 +904,12 @@ def test_both_erzeugt_zwei_enden(faelle):
 def test_ein_punkt_track_schlaegt_nachbarschaft(faelle, ad, oa):
     """27831625 hat EINEN Trackpunkt, und EDNR liegt 0,06 km daneben. Ohne die
     Punktzahl-Prüfung wäre das ein Fall-D-Befund — formal richtig gemessen und
-    trotzdem Unsinn. Sechs der urspruenglich neun D-Befunde waren solche Tracks."""
+    trotzdem Unsinn. Sechs der ursprünglich neun D-Befunde waren solche Tracks."""
     assert _gruppe(faelle, ad, oa, 27831625, "departure") == GRUPPE_DUENN
 
 
 def test_zzzz_schlaegt_luft(faelle, ad, oa):
-    """27404430 ist mit gs 147 auch in der Luft. ZZZZ ist die staerkere Aussage:
+    """27404430 ist mit gs 147 auch in der Luft. ZZZZ ist die stärkere Aussage:
     es gibt keinen Platz zu finden."""
     assert _gruppe(faelle, ad, oa, 27404430, "departure") == GRUPPE_ZZZZ
 
@@ -946,10 +946,10 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'scripts.triage_gaps'`
 Create `scripts/triage_gaps.py`:
 
 ```python
-"""Triage der Erkennungsluecken-Liste (Skill ``track-diagnose``).
+"""Triage der Erkennungslücken-Liste (Skill ``track-diagnose``).
 
 Liest den JSON-Export (siehe SKILL.md), misst je Fall das fragliche Ende und gruppiert nach
-Schritt 0 und Schritt 1 der Pruefreihenfolge — beides reine Messungen. Schritt 2 braucht
+Schritt 0 und Schritt 1 der Prüfreihenfolge — beides reine Messungen. Schritt 2 braucht
 Kontext und bleibt beim Assistenten.
 
 **Sortiert, entscheidet aber nichts.** Auch ein Sammelbefund „126x Fall E" wird vom Nutzer
@@ -1035,11 +1035,11 @@ def enden_aus_export(faelle: Sequence[dict]) -> list[Ende]:
 
 
 def _in_der_luft(punkt: dict, basis: AirportRef | None) -> tuple[bool, str]:
-    """Höhe fuehrt, Groundspeed hilft — wie im Detektor (app/gps_legs.py:4).
+    """Höhe führt, Groundspeed hilft — wie im Detektor (app/gps_legs.py:4).
 
-    Groundspeed allein genuegt NICHT: STOL/Heli fliegen langsam (Wilga ~40 kt Reise), eine
+    Groundspeed allein genügt NICHT: STOL/Heli fliegen langsam (Wilga ~40 kt Reise), eine
     gs-zentrierte Regel wertet sie als Bodenpunkt. Gemessen an 184 Enden: 13 erkennt nur die
-    Höhe, 5 nur die Groundspeed — beide Signale sind noetig.
+    Höhe, 5 nur die Groundspeed — beide Signale sind nötig.
     """
     alt = punkt.get("alt")
     gs = punkt.get("gs") or 0
@@ -1057,7 +1057,7 @@ def triagiere(
     ad_refs: Sequence[AirportRef],
     oa_refs: Sequence[AirportRef],
 ) -> Befund:
-    """Schritt 0 und Schritt 1 der Pruefreihenfolge. Erste greifende Gruppe gewinnt."""
+    """Schritt 0 und Schritt 1 der Prüfreihenfolge. Erste greifende Gruppe gewinnt."""
     if ende.punkte < MIN_TRACKPUNKTE:
         return Befund(ende, GRUPPE_DUENN, "Track hat nur %d Punkt(e)" % ende.punkte)
 
@@ -1087,7 +1087,7 @@ def triagiere(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Triage der Erkennungsluecken — sortiert, urteilt nicht.")
+    parser = argparse.ArgumentParser(description="Triage der Erkennungslücken — sortiert, urteilt nicht.")
     parser.add_argument("export", type=Path, help="gaps.json (siehe SKILL.md)")
     parser.add_argument("--gruppe", default=None, help="nur diese Gruppe ausgeben")
     args = parser.parse_args(argv)

@@ -55,12 +55,12 @@ def test_both_erzeugt_zwei_enden(faelle):
 def test_ein_punkt_track_schlaegt_nachbarschaft(faelle, ad, oa):
     """27831625 hat EINEN Trackpunkt, und EDNR liegt 0,06 km daneben. Ohne die
     Punktzahl-Prüfung wäre das ein Fall-D-Befund — formal richtig gemessen und
-    trotzdem Unsinn. Sechs der urspruenglich neun D-Befunde waren solche Tracks."""
+    trotzdem Unsinn. Sechs der ursprünglich neun D-Befunde waren solche Tracks."""
     assert _gruppe(faelle, ad, oa, 27831625, "departure") == GRUPPE_DUENN
 
 
 def test_zzzz_schlaegt_luft(faelle, ad, oa):
-    """27404430 ist mit gs 147 auch in der Luft. ZZZZ ist die staerkere Aussage:
+    """27404430 ist mit gs 147 auch in der Luft. ZZZZ ist die stärkere Aussage:
     es gibt keinen Platz zu finden."""
     assert _gruppe(faelle, ad, oa, 27404430, "departure") == GRUPPE_ZZZZ
 
