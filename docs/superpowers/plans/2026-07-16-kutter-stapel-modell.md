@@ -597,7 +597,8 @@ git commit -m "feat(kutter): Landung am Ziel liefert, Zwischenlandung laesst die
 
 **Interfaces:**
 - Consumes: alles aus Task 3.
-- Produces: das Ereignis `logout` verteilt die Ladung; `movements` bekommt
+- Produces: `_drop_load(state, cid, ts)` — der gemeinsame Helfer fuer `logout` UND einen
+  zweiten `login` ohne Logout dazwischen. `movements` bekommt
   `{"kind": "returned"|"stolen"|"sunk", ...}` — **dieselben drei Namen wie das heutige
   `loss_kind`**, damit Feed und Badge unverändert weiterlesen können.
 
@@ -699,6 +700,29 @@ def test_logout_gibt_auch_frisch_geladenes_zurueck():
 
     assert r["stacks"]["EDWG"]["Fischbroetchen"] == 800.0
     _assert_erhaltung(r)
+
+
+def test_zweiter_login_ohne_logout_verliert_keine_ware():
+    """Fable-Review 16.07. — der Erhaltungssatz braecher sonst in einem REALEN Fall.
+
+    Trigger: Ein ungracefuler Disconnect laesst die alte flights-Zeile offen (logoff_time NULL),
+    der Reconnect erzeugt eine neue. close_stale_flights raeumt erst nach 8 h auf
+    (database.py:895). In diesem Fenster liefert der Adapter zwei login-Ereignisse OHNE logout
+    dazwischen. Wuerde login die Bordladung einfach leeren, verschwaenden 800 kg aus dem
+    Universum — und weil dann Summe onboard == 0 gilt, koennte das Event mit der verschwundenen
+    Ware sogar EINFRIEREN (transport_anyone_in_progress = False). Der Freeze ist endgueltig.
+
+    Der zweite Login verteilt die alte Ladung deshalb wie ein Logout: dieselbe Regel, derselbe
+    Helfer (_drop_load) — kein Sonderfall.
+    """
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[_ev("login", 1, T0, "EDWG"), _ev("login", 1, "2026-07-01T09:01:00Z", None)],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    _assert_erhaltung(r)                                   # <- der eigentliche Test
+    assert r["stacks"]["EDWG"]["Fischbroetchen"] == 800.0   # stand am Ladeplatz -> zurueck
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -713,40 +737,67 @@ Ersetze den `logout`-Zweig in `derive_stacks`:
 
 ```python
         elif kind == "logout":
-            # Wer ausloggt, beendet seine Tour — was dann an Bord ist, bleibt liegen, wo er ist
-            # (Entscheidung 2). Das gilt auch beim unfreiwilligen Verbindungsabbruch: ein
-            # Netzausfall in der Luft ist im Track nicht von einem bewussten Ausstieg zu
-            # unterscheiden ("Ja. Ist halt so.", Nutzer 15.07.).
-            #
-            # Der Ort braucht keine Sonderregel: `position` ist bereits richtig, weil `takeoff`
-            # sie auf None gesetzt hat. Ein Logout zwischen Takeoff und Landung findet None vor
-            # -> versenkt. Genau der Fall S8 (Logout in der Luft, Sekunden spaeter Login am
-            # Platz), bei dem der Detektor EIN durchgehendes Leg mit sauberer Landung sieht.
-            where = position.get(cid)
-            load = onboard.pop(cid, None) or {}
-            if where == destination:
-                target, kind_name = None, None       # bei der Landung laengst geliefert
-            elif where in loading_airports:
-                target, kind_name = where, "returned"
-            elif where:
-                target, kind_name = STOLEN, "stolen"
-            else:
-                target, kind_name = SUNK, "sunk"
-            if target:
-                for name, kg in load.items():
-                    if kg <= _EPS:
-                        continue
-                    stacks[target][name] += kg
-                    movements.append({"ts": ts, "cid": cid, "kind": kind_name,
-                                      "airport": where, "name": name, "kg": kg})
+            _drop_load(state, cid, ts)
             position.pop(cid, None)
             since.pop(cid, None)
+```
+
+Und der `login`-Zweig gibt eine etwaige Alt-Ladung **mit derselben Regel** ab, statt sie zu leeren:
+
+```python
+        if kind == "login":
+            # Traegt er noch etwas (zwei logins ohne logout dazwischen — ungracefuler Disconnect
+            # + Reconnect, close_stale_flights raeumt erst nach 8 h auf), faellt es hier ab wie
+            # bei einem Logout. Ein blosses onboard[cid] = {} wuerde die Ware aus dem Universum
+            # loeschen und den Erhaltungssatz brechen (Fable-Review 16.07.).
+            _drop_load(state, cid, ts)
+            onboard[cid] = _empty()
+            position[cid] = e.get("airport")     # None = in der Luft eingeloggt
+            since[cid] = ts
+            if e.get("airport"):
+                last_ground[cid] = e["airport"]
+```
+
+Der gemeinsame Helfer — **eine** Regel, zwei Aufrufer:
+
+```python
+def _drop_load(state: dict, cid: int, ts: str) -> None:
+    """Die Bordladung abgeben — dorthin, wo der Pilot gerade ist (Entscheidung 2).
+
+    Wer ausloggt, beendet seine Tour: Was dann an Bord ist, bleibt liegen, wo er ist. Das gilt
+    auch beim unfreiwilligen Verbindungsabbruch — ein Netzausfall in der Luft ist im Track nicht
+    von einem bewussten Ausstieg zu unterscheiden ("Ja. Ist halt so.", Nutzer 15.07.).
+
+    Der Ort braucht keine Sonderregel: `position` ist bereits richtig, weil `takeoff` sie auf
+    None gesetzt hat. Ein Logout zwischen Takeoff und Landung findet None vor -> versenkt. Genau
+    der Fall S8 (Logout in der Luft, Sekunden spaeter Login am Platz), bei dem der Detektor EIN
+    durchgehendes Leg mit sauberer Landung sieht — eine Regel "letzter Leg -> gps_arrival"
+    ergaebe dort faelschlich 'zurueck'.
+    """
+    load = state["onboard"].pop(cid, None) or {}
+    if not any(kg > _EPS for kg in load.values()):
+        return
+    where = state["position"].get(cid)
+    if where == state["destination"]:
+        return                                   # bei der Landung laengst geliefert
+    if where in state["loading_airports"]:
+        target, kind_name = where, "returned"
+    elif where:
+        target, kind_name = STOLEN, "stolen"
+    else:
+        target, kind_name = SUNK, "sunk"
+    for name, kg in load.items():
+        if kg <= _EPS:
+            continue
+        state["stacks"][target][name] += kg
+        state["movements"].append({"ts": ts, "cid": cid, "kind": kind_name,
+                                   "airport": where, "name": name, "kg": kg})
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_transport_stacks.py -v`
-Expected: PASS (17 passed)
+Expected: PASS (18 passed)
 
 - [ ] **Step 5: Commit**
 
@@ -884,7 +935,7 @@ Ersetze in `_take` den Schleifenrumpf:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_transport_stacks.py -v`
-Expected: PASS (21 passed)
+Expected: PASS (22 passed)
 
 - [ ] **Step 5: Commit**
 
@@ -917,6 +968,39 @@ git commit -m "feat(kutter): per_flight_max_kg begrenzt die Bordladung, nicht de
 `logon_time` = **GPS-Takeoff dieses Legs** und `logoff_time` = **Landezeit** (nicht `landing_ts`!).
 Beleg im Bestand: `database.py:5527` (`leg_takeoff = current_leg.get("logon_time")`) und
 `database.py:5361` (`if _leg.get("logoff_time")` = Leg abgeschlossen).
+
+**⚠ Drei Fallen, die dieser Task lösen MUSS** (Fable-Review 16.07., alle am Code verifiziert):
+
+**1. Eine `flights`-Zeile ist KEINE VATSIM-Session.** Der Poller **splittet** eine laufende
+Verbindung, sobald der Flugplan mit **geändertem Abflugplatz** refiled wird: `close_flight` +
+`open_flight` in derselben Verbindung (`poller.py:832-852`, Log „Neues Leg CID …"). Wer unterwegs
+schon den Rückflug filed (`dep` = aktuelles Ziel), bekommt so ein `logoff_time` **mitten in der
+Luft** — ungefixt würde eine reine **Flugplan-Änderung die Fracht versenken**. Das verletzt #23
+(„der Flugplan ist keine Wahrheit") und Entscheidung 2 (die nur echte Verbindungsabbrüche meint).
+
+**Fix (Nutzer-Entscheidung 16.07.): Sessions verketten.** Endet eine Session und beginnt binnen
+`_SESSION_GAP_SEC` = 2 s eine neue derselben CID, war es ein Refile-Split — beide werden zu **einer**
+Verbindung verschmolzen, der Logout dazwischen entfällt. Das ist robust gegen
+Implementierungsdetails (der Poller schreibt Split-Zeilen zwar mit Mikrosekunden-Zeitstempel,
+`poller.py:838` — aber daran wollen wir nicht hängen). **Der echte S8-Fall bleibt ein Logout**: dort
+liegen 2:54 min zwischen Logout und Re-Login.
+
+**2. Legs nach `dtend` dürfen nicht verschwinden.** `canonicalize_legs` filtert `takeoff > end`
+(`database.py:2573-2582`). Mit `end = min(now, dtend)` sähe das Modell weder Takeoff noch Landung
+eines um 22:05 gestarteten Fluges (dtend 22:00) — der Pilot „stünde" ewig am Ladeplatz, seine Ware
+könnte **nie** ankommen, und beim Logout am Ziel würde sie als `returned` verbucht. Die Spec
+verspricht das Gegenteil (Entscheidung 10: „das Event wartet, bis die Ware angekommen ist").
+**Fix:** `end=now` für die Legs; das Event-Fenster begrenzt, welche **Sessions** teilnehmen
+(`logon_time <= dtend`), nicht welche Legs fliegen. Der Altcode löst dasselbe mit einem zweiten
+`canonicalize_legs`-Aufruf (`database.py:5344-5349`) — wir brauchen nur einen.
+
+**3. StatSim-Legs haben keine `flights`-Zeile.** Sie sind der Backfill-Pfad bei Poller-/VPS-Ausfall
+(eigene Tabellen `statsim_flights`/`statsim_position_history`, `database.py:107-130`). Ohne Session
+gäbe es für sie weder Takeoff noch Landung — sie lieferten still 0 kg, obwohl sie heute mitzählen.
+**Fix (Nutzer-Entscheidung 16.07.): wie ein normaler Flug.** Ein StatSim-Leg erzeugt seine
+Ereignisse selbst: `login` am `gps_departure`, `takeoff`, `landing` — und ein `logout` am Landeort,
+denn der Flug ist vorbei. Landet er am Ziel, liefert er; landet er woanders, gilt dort dieselbe
+Regel wie sonst.
 
 **Der Login-Ort — Regel (kein Flugplan, #23):**
 
@@ -1009,7 +1093,97 @@ class TestStackInputs:
         inp = _stack_inputs(conn, ev, END)
 
         assert [c["name"] for c in inp["manifest"]] == ["Zuerst", "Danach"]
+
+    def test_refile_split_ist_kein_logout(self):
+        """Fable-Review 16.07. (BLOCKER): Der Poller splittet eine LAUFENDE Verbindung, sobald
+        der Flugplan mit geaendertem Abflugplatz refiled wird (poller.py:832) — close_flight +
+        open_flight. Wer unterwegs den Rueckflug filed, bekaeme so ein logoff_time in der Luft
+        und seine Fracht wuerde durch eine reine Flugplan-Aenderung versenkt (#23-Verstoss).
+        """
+        from app.database import _stack_inputs
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        # Session 1: bis 09:30:00 (Poller schliesst sie beim Refile)
+        _add_flight(conn, 12, "EDWG", "EDXH", "C208", START, duration_min=30)
+        # Session 2: 09:30:00.123456 — Mikrosekunden = Split-Signatur des Pollers
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, logon_time) "
+            "VALUES (12, 'FRS12', 'C208', 'EDXH', 'EDWG', ?)",
+            ("2026-07-01T09:30:00.123456Z",),
+        )
+        conn.commit()
+
+        inp = _stack_inputs(conn, ev, END)
+
+        # EINE Verbindung: kein logout dazwischen, nur der (noch offene) Rest.
+        assert [e["kind"] for e in inp["events"]].count("logout") == 0
+        assert [e["kind"] for e in inp["events"]].count("login") == 1
+        assert len(inp["sessions"]) == 1
+        assert inp["sessions"][0]["logoff_time"] is None   # verkettet -> die Session laeuft
+
+    def test_echter_logout_bleibt_ein_logout(self):
+        """Gegenprobe zu S8 (Nutzer-Fund, flights.id 357/358): 2:54 min Luecke = echter Logout,
+        keine Verkettung. Sonst wuerde der Fix den Fall kaputtmachen, den er schuetzen soll."""
+        from app.database import _stack_inputs
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        _add_flight(conn, 12, "EDWG", "EDXH", "C208", START, duration_min=30)   # bis 09:30
+        _add_open_flight(conn, 12, "EDWG", "EDXH", "C208", "2026-07-01T09:32:54Z")
+
+        inp = _stack_inputs(conn, ev, END)
+
+        assert [e["kind"] for e in inp["events"]].count("logout") == 1
+        assert len(inp["sessions"]) == 2
+
+    def test_leg_nach_dtend_geht_nicht_verloren(self):
+        """Fable-Review 16.07. (BLOCKER): canonicalize_legs filtert takeoff > end
+        (database.py:2573). Mit end=min(now,dtend) koennte die Ware eines um 22:05 gestarteten
+        Fluges NIE ankommen — Widerspruch zu Entscheidung 10."""
+        from app.database import _stack_inputs
+        from app.geo import icao_to_coords, airport_elevation_ft
+        conn = _make_conn()
+        ev = self._load_event(conn)          # dtend = END = 23:00
+        spaet = "2026-07-01T22:55:00Z"       # Start kurz vor dtend, Landung DANACH
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        alat, alon = icao_to_coords("EDXH")
+        aelev = airport_elevation_ft("EDXH") or 0
+        _add_flight(conn, 12, "EDWG", "EDXH", "C208", spaet, duration_min=30)
+        _add_pos(conn, 12, spaet, dlat, dlon, 0, alt=delev)
+        _add_pos(conn, 12, _shift(spaet, 2), dlat, dlon, 80, alt=delev + 1200)
+        _add_pos(conn, 12, _shift(spaet, 28), alat, alon, 40, alt=aelev + 400)
+        _add_pos(conn, 12, _shift(spaet, 30), alat, alon, 0, alt=aelev)   # 23:25 — NACH dtend
+
+        inp = _stack_inputs(conn, ev, "2026-07-01T23:40:00Z")
+
+        assert "landing" in [e["kind"] for e in inp["events"]]
+        landing = next(e for e in inp["events"] if e["kind"] == "landing")
+        assert landing["airport"] == "EDXH"
+
+    def test_statsim_leg_erzeugt_eigene_ereignisse(self):
+        """Nutzer-Entscheidung 16.07.: StatSim (Backfill bei VPS-Ausfall) zaehlt wie ein
+        normaler Flug — Login am Startplatz, Takeoff, Landung, Logout am Landeort."""
+        from app.database import _stack_inputs
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        # StatSim-Flug OHNE flights-Zeile (der Poller lief nicht):
+        conn.execute(
+            "INSERT INTO statsim_flights (statsim_id, cid, callsign, departure, arrival, "
+            "aircraft, logon_time, logoff_time) VALUES (9001, 12, 'FRS12', 'EDWG', 'EDXH', "
+            "'C208', ?, ?)", (START, _shift(START, 30)),
+        )
+        conn.commit()
+
+        inp = _stack_inputs(conn, ev, END)
+        kinds = [e["kind"] for e in inp["events"]]
+
+        assert kinds == ["login", "takeoff", "landing", "logout"]
+        assert inp["events"][0]["airport"] == "EDWG"
 ```
+
+*(Der StatSim-Test setzt voraus, dass `statsim_flights` das Schema aus `database.py:107` hat —
+beim Schreiben des Tests dort nachsehen und die Spalten exakt übernehmen; `statsim_position_history`
+braucht zusätzlich einen Track, damit `canonicalize_legs` ein Leg erkennt.)*
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1033,21 +1207,78 @@ def _sort_stack_events(events: list[dict]) -> list[dict]:
     return sorted(events, key=lambda e: (e["ts"], _STACK_EVENT_PRIO.get(e["kind"], 9), e["cid"]))
 
 
+# Refile-Splits erkennen: Der Poller schliesst eine laufende Verbindung und oeffnet sofort eine
+# neue, sobald der Flugplan mit GEAENDERTEM Abflugplatz refiled wird (poller.py:832-852). Beide
+# Zeilen gehoeren zu EINER VATSIM-Verbindung — der "Logout" dazwischen ist keiner. Zwei Sekunden
+# reichen als Grenze: der Split passiert im selben Poll-Takt (close/open unmittelbar nacheinander),
+# ein echter Reconnect braucht laenger. Belegter Gegenfall S8 (flights.id 357/358): 2:54 min.
+_SESSION_GAP_SEC = 2
+
+
 def _transport_sessions(conn: sqlite3.Connection, start: str, end: str,
                         callsign_prefix: str) -> list[dict]:
-    """VATSIM-Sessions, die das Event-Fenster beruehren (offene wie geschlossene).
+    """VATSIM-Verbindungen, die das Event-Fenster beruehren (offene wie geschlossene).
 
-    Der Logout ist ein Ereignis der SESSION, nicht des Tracks (Spec) — der GPS-Detektor kennt
+    Der Logout ist ein Ereignis der VERBINDUNG, nicht des Tracks (Spec) — der GPS-Detektor kennt
     keine Verbindungsgrenzen und segmentiert erst bei Luecken > 30 min.
+
+    **Achtung, Refile-Split (Fable-Review 16.07.):** Eine `flights`-Zeile ist KEINE Verbindung.
+    Der Poller splittet bei einem Refile mit geaendertem Abflugplatz (close_flight + open_flight,
+    poller.py:832) — wer unterwegs den Rueckflug filed, haette sonst ein logoff_time IN DER LUFT
+    und seine Fracht wuerde durch eine reine Flugplan-Aenderung versenkt (#23-Verstoss). Solche
+    Zeilen werden hier wieder zu einer Verbindung VERKETTET.
+
+    ``logon_time <= end`` begrenzt die TEILNAHME (wer nach dtend einloggt, macht nicht mehr mit);
+    die LEGS laufen bewusst bis ``now`` weiter (s. _stack_inputs) — sonst koennte die Ware eines
+    kurz vor dtend gestarteten Fluges nie ankommen.
     """
     rows = conn.execute(
         "SELECT cid, callsign, aircraft_short AS aircraft, aircraft_icao, logon_time, logoff_time "
         "FROM flights WHERE superseded_by IS NULL AND callsign LIKE ? "
         "AND logon_time <= ? AND (logoff_time IS NULL OR logoff_time >= ?) "
-        "ORDER BY logon_time",
+        "ORDER BY cid, logon_time",
         (callsign_prefix + "%", end, start),
     ).fetchall()
-    return [dict(r) for r in rows]
+
+    merged: list[dict] = []
+    for r in (dict(x) for x in rows):
+        prev = merged[-1] if merged else None
+        if (prev is not None and prev["cid"] == r["cid"] and prev.get("logoff_time")
+                and _gap_seconds(prev["logoff_time"], r["logon_time"]) <= _SESSION_GAP_SEC):
+            # Refile-Split: dieselbe Verbindung laeuft weiter. Das Ende der neuen Zeile gilt,
+            # das Muster ebenso (der Pilot kann beim Refile den Typ gewechselt haben).
+            prev["logoff_time"] = r.get("logoff_time")
+            prev["aircraft"] = r.get("aircraft") or prev.get("aircraft")
+            prev["aircraft_icao"] = r.get("aircraft_icao") or prev.get("aircraft_icao")
+            continue
+        merged.append(r)
+    merged.sort(key=lambda s: (s["logon_time"], s["cid"]))
+    return merged
+
+
+def _gap_seconds(a: str, b: str) -> float:
+    """Sekunden zwischen zwei ISO-Zeitstempeln (b - a); inf bei unlesbaren Werten."""
+    try:
+        return (_parse_iso(b) - _parse_iso(a)).total_seconds()
+    except (ValueError, AttributeError, TypeError):
+        return float("inf")
+
+
+def _covered_by_session(sessions: list[dict], cid: int, takeoff: str | None) -> bool:
+    """Deckt eine echte VATSIM-Verbindung dieses Leg ab? (StatSim-Doppelzaehlung verhindern.)
+
+    canonicalize_legs verwirft StatSim-Legs, die einen FriesenSpy-Flug DESSELBEN cid ueberlappen,
+    bereits selbst (database.py:2499 ff.) — aber nur PRO FLUG, ein unueberdeckter Rest ueberlebt
+    bewusst (z. B. nach einem FS-Absturz). Dieser Test haelt die Ereignis-Erzeugung dazu konsistent.
+    """
+    if not takeoff:
+        return False
+    for s in sessions:
+        if int(s["cid"]) != cid:
+            continue
+        if (s.get("logon_time") or "") <= takeoff <= (s.get("logoff_time") or "9999"):
+            return True
+    return False
 
 
 def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
@@ -1078,10 +1309,16 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
     ]
 
     start = event.get("dtstart") or ""
-    end = min(now, event.get("dtend") or now)
+    window_end = min(now, event.get("dtend") or now)   # begrenzt die TEILNAHME (Sessions)
     load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
 
-    legs = canonicalize_legs(conn, start=load_start, end=end, callsign_prefix=callsign_prefix)
+    # LEGS laufen bis `now`, NICHT bis dtend: canonicalize_legs filtert takeoff > end
+    # (database.py:2573) — mit dtend als Grenze koennte die Ware eines kurz vor Schluss
+    # gestarteten Fluges nie ankommen (Entscheidung 10 verspricht das Gegenteil). Der Altcode
+    # loeste dasselbe mit einem ZWEITEN canonicalize_legs-Aufruf (database.py:5344); hier
+    # reicht einer.
+    legs = canonicalize_legs(conn, start=load_start, end=now, callsign_prefix=callsign_prefix)
+    legs = [g for g in legs if (g.get("logoff_time") or now) >= start]   # nichts vor dem Fenster
     legs_by_cid: dict[int, list[dict]] = {}
     for leg in legs:
         if leg.get("cid") is None:
@@ -1090,7 +1327,7 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
     for rows in legs_by_cid.values():
         rows.sort(key=lambda x: x.get("logon_time") or "")
 
-    sessions = _transport_sessions(conn, start, end, callsign_prefix)
+    sessions = _transport_sessions(conn, start, window_end, callsign_prefix)
     out: list[dict] = []
     for s in sessions:
         cid = int(s["cid"])
@@ -1139,6 +1376,37 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
         if lf:
             out.append({"ts": lf, "kind": "logout", "cid": cid, "airport": None, "capacity_kg": cap})
 
+    # --- StatSim-Legs: Backfill bei Poller-/VPS-Ausfall (Nutzer-Entscheidung 16.07.) ---
+    # Sie haben KEINE flights-Zeile (eigene Tabellen, database.py:107-130) und wuerden sonst
+    # still 0 kg liefern, obwohl sie heute mitzaehlen. Behandlung: wie ein normaler Flug — der
+    # Flug ist vorbei, also gehoert ein Logout am Landeort dazu.
+    session_cids = {int(s["cid"]) for s in sessions}
+    for cid, rows in legs_by_cid.items():
+        for g in rows:
+            if not g.get("statsim_id"):
+                continue
+            if cid in session_cids and _covered_by_session(sessions, cid, g.get("logon_time")):
+                continue     # eine echte Verbindung deckt dieses Leg ab -> kein Doppel
+            type_code = normalize_type_code(g.get("aircraft_icao")) or normalize_type_code(g.get("aircraft"))
+            cap = round(payload_map.get(type_code, default_kg), 1)
+            dep = normalize_type_code(g.get("gps_departure")) or None
+            out.append({"ts": g["logon_time"], "kind": "login", "cid": cid,
+                        "airport": dep if dep in route_set else None, "capacity_kg": cap})
+            out.append({"ts": g["logon_time"], "kind": "takeoff", "cid": cid,
+                        "airport": None, "capacity_kg": cap})
+            if g.get("logoff_time"):
+                arr = normalize_type_code(g.get("gps_arrival")) or None
+                out.append({"ts": g["logoff_time"], "kind": "landing", "cid": cid,
+                            "airport": arr, "capacity_kg": cap})
+                # Der Logout MUSS nach der Landung liegen: bei gleichem ts gewinnt laut
+                # _STACK_EVENT_PRIO der Logout — er faende dann position=None vor und wuerde die
+                # Ladung VERSENKEN statt sie abzuliefern. Eine Sekunde spaeter, synthetisch.
+                out.append({
+                    "ts": (_parse_iso(g["logoff_time"]) + timedelta(seconds=1))
+                          .strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "kind": "logout", "cid": cid, "airport": None, "capacity_kg": cap,
+                })
+
     return {
         "manifest": manifest,
         "events": _sort_stack_events(out),
@@ -1152,7 +1420,7 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_transport.py::TestStackInputs -v`
-Expected: PASS (4 passed)
+Expected: PASS (8 passed)
 
 Dann die Gegenprobe, dass **nichts Bestehendes** kaputt ist (der alte Kern läuft unverändert weiter):
 
@@ -1427,25 +1695,32 @@ def compute_transport_progress(
     **Erhaltungssatz:** Summe Stapel + Summe Ladung == Summe Manifest. Ware entsteht nicht und
     verschwindet nicht; ``total_kg`` kann den Balken daher nicht ueberzeichnen (#63).
 
-    ``radius_km`` wird nur noch fuer die Signatur-Vertraeglichkeit angenommen und ignoriert (der
-    Anwesenheitsradius ist seit #23 global ``_BUMMEL_AIRPORT_RADIUS_KM``). ``skip_open_probe``
-    blendet bei einem abgeschlossenen Event die noch offenen Sessions aus (#66) — deren Ladung
-    ist beim Freeze ohnehin verteilt.
+    ``radius_km`` und ``skip_open_probe`` werden nur noch fuer die Signatur-Vertraeglichkeit
+    angenommen und **ignoriert**:
+
+    * ``radius_km`` — der Anwesenheitsradius ist seit #23 global (``_BUMMEL_AIRPORT_RADIUS_KM``).
+    * ``skip_open_probe`` (#66) hatte zwei Gruende, beide entfallen. (1) Kosten: Es sparte den
+      ZWEITEN ``canonicalize_legs``-Aufruf — hier laeuft nur einer. (2) Richtigkeit: Es verhinderte,
+      dass der Freeze eine ``in_air``-Zeile fuer immer als "unterwegs" einfriert. Das kann nicht
+      mehr passieren, weil das Modell es selbst ausschliesst: Eingefroren wird erst, wenn niemand
+      mehr Ware traegt (Entscheidung 10, :func:`transport_anyone_in_progress`) — und eine
+      ``in_air``-Zeile entsteht nur MIT Ware an Bord. Es gibt also nichts wegzufiltern.
+
+    (Ein Filter waere hier sogar schaedlich gewesen: pro CID statt pro Session gefiltert, haette
+    er dem Piloten, der eben geliefert hat und noch online am Ziel parkt, seine ganze Tonnage aus
+    dem Snapshot geloescht — Fable-Review 16.07.)
     """
     inp = _stack_inputs(conn, event, now, callsign_prefix=callsign_prefix)
     manifest, dest = inp["manifest"], inp["destination"]
     route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
     payload_map = get_payload_map(conn)
     default_kg = transport_default_payload_kg(conn)
+    if not dest:
+        # Ohne Ziel gibt es keinen Ziel-Stapel — und eine Landung mit unerkanntem Platz
+        # (airport=None) wuerde sonst `airport == destination` erfuellen und ins Nichts liefern.
+        return _empty_transport_progress(event, route_set, manifest)
 
-    events = inp["events"]
-    if skip_open_probe:
-        # #66: abgeschlossenes Event — noch offene Sessions tragen nichts mehr bei und wuerden
-        # eingefroren fuer immer "unterwegs" anzeigen.
-        open_cids = {int(s["cid"]) for s in inp["sessions"] if not s.get("logoff_time")}
-        events = [e for e in events if e["cid"] not in open_cids]
-
-    r = derive_stacks(manifest=manifest, events=events, destination=dest,
+    r = derive_stacks(manifest=manifest, events=inp["events"], destination=dest,
                       loading_airports=inp["loading_airports"])
     stacks, onboard = r["stacks"], r["onboard"]
 
@@ -1481,8 +1756,6 @@ def compute_transport_progress(
     network: list[dict] = []
     for s in inp["sessions"]:
         cid = int(s["cid"])
-        if skip_open_probe and not s.get("logoff_time"):
-            continue
         type_code = normalize_type_code(s.get("aircraft_icao")) or normalize_type_code(s.get("aircraft"))
         if type_code and type_code not in payload_map:
             unmapped.add(type_code)
@@ -1516,12 +1789,18 @@ def compute_transport_progress(
             }
             network.append(row)
 
-        # Verlust-Zeile (Logout mit Ware an Bord) — an die Session, nicht an ein Leg.
+        # Verlust-Zeile (Logout mit Ware an Bord). Sie gehoert an das LETZTE Leg DIESER Session —
+        # `next(reversed(network) if cid == …)` waere falsch: es fischt quer ueber Sessions und
+        # koennte eine bereits mit einem Verlust behaftete Zeile ueberschreiben (aus zwei
+        # Rueckgaben wuerde eine, Fable-Review 16.07.).
         ls = loss_by.get((cid, s.get("logoff_time") or ""), [])
         if ls:
             kind = ls[0]["kind"]
             lost = round(sum(m["kg"] for m in ls), 1) if kind in ("stolen", "sunk") else 0.0
-            target = next((q for q in reversed(network) if q["cid"] == cid and not q["loaded"]), None)
+            own_keys = {f"{cid}:{g.get('logon_time') or ''}" for g in own}
+            target = next((q for q in reversed(network)
+                           if q["flight_key"] in own_keys and not q["loaded"]
+                           and not q.get("loss_kind")), None)
             if target is not None:
                 target["loss_kind"], target["lost_kg"] = kind, lost
                 target["cargo_lines"] = _lines(ls)
@@ -1585,8 +1864,21 @@ def compute_transport_progress(
     target_kg = round(sum(c["target_kg"] for c in manifest), 1) if manifest else None
 
     # --- Teilnehmer + Sichtbarkeit (Entscheidung 14) ---
-    visible_places = set(inp["loading_airports"]) | ({dest} if dest else set())
+    # WICHTIG: parts entsteht aus den SESSIONS, nicht aus dem Feed. Ein Pilot ohne Feed-Zeile ist
+    # trotzdem Teilnehmer — der Wartende am leeren Stapel (Entscheidung 13) und der Pilot, der
+    # leer am Ziel parkt (Spec-Statustabelle: `🅿️ steht in EDXH · 0 kg`), haben beide kein Leg
+    # und keine Ladung. Aus dem Feed gebaut waeren sie unsichtbar, obwohl die Sichtbarkeits-
+    # formel sie einschliesst (Fable-Review 16.07.).
+    visible_places = set(inp["loading_airports"]) | {dest}
     parts: dict[int, dict] = {}
+    for s in inp["sessions"]:
+        cid = int(s["cid"])
+        parts.setdefault(cid, {
+            "cid": cid, "name": names.get(cid, ""), "callsign": s.get("callsign") or "",
+            "aircraft": normalize_type_code(s.get("aircraft") or s.get("aircraft_icao") or ""),
+            "flights": 0, "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0,
+            "status": "done",
+        })
     for q in network:
         p = parts.setdefault(int(q["cid"]), {
             "cid": int(q["cid"]), "name": q.get("name") or "", "callsign": q.get("callsign") or "",
@@ -1606,8 +1898,17 @@ def compute_transport_progress(
         # (Entscheidung 14). Kostet kein Feld: beide Werte fuehrt das Modell ohnehin — die
         # Ladung IST der Flieger-Stapel, der letzte Bodenkontakt IST der Logout-Ort.
         p["visible"] = (r["last_ground"].get(cid) in visible_places) or aboard > 0.01
-        p["status"] = "flying" if aboard > 0.01 else ("dabei" if where is None else "done")
         p["place"] = where          # None = unterwegs; sonst das ICAO, an dem er steht
+        # Der Status ist eine grobe Kategorie fuer die API; die ANZEIGE leitet das Frontend aus
+        # place + reserved_kg ab (Ort x Ladung, Spec). Werte ehrlich statt `arrived`/`returning`:
+        if aboard > 0.01:
+            p["status"] = "flying" if where is None else "loaded"
+        elif where is None:
+            p["status"] = "dabei"                       # leer in der Luft — macht noch mit
+        elif where in inp["loading_airports"]:
+            p["status"] = "loading"                     # steht am Stapel
+        else:
+            p["status"] = "standing"                    # Ziel oder fremder Platz
         # Was er traegt — der Live-Block zeigt es je Pilot (index.html, fetchKutterActive).
         p["cargo_lines"] = [{"name": n, "emoji": emoji_of.get(n), "kg": round(kg, 1)}
                             for n, kg in load.items() if kg > 0.01]
@@ -1634,6 +1935,27 @@ def compute_transport_progress(
     }
 ```
 
+Und der Helfer fuer den fehlenden `dest` (Fable-Review K3 — der Altcode schuetzte alles mit
+`bool(dest)`; ohne Guard wuerde eine Landung mit unerkanntem Platz (`airport=None`) die Bedingung
+`airport == destination` erfuellen und ins Nichts liefern):
+
+```python
+def _empty_transport_progress(event: dict, route_set: set[str], manifest: list[dict]) -> dict:
+    """Leerer Fortschritt fuer ein Event ohne Ziel — es kann keine Lieferung geben."""
+    return {
+        "route": sorted(route_set), "destination": None, "flights": [],
+        "cargo": [{"name": c["name"], "emoji": c.get("emoji"), "target_kg": c["target_kg"],
+                   "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "pct": 0.0,
+                   "per_flight_max_kg": c.get("per_flight_max_kg"),
+                   "departure": c.get("departure")} for c in manifest],
+        "total_kg": 0.0, "flight_count": 0, "loaded_count": 0,
+        "target_kg": round(sum(c["target_kg"] for c in manifest), 1) if manifest else None,
+        "progress_pct": None, "reserved_total_kg": 0.0, "unmapped_types": [],
+        "summary_quip": event.get("summary_quip"), "losses": [], "lost_total_kg": 0.0,
+        "participants": [],
+    }
+```
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_transport.py::TestStapelProgress -v`
@@ -1657,12 +1979,16 @@ git commit -m "feat(kutter): compute_transport_progress rechnet mit Stapeln stat
 ### Task 9: Der Latch-Rückbau
 
 **Files:**
-- Modify: `app/database.py` — löschen: `set_transport_live_arrival` (4928-4936),
-  `get_transport_live_arrivals` (4939-4951), `_LATCH_SLACK_SEC` (4978), `_latch_hits_flight`
-  (4981-5021), `check_live_arrival` (5193-5240). Umbauen: `detect_transport_losses` (5038-5140),
-  `transport_anyone_in_progress` (5241-5275).
-- Modify: `app/poller.py:45` (Import), `app/poller.py:858-873` (Aufruf)
-- Modify: `tests/test_transport.py` — löschen/umbauen (Liste unten)
+- Modify: `app/database.py` — **ersatzlos löschen**: `set_transport_live_arrival` (4928-4936),
+  `get_transport_live_arrivals` (4939-4951), `record_transport_loss` (4954-4962),
+  `get_transport_losses` (4965-4971), `_LATCH_SLACK_SEC` (4974-4978), `_latch_hits_flight`
+  (4981-5021), `detect_transport_losses` (5038-5140), `check_live_arrival` (5193-5240),
+  `active_transport_destinations` (5143-5151), `open_transport_flights` (5154-5161),
+  `_returning_pilot_landed` (5164-5176). **Umbauen**: `transport_anyone_in_progress` (5241-5275).
+- Modify: `app/poller.py` — Importe Z. 44/45, der Block Z. 858-873, der Kommentar Z. 561,
+  Import + Aufruf von `detect_transport_losses` (Z. 1243/1299)
+- Modify: `tests/test_transport.py`, `tests/test_poller.py`, `scripts/kutter_ladung_szenarien.py`
+  — löschen/umbauen (Listen unten)
 
 **Interfaces:**
 - `transport_anyone_in_progress(conn, event, *, started_before=None, callsign_prefix="FRS",
@@ -1674,11 +2000,28 @@ Die Streckenprüfung entfällt — sie war ein *Proxy* für „trägt vermutlich
 ein Modell ohne Ladungsbegriff hatte. **Verhaltensänderung (gewollt):** Ein leerer Pilot hält den
 Feierabend nicht mehr auf; ein beladener sehr wohl, auch über `dtend` hinaus.
 
-**`detect_transport_losses`:** Verluste sind jetzt eine Ableitung (`movements`). Die Funktion bleibt
-nur als **Latch für den Push** (`transport_cargo_losses`) — der Poller braucht ein „neu erkannt"-
-Signal. Ihre eigene Positions-Klassifikation (`nearest_airport` mit `_LANDED_MAX_GS_KT` = 40, ohne
-AGL-Guard) entfällt ersatzlos; das löst zugleich **A10** (Großplatz > 4 km vom ARP → fälschlich
-„sunk").
+**`detect_transport_losses` entfällt ERSATZLOS — samt `record_transport_loss`,
+`get_transport_losses` und dem Schreiben in `transport_cargo_losses`.**
+
+Die Spec ließ offen, ob die Funktion „als Latch für den Push" bleiben muss. **Sie muss nicht — den
+Push gibt es nicht** (Fable-Review 16.07., am Code verifiziert):
+
+- `poller.py:1299` ruft sie auf und **wirft den Rückgabewert weg**; im ganzen Repo existiert kein
+  Verlust-Push.
+- Einziger Leser von `get_transport_losses` ist `compute_transport_progress:5581` — also genau die
+  Funktion, die Task 8 ersetzt — plus die Funktion selbst (Idempotenz-Check, `:5065`).
+
+Bliebe sie stehen, schriebe sie in eine Tabelle, die **niemand mehr liest**: zwei
+Klassifikations-Wahrheiten ohne Konsumenten — exakt die Doppelbuchhaltung, die dieser Umbau abbaut.
+Die Verluste stehen jetzt in `movements` und fließen über `losses[]`/`lost_total_kg` in denselben
+API-Vertrag wie bisher.
+
+Damit entfällt auch ihre eigene Positions-Klassifikation (`nearest_airport` mit
+`_LANDED_MAX_GS_KT` = 40, **ohne AGL-Guard**) — das löst zugleich **A10** (Großplatz > 4 km vom ARP
+→ fälschlich „sunk").
+
+`transport_cargo_losses` wird **nicht gedroppt** (Altdaten, stört nicht), nur nicht mehr
+geschrieben und nicht mehr gelesen.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1774,46 +2117,26 @@ Dann **löschen** (in dieser Reihenfolge, damit der Import-Check greift):
 `poller.py:858-873` (Abschnitt „2c. Live-Ankunft prüfen") ersatzlos löschen — die Landung am Ziel
 erkennt der Detektor selbst, sofort beim Touchdown.
 
-`detect_transport_losses` (`database.py:5038-5140`) ersetzen:
+**Ersatzlos löschen** (die Verluste stehen jetzt in `movements`, s. o.):
 
-```python
-def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") -> int:
-    """Neue Fracht-Verluste latchen (idempotent, Poll-Takt-tauglich) — fuer den PUSH.
-
-    Die Wertung braucht diese Tabelle nicht mehr: Verluste sind eine Ableitung des Stapel-Modells
-    (``movements`` mit kind returned/stolen/sunk). Der Poller braucht aber ein "neu erkannt"-
-    Signal, um genau einmal zu benachrichtigen — dafuer bleibt ``transport_cargo_losses`` der
-    Latch. Die frueher hier eigene Positions-Klassifikation (nearest_airport mit
-    _LANDED_MAX_GS_KT=40, ohne AGL-Guard) entfaellt ersatzlos: der Logout-Ort steht im Modell
-    (position beim logout-Ereignis) und ist genauer. Das loest zugleich A10 (Grossplatz > 4 km
-    vom ARP wurde faelschlich "sunk").
-    """
-    inp = _stack_inputs(conn, event, _now_utc(), callsign_prefix=callsign_prefix)
-    if not inp["destination"]:
-        return 0
-    r = derive_stacks(manifest=inp["manifest"], events=inp["events"],
-                      destination=inp["destination"], loading_airports=inp["loading_airports"])
-    existing = {(l["cid"], l["logon_time"]) for l in get_transport_losses(conn, int(event["id"]))}
-    sessions = {(int(s["cid"]), s.get("logoff_time")): s for s in inp["sessions"]}
-    now = _now_utc()
-    new = 0
-    seen: set[tuple[int, str]] = set()
-    for m in r["movements"]:
-        if m["kind"] not in ("returned", "stolen", "sunk"):
-            continue
-        s = sessions.get((m["cid"], m["ts"]))
-        if s is None:
-            continue
-        key = (m["cid"], s["logon_time"])
-        if key in existing or key in seen:
-            continue
-        type_code = normalize_type_code(s.get("aircraft_icao")) or normalize_type_code(s.get("aircraft"))
-        record_transport_loss(conn, int(event["id"]), m["cid"], s["logon_time"], m["kind"],
-                              type_code, s.get("callsign") or "", None, m.get("airport"), now)
-        seen.add(key)
-        new += 1
-    return new
+```bash
+# app/database.py — diese Bloecke ebenfalls ersatzlos entfernen:
+#   record_transport_loss          (4954-4962)
+#   get_transport_losses           (4965-4971)
+#   detect_transport_losses        (5038-5140)
 ```
+
+`app/poller.py`: `detect_transport_losses` aus dem Import (Z. 1243) und den Aufruf (Z. 1299) samt
+seiner `if ev.get("destination"):`-Zeile entfernen.
+
+**Verwaiste Bausteine, die dabei mit abfallen** (Fable-Review — sonst bleibt tote API stehen):
+
+- `active_transport_destinations` (`database.py:5143`) — verliert mit dem gelöschten Poller-Block
+  seinen letzten Aufrufer; auch der Import `poller.py:44` und der Kommentar `poller.py:561`
+  („Live-Ankunft (FriesenKutter) → check_live_arrival je Pilot") gehen.
+- `open_transport_flights` (`database.py:5154`) und `_returning_pilot_landed` (`:5164`) — ihr
+  letzter Produktions-Aufrufer war der Offen-Zweig der alten `compute_transport_progress`. Prüfen
+  und mit ihren Tests entfernen (`tests/test_transport.py:612-624`).
 
 - [ ] **Step 4: Die entfallenen Tests entfernen und die Latch-Fixtures umbauen**
 
@@ -1872,9 +2195,24 @@ umschreiben):
 | `TestCargoLosses` (16 Tests) | 1342-1662 | Latch-Kopplung + entfallende Positions-Eigenprüfung |
 | `TestCoLoadPerDeparture.test_latch_fallback_unknown_dep_fills_all` | 1218 | Der Fallback entfällt (S3b: erzeugte Ware) |
 | `TestGroundLoading` (5 Tests) | 2717-2780 | „lädt" beansprucht jetzt echte Stapelware |
+| `TestCargoLosses` (16 Tests) | 1342-1662 | `detect_transport_losses` ist weg — die Verluste kommen jetzt aus `compute_transport_progress` (`losses[]`). Die Fälle bleiben gültig, nur der Prüfpfad ändert sich. |
 
-Run: `pytest tests/ -q`
-Expected: **alle grün**. Erst dann ist Task 9 fertig.
+**`tests/test_poller.py` NICHT vergessen** (Fable-Review — stand nicht in meiner ersten Liste und
+hätte „alle grün" unerreichbar gemacht):
+
+| Stelle | Was |
+|---|---|
+| `tests/test_poller.py:509-635` | Latch-Integrationstest, importiert `get_transport_live_arrivals` + `compute_transport_progress` |
+| `tests/test_poller.py:2195-2236` | nutzt `get_transport_live_arrivals` |
+
+**`scripts/kutter_ladung_szenarien.py` bricht beim Import** (Z. 37, 177, 186:
+`set_transport_live_arrival`) — ausgerechnet das Skript, das dieser Plan als Vorlage und S8-Beleg
+zitiert. Die Latch-Szenarien S2b/S3b entfallen (sie zeigten den Fehler, den es nicht mehr gibt);
+S1–S5 und S8 bleiben und müssen weiter laufen.
+
+Run: `pytest tests/ -q && python -m scripts.kutter_ladung_szenarien`
+Expected: **alle grün**, und die Szenarien zeigen S2 = 800 Fisch + 200 Tee, S3 = 800 Fisch,
+S4 = Ware liegt in EDWZ, S8 = versenkt. Erst dann ist Task 9 fertig.
 
 - [ ] **Step 5: Commit**
 
@@ -2212,7 +2550,9 @@ git commit -m "docs(kutter): Stapel-Modell dokumentiert, Snapshot-Version 4, v9.
 
 | Risiko | Gegenmittel |
 |---|---|
-| **Big Bang** — der Latch kann nicht halb weg sein (`compute_transport_progress` und `detect_transport_losses` hängen beide an ihm) | Task 7 ist das Netz: Die Migration wird verifiziert, **bevor** ein produktiver Pfad angefasst wird. |
+| **Big Bang** — der Latch kann nicht halb weg sein | Task 7 ist das Netz: Die Migration wird verifiziert, **bevor** ein produktiver Pfad angefasst wird. |
+| **Das Task-7-Gate deckt die Adapter-Fallen NICHT ab** (Fable-Review): Die vier Alt-Events haben nur geschlossene Sessions, vermutlich keine Refile-Splits und kein StatSim im Fenster. Ein grünes Gate beweist die Migration, nicht den Adapter. | Deshalb hat **jede** der drei Fallen einen eigenen Test in Task 6 (`test_refile_split_ist_kein_logout`, `test_leg_nach_dtend_geht_nicht_verloren`, `test_statsim_leg_erzeugt_eigene_ereignisse`) plus die Gegenprobe `test_echter_logout_bleibt_ein_logout`. |
+| **Die 2-Sekunden-Grenze der Session-Verkettung** ist eine Annahme über den Poll-Takt | Gegenprobe im Test: S8 (2:54 min Lücke) muss ein Logout **bleiben**. Wird der Split je anders implementiert, schlägt `test_refile_split_ist_kein_logout` an. |
 | Der Feed-Filter (`dep ∈ route` **oder** `arr ∈ route`) zieht mehr Zeilen als heute | Bewusst: Wer mit Ware zwischenlandet, ist heute unsichtbar, obwohl er Teil des Abends ist. |
 | `test_transport.py` hat 173 Tests in 34 Klassen; ~60 hängen am Latch | Task 9 Step 4 listet sie einzeln. Die „Anzupassen"-Zeile ist echte Verhaltensprüfung, kein Suchen-und-Ersetzen. |
 | Ein beladener Pilot hält das Event über `dtend` offen | Gewollt (Entscheidung 10). Sicherung: `close_stale_flights` (`database.py:895`, 8 h) schließt hängende Sessions. |
