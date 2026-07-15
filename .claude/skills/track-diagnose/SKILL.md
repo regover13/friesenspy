@@ -30,6 +30,19 @@ einen realen Flugplatz für *alle* Auswertungen (Statistik, Bummel, Kutter) — 
 
 **Im Zweifel wird nichts eingetragen.**
 
+## Das Kriterium des Nutzers (2026-07-15)
+
+> „Ich trage Plätze ein, die im Sim angeflogen werden können."
+
+Nicht „existiert der Platz real?", sondern „kann man ihn im Simulator anfliegen?". Das entscheidet
+Fall A und macht Grübeleien überflüssig:
+
+- **Ein GPS-Bodenpunkt IST der Beweis.** Wer dort mit Groundspeed 0 stand, konnte den Platz
+  anfliegen — mehr braucht es nicht.
+- **`type: closed` in OurAirports ist kein Ausschluss.** Kai Tak (`VHHX`, 1998 geschlossen) und
+  Patreksfjörður (`BIPA`) sind eingetragen: real stillgelegt, im Sim anfliegbar, Pilot war da.
+- Reale Existenz allein genügt umgekehrt **nicht** — ohne Bodenpunkt gibt es nichts zu belegen.
+
 ## Datenzugang (nur lesend)
 
 ```bash
@@ -250,11 +263,34 @@ was mit dem Code los ist.
 | **F** | Quellen widersprechen sich, nicht auflösbar | **nichts eintragen**, Befund festhalten |
 
 **Fall A hat zwei Zweige:**
-- Echter ICAO-Code, den airportsdata nicht kennt → Ergänzung mit diesem Code.
-- **Gar kein ICAO-Code** → Pseudo-Code nach dem etablierten Muster (`BZWIROS`, `ZZSALZ`,
-  `EXHB`, `CML5`). Ein solcher Code ist **frei erfunden und muss vom Nutzer kommen** — nie
-  selbst einen ausdenken. Der Grund bleibt `Fehlt in airportsdata` (kein eigener Grund für
-  Platzhalter, siehe `docs/superpowers/specs/2026-07-15-flugplatz-grund-design.md`).
+- Echter ICAO-Code, den airportsdata nicht kennt → Ergänzung mit diesem Code. Beispiele aus
+  `custom_airports`: `EDHD`, `EDLQ`, `EDST`, `EDWD`, `LIVD`, `LOJB`, `CML5`, `RCLM`, `LNMC`.
+- **Gar kein ICAO-Code** → Pseudo-Code. **Konvention des Nutzers (2026-07-15): `ZZ`-Präfix**,
+  danach der Ort — `ZZLANGE`, `ZZPRIDE`, `ZZCALV`, `ZZSAZA`, `ZZSALZ`. Ältere Einträge weichen
+  ab (`BZWIROS`), das bleibt so; **neue Vorschläge immer im ZZ-Stil**.
+
+> **Zwei Regeln für Pseudo-Codes, beide nicht verhandelbar:**
+>
+> 1. **Der Code kommt vom Nutzer.** Vorschlagen ja, entscheiden nein.
+> 2. **Länger als vier Zeichen, und gegen BEIDE Quellen auf Kollision geprüft.** `custom_airports`
+>    ist seit #56 ein *Override*: Ein Code, den es real gibt, überschreibt einen echten Flugplatz —
+>    unbemerkt. Ein ICAO hat immer exakt vier Zeichen, deshalb ist alles ab fünf sicher. Prüfen
+>    trotzdem:
+>    ```python
+>    from scripts.nearby_airports import airportsdata_refs, load_ourairports, find_code
+>    ad, oa = airportsdata_refs(), load_ourairports()
+>    assert find_code(kandidat, ad) is None and find_code(kandidat, oa) is None
+>    ```
+> 3. **ASCII, keine Umlaute/Akzente** — Sázava wurde `ZZSAZA`, damit der Code in SQL, Flugplänen
+>    und URLs nicht bricht.
+
+Der Grund bleibt in beiden Zweigen `Fehlt in airportsdata` (kein eigener Grund für Platzhalter,
+siehe `docs/superpowers/specs/2026-07-15-flugplatz-grund-design.md`).
+
+**Was ein Pseudo-Code repariert — und was nicht:** Er schließt die *Erkennungslücke*
+(`gps_departure` wird gesetzt), nicht den Flugplan. FRS49 schrieb `KLIT` in den Plan und stand
+auf Prides Airport; danach steht dort `plan KLIT → KFCY | gps ZZPRIDE → KFCY`. Das ist richtig
+so: GPS ist die Wahrheit, der Plan bleibt, was er war.
 
 **Fall B — der Belgien-Fund:** airportsdata verortet belgische/luxemburgische Plätze
 systematisch falsch (34 % der BE-Codes > 3 km, alle nach Südwesten verschoben; Deutschland:
