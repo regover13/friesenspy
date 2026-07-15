@@ -189,3 +189,118 @@ def test_landung_am_ziel_liefert_sofort_ohne_disconnect():
 
     assert r["stacks"][DEST]["Fischbrötchen"] == 800.0   # kein logout nötig
     assert r["position"][1] == "EDXH"                     # steht am Ziel, bleibt sichtbar
+
+
+def test_s4_logout_am_zweiten_ladeplatz_gibt_dort_zurueck():
+    """S4: EDWG -> EDWZ, Logout. HEUTE: 'returned' -> zurück in den EDWG-Topf.
+    Nutzer 15.07.: 'Die Ware bleibt an dem Platz, an dem ausgeloggt wird!'"""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),                        # lädt 800 Fisch
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDWZ"),  # + 200 Tee (Kapazität 1000)
+            _ev("logout", 1, "2026-07-01T09:35:00Z"),
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["stacks"]["EDWZ"]["Fischbrötchen"] == 800.0   # liegt jetzt in EDWZ, NICHT in EDWG
+    assert r["stacks"]["EDWZ"]["Friesen Tee"] == 500.0      # 300 lagen noch da + 200 zurück
+    assert r["stacks"]["EDWG"]["Fischbrötchen"] == 0.0
+    _assert_erhaltung(r)
+
+
+def test_s5_logout_am_fremden_platz_ist_diebstahl():
+    """S5: EDWG -> EDDW(fremd), Logout. Er nimmt die Ware mit nach Hause."""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDDW"),
+            _ev("logout", 1, "2026-07-01T09:35:00Z"),
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["stacks"][STOLEN]["Fischbrötchen"] == 800.0
+    _assert_erhaltung(r)
+
+
+def test_s8_logout_in_der_luft_versenkt():
+    """S8 — der Nutzer-Fund vom 15.07. (Event #123, CID 1602713, flights.id 357/358).
+
+    Der Pilot loggt kurz nach dem Start IN DER LUFT aus und Sekunden später am Platz wieder ein.
+    Der GPS-Detektor macht daraus EIN Leg EDXH->EDXH mit sauberer Landung — der Logout ist für
+    ihn unsichtbar. Eine Regel 'letzter Leg -> gps_arrival' ergäbe fälschlich 'zurück'.
+    Hier fällt es von selbst richtig: takeoff hat position auf None gesetzt.
+    """
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),                          # lädt 800 Fisch
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),            # position -> None
+            _ev("logout", 1, "2026-07-01T09:07:00Z"),             # IN DER LUFT -> versenkt
+            _ev("login", 1, "2026-07-01T09:08:00Z", "EDWG"),      # sofort wieder da, leer
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["stacks"][SUNK]["Fischbrötchen"] == 800.0
+    assert r["stacks"]["EDWG"]["Fischbrötchen"] == 0.0   # der Stapel ist leer, nichts nachzuladen
+    assert _sum_onboard(r["onboard"]) == 0.0
+    _assert_erhaltung(r)
+
+
+def test_logout_am_ziel_verliert_nichts():
+    """Bei der Landung wurde längst geliefert — der Logout findet einen leeren Flieger vor."""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDXH"),
+            _ev("logout", 1, "2026-07-01T09:35:00Z"),
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["stacks"][DEST]["Fischbrötchen"] == 800.0
+    assert r["stacks"][STOLEN]["Fischbrötchen"] == 0.0   # NICHT gestohlen
+    assert r["stacks"][SUNK]["Fischbrötchen"] == 0.0
+
+
+def test_logout_gibt_auch_frisch_geladenes_zurueck():
+    """Entscheidung 4: 'Auch mit dem, was er eben erst geladen hat.'"""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[_ev("login", 1, T0, "EDWG"), _ev("logout", 1, "2026-07-01T09:01:00Z")],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["stacks"]["EDWG"]["Fischbrötchen"] == 800.0
+    _assert_erhaltung(r)
+
+
+def test_zweiter_login_ohne_logout_verliert_keine_ware():
+    """Fable-Review 16.07. — der Erhaltungssatz braecher sonst in einem REALEN Fall.
+
+    Trigger: Ein ungracefuler Disconnect lässt die alte flights-Zeile offen (logoff_time NULL),
+    der Reconnect erzeugt eine neue. close_stale_flights räumt erst nach 8 h auf (database.py:895).
+    In diesem Fenster liefert der Adapter zwei login-Ereignisse OHNE logout dazwischen. Würde
+    login die Bordladung einfach leeren, verschwänden 800 kg aus dem Universum — und weil dann
+    Summe onboard == 0 gilt, könnte das Event mit der verschwundenen Ware sogar EINFRIEREN
+    (transport_anyone_in_progress = False). Der Freeze ist endgültig.
+
+    Der zweite Login verteilt die alte Ladung deshalb wie ein Logout: dieselbe Regel, derselbe
+    Helfer (_drop_load) — kein Sonderfall.
+    """
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[_ev("login", 1, T0, "EDWG"), _ev("login", 1, "2026-07-01T09:01:00Z", None)],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    _assert_erhaltung(r)                                   # <- der eigentliche Test
+    assert r["stacks"]["EDWG"]["Fischbrötchen"] == 800.0   # stand am Ladeplatz -> zurück

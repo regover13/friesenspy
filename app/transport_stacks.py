@@ -75,8 +75,11 @@ def derive_stacks(
             capacity[cid] = float(e["capacity_kg"])
 
         if kind == "login":
-            # Ein frisch eingeloggter Pilot trägt nichts: die Ladung ist eine Ableitung, kein
-            # Speicher — beim letzten Logout hat sie einen End-Stapel gefunden.
+            # Trägt er noch etwas (zwei logins ohne logout dazwischen — ungracefuler Disconnect
+            # + Reconnect, close_stale_flights räumt erst nach 8 h auf), fällt es hier ab wie
+            # bei einem Logout. Ein bloßes onboard[cid] = {} würde die Ware aus dem Universum
+            # löschen und den Erhaltungssatz brechen (Fable-Review 16.07.).
+            _drop_load(state, cid, ts)
             onboard[cid] = _empty()
             position[cid] = e.get("airport")     # None = in der Luft eingeloggt
             since[cid] = ts
@@ -103,9 +106,9 @@ def derive_stacks(
                 onboard[cid] = _empty()
             # Landung woanders: NICHTS. Die Ladung bleibt an Bord (Milchmann/Zwischenlandung).
         elif kind == "logout":
+            _drop_load(state, cid, ts)
             position.pop(cid, None)
             since.pop(cid, None)
-            onboard.pop(cid, None)
 
         _load_standing(state, ts)
 
@@ -116,6 +119,39 @@ def derive_stacks(
         "last_ground": last_ground,
         "movements": movements,
     }
+
+
+def _drop_load(state: dict, cid: int, ts: str) -> None:
+    """Die Bordladung abgeben — dorthin, wo der Pilot gerade ist (Entscheidung 2).
+
+    Wer ausloggt, beendet seine Tour: Was dann an Bord ist, bleibt liegen, wo er ist. Das gilt
+    auch beim unfreiwilligen Verbindungsabbruch — ein Netzausfall in der Luft ist im Track nicht
+    von einem bewussten Ausstieg zu unterscheiden ("Ja. Ist halt so.", Nutzer 15.07.).
+
+    Der Ort braucht keine Sonderregel: `position` ist bereits richtig, weil `takeoff` sie auf
+    None gesetzt hat. Ein Logout zwischen Takeoff und Landung findet None vor -> versenkt. Genau
+    der Fall S8 (Logout in der Luft, Sekunden später Login am Platz), bei dem der Detektor EIN
+    durchgehendes Leg mit sauberer Landung sieht — eine Regel "letzter Leg -> gps_arrival"
+    ergäbe dort fälschlich 'zurück'.
+    """
+    load = state["onboard"].pop(cid, None) or {}
+    if not any(kg > _EPS for kg in load.values()):
+        return
+    where = state["position"].get(cid)
+    if where == state["destination"]:
+        return                                   # bei der Landung längst geliefert
+    if where in state["loading_airports"]:
+        target, kind_name = where, "returned"
+    elif where:
+        target, kind_name = STOLEN, "stolen"
+    else:
+        target, kind_name = SUNK, "sunk"
+    for name, kg in load.items():
+        if kg <= _EPS:
+            continue
+        state["stacks"][target][name] += kg
+        state["movements"].append({"ts": ts, "cid": cid, "kind": kind_name,
+                                   "airport": where, "name": name, "kg": kg})
 
 
 def _load_standing(state: dict, ts: str) -> None:
