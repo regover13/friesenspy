@@ -11,13 +11,19 @@ from pathlib import Path
 import pytest
 
 from app.database import _BUMMEL_AIRPORT_RADIUS_KM
-from app.gps_legs import _GPS_FLYING_GS_KT, _GPS_GROUND_AGL_FT, _GPS_SPAWN_MAX_AGL_FT
+from app.gps_legs import (
+    _GPS_CLIMB_MIN_AGL_FT,
+    _GPS_FLYING_GS_KT,
+    _GPS_GROUND_AGL_FT,
+    _GPS_SPAWN_MAX_AGL_FT,
+)
 from scripts.nearby_airports import airportsdata_refs, load_ourairports
 from scripts.triage_gaps import (
     Ende,
     GRUPPE_ANDERER,
     GRUPPE_DUENN,
     GRUPPE_KANDIDAT,
+    GRUPPE_KEIN_FLUG,
     GRUPPE_LUFT,
     GRUPPE_MEHRDEUTIG,
     GRUPPE_ZZZZ,
@@ -84,8 +90,15 @@ def test_stol_langsam_aber_hoch_ist_nicht_am_boden(faelle, ad, oa):
     assert _gruppe(faelle, ad, oa, 25216444, "departure") == GRUPPE_LUFT
 
 
-def test_punkt_an_anderem_platz(faelle, ad, oa):
-    assert _gruppe(faelle, ad, oa, 26626195, "departure") == GRUPPE_ANDERER
+def test_rollen_track_wird_nicht_als_fall_d_missdeutet(faelle, ad, oa):
+    """26626195: geplant EDLJ->EDLI ueber 95 Minuten, aufgezeichnet 6 Punkte beim Rollen in
+    EDLI (Hoehenspanne 12 ft). Der „departure"-Punkt liegt deshalb 0,03 km neben EDLI und
+    sieht aus wie Fall D — „der Pilot war woanders". Das waere eine falsche Erklaerung: der
+    Pilot war nicht woanders, der Track zeigt den Start schlicht nicht.
+
+    Deshalb greift „Kein Flug" VOR Fall D. Beim ersten echten Einsatz gefunden: alle drei
+    D-Befunde des Laufs waren in Wahrheit Rollen-Tracks."""
+    assert _gruppe(faelle, ad, oa, 26626195, "departure") == GRUPPE_KEIN_FLUG
 
 
 def test_bodenpunkt_ohne_nachbarn_bleibt_kandidat(faelle, ad, oa):
@@ -101,7 +114,8 @@ def test_bodenpunkt_am_falschen_platz_wird_nicht_als_luft_wegtriagiert(ad, oa):
     ein echter Kandidat wäre still verschwunden. Die Elevation muss vom Platz AM PUNKT
     kommen, wie im Detektor (app/gps_legs.py:183)."""
     ende = Ende(statsim_id=23066993, callsign="FRS131", seite="departure", soll="ETUO",
-                punkt={"lat": 51.85449, "lon": 10.02288, "alt": 779, "gs": 0}, punkte=100)
+                punkt={"lat": 51.85449, "lon": 10.02288, "alt": 779, "gs": 0}, punkte=110,
+                min_alt=326, max_alt=2501)   # echter Flug, 2175 ft Spanne — kein Rollen-Track
     assert triagiere(ende, ad, oa).gruppe == GRUPPE_ANDERER
 
 
@@ -142,3 +156,40 @@ def test_skill_md_zahlen_stimmen_mit_den_detektor_konstanten():
         "in_der_luft = (AGL > %d ft)  ODER  (groundspeed >= %d kt)"
         % (_GPS_GROUND_AGL_FT, _GPS_FLYING_GS_KT)
     ) in inhalt
+
+
+def test_track_ohne_flug_ist_keine_luecke(ad, oa):
+    """NAL3WK (23902523): Flugplan EDXW->EDDH, 85 Minuten. Aufgezeichnet sind 6 Punkte über
+    2 Minuten, alle zwischen 45 und 49 ft — der Taxi-in in Hamburg. Das Flugzeug ist in
+    diesem Track nie abgehoben, also kann der Detektor korrekt keine Landung werten: man
+    kann nicht landen, wenn man nicht geflogen ist.
+
+    Ohne diese Gruppe landet der Fall unter „Kandidat", obwohl es nichts zu entscheiden
+    gibt — der Punkt liegt 0,35 km von EDDH, dem richtigen Platz mit richtiger Koordinate.
+    Beim ersten echten Einsatz gefunden: 8 der 21 Kandidaten waren dieses Muster.
+    """
+    ende = Ende(statsim_id=23902523, callsign="NAL3WK", seite="arrival", soll="EDDH",
+                punkt={"lat": 53.62722, "lon": 9.988, "alt": 45, "gs": 0}, punkte=6,
+                min_alt=45, max_alt=49)
+    assert triagiere(ende, ad, oa).gruppe == GRUPPE_KEIN_FLUG
+
+
+def test_hoehen_delta_knapp_unter_der_abhebe_schwelle_zaehlt_noch_als_flug(ad, oa):
+    """Die Schwelle ist die des Detektors, nicht geraten: Abheben verlangt entweder
+    _GPS_AIR_AGL_FT (500 ft, Leitsignal) oder mindestens _GPS_CLIMB_MIN_AGL_FT plus
+    Steigflug. Bleibt der ganze Track darunter, kann kein Abheben erkannt worden sein.
+    Genau darüber muss die Gruppe schweigen — sonst triagiert sie echte Flüge weg.
+    """
+    knapp_drueber = Ende(statsim_id=1, callsign="X", seite="arrival", soll="EDDH",
+                         punkt={"lat": 53.62722, "lon": 9.988, "alt": 45, "gs": 0}, punkte=50,
+                         min_alt=45, max_alt=45 + _GPS_CLIMB_MIN_AGL_FT + 1)
+    assert triagiere(knapp_drueber, ad, oa).gruppe != GRUPPE_KEIN_FLUG
+
+
+def test_alter_export_ohne_hoehen_felder_wird_nicht_falsch_gruppiert(ad, oa):
+    """Rückwärtskompatibel: ein Export ohne min_alt/max_alt (vor dieser Gruppe erzeugt) darf
+    NICHT still als „kein Flug" durchgehen — das wäre die teure Richtung. Ohne die Felder
+    schweigt die Gruppe."""
+    ohne = Ende(statsim_id=2, callsign="X", seite="arrival", soll="EDDH",
+                punkt={"lat": 53.62722, "lon": 9.988, "alt": 45, "gs": 0}, punkte=6)
+    assert triagiere(ohne, ad, oa).gruppe != GRUPPE_KEIN_FLUG

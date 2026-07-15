@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.gps_legs import _GPS_FLYING_GS_KT, _GPS_GROUND_AGL_FT
+from app.gps_legs import _GPS_CLIMB_MIN_AGL_FT, _GPS_FLYING_GS_KT, _GPS_GROUND_AGL_FT
 from scripts.nearby_airports import (
     AirportRef,
     airportsdata_refs,
@@ -34,6 +34,7 @@ GRUPPE_LUFT = "E"
 GRUPPE_ANDERER = "D"
 GRUPPE_KANDIDAT = "Kandidat"
 GRUPPE_MEHRDEUTIG = "Mehrdeutig"
+GRUPPE_KEIN_FLUG = "Kein Flug"
 
 # Der Detektor braucht mindestens einen Zustandswechsel (ON_GROUND -> AIRBORNE -> ON_GROUND).
 # Bei weniger Samples ist jede Aussage über Start/Landung bedeutungslos.
@@ -57,6 +58,10 @@ class Ende:
     # True, wenn dieselbe statsim_id mehrfach im Export vorkommt (mehrere Legs einer Session,
     # siehe enden_aus_export). Dann sind first/last nicht dem richtigen Leg zuordenbar.
     mehrdeutig: bool = False
+    # Höhenspanne des GANZEN Tracks (nicht nur der Ränder). None = alter Export ohne die
+    # Felder; dann schweigt die „Kein Flug"-Gruppe, statt still in die teure Richtung zu fallen.
+    min_alt: int | None = None
+    max_alt: int | None = None
 
 
 @dataclass(frozen=True)
@@ -100,6 +105,8 @@ def enden_aus_export(faelle: Sequence[dict]) -> list[Ende]:
                     # hart failt.
                     punkte=int(fall["punkte"]),
                     mehrdeutig=fall["statsim_id"] in mehrfach,
+                    min_alt=fall.get("min_alt"),
+                    max_alt=fall.get("max_alt"),
                 )
             )
     return enden
@@ -175,6 +182,23 @@ def triagiere(
     luft, warum = _in_der_luft(ende.punkt, basis)
     if luft:
         return Befund(ende, GRUPPE_LUFT, "kein Bodenpunkt: %s" % warum)
+
+    # Zeigt der Track ueberhaupt einen Flug? Bleibt die Hoehe ueber den GANZEN Track unter der
+    # Abhebe-Schwelle des Detektors, kann er nicht abgehoben sein — und wer nicht geflogen ist,
+    # kann nicht landen. Die fehlende Landung ist dann korrektes Verhalten, keine Luecke.
+    # Schwelle ist die des Detektors: Abheben verlangt _GPS_AIR_AGL_FT (500 ft, Leitsignal) ODER
+    # _GPS_CLIMB_MIN_AGL_FT (100 ft) plus Steigflug — unter 100 ft greift keiner der beiden.
+    # NACH der Luft-Pruefung, sonst faellt ein Reiseflug mit konstanter Hoehe faelschlich
+    # hierher. Beleg NAL3WK (23902523): Flugplan EDXW->EDDH ueber 85 min, aufgezeichnet 6 Punkte
+    # zwischen 45 und 49 ft — nur der Taxi-in in Hamburg.
+    if ende.min_alt is not None and ende.max_alt is not None:
+        spanne = ende.max_alt - ende.min_alt
+        if spanne < _GPS_CLIMB_MIN_AGL_FT:
+            return Befund(
+                ende, GRUPPE_KEIN_FLUG,
+                "Track bleibt am Boden (Höhenspanne %d ft < %d) — kein Abheben möglich"
+                % (spanne, _GPS_CLIMB_MIN_AGL_FT),
+            )
 
     if nachbarn:
         hit = nachbarn[0]

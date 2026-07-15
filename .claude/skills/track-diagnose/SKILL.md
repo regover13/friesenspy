@@ -78,9 +78,12 @@ for g in list_gps_detection_gaps(conn):
     if not rows:
         continue
     f, l = rows[0], rows[-1]
+    hoehen = [r[3] for r in rows if r[3] is not None]
     out.append({"statsim_id": sid, "callsign": g["callsign"], "missing": g["missing"],
                 "plan_departure": g["plan_departure"], "plan_arrival": g["plan_arrival"],
                 "logon_time": g["logon_time"], "punkte": len(rows),
+                "min_alt": min(hoehen) if hoehen else None,
+                "max_alt": max(hoehen) if hoehen else None,
                 "first": {"ts": f[0], "lat": f[1], "lon": f[2], "alt": f[3], "gs": f[4]},
                 "last": {"ts": l[0], "lat": l[1], "lon": l[2], "alt": l[3], "gs": l[4]}})
 print(json.dumps(out))
@@ -89,6 +92,10 @@ PY
 
 Wichtig: `docker exec -i` (Eingabe muss durchgereicht werden) und `python -` (liest das Skript
 von stdin) — ohne `-i` kommt das Here-Doc nie im Container an.
+
+`min_alt`/`max_alt` sind die Höhenspanne des **ganzen** Tracks, nicht nur der Ränder — sie
+tragen die Gruppe „Kein Flug" (siehe A2). Ein Export ohne diese Felder funktioniert weiterhin,
+die Gruppe schweigt dann nur.
 
 Dauert ~18 s, liefert ~75 KB für 163 Fälle.
 
@@ -115,11 +122,23 @@ python -m scripts.triage_gaps gaps.json --gruppe E      # eine Gruppe im Detail
 > Mehrdeutig`, werden VOR jeder anderen Prüfung aussortiert und zählen nicht als mechanisch
 > abgehakt — wie Kandidaten ein Fall für den Menschen.
 
+> **Gruppe „Kein Flug".** Bleibt die Höhe über den **ganzen** Track unter
+> `_GPS_CLIMB_MIN_AGL_FT` (100 ft), kann der Detektor nicht abgehoben sein — und wer nicht
+> geflogen ist, kann nicht landen. Die fehlende Landung ist dann korrektes Verhalten, keine
+> Lücke. Typisch: StatSim hat nur den Taxi-in aufgezeichnet (Beleg NAL3WK/23902523: geplant
+> EDXW→EDDH über 85 min, aufgezeichnet 6 Punkte zwischen 45 und 49 ft).
+>
+> Die Gruppe wird **nach** „E" geprüft (sonst fiele ein Reiseflug mit konstanter Höhe
+> fälschlich hierher) und **vor** „D": Ein Rollen-Track am Ziel liefert einen „departure"-Punkt
+> direkt neben dem *Ziel*-Platz, was wie „der Pilot war woanders" aussieht. Das wäre falsch —
+> der Pilot war nicht woanders, der Track zeigt den Start nicht. Beim ersten echten Einsatz
+> waren **alle drei** D-Befunde in Wahrheit Rollen-Tracks.
+
 ### A3. Berichten
 
 Trivialgruppen als **Sammelbefund** melden (nicht einzeln durchkauen), Kandidaten als Arbeitsvorrat
-für Ablauf B. Stand 2026-07-15 (nach FIX 1 + FIX 4): 126× E, 19× zu dünn, 11× ZZZZ, 4× Mehrdeutig,
-3× D — **21 Kandidaten**.
+für Ablauf B. Stand 2026-07-15, 183 Enden aus 162 Fällen: 125× E, 19× zu dünn, 12× Kein Flug,
+11× ZZZZ, 4× Mehrdeutig, 0× D — **12 Kandidaten**; 167 von 183 mechanisch abgehakt (91,3 %).
 
 ## Ablauf B — Einzelfall
 
