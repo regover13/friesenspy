@@ -92,7 +92,7 @@ from scripts.nearby_airports import find_code, load_ourairports
 FIXTURE = Path(__file__).parent / "fixtures" / "ourairports_mini.csv"
 
 
-def test_fixture_laedt_alle_fuenf_plaetze():
+def test_fixture_lädt_alle_fuenf_plaetze():
     refs = load_ourairports(FIXTURE)
     assert len(refs) == 5
 
@@ -700,7 +700,7 @@ CACHE_MAX_AGE_DAYS = 30
 
 
 def _cached_ourairports() -> Path | None:
-    """Pfad zum OurAirports-Abzug; laedt ihn bei Bedarf. ``None`` = nicht verfuegbar.
+    """Pfad zum OurAirports-Abzug; lädt ihn bei Bedarf. ``None`` = nicht verfügbar.
 
     Ohne Netz wird ein vorhandener (auch alter) Cache weiterverwendet — ein veralteter
     Abzug ist brauchbarer als gar keine Gegenprobe, solange wir es sagen.
@@ -721,7 +721,7 @@ def _cached_ourairports() -> Path | None:
         if CACHE_PATH.exists():
             print("  ! OurAirports-Update fehlgeschlagen (%s) — nutze alten Cache" % exc, file=sys.stderr)
             return CACHE_PATH
-        print("  ! OurAirports nicht verfuegbar (%s) — nur airportsdata" % exc, file=sys.stderr)
+        print("  ! OurAirports nicht verfügbar (%s) — nur airportsdata" % exc, file=sys.stderr)
         return None
 
 
@@ -729,7 +729,7 @@ def load_ourairports(path: Path | str | None = None) -> list[AirportRef]:
     """OurAirports laden. ``path`` gesetzt → genau diese Datei (Tests: Fixture, kein Netz).
 
     Ohne ``path``: Cache unter ``scripts/.cache/``, bei Bedarf frisch geladen. Ist die
-    Quelle nicht verfuegbar, kommt eine LEERE Liste zurück — das Werkzeug arbeitet dann
+    Quelle nicht verfügbar, kommt eine LEERE Liste zurück — das Werkzeug arbeitet dann
     nur mit airportsdata weiter und sagt das im Report (``oa_available``).
     """
     source = Path(path) if path is not None else _cached_ourairports()
@@ -752,7 +752,7 @@ Expected: PASS (9 Tests) — die Fixture-Tests übergeben weiterhin einen Pfad, 
 
 - [ ] **Step 4: Download real verifizieren**
 
-Run: `python scripts/nearby_airports.py 53.49527 10.00085 --alt 2209 --icao EDDH`
+Run: `python -m scripts.nearby_airports 53.49527 10.00085 --alt 2209 --icao EDDH`
 Expected: Erster Lauf lädt ~12 MB nach `scripts/.cache/ourairports.csv`. Report zeigt EDDH 15.05 km / „außerhalb" / AGL 2156 ft / „überschritten".
 
 Run: `git status --short`
@@ -761,9 +761,9 @@ Expected: `scripts/.cache/` taucht **nicht** auf.
 - [ ] **Step 5: Die drei anderen Referenzfälle real gegenprüfen**
 
 ```bash
-python scripts/nearby_airports.py 54.18665 7.91488 --icao EDHX
-python scripts/nearby_airports.py 51.85449 10.02288 --icao ETUO
-python scripts/nearby_airports.py 50.82005 3.2163  --icao EBKT
+python -m scripts.nearby_airports 54.18665 7.91488 --icao EDHX
+python -m scripts.nearby_airports 51.85449 10.02288 --icao ETUO
+python -m scripts.nearby_airports 50.82005 3.2163  --icao EBKT
 ```
 
 Expected (gemessen 2026-07-15):
@@ -1251,8 +1251,8 @@ Dauert ~18 s, liefert ~75 KB für 163 Fälle.
 ### A2. Triagieren
 
 ```bash
-python scripts/triage_gaps.py gaps.json                 # Zusammenfassung + Kandidaten
-python scripts/triage_gaps.py gaps.json --gruppe E      # eine Gruppe im Detail
+python -m scripts.triage_gaps gaps.json                 # Zusammenfassung + Kandidaten
+python -m scripts.triage_gaps gaps.json --gruppe E      # eine Gruppe im Detail
 ```
 
 ### A3. Berichten
@@ -1297,7 +1297,7 @@ Sonst schlägt man einen Eintrag vor, den es längst gibt.
 ### 4. Messen
 
 ```bash
-python scripts/nearby_airports.py <lat> <lon> [--alt <ft MSL>] [--icao <Soll-Code>]
+python -m scripts.nearby_airports <lat> <lon> [--alt <ft MSL>] [--icao <Soll-Code>]
 ```
 
 Das Werkzeug misst, es urteilt nicht. Es zeigt die nächsten Plätze laut **airportsdata** und
@@ -1473,8 +1473,8 @@ OurAirports — der Belgien-Fund widerlegt das (848 von 24253 Codes > 3 km)."
 ## Verifikation zum Schluss
 
 - [ ] `python -m pytest tests/ -q` → 1063 passed
-- [ ] `python scripts/nearby_airports.py 53.49527 10.00085 --alt 2209 --icao EDDH` → 15.05 km, „außerhalb", AGL 2156 ft, „überschritten"
-- [ ] Echter Triage-Lauf: Export ziehen (siehe SKILL.md), dann `python scripts/triage_gaps.py gaps.json` → Größenordnung 184 Enden aus 163 Fällen, ~23 Kandidaten. **Weicht das stark ab, ist das ein Befund, kein Grund zum Nachjustieren** — die Liste ändert sich mit jedem Flug, aber ein Sprung von 23 auf 100 Kandidaten hieße, dass eine Gruppenregel nicht greift.
+- [ ] `python -m scripts.nearby_airports 53.49527 10.00085 --alt 2209 --icao EDDH` → 15.05 km, „außerhalb", AGL 2156 ft, „überschritten"
+- [ ] Echter Triage-Lauf: Export ziehen (siehe SKILL.md), dann `python -m scripts.triage_gaps gaps.json` → Größenordnung 184 Enden aus 163 Fällen, ~23 Kandidaten. **Weicht das stark ab, ist das ein Befund, kein Grund zum Nachjustieren** — die Liste ändert sich mit jedem Flug, aber ein Sprung von 23 auf 100 Kandidaten hieße, dass eine Gruppenregel nicht greift.
 - [ ] `git status --short` → keine ungewollten Dateien; `scripts/.cache/` fehlt (ignoriert)
 - [ ] **Nicht** getan: kein Version-Bump, kein Tag, kein Changelog, keine Änderung an `docs/api.md` / `docs/architecture.md`
 - [ ] **Nicht** angefasst: die vier unversionierten Nutzer-Dateien (`friesenkutter-*.html`, `docs/superpowers/{plans,specs}/2026-07-13-subjekt-sichtbarkeit*`)

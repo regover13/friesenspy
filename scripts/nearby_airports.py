@@ -7,6 +7,13 @@ Abweichung beider Quellen, Distanz zum Soll-Code aus dem Flugplan.
 Die Fallunterscheidung steht in ``.claude/skills/track-diagnose/SKILL.md``.
 
 Rein und offline: kein DB-Zugriff, kein SSH, keine ``custom_airports``.
+
+Aufruf als **Modul**, aus dem Repo-Root::
+
+    python -m scripts.nearby_airports <lat> <lon> [--alt <ft MSL>] [--icao <Soll-Code>]
+
+Nicht ``python scripts/nearby_airports.py`` — dabei setzt Python ``sys.path[0]`` auf
+``scripts/`` statt auf das Repo-Root, und die ``app.*``-Importe oben schlagen fehl.
 """
 from __future__ import annotations
 
@@ -83,7 +90,7 @@ CACHE_MAX_AGE_DAYS = 30
 
 
 def _cached_ourairports() -> Path | None:
-    """Pfad zum OurAirports-Abzug; laedt ihn bei Bedarf. ``None`` = nicht verfuegbar.
+    """Pfad zum OurAirports-Abzug; lädt ihn bei Bedarf. ``None`` = nicht verfügbar.
 
     Ohne Netz wird ein vorhandener (auch alter) Cache weiterverwendet — ein veralteter
     Abzug ist brauchbarer als gar keine Gegenprobe, solange wir es sagen.
@@ -98,13 +105,19 @@ def _cached_ourairports() -> Path | None:
         CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         response = httpx.get(OURAIRPORTS_URL, timeout=60.0, follow_redirects=True)
         response.raise_for_status()
-        CACHE_PATH.write_bytes(response.content)
+        # Erst in eine Nebendatei, dann umbenennen: ein abgebrochener Download darf NIE
+        # als gültiger Cache liegenbleiben. csv.DictReader liest eine abgeschnittene CSV
+        # klaglos — das Werkzeug meldete dann 30 Tage lang Plätze als „nicht vorhanden",
+        # die es gibt. Genau die Sorte stiller Falschmessung, die es aufdecken soll.
+        tmp = CACHE_PATH.with_suffix(".csv.part")
+        tmp.write_bytes(response.content)
+        tmp.replace(CACHE_PATH)
         return CACHE_PATH
     except Exception as exc:  # Netz weg, DNS, 404 — kein Grund, die Analyse abzubrechen
         if CACHE_PATH.exists():
             print("  ! OurAirports-Update fehlgeschlagen (%s) — nutze alten Cache" % exc, file=sys.stderr)
             return CACHE_PATH
-        print("  ! OurAirports nicht verfuegbar (%s) — nur airportsdata" % exc, file=sys.stderr)
+        print("  ! OurAirports nicht verfügbar (%s) — nur airportsdata" % exc, file=sys.stderr)
         return None
 
 
@@ -112,7 +125,7 @@ def load_ourairports(path: Path | str | None = None) -> list[AirportRef]:
     """OurAirports laden. ``path`` gesetzt → genau diese Datei (Tests: Fixture, kein Netz).
 
     Ohne ``path``: Cache unter ``scripts/.cache/``, bei Bedarf frisch geladen. Ist die
-    Quelle nicht verfuegbar, kommt eine LEERE Liste zurück — das Werkzeug arbeitet dann
+    Quelle nicht verfügbar, kommt eine LEERE Liste zurück — das Werkzeug arbeitet dann
     nur mit airportsdata weiter und sagt das im Report (``oa_available``).
     """
     source = Path(path) if path is not None else _cached_ourairports()
