@@ -2797,6 +2797,73 @@ class TestStackInputs:
         conn.commit()
 
 
+class TestStatSimSichtbarkeit:
+    """Whole-Branch-Review #3: Ein StatSim-Backfill-Flug (Poller-Ausfall, keine VATSIM-Session in
+    `flights`) liefert seine Fracht in total_kg — dann muss er auch im Feed und bei den Teilnehmern
+    auftauchen ('wenn sie gewertet werden, muss man sie sehen', Nutzer 16.07.). Der LIVE-Block
+    bleibt aber FriesenSpy-only: ein nachgereichter StatSim-Flug ist kein Live-Signal, deshalb das
+    Flag `statsim_only` (der Live-Block filtert danach)."""
+
+    def _statsim_flight(self, conn, *, statsim_id=9100, cid=77, arr="EDXH"):
+        from app.geo import icao_to_coords, airport_elevation_ft
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        alat, alon = icao_to_coords(arr)
+        aelev = airport_elevation_ft(arr) or 0
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id, cid, callsign, departure, arrival, "
+            "aircraft, logon_time, logoff_time, duration_min, fetched_at) VALUES "
+            "(?, ?, ?, 'EDWG', ?, 'C208', ?, ?, 30, ?)",
+            (statsim_id, cid, f"FRS{cid:02d}", arr, START, _shift(START, 30), START),
+        )
+        for lat, lon, alt, gs, minute in [
+            (dlat, dlon, delev, 0, 0),
+            (dlat, dlon, delev + 1200, 80, 2),
+            (54.0, 7.9, 4000, 120, 15),
+            (alat, alon, aelev + 400, 40, 28),
+            (alat, alon, aelev, 0, 30),
+        ]:
+            conn.execute(
+                "INSERT INTO statsim_position_history (statsim_id, latitude, longitude, "
+                "altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, 0, ?)",
+                (statsim_id, lat, lon, alt, gs, _shift(START, minute)),
+            )
+        conn.commit()
+
+    def _event(self, conn):
+        upsert_payload(conn, "C208", payload_kg=1000)
+        conn.commit()
+        return _event(conn, route="EDWG,EDXH", destination="EDXH",
+                      cargo=[{"name": "Fisch", "target_kg": 800, "departure": "EDWG"}])
+
+    def test_statsim_lieferung_im_feed_und_bei_teilnehmern(self):
+        conn = _make_conn()
+        ev = self._event(conn)
+        self._statsim_flight(conn, cid=77)                  # kein flights-Eintrag (Poller lief nicht)
+
+        p = compute_transport_progress(conn, ev, END)
+
+        assert p["total_kg"] == 800.0                        # zaehlt schon (Backfill)
+        f = next(x for x in p["flights"] if x["cid"] == 77)  # ... jetzt auch im Feed
+        assert f["tonnage_kg"] == 800.0 and f["arr"] == "EDXH"
+        part = next(x for x in p["participants"] if x["cid"] == 77)
+        assert part["delivered_kg"] == 800.0
+        assert part["statsim_only"] is True                  # Live-Block-Ausschluss (FriesenSpy-only)
+
+    def test_echter_flug_ist_nicht_statsim_only(self):
+        """Gegenprobe: ein normaler FriesenSpy-Flug traegt statsim_only == False (Live-Block zeigt
+        ihn), damit der Filter im Frontend nur den Backfill ausblendet."""
+        conn = _make_conn()
+        ev = self._event(conn)
+        _add_delivered_flight(conn, 42, "EDWG", "C208", START, ev["id"])
+
+        p = compute_transport_progress(conn, ev, END)
+
+        part = next(x for x in p["participants"] if x["cid"] == 42)
+        assert part["delivered_kg"] == 800.0
+        assert part["statsim_only"] is False
+
+
 class TestStapelProgress:
     """compute_transport_progress auf Basis der Stapel-Ableitung — die Fälle, an denen sich das
     Modell entscheidet (S1-S5 aus scripts/kutter_ladung_szenarien.py, hier mit echten Tracks)."""

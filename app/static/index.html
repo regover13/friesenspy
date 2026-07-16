@@ -3292,6 +3292,8 @@ async function fetchKutterActive() {
     const active = [];
     (d.participants || []).forEach(p => {
       if (!p.visible) return;
+      if (p.statsim_only) return;   // Live-Block ist FriesenSpy-only: StatSim-Backfill (nachgereicht,
+                                    // keine Live-VATSIM-Verbindung) zaehlt in Feed/Wertung, nicht hier.
       const kg = p.reserved_kg || 0;
       const inAir = !p.place;
       const status = inAir

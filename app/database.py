@@ -5278,6 +5278,7 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
     # still 0 kg liefern, obwohl sie heute mitzählen. Behandlung: wie ein normaler Flug — der
     # Flug ist vorbei, also gehört ein Logout am Landeort dazu.
     session_cids = {int(s["cid"]) for s in sessions}
+    statsim_sessions: list[dict] = []
     for cid, rows in legs_by_cid.items():
         for g in rows:
             # `block_start` auch hier: eine statsim_cache-Zeile mit duration_min > 5, aber ohne
@@ -5298,6 +5299,7 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
                         "airport": dep if dep in route_set else None, "capacity_kg": cap})
             out.append({"ts": g["logon_time"], "kind": "takeoff", "cid": cid,
                         "airport": None, "capacity_kg": cap})
+            logout_ts = None
             if g.get("logoff_time"):
                 arr = normalize_type_code(g.get("gps_arrival")) or None
                 out.append({"ts": g["logoff_time"], "kind": "landing", "cid": cid,
@@ -5305,11 +5307,23 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
                 # Der Logout MUSS nach der Landung liegen: bei gleichem ts gewinnt laut
                 # _STACK_EVENT_PRIO der Logout — er fände dann position=None vor und würde die
                 # Ladung VERSENKEN statt sie abzuliefern. Eine Sekunde später, synthetisch.
-                out.append({
-                    "ts": (_parse_iso(g["logoff_time"]) + timedelta(seconds=1))
-                          .strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "kind": "logout", "cid": cid, "airport": None, "capacity_kg": cap,
-                })
+                logout_ts = (_parse_iso(g["logoff_time"]) + timedelta(seconds=1)
+                             ).strftime("%Y-%m-%dT%H:%M:%SZ")
+                out.append({"ts": logout_ts, "kind": "logout", "cid": cid,
+                            "airport": None, "capacity_kg": cap})
+            # Pseudo-Session je StatSim-Leg (Whole-Branch-Review #3): Feed + Teilnehmer werden aus
+            # `sessions` gebaut; ohne einen Session-Eintrag fiele der StatSim-Pilot aus flights[]
+            # und participants[], obwohl seine Lieferung in total_kg zählt. `statsim_only` markiert
+            # ihn als NICHT-live (Backfill, keine VATSIM-Verbindung im Poller) — der Live-Block
+            # bleibt so FriesenSpy-only (index.html, fetchKutterActive filtert danach). Angehängt
+            # NACH `session_cids`/der Sessions-Schleife: die Event-Erzeugung oben läuft nur über die
+            # echten Sessions, hier werden die Ereignisse direkt erzeugt (kein Doppel).
+            statsim_sessions.append({
+                "cid": cid, "callsign": g.get("callsign") or f"{callsign_prefix}{cid}",
+                "aircraft": g.get("aircraft"), "aircraft_icao": g.get("aircraft_icao"),
+                "logon_time": g.get("logon_time"), "logoff_time": g.get("logoff_time"),
+                "next_logon": None, "logout_ts": logout_ts, "statsim_only": True,
+            })
 
     return {
         "manifest": manifest,
@@ -5317,7 +5331,7 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
         "loading_airports": loading,
         "destination": dest,
         "legs_by_cid": legs_by_cid,
-        "sessions": sessions,
+        "sessions": sessions + statsim_sessions,
     }
 
 
@@ -5485,7 +5499,8 @@ def compute_transport_progress(
         # und erfände einen Phantom-Flug (Whole-Branch-Review #2).
         load = onboard.get(cid) or {}
         aboard = round(sum(load.values()), 1)
-        if not s.get("logoff_time") and not s.get("next_logon") and aboard > 0.0:
+        if not s.get("logoff_time") and not s.get("next_logon") \
+                and not s.get("statsim_only") and aboard > 0.0:
             where = r["position"].get(cid)
             network.append({
                 "dep_time": s.get("logon_time") or "", "cid": cid,
@@ -5537,16 +5552,21 @@ def compute_transport_progress(
     parts: dict[int, dict] = {}
     for s in inp["sessions"]:
         cid = int(s["cid"])
-        parts.setdefault(cid, {
+        p = parts.setdefault(cid, {
             "cid": cid, "name": names.get(cid, ""), "callsign": s.get("callsign") or "",
             "aircraft": normalize_type_code(s.get("aircraft") or s.get("aircraft_icao") or ""),
             "flights": 0, "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0,
-            "status": "done",
+            "status": "done", "statsim_only": True,
         })
+        # statsim_only nur, wenn ALLE Verbindungen dieses cid StatSim-Backfill sind — deckt eine
+        # echte VATSIM-Verbindung ihn (irgendwo) ab, ist er live und gehört in den Live-Block (#3).
+        if not s.get("statsim_only"):
+            p["statsim_only"] = False
     for q in network:
         p = parts.setdefault(int(q["cid"]), {
             "cid": int(q["cid"]), "name": q.get("name") or "", "callsign": q.get("callsign") or "",
             "aircraft": normalize_type_code(q.get("aircraft") or ""), "flights": 0,
+            "statsim_only": False,
             "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "status": "done",
         })
         p["flights"] += 1
