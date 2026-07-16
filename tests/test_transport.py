@@ -1230,6 +1230,47 @@ class TestCargoLosses:
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         assert p["losses"] == [] and p["lost_total_kg"] == 0.0
 
+    def test_login_drop_verlust_wird_sichtbar(self):
+        """Whole-Branch-Review #2: Der ungracefule Reconnect-Verlust muss im Feed erscheinen.
+
+        Szenario: Der Pilot lädt in EDWG, hebt ab und verliert MITTEN IN DER LUFT die
+        Verbindung, ohne dass der Poller die `flights`-Zeile schließt (logoff bleibt NULL —
+        `close_stale_flights` räumt erst nach 8 h auf). Kurz darauf loggt er neu ein: eine
+        ZWEITE Verbindung desselben cid. `derive_stacks` lässt die Bordladung beim zweiten
+        Login abfallen (`_drop_load`) — die Ware ist versenkt und zählt korrekt in
+        `lost_total_kg`.
+
+        Der Fehler VOR dem Fix: Die Verlust-Bewegung war am Folge-LOGIN gestempelt, der Feed
+        suchte sie aber nur am Logout-ts der Session. Die stale-offene erste Verbindung hatte
+        keinen Logout — also fiel die Zeile still aus `losses[]` und `participants.lost_kg`,
+        obwohl die Summe stimmte. Fix: Die stale-offene Verbindung (hat eine Folge-Verbindung)
+        bekommt einen synthetischen Logout an deren Login — dort war der Pilot nachweislich weg.
+        """
+        conn = _make_conn()
+        from app.geo import icao_to_coords, airport_elevation_ft
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        # Verbindung 1: OFFEN (logoff NULL) — lädt in EDWG, hebt ab, verschwindet über See.
+        login1 = "2026-07-01T18:05:00Z"
+        _add_open_flight(conn, 320, "EDWG", "EDXH", "C172", login1)
+        _add_pos(conn, 320, login1, dlat, dlon, 0, alt=delev)                    # steht in EDWG
+        _add_pos(conn, 320, _shift(login1, 1), dlat, dlon, 12, alt=delev)        # rollt
+        _add_pos(conn, 320, _shift(login1, 3), dlat, dlon, 80, alt=delev + 1200) # Steigflug
+        _add_pos(conn, 320, _shift(login1, 15), 54.05, 7.7, 95, alt=4500)        # weg über See
+        # Verbindung 2: der Re-Login 40 min später (> 2 s Lücke -> keine Verkettung).
+        _add_open_flight(conn, 320, "EDWG", "EDXH", "C172", "2026-07-01T18:45:00Z")
+
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+
+        assert p["lost_total_kg"] == 292.0            # Summe war schon vorher korrekt ...
+        assert len(p["losses"]) == 1                  # ... jetzt ist die Zeile auch da
+        loss = p["losses"][0]
+        assert loss["cid"] == 320 and loss["loss_kind"] == "sunk" and loss["lost_kg"] == 292.0
+        part = next(x for x in p["participants"] if x["cid"] == 320)
+        assert part["lost_kg"] == 292.0               # dem Piloten zugeschrieben
+
     def test_loss_shows_cargo_lines(self):
         """Die Verlust-Zeile zeigt, WAS über Bord ging — Co-Load-Verteilung wie bei
         einem beladenen Flug (Nutzer-Wunsch 02.07.: 'x Krabbenbrötchen, x Schafe |

@@ -5226,7 +5226,16 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
                 out.append({"ts": g["logoff_time"], "kind": "landing", "cid": cid,
                             "airport": normalize_type_code(g.get("gps_arrival")) or None,
                             "capacity_kg": cap})
-        if lf:
+        # Effektives Session-Ende für den Logout: geschlossen -> ihr logoff; stale-OFFEN (hat eine
+        # Folge-Verbindung, next_logon) -> deren Login. Dort war der Pilot NACHWEISLICH weg und
+        # wieder da; die Bordladung fällt real an dieser Stelle ab (derive_stacks lässt sie sonst
+        # erst beim Folge-Login abfallen, _drop_load auf login). OHNE synthetischen Logout hätte
+        # die stale-offene Verbindung keinen logout_ts, und der Feed fände die Verlust-Bewegung
+        # nicht (sie stünde am Folge-Login-ts) -> die Verlust-Zeile fiele still aus losses[] und
+        # participants.lost_kg, obwohl lost_total_kg stimmt (Whole-Branch-Review #2). Die WIRKLICH
+        # offene letzte Verbindung (kein next_logon) bleibt ohne Logout — der Pilot fliegt noch.
+        lf_eff = lf or nl
+        if lf_eff:
             # Der Logout darf NIE vor oder auf der eigenen Landung liegen: bei gleichem ts gewinnt
             # laut _STACK_EVENT_PRIO der Logout, fände position=None vor (der takeoff hat sie
             # geleert) und würde die Ladung VERSENKEN statt sie abzuliefern.
@@ -5247,10 +5256,10 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
             # sieht ein durchgehendes Leg), stünde sonst hier als "letzte Landung" und schöbe
             # den Logout weit nach vorn, aus der Session heraus. Der Pilot verschwände dann
             # mitten in Session 2 aus `position` und lieferte 0 kg.
-            ts_logout = lf
+            ts_logout = lf_eff
             letzte_landung = max((g["logoff_time"] for g in real
                                   if g.get("logoff_time")
-                                  and _parse_iso(g["logoff_time"]) <= _parse_iso(lf)),
+                                  and _parse_iso(g["logoff_time"]) <= _parse_iso(lf_eff)),
                                  default=None)
             if letzte_landung and _parse_iso(ts_logout) <= _parse_iso(letzte_landung):
                 ts_logout = (_parse_iso(letzte_landung) + timedelta(seconds=1)
@@ -5468,10 +5477,15 @@ def compute_transport_progress(
                     "distance_nm": 0, "block_min": 0, "loss_kind": kind, "lost_kg": lost,
                 })
 
-        # Offene Session mit Ware an Bord: die Bordladung IST die Reservierung.
+        # Offene Session mit Ware an Bord: die Bordladung IST die Reservierung. NUR die WIRKLICH
+        # offene letzte Verbindung (kein next_logon) darf diese Zeile bekommen — eine stale-offene
+        # Verbindung (Folge-Login vorhanden) hat real geendet, ihre Ladung ist bereits am
+        # synthetischen Logout abgefallen. `onboard` ist zudem cid-keyed (der Endzustand): OHNE
+        # die next_logon-Sperre läse die stale-offene Zeile die Bordladung der FOLGE-Verbindung
+        # und erfände einen Phantom-Flug (Whole-Branch-Review #2).
         load = onboard.get(cid) or {}
         aboard = round(sum(load.values()), 1)
-        if not s.get("logoff_time") and aboard > 0.0:
+        if not s.get("logoff_time") and not s.get("next_logon") and aboard > 0.0:
             where = r["position"].get(cid)
             network.append({
                 "dep_time": s.get("logon_time") or "", "cid": cid,
