@@ -1587,9 +1587,10 @@ def rechne(ev):
 
 ```bash
 # DB-Kopie holen (NIE gegen die Original-Datei arbeiten)
-scp server:/opt/friesenspy/data/friesenspy.db     /tmp/friesenspy-kopie.db
-scp server:/opt/friesenspy/data/friesenspy.db-wal /tmp/friesenspy-kopie.db-wal   # falls vorhanden
-python -m scripts.kutter_stapel_prototyp
+# Windows/Git-Bash: KEIN /tmp verwenden (siehe Falle 4 unten). Ein Pfad im Repo-Laufwerk.
+scp server:/opt/friesenspy/data/friesenspy.db     "D:/User/Tobias/kutter-kopie.db"
+scp server:/opt/friesenspy/data/friesenspy.db-wal "D:/User/Tobias/kutter-kopie.db-wal"  # falls vorhanden
+python -m scripts.kutter_stapel_prototyp "D:/User/Tobias/kutter-kopie.db"
 ```
 
 **Drei Fallen, alle am 16.07. real angetroffen — der Plan war hier zunächst falsch:**
@@ -1603,6 +1604,15 @@ python -m scripts.kutter_stapel_prototyp
 3. **Der Zugriff auf den Produktions-Host braucht eine ausdrückliche Freigabe des Nutzers.**
    Die Berechtigungsprüfung lehnt ihn sonst ab — zu Recht. Nicht umgehen: den Nutzer fragen
    oder ihn den Befehl selbst mit `!`-Prefix ausführen lassen.
+4. **Git Bash verbiegt Unix-Pfade** (MSYS-Pfadumwandlung). Ein Argument `/tmp/kopie.db` kommt bei
+   `python.exe` als `D:/Program Files/Git/tmp/kopie.db` an — am 16.07. gemessen:
+   `python -c "import sys; print(repr(sys.argv[1:]))" /opt/friesenspy/x` gibt
+   `['D:/Program Files/Git/opt/friesenspy/x']`. Auf dieser Maschine deshalb **Windows-Pfade**
+   verwenden (siehe oben), sonst greift die `/opt/friesenspy/`-Sperre im Skript nicht und die
+   DB-Kopie landet an einer überraschenden Stelle. Zum Gegentest der Sperre:
+   `MSYS_NO_PATHCONV=1 python -m scripts.kutter_stapel_prototyp /opt/friesenspy/data/friesenspy.db`
+   → muss „Das ist die Produktions-DB. Bitte eine Kopie angeben." ausgeben (verifiziert 16.07.).
+   Die eigentliche Sicherung ist ohnehin `mode=ro` auf DB-Ebene, nicht die Pfad-Sperre.
 
 Expected — **diese drei Zahlen müssen exakt stehen**:
 

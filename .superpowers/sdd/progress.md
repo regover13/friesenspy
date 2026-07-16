@@ -1,11 +1,67 @@
 # SDD-Ledger — FriesenKutter Stapel-Modell
 
-Plan: docs/superpowers/plans/2026-07-16-kutter-stapel-modell.md
-Spec: docs/superpowers/specs/2026-07-15-kutter-stapel-modell-design.md (14 Entscheidungen, alle bestaetigt)
-Basis vor Task 1: 7d58e1f
-Branch: main (stehende Nutzer-Regel: kein PR-Umweg; nur vor `git push origin main` bestaetigen lassen)
+##############################################################################
+#  GUTEN MORGEN — STAND 16.07., NACHTS.  DAS HIER ZUERST LESEN.
+##############################################################################
 
-Reihenfolge: 1 -> 2 -> 3 -> 4 -> 5 (reine Funktion) -> 6 (Adapter) -> 7 GATE -> 8 -> 9 -> 10 -> 11 -> 12
+TASK 1-7 SIND FERTIG, SOWEIT SIE OHNE DICH GEHEN. 1108 Tests gruen, 0 rot.
+NICHTS GEPUSHT (deine stehende Regel: vor `git push origin main` fragen).
+NICHTS AM PRODUKTIVEN KUTTER GEAENDERT — der rechnet weiter wie bisher.
+
+## Was du tun musst: EIN Befehl, dann steht das GATE
+
+Die Migration braucht eine KOPIE der Prod-DB. Der Zugriff auf den Produktions-Host wurde von
+der Berechtigungspruefung abgelehnt (zu Recht — du hattest ihn nie freigegeben). Ich habe das
+NICHT umgangen.
+
+  scp server:/opt/friesenspy/data/friesenspy.db "D:/User/Tobias/kutter-kopie.db"
+  python -m scripts.kutter_stapel_prototyp "D:/User/Tobias/kutter-kopie.db"
+
+ACHTUNG Windows: KEIN /tmp-Pfad. Git Bash verbiegt Unix-Pfade (gemessen: /opt/... kommt bei
+python.exe als "D:/Program Files/Git/opt/..." an). Deshalb Windows-Pfade wie oben.
+Die Prod-DB ist live + WAL (43 MB, der Poller schreibt laufend) — falls eine .db-wal daneben
+liegt, mitkopieren. Das Skript oeffnet die Kopie mit mode=ro und weigert sich, auf
+/opt/friesenspy/ zu zeigen (beides verifiziert).
+
+ERWARTET:
+  #1    FriesenKutter-Test Wangerooge      SUMME  1610 -> 1610   IDENTISCH
+  #81   Strandkoerbe und Sonnenschirme     SUMME  1120 -> 1120   IDENTISCH
+  #136  Grossauftrag fuer Wooge            SUMME  1090 -> 1090   IDENTISCH
+  #123  Multi-Kutter-Test                  SUMME   618 ->  417   ABWEICHUNG (erwartet, CSV-Zeile)
+  + Erhaltungssatz "OK" fuer alle vier
+
+STIMMEN DIE DREI ZAHLEN -> Task 8 freigeben (erst dann faesst irgendwas den Produktivpfad an).
+STIMMEN SIE NICHT   -> der Fehler liegt in Task 1-6. ZURUECK, NICHT VORWAERTS. So ist der Plan
+                       gebaut, und heute Nacht hat sich gezeigt, warum.
+
+## Eine Entscheidung habe ich ohne dich getroffen — bitte anschauen
+
+Der Adapter haette die HAEUFIGSTE Lieferung versenkt. poller.py:891 schliesst einen Flug mit
+`close_flight(conn, id, last_pos)`, wobei last_pos = MAX(ts) aus position_history — logoff_time
+IST das letzte GPS-Sample. Bei 15 s Poll-Takt hat jeder, der landet und binnen eines Takts
+aussteigt, logoff_time == landing_ts EXAKT. Der Logout sortierte dann vor die Landung, fand
+position=None und versenkte die Fracht. Das ist der Normalfall "abgeliefert, Feierabend".
+Ich habe das gefixt (Logout auf letzte-eigene-Landung + 1 s, wenn er auf/vor ihr liegt).
+Die Alternative waere gewesen, den Test zu entschaerfen — das haette den Fehler versteckt.
+Begruendung steht im Code, im Plan und unten bei Task 6.
+
+## Bilanz der Nacht: der Plan war an SECHS Stellen falsch
+
+Alle sechs am Code belegt, alle sechs behoben, jeder Fix per Mutation bewiesen statt behauptet.
+Zwei davon waren MEINE Fehler (siehe Task 2 und Task 6/C2). Die sechste Falle gab es nur, weil
+ich den Reviewer ausdruecklich danach suchen liess.
+Ein Muster hat sich dreimal wiederholt und ist die Lehre der Nacht:
+  ==> TESTS, DIE EINE REGEL ZU PRUEFEN SCHEINEN, ABER AUCH BEI KAPUTTER REGEL GRUEN BLEIBEN.
+      Deshalb ist die Mutationsprobe jetzt ein Pflichtschritt im Plan (Task 5, Step 4b).
+
+##############################################################################
+
+Plan: docs/superpowers/plans/2026-07-16-kutter-stapel-modell.md
+Spec: docs/superpowers/specs/2026-07-15-kutter-stapel-modell-design.md (14 Entscheidungen)
+Basis vor Task 1: 7d58e1f
+Branch: main (stehende Regel: kein PR-Umweg; nur vor `git push origin main` bestaetigen lassen)
+
+Reihenfolge: 1-5 (reine Funktion) ✅ -> 6 (Adapter) ✅ -> 7 GATE ⏸ DU -> 8 -> 9 -> 10 -> 11 -> 12
              -> Whole-Branch-Review (Opus)
 
 ## ⛔ GATE BLOCKIERT — braucht eine Freigabe des Nutzers (Stand 16.07. nachts)
@@ -190,7 +246,13 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
    3. legs_by_cid/sessions enthalten auch Legs von Nicht-Teilnehmer-Sessions (Legs laufen bis
       now, Sessions nur bis dtend).
 
-- Task 7: offen (GATE)
+- Task 7: Step 1+3 complete (08a2f16) — Step 2+4 WARTEN AUF DICH (Prod-DB-Freigabe, s.o.)
+  Prototyp rechnet jetzt mit der ECHTEN Ableitung (_stack_inputs + derive_stacks) statt mit
+  seiner eigenen Regelkopie. DB-Verbindung entschaerft: Pfad per Argument, Sperre gegen
+  /opt/friesenspy/, mode=ro. Selbst verifiziert: Sperre feuert (MSYS_NO_PATHCONV=1 noetig,
+  sonst verbiegt Git Bash den Testpfad — meine erste Messung war deshalb falsch, nicht der Code).
+  Das Skript schreibt NIRGENDS (0 Treffer INSERT/UPDATE/DELETE/COMMIT).
+  NICHT verifiziert: die drei Zahlen. Dafuer fehlt die DB.
 - Task 8: offen
 - Task 9: offen
 - Task 10: offen
