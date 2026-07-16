@@ -132,7 +132,55 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
     SELBST GEPRUEFT -> KEINE Regression: der ALTE Kern macht es identisch
     (app/database.py:5725 `cap if (cap is not None and cap > 0) else _INF`). Der Plan spiegelt
     bewusst bestehendes Verhalten. Nicht in diesem Umbau anfassen (soll bitidentisch rechnen).
-- Task 6: offen
+- Task 6: IN ARBEIT — Adapter gebaut (76d1f9a, 1103 gruen), aber Review NICHT bestanden.
+  Opus-Review (bewusst Opus: riskantester Diff, kein Mensch schaut heute Nacht drueber):
+  2 Critical + 2 Important + 3 Minor. Fix-Agent laeuft.
+
+  🔴 C2 — MEIN EIGENER FEHLER. Meine Option-A-Anweisung sagte
+     max(g["logoff_time"] for g in own ...) OHNE die Menge auf Landungen <= lf zu begrenzen.
+     `own` filtert nur logon_time! Bei S8 (Logout in der Luft 09:30, EIN durchgehendes Leg mit
+     Landung 10:00) springt der Logout auf 10:00:01 — 30 min nach vorn, mitten in Session 2.
+     Der Pilot wird aus position entfernt, WAEHREND er verbunden ist -> _load_standing findet ihn
+     nie wieder -> liefert am Ziel 0 kg. Ich habe beim Beheben eines Critical einen neuen gebaut.
+     Fix: die Menge begrenzen (_parse_iso(g["logoff_time"]) <= _parse_iso(lf)), nicht die Bedingung.
+
+  🔴 C1 — test_leg_nach_dtend_geht_nicht_verloren BEISST NICHT. Der Takeoff liegt bei 22:57,
+     dtend 23:00 -> der Filter `takeoff > end` feuert nie; mit end=min(now,dtend) bleibt der Test
+     gruen. _positions_for_cid ignoriert `end` ohnehin bewusst (database.py:2118). Der Brief
+     meinte "Takeoff NACH dtend" (22:05 bei dtend 22:00), der Test legte ihn davor.
+     DAS IST DER TASK-2-FEHLER, WOERTLICH WIEDERHOLT. Fix: Testdaten, nicht Produktionscode.
+
+  🟠 I3 — DIE SECHSTE FALLE (gefunden, weil ich den Reviewer ausdruecklich danach suchen liess).
+     canonicalize_legs hat einen GPS-losen Fallback (_flightrow_as_flight, database.py:2610-2623):
+     ohne erkanntes Leg wird jede flights-Zeile als "Leg" ausgegeben — gps_departure/gps_arrival
+     = None, departure/arrival AUS DEM FLUGPLAN. Der Adapter macht daraus Phantom-takeoff und
+     -landing: ein #23-Verstoss im Herzen des Umbaus, der #23 durchsetzen soll.
+     Gekoppelt: Regel 2 (Login-Ort aus Live-Position) ist unerreichbar, weil `if own:` statt
+     `if own and own[0].get("gps_departure"):`. Aktuell verhindert genau das den Schaden —
+     wer nur Regel 2 repariert, macht aus dem latenten Fehler einen echten (800 kg sunk).
+     Deshalb beides zusammen fixen.
+
+  🟠 I4 — _covered_by_session voellig ungetestet. Einziger Schutz gegen StatSim/FriesenSpy-
+     Doppelzaehlung. Faellt er aus, wird dieselbe Fracht zweimal geliefert — und der
+     Erhaltungssatz bleibt FORMAL INTAKT (die Ware wird doppelt aus dem Stapel genommen).
+     Der Balken luegt nach oben, nichts schlaegt Alarm.
+
+  🟡 Minor (fuers finale Review):
+     M5 String-Vergleich auf Zeitstempeln, die Mikrosekunden tragen koennen (database.py:5285,
+        5419-5420, 5407) — gegen die HAUSEIGENE dokumentierte Regel (_flightplan_asof-Docstring,
+        database.py:2165: "bewusst ueber _parse_iso, NICHT ueber String-Vergleich").
+        "...09:30:00.123456Z" < "...09:30:00Z" lexikografisch. Reichweite klein, kein belegter
+        Live-Schaden. _gap_seconds selbst rechnet korrekt (geprueft).
+     M6 statsim_id als StatSim-Merkmal, obwohl `source` unbedingt gesetzt ist (database.py:5480).
+        Faellt _flightplan_asof auf None, wird das StatSim-Leg still uebersprungen -> 0 kg.
+     M7 Ungeprueft: "landing vor takeoff" in _STACK_EVENT_PRIO, der cid-Tiebreaker, und die
+        Manifest-Feldabbildung (.get() -> ein Schluesseldreher scheitert STILL, Summe 0).
+
+  ⚠️ Fuer Task 8 vormerken (Hinweis des Implementers + des Reviewers):
+     - logoff_time == landing_ts ist eine Eigenschaft der DATEN, nicht des Adapters. Wo Task 8
+       sonst nach Zeitstempel ordnet, gilt dieselbe Kollision.
+     - legs_by_cid/sessions enthalten auch Legs von Nicht-Teilnehmer-Sessions (Legs laufen bis
+       now, Sessions bis dtend).
 - Task 7: offen (GATE)
 - Task 8: offen
 - Task 9: offen
