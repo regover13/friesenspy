@@ -3287,28 +3287,26 @@ async function fetchKutterActive() {
     // wohin alle Fracht soll; die Reise je Fracht (Ladeplatz → Ziel) steht in der Tabelle unten.
     html += `<div class="bb-sub" style="font-weight:600;font-size:1.05em;">🎯 Ziel: ${escHtml(d.destination || '—')}</div>`;
     html += _kutterBarAndTotals(d, false);  // Live: nur Gesamtbalken; Aufschlüsselung steckt im Detail
-    // Aktive Piloten: gerade unterwegs / angekommen (noch verbunden) / auf dem Rückflug.
+    // Aktive Piloten: das Modell sagt, wer sichtbar ist (Entscheidung 14 — letzter Bodenkontakt
+    // an einem teilnehmenden Platz ODER Ladung an Bord). Kein Ziel unterstellt (#23).
     const active = [];
-    (d.flights || []).forEach(f => {
-      if (!f.in_air) return;
-      active.push({
-        callsign: f.callsign, aircraft: f.aircraft,
-        kg: f.loaded ? f.tonnage_kg : (f.reserved_kg || 0),
-        lines: f.cargo_lines || [],
-        // Strecke = Reise der Ladung: Ladeplatz (f.dep) → Ziel (d.destination). NICHT der geflogene
-        // GPS-Weg und NICHT der Flugplan (f.arr) — nur „von wo aufgeladen, wohin geliefert" (#12).
-        dep: f.dep || '', dest: d.destination || '',
-        // airborne trennt „wirklich abgehoben" von „am Streckenplatz geparkt, reserviert" (#62-Folgefund)
-        status: f.loaded ? '✅ angekommen'
-              : (f.airborne ? '✈️ unterwegs'
-                 : '🅿️ lädt' + (f.dep ? ' in ' + _kesc(f.dep) : '')),
-      });
-    });
     (d.participants || []).forEach(p => {
-      if (p.status === 'returning') {
-        active.push({ callsign: p.callsign || '', aircraft: p.aircraft || '',
-                      kg: 0, lines: [], dep: '', dest: '', status: '↩️ Rückflug' });
-      }
+      if (!p.visible) return;
+      const kg = p.reserved_kg || 0;
+      const inAir = !p.place;
+      const status = inAir
+        ? (kg > 0 ? '✈️ unterwegs' : '✈️ dabei')
+        : ((d.route || []).includes(p.place) && p.place !== d.destination
+            ? '🅿️ lädt in ' + _kesc(p.place)
+            : '🅿️ steht in ' + _kesc(p.place));
+      active.push({
+        callsign: p.callsign, aircraft: p.aircraft,
+        kg: kg, lines: p.cargo_lines || [],
+        dep: p.place || '', dest: d.destination || '',
+        // Am Boden IMMER die Menge — ob er beladen ist, sieht man ihm sonst nicht an.
+        // '✈️ dabei' braucht keine: es bedeutet leer.
+        status: status + (inAir && kg <= 0 ? '' : ' · ' + Math.round(kg) + ' kg'),
+      });
     });
     if (active.length) {
       const rows = active.map(a => {
@@ -4861,10 +4859,11 @@ function _kCargoLabel(f) {
     const quip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
     return '<td class="kutter-loss">' + cargoTxt + _kLossLabel(f.loss_kind) + quip + '</td>';
   }
-  if (!f.loaded) return f.in_air
-    ? (f.airborne ? '<td class="kf-empty">unterwegs zum Ziel</td>'
-                  : '<td class="kf-empty">lädt (reserviert)</td>')
-    : '<td class="kf-empty">leer</td>';
+  // 'lädt (reserviert)' hiess frueher: er reserviert, hat aber nichts. Jetzt traegt er die Ware
+  // wirklich — die Reservierung IST die Bordladung.
+  if (!f.loaded) return f.in_air ? (f.airborne ? '<td class="kf-empty">unterwegs</td>'
+                                               : '<td class="kf-empty">lädt</td>')
+                                 : '<td class="kf-empty">leer</td>';
   const lines = f.cargo_lines || [];
   let label;
   if (lines.length) {
@@ -5014,7 +5013,8 @@ function _kutterDetailBody(d) {
     const t = (f.dep_time || '').slice(11, 16);
     const kg = f.loaded ? '<td class="kf-kg">' + _kDualKg(f.tonnage_kg, f.onboard_kg) + '</td>'
       : f.loss_kind ? '<td class="kf-empty kutter-loss">' + (f.lost_kg ? Math.round(f.lost_kg) + ' kg' : '—') + '</td>'
-      : f.in_air ? '<td class="kf-res">~' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
+      : f.in_air ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg)
+                 + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
       : '<td class="kf-empty">leer</td>';
     return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + _kesc(f.aircraft || '')
       + '</td><td>' + _kesc(f.dep) + '→' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';
