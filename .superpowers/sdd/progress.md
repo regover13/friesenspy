@@ -48,6 +48,22 @@ app/database.py:4510 Seed; app/database.py:212 Kommentar "Fischbrötchen").
 kein Identifier mit Umlaut, "Fischbrötchen" 29x konsistent, Spaltenausrichtung im Task-7-
 Erwartungsblock nachgezogen (Umlaut = 1 Zeichen statt 2).
 
+## ⚠️ FUENFTE FALLE — vom Task-6-Implementer gefunden, groesser als er dachte (16.07.)
+Der Adapter haette die HAEUFIGSTE Lieferung versenkt. Beleg (selbst am Code geprueft):
+  app/poller.py:885-891  ->  close_flight(conn, id, last_pos or now_str)
+                             last_pos = MAX(ts) FROM position_history
+  d.h. logoff_time IST der Zeitstempel des LETZTEN GPS-SAMPLES, keine eigene Uhrzeit.
+  Poll-Takt = 15 s (VATSIM_POLL_INTERVAL). Wer landet und binnen 15 s aussteigt, hat also
+  logoff_time == landing_ts EXAKT. _STACK_EVENT_PRIO sortiert den Logout dann VOR die Landung,
+  er findet position=None vor (takeoff hat sie geleert) -> VERSENKT statt geliefert.
+  Das ist der Normalfall "abgeliefert, Feierabend" — nicht ein Grenzfall.
+ENTSCHEIDUNG (Option A, von mir getroffen, Nutzer schlief): Logout einer Session auf
+  "letzte eigene Landung + 1 s" schieben, WENN er auf/vor ihr liegt. _STACK_EVENT_PRIO bleibt.
+  Die verworfene Option B haette den Test entschaerft — also einen echten Produktionsfehler
+  weichgeklopft. Genau das Anti-Muster, das uns in Task 2 schon einmal eingeholt hat.
+NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne dich getroffen
+  habe. Plan + Code + Test tragen die Begruendung. Fable hatte diese Falle NICHT gefunden.
+
 ## Stehende Schreibregel fuer JEDEN Dispatch
 - Docstrings / Kommentare / Doku / Ausgabe-Strings / Testdaten = ECHTE Umlaute
 - Identifier (def-, Variablen-, Testnamen) = ASCII        <- Repo hat NIRGENDS Umlaute in def-Namen

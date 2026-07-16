@@ -1044,12 +1044,32 @@ verspricht das Gegenteil (Entscheidung 10: „das Event wartet, bis die Ware ang
 `canonicalize_legs`-Aufruf (`database.py:5344-5349`) — wir brauchen nur einen.
 
 **3. StatSim-Legs haben keine `flights`-Zeile.** Sie sind der Backfill-Pfad bei Poller-/VPS-Ausfall
-(eigene Tabellen `statsim_flights`/`statsim_position_history`, `database.py:107-130`). Ohne Session
+(eigene Tabellen `statsim_cache`/`statsim_position_history`, `database.py:107-130`). Ohne Session
 gäbe es für sie weder Takeoff noch Landung — sie lieferten still 0 kg, obwohl sie heute mitzählen.
 **Fix (Nutzer-Entscheidung 16.07.): wie ein normaler Flug.** Ein StatSim-Leg erzeugt seine
 Ereignisse selbst: `login` am `gps_departure`, `takeoff`, `landing` — und ein `logout` am Landeort,
 denn der Flug ist vorbei. Landet er am Ziel, liefert er; landet er woanders, gilt dort dieselbe
 Regel wie sonst.
+
+**4. Der Logout darf nie auf der eigenen Landung liegen** *(am 16.07. beim Bauen gefunden — die
+gefährlichste Falle des Adapters, und sie stand zunächst nicht in diesem Plan).*
+
+`app/poller.py:885-891` schließt einen Flug mit `close_flight(conn, id, last_pos or now_str)`, wobei
+`last_pos = MAX(ts) FROM position_history` ist. **`logoff_time` ist also der Zeitstempel des letzten
+GPS-Samples**, nicht eine eigene Uhrzeit. Der Poll-Takt beträgt 15 s (`VATSIM_POLL_INTERVAL=15`).
+
+Wer landet und **innerhalb eines Poll-Takts** aussteigt, dessen letztes Sample *ist* damit das
+Touchdown-Sample: `logoff_time == landing_ts`, exakt. Bei Gleichstand sortiert
+`_STACK_EVENT_PRIO` den Logout **vor** die Landung; er findet `position=None` vor (der `takeoff`
+hat sie geleert) und **versenkt die Fracht, statt sie abzuliefern**.
+
+Das ist kein Grenzfall, sondern der **Normalfall des FriesenKutter**: „Fracht am Ziel abgeliefert,
+Sim zu, Feierabend." Ungefixt hätte das Modell ausgerechnet die häufigste Lieferung versenkt.
+
+**Fix:** Der Logout einer Session wird auf `letzte eigene Landung + 1 s` geschoben, **wenn** er auf
+oder vor ihr liegt — sonst bleibt er, wo er ist. `_STACK_EVENT_PRIO` bleibt unverändert
+(`test_bei_gleicher_zeit_gilt_der_logout_zuerst` pinnt die Regel bewusst). Derselbe Kniff wie im
+StatSim-Zweig, aber dort war er nur für synthetische Logouts gedacht.
 
 **Der Login-Ort — Regel (kein Flugplan, #23):**
 
@@ -1217,7 +1237,7 @@ class TestStackInputs:
         ev = self._load_event(conn)
         # StatSim-Flug OHNE flights-Zeile (der Poller lief nicht):
         conn.execute(
-            "INSERT INTO statsim_flights (statsim_id, cid, callsign, departure, arrival, "
+            "INSERT INTO statsim_cache (statsim_id, cid, callsign, departure, arrival, "
             "aircraft, logon_time, logoff_time) VALUES (9001, 12, 'FRS12', 'EDWG', 'EDXH', "
             "'C208', ?, ?)", (START, _shift(START, 30)),
         )
@@ -1230,7 +1250,9 @@ class TestStackInputs:
         assert inp["events"][0]["airport"] == "EDWG"
 ```
 
-*(Der StatSim-Test setzt voraus, dass `statsim_flights` das Schema aus `database.py:107` hat —
+*(Schema `statsim_cache`, `database.py:106-117` — am 16.07. am Code geprueft: Die Tabelle hiess
+im Plan zunaechst faelschlich `statsim_flights`; die gibt es nicht. Pflichtfelder sind
+`duration_min` (canonicalize_legs verlangt `duration_min > 5`) und `fetched_at TEXT NOT NULL` —
 beim Schreiben des Tests dort nachsehen und die Spalten exakt übernehmen; `statsim_position_history`
 braucht zusätzlich einen Track, damit `canonicalize_legs` ein Leg erkennt.)*
 
@@ -1423,7 +1445,22 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
                             "airport": normalize_type_code(g.get("gps_arrival")) or None,
                             "capacity_kg": cap})
         if lf:
-            out.append({"ts": lf, "kind": "logout", "cid": cid, "airport": None, "capacity_kg": cap})
+            # Der Logout darf NIE vor oder auf der eigenen Landung liegen: bei gleichem ts gewinnt
+            # laut _STACK_EVENT_PRIO der Logout, fände position=None vor (der takeoff hat sie
+            # geleert) und würde die Ladung VERSENKEN statt sie abzuliefern.
+            # Das ist kein Grenzfall: poller.py:891 schließt den Flug mit
+            # `close_flight(conn, id, last_pos)`, wobei last_pos = MAX(ts) aus position_history —
+            # logoff_time IST also das letzte GPS-Sample. Wer landet und innerhalb eines
+            # Poll-Takts (15 s) aussteigt, hat logoff_time == landing_ts. Das ist der Normalfall
+            # "abgeliefert, Feierabend". Dann: eine Sekunde nach der Landung, synthetisch.
+            ts_logout = lf
+            letzte_landung = max((g["logoff_time"] for g in own if g.get("logoff_time")),
+                                 default=None)
+            if letzte_landung and _parse_iso(ts_logout) <= _parse_iso(letzte_landung):
+                ts_logout = (_parse_iso(letzte_landung) + timedelta(seconds=1)
+                             ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            out.append({"ts": ts_logout, "kind": "logout", "cid": cid,
+                        "airport": None, "capacity_kg": cap})
 
     # --- StatSim-Legs: Backfill bei Poller-/VPS-Ausfall (Nutzer-Entscheidung 16.07.) ---
     # Sie haben KEINE flights-Zeile (eigene Tabellen, database.py:107-130) und würden sonst
