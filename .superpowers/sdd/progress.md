@@ -52,9 +52,48 @@ Erwartungsblock nachgezogen (Umlaut = 1 Zeichen statt 2).
     => Plan ergaenzt: neuer Test `test_von_zwei_wartenden_laedt_der_laenger_stehende` in Task 5
        (spaeter angekommene CID ist die kleinere) + neuer Step 4b: Mutationsprobe PFLICHT
        (sorted(standing) muss ihn rot machen). Erwartete Zahl in Task 5 Step 4: 22 -> 23.
-- Task 3: offen
-- Task 4: offen
-- Task 5: offen
+- Task 3: complete (commit 7612b36, 12 Tests gruen, Review: Spec ✅ / Qualitaet Approved)
+  - Reviewer hat die Mutationsfrage selbst durchgerechnet (Lehre aus Task 2): "liefert bei JEDER
+    Landung" macht S2 rot (Tee 500 statt 200), S3 rot (Fisch 0 statt 800); Bedingung umgedreht
+    macht S1 rot. Die Tests beissen also nachweislich.
+  - Minor (fuers finale Review): app/transport_stacks.py:91-92 nutzt e.get("airport") statt der
+    zwei Zeilen zuvor gebundenen Variable `airport`. Funktional identisch, doppelter Lookup,
+    Abweichung vom Brief (der `if airport:` zeigt). Reine Stilfrage.
+  - ⚠️ "Sind die airport-Werte echter landing-Events GPS-abgeleitet?" -> Task 6 (Adapter) baut sie
+    aus canonicalize_legs/gps_arrival. Global Constraint deckt das ab, kein offener Punkt.
+- Task 4: complete (commit 7d0b080, 18 Tests gruen, Review: Spec ✅ / Qualitaet Approved)
+  - Die drei Ausgaenge sind GEGENEINANDER unterscheidbar (nicht nur gegen "verschwunden"):
+    S4 trennt aktueller vs. urspruenglicher Ladeplatz vs. gestohlen; S5 trennt gestohlen von
+    versenkt (Ort bekannt vs. None); S8 umgekehrt. Der Erhaltungssatz allein koennte das nicht.
+  - _drop_load deckt Logout UND zweiten Login ohne Logout ab (Fable-Fund E1) — der Test dazu
+    braeche ohne Fix den Erhaltungssatz (500 statt 1300).
+  - Minor (fuers finale Review): kein Test prueft movements[].kind direkt. Reviewer hat per Grep
+    bestaetigt, dass returned/stolen/sunk zu app/database.py:4795-4800 (Badge/Quips) passen.
+    Teilweise aufgefangen: Task 8 assertet loss_kind == "returned" (Plan 1684) und filtert auf
+    alle drei (1783) -> Abdriften wuerde dort rot. Fuer stolen/sunk bleibt es duenn.
+  - Aufgeraeumt: .superpowers/sdd/ enthielt Briefs/Reports aus DREI frueheren Laeufen mit
+    denselben Dateinamen (task-5-report.md, task-6-brief.md ... aus track-diagnose, 15.07.).
+    Der Task-4-Implementer stiess darauf. 61 Alt-Dateien nach archiv-vor-kutter-stapel/
+    verschoben. Briefs/Reports 1-4 waren nachweislich alle von heute -> kein Reviewer hat
+    Fremdes gelesen. Ab Task 5 waere die Falle scharf gewesen.
+- Task 5: complete (commit 9241b32, 23 Tests gruen, Review: Spec ✅ / Qualitaet Approved)
+  ==> DIE REINE ZUSTANDSMASCHINE IST FERTIG. app/transport_stacks.py, DB-frei, 23 Tests.
+  - MUTATIONSPROBE BESTANDEN (Step 4b, den ich nach dem Task-2-Fund eingezogen hatte):
+    sorted(standing) ohne since-Key machte GENAU test_von_zwei_wartenden_laedt_der_laenger_stehende
+    rot (assert 0.0 == 800.0), die anderen 22 blieben gruen. Rueckgedreht wieder 23 gruen.
+    Damit ist Entscheidung 5 nachweislich geprueft — der Kreis aus Task 2 ist geschlossen.
+  - Reviewer hat die Kappung von Hand nachgerechnet: unterscheidet "begrenzt die Bordladung" von
+    "begrenzt den Ladevorgang" (50 statt 150 kg nach drei Landungen). Kein Placebo.
+  - Important (gegen den BRIEF, nicht den Implementer): Step 2 nannte keinen Erwartungswert fuer
+    die drei "brauchen keine eigene Regel"-Tests (Wartender/zwei Wartende/Musterwechsel). Ein von
+    Anfang an gruener Test beweist nichts, wenn niemand das vorher erwartet hat. Der Implementer
+    hat es im Bericht nachgeholt (Step-2-Output 2 failed/21 passed, arithmetisch konsistent:
+    18 Alt + 3 schon gruene neue). Erledigt, aber als Planschwaeche notiert.
+  - Minor: per_flight_max_kg == 0 wird wie None behandelt (kein Limit statt "null erlaubt"), und
+    0 IST erreichbar (_opt_float(0) -> 0.0, nicht None; app/database.py:4415-4419).
+    SELBST GEPRUEFT -> KEINE Regression: der ALTE Kern macht es identisch
+    (app/database.py:5725 `cap if (cap is not None and cap > 0) else _INF`). Der Plan spiegelt
+    bewusst bestehendes Verhalten. Nicht in diesem Umbau anfassen (soll bitidentisch rechnen).
 - Task 6: offen
 - Task 7: offen (GATE)
 - Task 8: offen
