@@ -361,10 +361,22 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
   MIT Fracht war leer (haing an place statt last_ground), (b) "EDXH -> EDXH" am Ziel. Der ganz leere
   Fall (kein Start) trifft nur unsichtbare Zeilen -> rendert nie (mit dem Nutzer geklaert). Backend-
   Feld per Test abgesichert (test_participant_hat_last_ground_als_strecken_start).
-- Task 11: offen (Plausibilitaetspruefung departure-Feld — Entscheidung 6: genau ein ICAO != Ziel,
-  Pflicht. Betrifft database.py set_transport_cargo, main.py _validate_transport_manifest,
-  calendar_sync.py parse_cargo_lines, admin.html Feldbeschreibung + Tests.)
-- Task 12: offen
+- Task 11: complete (Cloud-Session). Entscheidung 6 durchgesetzt: jede Manifest-Zeile = ein Stapel =
+  GENAU EIN Startplatz != Ziel, Pflicht. main.py _validate_transport_manifest (Fehlertext "genau
+  einem Platz"), database.py set_transport_cargo (wirft ValueError, verbindlich serverseitig),
+  calendar_sync.py parse_cargo_lines (kein-ICAO/Multi-ICAO -> Zeile verworfen), admin.html (Feld-
+  hinweis + Client-Check gegen Multi). Der "geteilte Topf" (departure NULL) entfaellt ganz.
+  ECHTER NEBENFUND selbst behoben: der Kalender-Sync (upsert_calendar_transport_event) degradierte
+  einen fernen/Tippfehler-Marker-ICAO auf departure=None -> set_transport_cargo haette jetzt
+  gecrasht. Er VERWIRFT solche ortlosen Zeilen nun (nur Ein-Platz-Zeilen auf der Route != Ziel
+  ueberleben), statt den Sync zu killen.
+  Tests: 4 neue Validierungstests (main) + 3 (calendar) via Sub-Agent, danach von mir verifiziert.
+  19 durch die Regel gebrochene Seeds gefixt (departure ergaenzt; 2 shared/NULL-Tests auf
+  pytest.raises umgeschrieben; 1 geloescht). Backfill-Tests: Legacy-NULL jetzt per direktem SQL-
+  UPDATE simuliert (via create_transport_event nicht mehr erzeugbar) — Backfill-Kern + Assertion
+  unveraendert. MUTATIONSPROBE: alle 3 Guards permissiv -> 8 Tests rot -> sie beissen. Anti-
+  Schwaechungs-Scan sauber. pytest tests/ -q: 1080 passed, 0 failed.
+- Task 12: offen (naechster + letzter Plan-Task, noch nicht gelesen)
 
 ## Minor-Funde fuers finale Review
 (noch keine)

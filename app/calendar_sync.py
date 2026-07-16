@@ -66,10 +66,13 @@ _CARGO_ITEM_RE = re.compile(r"^([\d]+(?:[.,]\d+)?)\s*(?:kg\s+)?(.+)$", re.IGNORE
 
 
 def parse_cargo_lines(description: str) -> list[dict]:
-    """Fracht-Zeilen aus der Kalender-Beschreibung lesen (Marker ``Fracht:``, kommagetrennt).
+    """Fracht-Zeilen aus der Kalender-Beschreibung lesen (Marker ``Fracht <ICAO>:``).
 
-    Beispiel: ``"Fracht: 1000 Krabbenbrötchen, 500 Friesentee"`` →
-    ``[{"name": "Krabbenbrötchen", "target_kg": 1000.0}, {"name": "Friesentee", "target_kg": 500.0}]``.
+    Beispiel: ``"Fracht EDWG: 1000 Krabbenbrötchen, 500 Friesentee"`` →
+    ``[{"name": "Krabbenbrötchen", "target_kg": 1000.0, "departure": "EDWG"},
+       {"name": "Friesentee", "target_kg": 500.0, "departure": "EDWG"}]``.
+    Entscheidung 6 (Task 11): der Marker braucht GENAU EINEN Startplatz. ``Fracht:`` ohne ICAO
+    (früher „geteilt") und ``Fracht EDWG, EDWZ:`` (mehrere) werden ABGEWIESEN (leere Rückgabe).
     Nur die erste Zeile nach dem Marker wird gelesen. Frachtnamen werden beim Speichern gegen den
     Katalog abgeglichen (Emoji/Kappung); unbekannte Namen werden als Freitext übernommen.
     Mehrere Frachtarten werden durch ``", "`` (Komma+Leerzeichen) getrennt — ein Komma ohne
@@ -79,9 +82,14 @@ def parse_cargo_lines(description: str) -> list[dict]:
         return []
     out: list[dict] = []
     for m in _CARGO_MARKER_RE.finditer(description):
-        # #84: Startplatz-LISTE (CSV) — normalisiert (upper, dedup, sortiert); None = geteilt.
+        # Startplatz am Marker — normalisiert (upper, dedup, sortiert).
         raw = m.group(1)
         dep = ",".join(sorted({c.strip().upper() for c in raw.split(",") if c.strip()})) if raw else None
+        # Entscheidung 6 (Task 11): genau EIN Platz je Zeile. Ohne ICAO (früher „geteilter Topf")
+        # oder mit mehreren wird die Zeile ABGEWIESEN, statt still eine ortlose Zeile anzulegen —
+        # der Kalender-Sync meldet den Fehler dann am Event.
+        if not dep or "," in dep:
+            continue
         rest = m.group(2)                          # `.+` matcht bereits nur bis zum Zeilenende
         for chunk in re.split(r",\s+", rest):
             im = _CARGO_ITEM_RE.match(chunk.strip())

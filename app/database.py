@@ -4298,16 +4298,20 @@ def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
         ).fetchone()
         if row and not get_transport_cargo(conn, row[0]):
             resolved = _resolve_cargo_against_catalog(conn, cargo_lines)
-            # #84: Cargo-Startplätze auf die (distanz-gefilterte) Route beschneiden — ein von
-            # `parse_route` verworfener Marker-ICAO (Tippfehler/fern) degradiert seine Zeile auf
-            # geteilt (NULL), statt tote, nie füllbare Fracht anzulegen.
+            # Entscheidung 6 (Task 11): jede Zeile braucht GENAU EINEN Startplatz ≠ Ziel, der auf
+            # der (distanz-gefilterten) Route liegt. Ein von `parse_route` verworfener Marker-ICAO
+            # (Tippfehler/fern) oder das Ziel selbst macht die Zeile ortlos — sie wird VERWORFEN
+            # (früher: auf „geteilt"/NULL degradiert; den geteilten Topf gibt es nicht mehr, und
+            # set_transport_cargo würde eine ortlose Zeile jetzt mit ValueError ablehnen).
             route_places = {c.strip().upper() for c in (route or "").split(",") if c.strip()}
+            dest_up = (row["destination"] or "").strip().upper()
+            kept_lines = []
             for line in resolved:
-                dep = line.get("departure")
-                if dep:
-                    kept = [c for c in dep.split(",") if c.strip().upper() in route_places]
-                    line["departure"] = ",".join(kept) if kept else None
-            set_transport_cargo(conn, row[0], resolved, destination=row["destination"])
+                dep = (line.get("departure") or "").strip().upper()
+                if dep and dep in route_places and dep != dest_up:
+                    line["departure"] = dep
+                    kept_lines.append(line)
+            set_transport_cargo(conn, row[0], kept_lines, destination=row["destination"])
 
 
 def list_transport_events(conn: sqlite3.Connection, *, since: str | None = None) -> list[dict]:
@@ -4482,10 +4486,10 @@ def set_transport_cargo(
     destination: str | None = None,
 ) -> None:
     """Fracht-Manifest eines Events komplett ersetzen. Zeilen ohne Name/Menge werden ignoriert.
-    Je Zeile optional ``emoji``, ``per_flight_max_kg`` (Co-Load-Kappung) und ``departure`` (#84:
-    kommagetrennte Startplatz-LISTE, an die die Frachtart gebunden ist; leer = geteilt). Die
-    Startplatz-Liste wird via :func:`_normalize_icao_list` normalisiert; ``destination`` wird aus ihr
-    entfernt (ein am Ziel startender Flug ist per Rückflug-Filter nie füllbar)."""
+    Je Zeile optional ``emoji``, ``per_flight_max_kg`` (Co-Load-Kappung) und PFLICHT ``departure``:
+    GENAU EIN Startplatz ≠ Ziel (Entscheidung 6 — eine Zeile = ein Stapel = ein Platz). ``departure``
+    wird via :func:`_normalize_icao_list` normalisiert (``destination`` entfernt); fehlt der Platz
+    oder sind es mehrere, wird ``ValueError`` geworfen (der geteilte Topf/CSV-Liste entfällt)."""
     conn.execute("DELETE FROM transport_cargo WHERE event_id = ?", (event_id,))
     pos = 0
     for line in cargo:
@@ -4496,7 +4500,15 @@ def set_transport_cargo(
             continue
         if not name or target <= 0:
             continue
+        # Entscheidung 6 (Spec 2026-07-15): eine Zeile = ein Stapel = GENAU ein Platz. Verbindlich
+        # serverseitig (der Admin-Endpoint ist nicht der einzige Aufrufer) — der "geteilte Topf"
+        # (departure NULL) und die CSV-Liste entfallen.
         dep = _normalize_icao_list(line.get("departure"), exclude=destination)
+        if not dep or "," in dep:
+            raise ValueError(
+                f"Frachtart „{name}“: Jede Frachtart liegt an genau einem Platz. "
+                "Für dieselbe Ware an mehreren Plätzen leg mehrere Zeilen an."
+            )
         conn.execute(
             "INSERT INTO transport_cargo "
             "(event_id, position, name, target_kg, emoji, per_flight_max_kg, departure) "

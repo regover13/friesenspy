@@ -332,8 +332,8 @@ class TestCalendarCargo:
         upsert_cargo_catalog(conn, name="Filmrollen", emoji="🎞️", per_flight_max_kg=100)
         conn.commit()
         ev = self._cal_ev(cargo=[
-            {"name": "Krabbenbrötchen", "target_kg": 1000.0},
-            {"name": "Filmrollen", "target_kg": 300.0},
+            {"name": "Krabbenbrötchen", "target_kg": 1000.0, "departure": "EDWG"},
+            {"name": "Filmrollen", "target_kg": 300.0, "departure": "EDWG"},
         ])
         upsert_calendar_transport_event(conn, ev)
         conn.commit()
@@ -346,7 +346,7 @@ class TestCalendarCargo:
 
     def test_unknown_name_kept_as_freetext(self):
         conn = _make_conn()
-        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Mysteriöses Gut", "target_kg": 42.0}]))
+        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Mysteriöses Gut", "target_kg": 42.0, "departure": "EDWG"}]))
         conn.commit()
         eid = conn.execute("SELECT id FROM transport_events WHERE calendar_uid='abc123'").fetchone()[0]
         cargo = get_transport_cargo(conn, eid)
@@ -354,13 +354,13 @@ class TestCalendarCargo:
 
     def test_resync_does_not_overwrite_existing_manifest(self):
         conn = _make_conn()
-        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Krabbenbrötchen", "target_kg": 1000.0}]))
+        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Krabbenbrötchen", "target_kg": 1000.0, "departure": "EDWG"}]))
         conn.commit()
         eid = conn.execute("SELECT id FROM transport_events WHERE calendar_uid='abc123'").fetchone()[0]
-        set_transport_cargo(conn, eid, [{"name": "Vom Admin gepflegt", "target_kg": 5.0}])
+        set_transport_cargo(conn, eid, [{"name": "Vom Admin gepflegt", "target_kg": 5.0, "departure": "EDWG"}])
         conn.commit()
         # Erneuter Sync mit (ggf. anderer) Fracht-Zeile aus dem Kalender darf das nicht überschreiben.
-        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Anderes Gut", "target_kg": 77.0}]))
+        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Anderes Gut", "target_kg": 77.0, "departure": "EDWG"}]))
         conn.commit()
         cargo = get_transport_cargo(conn, eid)
         assert [c["name"] for c in cargo] == ["Vom Admin gepflegt"]
@@ -563,8 +563,8 @@ class TestProgress:
         conn = _make_conn()
         self._seed(conn)
         ev = _event(conn, cargo=[
-            {"name": "Inselpost", "target_kg": 1500, "per_flight_max_kg": 50},
-            {"name": "Lebensmittel", "target_kg": 500},
+            {"name": "Inselpost", "target_kg": 1500, "per_flight_max_kg": 50, "departure": "EDWG"},
+            {"name": "Lebensmittel", "target_kg": 500, "departure": "EDWG"},
         ])
         p = compute_transport_progress(conn, ev, END)
         post = next(c for c in p["cargo"] if c["name"] == "Inselpost")
@@ -871,7 +871,7 @@ class TestReservation:
         jedes ältere Event mit demselben Startplatz."""
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])  # läuft START..END (01.07.)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])  # läuft START..END (01.07.)
         _add_open_flight(conn, 220, "EDWG", "EDXH", "C172", "2026-07-02T10:00:00Z")  # NACH END
         p = compute_transport_progress(conn, ev, "2026-07-02T10:30:00Z")  # now weit nach dtend
         assert not any(f["cid"] == 220 for f in p["flights"])
@@ -935,21 +935,25 @@ class TestCargoPerDeparture:
         assert get_transport_cargo(conn, eid)[0]["departure"] == "EDDW"
         assert set(get_transport_event(conn, eid)["route"].split(",")) == {"EDDW", "EDXH"}
 
-    def test_departure_equal_destination_becomes_shared(self):
+    def test_departure_gleich_ziel_wird_abgewiesen(self):
+        # Entscheidung 6 (Task 11): departure == Ziel ist eine tote Zeile → Abweisung, kein NULL mehr.
+        import pytest
         conn = _make_conn()
-        eid = create_transport_event(
-            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "EDXH"}],  # == Ziel → tote Zeile verhindert
-        )
-        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+        with pytest.raises(ValueError, match="genau einem Platz"):
+            create_transport_event(
+                conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+                cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "EDXH"}],  # == Ziel
+            )
 
-    def test_no_departure_is_shared_null(self):
+    def test_ohne_departure_wird_abgewiesen(self):
+        # Entscheidung 6 (Task 11): jede Frachtart braucht genau einen Startplatz → Abweisung, kein NULL mehr.
+        import pytest
         conn = _make_conn()
-        eid = create_transport_event(
-            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Äpfel", "target_kg": 500}],
-        )
-        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+        with pytest.raises(ValueError, match="genau einem Platz"):
+            create_transport_event(
+                conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+                cargo=[{"name": "Äpfel", "target_kg": 500}],
+            )
 
     def test_update_rederives_route_from_cargo(self):
         # #84: nach einem Cargo-Update wird die Route frisch aus den Startplätzen + Ziel abgeleitet.
@@ -1061,8 +1065,11 @@ class TestZeilenStattStrecke:
         conn = _make_conn()
         eid = create_transport_event(
             conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Alt", "target_kg": 100}],  # departure NULL (geteilt, Alt-Modell)
+            cargo=[{"name": "Alt", "target_kg": 100, "departure": "EDWG"}],
         )
+        # Legacy-Zustand simulieren: eine vor Entscheidung 6 angelegte geteilte Zeile (departure
+        # NULL). Über create_transport_event nicht mehr erzeugbar (Validierung) — direkt setzen.
+        conn.execute("UPDATE transport_cargo SET departure = NULL WHERE event_id = ?", (eid,))
         assert get_transport_cargo(conn, eid)[0]["departure"] is None
         ev = get_transport_event(conn, eid)
         deps = _normalize_icao_list(ev["route"], exclude=ev["destination"])   # Backfill-Kern
@@ -1079,8 +1086,10 @@ class TestZeilenStattStrecke:
         conn = get_connection(p)
         eid = create_transport_event(
             conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Alt", "target_kg": 100}],  # departure NULL
+            cargo=[{"name": "Alt", "target_kg": 100, "departure": "EDWG"}],
         )
+        # Legacy-Zustand simulieren: departure NULL (vor Entscheidung 6, nur noch per SQL erzeugbar).
+        conn.execute("UPDATE transport_cargo SET departure = NULL WHERE event_id = ?", (eid,))
         conn.commit(); conn.close()
         init_db(p)  # Backfill läuft über das bestehende Event — darf NICHT crashen
         conn = get_connection(p)
@@ -1673,7 +1682,7 @@ class TestParticipants:
         # Rohes ICAO-Flugplanfeld (Typ + Ausrüstungssuffix) muss als reiner Typcode erscheinen —
         # sonst steht in Live-Tabelle und Forum-Badge z. B. "AS65/L-SDGY/S" statt "AS65".
         conn = _make_conn()
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0, "departure": "EDWG"}])
         _add_flight(conn, 403, "EDWG", "EDXH", "AS65/L-SDGY/S", "2026-07-01T18:00:00Z", duration_min=25)
         p = compute_transport_progress(conn, ev, "2026-07-01T19:30:00Z")
         assert {x["cid"]: x for x in p["participants"]}[403]["aircraft"] == "AS65"
@@ -1866,6 +1875,34 @@ class TestKutterCreateValidation:
         assert "EDWG" in codes and all(c.startswith("EDW") for c in codes)
         assert client.get("/api/airports/search?q=").json()["results"] == []
 
+    # --- Entscheidung 6: genau ein Startplatz je Frachtart (Task 11) ---
+    def test_mehrfach_icao_wird_abgewiesen(self):
+        from app.main import _validate_transport_manifest
+        err = _validate_transport_manifest("EDXH", [
+            {"name": "Krabbenbrötchen", "target_kg": 500, "departure": "EDWL,EDXP"},
+        ])
+        assert err is not None
+        assert "genau einem Platz" in err
+
+    def test_genau_ein_icao_geht_durch(self):
+        from app.main import _validate_transport_manifest
+        assert _validate_transport_manifest("EDXH", [
+            {"name": "Krabbenbrötchen", "target_kg": 500, "departure": "EDWL"},
+        ]) is None
+
+    def test_departure_ist_pflicht(self):
+        from app.main import _validate_transport_manifest
+        err = _validate_transport_manifest("EDXH", [{"name": "Fisch", "target_kg": 500}])
+        assert err is not None
+
+    def test_departure_gleich_ziel_wird_abgewiesen(self):
+        """Heute still zu NULL normalisiert — das erzeugte eine nie füllbare Zeile."""
+        from app.main import _validate_transport_manifest
+        err = _validate_transport_manifest("EDXH", [
+            {"name": "Fisch", "target_kg": 500, "departure": "EDXH"},
+        ])
+        assert err is not None
+
 
 class TestKutterBadgeEndpoints:
     """Integrationstests der Badge-Endpoints (Muster: tests/test_admin_api.py -- Fake-Settings +
@@ -1892,7 +1929,7 @@ class TestKutterBadgeEndpoints:
 
     def _seeded_event(self, db_path):
         conn = get_connection(db_path)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         _add_flight(conn, 500, "EDWG", "EDXH", "C172", "2026-07-01T18:00:00Z", duration_min=25)
         conn.commit()
         conn.close()

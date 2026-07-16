@@ -101,22 +101,22 @@ class TestDescription:
 
 class TestCargoLines:
     def test_parses_comma_separated_items(self):
-        lines = parse_cargo_lines("Fracht: 1000 Krabbenbrötchen, 500 Friesentee")
+        lines = parse_cargo_lines("Fracht EDWG: 1000 Krabbenbrötchen, 500 Friesentee")
         assert lines == [
-            {"name": "Krabbenbrötchen", "target_kg": 1000.0},
-            {"name": "Friesentee", "target_kg": 500.0},
+            {"name": "Krabbenbrötchen", "target_kg": 1000.0, "departure": "EDWG"},
+            {"name": "Friesentee", "target_kg": 500.0, "departure": "EDWG"},
         ]
 
     def test_kg_suffix_and_decimal_comma(self):
-        lines = parse_cargo_lines("Fracht: 250,5 kg Filmrollen")
-        assert lines == [{"name": "Filmrollen", "target_kg": 250.5}]
+        lines = parse_cargo_lines("Fracht EDWG: 250,5 kg Filmrollen")
+        assert lines == [{"name": "Filmrollen", "target_kg": 250.5, "departure": "EDWG"}]
 
     def test_no_marker_returns_empty(self):
         assert parse_cargo_lines("Diesmal als FriesenKutter: EDWG EDXH") == []
 
     def test_only_first_line_after_marker(self):
-        lines = parse_cargo_lines("Fracht: 1000 Krabbenbrötchen\nWeitere Infos hier")
-        assert lines == [{"name": "Krabbenbrötchen", "target_kg": 1000.0}]
+        lines = parse_cargo_lines("Fracht EDWG: 1000 Krabbenbrötchen\nWeitere Infos hier")
+        assert lines == [{"name": "Krabbenbrötchen", "target_kg": 1000.0, "departure": "EDWG"}]
 
     def test_empty_description(self):
         assert parse_cargo_lines("") == []
@@ -127,9 +127,6 @@ class TestCargoLines:
             {"name": "Äpfel", "target_kg": 500.0, "departure": "EDDW"},
             {"name": "Nüsse", "target_kg": 200.0, "departure": "EDDW"},
         ]
-
-    def test_plain_marker_stays_shared(self):
-        assert parse_cargo_lines("Fracht: 500 Äpfel") == [{"name": "Äpfel", "target_kg": 500.0}]
 
     def test_multiple_departure_markers(self):
         lines = parse_cargo_lines("Fracht EDDW: 500 Äpfel\nFracht EDWG: 300 Birnen")
@@ -143,10 +140,17 @@ class TestCargoLines:
             {"name": "Birnen", "target_kg": 300.0, "departure": "EDWG"},
         ]
 
-    def test_multi_icao_marker_binds_both(self):
-        # #84: kommagetrennte Startplatz-Liste am Marker.
-        assert parse_cargo_lines("Fracht EDDW, EDWG: 500 Äpfel") == [
-            {"name": "Äpfel", "target_kg": 500.0, "departure": "EDDW,EDWG"},
+    # --- Entscheidung 6 (Task 11): genau EIN Startplatz je Zeile, sonst abgewiesen ---
+    def test_fracht_marker_mit_mehreren_icao_wird_abgewiesen(self):
+        """Statt still zu teilen: der Sync verwirft die Zeile (Entscheidung 6)."""
+        assert parse_cargo_lines("Fracht EDWG, EDWZ: 500 Fisch") == []
+
+    def test_fracht_marker_ohne_icao_wird_abgewiesen(self):
+        assert parse_cargo_lines("Fracht: 500 Fisch") == []
+
+    def test_fracht_marker_mit_einem_icao_bleibt(self):
+        assert parse_cargo_lines("Fracht EDWG: 500 Fisch") == [
+            {"name": "Fisch", "target_kg": 500.0, "departure": "EDWG"},
         ]
 
     def test_near_cargo_marker_icao_added_to_route(self):
