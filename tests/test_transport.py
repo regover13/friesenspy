@@ -2778,3 +2778,244 @@ class TestGroundLoading:
         progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
         f = _feed_by_callsign(progress, "FRS65")
         assert f is not None and f["dep"] == "EDXH"   # Notnagel Plan greift, regressionsfrei
+
+
+# --- Task 6: Adapter — aus Legs und Sessions wird eine Ereignisliste -------
+
+class TestStackInputs:
+    """Der Adapter: aus Legs + Sessions wird eine chronologische Ereignisliste."""
+
+    def _load_event(self, conn):
+        upsert_payload(conn, "C208", payload_kg=1000)
+        conn.commit()
+        return _event(conn, route="EDWG,EDXH", destination="EDXH",
+                      cargo=[{"name": "Fisch", "target_kg": 800, "departure": "EDWG"}])
+
+    def test_session_ohne_leg_ergibt_login_am_platz_aus_der_live_position(self):
+        from app.database import _stack_inputs
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        _add_open_flight(conn, 61, "EDXP", "EDWK", "C208", START)   # Flugplan bewusst falsch
+        lat, lon = icao_to_coords("EDWG")
+        _set_live_pos(conn, 61, lat, lon, 0)                        # real steht er in EDWG
+
+        inp = _stack_inputs(conn, ev, _shift(START, 5))
+
+        assert inp["destination"] == "EDXH"
+        assert inp["loading_airports"] == {"EDWG"}
+        assert [e["kind"] for e in inp["events"]] == ["login"]
+        assert inp["events"][0]["airport"] == "EDWG"   # Live-Position gewinnt, nicht der Plan
+        assert inp["events"][0]["capacity_kg"] == 1000.0
+        assert len(inp["sessions"]) == 1               # für den Feed (Task 8)
+
+    def test_leg_ergibt_takeoff_und_landing_mit_gps_orten(self):
+        from app.database import _stack_inputs
+        from app.geo import icao_to_coords, airport_elevation_ft
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        alat, alon = icao_to_coords("EDXH")
+        aelev = airport_elevation_ft("EDXH") or 0
+        _add_flight(conn, 12, "EDWG", "EDXH", "C208", START, duration_min=40)
+        _add_pos(conn, 12, START, dlat, dlon, 0, alt=delev)
+        _add_pos(conn, 12, _shift(START, 2), dlat, dlon, 80, alt=delev + 1200)   # Takeoff
+        _add_pos(conn, 12, _shift(START, 20), 54.0, 7.9, 120, alt=4000)
+        _add_pos(conn, 12, _shift(START, 38), alat, alon, 40, alt=aelev + 400)
+        _add_pos(conn, 12, _shift(START, 40), alat, alon, 0, alt=aelev)          # Touchdown
+
+        inp = _stack_inputs(conn, ev, END)
+
+        kinds = [e["kind"] for e in inp["events"]]
+        assert kinds == ["login", "takeoff", "landing", "logout"]
+        assert inp["events"][0]["airport"] == "EDWG"   # Login-Ort aus gps_departure des Legs
+        assert inp["events"][2]["airport"] == "EDXH"   # Landung aus gps_arrival
+        assert 12 in inp["legs_by_cid"]                # für den Feed (Task 8)
+
+    def test_bei_gleicher_zeit_gilt_der_logout_zuerst(self):
+        """Spec: er beendet die Tour — eine Landung im selben Moment kann nichts mehr abliefern."""
+        from app.database import _sort_stack_events
+        same = "2026-07-01T10:00:00Z"
+        events = [
+            {"ts": same, "kind": "landing", "cid": 1, "airport": "EDXH", "capacity_kg": 0},
+            {"ts": same, "kind": "logout", "cid": 1, "airport": None, "capacity_kg": 0},
+        ]
+        assert [e["kind"] for e in _sort_stack_events(events)] == ["logout", "landing"]
+
+    def test_manifest_kommt_in_ladereihenfolge(self):
+        from app.database import _stack_inputs
+        conn = _make_conn()
+        ev = _event(conn, route="EDWG,EDXH", destination="EDXH", cargo=[
+            {"name": "Zuerst", "target_kg": 100, "departure": "EDWG"},
+            {"name": "Danach", "target_kg": 200, "departure": "EDWG"},
+        ])
+        inp = _stack_inputs(conn, ev, END)
+
+        assert [c["name"] for c in inp["manifest"]] == ["Zuerst", "Danach"]
+
+    def test_refile_split_ist_kein_logout(self):
+        """Fable-Review 16.07. (BLOCKER): Der Poller splittet eine LAUFENDE Verbindung, sobald
+        der Flugplan mit geändertem Abflugplatz refiled wird (poller.py:832) — close_flight +
+        open_flight. Wer unterwegs den Rückflug filed, bekäme so ein logoff_time in der Luft
+        und seine Fracht würde durch eine reine Flugplan-Aenderung versenkt (#23-Verstoß).
+        """
+        from app.database import _stack_inputs
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        # Session 1: bis 09:30:00 (Poller schließt sie beim Refile)
+        _add_flight(conn, 12, "EDWG", "EDXH", "C208", START, duration_min=30)
+        # Session 2: 09:30:00.123456 — Mikrosekunden = Split-Signatur des Pollers
+        conn.execute(
+            "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, logon_time) "
+            "VALUES (12, 'FRS12', 'C208', 'EDXH', 'EDWG', ?)",
+            ("2026-07-01T09:30:00.123456Z",),
+        )
+        conn.commit()
+
+        inp = _stack_inputs(conn, ev, END)
+
+        # EINE Verbindung: kein logout dazwischen, nur der (noch offene) Rest.
+        assert [e["kind"] for e in inp["events"]].count("logout") == 0
+        assert [e["kind"] for e in inp["events"]].count("login") == 1
+        assert len(inp["sessions"]) == 1
+        assert inp["sessions"][0]["logoff_time"] is None   # verkettet -> die Session läuft
+
+    def test_echter_logout_bleibt_ein_logout(self):
+        """Gegenprobe zu S8 (Nutzer-Fund, flights.id 357/358): 2:54 min Lücke = echter Logout,
+        keine Verkettung. Sonst würde der Fix den Fall kaputtmachen, den er schützen soll."""
+        from app.database import _stack_inputs
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        _add_flight(conn, 12, "EDWG", "EDXH", "C208", START, duration_min=30)   # bis 09:30
+        _add_open_flight(conn, 12, "EDWG", "EDXH", "C208", "2026-07-01T09:32:54Z")
+
+        inp = _stack_inputs(conn, ev, END)
+
+        assert [e["kind"] for e in inp["events"]].count("logout") == 1
+        assert len(inp["sessions"]) == 2
+
+    def test_leg_nach_dtend_geht_nicht_verloren(self):
+        """Fable-Review 16.07. (BLOCKER): canonicalize_legs filtert takeoff > end
+        (database.py:2573). Mit end=min(now,dtend) könnte die Ware eines um 22:05 gestarteten
+        Fluges NIE ankommen — Widerspruch zu Entscheidung 10."""
+        from app.database import _stack_inputs
+        from app.geo import icao_to_coords, airport_elevation_ft
+        conn = _make_conn()
+        ev = self._load_event(conn)          # dtend = END = 23:00
+        spät = "2026-07-01T22:55:00Z"       # Start kurz vor dtend, Landung DANACH
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        alat, alon = icao_to_coords("EDXH")
+        aelev = airport_elevation_ft("EDXH") or 0
+        _add_flight(conn, 12, "EDWG", "EDXH", "C208", spät, duration_min=30)
+        _add_pos(conn, 12, spät, dlat, dlon, 0, alt=delev)
+        _add_pos(conn, 12, _shift(spät, 2), dlat, dlon, 80, alt=delev + 1200)
+        _add_pos(conn, 12, _shift(spät, 28), alat, alon, 40, alt=aelev + 400)
+        _add_pos(conn, 12, _shift(spät, 30), alat, alon, 0, alt=aelev)   # 23:25 — NACH dtend
+
+        inp = _stack_inputs(conn, ev, "2026-07-01T23:40:00Z")
+
+        assert "landing" in [e["kind"] for e in inp["events"]]
+        landing = next(e for e in inp["events"] if e["kind"] == "landing")
+        assert landing["airport"] == "EDXH"
+
+    def test_logout_im_selben_poll_wie_die_landung_versenkt_die_fracht_nicht(self):
+        """Der Normalfall "abgeliefert, Feierabend" — und die Falle dahinter.
+
+        poller.py:891 schliesst den Flug mit last_pos = MAX(ts) aus position_history. Wer
+        innerhalb eines Poll-Takts (15 s) nach dem Aufsetzen aussteigt, bekommt deshalb
+        logoff_time == landing_ts. Ohne den +1-s-Versatz sortierte der Logout vor die Landung
+        (_STACK_EVENT_PRIO), faende position=None vor und versenkte die Ladung.
+        """
+        from app.database import _stack_inputs
+        from app.geo import icao_to_coords, airport_elevation_ft
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        alat, alon = icao_to_coords("EDXH")
+        aelev = airport_elevation_ft("EDXH") or 0
+        touchdown = _shift(START, 40)
+        # logoff_time liegt EXAKT auf dem Touchdown-Sample — genau das schreibt der Poller,
+        # wenn der Pilot im selben Poll-Takt aussteigt (last_pos = MAX(ts) = Touchdown).
+        _add_flight(conn, 12, "EDWG", "EDXH", "C208", START, duration_min=40)
+        _add_pos(conn, 12, START, dlat, dlon, 0, alt=delev)
+        _add_pos(conn, 12, _shift(START, 2), dlat, dlon, 80, alt=delev + 1200)
+        _add_pos(conn, 12, _shift(START, 20), 54.0, 7.9, 120, alt=4000)
+        _add_pos(conn, 12, _shift(START, 38), alat, alon, 40, alt=aelev + 400)
+        _add_pos(conn, 12, touchdown, alat, alon, 0, alt=aelev)
+
+        inp = _stack_inputs(conn, ev, END)
+
+        # Die Landung MUSS vor dem Logout stehen — sonst versenkt derive_stacks die Ladung,
+        # statt sie am Ziel abzuliefern.
+        kinds = [e["kind"] for e in inp["events"]]
+        assert kinds.index("landing") < kinds.index("logout")
+        landing = next(e for e in inp["events"] if e["kind"] == "landing")
+        logout = next(e for e in inp["events"] if e["kind"] == "logout")
+        assert landing["airport"] == "EDXH"          # am Ziel abgeliefert
+        assert landing["ts"] == touchdown            # die Landung bleibt, wo sie war
+        assert logout["ts"] > landing["ts"]          # der Logout rueckt hinter sie
+
+    def test_statsim_leg_erzeugt_eigene_ereignisse(self):
+        """Nutzer-Entscheidung 16.07.: StatSim (Backfill bei VPS-Ausfall) zählt wie ein
+        normaler Flug — Login am Startplatz, Takeoff, Landung, Logout am Landeort.
+
+        Hinweis: die im Brief genannte Tabelle heißt tatsächlich ``statsim_cache`` (nicht
+        ``statsim_flights`` — Vertrag oben nachgesehen, database.py:106); ``duration_min``
+        und ``fetched_at`` sind Pflichtfelder der echten Tabelle (WHERE-Filter in
+        canonicalize_legs verlangt duration_min > 5, fetched_at ist NOT NULL). Der Track
+        in statsim_position_history ist nötig, damit canonicalize_legs ein GPS-Leg erkennt."""
+        from app.database import _stack_inputs
+        from app.geo import icao_to_coords, airport_elevation_ft
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        alat, alon = icao_to_coords("EDXH")
+        aelev = airport_elevation_ft("EDXH") or 0
+        # StatSim-Flug OHNE flights-Zeile (der Poller lief nicht):
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id, cid, callsign, departure, arrival, "
+            "aircraft, logon_time, logoff_time, duration_min, fetched_at) VALUES "
+            "(9001, 12, 'FRS12', 'EDWG', 'EDXH', 'C208', ?, ?, 30, ?)",
+            (START, _shift(START, 30), START),
+        )
+        conn.execute(
+            "INSERT INTO statsim_position_history "
+            "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
+            "VALUES (9001, ?, ?, ?, ?, 0, ?)",
+            (dlat, dlon, delev, 0, START),
+        )
+        conn.execute(
+            "INSERT INTO statsim_position_history "
+            "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
+            "VALUES (9001, ?, ?, ?, ?, 0, ?)",
+            (dlat, dlon, delev + 1200, 80, _shift(START, 2)),
+        )
+        conn.execute(
+            "INSERT INTO statsim_position_history "
+            "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
+            "VALUES (9001, ?, ?, ?, ?, 0, ?)",
+            (54.0, 7.9, 4000, 120, _shift(START, 15)),
+        )
+        conn.execute(
+            "INSERT INTO statsim_position_history "
+            "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
+            "VALUES (9001, ?, ?, ?, ?, 0, ?)",
+            (alat, alon, aelev + 400, 40, _shift(START, 28)),
+        )
+        conn.execute(
+            "INSERT INTO statsim_position_history "
+            "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
+            "VALUES (9001, ?, ?, ?, ?, 0, ?)",
+            (alat, alon, aelev, 0, _shift(START, 30)),
+        )
+        conn.commit()
+
+        inp = _stack_inputs(conn, ev, END)
+        kinds = [e["kind"] for e in inp["events"]]
+
+        assert kinds == ["login", "takeoff", "landing", "logout"]
+        assert inp["events"][0]["airport"] == "EDWG"

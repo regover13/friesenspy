@@ -5275,6 +5275,242 @@ def transport_anyone_in_progress(
     return False
 
 
+# Reihenfolge bei gleichem Zeitstempel. Der Logout zuerst (er beendet die Tour — eine Landung im
+# selben Moment kann nichts mehr abliefern, Spec). `landing` vor `takeoff`, damit ein Stop-and-Go
+# im selben Sample nicht verdreht wird.
+_STACK_EVENT_PRIO = {"logout": 0, "login": 1, "landing": 2, "takeoff": 3}
+
+
+def _sort_stack_events(events: list[dict]) -> list[dict]:
+    """Ereignisse chronologisch ordnen; bei gleichem ts entscheidet _STACK_EVENT_PRIO."""
+    return sorted(events, key=lambda e: (e["ts"], _STACK_EVENT_PRIO.get(e["kind"], 9), e["cid"]))
+
+
+# Refile-Splits erkennen: Der Poller schließt eine laufende Verbindung und öffnet sofort eine
+# neue, sobald der Flugplan mit GEAENDERTEM Abflugplatz refiled wird (poller.py:832-852). Beide
+# Zeilen gehören zu EINER VATSIM-Verbindung — der "Logout" dazwischen ist keiner. Zwei Sekunden
+# reichen als Grenze: der Split passiert im selben Poll-Takt (close/open unmittelbar nacheinander),
+# ein echter Reconnect braucht länger. Belegter Gegenfall S8 (flights.id 357/358): 2:54 min.
+_SESSION_GAP_SEC = 2
+
+
+def _transport_sessions(conn: sqlite3.Connection, start: str, end: str,
+                        callsign_prefix: str) -> list[dict]:
+    """VATSIM-Verbindungen, die das Event-Fenster berühren (offene wie geschlossene).
+
+    Der Logout ist ein Ereignis der VERBINDUNG, nicht des Tracks (Spec) — der GPS-Detektor kennt
+    keine Verbindungsgrenzen und segmentiert erst bei Lücken > 30 min.
+
+    **Achtung, Refile-Split (Fable-Review 16.07.):** Eine `flights`-Zeile ist KEINE Verbindung.
+    Der Poller splittet bei einem Refile mit geändertem Abflugplatz (close_flight + open_flight,
+    poller.py:832) — wer unterwegs den Rückflug filed, hätte sonst ein logoff_time IN DER LUFT
+    und seine Fracht würde durch eine reine Flugplan-Aenderung versenkt (#23-Verstoß). Solche
+    Zeilen werden hier wieder zu einer Verbindung VERKETTET.
+
+    ``logon_time <= end`` begrenzt die TEILNAHME (wer nach dtend einloggt, macht nicht mehr mit);
+    die LEGS laufen bewusst bis ``now`` weiter (s. _stack_inputs) — sonst könnte die Ware eines
+    kurz vor dtend gestarteten Fluges nie ankommen.
+    """
+    rows = conn.execute(
+        "SELECT cid, callsign, aircraft_short AS aircraft, aircraft_icao, logon_time, logoff_time "
+        "FROM flights WHERE superseded_by IS NULL AND callsign LIKE ? "
+        "AND logon_time <= ? AND (logoff_time IS NULL OR logoff_time >= ?) "
+        "ORDER BY cid, logon_time",
+        (callsign_prefix + "%", end, start),
+    ).fetchall()
+
+    merged: list[dict] = []
+    for r in (dict(x) for x in rows):
+        prev = merged[-1] if merged else None
+        if (prev is not None and prev["cid"] == r["cid"] and prev.get("logoff_time")
+                and _gap_seconds(prev["logoff_time"], r["logon_time"]) <= _SESSION_GAP_SEC):
+            # Refile-Split: dieselbe Verbindung läuft weiter. Das Ende der neuen Zeile gilt,
+            # das Muster ebenso (der Pilot kann beim Refile den Typ gewechselt haben).
+            prev["logoff_time"] = r.get("logoff_time")
+            prev["aircraft"] = r.get("aircraft") or prev.get("aircraft")
+            prev["aircraft_icao"] = r.get("aircraft_icao") or prev.get("aircraft_icao")
+            continue
+        merged.append(r)
+    merged.sort(key=lambda s: (s["logon_time"], s["cid"]))
+    return merged
+
+
+def _gap_seconds(a: str, b: str) -> float:
+    """Sekunden zwischen zwei ISO-Zeitstempeln (b - a); inf bei unlesbaren Werten."""
+    try:
+        return (_parse_iso(b) - _parse_iso(a)).total_seconds()
+    except (ValueError, AttributeError, TypeError):
+        return float("inf")
+
+
+def _covered_by_session(sessions: list[dict], cid: int, takeoff: str | None) -> bool:
+    """Deckt eine echte VATSIM-Verbindung dieses Leg ab? (StatSim-Doppelzählung verhindern.)
+
+    canonicalize_legs verwirft StatSim-Legs, die einen FriesenSpy-Flug DESSELBEN cid überlappen,
+    bereits selbst (database.py:2499 ff.) — aber nur PRO FLUG, ein unüberdeckter Rest überlebt
+    bewusst (z. B. nach einem FS-Absturz). Dieser Test hält die Ereignis-Erzeugung dazu konsistent.
+    """
+    if not takeoff:
+        return False
+    for s in sessions:
+        if int(s["cid"]) != cid:
+            continue
+        if (s.get("logon_time") or "") <= takeoff <= (s.get("logoff_time") or "9999"):
+            return True
+    return False
+
+
+def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
+                  callsign_prefix: str = "FRS") -> dict:
+    """Die Eingänge für :func:`app.transport_stacks.derive_stacks` aus der DB holen.
+
+    Liefert ``{manifest, events, loading_airports, destination, legs_by_cid, sessions}``.
+    Reine Uebersetzung — die Regeln stehen in transport_stacks.py, hier wird nur gelesen und
+    sortiert. ``legs_by_cid``/``sessions`` reicht der Feed-Bau (compute_transport_progress)
+    weiter, damit canonicalize_legs nur EINMAL läuft.
+    """
+    from app.geo import icao_to_coords
+
+    dest = normalize_type_code(event.get("destination"))
+    route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
+    loading = route_set - {dest}
+    coords_map = {icao: icao_to_coords(icao) for icao in route_set}
+    radius = _BUMMEL_AIRPORT_RADIUS_KM
+    payload_map = get_payload_map(conn)
+    default_kg = transport_default_payload_kg(conn)
+
+    manifest = [
+        {"name": c["name"], "target_kg": float(c["target_kg"] or 0.0),
+         "departure": (c.get("departure") or "").upper(),
+         "per_flight_max_kg": c.get("per_flight_max_kg"),
+         "emoji": c.get("emoji")}
+        for c in get_transport_cargo(conn, int(event["id"]))
+    ]
+
+    start = event.get("dtstart") or ""
+    window_end = min(now, event.get("dtend") or now)   # begrenzt die TEILNAHME (Sessions)
+    load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
+
+    # LEGS laufen bis `now`, NICHT bis dtend: canonicalize_legs filtert takeoff > end
+    # (database.py:2573) — mit dtend als Grenze könnte die Ware eines kurz vor Schluss
+    # gestarteten Fluges nie ankommen (Entscheidung 10 verspricht das Gegenteil). Der Altcode
+    # löste dasselbe mit einem ZWEITEN canonicalize_legs-Aufruf (database.py:5344); hier
+    # reicht einer.
+    legs = canonicalize_legs(conn, start=load_start, end=now, callsign_prefix=callsign_prefix)
+    legs = [g for g in legs if (g.get("logoff_time") or now) >= start]   # nichts vor dem Fenster
+    legs_by_cid: dict[int, list[dict]] = {}
+    for leg in legs:
+        if leg.get("cid") is None:
+            continue
+        legs_by_cid.setdefault(int(leg["cid"]), []).append(leg)
+    for rows in legs_by_cid.values():
+        rows.sort(key=lambda x: x.get("logon_time") or "")
+
+    sessions = _transport_sessions(conn, start, window_end, callsign_prefix)
+    out: list[dict] = []
+    for s in sessions:
+        cid = int(s["cid"])
+        lo = s.get("logon_time") or ""
+        lf = s.get("logoff_time")
+        type_code = normalize_type_code(s.get("aircraft_icao")) or normalize_type_code(s.get("aircraft"))
+        cap = round(payload_map.get(type_code, default_kg), 1)
+
+        # Legs DIESER Session: Takeoff liegt im Sessionfenster.
+        own = [g for g in legs_by_cid.get(cid, [])
+               if (g.get("logon_time") or "") >= lo and (not lf or (g.get("logon_time") or "") <= lf)]
+
+        # --- Login-Ort (GPS-only, kein Flugplan-Fallback) ---
+        airport = None
+        if own:
+            # 1. Das erste Leg kennt seinen eigenen Startplatz — gilt auch, wenn der Pilot beim
+            #    ersten Poll schon rollte (gs > 2). Eine reine gs<2-Prüfung würde ihn hier
+            #    fälschlich als "nicht am Platz" werten und seine Fracht still verlieren.
+            airport = normalize_type_code(own[0].get("gps_departure")) or None
+        else:
+            # 2. Er steht nur da (kein Leg): aktuelle Live-Position, sonst die erste der Session.
+            #    Am Boden = gs < _BLOCK_GS_KT — exakt die heutige Boden-Beladung (#5, v8.22.0).
+            gpos = _current_pos(conn, cid) if lf is None else None
+            if gpos and gpos[2] is not None and gpos[2] < _BLOCK_GS_KT:
+                airport = _nearest_airport(coords_map, (gpos[0], gpos[1]), radius)
+            else:
+                row = conn.execute(
+                    "SELECT latitude, longitude, groundspeed FROM position_history "
+                    "WHERE cid=? AND ts>=? AND ts<=? ORDER BY ts ASC LIMIT 1",
+                    (cid, lo, lf or now),
+                ).fetchone()
+                if row is not None and row["groundspeed"] is not None \
+                        and row["groundspeed"] < _BLOCK_GS_KT:
+                    airport = _nearest_airport(coords_map, (row["latitude"], row["longitude"]), radius)
+        if airport not in route_set:
+            airport = None      # kein teilnehmender Platz -> in der Luft/anderswo eingeloggt
+
+        out.append({"ts": lo, "kind": "login", "cid": cid, "airport": airport, "capacity_kg": cap})
+        for g in own:
+            out.append({"ts": g["logon_time"], "kind": "takeoff", "cid": cid,
+                        "airport": None, "capacity_kg": cap})
+            if g.get("logoff_time"):     # abgeschlossenes Leg = Landung erkannt
+                out.append({"ts": g["logoff_time"], "kind": "landing", "cid": cid,
+                            "airport": normalize_type_code(g.get("gps_arrival")) or None,
+                            "capacity_kg": cap})
+        if lf:
+            # Der Logout darf NIE vor oder auf der eigenen Landung liegen: bei gleichem ts gewinnt
+            # laut _STACK_EVENT_PRIO der Logout, fände position=None vor (der takeoff hat sie
+            # geleert) und würde die Ladung VERSENKEN statt sie abzuliefern.
+            # Das ist kein Grenzfall: poller.py:891 schließt den Flug mit
+            # `close_flight(conn, id, last_pos)`, wobei last_pos = MAX(ts) aus position_history —
+            # logoff_time IST also das letzte GPS-Sample. Wer landet und innerhalb eines
+            # Poll-Takts (15 s) aussteigt, hat logoff_time == landing_ts. Das ist der Normalfall
+            # "abgeliefert, Feierabend". Dann: eine Sekunde nach der Landung, synthetisch.
+            ts_logout = lf
+            letzte_landung = max((g["logoff_time"] for g in own if g.get("logoff_time")),
+                                 default=None)
+            if letzte_landung and _parse_iso(ts_logout) <= _parse_iso(letzte_landung):
+                ts_logout = (_parse_iso(letzte_landung) + timedelta(seconds=1)
+                             ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            out.append({"ts": ts_logout, "kind": "logout", "cid": cid,
+                        "airport": None, "capacity_kg": cap})
+
+    # --- StatSim-Legs: Backfill bei Poller-/VPS-Ausfall (Nutzer-Entscheidung 16.07.) ---
+    # Sie haben KEINE flights-Zeile (eigene Tabellen, database.py:107-130) und würden sonst
+    # still 0 kg liefern, obwohl sie heute mitzählen. Behandlung: wie ein normaler Flug — der
+    # Flug ist vorbei, also gehört ein Logout am Landeort dazu.
+    session_cids = {int(s["cid"]) for s in sessions}
+    for cid, rows in legs_by_cid.items():
+        for g in rows:
+            if not g.get("statsim_id"):
+                continue
+            if cid in session_cids and _covered_by_session(sessions, cid, g.get("logon_time")):
+                continue     # eine echte Verbindung deckt dieses Leg ab -> kein Doppel
+            type_code = normalize_type_code(g.get("aircraft_icao")) or normalize_type_code(g.get("aircraft"))
+            cap = round(payload_map.get(type_code, default_kg), 1)
+            dep = normalize_type_code(g.get("gps_departure")) or None
+            out.append({"ts": g["logon_time"], "kind": "login", "cid": cid,
+                        "airport": dep if dep in route_set else None, "capacity_kg": cap})
+            out.append({"ts": g["logon_time"], "kind": "takeoff", "cid": cid,
+                        "airport": None, "capacity_kg": cap})
+            if g.get("logoff_time"):
+                arr = normalize_type_code(g.get("gps_arrival")) or None
+                out.append({"ts": g["logoff_time"], "kind": "landing", "cid": cid,
+                            "airport": arr, "capacity_kg": cap})
+                # Der Logout MUSS nach der Landung liegen: bei gleichem ts gewinnt laut
+                # _STACK_EVENT_PRIO der Logout — er fände dann position=None vor und würde die
+                # Ladung VERSENKEN statt sie abzuliefern. Eine Sekunde später, synthetisch.
+                out.append({
+                    "ts": (_parse_iso(g["logoff_time"]) + timedelta(seconds=1))
+                          .strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "kind": "logout", "cid": cid, "airport": None, "capacity_kg": cap,
+                })
+
+    return {
+        "manifest": manifest,
+        "events": _sort_stack_events(out),
+        "loading_airports": loading,
+        "destination": dest,
+        "legs_by_cid": legs_by_cid,
+        "sessions": sessions,
+    }
+
+
 def compute_transport_progress(
     conn: sqlite3.Connection,
     event: dict,
