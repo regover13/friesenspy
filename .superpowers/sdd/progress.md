@@ -8,6 +8,28 @@ Branch: main (stehende Nutzer-Regel: kein PR-Umweg; nur vor `git push origin mai
 Reihenfolge: 1 -> 2 -> 3 -> 4 -> 5 (reine Funktion) -> 6 (Adapter) -> 7 GATE -> 8 -> 9 -> 10 -> 11 -> 12
              -> Whole-Branch-Review (Opus)
 
+## ⛔ GATE BLOCKIERT — braucht eine Freigabe des Nutzers (Stand 16.07. nachts)
+
+Task 7 Step 2 verlangt eine KOPIE der Produktions-DB. Der Zugriff auf den Produktions-Host wurde
+von der Berechtigungspruefung ABGELEHNT ("no explicit user message named this SSH access to the
+production host as an authorized operation"). NICHT umgangen — das ist richtig so.
+
+ZWEI PLANFEHLER dabei gefunden (Task 7 Step 2 im Plan korrigieren):
+ 1. Der Plan schreibt `scp friesenspy:/opt/...`. Einen SSH-Host `friesenspy` GIBT ES NICHT.
+    Der VPS heisst `server` (167.86.127.129, ~/.ssh/config). Richtig waere:
+        scp server:/opt/friesenspy/data/friesenspy.db /tmp/friesenspy-kopie.db
+ 2. Die Prod-DB ist LIVE (43 MB, Zeitstempel 02:12, der Poller schreibt hinein) und laeuft im
+    WAL-Modus. Ein blosses `scp` der .db-Datei allein kann einen zerrissenen Stand ergeben —
+    die -wal/-shm-Dateien gehoeren mitkopiert, oder besser ein rein lesender Snapshot:
+        sqlite3 'file:/opt/friesenspy/data/friesenspy.db?mode=ro' ".backup '/tmp/kopie.db'"
+    (ungeprueft, ob sqlite3 auf dem Host liegt — konnte ich nicht nachsehen, s.o.)
+ Ausserdem: scripts/kutter_stapel_prototyp.py:20 verbindet HART auf
+    sqlite3.connect("/opt/friesenspy/data/friesenspy.db") — also schreibend auf die ORIGINALDATEI.
+    Das muss auf die Kopie zeigen (und am besten mode=ro), bevor es je laeuft.
+
+WAS DER NUTZER MORGEN TUN MUSS: den DB-Kopier-Befehl freigeben (oder selbst per `!`-Prefix
+ausfuehren). Danach laeuft Task 7 Step 2-4 durch und die drei Zahlen stehen fest.
+
 ## ⏸ GATE bei Task 7 — NICHT ueberspringen
 Die Migration muss 1610 / 1120 / 1090 zeigen (Events #1, #81, #136), bevor Task 8 irgendeinen
 produktiven Pfad anfasst. Stimmen die Zahlen nicht, liegt der Fehler in Task 1-6 -> zurueck, nicht

@@ -1503,7 +1503,30 @@ es läuft gegen eine **Kopie** der Prod-DB.
 
 - [ ] **Step 1: Prototyp auf die echte Ableitung umstellen**
 
-Ersetze in `scripts/kutter_stapel_prototyp.py` die komplette Funktion `rechne(ev)` durch:
+**Zuerst die DB-Verbindung entschärfen.** `scripts/kutter_stapel_prototyp.py:20` lautet heute:
+
+```python
+conn = sqlite3.connect("/opt/friesenspy/data/friesenspy.db")
+```
+
+Das zeigt **hart auf die Originaldatei** und öffnet sie **schreibend** (der Default von
+`connect()`). Das Skript liest zwar nur, aber es widerspricht der stehenden Nutzer-Regel im
+Ansatz — und ein schreibend geöffnetes WAL-Handle legt `-wal`/`-shm` neben der Prod-DB an.
+Ersetze die Zeile durch einen Pfad per Argument und eine **erzwungen lesende** Verbindung:
+
+```python
+import sys
+
+# Pfad zur KOPIE als Argument — niemals die Original-Prod-DB.
+db_pfad = sys.argv[1] if len(sys.argv) > 1 else "/tmp/friesenspy-kopie.db"
+if db_pfad.startswith("/opt/friesenspy/"):
+    raise SystemExit("Das ist die Produktions-DB. Bitte eine Kopie angeben.")
+# mode=ro erzwingt Lesen auf DB-Ebene — nicht nur per Vorsatz.
+conn = sqlite3.connect(f"file:{db_pfad}?mode=ro", uri=True)
+conn.row_factory = sqlite3.Row
+```
+
+Dann ersetze die komplette Funktion `rechne(ev)` durch:
 
 ```python
 from app.database import _stack_inputs
@@ -1527,10 +1550,22 @@ def rechne(ev):
 
 ```bash
 # DB-Kopie holen (NIE gegen die Original-Datei arbeiten)
-scp friesenspy:/opt/friesenspy/data/friesenspy.db /tmp/friesenspy-kopie.db
-# Pfad im Skript auf die Kopie zeigen lassen, dann:
+scp server:/opt/friesenspy/data/friesenspy.db     /tmp/friesenspy-kopie.db
+scp server:/opt/friesenspy/data/friesenspy.db-wal /tmp/friesenspy-kopie.db-wal   # falls vorhanden
 python -m scripts.kutter_stapel_prototyp
 ```
+
+**Drei Fallen, alle am 16.07. real angetroffen — der Plan war hier zunächst falsch:**
+
+1. **Der Host heißt `server`, nicht `friesenspy`** (`~/.ssh/config`: `server` → 167.86.127.129).
+   Ein Host `friesenspy` existiert nicht; der ursprüngliche `scp`-Befehl lief ins Leere.
+2. **Die Prod-DB ist live und im WAL-Modus** (43 MB, der Poller schreibt laufend hinein). Die
+   `.db`-Datei allein ist ohne ihr `-wal` kein konsistenter Stand — deshalb beide kopieren.
+   Sauberer, falls `sqlite3` auf dem Host liegt:
+   `sqlite3 'file:/opt/friesenspy/data/friesenspy.db?mode=ro' ".backup '/tmp/friesenspy-kopie.db'"`
+3. **Der Zugriff auf den Produktions-Host braucht eine ausdrückliche Freigabe des Nutzers.**
+   Die Berechtigungsprüfung lehnt ihn sonst ab — zu Recht. Nicht umgehen: den Nutzer fragen
+   oder ihn den Befehl selbst mit `!`-Prefix ausführen lassen.
 
 Expected — **diese drei Zahlen müssen exakt stehen**:
 
