@@ -1,5 +1,17 @@
 [
   {
+    "version": "9.6.0",
+    "date": "2026-07-16",
+    "highlight": true,
+    "title": "Der FriesenKutter weiß jetzt, was an Bord ist",
+    "items": [
+      "📦 Bisher hat der FriesenKutter die Fracht aus dem Startplatz deines LETZTEN Flugbeins geraten — wer über einen zweiten Ladeplatz flog, bei dem verschwand die erste Ladung (800 kg Fisch wurden zu 0), und wer über einen fremden Platz zwischenlandete, bekam Ware gutgeschrieben, die nie an Bord war. Jetzt liegt die Ware auf Stapeln: Du lädst, wenn du am Boden an einem Ladeplatz stehst, lieferst beim Landen am Ziel und gibst zurück, wenn du dort ausloggst. Was du geladen hast, bleibt an Bord — auch über Zwischenlandungen.",
+      "🚚 Der Milchmann funktioniert: EDWG → EDWZ → Ziel lädt an BEIDEN Plätzen und liefert beides.",
+      "🅿️ Neue Anzeige: „lädt in EDWG · 800 kg“ (am Stapel), „steht in EDDW · 800 kg“ (Zwischenstopp — vorher unsichtbar), „unterwegs · 800 kg“ (mit Menge) und „dabei“ (fliegt leer). „✅ angekommen“ ist weg: eine Lieferung ist eine Tatsache im Balken, kein Zustand.",
+      "⚖️ Der Balken kann nicht mehr lügen: geliefert + verloren + an Bord + Rest = Manifest. Immer. Das ist jetzt Arithmetik, keine Zusicherung."
+    ]
+  },
+  {
     "version": "9.5.0",
     "date": "2026-07-15",
     "highlight": false,
