@@ -5501,7 +5501,14 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
     session_cids = {int(s["cid"]) for s in sessions}
     for cid, rows in legs_by_cid.items():
         for g in rows:
-            if not g.get("statsim_id"):
+            # `block_start` auch hier: eine statsim_cache-Zeile mit duration_min > 5, aber ohne
+            # verwertbaren Track, fällt in canonicalize_legs ebenfalls auf _flightrow_as_flight
+            # zurück (database.py:2711) — und die statsim_id allein trennt das NICHT ab, denn
+            # der Fallback setzt sie sehr wohl (:2401), nur block_start nicht. Ohne diese
+            # Prüfung entstünden hier takeoff (Connection-Login) und landing
+            # (Connection-Logout) aus einer reinen Flugplan-Zeile — derselbe #23-Verstoß wie
+            # in der Sessions-Schleife oben.
+            if not g.get("statsim_id") or "block_start" not in g:
                 continue
             if cid in session_cids and _covered_by_session(sessions, cid, g.get("logon_time")):
                 continue     # eine echte Verbindung deckt dieses Leg ab -> kein Doppel

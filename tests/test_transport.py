@@ -3125,6 +3125,36 @@ class TestStackInputs:
         assert kinds.count("takeoff") == 1
         assert kinds.count("landing") == 1
 
+    def test_statsim_zeile_ohne_track_erzeugt_keine_flugereignisse(self):
+        """#23 auf der StatSim-Seite — dieselbe Falle wie bei den FriesenSpy-Fallback-Legs.
+
+        Eine statsim_cache-Zeile mit duration_min > 5, aber ohne verwertbaren Track in
+        statsim_position_history, fällt in canonicalize_legs auf _flightrow_as_flight zurück
+        (database.py:2711). Dieses Fallback-Leg trägt sehr wohl eine statsim_id (:2401) — nur
+        kein block_start. Der StatSim-Block darf daraus keinen takeoff (Connection-Login) und
+        keine landing (Connection-Logout) erfinden: kein GPS = kein Flug.
+
+        Der Schaden ist heute latent (gps_departure = None verhindert das Laden, und anders als
+        auf der FS-Seite gibt es hier gar keine Regel 2, die ihn scharfschalten könnte) — aber
+        ein Zweig, der ohne GPS eine Landung behauptet, widerspricht #23 auch dann, wenn gerade
+        niemand darauf tritt.
+        """
+        from app.database import _stack_inputs
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        # statsim_cache-Zeile OHNE statsim_position_history — kein Track, kein GPS-Leg.
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id, cid, callsign, departure, arrival, "
+            "aircraft, logon_time, logoff_time, duration_min, fetched_at) VALUES "
+            "(9002, 12, 'FRS12', 'EDWG', 'EDXH', 'C208', ?, ?, 30, ?)",
+            (START, _shift(START, 30), START),
+        )
+        conn.commit()
+
+        inp = _stack_inputs(conn, ev, END)
+
+        assert inp["events"] == []     # keine flights-Zeile -> auch kein login/logout
+
     def _add_statsim_leg(self, conn, *, statsim_id=9001, cid=12):
         """Ein vollständiger StatSim-Flug EDWG->EDXH (09:00 -> 09:30) mit Track.
 
