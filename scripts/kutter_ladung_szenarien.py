@@ -34,9 +34,9 @@ sys.path.insert(0, r"D:\User\Tobias\OneDrive\Claude\FriesenSpy")
 from app.database import (
     init_db, get_connection, _DDL, create_transport_event, get_transport_event,
     set_transport_cargo, upsert_payload, compute_transport_progress,
-    set_transport_live_arrival, detect_transport_losses, get_transport_losses,
 )
 from app import geo
+import app.database as db   # fuer db.canonicalize_legs in der S8-Diagnose (war nie importiert)
 
 START = "2026-07-01T09:00:00Z"
 END   = "2026-07-01T23:00:00Z"
@@ -118,15 +118,17 @@ def zeige(titel, c, ev, *, verluste=False):
     print("   %-16s %5.0f kg gesamt" % ("SUMME", p.get("total_kg") or 0))
     for f in p.get("flights", []):
         print("      Feed: %s->%s  %s kg  %s" % (
-            f.get("departure") or "?", f.get("arrival") or "?",
-            f.get("tonnage_kg") or 0, f.get("cargo_label") or f.get("status") or ""))
+            f.get("dep") or "?", f.get("arr") or "?",
+            f.get("tonnage_kg") or 0, f.get("loss_kind") or f.get("status") or ""))
     if verluste:
-        n = detect_transport_losses(c, ev, callsign_prefix="FRS")
-        ls = get_transport_losses(c, ev["id"])
-        print("   Verlust-Erkennung: %d neu, %d gesamt" % (n, len(ls)))
+        # Verluste kommen jetzt direkt aus compute_transport_progress (movements -> losses[]),
+        # der separate detect_transport_losses-Latch ist mit dem Stapel-Modell entfallen.
+        ls = p.get("losses", [])
+        print("   Verluste: %d Zeile(n), %.0f kg gesamt" % (len(ls), p.get("lost_total_kg") or 0))
         for l in ls:
             print("      VERLUST: kind=%-9s kg=%-6s %s" % (
-                l.get("kind"), l.get("kg") if l.get("kg") is not None else "?", l.get("type_code") or ""))
+                l.get("loss_kind"), l.get("lost_kg") if l.get("lost_kg") is not None else "?",
+                l.get("aircraft") or ""))
         if not ls:
             print("      (kein Verlust erkannt)")
     return p
@@ -142,7 +144,9 @@ zeige("S1  EDWG -> EDXH   (Normalfall: ein Ladeplatz, direkt zum Ziel)", c, ev)
 c = conn_new(); ev = event(c)
 t1 = leg(c, "EDWG", "EDWZ", START)                 # laedt in EDWG, landet in EDWZ (Ladeplatz)
 t2 = leg(c, "EDWZ", "EDXH", shift(t1, 10))         # laedt Tee nach, dann zum Ziel
-flight_row(c, "EDWG", "EDWZ", START, t1)
+# Refile-Split = EINE Verbindung: Leg 1 wird im Refile-Moment geschlossen -> logoff(1)==logon(2),
+# _transport_sessions verkettet beide (kein Logout am Zwischenplatz).
+flight_row(c, "EDWG", "EDWZ", START, shift(t1, 10))
 flight_row(c, "EDWZ", "EDXH", shift(t1, 10), t2)
 zeige("S2  EDWG -> EDWZ -> EDXH   (MILCHMANN: zwei Ladeplaetze, dann Ziel)", c, ev)
 
@@ -150,7 +154,8 @@ zeige("S2  EDWG -> EDWZ -> EDXH   (MILCHMANN: zwei Ladeplaetze, dann Ziel)", c, 
 c = conn_new(); ev = event(c)
 t1 = leg(c, "EDWG", "EDDW", START)                 # laedt EDWG, Zwischenlandung Bremen (fremd)
 t2 = leg(c, "EDDW", "EDXH", shift(t1, 10))         # weiter zum Ziel — Ladung ist an Bord!
-flight_row(c, "EDWG", "EDDW", START, t1)
+# Refile-Split = EINE Verbindung (kein Logout am fremden EDDW): logoff(1)==logon(2).
+flight_row(c, "EDWG", "EDDW", START, shift(t1, 10))
 flight_row(c, "EDDW", "EDXH", shift(t1, 10), t2)
 zeige("S3  EDWG -> EDDW(fremd) -> EDXH   (Zwischenlandung an fremdem Platz)", c, ev)
 
@@ -167,24 +172,8 @@ t1 = leg(c, "EDWG", "EDDW", START)
 flight_row(c, "EDWG", "EDDW", START, t1)
 zeige("S5  EDWG -> EDDW(fremd), LOGOUT", c, ev, verluste=True)
 
-# ------------------------------------------------ S3b: wie S3, aber MIT Latch (echter Betrieb)
-c = conn_new(); ev = event(c)
-t1 = leg(c, "EDWG", "EDDW", START)
-t2 = leg(c, "EDDW", "EDXH", shift(t1, 10))
-flight_row(c, "EDWG", "EDDW", START, t1)
-flight_row(c, "EDDW", "EDXH", shift(t1, 10), t2)
-# Der Poller haette beim Vollstopp in EDXH gelatcht:
-set_transport_live_arrival(c, 1, shift(t1, 10), ev["id"], t2)
-zeige("S3b EDWG -> EDDW(fremd) -> EDXH  MIT Live-Ankunfts-Latch (= echter Betrieb)", c, ev)
-
-# ------------------------------------------------ S2b: Milchmann MIT Latch
-c = conn_new(); ev = event(c)
-t1 = leg(c, "EDWG", "EDWZ", START)
-t2 = leg(c, "EDWZ", "EDXH", shift(t1, 10))
-flight_row(c, "EDWG", "EDWZ", START, t1)
-flight_row(c, "EDWZ", "EDXH", shift(t1, 10), t2)
-set_transport_live_arrival(c, 1, shift(t1, 10), ev["id"], t2)
-zeige("S2b MILCHMANN MIT Latch (= echter Betrieb)", c, ev)
+# (S3b/S2b entfallen: Der Live-Ankunfts-Latch ist mit dem Stapel-Modell weg. S2/S3 oben zeigen
+#  jetzt schon den "echten Betrieb" — die Landung am Ziel liefert sofort, ohne Latch.)
 
 # ---- S8: Start EDWG, Logout kurz nach dem Abheben IN DER LUFT, 30 s spaeter Login am Platz ----
 from app.gps_legs import detect_gps_legs, collapse_same_airport

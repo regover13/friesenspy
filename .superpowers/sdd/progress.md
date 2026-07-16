@@ -321,7 +321,33 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
      compute_transport_progress iteriert own=legs_by_cid OHNE block_start-Filter. Aktuell harmlos
      (Fallback-Legs haben gps_departure/arrival=None -> Sichtbarkeitsfilter schliesst sie aus), aber
      Ledger-Task-8-Vormerkung #1 wollte den expliziten Guard. Mit dem Nutzer abstimmen.
-- Task 9: offen
+- Task 9: complete (Cloud-Session). Latch-Rueckbau: aus app/database.py ERSATZLOS geloescht
+  set_transport_live_arrival, get_transport_live_arrivals, record_transport_loss, get_transport_losses,
+  detect_transport_losses, check_live_arrival, active_transport_destinations, _latch_hits_flight,
+  _connection_logon_for_leg (Waise), _returning_pilot_landed (Waise), _LATCH_SLACK_SEC.
+  transport_anyone_in_progress auf Entscheidung 10 umgestellt ("traegt noch jemand Ware?" statt
+  "offener Flug auf Strecke"). app/poller.py: Block 2c (check_live_arrival) + detect_transport_losses-
+  Aufruf/Import raus. block_start-Guard im Feed-Loop ergaenzt (die in Task 8 vermerkte Empfehlung —
+  in Task 9 mit umgesetzt, defensiv, keine Verhaltensaenderung). Tabellen transport_live_arrivals/
+  transport_cargo_losses bleiben im DDL (Altdaten), werden nur nicht mehr geschrieben/gelesen.
+  BEHALTEN (kein Waise, Plan-"pruefen" bestaetigt): open_transport_flights + transport_event_started
+  (Start-Push, poller.py:1305), _current_pos, _first_pos, _LANDED_MAX_GS_KT (Zweitnutzer :1797).
+  Verifikation: pytest tests/ -q -> 1073 passed, 1 xfailed, 0 failed. scripts/kutter_ladung_szenarien.py
+  laeuft (Latch-Importe + S2b/S3b raus, verluste-Block auf losses[]; S2/S3 als Refile-Split; S8-db-
+  Import gefixt): S1=800, S2=800+200, S3=800, S4=returned, S5=stolen 800, S8=sunk 800.
+  Test-Umbau test_transport.py (Sub-Agent, danach von mir verifiziert): 42 umgeschrieben, 19 geloescht
+  (+ 17 Latch-Klassen-Tests von mir vorab). MUTATIONSPROBE bestanden: stolen->returned-Mutation in
+  transport_stacks macht 5 Verlust-Tests rot -> sie beissen. Anti-Schwaechungs-Scan: die 72 fehlenden
+  Assertions entsprechen exakt den geloeschten Tests, alle umgeschriebenen pruefen konkrete Werte.
+  test_poller.py: TestLegSplitLatchKey + TestKutterLiveArrivalHook geloescht (Latch); der Nachzuegler-
+  Test (test_summary_deferred_while_pilot_in_progress) auf Entscheidung 10 umgebaut (Pilot traegt Ware
+  am Ladeplatz statt "offener Flug").
+  ⛔ EINE OFFENE FACHLICHE FRAGE (xfail, NICHT eigenmaechtig entschieden):
+     TestProgress::test_no_manifest_is_plain_counter — ein manifestloses FriesenKutter-Event
+     (cargo=None, per Admin erzeugbar main.py:2820) war alt ein "einfacher Zaehler" (Lieferung =
+     voller Payload, target_kg=None); das Stapel-Modell liefert 0 (kein Manifest = kein Stapel).
+     NUTZER MUSS ENTSCHEIDEN: Zaehler-Modus behalten (Code noetig) ODER manifestlos = 0 (Test auf 0
+     umschreiben/loeschen). Bis dahin xfail mit Begruendung im Test.
 - Task 10: offen
 - Task 11: offen
 - Task 12: offen
