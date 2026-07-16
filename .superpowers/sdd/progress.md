@@ -354,8 +354,13 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
   chromium-1194, executable_path noetig wegen Build-Mismatch; API per Route gemockt): Live-Banner
   rendert alle 5 sichtbaren Status korrekt, visible:false ausgeblendet, keine PAGEERRORs; Detail-
   Feed zeigt "500 / 1000 kg ✈️" ohne Tilde. Screenshots im Scratchpad (t10_live.png, t10_detail.png).
-  Kosmetik-Fund (NICHT geaendert, Plan-Code): ein am Ziel geparkter Pilot zeigt Strecke "EDXH → EDXH"
-  (place==dest). Harmlos.
+  NACHTRAG (Nutzer-Regel 16.07., Commit 6a041d6): Strecke im Live-Block = letzter Landeplatz ->
+  Ziel-der-Ware. START = participants.last_ground (neu durchgereicht aus r["last_ground"]): bleibt
+  im Flug erhalten (place wird beim Abheben None), wechselt bei jeder Zwischenlandung (auch fremd).
+  ZIEL nur MIT Ware bekannt (= Event-Ziel); ohne Ware "Start -> —". Behob: (a) Strecke in der Luft
+  MIT Fracht war leer (haing an place statt last_ground), (b) "EDXH -> EDXH" am Ziel. Der ganz leere
+  Fall (kein Start) trifft nur unsichtbare Zeilen -> rendert nie (mit dem Nutzer geklaert). Backend-
+  Feld per Test abgesichert (test_participant_hat_last_ground_als_strecken_start).
 - Task 11: offen (Plausibilitaetspruefung departure-Feld — Entscheidung 6: genau ein ICAO != Ziel,
   Pflicht. Betrifft database.py set_transport_cargo, main.py _validate_transport_manifest,
   calendar_sync.py parse_cargo_lines, admin.html Feldbeschreibung + Tests.)
