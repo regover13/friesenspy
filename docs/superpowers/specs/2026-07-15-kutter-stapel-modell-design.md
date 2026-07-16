@@ -450,3 +450,50 @@ Klassifikations-Wahrheiten), und der Feld-Vertrag zum Frontend (`reserved_kg`, `
   aber nicht verlieren.
 - **`skip_open_probe` (#66)** und die Snapshot-Mechanik für abgeschlossene Events bleiben; der
   Offen-Zweig wird durch „Ort × Ladung" ersetzt, nicht entfernt.
+
+---
+
+## Referenzfall: Der Versenk-Test (Nutzer-Flug, Grundwahrheit)
+
+**Diese Sektion ist eine STEHENDE Regel, kein Verlaufsprotokoll.** Sie beschreibt einen echten,
+vom Nutzer absichtlich geflogenen Test-Flug, der als Grundwahrheit dient. Jede künftige Änderung
+an der Reconnect-/Session-Logik MUSS gegen ihn geprüft werden.
+
+**Der Flug:** Callsign **FRS49**, CID **1602713**, Event **#123** („Multi-Kutter-Test", 2026-07-09,
+Ziel EDWG, Route EDWG,EDWL,EDXH,EDXP). Der Nutzer hat in **einem** Flug absichtlich **alle vier
+Ausgänge** des Modells durchgespielt:
+
+| Fracht | Ablauf | Soll-Ausgang |
+|---|---|---|
+| 250 Gummistiefel | EDXP geladen → Landung EDWG (Ziel) | **geliefert** |
+| 100 Filmrollen | EDXH geladen → Logout auf EDWS (fremder Platz) | **gestohlen** |
+| 40 Strandkörbe | EDWL geladen → Landung + Logout auf EDWL (Ladeplatz) | **zurück** |
+| 40 Strandkörbe | EDWL geladen → Logout auf EDWZ (fremder Platz) | **gestohlen** |
+| 100 Filmrollen | EDXH geladen, 18:10 abgehoben, **18:13:11 in der Luft ausgeloggt** | **VERSENKT** |
+
+**Der kritische Punkt — warum „Sessions verketten, wenn ein Leg drüberläuft" (Straddle-Merge)
+VERBOTEN ist:** Der Versenker (letzte Zeile) hat exakt dasselbe Datenmuster wie ein harmloser
+Reconnect: Nach dem Logout um 18:13:11 loggt FRS49 um 18:16:05 erneut auf EDXH ein, und der
+GPS-Detektor macht daraus **ein durchgehendes Leg EDXH→EDXH** (Takeoff 18:10:11, Landung 18:16:41),
+das über den Logout **hinwegläuft**. Ein Merge-Kriterium „Leg überspannt Logout → verketten" würde
+diesen Logout schlucken, die 100 Filmrollen bis zur 18:16-Landung auf EDXH (ein **Ladeplatz**, nicht
+das Ziel) tragen und beim finalen Logout als **zurück** statt **versenkt** verbuchen. **Damit wäre
+der Versenk-Test kaputt.**
+
+Ein Leg über einem Logout unterscheidet einen harmlosen Reconnect also **nicht** von einem echten
+Ausstieg. Deshalb:
+
+- **Der Straddle-Merge ist verworfen.** (Diskutiert am 15.07. und erneut am 16.07., beide Male an
+  genau diesem Flug.)
+- Ein echter Reconnect (belegt: DA40 FRS22 in #1, 6-min-Abriss 7 km vor EDXH im Endanflug) bleibt
+  daher **versenkt** — als „Pech für den Piloten" akzeptiert. Kein Zusammenflicken eines
+  Einzelflugs, dessen Verbindung ausgefallen ist (stehende Nutzer-Regel).
+- Der einzig denkbare *sichere* Unterscheider wäre „das überspannende Leg landet am **Ziel**"
+  (der DA40 landet auf EDXH=Ziel von #1; der Versenk-Test landet auf EDXH=Ladeplatz, Ziel wäre
+  EDWG). Er wurde als machbar erkannt, aber **bewusst nicht gebaut** — ein Einzelflug ist die
+  Komplexität nicht wert.
+
+**Regressionsschutz (offen, in der Cloud nachzuziehen):** Dieser Flug gehört als Test gegen echte
+GPS-Tracks in `tests/test_transport.py` festgehalten — mindestens die Zusicherung „die 100
+Filmrollen der 18:08-Session werden **versenkt**, nicht zurückgegeben". Bricht dieser Test, hat
+jemand den Straddle-Merge (oder Äquivalentes) wieder eingebaut.

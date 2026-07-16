@@ -5471,11 +5471,16 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
             # Der Logout darf NIE vor oder auf der eigenen Landung liegen: bei gleichem ts gewinnt
             # laut _STACK_EVENT_PRIO der Logout, fände position=None vor (der takeoff hat sie
             # geleert) und würde die Ladung VERSENKEN statt sie abzuliefern.
-            # Das ist kein Grenzfall: poller.py:891 schließt den Flug mit
+            # Warum kollidieren beide auf einer Sekunde? poller.py:891 schließt den Flug mit
             # `close_flight(conn, id, last_pos)`, wobei last_pos = MAX(ts) aus position_history —
-            # logoff_time IST also das letzte GPS-Sample. Wer landet und innerhalb eines
-            # Poll-Takts (15 s) aussteigt, hat logoff_time == landing_ts. Das ist der Normalfall
-            # "abgeliefert, Feierabend". Dann: eine Sekunde nach der Landung, synthetisch.
+            # logoff_time IST also das letzte GPS-Sample, keine eigene Uhr. Wer landet, bis zum
+            # Stillstand ausrollt und dann im selben Poll-Takt (15 s) die Verbindung verliert, hat
+            # logoff_time == landing_ts EXAKT. Das ist NICHT der Normalfall (normal rollt man ans
+            # Gate und loggt viel später aus, logoff_time liegt dann weit nach der Landung) —
+            # es ist der seltene TOUCHDOWN-DISCONNECT AM ZIEL. Belegt an echten Daten (16.07.,
+            # Migration gegen Prod-Kopie): FRS49 in Event #1 landet sauber in EDXH und verliert im
+            # Stillstand-Takt die Verbindung; MIT diesem +1s liefert er 316 kg, OHNE ihn werden alle
+            # 316 kg versenkt. Deshalb: eine Sekunde nach der Landung, synthetisch.
             # NUR Landungen, die auf oder VOR dem Logout liegen, können überhaupt eine
             # Poll-Takt-Kollision sein. `own` begrenzt nur logon_time (s. o.), nicht
             # logoff_time: ein Leg, das INNERHALB der Session abhebt und erst NACH ihrem

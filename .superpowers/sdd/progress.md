@@ -1,6 +1,42 @@
 # SDD-Ledger — FriesenKutter Stapel-Modell
 
 ##############################################################################
+#  GATE BESTANDEN (16.07. vormittags, mit dem Nutzer durchgesprochen)
+##############################################################################
+
+Die Migration lief gegen eine KOPIE der Prod-DB (Nutzer hat den scp freigegeben; Kopie lag unter
+D:/User/Tobias/kutter-kopie.db, NICHT im Repo, *.db-ignoriert). Ergebnis + Deutung, ALLE VIER
+Abweichungen verstanden und vom Nutzer ABGENOMMEN:
+
+  #1   1610 -> 1347  DA40-Reconnect (FRS22): 6-min-Verbindungsabriss 7 km vor EDXH im Endanflug,
+                     Landung faellt ins Loch -> 263 kg versenkt. Der "Straddle-Merge" (Sessions
+                     verketten, wenn ein Leg drueberlaeuft) wurde VERWORFEN: er haette den
+                     Versenk-Test des Nutzers (#123, gleiches Muster!) kaputtgemacht. Als "Pech"
+                     akzeptiert. NEUES SOLL 1347.
+  #81  1120 -> 1120  identisch. Der Normalfall, nichts Besonderes.
+  #136 1090 -> 1240  Staffel-Lieferung: Ware auf Zwischen-Ladeplatz EDWL zurueckgegeben, anderer
+                     Pilot nimmt sie mit ans Ziel. Das ALTE Modell unterzaehlte das (Latch konnte
+                     Fracht nicht ueber Rueckgabe+Weitergabe verfolgen). Neues Modell RICHTIGER.
+                     Erhaltungssatz beweist die 600 (kann nicht mehr liefern als da ist). SOLL 1240.
+  #123  618 -> ~250  Nutzers eigener VERSENK-TEST (FRS49, Fluege 357/358, EDXH->EDXH, erreicht das
+                     Ziel EDWG nie) + CSV-Zeile mit Komma-departure "EDWL,EDXH,EDXP" (kein echter
+                     Platz -> laedt nie). SOLL VERSENKEN — korrekt versenkt. Abweichung erwartet.
+
++1s-ENTSCHEIDUNG (fuenfte Falle) ABGENOMMEN + BEHALTEN, Kommentar korrigiert:
+  An FRS49 in #1 demonstriert: MIT +1s liefert der Flug 316 kg, OHNE ihn werden 316 kg VERSENKT
+  (Logout sortiert bei Gleichstand vor die Landung, findet position=None). Meine urspruengliche
+  Begruendung "Normalfall abgeliefert Feierabend" war FALSCH (Nutzer: normal rollt man ans Gate,
+  logoff kommt spaeter). RICHTIG: seltener Touchdown-Disconnect am Ziel. Kommentar in
+  app/database.py:5471 ff., Plan und hier entsprechend gefixt.
+
+STAND: GATE bestanden. Kein SSH / keine Prod-DB mehr noetig. Task 8-12 = reiner Code + Tests,
+CLOUD-TAUGLICH. 1108 Suite gruen (+ Kommentar-Fix = No-Op, 214 im Transport-Teil gruen).
+NAECHSTER SCHRITT: Task 8 (compute_transport_progress auf die Ableitung umstellen).
+
+##############################################################################
+
+
+##############################################################################
 #  GUTEN MORGEN — STAND 16.07., NACHTS.  DAS HIER ZUERST LESEN.
 ##############################################################################
 
@@ -40,7 +76,8 @@ Der Adapter haette die HAEUFIGSTE Lieferung versenkt. poller.py:891 schliesst ei
 `close_flight(conn, id, last_pos)`, wobei last_pos = MAX(ts) aus position_history — logoff_time
 IST das letzte GPS-Sample. Bei 15 s Poll-Takt hat jeder, der landet und binnen eines Takts
 aussteigt, logoff_time == landing_ts EXAKT. Der Logout sortierte dann vor die Landung, fand
-position=None und versenkte die Fracht. Das ist der Normalfall "abgeliefert, Feierabend".
+position=None und versenkte die Fracht. NICHT der Normalfall (Nutzer-Korrektur 16.07.: normal
+  rollt man ans Gate, logoff kommt spaeter) — der seltene Touchdown-Disconnect am Ziel.
 Ich habe das gefixt (Logout auf letzte-eigene-Landung + 1 s, wenn er auf/vor ihr liegt).
 Die Alternative waere gewesen, den Test zu entschaerfen — das haette den Fehler versteckt.
 Begruendung steht im Code, im Plan und unten bei Task 6.
@@ -112,7 +149,7 @@ Der Adapter haette die HAEUFIGSTE Lieferung versenkt. Beleg (selbst am Code gepr
   Poll-Takt = 15 s (VATSIM_POLL_INTERVAL). Wer landet und binnen 15 s aussteigt, hat also
   logoff_time == landing_ts EXAKT. _STACK_EVENT_PRIO sortiert den Logout dann VOR die Landung,
   er findet position=None vor (takeoff hat sie geleert) -> VERSENKT statt geliefert.
-  Das ist der Normalfall "abgeliefert, Feierabend" — nicht ein Grenzfall.
+  NICHT der Normalfall (Nutzer-Korrektur 16.07.) — der seltene Touchdown-Disconnect am Ziel.
 ENTSCHEIDUNG (Option A, von mir getroffen, Nutzer schlief): Logout einer Session auf
   "letzte eigene Landung + 1 s" schieben, WENN er auf/vor ihr liegt. _STACK_EVENT_PRIO bleibt.
   Die verworfene Option B haette den Test entschaerft — also einen echten Produktionsfehler

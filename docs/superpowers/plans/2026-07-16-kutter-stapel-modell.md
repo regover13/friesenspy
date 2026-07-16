@@ -1058,13 +1058,17 @@ gefährlichste Falle des Adapters, und sie stand zunächst nicht in diesem Plan)
 `last_pos = MAX(ts) FROM position_history` ist. **`logoff_time` ist also der Zeitstempel des letzten
 GPS-Samples**, nicht eine eigene Uhrzeit. Der Poll-Takt beträgt 15 s (`VATSIM_POLL_INTERVAL=15`).
 
-Wer landet und **innerhalb eines Poll-Takts** aussteigt, dessen letztes Sample *ist* damit das
-Touchdown-Sample: `logoff_time == landing_ts`, exakt. Bei Gleichstand sortiert
-`_STACK_EVENT_PRIO` den Logout **vor** die Landung; er findet `position=None` vor (der `takeoff`
-hat sie geleert) und **versenkt die Fracht, statt sie abzuliefern**.
+Wer landet, bis zum Stillstand ausrollt und dann **innerhalb eines Poll-Takts** die Verbindung
+verliert, dessen letztes Sample *ist* das Lande-Sample: `logoff_time == landing_ts`, exakt. Bei
+Gleichstand sortiert `_STACK_EVENT_PRIO` den Logout **vor** die Landung; er findet `position=None`
+vor (der `takeoff` hat sie geleert) und **versenkt die Fracht, statt sie abzuliefern**.
 
-Das ist kein Grenzfall, sondern der **Normalfall des FriesenKutter**: „Fracht am Ziel abgeliefert,
-Sim zu, Feierabend." Ungefixt hätte das Modell ausgerechnet die häufigste Lieferung versenkt.
+Das ist **nicht** der Normalfall (Korrektur nach Nutzer-Einwand 16.07.: normal rollt man ans Gate
+und loggt viel später aus, `logoff_time` liegt dann weit nach der Landung — beim Kutter wartet man
+ohnehin, bis geliefert ist). Es ist der seltene **Touchdown-Disconnect am Ziel**. Belegt an echten
+Daten (Migration gegen Prod-Kopie): **FRS49 in Event #1** landet sauber in EDXH und verliert im
+Stillstand-Takt die Verbindung — MIT dem +1s liefert der Flug 316 kg, OHNE ihn werden alle 316 kg
+versenkt. Selten, aber real, und ohne den Fix verlöre der Pilot seine ganze Lieferung.
 
 **Fix:** Der Logout einer Session wird auf `letzte eigene Landung + 1 s` geschoben, **wenn** er auf
 oder vor ihr liegt — sonst bleibt er, wo er ist. `_STACK_EVENT_PRIO` bleibt unverändert
@@ -1614,14 +1618,26 @@ python -m scripts.kutter_stapel_prototyp "D:/User/Tobias/kutter-kopie.db"
    → muss „Das ist die Produktions-DB. Bitte eine Kopie angeben." ausgeben (verifiziert 16.07.).
    Die eigentliche Sicherung ist ohnehin `mode=ro` auf DB-Ebene, nicht die Pfad-Sperre.
 
-Expected — **diese drei Zahlen müssen exakt stehen**:
+**GATE am 16.07. gelaufen und vom Nutzer ABGENOMMEN.** Die ursprüngliche Erwartung „bitidentisch
+1610/1120/1090" war falsch: sie setzte das ALTE Modell als Wahrheit, das aber Staffel-Lieferungen
+unterzählt. Tatsächliches, abgenommenes Ergebnis:
 
 ```
-#1    FriesenKutter-Test Wangerooge     SUMME  1610 -> 1610   IDENTISCH
+#1    FriesenKutter-Test Wangerooge     SUMME  1610 -> 1347   Reconnect = Pech (akzeptiert)
 #81   Strandkörbe und Sonnenschirme     SUMME  1120 -> 1120   IDENTISCH
-#136  Großauftrag für Wooge             SUMME  1090 -> 1090   IDENTISCH
-#123  Multi-Kutter-Test                 SUMME   618 ->  417   ABWEICHUNG  (erwartet: die CSV-Zeile)
+#136  Großauftrag für Wooge             SUMME  1090 -> 1240   Staffel-Lieferung, neu RICHTIGER
+#123  Multi-Kutter-Test                 SUMME   618 ->  250   Nutzer-Versenk-Test + CSV-Zeile
 ```
+
+- **#1 (−263):** DA40 (FRS22) verliert 7 km vor EDXH im Endanflug 6 min die Verbindung, Landung
+  fällt ins Loch → versenkt. Der „Straddle-Merge" (Sessions verketten, wenn ein Leg drüberläuft)
+  wurde **verworfen** — er hätte den Versenk-Test in #123 (gleiches Muster) kaputtgemacht. Als
+  „Pech für den Piloten" akzeptiert (deckt sich mit der stehenden Regel, keinen Einzelflug
+  zusammenzuflicken). Die +1s rettet davon getrennt die echten Touchdown-Disconnects am Ziel.
+- **#136 (+150):** Staffel-Lieferung (Ware auf Zwischen-Ladeplatz EDWL zurück, anderer Pilot
+  bringt sie ans Ziel). Das alte Latch-Modell unterzählte das. Erhaltungssatz beweist die 600.
+- **#123:** der Versenk-Test des Nutzers (FRS49, EDXH→EDXH, erreicht das Ziel EDWG nie) plus die
+  manuelle CSV-Zeile mit Komma-`departure` „EDWL,EDXH,EDXP" (kein echter Platz → lädt nie).
 
 - [ ] **Step 3: Erhaltungssatz auf echten Daten prüfen**
 
