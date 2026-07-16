@@ -11,8 +11,6 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-import pytest
-
 from fastapi.testclient import TestClient
 
 import app.main as main
@@ -580,14 +578,11 @@ class TestProgress:
     # geteilten Topf; Events verlangen jetzt per Validierung ein Cargo). Der Wert 250 ist die
     # alte Plain-Counter-Semantik — bewusst NICHT auf 0 „repariert", bis geklärt ist, ob
     # manifestlose Events überhaupt noch gewertet werden sollen. Bleibt bis dahin rot.
-    @pytest.mark.xfail(reason="TODO(ask-user): OFFENE FACHLICHE FRAGE. Ein manifestloses "
-                       "FriesenKutter-Event (cargo=None, per Admin erzeugbar, main.py:2820) war "
-                       "im Alt-Modell ein 'einfacher Zaehler' (jede Lieferung = voller Payload, "
-                       "hier 250 kg, target_kg=None). Das Stapel-Modell liefert 0 (kein Manifest "
-                       "= kein Stapel). Ob der Zaehler-Modus bleiben soll oder manifestlos = 0 "
-                       "gilt, ist eine Nutzer-Entscheidung — hier NICHT eigenmaechtig getroffen.",
-                       strict=False)
-    def test_no_manifest_is_plain_counter(self):
+    def test_no_manifest_delivers_nothing(self):
+        """Ohne Manifest liegt keine Ware auf einem Stapel — es gibt nichts zu liefern (0 kg).
+        Der fruehere 'einfacher Zaehler'-Modus (jede Lieferung = voller Payload) entfaellt
+        bewusst (Nutzer-Entscheidung 16.07.: war nie gewollt). Ladung ist ein Bestand; kein
+        Manifest = kein Bestand."""
         conn = _make_conn()
         self._seed(conn)
         ev = _event(conn, cargo=None)
@@ -595,7 +590,7 @@ class TestProgress:
         p = compute_transport_progress(conn, ev, END)
         assert p["cargo"] == []
         assert p["target_kg"] is None and p["progress_pct"] is None
-        assert p["total_kg"] == 250
+        assert p["total_kg"] == 0.0
 
 
 class TestTransportEventStarted:

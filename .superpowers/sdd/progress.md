@@ -342,12 +342,10 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
   test_poller.py: TestLegSplitLatchKey + TestKutterLiveArrivalHook geloescht (Latch); der Nachzuegler-
   Test (test_summary_deferred_while_pilot_in_progress) auf Entscheidung 10 umgebaut (Pilot traegt Ware
   am Ladeplatz statt "offener Flug").
-  ⛔ EINE OFFENE FACHLICHE FRAGE (xfail, NICHT eigenmaechtig entschieden):
-     TestProgress::test_no_manifest_is_plain_counter — ein manifestloses FriesenKutter-Event
-     (cargo=None, per Admin erzeugbar main.py:2820) war alt ein "einfacher Zaehler" (Lieferung =
-     voller Payload, target_kg=None); das Stapel-Modell liefert 0 (kein Manifest = kein Stapel).
-     NUTZER MUSS ENTSCHEIDEN: Zaehler-Modus behalten (Code noetig) ODER manifestlos = 0 (Test auf 0
-     umschreiben/loeschen). Bis dahin xfail mit Begruendung im Test.
+  ✅ Die manifestlose-Event-Frage ist ENTSCHIEDEN (Nutzer 16.07.): kein Zaehler-Modus, war nie
+     gewollt. manifestlos = 0. Test umbenannt -> test_no_manifest_delivers_nothing, prueft
+     total_kg == 0.0 (kein Sonder-Code noetig, das Stapel-Modell liefert das von selbst). xfail
+     entfernt. pytest tests/ -q -> 1074 passed, 0 failed, 0 xfailed.
 - Task 10: offen
 - Task 11: offen
 - Task 12: offen
