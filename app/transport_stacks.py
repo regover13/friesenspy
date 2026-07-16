@@ -40,6 +40,18 @@ def derive_stacks(
     """
     order = [c["name"] for c in manifest]
 
+    # Pro-Flug-Kappung gilt pro FRACHT-NAME, nicht pro Manifest-Zeile (#4). Dieselbe Ware darf
+    # aus zwei Startplätzen kommen (Nutzer 16.07.: Sonnenschirme aus EDWG UND EDDW), aber die
+    # Bordladung dieses Namens darf die Kappung nie überschreiten. Tragen zwei Zeilen desselben
+    # Namens UNTERSCHIEDLICHE Kappungen, gilt die STRENGSTE (kleinster Wert) — sonst nähme der
+    # Pilot am zweiten Platz gegen die lockerere Grenze nach. Ohne gesetzte Kappung: unbegrenzt.
+    name_cap: dict[str, float] = {}
+    for c in manifest:
+        cap = c.get("per_flight_max_kg")
+        if cap is not None and cap > 0:
+            cur = name_cap.get(c["name"])
+            name_cap[c["name"]] = float(cap) if cur is None else min(cur, float(cap))
+
     def _empty() -> dict[str, float]:
         return {n: 0.0 for n in order}
 
@@ -65,6 +77,7 @@ def derive_stacks(
         "manifest": manifest, "order": order, "stacks": stacks, "onboard": onboard,
         "position": position, "since": since, "capacity": capacity, "empty": _empty,
         "loading_airports": loading_airports, "destination": destination, "movements": movements,
+        "name_cap": name_cap,
     }
 
     for e in events:
@@ -184,9 +197,13 @@ def _take(state: dict, cid: int, airport: str, ts: str) -> None:
         # #63: `per_flight_max_kg` begrenzt, was AN BORD ist — nicht, was je Ladevorgang
         # aufgenommen wird. Sonst wäre die Kappung durch mehrfaches Landen am selben Platz
         # umgehbar (zehn Platzrunden = zehnmal die Kappungsmenge in EINER Lieferung).
-        cap = c.get("per_flight_max_kg")
-        if cap is not None and cap > 0:
-            take = min(take, float(cap) - load.get(name, 0.0))
+        # #4: Die Kappung ist eine Eigenschaft des Namens (Katalog), nicht der Manifest-ZEILE —
+        # sonst nähme derselbe Name aus zwei Startplätzen gegen die lockerere Kappung nach und
+        # die Bordladung überschritte die strengere. `name_cap` ist die pro Name gültige (bei
+        # Uneinigkeit strengste) Kappung; die Bordladung ist ohnehin name-keyed.
+        cap = state["name_cap"].get(name)
+        if cap is not None:
+            take = min(take, cap - load.get(name, 0.0))
         if take <= _EPS:
             continue
         stack[name] -= take

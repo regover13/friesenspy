@@ -341,6 +341,56 @@ def test_kappung_spillt_in_die_naechste_frachtart():
     assert r["onboard"][1]["Friesen Tee"] == 150.0      # 200 kg Zuladung - 50 Fisch
 
 
+def test_kappung_gilt_pro_name_ueber_zwei_ladeplaetze():
+    """Nutzer-Beispiel 16.07.: Dieselbe Ware darf aus zwei Startplätzen kommen — aber die
+    Bordladung dieses NAMENS darf die Kappung nie überschreiten. Kappung 100: In EDWG sind
+    60 übrig und werden geladen; der Pilot fliegt nach EDDW weiter und lädt dort die restlichen
+    40 nach (nicht mehr). Das ist schon heute richtig (Bordladung ist name-keyed) — dieser Test
+    hält es fest, damit der #4-Fix es nicht bricht."""
+    manifest = [
+        {"name": "Sonnenschirme", "target_kg": 60.0, "departure": "EDWG", "per_flight_max_kg": 100.0},
+        {"name": "Sonnenschirme", "target_kg": 200.0, "departure": "EDDW", "per_flight_max_kg": 100.0},
+    ]
+    r = derive_stacks(
+        manifest=manifest,
+        events=[
+            _ev("login", 1, T0, "EDWG", capacity_kg=1000.0),            # lädt 60 (mehr ist nicht da)
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDDW"),          # lädt die restlichen 40 auf 100
+            _ev("takeoff", 1, "2026-07-01T09:40:00Z"),
+            _ev("landing", 1, "2026-07-01T10:10:00Z", "EDXH"),          # liefert 100
+        ],
+        destination=DEST, loading_airports={"EDWG", "EDDW"},
+    )
+
+    assert r["stacks"][DEST]["Sonnenschirme"] == 100.0       # 60 + 40, exakt die Kappung
+    assert r["stacks"]["EDDW"]["Sonnenschirme"] == 160.0     # 200 - 40 bleibt liegen
+    assert _sum_stacks(r["stacks"]) + _sum_onboard(r["onboard"]) == pytest.approx(260.0)
+
+
+def test_ungleiche_kappung_pro_name_nimmt_die_strengste():
+    """#4: Tragen zwei Zeilen desselben Namens UNTERSCHIEDLICHE Kappungen, gilt pro Name die
+    STRENGSTE (kleinster Wert). Sonst nähme der Pilot am zweiten Platz gegen die lockerere
+    Kappung nach und die Bordladung überschritte die strengere (100). Nutzer-Entscheidung 16.07.
+    (1b): gleiche Ware aus zwei Quellen erlaubt, aber die Kappung gilt für den Namen insgesamt."""
+    manifest = [
+        {"name": "Sonnenschirme", "target_kg": 200.0, "departure": "EDWG", "per_flight_max_kg": 100.0},
+        {"name": "Sonnenschirme", "target_kg": 200.0, "departure": "EDDW", "per_flight_max_kg": 500.0},
+    ]
+    r = derive_stacks(
+        manifest=manifest,
+        events=[
+            _ev("login", 1, T0, "EDWG", capacity_kg=1000.0),            # lädt bis zur Kappung 100
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDDW"),          # DARF nichts nachladen
+        ],
+        destination=DEST, loading_airports={"EDWG", "EDDW"},
+    )
+
+    assert r["onboard"][1]["Sonnenschirme"] == 100.0         # strengste Kappung, NICHT 300
+    assert _sum_stacks(r["stacks"]) + _sum_onboard(r["onboard"]) == pytest.approx(400.0)
+
+
 def test_der_wartende_laedt_nach_wenn_ware_zurueckkommt():
     """Entscheidung 13: Steht jemand am leeren Stapel und ein anderer gibt dort zurück,
     lädt der Wartende — er steht ja am Platz, und Ware ist da."""
