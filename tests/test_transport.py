@@ -2897,22 +2897,31 @@ class TestStackInputs:
 
     def test_leg_nach_dtend_geht_nicht_verloren(self):
         """Fable-Review 16.07. (BLOCKER): canonicalize_legs filtert takeoff > end
-        (database.py:2573). Mit end=min(now,dtend) könnte die Ware eines um 22:05 gestarteten
-        Fluges NIE ankommen — Widerspruch zu Entscheidung 10."""
+        (database.py:2573). Mit end=min(now,dtend) könnte die Ware eines nach dtend
+        gestarteten Fluges NIE ankommen — Widerspruch zu Entscheidung 10.
+
+        Entscheidend ist die Lage des TAKEOFFS: `_in_window` filtert ausschließlich über
+        `logon_time` (= takeoff_ts des Legs), und `_positions_for_cid` fenstert `end` bewusst
+        gar nicht. Der Takeoff muss also NACH dtend liegen, sonst prüft der Test nichts (die
+        erste Fassung legte ihn mit 22:57 davor und blieb unter genau der Mutation grün, gegen
+        die sie schützen sollte). Der LOGIN muss zugleich VOR dtend liegen, sonst fällt die
+        Session aus _transport_sessions (dort filtert `logon_time <= end`).
+        """
         from app.database import _stack_inputs
         from app.geo import icao_to_coords, airport_elevation_ft
         conn = _make_conn()
         ev = self._load_event(conn)          # dtend = END = 23:00
-        spät = "2026-07-01T22:55:00Z"       # Start kurz vor dtend, Landung DANACH
+        login = "2026-07-01T22:55:00Z"      # Login VOR dtend ...
         dlat, dlon = icao_to_coords("EDWG")
         delev = airport_elevation_ft("EDWG") or 0
         alat, alon = icao_to_coords("EDXH")
         aelev = airport_elevation_ft("EDXH") or 0
-        _add_flight(conn, 12, "EDWG", "EDXH", "C208", spät, duration_min=30)
-        _add_pos(conn, 12, spät, dlat, dlon, 0, alt=delev)
-        _add_pos(conn, 12, _shift(spät, 2), dlat, dlon, 80, alt=delev + 1200)
-        _add_pos(conn, 12, _shift(spät, 28), alat, alon, 40, alt=aelev + 400)
-        _add_pos(conn, 12, _shift(spät, 30), alat, alon, 0, alt=aelev)   # 23:25 — NACH dtend
+        _add_flight(conn, 12, "EDWG", "EDXH", "C208", login, duration_min=40)
+        _add_pos(conn, 12, login, dlat, dlon, 0, alt=delev)                        # 22:55 steht
+        _add_pos(conn, 12, _shift(login, 10), dlat, dlon, 80, alt=delev + 1200)    # 23:05 Takeoff
+        _add_pos(conn, 12, _shift(login, 20), 54.0, 7.9, 120, alt=4000)            # 23:15
+        _add_pos(conn, 12, _shift(login, 38), alat, alon, 40, alt=aelev + 400)     # 23:33
+        _add_pos(conn, 12, _shift(login, 40), alat, alon, 0, alt=aelev)            # 23:35 Landung
 
         inp = _stack_inputs(conn, ev, "2026-07-01T23:40:00Z")
 
@@ -2958,6 +2967,114 @@ class TestStackInputs:
         assert landing["ts"] == touchdown            # die Landung bleibt, wo sie war
         assert logout["ts"] > landing["ts"]          # der Logout rueckt hinter sie
 
+    def test_fallback_leg_ohne_gps_erzeugt_keine_flugereignisse(self):
+        """#23: Kein GPS = kein Flug. canonicalize_legs hat einen Fallback OHNE GPS
+        (_flightrow_as_flight, database.py:2614-2623): erkennt der Detektor für eine cid im
+        ganzen Fenster KEIN Leg, wird jede geschlossene Nicht-Ghost-`flights`-Zeile als "Leg"
+        ausgegeben — logon_time = Connection-Login, logoff_time = Connection-Logout,
+        gps_departure/gps_arrival = None, departure/arrival aus dem FLUGPLAN.
+
+        Würde der Adapter daraus takeoff/landing bauen, erfände er Flugereignisse aus einer
+        Flugplan-Zeile (derselbe #23-Verstoß, den der Umbau ausschließen soll). Zugleich muss
+        der Login-Ort auf Regel 2 (Live-/Boden-Position) durchfallen, statt an
+        gps_departure=None hängenzubleiben — sonst stirbt die Boden-Beladung (#5, v8.22.0)
+        still für jede cid mit Fallback-Legs.
+
+        Aufbau = der reale Fall dahinter: Der Pilot steht die ganze Session in EDWG (gs 0, nie
+        abgehoben) -> kein GPS-Leg -> Fallback greift. Sein Flugplan behauptet EDXP->EDWK; die
+        Zeile trägt distance_nm > 0.5 und ist damit kein Ghost (database.py:1994).
+        """
+        from app.database import _stack_inputs
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        lat, lon = icao_to_coords("EDWG")
+        _add_flight(conn, 62, "EDXP", "EDWK", "C208", START, duration_min=30)
+        # Nur Steh-Positionen: kein Abheben -> _gps_flights_for_positions liefert nichts.
+        _add_pos(conn, 62, START, lat, lon, 0)
+        _add_pos(conn, 62, _shift(START, 10), lat, lon, 0)
+        _add_pos(conn, 62, _shift(START, 20), lat, lon, 0)
+
+        inp = _stack_inputs(conn, ev, END)
+
+        kinds = [e["kind"] for e in inp["events"]]
+        assert kinds == ["login", "logout"]            # kein erfundener takeoff/landing
+        assert inp["events"][0]["airport"] == "EDWG"   # Regel 2, nicht der Flugplan (EDXP)
+
+    def test_leg_ohne_gps_departure_faellt_auf_die_bodenposition_zurueck(self):
+        """Regel 2 muss auch dann greifen, wenn die Session ein ECHTES Leg hat, dessen
+        Startplatz aber unbekannt ist (`gps_departure = None`).
+
+        Realer Fall: Der Pilot steht um 09:00 in EDWG und lädt. Dann reißt der Positions-Feed
+        für > 30 min ab (VPS-/Poller-Hicks) — _split_on_gaps trennt bei dieser Lücke ein neues
+        Segment, das INIT-seitig als Spawn-in-der-Luft startet. Weil er dabei 4000 ft über
+        Grund ist (>= _GPS_SPAWN_MAX_AGL_FT), bleibt `dep_icao` None (gps_legs.py:185) — das Leg
+        ist trotzdem echt (Takeoff 10:00, Landung EDXH 10:30).
+
+        Mit `if real:` (statt `if real and real[0].get("gps_departure")`) übernähme der
+        Adapter dieses None als Login-Ort und der Pilot hätte in EDWG NICHTS geladen — die
+        Boden-Beladung (#5, v8.22.0) stirbt still. Regel 2 findet ihn über die erste
+        Position der Session korrekt in EDWG.
+        """
+        from app.database import _stack_inputs
+        from app.geo import icao_to_coords, airport_elevation_ft
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        alat, alon = icao_to_coords("EDXH")
+        aelev = airport_elevation_ft("EDXH") or 0
+        _add_flight(conn, 63, "EDWG", "EDXH", "C208", START, duration_min=120)   # bis 11:00
+        _add_pos(conn, 63, START, dlat, dlon, 0, alt=delev)                  # 09:00 steht in EDWG
+        # >30 min Lücke -> neues Segment, Spawn in der Luft, 4000 ft AGL -> dep_icao = None
+        _add_pos(conn, 63, _shift(START, 60), 54.0, 7.9, 120, alt=4000)      # 10:00 Takeoff-ts
+        _add_pos(conn, 63, _shift(START, 88), alat, alon, 40, alt=aelev + 400)
+        _add_pos(conn, 63, _shift(START, 90), alat, alon, 0, alt=aelev)      # 10:30 Landung EDXH
+
+        inp = _stack_inputs(conn, ev, END)
+
+        takeoff = next(e for e in inp["events"] if e["kind"] == "takeoff")
+        assert takeoff["ts"] == _shift(START, 60)      # das Leg ist echt und bleibt erhalten
+        landing = next(e for e in inp["events"] if e["kind"] == "landing")
+        assert landing["airport"] == "EDXH"
+        assert inp["events"][0]["airport"] == "EDWG"   # Login-Ort aus Regel 2, nicht None
+
+    def test_logout_in_der_luft_springt_nicht_zur_spaeteren_landung(self):
+        """S8 (Nutzer-Fund, flights.id 357/358, CID 1602713): Logout IN DER LUFT um 09:30,
+        Re-Login 09:32:54 — 2:54 min Lücke, also KEINE Verkettung (zwei Sessions). Der
+        GPS-Detektor segmentiert erst bei Lücken > 30 min und sieht EIN durchgehendes Leg:
+        Takeoff 09:05, Landung 10:00.
+
+        Der +1-s-Versatz des Logouts (gegen die Poll-Takt-Kollision "Landung und Logout im
+        selben Sample") darf hier NICHT greifen: `own` begrenzt nur logon_time, nicht
+        logoff_time — das Leg landet 30 min NACH dem Logout dieser Session. Sprünge der
+        Logout-Zeit auf 10:00:01 rissen den Piloten mitten in Session 2 aus `position`
+        (_drop_load + position.pop), _load_standing fände ihn nie wieder und seine Lieferung
+        käme mit 0 kg an.
+        """
+        from app.database import _stack_inputs
+        from app.geo import icao_to_coords, airport_elevation_ft
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        lat, lon = icao_to_coords("EDWG")
+        elev = airport_elevation_ft("EDWG") or 0
+        # Session 1: 09:00 -> 09:30 (Logout in der Luft), Session 2 ab 09:32:54 (offen).
+        _add_flight(conn, 12, "EDWG", "EDXH", "C208", START, duration_min=30)
+        _add_open_flight(conn, 12, "EDWG", "EDXH", "C208", "2026-07-01T09:32:54Z")
+        # EIN durchgehender GPS-Track über beide Sessions: Start EDWG, Landung EDWG (Ladeplatz!).
+        _add_pos(conn, 12, START, lat, lon, 0, alt=elev)                       # 09:00 steht
+        _add_pos(conn, 12, _shift(START, 5), lat, lon, 80, alt=elev + 1200)    # 09:05 Takeoff
+        _add_pos(conn, 12, _shift(START, 30), 54.0, 7.9, 120, alt=4000)        # 09:30 in der Luft
+        _add_pos(conn, 12, _shift(START, 35), 54.0, 7.9, 120, alt=4000)        # 09:35 Session 2
+        _add_pos(conn, 12, _shift(START, 58), lat, lon, 40, alt=elev + 400)    # 09:58 Anflug
+        _add_pos(conn, 12, _shift(START, 60), lat, lon, 0, alt=elev)           # 10:00 Touchdown
+
+        inp = _stack_inputs(conn, ev, END)
+
+        logouts = [e for e in inp["events"] if e["kind"] == "logout"]
+        assert len(logouts) == 1                       # Session 2 ist offen
+        assert logouts[0]["ts"] == _shift(START, 30)   # 09:30 — bleibt, wo er war
+
     def test_statsim_leg_erzeugt_eigene_ereignisse(self):
         """Nutzer-Entscheidung 16.07.: StatSim (Backfill bei VPS-Ausfall) zählt wie ein
         normaler Flug — Login am Startplatz, Takeoff, Landung, Logout am Landeort.
@@ -2968,54 +3085,74 @@ class TestStackInputs:
         canonicalize_legs verlangt duration_min > 5, fetched_at ist NOT NULL). Der Track
         in statsim_position_history ist nötig, damit canonicalize_legs ein GPS-Leg erkennt."""
         from app.database import _stack_inputs
-        from app.geo import icao_to_coords, airport_elevation_ft
         conn = _make_conn()
         ev = self._load_event(conn)
-        dlat, dlon = icao_to_coords("EDWG")
-        delev = airport_elevation_ft("EDWG") or 0
-        alat, alon = icao_to_coords("EDXH")
-        aelev = airport_elevation_ft("EDXH") or 0
-        # StatSim-Flug OHNE flights-Zeile (der Poller lief nicht):
-        conn.execute(
-            "INSERT INTO statsim_cache (statsim_id, cid, callsign, departure, arrival, "
-            "aircraft, logon_time, logoff_time, duration_min, fetched_at) VALUES "
-            "(9001, 12, 'FRS12', 'EDWG', 'EDXH', 'C208', ?, ?, 30, ?)",
-            (START, _shift(START, 30), START),
-        )
-        conn.execute(
-            "INSERT INTO statsim_position_history "
-            "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
-            "VALUES (9001, ?, ?, ?, ?, 0, ?)",
-            (dlat, dlon, delev, 0, START),
-        )
-        conn.execute(
-            "INSERT INTO statsim_position_history "
-            "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
-            "VALUES (9001, ?, ?, ?, ?, 0, ?)",
-            (dlat, dlon, delev + 1200, 80, _shift(START, 2)),
-        )
-        conn.execute(
-            "INSERT INTO statsim_position_history "
-            "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
-            "VALUES (9001, ?, ?, ?, ?, 0, ?)",
-            (54.0, 7.9, 4000, 120, _shift(START, 15)),
-        )
-        conn.execute(
-            "INSERT INTO statsim_position_history "
-            "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
-            "VALUES (9001, ?, ?, ?, ?, 0, ?)",
-            (alat, alon, aelev + 400, 40, _shift(START, 28)),
-        )
-        conn.execute(
-            "INSERT INTO statsim_position_history "
-            "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
-            "VALUES (9001, ?, ?, ?, ?, 0, ?)",
-            (alat, alon, aelev, 0, _shift(START, 30)),
-        )
-        conn.commit()
+        self._add_statsim_leg(conn)          # StatSim-Flug OHNE flights-Zeile (Poller lief nicht)
 
         inp = _stack_inputs(conn, ev, END)
         kinds = [e["kind"] for e in inp["events"]]
 
         assert kinds == ["login", "takeoff", "landing", "logout"]
         assert inp["events"][0]["airport"] == "EDWG"
+
+    def test_statsim_leg_unter_echter_session_zaehlt_nur_einmal(self):
+        """Gegenprobe zu oben — _covered_by_session ist der EINZIGE Schutz gegen
+        StatSim/FriesenSpy-Doppelzählung.
+
+        Deckt eine echte VATSIM-Verbindung das StatSim-Leg ab, darf es KEINE zweiten
+        login/takeoff/landing-Ereignisse erzeugen. Sonst wird dieselbe Fracht zweimal
+        geliefert — und das fällt nicht einmal auf: der Erhaltungssatz bleibt formal intakt,
+        weil die Ware doppelt aus dem Ladeplatz-Stapel genommen wird. Der Balken lügt nach oben,
+        ohne dass irgendetwas Alarm schlägt.
+
+        Aufbau: Die `flights`-Zeile ist OFFEN und hat keine eigenen Positionen — deshalb baut
+        canonicalize_legs aus ihr weder ein GPS-Leg noch ein Fallback-Leg (offene Zeilen sind
+        dort ausgenommen, database.py:2615). Ihr Dedup-Intervall bleibt damit leer, das
+        StatSim-Leg überlebt canonicalize_legs (genau der "unüberdeckte Rest", den
+        _covered_by_session abfangen muss). _transport_sessions sieht die Zeile trotzdem und
+        liefert die Session.
+        """
+        from app.database import _stack_inputs
+        conn = _make_conn()
+        ev = self._load_event(conn)
+        self._add_statsim_leg(conn)
+        _add_open_flight(conn, 12, "EDWG", "EDXH", "C208", START)   # echte Verbindung, deckt ab
+
+        inp = _stack_inputs(conn, ev, END)
+        kinds = [e["kind"] for e in inp["events"]]
+
+        assert kinds.count("login") == 1     # NICHT zweimal — sonst doppelte Fracht
+        assert kinds.count("takeoff") == 1
+        assert kinds.count("landing") == 1
+
+    def _add_statsim_leg(self, conn, *, statsim_id=9001, cid=12):
+        """Ein vollständiger StatSim-Flug EDWG->EDXH (09:00 -> 09:30) mit Track.
+
+        Hinweis: die Tabelle heißt statsim_cache (database.py:106); duration_min und
+        fetched_at sind Pflichtfelder (canonicalize_legs filtert duration_min > 5).
+        """
+        from app.geo import icao_to_coords, airport_elevation_ft
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        alat, alon = icao_to_coords("EDXH")
+        aelev = airport_elevation_ft("EDXH") or 0
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id, cid, callsign, departure, arrival, "
+            "aircraft, logon_time, logoff_time, duration_min, fetched_at) VALUES "
+            "(?, ?, ?, 'EDWG', 'EDXH', 'C208', ?, ?, 30, ?)",
+            (statsim_id, cid, f"FRS{cid:02d}", START, _shift(START, 30), START),
+        )
+        for lat, lon, alt, gs, minute in [
+            (dlat, dlon, delev, 0, 0),                # steht in EDWG
+            (dlat, dlon, delev + 1200, 80, 2),        # Takeoff
+            (54.0, 7.9, 4000, 120, 15),               # unterwegs
+            (alat, alon, aelev + 400, 40, 28),        # Anflug EDXH
+            (alat, alon, aelev, 0, 30),               # Touchdown
+        ]:
+            conn.execute(
+                "INSERT INTO statsim_position_history "
+                "(statsim_id, latitude, longitude, altitude, groundspeed, heading, ts) "
+                "VALUES (?, ?, ?, ?, ?, 0, ?)",
+                (statsim_id, lat, lon, alt, gs, _shift(START, minute)),
+            )
+        conn.commit()

@@ -5419,13 +5419,28 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
         own = [g for g in legs_by_cid.get(cid, [])
                if (g.get("logon_time") or "") >= lo and (not lf or (g.get("logon_time") or "") <= lf)]
 
+        # NUR echte GPS-Legs sind Flüge (#23). canonicalize_legs hat einen Fallback ohne GPS
+        # (_flightrow_as_flight, database.py:2614-2623): erkennt der Detektor für eine cid im
+        # ganzen Fenster kein Leg, wird jede geschlossene Nicht-Ghost-`flights`-Zeile zum "Leg"
+        # — mit dem Connection-Login als logon_time und dem Connection-Logout als logoff_time.
+        # Daraus takeoff/landing zu bauen hieße, Flugereignisse aus einer Flugplan-Zeile zu
+        # ERFINDEN. Merkmal ist `block_start`: _gps_flights_for_positions setzt es bei jedem
+        # erkannten Leg (database.py:2368), _flightrow_as_flight nie — und weitere Leg-Quellen
+        # hat canonicalize_legs nicht. (`gps_departure is None and gps_arrival is None` wäre
+        # UNSCHARF: ein echtes Leg darf beide None haben, wenn Start und Landung außerhalb
+        # jedes bekannten Platz-Radius liegen — nearest_airport gibt dann None, gps_legs.py:195
+        # und :158.)
+        real = [g for g in own if "block_start" in g]
+
         # --- Login-Ort (GPS-only, kein Flugplan-Fallback) ---
         airport = None
-        if own:
+        if real and real[0].get("gps_departure"):
             # 1. Das erste Leg kennt seinen eigenen Startplatz — gilt auch, wenn der Pilot beim
             #    ersten Poll schon rollte (gs > 2). Eine reine gs<2-Prüfung würde ihn hier
             #    fälschlich als "nicht am Platz" werten und seine Fracht still verlieren.
-            airport = normalize_type_code(own[0].get("gps_departure")) or None
+            #    Ohne gps_departure (Spawn abseits jedes Platzes, Fallback-Leg) gilt Regel 2 —
+            #    sonst stürbe die Boden-Beladung (#5, v8.22.0) hier still.
+            airport = normalize_type_code(real[0].get("gps_departure")) or None
         else:
             # 2. Er steht nur da (kein Leg): aktuelle Live-Position, sonst die erste der Session.
             #    Am Boden = gs < _BLOCK_GS_KT — exakt die heutige Boden-Beladung (#5, v8.22.0).
@@ -5445,7 +5460,7 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
             airport = None      # kein teilnehmender Platz -> in der Luft/anderswo eingeloggt
 
         out.append({"ts": lo, "kind": "login", "cid": cid, "airport": airport, "capacity_kg": cap})
-        for g in own:
+        for g in real:
             out.append({"ts": g["logon_time"], "kind": "takeoff", "cid": cid,
                         "airport": None, "capacity_kg": cap})
             if g.get("logoff_time"):     # abgeschlossenes Leg = Landung erkannt
@@ -5461,8 +5476,17 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
             # logoff_time IST also das letzte GPS-Sample. Wer landet und innerhalb eines
             # Poll-Takts (15 s) aussteigt, hat logoff_time == landing_ts. Das ist der Normalfall
             # "abgeliefert, Feierabend". Dann: eine Sekunde nach der Landung, synthetisch.
+            # NUR Landungen, die auf oder VOR dem Logout liegen, können überhaupt eine
+            # Poll-Takt-Kollision sein. `own` begrenzt nur logon_time (s. o.), nicht
+            # logoff_time: ein Leg, das INNERHALB der Session abhebt und erst NACH ihrem
+            # Logout landet (S8 — Logout in der Luft, Re-Login nach 2:54 min, der Detektor
+            # sieht ein durchgehendes Leg), stünde sonst hier als "letzte Landung" und schöbe
+            # den Logout weit nach vorn, aus der Session heraus. Der Pilot verschwände dann
+            # mitten in Session 2 aus `position` und lieferte 0 kg.
             ts_logout = lf
-            letzte_landung = max((g["logoff_time"] for g in own if g.get("logoff_time")),
+            letzte_landung = max((g["logoff_time"] for g in real
+                                  if g.get("logoff_time")
+                                  and _parse_iso(g["logoff_time"]) <= _parse_iso(lf)),
                                  default=None)
             if letzte_landung and _parse_iso(ts_logout) <= _parse_iso(letzte_landung):
                 ts_logout = (_parse_iso(letzte_landung) + timedelta(seconds=1)
