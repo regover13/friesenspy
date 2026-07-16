@@ -290,7 +290,37 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
   sonst verbiegt Git Bash den Testpfad — meine erste Messung war deshalb falsch, nicht der Code).
   Das Skript schreibt NIRGENDS (0 Treffer INSERT/UPDATE/DELETE/COMMIT).
   NICHT verifiziert: die drei Zahlen. Dafuer fehlt die DB.
-- Task 8: offen
+- Task 8: complete (Cloud-Session, GATE bestanden vorausgesetzt). compute_transport_progress rechnet
+  jetzt mit Stapeln (derive_stacks/_stack_inputs) statt zu raten; _empty_transport_progress ergaenzt;
+  Import derive_stacks/STOLEN/SUNK auf Modulebene (transport_stacks ist DB-frei -> kein Zyklus).
+  5 neue TestStapelProgress gruen, 1056 gesamt gruen. API-Vertrag unveraendert (main/poller importieren
+  sauber, alle Konsumenten lesen loss_kind mit .get()/JS-falsy — vertragsgleich zum Altcode).
+  DREI Funde/Entscheidungen dieser Session (alle mit dem Nutzer besprochen):
+   1. logout_ts (EIGENE Zutat ueber den Plan, vom Nutzer FREIGEGEBEN): der Plan-Feed suchte die
+      Verlust-Zeile per logoff_time — die Verlust-Bewegung traegt aber den +1s-verschobenen Logout-ts
+      (Touchdown-Disconnect, S4). _stack_inputs vermerkt jetzt den effektiven Logout-ts an der Session,
+      der Feed sucht danach. Aendert KEINE Zahl, nur welche Feed-Zeile das loss_kind-Label traegt.
+      Mutationsprobe: ohne den Fix war test_s4 rot (loss None), mit gruen.
+   2. S2/S3-Testmodellierung KORRIGIERT (Nutzer-Einwand "leg <> Verbindung, das soll so sein"): zwei
+      _add_flight mit 10-min-Luecke = echter Disconnect+Reconnect, NICHT die gemeinte durchgehende
+      Reise. Beleg im Poller (poller.py:837): ein Refile-Split schliesst Leg 1 IM Refile-Moment
+      (logoff(Leg1)==logon(Leg2), keine Luecke) -> _transport_sessions verkettet zu EINER Verbindung.
+      Tests bilden das jetzt so ab (duration_min=30/20 statt 20/20). Diskriminiert nachweislich:
+      mit Luecke -> S3=0 (stolen am fremden EDDW), ohne Luecke -> S3=800. Kein Placebo.
+   3. Poller-Seeds (Nutzer-Regel "ohne Track kein Kutter-Flug", FREIGEGEBEN): _seed_with_flight legte
+      eine nackte flights-Zeile OHNE position_history -> Fallback ohne block_start -> zaehlt zu Recht
+      nicht mehr (flight_count 0). Neuer Helfer _seed_kutter_track schreibt einen echten GPS-Track
+      (Boden-Start EDWG = laedt, Landung EDXH = liefert). TestTransportSummaryEmptyEventSuppressed +
+      TestTransportSnapshotFreeze wieder gruen.
+  ⚠️ OFFEN fuer Task 9 (kein Task-8-Bug): 57 rote Tests sind ALLE Latch-/entfallene-Feature-Tests
+     (56 in test_transport.py, PLAN-erwartet + Gegenstand Task 9/10; 1 in test_poller.py =
+     TestLegSplitLatchKey, steht auf der Task-9-Loeschliste des Plans (test_poller.py:509-635,
+     importiert get_transport_live_arrivals). NICHT frisiert — Task 9 entfernt ihn.
+  💡 EMPFEHLUNG fuers finale Review (NICHT umgesetzt, weil defensiv + keine Beobachtungsaenderung, und
+     der Nutzer will keine eigenmaechtigen fachlichen Aenderungen): der Feed-Loop in
+     compute_transport_progress iteriert own=legs_by_cid OHNE block_start-Filter. Aktuell harmlos
+     (Fallback-Legs haben gps_departure/arrival=None -> Sichtbarkeitsfilter schliesst sie aus), aber
+     Ledger-Task-8-Vormerkung #1 wollte den expliziten Guard. Mit dem Nutzer abstimmen.
 - Task 9: offen
 - Task 10: offen
 - Task 11: offen

@@ -3186,3 +3186,119 @@ class TestStackInputs:
                 (statsim_id, lat, lon, alt, gs, _shift(START, minute)),
             )
         conn.commit()
+
+
+class TestStapelProgress:
+    """compute_transport_progress auf Basis der Stapel-Ableitung — die Fälle, an denen sich das
+    Modell entscheidet (S1-S5 aus scripts/kutter_ladung_szenarien.py, hier mit echten Tracks)."""
+
+    def _leg(self, conn, cid, von, nach, t0, *, dauer=20, callsign=None):
+        """Ein GPS-erkennbarer Flug von 'von' nach 'nach'. Vorlage: scripts/kutter_ladung_szenarien.leg()"""
+        from app.geo import icao_to_coords, airport_elevation_ft
+        callsign = callsign or f"FRS{cid:02d}"
+        # position_history.cid ist NOT NULL REFERENCES pilots(cid) — der Pilot muss existieren,
+        # bevor Positionen kommen (_leg laeuft vor _add_flight, das den Piloten sonst anlegt).
+        conn.execute("INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)",
+                     (cid, f"Pilot{cid}", START))
+        la, lo = icao_to_coords(von)
+        ea = airport_elevation_ft(von) or 0
+        lb, lb2 = icao_to_coords(nach)
+        eb = airport_elevation_ft(nach) or 0
+        _add_pos(conn, cid, t0, la, lo, 0, alt=ea, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, 1), la, lo, 70, alt=ea + 250, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, 2), la, lo, 120, alt=ea + 2500, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, dauer // 2), (la + lb) / 2, (lo + lb2) / 2, 130,
+                 alt=3000, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, dauer - 1), lb, lb2, 60, alt=eb + 200, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, dauer), lb, lb2, 0, alt=eb, callsign=callsign)
+        return _shift(t0, dauer)
+
+    def _milchmann_event(self, conn):
+        upsert_payload(conn, "C208", payload_kg=1000)
+        conn.commit()
+        return _event(conn, route="EDWG,EDWZ,EDXH", destination="EDXH", cargo=[
+            {"name": "Fisch", "target_kg": 800, "departure": "EDWG"},
+            {"name": "Tee", "target_kg": 500, "departure": "EDWZ"},
+        ])
+
+    def test_s2_milchmann_erste_ladung_bleibt_an_bord(self):
+        """HEUTE: 0 Fisch + 500 Tee. Der Startplatz des LETZTEN Beins bestimmt die Fracht."""
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        t1 = self._leg(conn, 1, "EDWG", "EDWZ", START)
+        t2 = self._leg(conn, 1, "EDWZ", "EDXH", _shift(t1, 10))
+        # Zwei Legs, EINE Verbindung: Refile-Split am Zwischenplatz (Pilot landet, sitzt, filed neu).
+        # Der Poller schließt Leg 1 IM Refile-Moment (poller.py:837) — logoff(Leg1) == logon(Leg2),
+        # keine Lücke — sodass _transport_sessions beide wieder zu einer Verbindung verkettet
+        # (kein Logout am Zwischenplatz). Eine echte Lücke wäre ein Disconnect+Reconnect.
+        _add_flight(conn, 1, "EDWG", "EDWZ", "C208", START, duration_min=30)          # logoff 09:30
+        _add_flight(conn, 1, "EDWZ", "EDXH", "C208", _shift(t1, 10), duration_min=20)  # logon 09:30
+
+        p = compute_transport_progress(conn, ev, END)
+
+        fisch = next(c for c in p["cargo"] if c["name"] == "Fisch")
+        tee = next(c for c in p["cargo"] if c["name"] == "Tee")
+        assert fisch["delivered_kg"] == 800.0
+        assert tee["delivered_kg"] == 200.0     # 1000 kg Zuladung - 800 Fisch
+        assert p["total_kg"] == 1000.0
+
+    def test_s3_zwischenlandung_fremd_liefert_die_echte_ladung(self):
+        """HEUTE: ohne Latch 0 kg, mit Latch 1000 kg (Tee, der nie an Bord war)."""
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        t1 = self._leg(conn, 1, "EDWG", "EDDW", START)
+        t2 = self._leg(conn, 1, "EDDW", "EDXH", _shift(t1, 10))
+        # Zwei Legs, EINE Verbindung (Refile-Split am fremden EDDW, KEIN Logout): logoff(Leg1) ==
+        # logon(Leg2), keine Lücke → _transport_sessions verkettet zu einer Verbindung, die Ladung
+        # bleibt an Bord und wird am Ziel geliefert. Eine echte Lücke wäre ein Disconnect an EDDW —
+        # dort läge die Fracht dann unwiederbringlich (stolen, fremder Platz), Ergebnis 0.
+        _add_flight(conn, 1, "EDWG", "EDDW", "C208", START, duration_min=30)          # logoff 09:30
+        _add_flight(conn, 1, "EDDW", "EDXH", "C208", _shift(t1, 10), duration_min=20)  # logon 09:30
+
+        p = compute_transport_progress(conn, ev, END)
+
+        assert p["total_kg"] == 800.0           # nur der Fisch, der wirklich an Bord war
+        tee = next(c for c in p["cargo"] if c["name"] == "Tee")
+        assert tee["delivered_kg"] == 0.0
+
+    def test_s4_logout_am_zweiten_ladeplatz_legt_die_ware_dorthin(self):
+        """HEUTE: 'returned' -> zurück in den EDWG-Topf. Die Ware liegt aber in EDWZ."""
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        t1 = self._leg(conn, 1, "EDWG", "EDWZ", START)
+        _add_flight(conn, 1, "EDWG", "EDWZ", "C208", START, duration_min=20)
+
+        p = compute_transport_progress(conn, ev, END)
+
+        assert p["total_kg"] == 0.0
+        loss = next((f for f in p["flights"] if f.get("loss_kind")), None)
+        assert loss is not None and loss["loss_kind"] == "returned"
+        assert p["lost_total_kg"] == 0.0        # zurückgebracht ist kein Verlust
+
+    def test_die_bordladung_ist_die_reservierung(self):
+        """Die Reservierung ist kein eigener Mechanismus mehr: wer lädt, nimmt vom Stapel."""
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        _add_open_flight(conn, 61, "EDWG", "EDXH", "C208", START)
+        lat, lon = icao_to_coords("EDWG")
+        _set_live_pos(conn, 61, lat, lon, 0)
+
+        p = compute_transport_progress(conn, ev, _shift(START, 5))
+
+        assert p["reserved_total_kg"] == 800.0   # er hat den EDWG-Stapel an Bord
+        fisch = next(c for c in p["cargo"] if c["name"] == "Fisch")
+        assert fisch["reserved_kg"] == 800.0
+        assert fisch["delivered_kg"] == 0.0
+
+    def test_der_erhaltungssatz_gilt_auch_im_api_vertrag(self):
+        """geliefert + verloren + reserviert + Rest == Manifest. Der Balken kann nicht lügen."""
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        t1 = self._leg(conn, 1, "EDWG", "EDDW", START)
+        _add_flight(conn, 1, "EDWG", "EDDW", "C208", START, duration_min=20)
+
+        p = compute_transport_progress(conn, ev, END)
+
+        assert p["total_kg"] + p["lost_total_kg"] == 800.0   # gestohlen in EDDW
+        assert p["lost_total_kg"] == 800.0

@@ -28,6 +28,42 @@ def _make_poller(db_path: str = ":memory:", **kwargs) -> VatsimPoller:
     )
 
 
+def _seed_kutter_track(conn, cid, callsign, von, nach, logon, logoff):
+    """Einen GPS-erkennbaren Kutter-Flug von 'von' nach 'nach' als position_history schreiben.
+
+    Unter GPS-only (#23) IST der Track der Flug: eine nackte flights-Zeile ohne Positionen fällt
+    auf den Fallback (kein block_start) und zählt zu Recht nicht mehr. Für Tests, die einen
+    tatsächlich geflogenen, am Ziel angekommenen Kutter-Flug meinen, legt dieser Helfer den Track:
+    Boden-Start am Ladeplatz (dort wird geladen), Steigflug, Reise, Landung + Vollstopp am Ziel
+    (dort wird geliefert). Vorbild: scripts/kutter_ladung_szenarien.leg()."""
+    from datetime import datetime, timedelta, timezone
+    from app.geo import icao_to_coords, airport_elevation_ft
+
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    t0 = datetime.strptime(logon, fmt).replace(tzinfo=timezone.utc)
+    t1 = datetime.strptime(logoff, fmt).replace(tzinfo=timezone.utc)
+    total = (t1 - t0).total_seconds() / 60.0
+    la, lo = icao_to_coords(von)
+    ea = airport_elevation_ft(von) or 0
+    lb, lb2 = icao_to_coords(nach)
+    eb = airport_elevation_ft(nach) or 0
+
+    def _at(minute, lat, lon, gs, alt):
+        ts = (t0 + timedelta(minutes=minute)).strftime(fmt)
+        conn.execute(
+            "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, "
+            "groundspeed, ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (cid, callsign, lat, lon, alt, gs, ts),
+        )
+
+    _at(0, la, lo, 0, ea)                                   # am Boden am Ladeplatz
+    _at(1, la, lo, 70, ea + 250)                            # abgehoben
+    _at(2, la, lo, 120, ea + 2500)                          # steigt
+    _at(total / 2, (la + lb) / 2, (lo + lb2) / 2, 130, 3000)  # unterwegs
+    _at(total - 1, lb, lb2, 60, eb + 200)                  # Anflug Ziel
+    _at(total, lb, lb2, 0, eb)                              # Vollstopp am Ziel
+
+
 # ---------------------------------------------------------------------------
 # _lead_phrase — gestufte Restzeit-Formulierung für Event-Erinnerungs-Push (#2)
 # ---------------------------------------------------------------------------
@@ -799,6 +835,10 @@ class TestTransportSummaryEmptyEventSuppressed:
                 "logoff_time, duration_min) VALUES (7, 'FRS07', 'EDWG', 'EDXH', ?, ?, 60)",
                 (logon, logoff),
             )
+            # GPS-Track legen: unter GPS-only zählt nur ein Flug MIT Track (nackte flights-Zeile
+            # = Fallback ohne block_start = kein Kutter-Flug). Boden-Start EDWG (lädt), Landung
+            # EDXH (liefert) — so ist flight_count > 0 wie vom Test gemeint.
+            _seed_kutter_track(conn, 7, "FRS07", "EDWG", "EDXH", logon, logoff)
             conn.commit()
         finally:
             conn.close()
@@ -926,6 +966,10 @@ class TestTransportSnapshotFreeze:
                 "logoff_time, duration_min) VALUES (7, 'FRS07', 'EDWG', 'EDXH', ?, ?, 60)",
                 (logon, logoff),
             )
+            # GPS-Track legen: unter GPS-only zählt nur ein Flug MIT Track (nackte flights-Zeile
+            # = Fallback ohne block_start = kein Kutter-Flug). Boden-Start EDWG (lädt), Landung
+            # EDXH (liefert) — so ist flight_count > 0 wie vom Test gemeint.
+            _seed_kutter_track(conn, 7, "FRS07", "EDWG", "EDXH", logon, logoff)
             conn.commit()
         finally:
             conn.close()
