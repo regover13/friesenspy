@@ -13,100 +13,33 @@ Modell (Entscheidungen vom 15.07.):
 
 REIN LESEND. Aendert nichts.
 """
-import sqlite3, json
+import sqlite3, json, sys
 from collections import defaultdict
 from app import geo, database as db
+from app.database import _stack_inputs
+from app.transport_stacks import derive_stacks, STOLEN, SUNK
 
-conn = sqlite3.connect("/opt/friesenspy/data/friesenspy.db")
+# Pfad zur KOPIE als Argument — niemals die Original-Prod-DB.
+db_pfad = sys.argv[1] if len(sys.argv) > 1 else "/tmp/friesenspy-kopie.db"
+if db_pfad.startswith("/opt/friesenspy/"):
+    raise SystemExit("Das ist die Produktions-DB. Bitte eine Kopie angeben.")
+# mode=ro erzwingt Lesen auf DB-Ebene — nicht nur per Vorsatz.
+conn = sqlite3.connect(f"file:{db_pfad}?mode=ro", uri=True)
 conn.row_factory = sqlite3.Row
 geo.set_custom_airports(db.list_custom_airports(conn))
 
-payload_map = db.get_payload_map(conn)
-default_kg = db.transport_default_payload_kg(conn)
-
-
-def kap(f):
-    tc = (f.get("aircraft_icao") or f.get("aircraft") or "").upper()
-    return float(payload_map.get(tc) or default_kg or 0)
-
 
 def rechne(ev):
-    dest = (ev["destination"] or "").upper()
-    route = {r.strip().upper() for r in (ev["route"] or "").split(",") if r.strip()}
-    ladeplaetze = route - {dest}
-
-    # Manifest = Anfangsbestand. Reihenfolge: wie im Admin (oben zuerst).
-    cargo = db.get_transport_cargo(conn, ev["id"])
-    stapel = defaultdict(lambda: defaultdict(float))
-    reihenfolge = []
-    cap_je_flug = {}                             # per_flight_max_kg (#63) — pro LADEVORGANG
-    for c in cargo:
-        name = c.get("name")
-        reihenfolge.append(name)
-        cap_je_flug[name] = c.get("per_flight_max_kg")
-        deps = [d.strip().upper() for d in (c.get("departure") or "").split(",") if d.strip()]
-        if not deps:
-            deps = sorted(ladeplaetze)          # Altbestand ohne Bindung: geteilt
-        kg = float(c.get("target_kg") or 0)
-        for d in deps:                           # mehrere Startplaetze: Menge je Platz
-            stapel[d][name] += kg / len(deps)
-
-    legs = db.canonicalize_legs(conn, start=ev["dtstart"], end=ev["dtend"], callsign_prefix="FRS")
-    legs = [f for f in legs if f.get("gps_departure") or f.get("gps_arrival")]
-    legs.sort(key=lambda f: f.get("logon_time") or "")
-
-    ladung = defaultdict(lambda: defaultdict(float))
-    ziel = defaultdict(float)
-    gestohlen = defaultdict(float)
-    versenkt = defaultdict(float)
-    letzter_ort = {}
-
-    for f in legs:
-        cid = f.get("cid")
-        dep = (f.get("gps_departure") or "").upper()
-        arr = (f.get("gps_arrival") or "").upper()
-
-        # --- Abheben von einem Ladeplatz: auffuellen ---
-        if dep in ladeplaetze:
-            frei = kap(f) - sum(ladung[cid].values())
-            for name in reihenfolge:
-                if frei <= 0.01:
-                    break
-                da = stapel[dep].get(name, 0.0)
-                if da <= 0.01:
-                    continue
-                nimm = min(da, frei)
-                pfm = cap_je_flug.get(name)      # #63: Obergrenze je Flug/Ladevorgang
-                if pfm:
-                    nimm = min(nimm, float(pfm) - ladung[cid].get(name, 0.0))
-                if nimm <= 0.01:
-                    continue
-                stapel[dep][name] -= nimm
-                ladung[cid][name] += nimm
-                frei -= nimm
-
-        # --- Landung ---
-        if arr == dest:
-            for name, kg in list(ladung[cid].items()):
-                ziel[name] += kg
-            ladung[cid].clear()
-            letzter_ort[cid] = dest
-        elif arr:
-            letzter_ort[cid] = arr           # Ladeplatz oder fremd: Ladung bleibt an Bord
-        else:
-            letzter_ort[cid] = None          # Leg endet in der Luft
-
-    # --- Logout: was am Ende noch an Bord ist ---
-    for cid, l in ladung.items():
-        if not l:
-            continue
-        ort = letzter_ort.get(cid)
-        ziel_stapel = (stapel[ort] if ort in ladeplaetze
-                       else versenkt if ort is None else gestohlen)
-        for name, kg in l.items():
-            ziel_stapel[name] += kg
-
-    return dest, reihenfolge, stapel, ziel, gestohlen, versenkt
+    """Jetzt mit der ECHTEN Ableitung statt der Skript-eigenen Kopie."""
+    inp = _stack_inputs(conn, ev, ev["dtend"], callsign_prefix="FRS")
+    r = derive_stacks(
+        manifest=inp["manifest"], events=inp["events"],
+        destination=inp["destination"], loading_airports=inp["loading_airports"],
+    )
+    dest = inp["destination"]
+    reihenfolge = [c["name"] for c in inp["manifest"]]
+    return (dest, reihenfolge, r["stacks"], r["stacks"][dest],
+            r["stacks"][STOLEN], r["stacks"][SUNK])
 
 
 evs = [dict(r) for r in conn.execute(
@@ -140,3 +73,11 @@ for ev in evs:
             for o, s in stapel.items() if any(v > 0.5 for v in s.values())}
     if rest:
         print("      Rest auf Stapeln: %s" % rest)
+
+    # --- Erhaltungssatz: nichts darf beim Umbau verschwinden oder sich vermehren ---
+    cargo = db.get_transport_cargo(conn, ev["id"])
+    summe_stapel = sum(sum(s.values()) for s in stapel.values())
+    summe_manifest = sum(float(c.get("target_kg") or 0) for c in cargo)
+    print("      Erhaltungssatz: Stapel %.1f == Manifest %.1f  %s" % (
+        summe_stapel, summe_manifest,
+        "OK" if abs(summe_stapel - summe_manifest) < 0.5 else "<-- GEBROCHEN"))
