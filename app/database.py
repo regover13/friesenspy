@@ -5046,13 +5046,21 @@ def _transport_sessions(conn: sqlite3.Connection, start: str, end: str,
     ``logon_time <= end`` begrenzt die TEILNAHME (wer nach dtend einloggt, macht nicht mehr mit);
     die LEGS laufen bewusst bis ``now`` weiter (s. _stack_inputs) — sonst könnte die Ware eines
     kurz vor dtend gestarteten Fluges nie ankommen.
+
+    Jede zurückgegebene Session trägt ``next_logon`` = Start der NÄCHSTEN Verbindung desselben cid
+    (auch einer nach dtend eingeloggten, die selbst nicht teilnimmt) oder ``None``. Das ist die
+    Obergrenze für die Leg-Zuordnung einer OFFENEN (stale) Session: dort hat sie real geendet.
+    Ohne diese Grenze zöge eine stale-offene Zeile ein Leg der Folge-Verbindung an sich und
+    zählte dessen Fracht nach Eventende mit (Whole-Branch-Review #1). Deshalb wird die Liste OHNE
+    ``logon <= end`` geholt (auch spätere Verbindungen für ``next_logon`) und erst am Ende auf die
+    Teilnehmer gefiltert.
     """
     rows = conn.execute(
         "SELECT cid, callsign, aircraft_short AS aircraft, aircraft_icao, logon_time, logoff_time "
         "FROM flights WHERE superseded_by IS NULL AND callsign LIKE ? "
-        "AND logon_time <= ? AND (logoff_time IS NULL OR logoff_time >= ?) "
+        "AND (logoff_time IS NULL OR logoff_time >= ?) "
         "ORDER BY cid, logon_time",
-        (callsign_prefix + "%", end, start),
+        (callsign_prefix + "%", start),
     ).fetchall()
 
     merged: list[dict] = []
@@ -5068,7 +5076,11 @@ def _transport_sessions(conn: sqlite3.Connection, start: str, end: str,
             continue
         merged.append(r)
     merged.sort(key=lambda s: (s["logon_time"], s["cid"]))
-    return merged
+    # next_logon je Session (aus der VOLLEN Liste, vor dem Teilnehmer-Filter berechnet).
+    for i, s in enumerate(merged):
+        s["next_logon"] = next((t["logon_time"] for t in merged[i + 1:] if t["cid"] == s["cid"]), None)
+    # TEILNAHME: nur Verbindungen, die spätestens bei window_end (= end) eingeloggt haben.
+    return [s for s in merged if (s["logon_time"] or "") <= end]
 
 
 def _gap_seconds(a: str, b: str) -> float:
@@ -5151,9 +5163,17 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
         type_code = normalize_type_code(s.get("aircraft_icao")) or normalize_type_code(s.get("aircraft"))
         cap = round(payload_map.get(type_code, default_kg), 1)
 
-        # Legs DIESER Session: Takeoff liegt im Sessionfenster.
+        # Obergrenze der Session für die Leg-/Positions-Zuordnung: geschlossen → ihr logoff;
+        # OFFEN → Start der nächsten Verbindung (next_logon, s. _transport_sessions), sonst now.
+        # Eine stale-offene Zeile zöge sonst ein Leg der Folge-Verbindung an sich und zählte
+        # dessen Fracht nach Eventende mit (Whole-Branch-Review #1). Ein Leg, das NACH dtend
+        # abhebt, aber noch zu DIESER (vor dtend eingeloggten) Verbindung gehört, bleibt drin
+        # (Entscheidung 10) — die Grenze ist die Folge-Verbindung, nicht dtend.
+        nl = s.get("next_logon")
+        sess_end = lf if lf else (nl or now)
+        # Legs DIESER Session: Takeoff liegt in [logon, sess_end].
         own = [g for g in legs_by_cid.get(cid, [])
-               if (g.get("logon_time") or "") >= lo and (not lf or (g.get("logon_time") or "") <= lf)]
+               if lo <= (g.get("logon_time") or "") <= sess_end]
 
         # NUR echte GPS-Legs sind Flüge (#23). canonicalize_legs hat einen Fallback ohne GPS
         # (_flightrow_as_flight, database.py:2614-2623): erkennt der Detektor für eine cid im
@@ -5180,14 +5200,17 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
         else:
             # 2. Er steht nur da (kein Leg): aktuelle Live-Position, sonst die erste der Session.
             #    Am Boden = gs < _BLOCK_GS_KT — exakt die heutige Boden-Beladung (#5, v8.22.0).
-            gpos = _current_pos(conn, cid) if lf is None else None
+            #    Die Live-Position gilt nur für die WIRKLICH offene (letzte) Session — hat sie eine
+            #    Folge-Verbindung (nl), ist sie stale und die Live-Position gehört schon der
+            #    nächsten Verbindung; dann zählt nur die Position bis sess_end (Review #1).
+            gpos = _current_pos(conn, cid) if (lf is None and not nl) else None
             if gpos and gpos[2] is not None and gpos[2] < _BLOCK_GS_KT:
                 airport = _nearest_airport(coords_map, (gpos[0], gpos[1]), radius)
             else:
                 row = conn.execute(
                     "SELECT latitude, longitude, groundspeed FROM position_history "
                     "WHERE cid=? AND ts>=? AND ts<=? ORDER BY ts ASC LIMIT 1",
-                    (cid, lo, lf or now),
+                    (cid, lo, sess_end),
                 ).fetchone()
                 if row is not None and row["groundspeed"] is not None \
                         and row["groundspeed"] < _BLOCK_GS_KT:
@@ -5379,10 +5402,15 @@ def compute_transport_progress(
         # damit kein Kutter-Flug (#23). Der Feed ist der DRITTE canonicalize_legs-Konsument nach
         # _stack_inputs' Sessions- und StatSim-Block; alle drei erkennen das Fehlen von block_start
         # selbst (canonicalize_legs markiert seine Fallback-Legs nicht).
+        # Obergrenze = Sessionende (offen → Start der Folge-Verbindung, sonst now) — dieselbe
+        # Deckelung wie in _stack_inputs (Review-Fund #1): sonst zeigt der Feed einen Phantom-Flug
+        # einer stale-offenen Session, dessen Leg zur Folge-Verbindung nach Eventende gehört.
+        _lo = s.get("logon_time") or ""
+        _lf = s.get("logoff_time")
+        _sess_end = _lf if _lf else (s.get("next_logon") or now)
         own = [g for g in inp["legs_by_cid"].get(cid, [])
                if "block_start" in g
-               and (g.get("logon_time") or "") >= (s.get("logon_time") or "")
-               and (not s.get("logoff_time") or (g.get("logon_time") or "") <= s["logoff_time"])]
+               and _lo <= (g.get("logon_time") or "") <= _sess_end]
 
         for g in own:
             dep = normalize_type_code(g.get("gps_departure"))

@@ -2915,3 +2915,28 @@ class TestStapelProgress:
         assert part["visible"] is True
         assert part["last_ground"] == "EDWG"     # Strecken-Start
         assert part["reserved_kg"] == 800.0      # trägt Ware → Ziel im Feed bekannt
+
+    def test_offene_session_zaehlt_keinen_flug_nach_dtend(self):
+        """Whole-Branch-Review #1 (Überzählung): eine stale-OFFENE flights-Zeile (kein logoff)
+        darf NICHT ein späteres Leg einer separaten Verbindung, die erst NACH dtend einloggt, an
+        sich ziehen und dessen Fracht mitzählen. Der `own`-Filter muss offene Sessions am
+        Event-Fenster (window_end = min(now, dtend)) deckeln — sonst zeigt der Balken Fracht, die
+        nach Eventende geflogen wurde (verletzt 'nach dtend zählt nicht')."""
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=1000)
+        conn.commit()
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDXH", dtstart="2026-07-01T20:00:00Z",
+            dtend="2026-07-01T23:00:00Z", destination="EDXH",
+            cargo=[{"name": "Fisch", "target_kg": 800, "departure": "EDWG"}])
+        ev = get_transport_event(conn, eid)
+        # Session A: stale-offen (logon 22:00, KEIN logoff), kein eigener Track.
+        _add_open_flight(conn, 800, "EDWG", "EDXH", "C208", "2026-07-01T22:00:00Z", callsign="FRS800")
+        # Session B: separate Verbindung, Login 23:35 (NACH dtend 23:00) — von _transport_sessions
+        # korrekt ausgeschlossen; ihr GPS-Leg (Takeoff 23:39) darf NICHT unter A landen.
+        _add_flight(conn, 800, "EDWG", "EDXH", "C208", "2026-07-01T23:35:00Z", duration_min=40, callsign="FRS800")
+        self._leg(conn, 800, "EDWG", "EDXH", "2026-07-01T23:39:00Z", dauer=38, callsign="FRS800")
+
+        p = compute_transport_progress(conn, ev, "2026-07-02T00:30:00Z")   # now NACH der B-Landung
+        assert p["total_kg"] == 0.0       # B hob 39 min nach dtend ab -> zählt nicht
+        assert p["flight_count"] == 0     # kein Phantom-Flug im Feed
