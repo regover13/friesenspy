@@ -181,6 +181,12 @@ def _take(state: dict, cid: int, airport: str, ts: str) -> None:
         if available <= _EPS:
             continue
         take = min(available, free)
+        # #63: `per_flight_max_kg` begrenzt, was AN BORD ist — nicht, was je Ladevorgang
+        # aufgenommen wird. Sonst wäre die Kappung durch mehrfaches Landen am selben Platz
+        # umgehbar (zehn Platzrunden = zehnmal die Kappungsmenge in EINER Lieferung).
+        cap = c.get("per_flight_max_kg")
+        if cap is not None and cap > 0:
+            take = min(take, float(cap) - load.get(name, 0.0))
         if take <= _EPS:
             continue
         stack[name] -= take

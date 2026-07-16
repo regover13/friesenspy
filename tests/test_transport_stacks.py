@@ -304,3 +304,101 @@ def test_zweiter_login_ohne_logout_verliert_keine_ware():
 
     _assert_erhaltung(r)                                   # <- der eigentliche Test
     assert r["stacks"]["EDWG"]["Fischbrötchen"] == 800.0   # stand am Ladeplatz -> zurück
+
+
+CAPPED = [
+    {"name": "Fischbrötchen", "target_kg": 800.0, "departure": "EDWG", "per_flight_max_kg": 50.0},
+    {"name": "Friesen Tee", "target_kg": 500.0, "departure": "EDWG", "per_flight_max_kg": None},
+]
+
+
+def test_kappung_begrenzt_was_an_bord_ist_nicht_den_ladevorgang():
+    """Fable-Review: sonst wäre die Kappung durch mehrfaches Landen umgehbar (zehn Platzrunden
+    = zehnmal die Kappungsmenge, alles in EINER Lieferung)."""
+    r = derive_stacks(
+        manifest=CAPPED,
+        events=[
+            _ev("login", 1, T0, "EDWG"),                          # nimmt 50 Fisch + 500 Tee
+            _ev("takeoff", 1, "2026-07-01T09:05:00Z"),
+            _ev("landing", 1, "2026-07-01T09:10:00Z", "EDWG"),    # Platzrunde: NICHT nochmal 50
+            _ev("takeoff", 1, "2026-07-01T09:15:00Z"),
+            _ev("landing", 1, "2026-07-01T09:20:00Z", "EDWG"),    # und nochmal nicht
+        ],
+        destination=DEST, loading_airports={"EDWG"},
+    )
+
+    assert r["onboard"][1]["Fischbrötchen"] == 50.0     # nicht 150
+    assert r["onboard"][1]["Friesen Tee"] == 500.0
+    _assert_erhaltung(r)
+
+
+def test_kappung_spillt_in_die_naechste_frachtart():
+    """Co-Load: was die Kappung übrig lässt, füllt die nächste Zeile (Bestandsverhalten)."""
+    r = derive_stacks(manifest=CAPPED, events=[_ev("login", 1, T0, "EDWG", capacity_kg=200.0)],
+                      destination=DEST, loading_airports={"EDWG"})
+
+    assert r["onboard"][1]["Fischbrötchen"] == 50.0
+    assert r["onboard"][1]["Friesen Tee"] == 150.0      # 200 kg Zuladung - 50 Fisch
+
+
+def test_der_wartende_laedt_nach_wenn_ware_zurueckkommt():
+    """Entscheidung 13: Steht jemand am leeren Stapel und ein anderer gibt dort zurück,
+    lädt der Wartende — er steht ja am Platz, und Ware ist da."""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),                              # nimmt alle 800
+            _ev("login", 2, "2026-07-01T09:01:00Z", "EDWG"),          # steht am leeren Stapel
+            _ev("logout", 1, "2026-07-01T09:02:00Z"),                 # gibt 800 zurück
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["onboard"][2]["Fischbrötchen"] == 800.0   # der Wartende hat nachgeladen
+    assert r["stacks"]["EDWG"]["Fischbrötchen"] == 0.0
+    _assert_erhaltung(r)
+
+
+def test_von_zwei_wartenden_laedt_der_laenger_stehende():
+    """Entscheidung 5, der einzige Fall, in dem die Ankunftsreihenfolge überhaupt befragt wird.
+
+    Bei nur EINEM Wartenden ist die Sortierung wirkungslos: `_load_standing` läuft nach jedem
+    Ereignis, der Erste hat den Stapel also leergeräumt, bevor der Zweite überhaupt einloggt.
+    Erst wenn ZWEI am leeren Stapel stehen und Ware zurückkommt, entscheidet der Schlüssel,
+    wer sie bekommt.
+
+    Die später angekommene CID ist absichtlich die KLEINERE (3 vor 2): sonst wären Ankunfts-
+    und CID-Reihenfolge identisch und ein `sorted(standing)` ohne `since` bliebe grün.
+    """
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),                              # nimmt alle 800
+            _ev("login", 3, "2026-07-01T09:01:00Z", "EDWG"),          # wartet, größere CID
+            _ev("login", 2, "2026-07-01T09:02:00Z", "EDWG"),          # wartet, aber später da
+            _ev("logout", 1, "2026-07-01T09:03:00Z"),                 # gibt 800 zurück
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["onboard"][3]["Fischbrötchen"] == 800.0   # stand länger da
+    assert r["onboard"][2]["Fischbrötchen"] == 0.0     # kleinere CID, aber zu spät
+    _assert_erhaltung(r)
+
+
+def test_musterwechsel_am_boden_laedt_mit_der_neuen_kapazitaet():
+    """Entscheidung 11: Am Boden wird umgeladen. Braucht keine eigene Regel — der Musterwechsel
+    IST ein Logout (Ladung fällt ab) plus ein Login (lädt neu, mit neuer Kapazität)."""
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG", capacity_kg=1000.0),
+            _ev("logout", 1, "2026-07-01T09:05:00Z"),                          # gibt 800 zurück
+            _ev("login", 1, "2026-07-01T09:06:00Z", "EDWG", capacity_kg=250.0),  # kleineres Muster
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+
+    assert r["onboard"][1]["Fischbrötchen"] == 250.0
+    assert r["stacks"]["EDWG"]["Fischbrötchen"] == 550.0
+    _assert_erhaltung(r)
