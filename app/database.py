@@ -5508,6 +5508,11 @@ def compute_transport_progress(
         # Ladung IST der Flieger-Stapel, der letzte Bodenkontakt IST der Logout-Ort.
         p["visible"] = (r["last_ground"].get(cid) in visible_places) or aboard > 0.01
         p["place"] = where          # None = unterwegs; sonst das ICAO, an dem er steht
+        # Letzter Landeplatz = Start der Strecke im Live-Block. Anders als `place` bleibt er im
+        # Flug erhalten (Start bekannt, auch unterwegs) und wechselt bei jeder Zwischenlandung —
+        # teilnehmend oder fremd (gps_arrival). Das Ziel kennt der Feed nur MIT Ware an Bord
+        # (kein Flugplan-Vertrauen, #23); die Anzeige-Regel dazu steckt im Frontend.
+        p["last_ground"] = r["last_ground"].get(cid)
         # Der Status ist eine grobe Kategorie für die API; die ANZEIGE leitet das Frontend aus
         # place + reserved_kg ab (Ort x Ladung, Spec). Werte ehrlich statt `arrived`/`returning`:
         if aboard > 0.01:

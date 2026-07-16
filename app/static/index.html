@@ -3302,7 +3302,10 @@ async function fetchKutterActive() {
       active.push({
         callsign: p.callsign, aircraft: p.aircraft,
         kg: kg, lines: p.cargo_lines || [],
-        dep: p.place || '', dest: d.destination || '',
+        // Strecke-START = letzter Landeplatz (bleibt im Flug erhalten, wechselt bei jeder
+        // Zwischenlandung). Strecke-ZIEL nur MIT Ware bekannt (Ziel der Ware = Event-Ziel);
+        // ohne Ware kein Ziel (kein Flugplan-Vertrauen, #23) -> Strecke bleibt leer.
+        dep: p.last_ground || '', dest: (kg > 0 ? (d.destination || '') : ''),
         // Am Boden IMMER die Menge — ob er beladen ist, sieht man ihm sonst nicht an.
         // '✈️ dabei' braucht keine: es bedeutet leer.
         status: status + (inAir && kg <= 0 ? '' : ' · ' + Math.round(kg) + ' kg'),
@@ -3321,9 +3324,12 @@ async function fetchKutterActive() {
           ? `<td class="td-map-btn" data-callsign="${_kesc(a.callsign)}" title="Auf der Karte zeigen">`
             + '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></td>'
           : '<td></td>';
-        // Strecke = Ladeplatz → Ziel (Reise der Ladung). Neutral (mono), kein Link — kein Klick dahinter.
-        const strecke = (a.dep && a.dest)
-          ? `${_kesc(a.dep)} → ${_kesc(a.dest)}`
+        // Strecke = letzter Landeplatz → Ziel der Ware. Der START (letzter Landeplatz) steht
+        // immer, wenn bekannt — auch ohne Ware. Das ZIEL kennt man nur MIT Ware (Ziel der Ware);
+        // ohne Ware bleibt es '—' (kein Flugplan-Vertrauen, #23). Ganz leer nur, wenn nicht mal
+        // der Startplatz bekannt ist. Neutral (mono), kein Link — kein Klick dahinter.
+        const strecke = a.dep
+          ? `${_kesc(a.dep)} → ${a.dest ? _kesc(a.dest) : '—'}`
           : '—';
         // Callsign neutral (keine Link-Farbe — es ist keiner; Links sind hier nur Pin + Zum Kutter).
         return `<tr><td class="mono">${_kesc(a.callsign || '—')}</td><td class="mono">${_kesc(a.aircraft || '—')}</td>`

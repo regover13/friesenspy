@@ -2862,3 +2862,19 @@ class TestStapelProgress:
         _set_live_pos(conn, 3, lat, lon, 0)      # steht am vollen Stapel -> lädt 800 Fisch
 
         assert transport_anyone_in_progress(conn, ev, started_before=END) is True
+
+    def test_participant_hat_last_ground_als_strecken_start(self):
+        """Der Live-Block baut die Strecke aus last_ground (Start) → Ziel-der-Ware (Nutzer-Regel
+        16.07.). Das Feld muss da sein und den Bodenplatz tragen; ein sichtbarer, tragender Pilot
+        hat also immer einen Start (der '—'-Fallback trifft nur unsichtbare Zeilen)."""
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        _add_open_flight(conn, 3, "EDWG", "EDXH", "C208", START)
+        lat, lon = icao_to_coords("EDWG")
+        _set_live_pos(conn, 3, lat, lon, 0)      # steht am Ladeplatz EDWG, lädt vom Stapel
+        p = compute_transport_progress(conn, ev, _shift(START, 5))
+        part = next(x for x in p["participants"] if x["cid"] == 3)
+        assert part["visible"] is True
+        assert part["last_ground"] == "EDWG"     # Strecken-Start
+        assert part["reserved_kg"] == 800.0      # trägt Ware → Ziel im Feed bekannt
