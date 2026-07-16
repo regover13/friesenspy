@@ -376,7 +376,24 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
   UPDATE simuliert (via create_transport_event nicht mehr erzeugbar) — Backfill-Kern + Assertion
   unveraendert. MUTATIONSPROBE: alle 3 Guards permissiv -> 8 Tests rot -> sie beissen. Anti-
   Schwaechungs-Scan sauber. pytest tests/ -q: 1080 passed, 0 failed.
-- Task 12: offen (naechster + letzter Plan-Task, noch nicht gelesen)
+- Task 12: complete (Cloud-Session). _PROGRESS_SNAPSHOT_VERSION 3->4 (Entscheidung 9: neu rechnen).
+  CHANGELOG: neuer Eintrag — PLANABWEICHUNG noetig, "9.2.0" war schon vergeben (2026-07-13) und die
+  Top-Version war 9.5.0, also 9.6.0 (Schema title+items, highlight). VERSION leitet sich automatisch
+  daraus ab (app/version.py). Doku via Sub-Agent, danach von mir verifiziert: architecture.md/api.md/
+  README.md auf Stapel-Modell umgeschrieben (Latch/Reservierung/Verlust-Klassifikation raus,
+  Erhaltungssatz + transport_stacks-Verweis rein). api.md-Feldvertrag GEGEN DEN CODE geprueft: status
+  ∈ flying/loaded/loading/standing/dabei/done (kein arrived/returning), neue Felder visible/place/
+  last_ground/cargo_lines, loss_kind/losses[]/lost_total_kg, "Event ohne Manifest = 0". Zwei
+  widerspruechliche Kalender-Beispiele ("Fracht:" ohne ICAO als "wird uebernommen") selbst korrigiert
+  (README + api.md). Commit f631d2a, Tag v9.6.0 remote. pytest tests/ -q: 1080 passed.
+
+==============================================================================
+ALLE PLAN-TASKS (8-12) ABGESCHLOSSEN. Offen: nur noch der Whole-Branch-Review (Opus).
+Branch claude/session-complete-cloud-ready-oud6dx, Commits ab a31e943 bis f631d2a, Tag v9.6.0.
+Stapel-Modell live-faehig: Latch komplett zurueckgebaut, Frontend auf Ort x Ladung, departure
+Pflicht (ein Platz), Doku + Changelog + Snapshot-Version nachgezogen. 1080 Tests gruen, 0 rot.
+NUTZER-GATE nach Deploy (Plan): #1=1610, #81=1120, #136=1090 pruefen; #123 zeigt erwartet 417.
+==============================================================================
 
 ## Minor-Funde fuers finale Review
 (noch keine)
