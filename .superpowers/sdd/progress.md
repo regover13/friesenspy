@@ -132,55 +132,64 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
     SELBST GEPRUEFT -> KEINE Regression: der ALTE Kern macht es identisch
     (app/database.py:5725 `cap if (cap is not None and cap > 0) else _INF`). Der Plan spiegelt
     bewusst bestehendes Verhalten. Nicht in diesem Umbau anfassen (soll bitidentisch rechnen).
-- Task 6: IN ARBEIT — Adapter gebaut (76d1f9a, 1103 gruen), aber Review NICHT bestanden.
-  Opus-Review (bewusst Opus: riskantester Diff, kein Mensch schaut heute Nacht drueber):
-  2 Critical + 2 Important + 3 Minor. Fix-Agent laeuft.
+- Task 6: complete (76d1f9a + Fixes 50dab8c + 5a4661e; 1108 Tests gruen, 0 rot — SELBST
+  nachgelaufen, nicht nur berichtet. Review: Spec ✅ / Qualitaet Approved nach zwei Fix-Runden.)
 
-  🔴 C2 — MEIN EIGENER FEHLER. Meine Option-A-Anweisung sagte
-     max(g["logoff_time"] for g in own ...) OHNE die Menge auf Landungen <= lf zu begrenzen.
-     `own` filtert nur logon_time! Bei S8 (Logout in der Luft 09:30, EIN durchgehendes Leg mit
-     Landung 10:00) springt der Logout auf 10:00:01 — 30 min nach vorn, mitten in Session 2.
-     Der Pilot wird aus position entfernt, WAEHREND er verbunden ist -> _load_standing findet ihn
-     nie wieder -> liefert am Ziel 0 kg. Ich habe beim Beheben eines Critical einen neuen gebaut.
-     Fix: die Menge begrenzen (_parse_iso(g["logoff_time"]) <= _parse_iso(lf)), nicht die Bedingung.
+  Der teuerste Task des Plans. Opus-Review (bewusst Opus: riskantester Diff, nachts kein Mensch
+  im Loop) fand 2 Critical + 2 Important + 3 Minor. Alle behoben, jeder Fix per MUTATION belegt.
 
-  🔴 C1 — test_leg_nach_dtend_geht_nicht_verloren BEISST NICHT. Der Takeoff liegt bei 22:57,
-     dtend 23:00 -> der Filter `takeoff > end` feuert nie; mit end=min(now,dtend) bleibt der Test
-     gruen. _positions_for_cid ignoriert `end` ohnehin bewusst (database.py:2118). Der Brief
-     meinte "Takeoff NACH dtend" (22:05 bei dtend 22:00), der Test legte ihn davor.
-     DAS IST DER TASK-2-FEHLER, WOERTLICH WIEDERHOLT. Fix: Testdaten, nicht Produktionscode.
+  🔴 C2 — MEIN EIGENER FEHLER, vom Review gefangen. Meine Option-A-Anweisung nahm
+     max(logoff_time) ueber ALLE eigenen Legs, obwohl `own` nur logon_time begrenzt. Bei S8
+     (Logout in der Luft 09:30, EIN durchgehendes Leg mit Landung 10:00) sprang der Logout auf
+     10:00:01 — 30 min nach vorn, mitten in Session 2; der Pilot flog aus `position`, waehrend
+     er verbunden war, und lieferte 0 kg. Ich hatte beim Beheben eines Critical einen gebaut.
+     Fix: Menge auf Landungen <= lf begrenzen. Nebeneffekt (geprueft, richtig): die Bedingung
+     kollabiert auf exakte Gleichheit — "Logout vor der Landung" ist strukturell unmoeglich.
+  🔴 C1 — der dtend-Test biss nicht (Takeoff 22:57 vor dtend 23:00 -> Filter feuerte nie).
+     DER TASK-2-FEHLER WOERTLICH WIEDERHOLT. Fix: Testdaten (Takeoff 23:05 NACH dtend).
+     Der Fixer hat ZUERST reproduziert, dass die alte Fassung unter der Mutation gruen blieb.
+  🟠 I3 — die SECHSTE FALLE, gefunden nur weil ich den Reviewer ausdruecklich danach suchen
+     liess. canonicalize_legs hat einen GPS-losen Fallback (_flightrow_as_flight): ohne
+     erkanntes Leg wird eine flights-Zeile als Leg ausgegeben, departure/arrival AUS DEM
+     FLUGPLAN. Der Adapter machte daraus Phantom-takeoff/-landing = #23-Verstoss im Herzen des
+     Umbaus, der #23 durchsetzen soll. Musste ZWEIMAL gefixt werden (Sessions-Block 50dab8c,
+     StatSim-Block 5a4661e) — derselbe Defekt an zwei Stellen.
+  🟠 I4 — _covered_by_session war ungetestet (einziger Schutz gegen StatSim-Doppelzaehlung).
+     WICHTIG: bei Doppelzaehlung bleibt der Erhaltungssatz FORMAL ERFUELLT (Ware wird doppelt
+     aus dem Stapel genommen). Der Satz, auf dem die Kernzusage des Plans ruht, haette es nicht
+     gemerkt. Test + Mutation ergaenzt.
 
-  🟠 I3 — DIE SECHSTE FALLE (gefunden, weil ich den Reviewer ausdruecklich danach suchen liess).
-     canonicalize_legs hat einen GPS-losen Fallback (_flightrow_as_flight, database.py:2610-2623):
-     ohne erkanntes Leg wird jede flights-Zeile als "Leg" ausgegeben — gps_departure/gps_arrival
-     = None, departure/arrival AUS DEM FLUGPLAN. Der Adapter macht daraus Phantom-takeoff und
-     -landing: ein #23-Verstoss im Herzen des Umbaus, der #23 durchsetzen soll.
-     Gekoppelt: Regel 2 (Login-Ort aus Live-Position) ist unerreichbar, weil `if own:` statt
-     `if own and own[0].get("gps_departure"):`. Aktuell verhindert genau das den Schaden —
-     wer nur Regel 2 repariert, macht aus dem latenten Fehler einen echten (800 kg sunk).
-     Deshalb beides zusammen fixen.
+  ZWEI MEINER VORGABEN WAREN FALSCH, der Fix-Agent hat sie begruendet zurueckgewiesen — richtig:
+   (a) Ich schlug `gps_departure is None and gps_arrival is None` als Fallback-Merkmal vor. Ein
+       ECHTES Leg kann das auch haben (nearest_airport liefert None ausserhalb des Radius,
+       gps_legs.py:195) -> haette echten Fluegen die Ereignisse geklaut. Er nutzt `block_start`:
+       von _gps_flights_for_positions IMMER gesetzt (database.py:2312/2368), von
+       _flightrow_as_flight NIE, kein dritter Weg (Reviewer hat es erschoepfend gegengeprueft).
+   (b) Mein vorgeschriebener I3-Test biss nicht (nach dem Filtern ist `real` leer -> `if real:`
+       schliesst kurz). Er hat es GEMESSEN und einen Test fuer den wirklich erreichbaren Fall
+       gebaut (echtes Leg mit gps_departure=None via >30-min-Feed-Luecke + Spawn bei 4000 ft).
 
-  🟠 I4 — _covered_by_session voellig ungetestet. Einziger Schutz gegen StatSim/FriesenSpy-
-     Doppelzaehlung. Faellt er aus, wird dieselbe Fracht zweimal geliefert — und der
-     Erhaltungssatz bleibt FORMAL INTAKT (die Ware wird doppelt aus dem Stapel genommen).
-     Der Balken luegt nach oben, nichts schlaegt Alarm.
-
-  🟡 Minor (fuers finale Review):
-     M5 String-Vergleich auf Zeitstempeln, die Mikrosekunden tragen koennen (database.py:5285,
-        5419-5420, 5407) — gegen die HAUSEIGENE dokumentierte Regel (_flightplan_asof-Docstring,
-        database.py:2165: "bewusst ueber _parse_iso, NICHT ueber String-Vergleich").
-        "...09:30:00.123456Z" < "...09:30:00Z" lexikografisch. Reichweite klein, kein belegter
-        Live-Schaden. _gap_seconds selbst rechnet korrekt (geprueft).
-     M6 statsim_id als StatSim-Merkmal, obwohl `source` unbedingt gesetzt ist (database.py:5480).
-        Faellt _flightplan_asof auf None, wird das StatSim-Leg still uebersprungen -> 0 kg.
+  🟡 Minor offen fuers finale Review:
+     M5 String-Vergleich auf Zeitstempeln mit moeglichen Mikrosekunden (database.py:5285,
+        5419-5420, 5407) — gegen die HAUSEIGENE Regel (_flightplan_asof-Docstring, :2165).
+        Kein belegter Live-Schaden; _gap_seconds selbst rechnet korrekt.
+     M6 statsim_id als StatSim-Merkmal, obwohl `source` unbedingt gesetzt ist (:5480/:5511).
      M7 Ungeprueft: "landing vor takeoff" in _STACK_EVENT_PRIO, der cid-Tiebreaker, und die
-        Manifest-Feldabbildung (.get() -> ein Schluesseldreher scheitert STILL, Summe 0).
+        Manifest-Feldabbildung (.get() -> Schluesseldreher scheitert STILL, Summe 0).
+     M8 (Fussnote des Reviewers) Die S8-Testdaten liegen mit Luecken von 25/23 min nahe an
+        _GPS_LEG_GAP_MINUTES=30. Heute korrekt, aber der Test braeche still, faellt die
+        Konstante je.
 
-  ⚠️ Fuer Task 8 vormerken (Hinweis des Implementers + des Reviewers):
-     - logoff_time == landing_ts ist eine Eigenschaft der DATEN, nicht des Adapters. Wo Task 8
-       sonst nach Zeitstempel ordnet, gilt dieselbe Kollision.
-     - legs_by_cid/sessions enthalten auch Legs von Nicht-Teilnehmer-Sessions (Legs laufen bis
-       now, Sessions bis dtend).
+  ⚠️⚠️ FUER TASK 8 ZWINGEND VORMERKEN:
+   1. canonicalize_legs MARKIERT seine Fallback-Legs nicht — jeder Konsument muss das Fehlen von
+      `block_start` selbst erkennen. Task 8 waere der DRITTE Konsument und wuerde die Falle
+      erneut aufstellen. Vorschlag des Fix-Agenten: ein Helfer `_is_gps_leg(g)` oder ein Feld
+      `source_kind` AN canonicalize_legs — sauberer, aber Eingriff in Fremdcode.
+   2. logoff_time == landing_ts ist eine Eigenschaft der DATEN (poller.py:891), nicht des
+      Adapters. Wo Task 8 sonst nach Zeitstempel ordnet, gilt dieselbe Kollision.
+   3. legs_by_cid/sessions enthalten auch Legs von Nicht-Teilnehmer-Sessions (Legs laufen bis
+      now, Sessions nur bis dtend).
+
 - Task 7: offen (GATE)
 - Task 8: offen
 - Task 9: offen
