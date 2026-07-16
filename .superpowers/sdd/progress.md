@@ -346,8 +346,19 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
      gewollt. manifestlos = 0. Test umbenannt -> test_no_manifest_delivers_nothing, prueft
      total_kg == 0.0 (kein Sonder-Code noetig, das Stapel-Modell liefert das von selbst). xfail
      entfernt. pytest tests/ -q -> 1074 passed, 0 failed, 0 xfailed.
-- Task 10: offen
-- Task 11: offen
+- Task 10: complete (Cloud-Session). Frontend app/static/index.html: fetchKutterActive speist den
+  Live-Block jetzt aus d.participants (visible/place/reserved_kg/cargo_lines) statt aus d.flights;
+  Status = Ort x Ladung (🅿️ laedt/steht, ✈️ unterwegs/dabei). '✅ angekommen' + '↩️ Rueckflug'
+  entfallen. _kCargoLabel: laedt/unterwegs/leer; _kutterDetailBody: Tilde vor Reservierungsmenge
+  weg. _kLossLabel unveraendert. BROWSER-VERIFIZIERT (Playwright, Chromium /opt/pw-browsers/
+  chromium-1194, executable_path noetig wegen Build-Mismatch; API per Route gemockt): Live-Banner
+  rendert alle 5 sichtbaren Status korrekt, visible:false ausgeblendet, keine PAGEERRORs; Detail-
+  Feed zeigt "500 / 1000 kg ✈️" ohne Tilde. Screenshots im Scratchpad (t10_live.png, t10_detail.png).
+  Kosmetik-Fund (NICHT geaendert, Plan-Code): ein am Ziel geparkter Pilot zeigt Strecke "EDXH → EDXH"
+  (place==dest). Harmlos.
+- Task 11: offen (Plausibilitaetspruefung departure-Feld — Entscheidung 6: genau ein ICAO != Ziel,
+  Pflicht. Betrifft database.py set_transport_cargo, main.py _validate_transport_manifest,
+  calendar_sync.py parse_cargo_lines, admin.html Feldbeschreibung + Tests.)
 - Task 12: offen
 
 ## Minor-Funde fuers finale Review
