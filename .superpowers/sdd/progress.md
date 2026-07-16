@@ -404,3 +404,36 @@ NUTZER-GATE nach Deploy (Plan): #1=1610, #81=1120, #136=1090 pruefen; #123 zeigt
 6 Tasks + Whole-Branch-Review, Commits 9a35e96..289d434. Details in der Git-Historie
 (6889534 "fix: Code-Review-Findings track-diagnose"). Offen geblieben: Task #2 der Aufgabenliste
 (Praxis-Regeln vom 15.07. in die SKILL.md nachtragen) — gehoert NICHT zu diesem Plan.
+
+##############################################################################
+#  WHOLE-BRANCH-REVIEW (Cloud-Session, 5 adversariale Agenten + Selbstverifikation)
+##############################################################################
+Kernmodell solide: Erhaltungssatz hielt ueber 50k Fuzz-Laeufe; Latch-Rueckbau + departure-
+Validierung sauber; API-Vertrag intakt; 3 GATE-Zahlen unberuehrt. Alle Funde sind Edge-Faelle.
+
+  #1 HIGH  [GEFIXT, Commit ac99592] Offene (stale) Session zaehlt Flug NACH dtend mit.
+           own-Filter offener Sessions hatte keine Obergrenze -> Leg einer separaten, nach dtend
+           eingeloggten Folge-Verbindung wurde zugeschlagen -> Ueberzaehlung (800 statt 0).
+           Fix: _transport_sessions liefert next_logon; offene Session bis Folge-Verbindung
+           gedeckelt (nicht bis dtend -> Entscheidung 10 bleibt gewahrt). Beide own-Filter +
+           Login-Positionsabfrage + _current_pos-Guard. Mutationsprobe bestanden.
+  #2 Med   [OFFEN] Login-Drop-Verlust (ungracefuler Reconnect) fehlt im Feed/losses[]/
+           participants.lost_kg (lost_total_kg korrekt). Wurzel: Feed sucht Verlust nur per
+           Logout-ts, _drop_load beim login stempelt den Folge-Login-ts. Selbst reproduziert.
+  #3 Med   [OFFEN] StatSim-Backfill ohne VATSIM-Session: Lieferung/Verlust in total_kg, aber
+           Pilot fehlt in flights[]/participants[] (Feed iteriert nur sessions). Reproduziert.
+  #4 Med   [OFFEN] per_flight_max_kg gilt pro Manifest-Zeile, nicht pro Waren-NAME. Gleiche Ware
+           aus zwei Quellen mit ungleichen Caps -> Bordladung ueberschreitet strengeren Cap.
+           Schmaler Fall. Reproduziert.
+  #5 Low   [OFFEN] Landung an unerkanntem Platz (gps_arrival=None) -> Logout zaehlt sunk statt
+           stolen. Nur das Verlust-LABEL falsch, Summe/Erhaltungssatz korrekt. Reproduziert.
+  #6 Low   [OFFEN, geschuetzt] Manifest-Zeile mit leerem departure verschluckt Fracht still —
+           seit Task 11 durch set_transport_cargo-Validierung verhindert; nur Alt-/Direkt-SQL.
+  #7 Low   [pre-existing] Emoji im Frontend unescaped (schon im Basis-Commit; admin-kontrolliert).
+  #8 Low   [OFFEN] admin.html-Client-Check faengt departure==Ziel / reines Whitespace nicht vorab
+           ab -> Server weist mit 400 ab. Nur fehlende Vorpruefung, kein Defekt.
+
+Wurzel von #2/#3 (und der Feed-Seite von #1): Feed + participants werden aus VATSIM-SESSIONS
+rekonstruiert; das Stapel-Modell erzeugt aber Bewegungen ohne passende Session-Logout-Zeile.
+Summen korrekt, Session-basierte Sicht divergiert (Unterzaehlung, keine Ueberzeichnung).
+NAECHSTES: Nutzer liest #2-#8, entscheidet welche gefixt werden.
