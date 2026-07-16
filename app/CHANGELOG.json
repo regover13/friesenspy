@@ -1,5 +1,16 @@
 [
   {
+    "version": "9.6.1",
+    "date": "2026-07-16",
+    "highlight": false,
+    "title": "FriesenKutter: drei Feinschliffe am Stapel-Modell",
+    "items": [
+      "🛟 Wer mitten im Flug die Verbindung verliert und neu einloggt, taucht mit seiner versenkten Ladung jetzt auch im Verlust-Feed und bei den Teilnehmern auf — vorher stimmte nur die Gesamtsumme, die Zeile fehlte.",
+      "📡 Flüge, die nur über den StatSim-Backfill erfasst wurden (wenn der Live-Poller ausfiel), erscheinen jetzt im Feed und in der Teilnehmerwertung. Der Live-Block bleibt FriesenSpy-only — nachgereichte Flüge zählen mit, blinken aber nicht als „gerade live“.",
+      "⚖️ Die Kappung pro Flug gilt jetzt zuverlässig pro Frachtart: dieselbe Ware aus zwei Startplätzen (z. B. Sonnenschirme aus EDWG und EDDW) wird zusammen bis zur Grenze geladen, nie darüber hinaus."
+    ]
+  },
+  {
     "version": "9.6.0",
     "date": "2026-07-16",
     "highlight": true,

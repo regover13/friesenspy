@@ -2482,13 +2482,20 @@
       // #84: keine Strecke mehr — die Route wird serverseitig aus den Startplätzen der Fracht + Ziel
       // abgeleitet. Ziel + mind. eine Frachtart mit Startplatz sind Pflicht.
       if (!name || !dest || !dtstart) { toast('Name, Ziel und Start sind erforderlich.', true); return; }
-      if (!cargo.length || cargo.some(c => !c.departure)) {
+      // .trim() statt Wahrheitswert: ein reines Leerzeichen ist sonst „gesetzt", der Server weist
+      // es aber mit 400 ab (_normalize_icao_list liefert leer). #8: hier freundlich vorab abfangen.
+      if (!cargo.length || cargo.some(c => !(c.departure || '').trim())) {
         toast('Jede Frachtart braucht eine Menge und genau einen Startplatz.', true); return;
       }
       // Entscheidung 6: GENAU ein Startplatz je Frachtart — Komma/Leerzeichen (mehrere ICAO) hier
       // schon abfangen, sonst weist der Server es mit 400 ab.
       if (cargo.some(c => /[,\s]/.test((c.departure || '').trim()))) {
         toast('Genau ein Startplatz je Frachtart. Für dieselbe Ware an mehreren Plätzen mehrere Zeilen anlegen.', true); return;
+      }
+      // #8: Startplatz == Ziel weist der Server ab (_normalize_icao_list entfernt das Ziel -> leer).
+      // Vorab freundlich melden, statt den 400 durchschlagen zu lassen.
+      if (cargo.some(c => (c.departure || '').trim().toUpperCase() === dest)) {
+        toast('Der Startplatz einer Frachtart darf nicht das Ziel sein.', true); return;
       }
       // #77: unbekannte Flugplätze (Ziel + Startplätze) warnen, nicht hart blocken.
       const unknown = await checkUnknownIcaos([dest].concat(cargo.flatMap(c => (c.departure || '').split(/[,\s]+/))));

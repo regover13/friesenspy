@@ -437,3 +437,35 @@ Wurzel von #2/#3 (und der Feed-Seite von #1): Feed + participants werden aus VAT
 rekonstruiert; das Stapel-Modell erzeugt aber Bewegungen ohne passende Session-Logout-Zeile.
 Summen korrekt, Session-basierte Sicht divergiert (Unterzaehlung, keine Ueberzeichnung).
 NAECHSTES: Nutzer liest #2-#8, entscheidet welche gefixt werden.
+
+##############################################################################
+#  REVIEW-FUNDE AUFGELOEST (Cloud-Session Forts., v9.6.1)
+##############################################################################
+Nutzer-Entscheidungen (Handy, einzeln): #2/#3 sichtbar machen; #4 = 1b; #5 = keine Aenderung.
+
+  #2 [GEFIXT, 281276f] Login-Drop-Verlust sichtbar. Stale-offene Verbindung (next_logon gesetzt)
+     bekommt in _stack_inputs einen synthetischen Logout an deren Login -> logout_ts entsteht,
+     der Feed findet die Verlust-Zeile. Zahlen unveraendert (gleicher ts/Position). In-Air-
+     Reservierungszeile jetzt nur der WIRKLICH offenen letzten Verbindung (kein next_logon).
+     Test test_login_drop_verlust_wird_sichtbar; Mutationsprobe bestanden.
+  #3 [GEFIXT, 5189c66] StatSim-Backfill sichtbar. _stack_inputs haengt je StatSim-Leg eine
+     Pseudo-Session (statsim_only=True) an sessions -> Feed + participants fuehren ihn wie einen
+     Flug. Live-Block (index.html fetchKutterActive) filtert statsim_only -> bleibt FriesenSpy-
+     only (Nutzer-Korrektur: StatSim IST VATSIM, gemeint war friesenspy-only). participants tragen
+     statsim_only konsistent (False, sobald eine echte Verbindung den cid deckt). Tests
+     TestStatSimSichtbarkeit (2); Mutationsprobe bestanden.
+  #4 [GEFIXT, 48c8c5d] Kappung pro Frachtart-NAME (1b). Nutzer: gleiche Ware aus zwei Startplaetzen
+     erlaubt, Kappung gilt fuer den Namen zusammen; bei ungleichen Caps gewinnt die strengste.
+     derive_stacks: name_cap statt per-Zeile. Katalog bleibt die Stelle, an der die Kappung pro
+     Name gesetzt wird (Admin-UI + Kalender-Sync holen sie schon von dort). Tests: Nutzer-Beispiel
+     (60+40) + ungleiche-Caps-Guard; Mutationsprobe bestanden.
+  #5 [KEINE AENDERUNG, Nutzer-Entscheid] gps_arrival=None: sunk vs stolen ist aus GPS nicht
+     unterscheidbar (gps_legs.py:240-261 erkennt Landung NUR an bekanntem Platz; ohne Platz bleibt
+     das Leg AIRBORNE, egal ob Aufsetzer oder Absturz). "versenkt" ist die ehrliche Default-Aussage
+     (#23: kein GPS-Vertrauen ohne Beleg). Label-Frage, Summe stimmt. Bewusst offen gelassen.
+  #6 [unveraendert] Leeres departure ist seit Task 11 durch set_transport_cargo abgefangen.
+  #7 [unveraendert, pre-existing] Emoji-Escaping Frontend (admin-kontrolliert, ausserhalb Scope).
+  #8 [GEFIXT-UX] admin.html-Vorpruefung: departure==Ziel und reines Whitespace vorab freundlich
+     abgewiesen (Server wies mit 400 ab; kein Defekt, nur UX). Kein Test (reine Frontend-Meldung).
+
+Version 9.6.1 (CHANGELOG + app/version.py). Kein PR-Merge nach main = kein Go-Live (Nutzer).
