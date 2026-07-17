@@ -2323,7 +2323,7 @@
           const o = document.createElement('div');
           o.className = 'ke-c-opt';
           o.dataset.name = c.name;   // sicher (keine Attribut-Escaping-Falle)
-          o.innerHTML = (c.emoji ? c.emoji + ' ' : '') + escH(c.name)
+          o.innerHTML = (c.emoji ? escH(c.emoji) + ' ' : '') + escH(c.name)
             + (c.per_flight_max_kg != null ? ' <span class="ke-c-optcap">max ' + Math.round(c.per_flight_max_kg) + ' kg/Flug</span>' : '');
           picker.appendChild(o);
         });

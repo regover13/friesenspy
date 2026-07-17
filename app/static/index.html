@@ -3316,7 +3316,7 @@ async function fetchKutterActive() {
     if (active.length) {
       const rows = active.map(a => {
         const load = a.lines.length
-          ? a.lines.map(l => (l.emoji ? l.emoji + ' ' : '') + _kesc(l.name)
+          ? a.lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
               + (a.lines.length > 1 ? ' (' + Math.round(l.kg) + ')' : '')).join(' + ')
           : (a.kg > 0 ? Math.round(a.kg) + ' kg' : 'leer');
         // Kein Inline-onclick mit interpoliertem Callsign (XSS: HTML-Escaping schützt den
@@ -4861,7 +4861,7 @@ function _kCargoLabel(f) {
     // Was war an Bord? (Co-Load-Aufschlüsselung wie bei gelieferten Flügen)
     const lines = f.cargo_lines || [];
     const cargoTxt = lines.length
-      ? lines.map(l => (l.emoji ? l.emoji + ' ' : '') + _kesc(l.name)
+      ? lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
           + ' (' + Math.round(l.kg) + ')').join(' + ') + ' · '
       : '';
     const quip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
@@ -4875,7 +4875,7 @@ function _kCargoLabel(f) {
   const lines = f.cargo_lines || [];
   let label;
   if (lines.length) {
-    label = lines.map(l => (l.emoji ? l.emoji + ' ' : '') + _kesc(l.name)
+    label = lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
       + ' (' + Math.round(l.kg) + ')').join(' + ');
   } else {
     label = _kesc(f.cargo_name || '');
@@ -4914,7 +4914,7 @@ function _kSegLegend(items, totalTarget, sub) {
       + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i>' + lost + res + '</div>';
   }).join('');
   const legend = items.map(({ c, gi }) => {
-    const mark = c.emoji ? c.emoji + ' '
+    const mark = c.emoji ? _kesc(c.emoji) + ' '
       : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
     const res = (c.reserved_kg || 0) > 0 ? ' (+' + _kfmtT(c.reserved_kg) + ' ✈️)' : '';
     // Verlust je Frachtart sichtbar machen (vorher stand nur die Gesamt-Summe unten) — sonst wirkt
