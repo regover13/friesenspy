@@ -469,3 +469,17 @@ Nutzer-Entscheidungen (Handy, einzeln): #2/#3 sichtbar machen; #4 = 1b; #5 = kei
      abgewiesen (Server wies mit 400 ab; kein Defekt, nur UX). Kein Test (reine Frontend-Meldung).
 
 Version 9.6.1 (CHANGELOG + app/version.py). Kein PR-Merge nach main = kein Go-Live (Nutzer).
+
+##############################################################################
+#  RELEASE 10.0.0 "MILCHMANN" (Cloud-Session Forts.)
+##############################################################################
+Nutzer-Entscheidung: Das ganze Stapel-Modell + Review-Fixes ist EIN Major-Release "Milchmann"
+(nichts davon war je auf main). Die unveroeffentlichten Eintraege 9.6.0 + 9.6.1 zu einem
+Highlight-Eintrag 10.0.0 zusammengefasst. Fachlich groesste Aenderung = Milchmann (Multi-Stop-
+Laden); wichtigste = Fracht-Orientierung ueber Stapel + eine Wahrheit ueber canonicalize_legs.
+
+  #7 [GEFIXT] Katalog-Emojis im Frontend jetzt escaped (index.html 3x cargo_lines + 1x Legende,
+     admin.html Vorschlag-Picker). Die Admin-Hint-Stelle nutzte schon textContent (sicher).
+     War admin-kontrolliert/pre-existing; auf Nutzer-Wunsch mitgenommen.
+
+Version 10.0.0 (CHANGELOG[0] -> app/version.py). Weiterhin kein Merge nach main = kein Go-Live.
