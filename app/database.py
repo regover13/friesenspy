@@ -5483,7 +5483,11 @@ def compute_transport_progress(
                     "dep_time": s.get("logon_time") or "", "cid": cid,
                     "callsign": s.get("callsign") or "", "name": names.get(cid, ""),
                     "aircraft": s.get("aircraft") or type_code,
-                    "dep": "", "arr": ls[0].get("airport") or "—",
+                    # Startfeld mit dem Ort füllen, an dem die Ware abfiel — bei einer Rückgabe/
+                    # einem Klau am Platz IST das auch der Ladeort (geladen wird am Platz). Keine
+                    # Sonderregel: das Standard-`dep→arr` rendert dann „EDXH → EDXH" statt „→EDXH".
+                    # Nur beim Versenken in der Luft gibt es keinen Ort — dann bleibt dep leer.
+                    "dep": ls[0].get("airport") or "", "arr": ls[0].get("airport") or "—",
                     "tonnage_kg": 0.0, "loaded": False, "in_air": False, "airborne": False,
                     "reserved_kg": 0.0, "cargo_lines": _lines(ls),
                     "cargo_name": _lines(ls)[0]["name"],

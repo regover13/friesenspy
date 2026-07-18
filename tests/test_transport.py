@@ -1271,6 +1271,29 @@ class TestCargoLosses:
         part = next(x for x in p["participants"] if x["cid"] == 320)
         assert part["lost_kg"] == 292.0               # dem Piloten zugeschrieben
 
+    def test_rueckgabe_ohne_flug_zeigt_den_ladeort_als_start(self):
+        """Nutzer-Fund: Wer an einem Ladeplatz lädt und dort wieder ausloggt, OHNE abzuheben,
+        gibt die Ware zurück (kg-neutral). Die Feed-Zeile hatte bisher ein LEERES Startfeld
+        („→EDXH"), obwohl der Ort feststeht — geladen wird ja am Platz. Standardlösung ohne
+        Sonderregel: das Startfeld mit dem Ort füllen (den das Modell kennt) → „EDXH → EDXH".
+        """
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        upsert_payload(conn, "C208", payload_kg=1000)
+        ev = _event(conn, route="EDXH,EDWG", destination="EDWG",
+                    cargo=[{"name": "Fisch", "target_kg": 800, "departure": "EDXH"}])
+        lat, lon = icao_to_coords("EDXH")
+        # Geschlossene Session in EDXH, durchgehend am Boden (kein Takeoff -> kein GPS-Leg):
+        # lädt beim Login, gibt beim Logout am selben Platz zurück.
+        _add_flight(conn, 7, "EDXH", "EDWG", "C208", START, duration_min=20)
+        _add_pos(conn, 7, START, lat, lon, 0)
+        _add_pos(conn, 7, _shift(START, 10), lat, lon, 0)
+
+        p = compute_transport_progress(conn, ev, END)
+        row = next(f for f in p["flights"] if f["cid"] == 7)
+        assert row["loss_kind"] == "returned" and (row.get("lost_kg") or 0) == 0.0
+        assert row["dep"] == "EDXH" and row["arr"] == "EDXH"   # Ladeort als Start (Option 2)
+
     def test_loss_shows_cargo_lines(self):
         """Die Verlust-Zeile zeigt, WAS über Bord ging — Co-Load-Verteilung wie bei
         einem beladenen Flug (Nutzer-Wunsch 02.07.: 'x Krabbenbrötchen, x Schafe |
