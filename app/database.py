@@ -4054,10 +4054,12 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "7"  # "7": laufender BELADENER Flug = EINE ehrliche Feed-Zeile
-#      (Reservierungs-Zeile mit Start=last_ground → "EDWZ→EDWS · 274 kg · unterwegs"); die
-#      redundante leere GPS-Leg-Zeile desselben Flugs entfällt (kein doppelter Flüge-Zähler,
-#      kein falsches „leer", kein startloses „→Ziel").
+_PROGRESS_SNAPSHOT_VERSION = "8"  # "8": WURZEL-Fix — der laufende Flug holt seine Fracht aus der
+#      Bordladung (`onboard`) DIREKT auf die echte GPS-Leg-Zeile (dep=GPS-Start, arr=Ziel,
+#      reserved=Bordladung), statt aus `delivered_by` (vor der Landung leer). Die separate
+#      Reservierungs-Zeile bleibt nur noch für „beladen am Boden, nicht abgehoben" (kein Leg).
+#      "7": (Zwischenschritt) leere Leg-Zeile des laufenden Flugs unterdrückt + Reservierungs-Start
+#      aus last_ground — durch "8" ersetzt (Bordladung auf der Leg-Zeile, keine Unterdrückung).
 #      "6": participants[].online (momentane Präsenz vs. Dauer-
 #      Sperrklinke `visible`) — der Live-Block zeigt ausgeloggte Leer-Piloten nicht mehr als „dabei".
 #      "5": on_stack_kg je Frachtzeile (Bestand am Ladeplatz) +
@@ -5444,22 +5446,44 @@ def compute_transport_progress(
                if "block_start" in g
                and _lo <= (g.get("logon_time") or "") <= _sess_end]
 
-        # Trägt der Pilot in DIESER wirklich offenen Verbindung gerade Ware? Dann zeigt ihn die
-        # Reservierungs-Zeile unten vollständig (Start = last_ground, Ziel, Bordladung als
-        # reserved_kg). Seine rohe GPS-Leg-Zeile für den LAUFENDEN (noch offenen) Flug wäre eine
-        # zweite, HALBE Sicht auf denselben Flug: tonnage_kg zählt nur GELIEFERTES (dl), ein noch
-        # fliegender Flug hat also 0 → "leer" — obwohl er im Stapel-Modell die Ladung trägt. Genau
-        # das war der V10-Fund (Doppelzeile, falsches "leer", startloses "→Ziel"). Der beladene
-        # laufende Leg wird deshalb hier NICHT als eigene Zeile gebaut (die Reservierungs-Zeile ist
-        # die Wahrheit). Fliegt er LEER (aboard 0), bleibt seine Leg-Zeile die einzige Sicht.
+        # `own` enthält auch den LAUFENDEN (noch offenen) Flug dieser wirklich offenen Verbindung.
+        # WURZEL des V10-Funds: Die Fracht einer Leg-Zeile kam aus `delivered_by` (Lieferungen) —
+        # und Lieferungen entstehen ERST bei der Landung. Ein noch fliegender Flug hatte also 0 →
+        # „leer", obwohl er im Stapel-Modell die Ware TRÄGT. Deshalb bekommt der laufende beladene
+        # Flug seine Fracht DIREKT aus der Bordladung (`onboard`, die Modell-Wahrheit) auf die echte
+        # Leg-Zeile (dep = GPS-Start, arr = Ziel, reserved = Bordladung) — keine leere Zeile, keine
+        # separate Reservierungs-Zeile. Gelandet zeigt die Zeile weiter das Gelieferte; LEER fliegend
+        # ihre normale Strecke. Ein Flug = eine Zeile, eine Wahrheit.
         _open_sess = (not _lf) and (not s.get("next_logon")) and (not s.get("statsim_only"))
         _aboard_now = round(sum((onboard.get(cid) or {}).values()), 1) if _open_sess else 0.0
+        _has_open_leg = any(not g.get("logoff_time") for g in own)
 
         for g in own:
-            if _open_sess and not g.get("logoff_time") and _aboard_now > 0.01:
-                continue   # laufender beladener Flug → nur die Reservierungs-Zeile unten zeigt ihn
             dep = normalize_type_code(g.get("gps_departure"))
             arr = normalize_type_code(g.get("gps_arrival"))
+            if _open_sess and not g.get("logoff_time") and _aboard_now > 0.01:
+                # Laufender beladener Flug: die BORDLADUNG ist die Fracht dieser Zeile (nicht das
+                # noch nicht Gelieferte). Start = echter GPS-Start; fehlt er (Spawn abseits), der
+                # letzte Bodenkontakt (GPS-Faktum, kein Flugplan-Vertrauen, #23). Ziel = Event-Ziel.
+                load = onboard.get(cid) or {}
+                where = r["position"].get(cid)
+                network.append({
+                    "dep_time": g.get("logon_time") or "", "cid": cid,
+                    "callsign": g.get("callsign") or s.get("callsign") or "",
+                    "name": names.get(cid, ""), "aircraft": s.get("aircraft") or type_code,
+                    "dep": dep or r["last_ground"].get(cid) or "", "arr": dest,
+                    "tonnage_kg": 0.0, "onboard_kg": _aboard_now,
+                    "loaded": False,
+                    "cargo_lines": [{"name": n, "emoji": emoji_of.get(n), "kg": round(kg, 1)}
+                                    for n, kg in load.items() if kg > 0.01],
+                    "cargo_name": max(load, key=load.get),
+                    "in_air": True, "airborne": where is None,
+                    "reserved_kg": _aboard_now, "onboard_reserved_kg": cap,
+                    "flight_key": f"{cid}:{g.get('logon_time') or ''}",
+                    "distance_nm": g.get("distance_nm") or 0,
+                    "block_min": g.get("block_min") or g.get("duration_min") or 0,
+                })
+                continue
             dl = delivered_by.get((cid, g.get("logoff_time") or ""), [])
             tonnage = round(sum(m["kg"] for m in dl), 1)
             # Feed-Filter = reine SICHTBARKEIT (ersetzt den alten Streckenfilter, der BEIDE
@@ -5517,20 +5541,20 @@ def compute_transport_progress(
                     "distance_nm": 0, "block_min": 0, "loss_kind": kind, "lost_kg": lost,
                 })
 
-        # Offene Session mit Ware an Bord: die Bordladung IST die Reservierung. NUR die WIRKLICH
-        # offene letzte Verbindung (kein next_logon) darf diese Zeile bekommen — eine stale-offene
-        # Verbindung (Folge-Login vorhanden) hat real geendet, ihre Ladung ist bereits am
-        # synthetischen Logout abgefallen. `onboard` ist zudem cid-keyed (der Endzustand): OHNE
-        # die next_logon-Sperre läse die stale-offene Zeile die Bordladung der FOLGE-Verbindung
-        # und erfände einen Phantom-Flug (Whole-Branch-Review #2).
+        # Beladen am Boden, aber NOCH NICHT abgehoben (kein offener Leg): dieser Fall hat keine
+        # GPS-Leg-Zeile, deshalb zeigt ihn diese synthetische Zeile. Der laufende beladene Flug MIT
+        # Leg trägt seine Bordladung dagegen schon auf der Leg-Zeile oben (`_aboard_now`-Zweig) —
+        # deshalb `not _has_open_leg`, sonst wäre er wieder doppelt. NUR die WIRKLICH offene letzte
+        # Verbindung (kein next_logon) darf diese Zeile bekommen — eine stale-offene Verbindung
+        # (Folge-Login vorhanden) hat real geendet, ihre Ladung ist bereits am synthetischen Logout
+        # abgefallen. `onboard` ist zudem cid-keyed (der Endzustand): OHNE die next_logon-Sperre läse
+        # die stale-offene Zeile die Bordladung der FOLGE-Verbindung und erfände einen Phantom-Flug.
         load = onboard.get(cid) or {}
         aboard = round(sum(load.values()), 1)
         if not s.get("logoff_time") and not s.get("next_logon") \
-                and not s.get("statsim_only") and aboard > 0.0:
-            # Start der Live-Zeile = aktueller Standort, sonst der ECHTE letzte Bodenkontakt
-            # (last_ground — ein GPS-Faktum, kein Flugplan-Vertrauen, #23). In der Luft war `dep`
-            # bisher leer → die Strecke las sich als startloses „→Ziel" (V10-Fund); last_ground
-            # liefert den tatsächlichen Ladeplatz, also z. B. „EDWZ → EDWS".
+                and not s.get("statsim_only") and aboard > 0.0 and not _has_open_leg:
+            # Am Boden ist `where` gesetzt (der Ladeplatz); last_ground als Rückfall (GPS-Faktum,
+            # kein Flugplan-Vertrauen, #23). Ziel = Event-Ziel → z. B. „EDWZ → EDWS".
             where = r["position"].get(cid)
             network.append({
                 "dep_time": s.get("logon_time") or "", "cid": cid,

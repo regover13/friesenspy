@@ -938,12 +938,13 @@ class TestParticipantPresence:
 
 
 class TestActiveFlightFeedRow:
-    """Der laufende BELADENE Flug erscheint im Feed als EINE ehrliche Zeile (Reservierung mit
-    Start=last_ground → „EDWG→EDXH · unterwegs"), nicht als leere GPS-Leg-Zeile PLUS Reservierungs-
-    Zeile. Im Stapel-Modell trägt der Pilot die Ware — eine „leer"-Zeile für seinen laufenden Flug
-    (weil tonnage_kg nur GELIEFERTES zählt) war falsch (V10-Fund: Doppelzeile, startloses „→Ziel")."""
+    """WURZEL des V10-Funds: die Fracht einer Leg-Zeile kam aus `delivered_by` (Lieferungen, die
+    erst BEI DER LANDUNG entstehen) → ein noch fliegender Flug war „leer", obwohl er im Stapel-
+    Modell die Ware trägt. Der laufende beladene Flug holt seine Fracht deshalb DIREKT aus der
+    Bordladung (`onboard`) auf die echte GPS-Leg-Zeile — EINE Zeile, die die Bordladung zeigt
+    (keine Unterdrückung, keine parallele Reservierungs-Zeile)."""
 
-    def test_airborne_loaded_flight_is_single_row_with_real_departure(self):
+    def test_airborne_loaded_flight_shows_onboard_on_leg_row(self):
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)  # payload 292
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
@@ -957,11 +958,14 @@ class TestActiveFlightFeedRow:
         _add_pos(conn, 211, _shift(t0, 4), dlat, dlon, 80, alt=delev + 1200, callsign="FRS211")  # Takeoff
         p = compute_transport_progress(conn, ev, _shift(t0, 10))
         rows = [x for x in p["flights"] if x["cid"] == 211]
-        assert len(rows) == 1                                  # KEINE leere Doppelzeile mehr
+        assert len(rows) == 1                                  # EINE Zeile, keine leere Doppelzeile
         f = rows[0]
         assert f["in_air"] is True and f["airborne"] is True
         assert f["loaded"] is False and f["reserved_kg"] == 292.0
-        assert f["dep"] == "EDWG" and f["arr"] == "EDXH"        # echter Start statt startlosem „→EDXH"
+        assert f["dep"] == "EDWG" and f["arr"] == "EDXH"        # echter GPS-Start, Ziel = Event-Ziel
+        # Kernforderung: die BORDLADUNG steht auf DIESER Zeile (nicht „leer")
+        assert f["cargo_name"] == "Inselpost"
+        assert {c["name"]: c["kg"] for c in f["cargo_lines"]} == {"Inselpost": 292.0}
 
     def test_airborne_empty_flight_still_shows_its_leg_row(self):
         """Gegenprobe: fliegt der Pilot LEER, bleibt seine offene Leg-Zeile die einzige Sicht —
