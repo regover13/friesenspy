@@ -2305,7 +2305,9 @@
       if (departure) div.querySelector('.ke-c-dep').value = departure;
       updateKeCargoHint(nameInput, hintSpan);
       wireCargoPicker(nameInput, div.querySelector('.ke-c-picker'), hintSpan);
-      wireIcaoPicker(div.querySelector('.ke-c-dep'));   // #77-Erweiterung: Startplatz-Autocomplete
+      wireIcaoPicker(div.querySelector('.ke-c-dep'), false);   // Startplatz = GENAU ein ICAO (Entscheidung 6):
+      // multi=false, sonst haengt der Picker beim Auswaehlen ein ", " an, das die Speicher-Plausipruefung
+      // (kein Komma/Leerzeichen) dann ablehnt. Wie das Ziel-Feld (initIcaoPickers), nicht wie die Strecke.
       div.querySelector('.ke-c-del').addEventListener('click', () => div.remove());
       return div;
     }
