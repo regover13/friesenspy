@@ -1259,6 +1259,43 @@ class TestCargoLosses:
         assert f["loss_kind"] == "returned"
         assert p["lost_total_kg"] == 0.0                    # Wegpunkt-Rückgabe ≠ Verlust
 
+    def test_at_place_return_is_own_event_not_on_empty_leg(self):
+        """V10.0.1: Am-Platz-Rückgabe — leer nach EDWY geflogen, DORT geladen und DORT zurück
+        (Ladeplatz == Abfallort, nie geflogen). Der Leerflug bleibt „leer", die Rückgabe ist eine
+        EIGENE „EDWY→EDWY"-Zeile (nicht auf den leeren Anflug gemalt); kein Beitrag → kein Badge."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, route="EDWY,EDXH", destination="EDXH",
+                    cargo=[{"name": "Baumaterial", "target_kg": 400.0, "departure": "EDWY"}])
+        _add_delivered_flight(conn, 400, "EDWS", "C172", "2026-07-01T18:05:00Z", ev["id"], destination="EDWY")
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+        rows = [x for x in p["flights"] if x["cid"] == 400]
+        leer = next(x for x in rows if x["dep"] == "EDWS")                  # der leere Anflug
+        ret = next(x for x in rows if x.get("loss_kind") == "returned")     # die Rückgabe
+        assert leer.get("loss_kind") is None and not leer["cargo_lines"]    # Leerflug bleibt sauber „leer"
+        assert leer["arr"] == "EDWY"
+        assert ret["dep"] == "EDWY" and ret["arr"] == "EDWY"                # eigene Am-Platz-Zeile
+        assert ret["cargo_name"] == "Baumaterial" and p["lost_total_kg"] == 0.0
+        part = next(x for x in p["participants"] if x["cid"] == 400)
+        assert part["contributed"] is False                                # Phantom → kein Badge
+
+    def test_carried_return_stays_on_flight_and_counts(self):
+        """Gegenprobe: von Ladeplatz EDWG nach Wegpunkt EDXP GEFLOGEN und dort zurück (Ladeplatz ≠
+        Abfallort) — bleibt auf der echten Trage-Zeile EDWG→EDXP (kein „EDXP→EDXP"), und zählt fürs
+        Badge (contributed)."""
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        ev = _event(conn, route="EDWG,EDXP,EDXH", destination="EDXH",
+                    cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        xlat, xlon = icao_to_coords("EDXP")
+        self._flown_flight(conn, 410, "2026-07-01T18:05:00Z", end_lat=xlat, end_lon=xlon, end_gs=0, arrival="EDXP")
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+        f = next(x for x in p["flights"] if x["cid"] == 410 and x.get("loss_kind") == "returned")
+        assert f["dep"] == "EDWG" and f["arr"] == "EDXP"                    # echte Trage-Strecke
+        part = next(x for x in p["participants"] if x["cid"] == 410)
+        assert part["contributed"] is True                                 # geflogen → Badge
+
     def test_loss_kg_is_net_event_cargo_not_full_payload(self):
         """Live-Fund 06.07.: die VERLORENE Menge ist die tatsächlich mitgeführte EVENT-Fracht
         (Σ der pro-Flug-gekappten Frachtart-Anteile = cargo_lines), NICHT die volle Musterzuladung.
@@ -1601,13 +1638,15 @@ class TestGPSLegReconcile:
         conn.commit()
 
         p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
-        legs = [f for f in p["flights"] if f["cid"] == 501]
-        assert len(legs) == 2
-        hin = next(f for f in legs if f["arr"] == "EDXH")
-        rueck = next(f for f in legs if f["arr"] == "EDWG")
+        rows = [f for f in p["flights"] if f["cid"] == 501]
+        hin = next(f for f in rows if f["dep"] == "EDWG" and f["arr"] == "EDXH")
+        rueck = next(f for f in rows if f["dep"] == "EDXH" and f["arr"] == "EDWG")
         assert hin["loaded"] is True
-        assert rueck["loaded"] is False and rueck["tonnage_kg"] == 0.0
-        assert p["total_kg"] == 250  # nur einmal gezählt, nicht doppelt
+        # Der Rückflug bleibt ein SAUBERER Leerflug (die Am-Platz-Rückgabe daheim in EDWG — dort
+        # beim Landen auto-geladen, beim Logout zurück — ist eine eigene „EDWY→EDWY"-artige Zeile,
+        # V10.0.1; sie wird NICHT auf den Rückflug gemalt).
+        assert rueck["loaded"] is False and rueck["tonnage_kg"] == 0.0 and rueck.get("loss_kind") is None
+        assert p["total_kg"] == 250  # Hin-Lieferung nur EINMAL gezählt, Rückgabe ist kg-neutral
 
     def test_landing_off_destination_delivers_nothing(self):
         """Landung neben dem Ziel (ein bekannter, aber streckenfremder Flughafen) liefert 0 kg:
@@ -2077,7 +2116,9 @@ class TestKutterBadgeEndpoints:
     def _seeded_event(self, db_path):
         conn = get_connection(db_path)
         ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
-        _add_flight(conn, 500, "EDWG", "EDXH", "C172", "2026-07-01T18:00:00Z", duration_min=25)
+        # Echte GPS-Lieferung EDWG→EDXH: cid 500 bewegt Ware (contributed=True) → kriegt ein Badge.
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        _add_delivered_flight(conn, 500, "EDWG", "C172", "2026-07-01T18:00:00Z", ev["id"], destination="EDXH")
         conn.commit()
         conn.close()
         return ev

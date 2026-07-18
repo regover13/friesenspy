@@ -315,7 +315,8 @@ def flight_quip(context: dict) -> str | None:
     verlust = c.get("verlust")
     lines = [
         f"Pilot-Vorname: {c.get('vorname') or '?'}",
-        f"Frachtflug heute Nr.: {c.get('flights_tonight')} (Fleiß)",
+        f"Frachtflüge heute gesamt über ALLE Frachtarten: {c.get('flights_tonight')} "
+        f"(reiner Fleiß-Indikator — NICHT die Anzahl für DIESE Fracht oder DIESE Strecke!)",
         f"Muster: {c.get('aircraft') or '?'}",
         f"Strecke: {c.get('route') or '?'}",
         f"Fracht an Bord: {', '.join(c.get('cargo') or []) or '—'}",
@@ -349,7 +350,9 @@ def flight_quip(context: dict) -> str | None:
             "gut (Wörter wie 'Spitzbov', 'Kaperfahrt', 'Deern/Jung' sind ok) — aber weiter für alle "
             "sofort verständlich, KEINE Wörter, die man übersetzen müsste. Der Spruch darf AUF KEINEN "
             "FALL nach ordentlicher Auslieferung klingen (kein 'bringt … ans Ziel', kein 'liefert … "
-            "aus'). Fang NICHT immer mit 'Moin' an. Fakten:\n- "
+            "aus'). ERFINDE KEINE Zahlen/Zählungen, die nicht in den Fakten stehen (kein 'zum x-ten "
+            "Mal'; 'Frachtflüge heute gesamt' zählt ALLE Frachtarten, nicht diese eine). "
+            "Fang NICHT immer mit 'Moin' an. Fakten:\n- "
             + "\n- ".join(lines)
         )
     else:
@@ -357,9 +360,18 @@ def flight_quip(context: dict) -> str | None:
             "Schreibe EINEN lustigen Einzeiler (genau ein Satz) zu diesem Frachtflug. Nutze die Fakten "
             "als Ideen-Pool, aber greif NICHT bei jedem Flug alle auf — meistens reicht EIN Aspekt "
             "(oder auch mal keiner, nur die Fracht/den Namen), sonst klingen alle Sprüche gleich "
-            "aufgezählt. Fang NICHT immer mit 'Moin' an — wechsle den Einstieg ab (Name zuerst, eine "
-            "Frage, ein Ausruf, mittendrin einsteigen, o.ä.). Variation (bei Fakten UND Einstieg) ist "
-            "wichtiger als Vollständigkeit. Fakten:\n- "
+            "aufgezählt. WECHSLE DEN AUFHÄNGER bewusst durch — nimm mal das Flugzeugmuster (eine kleine "
+            "Cessna, ein zäher Zweimot, was der Flieger so hermacht), mal die Fracht selbst und wofür "
+            "sie ist (Heringe für die Seehunde, Inselpost für die Insulaner, Filmrollen für den "
+            "Filmabend, Baumaterial für den Deich…), mal den Zielort, mal den Piloten-Namen, mal die "
+            "schiere Menge. TEMPO und UMWEG sind NUR ZWEI von vielen Aspekten — nutze sie SELTEN und "
+            "nicht als Standard (nicht jeder Spruch braucht Knoten oder Luftlinie). "
+            "ERFINDE KEINE ZAHLEN oder Zählungen, die nicht in den Fakten stehen — insbesondere NICHT "
+            "'zum zweiten/dritten/x-ten Mal DIESE Fracht/Strecke' (die 'Frachtflüge heute gesamt' zählt "
+            "ALLE Frachtarten zusammen, nicht diese eine). "
+            "Fang NICHT immer mit 'Moin' an — wechsle den Einstieg ab (Name zuerst, eine Frage, ein "
+            "Ausruf, mittendrin einsteigen, o.ä.). Variation (bei Aufhänger UND Einstieg) ist wichtiger "
+            "als Vollständigkeit. Fakten:\n- "
             + "\n- ".join(lines)
         )
     return _chat(_QUIP_SYSTEM, user, 200)

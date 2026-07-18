@@ -5051,8 +5051,12 @@ function copyKutterBadgeCode(eventId, cid, btn) {
   }).catch(() => {});
 }
 function _kutterBadgeSection(d) {
-  if (!d.summarized_at || !(d.participants || []).length) return '';
-  const rows = d.participants.map(p =>
+  // Nur wer wirklich Ware bewegt hat (contributed) bekommt ein Badge — eine reine Am-Platz-
+  // Rückgabe oder reines Warten zählt nicht (Backend liefert das Flag; alte Snapshots ohne Flag
+  // → alle, wie bisher).
+  const parts = (d.participants || []).filter(p => p.contributed !== false);
+  if (!d.summarized_at || !parts.length) return '';
+  const rows = parts.map(p =>
     '<div class="kutter-badge-row">' + _kesc(p.callsign || ('CID ' + p.cid)) + ' — '
       + _kutterBadgeLinks(d.id, p.cid) + '</div>'
   ).join('');

@@ -1,5 +1,18 @@
 [
   {
+    "version": "10.0.1",
+    "date": "2026-07-18",
+    "highlight": false,
+    "title": "Live-Test-Feinschliff",
+    "items": [
+      "🚚 Ein Flug, der gerade Ware trägt, zeigt seine Bordladung jetzt direkt in der Flug-Zeile (z. B. „EDWZ → EDWS · 274 kg · unterwegs“) — statt während des Flugs „leer“ anzuzeigen oder in zwei Zeilen zu zerfallen.",
+      "↩️ Eine Rückgabe am Ladeplatz (geladen und am selben Platz wieder abgelegt, ohne einen Meter zu fliegen) erscheint jetzt als eigenes Ereignis „am Platz“ — der leere Anflug bleibt ein ehrlicher Leerflug und wird nicht mehr fälschlich mit der zurückgegebenen Ware beschriftet.",
+      "🎖 Badge und Feierabend-Bilanz zählen nur noch, wer wirklich Ware bewegt hat (geliefert, getragen oder von Platz zu Platz gebracht). Wer nur am Platz geladen und gleich zurückgegeben hat, taucht dort nicht mehr als Teilnehmer auf.",
+      "👋 Wer sich ausloggt, verschwindet aus der Live-Liste der aktiven Piloten, statt dauerhaft als „dabei“ zu gelten.",
+      "💬 Die Flug-Sprüche erfinden keine Zählungen mehr („zum dritten Mal …“) und bringen mehr Abwechslung — mal übers Flugzeug, mal über die Ladung oder den Zielort, nicht immer über Tempo und Umweg."
+    ]
+  },
+  {
     "version": "10.0.0",
     "date": "2026-07-17",
     "highlight": true,

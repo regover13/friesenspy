@@ -2656,7 +2656,9 @@ def _kutter_badge_data(progress: dict, ev: dict, cid: int) -> dict:
     aufsummiert — ``returned`` (ehrlich zurückgebracht) zählt dabei NICHT als Verlust.
     """
     entry = next((p for p in progress.get("participants", []) if p["cid"] == cid), None)
-    if not entry:
+    # Kein Badge ohne echten Transport: wer nur am Platz geladen und zurückgegeben hat (oder nur
+    # gewartet/leer geflogen ist), hat nichts bewegt (`contributed` False) → wie „nicht teilgenommen".
+    if not entry or not entry.get("contributed", True):
         raise HTTPException(status_code=404, detail="Teilnehmer nicht gefunden")
     stolen_kg = sum(
         l.get("lost_kg") or 0.0 for l in progress.get("losses", [])

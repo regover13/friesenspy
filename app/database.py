@@ -4054,7 +4054,10 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "8"  # "8": WURZEL-Fix — der laufende Flug holt seine Fracht aus der
+_PROGRESS_SNAPSHOT_VERSION = "9"  # "9": Am-Platz-Rückgabe (Ladeplatz == Abfallort) = eigenes
+#      „EDWY→EDWY"-Ereignis statt auf den leeren Anflug-Leg gemalt; participants[].contributed
+#      (Ware wirklich bewegt) fürs Badge/die Bilanz.
+#      "8": WURZEL-Fix — der laufende Flug holt seine Fracht aus der
 #      Bordladung (`onboard`) DIREKT auf die echte GPS-Leg-Zeile (dep=GPS-Start, arr=Ziel,
 #      reserved=Bordladung), statt aus `delivered_by` (vor der Landung leer). Die separate
 #      Reservierungs-Zeile bleibt nur noch für „beladen am Boden, nicht abgehoben" (kein Leg).
@@ -5407,6 +5410,26 @@ def compute_transport_progress(
 
     emoji_of = {c["name"]: c.get("emoji") for c in manifest}
 
+    # Herkunfts-Ladeplatz je Frachtart (Manifest-`departure`). Ware entsteht nur an ihrem
+    # Ladeplatz — das ist der echte Start einer verlorenen/zurückgebrachten Ware. Gleicher Name an
+    # mehreren Plätzen → uneindeutig (None). Damit trennen wir „geflogen" (Ladeplatz ≠ Abfallort)
+    # von „am Platz geladen und zurück" (Ladeplatz == Abfallort, Phantom, nie transportiert).
+    _deps_by_name: dict[str, set] = {}
+    for c in manifest:
+        d = (c.get("departure") or "").upper()
+        if d:
+            _deps_by_name.setdefault(c["name"], set()).add(d)
+    cargo_departure = {n: (next(iter(ds)) if len(ds) == 1 else None) for n, ds in _deps_by_name.items()}
+
+    def _loss_origin(ms: list[dict]) -> str | None:
+        ds = {cargo_departure.get(m["name"]) for m in ms}
+        ds.discard(None)
+        return next(iter(ds)) if len(ds) == 1 else None
+
+    # cids, deren Ware wirklich GEFLOGEN ist (geliefert/getragen/geklaut/versenkt/an anderem Platz
+    # zurückgegeben) — der `contributed`-Marker fürs Badge. Eine reine Am-Platz-Rückgabe zählt NICHT.
+    flew_cargo_cids: set[int] = set()
+
     def _lines(ms: list[dict]) -> list[dict]:
         agg: dict[str, float] = {}
         for m in ms:
@@ -5516,24 +5539,37 @@ def compute_transport_progress(
         if ls:
             kind = ls[0]["kind"]
             lost = round(sum(m["kg"] for m in ls), 1) if kind in ("stolen", "sunk") else 0.0
+            origin = _loss_origin(ls)             # Herkunfts-Ladeplatz der Ware (Manifest)
+            drop = ls[0].get("airport")           # Ort der Rückgabe/des Verlusts (None = in der Luft)
             own_keys = {f"{cid}:{g.get('logon_time') or ''}" for g in own}
             target = next((q for q in reversed(network)
                            if q["flight_key"] in own_keys and not q["loaded"]
                            and not q.get("loss_kind")), None)
-            if target is not None:
-                target["loss_kind"], target["lost_kg"] = kind, lost
-                target["cargo_lines"] = _lines(ls)
-                target["cargo_name"] = target["cargo_lines"][0]["name"]
+            # Trug DIESER Leg die Ware wirklich? Eine RÜCKGABE nur, wenn der Leg an IHREM Ladeplatz
+            # startete (leg.dep == origin) — dann ist sie geflogen (auch der Rundflug EDWG→…→EDWG!)
+            # und bleibt am Leg. Ein LEERER Anflug (Ware erst am ZIEL des Legs geladen, leg.dep !=
+            # origin) hat sie NICHT getragen: Am-Platz-Rückgabe → eigene „origin→drop"-Zeile, der Leg
+            # bleibt „leer". Klau/Versenken sind IMMER geflogen und bleiben an ihrem Leg. Herkunft
+            # unklar (origin None) → konservativ anhängen (bisheriges Verhalten).
+            carried_return = (kind == "returned" and target is not None
+                              and (origin is None or target.get("dep") == origin))
+            flew = kind in ("stolen", "sunk") or carried_return
+            attach = target if flew else None
+            if flew:
+                flew_cargo_cids.add(cid)          # geflogen → zählt fürs Badge (`contributed`)
+            if attach is not None:
+                attach["loss_kind"], attach["lost_kg"] = kind, lost
+                attach["cargo_lines"] = _lines(ls)
+                attach["cargo_name"] = attach["cargo_lines"][0]["name"]
             else:
                 network.append({
                     "dep_time": s.get("logon_time") or "", "cid": cid,
                     "callsign": s.get("callsign") or "", "name": names.get(cid, ""),
                     "aircraft": s.get("aircraft") or type_code,
-                    # Startfeld mit dem Ort füllen, an dem die Ware abfiel — bei einer Rückgabe/
-                    # einem Klau am Platz IST das auch der Ladeort (geladen wird am Platz). Keine
-                    # Sonderregel: das Standard-`dep→arr` rendert dann „EDXH → EDXH" statt „→EDXH".
-                    # Nur beim Versenken in der Luft gibt es keinen Ort — dann bleibt dep leer.
-                    "dep": ls[0].get("airport") or "", "arr": ls[0].get("airport") or "—",
+                    # Am-Platz-Ereignis: Start = Herkunfts-Ladeplatz (bei der Phantom-Rückgabe IST
+                    # das der Abfallort → „EDWY→EDWY"). Nur beim Versenken in der Luft ohne bekannte
+                    # Herkunft bleibt dep leer.
+                    "dep": origin or drop or "", "arr": drop or "—",
                     "tonnage_kg": 0.0, "loaded": False, "in_air": False, "airborne": False,
                     "reserved_kg": 0.0, "cargo_lines": _lines(ls),
                     "cargo_name": _lines(ls)[0]["name"],
@@ -5673,6 +5709,13 @@ def compute_transport_progress(
         p["reserved_kg"] = round(aboard, 1)   # die Bordladung IST die Reservierung
         for k in ("delivered_kg", "lost_kg"):
             p[k] = round(p[k], 1)
+        # contributed = hat Ware WIRKLICH bewegt (geliefert / trägt gerade / unterwegs verloren /
+        # von Platz zu Platz gebracht) → zählt fürs Badge und die Feierabend-Bilanz. Eine reine
+        # Am-Platz-Rückgabe (geladen und am selben Fleck zurück, nie geflogen), reines Warten am
+        # Stapel oder ein Leerflug zählt NICHT. Die Live-Sichtbarkeit (`visible`/`online`) bleibt
+        # unberührt — der Wartende (Entscheidung 13) zeigt sich live weiter, kriegt nur kein Badge.
+        p["contributed"] = (p["delivered_kg"] > 0.0 or p["reserved_kg"] > 0.0
+                            or p["lost_kg"] > 0.0 or cid in flew_cargo_cids)
 
     return {
         "route": sorted(route_set),
