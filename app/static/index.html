@@ -3287,33 +3287,36 @@ async function fetchKutterActive() {
     // wohin alle Fracht soll; die Reise je Fracht (Ladeplatz → Ziel) steht in der Tabelle unten.
     html += `<div class="bb-sub" style="font-weight:600;font-size:1.05em;">🎯 Ziel: ${escHtml(d.destination || '—')}</div>`;
     html += _kutterBarAndTotals(d, false);  // Live: nur Gesamtbalken; Aufschlüsselung steckt im Detail
-    // Aktive Piloten: gerade unterwegs / angekommen (noch verbunden) / auf dem Rückflug.
+    // Aktive Piloten: das Modell sagt, wer sichtbar ist (Entscheidung 14 — letzter Bodenkontakt
+    // an einem teilnehmenden Platz ODER Ladung an Bord). Kein Ziel unterstellt (#23).
     const active = [];
-    (d.flights || []).forEach(f => {
-      if (!f.in_air) return;
-      active.push({
-        callsign: f.callsign, aircraft: f.aircraft,
-        kg: f.loaded ? f.tonnage_kg : (f.reserved_kg || 0),
-        lines: f.cargo_lines || [],
-        // Strecke = Reise der Ladung: Ladeplatz (f.dep) → Ziel (d.destination). NICHT der geflogene
-        // GPS-Weg und NICHT der Flugplan (f.arr) — nur „von wo aufgeladen, wohin geliefert" (#12).
-        dep: f.dep || '', dest: d.destination || '',
-        // airborne trennt „wirklich abgehoben" von „am Streckenplatz geparkt, reserviert" (#62-Folgefund)
-        status: f.loaded ? '✅ angekommen'
-              : (f.airborne ? '✈️ unterwegs'
-                 : '🅿️ lädt' + (f.dep ? ' in ' + _kesc(f.dep) : '')),
-      });
-    });
     (d.participants || []).forEach(p => {
-      if (p.status === 'returning') {
-        active.push({ callsign: p.callsign || '', aircraft: p.aircraft || '',
-                      kg: 0, lines: [], dep: '', dest: '', status: '↩️ Rückflug' });
-      }
+      if (!p.visible) return;
+      if (p.statsim_only) return;   // Live-Block ist FriesenSpy-only: StatSim-Backfill (nachgereicht,
+                                    // keine Live-VATSIM-Verbindung) zaehlt in Feed/Wertung, nicht hier.
+      const kg = p.reserved_kg || 0;
+      const inAir = !p.place;
+      const status = inAir
+        ? (kg > 0 ? '✈️ unterwegs' : '✈️ dabei')
+        : ((d.route || []).includes(p.place) && p.place !== d.destination
+            ? '🅿️ lädt in ' + _kesc(p.place)
+            : '🅿️ steht in ' + _kesc(p.place));
+      active.push({
+        callsign: p.callsign, aircraft: p.aircraft,
+        kg: kg, lines: p.cargo_lines || [],
+        // Strecke-START = letzter Landeplatz (bleibt im Flug erhalten, wechselt bei jeder
+        // Zwischenlandung). Strecke-ZIEL nur MIT Ware bekannt (Ziel der Ware = Event-Ziel);
+        // ohne Ware kein Ziel (kein Flugplan-Vertrauen, #23) -> Strecke bleibt leer.
+        dep: p.last_ground || '', dest: (kg > 0 ? (d.destination || '') : ''),
+        // Am Boden IMMER die Menge — ob er beladen ist, sieht man ihm sonst nicht an.
+        // '✈️ dabei' braucht keine: es bedeutet leer.
+        status: status + (inAir && kg <= 0 ? '' : ' · ' + Math.round(kg) + ' kg'),
+      });
     });
     if (active.length) {
       const rows = active.map(a => {
         const load = a.lines.length
-          ? a.lines.map(l => (l.emoji ? l.emoji + ' ' : '') + _kesc(l.name)
+          ? a.lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
               + (a.lines.length > 1 ? ' (' + Math.round(l.kg) + ')' : '')).join(' + ')
           : (a.kg > 0 ? Math.round(a.kg) + ' kg' : 'leer');
         // Kein Inline-onclick mit interpoliertem Callsign (XSS: HTML-Escaping schützt den
@@ -3323,9 +3326,12 @@ async function fetchKutterActive() {
           ? `<td class="td-map-btn" data-callsign="${_kesc(a.callsign)}" title="Auf der Karte zeigen">`
             + '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></td>'
           : '<td></td>';
-        // Strecke = Ladeplatz → Ziel (Reise der Ladung). Neutral (mono), kein Link — kein Klick dahinter.
-        const strecke = (a.dep && a.dest)
-          ? `${_kesc(a.dep)} → ${_kesc(a.dest)}`
+        // Strecke = letzter Landeplatz → Ziel der Ware. Der START (letzter Landeplatz) steht
+        // immer, wenn bekannt — auch ohne Ware. Das ZIEL kennt man nur MIT Ware (Ziel der Ware);
+        // ohne Ware bleibt es '—' (kein Flugplan-Vertrauen, #23). Ganz leer nur, wenn nicht mal
+        // der Startplatz bekannt ist. Neutral (mono), kein Link — kein Klick dahinter.
+        const strecke = a.dep
+          ? `${_kesc(a.dep)} → ${a.dest ? _kesc(a.dest) : '—'}`
           : '—';
         // Callsign neutral (keine Link-Farbe — es ist keiner; Links sind hier nur Pin + Zum Kutter).
         return `<tr><td class="mono">${_kesc(a.callsign || '—')}</td><td class="mono">${_kesc(a.aircraft || '—')}</td>`
@@ -4855,20 +4861,21 @@ function _kCargoLabel(f) {
     // Was war an Bord? (Co-Load-Aufschlüsselung wie bei gelieferten Flügen)
     const lines = f.cargo_lines || [];
     const cargoTxt = lines.length
-      ? lines.map(l => (l.emoji ? l.emoji + ' ' : '') + _kesc(l.name)
+      ? lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
           + ' (' + Math.round(l.kg) + ')').join(' + ') + ' · '
       : '';
     const quip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
     return '<td class="kutter-loss">' + cargoTxt + _kLossLabel(f.loss_kind) + quip + '</td>';
   }
-  if (!f.loaded) return f.in_air
-    ? (f.airborne ? '<td class="kf-empty">unterwegs zum Ziel</td>'
-                  : '<td class="kf-empty">lädt (reserviert)</td>')
-    : '<td class="kf-empty">leer</td>';
+  // 'lädt (reserviert)' hiess frueher: er reserviert, hat aber nichts. Jetzt traegt er die Ware
+  // wirklich — die Reservierung IST die Bordladung.
+  if (!f.loaded) return f.in_air ? (f.airborne ? '<td class="kf-empty">unterwegs</td>'
+                                               : '<td class="kf-empty">lädt</td>')
+                                 : '<td class="kf-empty">leer</td>';
   const lines = f.cargo_lines || [];
   let label;
   if (lines.length) {
-    label = lines.map(l => (l.emoji ? l.emoji + ' ' : '') + _kesc(l.name)
+    label = lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
       + ' (' + Math.round(l.kg) + ')').join(' + ');
   } else {
     label = _kesc(f.cargo_name || '');
@@ -4907,7 +4914,7 @@ function _kSegLegend(items, totalTarget, sub) {
       + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i>' + lost + res + '</div>';
   }).join('');
   const legend = items.map(({ c, gi }) => {
-    const mark = c.emoji ? c.emoji + ' '
+    const mark = c.emoji ? _kesc(c.emoji) + ' '
       : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
     const res = (c.reserved_kg || 0) > 0 ? ' (+' + _kfmtT(c.reserved_kg) + ' ✈️)' : '';
     // Verlust je Frachtart sichtbar machen (vorher stand nur die Gesamt-Summe unten) — sonst wirkt
@@ -5014,7 +5021,8 @@ function _kutterDetailBody(d) {
     const t = (f.dep_time || '').slice(11, 16);
     const kg = f.loaded ? '<td class="kf-kg">' + _kDualKg(f.tonnage_kg, f.onboard_kg) + '</td>'
       : f.loss_kind ? '<td class="kf-empty kutter-loss">' + (f.lost_kg ? Math.round(f.lost_kg) + ' kg' : '—') + '</td>'
-      : f.in_air ? '<td class="kf-res">~' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
+      : f.in_air ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg)
+                 + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
       : '<td class="kf-empty">leer</td>';
     return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + _kesc(f.aircraft || '')
       + '</td><td>' + _kesc(f.dep) + '→' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';

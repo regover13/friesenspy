@@ -290,11 +290,110 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
   sonst verbiegt Git Bash den Testpfad — meine erste Messung war deshalb falsch, nicht der Code).
   Das Skript schreibt NIRGENDS (0 Treffer INSERT/UPDATE/DELETE/COMMIT).
   NICHT verifiziert: die drei Zahlen. Dafuer fehlt die DB.
-- Task 8: offen
-- Task 9: offen
-- Task 10: offen
-- Task 11: offen
-- Task 12: offen
+- Task 8: complete (Cloud-Session, GATE bestanden vorausgesetzt). compute_transport_progress rechnet
+  jetzt mit Stapeln (derive_stacks/_stack_inputs) statt zu raten; _empty_transport_progress ergaenzt;
+  Import derive_stacks/STOLEN/SUNK auf Modulebene (transport_stacks ist DB-frei -> kein Zyklus).
+  5 neue TestStapelProgress gruen, 1056 gesamt gruen. API-Vertrag unveraendert (main/poller importieren
+  sauber, alle Konsumenten lesen loss_kind mit .get()/JS-falsy — vertragsgleich zum Altcode).
+  DREI Funde/Entscheidungen dieser Session (alle mit dem Nutzer besprochen):
+   1. logout_ts (EIGENE Zutat ueber den Plan, vom Nutzer FREIGEGEBEN): der Plan-Feed suchte die
+      Verlust-Zeile per logoff_time — die Verlust-Bewegung traegt aber den +1s-verschobenen Logout-ts
+      (Touchdown-Disconnect, S4). _stack_inputs vermerkt jetzt den effektiven Logout-ts an der Session,
+      der Feed sucht danach. Aendert KEINE Zahl, nur welche Feed-Zeile das loss_kind-Label traegt.
+      Mutationsprobe: ohne den Fix war test_s4 rot (loss None), mit gruen.
+   2. S2/S3-Testmodellierung KORRIGIERT (Nutzer-Einwand "leg <> Verbindung, das soll so sein"): zwei
+      _add_flight mit 10-min-Luecke = echter Disconnect+Reconnect, NICHT die gemeinte durchgehende
+      Reise. Beleg im Poller (poller.py:837): ein Refile-Split schliesst Leg 1 IM Refile-Moment
+      (logoff(Leg1)==logon(Leg2), keine Luecke) -> _transport_sessions verkettet zu EINER Verbindung.
+      Tests bilden das jetzt so ab (duration_min=30/20 statt 20/20). Diskriminiert nachweislich:
+      mit Luecke -> S3=0 (stolen am fremden EDDW), ohne Luecke -> S3=800. Kein Placebo.
+   3. Poller-Seeds (Nutzer-Regel "ohne Track kein Kutter-Flug", FREIGEGEBEN): _seed_with_flight legte
+      eine nackte flights-Zeile OHNE position_history -> Fallback ohne block_start -> zaehlt zu Recht
+      nicht mehr (flight_count 0). Neuer Helfer _seed_kutter_track schreibt einen echten GPS-Track
+      (Boden-Start EDWG = laedt, Landung EDXH = liefert). TestTransportSummaryEmptyEventSuppressed +
+      TestTransportSnapshotFreeze wieder gruen.
+  ⚠️ OFFEN fuer Task 9 (kein Task-8-Bug): 57 rote Tests sind ALLE Latch-/entfallene-Feature-Tests
+     (56 in test_transport.py, PLAN-erwartet + Gegenstand Task 9/10; 1 in test_poller.py =
+     TestLegSplitLatchKey, steht auf der Task-9-Loeschliste des Plans (test_poller.py:509-635,
+     importiert get_transport_live_arrivals). NICHT frisiert — Task 9 entfernt ihn.
+  💡 EMPFEHLUNG fuers finale Review (NICHT umgesetzt, weil defensiv + keine Beobachtungsaenderung, und
+     der Nutzer will keine eigenmaechtigen fachlichen Aenderungen): der Feed-Loop in
+     compute_transport_progress iteriert own=legs_by_cid OHNE block_start-Filter. Aktuell harmlos
+     (Fallback-Legs haben gps_departure/arrival=None -> Sichtbarkeitsfilter schliesst sie aus), aber
+     Ledger-Task-8-Vormerkung #1 wollte den expliziten Guard. Mit dem Nutzer abstimmen.
+- Task 9: complete (Cloud-Session). Latch-Rueckbau: aus app/database.py ERSATZLOS geloescht
+  set_transport_live_arrival, get_transport_live_arrivals, record_transport_loss, get_transport_losses,
+  detect_transport_losses, check_live_arrival, active_transport_destinations, _latch_hits_flight,
+  _connection_logon_for_leg (Waise), _returning_pilot_landed (Waise), _LATCH_SLACK_SEC.
+  transport_anyone_in_progress auf Entscheidung 10 umgestellt ("traegt noch jemand Ware?" statt
+  "offener Flug auf Strecke"). app/poller.py: Block 2c (check_live_arrival) + detect_transport_losses-
+  Aufruf/Import raus. block_start-Guard im Feed-Loop ergaenzt (die in Task 8 vermerkte Empfehlung —
+  in Task 9 mit umgesetzt, defensiv, keine Verhaltensaenderung). Tabellen transport_live_arrivals/
+  transport_cargo_losses bleiben im DDL (Altdaten), werden nur nicht mehr geschrieben/gelesen.
+  BEHALTEN (kein Waise, Plan-"pruefen" bestaetigt): open_transport_flights + transport_event_started
+  (Start-Push, poller.py:1305), _current_pos, _first_pos, _LANDED_MAX_GS_KT (Zweitnutzer :1797).
+  Verifikation: pytest tests/ -q -> 1073 passed, 1 xfailed, 0 failed. scripts/kutter_ladung_szenarien.py
+  laeuft (Latch-Importe + S2b/S3b raus, verluste-Block auf losses[]; S2/S3 als Refile-Split; S8-db-
+  Import gefixt): S1=800, S2=800+200, S3=800, S4=returned, S5=stolen 800, S8=sunk 800.
+  Test-Umbau test_transport.py (Sub-Agent, danach von mir verifiziert): 42 umgeschrieben, 19 geloescht
+  (+ 17 Latch-Klassen-Tests von mir vorab). MUTATIONSPROBE bestanden: stolen->returned-Mutation in
+  transport_stacks macht 5 Verlust-Tests rot -> sie beissen. Anti-Schwaechungs-Scan: die 72 fehlenden
+  Assertions entsprechen exakt den geloeschten Tests, alle umgeschriebenen pruefen konkrete Werte.
+  test_poller.py: TestLegSplitLatchKey + TestKutterLiveArrivalHook geloescht (Latch); der Nachzuegler-
+  Test (test_summary_deferred_while_pilot_in_progress) auf Entscheidung 10 umgebaut (Pilot traegt Ware
+  am Ladeplatz statt "offener Flug").
+  ✅ Die manifestlose-Event-Frage ist ENTSCHIEDEN (Nutzer 16.07.): kein Zaehler-Modus, war nie
+     gewollt. manifestlos = 0. Test umbenannt -> test_no_manifest_delivers_nothing, prueft
+     total_kg == 0.0 (kein Sonder-Code noetig, das Stapel-Modell liefert das von selbst). xfail
+     entfernt. pytest tests/ -q -> 1074 passed, 0 failed, 0 xfailed.
+- Task 10: complete (Cloud-Session). Frontend app/static/index.html: fetchKutterActive speist den
+  Live-Block jetzt aus d.participants (visible/place/reserved_kg/cargo_lines) statt aus d.flights;
+  Status = Ort x Ladung (🅿️ laedt/steht, ✈️ unterwegs/dabei). '✅ angekommen' + '↩️ Rueckflug'
+  entfallen. _kCargoLabel: laedt/unterwegs/leer; _kutterDetailBody: Tilde vor Reservierungsmenge
+  weg. _kLossLabel unveraendert. BROWSER-VERIFIZIERT (Playwright, Chromium /opt/pw-browsers/
+  chromium-1194, executable_path noetig wegen Build-Mismatch; API per Route gemockt): Live-Banner
+  rendert alle 5 sichtbaren Status korrekt, visible:false ausgeblendet, keine PAGEERRORs; Detail-
+  Feed zeigt "500 / 1000 kg ✈️" ohne Tilde. Screenshots im Scratchpad (t10_live.png, t10_detail.png).
+  NACHTRAG (Nutzer-Regel 16.07., Commit 6a041d6): Strecke im Live-Block = letzter Landeplatz ->
+  Ziel-der-Ware. START = participants.last_ground (neu durchgereicht aus r["last_ground"]): bleibt
+  im Flug erhalten (place wird beim Abheben None), wechselt bei jeder Zwischenlandung (auch fremd).
+  ZIEL nur MIT Ware bekannt (= Event-Ziel); ohne Ware "Start -> —". Behob: (a) Strecke in der Luft
+  MIT Fracht war leer (haing an place statt last_ground), (b) "EDXH -> EDXH" am Ziel. Der ganz leere
+  Fall (kein Start) trifft nur unsichtbare Zeilen -> rendert nie (mit dem Nutzer geklaert). Backend-
+  Feld per Test abgesichert (test_participant_hat_last_ground_als_strecken_start).
+- Task 11: complete (Cloud-Session). Entscheidung 6 durchgesetzt: jede Manifest-Zeile = ein Stapel =
+  GENAU EIN Startplatz != Ziel, Pflicht. main.py _validate_transport_manifest (Fehlertext "genau
+  einem Platz"), database.py set_transport_cargo (wirft ValueError, verbindlich serverseitig),
+  calendar_sync.py parse_cargo_lines (kein-ICAO/Multi-ICAO -> Zeile verworfen), admin.html (Feld-
+  hinweis + Client-Check gegen Multi). Der "geteilte Topf" (departure NULL) entfaellt ganz.
+  ECHTER NEBENFUND selbst behoben: der Kalender-Sync (upsert_calendar_transport_event) degradierte
+  einen fernen/Tippfehler-Marker-ICAO auf departure=None -> set_transport_cargo haette jetzt
+  gecrasht. Er VERWIRFT solche ortlosen Zeilen nun (nur Ein-Platz-Zeilen auf der Route != Ziel
+  ueberleben), statt den Sync zu killen.
+  Tests: 4 neue Validierungstests (main) + 3 (calendar) via Sub-Agent, danach von mir verifiziert.
+  19 durch die Regel gebrochene Seeds gefixt (departure ergaenzt; 2 shared/NULL-Tests auf
+  pytest.raises umgeschrieben; 1 geloescht). Backfill-Tests: Legacy-NULL jetzt per direktem SQL-
+  UPDATE simuliert (via create_transport_event nicht mehr erzeugbar) — Backfill-Kern + Assertion
+  unveraendert. MUTATIONSPROBE: alle 3 Guards permissiv -> 8 Tests rot -> sie beissen. Anti-
+  Schwaechungs-Scan sauber. pytest tests/ -q: 1080 passed, 0 failed.
+- Task 12: complete (Cloud-Session). _PROGRESS_SNAPSHOT_VERSION 3->4 (Entscheidung 9: neu rechnen).
+  CHANGELOG: neuer Eintrag — PLANABWEICHUNG noetig, "9.2.0" war schon vergeben (2026-07-13) und die
+  Top-Version war 9.5.0, also 9.6.0 (Schema title+items, highlight). VERSION leitet sich automatisch
+  daraus ab (app/version.py). Doku via Sub-Agent, danach von mir verifiziert: architecture.md/api.md/
+  README.md auf Stapel-Modell umgeschrieben (Latch/Reservierung/Verlust-Klassifikation raus,
+  Erhaltungssatz + transport_stacks-Verweis rein). api.md-Feldvertrag GEGEN DEN CODE geprueft: status
+  ∈ flying/loaded/loading/standing/dabei/done (kein arrived/returning), neue Felder visible/place/
+  last_ground/cargo_lines, loss_kind/losses[]/lost_total_kg, "Event ohne Manifest = 0". Zwei
+  widerspruechliche Kalender-Beispiele ("Fracht:" ohne ICAO als "wird uebernommen") selbst korrigiert
+  (README + api.md). Commit f631d2a, Tag v9.6.0 remote. pytest tests/ -q: 1080 passed.
+
+==============================================================================
+ALLE PLAN-TASKS (8-12) ABGESCHLOSSEN. Offen: nur noch der Whole-Branch-Review (Opus).
+Branch claude/session-complete-cloud-ready-oud6dx, Commits ab a31e943 bis f631d2a, Tag v9.6.0.
+Stapel-Modell live-faehig: Latch komplett zurueckgebaut, Frontend auf Ort x Ladung, departure
+Pflicht (ein Platz), Doku + Changelog + Snapshot-Version nachgezogen. 1080 Tests gruen, 0 rot.
+NUTZER-GATE nach Deploy (Plan): #1=1610, #81=1120, #136=1090 pruefen; #123 zeigt erwartet 417.
+==============================================================================
 
 ## Minor-Funde fuers finale Review
 (noch keine)
@@ -305,3 +404,82 @@ NUTZER BITTE PRUEFEN: das ist die einzige inhaltliche Entscheidung, die ich ohne
 6 Tasks + Whole-Branch-Review, Commits 9a35e96..289d434. Details in der Git-Historie
 (6889534 "fix: Code-Review-Findings track-diagnose"). Offen geblieben: Task #2 der Aufgabenliste
 (Praxis-Regeln vom 15.07. in die SKILL.md nachtragen) — gehoert NICHT zu diesem Plan.
+
+##############################################################################
+#  WHOLE-BRANCH-REVIEW (Cloud-Session, 5 adversariale Agenten + Selbstverifikation)
+##############################################################################
+Kernmodell solide: Erhaltungssatz hielt ueber 50k Fuzz-Laeufe; Latch-Rueckbau + departure-
+Validierung sauber; API-Vertrag intakt; 3 GATE-Zahlen unberuehrt. Alle Funde sind Edge-Faelle.
+
+  #1 HIGH  [GEFIXT, Commit ac99592] Offene (stale) Session zaehlt Flug NACH dtend mit.
+           own-Filter offener Sessions hatte keine Obergrenze -> Leg einer separaten, nach dtend
+           eingeloggten Folge-Verbindung wurde zugeschlagen -> Ueberzaehlung (800 statt 0).
+           Fix: _transport_sessions liefert next_logon; offene Session bis Folge-Verbindung
+           gedeckelt (nicht bis dtend -> Entscheidung 10 bleibt gewahrt). Beide own-Filter +
+           Login-Positionsabfrage + _current_pos-Guard. Mutationsprobe bestanden.
+  #2 Med   [OFFEN] Login-Drop-Verlust (ungracefuler Reconnect) fehlt im Feed/losses[]/
+           participants.lost_kg (lost_total_kg korrekt). Wurzel: Feed sucht Verlust nur per
+           Logout-ts, _drop_load beim login stempelt den Folge-Login-ts. Selbst reproduziert.
+  #3 Med   [OFFEN] StatSim-Backfill ohne VATSIM-Session: Lieferung/Verlust in total_kg, aber
+           Pilot fehlt in flights[]/participants[] (Feed iteriert nur sessions). Reproduziert.
+  #4 Med   [OFFEN] per_flight_max_kg gilt pro Manifest-Zeile, nicht pro Waren-NAME. Gleiche Ware
+           aus zwei Quellen mit ungleichen Caps -> Bordladung ueberschreitet strengeren Cap.
+           Schmaler Fall. Reproduziert.
+  #5 Low   [OFFEN] Landung an unerkanntem Platz (gps_arrival=None) -> Logout zaehlt sunk statt
+           stolen. Nur das Verlust-LABEL falsch, Summe/Erhaltungssatz korrekt. Reproduziert.
+  #6 Low   [OFFEN, geschuetzt] Manifest-Zeile mit leerem departure verschluckt Fracht still —
+           seit Task 11 durch set_transport_cargo-Validierung verhindert; nur Alt-/Direkt-SQL.
+  #7 Low   [pre-existing] Emoji im Frontend unescaped (schon im Basis-Commit; admin-kontrolliert).
+  #8 Low   [OFFEN] admin.html-Client-Check faengt departure==Ziel / reines Whitespace nicht vorab
+           ab -> Server weist mit 400 ab. Nur fehlende Vorpruefung, kein Defekt.
+
+Wurzel von #2/#3 (und der Feed-Seite von #1): Feed + participants werden aus VATSIM-SESSIONS
+rekonstruiert; das Stapel-Modell erzeugt aber Bewegungen ohne passende Session-Logout-Zeile.
+Summen korrekt, Session-basierte Sicht divergiert (Unterzaehlung, keine Ueberzeichnung).
+NAECHSTES: Nutzer liest #2-#8, entscheidet welche gefixt werden.
+
+##############################################################################
+#  REVIEW-FUNDE AUFGELOEST (Cloud-Session Forts., v9.6.1)
+##############################################################################
+Nutzer-Entscheidungen (Handy, einzeln): #2/#3 sichtbar machen; #4 = 1b; #5 = keine Aenderung.
+
+  #2 [GEFIXT, 281276f] Login-Drop-Verlust sichtbar. Stale-offene Verbindung (next_logon gesetzt)
+     bekommt in _stack_inputs einen synthetischen Logout an deren Login -> logout_ts entsteht,
+     der Feed findet die Verlust-Zeile. Zahlen unveraendert (gleicher ts/Position). In-Air-
+     Reservierungszeile jetzt nur der WIRKLICH offenen letzten Verbindung (kein next_logon).
+     Test test_login_drop_verlust_wird_sichtbar; Mutationsprobe bestanden.
+  #3 [GEFIXT, 5189c66] StatSim-Backfill sichtbar. _stack_inputs haengt je StatSim-Leg eine
+     Pseudo-Session (statsim_only=True) an sessions -> Feed + participants fuehren ihn wie einen
+     Flug. Live-Block (index.html fetchKutterActive) filtert statsim_only -> bleibt FriesenSpy-
+     only (Nutzer-Korrektur: StatSim IST VATSIM, gemeint war friesenspy-only). participants tragen
+     statsim_only konsistent (False, sobald eine echte Verbindung den cid deckt). Tests
+     TestStatSimSichtbarkeit (2); Mutationsprobe bestanden.
+  #4 [GEFIXT, 48c8c5d] Kappung pro Frachtart-NAME (1b). Nutzer: gleiche Ware aus zwei Startplaetzen
+     erlaubt, Kappung gilt fuer den Namen zusammen; bei ungleichen Caps gewinnt die strengste.
+     derive_stacks: name_cap statt per-Zeile. Katalog bleibt die Stelle, an der die Kappung pro
+     Name gesetzt wird (Admin-UI + Kalender-Sync holen sie schon von dort). Tests: Nutzer-Beispiel
+     (60+40) + ungleiche-Caps-Guard; Mutationsprobe bestanden.
+  #5 [KEINE AENDERUNG, Nutzer-Entscheid] gps_arrival=None: sunk vs stolen ist aus GPS nicht
+     unterscheidbar (gps_legs.py:240-261 erkennt Landung NUR an bekanntem Platz; ohne Platz bleibt
+     das Leg AIRBORNE, egal ob Aufsetzer oder Absturz). "versenkt" ist die ehrliche Default-Aussage
+     (#23: kein GPS-Vertrauen ohne Beleg). Label-Frage, Summe stimmt. Bewusst offen gelassen.
+  #6 [unveraendert] Leeres departure ist seit Task 11 durch set_transport_cargo abgefangen.
+  #7 [unveraendert, pre-existing] Emoji-Escaping Frontend (admin-kontrolliert, ausserhalb Scope).
+  #8 [GEFIXT-UX] admin.html-Vorpruefung: departure==Ziel und reines Whitespace vorab freundlich
+     abgewiesen (Server wies mit 400 ab; kein Defekt, nur UX). Kein Test (reine Frontend-Meldung).
+
+Version 9.6.1 (CHANGELOG + app/version.py). Kein PR-Merge nach main = kein Go-Live (Nutzer).
+
+##############################################################################
+#  RELEASE 10.0.0 "MILCHMANN" (Cloud-Session Forts.)
+##############################################################################
+Nutzer-Entscheidung: Das ganze Stapel-Modell + Review-Fixes ist EIN Major-Release "Milchmann"
+(nichts davon war je auf main). Die unveroeffentlichten Eintraege 9.6.0 + 9.6.1 zu einem
+Highlight-Eintrag 10.0.0 zusammengefasst. Fachlich groesste Aenderung = Milchmann (Multi-Stop-
+Laden); wichtigste = Fracht-Orientierung ueber Stapel + eine Wahrheit ueber canonicalize_legs.
+
+  #7 [GEFIXT] Katalog-Emojis im Frontend jetzt escaped (index.html 3x cargo_lines + 1x Legende,
+     admin.html Vorschlag-Picker). Die Admin-Hint-Stelle nutzte schon textContent (sicher).
+     War admin-kontrolliert/pre-existing; auf Nutzer-Wunsch mitgenommen.
+
+Version 10.0.0 (CHANGELOG[0] -> app/version.py). Weiterhin kein Merge nach main = kein Go-Live.

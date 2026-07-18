@@ -2770,8 +2770,8 @@ async def admin_transport_events(request: Request):
 def _validate_transport_manifest(destination: str, cargo: list) -> str | None:
     """#84: ein manuelles Kutter-Event verlangt ein Ziel + ein Manifest mit Startplätzen je Ware.
     Gibt eine Fehlermeldung zurück oder ``None``. Jede Fracht-Zeile (Name + Menge > 0) braucht
-    mind. einen Startplatz ≠ Ziel; ohne solche Zeile wäre die abgeleitete Route nur das Ziel und
-    kein Flug zählte."""
+    GENAU EINEN Startplatz ≠ Ziel (Entscheidung 6: eine Zeile = ein Stapel = ein Platz); ohne
+    gültige Zeile wäre die abgeleitete Route nur das Ziel und kein Flug zählte."""
     from app.database import _normalize_icao_list
     if not destination:
         return "Ziel-ICAO erforderlich."
@@ -2790,8 +2790,13 @@ def _validate_transport_manifest(destination: str, cargo: list) -> str | None:
         if not name or kg <= 0:
             continue
         rows += 1
-        if not _normalize_icao_list(line.get("departure"), exclude=destination):
-            return f"Frachtart „{name}“ braucht mindestens einen Startplatz (nicht das Ziel)."
+        # Entscheidung 6 (Spec 2026-07-15): eine Manifest-Zeile = ein Stapel = GENAU ein Platz.
+        # Der "geteilte Topf" (departure NULL) und die CSV-Liste entfallen: eine Zeile ohne
+        # eindeutigen Ort hat keinen Stapel, an dem sie liegen könnte.
+        dep = _normalize_icao_list(line.get("departure"), exclude=destination)
+        if not dep or "," in dep:
+            return (f"Frachtart „{name}“: Jede Frachtart liegt an genau einem Platz. "
+                    "Für dieselbe Ware an mehreren Plätzen leg mehrere Zeilen an.")
     if rows == 0:
         return "Mindestens eine Frachtart mit Menge erforderlich."
     return None

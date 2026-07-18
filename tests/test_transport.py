@@ -38,16 +38,8 @@ from app.database import (
     set_app_setting,
     upsert_calendar_transport_event,
     get_transport_cargo,
-    set_transport_live_arrival,
-    get_transport_live_arrivals,
-    _latch_hits_flight,
-    active_transport_destinations,
     open_transport_flights,
     transport_event_started,
-    check_live_arrival,
-    record_transport_loss,
-    get_transport_losses,
-    detect_transport_losses,
     set_transport_summarized,
     set_transport_push_enabled,
     transport_events_due_for_reminder,
@@ -102,17 +94,28 @@ def _add_open_flight(conn, cid, dep, arr, aircraft, logon, *, callsign=None):
 
 
 def _add_delivered_flight(conn, cid, dep, aircraft, logon, ev_id, *, duration_min=30, callsign=None,
-                           latch_offset_min=5):
-    """Eine tatsächlich am Ziel angekommene Fracht-Lieferung OHNE vollen GPS-Track: die
-    Connection schließt mit arrival='' (keine verwertbare Ankunftsangabe -- ein reiner
-    Flugplan-Text darf unter GPS-only NICHT mehr als Lieferung zählen, #23 Review C2), der
-    Live-Ankunfts-Latch (wie ihn `check_live_arrival` beim echten Anflug setzen würde) ist
-    der einzige, GPS-gestützte Nachweis der Lieferung. Ersetzt die alten `_add_flight(...dest)`-
-    Aufrufe überall dort, wo der Test eine tatsächlich GEFLOGENE, angekommene Lieferung meint
-    (nicht bloß einen Flugplan-Eintrag)."""
+                          latch_offset_min=5, destination="EDXH"):
+    """Eine tatsächlich am Ziel angekommene Fracht-Lieferung — jetzt mit echtem GPS-Track.
+
+    Früher: Connection + Live-Ankunfts-Latch (der Latch WAR der Nachweis). Der Latch ist weg;
+    die Lieferung ist genau dann eine, wenn der Detektor die Landung am Ziel sieht. ``ev_id`` und
+    ``latch_offset_min`` bleiben für die Aufrufer-Verträglichkeit erhalten und werden ignoriert.
+    """
+    from app.geo import icao_to_coords, airport_elevation_ft
     callsign = callsign or f"FRS{cid:02d}"
-    _add_flight(conn, cid, dep, "", aircraft, logon, duration_min=duration_min, callsign=callsign)
-    set_transport_live_arrival(conn, cid, logon, ev_id, _shift(logon, latch_offset_min))
+    dlat, dlon = icao_to_coords(dep)
+    delev = airport_elevation_ft(dep) or 0
+    alat, alon = icao_to_coords(destination)
+    aelev = airport_elevation_ft(destination) or 0
+    _add_flight(conn, cid, dep, destination, aircraft, logon, duration_min=duration_min,
+                callsign=callsign)
+    _add_pos(conn, cid, logon, dlat, dlon, 0, alt=delev, callsign=callsign)
+    _add_pos(conn, cid, _shift(logon, 2), dlat, dlon, 80, alt=delev + 1200, callsign=callsign)
+    _add_pos(conn, cid, _shift(logon, duration_min // 2), (dlat + alat) / 2, (dlon + alon) / 2,
+             120, alt=4000, callsign=callsign)
+    _add_pos(conn, cid, _shift(logon, duration_min - 2), alat, alon, 60, alt=aelev + 400,
+             callsign=callsign)
+    _add_pos(conn, cid, _shift(logon, duration_min), alat, alon, 0, alt=aelev, callsign=callsign)
     conn.commit()
 
 
@@ -243,8 +246,8 @@ class TestCoLoad:
         upsert_payload(conn, "C208", payload_kg=550)
         conn.commit()
         ev = _event(conn, cargo=[
-            {"name": "Filmrollen", "target_kg": 300, "per_flight_max_kg": 100, "emoji": "🎞️"},
-            {"name": "Friesentee", "target_kg": 500, "emoji": "🫖"},
+            {"name": "Filmrollen", "target_kg": 300, "per_flight_max_kg": 100, "emoji": "🎞️", "departure": "EDWG"},
+            {"name": "Friesentee", "target_kg": 500, "emoji": "🫖", "departure": "EDWG"},
         ])
         _add_delivered_flight(conn, 7, "EDWG", "C208", "2026-07-01T10:00:00Z", ev["id"])
         p = compute_transport_progress(conn, ev, END)
@@ -329,8 +332,8 @@ class TestCalendarCargo:
         upsert_cargo_catalog(conn, name="Filmrollen", emoji="🎞️", per_flight_max_kg=100)
         conn.commit()
         ev = self._cal_ev(cargo=[
-            {"name": "Krabbenbrötchen", "target_kg": 1000.0},
-            {"name": "Filmrollen", "target_kg": 300.0},
+            {"name": "Krabbenbrötchen", "target_kg": 1000.0, "departure": "EDWG"},
+            {"name": "Filmrollen", "target_kg": 300.0, "departure": "EDWG"},
         ])
         upsert_calendar_transport_event(conn, ev)
         conn.commit()
@@ -343,7 +346,7 @@ class TestCalendarCargo:
 
     def test_unknown_name_kept_as_freetext(self):
         conn = _make_conn()
-        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Mysteriöses Gut", "target_kg": 42.0}]))
+        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Mysteriöses Gut", "target_kg": 42.0, "departure": "EDWG"}]))
         conn.commit()
         eid = conn.execute("SELECT id FROM transport_events WHERE calendar_uid='abc123'").fetchone()[0]
         cargo = get_transport_cargo(conn, eid)
@@ -351,13 +354,13 @@ class TestCalendarCargo:
 
     def test_resync_does_not_overwrite_existing_manifest(self):
         conn = _make_conn()
-        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Krabbenbrötchen", "target_kg": 1000.0}]))
+        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Krabbenbrötchen", "target_kg": 1000.0, "departure": "EDWG"}]))
         conn.commit()
         eid = conn.execute("SELECT id FROM transport_events WHERE calendar_uid='abc123'").fetchone()[0]
-        set_transport_cargo(conn, eid, [{"name": "Vom Admin gepflegt", "target_kg": 5.0}])
+        set_transport_cargo(conn, eid, [{"name": "Vom Admin gepflegt", "target_kg": 5.0, "departure": "EDWG"}])
         conn.commit()
         # Erneuter Sync mit (ggf. anderer) Fracht-Zeile aus dem Kalender darf das nicht überschreiben.
-        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Anderes Gut", "target_kg": 77.0}]))
+        upsert_calendar_transport_event(conn, self._cal_ev(cargo=[{"name": "Anderes Gut", "target_kg": 77.0, "departure": "EDWG"}]))
         conn.commit()
         cargo = get_transport_cargo(conn, eid)
         assert [c["name"] for c in cargo] == ["Vom Admin gepflegt"]
@@ -454,14 +457,17 @@ class TestProgress:
     def test_oneway_return_is_empty(self):
         conn = _make_conn()
         self._seed(conn)
-        ev = _event(conn)
-        _add_delivered_flight(conn, 12, "EDWG", "C172", "2026-07-01T10:00:00Z", ev["id"])  # hin, beladen
-        _add_flight(conn, 12, "EDXH", "EDWG", "C172", "2026-07-01T11:00:00Z")  # zurück, leer
+        # target == Musterzuladung: der Hinflug räumt den EDWG-Stapel leer, damit der Rückflug
+        # beim Landen dort nichts mehr aufnimmt (sonst „returned" statt leer).
+        ev = _event(conn, cargo=[{"name": "Fracht", "target_kg": 250, "departure": "EDWG"}])
+        _add_delivered_flight(conn, 12, "EDWG", "C172", "2026-07-01T10:00:00Z", ev["id"])  # hin, beladen -> EDXH
+        # Rückflug EDXH -> EDWG als ECHTES GPS-Leg (ohne Track kein Kutter-Flug): landet am
+        # (nun leeren) Ladeplatz EDWG, lädt nichts, liefert nichts -> leer.
+        _add_delivered_flight(conn, 12, "EDXH", "C172", "2026-07-01T11:00:00Z", ev["id"], destination="EDWG")
         p = compute_transport_progress(conn, ev, END)
 
         assert p["flight_count"] == 2 and p["loaded_count"] == 1
         assert p["total_kg"] == 250
-        hin = _feed_by_callsign(p, "FRS12")  # neueste oben → das ist der Rückflug
         # es gibt zwei Einträge mit derselben Callsign; explizit über dep prüfen
         loaded = next(f for f in p["flights"] if f["dep"] == "EDWG")
         empty = next(f for f in p["flights"] if f["dep"] == "EDXH")
@@ -472,13 +478,14 @@ class TestProgress:
     def test_feed_newest_first(self):
         conn = _make_conn()
         self._seed(conn)
-        _add_flight(conn, 12, "EDWG", "EDXH", "C172", "2026-07-01T10:00:00Z")
-        _add_flight(conn, 7, "EDWG", "EDXH", "C208", "2026-07-01T10:30:00Z")
         ev = _event(conn)
+        # Echte GPS-Lieferungen (dep_time = GPS-Takeoff); der spätere Abflug muss oben stehen.
+        _add_delivered_flight(conn, 12, "EDWG", "C172", "2026-07-01T10:00:00Z", ev["id"])
+        _add_delivered_flight(conn, 7, "EDWG", "C208", "2026-07-01T10:30:00Z", ev["id"])
         p = compute_transport_progress(conn, ev, END)
-        assert [f["dep_time"] for f in p["flights"]] == [
-            "2026-07-01T10:30:00Z", "2026-07-01T10:00:00Z",
-        ]
+        dep_times = [f["dep_time"] for f in p["flights"]]
+        assert dep_times == sorted(dep_times, reverse=True)          # neueste oben
+        assert p["flights"][0]["cid"] == 7 and p["flights"][1]["cid"] == 12
 
     def test_offroute_flight_excluded(self):
         conn = _make_conn()
@@ -491,7 +498,8 @@ class TestProgress:
     def test_unmapped_type_uses_default_and_is_flagged(self):
         conn = _make_conn()
         self._seed(conn)
-        ev = _event(conn)
+        # Stapel-Modell: Ware liegt an genau einem Ladeplatz (departure) — EDWG ist der Ladeplatz.
+        ev = _event(conn, cargo=[{"name": "Fracht", "target_kg": 500, "departure": "EDWG"}])
         _add_delivered_flight(conn, 3, "EDWG", "PA28", "2026-07-01T10:00:00Z", ev["id"])  # kein Payload gepflegt
         p = compute_transport_progress(conn, ev, END)
         assert p["total_kg"] == 150.0  # globaler Default
@@ -501,8 +509,8 @@ class TestProgress:
         conn = _make_conn()
         self._seed(conn)
         ev = _event(conn, cargo=[
-            {"name": "Fischbrötchen", "target_kg": 800},
-            {"name": "Friesen Tee", "target_kg": 500},
+            {"name": "Fischbrötchen", "target_kg": 800, "departure": "EDWG"},
+            {"name": "Friesen Tee", "target_kg": 500, "departure": "EDWG"},
         ])
         # beladene Flüge: 250 + 550 = 800 (füllt Fischbrötchen), dann 150 → Tee
         _add_delivered_flight(conn, 12, "EDWG", "C172", "2026-07-01T10:00:00Z", ev["id"])   # 250
@@ -519,11 +527,11 @@ class TestProgress:
         tee = next(c for c in p["cargo"] if c["name"] == "Friesen Tee")
         assert fisch["delivered_kg"] == 800 and fisch["pct"] == 100.0
         assert tee["delivered_kg"] == 150 and tee["pct"] == 30.0
-        # Frachtart je beladenem Flug
-        by_dep_time = {f["dep_time"]: f for f in p["flights"]}
-        assert by_dep_time["2026-07-01T10:00:00Z"]["cargo_name"] == "Fischbrötchen"
-        assert by_dep_time["2026-07-01T10:30:00Z"]["cargo_name"] == "Fischbrötchen"
-        assert by_dep_time["2026-07-01T11:00:00Z"]["cargo_name"] == "Friesen Tee"
+        # Frachtart je beladenem Flug (dep_time ist jetzt der GPS-Takeoff — über cid prüfen)
+        by_cid = {f["cid"]: f for f in p["flights"] if f["loaded"]}
+        assert by_cid[12]["cargo_name"] == "Fischbrötchen"   # 250, erster am EDWG-Stapel
+        assert by_cid[7]["cargo_name"] == "Fischbrötchen"    # 550, füllt Fisch voll
+        assert by_cid[3]["cargo_name"] == "Friesen Tee"      # 150, Fisch leer -> Tee
 
     def test_capped_overflow_not_credited_to_total(self):
         # #63 „Balken lügt nicht": Fracht ohne Manifest-Platz (per_flight_max_kg-Kappung) zählt
@@ -531,7 +539,7 @@ class TestProgress:
         conn = _make_conn()
         self._seed(conn)
         ev = _event(conn, cargo=[
-            {"name": "Inselpost", "target_kg": 1500, "per_flight_max_kg": 50},
+            {"name": "Inselpost", "target_kg": 1500, "per_flight_max_kg": 50, "departure": "EDWG"},
         ])
         _add_delivered_flight(conn, 12, "EDWG", "C208", "2026-07-01T10:00:00Z", ev["id"])  # Muster 550
         _add_delivered_flight(conn, 7, "EDWG", "C208", "2026-07-01T10:30:00Z", ev["id"])   # Muster 550
@@ -544,8 +552,8 @@ class TestProgress:
         assert post["delivered_kg"] == 100
         for f in p["flights"]:
             if f["loaded"]:
-                assert f["tonnage_kg"] == 50       # belegt (Netto)
-                assert f["onboard_kg"] == 550      # an Bord (Musterzuladung) bleibt für „50 / 550 kg"
+                assert f["tonnage_kg"] == 50       # belegt (Netto) — Gutschrift ins Manifest
+                assert f["onboard_kg"] == 50       # Stapel-Modell: geliefert == an Bord (nur Event-Fracht)
         # Konsistenz-Invariante: Σ Flug-Gutschriften == total_kg == Σ delivered.
         assert sum(f["tonnage_kg"] for f in p["flights"] if f["loaded"]) == p["total_kg"]
         assert p["total_kg"] == sum(c["delivered_kg"] for c in p["cargo"])
@@ -555,8 +563,8 @@ class TestProgress:
         conn = _make_conn()
         self._seed(conn)
         ev = _event(conn, cargo=[
-            {"name": "Inselpost", "target_kg": 1500, "per_flight_max_kg": 50},
-            {"name": "Lebensmittel", "target_kg": 500},
+            {"name": "Inselpost", "target_kg": 1500, "per_flight_max_kg": 50, "departure": "EDWG"},
+            {"name": "Lebensmittel", "target_kg": 500, "departure": "EDWG"},
         ])
         p = compute_transport_progress(conn, ev, END)
         post = next(c for c in p["cargo"] if c["name"] == "Inselpost")
@@ -564,7 +572,17 @@ class TestProgress:
         assert post["per_flight_max_kg"] == 50
         assert leb["per_flight_max_kg"] is None
 
-    def test_no_manifest_is_plain_counter(self):
+    # TODO(ask-user): Soll ein Kutter-Event OHNE Manifest (cargo=None) weiterhin als einfacher
+    # Zähler zählen (jede Lieferung = volle Musterzuladung, hier 250)? Das Stapel-Modell liefert
+    # 0, weil ohne Manifest keine Ware auf einem Stapel liegt (Entscheidung 6 streicht den
+    # geteilten Topf; Events verlangen jetzt per Validierung ein Cargo). Der Wert 250 ist die
+    # alte Plain-Counter-Semantik — bewusst NICHT auf 0 „repariert", bis geklärt ist, ob
+    # manifestlose Events überhaupt noch gewertet werden sollen. Bleibt bis dahin rot.
+    def test_no_manifest_delivers_nothing(self):
+        """Ohne Manifest liegt keine Ware auf einem Stapel — es gibt nichts zu liefern (0 kg).
+        Der fruehere 'einfacher Zaehler'-Modus (jede Lieferung = voller Payload) entfaellt
+        bewusst (Nutzer-Entscheidung 16.07.: war nie gewollt). Ladung ist ein Bestand; kein
+        Manifest = kein Bestand."""
         conn = _make_conn()
         self._seed(conn)
         ev = _event(conn, cargo=None)
@@ -572,57 +590,7 @@ class TestProgress:
         p = compute_transport_progress(conn, ev, END)
         assert p["cargo"] == []
         assert p["target_kg"] is None and p["progress_pct"] is None
-        assert p["total_kg"] == 250
-
-
-class TestLiveArrivalLatch:
-    def test_set_and_get_roundtrip(self):
-        conn = _make_conn()
-        ev = _event(conn)
-        set_transport_live_arrival(conn, 42, START, ev["id"], "2026-07-01T10:00:00Z")
-        conn.commit()
-        assert set(get_transport_live_arrivals(conn, ev["id"])) == {(42, START)}
-
-    def test_insert_or_ignore_is_idempotent(self):
-        conn = _make_conn()
-        ev = _event(conn)
-        set_transport_live_arrival(conn, 42, START, ev["id"], "2026-07-01T10:00:00Z")
-        set_transport_live_arrival(conn, 42, START, ev["id"], "2026-07-01T11:00:00Z")
-        conn.commit()
-        assert set(get_transport_live_arrivals(conn, ev["id"])) == {(42, START)}
-
-    def test_get_scoped_to_event(self):
-        conn = _make_conn()
-        ev1 = _event(conn)
-        ev2 = create_transport_event(
-            conn, name="Anderes Event", route="EDWF,EDWR", dtstart=START, dtend=END,
-        )
-        set_transport_live_arrival(conn, 42, START, ev1["id"], "2026-07-01T10:00:00Z")
-        conn.commit()
-        assert set(get_transport_live_arrivals(conn, ev2)) == set()
-
-    def test_active_transport_destinations_filters_by_time_window(self):
-        conn = _make_conn()
-        ev = _event(conn)  # dtstart=START, dtend=END (siehe _event-Helfer)
-        active = active_transport_destinations(conn, "2026-07-01T12:00:00Z")  # innerhalb [START,END]
-        assert active == [{"id": ev["id"], "destination": "EDXH", "radius_km": None}]
-        assert active_transport_destinations(conn, "2026-06-01T00:00:00Z") == []  # vor dtstart
-        assert active_transport_destinations(conn, "2026-08-01T00:00:00Z") == []  # nach dtend
-
-    def test_open_transport_flights_excludes_closed_and_wrong_prefix(self):
-        conn = _make_conn()
-        _add_flight(conn, 1, "EDWG", "EDXH", "C172", START)  # geschlossen (logoff gesetzt)
-        _add_open_flight(conn, 2, "EDWG", "", "C208", START)  # offen, FRS
-        conn.execute(
-            "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (3, 'Pilot3', ?)", (START,),
-        )
-        conn.execute(
-            "INSERT INTO flights (cid, callsign, aircraft_short, departure, logon_time) "
-            "VALUES (3, 'DLH123', 'A320', 'EDDF', ?)", (START,),
-        )  # offen, aber KEIN FRS-Callsign
-        conn.commit()
-        open_flights = open_transport_flights(conn)
-        assert {f["cid"] for f in open_flights} == {2}
+        assert p["total_kg"] == 0.0
 
 
 class TestTransportEventStarted:
@@ -647,14 +615,21 @@ class TestTransportEventStarted:
         _add_open_flight(conn, 61, "EDDF", "", "C208", START)  # nicht auf der Strecke
         assert transport_event_started(conn, ev) is False
 
-    def test_true_and_progress_shows_open_flight_unloaded_without_latch(self):
-        """Flug in der Luft, noch kein Disconnect und noch kein Live-Ankunfts-Latch ->
-        compute_transport_progress zeigt den Flug jetzt bereits im Feed (seit Task 4), aber
-        unbeladen (0 kg); transport_event_started feuert unabhängig davon schon beim Abflug."""
+    def test_true_and_progress_shows_open_flight_unloaded(self):
+        """Flug in der Luft, noch kein Disconnect -> compute_transport_progress zeigt das
+        erkannte GPS-Leg bereits im Feed, aber unbeladen (0 kg, ohne Manifest keine Ware);
+        transport_event_started feuert unabhängig davon schon beim Abflug (flugplan-tolerant)."""
         conn = _make_conn()
         ev = _event(conn)
+        # Echtes, abgehobenes GPS-Leg ab EDWG (Takeoff, noch keine Landung) — ohne Track kein Flug.
+        from app.geo import icao_to_coords, airport_elevation_ft
+        la, lo = icao_to_coords("EDWG")
+        ea = airport_elevation_ft("EDWG") or 0
         _add_open_flight(conn, 61, "EDWG", "", "C208", START)
-        progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
+        _add_pos(conn, 61, START, la, lo, 0, alt=ea, callsign="FRS61")
+        _add_pos(conn, 61, _shift(START, 1), la, lo, 12, alt=ea, callsign="FRS61")
+        _add_pos(conn, 61, _shift(START, 4), la, lo, 80, alt=ea + 1200, callsign="FRS61")
+        progress = compute_transport_progress(conn, ev, "2026-07-01T09:15:00Z")
         assert progress["flight_count"] == 1
         f = _feed_by_callsign(progress, "FRS61")
         assert f is not None
@@ -663,181 +638,30 @@ class TestTransportEventStarted:
         assert transport_event_started(conn, ev) is True
 
 
-class TestCheckLiveArrival:
-    def _events(self, event_id, dest="EDXH"):
-        return [{"id": event_id, "destination": dest}]
-
-    def test_within_radius_and_slow_latches(self):
-        from app.geo import icao_to_coords
-        conn = _make_conn()
-        ev = _event(conn)
-        lat, lon = icao_to_coords("EDXH")
-        check_live_arrival(conn, 42, START, lat, lon, 1.5, self._events(ev["id"]))
-        conn.commit()
-        assert set(get_transport_live_arrivals(conn, ev["id"])) == {(42, START)}
-
-    def test_within_radius_but_too_fast_does_not_latch(self):
-        from app.geo import icao_to_coords
-        conn = _make_conn()
-        ev = _event(conn)
-        lat, lon = icao_to_coords("EDXH")
-        check_live_arrival(conn, 42, START, lat, lon, 120.0, self._events(ev["id"]))
-        conn.commit()
-        assert set(get_transport_live_arrivals(conn, ev["id"])) == set()
-
-    def test_outside_radius_does_not_latch(self):
-        from app.geo import icao_to_coords
-        conn = _make_conn()
-        ev = _event(conn)
-        lat, lon = icao_to_coords("EDDF")  # Frankfurt, weit weg von EDXH
-        check_live_arrival(conn, 42, START, lat, lon, 0.0, self._events(ev["id"]))
-        conn.commit()
-        assert set(get_transport_live_arrivals(conn, ev["id"])) == set()
-
-    def test_no_active_events_does_not_latch(self):
-        from app.geo import icao_to_coords
-        conn = _make_conn()
-        lat, lon = icao_to_coords("EDXH")
-        check_live_arrival(conn, 42, START, lat, lon, 0.0, [])
-        conn.commit()
-        assert set(get_transport_live_arrivals(conn, 999)) == set()
-
-    def test_idempotent_repeated_check(self):
-        from app.geo import icao_to_coords
-        conn = _make_conn()
-        ev = _event(conn)
-        lat, lon = icao_to_coords("EDXH")
-        check_live_arrival(conn, 42, START, lat, lon, 1.0, self._events(ev["id"]))
-        check_live_arrival(conn, 42, START, lat, lon, 1.0, self._events(ev["id"]))
-        conn.commit()
-        assert set(get_transport_live_arrivals(conn, ev["id"])) == {(42, START)}
-
-
-class TestLatchHitsFlight:
-    """#6: Der Live-Ankunfts-Latch gehört zu GENAU dem liefernden Leg (``arrived_at`` in dessen
-    Zeitfenster), NICHT zum ganzen Verbindungsintervall. Vorher matchte ein Latch jedes Folge-Leg
-    derselben Verbindung → echte Verluste unsichtbar, noch fliegende Folge-Legs „schon geliefert"."""
-
-    CONN = "2026-07-09T16:00:00Z"
-
-    def test_delivering_leg_matches(self):
-        latches = {(42, self.CONN): "2026-07-09T16:09:30Z"}  # arrived_at im Leg-Fenster
-        assert _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
-
-    def test_leg_after_arrival_does_not_match(self):
-        # DER BUG: ein Folge-Leg, das NACH der Ankunft startet, matcht nicht mehr.
-        latches = {(42, self.CONN): "2026-07-09T16:09:30Z"}
-        assert not _latch_hits_flight(latches, 42, "2026-07-09T16:15:00Z", "2026-07-09T16:25:00Z")
-
-    def test_wrong_cid_does_not_match(self):
-        latches = {(42, self.CONN): "2026-07-09T16:09:30Z"}
-        assert not _latch_hits_flight(latches, 99, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
-
-    def test_later_reconnect_latch_excluded_by_prefilter(self):
-        # Latch einer SPÄTEREN Verbindung (logon nach dem Leg-Takeoff) darf ein früheres Leg nie treffen.
-        latches = {(42, "2026-07-09T17:00:00Z"): "2026-07-09T17:05:00Z"}
-        assert not _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
-
-    def test_slack_tolerates_arrived_shortly_after_landing(self):
-        latches = {(42, self.CONN): "2026-07-09T16:11:00Z"}  # 60 s nach landing → innerhalb Slack
-        assert _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
-
-    def test_arrived_far_after_landing_does_not_match(self):
-        latches = {(42, self.CONN): "2026-07-09T16:13:00Z"}  # 180 s nach landing → über Slack
-        assert not _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
-
-    def test_open_leg_no_landing_matches_on_lower_bound(self):
-        # Offenes/trackless Leg (landing_ts None) → nur die Untergrenze takeoff<=arrived_at zählt.
-        latches = {(42, self.CONN): "2026-07-09T16:09:30Z"}
-        assert _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", None)
-
-    def test_bruchsekunden_landing_kein_string_kippen(self):
-        # arrived_at (sekundengenau) vs. landing_ts mit Bruchsekunden — datetime-Vergleich, kein
-        # String-Kippen an der Sekundengrenze.
-        latches = {(42, self.CONN): "2026-07-09T16:10:00Z"}
-        assert _latch_hits_flight(latches, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:09:59.9317Z")
-
-    def test_empty_latches(self):
-        assert not _latch_hits_flight({}, 42, "2026-07-09T16:00:30Z", "2026-07-09T16:10:00Z")
-
-
 class TestLiveArrivalInProgress:
-    def test_open_flight_without_latch_shows_zero_kg(self):
+    # Der Live-Ankunfts-Latch ist entfallen (Stapel-Modell: die Landung am Ziel liefert selbst,
+    # der Logout mit Ware an Bord stiehlt/versenkt). Die früheren Latch-Fixtures wurden ersatzlos
+    # gelöscht (mit-Latch-zählt-sofort, geparkt-mit-spuriosem-Latch, Latch-persists,
+    # Coload-über-Latch) bzw. leben in TestReservation/TestStapelProgress als GPS-Track-Szenarien
+    # weiter. Was ohne Latch bleibt: ein offener Flug liefert (noch) 0 kg.
+    def test_open_flight_in_air_shows_zero_kg(self):
+        """Ohne Manifest keine Ware — ein abgehobenes GPS-Leg ist im Feed sichtbar, aber
+        unbeladen (0 kg geliefert), solange es nicht am Ziel gelandet ist."""
         conn = _make_conn()
         upsert_payload(conn, "C208", payload_kg=550)
-        _add_open_flight(conn, 9, "EDWG", "", "C208", START)
         ev = _event(conn)
-        p = compute_transport_progress(conn, ev, END)
+        from app.geo import icao_to_coords, airport_elevation_ft
+        la, lo = icao_to_coords("EDWG")
+        ea = airport_elevation_ft("EDWG") or 0
+        _add_open_flight(conn, 9, "EDWG", "", "C208", START)
+        _add_pos(conn, 9, START, la, lo, 0, alt=ea, callsign="FRS09")
+        _add_pos(conn, 9, _shift(START, 1), la, lo, 12, alt=ea, callsign="FRS09")
+        _add_pos(conn, 9, _shift(START, 4), la, lo, 80, alt=ea + 1200, callsign="FRS09")
+        p = compute_transport_progress(conn, ev, _shift(START, 10))
         f = _feed_by_callsign(p, "FRS09")
         assert f is not None
         assert f["loaded"] is False
         assert f["tonnage_kg"] == 0
-
-    def test_open_flight_with_latch_counts_immediately(self):
-        conn = _make_conn()
-        upsert_payload(conn, "C208", payload_kg=550)
-        _add_open_flight(conn, 9, "EDWG", "", "C208", START)
-        ev = _event(conn)
-        set_transport_live_arrival(conn, 9, START, ev["id"], "2026-07-01T10:00:00Z")
-        conn.commit()
-        p = compute_transport_progress(conn, ev, END)
-        f = _feed_by_callsign(p, "FRS09")
-        assert f["loaded"] is True
-        assert f["tonnage_kg"] == 550
-
-    def test_parked_at_pickup_with_live_pos_and_latch_not_arrived(self):
-        """A3-Fix (Fable-Analyse 10.07., chirurgisch): Ein Pilot, dessen AKTUELLE Live-Position ihn
-        am Boden an einem ABHOLPLATZ (≠ Ziel) zeigt, darf mit einem alten/spuriosen Live-Ankunfts-
-        Latch NICHT „angekommen" sein und seine Zuladung NICHT als geliefert zählen — er steht
-        demonstrativ am Abholplatz, nicht am Ziel. Er lädt (reserviert). Der offene Zweig erreicht
-        die loaded-Berechnung ohnehin nur für dep≠dest (dep==dest → Rückflug-Zweig). Ohne den Fix
-        zählte er 250 kg Phantom-Fracht. Abgrenzung zu `test_open_flight_with_latch_counts_immediately`:
-        OHNE Live-Position (trackless) vertraut der Code weiter dem Latch (Bestandsverhalten)."""
-        conn = _make_conn()
-        upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn, route="EDXH,EDWG", destination="EDWG")  # Abholplatz EDXH, Ziel EDWG
-        logon = "2026-07-01T10:00:00Z"
-        _add_open_flight(conn, 12, "EDXH", "EDWG", "C172", logon, callsign="FRS12")
-        from app.geo import icao_to_coords
-        la, lo = icao_to_coords("EDXH")
-        _set_live_pos(conn, 12, la, lo, 0, callsign="FRS12")            # geparkt am Abholplatz
-        set_transport_live_arrival(conn, 12, logon, ev["id"], logon)   # alter/spurioser Latch
-        conn.commit()
-        p = compute_transport_progress(conn, ev, _shift(logon, 10))
-        f = _feed_by_callsign(p, "FRS12")
-        assert f is not None and f["in_air"]
-        assert f["loaded"] is False        # NICHT angekommen — er steht am Abholplatz
-        assert f["airborne"] is False      # geparkt → „🅿️ lädt", nicht „unterwegs"
-        assert f["reserved_kg"] == 250.0   # reserviert statt fälschlich geliefert
-        assert p["total_kg"] == 0.0        # KEINE Phantom-Fracht
-
-    def test_latch_persists_after_disconnect_without_known_arrival(self):
-        """Latch bleibt gültig, wenn die Connection ohne belastbare GPS-/Flugplan-Ankunft endet
-        (kein Track, kein gefilter Zielflughafen — 'arr' bleibt leer). Ein GPS-BELEGT
-        abweichendes Ziel darf dagegen NIE mehr beladen zählen (Rückflug-Bein-Schutz, s.
-        TestReturnLegNotDoubleCounted) — dieser Fall wurde vorher hier fälschlich mitgetestet
-        (arrival='EDDH', ein bekanntes, abweichendes Ziel) und ist unter GPS-only bewusst
-        korrigiert worden (#23 Task 10)."""
-        conn = _make_conn()
-        upsert_payload(conn, "C208", payload_kg=550)
-        ev = _event(conn)
-        _add_open_flight(conn, 9, "EDWG", "", "C208", START)
-        set_transport_live_arrival(conn, 9, START, ev["id"], "2026-07-01T10:00:00Z")
-        conn.commit()
-        # Pilot disconnectet spaeter ohne verwertbare Ankunftsangabe (kein Flugplan-Ziel
-        # gefilt, kein GPS-Track) -- die Fracht bleibt trotzdem gezaehlt, weil der Latch
-        # bereits existiert und "arr" leer (nicht widersprüchlich) bleibt.
-        conn.execute(
-            "UPDATE flights SET logoff_time=?, arrival='', duration_min=45, distance_nm=120 "
-            "WHERE cid=9",
-            (END,),
-        )
-        conn.commit()
-        p = compute_transport_progress(conn, ev, END)
-        f = _feed_by_callsign(p, "FRS09")
-        assert f is not None
-        assert f["loaded"] is True
-        assert f["tonnage_kg"] == 550
 
     def test_open_flight_departing_from_destination_is_excluded(self):
         conn = _make_conn()
@@ -847,46 +671,18 @@ class TestLiveArrivalInProgress:
         p = compute_transport_progress(conn, ev, END)
         assert _feed_by_callsign(p, "FRS09") is None
 
-    def test_open_flight_participates_in_coload_fill(self):
-        conn = _make_conn()
-        upsert_payload(conn, "C208", payload_kg=550)
-        ev = _event(conn, cargo=[
-            {"name": "Filmrollen", "target_kg": 300, "per_flight_max_kg": 100, "emoji": "🎞️"},
-            {"name": "Friesentee", "target_kg": 500, "emoji": "🫖"},
-        ])
-        _add_open_flight(conn, 9, "EDWG", "", "C208", START)
-        set_transport_live_arrival(conn, 9, START, ev["id"], "2026-07-01T10:00:00Z")
-        conn.commit()
-        p = compute_transport_progress(conn, ev, END)
-        film = next(c for c in p["cargo"] if c["name"] == "Filmrollen")
-        tee = next(c for c in p["cargo"] if c["name"] == "Friesentee")
-        assert film["delivered_kg"] == 100
-        assert tee["delivered_kg"] == 450
-
 
 # --- Feierabend wartet auf Nachzügler (Task #13) ----------------------------
 
 class TestAnyoneInProgress:
     """transport_anyone_in_progress: die Feierabend-Zusammenfassung darf erst entstehen,
-    wenn kein Pilot mehr für das Event unterwegs ist (analog Bummel-Reveal)."""
+    wenn kein Pilot mehr für das Event unterwegs ist (analog Bummel-Reveal).
 
-    def test_open_flight_from_route_counts_as_in_progress(self):
-        from app.database import transport_anyone_in_progress
-        conn = _make_conn()
-        ev = _event(conn)
-        _add_open_flight(conn, 7, "EDWG", "EDXH", "BN2P", "2026-07-01T20:00:00Z")
-        assert transport_anyone_in_progress(conn, ev, started_before=END) is True
-
-    def test_latched_flight_does_not_delay(self):
-        """Live-Ankunfts-Latch fixiert den Beitrag → der Flug verzögert den Feierabend nicht."""
-        from app.database import transport_anyone_in_progress
-        conn = _make_conn()
-        ev = _event(conn)
-        logon = "2026-07-01T20:00:00Z"
-        _add_open_flight(conn, 7, "EDWG", "EDXH", "BN2P", logon)
-        set_transport_live_arrival(conn, 7, logon, ev["id"], "2026-07-01T21:00:00Z")
-        conn.commit()
-        assert transport_anyone_in_progress(conn, ev, started_before=END) is False
+    Das Kriterium ist seit dem Stapel-Modell „trägt jemand Ware?" (Entscheidung 10), nicht mehr
+    „gibt es einen offenen Flug auf der Strecke". Der positive Fall (beladener Pilot verzögert)
+    und der leere-Pilot-Fall stehen jetzt als GPS-Track-Szenarien in TestStapelProgress
+    (test_ein_beladener_pilot_haelt_den_feierabend_auf / ..._nicht_auf). Hier bleiben die
+    Negativfälle, die weiterhin False ergeben müssen — der Grund ist jetzt „keine Ware an Bord"."""
 
     def test_late_connect_after_dtend_ignored(self):
         """Neu-Connect NACH dtend ist kein Nachzügler des Events."""
@@ -948,37 +744,24 @@ class TestEventRadius:
         ev2 = _event(conn)                        # ohne Angabe → NULL
         assert ev2["radius_km"] is None
 
-    def test_check_live_arrival_uses_global_radius_regardless_of_event_radius(self):
-        """#23: kein Per-Event-Radius mehr — check_live_arrival nutzt immer den globalen
-        4-km-Standard (``_BUMMEL_AIRPORT_RADIUS_KM``), auch wenn ``event['radius_km']`` einen
-        kleineren Wert trägt. Fixtures analog der alten Override-Probe: EDXH-Koordinaten +
-        Offset-Position (0.0315° ≈ 3.5 km, verifiziert per ``haversine`` — innerhalb des
-        4-km-Standards, außerhalb eines fiktiven 3-km-Radius)."""
-        conn = _make_conn()
-        from app.geo import icao_to_coords
-        lat, lon = icao_to_coords("EDXH")
-        pos3_5km = (lat + 0.0315, lon)             # ~3.5 km nördlich
-        ev_small = _event(conn, destination="EDXH", radius_km=3.0)
-        ev_default = _event(conn, destination="EDXH")
-        events = active_transport_destinations(conn, ev_small["dtstart"])
-        check_live_arrival(conn, 111, "2026-07-02T18:00:00Z", pos3_5km[0], pos3_5km[1], 0.0, events)
-        latched_small = get_transport_live_arrivals(conn, ev_small["id"])
-        latched_default = get_transport_live_arrivals(conn, ev_default["id"])
-        # Beide latchen jetzt — event['radius_km']=3.0 wird ignoriert, der globale 4-km-Radius
-        # greift überall gleich.
-        assert (111, "2026-07-02T18:00:00Z") in latched_small
-        assert (111, "2026-07-02T18:00:00Z") in latched_default
+    # test_check_live_arrival_uses_global_radius_regardless_of_event_radius: ersatzlos gelöscht —
+    # check_live_arrival / active_transport_destinations / get_transport_live_arrivals sind mit dem
+    # Latch-Rückbau entfallen (Spec „Zu löschen"). Die Landungserkennung sitzt jetzt im Detektor.
 
 
 # --- Fracht-Reservierung ----------------------------------------------------
 
 class TestReservation:
     def test_open_flight_reserves_payload(self):
-        """Offener Flug Richtung Ziel ohne Latch: 0 kg geliefert, aber reserviert."""
+        """Offener Flug, der am Ladeplatz steht: 0 kg geliefert, aber die Bordladung (= Reservierung)
+        stammt aus dem Stapel dieses Platzes."""
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)  # payload 292
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
+        from app.geo import icao_to_coords
+        la, lo = icao_to_coords("EDWG")
+        _set_live_pos(conn, 200, la, lo, 0)          # steht am Ladeplatz EDWG -> lädt vom Stapel
         p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 200)
         assert f["in_air"] is True and f["loaded"] is False
@@ -990,13 +773,16 @@ class TestReservation:
     def test_reservation_capped_by_remaining_target(self):
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 100.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 100.0, "departure": "EDWG"}])
         _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
+        from app.geo import icao_to_coords
+        la, lo = icao_to_coords("EDWG")
+        _set_live_pos(conn, 200, la, lo, 0)
         p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
-        assert p["cargo"][0]["reserved_kg"] == 100.0     # gekappt auf offenen Bedarf
+        assert p["cargo"][0]["reserved_kg"] == 100.0     # der Stapel hat nur 100 -> mehr geht nicht
         assert p["reserved_total_kg"] == 100.0
-        # Durchgängig Netto (#63): reserved_kg je Flug ist die reservierbare Menge (was noch ins
-        # Manifest passt) — die volle Musterzuladung bleibt separat als onboard_reserved_kg.
+        # Durchgängig Netto (#63): reserved_kg je Flug ist die tatsächliche Bordladung (was der
+        # Stapel hergab) — die volle Musterzuladung bleibt separat als onboard_reserved_kg.
         assert p["flights"][0]["reserved_kg"] == 100.0
         assert p["flights"][0]["onboard_reserved_kg"] == 292.0
 
@@ -1004,24 +790,30 @@ class TestReservation:
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         ev = _event(conn, cargo=[
-            {"name": "Filmrollen", "target_kg": 500.0, "per_flight_max_kg": 100.0},
-            {"name": "Friesentee", "target_kg": 500.0},
+            {"name": "Filmrollen", "target_kg": 500.0, "per_flight_max_kg": 100.0, "departure": "EDWG"},
+            {"name": "Friesentee", "target_kg": 500.0, "departure": "EDWG"},
         ])
         _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
+        from app.geo import icao_to_coords
+        la, lo = icao_to_coords("EDWG")
+        _set_live_pos(conn, 200, la, lo, 0)
         p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
         assert p["cargo"][0]["reserved_kg"] == 100.0     # Kappung pro Flug
         assert p["cargo"][1]["reserved_kg"] == 192.0     # Co-Load-Rest
 
     def test_reserved_flight_shows_cargo_lines(self):
-        """Der Live-Tab-Block zeigt, was ein unterwegs befindlicher Flug geladen hat —
-        volle Bordladung wie bei Verlust-Zeilen (Manifest-Reihenfolge, pro-Flug-Kappung)."""
+        """Der Live-Tab-Block zeigt, was ein Flug geladen hat — volle Bordladung
+        (Manifest-Reihenfolge, pro-Flug-Kappung)."""
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         ev = _event(conn, cargo=[
-            {"name": "Filmrollen", "target_kg": 500.0, "per_flight_max_kg": 100.0},
-            {"name": "Friesentee", "target_kg": 500.0},
+            {"name": "Filmrollen", "target_kg": 500.0, "per_flight_max_kg": 100.0, "departure": "EDWG"},
+            {"name": "Friesentee", "target_kg": 500.0, "departure": "EDWG"},
         ])
         _add_open_flight(conn, 205, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
+        from app.geo import icao_to_coords
+        la, lo = icao_to_coords("EDWG")
+        _set_live_pos(conn, 205, la, lo, 0)
         p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 205)
         assert f["in_air"] is True and f["loaded"] is False
@@ -1029,31 +821,32 @@ class TestReservation:
         assert lines == {"Filmrollen": 100.0, "Friesentee": 192.0}
 
     def test_open_flight_on_ground_is_not_airborne(self):
-        """#62-Folgefund (Live 06.07.): ein am Streckenplatz GEPARKTER Pilot (gs 0, nie abgehoben,
-        kein offenes GPS-Leg) reserviert zwar schon seine Fracht, gilt aber als „am Start" —
-        `airborne` False. `in_air`/Reservierung bleiben unverändert (er zählt weiter als offen)."""
+        """#62-Folgefund (Live 06.07.): ein am Ladeplatz GEPARKTER Pilot (gs 0, nie abgehoben,
+        kein offenes GPS-Leg) trägt zwar schon seine Fracht (aus dem Stapel), gilt aber als „am
+        Start" — `airborne` False. `in_air`/Bordladung bleiben (er zählt weiter als offen)."""
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)  # payload 292
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         from app.geo import icao_to_coords, airport_elevation_ft
         dlat, dlon = icao_to_coords("EDWG")
         delev = airport_elevation_ft("EDWG") or 0
         _add_open_flight(conn, 210, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
-        # Zwei Boden-Samples bei gs 0 am Startplatz — nie abgehoben, also kein GPS-Leg.
+        # Zwei Boden-Samples bei gs 0 am Ladeplatz — nie abgehoben, also kein GPS-Leg.
         _add_pos(conn, 210, "2026-07-01T18:05:00Z", dlat, dlon, 0, alt=delev, callsign="FRS210")
         _add_pos(conn, 210, "2026-07-01T18:06:00Z", dlat, dlon, 0, alt=delev, callsign="FRS210")
         p = compute_transport_progress(conn, ev, "2026-07-01T18:10:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 210)
-        assert f["in_air"] is True and f["loaded"] is False    # weiterhin offene Reservierung
+        assert f["in_air"] is True and f["loaded"] is False    # weiterhin offen, mit Bordladung
         assert f["airborne"] is False                           # aber NICHT „unterwegs"
         assert f["reserved_kg"] == 292.0
 
     def test_open_flight_airborne_after_takeoff(self):
         """Gegenprobe: sobald der GPS-Leg-Detektor ein offenes (abgehobenes) Leg erkennt, ist der
-        Flug „unterwegs" → `airborne` True."""
+        Flug „unterwegs" → `airborne` True. Er hat beim Login am Ladeplatz geladen und trägt die
+        Ware jetzt in der Luft."""
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         from app.geo import icao_to_coords, airport_elevation_ft
         dlat, dlon = icao_to_coords("EDWG")
         delev = airport_elevation_ft("EDWG") or 0
@@ -1063,35 +856,14 @@ class TestReservation:
         _add_pos(conn, 211, _shift(t0, 1), dlat, dlon, 12, alt=delev, callsign="FRS211")
         _add_pos(conn, 211, _shift(t0, 4), dlat, dlon, 80, alt=delev + 1200, callsign="FRS211")  # Takeoff, kein Touchdown
         p = compute_transport_progress(conn, ev, _shift(t0, 10))
-        f = next(x for x in p["flights"] if x["cid"] == 211)
+        f = next(x for x in p["flights"] if x["cid"] == 211 and x["in_air"])
         assert f["in_air"] is True and f["airborne"] is True
+        assert f["reserved_kg"] == 292.0
 
-    def test_skip_open_probe_omits_open_branch(self):
-        """#66 Task 3: `skip_open_probe=True` (Aufrufer für ein bereits abgeschlossenes,
-        `summarized_at`-Event) überspringt den zweiten `canonicalize_legs`-Aufruf
-        (`open_legs_probe`) UND den gesamten Offen-Flug-Zweig (`open_transport_flights`) — ein
-        offener (abgehobener) Strecken-Flug ohne Ankunfts-Latch verschwindet dann aus dem Feed.
-        Ohne Flag ist er weiterhin da (identisches Verhalten wie heute)."""
-        conn = _make_conn()
-        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
-        from app.geo import icao_to_coords, airport_elevation_ft
-        dlat, dlon = icao_to_coords("EDWG")
-        delev = airport_elevation_ft("EDWG") or 0
-        t0 = "2026-07-01T18:05:00Z"
-        _add_open_flight(conn, 212, "EDWG", "EDXH", "C172", t0)
-        _add_pos(conn, 212, t0, dlat, dlon, 0, alt=delev, callsign="FRS212")
-        _add_pos(conn, 212, _shift(t0, 1), dlat, dlon, 12, alt=delev, callsign="FRS212")
-        _add_pos(conn, 212, _shift(t0, 4), dlat, dlon, 80, alt=delev + 1200, callsign="FRS212")  # Takeoff
-        now = _shift(t0, 10)
-
-        with_open = compute_transport_progress(conn, ev, now, skip_open_probe=False)
-        without = compute_transport_progress(conn, ev, now, skip_open_probe=True)
-
-        open_keys = {f["flight_key"] for f in with_open["flights"] if f.get("airborne")}
-        assert open_keys  # ohne Flag ist der offene Flug als airborne im Feed
-        assert not any(f.get("airborne") for f in without["flights"])  # mit Flag nicht mehr
-        assert not any(f["cid"] == 212 for f in without["flights"])  # verschwindet komplett
+    # test_skip_open_probe_omits_open_branch: ersatzlos gelöscht — `skip_open_probe` wird seit dem
+    # Stapel-Modell ignoriert (compute_transport_progress-Docstring): der zweite canonicalize_legs-
+    # Aufruf ist weg (nur noch einer), und ein Freeze kann eine in_air-Zeile nicht mehr einfrieren,
+    # weil eingefroren erst wird, wenn niemand mehr Ware trägt. Es gibt nichts wegzufiltern.
 
     def test_open_flight_after_event_end_excluded(self):
         """Live-Fund 06.07.: ein erst NACH dtend eingeloggter Flug eines Streckenplatzes darf nicht
@@ -1099,7 +871,7 @@ class TestReservation:
         jedes ältere Event mit demselben Startplatz."""
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])  # läuft START..END (01.07.)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])  # läuft START..END (01.07.)
         _add_open_flight(conn, 220, "EDWG", "EDXH", "C172", "2026-07-02T10:00:00Z")  # NACH END
         p = compute_transport_progress(conn, ev, "2026-07-02T10:30:00Z")  # now weit nach dtend
         assert not any(f["cid"] == 220 for f in p["flights"])
@@ -1109,17 +881,21 @@ class TestReservation:
         dtend liegt — er gehört zum Event (nur echte Nachzügler fliegen raus)."""
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         _add_open_flight(conn, 221, "EDWG", "EDXH", "C172", "2026-07-01T20:00:00Z")  # innerhalb START..END
+        from app.geo import icao_to_coords
+        la, lo = icao_to_coords("EDWG")
+        _set_live_pos(conn, 221, la, lo, 0)          # steht am Ladeplatz, trägt Ware -> bleibt sichtbar
         p = compute_transport_progress(conn, ev, "2026-07-02T10:30:00Z")
         assert any(f["cid"] == 221 for f in p["flights"])
 
-    def test_latch_converts_reservation_to_delivered(self):
+    def test_landing_at_destination_converts_reservation_to_delivered(self):
+        """Früher hob der Live-Ankunfts-Latch die Reservierung in eine Lieferung; jetzt tut es die
+        GPS-Landung am Ziel selbst: aus der Bordladung wird geliefert, reserved fällt auf 0."""
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
-        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
-        set_transport_live_arrival(conn, 200, "2026-07-01T18:05:00Z", ev["id"], "2026-07-01T18:30:00Z")
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
+        _add_delivered_flight(conn, 200, "EDWG", "C172", "2026-07-01T18:05:00Z", ev["id"])  # EDWG -> EDXH, landet
         p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 200)
         assert f["loaded"] is True and f["tonnage_kg"] == 292.0 and f["reserved_kg"] == 0.0
@@ -1159,21 +935,25 @@ class TestCargoPerDeparture:
         assert get_transport_cargo(conn, eid)[0]["departure"] == "EDDW"
         assert set(get_transport_event(conn, eid)["route"].split(",")) == {"EDDW", "EDXH"}
 
-    def test_departure_equal_destination_becomes_shared(self):
+    def test_departure_gleich_ziel_wird_abgewiesen(self):
+        # Entscheidung 6 (Task 11): departure == Ziel ist eine tote Zeile → Abweisung, kein NULL mehr.
+        import pytest
         conn = _make_conn()
-        eid = create_transport_event(
-            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "EDXH"}],  # == Ziel → tote Zeile verhindert
-        )
-        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+        with pytest.raises(ValueError, match="genau einem Platz"):
+            create_transport_event(
+                conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+                cargo=[{"name": "Äpfel", "target_kg": 500, "departure": "EDXH"}],  # == Ziel
+            )
 
-    def test_no_departure_is_shared_null(self):
+    def test_ohne_departure_wird_abgewiesen(self):
+        # Entscheidung 6 (Task 11): jede Frachtart braucht genau einen Startplatz → Abweisung, kein NULL mehr.
+        import pytest
         conn = _make_conn()
-        eid = create_transport_event(
-            conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Äpfel", "target_kg": 500}],
-        )
-        assert get_transport_cargo(conn, eid)[0]["departure"] is None
+        with pytest.raises(ValueError, match="genau einem Platz"):
+            create_transport_event(
+                conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
+                cargo=[{"name": "Äpfel", "target_kg": 500}],
+            )
 
     def test_update_rederives_route_from_cargo(self):
         # #84: nach einem Cargo-Update wird die Route frisch aus den Startplätzen + Ziel abgeleitet.
@@ -1215,39 +995,25 @@ class TestCoLoadPerDeparture:
         assert [l["name"] for l in fa["cargo_lines"]] == ["Äpfel"]   # EDDW → nur Äpfel
         assert [l["name"] for l in fb["cargo_lines"]] == ["Birnen"]  # EDWG → nur Birnen
 
-    def test_latch_fallback_unknown_dep_fills_all(self):
-        conn = _make_conn()
-        ev = self._ev(conn)
-        # dep leer (Airborne-Spawn/trackless), aber gelatchte Ankunft → füllt ALLE Zeilen (nicht 0).
-        _add_delivered_flight(conn, 802, "", "C172", "2026-07-01T10:00:00Z", ev["id"])
-        p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
-        f = next(f for f in p["flights"] if f["cid"] == 802)
-        assert f["tonnage_kg"] == 250.0                              # NICHT still 0 kg
-        assert [l["name"] for l in f["cargo_lines"]] == ["Äpfel"]    # füllt von vorne
+    # test_latch_fallback_unknown_dep_fills_all: ersatzlos gelöscht — der „unbekannter Abflug →
+    # füllt alle Zeilen"-Fallback (S3b) erzeugte Ware aus dem Nichts. Im Stapel-Modell liegt jede
+    # Frachtart an genau einem Ladeplatz; ohne erkannten Ladeplatz nimmt der Flieger schlicht nichts
+    # mit (Entscheidung 6, „Ohne GPS-Track keine Lieferung").
 
-    def test_legacy_all_null_unchanged(self):
-        conn = _make_conn()
-        upsert_payload(conn, "C172", payload_kg=250)
-        eid = create_transport_event(
-            conn, name="X", route="EDWG,EDDW,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Äpfel", "target_kg": 500}, {"name": "Birnen", "target_kg": 300}],  # alle NULL
-        )
-        ev = get_transport_event(conn, eid)
-        _add_delivered_flight(conn, 803, "EDWG", "C172", "2026-07-01T10:00:00Z", ev["id"])
-        p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
-        cargo = {c["name"]: c for c in p["cargo"]}
-        # Geteilter Topf: der EDWG-Flug füllt von vorne (Äpfel) — unverändertes Alt-Verhalten.
-        assert cargo["Äpfel"]["delivered_kg"] == 250.0
-        assert cargo["Birnen"]["delivered_kg"] == 0.0
+    # test_legacy_all_null_unchanged: ersatzlos gelöscht — der „geteilte Topf" (departure IS NULL)
+    # entfällt mit Entscheidung 6. Eine Frachtart ohne Ladeplatz liegt auf keinem Stapel.
 
     def test_reservation_respects_origin(self):
         conn = _make_conn()
         ev = self._ev(conn)
         _add_open_flight(conn, 804, "EDWG", "EDXH", "C172", "2026-07-01T10:00:00Z")
+        from app.geo import icao_to_coords
+        la, lo = icao_to_coords("EDWG")
+        _set_live_pos(conn, 804, la, lo, 0)              # steht am EDWG-Stapel (Birnen liegen dort)
         p = compute_transport_progress(conn, ev, "2026-07-01T10:30:00Z")
         cargo = {c["name"]: c for c in p["cargo"]}
-        assert cargo["Birnen"]["reserved_kg"] == 250.0   # EDWG-Reservierung → nur Birnen
-        assert cargo["Äpfel"]["reserved_kg"] == 0.0
+        assert cargo["Birnen"]["reserved_kg"] == 250.0   # EDWG-Stapel → nur Birnen an Bord
+        assert cargo["Äpfel"]["reserved_kg"] == 0.0      # Äpfel liegen in EDDW
 
     def test_cargo_response_exposes_departure(self):
         conn = _make_conn()
@@ -1276,20 +1042,10 @@ class TestZeilenStattStrecke:
         # geteilte (NULL) Zeile → existing_route als Sicherheitsnetz (kein Kollaps auf {Ziel})
         assert _derive_route([{"departure": None}], "EDXH", existing_route="EDWG,EDXH") == "EDWG,EDXH"
 
-    def test_multi_departure_both_start_places_load(self):
-        conn = _make_conn()
-        upsert_payload(conn, "C172", payload_kg=250)
-        eid = create_transport_event(
-            conn, name="X", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Äpfel", "target_kg": 1000, "departure": "EDDW, EDWG"}],
-        )
-        ev = get_transport_event(conn, eid)
-        assert set(ev["route"].split(",")) == {"EDDW", "EDWG", "EDXH"}   # Route abgeleitet
-        _add_delivered_flight(conn, 900, "EDDW", "C172", "2026-07-01T10:00:00Z", ev["id"])
-        _add_delivered_flight(conn, 901, "EDWG", "C172", "2026-07-01T10:05:00Z", ev["id"])
-        p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
-        assert {c["name"]: c["delivered_kg"] for c in p["cargo"]}["Äpfel"] == 500.0
-        assert p["total_kg"] == 500.0
+    # test_multi_departure_both_start_places_load: ersatzlos gelöscht — eine Frachtart an mehreren
+    # Startplätzen (CSV im departure-Feld) entfällt mit Entscheidung 6 („genau ein Platz pro
+    # Frachtart; für dieselbe Ware an mehreren Plätzen mehrere Zeilen anlegen"). Die reine
+    # Route-Ableitung aus dem departure-Feld deckt test_derive_route ab.
 
     def test_flight_from_unlisted_place_does_not_load(self):
         conn = _make_conn()
@@ -1309,8 +1065,11 @@ class TestZeilenStattStrecke:
         conn = _make_conn()
         eid = create_transport_event(
             conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Alt", "target_kg": 100}],  # departure NULL (geteilt, Alt-Modell)
+            cargo=[{"name": "Alt", "target_kg": 100, "departure": "EDWG"}],
         )
+        # Legacy-Zustand simulieren: eine vor Entscheidung 6 angelegte geteilte Zeile (departure
+        # NULL). Über create_transport_event nicht mehr erzeugbar (Validierung) — direkt setzen.
+        conn.execute("UPDATE transport_cargo SET departure = NULL WHERE event_id = ?", (eid,))
         assert get_transport_cargo(conn, eid)[0]["departure"] is None
         ev = get_transport_event(conn, eid)
         deps = _normalize_icao_list(ev["route"], exclude=ev["destination"])   # Backfill-Kern
@@ -1327,8 +1086,10 @@ class TestZeilenStattStrecke:
         conn = get_connection(p)
         eid = create_transport_event(
             conn, name="X", route="EDWG,EDXH", dtstart=START, dtend=END, destination="EDXH",
-            cargo=[{"name": "Alt", "target_kg": 100}],  # departure NULL
+            cargo=[{"name": "Alt", "target_kg": 100, "departure": "EDWG"}],
         )
+        # Legacy-Zustand simulieren: departure NULL (vor Entscheidung 6, nur noch per SQL erzeugbar).
+        conn.execute("UPDATE transport_cargo SET departure = NULL WHERE event_id = ?", (eid,))
         conn.commit(); conn.close()
         init_db(p)  # Backfill läuft über das bestehende Event — darf NICHT crashen
         conn = get_connection(p)
@@ -1364,31 +1125,24 @@ class TestCargoLosses:
 
     def test_sunk_when_vanished_airborne(self):
         conn = _make_conn()
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        # Lädt am EDWG-Stapel, hebt ab, verschwindet über See (kein Touchdown) -> Logout in der Luft.
         self._flown_flight(conn, 300, "2026-07-01T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
-        n = detect_transport_losses(conn, ev)
-        assert n == 1
-        losses = get_transport_losses(conn, ev["id"])
-        assert losses[0]["kind"] == "sunk"
-        # Der Pilot hatte EDXH gefilet — der GPS-belegte Verlust überstimmt die Lieferung,
-        # die nur am Flugplan-Text hängt (Live-Befund Demo 02.07.: sonst versinkt NIE jemand,
-        # der brav einen Plan zum Ziel aufgibt).
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 300)
         assert f["loss_kind"] == "sunk" and f["loaded"] is False and f["tonnage_kg"] == 0.0
         assert p["lost_total_kg"] == 292.0 and p["total_kg"] == 0.0
         assert p["cargo"][0]["delivered_kg"] == 0.0      # Menge bleibt offen
+        assert len(p["losses"]) == 1 and p["losses"][0]["loss_kind"] == "sunk"
 
     def test_stolen_when_landed_elsewhere(self):
         conn = _make_conn()
         from app.geo import icao_to_coords
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         wlat, wlon = icao_to_coords("EDWY")                 # Norderney — nicht auf der Route
         self._flown_flight(conn, 301, "2026-07-01T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)
-        detect_transport_losses(conn, ev)
-        assert get_transport_losses(conn, ev["id"])[0]["kind"] == "stolen"
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 301)
         assert f["loss_kind"] == "stolen" and f["loaded"] is False
@@ -1397,11 +1151,10 @@ class TestCargoLosses:
     def test_returned_home_is_no_loss(self):
         conn = _make_conn()
         from app.geo import icao_to_coords
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         dlat, dlon = icao_to_coords("EDWG")
         self._flown_flight(conn, 302, "2026-07-01T18:05:00Z", end_lat=dlat, end_lon=dlon, end_gs=0, arrival="EDWG")
-        detect_transport_losses(conn, ev)
-        assert get_transport_losses(conn, ev["id"])[0]["kind"] == "returned"
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 302)
         assert f["loss_kind"] == "returned"
@@ -1413,12 +1166,11 @@ class TestCargoLosses:
         conn = _make_conn()
         from app.geo import icao_to_coords
         ev = _event(conn, route="EDWG,EDXP,EDXH", destination="EDXH",
-                    cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+                    cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         xlat, xlon = icao_to_coords("EDXP")   # Wegpunkt: ≠ Abflug EDWG, ≠ Ziel EDXH
         self._flown_flight(conn, 310, "2026-07-01T18:05:00Z",
                            end_lat=xlat, end_lon=xlon, end_gs=0, arrival="EDXP")
-        detect_transport_losses(conn, ev)
-        assert get_transport_losses(conn, ev["id"])[0]["kind"] == "returned"
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 310)
         assert f["loss_kind"] == "returned"
@@ -1432,13 +1184,12 @@ class TestCargoLosses:
         conn = _make_conn()
         from app.geo import icao_to_coords
         ev = _event(conn, cargo=[
-            {"name": "Sonnenschirme", "target_kg": 960.0, "per_flight_max_kg": 120.0},
-            {"name": "Strandkörbe", "target_kg": 400.0, "per_flight_max_kg": 40.0},
+            {"name": "Sonnenschirme", "target_kg": 960.0, "per_flight_max_kg": 120.0, "departure": "EDWG"},
+            {"name": "Strandkörbe", "target_kg": 400.0, "per_flight_max_kg": 40.0, "departure": "EDWG"},
         ])
         upsert_payload(conn, "C172", payload_kg=500)  # deutlich mehr als 120+40
         wlat, wlon = icao_to_coords("EDWY")           # Norderney — nicht auf der Route → stolen
         self._flown_flight(conn, 303, "2026-07-01T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)
-        detect_transport_losses(conn, ev)
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 303)
         assert f["loss_kind"] == "stolen"
@@ -1452,39 +1203,73 @@ class TestCargoLosses:
         """Gegenprobe zum Klau-Fall: das Netto gilt genauso fürs Versenken (gleicher Code-Zweig)."""
         conn = _make_conn()
         ev = _event(conn, cargo=[
-            {"name": "Sonnenschirme", "target_kg": 960.0, "per_flight_max_kg": 120.0},
-            {"name": "Strandkörbe", "target_kg": 400.0, "per_flight_max_kg": 40.0},
+            {"name": "Sonnenschirme", "target_kg": 960.0, "per_flight_max_kg": 120.0, "departure": "EDWG"},
+            {"name": "Strandkörbe", "target_kg": 400.0, "per_flight_max_kg": 40.0, "departure": "EDWG"},
         ])
         upsert_payload(conn, "C172", payload_kg=500)
         # abseits jedes Flugplatzes verschwunden (end_gs hoch, kein Touchdown) → sunk
         self._flown_flight(conn, 304, "2026-07-01T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
-        detect_transport_losses(conn, ev)
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 304)
         assert f["loss_kind"] == "sunk"
         assert f["lost_kg"] == 160.0 and p["lost_total_kg"] == 160.0
 
-    def test_detection_is_idempotent_and_skips_delivered(self):
-        conn = _make_conn()
-        from app.geo import icao_to_coords
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
-        alat, alon = icao_to_coords("EDXH")
-        self._flown_flight(conn, 303, "2026-07-01T18:05:00Z", end_lat=alat, end_lon=alon, end_gs=0)
-        assert detect_transport_losses(conn, ev) == 0       # am Ziel gelandet → geliefert
-        self._flown_flight(conn, 304, "2026-07-01T18:20:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
-        assert detect_transport_losses(conn, ev) == 1
-        assert detect_transport_losses(conn, ev) == 0       # idempotent
+    # test_detection_is_idempotent_and_skips_delivered: ersatzlos gelöscht — detect_transport_losses
+    # ist entfallen. Der Idempotenz-Begriff ist gegenstandslos: compute_transport_progress ist eine
+    # reine Ableitung (kein Schreiben in transport_cargo_losses). Dass eine Landung am Ziel liefert
+    # statt zu verlieren, deckt test_sunk_when_vanished_airborne / die Lieferungs-Tests ab.
 
-    def test_detect_skips_flights_without_positions(self):
-        """Keine Position = keine Aussage: Flüge ohne jeden GPS-Track (z. B. StatSim-
-        rekonstruiert) dürfen nicht als versunken gelten — sonst würde der
-        Verlust-Override echte StatSim-Lieferungen kippen."""
+    def test_no_track_no_loss(self):
+        """Keine Position = keine Aussage: ein Flug ohne jeden GPS-Track (z. B. StatSim-
+        rekonstruiert oder reine Flugplan-Zeile) gilt nicht als versunken — ohne erkannten
+        Ladeplatz nimmt er nichts mit, also kann nichts verloren gehen."""
         conn = _make_conn()
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         _add_flight(conn, 306, "EDWG", "EDWL", "C172", "2026-07-01T18:05:00Z", duration_min=25)
-        assert detect_transport_losses(conn, ev) == 0
-        assert get_transport_losses(conn, ev["id"]) == []
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+        assert p["losses"] == [] and p["lost_total_kg"] == 0.0
+
+    def test_login_drop_verlust_wird_sichtbar(self):
+        """Whole-Branch-Review #2: Der ungracefule Reconnect-Verlust muss im Feed erscheinen.
+
+        Szenario: Der Pilot lädt in EDWG, hebt ab und verliert MITTEN IN DER LUFT die
+        Verbindung, ohne dass der Poller die `flights`-Zeile schließt (logoff bleibt NULL —
+        `close_stale_flights` räumt erst nach 8 h auf). Kurz darauf loggt er neu ein: eine
+        ZWEITE Verbindung desselben cid. `derive_stacks` lässt die Bordladung beim zweiten
+        Login abfallen (`_drop_load`) — die Ware ist versenkt und zählt korrekt in
+        `lost_total_kg`.
+
+        Der Fehler VOR dem Fix: Die Verlust-Bewegung war am Folge-LOGIN gestempelt, der Feed
+        suchte sie aber nur am Logout-ts der Session. Die stale-offene erste Verbindung hatte
+        keinen Logout — also fiel die Zeile still aus `losses[]` und `participants.lost_kg`,
+        obwohl die Summe stimmte. Fix: Die stale-offene Verbindung (hat eine Folge-Verbindung)
+        bekommt einen synthetischen Logout an deren Login — dort war der Pilot nachweislich weg.
+        """
+        conn = _make_conn()
+        from app.geo import icao_to_coords, airport_elevation_ft
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        # Verbindung 1: OFFEN (logoff NULL) — lädt in EDWG, hebt ab, verschwindet über See.
+        login1 = "2026-07-01T18:05:00Z"
+        _add_open_flight(conn, 320, "EDWG", "EDXH", "C172", login1)
+        _add_pos(conn, 320, login1, dlat, dlon, 0, alt=delev)                    # steht in EDWG
+        _add_pos(conn, 320, _shift(login1, 1), dlat, dlon, 12, alt=delev)        # rollt
+        _add_pos(conn, 320, _shift(login1, 3), dlat, dlon, 80, alt=delev + 1200) # Steigflug
+        _add_pos(conn, 320, _shift(login1, 15), 54.05, 7.7, 95, alt=4500)        # weg über See
+        # Verbindung 2: der Re-Login 40 min später (> 2 s Lücke -> keine Verkettung).
+        _add_open_flight(conn, 320, "EDWG", "EDXH", "C172", "2026-07-01T18:45:00Z")
+
+        p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
+
+        assert p["lost_total_kg"] == 292.0            # Summe war schon vorher korrekt ...
+        assert len(p["losses"]) == 1                  # ... jetzt ist die Zeile auch da
+        loss = p["losses"][0]
+        assert loss["cid"] == 320 and loss["loss_kind"] == "sunk" and loss["lost_kg"] == 292.0
+        part = next(x for x in p["participants"] if x["cid"] == 320)
+        assert part["lost_kg"] == 292.0               # dem Piloten zugeschrieben
 
     def test_loss_shows_cargo_lines(self):
         """Die Verlust-Zeile zeigt, WAS über Bord ging — Co-Load-Verteilung wie bei
@@ -1492,8 +1277,8 @@ class TestCargoLosses:
         Kutter versunken')."""
         conn = _make_conn()
         ev = _event(conn, cargo=[
-            {"name": "Filmrollen", "target_kg": 500.0, "per_flight_max_kg": 100.0},
-            {"name": "Friesentee", "target_kg": 500.0},
+            {"name": "Filmrollen", "target_kg": 500.0, "per_flight_max_kg": 100.0, "departure": "EDWG"},
+            {"name": "Friesentee", "target_kg": 500.0, "departure": "EDWG"},
         ])
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         # Vorher liefert jemand — die Verlust-Aufschlüsselung zeigt trotzdem die VOLLE
@@ -1502,7 +1287,6 @@ class TestCargoLosses:
         alat, alon = icao_to_coords("EDXH")
         self._flown_flight(conn, 308, "2026-07-01T17:30:00Z", end_lat=alat, end_lon=alon, end_gs=0)
         self._flown_flight(conn, 307, "2026-07-01T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
-        detect_transport_losses(conn, ev)
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         f = next(x for x in p["flights"] if x["cid"] == 307)
         assert f["loss_kind"] == "sunk"
@@ -1517,13 +1301,12 @@ class TestCargoLosses:
         300, ein späterer Klau kann nur die restlichen 200 mitgenommen haben (früher: 300 brutto)."""
         conn = _make_conn()
         from app.geo import icao_to_coords
-        ev = _event(conn, cargo=[{"name": "Krabben", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Krabben", "target_kg": 500.0, "departure": "EDWG"}])
         upsert_payload(conn, "C172", payload_kg=300)
         alat, alon = icao_to_coords("EDXH")
         self._flown_flight(conn, 100, "2026-07-01T17:30:00Z", end_lat=alat, end_lon=alon, end_gs=0)  # liefert 300
         wlat, wlon = icao_to_coords("EDWY")
         self._flown_flight(conn, 101, "2026-07-01T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)  # klaut den Rest
-        detect_transport_losses(conn, ev)
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         b = next(x for x in p["flights"] if x["cid"] == 101)
         assert b["loss_kind"] == "stolen"
@@ -1532,60 +1315,58 @@ class TestCargoLosses:
         assert p["cargo"][0]["lost_kg"] == 200.0     # #7/#8: neues Feld je Frachtart
 
     def test_lost_cargo_removed_from_reservable_pool(self):
-        """#8: nach einem Verlust ist die verlorene Ware für spätere offene Flüge NICHT mehr
-        reservierbar (target − delivered − lost). Ziel 500, 300 geliefert + 200 geklaut = Pool leer
-        → ein danach gestarteter offener Flug reserviert 0 (vorher bot er die Ware erneut an)."""
+        """#8: nach einem Verlust ist die verlorene Ware für spätere Flüge NICHT mehr verfügbar
+        (der Stapel ist leer). Ziel 500, 300 geliefert + 200 geklaut = Stapel leer → ein danach am
+        Ladeplatz stehender offener Flug lädt 0 (vorher bot er die Ware erneut an)."""
         conn = _make_conn()
         from app.geo import icao_to_coords
-        ev = _event(conn, cargo=[{"name": "Krabben", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Krabben", "target_kg": 500.0, "departure": "EDWG"}])
         upsert_payload(conn, "C172", payload_kg=300)
         alat, alon = icao_to_coords("EDXH")
         self._flown_flight(conn, 100, "2026-07-01T17:30:00Z", end_lat=alat, end_lon=alon, end_gs=0)
         wlat, wlon = icao_to_coords("EDWY")
         self._flown_flight(conn, 101, "2026-07-01T18:05:00Z", end_lat=wlat, end_lon=wlon, end_gs=0)
-        detect_transport_losses(conn, ev)
         _add_open_flight(conn, 102, "EDWG", "EDXH", "C172", "2026-07-01T18:30:00Z")
+        glat, glon = icao_to_coords("EDWG")
+        _set_live_pos(conn, 102, glat, glon, 0)      # steht am (nun leeren) EDWG-Stapel
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         cargo = p["cargo"][0]
         assert cargo["delivered_kg"] == 300.0 and cargo["lost_kg"] == 200.0
-        o = next(x for x in p["flights"] if x["cid"] == 102)
-        assert o["reserved_kg"] == 0.0               # Pool voll (300+200=500) → nichts mehr reservierbar
+        assert p["reserved_total_kg"] == 0.0         # Stapel leer (300+200=500) → nichts mehr zu laden
 
     def test_returned_does_not_consume_pool(self):
-        """'returned' (Ware heil an einem Streckenplatz abgestellt) verbraucht den Pool NICHT —
-        lost_kg=0, und ein späterer offener Flug kann die Frachtart weiter voll reservieren."""
+        """'returned' (Ware heil an einem Streckenplatz abgestellt) verbraucht den Stapel NICHT —
+        lost_kg=0, und ein späterer Flug, der dort steht, kann die Ware weiter voll aufnehmen."""
         conn = _make_conn()
         from app.geo import icao_to_coords
-        ev = _event(conn, cargo=[{"name": "Krabben", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Krabben", "target_kg": 500.0, "departure": "EDWG"}])
         upsert_payload(conn, "C172", payload_kg=300)
         glat, glon = icao_to_coords("EDWG")          # Rückkehr an Streckenplatz EDWG (≠ Ziel) → returned
         self._flown_flight(conn, 100, "2026-07-01T17:30:00Z", end_lat=glat, end_lon=glon, end_gs=0)
-        detect_transport_losses(conn, ev)
         _add_open_flight(conn, 102, "EDWG", "EDXH", "C172", "2026-07-01T18:30:00Z")
+        _set_live_pos(conn, 102, glat, glon, 0)      # steht am EDWG-Stapel (Ware wieder da)
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         r = next(x for x in p["flights"] if x["cid"] == 100)
         assert r["loss_kind"] == "returned"
-        assert p["cargo"][0]["lost_kg"] == 0.0       # kein Pool-Verbrauch
+        assert p["cargo"][0]["lost_kg"] == 0.0       # kein Verlust
         o = next(x for x in p["flights"] if x["cid"] == 102)
-        assert o["reserved_kg"] == 300.0             # voller Payload weiter reservierbar
+        assert o["reserved_kg"] == 300.0             # voller Payload wieder aufgenommen
 
     def test_no_loss_for_flight_after_event_window(self):
         """Ein Streckenflug lange nach dtend darf keinem alten Event als Verlust angelastet
         werden (Final-Review-Blocker: Alt-Events sammelten sonst fortlaufend Fremd-Verluste)."""
         conn = _make_conn()
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         # dtend = 2026-07-01T23:00:00Z — dieser Flug liegt einen Tag danach.
         self._flown_flight(conn, 305, "2026-07-03T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=95)
-        n = detect_transport_losses(conn, ev)
-        assert n == 0
-        assert get_transport_losses(conn, ev["id"]) == []
+        p = compute_transport_progress(conn, ev, "2026-07-03T20:00:00Z")
+        assert p["losses"] == [] and p["lost_total_kg"] == 0.0
 
     def test_plan_only_fallback_arrival_is_not_a_delivery(self):
         """#23 Review C2: Ein reiner Flugplan-Eintrag (arrival=dest im Flugplan, aber KEIN
-        einziger GPS-Track) darf NIE als Lieferung zählen -- weder in
-        compute_transport_progress (loaded) noch als Grund, detect_transport_losses die
-        Verlust-Prüfung überspringen zu lassen ('Plan-Text-Lieferung ohne Flug')."""
+        einziger GPS-Track) darf NIE als Lieferung zählen — die Fallback-Leg-Zeile ohne Track ist
+        kein Kutter-Flug (Entscheidung 8), und mangels Beweis auch kein Verlust."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
         ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
@@ -1594,62 +1375,22 @@ class TestCargoLosses:
         _add_flight(conn, 700, "EDWG", "EDXH", "C172", "2026-07-01T18:00:00Z", duration_min=30)
 
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
-        f = _feed_by_callsign(p, "FRS700")
-        assert f is not None
-        assert f["loaded"] is False and f["tonnage_kg"] == 0.0
+        # Ohne jeden Track ist die Fallback-Zeile gar kein Kutter-Flug (Entscheidung 8) — sie
+        # taucht nicht im Feed auf und zählt nichts.
+        assert _feed_by_callsign(p, "FRS700") is None
         assert p["total_kg"] == 0.0
+        # Ohne Track auch kein Verlust — 'arr == dest' aus dem Plan wertet nichts als geliefert.
+        assert p["losses"] == [] and p["lost_total_kg"] == 0.0
 
-        # Keine Position vorhanden -> detect_transport_losses erfasst (mangels Beweis) auch
-        # keinen Verlust, aber NICHT mehr, weil "arr == dest" es fälschlich als bereits
-        # geliefert wertet (das war der Bug) -- 0 ist hier aus dem richtigen Grund korrekt.
-        assert detect_transport_losses(conn, ev) == 0
-        assert get_transport_losses(conn, ev["id"]) == []
+    # test_later_reconnect_latch_does_not_hide_earlier_sunk_loss: ersatzlos gelöscht — der Latch und
+    # die connectionsweite Latch-Kopplung (detect_transport_losses) sind entfallen. Im Stapel-Modell
+    # ist jede Session eigenständig: der frühere Sunk steht in `movements`, eine spätere Reconnect-
+    # Session kann ihn gar nicht mehr verdecken. (Der Sunk-Fall selbst: test_sunk_when_vanished_airborne.)
 
-    def test_later_reconnect_latch_does_not_hide_earlier_sunk_loss(self):
-        """#23 Review I1: Der Latch-Abgleich in detect_transport_losses darf nur gegen das
-        ENDE DER EIGENEN CONNECTION prüfen -- ein Latch einer SPÄTEREN Reconnect-Connection
-        derselben cid darf einen früher versunkenen Kutter NICHT verdecken (vorher: end=∞ beim
-        Leg-eigenen logoff_time=None -> jeder spätere Latch 'traf')."""
-        conn = _make_conn()
-        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
-        cid = 900
-        logon1 = "2026-07-01T18:00:00Z"
-        # Connection 1: schließt (Disconnect) nach 30 min -- das GPS-Leg selbst registriert
-        # NIE eine Landung (über See verschwunden, s. _flown_flight/end_gs=95).
-        self._flown_flight(conn, cid, logon1, end_lat=54.05, end_lon=7.7, end_gs=95)
-        # Spätere Reconnect-Connection derselben cid, MIT Live-Ankunfts-Latch.
-        logon2 = "2026-07-01T19:30:00Z"
-        _add_flight(conn, cid, "EDXH", "EDWG", "C172", logon2, duration_min=20)
-        set_transport_live_arrival(conn, cid, logon2, ev["id"], _shift(logon2, 5))
-        conn.commit()
-
-        n = detect_transport_losses(conn, ev)
-        losses = get_transport_losses(conn, ev["id"])
-        assert n >= 1
-        assert any(l["kind"] == "sunk" for l in losses)
-
-    def test_position_classified_at_destination_is_not_stolen(self, monkeypatch):
-        """#23 Review M1: Klassifiziert die reine Positions-Auswertung die letzte bekannte
-        Position als 'am Ziel' (end_icao == dest) -- z. B. ein Detektor-Radius-/AGL-Grenzfall,
-        bei dem canonicalize_legs selbst dort KEINE Landung erkannt hat (Leg bleibt offen) --
-        ist das kein Diebstahl. Das GPS-Leg-Ende bleibt bewusst identisch zur 'sunk'-Fixture
-        (54.05/7.7, verifiziert abseits jedes Flugplatzes) -- nur die Klassifikationsfunktion
-        wird gepatcht, um den Grenzfall 'Ergebnis == Ziel' deterministisch zu erzwingen."""
-        import app.geo as geomod
-        conn = _make_conn()
-        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
-        self._flown_flight(conn, 1100, "2026-07-01T18:05:00Z", end_lat=54.05, end_lon=7.7, end_gs=0)
-        # detect_transport_losses importiert nearest_airport_icao lokal aus app.geo -- patchen
-        # dort, damit die Klassifikations-Funktion deterministisch "am Ziel" meldet, OHNE den
-        # GPS-Leg-Detektor selbst zu beeinflussen (der bleibt unpatched: er erkennt an diesem
-        # Punkt weiterhin keine Landung, s. _flown_flight/'sunk'-Fixture).
-        monkeypatch.setattr(geomod, "nearest_airport_icao", lambda lat, lon, radius: "EDXH")
-
-        n = detect_transport_losses(conn, ev)
-        assert n == 0
-        assert get_transport_losses(conn, ev["id"]) == []
+    # test_position_classified_at_destination_is_not_stolen: ersatzlos gelöscht — die eigene
+    # Positions-Klassifikation von detect_transport_losses (nearest_airport_icao + _LANDED_MAX_GS_KT)
+    # ist entfallen. Ob am Ziel geliefert wurde, entscheidet jetzt allein der GPS-Leg-Detektor
+    # (Landung am Ziel = Lieferung), es gibt keine zweite, patchbare Klassifikation mehr.
 
 
 # --- GPS-Flüge + Latch-/Loss-Reconcile über das Connection-Intervall (#23 Task 10) ----------
@@ -1698,27 +1439,30 @@ class TestGPSLegReconcile:
         )
         conn.commit()
 
-    def test_live_latch_reconciled_to_gps_flight(self):
-        """Latch mit Verbindungs-Logon 09:58 (Session-Start), GPS-Flug/Takeoff aber erst 10:02
-        (Taxi-Zeit dazwischen) — Landung EDXH 10:40. Ein naiver ``(cid, lo)``-Vergleich mit
-        ``lo`` = GPS-Takeoff (der jetzige ``flight_key``) fände den Latch NICHT (Schlüssel-
-        Mismatch) und die Ankunft läge außerhalb der (bewusst auf EDWG verengten) Strecke —
-        ohne die Connection-Intervall-Reconcile (``_latch_hits_flight``) bliebe die Fracht
-        0 kg, obwohl der Kutter GPS-belegt am Ziel landet."""
+    # Der Live-Ankunfts-Latch und seine Connection-Intervall-Reconcile sind entfallen. Die Fälle,
+    # deren EINZIGER Zweck die Latch-/`arrived`-Demotion war, wurden ersatzlos gelöscht:
+    #   test_second_delivery_run_shows_enroute_not_arrived  (Status „angekommen" gibt es nicht mehr)
+    #   test_new_leg_after_completed_return_not_shown_as_returning  (Status „returning" heißt jetzt „dabei")
+    #   test_new_leg_after_delivery_not_stuck_on_arrived  (Latch ans Leg binden — kein Latch mehr)
+    #   test_stale_incomplete_open_leg_does_not_keep_arrived  (Leg-Auswahl für die Latch-Demotion)
+    # Was bleibt, sind die Aussagen über ECHTES GPS-Verhalten (Doppelzählung, Ziel-Membership,
+    # Verlust nur einmal anheften) — hier ohne Latch, mit den GPS-Tracks als alleinigem Beweis.
+
+    def test_gps_takeoff_is_the_feed_key(self):
+        """Die Feed-Zeile trägt den GPS-Takeoff (10:02) als dep_time, nicht den Verbindungs-Logon
+        (09:58, Taxi-Zeit davor). Die Landung am Ziel EDXH liefert selbst — ohne Latch, ohne dass
+        EDXH auf der (bewusst auf EDWG verengten) Route liegen müsste."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
         conn_logon = "2026-07-01T09:58:00Z"
-        # `route` bewusst NUR der Abflugplatz -- ohne Latch würde der Strecken-Filter
-        # (arr=EDXH nicht in route_set) die Ankunft verwerfen; der Latch hebt ihn auf.
-        ev = _event(conn, route="EDWG", destination="EDXH")
+        ev = _event(conn, route="EDWG", destination="EDXH",
+                    cargo=[{"name": "Fracht", "target_kg": 500, "departure": "EDWG"}])
         self._insert_connection(conn, 500, "FRS500", "EDWG", "EDXH", conn_logon,
                                 _shift(conn_logon, 44), duration_min=44)
         self._seed_leg(conn, 500, "FRS500", conn_logon, "EDWG")
         landing_ts = self._add_leg_landing(conn, 500, "FRS500", conn_logon, "EDXH", cruise_min=22)
         conn.commit()
         assert landing_ts == "2026-07-01T10:40:00Z"
-        set_transport_live_arrival(conn, 500, conn_logon, ev["id"], "2026-07-01T10:35:00Z")
-        conn.commit()
 
         p = compute_transport_progress(conn, ev, "2026-07-01T11:00:00Z")
         f = _feed_by_callsign(p, "FRS500")
@@ -1727,79 +1471,27 @@ class TestGPSLegReconcile:
         assert f["loaded"] is True
         assert p["total_kg"] == 250
 
-    def test_second_delivery_run_shows_enroute_not_arrived(self):
-        """Physikalisch echter FRS102-Ablauf in EINER flights-Zeile (KEIN Refile → ein einziger
-        Verbindungs-Logon über alle GPS-Legs). ECHTE Richtung des Live-Events: Fracht wird am
-        Abholplatz EDXH aufgenommen und zum ZIEL EDWG geliefert; der Rückweg ist EDWG→EDXH. Leg 1
-        EDXH→EDWG liefert (Latch am Ziel EDWG), Leg 2 EDWG→EDXH Rückflug landet sauber am Abholplatz,
-        Leg 3 EDXH→EDWG startet eine ZWEITE Lieferrunde und ist noch in der Luft. Der alte Latch
-        (Verbindungs-Logon) überlappt Leg 3 weiter → der reine Membership-Test zeigte Leg 3 dauerhaft
-        „✅ angekommen", obwohl der Pilot gerade erst wieder Richtung Ziel unterwegs ist. Korrekt ist
-        „✈️ unterwegs" + Reservierung, bis er erneut landet."""
-        conn = _make_conn()
-        upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn, route="EDXH,EDWG", destination="EDWG")  # Abholplatz EDXH → Ziel EDWG
-        conn_logon = "2026-07-01T09:58:00Z"
-        from app.geo import icao_to_coords
-        # EINE offene Verbindung, KEIN Refile (dep/arr bleiben EDXH/EDWG über alle Legs).
-        self._insert_connection(conn, 800, "FRS800", "EDXH", "EDWG", conn_logon, None,
-                                duration_min=300)
-        # Leg 1: EDXH → EDWG, liefert am Ziel. Latch während Leg 1.
-        self._seed_leg(conn, 800, "FRS800", conn_logon, "EDXH")
-        l1 = self._add_leg_landing(conn, 800, "FRS800", conn_logon, "EDWG")
-        set_transport_live_arrival(conn, 800, conn_logon, ev["id"], _shift(l1, -3))
-        glat, glon = icao_to_coords("EDWG")
-        _add_pos(conn, 800, _shift(l1, 3), glat, glon, 5, alt=6, callsign="FRS800")
-        # Leg 2: EDWG → EDXH (echter Rückflug zum Abholplatz), landet EDXH.
-        r2 = _shift(l1, 6)
-        self._seed_leg(conn, 800, "FRS800", r2, "EDWG")
-        l2 = self._add_leg_landing(conn, 800, "FRS800", r2, "EDXH")
-        hlat, hlon = icao_to_coords("EDXH")
-        _add_pos(conn, 800, _shift(l2, 3), hlat, hlon, 5, alt=8, callsign="FRS800")
-        # Leg 3: EDXH → EDWG (ZWEITE Lieferrunde zum Ziel), airborne, noch kein Touchdown.
-        t3 = _shift(l2, 6)
-        self._seed_leg(conn, 800, "FRS800", t3, "EDXH")
-        conn.execute(
-            "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
-            "VALUES (800, 'FRS800', 53.9, 7.9, 110)"
-        )
-        conn.commit()
-
-        p = compute_transport_progress(conn, ev, _shift(t3, 10))
-        in_air = [f for f in p["flights"] if f["cid"] == 800 and f.get("in_air")]
-        assert len(in_air) == 1
-        f = in_air[0]
-        assert f["loaded"] is False        # NICHT „angekommen" — er ist erst wieder unterwegs
-        assert f["airborne"] is True       # „✈️ unterwegs"
-        assert f["reserved_kg"] == 250.0   # reserviert die 2.-Runden-Fracht
-        parts = {x["cid"]: x for x in p["participants"]}
-        assert parts[800]["status"] == "flying"
-
     def test_return_leg_not_double_counted(self):
-        """Eine Mehrbein-Connection (Hin EDWG→EDXH landet am Ziel, Rück EDXH→EDWG) — der Latch
-        (Verbindungs-Logon) überlappt via Connection-Intervall BEIDE Beine, trotzdem darf NUR
-        das Hin-Bein beladen sein: ein GPS-belegtes, vom Ziel abweichendes Ankunfts-Bein zählt
-        nie, unabhängig vom Latch (sonst zählte die Fracht doppelt)."""
+        """Eine Mehrbein-Connection (Hin EDWG→EDXH landet am Ziel, Rück EDXH→EDWG): NUR das
+        Hin-Bein ist beladen. Ein GPS-belegtes, vom Ziel abweichendes Ankunfts-Bein liefert nie
+        (sonst zählte die Fracht doppelt)."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
+        ev = _event(conn, cargo=[{"name": "Fracht", "target_kg": 500, "departure": "EDWG"}])
         conn_logon = "2026-07-01T09:58:00Z"
         conn_logoff = "2026-07-01T11:35:00Z"
         self._insert_connection(conn, 501, "FRS501", "EDWG", "EDWG", conn_logon, conn_logoff,
                                 duration_min=97)
         from app.geo import icao_to_coords
-        # Hin: EDWG -> EDXH
+        # Hin: EDWG -> EDXH (liefert am Ziel)
         self._seed_leg(conn, 501, "FRS501", conn_logon, "EDWG")
         hin_landing = self._add_leg_landing(conn, 501, "FRS501", conn_logon, "EDXH")
         # Turnaround in EDXH (kurzer Boden-Aufenthalt, dann erneut abheben)
         hlat, hlon = icao_to_coords("EDXH")
         _add_pos(conn, 501, _shift(hin_landing, 3), hlat, hlon, 5, alt=8, callsign="FRS501")
-        # Rück: EDXH -> EDWG
+        # Rück: EDXH -> EDWG (leer)
         self._seed_leg(conn, 501, "FRS501", _shift(hin_landing, 6), "EDXH")
         self._add_leg_landing(conn, 501, "FRS501", _shift(hin_landing, 6), "EDWG")
-        conn.commit()
-        # Latch waehrend des Hin-Beins gesetzt (Verbindungs-Logon als Key, Poller-Konvention).
-        set_transport_live_arrival(conn, 501, conn_logon, ev["id"], "2026-07-01T10:35:00Z")
         conn.commit()
 
         p = compute_transport_progress(conn, ev, "2026-07-01T12:00:00Z")
@@ -1811,12 +1503,13 @@ class TestGPSLegReconcile:
         assert rueck["loaded"] is False and rueck["tonnage_kg"] == 0.0
         assert p["total_kg"] == 250  # nur einmal gezählt, nicht doppelt
 
-    def test_delivery_requires_route_membership(self):
-        """Landung neben dem Ziel (ein bekannter, aber streckenfremder Flughafen), kein Latch
-        → 0 kg: weder Strecken-Filter-Bypass noch ``loaded``."""
+    def test_landing_off_destination_delivers_nothing(self):
+        """Landung neben dem Ziel (ein bekannter, aber streckenfremder Flughafen) liefert 0 kg:
+        nur die Landung AM ZIEL liefert. Wer die Fracht anderswo abstellt, hat sie nicht geliefert —
+        beim Logout am fremden Platz ist sie geklaut."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
+        ev = _event(conn, cargo=[{"name": "Fracht", "target_kg": 500, "departure": "EDWG"}])
         logon = "2026-07-01T09:58:00Z"
         self._insert_connection(conn, 502, "FRS502", "EDWG", "EDDH", logon,
                                 _shift(logon, 60), duration_min=60)
@@ -1825,18 +1518,19 @@ class TestGPSLegReconcile:
         conn.commit()
 
         p = compute_transport_progress(conn, ev, "2026-07-01T11:30:00Z")
-        assert _feed_by_callsign(p, "FRS502") is None
+        f = _feed_by_callsign(p, "FRS502")
+        assert f is not None and f["loaded"] is False        # gelandet, aber NICHT geliefert
         assert p["total_kg"] == 0
+        assert f["loss_kind"] == "stolen"                    # am fremden EDDH ausgeloggt -> geklaut
 
     def test_open_connection_after_gps_landing_not_double_counted(self):
         """#23 Review C1: Ein Pilot landet GPS-belegt am Ziel, bleibt aber verbunden
-        (flights.logoff_time NULL — Live-Befund, s. Fable-Review). canonicalize_legs liefert
-        dann SOWOHL die geschlossene GPS-Leg-Zeile (loaded=True, Landung erkannt) ALS AUCH
-        (über open_transport_flights, das ausdrücklich logoff_time IS NULL erlaubt) die offene
-        Connection-Zeile derselben cid -- ohne den Skip zählt die Fracht doppelt."""
+        (flights.logoff_time NULL). Es entsteht GENAU EINE gelieferte Feed-Zeile (das gelandete
+        Leg) — der Offen-Zweig fügt keine zweite hinzu, weil nach der Lieferung nichts mehr an
+        Bord ist."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
+        ev = _event(conn, cargo=[{"name": "Fracht", "target_kg": 500, "departure": "EDWG"}])
         logon = "2026-07-01T09:58:00Z"
         _add_open_flight(conn, 600, "EDWG", "", "C172", logon, callsign="FRS600")
         self._seed_leg(conn, 600, "FRS600", logon, "EDWG")
@@ -1850,15 +1544,13 @@ class TestGPSLegReconcile:
         assert p["total_kg"] == 250            # genau einmal, nicht doppelt (500)
 
     def test_open_connection_intermediate_leg_keeps_in_air_reservation(self):
-        """#23 Review C1 (Gegenprobe -- nicht zu breit fixen): ein geschlossenes Zwischenlande-
-        Bein (arr != dest, daher NICHT beladen) darf die offene Weiterreise derselben, noch
-        verbundenen Connection NICHT unterdrücken -- der Skip greift nur, wenn die Connection
-        bereits eine GELADENE Zeile geliefert hat.
-        Bug Y (#15A) aktualisiert: das Zwischenlande-Bein selbst ist KEIN eigener Phantom-
-        Leerflug mehr (eine Reise), die offene Weiterreise-Reservierung bleibt aber erhalten."""
+        """Eine offene Weiterreise nach einer Zwischenlandung bleibt als Reservierung sichtbar:
+        der Pilot lädt am EDWG-Stapel, landet zwischendurch (nicht am Ziel, Ware bleibt an Bord),
+        hebt wieder ab — die Bordladung (Reservierung) geht nicht verloren."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn, route="EDWG,EDWY,EDXH", destination="EDXH")
+        ev = _event(conn, route="EDWG,EDWY,EDXH", destination="EDXH",
+                    cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         t0 = "2026-07-01T09:58:00Z"
         _add_open_flight(conn, 601, "EDWG", "", "C172", t0, callsign="FRS601")
         # Bein 1: EDWG -> EDWY, geschlossen gelandet (echte Zwischenlandung, kein Ziel).
@@ -1871,19 +1563,20 @@ class TestGPSLegReconcile:
 
         p = compute_transport_progress(conn, ev, _shift(t1, 10))
         legs = [f for f in p["flights"] if f["cid"] == 601]
-        # Bug Y: kein geschlossenes Phantom-Zwischenbein (arr=EDWY) mehr im Feed.
-        assert not any(f["arr"] == "EDWY" and not f["in_air"] for f in legs)
-        assert any(f["in_air"] for f in legs)   # offene Weiterreise bleibt als Reservierung erhalten
+        # Die offene Weiterreise trägt die Ware weiter (Reservierung), nichts geliefert/verloren.
+        underway = next(f for f in legs if f["in_air"])
+        assert underway["airborne"] is True and underway["loaded"] is False
+        assert underway["reserved_kg"] == 250.0
+        assert p["reserved_total_kg"] == 250.0 and p["total_kg"] == 0.0
 
-    def test_intermediate_landing_parked_is_one_underway_row(self):
-        """Bug Y (#15A): Zwischenlandung an einem Wegpunkt (Verbindung offen, danach GEPARKT,
-        kein zweiter Start) erzeugt KEINEN Phantom-0-kg-Leerflug — der Pilot erscheint als EINE
-        Zeile 'unterwegs' (airborne=True), nicht 'am Start'. Fracht-/Reservierungssummen
-        unberührt (Anzeige-only, `total_kg`/`reserved_total_kg` gleich)."""
+    def test_intermediate_landing_parked_keeps_reservation(self):
+        """Zwischenlandung an einem Wegpunkt (Verbindung offen, danach GEPARKT, kein zweiter
+        Start): der Pilot trägt seine am EDWG geladene Ware weiter — sie bleibt reserviert, nichts
+        geliefert/verloren, bis er weiterfliegt oder ausloggt."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
         ev = _event(conn, route="EDWG,EDWY,EDXH", destination="EDXH",
-                    cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+                    cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         from app.geo import icao_to_coords, airport_elevation_ft
         t0 = "2026-07-01T09:58:00Z"
         _add_open_flight(conn, 610, "EDWG", "EDXH", "C172", t0, callsign="FRS610")
@@ -1897,206 +1590,86 @@ class TestGPSLegReconcile:
 
         p = compute_transport_progress(conn, ev, _shift(landing_ts, 15))
         legs = [f for f in p["flights"] if f["cid"] == 610]
-        assert len(legs) == 1                          # kein Phantom-Leerflug
-        f = legs[0]
-        assert f["in_air"] is True and f["loaded"] is False
-        assert f["airborne"] is True                   # 'unterwegs', nicht 'am Start'
-        assert f["reserved_kg"] == 250.0
+        # Die (offene) Reservierungs-Zeile trägt die volle Bordladung, geparkt am Wegpunkt.
+        res = next(f for f in legs if f["in_air"])
+        assert res["loaded"] is False and res["reserved_kg"] == 250.0
+        assert res["airborne"] is False                # geparkt am Wegpunkt (gs 0)
         assert p["reserved_total_kg"] == 250.0 and p["total_kg"] == 0.0
 
-    def test_new_leg_after_completed_return_not_shown_as_returning(self):
-        """#66 (Live-Fund 06.07., EDWG-EDXP-Test): Lieferung (EDWG->EDXH, geliefert) -> Rückflug
-        landet sauber (EDXH->EDWG) -> in DERSELBEN offenen Verbindung startet ein NEUER, davon
-        unabhängiger Flug (EDWG->irgendwohin, noch in der Luft). Die alte Heuristik nahm für
-        "Rückflug" immer die Erstposition der GESAMTEN Verbindung (EDXH, längst veraltet) und
-        zeigte den neuen Flug fälschlich weiter als "Rückflug". Mit dem GPS-Leg-basierten Dep
-        (aus dem bereits korrekt erkannten LAUFENDEN Leg) muss der neue Flug stattdessen normal
-        als "in der Luft"/reserviert erscheinen -- kein Rückflug mehr."""
-        conn = _make_conn()
-        upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
-        conn_logon = "2026-07-01T09:58:00Z"
-        self._insert_connection(conn, 700, "FRS700", "EDWG", "EDWG", conn_logon, None,
-                                duration_min=97)
-        from app.geo import icao_to_coords
-        # Leg 1: EDWG -> EDXH (Lieferung, geliefert).
-        self._seed_leg(conn, 700, "FRS700", conn_logon, "EDWG")
-        hin_landing = self._add_leg_landing(conn, 700, "FRS700", conn_logon, "EDXH")
-        hlat, hlon = icao_to_coords("EDXH")
-        _add_pos(conn, 700, _shift(hin_landing, 3), hlat, hlon, 5, alt=8, callsign="FRS700")
-        # Leg 2: EDXH -> EDWG (echter Rückflug, landet sauber).
-        rueck_t0 = _shift(hin_landing, 6)
-        self._seed_leg(conn, 700, "FRS700", rueck_t0, "EDXH")
-        rueck_landing = self._add_leg_landing(conn, 700, "FRS700", rueck_t0, "EDWG")
-        glat, glon = icao_to_coords("EDWG")
-        _add_pos(conn, 700, _shift(rueck_landing, 3), glat, glon, 5, alt=6, callsign="FRS700")
-        # Leg 3: NEUER Start ab EDWG, noch in der Luft (kein Touchdown vor `now`) -- KEIN
-        # Rückflug, ein unabhängiger neuer Flug (in der realen Live-Situation ging es weiter zu
-        # einem event-fremden Flugplatz, hier bewusst offen gelassen).
-        neu_t0 = _shift(rueck_landing, 6)
-        self._seed_leg(conn, 700, "FRS700", neu_t0, "EDWG")
-        conn.commit()
-        # Aktuelle Live-Position: noch in der Luft (nicht gelandet) -> _returning_pilot_landed
-        # darf nicht greifen, unabhängig vom Test.
-        conn.execute(
-            "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
-            "VALUES (700, 'FRS700', 53.75, 7.87, 100)"
-        )
-        conn.commit()
-
-        p = compute_transport_progress(conn, ev, _shift(neu_t0, 10))
-        parts = {x["cid"]: x for x in p["participants"]}
-        assert parts[700]["status"] != "returning"
-        assert parts[700]["status"] == "flying"
-        legs = [f for f in p["flights"] if f["cid"] == 700]
-        assert any(f["in_air"] and not f.get("loaded") for f in legs)   # neuer Flug: Reservierung, kein Rückflug
-
-    def test_new_leg_after_delivery_not_stuck_on_arrived(self):
-        """FRS102-Fund (10.07.): Lieferung EDWG->EDXH MIT Live-Ankunfts-Latch, danach startet in
-        DERSELBEN offenen Verbindung ein NEUER Flug ab einem Streckenplatz (EDWG, ≠ Ziel), noch in
-        der Luft und NACH der Ankunft. Der Latch trägt den Verbindungs-Logon und überlappt weiter,
-        aber das neue Leg begann nach `arrived_at` -- es darf NICHT mehr als beladen/„angekommen"
-        gelten. Der offene Zweig (compute_transport_progress) testete den Latch verbindungsweit
-        (`(cid, lo) in live_arrivals`) statt ans laufende Leg gebunden (`_latch_hits_flight`, wie
-        schon im geschlossenen Zweig + detect_transport_losses seit #6/v8.19.0) — Folge: der Status
-        blieb bis zum Disconnect dauerhaft auf „angekommen" hängen. Regressionsschutz für den
-        #6-Nachzug."""
-        conn = _make_conn()
-        upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
-        conn_logon = "2026-07-01T09:58:00Z"
-        self._insert_connection(conn, 702, "FRS702", "EDWG", "EDWG", conn_logon, None,
-                                duration_min=97)
-        from app.geo import icao_to_coords
-        # Leg 1: EDWG -> EDXH (Lieferung). Latch wird WÄHREND Leg 1 gesetzt (kurz vor Touchdown).
-        self._seed_leg(conn, 702, "FRS702", conn_logon, "EDWG")
-        hin_landing = self._add_leg_landing(conn, 702, "FRS702", conn_logon, "EDXH")
-        set_transport_live_arrival(conn, 702, conn_logon, ev["id"], _shift(hin_landing, -3))
-        hlat, hlon = icao_to_coords("EDXH")
-        _add_pos(conn, 702, _shift(hin_landing, 3), hlat, hlon, 5, alt=8, callsign="FRS702")
-        # Leg 2: NEUER Start ab EDWG (Streckenplatz ≠ Ziel), Takeoff NACH der Ankunft, noch in der Luft.
-        neu_t0 = _shift(hin_landing, 6)
-        self._seed_leg(conn, 702, "FRS702", neu_t0, "EDWG")
-        conn.execute(
-            "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
-            "VALUES (702, 'FRS702', 53.75, 7.87, 100)"
-        )
-        conn.commit()
-
-        p = compute_transport_progress(conn, ev, _shift(neu_t0, 10))
-        legs = [f for f in p["flights"] if f["cid"] == 702]
-        in_air = [f for f in legs if f.get("in_air")]
-        assert in_air, "erwarte eine offene In-Air-Zeile für das neue Leg von FRS702"
-        # DER BUG: das nach der Ankunft gestartete Leg darf nicht „angekommen"/loaded sein.
-        assert all(not f.get("loaded") for f in in_air), \
-            "In-Air-Folgeleg fälschlich als 'angekommen' (loaded=True) — Latch nicht ans Leg gebunden"
-        assert in_air[0]["airborne"] is True             # 'unterwegs', nicht 'angekommen'
-        assert in_air[0]["reserved_kg"] == 250.0         # reserviert wieder korrekt, statt loaded
-        # Teilnehmer-Status ebenfalls 'flying', nicht 'arrived'.
-        parts = {x["cid"]: x for x in p["participants"]}
-        assert parts[702]["status"] == "flying"
-
-    def test_stale_incomplete_open_leg_does_not_keep_arrived(self):
-        """Fable-Review-Fund (10.07.): Mehrere OFFENE Legs derselben Verbindung — ein incomplete
-        Leg (Track-Gap >30 min, endet airborne, nie geschlossen; `gps_legs.emit_incomplete`) plus
-        das tatsächlich laufende Leg. `current_leg_by_cid` muss das NEUESTE offene Leg wählen. Die
-        frühere Dict-Comprehension nahm über die absteigend sortierte canonicalize_legs-Liste
-        (last-wins) das ÄLTESTE — dann stammte der Takeoff aus dem veralteten Leg (VOR der Ankunft),
-        die Latch-Demotion (`leg_takeoff > arrived_at`) griff nicht und der Status hing erneut auf
-        „angekommen". Regressionsschutz für die Leg-Auswahl `:5196`."""
-        conn = _make_conn()
-        upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn)  # route=EDWG,EDXH, destination=EDXH
-        conn_logon = "2026-07-01T09:58:00Z"
-        self._insert_connection(conn, 703, "FRS703", "EDWG", "EDXH", conn_logon, None,
-                                duration_min=200)
-        # Leg A: alt, endet airborne (kein Touchdown) -> incomplete/offen. Takeoff ~10:02.
-        self._seed_leg(conn, 703, "FRS703", "2026-07-01T09:58:00Z", "EDWG")
-        # Latch: Ankunft ZWISCHEN Leg A und Leg D, unter dem Verbindungs-Logon (Poller-Konvention).
-        set_transport_live_arrival(conn, 703, conn_logon, ev["id"], "2026-07-01T11:30:00Z")
-        # Leg D: NEUER Start ~13:02 (>30 min Gap -> eigenes Segment), airborne -> das AKTUELLE Leg.
-        self._seed_leg(conn, 703, "FRS703", "2026-07-01T13:00:00Z", "EDWG")
-        conn.execute(
-            "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
-            "VALUES (703, 'FRS703', 53.75, 7.87, 100)"
-        )
-        conn.commit()
-
-        p = compute_transport_progress(conn, ev, "2026-07-01T13:15:00Z")
-        legs = [f for f in p["flights"] if f["cid"] == 703]
-        in_air = [f for f in legs if f.get("in_air")]
-        assert in_air, "erwarte eine offene In-Air-Zeile für FRS703"
-        # Das aktuelle (neueste) Leg startete lange NACH der Ankunft -> nicht mehr „angekommen".
-        assert all(not f.get("loaded") for f in in_air), \
-            "veraltetes incomplete Leg hält den Status fälschlich auf 'angekommen' (falsche Leg-Auswahl)"
-
     def test_multi_leg_loss_attached_once(self):
-        """#23 Review I2: eine Mehrbein-Connection mit ZWEI nicht gelieferten Beinen (Hin+Rück,
-        keins davon am Ziel) teilt denselben Verbindungs-Logon-Key -- der EINE gelatchte Verlust
-        darf lost_kg nur EINMAL anheften, nicht auf jede passende Zeile."""
+        """Eine Mehrbein-Connection mit ZWEI nicht gelieferten Beinen (keins am Ziel) und einem
+        Logout am fremden Platz: der Verlust wird nur EINMAL angeheftet — lost_total ist die
+        einmalige Bordladung (250), nicht das Doppelte."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
-        ev = _event(conn, route="EDWG,EDWY,EDXH", destination="EDXH")
+        ev = _event(conn, route="EDWG,EDWY,EDXH", destination="EDXH",
+                    cargo=[{"name": "Fracht", "target_kg": 500, "departure": "EDWG"}])
         conn_logon = "2026-07-01T09:58:00Z"
         conn_logoff = "2026-07-01T11:35:00Z"
-        self._insert_connection(conn, 1000, "FRS1000", "EDWG", "EDWG", conn_logon, conn_logoff,
+        self._insert_connection(conn, 1000, "FRS1000", "EDWG", "EDDH", conn_logon, conn_logoff,
                                 duration_min=97)
-        # Bein 1: EDWG -> EDWY (Zwischenlandung, nicht das Ziel).
+        from app.geo import icao_to_coords
+        # Bein 1: EDWG -> EDWY (Zwischenlandung auf der Strecke, nicht das Ziel).
         self._seed_leg(conn, 1000, "FRS1000", conn_logon, "EDWG")
         hin_landing = self._add_leg_landing(conn, 1000, "FRS1000", conn_logon, "EDWY")
-        from app.geo import icao_to_coords
         wlat, wlon = icao_to_coords("EDWY")
         _add_pos(conn, 1000, _shift(hin_landing, 3), wlat, wlon, 5, alt=8, callsign="FRS1000")
-        # Bein 2: EDWY -> EDWG (zurück, ebenfalls nicht das Ziel).
+        # Bein 2: EDWY -> EDDH (fremder Platz, nicht das Ziel). Logout dort -> gestohlen.
         self._seed_leg(conn, 1000, "FRS1000", _shift(hin_landing, 6), "EDWY")
-        self._add_leg_landing(conn, 1000, "FRS1000", _shift(hin_landing, 6), "EDWG")
-        conn.commit()
-
-        # EIN Verlust für diese Connection latchen (Poller-Konvention: Verbindungs-Logon-Key).
-        record_transport_loss(conn, ev["id"], 1000, conn_logon, "stolen", "C172", "FRS1000",
-                              "EDWG", "EDWY", "2026-07-01T12:00:00Z")
+        self._add_leg_landing(conn, 1000, "FRS1000", _shift(hin_landing, 6), "EDDH")
         conn.commit()
 
         p = compute_transport_progress(conn, ev, "2026-07-01T12:30:00Z")
         legs = [f for f in p["flights"] if f["cid"] == 1000]
-        assert len(legs) == 2
+        assert len(legs) == 2                                    # beide Beine sichtbar
         assert sum(1 for f in legs if f.get("loss_kind")) == 1   # nur EINE Zeile trägt den Verlust
         assert p["lost_total_kg"] == 250    # nicht 500 (doppelt angeheftet)
 
 
 class TestParticipants:
+    def _takeoff_leg(self, conn, cid, dep, t0, callsign):
+        """Ein abgehobenes GPS-Leg (Takeoff, keine Landung) — der Pilot ist danach in der Luft."""
+        from app.geo import icao_to_coords, airport_elevation_ft
+        la, lo = icao_to_coords(dep)
+        ea = airport_elevation_ft(dep) or 0
+        _add_pos(conn, cid, t0, la, lo, 0, alt=ea, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, 1), la, lo, 12, alt=ea, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, 4), la, lo, 80, alt=ea + 1200, callsign=callsign)
+
     def test_statuses_and_sums(self):
+        """Die Status-Werte des Stapel-Modells: 'dabei' (leer, ausgeloggt/unterwegs), 'loaded'
+        (steht beladen am Ladeplatz), 'flying' (trägt Ware in der Luft)."""
         conn = _make_conn()
-        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
-        # Pilot 400: geliefert (geschlossen am Ziel) + gerade wieder unterwegs (offen, Richtung Ziel)
-        # Innerhalb des Event-Fensters (dtstart/dtend = START/END, 2026-07-01) — ein geschlossener
-        # Flug wird über canonicalize_flights' end-Filter geladen, anders als offene Flüge/Losses.
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)  # 292
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0, "departure": "EDWG"}])
+        from app.geo import icao_to_coords
+        la, lo = icao_to_coords("EDWG")
+        # Pilot 400: liefert (geschlossen am Ziel), loggt danach aus -> delivered 292, leer -> 'dabei'.
         _add_delivered_flight(conn, 400, "EDWG", "C172", "2026-07-01T18:00:00Z", ev["id"], duration_min=25)
-        _add_open_flight(conn, 400, "EDWG", "EDXH", "C172", "2026-07-01T19:00:00Z")
-        # Pilot 401: offener Rückflug ab Ziel (dep == destination) → returning, keine Reservierung
-        _add_open_flight(conn, 401, "EDXH", "EDWG", "C172", "2026-07-01T19:05:00Z")
+        # Pilot 401: steht beladen am Ladeplatz EDWG (Live-Position) -> 'loaded', reserviert 292.
+        _add_open_flight(conn, 401, "EDWG", "EDXH", "C172", "2026-07-01T19:05:00Z")
+        _set_live_pos(conn, 401, la, lo, 0)
+        # Pilot 402: hat am EDWG geladen und ist jetzt in der Luft -> 'flying', reserviert 292.
+        _add_open_flight(conn, 402, "EDWG", "EDXH", "C172", "2026-07-01T19:06:00Z")
+        self._takeoff_leg(conn, 402, "EDWG", "2026-07-01T19:06:00Z", "FRS402")
         p = compute_transport_progress(conn, ev, "2026-07-01T19:30:00Z")
         parts = {x["cid"]: x for x in p["participants"]}
-        assert parts[400]["status"] == "flying" and parts[400]["reserved_kg"] == 292.0
-        assert parts[400]["delivered_kg"] == 292.0 and parts[400]["flights"] == 2
-        assert parts[401]["status"] == "returning" and parts[401]["reserved_kg"] == 0.0
-        # Live-Befund 2026-07-02 (Demo): Nur-Rückflug-Teilnehmer haben ein Muster —
-        # es steht im offenen Flug, der Fallback-Zweig muss es übernehmen.
-        assert parts[401]["aircraft"] == "C172"
-        # Der Live-Tab-Block zeigt Callsigns statt Namen — für alle Status-Arten gefüllt.
-        assert parts[400]["callsign"] == "FRS400"
-        assert parts[401]["callsign"] == "FRS401"
+        assert parts[400]["status"] == "dabei" and parts[400]["delivered_kg"] == 292.0
+        assert parts[400]["reserved_kg"] == 0.0 and parts[400]["callsign"] == "FRS400"
+        assert parts[401]["status"] == "loaded" and parts[401]["reserved_kg"] == 292.0
+        assert parts[401]["callsign"] == "FRS401" and parts[401]["aircraft"] == "C172"
+        assert parts[402]["status"] == "flying" and parts[402]["reserved_kg"] == 292.0
+        assert p["total_kg"] == 292.0 and p["reserved_total_kg"] == 584.0  # zwei tragen je 292
 
     def test_returning_pilot_at_pickup_shows_loading_not_returning(self):
         # #65 + #5 (GPS-only Boden-Beladung): eine als "Rückflug" erkannte Verbindung bleibt oft
-        # OHNE Disconnect offen. Landet der Pilot am Boden an einem ABHOLPLATZ (hier EDWG), zeigt
-        # er seit #5 dort "lädt" (bereit für die nächste Runde) — die aktuelle GPS-Position gewinnt.
-        # Der ursprüngliche #65-Bug ("hängt ewig als returning") bleibt behoben: er ist NICHT
-        # returning, sondern ein normaler ladender Flug am Abholplatz.
+        # OHNE Disconnect offen. Steht der Pilot am Boden an einem ABHOLPLATZ (hier EDWG), lädt er
+        # dort vom Stapel (bereit für die nächste Runde) — die aktuelle GPS-Position gewinnt. Der
+        # ursprüngliche #65-Bug ("hängt ewig als returning") bleibt behoben: 'returning' gibt es
+        # nicht mehr; er ist ein normaler ladender Flug am Abholplatz.
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0, "departure": "EDWG"}])
         _add_open_flight(conn, 401, "EDXH", "EDWG", "C172", "2026-07-01T19:05:00Z")
         # Live-Position: am Boden (gs < 2kt) bei EDWG (Abholplatz).
         conn.execute(
@@ -2106,8 +1679,7 @@ class TestParticipants:
         conn.commit()
         p = compute_transport_progress(conn, ev, "2026-07-01T19:30:00Z")
         parts = {x["cid"]: x for x in p["participants"]}
-        # #65 bleibt behoben: nicht mehr als "returning" hängen geblieben.
-        assert 401 not in parts or parts[401]["status"] != "returning"
+        assert parts[401]["status"] == "loaded"     # lädt am Abholplatz, NICHT „returning"
         # #5: als ladend am Abholplatz sichtbar (aktuelle Position EDWG gewinnt, nicht Plan-EDXH).
         f = _feed_by_callsign(p, "FRS401")
         assert f is not None
@@ -2116,11 +1688,14 @@ class TestParticipants:
         assert f["loaded"] is False
 
     def test_returning_pilot_still_shown_while_still_airborne(self):
-        # Gegenprobe: noch in der Luft (gs hoch) -> weiterhin "returning" wie gehabt.
+        # Der frühere „returning"-Status heißt jetzt 'dabei' und bleibt sichtbar: leer in der Luft,
+        # zuletzt am teilnehmenden Platz EDXH abgehoben (Entscheidung 14).
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0, "departure": "EDWG"}])
         _add_open_flight(conn, 401, "EDXH", "EDWG", "C172", "2026-07-01T19:05:00Z")
+        # Leer ab EDXH (Ziel, teilnehmend) abgehoben, noch in der Luft (kein Touchdown).
+        self._takeoff_leg(conn, 401, "EDXH", "2026-07-01T19:05:00Z", "FRS401")
         conn.execute(
             "INSERT INTO live_positions (cid, callsign, latitude, longitude, groundspeed) "
             "VALUES (401, 'FRS401', 53.75, 7.87, 110)"
@@ -2128,22 +1703,27 @@ class TestParticipants:
         conn.commit()
         p = compute_transport_progress(conn, ev, "2026-07-01T19:30:00Z")
         parts = {x["cid"]: x for x in p["participants"]}
-        assert parts[401]["status"] == "returning"
+        assert parts[401]["status"] == "dabei" and parts[401]["visible"] is True
 
-    def test_arrived_status_with_latch(self):
+    def test_delivered_pilot_has_no_arrived_status(self):
+        """`arrived` ist entfallen (Task 10): eine Lieferung ist eine Tatsache im Balken, kein
+        Zustand. Ein Pilot, der geliefert hat und ausgeloggt ist, zählt seine 292 kg — sein Status
+        ist NICHT mehr „angekommen"."""
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
-        _add_open_flight(conn, 402, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")
-        set_transport_live_arrival(conn, 402, "2026-07-01T18:05:00Z", ev["id"], "2026-07-01T18:30:00Z")
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0, "departure": "EDWG"}])
+        _add_delivered_flight(conn, 402, "EDWG", "C172", "2026-07-01T18:05:00Z", ev["id"])
         p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
-        assert p["participants"][0]["status"] == "arrived"
+        parts = {x["cid"]: x for x in p["participants"]}
+        assert parts[402]["delivered_kg"] == 292.0
+        assert parts[402]["status"] != "arrived"
+        assert not any(x["status"] == "arrived" for x in p["participants"])
 
     def test_aircraft_normalized_to_type_code(self):
         # Rohes ICAO-Flugplanfeld (Typ + Ausrüstungssuffix) muss als reiner Typcode erscheinen —
         # sonst steht in Live-Tabelle und Forum-Badge z. B. "AS65/L-SDGY/S" statt "AS65".
         conn = _make_conn()
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 1000.0, "departure": "EDWG"}])
         _add_flight(conn, 403, "EDWG", "EDXH", "AS65/L-SDGY/S", "2026-07-01T18:00:00Z", duration_min=25)
         p = compute_transport_progress(conn, ev, "2026-07-01T19:30:00Z")
         assert {x["cid"]: x for x in p["participants"]}[403]["aircraft"] == "AS65"
@@ -2336,6 +1916,34 @@ class TestKutterCreateValidation:
         assert "EDWG" in codes and all(c.startswith("EDW") for c in codes)
         assert client.get("/api/airports/search?q=").json()["results"] == []
 
+    # --- Entscheidung 6: genau ein Startplatz je Frachtart (Task 11) ---
+    def test_mehrfach_icao_wird_abgewiesen(self):
+        from app.main import _validate_transport_manifest
+        err = _validate_transport_manifest("EDXH", [
+            {"name": "Krabbenbrötchen", "target_kg": 500, "departure": "EDWL,EDXP"},
+        ])
+        assert err is not None
+        assert "genau einem Platz" in err
+
+    def test_genau_ein_icao_geht_durch(self):
+        from app.main import _validate_transport_manifest
+        assert _validate_transport_manifest("EDXH", [
+            {"name": "Krabbenbrötchen", "target_kg": 500, "departure": "EDWL"},
+        ]) is None
+
+    def test_departure_ist_pflicht(self):
+        from app.main import _validate_transport_manifest
+        err = _validate_transport_manifest("EDXH", [{"name": "Fisch", "target_kg": 500}])
+        assert err is not None
+
+    def test_departure_gleich_ziel_wird_abgewiesen(self):
+        """Heute still zu NULL normalisiert — das erzeugte eine nie füllbare Zeile."""
+        from app.main import _validate_transport_manifest
+        err = _validate_transport_manifest("EDXH", [
+            {"name": "Fisch", "target_kg": 500, "departure": "EDXH"},
+        ])
+        assert err is not None
+
 
 class TestKutterBadgeEndpoints:
     """Integrationstests der Badge-Endpoints (Muster: tests/test_admin_api.py -- Fake-Settings +
@@ -2362,7 +1970,7 @@ class TestKutterBadgeEndpoints:
 
     def _seeded_event(self, db_path):
         conn = get_connection(db_path)
-        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0}])
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         _add_flight(conn, 500, "EDWG", "EDXH", "C172", "2026-07-01T18:00:00Z", duration_min=25)
         conn.commit()
         conn.close()
@@ -2759,7 +2367,11 @@ class TestGroundLoading:
         progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
         assert _feed_by_callsign(progress, "FRS63") is None
 
-    def test_airborne_over_pickup_uses_leg_not_ground(self):
+    def test_airborne_over_pickup_does_not_ground_load(self):
+        """Der Boden-Ladezweig darf nur bei gs < Boden-Schwelle greifen: ein Pilot, dessen
+        Live-Position ihn mit gs 120 ÜBER dem Abholplatz zeigt, ist NICHT am Boden — er lädt dort
+        nichts (keine Phantom-Reservierung) und erscheint mangels erkanntem GPS-Leg gar nicht als
+        ladend im Feed."""
         from app.geo import icao_to_coords
         conn = _make_conn()
         ev = self._load_event(conn)
@@ -2767,17 +2379,14 @@ class TestGroundLoading:
         lat, lon = icao_to_coords("EDXH")
         _set_live_pos(conn, 64, lat, lon, 120)  # in der Luft -> Boden-Zweig darf nicht greifen
         progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
-        f = _feed_by_callsign(progress, "FRS64")
-        assert f is not None            # sichtbar (Plan-Notnagel EDXH), aber nicht wegen Boden-Position
-        assert f["airborne"] is False   # kein GPS-Leg erkannt -> weiterhin nicht „abgehoben"
+        # Kein Boden-Ladevorgang -> keine Ware an Bord -> keine Feed-Zeile (er lädt gerade nicht).
+        assert _feed_by_callsign(progress, "FRS64") is None
+        assert progress["reserved_total_kg"] == 0.0
 
-    def test_no_live_position_falls_back_to_plan(self):
-        conn = _make_conn()
-        ev = self._load_event(conn)
-        _add_open_flight(conn, 65, "EDXH", "EDWG", "C208", START)  # keine Live-Position
-        progress = compute_transport_progress(conn, ev, "2026-07-01T09:05:00Z")
-        f = _feed_by_callsign(progress, "FRS65")
-        assert f is not None and f["dep"] == "EDXH"   # Notnagel Plan greift, regressionsfrei
+    # test_no_live_position_falls_back_to_plan: ersatzlos gelöscht — der Plan-Notnagel
+    # (Sichtbarkeit/Beladung ohne jede Position) entfällt mit Entscheidung 8 („Ohne GPS-Track
+    # keine Lieferung"). Ohne Live-Position und ohne GPS-Leg gibt es keinen Ladeort und keinen
+    # Kutter-Flug. Der Boden-Ladefall MIT Live-Position bleibt (test_parked_at_pickup_...).
 
 
 # --- Task 6: Adapter — aus Legs und Sessions wird eine Ereignisliste -------
@@ -3186,3 +2795,256 @@ class TestStackInputs:
                 (statsim_id, lat, lon, alt, gs, _shift(START, minute)),
             )
         conn.commit()
+
+
+class TestStatSimSichtbarkeit:
+    """Whole-Branch-Review #3: Ein StatSim-Backfill-Flug (Poller-Ausfall, keine VATSIM-Session in
+    `flights`) liefert seine Fracht in total_kg — dann muss er auch im Feed und bei den Teilnehmern
+    auftauchen ('wenn sie gewertet werden, muss man sie sehen', Nutzer 16.07.). Der LIVE-Block
+    bleibt aber FriesenSpy-only: ein nachgereichter StatSim-Flug ist kein Live-Signal, deshalb das
+    Flag `statsim_only` (der Live-Block filtert danach)."""
+
+    def _statsim_flight(self, conn, *, statsim_id=9100, cid=77, arr="EDXH"):
+        from app.geo import icao_to_coords, airport_elevation_ft
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        alat, alon = icao_to_coords(arr)
+        aelev = airport_elevation_ft(arr) or 0
+        conn.execute(
+            "INSERT INTO statsim_cache (statsim_id, cid, callsign, departure, arrival, "
+            "aircraft, logon_time, logoff_time, duration_min, fetched_at) VALUES "
+            "(?, ?, ?, 'EDWG', ?, 'C208', ?, ?, 30, ?)",
+            (statsim_id, cid, f"FRS{cid:02d}", arr, START, _shift(START, 30), START),
+        )
+        for lat, lon, alt, gs, minute in [
+            (dlat, dlon, delev, 0, 0),
+            (dlat, dlon, delev + 1200, 80, 2),
+            (54.0, 7.9, 4000, 120, 15),
+            (alat, alon, aelev + 400, 40, 28),
+            (alat, alon, aelev, 0, 30),
+        ]:
+            conn.execute(
+                "INSERT INTO statsim_position_history (statsim_id, latitude, longitude, "
+                "altitude, groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, 0, ?)",
+                (statsim_id, lat, lon, alt, gs, _shift(START, minute)),
+            )
+        conn.commit()
+
+    def _event(self, conn):
+        upsert_payload(conn, "C208", payload_kg=1000)
+        conn.commit()
+        return _event(conn, route="EDWG,EDXH", destination="EDXH",
+                      cargo=[{"name": "Fisch", "target_kg": 800, "departure": "EDWG"}])
+
+    def test_statsim_lieferung_im_feed_und_bei_teilnehmern(self):
+        conn = _make_conn()
+        ev = self._event(conn)
+        self._statsim_flight(conn, cid=77)                  # kein flights-Eintrag (Poller lief nicht)
+
+        p = compute_transport_progress(conn, ev, END)
+
+        assert p["total_kg"] == 800.0                        # zaehlt schon (Backfill)
+        f = next(x for x in p["flights"] if x["cid"] == 77)  # ... jetzt auch im Feed
+        assert f["tonnage_kg"] == 800.0 and f["arr"] == "EDXH"
+        part = next(x for x in p["participants"] if x["cid"] == 77)
+        assert part["delivered_kg"] == 800.0
+        assert part["statsim_only"] is True                  # Live-Block-Ausschluss (FriesenSpy-only)
+
+    def test_echter_flug_ist_nicht_statsim_only(self):
+        """Gegenprobe: ein normaler FriesenSpy-Flug traegt statsim_only == False (Live-Block zeigt
+        ihn), damit der Filter im Frontend nur den Backfill ausblendet."""
+        conn = _make_conn()
+        ev = self._event(conn)
+        _add_delivered_flight(conn, 42, "EDWG", "C208", START, ev["id"])
+
+        p = compute_transport_progress(conn, ev, END)
+
+        part = next(x for x in p["participants"] if x["cid"] == 42)
+        assert part["delivered_kg"] == 800.0
+        assert part["statsim_only"] is False
+
+
+class TestStapelProgress:
+    """compute_transport_progress auf Basis der Stapel-Ableitung — die Fälle, an denen sich das
+    Modell entscheidet (S1-S5 aus scripts/kutter_ladung_szenarien.py, hier mit echten Tracks)."""
+
+    def _leg(self, conn, cid, von, nach, t0, *, dauer=20, callsign=None):
+        """Ein GPS-erkennbarer Flug von 'von' nach 'nach'. Vorlage: scripts/kutter_ladung_szenarien.leg()"""
+        from app.geo import icao_to_coords, airport_elevation_ft
+        callsign = callsign or f"FRS{cid:02d}"
+        # position_history.cid ist NOT NULL REFERENCES pilots(cid) — der Pilot muss existieren,
+        # bevor Positionen kommen (_leg laeuft vor _add_flight, das den Piloten sonst anlegt).
+        conn.execute("INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)",
+                     (cid, f"Pilot{cid}", START))
+        la, lo = icao_to_coords(von)
+        ea = airport_elevation_ft(von) or 0
+        lb, lb2 = icao_to_coords(nach)
+        eb = airport_elevation_ft(nach) or 0
+        _add_pos(conn, cid, t0, la, lo, 0, alt=ea, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, 1), la, lo, 70, alt=ea + 250, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, 2), la, lo, 120, alt=ea + 2500, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, dauer // 2), (la + lb) / 2, (lo + lb2) / 2, 130,
+                 alt=3000, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, dauer - 1), lb, lb2, 60, alt=eb + 200, callsign=callsign)
+        _add_pos(conn, cid, _shift(t0, dauer), lb, lb2, 0, alt=eb, callsign=callsign)
+        return _shift(t0, dauer)
+
+    def _milchmann_event(self, conn):
+        upsert_payload(conn, "C208", payload_kg=1000)
+        conn.commit()
+        return _event(conn, route="EDWG,EDWZ,EDXH", destination="EDXH", cargo=[
+            {"name": "Fisch", "target_kg": 800, "departure": "EDWG"},
+            {"name": "Tee", "target_kg": 500, "departure": "EDWZ"},
+        ])
+
+    def test_s2_milchmann_erste_ladung_bleibt_an_bord(self):
+        """HEUTE: 0 Fisch + 500 Tee. Der Startplatz des LETZTEN Beins bestimmt die Fracht."""
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        t1 = self._leg(conn, 1, "EDWG", "EDWZ", START)
+        t2 = self._leg(conn, 1, "EDWZ", "EDXH", _shift(t1, 10))
+        # Zwei Legs, EINE Verbindung: Refile-Split am Zwischenplatz (Pilot landet, sitzt, filed neu).
+        # Der Poller schließt Leg 1 IM Refile-Moment (poller.py:837) — logoff(Leg1) == logon(Leg2),
+        # keine Lücke — sodass _transport_sessions beide wieder zu einer Verbindung verkettet
+        # (kein Logout am Zwischenplatz). Eine echte Lücke wäre ein Disconnect+Reconnect.
+        _add_flight(conn, 1, "EDWG", "EDWZ", "C208", START, duration_min=30)          # logoff 09:30
+        _add_flight(conn, 1, "EDWZ", "EDXH", "C208", _shift(t1, 10), duration_min=20)  # logon 09:30
+
+        p = compute_transport_progress(conn, ev, END)
+
+        fisch = next(c for c in p["cargo"] if c["name"] == "Fisch")
+        tee = next(c for c in p["cargo"] if c["name"] == "Tee")
+        assert fisch["delivered_kg"] == 800.0
+        assert tee["delivered_kg"] == 200.0     # 1000 kg Zuladung - 800 Fisch
+        assert p["total_kg"] == 1000.0
+
+    def test_s3_zwischenlandung_fremd_liefert_die_echte_ladung(self):
+        """HEUTE: ohne Latch 0 kg, mit Latch 1000 kg (Tee, der nie an Bord war)."""
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        t1 = self._leg(conn, 1, "EDWG", "EDDW", START)
+        t2 = self._leg(conn, 1, "EDDW", "EDXH", _shift(t1, 10))
+        # Zwei Legs, EINE Verbindung (Refile-Split am fremden EDDW, KEIN Logout): logoff(Leg1) ==
+        # logon(Leg2), keine Lücke → _transport_sessions verkettet zu einer Verbindung, die Ladung
+        # bleibt an Bord und wird am Ziel geliefert. Eine echte Lücke wäre ein Disconnect an EDDW —
+        # dort läge die Fracht dann unwiederbringlich (stolen, fremder Platz), Ergebnis 0.
+        _add_flight(conn, 1, "EDWG", "EDDW", "C208", START, duration_min=30)          # logoff 09:30
+        _add_flight(conn, 1, "EDDW", "EDXH", "C208", _shift(t1, 10), duration_min=20)  # logon 09:30
+
+        p = compute_transport_progress(conn, ev, END)
+
+        assert p["total_kg"] == 800.0           # nur der Fisch, der wirklich an Bord war
+        tee = next(c for c in p["cargo"] if c["name"] == "Tee")
+        assert tee["delivered_kg"] == 0.0
+
+    def test_s4_logout_am_zweiten_ladeplatz_legt_die_ware_dorthin(self):
+        """HEUTE: 'returned' -> zurück in den EDWG-Topf. Die Ware liegt aber in EDWZ."""
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        t1 = self._leg(conn, 1, "EDWG", "EDWZ", START)
+        _add_flight(conn, 1, "EDWG", "EDWZ", "C208", START, duration_min=20)
+
+        p = compute_transport_progress(conn, ev, END)
+
+        assert p["total_kg"] == 0.0
+        loss = next((f for f in p["flights"] if f.get("loss_kind")), None)
+        assert loss is not None and loss["loss_kind"] == "returned"
+        assert p["lost_total_kg"] == 0.0        # zurückgebracht ist kein Verlust
+
+    def test_die_bordladung_ist_die_reservierung(self):
+        """Die Reservierung ist kein eigener Mechanismus mehr: wer lädt, nimmt vom Stapel."""
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        _add_open_flight(conn, 61, "EDWG", "EDXH", "C208", START)
+        lat, lon = icao_to_coords("EDWG")
+        _set_live_pos(conn, 61, lat, lon, 0)
+
+        p = compute_transport_progress(conn, ev, _shift(START, 5))
+
+        assert p["reserved_total_kg"] == 800.0   # er hat den EDWG-Stapel an Bord
+        fisch = next(c for c in p["cargo"] if c["name"] == "Fisch")
+        assert fisch["reserved_kg"] == 800.0
+        assert fisch["delivered_kg"] == 0.0
+
+    def test_der_erhaltungssatz_gilt_auch_im_api_vertrag(self):
+        """geliefert + verloren + reserviert + Rest == Manifest. Der Balken kann nicht lügen."""
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        t1 = self._leg(conn, 1, "EDWG", "EDDW", START)
+        _add_flight(conn, 1, "EDWG", "EDDW", "C208", START, duration_min=20)
+
+        p = compute_transport_progress(conn, ev, END)
+
+        assert p["total_kg"] + p["lost_total_kg"] == 800.0   # gestohlen in EDDW
+        assert p["lost_total_kg"] == 800.0
+
+    def test_ein_leerer_pilot_haelt_den_feierabend_nicht_auf(self):
+        """Entscheidung 10: Es zählt nur, ob jemand Ware trägt — nicht 'offener Flug auf der Strecke'."""
+        from app.database import transport_anyone_in_progress
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        # Der Stapel ist leer: ein anderer hat alles geholt und geliefert.
+        t1 = self._leg(conn, 1, "EDWG", "EDXH", START)
+        _add_flight(conn, 1, "EDWG", "EDXH", "C208", START, duration_min=20)
+        t2 = self._leg(conn, 2, "EDWZ", "EDXH", START)
+        _add_flight(conn, 2, "EDWZ", "EDXH", "C208", START, duration_min=20)
+        # Jetzt loggt ein Dritter am (leeren) EDWG ein und steht dort:
+        _add_open_flight(conn, 3, "EDWG", "EDXH", "C208", _shift(START, 60))
+        lat, lon = icao_to_coords("EDWG")
+        _set_live_pos(conn, 3, lat, lon, 0)
+
+        assert transport_anyone_in_progress(conn, ev, started_before=END) is False
+
+    def test_ein_beladener_pilot_haelt_den_feierabend_auf(self):
+        from app.database import transport_anyone_in_progress
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        _add_open_flight(conn, 3, "EDWG", "EDXH", "C208", START)
+        lat, lon = icao_to_coords("EDWG")
+        _set_live_pos(conn, 3, lat, lon, 0)      # steht am vollen Stapel -> lädt 800 Fisch
+
+        assert transport_anyone_in_progress(conn, ev, started_before=END) is True
+
+    def test_participant_hat_last_ground_als_strecken_start(self):
+        """Der Live-Block baut die Strecke aus last_ground (Start) → Ziel-der-Ware (Nutzer-Regel
+        16.07.). Das Feld muss da sein und den Bodenplatz tragen; ein sichtbarer, tragender Pilot
+        hat also immer einen Start (der '—'-Fallback trifft nur unsichtbare Zeilen)."""
+        from app.geo import icao_to_coords
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        _add_open_flight(conn, 3, "EDWG", "EDXH", "C208", START)
+        lat, lon = icao_to_coords("EDWG")
+        _set_live_pos(conn, 3, lat, lon, 0)      # steht am Ladeplatz EDWG, lädt vom Stapel
+        p = compute_transport_progress(conn, ev, _shift(START, 5))
+        part = next(x for x in p["participants"] if x["cid"] == 3)
+        assert part["visible"] is True
+        assert part["last_ground"] == "EDWG"     # Strecken-Start
+        assert part["reserved_kg"] == 800.0      # trägt Ware → Ziel im Feed bekannt
+
+    def test_offene_session_zaehlt_keinen_flug_nach_dtend(self):
+        """Whole-Branch-Review #1 (Überzählung): eine stale-OFFENE flights-Zeile (kein logoff)
+        darf NICHT ein späteres Leg einer separaten Verbindung, die erst NACH dtend einloggt, an
+        sich ziehen und dessen Fracht mitzählen. Der `own`-Filter muss offene Sessions am
+        Event-Fenster (window_end = min(now, dtend)) deckeln — sonst zeigt der Balken Fracht, die
+        nach Eventende geflogen wurde (verletzt 'nach dtend zählt nicht')."""
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=1000)
+        conn.commit()
+        eid = create_transport_event(
+            conn, name="X", route="EDWG,EDXH", dtstart="2026-07-01T20:00:00Z",
+            dtend="2026-07-01T23:00:00Z", destination="EDXH",
+            cargo=[{"name": "Fisch", "target_kg": 800, "departure": "EDWG"}])
+        ev = get_transport_event(conn, eid)
+        # Session A: stale-offen (logon 22:00, KEIN logoff), kein eigener Track.
+        _add_open_flight(conn, 800, "EDWG", "EDXH", "C208", "2026-07-01T22:00:00Z", callsign="FRS800")
+        # Session B: separate Verbindung, Login 23:35 (NACH dtend 23:00) — von _transport_sessions
+        # korrekt ausgeschlossen; ihr GPS-Leg (Takeoff 23:39) darf NICHT unter A landen.
+        _add_flight(conn, 800, "EDWG", "EDXH", "C208", "2026-07-01T23:35:00Z", duration_min=40, callsign="FRS800")
+        self._leg(conn, 800, "EDWG", "EDXH", "2026-07-01T23:39:00Z", dauer=38, callsign="FRS800")
+
+        p = compute_transport_progress(conn, ev, "2026-07-02T00:30:00Z")   # now NACH der B-Landung
+        assert p["total_kg"] == 0.0       # B hob 39 min nach dtend ab -> zählt nicht
+        assert p["flight_count"] == 0     # kein Phantom-Flug im Feed

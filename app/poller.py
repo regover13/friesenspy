@@ -41,8 +41,6 @@ from app.database import (
     update_flight_plan,
     upsert_live_position,
     upsert_statsim_flights,
-    active_transport_destinations,
-    check_live_arrival,
 )
 from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_position
 from app.alerts import format_online_message, send_telegram_alert
@@ -558,7 +556,6 @@ class VatsimPoller:
            - Neu online  → ensure_pilot, open_flight, upsert_live_position,
                            save_position_history, Telegram-Alert senden
            - Noch online → upsert_live_position, save_position_history
-           - Live-Ankunft (FriesenKutter) → check_live_arrival je Pilot gegen laufende Events
            - Offline     → close_flight, remove_live_position,
                            _active_flights[cid] entfernen
         3. SSE-Queue: get_live_positions() → {"type": "positions", "data": [...]}
@@ -855,22 +852,9 @@ class VatsimPoller:
                                 cid, old_dep, old_arr, new_dep, new_arr,
                             )
 
-                # 2c. Live-Ankunft prüfen (FriesenKutter, ohne Disconnect) — läuft im selben
-                # Poll-Takt mit, kein eigener Timer. Nutzt dieselben Live-Positionen, die 2a/2b
-                # gerade aktualisiert haben.
-                now_check = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                active_events = active_transport_destinations(conn, now_check)
-                if active_events:
-                    for cid in current_cids:
-                        pos = current[cid]
-                        # logon_time des aktuell offenen Legs (nicht der sitzungsweite Feed-Wert):
-                        # nur so trifft der Latch denselben Schlüssel wie die flights-Zeile dieses
-                        # Legs — sonst Fehl-Latch + Doppelzählung bei Refile-Splits (#22).
-                        leg_logon = self._active_flights.get(cid, {}).get("logon_time") or pos["logon_time"]
-                        check_live_arrival(
-                            conn, cid, leg_logon, pos["latitude"], pos["longitude"],
-                            pos["groundspeed"], active_events,
-                        )
+                # 2c. (entfallen mit dem Latch-Rückbau) Die Live-Ankunft am Ziel erkennt der
+                # GPS-Leg-Detektor jetzt selbst, sofort beim Touchdown — kein separater
+                # check_live_arrival-Latch mehr nötig (Stapel-Modell, Entscheidung 10).
 
                 # 2d. Pilots who went offline
                 # Logoff = letzter echter Beleg (letzte gespeicherte Position dieses Fluges),
@@ -1240,7 +1224,7 @@ class VatsimPoller:
                 set_transport_summary_quip, transport_quips_enabled,
                 event_summary_context, flight_quip_context, get_transport_quips,
                 get_push_subscriptions_for_events, transport_event_started,
-                transport_anyone_in_progress, detect_transport_losses,
+                transport_anyone_in_progress,
                 get_progress_snapshot, write_progress_snapshot,
             )
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1295,8 +1279,8 @@ class VatsimPoller:
                                         set_transport_summary_quip(conn, ev["id"], summary)
                         continue
                     # --- nicht abgeschlossen: bisheriger Ablauf unverändert ---
-                    if ev.get("destination"):
-                        detect_transport_losses(conn, ev, callsign_prefix=self.callsign_prefix)
+                    # (detect_transport_losses entfällt: Verluste stehen jetzt in den movements
+                    # und fließen über losses[]/lost_total_kg direkt aus compute_transport_progress.)
                     progress = compute_transport_progress(
                         conn, ev, now, callsign_prefix=self.callsign_prefix
                     )

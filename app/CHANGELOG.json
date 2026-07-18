@@ -1,5 +1,19 @@
 [
   {
+    "version": "10.0.0",
+    "date": "2026-07-17",
+    "highlight": true,
+    "title": "Milchmann",
+    "items": [
+      "📦 Die Fracht denkt jetzt vom Stapel her, nicht vom Flugbein. Bisher hat der FriesenKutter die Ladung aus dem Startplatz deines LETZTEN Flugbeins geraten — wer über einen zweiten Ladeplatz flog, bei dem verschwand die erste Ladung (800 kg Fisch wurden zu 0), und wer über einen fremden Platz zwischenlandete, bekam Ware gutgeschrieben, die nie an Bord war. Jetzt liegt die Ware als Bestand auf Stapeln mit einem Ort: Du lädst, wenn du am Boden an einem Ladeplatz stehst, lieferst beim Landen am Ziel und gibst zurück, wenn du dort ausloggst. Was du geladen hast, bleibt an Bord — auch über Zwischenlandungen.",
+      "🚚 Der Milchmann funktioniert — daher der Name: EDWG → EDWZ → Ziel lädt an BEIDEN Plätzen und liefert beides. Dieselbe Ware darf aus zwei Startplätzen kommen; die Kappung pro Flug gilt für die Frachtart insgesamt (60 in EDWG, die restlichen 40 in EDDW, nie mehr).",
+      "🧭 Eine Wahrheit: Ob geflogen, gelandet, geliefert oder verloren, entscheidet allein der erkannte GPS-Track (canonicalize_legs) — kein Flugplan-Raten, kein „Latch“ mehr, der die Ankunft separat merken musste. Kein Track, kein Kutter-Flug.",
+      "🅿️ Ehrliche Anzeige: „lädt in EDWG · 800 kg“ (am Stapel), „steht in EDDW · 800 kg“ (Zwischenstopp — vorher unsichtbar), „unterwegs · 800 kg“ (mit Menge) und „dabei“ (fliegt leer). „✅ angekommen“ ist weg: eine Lieferung ist eine Tatsache im Balken, kein Zustand.",
+      "⚖️ Der Balken kann nicht mehr lügen: geliefert + verloren + an Bord + Rest = Manifest. Immer. Das ist jetzt Arithmetik, keine Zusicherung.",
+      "🛟 Feinschliff: Wer mitten im Flug die Verbindung verliert und neu einloggt, taucht mit seiner versenkten Ladung jetzt auch im Verlust-Feed und bei den Teilnehmern auf. Flüge, die nur über den StatSim-Backfill erfasst wurden (wenn der Live-Poller ausfiel), erscheinen im Feed und in der Wertung — der Live-Block bleibt aber FriesenSpy-only."
+    ]
+  },
+  {
     "version": "9.5.0",
     "date": "2026-07-15",
     "highlight": false,

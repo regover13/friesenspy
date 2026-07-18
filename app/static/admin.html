@@ -865,8 +865,11 @@
                   </div>
                 </div>
                 <div class="form-section-title">Fracht-Manifest (Reihenfolge = Beladung)</div>
-                <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+                <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 6px;">
                   Emoji + Max/Flug kommen beim Speichern aus dem Katalog (Snapshot) — spätere Katalog-Änderungen wirken nicht auf bestehende Events; erneutes Speichern übernimmt den aktuellen Stand.
+                </p>
+                <p style="color:#8aa0b8;font-size:0.82rem;margin:0 0 12px;">
+                  <strong>Genau ein Startplatz je Frachtart.</strong> Dieselbe Ware an mehreren Plätzen? Mehrere Zeilen anlegen.
                 </p>
                 <datalist id="ke-cargo-suggestions">
                   <option value="Krabbenbrötchen"></option>
@@ -2291,8 +2294,8 @@
         + '<span class="ke-c-hint" style="color:#8aa0b8;font-size:0.75rem;"></span>'
         + '</div>'
         + '<input type="number" class="ke-c-kg" placeholder="kg" min="0" step="10" style="flex:1;min-width:70px;" />'
-        + '<input type="text" class="ke-c-dep" placeholder="Start ICAO(s), z.B. EDDW, EDWG" '
-        + 'title="Startplatz/-plätze dieser Fracht (kommagetrennt). Pflicht — die Route entsteht daraus." '
+        + '<input type="text" class="ke-c-dep" placeholder="Start-ICAO, z.B. EDDW" '
+        + 'title="Genau EIN Startplatz je Frachtart (Pflicht, ≠ Ziel). Für dieselbe Ware an mehreren Plätzen mehrere Zeilen anlegen." '
         + 'style="flex:1;min-width:120px;text-transform:uppercase;" />'
         + '<button type="button" class="btn btn-sm ke-c-del">✕</button>';
       const nameInput = div.querySelector('.ke-c-name');
@@ -2320,7 +2323,7 @@
           const o = document.createElement('div');
           o.className = 'ke-c-opt';
           o.dataset.name = c.name;   // sicher (keine Attribut-Escaping-Falle)
-          o.innerHTML = (c.emoji ? c.emoji + ' ' : '') + escH(c.name)
+          o.innerHTML = (c.emoji ? escH(c.emoji) + ' ' : '') + escH(c.name)
             + (c.per_flight_max_kg != null ? ' <span class="ke-c-optcap">max ' + Math.round(c.per_flight_max_kg) + ' kg/Flug</span>' : '');
           picker.appendChild(o);
         });
@@ -2365,7 +2368,7 @@
             name, target_kg: kg,
             emoji: cat ? cat.emoji : null,
             per_flight_max_kg: cat ? cat.per_flight_max_kg : null,
-            departure: dep || null,   // #15 Sub-Projekt B: Startplatz-Bindung; leer = geteilt
+            departure: dep || null,   // Startplatz-Bindung (Entscheidung 6: genau einer, Pflicht)
           });
         }
       });
@@ -2479,8 +2482,20 @@
       // #84: keine Strecke mehr — die Route wird serverseitig aus den Startplätzen der Fracht + Ziel
       // abgeleitet. Ziel + mind. eine Frachtart mit Startplatz sind Pflicht.
       if (!name || !dest || !dtstart) { toast('Name, Ziel und Start sind erforderlich.', true); return; }
-      if (!cargo.length || cargo.some(c => !c.departure)) {
-        toast('Jede Frachtart braucht eine Menge und mindestens einen Startplatz.', true); return;
+      // .trim() statt Wahrheitswert: ein reines Leerzeichen ist sonst „gesetzt", der Server weist
+      // es aber mit 400 ab (_normalize_icao_list liefert leer). #8: hier freundlich vorab abfangen.
+      if (!cargo.length || cargo.some(c => !(c.departure || '').trim())) {
+        toast('Jede Frachtart braucht eine Menge und genau einen Startplatz.', true); return;
+      }
+      // Entscheidung 6: GENAU ein Startplatz je Frachtart — Komma/Leerzeichen (mehrere ICAO) hier
+      // schon abfangen, sonst weist der Server es mit 400 ab.
+      if (cargo.some(c => /[,\s]/.test((c.departure || '').trim()))) {
+        toast('Genau ein Startplatz je Frachtart. Für dieselbe Ware an mehreren Plätzen mehrere Zeilen anlegen.', true); return;
+      }
+      // #8: Startplatz == Ziel weist der Server ab (_normalize_icao_list entfernt das Ziel -> leer).
+      // Vorab freundlich melden, statt den 400 durchschlagen zu lassen.
+      if (cargo.some(c => (c.departure || '').trim().toUpperCase() === dest)) {
+        toast('Der Startplatz einer Frachtart darf nicht das Ziel sein.', true); return;
       }
       // #77: unbekannte Flugplätze (Ziel + Startplätze) warnen, nicht hart blocken.
       const unknown = await checkUnknownIcaos([dest].concat(cargo.flatMap(c => (c.departure || '').split(/[,\s]+/))));

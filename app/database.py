@@ -8,6 +8,10 @@ import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+# Reine Zustandsmaschine ohne DB-Abhaengigkeit (importiert nichts aus app.*) -> kein Zyklus,
+# darf auf Modulebene stehen. compute_transport_progress + transport_anyone_in_progress nutzen sie.
+from app.transport_stacks import derive_stacks, STOLEN, SUNK
+
 logger = logging.getLogger(__name__)
 
 
@@ -4050,7 +4054,8 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "3"  # "3" (#84): cargo.departure ist jetzt eine Startplatz-LISTE (CSV)
+_PROGRESS_SNAPSHOT_VERSION = "4"  # "4": Stapel-Modell — Ladung ist ein Bestand mit einem Ort
+                                  # (Entscheidung 9: kein Auftau-Schutz, Version hoch + neu rechnen)
 
 # Reine Anzeige-Retention (öffentliche Listen-Endpoints): Events/Rennen älter als das werden
 # ausgeblendet, nicht gelöscht. Nutzung erst in späteren Tasks (#66); hier nur die Konstante.
@@ -4294,16 +4299,20 @@ def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
         ).fetchone()
         if row and not get_transport_cargo(conn, row[0]):
             resolved = _resolve_cargo_against_catalog(conn, cargo_lines)
-            # #84: Cargo-Startplätze auf die (distanz-gefilterte) Route beschneiden — ein von
-            # `parse_route` verworfener Marker-ICAO (Tippfehler/fern) degradiert seine Zeile auf
-            # geteilt (NULL), statt tote, nie füllbare Fracht anzulegen.
+            # Entscheidung 6 (Task 11): jede Zeile braucht GENAU EINEN Startplatz ≠ Ziel, der auf
+            # der (distanz-gefilterten) Route liegt. Ein von `parse_route` verworfener Marker-ICAO
+            # (Tippfehler/fern) oder das Ziel selbst macht die Zeile ortlos — sie wird VERWORFEN
+            # (früher: auf „geteilt"/NULL degradiert; den geteilten Topf gibt es nicht mehr, und
+            # set_transport_cargo würde eine ortlose Zeile jetzt mit ValueError ablehnen).
             route_places = {c.strip().upper() for c in (route or "").split(",") if c.strip()}
+            dest_up = (row["destination"] or "").strip().upper()
+            kept_lines = []
             for line in resolved:
-                dep = line.get("departure")
-                if dep:
-                    kept = [c for c in dep.split(",") if c.strip().upper() in route_places]
-                    line["departure"] = ",".join(kept) if kept else None
-            set_transport_cargo(conn, row[0], resolved, destination=row["destination"])
+                dep = (line.get("departure") or "").strip().upper()
+                if dep and dep in route_places and dep != dest_up:
+                    line["departure"] = dep
+                    kept_lines.append(line)
+            set_transport_cargo(conn, row[0], kept_lines, destination=row["destination"])
 
 
 def list_transport_events(conn: sqlite3.Connection, *, since: str | None = None) -> list[dict]:
@@ -4478,10 +4487,10 @@ def set_transport_cargo(
     destination: str | None = None,
 ) -> None:
     """Fracht-Manifest eines Events komplett ersetzen. Zeilen ohne Name/Menge werden ignoriert.
-    Je Zeile optional ``emoji``, ``per_flight_max_kg`` (Co-Load-Kappung) und ``departure`` (#84:
-    kommagetrennte Startplatz-LISTE, an die die Frachtart gebunden ist; leer = geteilt). Die
-    Startplatz-Liste wird via :func:`_normalize_icao_list` normalisiert; ``destination`` wird aus ihr
-    entfernt (ein am Ziel startender Flug ist per Rückflug-Filter nie füllbar)."""
+    Je Zeile optional ``emoji``, ``per_flight_max_kg`` (Co-Load-Kappung) und PFLICHT ``departure``:
+    GENAU EIN Startplatz ≠ Ziel (Entscheidung 6 — eine Zeile = ein Stapel = ein Platz). ``departure``
+    wird via :func:`_normalize_icao_list` normalisiert (``destination`` entfernt); fehlt der Platz
+    oder sind es mehrere, wird ``ValueError`` geworfen (der geteilte Topf/CSV-Liste entfällt)."""
     conn.execute("DELETE FROM transport_cargo WHERE event_id = ?", (event_id,))
     pos = 0
     for line in cargo:
@@ -4492,7 +4501,15 @@ def set_transport_cargo(
             continue
         if not name or target <= 0:
             continue
+        # Entscheidung 6 (Spec 2026-07-15): eine Zeile = ein Stapel = GENAU ein Platz. Verbindlich
+        # serverseitig (der Admin-Endpoint ist nicht der einzige Aufrufer) — der "geteilte Topf"
+        # (departure NULL) und die CSV-Liste entfallen.
         dep = _normalize_icao_list(line.get("departure"), exclude=destination)
+        if not dep or "," in dep:
+            raise ValueError(
+                f"Frachtart „{name}“: Jede Frachtart liegt an genau einem Platz. "
+                "Für dieselbe Ware an mehreren Plätzen leg mehrere Zeilen an."
+            )
         conn.execute(
             "INSERT INTO transport_cargo "
             "(event_id, position, name, target_kg, emoji, per_flight_max_kg, departure) "
@@ -4925,232 +4942,6 @@ def set_transport_summarized(conn: sqlite3.Connection, event_id: int, ts: str) -
     return _set_transport_latch(conn, event_id, "summarized_at", ts)
 
 
-def set_transport_live_arrival(
-    conn: sqlite3.Connection, cid: int, logon_time: str, event_id: int, arrived_at: str
-) -> None:
-    """Live-Ankunft dauerhaft latchen — einmal geschrieben, nie zurückgenommen."""
-    conn.execute(
-        "INSERT OR IGNORE INTO transport_live_arrivals (cid, logon_time, event_id, arrived_at) "
-        "VALUES (?, ?, ?, ?)",
-        (cid, logon_time, event_id, arrived_at),
-    )
-
-
-def get_transport_live_arrivals(
-    conn: sqlite3.Connection, event_id: int
-) -> dict[tuple[int, str], str]:
-    """{(cid, logon_time): arrived_at} mit Live-Ankunfts-Latch für dieses Event.
-
-    ``arrived_at`` (der Ziel-Ankunfts-Zeitpunkt) wird von :func:`_latch_hits_flight` genutzt, um den
-    Latch an GENAU das liefernde GPS-Leg zu binden (#6). Membership-Aufrufer (``(cid, lo) in …``)
-    funktionieren unverändert weiter (dict-Key-Test)."""
-    rows = conn.execute(
-        "SELECT cid, logon_time, arrived_at FROM transport_live_arrivals WHERE event_id = ?",
-        (event_id,),
-    ).fetchall()
-    return {(r["cid"], r["logon_time"]): r["arrived_at"] for r in rows}
-
-
-def record_transport_loss(conn, event_id, cid, logon_time, kind, type_code,
-                          callsign, dep, end_icao, lost_at) -> None:
-    """Fracht-Verlust latchen (idempotent via PK). kind: 'returned'|'stolen'|'sunk'."""
-    conn.execute(
-        "INSERT OR IGNORE INTO transport_cargo_losses "
-        "(event_id, cid, logon_time, kind, type_code, callsign, dep, end_icao, lost_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (event_id, cid, logon_time, kind, type_code, callsign, dep, end_icao, lost_at),
-    )
-
-
-def get_transport_losses(conn, event_id: int) -> list[dict]:
-    rows = conn.execute(
-        "SELECT event_id, cid, logon_time, kind, type_code, callsign, dep, end_icao, lost_at "
-        "FROM transport_cargo_losses WHERE event_id = ? ORDER BY lost_at",
-        (event_id,),
-    ).fetchall()
-    return [dict(r) for r in rows]
-
-
-# #6: `arrived_at` (per _now_utc(), sekundengenau) wird im selben Poll-Takt ERST NACH
-# save_position_history erzeugt und kann daher minimal NACH dem GPS-`landing_ts` des liefernden
-# Legs liegen; ein Vollstopp knapp außerhalb des 4-km-Latch-Radius (aber im 10-km-Leg-Radius)
-# kann ihn um Poll-Takte verzögern. Dieser Slack federt das an der OBEREN Grenze ab (nur nach oben).
-_LATCH_SLACK_SEC = 120
-
-
-def _latch_hits_flight(
-    latches: dict[tuple[int, str], str],
-    cid: int,
-    takeoff_ts: str,
-    landing_ts: str | None,
-) -> bool:
-    """True, wenn ein Live-Ankunfts-Latch zu GENAU diesem GPS-Leg gehört (#6).
-
-    Der Latch trägt ``arrived_at`` = Zeitpunkt der Ziel-Ankunfts-Erkennung (:func:`check_live_arrival`
-    latcht nur am Boden im ZIELradius). Ein Latch gehört zu dem Leg, in dessen eigenem Lebensfenster
-    ``[takeoff_ts, landing_ts (+Slack)]`` ``arrived_at`` liegt — NICHT zum ganzen Connection-Intervall
-    (das war der #6-Bug: jedes Folge-Leg derselben Verbindung matchte, wodurch echte Verluste und noch
-    fliegende Folge-Legs fälschlich als „schon geliefert" galten).
-
-    Untergrenze ``takeoff_ts <= arrived_at`` ist scharf (der eigentliche Fix — ein Leg, das erst NACH
-    der Ankunft startet, darf nie matchen). Der Connection-Logon des Latches liegt per Konstruktion
-    vor/auf dem Leg-Takeoff → ``lo <= takeoff_ts`` als Vorfilter. Vergleich als datetime (Bruchsekunden
-    kippen String-Vergleich an der Sekundengrenze)."""
-    if not takeoff_ts:
-        return False
-    try:
-        to = _parse_iso(takeoff_ts)
-    except (ValueError, AttributeError):
-        return False
-    lend = None
-    if landing_ts:
-        try:
-            lend = _parse_iso(landing_ts) + timedelta(seconds=_LATCH_SLACK_SEC)
-        except (ValueError, AttributeError):
-            lend = None
-    for (c, lo), arrived_at in latches.items():
-        if c != cid or not lo or not arrived_at:
-            continue
-        try:
-            lo_dt = _parse_iso(lo)
-            arr = _parse_iso(arrived_at)
-        except (ValueError, AttributeError):
-            continue
-        if lo_dt <= to and to <= arr and (lend is None or arr <= lend):
-            return True
-    return False
-
-
-def _connection_logon_for_leg(conn: sqlite3.Connection, cid: int, takeoff_ts: str) -> str | None:
-    """Verbindungs-Logon (``flights.logon_time``) der Connection, die den Takeoff dieses GPS-Legs
-    umschließt — für den Loss-Key (der Poller latcht Verluste weiterhin unter dem Verbindungs-
-    Logon, nicht unter dem GPS-Takeoff). ``None``, wenn keine Connection gefunden wird (z. B.
-    StatSim-only Flüge ohne ``flights``-Zeile)."""
-    row = conn.execute(
-        "SELECT logon_time FROM flights WHERE cid = ? AND logon_time <= ? "
-        "AND (logoff_time IS NULL OR logoff_time >= ?) AND superseded_by IS NULL "
-        "ORDER BY logon_time DESC LIMIT 1",
-        (cid, takeoff_ts, takeoff_ts),
-    ).fetchone()
-    return row[0] if row else None
-
-
-def detect_transport_losses(conn, event: dict, *, callsign_prefix: str = "FRS") -> int:
-    """Neue Fracht-Verluste eines Events erkennen und latchen (idempotent, Poll-Takt-tauglich).
-
-    Kandidat = ein GPS-Leg (:func:`canonicalize_legs`), das Richtung Ziel gestartet war (dep auf
-    der Strecke, ≠ destination), ohne Live-Ankunfts-Latch (Connection-Intervall-Reconcile, s.
-    :func:`_latch_hits_flight`) und ohne GPS-Ankunft am Ziel. Die Entscheidung wartet auf die
-    zugrunde liegende VERBINDUNG (``flights.logoff_time`` — echter VATSIM-Disconnect), NICHT auf
-    das GPS-Leg selbst: ein wirklich versunkener Kutter (Absturz/Verschwinden abseits jedes
-    Flugplatzes) registriert per GPS-Detektor NIE eine Landung (``detect_gps_legs`` schließt ein
-    Leg nur an einem erkannten Platz ab, s. app/gps_legs.py) und bliebe mit dem Leg-eigenen
-    ``logoff_time`` als Kriterium für immer „offen" — die Connection dagegen schließt beim
-    Disconnect zuverlässig, das ist das Signal, dass keine weiteren Daten mehr kommen.
-    Klassifikation per letzter Position bis zu diesem Verbindungsende: am Boden am
-    Abflugplatz → 'returned' · am Boden an anderem Platz → 'stolen' · sonst (in der Luft
-    verschwunden / abseits jedes Platzes) → 'sunk' (Kutter versunken). Gelatcht wird unter dem
-    VERBINDUNGS-Logon (:func:`_connection_logon_for_leg`), nicht dem GPS-Takeoff — der Poller
-    kennt beim Latch-Setzen nur die Connection.
-    """
-    from app.geo import nearest_airport_icao
-    dest = normalize_type_code(event.get("destination"))
-    route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
-    if not dest or not route_set:
-        return 0
-    radius = _BUMMEL_AIRPORT_RADIUS_KM
-    start = event.get("dtstart") or ""
-    now = _now_utc()
-    latched = get_transport_live_arrivals(conn, int(event["id"]))
-    existing = {(l["cid"], l["logon_time"]) for l in get_transport_losses(conn, int(event["id"]))}
-    load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
-    new = 0
-    recorded_this_run: set[tuple[int, str]] = set()
-    # Obergrenze wie compute_transport_progress: Verluste dürfen nur innerhalb des
-    # Event-Fensters entstehen. Ohne `end` wurde jeder spätere Streckenflug (auch Wochen nach
-    # dtend, z. B. ein ganz anderes Event auf derselben Route) fälschlich als Verlust dieses
-    # (längst abgeschlossenen) Events gelatcht — Alt-Events sammelten so fortlaufend
-    # Fremd-Verluste, zusätzlich unbeschränkte Poller-Last.
-    end = event.get("dtend") or now
-    for f in canonicalize_legs(conn, start=load_start, end=end, callsign_prefix=callsign_prefix):
-        cid, lo = f.get("cid"), f.get("logon_time")
-        if cid is None or lo is None:
-            continue
-        cid = int(cid)
-        conn_logon = _connection_logon_for_leg(conn, cid, lo)
-        if conn_logon is None:
-            continue  # kein Verbindungs-Key (z. B. StatSim) → kann nicht latch-kompatibel gemeldet werden
-        conn_row = conn.execute(
-            "SELECT logoff_time FROM flights WHERE cid = ? AND logon_time = ?", (cid, conn_logon)
-        ).fetchone()
-        # #23 Review I1: als Fenster-Ende für den Latch-Abgleich das Ende der ZUGRUNDE
-        # LIEGENDEN CONNECTION nutzen (nicht das Leg-eigene logoff_time, das bei einem
-        # versunkenen Kutter NIE gesetzt wird → end=∞ → ein Latch einer SPÄTEREN Reconnect-
-        # Connection derselben cid überlappt sonst immer und verdeckt den echten Verlust).
-        # Ist die Connection noch offen, bleibt das Leg-eigene logoff_time der Fallback
-        # (harmlos: eine noch offene Connection wird unten ohnehin nicht gemeldet).
-        leg_logoff = f.get("logoff_time") or ""
-        conn_logoff = conn_row[0] if conn_row and conn_row[0] else leg_logoff
-        if _latch_hits_flight(latched, cid, lo, conn_logoff):
-            continue
-        if (cid, conn_logon) in existing or (cid, conn_logon) in recorded_this_run:
-            continue
-        conn_end = conn_row[0] if conn_row and conn_row[0] else None
-        if not conn_end or conn_end < start:
-            continue  # Verbindung noch offen (kein Disconnect) oder vor dem Event-Fenster beendet
-        dep = normalize_type_code(f.get("departure"))
-        if dep not in route_set or dep == dest:
-            continue  # war nie mit Fracht Richtung Ziel unterwegs
-        # Bewusst gps_arrival statt arrival (#23 Review C2): der trackless Fallback setzt
-        # arrival aus dem FLUGPLAN — eine reine Plan-Angabe ohne GPS-Beleg darf eine echte
-        # Verlust-Erfassung nicht als "schon geliefert" überstimmen.
-        gps_arr = normalize_type_code(f.get("gps_arrival"))
-        if gps_arr == dest:
-            continue  # echte GPS-Ankunft am Ziel → geliefert (compute zählt das als loaded)
-        row = conn.execute(
-            "SELECT latitude, longitude, groundspeed FROM position_history "
-            "WHERE cid = ? AND ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT 1",
-            (cid, lo, conn_end),
-        ).fetchone()
-        if row is None:
-            # Keine Position = keine Aussage: Flüge ohne jeden GPS-Track (z. B. StatSim-
-            # rekonstruiert) nicht als Verlust werten — der Verlust-Override in
-            # compute_transport_progress würde sonst echte StatSim-Lieferungen kippen.
-            continue
-        kind, end_icao = "sunk", None
-        if row is not None and row["groundspeed"] is not None \
-                and row["groundspeed"] <= _LANDED_MAX_GS_KT:
-            end_icao = nearest_airport_icao(row["latitude"], row["longitude"], radius)
-            if end_icao == dest:
-                # #23 Review M1: letzte Position am ZIEL (Zwischenlande-/Restweg-Klassifikation
-                # trifft hier zufällig den Zielplatz) — das Leg endete am Ziel, kein Verlust.
-                continue
-            elif end_icao in route_set:
-                # Bug X (#15A): Rückgabe an JEDEM Strecken-Wegpunkt (inkl. Abflugplatz), nicht
-                # nur am ursprünglichen dep — der Kutter steht sicher an einem Netz-Platz. Nur
-                # Plätze AUSSERHALB der Strecke gelten als geklaut.
-                kind = "returned"
-            elif end_icao:
-                kind = "stolen"
-        type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
-        record_transport_loss(conn, int(event["id"]), cid, conn_logon, kind, type_code,
-                              f.get("callsign") or "", dep, end_icao, now)
-        recorded_this_run.add((cid, conn_logon))
-        new += 1
-    return new
-
-
-def active_transport_destinations(conn: sqlite3.Connection, now: str) -> list[dict]:
-    """Aktuell laufende FriesenKutter-Events (dtstart <= now <= dtend) mit gesetztem Ziel
-    (inkl. ``radius_km`` — NULL, wenn das Event den Default-Umkreis nutzt)."""
-    rows = conn.execute(
-        "SELECT id, destination, radius_km FROM transport_events "
-        "WHERE dtstart <= ? AND dtend >= ? AND destination IS NOT NULL AND destination != ''",
-        (now, now),
-    ).fetchall()
-    return [{"id": r["id"], "destination": r["destination"], "radius_km": r["radius_km"]} for r in rows]
-
-
 def open_transport_flights(conn: sqlite3.Connection, callsign_prefix: str = "FRS") -> list[dict]:
     """Aktuell offene (noch verbundene) FRS-Flüge — Basis für Live-Ankunft ohne Disconnect."""
     rows = conn.execute(
@@ -5159,21 +4950,6 @@ def open_transport_flights(conn: sqlite3.Connection, callsign_prefix: str = "FRS
         (callsign_prefix + "%",),
     ).fetchall()
     return [dict(r) for r in rows]
-
-
-def _returning_pilot_landed(conn: sqlite3.Connection, cid: int) -> bool:
-    """True, wenn ein als „Rückflug" erkannter Pilot inzwischen wieder GELANDET ist (aktuelle
-    Live-Position am Boden, ``groundspeed < _BLOCK_GS_KT``) — EGAL wo (#66: die Position spielt
-    für die Klassifikation ohnehin keine Rolle mehr, nur der Bewegungszustand). Die zugrunde
-    liegende Verbindung bleibt dabei oft weiter offen (kein Disconnect nach der Landung), sodass
-    ``open_transport_flights`` sie unverändert weiter liefert — ohne diesen Check würde die
-    „Rückflug"-Markierung dauerhaft hängen bleiben (#65, Fund 06.07. Live-Test EDWG-EDXP:
-    ursprünglich nur „Landung auf der Strecke" geprüft, was einen Zwischenstopp an einem
-    event-fremden Flugplatz — EDWL — übersah)."""
-    row = conn.execute(
-        "SELECT groundspeed FROM live_positions WHERE cid=?", (cid,)
-    ).fetchone()
-    return bool(row) and row["groundspeed"] is not None and row["groundspeed"] < _BLOCK_GS_KT
 
 
 def _current_pos(conn: sqlite3.Connection, cid: int) -> tuple[float, float, float] | None:
@@ -5190,45 +4966,13 @@ def _current_pos(conn: sqlite3.Connection, cid: int) -> tuple[float, float, floa
     return (row["latitude"], row["longitude"], row["groundspeed"])
 
 
-def check_live_arrival(
-    conn: sqlite3.Connection,
-    cid: int,
-    logon_time: str,
-    latitude: float,
-    longitude: float,
-    groundspeed: float,
-    events: list[dict],
-    *,
-    radius_km: float | None = None,
-) -> None:
-    """Prüft eine aktuelle Live-Position gegen bereits geladene, laufende FriesenKutter-Ziele
-    (``events``, aus :func:`active_transport_destinations`) und latcht einen Treffer dauerhaft
-    (``transport_live_arrivals``) — 'am Boden' (``groundspeed < _BLOCK_GS_KT``) und im Umkreis
-    (``radius_km``-Parameter, sonst ``_BUMMEL_AIRPORT_RADIUS_KM`` — kein per-Event-Override mehr,
-    s. #23) um ``destination``. Kein Rückgängigmachen; ``events`` wird NICHT selbst nachgeladen
-    (Aufrufer lädt einmal pro Poll)."""
-    if groundspeed is None or groundspeed >= _BLOCK_GS_KT:
-        return
-    from app.geo import haversine, icao_to_coords
-    now = _now_utc()
-    for ev in events:
-        dest = normalize_type_code(ev.get("destination"))
-        coords = icao_to_coords(dest) if dest else None
-        if not coords:
-            continue
-        radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
-        if haversine(latitude, longitude, coords[0], coords[1]) <= radius:
-            set_transport_live_arrival(conn, cid, logon_time, ev["id"], now)
-
-
 def transport_event_started(
     conn: sqlite3.Connection, event: dict, callsign_prefix: str = "FRS"
 ) -> bool:
     """True, sobald ein Friese von einem Streckenflugplatz abgeflogen ist — auch während der Flug
-    noch offen ist (kein Disconnect). ``compute_transport_progress`` nimmt offene Flüge seit dem
-    Live-Ankunfts-Latch zwar in den Feed auf, zählt sie dort aber erst mit Latch als beladen (ohne
-    verlässliche GPS-Ankunft) — das darf den Start-Push nicht verzögern: der (Flugplan-)Abflugort
-    genügt hierfür, ohne GPS-Korrektur."""
+    noch offen ist (kein Disconnect). Der Start-Push darf nicht auf die GPS-Ankunft warten: der
+    (Flugplan-)Abflugort an einem Streckenplatz genügt hierfür. (Der Feed selbst rechnet seit dem
+    Stapel-Modell rein GPS-basiert — diese Frühabfrage bleibt bewusst flugplan-tolerant.)"""
     route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
     if not route_set:
         return False
@@ -5246,33 +4990,25 @@ def transport_anyone_in_progress(
     callsign_prefix: str = "FRS",
     radius_km: float | None = None,
 ) -> bool:
-    """True, wenn für dieses FriesenKutter-Event noch ein Friese unterwegs ist — dann muss die
-    Feierabend-Zusammenfassung warten (analog ``_bummel_anyone_in_progress`` beim Reveal).
+    """True, wenn noch jemand Ware dieses Events trägt — dann muss der Feierabend warten.
 
-    Ein „Nachzügler" = offener Flug (``logoff_time IS NULL``), dessen Start an einem
-    Streckenflugplatz liegt (GPS-erste-Position im Umkreis, Fallback Flugplan-DEP) und der vor
-    ``started_before`` (dtend) begonnen hat — verspätete Neu-Connects nach dtend zählen nicht.
-    Flüge mit Live-Ankunfts-Latch (``transport_live_arrivals``) verzögern nicht: ihr Beitrag
-    steht fest (Zuladung hängt nur am Muster; der Latch überdauert jeden späteren Disconnect).
+    Entscheidung 10 (Spec): Das Event endet erst, wenn alle Ware einen End-Stapel gefunden hat
+    (geliefert, zurück, gestohlen, versenkt). Formal ``Summe Flieger-Stapel == 0``.
+
+    Damit entfällt die frühere Streckenprüfung ("gibt es einen offenen Flug, der auf der
+    Strecke gestartet ist?") — sie war ein PROXY für "trägt vermutlich noch Ware", der beste,
+    den ein Modell ohne Ladungsbegriff hatte. Ein LEERER Pilot hält jetzt nichts mehr auf; ein
+    beladener sehr wohl, auch über ``dtend`` hinaus (dann wartet das Event auf seine Ware).
+
+    ``started_before``/``radius_km`` bleiben für die Signatur-Verträglichkeit erhalten und
+    werden nicht mehr ausgewertet: Wer Ware trägt, zählt — unabhängig davon, wann er einloggte.
     """
-    from app.geo import icao_to_coords
-    route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
-    if not route_set:
+    inp = _stack_inputs(conn, event, _now_utc(), callsign_prefix=callsign_prefix)
+    if not inp["destination"]:
         return False
-    coords_map = {icao: icao_to_coords(icao) for icao in route_set}
-    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
-    latched = get_transport_live_arrivals(conn, int(event["id"]))
-    for f in open_transport_flights(conn, callsign_prefix):
-        lo = f.get("logon_time") or ""
-        if started_before and lo > started_before:
-            continue
-        if (f.get("cid"), lo) in latched:
-            continue
-        first = _first_pos(conn, int(f["cid"]), lo, "9999-12-31T23:59:59Z")
-        dep = _nearest_airport(coords_map, first, radius) or normalize_type_code(f.get("departure"))
-        if dep in route_set:
-            return True
-    return False
+    r = derive_stacks(manifest=inp["manifest"], events=inp["events"],
+                      destination=inp["destination"], loading_airports=inp["loading_airports"])
+    return any(sum(load.values()) > 0.01 for load in r["onboard"].values())
 
 
 # Reihenfolge bei gleichem Zeitstempel. Der Logout zuerst (er beendet die Tour — eine Landung im
@@ -5310,13 +5046,21 @@ def _transport_sessions(conn: sqlite3.Connection, start: str, end: str,
     ``logon_time <= end`` begrenzt die TEILNAHME (wer nach dtend einloggt, macht nicht mehr mit);
     die LEGS laufen bewusst bis ``now`` weiter (s. _stack_inputs) — sonst könnte die Ware eines
     kurz vor dtend gestarteten Fluges nie ankommen.
+
+    Jede zurückgegebene Session trägt ``next_logon`` = Start der NÄCHSTEN Verbindung desselben cid
+    (auch einer nach dtend eingeloggten, die selbst nicht teilnimmt) oder ``None``. Das ist die
+    Obergrenze für die Leg-Zuordnung einer OFFENEN (stale) Session: dort hat sie real geendet.
+    Ohne diese Grenze zöge eine stale-offene Zeile ein Leg der Folge-Verbindung an sich und
+    zählte dessen Fracht nach Eventende mit (Whole-Branch-Review #1). Deshalb wird die Liste OHNE
+    ``logon <= end`` geholt (auch spätere Verbindungen für ``next_logon`) und erst am Ende auf die
+    Teilnehmer gefiltert.
     """
     rows = conn.execute(
         "SELECT cid, callsign, aircraft_short AS aircraft, aircraft_icao, logon_time, logoff_time "
         "FROM flights WHERE superseded_by IS NULL AND callsign LIKE ? "
-        "AND logon_time <= ? AND (logoff_time IS NULL OR logoff_time >= ?) "
+        "AND (logoff_time IS NULL OR logoff_time >= ?) "
         "ORDER BY cid, logon_time",
-        (callsign_prefix + "%", end, start),
+        (callsign_prefix + "%", start),
     ).fetchall()
 
     merged: list[dict] = []
@@ -5332,7 +5076,11 @@ def _transport_sessions(conn: sqlite3.Connection, start: str, end: str,
             continue
         merged.append(r)
     merged.sort(key=lambda s: (s["logon_time"], s["cid"]))
-    return merged
+    # next_logon je Session (aus der VOLLEN Liste, vor dem Teilnehmer-Filter berechnet).
+    for i, s in enumerate(merged):
+        s["next_logon"] = next((t["logon_time"] for t in merged[i + 1:] if t["cid"] == s["cid"]), None)
+    # TEILNAHME: nur Verbindungen, die spätestens bei window_end (= end) eingeloggt haben.
+    return [s for s in merged if (s["logon_time"] or "") <= end]
 
 
 def _gap_seconds(a: str, b: str) -> float:
@@ -5415,9 +5163,17 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
         type_code = normalize_type_code(s.get("aircraft_icao")) or normalize_type_code(s.get("aircraft"))
         cap = round(payload_map.get(type_code, default_kg), 1)
 
-        # Legs DIESER Session: Takeoff liegt im Sessionfenster.
+        # Obergrenze der Session für die Leg-/Positions-Zuordnung: geschlossen → ihr logoff;
+        # OFFEN → Start der nächsten Verbindung (next_logon, s. _transport_sessions), sonst now.
+        # Eine stale-offene Zeile zöge sonst ein Leg der Folge-Verbindung an sich und zählte
+        # dessen Fracht nach Eventende mit (Whole-Branch-Review #1). Ein Leg, das NACH dtend
+        # abhebt, aber noch zu DIESER (vor dtend eingeloggten) Verbindung gehört, bleibt drin
+        # (Entscheidung 10) — die Grenze ist die Folge-Verbindung, nicht dtend.
+        nl = s.get("next_logon")
+        sess_end = lf if lf else (nl or now)
+        # Legs DIESER Session: Takeoff liegt in [logon, sess_end].
         own = [g for g in legs_by_cid.get(cid, [])
-               if (g.get("logon_time") or "") >= lo and (not lf or (g.get("logon_time") or "") <= lf)]
+               if lo <= (g.get("logon_time") or "") <= sess_end]
 
         # NUR echte GPS-Legs sind Flüge (#23). canonicalize_legs hat einen Fallback ohne GPS
         # (_flightrow_as_flight, database.py:2614-2623): erkennt der Detektor für eine cid im
@@ -5444,14 +5200,17 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
         else:
             # 2. Er steht nur da (kein Leg): aktuelle Live-Position, sonst die erste der Session.
             #    Am Boden = gs < _BLOCK_GS_KT — exakt die heutige Boden-Beladung (#5, v8.22.0).
-            gpos = _current_pos(conn, cid) if lf is None else None
+            #    Die Live-Position gilt nur für die WIRKLICH offene (letzte) Session — hat sie eine
+            #    Folge-Verbindung (nl), ist sie stale und die Live-Position gehört schon der
+            #    nächsten Verbindung; dann zählt nur die Position bis sess_end (Review #1).
+            gpos = _current_pos(conn, cid) if (lf is None and not nl) else None
             if gpos and gpos[2] is not None and gpos[2] < _BLOCK_GS_KT:
                 airport = _nearest_airport(coords_map, (gpos[0], gpos[1]), radius)
             else:
                 row = conn.execute(
                     "SELECT latitude, longitude, groundspeed FROM position_history "
                     "WHERE cid=? AND ts>=? AND ts<=? ORDER BY ts ASC LIMIT 1",
-                    (cid, lo, lf or now),
+                    (cid, lo, sess_end),
                 ).fetchone()
                 if row is not None and row["groundspeed"] is not None \
                         and row["groundspeed"] < _BLOCK_GS_KT:
@@ -5467,7 +5226,16 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
                 out.append({"ts": g["logoff_time"], "kind": "landing", "cid": cid,
                             "airport": normalize_type_code(g.get("gps_arrival")) or None,
                             "capacity_kg": cap})
-        if lf:
+        # Effektives Session-Ende für den Logout: geschlossen -> ihr logoff; stale-OFFEN (hat eine
+        # Folge-Verbindung, next_logon) -> deren Login. Dort war der Pilot NACHWEISLICH weg und
+        # wieder da; die Bordladung fällt real an dieser Stelle ab (derive_stacks lässt sie sonst
+        # erst beim Folge-Login abfallen, _drop_load auf login). OHNE synthetischen Logout hätte
+        # die stale-offene Verbindung keinen logout_ts, und der Feed fände die Verlust-Bewegung
+        # nicht (sie stünde am Folge-Login-ts) -> die Verlust-Zeile fiele still aus losses[] und
+        # participants.lost_kg, obwohl lost_total_kg stimmt (Whole-Branch-Review #2). Die WIRKLICH
+        # offene letzte Verbindung (kein next_logon) bleibt ohne Logout — der Pilot fliegt noch.
+        lf_eff = lf or nl
+        if lf_eff:
             # Der Logout darf NIE vor oder auf der eigenen Landung liegen: bei gleichem ts gewinnt
             # laut _STACK_EVENT_PRIO der Logout, fände position=None vor (der takeoff hat sie
             # geleert) und würde die Ladung VERSENKEN statt sie abzuliefern.
@@ -5488,14 +5256,20 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
             # sieht ein durchgehendes Leg), stünde sonst hier als "letzte Landung" und schöbe
             # den Logout weit nach vorn, aus der Session heraus. Der Pilot verschwände dann
             # mitten in Session 2 aus `position` und lieferte 0 kg.
-            ts_logout = lf
+            ts_logout = lf_eff
             letzte_landung = max((g["logoff_time"] for g in real
                                   if g.get("logoff_time")
-                                  and _parse_iso(g["logoff_time"]) <= _parse_iso(lf)),
+                                  and _parse_iso(g["logoff_time"]) <= _parse_iso(lf_eff)),
                                  default=None)
             if letzte_landung and _parse_iso(ts_logout) <= _parse_iso(letzte_landung):
                 ts_logout = (_parse_iso(letzte_landung) + timedelta(seconds=1)
                              ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            # Der EFFEKTIVE Logout-Zeitstempel (nach dem +1s-Shift) an der Session vermerken.
+            # derive_stacks stempelt die Verlust-Bewegung (returned/stolen/sunk) mit GENAU diesem
+            # ts; der Feed-Bau in compute_transport_progress muss danach suchen — nicht nach
+            # `logoff_time`, das beim Touchdown-Disconnect um 1 s daneben liegt (dann fiele die
+            # Verlust-Zeile still aus dem Feed, obwohl die Stapel-Zahlen stimmen).
+            s["logout_ts"] = ts_logout
             out.append({"ts": ts_logout, "kind": "logout", "cid": cid,
                         "airport": None, "capacity_kg": cap})
 
@@ -5504,6 +5278,7 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
     # still 0 kg liefern, obwohl sie heute mitzählen. Behandlung: wie ein normaler Flug — der
     # Flug ist vorbei, also gehört ein Logout am Landeort dazu.
     session_cids = {int(s["cid"]) for s in sessions}
+    statsim_sessions: list[dict] = []
     for cid, rows in legs_by_cid.items():
         for g in rows:
             # `block_start` auch hier: eine statsim_cache-Zeile mit duration_min > 5, aber ohne
@@ -5524,6 +5299,7 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
                         "airport": dep if dep in route_set else None, "capacity_kg": cap})
             out.append({"ts": g["logon_time"], "kind": "takeoff", "cid": cid,
                         "airport": None, "capacity_kg": cap})
+            logout_ts = None
             if g.get("logoff_time"):
                 arr = normalize_type_code(g.get("gps_arrival")) or None
                 out.append({"ts": g["logoff_time"], "kind": "landing", "cid": cid,
@@ -5531,11 +5307,23 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
                 # Der Logout MUSS nach der Landung liegen: bei gleichem ts gewinnt laut
                 # _STACK_EVENT_PRIO der Logout — er fände dann position=None vor und würde die
                 # Ladung VERSENKEN statt sie abzuliefern. Eine Sekunde später, synthetisch.
-                out.append({
-                    "ts": (_parse_iso(g["logoff_time"]) + timedelta(seconds=1))
-                          .strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "kind": "logout", "cid": cid, "airport": None, "capacity_kg": cap,
-                })
+                logout_ts = (_parse_iso(g["logoff_time"]) + timedelta(seconds=1)
+                             ).strftime("%Y-%m-%dT%H:%M:%SZ")
+                out.append({"ts": logout_ts, "kind": "logout", "cid": cid,
+                            "airport": None, "capacity_kg": cap})
+            # Pseudo-Session je StatSim-Leg (Whole-Branch-Review #3): Feed + Teilnehmer werden aus
+            # `sessions` gebaut; ohne einen Session-Eintrag fiele der StatSim-Pilot aus flights[]
+            # und participants[], obwohl seine Lieferung in total_kg zählt. `statsim_only` markiert
+            # ihn als NICHT-live (Backfill, keine VATSIM-Verbindung im Poller) — der Live-Block
+            # bleibt so FriesenSpy-only (index.html, fetchKutterActive filtert danach). Angehängt
+            # NACH `session_cids`/der Sessions-Schleife: die Event-Erzeugung oben läuft nur über die
+            # echten Sessions, hier werden die Ereignisse direkt erzeugt (kein Doppel).
+            statsim_sessions.append({
+                "cid": cid, "callsign": g.get("callsign") or f"{callsign_prefix}{cid}",
+                "aircraft": g.get("aircraft"), "aircraft_icao": g.get("aircraft_icao"),
+                "logon_time": g.get("logon_time"), "logoff_time": g.get("logoff_time"),
+                "next_logon": None, "logout_ts": logout_ts, "statsim_only": True,
+            })
 
     return {
         "manifest": manifest,
@@ -5543,7 +5331,7 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
         "loading_airports": loading,
         "destination": dest,
         "legs_by_cid": legs_by_cid,
-        "sessions": sessions,
+        "sessions": sessions + statsim_sessions,
     }
 
 
@@ -5556,372 +5344,67 @@ def compute_transport_progress(
     radius_km: float | None = None,
     skip_open_probe: bool = False,
 ) -> dict:
-    """Live-Fortschritt eines FriesenKutter-Events.
+    """Live-Fortschritt eines FriesenKutter-Events — Stapel-Modell (Spec 2026-07-15).
 
-    Feed-relevant sind FRS-Flüge, deren Start UND Ziel (GPS-korrigiert, Flugplan als Fallback) auf
-    der Streckenmenge liegen (dep≠arr). **Fracht zählt nur in eine Richtung:** ein Flug ist
-    ``loaded`` (trägt Zuladung), wenn er am ``destination`` ankommt **ODER** ein Live-Ankunfts-Latch
-    (``transport_live_arrivals``, gesetzt vom Poller via ``check_live_arrival`` — Boden + Zielradius,
-    auch ohne Disconnect) existiert; ein Latch hebt dabei auch den Strecken-Filter auf, sodass die
-    Fracht selbst dann gezählt bleibt, wenn der Pilot später außerhalb der Strecke disconnectet.
-    Zusätzlich werden aktuell **offene** (noch verbundene) Flüge mit Start auf der Strecke in den
-    Feed aufgenommen (``open_transport_flights``) — beladen nur mit Latch, da eine verlässliche
-    GPS-Ankunft erst nach Disconnect feststeht; ansonsten 0 kg, bis Latch oder Disconnect eintreten.
-    Rückflüge zählen 0 kg, erscheinen aber als leere Flüge im Feed. Die Musterzuladung je beladenem
-    Flug stammt aus ``aircraft_payloads`` (Fallback: globaler Default) und dient als EINGANG der
-    Co-Load-Füllung: das Fracht-Manifest wird nach Abflugzeit befüllt (Obergrenze pro Flug via
-    ``per_flight_max_kg``, Rest fließt in die nächste Frachtart). **Durchgängig Netto (#63):** die
-    ausgewiesene Menge eines Flugs (``tonnage_kg``) ist die tatsächlich ins Manifest verteilte Summe,
-    nicht die Musterzuladung — Überschuss ohne Manifest-Platz (Kappung/volle Frachtarten) zählt nicht
-    als geliefert, sodass ``total_kg`` == Σ ``delivered`` gilt und der Fortschritt nie überzeichnet.
-    Jeder beladene Flug trägt seine Frachtart(en). Der ``flights``-Feed ist absteigend (neueste oben).
+    Ladung ist ein BESTAND mit einem Ort, kein Attribut eines Flugbeins: Das Manifest liegt als
+    Stapel an seinen Ladeplätzen; wer am Boden an einem Ladeplatz steht, lädt; wer am Ziel
+    landet, liefert; wer ausloggt, gibt zurück / bestiehlt / versenkt. Die Regeln stehen
+    vollständig in :mod:`app.transport_stacks`, die DB-Uebersetzung in :func:`_stack_inputs` —
+    diese Funktion formt nur noch das Ergebnis in den API-Vertrag.
 
-    **Reservierung:** Sobald ein FRS-Pilot Richtung Ziel abhebt (``open_transport_flights``,
-    Start auf der Strecke), reserviert er seine volle Zuladung im Manifest — noch ohne Latch,
-    also vor jeder GPS-Bestätigung. Die Reservierung ist rein rechnerisch (kein DB-State, kein
-    eigenes Feld in ``flights``): sie füllt einen von ``delivered`` getrennten Topf
-    (``reserved_alloc``/``reserved_total_kg``), damit der gelieferte Fortschritt nie rückwärts
-    läuft, und verschwindet mit dem Flug (Latch, Landung anderswo, Disconnect). Die kg werden
-    dabei stets live aus ``aircraft_payloads`` (``payload_map``/``default_kg``) gelesen, nie
-    gesnapshottet.
+    **Erhaltungssatz:** Summe Stapel + Summe Ladung == Summe Manifest. Ware entsteht nicht und
+    verschwindet nicht; ``total_kg`` kann den Balken daher nicht überzeichnen (#63).
 
-    ``skip_open_probe`` (#66 Task 3): bei einem bereits ABGESCHLOSSENEN Event (``summarized_at``
-    gesetzt) überspringt der Aufrufer damit den zweiten, mit dem Event-Alter wachsenden
-    ``canonicalize_legs``-Aufruf (``open_legs_probe``) UND den gesamten Offen-Flug-Zweig
-    (``open_transport_flights``). Das ist beim Freeze nicht nur billiger, sondern auch
-    RICHTIGER: die Fracht eines abgeschlossenen Events steckt bereits im geschlossenen GPS-Leg
-    (C1-Mechanik oben) — der Offen-Zweig trägt nur noch die kosmetische
-    ``in_air``/``airborne``-Zeile bei, die eingefroren für immer fälschlich „unterwegs" anzeigen
-    würde (s. Spec `docs/superpowers/specs/2026-07-06-spezialevents-progress-snapshot-perf-design.md` §2).
+    ``radius_km`` und ``skip_open_probe`` werden nur noch für die Signatur-Verträglichkeit
+    angenommen und **ignoriert**:
+
+    * ``radius_km`` — der Anwesenheitsradius ist seit #23 global (``_BUMMEL_AIRPORT_RADIUS_KM``).
+    * ``skip_open_probe`` (#66) hatte zwei Gründe, beide entfallen. (1) Kosten: Es sparte den
+      ZWEITEN ``canonicalize_legs``-Aufruf — hier läuft nur einer. (2) Richtigkeit: Es verhinderte,
+      dass der Freeze eine ``in_air``-Zeile für immer als "unterwegs" einfriert. Das kann nicht
+      mehr passieren, weil das Modell es selbst ausschließt: Eingefroren wird erst, wenn niemand
+      mehr Ware trägt (Entscheidung 10, :func:`transport_anyone_in_progress`) — und eine
+      ``in_air``-Zeile entsteht nur MIT Ware an Bord. Es gibt also nichts wegzufiltern.
+
+    (Ein Filter wäre hier sogar schädlich gewesen: pro CID statt pro Session gefiltert, hätte
+    er dem Piloten, der eben geliefert hat und noch online am Ziel parkt, seine ganze Tonnage aus
+    dem Snapshot gelöscht — Fable-Review 16.07.)
     """
-    from app.geo import icao_to_coords  # lazy
-
+    inp = _stack_inputs(conn, event, now, callsign_prefix=callsign_prefix)
+    manifest, dest = inp["manifest"], inp["destination"]
     route_set = {c for c in (normalize_type_code(x) for x in (event.get("route") or "").split(",")) if c}
-    coords_map = {icao: icao_to_coords(icao) for icao in route_set}
-    radius = radius_km or _BUMMEL_AIRPORT_RADIUS_KM
     payload_map = get_payload_map(conn)
     default_kg = transport_default_payload_kg(conn)
+    if not dest:
+        # Ohne Ziel gibt es keinen Ziel-Stapel — und eine Landung mit unerkanntem Platz
+        # (airport=None) würde sonst `airport == destination` erfüllen und ins Nichts liefern.
+        return _empty_transport_progress(event, route_set, manifest)
 
-    start = event.get("dtstart") or ""
-    end = min(now, event.get("dtend") or now)
-    load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H)
-    flights = canonicalize_legs(conn, start=load_start, end=end, callsign_prefix=callsign_prefix)
-    flights = [f for f in flights if (f.get("logoff_time") or "") >= start]
+    r = derive_stacks(manifest=manifest, events=inp["events"], destination=dest,
+                      loading_airports=inp["loading_airports"])
+    stacks, onboard = r["stacks"], r["onboard"]
 
-    # #66: das aktuell laufende (noch nicht gelandete) Leg jedes Piloten separat auflösen — der
-    # obige `>= start`-Filter schließt es bewusst aus (offene Verbindungen behandelt weiter unten
-    # `open_transport_flights`), aber `canonicalize_legs` hat seinen GPS-Startpunkt bereits über
-    # den echten Leg-Detektor korrekt erkannt (`_gps_flights_for_positions`), inkl. der EIGENEN
-    # Abflugzeit dieses Legs — zuverlässiger als ihn aus der ersten Position der GANZEN
-    # Verbindung neu herzuleiten. Eigener Aufruf mit `end=now` (nicht durch `dtend` gekappt),
-    # damit ein Leg, das erst nach Event-Ende startete, nicht verloren geht.
-    if skip_open_probe:
-        current_leg_by_cid: dict[int, dict] = {}
-    else:
-        open_legs_probe = canonicalize_legs(conn, start=load_start, end=now, callsign_prefix=callsign_prefix)
-        # `open_legs_probe` ist absteigend nach logon_time sortiert (canonicalize_legs, Z. ~2633).
-        # Bei MEHREREN offenen Legs derselben cid (z. B. ein incomplete Leg aus einem Track-Gap
-        # >30 min bzw. einem Poller-/VPS-Ausfall, das nie geschlossen wurde, PLUS das tatsächlich
-        # laufende) muss das NEUESTE gewinnen — das ist das aktuelle Leg, aus dem dep/airborne und
-        # die Latch-Demotion (unten) abgeleitet werden. Die frühere Dict-Comprehension ließ über die
-        # absteigende Liste „last-wins" gewinnen = das ÄLTESTE Leg; ein veraltetes, längst
-        # abgeschlossenes Leg lieferte dann Takeoff/dep und ließ „angekommen" hängen (Fable-Review
-        # 10.07.). „erstes gewinnt" über die absteigende Liste = neuestes offenes Leg.
-        current_leg_by_cid: dict[int, dict] = {}
-        for _leg in open_legs_probe:
-            _cid = _leg.get("cid")
-            if _cid is None or _leg.get("logoff_time"):
-                continue
-            current_leg_by_cid.setdefault(int(_cid), _leg)
+    # --- Bewegungen je Leg/Session zuordnen (Feed) ---
+    delivered_by: dict[tuple[int, str], list[dict]] = {}
+    loss_by: dict[tuple[int, str], list[dict]] = {}
+    for m in r["movements"]:
+        key = (m["cid"], m["ts"])
+        if m["kind"] == "deliver":
+            delivered_by.setdefault(key, []).append(m)
+        elif m["kind"] in ("returned", "stolen", "sunk"):
+            loss_by.setdefault(key, []).append(m)
 
-    dest = normalize_type_code(event.get("destination"))
-    live_arrivals = get_transport_live_arrivals(conn, int(event["id"]))
+    emoji_of = {c["name"]: c.get("emoji") for c in manifest}
 
-    # Netzwerk-Flüge sammeln (dep & arr auf der Strecke, dep≠arr). „Beladen" = Ankunft am Ziel
-    # ODER ein Live-Ankunfts-Latch existiert (Fracht ohne Disconnect erkannt) — ein Latch hebt
-    # den Strecken-Filter auf, da die Fracht dann unabhängig vom finalen Disconnect-Ort zählt.
-    # dep/arr kommen direkt aus canonicalize_legs (GPS-Wahrheit, Plan nur als dep-Fallback —
-    # arrival hat bewusst KEINEN Plan-Fallback, s. _gps_flights_for_positions) — keine eigene
-    # _nearest_airport-Korrektur mehr nötig.
-    # Latches tragen den VERBINDUNGS-Logon (Poller kennt nur die flights-Session), der VOR dem
-    # GPS-Takeoff liegt → Zuordnung über Connection-Intervall-Überlappung (_latch_hits_flight),
-    # nicht per exaktem (cid, lo)-Schlüsselvergleich.
-    network: list[dict] = []
-    unmapped: set[str] = set()
-    for f in flights:
-        cid = f.get("cid")
-        if cid is None:
-            continue
-        lo = f.get("logon_time") or ""
-        lf = f.get("logoff_time")
-        dep = normalize_type_code(f.get("departure"))
-        arr = normalize_type_code(f.get("arrival"))
-        has_latch = bool(dest) and _latch_hits_flight(live_arrivals, int(cid), lo, lf)
-        if not has_latch and (dep not in route_set or arr not in route_set or dep == arr):
-            continue
-        # ECHTE GPS-Ankunft am Ziel ODER (kein bekanntes, abweichendes Ziel UND Latch) — ein
-        # Rückflug-Bein mit GPS-belegter Landung anderswo (arr gesetzt, ≠ dest) zählt NIE als
-        # beladen, selbst wenn das Connection-Intervall des Hin-Legs noch überlappt (sonst
-        # würde ein Latch vom Hinflug fälschlich auch das Rückflug-Bein beladen zeigen).
-        # Bewusst gps_arrival statt arrival (#23 Review C2): der trackless Fallback
-        # (_flightrow_as_flight) setzt arrival aus dem FLUGPLAN — eine reine Plan-Angabe ohne
-        # jeden GPS-Beleg darf NIE als Lieferung zählen ("Plan-Text-Lieferung ohne Flug").
-        gps_arr = normalize_type_code(f.get("gps_arrival"))
-        loaded = bool(dest) and (gps_arr == dest or not arr) and (gps_arr == dest or has_latch)
-        type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
-        if loaded and type_code and type_code not in payload_map:
-            unmapped.add(type_code)
-        tonnage = round(payload_map.get(type_code, default_kg), 1) if loaded else 0.0
-        network.append({
-            "dep_time": lo,
-            "cid": cid,
-            "callsign": f.get("callsign") or "",
-            "aircraft": f.get("aircraft") or type_code,
-            "dep": dep,
-            "arr": arr,
-            "tonnage_kg": tonnage,
-            "loaded": loaded,
-            "in_air": False,
-            "airborne": False,  # geschlossenes Bein (gelandet/zurück) — nie „unterwegs"
-            "reserved_kg": 0.0,
-            "flight_key": f"{cid}:{lo}",
-            "distance_nm": f.get("distance_nm") or 0,
-            "block_min": f.get("block_min") or f.get("duration_min") or 0,
-            # Interne Markierung für den Loss-Reconcile unten (Verbindungs-Logon dieses Legs,
-            # unter dem der Poller Verluste latcht) — vor der Rückgabe entfernt.
-            "_conn_logon": _connection_logon_for_leg(conn, int(cid), lo),
-        })
+    def _lines(ms: list[dict]) -> list[dict]:
+        agg: dict[str, float] = {}
+        for m in ms:
+            agg[m["name"]] = agg.get(m["name"], 0.0) + m["kg"]
+        return [{"name": n, "emoji": emoji_of.get(n), "kg": round(kg, 1)}
+                for n, kg in sorted(agg.items(), key=lambda kv: kv[1], reverse=True)]
 
-    # Aktuell offene Flüge (noch verbunden) — bisher komplett ignoriert, da canonicalize_flights
-    # logoff_time IS NOT NULL verlangt. Zählen ab dem Live-Ankunfts-Latch, ohne Disconnect.
-    # #23 Review C1: eine Connection, die bereits eine GELADENE geschlossene GPS-Leg-Zeile
-    # geliefert hat (Landung am Ziel erkannt), aber noch verbunden ist (flights.logoff_time
-    # NULL), taucht sonst HIER erneut auf (canonicalize_legs erlaubt logoff_time IS NULL im
-    # fs-WHERE) — Doppelzählung derselben Fracht. Nur bei bereits GELADENER Connection
-    # skippen: ein geschlossenes, NICHT geladenes Zwischenlande-Bein (arr ≠ dest) einer noch
-    # offenen Weiterreise darf die In-Air-Reservierung nicht unterdrücken.
-    returning_cids: set[int] = set()
-    returning_info: dict[int, dict] = {}  # Muster/Callsign für Nur-Rückflug-Teilnehmer (nicht im Feed)
-    if skip_open_probe:
-        # #66 Task 3: abgeschlossenes Event (Freeze) — der gesamte Offen-Flug-Zweig entfällt
-        # (`current_leg_by_cid` ist oben bereits leer). Die Fracht steckt bereits im geschlossenen
-        # GPS-Leg; übrig bliebe nur die kosmetische in_air/airborne-Zeile, die eingefroren für
-        # immer fälschlich „unterwegs" anzeigen würde (s. Docstring/Spec §2).
-        pass
-    else:
-        loaded_conn_logons = {
-            (int(q["cid"]), q["_conn_logon"]) for q in network
-            if q.get("loaded") and q.get("_conn_logon") and q.get("cid") is not None
-        }
-        for f in open_transport_flights(conn, callsign_prefix):
-            cid = f.get("cid")
-            if cid is None:
-                continue
-            lo = f.get("logon_time") or ""
-            if lo < start:
-                continue
-            # Ober-Zeitgrenze (Live-Fund 06.07.): eine noch offene Verbindung, die erst NACH dem
-            # Event-Ende (`end` = min(now, dtend)) begann, gehört nicht mehr zu diesem Event. Ohne
-            # diese Grenze zog der Offen-Zweig jeden gerade eingeloggten Abflieger eines Strecken-
-            # platzes in JEDES Event mit demselben Startplatz — auch in längst beendete (Fund:
-            # laufende EDWG→EDWY-Flüge tauchten im bereits abgelaufenen Test-Event EDWG→EDXP als
-            # „unterwegs" auf, weil beide EDWG teilen). Der geschlossene Zweig ist über
-            # `canonicalize_legs(end=…)` längst gebunden — nur der Offen-Zweig hatte oben keine
-            # Obergrenze. Bei laufendem Event ist `end == now`, greift also nie (keiner loggt in die
-            # Zukunft ein); nur bei beendetem Event blendet er Nachzügler korrekt aus.
-            if end and lo > end:
-                continue
-            # #66: der "schon geliefert"-Skip darf nur greifen, solange seit der Lieferung KEIN
-            # neues Leg begonnen hat (current_leg_by_cid leer für diese cid) — sonst würde er die
-            # komplette restliche Lebensdauer der Verbindung blind ausblenden, selbst wenn seither
-            # längst ein Rückflug UND ein weiteres, unabhängiges Leg passiert sind (Live-Fund
-            # 06.07.: Lieferung → Rückflug gelandet → neuer Flug wurde dadurch komplett verschluckt,
-            # nicht nur falsch als "Rückflug" markiert).
-            if (int(cid), lo) in loaded_conn_logons and int(cid) not in current_leg_by_cid:
-                continue
-            # #66: dep bevorzugt aus dem bereits GPS-erkannten LAUFENDEN Leg (current_leg_by_cid) —
-            # dessen eigener, korrekter Startpunkt, NICHT die Erstposition der gesamten Verbindung.
-            # Eine offene Verbindung kann mehrere Legs nacheinander enthalten (Rückflug gelandet,
-            # dann ein neuer, unabhängiger Weiterflug in DERSELBEN Verbindung ohne Disconnect) — die
-            # alte Heuristik nahm immer dieselbe, längst veraltete Erstposition und hätte den neuen
-            # Weiterflug fälschlich weiter als "Rückflug" gezeigt (Live-Fund 06.07., EDWG-EDXP-Test:
-            # Rückflug EDXP→EDWG bereits gelandet, danach EDWG→EDWL fälschlich als "Rückflug"
-            # markiert geblieben). Fallback (kein GPS-Leg erkannt, z. B. trackless) wie bisher.
-            current_leg = current_leg_by_cid.get(int(cid))
-            # `dep_from_ground_pos` = der Abholplatz stammt aus der AKTUELLEN Live-Boden-Position
-            # (der Pilot steht JETZT nachweislich dort). Nur dann darf ein alter „am Ziel angekommen"-
-            # Latch als widerlegt gelten (A3-Fix unten) — bei trackless/Fallback-dep bleibt der Latch
-            # maßgeblich (Bestandsverhalten, s. test_open_flight_with_latch_counts_immediately).
-            dep_from_ground_pos = False
-            # GPS-only Boden-Beladung (#5): den Abholplatz bestimmt vorrangig die AKTUELLE Position,
-            # NICHT der (evtl. veraltete) Flugplan und nicht die erste Position der Verbindung.
-            if current_leg:
-                dep = normalize_type_code(current_leg.get("departure"))  # abgehoben → GPS-Leg-Start
-            else:
-                gpos = _current_pos(conn, int(cid))
-                if gpos and gpos[2] is not None and gpos[2] < _BLOCK_GS_KT:
-                    # Am Boden: die aktuelle Position ist MASSGEBLICH. Liegt sie an keinem
-                    # Streckenplatz, steht der Pilot dort nicht — dann bleibt dep None (unsichtbar),
-                    # KEIN Rückfall auf den Flugplan (sonst würde ein alter Plan ihn falsch verorten).
-                    dep = _nearest_airport(coords_map, (gpos[0], gpos[1]), radius)
-                    dep_from_ground_pos = True
-                else:
-                    # Keine verwertbare Boden-Position (offline / erste Runde / in der Luft ohne
-                    # erkanntes Leg): alter GPS-Fallback, Flugplan nur als letzter Notnagel.
-                    dep = _nearest_airport(coords_map, _first_pos(conn, int(cid), lo, now), radius) \
-                        or normalize_type_code(f.get("departure"))
-            if dep not in route_set or dep == dest:
-                # #65: eine Verbindung, die als "Rückflug" (dep==dest) erkannt wurde, bleibt oft auch
-                # nach der Landung offen (kein Disconnect) -- ohne diesen Check würde "Rückflug"
-                # dauerhaft hängen bleiben, obwohl der Pilot längst wieder am Boden ist (irgendwo,
-                # nicht zwingend auf der Strecke — #66 verallgemeinert).
-                if dep == dest and not _returning_pilot_landed(conn, int(cid)):
-                    returning_cids.add(int(cid))
-                    returning_info.setdefault(int(cid), {
-                        "aircraft": f.get("aircraft") or normalize_type_code(f.get("aircraft_icao")) or "",
-                        "callsign": f.get("callsign") or "",
-                    })
-                continue
-            # `(cid, lo) in live_arrivals` matcht per Konstruktion exakt die flights-Zeile DIESES
-            # offenen Legs — der Poller latcht unter demselben `logon_time` (Refile-Split #22). Das
-            # bleibt die richtige Grundprüfung und darf NICHT durch einen GPS-Takeoff-Vergleich
-            # ersetzt werden (Latch-Key = flights-Logon, NICHT der canonicalize-Leg-Takeoff — andere
-            # Zeitachse).
-            loaded = bool(dest) and (cid, lo) in live_arrivals
-            # #6-Nachzug (Live-Fund FRS102, 10.07.): Fliegt der Pilot in DERSELBEN flights-Zeile nach
-            # der Lieferung GPS-erkannt weiter (canonicalize_legs splittet rein visuell — kein neuer
-            # flights-Eintrag mangels Refile), blieb das neue Leg über den reinen Membership-Test
-            # dauerhaft „angekommen". Deshalb zusätzlich demoten, wenn der Takeoff des AKTUELL
-            # laufenden GPS-Legs klar NACH dem gelatchten Ankunftszeitpunkt liegt (+Slack gegen
-            # Uhr-Jitter): dann gehört die Lieferung zu einem FRÜHEREN Leg, das aktuelle ist neu.
-            if loaded and current_leg:
-                arrived_at = live_arrivals.get((cid, lo))
-                leg_takeoff = current_leg.get("logon_time")
-                if arrived_at and leg_takeoff:
-                    try:
-                        if _parse_iso(leg_takeoff) > _parse_iso(arrived_at) + timedelta(seconds=_LATCH_SLACK_SEC):
-                            loaded = False
-                    except (ValueError, AttributeError):
-                        pass
-            elif loaded and dep_from_ground_pos:
-                # A3-Fix (Fable-Analyse 10.07.): Der Pilot steht laut aktueller Live-Position am Boden
-                # an einem ABHOLPLATZ (dep≠dest — am Ziel Geparkte gehen oben in den Rückflug-Zweig).
-                # Das widerspricht dem „am Ziel angekommen"-Latch: wer nachweislich am Abholplatz
-                # parkt, ist nicht angekommen, sondern lädt. Ohne dies zählte ein alter/spurioser
-                # Latch die volle Zuladung als geliefert (Phantom-Fracht) und zeigte „✅ angekommen".
-                # Der Latch selbst bleibt gesetzt (Zähl-Fallback bei trackless/Disconnect unberührt).
-                loaded = False
-            type_code = normalize_type_code(f.get("aircraft_icao")) or normalize_type_code(f.get("aircraft"))
-            if loaded and type_code and type_code not in payload_map:
-                unmapped.add(type_code)
-            tonnage = round(payload_map.get(type_code, default_kg), 1) if loaded else 0.0
-            reserved = 0.0 if loaded else round(payload_map.get(type_code, default_kg), 1)
-            if not loaded and type_code and type_code not in payload_map:
-                unmapped.add(type_code)   # reservierte Typen dem Admin ebenfalls melden
-            network.append({
-                "dep_time": lo,
-                "cid": cid,
-                "callsign": f.get("callsign") or "",
-                "aircraft": f.get("aircraft") or type_code,
-                "dep": dep,
-                "arr": dest,
-                "tonnage_kg": tonnage,
-                "loaded": loaded,
-                "in_air": True,
-                # #62-Folgefund (Live 06.07.): `in_air` heißt nur „offene Reservierung Richtung Ziel",
-                # NICHT „abgehoben". Ein am Streckenplatz geparkter Pilot (gs 0, kein GPS-Leg) reserviert
-                # zwar schon, ist aber am Start — nicht unterwegs. `airborne` trennt beides fürs Frontend:
-                # True erst, wenn der GPS-Leg-Detektor ein offenes (abgehobenes) Leg erkannt hat.
-                "airborne": current_leg is not None,
-                "reserved_kg": reserved,
-                "onboard_reserved_kg": reserved,  # Musterzuladung an Bord (#63) — reserved_kg wird auf Netto begrenzt
-                "flight_key": f"{cid}:{lo}",
-                "distance_nm": 0,
-                "block_min": 0,
-                # lo IST hier bereits der Verbindungs-Logon (open_transport_flights liest die
-                # flights-Tabelle direkt) — kein Reconcile nötig, nur einheitlicher Key fürs Loss-
-                # Attach unten.
-                "_conn_logon": lo,
-            })
-
-    # Fracht-Verluste anheften: Feed-Zeilen bekommen loss_kind; Verlust-Flüge, die der
-    # Strecken-Filter oben verworfen hat (woanders gelandet, dep==arr), erscheinen als
-    # eigener Eintrag. kg IMMER live aus aircraft_payloads (type_code, kein Snapshot).
-    # Losses sind unter dem VERBINDUNGS-Logon gelatcht (Poller-Konvention) — Zuordnung daher
-    # über `_conn_logon` (nicht `flight_key`, der ist der GPS-Leg-Takeoff und kann vom
-    # Verbindungs-Logon abweichen, s. Reconcile-Regel #23).
-    losses = get_transport_losses(conn, int(event["id"]))
-    loss_by_conn: dict[str, dict] = {f"{l['cid']}:{l['logon_time']}": l for l in losses}
-    seen_conn = {f"{q['cid']}:{q['_conn_logon']}" for q in network if q.get("_conn_logon")}
-    # #23 Review I2: mehrere nicht-geladene Feed-Zeilen derselben Connection teilen denselben
-    # `_conn_logon` (z. B. eine Mehrbein-Connection mit mehreren Zwischenlande-Beinen ohne
-    # Lieferung) — pro Connection-Loss-Key darf NUR EINE Zeile den Verlust tragen, sonst
-    # zählt lost_kg/lost_total_kg mehrfach. Gewählt wird die späteste (höchstes dep_time).
-    attach_target: dict[str, dict] = {}
-    for q in network:
-        if q["loaded"] or not q.get("_conn_logon"):
-            continue
-        conn_key = f"{q['cid']}:{q['_conn_logon']}"
-        if conn_key not in loss_by_conn:
-            continue
-        current = attach_target.get(conn_key)
-        if current is None or q["dep_time"] > current["dep_time"]:
-            attach_target[conn_key] = q
-    for conn_key, q in attach_target.items():
-        l = loss_by_conn[conn_key]
-        q["loss_kind"] = l["kind"]
-        q["lost_kg"] = round(payload_map.get(normalize_type_code(l.get("type_code")), default_kg), 1) \
-            if l["kind"] in ("stolen", "sunk") else 0.0
-    for key, l in loss_by_conn.items():
-        if key in seen_conn:
-            continue
-        tc = normalize_type_code(l.get("type_code"))
-        lost = round(payload_map.get(tc, default_kg), 1) if l["kind"] in ("stolen", "sunk") else 0.0
-        network.append({
-            "dep_time": l["logon_time"], "cid": l["cid"], "callsign": l.get("callsign") or "",
-            "aircraft": tc, "dep": l.get("dep") or "", "arr": l.get("end_icao") or "—",
-            "tonnage_kg": 0.0, "loaded": False, "in_air": False, "reserved_kg": 0.0,
-            "flight_key": key, "distance_nm": 0, "block_min": 0,
-            "loss_kind": l["kind"], "lost_kg": lost,
-        })
-
-    # Bug Y (#15A): geschlossene Phantom-Zwischenbeine einer noch fortlaufenden oder gelieferten
-    # Reise aus dem FEED entfernen (reine Anzeige). Eine Reise durch einen Wegpunkt ist EINE
-    # Zeile, kein 0-kg-Leerflug je Zwischenlandung. Die entfernten Zeilen tragen 0 kg geliefert
-    # (loaded=False) UND keine Reservierung (geschlossen, kein onboard_reserved_kg) — delivered/
-    # reserved/total bleiben daher unverändert (Invariante, getestet). Pro Verbindung bleibt die
-    # aussagekräftige Zeile: Lieferung (loaded), offene Reise (in_air) oder Verlust (loss_kind).
-    # Ein Rückflug-Bein (dep == destination) bleibt IMMER sichtbar (leerer 0-kg-Rückflug), auch
-    # wenn dieselbe Verbindung eine Lieferungs-Geschwisterzeile trägt.
-    kept_conn_keys = {
-        (q["cid"], q["_conn_logon"]) for q in network
-        if (q.get("loaded") or q.get("in_air")) and q.get("cid") is not None and q.get("_conn_logon")
-    }
-    suppressed_conn_keys: set = set()
-    kept_network = []
-    for q in network:
-        key = (q.get("cid"), q.get("_conn_logon"))
-        if (not q.get("loaded") and not q.get("in_air") and not q.get("loss_kind")
-                and q.get("dep") != dest               # Rückflug (dep==dest) nie unterdrücken
-                and q.get("cid") is not None and q.get("_conn_logon")
-                and key in kept_conn_keys):
-            suppressed_conn_keys.add(key)
-            continue
-        kept_network.append(q)
-    network = kept_network
-    # Y2: ein an einem Wegpunkt geparkter, noch offener Flug, dessen Verbindung bereits ein
-    # Strecken-Bein abgeschlossen hat (Phantom oben unterdrückt), ist „unterwegs", nicht
-    # „am Start" — airborne für die Feed-Kennzeichnung (✈️ statt 🅿️) setzen.
-    for q in network:
-        if q.get("in_air") and not q.get("airborne") \
-                and (q.get("cid"), q.get("_conn_logon")) in suppressed_conn_keys:
-            q["airborne"] = True
-
-    network.sort(key=lambda x: x["dep_time"])  # aufsteigend für die Manifest-Füllung
-
-    # Pilotennamen nachladen (eine Abfrage).
-    cids = {q["cid"] for q in network} | returning_cids
-    names: dict[int, str] = {}
+    names = {}
+    cids = {int(s["cid"]) for s in inp["sessions"]}
     if cids:
         rows = conn.execute(
             "SELECT cid, name FROM pilots WHERE cid IN (%s)" % ",".join("?" * len(cids)),
@@ -5929,259 +5412,231 @@ def compute_transport_progress(
         ).fetchall()
         names = {r["cid"]: (r["name"] or "") for r in rows}
 
-    cargo = get_transport_cargo(conn, int(event["id"]))
-    cargo_targets = [c["target_kg"] for c in cargo]
-    delivered = [0.0] * len(cargo)
-    # #7/#8: verlorene (stolen/sunk) Menge je Frachtart — netto verteilt wie `delivered`, verbraucht
-    # denselben Pool dauerhaft (target − delivered − lost_alloc). `returned` fließt hier NICHT ein
-    # (Ware kam heil zurück). Der Pool-Abzug macht verlorene Ware unwiederbringlich (kein Nachschub).
-    lost_alloc = [0.0] * len(cargo)
-    _INF = float("inf")
+    unmapped: set[str] = set()
+    network: list[dict] = []
+    for s in inp["sessions"]:
+        cid = int(s["cid"])
+        type_code = normalize_type_code(s.get("aircraft_icao")) or normalize_type_code(s.get("aircraft"))
+        if type_code and type_code not in payload_map:
+            unmapped.add(type_code)
+        cap = round(payload_map.get(type_code, default_kg), 1)
+        # NUR echte GPS-Legs (block_start gesetzt) gehören in den Feed — ein Fallback-Leg
+        # (_flightrow_as_flight, kein block_start) ist eine reine Flugplan-Zeile ohne Track und
+        # damit kein Kutter-Flug (#23). Der Feed ist der DRITTE canonicalize_legs-Konsument nach
+        # _stack_inputs' Sessions- und StatSim-Block; alle drei erkennen das Fehlen von block_start
+        # selbst (canonicalize_legs markiert seine Fallback-Legs nicht).
+        # Obergrenze = Sessionende (offen → Start der Folge-Verbindung, sonst now) — dieselbe
+        # Deckelung wie in _stack_inputs (Review-Fund #1): sonst zeigt der Feed einen Phantom-Flug
+        # einer stale-offenen Session, dessen Leg zur Folge-Verbindung nach Eventende gehört.
+        _lo = s.get("logon_time") or ""
+        _lf = s.get("logoff_time")
+        _sess_end = _lf if _lf else (s.get("next_logon") or now)
+        own = [g for g in inp["legs_by_cid"].get(cid, [])
+               if "block_start" in g
+               and _lo <= (g.get("logon_time") or "") <= _sess_end]
 
-    # #15 Sub-Projekt B: Fracht je Startplatz. Eine Frachtart-Zeile ist für einen Flug füllbar,
-    # wenn sie geteilt ist (departure NULL) ODER an seinen Startplatz gebunden ist. **Latch-
-    # Fallback:** ein GELADENER Flug ohne verwertbaren Startplatz (`dep` leer/streckenfremd — der
-    # Live-Ankunfts-Latch hebt den Strecken-Filter auf, `dep` kann dann leer oder außerhalb der
-    # Route sein) füllt ALLE Zeilen (Degradation aufs Gesamt-Topf-Verhalten), damit eine echte,
-    # gelatchte Ankunft nie still 0 kg liefert. Reservierungen/Verluste haben `dep` stets in
-    # `route_set` (Offen-Zweig/`detect_transport_losses` verlangen das) — dort greift der Fallback
-    # nie.
-    # #84: departure ist jetzt eine (ggf. leere) Menge von Startplätzen je Zeile.
-    cargo_departures = [
-        {c for c in (c_.get("departure") or "").split(",") if c} for c_ in cargo
-    ]
+        for g in own:
+            dep = normalize_type_code(g.get("gps_departure"))
+            arr = normalize_type_code(g.get("gps_arrival"))
+            dl = delivered_by.get((cid, g.get("logoff_time") or ""), [])
+            tonnage = round(sum(m["kg"] for m in dl), 1)
+            # Feed-Filter = reine SICHTBARKEIT (ersetzt den alten Streckenfilter, der BEIDE
+            # Enden auf der Route verlangte und deshalb vom Latch aufgehoben werden musste).
+            if not (dep in route_set or arr in route_set or tonnage > 0):
+                continue
+            row = {
+                "dep_time": g.get("logon_time") or "", "cid": cid,
+                "callsign": g.get("callsign") or s.get("callsign") or "",
+                "name": names.get(cid, ""), "aircraft": s.get("aircraft") or type_code,
+                "dep": dep, "arr": arr,
+                "tonnage_kg": tonnage, "onboard_kg": tonnage,
+                "loaded": tonnage > 0.0,
+                "cargo_lines": _lines(dl), "cargo_name": _lines(dl)[0]["name"] if dl else None,
+                "in_air": False, "airborne": False,
+                "reserved_kg": 0.0, "onboard_reserved_kg": 0.0,
+                "flight_key": f"{cid}:{g.get('logon_time') or ''}",
+                "distance_nm": g.get("distance_nm") or 0,
+                "block_min": g.get("block_min") or g.get("duration_min") or 0,
+            }
+            network.append(row)
 
-    def _fillable(flight: dict, i: int) -> bool:
-        dep_ = flight.get("dep")
-        if flight.get("loaded") and (not dep_ or dep_ not in route_set):
-            return True
-        deps = cargo_departures[i]
-        return (not deps) or (dep_ in deps)
+        # Verlust-Zeile (Logout mit Ware an Bord). Sie gehört an das LETZTE Leg DIESER Session —
+        # `next(reversed(network) if cid == …)` wäre falsch: es fischt quer über Sessions und
+        # könnte eine bereits mit einem Verlust behaftete Zeile überschreiben (aus zwei
+        # Rückgaben würde eine, Fable-Review 16.07.).
+        # Verlust am effektiven Logout-ts suchen (nach dem +1s-Shift, den _stack_inputs an der
+        # Session vermerkt) — beim Touchdown-Disconnect liegt er 1 s hinter `logoff_time`.
+        ls = loss_by.get((cid, s.get("logout_ts") or s.get("logoff_time") or ""), [])
+        if ls:
+            kind = ls[0]["kind"]
+            lost = round(sum(m["kg"] for m in ls), 1) if kind in ("stolen", "sunk") else 0.0
+            own_keys = {f"{cid}:{g.get('logon_time') or ''}" for g in own}
+            target = next((q for q in reversed(network)
+                           if q["flight_key"] in own_keys and not q["loaded"]
+                           and not q.get("loss_kind")), None)
+            if target is not None:
+                target["loss_kind"], target["lost_kg"] = kind, lost
+                target["cargo_lines"] = _lines(ls)
+                target["cargo_name"] = target["cargo_lines"][0]["name"]
+            else:
+                network.append({
+                    "dep_time": s.get("logon_time") or "", "cid": cid,
+                    "callsign": s.get("callsign") or "", "name": names.get(cid, ""),
+                    "aircraft": s.get("aircraft") or type_code,
+                    "dep": "", "arr": ls[0].get("airport") or "—",
+                    "tonnage_kg": 0.0, "loaded": False, "in_air": False, "airborne": False,
+                    "reserved_kg": 0.0, "cargo_lines": _lines(ls),
+                    "cargo_name": _lines(ls)[0]["name"],
+                    "flight_key": f"{cid}:{s.get('logon_time') or ''}",
+                    "distance_nm": 0, "block_min": 0, "loss_kind": kind, "lost_kg": lost,
+                })
 
-    # Co-Load-Füllung — NUR beladene Flüge. Jeder Flug verteilt seine Zuladung in Manifest-
-    # Reihenfolge über die noch nicht vollen Frachtarten, je Frachtart gekappt durch
-    # per_flight_max_kg (Obergrenze pro Flug); der Rest fließt in die nächste Frachtart (Co-Load).
-    # Co-Load-Füllung — beladene Flüge UND Verluste (stolen/sunk) in EINEM chronologischen Durchlauf
-    # (network nach dep_time). Beide ziehen aus DEMSELBEN Frachtart-Pool: `space = target − delivered
-    # − lost_alloc`. Dadurch (#7) zählt ein Verlust nur, was zu seinem dep_time real noch im Topf war
-    # (netto statt brutto), und (#8) verlorene Ware bleibt für ALLE späteren Flüge (delivered ODER
-    # reserved) dauerhaft aus dem Pool. `returned` ist KEIN Pool-Verbrauch → wird hier übersprungen
-    # (dessen Brutto-Bordladungs-Anzeige folgt weiter unten, unverändert).
-    for q in network:
-        q["name"] = names.get(q["cid"], "")
-        is_loss = q.get("loss_kind") in ("stolen", "sunk")
-        if not q["loaded"] and not is_loss:
-            q["cargo_name"] = None
-            q["cargo_lines"] = []
-            continue
-        # Eingang der Verteilung: Lieferung → Musterzuladung; Verlust → Bordladung (lost_kg wurde beim
-        # Loss-Attach mit der Musterzuladung vorbelegt, Fallback: Musterzuladung des Typs).
-        if is_loss:
-            remaining = q.get("lost_kg") or 0.0
-            if remaining <= 1e-9:
-                remaining = round(payload_map.get(normalize_type_code(q.get("aircraft")), default_kg), 1)
-        else:
-            remaining = q["tonnage_kg"]
-        loss_input = remaining
-        pool = lost_alloc if is_loss else delivered
-        contrib: dict[int, float] = {}
-        for i, c in enumerate(cargo):
-            if remaining <= 1e-9:
-                break
-            if not _fillable(q, i):
-                continue
-            space = cargo_targets[i] - delivered[i] - lost_alloc[i]
-            if space <= 1e-9:
-                continue
-            cap = c.get("per_flight_max_kg")
-            cap = cap if (cap is not None and cap > 0) else _INF
-            add = min(remaining, cap, space)
-            if add <= 1e-9:
-                continue
-            pool[i] += add
-            remaining -= add
-            contrib[i] = contrib.get(i, 0.0) + add
-        ordered = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
-        q["cargo_lines"] = [
-            {"name": cargo[i]["name"], "emoji": cargo[i].get("emoji"), "kg": round(kg, 1)}
-            for i, kg in ordered
-        ]
-        q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
-        if is_loss:
-            # Netto-Verlustmenge (#7): Σ der tatsächlich zugeordneten Frachtart-Anteile statt der
-            # vollen Musterzuladung. Ohne Manifest bleibt die Eingangs-Bordladung als kg-Zähler.
-            q["lost_kg"] = round(sum(contrib.values()), 1) if cargo else loss_input
-        else:
-            # Durchgängig Netto (#63): gutgeschriebene Menge = ins Manifest verteilte Summe, NICHT die
-            # Musterzuladung; Überschuss ohne Manifest-Platz zählt nicht als geliefert (total_kg == Σ
-            # delivered). OHNE Manifest bleibt die Musterzuladung als schlichter kg-Zähler.
-            q["onboard_kg"] = q["tonnage_kg"]  # „an Bord"-Zahl für „belegt / an Bord"
-            if cargo:
-                q["tonnage_kg"] = round(sum(contrib.values()), 1)
+        # Offene Session mit Ware an Bord: die Bordladung IST die Reservierung. NUR die WIRKLICH
+        # offene letzte Verbindung (kein next_logon) darf diese Zeile bekommen — eine stale-offene
+        # Verbindung (Folge-Login vorhanden) hat real geendet, ihre Ladung ist bereits am
+        # synthetischen Logout abgefallen. `onboard` ist zudem cid-keyed (der Endzustand): OHNE
+        # die next_logon-Sperre läse die stale-offene Zeile die Bordladung der FOLGE-Verbindung
+        # und erfände einen Phantom-Flug (Whole-Branch-Review #2).
+        load = onboard.get(cid) or {}
+        aboard = round(sum(load.values()), 1)
+        if not s.get("logoff_time") and not s.get("next_logon") \
+                and not s.get("statsim_only") and aboard > 0.0:
+            where = r["position"].get(cid)
+            network.append({
+                "dep_time": s.get("logon_time") or "", "cid": cid,
+                "callsign": s.get("callsign") or "", "name": names.get(cid, ""),
+                "aircraft": s.get("aircraft") or type_code,
+                "dep": where or "", "arr": dest,
+                "tonnage_kg": 0.0, "loaded": False,
+                "in_air": True, "airborne": where is None,
+                "reserved_kg": aboard, "onboard_reserved_kg": cap,
+                "cargo_lines": [{"name": n, "emoji": emoji_of.get(n), "kg": round(kg, 1)}
+                                for n, kg in load.items() if kg > 0.01],
+                "cargo_name": max(load, key=load.get) if aboard > 0 else None,
+                "flight_key": f"{cid}:{s.get('logon_time') or ''}",
+                "distance_nm": 0, "block_min": 0,
+            })
 
-    # Reservierungen (offene Flüge Richtung Ziel, noch ohne Latch) in die Rest-Kapazität
-    # verteilen — gleiche Co-Load-Regeln wie Lieferungen, aber in einem von `delivered`
-    # getrennten Topf (`reserved_alloc`): der gelieferte Fortschritt läuft nie rückwärts, die
-    # Reservierung verschwindet mit dem Flug. **Durchgängig Netto (#63):** `reserved_kg` je Flug
-    # ist die tatsächlich reservierbare Menge (was noch ins Manifest passt), NICHT die volle
-    # Musterzuladung — die bleibt als `onboard_reserved_kg` erhalten (an-Bord-Zahl). Die
-    # Aufschlüsselung (`cargo_lines`) zeigt entsprechend die reservierten Frachtart-Anteile.
-    reserved_alloc = [0.0] * len(cargo)
-    for q in network:
-        onboard_res = q.get("onboard_reserved_kg") or 0.0
-        if q["loaded"] or q.get("loss_kind") or onboard_res <= 1e-9:
-            continue
-        remaining = onboard_res
-        contrib = {}
-        for i, c in enumerate(cargo):
-            if remaining <= 1e-9:
-                break
-            if not _fillable(q, i):
-                continue
-            space = cargo_targets[i] - delivered[i] - lost_alloc[i] - reserved_alloc[i]
-            if space <= 1e-9:
-                continue
-            cap = c.get("per_flight_max_kg")
-            cap = cap if (cap is not None and cap > 0) else _INF
-            add = min(remaining, cap, space)
-            if add <= 1e-9:
-                continue
-            reserved_alloc[i] += add
-            remaining -= add
-            contrib[i] = contrib.get(i, 0.0) + add
-        # OHNE Manifest keine Verteilung — dann bleibt die volle Reservierung als kg-Zähler.
-        q["reserved_kg"] = round(sum(contrib.values()), 1) if cargo else onboard_res
-        ordered = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
-        q["cargo_lines"] = [
-            {"name": cargo[i]["name"], "emoji": cargo[i].get("emoji"), "kg": round(kg, 1)}
-            for i, kg in ordered
-        ]
-        q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
-
-    # 'returned'-Bordladung aufschlüsseln (reine Anzeige, Nutzer-Wunsch 02.07.: „x Krabbenbrötchen"):
-    # was war an Bord, als der Kutter heil umkehrte? Bewusst BRUTTO (volle Musterzuladung in Manifest-
-    # Reihenfolge, nur pro-Flug-Kappungen, OHNE Restkapazitäts-Abzug). 'returned' verbraucht KEINEN
-    # Pool und trägt lost_kg=0 — reine Anzeige. stolen/sunk laufen NICHT hier, sondern netto im
-    # gemeinsamen Delivered/Verlust-Pool oben (#7/#8).
-    for q in network:
-        if q.get("loss_kind") != "returned":
-            continue
-        # Musterzuladung = EINGANG der Verteilung (was das Flugzeug tragen konnte). 'returned'
-        # trägt lost_kg=0, zeigt aber trotzdem seine Bordladung → Fallback auf die Musterzuladung.
-        onboard = q.get("lost_kg") or 0.0
-        if onboard <= 1e-9:
-            onboard = round(payload_map.get(normalize_type_code(q.get("aircraft")), default_kg), 1)
-        if onboard <= 1e-9:
-            continue
-        remaining = onboard
-        contrib = {}
-        for i, c in enumerate(cargo):
-            if remaining <= 1e-9:
-                break
-            if not _fillable(q, i):
-                continue
-            cap = c.get("per_flight_max_kg")
-            cap = cap if (cap is not None and cap > 0) else _INF
-            add = min(remaining, cap, cargo_targets[i])
-            if add <= 1e-9:
-                continue
-            remaining -= add
-            contrib[i] = contrib.get(i, 0.0) + add
-        ordered = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
-        q["cargo_lines"] = [
-            {"name": cargo[i]["name"], "emoji": cargo[i].get("emoji"), "kg": round(kg, 1)}
-            for i, kg in ordered
-        ]
-        q["cargo_name"] = cargo[ordered[0][0]]["name"] if ordered else None
-        # 'returned' behält lost_kg=0 (kein Verlust) — die Bordladung oben ist reine Anzeige.
-
-    # Gecachte KI-Sprüche je Flug anhängen (Phase 2; None wenn deaktiviert/noch nicht erzeugt).
     quips = get_transport_quips(conn, int(event["id"]))
     for q in network:
         q["quip"] = quips.get(q["flight_key"])
-        q.pop("_conn_logon", None)  # interne Markierung nicht in die API-Antwort leaken
 
-    total_kg = round(sum(q["tonnage_kg"] for q in network), 1)
-    loaded_count = sum(1 for q in network if q["loaded"])
-
-    # Pro Frachtart geliefert = tatsächlich zugeordnete Menge aus der Co-Load-Füllung.
+    # --- Zahlen: direkt aus den Stapeln ---
     cargo_out: list[dict] = []
-    for i, c in enumerate(cargo):
+    for c in manifest:
+        n = c["name"]
+        delivered = stacks[dest].get(n, 0.0)
+        lost = stacks[STOLEN].get(n, 0.0) + stacks[SUNK].get(n, 0.0)
+        reserved = sum(l.get(n, 0.0) for l in onboard.values())
         cargo_out.append({
-            "name": c["name"],
-            "emoji": c.get("emoji"),
-            "target_kg": c["target_kg"],
-            "delivered_kg": round(delivered[i], 1),
-            "reserved_kg": round(reserved_alloc[i], 1),
-            "lost_kg": round(lost_alloc[i], 1),  # #7/#8: unwiederbringlich verloren (stolen/sunk), zeigt warum <100 %
-            "pct": round(100.0 * delivered[i] / c["target_kg"], 1) if c["target_kg"] > 0 else 0.0,
-            "per_flight_max_kg": c.get("per_flight_max_kg"),  # Kappungs-Badge in der UI (#63)
-            "departure": c.get("departure"),  # #15 Sub-Projekt B: Startplatz-Gruppierung; NULL = geteilt
+            "name": n, "emoji": c.get("emoji"), "target_kg": c["target_kg"],
+            "delivered_kg": round(delivered, 1), "reserved_kg": round(reserved, 1),
+            "lost_kg": round(lost, 1),
+            "pct": round(100.0 * delivered / c["target_kg"], 1) if c["target_kg"] > 0 else 0.0,
+            "per_flight_max_kg": c.get("per_flight_max_kg"),
+            "departure": c.get("departure"),
         })
 
-    target_kg = round(sum(cargo_targets), 1) if cargo_targets else None
-    progress_pct = round(100.0 * total_kg / target_kg, 1) if target_kg else None
+    total_kg = round(sum(stacks[dest].values()), 1)
+    lost_total = round(sum(stacks[STOLEN].values()) + sum(stacks[SUNK].values()), 1)
+    reserved_total = round(sum(sum(l.values()) for l in onboard.values()), 1)
+    target_kg = round(sum(c["target_kg"] for c in manifest), 1) if manifest else None
 
-    # Teilnehmerliste (Bummel-Analogie): eine Zeile pro Pilot mit Summen + Live-Status.
-    # callsign = zuletzt gesehenes Rufzeichen — der Live-Tab-Block zeigt Callsigns statt Namen.
+    # --- Teilnehmer + Sichtbarkeit (Entscheidung 14) ---
+    # WICHTIG: parts entsteht aus den SESSIONS, nicht aus dem Feed. Ein Pilot ohne Feed-Zeile ist
+    # trotzdem Teilnehmer — der Wartende am leeren Stapel (Entscheidung 13) und der Pilot, der
+    # leer am Ziel parkt (Spec-Statustabelle: `🅿️ steht in EDXH · 0 kg`), haben beide kein Leg
+    # und keine Ladung. Aus dem Feed gebaut wären sie unsichtbar, obwohl die Sichtbarkeits-
+    # formel sie einschließt (Fable-Review 16.07.).
+    visible_places = set(inp["loading_airports"]) | {dest}
     parts: dict[int, dict] = {}
+    for s in inp["sessions"]:
+        cid = int(s["cid"])
+        p = parts.setdefault(cid, {
+            "cid": cid, "name": names.get(cid, ""), "callsign": s.get("callsign") or "",
+            "aircraft": normalize_type_code(s.get("aircraft") or s.get("aircraft_icao") or ""),
+            "flights": 0, "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0,
+            "status": "done", "statsim_only": True,
+        })
+        # statsim_only nur, wenn ALLE Verbindungen dieses cid StatSim-Backfill sind — deckt eine
+        # echte VATSIM-Verbindung ihn (irgendwo) ab, ist er live und gehört in den Live-Block (#3).
+        if not s.get("statsim_only"):
+            p["statsim_only"] = False
     for q in network:
         p = parts.setdefault(int(q["cid"]), {
             "cid": int(q["cid"]), "name": q.get("name") or "", "callsign": q.get("callsign") or "",
-            "aircraft": q.get("aircraft") or "",
-            "flights": 0, "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "status": "done",
+            "aircraft": normalize_type_code(q.get("aircraft") or ""), "flights": 0,
+            "statsim_only": False,
+            "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "status": "done",
         })
         p["flights"] += 1
-        if q.get("aircraft"):
-            p["aircraft"] = q["aircraft"]
-        if q.get("name"):
-            p["name"] = q["name"]
-        if q.get("callsign"):
-            p["callsign"] = q["callsign"]
         p["delivered_kg"] += q["tonnage_kg"]
         p["lost_kg"] += q.get("lost_kg") or 0.0
-        if q.get("in_air"):
-            p["status"] = "arrived" if q["loaded"] else "flying"
-            if not q["loaded"]:
-                p["reserved_kg"] += q.get("reserved_kg") or 0.0
-    for rc in returning_cids:
-        info = returning_info.get(rc, {})
-        if rc in parts and parts[rc]["status"] == "done":
-            parts[rc]["status"] = "returning"
-        elif rc not in parts:
-            parts[rc] = {"cid": rc, "name": names.get(rc, ""), "callsign": info.get("callsign", ""),
-                         "aircraft": info.get("aircraft", ""), "flights": 0,
-                         "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "status": "returning"}
-        if rc in parts:
-            if not parts[rc]["aircraft"]:
-                parts[rc]["aircraft"] = info.get("aircraft", "")
-            if not parts[rc]["callsign"]:
-                parts[rc]["callsign"] = info.get("callsign", "")
-    participants = sorted(parts.values(), key=lambda x: (-x["delivered_kg"], x["name"]))
-    for p in participants:
-        p["delivered_kg"] = round(p["delivered_kg"], 1)
-        p["reserved_kg"] = round(p["reserved_kg"], 1)
-        p["lost_kg"] = round(p["lost_kg"], 1)
-        # Muster auf den reinen Typcode kürzen (rohes Flugplanfeld wie "AS65/L-SDGY/S" → "AS65")
-        # — konsistent für Live-Tabelle, Detail und Forum-Badge.
-        p["aircraft"] = normalize_type_code(p["aircraft"])
+        # reserved_kg NICHT hier aufsummieren — es kommt unten direkt aus der Bordladung
+        # (eine Wahrheit, nicht zwei: die Feed-Zeile ist nur eine Sicht auf denselben Stapel).
+    for cid, p in parts.items():
+        load = onboard.get(cid) or {}
+        aboard = sum(load.values())
+        where = r["position"].get(cid)
+        # sichtbar = letzter Bodenkontakt an einem teilnehmenden Platz ODER Ladung > 0
+        # (Entscheidung 14). Kostet kein Feld: beide Werte führt das Modell ohnehin — die
+        # Ladung IST der Flieger-Stapel, der letzte Bodenkontakt IST der Logout-Ort.
+        p["visible"] = (r["last_ground"].get(cid) in visible_places) or aboard > 0.01
+        p["place"] = where          # None = unterwegs; sonst das ICAO, an dem er steht
+        # Letzter Landeplatz = Start der Strecke im Live-Block. Anders als `place` bleibt er im
+        # Flug erhalten (Start bekannt, auch unterwegs) und wechselt bei jeder Zwischenlandung —
+        # teilnehmend oder fremd (gps_arrival). Das Ziel kennt der Feed nur MIT Ware an Bord
+        # (kein Flugplan-Vertrauen, #23); die Anzeige-Regel dazu steckt im Frontend.
+        p["last_ground"] = r["last_ground"].get(cid)
+        # Der Status ist eine grobe Kategorie für die API; die ANZEIGE leitet das Frontend aus
+        # place + reserved_kg ab (Ort x Ladung, Spec). Werte ehrlich statt `arrived`/`returning`:
+        if aboard > 0.01:
+            p["status"] = "flying" if where is None else "loaded"
+        elif where is None:
+            p["status"] = "dabei"                       # leer in der Luft — macht noch mit
+        elif where in inp["loading_airports"]:
+            p["status"] = "loading"                     # steht am Stapel
+        else:
+            p["status"] = "standing"                    # Ziel oder fremder Platz
+        # Was er trägt — der Live-Block zeigt es je Pilot (index.html, fetchKutterActive).
+        p["cargo_lines"] = [{"name": n, "emoji": emoji_of.get(n), "kg": round(kg, 1)}
+                            for n, kg in load.items() if kg > 0.01]
+        p["reserved_kg"] = round(aboard, 1)   # die Bordladung IST die Reservierung
+        for k in ("delivered_kg", "lost_kg"):
+            p[k] = round(p[k], 1)
 
     return {
         "route": sorted(route_set),
         "destination": dest,
-        "flights": sorted(network, key=lambda x: x["dep_time"], reverse=True),  # neueste oben
+        "flights": sorted(network, key=lambda x: x["dep_time"], reverse=True),
         "cargo": cargo_out,
         "total_kg": total_kg,
         "flight_count": len(network),
-        "loaded_count": loaded_count,
+        "loaded_count": sum(1 for q in network if q["loaded"]),
         "target_kg": target_kg,
-        "progress_pct": progress_pct,
-        "reserved_total_kg": round(sum(reserved_alloc), 1),
+        "progress_pct": round(100.0 * total_kg / target_kg, 1) if target_kg else None,
+        "reserved_total_kg": reserved_total,
         "unmapped_types": sorted(unmapped),
         "summary_quip": event.get("summary_quip"),
         "losses": [q for q in network if q.get("loss_kind")],
-        "lost_total_kg": round(sum(q.get("lost_kg") or 0.0 for q in network), 1),
-        "participants": participants,
+        "lost_total_kg": lost_total,
+        "participants": sorted(parts.values(), key=lambda x: (-x["delivered_kg"], x["name"])),
+    }
+
+
+def _empty_transport_progress(event: dict, route_set: set[str], manifest: list[dict]) -> dict:
+    """Leerer Fortschritt für ein Event ohne Ziel — es kann keine Lieferung geben."""
+    return {
+        "route": sorted(route_set), "destination": None, "flights": [],
+        "cargo": [{"name": c["name"], "emoji": c.get("emoji"), "target_kg": c["target_kg"],
+                   "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "pct": 0.0,
+                   "per_flight_max_kg": c.get("per_flight_max_kg"),
+                   "departure": c.get("departure")} for c in manifest],
+        "total_kg": 0.0, "flight_count": 0, "loaded_count": 0,
+        "target_kg": round(sum(c["target_kg"] for c in manifest), 1) if manifest else None,
+        "progress_pct": None, "reserved_total_kg": 0.0, "unmapped_types": [],
+        "summary_quip": event.get("summary_quip"), "losses": [], "lost_total_kg": 0.0,
+        "participants": [],
     }
 
 
