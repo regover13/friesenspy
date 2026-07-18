@@ -189,7 +189,7 @@ Sortiert nach `logon_time` absteigend. FriesenSpy-Einträge haben Vorrang bei Ze
 | Feld | Beschreibung |
 |------|--------------|
 | `gps_departure` / `gps_arrival` | Start-/Ziel-ICAO, wie es der GPS-Leg-Detektor erkannt hat (erste/letzte Position im 4-km-Umkreis eines Flugplatzes). `null`, wenn kein Track vorlag oder der Flug noch nicht gelandet ist. |
-| `plan_departure` / `plan_arrival` | DEP/ARR aus dem eingereichten Flugplan (reine Beschriftung, keine Grundlage mehr für die Flugzählung). Kann von `gps_*` abweichen, z. B. bei einer Zwischenlandung ohne Refile — oder wenn der Pilot bereits vor der Landung des aktuellen Beins den nächsten Plan eingereicht hat (zeitbasierte Zuordnung, Stand 2026-07-05). |
+| `plan_departure` / `plan_arrival` | DEP/ARR aus dem eingereichten Flugplan (reine Beschriftung, keine Grundlage mehr für die Flugzählung). Kann von `gps_*` abweichen, z. B. bei einer Zwischenlandung ohne Refile — oder wenn der Pilot bereits vor der Landung des aktuellen Legs den nächsten Plan eingereicht hat (zeitbasierte Zuordnung, Stand 2026-07-05). |
 | `connection_closed` | `true`, wenn die zugrunde liegende VATSIM-Verbindung beendet ist (`logoff_time` gesetzt). **Kein** Indikator dafür, ob der Flug selbst fertig geflogen ist — das entscheidet allein `arrival`/`gps_arrival`/`logoff_time`, und „🛫 läuft" leitet das Frontend seit v8.1.0 aus `last_pos_ts` (Frische), nicht aus diesem Feld ab. |
 | `last_pos_ts` | (v8.1.0) ISO8601 UTC — Zeit der **letzten belegten Position** dieses Legs (statisch, nicht „now"). Für einen geschlossenen Flug = Landung/letzte Position; für einen offenen Flug = letzte empfangene Position. Das Frontend zeigt „🛫 läuft" nur, wenn der Flug offen ist **und** `last_pos_ts` frisch (< 15 min alt), und nutzt den Wert als Obergrenze beim Nachladen des GPS-Tracks offener Legs. |
 | `block_start` | (v8.9.0) ISO8601 UTC — **Rollbeginn** (Rückwärts-Walk ab dem Abheben `logon_time` bis zum ersten zusammenhängenden Sample, begrenzt durch das Ende des Vorflugs/eine 30-min-Lücke). Das Frontend nutzt ihn als **Untergrenze** beim Nachladen des GPS-Tracks der gefensterten FriesenSpy-Endpoints (`/api/flights/{id}/track`, `/api/pilots/{cid}/track`), damit Taxi-out + Startlauf sichtbar sind, statt erst am Abheben zu beginnen. Ohne Track/bei Fallback-Zeilen nicht gesetzt → das Frontend fällt auf `logon_time` zurück. |
@@ -537,7 +537,7 @@ Liste aller bekannten FriesenFliegerBummel-Rennen (aus `bummel_races`, persisten
 }
 ```
 
-Sichtbar vor Enthüllung: Callsign, Name, Flugzeugtyp, Flugplan (Start/Ziel), Abflugzeit, besuchte/fehlende Flugplätze, Anzahl Beine, wer gerade fliegt.
+Sichtbar vor Enthüllung: Callsign, Name, Flugzeugtyp, Flugplan (Start/Ziel), Abflugzeit, besuchte/fehlende Flugplätze, Anzahl Legs, wer gerade fliegt.
 
 **Nicht sichtbar vor Enthüllung:** Block-/Gesamtzeiten, Durchschnitt, Abstand zum Schnitt, Ranking-Reihenfolge, Lande-/Logoff-Zeit, Online-Dauer, geflogene nm.
 

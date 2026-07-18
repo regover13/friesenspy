@@ -51,7 +51,7 @@ Flug stand also als „17:04→18:36" im Cache, seine Anmeldezeit lag im Fenster
 „gedeckt" → übersprungen. Jetzt ankert die Rekonstruktion an der **Landezeit** und bestimmt den
 Flugbeginn per Rückwärtssuche im Track (letzte belegte Standphase ≥ 5 min). Dieselbe
 StatSim-Eigenschaft hätte künftig auch `consolidate_flights` Schritt D gefährlich gemacht
-(Multi-Leg-Session auf die Dauer des ersten Beins geschrumpft, LIMIT-1-Zufall) — jetzt zählt
+(Multi-Leg-Session auf die Dauer des ersten Legs geschrumpft, LIMIT-1-Zufall) — jetzt zählt
 das `MAX(duration_min)` aller Zeilen derselben Anmelde-Minute (eigener Regressionstest).
 **Bitte gegenprüfen** (ich habe aus dieser Umgebung keinen Zugriff auf VPS/Domain):
 `ssh root@167.86.127.129 'curl -s http://127.0.0.1:8091/api/pilots/1031301/flights?days=7'`

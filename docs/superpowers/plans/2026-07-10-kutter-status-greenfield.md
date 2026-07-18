@@ -30,7 +30,7 @@ Belegte Fehlerklassen (s. Zustandsanalyse vom 10.07.):
 
 ## Die Idee (grüne Wiese)
 
-**Eine einzige Wahrheit für die Zählung:** Eine Lieferung = ein geflogenes GPS-Bein, das an einem
+**Eine einzige Wahrheit für die Zählung:** Eine Lieferung = ein geflogenes GPS-Leg, das an einem
 Abholplatz startet (`dep ∈ route, ≠ Ziel`) und am Ziel landet (`gps_arrival == Ziel`). Menge =
 Zuladung des Musters. Das steht bereits vollständig im GPS-Track — **kein Latch, kein `arrived_at`,
 keine Demotion** nötig, um zu zählen.
@@ -58,7 +58,7 @@ Netto: **Code wird entfernt, nicht hinzugefügt.**
 ## Der eine echte Knackpunkt
 
 Wozu war der Latch da? Für **löchrige GPS-Tracks / kein Disconnect** — wenn die Ankunft am Ziel
-nicht sauber als GPS-Bein erkannt wird. Ohne Dauer-Merker sauber lösbar: **beim Verbindungsende
+nicht sauber als GPS-Leg erkannt wird. Ohne Dauer-Merker sauber lösbar: **beim Verbindungsende
 einmal abrechnen** — stand der Pilot zuletzt am Ziel und kam er von einem Abholplatz? Dann zählt
 die Lieferung. Einmalige Abrechnung, kein permanentes Flag, das den Live-Status vergiften kann.
 (Das ist strukturell dasselbe wie die heutige Verlust-Erkennung `detect_transport_losses`, nur mit
@@ -80,7 +80,7 @@ umgekehrtem Vorzeichen — „am Ziel gelandet" statt „woanders geendet".)
 2. Sollen reservierte In-Air-Mengen bei Event-Ende als „nicht geliefert" statt „offen" erscheinen?
    (Getrennt vom Latch-Thema, s. Bilanz-Frage 10.07.)
 3. Migration: Bestandsdaten haben `transport_live_arrivals`-Einträge. Beim Umbau ignorierbar
-   (nur GPS-Bein zählt) oder einmalig abzugleichen?
+   (nur GPS-Leg zählt) oder einmalig abzugleichen?
 4. Test-Strategie: Die bestehende Zustandstabelle (Artifact 10.07.) als Abnahme-Matrix gegen den
    neuen Kern durchspielen — jede heutige ✅-Zeile muss gleich oder besser rauskommen.
 

@@ -181,8 +181,8 @@ class TestRanking:
         result = compute_bummel_standings(conn, route, START, END)
         anna = _by_cid(result["complete"], 100)
         assert anna["aircraft"] == "C172"      # repräsentatives Muster
-        assert anna["leg_count"] == 2          # zwei gewertete Beine
-        # aircraft steckt auch im einzelnen Bein
+        assert anna["leg_count"] == 2          # zwei gewertete Legs
+        # aircraft steckt auch im einzelnen Leg
         assert anna["legs"][0]["aircraft"] == "C172"
 
     def test_only_complete_tours_count_toward_average(self):
@@ -225,7 +225,7 @@ class TestIncomplete:
     def test_partial_tour_listed_with_missing_airport(self):
         conn = _make_conn()
         route = ["EDWF", "EDWG", "EDWR"]
-        _add_flight(conn, 100, "Tom", "EDWF", "EDWG", 30)  # nur ein Bein
+        _add_flight(conn, 100, "Tom", "EDWF", "EDWG", 30)  # nur ein Leg
 
         result = compute_bummel_standings(conn, route, START, END)
 
@@ -253,7 +253,7 @@ class TestTimeMetric:
     def test_flights_outside_route_are_ignored(self):
         conn = _make_conn()
         route = ["EDWF", "EDWG", "EDWR"]
-        # Komplette Tour (zwei Beine), danach Fremdflüge, die NICHT mitzählen.
+        # Komplette Tour (zwei Legs), danach Fremdflüge, die NICHT mitzählen.
         # Explizite Zeiten: die Fremdflüge liegen klar NACH dem Tour-Ende.
         _add_flight(conn, 100, "Udo", "EDWF", "EDWG", 30,
                     logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:30:00Z")
@@ -278,14 +278,14 @@ class TestTourWithStops:
 
     Eine Tour zählt vom ersten Start an einem Routenplatz bis zum letzten Ziel an einem
     Routenplatz; Zwischenstopps dazwischen sind erlaubt. Gewertet wird die Summe der reinen
-    Blockzeiten der Tour-Beine — die Bodenzeit der Zwischenstopps zählt NICHT mit.
+    Blockzeiten der Tour-Legs — die Bodenzeit der Zwischenstopps zählt NICHT mit.
     """
 
     def test_intermediate_stop_counts_as_complete(self):
         conn = _make_conn()
         route = ["EDWF", "EDWG"]
         # EDWF -> EDDH (Zwischenstopp, nicht auf der Route) -> EDWG.
-        # Kein einzelnes Route↔Route-Bein, aber die Tour beginnt an EDWF und endet an EDWG.
+        # Kein einzelnes Route↔Route-Leg, aber die Tour beginnt an EDWF und endet an EDWG.
         _add_flight(conn, 100, "Stan", "EDWF", "EDDH", 30,
                     logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:30:00Z")
         _add_flight(conn, 100, "Stan", "EDDH", "EDWG", 30,
@@ -459,12 +459,12 @@ class TestGpsPresence:
         conn = _make_conn()
         route = ["EDWF", "EDWG", "EDWR"]
 
-        # Bein 1: EDWF→EDWG, Flugplan korrekt, echter GPS-Track an beiden Enden.
+        # Leg 1: EDWF→EDWG, Flugplan korrekt, echter GPS-Track an beiden Enden.
         _add_flight(conn, 100, "Eva", "EDWF", "EDWG", 30,
                     logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:30:00Z")
         _add_realistic_track(conn, 100, "EDWF", "EDWG", "2026-06-27T11:00:00Z",
                               flight_min=30, callsign="FRS123")
-        # Bein 2: Flugplan-ARR vertippt ("EDXX"), aber der echte GPS-Track landet bei EDWR.
+        # Leg 2: Flugplan-ARR vertippt ("EDXX"), aber der echte GPS-Track landet bei EDWR.
         _add_flight(conn, 100, "Eva", "EDWG", "EDXX", 30,
                     logon="2026-06-27T12:00:00Z", logoff="2026-06-27T12:30:00Z")
         _add_realistic_track(conn, 100, "EDWG", "EDWR", "2026-06-27T12:00:00Z",
@@ -474,7 +474,7 @@ class TestGpsPresence:
         eva = _by_cid(result["complete"], 100)
         assert eva is not None, "GPS muss EDWR trotz Flugplan-Tippfehler erkennen"
         assert set(eva["visited"]) == {"EDWF", "EDWG", "EDWR"}
-        # Das vertippte Bein wird auf den echten Zielflugplatz korrigiert
+        # Das vertippte Leg wird auf den echten Zielflugplatz korrigiert
         assert any(l["arrival"] == "EDWR" for l in eva["legs"])
 
     def test_no_gps_falls_back_to_flightplan(self):
@@ -542,7 +542,7 @@ class TestFragmentMerge:
     def test_reconnect_fragments_of_one_leg_count_once(self):
         conn = _make_conn()
         route = ["EDWF", "EDWG", "EDWR"]
-        # Ein Bein EDWF→EDWG als zwei Fragmente (Reconnect, gleicher Flugplan, kleine Lücke).
+        # Ein Leg EDWF→EDWG als zwei Fragmente (Reconnect, gleicher Flugplan, kleine Lücke).
         # canonicalize_flights/merge_fragmented_flights führt sie zu einem Flug zusammen,
         # block_min wird summiert (20+10=30).
         _add_flight(conn, 100, "Eva", "EDWF", "EDWG", 20,
@@ -557,5 +557,5 @@ class TestFragmentMerge:
         eva = _by_cid(result["complete"], 100)
         assert eva is not None
         assert set(eva["visited"]) == {"EDWF", "EDWG", "EDWR"}
-        # 30 (gemergtes Bein) + 30 (zweites Bein) = 60
+        # 30 (gemergtes Leg) + 30 (zweites Leg) = 60
         assert eva["total_min"] == 60

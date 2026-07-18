@@ -1285,7 +1285,7 @@ def consolidate_flights(
             # MAX statt LIMIT-1-Zufall: StatSim legt PRO FLUG eine Zeile mit der SESSION-
             # Anmeldung als logon_time an (duration = arrived − loggedOn) — bei Multi-Leg-
             # Sessions matchen mehrere Zeilen dieselbe Minute. Die längste (= späteste
-            # Landung) ist die beste Untergrenze der Session-Dauer; die des ersten Beins
+            # Landung) ist die beste Untergrenze der Session-Dauer; die des ersten Legs
             # würde eine legitime Multi-Leg-Session fälschlich schrumpfen.
             sc = conn.execute(
                 "SELECT MAX(duration_min) FROM statsim_cache "
@@ -1327,7 +1327,7 @@ def consolidate_flights(
 # Track-Rekonstruktions-Parameter (siehe reconstruct_orphaned_flights):
 _RECONSTRUCT_MARGIN_MIN = 10        # Taxi-in-Rand nach der StatSim-Landezeit
 _RECONSTRUCT_COVER_MARGIN_MIN = 5   # Toleranz „Landung liegt in einem FS-Fenster" (gedeckt)
-_RECONSTRUCT_STAND_SEC = 300        # belegte Standphase, die zwei Beine einer Session trennt
+_RECONSTRUCT_STAND_SEC = 300        # belegte Standphase, die zwei Legs einer Session trennt
 _RECONSTRUCT_MAX_LOOKBACK_H = 3     # Max-Rückblick vor der Landung ohne Session-Grenze
 
 
@@ -1410,7 +1410,7 @@ def reconstruct_orphaned_flights(
         if prev_logoff and prev_logoff > lo:
             lo = prev_logoff
         # Flugbeginn: Rückwärtssuche — die letzte belegte Standphase VOR der Landung trennt
-        # diesen Flug vom vorherigen Bein derselben verwaisten Session.
+        # diesen Flug vom vorherigen Leg derselben verwaisten Session.
         samples = conn.execute(
             "SELECT ts, groundspeed FROM position_history "
             "WHERE cid=? AND ts>? AND ts<? ORDER BY ts",
@@ -2147,13 +2147,13 @@ def _positions_for_cid(
 
 
 def _flightplan_asof(plan_rows: list[dict], ts: str) -> dict | None:
-    """Ordnet einem Zeitpunkt (i. d. R. das Ende/die Landung eines GPS-Beins, ``end_ts``) den
+    """Ordnet einem Zeitpunkt (i. d. R. das Ende/die Landung eines GPS-Legs, ``end_ts``) den
     zu diesem Moment zuletzt gefileten Flugplan zu (Nutzer-Entscheidung 2026-07-05, ersetzt
     das bisherige Startplatz-Matching komplett).
 
     Regel: die ``flights``-Zeile mit dem größten ``logon_time <= ts`` gewinnt — unabhängig
-    davon, ob deren Start/Ziel zum GPS-Start/Ziel des Beins passt. Ein während des Fluges neu
-    gefileter Plan gilt ab sofort und wandert in jedes folgende Bein mit, bis der nächste
+    davon, ob deren Start/Ziel zum GPS-Start/Ziel des Legs passt. Ein während des Fluges neu
+    gefileter Plan gilt ab sofort und wandert in jedes folgende Leg mit, bis der nächste
     Refile ihn ersetzt (Realitäts-Abbild: ein vergessener Refile bleibt sichtbar bestehen).
     Filed ein Pilot den nächsten Plan bereits VOR der eigenen Landung, erscheint das bewusst
     als sichtbarer Mismatch (kein Schutz eingebaut — klarer Pilotenfehler, Nutzer-Entscheidung).
@@ -2500,7 +2500,7 @@ def canonicalize_legs(
 
     Ablauf: Fenster-Lookback (Positionen ab ``start - 12h``, gegen Spawn-Artefakte an der
     Fensterkante) → je Pilot/StatSim-Flug Detektor + Collapse über die ECHTEN Positionen →
-    Flugplan-Zuordnung (zeitbasiert — zuletzt gefilter Plan zum Landungs-/Beinende, Spec G
+    Flugplan-Zuordnung (zeitbasiert — zuletzt gefilter Plan zum Landungs-/Leg-Ende, Spec G
     aktualisiert 2026-07-05) → Fallback auf die reine Connection-/
     StatSim-Zeile, wenn kein Track vorliegt (bzw. kein Leg erkannt wurde) → Ergebnis auf
     Überlappung mit ``[start, end]`` gefiltert → StatSim-Flüge, die einen FriesenSpy-Flug
@@ -2523,14 +2523,14 @@ def canonicalize_legs(
     prefix_pat = callsign_prefix + "%"
     # Plan-Kandidaten (fs_where/sc_where) bekommen an BEIDEN Rändern denselben Puffer
     # (_PLAN_ROWS_LOOKBACK_H) wie die GPS-Positionen (_positions_for_cid) — die eigentliche
-    # Beinauswahl passiert erst auf Flug-Ebene (_in_window). Ohne den Puffer fällt ein
-    # Flugplan aus den Kandidaten, obwohl das zugehörige GPS-Bein im Ergebnis erscheint:
+    # Leg-Auswahl passiert erst auf Flug-Ebene (_in_window). Ohne den Puffer fällt ein
+    # Flugplan aus den Kandidaten, obwohl das zugehörige GPS-Leg im Ergebnis erscheint:
     #   - start-Seite (Live-Fund 2026-07-05, FRS61 ETHB→ETHS, Landung ~15:12): eine Connection,
     #     deren logoff_time knapp VOR `start` liegt, verschwand aus den Kandidaten → leeres
     #     Flugplan-Feld + falscher Aircraft-Fallback.
     #   - end-Seite (Live-Fund 2026-07-05, FRS119N LOWZ→LIME): ein Refile mit Startplatz-Wechsel
-    #     WÄHREND eines noch im Fenster gestarteten Beins erzeugt eine flights-Zeile, deren
-    #     logon_time (Poller-Erkennungszeit) NACH `end` liegt → das Bein bekam fälschlich den
+    #     WÄHREND eines noch im Fenster gestarteten Legs erzeugt eine flights-Zeile, deren
+    #     logon_time (Poller-Erkennungszeit) NACH `end` liegt → das Leg bekam fälschlich den
     #     alten Plan/Muster (zwei verschiedene "Wahrheiten" zwischen Statistik und Events).
     plan_lookback_start = (
         _shift_iso(start, hours=-_PLAN_ROWS_LOOKBACK_H) if start else None
@@ -2642,7 +2642,7 @@ def canonicalize_legs(
         # IS-NULL-Klausel greift dort nie, ist aber harmlos). Derselbe Puffer an BEIDEN
         # Rändern wie bei fs_where — jede statsim_cache-Zeile ist ihr eigener Plan
         # (_statsim_plan), eine knapp vor `start` bzw. knapp nach `end` liegende Session soll
-        # ebenfalls nicht herausfallen (die Beinauswahl erledigt _in_window).
+        # ebenfalls nicht herausfallen (die Leg-Auswahl erledigt _in_window).
         sc_where.append("(logoff_time IS NULL OR logoff_time >= ?)")
         sc_params.append(plan_lookback_start)
     if plan_lookahead_end:
@@ -2661,12 +2661,12 @@ def canonicalize_legs(
 
     # StatSim schneidet einen echten durchgehenden Flug manchmal MITTEN IN DER LUFT in zwei
     # statsim_ids (Live-Fund 2026-07-06, KNF04WC CYYR→KCAR→KOWD — s. _statsim_rows_continuous).
-    # Verarbeitet man jede id isoliert, entsteht dabei ein Geister-Bein ("KCAR → —", gestartet
+    # Verarbeitet man jede id isoliert, entsteht dabei ein Geister-Leg ("KCAR → —", gestartet
     # aber nie gelandet, weil die Positionsdaten dieser id vor der Landung enden). Deshalb
     # werden zeitlich benachbarte Zeilen DESSELBEN Piloten erst zu Clustern zusammengefasst
     # (dieselben Reconnect-Regeln wie bei FriesenSpy-Verbindungsabbrüchen), bevor der
     # Detektor läuft — Positionen werden aneinandergehängt, alle betroffenen Flugpläne
-    # gemeinsam als plan_rows übergeben (_flightplan_asof ordnet dann jedem erkannten Bein
+    # gemeinsam als plan_rows übergeben (_flightplan_asof ordnet dann jedem erkannten Leg
     # automatisch den zeitlich richtigen Plan zu, genau wie beim FriesenSpy-Zweig).
     sc_by_cid: dict[int, list[dict]] = {}
     for row in sc_rows:
@@ -3346,7 +3346,7 @@ def compute_bummel_standings(
     Track-/tour-basiert (Bummel = gemütlich): Die Tour eines Piloten reicht vom ersten Start an
     einem Streckenflugplatz bis zum letzten Ziel an einem Streckenflugplatz — **Zwischenlandungen
     dazwischen sind erlaubt** und brechen die Wertung nicht. Gewertet wird die Summe der reinen
-    Block-Zeiten der Tour-Beine, d. h. die Bodenzeit der Zwischenstopps zählt NICHT mit.
+    Block-Zeiten der Tour-Legs, d. h. die Bodenzeit der Zwischenstopps zählt NICHT mit.
 
     Frühstarter: Flüge, die VOR ``start`` begonnen haben, aber im Eventfenster noch unterwegs sind
     (``logoff_time >= start``), werden mit voller Blockzeit erfasst (Vorlauf
@@ -3359,7 +3359,7 @@ def compute_bummel_standings(
     tatsächlichen GPS-Track erkannt (kein Warten auf Disconnect/Refile mehr nötig), Reconnect-
     Fragmente/Ghosts sind bereits auf Ebene der Positions-Detektion bereinigt. Unvollständige
     Touren werden NIE still verworfen, sondern separat mit ``visited``/``missing`` gelistet —
-    sichtbares Kontrollnetz, falls ein geflogenes Bein wegen eines abweichenden Flugplans nicht
+    sichtbares Kontrollnetz, falls ein geflogenes Leg wegen eines abweichenden Flugplans nicht
     matcht.
 
     Rückgabe::
@@ -3392,8 +3392,8 @@ def compute_bummel_standings(
     flights = canonicalize_legs(conn, start=load_start, end=end, cids=cids)
     flights = [f for f in flights if (f.get("logoff_time") or "") >= start]
 
-    # Beine je Pilot sammeln (Endpunkte bereits GPS-korrigiert durch canonicalize_legs, sonst
-    # Flugplan-Fallback). Beine außerhalb der Strecke werden NICHT mehr sofort verworfen — sie
+    # Legs je Pilot sammeln (Endpunkte bereits GPS-korrigiert durch canonicalize_legs, sonst
+    # Flugplan-Fallback). Legs außerhalb der Strecke werden NICHT mehr sofort verworfen — sie
     # können Zwischenstopps einer Tour sein.
     legs_by_cid: dict[int, list[dict]] = {}
     for f in flights:
@@ -3424,8 +3424,8 @@ def compute_bummel_standings(
         })
 
     # Tour je Pilot: vom ersten Start an einem Streckenflugplatz bis zum letzten Ziel an einem
-    # Streckenflugplatz (Beine zeitlich geordnet). Zwischenstopps dazwischen sind erlaubt; ihre
-    # Bodenzeit fällt automatisch raus, da nur die Block-Zeit der Beine summiert wird.
+    # Streckenflugplatz (Legs zeitlich geordnet). Zwischenstopps dazwischen sind erlaubt; ihre
+    # Bodenzeit fällt automatisch raus, da nur die Block-Zeit der Legs summiert wird.
     complete: list[dict] = []
     incomplete: list[dict] = []
     for cid, legs in legs_by_cid.items():
@@ -5346,7 +5346,7 @@ def compute_transport_progress(
 ) -> dict:
     """Live-Fortschritt eines FriesenKutter-Events — Stapel-Modell (Spec 2026-07-15).
 
-    Ladung ist ein BESTAND mit einem Ort, kein Attribut eines Flugbeins: Das Manifest liegt als
+    Ladung ist ein BESTAND mit einem Ort, kein Attribut eines Legs: Das Manifest liegt als
     Stapel an seinen Ladeplätzen; wer am Boden an einem Ladeplatz steht, lädt; wer am Ziel
     landet, liefert; wer ausloggt, gibt zurück / bestiehlt / versenkt. Die Regeln stehen
     vollständig in :mod:`app.transport_stacks`, die DB-Uebersetzung in :func:`_stack_inputs` —

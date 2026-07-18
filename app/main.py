@@ -1078,7 +1078,7 @@ async def get_calendar_events_endpoint():
 
 
 def _open_bummel_legs(conn, route_set: set[str], start: str, end: str) -> list[dict]:
-    """Aktuell laufende Flüge (logoff_time IS NULL) auf einem Streckenbein.
+    """Aktuell laufende Flüge (logoff_time IS NULL) auf einem Strecken-Leg.
 
     Liefert die „gerade unterwegs"-Info fürs Live-Banner: Flüge ohne block_min/Wertung,
     deren Start UND Ziel zur Strecke gehören. Provisorisch, bis der Flug abgeschlossen ist.

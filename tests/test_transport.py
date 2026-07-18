@@ -1405,7 +1405,7 @@ class TestGPSLegReconcile:
     def _seed_leg(self, conn, cid, callsign, t0, dep_icao, *, arr_landing=True):
         """Ein reales, GPS-erkennbares Leg ab ``dep_icao`` (Taxi 0–1 min, Steigflug über die
         500-ft-AGL-Schwelle bei ``t0+4min`` — GPS-Takeoff). Ohne Endpunkt hier: Aufrufer hängt
-        Reiseflug/Landung selbst an (Verkettung für Mehrbein-Connections)."""
+        Reiseflug/Landung selbst an (Verkettung für Multi-Leg-Connections)."""
         from app.geo import icao_to_coords, airport_elevation_ft
         dlat, dlon = icao_to_coords(dep_icao)
         delev = airport_elevation_ft(dep_icao) or 0
@@ -1472,8 +1472,8 @@ class TestGPSLegReconcile:
         assert p["total_kg"] == 250
 
     def test_return_leg_not_double_counted(self):
-        """Eine Mehrbein-Connection (Hin EDWG→EDXH landet am Ziel, Rück EDXH→EDWG): NUR das
-        Hin-Bein ist beladen. Ein GPS-belegtes, vom Ziel abweichendes Ankunfts-Bein liefert nie
+        """Eine Multi-Leg-Connection (Hin EDWG→EDXH landet am Ziel, Rück EDXH→EDWG): NUR das
+        Hin-Leg ist beladen. Ein GPS-belegtes, vom Ziel abweichendes Ankunfts-Leg liefert nie
         (sonst zählte die Fracht doppelt)."""
         conn = _make_conn()
         upsert_payload(conn, "C172", payload_kg=250)
@@ -1553,10 +1553,10 @@ class TestGPSLegReconcile:
                     cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
         t0 = "2026-07-01T09:58:00Z"
         _add_open_flight(conn, 601, "EDWG", "", "C172", t0, callsign="FRS601")
-        # Bein 1: EDWG -> EDWY, geschlossen gelandet (echte Zwischenlandung, kein Ziel).
+        # Leg 1: EDWG -> EDWY, geschlossen gelandet (echte Zwischenlandung, kein Ziel).
         self._seed_leg(conn, 601, "FRS601", t0, "EDWG")
         landing_ts = self._add_leg_landing(conn, 601, "FRS601", t0, "EDWY", cruise_min=18)
-        # Bein 2: erneuter Start ab EDWY, noch in der Luft (kein Touchdown vor `now`).
+        # Leg 2: erneuter Start ab EDWY, noch in der Luft (kein Touchdown vor `now`).
         t1 = _shift(landing_ts, 5)
         self._seed_leg(conn, 601, "FRS601", t1, "EDWY")
         conn.commit()
@@ -1597,7 +1597,7 @@ class TestGPSLegReconcile:
         assert p["reserved_total_kg"] == 250.0 and p["total_kg"] == 0.0
 
     def test_multi_leg_loss_attached_once(self):
-        """Eine Mehrbein-Connection mit ZWEI nicht gelieferten Beinen (keins am Ziel) und einem
+        """Eine Multi-Leg-Connection mit ZWEI nicht gelieferten Legs (keins am Ziel) und einem
         Logout am fremden Platz: der Verlust wird nur EINMAL angeheftet — lost_total ist die
         einmalige Bordladung (250), nicht das Doppelte."""
         conn = _make_conn()
@@ -1609,19 +1609,19 @@ class TestGPSLegReconcile:
         self._insert_connection(conn, 1000, "FRS1000", "EDWG", "EDDH", conn_logon, conn_logoff,
                                 duration_min=97)
         from app.geo import icao_to_coords
-        # Bein 1: EDWG -> EDWY (Zwischenlandung auf der Strecke, nicht das Ziel).
+        # Leg 1: EDWG -> EDWY (Zwischenlandung auf der Strecke, nicht das Ziel).
         self._seed_leg(conn, 1000, "FRS1000", conn_logon, "EDWG")
         hin_landing = self._add_leg_landing(conn, 1000, "FRS1000", conn_logon, "EDWY")
         wlat, wlon = icao_to_coords("EDWY")
         _add_pos(conn, 1000, _shift(hin_landing, 3), wlat, wlon, 5, alt=8, callsign="FRS1000")
-        # Bein 2: EDWY -> EDDH (fremder Platz, nicht das Ziel). Logout dort -> gestohlen.
+        # Leg 2: EDWY -> EDDH (fremder Platz, nicht das Ziel). Logout dort -> gestohlen.
         self._seed_leg(conn, 1000, "FRS1000", _shift(hin_landing, 6), "EDWY")
         self._add_leg_landing(conn, 1000, "FRS1000", _shift(hin_landing, 6), "EDDH")
         conn.commit()
 
         p = compute_transport_progress(conn, ev, "2026-07-01T12:30:00Z")
         legs = [f for f in p["flights"] if f["cid"] == 1000]
-        assert len(legs) == 2                                    # beide Beine sichtbar
+        assert len(legs) == 2                                    # beide Legs sichtbar
         assert sum(1 for f in legs if f.get("loss_kind")) == 1   # nur EINE Zeile trägt den Verlust
         assert p["lost_total_kg"] == 250    # nicht 500 (doppelt angeheftet)
 
@@ -2898,7 +2898,7 @@ class TestStapelProgress:
         ])
 
     def test_s2_milchmann_erste_ladung_bleibt_an_bord(self):
-        """HEUTE: 0 Fisch + 500 Tee. Der Startplatz des LETZTEN Beins bestimmt die Fracht."""
+        """HEUTE: 0 Fisch + 500 Tee. Der Startplatz des LETZTEN Legs bestimmt die Fracht."""
         conn = _make_conn()
         ev = self._milchmann_event(conn)
         t1 = self._leg(conn, 1, "EDWG", "EDWZ", START)

@@ -663,7 +663,7 @@ Alt (Zeilen ~2607-2625):
     dest = normalize_type_code(event.get("destination"))
 
     # Netzwerk-Flüge sammeln (dep & arr auf der Strecke, dep≠arr). „Beladen" = Ankunft am Ziel;
-    # Rückflüge (und Bein-zu-Bein ohne Ziel) sind leer (0 kg), erscheinen aber im Feed.
+    # Rückflüge (und Leg-zu-Leg ohne Ziel) sind leer (0 kg), erscheinen aber im Feed.
     network: list[dict] = []
     unmapped: set[str] = set()
     for f in flights:

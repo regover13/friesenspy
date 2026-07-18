@@ -29,7 +29,7 @@ ohnehin kennt — 14 davon auf die Sekunde genau (dasselbe `gs<2`-Sample). Geret
 v8.25.0, v8.25.1).
 
 **Der eigentliche Fehler ist tiefer.** Das Modell kennt keine Ladung: Es rät die Fracht aus dem
-Startplatz des **letzten Flugbeins** (`normalize_type_code(f.get("departure"))`, `database.py:5385`). Gemessen mit
+Startplatz des **letzten Legs** (`normalize_type_code(f.get("departure"))`, `database.py:5385`). Gemessen mit
 echten Tracks (Manifest: Fischbrötchen 800 kg ab EDWG, Tee 500 kg ab EDWZ, Ziel EDXH, Zuladung 1000):
 
 | Szenario | heute | richtig |
@@ -46,7 +46,7 @@ falsch ist, sondern die Logik.
 
 ## Entscheidungen (bestätigt mit User, 2026-07-15)
 
-1. **Ladung ist ein Bestand mit einem Ort**, kein Attribut eines Flugbeins.
+1. **Ladung ist ein Bestand mit einem Ort**, kein Attribut eines Legs.
 2. **Die Landung lädt und liefert. Der Logout stiehlt, gibt zurück und versenkt.** Begründung des
    Nutzers: Wer ausloggt, beendet seine Tour — was dann an Bord ist, bleibt liegen, wo er ist.
    **Das gilt auch beim unfreiwilligen Verbindungsabbruch** („Ja. Ist halt so.", Nutzer 15.07.):

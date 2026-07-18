@@ -80,7 +80,7 @@ steht dem Topf durch den Wegfall des aktiven Flugs ohnehin wieder zur Verfügung
 ### Symptom
 
 Ein durchgehender Flug mit **Zwischenlandung an einem Wegpunkt** (kein Logout), z. B.
-EDDW→EDWG→EDWY, wird von der GPS-Erkennung in zwei Beine geschnitten. Das Bein EDDW→EDWG
+EDDW→EDWG→EDWY, wird von der GPS-Erkennung in zwei Legs geschnitten. Das Leg EDDW→EDWG
 erscheint heute als **eigener 0-kg-„Leerflug"** im Feed, und der noch verbundene, am Wegpunkt
 geparkte Pilot wird als **„am Start"** angezeigt — obwohl er mitten auf der Reise ist. Es müsste
 **eine** Reise „unterwegs" bis EDWY sein.
@@ -88,7 +88,7 @@ geparkte Pilot wird als **„am Start"** angezeigt — obwohl er mitten auf der 
 ### Root Cause
 
 `compute_transport_progress` (`app/database.py`) stellt den Feed aus zwei Quellen zusammen:
-- geschlossene Beine aus `canonicalize_legs` (jedes Zwischenlande-Bein ist eine eigene Zeile;
+- geschlossene Legs aus `canonicalize_legs` (jedes Zwischenlande-Leg ist eine eigene Zeile;
   nicht am Ziel gelandet → `loaded=False`, 0 kg),
 - offene Verbindungen aus `open_transport_flights` (Reservierung; ein am Wegpunkt geparkter
   Pilot hat `airborne=False`, was das Frontend als „am Start" rendert — `#62`).
@@ -105,11 +105,11 @@ Zeilen `loaded=False` sind (0 kg → kein Beitrag zu `delivered`) und geschlosse
 `delivered[]` noch `reserved_alloc[]`** — die ausgewiesene Gesamt-Tonnage (`total_kg`) und alle
 Fortschritts-/Verlustzahlen bleiben identisch. Das ist eine Invariante und wird getestet.
 
-**Y1 — Phantom-Zwischenbeine unterdrücken.** Eine geschlossene Feed-Zeile wird entfernt, wenn
+**Y1 — Phantom-Zwischen-Legs unterdrücken.** Eine geschlossene Feed-Zeile wird entfernt, wenn
 alle gelten:
 - `loaded` ist False, **und**
 - sie trägt **kein** `loss_kind` (ist nicht der Verlust-Träger ihrer Verbindung), **und**
-- `dep` ≠ `destination` — ein Bein, das **am Ziel gestartet** ist, ist ein leerer **Rückflug**
+- `dep` ≠ `destination` — ein Leg, das **am Ziel gestartet** ist, ist ein leerer **Rückflug**
   (0 kg) und bleibt **immer** sichtbar (Nutzer-Definition 2026-07-07), **und**
 - dieselbe Verbindung (`_conn_logon`) ist im Feed bereits durch eine **behaltene** Zeile
   vertreten — entweder eine **Lieferung** (`loaded=True`) derselben Verbindung **oder** eine
@@ -119,14 +119,14 @@ Damit bleibt pro Verbindung genau die *eine* aussagekräftige Zeile plus jeder e
 Lieferung, offene Reise, Verlust — und ein Rückflug (`dep == dest`) als eigene 0-kg-Zeile.
 
 **Rückflug bleibt sichtbar — auch im selben Connection-Umlauf.** Liefert ein Pilot EDDW→EDWY und
-fliegt **ohne Logout** zurück (EDWY→EDDW in derselben Verbindung), so trägt das Rückflug-Bein
+fliegt **ohne Logout** zurück (EDWY→EDDW in derselben Verbindung), so trägt das Rückflug-Leg
 zwar eine behaltene Geschwister-Zeile (die Lieferung), wird aber wegen `dep == dest` **nicht**
 unterdrückt. Ebenso bleibt ein eigenständiger Rückflug (eigene Verbindung, keine Reservierung,
 keine Lieferung) sichtbar.
 
 **Y2 — „am Start" → „unterwegs".** Ein an einem Wegpunkt geparkter Pilot, dessen offene
-Verbindung **schon mindestens ein Strecken-Bein abgeschlossen** hat (erkennbar an einem
-unterdrückten Zwischenbein desselben `_conn_logon`), wird als **„unterwegs"** dargestellt, nie
+Verbindung **schon mindestens ein Strecken-Leg abgeschlossen** hat (erkennbar an einem
+unterdrückten Zwischen-Leg desselben `_conn_logon`), wird als **„unterwegs"** dargestellt, nie
 als „am Start". Anzeige ohne Stopp-Detail (Nutzer-Entscheidung 2026-07-07): schlicht
 „unterwegs", **kein** „Stopp EDWG".
 
@@ -176,7 +176,7 @@ Live-Takt rutschen Nr. 2/3/4 eine Sorte nach vorne (2 Äpfel+1 Birne / 3 Birnen 
 - Zwischenlandung an Wegpunkt (Verbindung offen): **kein** Phantom-Leerflug im Feed; Pilot
   genau **eine** „unterwegs"-Zeile mit reservierter Ladung; als „unterwegs", nicht „am Start".
 - Durchgehende Lieferung mit Zwischenstopp (EDDW→EDWG→EDWY, gelandet): nur die Lieferzeile,
-  kein Zwischenbein.
+  kein Zwischen-Leg.
 - **Invariante:** `total_kg` / `delivered` / Verlustzahlen sind vor und nach dem Filter
   identisch (Anzeige-only).
 - Eigenständiger Rückflug (keine Geschwister-Zeile) bleibt sichtbar (kein versehentliches
