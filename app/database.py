@@ -4054,7 +4054,9 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "5"  # "5": on_stack_kg je Frachtzeile (Bestand am Ladeplatz) +
+_PROGRESS_SNAPSHOT_VERSION = "6"  # "6": participants[].online (momentane Präsenz vs. Dauer-
+#      Sperrklinke `visible`) — der Live-Block zeigt ausgeloggte Leer-Piloten nicht mehr als „dabei".
+#      "5": on_stack_kg je Frachtzeile (Bestand am Ladeplatz) +
 #      Verlust-/Rueckgabe-Zeile traegt den Ort als dep. Bump erzwingt Neuberechnung eingefrorener
 #      Snapshots, sonst fehlt beiden abgeschlossenen Events das neue Feld (Anzeige "noch 0").
 #      "4": Stapel-Modell — Ladung ist ein Bestand mit einem Ort
@@ -5569,17 +5571,26 @@ def compute_transport_progress(
             "cid": cid, "name": names.get(cid, ""), "callsign": s.get("callsign") or "",
             "aircraft": normalize_type_code(s.get("aircraft") or s.get("aircraft_icao") or ""),
             "flights": 0, "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0,
-            "status": "done", "statsim_only": True,
+            "status": "done", "statsim_only": True, "online": False,
         })
         # statsim_only nur, wenn ALLE Verbindungen dieses cid StatSim-Backfill sind — deckt eine
         # echte VATSIM-Verbindung ihn (irgendwo) ab, ist er live und gehört in den Live-Block (#3).
         if not s.get("statsim_only"):
             p["statsim_only"] = False
+        # online = mindestens eine ECHT offene Session dieses Piloten: kein logoff_time UND keine
+        # Folge-Verbindung (next_logon) — exakt das Kriterium, mit dem _stack_inputs (lf_eff =
+        # lf or nl) den wirklich noch verbundenen Piloten von einer stale-offenen Zeile trennt.
+        # StatSim-Backfill (keine Live-Verbindung) zählt nie als online. `visible` bleibt die
+        # DAUERHAFTE Teilnahme-Sperrklinke (einmal am Ladeplatz → für immer im Event); `online`
+        # ist die MOMENTANE Präsenz, damit der Live-Block „aktive Piloten" einen fertig
+        # ausgeloggten Leer-Piloten nicht ewig als „dabei" führt (er bleibt in Feed/Bilanz/Badge).
+        if not s.get("logoff_time") and not s.get("next_logon") and not s.get("statsim_only"):
+            p["online"] = True
     for q in network:
         p = parts.setdefault(int(q["cid"]), {
             "cid": int(q["cid"]), "name": q.get("name") or "", "callsign": q.get("callsign") or "",
             "aircraft": normalize_type_code(q.get("aircraft") or ""), "flights": 0,
-            "statsim_only": False,
+            "statsim_only": False, "online": False,
             "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "status": "done",
         })
         p["flights"] += 1

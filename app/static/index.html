@@ -3294,6 +3294,11 @@ async function fetchKutterActive() {
       if (!p.visible) return;
       if (p.statsim_only) return;   // Live-Block ist FriesenSpy-only: StatSim-Backfill (nachgereicht,
                                     // keine Live-VATSIM-Verbindung) zaehlt in Feed/Wertung, nicht hier.
+      // Fertig & ausgeloggt fällt SOFORT aus dem Live-Block: „aktiv" ist nur, wer gerade verbunden
+      // ist (online) oder gerade Ware traegt (reserved>0). `visible` ist die Dauer-Sperrklinke
+      // (einmal am Ladeplatz → fuer immer Teilnehmer) — allein hieße das „ewig dabei", obwohl der
+      // Pilot laengst offline ist. Sein Beitrag bleibt in Feed, Teilnehmer-Bilanz und Badge.
+      if (!(p.online || (p.reserved_kg || 0) > 0)) return;
       const kg = p.reserved_kg || 0;
       const inAir = !p.place;
       const status = inAir

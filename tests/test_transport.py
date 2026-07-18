@@ -903,6 +903,40 @@ class TestReservation:
         assert p["reserved_total_kg"] == 0.0             # kein Doppelzählen
 
 
+class TestParticipantPresence:
+    """participants[].online — die MOMENTANE Präsenz, getrennt von `visible` (Dauer-Teilnahme:
+    einmal am Ladeplatz → für immer Teilnehmer). Der Live-Block „aktive Piloten"
+    (index.html:fetchKutterActive) zeigt nur noch online-Piloten (oder solche mit Ware an Bord);
+    ein fertig ausgeloggter Leer-Pilot fällt sofort heraus, bleibt aber in Feed/Bilanz/Badge."""
+
+    def test_online_true_while_connected(self):
+        """Gegenprobe: eine offene (nicht ausgeloggte) Session ist online=True."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
+        _add_open_flight(conn, 200, "EDWG", "EDXH", "C172", "2026-07-01T18:05:00Z")  # offen = verbunden
+        from app.geo import icao_to_coords
+        la, lo = icao_to_coords("EDWG")
+        _set_live_pos(conn, 200, la, lo, 0)              # steht am Ladeplatz EDWG
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
+        part = next(x for x in p["participants"] if x["cid"] == 200)
+        assert part["online"] is True
+        assert part["visible"] is True
+
+    def test_online_false_after_logoff_but_still_visible_and_counted(self):
+        """Kernfix: geliefert UND ausgeloggt → online=False (raus aus „aktive Piloten"), aber
+        visible=True (letzter Bodenkontakt am Ziel) und delivered_kg bleibt in der Bilanz."""
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
+        _add_delivered_flight(conn, 200, "EDWG", "C172", "2026-07-01T18:05:00Z", ev["id"])  # EDWG→EDXH, landet+zu
+        p = compute_transport_progress(conn, ev, "2026-07-01T19:00:00Z")
+        part = next(x for x in p["participants"] if x["cid"] == 200)
+        assert part["online"] is False        # Session geschlossen (logoff gesetzt)
+        assert part["visible"] is True         # Dauer-Sperrklinke (Bodenkontakt am Ziel EDXH)
+        assert part["delivered_kg"] == 292.0   # Beitrag zählt weiter
+
+
 # --- Fracht je Startplatz (#15 Sub-Projekt B) ------------------------------
 
 class TestCargoPerDeparture:
