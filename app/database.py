@@ -5528,10 +5528,16 @@ def compute_transport_progress(
         delivered = stacks[dest].get(n, 0.0)
         lost = stacks[STOLEN].get(n, 0.0) + stacks[SUNK].get(n, 0.0)
         reserved = sum(l.get(n, 0.0) for l in onboard.values())
+        # on_stack_kg: was von DIESER Zeile noch am Startplatz liegt (Rest-Stapel). Das ist die
+        # EINZIGE pro-Platz bekannte Zahl bei mehreren Zeilen desselben Namens — geliefert/verloren
+        # gibt es nur als Name-Gesamt (die Ware verliert beim Laden ihre Herkunft). Damit kann die
+        # Detailansicht ehrlich "noch am Platz / abgeholt" je Platz zeigen (Nutzer-Entscheidung:
+        # zusammenfassen statt Herkunft mitzuführen).
+        on_stack = stacks.get(c.get("departure") or "", {}).get(n, 0.0)
         cargo_out.append({
             "name": n, "emoji": c.get("emoji"), "target_kg": c["target_kg"],
             "delivered_kg": round(delivered, 1), "reserved_kg": round(reserved, 1),
-            "lost_kg": round(lost, 1),
+            "lost_kg": round(lost, 1), "on_stack_kg": round(on_stack, 1),
             "pct": round(100.0 * delivered / c["target_kg"], 1) if c["target_kg"] > 0 else 0.0,
             "per_flight_max_kg": c.get("per_flight_max_kg"),
             "departure": c.get("departure"),
@@ -5630,6 +5636,7 @@ def _empty_transport_progress(event: dict, route_set: set[str], manifest: list[d
         "route": sorted(route_set), "destination": None, "flights": [],
         "cargo": [{"name": c["name"], "emoji": c.get("emoji"), "target_kg": c["target_kg"],
                    "delivered_kg": 0.0, "reserved_kg": 0.0, "lost_kg": 0.0, "pct": 0.0,
+                   "on_stack_kg": round(c["target_kg"], 1),   # ohne Ziel liegt alles noch am Platz
                    "per_flight_max_kg": c.get("per_flight_max_kg"),
                    "departure": c.get("departure")} for c in manifest],
         "total_kg": 0.0, "flight_count": 0, "loaded_count": 0,

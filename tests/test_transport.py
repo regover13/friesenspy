@@ -2864,6 +2864,40 @@ class TestStatSimSichtbarkeit:
         assert part["statsim_only"] is False
 
 
+class TestGleicherNameMehrfachePlaetze:
+    """Dieselbe Frachtart aus mehreren Startplätzen (Entscheidung 1b). Das Modell führt Ladung
+    nach NAME — geliefert/verloren gibt es nur als Name-Gesamt, nicht pro Platz. Pro Platz ist
+    dagegen der REST-Stapel bekannt (``on_stack_kg``): so kann die Detailansicht ehrlich zeigen,
+    wie viel an einem Platz noch liegt bzw. schon abgeholt wurde (Nutzer-Entscheidung: Anzeige
+    zusammenfassen, KEINE Herkunfts-Verfolgung)."""
+
+    def test_on_stack_je_platz_geliefert_bleibt_name_gesamt(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=1000)
+        conn.commit()
+        ev = _event(conn, route="EDWL,EDXH,EDXP,EDWG", destination="EDWG", cargo=[
+            {"name": "Krabbenbrötchen", "target_kg": 200, "departure": "EDWL", "per_flight_max_kg": 80},
+            {"name": "Krabbenbrötchen", "target_kg": 200, "departure": "EDXH", "per_flight_max_kg": 80},
+            {"name": "Krabbenbrötchen", "target_kg": 100, "departure": "EDXP", "per_flight_max_kg": 80},
+        ])
+        # Ein Pilot holt in EDWL (Kappung 80) und liefert nach EDWG.
+        _add_delivered_flight(conn, 5, "EDWL", "C208", START, ev["id"], destination="EDWG")
+
+        p = compute_transport_progress(conn, ev, END)
+        krabben = [c for c in p["cargo"] if c["name"] == "Krabbenbrötchen"]
+        by_dep = {c["departure"]: c for c in krabben}
+
+        assert len(krabben) == 3
+        # geliefert ist der NAME-Gesamt (80) — auf allen drei Zeilen gleich (name-keyed).
+        assert all(c["delivered_kg"] == 80.0 for c in krabben)
+        # on_stack_kg ist PRO PLATZ: EDWL hat 80 abgegeben (200->120), EDXH/EDXP unberührt.
+        assert by_dep["EDWL"]["on_stack_kg"] == 120.0
+        assert by_dep["EDXH"]["on_stack_kg"] == 200.0
+        assert by_dep["EDXP"]["on_stack_kg"] == 100.0
+        # Summe on_stack (120+200+100=420) + geliefert (80) == Krabben-Manifest (500).
+        assert round(sum(c["on_stack_kg"] for c in krabben), 1) + 80.0 == 500.0
+
+
 class TestStapelProgress:
     """compute_transport_progress auf Basis der Stapel-Ableitung — die Fälle, an denen sich das
     Modell entscheidet (S1-S5 aus scripts/kutter_ladung_szenarien.py, hier mit echten Tracks)."""
