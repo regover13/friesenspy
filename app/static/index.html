@@ -4933,36 +4933,86 @@ function _kSegLegend(items, totalTarget, sub) {
   return '<div class="' + barCls + '">' + segs + '</div><div class="' + legCls + '">' + legend + '</div>';
 }
 
+// Bestands-Ansicht je Abholplatz (Detail): zeigt, was pro Platz WIRKLICH bekannt ist — wie viel
+// noch am Platz liegt (on_stack_kg = Rest-Stapel) und wie viel schon abgeholt wurde (Ziel − Rest).
+// Bewusst OHNE geliefert/verloren: die gibt es nur als Name-Gesamt (Ware ist name-keyed), sie
+// stehen oben in „Gesamt“. Der Balken füllt sich mit dem bereits Abgeholten.
+function _kStockLegend(items, totalTarget) {
+  totalTarget = totalTarget || 1;
+  const segs = items.map(({ c, gi }) => {
+    const picked = Math.max(0, (c.target_kg || 0) - (c.on_stack_kg || 0));
+    const pct = c.target_kg > 0 ? Math.min(100, 100 * picked / c.target_kg) : 0;
+    return '<div class="kutter-seg" style="width:' + (100 * c.target_kg / totalTarget).toFixed(2)
+      + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i></div>';
+  }).join('');
+  const legend = items.map(({ c, gi }) => {
+    const mark = c.emoji ? _kesc(c.emoji) + ' '
+      : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
+    const cap = c.per_flight_max_kg != null
+      ? ' <span class="kl-cap" title="Obergrenze pro Flug">⚠ ' + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
+    const picked = Math.max(0, (c.target_kg || 0) - (c.on_stack_kg || 0));
+    const pickedTxt = picked > 0.05
+      ? ' <span style="opacity:.7">· ' + _kfmtT(picked) + ' abgeholt</span>' : '';
+    return '<span>' + mark + _kesc(c.name) + cap + ' noch ' + _kfmtT(c.on_stack_kg || 0)
+      + ' / ' + _kfmtT(c.target_kg) + pickedTxt + '</span>';
+  }).join('');
+  return '<div class="kutter-bar kutter-bar--sub">' + segs + '</div>'
+    + '<div class="kutter-legend kutter-legend--sub">' + legend + '</div>';
+}
+
 function _kutterBarAndTotals(d, showBreakdown = true) {
   let bar = '';
   if (d.cargo && d.cargo.length) {
-    const items = d.cargo.map((c, i) => ({ c, gi: i }));
     const totalTarget = d.cargo.reduce((s, c) => s + c.target_kg, 0) || 1;
-    // Nach Startplatz gruppieren ('' = geteilt). Gibt es KEINE gebundene Fracht (Legacy/rein
-    // geteilt), bleibt es ein einziger Balken wie bisher — sonst Gesamtbalken + je Startplatz
-    // ein Block (#15 Sub-Projekt B). `showBreakdown=false` (kompakter Live-Banner) zeigt NUR den
-    // einen Gesamtbalken — die Aufschlüsselung je Abholplatz lebt in der Detail-Ansicht, damit
-    // der Live-Banner nicht überladen wirkt (Nutzer-Fund 09.07.: „Live = Kurzblick, Detail = Tiefe").
+    // Stabile Farbe je NAME: die Gesamt-Ansicht fasst gleiche Namen zu EINER Zeile zusammen, die
+    // Startplatz-Blöcke nutzen dieselbe Farbe je Ware (damit man sie wiedererkennt).
+    const nameIdx = {}; let ni = 0;
+    d.cargo.forEach(c => { if (!(c.name in nameIdx)) nameIdx[c.name] = ni++; });
+
+    // GESAMT: gleiche Namen zusammenfassen. Dieselbe Ware darf aus mehreren Startplätzen kommen
+    // (Entscheidung 1b) — geliefert/verloren/reserviert führt das Modell nach NAME, sie sind auf
+    // jeder Startplatz-Zeile identisch. Ohne Zusammenfassung stünde die Ware mehrfach mit
+    // wiederholten (irreführend summierbaren) Zahlen. Nur die ZIELE werden addiert.
+    const byName = new Map();
+    d.cargo.forEach(c => {
+      const e = byName.get(c.name);
+      if (!e) { byName.set(c.name, { ...c }); }
+      else {
+        e.target_kg += c.target_kg;
+        if (c.per_flight_max_kg != null)   // strengste Kappung je Name (wie im Modell, #4)
+          e.per_flight_max_kg = e.per_flight_max_kg != null
+            ? Math.min(e.per_flight_max_kg, c.per_flight_max_kg) : c.per_flight_max_kg;
+      }
+    });
+    const mergedItems = [...byName.values()].map(c => {
+      c.pct = c.target_kg > 0 ? 100 * c.delivered_kg / c.target_kg : 0;   // pct auf die Ziel-Summe
+      return { c, gi: nameIdx[c.name] };
+    });
+
+    // Nach Startplatz gruppieren (jede Zeile = ein Platz, Entscheidung 6). `showBreakdown=false`
+    // (kompakter Live-Banner) zeigt NUR den Gesamtbalken — die Aufschlüsselung je Abholplatz lebt
+    // in der Detail-Ansicht (Nutzer-Fund 09.07.: „Live = Kurzblick, Detail = Tiefe").
     const groups = new Map();
-    items.forEach(it => {
-      const k = it.c.departure || '';
+    d.cargo.forEach(c => {
+      const k = c.departure || '';
       if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(it);
+      groups.get(k).push({ c, gi: nameIdx[c.name] });
     });
     const hasBound = [...groups.keys()].some(k => k);
     if (!hasBound || !showBreakdown) {
-      bar = _kSegLegend(items, totalTarget);
+      bar = _kSegLegend(mergedItems, totalTarget);
     } else {
-      bar = '<div class="kutter-grp-h kutter-grp-total">Gesamt</div>' + _kSegLegend(items, totalTarget);
-      // Überschrift über die untergeordneten Startplatz-Blöcke — trennt „das große Ganze" (Gesamt)
-      // sichtbar von der Aufschlüsselung, damit die Teilbalken nicht als flache, überladene Liste wirken.
+      bar = '<div class="kutter-grp-h kutter-grp-total">Gesamt</div>' + _kSegLegend(mergedItems, totalTarget);
+      // Je Abholplatz zeigt die EHRLICHEN pro-Platz-Zahlen: was noch am Platz liegt und wie viel
+      // von dort abgeholt wurde. Geliefert/verloren steht NICHT hier — das ist nur als Name-Gesamt
+      // bekannt (die Ware verliert beim Laden ihre Herkunft) und lebt oben in „Gesamt".
       bar += '<div class="kutter-grp-h kutter-grp-section">Je Abholplatz</div>';
       const keys = [...groups.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
       keys.forEach(k => {
         const grp = groups.get(k);
         const gt = grp.reduce((s, it) => s + it.c.target_kg, 0) || 1;
         const label = k ? '🛫 ab ' + _kesc(k.split(',').join(', ')) : 'Alle Startplätze';
-        bar += '<div class="kutter-grp-h">' + label + '</div>' + _kSegLegend(grp, gt, true);
+        bar += '<div class="kutter-grp-h">' + label + '</div>' + _kStockLegend(grp, gt);
       });
     }
   }

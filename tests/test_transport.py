@@ -1271,6 +1271,29 @@ class TestCargoLosses:
         part = next(x for x in p["participants"] if x["cid"] == 320)
         assert part["lost_kg"] == 292.0               # dem Piloten zugeschrieben
 
+    def test_rueckgabe_ohne_flug_zeigt_den_ladeort_als_start(self):
+        """Nutzer-Fund: Wer an einem Ladeplatz lädt und dort wieder ausloggt, OHNE abzuheben,
+        gibt die Ware zurück (kg-neutral). Die Feed-Zeile hatte bisher ein LEERES Startfeld
+        („→EDXH"), obwohl der Ort feststeht — geladen wird ja am Platz. Standardlösung ohne
+        Sonderregel: das Startfeld mit dem Ort füllen (den das Modell kennt) → „EDXH → EDXH".
+        """
+        conn = _make_conn()
+        from app.geo import icao_to_coords
+        upsert_payload(conn, "C208", payload_kg=1000)
+        ev = _event(conn, route="EDXH,EDWG", destination="EDWG",
+                    cargo=[{"name": "Fisch", "target_kg": 800, "departure": "EDXH"}])
+        lat, lon = icao_to_coords("EDXH")
+        # Geschlossene Session in EDXH, durchgehend am Boden (kein Takeoff -> kein GPS-Leg):
+        # lädt beim Login, gibt beim Logout am selben Platz zurück.
+        _add_flight(conn, 7, "EDXH", "EDWG", "C208", START, duration_min=20)
+        _add_pos(conn, 7, START, lat, lon, 0)
+        _add_pos(conn, 7, _shift(START, 10), lat, lon, 0)
+
+        p = compute_transport_progress(conn, ev, END)
+        row = next(f for f in p["flights"] if f["cid"] == 7)
+        assert row["loss_kind"] == "returned" and (row.get("lost_kg") or 0) == 0.0
+        assert row["dep"] == "EDXH" and row["arr"] == "EDXH"   # Ladeort als Start (Option 2)
+
     def test_loss_shows_cargo_lines(self):
         """Die Verlust-Zeile zeigt, WAS über Bord ging — Co-Load-Verteilung wie bei
         einem beladenen Flug (Nutzer-Wunsch 02.07.: 'x Krabbenbrötchen, x Schafe |
@@ -2862,6 +2885,40 @@ class TestStatSimSichtbarkeit:
         part = next(x for x in p["participants"] if x["cid"] == 42)
         assert part["delivered_kg"] == 800.0
         assert part["statsim_only"] is False
+
+
+class TestGleicherNameMehrfachePlaetze:
+    """Dieselbe Frachtart aus mehreren Startplätzen (Entscheidung 1b). Das Modell führt Ladung
+    nach NAME — geliefert/verloren gibt es nur als Name-Gesamt, nicht pro Platz. Pro Platz ist
+    dagegen der REST-Stapel bekannt (``on_stack_kg``): so kann die Detailansicht ehrlich zeigen,
+    wie viel an einem Platz noch liegt bzw. schon abgeholt wurde (Nutzer-Entscheidung: Anzeige
+    zusammenfassen, KEINE Herkunfts-Verfolgung)."""
+
+    def test_on_stack_je_platz_geliefert_bleibt_name_gesamt(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=1000)
+        conn.commit()
+        ev = _event(conn, route="EDWL,EDXH,EDXP,EDWG", destination="EDWG", cargo=[
+            {"name": "Krabbenbrötchen", "target_kg": 200, "departure": "EDWL", "per_flight_max_kg": 80},
+            {"name": "Krabbenbrötchen", "target_kg": 200, "departure": "EDXH", "per_flight_max_kg": 80},
+            {"name": "Krabbenbrötchen", "target_kg": 100, "departure": "EDXP", "per_flight_max_kg": 80},
+        ])
+        # Ein Pilot holt in EDWL (Kappung 80) und liefert nach EDWG.
+        _add_delivered_flight(conn, 5, "EDWL", "C208", START, ev["id"], destination="EDWG")
+
+        p = compute_transport_progress(conn, ev, END)
+        krabben = [c for c in p["cargo"] if c["name"] == "Krabbenbrötchen"]
+        by_dep = {c["departure"]: c for c in krabben}
+
+        assert len(krabben) == 3
+        # geliefert ist der NAME-Gesamt (80) — auf allen drei Zeilen gleich (name-keyed).
+        assert all(c["delivered_kg"] == 80.0 for c in krabben)
+        # on_stack_kg ist PRO PLATZ: EDWL hat 80 abgegeben (200->120), EDXH/EDXP unberührt.
+        assert by_dep["EDWL"]["on_stack_kg"] == 120.0
+        assert by_dep["EDXH"]["on_stack_kg"] == 200.0
+        assert by_dep["EDXP"]["on_stack_kg"] == 100.0
+        # Summe on_stack (120+200+100=420) + geliefert (80) == Krabben-Manifest (500).
+        assert round(sum(c["on_stack_kg"] for c in krabben), 1) + 80.0 == 500.0
 
 
 class TestStapelProgress:
