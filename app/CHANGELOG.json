@@ -5,6 +5,7 @@
     "highlight": true,
     "title": "Milchmann",
     "items": [
+      "⚠️ Wichtig: Das Backend wurde für diese Version nahezu komplett neu programmiert und ist bislang nur durch automatische System-/Softwaretests abgesichert — im echten Flugbetrieb noch nicht auf Herz und Nieren erprobt. Wenn dir etwas auffällt (falsche Zahlen, seltsame Anzeigen, Ungereimtheiten), melde es bitte, damit wir es schnell beheben können. Danke fürs Mittesten!",
       "📦 Die Fracht denkt jetzt vom Stapel her, nicht vom Leg. Bisher hat der FriesenKutter die Ladung aus dem Startplatz deines LETZTEN Legs geraten — wer über einen zweiten Ladeplatz flog, bei dem verschwand die erste Ladung (800 kg Fisch wurden zu 0), und wer über einen fremden Platz zwischenlandete, bekam Ware gutgeschrieben, die nie an Bord war. Jetzt liegt die Ware als Bestand auf Stapeln mit einem Ort: Du lädst, wenn du am Boden an einem Ladeplatz stehst, lieferst beim Landen am Ziel und gibst zurück, wenn du dort ausloggst. Was du geladen hast, bleibt an Bord — auch über Zwischenlandungen.",
       "🚚 Der Milchmann funktioniert — daher der Name: EDWG → EDWZ → Ziel lädt an BEIDEN Plätzen und liefert beides. Dieselbe Ware darf aus zwei Startplätzen kommen; die Kappung pro Flug gilt für die Frachtart insgesamt (60 in EDWG, die restlichen 40 in EDDW, nie mehr).",
       "🧭 Eine Wahrheit: Ob geflogen, gelandet, geliefert oder verloren, entscheidet allein der erkannte GPS-Track (canonicalize_legs) — kein Flugplan-Raten, kein „Latch“ mehr, der die Ankunft separat merken musste. Kein Track, kein Kutter-Flug.",
