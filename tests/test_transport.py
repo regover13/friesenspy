@@ -1259,10 +1259,11 @@ class TestCargoLosses:
         assert f["loss_kind"] == "returned"
         assert p["lost_total_kg"] == 0.0                    # Wegpunkt-Rückgabe ≠ Verlust
 
-    def test_at_place_return_is_own_event_not_on_empty_leg(self):
-        """V10.0.1: Am-Platz-Rückgabe — leer nach EDWY geflogen, DORT geladen und DORT zurück
-        (Ladeplatz == Abfallort, nie geflogen). Der Leerflug bleibt „leer", die Rückgabe ist eine
-        EIGENE „EDWY→EDWY"-Zeile (nicht auf den leeren Anflug gemalt); kein Beitrag → kein Badge."""
+    def test_at_place_return_is_silent_not_a_flight(self):
+        """V10.0.2: Am-Platz-Rückgabe — leer nach EDWY geflogen, DORT geladen und DORT zurück
+        (Ladeplatz == Abfallort, nie geflogen). Das ist KEIN Leg → STILLE Stapel-Buchung: KEINE
+        Feed-Zeile, kein Flugzähler. Nur der echte Leerflug EDWS→EDWY bleibt; kein Beitrag → kein
+        Badge; Erhaltungssatz hält (Baumaterial liegt wieder voll am Stapel)."""
         conn = _make_conn()
         upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)
         ev = _event(conn, route="EDWY,EDXH", destination="EDXH",
@@ -1270,14 +1271,17 @@ class TestCargoLosses:
         _add_delivered_flight(conn, 400, "EDWS", "C172", "2026-07-01T18:05:00Z", ev["id"], destination="EDWY")
         p = compute_transport_progress(conn, ev, "2026-07-01T20:00:00Z")
         rows = [x for x in p["flights"] if x["cid"] == 400]
-        leer = next(x for x in rows if x["dep"] == "EDWS")                  # der leere Anflug
-        ret = next(x for x in rows if x.get("loss_kind") == "returned")     # die Rückgabe
-        assert leer.get("loss_kind") is None and not leer["cargo_lines"]    # Leerflug bleibt sauber „leer"
-        assert leer["arr"] == "EDWY"
-        assert ret["dep"] == "EDWY" and ret["arr"] == "EDWY"                # eigene Am-Platz-Zeile
-        assert ret["cargo_name"] == "Baumaterial" and p["lost_total_kg"] == 0.0
+        assert len(rows) == 1                                              # NUR der echte Leerflug
+        leer = rows[0]
+        assert leer["dep"] == "EDWS" and leer["arr"] == "EDWY"
+        assert leer.get("loss_kind") is None and not leer["cargo_lines"]    # sauber „leer", keine Rückgabe
+        assert not any(x.get("loss_kind") == "returned" for x in p["flights"])   # KEINE Rückgabe-Zeile
+        assert not p["losses"]                                             # keine Verlust-/Rückgabe-Buchung im Feed
+        assert p["lost_total_kg"] == 0.0
+        bau = next(c for c in p["cargo"] if c["name"] == "Baumaterial")
+        assert bau["on_stack_kg"] == 400.0 and bau["reserved_kg"] == 0.0    # Ware still zurück auf dem Stapel
         part = next(x for x in p["participants"] if x["cid"] == 400)
-        assert part["contributed"] is False                                # Phantom → kein Badge
+        assert part["contributed"] is False                                # nichts bewegt → kein Badge
 
     def test_carried_return_stays_on_flight_and_counts(self):
         """Gegenprobe: von Ladeplatz EDWG nach Wegpunkt EDXP GEFLOGEN und dort zurück (Ladeplatz ≠
@@ -1391,11 +1395,12 @@ class TestCargoLosses:
         part = next(x for x in p["participants"] if x["cid"] == 320)
         assert part["lost_kg"] == 292.0               # dem Piloten zugeschrieben
 
-    def test_rueckgabe_ohne_flug_zeigt_den_ladeort_als_start(self):
-        """Nutzer-Fund: Wer an einem Ladeplatz lädt und dort wieder ausloggt, OHNE abzuheben,
-        gibt die Ware zurück (kg-neutral). Die Feed-Zeile hatte bisher ein LEERES Startfeld
-        („→EDXH"), obwohl der Ort feststeht — geladen wird ja am Platz. Standardlösung ohne
-        Sonderregel: das Startfeld mit dem Ort füllen (den das Modell kennt) → „EDXH → EDXH".
+    def test_rueckgabe_ohne_flug_ist_still_keine_zeile(self):
+        """Nutzer-Prinzip (V10.0.2): Wer an einem Ladeplatz lädt und dort wieder ausloggt, OHNE
+        abzuheben, gibt die Ware zurück (kg-neutral). Das ist KEIN Leg und KEIN Flug — als Flug
+        zählt/erscheint/geloggt wird nur, was canonicalize_legs als echtes Leg erfasst. Eine reine
+        Am-Platz-Rückgabe ist eine stille Stapel-Buchung: keine Feed-Zeile, kein Flugzähler-Eintrag.
+        Der Erhaltungssatz hält trotzdem — die Ware liegt danach wieder auf dem Stapel.
         """
         conn = _make_conn()
         from app.geo import icao_to_coords
@@ -1410,9 +1415,10 @@ class TestCargoLosses:
         _add_pos(conn, 7, _shift(START, 10), lat, lon, 0)
 
         p = compute_transport_progress(conn, ev, END)
-        row = next(f for f in p["flights"] if f["cid"] == 7)
-        assert row["loss_kind"] == "returned" and (row.get("lost_kg") or 0) == 0.0
-        assert row["dep"] == "EDXH" and row["arr"] == "EDXH"   # Ladeort als Start (Option 2)
+        assert not any(f["cid"] == 7 for f in p["flights"])       # gar keine Zeile — stille Buchung
+        assert p["total_kg"] == 0.0 and p["lost_total_kg"] == 0.0  # nichts geliefert, nichts verloren
+        fisch = next(c for c in p["cargo"] if c["name"] == "Fisch")
+        assert fisch["on_stack_kg"] == 800.0                       # Ware liegt wieder auf dem Stapel
 
     def test_loss_shows_cargo_lines(self):
         """Die Verlust-Zeile zeigt, WAS über Bord ging — Co-Load-Verteilung wie bei
@@ -1642,10 +1648,12 @@ class TestGPSLegReconcile:
         hin = next(f for f in rows if f["dep"] == "EDWG" and f["arr"] == "EDXH")
         rueck = next(f for f in rows if f["dep"] == "EDXH" and f["arr"] == "EDWG")
         assert hin["loaded"] is True
-        # Der Rückflug bleibt ein SAUBERER Leerflug (die Am-Platz-Rückgabe daheim in EDWG — dort
-        # beim Landen auto-geladen, beim Logout zurück — ist eine eigene „EDWY→EDWY"-artige Zeile,
-        # V10.0.1; sie wird NICHT auf den Rückflug gemalt).
+        # Der Rückflug bleibt ein SAUBERER Leerflug. Die reine Am-Platz-Rückgabe daheim in EDWG
+        # (beim Landen am Ladeplatz auto-geladen, beim Logout an den Stapel zurück) ist KEIN Leg —
+        # sie erzeugt seit V10.0.2 gar keine Zeile mehr (stille Stapel-Buchung, kg-neutral).
         assert rueck["loaded"] is False and rueck["tonnage_kg"] == 0.0 and rueck.get("loss_kind") is None
+        assert not any(f.get("loss_kind") == "returned" for f in rows)  # keine Phantom-Rückgabe-Zeile
+        assert len(rows) == 2                                           # nur Hin- und Rück-Leg
         assert p["total_kg"] == 250  # Hin-Lieferung nur EINMAL gezählt, Rückgabe ist kg-neutral
 
     def test_landing_off_destination_delivers_nothing(self):

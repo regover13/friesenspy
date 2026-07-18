@@ -1,5 +1,15 @@
 [
   {
+    "version": "10.0.2",
+    "date": "2026-07-18",
+    "highlight": false,
+    "title": "Nur echte Legs sind Flüge",
+    "items": [
+      "🧮 Der Flugzähler zählt jetzt nur noch echte Flüge. Eine reine Rückgabe am Platz (geladen und am selben Platz wieder abgelegt, ohne einen Meter zu fliegen) ist kein Leg und kein Flug mehr — sie erscheint nicht mehr im Feed und wird nicht mitgezählt. Vorher blähten solche stillen Buchungen die „gesamt“-Zahl auf (z. B. 12 statt der tatsächlich geflogenen Legs).",
+      "🤫 So eine Am-Platz-Rückgabe ist eine stille Stapel-Buchung: Die Ware liegt einfach wieder auf ihrem Stapel. Der Balken bleibt exakt gleich (die Rückgabe ist kg-neutral), es fehlt nur die irreführende Zeile. Grundsatz: Als Flug erscheint, geloggt und gezählt wird ausschließlich, was der GPS-Track als echtes Leg erfasst."
+    ]
+  },
+  {
     "version": "10.0.1",
     "date": "2026-07-18",
     "highlight": false,

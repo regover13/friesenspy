@@ -4054,7 +4054,10 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "9"  # "9": Am-Platz-Rückgabe (Ladeplatz == Abfallort) = eigenes
+_PROGRESS_SNAPSHOT_VERSION = "10"  # "10": Am-Platz-Rückgabe (Ladeplatz == Abfallort, kein Trage-
+#      Flug) ist eine STILLE Stapel-Buchung — keine Feed-Zeile, kein Flugzähler (kein Leg = kein
+#      Flug). Klau/Versenken/geflogene Rückgabe bleiben sichtbar.
+#      "9": Am-Platz-Rückgabe (Ladeplatz == Abfallort) = eigenes
 #      „EDWY→EDWY"-Ereignis statt auf den leeren Anflug-Leg gemalt; participants[].contributed
 #      (Ware wirklich bewegt) fürs Badge/die Bilanz.
 #      "8": WURZEL-Fix — der laufende Flug holt seine Fracht aus der
@@ -5561,14 +5564,13 @@ def compute_transport_progress(
                 attach["loss_kind"], attach["lost_kg"] = kind, lost
                 attach["cargo_lines"] = _lines(ls)
                 attach["cargo_name"] = attach["cargo_lines"][0]["name"]
-            else:
+            elif kind in ("stolen", "sunk"):
+                # Klau/Versenken OHNE passenden Leg: echter kg-Verlust, MUSS sichtbar bleiben —
+                # als eigene Zeile (Start = Herkunfts-Ladeplatz, sonst der Ort; in der Luft „—").
                 network.append({
                     "dep_time": s.get("logon_time") or "", "cid": cid,
                     "callsign": s.get("callsign") or "", "name": names.get(cid, ""),
                     "aircraft": s.get("aircraft") or type_code,
-                    # Am-Platz-Ereignis: Start = Herkunfts-Ladeplatz (bei der Phantom-Rückgabe IST
-                    # das der Abfallort → „EDWY→EDWY"). Nur beim Versenken in der Luft ohne bekannte
-                    # Herkunft bleibt dep leer.
                     "dep": origin or drop or "", "arr": drop or "—",
                     "tonnage_kg": 0.0, "loaded": False, "in_air": False, "airborne": False,
                     "reserved_kg": 0.0, "cargo_lines": _lines(ls),
@@ -5576,6 +5578,11 @@ def compute_transport_progress(
                     "flight_key": f"{cid}:{s.get('logon_time') or ''}",
                     "distance_nm": 0, "block_min": 0, "loss_kind": kind, "lost_kg": lost,
                 })
+            # else: reine Am-Platz-Rückgabe (Ladeplatz == Abfallort, kein Trage-Flug) = STILLE
+            # Stapel-Buchung. Das ist KEIN Leg, KEIN Flug → keine Feed-Zeile, kein Flugzähler-Eintrag
+            # (Nutzer-Prinzip: als Flug zählt NUR, was canonicalize_legs als echtes Leg erfasst). Der
+            # Erhaltungssatz hält trotzdem — derive_stacks legt die Ware sowieso auf den Stapel zurück,
+            # unabhängig von der Anzeige.
 
         # Beladen am Boden, aber NOCH NICHT abgehoben (kein offener Leg): dieser Fall hat keine
         # GPS-Leg-Zeile, deshalb zeigt ihn diese synthetische Zeile. Der laufende beladene Flug MIT
