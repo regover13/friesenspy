@@ -45,8 +45,8 @@ lokal). Danach Konsumenten-Umstellung, Kutter-Latch-Reconcile, UI (GPS+Plan nebe
   Takeoff. Reconcile: das **Connection-Intervall** `[logon, logoff]` muss das Flug-Fenster überlappen
   (NIE „Latch-Logon ∈ [takeoff, landing]" prüfen — das matcht nie).
 - **Kutter-Streckenbedingung bleibt**: Lieferung nur wenn `dep` UND `arr` auf `route_set` (`dep ≠ arr`)
-  ODER Latch; mit Latch zählt nur das Bein, das am `destination` ankommt (oder offen ist) — nie das
-  Rückflug-Bein derselben Verbindung.
+  ODER Latch; mit Latch zählt nur das Leg, das am `destination` ankommt (oder offen ist) — nie das
+  Rückflug-Leg derselben Verbindung.
 - **Refile-Split im Poller BLEIBT** — er erzeugt die `flights`-Zeile je Refile = Label-Zeitachse für die
   Startplatz-primäre Flugplan-Zuordnung (Spec G). Er hat keine Wertungswirkung mehr (Wertung liest GPS).
 - **`duration_min`** je Flug = `takeoff→landing` (bewusst; Stunden-KPI schrumpft rückwirkend).
@@ -412,7 +412,7 @@ Pseudo-Plan-Dict mit `id=None`).
   - `test_connection_closed_flag` — offener GPS-Flug: Connection `logoff_time=None` → False;
     Connection beendet → True.
   - `test_plan_assignment_start_airport_primary` — zwei Plan-Zeilen (A→B, dann B→C in der Luft gefiled);
-    das B-Bein bekommt den B→C-Plan (`plan_departure="B"`), unabhängig vom Filing-Zeitpunkt; ein Bein
+    das B-Leg bekommt den B→C-Plan (`plan_departure="B"`), unabhängig vom Filing-Zeitpunkt; ein Leg
     ohne Match → `plan_departure is None`.
 - [ ] **Step 2: Run — FAIL.**
 - [ ] **Step 3: Implementieren** gemäß Ablauf oben (Code-Gerüst wie Rev. 1, aber: Metriken aus
@@ -567,14 +567,14 @@ def _latch_hits_flight(conn, latches: set[tuple[int, str]], cid: int,
 - [ ] **Step 1: Failing Tests**
   - `test_live_latch_reconciled_to_gps_flight` — Latch mit Verbindungs-Logon **09:58**, GPS-Flug
     [10:02, 10:40] ⇒ `delivered_kg > 0` (die alte `(cid, lo) in latches`-Prüfung findet nichts).
-  - `test_return_leg_not_double_counted` — Mehrbein-Connection Hin (landet am `destination`) + Rück:
-    nur das Hin-Bein `loaded` (Regel: Latch **und** (`arr == destination` **oder** Flug offen)).
+  - `test_return_leg_not_double_counted` — Multi-Leg-Connection Hin (landet am `destination`) + Rück:
+    nur das Hin-Leg `loaded` (Regel: Latch **und** (`arr == destination` **oder** Flug offen)).
   - `test_delivery_requires_route_membership` — Landung neben dem Ziel, kein Latch ⇒ 0 kg.
 - [ ] **Step 2: Run — FAIL.**
 - [ ] **Step 3:** Zeile 3604 → `canonicalize_legs(...)`. `dep/arr` direkt aus dem Flug
   (`_nearest_airport`-Korrektur `:3621-3624` entfernen). Latch-Prüfungen `:3625` und `:3673` durch
   `_latch_hits_flight(conn, live_arrivals, cid, f["logon_time"], f["logoff_time"])` ersetzen, `loaded`
-  zusätzlich an `arr == dest or not arr` binden (Rückflug-Bein zählt nie). Streckenbedingung `:3626`
+  zusätzlich an `arr == dest or not arr` binden (Rückflug-Leg zählt nie). Streckenbedingung `:3626`
   unverändert. `detect_transport_losses` (`:3415`) ebenfalls auf `canonicalize_legs` + dieselbe
   Zeitfenster-Zuordnung für vorhandene Loss-Zeilen (`:3700-3702`) umstellen; neue Loss-Zeilen behalten
   den Verbindungs-Logon als Key (Poller schreibt ihn weiter — nur die Lese-Seite reconciled).
@@ -591,8 +591,8 @@ Test: Sichtprüfung + bestehende API-Tests (Rendering ist Vanilla-JS, kein JS-Te
 - [ ] **Step 1:** Flug-Zeilen-Rendering der Piloten-Detailansicht anpassen:
   - **Route-Zelle (klickbar, blau)** zeigt `gps_departure→gps_arrival` (Fallback `departure→arrival`);
     offenes Ziel als „offen". Klick öffnet wie bisher den Track — `data-logon/data-logoff` tragen jetzt
-    automatisch das Bein-Fenster (`logon_time=takeoff_ts`), der bestehende `?logon=&logoff=`-Mechanismus
-    des Track-Endpoints schneidet damit genau das Bein.
+    automatisch das Leg-Fenster (`logon_time=takeoff_ts`), der bestehende `?logon=&logoff=`-Mechanismus
+    des Track-Endpoints schneidet damit genau das Leg.
   - **Neue „Plan"-Spalte** daneben (reiner Text, NICHT blau): `plan_departure→plan_arrival`, sonst `—`.
   - Tabelle bleibt im `.table-scroll`-Wrapper (mobil scrollbar); keine neuen klickbaren Blau-Elemente.
 - [ ] **Step 2:** Lokal `uvicorn app.main:app` + Piloten-Detail mit A→B→C-Testdaten sichten (2 Zeilen,

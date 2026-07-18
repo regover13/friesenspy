@@ -1649,9 +1649,9 @@ class TestConsolidateFlights:
 
     def test_statsim_backstop_spares_legit_multileg_session(self):
         """Schritt D darf eine legitime Multi-Leg-Session (eine Verbindung, mehrere Flüge)
-        nicht auf die Dauer des ERSTEN Beins schrumpfen: StatSim legt pro Flug eine Zeile
+        nicht auf die Dauer des ERSTEN Legs schrumpfen: StatSim legt pro Flug eine Zeile
         mit der SESSION-Anmeldung als logon_time an (duration = arrived − loggedOn) — bei
-        drei Beinen matchen also mehrere Zeilen dieselbe Minute. Maßgeblich ist die LÄNGSTE
+        drei Legs matchen also mehrere Zeilen dieselbe Minute. Maßgeblich ist die LÄNGSTE
         (späteste Landung), nicht ein LIMIT-1-Zufallstreffer."""
         conn = _make_conn()
         ensure_pilot(conn, 1, "P")

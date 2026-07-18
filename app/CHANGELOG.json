@@ -5,7 +5,7 @@
     "highlight": true,
     "title": "Milchmann",
     "items": [
-      "📦 Die Fracht denkt jetzt vom Stapel her, nicht vom Flugbein. Bisher hat der FriesenKutter die Ladung aus dem Startplatz deines LETZTEN Flugbeins geraten — wer über einen zweiten Ladeplatz flog, bei dem verschwand die erste Ladung (800 kg Fisch wurden zu 0), und wer über einen fremden Platz zwischenlandete, bekam Ware gutgeschrieben, die nie an Bord war. Jetzt liegt die Ware als Bestand auf Stapeln mit einem Ort: Du lädst, wenn du am Boden an einem Ladeplatz stehst, lieferst beim Landen am Ziel und gibst zurück, wenn du dort ausloggst. Was du geladen hast, bleibt an Bord — auch über Zwischenlandungen.",
+      "📦 Die Fracht denkt jetzt vom Stapel her, nicht vom Leg. Bisher hat der FriesenKutter die Ladung aus dem Startplatz deines LETZTEN Legs geraten — wer über einen zweiten Ladeplatz flog, bei dem verschwand die erste Ladung (800 kg Fisch wurden zu 0), und wer über einen fremden Platz zwischenlandete, bekam Ware gutgeschrieben, die nie an Bord war. Jetzt liegt die Ware als Bestand auf Stapeln mit einem Ort: Du lädst, wenn du am Boden an einem Ladeplatz stehst, lieferst beim Landen am Ziel und gibst zurück, wenn du dort ausloggst. Was du geladen hast, bleibt an Bord — auch über Zwischenlandungen.",
       "🚚 Der Milchmann funktioniert — daher der Name: EDWG → EDWZ → Ziel lädt an BEIDEN Plätzen und liefert beides. Dieselbe Ware darf aus zwei Startplätzen kommen; die Kappung pro Flug gilt für die Frachtart insgesamt (60 in EDWG, die restlichen 40 in EDDW, nie mehr).",
       "🧭 Eine Wahrheit: Ob geflogen, gelandet, geliefert oder verloren, entscheidet allein der erkannte GPS-Track (canonicalize_legs) — kein Flugplan-Raten, kein „Latch“ mehr, der die Ankunft separat merken musste. Kein Track, kein Kutter-Flug.",
       "🅿️ Ehrliche Anzeige: „lädt in EDWG · 800 kg“ (am Stapel), „steht in EDDW · 800 kg“ (Zwischenstopp — vorher unsichtbar), „unterwegs · 800 kg“ (mit Menge) und „dabei“ (fliegt leer). „✅ angekommen“ ist weg: eine Lieferung ist eine Tatsache im Balken, kein Zustand.",
@@ -486,7 +486,7 @@
     "date": "2026-07-06",
     "title": "StatSim-Mid-Air-Split-Merge + Admin-Scrollbar-Fix",
     "items": [
-      "🐛 StatSim schnitt manche durchgehenden Flüge mitten in der Luft in zwei Aufzeichnungen (Flugplan-Umplanung ohne Landung) — dadurch entstand ein Geister-Flugbein („gestartet, nie gelandet“). Beide Aufzeichnungen werden jetzt erkannt und zu einem Flug zusammengeführt, wenn beide Seiten der Naht nachweislich in der Luft sind (dieselben Regeln wie bei einem FriesenSpy-Verbindungsabbruch).",
+      "🐛 StatSim schnitt manche durchgehenden Flüge mitten in der Luft in zwei Aufzeichnungen (Flugplan-Umplanung ohne Landung) — dadurch entstand ein Geister-Leg („gestartet, nie gelandet“). Beide Aufzeichnungen werden jetzt erkannt und zu einem Flug zusammengeführt, wenn beide Seiten der Naht nachweislich in der Luft sind (dieselben Regeln wie bei einem FriesenSpy-Verbindungsabbruch).",
       "📱 Breite Tabellen im Admin-Bereich (z. B. Erkennungslücken, Flugplätze) hatten in Edge/Chrome keine horizontale Scrollbar mehr — der Inhalt wurde einfach abgeschnitten. Ursache war ein Flexbox-Effekt (Panels durften sich nicht unter ihre Inhaltsbreite schrumpfen)."
     ]
   },
@@ -556,7 +556,7 @@
     "date": "2026-07-05",
     "title": "Events- und Statistik-Ansicht zeigten unterschiedliche Flugpläne",
     "items": [
-      "🐛 Derselbe Flug konnte in der Events-Suche einen anderen Flugplan (und Flugzeugtyp) zeigen als in der Statistik. Ursache: wurde während eines noch laufenden Beins ein neuer Flugplan mit Startplatz-Wechsel eingereicht und dessen Zeitstempel lag knapp nach dem Ende des Abfragefensters, fiel dieser korrekte Plan aus den Kandidaten — die Events-Ansicht griff dann auf den alten Plan zurück. Der Kandidaten-Rand bekommt jetzt am oberen Ende denselben 12-Stunden-Puffer wie am unteren (Spiegelfall zu v8.4.1)."
+      "🐛 Derselbe Flug konnte in der Events-Suche einen anderen Flugplan (und Flugzeugtyp) zeigen als in der Statistik. Ursache: wurde während eines noch laufenden Legs ein neuer Flugplan mit Startplatz-Wechsel eingereicht und dessen Zeitstempel lag knapp nach dem Ende des Abfragefensters, fiel dieser korrekte Plan aus den Kandidaten — die Events-Ansicht griff dann auf den alten Plan zurück. Der Kandidaten-Rand bekommt jetzt am oberen Ende denselben 12-Stunden-Puffer wie am unteren (Spiegelfall zu v8.4.1)."
     ]
   },
   {
@@ -564,7 +564,7 @@
     "date": "2026-07-05",
     "title": "Flugplan verschwand bei schmalen Zeitfenstern (Events-Suche)",
     "items": [
-      "🐛 In v8.4.0 konnte eine Verbindung, die kurz VOR einem eng gefassten Abfragefenster (z. B. Events-Suche) real endete, aus den Flugplan-Kandidaten herausfallen — das zugehörige, per GPS weiterhin „offen“ wirkende Bein blieb dann ohne Flugplan und mit falschem Aircraft-Typ. Die Kandidaten-Suche bekommt jetzt denselben 12-Stunden-Rückblick wie die GPS-Positionsladung."
+      "🐛 In v8.4.0 konnte eine Verbindung, die kurz VOR einem eng gefassten Abfragefenster (z. B. Events-Suche) real endete, aus den Flugplan-Kandidaten herausfallen — das zugehörige, per GPS weiterhin „offen“ wirkende Leg blieb dann ohne Flugplan und mit falschem Aircraft-Typ. Die Kandidaten-Suche bekommt jetzt denselben 12-Stunden-Rückblick wie die GPS-Positionsladung."
     ]
   },
   {
@@ -750,7 +750,7 @@
     "items": [
       "🔤 Badges (Kutter + Bummel) zeigen Umlaute jetzt korrekt (»für«, »Größe«) statt leerer Kästchen — der Bild-Font kann keine Umlaute, deshalb werden sie sauber ausgeschrieben (ue/oe/ae).",
       "🏷️ Im Admin steht bei enthüllten Bummel-Rennen der Status »Enthüllt« nur noch einmal (das doppelte Badge ist weg).",
-      "⚖️ FriesenKutter zählt eine Lieferung nicht mehr doppelt, wenn ein Pilot mitten im Flug mit geändertem Abflugort neu filed (Mehrbein-Session): Die Live-Ankunft wird jetzt am richtigen Flugabschnitt verbucht."
+      "⚖️ FriesenKutter zählt eine Lieferung nicht mehr doppelt, wenn ein Pilot mitten im Flug mit geändertem Abflugort neu filed (Multi-Leg-Session): Die Live-Ankunft wird jetzt am richtigen Flugabschnitt verbucht."
     ]
   },
   {
@@ -931,7 +931,7 @@
     "title": "Track-Rekonstruktion findet den Flug jetzt wirklich",
     "items": [
       "🧭 Die Rekonstruktion verwaister Flüge ankert jetzt an der StatSim-LANDEZEIT statt an der Anmeldezeit — StatSim meldet bei mehreren Flügen einer Verbindung für alle dieselbe Session-Anmeldung, dadurch galt Reiners fehlender Flug fälschlich als bereits erfasst.",
-      "🛡️ Der StatSim-Abgleich der Flugdauern kann eine echte Mehrfach-Flug-Session nicht mehr versehentlich auf die Dauer des ersten Beins kürzen."
+      "🛡️ Der StatSim-Abgleich der Flugdauern kann eine echte Mehrfach-Flug-Session nicht mehr versehentlich auf die Dauer des ersten Legs kürzen."
     ]
   },
   {
@@ -1118,7 +1118,7 @@
     "date": "2026-06-28",
     "title": "Bummel: Zwischenlandungen & Frühstarter zählen",
     "items": [
-      "🛬 Ein Bummel ist gemütlich: Wer mit Zwischenlandung fliegt, kommt jetzt trotzdem in die Wertung. Gezählt wird die Tour vom ersten Start bis zur letzten Landung an einem Streckenflugplatz — nur die reine Flugzeit der Beine, die Standzeit der Zwischenstopps zählt NICHT mit.",
+      "🛬 Ein Bummel ist gemütlich: Wer mit Zwischenlandung fliegt, kommt jetzt trotzdem in die Wertung. Gezählt wird die Tour vom ersten Start bis zur letzten Landung an einem Streckenflugplatz — nur die reine Flugzeit der Legs, die Standzeit der Zwischenstopps zählt NICHT mit.",
       "🕑 Frühstarter zählen mit: Wer schon vor dem offiziellen Event-Start losfliegt, aber währenddessen unterwegs ist, wird mit seiner vollen Blockzeit gewertet.",
       "🎯 Der am Rennen eingestellte Radius wirkt jetzt in der Wertung — er bestimmt, wie nah Start/Landung an einem Streckenflugplatz liegen dürfen, um als dieser gewertet zu werden."
     ]
@@ -1259,7 +1259,7 @@
       "🧭 Erkennt einzelne Flüge präziser als reine StatSim-/VATSIM-Daten: Eine Zwischenlandung mit neu aufgegebenem Flugplan zählt als eigener neuer Flug — nicht als ein durchgehender.",
       "📐 Dahinter steckt eine ICAO-/GPS-Koordinatenerkennung (Haversine-Distanz): gleicher Abflughafen → selbes Leg, neuer Abflughafen → neuer Flug.",
       "🔗 Kurze Reconnects desselben Piloten werden sauber zu einem Flug zusammengeführt (Stitching).",
-      "🎯 Ergebnis: korrekte Flüge, Strecken und Statistiken — auch bei komplexen Mehrbein-Sessions."
+      "🎯 Ergebnis: korrekte Flüge, Strecken und Statistiken — auch bei komplexen Multi-Leg-Sessions."
     ]
   },
   {

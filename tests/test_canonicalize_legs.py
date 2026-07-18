@@ -575,7 +575,7 @@ class TestTimeBasedPlanAssignment:
     def test_single_plan_covers_intermediate_landing_frs96(self):
         """FRS96: EIN Plan A(EDDK)->C(EDDL) gefiled, GPS erkennt eine Zwischenlandung in
         EDDW (kein Refile) -> BEIDE Legs (EDDK->EDDW und EDDW->EDDL) bekommen denselben
-        Plan (vorher bekam das EDDW->EDDL-Bein kein Match, weil dessen GPS-Startplatz EDDW
+        Plan (vorher bekam das EDDW->EDDL-Leg kein Match, weil dessen GPS-Startplatz EDDW
         nicht zum gefileten Startplatz EDDK passte)."""
         conn = _make_conn()
         cid = 5001
@@ -735,18 +735,18 @@ class TestPlanRowsLookback:
         laengst geschlossene Connection (logoff kurz nach dem letzten GPS-Sample) verschwand
         aus den Flugplan-Kandidaten eines schmalen Abfragefensters, weil deren logoff_time
         knapp VOR dem Fenster-`start` lag -- _flightplan_asof fand dadurch KEINEN Kandidaten
-        mehr fuer das (per GPS weiterhin "offene", weil kein Landing erkannte) Bein und der
+        mehr fuer das (per GPS weiterhin "offene", weil kein Landing erkannte) Leg und der
         Flugplan blieb leer (Aircraft fiel auf den global letzten bekannten Typ zurueck,
         hier faelschlich SA65 statt des tatsaechlich gefileten EC45).
 
         Eine ZWEITE, spaetere Connection (Reconnect + Refile, wie im Live-Fund id=257) haelt
         die cid im schmalen Fenster "sichtbar" -- ohne sie wuerde die cid komplett aus
-        fs_by_cid herausfallen und das fruehe Bein gar nicht erst berechnet (ein noch
+        fs_by_cid herausfallen und das fruehe Leg gar nicht erst berechnet (ein noch
         deutlicheres, aber anderes Symptom als das gemeldete "ohne Flugplan").
 
-        GPS-Track des ersten Beins bricht bewusst OHNE erkannte Landung ab (Positionen enden
+        GPS-Track des ersten Legs bricht bewusst OHNE erkannte Landung ab (Positionen enden
         waehrend des Streckenflugs) -- genau das reproduziert "gps_arrival leer trotz laengst
-        geschlossener Connection", der Fall, in dem _in_window() das Bein unabhaengig vom
+        geschlossener Connection", der Fall, in dem _in_window() das Leg unabhaengig vom
         Fenster durchlaesst (logoff_time im Ergebnis-Dict ist None, weil GPS keine Landung
         sah)."""
         conn = _make_conn()
@@ -758,7 +758,7 @@ class TestPlanRowsLookback:
         )
         # Reconnect + Refile Stunden spaeter, gleiche Strecke -- haelt die cid im schmalen
         # Fenster praesent (wie id=257 im Live-Fund), OHNE selbst der Plan-Kandidat fuer das
-        # fruehe Bein zu sein (logon liegt NACH dem fruehen Beins-Ende, _flightplan_asof darf
+        # fruehe Leg zu sein (logon liegt NACH dem fruehen Legs-Ende, _flightplan_asof darf
         # diese Zeile also nicht waehlen).
         _insert_flight(
             conn, cid=cid, callsign="FRS56", departure="EDDK", arrival="EDDW",
@@ -776,7 +776,7 @@ class TestPlanRowsLookback:
             _insert_pos(conn, cid, ts, lat, lon, alt, gs, "FRS56")
         conn.commit()
 
-        # Schmales Fenster ca. 3h40 NACH dem echten logoff (10:35) des fruehen Beins --
+        # Schmales Fenster ca. 3h40 NACH dem echten logoff (10:35) des fruehen Legs --
         # innerhalb der 12h-Lookback-Grenze, genau wie im Live-Fund (Events-Fenster
         # 18:00-20:00 desselben Tages, Connection-Ende ~15:xx).
         narrow_window = dict(start="2026-07-02T14:00:00Z", end="2026-07-02T16:00:00Z")
@@ -796,15 +796,15 @@ class TestPlanRowsLookback:
         Spiegelfall zum start-seitigen Bug oben: der Pilot flog EDDK->EDDW, landete, und
         feilte beim Start in EDDW mit Startplatz-Wechsel NEU (EDDW->EDDL, anderer Muster
         PA28). Der Refile erzeugt eine neue flights-Zeile, deren logon_time (Poller-Erkennung
-        des Startplatz-Wechsels) NACH dem Fenster-`end` liegt. Das zweite GPS-Bein startet
+        des Startplatz-Wechsels) NACH dem Fenster-`end` liegt. Das zweite GPS-Leg startet
         aber noch VOR `end` -- es ist also im Fenster, sein korrekter Flugplan aber nicht in
-        den Kandidaten (fs_where filterte `logon_time <= end`). Folge (buggy): das Bein
+        den Kandidaten (fs_where filterte `logon_time <= end`). Folge (buggy): das Leg
         bekam faelschlich den ALTEN Plan EDDK->EDDW (Muster C172) statt EDDW->EDDL (PA28) --
         genau die 'zwei verschiedenen Wahrheiten' zwischen Statistik (kein end) und Events
         (end gesetzt).
 
         Fix: der end-Oberrand fuer die Plan-Kandidaten bekommt denselben Puffer wie der
-        start-Unterrand -- die Beinauswahl (`_in_window`) nutzt weiterhin das echte `end`."""
+        start-Unterrand -- die Leg-Auswahl (`_in_window`) nutzt weiterhin das echte `end`."""
         conn = _make_conn()
         cid = 5009
         _insert_flight(
@@ -812,8 +812,8 @@ class TestPlanRowsLookback:
             aircraft_short="C172",
             logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T10:40:00Z",
         )
-        # Refile mit Startplatz-Wechsel WAEHREND des zweiten Beins -- logon (Poller-Erkennung)
-        # liegt NACH dem schmalen Fenster-end (10:48), das Bein selbst startet aber 10:46.
+        # Refile mit Startplatz-Wechsel WAEHREND des zweiten Legs -- logon (Poller-Erkennung)
+        # liegt NACH dem schmalen Fenster-end (10:48), das Leg selbst startet aber 10:46.
         id_refile = _insert_flight(
             conn, cid=cid, callsign="FRS57", departure="EDDW", arrival="EDDL",
             aircraft_short="PA28",
@@ -822,7 +822,7 @@ class TestPlanRowsLookback:
         _seed_eddk_eddw_eddl_intermediate_landing_track(conn, cid, "FRS57")
         conn.commit()
 
-        # Fenster endet 10:48: Bein 2 (Takeoff 10:46) ist drin, der Refile (logon 10:50) nicht.
+        # Fenster endet 10:48: Leg 2 (Takeoff 10:46) ist drin, der Refile (logon 10:50) nicht.
         narrow_window = dict(start="2026-07-02T10:00:00Z", end="2026-07-02T10:48:00Z")
         result = canonicalize_legs(conn, callsign_prefix="FRS", **narrow_window)
         conn.close()
@@ -841,7 +841,7 @@ class TestStatsimIdPropagation:
         """StatSim-Pendant zum FRS96-Fix (Live-Fund FRS1116/CID 1637198): eine einzige
         statsim_cache-Zeile (ein statsim_id), GPS-Track mit Zwischenlandung -> BEIDE
         resultierenden Legs bekommen dieselbe statsim_id (vorher bekam nur das erste Leg
-        sie, das Folgebein hatte statsim_id=None -> toter Track-Button trotz vorhandenem
+        sie, das Folge-Leg hatte statsim_id=None -> toter Track-Button trotz vorhandenem
         Track in statsim_position_history)."""
         conn = _make_conn()
         cid = 5006
@@ -1448,9 +1448,9 @@ class TestStatsimMidAirSplitContinuity:
 
     def test_ghost_leg_resolved_by_merge(self):
         """Integration: StatSim schneidet EINEN Flug EDDK→EDDL mitten in der Luft in zwei ids —
-        id A endet airborne (kein Landing → Geister-Bein 'EDDK→—'), id B spawnt 60 s später
-        airborne und landet EDDL ('—→EDDL'). Nach dem Merge: EIN sauberes Bein EDDK→EDDL,
-        kein Geister-Bein mit gps_arrival=None mehr."""
+        id A endet airborne (kein Landing → Geister-Leg 'EDDK→—'), id B spawnt 60 s später
+        airborne und landet EDDL ('—→EDDL'). Nach dem Merge: EIN sauberes Leg EDDK→EDDL,
+        kein Geister-Leg mit gps_arrival=None mehr."""
         conn = _make_conn()
         cid = 5700
         # id A: EDDK-Start + Steigflug, Track endet mitten im Reiseflug (kein Touchdown).
@@ -1480,7 +1480,7 @@ class TestStatsimMidAirSplitContinuity:
         conn.close()
 
         st = [f for f in result if f["cid"] == cid and f["source"] == "statsim"]
-        assert len(st) == 1                          # EIN Bein, kein Geister-Bein
+        assert len(st) == 1                          # EIN Leg, kein Geister-Leg
         assert st[0]["gps_departure"] == "EDDK"
         assert st[0]["gps_arrival"] == "EDDL"
         assert not any(f["gps_arrival"] is None for f in st)

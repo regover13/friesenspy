@@ -165,21 +165,21 @@ bestehende **Bulk-Backfill** (`POST /api/admin/statsim-backfill`, gedrosselt, re
 
 ## G — Flugplan-Zuordnung & Anzeige
 
-**Anzeige — GPS *und* Plan nebeneinander.** Jede Listenzeile = ein GPS-Flug (Bein):
-- **GPS-Start→Ziel** = die klickbare Route-Zelle (blau), Klick → Track **genau dieses Beins**
+**Anzeige — GPS *und* Plan nebeneinander.** Jede Listenzeile = ein GPS-Flug (Leg):
+- **GPS-Start→Ziel** = die klickbare Route-Zelle (blau), Klick → Track **genau dieses Legs**
   (`[takeoff_ts, landing_ts]`). **Immer vorhanden** (aus dem Track) — die Anzeige hängt nicht mehr am Plan.
 - **Flugplan-Start→Ziel** daneben als Kontext; `—`, wenn kein passender Plan. Route/Remarks/Muster als
   Label vom zugeordneten Plan (**StatSim liefert nur Muster + Start→Ziel, keine Route/Remarks**).
 
-**Zuordnung Plan → Bein — zeitbasiert (Nutzer-Entscheidung 2026-07-05, ersetzt die ursprüngliche
+**Zuordnung Plan → Leg — zeitbasiert (Nutzer-Entscheidung 2026-07-05, ersetzt die ursprüngliche
 Startplatz-primäre Regel):**
 1. **Zuletzt gefilter Plan zum Landungszeitpunkt (primär und einzige Regel):** bei Landung eines
-   GPS-Beins (bzw. am geschätzten Ende `end_ts` eines noch offenen Beins) zählt die `flights`-Zeile
+   GPS-Legs (bzw. am geschätzten Ende `end_ts` eines noch offenen Legs) zählt die `flights`-Zeile
    mit dem größten `logon_time <= end_ts` — unabhängig davon, ob deren gefilter Start/Ziel zum
-   GPS-Start/Ziel dieses Beins passt. Der Plan bleibt gültig, bis ein späteres Filing (spätere Zeile)
+   GPS-Start/Ziel dieses Legs passt. Der Plan bleibt gültig, bis ein späteres Filing (spätere Zeile)
    ihn ablöst. Beispiel (der ursprüngliche FRS96-Bugreport-Fall): nur *ein* Plan A→C gefiled, GPS
-   macht A→B→C (Zwischenlandung ohne Refile) → BEIDE Beine (A→B und B→C) bekommen denselben Plan A→C
-   zugeordnet, statt dass das B→C-Bein leer bleibt.
+   macht A→B→C (Zwischenlandung ohne Refile) → BEIDE Legs (A→B und B→C) bekommen denselben Plan A→C
+   zugeordnet, statt dass das B→C-Leg leer bleibt.
 2. **Kein Tie-Breaker nötig:** `(cid, logon_time)` ist durch den partiellen Unique-Index
    `idx_flights_session` bereits eindeutig — zwei Zeilen derselben cid können nie dasselbe
    `logon_time` tragen.
@@ -190,7 +190,7 @@ Startplatz-primäre Regel):**
    „leere" Zuordnung statt `—`.
 4. **Bewusst akzeptierter Sonderfall (kein Schutz eingebaut):** filed ein Pilot den nächsten Plan
    bereits, BEVOR er im aktuellen Ziel gelandet ist (Start-Wechsel-Refile mitten im Flug), bekommt
-   das noch nicht gelandete aktuelle Bein bereits den NEUEN Plan zugeordnet — sichtbar als Mismatch
+   das noch nicht gelandete aktuelle Leg bereits den NEUEN Plan zugeordnet — sichtbar als Mismatch
    zwischen `plan_departure` und `gps_departure`. Das ist ein klarer Pilotenfehler und darf laut
    Entscheidung vom 2026-07-05 ausdrücklich sichtbar sein; die rechtzeitige Nachmeldung eines
    vergessenen Refiles ist dagegen der Normalfall, den die Regel abbildet.
@@ -209,19 +209,19 @@ für `_flightplan_asof`) wurden bei einem schmalen Abfragefenster (z. B. Events-
 (`logoff_time IS NULL OR logoff_time >= start`) — OHNE den 12h-Rückblick, den GPS-Positionen
 (`_positions_for_cid`) bereits vor `start` bekommen. Eine Verbindung, die kurz VOR dem
 Fenster-`start` real geschlossen wurde, fiel dadurch aus den Plan-Kandidaten heraus, obwohl das
-zugehörige GPS-Bein (mangels erkannter Landung) weiterhin als „offen" im Ergebnis auftauchte —
+zugehörige GPS-Leg (mangels erkannter Landung) weiterhin als „offen" im Ergebnis auftauchte —
 Folge: leeres Flugplan-Feld + falscher Aircraft-Fallback (globaler „zuletzt bekannter Typ" statt
 des tatsächlich gefileten). Fix: `plan_rows`-Filterung bekommt denselben 12h-Rückblick
 (`_PLAN_ROWS_LOOKBACK_H`) wie die Positionsladung.
 
 **Nachtrag 2 (Bugfix 2026-07-05, Spiegelfall am `end`-Rand, Live-Fund FRS119N/CID 1976702):** dasselbe
 Problem am oberen Rand — der `logon_time <= end`-Filter der Plan-Kandidaten schnitt einen Refile weg,
-der WÄHREND eines noch im Fenster gestarteten Beins gefiled wurde und dessen `logon_time`
-(Poller-Erkennungszeit des Startplatz-Wechsels) knapp nach `end` lag. Das Bein bekam dadurch den
+der WÄHREND eines noch im Fenster gestarteten Legs gefiled wurde und dessen `logon_time`
+(Poller-Erkennungszeit des Startplatz-Wechsels) knapp nach `end` lag. Das Leg bekam dadurch den
 alten Plan/Muster (EDMO→LOWZ, SR22) statt des korrekten (LOWZ→LIME, S22T) — sichtbar als „zwei
 verschiedene Wahrheiten" zwischen Statistik (kein `end`) und Events (`end` gesetzt). Fix: der
 `end`-Oberrand der Plan-Kandidaten bekommt denselben Puffer (`+_PLAN_ROWS_LOOKBACK_H`) wie der
-`start`-Unterrand; die eigentliche Beinauswahl (`_in_window`) nutzt weiterhin das echte `end`.
+`start`-Unterrand; die eigentliche Leg-Auswahl (`_in_window`) nutzt weiterhin das echte `end`.
 
 ## Bewusste Semantik-Änderungen (Review g)
 
@@ -279,8 +279,8 @@ Damit Phase 2 schlank **„nur GPS für FRS"** bleibt (Review e/f):
 - **`canonicalize_legs`**: Feld-für-Feld-Parität mit `canonicalize_flights`; nur `FRS` gewertet; Dedup
   FriesenSpy-gewinnt bei Überlappung; **Teil-Überlappung** verliert den ungedeckten StatSim-Teil nicht.
 - **Flugplan-Zuordnung (zeitbasiert, Update 2026-07-05)**: zuletzt gefilter Plan zum Landungs-/
-  Beinende gewinnt; ein Plan A→C + GPS A→B→C → BEIDE Beine bekommen A→C (FRS96-Bugfix); zwei echte
-  Refiles (Start-Wechsel) → jedes Bein bekommt exklusiv seinen eigenen Plan; verfrühtes Refile vor
+  Leg-Ende gewinnt; ein Plan A→C + GPS A→B→C → BEIDE Legs bekommen A→C (FRS96-Bugfix); zwei echte
+  Refiles (Start-Wechsel) → jedes Leg bekommt exklusiv seinen eigenen Plan; verfrühtes Refile vor
   der eigenen Landung → sichtbar als Mismatch (kein Schutz, akzeptiertes Verhalten); reiner Connect
   ohne Plan → `—`; Landung vor der ersten Filing → `—`.
 - **Konsumenten**: `get_stats`/Bummel/Kutter mit Flügen; Bummel-„Frode"-E2E; Vorher/Nachher-Zahlvergleich

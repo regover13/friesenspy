@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Die Kutter-Fracht wird zu einem Bestand mit einem Ort („Stapel"), der beim Landen geladen und geliefert und beim Ausloggen zurückgegeben, gestohlen oder versenkt wird — statt aus dem Startplatz des letzten Flugbeins geraten zu werden.
+**Goal:** Die Kutter-Fracht wird zu einem Bestand mit einem Ort („Stapel"), der beim Landen geladen und geliefert und beim Ausloggen zurückgegeben, gestohlen oder versenkt wird — statt aus dem Startplatz des letzten Legs geraten zu werden.
 
 **Architecture:** Eine neue, DB-freie Zustandsmaschine (`app/transport_stacks.py`, Vorbild: `app/gps_legs.py`) arbeitet eine chronologische Ereignisliste ab und liefert Stapel + Bordladung. `compute_transport_progress` wird zu ihrem Adapter: Es holt Manifest, Legs, Sessions und Zuladungen aus der DB, ruft die Ableitung und formt deren Ergebnis in den bestehenden API-Vertrag. Der Ankunfts-Latch (`transport_live_arrivals`) und die Reservierung als eigener Mechanismus entfallen ersatzlos.
 
@@ -1737,7 +1737,7 @@ class TestStapelProgress:
         ])
 
     def test_s2_milchmann_erste_ladung_bleibt_an_bord(self):
-        """HEUTE: 0 Fisch + 500 Tee. Der Startplatz des LETZTEN Beins bestimmt die Fracht."""
+        """HEUTE: 0 Fisch + 500 Tee. Der Startplatz des LETZTEN Legs bestimmt die Fracht."""
         conn = _make_conn()
         ev = self._milchmann_event(conn)
         t1 = self._leg(conn, 1, "EDWG", "EDWZ", START)
@@ -1815,7 +1815,7 @@ class TestStapelProgress:
 
 Run: `pytest tests/test_transport.py::TestStapelProgress -v`
 Expected: FAIL — `assert 500.0 == 800.0` in `test_s2_milchmann_...` (der alte Kern rät die Fracht
-aus dem Startplatz des letzten Beins: 0 Fisch + 500 Tee)
+aus dem Startplatz des letzten Legs: 0 Fisch + 500 Tee)
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -1833,7 +1833,7 @@ def compute_transport_progress(
 ) -> dict:
     """Live-Fortschritt eines FriesenKutter-Events — Stapel-Modell (Spec 2026-07-15).
 
-    Ladung ist ein BESTAND mit einem Ort, kein Attribut eines Flugbeins: Das Manifest liegt als
+    Ladung ist ein BESTAND mit einem Ort, kein Attribut eines Legs: Das Manifest liegt als
     Stapel an seinen Ladeplätzen; wer am Boden an einem Ladeplatz steht, lädt; wer am Ziel
     landet, liefert; wer ausloggt, gibt zurück / bestiehlt / versenkt. Die Regeln stehen
     vollständig in :mod:`app.transport_stacks`, die DB-Uebersetzung in :func:`_stack_inputs` —
@@ -2650,7 +2650,7 @@ _PROGRESS_SNAPSHOT_VERSION = "4"  # "4": Stapel-Modell — Ladung ist ein Bestan
   "date": "2026-07-16",
   "highlight": true,
   "changes": [
-    "📦 Der FriesenKutter weiß jetzt, was an Bord ist. Bisher hat er die Fracht aus dem Startplatz deines LETZTEN Flugbeins geraten — wer über einen zweiten Ladeplatz flog, bei dem verschwand die erste Ladung (800 kg Fisch wurden zu 0), und wer über einen fremden Platz zwischenlandete, bekam 1000 kg gutgeschrieben, darunter Ware, die nie an Bord war. Jetzt liegt die Ware auf Stapeln: Du lädst, wenn du am Boden an einem Ladeplatz stehst, lieferst beim Landen am Ziel und gibst zurück, wenn du dort ausloggst. Was du geladen hast, bleibt an Bord — auch über Zwischenlandungen.",
+    "📦 Der FriesenKutter weiß jetzt, was an Bord ist. Bisher hat er die Fracht aus dem Startplatz deines LETZTEN Legs geraten — wer über einen zweiten Ladeplatz flog, bei dem verschwand die erste Ladung (800 kg Fisch wurden zu 0), und wer über einen fremden Platz zwischenlandete, bekam 1000 kg gutgeschrieben, darunter Ware, die nie an Bord war. Jetzt liegt die Ware auf Stapeln: Du lädst, wenn du am Boden an einem Ladeplatz stehst, lieferst beim Landen am Ziel und gibst zurück, wenn du dort ausloggst. Was du geladen hast, bleibt an Bord — auch über Zwischenlandungen.",
     "🚚 Der Milchmann funktioniert: EDWG → EDWZ → Ziel lädt an BEIDEN Plätzen und liefert beides.",
     "🅿️ Neue Anzeige: „lädt in EDWG · 800 kg“ (am Stapel), „steht in EDDW · 800 kg“ (Zwischenstopp — vorher unsichtbar), „unterwegs · 800 kg“ (mit Menge) und „dabei“ (fliegt leer). „✅ angekommen“ ist weg: eine Lieferung ist eine Tatsache im Balken, kein Zustand.",
     "⚖️ Der Balken kann nicht mehr lügen: geliefert + verloren + an Bord + Rest = Manifest. Immer. Das ist jetzt Arithmetik, keine Zusicherung."

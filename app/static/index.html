@@ -3114,7 +3114,7 @@ function renderBummelParticipants(view) {
   } else {
     html += '<div class="empty-state"><div class="empty-state-text text-label">Noch keine Teilnehmer erfasst</div></div>';
   }
-  // Piloten, die gerade ein Bein fliegen, aber noch kein abgeschlossenes haben (nur unterwegs).
+  // Piloten, die gerade ein Leg fliegen, aber noch kein abgeschlossenes haben (nur unterwegs).
   const known = new Set(parts.map(p => p.cid));
   const flying = (view.in_progress || []).filter(p => !known.has(p.cid));
   if (flying.length) {
