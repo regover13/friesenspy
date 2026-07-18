@@ -937,6 +937,51 @@ class TestParticipantPresence:
         assert part["delivered_kg"] == 292.0   # Beitrag zählt weiter
 
 
+class TestActiveFlightFeedRow:
+    """Der laufende BELADENE Flug erscheint im Feed als EINE ehrliche Zeile (Reservierung mit
+    Start=last_ground → „EDWG→EDXH · unterwegs"), nicht als leere GPS-Leg-Zeile PLUS Reservierungs-
+    Zeile. Im Stapel-Modell trägt der Pilot die Ware — eine „leer"-Zeile für seinen laufenden Flug
+    (weil tonnage_kg nur GELIEFERTES zählt) war falsch (V10-Fund: Doppelzeile, startloses „→Ziel")."""
+
+    def test_airborne_loaded_flight_is_single_row_with_real_departure(self):
+        conn = _make_conn()
+        upsert_payload(conn, "C172", mtow_kg=1157, empty_kg=680, fuel_kg=100, crew_kg=85)  # payload 292
+        ev = _event(conn, cargo=[{"name": "Inselpost", "target_kg": 500.0, "departure": "EDWG"}])
+        from app.geo import icao_to_coords, airport_elevation_ft
+        dlat, dlon = icao_to_coords("EDWG")
+        delev = airport_elevation_ft("EDWG") or 0
+        t0 = "2026-07-01T18:05:00Z"
+        _add_open_flight(conn, 211, "EDWG", "EDXH", "C172", t0)
+        _add_pos(conn, 211, t0, dlat, dlon, 0, alt=delev, callsign="FRS211")
+        _add_pos(conn, 211, _shift(t0, 1), dlat, dlon, 12, alt=delev, callsign="FRS211")
+        _add_pos(conn, 211, _shift(t0, 4), dlat, dlon, 80, alt=delev + 1200, callsign="FRS211")  # Takeoff
+        p = compute_transport_progress(conn, ev, _shift(t0, 10))
+        rows = [x for x in p["flights"] if x["cid"] == 211]
+        assert len(rows) == 1                                  # KEINE leere Doppelzeile mehr
+        f = rows[0]
+        assert f["in_air"] is True and f["airborne"] is True
+        assert f["loaded"] is False and f["reserved_kg"] == 292.0
+        assert f["dep"] == "EDWG" and f["arr"] == "EDXH"        # echter Start statt startlosem „→EDXH"
+
+    def test_airborne_empty_flight_still_shows_its_leg_row(self):
+        """Gegenprobe: fliegt der Pilot LEER, bleibt seine offene Leg-Zeile die einzige Sicht —
+        nur der beladene laufende Flug wird zusammengeführt, der leere nicht."""
+        conn = _make_conn()
+        ev = _event(conn)   # ohne Manifest → keine Ladung
+        from app.geo import icao_to_coords, airport_elevation_ft
+        la, lo = icao_to_coords("EDWG")
+        ea = airport_elevation_ft("EDWG") or 0
+        t0 = "2026-07-01T18:05:00Z"
+        _add_open_flight(conn, 61, "EDWG", "", "C208", t0)
+        _add_pos(conn, 61, t0, la, lo, 0, alt=ea, callsign="FRS61")
+        _add_pos(conn, 61, _shift(t0, 1), la, lo, 12, alt=ea, callsign="FRS61")
+        _add_pos(conn, 61, _shift(t0, 4), la, lo, 80, alt=ea + 1200, callsign="FRS61")
+        p = compute_transport_progress(conn, ev, _shift(t0, 10))
+        rows = [x for x in p["flights"] if x["cid"] == 61]
+        assert len(rows) == 1
+        assert rows[0]["loaded"] is False and rows[0]["reserved_kg"] == 0.0
+
+
 # --- Fracht je Startplatz (#15 Sub-Projekt B) ------------------------------
 
 class TestCargoPerDeparture:

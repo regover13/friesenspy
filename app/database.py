@@ -4054,7 +4054,11 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "6"  # "6": participants[].online (momentane Präsenz vs. Dauer-
+_PROGRESS_SNAPSHOT_VERSION = "7"  # "7": laufender BELADENER Flug = EINE ehrliche Feed-Zeile
+#      (Reservierungs-Zeile mit Start=last_ground → "EDWZ→EDWS · 274 kg · unterwegs"); die
+#      redundante leere GPS-Leg-Zeile desselben Flugs entfällt (kein doppelter Flüge-Zähler,
+#      kein falsches „leer", kein startloses „→Ziel").
+#      "6": participants[].online (momentane Präsenz vs. Dauer-
 #      Sperrklinke `visible`) — der Live-Block zeigt ausgeloggte Leer-Piloten nicht mehr als „dabei".
 #      "5": on_stack_kg je Frachtzeile (Bestand am Ladeplatz) +
 #      Verlust-/Rueckgabe-Zeile traegt den Ort als dep. Bump erzwingt Neuberechnung eingefrorener
@@ -5440,7 +5444,20 @@ def compute_transport_progress(
                if "block_start" in g
                and _lo <= (g.get("logon_time") or "") <= _sess_end]
 
+        # Trägt der Pilot in DIESER wirklich offenen Verbindung gerade Ware? Dann zeigt ihn die
+        # Reservierungs-Zeile unten vollständig (Start = last_ground, Ziel, Bordladung als
+        # reserved_kg). Seine rohe GPS-Leg-Zeile für den LAUFENDEN (noch offenen) Flug wäre eine
+        # zweite, HALBE Sicht auf denselben Flug: tonnage_kg zählt nur GELIEFERTES (dl), ein noch
+        # fliegender Flug hat also 0 → "leer" — obwohl er im Stapel-Modell die Ladung trägt. Genau
+        # das war der V10-Fund (Doppelzeile, falsches "leer", startloses "→Ziel"). Der beladene
+        # laufende Leg wird deshalb hier NICHT als eigene Zeile gebaut (die Reservierungs-Zeile ist
+        # die Wahrheit). Fliegt er LEER (aboard 0), bleibt seine Leg-Zeile die einzige Sicht.
+        _open_sess = (not _lf) and (not s.get("next_logon")) and (not s.get("statsim_only"))
+        _aboard_now = round(sum((onboard.get(cid) or {}).values()), 1) if _open_sess else 0.0
+
         for g in own:
+            if _open_sess and not g.get("logoff_time") and _aboard_now > 0.01:
+                continue   # laufender beladener Flug → nur die Reservierungs-Zeile unten zeigt ihn
             dep = normalize_type_code(g.get("gps_departure"))
             arr = normalize_type_code(g.get("gps_arrival"))
             dl = delivered_by.get((cid, g.get("logoff_time") or ""), [])
@@ -5510,12 +5527,16 @@ def compute_transport_progress(
         aboard = round(sum(load.values()), 1)
         if not s.get("logoff_time") and not s.get("next_logon") \
                 and not s.get("statsim_only") and aboard > 0.0:
+            # Start der Live-Zeile = aktueller Standort, sonst der ECHTE letzte Bodenkontakt
+            # (last_ground — ein GPS-Faktum, kein Flugplan-Vertrauen, #23). In der Luft war `dep`
+            # bisher leer → die Strecke las sich als startloses „→Ziel" (V10-Fund); last_ground
+            # liefert den tatsächlichen Ladeplatz, also z. B. „EDWZ → EDWS".
             where = r["position"].get(cid)
             network.append({
                 "dep_time": s.get("logon_time") or "", "cid": cid,
                 "callsign": s.get("callsign") or "", "name": names.get(cid, ""),
                 "aircraft": s.get("aircraft") or type_code,
-                "dep": where or "", "arr": dest,
+                "dep": where or r["last_ground"].get(cid) or "", "arr": dest,
                 "tonnage_kg": 0.0, "loaded": False,
                 "in_air": True, "airborne": where is None,
                 "reserved_kg": aboard, "onboard_reserved_kg": cap,
