@@ -4054,7 +4054,10 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "4"  # "4": Stapel-Modell — Ladung ist ein Bestand mit einem Ort
+_PROGRESS_SNAPSHOT_VERSION = "5"  # "5": on_stack_kg je Frachtzeile (Bestand am Ladeplatz) +
+#      Verlust-/Rueckgabe-Zeile traegt den Ort als dep. Bump erzwingt Neuberechnung eingefrorener
+#      Snapshots, sonst fehlt beiden abgeschlossenen Events das neue Feld (Anzeige "noch 0").
+#      "4": Stapel-Modell — Ladung ist ein Bestand mit einem Ort
                                   # (Entscheidung 9: kein Auftau-Schutz, Version hoch + neu rechnen)
 
 # Reine Anzeige-Retention (öffentliche Listen-Endpoints): Events/Rennen älter als das werden
