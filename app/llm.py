@@ -395,8 +395,11 @@ def event_summary(context: dict) -> str | None:
     else:
         lines.append("Verluste: keine — alles kam heil an")
     user = (
-        "Schreibe eine kurze, launige Tagesend-Zusammenfassung (1–2 Sätze) für die "
+        "Schreibe eine kurze, launige Tagesend-Zusammenfassung für die "
         "Friesen — wie viel Fracht zusammen bewegt wurde, mit einem Augenzwinkern. "
+        "Nenne JEDEN Piloten aus »Piloten (Flüge)« genau so, wie er dort steht — mit "
+        "Vorname UND Callsign in Klammern — und mit seiner GENAUEN Flugzahl. Lass keinen weg, "
+        "fasse keine zwei zusammen und erfinde weder Vornamen noch Nachnamen noch Zahlen. "
         "Die Abholplätze sind KEINE geflogene Route oder Rundstrecke — jeder Kutter fliegt von genau "
         "EINEM Abholplatz zum Ziel. Stelle es NIEMALS als Runde/Streckenkette dar (kein »auf der Runde "
         "A-B-C-D«) und reihe die Plätze nicht mit Pfeilen/Bindestrichen aneinander. "

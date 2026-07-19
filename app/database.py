@@ -4853,11 +4853,26 @@ def flight_quip_context(flight: dict, progress: dict) -> dict:
 def event_summary_context(event: dict, progress: dict) -> dict:
     """Kontext für die lustige Tagesend-Zusammenfassung (rein, testbar)."""
     flights = [f for f in progress.get("flights", []) if f.get("loaded")]
-    per_pilot: dict[str, int] = {}
-    for f in flights:
-        raw = (f.get("name") or f.get("callsign") or "?").strip()
+
+    def _label(name: object, callsign: object) -> str:
+        # Anzeige-Name: VORNAME + Callsign, nie Nachname. Das Callsign macht eindeutig — zwei
+        # Piloten mit gleichem Vornamen (zwei „Michael") lassen sich am Vornamen allein NICHT
+        # auseinanderhalten. Ohne Callsign (Altbestand/Testdaten) bleibt der Vorname allein.
+        raw = ((str(name) if name else "") or (str(callsign) if callsign else "") or "?").strip()
         who = raw.split()[0] if raw else "?"
-        per_pilot[who] = per_pilot.get(who, 0) + 1
+        cs = str(callsign).strip() if callsign else ""
+        return f"{who} ({cs})" if cs else who
+
+    # Nach CALLSIGN aggregieren, NICHT nach Vorname: sonst verschmelzen zwei „Michael" zu EINER
+    # Zeile mit summierten Flügen — dann fällt einer aus der Zusammenfassung und die Flugzahl
+    # stimmt nicht (Fund 19.07.). Das Callsign ist der eindeutige Schlüssel.
+    _agg: dict[str, dict] = {}
+    for f in flights:
+        cs = (f.get("callsign") or "").strip()
+        key = cs or _label(f.get("name"), f.get("callsign"))
+        ent = _agg.setdefault(key, {"label": _label(f.get("name"), f.get("callsign")), "n": 0})
+        ent["n"] += 1
+    per_pilot = {e["label"]: e["n"] for e in _agg.values()}
     return {
         "name": event.get("name"),
         "total_kg": progress.get("total_kg"),
@@ -4874,7 +4889,7 @@ def event_summary_context(event: dict, progress: dict) -> dict:
         "pickups": [p for p in progress.get("route", []) if p != progress.get("destination")],
         "lost_total_kg": progress.get("lost_total_kg", 0.0),
         "verluste": [
-            (f"{(l.get('name') or l.get('callsign') or '?').split()[0]}: "
+            (f"{_label(l.get('name'), l.get('callsign'))}: "
              + ("Kutter versunken" if l.get("loss_kind") == "sunk"
                 else "Fracht geklaut" if l.get("loss_kind") == "stolen"
                 else "Fracht zurückgebracht")

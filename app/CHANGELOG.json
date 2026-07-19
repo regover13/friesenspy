@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.0.6",
+    "date": "2026-07-19",
+    "highlight": false,
+    "title": "Feierabend-Zusammenfassung nennt jeden Piloten richtig",
+    "items": [
+      "🧾 Die Tagesend-Zusammenfassung fasste bisher zwei Piloten mit gleichem Vornamen (z. B. zwei „Michael“) zu einer Zeile zusammen und addierte ihre Flüge — einer fiel dadurch komplett aus dem Text und die Flugzahl stimmte nicht. Jetzt wird jeder Pilot eindeutig über sein Callsign geführt und als „Vorname (Callsign)“ genannt, ohne Nachnamen. So taucht jeder Teilnehmer auf, mit seiner echten Zahl — und die KI erfindet keine Namen mehr dazu."
+    ]
+  },
+  {
     "version": "10.0.5",
     "date": "2026-07-19",
     "highlight": false,

@@ -316,6 +316,23 @@ class TestQuipContext:
         assert ctx["pilots"] == {"Anna": 2, "Bert": 1}
         assert ctx["loaded_count"] == 3
 
+    def test_summary_context_gleiche_vornamen_bleiben_getrennt(self):
+        """Zwei Piloten mit gleichem Vornamen (zwei »Michael«) dürfen NICHT zu einer Zeile
+        verschmelzen — sonst fällt einer aus der Zusammenfassung und die Flugzahl stimmt nicht
+        (Fund 19.07.). Schlüssel = Callsign (eindeutig), Anzeige = »Vorname (CALLSIGN)«, kein
+        Nachname."""
+        progress = {
+            "flights": [
+                {"loaded": True, "name": "Michael Stingl", "callsign": "FRS96"},
+                {"loaded": True, "name": "Michael Stingl", "callsign": "FRS96"},
+                {"loaded": True, "name": "Michael Wellner", "callsign": "FRS44"},
+            ],
+            "total_kg": 500, "loaded_count": 3, "cargo": [],
+            "route": ["EDWZ", "EDWS"], "destination": "EDWS",
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert ctx["pilots"] == {"Michael (FRS96)": 2, "Michael (FRS44)": 1}
+
 
 class TestCalendarCargo:
     def _cal_ev(self, **overrides):
