@@ -53,6 +53,17 @@ Verbindungsende oder einem Flugplanwechsel:
 - Der **eingereichte Flugplan** (DEP/ARR) bleibt erhalten und wird weiterhin angezeigt — er ist
   aber nur noch Beschriftung, keine Grundlage mehr für die Flugzählung selbst.
 
+**Die harten Schwellen (Kurzfassung).** Woran genau FriesenSpy Start und Landung festmacht — die **Höhe über Grund ist immer das Leitsignal**, die Geschwindigkeit nur Hilfssignal:
+
+| Ereignis | Bedingung |
+|---|---|
+| **Abheben** | ~500 ft über Startplatzhöhe (Leitsignal) — oder als Hilfssignal > 50 kt **und** nachweislich steigend |
+| **Landung** | **Vollstopp** (< 2 kt) **und** im **4-km-Umkreis** eines Flugplatzes **und** < 300 ft über Platzhöhe — sofort final, ohne Wartezeit; Abrollen/Parken/Motor/Tür spielen keine Rolle |
+| **Platzrunde / Stop-and-Go** | Landung am **selben** Platz zählt als **ein** Flug, solange der nächste Start binnen **5 Min** (300 s) folgt; steht der Pilot länger, wird als X→X abgeschlossen und ab dem nächsten Start ein neuer Flug |
+| **Track-Trennung** | Eine Positions-Lücke > **30 Min** teilt den Track in unabhängige Segmente |
+
+Der Umkreis ist ein fester, globaler 4-km-Radius (kein per-Event-Radius). Vollständige Konstanten-Tabelle **plus die Begründung je Regel** (belegte Irrwege inklusive): [`docs/gps-flugerkennung.md`](docs/gps-flugerkennung.md).
+
 **Fallback ohne GPS-Track:** Fehlt ein Track (z. B. reine StatSim-Historie oder ein Serverausfall
 mitten im Flug), fällt FriesenSpy auf die klassische, refile-/disconnect-basierte Erkennung
 zurück (Reconnect-Merge über Callsign + Flugplan + Zeitlücke, wie zuvor) — Details dazu unter
