@@ -1,5 +1,15 @@
 [
   {
+    "version": "10.0.4",
+    "date": "2026-07-19",
+    "highlight": false,
+    "title": "Ladung-Spalte zeigt immer die echte Ware",
+    "items": [
+      "🚚 Der Flug-für-Flug-Log (unter „🦐 Zum Kutter“) zeigt in der Ladung-Spalte jetzt bei jeder Zeile die tatsächliche Ware — auch für das Leg, das jemand gerade fliegt oder gerade am Ladeplatz belädt. Vorher stand dort nur „unterwegs“ bzw. „lädt“, obwohl die Ladung längst bekannt war. Und das Wort „getragen“ hinter durchgereichten Zwischenlegs ist weg: die Ware steht jetzt einfach da.",
+      "🔧 An der Wurzel behoben: Statt für jeden Leg-Zustand ein eigener Anzeige-Zweig (der die Ladung mal zeigte, mal verschluckte) gilt jetzt eine Regel — zeig, was an Bord liegt; „leer“ nur, wenn wirklich nichts da ist. Den Zustand (geliefert · unterwegs · am Platz · durchgereicht) trägt ohnehin schon das Icon in der Fracht-Spalte daneben. An Zahlen und Balken ändert sich nichts, es war reine Anzeige."
+    ]
+  },
+  {
     "version": "10.0.3",
     "date": "2026-07-19",
     "highlight": false,

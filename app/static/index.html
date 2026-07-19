@@ -4862,39 +4862,33 @@ function _kColor(i) {
 }
 
 function _kCargoLabel(f) {
-  if (f.loss_kind) {
-    // Was war an Bord? (Co-Load-Aufschlüsselung wie bei gelieferten Flügen)
-    const lines = f.cargo_lines || [];
-    const cargoTxt = lines.length
-      ? lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
-          + ' (' + Math.round(l.kg) + ')').join(' + ') + ' · '
-      : '';
-    const quip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
-    return '<td class="kutter-loss">' + cargoTxt + _kLossLabel(f.loss_kind) + quip + '</td>';
-  }
-  // 'lädt (reserviert)' hiess frueher: er reserviert, hat aber nichts. Jetzt traegt er die Ware
-  // wirklich — die Reservierung IST die Bordladung.
-  if (f.carried_through && !f.loaded) {
-    // Zwischenleg eines Milchmanns: hier NICHT geliefert, aber getragen. Zeigt die durchgereichte
-    // Ladung statt „leer" (Fund Michael 19.07.).
-    const clines = (f.cargo_lines || []).map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
-      + ' (' + Math.round(l.kg) + ')').join(' + ');
-    const cquip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
-    return '<td class="kf-empty">' + (clines || '—') + ' · getragen' + cquip + '</td>';
-  }
-  if (!f.loaded) return f.in_air ? (f.airborne ? '<td class="kf-empty">unterwegs</td>'
-                                               : '<td class="kf-empty">lädt</td>')
-                                 : '<td class="kf-empty">leer</td>';
+  // EINE Regel für jede Leg-Zeile: was liegt/lag an Bord? Das steht in `cargo_lines` — gleich, ob
+  // geliefert, gerade unterwegs, am Ladeplatz stehend oder als Zwischenleg durchgetragen. Nur wenn
+  // wirklich nichts an Bord ist, „leer". Den ZUSTAND (geliefert kräftig · ✈️ unterwegs · 🅿️ am Platz
+  // · 🔀 durchgereicht) trägt schon die Fracht-/kg-Spalte nebenan — die Ladung-Spalte nennt deshalb
+  // nur die Ware, nicht nochmal den Status. (Früher: je Zustand ein eigener Zweig, der die Ladung mal
+  // zeigte, mal wegwarf — daher „leer"/„unterwegs" trotz Ware an Bord, Fund Michael 19.07.)
   const lines = f.cargo_lines || [];
-  let label;
-  if (lines.length) {
-    label = lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
-      + ' (' + Math.round(l.kg) + ')').join(' + ');
-  } else {
-    label = _kesc(f.cargo_name || '');
-  }
+  const cargoTxt = lines.length
+    ? lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
+        + ' (' + Math.round(l.kg) + ')').join(' + ')
+    : _kesc(f.cargo_name || '');
   const quip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
-  return '<td>' + label + quip + '</td>';
+  if (f.loss_kind) {
+    // Verlust: was war an Bord + wie es verloren ging (versenkt/geklaut/zurückgebracht).
+    return '<td class="kutter-loss">' + (cargoTxt ? cargoTxt + ' · ' : '') + _kLossLabel(f.loss_kind) + quip + '</td>';
+  }
+  if (f.loaded) {
+    // Am Ziel abgeliefert — kräftig (kein kf-empty): die „harte" Buchung.
+    return '<td>' + cargoTxt + quip + '</td>';
+  }
+  if (cargoTxt) {
+    // Trägt Ware, aber (noch) nicht am Ziel: laufendes Leg ODER durchgetragenes Zwischenleg.
+    // Gedämpft (kf-empty), weil noch „schwebend" — der Status steckt im Icon der Fracht-Spalte.
+    return '<td class="kf-empty">' + cargoTxt + quip + '</td>';
+  }
+  // Wirklich nichts an Bord.
+  return '<td class="kf-empty">' + (f.in_air ? (f.airborne ? 'unterwegs' : 'lädt') : 'leer') + '</td>';
 }
 
 function _kLossLabel(kind) {
