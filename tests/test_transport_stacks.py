@@ -154,6 +154,48 @@ def test_s2_milchmann_erste_ladung_bleibt_an_bord():
     _assert_erhaltung(r)
 
 
+def test_carried_liefert_die_bordladung_je_leg():
+    """WURZEL des „leere Zwischenlegs"-Funds (Michael 19.07.): derive_stacks liefert je Abheben die
+    Bordladung (`carried`, Schlüssel (cid, takeoff-ts)) — die Modell-Wahrheit „was trug er auf DIESEM
+    Leg". Der Feed zeigt damit auch die durchgetragene Ware auf Zwischenlegs statt „leer".
+
+    Milchmann EDWG -> EDWZ -> EDXH: Leg 1 trägt nur die EDWG-Ladung, Leg 2 zusätzlich den
+    EDWZ-Nachschub. Ein wirklich leeres Leg hätte einen leeren Snapshot (bleibt „leer")."""
+    to1 = "2026-07-01T09:05:00Z"
+    to2 = "2026-07-01T09:40:00Z"
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDWG"),                        # lädt 800 Fisch
+            _ev("takeoff", 1, to1),                             # Leg 1 hebt ab: 800 Fisch an Bord
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDWZ"),  # Ladeplatz: 200 Tee dazu
+            _ev("takeoff", 1, to2),                             # Leg 2 hebt ab: 800 Fisch + 200 Tee
+            _ev("landing", 1, "2026-07-01T10:10:00Z", "EDXH"),  # liefert alles
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+    carried = r["carried"]
+    assert carried[(1, to1)] == {"Fischbrötchen": 800.0}
+    assert carried[(1, to2)] == {"Fischbrötchen": 800.0, "Friesen Tee": 200.0}
+    _assert_erhaltung(r)
+
+
+def test_carried_leeres_leg_bleibt_leer():
+    """Gegenprobe: ein Leg ohne Ware an Bord (Leerflug/Rückflug) hat einen leeren Snapshot — der
+    Feed zeigt weiter „leer", der Fix erfindet keine Ladung."""
+    to = "2026-07-01T09:05:00Z"
+    r = derive_stacks(
+        manifest=MANIFEST,
+        events=[
+            _ev("login", 1, T0, "EDDW"),   # fremder Platz: lädt nichts
+            _ev("takeoff", 1, to),
+            _ev("landing", 1, "2026-07-01T09:30:00Z", "EDXH"),
+        ],
+        destination=DEST, loading_airports=LOADING,
+    )
+    assert r["carried"][(1, to)] == {}
+
+
 def test_s3_zwischenlandung_am_fremden_platz_aendert_nichts():
     """S3: EDWG -> EDDW(fremd) -> EDXH. HEUTE ohne Latch 0 kg, mit Latch 1000 kg (Tee, der nie
     an Bord war). Stapel-Modell: 800 Fisch — EDDW hat keinen Stapel."""

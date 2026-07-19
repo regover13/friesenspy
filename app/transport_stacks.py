@@ -72,6 +72,11 @@ def derive_stacks(
     since: dict[int, str] = {}                # seit wann steht er dort (Ankunftsreihenfolge)
     capacity: dict[int, float] = {}
     movements: list[dict] = []
+    # Bordladung beim Abheben je Leg, Schlüssel (cid, takeoff-ts). Das ist die Modell-Wahrheit
+    # „was trug er auf DIESEM Leg". Der Feed zeigt damit auch DURCHGETRAGENE Ware auf Zwischenlegs
+    # eines Milchmanns (nicht nur Geliefertes) — ohne sie sah ein beladenes Zwischenleg „leer" aus
+    # (Fund Michael 19.07.). Reine Anzeige-Quelle: an Stapeln/Bilanz ändert sie nichts.
+    carried: dict[tuple[int, str], dict[str, float]] = {}
 
     state = {
         "manifest": manifest, "order": order, "stacks": stacks, "onboard": onboard,
@@ -100,6 +105,9 @@ def derive_stacks(
                 last_ground[cid] = e["airport"]
         elif kind == "takeoff":
             position[cid] = None                 # unterwegs. Lädt NICHT.
+            # Was liegt beim Abheben an Bord? = die auf DIESEM Leg getragene Ladung (nach dem Laden
+            # im Stand, vor dem nächsten Ladeort). Ein Snapshot pro Leg für die Feed-Anzeige.
+            carried[(cid, ts)] = {n: kg for n, kg in (onboard.get(cid) or {}).items() if kg > _EPS}
         elif kind == "landing":
             airport = e.get("airport")
             position[cid] = airport
@@ -131,6 +139,7 @@ def derive_stacks(
         "position": position,
         "last_ground": last_ground,
         "movements": movements,
+        "carried": carried,
     }
 
 

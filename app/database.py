@@ -4054,7 +4054,10 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "10"  # "10": Am-Platz-Rückgabe (Ladeplatz == Abfallort, kein Trage-
+_PROGRESS_SNAPSHOT_VERSION = "11"  # "11": Zwischenlegs eines Milchmanns zeigen die GETRAGENE
+#      Ladung (carried_at, Bordladung beim Abheben) statt „leer" — der Feed nutzt die Modell-
+#      Wahrheit je Leg, nicht nur delivered_by. Reine Anzeige, Stapel/Bilanz unverändert.
+#      "10": Am-Platz-Rückgabe (Ladeplatz == Abfallort, kein Trage-
 #      Flug) ist eine STILLE Stapel-Buchung — keine Feed-Zeile, kein Flugzähler (kein Leg = kein
 #      Flug). Klau/Versenken/geflogene Rückgabe bleiben sichtbar.
 #      "9": Am-Platz-Rückgabe (Ladeplatz == Abfallort) = eigenes
@@ -5400,6 +5403,7 @@ def compute_transport_progress(
     r = derive_stacks(manifest=manifest, events=inp["events"], destination=dest,
                       loading_airports=inp["loading_airports"])
     stacks, onboard = r["stacks"], r["onboard"]
+    carried_at = r["carried"]   # Bordladung je Abheben (cid, logon_time) — für die Zwischenleg-Anzeige
 
     # --- Bewegungen je Leg/Session zuordnen (Feed) ---
     delivered_by: dict[tuple[int, str], list[dict]] = {}
@@ -5512,20 +5516,36 @@ def compute_transport_progress(
                 continue
             dl = delivered_by.get((cid, g.get("logoff_time") or ""), [])
             tonnage = round(sum(m["kg"] for m in dl), 1)
+            # Getragene, hier NICHT gelieferte Ware = Zwischenleg eines Milchmanns. WURZEL des Funds
+            # (Michael 19.07.): die Fracht einer fertigen Leg-Zeile kam allein aus `delivered_by`
+            # (Lieferungen) — ein durchgetragenes Zwischenleg hatte also 0 → „leer", obwohl beladen.
+            # Die Modell-Wahrheit ist die Bordladung beim ABHEBEN dieses Legs (`carried_at`), genau wie
+            # der laufende Flug seine Fracht aus `onboard` zieht (V10-Prinzip, jetzt für JEDES Leg).
+            # Nur wenn nichts geliefert wurde: eine Lieferung leert den Flieger-Stapel, dann IST das
+            # Gelieferte das Getragene (kein Doppel). Reine Anzeige — Stapel/Bilanz bleiben unberührt.
+            carr = carried_at.get((cid, g.get("logon_time") or "")) if tonnage <= 0.0 else None
+            carr_items = [{"name": n, "kg": kg} for n, kg in (carr or {}).items() if kg > 0.01]
+            carr_lines = _lines(carr_items)
+            carr_kg = round(sum(m["kg"] for m in carr_items), 1)
+            carried_row = tonnage <= 0.0 and carr_kg > 0.0
             # Feed-Filter = reine SICHTBARKEIT (ersetzt den alten Streckenfilter, der BEIDE
             # Enden auf der Route verlangte und deshalb vom Latch aufgehoben werden musste).
-            if not (dep in route_set or arr in route_set or tonnage > 0):
+            if not (dep in route_set or arr in route_set or tonnage > 0 or carr_kg > 0):
                 continue
             row = {
                 "dep_time": g.get("logon_time") or "", "cid": cid,
                 "callsign": g.get("callsign") or s.get("callsign") or "",
                 "name": names.get(cid, ""), "aircraft": s.get("aircraft") or type_code,
                 "dep": dep, "arr": arr,
-                "tonnage_kg": tonnage, "onboard_kg": tonnage,
+                "tonnage_kg": tonnage, "onboard_kg": tonnage if tonnage > 0 else carr_kg,
                 "loaded": tonnage > 0.0,
-                "cargo_lines": _lines(dl), "cargo_name": _lines(dl)[0]["name"] if dl else None,
+                "cargo_lines": _lines(dl) if tonnage > 0 else carr_lines,
+                "cargo_name": (_lines(dl)[0]["name"] if dl
+                               else (carr_lines[0]["name"] if carr_lines else None)),
                 "in_air": False, "airborne": False,
-                "reserved_kg": 0.0, "onboard_reserved_kg": 0.0,
+                "reserved_kg": carr_kg if carried_row else 0.0,
+                "onboard_reserved_kg": cap if carried_row else 0.0,
+                "carried_through": carried_row,
                 "flight_key": f"{cid}:{g.get('logon_time') or ''}",
                 "distance_nm": g.get("distance_nm") or 0,
                 "block_min": g.get("block_min") or g.get("duration_min") or 0,

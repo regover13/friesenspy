@@ -1,5 +1,15 @@
 [
   {
+    "version": "10.0.3",
+    "date": "2026-07-19",
+    "highlight": false,
+    "title": "Milchmann: Zwischenlegs zeigen die getragene Ladung",
+    "items": [
+      "📦 Ein Milchmann mit Zwischenlandungen zeigte seine fertigen Zwischenlegs bisher als „leer“ — obwohl die Ware die ganze Zeit an Bord war. Jetzt zeigt jedes Zwischenleg, was auf ihm getragen wurde (z. B. „🎞️ Filmrollen (100) · getragen“), statt fälschlich leer zu wirken. An den Zahlen und am Balken ändert sich nichts — es war reine Anzeige.",
+      "🔧 An der Wurzel behoben: Die Fracht einer Leg-Zeile kommt jetzt aus der Modell-Wahrheit „was war beim Abheben an Bord“ (nicht mehr nur aus den Lieferungen). Damit trägt jedes Leg seine echte Ladung — dieselbe Logik, die der laufende Flug schon nutzte, gilt jetzt für alle Legs. Danke an Michael (FRS44) fürs genaue Melden im Live-Test."
+    ]
+  },
+  {
     "version": "10.0.2",
     "date": "2026-07-18",
     "highlight": false,

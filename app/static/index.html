@@ -4874,6 +4874,14 @@ function _kCargoLabel(f) {
   }
   // 'lädt (reserviert)' hiess frueher: er reserviert, hat aber nichts. Jetzt traegt er die Ware
   // wirklich — die Reservierung IST die Bordladung.
+  if (f.carried_through && !f.loaded) {
+    // Zwischenleg eines Milchmanns: hier NICHT geliefert, aber getragen. Zeigt die durchgereichte
+    // Ladung statt „leer" (Fund Michael 19.07.).
+    const clines = (f.cargo_lines || []).map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
+      + ' (' + Math.round(l.kg) + ')').join(' + ');
+    const cquip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
+    return '<td class="kf-empty">' + (clines || '—') + ' · getragen' + cquip + '</td>';
+  }
   if (!f.loaded) return f.in_air ? (f.airborne ? '<td class="kf-empty">unterwegs</td>'
                                                : '<td class="kf-empty">lädt</td>')
                                  : '<td class="kf-empty">leer</td>';
@@ -5082,6 +5090,7 @@ function _kutterDetailBody(d) {
       : f.loss_kind ? '<td class="kf-empty kutter-loss">' + (f.lost_kg ? Math.round(f.lost_kg) + ' kg' : '—') + '</td>'
       : f.in_air ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg)
                  + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
+      : f.carried_through ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + ' 🔀</td>'
       : '<td class="kf-empty">leer</td>';
     return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + _kesc(f.aircraft || '')
       + '</td><td>' + _kesc(f.dep) + '→' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';
