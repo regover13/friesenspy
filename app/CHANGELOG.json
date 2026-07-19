@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.0.5",
+    "date": "2026-07-19",
+    "highlight": false,
+    "title": "Aufräumen: die Bordladung ist die einzige Frachtquelle",
+    "items": [
+      "🧹 Unter der Haube: Der Kutter-Feed leitet die Fracht jeder Flug-Zeile jetzt aus einer einzigen Wahrheit ab — der Ladung, die das Flugzeug auf diesem Leg an Bord hatte (das Stapel-Modell). Vorher war dieselbe Entscheidung als Sonderfall über sechs Felder verstreut („Lieferung, sonst ersatzweise Bordladung“), was ein durchgetragenes Zwischenleg fälschlich „leer“ erscheinen ließ. An dem, was ihr seht, ändert sich nichts — es ist reines Aufräumen an der Wurzel, das solche „leer trotz Ware“-Fehler künftig ausschließt. Voll abgesichert (1097 Tests grün)."
+    ]
+  },
+  {
     "version": "10.0.4",
     "date": "2026-07-19",
     "highlight": false,

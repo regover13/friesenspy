@@ -3107,6 +3107,31 @@ class TestStapelProgress:
         assert tee["delivered_kg"] == 200.0     # 1000 kg Zuladung - 800 Fisch
         assert p["total_kg"] == 1000.0
 
+    def test_leg_zeile_zeigt_die_bordladung_eine_quelle(self):
+        """Wurzel (Stapel-Modell, Spec 2026-07-15): die Leg-Zeile zeigt die BORDLADUNG des Legs —
+        `ladung {cid: {frachtart: kg}}`, die „an Bord bleibt". `delivered_by` ist nur das
+        Geliefert-Signal, KEINE zweite Frachtquelle. Also: das getragene Zwischenleg (EDWG→EDWZ)
+        zeigt den Fisch, das Ziel-Leg (EDWZ→EDXH) Fisch+Tee — beide aus derselben Bordladung."""
+        conn = _make_conn()
+        ev = self._milchmann_event(conn)
+        t1 = self._leg(conn, 1, "EDWG", "EDWZ", START)
+        self._leg(conn, 1, "EDWZ", "EDXH", _shift(t1, 10))
+        _add_flight(conn, 1, "EDWG", "EDWZ", "C208", START, duration_min=30)
+        _add_flight(conn, 1, "EDWZ", "EDXH", "C208", _shift(t1, 10), duration_min=20)
+
+        p = compute_transport_progress(conn, ev, END)
+        legs = {(f["dep"], f["arr"]): f for f in p["flights"] if not f.get("loss_kind")}
+
+        zwischen = legs[("EDWG", "EDWZ")]                 # getragen, nicht geliefert
+        assert zwischen["carried_through"] is True and zwischen["loaded"] is False
+        assert zwischen["tonnage_kg"] == 0.0             # zählt NICHT als Lieferung
+        assert {l["name"]: l["kg"] for l in zwischen["cargo_lines"]} == {"Fisch": 800.0}
+
+        ziel = legs[("EDWZ", "EDXH")]                     # am Ziel geliefert
+        assert ziel["loaded"] is True and not ziel.get("carried_through")
+        assert ziel["tonnage_kg"] == 1000.0
+        assert {l["name"]: l["kg"] for l in ziel["cargo_lines"]} == {"Fisch": 800.0, "Tee": 200.0}
+
     def test_s3_zwischenlandung_fremd_liefert_die_echte_ladung(self):
         """HEUTE: ohne Latch 0 kg, mit Latch 1000 kg (Tee, der nie an Bord war)."""
         conn = _make_conn()

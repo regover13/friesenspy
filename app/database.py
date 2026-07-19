@@ -5514,38 +5514,37 @@ def compute_transport_progress(
                     "block_min": g.get("block_min") or g.get("duration_min") or 0,
                 })
                 continue
-            dl = delivered_by.get((cid, g.get("logoff_time") or ""), [])
-            tonnage = round(sum(m["kg"] for m in dl), 1)
-            # Getragene, hier NICHT gelieferte Ware = Zwischenleg eines Milchmanns. WURZEL des Funds
-            # (Michael 19.07.): die Fracht einer fertigen Leg-Zeile kam allein aus `delivered_by`
-            # (Lieferungen) — ein durchgetragenes Zwischenleg hatte also 0 → „leer", obwohl beladen.
-            # Die Modell-Wahrheit ist die Bordladung beim ABHEBEN dieses Legs (`carried_at`), genau wie
-            # der laufende Flug seine Fracht aus `onboard` zieht (V10-Prinzip, jetzt für JEDES Leg).
-            # Nur wenn nichts geliefert wurde: eine Lieferung leert den Flieger-Stapel, dann IST das
-            # Gelieferte das Getragene (kein Doppel). Reine Anzeige — Stapel/Bilanz bleiben unberührt.
-            carr = carried_at.get((cid, g.get("logon_time") or "")) if tonnage <= 0.0 else None
-            carr_items = [{"name": n, "kg": kg} for n, kg in (carr or {}).items() if kg > 0.01]
-            carr_lines = _lines(carr_items)
-            carr_kg = round(sum(m["kg"] for m in carr_items), 1)
-            carried_row = tonnage <= 0.0 and carr_kg > 0.0
+            # Bordladung DIESES Legs = Modell-Wahrheit aus dem Stapel-Replay: `ladung {cid: {…}}`,
+            # die „an Bord bleibt" (Spec 2026-07-15). `carried_at` ist der Snapshot beim Abheben und
+            # damit die EINZIGE Frachtquelle je Leg — zwischen Start und Landung lädt ein Leg nichts
+            # nach. Der Feed zeigt schlicht, was das Flugzeug auf diesem Leg trug — egal ob am Ende
+            # geliefert. `delivered_by` sagt nur noch, OB am Ziel geliefert wurde (dort geht der ganze
+            # Flieger-Stapel rüber = genau diese Bordladung), es ist KEINE zweite Frachtquelle.
+            # (Früher primär `delivered_by` + `carried_at` nur als Fallback `if tonnage<=0` — ein
+            # Sonderfall über sechs Felder verstreut; ein Zwischenleg erschien „leer". Fund Michael 19.07.)
+            onboard_here = carried_at.get((cid, g.get("logon_time") or "")) or {}
+            cargo_lines = _lines([{"name": n, "kg": kg} for n, kg in onboard_here.items() if kg > 0.01])
+            onboard_kg = round(sum(kg for kg in onboard_here.values() if kg > 0.01), 1)
+            delivered = bool(delivered_by.get((cid, g.get("logoff_time") or "")))  # am Ziel gelandet
             # Feed-Filter = reine SICHTBARKEIT (ersetzt den alten Streckenfilter, der BEIDE
             # Enden auf der Route verlangte und deshalb vom Latch aufgehoben werden musste).
-            if not (dep in route_set or arr in route_set or tonnage > 0 or carr_kg > 0):
+            if not (dep in route_set or arr in route_set or onboard_kg > 0):
                 continue
             row = {
                 "dep_time": g.get("logon_time") or "", "cid": cid,
                 "callsign": g.get("callsign") or s.get("callsign") or "",
                 "name": names.get(cid, ""), "aircraft": s.get("aircraft") or type_code,
                 "dep": dep, "arr": arr,
-                "tonnage_kg": tonnage, "onboard_kg": tonnage if tonnage > 0 else carr_kg,
-                "loaded": tonnage > 0.0,
-                "cargo_lines": _lines(dl) if tonnage > 0 else carr_lines,
-                "cargo_name": (_lines(dl)[0]["name"] if dl
-                               else (carr_lines[0]["name"] if carr_lines else None)),
+                # In die Teilnehmer-Bilanz (delivered_kg) zählt nur Geliefertes; Getragenes zählt 0.
+                "tonnage_kg": onboard_kg if delivered else 0.0, "onboard_kg": onboard_kg,
+                "loaded": delivered,
+                "cargo_lines": cargo_lines,
+                "cargo_name": cargo_lines[0]["name"] if cargo_lines else None,
                 "in_air": False, "airborne": False,
-                "reserved_kg": carr_kg if carried_row else 0.0,
-                "onboard_reserved_kg": cap if carried_row else 0.0,
-                "carried_through": carried_row,
+                # Getragenes Zwischenleg: die Bordladung ist „schwebend" (noch nicht geliefert).
+                "reserved_kg": onboard_kg if not delivered else 0.0,
+                "onboard_reserved_kg": cap if (not delivered and onboard_kg > 0.0) else 0.0,
+                "carried_through": (not delivered) and onboard_kg > 0.0,
                 "flight_key": f"{cid}:{g.get('logon_time') or ''}",
                 "distance_nm": g.get("distance_nm") or 0,
                 "block_min": g.get("block_min") or g.get("duration_min") or 0,
