@@ -308,6 +308,46 @@ class TestCatalog:
         assert not any(x["id"] == r["id"] for x in list_cargo_catalog(conn))
 
 
+class TestEventTimeGuards:
+    """20.07.2026: #238 „Touristen für Helgoland" hatte per Tippfehler dtend im JUNI (Vergangenheit).
+    Der Poller sah sofort `now >= dtend` und fror das Event 59 s nach Start ein — ein Pilot blieb
+    dadurch für immer als „unterwegs" hängen, spätere Lieferung/Legs unsichtbar. Umdatieren taute
+    nicht auf, weil `admin_update` den Snapshot löscht, aber `summarized_at` stehen ließ.
+    (A) dtend muss nach dtstart liegen. (B) Bearbeiten setzt `summarized_at` zurück (Auftauen)."""
+
+    def test_validate_rejects_dtend_before_dtstart(self):
+        from app.main import _validate_transport_times
+        # Juni-Ende vor Juli-Start (der echte Tippfehler) -> Fehlermeldung (truthy).
+        assert _validate_transport_times("2026-07-20T17:00:00Z", "2026-06-20T22:00:00Z")
+
+    def test_validate_rejects_dtend_equal_dtstart(self):
+        from app.main import _validate_transport_times
+        assert _validate_transport_times("2026-07-20T17:00:00Z", "2026-07-20T17:00:00Z")
+
+    def test_validate_accepts_dtend_after_dtstart(self):
+        from app.main import _validate_transport_times
+        assert _validate_transport_times("2026-07-20T17:00:00Z", "2026-07-20T22:00:00Z") is None
+
+    def test_validate_ignores_missing_dtend(self):
+        from app.main import _validate_transport_times
+        assert _validate_transport_times("2026-07-20T17:00:00Z", None) is None
+        assert _validate_transport_times("2026-07-20T17:00:00Z", "") is None
+
+    def test_clear_transport_summarized_thaws_event(self):
+        from app.database import (create_transport_event, set_transport_summarized,
+                                  clear_transport_summarized, get_transport_event)
+        conn = _make_conn()
+        eid = create_transport_event(
+            conn, name="Helgoland", destination="EDXH", dtstart=START, dtend=END,
+            cargo=[{"name": "Passagiere", "target_kg": 300, "departure": "EDWG"}])
+        set_transport_summarized(conn, eid, "2026-07-20T17:00:59Z")
+        conn.commit()
+        assert get_transport_event(conn, eid)["summarized_at"] == "2026-07-20T17:00:59Z"
+        clear_transport_summarized(conn, eid)
+        conn.commit()
+        assert get_transport_event(conn, eid)["summarized_at"] is None
+
+
 class TestQuipContext:
     def test_flight_context(self):
         progress = {"flights": [

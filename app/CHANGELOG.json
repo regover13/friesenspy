@@ -1,5 +1,15 @@
 [
   {
+    "version": "10.1.3",
+    "date": "2026-07-20",
+    "highlight": false,
+    "title": "Kutter friert nicht mehr durch ein falsches Enddatum ein",
+    "items": [
+      "🧊 Bugfix: Stand das Enddatum eines Kutters (per Tippfehler) VOR dem Start — z. B. im falschen Monat — hielt der Poller das Event sofort für beendet und zog Sekunden nach dem Start die Feierabend-Bilanz. Ein Pilot, der gerade lud, blieb dadurch für immer als „unterwegs“ hängen; seine spätere Lieferung und alle weiteren Flüge waren unsichtbar. Jetzt wird ein Enddatum vor dem Start beim Speichern abgewiesen, und der Poller friert so ein Fenster gar nicht mehr ein.",
+      "♨️ Bugfix: Ein versehentlich (zu früh) eingefrorenes Event ließ sich durch Umdatieren nicht wieder auftauen — das erneute Speichern löschte zwar den Zwischenstand, ließ aber die „abgeschlossen“-Markierung stehen, sodass der nächste Durchlauf alles wieder einfror. „Event bearbeiten + speichern“ taut ein Event jetzt zuverlässig auf und rechnet wieder live."
+    ]
+  },
+  {
     "version": "10.1.2",
     "date": "2026-07-20",
     "highlight": false,

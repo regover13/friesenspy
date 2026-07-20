@@ -1300,7 +1300,11 @@ class VatsimPoller:
                     # Feierabend erst, wenn kein Nachzügler mehr unterwegs ist (Flug vor dtend
                     # gestartet, noch offen, ohne Ankunfts-Latch) — sonst entstünde die
                     # Zusammenfassung mit einem noch nicht finalen Ergebnis (Task #13).
-                    if dtend and now >= dtend and not transport_anyone_in_progress(
+                    # dtend >= dtstart: ein Enddatum VOR dem Start (Tippfehler in der Vergangenheit)
+                    # erfüllte `now >= dtend` sofort und fror das Event Sekunden nach Start ein
+                    # (Fund 20.07.2026, #238). Solche unsinnigen Fenster nie als „beendet" werten.
+                    if dtend and now >= dtend and dtend >= (ev.get("dtstart") or "") \
+                            and not transport_anyone_in_progress(
                                 conn, ev, started_before=dtend,
                                 callsign_prefix=self.callsign_prefix,
                             ):

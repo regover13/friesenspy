@@ -109,6 +109,7 @@ from app.database import (
     write_progress_snapshot,
     delete_progress_snapshot,
     delete_progress_snapshots,
+    clear_transport_summarized,
     list_custom_airports,
     upsert_custom_airport,
     delete_custom_airport,
@@ -2769,6 +2770,18 @@ async def admin_transport_events(request: Request):
         conn.close()
 
 
+def _validate_transport_times(dtstart, dtend) -> str | None:
+    """Enddatum muss NACH dem Startdatum liegen. Verhindert den 20.07.2026-Fall: ein Tippfehler im
+    Enddatum (Monat/Jahr in der Vergangenheit) ließ den Poller `now >= dtend` sofort erfüllen und
+    fror das Event Sekunden nach Start ein. ISO-8601-UTC-Strings vergleichen lexikografisch =
+    chronologisch. Fehlt dtend, greift der Mitternacht-Default (kein Fehler)."""
+    ds = (str(dtstart) if dtstart else "").strip()
+    de = (str(dtend) if dtend else "").strip()
+    if ds and de and de <= ds:
+        return "Enddatum muss nach dem Startdatum liegen."
+    return None
+
+
 def _validate_transport_manifest(destination: str, cargo: list) -> str | None:
     """#84: ein manuelles Kutter-Event verlangt ein Ziel + ein Manifest mit Startplätzen je Ware.
     Gibt eine Fehlermeldung zurück oder ``None``. Jede Fracht-Zeile (Name + Menge > 0) braucht
@@ -2813,6 +2826,9 @@ async def admin_create_transport_event(request: Request):
     dest = str(body.get("destination") or "").strip().upper()
     if not body.get("dtstart"):
         raise HTTPException(status_code=400, detail="dtstart erforderlich")
+    terr = _validate_transport_times(body.get("dtstart"), body.get("dtend"))
+    if terr:
+        raise HTTPException(status_code=400, detail=terr)
     err = _validate_transport_manifest(dest, body.get("cargo") or [])
     if err:
         raise HTTPException(status_code=400, detail=err)
@@ -2851,6 +2867,11 @@ async def admin_update_transport_event(request: Request, event_id: int):
         cur = get_transport_event(conn, event_id)
         if not cur:
             raise HTTPException(status_code=404, detail="Event nicht gefunden")
+        # Enddatum-Sanity gegen die EFFEKTIVEN Werte (geänderte + bestehende).
+        terr = _validate_transport_times(
+            fields.get("dtstart", cur.get("dtstart")), fields.get("dtend", cur.get("dtend")))
+        if terr:
+            raise HTTPException(status_code=400, detail=terr)
         # #84: wird das Manifest geändert, gegen das (ggf. neue) Ziel validieren.
         if "cargo" in body:
             dest = fields.get("destination", cur.get("destination")) or ""
@@ -2861,7 +2882,11 @@ async def admin_update_transport_event(request: Request, event_id: int):
             update_transport_event(conn, event_id, **fields)
         # Unbedingt (auch bei leerem Body) — "Event antippen + speichern" ist der bewusste
         # manuelle Neuberechnungs-Hebel für ein bereits eingefrorenes Event (#66 Task 7).
+        # Snapshot-Löschung ALLEIN reicht nicht: `finished` hängt an `summarized_at`, sonst
+        # schreibt der Poller den Snapshot beim nächsten Tick neu → Event bliebe eingefroren.
+        # Deshalb hier zusätzlich auftauen (Fund 20.07.2026, #238).
         delete_progress_snapshot(conn, "kutter", event_id)
+        clear_transport_summarized(conn, event_id)
         conn.commit()
         return {"status": "ok"}
     finally:

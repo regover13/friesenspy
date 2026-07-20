@@ -4999,6 +4999,14 @@ def set_transport_summarized(conn: sqlite3.Connection, event_id: int, ts: str) -
     return _set_transport_latch(conn, event_id, "summarized_at", ts)
 
 
+def clear_transport_summarized(conn: sqlite3.Connection, event_id: int) -> None:
+    """``summarized_at`` zurücksetzen → das Event gilt wieder als NICHT abgeschlossen und wird live
+    gerechnet (Auftauen). Gegenstück zum Einfrieren; nötig, wenn ein Event versehentlich/zu früh
+    eingefroren wurde (z. B. dtend-Tippfehler in der Vergangenheit) und beim Bearbeiten wieder
+    live werden soll — Snapshot-Löschung allein reicht nicht, weil ``finished`` an diesem Latch hängt."""
+    conn.execute("UPDATE transport_events SET summarized_at = NULL WHERE id = ?", (event_id,))
+
+
 def open_transport_flights(conn: sqlite3.Connection, callsign_prefix: str = "FRS") -> list[dict]:
     """Aktuell offene (noch verbundene) FRS-Flüge — Basis für Live-Ankunft ohne Disconnect."""
     rows = conn.execute(
