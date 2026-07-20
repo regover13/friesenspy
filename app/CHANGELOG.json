@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.2.2",
+    "date": "2026-07-20",
+    "highlight": false,
+    "title": "Kutter-Balken durchgängig aus dem echten Stapel",
+    "items": [
+      "🧱 Die Frachtansicht wird jetzt durchgängig aus dem echten Stapel gebaut, nicht mehr aus dem Plan: Jeder Ladeplatz zeigt einfach, was dort gerade wirklich liegt (inklusive abgelegter bzw. weitergereichter Ware), und der Gesamt-Balken ist die Summe aller Einzel-Stapel. Das Ziel ergibt sich dabei automatisch aus geliefert + unterwegs + verloren + noch am Platz — kein separater Sonderblock, keine doppelte Buchführung."
+    ]
+  },
+  {
     "version": "10.2.1",
     "date": "2026-07-20",
     "highlight": false,

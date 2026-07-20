@@ -4985,31 +4985,38 @@ function _kStockLegend(items, totalTarget) {
 function _kutterBarAndTotals(d, showBreakdown = true) {
   let bar = '';
   if (d.cargo && d.cargo.length) {
-    const totalTarget = d.cargo.reduce((s, c) => s + c.target_kg, 0) || 1;
-    // Stabile Farbe je NAME: die Gesamt-Ansicht fasst gleiche Namen zu EINER Zeile zusammen, die
-    // Startplatz-Blöcke nutzen dieselbe Farbe je Ware (damit man sie wiedererkennt).
+    // #2 (Nutzer 20.07.): GESAMT aus den ECHTEN Stapeln + Modell-Summen je NAME ableiten — KEIN
+    // Manifest-Ziel. on_stack = Summe über ALLE Plätze (place_stacks); das Ziel ergibt sich dann
+    // AUTOMATISCH als delivered + reserved + lost + on_stack (Erhaltungssatz). So ist der Gesamt-
+    // Balken die Summe aller Einzel-Stapel und stimmt auch mit relayter Ware überein.
     const nameIdx = {}; let ni = 0;
     d.cargo.forEach(c => { if (!(c.name in nameIdx)) nameIdx[c.name] = ni++; });
-
-    // GESAMT: gleiche Namen zusammenfassen. Dieselbe Ware darf aus mehreren Startplätzen kommen
-    // (Entscheidung 1b) — geliefert/verloren/reserviert führt das Modell nach NAME, sie sind auf
-    // jeder Startplatz-Zeile identisch. Ohne Zusammenfassung stünde die Ware mehrfach mit
-    // wiederholten (irreführend summierbaren) Zahlen. Nur die ZIELE werden addiert.
+    const onStackByName = {};
+    Object.values(d.place_stacks || {}).forEach(s =>
+      Object.entries(s).forEach(([n, kg]) => { onStackByName[n] = (onStackByName[n] || 0) + kg; }));
+    // delivered/reserved/lost/emoji/Kappung je NAME (name-aggregiert — auf jeder d.cargo-Zeile gleich).
     const byName = new Map();
     d.cargo.forEach(c => {
-      const e = byName.get(c.name);
-      if (!e) { byName.set(c.name, { ...c }); }
-      else {
-        e.target_kg += c.target_kg;
-        if (c.per_flight_max_kg != null)   // strengste Kappung je Name (wie im Modell, #4)
-          e.per_flight_max_kg = e.per_flight_max_kg != null
-            ? Math.min(e.per_flight_max_kg, c.per_flight_max_kg) : c.per_flight_max_kg;
+      if (!byName.has(c.name)) byName.set(c.name, {
+        name: c.name, emoji: c.emoji, per_flight_max_kg: c.per_flight_max_kg,
+        delivered_kg: c.delivered_kg || 0, reserved_kg: c.reserved_kg || 0, lost_kg: c.lost_kg || 0,
+      });
+      else if (c.per_flight_max_kg != null) {   // strengste Kappung je Name (wie im Modell, #4)
+        const e = byName.get(c.name);
+        e.per_flight_max_kg = e.per_flight_max_kg != null ? Math.min(e.per_flight_max_kg, c.per_flight_max_kg) : c.per_flight_max_kg;
       }
     });
+    // Ware, die nur noch relayt auf einem Stapel liegt (kein Manifest-Eintrag mehr) — ebenfalls aufnehmen.
+    Object.keys(onStackByName).forEach(n => {
+      if (!byName.has(n)) byName.set(n, { name: n, delivered_kg: 0, reserved_kg: 0, lost_kg: 0, per_flight_max_kg: null });
+      if (!(n in nameIdx)) nameIdx[n] = ni++;
+    });
     const mergedItems = [...byName.values()].map(c => {
-      c.pct = c.target_kg > 0 ? 100 * c.delivered_kg / c.target_kg : 0;   // pct auf die Ziel-Summe
+      c.target_kg = (c.delivered_kg || 0) + (c.reserved_kg || 0) + (c.lost_kg || 0) + (onStackByName[c.name] || 0);
+      c.pct = c.target_kg > 0 ? 100 * c.delivered_kg / c.target_kg : 0;
       return { c, gi: nameIdx[c.name] };
     });
+    const totalTarget = mergedItems.reduce((s, it) => s + it.c.target_kg, 0) || 1;
 
     // Nach Startplatz gruppieren (jede Zeile = ein Platz, Entscheidung 6). `showBreakdown=false`
     // (kompakter Live-Banner) zeigt NUR den Gesamtbalken — die Aufschlüsselung je Abholplatz lebt
@@ -5025,31 +5032,27 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
       bar = _kSegLegend(mergedItems, totalTarget);
     } else {
       bar = '<div class="kutter-grp-h kutter-grp-total">Gesamt</div>' + _kSegLegend(mergedItems, totalTarget);
-      // Je Abholplatz zeigt die EHRLICHEN pro-Platz-Zahlen: was noch am Platz liegt und wie viel
-      // von dort abgeholt wurde. Geliefert/verloren steht NICHT hier — das ist nur als Name-Gesamt
-      // bekannt (die Ware verliert beim Laden ihre Herkunft) und lebt oben in „Gesamt".
-      bar += '<div class="kutter-grp-h kutter-grp-section">Je Abholplatz</div>';
-      // #2 (20.07.2026): Plätze = Manifest-Herkünfte + Plätze, an denen relayte Ware LIEGT
-      // (place_stacks). Relayte/zurückgebrachte Ware wird DIREKT beim jeweiligen Platz mit
-      // aufgelistet (nicht als separater Block) — so sieht man pro Platz, was dort wirklich liegt.
-      const placeSet = new Set([...groups.keys()]);
-      Object.keys(d.place_stacks || {}).forEach(p => placeSet.add(p));
-      const keys = [...placeSet].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
-      keys.forEach(k => {
-        const grp = groups.get(k) || [];
-        const gt = grp.reduce((s, it) => s + it.c.target_kg, 0) || 1;
-        const label = k ? '🛫 ab ' + _kesc(k.split(',').join(', ')) : 'Alle Startplätze';
-        bar += '<div class="kutter-grp-h">' + label + '</div>';
-        if (grp.length) bar += _kStockLegend(grp, gt);
-        // Ware, die hier LIEGT, aber dort keine Manifest-Zeile hat (relayt/abgelegt) — direkt am Platz.
-        const planned = new Set(grp.map(it => it.c.name));
-        const relayed = Object.entries((d.place_stacks || {})[k] || {})
-          .filter(([name, kg]) => kg > 0.05 && !planned.has(name));
-        if (relayed.length) {
-          bar += '<div class="kutter-legend kutter-legend--sub">'
-            + relayed.map(([name, kg]) => '<span title="Hier abgelegt/zurückgebracht — liegt zum Weitertragen bereit">🔄 ' + _kfmtT(kg) + ' ' + _kesc(name) + ' <span style="opacity:.65">· abgelegt</span></span>').join('')
-            + '</div>';
-        }
+      // Je Abholplatz = EINFACH der echte Stapelinhalt (`place_stacks`): was liegt an jedem Platz
+      // gerade WIRKLICH. EINE Quelle, keine Manifest-Gruppierung, keine Sonderfälle — relayte/
+      // zurückgebrachte Ware erscheint automatisch, weil sie im Stapel steht. Emoji/Farbe je Name
+      // aus dem Manifest (nameIdx oben); „geliefert/verloren" steht als Name-Gesamt oben in „Gesamt".
+      bar += '<div class="kutter-grp-h kutter-grp-section">Je Abholplatz — was liegt gerade dort</div>';
+      const emojiByName = {};
+      d.cargo.forEach(c => { if (c.emoji && !(c.name in emojiByName)) emojiByName[c.name] = c.emoji; });
+      const stacks = d.place_stacks || {};
+      const places = new Set(d.cargo.map(c => c.departure).filter(Boolean));  // Manifest-Plätze (auch leere)
+      Object.keys(stacks).forEach(p => places.add(p));                        // + jeder Platz mit Bestand
+      [...places].sort((a, b) => a.localeCompare(b)).forEach(k => {
+        const contents = Object.entries(stacks[k] || {}).filter(([, kg]) => kg > 0.05)
+          .sort((a, b) => a[0].localeCompare(b[0]));
+        bar += '<div class="kutter-grp-h">🛫 ' + _kesc(k) + '</div>';
+        if (!contents.length) { bar += '<div class="kutter-legend kutter-legend--sub"><span style="opacity:.6">leer</span></div>'; return; }
+        const totalHere = contents.reduce((s, [, kg]) => s + kg, 0) || 1;
+        const segs = contents.map(([name, kg]) => '<div class="kutter-seg" style="width:'
+          + (100 * kg / totalHere).toFixed(2) + '%"><i style="width:100%;background:' + _kColor(nameIdx[name] ?? 0) + '"></i></div>').join('');
+        const legend = contents.map(([name, kg]) => '<span>'
+          + (emojiByName[name] ? _kesc(emojiByName[name]) + ' ' : '') + _kesc(name) + ' ' + _kfmtT(kg) + '</span>').join('');
+        bar += '<div class="kutter-bar kutter-bar--sub">' + segs + '</div><div class="kutter-legend kutter-legend--sub">' + legend + '</div>';
       });
     }
   }
