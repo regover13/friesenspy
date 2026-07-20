@@ -1073,7 +1073,7 @@ Event samt Manifest löschen.
 
 ### POST /api/admin/transport/events/{id}/push
 
-Push-Benachrichtigungen (Start, Ziel erreicht, Feierabend-Zusammenfassung, ~1h-Erinnerung) für dieses Event an- oder abschalten. Spiegelt `POST /api/admin/bummel/races/{id}/push`.
+Push-Benachrichtigungen (Start, Ziel erreicht, Feierabend-Zusammenfassung, ~1h-Erinnerung) für dieses Event an- oder abschalten. Spiegelt `POST /api/admin/bummel/races/{id}/push`. (Der „Ziel erreicht"-Push feuert seit v10.2.3, sobald `geliefert + verloren ≥ Ziel` — auch wenn der Rest unterwegs verloren ging; er nennt dann die verlorene Menge.)
 
 **Body (JSON)**
 

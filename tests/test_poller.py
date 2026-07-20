@@ -770,6 +770,78 @@ class TestTransportSummaryEmptyEventSuppressed:
 
         mock_summary.assert_not_called()
 
+    def _seed_partial_delivery_with_loss(self, db_file):
+        """Live-Event (dtend in der ZUKUNFT → kein Feierabend-Push): 200 kg Ziel, davon 100 kg
+        geliefert und 100 kg unterwegs GEKLAUT (Logout an fremdem Platz). geliefert (100) < Ziel
+        (200), aber geliefert + verloren (200) == Ziel → jedes kg ist aufgelöst (#237-Fund 20.07.)."""
+        from datetime import datetime, timedelta, timezone
+        from app.database import (create_transport_event, get_connection,
+                                  set_transport_started)
+
+        now = datetime.now(timezone.utc)
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        dtstart = (now - timedelta(hours=3)).strftime(fmt)
+        dtend = (now + timedelta(hours=1)).strftime(fmt)          # LÄUFT noch → kein Feierabend
+        logon = (now - timedelta(hours=2)).strftime(fmt)
+        logoff = (now - timedelta(hours=1)).strftime(fmt)
+        conn = get_connection(db_file)
+        try:
+            eid = create_transport_event(
+                conn, name="Helgoland-Nachschub", route="EDWG,EDWZ,EDXH",
+                dtstart=dtstart, dtend=dtend, destination="EDXH",
+                cargo=[{"name": "Fisch", "target_kg": 100, "departure": "EDWG"},
+                       {"name": "Tee", "target_kg": 100, "departure": "EDWZ"}],
+            )
+            set_transport_started(conn, eid, dtstart)             # Start-Latch → kein Start-Push
+            for cid, cs, von, nach in ((7, "FRS07", "EDWG", "EDXH"),   # liefert Fisch 100
+                                       (8, "FRS08", "EDWZ", "EDDW")):   # klaut Tee 100 (fremd)
+                conn.execute("INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, 'P', ?)",
+                             (cid, dtstart))
+                conn.execute(
+                    "INSERT INTO flights (cid, callsign, departure, arrival, logon_time, "
+                    "logoff_time, duration_min) VALUES (?, ?, ?, ?, ?, ?, 60)",
+                    (cid, cs, von, nach, logon, logoff),
+                )
+                _seed_kutter_track(conn, cid, cs, von, nach, logon, logoff)
+            conn.commit()
+        finally:
+            conn.close()
+        return eid
+
+    @pytest.mark.asyncio
+    async def test_goal_reached_push_when_rest_is_lost(self, tmp_path):
+        """#237 (Live-Fund 20.07.): geliefert < Ziel, aber geliefert + dauerhaft verloren == Ziel →
+        der Kutter ist aufgelöst (nichts liegt mehr auf einem Ladeplatz). Der Abschluss-Push MUSS
+        feuern (vorher tat er das nur bei geliefert >= Ziel) — mit Verlust-Wortlaut."""
+        from app.database import init_db, get_connection, upsert_push_subscription
+
+        db_file = str(tmp_path / "test.db")
+        init_db(db_file)
+        eid = self._seed_partial_delivery_with_loss(db_file)
+        conn = get_connection(db_file)
+        upsert_push_subscription(conn, "e1", "p1", "a1", notify_events=True)
+        conn.commit(); conn.close()
+
+        poller = self._poller(db_file)
+        sent = []
+        with patch("app.poller.send_web_push",
+                   new=AsyncMock(side_effect=lambda *a, **k: sent.append(a))):
+            await poller._check_transport_events()
+            await asyncio.sleep(0)
+
+        assert len(sent) == 1
+        body = sent[0][4]["body"]
+        assert "verloren" in body and "100 kg angekommen" in body
+
+        conn = get_connection(db_file)
+        try:
+            row = conn.execute(
+                "SELECT goal_reached_at FROM transport_events WHERE id = ?", (eid,)
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row["goal_reached_at"] is not None   # Latch feuert, obwohl geliefert < Ziel
+
     @pytest.mark.asyncio
     async def test_event_with_flight_still_pushes_feierabend(self, tmp_path):
         """Regression: ein Event mit mindestens einem qualifizierenden Flug (flight_count > 0)

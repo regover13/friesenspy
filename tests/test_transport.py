@@ -3264,6 +3264,34 @@ class TestStapelProgress:
         assert loss is not None and loss["loss_kind"] == "returned"
         assert p["lost_total_kg"] == 0.0        # zurückgebracht ist kein Verlust
 
+    def test_leerer_anflug_bekommt_keine_phantom_rueckgabe(self):
+        """#238 (Live-Fund 20.07.): namensgleiche Ware an ZWEI Ladeplätzen (Herkunft uneindeutig →
+        `_loss_origin` = None). Ein Pilot fliegt einen Ladeplatz LEER an (der andere hat die Ware
+        schon geräumt), lädt erst DORT nach der Landung und gibt beim Touchdown-Disconnect am selben
+        Platz zurück. Diese Am-Platz-Rückgabe darf NICHT an das leere Anflug-Leg gehängt werden —
+        das Leg hob mit 0 kg ab (`onboard_kg == 0`), hat also nie etwas getragen."""
+        conn = _make_conn()
+        upsert_payload(conn, "C208", payload_kg=1000)
+        conn.commit()
+        ev = _event(conn, route="EDWG,EDWY,EDXH", destination="EDXH", cargo=[
+            {"name": "Passagiere", "target_kg": 300, "departure": "EDWG"},
+            {"name": "Passagiere", "target_kg": 300, "departure": "EDWY"},
+        ])
+        # Pilot 1 räumt EDWG: lädt EDWGs 300, liefert am Ziel EDXH → EDWG-Stapel danach leer.
+        self._leg(conn, 1, "EDWG", "EDXH", START)
+        _add_flight(conn, 1, "EDWG", "EDXH", "C208", START, duration_min=20)
+        # Pilot 2 fliegt EDWG→EDWY LEER an (EDWG schon geräumt), lädt erst in EDWY, Logout dort.
+        self._leg(conn, 2, "EDWG", "EDWY", _shift(START, 30))
+        _add_flight(conn, 2, "EDWG", "EDWY", "C208", _shift(START, 30), duration_min=20)
+
+        p = compute_transport_progress(conn, ev, END)
+
+        leerleg = next(f for f in p["flights"]
+                       if f["cid"] == 2 and f["dep"] == "EDWG" and f["arr"] == "EDWY")
+        assert leerleg.get("loss_kind") is None       # leer abgehoben → keine „zurückgebracht"
+        assert leerleg["cargo_lines"] == []           # keine Phantom-Fracht
+        assert not leerleg.get("carried_through")
+
     def test_die_bordladung_ist_die_reservierung(self):
         """Die Reservierung ist kein eigener Mechanismus mehr: wer lädt, nimmt vom Stapel."""
         from app.geo import icao_to_coords

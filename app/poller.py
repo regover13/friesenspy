@@ -1293,10 +1293,22 @@ class VatsimPoller:
                                            "body": "Der FriesenKutter läuft — Fracht wird geladen! 📦",
                                            "url": "/"})
                     target = progress["target_kg"]
-                    if target and not ev.get("goal_reached_at") and progress["total_kg"] >= target:
+                    delivered = progress["total_kg"]
+                    lost = progress.get("lost_total_kg") or 0.0
+                    # Aufgelöst = jedes kg ist geliefert ODER unwiederbringlich verloren
+                    # (geklaut/versenkt). Dann liegt nichts mehr auf einem Ladeplatz und nichts ist
+                    # mehr unterwegs — das Ziel ist erreicht, soweit es je erreichbar war. Der reine
+                    # `geliefert >= Ziel`-Latch verpasste „der Rest ging unterwegs verloren"
+                    # (#237-Live-Fund 20.07.: 3350 geliefert + 310 verloren = 3660 Ziel → der Kutter
+                    # war fertig, feuerte aber nie „komplett", weil geliefert < Ziel blieb).
+                    if target and not ev.get("goal_reached_at") and delivered + lost >= target:
                         if set_transport_goal_reached(conn, ev["id"], now) and push_on:
-                            pushes.append({"title": name,
-                                           "body": "Fracht komplett — Ziel erreicht! 🎯", "url": "/"})
+                            if delivered >= target:
+                                body = "Fracht komplett — Ziel erreicht! 🎯"
+                            else:
+                                body = (f"Kutter abgeschlossen — {round(delivered)} kg angekommen, "
+                                        f"{round(lost)} kg unterwegs verloren 💀")
+                            pushes.append({"title": name, "body": body, "url": "/"})
                     # Feierabend erst, wenn kein Nachzügler mehr unterwegs ist (Flug vor dtend
                     # gestartet, noch offen, ohne Ankunfts-Latch) — sonst entstünde die
                     # Zusammenfassung mit einem noch nicht finalen Ergebnis (Task #13).

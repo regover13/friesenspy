@@ -5632,13 +5632,18 @@ def compute_transport_progress(
             target = next((q for q in reversed(network)
                            if q["flight_key"] in own_keys and not q["loaded"]
                            and not q.get("loss_kind")), None)
-            # Trug DIESER Leg die Ware wirklich? Eine RÜCKGABE nur, wenn der Leg an IHREM Ladeplatz
-            # startete (leg.dep == origin) — dann ist sie geflogen (auch der Rundflug EDWG→…→EDWG!)
-            # und bleibt am Leg. Ein LEERER Anflug (Ware erst am ZIEL des Legs geladen, leg.dep !=
-            # origin) hat sie NICHT getragen: Am-Platz-Rückgabe → eigene „origin→drop"-Zeile, der Leg
-            # bleibt „leer". Klau/Versenken sind IMMER geflogen und bleiben an ihrem Leg. Herkunft
-            # unklar (origin None) → konservativ anhängen (bisheriges Verhalten).
+            # Trug DIESER Leg die Ware wirklich? Zwei Bedingungen, beide nötig:
+            # (1) Das Leg hob mit Ladung an Bord ab (`onboard_kg > 0`, der `carried_at`-Snapshot beim
+            #     Takeoff). Ein LEER abgehobenes Leg hat nie etwas getragen — die Ware wurde erst NACH
+            #     der Landung geladen und am selben Platz zurückgegeben (Touchdown-Disconnect): reine
+            #     Am-Platz-Rückgabe, gehört an KEIN Leg. Das ist der harte physische Diskriminator und
+            #     greift auch, wenn die Herkunft mehrdeutig ist (namensgleiche Ware an zwei Plätzen →
+            #     `origin` None, #238-Live-Fund 20.07.: das leere Anflug-Leg bekam sonst die Rückgabe).
+            # (2) Startete der Leg an IHREM Ladeplatz (leg.dep == origin) — dann ist sie geflogen (auch
+            #     der Rundflug EDWG→…→EDWG!). Bei mehrdeutiger Herkunft (origin None) trägt (1) allein.
+            # Klau/Versenken sind IMMER geflogen und bleiben an ihrem Leg.
             carried_return = (kind == "returned" and target is not None
+                              and target.get("onboard_kg", 0.0) > 0.01
                               and (origin is None or target.get("dep") == origin))
             flew = kind in ("stolen", "sunk") or carried_return
             attach = target if flew else None

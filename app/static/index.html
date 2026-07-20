@@ -5058,9 +5058,12 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
   }
   const goal = d.target_kg ? ' / ' + _kfmtT(d.target_kg) : '';
   const pct = d.progress_pct != null ? ' · ' + Math.min(100, Math.round(d.progress_pct)) + '%' : '';
-  const open = d.target_kg ? Math.max(0, d.target_kg - d.total_kg) : null;
+  // „offen" = was WIRKLICH noch kommen kann: Ziel − geliefert − verloren. Unwiederbringlich
+  // Verlorenes (geklaut/versenkt) ist NICHT offen, sondern erledigt (#237-Fund 20.07.: sonst stand
+  // „offen: 310" neben „💀 310 verloren" — dieselben kg doppelt). Ist alles aufgelöst → 0 → kein Text.
+  const open = d.target_kg ? Math.max(0, d.target_kg - d.total_kg - (d.lost_total_kg || 0)) : null;
   const inAir = d.reserved_total_kg || 0;
-  const openTxt = open != null
+  const openTxt = open
     ? ' — offen: ' + _kfmtT(open) + (inAir > 0 ? ', davon ' + _kfmtT(inAir) + ' reserviert' : '') : '';
   const lostTxt = (d.lost_total_kg || 0) > 0
     ? ' <span class="kutter-loss">💀 ' + _kfmtT(d.lost_total_kg) + ' verloren</span>' : '';

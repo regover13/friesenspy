@@ -1,5 +1,16 @@
 [
   {
+    "version": "10.2.3",
+    "date": "2026-07-20",
+    "highlight": false,
+    "title": "Kutter: Leerflüge sauber, Abschluss-Push auch bei Verlust",
+    "items": [
+      "🧭 Bugfix (Anzeige): Ein leer abgeflogenes Leg bekommt keine Phantom-Rückgabe mehr. Wer nach der Landung an einem Platz lädt und bei einem kurzen Verbindungsabriss dort gleich wieder ablädt (Touchdown-Disconnect), buchte diese Rückgabe fälschlich auf den vorherigen, leeren Anflug — sichtbar, wenn dieselbe Ware an zwei Ladeplätzen liegt (Herkunft mehrdeutig). Jetzt gilt: eine Rückgabe gehört nur an ein Leg, das die Ware wirklich an Bord hatte.",
+      "🎯 Bugfix (Push): Der „Fracht komplett“-Push feuert jetzt auch, wenn der Rest unterwegs unwiederbringlich verloren ging (geklaut/versenkt). Vorher hing der Latch an „geliefert ≥ Ziel“ — sank ein Teil, wurde das Ziel nie erreicht und der Kutter „schloss“ nie ab, obwohl nichts mehr kommen konnte. Bei Verlust nennt der Push die angekommene und die verlorene Menge.",
+      "🧮 Bugfix (Anzeige): „offen“ zählt Verlorenes nicht mehr mit. Ist alles aufgelöst (geliefert + verloren = Ziel), steht kein „offen“ mehr neben dem „💀 verloren“ — dieselben Kilo erschienen sonst doppelt."
+    ]
+  },
+  {
     "version": "10.2.2",
     "date": "2026-07-20",
     "highlight": false,
