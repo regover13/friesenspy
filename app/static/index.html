@@ -3357,7 +3357,7 @@ function _kutterBannerBlock(d) {
           + `<td>${load}</td><td class="mono">${strecke}</td><td>${a.status}</td>${map}</tr>`;
       }).join('');
       html += '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Callsign</th><th>Muster</th>'
-        + '<th>Ladung</th><th>Strecke</th><th>Status</th><th>Karte</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+        + '<th>Ladung</th><th title="Von der letzten Landung zum Ziel der Ladung — NICHT der Ladeplatz">Strecke</th><th>Status</th><th>Karte</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
     } else {
       html += '<div class="bb-sub">Gerade niemand auf der Strecke unterwegs.</div>';
     }
@@ -4905,7 +4905,7 @@ function _kCargoLabel(f) {
 function _kLossLabel(kind) {
   return kind === 'sunk' ? '🌊 Kutter versunken'
        : kind === 'stolen' ? '🏴‍☠️ geklaut'
-       : kind === 'returned' ? '↩️ zurückgebracht' : '';
+       : kind === 'returned' ? '↩️ am Ladeplatz abgeladen' : '';
 }
 
 // Balken + Mengen-Zeile — gemeinsam für die Events-Ansicht und den Live-Tab-Block.
@@ -4934,7 +4934,11 @@ function _kSegLegend(items, totalTarget, sub) {
   const legend = items.map(({ c, gi }) => {
     const mark = c.emoji ? _kesc(c.emoji) + ' '
       : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
-    const res = (c.reserved_kg || 0) > 0 ? ' (+' + _kfmtT(c.reserved_kg) + ' ✈️)' : '';
+    // #3 Rundung: „reserviert" als Differenz zum gerundeten (delivered+reserved), damit sich die
+    // angezeigten Teile SICHTBAR aufsummieren — sonst runden zwei „,5"-Werte beide hoch (137+24=161
+    // statt 160). Erhaltungssatz stimmt ohnehin, nur die Optik war überzogen.
+    const resKg = Math.round((c.delivered_kg || 0) + (c.reserved_kg || 0)) - Math.round(c.delivered_kg || 0);
+    const res = resKg > 0 ? ' (+' + _kfmtT(resKg) + ' ✈️)' : '';
     // Verlust je Frachtart sichtbar machen (vorher stand nur die Gesamt-Summe unten) — sonst wirkt
     // „0 / 200" wie voll offen, obwohl ein Teil unwiederbringlich weg ist (#8).
     // Verlust bleibt in Gesamt UND Teilmengen sichtbar; in den Teilmengen (sub) nur kleiner, damit die
@@ -5032,6 +5036,23 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
         const label = k ? '🛫 ab ' + _kesc(k.split(',').join(', ')) : 'Alle Startplätze';
         bar += '<div class="kutter-grp-h">' + label + '</div>' + _kStockLegend(grp, gt);
       });
+      // #2 (20.07.2026): Ware, die an einem Platz LIEGT, aber dort keine Manifest-Zeile hat
+      // (relayt/zurückgebracht) — der echte Stapel aus `place_stacks`. Sonst unsichtbar, weil die
+      // Aufschlüsselung nach Manifest-Herkunft gruppiert. Macht die Staffel-Übergabe erst sichtbar.
+      const relayed = [];
+      Object.entries(d.place_stacks || {}).forEach(([place, contents]) => {
+        const planned = new Set((groups.get(place) || []).map(it => it.c.name));
+        Object.entries(contents).forEach(([name, kg]) => {
+          if (kg > 0.05 && !planned.has(name)) relayed.push({ place, name, kg });
+        });
+      });
+      if (relayed.length) {
+        relayed.sort((a, b) => a.place.localeCompare(b.place) || a.name.localeCompare(b.name));
+        bar += '<div class="kutter-grp-h kutter-grp-section" title="Ware, die hier abgelegt/zurückgebracht wurde und zum Weitertragen bereitliegt">🔄 Hier abgelegt (zum Weitertragen)</div>';
+        bar += '<div class="kutter-legend kutter-legend--sub">'
+          + relayed.map(r => '<span>🛬 ' + _kesc(r.place) + ': ' + _kfmtT(r.kg) + ' ' + _kesc(r.name) + '</span>').join('')
+          + '</div>';
+      }
     }
   }
   const goal = d.target_kg ? ' / ' + _kfmtT(d.target_kg) : '';
@@ -5101,7 +5122,7 @@ function _kutterDetailBody(d) {
       + '</td><td>' + _kesc(f.dep) + '→' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';
   }).join('');
   const feed = '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Zeit</th><th>Callsign</th><th>Muster</th>'
-    + '<th>Strecke</th><th>Fracht</th><th>Ladung</th></tr></thead><tbody>'
+    + '<th title="Von der letzten Landung zum Ziel der Ladung — NICHT der Ladeplatz">Strecke</th><th>Fracht</th><th>Ladung</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="6" style="color:var(--text-label)">Noch keine Flüge.</td></tr>')
     + '</tbody></table></div>';
   return summary + dest + _kutterBarAndTotals(d) + _kutterBadgeSection(d) + feed;

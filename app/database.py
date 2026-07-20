@@ -217,7 +217,8 @@ CREATE TABLE IF NOT EXISTS transport_cargo (
     target_kg REAL NOT NULL,
     emoji     TEXT,                      -- Snapshot aus dem Katalog (für den Feed)
     per_flight_max_kg REAL,              -- Obergrenze pro Flug (Co-Load); NULL = keine Kappung
-    departure TEXT                       -- #15 Sub-Projekt B: gebundener Startplatz-ICAO; NULL = geteilt
+    departure TEXT,                      -- #15 Sub-Projekt B: gebundener Startplatz-ICAO; NULL = geteilt
+    added_at  TEXT                       -- ISO-UTC: wann die Zeile ins Manifest kam; NULL = "schon immer da"
 );
 CREATE INDEX IF NOT EXISTS idx_transport_cargo_event ON transport_cargo(event_id);
 
@@ -460,6 +461,10 @@ _TRANSPORT_MIGRATIONS = [
     # departure (#15 Sub-Projekt B): Startplatz-ICAO, an den diese Frachtart gebunden ist.
     # NULL = geteilt (jeder Startplatz lädt sie — Legacy-Verhalten).
     "ALTER TABLE transport_cargo ADD COLUMN departure TEXT",
+    # added_at (20.07.2026): wann diese Zeile ins Manifest kam. Ware ist erst AB DANN ladbar — sonst
+    # lud eine mid-event dazugekommene Zeile rückwirkend auf frühere Bodenkontakte. NULL = Alt-Daten
+    # ("schon immer da"), derive_stacks behandelt das als von Anfang an vorhanden.
+    "ALTER TABLE transport_cargo ADD COLUMN added_at TEXT",
 ]
 
 _LIVE_POSITIONS_MIGRATIONS = [
@@ -4389,7 +4394,8 @@ def create_transport_event(
     )
     event_id = int(cur.lastrowid)  # type: ignore[arg-type]
     if cargo:
-        set_transport_cargo(conn, event_id, cargo, destination=dest)
+        # Erstanlage: das ganze Manifest gilt als „vom Event-Start an vorhanden" (added_at = dtstart).
+        set_transport_cargo(conn, event_id, cargo, destination=dest, default_added_at=dtstart)
     return event_id
 
 
@@ -4418,7 +4424,10 @@ def update_transport_event(conn: sqlite3.Connection, event_id: int, **fields: ob
     ev_now = get_transport_event(conn, event_id)
     dest = ev_now.get("destination") if ev_now else None
     if cargo is not None:
-        set_transport_cargo(conn, event_id, cargo, destination=dest)  # type: ignore[arg-type]
+        # Bearbeiten mitten im Event: NEUE Frachtzeilen kamen JETZT dazu (bestehende behalten ihr
+        # added_at) → sie laden nicht rückwirkend auf schon abgeflogene Piloten.
+        set_transport_cargo(conn, event_id, cargo, destination=dest,  # type: ignore[arg-type]
+                            default_added_at=_now_utc())
     # Route immer aus dem aktuellen Manifest + Ziel neu ableiten (#84); existing_route als
     # Sicherheitsnetz, falls noch eine geteilte (NULL) Zeile existiert (Kalender-Fracht:).
     if ev_now:
@@ -4438,8 +4447,8 @@ def delete_transport_event(conn: sqlite3.Connection, event_id: int) -> None:
 def get_transport_cargo(conn: sqlite3.Connection, event_id: int) -> list[dict]:
     """Geordnetes Fracht-Manifest eines Events (inkl. Emoji + Co-Load-Kappung)."""
     rows = conn.execute(
-        "SELECT id, position, name, target_kg, emoji, per_flight_max_kg, departure FROM transport_cargo "
-        "WHERE event_id = ? ORDER BY position, id",
+        "SELECT id, position, name, target_kg, emoji, per_flight_max_kg, departure, added_at "
+        "FROM transport_cargo WHERE event_id = ? ORDER BY position, id",
         (event_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -4509,12 +4518,21 @@ def set_transport_cargo(
     cargo: list[dict],
     *,
     destination: str | None = None,
+    default_added_at: str | None = None,
 ) -> None:
     """Fracht-Manifest eines Events komplett ersetzen. Zeilen ohne Name/Menge werden ignoriert.
     Je Zeile optional ``emoji``, ``per_flight_max_kg`` (Co-Load-Kappung) und PFLICHT ``departure``:
     GENAU EIN Startplatz ≠ Ziel (Entscheidung 6 — eine Zeile = ein Stapel = ein Platz). ``departure``
     wird via :func:`_normalize_icao_list` normalisiert (``destination`` entfernt); fehlt der Platz
     oder sind es mehrere, wird ``ValueError`` geworfen (der geteilte Topf/CSV-Liste entfällt)."""
+    # added_at (20.07.2026): jede Zeile trägt, seit wann sie im Manifest ist — Ware ist erst AB DANN
+    # ladbar (derive_stacks). BESTEHENDE Zeilen (Match über name+departure) behalten ihr added_at über
+    # das Ersetzen hinweg; NEUE Zeilen bekommen ``default_added_at`` (Erstanlage: Event-Start;
+    # Mid-Event-Edit: jetzt). So schlägt ein Nachtrag NICHT rückwirkend auf schon abgeflogene Piloten.
+    prev_added = {((r["name"] or "").strip().lower(), (r["departure"] or "")): r["added_at"]
+                  for r in conn.execute(
+                      "SELECT name, departure, added_at FROM transport_cargo WHERE event_id = ?",
+                      (event_id,)).fetchall()}
     conn.execute("DELETE FROM transport_cargo WHERE event_id = ?", (event_id,))
     pos = 0
     for line in cargo:
@@ -4534,12 +4552,13 @@ def set_transport_cargo(
                 f"Frachtart „{name}“: Jede Frachtart liegt an genau einem Platz. "
                 "Für dieselbe Ware an mehreren Plätzen leg mehrere Zeilen an."
             )
+        added = prev_added.get((name.lower(), dep), default_added_at)
         conn.execute(
             "INSERT INTO transport_cargo "
-            "(event_id, position, name, target_kg, emoji, per_flight_max_kg, departure) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(event_id, position, name, target_kg, emoji, per_flight_max_kg, departure, added_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (event_id, pos, name, target, (line.get("emoji") or None),
-             _opt_float(line.get("per_flight_max_kg")), dep),
+             _opt_float(line.get("per_flight_max_kg")), dep, added),
         )
         pos += 1
 
@@ -5196,7 +5215,8 @@ def _stack_inputs(conn: sqlite3.Connection, event: dict, now: str, *,
         {"name": c["name"], "target_kg": float(c["target_kg"] or 0.0),
          "departure": (c.get("departure") or "").upper(),
          "per_flight_max_kg": c.get("per_flight_max_kg"),
-         "emoji": c.get("emoji")}
+         "emoji": c.get("emoji"),
+         "added_at": c.get("added_at")}   # ab wann ladbar (derive_stacks) — sonst rückwirkendes Nachladen
         for c in get_transport_cargo(conn, int(event["id"]))
     ]
 
@@ -5799,6 +5819,15 @@ def compute_transport_progress(
         "target_kg": target_kg,
         "progress_pct": round(100.0 * total_kg / target_kg, 1) if target_kg else None,
         "reserved_total_kg": reserved_total,
+        # #2 (20.07.2026): der ECHTE Stapel je Ladeplatz (name → kg), ohne Ziel + virtuelle Plätze
+        # (\x00…). Zeigt auch relayte/zurückgebrachte Ware an Plätzen OHNE eigene Manifest-Zeile —
+        # sonst ist sie in der „Je Abholplatz"-Sicht (gruppiert nach Manifest-Herkunft) unsichtbar.
+        "place_stacks": {
+            place: {n: round(kg, 1) for n, kg in s.items() if kg > 0.01}
+            for place, s in stacks.items()
+            if place != dest and not str(place).startswith("\x00")
+            and any(kg > 0.01 for kg in s.values())
+        },
         "unmapped_types": sorted(unmapped),
         "summary_quip": event.get("summary_quip"),
         "losses": [q for q in network if q.get("loss_kind")],
@@ -5818,7 +5847,7 @@ def _empty_transport_progress(event: dict, route_set: set[str], manifest: list[d
                    "departure": c.get("departure")} for c in manifest],
         "total_kg": 0.0, "flight_count": 0, "loaded_count": 0,
         "target_kg": round(sum(c["target_kg"] for c in manifest), 1) if manifest else None,
-        "progress_pct": None, "reserved_total_kg": 0.0, "unmapped_types": [],
+        "progress_pct": None, "reserved_total_kg": 0.0, "unmapped_types": [], "place_stacks": {},
         "summary_quip": event.get("summary_quip"), "losses": [], "lost_total_kg": 0.0,
         "participants": [],
     }

@@ -29,6 +29,54 @@ def _sum_onboard(onboard):
     return sum(sum(inner.values()) for inner in onboard.values())
 
 
+class TestAddedAtTemporalLoading:
+    """20.07.2026: Ware, die MID-EVENT ins Manifest kam, wurde rückwirkend auf einen FRÜHEREN
+    Bodenkontakt geladen (der Pilot war da längst weg). Root Cause: derive_stacks baute den
+    Anfangs-Stapel zeitlos aus dem JETZIGEN Manifest. Fix: jede Zeile hat ``added_at``; Ware liegt
+    erst AB DANN auf dem Stapel — wer noch steht, lädt nach (gewollt); wer weg ist, kriegt nichts."""
+
+    def test_later_cargo_not_loaded_on_already_departed_pilot(self):
+        manifest = [
+            {"name": "Fisch", "target_kg": 100.0, "departure": "EDWA", "per_flight_max_kg": None,
+             "added_at": "2026-07-20T17:00:00Z"},
+            {"name": "Krabbe", "target_kg": 80.0, "departure": "EDWA", "per_flight_max_kg": None,
+             "added_at": "2026-07-20T17:10:00Z"},   # erst NACH Abflug 17:05 dazu
+        ]
+        events = [
+            _ev("login", 1, "2026-07-20T17:00:00Z", "EDWA", 500.0),
+            _ev("takeoff", 1, "2026-07-20T17:05:00Z"),
+            _ev("landing", 1, "2026-07-20T17:20:00Z", "EDWB", 500.0),
+        ]
+        r = derive_stacks(manifest=manifest, events=events, destination="EDWB", loading_airports={"EDWA"})
+        carried = r["carried"][(1, "2026-07-20T17:05:00Z")]
+        assert carried.get("Fisch") == 100.0             # 17:00 da → geladen
+        assert carried.get("Krabbe", 0.0) == 0.0         # 17:10 dazu, Pilot 17:05 weg → NICHT geladen
+        assert r["stacks"]["EDWA"]["Krabbe"] == 80.0      # bleibt liegen
+
+    def test_later_cargo_loaded_if_still_standing(self):
+        # „Der Wartende lädt nach": kommt Ware, WÄHREND jemand am Platz steht, nimmt er sie mit.
+        manifest = [
+            {"name": "Krabbe", "target_kg": 80.0, "departure": "EDWA", "per_flight_max_kg": None,
+             "added_at": "2026-07-20T17:10:00Z"},
+        ]
+        events = [
+            _ev("login", 1, "2026-07-20T17:00:00Z", "EDWA", 500.0),
+            _ev("takeoff", 1, "2026-07-20T17:20:00Z"),   # hebt erst NACH 17:10 ab
+        ]
+        r = derive_stacks(manifest=manifest, events=events, destination="EDWB", loading_airports={"EDWA"})
+        assert r["carried"][(1, "2026-07-20T17:20:00Z")].get("Krabbe") == 80.0
+
+    def test_missing_added_at_present_from_start(self):
+        # Rückwärtskompatibel: Zeile ohne added_at (Alt-Daten) liegt von Anfang an da.
+        manifest = [{"name": "Fisch", "target_kg": 100.0, "departure": "EDWA", "per_flight_max_kg": None}]
+        events = [
+            _ev("login", 1, "2026-07-20T17:00:00Z", "EDWA", 500.0),
+            _ev("takeoff", 1, "2026-07-20T17:05:00Z"),
+        ]
+        r = derive_stacks(manifest=manifest, events=events, destination="EDWB", loading_airports={"EDWA"})
+        assert r["carried"][(1, "2026-07-20T17:05:00Z")].get("Fisch") == 100.0
+
+
 def _assert_erhaltung(r, total=1300.0):
     """Der Erhaltungssatz: Summe Stapel + Summe Ladung == Summe Manifest. Immer."""
     assert _sum_stacks(r["stacks"]) + _sum_onboard(r["onboard"]) == pytest.approx(total)

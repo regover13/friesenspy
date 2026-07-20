@@ -60,11 +60,19 @@ def derive_stacks(
     stacks: dict[str, dict[str, float]] = {a: _empty() for a in loading_airports}
     for virtual in (destination, STOLEN, SUNK):
         stacks[virtual] = _empty()
+    # Ware liegt NICHT mehr zeitlos ab t=0 auf dem Stapel — das lud mid-event dazugekommene Fracht
+    # rückwirkend auf FRÜHERE Bodenkontakte (Pilot war da längst weg; Fund 20.07.2026). Stattdessen
+    # kommt jede Zeile per „stock"-Ereignis zu ihrem ``added_at`` auf den Stapel; wer dann noch steht,
+    # lädt nach (gewollt), wer weg ist, kriegt nichts. ``added_at`` leer/None = Alt-Daten → „schon
+    # immer da" (der leere String sortiert vor jedem echten ISO-Zeitstempel).
+    stock_events: list[dict] = []
     for c in manifest:
         dep = (c.get("departure") or "").upper()
-        if dep:
+        kg = float(c.get("target_kg") or 0.0)
+        if dep and kg > 0:
             stacks.setdefault(dep, _empty())
-            stacks[dep][c["name"]] += float(c.get("target_kg") or 0.0)
+            stock_events.append({"ts": c.get("added_at") or "", "kind": "stock",
+                                 "airport": dep, "name": c["name"], "kg": kg})
 
     onboard: dict[int, dict[str, float]] = {}
     position: dict[int, str | None] = {}
@@ -85,10 +93,21 @@ def derive_stacks(
         "name_cap": name_cap,
     }
 
-    for e in events:
-        cid = int(e["cid"])
+    # Echte Ereignisse + Ware-Ankünfte zu EINER Zeitachse mischen. Bei gleichem Zeitstempel kommt
+    # die Ware (``stock``) ZUERST auf den Stapel, dann handelt der Pilot — sonst lädt ein zeitgleich
+    # Ankommender die eben erst eingetroffene Ware nicht. Stabile Sortierung: die Reihenfolge der
+    # echten Ereignisse (login/takeoff/landing) untereinander bleibt erhalten.
+    timeline = sorted(events + stock_events,
+                      key=lambda x: (x.get("ts") or "", 0 if x["kind"] == "stock" else 1))
+    for e in timeline:
         kind = e["kind"]
         ts = e["ts"]
+        if kind == "stock":
+            stacks.setdefault(e["airport"], _empty())
+            stacks[e["airport"]][e["name"]] = stacks[e["airport"]].get(e["name"], 0.0) + float(e["kg"])
+            _load_standing(state, ts)
+            continue
+        cid = int(e["cid"])
         if e.get("capacity_kg") is not None:
             capacity[cid] = float(e["capacity_kg"])
 

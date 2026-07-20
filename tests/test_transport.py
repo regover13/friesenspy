@@ -333,6 +333,24 @@ class TestEventTimeGuards:
         assert _validate_transport_times("2026-07-20T17:00:00Z", None) is None
         assert _validate_transport_times("2026-07-20T17:00:00Z", "") is None
 
+    def test_set_transport_cargo_added_at_preserve_and_stamp(self):
+        from app.database import (create_transport_event, get_transport_cargo, set_transport_cargo)
+        conn = _make_conn()
+        eid = create_transport_event(
+            conn, name="X", destination="EDXH", dtstart=START, dtend=END,
+            cargo=[{"name": "Fisch", "target_kg": 100, "departure": "EDWG"}])
+        conn.commit()
+        assert get_transport_cargo(conn, eid)[0]["added_at"] == START   # Erstanlage → Event-Start
+        # Mid-Event: eine Zeile dazu; Fisch bleibt (behält added_at), Krabbe ist neu (default).
+        set_transport_cargo(conn, eid, [
+            {"name": "Fisch", "target_kg": 100, "departure": "EDWG"},
+            {"name": "Krabbe", "target_kg": 80, "departure": "EDWZ"},
+        ], destination="EDXH", default_added_at="2026-07-01T12:00:00Z")
+        conn.commit()
+        by = {c["name"]: c["added_at"] for c in get_transport_cargo(conn, eid)}
+        assert by["Fisch"] == START                          # bestehend → added_at unverändert
+        assert by["Krabbe"] == "2026-07-01T12:00:00Z"        # neu → default_added_at (Mid-Event = jetzt)
+
     def test_clear_transport_summarized_thaws_event(self):
         from app.database import (create_transport_event, set_transport_summarized,
                                   clear_transport_summarized, get_transport_event)

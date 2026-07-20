@@ -1,5 +1,17 @@
 [
   {
+    "version": "10.2.0",
+    "date": "2026-07-20",
+    "highlight": false,
+    "title": "Fracht rückwirkend-sicher + Stapel-Anzeige ehrlicher",
+    "items": [
+      "⏱ Bugfix (Kernmodell): Ware, die mitten in einem laufenden Kutter zum Manifest dazukommt, ist jetzt korrekt erst ab diesem Zeitpunkt ladbar. Vorher wurde sie rückwirkend auf schon abgeflogene Piloten gebucht — sie trugen also Ware, die es beim Abheben noch gar nicht gab. Wer noch am Platz steht, lädt neu hinzugekommene Ware weiterhin nach.",
+      "🔄 Die Aufschlüsselung je Abholplatz zeigt jetzt zusätzlich Ware, die an einem Platz abgelegt bzw. zurückgebracht wurde und dort zum Weitertragen bereitliegt — auch wenn dieser Platz die Ware ursprünglich gar nicht führt. So sieht man bei der Staffel-Übergabe, was gerade wo liegt.",
+      "🧮 Die Teilmengen im Frachtbalken (geliefert / in der Luft) summieren sich jetzt sauber zum Ganzen — vorher konnten zwei auf 0,5 endende Werte beide aufrunden und in Summe das Ziel scheinbar übersteigen (etwa 137 + 24 statt 160).",
+      "🏷 Klarere Worte: abgelegte Ladung heißt jetzt „am Ladeplatz abgeladen“ statt „zurückgebracht“, und die „Strecke“-Spalte erklärt per Tooltip, dass sie die letzte Landung zum Ladungsziel zeigt — nicht den Ladeplatz."
+    ]
+  },
+  {
     "version": "10.1.3",
     "date": "2026-07-20",
     "highlight": false,
