@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.2.1",
+    "date": "2026-07-20",
+    "highlight": false,
+    "title": "Abgelegte Ware direkt beim Platz",
+    "items": [
+      "🔄 Abgelegte bzw. zurückgebrachte Ware wird jetzt direkt beim jeweiligen Ladeplatz mit aufgelistet (statt in einem separaten Block darunter) — so sieht man pro Platz auf einen Blick, was dort gerade wirklich liegt, auch wenn der Platz die Ware ursprünglich nicht führt."
+    ]
+  },
+  {
     "version": "10.2.0",
     "date": "2026-07-20",
     "highlight": false,

@@ -5029,30 +5029,28 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
       // von dort abgeholt wurde. Geliefert/verloren steht NICHT hier — das ist nur als Name-Gesamt
       // bekannt (die Ware verliert beim Laden ihre Herkunft) und lebt oben in „Gesamt".
       bar += '<div class="kutter-grp-h kutter-grp-section">Je Abholplatz</div>';
-      const keys = [...groups.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
+      // #2 (20.07.2026): Plätze = Manifest-Herkünfte + Plätze, an denen relayte Ware LIEGT
+      // (place_stacks). Relayte/zurückgebrachte Ware wird DIREKT beim jeweiligen Platz mit
+      // aufgelistet (nicht als separater Block) — so sieht man pro Platz, was dort wirklich liegt.
+      const placeSet = new Set([...groups.keys()]);
+      Object.keys(d.place_stacks || {}).forEach(p => placeSet.add(p));
+      const keys = [...placeSet].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
       keys.forEach(k => {
-        const grp = groups.get(k);
+        const grp = groups.get(k) || [];
         const gt = grp.reduce((s, it) => s + it.c.target_kg, 0) || 1;
         const label = k ? '🛫 ab ' + _kesc(k.split(',').join(', ')) : 'Alle Startplätze';
-        bar += '<div class="kutter-grp-h">' + label + '</div>' + _kStockLegend(grp, gt);
+        bar += '<div class="kutter-grp-h">' + label + '</div>';
+        if (grp.length) bar += _kStockLegend(grp, gt);
+        // Ware, die hier LIEGT, aber dort keine Manifest-Zeile hat (relayt/abgelegt) — direkt am Platz.
+        const planned = new Set(grp.map(it => it.c.name));
+        const relayed = Object.entries((d.place_stacks || {})[k] || {})
+          .filter(([name, kg]) => kg > 0.05 && !planned.has(name));
+        if (relayed.length) {
+          bar += '<div class="kutter-legend kutter-legend--sub">'
+            + relayed.map(([name, kg]) => '<span title="Hier abgelegt/zurückgebracht — liegt zum Weitertragen bereit">🔄 ' + _kfmtT(kg) + ' ' + _kesc(name) + ' <span style="opacity:.65">· abgelegt</span></span>').join('')
+            + '</div>';
+        }
       });
-      // #2 (20.07.2026): Ware, die an einem Platz LIEGT, aber dort keine Manifest-Zeile hat
-      // (relayt/zurückgebracht) — der echte Stapel aus `place_stacks`. Sonst unsichtbar, weil die
-      // Aufschlüsselung nach Manifest-Herkunft gruppiert. Macht die Staffel-Übergabe erst sichtbar.
-      const relayed = [];
-      Object.entries(d.place_stacks || {}).forEach(([place, contents]) => {
-        const planned = new Set((groups.get(place) || []).map(it => it.c.name));
-        Object.entries(contents).forEach(([name, kg]) => {
-          if (kg > 0.05 && !planned.has(name)) relayed.push({ place, name, kg });
-        });
-      });
-      if (relayed.length) {
-        relayed.sort((a, b) => a.place.localeCompare(b.place) || a.name.localeCompare(b.name));
-        bar += '<div class="kutter-grp-h kutter-grp-section" title="Ware, die hier abgelegt/zurückgebracht wurde und zum Weitertragen bereitliegt">🔄 Hier abgelegt (zum Weitertragen)</div>';
-        bar += '<div class="kutter-legend kutter-legend--sub">'
-          + relayed.map(r => '<span>🛬 ' + _kesc(r.place) + ': ' + _kfmtT(r.kg) + ' ' + _kesc(r.name) + '</span>').join('')
-          + '</div>';
-      }
     }
   }
   const goal = d.target_kg ? ' / ' + _kfmtT(d.target_kg) : '';
