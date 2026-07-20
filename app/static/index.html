@@ -392,6 +392,8 @@
     .bummel-incomplete .bi-missing { color: #e0884a; }
 
     /* ---- FriesenKutter (Transportflug-Events) ---- */
+    /* Mehrere gleichzeitig laufende Kutter im Live-Banner werden gestapelt — Trennlinie dazwischen. */
+    .kutter-live-block + .kutter-live-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.14); }
     .kutter-bar { display: flex; gap: 3px; height: 16px; margin: 10px 0 6px; }
     .kutter-seg { position: relative; background: rgba(255,255,255,0.10); border-radius: 4px; overflow: hidden; }
     .kutter-seg > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg,#28b98f,#c8933a); }
@@ -3276,12 +3278,24 @@ async function fetchKutterActive() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const events = await res.json();
     const now = new Date().toISOString().slice(0, 19) + 'Z';
-    const v = (events || []).find(k => k.dtstart <= now && now <= (k.dtend || ''));
-    if (!v) { banner.hidden = true; banner.innerHTML = ''; return; }
-    const d = await (await fetch('/api/transport/event/' + v.id)).json();
+    // Alle GERADE laufenden Kutter stapeln (nicht nur der erste `.find`) — mehrere parallele Events.
+    const actives = (events || []).filter(k => k.dtstart <= now && now <= (k.dtend || ''));
+    if (!actives.length) { banner.hidden = true; banner.innerHTML = ''; return; }
+    const details = (await Promise.all(actives.map(v =>
+      fetch('/api/transport/event/' + v.id).then(r => r.json()).catch(() => null)))).filter(Boolean);
+    if (!details.length) { banner.hidden = true; banner.innerHTML = ''; return; }
+    banner.innerHTML = details.map(_kutterBannerBlock).join('');
+    banner.hidden = false;
+  } catch (e) {
+    banner.hidden = true;
+  }
+}
+
+// Rendert den Live-Banner-Block EINES laufenden Kutters; fetchKutterActive stapelt mehrere.
+function _kutterBannerBlock(d) {
     // Exakte Bummel-Banner-Parität: kein Teilen hier — das gibt es rechts oben in der
     // Events-Ansicht (Nutzer-Entscheidung 02.07.).
-    let html = `<div class="bb-title">🦐 ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
+    let html = `<div class="kutter-live-block"><div class="bb-title">🦐 ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
     // Kein Strecken-Kettentext mehr (verwirrte im Live-Test — war weder geflogene Strecke noch
     // Flugplan, sondern die Aneinanderreihung der Ladeplätze). Stattdessen prominent NUR das Ziel,
     // wohin alle Fracht soll; die Reise je Fracht (Ladeplatz → Ziel) steht in der Tabelle unten.
@@ -3350,11 +3364,8 @@ async function fetchKutterActive() {
     // Exakt wie der Bummel-Banner: nur der Sprung zur vollen Ansicht — Teilen gibt es
     // dort rechts oben im Panel-Header (wie überall).
     html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openKutterById(${d.id})">🦐 Zum Kutter</button></div>`;
-    banner.innerHTML = html;
-    banner.hidden = false;
-  } catch (e) {
-    banner.hidden = true;
-  }
+    html += '</div>';
+    return html;
 }
 
 // Events-Tab öffnen und ein konkretes Rennen direkt anzeigen (vom Live-Banner + Deep-Link genutzt).

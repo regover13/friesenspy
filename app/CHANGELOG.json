@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.1.2",
+    "date": "2026-07-20",
+    "highlight": false,
+    "title": "Live-Banner zeigt alle laufenden Kutter",
+    "items": [
+      "🦐 Laufen mehrere FriesenKutter gleichzeitig, zeigt der Live-Tab jetzt ALLE davon gestapelt (je mit Ziel-Balken und aktiven Piloten) — vorher wurde nur einer angezeigt (der erste), die anderen fielen unter den Tisch. Jeder Block bleibt einzeln anklickbar („🦐 Zum Kutter“). Für den Fall paralleler Kutter (z. B. Hin- und Rückrouten) sieht man so auf einen Blick, wo überall gerade etwas fliegt."
+    ]
+  },
+  {
     "version": "10.1.1",
     "date": "2026-07-20",
     "highlight": false,
