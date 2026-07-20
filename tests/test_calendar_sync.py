@@ -6,7 +6,60 @@ SUMMARY UND >= 2 Flugplätze).
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from app.calendar_sync import parse_route, parse_cargo_lines
+
+
+class TestKutterCalendarSuppression:
+    """Variante ① (Entscheidung 20.07.2026): Kutter-Kalendertermine gehören NICHT nach FriesenSpy —
+    der Kutter wird ausschließlich manuell im Admin geführt (einzige Wahrheit). Ein Termin mit dem
+    Stichwort ``kutter`` (deckt ``friesenkutter`` mit ab) in Titel ODER Beschreibung wird bei der
+    Kalender-Aufnahme verworfen — keine Zeile, kein Objekt, kein generischer Reminder. Ohne
+    Flugplatz-Bedingung (Ankündigungen nennen oft nur das Ziel)."""
+
+    def test_predicate_matches_friesenkutter_in_summary(self):
+        from app.calendar_sync import is_kutter_calendar_entry
+        assert is_kutter_calendar_entry("Krabbenbrötchen für Wooge — FriesenKutter", "") is True
+
+    def test_predicate_matches_bare_kutter_in_description(self):
+        from app.calendar_sync import is_kutter_calendar_entry
+        assert is_kutter_calendar_entry("Krabbenbrötchen für Wooge", "Details siehe Kutter-Forum") is True
+
+    def test_predicate_case_insensitive(self):
+        from app.calendar_sync import is_kutter_calendar_entry
+        assert is_kutter_calendar_entry("FRIESENKUTTER", "") is True
+
+    def test_predicate_ignores_unrelated_event(self):
+        from app.calendar_sync import is_kutter_calendar_entry
+        assert is_kutter_calendar_entry("FFFreitag", "Stammtisch in Wooge EDWG") is False
+
+    def _ics(self, *vevents: str) -> bytes:
+        body = "".join(vevents)
+        return (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//test//EN\r\n"
+            f"{body}END:VCALENDAR\r\n"
+        ).encode()
+
+    def _vevent(self, uid: str, summary: str, description: str) -> str:
+        # DTSTART dynamisch nahe „jetzt“, damit es sicher im Parse-Fenster (−365d..+90d) liegt.
+        dt = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y%m%dT%H%M%SZ")
+        return (
+            f"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTART:{dt}\r\nDTEND:{dt}\r\n"
+            f"SUMMARY:{summary}\r\nDESCRIPTION:{description}\r\nEND:VEVENT\r\n"
+        )
+
+    def test_parse_ical_bytes_drops_kutter_keeps_normal(self):
+        from app.calendar_sync import parse_ical_bytes
+        ics = self._ics(
+            self._vevent("kutter-1", "Krabbenbrötchen für Wooge", "Wir testen den FriesenKutter"),
+            self._vevent("normal-1", "FFFreitag", "Wangerooge EDWG"),
+        )
+        events = parse_ical_bytes(ics)
+        summaries = [e["summary"] for e in events]
+        assert "FFFreitag" in summaries
+        assert all("kutter" not in (e["summary"] + e.get("uid", "")).lower() for e in events)
+        assert not any(e["uid"].startswith("kutter-1") for e in events)
 
 
 class TestRouteExtraction:

@@ -148,18 +148,37 @@ def parse_route(location: str, summary: str, description: str = "") -> tuple[str
     return ",".join(route), is_bummel, is_transport
 
 
+def is_kutter_calendar_entry(summary: str, description: str) -> bool:
+    """Variante ① (Entscheidung 20.07.2026): Ein Kalendertermin, der einen FriesenKutter
+    ankündigt, gehört NICHT nach FriesenSpy — der Kutter wird ausschließlich manuell im Admin
+    geführt (einzige Wahrheit, kein konkurrierendes Kalender-Objekt → kein Doppel im Events-Tab,
+    kein Matching-Problem). Erkennung per Stichwort ``kutter`` (deckt ``friesenkutter`` mit ab) in
+    Titel ODER Beschreibung, bewusst OHNE Flugplatz-Bedingung — Ankündigungen nennen oft nur das
+    Ziel. Solche Termine dienen nur Discord/Forum-Link und werden bei der Aufnahme verworfen.
+    """
+    text = f"{summary or ''}\n{description or ''}".lower()
+    return "kutter" in text
+
+
 async def fetch_and_parse_ical(client) -> list[dict]:
-    """Holt den iCal-Feed und gibt Events als Dicts zurück.
+    """Holt den iCal-Feed und gibt Events als Dicts zurück (Netzwerk; Parsing in
+    :func:`parse_ical_bytes`)."""
+    resp = await client.get(ICAL_URL, timeout=15.0, follow_redirects=True)
+    resp.raise_for_status()
+    return parse_ical_bytes(resp.content)
+
+
+def parse_ical_bytes(content: bytes) -> list[dict]:
+    """Parst rohe iCal-Bytes zu Event-Dicts (netzwerkfrei, testbar).
 
     Expandiert RRULE-Wiederholungen im Fenster 365 Tage zurück bis 90 Tage voraus.
-    Extrahiert den ersten ICAO-Code aus LOCATION, sonst aus SUMMARY.
+    Extrahiert den ersten ICAO-Code aus LOCATION, sonst aus SUMMARY. Kutter-Termine
+    (:func:`is_kutter_calendar_entry`) werden übersprungen — Variante ①.
     """
     import recurring_ical_events  # lazy import
     from icalendar import Calendar  # lazy import
 
-    resp = await client.get(ICAL_URL, timeout=15.0, follow_redirects=True)
-    resp.raise_for_status()
-    cal = Calendar.from_ical(resp.content)
+    cal = Calendar.from_ical(content)
 
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(days=365)
@@ -202,6 +221,10 @@ async def fetch_and_parse_ical(client) -> list[dict]:
 
         location_raw = str(comp.get("LOCATION") or "")
         description_raw = str(comp.get("DESCRIPTION") or "")
+        # Variante ①: Kutter-Kalendertermine gehören nicht nach FriesenSpy (manuell = einzige
+        # Wahrheit) — verwerfen, bevor sie gespeichert/angezeigt/erinnert werden.
+        if is_kutter_calendar_entry(summary, description_raw):
+            continue
         route, is_bummel, is_transport = parse_route(location_raw, summary, description_raw)
         # location bleibt der erste ICAO (Rückwärtskompatibilität: Event-Suche-Prefill).
         icao = route.split(",")[0] if route else ""

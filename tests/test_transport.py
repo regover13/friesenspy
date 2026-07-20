@@ -269,6 +269,30 @@ class TestCatalog:
         assert seed_cargo_catalog(conn) == 0        # nicht erneut seeden
         assert len(list_cargo_catalog(conn)) == n
 
+    def test_seed_enthaelt_generische_heringe(self):
+        # 20.07.2026: Kalender-Fracht "Heringe" (nach Wooge) matchte den Katalog nicht — dort gab es
+        # nur "Heringe (für die Seehunde in EDWS)". Ein eigener, generischer Eintrag "Heringe" (🐟,
+        # keine Kappung) muss geseedet werden, damit die Zeile ihr Emoji bekommt.
+        conn = _make_conn()
+        seed_cargo_catalog(conn)
+        heringe = [c for c in list_cargo_catalog(conn) if c["name"] == "Heringe"]
+        assert len(heringe) == 1
+        assert heringe[0]["emoji"] == "🐟"
+        assert heringe[0]["per_flight_max_kg"] is None
+
+    def test_ensure_generic_heringe_backfills_existing(self):
+        # Bestands-DB (bereits geseedet, noch ohne generische "Heringe"): idempotenter Nachtrag.
+        from app.database import ensure_generic_heringe
+        conn = _make_conn()
+        upsert_cargo_catalog(conn, name="Krabbenbrötchen", emoji="🦐", per_flight_max_kg=None)
+        conn.commit()
+        assert not any(c["name"] == "Heringe" for c in list_cargo_catalog(conn))
+        assert ensure_generic_heringe(conn) is True
+        conn.commit()
+        h = [c for c in list_cargo_catalog(conn) if c["name"] == "Heringe"]
+        assert len(h) == 1 and h[0]["emoji"] == "🐟" and h[0]["per_flight_max_kg"] is None
+        assert ensure_generic_heringe(conn) is False    # idempotent
+
     def test_crud(self):
         conn = _make_conn()
         upsert_cargo_catalog(conn, name="Testfracht", emoji="🧪", per_flight_max_kg=50)

@@ -645,6 +645,10 @@ def init_db(db_path: str) -> None:
         except sqlite3.OperationalError:
             pass
         try:
+            ensure_generic_heringe(conn)  # 20.07.2026: generische "Heringe" in Bestands-DBs nachrüsten
+        except sqlite3.OperationalError:
+            pass
+        try:
             seed_custom_airports(conn)  # Ergänzungs-Flugplätze erstbefüllen (idempotent, #50)
         except sqlite3.OperationalError:
             pass
@@ -4546,6 +4550,7 @@ _CARGO_SEED = [
     ("Krabbenbrötchen", "🦐", None), ("Friesentee", "🫖", None), ("Filmrollen", "🎞️", 100.0),
     ("Sonnenschirme", "⛱️", None), ("Strandkörbe", "🪑", None), ("Lebensmittel", "🧺", None),
     ("Baumaterial", "🧱", None), ("Material für Offshore-Anlagen", "⚙️", None),
+    ("Heringe", "🐟", None),
     ("Heringe (für die Seehunde in EDWS)", "🐟", None), ("Passagiere", "🧳", None),
     ("Seehund-Heuler", "🦭", None), ("Deichschafe", "🐑", None),
     ("Rechtsdeichschaf", "🐑", None), ("Linksdeichschaf", "🐑", None),
@@ -4597,6 +4602,23 @@ def seed_cargo_catalog(conn: sqlite3.Connection) -> int:
             (name, emoji, mx, pos),
         )
     return len(_CARGO_SEED)
+
+
+def ensure_generic_heringe(conn: sqlite3.Connection) -> bool:
+    """Idempotenter Nachtrag des generischen ``Heringe``-Katalogeintrags (🐟, keine Kappung).
+
+    20.07.2026: Der Bestand kannte nur ``Heringe (für die Seehunde in EDWS)``. Fracht schlicht
+    „Heringe" (z. B. nach Wooge) matchte den Katalog daher nicht → kein Emoji. Für neu geseedete
+    DBs steht der Eintrag bereits in ``_CARGO_SEED``; diese Funktion rüstet ihn in **bestehenden**
+    (bereits geseedeten) DBs nach. Gibt True zurück, wenn eingefügt wurde."""
+    if conn.execute("SELECT 1 FROM cargo_catalog WHERE name = 'Heringe'").fetchone():
+        return False
+    pos = conn.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM cargo_catalog").fetchone()[0]
+    conn.execute(
+        "INSERT INTO cargo_catalog (name, emoji, per_flight_max_kg, position) VALUES (?, ?, ?, ?)",
+        ("Heringe", "🐟", None, pos),
+    )
+    return True
 
 
 # Reale, wiederholt angeflogene Plätze, die in ``airportsdata`` fehlen (Live-Funde 2026-07-05,

@@ -1,5 +1,16 @@
 [
   {
+    "version": "10.1.0",
+    "date": "2026-07-20",
+    "highlight": false,
+    "title": "Kutter laufen nur noch manuell — Kalender bleibt sauber",
+    "items": [
+      "🦐 FriesenKutter werden ab jetzt ausschließlich manuell im Admin angelegt. Ein Kalendertermin mit „Kutter“/„FriesenKutter“ im Titel oder Text wird bewusst nicht mehr nach FriesenSpy übernommen — weder als zweite Zeile im Events-Tab noch als eigenes Objekt. Damit gibt es kein Durcheinander mehr zwischen einem manuell angelegten Kutter und seiner Kalender-Ankündigung. Solche Kalendertermine dienen nur noch der Ankündigung (Discord/Forum-Link).",
+      "🔔 Kalender bleibt sonst unverändert: Alle übrigen Events (FFFreitag & Co.) und der FriesenFliegerBummel werden weiter angezeigt und ~1 h vorher erinnert. Ein manueller Kutter kann seine eigene Erinnerung schicken, wenn im Admin der Push für das Event aktiviert ist.",
+      "🐟 Neue Frachtart „Heringe“ (🐟) im Katalog — bisher gab es nur „Heringe (für die Seehunde in EDWS)“, sodass schlicht als „Heringe“ eingetragene Ware kein Emoji bekam. Wird in bestehenden Installationen automatisch nachgetragen."
+    ]
+  },
+  {
     "version": "10.0.6",
     "date": "2026-07-19",
     "highlight": false,

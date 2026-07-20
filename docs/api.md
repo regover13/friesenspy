@@ -446,6 +446,8 @@ FriesenEvents aus dem FriesenFlieger-Google-Kalender — letzte 365 Tage bis heu
 
 Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungstermine werden expandiert (jede Wiederholung als eigener Eintrag). Ganztags-Events (ohne Uhrzeit) werden nicht gespeichert. Termine, die im Google-Kalender gelöscht/storniert wurden, entfernt derselbe Sync-Lauf per Mark-and-Sweep (`delete_stale_calendar_events`) wieder aus der lokalen Kopie — sie verschwinden hier spätestens beim nächsten Sync.
 
+> **Kutter-Termine ausgeschlossen (Variante ①, 20.07.2026):** Kalendertermine mit „kutter"/„friesenkutter" im Titel oder in der Beschreibung werden **gar nicht erst aufgenommen** (`is_kutter_calendar_entry` in `calendar_sync.py`) — sie erscheinen weder hier noch als Transport-Objekt und lösen keine Erinnerung aus. FriesenKutter laufen ausschließlich **manuell** im Admin (einzige Wahrheit); der Kalendertermin dient nur der externen Ankündigung (Discord/Forum-Link). Bummel und alle übrigen Kalender-Events bleiben unberührt.
+
 **Response**
 
 ```json
@@ -1055,7 +1057,7 @@ Der öffentliche Endpoint `GET /api/bummel/race/{id}/badge/{cid}.png` bleibt vor
 
 Alle Endpoints erfordern das Admin-Cookie (`require_admin`).
 
-> **Kalender-Fracht:** Ein Termin mit dem `friesenkutter`-Marker kann direkt in der Beschreibung eine Fracht-Zeile enthalten: `Fracht EDWG: 1000 Krabbenbrötchen, 500 Friesentee` (der Startplatz gehört zwingend an den Marker, s. u.). Beim Sync wird sie **einmalig** (nur beim erstmaligen Anlegen) gegen den Frachtart-Katalog abgeglichen und ins Manifest übernommen; ein später im Admin gepflegtes Manifest bleibt bei erneutem Sync unverändert. **Fracht je Startplatz (Stapel-Modell, Entscheidung 6):** jede Fracht-Zeile bindet an **genau EINEN Startplatz ≠ Ziel** über den Marker — `Fracht EDWG: 300 Birnen` (je eigene Zeile, mehrere Marker werden alle gelesen). Eine `Fracht:`-Zeile **ohne** ICAO wird **abgewiesen** (kein „geteilter Topf" mehr), ebenso ein Marker mit mehreren ICAOs. Die Marker-Startplätze tragen zur (abgeleiteten) Route bei; ein **ferner/unauflösbarer** Marker-ICAO wird per Distanzprüfung aus der Route verworfen.
+> **Kalender-Fracht (deaktiviert seit 20.07.2026):** Der Kutter-Import aus dem Kalender ist abgeschaltet — Kalendertermine mit „kutter"/„friesenkutter" werden gar nicht mehr aufgenommen (Variante ①, siehe `GET /api/calendar/events`). Ein Fracht-Manifest wird deshalb **ausschließlich manuell** über die Endpoints unten gepflegt. Die frühere Kalender-Fracht-Syntax (`Fracht EDWG: 1000 Krabbenbrötchen, …`, genau ein Startplatz je Zeile) samt Parser (`parse_cargo_lines`) bleibt für eine spätere, forum-basierte Import-Lösung im Code erhalten, wird aber derzeit nicht ausgewertet.
 
 ### GET /api/admin/transport/events
 Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_kg, emoji, per_flight_max_kg, departure}]`; `departure` = gebundener Startplatz-ICAO, **genau einer ≠ Ziel, Pflicht** — kein `null`/geteilt mehr), `radius_km` (Legacy-Feld — s. o., seit GPS-only Phase 2/#23 nicht mehr über die Admin-Endpoints setzbar, wirkt nicht mehr auf die Platz-Zuordnung) und `status` (`scheduled` \| `running` \| `waiting` \| `done` — analog `_race_status` beim Bummel, siehe `_transport_status`; nur in der Admin-Sicht, kein Piloten-Frontend-Feld).
