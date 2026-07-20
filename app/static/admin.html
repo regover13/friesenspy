@@ -2551,6 +2551,7 @@
           + '<div style="color:#8aa0b8;font-size:0.72rem;">' + escH(ev.dtstart) + ' → ' + escH(ev.dtend) + '</div>'
           + '<div style="color:#8aa0b8;font-size:0.72rem;">Fracht: ' + cargo + '</div></div>'
           + '<div style="display:flex;gap:6px;flex:none;">'
+          + '<button class="btn btn-sm" onclick="keCopyLink(' + ev.id + ')" title="Direktlink zum Kutter (fürs Forum/Discord) kopieren">🔗 Link</button>'
           + '<button class="btn btn-sm" onclick="keTogglePush(' + ev.id + ',' + (pushOn ? 'false' : 'true') + ')">' + (pushOn ? 'Push aus' : 'Push an') + '</button>'
           + '<button class="btn btn-sm" onclick="keRegenQuips(' + ev.id + ')" title="Gecachte KI-Sprüche löschen — der Poller baut sie in ~60 s neu">🔄 Sprüche neu</button>'
           + '<button class="btn btn-sm" onclick="keEdit(' + ev.id + ')">Bearbeiten</button>'
@@ -2582,6 +2583,15 @@
       if (!res || !res.ok) { toast('Fehler beim Löschen.', true); return; }
       toast('Event gelöscht.');
       loadKutterAdmin();
+    }
+
+    async function keCopyLink(id) {
+      // Direktlink zum Kutter-Event fürs Forum/Discord (löst die „woher die Event-Nummer?“-Lücke).
+      const url = location.origin + '/#tab=events&kutter=' + id;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast('Kutter-Link kopiert: ' + url);
+      } catch { toast('Kopieren fehlgeschlagen — Link: ' + url, true); }
     }
 
     async function keTogglePush(id, enabled) {

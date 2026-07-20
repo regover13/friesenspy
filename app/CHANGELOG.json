@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.1.1",
+    "date": "2026-07-20",
+    "highlight": false,
+    "title": "Admin: Kutter-Direktlink mit einem Klick",
+    "items": [
+      "🔗 In der Admin-Kutter-Liste gibt es pro Event jetzt einen „🔗 Link“-Button, der den sauberen Direktlink (`…/#tab=events&kutter=<id>`) in die Zwischenablage kopiert — praktisch fürs Forum oder Discord. Bisher war die Event-Nummer nirgends bequem ablesbar."
+    ]
+  },
+  {
     "version": "10.1.0",
     "date": "2026-07-20",
     "highlight": false,
