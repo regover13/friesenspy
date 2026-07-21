@@ -571,6 +571,29 @@ def _edge(a: str, b: str) -> str:
     return f"{x} ↔ {y}"
 
 
+class TestHiddenOrderNoRankLeak:
+    """Fairness: im VERDECKTEN Zustand darf die Teilnehmer-REIHENFOLGE das Ranking nicht verraten.
+    `standings["complete"]` ist rang-sortiert (Nähe zum Schnitt) — würde man sie so durchreichen,
+    liest man die Platzierung aus der Ordnung ab, obwohl Zeiten/Delta/Rang redigiert sind."""
+
+    def test_hidden_participants_neutral_order_revealed_keeps_rank(self):
+        conn = _make_conn()
+        route = ["EDWF", "EDWG"]
+        # avg(60,40,50)=50 → FRS555 (=50) Rang 1; FRS111/FRS999 je 10 weg (Tie → cid).
+        _add_flight(conn, 100, "Zeb", "EDWF", "EDWG", 60, callsign="FRS999")
+        _add_flight(conn, 200, "Amy", "EDWF", "EDWG", 40, callsign="FRS111")
+        _add_flight(conn, 300, "Mimi", "EDWF", "EDWG", 50, callsign="FRS555")
+        s = compute_bummel_standings(conn, route, START, END)
+        assert [e["callsign"] for e in s["complete"]] == ["FRS555", "FRS111", "FRS999"]  # Rang
+
+        hidden = public_bummel_view(s, in_progress=[], revealed=False)
+        order = [p["callsign"] for p in hidden["participants"]]
+        assert order == ["FRS111", "FRS555", "FRS999"]   # neutral (Callsign), NICHT Rang-Ordnung
+
+        revealed = public_bummel_view(s, in_progress=[], revealed=True)
+        assert revealed["complete"][0]["callsign"] == "FRS555"   # enthüllt weiter rang-sortiert
+
+
 class TestRoundCourseEdges:
     """Kanten-basierte Wertung (Spec 2026-07-21): Route = geordnete Plätze-Kette mit Wiederholung
     → Pflicht-Etappen (ungerichtete Kanten-Multimenge). Komplett = jede Etappe geflogen. Der

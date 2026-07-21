@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.4.1",
+    "date": "2026-07-21",
+    "highlight": false,
+    "title": "Bummel-Fairness: verdeckte Reihenfolge verrät kein Ranking mehr",
+    "items": [
+      "🔒 Solange ein Bummel verdeckt läuft, waren die Teilnehmer versehentlich schon in Platzierungs-Reihenfolge gelistet (am nächsten am Durchschnitt zuerst) — die Zahlen waren zwar ausgeblendet, aber die bloße Reihenfolge verriet den Stand. Die verdeckte Liste ist jetzt neutral nach Callsign sortiert; erst nach der Enthüllung erscheint die echte Platzierungs-Reihenfolge."
+    ]
+  },
+  {
     "version": "10.4.0",
     "date": "2026-07-21",
     "highlight": false,

@@ -3586,6 +3586,11 @@ def public_bummel_view(standings: dict, in_progress: list[dict], revealed: bool)
             "started": started,
             "in_progress": e["cid"] in in_prog_cids,
         })
+    # Fairness: NEUTRAL sortieren (Callsign, dann cid). `standings["complete"]` ist rang-sortiert
+    # (Nähe zum Schnitt) — reichte man diese Ordnung durch, ließe sich die Platzierung aus der
+    # Reihenfolge ablesen, obwohl Zeiten/Delta/Rang redigiert sind. Die Ordnung darf kein
+    # Ranking-Signal tragen; enthüllt bleibt die Rang-Sortierung (anderer Zweig oben).
+    participants.sort(key=lambda p: ((p["callsign"] or "").upper(), p["cid"]))
     base["participants"] = participants
     return base
 
