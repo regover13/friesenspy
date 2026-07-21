@@ -313,6 +313,7 @@ def flight_quip(context: dict) -> str | None:
     """Einen lustigen Einzeiler zu einem Frachtflug erzeugen (mit Piloten-Kontext)."""
     c = context or {}
     verlust = c.get("verlust")
+    relay = c.get("relay")
     lines = [
         f"Pilot-Vorname: {c.get('vorname') or '?'}",
         f"Frachtflüge heute gesamt über ALLE Frachtarten: {c.get('flights_tonight')} "
@@ -328,11 +329,11 @@ def flight_quip(context: dict) -> str | None:
         extra = " (fliegt Umwege!)" if c["detour_ratio"] >= 1.3 else ""
         lines.append(f"Umweg-Faktor: {c['detour_ratio']}x Luftlinie{extra}")
     if verlust:
-        # #67-Folgefund (Live 06.07.): der Kontext liefert `verlust` (versunken/geklaut/
-        # zurückgebracht), aber der Prompt griff ihn nie auf → die KI textete einen normalen
-        # Liefer-Spruch für einen SCHIEFGEGANGENEN Flug ("hat 160 kg geladen …" obwohl geklaut).
-        # Bei gesetztem Verlust MUSS der Spruch das aufgreifen und darf NICHT nach Auslieferung
-        # klingen.
+        # #67-Folgefund (Live 06.07.): der Kontext liefert `verlust` (versunken/geklaut),
+        # aber der Prompt griff ihn nie auf → die KI textete einen normalen Liefer-Spruch für
+        # einen SCHIEFGEGANGENEN Flug ("hat 160 kg geladen …" obwohl geklaut). Bei gesetztem
+        # Verlust MUSS der Spruch das aufgreifen und darf NICHT nach Auslieferung klingen.
+        # (Eine „returned"-Bewegung ist KEIN Verlust — die läuft über `relay`, s. u.)
         lines.append(f"WICHTIG — DIESER FLUG GING SCHIEF: {verlust}")
         user = (
             "Schreibe EINEN frechen, spitzbübischen Einzeiler (genau ein Satz) zu diesem "
@@ -346,13 +347,30 @@ def flight_quip(context: dict) -> str | None:
             "sich über die Fracht, Neptun/der Klabautermann kriegt seinen Anteil, die Ladung dümpelt "
             "in der Nordsee — nimm dabei die KONKRETE Fracht aufs Korn (z. B. Strandkörbe, auf denen "
             "jetzt die Fische Urlaub machen). Gutmütig-schadenfroh. "
-            "Bei UMGEDREHT: neck ihn fürs Kneifen. Ein deftiger, spitzbübischer Nordtonfall passt hier "
+            "Ein deftiger, spitzbübischer Nordtonfall passt hier "
             "gut (Wörter wie 'Spitzbov', 'Kaperfahrt', 'Deern/Jung' sind ok) — aber weiter für alle "
             "sofort verständlich, KEINE Wörter, die man übersetzen müsste. Der Spruch darf AUF KEINEN "
             "FALL nach ordentlicher Auslieferung klingen (kein 'bringt … ans Ziel', kein 'liefert … "
             "aus'). ERFINDE KEINE Zahlen/Zählungen, die nicht in den Fakten stehen (kein 'zum x-ten "
             "Mal'; 'Frachtflüge heute gesamt' zählt ALLE Frachtarten, nicht diese eine). "
             "Fang NICHT immer mit 'Moin' an. Fakten:\n- "
+            + "\n- ".join(lines)
+        )
+    elif relay:
+        # v10.2.1-Umbenennung (Live-Fund 21.07.): eine „returned"-Bewegung ist eine
+        # Staffel-Übergabe („am Ladeplatz abgeladen"), KEIN schiefgegangener Flug. Nicht als
+        # Kneifen/Umdrehen framen — das las sich als „unentschlossen".
+        lines.append(f"HINWEIS — STAFFEL-ÜBERGABE (KEIN Verlust): {relay}")
+        user = (
+            "Schreibe EINEN lockeren, herzlichen Einzeiler (genau ein Satz) zu diesem Flug. Der "
+            "Pilot hat die Fracht NICHT bis zum Ziel gebracht, sondern an einem Ladeplatz abgeladen "
+            "(s. 'HINWEIS') — dort liegt sie zum Weitertragen bereit, ein anderer bringt sie weiter. "
+            "Das ist eine Staffel-Übergabe, KEIN Missgeschick und KEIN Verlust: nichts ging verloren, "
+            "nichts sank, nichts wurde geklaut. Neck ihn höchstens ganz milde dafür, dass er die "
+            "letzte Etappe einem Kollegen überlässt — aber wohlwollend, nie als Kneifen, Rückzug "
+            "oder Unentschlossenheit. Lass es NICHT nach ordentlicher Auslieferung ans Ziel klingen. "
+            "ERFINDE KEINE Zahlen/Zählungen, die nicht in den Fakten stehen. Fang NICHT immer mit "
+            "'Moin' an. Fakten:\n- "
             + "\n- ".join(lines)
         )
     else:
@@ -394,6 +412,12 @@ def event_summary(context: dict) -> str | None:
         lines.append(f"Verluste unterwegs ({round(c.get('lost_total_kg') or 0)} kg): " + "; ".join(verluste))
     else:
         lines.append("Verluste: keine — alles kam heil an")
+    abgeladen = c.get("abgeladen") or []
+    if abgeladen:
+        lines.append(
+            "Am Ladeplatz abgeladen (Staffel-Übergabe, KEIN Verlust — die Ware liegt am Ladeplatz "
+            "und wird von dort weitergetragen): " + "; ".join(abgeladen)
+        )
     user = (
         "Schreibe eine kurze, launige Tagesend-Zusammenfassung für die "
         "Friesen — wie viel Fracht zusammen bewegt wurde, mit einem Augenzwinkern. "
@@ -405,7 +429,10 @@ def event_summary(context: dict) -> str | None:
         "A-B-C-D«) und reihe die Plätze nicht mit Pfeilen/Bindestrichen aneinander. "
         "WICHTIG: Wenn es Verluste gab, MUSST du sie erwähnen (wer, versunken/geklaut, wie viel) "
         "und darfst NICHT behaupten, alles sei heil angekommen oder niemand habe etwas verloren — "
-        "das wäre ein Widerspruch zu den Fakten. Fakten:\n- "
+        "das wäre ein Widerspruch zu den Fakten. "
+        "Wer unter »Am Ladeplatz abgeladen« steht, hat NICHTS verloren — er hat die Ware an einem "
+        "Ladeplatz abgeladen, wo sie zum Weitertragen bereitliegt. Erwähne das (falls vorhanden) "
+        "locker als Staffel-Übergabe, NIE als Missgeschick, Verlust, Rückzug oder Kneifen. Fakten:\n- "
         + "\n- ".join(lines)
     )
-    return _chat(_QUIP_SYSTEM, user, 400)
+    return _chat(_QUIP_SYSTEM, user, 800)

@@ -4870,13 +4870,18 @@ def flight_quip_context(flight: dict, progress: dict) -> dict:
     onboard_kg = round(sum(c.get("kg") or 0 for c in cargo_lines))
     loss_kind = flight.get("loss_kind")
     verlust = None
+    relay = None
     if loss_kind == "sunk":
         verlust = f"Kutter versunken — {round(flight.get('lost_kg') or 0)} kg Fracht verloren"
     elif loss_kind == "stolen":
         verlust = (f"am falschen Ort gelandet ({flight.get('arr')}) — "
                    f"{round(flight.get('lost_kg') or 0)} kg Fracht geklaut")
     elif loss_kind == "returned":
-        verlust = "umgedreht und Fracht heil zurückgebracht"
+        # v10.2.1-Umbenennung (Live-Fund 21.07.): eine „returned"-Bewegung ist KEIN
+        # schiefgegangener Flug, sondern eine Staffel-Übergabe — die Ware wird an einem
+        # Ladeplatz abgeladen und liegt dort zum Weitertragen bereit. NICHT über den
+        # verlust-/„GING SCHIEF"-Zweig (sonst textete die KI „unentschlossen/umgedreht").
+        relay = "an einem Ladeplatz abgeladen (nicht bis zum Ziel) — liegt dort zum Weitertragen bereit"
     return {
         "vorname": vorname,
         "callsign": flight.get("callsign"),
@@ -4888,6 +4893,7 @@ def flight_quip_context(flight: dict, progress: dict) -> dict:
         "speed_kt": speed_kt,
         "detour_ratio": detour_ratio,
         "verlust": verlust,
+        "relay": relay,
     }
 
 
@@ -4929,13 +4935,24 @@ def event_summary_context(event: dict, progress: dict) -> dict:
         "destination": progress.get("destination"),
         "pickups": [p for p in progress.get("route", []) if p != progress.get("destination")],
         "lost_total_kg": progress.get("lost_total_kg", 0.0),
+        # Nur ECHTE Verluste (versunken/geklaut). Eine „returned"-Bewegung ist kg-neutral und
+        # kein Verlust — sie käme sonst als „MUSST du als Verlust nennen" bei der KI an und
+        # würde als Missgeschick getextet (Live-Fund 21.07., #238/#239: „unentschlossen …
+        # zurückgebracht"). Stattdessen als Staffel-Übergabe getrennt (siehe `abgeladen`).
         "verluste": [
             (f"{_label(l.get('name'), l.get('callsign'))}: "
-             + ("Kutter versunken" if l.get("loss_kind") == "sunk"
-                else "Fracht geklaut" if l.get("loss_kind") == "stolen"
-                else "Fracht zurückgebracht")
+             + ("Kutter versunken" if l.get("loss_kind") == "sunk" else "Fracht geklaut")
              + f" ({round(l.get('lost_kg') or 0)} kg)")
             for l in progress.get("losses", [])
+            if l.get("loss_kind") in ("sunk", "stolen")
+        ],
+        # v10.2.1-Terminologie: „am Ladeplatz abgeladen" statt „zurückgebracht" — Ware, die ein
+        # Pilot an einem Ladeplatz abgelegt hat und die dort zum Weitertragen bereitliegt.
+        "abgeladen": [
+            f"{_label(l.get('name'), l.get('callsign'))}: Fracht an einem Ladeplatz abgeladen "
+            "(liegt zum Weitertragen bereit)"
+            for l in progress.get("losses", [])
+            if l.get("loss_kind") == "returned"
         ],
     }
 

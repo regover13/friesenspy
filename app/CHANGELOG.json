@@ -1,5 +1,15 @@
 [
   {
+    "version": "10.2.4",
+    "date": "2026-07-21",
+    "highlight": false,
+    "title": "Kutter-Sprüche: „am Ladeplatz abgeladen“ statt „zurückgebracht“, kein Abschneiden",
+    "items": [
+      "🏷 Der launige Tagesend-Spruch redet nicht mehr von „zurückgebracht“ oder „umgedreht“. Ware, die ein Pilot an einem Ladeplatz zum Weitertragen abgelegt hat, heißt jetzt auch im Spruch „am Ladeplatz abgeladen“ — eine Staffel-Übergabe, kein Verlust und kein Kneifen (die Umbenennung aus v10.2.1 galt bisher nur in der Ansicht, nicht in der KI-Schicht). Der betroffene Pilot wird nicht mehr als „unentschlossen“ geneckt.",
+      "✂️ Der Abschluss-Spruch wird nicht mehr mitten im Satz abgeschnitten. Bei vielen Piloten plus Verlusten reichte das Token-Budget nicht — es ist jetzt großzügiger bemessen."
+    ]
+  },
+  {
     "version": "10.2.3",
     "date": "2026-07-20",
     "highlight": false,

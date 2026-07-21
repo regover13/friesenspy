@@ -123,7 +123,7 @@ Aggregierte Kennzahlen beider Spezial-Events im Zeitfenster (`?days=30|90|365`, 
 `{"kutter": {event_count, participations, flights, delivered_kg, sunk_kg, sunk_count, stolen_kg, stolen_count},
   "bummel": {race_count, participations, legs, avg_absolute_min}}`.
 Abgrenzung: Kutter „Flüge" = alle Flug-/Verlust-Zeilen (`flight_count`); Bummel „Flüge" = gewertete Tour-Legs
-(`Σ leg_count`). `returned` (zurückgebracht) ist kein Verlust (0 kg). `avg_absolute_min` ist `null` ohne
+(`Σ leg_count`). `returned` (am Ladeplatz abgeladen) ist kein Verlust (0 kg). `avg_absolute_min` ist `null` ohne
 gewertetes Rennen. NULL-`dtend`-Events werden ausgeschlossen.
 
 ---
