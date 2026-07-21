@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.4.2",
+    "date": "2026-07-21",
+    "highlight": false,
+    "title": "Bummel-Detail: „Plätze“ → „Etappen“ (Wording)",
+    "items": [
+      "🏷 In der verdeckten Teilnehmer-Ansicht heißt die Fortschritts-Spalte jetzt konsequent „Etappen“ (z. B. „2/3 Etappen“) statt „Plätze“ — passend zur kanten-basierten Wertung seit v10.4.0. Reine Anzeige."
+    ]
+  },
+  {
     "version": "10.4.1",
     "date": "2026-07-21",
     "highlight": false,

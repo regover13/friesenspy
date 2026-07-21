@@ -3129,7 +3129,7 @@ function renderBummelParticipants(view) {
         <td class="mono">${escHtml(p.callsign || '')}</td>
         <td class="mono">${escHtml(p.aircraft || '—')}</td>
         <td class="mono text-label">${p.started ? escHtml(p.started.slice(11, 16)) : '—'}</td>
-        <td class="mono">${(p.visited || []).length}/${total} Plätze${miss}</td>
+        <td class="mono">${(p.visited || []).length}/${total} Etappen${miss}</td>
         <td>${st}</td>
       </tr>`;
     });
