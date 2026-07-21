@@ -415,13 +415,21 @@
     /* Ziel-Überschrift der Kutter-Detailansicht (Events) — Parität zum Live-Banner (🎯 Ziel: …).
        Eigene Klasse, weil .bb-sub nur auf #kutter-banner gescoped ist und hier nicht greift. */
     .kutter-dest { font-family: var(--text-mono); font-weight: 700; font-size: 0.95rem; color: var(--text-bright); margin: 2px 0 10px; }
-    .kutter-quip { display:block; font-style: italic; color: #9fc9b6; font-size: 0.76rem; margin-top: 2px; white-space: normal; overflow-wrap: anywhere; }
+    .kutter-quip { display:block; font-style: italic; font-weight: 400; color: #9fc9b6; font-size: 0.76rem; margin-top: 2px; white-space: normal; overflow-wrap: anywhere; }
     .kutter-feed td:last-child { max-width: 260px; white-space: normal; }
     .kutter-summary { font-style: italic; color: #ffe6c2; background: rgba(200,147,58,0.12); border-left: 3px solid #c8933a; padding: 8px 12px; border-radius: 0 8px 8px 0; margin-bottom: 10px; font-size: 0.85rem; line-height: 1.4; }
     .kutter-seg > i.kseg-res { opacity: .5; background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,.35) 4px 8px); }
     /* Verloren (versunken/geklaut): dunkel + „tote" Schraffur — liest sich als weg, nicht als offen (#8). */
     .kutter-seg > i.kseg-lost { background: rgba(70,74,82,0.85); background-image: repeating-linear-gradient(45deg, transparent 0 3px, rgba(232,169,160,.55) 3px 6px); }
     .kutter-feed td.kf-res { color: #9fc9e8; text-align: right; font-style: italic; }
+    /* Feed-Farblogik — Fracht- UND Ladung-Spalte je Zeile in DERSELBEN Farbe:
+       grün = geliefert (Ladung zusätzlich fett) · dunkleres Blau = getragen (Ware an Bord) ·
+       helleres Blau = am Ladeplatz abgeladen (nicht mehr an Bord, aber kein Verlust) ·
+       rot = verloren (geklaut/versunken). Der Spruch behält sein eigenes Grün. */
+    .kutter-feed td.kf-delivered { color: #7ee6bd; font-weight: 700; }
+    .kutter-feed td.kf-carry { color: #9fc9e8; font-style: italic; }
+    .kutter-feed td.kf-relay { color: #b3ddff; font-style: italic; }
+    .kutter-feed td.kf-relay-kg { color: #b3ddff; text-align: right; font-style: italic; }
     .kutter-loss { color: #e8a9a0; }
     /* Verlust-Marker in den Teil-Balken (je Startplatz) kleiner — untergeordnet zum Gesamt-Block. */
     .kutter-loss--sm { font-size: 0.82em; opacity: 0.85; }
@@ -3338,6 +3346,8 @@ function _kutterBannerBlock(d) {
           ? a.lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
               + (a.lines.length > 1 ? ' (' + Math.round(l.kg) + ')' : '')).join(' + ')
           : (a.kg > 0 ? Math.round(a.kg) + ' kg' : 'leer');
+        // Ware an Bord → Getragen-Blau (kf-carry, wie im Events-Feed); nichts an Bord → neutral.
+        const loadCls = (a.lines.length || a.kg > 0) ? 'kf-carry' : 'kf-empty';
         // Kein Inline-onclick mit interpoliertem Callsign (XSS: HTML-Escaping schützt den
         // JS-String-Kontext im Attribut nicht) — data-Attribut + delegierter Listener.
         // Gleiches Pin-Symbol wie in der Live-Tabelle (td-map-btn), kein neues Icon.
@@ -3354,7 +3364,7 @@ function _kutterBannerBlock(d) {
           : '—';
         // Callsign neutral (keine Link-Farbe — es ist keiner; Links sind hier nur Pin + Zum Kutter).
         return `<tr><td class="mono">${_kesc(a.callsign || '—')}</td><td class="mono">${_kesc(a.aircraft || '—')}</td>`
-          + `<td>${load}</td><td class="mono">${strecke}</td><td>${a.status}</td>${map}</tr>`;
+          + `<td class="${loadCls}">${load}</td><td class="mono">${strecke}</td><td>${a.status}</td>${map}</tr>`;
       }).join('');
       html += '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Callsign</th><th>Muster</th>'
         + '<th>Ladung</th><th title="Von der letzten Landung zum Ziel der Ladung — NICHT der Ladeplatz">Strecke</th><th>Status</th><th>Karte</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
@@ -4255,8 +4265,8 @@ function renderSpecialEventStats(data) {
       ${_kpiCard(k.participations, 'Teilnahmen')}
       ${_kpiCard(k.flights, 'Flüge')}
       ${_kpiCard(_fmtTons(k.delivered_kg), 'Tonnage')}
-      ${_kpiCard(_fmtTons(k.sunk_kg), '💀 Versunken', `${k.sunk_count || 0} Kutter`)}
-      ${_kpiCard(_fmtTons(k.stolen_kg), '💀 Geklaut', `${k.stolen_count || 0} Ladungen`)}
+      ${_kpiCard(_fmtTons(k.sunk_kg), '🌊 Versunken', `${k.sunk_count || 0} Kutter`)}
+      ${_kpiCard(_fmtTons(k.stolen_kg), '🏴‍☠️ Geklaut', `${k.stolen_count || 0} Ladungen`)}
     </div>`);
   }
   if ((b.race_count || 0) > 0) {
@@ -4885,18 +4895,26 @@ function _kCargoLabel(f) {
         + ' (' + Math.round(l.kg) + ')').join(' + ')
     : _kesc(f.cargo_name || '');
   const quip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
+  if (f.loss_kind === 'returned') {
+    // „am Ladeplatz abgeladen" ist KEIN Verlust — die Ware ist heil und liegt zum Weitertragen
+    // bereit. Helleres Blau (kf-relay, gleiche Farbe wie die Fracht-Spalte kf-relay-kg), NICHT rot
+    // wie versunken/geklaut und heller als das Getragen-Blau, weil die Ware nicht mehr an Bord ist.
+    // Kein Spruch (der hängt nur an Ablieferung/echtem Verlust).
+    return '<td class="kf-relay">' + (cargoTxt ? cargoTxt + ' · ' : '') + _kLossLabel(f.loss_kind) + '</td>';
+  }
   if (f.loss_kind) {
-    // Verlust: was war an Bord + wie es verloren ging (versenkt/geklaut/zurückgebracht).
+    // Echter Verlust (versenkt/geklaut): was war an Bord + wie es verloren ging — rot.
     return '<td class="kutter-loss">' + (cargoTxt ? cargoTxt + ' · ' : '') + _kLossLabel(f.loss_kind) + quip + '</td>';
   }
   if (f.loaded) {
-    // Am Ziel abgeliefert — kräftig (kein kf-empty): die „harte" Buchung.
-    return '<td>' + cargoTxt + quip + '</td>';
+    // Am Ziel abgeliefert — grün + fett (gleiche Farbe wie die kg der Fracht-Spalte, kf-kg). Der
+    // Spruch behält via .kutter-quip sein eigenes Grün und bleibt normal (nicht fett).
+    return '<td class="kf-delivered">' + cargoTxt + quip + '</td>';
   }
   if (cargoTxt) {
     // Trägt Ware, aber (noch) nicht am Ziel: laufendes Leg ODER durchgetragenes Zwischenleg.
-    // Gedämpft (kf-empty), weil noch „schwebend" — der Status steckt im Icon der Fracht-Spalte.
-    return '<td class="kf-empty">' + cargoTxt + quip + '</td>';
+    // Getragen-Blau (kf-carry, gleiche Farbe wie die Fracht-Spalte kf-res) — Ware ist an Bord.
+    return '<td class="kf-carry">' + cargoTxt + quip + '</td>';
   }
   // Wirklich nichts an Bord.
   return '<td class="kf-empty">' + (f.in_air ? (f.airborne ? 'unterwegs' : 'lädt') : 'leer') + '</td>';
@@ -5117,7 +5135,9 @@ function _kutterDetailBody(d) {
   const rows = (d.flights || []).map(f => {
     const t = (f.dep_time || '').slice(11, 16);
     const kg = f.loaded ? '<td class="kf-kg">' + _kDualKg(f.tonnage_kg, f.onboard_kg) + '</td>'
-      : f.loss_kind ? '<td class="kf-empty kutter-loss">' + (f.lost_kg ? Math.round(f.lost_kg) + ' kg' : '—') + '</td>'
+      : f.loss_kind === 'returned'
+        ? '<td class="kf-relay-kg">' + (Math.round((f.cargo_lines || []).reduce((s, l) => s + (l.kg || 0), 0)) || '—') + ' kg ↩️</td>'
+      : f.loss_kind ? '<td class="kf-empty kutter-loss">' + (f.lost_kg ? Math.round(f.lost_kg) + ' kg' : '—') + (f.loss_kind === 'stolen' ? ' 🏴‍☠️' : ' 🌊') + '</td>'
       : f.in_air ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg)
                  + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
       : f.carried_through ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + ' 🔀</td>'

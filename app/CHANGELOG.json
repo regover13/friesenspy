@@ -1,5 +1,17 @@
 [
   {
+    "version": "10.2.5",
+    "date": "2026-07-21",
+    "highlight": false,
+    "title": "Kutter-Feed: einheitliche Farb-Logik + richtige Verlust-Symbole",
+    "items": [
+      "🎨 Der Kutter-Feed hat jetzt eine durchgängige Farb-Logik — Fracht- und Ladung-Spalte je Zeile in DERSELBEN Farbe: grün = geliefert (Ladung zusätzlich fett), dunkleres Blau = getragen (Ware an Bord), helleres Blau = am Ladeplatz abgeladen (nicht mehr an Bord, aber kein Verlust), rot = verloren. Der launige Spruch behält sein eigenes Grün.",
+      "↩️ Ein „am Ladeplatz abgeladen“-Leg wird nicht mehr rot wie ein Verlust dargestellt — es ist keiner (die Ware liegt heil zum Weitertragen bereit). Die Fracht-Spalte zeigt dort die abgelegte Menge (z. B. „80 kg ↩️“) statt „—“.",
+      "🌊 Verlust-Zeilen tragen ihr Symbol jetzt auch in der Fracht-Spalte (🌊 versunken, 🏴‍☠️ geklaut) — wie 🔀 und ↩️ schon. Und die Statistik-Kacheln „Versunken/Geklaut“ zeigen 🌊 bzw. 🏴‍☠️ statt zweimal 💀 (der Totenkopf steht nur noch für die Gesamt-Verlustmenge). Reine Anzeige, die Zahlen stimmten.",
+      "🛰️ Im Live-Banner wird die Ladung eines Piloten, der gerade etwas an Bord hat, im selben Getragen-Blau angezeigt — konsistent zum Feed."
+    ]
+  },
+  {
     "version": "10.2.4",
     "date": "2026-07-21",
     "highlight": false,
