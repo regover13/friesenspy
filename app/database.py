@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import sqlite3
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -3335,6 +3336,22 @@ def list_visibility_restrictions(conn: sqlite3.Connection) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _bummel_edge_label(edge: tuple[str, str]) -> str:
+    """Anzeige einer ungerichteten Etappe: „A ↔ B" (edge ist bereits sortiert)."""
+    return f"{edge[0]} ↔ {edge[1]}"
+
+
+def _route_touch_edges(segment: list[str], route_set: set[str]) -> Counter:
+    """Kanten-Multimenge EINER zusammenhängenden Leg-Kette: auf Streckenplätze projizieren,
+    aufeinanderfolgende Duplikate entfernen, benachbarte Plätze als ungerichtete Kanten zählen.
+    Off-Route-Plätze werden übersprungen (Etappe A–B gilt auch über Off-Route-Zwischenstopp)."""
+    touch: list[str] = []
+    for p in segment:
+        if p in route_set and (not touch or touch[-1] != p):
+            touch.append(p)
+    return Counter(tuple(sorted((a, b))) for a, b in zip(touch, touch[1:]))
+
+
 def compute_bummel_standings(
     conn: sqlite3.Connection,
     route_icaos: list[str],
@@ -3382,12 +3399,21 @@ def compute_bummel_standings(
           "count": int,                         # Anzahl kompletter Touren
         }
     """
-    route_order: list[str] = []
+    # route_seq: Route saniert — strip/upper, leere raus, AUFEINANDERFOLGENDE Duplikate raus
+    # (Reihenfolge + nicht-benachbarte Wiederholung bleiben, damit ein Rundkurs A,B,C,A erhalten
+    # bleibt). Verhindert eine unerfüllbare Selbstkante (A2). route_set = distinkte Plätze, nur
+    # für den Zugehörigkeitstest „Landepunkt liegt auf der Strecke".
+    route_seq: list[str] = []
     for code in route_icaos:
         c = (code or "").strip().upper()
-        if c and c not in route_order:
-            route_order.append(c)
-    route_set = set(route_order)
+        if c and (not route_seq or route_seq[-1] != c):
+            route_seq.append(c)
+    route_set = set(route_seq)
+    # Pflicht-Etappen = ungerichtete Kanten-Multimenge der Nachbarpaare. Der Rückweg eines
+    # Rundkurses (letztes Paar) ist so eine eigene Pflicht-Etappe. Kante = sortiertes Tupel.
+    required_edges: Counter = Counter(
+        tuple(sorted((a, b))) for a, b in zip(route_seq, route_seq[1:])
+    )
 
     # radius_km bleibt als Parameter erhalten (main.py._build_race_view reicht weiterhin
     # race["radius_km"] durch) — wirkt aber nicht mehr auf die Endpunkt-Zuordnung. Die GPS-
@@ -3446,16 +3472,35 @@ def compute_bummel_standings(
         if start_idx is None or end_idx is None or end_idx < start_idx:
             continue  # keine an der Strecke beginnende UND endende Tour
         tour = legs[start_idx:end_idx + 1]
-        visited: set[str] = set()
         total = 0
         total_secs = 0
         for l in tour:
             total += l["minutes"]
             total_secs += l["seconds"]
-            if l["departure"] in route_set:
-                visited.add(l["departure"])
-            if l["arrival"] in route_set:
-                visited.add(l["arrival"])
+        # achieved_edges: geflogene Etappen — Kanten NUR aus zusammenhängenden Leg-Ketten. Eine
+        # Lücke (arr von Leg i ≠ dep von Leg i+1) oder ein leerer Endpunkt bricht die Kette, damit
+        # keine Phantom-Kante über nie geflogene Strecken entsteht (A1). Off-Route-Zwischenstopps
+        # bleiben Teil des Segments (werden bei der Projektion übersprungen → „Weg erlaubt").
+        achieved_edges: Counter = Counter()
+        segment: list[str] = []
+        for l in tour:
+            dep, arr = l["departure"], l["arrival"]
+            if segment and segment[-1] == dep and dep:
+                segment.append(arr)
+            else:
+                achieved_edges.update(_route_touch_edges(segment, route_set))
+                segment = [dep, arr]
+        achieved_edges.update(_route_touch_edges(segment, route_set))
+
+        # komplett ⇔ jede Pflicht-Etappe (mit Multiplizität) gedeckt. Counter-Subtraktion lässt
+        # nur die Fehlmengen (> 0) stehen; leer ⇒ alle Etappen geflogen.
+        missing_ctr = required_edges - achieved_edges
+        visited_edges = []
+        for e, n in required_edges.items():
+            visited_edges += [_bummel_edge_label(e)] * min(achieved_edges[e], n)
+        missing_edges = []
+        for e, n in missing_ctr.items():
+            missing_edges += [_bummel_edge_label(e)] * n
         row = conn.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
         entry = {
             "cid": cid,
@@ -3466,10 +3511,10 @@ def compute_bummel_standings(
             "legs": [{k: v for k, v in l.items() if k != "callsign"} for l in tour],
             "leg_count": len(tour),
             "aircraft": next((l["aircraft"] for l in tour if l["aircraft"]), ""),
-            "visited": [c for c in route_order if c in visited],
-            "missing": [c for c in route_order if c not in visited],
+            "visited": visited_edges,
+            "missing": missing_edges,
         }
-        (complete if route_set.issubset(visited) else incomplete).append(entry)
+        (complete if not missing_ctr else incomplete).append(entry)
 
     count = len(complete)
     average = (sum(e["total_min"] for e in complete) / count) if count else 0.0
@@ -3484,7 +3529,7 @@ def compute_bummel_standings(
     incomplete.sort(key=lambda e: e["cid"])
 
     return {
-        "route": route_order,
+        "route": route_seq,
         "complete": complete,
         "incomplete": incomplete,
         "average_min": round(average, 1),

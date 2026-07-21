@@ -203,22 +203,26 @@ class TestRanking:
 
 
 class TestDirectionAndOrderAgnostic:
-    def test_reverse_and_alternate_routing_count_as_complete(self):
+    def test_reverse_complete_but_alternate_routing_incomplete(self):
+        """Kanten-Modell: Rückwärts fliegen ist komplett (Richtung egal), ABER ein alternatives
+        Routing über einen ANDEREN Streckenplatz (A→C→B) zerlegt die Etappe A–B → unvollständig
+        (B1). Das ist die bewusste Abkehr vom alten Knoten-Modell."""
         conn = _make_conn()
         route = ["EDWF", "EDWG", "EDWR"]
-        # Rückwärts geflogen
+        # Rückwärts geflogen (C→B→A) — deckt dieselben ungerichteten Kanten → komplett.
         _add_flight(conn, 100, "Rosa", "EDWR", "EDWG", 25)
         _add_flight(conn, 100, "Rosa", "EDWG", "EDWF", 25)
-        # Alternatives Routing (A→C→B)
+        # Alternatives Routing (A→C→B): Etappe EDWF–EDWG wird nie direkt geflogen.
         _add_flight(conn, 200, "Alf", "EDWF", "EDWR", 20)
         _add_flight(conn, 200, "Alf", "EDWR", "EDWG", 20)
 
         result = compute_bummel_standings(conn, route, START, END)
 
-        assert result["incomplete"] == []
-        assert result["count"] == 2
-        assert _by_cid(result["complete"], 100)["total_min"] == 50
-        assert _by_cid(result["complete"], 200)["total_min"] == 40
+        rosa = _by_cid(result["complete"], 100)
+        assert rosa is not None and rosa["total_min"] == 50
+        alf = _by_cid(result["incomplete"], 200)
+        assert alf is not None, "A→C→B fliegt EDWF–EDWG nie direkt → unvollständig"
+        assert _edge("EDWF", "EDWG") in alf["missing"]
 
 
 class TestIncomplete:
@@ -233,8 +237,8 @@ class TestIncomplete:
         assert result["count"] == 0
         tom = _by_cid(result["incomplete"], 100)
         assert tom is not None
-        assert set(tom["visited"]) == {"EDWF", "EDWG"}
-        assert tom["missing"] == ["EDWR"]
+        assert set(tom["visited"]) == {_edge("EDWF", "EDWG")}
+        assert tom["missing"] == [_edge("EDWG", "EDWR")]
 
 
 class TestTimeMetric:
@@ -295,7 +299,7 @@ class TestTourWithStops:
 
         stan = _by_cid(result["complete"], 100)
         assert stan is not None, "Tour mit Zwischenstopp muss komplett sein"
-        assert set(stan["visited"]) == {"EDWF", "EDWG"}
+        assert set(stan["visited"]) == {_edge("EDWF", "EDWG")}
         # Summe der reinen Blockzeiten (30+30); die Bodenzeit in EDDH (11:30–13:00) zählt NICHT.
         assert stan["total_min"] == 60
 
@@ -368,7 +372,7 @@ class TestRadiusParam:
         assert rudi_default is not None
         assert rudi_wide is not None
         assert rudi_default["total_min"] == rudi_wide["total_min"]
-        assert set(rudi_default["visited"]) == {"EDDH", "EDDM"}
+        assert set(rudi_default["visited"]) == {_edge("EDDH", "EDDM")}
 
 
 class TestBlockTimeSource:
@@ -448,7 +452,7 @@ class TestPublicView:
         for leak in ("total_min", "block_min", "delta", "rank", "average", "distance"):
             assert leak not in blob, f"Leak: {leak} steht im redigierten JSON"
         anna = _by_cid(parts, 100)
-        assert set(anna["visited"]) == {"EDWF", "EDWG", "EDWR"}
+        assert set(anna["visited"]) == {_edge("EDWF", "EDWG"), _edge("EDWG", "EDWR")}
         assert anna["aircraft"] == "C172"
         assert anna["leg_count"] == 2
 
@@ -473,7 +477,7 @@ class TestGpsPresence:
         result = compute_bummel_standings(conn, route, START, END)
         eva = _by_cid(result["complete"], 100)
         assert eva is not None, "GPS muss EDWR trotz Flugplan-Tippfehler erkennen"
-        assert set(eva["visited"]) == {"EDWF", "EDWG", "EDWR"}
+        assert set(eva["visited"]) == {_edge("EDWF", "EDWG"), _edge("EDWG", "EDWR")}
         # Das vertippte Leg wird auf den echten Zielflugplatz korrigiert
         assert any(l["arrival"] == "EDWR" for l in eva["legs"])
 
@@ -505,7 +509,7 @@ class TestFrodeGpsLandingWithoutDisconnect:
 
         frode = _by_cid(result["complete"], 900)
         assert frode is not None, "GPS-Landung muss trotz offener Connection zählen"
-        assert set(frode["visited"]) == {"EDWF", "EDWG"}
+        assert set(frode["visited"]) == {_edge("EDWF", "EDWG")}
         assert frode["total_min"] > 0
         assert frode["total_sec"] == frode["total_min"] * 60
 
@@ -532,7 +536,7 @@ class TestZwischenlandungGpsTrack:
 
         stan = _by_cid(result["complete"], 950)
         assert stan is not None, "Tour mit echtem GPS-Zwischenstopp muss komplett sein"
-        assert set(stan["visited"]) == {"EDWF", "EDWG"}
+        assert set(stan["visited"]) == {_edge("EDWF", "EDWG")}
         assert stan["leg_count"] == 2
         # Reine Summe der beiden Block-Zeiten; die Bodenzeit in EDDH (11:xx–13:00) zählt NICHT.
         assert stan["total_sec"] == stan["legs"][0]["seconds"] + stan["legs"][1]["seconds"]
@@ -556,6 +560,102 @@ class TestFragmentMerge:
 
         eva = _by_cid(result["complete"], 100)
         assert eva is not None
-        assert set(eva["visited"]) == {"EDWF", "EDWG", "EDWR"}
+        assert set(eva["visited"]) == {_edge("EDWF", "EDWG"), _edge("EDWG", "EDWR")}
         # 30 (gemergtes Leg) + 30 (zweites Leg) = 60
         assert eva["total_min"] == 60
+
+
+def _edge(a: str, b: str) -> str:
+    """Erwartete Kanten-Darstellung (ungerichtet, sortiert) — Spiegel der Implementierung."""
+    x, y = sorted((a, b))
+    return f"{x} ↔ {y}"
+
+
+class TestRoundCourseEdges:
+    """Kanten-basierte Wertung (Spec 2026-07-21): Route = geordnete Plätze-Kette mit Wiederholung
+    → Pflicht-Etappen (ungerichtete Kanten-Multimenge). Komplett = jede Etappe geflogen. Der
+    Rückweg eines Rundkurses ist eine eigene Pflicht-Etappe."""
+
+    RING = ["EDWF", "EDWG", "EDWR", "EDWF"]   # Rundkurs A→B→C→A
+
+    def test_full_round_is_complete(self):
+        conn = _make_conn()
+        _add_flight(conn, 100, "Ringo", "EDWF", "EDWG", 20, logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:20:00Z")
+        _add_flight(conn, 100, "Ringo", "EDWG", "EDWR", 20, logon="2026-06-27T12:00:00Z", logoff="2026-06-27T12:20:00Z")
+        _add_flight(conn, 100, "Ringo", "EDWR", "EDWF", 20, logon="2026-06-27T13:00:00Z", logoff="2026-06-27T13:20:00Z")
+        result = compute_bummel_standings(conn, self.RING, START, END)
+        ringo = _by_cid(result["complete"], 100)
+        assert ringo is not None
+        assert ringo["missing"] == []
+        assert ringo["total_min"] == 60
+
+    def test_round_without_return_is_incomplete(self):
+        # KERNFALL gegen das alte Knoten-Modell: alle drei Plätze besucht, aber NICHT zurück.
+        conn = _make_conn()
+        _add_flight(conn, 100, "Nora", "EDWF", "EDWG", 20, logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:20:00Z")
+        _add_flight(conn, 100, "Nora", "EDWG", "EDWR", 20, logon="2026-06-27T12:00:00Z", logoff="2026-06-27T12:20:00Z")
+        result = compute_bummel_standings(conn, self.RING, START, END)
+        assert _by_cid(result["complete"], 100) is None
+        nora = _by_cid(result["incomplete"], 100)
+        assert nora is not None
+        assert nora["missing"] == [_edge("EDWR", "EDWF")]   # der Rückweg fehlt
+
+    def test_reverse_round_is_complete(self):
+        # Richtung egal: Dreieck andersherum deckt dieselben ungerichteten Kanten.
+        conn = _make_conn()
+        _add_flight(conn, 100, "Rev", "EDWF", "EDWR", 20, logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:20:00Z")
+        _add_flight(conn, 100, "Rev", "EDWR", "EDWG", 20, logon="2026-06-27T12:00:00Z", logoff="2026-06-27T12:20:00Z")
+        _add_flight(conn, 100, "Rev", "EDWG", "EDWF", 20, logon="2026-06-27T13:00:00Z", logoff="2026-06-27T13:20:00Z")
+        result = compute_bummel_standings(conn, self.RING, START, END)
+        assert _by_cid(result["complete"], 100) is not None
+
+    def test_offroute_stop_still_completes_edge(self):
+        # Weg erlaubt: Off-Route-Zwischenstopp EDDH innerhalb einer Etappe zerlegt sie NICHT.
+        conn = _make_conn()
+        route = ["EDWF", "EDWG"]
+        _add_flight(conn, 100, "Ossi", "EDWF", "EDDH", 20, logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:20:00Z")
+        _add_flight(conn, 100, "Ossi", "EDDH", "EDWG", 20, logon="2026-06-27T12:00:00Z", logoff="2026-06-27T12:20:00Z")
+        result = compute_bummel_standings(conn, route, START, END)
+        ossi = _by_cid(result["complete"], 100)
+        assert ossi is not None
+        assert ossi["visited"] == [_edge("EDWF", "EDWG")]
+
+    def test_route_airport_as_stop_breaks_edge(self):
+        # B1: ein ANDERER Streckenplatz als Zwischenstopp zerlegt die Etappe.
+        # route offen A,B,C,D; Pilot A→C→B→C→D: A–B nie direkt → unvollständig.
+        conn = _make_conn()
+        route = ["EDWF", "EDWG", "EDWR", "EDWI"]
+        _add_flight(conn, 100, "Break", "EDWF", "EDWR", 20, logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:20:00Z")
+        _add_flight(conn, 100, "Break", "EDWR", "EDWG", 20, logon="2026-06-27T12:00:00Z", logoff="2026-06-27T12:20:00Z")
+        _add_flight(conn, 100, "Break", "EDWG", "EDWR", 20, logon="2026-06-27T13:00:00Z", logoff="2026-06-27T13:20:00Z")
+        _add_flight(conn, 100, "Break", "EDWR", "EDWI", 20, logon="2026-06-27T14:00:00Z", logoff="2026-06-27T14:20:00Z")
+        result = compute_bummel_standings(conn, route, START, END)
+        brk = _by_cid(result["incomplete"], 100)
+        assert brk is not None
+        assert _edge("EDWF", "EDWG") in brk["missing"]
+
+    def test_gap_between_legs_no_phantom_edge(self):
+        # A1: Lücke zwischen Legs (arr≠dep des Folgelegs) bildet KEINE Kante.
+        # Ring A,B,C,A; Pilot A→B, dann (Lücke) C→A. B–C nie geflogen → unvollständig.
+        conn = _make_conn()
+        _add_flight(conn, 100, "Gap", "EDWF", "EDWG", 20, logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:20:00Z")
+        _add_flight(conn, 100, "Gap", "EDWR", "EDWF", 20, logon="2026-06-27T13:00:00Z", logoff="2026-06-27T13:20:00Z")
+        result = compute_bummel_standings(conn, self.RING, START, END)
+        assert _by_cid(result["complete"], 100) is None
+        gap = _by_cid(result["incomplete"], 100)
+        assert gap is not None
+        assert _edge("EDWG", "EDWR") in gap["missing"]
+
+    def test_display_route_keeps_repeat(self):
+        # Anzeige-Route roh (mit Wiederholung), nicht dedupliziert.
+        conn = _make_conn()
+        result = compute_bummel_standings(conn, self.RING, START, END)
+        assert result["route"] == ["EDWF", "EDWG", "EDWR", "EDWF"]
+
+    def test_consecutive_duplicate_sanitized(self):
+        # A2: aufeinanderfolgende Duplikate raus → keine unerfüllbare Selbstkante.
+        conn = _make_conn()
+        _add_flight(conn, 100, "San", "EDWF", "EDWG", 20, logon="2026-06-27T11:00:00Z", logoff="2026-06-27T11:20:00Z")
+        result = compute_bummel_standings(conn, ["EDWF", "EDWF", "EDWG"], START, END)
+        assert result["route"] == ["EDWF", "EDWG"]
+        assert _by_cid(result["complete"], 100) is not None   # A→B erfüllt einzige Etappe

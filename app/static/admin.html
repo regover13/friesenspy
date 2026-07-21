@@ -1889,7 +1889,7 @@
       if (d.incomplete && d.incomplete.length) {
         html += section('Unvollständig (' + d.incomplete.length + ')',
           tableWrap(
-            thRow(['Pilot', 'CID', 'Callsign', 'Flugzeug', 'Abgehakt', 'Fehlend', 'Badge', 'Aktionen']),
+            thRow(['Pilot', 'CID', 'Callsign', 'Flugzeug', 'Etappen ✓', 'Etappen fehlt', 'Badge', 'Aktionen']),
             d.incomplete.map(p => {
               const visited = (p.visited || []).join(', ') || '—';
               const missing = (p.missing || []).join(', ') || '—';

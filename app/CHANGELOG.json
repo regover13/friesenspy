@@ -1,5 +1,15 @@
 [
   {
+    "version": "10.4.0",
+    "date": "2026-07-21",
+    "highlight": false,
+    "title": "Bummel-Wertung kanten-basiert — Rundkurse mit Pflicht-Rückweg",
+    "items": [
+      "🔁 Ein Bummel wird jetzt über seine ETAPPEN gewertet, nicht mehr über die bloße Menge besuchter Plätze. Ein Rundkurs (z. B. EDKB → EDKL → EDKF → EDKB) verlangt dadurch auch den Rückweg: Wer nicht zum Start zurückfliegt, dem fehlt eine Etappe und die Tour ist unvollständig. „Richtung egal / Reihenfolge egal / Off-Route-Zwischenstopps erlaubt“ bleibt erhalten, die Zeitwertung (ganze Tour-Blockzeit) ebenfalls.",
+      "🗺 Die Strecke wird in der Ansicht wieder vollständig gezeigt — inkl. Wiederholung, also der echte Rundkurs statt der verkürzten Platz-Liste. Fortschritt/Fehlend nennt jetzt Etappen (z. B. „EDKF ↔ EDKB“) statt einzelner Plätze."
+    ]
+  },
+  {
     "version": "10.3.1",
     "date": "2026-07-21",
     "highlight": false,

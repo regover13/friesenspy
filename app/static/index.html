@@ -3122,7 +3122,7 @@ function renderBummelParticipants(view) {
     parts.forEach(p => {
       const total = (p.visited || []).length + (p.missing || []).length;
       const miss = (p.missing || []).length ? ` <span class="bi-missing">(fehlt ${escHtml((p.missing || []).join(', '))})</span>` : '';
-      const st = p.in_progress ? '🛫 unterwegs' : ((p.missing || []).length ? 'unvollständig' : '✓ alle Plätze');
+      const st = p.in_progress ? '🛫 unterwegs' : ((p.missing || []).length ? 'unvollständig' : '✓ alle Etappen');
       html += `<tr>
         <td>${escHtml(p.name || ('CID ' + p.cid))}</td>
         <td class="mono text-label">${escHtml(p.cid)}</td>
@@ -3247,11 +3247,11 @@ function renderBummelStandings(data, inProgress) {
   }
 
   if (data.incomplete && data.incomplete.length) {
-    html += '<div class="bummel-incomplete"><strong>Unvollständig (noch nicht alle Flugplätze besucht):</strong><br>';
+    html += '<div class="bummel-incomplete"><strong>Unvollständig (noch nicht alle Etappen geflogen):</strong><br>';
     html += data.incomplete.map(e => {
       const visited = (e.visited || []).join(', ') || '—';
       const missing = (e.missing || []).join(', ');
-      return `${escHtml(e.name || e.callsign || ('CID ' + e.cid))} — besucht: ${escHtml(visited)}` +
+      return `${escHtml(e.name || e.callsign || ('CID ' + e.cid))} — geflogen: ${escHtml(visited)}` +
              (missing ? ` <span class="bi-missing">(fehlt: ${escHtml(missing)})</span>` : '') +
              ` ${_bummelBadgeLinks(data.id, e.cid)}`;
     }).join('<br>');
