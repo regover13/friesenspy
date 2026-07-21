@@ -3096,12 +3096,26 @@ async function openBummel(ev) {
 // Verdeckte Teilnahme-Ansicht (vor Enthüllung) — bewusst OHNE Zeiten/Schnitt/Ranking.
 function renderBummelParticipants(view) {
   const route = (view.route || []).join(' → ');
-  const statusText = view.status === 'waiting'
-    ? 'Rennen beendet — warten auf Nachzügler. Ergebnisse erscheinen, sobald alle gelandet (oder offline) sind.'
-    : 'Rennen läuft — Ergebnisse und Ranking erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann.';
+  // scheduled = Start liegt noch in der Zukunft; NICHT als „läuft" beschriften (sonst wirkt ein
+  // geplantes Rennen wie ein bereits gestartetes — Fund 21.07.). waiting = beendet, Nachzügler.
+  const startTxt = view.dtstart ? `${view.dtstart.slice(8,10)}.${view.dtstart.slice(5,7)}. ${view.dtstart.slice(11,16)}z` : '';
+  let statusText, lockIcon;
+  if (view.status === 'scheduled') {
+    lockIcon = '⏳';
+    statusText = `Rennen noch nicht gestartet${startTxt ? ' — geplanter Start ' + startTxt : ''}. Ergebnisse erscheinen erst nach Renn-Ende.`;
+  } else if (view.status === 'waiting') {
+    lockIcon = '🔒';
+    statusText = 'Rennen beendet — warten auf Nachzügler. Ergebnisse erscheinen, sobald alle gelandet (oder offline) sind.';
+  } else {
+    lockIcon = '🔒';
+    statusText = 'Rennen läuft — Ergebnisse und Ranking erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann.';
+  }
+  const partLine = view.status === 'scheduled'
+    ? (view.participant_count ? `${view.participant_count} Teilnehmer vorgemerkt` : 'Noch keine Teilnehmer')
+    : `${view.participant_count} Teilnehmer bisher`;
   let html = `<div class="bummel-sub mono text-label" style="margin-bottom:6px;">Strecke: ${escHtml(route)}</div>`;
-  html += `<div class="bummel-avg-row">🔒 ${statusText}</div>`;
-  html += `<div class="bummel-sub mono text-label" style="margin:6px 0;">${view.participant_count} Teilnehmer bisher</div>`;
+  html += `<div class="bummel-avg-row">${lockIcon} ${statusText}</div>`;
+  html += `<div class="bummel-sub mono text-label" style="margin:6px 0;">${partLine}</div>`;
   const parts = view.participants || [];
   if (parts.length) {
     html += '<div class="live-table-wrap"><table><thead><tr><th>Pilot</th><th>CID</th><th>Callsign</th><th>Flugzeug</th><th>Start (UTC)</th><th>Fortschritt</th><th>Status</th></tr></thead><tbody>';

@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.3.1",
+    "date": "2026-07-21",
+    "highlight": false,
+    "title": "Bummel-Detail: geplantes Rennen nicht mehr als „läuft“ beschriftet",
+    "items": [
+      "⏳ Ein Bummel, dessen Start noch in der Zukunft liegt, zeigt in der Detail-Ansicht jetzt „Rennen noch nicht gestartet — geplanter Start TT.MM. HH:MMz“ statt fälschlich „Rennen läuft“. Der Status kannte bisher nur „beendet“ vs. „läuft“; ein geplantes Rennen fiel in den „läuft“-Zweig. Das Live-Banner war nie betroffen (zeigt nur wirklich gestartete Rennen)."
+    ]
+  },
+  {
     "version": "10.3.0",
     "date": "2026-07-21",
     "highlight": false,
