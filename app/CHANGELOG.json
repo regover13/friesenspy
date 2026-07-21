@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.4.4",
+    "date": "2026-07-21",
+    "highlight": false,
+    "title": "Bummel „unterwegs“: am Gate zählt nicht mehr (nur GPS-abgehoben)",
+    "items": [
+      "🛫 Die „unterwegs“-Anzeige eines laufenden Bummels zeigt jetzt nur noch Piloten, die per GPS tatsächlich abgehoben sind (offenes, frisches Leg) — wer mit passendem Flugplan nur am Boden/Gate steht, erscheint nicht mehr. Der Flugplan bleibt die Grundlage (kennt das Ziel, ist immun gegen Off-Route-Zwischenstopps, verschwindet automatisch bei Logout); der GPS-Track liefert nur das „ist-in-der-Luft“-Signal. Ein „totes“ offenes Leg nach einem Mid-Air-Disconnect zählt dank Frische-Prüfung nicht mehr mit. Reine Live-Anzeige, die Wertung ist unberührt."
+    ]
+  },
+  {
     "version": "10.4.3",
     "date": "2026-07-21",
     "highlight": false,

@@ -1079,11 +1079,32 @@ async def get_calendar_events_endpoint():
 
 
 def _open_bummel_legs(conn, route_set: set[str], start: str, end: str) -> list[dict]:
-    """Aktuell laufende Flüge (logoff_time IS NULL) auf einem Strecken-Leg.
+    """Aktuell laufende Flüge auf einem Strecken-Leg — fürs Live-Banner „gerade unterwegs".
 
-    Liefert die „gerade unterwegs"-Info fürs Live-Banner: Flüge ohne block_min/Wertung,
-    deren Start UND Ziel zur Strecke gehören. Provisorisch, bis der Flug abgeschlossen ist.
+    Ein Pilot erscheint „unterwegs", wenn BEIDES gilt:
+
+    1. **Flugplan auf der Strecke** (offene ``flights``-Zeile, ``logoff_time IS NULL``): Start UND
+       Ziel gehören zur Strecke. Das kennt die ABSICHT (Ziel) und ist damit immun gegen
+       Off-Route-Zwischenstopps — der Plan bleibt konstant (z. B. EDKB→EDKB für den ganzen
+       Rundkurs, dep==arr ist ausdrücklich zulässig). Logouts regelt es automatisch: loggt jemand
+       aus, setzt der Poller ``logoff_time`` → die Zeile fällt hier heraus.
+    2. **Tatsächlich abgehoben** (per :func:`canonicalize_legs`): der Pilot hat ein OFFENES
+       GPS-Leg (``logoff_time is None``), ist also wirklich in der Luft. Wer nur am Gate steht
+       (Steh-Position, kein erkanntes Leg), erscheint NICHT.
+
+    Ab der ersten Etappe sichtbar (nicht „streng"): ein offenes Leg gibt es schon im Steigflug.
+    Provisorisch, ohne block_min/Wertung — bis der Flug abgeschlossen ist.
+
+    Bekannte Grenze: Ein Track, der erst MITTEN in der Luft unter ~50 kt beginnt, wird vom
+    GPS-Detektor evtl. nicht als Leg erkannt (kein Abhebe-Punkt). Für die FriesenFlieger-Muster
+    (Reiseflug > 50 kt, auch die Wilga) praktisch irrelevant.
     """
+    from app.database import (
+        _BUMMEL_EARLY_START_LOOKBACK_H,
+        _GPS_RESCUE_LIVE_WINDOW_MIN,
+        _shift_iso,
+    )
+
     settings = get_settings()
     rows = conn.execute(
         "SELECT f.cid, f.callsign, f.departure, f.arrival, f.logon_time, f.aircraft_short, "
@@ -1092,25 +1113,49 @@ def _open_bummel_legs(conn, route_set: set[str], start: str, end: str) -> list[d
         "AND f.callsign LIKE ? AND f.logon_time <= ?",
         (settings.CALLSIGN_PREFIX + "%", end or "9999-12-31"),
     ).fetchall()
-    out: list[dict] = []
-    for r in rows:
-        dep = (r["departure"] or "").strip().upper()
-        arr = (r["arrival"] or "").strip().upper()
-        # dep==arr ist ZULÄSSIG: Ein Rundkurs wird oft als EIN Flugplan mit gleichem Start=Ziel
-        # gefiled (z. B. EDKB→EDKB für die ganze Runde). Der frühere `dep != arr`-Filter blendete
-        # genau solche Piloten aus — sie erschienen nie „unterwegs", obwohl beide Endpunkte auf der
-        # Strecke liegen. Es zählt allein: Start UND Ziel gehören zur Strecke.
-        if dep in route_set and arr in route_set:
-            out.append({
-                "cid": r["cid"],
-                "name": r["name"] or "",
-                "callsign": r["callsign"] or "",
-                "departure": dep,
-                "arrival": arr,
-                "logon_time": r["logon_time"],
-                "aircraft": r["aircraft_short"] or "",
-            })
-    return out
+    # Vorfilter: nur offene Flugpläne mit Start UND Ziel auf der Strecke (dep==arr für
+    # Rundkurs-Pläne zulässig). Ohne Kandidaten sparen wir uns den teuren canonicalize_legs-Scan
+    # (Waiting-Phase/leeres Feld) — semantikgleich.
+    candidates = [
+        r for r in rows
+        if (r["departure"] or "").strip().upper() in route_set
+        and (r["arrival"] or "").strip().upper() in route_set
+    ]
+    if not candidates:
+        return []
+    # „ist gerade in der Luft"-Signal aus dem GPS-Track: canonicalize_legs liefert für einen Piloten
+    # in der Luft ein OFFENES Leg (logoff_time is None). Der letzte Track-Punkt (last_pos_ts) muss
+    # zusätzlich FRISCH sein (jünger als das Live-Fenster, analog GPS-Rettung) — sonst zählte ein
+    # „totes" offenes Leg mit (ein Mid-Air-Disconnect fernab jedes Platzes wird nicht als Landung
+    # gerettet und bleibt offen, obwohl der Pilot längst am Boden ist). Vorlauf wie in
+    # compute_bummel_standings (Frühstarter, damit vor `start` gestartete Flüge im Fenster zählen).
+    # TODO(Perf): canonicalize_legs läuft dadurch 2× pro Live-Ansicht (einmal in der Wertung via
+    # compute_bummel_standings, einmal hier). Sauber wäre, es in _build_race_view 1× aufzurufen und
+    # an beide zu reichen — berührt aber die Signatur des Wertungsherzens, daher bewusst später.
+    load_start = _shift_iso(start, hours=-_BUMMEL_EARLY_START_LOOKBACK_H) if start else start
+    fresh_after = (
+        datetime.now(_timezone.utc) - timedelta(minutes=_GPS_RESCUE_LIVE_WINDOW_MIN)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    airborne = {
+        f["cid"]
+        for f in canonicalize_legs(
+            conn, start=load_start, end=end, callsign_prefix=settings.CALLSIGN_PREFIX
+        )
+        if f.get("logoff_time") is None and (f.get("last_pos_ts") or "") >= fresh_after
+    }
+    return [
+        {
+            "cid": r["cid"],
+            "name": r["name"] or "",
+            "callsign": r["callsign"] or "",
+            "departure": (r["departure"] or "").strip().upper(),
+            "arrival": (r["arrival"] or "").strip().upper(),
+            "logon_time": r["logon_time"],
+            "aircraft": r["aircraft_short"] or "",
+        }
+        for r in candidates
+        if r["cid"] in airborne
+    ]
 
 
 def _race_status(race: dict, now: str) -> str:

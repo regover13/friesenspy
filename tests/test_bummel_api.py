@@ -33,6 +33,44 @@ def _patch_settings(monkeypatch, db):
     )
 
 
+# Reale Koordinate EDWF (airportsdata) für GPS-Track-Fixtures.
+_EDWF = (53.27194, 7.44167)
+
+
+def _add_flying_track(conn, cid, dep_fp, arr_fp, *, coord=_EDWF):
+    """Offene flights-Zeile + fliegender GPS-Track (abgehoben, letzter Punkt < 15 min alt).
+
+    canonicalize_legs liefert dafür ein OFFENES Leg (``logoff_time is None``) → der cid gilt als
+    „in der Luft". Ohne echten Track (nur Steh-Position) entsteht kein Leg → nicht airborne.
+    ``dep_fp``/``arr_fp`` sind der Flugplan (dep==arr = Rundkurs-Plan zulässig).
+    """
+    now = datetime.now(timezone.utc)
+    base = now - timedelta(minutes=18)
+    conn.execute("INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)",
+                 (cid, f"P{cid}", _iso(base)))
+    conn.execute(
+        "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
+        "logon_time, logoff_time, duration_min, distance_nm, block_min) "
+        "VALUES (?, ?, 'C172', ?, ?, ?, NULL, NULL, NULL, NULL)",
+        (cid, f"FRS{cid}", dep_fp, arr_fp, _iso(base)),
+    )
+    # Abheben am Platz → Reiseflug; letzter Punkt airborne & frisch → Leg bleibt offen.
+    track = [
+        (0, coord[0], coord[1], 20, 0),
+        (1, coord[0], coord[1], 20, 12),
+        (2, coord[0], coord[1], 1200, 80),
+        (10, coord[0] + 0.15, coord[1] + 0.20, 4000, 110),
+        (16, coord[0] + 0.30, coord[1] + 0.35, 3500, 100),
+    ]
+    for mins, lat, lon, alt, gs in track:
+        conn.execute(
+            "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, "
+            "groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+            (cid, f"FRS{cid}", lat, lon, alt, gs, _iso(base + timedelta(minutes=mins))),
+        )
+    conn.commit()
+
+
 def _seed(db, *, dtstart, dtend, with_open=False):
     conn = get_connection(db)
     conn.execute("INSERT INTO pilots (cid, name, added_at) VALUES (100, 'Anna', ?)", (dtstart,))
@@ -50,13 +88,10 @@ def _seed(db, *, dtstart, dtend, with_open=False):
     add(100, "EDWG", "EDWR", 30, _iso(base + timedelta(minutes=45)), _iso(base + timedelta(minutes=75)))
 
     if with_open:
+        # Bert ist real in der Luft (offener GPS-Track ab EDWF). Seit dem GPS-„airborne"-Filter
+        # reicht eine reine Flugplan-Zeile nicht mehr, damit er als „unterwegs" gilt.
         conn.execute("INSERT INTO pilots (cid, name, added_at) VALUES (200, 'Bert', ?)", (dtstart,))
-        conn.execute(
-            "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
-            "logon_time, logoff_time, duration_min, distance_nm, block_min) "
-            "VALUES (200, 'FRS200', 'C172', 'EDWF', 'EDWG', ?, NULL, NULL, NULL, NULL)",
-            (_iso(base + timedelta(minutes=10)),),
-        )
+        _add_flying_track(conn, 200, "EDWF", "EDWG")
 
     upsert_calendar_bummel_race(conn, {
         "uid": "race1", "summary": "FriesenFliegerBummel Ostfriesland",
@@ -89,11 +124,11 @@ def test_active_running_is_redacted(tmp_path, monkeypatch):
 
 
 def test_open_bummel_legs_roundtrip_plan_is_shown(tmp_path, monkeypatch):
-    """Rundkurs-Flugplan (dep==arr, beide auf der Strecke) muss als „unterwegs" erscheinen.
+    """Rundkurs-Flugplan (dep==arr, beide auf der Strecke) + in der Luft → „unterwegs".
 
     Regression: der frühere `dep != arr`-Filter blendete einen Rundkurs-Plan (z. B. EDKB→EDKB,
-    ein Flugplan für die ganze Runde) komplett aus — der Pilot erschien nie „unterwegs",
-    obwohl Start UND Ziel auf der Strecke liegen.
+    ein Flugplan für die ganze Runde) komplett aus. Er zählt jetzt — sofern der Pilot per GPS
+    tatsächlich abgehoben ist (offenes canonicalize-Leg).
     """
     db = str(tmp_path / "t.db")
     init_db(db)
@@ -102,16 +137,124 @@ def test_open_bummel_legs_roundtrip_plan_is_shown(tmp_path, monkeypatch):
     start = _iso(now - timedelta(hours=1))
     end = _iso(now + timedelta(hours=3))
     conn = get_connection(db)
-    conn.execute("INSERT INTO pilots (cid, name, added_at) VALUES (300, 'Rund', ?)", (start,))
+    # Rundkurs-Plan EDWF→EDWF (dep==arr) UND tatsächlich in der Luft (offener GPS-Track).
+    _add_flying_track(conn, 300, "EDWF", "EDWF")
+    legs = main._open_bummel_legs(conn, {"EDWF", "EDWG", "EDWR"}, start, end)
+    assert 300 in {l["cid"] for l in legs}, "Rundkurs-Plan (dep==arr) + abgehoben muss unterwegs sein"
+
+
+def test_open_bummel_legs_at_gate_not_shown(tmp_path, monkeypatch):
+    """Am Gate stehend (Rundkurs-Plan, nur Steh-Position) → NICHT „unterwegs".
+
+    Der GPS-„airborne"-Filter: ohne offenes Leg (nie abgehoben) erscheint niemand, auch wenn der
+    Flugplan auf der Strecke liegt.
+    """
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch_settings(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    start = _iso(now - timedelta(hours=1))
+    end = _iso(now + timedelta(hours=3))
+    conn = get_connection(db)
+    base = now - timedelta(minutes=8)
+    conn.execute("INSERT INTO pilots (cid, name, added_at) VALUES (301, 'Gate', ?)", (_iso(base),))
     conn.execute(
         "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
         "logon_time, logoff_time, duration_min, distance_nm, block_min) "
-        "VALUES (300, 'FRS300', 'C172', 'EDWF', 'EDWF', ?, NULL, NULL, NULL, NULL)",
-        (_iso(now - timedelta(minutes=30)),),
+        "VALUES (301, 'FRS301', 'C172', 'EDWF', 'EDWF', ?, NULL, NULL, NULL, NULL)",
+        (_iso(base),),
     )
+    for mins in (0, 1, 5):
+        conn.execute(
+            "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, "
+            "groundspeed, heading, ts) VALUES (301, 'FRS301', ?, ?, 20, 0, 0, ?)",
+            (_EDWF[0], _EDWF[1], _iso(base + timedelta(minutes=mins))),
+        )
     conn.commit()
     legs = main._open_bummel_legs(conn, {"EDWF", "EDWG", "EDWR"}, start, end)
-    assert 300 in {l["cid"] for l in legs}, "Rundkurs-Plan (dep==arr) muss unterwegs erscheinen"
+    assert 301 not in {l["cid"] for l in legs}, "Am Gate stehend darf NICHT unterwegs sein"
+
+
+def test_open_bummel_legs_single_leg_plan_airborne_shown(tmp_path, monkeypatch):
+    """Einzel-Etappen-Plan (EDWF→EDWG, dep≠arr, beide auf Route) + in der Luft → „unterwegs"."""
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch_settings(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    start = _iso(now - timedelta(hours=1))
+    end = _iso(now + timedelta(hours=3))
+    conn = get_connection(db)
+    _add_flying_track(conn, 302, "EDWF", "EDWG")
+    legs = main._open_bummel_legs(conn, {"EDWF", "EDWG", "EDWR"}, start, end)
+    assert 302 in {l["cid"] for l in legs}, "Einzel-Etappen-Plan + abgehoben muss unterwegs sein"
+
+
+def test_open_bummel_legs_stale_open_leg_not_shown(tmp_path, monkeypatch):
+    """Ein „totes" offenes Leg darf NICHT als „unterwegs" gelten (Finding 1).
+
+    Ein Mid-Air-Disconnect fernab jedes Platzes (kein Disconnect in der ``flights``-Zeile erfasst)
+    wird von canonicalize_legs NICHT als Landung gerettet → das Leg bleibt offen. Ist sein letzter
+    Track-Punkt aber älter als das Live-Fenster, ist der Pilot längst nicht mehr in der Luft; er
+    darf nicht über das veraltete Leg fälschlich als „unterwegs" erscheinen.
+    """
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch_settings(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    start = _iso(now - timedelta(hours=1))
+    end = _iso(now + timedelta(hours=3))
+    conn = get_connection(db)
+    conn.execute("INSERT INTO pilots (cid, name, added_at) VALUES (400, 'Ghost', ?)",
+                 (_iso(now - timedelta(minutes=90)),))
+    conn.execute(
+        "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
+        "logon_time, logoff_time, duration_min, distance_nm, block_min) "
+        "VALUES (400, 'FRS400', 'C172', 'EDWF', 'EDWF', ?, NULL, NULL, NULL, NULL)",
+        (_iso(now - timedelta(minutes=90)),),
+    )
+    # Abheben EDWF → Reiseflug → Abbruch fernab jedes Platzes; letzter Punkt ~40 min alt, keine
+    # Landung → offenes, aber veraltetes Leg.
+    remote = (55.0, 2.0)
+    b = now - timedelta(minutes=50)
+    track = [
+        (b, _EDWF[0], _EDWF[1], 20, 0),
+        (b + timedelta(minutes=1), _EDWF[0], _EDWF[1], 20, 12),
+        (b + timedelta(minutes=2), _EDWF[0], _EDWF[1], 1200, 80),
+        (b + timedelta(minutes=10), remote[0], remote[1], 3000, 120),
+    ]
+    for ts, lat, lon, alt, gs in track:
+        conn.execute(
+            "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, "
+            "groundspeed, heading, ts) VALUES (400, 'FRS400', ?, ?, ?, ?, 0, ?)",
+            (lat, lon, alt, gs, _iso(ts)),
+        )
+    conn.commit()
+    legs = main._open_bummel_legs(conn, {"EDWF", "EDWG", "EDWR"}, start, end)
+    assert 400 not in {l["cid"] for l in legs}, "Veraltetes totes offenes Leg darf NICHT unterwegs sein"
+
+
+def test_open_bummel_legs_off_route_flight_returns_empty(tmp_path, monkeypatch):
+    """Frühausstieg (Finding 3): kein Flugplan auf der Strecke → leeres Ergebnis (kein Kandidat).
+
+    Ein offener Flug abseits der Strecke (EDDH→EDDL) darf nichts liefern; der teure
+    canonicalize_legs-Scan wird gar nicht erst gebraucht.
+    """
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch_settings(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    start = _iso(now - timedelta(hours=1))
+    end = _iso(now + timedelta(hours=3))
+    conn = get_connection(db)
+    conn.execute("INSERT INTO pilots (cid, name, added_at) VALUES (401, 'Weg', ?)", (start,))
+    conn.execute(
+        "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
+        "logon_time, logoff_time, duration_min, distance_nm, block_min) "
+        "VALUES (401, 'FRS401', 'C172', 'EDDH', 'EDDL', ?, NULL, NULL, NULL, NULL)",
+        (_iso(now - timedelta(minutes=20)),),
+    )
+    conn.commit()
+    assert main._open_bummel_legs(conn, {"EDWF", "EDWG", "EDWR"}, start, end) == []
 
 
 def test_race_revealed_shows_full(tmp_path, monkeypatch):
