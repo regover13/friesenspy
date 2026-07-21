@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.4.3",
+    "date": "2026-07-21",
+    "highlight": false,
+    "title": "Bummel „unterwegs“: Rundkurs-Flugpläne werden erkannt",
+    "items": [
+      "🛫 Die „unterwegs“-Anzeige eines laufenden Bummels blendete Piloten aus, die den Rundkurs als EINEN Flugplan mit gleichem Start=Ziel gefiled hatten (z. B. EDKB→EDKB) — ein alter Filter verlangte Start ≠ Ziel. Jetzt zählt allein, dass Start UND Ziel auf der Strecke liegen; solche Rundkurs-Flieger erscheinen wieder korrekt als „unterwegs“. Reine Live-Anzeige, die Wertung war nie betroffen."
+    ]
+  },
+  {
     "version": "10.4.2",
     "date": "2026-07-21",
     "highlight": false,

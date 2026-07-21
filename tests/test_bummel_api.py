@@ -88,6 +88,32 @@ def test_active_running_is_redacted(tmp_path, monkeypatch):
     assert 200 in {p["cid"] for p in view["in_progress"]}
 
 
+def test_open_bummel_legs_roundtrip_plan_is_shown(tmp_path, monkeypatch):
+    """Rundkurs-Flugplan (dep==arr, beide auf der Strecke) muss als „unterwegs" erscheinen.
+
+    Regression: der frühere `dep != arr`-Filter blendete einen Rundkurs-Plan (z. B. EDKB→EDKB,
+    ein Flugplan für die ganze Runde) komplett aus — der Pilot erschien nie „unterwegs",
+    obwohl Start UND Ziel auf der Strecke liegen.
+    """
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    _patch_settings(monkeypatch, db)
+    now = datetime.now(timezone.utc)
+    start = _iso(now - timedelta(hours=1))
+    end = _iso(now + timedelta(hours=3))
+    conn = get_connection(db)
+    conn.execute("INSERT INTO pilots (cid, name, added_at) VALUES (300, 'Rund', ?)", (start,))
+    conn.execute(
+        "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
+        "logon_time, logoff_time, duration_min, distance_nm, block_min) "
+        "VALUES (300, 'FRS300', 'C172', 'EDWF', 'EDWF', ?, NULL, NULL, NULL, NULL)",
+        (_iso(now - timedelta(minutes=30)),),
+    )
+    conn.commit()
+    legs = main._open_bummel_legs(conn, {"EDWF", "EDWG", "EDWR"}, start, end)
+    assert 300 in {l["cid"] for l in legs}, "Rundkurs-Plan (dep==arr) muss unterwegs erscheinen"
+
+
 def test_race_revealed_shows_full(tmp_path, monkeypatch):
     db = str(tmp_path / "t.db")
     init_db(db)

@@ -1096,7 +1096,11 @@ def _open_bummel_legs(conn, route_set: set[str], start: str, end: str) -> list[d
     for r in rows:
         dep = (r["departure"] or "").strip().upper()
         arr = (r["arrival"] or "").strip().upper()
-        if dep in route_set and arr in route_set and dep != arr:
+        # dep==arr ist ZULÄSSIG: Ein Rundkurs wird oft als EIN Flugplan mit gleichem Start=Ziel
+        # gefiled (z. B. EDKB→EDKB für die ganze Runde). Der frühere `dep != arr`-Filter blendete
+        # genau solche Piloten aus — sie erschienen nie „unterwegs", obwohl beide Endpunkte auf der
+        # Strecke liegen. Es zählt allein: Start UND Ziel gehören zur Strecke.
+        if dep in route_set and arr in route_set:
             out.append({
                 "cid": r["cid"],
                 "name": r["name"] or "",
