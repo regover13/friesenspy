@@ -5133,7 +5133,7 @@ function _kutterDetailBody(d) {
   const dest = '<div class="kutter-dest">🎯 Ziel: ' + _kesc(d.destination || '—') + '</div>';
   const rows = (d.flights || []).map(f => {
     const t = (f.dep_time || '').slice(11, 16);
-    const kg = f.loaded ? '<td class="kf-kg">' + _kDualKg(f.tonnage_kg, f.onboard_kg) + '</td>'
+    const kg = f.loaded ? '<td class="kf-kg">' + _kDualKg(f.tonnage_kg, f.onboard_kg) + ' ✅</td>'
       : f.loss_kind === 'returned'
         ? '<td class="kf-relay-kg">' + (Math.round((f.cargo_lines || []).reduce((s, l) => s + (l.kg || 0), 0)) || '—') + ' kg ↩️</td>'
       : f.loss_kind ? '<td class="kf-empty kutter-loss">' + (f.lost_kg ? Math.round(f.lost_kg) + ' kg' : '—') + (f.loss_kind === 'stolen' ? ' 🏴‍☠️' : ' 🌊') + '</td>'

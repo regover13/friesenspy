@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.2.7",
+    "date": "2026-07-21",
+    "highlight": false,
+    "title": "Kutter-Feed: grünes ✅ bei geliefert",
+    "items": [
+      "✅ Eine gelieferte Ladung zeigt in der Fracht-Spalte jetzt ein grünes Häkchen (z. B. „1639 kg ✅“) — so hat jeder Zustand sein eigenes Symbol (✅ geliefert · 🔀 getragen · ↩️ am Ladeplatz abgeladen · 🌊 versunken · 🏴‍☠️ geklaut)."
+    ]
+  },
+  {
     "version": "10.2.6",
     "date": "2026-07-21",
     "highlight": false,
