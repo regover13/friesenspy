@@ -410,7 +410,7 @@
        Aufschlüsselung sichtbar vom Gesamtblock ab (gegen den „überladen"-Eindruck). */
     .kutter-grp-h.kutter-grp-section { color: var(--text-bright); margin-top: 14px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.10); }
     .kutter-feed td.kf-empty { color: var(--text-label); font-style: italic; }
-    .kutter-feed td.kf-kg { color: #7ee6bd; text-align: right; }
+    .kutter-feed td.kf-kg { color: var(--text-bright); text-align: right; }
     .kutter-total { font-family: var(--text-mono); font-size: 0.82rem; color: var(--text-bright); margin-bottom: 4px; }
     /* Ziel-Überschrift der Kutter-Detailansicht (Events) — Parität zum Live-Banner (🎯 Ziel: …).
        Eigene Klasse, weil .bb-sub nur auf #kutter-banner gescoped ist und hier nicht greift. */
@@ -421,20 +421,19 @@
     .kutter-seg > i.kseg-res { opacity: .5; background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,.35) 4px 8px); }
     /* Verloren (versunken/geklaut): dunkel + „tote" Schraffur — liest sich als weg, nicht als offen (#8). */
     .kutter-seg > i.kseg-lost { background: rgba(70,74,82,0.85); background-image: repeating-linear-gradient(45deg, transparent 0 3px, rgba(232,169,160,.55) 3px 6px); }
-    .kutter-feed td.kf-res { color: #9fc9e8; text-align: right; font-style: italic; }
+    .kutter-feed td.kf-res { color: #5b8dbf; text-align: right; font-style: italic; }
     /* Feed-Farblogik — Fracht- UND Ladung-Spalte je Zeile in DERSELBEN Farbe:
-       grün = geliefert (Ladung zusätzlich fett) · dunkleres Blau = getragen (Ware an Bord) ·
+       weiß = geliefert (neutral, wie Zeit/Callsign) · dunkles Blau = getragen (Ware an Bord) ·
        helleres Blau = am Ladeplatz abgeladen (nicht mehr an Bord, aber kein Verlust) ·
-       rot = verloren (geklaut/versunken). Der Spruch behält sein eigenes Grün. */
-    .kutter-feed td.kf-delivered { color: #7ee6bd; font-weight: 700; }
-    .kutter-feed td.kf-carry { color: #9fc9e8; font-style: italic; }
+       rot = verloren (geklaut/versunken, auch die kg in der Fracht-Spalte). Spruch behält sein Grün. */
+    .kutter-feed td.kf-carry { color: #5b8dbf; font-style: italic; }
     .kutter-feed td.kf-relay { color: #b3ddff; font-style: italic; }
     .kutter-feed td.kf-relay-kg { color: #b3ddff; text-align: right; font-style: italic; }
     .kutter-loss { color: #e8a9a0; }
     /* Verlust-Marker in den Teil-Balken (je Startplatz) kleiner — untergeordnet zum Gesamt-Block. */
     .kutter-loss--sm { font-size: 0.82em; opacity: 0.85; }
     /* Verlust-kg in der Fracht-Spalte bündig zu den anderen kg-Werten (kf-empty macht sonst kursiv/links). */
-    .kutter-feed td.kf-empty.kutter-loss { text-align: right; font-style: normal; }
+    .kutter-feed td.kf-empty.kutter-loss { color: #e8a9a0; text-align: right; font-style: normal; }
     /* Forum-Badges pro Teilnehmer (erst nach der Feierabend-Bilanz) — kompakter Block über dem Feed. */
     .kutter-badges { margin: 4px 0 12px; font-size: 0.8rem; color: var(--text-label); }
     .kutter-badges-title { font-weight: 600; color: var(--text-bright); margin-bottom: 4px; }
@@ -4907,9 +4906,9 @@ function _kCargoLabel(f) {
     return '<td class="kutter-loss">' + (cargoTxt ? cargoTxt + ' · ' : '') + _kLossLabel(f.loss_kind) + quip + '</td>';
   }
   if (f.loaded) {
-    // Am Ziel abgeliefert — grün + fett (gleiche Farbe wie die kg der Fracht-Spalte, kf-kg). Der
-    // Spruch behält via .kutter-quip sein eigenes Grün und bleibt normal (nicht fett).
-    return '<td class="kf-delivered">' + cargoTxt + quip + '</td>';
+    // Am Ziel abgeliefert — neutral weiß (wie Zeit/Callsign, gleiche Farbe wie die kg der
+    // Fracht-Spalte kf-kg), NICHT fett. Der Spruch behält via .kutter-quip sein eigenes Grün.
+    return '<td>' + cargoTxt + quip + '</td>';
   }
   if (cargoTxt) {
     // Trägt Ware, aber (noch) nicht am Ziel: laufendes Leg ODER durchgetragenes Zwischenleg.
