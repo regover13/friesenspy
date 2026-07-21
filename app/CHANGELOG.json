@@ -1,5 +1,15 @@
 [
   {
+    "version": "10.3.0",
+    "date": "2026-07-21",
+    "highlight": false,
+    "title": "Event-Datum: Ende automatisch +2 h + Plausibilitätsprüfung (Kutter & Bummel)",
+    "items": [
+      "🕑 Beim Anlegen/Bearbeiten eines Events (Kutter wie Bummel) wird das Ende-Feld jetzt automatisch mit „Start + 2 Stunden“ vorbelegt, sobald man den Start wählt und das Ende noch leer ist — überschreibbar wie bisher.",
+      "🛡 Ein Enddatum, das VOR (oder genau auf) dem Start liegt, wird jetzt abgewiesen — im Browser mit klarem Hinweis und serverseitig als harte Prüfung. Das verhindert den 20.07.-Fall (Tippfehler im Ende → Event fror Sekunden nach Start ein). Die Prüfung galt bisher nur für den Kutter; jetzt gleichrangig auch für den Bummel."
+    ]
+  },
+  {
     "version": "10.2.7",
     "date": "2026-07-21",
     "highlight": false,

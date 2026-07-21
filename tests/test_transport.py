@@ -316,22 +316,22 @@ class TestEventTimeGuards:
     (A) dtend muss nach dtstart liegen. (B) Bearbeiten setzt `summarized_at` zurück (Auftauen)."""
 
     def test_validate_rejects_dtend_before_dtstart(self):
-        from app.main import _validate_transport_times
+        from app.main import _validate_event_times
         # Juni-Ende vor Juli-Start (der echte Tippfehler) -> Fehlermeldung (truthy).
-        assert _validate_transport_times("2026-07-20T17:00:00Z", "2026-06-20T22:00:00Z")
+        assert _validate_event_times("2026-07-20T17:00:00Z", "2026-06-20T22:00:00Z")
 
     def test_validate_rejects_dtend_equal_dtstart(self):
-        from app.main import _validate_transport_times
-        assert _validate_transport_times("2026-07-20T17:00:00Z", "2026-07-20T17:00:00Z")
+        from app.main import _validate_event_times
+        assert _validate_event_times("2026-07-20T17:00:00Z", "2026-07-20T17:00:00Z")
 
     def test_validate_accepts_dtend_after_dtstart(self):
-        from app.main import _validate_transport_times
-        assert _validate_transport_times("2026-07-20T17:00:00Z", "2026-07-20T22:00:00Z") is None
+        from app.main import _validate_event_times
+        assert _validate_event_times("2026-07-20T17:00:00Z", "2026-07-20T22:00:00Z") is None
 
     def test_validate_ignores_missing_dtend(self):
-        from app.main import _validate_transport_times
-        assert _validate_transport_times("2026-07-20T17:00:00Z", None) is None
-        assert _validate_transport_times("2026-07-20T17:00:00Z", "") is None
+        from app.main import _validate_event_times
+        assert _validate_event_times("2026-07-20T17:00:00Z", None) is None
+        assert _validate_event_times("2026-07-20T17:00:00Z", "") is None
 
     def test_set_transport_cargo_added_at_preserve_and_stamp(self):
         from app.database import (create_transport_event, get_transport_cargo, set_transport_cargo)
@@ -3389,3 +3389,68 @@ class TestStapelProgress:
         p = compute_transport_progress(conn, ev, "2026-07-02T00:30:00Z")   # now NACH der B-Landung
         assert p["total_kg"] == 0.0       # B hob 39 min nach dtend ab -> zählt nicht
         assert p["flight_count"] == 0     # kein Phantom-Flug im Feed
+
+
+class TestBummelTimeGuards:
+    """Symmetrie zu TestEventTimeGuards (Kutter): auch ein Bummel-Rennen darf kein Enddatum VOR
+    dem Start haben (derselbe 20.07.-Tippfehler-Fall, hier für den Bummel). Der Reveal-Poller
+    prüft `now < dtend`; ein Ende in der Vergangenheit würde ein Rennen sofort als abgelaufen
+    behandeln. Endpoint-Ebene (create + update), damit die Prüfung an der Wurzel greift, nicht
+    nur im Browser."""
+
+    SECRET = "s3cr3t"
+    PW = "test-admin-pw"
+
+    def _app(self, tmp_path, monkeypatch):
+        p = str(tmp_path / "bummel_time.db")
+        init_db(p)
+        monkeypatch.setattr(main, "get_settings", lambda: SimpleNamespace(
+            DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=self.SECRET, ADMIN_PASSWORD=self.PW,
+            VAPID_PRIVATE_KEY="vapid", VAPID_CONTACT_EMAIL="mailto:test"))
+        client = TestClient(main.app)
+        client.cookies.update({ADMIN_COOKIE: make_admin_token(self.SECRET, self.PW)})
+        return client, p
+
+    def test_create_rejects_dtend_before_dtstart(self, tmp_path, monkeypatch):
+        client, _ = self._app(tmp_path, monkeypatch)
+        r = client.post("/api/admin/bummel/races", json={
+            "name": "Bummel", "route": "EDWB,EDWI", "dtstart": START,
+            "dtend": "2026-06-01T09:00:00Z"})  # Juni-Ende vor Juli-Start
+        assert r.status_code == 400
+
+    def test_create_rejects_dtend_equal_dtstart(self, tmp_path, monkeypatch):
+        client, _ = self._app(tmp_path, monkeypatch)
+        r = client.post("/api/admin/bummel/races", json={
+            "name": "Bummel", "route": "EDWB,EDWI", "dtstart": START, "dtend": START})
+        assert r.status_code == 400
+
+    def test_create_accepts_dtend_after_dtstart(self, tmp_path, monkeypatch):
+        client, _ = self._app(tmp_path, monkeypatch)
+        r = client.post("/api/admin/bummel/races", json={
+            "name": "Bummel", "route": "EDWB,EDWI", "dtstart": START, "dtend": END})
+        assert r.status_code == 200
+
+    def test_create_accepts_missing_dtend(self, tmp_path, monkeypatch):
+        client, _ = self._app(tmp_path, monkeypatch)
+        r = client.post("/api/admin/bummel/races", json={
+            "name": "Bummel", "route": "EDWB,EDWI", "dtstart": START})
+        assert r.status_code == 200
+
+    def test_update_rejects_dtend_before_dtstart(self, tmp_path, monkeypatch):
+        client, dbp = self._app(tmp_path, monkeypatch)
+        r = client.post("/api/admin/bummel/races", json={
+            "name": "Bummel", "route": "EDWB,EDWI", "dtstart": START, "dtend": END})
+        rid = r.json()["id"]
+        r2 = client.post(f"/api/admin/bummel/races/{rid}", json={
+            "dtstart": START, "dtend": "2026-06-01T09:00:00Z"})
+        assert r2.status_code == 400
+
+    def test_update_rejects_dtend_before_existing_dtstart(self, tmp_path, monkeypatch):
+        # Nur dtend im Body geändert (dtstart bleibt der gespeicherte Wert) -> muss trotzdem greifen.
+        client, dbp = self._app(tmp_path, monkeypatch)
+        r = client.post("/api/admin/bummel/races", json={
+            "name": "Bummel", "route": "EDWB,EDWI", "dtstart": START, "dtend": END})
+        rid = r.json()["id"]
+        r2 = client.post(f"/api/admin/bummel/races/{rid}", json={
+            "dtend": "2026-06-01T09:00:00Z"})
+        assert r2.status_code == 400

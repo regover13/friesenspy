@@ -812,7 +812,7 @@
                   </div>
                   <div class="form-group">
                     <label for="nr-dtstart">Start (UTC)</label>
-                    <input type="datetime-local" id="nr-dtstart" required />
+                    <input type="datetime-local" id="nr-dtstart" data-end="nr-dtend" required />
                   </div>
                   <div class="form-group">
                     <label for="nr-dtend">Ende (UTC, optional)</label>
@@ -857,7 +857,7 @@
                   </div>
                   <div class="form-group">
                     <label for="ke-dtstart">Start (UTC)</label>
-                    <input type="datetime-local" id="ke-dtstart" required />
+                    <input type="datetime-local" id="ke-dtstart" data-end="ke-dtend" required />
                   </div>
                   <div class="form-group">
                     <label for="ke-dtend">Ende (UTC, optional)</label>
@@ -1177,6 +1177,37 @@
       return val + ':00Z';
     }
 
+    /** datetime-local-Wert (naiv, wird als UTC behandelt) + h Stunden → datetime-local-Wert.
+        Bewusst über ':00Z' als UTC gelesen (NICHT new Date(val) ohne Z — das läse Browser-Ortszeit,
+        siehe UTC-Regel im CLAUDE.md); die getUTC*-Rückformatierung übernimmt Tages-/Monatsüberlauf. */
+    function addHoursToLocal(val, hours) {
+      if (!val) return '';
+      const d = new Date(val + ':00Z');
+      if (isNaN(d.getTime())) return '';
+      d.setUTCHours(d.getUTCHours() + hours);
+      const p = n => String(n).padStart(2, '0');
+      return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate())
+           + 'T' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
+    }
+
+    /** true, wenn Ende ≤ Start (unplausibel). Eine Seite leer → nichts zu prüfen (false).
+        Lexikografischer Vergleich der datetime-local-Strings = chronologisch (gleiches Format). */
+    function endNotAfterStart(startVal, endVal) {
+      if (!startVal || !endVal) return false;
+      return endVal <= startVal;
+    }
+
+    // Auto-Belegung: sobald ein Start-Feld (mit data-end) gewählt wird und sein Ende noch leer ist,
+    // Ende mit Start + 2 h vorbelegen (überschreibbar). Delegiert auf document, damit es auch für
+    // die dynamisch gerenderten Rennen-Bearbeiten-Felder gilt.
+    document.addEventListener('change', e => {
+      const el = e.target;
+      if (!el || !el.matches || !el.matches('input[type="datetime-local"][data-end]')) return;
+      if (!el.value) return;
+      const endEl = document.getElementById(el.getAttribute('data-end'));
+      if (endEl && !endEl.value) endEl.value = addHoursToLocal(el.value, 2);
+    });
+
     /** Minutes (number) → "Xh YYm" */
     // Signierter, sekundengenauer Abstand zum Schnitt: '+1:23' / '-0:18' / '* exakt' / leer.
     function fmtSignedDelta(sec) {
@@ -1494,6 +1525,7 @@
       const dtstart = document.getElementById('nr-dtstart').value;
       const dtend   = document.getElementById('nr-dtend').value;
       if (!name || !route || !dtstart) { toast('Name, Strecke und Start sind erforderlich.', true); return; }
+      if (endNotAfterStart(dtstart, dtend)) { toast('Enddatum muss nach dem Startdatum liegen.', true); return; }
       // #77: unbekannte Streckenplätze warnen (nicht hart blocken).
       const unknown = await checkUnknownIcaos(route.split(/[,\s]+/));
       if (unknown.length) {
@@ -1614,7 +1646,7 @@
             </div>
             <div class="form-group">
               <label>Start (UTC)</label>
-              <input type="datetime-local" id="edit-dtstart-${r.id}" value="${escA(isoToLocal(r.dtstart))}" />
+              <input type="datetime-local" id="edit-dtstart-${r.id}" data-end="edit-dtend-${r.id}" value="${escA(isoToLocal(r.dtstart))}" />
             </div>
             <div class="form-group">
               <label>Ende (UTC)</label>
@@ -1667,6 +1699,7 @@
       const route   = document.getElementById(`edit-route-${id}`).value.trim();
       const dtstart = document.getElementById(`edit-dtstart-${id}`).value;
       const dtend   = document.getElementById(`edit-dtend-${id}`).value;
+      if (endNotAfterStart(dtstart, dtend)) { toast('Enddatum muss nach dem Startdatum liegen.', true); return; }
       if (name)         body.name       = name;
       if (route)        body.route      = route;
       if (dtstart)      body.dtstart    = localToIso(dtstart);
@@ -2481,6 +2514,7 @@
       const dtstart = document.getElementById('ke-dtstart').value;
       const dtend = document.getElementById('ke-dtend').value;
       const cargo = keCollectCargo();
+      if (endNotAfterStart(dtstart, dtend)) { toast('Enddatum muss nach dem Startdatum liegen.', true); return; }
       // #84: keine Strecke mehr — die Route wird serverseitig aus den Startplätzen der Fracht + Ziel
       // abgeleitet. Ziel + mind. eine Frachtart mit Startplatz sind Pflicht.
       if (!name || !dest || !dtstart) { toast('Name, Ziel und Start sind erforderlich.', true); return; }

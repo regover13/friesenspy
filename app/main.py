@@ -2365,6 +2365,9 @@ async def admin_create_race(request: Request):
     route = ",".join(c.strip().upper() for c in str(body.get("route", "")).replace(" ", ",").split(",") if c.strip())
     if len(route.split(",")) < 2 or not body.get("dtstart"):
         raise HTTPException(status_code=400, detail="route (≥2 ICAOs) und dtstart erforderlich")
+    terr = _validate_event_times(body.get("dtstart"), body.get("dtend"))
+    if terr:
+        raise HTTPException(status_code=400, detail=terr)
     conn = get_connection(get_settings().DB_PATH)
     try:
         rid = create_bummel_race(
@@ -2388,8 +2391,14 @@ async def admin_update_race(request: Request, race_id: int):
     fields = {k: body[k] for k in ("name", "route", "dtstart", "dtend") if k in body}
     conn = get_connection(get_settings().DB_PATH)
     try:
-        if not get_bummel_race(conn, race_id):
+        cur = get_bummel_race(conn, race_id)
+        if not cur:
             raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
+        # Enddatum-Sanity gegen die EFFEKTIVEN Werte (geänderte + bestehende) — wie beim Kutter.
+        terr = _validate_event_times(
+            fields.get("dtstart", cur.get("dtstart")), fields.get("dtend", cur.get("dtend")))
+        if terr:
+            raise HTTPException(status_code=400, detail=terr)
         if fields:
             update_bummel_race(conn, race_id, **fields)
         # Unbedingt (auch bei leerem Body) — "Rennen antippen + speichern" ist der bewusste
@@ -2770,11 +2779,13 @@ async def admin_transport_events(request: Request):
         conn.close()
 
 
-def _validate_transport_times(dtstart, dtend) -> str | None:
-    """Enddatum muss NACH dem Startdatum liegen. Verhindert den 20.07.2026-Fall: ein Tippfehler im
-    Enddatum (Monat/Jahr in der Vergangenheit) ließ den Poller `now >= dtend` sofort erfüllen und
-    fror das Event Sekunden nach Start ein. ISO-8601-UTC-Strings vergleichen lexikografisch =
-    chronologisch. Fehlt dtend, greift der Mitternacht-Default (kein Fehler)."""
+def _validate_event_times(dtstart, dtend) -> str | None:
+    """Enddatum muss NACH dem Startdatum liegen. Gilt für BEIDE Event-Typen (Kutter + Bummel) —
+    verhindert den 20.07.2026-Fall: ein Tippfehler im Enddatum (Monat/Jahr in der Vergangenheit)
+    ließ den Poller `now >= dtend` (Kutter) bzw. `now < dtend` (Bummel-Reveal) sofort falsch
+    auswerten und das Event Sekunden nach Start einfrieren/ablaufen lassen. ISO-8601-UTC-Strings
+    vergleichen lexikografisch = chronologisch. Fehlt dtend, greift der Mitternacht-Default
+    (kein Fehler)."""
     ds = (str(dtstart) if dtstart else "").strip()
     de = (str(dtend) if dtend else "").strip()
     if ds and de and de <= ds:
@@ -2826,7 +2837,7 @@ async def admin_create_transport_event(request: Request):
     dest = str(body.get("destination") or "").strip().upper()
     if not body.get("dtstart"):
         raise HTTPException(status_code=400, detail="dtstart erforderlich")
-    terr = _validate_transport_times(body.get("dtstart"), body.get("dtend"))
+    terr = _validate_event_times(body.get("dtstart"), body.get("dtend"))
     if terr:
         raise HTTPException(status_code=400, detail=terr)
     err = _validate_transport_manifest(dest, body.get("cargo") or [])
@@ -2868,7 +2879,7 @@ async def admin_update_transport_event(request: Request, event_id: int):
         if not cur:
             raise HTTPException(status_code=404, detail="Event nicht gefunden")
         # Enddatum-Sanity gegen die EFFEKTIVEN Werte (geänderte + bestehende).
-        terr = _validate_transport_times(
+        terr = _validate_event_times(
             fields.get("dtstart", cur.get("dtstart")), fields.get("dtend", cur.get("dtend")))
         if terr:
             raise HTTPException(status_code=400, detail=terr)

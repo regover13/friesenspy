@@ -944,6 +944,10 @@ Neues Rennen manuell anlegen (ohne Kalender-Termin).
 **Kein `radius_km` mehr** (seit GPS-only Phase 2, #23) — die Anwesenheitsprüfung nutzt überall
 den festen globalen 4-km-Radius aus dem GPS-Leg-Detektor, kein per-Rennen-Override mehr.
 
+**Zeit-Plausibilität (v10.3.0):** Ist `dtend` gesetzt und ≤ `dtstart`, antwortet der Endpoint
+mit `400` („Enddatum muss nach dem Startdatum liegen.") — dieselbe Prüfung wie beim Kutter
+(`_validate_event_times`), symmetrisch für beide Event-Typen.
+
 **Response** `{"id": 42}`
 
 ---
@@ -953,6 +957,9 @@ den festen globalen 4-km-Radius aus dem GPS-Leg-Detektor, kein per-Rennen-Overri
 Felder eines bestehenden Rennens aktualisieren. Nur angegebene Felder werden geändert.
 
 **Body (JSON)** — `name`/`route`/`dtstart`/`dtend`, alle optional (kein `radius_km` mehr, s. o.).
+
+**Zeit-Plausibilität (v10.3.0):** gegen die **effektiven** Werte geprüft (geänderte + bestehende) —
+wird nur `dtend` geschickt, zählt der gespeicherte `dtstart`. Ende ≤ Start → `400`.
 
 **Response** `{"status": "ok"}` oder `404`.
 
@@ -1063,10 +1070,10 @@ Alle Endpoints erfordern das Admin-Cookie (`require_admin`).
 Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_kg, emoji, per_flight_max_kg, departure}]`; `departure` = gebundener Startplatz-ICAO, **genau einer ≠ Ziel, Pflicht** — kein `null`/geteilt mehr), `radius_km` (Legacy-Feld — s. o., seit GPS-only Phase 2/#23 nicht mehr über die Admin-Endpoints setzbar, wirkt nicht mehr auf die Platz-Zuordnung) und `status` (`scheduled` \| `running` \| `waiting` \| `done` — analog `_race_status` beim Bummel, siehe `_transport_status`; nur in der Admin-Sicht, kein Piloten-Frontend-Feld).
 
 ### POST /api/admin/transport/events
-Manuelles Event anlegen. **Seit v8.14.0/#84 kein `route`-Feld mehr** — die Route wird aus den Startplätzen der Fracht + Ziel abgeleitet. Body: `name`, `destination` (ICAO, **Pflicht**), `dtstart` (UTC, Pflicht), `dtend` (optional, sonst Mitternacht UTC), `cargo` (`[{name, target_kg, departure}]`, **Pflicht** — mind. eine Frachtart mit Menge und **genau einem** Startplatz `departure` ≠ Ziel; fehlender/mehrfacher Platz → `400`). → `{status, id}`. **Kein `radius_km` mehr** (fester globaler 4-km-Radius seit GPS-only Phase 2/#23).
+Manuelles Event anlegen. **Seit v8.14.0/#84 kein `route`-Feld mehr** — die Route wird aus den Startplätzen der Fracht + Ziel abgeleitet. Body: `name`, `destination` (ICAO, **Pflicht**), `dtstart` (UTC, Pflicht), `dtend` (optional, sonst Mitternacht UTC), `cargo` (`[{name, target_kg, departure}]`, **Pflicht** — mind. eine Frachtart mit Menge und **genau einem** Startplatz `departure` ≠ Ziel; fehlender/mehrfacher Platz → `400`). → `{status, id}`. **Kein `radius_km` mehr** (fester globaler 4-km-Radius seit GPS-only Phase 2/#23). **Zeit-Plausibilität (v10.1.3, `_validate_event_times`):** `dtend` ≤ `dtstart` → `400` („Enddatum muss nach dem Startdatum liegen.").
 
 ### POST /api/admin/transport/events/{id}
-Bearbeiten. Übergebene Felder aus `name/destination/dtstart/dtend` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest und muss dieselbe Validierung erfüllen wie beim Anlegen (Ziel + Startplätze, sonst `400`). Die `route` wird danach frisch aus dem Manifest abgeleitet — **kein `route`-Feld mehr** (v8.14.0/#84).
+Bearbeiten. Übergebene Felder aus `name/destination/dtstart/dtend` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest und muss dieselbe Validierung erfüllen wie beim Anlegen (Ziel + Startplätze, sonst `400`). Die `route` wird danach frisch aus dem Manifest abgeleitet — **kein `route`-Feld mehr** (v8.14.0/#84). Die Zeit-Plausibilität (`dtend` > `dtstart`) wird gegen die **effektiven** Werte geprüft (geänderte + bestehende) — Ende ≤ Start → `400`.
 
 ### DELETE /api/admin/transport/events/{id}
 Event samt Manifest löschen.
