@@ -8,6 +8,10 @@ __pycache__/
 dist/
 build/
 
+# Virtuelle Umgebungen
+.venv/
+venv/
+
 # Lokale Konfiguration (Secrets)
 config.env
 *.db
