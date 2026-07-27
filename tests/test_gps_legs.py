@@ -81,8 +81,9 @@ class TestDetectGpsLegs:
         assert leg["takeoff_ts"] == _ts(30)
         assert leg["landing_ts"] == _ts(330)
         assert leg["max_altitude"] == 5000
+        assert leg["taxi_start_ts"] == _ts(0)   # Rollbeginn = erstes Boden-Sample an A
         assert set(leg.keys()) == {
-            "dep_icao", "arr_icao", "takeoff_ts", "landing_ts",
+            "dep_icao", "arr_icao", "takeoff_ts", "taxi_start_ts", "landing_ts",
             "complete", "dep_source", "arr_source", "max_altitude", "segment",
         }
 
@@ -666,8 +667,9 @@ class TestTrackEndRescue:
         assert flights[0]["complete"] is True
 
 
-def _leg(dep, arr, to, ld, seg=0, complete=True, maxalt=1000):
-    return {"dep_icao": dep, "arr_icao": arr, "takeoff_ts": to, "landing_ts": ld,
+def _leg(dep, arr, to, ld, seg=0, complete=True, maxalt=1000, taxi=None):
+    return {"dep_icao": dep, "arr_icao": arr, "takeoff_ts": to, "taxi_start_ts": taxi,
+            "landing_ts": ld,
             "complete": complete, "dep_source": "gps" if dep else None,
             "arr_source": "gps" if (arr and complete) else None, "max_altitude": maxalt, "segment": seg}
 
@@ -692,9 +694,12 @@ class TestCollapseSameAirport:
         assert out[0]["landing_ts"] == "t3"
 
     def test_open_leg_stays_open(self):
-        legs = [_leg("EDDK","EDDK","t0","t1"), _leg("EDDK",None,"t2",None, complete=False)]
+        legs = [_leg("EDDK","EDDK","t0","t1", taxi="x0"),
+                _leg("EDDK",None,"t2",None, complete=False, taxi="x2")]
         out = collapse_same_airport(legs)
-        assert out == [{"dep_icao":"EDDK","arr_icao":None,"takeoff_ts":"t0","landing_ts":None,
+        # taxi_start_ts kommt wie takeoff_ts vom ERSTEN Leg der Gruppe ("x0", nicht "x2").
+        assert out == [{"dep_icao":"EDDK","arr_icao":None,"takeoff_ts":"t0","taxi_start_ts":"x0",
+                        "landing_ts":None,
                         "complete":False,"dep_source":"gps","arr_source":None,"max_altitude":1000}]
 
     def test_segment_boundary_does_not_merge_same_airport(self):

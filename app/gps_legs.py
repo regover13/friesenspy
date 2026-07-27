@@ -139,12 +139,19 @@ def _detect_segment(
     max_alt: int | None = None
     land_ts: str | None = None
     land_arr: str | None = None
+    # Beginn der AKTUELLEN Boden-/Rollphase und der Platz, an dem sie läuft. Die Phase startet
+    # neu, sobald der Detektor am Boden einen ANDEREN Platz erkennt (Reconnect/Platzwechsel) —
+    # damit ist der Rollbeginn an denselben Nachweis gebunden wie der Startplatz selbst.
+    ground_since_ts: str | None = None
+    ground_icao: str | None = None
+    taxi_start_ts: str | None = None   # Rollbeginn des laufenden Legs (beim Abheben eingefroren)
 
     def emit_complete() -> None:
         legs.append({
             "dep_icao": dep_icao,
             "arr_icao": land_arr,
             "takeoff_ts": takeoff_ts,
+            "taxi_start_ts": taxi_start_ts,
             "landing_ts": land_ts,
             "complete": True,
             "dep_source": dep_source,
@@ -157,6 +164,7 @@ def _detect_segment(
             "dep_icao": dep_icao,
             "arr_icao": None,
             "takeoff_ts": takeoff_ts,
+            "taxi_start_ts": taxi_start_ts,
             "landing_ts": None,
             "complete": False,
             "dep_source": dep_source,
@@ -186,6 +194,7 @@ def _detect_segment(
                 dep_icao = ap if dep_ok else None
                 dep_source = "gps" if dep_ok else None
                 takeoff_ts = ts
+                taxi_start_ts = None   # Spawn in der Luft: es gab keine Rollphase
                 max_alt = _update_max(None, alt)
             else:
                 state = "ON_GROUND"
@@ -194,6 +203,8 @@ def _detect_segment(
                                  # ab dem nächsten Sample greifen kann (M1)
                 dep_icao = nearest_airport(lat, lon, radius_km)
                 dep_source = "gps" if dep_icao else None
+                ground_since_ts = ts
+                ground_icao = dep_icao
             continue
 
         if state == "ON_GROUND":
@@ -219,6 +230,7 @@ def _detect_segment(
                 state = "AIRBORNE"
                 takeoff_ts = ts
                 # dep_icao/dep_source stammen aus dem Boden-Cluster (bereits getrackt).
+                taxi_start_ts = ground_since_ts
                 max_alt = _update_max(None, alt)
                 prev_alt = None
             else:
@@ -231,6 +243,16 @@ def _detect_segment(
                     ground_ref_ft = alt if ground_ref_ft is None else min(ground_ref_ft, alt)
                 dep_icao = nearest_airport(lat, lon, radius_km)
                 dep_source = "gps" if dep_icao else None
+                # Steht das Flugzeug plötzlich an einem ANDEREN Platz, war das kein Rollen,
+                # sondern ein Reconnect — die Rollphase beginnt dort neu. Nur zwischen zwei
+                # ERKANNTEN Plätzen umschalten: ein einzelnes Sample ohne Platz im Umkreis
+                # (weite Vorfelder) darf die laufende Rollphase nicht zerschneiden.
+                if dep_icao is not None:
+                    if ground_icao is not None and dep_icao != ground_icao:
+                        ground_since_ts = ts
+                    ground_icao = dep_icao
+                if ground_since_ts is None:
+                    ground_since_ts = ts
                 prev_alt = alt   # Höhe dieses Boden-Samples für die nächste „steigend"-Prüfung
             continue
 
@@ -255,6 +277,11 @@ def _detect_segment(
                         dep_icao = ap
                         dep_source = "gps"
                         takeoff_ts = None
+                        # Neue Rollphase ab dem Aufsetzer: der Turnaround gehört zum FOLGE-Leg,
+                        # die Rollphase davor ist mit diesem Leg abgeschlossen.
+                        ground_since_ts = ts
+                        ground_icao = ap
+                        taxi_start_ts = None
                         max_alt = None
                         land_ts = None
                         land_arr = None
@@ -315,6 +342,9 @@ def collapse_same_airport(legs: list[dict]) -> list[dict]:
                 "dep_icao": leg.get("dep_icao"),
                 "dep_source": leg.get("dep_source"),
                 "takeoff_ts": leg.get("takeoff_ts"),
+                # Rollbeginn des ERSTEN Legs der Gruppe — bei Stop-and-Go ist das der Rollbeginn
+                # des zusammengefassten Fluges (analog takeoff_ts).
+                "taxi_start_ts": leg.get("taxi_start_ts"),
                 "max_altitude": leg.get("max_altitude"),
             }
             cur_seg = seg

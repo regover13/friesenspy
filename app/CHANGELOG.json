@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.4.5",
+    "date": "2026-07-27",
+    "highlight": false,
+    "title": "Track beginnt wieder am eigenen Startplatz",
+    "items": [
+      "🗺 Der GPS-Track konnte an einem völlig anderen Platz beginnen und dann quer über die Karte zum echten Startplatz springen. Betroffen war, wer sich weniger als 30 Minuten nach der Landung an einem anderen Platz neu verbunden hat: Die Rollphase des Vorflugs wurde dann fälschlich dem neuen Flug zugeschlagen. Die Strecke selbst war immer richtig — nur der gezeichnete Track passte nicht dazu. Der Rollbeginn kommt jetzt aus derselben Erkennung, die auch den Startplatz bestimmt; ein Track kann damit gar nicht mehr woanders anfangen als die angezeigte Strecke. Nebenbei war aus demselben Grund die Blockzeit solcher Flüge zu hoch — auch das stimmt jetzt."
+    ]
+  },
+  {
     "version": "10.4.4",
     "date": "2026-07-21",
     "highlight": false,

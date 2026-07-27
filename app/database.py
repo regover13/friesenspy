@@ -2290,7 +2290,6 @@ def _gps_flights_for_positions(
     callsign_by_ts = {p["ts"]: p.get("callsign") for p in positions if p.get("callsign")}
 
     out: list[dict] = []
-    prev_end: str | None = None  # Ende (ts) des vorherigen Flugs — Block-Rückwärts-Walk-Grenze
     for i, gf in enumerate(gps_flights):
         takeoff_ts = gf.get("takeoff_ts")
         landing_ts = gf.get("landing_ts")
@@ -2319,19 +2318,14 @@ def _gps_flights_for_positions(
             if next_takeoff is not None and end_ts >= next_takeoff:
                 end_ts = takeoff_ts  # Sicherheitsnetz; strukturell sollte dieser Zweig nie greifen
 
-        # Block-Fenster nach vorn bis zum Rollbeginn erweitern (gate-to-gate inkl. Taxi):
-        # rückwärts durch zusammenhängende Positionen laufen (Lücke <= _GPS_LEG_GAP_MINUTES),
-        # aber nie vor das Ende des vorherigen Flugs (prev_end) — sonst würde Standzeit einer
-        # Zwischenlandung/eines Vorflugs fälschlich als Taxi dieses Flugs gezählt.
-        block_start = takeoff_ts
-        _prev = takeoff_ts
-        for t in reversed([x for x in all_ts if x < takeoff_ts]):
-            if prev_end is not None and t < prev_end:
-                break
-            if (_parse_iso(_prev) - _parse_iso(t)).total_seconds() / 60.0 > _GPS_LEG_GAP_MINUTES:
-                break
-            block_start = t
-            _prev = t
+        # Block-Fenster nach vorn bis zum Rollbeginn (gate-to-gate inkl. Taxi). Der Rollbeginn
+        # wird NICHT hier rekonstruiert, sondern kommt aus ``detect_gps_legs`` — dieselbe
+        # Zustandsmaschine, die auch den Startplatz bestimmt hat (``taxi_start_ts`` = Beginn der
+        # Boden-Phase an genau diesem Platz). Damit passen Strecke und Track-Fenster per
+        # Konstruktion zusammen: eine Rollphase an einem anderen Platz (Reconnect) oder vor der
+        # Landung des Vorflugs kann strukturell nicht hineinlaufen. Fehlt der Wert (Spawn in der
+        # Luft), beginnt das Fenster am Abheben.
+        block_start = gf.get("taxi_start_ts") or takeoff_ts
 
         block_min = _block_seconds_positions(positions, block_start, end_ts) // 60
         distance_nm = _distance_nm_positions(positions, takeoff_ts, end_ts)
@@ -2374,8 +2368,7 @@ def _gps_flights_for_positions(
             "plan_arrival": plan_arr,
             "logon_time": takeoff_ts,
             "logoff_time": landing_ts,
-            # block_start = Rollbeginn (Rückwärts-Walk ab takeoff_ts bis zum ersten
-            # zusammenhängenden Sample, begrenzt durch prev_end/30-min-Lücke). Dient dem
+            # block_start = Rollbeginn (``taxi_start_ts`` aus detect_gps_legs, s. oben). Dient dem
             # Frontend als Track-Untergrenze (#62), damit Taxi-out + Startlauf sichtbar sind —
             # takeoff_ts (Abheben) schnitt sie bisher ab. Nur relevant für die gefensterten
             # FriesenSpy-Track-Endpoints; der StatSim-Track lädt ohnehin ungefenstert.
@@ -2397,7 +2390,6 @@ def _gps_flights_for_positions(
             "source": source,
             "_coverage_end": end_ts,
         })
-        prev_end = end_ts
     return out
 
 

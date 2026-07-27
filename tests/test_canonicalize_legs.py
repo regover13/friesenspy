@@ -1093,18 +1093,74 @@ class TestRadiusKmParameter:
         assert flight["gps_arrival"] == "EDDW"
 
 
+# --- Regression: Reconnect an einem ANDEREN Platz (Track sprang quer über die Karte) ---
+
+
+class TestReconnectAtOtherAirport:
+    def test_block_start_stays_at_own_departure_airport(self):
+        """Der Rückwärts-Walk für ``block_start`` darf nicht über einen Reconnect an einem
+        ANDEREN Platz hinweglaufen.
+
+        Realfall (Engelhard Hinrichs, 27.07.2026): Leg 1 landet in EDLX, der Pilot verbindet
+        sich 29 min später in EDWG neu und fliegt EDWG→EDXH. Weil die Sample-Lücke mit 29 min
+        UNTER ``_GPS_LEG_GAP_MINUTES`` (30) liegt und die einzige Schranke des Walks
+        ``prev_end`` (= Landungs-ts von Leg 1) war, lief er bis in die Standzeit von Leg 1
+        zurück. ``block_start`` zeigte damit auf den 240 km entfernten Vorgänger-Platz — und
+        weil das Frontend ``block_start`` als Track-Untergrenze nutzt, begann die gezeichnete
+        Linie dort und sprang quer über die Karte zum echten Startplatz.
+
+        Hier nachgestellt mit denselben Abständen: Leg 1 EDDK→EDDW (Landung 10:40, Standzeit
+        bis 10:44), 29 min Lücke, Leg 2 ab EDDL (Boden ab 11:13, Abheben 11:18) nach EDDK.
+        EDDW→EDDL sind 239 km — dieselbe Größenordnung wie im Realfall.
+        """
+        conn = _make_conn()
+        cid = 4315
+        _insert_flight(
+            conn, cid=cid, callsign="FRS45", departure="EDDK", arrival="EDDK",
+            logon_time="2026-07-02T09:55:00Z", logoff_time="2026-07-02T11:55:00Z",
+        )
+        _seed_eddk_eddw_track(conn, cid, "FRS45")  # Leg 1: EDDK→EDDW, Standzeit bis 10:44
+        # 29 min Lücke (10:44 → 11:13) — unter _GPS_LEG_GAP_MINUTES, also DASSELBE Zeit-Segment.
+        _insert_pos(conn, cid, "2026-07-02T11:13:00Z", *EDDL, 147, 0, "FRS45")
+        _insert_pos(conn, cid, "2026-07-02T11:15:00Z", *EDDL, 147, 12, "FRS45")
+        _insert_pos(conn, cid, "2026-07-02T11:17:00Z", *EDDL, 147, 15, "FRS45")
+        _insert_pos(conn, cid, "2026-07-02T11:18:00Z", *EDDL, 1200, 80, "FRS45")
+        _insert_pos(conn, cid, "2026-07-02T11:30:00Z", 52.0, 7.5, 5000, 120, "FRS45")
+        _insert_pos(conn, cid, "2026-07-02T11:45:00Z", 51.0, 7.2, 500, 60, "FRS45")
+        _insert_pos(conn, cid, "2026-07-02T11:47:00Z", *EDDK, 302, 0, "FRS45")
+        _insert_pos(conn, cid, "2026-07-02T11:50:00Z", *EDDK, 302, 0, "FRS45")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS", **WINDOW)
+        conn.close()
+
+        fs = [f for f in result if f["cid"] == cid and f["source"] == "friesenspy"]
+        assert len(fs) == 2, f"erwartete 2 Legs (EDDK->EDDW, EDDL->EDDK), bekam {len(fs)}"
+        leg2 = next(f for f in fs if f["gps_departure"] == "EDDL")
+
+        # Rollbeginn ist das erste Boden-Sample in EDDL (11:13) — NICHT die Standzeit in EDDW.
+        assert leg2["block_start"] == "2026-07-02T11:13:00Z", (
+            "block_start liegt vor dem Reconnect — der Track begaenne am falschen Platz"
+        )
+
+
 # --- Härtung (#23, Review-Finding zu Task 4c): prev_end-Schranke -----------------------
 
 
 class TestPrevEndBoundary:
     def test_second_leg_block_min_excludes_first_legs_airborne_time(self):
-        """Kern-Regression für die ``prev_end``-Schranke in ``_gps_flights_for_positions``
-        (KORREKTUR #23 Phase 2, Blockzeit gate-to-gate): bei einer ECHTEN Zwischenlandung
-        (zwei Legs im selben Zeit-Segment, Turnaround-Boden-Rollen <= 30 min) darf der
-        Rückwärts-Walk für ``block_start`` des ZWEITEN Legs nicht vor das Landungs-Ende des
-        ERSTEN Legs zurücklaufen — sonst würde die komplette Luftzeit von Leg 1 (Taxi +
-        Steigen + Reise + Sinken, ~34 min) fälschlich in die Blockzeit von Leg 2
-        mit hineingezählt (Doppelzählung).
+        """Kern-Regression für die Trennung zweier Legs in der Blockzeit (KORREKTUR #23
+        Phase 2, Blockzeit gate-to-gate): bei einer ECHTEN Zwischenlandung (zwei Legs im
+        selben Zeit-Segment, Turnaround-Boden-Rollen <= 30 min) darf ``block_start`` des
+        ZWEITEN Legs nicht vor das Landungs-Ende des ERSTEN Legs zurückreichen — sonst würde
+        die komplette Luftzeit von Leg 1 (Taxi + Steigen + Reise + Sinken, ~34 min)
+        fälschlich in die Blockzeit von Leg 2 mit hineingezählt (Doppelzählung).
+
+        Die Schranke sitzt in ``_detect_segment`` (app/gps_legs.py): beim Aufsetzen beginnt
+        eine NEUE Boden-/Rollphase (``ground_since_ts = Aufsetz-ts``), die dem Folge-Leg als
+        ``taxi_start_ts`` mitgegeben wird. Früher war es stattdessen eine ``prev_end``-Schranke
+        um einen Rückwärts-Walk in ``_gps_flights_for_positions`` — die griff bei einem
+        Reconnect an einem anderen Platz nicht (s. ``TestReconnectAtOtherAirport``).
 
         Track (``_seed_eddk_eddw_eddl_intermediate_landing_track``): EDDK→EDDW (10:00-10:40,
         Taxi-out ab 10:00, Airborne 10:06-10:40) → Turnaround in EDDW (10:40-10:46, 6 min,
@@ -1115,12 +1171,11 @@ class TestPrevEndBoundary:
         Landungs-ts von Leg 1 (10:40:00, = ``prev_end``) und deckt NUR den eigenen Turnaround
         (10:40-10:46) + die eigene Airborne-Zeit (10:46-11:10) ab.
 
-        OHNE die ``prev_end``-Schranke würde der Rückwärts-Walk (Sample-Lücken hier überall
-        <= 18 min, also nie > ``_GPS_LEG_GAP_MINUTES``) ungebremst bis zum allerersten
-        Taxi-Sample von Leg 1 (10:00:00) zurücklaufen und ``block_min`` auf 67 (4020 s)
-        aufblähen — Leg 1s komplette Luftzeit (~34 min zusätzlich) wäre dann in Leg 2s
-        Blockzeit enthalten. Der Test würde also brechen (67 statt 27), wenn jemand die
-        Schranke entfernt — genau das soll er verhindern.
+        OHNE diesen Schnitt reichte ``block_start`` von Leg 2 bis zum allerersten Taxi-Sample
+        von Leg 1 (10:00:00) zurück und bliese ``block_min`` auf 67 (4020 s) auf — Leg 1s
+        komplette Luftzeit (~34 min zusätzlich) wäre dann in Leg 2s Blockzeit enthalten. Der
+        Test bricht also messbar (67 statt 27), wenn jemand den Neustart der Rollphase beim
+        Aufsetzen entfernt — genau das soll er verhindern.
         """
         conn = _make_conn()
         cid = 4314
