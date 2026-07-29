@@ -843,6 +843,21 @@ class TestAdminAirports:
             })
         assert e.value.status_code == 400
 
+    def test_airports_placeholder_code_rejected_even_with_override(self, db):
+        """v10.4.6 (Fable-Review): "_"-Codes sind airportsdata-interne Platzhalter. Als Custom-
+        Eintrag angelegt, umgehen sie die Unterdrueckung in geo._shadowed_codes ueber den
+        Override-Zweig und holen den _MLH-Bug zurueck. 400 (echter Fehler), nicht 409
+        (bestaetigbar) -- es gibt keinen Fall, in dem das gewollt waere."""
+        for body in (
+            {"icao": "_MLH", "name": "Basel", "lat": 47.5896, "lon": 7.52991, "elevation_ft": 885.0},
+            {"icao": "_MLH", "name": "Basel", "lat": 47.5896, "lon": 7.52991,
+             "elevation_ft": 885.0, "override": True},
+        ):
+            with pytest.raises(HTTPException) as e:
+                _upsert_airport(body)
+            assert e.value.status_code == 400
+            assert "Platzhalter" in e.value.detail
+
     def test_airports_radius_km_must_be_positive(self, db):
         with pytest.raises(HTTPException) as e:
             _upsert_airport({

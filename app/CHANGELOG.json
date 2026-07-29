@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.4.6",
+    "date": "2026-07-29",
+    "highlight": false,
+    "title": "Basel heißt wieder LFSB",
+    "items": [
+      "🛬 Nach einer Landung am EuroAirport Basel-Mulhouse stand in der Statistik nicht LFSB, sondern _MLH. Der Platz ist binational und hat gleich drei IATA-Codes (BSL, MLH, EAP), aber nur ein einziges ICAO — die Flugplatz-Datenbank führt ihn deshalb zweimal, beide Einträge auf genau derselben Koordinate. Bei diesem Gleichstand griff die Platzerkennung den Platzhalter statt des echten Codes. Die Landung selbst war immer richtig erkannt und richtig gewertet, auch der Punkt auf der Karte saß korrekt — falsch war nur das angezeigte Kürzel. Betroffen war außer Basel noch Lachin (UBTT). Danke an Roland für den Hinweis!"
+    ]
+  },
+  {
     "version": "10.4.5",
     "date": "2026-07-27",
     "highlight": false,

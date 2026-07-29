@@ -3129,6 +3129,21 @@ async def admin_upsert_airport(request: Request, background_tasks: BackgroundTas
     icao = str(body.get("icao") or "").strip()
     if not icao:
         raise HTTPException(status_code=400, detail="icao erforderlich")
+    # v10.4.6 (Fable-Review): "_"-Präfixe sind airportsdata-interne Platzhalter für Plätze mit
+    # IATA- aber ohne ICAO-Code und werden von der Platzerkennung bewusst unterdrückt, wo ein
+    # echtes ICAO dieselbe Position beschreibt (siehe geo._shadowed_codes). Als Custom-Eintrag
+    # angelegt, umgeht ein solcher Code diese Unterdrückung über den Override-Zweig und holt den
+    # Bug zurück — realistischer Auslöser: jemand sieht "_MLH" in Altflügen und will es
+    # "reparieren". Ein Platzhalter ist niemals ein legitimer Ergänzungs-Code (echte ICAOs haben
+    # vier Zeichen, Pseudo-Codes folgen der ZZ-Konvention).
+    if icao.startswith("_"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{icao.upper()} ist ein airportsdata-interner Platzhalter, kein Flugplatz-Code. "
+                "Gemeint ist vermutlich das echte ICAO desselben Platzes."
+            ),
+        )
     override = bool(body.get("override"))
     if not override and geo.is_known_in_airportsdata(icao):
         known_coords = geo.icao_to_coords(icao)
