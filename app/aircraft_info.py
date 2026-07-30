@@ -11,10 +11,15 @@ due to abuse``, eigener UA → ``200``. Der Block greift nicht deterministisch a
 """
 from __future__ import annotations
 
+import logging
 import re
 from urllib.parse import quote
 
+import httpx
+
 from app.version import VERSION
+
+logger = logging.getLogger(__name__)
 
 USER_AGENT = f"FriesenSpy/{VERSION} (https://friesenspy.devprops.de; admin@devprops.de)"
 
@@ -276,3 +281,52 @@ def resolve_type(name: str, fetch) -> dict | None:
                 ergebnis.update(bild)
             return ergebnis
     return None
+
+
+# --- HTTP-Schicht mit User-Agent und Fehlerklassifikation -------------------
+
+class WikimediaError(Exception):
+    """Ein Wikimedia-Aufruf ist gescheitert. ``status_code`` trägt den HTTP-Status.
+
+    ``llm.is_transient_error`` liest ``status_code`` — deshalb ist **403 automatisch
+    transient** (>= 500 oder in {408, 429, 529} … 403 gehört ergänzt, siehe unten), was hier
+    entscheidend ist: der Contabo-Netzblock von Wikimedia greift nicht deterministisch, und
+    ein als endgültig gewerteter 403 würde jedes Muster 30 Tage als „nichts gefunden"
+    begraben.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def fetch_json(url: str, *, timeout_s: float = 15.0) -> dict:
+    """JSON von Wikimedia holen — **immer** mit aussagekräftigem User-Agent."""
+    try:
+        with httpx.Client(
+            timeout=timeout_s, headers={"User-Agent": USER_AGENT}, follow_redirects=True
+        ) as client:
+            resp = client.get(url)
+            if resp.status_code >= 400:
+                raise WikimediaError(f"HTTP {resp.status_code} für {url}", resp.status_code)
+            return resp.json()
+    except WikimediaError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise WikimediaError(f"{type(exc).__name__}: {exc}", None) from exc
+
+
+def download_photo(url: str, *, timeout_s: float = 30.0) -> bytes:
+    """Bilddatei holen — ebenfalls mit User-Agent."""
+    try:
+        with httpx.Client(
+            timeout=timeout_s, headers={"User-Agent": USER_AGENT}, follow_redirects=True
+        ) as client:
+            resp = client.get(url)
+            if resp.status_code >= 400:
+                raise WikimediaError(f"HTTP {resp.status_code} für {url}", resp.status_code)
+            return resp.content
+    except WikimediaError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise WikimediaError(f"{type(exc).__name__}: {exc}", None) from exc

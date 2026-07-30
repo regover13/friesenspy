@@ -295,3 +295,60 @@ def test_fetch_ausnahme_wird_durchgeworfen():
     routen = {"de.wikipedia.org/w/api.php": _Http("Contabo forbidden")}
     with pytest.raises(_Http):
         resolve_type("Cessna 172", _fetcher(routen))
+
+
+# --- HTTP-Schicht mit User-Agent und Fehlerklassifikation -------------------
+
+def test_fetch_json_setzt_user_agent(monkeypatch):
+    """B3: ohne UA antwortet Wikimedia von diesem Server mit 403."""
+    import httpx
+    from app import aircraft_info
+
+    gesehen = {}
+
+    class _Resp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"ok": True}
+
+    class _Client:
+        def __init__(self, **kw):
+            gesehen["headers"] = kw.get("headers") or {}
+            gesehen["timeout"] = kw.get("timeout")
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url): return _Resp()
+
+    monkeypatch.setattr(httpx, "Client", _Client)
+    assert aircraft_info.fetch_json("https://de.wikipedia.org/x") == {"ok": True}
+    assert gesehen["headers"]["User-Agent"] == aircraft_info.USER_AGENT
+
+
+def test_403_ist_transient_404_nicht(monkeypatch):
+    import httpx
+    from app import aircraft_info, llm
+
+    def _mit_status(code):
+        class _Resp:
+            status_code = code
+            def raise_for_status(self):
+                raise httpx.HTTPStatusError("x", request=None, response=None)
+            def json(self): return {}
+        class _Client:
+            def __init__(self, **kw): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def get(self, url): return _Resp()
+        monkeypatch.setattr(httpx, "Client", _Client)
+
+    _mit_status(403)
+    with pytest.raises(aircraft_info.WikimediaError) as e403:
+        aircraft_info.fetch_json("https://de.wikipedia.org/x")
+    assert e403.value.status_code == 403
+    assert llm.is_transient_error(e403.value) is True, \
+        "403 muss transient sein, sonst begraebt der Contabo-Block jedes Muster 30 Tage"
+
+    _mit_status(404)
+    with pytest.raises(aircraft_info.WikimediaError) as e404:
+        aircraft_info.fetch_json("https://de.wikipedia.org/x")
+    assert llm.is_transient_error(e404.value) is False
