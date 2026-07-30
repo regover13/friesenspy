@@ -1509,6 +1509,60 @@
       color: var(--red, #D31141); border: 1px solid var(--red, #D31141);
       border-radius: 2px; padding: 1px 5px; white-space: nowrap;
     }
+
+    /* =====================================================================
+       MUSTER-INFO-PANEL (Aircraft-Type-Modal)
+       Basisklassen .modal/.modal-box/.modal-close gab es hier noch nicht —
+       sie folgen optisch dem Flugplan-Modal (.fp-modal-overlay/.fp-modal-box).
+       ===================================================================== */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(4,8,15,0.88);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(2px);
+    }
+    .modal.open { display: flex; }
+    .modal-box {
+      position: relative;
+      background: var(--bg-panel);
+      border: 1px solid var(--green);
+      box-shadow: 0 0 40px rgba(45,156,219,0.25), 0 0 80px rgba(45,156,219,0.08);
+      width: min(560px, 95vw);
+      padding: 18px 20px 20px;
+      animation: fpModalIn 0.15s ease-out;
+    }
+    .modal-close {
+      position: absolute;
+      top: 6px; right: 6px;
+      background: transparent;
+      border: 1px solid var(--green-dim);
+      color: var(--green);
+      font-family: var(--text-mono);
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 3px 9px;
+      cursor: pointer;
+    }
+    .modal-close:hover { background: var(--green-faint); }
+
+    /* Blau = klickbar (stehende UI-Regel) — der Designator ist ein Klickziel. */
+    .ac-link { color: var(--green); text-decoration: none; border-bottom: 1px dotted var(--green); }
+    .ac-link:hover { text-decoration: underline; }
+    #ac-modal .modal-box { max-height: 85vh; overflow-y: auto; }
+    .ac-photo { width: 100%; height: auto; border-radius: 4px; display: block; }
+    .ac-credit { font-size: 0.68rem; color: #8aa0b8; margin: 0.25rem 0 0.75rem; }
+    .ac-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 0.25rem; }
+    .ac-extract { line-height: 1.45; }
+    .ac-block { margin-top: 0.9rem; }
+    .ac-block h4 { margin: 0 0 0.3rem; font-size: 0.78rem; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: #8aa0b8; }
+    #ac-body .hint { font-size: 0.72rem; color: var(--text-label); margin-top: 0.2rem; }
+    #ac-body .hint a { color: var(--green); }
+    #ac-body .empty-hint { font-size: 0.82rem; color: var(--text-label); font-style: italic; }
   </style>
 </head>
 <body>
@@ -1897,6 +1951,14 @@
       <button class="fp-close-btn" onclick="closeChangelogModal()">✕</button>
     </div>
     <div class="fp-section" id="changelog-modal-body"></div>
+  </div>
+</div>
+
+<!-- Muster-Info-Panel -->
+<div id="ac-modal" class="modal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeAcModal()">×</button>
+    <div id="ac-body"></div>
   </div>
 </div>
 
@@ -2724,7 +2786,7 @@ function renderLiveTable(pilots) {
           <tr data-callsign="${escHtml(p.callsign)}" ${isNew ? 'class="new-row"' : ''}>
             <td class="td-callsign" data-cs="${escHtml(p.callsign || '')}">${escHtml((p.callsign || '').toUpperCase())}</td>
             <td>${escHtml(p.name || '—')}</td>
-            <td class="mono">${escHtml(p.aircraft || '—')}</td>
+            <td class="mono">${acLink(p.aircraft)}</td>
             <td class="td-route td-callsign-link text-green" data-cs="${escHtml(p.callsign || '')}">${escHtml(fmtRoute(p.departure, p.arrival))}</td>
             <td class="td-alt">${fmtAlt(p.altitude)}</td>
             <td class="td-gs">${fmtGS(p.groundspeed)}</td>
@@ -2759,6 +2821,116 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+// ==========================================================================
+//  MUSTER-INFO-PANEL
+// ==========================================================================
+// Aircraft-Designator als Klickziel. EIN Markup fuer alle acht Sichten.
+// Attribut heisst data-actype, NICHT data-ac -- letzteres ist bei den Flugzeilen fuer das
+// Flugplan-Modal belegt (_flightRowHtml), sonst oeffnen sich zwei Modals uebereinander.
+function acLink(code) {
+  const c = (code || '').trim();
+  if (!c || c === '—') return '—';
+  return '<a class="ac-link" href="#" data-actype="' + escHtml(c) + '">' + escHtml(c) + '</a>';
+}
+
+document.addEventListener('click', function (e) {
+  const a = e.target.closest && e.target.closest('a.ac-link[data-actype]');
+  if (!a) return;
+  e.preventDefault();
+  e.stopPropagation();   // nicht die Zeile darunter mit-oeffnen (Flugplan-Modal)
+  openAcModal(a.getAttribute('data-actype'));
+});
+
+async function openAcModal(code) {
+  const el = document.getElementById('ac-modal');
+  document.getElementById('ac-body').innerHTML = '<div class="empty-hint">Lade…</div>';
+  el.classList.add('open');
+  document.addEventListener('keydown', _acEscHandler);
+  let d;
+  try {
+    const res = await fetch('/api/aircraft/' + encodeURIComponent(code));
+    d = await res.json();
+  } catch (err) {
+    document.getElementById('ac-body').innerHTML =
+      '<div class="empty-hint">Konnte nicht geladen werden.</div>';
+    return;
+  }
+  const f = d.friesen || {};
+  let h = '';
+
+  if (d.photo_url) {
+    h += '<img class="ac-photo" src="' + escHtml(d.photo_url) + '" alt="' + escHtml(d.code) + '">';
+    const nachweis = d.photo_credit
+      || [d.photo_artist, d.photo_licence].filter(Boolean).join(' · ');
+    if (nachweis || d.photo_source_url) {
+      h += '<div class="ac-credit">' + escHtml(nachweis || '');
+      if (d.photo_source_url) {
+        h += ' <a href="' + escHtml(d.photo_source_url) + '" target="_blank" rel="noopener">Quelle</a>';
+      }
+      h += '</div>';
+    }
+  }
+
+  h += '<div class="ac-title">' + escHtml(d.name || d.code) + '</div>';
+  if (d.resolved_code !== d.code) {
+    h += '<div class="hint">Flugplan-Kürzel ' + escHtml(d.code)
+       + ', gemeint ist ' + escHtml(d.resolved_code) + '.</div>';
+  }
+  if (d.extract) {
+    h += '<p class="ac-extract">' + escHtml(d.extract) + '</p>';
+    if (d.wiki_url) {
+      h += '<div class="hint"><a href="' + escHtml(d.wiki_url)
+         + '" target="_blank" rel="noopener">Auf Wikipedia weiterlesen</a></div>';
+    }
+  } else if (!d.name) {
+    h += '<p class="empty-hint">Zu diesem Kürzel ist kein Muster bekannt.</p>';
+  }
+
+  h += '<div class="ac-block"><h4>Bei den Friesen</h4>';
+  if (f.fluege) {
+    let zeile = f.fluege + (f.fluege === 1 ? ' Flug' : ' Flüge');
+    if (f.alias_anteil && f.alias_anteil.length) {
+      zeile += ' (' + f.alias_anteil.map(a => a.n + ' davon als ' + escHtml(a.code)
+        + ' erfasst').join(', ') + ')';
+    }
+    h += '<div>' + zeile + '</div>';
+    h += '<div>' + f.stunden + ' h · ' + Math.round(f.nm) + ' nm · '
+       + f.piloten + (f.piloten === 1 ? ' Pilot' : ' Piloten') + '</div>';
+    if (f.von) h += '<div class="hint">' + escHtml(f.von) + ' bis ' + escHtml(f.bis) + '</div>';
+  } else {
+    h += '<div class="empty-hint">Noch nie geflogen.</div>';
+  }
+  h += '</div>';
+
+  if (d.top && d.top.length) {
+    h += '<div class="ac-block"><h4>Am häufigsten</h4>'
+       + d.top.map(t => '<div>' + escHtml(t.name || t.callsign || ('CID ' + t.cid))
+           + ' — ' + t.n + '</div>').join('') + '</div>';
+  }
+
+  const k = d.kutter || {};
+  if (k.payload_kg != null || k.mtow_kg != null) {
+    h += '<div class="ac-block"><h4>Kutter-Daten</h4><div>';
+    if (k.mtow_kg != null) h += 'MTOW ' + Math.round(k.mtow_kg) + ' kg · ';
+    if (k.empty_kg != null) h += 'leer ' + Math.round(k.empty_kg) + ' kg · ';
+    if (k.payload_kg != null) h += 'Zuladung ' + Math.round(k.payload_kg) + ' kg';
+    h += '</div>';
+    if (k.eigene_zeile_hinweis) {
+      h += '<div class="hint">' + escHtml(k.eigene_zeile_hinweis) + '</div>';
+    }
+    h += '</div>';
+  }
+
+  document.getElementById('ac-body').innerHTML = h;
+}
+
+function closeAcModal() {
+  document.getElementById('ac-modal').classList.remove('open');
+  document.removeEventListener('keydown', _acEscHandler);
+}
+
+function _acEscHandler(e) { if (e.key === 'Escape') closeAcModal(); }
 
 // ==========================================================================
 //  PREFILES
@@ -3127,7 +3299,7 @@ function renderBummelParticipants(view) {
         <td>${escHtml(p.name || ('CID ' + p.cid))}</td>
         <td class="mono text-label">${escHtml(p.cid)}</td>
         <td class="mono">${escHtml(p.callsign || '')}</td>
-        <td class="mono">${escHtml(p.aircraft || '—')}</td>
+        <td class="mono">${acLink(p.aircraft)}</td>
         <td class="mono text-label">${p.started ? escHtml(p.started.slice(11, 16)) : '—'}</td>
         <td class="mono">${(p.visited || []).length}/${total} Etappen${miss}</td>
         <td>${st}</td>
@@ -3226,7 +3398,7 @@ function renderBummelStandings(data, inProgress) {
       html += `<tr class="${cls}">
         <td class="mono">${e.rank}</td>
         <td>${medal}${escHtml(e.name || e.callsign || ('CID ' + e.cid))}</td>
-        <td class="mono">${escHtml(e.aircraft || '—')}</td>
+        <td class="mono">${acLink(e.aircraft)}</td>
         <td class="mono">${e.leg_count != null ? e.leg_count : '—'}</td>
         <td class="mono">${_fmtMin(e.total_min)}</td>
         <td class="mono">${_fmtSignedDelta(e.delta_sec)}</td>
@@ -3376,7 +3548,7 @@ function _kutterBannerBlock(d) {
           ? `${_kesc(a.dep)} → ${a.dest ? _kesc(a.dest) : '—'}`
           : '—';
         // Callsign neutral (keine Link-Farbe — es ist keiner; Links sind hier nur Pin + Zum Kutter).
-        return `<tr><td class="mono">${_kesc(a.callsign || '—')}</td><td class="mono">${_kesc(a.aircraft || '—')}</td>`
+        return `<tr><td class="mono">${_kesc(a.callsign || '—')}</td><td class="mono">${acLink(a.aircraft)}</td>`
           + `<td class="${loadCls}">${load}</td><td class="mono">${strecke}</td><td>${a.status}</td>${map}</tr>`;
       }).join('');
       html += '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Callsign</th><th>Muster</th>'
@@ -3490,7 +3662,10 @@ function openFpModal(pilot, opts) {
   document.getElementById('fp-callsign-title').textContent = (pilot.callsign || '').toUpperCase();
   fpSet('fp-cs',      (pilot.callsign || '').toUpperCase());
   fpSet('fp-rules',   FP_RULES[pilot.flight_rules] || pilot.flight_rules);
-  fpSet('fp-aircraft', pilot.aircraft_icao || pilot.aircraft);
+  // fpSet() setzt textContent — hier muss Markup rein, sonst steht das <a> als Text da.
+  const acEl = document.getElementById('fp-aircraft');
+  const acCode = pilot.aircraft_icao || pilot.aircraft;
+  acEl.innerHTML = acLink(acCode);
   fpSet('fp-dep',     pilot.departure);
   fpSet('fp-arr',     pilot.arrival);
   fpSet('fp-alt-icao', pilot.alternate);
@@ -3828,7 +4003,7 @@ function _flightRowHtml(f, rowAttrs) {
       data-remarks="${escHtml(f.remarks || '')}"
       data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
     <td class="mono">${escHtml(f.callsign || '—')}${unscoredBadge}</td>
-    <td class="mono text-label">${escHtml(f.aircraft || '—')}</td>
+    <td class="mono text-label">${acLink(f.aircraft)}</td>
     <td class="mono td-gps-link text-green" style="cursor:pointer;" title="GPS-Erfassung öffnen">${routeCell}</td>
     ${planCell}
     <td class="mono">${escHtml(dt)}</td>
@@ -4127,7 +4302,7 @@ function buildPopupHtml(p) {
   return `
     <div class="popup-callsign">${escHtml((p.callsign || '').toUpperCase())}</div>
     <div class="popup-row">Pilot: <span>${escHtml(p.name || '—')}</span></div>
-    <div class="popup-row">Muster: <span>${escHtml(p.aircraft || '—')}</span></div>
+    <div class="popup-row">Muster: <span>${acLink(p.aircraft)}</span></div>
     <div class="popup-row">Flugplan: <span>${escHtml(fmtRoute(p.departure, p.arrival))}</span></div>
     <div class="popup-row">Höhe: <span>${fmtAlt(p.altitude)}</span></div>
     <div class="popup-row">GS: <span>${fmtGS(p.groundspeed)}</span></div>
@@ -4726,7 +4901,11 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 
   // Klick auf Flug-Zeile → highlight auf Karte
   pilotList.querySelectorAll('.events-flight-row').forEach(row => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (e) => {
+      // Muster-Designator hat sein eigenes Ziel (Muster-Panel). Der delegierte ac-link-Listener
+      // haengt am document und feuert erst NACH diesem Zeilen-Handler — sein stopPropagation
+      // kaeme hier zu spaet, deshalb hier abbiegen (gleiches Muster wie td-map-btn oben).
+      if (e.target.closest && e.target.closest('a.ac-link')) return;
       const [pi, fi] = row.dataset.flightKey.split('_').map(Number);
       highlightEventFlight(pilots, pi, fi);
     });
@@ -5155,7 +5334,7 @@ function _kutterDetailBody(d) {
                  + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
       : f.carried_through ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + ' 🔀</td>'
       : '<td class="kf-empty">leer</td>';
-    return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + _kesc(f.aircraft || '')
+    return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + acLink(f.aircraft)
       + '</td><td>' + _kesc(f.dep) + '→' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';
   }).join('');
   const feed = '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Zeit</th><th>Callsign</th><th>Muster</th>'
