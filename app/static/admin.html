@@ -2890,8 +2890,19 @@
         extract: document.getElementById('mi-extract').value,
         photo_credit: document.getElementById('mi-credit').value,
         alias_of: document.getElementById('mi-alias').value,
-        photo_override: document.getElementById('mi-nophoto').checked ? '-' : '',
       };
+      // photo_override nur senden, wenn es wirklich etwas zu sagen gibt. Ein hochgeladenes
+      // Foto steht als photo_override='blob' in der DB, das Kaestchen "Kein Foto" ist dafuer
+      // laut miPrefill NICHT angehakt (das prueft auf '-') -- ein bedingungsloses ''
+      // loeschte beim naechsten Speichern (z. B. nur einer Namenskorrektur) die
+      // blob-Markierung und das eigene Foto verschwaende lautlos aus der Anzeige.
+      // Nur ein Upload setzt 'blob', deshalb kann das Formular es hier nur zerstoeren.
+      const aktuell = (_miRows || []).find(x => x.type_code === code) || {};
+      if (document.getElementById('mi-nophoto').checked) {
+        body.photo_override = '-';
+      } else if (aktuell.photo_override !== 'blob') {
+        body.photo_override = '';      // harmlos: es gibt nichts zu loeschen
+      }
       const res = await api('POST', '/api/admin/aircraft-types', body);
       if (!res || !res.ok) { toast((res && (await res.json()).detail) || 'Fehler', true); return; }
       toast('Gespeichert.');
