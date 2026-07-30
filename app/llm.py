@@ -210,9 +210,18 @@ def _extract_spec(resp) -> dict | None:
 def suggest_aircraft_payload(type_code: str) -> dict | None:
     """Vorschlag für die Zuladungs-Komponenten eines Flugzeugtyps — per Web-Recherche (Haiku 4.5).
 
-    Rückgabe (kg, im Admin editierbar) oder ``None`` bei fehlendem Key/Paket/Fehler::
+    Rückgabe (kg, im Admin editierbar) oder ``None``::
 
         {"make_model", "mtow_kg", "empty_kg", "fuel_kg", "fuel_full_kg", "crew_kg", "payload_kg"}
+
+    Vertrag der beiden Fehlausgänge — der Aufrufer MUSS sie unterscheiden:
+
+    - ``None`` = **keine Daten**: kein Key, kein ``anthropic``-Paket, leerer Typcode oder eine
+      Antwort ohne verwertbares Spec. Aussage über das Muster, darf gespeichert werden.
+    - ``TransientResearchError`` = **vorübergehend gescheitert** (Überlastung, Rate-Limit,
+      Timeout, Verbindungsfehler): keine Aussage über das Muster, erneut versuchen. Früher kam
+      auch hier ``None`` zurück — der Aufrufer merkte sich den Fehlschlag dauerhaft als
+      „nichts gefunden" (AP32-Fall 2026-07-30).
 
     Default-Betankung = halber Tank: ``fuel_kg = fuel_full_kg / 2`` (Vorbefüllung im Admin),
     ``fuel_full_kg`` = Maximum (volle Tanks) fürs Label. ``payload_kg`` =
