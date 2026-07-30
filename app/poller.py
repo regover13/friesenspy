@@ -416,6 +416,11 @@ class VatsimPoller:
             conn.close()
         logger.info("Rehydration: %d offene Flüge adoptiert", len(self._active_flights))
         self._scheduler = AsyncIOScheduler()
+        self._register_jobs()
+        self._scheduler.start()
+
+    def _register_jobs(self) -> None:
+        """Alle Scheduler-Jobs registrieren (getrennt von start(), damit testbar)."""
         self._scheduler.add_job(
             self._poll_once,
             "interval",
@@ -506,7 +511,21 @@ class VatsimPoller:
                     "TS_NOTIFY_CHANNEL_ID=0 → serverweites FRS-Tracking "
                     "(kein Kanal-Filter). Falls unbeabsichtigt, Zielkanal-ID setzen."
                 )
-        self._scheduler.start()
+        # Zuladungs-Nachlese (Teil 8): einmalig kurz nach Start den Altbestand angehen …
+        self._scheduler.add_job(
+            self._research_due_payloads,
+            "date",
+            id="payload_research_initial",
+        )
+        # … und danach regelmäßig die fälligen Wiederholungen. OHNE diesen Job ist der
+        # Backoff aus is_retry_due() reine Dekoration: der Live-Auslöser reagiert nur auf NEU
+        # gesehene Muster, ein 'fehler' bliebe bis zum nächsten Container-Neubau liegen.
+        self._scheduler.add_job(
+            self._research_due_payloads,
+            "interval",
+            minutes=5,
+            id="payload_research_retry",
+        )
 
     async def stop(self) -> None:
         """Scheduler + HTTP-Client sauber beenden."""

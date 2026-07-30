@@ -197,3 +197,16 @@ async def test_in_memory_set_ist_weg(db):
     """Explizit: der alte Mechanismus darf nicht als zweite Wahrheit zurueckkommen."""
     p = _poller(db)
     assert not hasattr(p, "_payload_research_attempted")
+
+
+def test_beide_jobs_sind_registriert(db):
+    """B4: ein Backoff ohne Ausfuehrer ist kein Retry."""
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    p = _poller(db)
+    p._scheduler = AsyncIOScheduler()
+    p._register_jobs()
+    ids = {j.id for j in p._scheduler.get_jobs()}
+    assert "payload_research_retry" in ids
+    assert "payload_research_initial" in ids
+    job = p._scheduler.get_job("payload_research_retry")
+    assert job.trigger.interval.total_seconds() == 300
