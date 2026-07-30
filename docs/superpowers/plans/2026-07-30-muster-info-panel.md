@@ -1455,15 +1455,13 @@ def download_photo(url: str, *, timeout_s: float = 30.0) -> bytes:
 
 `import logging` oben in `app/aircraft_info.py` ergänzen.
 
-In `app/llm.py` die Konstante aus Plan A um 403 erweitern:
+In `app/llm.py` ist `_TRANSIENT_STATUS` bereits `frozenset({403, 408, 429, 529})` — Plan A Task 1 enthält die 403 von Anfang an, samt Begründung und eigenem Test (`test_forbidden_raises_transient`). **Hier ist nichts zu ändern; nur zu prüfen:**
 
-```python
-# 403 gehört dazu, weil Wikimedia das Contabo-Netz dieses Servers nicht deterministisch
-# blockt (gemessen 2026-07-30: derselbe UA einmal 403, Minuten später 200).
-_TRANSIENT_STATUS = frozenset({403, 408, 429, 529})
+```bash
+grep -n "_TRANSIENT_STATUS" app/llm.py
 ```
 
-Der Test aus Plan A Task 1 (`test_client_error_400_stays_none`) bleibt grün — 400 ist nicht in der Menge. **Achtung:** In Plan A wurde `is_transient_error(_Http(403)) is True` bereits geprüft; die Konstante dort muss die 403 also von Anfang an enthalten. Ist sie in Plan A ohne 403 umgesetzt worden, ist dieser Schritt die Korrektur.
+Erwartet: `frozenset({403, 408, 429, 529})`. Fehlt die 403, ist Plan A Task 1 unvollständig umgesetzt — dann dort nachziehen, nicht hier.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -2432,11 +2430,13 @@ async def admin_aircraft_types(request: Request):
     return {"types": [dict(r) for r in rows]}
 ```
 
-**Hinweis zur Umsetzung:** SQLite unterstützt `FULL OUTER JOIN` erst ab 3.39. Ist die Version im Container älter, statt des Joins drei Abfragen machen und in Python über `normalize_type_code` zusammenführen — dabei die Schlüsselmenge aus `aircraft_types ∪ aircraft_payloads ∪ payload_research ∪ flight_type_codes(conn)` bilden. Vor der Umsetzung prüfen:
+**Geprüft am 2026-07-30:** SQLite im Produktions-Container ist **3.46.1**, `FULL OUTER JOIN` gibt es ab 3.39 — der Join ist also benutzbar, ein Ersatzweg wird **nicht** gebraucht. Falls die lokale Entwicklungsumgebung älter ist, dort nachmessen:
 
 ```bash
-docker exec friesenspy-friesenspy-1 python -c "import sqlite3; print(sqlite3.sqlite_version)"
+python -c "import sqlite3; print(sqlite3.sqlite_version)"
 ```
+
+Ist sie < 3.39, statt des Joins drei Abfragen machen und in Python über `normalize_type_code` zusammenführen; die Schlüsselmenge dabei aus `aircraft_types ∪ aircraft_payloads ∪ payload_research ∪ flight_type_codes(conn)` bilden.
 
 ```python
 @app.post("/api/admin/aircraft-types")

@@ -80,29 +80,39 @@ def _settings(monkeypatch):
     get_settings.cache_clear()
 
 
-def _fake_anthropic_raising(exc: BaseException):
-    """Fake-anthropic, dessen stream() beim Betreten die übergebene Ausnahme wirft."""
+# Die anthropic-Ausnahmeklassen auf Modulebene nachgebaut, damit Tests eine Ausnahme
+# konstruieren können, BEVOR das Fake-Modul gesetzt wird. (Eine Factory, die die Klassen
+# selbst erst anlegt, führt zum Henne-Ei-Problem: man braucht die Klasse für das Argument,
+# das man der Factory übergeben will.)
+class _APIError(Exception):
+    pass
+
+
+class _APIStatusError(_APIError):
+    def __init__(self, message="", status_code=500):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class _APIConnectionError(_APIError):
+    pass
+
+
+class _APITimeoutError(_APIConnectionError):
+    pass
+
+
+class _RateLimitError(_APIStatusError):
+    pass
+
+
+class _InternalServerError(_APIStatusError):
+    pass
+
+
+def _fake_anthropic(exc: BaseException):
+    """Fake-anthropic-Modul, dessen ``stream()`` beim Betreten ``exc`` wirft."""
     mod = types.ModuleType("anthropic")
-
-    class APIError(Exception):
-        pass
-
-    class APIStatusError(APIError):
-        def __init__(self, message="", status_code=500):
-            super().__init__(message)
-            self.status_code = status_code
-
-    class APIConnectionError(APIError):
-        pass
-
-    class APITimeoutError(APIConnectionError):
-        pass
-
-    class RateLimitError(APIStatusError):
-        pass
-
-    class InternalServerError(APIStatusError):
-        pass
 
     class _Messages:
         def stream(self, **kwargs):
@@ -112,48 +122,48 @@ def _fake_anthropic_raising(exc: BaseException):
         def __init__(self, **kwargs):
             self.messages = _Messages()
 
-    mod.APIError = APIError
-    mod.APIStatusError = APIStatusError
-    mod.APIConnectionError = APIConnectionError
-    mod.APITimeoutError = APITimeoutError
-    mod.RateLimitError = RateLimitError
-    mod.InternalServerError = InternalServerError
+    mod.APIError = _APIError
+    mod.APIStatusError = _APIStatusError
+    mod.APIConnectionError = _APIConnectionError
+    mod.APITimeoutError = _APITimeoutError
+    mod.RateLimitError = _RateLimitError
+    mod.InternalServerError = _InternalServerError
     mod.Anthropic = _Client
     return mod
 
 
-def _run(exc):
+def _run(exc: BaseException):
+    """suggest_aircraft_payload gegen ein Fake-anthropic, das ``exc`` wirft."""
     from app import llm
-    mod = _fake_anthropic_raising(exc)
-    with patch.dict("sys.modules", {"anthropic": mod}):
+    with patch.dict("sys.modules", {"anthropic": _fake_anthropic(exc)}):
         return llm.suggest_aircraft_payload("AP32")
 
 
 def test_overloaded_raises_transient():
     """529 Overloaded — genau der gemessene AP32-Fall."""
     from app import llm
-    mod = _fake_anthropic_raising(None)
-    exc = mod.APIStatusError("Overloaded", status_code=529)
-    with patch.dict("sys.modules", {"anthropic": mod}):
-        mod.APIStatusError  # Modul ist gesetzt
-        with pytest.raises(llm.TransientResearchError):
-            _run(exc)
+    with pytest.raises(llm.TransientResearchError):
+        _run(_APIStatusError("Overloaded", status_code=529))
 
 
 def test_timeout_raises_transient():
     from app import llm
-    mod = _fake_anthropic_raising(None)
-    with patch.dict("sys.modules", {"anthropic": mod}):
-        with pytest.raises(llm.TransientResearchError):
-            _run(mod.APITimeoutError("timeout"))
+    with pytest.raises(llm.TransientResearchError):
+        _run(_APITimeoutError("timeout"))
 
 
 def test_rate_limit_raises_transient():
     from app import llm
-    mod = _fake_anthropic_raising(None)
-    with patch.dict("sys.modules", {"anthropic": mod}):
-        with pytest.raises(llm.TransientResearchError):
-            _run(mod.RateLimitError("slow down", status_code=429))
+    with pytest.raises(llm.TransientResearchError):
+        _run(_RateLimitError("slow down", status_code=429))
+
+
+def test_forbidden_raises_transient():
+    """403: Wikimedia blockt das Netz dieses Servers nicht deterministisch — Plan B nutzt
+    denselben Klassifikator, deshalb gehört 403 zu den vorübergehenden Fehlern."""
+    from app import llm
+    with pytest.raises(llm.TransientResearchError):
+        _run(_APIStatusError("forbidden", status_code=403))
 
 
 def test_value_error_stays_none():
@@ -162,11 +172,8 @@ def test_value_error_stays_none():
 
 
 def test_client_error_400_stays_none():
-    """4xx außer 408/429 ist endgültig: erneutes Fragen ändert nichts."""
-    from app import llm
-    mod = _fake_anthropic_raising(None)
-    with patch.dict("sys.modules", {"anthropic": mod}):
-        assert _run(mod.APIStatusError("bad request", status_code=400)) is None
+    """4xx außer 403/408/429 ist endgültig: erneutes Fragen ändert nichts."""
+    assert _run(_APIStatusError("bad request", status_code=400)) is None
 
 
 def test_is_transient_error_classifies_plain_status_codes():
@@ -207,7 +214,13 @@ class TransientResearchError(Exception):
 
 # 408 Request Timeout, 429 Rate Limit, 529 Overloaded (Anthropic) + alle 5xx gelten als
 # vorübergehend. Alles andere im 4xx-Bereich ist endgültig: erneutes Fragen ändert nichts.
-_TRANSIENT_STATUS = frozenset({408, 429, 529})
+#
+# 403 gehört ausdrücklich dazu — nicht wegen Anthropic, sondern wegen Wikimedia: das
+# Contabo-Netz dieses Servers ist dort geblockt, und der Block greift NICHT deterministisch
+# (gemessen 2026-07-30 im Container: derselbe User-Agent einmal 403, Minuten später 200). Als
+# endgültig gewertet würde er jedes Muster 30 Tage als „nichts gefunden" begraben. Der
+# Klassifikator wird von Plan B für genau diesen Fall mitbenutzt.
+_TRANSIENT_STATUS = frozenset({403, 408, 429, 529})
 
 
 def is_transient_error(exc: BaseException) -> bool:
@@ -251,7 +264,7 @@ Zusätzlich das Zeitbudget-Ende als transient behandeln (`app/llm.py`, im `pause
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_llm_transient.py -v`
-Expected: PASS (7 Tests)
+Expected: PASS (8 Tests)
 
 - [ ] **Step 5: Bestehende Aufrufer anpassen und die Regression prüfen**
 
