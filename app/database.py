@@ -281,6 +281,40 @@ CREATE TABLE IF NOT EXISTS payload_research (
     last_error  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS aircraft_types (
+    type_code           TEXT PRIMARY KEY,   -- normalize_type_code()
+    alias_of            TEXT,               -- Tippfehler-Kürzel → echtes Muster (ein Schritt)
+
+    -- importiert: NUR der Import schreibt diese Spalten
+    name                TEXT,
+    name_source         TEXT,               -- 'payloads' | 'llm'
+    wiki_lang           TEXT,               -- 'de' | 'en'
+    wiki_title          TEXT,
+    extract             TEXT,
+    photo_file          TEXT,
+    photo_licence       TEXT,
+    photo_artist        TEXT,
+    photo_source_url    TEXT,
+
+    -- Korrektur: NUR der Admin schreibt diese Spalten
+    name_override       TEXT,
+    extract_override    TEXT,
+    wiki_title_override TEXT,
+    photo_override      TEXT,               -- NULL | '-' (kein Foto) | 'blob' (Upload)
+    photo_blob          BLOB,
+    photo_credit        TEXT,
+
+    -- Zustand
+    fetch_state         TEXT,               -- 'neu' | 'ok' | 'nichts_gefunden' | 'fehler'
+    attempts            INTEGER NOT NULL DEFAULT 0,
+    checked_at          TEXT,
+    last_error          TEXT,
+    updated_at          TEXT,
+
+    CHECK (photo_override IS NULL OR photo_override IN ('-', 'blob')),
+    CHECK (photo_override <> 'blob' OR photo_blob IS NOT NULL)
+);
+
 CREATE TABLE IF NOT EXISTS custom_airports (
     icao          TEXT PRIMARY KEY,     -- ICAO ODER Platzhalter-Code (z. B. "ZZSALZ", kein echter ICAO)
     name          TEXT,                 -- reine Anzeige, keine Funktionswirkung
@@ -4307,6 +4341,291 @@ def payload_research_candidates(
         r["code"] for r in rows
         if r["code"] and is_retry_due(r["state"] or "neu", r["attempts"] or 0,
                                      r["checked_at"], now)
+    ]
+    return faellig[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Muster-Infos (aircraft_types) — Anzeige = COALESCE(<feld>_override, <feld>)
+# ---------------------------------------------------------------------------
+
+_AT_OVERRIDE_FELDER = ("name", "extract", "wiki_title")
+
+
+def _ts(now: datetime) -> str:
+    return now.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _ensure_aircraft_type(conn: sqlite3.Connection, code: str, now: datetime) -> None:
+    conn.execute(
+        "INSERT INTO aircraft_types (type_code, fetch_state, updated_at) "
+        "VALUES (?, 'neu', ?) ON CONFLICT(type_code) DO NOTHING",
+        (code, _ts(now)),
+    )
+
+
+def get_aircraft_type(conn: sqlite3.Connection, type_code: str) -> dict | None:
+    """Zeile mit aufgelösten Anzeigewerten, oder ``None``.
+
+    ``photo_kind``: ``'blob'`` (Upload gewinnt immer), ``'file'`` (Commons-Cache) oder ``None``
+    (``photo_override='-'`` oder gar kein Bild).
+    """
+    code = normalize_type_code(type_code)
+    if not code:
+        return None
+    row = conn.execute("SELECT * FROM aircraft_types WHERE type_code = ?", (code,)).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    out = {
+        "type_code": d["type_code"],
+        "alias_of": d["alias_of"],
+        "wiki_lang": d["wiki_lang"],
+        "photo_licence": d["photo_licence"],
+        "photo_artist": d["photo_artist"],
+        "photo_source_url": d["photo_source_url"],
+        "photo_credit": d["photo_credit"],
+        "fetch_state": d["fetch_state"],
+        "attempts": d["attempts"],
+        "checked_at": d["checked_at"],
+        "updated_at": d["updated_at"],
+    }
+    for feld in _AT_OVERRIDE_FELDER:
+        out[feld] = d[f"{feld}_override"] if d[f"{feld}_override"] else d[feld]
+    if d["photo_override"] == "-":
+        out["photo_kind"] = None
+    elif d["photo_override"] == "blob" and d["photo_blob"] is not None:
+        out["photo_kind"] = "blob"
+    elif d["photo_file"]:
+        out["photo_kind"] = "file"
+    else:
+        out["photo_kind"] = None
+    out["photo_file"] = d["photo_file"]
+    return out
+
+
+def upsert_aircraft_type_import(
+    conn: sqlite3.Connection, type_code: str, *, now: datetime, **felder
+) -> None:
+    """Import-Spalten schreiben. Kennt die Korrektur-Spalten NICHT — deshalb kann ein Import
+    eine Korrektur strukturell nicht zertreten (nicht bloß per Konvention).
+
+    Nur übergebene Felder werden geschrieben; ``None`` heißt „nicht anfassen".
+    """
+    erlaubt = {"name", "name_source", "wiki_lang", "wiki_title", "extract",
+               "photo_file", "photo_licence", "photo_artist", "photo_source_url"}
+    code = normalize_type_code(type_code)
+    if not code:
+        return
+    _ensure_aircraft_type(conn, code, now)
+    setze = {k: v for k, v in felder.items() if k in erlaubt and v is not None}
+    if not setze:
+        conn.execute("UPDATE aircraft_types SET updated_at=? WHERE type_code=?",
+                     (_ts(now), code))
+        return
+    sets = ", ".join(f"{k} = ?" for k in setze)
+    conn.execute(
+        f"UPDATE aircraft_types SET {sets}, updated_at = ? WHERE type_code = ?",
+        (*setze.values(), _ts(now), code),
+    )
+
+
+def set_aircraft_type_override(
+    conn: sqlite3.Connection, type_code: str, *, now: datetime, **felder
+) -> None:
+    """Korrektur-Spalten schreiben. Ein **Leerstring** löscht die Korrektur (→ Importwert gilt).
+
+    Erlaubt: ``name``, ``extract``, ``wiki_title`` (→ ``*_override``), ``photo_override``,
+    ``photo_credit``, ``alias_of``.
+    """
+    code = normalize_type_code(type_code)
+    if not code:
+        return
+    _ensure_aircraft_type(conn, code, now)
+    setze: dict[str, object] = {}
+    for feld in _AT_OVERRIDE_FELDER:
+        if feld in felder:
+            setze[f"{feld}_override"] = felder[feld] or None
+    for feld in ("photo_override", "photo_credit", "alias_of"):
+        if feld in felder:
+            wert = felder[feld]
+            if feld == "alias_of" and wert:
+                wert = normalize_type_code(str(wert))
+            setze[feld] = wert or None
+    if not setze:
+        return
+    sets = ", ".join(f"{k} = ?" for k in setze)
+    conn.execute(
+        f"UPDATE aircraft_types SET {sets}, updated_at = ? WHERE type_code = ?",
+        (*setze.values(), _ts(now), code),
+    )
+
+
+def mark_aircraft_type_state(
+    conn: sqlite3.Connection, type_code: str, state: str, now: datetime,
+    last_error: str | None = None,
+) -> None:
+    """Auflösungs-Zustand festschreiben. ``attempts`` zählt nur ``fehler``."""
+    code = normalize_type_code(type_code)
+    if not code:
+        return
+    _ensure_aircraft_type(conn, code, now)
+    if state == "fehler":
+        conn.execute(
+            "UPDATE aircraft_types SET fetch_state='fehler', attempts = attempts + 1, "
+            "checked_at = ?, last_error = ?, updated_at = ? WHERE type_code = ?",
+            (_ts(now), last_error, _ts(now), code),
+        )
+        return
+    conn.execute(
+        "UPDATE aircraft_types SET fetch_state = ?, attempts = 0, checked_at = ?, "
+        "last_error = ?, updated_at = ? WHERE type_code = ?",
+        (state, _ts(now), last_error, _ts(now), code),
+    )
+
+
+def resolve_alias(conn: sqlite3.Connection, type_code: str) -> str:
+    """Alias **einen** Schritt auflösen. Ketten werden nicht verfolgt (siehe validate_alias)."""
+    code = normalize_type_code(type_code)
+    if not code:
+        return ""
+    row = conn.execute(
+        "SELECT alias_of FROM aircraft_types WHERE type_code = ?", (code,)
+    ).fetchone()
+    ziel = normalize_type_code(row["alias_of"]) if row and row["alias_of"] else ""
+    return ziel or code
+
+
+def validate_alias(conn: sqlite3.Connection, type_code: str, target: str) -> str | None:
+    """Fehlermeldung, wenn ``type_code → target`` unzulässig wäre, sonst ``None``.
+
+    Drei Ablehnungsgründe. Der dritte ist der aus Rev. 2 (W5.1): ohne ihn entsteht eine Kette
+    in der anderen Anlegereihenfolge — erst ``P24 → PA24`` (erlaubt), dann ``PA24 → X``
+    (scheinbar erlaubt), und die Ein-Schritt-Auflösung von ``P24`` landet auf einer Alias-Zeile
+    ohne eigene Daten.
+    """
+    code, ziel = normalize_type_code(type_code), normalize_type_code(target)
+    if not code or not ziel:
+        return "Kürzel und Ziel müssen gesetzt sein."
+    if code == ziel:
+        return f"{code} kann nicht auf sich selbst zeigen."
+    row = conn.execute(
+        "SELECT alias_of FROM aircraft_types WHERE type_code = ?", (ziel,)
+    ).fetchone()
+    if row is not None and row["alias_of"]:
+        return (f"{ziel} ist selbst ein Alias (→ {row['alias_of']}). "
+                "Zeige direkt auf das echte Muster.")
+    zeigt_auf_mich = conn.execute(
+        "SELECT type_code FROM aircraft_types WHERE alias_of = ? LIMIT 1", (code,)
+    ).fetchone()
+    if zeigt_auf_mich is not None:
+        return (f"{zeigt_auf_mich['type_code']} zeigt bereits auf {code} — "
+                f"{code} kann deshalb kein Alias werden (das ergäbe eine Kette).")
+    return None
+
+
+def _alias_codes(conn: sqlite3.Connection, ziel: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT type_code FROM aircraft_types WHERE alias_of = ? ORDER BY type_code", (ziel,)
+    ).fetchall()
+    return [r["type_code"] for r in rows]
+
+
+def friesen_numbers(conn: sqlite3.Connection, type_code: str) -> dict:
+    """Kernzahlen der Gruppe für ein Muster, inklusive der Flüge seiner Aliasse.
+
+    ``alias_anteil`` ist eine **Liste**: es können mehrere Aliasse auf dasselbe Ziel zeigen
+    (real: ``SA65``/``AS65`` und ``JU5``/``JU52``). Damit die angezeigte Zahl nachvollziehbar
+    bleibt, weist das Panel sie einzeln aus.
+    """
+    ziel = resolve_alias(conn, type_code)
+    leer = {"fluege": 0, "stunden": 0.0, "nm": 0.0, "piloten": 0,
+            "von": None, "bis": None, "alias_anteil": []}
+    if not ziel:
+        return leer
+    codes = [ziel, *_alias_codes(conn, ziel)]
+    platz = ",".join("?" * len(codes))
+    row = conn.execute(
+        f"""SELECT COUNT(*) AS fluege,
+                   COALESCE(SUM(duration_min), 0) / 60.0 AS stunden,
+                   COALESCE(SUM(distance_nm), 0) AS nm,
+                   COUNT(DISTINCT cid) AS piloten,
+                   MIN(substr(logon_time, 1, 10)) AS von,
+                   MAX(substr(logon_time, 1, 10)) AS bis
+              FROM flight_cache
+             WHERE {FLIGHT_TYPE_CODE_SQL} IN ({platz})""",
+        codes,
+    ).fetchone()
+    if row is None or not row["fluege"]:
+        return leer
+    anteil = []
+    for a in _alias_codes(conn, ziel):
+        n = conn.execute(
+            f"SELECT COUNT(*) AS n FROM flight_cache WHERE {FLIGHT_TYPE_CODE_SQL} = ?", (a,)
+        ).fetchone()["n"]
+        if n:
+            anteil.append({"code": a, "n": n})
+    return {
+        "fluege": row["fluege"],
+        "stunden": round(row["stunden"], 1),
+        "nm": round(row["nm"], 0),
+        "piloten": row["piloten"],
+        "von": row["von"],
+        "bis": row["bis"],
+        "alias_anteil": anteil,
+    }
+
+
+def top_pilots(conn: sqlite3.Connection, type_code: str, limit: int = 3) -> list[dict]:
+    """Wer das Muster am häufigsten geflogen hat (inkl. Alias-Flüge)."""
+    ziel = resolve_alias(conn, type_code)
+    if not ziel:
+        return []
+    codes = [ziel, *_alias_codes(conn, ziel)]
+    platz = ",".join("?" * len(codes))
+    rows = conn.execute(
+        f"""SELECT f.cid AS cid, COUNT(*) AS n,
+                   MAX(f.callsign) AS callsign,
+                   (SELECT p.name FROM pilots p WHERE p.cid = f.cid) AS name
+              FROM flight_cache f
+             WHERE {FLIGHT_TYPE_CODE_SQL} IN ({platz})
+             GROUP BY f.cid
+             ORDER BY n DESC, f.cid ASC
+             LIMIT ?""",
+        (*codes, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def flight_type_codes(conn: sqlite3.Connection) -> set[str]:
+    """Alle Typcodes aus dem Flugbestand — Grundlage der Klick-Eingrenzung (W3)."""
+    rows = conn.execute(
+        f"""SELECT DISTINCT {FLIGHT_TYPE_CODE_SQL} AS code FROM flight_cache
+             WHERE COALESCE(NULLIF(aircraft_icao, ''), aircraft) IS NOT NULL
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''"""
+    ).fetchall()
+    return {r["code"] for r in rows if r["code"]}
+
+
+def aircraft_type_candidates(
+    conn: sqlite3.Connection, now: datetime, limit: int
+) -> list[str]:
+    """Typcodes aus dem Flugbestand, deren Auflösung fällig ist — häufigste zuerst."""
+    rows = conn.execute(
+        f"""SELECT {FLIGHT_TYPE_CODE_SQL} AS code, COUNT(*) AS n,
+                   t.fetch_state AS state, t.attempts AS attempts, t.checked_at AS checked_at,
+                   t.alias_of AS alias_of
+              FROM flight_cache f
+              LEFT JOIN aircraft_types t ON t.type_code = {FLIGHT_TYPE_CODE_SQL}
+             WHERE COALESCE(NULLIF(aircraft_icao, ''), aircraft) IS NOT NULL
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''
+             GROUP BY code
+             ORDER BY n DESC, code ASC"""
+    ).fetchall()
+    faellig = [
+        r["code"] for r in rows
+        if r["code"] and not r["alias_of"]
+        and is_retry_due(r["state"] or "neu", r["attempts"] or 0, r["checked_at"], now)
     ]
     return faellig[:limit]
 
