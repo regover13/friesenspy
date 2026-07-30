@@ -1422,6 +1422,13 @@ class VatsimPoller:
             if st is not None and not is_retry_due(st["state"], st["attempts"],
                                                    st["checked_at"], jetzt):
                 return  # Backoff läuft noch
+        except Exception:
+            # DB-Fehler VOR dem (bezahlten) LLM-Aufruf: es fand noch kein Versuch statt, also
+            # keinen mark_payload_research-Aufruf nachschieben (attempts soll nicht steigen).
+            # Wichtig fuer _research_due_payloads: ungefangen wuerde das die ganze Nachlese
+            # abbrechen, nicht nur diesen einen Kandidaten.
+            logger.exception("Auto-Zuladung %s: DB-Fehler vor der Recherche", code)
+            return
         finally:
             conn.close()
 
@@ -1468,6 +1475,18 @@ class VatsimPoller:
             )
             mark_payload_research(conn, code, "ok", jetzt)
             conn.commit()
+        except Exception:
+            # Die (bezahlte) Recherche selbst ist gelungen, nur das Schreiben schlug fehl
+            # (z. B. SQLite-Lock-Kontention zwischen dem Live-Trigger und der serialisierten
+            # Nachlese). Bewusst KEIN weiterer Schreibversuch hier (Gefahr, dieselbe Ursache
+            # erneut zu treffen) -- der Zustand bleibt "nie versucht"/alter Backoff-Stand, das
+            # Muster gilt beim nächsten fälligen Zeitpunkt wieder als offen und wird erneut
+            # recherchiert. Kostet im Fehlerfall ggf. noch einmal ~4 ct, aber ein erfolgreiches
+            # Ergebnis verschwindet nicht lautlos für immer. Wichtig fuer
+            # _research_due_payloads: ungefangen wuerde das die ganze Nachlese fuer die
+            # UEBRIGEN Kandidaten abbrechen, nicht nur diesen einen.
+            logger.exception("Auto-Zuladung %s: Ergebnis konnte nicht gespeichert werden", code)
+            return
         finally:
             conn.close()
         logger.info("Auto-Zuladung vorbefüllt: %s (%s)", code, s.get("make_model"))

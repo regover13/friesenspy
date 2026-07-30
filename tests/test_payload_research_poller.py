@@ -164,6 +164,35 @@ async def test_nachlese_stirbt_nicht_an_einem_einzelnen_fehler(db, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_nachlese_uebersteht_db_fehler_beim_schreiben_eines_kandidaten(db, monkeypatch):
+    """Review-Befund: der Schreib-Block nach erfolgreicher (oder ergebnisloser) Recherche war
+    nur in try/finally, nicht try/except. Ein DB-Fehler dort (z. B. SQLite-Lock-Kontention
+    zwischen Live-Trigger und Nachlese) propagierte ungefangen bis in _research_due_payloads
+    und beendete dort die GESAMTE Nachlese -- nicht nur den einen Kandidaten. Bei drei fälligen
+    Mustern durfte ein Fehler bei AP32 FK9/M20T nicht verhindern."""
+    for i, code in enumerate(["AP32", "FK9", "M20T"]):
+        _flug(db, i, code, "2026-07-25T10:00:00Z")
+    p = _poller(db)
+    gesehen = []
+    monkeypatch.setattr(llm, "suggest_aircraft_payload",
+                        lambda code: gesehen.append(code) or None)
+
+    from app import database
+    original = database.mark_payload_research
+
+    def _boom_bei_ap32(conn, code, state, now, last_error=None):
+        if code == "AP32":
+            raise RuntimeError("database is locked")
+        return original(conn, code, state, now, last_error=last_error)
+
+    monkeypatch.setattr(database, "mark_payload_research", _boom_bei_ap32)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+    await p._research_due_payloads()
+    assert set(gesehen) == {"AP32", "FK9", "M20T"}, \
+        "ein DB-Fehler beim Schreiben fuer EINEN Kandidaten darf die uebrigen nicht verhindern"
+
+
+@pytest.mark.asyncio
 async def test_in_memory_set_ist_weg(db):
     """Explizit: der alte Mechanismus darf nicht als zweite Wahrheit zurueckkommen."""
     p = _poller(db)
