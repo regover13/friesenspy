@@ -474,6 +474,10 @@
     .td-dim  { color: var(--text-label); font-size: 0.75rem; }
     .td-rank1 { color: #ffd24a; font-weight: 700; }
 
+    /* Dezenter Fließtext-/Inline-Hinweis (Muster-Infos-Panel, #8: Intro-Absatz + Alias-Verweis
+       in der Tabellenzelle). */
+    .hint { color: var(--text-label); font-size: 0.8rem; }
+
     /* === OVERRIDE UI === */
     .override-list {
       display: flex;
@@ -964,6 +968,46 @@
           <div id="ke-payloads-container" class="scroll-list"><div class="empty-hint">Lade Zuladungen…</div></div>
         </div>
 
+        <!-- MUSTER-INFOS (aircraft_types, Task 8 Plan B) -->
+        <div class="panel">
+          <div class="panel-title"><span>Muster-Infos</span></div>
+          <p class="hint" style="margin:0 0 14px;">
+            Import und Korrektur stehen nebeneinander: ein leeres Korrekturfeld heißt „Importwert gilt".
+            Beim falschen Artikel besser das <b>Lemma</b> korrigieren und „Neu holen" drücken — dann
+            wandert das Foto mit.
+          </p>
+          <div class="form-grid" style="margin:6px 0 8px;">
+            <div class="form-group"><label for="mi-code">Kürzel</label>
+              <input type="text" id="mi-code" placeholder="C172" /></div>
+            <div class="form-group"><label for="mi-name">Name (Korrektur)</label>
+              <input type="text" id="mi-name" /></div>
+            <div class="form-group"><label for="mi-lemma">Wikipedia-Lemma (Korrektur)</label>
+              <input type="text" id="mi-lemma" /></div>
+          </div>
+          <div class="form-grid" style="margin:6px 0 8px;">
+            <div class="form-group"><label for="mi-extract">Text (Korrektur)</label>
+              <textarea id="mi-extract" rows="3"></textarea></div>
+            <div class="form-group"><label for="mi-credit">Bildnachweis</label>
+              <input type="text" id="mi-credit" /></div>
+            <div class="form-group"><label for="mi-alias">Alias von</label>
+              <input type="text" id="mi-alias" placeholder="PA24" /></div>
+          </div>
+          <div class="form-grid" style="margin:6px 0 12px;">
+            <div class="form-group"><label for="mi-photo">Eigenes Foto</label>
+              <input type="file" id="mi-photo" accept="image/*" /></div>
+            <div class="form-group" style="justify-content:flex-end;">
+              <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:var(--text-bright);">
+                <input type="checkbox" id="mi-nophoto" /> Kein Foto anzeigen</label>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <button class="btn btn-primary btn-sm" onclick="miSave()">Speichern</button>
+            <button class="btn btn-sm" onclick="miUpload()">Foto hochladen</button>
+            <button class="btn btn-sm" onclick="miRefetch()">🔄 Neu holen</button>
+          </div>
+          <div id="mi-container" class="scroll-list"><div class="empty-hint">Lade Muster…</div></div>
+        </div>
+
         <!-- HINWEIS-BANNER -->
         <div class="panel">
           <div class="panel-title"><span>Hinweis-Banner (App-Startseite)</span></div>
@@ -1387,6 +1431,43 @@
       return res;
     }
 
+    // Analog zu api(), aber für multipart/form-data-Uploads (Muster-Info-Foto, Task 8): KEIN
+    // 'Content-Type' setzen -- den setzt der Browser für FormData selbst inkl. Boundary. Das
+    // Bestätigungs-Cookie (fs_confirm), das require_confirm auf dem Server prüft, geht bei
+    // credentials: 'same-origin' automatisch mit, genau wie bei api().
+    async function apiForm(method, path, formData) {
+      const opts = { method, credentials: 'same-origin', body: formData };
+      let res;
+      try {
+        res = await fetch(path, opts);
+      } catch (e) {
+        toast('Verbindungsfehler.', true);
+        return null;
+      }
+      if (res.status === 401) { showLogin(); return null; }
+      if (res.status === 403) {
+        let detail = '';
+        try { detail = ((await res.clone().json()) || {}).detail || ''; } catch {}
+        if (detail === 'confirm_required') {
+          _confirmValidUntil = 0;
+          const ok = await _openModal(
+            'Bestätigung erforderlich',
+            'Bitte gib das Admin-Passwort ein, um diese Aktion auszuführen.',
+            'Bestätigen', true, true
+          );
+          if (!ok) return res;
+          try {
+            res = await fetch(path, opts);
+          } catch (e) {
+            toast('Verbindungsfehler.', true);
+            return null;
+          }
+          if (res.status === 401) { showLogin(); return null; }
+        }
+      }
+      return res;
+    }
+
     // ====================================================================
     // AUTH
     // ====================================================================
@@ -1413,6 +1494,7 @@
       loadPilots();
       loadKutterAdmin();
       loadCustomAirports();
+      miLoad();
       // Erkennungslücken NICHT automatisch laden -- der Check rechnet den gesamten
       // Flugbestand neu durch (mehrere Sekunden) und läuft nur auf expliziten Klick
       // ("🔍 Jetzt prüfen" / dg-refresh-btn).
@@ -2747,6 +2829,97 @@
       ['kp-type', 'kp-make-model', 'kp-mtow', 'kp-empty', 'kp-fuel-full', 'kp-fuel', 'kp-crew', 'kp-payload'].forEach(i => document.getElementById(i).value = '');
       loadKutterPayloads();
     });
+
+    // ====================================================================
+    // MUSTER-INFOS (aircraft_types, Task 8 Plan B)
+    // ====================================================================
+    let _miRows = [];
+
+    async function miLoad() {
+      const res = await api('GET', '/api/admin/aircraft-types');
+      if (!res || !res.ok) return;
+      const d = await res.json();
+      _miRows = d.types || [];
+      const c = document.getElementById('mi-container');
+      if (!_miRows.length) { c.innerHTML = '<div class="empty-hint">Keine Muster.</div>'; return; }
+      c.innerHTML = '<div class="table-wrap"><table style="font-size:0.8rem;"><thead><tr>'
+        + '<th style="text-align:left;">Kürzel</th><th>Flüge</th><th style="text-align:left;">Name</th>'
+        + '<th style="text-align:left;">Lemma</th><th style="text-align:left;">Foto</th>'
+        + '<th style="text-align:left;">Muster-Info</th><th style="text-align:left;">Zuladung</th><th></th></tr></thead><tbody>'
+        + _miRows.map(r => {
+          const name = r.name_override || r.name || '—';
+          const korr = r.name_override ? ' <span title="Korrektur">✎</span>' : '';
+          const foto = r.photo_override === '-' ? 'aus'
+                     : r.photo_override === 'blob' ? 'eigenes'
+                     : r.photo_file ? (r.photo_licence || 'Commons') : '—';
+          const zust = (r.fetch_state || 'neu')
+            + (r.attempts ? ' (' + r.attempts + '×)' : '')
+            + (r.last_error ? ' — ' + escH(String(r.last_error).slice(0, 60)) : '');
+          const pz = (r.payload_state || (r.payload_kg != null ? 'ok' : '—'))
+            + (r.payload_last_error ? ' — ' + escH(String(r.payload_last_error).slice(0, 40)) : '');
+          return '<tr><td><b>' + escH(r.type_code) + '</b>'
+            + (r.alias_of ? '<br><span class="hint">→ ' + escH(r.alias_of) + '</span>' : '')
+            + '</td><td>' + (r.fluege || 0) + '</td>'
+            + '<td>' + escH(name) + korr + '</td>'
+            + '<td>' + escH(r.wiki_title_override || r.wiki_title || '—') + '</td>'
+            + '<td>' + escH(foto) + '</td>'
+            + '<td>' + zust + '</td><td>' + pz + '</td>'
+            + '<td><button class="btn btn-sm" onclick="miPrefill(\'' + escA(r.type_code)
+            + '\')">Bearbeiten</button></td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+
+    function miPrefill(code) {
+      const r = (_miRows || []).find(x => x.type_code === code) || {};
+      document.getElementById('mi-code').value = code;
+      document.getElementById('mi-name').value = r.name_override || '';
+      document.getElementById('mi-lemma').value = r.wiki_title_override || '';
+      document.getElementById('mi-extract').value = r.extract_override || '';
+      document.getElementById('mi-credit').value = r.photo_credit || '';
+      document.getElementById('mi-alias').value = r.alias_of || '';
+      document.getElementById('mi-nophoto').checked = r.photo_override === '-';
+    }
+
+    async function miSave() {
+      const code = document.getElementById('mi-code').value.trim().toUpperCase();
+      if (!code) { toast('Kürzel fehlt', true); return; }
+      const body = {
+        type_code: code,
+        name: document.getElementById('mi-name').value,
+        wiki_title: document.getElementById('mi-lemma').value,
+        extract: document.getElementById('mi-extract').value,
+        photo_credit: document.getElementById('mi-credit').value,
+        alias_of: document.getElementById('mi-alias').value,
+        photo_override: document.getElementById('mi-nophoto').checked ? '-' : '',
+      };
+      const res = await api('POST', '/api/admin/aircraft-types', body);
+      if (!res || !res.ok) { toast((res && (await res.json()).detail) || 'Fehler', true); return; }
+      toast('Gespeichert.');
+      await miLoad();
+    }
+
+    async function miRefetch() {
+      const code = document.getElementById('mi-code').value.trim().toUpperCase();
+      if (!code) { toast('Kürzel fehlt', true); return; }
+      const res = await api('POST', '/api/admin/aircraft-types/' + encodeURIComponent(code) + '/refetch');
+      if (!res || !res.ok) { toast('Fehler beim Neu-Holen.', true); return; }
+      toast('Neu-Holen angestoßen — Liste aktualisiert sich in ein paar Sekunden.');
+      setTimeout(miLoad, 3000);
+    }
+
+    async function miUpload() {
+      const code = document.getElementById('mi-code').value.trim().toUpperCase();
+      const f = document.getElementById('mi-photo').files[0];
+      if (!code || !f) { toast('Kürzel und Datei nötig', true); return; }
+      const fd = new FormData();
+      fd.append('file', f);
+      const res = await apiForm('POST',
+        '/api/admin/aircraft-types/' + encodeURIComponent(code) + '/photo', fd);
+      if (!res || !res.ok) { toast((res && (await res.json()).detail) || 'Fehler', true); return; }
+      toast('Foto hochgeladen.');
+      document.getElementById('mi-photo').value = '';
+      await miLoad();
+    }
 
     // ====================================================================
     // ERGÄNZUNGS-FLUGPLÄTZE (custom_airports, #50)
