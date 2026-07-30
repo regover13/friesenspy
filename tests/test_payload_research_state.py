@@ -168,3 +168,31 @@ def test_gepolsterter_typcode_matcht_normalize_type_code(conn):
                    fuel_full_kg=80.0, crew_kg=85.0, source="llm", make_model="Aeroprakt A-32")
     conn.commit()
     assert payload_research_candidates(conn, T0, limit=10) == []
+
+
+def test_leerzeichen_vor_dem_slash_matcht_normalize_type_code(conn):
+    """Whole-Branch-Befund 3: das aeussere trim() fasst nur den Rand, nicht das Segment.
+
+    "AP32 /L-SDGY" (Leerzeichen unmittelbar vor dem inneren '/', KEIN Randpadding) ergibt in
+    Python "AP32", im SQL aber "AP32 " -- eine so gepolsterte Zeile joint nie auf ihre
+    aircraft_payloads/payload_research-Zeile, bleibt dauerhaft Kandidat und belegt bei jedem
+    Nachlese-Lauf einen der 5 Slots, ohne je fertig zu werden."""
+    from app.database import normalize_type_code
+
+    _flug(conn, 1, None, "AP32 /L-SDGY", "2026-07-25T10:00:00Z")
+    conn.commit()
+    assert payload_research_candidates(conn, T0, limit=10) == \
+        [normalize_type_code("AP32 /L-SDGY")] == ["AP32"]
+
+    # Ein Zustand fuer "AP32" muss diese Zeile stilllegen (sonst: ewiger Kandidat).
+    mark_payload_research(conn, "AP32", "ok", T0)
+    conn.commit()
+    assert payload_research_candidates(conn, T0, limit=10) == []
+
+    # Ebenso ein aircraft_payloads-Eintrag -- und auch mit Rand- UND Innenpadding zugleich.
+    _flug(conn, 2, None, "  AP32  /  L-SDGY ", "2026-07-25T10:00:00Z")
+    conn.commit()
+    upsert_payload(conn, "AP32", mtow_kg=600.0, empty_kg=350.0, fuel_kg=40.0,
+                   fuel_full_kg=80.0, crew_kg=85.0, source="llm", make_model="Aeroprakt A-32")
+    conn.commit()
+    assert payload_research_candidates(conn, T0, limit=10) == []

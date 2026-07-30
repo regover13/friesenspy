@@ -4266,12 +4266,20 @@ def mark_payload_research(
 # `aircraft` (2232 Zeilen). COALESCE liefert GENAU EINEN Wert je Flug; die beiden Spalten
 # dürfen nie per OR addiert werden (Doppelzählung). Bei 358 Zeilen sind beide gefüllt, in 357
 # stimmen sie überein.
+# SQL-Pendant zu normalize_type_code(): vor dem '/' abschneiden, trimmen, Uppercase.
+# ZWEI trim() sind noetig, sie decken verschiedene Faelle ab:
+#   - das aeussere trim() um COALESCE(...) den Randpadding-Fall (" AP32 ")
+#   - das trim() um substr(...) das Leerzeichen unmittelbar VOR einem inneren '/'
+#     ("AP32 /L-SDGY" -> ohne dieses trim bliebe "AP32 " uebrig).
+# Python macht beides in einem Schritt (``code.split("/")[0].strip()``); weicht das SQL ab,
+# joint die betroffene Zeile nie auf ihre aircraft_payloads/payload_research-Zeile und bleibt
+# ewig Kandidat -- sie belegt dann bei jedem Nachlese-Lauf einen der Slots.
 FLIGHT_TYPE_CODE_SQL = """
-    upper(substr(
+    upper(trim(substr(
         trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft)), 1,
         CASE WHEN instr(trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft)), '/') > 0
              THEN instr(trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft)), '/') - 1
-             ELSE length(trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft))) END))
+             ELSE length(trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft))) END)))
 """
 
 
