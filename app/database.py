@@ -4610,23 +4610,45 @@ def flight_type_codes(conn: sqlite3.Connection) -> set[str]:
 def aircraft_type_candidates(
     conn: sqlite3.Connection, now: datetime, limit: int
 ) -> list[str]:
-    """Typcodes aus dem Flugbestand, deren Auflösung fällig ist — häufigste zuerst."""
+    """Typcodes aus dem Flugbestand, deren Auflösung fällig ist — häufigste zuerst.
+
+    Ein Code ohne jeden Namen (kein Admin-Lemma, kein ``name_override``, kein
+    ``aircraft_payloads.make_model``) UND ohne Endzustand der Zuladungs-Recherche
+    (``payload_research.state`` weder ``'ok'`` noch ``'nichts_gefunden'``) wird
+    übersprungen — für ihn würde ``_resolve_aircraft_type`` ohnehin nichts schreiben
+    (siehe dortige Begründung). Ohne diesen Filter bleibt so ein Code für immer ein
+    Kandidat (``checked_at IS NULL`` → immer fällig) und kann bei einem realistischen
+    Flugbestand ab Rang ~8 alle dahinter liegenden, echt auflösbaren Muster dauerhaft
+    aus der Nachlese verdrängen — konkret der Fall ohne ``ANTHROPIC_API_KEY`` (ein
+    unterstützter Zustand) oder bei einer manuell gepflegten Zuladungszeile ohne
+    ``make_model``.
+    """
     rows = conn.execute(
         f"""SELECT {FLIGHT_TYPE_CODE_SQL} AS code, COUNT(*) AS n,
                    t.fetch_state AS state, t.attempts AS attempts, t.checked_at AS checked_at,
-                   t.alias_of AS alias_of
+                   t.alias_of AS alias_of, t.wiki_title_override AS wiki_title_override,
+                   t.name_override AS name_override, p.make_model AS make_model,
+                   r.state AS payload_state
               FROM flight_cache f
               LEFT JOIN aircraft_types t ON t.type_code = {FLIGHT_TYPE_CODE_SQL}
+              LEFT JOIN aircraft_payloads p ON p.type_code = {FLIGHT_TYPE_CODE_SQL}
+              LEFT JOIN payload_research  r ON r.type_code = {FLIGHT_TYPE_CODE_SQL}
              WHERE COALESCE(NULLIF(aircraft_icao, ''), aircraft) IS NOT NULL
                AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''
              GROUP BY code
              ORDER BY n DESC, code ASC"""
     ).fetchall()
-    faellig = [
-        r["code"] for r in rows
-        if r["code"] and not r["alias_of"]
-        and is_retry_due(r["state"] or "neu", r["attempts"] or 0, r["checked_at"], now)
-    ]
+    faellig = []
+    for r in rows:
+        if not r["code"] or r["alias_of"]:
+            continue
+        if not is_retry_due(r["state"] or "neu", r["attempts"] or 0, r["checked_at"], now):
+            continue
+        hat_namen = r["wiki_title_override"] or r["name_override"] or r["make_model"]
+        zuladung_offen = (r["payload_state"] or "") not in ("ok", "nichts_gefunden")
+        if not hat_namen and zuladung_offen:
+            continue
+        faellig.append(r["code"])
     return faellig[:limit]
 
 

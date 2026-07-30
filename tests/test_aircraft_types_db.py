@@ -13,10 +13,12 @@ from app.database import (
     get_connection,
     init_db,
     mark_aircraft_type_state,
+    mark_payload_research,
     resolve_alias,
     set_aircraft_type_override,
     top_pilots,
     upsert_aircraft_type_import,
+    upsert_payload,
     validate_alias,
 )
 
@@ -192,6 +194,11 @@ def test_top_piloten(conn):
 def test_kandidaten_und_bestand(conn):
     _flug(conn, 1, None, "P28S", "2025-06-06T10:00:00Z")
     _flug(conn, 2, "AP32", "AP32", "2026-07-25T10:00:00Z")
+    # Zuladungs-Recherche (Plan A) bereits abgeschlossen (Endzustand) — sonst wären
+    # beide Codes namenlos UND ohne Endzustand und würden vom Filter gegen
+    # dauerhaft offene Kandidaten übersprungen (siehe test_namenloser_code_...).
+    mark_payload_research(conn, "P28S", "nichts_gefunden", T0)
+    mark_payload_research(conn, "AP32", "nichts_gefunden", T0)
     conn.commit()
     assert flight_type_codes(conn) == {"P28S", "AP32"}
     assert set(aircraft_type_candidates(conn, T0, limit=10)) == {"P28S", "AP32"}
@@ -203,6 +210,7 @@ def test_kandidaten_und_bestand(conn):
 def test_fehlende_fotodatei_setzt_zustand_zurueck_ist_kandidat(conn, tmp_path):
     """W2: 'ok' heisst nicht 'nie wieder'."""
     _flug(conn, 1, None, "C172", "2025-01-01T10:00:00Z")
+    mark_payload_research(conn, "C172", "nichts_gefunden", T0)
     conn.commit()
     upsert_aircraft_type_import(conn, "C172", photo_file="C172.jpg", now=T0)
     mark_aircraft_type_state(conn, "C172", "ok", T0)
@@ -211,3 +219,29 @@ def test_fehlende_fotodatei_setzt_zustand_zurueck_ist_kandidat(conn, tmp_path):
     mark_aircraft_type_state(conn, "C172", "neu", T0)
     conn.commit()
     assert aircraft_type_candidates(conn, T0, limit=10) == ["C172"]
+
+
+def test_namenloser_code_ohne_endzustand_verdraengt_keine_echten_kandidaten(conn):
+    """Restbefund der Fix-Welle-Re-Review: ein Code ohne jeden Namen, dessen
+    Zuladungs-Recherche nie zu einem Endzustand kommt (z. B. ohne ANTHROPIC_API_KEY,
+    ein unterstuetzter Zustand), darf nicht auf ewig ein Kandidatenplatz bleiben und
+    damit echte, aufloesbare Muster verdraengen. `checked_at IS NULL` waere sonst
+    IMMER faellig (is_retry_due) und mit hoher Flugzahl immer vorne einsortiert."""
+    # AP32: viele Fluege, aber nie ein Name -- weder Override noch make_model --
+    # und payload_research existiert gar nicht (kein API-Key, kein Versuch je gestartet).
+    for i in range(5):
+        _flug(conn, i, "AP32", "AP32", f"2026-07-0{i+1}T10:00:00Z")
+    # P28S: ein einzelner Flug, aber ein echter Name -- muss trotz niedrigerer
+    # Flugzahl als Kandidat erscheinen, DARF NICHT von AP32 verdraengt werden.
+    _flug(conn, 10, "P28S", "P28S", "2026-07-10T10:00:00Z")
+    upsert_payload(conn, "P28S", mtow_kg=1157.0, empty_kg=767.0, fuel_kg=100.0,
+                   fuel_full_kg=200.0, crew_kg=85.0, source="curated",
+                   make_model="Piper PA-28-181 Archer")
+    conn.commit()
+    kandidaten = aircraft_type_candidates(conn, T0, limit=1)
+    assert kandidaten == ["P28S"], "namenloser Code ohne Endzustand hat den echten Kandidaten verdraengt"
+
+    # Ein Admin-Lemma reicht ebenfalls als "hat einen Namen" -- AP32 wird dann Kandidat.
+    set_aircraft_type_override(conn, "AP32", wiki_title="Aeroprakt A-32", now=T0)
+    conn.commit()
+    assert set(aircraft_type_candidates(conn, T0, limit=10)) == {"AP32", "P28S"}
