@@ -12,6 +12,7 @@ due to abuse``, eigener UA → ``200``. Der Block greift nicht deterministisch a
 from __future__ import annotations
 
 import re
+from urllib.parse import quote
 
 from app.version import VERSION
 
@@ -109,3 +110,169 @@ def looks_like_aircraft(description: str | None, extract: str | None) -> bool:
         if any(w in text for w in _LUFTFAHRZEUG_WOERTER):
             return True
     return False
+
+
+# --- Auflösung gegen Wikipedia und Commons ----------------------------------
+
+# Whitelist **exakter** normalisierter Kürzel. Ein Substring-Vergleich ist hier falsch:
+# "CC BY" ist ein Teilstring von "CC BY-NC-ND 2.0" und würde ein NC/ND-Bild veröffentlichen
+# (Rev. 2, W4). `LicenseShortName` ist auf Commons Freitext mit Leerzeichen — gemessen:
+# "CC BY-SA 4.0", "Public domain", "GFDL 1.2".
+ALLOWED_LICENCES = frozenset({
+    "cc0", "cc01.0", "publicdomain", "pd",
+    "ccby2.0", "ccby2.5", "ccby3.0", "ccby4.0",
+    "ccbysa2.0", "ccbysa2.5", "ccbysa3.0", "ccbysa4.0",
+})
+
+_SUCHTIEFE = 3          # so viele Suchtreffer werden geprüft
+_SPRACHEN = ("de", "en")
+
+
+def _norm_licence(s: str) -> str:
+    return re.sub(r"[^a-z0-9.]", "", (s or "").lower())
+
+
+def licence_ok(short_name: str | None, usage_terms: str | None) -> bool:
+    """Darf dieses Bild angezeigt werden?
+
+    Zulässig sind CC0, Public Domain und CC BY / CC BY-SA. Ausgeschlossen ist alles mit ``NC``
+    oder ``ND`` sowie **GFDL als einzige** Lizenz (Copyleft mit Volltextpflicht — für eine
+    Web-Anzeige unpassend; betrifft konkret das Leitbild der ``C172``).
+
+    Dual lizenzierte Bilder tragen auf Commons häufig nur „GFDL" im Kürzel, nennen die
+    CC-Lizenz aber in ``UsageTerms``. Deshalb wird dort nachgesehen, statt das Bild
+    vorschnell zu verwerfen.
+    """
+    if _norm_licence(short_name) in ALLOWED_LICENCES:
+        return True
+    # Zweite Chance nur für Dual-Lizenzen: eine erlaubte Lizenz muss in UsageTerms stehen.
+    terms = _norm_licence(usage_terms)
+    if not terms:
+        return False
+    if "nc" in (usage_terms or "").lower() or "noderiv" in terms or "ccbynd" in terms:
+        return False
+    return any(erlaubt in terms for erlaubt in ("ccbysa", "ccby", "cc0", "publicdomain"))
+
+
+def normalise_commons_title(title: str) -> str:
+    """Dateititel auf das ``File:``-Präfix bringen.
+
+    Die deutsche ``media-list`` liefert ``Datei:``; die Commons-API kennt nur ``File:`` und
+    antwortet sonst still ohne ``imageinfo``.
+    """
+    t = (title or "").strip()
+    for praefix in ("Datei:", "File:", "Bild:", "Image:"):
+        if t.startswith(praefix):
+            return "File:" + t[len(praefix):]
+    return "File:" + t
+
+
+def _such_url(lang: str, name: str) -> str:
+    return (f"https://{lang}.wikipedia.org/w/api.php?action=query&list=search"
+            f"&srsearch={quote(name)}&srlimit={_SUCHTIEFE}&format=json")
+
+
+def _summary_url(lang: str, titel: str) -> str:
+    return f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(titel, safe='')}"
+
+
+def _medialist_url(lang: str, titel: str) -> str:
+    return f"https://{lang}.wikipedia.org/api/rest_v1/page/media-list/{quote(titel, safe='')}"
+
+
+def _imageinfo_url(commons_titel: str) -> str:
+    return ("https://commons.wikimedia.org/w/api.php?action=query"
+            f"&titles={quote(commons_titel, safe='')}"
+            "&prop=imageinfo&iiprop=extmetadata%7Curl&format=json")
+
+
+def _meta(extmetadata: dict, key: str) -> str | None:
+    wert = (extmetadata or {}).get(key)
+    if isinstance(wert, dict):
+        return wert.get("value")
+    return wert if isinstance(wert, str) else None
+
+
+def _waehle_bild(lang: str, titel: str, fetch) -> dict | None:
+    """Erstes Bild des Artikels mit zulässiger Lizenz.
+
+    Rev. 2 (W1): Rev. 1 fragte nur ``originalimage`` der Summary ab und schloss daraus, die
+    ``C172`` — mit 506 Flügen das häufigste Muster der Gruppe — bleibe wegen GFDL dauerhaft
+    ohne Bild. Der Artikel enthält aber mindestens vier verwendbare Bilder. Der Lizenzfilter
+    war richtig, die Ein-Kandidaten-Pipeline falsch.
+    """
+    daten = fetch(_medialist_url(lang, titel)) or {}
+    for item in (daten.get("items") or []):
+        if item.get("type") not in (None, "image"):
+            continue
+        roh = item.get("title") or ""
+        if not roh:
+            continue
+        commons_titel = normalise_commons_title(roh)
+        info = fetch(_imageinfo_url(commons_titel)) or {}
+        seiten = ((info.get("query") or {}).get("pages") or {})
+        for seite in seiten.values():
+            ii = (seite.get("imageinfo") or [{}])[0]
+            ext = ii.get("extmetadata") or {}
+            short, terms = _meta(ext, "LicenseShortName"), _meta(ext, "UsageTerms")
+            if not licence_ok(short, terms):
+                continue
+            return {
+                "photo_commons_title": commons_titel,
+                "photo_url": ii.get("url"),
+                "photo_licence": short,
+                "photo_artist": re.sub(r"<[^>]+>", "", _meta(ext, "Artist") or "").strip() or None,
+                "photo_source_url": ii.get("descriptionurl"),
+            }
+    return None
+
+
+def resolve_type(name: str, fetch) -> dict | None:
+    """Muster-Name → Wikipedia-Artikel und Foto, oder ``None``.
+
+    ``fetch(url) -> dict`` liefert geparstes JSON und **muss** den :data:`USER_AGENT` setzen.
+    Ausnahmen von ``fetch`` werden durchgeworfen — ob ein Fehler vorübergehend ist, entscheidet
+    der Aufrufer (``llm.is_transient_error``).
+
+    Immer über die **Suche**, nie den Namen als Lemma raten: gemessen liefert
+    ``srsearch="Cessna 172S Skyhawk"`` den Treffer ``Cessna 172``, der direkte Lemma-Aufruf
+    mit demselben String dagegen **HTTP 404**.
+
+    Reihenfolge im Loop bewusst: für jeden Suchtreffer wird **erst** die Summary geholt und
+    **dann** gegen den kanonischen Titel geprüft (``title_matches_name`` + ``looks_like_
+    aircraft``) — nicht umgekehrt. Nur so lässt sich messen, dass wirklich alle ``_SUCHTIEFE``
+    Treffer geprüft werden (``test_hoechstens_drei_treffer_werden_geprueft``), und die Prüfung
+    läuft gegen den kanonischen Titel nach einer Weiterleitung, nicht den rohen Suchtitel.
+    """
+    sauber = harden_name(name)
+    if not sauber:
+        return None
+    for lang in _SPRACHEN:
+        treffer = fetch(_such_url(lang, sauber)) or {}
+        titel_liste = [
+            t.get("title") for t in ((treffer.get("query") or {}).get("search") or [])
+            if t.get("title")
+        ][:_SUCHTIEFE]
+        for titel in titel_liste:
+            summary = fetch(_summary_url(lang, titel)) or {}
+            extract = summary.get("extract")
+            echter_titel = summary.get("title") or titel
+            if not title_matches_name(echter_titel, sauber):
+                continue
+            if not looks_like_aircraft(summary.get("description"), extract):
+                continue
+            ergebnis = {
+                "wiki_lang": lang,
+                "wiki_title": echter_titel,
+                "extract": extract,
+                "photo_commons_title": None,
+                "photo_url": None,
+                "photo_licence": None,
+                "photo_artist": None,
+                "photo_source_url": None,
+            }
+            bild = _waehle_bild(lang, ergebnis["wiki_title"], fetch)
+            if bild:
+                ergebnis.update(bild)
+            return ergebnis
+    return None
