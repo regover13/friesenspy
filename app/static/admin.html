@@ -2871,13 +2871,17 @@
 
     function miPrefill(code) {
       const r = (_miRows || []).find(x => x.type_code === code) || {};
-      document.getElementById('mi-code').value = code;
+      const codeEl = document.getElementById('mi-code');
+      codeEl.value = code;
       document.getElementById('mi-name').value = r.name_override || '';
       document.getElementById('mi-lemma').value = r.wiki_title_override || '';
       document.getElementById('mi-extract').value = r.extract_override || '';
       document.getElementById('mi-credit').value = r.photo_credit || '';
       document.getElementById('mi-alias').value = r.alias_of || '';
       document.getElementById('mi-nophoto').checked = r.photo_override === '-';
+      // Formular liegt weit oberhalb der (potenziell langen) Liste -- ohne den Sprung
+      // sieht man auf dem Handy nicht, dass "Bearbeiten" ueberhaupt etwas getan hat.
+      codeEl.scrollIntoView({behavior: 'smooth', block: 'center'});
     }
 
     async function miSave() {

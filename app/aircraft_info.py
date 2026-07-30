@@ -245,6 +245,36 @@ def _waehle_bild(lang: str, titel: str, fetch) -> dict | None:
     return None
 
 
+def _ohne_klammern(name: str) -> str:
+    """Klammerzusätze entfernen.
+
+    ``aircraft_payloads.make_model`` trägt teils technische Varianten-/Motorangaben in
+    Klammern, die als Suchbegriff nichts taugen. Gemessen 2026-07-30:
+    ``"Diamond DA62 (US 7-seat, 2300 kg)"`` findet KEINEN Wikipedia-Treffer,
+    ``"Diamond DA62"`` findet den Artikel sofort und exakt.
+    """
+    return re.sub(r"\s*\([^)]*\)", "", name).strip()
+
+
+def _namens_varianten(sauber: str) -> list[str]:
+    """Suchbegriffe von spezifisch nach allgemein, höchstens drei — je Variante ein
+    zusätzlicher Wikipedia-Request, deshalb bewusst begrenzt.
+
+    Deckt zwei gemessene Fälle ab: reine Klammerzusätze (``"Diamond DA62 (US
+    7-seat, 2300 kg)"`` → ``"Diamond DA62"``) und ein zusätzliches, für die Suche zu
+    spezifisches Wort danach (``"Diamond DA40 XLS (…)"`` → ``"Diamond DA40 XLS"`` →
+    ``"Diamond DA40"``, die "XLS"-Variante hat keinen eigenen Artikel).
+    """
+    varianten = [sauber]
+    ohne = _ohne_klammern(sauber)
+    if ohne and ohne != sauber:
+        varianten.append(ohne)
+    woerter = varianten[-1].split()
+    if len(woerter) > 2:
+        varianten.append(" ".join(woerter[:-1]))
+    return varianten
+
+
 def resolve_type(name: str, fetch) -> dict | None:
     """Muster-Name → Wikipedia-Artikel und Foto, oder ``None``.
 
@@ -261,38 +291,43 @@ def resolve_type(name: str, fetch) -> dict | None:
     aircraft``) — nicht umgekehrt. Nur so lässt sich messen, dass wirklich alle ``_SUCHTIEFE``
     Treffer geprüft werden (``test_hoechstens_drei_treffer_werden_geprueft``), und die Prüfung
     läuft gegen den kanonischen Titel nach einer Weiterleitung, nicht den rohen Suchtitel.
+
+    Findet die Suche mit dem vollen Namen nichts, versucht ``_namens_varianten`` es mit
+    zunehmend knapperen Suchbegriffen erneut — geprüft wird aber immer gegen den VOLLEN
+    Namen (``sauber``), die Trefferprüfung wird also nicht durch die Verkürzung aufgeweicht.
     """
     sauber = harden_name(name)
     if not sauber:
         return None
-    for lang in _SPRACHEN:
-        treffer = fetch(_such_url(lang, sauber)) or {}
-        titel_liste = [
-            t.get("title") for t in ((treffer.get("query") or {}).get("search") or [])
-            if t.get("title")
-        ][:_SUCHTIEFE]
-        for titel in titel_liste:
-            summary = fetch(_summary_url(lang, titel)) or {}
-            extract = summary.get("extract")
-            echter_titel = summary.get("title") or titel
-            if not title_matches_name(echter_titel, sauber):
-                continue
-            if not looks_like_aircraft(summary.get("description"), extract):
-                continue
-            ergebnis = {
-                "wiki_lang": lang,
-                "wiki_title": echter_titel,
-                "extract": extract,
-                "photo_commons_title": None,
-                "photo_url": None,
-                "photo_licence": None,
-                "photo_artist": None,
-                "photo_source_url": None,
-            }
-            bild = _waehle_bild(lang, ergebnis["wiki_title"], fetch)
-            if bild:
-                ergebnis.update(bild)
-            return ergebnis
+    for versuch in _namens_varianten(sauber):
+        for lang in _SPRACHEN:
+            treffer = fetch(_such_url(lang, versuch)) or {}
+            titel_liste = [
+                t.get("title") for t in ((treffer.get("query") or {}).get("search") or [])
+                if t.get("title")
+            ][:_SUCHTIEFE]
+            for titel in titel_liste:
+                summary = fetch(_summary_url(lang, titel)) or {}
+                extract = summary.get("extract")
+                echter_titel = summary.get("title") or titel
+                if not title_matches_name(echter_titel, sauber):
+                    continue
+                if not looks_like_aircraft(summary.get("description"), extract):
+                    continue
+                ergebnis = {
+                    "wiki_lang": lang,
+                    "wiki_title": echter_titel,
+                    "extract": extract,
+                    "photo_commons_title": None,
+                    "photo_url": None,
+                    "photo_licence": None,
+                    "photo_artist": None,
+                    "photo_source_url": None,
+                }
+                bild = _waehle_bild(lang, ergebnis["wiki_title"], fetch)
+                if bild:
+                    ergebnis.update(bild)
+                return ergebnis
     return None
 
 

@@ -17,7 +17,7 @@ from app.aircraft_info import (
     title_matches_name,
 )
 from app.aircraft_info import (
-    ALLOWED_LICENCES, licence_ok, normalise_commons_title, resolve_type,
+    ALLOWED_LICENCES, _namens_varianten, licence_ok, normalise_commons_title, resolve_type,
 )
 
 
@@ -410,3 +410,45 @@ def test_unlesbares_bild_wird_als_valueerror_gemeldet():
     from app.aircraft_info import to_web_jpeg
     with _pytest.raises(ValueError):
         to_web_jpeg(b"<svg xmlns='http://www.w3.org/2000/svg'></svg>")
+
+
+# --- Namensvarianten-Fallback (Admin-Meldung 2026-07-30: DA40/DA62 fanden nichts) -------
+
+def test_namensvarianten_ohne_klammer_und_extra_wort():
+    """Gemessen: 'Diamond DA62 (US 7-seat, 2300 kg)' findet KEINEN Wikipedia-Treffer,
+    'Diamond DA62' findet ihn sofort. 'Diamond DA40 XLS (…)' findet erst nach Streichen
+    von 'XLS' einen Treffer -- die Variante hat keinen eigenen Artikel."""
+    assert _namens_varianten("Diamond DA62 (US 7-seat, 2300 kg)") == [
+        "Diamond DA62 (US 7-seat, 2300 kg)", "Diamond DA62",
+    ]
+    assert _namens_varianten(
+        "Diamond DA40 XLS (Lycoming IO-360-M1A, häufigste zertifizierte Avgas-Variante)"
+    ) == [
+        "Diamond DA40 XLS (Lycoming IO-360-M1A, häufigste zertifizierte Avgas-Variante)",
+        "Diamond DA40 XLS",
+        "Diamond DA40",
+    ]
+
+
+def test_namensvarianten_ohne_klammer_bleibt_unveraendert():
+    """Kein Klammerzusatz, kein drittes Wort zum Streichen -- nur der Originalname."""
+    assert _namens_varianten("Cessna 172") == ["Cessna 172"]
+    assert _namens_varianten("Cessna 172S Skyhawk") == [
+        "Cessna 172S Skyhawk", "Cessna 172S",
+    ]
+
+
+def test_resolve_type_findet_nach_klammer_entfernen_einen_treffer():
+    """Erster Suchversuch mit dem vollen Namen findet nichts; erst 'Diamond DA62' (ohne
+    Klammerzusatz) liefert den Treffer. Trefferpruefung laeuft trotzdem gegen den VOLLEN
+    Namen (teilt 'diamond' und 'da62')."""
+    routen = {
+        "srsearch=Diamond%20DA62%20%28": _such(),         # voller Name: kein Treffer
+        "srsearch=Diamond%20DA62&": _such("Diamond DA62"),  # bereinigter Name: Treffer
+        "summary/Diamond": _summary("Diamond DA62", "Aircraft",
+                                    "Die Diamond DA62 ist ein zweimotoriges Flugzeug."),
+        "media-list": _medialist(),
+    }
+    r = resolve_type("Diamond DA62 (US 7-seat, 2300 kg)", _fetcher(routen))
+    assert r is not None, "Fallback ohne Klammerzusatz haette einen Treffer finden muessen"
+    assert r["wiki_title"] == "Diamond DA62"
