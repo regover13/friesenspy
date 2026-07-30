@@ -11,6 +11,8 @@ t0+6min DOCH.
 """
 from __future__ import annotations
 
+import asyncio
+import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -24,6 +26,20 @@ from app.database import (
 )
 
 T0 = datetime(2026, 7, 30, 12, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _settings(monkeypatch):
+    """Die Nachlese fragt llm.is_configured() (B2) — dafuer braucht sie lesbare Settings.
+
+    Default hier: Key vorhanden. Der Test fuer den ungesetzten Key setzt ihn explizit leer.
+    """
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture
@@ -190,6 +206,112 @@ async def test_nachlese_uebersteht_db_fehler_beim_schreiben_eines_kandidaten(db,
     await p._research_due_payloads()
     assert set(gesehen) == {"AP32", "FK9", "M20T"}, \
         "ein DB-Fehler beim Schreiben fuer EINEN Kandidaten darf die uebrigen nicht verhindern"
+
+
+@pytest.mark.asyncio
+async def test_zweiter_start_waehrend_laufender_recherche_wird_unterdrueckt(db, monkeypatch):
+    """Whole-Branch-Befund 1: der DB-Zustand entsteht erst NACH dem Ergebnis.
+
+    Die Recherche dauert 30 s bis 300 s (_SUGGEST_TOTAL_BUDGET_S), gepollt wird alle 15 s. In
+    dieser Luecke sah jeder weitere Poll das Muster als 'nie versucht' und startete eine zweite,
+    ebenfalls bezahlte Recherche fuer denselben Code -- gemessen 4 Polls -> 4 parallele Laeufe,
+    im Ausreisserfall 20 (~80 ct statt 4 ct) plus 20 gleichzeitige LLM-Requests, die selbst
+    429er provozieren. Das In-Flight-Set deckt genau diese Laufzeit ab.
+    """
+    p = _poller(db)
+    starts: list[str] = []
+    laeuft = threading.Event()      # erste Recherche haengt jetzt wirklich im Thread
+    freigabe = threading.Event()    # ... bis der Test sie freigibt
+
+    def _haengt(code):
+        starts.append(code)
+        laeuft.set()
+        assert freigabe.wait(timeout=10), "Freigabe kam nie an"
+        return None                 # -> nichts_gefunden, 30-Tage-Sperre
+
+    monkeypatch.setattr(llm, "suggest_aircraft_payload", _haengt)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+
+    erste = asyncio.create_task(p._auto_research_payload("ZZ01"))
+    for _ in range(1000):           # auf den echten Start warten, nicht auf eine Schaetzung
+        if laeuft.is_set():
+            break
+        await asyncio.sleep(0.01)
+    assert laeuft.is_set(), "erste Recherche kam nicht in den Thread"
+
+    # Drei weitere Polls, waehrend die erste Recherche noch laeuft.
+    await p._auto_research_payload("ZZ01")
+    await asyncio.gather(*(p._auto_research_payload("ZZ01") for _ in range(2)))
+    assert starts == ["ZZ01"], f"parallele Recherche fuer dasselbe Muster gestartet: {starts}"
+
+    freigabe.set()
+    await erste
+    assert starts == ["ZZ01"]
+    assert not p._payload_research_inflight, "In-Flight-Eintrag blieb haengen"
+    assert get_payload_research(get_connection(db), "ZZ01")["state"] == "nichts_gefunden"
+
+    # Das Set ist KEIN Gedaechtnis: nach Ablauf des Backoffs geht es normal weiter.
+    monkeypatch.setattr(p, "_now", lambda: T0 + timedelta(days=31))
+    await p._auto_research_payload("ZZ01")
+    assert starts == ["ZZ01", "ZZ01"], "In-Flight-Set blockiert den faelligen Retry"
+
+
+@pytest.mark.asyncio
+async def test_inflight_eintrag_verschwindet_auch_im_fehlerfall(db, monkeypatch):
+    """Bliebe ein Code nach einem Fehlschlag im Set haengen, waere das der alte Bug zurueck."""
+    p = _poller(db)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+
+    for fehler in (llm.TransientResearchError("Overloaded"), RuntimeError("unerwartet")):
+        def _boom(code, _f=fehler):
+            raise _f
+        monkeypatch.setattr(llm, "suggest_aircraft_payload", _boom)
+        await p._auto_research_payload("AP32")
+        assert not p._payload_research_inflight
+
+    # Auch der Kurzschluss "inzwischen manuell gepflegt" raeumt auf.
+    from app.database import upsert_payload
+    c = get_connection(db)
+    upsert_payload(c, "FK9", mtow_kg=1.0, empty_kg=1.0, fuel_kg=1.0, fuel_full_kg=1.0,
+                   crew_kg=85.0, source="manual", make_model="Von Hand")
+    c.commit()
+    c.close()
+    await p._auto_research_payload("FK9")
+    assert not p._payload_research_inflight
+
+
+@pytest.mark.asyncio
+async def test_nachlese_ohne_api_key_ruehrt_nichts_an(db, monkeypatch):
+    """Whole-Branch-Befund 2: ohne Key liefert suggest_aircraft_payload sofort None -- und None
+    heisst in diesem Branch 'Muster nicht auffindbar'. Ohne Gate waeren alle Luecken binnen
+    einer halben Stunde mit nichts_gefunden + 30-Tage-Sperre belegt; wird der Key danach
+    gesetzt, passiert einen Monat lang nichts. Der Live-Ausloeser prueft das laengst."""
+    for i, code in enumerate(["AP32", "FK9", "M20T"]):
+        _flug(db, i, code, "2026-07-25T10:00:00Z")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    assert llm.is_configured() is False
+
+    p = _poller(db)
+    monkeypatch.setattr(llm, "suggest_aircraft_payload",
+                        lambda code: pytest.fail("ohne Key darf nicht recherchiert werden"))
+    monkeypatch.setattr(p, "_now", lambda: T0)
+    await p._research_due_payloads()
+
+    c = get_connection(db)
+    assert c.execute("SELECT COUNT(*) FROM payload_research").fetchone()[0] == 0, \
+        "ohne Key wurde ein Zustand geschrieben"
+    c.close()
+
+    # Key nachgereicht -> die Nachlese arbeitet sofort, nichts ist gesperrt.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    get_settings.cache_clear()
+    geholt: list[str] = []
+    monkeypatch.setattr(llm, "suggest_aircraft_payload",
+                        lambda code: geholt.append(code) or None)
+    await p._research_due_payloads()
+    assert set(geholt) == {"AP32", "FK9", "M20T"}
 
 
 @pytest.mark.asyncio

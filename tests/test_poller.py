@@ -1313,7 +1313,11 @@ class TestAutoPayloadResearch:
     async def test_poll_once_schedules_research_for_unknown_type(self, tmp_path):
         """Der Versuchszustand steht jetzt in payload_research (DB), nicht mehr in einem
         Prozess-Set — der Fake schreibt deshalb wie das Original einen 'ok'-Zustand fest,
-        bevor der zweite Poll prüft, ob erneut recherchiert werden müsste."""
+        bevor der zweite Poll prüft, ob erneut recherchiert werden müsste.
+
+        Achtung, dieser Test deckt nur den Fall ab, dass die Recherche zum zweiten Poll bereits
+        FERTIG ist. Real dauert sie 30-300 s, gepollt wird alle 15 s — diese Lücke prüft
+        test_poll_once_startet_keine_zweite_recherche_waehrend_die_erste_laeuft (Befund 1)."""
         from app.database import get_connection, init_db, mark_payload_research
         db_file = str(tmp_path / "t.db")
         init_db(db_file)
@@ -1341,6 +1345,50 @@ class TestAutoPayloadResearch:
             await poller._poll_once()
             await asyncio.sleep(0)
         assert calls == ["ZZ01"]
+
+    @pytest.mark.asyncio
+    async def test_poll_once_startet_keine_zweite_recherche_waehrend_die_erste_laeuft(
+        self, tmp_path, monkeypatch
+    ):
+        """Whole-Branch-Befund 1, auf Poll-Ebene und mit dem ECHTEN _auto_research_payload.
+
+        Der DB-Zustand entsteht erst nach dem Ergebnis; solange die Recherche laeuft (30-300 s),
+        sah jeder weitere Poll (alle 15 s) das Muster als 'nie versucht'. Gemessen: 4 Polls bei
+        haengender Recherche -> 4 parallele, je ~4 ct teure Laeufe fuer denselben Code."""
+        import threading
+        from app import llm
+        from app.database import init_db
+        db_file = str(tmp_path / "t.db")
+        init_db(db_file)
+        poller = _make_poller(db_path=db_file)
+        poller._http_client = AsyncMock()
+
+        starts = []
+        laeuft = threading.Event()
+        freigabe = threading.Event()
+
+        def _haengt(code):
+            starts.append(code)
+            laeuft.set()
+            assert freigabe.wait(timeout=10), "Freigabe kam nie an"
+            return None
+
+        monkeypatch.setattr(llm, "suggest_aircraft_payload", _haengt)
+        data = {"pilots": [self._pilot()]}
+        with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=data)):
+            for _ in range(4):                       # vier Polls, Recherche haengt durchgehend
+                await poller._poll_once()
+                for _ in range(200):
+                    await asyncio.sleep(0.01)        # create_task laufen lassen
+                    if laeuft.is_set():
+                        break
+        assert starts == ["ZZ01"], f"parallele Recherchen fuer dasselbe Muster: {starts}"
+        freigabe.set()
+        for _ in range(200):
+            await asyncio.sleep(0.01)
+            if not poller._payload_research_inflight:
+                break
+        assert not poller._payload_research_inflight
 
     @pytest.mark.asyncio
     async def test_poll_once_skips_known_type(self, tmp_path):

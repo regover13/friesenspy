@@ -375,6 +375,14 @@ class VatsimPoller:
         # Letzter TS-Client-Snapshot für die Live-Anzeige (FRS-getaggte Clients).
         self.ts_clients: list[dict] = []
         self._PAYLOAD_RESEARCH_LIMIT = 5   # Muster je Nachlese-Lauf (~4 ct und ~30 s je Stück)
+        # NUR die Laufzeit einer einzelnen Recherche, kein Ergebnisgedächtnis: der DB-Zustand
+        # (payload_research) entsteht erst NACH dem Ergebnis, die Recherche dauert aber 30 s bis
+        # 300 s. In dieser Lücke sähe jeder weitere Poll (alle 15 s) das Muster als „nie
+        # versucht" und startete eine zweite, ebenfalls bezahlte Recherche für denselben Code
+        # (gemessen: 4 Polls → 4 parallele Läufe). Bewusst NICHT der alte
+        # _payload_research_attempted-Bug: hier fliegt der Code im finally immer wieder heraus,
+        # ein Fehlschlag überlebt weder den Aufruf noch einen Neustart.
+        self._payload_research_inflight: set[str] = set()
 
     @staticmethod
     def _now() -> datetime:
@@ -1416,13 +1424,22 @@ class VatsimPoller:
     async def _auto_research_payload(self, type_code: str) -> None:
         """Zuladung eines Musters recherchieren und vorbefüllen (source='llm').
 
-        Silent-Fail nach außen, aber der Ausgang wird in ``payload_research`` festgehalten:
+        Silent-Fail nach außen. Die Methode hat mehrere Ausgänge; drei davon schreiben einen
+        Zustand nach ``payload_research``:
 
         - Erfolg → ``ok``
         - kein Ergebnis (``None``) → ``nichts_gefunden`` (nach 30 Tagen erneut)
         - transienter Fehler → ``fehler`` mit Backoff; **kein Endzustand**
 
         Der Unterschied ist der ganze Punkt: ``Overloaded`` ist kein „keine Daten".
+
+        Die übrigen Ausgänge schreiben bewusst **nichts** und lassen das Muster damit offen
+        (es kommt beim nächsten fälligen Zeitpunkt wieder dran): läuft für dasselbe Muster
+        schon eine Recherche (In-Flight-Kurzschluss), ist das Muster inzwischen manuell
+        gepflegt, läuft noch ein Backoff, oder schlägt die DB selbst fehl — vor der Recherche
+        (dann fand kein Versuch statt, ``attempts`` darf nicht steigen) oder beim Schreiben
+        des Ergebnisses. Nie propagiert eine Ausnahme nach außen: die Nachlese ruft diese
+        Methode in einer Schleife auf, ein Kandidat darf die übrigen nicht mitreißen.
         """
         from app import llm
         from app.database import (
@@ -1432,83 +1449,95 @@ class VatsimPoller:
         code = normalize_type_code(type_code)
         if not code:
             return
-        jetzt = self._now()
-        conn = get_connection(self.db_path)
-        try:
-            if code in get_payload_map(conn):
-                return  # inzwischen (manuell) gepflegt → nicht anfassen
-            st = get_payload_research(conn, code)
-            if st is not None and not is_retry_due(st["state"], st["attempts"],
-                                                   st["checked_at"], jetzt):
-                return  # Backoff läuft noch
-        except Exception:
-            # DB-Fehler VOR dem (bezahlten) LLM-Aufruf: es fand noch kein Versuch statt, also
-            # keinen mark_payload_research-Aufruf nachschieben (attempts soll nicht steigen).
-            # Wichtig fuer _research_due_payloads: ungefangen wuerde das die ganze Nachlese
-            # abbrechen, nicht nur diesen einen Kandidaten.
-            logger.exception("Auto-Zuladung %s: DB-Fehler vor der Recherche", code)
+        # In-Flight-Guard: für dasselbe Muster läuft schon eine (bezahlte) Recherche — egal ob
+        # vom Live-Auslöser oder von der Nachlese angestoßen. Der DB-Zustand entsteht erst nach
+        # dem Ergebnis, deckt diese 30-300 s also nicht ab.
+        if code in self._payload_research_inflight:
+            logger.debug("Auto-Zuladung %s: Recherche läuft bereits — kein zweiter Start", code)
             return
-        finally:
-            conn.close()
-
+        self._payload_research_inflight.add(code)
         try:
-            s = await asyncio.to_thread(llm.suggest_aircraft_payload, code)
-        except llm.TransientResearchError as exc:
+            jetzt = self._now()
             conn = get_connection(self.db_path)
             try:
-                mark_payload_research(conn, code, "fehler", jetzt, last_error=str(exc)[:200])
-                conn.commit()
-            finally:
-                conn.close()
-            logger.info("Auto-Zuladung %s: vorübergehend gescheitert (%s) — wird wiederholt",
-                        code, exc)
-            return
-        except Exception as exc:  # noqa: BLE001 — nie einen Poll-Durchlauf reißen
-            conn = get_connection(self.db_path)
-            try:
-                mark_payload_research(conn, code, "fehler", jetzt, last_error=str(exc)[:200])
-                conn.commit()
-            finally:
-                conn.close()
-            logger.exception("Auto-Zuladung %s: unerwarteter Fehler", code)
-            return
-
-        conn = get_connection(self.db_path)
-        try:
-            if s is None:
-                mark_payload_research(conn, code, "nichts_gefunden", jetzt)
-                conn.commit()
-                logger.info("Auto-Zuladung: keine Daten für %s gefunden", code)
+                if code in get_payload_map(conn):
+                    return  # inzwischen (manuell) gepflegt → nicht anfassen
+                st = get_payload_research(conn, code)
+                if st is not None and not is_retry_due(st["state"], st["attempts"],
+                                                       st["checked_at"], jetzt):
+                    return  # Backoff läuft noch
+            except Exception:
+                # DB-Fehler VOR dem (bezahlten) LLM-Aufruf: es fand noch kein Versuch statt, also
+                # keinen mark_payload_research-Aufruf nachschieben (attempts soll nicht steigen).
+                # Wichtig fuer _research_due_payloads: ungefangen wuerde das die ganze Nachlese
+                # abbrechen, nicht nur diesen einen Kandidaten.
+                logger.exception("Auto-Zuladung %s: DB-Fehler vor der Recherche", code)
                 return
-            if code in get_payload_map(conn):
+            finally:
+                conn.close()
+
+            try:
+                s = await asyncio.to_thread(llm.suggest_aircraft_payload, code)
+            except llm.TransientResearchError as exc:
+                conn = get_connection(self.db_path)
+                try:
+                    mark_payload_research(conn, code, "fehler", jetzt, last_error=str(exc)[:200])
+                    conn.commit()
+                finally:
+                    conn.close()
+                logger.info("Auto-Zuladung %s: vorübergehend gescheitert (%s) — wird wiederholt",
+                            code, exc)
+                return
+            except Exception as exc:  # noqa: BLE001 — nie einen Poll-Durchlauf reißen
+                conn = get_connection(self.db_path)
+                try:
+                    mark_payload_research(conn, code, "fehler", jetzt, last_error=str(exc)[:200])
+                    conn.commit()
+                finally:
+                    conn.close()
+                logger.exception("Auto-Zuladung %s: unerwarteter Fehler", code)
+                return
+
+            conn = get_connection(self.db_path)
+            try:
+                if s is None:
+                    mark_payload_research(conn, code, "nichts_gefunden", jetzt)
+                    conn.commit()
+                    logger.info("Auto-Zuladung: keine Daten für %s gefunden", code)
+                    return
+                if code in get_payload_map(conn):
+                    mark_payload_research(conn, code, "ok", jetzt)
+                    conn.commit()
+                    return  # inzwischen manuell gepflegt
+                upsert_payload(
+                    conn, code,
+                    mtow_kg=s.get("mtow_kg"), empty_kg=s.get("empty_kg"),
+                    fuel_kg=s.get("fuel_kg", s.get("fuel_full_kg")),
+                    fuel_full_kg=s.get("fuel_full_kg"),
+                    crew_kg=s.get("crew_kg"), source="llm",
+                    make_model=s.get("make_model"),
+                )
                 mark_payload_research(conn, code, "ok", jetzt)
                 conn.commit()
-                return  # inzwischen manuell gepflegt
-            upsert_payload(
-                conn, code,
-                mtow_kg=s.get("mtow_kg"), empty_kg=s.get("empty_kg"),
-                fuel_kg=s.get("fuel_kg", s.get("fuel_full_kg")),
-                fuel_full_kg=s.get("fuel_full_kg"),
-                crew_kg=s.get("crew_kg"), source="llm",
-                make_model=s.get("make_model"),
-            )
-            mark_payload_research(conn, code, "ok", jetzt)
-            conn.commit()
-        except Exception:
-            # Die (bezahlte) Recherche selbst ist gelungen, nur das Schreiben schlug fehl
-            # (z. B. SQLite-Lock-Kontention zwischen dem Live-Trigger und der serialisierten
-            # Nachlese). Bewusst KEIN weiterer Schreibversuch hier (Gefahr, dieselbe Ursache
-            # erneut zu treffen) -- der Zustand bleibt "nie versucht"/alter Backoff-Stand, das
-            # Muster gilt beim nächsten fälligen Zeitpunkt wieder als offen und wird erneut
-            # recherchiert. Kostet im Fehlerfall ggf. noch einmal ~4 ct, aber ein erfolgreiches
-            # Ergebnis verschwindet nicht lautlos für immer. Wichtig fuer
-            # _research_due_payloads: ungefangen wuerde das die ganze Nachlese fuer die
-            # UEBRIGEN Kandidaten abbrechen, nicht nur diesen einen.
-            logger.exception("Auto-Zuladung %s: Ergebnis konnte nicht gespeichert werden", code)
-            return
+            except Exception:
+                # Die (bezahlte) Recherche selbst ist gelungen, nur das Schreiben schlug fehl
+                # (z. B. SQLite-Lock-Kontention zwischen dem Live-Trigger und der serialisierten
+                # Nachlese). Bewusst KEIN weiterer Schreibversuch hier (Gefahr, dieselbe Ursache
+                # erneut zu treffen) -- der Zustand bleibt "nie versucht"/alter Backoff-Stand, das
+                # Muster gilt beim nächsten fälligen Zeitpunkt wieder als offen und wird erneut
+                # recherchiert. Kostet im Fehlerfall ggf. noch einmal ~4 ct, aber ein erfolgreiches
+                # Ergebnis verschwindet nicht lautlos für immer. Wichtig fuer
+                # _research_due_payloads: ungefangen wuerde das die ganze Nachlese fuer die
+                # UEBRIGEN Kandidaten abbrechen, nicht nur diesen einen.
+                logger.exception("Auto-Zuladung %s: Ergebnis konnte nicht gespeichert werden", code)
+                return
+            finally:
+                conn.close()
+            logger.info("Auto-Zuladung vorbefüllt: %s (%s)", code, s.get("make_model"))
         finally:
-            conn.close()
-        logger.info("Auto-Zuladung vorbefüllt: %s (%s)", code, s.get("make_model"))
+            # Garantiert auf JEDEM Rückgabepfad (Erfolg, nichts_gefunden, fehler, manuell
+            # gepflegt, DB-Fehler, Cancel) — sonst bliebe das Muster für immer gesperrt.
+            self._payload_research_inflight.discard(code)
 
     async def _research_due_payloads(self) -> None:
         """Nachlese: fällige Muster aus dem Flugbestand, serialisiert und gedeckelt.
@@ -1517,8 +1546,18 @@ class VatsimPoller:
         (2026-07-02) stattfanden — der Live-Auslöser erreicht sie nie. Serialisiert und mit
         Deckel, weil jede Recherche ~4 ct und ~30 s kostet und ein einzelner Request schon
         einmal über 9 Minuten lief (docs/architecture.md:202).
+
+        Ohne ``ANTHROPIC_API_KEY`` (ein unterstützter Zustand) passiert gar nichts: der
+        Live-Auslöser prüft das ebenfalls. Ungeprüft lieferte ``suggest_aircraft_payload``
+        sofort ``None`` — und ``None`` heißt hier „Muster nicht auffindbar", nicht „System
+        nicht konfiguriert". Alle Lücken wären binnen einer halben Stunde mit
+        ``nichts_gefunden`` und 30-Tage-Sperre belegt; wird der Key danach gesetzt, passierte
+        einen Monat lang nichts. Genau der Fehler, den dieser Branch behebt.
         """
         try:
+            from app import llm
+            if not llm.is_configured():
+                return
             from app.database import payload_research_candidates
             jetzt = self._now()
             conn = get_connection(self.db_path)
