@@ -374,9 +374,12 @@ class VatsimPoller:
         self._ts_last_notified: dict[str, datetime] = {}
         # Letzter TS-Client-Snapshot für die Live-Anzeige (FRS-getaggte Clients).
         self.ts_clients: list[dict] = []
-        # Typcodes, für die in dieser Prozess-Lebensdauer bereits eine Auto-Recherche lief —
-        # verhindert Wiederholungen/Kosten.
-        self._payload_research_attempted: set[str] = set()
+        self._PAYLOAD_RESEARCH_LIMIT = 5   # Muster je Nachlese-Lauf (~4 ct und ~30 s je Stück)
+
+    @staticmethod
+    def _now() -> datetime:
+        """Aktuelle Zeit — als Methode, damit Tests sie kontrollieren können."""
+        return datetime.now(timezone.utc)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -883,13 +886,20 @@ class VatsimPoller:
 
                 # Neu gesehene Flugzeugtypen: Zuladung automatisch recherchieren + vorbefüllen
                 # (Admin kann die Werte jederzeit überschreiben; source='llm' kennzeichnet sie).
-                from app.database import get_payload_map
+                # Der Versuchszustand steht in payload_research, NICHT in einem Set im
+                # Prozessgedächtnis — sonst überlebt ein Fehlschlag den Neustart als "erledigt"
+                # (AP32-Fall 2026-07-30).
+                from app.database import get_payload_map, get_payload_research, is_retry_due
                 known_types = set(get_payload_map(conn).keys())
+                jetzt = self._now()
                 new_codes = []
                 for pos in current.values():
                     code = normalize_type_code(pos.get("aircraft_icao") or pos.get("aircraft_short"))
-                    if code and code not in known_types and code not in self._payload_research_attempted:
-                        self._payload_research_attempted.add(code)
+                    if not code or code in known_types or code in new_codes:
+                        continue
+                    st = get_payload_research(conn, code)
+                    if st is None or is_retry_due(st["state"], st["attempts"],
+                                                  st["checked_at"], jetzt):
                         new_codes.append(code)
             finally:
                 conn.close()
@@ -1385,34 +1395,108 @@ class VatsimPoller:
             logger.exception("Error in _gen_flight_quip")
 
     async def _auto_research_payload(self, type_code: str) -> None:
-        """Zuladung eines neu gesehenen Flugzeugtyps automatisch recherchieren und
-        vorbefüllen (source='llm'). Läuft im Hintergrund, Silent-Fail — der Admin kann
-        die Werte jederzeit überschreiben; manuell gepflegte Typen werden nie angefasst."""
+        """Zuladung eines Musters recherchieren und vorbefüllen (source='llm').
+
+        Silent-Fail nach außen, aber der Ausgang wird in ``payload_research`` festgehalten:
+
+        - Erfolg → ``ok``
+        - kein Ergebnis (``None``) → ``nichts_gefunden`` (nach 30 Tagen erneut)
+        - transienter Fehler → ``fehler`` mit Backoff; **kein Endzustand**
+
+        Der Unterschied ist der ganze Punkt: ``Overloaded`` ist kein „keine Daten".
+        """
+        from app import llm
+        from app.database import (
+            get_payload_map, get_payload_research, is_retry_due,
+            mark_payload_research, upsert_payload,
+        )
+        code = normalize_type_code(type_code)
+        if not code:
+            return
+        jetzt = self._now()
+        conn = get_connection(self.db_path)
         try:
-            from app import llm
-            from app.database import get_payload_map, upsert_payload
-            s = await asyncio.to_thread(llm.suggest_aircraft_payload, type_code)
-            if not s:
-                logger.info("Auto-Zuladung: keine Daten für %s gefunden", type_code)
-                return
+            if code in get_payload_map(conn):
+                return  # inzwischen (manuell) gepflegt → nicht anfassen
+            st = get_payload_research(conn, code)
+            if st is not None and not is_retry_due(st["state"], st["attempts"],
+                                                   st["checked_at"], jetzt):
+                return  # Backoff läuft noch
+        finally:
+            conn.close()
+
+        try:
+            s = await asyncio.to_thread(llm.suggest_aircraft_payload, code)
+        except llm.TransientResearchError as exc:
             conn = get_connection(self.db_path)
             try:
-                if type_code in get_payload_map(conn):
-                    return  # inzwischen (manuell) gepflegt → nicht überschreiben
-                upsert_payload(
-                    conn, type_code,
-                    mtow_kg=s.get("mtow_kg"), empty_kg=s.get("empty_kg"),
-                    fuel_kg=s.get("fuel_kg", s.get("fuel_full_kg")),
-                    fuel_full_kg=s.get("fuel_full_kg"),
-                    crew_kg=s.get("crew_kg"), source="llm",
-                    make_model=s.get("make_model"),
-                )
+                mark_payload_research(conn, code, "fehler", jetzt, last_error=str(exc)[:200])
                 conn.commit()
             finally:
                 conn.close()
-            logger.info("Auto-Zuladung vorbefüllt: %s (%s)", type_code, s.get("make_model"))
+            logger.info("Auto-Zuladung %s: vorübergehend gescheitert (%s) — wird wiederholt",
+                        code, exc)
+            return
+        except Exception as exc:  # noqa: BLE001 — nie einen Poll-Durchlauf reißen
+            conn = get_connection(self.db_path)
+            try:
+                mark_payload_research(conn, code, "fehler", jetzt, last_error=str(exc)[:200])
+                conn.commit()
+            finally:
+                conn.close()
+            logger.exception("Auto-Zuladung %s: unerwarteter Fehler", code)
+            return
+
+        conn = get_connection(self.db_path)
+        try:
+            if s is None:
+                mark_payload_research(conn, code, "nichts_gefunden", jetzt)
+                conn.commit()
+                logger.info("Auto-Zuladung: keine Daten für %s gefunden", code)
+                return
+            if code in get_payload_map(conn):
+                mark_payload_research(conn, code, "ok", jetzt)
+                conn.commit()
+                return  # inzwischen manuell gepflegt
+            upsert_payload(
+                conn, code,
+                mtow_kg=s.get("mtow_kg"), empty_kg=s.get("empty_kg"),
+                fuel_kg=s.get("fuel_kg", s.get("fuel_full_kg")),
+                fuel_full_kg=s.get("fuel_full_kg"),
+                crew_kg=s.get("crew_kg"), source="llm",
+                make_model=s.get("make_model"),
+            )
+            mark_payload_research(conn, code, "ok", jetzt)
+            conn.commit()
+        finally:
+            conn.close()
+        logger.info("Auto-Zuladung vorbefüllt: %s (%s)", code, s.get("make_model"))
+
+    async def _research_due_payloads(self) -> None:
+        """Nachlese: fällige Muster aus dem Flugbestand, serialisiert und gedeckelt.
+
+        30 der 33 Lücken vom 2026-07-30 sind Altflüge, die vor Einführung der Auto-Recherche
+        (2026-07-02) stattfanden — der Live-Auslöser erreicht sie nie. Serialisiert und mit
+        Deckel, weil jede Recherche ~4 ct und ~30 s kostet und ein einzelner Request schon
+        einmal über 9 Minuten lief (docs/architecture.md:202).
+        """
+        try:
+            from app.database import payload_research_candidates
+            jetzt = self._now()
+            conn = get_connection(self.db_path)
+            try:
+                codes = payload_research_candidates(
+                    conn, jetzt, limit=self._PAYLOAD_RESEARCH_LIMIT
+                )
+            finally:
+                conn.close()
+            if not codes:
+                return
+            logger.info("Zuladungs-Nachlese: %d Muster (%s)", len(codes), ", ".join(codes))
+            for code in codes:
+                await self._auto_research_payload(code)   # serialisiert, nie parallel
         except Exception:
-            logger.exception("Error in _auto_research_payload (%s)", type_code)
+            logger.exception("Error in _research_due_payloads")
 
     async def _check_event_reminders(self) -> None:
         """Periodisch (~5 min): FriesenEvents, Bummel-Rennen und Kutter-Events, die in ~1 h

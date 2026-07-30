@@ -1311,20 +1311,36 @@ class TestAutoPayloadResearch:
 
     @pytest.mark.asyncio
     async def test_poll_once_schedules_research_for_unknown_type(self, tmp_path):
-        from app.database import init_db
+        """Der Versuchszustand steht jetzt in payload_research (DB), nicht mehr in einem
+        Prozess-Set — der Fake schreibt deshalb wie das Original einen 'ok'-Zustand fest,
+        bevor der zweite Poll prüft, ob erneut recherchiert werden müsste."""
+        from app.database import get_connection, init_db, mark_payload_research
         db_file = str(tmp_path / "t.db")
         init_db(db_file)
         poller = _make_poller(db_path=db_file)
         poller._http_client = AsyncMock()
-        poller._auto_research_payload = AsyncMock()
+        calls = []
+
+        async def _fake_research(code):
+            calls.append(code)
+            conn = get_connection(db_file)
+            try:
+                mark_payload_research(conn, code, "ok", poller._now())
+                conn.commit()
+            finally:
+                conn.close()
+
+        poller._auto_research_payload = _fake_research
         data = {"pilots": [self._pilot()]}
         with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=data)):
             await poller._poll_once()
-        poller._auto_research_payload.assert_called_once_with("ZZ01")
-        # Zweiter Poll: bereits versucht → kein erneuter (teurer) Recherche-Start.
+            await asyncio.sleep(0)  # create_task laufen lassen
+        assert calls == ["ZZ01"]
+        # Zweiter Poll: DB-Zustand sagt "ok" → kein erneuter (teurer) Recherche-Start.
         with patch("app.poller.fetch_vatsim_data", new=AsyncMock(return_value=data)):
             await poller._poll_once()
-        assert poller._auto_research_payload.call_count == 1
+            await asyncio.sleep(0)
+        assert calls == ["ZZ01"]
 
     @pytest.mark.asyncio
     async def test_poll_once_skips_known_type(self, tmp_path):
