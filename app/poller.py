@@ -968,6 +968,12 @@ class VatsimPoller:
                 # über viele Polls hintereinander auftaucht (das Kriterium für new_codes ist der
                 # Zustand in payload_research, nicht in aircraft_types), fängt der
                 # In-Flight-Guard in _resolve_aircraft_type ab.
+                # Wichtig zur Gleichzeitigkeit: `new_codes` enthält per Konstruktion nur Codes
+                # OHNE aircraft_payloads-Zeile — der Name, den die Auflösung braucht, entsteht
+                # also erst durch die eben gestartete Recherche der Zeile darüber. Dass die
+                # Auflösung deshalb praktisch immer „noch kein Name" vorfindet, ist eingeplant:
+                # sie kehrt dann OHNE Zustandsschreibung zurück (Rev. 3, C2) und der Code kommt
+                # über den 10-Minuten-Job wieder, sobald der Name da ist.
                 for code in new_codes:
                     asyncio.create_task(self._resolve_aircraft_type(code))
 
@@ -1637,7 +1643,7 @@ class VatsimPoller:
         """
         from app import aircraft_info, llm
         from app.database import (
-            get_aircraft_type, is_retry_due, mark_aircraft_type_state,
+            get_aircraft_type, get_payload_research, is_retry_due, mark_aircraft_type_state,
             upsert_aircraft_type_import,
         )
         code = normalize_type_code(type_code)
@@ -1676,6 +1682,13 @@ class VatsimPoller:
                     "SELECT wiki_title_override FROM aircraft_types WHERE type_code = ?", (code,)
                 ).fetchone()
                 lemma = lemma["wiki_title_override"] if lemma else None
+                # Reihenfolge zählt: ERST den Zustand der Zuladungs-Recherche lesen, DANN den
+                # Namen. Andersherum gäbe es ein Fenster, in dem die Recherche zwischen beiden
+                # Lesevorgängen fertig wird — der Name wäre noch als leer gelesen, der Zustand
+                # schon 'ok', und der Zweig unten schriebe fälschlich 'nichts_gefunden'.
+                # `_auto_research_payload` schreibt make_model und den 'ok'-Zustand in EINEM
+                # Commit; wer 'ok' sieht, sieht deshalb auch den Namen.
+                payload_zustand = get_payload_research(conn, code)
                 name = self._muster_name(conn, code)
             except Exception:
                 # DB-Fehler VOR der Auflösung: es fand kein Versuch statt, also auch keinen
@@ -1688,6 +1701,40 @@ class VatsimPoller:
 
             if not lemma and not name:
                 # Kein brauchbarer Name (oder nur ein Prosa-Altwert) → nichts zu suchen.
+                #
+                # ABER: „noch kein Name" ist nicht dasselbe wie „es wird nie einen geben".
+                # `_muster_name` liest ausschließlich aircraft_payloads.make_model, und genau
+                # diese Zeile legt erst die Zuladungs-Recherche aus Plan A an. Der Live-
+                # Auslöser startet BEIDE gleichzeitig (`new_codes` enthält per Konstruktion nur
+                # Codes OHNE aircraft_payloads-Zeile) — die Recherche braucht 30–300 s, diese
+                # Methode ist nach Millisekunden hier. Ohne die Prüfung unten bekäme praktisch
+                # JEDES neu gesehene Muster sofort 'nichts_gefunden' und damit 30 Tage Sperre,
+                # obwohl der Name Minuten später dasteht. Das ist derselbe Fehler wie der
+                # AP32-Kostenbug aus Plan A: ein VORÜBERGEHENDER Zustand als ENDGÜLTIGES
+                # Ergebnis gespeichert.
+                #
+                # Endzustand der Zuladungs-Recherche ist nur 'ok' (fertig, aber ohne
+                # verwertbaren make_model — sollte nicht vorkommen) oder 'nichts_gefunden'
+                # (wirklich nichts gefunden). Alles andere (nie versucht → None, 'neu',
+                # 'fehler' mit Backoff) heißt: die Recherche läuft noch oder ist noch nicht
+                # dran. Dann OHNE Zustandsschreibung zurück — der Code bleibt 'neu' und ist
+                # beim nächsten Fälligkeitscheck wieder Kandidat, sobald der Name da ist.
+                # Preis dieser Wahl: ein Muster, für das nie eine Zuladungs-Recherche läuft
+                # (z. B. ohne ANTHROPIC_API_KEY), bleibt dauerhaft Kandidat. Das kostet nichts
+                # (kein HTTP, Rückkehr nach wenigen Millisekunden), belegt aber einen der
+                # _AIRCRAFT_INFO_LIMIT-Plätze je Nachlese-Lauf. Bewusst so: die Alternative
+                # wäre wieder eine 30-Tage-Sperre aus einem Konfigurationszustand heraus.
+                zustand_offen = (
+                    payload_zustand is None
+                    or (payload_zustand.get("state") not in ("ok", "nichts_gefunden"))
+                )
+                if zustand_offen:
+                    logger.debug(
+                        "Muster-Info %s: noch kein Name, Zuladungs-Recherche noch offen (%s) "
+                        "— kein Zustand geschrieben",
+                        code, (payload_zustand or {}).get("state"),
+                    )
+                    return
                 conn = get_connection(self.db_path)
                 try:
                     mark_aircraft_type_state(conn, code, "nichts_gefunden", jetzt)

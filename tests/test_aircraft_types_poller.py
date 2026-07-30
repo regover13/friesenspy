@@ -109,6 +109,7 @@ async def test_403_wird_fehler_nicht_nichts_gefunden(db, tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_kein_treffer_wird_nichts_gefunden(db, tmp_path, monkeypatch):
     _flug(db, 1, "IMPU")
+    _name_hinterlegen(db, "IMPU", "Impuls")   # Name da, die Suche findet nur nichts
     p = _poller(db, tmp_path)
     monkeypatch.setattr(p, "_now", lambda: T0)
     from app import aircraft_info
@@ -299,7 +300,8 @@ async def test_inflight_eintrag_verschwindet_auf_jedem_rueckgabepfad(db, tmp_pat
     await p._resolve_aircraft_type("C72R")
     assert not p._aircraft_info_inflight
 
-    # 2. kein Name verfuegbar -> nichts_gefunden ohne HTTP
+    # 2. kein Name verfuegbar -> Rueckkehr ohne HTTP (und seit Rev. 3 auch ohne Zustand,
+    #    solange die Zuladungs-Recherche noch offen ist)
     await p._resolve_aircraft_type("IMPU")
     assert not p._aircraft_info_inflight
 
@@ -401,3 +403,97 @@ async def test_nachlese_uebersteht_fehler_eines_einzelnen_kandidaten(db, tmp_pat
     assert set(gesehen) == {"Muster C172", "Muster PA24", "Muster DA40"}, \
         "ein Fehler bei EINEM Kandidaten darf die uebrigen nicht verhindern"
     assert not p._aircraft_info_inflight
+
+
+@pytest.mark.asyncio
+async def test_neues_muster_wird_nicht_sofort_30_tage_gesperrt(db, tmp_path, monkeypatch):
+    """Rev. 3 (C2): „Name noch nicht da" ist kein „nichts gefunden".
+
+    Der Live-Ausloeser startet fuer dieselben `new_codes` BEIDE Recherchen gleichzeitig --
+    und `new_codes` enthaelt per Konstruktion nur Codes OHNE aircraft_payloads-Zeile. Der
+    Name, den `_muster_name` braucht, entsteht aber erst durch die Zuladungs-Recherche
+    (30-300 s). `_resolve_aircraft_type` ist Millisekunden spaeter hier und faende praktisch
+    IMMER keinen Namen: ohne Unterscheidung schriebe es sofort 'nichts_gefunden' und damit
+    30 Tage Sperre -- fuer jedes neu gesehene Muster, noch bevor der Name da sein KANN.
+    """
+    from app import aircraft_info
+    from app.database import get_payload_research, mark_payload_research
+    _flug(db, 1, "NEU1")
+    p = _poller(db, tmp_path)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+    gesucht: list[str] = []
+    monkeypatch.setattr(aircraft_info, "resolve_type",
+                        lambda name, fetch: gesucht.append(name) or None)
+
+    # 1. Live-Ausloeser: Zuladungs-Recherche laeuft gerade erst an, payload_research ist leer.
+    await p._resolve_aircraft_type("NEU1")
+    assert gesucht == [], "ohne Namen darf keine Wikipedia-Suche laufen"
+    zeile = get_aircraft_type(get_connection(db), "NEU1")
+    assert zeile is None or zeile["fetch_state"] != "nichts_gefunden", \
+        "vorlaeufiger Zustand wurde als Endergebnis gespeichert (30-Tage-Sperre)"
+
+    # 2. Auch ein laufender Backoff der Zuladungs-Recherche ist kein Endzustand.
+    c = get_connection(db)
+    mark_payload_research(c, "NEU1", "fehler", T0, last_error="Overloaded")
+    c.commit()
+    c.close()
+    await p._resolve_aircraft_type("NEU1")
+    zeile = get_aircraft_type(get_connection(db), "NEU1")
+    assert zeile is None or zeile["fetch_state"] != "nichts_gefunden"
+
+    # 3. Zehn Minuten spaeter ist die Zuladungs-Recherche durch und hat den Namen geliefert --
+    #    das Muster muss JETZT Kandidat sein und ganz normal aufgeloest werden.
+    _name_hinterlegen(db, "NEU1", "Cessna 172S Skyhawk")
+    c = get_connection(db)
+    mark_payload_research(c, "NEU1", "ok", T0)
+    c.commit()
+    c.close()
+    assert get_payload_research(get_connection(db), "NEU1")["state"] == "ok"
+    monkeypatch.setattr(p, "_now", lambda: T0 + timedelta(minutes=10))
+    await p._resolve_aircraft_type("NEU1")
+    assert gesucht == ["Cessna 172S Skyhawk"], \
+        "nach dem Eintreffen des Namens muss die Aufloesung starten"
+    assert get_aircraft_type(get_connection(db), "NEU1")["fetch_state"] == "nichts_gefunden"
+
+
+@pytest.mark.asyncio
+async def test_endgueltig_ohne_namen_wird_weiterhin_gesperrt(db, tmp_path, monkeypatch):
+    """Gegenprobe zu C2: hat die Zuladungs-Recherche wirklich nichts gefunden, gibt es auch
+    nie einen Namen -- dann ist 'nichts_gefunden' das richtige, endgueltige Ergebnis (sonst
+    bliebe der Code fuer immer Kandidat und belegte jeden Nachlese-Lauf)."""
+    from app.database import mark_payload_research
+    _flug(db, 1, "ZZ99")
+    c = get_connection(db)
+    mark_payload_research(c, "ZZ99", "nichts_gefunden", T0)
+    c.commit()
+    c.close()
+    p = _poller(db, tmp_path)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+    await p._resolve_aircraft_type("ZZ99")
+    assert get_aircraft_type(get_connection(db), "ZZ99")["fetch_state"] == "nichts_gefunden"
+
+
+@pytest.mark.asyncio
+async def test_admin_lemma_gilt_auch_ohne_namen(db, tmp_path, monkeypatch):
+    """Ein gesetztes Lemma ist eine menschliche Entscheidung -- es braucht keinen Namen und
+    darf von der C2-Pruefung nicht mit blockiert werden."""
+    from app import aircraft_info
+    from app.database import set_aircraft_type_override
+    _flug(db, 1, "LEMM")
+    c = get_connection(db)
+    set_aircraft_type_override(c, "LEMM", wiki_title="Cessna 172", now=T0)
+    c.commit()
+    c.close()
+    p = _poller(db, tmp_path)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+    gesehen: list[str] = []
+    monkeypatch.setattr(aircraft_info, "resolve_title",
+                        lambda lang, titel, fetch: gesehen.append(titel) or {
+                            "wiki_lang": lang, "wiki_title": titel, "extract": "Text",
+                            "photo_commons_title": None, "photo_url": None,
+                            "photo_licence": None, "photo_artist": None,
+                            "photo_source_url": None,
+                        })
+    await p._resolve_aircraft_type("LEMM")
+    assert gesehen == ["Cessna 172"]
+    assert get_aircraft_type(get_connection(db), "LEMM")["fetch_state"] == "ok"
