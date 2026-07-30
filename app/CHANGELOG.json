@@ -1,5 +1,15 @@
 [
   {
+    "version": "10.5.0",
+    "date": "2026-07-30",
+    "highlight": false,
+    "title": "Neue Muster werden nicht mehr vergessen",
+    "items": [
+      "🔎 Wenn ein Muster zum ersten Mal auftaucht, recherchiert FriesenSpy Gewichte und Namen selbst. War der KI-Dienst in diesem Moment gerade überlastet, galt das Muster bisher als „abgehakt\" — und wurde nie wieder angefasst. Genau das war der Aeroprakt A-32 (AP32) passiert, der deshalb zwei Monate ohne Eintrag blieb. Ein vorübergehender Fehler wird jetzt als solcher erkannt und später erneut versucht.",
+      "📚 Dazu holt FriesenSpy den Altbestand nach: 33 Muster aus eurem Flugbuch hatten noch keine Zuladungsdaten, die meisten davon Flüge von vor Juli — aus einer Zeit, in der es die automatische Recherche noch nicht gab. Sie werden im Hintergrund nachgetragen, gedrosselt und der Reihe nach, häufig geflogene zuerst."
+    ]
+  },
+  {
     "version": "10.4.6",
     "date": "2026-07-29",
     "highlight": false,
