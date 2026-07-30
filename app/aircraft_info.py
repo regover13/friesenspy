@@ -52,6 +52,19 @@ _LUFTFAHRZEUG_WOERTER = (
 # bewusst eine enge, explizite Ausnahmeliste für belegte Fälle, keine generelle Fuzzy-Logik —
 # Substring-Vergleiche würden z. B. "Impuls" (Physik) fälschlich mit "Impulse" (Flugzeug)
 # verwechseln (siehe test_fehltreffer_wird_verworfen).
+#
+# **Bekannte Grenze:** Die Liste ist eine Momentaufnahme belegter Fälle und wächst nicht von
+# allein. Ein künftiges, ähnlich umbenanntes Muster (das nächste Hersteller-Rebranding) teilt
+# mit seinem Wikipedia-Lemma dann wieder kein Wort — ``title_matches_name`` verwirft jeden
+# Treffer, ``resolve_type`` liefert ``None``, und der Aufrufer schreibt ``nichts_gefunden``
+# mit 30-Tage-Sperre. Das passiert **still**: es gibt keinen Alarm und keine Unterscheidung
+# zwischen „Muster hat wirklich keinen Artikel" und „Umbenennung nicht erkannt". Auffallen
+# kann es nur über die Muster-Liste im Admin (Zustand ``nichts_gefunden`` bei einem Muster mit
+# vielen Flügen). Reparaturweg dann eines von beiden:
+#   1. neuen Eintrag in diese Tabelle aufnehmen (wirkt für alle künftigen Auflösungen), oder
+#   2. im Admin-Panel ``wiki_title_override`` (Feld „Lemma") auf den richtigen Artikel setzen
+#      — das umgeht Suche UND Trefferprüfung komplett (``resolve_title``) und wirkt sofort
+#      nach „Neu holen".
 _BEKANNTE_MUSTER_ALIASE: tuple[tuple[str, ...], ...] = (
     ("h145", "bk117", "bk 117"),
     ("h135", "ec135", "ec 135"),
@@ -321,6 +334,19 @@ class WikimediaError(Exception):
         self.status_code = status_code
 
 
+# Ersatz-Status für Ausnahmen OHNE HTTP-Antwort (Timeout, Verbindungsabbruch, DNS, kaputtes
+# JSON). ``llm.is_transient_error`` prüft zuerst ``status_code`` und danach die Klassennamen
+# der ``__mro__`` — die lautet beim Verpacken aber nur noch ``WikimediaError, Exception, …``,
+# der ursprüngliche Typ (``httpx.ConnectTimeout`` o. ä.) steckt danach nur noch als TEXT in
+# der Nachricht. Ohne Status-Code galt ein Timeout deshalb als endgültig und ``_resolve_
+# aircraft_type`` schrieb ``nichts_gefunden`` mit 30-Tage-Sperre statt ``fehler`` mit kurzem
+# Backoff. Die Asymmetrie der beiden Irrtümer entscheidet: ein zu Unrecht als vorübergehend
+# gewerteter Fehler kostet einen weiteren, kostenlosen Wikipedia-Aufruf nach Backoff — ein zu
+# Unrecht als endgültig gewerteter begräbt das Muster einen Monat lang. Deshalb bekommt JEDE
+# verpackte Ausnahme diesen Status, nicht nur die sicher erkannten Netzwerkfehler.
+_NETZFEHLER_STATUS = 503
+
+
 def fetch_json(url: str, *, timeout_s: float = 15.0) -> dict:
     """JSON von Wikimedia holen — **immer** mit aussagekräftigem User-Agent."""
     try:
@@ -334,7 +360,43 @@ def fetch_json(url: str, *, timeout_s: float = 15.0) -> dict:
     except WikimediaError:
         raise
     except Exception as exc:  # noqa: BLE001
-        raise WikimediaError(f"{type(exc).__name__}: {exc}", None) from exc
+        # Status siehe _NETZFEHLER_STATUS: ohne ihn verliert der Aufrufer die Information,
+        # dass ein Timeout/Verbindungsfehler vorübergehend ist.
+        raise WikimediaError(f"{type(exc).__name__}: {exc}", _NETZFEHLER_STATUS) from exc
+
+
+PHOTO_MAX_WIDTH = 1280
+PHOTO_JPEG_QUALITY = 82
+
+
+def to_web_jpeg(daten: bytes, *, max_width: int = PHOTO_MAX_WIDTH) -> bytes:
+    """Bilddaten dekodieren, verkleinern und als EXIF-freies JPEG neu schreiben.
+
+    Ein Aufbereitungsschritt für **beide** Foto-Quellen — den Admin-Upload und den
+    Commons-Download. Rev. 3 (I3): Commons liefert die Originaldatei (gemessen bis 4 MB), die
+    unverändert auf das Volume geschrieben und an Mobilgeräte ausgeliefert wurde, während der
+    Admin-Upload längst auf 1280 px verkleinert und neu kodiert wurde — eine Asymmetrie ohne
+    Begründung. Nebeneffekt: ein von Commons geliefertes SVG oder TIFF wird hier zu einem
+    echten JPEG, statt unter falschem ``image/jpeg`` ausgeliefert zu werden.
+
+    Wirft :class:`ValueError`, wenn die Daten kein von Pillow lesbares Bild sind (bei Commons
+    z. B. SVG — dann bleibt der Artikel, nur ohne Foto).
+    """
+    from io import BytesIO
+
+    from PIL import Image
+    try:
+        img = Image.open(BytesIO(daten))
+        img.load()
+    except Exception as exc:  # noqa: BLE001 — Pillow wirft je nach Format alles Mögliche
+        raise ValueError(f"kein lesbares Bild: {type(exc).__name__}: {exc}") from exc
+    img = img.convert("RGB")
+    if img.width > max_width:
+        hoehe = max(1, round(img.height * max_width / img.width))
+        img = img.resize((max_width, hoehe))
+    aus = BytesIO()
+    img.save(aus, format="JPEG", quality=PHOTO_JPEG_QUALITY)   # ohne exif= → EXIF ist weg
+    return aus.getvalue()
 
 
 def download_photo(url: str, *, timeout_s: float = 30.0) -> bytes:
@@ -350,4 +412,6 @@ def download_photo(url: str, *, timeout_s: float = 30.0) -> bytes:
     except WikimediaError:
         raise
     except Exception as exc:  # noqa: BLE001
-        raise WikimediaError(f"{type(exc).__name__}: {exc}", None) from exc
+        # Status siehe _NETZFEHLER_STATUS: ohne ihn verliert der Aufrufer die Information,
+        # dass ein Timeout/Verbindungsfehler vorübergehend ist.
+        raise WikimediaError(f"{type(exc).__name__}: {exc}", _NETZFEHLER_STATUS) from exc

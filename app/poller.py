@@ -1764,9 +1764,26 @@ class VatsimPoller:
                     rohdaten = await asyncio.to_thread(
                         aircraft_info.download_photo, res["photo_url"]
                     )
-                    self._photo_dir.mkdir(parents=True, exist_ok=True)
-                    foto_datei = f"{code}.jpg"
-                    (self._photo_dir / foto_datei).write_bytes(rohdaten)
+                    # Rev. 3 (I3): dieselbe Aufbereitung wie beim Admin-Upload — Commons
+                    # liefert die ORIGINALdatei (gemessen bis 4 MB), die sonst unverkleinert
+                    # auf das Volume und an jedes Mobilgerät ginge. `to_web_jpeg` verkleinert
+                    # auf 1280 px und kodiert als JPEG neu; damit stimmt auch der ausgelieferte
+                    # MIME-Typ, wenn Commons ein SVG/TIFF liefert.
+                    try:
+                        bilddaten = await asyncio.to_thread(
+                            aircraft_info.to_web_jpeg, rohdaten
+                        )
+                    except ValueError as exc:
+                        # Kein von Pillow lesbares Bild (z. B. SVG). Das ist KEIN Grund, die
+                        # gelungene Artikel-Recherche wegzuwerfen — der Text bleibt, das Foto
+                        # entfällt.
+                        logger.info("Muster-Info %s: Foto unbrauchbar, nur Text (%s)",
+                                    code, exc)
+                        bilddaten = None
+                    if bilddaten is not None:
+                        self._photo_dir.mkdir(parents=True, exist_ok=True)
+                        foto_datei = f"{code}.jpg"
+                        (self._photo_dir / foto_datei).write_bytes(bilddaten)
             except Exception as exc:  # noqa: BLE001 — nie einen Job reißen
                 zustand = "fehler" if llm.is_transient_error(exc) else "nichts_gefunden"
                 conn = get_connection(self.db_path)

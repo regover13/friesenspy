@@ -352,3 +352,61 @@ def test_403_ist_transient_404_nicht(monkeypatch):
     with pytest.raises(aircraft_info.WikimediaError) as e404:
         aircraft_info.fetch_json("https://de.wikipedia.org/x")
     assert llm.is_transient_error(e404.value) is False
+
+
+def test_netzwerkfehler_bleibt_transient(monkeypatch):
+    """Rev. 3 (C3): ein Timeout darf nicht als endgueltig durchgereicht werden.
+
+    Beim Verpacken in WikimediaError geht der urspruengliche Ausnahmetyp verloren -- die
+    __mro__ lautet danach nur noch (WikimediaError, Exception, ...), und `is_transient_error`
+    findet weder einen Status-Code noch einen der gesuchten Klassennamen. Ohne Ersatz-Status
+    schrieb _resolve_aircraft_type deshalb `nichts_gefunden` (30 Tage Sperre) statt `fehler`
+    (kurzer Backoff) -- und zwar bei jedem Netzwerkschluckauf gegen Wikimedia.
+    """
+    import httpx
+    from app import aircraft_info, llm
+
+    class _Client:
+        def __init__(self, **kw): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url):
+            raise httpx.ConnectTimeout("timed out")
+
+    monkeypatch.setattr(httpx, "Client", _Client)
+
+    with pytest.raises(aircraft_info.WikimediaError) as artikel:
+        aircraft_info.fetch_json("https://de.wikipedia.org/x")
+    assert llm.is_transient_error(artikel.value) is True, \
+        "Timeout beim Artikel-Abruf wurde als endgueltig eingestuft"
+
+    with pytest.raises(aircraft_info.WikimediaError) as foto:
+        aircraft_info.download_photo("https://upload.wikimedia.org/x.jpg")
+    assert llm.is_transient_error(foto.value) is True, \
+        "Timeout beim Foto-Download verwirft sonst die schon geloeste Artikel-Recherche"
+
+
+def test_commons_foto_wird_wie_ein_upload_aufbereitet():
+    """Rev. 3 (I3): Commons liefert die Originaldatei (gemessen bis 4 MB) -- dieselbe
+    Pillow-Pipeline wie beim Admin-Upload begrenzt sie auf 1280 px."""
+    import io
+
+    from PIL import Image
+    from app.aircraft_info import PHOTO_MAX_WIDTH, to_web_jpeg
+
+    quelle = io.BytesIO()
+    Image.new("RGB", (3000, 2000), (10, 20, 30)).save(quelle, format="PNG")
+    jpeg = to_web_jpeg(quelle.getvalue())
+    bild = Image.open(io.BytesIO(jpeg))
+    assert bild.format == "JPEG", "MIME-Typ image/jpeg waere sonst gelogen"
+    assert bild.width == PHOTO_MAX_WIDTH
+    assert bild.height == 853
+
+
+def test_unlesbares_bild_wird_als_valueerror_gemeldet():
+    """SVG von Commons: kein Pillow-Bild. Der Aufrufer behaelt den Artikel, nur ohne Foto."""
+    import pytest as _pytest
+
+    from app.aircraft_info import to_web_jpeg
+    with _pytest.raises(ValueError):
+        to_web_jpeg(b"<svg xmlns='http://www.w3.org/2000/svg'></svg>")

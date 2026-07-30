@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -37,6 +38,14 @@ def _flug(db_path, cid, code, ts="2026-07-01T10:00:00Z"):
               (cid, "FRS1", code, ts))
     c.commit()
     c.close()
+
+
+def _bild(breite=3000, hoehe=2000) -> bytes:
+    """Ein echtes JPEG in Commons-Originalgroesse (dort gemessen bis 4 MB)."""
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (breite, hoehe), (10, 20, 30)).save(buf, format="JPEG")
+    return buf.getvalue()
 
 
 def _name_hinterlegen(db_path, code, make_model):
@@ -77,7 +86,7 @@ async def test_name_kommt_aus_payloads_und_foto_landet_als_datei(db, tmp_path, m
         }
 
     monkeypatch.setattr(aircraft_info, "resolve_type", _fake_resolve)
-    monkeypatch.setattr(aircraft_info, "download_photo", lambda url, **kw: b"\xff\xd8\xffBILD")
+    monkeypatch.setattr(aircraft_info, "download_photo", lambda url, **kw: _bild(3000, 2000))
 
     await p._resolve_aircraft_type("C172")
 
@@ -86,7 +95,34 @@ async def test_name_kommt_aus_payloads_und_foto_landet_als_datei(db, tmp_path, m
     assert row["fetch_state"] == "ok"
     assert row["wiki_title"] == "Cessna 172"
     assert row["photo_kind"] == "file"
-    assert (p._photo_dir / row["photo_file"]).read_bytes() == b"\xff\xd8\xffBILD"
+    # Rev. 3 (I3): Commons liefert das Original (bis 4 MB). Auf dem Volume und auf dem
+    # Mobilgeraet darf nur noch die aufbereitete Fassung landen -- dieselbe Pillow-Pipeline
+    # wie beim Admin-Upload (max. 1280 px, JPEG, kein EXIF).
+    from PIL import Image
+    bild = Image.open(io.BytesIO((p._photo_dir / row["photo_file"]).read_bytes()))
+    assert bild.format == "JPEG"
+    assert bild.width == 1280, "Commons-Original wurde unverkleinert gespeichert"
+
+
+@pytest.mark.asyncio
+async def test_unlesbares_commons_bild_kostet_nur_das_foto(db, tmp_path, monkeypatch):
+    """Ein SVG von Commons ist kein Pillow-Bild -- der Artikeltext bleibt trotzdem."""
+    from app import aircraft_info
+    _name_hinterlegen(db, "C208", "Cessna 208B Grand Caravan")
+    _flug(db, 1, "C208")
+    p = _poller(db, tmp_path)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+    monkeypatch.setattr(aircraft_info, "resolve_type", lambda name, fetch: {
+        "wiki_lang": "de", "wiki_title": "Cessna 208", "extract": "Text",
+        "photo_commons_title": "File:x.svg", "photo_url": "https://upload/x.svg",
+        "photo_licence": "CC BY-SA 3.0", "photo_artist": None, "photo_source_url": None,
+    })
+    monkeypatch.setattr(aircraft_info, "download_photo", lambda url, **kw: b"<svg/>")
+    await p._resolve_aircraft_type("C208")
+    row = get_aircraft_type(get_connection(db), "C208")
+    assert row["fetch_state"] == "ok"
+    assert row["extract"] == "Text"
+    assert not row["photo_file"]
 
 
 @pytest.mark.asyncio

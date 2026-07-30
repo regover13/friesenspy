@@ -3458,7 +3458,9 @@ async def aircraft_photo(code: str):
 # ---------------------------------------------------------------------------
 
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024     # vor der Umwandlung
-PHOTO_MAX_WIDTH = 1280
+# Die Umwandlung selbst (Verkleinern auf aircraft_info.PHOTO_MAX_WIDTH, Neukodieren als JPEG,
+# EXIF weg) steht in aircraft_info.to_web_jpeg — seit Rev. 3 (I3) laufen der Admin-Upload UND
+# der Commons-Download durch denselben Code-Pfad.
 
 
 @app.get("/api/admin/aircraft-types")
@@ -3556,8 +3558,9 @@ async def admin_refetch_aircraft_type(request: Request, code: str):
 async def admin_upload_aircraft_photo(request: Request, code: str, file: UploadFile = File(...)):
     """Eigenes Foto hochladen.
 
-    Das Bild wird mit Pillow dekodiert und **neu geschrieben**. Das erledigt drei Dinge in
-    einem Schritt: was Pillow nicht öffnet, ist kein Bild (Dateiendung und gemeldeter
+    Das Bild wird mit Pillow dekodiert und **neu geschrieben** (``aircraft_info.to_web_jpeg``,
+    seit Rev. 3 derselbe Pfad wie für die von Commons geladenen Fotos). Das erledigt drei
+    Dinge in einem Schritt: was Pillow nicht öffnet, ist kein Bild (Dateiendung und gemeldeter
     Content-Type werden nicht geglaubt); EXIF fällt weg (ein Handyfoto vom Cockpit trägt sonst
     GPS-Koordinaten in die Datenbank einer öffentlichen Seite); und die Größe bleibt
     beherrschbar.
@@ -3571,6 +3574,7 @@ async def admin_upload_aircraft_photo(request: Request, code: str, file: UploadF
 
     from PIL import Image
 
+    from app.aircraft_info import to_web_jpeg
     from app.database import normalize_type_code
     roh = normalize_type_code(code)
     if not roh:
@@ -3579,17 +3583,10 @@ async def admin_upload_aircraft_photo(request: Request, code: str, file: UploadF
     if len(daten) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Bild größer als 8 MB")
     try:
-        img = Image.open(BytesIO(daten))
-        img.load()
-    except Exception as exc:  # noqa: BLE001
+        blob = to_web_jpeg(daten)
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail="Das ist kein Bild.") from exc
-    img = img.convert("RGB")
-    if img.width > PHOTO_MAX_WIDTH:
-        hoehe = max(1, round(img.height * PHOTO_MAX_WIDTH / img.width))
-        img = img.resize((PHOTO_MAX_WIDTH, hoehe))
-    aus = BytesIO()
-    img.save(aus, format="JPEG", quality=82)   # ohne exif= → EXIF ist weg
-    blob = aus.getvalue()
+    breite = Image.open(BytesIO(blob)).width
 
     conn = get_connection(get_settings().DB_PATH)
     try:
@@ -3604,7 +3601,7 @@ async def admin_upload_aircraft_photo(request: Request, code: str, file: UploadF
         conn.commit()
     finally:
         conn.close()
-    return {"ok": True, "bytes": len(blob), "width": img.width}
+    return {"ok": True, "bytes": len(blob), "width": breite}
 
 
 def _llm_configured() -> bool:
