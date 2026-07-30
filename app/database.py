@@ -4268,10 +4268,10 @@ def mark_payload_research(
 # stimmen sie überein.
 FLIGHT_TYPE_CODE_SQL = """
     upper(substr(
-        COALESCE(NULLIF(aircraft_icao, ''), aircraft), 1,
-        CASE WHEN instr(COALESCE(NULLIF(aircraft_icao, ''), aircraft), '/') > 0
-             THEN instr(COALESCE(NULLIF(aircraft_icao, ''), aircraft), '/') - 1
-             ELSE length(COALESCE(NULLIF(aircraft_icao, ''), aircraft)) END))
+        trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft)), 1,
+        CASE WHEN instr(trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft)), '/') > 0
+             THEN instr(trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft)), '/') - 1
+             ELSE length(trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft))) END))
 """
 
 

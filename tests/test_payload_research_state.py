@@ -140,3 +140,31 @@ def test_limit_greift(conn):
         _flug(conn, i, code, code, "2026-07-25T10:00:00Z")
     conn.commit()
     assert len(payload_research_candidates(conn, T0, limit=2)) == 2
+
+
+def test_gepolsterter_typcode_matcht_normalize_type_code(conn):
+    """FLIGHT_TYPE_CODE_SQL muss normalize_type_code() gleichziehen (Whitespace).
+
+    normalize_type_code() trimmt (``.strip()``); ohne trim() im SQL-Pendant wuerde ein
+    gepolsterter aircraft-Wert nie zu seinem eigenen payload_research/aircraft_payloads-
+    Eintrag joinen und ewig als 'neu' erscheinen."""
+    from app.database import normalize_type_code
+
+    _flug(conn, 1, None, " AP32 ", "2026-07-25T10:00:00Z")
+    conn.commit()
+    kandidaten = payload_research_candidates(conn, T0, limit=10)
+    assert kandidaten == [normalize_type_code(" AP32 ")] == ["AP32"]
+
+    # Mit vorhandenem payload_research-Eintrag fuer "AP32" darf der gepolsterte Flug
+    # NICHT mehr als eigener, ungematchter Kandidat auftauchen.
+    mark_payload_research(conn, "AP32", "ok", T0)
+    conn.commit()
+    assert payload_research_candidates(conn, T0, limit=10) == []
+
+    # Ebenso mit einem aircraft_payloads-Eintrag fuer "AP32".
+    _flug(conn, 2, None, "AP32 ", "2026-07-25T10:00:00Z")
+    conn.commit()
+    upsert_payload(conn, "AP32", mtow_kg=600.0, empty_kg=350.0, fuel_kg=40.0,
+                   fuel_full_kg=80.0, crew_kg=85.0, source="llm", make_model="Aeroprakt A-32")
+    conn.commit()
+    assert payload_research_candidates(conn, T0, limit=10) == []
