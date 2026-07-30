@@ -3039,15 +3039,24 @@ async def admin_upsert_payload(request: Request):
 
 @app.get("/api/admin/transport/payloads/suggest")
 async def admin_transport_payload_suggest(request: Request, type: str):
-    """KI-Vorschlag (Claude) für die Zuladungs-Komponenten eines Flugzeugtyps."""
+    """KI-Vorschlag (Claude Haiku 4.5) für die Zuladungs-Komponenten eines Flugzeugtyps."""
     require_admin(request)
     require_confirm(request)
     from app import llm
     if not llm.is_configured():
         raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY nicht konfiguriert")
-    # Blockierender Sonnet-5-Aufruf (Web-Search, bis zu ~1-2 Min.) — in einen Thread auslagern,
+    # Blockierender Haiku-Aufruf (Web-Search, bis zu ~1-2 Min.) — in einen Thread auslagern,
     # sonst haengt die Event-Loop und damit die GESAMTE App fuer die Dauer der Recherche.
-    suggestion = await asyncio.to_thread(llm.suggest_aircraft_payload, type)
+    try:
+        suggestion = await asyncio.to_thread(llm.suggest_aircraft_payload, type)
+    except llm.TransientResearchError as exc:
+        # 503 + Retry-After: der Admin soll es gleich nochmal versuchen koennen, statt
+        # "Kein Vorschlag verfuegbar" zu lesen und das Muster von Hand zu pflegen.
+        raise HTTPException(
+            status_code=503,
+            detail=f"Recherche gerade nicht möglich ({exc}) — bitte in einer Minute erneut.",
+            headers={"Retry-After": "60"},
+        ) from exc
     if suggestion is None:
         raise HTTPException(status_code=502, detail="Kein Vorschlag verfügbar")
     return suggestion

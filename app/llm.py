@@ -31,6 +31,50 @@ _CREW_KG = 85.0
 # à 30–95 s und kam nie zurück; max_uses deckelt nur Suchen, nicht diese Code-Runden.
 # Basis-Tool, gleicher Prompt: 16 s, 1 Suche, ~0,07 $ — und korrektes Ergebnis.
 _WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3}
+
+
+class TransientResearchError(Exception):
+    """Die Recherche scheiterte an einem vorübergehenden Zustand, nicht am Muster.
+
+    Auslöser: API überladen (529), Rate-Limit (429), Timeout, Verbindungsabbruch, 5xx.
+    Der Aufrufer MUSS das von "keine Daten gefunden" (``None``) unterscheiden und es später
+    erneut versuchen — sonst passiert genau der AP32-Fall vom 2026-07-30: ein einzelnes
+    ``overloaded_error`` hat das Muster zwei Monate aus der Tabelle gehalten.
+    """
+
+
+# 408 Request Timeout, 429 Rate Limit, 529 Overloaded (Anthropic) + alle 5xx gelten als
+# vorübergehend. Alles andere im 4xx-Bereich ist endgültig: erneutes Fragen ändert nichts.
+#
+# 403 gehört ausdrücklich dazu — nicht wegen Anthropic, sondern wegen Wikimedia: das
+# Contabo-Netz dieses Servers ist dort geblockt, und der Block greift NICHT deterministisch
+# (gemessen 2026-07-30 im Container: derselbe User-Agent einmal 403, Minuten später 200). Als
+# endgültig gewertet würde er jedes Muster 30 Tage als „nichts gefunden" begraben. Der
+# Klassifikator wird von Plan B für genau diesen Fall mitbenutzt.
+_TRANSIENT_STATUS = frozenset({403, 408, 429, 529})
+
+
+def is_transient_error(exc: BaseException) -> bool:
+    """True, wenn ``exc`` ein vorübergehender Fehler ist (erneut versuchen lohnt).
+
+    Arbeitet bewusst ohne Import von ``anthropic``: geprüft wird ein vorhandenes
+    ``status_code``-Attribut sowie die Namen der anthropic-Verbindungs-/Timeout-Klassen.
+    Damit ist der Klassifikator auch für HTTP-Fehler anderer Quellen brauchbar
+    (Wikimedia: 403 durch den Contabo-Netzblock ist ausdrücklich vorübergehend).
+    """
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status >= 500 or status in _TRANSIENT_STATUS
+    # Verbindungs- und Timeout-Fehler tragen keinen Status-Code. endswith() statt exaktem
+    # Namensvergleich, damit das auch fuer private Test-Doubles greift (siehe
+    # tests/test_llm_transient.py: `_APITimeoutError` statt `APITimeoutError`) und nicht nur
+    # fuer die echten anthropic-Klassennamen.
+    return any(
+        name.endswith(("APIConnectionError", "APITimeoutError", "TimeoutError", "ConnectionError"))
+        for name in (c.__name__ for c in type(exc).__mro__)
+    )
+
+
 _SPEC_SCHEMA = {
     "type": "object",
     "properties": {
@@ -226,13 +270,19 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
                 break
             if _time.monotonic() >= deadline:
                 logger.warning("Zuladungs-Vorschlag für %s: Zeitbudget erschöpft", code)
-                break
+                raise TransientResearchError(f"Zeitbudget erschöpft für {code}")
             messages.append({"role": "assistant", "content": resp.content})
         if resp is None or resp.stop_reason == "refusal":
             logger.warning("Zuladungs-Vorschlag für %s abgelehnt/leer", code)
             return None
         spec = _extract_spec(resp)
+    except TransientResearchError:
+        raise
     except Exception as exc:  # noqa: BLE001 — Komfortpfad, jeder Fehler → kein Vorschlag
+        if is_transient_error(exc):
+            # NICHT als "keine Daten" behandeln: der Aufrufer soll es erneut versuchen.
+            logger.warning("Zuladungs-Vorschlag für %s vorübergehend gescheitert: %s", code, exc)
+            raise TransientResearchError(str(exc)) from exc
         logger.warning("Zuladungs-Vorschlag für %s fehlgeschlagen: %s", code, exc)
         return None
 

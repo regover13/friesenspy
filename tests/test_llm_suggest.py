@@ -152,12 +152,16 @@ class TestSuggestHardening:
         assert "effort" not in calls["stream_kwargs"]["output_config"]
 
     def test_pause_loop_respects_total_budget(self, monkeypatch):
-        """Erschöpftes Gesamtbudget beendet die Fortsetzungsschleife — kein Endlos-Drehen."""
+        """Erschöpftes Gesamtbudget beendet die Fortsetzungsschleife — kein Endlos-Drehen.
+
+        Zeitbudget-Ende ist ein vorübergehender Zustand (die Recherche kam einfach nicht
+        rechtzeitig zum Abschluss), kein "Muster nicht auffindbar" — deshalb
+        TransientResearchError statt None (s. tests/test_llm_transient.py, AP32-Fall)."""
         from app import llm
         calls: dict = {}
         fake = _fake_anthropic([_Resp("pause_turn")], calls)
         monkeypatch.setattr(llm, "_SUGGEST_TOTAL_BUDGET_S", 0.0)
         with patch.dict(sys.modules, {"anthropic": fake}):
-            result = llm.suggest_aircraft_payload("AS65")
-        assert result is None          # sauberes „kein Ergebnis", kein Hänger/Crash
+            with pytest.raises(llm.TransientResearchError):
+                llm.suggest_aircraft_payload("AS65")
         assert calls["create"] == 1    # nach Budget-Ende keine weitere Runde
