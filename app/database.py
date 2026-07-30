@@ -273,6 +273,14 @@ CREATE TABLE IF NOT EXISTS aircraft_payloads (
     updated_at  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS payload_research (
+    type_code   TEXT PRIMARY KEY,   -- normalize_type_code()
+    state       TEXT NOT NULL,      -- 'ok' | 'nichts_gefunden' | 'fehler'
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    checked_at  TEXT,
+    last_error  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS custom_airports (
     icao          TEXT PRIMARY KEY,     -- ICAO ODER Platzhalter-Code (z. B. "ZZSALZ", kein echter ICAO)
     name          TEXT,                 -- reine Anzeige, keine Funktionswirkung
@@ -4153,6 +4161,146 @@ def get_payload_map(conn: sqlite3.Connection) -> dict[str, float]:
     """{type_code: payload_kg} über alle gepflegten Flugzeugtypen."""
     rows = conn.execute("SELECT type_code, payload_kg FROM aircraft_payloads").fetchall()
     return {r["type_code"]: (r["payload_kg"] or 0.0) for r in rows}
+
+
+# Backoff der Recherche-Wiederholung. Bewusst grob gestaffelt: ein überlasteter Anbieter ist
+# meist in Minuten wieder da, ein dauerhaft fehlschlagendes Muster soll aber nicht stündlich
+# Geld kosten (~4 ct je Recherche, docs/architecture.md).
+_RETRY_STAFFEL_S = (300, 1800, 14400)      # 5 min, 30 min, 4 h
+_RETRY_MAX_S = 86400                        # danach täglich
+_NICHTS_GEFUNDEN_ERNEUT_S = 30 * 86400      # inhaltlich erledigt: nach 30 Tagen erneut
+
+
+def next_retry_delay_s(attempts: int) -> int:
+    """Abstand bis zum nächsten Versuch, nach ``attempts`` Fehlschlägen (in Sekunden)."""
+    if attempts <= 0:
+        return 0
+    if attempts <= len(_RETRY_STAFFEL_S):
+        return _RETRY_STAFFEL_S[attempts - 1]
+    return _RETRY_MAX_S
+
+
+def _parse_iso_utc(ts: str | None) -> datetime | None:
+    """ISO-8601 mit 'Z' oder Offset zu einem aware datetime; None bei Unbrauchbarem."""
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def is_retry_due(state: str, attempts: int, checked_at: str | None, now: datetime) -> bool:
+    """Ist ein erneuter Versuch fällig?
+
+    ``ok`` nie. ``nichts_gefunden`` nach 30 Tagen (die Welt kann sich geändert haben, das
+    Muster aber nicht stündlich). ``fehler`` nach der Backoff-Staffel — ein transienter
+    Fehler ist KEIN Endzustand (AP32-Fall). Unbekannter Zustand oder unlesbares
+    ``checked_at``: sofort fällig, im Zweifel lieber einmal zu viel versuchen.
+    """
+    if state == "ok":
+        return False
+    seit = _parse_iso_utc(checked_at)
+    if seit is None:
+        return True
+    if state == "nichts_gefunden":
+        wartezeit = _NICHTS_GEFUNDEN_ERNEUT_S
+    elif state == "fehler":
+        wartezeit = next_retry_delay_s(attempts)
+    else:
+        return True
+    return (now - seit).total_seconds() >= wartezeit
+
+
+def get_payload_research(conn: sqlite3.Connection, type_code: str) -> dict | None:
+    """Versuchszustand eines Typcodes oder ``None``, wenn nie versucht wurde."""
+    code = normalize_type_code(type_code)
+    if not code:
+        return None
+    row = conn.execute(
+        "SELECT state, attempts, checked_at, last_error FROM payload_research WHERE type_code = ?",
+        (code,),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def mark_payload_research(
+    conn: sqlite3.Connection,
+    type_code: str,
+    state: str,
+    now: datetime,
+    last_error: str | None = None,
+) -> None:
+    """Versuchszustand festschreiben. ``attempts`` zählt NUR Fehlschläge."""
+    code = normalize_type_code(type_code)
+    if not code:
+        return
+    ts = now.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    if state == "fehler":
+        conn.execute(
+            """INSERT INTO payload_research (type_code, state, attempts, checked_at, last_error)
+               VALUES (?, 'fehler', 1, ?, ?)
+               ON CONFLICT(type_code) DO UPDATE SET
+                   state='fehler',
+                   attempts = payload_research.attempts + 1,
+                   checked_at = excluded.checked_at,
+                   last_error = excluded.last_error""",
+            (code, ts, last_error),
+        )
+        return
+    conn.execute(
+        """INSERT INTO payload_research (type_code, state, attempts, checked_at, last_error)
+           VALUES (?, ?, 0, ?, ?)
+           ON CONFLICT(type_code) DO UPDATE SET
+               state = excluded.state,
+               attempts = 0,
+               checked_at = excluded.checked_at,
+               last_error = excluded.last_error""",
+        (code, state, ts, last_error),
+    )
+
+
+# Maßgebliche Spalte für den Flugbestand (Rev.-2-Befund B1): `aircraft_icao` existiert erst
+# seit 2026-06-09 und ist nur in 357 von 2256 Zeilen gefüllt — angezeigt und angeklickt wird
+# `aircraft` (2232 Zeilen). COALESCE liefert GENAU EINEN Wert je Flug; die beiden Spalten
+# dürfen nie per OR addiert werden (Doppelzählung). Bei 358 Zeilen sind beide gefüllt, in 357
+# stimmen sie überein.
+FLIGHT_TYPE_CODE_SQL = """
+    upper(substr(
+        COALESCE(NULLIF(aircraft_icao, ''), aircraft), 1,
+        CASE WHEN instr(COALESCE(NULLIF(aircraft_icao, ''), aircraft), '/') > 0
+             THEN instr(COALESCE(NULLIF(aircraft_icao, ''), aircraft), '/') - 1
+             ELSE length(COALESCE(NULLIF(aircraft_icao, ''), aircraft)) END))
+"""
+
+
+def payload_research_candidates(
+    conn: sqlite3.Connection, now: datetime, limit: int
+) -> list[str]:
+    """Typcodes aus dem Flugbestand ohne Zuladungseintrag, deren Versuch fällig ist.
+
+    Nach Flugzahl absteigend — was oft geflogen wird, zuerst. Die Fälligkeit wird in Python
+    entschieden (``is_retry_due``), damit die Backoff-Regel an einer Stelle steht.
+    """
+    rows = conn.execute(
+        f"""SELECT {FLIGHT_TYPE_CODE_SQL} AS code, COUNT(*) AS n,
+                   r.state AS state, r.attempts AS attempts, r.checked_at AS checked_at
+              FROM flight_cache f
+              LEFT JOIN aircraft_payloads p ON p.type_code = {FLIGHT_TYPE_CODE_SQL}
+              LEFT JOIN payload_research  r ON r.type_code = {FLIGHT_TYPE_CODE_SQL}
+             WHERE COALESCE(NULLIF(aircraft_icao, ''), aircraft) IS NOT NULL
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''
+               AND p.type_code IS NULL
+             GROUP BY code
+             ORDER BY n DESC, code ASC"""
+    ).fetchall()
+    faellig = [
+        r["code"] for r in rows
+        if r["code"] and is_retry_due(r["state"] or "neu", r["attempts"] or 0,
+                                     r["checked_at"], now)
+    ]
+    return faellig[:limit]
 
 
 def _finite_or_none(v):
