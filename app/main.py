@@ -11,6 +11,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from datetime import timezone as _timezone
+from pathlib import Path
 from urllib.parse import quote
 
 import httpx as _httpx
@@ -3335,6 +3336,121 @@ async def admin_regenerate_transport_quips(event_id: int, request: Request):
         return {"status": "ok", "cleared": cleared}
     finally:
         conn.close()
+
+
+def _photo_dir() -> Path:
+    """Cache-Verzeichnis der Commons-Fotos (im Volume, überlebt Container-Neubauten)."""
+    return Path(get_settings().DB_PATH).parent / "aircraft-photos"
+
+
+@app.get("/api/aircraft/{code}")
+async def aircraft_info_endpoint(request: Request, code: str):
+    """Muster-Infos + Friesen-Zahlen. Liefert IMMER 200 — auch für ein unbekanntes Kürzel,
+    denn die Friesen-Zahlen dazu sind trotzdem echt.
+
+    Der Hintergrund-Abruf wird nur für Codes angestoßen, die im Flugbestand vorkommen (W3).
+    Sonst wäre der Endpunkt ein Verstärker: `curl /api/aircraft/JUNK$i` in einer Schleife
+    legt beliebig viele Zeilen an und feuert Wikimedia-Aufrufe von einer IP, die dort wegen
+    „abuse" schon vorbelastet ist.
+    """
+    from app.database import (
+        flight_type_codes, friesen_numbers, get_aircraft_type, normalize_type_code,
+        resolve_alias, top_pilots,
+    )
+    roh = normalize_type_code(code)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        bekannt = roh in flight_type_codes(conn)
+        ziel = resolve_alias(conn, roh)
+        typ = get_aircraft_type(conn, ziel) or {}
+        zahlen = friesen_numbers(conn, roh)
+        top = top_pilots(conn, roh, limit=3)
+        kutter_row = conn.execute(
+            "SELECT mtow_kg, empty_kg, payload_kg FROM aircraft_payloads WHERE type_code = ?",
+            (ziel,),
+        ).fetchone()
+        # W5.3: hat das ANGEFRAGTE Kürzel eine eigene Zuladungszeile, während wir die des
+        # Ziels anzeigen? Dann weicht die Frachtrechnung von der Anzeige ab — sichtbar machen.
+        hinweis = None
+        if ziel != roh:
+            eigene = conn.execute(
+                "SELECT payload_kg FROM aircraft_payloads WHERE type_code = ?", (roh,)
+            ).fetchone()
+            if eigene is not None:
+                hinweis = (
+                    f"Für {roh} ist eine eigene Zuladung von {round(eigene['payload_kg'])} kg "
+                    f"gepflegt; die FriesenKutter-Frachtrechnung verwendet diese."
+                )
+        alias_of = typ.get("alias_of") if ziel == roh else roh
+    finally:
+        conn.close()
+
+    photo_url = None
+    if typ.get("photo_kind"):
+        photo_url = f"/api/aircraft/{ziel}/photo?v={quote(str(typ.get('updated_at') or ''))}"
+    wiki_url = None
+    if typ.get("wiki_title") and typ.get("wiki_lang"):
+        wiki_url = (f"https://{typ['wiki_lang']}.wikipedia.org/wiki/"
+                    f"{quote(typ['wiki_title'].replace(' ', '_'), safe='')}")
+
+    if bekannt and not typ:
+        # Nur für echte Kürzel: im Hintergrund auflösen, nie synchron im Klickpfad.
+        poller: VatsimPoller | None = getattr(request.app.state, "poller", None)
+        if poller is not None and hasattr(poller, "_resolve_aircraft_type"):
+            asyncio.create_task(poller._resolve_aircraft_type(ziel))
+
+    return {
+        "code": roh,
+        "alias_of": alias_of,
+        "resolved_code": ziel,
+        "name": typ.get("name"),
+        "extract": typ.get("extract"),
+        "wiki_url": wiki_url,
+        "photo_url": photo_url,
+        "photo_credit": typ.get("photo_credit"),
+        "photo_licence": typ.get("photo_licence"),
+        "photo_artist": typ.get("photo_artist"),
+        "photo_source_url": typ.get("photo_source_url"),
+        "state": typ.get("fetch_state") or ("neu" if bekannt else "unbekannt"),
+        "friesen": zahlen,
+        "top": top,
+        "kutter": {
+            "mtow_kg": kutter_row["mtow_kg"] if kutter_row else None,
+            "empty_kg": kutter_row["empty_kg"] if kutter_row else None,
+            "payload_kg": kutter_row["payload_kg"] if kutter_row else None,
+            "eigene_zeile_hinweis": hinweis,
+        },
+    }
+
+
+@app.get("/api/aircraft/{code}/photo")
+async def aircraft_photo(code: str):
+    """Foto eines Musters. Ein Upload (BLOB) gewinnt immer über den Commons-Cache (Datei)."""
+    from app.database import get_aircraft_type, mark_aircraft_type_state, normalize_type_code
+    roh = normalize_type_code(code)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        typ = get_aircraft_type(conn, roh)
+        if not typ or not typ["photo_kind"]:
+            raise HTTPException(status_code=404, detail="Kein Foto")
+        if typ["photo_kind"] == "blob":
+            blob = conn.execute(
+                "SELECT photo_blob FROM aircraft_types WHERE type_code = ?", (roh,)
+            ).fetchone()["photo_blob"]
+            return Response(content=blob, media_type="image/jpeg",
+                            headers={"Cache-Control": "public, max-age=86400"})
+        pfad = _photo_dir() / typ["photo_file"]
+        if not pfad.exists():
+            # W2: 'ok' heißt nicht 'nie wieder' — Zustand zurücksetzen, damit die Nachlese
+            # das Bild neu holt. Das Backup enthält diese Dateien nicht, nur die DB.
+            mark_aircraft_type_state(conn, roh, "neu", datetime.now(_timezone.utc))
+            conn.commit()
+            raise HTTPException(status_code=404, detail="Foto fehlt, wird neu geholt")
+        daten = pfad.read_bytes()
+    finally:
+        conn.close()
+    return Response(content=daten, media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 def _llm_configured() -> bool:
