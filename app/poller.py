@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 from pywebpush import webpush, WebPushException
@@ -383,6 +384,21 @@ class VatsimPoller:
         # _payload_research_attempted-Bug: hier fliegt der Code im finally immer wieder heraus,
         # ein Fehlschlag überlebt weder den Aufruf noch einen Neustart.
         self._payload_research_inflight: set[str] = set()
+        self._AIRCRAFT_INFO_LIMIT = 8      # Muster je Nachlese-Lauf
+        self._photo_dir = Path(self.db_path).parent / "aircraft-photos"
+        # Zweites, unabhängiges In-Flight-Set — gleiche Gefahrenklasse wie oben, andere
+        # Gegenstelle (Wikipedia/Commons statt der LLM-API). aircraft_types.fetch_state entsteht
+        # erst NACH der HTTP-Auflösung, und zwei Auslöser greifen unabhängig voneinander auf
+        # dasselbe Muster zu:
+        #   1. Der Live-Auslöser hängt an den `new_codes` des Poll-Durchlaufs. Deren Kriterium
+        #      ist der Zustand in `payload_research` (Plan A), NICHT in `aircraft_types` —
+        #      solange dort noch kein Endzustand steht, bleibt der Code über viele Polls
+        #      (alle 15 s) in `new_codes` und stiesse jedes Mal eine neue Auflösung an.
+        #   2. Der 10-Minuten-Job wählt nach `aircraft_types.fetch_state`; ein Code, dessen
+        #      Live-Auflösung gerade läuft, steht dort noch auf 'neu' und gilt weiter als fällig.
+        # Wie oben: nur die Laufzeit, kein Ergebnisgedächtnis — im finally fliegt der Code
+        # immer wieder heraus.
+        self._aircraft_info_inflight: set[str] = set()
 
     @staticmethod
     def _now() -> datetime:
@@ -468,6 +484,14 @@ class VatsimPoller:
             "interval",
             seconds=60,
             id="transport_event_check",
+        )
+        # Muster-Infos: einmalig kurz nach Start, danach regelmäßig die fälligen.
+        self._scheduler.add_job(
+            self._resolve_due_aircraft_types, "date", id="aircraft_info_initial",
+        )
+        self._scheduler.add_job(
+            self._resolve_due_aircraft_types, "interval", minutes=10,
+            id="aircraft_info_retry",
         )
         # Event-Erinnerung (~1 h vor Beginn) regelmäßig prüfen
         self._scheduler.add_job(
@@ -939,6 +963,13 @@ class VatsimPoller:
                 if llm.is_configured():
                     for code in new_codes:
                         asyncio.create_task(self._auto_research_payload(code))
+                # Muster-Infos für dieselben neu gesehenen Codes — bewusst NICHT hinter dem
+                # LLM-Key-Gate: Wikipedia/Commons brauchen keinen Key. Dass derselbe Code hier
+                # über viele Polls hintereinander auftaucht (das Kriterium für new_codes ist der
+                # Zustand in payload_research, nicht in aircraft_types), fängt der
+                # In-Flight-Guard in _resolve_aircraft_type ab.
+                for code in new_codes:
+                    asyncio.create_task(self._resolve_aircraft_type(code))
 
             # 4. Prefile-Benachrichtigungen für neu eingereichte/geänderte Flugpläne
             # Nur wenn Pilot NICHT bereits online ist (Prefile = Ankündigung, kein Duplikat)
@@ -1574,6 +1605,220 @@ class VatsimPoller:
                 await self._auto_research_payload(code)   # serialisiert, nie parallel
         except Exception:
             logger.exception("Error in _research_due_payloads")
+
+    def _muster_name(self, conn, code: str) -> str | None:
+        """Name nach Rangfolge: Admin-Korrektur → aircraft_payloads.make_model.
+
+        Die dritte Stufe (LLM-Recherche) füllt `aircraft_payloads` über Teil 8 und wirkt
+        deshalb automatisch über Stufe 2 — hier wird sie nicht separat angestoßen.
+        """
+        from app.aircraft_info import harden_name
+        row = conn.execute(
+            "SELECT name_override, name FROM aircraft_types WHERE type_code = ?", (code,)
+        ).fetchone()
+        if row is not None and row["name_override"]:
+            return harden_name(row["name_override"])
+        p = conn.execute(
+            "SELECT make_model FROM aircraft_payloads WHERE type_code = ?", (code,)
+        ).fetchone()
+        if p is not None and p["make_model"]:
+            return harden_name(p["make_model"])
+        return None
+
+    async def _resolve_aircraft_type(self, type_code: str) -> None:
+        """Muster-Infos für einen Typcode holen und speichern. Silent-Fail nach außen.
+
+        Läuft NIE im Klickpfad: der Aufruf kommt aus dem Poller, der Nachlese oder dem
+        Retry-Job. Der Ausgang landet in ``aircraft_types.fetch_state``.
+
+        Nie propagiert eine Ausnahme nach außen — weder ein DB- noch ein HTTP-Fehler: die
+        Nachlese ruft diese Methode in einer Schleife auf, ein Kandidat darf die übrigen nicht
+        mitreißen, und der Live-Auslöser darf keinen Poll-Durchlauf reißen.
+        """
+        from app import aircraft_info, llm
+        from app.database import (
+            get_aircraft_type, is_retry_due, mark_aircraft_type_state,
+            upsert_aircraft_type_import,
+        )
+        code = normalize_type_code(type_code)
+        if not code:
+            return
+        # In-Flight-Guard: für dasselbe Muster läuft schon eine Auflösung — egal ob vom
+        # Live-Auslöser (jeder Poll, alle 15 s) oder von der 10-Minuten-Nachlese angestoßen.
+        # Der DB-Zustand entsteht erst nach der HTTP-Auflösung und deckt deren Laufzeit nicht ab;
+        # ohne diesen Kurzschluss liefen mehrere gleichzeitige Requests gegen Wikipedia/Commons
+        # für dasselbe Muster (strukturell derselbe Fehler wie der AP32-Kostenbug in Plan A).
+        if code in self._aircraft_info_inflight:
+            logger.debug("Muster-Info %s: Auflösung läuft bereits — kein zweiter Start", code)
+            return
+        self._aircraft_info_inflight.add(code)
+        try:
+            jetzt = self._now()
+            conn = get_connection(self.db_path)
+            try:
+                vorhanden = get_aircraft_type(conn, code)
+                if vorhanden and vorhanden["alias_of"]:
+                    return  # Alias hat keine eigenen Daten
+                if vorhanden and not is_retry_due(
+                    vorhanden["fetch_state"] or "neu", vorhanden["attempts"] or 0,
+                    vorhanden["checked_at"], jetzt,
+                ):
+                    # 'ok', laufender Backoff oder 30-Tage-Sperre — nichts zu tun. Der
+                    # In-Flight-Guard deckt nur GLEICHZEITIGE Läufe ab, nicht die Wiederholung
+                    # beim nächsten Poll: das Kriterium für new_codes ist der Zustand in
+                    # payload_research, nicht in aircraft_types. Ohne ANTHROPIC_API_KEY (ein
+                    # unterstützter Zustand) bleibt payload_research für immer leer, der Code
+                    # stünde bei JEDEM Poll wieder in new_codes — und ohne diese Prüfung liefe
+                    # für jedes fliegende Muster alle 15 s eine komplette Wikipedia-Suche samt
+                    # Foto-Download, von einer bei Wikimedia vorbelasteten IP.
+                    return
+                lemma = conn.execute(
+                    "SELECT wiki_title_override FROM aircraft_types WHERE type_code = ?", (code,)
+                ).fetchone()
+                lemma = lemma["wiki_title_override"] if lemma else None
+                name = self._muster_name(conn, code)
+            except Exception:
+                # DB-Fehler VOR der Auflösung: es fand kein Versuch statt, also auch keinen
+                # Zustand nachschieben (attempts soll nicht steigen). Das Muster gilt beim
+                # nächsten Lauf wieder als offen. Ungefangen risse das die ganze Nachlese.
+                logger.exception("Muster-Info %s: DB-Fehler vor der Auflösung", code)
+                return
+            finally:
+                conn.close()
+
+            if not lemma and not name:
+                # Kein brauchbarer Name (oder nur ein Prosa-Altwert) → nichts zu suchen.
+                conn = get_connection(self.db_path)
+                try:
+                    mark_aircraft_type_state(conn, code, "nichts_gefunden", jetzt)
+                    conn.commit()
+                except Exception:
+                    logger.exception("Muster-Info %s: Zustand konnte nicht gespeichert werden",
+                                     code)
+                finally:
+                    conn.close()
+                return
+
+            try:
+                if lemma:
+                    res = await asyncio.to_thread(
+                        aircraft_info.resolve_title, "de", lemma, aircraft_info.fetch_json
+                    )
+                    if res is None:
+                        res = await asyncio.to_thread(
+                            aircraft_info.resolve_title, "en", lemma, aircraft_info.fetch_json
+                        )
+                else:
+                    res = await asyncio.to_thread(
+                        aircraft_info.resolve_type, name, aircraft_info.fetch_json
+                    )
+                foto_datei = None
+                if res and res.get("photo_url"):
+                    rohdaten = await asyncio.to_thread(
+                        aircraft_info.download_photo, res["photo_url"]
+                    )
+                    self._photo_dir.mkdir(parents=True, exist_ok=True)
+                    foto_datei = f"{code}.jpg"
+                    (self._photo_dir / foto_datei).write_bytes(rohdaten)
+            except Exception as exc:  # noqa: BLE001 — nie einen Job reißen
+                zustand = "fehler" if llm.is_transient_error(exc) else "nichts_gefunden"
+                conn = get_connection(self.db_path)
+                try:
+                    mark_aircraft_type_state(conn, code, zustand, jetzt,
+                                             last_error=str(exc)[:200])
+                    conn.commit()
+                except Exception:
+                    logger.exception("Muster-Info %s: Zustand konnte nicht gespeichert werden",
+                                     code)
+                finally:
+                    conn.close()
+                logger.info("Muster-Info %s: %s (%s)", code, zustand, exc)
+                return
+
+            conn = get_connection(self.db_path)
+            try:
+                if res is None:
+                    mark_aircraft_type_state(conn, code, "nichts_gefunden", jetzt)
+                else:
+                    upsert_aircraft_type_import(
+                        conn, code, now=jetzt,
+                        name=name, name_source="payloads" if name else None,
+                        wiki_lang=res.get("wiki_lang"), wiki_title=res.get("wiki_title"),
+                        extract=res.get("extract"),
+                        photo_file=foto_datei,
+                        photo_licence=res.get("photo_licence"),
+                        photo_artist=res.get("photo_artist"),
+                        photo_source_url=res.get("photo_source_url"),
+                    )
+                    mark_aircraft_type_state(conn, code, "ok", jetzt)
+                conn.commit()
+            except Exception:
+                # Die Auflösung selbst ist gelungen, nur das Schreiben schlug fehl (z. B.
+                # SQLite-Lock-Kontention zwischen Live-Trigger und Nachlese). Kein zweiter
+                # Schreibversuch — der Zustand bleibt offen, das Muster kommt beim nächsten Lauf
+                # wieder dran. Wichtig für _resolve_due_aircraft_types: ungefangen bräche das die
+                # Nachlese für die ÜBRIGEN Kandidaten ab, nicht nur für diesen einen.
+                logger.exception("Muster-Info %s: Ergebnis konnte nicht gespeichert werden", code)
+            finally:
+                conn.close()
+        finally:
+            # Garantiert auf JEDEM Rückgabepfad (Alias, kein Name, Fehler, nichts_gefunden, ok,
+            # Cancel) — sonst bliebe das Muster für die restliche Prozesslaufzeit gesperrt.
+            self._aircraft_info_inflight.discard(code)
+
+    async def _requeue_missing_photos(self) -> None:
+        """Zustand zurücksetzen, wo die Fotodatei fehlt.
+
+        Rev. 2 (W2): ``rm -rf data/aircraft-photos/`` ist laut Spec eine legitime Reparatur,
+        und das nächtliche Backup enthält die Dateien nicht (nur die DB). Ohne diesen Schritt
+        sagt die DB ``photo_file`` gesetzt, die Datei fehlt, und ``fetch_state='ok'`` sorgt
+        dafür, dass nie wieder etwas nachgeladen wird.
+        """
+        from app.database import mark_aircraft_type_state
+        conn = get_connection(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT type_code, photo_file FROM aircraft_types "
+                "WHERE photo_file IS NOT NULL AND photo_file != ''"
+            ).fetchall()
+            jetzt = self._now()
+            for r in rows:
+                if not (self._photo_dir / r["photo_file"]).exists():
+                    mark_aircraft_type_state(conn, r["type_code"], "neu", jetzt)
+            conn.commit()
+        finally:
+            conn.close()
+
+    async def _resolve_due_aircraft_types(self) -> None:
+        """Nachlese über fällige Muster — serialisiert, gedeckelt."""
+        try:
+            from app.database import aircraft_type_candidates
+            try:
+                await self._requeue_missing_photos()
+            except Exception:
+                # Nur eine Reparaturmaßnahme — schlägt sie fehl, ist das kein Grund, die
+                # eigentliche Nachlese ausfallen zu lassen.
+                logger.exception("Muster-Infos: Requeue fehlender Fotos fehlgeschlagen")
+            jetzt = self._now()
+            conn = get_connection(self.db_path)
+            try:
+                codes = aircraft_type_candidates(conn, jetzt, limit=self._AIRCRAFT_INFO_LIMIT)
+            finally:
+                conn.close()
+            if not codes:
+                return
+            logger.info("Muster-Infos: %d Muster (%s)", len(codes), ", ".join(codes))
+            for code in codes:
+                # Fehler-Isolation je Kandidat: _resolve_aircraft_type fängt selbst alles ab,
+                # dieses try ist das Netz für alles Unvorhergesehene. Ein `except Exception` nur
+                # um die ganze Schleife herum würde beim ersten Ausrutscher die übrigen Muster
+                # stillschweigend ausfallen lassen.
+                try:
+                    await self._resolve_aircraft_type(code)   # serialisiert, nie parallel
+                except Exception:
+                    logger.exception("Muster-Info %s: Kandidat übersprungen", code)
+        except Exception:
+            logger.exception("Error in _resolve_due_aircraft_types")
 
     async def _check_event_reminders(self) -> None:
         """Periodisch (~5 min): FriesenEvents, Bummel-Rennen und Kutter-Events, die in ~1 h

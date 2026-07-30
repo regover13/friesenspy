@@ -283,6 +283,27 @@ def resolve_type(name: str, fetch) -> dict | None:
     return None
 
 
+def resolve_title(lang: str, titel: str, fetch) -> dict | None:
+    """Einen **vorgegebenen** Artikeltitel auflösen — ohne Suche und ohne Trefferprüfung.
+
+    Für ein Admin-gesetztes Lemma: das ist eine bewusste menschliche Entscheidung und braucht
+    die Heuristik nicht. Liefert ``None``, wenn der Artikel nicht existiert.
+    """
+    summary = fetch(_summary_url(lang, titel)) or {}
+    if not summary.get("extract"):
+        return None
+    echter = summary.get("title") or titel
+    ergebnis = {
+        "wiki_lang": lang, "wiki_title": echter, "extract": summary.get("extract"),
+        "photo_commons_title": None, "photo_url": None, "photo_licence": None,
+        "photo_artist": None, "photo_source_url": None,
+    }
+    bild = _waehle_bild(lang, echter, fetch)
+    if bild:
+        ergebnis.update(bild)
+    return ergebnis
+
+
 # --- HTTP-Schicht mit User-Agent und Fehlerklassifikation -------------------
 
 class WikimediaError(Exception):
