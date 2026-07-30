@@ -545,6 +545,30 @@ Die Anthropic-API war überladen. `suggest_aircraft_payload()` fängt das ab und
 `TL20`, `PIVI`), gemessen auf `aircraft_icao`. Auf der maßgeblichen Spalte sind es **33 Kürzel mit
 74 Flügen**, u. a. `P28S` (11), `NAV` (5), `AP32` (5), `PA60` (3), `M20T` (3), `FK9` (3).
 
+**Warum 33 — und warum das kein Pflegeversäumnis ist.** Die Auto-Recherche existiert erst seit dem
+**2026-07-02** (`b8b9926`, v7.4.0) und wird ausschließlich durch ein **live gesehenes** Muster
+ausgelöst. Aufgeteilt nach dem letzten Flug:
+
+| | Kürzel | Flüge |
+|---|---|---|
+| zuletzt geflogen **vor** dem 2026-07-02 | **30** | 66 |
+| zuletzt geflogen **seit** dem 2026-07-02 | **3** | 8 |
+
+Die 30 sind der Langschwanz aus den 15 Monaten **vor** der Funktion (Januar 2025 – Juni 2026),
+im Schnitt 2,2 Flüge je Kürzel — für sie hat die Recherche nie eine Chance gehabt. Die 3 sind die
+echten Fehlschläge der laufenden Funktion: `AP32`, `PC21`, `PIVI`. **Genau das ist die Begründung
+für die Nachlese** — ohne sie bleibt der Altbestand dauerhaft unerreichbar, egal wie gut der
+Retry funktioniert.
+
+Zwei Zahlen, die das Bild vervollständigen:
+
+- **63 der 119 Zuladungseinträge** gehören zu Mustern, die nie geflogen wurden. Die Tabelle wurde
+  vorwärts kuratiert, nicht aus dem Flugbestand aufgebaut — „119 Einträge" und „33 Lücken"
+  widersprechen sich deshalb nicht, es sind zwei Mengen mit Überschneidung.
+- **Vier der 33 sind keine Flugzeuge:** `NAV` (5 Flüge), `AERO` (2), `F22` (1), `182` (1). Netto
+  sind **29 Kürzel** recherchierbar, also ~1,20 €. Sie werden dauerhaft als
+  `nichts_gefunden` enden — das ist der richtige Zustand für sie, kein Fehler.
+
 **Was die Nachlese kostet** — Rev. 1 nannte sie „billig", ohne eine Zahl. Laut `docs/architecture.md:202`
 (dort gemessen): **~4 ct und ~30 s je Recherche**. Für 33 Kürzel also **~1,30 € und ~17 min**,
 serialisiert. Unkritisch, aber nicht kostenlos, und **nur serialisiert** — dieselbe Doku hält fest,
