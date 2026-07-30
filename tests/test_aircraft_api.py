@@ -1,6 +1,7 @@
 """Endpunkte des Muster-Panels."""
 from __future__ import annotations
 
+import io
 import time
 from datetime import datetime, timezone
 
@@ -198,3 +199,134 @@ def test_photo_url_traegt_versionsparameter(client):
 def test_kein_foto_liefert_photo_url_none(client):
     _flug(client.db, 1, "IMPU")
     assert client.get("/api/aircraft/IMPU").json()["photo_url"] is None
+
+
+@pytest.fixture
+def admin(client, monkeypatch):
+    """Admin-Sitzung — require_admin/require_confirm werden überbrückt."""
+    from app import main
+    monkeypatch.setattr(main, "require_admin", lambda request: None)
+    monkeypatch.setattr(main, "require_confirm", lambda request: None)
+    return client
+
+
+def _jpeg(breite=2000, hoehe=1200, mit_exif=True) -> bytes:
+    """Testbild, optional mit echten GPS-EXIF-Daten (0x8825 = GPSInfo-Sub-IFD).
+
+    Pillow >= 10 verlangt fuer 0x8825 ein echtes Sub-IFD (ueber ``get_ifd``), kein rohes
+    Bytes-Objekt -- ein direktes ``exif[0x8825] = b"GPS"`` wirft beim Speichern
+    ``AttributeError: 'Exif' object has no attribute 'fp'`` (gegen Pillow 12.3.0 verifiziert).
+    Der Sub-IFD-Weg liefert dasselbe Testziel: ein Bild mit echten GPS-Koordinaten im EXIF.
+    """
+    from PIL import Image
+    img = Image.new("RGB", (breite, hoehe), (10, 20, 30))
+    buf = io.BytesIO()
+    if mit_exif:
+        exif = img.getexif()
+        gps_ifd = exif.get_ifd(0x8825)  # GPSInfo — genau das, was nicht in die DB soll
+        gps_ifd[1] = "N"                # GPSLatitudeRef
+        gps_ifd[2] = (53.0, 30.0, 0.0)  # GPSLatitude
+        img.save(buf, format="JPEG", exif=exif)
+    else:
+        img.save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def test_upload_wird_neu_kodiert_verkleinert_und_exif_frei(admin):
+    from PIL import Image
+    from app.database import get_aircraft_type, get_connection
+    _flug(admin.db, 1, "C172")
+    r = admin.post("/api/admin/aircraft-types/C172/photo",
+                   files={"file": ("cockpit.jpg", _jpeg(), "image/jpeg")})
+    assert r.status_code == 200
+    conn = get_connection(admin.db)
+    blob = conn.execute("SELECT photo_blob FROM aircraft_types WHERE type_code='C172'"
+                        ).fetchone()["photo_blob"]
+    assert get_aircraft_type(conn, "C172")["photo_kind"] == "blob"
+    conn.close()
+    img = Image.open(io.BytesIO(blob))
+    assert img.width <= 1280
+    assert not dict(img.getexif()), "EXIF nicht entfernt — GPS landet in der DB"
+
+
+def test_kein_bild_wird_abgelehnt(admin):
+    _flug(admin.db, 1, "C172")
+    r = admin.post("/api/admin/aircraft-types/C172/photo",
+                   files={"file": ("boese.jpg", b"<html>kein Bild</html>", "image/jpeg")})
+    assert r.status_code == 400
+
+
+def test_zu_gross_wird_abgelehnt(admin):
+    _flug(admin.db, 1, "C172")
+    r = admin.post("/api/admin/aircraft-types/C172/photo",
+                   files={"file": ("gross.jpg", b"x" * (8 * 1024 * 1024 + 1), "image/jpeg")})
+    assert r.status_code == 413
+
+
+def test_dateiname_kommt_aus_dem_typcode(admin):
+    """Pfad-Traversal ist keine Pruef-, sondern eine Unmoeglichkeitsfrage."""
+    _flug(admin.db, 1, "C172")
+    r = admin.post("/api/admin/aircraft-types/C172/photo",
+                   files={"file": ("../../etc/passwd", _jpeg(100, 100), "image/jpeg")})
+    assert r.status_code == 200
+    from app.database import get_connection
+    conn = get_connection(admin.db)
+    row = conn.execute("SELECT photo_file, photo_override FROM aircraft_types "
+                       "WHERE type_code='C172'").fetchone()
+    conn.close()
+    assert row["photo_override"] == "blob"
+    assert row["photo_file"] is None or ".." not in (row["photo_file"] or "")
+
+
+def test_override_setzen_und_leeren(admin):
+    from app.database import get_aircraft_type, get_connection, upsert_aircraft_type_import
+    conn = get_connection(admin.db)
+    upsert_aircraft_type_import(conn, "C172", name="Cessna 172", now=T0)
+    conn.commit()
+    conn.close()
+    admin.post("/api/admin/aircraft-types", json={"type_code": "C172", "name": "Unsere Rote"})
+    conn = get_connection(admin.db)
+    assert get_aircraft_type(conn, "C172")["name"] == "Unsere Rote"
+    conn.close()
+    admin.post("/api/admin/aircraft-types", json={"type_code": "C172", "name": ""})
+    conn = get_connection(admin.db)
+    assert get_aircraft_type(conn, "C172")["name"] == "Cessna 172"
+    conn.close()
+
+
+def test_ungueltiger_alias_wird_mit_400_abgelehnt(admin):
+    r = admin.post("/api/admin/aircraft-types",
+                   json={"type_code": "P24", "alias_of": "P24"})
+    assert r.status_code == 400
+    admin.post("/api/admin/aircraft-types", json={"type_code": "P24", "alias_of": "PA24"})
+    r = admin.post("/api/admin/aircraft-types",
+                   json={"type_code": "PA24", "alias_of": "X"})
+    assert r.status_code == 400, "Kette in der anderen Reihenfolge wurde zugelassen"
+
+
+def test_liste_zeigt_import_und_korrektur_getrennt(admin):
+    from app.database import (get_connection, set_aircraft_type_override,
+                              upsert_aircraft_type_import)
+    conn = get_connection(admin.db)
+    upsert_aircraft_type_import(conn, "C172", name="Cessna 172", now=T0)
+    set_aircraft_type_override(conn, "C172", name="Unsere Rote", now=T0)
+    conn.commit()
+    conn.close()
+    d = admin.get("/api/admin/aircraft-types").json()
+    row = next(r for r in d["types"] if r["type_code"] == "C172")
+    assert row["name"] == "Cessna 172"
+    assert row["name_override"] == "Unsere Rote"
+    assert "fetch_state" in row and "checked_at" in row and "attempts" in row
+
+
+def test_liste_zeigt_auch_den_zuladungs_recherchezustand(admin):
+    """Teil 8 hat absichtlich keine UI — sichtbar wird der Zustand hier."""
+    from app.database import get_connection, mark_payload_research
+    conn = get_connection(admin.db)
+    mark_payload_research(conn, "AP32", "fehler", T0, last_error="Overloaded")
+    conn.commit()
+    conn.close()
+    d = admin.get("/api/admin/aircraft-types").json()
+    row = next(r for r in d["types"] if r["type_code"] == "AP32")
+    assert row["payload_state"] == "fehler"
+    assert row["payload_last_error"] == "Overloaded"
