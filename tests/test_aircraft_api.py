@@ -330,3 +330,39 @@ def test_liste_zeigt_auch_den_zuladungs_recherchezustand(admin):
     row = next(r for r in d["types"] if r["type_code"] == "AP32")
     assert row["payload_state"] == "fehler"
     assert row["payload_last_error"] == "Overloaded"
+
+
+def test_liste_fasst_zuladung_und_recherche_ohne_types_zeile_zusammen(admin):
+    """Rev. 3 (I1): der NORMALE Zustand direkt nach jeder Plan-A-Recherche.
+
+    aircraft_payloads UND payload_research haben eine Zeile, aircraft_types noch nicht (bis der
+    10-Minuten-Job nachzieht). Weil die payload_research-Seite nur gegen `t.type_code` jointe,
+    fielen daraus ZWEI Zeilen fuer dasselbe Muster heraus -- eine mit den Zuladungsdaten, eine
+    mit dem Recherche-Zustand.
+    """
+    from app.database import get_connection, mark_payload_research, upsert_payload
+    conn = get_connection(admin.db)
+    upsert_payload(conn, "AP32", mtow_kg=600.0, empty_kg=300.0, fuel_kg=50.0,
+                   fuel_full_kg=60.0, crew_kg=85.0, source="llm",
+                   make_model="Aquila A211")
+    mark_payload_research(conn, "AP32", "ok", T0)
+    conn.commit()
+    conn.close()
+    zeilen = [r for r in admin.get("/api/admin/aircraft-types").json()["types"]
+              if r["type_code"] == "AP32"]
+    assert len(zeilen) == 1, f"Muster doppelt in der Liste: {zeilen}"
+    assert zeilen[0]["make_model"] == "Aquila A211"
+    assert zeilen[0]["payload_state"] == "ok"
+
+
+def test_liste_zeigt_auch_reine_flug_codes(admin):
+    """Rev. 3 (I1): ein Code, der nur in flight_cache steht, hatte keine Basiszeile zum
+    Anhaengen und erschien nie -- `f.code` im COALESCE war toter Code. Genau diese Muster sind
+    aber die interessanten: geflogen, aber noch ohne jede Info."""
+    _flug(admin.db, 1, "FK9")
+    _flug(admin.db, 2, "FK9", "2026-07-02T10:00:00Z")
+    zeilen = [r for r in admin.get("/api/admin/aircraft-types").json()["types"]
+              if r["type_code"] == "FK9"]
+    assert len(zeilen) == 1, f"Flug-only-Code fehlt oder ist doppelt: {zeilen}"
+    assert zeilen[0]["fluege"] == 2
+    assert zeilen[0]["fetch_state"] is None and zeilen[0]["payload_state"] is None

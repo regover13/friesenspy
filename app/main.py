@@ -3471,6 +3471,16 @@ async def admin_aircraft_types(request: Request):
     conn = get_connection(get_settings().DB_PATH)
     try:
         rows = conn.execute(
+            # Vier Quellen, vier gleichberechtigte Schlüsselmengen — deshalb DREI FULL OUTER
+            # JOINs und jeweils COALESCE über ALLE schon verbundenen Seiten in der ON-Bedingung
+            # (Rev. 3, I1). Vorher hing sowohl `r` als auch die Flugzahl nur an `t.type_code`:
+            #   - ein Muster mit aircraft_payloads- UND payload_research-Zeile, aber noch ohne
+            #     aircraft_types-Zeile (der NORMALE Zustand nach jeder Plan-A-Recherche, bis der
+            #     10-Minuten-Job nachzieht) erschien als ZWEI Zeilen — eine mit den
+            #     Zuladungsdaten, eine mit dem Recherche-Zustand;
+            #   - ein Code, der nur in flight_cache steht, erschien nie, weil die Flugzahl per
+            #     LEFT JOIN angehängt wurde und es für ihn keine Basiszeile gab (`f.code` im
+            #     COALESCE war toter Code).
             f"""SELECT COALESCE(t.type_code, p.type_code, r.type_code, f.code) AS type_code,
                        t.alias_of, t.name, t.name_override, t.extract, t.extract_override,
                        t.wiki_title, t.wiki_title_override, t.wiki_lang,
@@ -3483,8 +3493,9 @@ async def admin_aircraft_types(request: Request):
                        COALESCE(f.n, 0) AS fluege
                   FROM aircraft_types t
                   FULL OUTER JOIN aircraft_payloads p ON p.type_code = t.type_code
-                  FULL OUTER JOIN payload_research  r ON r.type_code = t.type_code
-                  LEFT JOIN (SELECT {FLIGHT_TYPE_CODE_SQL} AS code, COUNT(*) AS n
+                  FULL OUTER JOIN payload_research  r
+                         ON r.type_code = COALESCE(t.type_code, p.type_code)
+                  FULL OUTER JOIN (SELECT {FLIGHT_TYPE_CODE_SQL} AS code, COUNT(*) AS n
                                FROM flight_cache
                               WHERE COALESCE(NULLIF(aircraft_icao,''), aircraft) IS NOT NULL
                                 AND COALESCE(NULLIF(aircraft_icao,''), aircraft) != ''
