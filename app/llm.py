@@ -16,6 +16,8 @@ import json
 import logging
 import math
 
+from app.aircraft_info import harden_name
+
 logger = logging.getLogger(__name__)
 
 # Spec-Lookup auf Haiku 4.5 (Nutzer-Entscheidung 2026-07-02: ~4 ct statt ~7 ct pro Recherche;
@@ -317,7 +319,18 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
             code, mtow, empty, fuel_full,
         )
         return None
-    return _build_result(str(spec.get("make_model") or code), mtow, empty, fuel_full)
+    # Die Schema-Vorgabe für make_model ist nur {"type": "string"} -- ohne Laengengrenze.
+    # Live-Befund MR20: bei mehreren M20-Varianten ohne eindeutigen Favoriten schrieb das
+    # Modell seine Unsicherheit als 1063-Zeichen-Prosaabsatz IN dieses Feld statt eines
+    # Namens (die Zahlen selbst waren brauchbar, nur make_model nicht). harden_name() (siehe
+    # dort) verwirft genau das schon beim LESEN in _muster_name() -- hier auf der SCHREIBSEITE
+    # dieselbe Haertung, sonst landet der Prosa-Absatz erst in aircraft_payloads (persistiert,
+    # im Admin sichtbar als "Vorschlag") und blockiert von dort aus jede erneute Recherche
+    # (_auto_research_payload ueberspringt Codes mit bestehender Zeile), ohne dass
+    # payload_research je einen Endzustand bekommt -- ein Muster bliebe damit dauerhaft
+    # Kandidat in der Nachlese, ohne je einen Namen zu zeigen.
+    make_model = harden_name(spec.get("make_model")) or code
+    return _build_result(make_model, mtow, empty, fuel_full)
 
 
 # ---------------------------------------------------------------------------

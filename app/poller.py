@@ -1643,8 +1643,8 @@ class VatsimPoller:
         """
         from app import aircraft_info, llm
         from app.database import (
-            get_aircraft_type, get_payload_research, is_retry_due, mark_aircraft_type_state,
-            upsert_aircraft_type_import,
+            get_aircraft_type, get_payload_map, get_payload_research, is_retry_due,
+            mark_aircraft_type_state, upsert_aircraft_type_import,
         )
         code = normalize_type_code(type_code)
         if not code:
@@ -1689,6 +1689,18 @@ class VatsimPoller:
                 # `_auto_research_payload` schreibt make_model und den 'ok'-Zustand in EINEM
                 # Commit; wer 'ok' sieht, sieht deshalb auch den Namen.
                 payload_zustand = get_payload_research(conn, code)
+                # Eine bereits vorhandene aircraft_payloads-Zeile (gleich welcher Quelle) heisst
+                # ZUSAETZLICH "fertig", auch OHNE Endzustand in payload_research: dessen eigener
+                # "inzwischen (manuell) gepflegt"-Kurzschluss (`if code in get_payload_map(conn):
+                # return`) greift ab der ERSTEN Zeile und ruehrt das Muster dann nie wieder an --
+                # ein 'ok'/'nichts_gefunden' in payload_research kaeme fuer 'manual'/'curated'-
+                # Zeilen und fuer ueber den Admin-Knopf gespeicherte LLM-Vorschlaege NIE, das
+                # waren beides Wege AUSSERHALB von _auto_research_payload. Ohne diese zweite
+                # Quelle bliebe so ein Muster fuer immer Kandidat der Nachlese (reale
+                # Beobachtung: MR20, Admin-Speicherung 2026-07-26 mit einem 1063-Zeichen-Prosa-
+                # make_model, das harden_name() zu Recht verwirft -- und ohne diese Zeile hier
+                # zu jedem der folgenden 10-Minuten-Laeufe erneut als einziger Kandidat).
+                hat_zuladungszeile = code in get_payload_map(conn)
                 name = self._muster_name(conn, code)
             except Exception:
                 # DB-Fehler VOR der Auflösung: es fand kein Versuch statt, also auch keinen
@@ -1727,7 +1739,7 @@ class VatsimPoller:
                 zustand_offen = (
                     payload_zustand is None
                     or (payload_zustand.get("state") not in ("ok", "nichts_gefunden"))
-                )
+                ) and not hat_zuladungszeile
                 if zustand_offen:
                     logger.debug(
                         "Muster-Info %s: noch kein Name, Zuladungs-Recherche noch offen (%s) "

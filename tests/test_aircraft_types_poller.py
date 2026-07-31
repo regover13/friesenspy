@@ -510,6 +510,36 @@ async def test_endgueltig_ohne_namen_wird_weiterhin_gesperrt(db, tmp_path, monke
 
 
 @pytest.mark.asyncio
+async def test_zuladungszeile_ohne_payload_research_wird_trotzdem_abgeschlossen(
+    db, tmp_path, monkeypatch
+):
+    """Realer Fund (MR20, 2026-07-26): eine manuell/per Admin-Knopf gespeicherte
+    aircraft_payloads-Zeile geht NIE durch _auto_research_payload (dessen eigener
+    "inzwischen (manuell) gepflegt"-Kurzschluss greift ab der ersten Zeile) -- payload_research
+    bekommt fuer sie deshalb NIE einen Endzustand. War make_model dazu unbrauchbar (hier: ein
+    Prosa-Absatz, den harden_name() verwirft, wie MR20s echter 1063-Zeichen-Wert), blieb das
+    Muster ohne den hat_zuladungszeile-Fallback fuer immer 'offen' -- jeder Nachlese-Lauf griff
+    es erneut auf, ohne je 'nichts_gefunden' zu erreichen."""
+    from app import aircraft_info
+    from app.database import get_payload_research
+    _flug(db, 1, "MR20")
+    _name_hinterlegen(db, "MR20", "M" * 200)  # zu lang fuer harden_name (MAX_NAME_LEN=80)
+    assert get_payload_research(get_connection(db), "MR20") is None, \
+        "Testaufbau: payload_research darf hier KEINE Zeile haben (der reale Fehlerfall)"
+    p = _poller(db, tmp_path)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+    gesucht: list[str] = []
+    monkeypatch.setattr(aircraft_info, "resolve_type",
+                        lambda name, fetch: gesucht.append(name) or None)
+    await p._resolve_aircraft_type("MR20")
+    assert gesucht == [], "der zu lange Name darf nie an die Suche gehen"
+    zeile = get_aircraft_type(get_connection(db), "MR20")
+    assert zeile is not None and zeile["fetch_state"] == "nichts_gefunden", \
+        "ohne payload_research-Endzustand, aber MIT aircraft_payloads-Zeile muss die " \
+        "Aufloesung trotzdem abschliessen, statt fuer immer 'offen' zu bleiben"
+
+
+@pytest.mark.asyncio
 async def test_admin_lemma_gilt_auch_ohne_namen(db, tmp_path, monkeypatch):
     """Ein gesetztes Lemma ist eine menschliche Entscheidung -- es braucht keinen Namen und
     darf von der C2-Pruefung nicht mit blockiert werden."""

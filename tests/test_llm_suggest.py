@@ -151,6 +151,32 @@ class TestSuggestHardening:
         assert calls["stream_kwargs"]["model"] == "claude-haiku-4-5"
         assert "effort" not in calls["stream_kwargs"]["output_config"]
 
+    def test_zu_langer_make_model_faellt_auf_den_code_zurueck(self):
+        """Realer Fund (MR20): ohne Laengengrenze im Schema schrieb das Modell bei mehreren
+        M20-Varianten ohne eindeutigen Favoriten seine Unsicherheit als 1063-Zeichen-
+        Prosaabsatz IN make_model statt eines Namens -- die Zahlen selbst waren brauchbar.
+        harden_name() (dieselbe Haertung wie beim LESEN in _muster_name) verwirft das hier
+        auf der SCHREIBSEITE, sonst landet der Prosa-Absatz dauerhaft in aircraft_payloads."""
+        from app import llm
+        spec = json.dumps({
+            "make_model": "M" * 200,
+            "mtow_kg": 1168.0, "empty_kg": 693.0, "fuel_full_kg": 142.0,
+        })
+        calls: dict = {}
+        fake = _fake_anthropic([_Resp("end_turn", spec)], calls)
+        with patch.dict(sys.modules, {"anthropic": fake}):
+            result = llm.suggest_aircraft_payload("MR20")
+        assert result is not None
+        assert result["make_model"] == "MR20", \
+            "zu langer make_model muss auf den Typcode zurueckfallen, nicht durchgereicht werden"
+
+    def test_normaler_make_model_bleibt_unangetastet(self):
+        from app import llm
+        fake = _fake_anthropic([_Resp("end_turn", self.SPEC)], {})
+        with patch.dict(sys.modules, {"anthropic": fake}):
+            result = llm.suggest_aircraft_payload("C172")
+        assert result["make_model"] == "Test"
+
     def test_pause_loop_respects_total_budget(self, monkeypatch):
         """Erschöpftes Gesamtbudget beendet die Fortsetzungsschleife — kein Endlos-Drehen.
 
