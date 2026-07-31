@@ -7,6 +7,7 @@ import pytest
 
 from app.database import (
     aircraft_type_candidates,
+    all_type_stats,
     flight_type_codes,
     friesen_numbers,
     get_aircraft_type,
@@ -187,6 +188,48 @@ def test_top_piloten(conn):
     assert top[0]["n"] == 3
     assert top[0]["callsign"] == "FRS96"
     assert top[1]["n"] == 1
+
+
+# --- Musterliste (all_type_stats) --------------------------------------------
+
+def test_musterliste_sortiert_meistgeflogenes_zuerst(conn):
+    for i in range(3):
+        _flug(conn, i, "C172", "C172", f"2026-07-0{i+1}T10:00:00Z")
+    _flug(conn, 10, None, "PA24", "2025-01-01T10:00:00Z")
+    conn.commit()
+    upsert_aircraft_type_import(conn, "C172", name="Cessna 172", now=T0)
+    upsert_aircraft_type_import(conn, "PA24", name="Piper PA-24 Comanche", now=T0)
+    out = all_type_stats(conn)
+    assert [r["code"] for r in out] == ["C172", "PA24"]
+    assert out[0]["name"] == "Cessna 172"
+    assert out[0]["fluege"] == 3
+    assert out[0]["piloten"] == 3
+
+
+def test_musterliste_faltet_alias_auf_ziel_ohne_doppelzeile(conn):
+    """Wie friesen_numbers(): ein Alias-Kuerzel im Flugbestand darf keine eigene Zeile
+    bekommen, sonst zaehlen dieselben Fluege zweimal in der Liste."""
+    _flug(conn, 1, None, "PA24", "2025-01-01T10:00:00Z")
+    _flug(conn, 2, None, "P24", "2025-10-26T10:00:00Z")
+    conn.commit()
+    set_aircraft_type_override(conn, "P24", alias_of="PA24", now=T0)
+    out = all_type_stats(conn)
+    assert [r["code"] for r in out] == ["PA24"]
+    assert out[0]["fluege"] == 2
+
+
+def test_musterliste_ohne_flugbestand_ist_leer(conn):
+    assert all_type_stats(conn) == []
+
+
+def test_musterliste_kuerzel_ohne_namen_bleibt_mit_none_drin(conn):
+    """Ein Muster ohne Beschreibung gehoert trotzdem in die Liste -- die Fluege sind echt,
+    auch wenn (noch) niemand einen Namen dazu recherchiert hat."""
+    _flug(conn, 1, "AP32", "AP32", "2026-07-25T10:00:00Z")
+    conn.commit()
+    out = all_type_stats(conn)
+    assert out == [{"code": "AP32", "name": None, "fluege": 1,
+                     "stunden": 1.0, "nm": 100.0, "piloten": 1}]
 
 
 # --- Kandidaten und Bestand -------------------------------------------------

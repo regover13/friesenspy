@@ -1979,7 +1979,22 @@
   </div>
 </div>
 
-<!-- Muster-Info-Panel -->
+<!-- Musterliste-Modal (Statistiken-Tab: Kachel "Häufigstes Muster") -->
+<div id="types-modal" class="fp-modal-overlay hidden">
+  <div class="fp-modal-box" onclick="event.stopPropagation()">
+    <div class="fp-modal-header">
+      <span class="fp-callsign-title">Alle Muster</span>
+      <button class="btn-share" style="margin-left:auto; margin-right:12px;" onclick="copyTypesShareUrl(this)">⎘ Teilen</button>
+      <button class="fp-close-btn" onclick="closeTypesModal()">✕</button>
+    </div>
+    <div class="fp-section" id="types-modal-body"></div>
+  </div>
+</div>
+
+<!-- Muster-Info-Panel: MUSS nach #types-modal im DOM stehen -- gleicher z-index (10000),
+     ein Klick auf ein Muster-Kuerzel IN der Liste oeffnet #ac-modal darueber, das geht nur,
+     weil es hier spaeter im Dokument steht (Stapelreihenfolge bei gleichem z-index folgt
+     der DOM-Position). Bereits vorher fuer #fp-modal so geloest, gleiches Prinzip. -->
 <div id="ac-modal" class="modal">
   <div class="modal-box" onclick="event.stopPropagation()">
     <div class="ac-topbar">
@@ -4483,6 +4498,7 @@ async function fetchStats(_isRetry = false) {
     const data = await res.json();
     renderStatsTable(data, Number(days));
     fetchSpecialEventStats(Number(days));
+    fetchTypeStats();
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden der Statistiken</div></div>`;
   }
@@ -4739,7 +4755,7 @@ function renderStatsSummary(stats, days) {
 
   return `
     <p class="stats-kpi-note" style="margin-bottom:8px;">Nur Flüge mit FRS*-Callsign · nur abgeschlossene Flüge · FriesenSpy-Aufzeichnungen + StatSim-Daten</p>
-    <div class="stats-kpi-row">
+    <div class="stats-kpi-row" id="stats-kpi-row">
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${stats.length}</span>
         <span class="stats-kpi-label">Piloten</span>
@@ -4770,6 +4786,141 @@ function renderStatsSummary(stats, days) {
       </div>
     </div>
     `;
+}
+
+// ==========================================================================
+//  MUSTERLISTE (Statistiken-Tab: Kachel "Häufigstes Muster" + Detail-Modal)
+// ==========================================================================
+// Zwischenspeicher aller Muster-Kennzahlen -- lebt unabhaengig vom Zeitraum-Filter der
+// Statistiken-Uebersicht (all_type_stats() ist wie das Muster-Panel selbst eine
+// Gesamtzahl seit je, kein days-Fenster).
+let _typeStats    = null;
+let _typesSortBy  = 'fluege';
+let _typesSortDir = 'desc';
+
+async function fetchTypeStats() {
+  try {
+    const res = await fetch('/api/aircraft-types/stats');
+    _typeStats = res.ok ? await res.json() : [];
+  } catch (e) {
+    _typeStats = [];
+  }
+  renderTopMusterCard();
+}
+
+// Haengt sich als eigene Kachel HINTER "Aktivster Pilot" in dieselbe KPI-Reihe --
+// asynchron nachgeladen (eigener Endpoint), deshalb per DOM-Insert statt als Teil des
+// synchronen renderStatsSummary()-Strings. Bei jedem Neu-Render der Uebersicht (Zeitraum-
+// Wechsel) baut renderStatsSummary() die Reihe komplett neu auf, die alte Kachel wird
+// deshalb zuerst entfernt statt doppelt eingehaengt.
+function renderTopMusterCard() {
+  const row = document.getElementById('stats-kpi-row');
+  const old = document.getElementById('stats-kpi-topmuster');
+  if (old) old.remove();
+  if (!row || !_typeStats || !_typeStats.length) return;
+  const top = _typeStats[0];
+  const card = document.createElement('div');
+  card.id = 'stats-kpi-topmuster';
+  card.className = 'stats-kpi-card';
+  card.style.cssText = 'min-width:160px;cursor:pointer;';
+  card.onclick = () => openTypesModal();
+  card.innerHTML =
+    `<span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(top.name || top.code)}</span>
+     <span class="stats-kpi-label">Häufigstes Muster (${top.fluege} Flüge) →</span>`;
+  row.appendChild(card);
+}
+
+function _typesSortIndicator(field) {
+  if (_typesSortBy !== field) return '<span style="opacity:0.3"> ⇅</span>';
+  return _typesSortDir === 'asc' ? ' ▲' : ' ▼';
+}
+
+function _typesSortClick(field) {
+  if (_typesSortBy === field) {
+    _typesSortDir = _typesSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _typesSortBy  = field;
+    _typesSortDir = field === 'name' ? 'asc' : 'desc';
+  }
+  renderTypesModalBody();
+}
+
+function renderTypesModalBody() {
+  const body = document.getElementById('types-modal-body');
+  if (!_typeStats || !_typeStats.length) {
+    body.innerHTML = '<div class="empty-hint">Noch keine Flugdaten.</div>';
+    return;
+  }
+  const field = _typesSortBy;
+  const dir   = _typesSortDir === 'asc' ? 1 : -1;
+  const rows  = _typeStats.slice().sort((a, b) => field === 'name'
+    ? dir * String(a.name || a.code).localeCompare(String(b.name || b.code))
+    : dir * ((a[field] || 0) - (b[field] || 0)));
+  let h = `<div class="table-scroll"><table><thead><tr>
+    <th style="cursor:pointer;" onclick="_typesSortClick('name')">Muster${_typesSortIndicator('name')}</th>
+    <th style="cursor:pointer;" onclick="_typesSortClick('fluege')">Flüge${_typesSortIndicator('fluege')}</th>
+    <th style="cursor:pointer;" onclick="_typesSortClick('stunden')">Stunden${_typesSortIndicator('stunden')}</th>
+    <th style="cursor:pointer;" onclick="_typesSortClick('nm')">nm${_typesSortIndicator('nm')}</th>
+    <th style="cursor:pointer;" onclick="_typesSortClick('piloten')">Piloten${_typesSortIndicator('piloten')}</th>
+  </tr></thead><tbody>`;
+  rows.forEach(t => {
+    h += `<tr>
+      <td class="mono">${acLink(t.code)}${t.name ? ' — ' + escHtml(t.name) : ''}</td>
+      <td class="mono">${t.fluege}</td>
+      <td class="mono">${t.stunden}</td>
+      <td class="mono">${Math.round(t.nm)}</td>
+      <td class="mono">${t.piloten}</td>
+    </tr>`;
+  });
+  h += '</tbody></table></div>';
+  body.innerHTML = h;
+}
+
+// `_typeStats` wird wiederverwendet, wenn schon geladen (typischer Fall: Klick auf die
+// gerade gerenderte Kachel -- kein sichtbares "Lade…" fuer einen Refetch, der nichts Neues
+// bringt). Nur beim rohen Deep-Link `#types=1` ohne vorherigen Tab-Aufbau ist der Zwischen-
+// speicher noch leer und wird hier zum ersten Mal gefuellt.
+async function openTypesModal() {
+  const el = document.getElementById('types-modal');
+  el.classList.remove('hidden');
+  document.addEventListener('keydown', _typesEscHandler);
+  if (!_typeStats) {
+    document.getElementById('types-modal-body').innerHTML = '<div class="empty-hint">Lade…</div>';
+    try {
+      const res = await fetch('/api/aircraft-types/stats');
+      _typeStats = res.ok ? await res.json() : [];
+    } catch (e) {
+      document.getElementById('types-modal-body').innerHTML =
+        '<div class="empty-hint">Konnte nicht geladen werden.</div>';
+      return;
+    }
+  }
+  renderTypesModalBody();
+}
+
+function closeTypesModal() {
+  document.getElementById('types-modal').classList.add('hidden');
+  document.removeEventListener('keydown', _typesEscHandler);
+}
+
+function _typesEscHandler(e) { if (e.key === 'Escape') closeTypesModal(); }
+
+// Klick auf das Overlay schliesst -- wie bei fp-modal/fld-modal/track-modal/changelog-modal.
+document.getElementById('types-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('types-modal')) closeTypesModal();
+});
+
+function copyTypesShareUrl(btn) {
+  const url = `${location.origin}${location.pathname}#types=1`;
+  navigator.clipboard.writeText(url).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Kopiert!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✗ Fehler';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  });
 }
 
 function _sortIndicator(field) {
@@ -5584,6 +5735,11 @@ async function initFromUrl() {
   // darauf warten. Muss VOR dem `if (!tab) return` stehen, sonst greift der Link ohne Tab nicht.
   const acType = p.get('actype');
   if (acType) openAcModal(acType);
+
+  // Deep-Link auf die Musterliste (#types=1) -- ebenfalls tab-unabhaengig und ohne await:
+  // openTypesModal() holt sich seine Daten bei Bedarf selbst (kein vorheriger Tab-Aufbau
+  // noetig). Muss ebenfalls VOR dem `if (!tab) return` stehen.
+  if (p.get('types')) openTypesModal();
 
   const tab = p.get('tab');
   if (!tab) return;

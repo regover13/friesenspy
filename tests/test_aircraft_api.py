@@ -102,6 +102,25 @@ def test_zahlen_und_top_piloten(client):
     assert d["top"][0]["n"] == 3
 
 
+def test_type_stats_endpoint_sortiert_und_ohne_hintergrund_abruf(client, monkeypatch):
+    """Grundlage der Top-Muster-KPI: meistgeflogenes zuerst, kein Wikimedia-Seiteneffekt
+    (anders als /api/aircraft/{code} loest dieser Endpunkt nie _resolve_aircraft_type aus)."""
+    from app.poller import VatsimPoller
+    aufgerufen = []
+    monkeypatch.setattr(
+        VatsimPoller, "_resolve_aircraft_type",
+        lambda self, code: aufgerufen.append(code),
+    )
+    for i in range(2):
+        _flug(client.db, i, "C172", f"2026-07-0{i+1}T10:00:00Z")
+    _flug(client.db, 10, "PA24")
+    d = client.get("/api/aircraft-types/stats").json()
+    assert [r["code"] for r in d] == ["C172", "PA24"]
+    assert d[0]["fluege"] == 2
+    assert d[1]["fluege"] == 1
+    assert aufgerufen == []
+
+
 def test_kutter_daten_und_hinweis_auf_eigene_zeile(client):
     """W5.3: P24 hat real eine eigene Zuladungszeile (381 kg), PA24 hat 381,5 kg."""
     from app.database import get_connection, set_aircraft_type_override, upsert_payload

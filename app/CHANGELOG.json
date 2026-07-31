@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.2.0",
+    "date": "2026-07-31",
+    "highlight": false,
+    "title": "Welches Muster fliegen wir am häufigsten?",
+    "items": [
+      "🏆 Neue Kachel in den Statistiken: „Häufigstes Muster\" — ein Klick öffnet die komplette Liste aller geflogenen Muster mit Flügen, Stunden, Strecke und Pilotenzahl, sortierbar nach jeder Spalte.",
+      "🔗 Jede Zeile der Liste verlinkt zurück ins bekannte Muster-Panel (Foto, Beschreibung, Kutter-Gewichte). Die Liste selbst lässt sich ebenfalls teilen — der Link öffnet sie beim Empfänger direkt, ohne erst über die Statistiken zu gehen."
+    ]
+  },
+  {
     "version": "11.1.0",
     "date": "2026-07-31",
     "highlight": false,

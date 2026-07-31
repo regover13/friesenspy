@@ -4607,6 +4607,35 @@ def flight_type_codes(conn: sqlite3.Connection) -> set[str]:
     return {r["code"] for r in rows if r["code"]}
 
 
+def all_type_stats(conn: sqlite3.Connection) -> list[dict]:
+    """Friesen-Zahlen JEDES geflogenen Musters, meistgeflogenes zuerst.
+
+    Grundlage der Musterliste im Statistiken-Tab (Top-Muster-KPI). Aliase zaehlen wie im
+    Muster-Panel auf ihr Ziel (friesen_numbers) -- ein Alias-Kuerzel aus dem Flugbestand
+    taucht deshalb NICHT als eigene Zeile auf, nur sein Ziel, sonst waeren dieselben Fluege
+    doppelt in der Liste.
+    """
+    ziele = {resolve_alias(conn, c) for c in flight_type_codes(conn)}
+    out = []
+    for ziel in ziele:
+        if not ziel:
+            continue
+        zahlen = friesen_numbers(conn, ziel)
+        if not zahlen["fluege"]:
+            continue
+        typ = get_aircraft_type(conn, ziel) or {}
+        out.append({
+            "code": ziel,
+            "name": typ.get("name"),
+            "fluege": zahlen["fluege"],
+            "stunden": zahlen["stunden"],
+            "nm": zahlen["nm"],
+            "piloten": zahlen["piloten"],
+        })
+    out.sort(key=lambda r: (-r["fluege"], r["code"]))
+    return out
+
+
 def aircraft_type_candidates(
     conn: sqlite3.Connection, now: datetime, limit: int
 ) -> list[str]:

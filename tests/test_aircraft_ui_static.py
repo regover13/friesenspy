@@ -111,6 +111,48 @@ def test_modal_knoepfe_liegen_nicht_ueber_dem_foto():
         "das Schliessen-Kreuz ist wieder absolut positioniert und liegt auf dem Foto"
 
 
+def test_types_deeplink_wird_vor_dem_tab_abbruch_ausgewertet():
+    """Wie #actype: der Teilen-Knopf der Musterliste teilt `#types=1` ohne `tab`-Parameter."""
+    m = re.search(r"async function initFromUrl\(\)\s*\{(.*?)\n\}", INDEX, re.S)
+    assert m, "initFromUrl nicht gefunden"
+    quelle = m.group(1)
+    m_types  = re.search(r"^\s*if \(p\.get\('types'\)\) openTypesModal\(\);", quelle, re.M)
+    m_return = re.search(r"^\s*if \(!tab\) return", quelle, re.M)
+    assert m_types, "types-Deep-Link fehlt in initFromUrl"
+    assert m_return, "Tab-Abbruch nicht gefunden — Test veraltet"
+    assert m_types.start() < m_return.start(), \
+        "types wird erst nach dem Tab-Abbruch gelesen — ein Link ohne tab oeffnet nichts"
+
+
+def test_types_modal_steht_vor_ac_modal_im_dom():
+    """Ein Muster-Kuerzel-Klick INNERHALB der Musterliste oeffnet #ac-modal darueber.
+
+    Beide Overlays haben denselben z-index (10000) -- bei Gleichstand gewinnt die
+    Dokument-Position (spaeter im DOM = optisch oben). #ac-modal muss deshalb NACH
+    #types-modal stehen, sonst verschwindet das Muster-Panel hinter der Liste.
+    """
+    pos_types = INDEX.find('id="types-modal"')
+    pos_ac    = INDEX.find('id="ac-modal"')
+    assert pos_types != -1, "#types-modal nicht gefunden"
+    assert pos_ac != -1, "#ac-modal nicht gefunden"
+    assert pos_types < pos_ac, \
+        "#ac-modal steht vor #types-modal im DOM — stapelt sich beim Verschachteln dahinter"
+
+
+def test_types_modal_schliesst_bei_klick_auf_das_overlay():
+    assert re.search(
+        r"getElementById\('types-modal'\)\.addEventListener\('click'", INDEX
+    ), "kein Overlay-Klick-Handler fuer #types-modal"
+
+
+def test_musterliste_verlinkt_aus_jeder_zeile_zurueck_ins_muster_modal():
+    """Kernanforderung: aus der Liste heraus wieder ins einzelne Muster-Panel springen."""
+    m = re.search(r"function renderTypesModalBody\(\)\s*\{(.*?)\n\}", INDEX, re.S)
+    assert m, "renderTypesModalBody nicht gefunden"
+    assert "acLink(t.code)" in m.group(1), \
+        "Musterliste verlinkt die Zeilen nicht ueber den bestehenden ac-link zurueck"
+
+
 def test_misave_loescht_kein_hochgeladenes_foto():
     """I2: photo_override='' loescht die 'blob'-Markierung — ein hochgeladenes Foto
     verschwaende beim naechsten Speichern (z. B. einer Namenskorrektur) aus der Anzeige.

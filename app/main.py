@@ -3343,6 +3343,19 @@ def _photo_dir() -> Path:
     return Path(get_settings().DB_PATH).parent / "aircraft-photos"
 
 
+@app.get("/api/aircraft-types/stats")
+async def aircraft_type_stats_endpoint():
+    """Friesen-Zahlen aller geflogenen Muster, meistgeflogenes zuerst — Grundlage der
+    Musterliste im Statistiken-Tab (Top-Muster-KPI). Rein lesend, kein Hintergrund-Abruf:
+    anders als /api/aircraft/{code} stösst dieser Endpunkt nie eine Wikimedia-Recherche an."""
+    from app.database import all_type_stats
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return all_type_stats(conn)
+    finally:
+        conn.close()
+
+
 @app.get("/api/aircraft/{code}")
 async def aircraft_info_endpoint(request: Request, code: str):
     """Muster-Infos + Friesen-Zahlen. Liefert IMMER 200 — auch für ein unbekanntes Kürzel,
