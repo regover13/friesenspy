@@ -4813,6 +4813,13 @@ async function fetchTypeStats() {
 // synchronen renderStatsSummary()-Strings. Bei jedem Neu-Render der Uebersicht (Zeitraum-
 // Wechsel) baut renderStatsSummary() die Reihe komplett neu auf, die alte Kachel wird
 // deshalb zuerst entfernt statt doppelt eingehaengt.
+//
+// "gesamt" im Label ist bewusst da: alle anderen Kacheln dieser Reihe (inkl. "Aktivster
+// Pilot") sind auf den gewaehlten Zeitraum begrenzt (get_stats(..., days=...)), diese
+// Kachel aber nicht -- all_type_stats() kennt keinen days-Parameter, genau wie das
+// Muster-Panel selbst immer "seit je" zeigt. Ohne Kennzeichnung sieht ein Muster mit
+// vielen Fluegen VOR dem gewaehlten Zeitraum so aus, als waere es im aktuellen Zeitraum
+// aktiv -- ist es aber nicht zwingend.
 function renderTopMusterCard() {
   const row = document.getElementById('stats-kpi-row');
   const old = document.getElementById('stats-kpi-topmuster');
@@ -4826,7 +4833,7 @@ function renderTopMusterCard() {
   card.onclick = () => openTypesModal();
   card.innerHTML =
     `<span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(top.name || top.code)}</span>
-     <span class="stats-kpi-label">Häufigstes Muster (${top.fluege} Flüge) →</span>`;
+     <span class="stats-kpi-label">Häufigstes Muster gesamt (${top.fluege} Flüge) →</span>`;
   row.appendChild(card);
 }
 
@@ -4856,7 +4863,8 @@ function renderTypesModalBody() {
   const rows  = _typeStats.slice().sort((a, b) => field === 'name'
     ? dir * String(a.name || a.code).localeCompare(String(b.name || b.code))
     : dir * ((a[field] || 0) - (b[field] || 0)));
-  let h = `<div class="table-scroll"><table><thead><tr>
+  let h = `<p class="stats-kpi-note" style="margin-bottom:8px;">Gesamtzahlen seit je — unabhängig vom Zeitraum, der oben in den Statistiken gewählt ist</p>
+  <div class="table-scroll"><table><thead><tr>
     <th style="cursor:pointer;" onclick="_typesSortClick('name')">Muster${_typesSortIndicator('name')}</th>
     <th style="cursor:pointer;" onclick="_typesSortClick('fluege')">Flüge${_typesSortIndicator('fluege')}</th>
     <th style="cursor:pointer;" onclick="_typesSortClick('stunden')">Stunden${_typesSortIndicator('stunden')}</th>

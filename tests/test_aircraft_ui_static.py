@@ -145,6 +145,16 @@ def test_types_modal_schliesst_bei_klick_auf_das_overlay():
     ), "kein Overlay-Klick-Handler fuer #types-modal"
 
 
+def test_top_muster_kachel_kennzeichnet_sich_als_zeitraum_unabhaengig():
+    """Alle anderen Kacheln der KPI-Reihe (get_stats(..., days=...)) sind auf den gewaehlten
+    Zeitraum begrenzt, all_type_stats() aber nicht -- ohne Kennzeichnung sieht ein Muster mit
+    vielen Fluegen VOR dem gewaehlten Zeitraum so aus, als waere es aktuell aktiv."""
+    m = re.search(r"function renderTopMusterCard\(\)\s*\{(.*?)\n\}", INDEX, re.S)
+    assert m, "renderTopMusterCard nicht gefunden"
+    assert "gesamt" in m.group(1), \
+        "Top-Muster-Kachel kennzeichnet sich nicht als zeitraum-unabhaengig (\"gesamt\" fehlt)"
+
+
 def test_musterliste_verlinkt_aus_jeder_zeile_zurueck_ins_muster_modal():
     """Kernanforderung: aus der Liste heraus wieder ins einzelne Muster-Panel springen."""
     m = re.search(r"function renderTypesModalBody\(\)\s*\{(.*?)\n\}", INDEX, re.S)
