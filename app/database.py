@@ -4607,74 +4607,62 @@ def flight_type_codes(conn: sqlite3.Connection) -> set[str]:
     return {r["code"] for r in rows if r["code"]}
 
 
-def all_type_stats(conn: sqlite3.Connection) -> list[dict]:
-    """Friesen-Zahlen JEDES geflogenen Musters seit je, meistgeflogenes zuerst.
+def all_type_stats_for_days(conn: sqlite3.Connection, days: int) -> list[dict]:
+    """Friesen-Zahlen jedes im gewaehlten Zeitraum geflogenen Musters, meistgeflogenes
+    zuerst -- gemeinsame Grundlage der Top-Muster-KPI-Kachel (nimmt Zeile 0) UND der vollen
+    Musterliste im Statistiken-Tab. Beide teilen sich denselben Zeitraum-Filter wie die
+    uebrigen Kacheln der Reihe (get_stats(..., days=...)) -- ein Muster, das nur VOR dem
+    gewaehlten Fenster geflogen wurde, taucht hier nicht auf.
 
-    Grundlage der VOLLEN Musterliste im Statistiken-Tab -- kennt bewusst kein days-Fenster,
-    wie das Muster-Panel selbst auch immer "seit je" zeigt. Fuer die Top-Muster-KPI, die auf
-    den Zeitraum-Filter reagieren soll, siehe :func:`top_type_for_days`. Aliase zaehlen wie im
-    Muster-Panel auf ihr Ziel (friesen_numbers) -- ein Alias-Kuerzel aus dem Flugbestand
-    taucht deshalb NICHT als eigene Zeile auf, nur sein Ziel, sonst waeren dieselben Fluege
-    doppelt in der Liste.
-    """
-    ziele = {resolve_alias(conn, c) for c in flight_type_codes(conn)}
-    out = []
-    for ziel in ziele:
-        if not ziel:
-            continue
-        zahlen = friesen_numbers(conn, ziel)
-        if not zahlen["fluege"]:
-            continue
-        typ = get_aircraft_type(conn, ziel) or {}
-        out.append({
-            "code": ziel,
-            "name": typ.get("name"),
-            "fluege": zahlen["fluege"],
-            "stunden": zahlen["stunden"],
-            "nm": zahlen["nm"],
-            "piloten": zahlen["piloten"],
-        })
-    out.sort(key=lambda r: (-r["fluege"], r["code"]))
-    return out
-
-
-def top_type_for_days(conn: sqlite3.Connection, days: int) -> dict | None:
-    """Meistgeflogenes Muster IM GEWAEHLTEN ZEITRAUM, oder ``None`` ohne einen Flug im Fenster.
-
-    Grundlage der Top-Muster-KPI-Kachel im Statistiken-Tab: die Kachel sitzt in derselben
-    Reihe wie "Aktivster Pilot" & Co. (get_stats(..., days=...)) und muss wie diese auf den
-    days-Filter reagieren -- anders als :func:`all_type_stats`, das fuer die VOLLE Liste
-    bewusst "seit je" zaehlt. Aliase zaehlen wie ueberall sonst auf ihr Ziel.
+    Aliase zaehlen auf ihr Ziel (wie friesen_numbers()), inklusive korrekter Piloten-
+    Deduplizierung: ein Pilot, der im Fenster sowohl unter dem Alias- als auch dem
+    Ziel-Kuerzel flog, zaehlt einmal -- deshalb Aggregation ueber Einzelzeilen (mit cid),
+    nicht ueber ein GROUP BY COUNT(DISTINCT cid) je Rohcode (das wuerde bei einem
+    Alias-Wechsel innerhalb des Fensters denselben Piloten zweimal zaehlen).
 
     flight_cache ist bereits auf CALLSIGN_PREFIX beschraenkt (rebuild_flight_cache() baut es
     ausschliesslich aus canonicalize_legs() mit dem konfigurierten Praefix) -- kein eigener
-    Callsign-Filter noetig, wie auch bei friesen_numbers()/all_type_stats() schon nicht.
-    In-progress-Fluege werden NICHT ausgeschlossen -- konsistent mit dem Rest der Muster-
-    Zahlenfamilie (friesen_numbers, all_type_stats, flight_type_codes), nicht mit get_stats()
-    (das fuer Piloten-Kennzahlen einen strengeren Abschluss-Begriff verwendet).
+    Callsign-Filter noetig, wie auch bei friesen_numbers() schon nicht. In-progress-Fluege
+    werden NICHT ausgeschlossen -- konsistent mit dem Rest der Muster-Zahlenfamilie
+    (friesen_numbers, flight_type_codes), nicht mit get_stats() (das fuer Piloten-Kennzahlen
+    einen strengeren Abschluss-Begriff verwendet).
     """
     start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
-        f"""SELECT {FLIGHT_TYPE_CODE_SQL} AS code, COUNT(*) AS n FROM flight_cache
+        f"""SELECT {FLIGHT_TYPE_CODE_SQL} AS code, cid,
+                   COALESCE(duration_min, 0) AS duration_min,
+                   COALESCE(distance_nm, 0) AS distance_nm
+              FROM flight_cache
              WHERE logon_time >= ?
                AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) IS NOT NULL
-               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''
-             GROUP BY code""",
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''""",
         (start,),
     ).fetchall()
-    agg: dict[str, int] = {}
+    agg: dict[str, dict] = {}
     for r in rows:
         if not r["code"]:
             continue
         ziel = resolve_alias(conn, r["code"])
         if not ziel:
             continue
-        agg[ziel] = agg.get(ziel, 0) + r["n"]
-    if not agg:
-        return None
-    best = min(agg, key=lambda c: (-agg[c], c))
-    typ = get_aircraft_type(conn, best) or {}
-    return {"code": best, "name": typ.get("name"), "fluege": agg[best]}
+        a = agg.setdefault(ziel, {"fluege": 0, "min": 0, "nm": 0.0, "piloten": set()})
+        a["fluege"] += 1
+        a["min"] += r["duration_min"]
+        a["nm"] += r["distance_nm"]
+        a["piloten"].add(r["cid"])
+    out = []
+    for ziel, a in agg.items():
+        typ = get_aircraft_type(conn, ziel) or {}
+        out.append({
+            "code": ziel,
+            "name": typ.get("name"),
+            "fluege": a["fluege"],
+            "stunden": round(a["min"] / 60.0, 1),
+            "nm": round(a["nm"], 0),
+            "piloten": len(a["piloten"]),
+        })
+    out.sort(key=lambda r: (-r["fluege"], r["code"]))
+    return out
 
 
 def aircraft_type_candidates(

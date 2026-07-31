@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.3.0",
+    "date": "2026-07-31",
+    "highlight": false,
+    "title": "Auch die Musterliste kennt jetzt einen Zeitraum",
+    "items": [
+      "📅 Die volle Liste hinter „Häufigstes Muster\" zeigt nicht mehr die Gesamtzahlen seit je, sondern denselben Zeitraum wie die Kachel — mit einem eigenen Zeitraum-Regler direkt in der Liste, unabhängig von der Statistiken-Übersicht umschaltbar.",
+      "🔗 Der Teilen-Knopf der Liste nimmt den gerade eingestellten Zeitraum mit in den Link — wer ihn öffnet, sieht genau das gleiche Fenster."
+    ]
+  },
+  {
     "version": "11.2.1",
     "date": "2026-07-31",
     "highlight": false,

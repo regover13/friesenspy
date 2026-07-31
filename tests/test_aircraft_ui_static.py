@@ -112,13 +112,17 @@ def test_modal_knoepfe_liegen_nicht_ueber_dem_foto():
 
 
 def test_types_deeplink_wird_vor_dem_tab_abbruch_ausgewertet():
-    """Wie #actype: der Teilen-Knopf der Musterliste teilt `#types=1` ohne `tab`-Parameter."""
+    """Wie #actype: der Teilen-Knopf der Musterliste teilt `#types=1&days=N` ohne
+    `tab`-Parameter -- und der days-Wert muss durchgereicht werden, sonst oeffnet der Link
+    immer mit dem Default-Zeitraum statt dem geteilten."""
     m = re.search(r"async function initFromUrl\(\)\s*\{(.*?)\n\}", INDEX, re.S)
     assert m, "initFromUrl nicht gefunden"
     quelle = m.group(1)
-    m_types  = re.search(r"^\s*if \(p\.get\('types'\)\) openTypesModal\(\);", quelle, re.M)
+    m_types  = re.search(
+        r"^\s*if \(p\.get\('types'\)\) openTypesModal\(p\.get\('days'\)\);", quelle, re.M
+    )
     m_return = re.search(r"^\s*if \(!tab\) return", quelle, re.M)
-    assert m_types, "types-Deep-Link fehlt in initFromUrl"
+    assert m_types, "types-Deep-Link fehlt in initFromUrl oder reicht 'days' nicht durch"
     assert m_return, "Tab-Abbruch nicht gefunden — Test veraltet"
     assert m_types.start() < m_return.start(), \
         "types wird erst nach dem Tab-Abbruch gelesen — ein Link ohne tab oeffnet nichts"
@@ -148,23 +152,37 @@ def test_types_modal_schliesst_bei_klick_auf_das_overlay():
 def test_top_muster_kachel_reagiert_auf_den_zeitraum_filter():
     """Die Kachel sitzt in derselben Reihe wie 'Aktivster Pilot' & Co. (get_stats(...,
     days=...)) und muss wie diese auf den Zeitraum-Filter reagieren -- sonst zeigt
-    'Häufigstes Muster' ein Muster, das im gewaehlten Zeitraum gar nicht geflogen wurde.
-    Die VOLLE Liste (#types-modal) bleibt bewusst 'gesamt', das prueft die naechste Funktion.
-    """
+    'Häufigstes Muster' ein Muster, das im gewaehlten Zeitraum gar nicht geflogen wurde."""
     m = re.search(r"async function fetchStats\(_isRetry = false\)\s*\{(.*?)\n\}", INDEX, re.S)
     assert m, "fetchStats nicht gefunden"
     assert re.search(r"fetchTopMuster\(Number\(days\)\)", m.group(1)), \
         "fetchTopMuster wird nicht mit dem aktuell gewaehlten Zeitraum aufgerufen"
 
 
-def test_musterliste_bleibt_gesamt_unabhaengig_vom_zeitraum_filter():
-    """Gegenstueck zum vorigen Test: die VOLLE Liste (Klick auf die Kachel) zeigt bewusst
-    alle Fluege seit je, wie das Muster-Panel selbst -- fetchTypeStats() nimmt deshalb
-    KEINEN days-Parameter."""
-    m = re.search(r"async function fetchTypeStats\(\)\s*\{(.*?)\n\}", INDEX, re.S)
-    assert m, "fetchTypeStats nicht gefunden"
-    assert "/api/aircraft-types/stats'" in m.group(1) and "days" not in m.group(1), \
-        "fetchTypeStats() filtert jetzt nach Zeitraum -- die volle Liste soll 'gesamt' bleiben"
+def test_musterliste_hat_einen_eigenen_zeitraum_selector():
+    """Die volle Liste ist jetzt ebenfalls zeitraum-gebunden (nicht mehr 'gesamt') und
+    braucht deshalb ihren EIGENEN Selector -- unabhaengig von #stats-days umschaltbar,
+    ohne das Modal zu schliessen."""
+    sel = re.search(
+        r'<select id="types-modal-days">(.*?)</select>', INDEX, re.S,
+    )
+    assert sel, "#types-modal-days nicht gefunden"
+    for wert in ("30", "90", "365"):
+        assert f'value="{wert}"' in sel.group(1), \
+            f"Option {wert} Tage fehlt im Listen-Selector"
+    assert re.search(
+        r"getElementById\('types-modal-days'\)\.addEventListener\('change'", INDEX
+    ), "Aenderung am Listen-Selector loest keinen Refetch aus"
+
+
+def test_musterliste_deeplink_teilt_den_aktuell_gezeigten_zeitraum():
+    """Der Teilen-Knopf im Modal muss den ZEITRAUM MITTEILEN, den die Liste GERADE zeigt
+    (_typesModalDays) -- nicht den der Statistiken-Uebersicht, die inzwischen anders stehen
+    kann, wenn der Listen-Selector umgestellt wurde."""
+    m = re.search(r"function copyTypesShareUrl\(btn\)\s*\{(.*?)\n\}", INDEX, re.S)
+    assert m, "copyTypesShareUrl nicht gefunden"
+    assert "_typesModalDays" in m.group(1), \
+        "Teilen-Link der Musterliste kodiert den Zeitraum nicht"
 
 
 def test_musterliste_verlinkt_aus_jeder_zeile_zurueck_ins_muster_modal():

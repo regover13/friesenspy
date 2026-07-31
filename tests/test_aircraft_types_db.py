@@ -7,7 +7,7 @@ import pytest
 
 from app.database import (
     aircraft_type_candidates,
-    all_type_stats,
+    all_type_stats_for_days,
     flight_type_codes,
     friesen_numbers,
     get_aircraft_type,
@@ -18,7 +18,6 @@ from app.database import (
     resolve_alias,
     set_aircraft_type_override,
     top_pilots,
-    top_type_for_days,
     upsert_aircraft_type_import,
     upsert_payload,
     validate_alias,
@@ -191,90 +190,86 @@ def test_top_piloten(conn):
     assert top[1]["n"] == 1
 
 
-# --- Musterliste (all_type_stats) --------------------------------------------
+# --- Musterliste (all_type_stats_for_days) -----------------------------------
+# Echtes "jetzt" (nicht T0): all_type_stats_for_days() rechnet intern mit datetime.now(),
+# die Testzeitstempel muessen deshalb relativ dazu liegen, nicht relativ zu einem festen T0.
+# Liste UND Top-Muster-KPI-Kachel teilen sich diese eine Funktion (Kachel nimmt Zeile 0).
+
+def _vor(tage):
+    return (datetime.now(timezone.utc) - timedelta(days=tage)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 def test_musterliste_sortiert_meistgeflogenes_zuerst(conn):
     for i in range(3):
-        _flug(conn, i, "C172", "C172", f"2026-07-0{i+1}T10:00:00Z")
-    _flug(conn, 10, None, "PA24", "2025-01-01T10:00:00Z")
+        _flug(conn, i, "C172", "C172", _vor(1))
+    _flug(conn, 10, None, "PA24", _vor(2))
     conn.commit()
     upsert_aircraft_type_import(conn, "C172", name="Cessna 172", now=T0)
     upsert_aircraft_type_import(conn, "PA24", name="Piper PA-24 Comanche", now=T0)
-    out = all_type_stats(conn)
+    out = all_type_stats_for_days(conn, 30)
     assert [r["code"] for r in out] == ["C172", "PA24"]
     assert out[0]["name"] == "Cessna 172"
     assert out[0]["fluege"] == 3
     assert out[0]["piloten"] == 3
 
 
-def test_musterliste_faltet_alias_auf_ziel_ohne_doppelzeile(conn):
-    """Wie friesen_numbers(): ein Alias-Kuerzel im Flugbestand darf keine eigene Zeile
-    bekommen, sonst zaehlen dieselben Fluege zweimal in der Liste."""
-    _flug(conn, 1, None, "PA24", "2025-01-01T10:00:00Z")
-    _flug(conn, 2, None, "P24", "2025-10-26T10:00:00Z")
-    conn.commit()
-    set_aircraft_type_override(conn, "P24", alias_of="PA24", now=T0)
-    out = all_type_stats(conn)
-    assert [r["code"] for r in out] == ["PA24"]
-    assert out[0]["fluege"] == 2
-
-
-def test_musterliste_ohne_flugbestand_ist_leer(conn):
-    assert all_type_stats(conn) == []
-
-
-def test_musterliste_kuerzel_ohne_namen_bleibt_mit_none_drin(conn):
-    """Ein Muster ohne Beschreibung gehoert trotzdem in die Liste -- die Fluege sind echt,
-    auch wenn (noch) niemand einen Namen dazu recherchiert hat."""
-    _flug(conn, 1, "AP32", "AP32", "2026-07-25T10:00:00Z")
-    conn.commit()
-    out = all_type_stats(conn)
-    assert out == [{"code": "AP32", "name": None, "fluege": 1,
-                     "stunden": 1.0, "nm": 100.0, "piloten": 1}]
-
-
-# --- Top-Muster-KPI (top_type_for_days) --------------------------------------
-# Echtes "jetzt" (nicht T0): top_type_for_days() rechnet intern mit datetime.now(), die
-# Testzeitstempel muessen deshalb relativ dazu liegen, nicht relativ zu einem festen T0.
-
-def _vor(tage):
-    return (datetime.now(timezone.utc) - timedelta(days=tage)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def test_top_muster_zaehlt_nur_das_gewaehlte_fenster(conn):
-    """Kernanforderung: die KPI-Kachel reagiert auf den Zeitraum-Filter, anders als die
-    volle Liste (all_type_stats) -- ein Muster mit vielen Fluegen VOR dem Fenster darf
-    das aktuelle Fenster nicht gewinnen."""
+def test_musterliste_zaehlt_nur_das_gewaehlte_fenster(conn):
+    """Kernanforderung: sowohl die Liste als auch die daraus gebildete Top-Muster-KPI
+    reagieren auf den Zeitraum-Filter -- ein Muster mit vielen Fluegen VOR dem Fenster darf
+    das Fenster nicht gewinnen und taucht in der gefilterten Liste gar nicht erst auf."""
     for i in range(5):
         _flug(conn, i, "C172", "C172", _vor(60))  # ausserhalb der 30-Tage-Auswahl
     _flug(conn, 10, "PA24", "PA24", _vor(2))       # innerhalb
     conn.commit()
     upsert_aircraft_type_import(conn, "PA24", name="Piper PA-24-250 Comanche", now=T0)
-    top = top_type_for_days(conn, 30)
-    assert top == {"code": "PA24", "name": "Piper PA-24-250 Comanche", "fluege": 1}
+    out = all_type_stats_for_days(conn, 30)
+    assert out == [{"code": "PA24", "name": "Piper PA-24-250 Comanche", "fluege": 1,
+                     "stunden": 1.0, "nm": 100.0, "piloten": 1}]
 
 
-def test_top_muster_ohne_flug_im_fenster_ist_none(conn):
-    _flug(conn, 1, "C172", "C172", _vor(90))
-    conn.commit()
-    assert top_type_for_days(conn, 30) is None
-
-
-def test_top_muster_faltet_alias_auf_ziel(conn):
-    """Wie all_type_stats(): ein Alias-Kuerzel darf das Ranking nicht verfaelschen, indem
-    es getrennt von seinem Ziel gezaehlt wird."""
+def test_musterliste_faltet_alias_auf_ziel_ohne_doppelzeile(conn):
+    """Wie friesen_numbers(): ein Alias-Kuerzel im Flugbestand darf keine eigene Zeile
+    bekommen, sonst zaehlen dieselben Fluege zweimal in der Liste."""
     _flug(conn, 1, None, "PA24", _vor(1))
     _flug(conn, 2, None, "P24", _vor(2))
-    _flug(conn, 3, "C172", "C172", _vor(3))
     conn.commit()
     set_aircraft_type_override(conn, "P24", alias_of="PA24", now=T0)
-    top = top_type_for_days(conn, 30)
-    assert top["code"] == "PA24"
-    assert top["fluege"] == 2
+    out = all_type_stats_for_days(conn, 30)
+    assert [r["code"] for r in out] == ["PA24"]
+    assert out[0]["fluege"] == 2
 
 
-def test_top_muster_ohne_flugbestand_ist_none(conn):
-    assert top_type_for_days(conn, 30) is None
+def test_musterliste_pilot_ueber_alias_und_ziel_zaehlt_nur_einmal(conn):
+    """W5.2-Analogon fuer die Zeitraum-Liste: ein Pilot, der IM FENSTER sowohl unter dem
+    Alias- als auch dem Ziel-Kuerzel flog, darf nicht doppelt in 'piloten' auftauchen --
+    ein simples GROUP BY COUNT(DISTINCT cid) je Rohcode wuerde das falsch zaehlen."""
+    _flug(conn, 1, None, "PA24", _vor(1))
+    _flug(conn, 1, None, "P24", _vor(2))
+    conn.commit()
+    set_aircraft_type_override(conn, "P24", alias_of="PA24", now=T0)
+    out = all_type_stats_for_days(conn, 30)
+    assert out[0]["fluege"] == 2
+    assert out[0]["piloten"] == 1
+
+
+def test_musterliste_ohne_flugbestand_ist_leer(conn):
+    assert all_type_stats_for_days(conn, 30) == []
+
+
+def test_musterliste_ohne_flug_im_fenster_ist_leer(conn):
+    _flug(conn, 1, "C172", "C172", _vor(90))
+    conn.commit()
+    assert all_type_stats_for_days(conn, 30) == []
+
+
+def test_musterliste_kuerzel_ohne_namen_bleibt_mit_none_drin(conn):
+    """Ein Muster ohne Beschreibung gehoert trotzdem in die Liste -- die Fluege sind echt,
+    auch wenn (noch) niemand einen Namen dazu recherchiert hat."""
+    _flug(conn, 1, "AP32", "AP32", _vor(1))
+    conn.commit()
+    out = all_type_stats_for_days(conn, 30)
+    assert out == [{"code": "AP32", "name": None, "fluege": 1,
+                     "stunden": 1.0, "nm": 100.0, "piloten": 1}]
 
 
 # --- Kandidaten und Bestand -------------------------------------------------

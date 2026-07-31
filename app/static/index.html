@@ -1987,6 +1987,16 @@
       <button class="btn-share" style="margin-left:auto; margin-right:12px;" onclick="copyTypesShareUrl(this)">⎘ Teilen</button>
       <button class="fp-close-btn" onclick="closeTypesModal()">✕</button>
     </div>
+    <div class="fp-section">
+      <div class="stats-controls" style="margin-bottom:0;">
+        <label for="types-modal-days">Zeitraum</label>
+        <select id="types-modal-days">
+          <option value="30">30 Tage</option>
+          <option value="90">90 Tage</option>
+          <option value="365">365 Tage</option>
+        </select>
+      </div>
+    </div>
     <div class="fp-section" id="types-modal-body"></div>
   </div>
 </div>
@@ -4498,7 +4508,6 @@ async function fetchStats(_isRetry = false) {
     const data = await res.json();
     renderStatsTable(data, Number(days));
     fetchSpecialEventStats(Number(days));
-    fetchTypeStats();
     fetchTopMuster(Number(days));
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden der Statistiken</div></div>`;
@@ -4792,61 +4801,50 @@ function renderStatsSummary(stats, days) {
 // ==========================================================================
 //  MUSTERLISTE (Statistiken-Tab: Kachel "Häufigstes Muster" + Detail-Modal)
 // ==========================================================================
-// Zwei getrennte Zwischenspeicher, bewusst nicht einer:
-// - _typeStats  -- ALLE Muster seit je (all_type_stats(), kein days-Fenster), Grundlage
-//                  der vollen Liste im #types-modal. Die Liste bleibt "gesamt", wie im
-//                  Muster-Panel selbst -- unabhaengig vom Zeitraum-Filter oben.
-// - _topMuster  -- NUR das meistgeflogene Muster IM GEWAEHLTEN ZEITRAUM (top_type_for_days()),
-//                  Grundlage der KPI-Kachel. Die Kachel sitzt in derselben Reihe wie
-//                  "Aktivster Pilot" & Co. und muss wie diese auf den days-Filter reagieren --
-//                  sonst zeigt "Häufigstes Muster" ein Muster, das im gewaehlten Zeitraum
-//                  vielleicht gar nicht geflogen wurde.
-let _typeStats    = null;
-let _topMuster    = null;
-let _typesSortBy  = 'fluege';
-let _typesSortDir = 'desc';
+// EIN Zwischenspeicher, EIN Endpoint (/api/aircraft-types/stats?days=N): Kachel und Liste
+// zeigen jetzt denselben Zeitraum-Filter wie "Aktivster Pilot" & Co. (get_stats(...,
+// days=...)) -- ein Muster, das nur VOR dem gewaehlten Fenster geflogen wurde, gewinnt
+// weder die Kachel noch taucht es in der Liste auf. Die Liste hat trotzdem ihren EIGENEN
+// Zeitraum-Selector (_typesModalDays): einmal geoeffnet, soll sie unabhaengig von der
+// Statistiken-Uebersicht umschaltbar sein, ohne das Modal zu schliessen.
+let _typeStats     = null;   // Antwort des zuletzt geladenen /stats?days=... -- fuer BEIDE:
+                              // Kachel nimmt Zeile 0, Liste zeigt alle Zeilen.
+let _typesModalDays = 30;
+let _typesSortBy   = 'fluege';
+let _typesSortDir  = 'desc';
 
-// Prefetch fuer #types-modal (Klick auf die Kachel oeffnet die Liste) -- rendert selbst
-// keine Kachel, das macht fetchTopMuster()/renderTopMusterCard() getrennt.
-async function fetchTypeStats() {
-  try {
-    const res = await fetch('/api/aircraft-types/stats');
-    _typeStats = res.ok ? await res.json() : [];
-  } catch (e) {
-    _typeStats = [];
-  }
-}
-
+// Fuer die KPI-Kachel in der Statistiken-Uebersicht -- eigener Fetch, eigenes days
+// (das der Uebersicht), unabhaengig vom evtl. schon anders eingestellten Listen-Selector.
 async function fetchTopMuster(days) {
+  let stats;
   try {
-    const res  = await fetch(`/api/aircraft-types/top?days=${days}`);
-    const body = res.ok ? await res.json() : null;
-    _topMuster = body && body.code ? body : null;
+    const res = await fetch(`/api/aircraft-types/stats?days=${days}`);
+    stats = res.ok ? await res.json() : [];
   } catch (e) {
-    _topMuster = null;
+    stats = [];
   }
-  renderTopMusterCard();
+  renderTopMusterCard(stats[0] || null);
 }
 
 // Haengt sich als eigene Kachel HINTER "Aktivster Pilot" in dieselbe KPI-Reihe --
 // asynchron nachgeladen (eigener Endpoint), deshalb per DOM-Insert statt als Teil des
 // synchronen renderStatsSummary()-Strings. Bei jedem Neu-Render der Uebersicht (Zeitraum-
 // Wechsel) baut renderStatsSummary() die Reihe komplett neu auf, die alte Kachel wird
-// deshalb zuerst entfernt statt doppelt eingehaengt. Kein Muster im gewaehlten Zeitraum
-// (_topMuster leer) -- Kachel bleibt einfach weg, wie "Aktivster Pilot" bei leeren stats.
-function renderTopMusterCard() {
+// deshalb zuerst entfernt statt doppelt eingehaengt. Kein Muster im gewaehlten Zeitraum --
+// Kachel bleibt einfach weg, wie "Aktivster Pilot" bei leeren stats.
+function renderTopMusterCard(top) {
   const row = document.getElementById('stats-kpi-row');
   const old = document.getElementById('stats-kpi-topmuster');
   if (old) old.remove();
-  if (!row || !_topMuster) return;
+  if (!row || !top) return;
   const card = document.createElement('div');
   card.id = 'stats-kpi-topmuster';
   card.className = 'stats-kpi-card';
   card.style.cssText = 'min-width:160px;cursor:pointer;';
   card.onclick = () => openTypesModal();
   card.innerHTML =
-    `<span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(_topMuster.name || _topMuster.code)}</span>
-     <span class="stats-kpi-label">Häufigstes Muster (${_topMuster.fluege} Flüge) →</span>`;
+    `<span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(top.name || top.code)}</span>
+     <span class="stats-kpi-label">Häufigstes Muster (${top.fluege} Flüge) →</span>`;
   row.appendChild(card);
 }
 
@@ -4868,7 +4866,7 @@ function _typesSortClick(field) {
 function renderTypesModalBody() {
   const body = document.getElementById('types-modal-body');
   if (!_typeStats || !_typeStats.length) {
-    body.innerHTML = '<div class="empty-hint">Noch keine Flugdaten.</div>';
+    body.innerHTML = '<div class="empty-hint">Keine Flüge im gewählten Zeitraum.</div>';
     return;
   }
   const field = _typesSortBy;
@@ -4876,8 +4874,7 @@ function renderTypesModalBody() {
   const rows  = _typeStats.slice().sort((a, b) => field === 'name'
     ? dir * String(a.name || a.code).localeCompare(String(b.name || b.code))
     : dir * ((a[field] || 0) - (b[field] || 0)));
-  let h = `<p class="stats-kpi-note" style="margin-bottom:8px;">Gesamtzahlen seit je — unabhängig vom Zeitraum, der oben in den Statistiken gewählt ist</p>
-  <div class="table-scroll"><table><thead><tr>
+  let h = `<div class="table-scroll"><table><thead><tr>
     <th style="cursor:pointer;" onclick="_typesSortClick('name')">Muster${_typesSortIndicator('name')}</th>
     <th style="cursor:pointer;" onclick="_typesSortClick('fluege')">Flüge${_typesSortIndicator('fluege')}</th>
     <th style="cursor:pointer;" onclick="_typesSortClick('stunden')">Stunden${_typesSortIndicator('stunden')}</th>
@@ -4897,26 +4894,34 @@ function renderTypesModalBody() {
   body.innerHTML = h;
 }
 
-// `_typeStats` wird wiederverwendet, wenn schon geladen (typischer Fall: Klick auf die
-// gerade gerenderte Kachel -- kein sichtbares "Lade…" fuer einen Refetch, der nichts Neues
-// bringt). Nur beim rohen Deep-Link `#types=1` ohne vorherigen Tab-Aufbau ist der Zwischen-
-// speicher noch leer und wird hier zum ersten Mal gefuellt.
-async function openTypesModal() {
+async function fetchTypesModalList(days) {
+  _typesModalDays = days;
+  const body = document.getElementById('types-modal-body');
+  body.innerHTML = '<div class="empty-hint">Lade…</div>';
+  try {
+    const res = await fetch(`/api/aircraft-types/stats?days=${days}`);
+    _typeStats = res.ok ? await res.json() : [];
+  } catch (e) {
+    body.innerHTML = '<div class="empty-hint">Konnte nicht geladen werden.</div>';
+    return;
+  }
+  renderTypesModalBody();
+}
+
+// `days` optional -- Deep-Link (#types=1&days=N) reicht ihn explizit durch. Ohne Angabe
+// (Klick auf die Kachel) uebernimmt das Modal den Zeitraum, der GERADE in der Statistiken-
+// Uebersicht eingestellt ist -- die Liste startet dann synchron zu der Kachel, die den
+// Klick ausgeloest hat. Immer ein frischer Fetch, kein Cache-Wiederverwenden: anders als
+// beim alten "immer gesamt"-Stand koennte ein stehen gelassener Zwischenspeicher hier
+// einen falschen Zeitraum zeigen.
+async function openTypesModal(days) {
   const el = document.getElementById('types-modal');
   el.classList.remove('hidden');
   document.addEventListener('keydown', _typesEscHandler);
-  if (!_typeStats) {
-    document.getElementById('types-modal-body').innerHTML = '<div class="empty-hint">Lade…</div>';
-    try {
-      const res = await fetch('/api/aircraft-types/stats');
-      _typeStats = res.ok ? await res.json() : [];
-    } catch (e) {
-      document.getElementById('types-modal-body').innerHTML =
-        '<div class="empty-hint">Konnte nicht geladen werden.</div>';
-      return;
-    }
-  }
-  renderTypesModalBody();
+  const daysSel = document.getElementById('types-modal-days');
+  const wunsch  = String(days || document.getElementById('stats-days')?.value || '30');
+  daysSel.value = [...daysSel.options].some(o => o.value === wunsch) ? wunsch : '30';
+  await fetchTypesModalList(Number(daysSel.value));
 }
 
 function closeTypesModal() {
@@ -4931,8 +4936,15 @@ document.getElementById('types-modal').addEventListener('click', (e) => {
   if (e.target === document.getElementById('types-modal')) closeTypesModal();
 });
 
+document.getElementById('types-modal-days').addEventListener('change', (e) => {
+  fetchTypesModalList(Number(e.target.value));
+});
+
+// Teilt genau das, was gerade zu sehen ist -- inklusive des Zeitraums, den die Liste
+// GERADE zeigt (kann vom Zeitraum der Statistiken-Uebersicht abweichen, wenn der Selector
+// im Modal umgestellt wurde).
 function copyTypesShareUrl(btn) {
-  const url = `${location.origin}${location.pathname}#types=1`;
+  const url = `${location.origin}${location.pathname}#types=1&days=${_typesModalDays}`;
   navigator.clipboard.writeText(url).then(() => {
     const orig = btn.textContent;
     btn.textContent = '✓ Kopiert!';
@@ -5757,10 +5769,11 @@ async function initFromUrl() {
   const acType = p.get('actype');
   if (acType) openAcModal(acType);
 
-  // Deep-Link auf die Musterliste (#types=1) -- ebenfalls tab-unabhaengig und ohne await:
-  // openTypesModal() holt sich seine Daten bei Bedarf selbst (kein vorheriger Tab-Aufbau
-  // noetig). Muss ebenfalls VOR dem `if (!tab) return` stehen.
-  if (p.get('types')) openTypesModal();
+  // Deep-Link auf die Musterliste (#types=1&days=N) -- ebenfalls tab-unabhaengig und ohne
+  // await: openTypesModal() holt sich seine Daten bei Bedarf selbst (kein vorheriger
+  // Tab-Aufbau noetig). Muss ebenfalls VOR dem `if (!tab) return` stehen. `days` ist
+  // optional -- ohne Angabe uebernimmt openTypesModal() den Zeitraum aus #stats-days.
+  if (p.get('types')) openTypesModal(p.get('days'));
 
   const tab = p.get('tab');
   if (!tab) return;
