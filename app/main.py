@@ -3345,13 +3345,31 @@ def _photo_dir() -> Path:
 
 @app.get("/api/aircraft-types/stats")
 async def aircraft_type_stats_endpoint():
-    """Friesen-Zahlen aller geflogenen Muster, meistgeflogenes zuerst — Grundlage der
-    Musterliste im Statistiken-Tab (Top-Muster-KPI). Rein lesend, kein Hintergrund-Abruf:
-    anders als /api/aircraft/{code} stösst dieser Endpunkt nie eine Wikimedia-Recherche an."""
+    """Friesen-Zahlen ALLER geflogenen Muster seit je, meistgeflogenes zuerst — Grundlage
+    der vollen Musterliste im Statistiken-Tab. Kennt bewusst kein days-Fenster, siehe
+    /api/aircraft-types/top fuer die zeitraum-gefilterte KPI-Kachel. Rein lesend, kein
+    Hintergrund-Abruf: anders als /api/aircraft/{code} stösst dieser Endpunkt nie eine
+    Wikimedia-Recherche an."""
     from app.database import all_type_stats
     conn = get_connection(get_settings().DB_PATH)
     try:
         return all_type_stats(conn)
+    finally:
+        conn.close()
+
+
+@app.get("/api/aircraft-types/top")
+async def aircraft_type_top_endpoint(days: int = 30):
+    """Meistgeflogenes Muster im gewaehlten Zeitraum — Grundlage der Top-Muster-KPI-Kachel,
+    die (anders als die volle Liste unter /api/aircraft-types/stats) auf denselben
+    days-Filter reagiert wie die uebrigen Kacheln ihrer Reihe (vgl. /api/stats). Liefert
+    ``{}`` statt 404, wenn im Fenster kein Flug lag — das ist ein echter, darstellbarer
+    Zustand, kein Fehler."""
+    from app.database import top_type_for_days
+    days = _clamp_retention_days(days)  # #67: nie über die globale 365-Tage-Anzeigegrenze
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return top_type_for_days(conn, days) or {}
     finally:
         conn.close()
 

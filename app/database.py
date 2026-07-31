@@ -4608,9 +4608,11 @@ def flight_type_codes(conn: sqlite3.Connection) -> set[str]:
 
 
 def all_type_stats(conn: sqlite3.Connection) -> list[dict]:
-    """Friesen-Zahlen JEDES geflogenen Musters, meistgeflogenes zuerst.
+    """Friesen-Zahlen JEDES geflogenen Musters seit je, meistgeflogenes zuerst.
 
-    Grundlage der Musterliste im Statistiken-Tab (Top-Muster-KPI). Aliase zaehlen wie im
+    Grundlage der VOLLEN Musterliste im Statistiken-Tab -- kennt bewusst kein days-Fenster,
+    wie das Muster-Panel selbst auch immer "seit je" zeigt. Fuer die Top-Muster-KPI, die auf
+    den Zeitraum-Filter reagieren soll, siehe :func:`top_type_for_days`. Aliase zaehlen wie im
     Muster-Panel auf ihr Ziel (friesen_numbers) -- ein Alias-Kuerzel aus dem Flugbestand
     taucht deshalb NICHT als eigene Zeile auf, nur sein Ziel, sonst waeren dieselben Fluege
     doppelt in der Liste.
@@ -4634,6 +4636,45 @@ def all_type_stats(conn: sqlite3.Connection) -> list[dict]:
         })
     out.sort(key=lambda r: (-r["fluege"], r["code"]))
     return out
+
+
+def top_type_for_days(conn: sqlite3.Connection, days: int) -> dict | None:
+    """Meistgeflogenes Muster IM GEWAEHLTEN ZEITRAUM, oder ``None`` ohne einen Flug im Fenster.
+
+    Grundlage der Top-Muster-KPI-Kachel im Statistiken-Tab: die Kachel sitzt in derselben
+    Reihe wie "Aktivster Pilot" & Co. (get_stats(..., days=...)) und muss wie diese auf den
+    days-Filter reagieren -- anders als :func:`all_type_stats`, das fuer die VOLLE Liste
+    bewusst "seit je" zaehlt. Aliase zaehlen wie ueberall sonst auf ihr Ziel.
+
+    flight_cache ist bereits auf CALLSIGN_PREFIX beschraenkt (rebuild_flight_cache() baut es
+    ausschliesslich aus canonicalize_legs() mit dem konfigurierten Praefix) -- kein eigener
+    Callsign-Filter noetig, wie auch bei friesen_numbers()/all_type_stats() schon nicht.
+    In-progress-Fluege werden NICHT ausgeschlossen -- konsistent mit dem Rest der Muster-
+    Zahlenfamilie (friesen_numbers, all_type_stats, flight_type_codes), nicht mit get_stats()
+    (das fuer Piloten-Kennzahlen einen strengeren Abschluss-Begriff verwendet).
+    """
+    start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        f"""SELECT {FLIGHT_TYPE_CODE_SQL} AS code, COUNT(*) AS n FROM flight_cache
+             WHERE logon_time >= ?
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) IS NOT NULL
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''
+             GROUP BY code""",
+        (start,),
+    ).fetchall()
+    agg: dict[str, int] = {}
+    for r in rows:
+        if not r["code"]:
+            continue
+        ziel = resolve_alias(conn, r["code"])
+        if not ziel:
+            continue
+        agg[ziel] = agg.get(ziel, 0) + r["n"]
+    if not agg:
+        return None
+    best = min(agg, key=lambda c: (-agg[c], c))
+    typ = get_aircraft_type(conn, best) or {}
+    return {"code": best, "name": typ.get("name"), "fluege": agg[best]}
 
 
 def aircraft_type_candidates(

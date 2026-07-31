@@ -18,6 +18,7 @@ from app.database import (
     resolve_alias,
     set_aircraft_type_override,
     top_pilots,
+    top_type_for_days,
     upsert_aircraft_type_import,
     upsert_payload,
     validate_alias,
@@ -230,6 +231,50 @@ def test_musterliste_kuerzel_ohne_namen_bleibt_mit_none_drin(conn):
     out = all_type_stats(conn)
     assert out == [{"code": "AP32", "name": None, "fluege": 1,
                      "stunden": 1.0, "nm": 100.0, "piloten": 1}]
+
+
+# --- Top-Muster-KPI (top_type_for_days) --------------------------------------
+# Echtes "jetzt" (nicht T0): top_type_for_days() rechnet intern mit datetime.now(), die
+# Testzeitstempel muessen deshalb relativ dazu liegen, nicht relativ zu einem festen T0.
+
+def _vor(tage):
+    return (datetime.now(timezone.utc) - timedelta(days=tage)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_top_muster_zaehlt_nur_das_gewaehlte_fenster(conn):
+    """Kernanforderung: die KPI-Kachel reagiert auf den Zeitraum-Filter, anders als die
+    volle Liste (all_type_stats) -- ein Muster mit vielen Fluegen VOR dem Fenster darf
+    das aktuelle Fenster nicht gewinnen."""
+    for i in range(5):
+        _flug(conn, i, "C172", "C172", _vor(60))  # ausserhalb der 30-Tage-Auswahl
+    _flug(conn, 10, "PA24", "PA24", _vor(2))       # innerhalb
+    conn.commit()
+    upsert_aircraft_type_import(conn, "PA24", name="Piper PA-24-250 Comanche", now=T0)
+    top = top_type_for_days(conn, 30)
+    assert top == {"code": "PA24", "name": "Piper PA-24-250 Comanche", "fluege": 1}
+
+
+def test_top_muster_ohne_flug_im_fenster_ist_none(conn):
+    _flug(conn, 1, "C172", "C172", _vor(90))
+    conn.commit()
+    assert top_type_for_days(conn, 30) is None
+
+
+def test_top_muster_faltet_alias_auf_ziel(conn):
+    """Wie all_type_stats(): ein Alias-Kuerzel darf das Ranking nicht verfaelschen, indem
+    es getrennt von seinem Ziel gezaehlt wird."""
+    _flug(conn, 1, None, "PA24", _vor(1))
+    _flug(conn, 2, None, "P24", _vor(2))
+    _flug(conn, 3, "C172", "C172", _vor(3))
+    conn.commit()
+    set_aircraft_type_override(conn, "P24", alias_of="PA24", now=T0)
+    top = top_type_for_days(conn, 30)
+    assert top["code"] == "PA24"
+    assert top["fluege"] == 2
+
+
+def test_top_muster_ohne_flugbestand_ist_none(conn):
+    assert top_type_for_days(conn, 30) is None
 
 
 # --- Kandidaten und Bestand -------------------------------------------------

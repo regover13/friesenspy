@@ -145,14 +145,26 @@ def test_types_modal_schliesst_bei_klick_auf_das_overlay():
     ), "kein Overlay-Klick-Handler fuer #types-modal"
 
 
-def test_top_muster_kachel_kennzeichnet_sich_als_zeitraum_unabhaengig():
-    """Alle anderen Kacheln der KPI-Reihe (get_stats(..., days=...)) sind auf den gewaehlten
-    Zeitraum begrenzt, all_type_stats() aber nicht -- ohne Kennzeichnung sieht ein Muster mit
-    vielen Fluegen VOR dem gewaehlten Zeitraum so aus, als waere es aktuell aktiv."""
-    m = re.search(r"function renderTopMusterCard\(\)\s*\{(.*?)\n\}", INDEX, re.S)
-    assert m, "renderTopMusterCard nicht gefunden"
-    assert "gesamt" in m.group(1), \
-        "Top-Muster-Kachel kennzeichnet sich nicht als zeitraum-unabhaengig (\"gesamt\" fehlt)"
+def test_top_muster_kachel_reagiert_auf_den_zeitraum_filter():
+    """Die Kachel sitzt in derselben Reihe wie 'Aktivster Pilot' & Co. (get_stats(...,
+    days=...)) und muss wie diese auf den Zeitraum-Filter reagieren -- sonst zeigt
+    'Häufigstes Muster' ein Muster, das im gewaehlten Zeitraum gar nicht geflogen wurde.
+    Die VOLLE Liste (#types-modal) bleibt bewusst 'gesamt', das prueft die naechste Funktion.
+    """
+    m = re.search(r"async function fetchStats\(_isRetry = false\)\s*\{(.*?)\n\}", INDEX, re.S)
+    assert m, "fetchStats nicht gefunden"
+    assert re.search(r"fetchTopMuster\(Number\(days\)\)", m.group(1)), \
+        "fetchTopMuster wird nicht mit dem aktuell gewaehlten Zeitraum aufgerufen"
+
+
+def test_musterliste_bleibt_gesamt_unabhaengig_vom_zeitraum_filter():
+    """Gegenstueck zum vorigen Test: die VOLLE Liste (Klick auf die Kachel) zeigt bewusst
+    alle Fluege seit je, wie das Muster-Panel selbst -- fetchTypeStats() nimmt deshalb
+    KEINEN days-Parameter."""
+    m = re.search(r"async function fetchTypeStats\(\)\s*\{(.*?)\n\}", INDEX, re.S)
+    assert m, "fetchTypeStats nicht gefunden"
+    assert "/api/aircraft-types/stats'" in m.group(1) and "days" not in m.group(1), \
+        "fetchTypeStats() filtert jetzt nach Zeitraum -- die volle Liste soll 'gesamt' bleiben"
 
 
 def test_musterliste_verlinkt_aus_jeder_zeile_zurueck_ins_muster_modal():

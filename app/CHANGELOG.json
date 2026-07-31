@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.2.1",
+    "date": "2026-07-31",
+    "highlight": false,
+    "title": "Häufigstes Muster reagiert jetzt auf den Zeitraum",
+    "items": [
+      "🏆 Die Kachel „Häufigstes Muster\" zeigt jetzt das meistgeflogene Muster im oben gewählten Zeitraum, genau wie „Aktivster Pilot\" nebenan — vorher zeigte sie unabhängig davon immer die Gesamtzahl seit je, was in der 30-Tage-Ansicht ein länger nicht geflogenes Muster als aktuell aktiv aussehen lassen konnte.",
+      "📋 Die volle Liste (ein Klick auf die Kachel) bleibt bewusst bei den Gesamtzahlen seit je, wie das Muster-Panel selbst — dafür jetzt mit einem Hinweis direkt über der Tabelle."
+    ]
+  },
+  {
     "version": "11.2.0",
     "date": "2026-07-31",
     "highlight": false,

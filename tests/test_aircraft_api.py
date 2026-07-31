@@ -103,8 +103,9 @@ def test_zahlen_und_top_piloten(client):
 
 
 def test_type_stats_endpoint_sortiert_und_ohne_hintergrund_abruf(client, monkeypatch):
-    """Grundlage der Top-Muster-KPI: meistgeflogenes zuerst, kein Wikimedia-Seiteneffekt
-    (anders als /api/aircraft/{code} loest dieser Endpunkt nie _resolve_aircraft_type aus)."""
+    """Grundlage der VOLLEN Musterliste (kein days-Fenster, "seit je" wie das Muster-Panel):
+    meistgeflogenes zuerst, kein Wikimedia-Seiteneffekt (anders als /api/aircraft/{code}
+    loest dieser Endpunkt nie _resolve_aircraft_type aus)."""
     from app.poller import VatsimPoller
     aufgerufen = []
     monkeypatch.setattr(
@@ -119,6 +120,28 @@ def test_type_stats_endpoint_sortiert_und_ohne_hintergrund_abruf(client, monkeyp
     assert d[0]["fluege"] == 2
     assert d[1]["fluege"] == 1
     assert aufgerufen == []
+
+
+def test_type_top_endpoint_reagiert_auf_days(client):
+    """Grundlage der Top-Muster-KPI-Kachel: anders als /api/aircraft-types/stats reagiert
+    dieser Endpunkt auf ?days= -- ein Muster, das nur AUSSERHALB des Fensters geflogen
+    wurde, darf das Fenster nicht gewinnen."""
+    from datetime import datetime, timedelta, timezone
+    vor = lambda tage: (
+        (datetime.now(timezone.utc) - timedelta(days=tage)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    for i in range(3):
+        _flug(client.db, i, "C172", vor(60))
+    _flug(client.db, 10, "PA24", vor(1))
+    d = client.get("/api/aircraft-types/top?days=30").json()
+    assert d == {"code": "PA24", "name": None, "fluege": 1}
+
+
+def test_type_top_endpoint_leeres_fenster_liefert_200_und_leeres_objekt(client):
+    """Kein Flug im Fenster ist ein echter, darstellbarer Zustand -- kein 404."""
+    r = client.get("/api/aircraft-types/top?days=30")
+    assert r.status_code == 200
+    assert r.json() == {}
 
 
 def test_kutter_daten_und_hinweis_auf_eigene_zeile(client):

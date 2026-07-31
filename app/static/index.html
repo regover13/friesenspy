@@ -4499,6 +4499,7 @@ async function fetchStats(_isRetry = false) {
     renderStatsTable(data, Number(days));
     fetchSpecialEventStats(Number(days));
     fetchTypeStats();
+    fetchTopMuster(Number(days));
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden der Statistiken</div></div>`;
   }
@@ -4791,19 +4792,38 @@ function renderStatsSummary(stats, days) {
 // ==========================================================================
 //  MUSTERLISTE (Statistiken-Tab: Kachel "Häufigstes Muster" + Detail-Modal)
 // ==========================================================================
-// Zwischenspeicher aller Muster-Kennzahlen -- lebt unabhaengig vom Zeitraum-Filter der
-// Statistiken-Uebersicht (all_type_stats() ist wie das Muster-Panel selbst eine
-// Gesamtzahl seit je, kein days-Fenster).
+// Zwei getrennte Zwischenspeicher, bewusst nicht einer:
+// - _typeStats  -- ALLE Muster seit je (all_type_stats(), kein days-Fenster), Grundlage
+//                  der vollen Liste im #types-modal. Die Liste bleibt "gesamt", wie im
+//                  Muster-Panel selbst -- unabhaengig vom Zeitraum-Filter oben.
+// - _topMuster  -- NUR das meistgeflogene Muster IM GEWAEHLTEN ZEITRAUM (top_type_for_days()),
+//                  Grundlage der KPI-Kachel. Die Kachel sitzt in derselben Reihe wie
+//                  "Aktivster Pilot" & Co. und muss wie diese auf den days-Filter reagieren --
+//                  sonst zeigt "Häufigstes Muster" ein Muster, das im gewaehlten Zeitraum
+//                  vielleicht gar nicht geflogen wurde.
 let _typeStats    = null;
+let _topMuster    = null;
 let _typesSortBy  = 'fluege';
 let _typesSortDir = 'desc';
 
+// Prefetch fuer #types-modal (Klick auf die Kachel oeffnet die Liste) -- rendert selbst
+// keine Kachel, das macht fetchTopMuster()/renderTopMusterCard() getrennt.
 async function fetchTypeStats() {
   try {
     const res = await fetch('/api/aircraft-types/stats');
     _typeStats = res.ok ? await res.json() : [];
   } catch (e) {
     _typeStats = [];
+  }
+}
+
+async function fetchTopMuster(days) {
+  try {
+    const res  = await fetch(`/api/aircraft-types/top?days=${days}`);
+    const body = res.ok ? await res.json() : null;
+    _topMuster = body && body.code ? body : null;
+  } catch (e) {
+    _topMuster = null;
   }
   renderTopMusterCard();
 }
@@ -4812,28 +4832,21 @@ async function fetchTypeStats() {
 // asynchron nachgeladen (eigener Endpoint), deshalb per DOM-Insert statt als Teil des
 // synchronen renderStatsSummary()-Strings. Bei jedem Neu-Render der Uebersicht (Zeitraum-
 // Wechsel) baut renderStatsSummary() die Reihe komplett neu auf, die alte Kachel wird
-// deshalb zuerst entfernt statt doppelt eingehaengt.
-//
-// "gesamt" im Label ist bewusst da: alle anderen Kacheln dieser Reihe (inkl. "Aktivster
-// Pilot") sind auf den gewaehlten Zeitraum begrenzt (get_stats(..., days=...)), diese
-// Kachel aber nicht -- all_type_stats() kennt keinen days-Parameter, genau wie das
-// Muster-Panel selbst immer "seit je" zeigt. Ohne Kennzeichnung sieht ein Muster mit
-// vielen Fluegen VOR dem gewaehlten Zeitraum so aus, als waere es im aktuellen Zeitraum
-// aktiv -- ist es aber nicht zwingend.
+// deshalb zuerst entfernt statt doppelt eingehaengt. Kein Muster im gewaehlten Zeitraum
+// (_topMuster leer) -- Kachel bleibt einfach weg, wie "Aktivster Pilot" bei leeren stats.
 function renderTopMusterCard() {
   const row = document.getElementById('stats-kpi-row');
   const old = document.getElementById('stats-kpi-topmuster');
   if (old) old.remove();
-  if (!row || !_typeStats || !_typeStats.length) return;
-  const top = _typeStats[0];
+  if (!row || !_topMuster) return;
   const card = document.createElement('div');
   card.id = 'stats-kpi-topmuster';
   card.className = 'stats-kpi-card';
   card.style.cssText = 'min-width:160px;cursor:pointer;';
   card.onclick = () => openTypesModal();
   card.innerHTML =
-    `<span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(top.name || top.code)}</span>
-     <span class="stats-kpi-label">Häufigstes Muster gesamt (${top.fluege} Flüge) →</span>`;
+    `<span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(_topMuster.name || _topMuster.code)}</span>
+     <span class="stats-kpi-label">Häufigstes Muster (${_topMuster.fluege} Flüge) →</span>`;
   row.appendChild(card);
 }
 
