@@ -44,6 +44,42 @@ def test_ac_modal_schliesst_bei_klick_auf_das_overlay():
     ), "kein Overlay-Klick-Handler fuer #ac-modal"
 
 
+def test_ac_link_traegt_keine_eigene_unterstreichung():
+    """Stehende UI-Regel: Klickbares ist allein durch Blau gekennzeichnet.
+
+    Der Designator stand in derselben Tabellenzeile wie die Strecken-Zelle (`.text-green`,
+    nur blau) und sah als einziges Klickziel der App anders aus — gepunktete `border-bottom`
+    plus `text-decoration: underline` beim Hover.
+    """
+    m = re.search(r"\.ac-link\s*\{([^}]*)\}", INDEX)
+    assert m, ".ac-link-Regel nicht gefunden"
+    regel = m.group(1)
+    assert "border-bottom" not in regel, \
+        ".ac-link hat wieder eine eigene Unterstreichung — kein anderes Klickziel hat eine"
+    assert "underline" not in regel
+    assert not re.search(r"\.ac-link:hover\s*\{[^}]*underline", INDEX), \
+        ".ac-link:hover unterstreicht wieder — die anderen Klickziele tun das nicht"
+
+
+def test_actype_deeplink_wird_vor_dem_tab_abbruch_ausgewertet():
+    """Der Teilen-Knopf im Muster-Panel teilt `#actype=<code>` ohne `tab`-Parameter.
+
+    `initFromUrl` steigt bei fehlendem `tab` mit `return` aus — steht die actype-Auswertung
+    danach, oeffnet der geteilte Link beim Empfaenger gar nichts.
+    """
+    m = re.search(r"async function initFromUrl\(\)\s*\{(.*?)\n\}", INDEX, re.S)
+    assert m, "initFromUrl nicht gefunden"
+    quelle = m.group(1)
+    # Zeilenanfang-Anker: der Hinweis-Kommentar ueber der actype-Zeile nennt den Abbruch
+    # selbst, ein blosses find() faende deshalb den Kommentar statt der echten Anweisung.
+    m_actype = re.search(r"^\s*const acType = p\.get\('actype'\)", quelle, re.M)
+    m_return = re.search(r"^\s*if \(!tab\) return", quelle, re.M)
+    assert m_actype, "actype-Deep-Link fehlt in initFromUrl"
+    assert m_return, "Tab-Abbruch nicht gefunden — Test veraltet"
+    assert m_actype.start() < m_return.start(), \
+        "actype wird erst nach dem Tab-Abbruch gelesen — ein Link ohne tab oeffnet nichts"
+
+
 def test_misave_loescht_kein_hochgeladenes_foto():
     """I2: photo_override='' loescht die 'blob'-Markierung — ein hochgeladenes Foto
     verschwaende beim naechsten Speichern (z. B. einer Namenskorrektur) aus der Anzeige.

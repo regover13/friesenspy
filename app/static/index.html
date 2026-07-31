@@ -1549,10 +1549,20 @@
     }
     .modal-close:hover { background: var(--green-faint); }
 
-    /* Blau = klickbar (stehende UI-Regel) — der Designator ist ein Klickziel. */
-    .ac-link { color: var(--green); text-decoration: none; border-bottom: 1px dotted var(--green); }
-    .ac-link:hover { text-decoration: underline; }
+    /* Blau = klickbar (stehende UI-Regel) — der Designator ist ein Klickziel.
+       KEINE eigene Unterstreichung/Punktlinie: alle anderen Klickziele (Strecken-, Plan-,
+       Callsign-Zellen, .text-green) sind allein durch Blau gekennzeichnet. Der Designator
+       stand direkt daneben in derselben Tabelle und sah als einziger anders aus. */
+    .ac-link { color: var(--green); text-decoration: none; cursor: pointer; }
     #ac-modal .modal-box { max-height: 85vh; overflow-y: auto; }
+    /* Teilen sitzt links neben dem Schliessen-Kreuz. Beide liegen ueber dem Foto, deshalb
+       hier ein deckender Hintergrund statt des transparenten der .btn-share-Basisklasse. */
+    .ac-share {
+      position: absolute;
+      top: 6px; right: 46px;
+      z-index: 2;
+      background: var(--bg-panel);
+    }
     .ac-photo { width: 100%; height: auto; border-radius: 4px; display: block; }
     .ac-credit { font-size: 0.68rem; color: #8aa0b8; margin: 0.25rem 0 0.75rem; }
     .ac-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 0.25rem; }
@@ -1957,6 +1967,7 @@
 <!-- Muster-Info-Panel -->
 <div id="ac-modal" class="modal">
   <div class="modal-box" onclick="event.stopPropagation()">
+    <button class="btn-share ac-share" onclick="copyAcShareUrl(this)" title="Deep-Link auf dieses Muster kopieren">⎘ Teilen</button>
     <button class="modal-close" onclick="closeAcModal()">×</button>
     <div id="ac-body"></div>
   </div>
@@ -2850,8 +2861,13 @@ document.addEventListener('click', function (e) {
   openAcModal(a.getAttribute('data-actype'));
 }, true);
 
+// Das gerade offene Kuerzel — der Teilen-Knopf im Modal baut daraus seinen Deep-Link.
+// Wie beim Bummel bewusst NICHT aus location.href gelesen: das Modal aendert die URL nicht.
+let _acOpenCode = null;
+
 async function openAcModal(code) {
   const el = document.getElementById('ac-modal');
+  _acOpenCode = (code || '').trim();
   document.getElementById('ac-body').innerHTML = '<div class="empty-hint">Lade…</div>';
   el.classList.add('open');
   document.addEventListener('keydown', _acEscHandler);
@@ -2933,9 +2949,25 @@ async function openAcModal(code) {
   document.getElementById('ac-body').innerHTML = h;
 }
 
+// Teilt den Deep-Link auf dieses Muster (#actype=<code>) — oeffnet das Panel beim Laden.
+function copyAcShareUrl(btn) {
+  if (!_acOpenCode) return;
+  const url = `${location.origin}${location.pathname}#actype=${encodeURIComponent(_acOpenCode)}`;
+  navigator.clipboard.writeText(url).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Kopiert!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✗ Fehler';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  });
+}
+
 function closeAcModal() {
   document.getElementById('ac-modal').classList.remove('open');
   document.removeEventListener('keydown', _acEscHandler);
+  _acOpenCode = null;
 }
 
 // Klick auf das Overlay schliesst -- wie bei fp-modal/fld-modal/track-modal/changelog-modal.
@@ -5529,6 +5561,12 @@ async function initFromUrl() {
     await _configPromise;
     openChangelogModal();
   }
+
+  // Deep-Link auf ein Muster (#actype=<code>) — ebenfalls tab-unabhaengig. Bewusst ohne
+  // await: das Panel laedt aus einem eigenen Endpoint, der Tab-Aufbau darunter soll nicht
+  // darauf warten. Muss VOR dem `if (!tab) return` stehen, sonst greift der Link ohne Tab nicht.
+  const acType = p.get('actype');
+  if (acType) openAcModal(acType);
 
   const tab = p.get('tab');
   if (!tab) return;

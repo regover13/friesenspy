@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.1.0",
+    "date": "2026-07-31",
+    "highlight": false,
+    "title": "Ein Muster lässt sich jetzt teilen",
+    "items": [
+      "⎘ Das Muster-Panel hat oben einen Teilen-Knopf — wie der Bummel, der Kutter und der Versionsverlauf. Der kopierte Link öffnet beim Empfänger direkt dasselbe Muster, egal auf welchem Tab er landet.",
+      "🔗 Das Muster-Kürzel in den Listen sieht jetzt aus wie jedes andere Klickziel: einfach blau. Die gepunktete Unterstreichung darunter war die einzige ihrer Art und stand direkt neben Strecken, die ohne auskommen."
+    ]
+  },
+  {
     "version": "11.0.0",
     "date": "2026-07-30",
     "highlight": true,
