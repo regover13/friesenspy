@@ -80,6 +80,37 @@ def test_actype_deeplink_wird_vor_dem_tab_abbruch_ausgewertet():
         "actype wird erst nach dem Tab-Abbruch gelesen — ein Link ohne tab oeffnet nichts"
 
 
+def test_hover_zustand_bleibt_auf_dem_touchscreen_nicht_haengen():
+    """Auf dem iPhone blieb der Teilen-Knopf nach dem Antippen im :hover-Zustand.
+
+    Dessen Hintergrund `--green-faint` ist halbtransparent — der Knopf sah danach
+    „durchsichtig" aus und wurde erst beim naechsten Tippen wieder normal. Beide
+    Knopf-Hover-Regeln des Muster-Panels gehoeren deshalb in `@media (hover: hover)`.
+    """
+    for regel in (".btn-share:hover", ".modal-close:hover"):
+        m = re.search(re.escape(regel) + r"\s*\{", INDEX)
+        assert m, f"{regel} nicht gefunden"
+        davor = INDEX[:m.start()]
+        # letzter geoeffneter @media-Block vor der Regel muss die hover-Abfrage sein
+        letzte_media = davor.rfind("@media")
+        assert letzte_media != -1 and "hover: hover" in davor[letzte_media:], \
+            f"{regel} steht ausserhalb von @media (hover: hover) — der Zustand bleibt " \
+            "auf dem Touchscreen nach dem Antippen haengen"
+
+
+def test_modal_knoepfe_liegen_nicht_ueber_dem_foto():
+    """Teilen und Schliessen sassen absolut positioniert auf dem Foto und waren dort
+    kaum zu lesen. Sie gehoeren in die Kopfzeile im Fluss, die das Foto nach unten drueckt."""
+    box = re.search(
+        r'<div id="ac-modal" class="modal">\s*<div class="modal-box"[^>]*>(.*?)<div id="ac-body"',
+        INDEX, re.S,
+    )
+    assert box, "#ac-modal-Kopfbereich nicht gefunden"
+    assert 'class="ac-topbar"' in box.group(1), "Kopfzeile .ac-topbar fehlt"
+    assert re.search(r"#ac-modal \.modal-close \{[^}]*position: static", INDEX), \
+        "das Schliessen-Kreuz ist wieder absolut positioniert und liegt auf dem Foto"
+
+
 def test_misave_loescht_kein_hochgeladenes_foto():
     """I2: photo_override='' loescht die 'blob'-Markierung — ein hochgeladenes Foto
     verschwaende beim naechsten Speichern (z. B. einer Namenskorrektur) aus der Anzeige.

@@ -1340,7 +1340,12 @@
       transition: all 0.15s;
       flex-shrink: 0;
     }
-    .btn-share:hover { border-color: var(--green); color: var(--green); background: var(--green-faint); }
+    /* Nur fuer echte Zeigergeraete: auf dem Touchscreen bleibt :hover nach dem Antippen
+       haengen, bis woanders hingetippt wird. Der halbtransparente --green-faint-Hintergrund
+       liess den Knopf danach „durchsichtig" wirken und beim naechsten Tippen wieder normal. */
+    @media (hover: hover) {
+      .btn-share:hover { border-color: var(--green); color: var(--green); background: var(--green-faint); }
+    }
     .ev-row-selected { background: var(--green-faint); }
 
     /* =====================================================================
@@ -1547,7 +1552,10 @@
       padding: 3px 9px;
       cursor: pointer;
     }
-    .modal-close:hover { background: var(--green-faint); }
+    /* Wie bei .btn-share: kein haengenbleibender Hover-Zustand auf dem Touchscreen. */
+    @media (hover: hover) {
+      .modal-close:hover { background: var(--green-faint); }
+    }
 
     /* Blau = klickbar (stehende UI-Regel) — der Designator ist ein Klickziel.
        KEINE eigene Unterstreichung/Punktlinie: alle anderen Klickziele (Strecken-, Plan-,
@@ -1555,14 +1563,21 @@
        stand direkt daneben in derselben Tabelle und sah als einziger anders aus. */
     .ac-link { color: var(--green); text-decoration: none; cursor: pointer; }
     #ac-modal .modal-box { max-height: 85vh; overflow-y: auto; }
-    /* Teilen sitzt links neben dem Schliessen-Kreuz. Beide liegen ueber dem Foto, deshalb
-       hier ein deckender Hintergrund statt des transparenten der .btn-share-Basisklasse. */
-    .ac-share {
-      position: absolute;
-      top: 6px; right: 46px;
-      z-index: 2;
-      background: var(--bg-panel);
+    /* Eigene Kopfzeile IM FLUSS statt zweier schwebender Knoepfe: absolut positioniert lagen
+       Teilen und Schliessen ueber dem Foto (das direkt unter dem Box-Padding beginnt) und waren
+       auf hellen Bildern kaum zu lesen. Hier druecken sie das Foto nach unten und stehen immer
+       auf dem Panel-Hintergrund. `stretch` gibt beiden dieselbe Hoehe trotz ungleicher Schrift. */
+    #ac-modal .ac-topbar {
+      display: flex;
+      justify-content: flex-end;
+      align-items: stretch;
+      gap: 8px;
+      margin-bottom: 12px;
     }
+    #ac-modal .modal-close { position: static; }
+    /* --text-label (#6b9ab8) ist als Knopfbeschriftung zu leise — hier heller und eine Spur
+       groesser als die Basisklasse. */
+    #ac-modal .ac-topbar .btn-share { color: var(--text-bright); font-size: 0.75rem; }
     .ac-photo { width: 100%; height: auto; border-radius: 4px; display: block; }
     .ac-credit { font-size: 0.68rem; color: #8aa0b8; margin: 0.25rem 0 0.75rem; }
     .ac-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 0.25rem; }
@@ -1967,8 +1982,10 @@
 <!-- Muster-Info-Panel -->
 <div id="ac-modal" class="modal">
   <div class="modal-box" onclick="event.stopPropagation()">
-    <button class="btn-share ac-share" onclick="copyAcShareUrl(this)" title="Deep-Link auf dieses Muster kopieren">⎘ Teilen</button>
-    <button class="modal-close" onclick="closeAcModal()">×</button>
+    <div class="ac-topbar">
+      <button class="btn-share" onclick="copyAcShareUrl(this)" title="Deep-Link auf dieses Muster kopieren">⎘ Teilen</button>
+      <button class="modal-close" onclick="closeAcModal()">×</button>
+    </div>
     <div id="ac-body"></div>
   </div>
 </div>
