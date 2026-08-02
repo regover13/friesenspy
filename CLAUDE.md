@@ -29,6 +29,10 @@ GitHub Push → main-Branch → GitHub Actions → GHCR → SSH-Deploy auf VPS
 - Port: 8091 (intern), friesenspy.devprops.de (extern)
 - DB: `/opt/friesenspy/data/friesenspy.db` (Volume)
 - Config: `/opt/friesenspy/config.env` (niemals in git!)
+- **Discord-Meldung nach jedem Deploy:** letzter Schritt in `deploy.yml`, meldet Erfolg (grün, nach
+  bestandenem Health-Check) oder Fehlschlag (rot) mit Version, Commit-Titel und Link zum Workflow-Log.
+  Braucht das Repo-Secret `DISCORD_WEBHOOK` (Discord-Kanal-Webhook, **ohne** `/github`-Suffix).
+  Fehlt das Secret, wird der Schritt übersprungen — der Deploy bleibt grün.
 
 ## VPS-Einrichtung (einmalig)
 
