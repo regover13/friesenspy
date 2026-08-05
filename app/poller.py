@@ -1772,26 +1772,42 @@ class VatsimPoller:
                         aircraft_info.resolve_type, name, aircraft_info.fetch_json
                     )
                 foto_datei = None
+                foto_fehler = None
                 if res and res.get("photo_url"):
-                    rohdaten = await asyncio.to_thread(
-                        aircraft_info.download_photo, res["photo_url"]
-                    )
-                    # Rev. 3 (I3): dieselbe Aufbereitung wie beim Admin-Upload — Commons
-                    # liefert die ORIGINALdatei (gemessen bis 4 MB), die sonst unverkleinert
-                    # auf das Volume und an jedes Mobilgerät ginge. `to_web_jpeg` verkleinert
-                    # auf 1280 px und kodiert als JPEG neu; damit stimmt auch der ausgelieferte
-                    # MIME-Typ, wenn Commons ein SVG/TIFF liefert.
+                    # Das Foto ist die Kür, der Artikeltext die Pflicht: ab hier darf NICHTS
+                    # mehr die schon gelungene Recherche wegwerfen. Bis 2026-08-05 lag der
+                    # Download vor diesem try, ein Fehler flog in den äußeren Handler und
+                    # verwarf den Text — während ein unlesbares Bild längst sauber abgefangen
+                    # wurde. Die Asymmetrie war unbegründet und real teuer: beim Neu-Holen
+                    # von 13 Mustern auf einmal drosselte Wikimedia den Bild-Download mit
+                    # HTTP 429, und C210 verlor deswegen seinen fertigen deutschen Text.
                     try:
+                        rohdaten = await asyncio.to_thread(
+                            aircraft_info.download_photo, res["photo_url"]
+                        )
+                        # Rev. 3 (I3): dieselbe Aufbereitung wie beim Admin-Upload — Commons
+                        # liefert die ORIGINALdatei (gemessen bis 4 MB), die sonst
+                        # unverkleinert auf das Volume und an jedes Mobilgerät ginge.
+                        # `to_web_jpeg` verkleinert auf 1280 px und kodiert als JPEG neu;
+                        # damit stimmt auch der ausgelieferte MIME-Typ, wenn Commons ein
+                        # SVG/TIFF liefert.
                         bilddaten = await asyncio.to_thread(
                             aircraft_info.to_web_jpeg, rohdaten
                         )
                     except ValueError as exc:
-                        # Kein von Pillow lesbares Bild (z. B. SVG). Das ist KEIN Grund, die
-                        # gelungene Artikel-Recherche wegzuwerfen — der Text bleibt, das Foto
-                        # entfällt.
+                        # Kein von Pillow lesbares Bild (z. B. SVG). Endgültig: ein Retry
+                        # bekäme dieselbe Datei. Der Text bleibt, das Foto entfällt.
                         logger.info("Muster-Info %s: Foto unbrauchbar, nur Text (%s)",
                                     code, exc)
                         bilddaten = None
+                    except Exception as exc:  # noqa: BLE001 — Text schlägt Foto, immer
+                        # Download gescheitert (429, Timeout, 404). Ob das Muster deswegen
+                        # wieder auf die Wiedervorlage kommt, entscheidet unten
+                        # `llm.is_transient_error` — der Text wird in JEDEM Fall geschrieben.
+                        logger.info("Muster-Info %s: Foto nicht ladbar, nur Text (%s)",
+                                    code, exc)
+                        bilddaten = None
+                        foto_fehler = exc
                     if bilddaten is not None:
                         self._photo_dir.mkdir(parents=True, exist_ok=True)
                         foto_datei = f"{code}.jpg"
@@ -1826,7 +1842,17 @@ class VatsimPoller:
                         photo_artist=res.get("photo_artist"),
                         photo_source_url=res.get("photo_source_url"),
                     )
-                    mark_aircraft_type_state(conn, code, "ok", jetzt)
+                    if foto_fehler is not None and llm.is_transient_error(foto_fehler):
+                        # Text ist geschrieben und sofort sichtbar; nur das Foto fehlt noch.
+                        # `fehler` (statt `ok`) hält das Muster in der Wiedervorlage, damit
+                        # der Backoff es später erneut versucht — bei einem 429 ist das Bild
+                        # beim nächsten Mal in aller Regel da. Ein endgültiger Fehler (404
+                        # auf eine gelöschte Commons-Datei) fällt hier durch und schließt die
+                        # Auflösung mit `ok` ab, sonst hinge das Muster endlos im Backoff.
+                        mark_aircraft_type_state(conn, code, "fehler", jetzt,
+                                                 last_error=str(foto_fehler)[:200])
+                    else:
+                        mark_aircraft_type_state(conn, code, "ok", jetzt)
                 conn.commit()
             except Exception:
                 # Die Auflösung selbst ist gelungen, nur das Schreiben schlug fehl (z. B.

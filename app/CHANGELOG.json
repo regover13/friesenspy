@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.3.3",
+    "date": "2026-08-05",
+    "highlight": false,
+    "title": "Beschreibung erscheint auch, wenn das Foto klemmt",
+    "items": [
+      "🖼️ Wikipedia bremst Abrufe aus, wenn zu viele auf einmal kommen. Traf das den Bild-Download, warf FriesenSpy den bereits fertig geholten Beschreibungstext gleich mit weg — das Muster blieb leer, obwohl der Text schon da war. Jetzt gilt: Text schlägt Foto. Die Beschreibung wird gespeichert, das Bild kommt beim nächsten Anlauf nach. Ein dauerhaft fehlendes Bild (auf Wikipedia gelöscht) schließt die Recherche sauber ab, statt das Muster endlos erneut versuchen zu lassen."
+    ]
+  },
+  {
     "version": "11.3.2",
     "date": "2026-08-05",
     "highlight": false,

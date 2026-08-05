@@ -126,6 +126,108 @@ async def test_unlesbares_commons_bild_kostet_nur_das_foto(db, tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_gedrosselter_fotodownload_kostet_nur_das_foto(db, tmp_path, monkeypatch):
+    """Real am 2026-08-05 aufgetreten: 13 Muster gleichzeitig neu geholt, Wikimedia
+    antwortete auf den Bild-Download mit HTTP 429.
+
+    Der Artikeltext war zu diesem Zeitpunkt bereits geholt -- er wurde trotzdem
+    weggeworfen, weil der Download-Fehler in den aeusseren Handler flog. Ein UNLESBARES
+    Bild (SVG) wird dagegen seit jeher abgefangen und der Text bleibt
+    (`test_unlesbares_commons_bild_kostet_nur_das_foto`). Diese Asymmetrie war unbegruendet:
+    in beiden Faellen ist die Artikel-Recherche gelungen und nur das Foto fehlt.
+
+    Der Zustand bleibt `fehler` -- ein 429 ist voruebergehend, das Foto soll beim Retry
+    nachkommen. Anders als bisher steht der Text aber sofort in der DB.
+    """
+    from app import aircraft_info
+    _name_hinterlegen(db, "C210", "Cessna 210N Centurion")
+    _flug(db, 1, "C210")
+    p = _poller(db, tmp_path)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+    monkeypatch.setattr(aircraft_info, "resolve_type", lambda name, fetch: {
+        "wiki_lang": "de", "wiki_title": "Cessna 210", "extract": "Die Cessna 210 …",
+        "photo_commons_title": "File:c210.jpg", "photo_url": "https://upload/c210.jpg",
+        "photo_licence": "CC BY-SA 3.0", "photo_artist": None, "photo_source_url": None,
+    })
+
+    def _gedrosselt(url, **kw):
+        raise aircraft_info.WikimediaError(f"HTTP 429 für {url}", 429)
+
+    monkeypatch.setattr(aircraft_info, "download_photo", _gedrosselt)
+    await p._resolve_aircraft_type("C210")
+
+    row = get_aircraft_type(get_connection(db), "C210")
+    assert row["extract"] == "Die Cessna 210 …", \
+        "gelungene Artikel-Recherche wurde wegen des Fotos weggeworfen"
+    assert row["wiki_lang"] == "de"
+    assert row["wiki_title"] == "Cessna 210"
+    assert not row["photo_file"]
+    assert row["fetch_state"] == "fehler", "429 ist voruebergehend, das Foto soll nachkommen"
+    assert row["attempts"] == 1
+
+
+@pytest.mark.asyncio
+async def test_endgueltiger_fotofehler_schliesst_die_aufloesung_ab(db, tmp_path, monkeypatch):
+    """Ein 404 auf die Bilddatei kommt beim Retry nicht wieder -- dann ist die Auflösung
+    fertig (`ok`), nicht dauerhaft im Backoff. Sonst haengt das Muster wegen eines
+    geloeschten Commons-Bildes endlos in der Wiedervorlage."""
+    from app import aircraft_info
+    _name_hinterlegen(db, "C208", "Cessna 208B Grand Caravan")
+    _flug(db, 1, "C208")
+    p = _poller(db, tmp_path)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+    monkeypatch.setattr(aircraft_info, "resolve_type", lambda name, fetch: {
+        "wiki_lang": "de", "wiki_title": "Cessna 208", "extract": "Text",
+        "photo_commons_title": "File:weg.jpg", "photo_url": "https://upload/weg.jpg",
+        "photo_licence": "CC BY-SA 3.0", "photo_artist": None, "photo_source_url": None,
+    })
+
+    def _weg(url, **kw):
+        raise aircraft_info.WikimediaError(f"HTTP 404 für {url}", 404)
+
+    monkeypatch.setattr(aircraft_info, "download_photo", _weg)
+    await p._resolve_aircraft_type("C208")
+
+    row = get_aircraft_type(get_connection(db), "C208")
+    assert row["extract"] == "Text"
+    assert row["fetch_state"] == "ok"
+    assert not row["photo_file"]
+
+
+@pytest.mark.asyncio
+async def test_fotofehler_laesst_ein_vorhandenes_foto_stehen(db, tmp_path, monkeypatch):
+    """Beim Neu-Holen darf ein gescheiterter Download das ALTE Foto nicht entwerten --
+    ``upsert_aircraft_type_import`` fasst ``None``-Felder nicht an, das muss so bleiben."""
+    from app import aircraft_info
+    from app.database import upsert_aircraft_type_import
+    _name_hinterlegen(db, "C172", "Cessna 172S Skyhawk")
+    _flug(db, 1, "C172")
+    conn = get_connection(db)
+    upsert_aircraft_type_import(conn, "C172", now=T0, photo_file="C172.jpg",
+                                extract="alt", wiki_lang="de", wiki_title="Cessna 172")
+    conn.commit()
+    conn.close()
+
+    p = _poller(db, tmp_path)
+    monkeypatch.setattr(p, "_now", lambda: T0)
+    monkeypatch.setattr(aircraft_info, "resolve_type", lambda name, fetch: {
+        "wiki_lang": "de", "wiki_title": "Cessna 172", "extract": "neu",
+        "photo_commons_title": "File:x.jpg", "photo_url": "https://upload/x.jpg",
+        "photo_licence": "CC BY-SA 3.0", "photo_artist": None, "photo_source_url": None,
+    })
+
+    def _gedrosselt(url, **kw):
+        raise aircraft_info.WikimediaError(f"HTTP 429 für {url}", 429)
+
+    monkeypatch.setattr(aircraft_info, "download_photo", _gedrosselt)
+    await p._resolve_aircraft_type("C172")
+
+    row = get_aircraft_type(get_connection(db), "C172")
+    assert row["photo_file"] == "C172.jpg", "vorhandenes Foto wurde entwertet"
+    assert row["extract"] == "neu"
+
+
+@pytest.mark.asyncio
 async def test_403_wird_fehler_nicht_nichts_gefunden(db, tmp_path, monkeypatch):
     _flug(db, 1, "C172")
     p = _poller(db, tmp_path)
