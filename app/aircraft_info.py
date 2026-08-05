@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from urllib.parse import quote
 
 import httpx
@@ -88,9 +89,52 @@ def harden_name(name: str | None) -> str | None:
     return s
 
 
+# Deutsche und englische Transkription des Kyrillischen unterscheiden sich systematisch:
+# die de-Wikipedia schreibt *Antonow*, *Tupolew*, *Jakowlew*, *Suchoi*, *Iljuschin* — VATSIM
+# liefert durchweg die englische Form (*Antonov*, *Yakovlev*, *Sukhoi*, *Ilyushin*). Ein
+# einziger Buchstabe genügt, damit ``_woerter`` keine Überlappung mehr sieht: gemessen am
+# 2026-08-05 findet die de-Suche nach ``Antonov An-2`` den Artikel *Antonow An-2* — und
+# ``title_matches_name`` verwarf ihn, weil ``{'antonow'}`` und ``{'antonov'}`` disjunkt sind.
+# Beide Seiten werden auf dieselbe Schreibweise gebracht, ein Fehltreffer entstünde also nur,
+# wenn zwei WIRKLICH verschiedene Wörter dabei zusammenfielen (in Luftfahrtnamen nicht belegt).
+_TRANSLITERATION = (("kh", "ch"), ("sh", "sch"), ("y", "j"), ("v", "w"))
+
+# Typbezeichnung: Buchstabenkürzel am Wortanfang + Ziffernblock, mit oder ohne Bindestrich
+# (``An-2``, ``AS365N3``, ``BN-2B``, ``DA40``). Der Varianten-Buchstabe DAHINTER bleibt
+# bewusst außen vor — ``AS365N3`` und ``AS365`` sind dieselbe Baureihe. Das ``\b`` verhindert,
+# dass mitten in einem Wort ein Scheinkürzel entsteht (``AS365N3`` ergäbe sonst zusätzlich
+# ``n3``, ``Cessna 182`` das sinnlose ``ssna182``).
+_TYP_MUSTER = re.compile(r"\b([A-Za-z]{1,4})-?(\d+)")
+
+
+def _translit(wort: str) -> str:
+    for aus, ein in _TRANSLITERATION:
+        wort = wort.replace(aus, ein)
+    return wort
+
+
+def _ohne_akzente(wort: str) -> str:
+    """``aérospatiale`` → ``aerospatiale``.
+
+    Wikipedia führt französische Hersteller mit Akzent (*Aérospatiale SA-315*), VATSIM
+    liefert sie ohne (``Aerospatiale SA 315B Lama``) — gemessen am 2026-08-05, dasselbe Wort
+    galt als zwei verschiedene. Die Zerlegung wirkt auf BEIDE Seiten, ein Fehltreffer
+    entstünde also nur, wenn zwei wirklich verschiedene Wörter zusammenfielen.
+    """
+    return "".join(z for z in unicodedata.normalize("NFKD", wort)
+                   if not unicodedata.combining(z))
+
+
 def _woerter(text: str) -> set[str]:
     roh = re.findall(r"[0-9A-Za-zÄÖÜäöüßÀ-ÿ]+", text.lower())
-    return {w for w in roh if len(w) >= _MIN_WORT_LEN and w not in _FUELLWOERTER}
+    return {_translit(_ohne_akzente(w))
+            for w in roh if len(w) >= _MIN_WORT_LEN and w not in _FUELLWOERTER}
+
+
+def _typ_tokens(text: str) -> set[str]:
+    """Alle Typbezeichnungen eines Strings, transliteriert (``Jak-52`` = ``Yak-52``)."""
+    return {_translit(praefix.lower()) + ziffern
+            for praefix, ziffern in _TYP_MUSTER.findall(text)}
 
 
 def title_matches_name(title: str, name: str) -> bool:
@@ -102,16 +146,27 @@ def title_matches_name(title: str, name: str) -> bool:
     *Piper PA-60* (72 Flüge), ``AS365N3 Dauphin 2`` gegen *Eurocopter AS365 Dauphin*.
     Der Hersteller wandert bei Hubschraubern durch die Firmengeschichte, die Typbezeichnung
     bleibt — deshalb ist der ganze Name der bessere Anker.
+
+    **Widersprechen sich die Typbezeichnungen, ist es kein Treffer** — auch wenn der
+    Herstellername passt. Diese Sperre kam mit der Transliteration (2026-08-05) und ist ihr
+    notwendiges Gegenstück: die de-Suche nach ``Antonov An-2`` liefert *Antonow An-225* auf
+    **Platz 1**, die An-2 bekäme sonst den Artikel des größten Flugzeugs der Welt. Sie greift
+    nur, wenn BEIDE Seiten eine Typbezeichnung tragen — ``MBB/Kawasaki BK 117`` (Leerzeichen
+    statt Bindestrich) hat keine, dort bleibt es bei der Wortüberlappung.
+
+    Reihenfolge: die Alias-Liste zuerst, denn dort ist die Zuordnung bereits menschlich
+    belegt (``H145`` = ``BK 117``) und darf nicht an der Typ-Sperre scheitern.
     """
     if not title or not name:
         return False
-    if _woerter(title) & _woerter(name):
-        return True
     title_l, name_l = title.lower(), name.lower()
     for gruppe in _BEKANNTE_MUSTER_ALIASE:
         if any(g in title_l for g in gruppe) and any(g in name_l for g in gruppe):
             return True
-    return False
+    titel_typ, name_typ = _typ_tokens(title), _typ_tokens(name)
+    if titel_typ and name_typ and not (titel_typ & name_typ):
+        return False
+    return bool(_woerter(title) & _woerter(name))
 
 
 def looks_like_aircraft(description: str | None, extract: str | None) -> bool:
@@ -256,19 +311,38 @@ def _ohne_klammern(name: str) -> str:
     return re.sub(r"\s*\([^)]*\)", "", name).strip()
 
 
+def _ohne_typ_suffix(name: str) -> str:
+    """Varianten-Buchstaben hinter dem Ziffernblock streichen (``182T`` → ``182``).
+
+    Der deutsche Suchindex ist kleiner als der englische und kennt die Untervariante meist
+    nicht. Gemessen am 2026-08-05 gegen de.wikipedia.org:
+    ``"Cessna 182T Skylane"`` → ``['Liste von Zwischenfällen …', 'Lycoming O-540']``,
+    ``"Cessna 182 Skylane"``  → ``['Cessna 182', 'Cessna']``. Dasselbe bei ``210N`` → ``210``
+    und ``SR-22T`` → ``SR-22``. Die englische Suche findet den Artikel schon mit dem Suffix —
+    genau daran gingen die deutschen Artikel verloren.
+
+    Reine Typnummern ohne angehängten Buchstaben (``DA62``, ``An-2``) bleiben unangetastet.
+    """
+    return re.sub(r"(\d+)[A-Za-z]{1,3}\b", r"\1", name)
+
+
 def _namens_varianten(sauber: str) -> list[str]:
-    """Suchbegriffe von spezifisch nach allgemein, höchstens drei — je Variante ein
+    """Suchbegriffe von spezifisch nach allgemein, höchstens vier — je Variante ein
     zusätzlicher Wikipedia-Request, deshalb bewusst begrenzt.
 
-    Deckt zwei gemessene Fälle ab: reine Klammerzusätze (``"Diamond DA62 (US
-    7-seat, 2300 kg)"`` → ``"Diamond DA62"``) und ein zusätzliches, für die Suche zu
-    spezifisches Wort danach (``"Diamond DA40 XLS (…)"`` → ``"Diamond DA40 XLS"`` →
-    ``"Diamond DA40"``, die "XLS"-Variante hat keinen eigenen Artikel).
+    Drei Stufen, jede an einem gemessenen Fall belegt: Klammerzusätze (``"Diamond DA62 (US
+    7-seat, 2300 kg)"`` → ``"Diamond DA62"``), das Varianten-Suffix am Ziffernblock
+    (``"Cessna 182T Skylane"`` → ``"Cessna 182 Skylane"``, siehe :func:`_ohne_typ_suffix`)
+    und ein zusätzliches, für die Suche zu spezifisches Wort am Ende (``"Diamond DA40 XLS"``
+    → ``"Diamond DA40"``, die "XLS"-Variante hat keinen eigenen Artikel).
     """
     varianten = [sauber]
     ohne = _ohne_klammern(sauber)
     if ohne and ohne != sauber:
         varianten.append(ohne)
+    entsuffigt = _ohne_typ_suffix(varianten[-1])
+    if entsuffigt != varianten[-1]:
+        varianten.append(entsuffigt)
     woerter = varianten[-1].split()
     if len(woerter) > 2:
         varianten.append(" ".join(woerter[:-1]))
@@ -295,12 +369,21 @@ def resolve_type(name: str, fetch) -> dict | None:
     Findet die Suche mit dem vollen Namen nichts, versucht ``_namens_varianten`` es mit
     zunehmend knapperen Suchbegriffen erneut — geprüft wird aber immer gegen den VOLLEN
     Namen (``sauber``), die Trefferprüfung wird also nicht durch die Verkürzung aufgeweicht.
+
+    **Die Sprache ist die äußere Schleife, die Namensvariante die innere** — und das ist die
+    Reihenfolge, auf die es ankommt. Umgekehrt (Rev. bis 2026-08-05) galt „deutsch zuerst"
+    nur je Suchbegriff: sobald irgendeine Variante in ``en`` traf, wurde zurückgegeben, und
+    eine kürzere Variante, die in ``de`` getroffen hätte, kam nie dran. Gemessen an der
+    Produktions-DB standen so acht Muster auf Englisch, deren deutscher Artikel existiert —
+    ``Diamond DA40 XLS`` etwa findet in ``en`` sofort etwas, in ``de`` erst als
+    ``Diamond DA40``. Erst wenn ALLE Varianten in ``de`` erfolglos waren, ist Englisch dran.
     """
     sauber = harden_name(name)
     if not sauber:
         return None
-    for versuch in _namens_varianten(sauber):
-        for lang in _SPRACHEN:
+    varianten = _namens_varianten(sauber)
+    for lang in _SPRACHEN:
+        for versuch in varianten:
             treffer = fetch(_such_url(lang, versuch)) or {}
             titel_liste = [
                 t.get("title") for t in ((treffer.get("query") or {}).get("search") or [])

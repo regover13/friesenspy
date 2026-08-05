@@ -1,5 +1,16 @@
 [
   {
+    "version": "11.3.2",
+    "date": "2026-08-05",
+    "highlight": false,
+    "title": "Musterbeschreibungen kommen jetzt auf Deutsch",
+    "items": [
+      "🇩🇪 Bei 13 Mustern stand die Beschreibung auf Englisch, obwohl es den deutschen Wikipedia-Artikel gibt — die An-2 etwa erklärte sich mit „The Antonov An-2 is a Soviet mass-produced single-engine biplane\". Acht davon sprechen jetzt Deutsch: An-2, Cessna 182 und 210, Cirrus SR22 (beide Varianten), Diamond DA40, Britten-Norman BN-2 Islander und die SA 315B Lama. Die restlichen fünf (u. a. Aeroprakt A-32 Vixxen, CubCrafters CC19 XCub) haben schlicht keinen deutschen Artikel und bleiben zu Recht englisch.",
+      "🔎 Drei Gründe steckten dahinter: die deutsche Wikipedia schreibt „Antonow\" statt „Antonov\" und „Aérospatiale\" statt „Aerospatiale\" — ein Buchstabe Unterschied reichte, damit der gefundene Artikel wieder verworfen wurde. Der deutsche Suchindex kennt außerdem Untervarianten wie „182T\" oder „SR-22T\" nicht, der englische schon. Und wenn der englische Artikel zuerst passte, wurde gar nicht mehr auf Deutsch weitergesucht.",
+      "🎯 Nebenbei sicherer geworden: widersprechen sich die Typbezeichnungen, gilt der Artikel nicht mehr als Treffer. Die An-2 wäre sonst beim Artikel der An-225 gelandet — dem größten Flugzeug der Welt."
+    ]
+  },
+  {
     "version": "11.3.1",
     "date": "2026-07-31",
     "highlight": false,

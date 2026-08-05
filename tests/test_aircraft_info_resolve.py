@@ -431,10 +431,14 @@ def test_namensvarianten_ohne_klammer_und_extra_wort():
 
 
 def test_namensvarianten_ohne_klammer_bleibt_unveraendert():
-    """Kein Klammerzusatz, kein drittes Wort zum Streichen -- nur der Originalname."""
+    """Kein Klammerzusatz, kein drittes Wort zum Streichen -- nur der Originalname.
+
+    Die mittlere Stufe kam am 2026-08-05 dazu (Varianten-Suffix am Ziffernblock, siehe
+    ``test_namensvarianten_streichen_das_varianten_suffix``): aus ``172S`` wird ``172``.
+    """
     assert _namens_varianten("Cessna 172") == ["Cessna 172"]
     assert _namens_varianten("Cessna 172S Skyhawk") == [
-        "Cessna 172S Skyhawk", "Cessna 172S",
+        "Cessna 172S Skyhawk", "Cessna 172 Skyhawk", "Cessna 172",
     ]
 
 
@@ -452,3 +456,148 @@ def test_resolve_type_findet_nach_klammer_entfernen_einen_treffer():
     r = resolve_type("Diamond DA62 (US 7-seat, 2300 kg)", _fetcher(routen))
     assert r is not None, "Fallback ohne Klammerzusatz haette einen Treffer finden muessen"
     assert r["wiki_title"] == "Diamond DA62"
+
+
+# --- Deutsche Artikel gehen verloren (Fund 2026-08-05) ----------------------
+#
+# Gemessen an den 13 Mustern, die in der Produktions-DB auf `wiki_lang='en'` standen:
+# acht davon HABEN einen deutschen Artikel, er wurde nur nicht erreicht. Drei Ursachen,
+# jede fuer sich ausreichend — die Tests unten decken sie einzeln ab.
+
+
+def test_kyrillische_transliteration_de_gegen_en():
+    """Ursache 1: die de-Wikipedia transkribiert Kyrillisch mit *w*, VATSIM liefert *v*.
+
+    Gemessen am 2026-08-05: die de-Suche nach ``Antonov An-2`` FINDET ``Antonow An-2``,
+    aber ``_woerter`` liefert ``{'antonow'}`` gegen ``{'antonov'}`` — ein Buchstabe, keine
+    Ueberlappung, Treffer verworfen. ``An-2`` faellt vorher durch ``_MIN_WORT_LEN``
+    (``an`` = 2 Zeichen, ``2`` = 1), es bleibt also kein zweiter Anker.
+    """
+    assert title_matches_name("Antonow An-2", "Antonov An-2") is True
+    assert title_matches_name("Tupolew Tu-154", "Tupolev Tu-154") is True
+    assert title_matches_name("Jakowlew Jak-52", "Yakovlev Yak-52") is True
+    assert title_matches_name("Iljuschin Il-14", "Ilyushin Il-14") is True
+
+
+def test_transliteration_verwechselt_keine_baureihen():
+    """Der Herstellername allein darf NICHT reichen — sonst schlaegt die Transliteration
+    ins Gegenteil um.
+
+    Gemessen: die de-Suche nach ``Antonov An-2`` liefert ``Antonow An-225`` auf **Platz 1**
+    und ``Antonow An-124`` auf Platz 3. Sobald ``antonow`` als Anker zaehlt, wuerde der
+    erste dieser Treffer akzeptiert — die An-2 (Doppeldecker, 1947) bekaeme den Artikel der
+    An-225 (groesstes Flugzeug der Welt). Widersprechen sich die Typbezeichnungen, ist es
+    kein Treffer, egal wie gut der Herstellername passt.
+    """
+    assert title_matches_name("Antonow An-225", "Antonov An-2") is False
+    assert title_matches_name("Antonow An-124", "Antonov An-2") is False
+    assert title_matches_name("Diamond DA42", "Diamond DA40 XLS") is False
+
+
+def test_akzente_trennen_nicht_dasselbe_wort():
+    """Ursache 4, gemessen erst beim Nachrechnen gegen die echte Wikipedia am 2026-08-05:
+    das de-Lemma heisst *Aérospatiale SA-315*, VATSIM liefert ``Aerospatiale SA 315B Lama``.
+
+    ``_woerter`` verglich ``{'aérospatiale', '315'}`` gegen ``{'aerospatiale', '315b',
+    'lama'}`` — dasselbe Wort, ein Akzent Unterschied, Treffer verworfen. Dieselbe
+    Fehlerklasse wie die Transliteration: eine Schreibweisen-Differenz zwischen Quelle und
+    Lemma, keine inhaltliche.
+    """
+    assert title_matches_name("Aérospatiale SA-315", "Aerospatiale SA 315B Lama") is True
+    assert title_matches_name("Aérospatiale Alouette III", "Aerospatiale Alouette") is True
+
+
+def test_typbezeichnung_mit_variantenbuchstabe_bleibt_ein_treffer():
+    """Die Konfliktregel darf nicht ueber Varianten-Suffixe stolpern: ``AS365N3`` und
+    ``AS365`` sind dieselbe Baureihe (realer Wert, AS65)."""
+    assert title_matches_name(
+        "Eurocopter AS365 Dauphin",
+        "Aérospatiale/Airbus Helicopters AS365N3 Dauphin 2") is True
+    assert title_matches_name("Britten-Norman BN-2 Islander",
+                              "Britten-Norman BN-2B Islander") is True
+
+
+def test_namensvarianten_streichen_das_varianten_suffix():
+    """Ursache 2: der deutsche Suchindex kennt die Varianten-Endung nicht.
+
+    Gemessen am 2026-08-05 gegen de.wikipedia.org:
+    ``'Cessna 182T Skylane'`` -> ``['Liste von Zwischenfällen …', 'Lycoming O-540']``,
+    ``'Cessna 182 Skylane'``  -> ``['Cessna 182', 'Cessna']``.
+    Dasselbe bei ``210N`` -> ``210`` und ``SR-22T`` -> ``SR-22``. Die bisherige Kuerzung
+    strich nur das letzte WORT und kam an das Suffix am Ziffernblock nie heran; bei
+    ``'Cirrus SR-22T'`` (zwei Woerter) griff sie gar nicht.
+    """
+    assert _namens_varianten("Cessna 182T Skylane") == [
+        "Cessna 182T Skylane", "Cessna 182 Skylane", "Cessna 182",
+    ]
+    assert _namens_varianten("Cessna 210N Centurion") == [
+        "Cessna 210N Centurion", "Cessna 210 Centurion", "Cessna 210",
+    ]
+    assert _namens_varianten("Cirrus SR-22T") == ["Cirrus SR-22T", "Cirrus SR-22"]
+
+
+def test_namensvarianten_lassen_reine_typnummern_in_ruhe():
+    """Ohne angehaengten Buchstaben gibt es nichts zu streichen — ``DA62`` bleibt ``DA62``,
+    sonst suchte die Auflösung nach einer Baureihe, die es nicht gibt."""
+    assert _namens_varianten("Diamond DA62") == ["Diamond DA62"]
+    assert _namens_varianten("Antonov An-2") == ["Antonov An-2"]
+
+
+def _sprach_fetcher(treffer: dict, summaries: dict):
+    """fetch(url) fuer resolve_type: Suchtreffer je (Sprache, Suchbegriff)."""
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    def _f(url):
+        teile = urlparse(url)
+        lang = teile.netloc.split(".")[0]
+        if "/w/api.php" in url and "list=search" in url:
+            begriff = parse_qs(teile.query)["srsearch"][0]
+            return _such(*treffer.get((lang, begriff), []))
+        if "/page/summary/" in url:
+            titel = unquote(url.rsplit("/", 1)[-1])
+            return summaries[titel]
+        if "/page/media-list/" in url:
+            return _medialist()
+        raise AssertionError(f"unerwartete URL: {url}")
+    return _f
+
+
+def test_deutsch_gewinnt_auch_ueber_eine_spaetere_namensvariante():
+    """Ursache 3: die Sprachschleife lag INNEN (``for versuch: for lang:``).
+
+    Sobald irgendeine Variante in en traf, wurde zurueckgegeben — die kuerzere Variante,
+    die in de getroffen haette, kam nie dran. Realer Fall DA40: de findet erst mit
+    ``'Diamond DA40'`` etwas, en schon mit ``'Diamond DA40 XLS'``. ``wiki_lang`` stand
+    deshalb auf ``en``, obwohl der deutsche Artikel existiert.
+    """
+    treffer = {
+        ("de", "Diamond DA40 XLS"): [],
+        ("de", "Diamond DA40"): ["Diamond DA40"],
+        ("en", "Diamond DA40 XLS"): ["Diamond DA40 Diamond Star"],
+        ("en", "Diamond DA40"): ["Diamond DA40 Diamond Star"],
+    }
+    summaries = {
+        "Diamond DA40": _summary("Diamond DA40", "Flugzeugtyp",
+                                 "Die Diamond DA40 ist ein einmotoriges Flugzeug."),
+        "Diamond DA40 Diamond Star": _summary(
+            "Diamond DA40 Diamond Star", "aircraft",
+            "The Diamond DA40 Diamond Star is a light aircraft."),
+    }
+    r = resolve_type("Diamond DA40 XLS", _sprach_fetcher(treffer, summaries))
+    assert r is not None
+    assert r["wiki_lang"] == "de", "englischer Treffer hat den deutschen Artikel verdraengt"
+    assert r["wiki_title"] == "Diamond DA40"
+
+
+def test_englisch_bleibt_der_rueckfall_wenn_de_nichts_hat():
+    """Gegenprobe zur Sprachreihenfolge: fuenf der 13 Muster (u. a. Aeroprakt A-32 Vixxen,
+    CubCrafters CC19 XCub) haben schlicht KEINEN deutschen Artikel — die muessen weiterhin
+    den englischen bekommen, nicht gar keinen."""
+    treffer = {
+        ("de", "Aeroprakt A-32 Vixxen"): [],
+        ("en", "Aeroprakt A-32 Vixxen"): ["Aeroprakt A-32 Vixxen"],
+    }
+    summaries = {"Aeroprakt A-32 Vixxen": _summary(
+        "Aeroprakt A-32 Vixxen", "aircraft", "The Aeroprakt A-32 is a Ukrainian aircraft.")}
+    r = resolve_type("Aeroprakt A-32 Vixxen", _sprach_fetcher(treffer, summaries))
+    assert r is not None and r["wiki_lang"] == "en"
