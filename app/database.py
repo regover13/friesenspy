@@ -118,6 +118,14 @@ CREATE TABLE IF NOT EXISTS statsim_cache (
     logon_time   TEXT,
     logoff_time  TEXT,
     duration_min INTEGER,
+    -- ACHTUNG: "zuletzt berührt", NICHT "erstmals geholt". Der StatSim-Abruf holt immer das
+    -- ganze Fenster (31 Tage bzw. 365 bei Vollabruf) und schreibt per INSERT OR REPLACE JEDE
+    -- Zeile neu, auch die unveränderten -- fetched_at springt dabei auf jetzt (upsert_statsim_
+    -- flights). Ein Flug von vor drei Wochen kann also ein fetched_at von heute tragen.
+    -- Taugt deshalb NICHT für "seit wann kennen wir diesen Flug?" und nicht als Beleg dafür,
+    -- dass ein Flug neu dazugekommen ist (2026-08-05 genau so fehlgedeutet: 10 gleichzeitig
+    -- aktualisierte Zeilen sahen aus wie 10 neue Flüge). Wofür es taugt: Cache-Alter je Pilot
+    -- (get_statsim_last_fetched -> 24-h-Cooldown in main.py).
     fetched_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sc_cid ON statsim_cache(cid);
