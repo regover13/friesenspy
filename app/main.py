@@ -113,6 +113,10 @@ from app.database import (
     list_custom_airports,
     upsert_custom_airport,
     delete_custom_airport,
+    list_airport_links,
+    get_airport_links,
+    upsert_airport_link,
+    delete_airport_link,
     rebuild_flight_cache,
     list_gps_detection_gaps,
     dismiss_gps_detection_gap,
@@ -3201,6 +3205,73 @@ async def admin_delete_airport(icao: str, request: Request, background_tasks: Ba
         conn.commit()
         _reload_custom_airports_geo_cache(conn)
         background_tasks.add_task(_rebuild_flight_cache_background, get_settings().DB_PATH)
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+_CHARTFOX_URL = "https://chartfox.org/{icao}"
+
+
+@app.get("/api/airport-links")
+async def airport_links():
+    """ICAO -> Karten-Link fürs Frontend. Deutschland (in unserer kuratierten Tabelle, aus der
+    amtlichen DFS-AIP-VFR): offizieller AIP-Link. Sonst, nur wenn der Code ein von airportsdata
+    anerkannter echter ICAO-Code ist: ChartFox-Fallback (chartfox.org/<ICAO>, kein API-Key/eigene
+    Datenhaltung nötig -- ChartFox deckt selbst nur ~1.869 Plätze ab, ein einzelner Link kann dort
+    also durchaus 'nicht vorhanden' zeigen, das ist ChartFox' eigene Sache).
+    Unbestätigte custom_airports (synthetische/nicht amtliche Codes, z. B. Navigraph-only ohne
+    AIP-Eintrag) bekommen bewusst KEINEN Link -- weder DFS noch ChartFox kennen solche Codes.
+    Rein informativ, keine Wirkung auf Flug-Erkennung -- deshalb öffentlich (kein require_admin)."""
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        de_links = get_airport_links(conn)
+    finally:
+        conn.close()
+    links = {icao: _CHARTFOX_URL.format(icao=icao) for icao in geo._airports_icao()}
+    links.update(de_links)
+    return {"links": links}
+
+
+@app.get("/api/admin/airport-links")
+async def admin_get_airport_links(request: Request):
+    """Alle Flugplatz-Links (für die Admin-Tabelle)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return {"links": list_airport_links(conn)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/airport-links")
+async def admin_upsert_airport_link(request: Request):
+    """Flugplatz-Link speichern: icao + aip_url (beide Pflicht)."""
+    require_admin(request)
+    body = await request.json()
+    icao = str(body.get("icao") or "").strip()
+    aip_url = str(body.get("aip_url") or "").strip()
+    if not icao:
+        raise HTTPException(status_code=400, detail="icao erforderlich")
+    if not aip_url:
+        raise HTTPException(status_code=400, detail="aip_url erforderlich")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        upsert_airport_link(conn, icao, aip_url)
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/airport-links/{icao}")
+async def admin_delete_airport_link(icao: str, request: Request):
+    """Löscht einen Flugplatz-Link."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        delete_airport_link(conn, icao)
+        conn.commit()
         return {"status": "ok"}
     finally:
         conn.close()

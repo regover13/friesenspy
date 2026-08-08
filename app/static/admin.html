@@ -1091,6 +1091,27 @@
           <div id="ap-container" class="scroll-list"><div class="empty-hint">Lade Flugplätze…</div></div>
         </div>
 
+        <!-- AIP-VFR-LINKS (Karten-Links, amtliche DFS-AIP) -->
+        <div class="panel">
+          <div class="panel-title"><span>🗺️ AIP-VFR-Links</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Link zur amtlichen DFS-AIP-VFR-Flugplatzkarte (aip.dfs.de), pro ICAO-Code — wird im
+            Frontend als kleines Link-Icon neben dem Code angezeigt. Für nicht hier gelistete
+            Codes mit bekanntem ICAO (airportsdata) wird automatisch ein ChartFox-Link
+            (chartfox.org) angezeigt — das ist rein rechnerisch und hier nicht zu pflegen.
+          </p>
+          <div class="form-grid" style="margin:6px 0 8px;">
+            <div class="form-group"><label for="al-icao">Code</label>
+              <input type="text" id="al-icao" placeholder="EDTK" /></div>
+            <div class="form-group"><label for="al-url">AIP-URL</label>
+              <input type="text" id="al-url" placeholder="https://aip.dfs.de/BasicVFR/pages/..." /></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <button class="btn btn-primary btn-sm" id="al-save-btn">Speichern</button>
+          </div>
+          <div id="al-container" class="scroll-list"><div class="empty-hint">Lade Links…</div></div>
+        </div>
+
         <!-- ERKENNUNGSLÜCKEN (v8.6.0) -->
         <div class="panel">
           <div class="panel-title"><span>🔍 Erkennungslücken (Start/Landung)</span></div>
@@ -1413,6 +1434,7 @@
       loadPilots();
       loadKutterAdmin();
       loadCustomAirports();
+      loadAirportLinks();
       // Erkennungslücken NICHT automatisch laden -- der Check rechnet den gesamten
       // Flugbestand neu durch (mehrere Sekunden) und läuft nur auf expliziten Klick
       // ("🔍 Jetzt prüfen" / dg-refresh-btn).
@@ -2837,6 +2859,57 @@
         // Erkennungslücken nur neu laden, wenn die Liste schon einmal geöffnet wurde -- sonst
         // würde jedes Flugplatz-Speichern ungefragt die teure Prüfung anstoßen (mehrere Sekunden).
         if (_dgLoaded) loadDetectionGaps();
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+
+    // ====================================================================
+    // AIP-VFR-LINKS (Karten-Links, amtliche DFS-AIP)
+    // ====================================================================
+    async function loadAirportLinks() {
+      const res = await api('GET', '/api/admin/airport-links');
+      if (!res || !res.ok) return;
+      const d = await res.json();
+      const rows = d.links || [];
+      const c = document.getElementById('al-container');
+      if (!rows.length) { c.innerHTML = '<div class="empty-hint">Noch keine AIP-VFR-Links.</div>'; return; }
+      c.innerHTML = '<div class="table-wrap"><table style="font-size:0.8rem;width:max-content;min-width:100%;"><thead><tr>'
+        + '<th style="text-align:left;">Code</th><th style="text-align:left;">AIP-URL</th><th></th></tr></thead><tbody>'
+        + rows.map(l => '<tr><td><b>' + escH(l.icao) + '</b></td>'
+          + '<td><a href="' + escA(l.aip_url) + '" target="_blank" rel="noopener">' + escH(l.aip_url) + '</a></td>'
+          + '<td><button class="btn btn-sm btn-danger" onclick="alDelete(this,\'' + escA(l.icao) + '\')">✕</button></td></tr>').join('')
+        + '</tbody></table></div>';
+    }
+
+    async function alDelete(btn, icao) {
+      const ok = await confirmCritical('Link löschen?', `AIP-Link für „${icao}" wirklich löschen?`, 'Löschen', true);
+      if (!ok) return;
+      btn.disabled = true;
+      const res = await api('DELETE', '/api/admin/airport-links/' + encodeURIComponent(icao));
+      if (!res || !res.ok) { toast('Fehler beim Löschen.', true); btn.disabled = false; return; }
+      toast('Link gelöscht.');
+      loadAirportLinks();
+    }
+
+    document.getElementById('al-save-btn').addEventListener('click', async () => {
+      const icao = document.getElementById('al-icao').value.trim();
+      const aip_url = document.getElementById('al-url').value.trim();
+      if (!icao) { toast('Code eingeben.', true); return; }
+      if (!aip_url) { toast('URL eingeben.', true); return; }
+      const saveBtn = document.getElementById('al-save-btn');
+      saveBtn.disabled = true;
+      try {
+        const res = await api('POST', '/api/admin/airport-links', { icao, aip_url });
+        if (!res || !res.ok) {
+          let detail = 'Fehler beim Speichern.';
+          try { detail = (await res.json()).detail || detail; } catch (e) {}
+          toast(detail, true);
+          return;
+        }
+        toast('Link gespeichert.');
+        ['al-icao', 'al-url'].forEach(i => document.getElementById(i).value = '');
+        loadAirportLinks();
       } finally {
         saveBtn.disabled = false;
       }

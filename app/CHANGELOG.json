@@ -1,5 +1,14 @@
 [
   {
+    "version": "10.5.0",
+    "date": "2026-08-08",
+    "highlight": true,
+    "title": "Karten-Links: amtliche AIP-VFR-Karten (Deutschland) + ChartFox (weltweit)",
+    "items": [
+      "🗺️ Neben angezeigten Flugplatz-Codes (Live-Tab, Statistiken, Kartenpopup, Flugplan-/Flug-Details, FriesenKutter-Feed) erscheint jetzt ein kleines Karten-Icon: für deutsche Flugplätze führt es zur amtlichen DFS-AIP-VFR-Kennkarte, für alle anderen von airportsdata erkannten ICAO-Codes zu ChartFox (chartfox.org). Rein informativ, kein Login nötig."
+    ]
+  },
+  {
     "version": "10.4.4",
     "date": "2026-07-21",
     "highlight": false,

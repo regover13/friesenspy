@@ -1220,6 +1220,56 @@ vervollständigt.
 
 **Response** `{"results": [{"icao": "EDWG", "name": "Wangerooge Airport"}, …]}`
 
+## Flugplatz-Links (AIP-VFR / ChartFox)
+
+Karten-Link je ICAO-Code fürs Frontend (kleines Link-Icon neben angezeigten Flugplatz-Codes:
+Live-Tab, Statistiken, Kartenpopup, Flugplan-/GPS-Detail-Modals, FriesenKutter-Feed). Zwei
+Quellen, serverseitig zu einer Map zusammengeführt:
+
+- **Deutschland, amtlich in der DFS-AIP-VFR gelistet:** kuratierte Tabelle `airport_links`
+  (446 Flugplätze, Stand 2026-06-25, aus der lokal installierten AIPBrowserDE-App abgeleitet
+  und admin-pflegbar) → Link auf `aip.dfs.de/BasicVFR/...` (offizielle Kennkarte).
+- **Alle anderen von `airportsdata` anerkannten ICAO-Codes:** rein rechnerischer Fallback auf
+  `https://chartfox.org/{ICAO}` (Community-Aggregator für Anflugkarten, kein API-Key nötig,
+  deckt selbst nur eine Teilmenge — ~1.869 Flugplätze weltweit — ab; ein Link kann dort
+  gelegentlich „nicht vorhanden" zeigen, das ist ChartFox' eigene Sache).
+- **Codes, die WEDER amtlich (DFS-AIP) NOCH bei `airportsdata` bekannt sind** (z. B.
+  unbestätigte Navigraph-only-Platzhalter wie `ED01`, s. `custom_airports`-Einträge ohne
+  amtliche Bestätigung): bewusst **kein** Link — weder DFS noch ChartFox kennen solche Codes.
+
+### GET /api/airport-links
+
+Öffentlich, kein Auth (rein informativ, keine Wirkung auf Flug-Erkennung). Liefert die
+komplette zusammengeführte Map (~28k Einträge, gzip ~160 KB) — vom Frontend einmalig beim
+Start geladen und im Speicher gehalten.
+
+**Response**
+
+```json
+{"links": {"EDTK": "https://aip.dfs.de/BasicVFR/pages/P00EE0.html", "EDDF": "https://chartfox.org/EDDF", ...}}
+```
+
+### GET /api/admin/airport-links
+
+Liste der kuratierten deutschen AIP-Links (nur die DB-Tabelle, nicht der ChartFox-Fallback —
+der ist rein rechnerisch und hier nicht editierbar). Erfordert das Admin-Cookie.
+
+**Response**
+
+```json
+{"links": [{"icao": "EDTK", "aip_url": "https://aip.dfs.de/BasicVFR/pages/P00EE0.html", "updated_at": "2026-08-08T12:00:00Z"}]}
+```
+
+### POST /api/admin/airport-links
+
+Upsert nach `icao`. Body: `{"icao": "EDTK", "aip_url": "https://aip.dfs.de/BasicVFR/pages/..."}`
+(beide Felder Pflicht, sonst `400`). **Response** `{"status": "ok"}`
+
+### DELETE /api/admin/airport-links/{icao}
+
+Löscht den kuratierten Link (der Code fällt danach ggf. auf den ChartFox-Fallback zurück,
+falls er in `airportsdata` bekannt ist). **Response** `{"status": "ok"}`
+
 ## Admin — Erkennungslücken
 
 Prüfliste (v8.6.0) für Flüge, deren GPS-Start oder -Landung trotz bekanntem Flugplan fehlt —

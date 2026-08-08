@@ -2676,6 +2676,28 @@ function fmtRoute(dep, arr) {
   return d + ' → ' + a;
 }
 
+// Karten-Link (amtliche DFS-AIP-VFR für Deutschland, sonst ChartFox-Fallback für bekannte
+// ICAO-Codes) — _airportLinks wird einmalig beim Start geladen (s. _airportLinksPromise unten).
+// Rein additiv: fehlt der Code in der Map (z. B. unbestätigter Navigraph-only-Platzhalter),
+// wird schlicht kein Link angezeigt. stopPropagation() nötig, weil das Icon oft in klickbaren
+// Zeilen/Zellen sitzt (z. B. .td-callsign-link), die selbst einen eigenen Klick-Handler haben.
+let _airportLinks = {};
+function airportLinkIcon(icao) {
+  if (!icao) return '';
+  const url = _airportLinks[String(icao).toUpperCase()];
+  if (!url) return '';
+  return ' <a href="' + escHtml(url) + '" target="_blank" rel="noopener" class="airport-link-icon" '
+    + 'title="Flugplatz-Karte" onclick="event.stopPropagation()">🗺️</a>';
+}
+
+// HTML-sichere Variante von fmtRoute() inkl. Karten-Link-Icons je Seite — für Stellen, die das
+// Ergebnis per innerHTML einsetzen (fmtRoute() selbst bleibt unverändert für reine Text-Stellen).
+function fmtRouteHtml(dep, arr) {
+  const d = (dep || '').toUpperCase();
+  const a = (arr || '').toUpperCase();
+  return (d ? escHtml(d) + airportLinkIcon(d) : '—') + ' → ' + (a ? escHtml(a) + airportLinkIcon(a) : '—');
+}
+
 // ==========================================================================
 //  LIVE TAB
 // ==========================================================================
@@ -2725,7 +2747,7 @@ function renderLiveTable(pilots) {
             <td class="td-callsign" data-cs="${escHtml(p.callsign || '')}">${escHtml((p.callsign || '').toUpperCase())}</td>
             <td>${escHtml(p.name || '—')}</td>
             <td class="mono">${escHtml(p.aircraft || '—')}</td>
-            <td class="td-route td-callsign-link text-green" data-cs="${escHtml(p.callsign || '')}">${escHtml(fmtRoute(p.departure, p.arrival))}</td>
+            <td class="td-route td-callsign-link text-green" data-cs="${escHtml(p.callsign || '')}">${fmtRouteHtml(p.departure, p.arrival)}</td>
             <td class="td-alt">${fmtAlt(p.altitude)}</td>
             <td class="td-gs">${fmtGS(p.groundspeed)}</td>
             <td class="td-time">${fmtOnlineTime(p.logon_time)}</td>
@@ -2794,7 +2816,9 @@ function renderPrefiles(data) {
   }
   let html = '<div class="live-table-wrap"><table><thead><tr><th>Callsign</th><th>Pilot</th><th>Flugplan</th><th>Abflug (geplant)</th><th></th></tr></thead><tbody>';
   data.forEach((p, i) => {
-    const route = p.departure && p.arrival ? `${escHtml(p.departure)} → ${escHtml(p.arrival)}` : '—';
+    const route = p.departure && p.arrival
+      ? `${escHtml(p.departure)}${airportLinkIcon(p.departure)} → ${escHtml(p.arrival)}${airportLinkIcon(p.arrival)}`
+      : '—';
     const dofMatch = (p.remarks || '').match(/DOF\/(\d{2})(\d{2})(\d{2})/);
     const dateStr = dofMatch ? `${dofMatch[3]}.${dofMatch[2]}.20${dofMatch[1]}, ` : '';
     const timeStr = p.deptime ? String(p.deptime).padStart(4,'0').replace(/(\d{2})(\d{2})/, '$1:$2') + ' UTC' : '';
@@ -3485,15 +3509,24 @@ function fpSet(id, val) {
   el.className = 'fp-val' + (val ? '' : ' empty');
 }
 
+// Wie fpSet(), aber für ICAO-Felder mit Karten-Link-Icon (braucht innerHTML statt textContent).
+function fpSetAirport(id, icao) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const code = (icao || '').toUpperCase();
+  el.innerHTML = code ? escHtml(code) + airportLinkIcon(code) : '—';
+  el.className = 'fp-val' + (code ? '' : ' empty');
+}
+
 function openFpModal(pilot, opts) {
   opts = opts || {};
   document.getElementById('fp-callsign-title').textContent = (pilot.callsign || '').toUpperCase();
   fpSet('fp-cs',      (pilot.callsign || '').toUpperCase());
   fpSet('fp-rules',   FP_RULES[pilot.flight_rules] || pilot.flight_rules);
   fpSet('fp-aircraft', pilot.aircraft_icao || pilot.aircraft);
-  fpSet('fp-dep',     pilot.departure);
-  fpSet('fp-arr',     pilot.arrival);
-  fpSet('fp-alt-icao', pilot.alternate);
+  fpSetAirport('fp-dep',     pilot.departure);
+  fpSetAirport('fp-arr',     pilot.arrival);
+  fpSetAirport('fp-alt-icao', pilot.alternate);
   fpSet('fp-deptime', pilot.deptime ? fmtHHMM(pilot.deptime) : '');
   fpSet('fp-altft',   pilot.altitude ? Number(pilot.altitude).toLocaleString('de') + ' ft' : '');
   fpSet('fp-tas',     pilot.cruise_tas ? pilot.cruise_tas + ' kt' : '');
@@ -3549,8 +3582,8 @@ function openFlightDetailModal(d) {
   document.getElementById('fld-callsign').textContent = d.cs || '—';
   document.getElementById('fld-cs').textContent    = d.cs     || '—';
   document.getElementById('fld-ac').textContent    = d.ac     || '—';
-  document.getElementById('fld-dep').textContent   = d.dep    || '—';
-  document.getElementById('fld-arr').textContent   = d.arr    || '—';
+  document.getElementById('fld-dep').innerHTML = d.dep ? escHtml(d.dep) + airportLinkIcon(d.dep) : '—';
+  document.getElementById('fld-arr').innerHTML = d.arr ? escHtml(d.arr) + airportLinkIcon(d.arr) : '—';
   document.getElementById('fld-dt-start').textContent = d.dt
     ? d.dt.slice(0, 16).replace('T', ' ') + ' UTC' : '—';
   document.getElementById('fld-dt-land').textContent  = d.dtend
@@ -3748,8 +3781,8 @@ function _flightRowHtml(f, rowAttrs) {
   // Fehlender Wert überall einheitlich "—" (wie sonst in der Tabelle), kein Sonderzeichen wie
   // "????"/"N/A"/"?". „läuft" NUR wenn tatsächlich live (offen UND letzte GPS-Position frisch).
   // connection_closed steuert das NICHT mehr (Flugplan-Begriff).
-  const dep = escHtml(gpsDep || '—');
-  const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : escHtml(gpsArr || '—');
+  const dep = gpsDep ? escHtml(gpsDep) + airportLinkIcon(gpsDep) : '—';
+  const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : (gpsArr ? escHtml(gpsArr) + airportLinkIcon(gpsArr) : '—');
   // Fehlen GPS-Dep UND -Arr komplett (und der Flug läuft nicht), sieht "— → —" als Route
   // unschön aus — eine einzelne zentrierte "—" statt zweier Platzhalter mit Pfeil dazwischen.
   const routeCell = (!gpsDep && !gpsArr && !live)
@@ -3757,7 +3790,9 @@ function _flightRowHtml(f, rowAttrs) {
     : `${dep} → ${arrCell}`;
   const planDep = f.plan_departure || '';
   const planArr = f.plan_arrival || '';
-  const planText = (planDep || planArr) ? `${escHtml(planDep || '—')} → ${escHtml(planArr || '—')}` : '—';
+  const planText = (planDep || planArr)
+    ? `${planDep ? escHtml(planDep) + airportLinkIcon(planDep) : '—'} → ${planArr ? escHtml(planArr) + airportLinkIcon(planArr) : '—'}`
+    : '—';
   const dt = f.logon_time ? f.logon_time.slice(0, 10) : '—';
   const durMin = f.duration_min;
   const dur = durMin != null
@@ -4128,7 +4163,7 @@ function buildPopupHtml(p) {
     <div class="popup-callsign">${escHtml((p.callsign || '').toUpperCase())}</div>
     <div class="popup-row">Pilot: <span>${escHtml(p.name || '—')}</span></div>
     <div class="popup-row">Muster: <span>${escHtml(p.aircraft || '—')}</span></div>
-    <div class="popup-row">Flugplan: <span>${escHtml(fmtRoute(p.departure, p.arrival))}</span></div>
+    <div class="popup-row">Flugplan: <span>${fmtRouteHtml(p.departure, p.arrival)}</span></div>
     <div class="popup-row">Höhe: <span>${fmtAlt(p.altitude)}</span></div>
     <div class="popup-row">GS: <span>${fmtGS(p.groundspeed)}</span></div>
     <div class="popup-row">Online: <span>${fmtOnlineTime(p.logon_time)}</span></div>`;
@@ -5144,7 +5179,8 @@ function _kutterDetailBody(d) {
     ? '<div class="kutter-summary">🦐 ' + _kesc(d.summary_quip) + '</div>' : '';
   // 🎯 Ziel-Überschrift wie im Live-Banner (Z. ~3093): wohin alle Fracht soll. Prominent oben,
   // bevor der Gesamtbalken kommt — bislang fehlte sie in der Events-Detailansicht.
-  const dest = '<div class="kutter-dest">🎯 Ziel: ' + _kesc(d.destination || '—') + '</div>';
+  const dest = '<div class="kutter-dest">🎯 Ziel: '
+    + (d.destination ? _kesc(d.destination) + airportLinkIcon(d.destination) : '—') + '</div>';
   const rows = (d.flights || []).map(f => {
     const t = (f.dep_time || '').slice(11, 16);
     const kg = f.loaded ? '<td class="kf-kg">' + _kDualKg(f.tonnage_kg, f.onboard_kg) + ' ✅</td>'
@@ -5155,8 +5191,10 @@ function _kutterDetailBody(d) {
                  + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
       : f.carried_through ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + ' 🔀</td>'
       : '<td class="kf-empty">leer</td>';
+    const kDep = f.dep ? _kesc(f.dep) + airportLinkIcon(f.dep) : '';
+    const kArr = f.arr ? _kesc(f.arr) + airportLinkIcon(f.arr) : '';
     return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + _kesc(f.aircraft || '')
-      + '</td><td>' + _kesc(f.dep) + '→' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';
+      + '</td><td>' + kDep + '→' + kArr + '</td>' + kg + _kCargoLabel(f) + '</tr>';
   }).join('');
   const feed = '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Zeit</th><th>Callsign</th><th>Muster</th>'
     + '<th title="Von der letzten Landung zum Ziel der Ladung — NICHT der Ladeplatz">Strecke</th><th>Fracht</th><th>Ladung</th></tr></thead><tbody>'
@@ -5472,6 +5510,12 @@ const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cf
     _registerServiceWorker();
   }
   _initVersionUI(cfg.version, cfg.changelog, cfg.banner_version);
+}).catch(() => {});
+
+// Eigener, unabhängiger Fetch (nicht an _configPromise gekoppelt) -- ~28k Einträge, JSON-Payload
+// spielt für den restlichen Seitenaufbau keine Rolle, wird nur lazy von airportLinkIcon() genutzt.
+const _airportLinksPromise = fetch('/api/airport-links').then(r => r.json()).then(d => {
+  _airportLinks = d.links || {};
 }).catch(() => {});
 
 const _liveInitialPromise = fetchLiveInitial();
