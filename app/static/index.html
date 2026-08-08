@@ -2862,7 +2862,7 @@ function renderLiveTable(pilots) {
             <td class="td-callsign" data-cs="${escHtml(p.callsign || '')}">${escHtml((p.callsign || '').toUpperCase())}</td>
             <td>${escHtml(p.name || '—')}</td>
             <td class="mono">${acLink(p.aircraft)}</td>
-            <td class="td-route td-callsign-link text-green" data-cs="${escHtml(p.callsign || '')}">${fmtRouteHtml(p.departure, p.arrival)}</td>
+            <td class="td-route td-callsign-link text-green" data-cs="${escHtml(p.callsign || '')}">${escHtml(fmtRoute(p.departure, p.arrival))}</td>
             <td class="td-alt">${fmtAlt(p.altitude)}</td>
             <td class="td-gs">${fmtGS(p.groundspeed)}</td>
             <td class="td-time">${fmtOnlineTime(p.logon_time)}</td>
@@ -3079,7 +3079,7 @@ function renderPrefiles(data) {
   let html = '<div class="live-table-wrap"><table><thead><tr><th>Callsign</th><th>Pilot</th><th>Flugplan</th><th>Abflug (geplant)</th><th></th></tr></thead><tbody>';
   data.forEach((p, i) => {
     const route = p.departure && p.arrival
-      ? `${escHtml(p.departure)}${airportLinkIcon(p.departure)} → ${escHtml(p.arrival)}${airportLinkIcon(p.arrival)}`
+      ? `${escHtml(p.departure)} → ${escHtml(p.arrival)}`
       : '—';
     const dofMatch = (p.remarks || '').match(/DOF\/(\d{2})(\d{2})(\d{2})/);
     const dateStr = dofMatch ? `${dofMatch[3]}.${dofMatch[2]}.20${dofMatch[1]}, ` : '';
@@ -4046,8 +4046,8 @@ function _flightRowHtml(f, rowAttrs) {
   // Fehlender Wert überall einheitlich "—" (wie sonst in der Tabelle), kein Sonderzeichen wie
   // "????"/"N/A"/"?". „läuft" NUR wenn tatsächlich live (offen UND letzte GPS-Position frisch).
   // connection_closed steuert das NICHT mehr (Flugplan-Begriff).
-  const dep = gpsDep ? escHtml(gpsDep) + airportLinkIcon(gpsDep) : '—';
-  const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : (gpsArr ? escHtml(gpsArr) + airportLinkIcon(gpsArr) : '—');
+  const dep = gpsDep ? escHtml(gpsDep) : '—';
+  const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : (gpsArr ? escHtml(gpsArr) : '—');
   // Fehlen GPS-Dep UND -Arr komplett (und der Flug läuft nicht), sieht "— → —" als Route
   // unschön aus — eine einzelne zentrierte "—" statt zweier Platzhalter mit Pfeil dazwischen.
   const routeCell = (!gpsDep && !gpsArr && !live)
@@ -4056,7 +4056,7 @@ function _flightRowHtml(f, rowAttrs) {
   const planDep = f.plan_departure || '';
   const planArr = f.plan_arrival || '';
   const planText = (planDep || planArr)
-    ? `${planDep ? escHtml(planDep) + airportLinkIcon(planDep) : '—'} → ${planArr ? escHtml(planArr) + airportLinkIcon(planArr) : '—'}`
+    ? `${planDep ? escHtml(planDep) : '—'} → ${planArr ? escHtml(planArr) : '—'}`
     : '—';
   const dt = f.logon_time ? f.logon_time.slice(0, 10) : '—';
   const durMin = f.duration_min;
@@ -5619,10 +5619,8 @@ function _kutterDetailBody(d) {
                  + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
       : f.carried_through ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + ' 🔀</td>'
       : '<td class="kf-empty">leer</td>';
-    const kDep = f.dep ? _kesc(f.dep) + airportLinkIcon(f.dep) : '';
-    const kArr = f.arr ? _kesc(f.arr) + airportLinkIcon(f.arr) : '';
     return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + acLink(f.aircraft)
-      + '</td><td>' + kDep + '→' + kArr + '</td>' + kg + _kCargoLabel(f) + '</tr>';
+      + '</td><td>' + _kesc(f.dep) + '→' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';
   }).join('');
   const feed = '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Zeit</th><th>Callsign</th><th>Muster</th>'
     + '<th title="Von der letzten Landung zum Ziel der Ladung — NICHT der Ladeplatz">Strecke</th><th>Fracht</th><th>Ladung</th></tr></thead><tbody>'

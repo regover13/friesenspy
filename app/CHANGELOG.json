@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.4.1",
+    "date": "2026-08-08",
+    "highlight": false,
+    "title": "Karten-Icon nur noch in Karte und Details, nicht mehr in Übersichtstabellen",
+    "items": [
+      "🗺️ Das neue Karten-Link-Icon (v11.4.0) saß in dichten Übersichtstabellen (Live-Liste, Prefiles, Flugliste in den Statistiken, FriesenKutter-Feed) neben jedem einzelnen Flugplatz-Code — bei vielen Zeilen wirkte das überladen. Es bleibt jetzt beim Kartenpopup und in den Detail-Ansichten (Flugplan-Modal, Flug-Details, Kutter-Ziel), wo ein einzelner Link nicht stört."
+    ]
+  },
+  {
     "version": "11.4.0",
     "date": "2026-08-08",
     "highlight": false,
