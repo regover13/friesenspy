@@ -5,6 +5,7 @@ import math
 
 import pytest
 
+from app import geo
 from app.geo import (
     airport_elevation_ft,
     airportsdata_coords,
@@ -14,6 +15,7 @@ from app.geo import (
     is_known_in_airportsdata,
     nearest_airport_icao,
     nearest_airport_icao_fast,
+    search_airports,
     set_custom_airports,
 )
 
@@ -542,3 +544,108 @@ class TestCustomAirports:
         assert nearest_airport_icao_fast(-80.054, 0.0, 4.0) == "ZZNEAR"
 
 
+
+
+class TestSyntheticIataCodes:
+    """v10.4.6-Fund: airportsdata fuehrt Plaetze mit IATA-Code, aber ohne eigenes ICAO, unter
+    einem Platzhalter-Schluessel ``_`` + IATA (14 Stueck, Version 20260315). Zwei davon
+    beschreiben einen Platz, den airportsdata BEREITS unter seinem echten ICAO fuehrt --
+    auf exakt identischer Koordinate:
+
+        LFSB / _MLH  EuroAirport Basel-Mulhouse-Freiburg (binational: BSL, MLH, EAP -> ein ICAO)
+        UBTT / _LHL  Lachin International
+
+    Bei exaktem Distanz-Gleichstand gewinnt in nearest_airport_icao* durch ``d <= best_d`` der
+    SPAETER iterierte Eintrag, und ``_`` (0x5F) sortiert in der CSV hinter alle Buchstaben
+    (Einfuege-Index LFSB 15599, _MLH 28420) -- also immer der Platzhalter.
+
+    Beleg: FRS190N (cid 1820730) landete am 2026-07-29 in Basel, Flugplan LSPM->LFSB, die
+    Statistik zeigte ``LSPM -> _MLH``. Die Erkennung war geometrisch richtig (gleiche
+    Koordinate!), nur der ausgegebene Code war der Platzhalter.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_custom_airports(self):
+        set_custom_airports([])
+        yield
+        set_custom_airports([])
+
+    def test_prefers_real_icao_over_synthetic_twin(self):
+        lat, lon = icao_to_coords("LFSB")
+        assert nearest_airport_icao(lat, lon, 4.0) == "LFSB"
+        assert nearest_airport_icao_fast(lat, lon, 4.0) == "LFSB"
+
+    def test_prefers_real_icao_for_second_shadowed_twin(self):
+        lat, lon = icao_to_coords("UBTT")
+        assert nearest_airport_icao(lat, lon, 4.0) == "UBTT"
+        assert nearest_airport_icao_fast(lat, lon, 4.0) == "UBTT"
+
+    def test_synthetic_code_without_twin_stays_findable(self):
+        """Die uebrigen 12 Platzhalter sind der EINZIGE Datensatz ihres Platzes -- ein
+        pauschales Aussortieren aller ``_``-Codes wuerde sie unauffindbar machen."""
+        for code in ("_OUK", "_AYM"):
+            lat, lon = icao_to_coords(code)
+            assert nearest_airport_icao(lat, lon, 1.0) == code
+            assert nearest_airport_icao_fast(lat, lon, 1.0) == code
+
+    def test_shadowed_code_still_resolves_to_coords_and_elevation(self):
+        """Sieben Altfluege tragen ``_MLH`` in ``flight_cache``; bis zum rebuild muessen
+        Karten-Koordinate und Elevation dafuer weiter aufloesbar bleiben."""
+        assert icao_to_coords("_MLH") == airportsdata_coords("LFSB")
+        assert airport_elevation_ft("_MLH") == airport_elevation_ft("LFSB")
+
+    def test_unshadowed_placeholders_are_far(self):
+        """Canary gegen Datenpflege upstream (Fable-Review v10.4.6).
+
+        ``airportsdata`` ist absichtlich nicht gepinnt. Verschiebt eine kuenftige Version die
+        Koordinate eines echten Platzes um wenige Meter, ohne den Platzhalter mitzuziehen, faellt
+        das Paar aus der Zwillings-Erkennung -- und der Bug waere lautlos zurueck, weil die
+        anderen Tests genau auf der gemeinsamen Koordinate pruefen und dort weiterhin gruen sind.
+
+        Dieser Test schlaegt in genau dem Fall an: Jeder NICHT als Zwilling erkannte Platzhalter
+        muss weiter als der Detektor-Radius (4 km) vom naechsten echten Platz entfernt liegen.
+        Alles dazwischen ist die Grauzone, in der zwei Eintraege denselben Platz beschreiben
+        koennten, ohne dass die Schwelle greift.
+        """
+        airports = geo._airports_icao()
+        shadowed = geo._shadowed_codes()
+        verdaechtig = []
+        for code, a in airports.items():
+            if not code.startswith("_") or code in shadowed:
+                continue
+            naechster, distanz = None, float("inf")
+            for anderer, b in airports.items():
+                if anderer.startswith("_"):
+                    continue
+                d = haversine(a["lat"], a["lon"], b["lat"], b["lon"])
+                if d < distanz:
+                    naechster, distanz = anderer, d
+            if distanz <= 4.0:
+                verdaechtig.append(f"{code} -> {naechster} ({distanz:.2f} km)")
+        assert not verdaechtig, (
+            "Platzhalter in der Grauzone 1-4 km: "
+            + ", ".join(verdaechtig)
+            + " -- _ZWILLING_MAX_KM pruefen (airportsdata-Daten haben sich geaendert)"
+        )
+
+    def test_twin_detection_survives_coordinate_drift(self, monkeypatch):
+        """Datenunabhaengiger Beleg fuer die Distanzschwelle: ein Zwillingspaar, dessen
+        Koordinaten NICHT bitidentisch sind (hier ~50 m auseinander), wird trotzdem erkannt.
+        Mit dem urspruenglichen Float-Gleichheits-Vergleich waere dieser Test rot."""
+        kunst = {
+            "ZQQA": {"icao": "ZQQA", "lat": 47.5896, "lon": 7.52991, "elevation": 885.0},
+            "_QQB": {"icao": "_QQB", "lat": 47.59005, "lon": 7.52991, "elevation": 885.0},  # ~50 m
+            "_QQC": {"icao": "_QQC", "lat": 10.0, "lon": 10.0, "elevation": 0.0},  # allein
+        }
+        monkeypatch.setattr(geo, "_AIRPORTS_ICAO", kunst)
+        monkeypatch.setattr(geo, "_SHADOWED_CODES", None)
+        assert geo._shadowed_codes() == frozenset({"_QQB"})
+        # Der echte Code gewinnt jetzt auch, wenn der Landepunkt NAEHER am Platzhalter liegt.
+        assert geo.nearest_airport_icao(47.59005, 7.52991, 4.0) == "ZQQA"
+
+    def test_shadowed_codes_not_offered_in_autocomplete(self):
+        """Fable-Review v10.4.6: Was die Platzerkennung nie zurueckgibt, darf man sich auch
+        nicht in einen Event-Filter klicken koennen. Eigenstaendige Platzhalter bleiben waehlbar."""
+        treffer = {e["icao"] for e in search_airports("_M", limit=50)}
+        assert "_MLH" not in treffer
+        assert "_MUM" in treffer  # Muli Airport -- eigener Platz, kein Zwilling

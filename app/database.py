@@ -118,6 +118,14 @@ CREATE TABLE IF NOT EXISTS statsim_cache (
     logon_time   TEXT,
     logoff_time  TEXT,
     duration_min INTEGER,
+    -- ACHTUNG: "zuletzt berührt", NICHT "erstmals geholt". Der StatSim-Abruf holt immer das
+    -- ganze Fenster (31 Tage bzw. 365 bei Vollabruf) und schreibt per INSERT OR REPLACE JEDE
+    -- Zeile neu, auch die unveränderten -- fetched_at springt dabei auf jetzt (upsert_statsim_
+    -- flights). Ein Flug von vor drei Wochen kann also ein fetched_at von heute tragen.
+    -- Taugt deshalb NICHT für "seit wann kennen wir diesen Flug?" und nicht als Beleg dafür,
+    -- dass ein Flug neu dazugekommen ist (2026-08-05 genau so fehlgedeutet: 10 gleichzeitig
+    -- aktualisierte Zeilen sahen aus wie 10 neue Flüge). Wofür es taugt: Cache-Alter je Pilot
+    -- (get_statsim_last_fetched -> 24-h-Cooldown in main.py).
     fetched_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sc_cid ON statsim_cache(cid);
@@ -271,6 +279,48 @@ CREATE TABLE IF NOT EXISTS aircraft_payloads (
     source      TEXT,                    -- 'manual' | 'llm' | 'curated' | 'default'
     make_model  TEXT,
     updated_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS payload_research (
+    type_code   TEXT PRIMARY KEY,   -- normalize_type_code()
+    state       TEXT NOT NULL,      -- 'ok' | 'nichts_gefunden' | 'fehler'
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    checked_at  TEXT,
+    last_error  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS aircraft_types (
+    type_code           TEXT PRIMARY KEY,   -- normalize_type_code()
+    alias_of            TEXT,               -- Tippfehler-Kürzel → echtes Muster (ein Schritt)
+
+    -- importiert: NUR der Import schreibt diese Spalten
+    name                TEXT,
+    name_source         TEXT,               -- 'payloads' | 'llm'
+    wiki_lang           TEXT,               -- 'de' | 'en'
+    wiki_title          TEXT,
+    extract             TEXT,
+    photo_file          TEXT,
+    photo_licence       TEXT,
+    photo_artist        TEXT,
+    photo_source_url    TEXT,
+
+    -- Korrektur: NUR der Admin schreibt diese Spalten
+    name_override       TEXT,
+    extract_override    TEXT,
+    wiki_title_override TEXT,
+    photo_override      TEXT,               -- NULL | '-' (kein Foto) | 'blob' (Upload)
+    photo_blob          BLOB,
+    photo_credit        TEXT,
+
+    -- Zustand
+    fetch_state         TEXT,               -- 'neu' | 'ok' | 'nichts_gefunden' | 'fehler'
+    attempts            INTEGER NOT NULL DEFAULT 0,
+    checked_at          TEXT,
+    last_error          TEXT,
+    updated_at          TEXT,
+
+    CHECK (photo_override IS NULL OR photo_override IN ('-', 'blob')),
+    CHECK (photo_override <> 'blob' OR photo_blob IS NOT NULL)
 );
 
 CREATE TABLE IF NOT EXISTS custom_airports (
@@ -2300,7 +2350,6 @@ def _gps_flights_for_positions(
     callsign_by_ts = {p["ts"]: p.get("callsign") for p in positions if p.get("callsign")}
 
     out: list[dict] = []
-    prev_end: str | None = None  # Ende (ts) des vorherigen Flugs — Block-Rückwärts-Walk-Grenze
     for i, gf in enumerate(gps_flights):
         takeoff_ts = gf.get("takeoff_ts")
         landing_ts = gf.get("landing_ts")
@@ -2329,19 +2378,14 @@ def _gps_flights_for_positions(
             if next_takeoff is not None and end_ts >= next_takeoff:
                 end_ts = takeoff_ts  # Sicherheitsnetz; strukturell sollte dieser Zweig nie greifen
 
-        # Block-Fenster nach vorn bis zum Rollbeginn erweitern (gate-to-gate inkl. Taxi):
-        # rückwärts durch zusammenhängende Positionen laufen (Lücke <= _GPS_LEG_GAP_MINUTES),
-        # aber nie vor das Ende des vorherigen Flugs (prev_end) — sonst würde Standzeit einer
-        # Zwischenlandung/eines Vorflugs fälschlich als Taxi dieses Flugs gezählt.
-        block_start = takeoff_ts
-        _prev = takeoff_ts
-        for t in reversed([x for x in all_ts if x < takeoff_ts]):
-            if prev_end is not None and t < prev_end:
-                break
-            if (_parse_iso(_prev) - _parse_iso(t)).total_seconds() / 60.0 > _GPS_LEG_GAP_MINUTES:
-                break
-            block_start = t
-            _prev = t
+        # Block-Fenster nach vorn bis zum Rollbeginn (gate-to-gate inkl. Taxi). Der Rollbeginn
+        # wird NICHT hier rekonstruiert, sondern kommt aus ``detect_gps_legs`` — dieselbe
+        # Zustandsmaschine, die auch den Startplatz bestimmt hat (``taxi_start_ts`` = Beginn der
+        # Boden-Phase an genau diesem Platz). Damit passen Strecke und Track-Fenster per
+        # Konstruktion zusammen: eine Rollphase an einem anderen Platz (Reconnect) oder vor der
+        # Landung des Vorflugs kann strukturell nicht hineinlaufen. Fehlt der Wert (Spawn in der
+        # Luft), beginnt das Fenster am Abheben.
+        block_start = gf.get("taxi_start_ts") or takeoff_ts
 
         block_min = _block_seconds_positions(positions, block_start, end_ts) // 60
         distance_nm = _distance_nm_positions(positions, takeoff_ts, end_ts)
@@ -2384,8 +2428,7 @@ def _gps_flights_for_positions(
             "plan_arrival": plan_arr,
             "logon_time": takeoff_ts,
             "logoff_time": landing_ts,
-            # block_start = Rollbeginn (Rückwärts-Walk ab takeoff_ts bis zum ersten
-            # zusammenhängenden Sample, begrenzt durch prev_end/30-min-Lücke). Dient dem
+            # block_start = Rollbeginn (``taxi_start_ts`` aus detect_gps_legs, s. oben). Dient dem
             # Frontend als Track-Untergrenze (#62), damit Taxi-out + Startlauf sichtbar sind —
             # takeoff_ts (Abheben) schnitt sie bisher ab. Nur relevant für die gefensterten
             # FriesenSpy-Track-Endpoints; der StatSim-Track lädt ohnehin ungefenstert.
@@ -2407,7 +2450,6 @@ def _gps_flights_for_positions(
             "source": source,
             "_coverage_end": end_ts,
         })
-        prev_end = end_ts
     return out
 
 
@@ -4171,6 +4213,519 @@ def get_payload_map(conn: sqlite3.Connection) -> dict[str, float]:
     """{type_code: payload_kg} über alle gepflegten Flugzeugtypen."""
     rows = conn.execute("SELECT type_code, payload_kg FROM aircraft_payloads").fetchall()
     return {r["type_code"]: (r["payload_kg"] or 0.0) for r in rows}
+
+
+# Backoff der Recherche-Wiederholung. Bewusst grob gestaffelt: ein überlasteter Anbieter ist
+# meist in Minuten wieder da, ein dauerhaft fehlschlagendes Muster soll aber nicht stündlich
+# Geld kosten (~4 ct je Recherche, docs/architecture.md).
+_RETRY_STAFFEL_S = (300, 1800, 14400)      # 5 min, 30 min, 4 h
+_RETRY_MAX_S = 86400                        # danach täglich
+_NICHTS_GEFUNDEN_ERNEUT_S = 30 * 86400      # inhaltlich erledigt: nach 30 Tagen erneut
+
+
+def next_retry_delay_s(attempts: int) -> int:
+    """Abstand bis zum nächsten Versuch, nach ``attempts`` Fehlschlägen (in Sekunden)."""
+    if attempts <= 0:
+        return 0
+    if attempts <= len(_RETRY_STAFFEL_S):
+        return _RETRY_STAFFEL_S[attempts - 1]
+    return _RETRY_MAX_S
+
+
+def _parse_iso_utc(ts: str | None) -> datetime | None:
+    """ISO-8601 mit 'Z' oder Offset zu einem aware datetime; None bei Unbrauchbarem."""
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def is_retry_due(state: str, attempts: int, checked_at: str | None, now: datetime) -> bool:
+    """Ist ein erneuter Versuch fällig?
+
+    ``ok`` nie. ``nichts_gefunden`` nach 30 Tagen (die Welt kann sich geändert haben, das
+    Muster aber nicht stündlich). ``fehler`` nach der Backoff-Staffel — ein transienter
+    Fehler ist KEIN Endzustand (AP32-Fall). Unbekannter Zustand oder unlesbares
+    ``checked_at``: sofort fällig, im Zweifel lieber einmal zu viel versuchen.
+    """
+    if state == "ok":
+        return False
+    seit = _parse_iso_utc(checked_at)
+    if seit is None:
+        return True
+    if state == "nichts_gefunden":
+        wartezeit = _NICHTS_GEFUNDEN_ERNEUT_S
+    elif state == "fehler":
+        wartezeit = next_retry_delay_s(attempts)
+    else:
+        return True
+    return (now - seit).total_seconds() >= wartezeit
+
+
+def get_payload_research(conn: sqlite3.Connection, type_code: str) -> dict | None:
+    """Versuchszustand eines Typcodes oder ``None``, wenn nie versucht wurde."""
+    code = normalize_type_code(type_code)
+    if not code:
+        return None
+    row = conn.execute(
+        "SELECT state, attempts, checked_at, last_error FROM payload_research WHERE type_code = ?",
+        (code,),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def mark_payload_research(
+    conn: sqlite3.Connection,
+    type_code: str,
+    state: str,
+    now: datetime,
+    last_error: str | None = None,
+) -> None:
+    """Versuchszustand festschreiben. ``attempts`` zählt NUR Fehlschläge."""
+    code = normalize_type_code(type_code)
+    if not code:
+        return
+    ts = now.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    if state == "fehler":
+        conn.execute(
+            """INSERT INTO payload_research (type_code, state, attempts, checked_at, last_error)
+               VALUES (?, 'fehler', 1, ?, ?)
+               ON CONFLICT(type_code) DO UPDATE SET
+                   state='fehler',
+                   attempts = payload_research.attempts + 1,
+                   checked_at = excluded.checked_at,
+                   last_error = excluded.last_error""",
+            (code, ts, last_error),
+        )
+        return
+    conn.execute(
+        """INSERT INTO payload_research (type_code, state, attempts, checked_at, last_error)
+           VALUES (?, ?, 0, ?, ?)
+           ON CONFLICT(type_code) DO UPDATE SET
+               state = excluded.state,
+               attempts = 0,
+               checked_at = excluded.checked_at,
+               last_error = excluded.last_error""",
+        (code, state, ts, last_error),
+    )
+
+
+# Maßgebliche Spalte für den Flugbestand (Rev.-2-Befund B1): `aircraft_icao` existiert erst
+# seit 2026-06-09 und ist nur in 357 von 2256 Zeilen gefüllt — angezeigt und angeklickt wird
+# `aircraft` (2232 Zeilen). COALESCE liefert GENAU EINEN Wert je Flug; die beiden Spalten
+# dürfen nie per OR addiert werden (Doppelzählung). Bei 358 Zeilen sind beide gefüllt, in 357
+# stimmen sie überein.
+# SQL-Pendant zu normalize_type_code(): vor dem '/' abschneiden, trimmen, Uppercase.
+# ZWEI trim() sind noetig, sie decken verschiedene Faelle ab:
+#   - das aeussere trim() um COALESCE(...) den Randpadding-Fall (" AP32 ")
+#   - das trim() um substr(...) das Leerzeichen unmittelbar VOR einem inneren '/'
+#     ("AP32 /L-SDGY" -> ohne dieses trim bliebe "AP32 " uebrig).
+# Python macht beides in einem Schritt (``code.split("/")[0].strip()``); weicht das SQL ab,
+# joint die betroffene Zeile nie auf ihre aircraft_payloads/payload_research-Zeile und bleibt
+# ewig Kandidat -- sie belegt dann bei jedem Nachlese-Lauf einen der Slots.
+FLIGHT_TYPE_CODE_SQL = """
+    upper(trim(substr(
+        trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft)), 1,
+        CASE WHEN instr(trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft)), '/') > 0
+             THEN instr(trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft)), '/') - 1
+             ELSE length(trim(COALESCE(NULLIF(aircraft_icao, ''), aircraft))) END)))
+"""
+
+
+def payload_research_candidates(
+    conn: sqlite3.Connection, now: datetime, limit: int
+) -> list[str]:
+    """Typcodes aus dem Flugbestand ohne Zuladungseintrag, deren Versuch fällig ist.
+
+    Nach Flugzahl absteigend — was oft geflogen wird, zuerst. Die Fälligkeit wird in Python
+    entschieden (``is_retry_due``), damit die Backoff-Regel an einer Stelle steht.
+    """
+    rows = conn.execute(
+        f"""SELECT {FLIGHT_TYPE_CODE_SQL} AS code, COUNT(*) AS n,
+                   r.state AS state, r.attempts AS attempts, r.checked_at AS checked_at
+              FROM flight_cache f
+              LEFT JOIN aircraft_payloads p ON p.type_code = {FLIGHT_TYPE_CODE_SQL}
+              LEFT JOIN payload_research  r ON r.type_code = {FLIGHT_TYPE_CODE_SQL}
+             WHERE COALESCE(NULLIF(aircraft_icao, ''), aircraft) IS NOT NULL
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''
+               AND p.type_code IS NULL
+             GROUP BY code
+             ORDER BY n DESC, code ASC"""
+    ).fetchall()
+    faellig = [
+        r["code"] for r in rows
+        if r["code"] and is_retry_due(r["state"] or "neu", r["attempts"] or 0,
+                                     r["checked_at"], now)
+    ]
+    return faellig[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Muster-Infos (aircraft_types) — Anzeige = COALESCE(<feld>_override, <feld>)
+# ---------------------------------------------------------------------------
+
+_AT_OVERRIDE_FELDER = ("name", "extract", "wiki_title")
+
+
+def _ts(now: datetime) -> str:
+    return now.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _ensure_aircraft_type(conn: sqlite3.Connection, code: str, now: datetime) -> None:
+    conn.execute(
+        "INSERT INTO aircraft_types (type_code, fetch_state, updated_at) "
+        "VALUES (?, 'neu', ?) ON CONFLICT(type_code) DO NOTHING",
+        (code, _ts(now)),
+    )
+
+
+def get_aircraft_type(conn: sqlite3.Connection, type_code: str) -> dict | None:
+    """Zeile mit aufgelösten Anzeigewerten, oder ``None``.
+
+    ``photo_kind``: ``'blob'`` (Upload gewinnt immer), ``'file'`` (Commons-Cache) oder ``None``
+    (``photo_override='-'`` oder gar kein Bild).
+    """
+    code = normalize_type_code(type_code)
+    if not code:
+        return None
+    row = conn.execute("SELECT * FROM aircraft_types WHERE type_code = ?", (code,)).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    out = {
+        "type_code": d["type_code"],
+        "alias_of": d["alias_of"],
+        "wiki_lang": d["wiki_lang"],
+        "photo_licence": d["photo_licence"],
+        "photo_artist": d["photo_artist"],
+        "photo_source_url": d["photo_source_url"],
+        "photo_credit": d["photo_credit"],
+        "fetch_state": d["fetch_state"],
+        "attempts": d["attempts"],
+        "checked_at": d["checked_at"],
+        "updated_at": d["updated_at"],
+    }
+    for feld in _AT_OVERRIDE_FELDER:
+        out[feld] = d[f"{feld}_override"] if d[f"{feld}_override"] else d[feld]
+    if d["photo_override"] == "-":
+        out["photo_kind"] = None
+    elif d["photo_override"] == "blob" and d["photo_blob"] is not None:
+        out["photo_kind"] = "blob"
+    elif d["photo_file"]:
+        out["photo_kind"] = "file"
+    else:
+        out["photo_kind"] = None
+    out["photo_file"] = d["photo_file"]
+    return out
+
+
+def upsert_aircraft_type_import(
+    conn: sqlite3.Connection, type_code: str, *, now: datetime, **felder
+) -> None:
+    """Import-Spalten schreiben. Kennt die Korrektur-Spalten NICHT — deshalb kann ein Import
+    eine Korrektur strukturell nicht zertreten (nicht bloß per Konvention).
+
+    Nur übergebene Felder werden geschrieben; ``None`` heißt „nicht anfassen".
+    """
+    erlaubt = {"name", "name_source", "wiki_lang", "wiki_title", "extract",
+               "photo_file", "photo_licence", "photo_artist", "photo_source_url"}
+    code = normalize_type_code(type_code)
+    if not code:
+        return
+    _ensure_aircraft_type(conn, code, now)
+    setze = {k: v for k, v in felder.items() if k in erlaubt and v is not None}
+    if not setze:
+        conn.execute("UPDATE aircraft_types SET updated_at=? WHERE type_code=?",
+                     (_ts(now), code))
+        return
+    sets = ", ".join(f"{k} = ?" for k in setze)
+    conn.execute(
+        f"UPDATE aircraft_types SET {sets}, updated_at = ? WHERE type_code = ?",
+        (*setze.values(), _ts(now), code),
+    )
+
+
+def set_aircraft_type_override(
+    conn: sqlite3.Connection, type_code: str, *, now: datetime, **felder
+) -> None:
+    """Korrektur-Spalten schreiben. Ein **Leerstring** löscht die Korrektur (→ Importwert gilt).
+
+    Erlaubt: ``name``, ``extract``, ``wiki_title`` (→ ``*_override``), ``photo_override``,
+    ``photo_credit``, ``alias_of``.
+    """
+    code = normalize_type_code(type_code)
+    if not code:
+        return
+    _ensure_aircraft_type(conn, code, now)
+    setze: dict[str, object] = {}
+    for feld in _AT_OVERRIDE_FELDER:
+        if feld in felder:
+            setze[f"{feld}_override"] = felder[feld] or None
+    for feld in ("photo_override", "photo_credit", "alias_of"):
+        if feld in felder:
+            wert = felder[feld]
+            if feld == "alias_of" and wert:
+                wert = normalize_type_code(str(wert))
+            setze[feld] = wert or None
+    if not setze:
+        return
+    sets = ", ".join(f"{k} = ?" for k in setze)
+    conn.execute(
+        f"UPDATE aircraft_types SET {sets}, updated_at = ? WHERE type_code = ?",
+        (*setze.values(), _ts(now), code),
+    )
+
+
+def mark_aircraft_type_state(
+    conn: sqlite3.Connection, type_code: str, state: str, now: datetime,
+    last_error: str | None = None,
+) -> None:
+    """Auflösungs-Zustand festschreiben. ``attempts`` zählt nur ``fehler``."""
+    code = normalize_type_code(type_code)
+    if not code:
+        return
+    _ensure_aircraft_type(conn, code, now)
+    if state == "fehler":
+        conn.execute(
+            "UPDATE aircraft_types SET fetch_state='fehler', attempts = attempts + 1, "
+            "checked_at = ?, last_error = ?, updated_at = ? WHERE type_code = ?",
+            (_ts(now), last_error, _ts(now), code),
+        )
+        return
+    conn.execute(
+        "UPDATE aircraft_types SET fetch_state = ?, attempts = 0, checked_at = ?, "
+        "last_error = ?, updated_at = ? WHERE type_code = ?",
+        (state, _ts(now), last_error, _ts(now), code),
+    )
+
+
+def resolve_alias(conn: sqlite3.Connection, type_code: str) -> str:
+    """Alias **einen** Schritt auflösen. Ketten werden nicht verfolgt (siehe validate_alias)."""
+    code = normalize_type_code(type_code)
+    if not code:
+        return ""
+    row = conn.execute(
+        "SELECT alias_of FROM aircraft_types WHERE type_code = ?", (code,)
+    ).fetchone()
+    ziel = normalize_type_code(row["alias_of"]) if row and row["alias_of"] else ""
+    return ziel or code
+
+
+def validate_alias(conn: sqlite3.Connection, type_code: str, target: str) -> str | None:
+    """Fehlermeldung, wenn ``type_code → target`` unzulässig wäre, sonst ``None``.
+
+    Drei Ablehnungsgründe. Der dritte ist der aus Rev. 2 (W5.1): ohne ihn entsteht eine Kette
+    in der anderen Anlegereihenfolge — erst ``P24 → PA24`` (erlaubt), dann ``PA24 → X``
+    (scheinbar erlaubt), und die Ein-Schritt-Auflösung von ``P24`` landet auf einer Alias-Zeile
+    ohne eigene Daten.
+    """
+    code, ziel = normalize_type_code(type_code), normalize_type_code(target)
+    if not code or not ziel:
+        return "Kürzel und Ziel müssen gesetzt sein."
+    if code == ziel:
+        return f"{code} kann nicht auf sich selbst zeigen."
+    row = conn.execute(
+        "SELECT alias_of FROM aircraft_types WHERE type_code = ?", (ziel,)
+    ).fetchone()
+    if row is not None and row["alias_of"]:
+        return (f"{ziel} ist selbst ein Alias (→ {row['alias_of']}). "
+                "Zeige direkt auf das echte Muster.")
+    zeigt_auf_mich = conn.execute(
+        "SELECT type_code FROM aircraft_types WHERE alias_of = ? LIMIT 1", (code,)
+    ).fetchone()
+    if zeigt_auf_mich is not None:
+        return (f"{zeigt_auf_mich['type_code']} zeigt bereits auf {code} — "
+                f"{code} kann deshalb kein Alias werden (das ergäbe eine Kette).")
+    return None
+
+
+def _alias_codes(conn: sqlite3.Connection, ziel: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT type_code FROM aircraft_types WHERE alias_of = ? ORDER BY type_code", (ziel,)
+    ).fetchall()
+    return [r["type_code"] for r in rows]
+
+
+def friesen_numbers(conn: sqlite3.Connection, type_code: str) -> dict:
+    """Kernzahlen der Gruppe für ein Muster, inklusive der Flüge seiner Aliasse.
+
+    ``alias_anteil`` ist eine **Liste**: es können mehrere Aliasse auf dasselbe Ziel zeigen
+    (real: ``SA65``/``AS65`` und ``JU5``/``JU52``). Damit die angezeigte Zahl nachvollziehbar
+    bleibt, weist das Panel sie einzeln aus.
+    """
+    ziel = resolve_alias(conn, type_code)
+    leer = {"fluege": 0, "stunden": 0.0, "nm": 0.0, "piloten": 0,
+            "von": None, "bis": None, "alias_anteil": []}
+    if not ziel:
+        return leer
+    codes = [ziel, *_alias_codes(conn, ziel)]
+    platz = ",".join("?" * len(codes))
+    row = conn.execute(
+        f"""SELECT COUNT(*) AS fluege,
+                   COALESCE(SUM(duration_min), 0) / 60.0 AS stunden,
+                   COALESCE(SUM(distance_nm), 0) AS nm,
+                   COUNT(DISTINCT cid) AS piloten,
+                   MIN(substr(logon_time, 1, 10)) AS von,
+                   MAX(substr(logon_time, 1, 10)) AS bis
+              FROM flight_cache
+             WHERE {FLIGHT_TYPE_CODE_SQL} IN ({platz})""",
+        codes,
+    ).fetchone()
+    if row is None or not row["fluege"]:
+        return leer
+    anteil = []
+    for a in _alias_codes(conn, ziel):
+        n = conn.execute(
+            f"SELECT COUNT(*) AS n FROM flight_cache WHERE {FLIGHT_TYPE_CODE_SQL} = ?", (a,)
+        ).fetchone()["n"]
+        if n:
+            anteil.append({"code": a, "n": n})
+    return {
+        "fluege": row["fluege"],
+        "stunden": round(row["stunden"], 1),
+        "nm": round(row["nm"], 0),
+        "piloten": row["piloten"],
+        "von": row["von"],
+        "bis": row["bis"],
+        "alias_anteil": anteil,
+    }
+
+
+def top_pilots(conn: sqlite3.Connection, type_code: str, limit: int = 3) -> list[dict]:
+    """Wer das Muster am häufigsten geflogen hat (inkl. Alias-Flüge)."""
+    ziel = resolve_alias(conn, type_code)
+    if not ziel:
+        return []
+    codes = [ziel, *_alias_codes(conn, ziel)]
+    platz = ",".join("?" * len(codes))
+    rows = conn.execute(
+        f"""SELECT f.cid AS cid, COUNT(*) AS n,
+                   MAX(f.callsign) AS callsign,
+                   (SELECT p.name FROM pilots p WHERE p.cid = f.cid) AS name
+              FROM flight_cache f
+             WHERE {FLIGHT_TYPE_CODE_SQL} IN ({platz})
+             GROUP BY f.cid
+             ORDER BY n DESC, f.cid ASC
+             LIMIT ?""",
+        (*codes, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def flight_type_codes(conn: sqlite3.Connection) -> set[str]:
+    """Alle Typcodes aus dem Flugbestand — Grundlage der Klick-Eingrenzung (W3)."""
+    rows = conn.execute(
+        f"""SELECT DISTINCT {FLIGHT_TYPE_CODE_SQL} AS code FROM flight_cache
+             WHERE COALESCE(NULLIF(aircraft_icao, ''), aircraft) IS NOT NULL
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''"""
+    ).fetchall()
+    return {r["code"] for r in rows if r["code"]}
+
+
+def all_type_stats_for_days(conn: sqlite3.Connection, days: int) -> list[dict]:
+    """Friesen-Zahlen jedes im gewaehlten Zeitraum geflogenen Musters, meistgeflogenes
+    zuerst -- gemeinsame Grundlage der Top-Muster-KPI-Kachel (nimmt Zeile 0) UND der vollen
+    Musterliste im Statistiken-Tab. Beide teilen sich denselben Zeitraum-Filter wie die
+    uebrigen Kacheln der Reihe (get_stats(..., days=...)) -- ein Muster, das nur VOR dem
+    gewaehlten Fenster geflogen wurde, taucht hier nicht auf.
+
+    Aliase zaehlen auf ihr Ziel (wie friesen_numbers()), inklusive korrekter Piloten-
+    Deduplizierung: ein Pilot, der im Fenster sowohl unter dem Alias- als auch dem
+    Ziel-Kuerzel flog, zaehlt einmal -- deshalb Aggregation ueber Einzelzeilen (mit cid),
+    nicht ueber ein GROUP BY COUNT(DISTINCT cid) je Rohcode (das wuerde bei einem
+    Alias-Wechsel innerhalb des Fensters denselben Piloten zweimal zaehlen).
+
+    flight_cache ist bereits auf CALLSIGN_PREFIX beschraenkt (rebuild_flight_cache() baut es
+    ausschliesslich aus canonicalize_legs() mit dem konfigurierten Praefix) -- kein eigener
+    Callsign-Filter noetig, wie auch bei friesen_numbers() schon nicht. In-progress-Fluege
+    werden NICHT ausgeschlossen -- konsistent mit dem Rest der Muster-Zahlenfamilie
+    (friesen_numbers, flight_type_codes), nicht mit get_stats() (das fuer Piloten-Kennzahlen
+    einen strengeren Abschluss-Begriff verwendet).
+    """
+    start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        f"""SELECT {FLIGHT_TYPE_CODE_SQL} AS code, cid,
+                   COALESCE(duration_min, 0) AS duration_min,
+                   COALESCE(distance_nm, 0) AS distance_nm
+              FROM flight_cache
+             WHERE logon_time >= ?
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) IS NOT NULL
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''""",
+        (start,),
+    ).fetchall()
+    agg: dict[str, dict] = {}
+    for r in rows:
+        if not r["code"]:
+            continue
+        ziel = resolve_alias(conn, r["code"])
+        if not ziel:
+            continue
+        a = agg.setdefault(ziel, {"fluege": 0, "min": 0, "nm": 0.0, "piloten": set()})
+        a["fluege"] += 1
+        a["min"] += r["duration_min"]
+        a["nm"] += r["distance_nm"]
+        a["piloten"].add(r["cid"])
+    out = []
+    for ziel, a in agg.items():
+        typ = get_aircraft_type(conn, ziel) or {}
+        out.append({
+            "code": ziel,
+            "name": typ.get("name"),
+            "fluege": a["fluege"],
+            "stunden": round(a["min"] / 60.0, 1),
+            "nm": round(a["nm"], 0),
+            "piloten": len(a["piloten"]),
+        })
+    out.sort(key=lambda r: (-r["fluege"], r["code"]))
+    return out
+
+
+def aircraft_type_candidates(
+    conn: sqlite3.Connection, now: datetime, limit: int
+) -> list[str]:
+    """Typcodes aus dem Flugbestand, deren Auflösung fällig ist — häufigste zuerst.
+
+    Ein Code ohne jeden Namen (kein Admin-Lemma, kein ``name_override``, kein
+    ``aircraft_payloads.make_model``) UND ohne Endzustand der Zuladungs-Recherche
+    (``payload_research.state`` weder ``'ok'`` noch ``'nichts_gefunden'``) wird
+    übersprungen — für ihn würde ``_resolve_aircraft_type`` ohnehin nichts schreiben
+    (siehe dortige Begründung). Ohne diesen Filter bleibt so ein Code für immer ein
+    Kandidat (``checked_at IS NULL`` → immer fällig) und kann bei einem realistischen
+    Flugbestand ab Rang ~8 alle dahinter liegenden, echt auflösbaren Muster dauerhaft
+    aus der Nachlese verdrängen — konkret der Fall ohne ``ANTHROPIC_API_KEY`` (ein
+    unterstützter Zustand) oder bei einer manuell gepflegten Zuladungszeile ohne
+    ``make_model``.
+    """
+    rows = conn.execute(
+        f"""SELECT {FLIGHT_TYPE_CODE_SQL} AS code, COUNT(*) AS n,
+                   t.fetch_state AS state, t.attempts AS attempts, t.checked_at AS checked_at,
+                   t.alias_of AS alias_of, t.wiki_title_override AS wiki_title_override,
+                   t.name_override AS name_override, p.make_model AS make_model,
+                   r.state AS payload_state
+              FROM flight_cache f
+              LEFT JOIN aircraft_types t ON t.type_code = {FLIGHT_TYPE_CODE_SQL}
+              LEFT JOIN aircraft_payloads p ON p.type_code = {FLIGHT_TYPE_CODE_SQL}
+              LEFT JOIN payload_research  r ON r.type_code = {FLIGHT_TYPE_CODE_SQL}
+             WHERE COALESCE(NULLIF(aircraft_icao, ''), aircraft) IS NOT NULL
+               AND COALESCE(NULLIF(aircraft_icao, ''), aircraft) != ''
+             GROUP BY code
+             ORDER BY n DESC, code ASC"""
+    ).fetchall()
+    faellig = []
+    for r in rows:
+        if not r["code"] or r["alias_of"]:
+            continue
+        if not is_retry_due(r["state"] or "neu", r["attempts"] or 0, r["checked_at"], now):
+            continue
+        hat_namen = r["wiki_title_override"] or r["name_override"] or r["make_model"]
+        zuladung_offen = (r["payload_state"] or "") not in ("ok", "nichts_gefunden")
+        if not hat_namen and zuladung_offen:
+            continue
+        faellig.append(r["code"])
+    return faellig[:limit]
 
 
 def _finite_or_none(v):

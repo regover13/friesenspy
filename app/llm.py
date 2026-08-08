@@ -16,6 +16,8 @@ import json
 import logging
 import math
 
+from app.aircraft_info import harden_name
+
 logger = logging.getLogger(__name__)
 
 # Spec-Lookup auf Haiku 4.5 (Nutzer-Entscheidung 2026-07-02: ~4 ct statt ~7 ct pro Recherche;
@@ -31,6 +33,50 @@ _CREW_KG = 85.0
 # à 30–95 s und kam nie zurück; max_uses deckelt nur Suchen, nicht diese Code-Runden.
 # Basis-Tool, gleicher Prompt: 16 s, 1 Suche, ~0,07 $ — und korrektes Ergebnis.
 _WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3}
+
+
+class TransientResearchError(Exception):
+    """Die Recherche scheiterte an einem vorübergehenden Zustand, nicht am Muster.
+
+    Auslöser: API überladen (529), Rate-Limit (429), Timeout, Verbindungsabbruch, 5xx.
+    Der Aufrufer MUSS das von "keine Daten gefunden" (``None``) unterscheiden und es später
+    erneut versuchen — sonst passiert genau der AP32-Fall vom 2026-07-30: ein einzelnes
+    ``overloaded_error`` hat das Muster zwei Monate aus der Tabelle gehalten.
+    """
+
+
+# 408 Request Timeout, 429 Rate Limit, 529 Overloaded (Anthropic) + alle 5xx gelten als
+# vorübergehend. Alles andere im 4xx-Bereich ist endgültig: erneutes Fragen ändert nichts.
+#
+# 403 gehört ausdrücklich dazu — nicht wegen Anthropic, sondern wegen Wikimedia: das
+# Contabo-Netz dieses Servers ist dort geblockt, und der Block greift NICHT deterministisch
+# (gemessen 2026-07-30 im Container: derselbe User-Agent einmal 403, Minuten später 200). Als
+# endgültig gewertet würde er jedes Muster 30 Tage als „nichts gefunden" begraben. Der
+# Klassifikator wird von Plan B für genau diesen Fall mitbenutzt.
+_TRANSIENT_STATUS = frozenset({403, 408, 429, 529})
+
+
+def is_transient_error(exc: BaseException) -> bool:
+    """True, wenn ``exc`` ein vorübergehender Fehler ist (erneut versuchen lohnt).
+
+    Arbeitet bewusst ohne Import von ``anthropic``: geprüft wird ein vorhandenes
+    ``status_code``-Attribut sowie die Namen der anthropic-Verbindungs-/Timeout-Klassen.
+    Damit ist der Klassifikator auch für HTTP-Fehler anderer Quellen brauchbar
+    (Wikimedia: 403 durch den Contabo-Netzblock ist ausdrücklich vorübergehend).
+    """
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status >= 500 or status in _TRANSIENT_STATUS
+    # Verbindungs- und Timeout-Fehler tragen keinen Status-Code. endswith() statt exaktem
+    # Namensvergleich, damit das auch fuer private Test-Doubles greift (siehe
+    # tests/test_llm_transient.py: `_APITimeoutError` statt `APITimeoutError`) und nicht nur
+    # fuer die echten anthropic-Klassennamen.
+    return any(
+        name.endswith(("APIConnectionError", "APITimeoutError", "TimeoutError", "ConnectionError"))
+        for name in (c.__name__ for c in type(exc).__mro__)
+    )
+
+
 _SPEC_SCHEMA = {
     "type": "object",
     "properties": {
@@ -166,9 +212,18 @@ def _extract_spec(resp) -> dict | None:
 def suggest_aircraft_payload(type_code: str) -> dict | None:
     """Vorschlag für die Zuladungs-Komponenten eines Flugzeugtyps — per Web-Recherche (Haiku 4.5).
 
-    Rückgabe (kg, im Admin editierbar) oder ``None`` bei fehlendem Key/Paket/Fehler::
+    Rückgabe (kg, im Admin editierbar) oder ``None``::
 
         {"make_model", "mtow_kg", "empty_kg", "fuel_kg", "fuel_full_kg", "crew_kg", "payload_kg"}
+
+    Vertrag der beiden Fehlausgänge — der Aufrufer MUSS sie unterscheiden:
+
+    - ``None`` = **keine Daten**: kein Key, kein ``anthropic``-Paket, leerer Typcode oder eine
+      Antwort ohne verwertbares Spec. Aussage über das Muster, darf gespeichert werden.
+    - ``TransientResearchError`` = **vorübergehend gescheitert** (Überlastung, Rate-Limit,
+      Timeout, Verbindungsfehler): keine Aussage über das Muster, erneut versuchen. Früher kam
+      auch hier ``None`` zurück — der Aufrufer merkte sich den Fehlschlag dauerhaft als
+      „nichts gefunden" (AP32-Fall 2026-07-30).
 
     Default-Betankung = halber Tank: ``fuel_kg = fuel_full_kg / 2`` (Vorbefüllung im Admin),
     ``fuel_full_kg`` = Maximum (volle Tanks) fürs Label. ``payload_kg`` =
@@ -226,13 +281,19 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
                 break
             if _time.monotonic() >= deadline:
                 logger.warning("Zuladungs-Vorschlag für %s: Zeitbudget erschöpft", code)
-                break
+                raise TransientResearchError(f"Zeitbudget erschöpft für {code}")
             messages.append({"role": "assistant", "content": resp.content})
         if resp is None or resp.stop_reason == "refusal":
             logger.warning("Zuladungs-Vorschlag für %s abgelehnt/leer", code)
             return None
         spec = _extract_spec(resp)
+    except TransientResearchError:
+        raise
     except Exception as exc:  # noqa: BLE001 — Komfortpfad, jeder Fehler → kein Vorschlag
+        if is_transient_error(exc):
+            # NICHT als "keine Daten" behandeln: der Aufrufer soll es erneut versuchen.
+            logger.warning("Zuladungs-Vorschlag für %s vorübergehend gescheitert: %s", code, exc)
+            raise TransientResearchError(str(exc)) from exc
         logger.warning("Zuladungs-Vorschlag für %s fehlgeschlagen: %s", code, exc)
         return None
 
@@ -258,7 +319,18 @@ def suggest_aircraft_payload(type_code: str) -> dict | None:
             code, mtow, empty, fuel_full,
         )
         return None
-    return _build_result(str(spec.get("make_model") or code), mtow, empty, fuel_full)
+    # Die Schema-Vorgabe für make_model ist nur {"type": "string"} -- ohne Laengengrenze.
+    # Live-Befund MR20: bei mehreren M20-Varianten ohne eindeutigen Favoriten schrieb das
+    # Modell seine Unsicherheit als 1063-Zeichen-Prosaabsatz IN dieses Feld statt eines
+    # Namens (die Zahlen selbst waren brauchbar, nur make_model nicht). harden_name() (siehe
+    # dort) verwirft genau das schon beim LESEN in _muster_name() -- hier auf der SCHREIBSEITE
+    # dieselbe Haertung, sonst landet der Prosa-Absatz erst in aircraft_payloads (persistiert,
+    # im Admin sichtbar als "Vorschlag") und blockiert von dort aus jede erneute Recherche
+    # (_auto_research_payload ueberspringt Codes mit bestehender Zeile), ohne dass
+    # payload_research je einen Endzustand bekommt -- ein Muster bliebe damit dauerhaft
+    # Kandidat in der Nachlese, ohne je einen Namen zu zeigen.
+    make_model = harden_name(spec.get("make_model")) or code
+    return _build_result(make_model, mtow, empty, fuel_full)
 
 
 # ---------------------------------------------------------------------------

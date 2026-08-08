@@ -29,6 +29,10 @@ GitHub Push → main-Branch → GitHub Actions → GHCR → SSH-Deploy auf VPS
 - Port: 8091 (intern), friesenspy.devprops.de (extern)
 - DB: `/opt/friesenspy/data/friesenspy.db` (Volume)
 - Config: `/opt/friesenspy/config.env` (niemals in git!)
+- **Discord-Meldung nach jedem Deploy:** letzter Schritt in `deploy.yml`, meldet Erfolg (grün, nach
+  bestandenem Health-Check) oder Fehlschlag (rot) mit Version, Commit-Titel und Link zum Workflow-Log.
+  Braucht das Repo-Secret `DISCORD_WEBHOOK` (Discord-Kanal-Webhook, **ohne** `/github`-Suffix).
+  Fehlt das Secret, wird der Schritt übersprungen — der Deploy bleibt grün.
 
 ## VPS-Einrichtung (einmalig)
 
@@ -100,7 +104,9 @@ VATSIM_POLL_INTERVAL=15
 VATSIM_REJOIN_DEBOUNCE_SEC=900   # Default: 900 s (15 min) — Reconnect-Fenster Online-Push
 LOG_LEVEL=INFO                   # Default: INFO — App-Logger sichtbar (unter uvicorn sonst nur WARNING+)
 DB_PATH=/opt/friesenspy/data/friesenspy.db
-ANTHROPIC_API_KEY=               # Optional — FriesenKutter-Zuladungs-Vorschlag (Claude Sonnet 5 + Web-Search); denselben Key wie TSBot verwenden
+ANTHROPIC_API_KEY=               # Optional — FriesenKutter-Zuladungs-Vorschlag (Claude Haiku 4.5 + Web-Search,
+                                 # llm.py:25 _SUGGEST_MODEL, seit v7.4.2 — NICHT Sonnet 5; Sonnet 5 macht nur die
+                                 # Sprüche, llm.py:295). Denselben Key wie TSBot verwenden.
 
 # TeamSpeak-Login-Benachrichtigung (Phase 1, alle Optional)
 TS_NOTIFY_ENABLED=false      # Default: false — Feature aktivieren

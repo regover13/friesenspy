@@ -11,10 +11,11 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from datetime import timezone as _timezone
+from pathlib import Path
 from urllib.parse import quote
 
 import httpx as _httpx
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import (
     FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse,
 )
@@ -3043,15 +3044,24 @@ async def admin_upsert_payload(request: Request):
 
 @app.get("/api/admin/transport/payloads/suggest")
 async def admin_transport_payload_suggest(request: Request, type: str):
-    """KI-Vorschlag (Claude) für die Zuladungs-Komponenten eines Flugzeugtyps."""
+    """KI-Vorschlag (Claude Haiku 4.5) für die Zuladungs-Komponenten eines Flugzeugtyps."""
     require_admin(request)
     require_confirm(request)
     from app import llm
     if not llm.is_configured():
         raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY nicht konfiguriert")
-    # Blockierender Sonnet-5-Aufruf (Web-Search, bis zu ~1-2 Min.) — in einen Thread auslagern,
+    # Blockierender Haiku-Aufruf (Web-Search, bis zu ~1-2 Min.) — in einen Thread auslagern,
     # sonst haengt die Event-Loop und damit die GESAMTE App fuer die Dauer der Recherche.
-    suggestion = await asyncio.to_thread(llm.suggest_aircraft_payload, type)
+    try:
+        suggestion = await asyncio.to_thread(llm.suggest_aircraft_payload, type)
+    except llm.TransientResearchError as exc:
+        # 503 + Retry-After: der Admin soll es gleich nochmal versuchen koennen, statt
+        # "Kein Vorschlag verfuegbar" zu lesen und das Muster von Hand zu pflegen.
+        raise HTTPException(
+            status_code=503,
+            detail=f"Recherche gerade nicht möglich ({exc}) — bitte in einer Minute erneut.",
+            headers={"Retry-After": "60"},
+        ) from exc
     if suggestion is None:
         raise HTTPException(status_code=502, detail="Kein Vorschlag verfügbar")
     return suggestion
@@ -3133,6 +3143,21 @@ async def admin_upsert_airport(request: Request, background_tasks: BackgroundTas
     icao = str(body.get("icao") or "").strip()
     if not icao:
         raise HTTPException(status_code=400, detail="icao erforderlich")
+    # v10.4.6 (Fable-Review): "_"-Präfixe sind airportsdata-interne Platzhalter für Plätze mit
+    # IATA- aber ohne ICAO-Code und werden von der Platzerkennung bewusst unterdrückt, wo ein
+    # echtes ICAO dieselbe Position beschreibt (siehe geo._shadowed_codes). Als Custom-Eintrag
+    # angelegt, umgeht ein solcher Code diese Unterdrückung über den Override-Zweig und holt den
+    # Bug zurück — realistischer Auslöser: jemand sieht "_MLH" in Altflügen und will es
+    # "reparieren". Ein Platzhalter ist niemals ein legitimer Ergänzungs-Code (echte ICAOs haben
+    # vier Zeichen, Pseudo-Codes folgen der ZZ-Konvention).
+    if icao.startswith("_"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{icao.upper()} ist ein airportsdata-interner Platzhalter, kein Flugplatz-Code. "
+                "Gemeint ist vermutlich das echte ICAO desselben Platzes."
+            ),
+        )
     override = bool(body.get("override"))
     if not override and geo.is_known_in_airportsdata(icao):
         known_coords = geo.icao_to_coords(icao)
@@ -3382,6 +3407,299 @@ async def admin_regenerate_transport_quips(event_id: int, request: Request):
         return {"status": "ok", "cleared": cleared}
     finally:
         conn.close()
+
+
+def _photo_dir() -> Path:
+    """Cache-Verzeichnis der Commons-Fotos (im Volume, überlebt Container-Neubauten)."""
+    return Path(get_settings().DB_PATH).parent / "aircraft-photos"
+
+
+@app.get("/api/aircraft-types/stats")
+async def aircraft_type_stats_endpoint(days: int = 30):
+    """Friesen-Zahlen aller im gewaehlten Zeitraum geflogenen Muster, meistgeflogenes
+    zuerst — gemeinsame Grundlage der Top-Muster-KPI-Kachel (nimmt Zeile 0) UND der vollen
+    Musterliste im Statistiken-Tab, beide an denselben days-Filter gebunden wie die uebrigen
+    Kacheln ihrer Reihe (vgl. /api/stats). Rein lesend, kein Hintergrund-Abruf: anders als
+    /api/aircraft/{code} stösst dieser Endpunkt nie eine Wikimedia-Recherche an."""
+    from app.database import all_type_stats_for_days
+    days = _clamp_retention_days(days)  # #67: nie über die globale 365-Tage-Anzeigegrenze
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return all_type_stats_for_days(conn, days)
+    finally:
+        conn.close()
+
+
+@app.get("/api/aircraft/{code}")
+async def aircraft_info_endpoint(request: Request, code: str):
+    """Muster-Infos + Friesen-Zahlen. Liefert IMMER 200 — auch für ein unbekanntes Kürzel,
+    denn die Friesen-Zahlen dazu sind trotzdem echt.
+
+    Der Hintergrund-Abruf wird nur für Codes angestoßen, die im Flugbestand vorkommen (W3).
+    Sonst wäre der Endpunkt ein Verstärker: `curl /api/aircraft/JUNK$i` in einer Schleife
+    legt beliebig viele Zeilen an und feuert Wikimedia-Aufrufe von einer IP, die dort wegen
+    „abuse" schon vorbelastet ist.
+    """
+    from app.database import (
+        flight_type_codes, friesen_numbers, get_aircraft_type, normalize_type_code,
+        resolve_alias, top_pilots,
+    )
+    roh = normalize_type_code(code)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        bekannt = roh in flight_type_codes(conn)
+        ziel = resolve_alias(conn, roh)
+        typ = get_aircraft_type(conn, ziel) or {}
+        zahlen = friesen_numbers(conn, roh)
+        top = top_pilots(conn, roh, limit=3)
+        kutter_row = conn.execute(
+            "SELECT mtow_kg, empty_kg, payload_kg FROM aircraft_payloads WHERE type_code = ?",
+            (ziel,),
+        ).fetchone()
+        # W5.3: hat das ANGEFRAGTE Kürzel eine eigene Zuladungszeile, während wir die des
+        # Ziels anzeigen? Dann weicht die Frachtrechnung von der Anzeige ab — sichtbar machen.
+        hinweis = None
+        if ziel != roh:
+            eigene = conn.execute(
+                "SELECT payload_kg FROM aircraft_payloads WHERE type_code = ?", (roh,)
+            ).fetchone()
+            if eigene is not None:
+                hinweis = (
+                    f"Für {roh} ist eine eigene Zuladung von {round(eigene['payload_kg'])} kg "
+                    f"gepflegt; die FriesenKutter-Frachtrechnung verwendet diese."
+                )
+        alias_of = typ.get("alias_of") if ziel == roh else roh
+    finally:
+        conn.close()
+
+    photo_url = None
+    if typ.get("photo_kind"):
+        photo_url = f"/api/aircraft/{ziel}/photo?v={quote(str(typ.get('updated_at') or ''))}"
+    wiki_url = None
+    if typ.get("wiki_title") and typ.get("wiki_lang"):
+        wiki_url = (f"https://{typ['wiki_lang']}.wikipedia.org/wiki/"
+                    f"{quote(typ['wiki_title'].replace(' ', '_'), safe='')}")
+
+    if bekannt and not typ:
+        # Nur für echte Kürzel: im Hintergrund auflösen, nie synchron im Klickpfad.
+        poller: VatsimPoller | None = getattr(request.app.state, "poller", None)
+        if poller is not None and hasattr(poller, "_resolve_aircraft_type"):
+            asyncio.create_task(poller._resolve_aircraft_type(ziel))
+
+    return {
+        "code": roh,
+        "alias_of": alias_of,
+        "resolved_code": ziel,
+        "name": typ.get("name"),
+        "extract": typ.get("extract"),
+        "wiki_url": wiki_url,
+        "photo_url": photo_url,
+        "photo_credit": typ.get("photo_credit"),
+        "photo_licence": typ.get("photo_licence"),
+        "photo_artist": typ.get("photo_artist"),
+        "photo_source_url": typ.get("photo_source_url"),
+        "state": typ.get("fetch_state") or ("neu" if bekannt else "unbekannt"),
+        "friesen": zahlen,
+        "top": top,
+        "kutter": {
+            "mtow_kg": kutter_row["mtow_kg"] if kutter_row else None,
+            "empty_kg": kutter_row["empty_kg"] if kutter_row else None,
+            "payload_kg": kutter_row["payload_kg"] if kutter_row else None,
+            "eigene_zeile_hinweis": hinweis,
+        },
+    }
+
+
+@app.get("/api/aircraft/{code}/photo")
+async def aircraft_photo(code: str):
+    """Foto eines Musters. Ein Upload (BLOB) gewinnt immer über den Commons-Cache (Datei)."""
+    from app.database import get_aircraft_type, mark_aircraft_type_state, normalize_type_code
+    roh = normalize_type_code(code)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        typ = get_aircraft_type(conn, roh)
+        if not typ or not typ["photo_kind"]:
+            raise HTTPException(status_code=404, detail="Kein Foto")
+        if typ["photo_kind"] == "blob":
+            blob = conn.execute(
+                "SELECT photo_blob FROM aircraft_types WHERE type_code = ?", (roh,)
+            ).fetchone()["photo_blob"]
+            return Response(content=blob, media_type="image/jpeg",
+                            headers={"Cache-Control": "public, max-age=86400"})
+        pfad = _photo_dir() / typ["photo_file"]
+        if not pfad.exists():
+            # W2: 'ok' heißt nicht 'nie wieder' — Zustand zurücksetzen, damit die Nachlese
+            # das Bild neu holt. Das Backup enthält diese Dateien nicht, nur die DB.
+            mark_aircraft_type_state(conn, roh, "neu", datetime.now(_timezone.utc))
+            conn.commit()
+            raise HTTPException(status_code=404, detail="Foto fehlt, wird neu geholt")
+        daten = pfad.read_bytes()
+    finally:
+        conn.close()
+    return Response(content=daten, media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+# ---------------------------------------------------------------------------
+# Admin: Muster-Infos pflegen (Task 7)
+# ---------------------------------------------------------------------------
+
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024     # vor der Umwandlung
+# Die Umwandlung selbst (Verkleinern auf aircraft_info.PHOTO_MAX_WIDTH, Neukodieren als JPEG,
+# EXIF weg) steht in aircraft_info.to_web_jpeg — seit Rev. 3 (I3) laufen der Admin-Upload UND
+# der Commons-Download durch denselben Code-Pfad.
+
+
+@app.get("/api/admin/aircraft-types")
+async def admin_aircraft_types(request: Request):
+    """Alle Muster mit Import- und Korrekturwerten, beiden Recherche-Zuständen und Flugzahl."""
+    require_admin(request)
+    from app.database import FLIGHT_TYPE_CODE_SQL
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        rows = conn.execute(
+            # Vier Quellen, vier gleichberechtigte Schlüsselmengen — deshalb DREI FULL OUTER
+            # JOINs und jeweils COALESCE über ALLE schon verbundenen Seiten in der ON-Bedingung
+            # (Rev. 3, I1). Vorher hing sowohl `r` als auch die Flugzahl nur an `t.type_code`:
+            #   - ein Muster mit aircraft_payloads- UND payload_research-Zeile, aber noch ohne
+            #     aircraft_types-Zeile (der NORMALE Zustand nach jeder Plan-A-Recherche, bis der
+            #     10-Minuten-Job nachzieht) erschien als ZWEI Zeilen — eine mit den
+            #     Zuladungsdaten, eine mit dem Recherche-Zustand;
+            #   - ein Code, der nur in flight_cache steht, erschien nie, weil die Flugzahl per
+            #     LEFT JOIN angehängt wurde und es für ihn keine Basiszeile gab (`f.code` im
+            #     COALESCE war toter Code).
+            f"""SELECT COALESCE(t.type_code, p.type_code, r.type_code, f.code) AS type_code,
+                       t.alias_of, t.name, t.name_override, t.extract, t.extract_override,
+                       t.wiki_title, t.wiki_title_override, t.wiki_lang,
+                       t.photo_file, t.photo_override, t.photo_credit,
+                       t.photo_licence, t.photo_artist, t.photo_source_url,
+                       t.fetch_state, t.attempts, t.checked_at, t.last_error,
+                       p.make_model, p.payload_kg, p.source AS payload_source,
+                       r.state AS payload_state, r.attempts AS payload_attempts,
+                       r.checked_at AS payload_checked_at, r.last_error AS payload_last_error,
+                       COALESCE(f.n, 0) AS fluege
+                  FROM aircraft_types t
+                  FULL OUTER JOIN aircraft_payloads p ON p.type_code = t.type_code
+                  FULL OUTER JOIN payload_research  r
+                         ON r.type_code = COALESCE(t.type_code, p.type_code)
+                  FULL OUTER JOIN (SELECT {FLIGHT_TYPE_CODE_SQL} AS code, COUNT(*) AS n
+                               FROM flight_cache
+                              WHERE COALESCE(NULLIF(aircraft_icao,''), aircraft) IS NOT NULL
+                                AND COALESCE(NULLIF(aircraft_icao,''), aircraft) != ''
+                              GROUP BY code) f
+                         ON f.code = COALESCE(t.type_code, p.type_code, r.type_code)
+                 ORDER BY fluege DESC, type_code ASC"""
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"types": [dict(r) for r in rows]}
+
+
+@app.post("/api/admin/aircraft-types")
+async def admin_upsert_aircraft_type(request: Request):
+    """Korrekturen setzen oder leeren. Ein Leerstring löscht die Korrektur."""
+    require_admin(request)
+    require_confirm(request)
+    from app.database import (
+        normalize_type_code, set_aircraft_type_override, validate_alias,
+    )
+    body = await request.json()
+    code = normalize_type_code(str(body.get("type_code") or ""))
+    if not code:
+        raise HTTPException(status_code=400, detail="type_code fehlt")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        felder = {}
+        for feld in ("name", "extract", "wiki_title", "photo_override", "photo_credit"):
+            if feld in body:
+                felder[feld] = body[feld]
+        if "alias_of" in body:
+            ziel = normalize_type_code(str(body.get("alias_of") or ""))
+            if ziel:
+                fehler = validate_alias(conn, code, ziel)
+                if fehler:
+                    raise HTTPException(status_code=400, detail=fehler)
+            felder["alias_of"] = ziel
+        if "photo_override" in felder and felder["photo_override"] not in (None, "", "-"):
+            raise HTTPException(
+                status_code=400,
+                detail="photo_override akzeptiert nur '-' (kein Foto) oder leer. "
+                       "Ein Upload setzt 'blob' selbst.",
+            )
+        set_aircraft_type_override(conn, code, now=datetime.now(_timezone.utc), **felder)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+
+@app.post("/api/admin/aircraft-types/{code}/refetch")
+async def admin_refetch_aircraft_type(request: Request, code: str):
+    """Neu holen — nutzt ein gesetztes Lemma. Schreibt nur Import-Spalten."""
+    require_admin(request)
+    require_confirm(request)
+    from app.database import mark_aircraft_type_state, normalize_type_code
+    roh = normalize_type_code(code)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        mark_aircraft_type_state(conn, roh, "neu", datetime.now(_timezone.utc))
+        conn.commit()
+    finally:
+        conn.close()
+    poller = getattr(request.app.state, "poller", None)
+    if poller is not None and hasattr(poller, "_resolve_aircraft_type"):
+        asyncio.create_task(poller._resolve_aircraft_type(roh))
+    return {"ok": True}
+
+
+@app.post("/api/admin/aircraft-types/{code}/photo")
+async def admin_upload_aircraft_photo(request: Request, code: str, file: UploadFile = File(...)):
+    """Eigenes Foto hochladen.
+
+    Das Bild wird mit Pillow dekodiert und **neu geschrieben** (``aircraft_info.to_web_jpeg``,
+    seit Rev. 3 derselbe Pfad wie für die von Commons geladenen Fotos). Das erledigt drei
+    Dinge in einem Schritt: was Pillow nicht öffnet, ist kein Bild (Dateiendung und gemeldeter
+    Content-Type werden nicht geglaubt); EXIF fällt weg (ein Handyfoto vom Cockpit trägt sonst
+    GPS-Koordinaten in die Datenbank einer öffentlichen Seite); und die Größe bleibt
+    beherrschbar.
+
+    Uploads liegen als BLOB in der DB, nicht als Datei: sie sind **unersetzlich**, und das
+    nächtliche Backup sichert nur die Datenbank (`backup_onedrive.sh:225`), nicht `data/`.
+    """
+    require_admin(request)
+    require_confirm(request)
+    from io import BytesIO
+
+    from PIL import Image
+
+    from app.aircraft_info import to_web_jpeg
+    from app.database import normalize_type_code
+    roh = normalize_type_code(code)
+    if not roh:
+        raise HTTPException(status_code=400, detail="Ungültiges Kürzel")
+    daten = await file.read()
+    if len(daten) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Bild größer als 8 MB")
+    try:
+        blob = to_web_jpeg(daten)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Das ist kein Bild.") from exc
+    breite = Image.open(BytesIO(blob)).width
+
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        jetzt = datetime.now(_timezone.utc).isoformat().replace("+00:00", "Z")
+        conn.execute(
+            "INSERT INTO aircraft_types (type_code, fetch_state, updated_at) "
+            "VALUES (?, 'neu', ?) ON CONFLICT(type_code) DO NOTHING", (roh, jetzt))
+        # Reihenfolge zählt: der CHECK verlangt, dass der Blob beim Setzen von 'blob' da ist.
+        conn.execute(
+            "UPDATE aircraft_types SET photo_blob = ?, photo_override = 'blob', "
+            "updated_at = ? WHERE type_code = ?", (blob, jetzt, roh))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "bytes": len(blob), "width": breite}
 
 
 def _llm_configured() -> bool:

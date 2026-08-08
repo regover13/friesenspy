@@ -1340,7 +1340,12 @@
       transition: all 0.15s;
       flex-shrink: 0;
     }
-    .btn-share:hover { border-color: var(--green); color: var(--green); background: var(--green-faint); }
+    /* Nur fuer echte Zeigergeraete: auf dem Touchscreen bleibt :hover nach dem Antippen
+       haengen, bis woanders hingetippt wird. Der halbtransparente --green-faint-Hintergrund
+       liess den Knopf danach „durchsichtig" wirken und beim naechsten Tippen wieder normal. */
+    @media (hover: hover) {
+      .btn-share:hover { border-color: var(--green); color: var(--green); background: var(--green-faint); }
+    }
     .ev-row-selected { background: var(--green-faint); }
 
     /* =====================================================================
@@ -1509,6 +1514,80 @@
       color: var(--red, #D31141); border: 1px solid var(--red, #D31141);
       border-radius: 2px; padding: 1px 5px; white-space: nowrap;
     }
+
+    /* =====================================================================
+       MUSTER-INFO-PANEL (Aircraft-Type-Modal)
+       Basisklassen .modal/.modal-box/.modal-close gab es hier noch nicht —
+       sie folgen optisch dem Flugplan-Modal (.fp-modal-overlay/.fp-modal-box).
+       ===================================================================== */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(4,8,15,0.88);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(2px);
+    }
+    .modal.open { display: flex; }
+    .modal-box {
+      position: relative;
+      background: var(--bg-panel);
+      border: 1px solid var(--green);
+      box-shadow: 0 0 40px rgba(45,156,219,0.25), 0 0 80px rgba(45,156,219,0.08);
+      width: min(560px, 95vw);
+      padding: 18px 20px 20px;
+      animation: fpModalIn 0.15s ease-out;
+    }
+    .modal-close {
+      position: absolute;
+      top: 6px; right: 6px;
+      background: transparent;
+      border: 1px solid var(--green-dim);
+      color: var(--green);
+      font-family: var(--text-mono);
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 3px 9px;
+      cursor: pointer;
+    }
+    /* Wie bei .btn-share: kein haengenbleibender Hover-Zustand auf dem Touchscreen. */
+    @media (hover: hover) {
+      .modal-close:hover { background: var(--green-faint); }
+    }
+
+    /* Blau = klickbar (stehende UI-Regel) — der Designator ist ein Klickziel.
+       KEINE eigene Unterstreichung/Punktlinie: alle anderen Klickziele (Strecken-, Plan-,
+       Callsign-Zellen, .text-green) sind allein durch Blau gekennzeichnet. Der Designator
+       stand direkt daneben in derselben Tabelle und sah als einziger anders aus. */
+    .ac-link { color: var(--green); text-decoration: none; cursor: pointer; }
+    #ac-modal .modal-box { max-height: 85vh; overflow-y: auto; }
+    /* Eigene Kopfzeile IM FLUSS statt zweier schwebender Knoepfe: absolut positioniert lagen
+       Teilen und Schliessen ueber dem Foto (das direkt unter dem Box-Padding beginnt) und waren
+       auf hellen Bildern kaum zu lesen. Hier druecken sie das Foto nach unten und stehen immer
+       auf dem Panel-Hintergrund. `stretch` gibt beiden dieselbe Hoehe trotz ungleicher Schrift. */
+    #ac-modal .ac-topbar {
+      display: flex;
+      justify-content: flex-end;
+      align-items: stretch;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    #ac-modal .modal-close { position: static; }
+    /* --text-label (#6b9ab8) ist als Knopfbeschriftung zu leise — hier heller und eine Spur
+       groesser als die Basisklasse. */
+    #ac-modal .ac-topbar .btn-share { color: var(--text-bright); font-size: 0.75rem; }
+    .ac-photo { width: 100%; height: auto; border-radius: 4px; display: block; }
+    .ac-credit { font-size: 0.68rem; color: #8aa0b8; margin: 0.25rem 0 0.75rem; }
+    .ac-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 0.25rem; }
+    .ac-extract { line-height: 1.45; }
+    .ac-block { margin-top: 0.9rem; }
+    .ac-block h4 { margin: 0 0 0.3rem; font-size: 0.78rem; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: #8aa0b8; }
+    #ac-body .hint { font-size: 0.72rem; color: var(--text-label); margin-top: 0.2rem; }
+    #ac-body .hint a { color: var(--green); }
+    #ac-body .empty-hint { font-size: 0.82rem; color: var(--text-label); font-style: italic; }
   </style>
 </head>
 <body>
@@ -1897,6 +1976,42 @@
       <button class="fp-close-btn" onclick="closeChangelogModal()">✕</button>
     </div>
     <div class="fp-section" id="changelog-modal-body"></div>
+  </div>
+</div>
+
+<!-- Musterliste-Modal (Statistiken-Tab: Kachel "Häufigstes Muster") -->
+<div id="types-modal" class="fp-modal-overlay hidden">
+  <div class="fp-modal-box" onclick="event.stopPropagation()">
+    <div class="fp-modal-header">
+      <span class="fp-callsign-title">Alle Muster</span>
+      <button class="btn-share" style="margin-left:auto; margin-right:12px;" onclick="copyTypesShareUrl(this)">⎘ Teilen</button>
+      <button class="fp-close-btn" onclick="closeTypesModal()">✕</button>
+    </div>
+    <div class="fp-section">
+      <div class="stats-controls" style="margin-bottom:0;">
+        <label for="types-modal-days">Zeitraum</label>
+        <select id="types-modal-days">
+          <option value="30">30 Tage</option>
+          <option value="90">90 Tage</option>
+          <option value="365">365 Tage</option>
+        </select>
+      </div>
+    </div>
+    <div class="fp-section" id="types-modal-body"></div>
+  </div>
+</div>
+
+<!-- Muster-Info-Panel: MUSS nach #types-modal im DOM stehen -- gleicher z-index (10000),
+     ein Klick auf ein Muster-Kuerzel IN der Liste oeffnet #ac-modal darueber, das geht nur,
+     weil es hier spaeter im Dokument steht (Stapelreihenfolge bei gleichem z-index folgt
+     der DOM-Position). Bereits vorher fuer #fp-modal so geloest, gleiches Prinzip. -->
+<div id="ac-modal" class="modal">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="ac-topbar">
+      <button class="btn-share" onclick="copyAcShareUrl(this)" title="Deep-Link auf dieses Muster kopieren">⎘ Teilen</button>
+      <button class="modal-close" onclick="closeAcModal()">×</button>
+    </div>
+    <div id="ac-body"></div>
   </div>
 </div>
 
@@ -2746,7 +2861,7 @@ function renderLiveTable(pilots) {
           <tr data-callsign="${escHtml(p.callsign)}" ${isNew ? 'class="new-row"' : ''}>
             <td class="td-callsign" data-cs="${escHtml(p.callsign || '')}">${escHtml((p.callsign || '').toUpperCase())}</td>
             <td>${escHtml(p.name || '—')}</td>
-            <td class="mono">${escHtml(p.aircraft || '—')}</td>
+            <td class="mono">${acLink(p.aircraft)}</td>
             <td class="td-route td-callsign-link text-green" data-cs="${escHtml(p.callsign || '')}">${fmtRouteHtml(p.departure, p.arrival)}</td>
             <td class="td-alt">${fmtAlt(p.altitude)}</td>
             <td class="td-gs">${fmtGS(p.groundspeed)}</td>
@@ -2781,6 +2896,153 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+// ==========================================================================
+//  MUSTER-INFO-PANEL
+// ==========================================================================
+// Aircraft-Designator als Klickziel. EIN Markup fuer alle acht Sichten.
+// Attribut heisst data-actype, NICHT data-ac -- letzteres ist bei den Flugzeilen fuer das
+// Flugplan-Modal belegt (_flightRowHtml), sonst oeffnen sich zwei Modals uebereinander.
+function acLink(code) {
+  const c = (code || '').trim();
+  if (!c || c === '—') return '—';
+  return '<a class="ac-link" href="#" data-actype="' + escHtml(c) + '">' + escHtml(c) + '</a>';
+}
+
+// CAPTURE-Phase (dritter Parameter `true`) -- das ist keine Stilfrage, sondern der Grund,
+// warum der Link im Flugplan-Modal ueberhaupt funktioniert: die Modal-Box traegt
+// `onclick="event.stopPropagation()"` (.fp-modal-box, damit ein Klick INS Modal es nicht
+// ueber den Overlay-Handler wieder schliesst). In der Bubble-Phase erreicht der Klick auf
+// einen ac-link innerhalb von #fp-aircraft das `document` deshalb nie -- der Link tat nichts
+// ausser '#' an die URL zu haengen. Capture laeuft von aussen nach innen und ist damit
+// VOR jedem stopPropagation() im Modal dran; das gilt automatisch auch fuer jedes kuenftige
+// Modal mit demselben Muster.
+document.addEventListener('click', function (e) {
+  const a = e.target.closest && e.target.closest('a.ac-link[data-actype]');
+  if (!a) return;
+  e.preventDefault();
+  e.stopPropagation();   // nicht die Zeile darunter mit-oeffnen (Flugplan-Modal)
+  openAcModal(a.getAttribute('data-actype'));
+}, true);
+
+// Das gerade offene Kuerzel — der Teilen-Knopf im Modal baut daraus seinen Deep-Link.
+// Wie beim Bummel bewusst NICHT aus location.href gelesen: das Modal aendert die URL nicht.
+let _acOpenCode = null;
+
+async function openAcModal(code) {
+  const el = document.getElementById('ac-modal');
+  _acOpenCode = (code || '').trim();
+  document.getElementById('ac-body').innerHTML = '<div class="empty-hint">Lade…</div>';
+  el.classList.add('open');
+  document.addEventListener('keydown', _acEscHandler);
+  let d;
+  try {
+    const res = await fetch('/api/aircraft/' + encodeURIComponent(code));
+    d = await res.json();
+  } catch (err) {
+    document.getElementById('ac-body').innerHTML =
+      '<div class="empty-hint">Konnte nicht geladen werden.</div>';
+    return;
+  }
+  const f = d.friesen || {};
+  let h = '';
+
+  if (d.photo_url) {
+    h += '<img class="ac-photo" src="' + escHtml(d.photo_url) + '" alt="' + escHtml(d.code) + '">';
+    const nachweis = d.photo_credit
+      || [d.photo_artist, d.photo_licence].filter(Boolean).join(' · ');
+    if (nachweis || d.photo_source_url) {
+      h += '<div class="ac-credit">' + escHtml(nachweis || '');
+      if (d.photo_source_url) {
+        h += ' <a href="' + escHtml(d.photo_source_url) + '" target="_blank" rel="noopener">Quelle</a>';
+      }
+      h += '</div>';
+    }
+  }
+
+  h += '<div class="ac-title">' + escHtml(d.name || d.code) + '</div>';
+  if (d.resolved_code !== d.code) {
+    h += '<div class="hint">Flugplan-Kürzel ' + escHtml(d.code)
+       + ', gemeint ist ' + escHtml(d.resolved_code) + '.</div>';
+  }
+  if (d.extract) {
+    h += '<p class="ac-extract">' + escHtml(d.extract) + '</p>';
+    if (d.wiki_url) {
+      h += '<div class="hint"><a href="' + escHtml(d.wiki_url)
+         + '" target="_blank" rel="noopener">Auf Wikipedia weiterlesen</a></div>';
+    }
+  } else if (!d.name) {
+    h += '<p class="empty-hint">Zu diesem Kürzel ist kein Muster bekannt.</p>';
+  }
+
+  h += '<div class="ac-block"><h4>Bei den Friesen</h4>';
+  if (f.fluege) {
+    let zeile = f.fluege + (f.fluege === 1 ? ' Flug' : ' Flüge');
+    if (f.alias_anteil && f.alias_anteil.length) {
+      zeile += ' (' + f.alias_anteil.map(a => a.n + ' davon als ' + escHtml(a.code)
+        + ' erfasst').join(', ') + ')';
+    }
+    h += '<div>' + zeile + '</div>';
+    h += '<div>' + f.stunden + ' h · ' + Math.round(f.nm) + ' nm · '
+       + f.piloten + (f.piloten === 1 ? ' Pilot' : ' Piloten') + '</div>';
+    if (f.von) h += '<div class="hint">' + escHtml(f.von) + ' bis ' + escHtml(f.bis) + '</div>';
+  } else {
+    h += '<div class="empty-hint">Noch nie geflogen.</div>';
+  }
+  h += '</div>';
+
+  if (d.top && d.top.length) {
+    h += '<div class="ac-block"><h4>Am häufigsten</h4>'
+       + d.top.map(t => '<div>' + escHtml(t.name || t.callsign || ('CID ' + t.cid))
+           + ' — ' + t.n + '</div>').join('') + '</div>';
+  }
+
+  const k = d.kutter || {};
+  if (k.payload_kg != null || k.mtow_kg != null) {
+    h += '<div class="ac-block"><h4>Kutter-Daten</h4><div>';
+    if (k.mtow_kg != null) h += 'MTOW ' + Math.round(k.mtow_kg) + ' kg · ';
+    if (k.empty_kg != null) h += 'leer ' + Math.round(k.empty_kg) + ' kg · ';
+    if (k.payload_kg != null) h += 'Zuladung ' + Math.round(k.payload_kg) + ' kg';
+    h += '</div>';
+    if (k.eigene_zeile_hinweis) {
+      h += '<div class="hint">' + escHtml(k.eigene_zeile_hinweis) + '</div>';
+    }
+    h += '</div>';
+  }
+
+  document.getElementById('ac-body').innerHTML = h;
+}
+
+// Teilt den Deep-Link auf dieses Muster (#actype=<code>) — oeffnet das Panel beim Laden.
+function copyAcShareUrl(btn) {
+  if (!_acOpenCode) return;
+  const url = `${location.origin}${location.pathname}#actype=${encodeURIComponent(_acOpenCode)}`;
+  navigator.clipboard.writeText(url).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Kopiert!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✗ Fehler';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  });
+}
+
+function closeAcModal() {
+  document.getElementById('ac-modal').classList.remove('open');
+  document.removeEventListener('keydown', _acEscHandler);
+  _acOpenCode = null;
+}
+
+// Klick auf das Overlay schliesst -- wie bei fp-modal/fld-modal/track-modal/changelog-modal.
+// Das `onclick="event.stopPropagation()"` auf der .modal-box gehoert dazu (sonst schloesse
+// jeder Klick INS Modal es sofort wieder) und ist nur deshalb ungefaehrlich, weil der
+// delegierte ac-link-Listener oben in der CAPTURE-Phase haengt.
+document.getElementById('ac-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('ac-modal')) closeAcModal();
+});
+
+function _acEscHandler(e) { if (e.key === 'Escape') closeAcModal(); }
 
 // ==========================================================================
 //  PREFILES
@@ -3151,7 +3413,7 @@ function renderBummelParticipants(view) {
         <td>${escHtml(p.name || ('CID ' + p.cid))}</td>
         <td class="mono text-label">${escHtml(p.cid)}</td>
         <td class="mono">${escHtml(p.callsign || '')}</td>
-        <td class="mono">${escHtml(p.aircraft || '—')}</td>
+        <td class="mono">${acLink(p.aircraft)}</td>
         <td class="mono text-label">${p.started ? escHtml(p.started.slice(11, 16)) : '—'}</td>
         <td class="mono">${(p.visited || []).length}/${total} Etappen${miss}</td>
         <td>${st}</td>
@@ -3250,7 +3512,7 @@ function renderBummelStandings(data, inProgress) {
       html += `<tr class="${cls}">
         <td class="mono">${e.rank}</td>
         <td>${medal}${escHtml(e.name || e.callsign || ('CID ' + e.cid))}</td>
-        <td class="mono">${escHtml(e.aircraft || '—')}</td>
+        <td class="mono">${acLink(e.aircraft)}</td>
         <td class="mono">${e.leg_count != null ? e.leg_count : '—'}</td>
         <td class="mono">${_fmtMin(e.total_min)}</td>
         <td class="mono">${_fmtSignedDelta(e.delta_sec)}</td>
@@ -3400,7 +3662,7 @@ function _kutterBannerBlock(d) {
           ? `${_kesc(a.dep)} → ${a.dest ? _kesc(a.dest) : '—'}`
           : '—';
         // Callsign neutral (keine Link-Farbe — es ist keiner; Links sind hier nur Pin + Zum Kutter).
-        return `<tr><td class="mono">${_kesc(a.callsign || '—')}</td><td class="mono">${_kesc(a.aircraft || '—')}</td>`
+        return `<tr><td class="mono">${_kesc(a.callsign || '—')}</td><td class="mono">${acLink(a.aircraft)}</td>`
           + `<td class="${loadCls}">${load}</td><td class="mono">${strecke}</td><td>${a.status}</td>${map}</tr>`;
       }).join('');
       html += '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Callsign</th><th>Muster</th>'
@@ -3523,7 +3785,10 @@ function openFpModal(pilot, opts) {
   document.getElementById('fp-callsign-title').textContent = (pilot.callsign || '').toUpperCase();
   fpSet('fp-cs',      (pilot.callsign || '').toUpperCase());
   fpSet('fp-rules',   FP_RULES[pilot.flight_rules] || pilot.flight_rules);
-  fpSet('fp-aircraft', pilot.aircraft_icao || pilot.aircraft);
+  // fpSet() setzt textContent — hier muss Markup rein, sonst steht das <a> als Text da.
+  const acEl = document.getElementById('fp-aircraft');
+  const acCode = pilot.aircraft_icao || pilot.aircraft;
+  acEl.innerHTML = acLink(acCode);
   fpSetAirport('fp-dep',     pilot.departure);
   fpSetAirport('fp-arr',     pilot.arrival);
   fpSetAirport('fp-alt-icao', pilot.alternate);
@@ -3863,7 +4128,7 @@ function _flightRowHtml(f, rowAttrs) {
       data-remarks="${escHtml(f.remarks || '')}"
       data-src="${f.source === 'friesenspy' ? 'FriesenSpy' : 'StatSim'}">
     <td class="mono">${escHtml(f.callsign || '—')}${unscoredBadge}</td>
-    <td class="mono text-label">${escHtml(f.aircraft || '—')}</td>
+    <td class="mono text-label">${acLink(f.aircraft)}</td>
     <td class="mono td-gps-link text-green" style="cursor:pointer;" title="GPS-Erfassung öffnen">${routeCell}</td>
     ${planCell}
     <td class="mono">${escHtml(dt)}</td>
@@ -4162,7 +4427,7 @@ function buildPopupHtml(p) {
   return `
     <div class="popup-callsign">${escHtml((p.callsign || '').toUpperCase())}</div>
     <div class="popup-row">Pilot: <span>${escHtml(p.name || '—')}</span></div>
-    <div class="popup-row">Muster: <span>${escHtml(p.aircraft || '—')}</span></div>
+    <div class="popup-row">Muster: <span>${acLink(p.aircraft)}</span></div>
     <div class="popup-row">Flugplan: <span>${fmtRouteHtml(p.departure, p.arrival)}</span></div>
     <div class="popup-row">Höhe: <span>${fmtAlt(p.altitude)}</span></div>
     <div class="popup-row">GS: <span>${fmtGS(p.groundspeed)}</span></div>
@@ -4278,6 +4543,7 @@ async function fetchStats(_isRetry = false) {
     const data = await res.json();
     renderStatsTable(data, Number(days));
     fetchSpecialEventStats(Number(days));
+    fetchTopMuster(Number(days));
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-text text-label">Fehler beim Laden der Statistiken</div></div>`;
   }
@@ -4534,7 +4800,7 @@ function renderStatsSummary(stats, days) {
 
   return `
     <p class="stats-kpi-note" style="margin-bottom:8px;">Nur Flüge mit FRS*-Callsign · nur abgeschlossene Flüge · FriesenSpy-Aufzeichnungen + StatSim-Daten</p>
-    <div class="stats-kpi-row">
+    <div class="stats-kpi-row" id="stats-kpi-row">
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${stats.length}</span>
         <span class="stats-kpi-label">Piloten</span>
@@ -4565,6 +4831,164 @@ function renderStatsSummary(stats, days) {
       </div>
     </div>
     `;
+}
+
+// ==========================================================================
+//  MUSTERLISTE (Statistiken-Tab: Kachel "Häufigstes Muster" + Detail-Modal)
+// ==========================================================================
+// EIN Zwischenspeicher, EIN Endpoint (/api/aircraft-types/stats?days=N): Kachel und Liste
+// zeigen jetzt denselben Zeitraum-Filter wie "Aktivster Pilot" & Co. (get_stats(...,
+// days=...)) -- ein Muster, das nur VOR dem gewaehlten Fenster geflogen wurde, gewinnt
+// weder die Kachel noch taucht es in der Liste auf. Die Liste hat trotzdem ihren EIGENEN
+// Zeitraum-Selector (_typesModalDays): einmal geoeffnet, soll sie unabhaengig von der
+// Statistiken-Uebersicht umschaltbar sein, ohne das Modal zu schliessen.
+let _typeStats     = null;   // Antwort des zuletzt geladenen /stats?days=... -- fuer BEIDE:
+                              // Kachel nimmt Zeile 0, Liste zeigt alle Zeilen.
+let _typesModalDays = 30;
+let _typesSortBy   = 'fluege';
+let _typesSortDir  = 'desc';
+
+// Fuer die KPI-Kachel in der Statistiken-Uebersicht -- eigener Fetch, eigenes days
+// (das der Uebersicht), unabhaengig vom evtl. schon anders eingestellten Listen-Selector.
+async function fetchTopMuster(days) {
+  let stats;
+  try {
+    const res = await fetch(`/api/aircraft-types/stats?days=${days}`);
+    stats = res.ok ? await res.json() : [];
+  } catch (e) {
+    stats = [];
+  }
+  renderTopMusterCard(stats[0] || null);
+}
+
+// Haengt sich als eigene Kachel HINTER "Aktivster Pilot" in dieselbe KPI-Reihe --
+// asynchron nachgeladen (eigener Endpoint), deshalb per DOM-Insert statt als Teil des
+// synchronen renderStatsSummary()-Strings. Bei jedem Neu-Render der Uebersicht (Zeitraum-
+// Wechsel) baut renderStatsSummary() die Reihe komplett neu auf, die alte Kachel wird
+// deshalb zuerst entfernt statt doppelt eingehaengt. Kein Muster im gewaehlten Zeitraum --
+// Kachel bleibt einfach weg, wie "Aktivster Pilot" bei leeren stats.
+function renderTopMusterCard(top) {
+  const row = document.getElementById('stats-kpi-row');
+  const old = document.getElementById('stats-kpi-topmuster');
+  if (old) old.remove();
+  if (!row || !top) return;
+  const card = document.createElement('div');
+  card.id = 'stats-kpi-topmuster';
+  card.className = 'stats-kpi-card';
+  card.style.cssText = 'min-width:160px;cursor:pointer;';
+  card.onclick = () => openTypesModal();
+  card.innerHTML =
+    `<span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(top.name || top.code)}</span>
+     <span class="stats-kpi-label">Häufigstes Muster (${top.fluege} Flüge) →</span>`;
+  row.appendChild(card);
+}
+
+function _typesSortIndicator(field) {
+  if (_typesSortBy !== field) return '<span style="opacity:0.3"> ⇅</span>';
+  return _typesSortDir === 'asc' ? ' ▲' : ' ▼';
+}
+
+function _typesSortClick(field) {
+  if (_typesSortBy === field) {
+    _typesSortDir = _typesSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _typesSortBy  = field;
+    _typesSortDir = field === 'name' ? 'asc' : 'desc';
+  }
+  renderTypesModalBody();
+}
+
+function renderTypesModalBody() {
+  const body = document.getElementById('types-modal-body');
+  if (!_typeStats || !_typeStats.length) {
+    body.innerHTML = '<div class="empty-hint">Keine Flüge im gewählten Zeitraum.</div>';
+    return;
+  }
+  const field = _typesSortBy;
+  const dir   = _typesSortDir === 'asc' ? 1 : -1;
+  const rows  = _typeStats.slice().sort((a, b) => field === 'name'
+    ? dir * String(a.name || a.code).localeCompare(String(b.name || b.code))
+    : dir * ((a[field] || 0) - (b[field] || 0)));
+  let h = `<div class="table-scroll"><table><thead><tr>
+    <th style="cursor:pointer;" onclick="_typesSortClick('name')">Muster${_typesSortIndicator('name')}</th>
+    <th style="cursor:pointer;" onclick="_typesSortClick('fluege')">Flüge${_typesSortIndicator('fluege')}</th>
+    <th style="cursor:pointer;" onclick="_typesSortClick('stunden')">Stunden${_typesSortIndicator('stunden')}</th>
+    <th style="cursor:pointer;" onclick="_typesSortClick('nm')">nm${_typesSortIndicator('nm')}</th>
+    <th style="cursor:pointer;" onclick="_typesSortClick('piloten')">Piloten${_typesSortIndicator('piloten')}</th>
+  </tr></thead><tbody>`;
+  rows.forEach(t => {
+    h += `<tr>
+      <td class="mono">${acLink(t.code)}${t.name ? ' — ' + escHtml(t.name) : ''}</td>
+      <td class="mono">${t.fluege}</td>
+      <td class="mono">${t.stunden}</td>
+      <td class="mono">${Math.round(t.nm)}</td>
+      <td class="mono">${t.piloten}</td>
+    </tr>`;
+  });
+  h += '</tbody></table></div>';
+  body.innerHTML = h;
+}
+
+async function fetchTypesModalList(days) {
+  _typesModalDays = days;
+  const body = document.getElementById('types-modal-body');
+  body.innerHTML = '<div class="empty-hint">Lade…</div>';
+  try {
+    const res = await fetch(`/api/aircraft-types/stats?days=${days}`);
+    _typeStats = res.ok ? await res.json() : [];
+  } catch (e) {
+    body.innerHTML = '<div class="empty-hint">Konnte nicht geladen werden.</div>';
+    return;
+  }
+  renderTypesModalBody();
+}
+
+// `days` optional -- Deep-Link (#types=1&days=N) reicht ihn explizit durch. Ohne Angabe
+// (Klick auf die Kachel) uebernimmt das Modal den Zeitraum, der GERADE in der Statistiken-
+// Uebersicht eingestellt ist -- die Liste startet dann synchron zu der Kachel, die den
+// Klick ausgeloest hat. Immer ein frischer Fetch, kein Cache-Wiederverwenden: anders als
+// beim alten "immer gesamt"-Stand koennte ein stehen gelassener Zwischenspeicher hier
+// einen falschen Zeitraum zeigen.
+async function openTypesModal(days) {
+  const el = document.getElementById('types-modal');
+  el.classList.remove('hidden');
+  document.addEventListener('keydown', _typesEscHandler);
+  const daysSel = document.getElementById('types-modal-days');
+  const wunsch  = String(days || document.getElementById('stats-days')?.value || '30');
+  daysSel.value = [...daysSel.options].some(o => o.value === wunsch) ? wunsch : '30';
+  await fetchTypesModalList(Number(daysSel.value));
+}
+
+function closeTypesModal() {
+  document.getElementById('types-modal').classList.add('hidden');
+  document.removeEventListener('keydown', _typesEscHandler);
+}
+
+function _typesEscHandler(e) { if (e.key === 'Escape') closeTypesModal(); }
+
+// Klick auf das Overlay schliesst -- wie bei fp-modal/fld-modal/track-modal/changelog-modal.
+document.getElementById('types-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('types-modal')) closeTypesModal();
+});
+
+document.getElementById('types-modal-days').addEventListener('change', (e) => {
+  fetchTypesModalList(Number(e.target.value));
+});
+
+// Teilt genau das, was gerade zu sehen ist -- inklusive des Zeitraums, den die Liste
+// GERADE zeigt (kann vom Zeitraum der Statistiken-Uebersicht abweichen, wenn der Selector
+// im Modal umgestellt wurde).
+function copyTypesShareUrl(btn) {
+  const url = `${location.origin}${location.pathname}#types=1&days=${_typesModalDays}`;
+  navigator.clipboard.writeText(url).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Kopiert!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✗ Fehler';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  });
 }
 
 function _sortIndicator(field) {
@@ -4761,7 +5185,11 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 
   // Klick auf Flug-Zeile → highlight auf Karte
   pilotList.querySelectorAll('.events-flight-row').forEach(row => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (e) => {
+      // Muster-Designator hat sein eigenes Ziel (Muster-Panel). Der delegierte ac-link-Listener
+      // haengt am document und feuert erst NACH diesem Zeilen-Handler — sein stopPropagation
+      // kaeme hier zu spaet, deshalb hier abbiegen (gleiches Muster wie td-map-btn oben).
+      if (e.target.closest && e.target.closest('a.ac-link')) return;
       const [pi, fi] = row.dataset.flightKey.split('_').map(Number);
       highlightEventFlight(pilots, pi, fi);
     });
@@ -5193,7 +5621,7 @@ function _kutterDetailBody(d) {
       : '<td class="kf-empty">leer</td>';
     const kDep = f.dep ? _kesc(f.dep) + airportLinkIcon(f.dep) : '';
     const kArr = f.arr ? _kesc(f.arr) + airportLinkIcon(f.arr) : '';
-    return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + _kesc(f.aircraft || '')
+    return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + acLink(f.aircraft)
       + '</td><td>' + kDep + '→' + kArr + '</td>' + kg + _kCargoLabel(f) + '</tr>';
   }).join('');
   const feed = '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Zeit</th><th>Callsign</th><th>Muster</th>'
@@ -5372,6 +5800,18 @@ async function initFromUrl() {
     await _configPromise;
     openChangelogModal();
   }
+
+  // Deep-Link auf ein Muster (#actype=<code>) — ebenfalls tab-unabhaengig. Bewusst ohne
+  // await: das Panel laedt aus einem eigenen Endpoint, der Tab-Aufbau darunter soll nicht
+  // darauf warten. Muss VOR dem `if (!tab) return` stehen, sonst greift der Link ohne Tab nicht.
+  const acType = p.get('actype');
+  if (acType) openAcModal(acType);
+
+  // Deep-Link auf die Musterliste (#types=1&days=N) -- ebenfalls tab-unabhaengig und ohne
+  // await: openTypesModal() holt sich seine Daten bei Bedarf selbst (kein vorheriger
+  // Tab-Aufbau noetig). Muss ebenfalls VOR dem `if (!tab) return` stehen. `days` ist
+  // optional -- ohne Angabe uebernimmt openTypesModal() den Zeitraum aus #stats-days.
+  if (p.get('types')) openTypesModal(p.get('days'));
 
   const tab = p.get('tab');
   if (!tab) return;

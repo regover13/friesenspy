@@ -1,11 +1,121 @@
 [
   {
-    "version": "10.5.0",
+    "version": "11.4.0",
     "date": "2026-08-08",
     "highlight": true,
     "title": "Karten-Links: amtliche AIP-VFR-Karten (Deutschland) + ChartFox (weltweit)",
     "items": [
       "🗺️ Neben angezeigten Flugplatz-Codes (Live-Tab, Statistiken, Kartenpopup, Flugplan-/Flug-Details, FriesenKutter-Feed) erscheint jetzt ein kleines Karten-Icon: für deutsche Flugplätze führt es zur amtlichen DFS-AIP-VFR-Kennkarte, für alle anderen von airportsdata erkannten ICAO-Codes zu ChartFox (chartfox.org). Rein informativ, kein Login nötig."
+    ]
+  },
+  {
+    "version": "11.3.3",
+    "date": "2026-08-05",
+    "highlight": false,
+    "title": "Beschreibung erscheint auch, wenn das Foto klemmt",
+    "items": [
+      "🖼️ Wikipedia bremst Abrufe aus, wenn zu viele auf einmal kommen. Traf das den Bild-Download, warf FriesenSpy den bereits fertig geholten Beschreibungstext gleich mit weg — das Muster blieb leer, obwohl der Text schon da war. Jetzt gilt: Text schlägt Foto. Die Beschreibung wird gespeichert, das Bild kommt beim nächsten Anlauf nach. Ein dauerhaft fehlendes Bild (auf Wikipedia gelöscht) schließt die Recherche sauber ab, statt das Muster endlos erneut versuchen zu lassen."
+    ]
+  },
+  {
+    "version": "11.3.2",
+    "date": "2026-08-05",
+    "highlight": false,
+    "title": "Musterbeschreibungen kommen jetzt auf Deutsch",
+    "items": [
+      "🇩🇪 Bei 13 Mustern stand die Beschreibung auf Englisch, obwohl es den deutschen Wikipedia-Artikel gibt — die An-2 etwa erklärte sich mit „The Antonov An-2 is a Soviet mass-produced single-engine biplane\". Acht davon sprechen jetzt Deutsch: An-2, Cessna 182 und 210, Cirrus SR22 (beide Varianten), Diamond DA40, Britten-Norman BN-2 Islander und die SA 315B Lama. Die restlichen fünf (u. a. Aeroprakt A-32 Vixxen, CubCrafters CC19 XCub) haben schlicht keinen deutschen Artikel und bleiben zu Recht englisch.",
+      "🔎 Drei Gründe steckten dahinter: die deutsche Wikipedia schreibt „Antonow\" statt „Antonov\" und „Aérospatiale\" statt „Aerospatiale\" — ein Buchstabe Unterschied reichte, damit der gefundene Artikel wieder verworfen wurde. Der deutsche Suchindex kennt außerdem Untervarianten wie „182T\" oder „SR-22T\" nicht, der englische schon. Und wenn der englische Artikel zuerst passte, wurde gar nicht mehr auf Deutsch weitergesucht.",
+      "🎯 Nebenbei sicherer geworden: widersprechen sich die Typbezeichnungen, gilt der Artikel nicht mehr als Treffer. Die An-2 wäre sonst beim Artikel der An-225 gelandet — dem größten Flugzeug der Welt."
+    ]
+  },
+  {
+    "version": "11.3.1",
+    "date": "2026-07-31",
+    "highlight": false,
+    "title": "Mooney M20 (MR20) taucht endlich auf",
+    "items": [
+      "🛩️ MR20 stand seit Wochen ohne Namen da, obwohl längst klar war: eine Mooney M20. Die KI-Recherche hatte sich bei der Variante nicht entscheiden können und ihre ganze Unsicherheit als Textabsatz in das Namensfeld statt eines Namens geschrieben — das wurde zu Recht verworfen, aber dadurch dachte FriesenSpy fälschlich, die Recherche liefe noch, und hat es bei jedem Durchlauf erneut versucht, ohne je fertig zu werden. Repariert, MR20 bekommt jetzt seinen Wikipedia-Eintrag."
+    ]
+  },
+  {
+    "version": "11.3.0",
+    "date": "2026-07-31",
+    "highlight": false,
+    "title": "Auch die Musterliste kennt jetzt einen Zeitraum",
+    "items": [
+      "📅 Die volle Liste hinter „Häufigstes Muster\" zeigt nicht mehr die Gesamtzahlen seit je, sondern denselben Zeitraum wie die Kachel — mit einem eigenen Zeitraum-Regler direkt in der Liste, unabhängig von der Statistiken-Übersicht umschaltbar.",
+      "🔗 Der Teilen-Knopf der Liste nimmt den gerade eingestellten Zeitraum mit in den Link — wer ihn öffnet, sieht genau das gleiche Fenster."
+    ]
+  },
+  {
+    "version": "11.2.1",
+    "date": "2026-07-31",
+    "highlight": false,
+    "title": "Häufigstes Muster reagiert jetzt auf den Zeitraum",
+    "items": [
+      "🏆 Die Kachel „Häufigstes Muster\" zeigt jetzt das meistgeflogene Muster im oben gewählten Zeitraum, genau wie „Aktivster Pilot\" nebenan — vorher zeigte sie unabhängig davon immer die Gesamtzahl seit je, was in der 30-Tage-Ansicht ein länger nicht geflogenes Muster als aktuell aktiv aussehen lassen konnte.",
+      "📋 Die volle Liste (ein Klick auf die Kachel) bleibt bewusst bei den Gesamtzahlen seit je, wie das Muster-Panel selbst — dafür jetzt mit einem Hinweis direkt über der Tabelle."
+    ]
+  },
+  {
+    "version": "11.2.0",
+    "date": "2026-07-31",
+    "highlight": false,
+    "title": "Welches Muster fliegen wir am häufigsten?",
+    "items": [
+      "🏆 Neue Kachel in den Statistiken: „Häufigstes Muster gesamt\" — ein Klick öffnet die komplette Liste aller geflogenen Muster mit Flügen, Stunden, Strecke und Pilotenzahl, sortierbar nach jeder Spalte. Anders als die übrigen Kacheln daneben gilt das nicht nur für den gewählten Zeitraum, sondern seit je — wie im Muster-Panel selbst.",
+      "🔗 Jede Zeile der Liste verlinkt zurück ins bekannte Muster-Panel (Foto, Beschreibung, Kutter-Gewichte). Die Liste selbst lässt sich ebenfalls teilen — der Link öffnet sie beim Empfänger direkt, ohne erst über die Statistiken zu gehen."
+    ]
+  },
+  {
+    "version": "11.1.0",
+    "date": "2026-07-31",
+    "highlight": false,
+    "title": "Ein Muster lässt sich jetzt teilen",
+    "items": [
+      "⎘ Das Muster-Panel hat oben einen Teilen-Knopf — wie der Bummel, der Kutter und der Versionsverlauf. Der kopierte Link öffnet beim Empfänger direkt dasselbe Muster, egal auf welchem Tab er landet.",
+      "🔗 Das Muster-Kürzel in den Listen sieht jetzt aus wie jedes andere Klickziel: einfach blau. Die gepunktete Unterstreichung darunter war die einzige ihrer Art und stand direkt neben Strecken, die ohne auskommen.",
+      "👓 Teilen und Schließen sitzen jetzt oberhalb des Fotos statt darauf — auf einem hellen Bild war von ihnen kaum etwas zu erkennen. Und auf dem Handy bleibt ein einmal angetippter Knopf nicht mehr halb durchsichtig zurück."
+    ]
+  },
+  {
+    "version": "11.0.0",
+    "date": "2026-07-30",
+    "highlight": true,
+    "title": "Eisenschwein",
+    "items": [
+      "✈️ Das Muster-Kürzel ist jetzt überall anklickbar — in der Live-Liste, auf der Karte, im Flugplan, in der Flugliste, im Bummel und beim Kutter. Ein Klick zeigt Foto, Kurzbeschreibung und was die Gruppe mit dem Muster schon geflogen hat: Flüge, Stunden, Strecke, wer es am häufigsten nimmt, und die gepflegten Kutter-Gewichte.",
+      "📷 Die Fotos kommen von Wikimedia Commons, mit Angabe von Urheber und Lizenz — und nur solche, deren Lizenz das erlaubt. FriesenSpy holt sie selbst und legt sie ab, statt sie von fremden Servern einzubinden: so erfährt niemand Drittes, wer hier mitliest. Wo ein passendes Bild fehlt, kann im Admin eins hochgeladen werden, auch ein eigener Screenshot.",
+      "🔤 Vertippte Kürzel lassen sich auf das richtige Muster umbiegen (etwa P24 auf PA24). Die Flüge zählen dann zum richtigen Muster, und das Panel schreibt dazu, wie viele davon unter dem alten Kürzel erfasst wurden.",
+      "🤷 Und wenn zu einem Kürzel nichts zu finden ist, steht das da — statt eines erfundenen Textes oder eines Platzhalterbilds."
+    ]
+  },
+  {
+    "version": "10.5.0",
+    "date": "2026-07-30",
+    "highlight": false,
+    "title": "Neue Muster werden nicht mehr vergessen",
+    "items": [
+      "🔎 Wenn ein Muster zum ersten Mal auftaucht, recherchiert FriesenSpy Gewichte und Namen selbst. War der KI-Dienst in diesem Moment gerade überlastet, galt das Muster bisher als „abgehakt\" — und wurde nie wieder angefasst. Genau das war der Aeroprakt A-32 (AP32) passiert, der deshalb zwei Monate ohne Eintrag blieb. Ein vorübergehender Fehler wird jetzt als solcher erkannt und später erneut versucht.",
+      "📚 Dazu holt FriesenSpy den Altbestand nach: 33 Muster aus eurem Flugbuch hatten noch keine Zuladungsdaten, die meisten davon Flüge von vor Juli — aus einer Zeit, in der es die automatische Recherche noch nicht gab. Sie werden im Hintergrund nachgetragen, gedrosselt und der Reihe nach, häufig geflogene zuerst."
+    ]
+  },
+  {
+    "version": "10.4.6",
+    "date": "2026-07-29",
+    "highlight": false,
+    "title": "Basel heißt wieder LFSB",
+    "items": [
+      "🛬 Nach einer Landung am EuroAirport Basel-Mulhouse stand in der Statistik nicht LFSB, sondern _MLH. Der Platz ist binational und hat gleich drei IATA-Codes (BSL, MLH, EAP), aber nur ein einziges ICAO — die Flugplatz-Datenbank führt ihn deshalb zweimal, beide Einträge auf genau derselben Koordinate. Bei diesem Gleichstand griff die Platzerkennung den Platzhalter statt des echten Codes. Die Landung selbst war immer richtig erkannt und richtig gewertet, auch der Punkt auf der Karte saß korrekt — falsch war nur das angezeigte Kürzel. Betroffen war außer Basel noch Lachin (UBTT). Danke an Roland für den Hinweis!"
+    ]
+  },
+  {
+    "version": "10.4.5",
+    "date": "2026-07-27",
+    "highlight": false,
+    "title": "Track beginnt wieder am eigenen Startplatz",
+    "items": [
+      "🗺 Der GPS-Track konnte an einem völlig anderen Platz beginnen und dann quer über die Karte zum echten Startplatz springen. Betroffen war, wer sich weniger als 30 Minuten nach der Landung an einem anderen Platz neu verbunden hat: Die Rollphase des Vorflugs wurde dann fälschlich dem neuen Flug zugeschlagen. Die Strecke selbst war immer richtig — nur der gezeichnete Track passte nicht dazu. Der Rollbeginn kommt jetzt aus derselben Erkennung, die auch den Startplatz bestimmt; ein Track kann damit gar nicht mehr woanders anfangen als die angezeigte Strecke. Nebenbei war aus demselben Grund die Blockzeit solcher Flüge zu hoch — auch das stimmt jetzt."
     ]
   },
   {

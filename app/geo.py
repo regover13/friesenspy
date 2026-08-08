@@ -18,6 +18,79 @@ def _airports_icao() -> dict:
     return _AIRPORTS_ICAO
 
 
+# v10.4.6: airportsdata führt Plätze, die einen IATA-Code aber kein eigenes ICAO haben, unter
+# einem Platzhalter-Schlüssel "_" + IATA (14 Stück in Version 20260315). Zwei davon beschreiben
+# einen Platz, den airportsdata BEREITS unter seinem echten ICAO führt — auf identischer
+# Koordinate:
+#   LFSB / _MLH   EuroAirport Basel-Mulhouse-Freiburg (binational: BSL, MLH, EAP → ein ICAO)
+#   UBTT / _LHL   Lachin International
+# Weil die nearest_airport_icao*-Funktionen bei Distanz-Gleichstand den SPÄTER iterierten
+# Eintrag nehmen (``d <= best_d``; die Gesamt-Policy ist „später iteriert gewinnt", weshalb
+# die Custom-Schleife hinten läuft) und "_" (0x5F) in der CSV hinter allen Buchstaben sortiert,
+# gewann dort ausnahmslos der Platzhalter: Flug FRS190N landete am 2026-07-29 in Basel und
+# bekam "LSPM -> _MLH" in die Statistik.
+# Solche verdeckten Schlüssel sind deshalb aus der NEAREST-Suche ausgeschlossen — sie tragen
+# keine Information, die das echte ICAO nicht schon trägt (gleiche Position, gleiche Elevation,
+# gleicher Name). In icao_to_coords()/airport_elevation_ft() bleiben sie bewusst auflösbar,
+# damit Altbestände in flight_cache weiter Koordinaten liefern.
+# Die übrigen 12 Platzhalter sind der EINZIGE Datensatz ihres Platzes (z. B. _OUK/Out Skerries)
+# und bleiben normale Kandidaten — ein pauschaler "_"-Filter würde sie unauffindbar machen.
+#
+# Erkannt wird der Zwilling über eine DISTANZSCHWELLE, nicht über Float-Gleichheit. Ein
+# Bit-Vergleich wäre gegen Datenpflege upstream wehrlos: ``airportsdata`` ist in
+# requirements.txt absichtlich nicht auf eine Version gepinnt (die Flugplatzdaten sollen aktuell
+# bleiben), und würde eine künftige Version die LFSB-Koordinate um wenige Meter korrigieren,
+# ohne den Platzhalter mitzuziehen, wäre der Bug lautlos zurück. Bei 1 km ist der Abstand zum
+# nächsten echten Platz für alle 12 legitimen Platzhalter komfortabel groß (der knappste ist
+# _AYM/Yas Island mit 5,6 km zu OMAA), die Schwelle trennt also sicher. Gegen ein Aufweichen
+# dieser Trennung wacht ein Canary-Test (tests/test_geo.py::test_unshadowed_placeholders_are_far).
+_ZWILLING_MAX_KM = 1.0
+
+_SHADOWED_CODES: frozenset[str] | None = None
+
+
+def _shadowed_codes() -> frozenset[str]:
+    """Platzhalter-Schlüssel ("_" + IATA), die einen echten ICAO-Zwilling am selben Ort haben.
+
+    „Am selben Ort" heißt: näher als :data:`_ZWILLING_MAX_KM` an einem Code ohne "_"-Präfix.
+    Einmal modulweit berechnet und gecacht — wie :func:`_airports_icao` selbst, aus dem die
+    Menge abgeleitet wird (deterministisch, keine externe Quelle).
+    """
+    global _SHADOWED_CODES
+    if _SHADOWED_CODES is None:
+        try:
+            airports = _airports_icao()
+        except Exception:
+            return frozenset()  # nicht cachen: ein späterer Aufruf soll es erneut versuchen
+        _SHADOWED_CODES = frozenset(
+            code for code in airports if code.startswith("_") and _hat_echten_zwilling(code)
+        )
+    return _SHADOWED_CODES
+
+
+def _hat_echten_zwilling(platzhalter: str) -> bool:
+    """True, wenn ein Code ohne "_"-Präfix näher als :data:`_ZWILLING_MAX_KM` liegt.
+
+    Bounding-Box-Vorfilter vor der Haversine-Rechnung (wie in :func:`nearest_airport_icao`) —
+    damit bleibt der einmalige Aufbau der Shadow-Menge auch über alle ~28k Einträge billig.
+    """
+    airports = _airports_icao()
+    ziel = airports.get(platzhalter) or {}
+    lat, lon = ziel.get("lat"), ziel.get("lon")
+    if lat is None or lon is None:
+        return False
+    box = _ZWILLING_MAX_KM / 111.0 + 0.01  # Grad-Näherung, großzügig
+    for code, a in airports.items():
+        if code.startswith("_"):
+            continue
+        alat, alon = a.get("lat"), a.get("lon")
+        if alat is None or alon is None or abs(alat - lat) > box:
+            continue
+        if haversine(lat, lon, alat, alon) <= _ZWILLING_MAX_KM:
+            return True
+    return False
+
+
 # Ergänzungs-Flugplätze (#50) — Plätze, die in airportsdata fehlen (z. B. Segelfluggelände ohne
 # offizielle ICAO-Kennung), admin-pflegbar über app.database.custom_airports. geo.py bleibt bewusst
 # DB-frei: der Aufrufer (main.py-Lifespan, Admin-Endpoints) befüllt diesen Cache per Push über
@@ -96,7 +169,11 @@ def search_airports(q: str, limit: int = 20) -> list[dict]:
     except Exception:
         airports = {}
     codes = {c for c in _CUSTOM_AIRPORTS if c.startswith(q)}
-    codes |= {c for c in airports if c.startswith(q)}
+    # v10.4.6 (Fable-Review): verdeckte Platzhalter nicht anbieten — die Platzerkennung liefert
+    # sie nie zurück, also darf man sie sich auch nicht in einen Event-Filter klicken können.
+    # Die 12 eigenständigen Platzhalter bleiben wählbar, sie sind ihr Platz.
+    verdeckt = _shadowed_codes()
+    codes |= {c for c in airports if c.startswith(q) and c not in verdeckt}
     out = []
     for c in sorted(codes)[:limit]:
         info = airports.get(c) or {}
@@ -241,9 +318,12 @@ def nearest_airport_icao(lat: float, lon: float, max_km: float) -> str | None:
     """
     best, best_d = None, max_km
     box = max_km / 111.0 + 0.01  # Grad-Näherung
+    shadowed = _shadowed_codes()
     for icao, a in _airports_icao().items():
         if icao in _CUSTOM_AIRPORTS:
             continue  # #56: von Custom überschattet (Override), airportsdata-Wert ignorieren
+        if icao in shadowed:
+            continue  # v10.4.6: Platzhalter-Zwilling, echtes ICAO liegt auf derselben Koordinate
         alat, alon = a.get("lat"), a.get("lon")
         if alat is None or alon is None or abs(alat - lat) > box:
             continue
@@ -334,9 +414,12 @@ def nearest_airport_icao_fast(lat: float, lon: float, max_km: float) -> str | No
     candidates.sort(key=lambda t: t[0])
 
     best, best_d = None, max_km
+    shadowed = _shadowed_codes()
     for _idx, icao, alat, alon in candidates:
         if icao in _CUSTOM_AIRPORTS:
             continue  # #56: von Custom überschattet (Override), airportsdata-Wert ignorieren
+        if icao in shadowed:
+            continue  # v10.4.6: Platzhalter-Zwilling, echtes ICAO liegt auf derselben Koordinate
         d = haversine(lat, lon, alat, alon)
         if d <= best_d:
             best, best_d = icao, d

@@ -65,3 +65,51 @@ jobs:
             echo "Health-Check fehlgeschlagen — letzte Container-Logs:"
             docker compose logs --tail 50
             exit 1
+
+      # Meldet das Ergebnis des Deploys (inkl. Health-Check) nach Discord.
+      # Voraussetzung: Repo-Secret DISCORD_WEBHOOK (Discord-Kanal-Webhook, OHNE /github-Suffix).
+      # Fehlt das Secret, wird der Schritt still übersprungen statt den Workflow rot zu färben.
+      - name: Discord benachrichtigen
+        if: always()
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          JOB_STATUS: ${{ job.status }}
+          # Commit-Daten NUR über env, nie direkt in den Shell-Text interpolieren
+          # (sonst könnte eine Commit-Message Befehle einschleusen).
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_URL: ${{ github.event.head_commit.url }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::notice::Secret DISCORD_WEBHOOK nicht gesetzt — Benachrichtigung übersprungen."
+            exit 0
+          fi
+          VERSION=$(jq -r '.[0].version' app/CHANGELOG.json 2>/dev/null || echo '?')
+          TITLE=$(printf '%s' "$COMMIT_MSG" | head -1)
+          if [ "$JOB_STATUS" = "success" ]; then
+            COLOR=3066993
+            TEXT='Deploy erfolgreich — Health-Check auf friesenspy.devprops.de bestanden.'
+          else
+            COLOR=15158332
+            TEXT="Deploy fehlgeschlagen ($JOB_STATUS) — auf dem VPS läuft die bisherige Version weiter."
+          fi
+          jq -n \
+            --arg name "FriesenSpy v$VERSION" \
+            --arg title "$TITLE" \
+            --arg url "$COMMIT_URL" \
+            --arg text "$TEXT" \
+            --arg actor "$ACTOR" \
+            --arg run "$RUN_URL" \
+            --argjson color "$COLOR" \
+            '{embeds: [{
+                author: {name: $name},
+                title: $title,
+                url: $url,
+                description: ($text + "\n\nvon **" + $actor + "** · [Workflow-Log](" + $run + ")"),
+                color: $color
+             }]}' > /tmp/discord.json
+          curl --fail --silent --show-error -X POST \
+               -H 'Content-Type: application/json' \
+               -d @/tmp/discord.json "$WEBHOOK" \
+            || echo "::warning::Discord-Benachrichtigung fehlgeschlagen — Deploy selbst ist davon unberührt."
