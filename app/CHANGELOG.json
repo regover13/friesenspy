@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.4.2",
+    "date": "2026-08-09",
+    "highlight": false,
+    "title": "Kyrillische Zeichen erscheinen nicht mehr wie fettgedruckt",
+    "items": [
+      "🔤 Die selbst gehostete Schrift Exo 2 lag bisher nur in den Subsets „latin“ und „latin-ext“ vor. Für kyrillische Zeichen fiel der Browser deshalb auf die generische System-Schrift zurück — die kennt kein Schriftgewicht 300, in dem die ganze Seite läuft, und rendert in Regular. Neben dem übrigen Text sah das nach Fettdruck aus. Die Subsets „cyrillic“ und „cyrillic-ext“ sind jetzt für alle drei Gewichte (300/500/700) ergänzt, insgesamt 54 kB. Aufgefallen an der Musterbeschreibung der Mil Mi-2."
+    ]
+  },
+  {
     "version": "11.4.1",
     "date": "2026-08-08",
     "highlight": false,
