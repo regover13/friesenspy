@@ -231,7 +231,9 @@ def test_gate_on_redirects_html_to_login(env):
     env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
     main._reset_gate_cache()
     r = env.client.get("/", headers={"accept": "text/html"}, follow_redirects=False)
-    assert r.status_code == 302 and r.headers["location"] == "/auth/forum/login"
+    # next-Parameter trägt den ursprünglichen Pfad weiter (hier "/"), damit der Login zurück
+    # zur Original-URL führt statt immer auf die Startseite zu landen.
+    assert r.status_code == 302 and r.headers["location"] == "/auth/forum/login?next=%2F"
 
 
 def test_gate_on_returns_401_for_api(env):

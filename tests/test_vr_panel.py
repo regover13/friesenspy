@@ -9,11 +9,45 @@ from __future__ import annotations
 import asyncio
 import re
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from fastapi.testclient import TestClient
 
 import app.main as main
+from app.auth import make_admin_token, make_confirm_token
+from app.database import init_db
 
 STATIC = Path(__file__).resolve().parents[1] / "app" / "static"
 INDEX = (STATIC / "index.html").read_text(encoding="utf-8")
+
+SECRET = "s3cr3t-key"
+PW = "test-admin-pw"
+
+
+@pytest.fixture()
+def env(tmp_path, monkeypatch):
+    # Minimaler Zwilling des env-Fixtures aus tests/test_forum_sso_api.py — reicht hier, weil
+    # wir nur Routing (/panel) + Gate brauchen, keinen vollen SSO-Roundtrip.
+    p = str(tmp_path / "t.db")
+    init_db(p)
+    settings = SimpleNamespace(
+        DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=SECRET, ADMIN_PASSWORD=PW,
+        SSO_SECRET="shared-forum-secret", FORUM_SSO_URL="https://board.friesenflieger.de/sso.php",
+        FORUM_SSO_CALLBACK="https://friesenspy.devprops.de/auth/forum/callback",
+        USER_SESSION_MAX_AGE_SEC=3600, OPENAIP_API_KEY="", VAPID_PUBLIC_KEY="",
+    )
+    monkeypatch.setattr(main, "get_settings", lambda: settings)
+    main._reset_gate_cache()
+    client = TestClient(main.app)
+    return SimpleNamespace(client=client, db=p, settings=settings)
+
+
+def _admin_cookie() -> dict:
+    return {
+        "fs_admin": make_admin_token(SECRET, PW),
+        "fs_confirm": make_confirm_token(SECRET, PW, 9_999_999_999),
+    }
 
 
 def test_panel_liefert_dieselbe_datei_wie_index():
@@ -39,3 +73,25 @@ def test_vr_panel_css_skaliert_alles_gemeinsam():
     nicht reicht'."""
     assert re.search(r"html\.vr-panel\s*\{[^}]*zoom:\s*1\.35", INDEX)
     assert re.search(r"html\.vr-panel body\s*\{[^}]*font-weight:\s*400", INDEX)
+
+
+def test_panel_route_ist_wirklich_unter_slash_panel_registriert(env):
+    """Echter Request über TestClient/Routing statt Direktaufruf von main.panel() -- ein
+    Tippfehler im @app.get("/panel")-Pfad (den auch die JS-Erkennung in index.html prüft)
+    würde hier auffallen, im alten Direktaufruf-Test dagegen nicht."""
+    r = env.client.get("/panel", headers={"accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 200
+    assert "vr-panel" in r.text  # dieselbe Seite wie /, samt VR-Erkennungs-Skript
+
+
+def test_panel_bleibt_hinter_dem_login_gate(env):
+    """Design-Entscheidung 'kein öffentlicher Zugang' -- bei aktivem Gate muss /panel wie jede
+    andere Seite zum Login umleiten. Eine künftige Erweiterung von _GATE_ALLOW_PREFIXES um
+    "/panel" würde diesen Test brechen."""
+    env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
+    main._reset_gate_cache()
+    r = env.client.get("/panel", headers={"accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 302
+    loc = r.headers["location"]
+    assert loc.startswith("/auth/forum/login")
+    assert loc == "/auth/forum/login?next=%2Fpanel"

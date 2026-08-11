@@ -273,7 +273,11 @@ async def forum_login_gate(request: Request, call_next):
         if _forum_login_active_cached(settings) and not _request_is_authenticated(request, settings):
             wants_html = request.method == "GET" and "text/html" in request.headers.get("accept", "")
             if wants_html:
-                return RedirectResponse("/auth/forum/login", status_code=302)
+                next_path = request.url.path
+                if request.url.query:
+                    next_path += "?" + request.url.query
+                return RedirectResponse(f"/auth/forum/login?next={quote(next_path, safe='')}",
+                                        status_code=302)
             return JSONResponse({"detail": "Login erforderlich"}, status_code=401)
     return await call_next(request)
 
