@@ -2813,7 +2813,12 @@ class TestAirSeconds:
 class TestExtendBlockEnd:
     def test_rolling_after_landing_extends_block_end(self):
         """Rollt die Maschine nach der Landung noch (Weg zum Abstellplatz), verlängert sich
-        block_end bis zum letzten Rollsample."""
+        block_end bis zum LETZTEN VERFÜGBAREN Sample (10:43:00, wo sie nachweislich bereits
+        steht) — NICHT nur bis zum letzten Rollsample davor (10:42:30). Der Stand bei 10:43:00
+        ist mit nur einem Sample viel zu kurz, um als „abgestellt" zu qualifizieren (siehe
+        test_extension_capped_at_parking_stand für den Fall, der wirklich qualifiziert) —
+        er zählt trotzdem, aus demselben Grund wie ein kurzer Rollhalt in der Blockzeit selbst:
+        die letzte verfügbare Position ist die beste Schätzung, wie weit dieses Leg reicht."""
         from app.database import _extend_block_end
 
         pos = [
@@ -2825,7 +2830,28 @@ class TestExtendBlockEnd:
              "ts": _track_ts("10:43:00")},
         ]
         end = _extend_block_end(pos, _track_ts("10:40:00"), None)
-        assert end == _track_ts("10:42:30")
+        assert end == _track_ts("10:43:00")
+
+    def test_recording_ends_shortly_after_stop_extends_to_last_sample(self):
+        """Zweiter Live-Fund 2026-08-11 (cid 1602713, Flug 666): die Aufzeichnung endet schon
+        4,5 min nach dem Stillstand (18:03:45Z-18:08:15Z) — deutlich unter den 600 s, die für
+        eine qualifizierende Abstell-Standphase nötig wären (s. test_extension_ends_at_stand_
+        start_not_last_moving_sample für den Fall MIT genug Daten). Ergebnis MUSS trotzdem der
+        letzte verfügbare Sample sein (18:08:15Z, direkt belegte Standzeit), NICHT der letzte
+        bewegte Sample davor (18:03:30Z) — sonst gehen 4,5 min direkt belegter Standzeit
+        verloren, nur weil die Aufzeichnung (Disconnect/Feed-Ende) zu früh abbricht."""
+        from app.database import _extend_block_end
+
+        pos = [
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 11,
+             "ts": "2026-08-11T18:03:30Z"},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": "2026-08-11T18:03:45Z"},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": "2026-08-11T18:08:15Z"},  # letztes Sample -- Aufzeichnung endet hier
+        ]
+        end = _extend_block_end(pos, "2026-08-11T18:00:15Z", None)
+        assert end == "2026-08-11T18:08:15Z"
 
     def test_extension_capped_at_parking_stand(self):
         """Ein anschließender 10-min-Stand AN EINEM FLUGPLATZ ist das Abstellen — Ergebnis ist
@@ -2887,7 +2913,11 @@ class TestExtendBlockEnd:
         end = _extend_block_end(pos, _track_ts("10:40:00"), _track_ts("10:45:00"))
         assert end == _track_ts("10:42:30")
 
-    def test_no_rolling_after_landing_leaves_end_ts_unchanged(self):
+    def test_single_stand_sample_after_landing_still_extends(self):
+        """Ein einzelner gs=0-Sample eine Minute nach der Landung ist zu kurz, um als
+        qualifizierender Abstell-Stand zu gelten (>= 600 s nötig) — trotzdem verlängert er
+        block_end, weil er direkte Standzeit-Evidenz ist (derselbe Grund wie bei den beiden
+        Tests oben: kurze Standzeit vor dem Ende der Aufzeichnung zählt, statt zu verfallen)."""
         from app.database import _extend_block_end
 
         pos = [
@@ -2895,7 +2925,20 @@ class TestExtendBlockEnd:
              "ts": _track_ts("10:41:00")},
         ]
         end = _extend_block_end(pos, _track_ts("10:40:00"), None)
+        assert end == _track_ts("10:41:00")
+
+    def test_no_positions_at_all_after_landing_leaves_end_ts_unchanged(self):
+        """Keine einzige Position nach end_ts (Positionsliste leer bzw. nur davor) -> keine
+        Evidenz für irgendeine Fortsetzung, block_end bleibt end_ts."""
+        from app.database import _extend_block_end
+
+        pos = [
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:30:00")},  # VOR end_ts -- kein Kandidat
+        ]
+        end = _extend_block_end(pos, _track_ts("10:40:00"), None)
         assert end == _track_ts("10:40:00")
+        assert _extend_block_end([], _track_ts("10:40:00"), None) == _track_ts("10:40:00")
 
 
 # ---------------------------------------------------------------------------

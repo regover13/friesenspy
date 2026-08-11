@@ -179,21 +179,24 @@ class TestFormParity:
         assert flight["arrival"] == "EDDW"
         # KORREKTUR 1 (#23 Phase 2): block_min (gate-to-gate inkl. Taxi) ist die GRÖSSERE
         # Zeit, duration_min (reine Flugzeit Abheben->Landung) die KLEINERE — exakte Werte
-        # ausgerechnet aus _seed_eddk_eddw_track (Taxi 10:00-10:06, Flugzeit 10:06-10:40).
+        # ausgerechnet aus _seed_eddk_eddw_track (Taxi 10:00-10:06, Flugzeit 10:06-10:40,
+        # PLUS ein Sample 10:44:00 EDDW gs=0, 4 min nach der Landung -- die Verbindung bleibt
+        # noch kurz bestehen, bevor die Testdaten enden).
         #
         # "fix/blockzeit-anblock": duration_min bleibt 34 (_air_seconds findet im Track
         # keine Bodenphase -- jedes Sample-Paar zwischen 10:06 und 10:40 liegt entweder mehr
         # als 300 s auseinander oder mehr als 200 m entfernt, s. Kriterien in _air_seconds).
-        # block_min steigt von 37 auf 39: _leg_block_seconds zaehlt WANDUHR ab dem ERSTEN
-        # Bewegungsnachweis (block_from = 10:01, erstes Sample mit groundspeed > 2 kt) bis
-        # block_end (hier unveraendert 10:40, kein Rollen danach) MINUS qualifizierender
-        # Abstell-Standphasen -- hier gibt es keine (jeder Lauf mit groundspeed <= 2 kt im
-        # Fenster ist <= 1 Sample lang, weit unter der 600-s-Schwelle). 10:01-10:40 = 39 min,
-        # keine Abzuege -> 39 (vorher zaehlte die SESSION-Blockzeit-Formel nur die Summe der
-        # Bewegungs-Luecken zwischen Messpunkten, 37 min -- s. `_block_seconds_positions`,
-        # die für die Leg-Metrik nicht mehr verwendet wird).
+        # block_min steigt von 37 auf 43: _leg_block_seconds zaehlt WANDUHR ab block_from
+        # (10:01, erstes Sample mit groundspeed > 2 kt) bis block_end. block_end selbst
+        # verlaengert sich ueber die Landung (10:40) hinaus bis zum LETZTEN VERFUEGBAREN
+        # Sample (10:44 -- der einzige Stand danach hat nur 1 Sample, viel zu kurz fuer die
+        # 600-s-Schwelle einer qualifizierenden Abstell-Standphase, zaehlt aber trotzdem als
+        # direkt belegte Standzeit, s. _extend_block_end). 10:01-10:44 = 43 min, keine
+        # qualifizierenden Abzuege -> 43 (vorher zaehlte die SESSION-Blockzeit-Formel nur die
+        # Summe der Bewegungs-Luecken zwischen Messpunkten, 37 min -- s.
+        # `_block_seconds_positions`, die für die Leg-Metrik nicht mehr verwendet wird).
         assert flight["duration_min"] == 34
-        assert flight["block_min"] == 39
+        assert flight["block_min"] == 43
         assert flight["block_min"] >= flight["duration_min"]
 
     def test_block_start_is_roll_begin_before_takeoff(self):

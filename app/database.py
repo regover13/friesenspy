@@ -2494,17 +2494,27 @@ def _extend_block_end(positions: list[dict], end_ts: str, cap_ts: str | None) ->
     DANACH; als Obergrenze für die Anzeige ist das die genauere Wahl.
 
     Ab ``stand_cap`` ist die Maschine nachweislich geparkt — jede spätere Bewegung (z. B.
-    Pushback für den NÄCHSTEN Flug) gehört nicht mehr hierher. Fehlt eine qualifizierende
-    Standphase (Suche läuft ohne 600-s-Stand aus oder wird von ``cap_ts`` beschnitten),
-    bleibt der bisherige Fallback: der letzte Zeitpunkt mit ``groundspeed > _BLOCK_GS_KT`` —
-    dort haben wir keinen Stillstands-Beleg, nur den letzten Bewegungs-Beleg.
+    Pushback für den NÄCHSTEN Flug) gehört nicht mehr hierher.
+
+    OHNE qualifizierende Standphase (Suche läuft ohne 600-s-Stand aus — Datenende, Disconnect,
+    oder von ``cap_ts``/der Zeitlücken-Schranke beschnitten, bevor 600 s zusammenkommen) ist
+    das Ergebnis der LETZTE verfügbare Sample-Zeitpunkt (``tail[-1]``) — NICHT mehr der letzte
+    Zeitpunkt mit ``groundspeed > _BLOCK_GS_KT`` (zweiter Live-Fund 2026-08-11, cid 1602713,
+    Flug 666: die Aufzeichnung endet bereits 4,5 min nach dem Stillstand — 18:03:45Z bis
+    18:08:15Z, keine 10 min —, der alte Fallback sprang deshalb auf 18:03:30Z zurück, den
+    letzten BEWEGTEN Sample, und ignorierte damit sogar die 4,5 min direkt belegte Standzeit
+    danach). Ein kurzer, noch nicht qualifizierender Stand VOR dem Datenende zählt nach
+    demselben Prinzip wie ein kurzer Rollhalt in der Blockzeit selbst (< ``_BLOCK_STAND_MIN_SEC``
+    bleibt enthalten) — die letzte verfügbare Position ist immer die beste Schätzung dafür,
+    wie weit diese Leg-eigene Aktivität (Rollen ODER kurzes, noch unbewiesenes Stehen)
+    nachweislich reicht.
 
     Zusätzlich wird die Suche selbst an einer Zeitlücke > ``_GPS_LEG_GAP_MINUTES`` beendet
     (dieselbe Schwelle wie beim offenen-Leg-Fensterende oben) — sonst könnte bei fehlendem
     ``cap_ts`` (letzter Flug seines Segments) ein VÖLLIG anderes, viel späteres Segment
     (z. B. die nächste Session Stunden danach) fälschlich mit hineingezogen werden.
 
-    Ohne jede Rollbewegung danach (oder ohne Kandidaten-Samples) bleibt es bei ``end_ts``.
+    Ohne jede Position danach bleibt es bei ``end_ts``.
     """
     from app import geo
 
@@ -2562,8 +2572,7 @@ def _extend_block_end(positions: list[dict], end_ts: str, cap_ts: str | None) ->
     if stand_cap is not None:
         return stand_cap
 
-    move_ts = [p["ts"] for p in tail if (p.get("groundspeed") or 0) > _BLOCK_GS_KT]
-    return max(move_ts) if move_ts else end_ts
+    return tail[-1]["ts"]
 
 
 def _gps_flights_for_positions(
