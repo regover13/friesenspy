@@ -2828,8 +2828,12 @@ class TestExtendBlockEnd:
         assert end == _track_ts("10:42:30")
 
     def test_extension_capped_at_parking_stand(self):
-        """Ein anschließender 10-min-Stand AN EINEM FLUGPLATZ ist das Abstellen — Rollen
-        DANACH (z. B. Pushback für den nächsten Flug) gehört nicht mehr zu diesem Leg."""
+        """Ein anschließender 10-min-Stand AN EINEM FLUGPLATZ ist das Abstellen — Ergebnis ist
+        dessen BEGINN (10:43:00, der Moment des nachgewiesenen Stillstands), NICHT der letzte
+        bewegte Sample davor (10:42:30) — Live-Fund 2026-08-11: genau diese Verwechslung ließ
+        die letzten ~53 m Rollstrecke vor dem Stillstand im Track fehlen. Rollen NACH dem
+        Abstellen (z. B. Pushback für den nächsten Flug) gehört weiterhin nicht mehr zu diesem
+        Leg."""
         from app.database import _extend_block_end
 
         pos = [
@@ -2845,7 +2849,27 @@ class TestExtendBlockEnd:
              "ts": _track_ts("10:55:00")},  # Pushback des NÄCHSTEN Flugs -- zählt nicht mehr
         ]
         end = _extend_block_end(pos, _track_ts("10:40:00"), None)
-        assert end == _track_ts("10:42:30")
+        assert end == _track_ts("10:43:00")
+
+    def test_extension_ends_at_stand_start_not_last_moving_sample(self):
+        """Live-Fund 2026-08-11 (cid 1602713, Flug 666) direkt nachgebaut: letztes bewegtes
+        Sample bei 18:03:30Z (gs=11), tatsächlicher Stillstand ab 18:03:45Z — block_end MUSS
+        18:03:45Z liefern (der Stillstands-Beleg), nicht 18:03:30Z (nur der letzte
+        Bewegungs-Beleg, ~53 m vor dem realen Stopp)."""
+        from app.database import _extend_block_end
+
+        pos = [
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": "2026-08-11T18:00:15Z"},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 11,
+             "ts": "2026-08-11T18:03:30Z"},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": "2026-08-11T18:03:45Z"},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": "2026-08-11T18:14:00Z"},  # >= 600 s ab 18:03:45Z, an einem Flugplatz
+        ]
+        end = _extend_block_end(pos, "2026-08-11T18:00:15Z", None)
+        assert end == "2026-08-11T18:03:45Z"
 
     def test_extension_capped_at_next_takeoff(self):
         """Ohne Abstell-Stand, aber mit einem chronologisch nächsten Flug: die Verlängerung

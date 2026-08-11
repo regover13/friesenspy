@@ -2482,13 +2482,23 @@ def _extend_block_end(positions: list[dict], end_ts: str, cap_ts: str | None) ->
     beiden strukturellen Deckel unten reichen).
 
     Sucht in den Samples NACH ``end_ts`` (gedeckelt auf ``cap_ts`` — Exklusivgrenze, typisch
-    der Abhebe-Zeitpunkt des chronologisch nächsten Flugs) den LETZTEN Zeitpunkt mit
-    ``groundspeed > _BLOCK_GS_KT``. Zwei Deckel greifen dabei zusätzlich:
-      (i) nicht über den Beginn der ERSTEN qualifizierenden Abstell-Standphase hinaus
-          (dieselben Kriterien a+b wie in :func:`_leg_block_seconds`: >= _BLOCK_STAND_MIN_SEC
-          UND an einem Flugplatz) — ab dort ist die Maschine nachweislich geparkt, jede
-          spätere Bewegung (z. B. Pushback für den NÄCHSTEN Flug) gehört nicht mehr hierher;
-      (ii) nicht bis zum/über ``cap_ts`` hinaus (bereits durch die Fensterung erledigt).
+    der Abhebe-Zeitpunkt des chronologisch nächsten Flugs) die ERSTE qualifizierende
+    Abstell-Standphase (dieselben Kriterien a+b wie in :func:`_leg_block_seconds`:
+    >= _BLOCK_STAND_MIN_SEC UND an einem Flugplatz) und liefert deren BEGINN — nicht den
+    letzten Zeitpunkt mit ``groundspeed > _BLOCK_GS_KT`` davor (Live-Fund 2026-08-11, cid
+    1602713, Flug 666: letztes bewegtes Sample 18:03:30Z bei gs=11, tatsächlicher Stillstand
+    18:03:45Z — 15 s / ~53 m Rollstrecke fehlten im Track, weil die alte Fassung genau EINEN
+    Sample-Takt vor dem Stillstand abschnitt). ``stand_cap`` ist der früheste Zeitpunkt, zu
+    dem die Maschine NACHWEISLICH schon steht — der letzte bewegte Sample davor liegt per
+    Definition VOR dem wahren Stillstand, ``stand_cap`` liegt (spätestens im selben Sample)
+    DANACH; als Obergrenze für die Anzeige ist das die genauere Wahl.
+
+    Ab ``stand_cap`` ist die Maschine nachweislich geparkt — jede spätere Bewegung (z. B.
+    Pushback für den NÄCHSTEN Flug) gehört nicht mehr hierher. Fehlt eine qualifizierende
+    Standphase (Suche läuft ohne 600-s-Stand aus oder wird von ``cap_ts`` beschnitten),
+    bleibt der bisherige Fallback: der letzte Zeitpunkt mit ``groundspeed > _BLOCK_GS_KT`` —
+    dort haben wir keinen Stillstands-Beleg, nur den letzten Bewegungs-Beleg.
+
     Zusätzlich wird die Suche selbst an einer Zeitlücke > ``_GPS_LEG_GAP_MINUTES`` beendet
     (dieselbe Schwelle wie beim offenen-Leg-Fensterende oben) — sonst könnte bei fehlendem
     ``cap_ts`` (letzter Flug seines Segments) ein VÖLLIG anderes, viel späteres Segment
@@ -2550,7 +2560,7 @@ def _extend_block_end(positions: list[dict], end_ts: str, cap_ts: str | None) ->
             stand_cap = run_first
 
     if stand_cap is not None:
-        tail = [p for p in tail if p["ts"] < stand_cap]
+        return stand_cap
 
     move_ts = [p["ts"] for p in tail if (p.get("groundspeed") or 0) > _BLOCK_GS_KT]
     return max(move_ts) if move_ts else end_ts
