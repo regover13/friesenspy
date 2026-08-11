@@ -1231,6 +1231,161 @@ def _block_seconds(
     return _block_seconds_positions(positions, logon_time, logoff_time)
 
 
+# ---------------------------------------------------------------------------
+# Leg-Metriken (Blockzeit-Anblock, Fix "fix/blockzeit-anblock"): _block_seconds_positions
+# oben bleibt die SESSION-Blockzeit (flights.block_min über [logon, logoff], block <=
+# duration, drei Fremdnutzer — s. Kommentar dort). Die beiden folgenden Funktionen sind
+# NEU und ausschließlich für die LEG-Metriken in _gps_flights_for_positions gedacht: dort
+# gilt die UMGEKEHRTE Relation (duration_min <= block_min, Flugzeit ist Teilmenge der
+# Blockzeit), weil block_min dort gate-to-gate inkl. Taxi zählt, duration_min dagegen nur
+# die reine Luftzeit.
+# ---------------------------------------------------------------------------
+
+def _leg_block_seconds(positions: list[dict], start_ts: str, end_ts: str) -> int:
+    """Leg-Blockzeit (Sekunden) als WANDUHR: ``end_ts - start_ts`` MINUS der Summe aller
+    „Abstell-Standphasen" im Fenster.
+
+    Anders als :func:`_block_seconds_positions` (die BEWEGTE Abschnitte aufsummiert) zählt
+    diese Funktion erst alles zwischen ``start_ts`` und ``end_ts`` als Blockzeit und zieht
+    dann NUR nachweislich geparkte Standphasen wieder ab — Rollhalte, Warteschlangen und
+    sonstige kurze Unterbrechungen bleiben so automatisch gate-to-gate enthalten, ohne dass
+    dafür (wie bei der session-basierten Funktion) explizit „bewegte Abschnitte" aufsummiert
+    werden müssten.
+
+    Eine „Abstell-Standphase" ist ein maximaler zusammenhängender Lauf von Samples mit
+    ``groundspeed <= _BLOCK_GS_KT`` (Samples mit ``groundspeed=None`` sind kein Beleg — sie
+    brechen den Lauf NICHT und verlängern ihn auch NICHT, sie werden schlicht übersprungen),
+    der ALLE drei Bedingungen erfüllt:
+      a) Dauer (letztes minus erstes Sample des Laufs) >= ``_BLOCK_STAND_MIN_SEC``,
+      b) die ERSTE Position des Laufs liegt <= ``_BUMMEL_AIRPORT_RADIUS_KM`` von einem
+         Flugplatz (``geo.nearest_airport_icao_fast`` liefert nicht ``None``) — NUR ein
+         Abstellen AN EINEM FLUGPLATZ beendet die Blockzeit,
+      c) der Lauf liegt vollständig in ``[start_ts, end_ts]`` (durch die Fensterung der
+         Positionsliste hier strukturell immer erfüllt, wird der Vollständigkeit halber
+         mitgeführt).
+    Eine Standphase IM GELÄNDE (kein Flugplatz im Umkreis) ist dagegen eine Außenlandung —
+    die Maschine läuft weiter, die Blockzeit läuft mit (ausdrückliche Nutzerentscheidung,
+    keine Obergrenze). Nur (a) UND (b) zusammen disqualifizieren eine Standphase.
+
+    Ohne Positionen im Fenster gibt es keinen Beleg für irgendeinen Stillstand — nichts wird
+    abgezogen, es zählt die volle Wanduhr ``end_ts - start_ts`` (NICHT 0).
+    """
+    from app import geo
+
+    window = sorted(
+        (p for p in positions if start_ts <= p["ts"] <= end_ts),
+        key=lambda p: p["ts"],
+    )
+    try:
+        total = (_parse_iso(end_ts) - _parse_iso(start_ts)).total_seconds()
+    except Exception:
+        return 0
+
+    run_first: str | None = None   # ts des ersten Samples des laufenden gs<=Schwelle-Laufs
+    run_last: str | None = None    # ts des letzten Samples desselben Laufs
+    run_pos: tuple | None = None   # (lat, lon) des ERSTEN Samples des Laufs (Kriterium b)
+
+    def _maybe_subtract() -> None:
+        nonlocal total
+        if run_first is None or run_last is None:
+            return
+        dur = (_parse_iso(run_last) - _parse_iso(run_first)).total_seconds()
+        if dur < _BLOCK_STAND_MIN_SEC:
+            return
+        if not run_pos or run_pos[0] is None or run_pos[1] is None:
+            return
+        if geo.nearest_airport_icao_fast(run_pos[0], run_pos[1], _BUMMEL_AIRPORT_RADIUS_KM) is None:
+            return
+        total -= dur
+
+    for p in window:
+        gs = p.get("groundspeed")
+        if gs is None:
+            continue  # kein Beleg — weder Lauf-Ende noch Lauf-Fortsetzung
+        if gs <= _BLOCK_GS_KT:
+            if run_first is None:
+                run_first = p["ts"]
+                run_pos = (p.get("latitude"), p.get("longitude"))
+            run_last = p["ts"]
+        else:
+            _maybe_subtract()
+            run_first = run_last = None
+            run_pos = None
+    _maybe_subtract()
+    return max(0, int(total))
+
+
+# Bodenphasen-Erkennung Paket 2 (_air_seconds): bewusst POSITION statt Groundspeed als
+# Kriterium (anders als _leg_block_seconds oben) — Grund war Flug 632 (Hubschrauber):
+# Schweberoll-Blips von 7/13 kt zerhackten eine 26-minütige Bodenzeit in viele Kurz-Läufe,
+# weil sie über der _BLOCK_GS_KT-Schwelle (2 kt) lagen, obwohl die Maschine effektiv am
+# Fleck stand. Ein exakt stehender Schwebeflug gilt damit ausdrücklich als „Boden" — der
+# großzügige Radius ist unkritisch, weil die Regel NUR zwischen Abheben und Landung greift.
+_AIR_GROUND_RADIUS_M = 200      # Positions-Radius um die ERSTE Position eines Laufs
+_AIR_GROUND_MAX_GAP_SEC = 300   # größere Sample-Lücke bricht den Lauf (kein Beleg → nichts abziehen)
+_AIR_GROUND_MIN_SEC = 120       # Mindestdauer, ab der eine Bodenphase abgezogen wird
+
+
+def _air_seconds(positions: list[dict], takeoff_ts: str, landing_ts: str) -> int:
+    """Reine Flugzeit (Sekunden) OHNE Bodenzeit: ``landing_ts - takeoff_ts`` MINUS der Summe
+    aller „Bodenphasen" im Fenster ``[takeoff_ts, landing_ts]``.
+
+    Eine „Bodenphase" ist ein maximaler zusammenhängender Lauf von Samples, bei dem
+      a) jede Position des Laufs <= ``_AIR_GROUND_RADIUS_M`` von der ERSTEN Position des
+         Laufs entfernt ist (``geo.haversine`` liefert km, hier in Meter umgerechnet),
+      b) zwischen zwei aufeinanderfolgenden Samples des Laufs höchstens
+         ``_AIR_GROUND_MAX_GAP_SEC`` liegen (eine größere Lücke ist kein Beleg für
+         Stillstand und bricht den Lauf, statt ihn zu überbrücken),
+      c) die Gesamtdauer des Laufs >= ``_AIR_GROUND_MIN_SEC`` ist.
+    Fehlt bei einem Sample die Position (``latitude``/``longitude`` ``None``), ist auch das
+    kein Beleg — der laufende Lauf wird geschlossen (ggf. abgezogen) und NICHT fortgesetzt,
+    analog zur „ohne Belege wird nichts abgezogen"-Regel der Kriterien selbst.
+
+    Kriterium ist bewusst die POSITION, nicht der Groundspeed (anders als
+    :func:`_leg_block_seconds`) — Groundspeed kann mitten im Flug durch Datenlücken oder
+    (bei manchen Quellen) fehlende Telemetrie unbrauchbar sein, während echte Bewegung sich
+    in der Position ohnehin zeigt. Ohne Positionen im Fenster wird nichts abgezogen — es
+    zählt die volle Wanduhr ``landing_ts - takeoff_ts`` (NICHT 0).
+    """
+    from app import geo
+
+    window = sorted(
+        (p for p in positions if takeoff_ts <= p["ts"] <= landing_ts),
+        key=lambda p: p["ts"],
+    )
+    try:
+        total = (_parse_iso(landing_ts) - _parse_iso(takeoff_ts)).total_seconds()
+    except Exception:
+        return 0
+
+    run: list[dict] = []
+
+    def _close_run() -> None:
+        nonlocal total
+        if not run:
+            return
+        dur = (_parse_iso(run[-1]["ts"]) - _parse_iso(run[0]["ts"])).total_seconds()
+        if dur >= _AIR_GROUND_MIN_SEC:
+            total -= dur
+
+    for p in window:
+        lat, lon = p.get("latitude"), p.get("longitude")
+        if lat is None or lon is None:
+            _close_run()
+            run.clear()
+            continue
+        if run:
+            gap = (_parse_iso(p["ts"]) - _parse_iso(run[-1]["ts"])).total_seconds()
+            first = run[0]
+            dist_m = geo.haversine(first["latitude"], first["longitude"], lat, lon) * 1000.0
+            if gap > _AIR_GROUND_MAX_GAP_SEC or dist_m > _AIR_GROUND_RADIUS_M:
+                _close_run()
+                run.clear()
+        run.append(p)
+    _close_run()
+    return max(0, int(total))
+
+
 def consolidate_flights(
     conn: sqlite3.Connection, *, statsim_correct: bool = True, shrink_margin_min: int = 10
 ) -> int:
@@ -2059,19 +2214,44 @@ def _is_ghost_row(conn: sqlite3.Connection, cid: int, f: dict) -> bool:
     """Ghost-Erkennung für eine Connection-/Flug-Zeile (geteilt zwischen
     :func:`canonicalize_flights` und dem Fallback-Pfad von :func:`canonicalize_legs`).
 
-    Echte Strecke (`distance_nm > 0.5`) → kein Ghost. Kurz-Connect ohne Strecke
+    Echte Strecke (`distance_nm > 0.5`) → kein Ghost — ABER nur, wenn ein vorhandener Track
+    diese Strecke auch durch echte Bewegung deckt (s. u.). Kurz-Connect ohne Strecke
     (`duration_min <= 5`) → Test-Connect (Ghost). Länger verbunden, keine Strecke: eine
     Steh-Session ist KEIN Flug — aber nur verwerfen, wenn der Track den Stillstand BELEGT
     (Positionen im Connection-Fenster vorhanden, Blockzeit 0). Altflüge ohne Positionsdaten
     bleiben (im Zweifel echter Flug).
+
+    Deckungs-Prüfung bei `distance_nm > 0.5` (Ghost-Filter Paket 3): reine Haversine-Distanz
+    ist noch kein Flugbeweis — ein Slew/Umsetzen am Boden erzeugt genauso eine Strecke ohne
+    jede Bewegung (realer Fall FRS145, 08.06.2026: 101 Samples mit groundspeed 0, ~1 nm
+    „Strecke" durch GPS-Rauschen/Teleport). Sind für diese Zeile Positionen vorhanden, muss
+    daher zusätzlich mindestens EIN echter Bewegungsnachweis vorliegen: >= 2 Positionen mit
+    groundspeed >= 40 im Fenster `[logon_time, logoff_time]` — dasselbe Kriterium, das
+    :func:`reconstruct_orphaned_flights` bereits verwendet (dort :1510-1516). Ohne
+    Positionsdaten (Altflüge) bleibt das bisherige, großzügige Verhalten (im Zweifel echter
+    Flug) — die neue Schranke greift NUR, wenn Positionen vorhanden sind, aber keine echte
+    Bewegung zeigen.
     """
+    lo, lf = f.get("logon_time"), f.get("logoff_time")
     if (f.get("distance_nm") or 0) > 0.5:
+        if lo and lf:
+            has_pos = conn.execute(
+                "SELECT 1 FROM position_history WHERE cid=? AND ts>=? AND ts<=? LIMIT 1",
+                (cid, lo, lf),
+            ).fetchone()
+            if has_pos is not None:
+                airborne = conn.execute(
+                    "SELECT COUNT(*) FROM position_history "
+                    "WHERE cid=? AND ts>=? AND ts<=? AND groundspeed >= 40",
+                    (cid, lo, lf),
+                ).fetchone()[0]
+                if airborne < 2:
+                    return True
         return False
     if (f.get("duration_min") or 0) <= 5:
         return True
     if (f.get("block_min") or 0) > 0:
         return False
-    lo, lf = f.get("logon_time"), f.get("logoff_time")
     if not lo or not lf:
         return False
     has_pos = conn.execute(
@@ -2295,6 +2475,87 @@ _GPS_LEG_GAP_MINUTES = 30  # muss zum gap_minutes-Default von detect_gps_legs pa
 _GPS_RESCUE_LIVE_WINDOW_MIN = 15
 
 
+def _extend_block_end(positions: list[dict], end_ts: str, cap_ts: str | None) -> str:
+    """Blockfenster-ENDE über die Landung hinaus verlängern, wenn danach noch gerollt wird
+    (Einrollen zum Abstellplatz — gemessen: 109 von 465 Landungen rollen nach dem erkannten
+    Stillstand weiter, Median 2 min, nie mehr als 10 min. Keine feste Obergrenze hier: die
+    beiden strukturellen Deckel unten reichen).
+
+    Sucht in den Samples NACH ``end_ts`` (gedeckelt auf ``cap_ts`` — Exklusivgrenze, typisch
+    der Abhebe-Zeitpunkt des chronologisch nächsten Flugs) den LETZTEN Zeitpunkt mit
+    ``groundspeed > _BLOCK_GS_KT``. Zwei Deckel greifen dabei zusätzlich:
+      (i) nicht über den Beginn der ERSTEN qualifizierenden Abstell-Standphase hinaus
+          (dieselben Kriterien a+b wie in :func:`_leg_block_seconds`: >= _BLOCK_STAND_MIN_SEC
+          UND an einem Flugplatz) — ab dort ist die Maschine nachweislich geparkt, jede
+          spätere Bewegung (z. B. Pushback für den NÄCHSTEN Flug) gehört nicht mehr hierher;
+      (ii) nicht bis zum/über ``cap_ts`` hinaus (bereits durch die Fensterung erledigt).
+    Zusätzlich wird die Suche selbst an einer Zeitlücke > ``_GPS_LEG_GAP_MINUTES`` beendet
+    (dieselbe Schwelle wie beim offenen-Leg-Fensterende oben) — sonst könnte bei fehlendem
+    ``cap_ts`` (letzter Flug seines Segments) ein VÖLLIG anderes, viel späteres Segment
+    (z. B. die nächste Session Stunden danach) fälschlich mit hineingezogen werden.
+
+    Ohne jede Rollbewegung danach (oder ohne Kandidaten-Samples) bleibt es bei ``end_ts``.
+    """
+    from app import geo
+
+    candidates = sorted(
+        (p for p in positions if p["ts"] > end_ts and (cap_ts is None or p["ts"] < cap_ts)),
+        key=lambda p: p["ts"],
+    )
+    tail: list[dict] = []
+    prev_ts = end_ts
+    for p in candidates:
+        gap_min = (_parse_iso(p["ts"]) - _parse_iso(prev_ts)).total_seconds() / 60.0
+        if gap_min > _GPS_LEG_GAP_MINUTES:
+            break
+        tail.append(p)
+        prev_ts = p["ts"]
+    if not tail:
+        return end_ts
+
+    # Deckel (i): Beginn der ersten qualifizierenden Abstell-Standphase in `tail` finden.
+    stand_cap: str | None = None
+    run_first = run_last = None
+    run_pos = None
+    for p in tail:
+        gs = p.get("groundspeed")
+        if gs is None:
+            continue
+        if gs <= _BLOCK_GS_KT:
+            if run_first is None:
+                run_first = p["ts"]
+                run_pos = (p.get("latitude"), p.get("longitude"))
+            run_last = p["ts"]
+        else:
+            if run_first is not None and run_last is not None:
+                dur = (_parse_iso(run_last) - _parse_iso(run_first)).total_seconds()
+                if (
+                    dur >= _BLOCK_STAND_MIN_SEC and run_pos and run_pos[0] is not None
+                    and geo.nearest_airport_icao_fast(
+                        run_pos[0], run_pos[1], _BUMMEL_AIRPORT_RADIUS_KM
+                    ) is not None
+                ):
+                    stand_cap = run_first
+                    break
+            run_first = run_last = None
+            run_pos = None
+    if stand_cap is None and run_first is not None and run_last is not None:
+        dur = (_parse_iso(run_last) - _parse_iso(run_first)).total_seconds()
+        if (
+            dur >= _BLOCK_STAND_MIN_SEC and run_pos and run_pos[0] is not None
+            and geo.nearest_airport_icao_fast(
+                run_pos[0], run_pos[1], _BUMMEL_AIRPORT_RADIUS_KM
+            ) is not None
+        ):
+            stand_cap = run_first
+
+    if stand_cap is not None:
+        tail = [p for p in tail if p["ts"] < stand_cap]
+
+    move_ts = [p["ts"] for p in tail if (p.get("groundspeed") or 0) > _BLOCK_GS_KT]
+    return max(move_ts) if move_ts else end_ts
+
+
 def _gps_flights_for_positions(
     positions: list[dict], *, plan_rows: list[dict], source: str, radius_km: float | None = None
 ) -> list[dict]:
@@ -2313,17 +2574,31 @@ def _gps_flights_for_positions(
     ``radius_km``: Erkennungs-Umkreis für ``detect_gps_legs`` (Platz-Zuordnung Start/Ziel).
     ``None`` → Default ``_BUMMEL_AIRPORT_RADIUS_KM`` (4 km, unverändertes Verhalten).
 
-    Zwei Metriken je Flug (KORREKTUR #23 Phase 2): ``block_min`` = Blockzeit (gate-to-gate
-    inkl. Taxi — Fenster beginnt am Rollbeginn, nicht erst am Abheben; lange Standphasen
-    ≥ ``_BLOCK_STAND_MIN_SEC`` zählen weiterhin NICHT, s. ``_block_seconds_positions``),
-    ``duration_min`` = reine Flugzeit (Abheben → Landung, ``[takeoff_ts, end_ts]``,
-    unverändert). Regelfall: ``duration_min <= block_min`` (Flugzeit ist Teilmenge der
-    Blockzeit) — NICHT umgekehrt (das war der vorherige, falsche Vertrag). Das gilt aber
-    NUR, wenn tatsächlich eine Taxi-Phase VOR dem Abheben vorliegt — ohne sie (z. B.
-    Runway-Spawn direkt airborne/knapp am Boden, oder Taxi wird vor der 12h-Lookback-Kante
-    abgeschnitten) ist ``block_start == takeoff_ts`` und ``block_min`` kann dann KLEINER als
-    ``duration_min`` ausfallen (Standphasen ≥ ``_BLOCK_STAND_MIN_SEC`` innerhalb der Flugzeit
-    selbst ziehen ab, s. ``_block_seconds_positions``). Kein Code erzwingt die Relation.
+    Zwei Metriken je Flug (KORREKTUR #23 Phase 2, seit „Blockzeit-Anblock" auf Leg-eigene
+    Helfer umgestellt): ``block_min`` = Blockzeit als WANDUHR über ``[block_from,
+    block_end]`` MINUS belegter Abstell-Standphasen an einem Flugplatz (s.
+    :func:`_leg_block_seconds`) — ``block_from`` beginnt an der ERSTEN nachweisbaren
+    Bewegung (nicht erst am rohen Rollbeginn ``block_start``, s. u.), ``block_end`` reicht
+    ggf. über die Landung hinaus bis zum Ende des Einrollens (s.
+    :func:`_extend_block_end`). ``duration_min`` = reine Flugzeit ``[takeoff_ts, end_ts]``
+    MINUS positionsbasierter Bodenphasen (s. :func:`_air_seconds`, ersetzt die frühere
+    reine Wanduhr-Differenz — Außenlandungen mit Standzeit MITTEN im Flug zählten sonst
+    fälschlich als Flugzeit mit).
+
+    GARANTIE: ``duration_min <= block_min``, immer — ``[takeoff_ts, end_ts]`` liegt
+    innerhalb ``[block_from, block_end]``, und jede Standphase, die die Blockzeit abzieht
+    UND im Flugfenster liegt, erfüllt wegen des STRENGEREN Block-Kriteriums (>=
+    ``_BLOCK_STAND_MIN_SEC`` UND an einem Flugplatz) automatisch auch das lockerere
+    Flugzeit-Kriterium (>= ``_AIR_GROUND_MIN_SEC``, überall) — Flugzeit zieht also nie
+    weniger ab, als Blockzeit es innerhalb desselben Fensters tut. Zusätzlich zu dieser
+    strukturellen Herleitung wird ``block_min`` unten hart auf ``duration_min`` gefloort
+    (``max(block_min, duration_min)``) — ein Sicherheitsnetz für den Fall, dass eine Quelle
+    Groundspeed durchgehend fehlerhaft als 0 statt ``None`` meldet (z. B.
+    ``statsim.py`` `p.get("speed", 0)`): dann kann ``_leg_block_seconds`` einen einzigen,
+    das GESAMTE Fenster überspannenden Fehl-Lauf sehen (Start nahe einem Flugplatz ist bei
+    einem Abflug strukturell IMMER gegeben) und 0 liefern, obwohl echte Positionsbewegung
+    (das Kriterium von ``_air_seconds``) eine positive Flugzeit belegt — ohne den Floor
+    wäre die Garantie in genau diesem Randfall verletzt.
     """
     from app import geo
     from app.gps_legs import detect_gps_legs, collapse_same_airport
@@ -2353,6 +2628,10 @@ def _gps_flights_for_positions(
     for i, gf in enumerate(gps_flights):
         takeoff_ts = gf.get("takeoff_ts")
         landing_ts = gf.get("landing_ts")
+        # Abhebe-ts des chronologisch nächsten Flugs (``gps_flights`` ist chronologisch
+        # geordnet) — Deckel sowohl für das offene-Leg-Fensterende unten als auch für die
+        # Blockfenster-Verlängerung nach der Landung (s. ``_extend_block_end``).
+        next_takeoff = gps_flights[i + 1].get("takeoff_ts") if i + 1 < len(gps_flights) else None
         if landing_ts:
             end_ts = landing_ts
         else:
@@ -2374,7 +2653,6 @@ def _gps_flights_for_positions(
                 if gap_min > _GPS_LEG_GAP_MINUTES:
                     break
                 end_ts = cur_ts
-            next_takeoff = gps_flights[i + 1].get("takeoff_ts") if i + 1 < len(gps_flights) else None
             if next_takeoff is not None and end_ts >= next_takeoff:
                 end_ts = takeoff_ts  # Sicherheitsnetz; strukturell sollte dieser Zweig nie greifen
 
@@ -2384,17 +2662,40 @@ def _gps_flights_for_positions(
         # Boden-Phase an genau diesem Platz). Damit passen Strecke und Track-Fenster per
         # Konstruktion zusammen: eine Rollphase an einem anderen Platz (Reconnect) oder vor der
         # Landung des Vorflugs kann strukturell nicht hineinlaufen. Fehlt der Wert (Spawn in der
-        # Luft), beginnt das Fenster am Abheben.
+        # Luft), beginnt das Fenster am Abheben. ACHTUNG: ``block_start`` bleibt dieser rohe
+        # Rollbeginn — er ist ein EIGENER Vertrag (Track-Untergrenze fürs Frontend, #62, s.
+        # Kommentar am Feld unten) und wird NICHT angetastet. Für die Blockzeit-BERECHNUNG
+        # selbst wird stattdessen ``block_from`` benutzt (s. u.).
         block_start = gf.get("taxi_start_ts") or takeoff_ts
 
-        block_min = _block_seconds_positions(positions, block_start, end_ts) // 60
+        # Blockfenster-ANFANG (``block_from``): die ERSTE nachweisbare Bewegung (groundspeed
+        # > _BLOCK_GS_KT) zwischen dem rohen Rollbeginn und dem (noch unverlängerten)
+        # Flugfenster-Ende — nicht ``block_start`` selbst. Grund: der Abhebe-Trigger in
+        # ``detect_gps_legs`` ist höhenbasiert und funktioniert auch OHNE Groundspeed-Signal
+        # (gps_legs.py:215-224). Ohne dieses ``min(...)`` würde ``block_start`` (der reine
+        # „am Boden erkannt"-Zeitpunkt, ohne Bewegungsnachweis) unverändert als Fensteranfang
+        # dienen — bei einer Quelle mit fehlendem/konstant 0 gemeldetem Speed (StatSim:
+        # ``statsim.py:127`` `p.get("speed", 0)`) liefert das im Extremfall ``block_min`` nahe
+        # 0 trotz voller Flugzeit (s. GARANTIE-Kommentar am Funktionskopf, dort auch der
+        # Floor, der das strukturell absichert). Wird keine Bewegung gefunden, gilt
+        # ``takeoff_ts`` (frühestens dort ist die Bewegung durch das Abheben selbst belegt).
+        moves_in_window = [
+            p["ts"] for p in positions
+            if block_start <= p["ts"] <= end_ts and (p.get("groundspeed") or 0) > _BLOCK_GS_KT
+        ]
+        block_from = min(min(moves_in_window), takeoff_ts) if moves_in_window else takeoff_ts
+
+        # Blockfenster-ENDE (``block_end``): normalerweise ``end_ts`` — zusätzlich über die
+        # Landung hinaus verlängert, wenn danach noch eingerollt wird (s. ``_extend_block_end``).
+        # Nur bei einer ECHTEN Landung sinnvoll (offene Legs haben nichts zum „Einrollen").
+        block_end = _extend_block_end(positions, end_ts, next_takeoff) if landing_ts else end_ts
+
+        block_min = _leg_block_seconds(positions, block_from, block_end) // 60
         distance_nm = _distance_nm_positions(positions, takeoff_ts, end_ts)
-        try:
-            duration_min = max(
-                0, int((_parse_iso(end_ts) - _parse_iso(takeoff_ts)).total_seconds() // 60)
-            )
-        except Exception:
-            duration_min = 0
+        duration_min = _air_seconds(positions, takeoff_ts, end_ts) // 60
+        # Sicherheitsnetz für die GARANTIE duration_min <= block_min (Herleitung + der eine
+        # bekannte Randfall, in dem sie allein nicht reicht: s. Docstring am Funktionskopf).
+        block_min = max(block_min, duration_min)
 
         plan = _flightplan_asof(plan_rows, end_ts)
         gps_dep = gf.get("dep_icao")
@@ -2433,6 +2734,10 @@ def _gps_flights_for_positions(
             # takeoff_ts (Abheben) schnitt sie bisher ab. Nur relevant für die gefensterten
             # FriesenSpy-Track-Endpoints; der StatSim-Track lädt ohnehin ungefenstert.
             "block_start": block_start,
+            # block_end = Blockfenster-Ende (s. ``_extend_block_end``) — normalerweise
+            # ``end_ts`` (Landung bzw. bisheriges Tracking-Ende bei offenem Leg), bei
+            # nachgewiesenem Einrollen zum Abstellplatz bis zum letzten Rollsample verlängert.
+            "block_end": block_end,
             "duration_min": duration_min,
             "distance_nm": distance_nm,
             "block_min": block_min,

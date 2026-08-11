@@ -1,5 +1,18 @@
 [
   {
+    "version": "11.4.3",
+    "date": "2026-08-11",
+    "highlight": false,
+    "title": "Blockzeit kann nicht mehr kürzer sein als die Flugzeit",
+    "items": [
+      "🕐 Blockzeit wird jetzt als reine Uhrzeit-Differenz vom ersten Rollen bis zur Landung gerechnet, nicht mehr als Summe einzelner Bewegungsabschnitte — dadurch gilt jetzt immer: Blockzeit ist mindestens so groß wie die Flugzeit. Bei einem Hubschrauber-Flug lag es vorher andersherum (Block 1:11 h bei 1:21 h Flugzeit).",
+      "🚁 Landet ein Flugzeug außerhalb eines Flugplatzes (Außenlandung), läuft die Blockzeit während der Standzeit weiter — die Maschine läuft ja. Nur ein Abstellen AN einem Flugplatz beendet sie.",
+      "🛬 Rollt eine Maschine nach der Landung noch zum Abstellplatz, gehört das jetzt zur Blockzeit — vorher endete sie schon an der Piste.",
+      "✈️ Die Flugzeit zieht jetzt echte Bodenzeit ab, auch wenn kurzzeitig eine Geschwindigkeit über 0 gemeldet wird (z. B. Schweberollen eines Hubschraubers) — erkannt über die Position, nicht über die gemeldete Geschwindigkeit.",
+      "👻 Ein reiner Positions-Sprung am Boden ohne echte Flugbewegung zählt nicht mehr fälschlich als Flug."
+    ]
+  },
+  {
     "version": "11.4.2",
     "date": "2026-08-09",
     "highlight": false,

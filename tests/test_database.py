@@ -1434,17 +1434,23 @@ class TestMergeFragmentedFlights:
                 (fid, lo, lf, dur),
             )
         pos = [
-            # 282: EDWG → EDXH, Landung + Disconnect in EDXH
+            # 282: EDWG → EDXH, Landung + Disconnect in EDXH. ZWEI Cruise-Samples >= 40 kt
+            # (Ghost-Filter Paket 3, "fix/blockzeit-anblock": reine Haversine-Distanz allein
+            # ist seither kein Flugbeweis mehr -- gebraucht wird zusaetzlich der Nachweis
+            # echter Bewegung, >= 2 Positionen >= 40 kt im Connection-Fenster, s. _is_ghost_row).
             (53.78278, 7.91389, 0,  "2026-07-01T18:29:00Z"),
             (53.95000, 7.91400, 85, "2026-07-01T18:38:00Z"),
+            (54.05000, 7.91450, 82, "2026-07-01T18:44:00Z"),
             (54.18528, 7.91583, 0,  "2026-07-01T18:50:20Z"),
             # 286: realer Rückflug EDXH → EDWG
             (54.18528, 7.91583, 0,  "2026-07-01T19:06:40Z"),
             (54.10000, 7.91500, 75, "2026-07-01T19:09:00Z"),
+            (53.95000, 7.91450, 70, "2026-07-01T19:12:00Z"),
             (53.78278, 7.91389, 0,  "2026-07-01T19:20:15Z"),
             # 287: nächster Hinflug EDWG → EDXH
             (53.78278, 7.91389, 0,  "2026-07-01T19:22:40Z"),
             (54.00000, 7.91500, 80, "2026-07-01T19:30:00Z"),
+            (54.10000, 7.91550, 78, "2026-07-01T19:34:00Z"),
             (54.18528, 7.91583, 0,  "2026-07-01T19:38:30Z"),
         ]
         for lat, lon, gs, ts in pos:
@@ -2599,6 +2605,273 @@ def test_wrappers_equal_pure(conn_with_track):
     assert _gps_distance_nm(conn, cid, start_ts, end_ts) == _distance_nm_positions(
         positions, start_ts, end_ts
     )
+
+
+# ---------------------------------------------------------------------------
+# _leg_block_seconds / _air_seconds / _extend_block_end ("fix/blockzeit-anblock")
+#
+# NEUE, von _block_seconds_positions UNABHÄNGIGE Leg-Metriken. Kernunterschied zur
+# session-basierten Funktion oben: _leg_block_seconds zählt als WANDUHR (Fenster minus
+# belegter Abzüge), nicht als Summe bewegter Abschnitte — dadurch endet die Blockzeit nicht
+# mehr strukturell am letzten bewegten Sample. Referenzkoordinaten wie in
+# tests/test_canonicalize_legs.py: EDDK (Flugplatz, <= 4 km = _BUMMEL_AIRPORT_RADIUS_KM) und
+# REMOTE (Nordsee, fernab jedes Flugplatzes — nie ein Treffer für nearest_airport_icao_fast).
+# ---------------------------------------------------------------------------
+
+EDDK_POS = (50.8659, 7.14274)
+REMOTE_POS = (55.0, 2.0)
+
+
+def _standing_at(start: str, end: str, lat: float, lon: float, gs=0) -> list[dict]:
+    return [
+        {"latitude": lat, "longitude": lon, "groundspeed": gs, "ts": _track_ts(t)}
+        for t in _time_range(start, end)
+    ]
+
+
+def _moving_at(start: str, end: str, lat: float, lon: float) -> list[dict]:
+    return [
+        {"latitude": lat, "longitude": lon, "groundspeed": 80, "ts": _track_ts(t)}
+        for t in _time_range(start, end)
+    ]
+
+
+class TestLegBlockSeconds:
+    def test_no_stand_counts_full_wall_clock(self):
+        """Ohne jeden Stillstand ist die Blockzeit exakt das Fenster (Wanduhr)."""
+        from app.database import _leg_block_seconds
+
+        pos = _moving_at("10:00:00", "10:10:00", *EDDK_POS)
+        secs = _leg_block_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 10 * 60
+
+    def test_stand_at_airport_11min_is_subtracted(self):
+        """11 min Stillstand AN EINEM FLUGPLATZ (>= _BLOCK_STAND_MIN_SEC) wird abgezogen."""
+        from app.database import _leg_block_seconds
+
+        pos = (
+            _moving_at("10:00:00", "10:05:00", *EDDK_POS)
+            + _standing_at("10:05:00", "10:16:00", *EDDK_POS)
+            + _moving_at("10:16:00", "10:20:00", *EDDK_POS)
+        )
+        secs = _leg_block_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 20 * 60 - 11 * 60
+
+    def test_stand_at_airport_9min_is_not_subtracted(self):
+        """Randfall der 10-Minuten-Schwelle: 9 min bleiben unterhalb, kein Abzug."""
+        from app.database import _leg_block_seconds
+
+        pos = (
+            _moving_at("10:00:00", "10:05:00", *EDDK_POS)
+            + _standing_at("10:05:00", "10:14:00", *EDDK_POS)
+            + _moving_at("10:14:00", "10:20:00", *EDDK_POS)
+        )
+        secs = _leg_block_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 20 * 60  # komplettes Fenster, kein Abzug
+
+    def test_stand_in_terrain_is_never_subtracted(self):
+        """Außenlandung (kein Flugplatz im Umkreis): Maschine läuft weiter, die Blockzeit
+        läuft mit — auch bei 11 min, auch ohne Obergrenze (ausdrückliche Nutzerentscheidung,
+        s. Docstring von _leg_block_seconds)."""
+        from app.database import _leg_block_seconds
+
+        pos = (
+            _moving_at("10:00:00", "10:05:00", *REMOTE_POS)
+            + _standing_at("10:05:00", "10:16:00", *REMOTE_POS)
+            + _moving_at("10:16:00", "10:20:00", *REMOTE_POS)
+        )
+        secs = _leg_block_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 20 * 60  # voll enthalten, kein Abzug
+
+    def test_missing_groundspeed_neither_breaks_nor_extends_run(self):
+        """Ein Sample mit groundspeed=None ist kein Beleg — es wird übersprungen, bricht den
+        laufenden Stand nicht und verlängert ihn auch nicht selbst (die Lauf-Dauer misst
+        weiterhin nur zwischen den REALEN gs<=2-Samples davor/danach)."""
+        from app.database import _leg_block_seconds
+
+        pos = [
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:00:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": None,
+             "ts": _track_ts("10:05:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:11:00")},
+        ]
+        secs = _leg_block_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        # Lauf 10:00-10:11 = 11 min >= 600 s, am Platz -> komplett abgezogen -> 0.
+        assert secs == 0
+
+    def test_no_positions_in_window_counts_full_wall_clock(self):
+        """Keine Positionsdaten im Fenster = kein Beleg für irgendeinen Stillstand -> nichts
+        wird abgezogen, die volle Wanduhr zählt (nicht 0!)."""
+        from app.database import _leg_block_seconds
+
+        secs = _leg_block_seconds([], "2026-01-01T10:00:00Z", "2026-01-01T10:30:00Z")
+        assert secs == 30 * 60
+
+    def test_short_stand_at_airport_not_subtracted(self):
+        """Kurzer Rollhalt (< _BLOCK_STAND_MIN_SEC) an einem Flugplatz bleibt Block, wie bei
+        der session-basierten Funktion (Rollhalt/Warteschlange zählen weiter mit)."""
+        from app.database import _leg_block_seconds
+
+        pos = (
+            _moving_at("10:00:00", "10:05:00", *EDDK_POS)
+            + _standing_at("10:05:00", "10:07:00", *EDDK_POS)
+            + _moving_at("10:07:00", "10:12:00", *EDDK_POS)
+        )
+        secs = _leg_block_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 12 * 60
+
+
+class TestAirSeconds:
+    def _cruise(self, start: str, end: str, base_lat: float = 50.8659,
+                base_lon: float = 7.14274, step_deg: float = 0.01) -> list[dict]:
+        """Positionen, die sich klar bewegen (weit über dem 200-m-Radius pro Sample) — nie
+        eine Bodenphase."""
+        out = []
+        for i, t in enumerate(_time_range(start, end)):
+            out.append({
+                "latitude": base_lat + i * step_deg, "longitude": base_lon,
+                "groundspeed": 80, "ts": _track_ts(t),
+            })
+        return out
+
+    def test_no_ground_phase_counts_full_wall_clock(self):
+        from app.database import _air_seconds
+
+        pos = self._cruise("10:00:00", "10:10:00")
+        secs = _air_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 10 * 60
+
+    def test_ground_phase_3min_is_subtracted(self):
+        """Positionsstillstand >= _AIR_GROUND_MIN_SEC (120 s) wird abgezogen — unabhängig
+        vom gemeldeten Groundspeed (hier gs=0, aber das Kriterium ist die Position)."""
+        from app.database import _air_seconds
+
+        pos = (
+            self._cruise("10:00:00", "10:05:00")
+            + _standing_at("10:05:00", "10:08:00", *EDDK_POS)
+            + self._cruise("10:08:00", "10:13:00", base_lat=50.9)
+        )
+        secs = _air_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 13 * 60 - 3 * 60
+
+    def test_short_ground_phase_not_subtracted(self):
+        """1 min Stillstand liegt unter _AIR_GROUND_MIN_SEC (120 s) -> kein Abzug."""
+        from app.database import _air_seconds
+
+        pos = (
+            self._cruise("10:00:00", "10:05:00")
+            + _standing_at("10:05:00", "10:06:00", *EDDK_POS)
+            + self._cruise("10:06:00", "10:11:00", base_lat=50.9)
+        )
+        secs = _air_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 11 * 60
+
+    def test_hovering_with_speed_blips_still_counted_as_ground(self):
+        """Der gemeldete Fund (Flug 632, Hubschrauber): Schweberoll-Blips von 7/13 kt an
+        FAKTISCH derselben Stelle dürfen die Bodenphase NICHT zerhacken — Kriterium ist die
+        Position, nicht der Groundspeed."""
+        from app.database import _air_seconds
+
+        pos = self._cruise("10:00:00", "10:05:00") + [
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:05:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 13,
+             "ts": _track_ts("10:07:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 7,
+             "ts": _track_ts("10:09:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:12:00")},
+        ] + self._cruise("10:12:00", "10:17:00", base_lat=50.9)
+        secs = _air_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        # Bodenphase 10:05-10:12 = 7 min wird komplett abgezogen (alle Punkte <= 200 m).
+        assert secs == 17 * 60 - 7 * 60
+
+    def test_large_gap_breaks_run_no_deduction_without_evidence(self):
+        """Eine Sample-Lücke > _AIR_GROUND_MAX_GAP_SEC (300 s) ist kein Stillstandsbeleg —
+        der Lauf bricht, statt die Lücke zu überbrücken; ohne einen zusammenhängenden Beleg
+        >= 120 s auf beiden Seiten wird nichts abgezogen."""
+        from app.database import _air_seconds
+
+        pos = [
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:00:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:07:00")},  # 7 min Lücke > 300 s
+        ]
+        secs = _air_seconds(pos, pos[0]["ts"], pos[-1]["ts"])
+        assert secs == 7 * 60
+
+    def test_no_positions_in_window_counts_full_wall_clock(self):
+        from app.database import _air_seconds
+
+        secs = _air_seconds([], "2026-01-01T10:00:00Z", "2026-01-01T10:20:00Z")
+        assert secs == 20 * 60
+
+
+class TestExtendBlockEnd:
+    def test_rolling_after_landing_extends_block_end(self):
+        """Rollt die Maschine nach der Landung noch (Weg zum Abstellplatz), verlängert sich
+        block_end bis zum letzten Rollsample."""
+        from app.database import _extend_block_end
+
+        pos = [
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 10,
+             "ts": _track_ts("10:41:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 8,
+             "ts": _track_ts("10:42:30")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:43:00")},
+        ]
+        end = _extend_block_end(pos, _track_ts("10:40:00"), None)
+        assert end == _track_ts("10:42:30")
+
+    def test_extension_capped_at_parking_stand(self):
+        """Ein anschließender 10-min-Stand AN EINEM FLUGPLATZ ist das Abstellen — Rollen
+        DANACH (z. B. Pushback für den nächsten Flug) gehört nicht mehr zu diesem Leg."""
+        from app.database import _extend_block_end
+
+        pos = [
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 10,
+             "ts": _track_ts("10:41:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 8,
+             "ts": _track_ts("10:42:30")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:43:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:53:10")},  # >= 600 s Stand ab 10:43:00 -> Abstell-Deckel
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 12,
+             "ts": _track_ts("10:55:00")},  # Pushback des NÄCHSTEN Flugs -- zählt nicht mehr
+        ]
+        end = _extend_block_end(pos, _track_ts("10:40:00"), None)
+        assert end == _track_ts("10:42:30")
+
+    def test_extension_capped_at_next_takeoff(self):
+        """Ohne Abstell-Stand, aber mit einem chronologisch nächsten Flug: die Verlängerung
+        darf nicht bis zu oder über dessen Abheben reichen."""
+        from app.database import _extend_block_end
+
+        pos = [
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 10,
+             "ts": _track_ts("10:41:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 8,
+             "ts": _track_ts("10:42:30")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 15,
+             "ts": _track_ts("10:50:00")},  # liegt hinter dem Deckel (next_takeoff 10:45)
+        ]
+        end = _extend_block_end(pos, _track_ts("10:40:00"), _track_ts("10:45:00"))
+        assert end == _track_ts("10:42:30")
+
+    def test_no_rolling_after_landing_leaves_end_ts_unchanged(self):
+        from app.database import _extend_block_end
+
+        pos = [
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:41:00")},
+        ]
+        end = _extend_block_end(pos, _track_ts("10:40:00"), None)
+        assert end == _track_ts("10:40:00")
 
 
 # ---------------------------------------------------------------------------
