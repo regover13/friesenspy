@@ -300,6 +300,14 @@ async def index():
     return FileResponse("app/static/index.html", headers=_HTML_NO_CACHE)
 
 
+@app.get("/panel", include_in_schema=False)
+async def panel():
+    """VR-Panel-Modus fürs MSFS-EFB-Panel (s. Design-Doku) — dieselbe Seite wie `/`, das
+    Frontend erkennt den Pfad selbst und skaliert per CSS. Kein eigener Login-Ausnahmefall:
+    läuft durch dasselbe forum_login_gate wie jede andere Route."""
+    return FileResponse("app/static/index.html", headers=_HTML_NO_CACHE)
+
+
 @app.get("/admin", include_in_schema=False)
 async def admin_page():
     """Admin-Seite (Login-Formular + Bummel-Rennverwaltung). Schutz erfolgt über die
