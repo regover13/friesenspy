@@ -4079,13 +4079,15 @@ function _flightRowHtml(f, rowAttrs) {
     ? ` <span class="badge-unscored" title="Kein ${escHtml(_callsignPrefix)}-Callsign — zählt nicht in Statistik/Bummel/Kutter">nicht gewertet</span>`
     : '';
   // Track IMMER über GPS ladbar (GPS-only): StatSim → statsim_id; FS mit Flugplan-id →
-  // flights-Endpoint; FS ohne id → cid-Fenster-Endpoint ('pilot'). last_pos_ts ist die
-  // Obergrenze (nie „now"), damit offene/alte Legs nicht Positionen späterer Flüge ziehen.
+  // flights-Endpoint; FS ohne id → cid-Fenster-Endpoint ('pilot'). Obergrenze ist block_end
+  // (Rollen zum Abstellplatz nach der Landung, s. _extend_block_end/database.py) — für
+  // OFFENE Legs ist block_end == last_pos_ts (kein "now"-Zug möglich), für Fallback-Zeilen
+  // ohne GPS-Leg (kein block_end-Feld) fällt es auf last_pos_ts/logoff_time zurück wie bisher.
   let trackSrc, trackId;
   if (f.source === 'statsim') { trackSrc = 'statsim'; trackId = f.statsim_id; }
   else if (f.id != null)      { trackSrc = 'friesenspy'; trackId = f.id; }
   else                        { trackSrc = 'pilot'; trackId = f.cid; }
-  const trackUpper = f.last_pos_ts || f.logoff_time || '';
+  const trackUpper = f.block_end || f.last_pos_ts || f.logoff_time || '';
   const hasTrack = trackId != null;
   const trackIcon = `<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
   const trackCell = hasTrack
@@ -5210,8 +5212,10 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 // cid-Fenster-Endpoint. null, wenn kein Track ladbar ist (kein statsim_id/id/cid).
 function _flightTrackUrl(f) {
   // block_start = Rollbeginn (#62) als Track-Untergrenze, Fallback logon_time (Abheben).
+  // block_end = Rollen zum Abstellplatz nach der Landung als Obergrenze (s. _flightRowHtml),
+  // Fallback last_pos_ts/logoff_time für Fallback-Zeilen ohne GPS-Leg.
   const logon  = encodeURIComponent(f.block_start || f.logon_time || '');
-  const logoff = encodeURIComponent(f.last_pos_ts || f.logoff_time || '');
+  const logoff = encodeURIComponent(f.block_end || f.last_pos_ts || f.logoff_time || '');
   if (f.source === 'statsim') {
     return f.statsim_id != null ? `/api/flights/statsim/${f.statsim_id}/track` : null;
   }
