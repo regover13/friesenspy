@@ -22,6 +22,9 @@ config.env
 # Claude Code Worktrees
 .claude/worktrees/
 
+# Subagent-Driven-Development-Scratch (Ledger, Task-Briefs, Review-Pakete)
+.superpowers/
+
 # OurAirports-Abzug für scripts/nearby_airports.py (12 MB, jederzeit neu ladbar)
 scripts/.cache/
 
