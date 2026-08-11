@@ -2,6 +2,17 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
+  <script>
+    (function () {
+      // VR-Panel-Modus (MSFS-EFB, s. docs/superpowers/specs/2026-08-11-vr-panel-modus-design.md):
+      // /panel als eigene Route (Task 1) ODER ?vr=1 als gleichwertiger Trigger auf jeder URL.
+      // Muss VOR dem <style>-Block laufen, damit html.vr-panel beim ersten Paint schon greift.
+      var qs = new URLSearchParams(location.search);
+      if (location.pathname === '/panel' || qs.get('vr') === '1') {
+        document.documentElement.classList.add('vr-panel');
+      }
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FriesenSpy</title>
   <meta name="application-name" content="FriesenSpy" />
@@ -52,6 +63,20 @@
       --text-label:   #6b9ab8;
       --text-mono:    'Courier Prime', monospace;
       --text-display: 'Exo 2', sans-serif;
+    }
+
+    html.vr-panel {
+      /* VR-Panel-Modus (MSFS-EFB, /panel oder ?vr=1): skaliert Text, Abstände, Buttons und
+         Karten-Controls gemeinsam wie ein manuelles Browser-Zoom -- Innenabstände/Button-
+         Größen sind im Rest der Seite überwiegend feste px-Werte, eine reine Schriftgrößen-
+         Änderung würde nur den Text wachsen lassen. Startwert, nach dem VR-Test in MSFS
+         nachjustierbar (docs/superpowers/specs/2026-08-11-vr-panel-modus-design.md). */
+      zoom: 1.35;
+    }
+    html.vr-panel body {
+      /* App läuft sonst durchgehend auf font-weight 300 (dünn) -- in der Headset-Optik
+         vermutlich zu blass. */
+      font-weight: 400;
     }
 
     html, body {
