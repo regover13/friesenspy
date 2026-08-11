@@ -10,6 +10,7 @@ import sqlite3
 from app.database import (
     _DDL,
     _flightplan_asof,
+    _gps_flights_for_positions,
     canonicalize_legs,
     ensure_pilot,
     get_connection,
@@ -167,7 +168,7 @@ class TestFormParity:
         }
         gps_extra_keys = {
             "gps_departure", "gps_arrival", "plan_departure", "plan_arrival", "connection_closed",
-            "block_start",
+            "block_start", "block_end",
         }
         assert canonical_flights_keys | gps_extra_keys <= set(flight.keys())
 
@@ -179,8 +180,20 @@ class TestFormParity:
         # KORREKTUR 1 (#23 Phase 2): block_min (gate-to-gate inkl. Taxi) ist die GRÖSSERE
         # Zeit, duration_min (reine Flugzeit Abheben->Landung) die KLEINERE — exakte Werte
         # ausgerechnet aus _seed_eddk_eddw_track (Taxi 10:00-10:06, Flugzeit 10:06-10:40).
+        #
+        # "fix/blockzeit-anblock": duration_min bleibt 34 (_air_seconds findet im Track
+        # keine Bodenphase -- jedes Sample-Paar zwischen 10:06 und 10:40 liegt entweder mehr
+        # als 300 s auseinander oder mehr als 200 m entfernt, s. Kriterien in _air_seconds).
+        # block_min steigt von 37 auf 39: _leg_block_seconds zaehlt WANDUHR ab dem ERSTEN
+        # Bewegungsnachweis (block_from = 10:01, erstes Sample mit groundspeed > 2 kt) bis
+        # block_end (hier unveraendert 10:40, kein Rollen danach) MINUS qualifizierender
+        # Abstell-Standphasen -- hier gibt es keine (jeder Lauf mit groundspeed <= 2 kt im
+        # Fenster ist <= 1 Sample lang, weit unter der 600-s-Schwelle). 10:01-10:40 = 39 min,
+        # keine Abzuege -> 39 (vorher zaehlte die SESSION-Blockzeit-Formel nur die Summe der
+        # Bewegungs-Luecken zwischen Messpunkten, 37 min -- s. `_block_seconds_positions`,
+        # die für die Leg-Metrik nicht mehr verwendet wird).
         assert flight["duration_min"] == 34
-        assert flight["block_min"] == 37
+        assert flight["block_min"] == 39
         assert flight["block_min"] >= flight["duration_min"]
 
     def test_block_start_is_roll_begin_before_takeoff(self):
@@ -1166,16 +1179,21 @@ class TestPrevEndBoundary:
         Taxi-out ab 10:00, Airborne 10:06-10:40) → Turnaround in EDDW (10:40-10:46, 6 min,
         <= 30 min) → EDDW→EDDL (Airborne 10:46-11:10).
 
-        Exakter erwarteter ``block_min`` von Leg 2 MIT ``prev_end``-Schranke: 27 (1620 s) —
-        die Blockzeit-Summe (s. ``_block_seconds_positions``) beginnt frühestens am
-        Landungs-ts von Leg 1 (10:40:00, = ``prev_end``) und deckt NUR den eigenen Turnaround
-        (10:40-10:46) + die eigene Airborne-Zeit (10:46-11:10) ab.
+        Exakter erwarteter ``block_min`` von Leg 2 MIT ``prev_end``-Schranke ("fix/blockzeit-
+        anblock": _leg_block_seconds als Wanduhr statt der Summe bewegter Abschnitte, s.
+        TestFormParity für die allgemeine Herleitung): ``block_from`` ist der erste
+        Bewegungsnachweis NACH der Landung von Leg 1 (10:41:00, erstes Sample mit
+        groundspeed > 2 kt im Turnaround — 10:40:00 selbst ist der Touchdown mit gs=0),
+        ``block_end`` bleibt bei 11:10 (kein Rollen nach der Landung in EDDL nachweisbar).
+        10:41–11:10 = 29 min, keine qualifizierende Abstell-Standphase im Fenster (der
+        einzelne gs=0-Ausreißer um 10:43 ist mit 0 s weit unter der 600-s-Schwelle) → 29.
 
-        OHNE diesen Schnitt reichte ``block_start`` von Leg 2 bis zum allerersten Taxi-Sample
-        von Leg 1 (10:00:00) zurück und bliese ``block_min`` auf 67 (4020 s) auf — Leg 1s
-        komplette Luftzeit (~34 min zusätzlich) wäre dann in Leg 2s Blockzeit enthalten. Der
-        Test bricht also messbar (67 statt 27), wenn jemand den Neustart der Rollphase beim
-        Aufsetzen entfernt — genau das soll er verhindern.
+        OHNE die ``prev_end``-Schranke (Neustart der Rollphase beim Aufsetzen) reichte
+        ``block_start``/``block_from`` von Leg 2 bis in Leg 1 zurück und risse dessen
+        komplette Luftzeit (~34 min zusätzlich) mit in Leg 2s Blockzeit — der Regressionstest
+        unten prüft das nicht über eine zweite feste Zahl, sondern strukturell (Zeile
+        ``block_min < leg1.duration_min + leg2.duration_min``): jede Vermischung der beiden
+        Luftzeiten würde diese Schranke sprengen.
         """
         conn = _make_conn()
         cid = 4314
@@ -1197,10 +1215,11 @@ class TestPrevEndBoundary:
         assert leg1["gps_arrival"] == "EDDW"
         assert leg2["gps_arrival"] == "EDDL"
 
-        # Exakter Wert — bricht messbar (67 statt 27), sobald die prev_end-Schranke entfernt
-        # wird (s. Docstring oben für die Herleitung beider Zahlen).
+        # Exakter Wert — s. Docstring oben für die Herleitung (fix/blockzeit-anblock: 27 -> 29,
+        # da block_min jetzt Wanduhr ab dem ersten Bewegungsnachweis zaehlt statt der Summe
+        # bewegter Abschnitte).
         assert leg2["duration_min"] == 24
-        assert leg2["block_min"] == 27
+        assert leg2["block_min"] == 29
         assert leg2["block_min"] < leg1["duration_min"] + leg2["duration_min"], (
             "block_min von Leg 2 enthaelt vermutlich (Teile) der Luftzeit von Leg 1 "
             "-- die prev_end-Schranke greift nicht mehr"
@@ -1539,3 +1558,103 @@ class TestStatsimMidAirSplitContinuity:
         assert st[0]["gps_departure"] == "EDDK"
         assert st[0]["gps_arrival"] == "EDDL"
         assert not any(f["gps_arrival"] is None for f in st)
+
+
+class TestDurationLeBlockGuarantee:
+    """"fix/blockzeit-anblock": duration_min <= block_min muss IMMER gelten -- das Fenster
+    der Flugzeit [takeoff_ts, end_ts] liegt strukturell innerhalb des Blockfensters
+    [block_from, block_end], und jede Standphase, die block_min abzieht UND im Flugfenster
+    liegt, erfüllt automatisch auch das (lockerere) Kriterium von duration_min. Diese Klasse
+    prüft die Garantie an den Rändern, an denen sie am ehesten brechen könnte -- inklusive
+    des einen Falls, in dem allein die strukturelle Herleitung NICHT reicht und der Floor
+    in `_gps_flights_for_positions` (`block_min = max(block_min, duration_min)`) greift."""
+
+    def test_floor_rescues_guarantee_when_speed_reported_zero_throughout(self):
+        """Quelle meldet durchgehend groundspeed=0, obwohl die Position sich klar bewegt
+        (StatSim: `p.get("speed", 0)` bei fehlendem Feld, s. app/statsim.py:127). Ohne den
+        Floor würde `_leg_block_seconds` das GESAMTE Fenster als EINEN Stand werten (jedes
+        Sample gs<=2, die ERSTE Position des Laufs liegt am Abflugplatz -> qualifiziert) und
+        komplett abziehen -> block_min=0 trotz positiver Flugzeit (verifiziert: roh, ohne
+        Floor, liefert `_leg_block_seconds` hier exakt 0). Der Floor in
+        `_gps_flights_for_positions` federt genau das ab."""
+        positions = [
+            {"latitude": EDDK[0], "longitude": EDDK[1], "altitude": 302,
+             "groundspeed": 0, "ts": "2026-07-02T10:00:00Z"},
+            {"latitude": EDDK[0], "longitude": EDDK[1], "altitude": 1500,
+             "groundspeed": 0, "ts": "2026-07-02T10:06:00Z"},  # Takeoff via AGL-Steigung
+            {"latitude": 52.0, "longitude": 8.0, "altitude": 5000,
+             "groundspeed": 0, "ts": "2026-07-02T10:20:00Z"},
+            {"latitude": 53.0, "longitude": 8.7, "altitude": 500,
+             "groundspeed": 0, "ts": "2026-07-02T10:38:00Z"},
+            {"latitude": EDDW[0], "longitude": EDDW[1], "altitude": 200,
+             "groundspeed": 0, "ts": "2026-07-02T10:44:00Z"},  # Touchdown EDDW
+        ]
+        out = _gps_flights_for_positions(positions, plan_rows=[], source="statsim")
+        assert len(out) == 1
+        flight = out[0]
+        assert flight["duration_min"] == 38  # reine Wanduhr [10:06, 10:44], keine Bodenphase
+        assert flight["block_min"] == flight["duration_min"], (
+            "ohne den Floor waere block_min hier 0 -- s. Docstring des Tests"
+        )
+
+    def test_open_leg_without_landing_satisfies_guarantee(self):
+        """Track reißt airborne ab (kein Touchdown) -- offenes Leg, end_ts kommt aus dem
+        letzten belegten Sample vor der nächsten Zeitlücke."""
+        positions = [
+            {"latitude": EDDK[0], "longitude": EDDK[1], "altitude": 302,
+             "groundspeed": 5, "ts": "2026-07-02T10:00:00Z"},
+            {"latitude": EDDK[0], "longitude": EDDK[1], "altitude": 1500,
+             "groundspeed": 80, "ts": "2026-07-02T10:06:00Z"},
+            {"latitude": 52.0, "longitude": 8.0, "altitude": 5000,
+             "groundspeed": 90, "ts": "2026-07-02T10:20:00Z"},
+            {"latitude": 52.5, "longitude": 8.3, "altitude": 5000,
+             "groundspeed": 85, "ts": "2026-07-02T10:25:00Z"},
+        ]
+        out = _gps_flights_for_positions(positions, plan_rows=[], source="friesenspy")
+        assert len(out) == 1
+        flight = out[0]
+        assert flight["logoff_time"] is None  # tatsächlich offen
+        assert flight["duration_min"] <= flight["block_min"]
+        assert flight["duration_min"] > 0 and flight["block_min"] > 0
+
+    def test_data_gap_inside_flight_window_satisfies_guarantee(self):
+        """Eine 25-min-Datenlücke MITTEN im (noch offenen) Flugfenster -- unter
+        _GPS_LEG_GAP_MINUTES (30), bleibt also im selben Segment. Ohne Belege wird an
+        keiner Stelle etwas abgezogen (weder Block noch Flugzeit)."""
+        positions = [
+            {"latitude": EDDK[0], "longitude": EDDK[1], "altitude": 302,
+             "groundspeed": 5, "ts": "2026-07-02T10:00:00Z"},
+            {"latitude": EDDK[0], "longitude": EDDK[1], "altitude": 1500,
+             "groundspeed": 80, "ts": "2026-07-02T10:06:00Z"},
+            {"latitude": 52.0, "longitude": 8.0, "altitude": 5000,
+             "groundspeed": 90, "ts": "2026-07-02T10:10:00Z"},
+            {"latitude": 52.5, "longitude": 8.3, "altitude": 5000,
+             "groundspeed": 85, "ts": "2026-07-02T10:35:00Z"},  # 25 min Lücke
+        ]
+        out = _gps_flights_for_positions(positions, plan_rows=[], source="friesenspy")
+        assert len(out) == 1
+        flight = out[0]
+        assert flight["duration_min"] <= flight["block_min"]
+
+    def test_constant_ground_position_with_intermediate_landing_satisfies_guarantee(self):
+        """Realer Fund (Flug 632, Hubschrauber): Außenlandung MITTEN im Flugfenster, danach
+        Weiterflug -- Standzeit im Gelände wird von der Flugzeit abgezogen (Kriterium
+        Position), von der Blockzeit nicht (Kriterium Flugplatznähe, hier REMOTE). Die
+        Garantie muss trotz der divergierenden Kriterien halten."""
+        positions = [
+            {"latitude": EDDK[0], "longitude": EDDK[1], "altitude": 302,
+             "groundspeed": 5, "ts": "2026-07-02T10:00:00Z"},
+            {"latitude": EDDK[0], "longitude": EDDK[1], "altitude": 1500,
+             "groundspeed": 80, "ts": "2026-07-02T10:06:00Z"},
+            {"latitude": REMOTE[0], "longitude": REMOTE[1], "altitude": 250,
+             "groundspeed": 0, "ts": "2026-07-02T10:20:00Z"},  # Außenlandung im Gelände
+            {"latitude": REMOTE[0], "longitude": REMOTE[1], "altitude": 250,
+             "groundspeed": 0, "ts": "2026-07-02T10:35:00Z"},  # 15 min Stand, kein Platz nah
+            {"latitude": REMOTE[0], "longitude": REMOTE[1], "altitude": 1200,
+             "groundspeed": 70, "ts": "2026-07-02T10:37:00Z"},  # Weiterflug
+        ]
+        out = _gps_flights_for_positions(positions, plan_rows=[], source="friesenspy")
+        assert len(out) == 1
+        flight = out[0]
+        assert flight["logoff_time"] is None  # nie an einem Platz gelandet -> offen
+        assert flight["duration_min"] <= flight["block_min"]
