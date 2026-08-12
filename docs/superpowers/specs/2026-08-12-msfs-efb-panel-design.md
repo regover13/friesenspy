@@ -71,8 +71,9 @@ Das gebaute Package selbst ist NICHT Teil des Git-Repos (wie ein `dist/`-Ordner)
 lokal nach `Community2024/friesenflieger-friesenspy-efb/` kopiert oder verlinkt, um es im Sim
 zu testen.
 
-**Package-Identität** (final, nicht als Wegwerf-Test gewählt):
-- Creator: `FriesenFlieger`
+**Package-Identität** (final, nicht als Wegwerf-Test gewählt; Creator während der Umsetzung
+von `FriesenFlieger` auf `devprops` geändert, Package-ID unverändert):
+- Creator: `devprops`
 - Package-/App-Titel: `FriesenSpy`
 - Package-ID: `friesenflieger-friesenspy-efb`
 

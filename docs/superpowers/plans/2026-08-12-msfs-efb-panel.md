@@ -20,8 +20,9 @@ Kein SimConnect, keine eigene Navigation — die App zeigt ausschließlich die f
 
 ## Global Constraints
 
-- Package-Identität (aus Spec, final, nicht als Wegwerf-Test gewählt): Creator `FriesenFlieger`,
-  Titel `FriesenSpy`, Package-ID `friesenflieger-friesenspy-efb`.
+- Package-Identität (aus Spec, final, nicht als Wegwerf-Test gewählt): Creator `devprops`
+  (während der Umsetzung geändert, ursprünglich `FriesenFlieger`), Titel `FriesenSpy`,
+  Package-ID `friesenflieger-friesenspy-efb`.
 - Feste URL `https://friesenspy.devprops.de/panel`, keine Adressleiste, keine Einstellungen,
   keine SimConnect-Datenanbindung (s. Design-Doku `docs/superpowers/specs/2026-08-12-msfs-efb-panel-design.md`).
 - `PackageSources/efb_api/` und `PackageSources/vendor/` sind Sibling-Abhängigkeiten aus dem
@@ -180,7 +181,7 @@ müssten beide Stellen manuell synchron gehalten werden.
     "esbuild": "^0.21.3",
     "esbuild-copy-static-files": "^0.1.0",
     "esbuild-plugin-copy": "^2.1.1",
-    "esbuild-sass-plugin": "^3.3.0",
+    "esbuild-sass-plugin": "3.3.1",
     "postcss": "^8.4.30",
     "postcss-prefix-selector": "^1.16.0",
     "postcss-url": "^10.1.3",
@@ -444,7 +445,7 @@ Copy-Item -Path "D:\User\Tobias\OneDrive\Claude\FriesenSpy\app\static\icon-512.p
   "content_type": "MISC",
   "title": "FriesenSpy",
   "manufacturer": "",
-  "creator": "FriesenFlieger",
+  "creator": "devprops",
   "package_version": "0.1.0",
   "minimum_game_version": "1.0.0",
   "release_notes": {
