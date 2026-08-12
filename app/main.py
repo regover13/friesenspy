@@ -1695,6 +1695,15 @@ def _is_https(request: Request) -> bool:
     return request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
 
 
+def _iframe_samesite(request: Request) -> str:
+    """SameSite für Cookies, die auch aus dem eingebetteten MSFS-EFB-Panel funktionieren müssen
+    (User-Session + SSO-Redirect-State) -- s. docs/superpowers/specs/2026-08-12-msfs-efb-panel-design.md.
+    ``None`` verlangt zwingend ``Secure``, sonst verwirft der Browser das Cookie komplett --
+    degradiert deshalb lokal über HTTP (kein Secure möglich) auf ``lax``, wie schon das
+    bestehende ``secure=_is_https(request)``-Muster."""
+    return "none" if _is_https(request) else "lax"
+
+
 def _safe_next_path(raw: str) -> str | None:
     """Sanitize a post-login redirect target to a SEITENINTERNEN Pfad (kein Open-Redirect).
 
@@ -1728,11 +1737,11 @@ async def forum_login(request: Request):
               f"&state={quote(state, safe='')}")
     resp = RedirectResponse(target, status_code=302)
     resp.set_cookie("fs_sso_state", state, httponly=True, secure=_is_https(request),
-                    samesite="lax", path="/auth/forum", max_age=300)
+                    samesite=_iframe_samesite(request), path="/auth/forum", max_age=300)
     next_path = _safe_next_path(request.query_params.get("next", ""))
     if next_path:
         resp.set_cookie("fs_sso_next", next_path, httponly=True, secure=_is_https(request),
-                        samesite="lax", path="/auth/forum", max_age=300)
+                        samesite=_iframe_samesite(request), path="/auth/forum", max_age=300)
     return resp
 
 
@@ -1794,7 +1803,7 @@ async def forum_callback(request: Request):
     dest = _safe_next_path(request.cookies.get("fs_sso_next", "")) or "/"
     resp = RedirectResponse(dest, status_code=302)
     resp.set_cookie(USER_COOKIE, user_token, httponly=True, secure=_is_https(request),
-                    samesite="lax", path="/", max_age=settings.USER_SESSION_MAX_AGE_SEC)
+                    samesite=_iframe_samesite(request), path="/", max_age=settings.USER_SESSION_MAX_AGE_SEC)
     resp.delete_cookie("fs_sso_state", path="/auth/forum")
     resp.delete_cookie("fs_sso_next", path="/auth/forum")
     return resp
@@ -1831,7 +1840,7 @@ async def api_me(request: Request):
         USER_COOKIE,
         make_user_token(settings.SECRET_KEY, str(claims.get("name", "")),
                         str(claims.get("cid", "")), bool(claims.get("is_admin")), exp),
-        httponly=True, secure=_is_https(request), samesite="lax", path="/",
+        httponly=True, secure=_is_https(request), samesite=_iframe_samesite(request), path="/",
         max_age=settings.USER_SESSION_MAX_AGE_SEC,
     )
     return resp
