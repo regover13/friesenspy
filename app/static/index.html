@@ -98,7 +98,7 @@
     body::before {
       content: '';
       position: fixed;
-      inset: 0;
+      top: 0; right: 0; bottom: 0; left: 0;
       background-image:
         linear-gradient(var(--green-grid) 1px, transparent 1px),
         linear-gradient(90deg, var(--green-grid) 1px, transparent 1px);
@@ -332,6 +332,14 @@
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;   /* sanftes Trägheits-Scrollen auf iOS */
     }
+    /* Windows/Edge/Chrome blenden Overlay-Scrollbars standardmäßig aus (nur beim aktiven
+       Hover/Scrollen sichtbar) — derselbe Fund wie bei .table-scroll oben, hier erneut
+       nötig, weil .live-table-wrap eine eigene, separate Wrapper-Klasse ist. */
+    .live-table-wrap { scrollbar-width: thin; scrollbar-color: var(--green-dim) var(--bg-panel-2); }
+    .live-table-wrap::-webkit-scrollbar { height: 10px; }
+    .live-table-wrap::-webkit-scrollbar-track { background: var(--bg-panel-2); }
+    .live-table-wrap::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 5px; }
+    .live-table-wrap::-webkit-scrollbar-thumb:hover { background: var(--green); }
     /* Mobile-Scroll-Fix: Tabellen wuchsen nie über die Wrapper-Breite hinaus (width:100%
        ohne min-width) → der overflow-x:auto-Wrapper hatte nichts zu scrollen, Zellen wurden
        gequetscht. width:max-content lässt die Tabelle so breit wie ihr Inhalt werden, sodass
@@ -564,7 +572,7 @@
     .radar-sweep::before {
       content: '';
       position: absolute;
-      inset: 0;
+      top: 0; right: 0; bottom: 0; left: 0;
       border: 1px solid var(--green-dim);
       border-radius: 50% !important;
     }
@@ -620,7 +628,7 @@
     }
     .map-is-fullscreen {
       position: fixed !important;
-      inset: 0 !important;
+      top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important;
       z-index: 3000 !important;
       width: 100vw !important;
       height: 100vh !important;
@@ -941,7 +949,7 @@
        ===================================================================== */
     .fp-modal-overlay {
       position: fixed;
-      inset: 0;
+      top: 0; right: 0; bottom: 0; left: 0;
       background: rgba(4,8,15,0.88);
       z-index: 10000;
       display: flex;
@@ -1548,7 +1556,7 @@
     .modal {
       display: none;
       position: fixed;
-      inset: 0;
+      top: 0; right: 0; bottom: 0; left: 0;
       background: rgba(4,8,15,0.88);
       z-index: 10000;
       align-items: center;
