@@ -2272,13 +2272,13 @@ function _showNotifPanelContent() {
 function _applyNotifPilotListState() {
   const container = document.getElementById('notif-pilot-list');
   if (!container || container.children.length === 0) return;
-  const mode = document.querySelector('input[name="notif-filter-mode"]:checked')?.value || 'all';
+  const mode = (document.querySelector('input[name="notif-filter-mode"]:checked') || {}).value || 'all';
   const cbs = container.querySelectorAll('input[type=checkbox]');
   container.hidden = false;
   if (mode === 'all') {
     cbs.forEach(cb => { cb.checked = true; cb.disabled = true; });
   } else {
-    const filter = _notifCustomFilter ?? JSON.parse(localStorage.getItem('notif_pilot_filter') || 'null');
+    const filter = _notifCustomFilter || JSON.parse(localStorage.getItem('notif_pilot_filter') || 'null');
     cbs.forEach(cb => {
       const cid = Number(cb.dataset.cid);
       cb.checked = !filter || filter.includes(cid);
@@ -2352,7 +2352,7 @@ async function _unsubscribePush() {
 
 async function _saveNotifFilter() {
   if (!_pushSubscription) return;
-  const mode = document.querySelector('input[name="notif-filter-mode"]:checked')?.value;
+  const mode = (document.querySelector('input[name="notif-filter-mode"]:checked') || {}).value;
   let pilotFilter = null;
   if (mode === 'select') {
     const cbs = document.querySelectorAll('#notif-pilot-list input[type=checkbox]:checked');
@@ -2363,11 +2363,11 @@ async function _saveNotifFilter() {
     _notifCustomFilter = null;
     localStorage.removeItem('notif_pilot_filter');
   }
-  const notifyPrefiles = document.getElementById('notif-prefiles')?.checked ?? false;
+  const notifyPrefiles = (document.getElementById('notif-prefiles') || {}).checked || false;
   localStorage.setItem('notif_prefiles', notifyPrefiles ? '1' : '0');
-  const notifyTs = document.getElementById('notif-ts')?.checked ?? false;
+  const notifyTs = (document.getElementById('notif-ts') || {}).checked || false;
   localStorage.setItem('notif_ts', notifyTs ? '1' : '0');
-  const notifyEvents = document.getElementById('notif-events')?.checked ?? false;
+  const notifyEvents = (document.getElementById('notif-events') || {}).checked || false;
   localStorage.setItem('notif_events', notifyEvents ? '1' : '0');
   await fetch('/api/push/subscribe', {
     method: 'POST',
@@ -2444,7 +2444,7 @@ function _renderVisibilityPilots(allowlist) {
 }
 
 function _applyVisibilityModeUI() {
-  const mode = document.querySelector('input[name="visibility-mode"]:checked')?.value || 'everyone';
+  const mode = (document.querySelector('input[name="visibility-mode"]:checked') || {}).value || 'everyone';
   const list = document.getElementById('visibility-pilot-list');
   const svc = document.getElementById('visibility-services');
   if (list) list.hidden = (mode !== 'allowlist');
@@ -2474,7 +2474,7 @@ function loadVisibility() {
 }
 
 function saveVisibility() {
-  const mode = document.querySelector('input[name="visibility-mode"]:checked')?.value || 'everyone';
+  const mode = (document.querySelector('input[name="visibility-mode"]:checked') || {}).value || 'everyone';
   const body = { mode };
   if (mode === 'allowlist') {
     body.allowlist = [...document.querySelectorAll(
@@ -2482,9 +2482,9 @@ function saveVisibility() {
   }
   if (mode !== 'everyone') {
     body.services = [];
-    if (document.getElementById('vis-svc-online')?.checked) body.services.push('online');
-    if (document.getElementById('vis-svc-prefile')?.checked) body.services.push('prefile');
-    if (document.getElementById('vis-svc-ts')?.checked) body.services.push('ts');
+    if ((document.getElementById('vis-svc-online') || {}).checked) body.services.push('online');
+    if ((document.getElementById('vis-svc-prefile') || {}).checked) body.services.push('prefile');
+    if ((document.getElementById('vis-svc-ts') || {}).checked) body.services.push('ts');
   }
   const btn = document.getElementById('visibility-save-btn');
   fetch('/api/me/visibility', {
@@ -2510,6 +2510,12 @@ function _claimPushOwnership() {
     .catch(() => { _pushOwnershipClaimed = false; });
 }
 
+// Coherent GTs JS-Engine (MSFS-EFB-Panel) kennt kein Optional Chaining (?.) -- ein einziges
+// Vorkommen im Script macht die GANZE Datei einen SyntaxError und nichts läuft mehr (s.
+// docs/superpowers/plans/2026-08-12-msfs-efb-panel.md, Live-Test-Fund). Deshalb hier und an
+// allen anderen `?.`/`??`-Stellen auf ES2019-kompatible Alternativen umgestellt.
+function _on(el, ev, fn) { if (el) el.addEventListener(ev, fn); }
+
 document.addEventListener('DOMContentLoaded', () => {
   const notifBtn    = document.getElementById('notif-btn');
   const notifPanel  = document.getElementById('notif-panel');
@@ -2517,7 +2523,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveBtn     = document.getElementById('notif-save-btn');
   const installBtn  = document.getElementById('notif-install-btn');
 
-  notifBtn?.addEventListener('click', e => {
+  _on(notifBtn, 'click', e => {
     e.stopPropagation();
     notifPanel.hidden = !notifPanel.hidden;
     if (!notifPanel.hidden) {
@@ -2527,12 +2533,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.addEventListener('click', e => {
-    if (!notifPanel?.hidden && !notifPanel.contains(e.target) && e.target !== notifBtn) {
+    if (!(notifPanel || {}).hidden && !notifPanel.contains(e.target) && e.target !== notifBtn) {
       notifPanel.hidden = true;
     }
   });
 
-  enabledCb?.addEventListener('change', async () => {
+  _on(enabledCb, 'change', async () => {
     if (enabledCb.checked) await _subscribePush();
     else await _unsubscribePush();
     _showNotifPanelContent();
@@ -2551,7 +2557,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  saveBtn?.addEventListener('click', _saveNotifFilter);
+  _on(saveBtn, 'click', _saveNotifFilter);
 
   document.querySelectorAll('input[name="visibility-mode"]').forEach(r => {
     r.addEventListener('change', () => {
@@ -2566,9 +2572,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
-  document.getElementById('visibility-save-btn')?.addEventListener('click', saveVisibility);
+  _on(document.getElementById('visibility-save-btn'), 'click', saveVisibility);
 
-  document.getElementById('visibility-toggle')?.addEventListener('click', (e) => {
+  _on(document.getElementById('visibility-toggle'), 'click', (e) => {
     e.preventDefault();
     const body = document.getElementById('visibility-body');
     const caret = document.getElementById('visibility-caret');
@@ -2577,7 +2583,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (caret) caret.textContent = body.hidden ? '›' : '⌄';
   });
 
-  document.getElementById('notif-reset-btn')?.addEventListener('click', async () => {
+  _on(document.getElementById('notif-reset-btn'), 'click', async () => {
     if (!confirm('Service Worker zurücksetzen und Seite neu laden?')) return;
     try {
       if (_pushSubscription) {
@@ -2592,7 +2598,7 @@ document.addEventListener('DOMContentLoaded', () => {
     location.reload();
   });
 
-  installBtn?.addEventListener('click', async () => {
+  _on(installBtn, 'click', async () => {
     if (!_deferredInstallPrompt) return;
     _deferredInstallPrompt.prompt();
     const { outcome } = await _deferredInstallPrompt.userChoice;
@@ -2603,7 +2609,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ---- Install-Banner (sichtbarer Hinweis, schließbar) ----
-  document.getElementById('install-banner-btn')?.addEventListener('click', async () => {
+  _on(document.getElementById('install-banner-btn'), 'click', async () => {
     if (!_deferredInstallPrompt) return;
     _deferredInstallPrompt.prompt();
     try { await _deferredInstallPrompt.userChoice; } catch (_) {}
@@ -2611,7 +2617,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const banner = document.getElementById('install-banner');
     if (banner) banner.hidden = true;
   });
-  document.getElementById('install-banner-close')?.addEventListener('click', () => {
+  _on(document.getElementById('install-banner-close'), 'click', () => {
     const banner = document.getElementById('install-banner');
     if (banner) banner.hidden = true;
     try { localStorage.setItem(INSTALL_DISMISS_KEY, '1'); } catch (_) {}
@@ -2642,9 +2648,9 @@ function _initVersionUI(version, changelog, bannerVersion) {
     badge.addEventListener('click', openChangelogModal);
   }
   // Einmalige Verdrahtung der Banner-/Modal-Bedienelemente
-  document.getElementById('changelog-banner-close')?.addEventListener('click', _markChangelogSeen);
-  document.getElementById('changelog-banner-more')?.addEventListener('click', openChangelogModal);
-  document.getElementById('changelog-modal')?.addEventListener('click', (e) => {
+  _on(document.getElementById('changelog-banner-close'), 'click', _markChangelogSeen);
+  _on(document.getElementById('changelog-banner-more'), 'click', openChangelogModal);
+  _on(document.getElementById('changelog-modal'), 'click', (e) => {
     if (e.target === document.getElementById('changelog-modal')) closeChangelogModal();
   });
   _maybeShowChangelogBanner();
@@ -4019,8 +4025,8 @@ async function loadAllFlights(cid) {
     const res = await fetch(`/api/pilots/${cid}/flights?days=0`);
     const flights = await res.json();
     const status = res.headers.get('X-StatSim-Status') || 'no-key';
-    renderFlightsList(cid, pilot?.name, flights, status);
-    if (status === 'updating') scheduleFlightsRefresh(cid, pilot?.name, 15000, true);
+    renderFlightsList(cid, (pilot || {}).name, flights, status);
+    if (status === 'updating') scheduleFlightsRefresh(cid, (pilot || {}).name, 15000, true);
   } catch (e) {
     console.error('Fehler beim Laden aller Flüge', e);
     if (btn) { btn.disabled = false; btn.textContent = 'Alle Flüge laden (letztes Jahr)'; }
@@ -4852,9 +4858,9 @@ function renderStatsSummary(stats, days) {
         <span class="stats-kpi-value">${avgDur}</span>
         <span class="stats-kpi-label">Ø Flugzeit</span>
       </div>
-      <div class="stats-kpi-card" style="min-width:160px;cursor:pointer;" onclick="openPilotFlights(${best?.cid})">
-        <span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(best?.name || '—')}</span>
-        <span class="stats-kpi-label">Aktivster Pilot (${best?.flight_count || 0} Flüge) →</span>
+      <div class="stats-kpi-card" style="min-width:160px;cursor:pointer;" onclick="openPilotFlights(${(best || {}).cid})">
+        <span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml((best || {}).name || '—')}</span>
+        <span class="stats-kpi-label">Aktivster Pilot (${(best || {}).flight_count || 0} Flüge) →</span>
       </div>
     </div>
     `;
@@ -4981,7 +4987,7 @@ async function openTypesModal(days) {
   el.classList.remove('hidden');
   document.addEventListener('keydown', _typesEscHandler);
   const daysSel = document.getElementById('types-modal-days');
-  const wunsch  = String(days || document.getElementById('stats-days')?.value || '30');
+  const wunsch  = String(days || (document.getElementById('stats-days') || {}).value || '30');
   daysSel.value = [...daysSel.options].some(o => o.value === wunsch) ? wunsch : '30';
   await fetchTypesModalList(Number(daysSel.value));
 }
@@ -5572,7 +5578,7 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
         if (!contents.length) { bar += '<div class="kutter-legend kutter-legend--sub"><span style="opacity:.6">leer</span></div>'; return; }
         const totalHere = contents.reduce((s, [, kg]) => s + kg, 0) || 1;
         const segs = contents.map(([name, kg]) => '<div class="kutter-seg" style="width:'
-          + (100 * kg / totalHere).toFixed(2) + '%"><i style="width:100%;background:' + _kColor(nameIdx[name] ?? 0) + '"></i></div>').join('');
+          + (100 * kg / totalHere).toFixed(2) + '%"><i style="width:100%;background:' + _kColor(nameIdx[name] || 0) + '"></i></div>').join('');
         const legend = contents.map(([name, kg]) => '<span>'
           + (emojiByName[name] ? _kesc(emojiByName[name]) + ' ' : '') + _kesc(name) + ' ' + _kfmtT(kg) + '</span>').join('');
         bar += '<div class="kutter-bar kutter-bar--sub">' + segs + '</div><div class="kutter-legend kutter-legend--sub">' + legend + '</div>';
@@ -5876,10 +5882,11 @@ async function initFromUrl() {
         const btn = document.querySelector(
           `.track-btn[data-track-id="${trackId}"][data-track-src="${trackSrc}"]`
         );
+        const btnData = btn ? btn.dataset : {};
         openTrackModal(
           trackSrc, trackId,
-          btn?.dataset.callsign || '', btn?.dataset.dep || '', btn?.dataset.arr || '',
-          btn?.dataset.logon || '', btn?.dataset.logoff || ''
+          btnData.callsign || '', btnData.dep || '', btnData.arr || '',
+          btnData.logon || '', btnData.logoff || ''
         );
       } else {
         const fld = p.get('fld');
@@ -5999,7 +6006,7 @@ setInterval(fetchBummelActive, 60000);  // Bummel-Banner langsam pollen (wie Pre
 fetchKutterActive();
 setInterval(fetchKutterActive, 25000);  // Kutter-Live-Block im Kutter-Detail-Takt (Live-Aktualität)
 // Delegierter Karten-Klick des Kutter-Blocks (überlebt die innerHTML-Refreshs).
-document.getElementById('kutter-banner')?.addEventListener('click', e => {
+_on(document.getElementById('kutter-banner'), 'click', e => {
   const el = e.target.closest('[data-callsign]');
   if (el) switchToMapAndCenter(el.dataset.callsign);
 });
