@@ -1,3 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <image width="512" height="512" preserveAspectRatio="xMidYMid meet" href="app-icon.png" />
+  <rect width="512" height="512" fill="#04080f" />
+  <circle cx="256" cy="256" r="200" fill="none" stroke="#2d9cdb" stroke-width="14" />
+  <text x="256" y="290" text-anchor="middle" font-family="Arial, sans-serif" font-weight="bold" font-size="140" fill="#dce8f5">FRS</text>
 </svg>
