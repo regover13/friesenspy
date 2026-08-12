@@ -3134,7 +3134,7 @@ function renderPrefiles(data) {
     tr.addEventListener('click', (e) => {
       if (e.target.classList.contains('td-map-btn')) return;
       const p = _prefileData[+tr.dataset.idx];
-      if (p) openFpModal({ ...p, callsign: p.callsign });
+      if (p) openFpModal(Object.assign({}, p));
     });
   });
   container.querySelectorAll('.td-map-btn').forEach(btn => {
@@ -5122,12 +5122,9 @@ async function searchEvents() {
   const startIso = start ? start + ':00Z' : '';
   const endIso   = end   ? end   + ':00Z' : '';
 
-  const params = new URLSearchParams({
-    icao,
-    radius,
-    ...(startIso && { start: startIso }),
-    ...(endIso   && { end:   endIso   }),
-  });
+  const params = new URLSearchParams({ icao, radius });
+  if (startIso) params.set('start', startIso);
+  if (endIso) params.set('end', endIso);
 
   try {
     const res  = await fetch(`/api/events?${params}`);
@@ -5296,7 +5293,7 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
   // nicht mehr eingebettet aus der Response (#33 — canonicalize_legs liefert keine positions)
   // und werden pro Flug nachgeladen, für ALLE Quellen einheitlich über _flightTrackUrl.
   const bounds = [];
-  const drawTasks = pilots.flatMap((p, i) => {
+  const drawTasks = [].concat.apply([], pilots.map((p, i) => {
     const color   = PILOT_COLORS[i % PILOT_COLORS.length];
     const label   = p.callsign || p.name || String(p.cid);
     const flights = p.flights || [];
@@ -5328,7 +5325,7 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
         })
         .catch(() => {});
     });
-  });
+  }));
 
   await Promise.all(drawTasks);
   if (bounds.length > 0) {
