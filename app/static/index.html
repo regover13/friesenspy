@@ -4793,6 +4793,8 @@ function renderStatsSummary(stats, days) {
   const totalFlights = stats.reduce((s, p) => s + (p.flight_count || 0), 0);
   const totalMin     = stats.reduce((s, p) => s + (p.total_duration_min || 0), 0);
   const totalHours   = totalMin / 60;
+  const totalBlockMin = stats.reduce((s, p) => s + (p.total_block_min || 0), 0);
+  const totalBlockHours = totalBlockMin / 60;
   const avgFlightsDay = (totalFlights / days).toFixed(1);
   const avgHoursDay   = (totalHours / days).toFixed(2);
   const best = stats.reduce((a, b) => (b.flight_count || 0) > (a.flight_count || 0) ? b : a, stats[0]);
@@ -4814,6 +4816,10 @@ function renderStatsSummary(stats, days) {
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${totalHours.toFixed(1)}</span>
         <span class="stats-kpi-label">Flugstunden</span>
+      </div>
+      <div class="stats-kpi-card">
+        <span class="stats-kpi-value">${totalBlockHours.toFixed(1)}</span>
+        <span class="stats-kpi-label">Blockzeit</span>
       </div>
       <div class="stats-kpi-card">
         <span class="stats-kpi-value">${avgFlightsDay}</span>

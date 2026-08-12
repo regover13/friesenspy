@@ -3823,6 +3823,8 @@ async def widget(request: Request):
 
     total_min = sum(s.get("total_duration_min", 0) for s in stats)
     total_h = total_min / 60
+    total_block_min = sum(s.get("total_block_min", 0) for s in stats)
+    total_block_h = total_block_min / 60
     pilots_html = " &nbsp;·&nbsp; ".join(
         f'<span>{_html.escape(str(p.get("callsign") or p.get("name") or "?"))}</span>'
         for p in live
@@ -3889,7 +3891,7 @@ async def widget(request: Request):
   <div class="bd">
     <div>{pilots_html}</div>
     {prefile_html}
-    <div class="ft">Flugstunden der letzten 7&nbsp;Tage:&nbsp;{total_h:.1f}&nbsp;h&nbsp;·&nbsp;FriesenSpy.devprops.de</div>
+    <div class="ft">Flugstunden der letzten 7&nbsp;Tage:&nbsp;{total_h:.1f}&nbsp;h&nbsp;·&nbsp;Blockzeit:&nbsp;{total_block_h:.1f}&nbsp;h&nbsp;·&nbsp;FriesenSpy.devprops.de</div>
   </div>
 </a>
 </body>

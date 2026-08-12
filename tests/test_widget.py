@@ -100,6 +100,28 @@ def test_dunkler_balken_bleibt_um_die_badges_stehen(widget_env):
     assert "padding:1px 6px" in html    # Badges, kleiner -> Balken bleibt sichtbar
 
 
+def test_blockzeit_steht_neben_flugstunden(tmp_path, monkeypatch):
+    """Neue KPI "Blockzeit" im loginlosen Banner, direkt neben Flugstunden."""
+    p = str(tmp_path / "t3.db")
+    init_db(p)
+    monkeypatch.setattr(
+        main, "get_settings",
+        lambda: SimpleNamespace(DB_PATH=p, CALLSIGN_PREFIX="FRS", TS_NOTIFY_ENABLED=False),
+    )
+    monkeypatch.setattr(main, "get_live_positions", lambda conn: [])
+    monkeypatch.setattr(
+        main, "get_stats",
+        lambda conn, days, callsign_prefix: [{"total_duration_min": 120, "total_block_min": 180}],
+    )
+    poller = SimpleNamespace(last_prefiles=[], ts_clients=[])
+    html = asyncio.run(main.widget(FakeReq(poller=poller))).body.decode("utf-8")
+    ft = html.split('<div class="ft">')[1].split('</div>')[0]
+    assert "Flugstunden" in ft
+    assert "Blockzeit" in ft
+    assert "2.0" in ft   # 120 min Flugzeit
+    assert "3.0" in ft   # 180 min Blockzeit
+
+
 def test_ts_badge_fehlt_wenn_teamspeak_aus(tmp_path, monkeypatch):
     p = str(tmp_path / "t2.db")
     init_db(p)

@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.5.0",
+    "date": "2026-08-12",
+    "highlight": false,
+    "title": "Neue KPI „Blockzeit“ im Statistik-Tab und im Widget-Banner",
+    "items": [
+      "🕐 Im Statistik-Tab steht jetzt neben den Flugstunden eine eigene KPI-Karte „Blockzeit“ (Summe über den gewählten Zeitraum). Dieselbe Zahl erscheint auch im loginlosen Widget-Banner neben den Flugstunden der letzten 7 Tage."
+    ]
+  },
+  {
     "version": "11.4.3",
     "date": "2026-08-11",
     "highlight": false,
