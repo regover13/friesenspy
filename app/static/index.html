@@ -78,6 +78,15 @@
          vermutlich zu blass. */
       font-weight: 400;
     }
+    /* Im MSFS-EFB-Panel fehl am Platz: Push-Benachrichtigungen funktionieren dort ohnehin
+       nicht (kein OS-Push-Kanal in Coherent GT) -- lieber ausblenden als eine kaputte
+       Funktion anzubieten. Impressum/Datenschutz ersetzen im Panel-Kontext die ganze
+       Cockpit-Ansicht durch eine Rechtstext-Seite, ohne echten Nutzen dort; über die normale
+       Web-Seite (/) bleiben beide weiterhin erreichbar. */
+    html.vr-panel #notif-btn,
+    html.vr-panel footer {
+      display: none !important;
+    }
 
     html, body {
       height: 100%;
@@ -2254,7 +2263,10 @@ function _showNotifPanelContent() {
     filterDiv.hidden = true;
     return;
   }
-  if (Notification.permission === 'denied') {
+  // 'Notification' in window statt direktem Zugriff -- in Umgebungen ohne die Notification-API
+  // (z. B. MSFS-EFB-Panel/Coherent GT) würde `Notification.permission` sonst mit einem
+  // ReferenceError abbrechen, statt wie hier gewollt den Blocked-Hinweis zu zeigen.
+  if (!('Notification' in window) || Notification.permission === 'denied') {
     blockedHint.hidden = false;
     enabledCb.disabled = true;
     filterDiv.hidden = true;
@@ -3056,15 +3068,7 @@ async function openAcModal(code) {
 function copyAcShareUrl(btn) {
   if (!_acOpenCode) return;
   const url = `${location.origin}${location.pathname}#actype=${encodeURIComponent(_acOpenCode)}`;
-  navigator.clipboard.writeText(url).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✓ Kopiert!';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  }).catch(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✗ Fehler';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  });
+  _copyText(url, btn);
 }
 
 function closeAcModal() {
@@ -3503,11 +3507,7 @@ function _buildBummelForumText(data) {
   return t;
 }
 function copyBummelForumText(btn) {
-  navigator.clipboard.writeText(_bummelForumText).then(() => {
-    const old = btn.textContent;
-    btn.textContent = '✓ kopiert';
-    setTimeout(() => { btn.textContent = old; }, 1500);
-  }).catch(() => {});
+  _copyText(_bummelForumText, btn, '✓ kopiert', 1500, false);
 }
 
 // Badge-Links je Pilot (Forum-PNG öffnen + BBCode kopieren).
@@ -3519,11 +3519,7 @@ function _bummelBadgeLinks(raceId, cid) {
 }
 function copyBummelBadgeCode(raceId, cid, btn) {
   const code = `[img]${location.origin}/api/bummel/race/${raceId}/badge/${cid}.png[/img]`;
-  navigator.clipboard.writeText(code).then(() => {
-    const old = btn.textContent;
-    btn.textContent = '✓ kopiert';
-    setTimeout(() => { btn.textContent = old; }, 1500);
-  }).catch(() => {});
+  _copyText(code, btn, '✓ kopiert', 1500, false);
 }
 
 // Baut den Ranking-HTML-Block (ohne äußeren Panel-Rahmen). inProgress optional (Live-Banner).
@@ -3746,45 +3742,48 @@ function setUrlState(params) {
   history.replaceState(null, '', '#' + new URLSearchParams(params).toString());
 }
 
+// Gemeinsamer Clipboard-Helfer für alle "Teilen"/"Kopieren"-Buttons -- fällt auf die
+// execCommand('copy')-Textarea-Technik zurück, wenn navigator.clipboard fehlt (z. B. im
+// MSFS-EFB-Panel/Coherent GT, das die moderne Clipboard-API vermutlich nicht kennt).
+function _copyText(text, btn, successMsg = '✓ Kopiert!', ms = 2000, showFail = true) {
+  const orig = btn.textContent;
+  const restore = () => setTimeout(() => { btn.textContent = orig; }, ms);
+  const onOk = () => { btn.textContent = successMsg; restore(); };
+  const onFail = () => { if (showFail) { btn.textContent = '✗ Fehler'; restore(); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onOk).catch(onFail);
+    return;
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    ok ? onOk() : onFail();
+  } catch (_) {
+    onFail();
+  }
+}
+
 function copyShareUrl(btn) {
-  navigator.clipboard.writeText(location.href).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✓ Kopiert!';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  }).catch(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✗ Fehler';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  });
+  _copyText(location.href, btn);
 }
 
 // Teilt den Deep-Link auf den Versionsverlauf (#changelog=1) — öffnet das Modal beim Laden.
 function copyChangelogShareUrl(btn) {
   const url = `${location.origin}${location.pathname}#changelog=1`;
-  navigator.clipboard.writeText(url).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✓ Kopiert!';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  }).catch(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✗ Fehler';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  });
+  _copyText(url, btn);
 }
 
 // Teilt EXPLIZIT den Deep-Link eines Rennens — unabhängig vom flüchtigen location.href
 // (der nach searchEvents den bummel-Parameter verliert).
 function copyBummelShareUrl(id, btn) {
   const url = `${location.origin}${location.pathname}#tab=events&bummel=${id}`;
-  navigator.clipboard.writeText(url).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✓ Kopiert!';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  }).catch(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✗ Fehler';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  });
+  _copyText(url, btn);
 }
 
 // Teilen-Knopf oben rechts in der Bummel-View: teilt das gerade geöffnete Rennen.
@@ -5021,15 +5020,7 @@ document.getElementById('types-modal-days').addEventListener('change', (e) => {
 // im Modal umgestellt wurde).
 function copyTypesShareUrl(btn) {
   const url = `${location.origin}${location.pathname}#types=1&days=${_typesModalDays}`;
-  navigator.clipboard.writeText(url).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✓ Kopiert!';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  }).catch(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✗ Fehler';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  });
+  _copyText(url, btn);
 }
 
 function _sortIndicator(field) {
@@ -5616,11 +5607,7 @@ function _kutterBadgeLinks(eventId, cid) {
 }
 function copyKutterBadgeCode(eventId, cid, btn) {
   const code = `[img]${location.origin}/api/transport/event/${eventId}/badge/${cid}.png[/img]`;
-  navigator.clipboard.writeText(code).then(() => {
-    const old = btn.textContent;
-    btn.textContent = '✓ kopiert';
-    setTimeout(() => { btn.textContent = old; }, 1500);
-  }).catch(() => {});
+  _copyText(code, btn, '✓ kopiert', 1500, false);
 }
 function _kutterBadgeSection(d) {
   // Nur wer wirklich Ware bewegt hat (contributed) bekommt ein Badge — eine reine Am-Platz-
@@ -5714,15 +5701,7 @@ async function openKutterById(id) {
 // location.href (analog copyBummelShareUrl).
 function copyKutterShareUrl(id, btn) {
   const url = `${location.origin}${location.pathname}#tab=events&kutter=${id}`;
-  navigator.clipboard.writeText(url).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✓ Kopiert!';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  }).catch(() => {
-    const orig = btn.textContent;
-    btn.textContent = '✗ Fehler';
-    setTimeout(() => { btn.textContent = orig; }, 2000);
-  });
+  _copyText(url, btn);
 }
 
 // Teilen-Knopf oben rechts in der Kutter-Detail-View: teilt das gerade geöffnete Event.
