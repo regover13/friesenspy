@@ -85,19 +85,40 @@ Neue Datei `msfs-panel/.gitignore`:
 ```
 # Build-Output (Task 2) und Community-Package (Task 3) -- nicht versioniert,
 # siehe Global Constraints im Plan.
-# WICHTIG: efb_api/dist ist KEIN Build-Output, sondern vendorierter SDK-Sample-Code
-# (Task 1) und wird bewusst NICHT ausgeschlossen -- er muss committet werden.
 PackageSources/efb_api/node_modules/
 PackageSources/FriesenSpy/node_modules/
 PackageSources/FriesenSpy/dist/
 Package/
+
+# WICHTIG: Das Repo-Root-.gitignore hat eine unverankerte Regel "dist/" (Zeile 8, greift
+# ueberall im Repo). efb_api/dist ist aber KEIN Build-Output, sondern vendorierter
+# SDK-Sample-Code (Task 1) und muss committet werden -- deshalb hier explizit
+# zurueckgeholt. Ohne diese Negation wuerde Task 1 Step 4 committen, als waere alles
+# gutgegangen, aber efb_api/dist bliebe leise ungetrackt (verifiziert per
+# "git check-ignore -v" waehrend der Planerstellung).
+!PackageSources/efb_api/dist/
+!PackageSources/efb_api/dist/**
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Verifizieren, dass git die Dateien wirklich sieht** (nicht nur das Dateisystem,
+  s. Global Constraints -- das Repo-Root-`.gitignore` hat eine unverankerte `dist/`-Regel)
+
+```powershell
+cd "D:\User\Tobias\OneDrive\Claude\FriesenSpy"
+git add msfs-panel/PackageSources/efb_api msfs-panel/PackageSources/vendor msfs-panel/.gitignore
+git status --short msfs-panel/PackageSources/efb_api/dist
+```
+
+Expected: mindestens eine Zeile pro Datei in `efb_api/dist/` mit `A ` (added) -- **nicht leer**.
+Ist die Ausgabe leer, greift die `dist/`-Ausschlussregel trotz der Negation in
+`msfs-panel/.gitignore` noch immer; dann zuerst `git check-ignore -v
+msfs-panel/PackageSources/efb_api/dist/EfbApi.d.ts` ausführen und die Negation korrigieren,
+bevor weitergemacht wird.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 cd "D:\User\Tobias\OneDrive\Claude\FriesenSpy"
-git add msfs-panel/PackageSources/efb_api msfs-panel/PackageSources/vendor msfs-panel/.gitignore
 git commit -m "chore(msfs-panel): efb_api + msfs-sdk Sibling-Dependencies aus SDK-Sample uebernommen"
 ```
 
@@ -261,7 +282,9 @@ SOURCE_MAPS=true
 MINIFY=false
 ```
 
-- [ ] **Step 4: `tsconfig.json` schreiben** (1:1 aus `TemplateApp/tsconfig.json` kopiert)
+- [ ] **Step 4: `tsconfig.json` schreiben** (byte-identisch zu `TemplateApp/tsconfig.json`,
+  inklusive des ungenutzten `ts-node`-Blocks -- keine eigene Vereinfachung, um keine
+  unentdeckten Abweichungen vom verifizierten Original einzuführen)
 
 ```json
 {
@@ -289,7 +312,12 @@ MINIFY=false
     "strict": true,
     "skipLibCheck": true
   },
-  "exclude": ["node_modules", "dist", "tsconfig.json"]
+  "exclude": ["node_modules", "dist", "tsconfig.json"],
+  "ts-node": {
+    "compilerOptions": {
+      "module": "CommonJS"
+    }
+  }
 }
 ```
 
@@ -384,12 +412,15 @@ Efb.use(FriesenSpy);
 ```
 
 **Bekanntes Risiko (für den Live-Test in Task 4 vormerken):** Das `<iframe>`-Tag in
-`FriesenSpyView.render()` ist im SDK-Sample nicht vorbelegt (dort werden nur `<div>`/`<h2>`
-über generische DOM-Tags gerendert) — dass `FSComponent.buildComponent` beliebige HTML-Tags
-inklusive `iframe` 1:1 als DOM-Element erzeugt, ist eine begründete Annahme (das Verhalten für
-`<div>` ist im Sample belegt, `iframe` ist kein Sonderfall in diesem Framework), aber nicht am
-echten SDK verifiziert. Falls der Build in Step 7 durchläuft, aber im Live-Test (Task 4) kein
-iframe erscheint, ist das der erste Verdächtige.
+`FriesenSpyView.render()` ist im SDK-Sample selbst nicht vorbelegt (dort werden nur `<div>`/
+`<h2>` gerendert). Die Framework-Seite ist inzwischen aber direkt verifiziert, nicht nur
+angenommen: `microsoft-msfs-sdk-2.1.1.tgz` enthält in `msfssdk-iife.js` eine generische
+`document.createElement(type)`-Erzeugung für beliebige String-Tags (kein `<div>`-Sonderfall),
+und die Typdefinition von `JSX.IntrinsicElements` hat eine Index-Signatur `[elemName: string]:
+{...}` statt einer festen Tag-Liste. Damit ist NICHT mehr das Framework der wahrscheinlichste
+Fehlerort, falls im Live-Test (Task 4) kein Panel erscheint, sondern die Coherent-GT-Browser-
+Engine selbst (die tatsächliche Rendering-/Netzwerktreue beim Laden von
+`https://friesenspy.devprops.de/panel`) -- das bleibt echt ungetestet bis Task 4.
 
 - [ ] **Step 6: Icon kopieren**
 
@@ -400,9 +431,12 @@ Copy-Item -Path "D:\User\Tobias\OneDrive\Claude\FriesenSpy\app\static\icon-512.p
   -Force
 ```
 
-- [ ] **Step 7: `manifest.json` schreiben** (Schema verifiziert an echten Community-Packages in
-  `D:\User\Tobias\OneDrive\GIT\ga-inventory\`; `minimum_game_version` ist eine Annahme, s. Global
-  Constraints)
+- [ ] **Step 7: `manifest.json` schreiben** (Feld-Schema verifiziert an echten Community-Packages
+  in `D:\User\Tobias\OneDrive\GIT\ga-inventory\`; `minimum_game_version` ist eine Annahme, s.
+  Global Constraints. `total_package_size` startet als Platzhalter mit 20 Nullen -- laut
+  Dokumentation von `MSFSLayoutGenerator.exe` wird der Wert automatisch aktualisiert, WENN das
+  Feld bereits vorhanden ist; das Tool erzeugt das Feld nicht neu. Task 3 Step 3 prüft, dass der
+  Platzhalter danach wirklich überschrieben wurde.)
 
 ```json
 {
@@ -449,15 +483,20 @@ Expected: alle drei `True`.
 
 - [ ] **Step 10: Commit**
 
+`npm install` (Step 8) erzeugt in `PackageSources/FriesenSpy/` und ggf. `PackageSources/efb_api/`
+je eine frische `package-lock.json` — ordnerweise hinzufügen statt einzelne Dateien aufzuzählen,
+damit sie nicht vergessen wird (`node_modules/`/`dist/` bleiben trotzdem draußen, s.
+`msfs-panel/.gitignore`):
+
 ```bash
 cd "D:\User\Tobias\OneDrive\Claude\FriesenSpy"
-git add msfs-panel/PackageSources/FriesenSpy/package.json msfs-panel/PackageSources/FriesenSpy/build.js \
-  msfs-panel/PackageSources/FriesenSpy/.env msfs-panel/PackageSources/FriesenSpy/tsconfig.json \
-  msfs-panel/PackageSources/FriesenSpy/src msfs-panel/PackageSources/FriesenSpy/manifest.json
+git add msfs-panel/PackageSources/FriesenSpy msfs-panel/PackageSources/efb_api
+git status --short msfs-panel/PackageSources/FriesenSpy/package-lock.json
 git commit -m "feat(msfs-panel): FriesenSpy-EFB-App -- rendert /panel per iframe"
 ```
 
-(`node_modules/` und `dist/` sind durch `msfs-panel/.gitignore` aus Task 1 bereits ausgeschlossen.)
+Expected: die `git status --short`-Zeile zeigt `A  ...package-lock.json` (nicht leer) — bestätigt,
+dass die generierte Lockfile mit committet wird und Installs reproduzierbar bleiben.
 
 ---
 
@@ -471,6 +510,14 @@ git commit -m "feat(msfs-panel): FriesenSpy-EFB-App -- rendert /panel per iframe
   (Task 2).
 - Produces: `msfs-panel/Package/` (manifest.json, layout.json,
   `html_ui/efb_ui/efb_apps/FriesenSpy/...`) — wird von Task 4 nach `Community2024` verlinkt.
+
+**Bewusst ausgelassen:** Das echte SDK-Sample-Package (`PackageDefinitions\mycompany-efb-
+templateapp.xml`) hat zusätzlich eine `ContentInfo`-AssetGroup mit einem `thumbnail.jpg` für
+die Marketplace-/Content-Manager-Vorschau. Das gehört zu Asobos `fspackagetool`/Project-Editor-
+Build-Pipeline, die wir laut Global Constraints bewusst NICHT verwenden (löst den Sim-Start
+aus). Ein einfaches, sideloadiertes Community-Package wie in `ga-inventory` kommt ohne
+`ContentInfo` aus — das Fehlen ist hier also keine Lücke, sondern Konsequenz der gewählten
+Build-Methode.
 
 - [ ] **Step 1: Build-Skript schreiben**
 
@@ -502,7 +549,13 @@ Copy-Item -Path $manifestSrc -Destination (Join-Path $pkg "manifest.json") -Forc
 $layoutJson = Join-Path $pkg "layout.json"
 Set-Content -Path $layoutJson -Value "{}" -Encoding UTF8 -NoNewline
 
-& $layoutGen $layoutJson
+# MSFSLayoutGenerator.exe wird mit relativem Dateinamen aus dem Package-Ordner heraus
+# aufgerufen, nicht mit absolutem Pfad -- das ist die einzige tatsaechlich verifizierte
+# Nutzung des Tools (s. ga-inventory/CLAUDE.md: "cd <Package>; ..\MSFSLayoutGenerator.exe
+# layout.json"). Ein absoluter Pfad aus fremdem cwd wurde nicht getestet.
+Push-Location $pkg
+& $layoutGen "layout.json"
+Pop-Location
 
 Write-Output "Package gebaut: $pkg"
 ```
@@ -523,18 +576,31 @@ Erwartung: Konsolen-Ausgabe endet mit `Package gebaut: ...\msfs-panel\Package`, 
 Test-Path "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\Package\manifest.json"
 Test-Path "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\Package\html_ui\efb_ui\efb_apps\FriesenSpy\FriesenSpy.js"
 Get-Content "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\Package\layout.json" | Select-String '"path"'
+Get-Content "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\Package\manifest.json" | Select-String "total_package_size"
 ```
 
 Expected: beide `Test-Path` `True`; `layout.json` enthält mindestens einen `"path"`-Eintrag
 (bestätigt, dass `MSFSLayoutGenerator.exe` die Datei-Liste tatsächlich befüllt hat, nicht nur
-das leere `{}`-Grundgerüst stehen ließ).
+das leere `{}`-Grundgerüst stehen ließ); `total_package_size` in `manifest.json` ist **nicht
+mehr** `"00000000000000000000"` (bestätigt, dass `MSFSLayoutGenerator.exe` den Platzhalter aus
+Task 2 Step 7 wie dokumentiert überschrieben hat).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: `CLAUDE.md` um den neuen Ordner ergänzen**
+
+In `D:\User\Tobias\OneDrive\Claude\FriesenSpy\CLAUDE.md`, im Abschnitt „Projektstruktur", nach
+der bestehenden Liste (`app/static/index.html — ...`) eine Zeile ergänzen:
+
+```
+- `msfs-panel/` — MSFS-2024-EFB-App "FriesenSpy" (Coherent-GT-Panel, rendert `/panel` per
+  iframe); eigener Node/esbuild-Build, s. `docs/superpowers/specs/2026-08-12-msfs-efb-panel-design.md`
+```
+
+- [ ] **Step 5: Commit**
 
 ```bash
 cd "D:\User\Tobias\OneDrive\Claude\FriesenSpy"
-git add msfs-panel/build-package.ps1
-git commit -m "chore(msfs-panel): Build-Skript fuer den Community-Package-Ordner"
+git add msfs-panel/build-package.ps1 CLAUDE.md
+git commit -m "chore(msfs-panel): Build-Skript fuer den Community-Package-Ordner + CLAUDE.md"
 ```
 
 (`msfs-panel/Package/` bleibt ungetrackt, s. `.gitignore` aus Task 1.)
