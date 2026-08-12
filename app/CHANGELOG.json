@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.4.4",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Icons statt Emoji in der ganzen Oberfläche",
+    "items": [
+      "🎨 Alle Emoji/Symbol-Icons in der Oberfläche (Glocke, Karte, Pokal, Schiffs-Symbole u. v. m.) sind jetzt selbst gehostete SVG-Icons statt Unicode-Emoji — Vorarbeit fürs kommende MSFS-EFB-Panel, dessen Rendering-Engine keine Emoji-Schriftarten kennt und sie sonst als leere Kästchen zeigt.",
+      "🐞 Zwei native Browser-Dialoge (bei leerer/fehlgeschlagener Event-Suche) sind durch eine Inline-Fehlermeldung ersetzt, die auch in der eingebetteten Panel-Ansicht sauber funktioniert."
+    ]
+  },
+  {
     "version": "11.4.3",
     "date": "2026-08-11",
     "highlight": false,
