@@ -2125,11 +2125,20 @@ function _getPreferredLayer(layers) {
 const _AIP_PREF_KEY = 'friesenspy_aip';
 function _saveAIPPref(on) { try { localStorage.setItem(_AIP_PREF_KEY, on ? '1' : '0'); } catch(e) {} }
 function _loadAIPPref() { try { return localStorage.getItem(_AIP_PREF_KEY) === '1'; } catch(e) { return false; } }
+// WICHTIG: Diese Funktion NUR die overlayadd/overlayremove-Listener registrieren lassen, NICHT
+// den Layer selbst hinzufügen -- das muss VOR L.control.layers(...) passieren (s.
+// _addPreferredAIPLayer unten), sonst sieht die Layers-Control-Checkbox den Zustand nie, weil
+// aipLayer.addTo(map) direkt keine der Events feuert, auf die die Control selbst lauscht.
 function _setupAIPPref(map, aipLayer) {
   if (!aipLayer) return;
-  if (_loadAIPPref()) aipLayer.addTo(map);
   map.on('overlayadd',    (e) => { if (e.layer === aipLayer) _saveAIPPref(true);  });
   map.on('overlayremove', (e) => { if (e.layer === aipLayer) _saveAIPPref(false); });
+}
+
+// Fügt den AIP-Layer VOR der Layers-Control hinzu, falls zuvor aktiviert -- damit die
+// Control-Checkbox von Anfang an korrekt "angehakt" gerendert wird (s. Kommentar oben).
+function _addPreferredAIPLayer(map, aipLayer) {
+  if (aipLayer && _loadAIPPref()) aipLayer.addTo(map);
 }
 
 // OFM ist nur bei Zoom 7–12 sinnvoll (unter 7 sparse, über 12 blank).
@@ -4305,6 +4314,7 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff, aut
         const trackLayers = _makeTileLayers();
         _getPreferredLayer(trackLayers).addTo(trackMap);
         const trackAIP = _makeAIPOverlay();
+        _addPreferredAIPLayer(trackMap, trackAIP);
         L.control.layers(
           { 'OpenFlightMap': trackLayers.ofm, 'OpenTopo': trackLayers.topo, 'Satellit': trackLayers.sat, 'Light': trackLayers.light, 'Dark': trackLayers.dark },
           trackAIP ? { 'OpenAIP': trackAIP } : {}, { position: 'topright', collapsed: true }
@@ -4436,6 +4446,7 @@ async function initLiveMap() {
   const liveLayers = _makeTileLayers();
   _getPreferredLayer(liveLayers).addTo(liveMap);
   const liveAIP = _makeAIPOverlay();
+  _addPreferredAIPLayer(liveMap, liveAIP);
   L.control.layers(
     { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Light': liveLayers.light, 'Dark': liveLayers.dark },
     liveAIP ? { 'OpenAIP': liveAIP } : {},
@@ -5275,6 +5286,7 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
     const evLayers = _makeTileLayers();
     _getPreferredLayer(evLayers).addTo(eventsMap);
     const evAIP = _makeAIPOverlay();
+    _addPreferredAIPLayer(eventsMap, evAIP);
     L.control.layers(
       { 'OpenFlightMap': evLayers.ofm, 'OpenTopo': evLayers.topo, 'Satellit': evLayers.sat, 'Light': evLayers.light, 'Dark': evLayers.dark },
       evAIP ? { 'OpenAIP': evAIP } : {}, { position: 'topright', collapsed: true }
