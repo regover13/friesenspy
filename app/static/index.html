@@ -87,6 +87,23 @@
     html.vr-panel footer {
       display: none !important;
     }
+    /* Teilen/Kopieren-Buttons (Link, Forum-BBCode) und Versionsverlauf: mitten im Flug ohne
+       Nutzen (kopierter Link/Code hat kein Ziel, Release-Notes sind keine Cockpit-Info). Über
+       Attribut-Selektoren statt neuer Klassen, weil .btn-share auch für "Zum Bummel"/"Zum
+       Kutter"-Navigation wiederverwendet wird, die im Panel weiterhin gebraucht wird. */
+    html.vr-panel [onclick*="copyShareUrl"],
+    html.vr-panel [onclick*="copyChangelogShareUrl"],
+    html.vr-panel [onclick*="copyBummelShareHeader"],
+    html.vr-panel [onclick*="copyKutterShareHeader"],
+    html.vr-panel [onclick*="copyTypesShareUrl"],
+    html.vr-panel [onclick*="copyAcShareUrl"],
+    html.vr-panel [onclick*="copyBummelForumText"],
+    html.vr-panel [onclick*="copyBummelBadgeCode"],
+    html.vr-panel [onclick*="copyKutterBadgeCode"],
+    html.vr-panel #changelog-banner,
+    html.vr-panel #app-version {
+      display: none !important;
+    }
 
     html, body {
       height: 100%;
