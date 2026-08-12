@@ -88,6 +88,8 @@ mkdir -p /opt/friesenspy/data
 - `app/poller.py` — APScheduler, Flug-State-Machine, SSE-Queue
 - `app/main.py` — FastAPI-App, REST + SSE-Endpoints
 - `app/static/index.html` — Vanilla-JS-SPA (4 Tabs)
+- `msfs-panel/` — MSFS-2024-EFB-App "FriesenSpy" (Coherent-GT-Panel, rendert `/panel` per
+  iframe); eigener Node/esbuild-Build, s. `docs/superpowers/specs/2026-08-12-msfs-efb-panel-design.md`
 
 ## Konfiguration (config.env — NIE in git)
 
