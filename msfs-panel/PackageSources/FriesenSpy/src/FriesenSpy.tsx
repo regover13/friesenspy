@@ -43,7 +43,7 @@ class FriesenSpy extends App {
   }
 
   public get icon(): string {
-    return `${BASE_URL}/Assets/app-icon.png`;
+    return `${BASE_URL}/Assets/app-icon.svg`;
   }
 
   public BootMode = AppBootMode.COLD;

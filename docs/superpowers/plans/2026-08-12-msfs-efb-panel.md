@@ -134,7 +134,7 @@ git commit -m "chore(msfs-panel): efb_api + msfs-sdk Sibling-Dependencies aus SD
 - Create: `msfs-panel/PackageSources/FriesenSpy/tsconfig.json`
 - Create: `msfs-panel/PackageSources/FriesenSpy/src/FriesenSpy.tsx`
 - Create: `msfs-panel/PackageSources/FriesenSpy/src/FriesenSpy.scss`
-- Create: `msfs-panel/PackageSources/FriesenSpy/src/Assets/app-icon.png` (kopiert)
+- Create: `msfs-panel/PackageSources/FriesenSpy/src/Assets/app-icon.svg` (aus icon-512.png generiert, s. Nachtrag Step 6)
 - Create: `msfs-panel/PackageSources/FriesenSpy/manifest.json`
 
 **Interfaces:**
@@ -389,7 +389,7 @@ class FriesenSpy extends App {
   }
 
   public get icon(): string {
-    return `${BASE_URL}/Assets/app-icon.png`;
+    return `${BASE_URL}/Assets/app-icon.svg`;
   }
 
   public BootMode = AppBootMode.COLD;
@@ -425,11 +425,21 @@ Engine selbst (die tatsächliche Rendering-/Netzwerktreue beim Laden von
 
 - [ ] **Step 6: Icon kopieren**
 
+**Nachtrag vom Live-Test (2026-08-12):** Ein direkt kopiertes `app-icon.png` wurde im EFB-App-Grid
+sichtbar verzerrt (oval statt rund) dargestellt, im Dock unten dagegen unauffällig. Ursache
+vermutlich: `IconElement` (efb_api) hat einen internen Handler namens `onSVGIconLoaded` und das
+SDK-Sample nutzt ausschließlich ein `.svg`-Icon -- ein rohes PNG durchläuft offenbar einen
+anderen Rendering-Pfad ohne seitenverhältnis-treues Skalieren. Fix: PNG in ein SVG mit
+quadratischem `viewBox` + `preserveAspectRatio="xMidYMid meet"` einbetten, `app-icon.png` NICHT
+mehr verwenden.
+
 ```powershell
 New-Item -ItemType Directory -Force -Path "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\PackageSources\FriesenSpy\src\Assets" | Out-Null
-Copy-Item -Path "D:\User\Tobias\OneDrive\Claude\FriesenSpy\app\static\icon-512.png" `
-  -Destination "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\PackageSources\FriesenSpy\src\Assets\app-icon.png" `
-  -Force
+$pngPath = "D:\User\Tobias\OneDrive\Claude\FriesenSpy\app\static\icon-512.png"
+$svgPath = "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\PackageSources\FriesenSpy\src\Assets\app-icon.svg"
+$b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($pngPath))
+$svg = "<svg xmlns=`"http://www.w3.org/2000/svg`" viewBox=`"0 0 512 512`">`n  <image width=`"512`" height=`"512`" preserveAspectRatio=`"xMidYMid meet`" href=`"data:image/png;base64,$b64`" />`n</svg>`n"
+Set-Content -Path $svgPath -Value $svg -Encoding UTF8 -NoNewline
 ```
 
 - [ ] **Step 7: `manifest.json` schreiben** (Feld-Schema verifiziert an echten Community-Packages
@@ -477,7 +487,7 @@ Expected: `npm run build` endet ohne Fehler; `esbuild`-Log zeigt geschriebene Da
 ```powershell
 Test-Path "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\PackageSources\FriesenSpy\dist\FriesenSpy.js"
 Test-Path "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\PackageSources\FriesenSpy\dist\FriesenSpy.css"
-Test-Path "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\PackageSources\FriesenSpy\dist\Assets\app-icon.png"
+Test-Path "D:\User\Tobias\OneDrive\Claude\FriesenSpy\msfs-panel\PackageSources\FriesenSpy\dist\Assets\app-icon.svg"
 ```
 
 Expected: alle drei `True`.
