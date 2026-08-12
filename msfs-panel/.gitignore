@@ -1,0 +1,15 @@
+# Build-Output (Task 2) und Community-Package (Task 3) -- nicht versioniert,
+# siehe Global Constraints im Plan.
+PackageSources/efb_api/node_modules/
+PackageSources/FriesenSpy/node_modules/
+PackageSources/FriesenSpy/dist/
+Package/
+
+# WICHTIG: Das Repo-Root-.gitignore hat eine unverankerte Regel "dist/" (Zeile 8, greift
+# ueberall im Repo). efb_api/dist ist aber KEIN Build-Output, sondern vendorierter
+# SDK-Sample-Code (Task 1) und muss committet werden -- deshalb hier explizit
+# zurueckgeholt. Ohne diese Negation wuerde Task 1 Step 4 committen, als waere alles
+# gutgegangen, aber efb_api/dist bliebe leise ungetrackt (verifiziert per
+# "git check-ignore -v" waehrend der Planerstellung).
+!PackageSources/efb_api/dist/
+!PackageSources/efb_api/dist/**
