@@ -284,6 +284,25 @@ class TestFilterFriesenPilots:
         assert len(result) == 1
         assert result[0]["callsign"] == "FRS001"
 
+    def test_filter_excludes_cid_despite_matching_prefix(self, sample_vatsim_data):
+        """Eine per excluded_cids ausgeschlossene CID fällt trotz FRS-Callsign raus."""
+        result = filter_friesen_pilots("FRS", sample_vatsim_data, excluded_cids=frozenset({1234567}))
+
+        callsigns = {p["callsign"] for p in result}
+        assert callsigns == {"FRS002"}
+
+    def test_filter_excluded_cids_empty_by_default(self, sample_vatsim_data):
+        """Ohne excluded_cids ändert sich nichts am bisherigen Verhalten."""
+        result = filter_friesen_pilots("FRS", sample_vatsim_data)
+
+        assert len(result) == 2
+
+    def test_filter_excluded_cids_does_not_affect_other_cids(self, sample_vatsim_data):
+        """Ausschluss einer CID lässt andere passende Piloten unangetastet."""
+        result = filter_friesen_pilots("FRS", sample_vatsim_data, excluded_cids=frozenset({999999}))
+
+        assert len(result) == 2
+
 
 # ---------------------------------------------------------------------------
 # pilot_to_position

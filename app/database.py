@@ -536,6 +536,13 @@ _LIVE_POSITIONS_MIGRATIONS = [
     "ALTER TABLE live_positions ADD COLUMN remarks TEXT",
 ]
 
+_PILOTS_MIGRATIONS = [
+    # Pilot von der Friesen-Erkennung ausschließen, obwohl das Callsign den Präfix trägt
+    # (z. B. Gast-CID auf einem FRS-Tag bei PC-21-Flügen). Default 1: Bestandspiloten bleiben
+    # aktiv, das Ausschließen ist ein bewusster Admin-Opt-out, kein Opt-in.
+    "ALTER TABLE pilots ADD COLUMN active INTEGER NOT NULL DEFAULT 1",
+]
+
 _CUSTOM_AIRPORTS_MIGRATIONS = [
     # #62: Radius-Override für Großflughäfen (z. B. EHAM) -- der Abhebe-/Aufsetzpunkt kann
     # weiter vom airportsdata-Referenzpunkt entfernt liegen als der globale Standardradius.
@@ -645,6 +652,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _CUSTOM_AIRPORTS_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _PILOTS_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -879,7 +891,7 @@ def list_pilots(conn: sqlite3.Connection, callsign_prefix: str = "FRS") -> list[
     Macht sichtbar, wenn eine CID mehrere FRS-Tags nutzt.
     """
     rows = conn.execute(
-        "SELECT p.cid, p.name, p.added_at, "
+        "SELECT p.cid, p.name, p.added_at, p.active, "
         "(SELECT GROUP_CONCAT(DISTINCT f.callsign) FROM flights f "
         " WHERE f.cid = p.cid AND f.callsign LIKE ?) AS callsigns "
         "FROM pilots p ORDER BY p.name COLLATE NOCASE, p.cid",
@@ -890,17 +902,29 @@ def list_pilots(conn: sqlite3.Connection, callsign_prefix: str = "FRS") -> list[
         d = dict(r)
         cs = d.pop("callsigns") or ""
         d["callsigns"] = sorted(c for c in cs.split(",") if c)
+        d["active"] = bool(d["active"])
         result.append(d)
     return result
 
 
-def upsert_pilot(conn: sqlite3.Connection, cid: int, name: str) -> None:
-    """Pilot anlegen oder Namen aktualisieren (added_at bleibt beim Update erhalten)."""
+def upsert_pilot(conn: sqlite3.Connection, cid: int, name: str, active: bool = True) -> None:
+    """Pilot anlegen oder Namen/Aktiv-Status aktualisieren (added_at bleibt beim Update erhalten)."""
     conn.execute(
-        "INSERT INTO pilots (cid, name, added_at) VALUES (?, ?, ?) "
-        "ON CONFLICT(cid) DO UPDATE SET name = excluded.name",
-        (cid, name, _now_utc()),
+        "INSERT INTO pilots (cid, name, added_at, active) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(cid) DO UPDATE SET name = excluded.name, active = excluded.active",
+        (cid, name, _now_utc(), int(active)),
     )
+
+
+def get_inactive_cids(conn: sqlite3.Connection) -> set[int]:
+    """CIDs, die per Admin-Checkbox von der Friesen-Erkennung ausgeschlossen wurden.
+
+    Trotz FRS-Callsign-Präfix sollen diese CIDs NICHT als Friesen gelten (z. B. eine
+    Gast-CID, die für PC-21-Flüge einen FRS-Tag nutzt). Wird vor jedem Poll gegen den
+    Live-VATSIM-Feed abgefragt, s. filter_friesen_pilots() in app/vatsim.py.
+    """
+    rows = conn.execute("SELECT cid FROM pilots WHERE active = 0").fetchall()
+    return {r[0] for r in rows}
 
 
 def delete_pilot(conn: sqlite3.Connection, cid: int) -> None:

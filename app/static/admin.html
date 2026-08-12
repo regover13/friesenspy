@@ -1066,7 +1066,9 @@
         <div class="panel">
           <div class="panel-title"><span>Piloten</span></div>
           <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Bekannte Piloten — Namen pflegen, anlegen oder entfernen.
+            Bekannte Piloten — Namen pflegen, anlegen oder entfernen. „Aktiv” abwählen schließt
+            die CID trotz FRS-Callsign von der Friesen-Erkennung aus (z. B. Gast-CID bei
+            PC-21-Flügen).
           </p>
           <div class="form-grid" style="margin-bottom:12px;">
             <div class="form-group">
@@ -2356,11 +2358,12 @@
       const c = document.getElementById('pilots-container');
       if (!pilots.length) { c.innerHTML = '<div class="empty-hint">Keine Piloten bekannt.</div>'; return; }
       c.innerHTML = tableWrap(
-        thRow(['CID', 'Callsign', 'Name', 'Seit', 'Aktionen']),
+        thRow(['CID', 'Callsign', 'Name', 'Aktiv', 'Seit', 'Aktionen']),
         pilots.map(p => `<tr>
           <td class="td-mono">${escH(p.cid)}</td>
           <td class="td-mono">${(p.callsigns && p.callsigns.length) ? escH(p.callsigns.join(', ')) : '<span class="td-dim">–</span>'}</td>
           <td><input type="text" value="${escA(p.name || '')}" data-pilot-name="${escA(p.cid)}" style="width:100%;box-sizing:border-box;" /></td>
+          <td style="text-align:center;"><input type="checkbox" data-pilot-active="${escA(p.cid)}" ${p.active ? 'checked' : ''} title="Von der Friesen-Erkennung ausschließen, wenn abgewählt" /></td>
           <td class="td-dim">${escH((p.added_at || '').slice(0, 10))}</td>
           <td><div class="quick-btns">
             <button class="btn btn-sm" style="font-size:0.6rem;padding:3px 8px;" data-pilot-save="${escA(p.cid)}">Speichern</button>
@@ -2375,7 +2378,8 @@
       if (saveBtn) {
         const cid = parseInt(saveBtn.dataset.pilotSave, 10);
         const inp = document.querySelector(`[data-pilot-name="${cid}"]`);
-        await savePilot(cid, inp ? inp.value.trim() : '');
+        const cb  = document.querySelector(`[data-pilot-active="${cid}"]`);
+        await savePilot(cid, inp ? inp.value.trim() : '', cb ? cb.checked : true);
         return;
       }
       const delBtn = e.target.closest('[data-pilot-del]');
@@ -2391,21 +2395,30 @@
       }
     });
 
+    // Aktiv-Checkbox speichert sofort (kein Extra-Klick auf "Speichern" nötig).
+    document.getElementById('pilots-container').addEventListener('change', async e => {
+      const cb = e.target.closest('[data-pilot-active]');
+      if (!cb) return;
+      const cid = parseInt(cb.dataset.pilotActive, 10);
+      const inp = document.querySelector(`[data-pilot-name="${cid}"]`);
+      await savePilot(cid, inp ? inp.value.trim() : '', cb.checked, { silent: true });
+    });
+
     document.getElementById('pilot-add-btn').addEventListener('click', async () => {
       const cid  = parseInt(document.getElementById('pilot-cid').value, 10);
       const name = document.getElementById('pilot-name').value.trim();
       if (!cid || !name) { toast('CID und Name erforderlich.', true); return; }
-      await savePilot(cid, name);
+      await savePilot(cid, name, true);
       document.getElementById('pilot-cid').value = '';
       document.getElementById('pilot-name').value = '';
     });
 
-    async function savePilot(cid, name) {
+    async function savePilot(cid, name, active, opts) {
       if (!name) { toast('Name darf nicht leer sein.', true); return; }
-      const res = await api('POST', '/api/admin/pilots', { cid, name });
+      const res = await api('POST', '/api/admin/pilots', { cid, name, active });
       if (!res) return;
       if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
-      toast('Pilot gespeichert.');
+      if (!(opts && opts.silent)) toast('Pilot gespeichert.');
       await loadPilots();
     }
 

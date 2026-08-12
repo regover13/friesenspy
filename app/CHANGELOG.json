@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.5.0",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Piloten lassen sich von der Friesen-Erkennung ausschließen",
+    "items": [
+      "🚫 Neue Checkbox „Aktiv” in der Admin-Piloten-Pflegeliste: abgewählt, zählt die CID trotz FRS-Callsign nicht mehr als Friesen (z. B. eine Gast-CID, die für einzelne Flüge einen FRS-Tag nutzt) — betrifft Live-Liste, Prefiles, Statistik, Bummel und Kutter gleichermaßen, weil die Ausnahme direkt an der Wurzel greift, wo der VATSIM-Feed gefiltert wird."
+    ]
+  },
+  {
     "version": "11.4.4",
     "date": "2026-08-13",
     "highlight": false,

@@ -22,6 +22,7 @@ from app.database import (
     record_push_delivery,
     ensure_pilot,
     get_connection,
+    get_inactive_cids,
     get_live_positions,
     get_push_subscriptions_for_pilot,
     get_push_subscriptions_for_prefile,
@@ -620,13 +621,22 @@ class VatsimPoller:
 
             # 1. Fetch + filter
             vatsim_data = await fetch_vatsim_data(self._http_client)
-            online_pilots = filter_friesen_pilots(self.callsign_prefix, vatsim_data)
+            excl_conn = get_connection(self.db_path)
+            try:
+                excluded_cids = get_inactive_cids(excl_conn)
+            finally:
+                excl_conn.close()
+            online_pilots = filter_friesen_pilots(
+                self.callsign_prefix, vatsim_data, excluded_cids=excluded_cids
+            )
 
-            # Prefiles mit FRS*-Callsign aus dem Feed speichern
+            # Prefiles mit FRS*-Callsign aus dem Feed speichern (dieselbe Ausnahmeliste wie oben --
+            # eine per Admin-Checkbox ausgeschlossene CID soll auch nicht als Prefile auftauchen).
             prefix = self.callsign_prefix.upper()
             current_prefiles = [
                 p for p in (vatsim_data.get("prefiles") or [])
                 if isinstance(p, dict) and p.get("callsign", "").upper().startswith(prefix)
+                and p.get("cid") not in excluded_cids
             ]
 
             def _prefile_sig(p: dict) -> tuple:

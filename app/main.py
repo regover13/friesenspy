@@ -2358,7 +2358,7 @@ async def admin_list_pilots(request: Request):
 
 @app.post("/api/admin/pilots")
 async def admin_upsert_pilot(request: Request):
-    """Pilot anlegen oder Namen aktualisieren ({cid, name})."""
+    """Pilot anlegen oder Namen/Aktiv-Status aktualisieren ({cid, name, active?})."""
     require_admin(request)
     body = await request.json()
     try:
@@ -2368,11 +2368,12 @@ async def admin_upsert_pilot(request: Request):
     name = str(body.get("name", "")).strip()
     if not name:
         raise HTTPException(status_code=400, detail="Name erforderlich")
+    active = bool(body.get("active", True))
     conn = get_connection(get_settings().DB_PATH)
     try:
-        upsert_pilot(conn, cid, name)
+        upsert_pilot(conn, cid, name, active=active)
         conn.commit()
-        return {"status": "ok", "cid": cid, "name": name}
+        return {"status": "ok", "cid": cid, "name": name, "active": active}
     finally:
         conn.close()
 

@@ -7,6 +7,7 @@ from app.database import (
     delete_pilot,
     get_app_setting,
     get_connection,
+    get_inactive_cids,
     get_push_subscription_by_endpoint,
     init_db,
     list_pilots,
@@ -54,6 +55,35 @@ class TestPilotsCrud:
         delete_pilot(conn, 111)
         conn.commit()
         assert 111 not in {p["cid"] for p in list_pilots(conn)}
+
+    def test_new_pilot_active_by_default(self, conn):
+        upsert_pilot(conn, 111, "Tobias")
+        conn.commit()
+        assert list_pilots(conn)[0]["active"] is True
+        assert get_inactive_cids(conn) == set()
+
+    def test_upsert_with_active_false_excludes_from_detection(self, conn):
+        upsert_pilot(conn, 111, "Gast-CID", active=False)
+        conn.commit()
+        pilots = {p["cid"]: p for p in list_pilots(conn)}
+        assert pilots[111]["active"] is False
+        assert get_inactive_cids(conn) == {111}
+
+    def test_reactivating_pilot_removes_from_inactive_cids(self, conn):
+        upsert_pilot(conn, 111, "Gast-CID", active=False)
+        conn.commit()
+        assert get_inactive_cids(conn) == {111}
+
+        upsert_pilot(conn, 111, "Gast-CID", active=True)
+        conn.commit()
+        assert get_inactive_cids(conn) == set()
+
+    def test_get_inactive_cids_only_lists_inactive(self, conn):
+        upsert_pilot(conn, 111, "Aktiv")
+        upsert_pilot(conn, 222, "Inaktiv", active=False)
+        upsert_pilot(conn, 333, "Auch aktiv")
+        conn.commit()
+        assert get_inactive_cids(conn) == {222}
 
 
 class TestPilotCallsigns:

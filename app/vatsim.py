@@ -23,12 +23,16 @@ async def fetch_vatsim_data(client: httpx.AsyncClient) -> dict:
     return response.json()
 
 
-def filter_friesen_pilots(callsign_prefix: str, vatsim_data: dict) -> list[dict]:
+def filter_friesen_pilots(
+    callsign_prefix: str, vatsim_data: dict, excluded_cids: frozenset[int] = frozenset()
+) -> list[dict]:
     """Filtert VATSIM-Piloten nach Callsign-Prefix (z.B. 'FRS').
 
     Args:
         callsign_prefix: Callsign-Präfix (case-insensitiv), z.B. 'FRS'.
         vatsim_data: Dictionary von VATSIM-API mit 'pilots'-Schlüssel.
+        excluded_cids: CIDs, die trotz passendem Callsign-Präfix NICHT als Friesen gelten
+            sollen (Admin-Checkbox "Aktiv" in der Piloten-Pflegeliste, s. get_inactive_cids()).
 
     Returns:
         Liste der matching pilot-Objekte (unmodifiziert aus VATSIM).
@@ -44,6 +48,7 @@ def filter_friesen_pilots(callsign_prefix: str, vatsim_data: dict) -> list[dict]
     return [
         p for p in pilots
         if isinstance(p, dict) and p.get("callsign", "").upper().startswith(prefix)
+        and p.get("cid") not in excluded_cids
     ]
 
 
