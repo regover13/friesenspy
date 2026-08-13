@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.14.1",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Kein Stroboskop mehr über der Karte im MSFS-Panel",
+    "items": [
+      "✨ Der wandernde Leuchtstreifen über der Seite und der pulsierende Verbindungspunkt sind im MSFS-Panel abgeschaltet. Der Streifen läuft über die ganze Breite und zwingt bei jedem Einzelbild die gesamte Seite zum Neuzeichnen — im Simulator sah das über der Karte wie ein Stroboskop aus. Auf der Website bleibt beides."
+    ]
+  },
+  {
     "version": "11.14.0",
     "date": "2026-08-13",
     "highlight": false,

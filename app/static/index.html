@@ -1281,6 +1281,21 @@
        ist er der einzige Hinweis darauf, als wer man angemeldet ist. */
     html.vr-panel #userBox { display: none !important; }
 
+    /* Dauerlaufende Zierde-Animationen im Panel abschalten.
+       .scanline ist der Hauptverdaechtige fuer das Stroboskop, das der Nutzer ueber der
+       Karte sieht: ein position:fixed-Streifen ueber die GANZE Breite mit z-index 9999,
+       der acht Sekunden lang seinen `top`-Wert von -2px bis 100vh hochzaehlt -- also eine
+       LAYOUT-Eigenschaft animiert, nicht transform. Jedes Einzelbild zwingt damit die
+       gesamte Seite zum Neuzeichnen, Karte eingeschlossen, und der Streifen wandert dabei
+       auch noch sichtbar darueber. Auf einem Desktop-Browser faellt das nicht auf, in
+       Coherent GT sehr wohl. Der Achtsekundentakt passt zu dem, was der Nutzer beschreibt
+       ("alle 5 Sekunden Stroboskop fuer 3 Sekunden, kurze Pause, dann wieder").
+       .sse-dot pulsiert alle zwei Sekunden mit box-shadow -- viel kleiner, aber ebenfalls
+       reine Zierde und ebenfalls dauerhaft. Im Cockpit vermisst beides niemand; auf der
+       Website bleibt es. */
+    html.vr-panel .scanline { display: none !important; }
+    html.vr-panel .sse-dot { animation: none !important; }
+
     /* Override Leaflet popup styles for the radar aesthetic */
     .leaflet-popup-content-wrapper {
       background: var(--bg-panel) !important;

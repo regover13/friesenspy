@@ -349,3 +349,12 @@ def test_kachel_einblendung_im_panel_abgeschaltet():
     assert "const _KARTE_EINBLENDEN = !document.documentElement.classList.contains('vr-panel');" in INDEX
     # Alle drei Karten muessen die Option bekommen, sonst bleibt eine Ansicht kaputt
     assert INDEX.count("fadeAnimation: _KARTE_EINBLENDEN") == 3
+
+
+def test_dauerlaufende_zierde_animationen_im_panel_aus():
+    """.scanline animiert `top` (eine Layout-Eigenschaft!) auf einem position:fixed-Streifen
+    ueber die ganze Breite mit z-index 9999, acht Sekunden im Dauerlauf. Jedes Einzelbild
+    zwingt die ganze Seite zum Neuzeichnen -- im Sim als Stroboskop ueber der Karte sichtbar.
+    Im Cockpit ist beides reine Zierde."""
+    assert "html.vr-panel .scanline { display: none !important; }" in INDEX
+    assert "html.vr-panel .sse-dot { animation: none !important; }" in INDEX
