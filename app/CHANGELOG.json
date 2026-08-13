@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.5.2",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Aus dem Kartenvollbild kommt man jetzt wieder heraus",
+    "items": [
+      "🆘 Der 50vh-Höhenfix von eben (Version 11.5.1) hat einen Regressions-Bug ausgelöst: Die Karte blieb im Vollbild-Modus bei 50 % Bildschirmhöhe hängen, mit schwarzer Fläche darunter — der Verlassen-Button landete dadurch in der Bildschirmmitte statt am unteren Rand und war praktisch nicht mehr erreichbar. Ursache war ein CSS-Spezifitäts-Konflikt (ID- schlägt Klassen-Selektor). Zusätzlich gibt es jetzt einen zweiten, komplett unabhängigen „Vollbild verlassen”-Knopf unten rechts, der auch funktioniert, falls der Karten-interne Button aus einem anderen Grund nicht erreichbar sein sollte.",
+      "🐚 Kutter-, Bummel- und Kartenleiste-Symbole (Garnele, Diamant, Zielscheibe, Kreuzraster) sind jetzt eigene SVG-Nachbildungen der ursprünglichen Symbole statt generischer Ersatz-Icons — sehen wie vorher aus, funktionieren aber auch im MSFS-EFB-Panel."
+    ]
+  },
+  {
     "version": "11.5.1",
     "date": "2026-08-13",
     "highlight": false,

@@ -114,10 +114,15 @@
        unter der 1.35er VR-Skalierung (s. oben) wachsen die um denselben Faktor mit und werden
        höher als das EFB-Tablet, man muss zum unteren Rand scrollen (Live-Test-Fund 13.08.2026).
        Viewport-relativ statt fix, damit es sich an die tatsächliche Panel-Höhe anpasst. Startwert,
-       im Sim nachjustierbar -- #track-map-wrap hat die Höhe als Inline-Style, deshalb !important. */
-    html.vr-panel #map-container,
-    html.vr-panel #events-map-container,
-    html.vr-panel #track-map-wrap {
+       im Sim nachjustierbar -- #track-map-wrap hat die Höhe als Inline-Style, deshalb !important.
+       :not(.map-is-fullscreen) ist Pflicht: #map-container ist ein ID-Selektor, schlaegt also
+       .map-is-fullscreen (Klassen-Selektor) trotz dessen eigenem !important -- ohne die
+       Ausnahme blieb die Karte im Vollbild bei 50vh statt 100vh haengen, mit schwarzer Flaeche
+       darunter und dem Vollbild-Verlassen-Button in der Bildschirmmitte statt am unteren Rand
+       (Live-Test-Fund 13.08.2026, selbst verursachte Regression). */
+    html.vr-panel #map-container:not(.map-is-fullscreen),
+    html.vr-panel #events-map-container:not(.map-is-fullscreen),
+    html.vr-panel #track-map-wrap:not(.map-is-fullscreen) {
       height: 50vh !important;
     }
 
@@ -675,6 +680,25 @@
       width: 100vw !important;
       height: 100vh !important;
       border: none !important;
+    }
+    /* Zweiter, vom Karten-Wrap unabhaengiger Ausgang aus dem Karten-Vollbild (Live-Test-Fund
+       13.08.2026 im MSFS-EFB-Panel: der Button INNERHALB der Karte war weder sicht- noch
+       klickbar, Escape kam nie an -- Nutzer musste den Flug neu laden). Direkt als letztes
+       Element vor </body> eingehaengt, NICHT Nachfahre von #leaflet-map, mit sehr hohem
+       z-index -- unabhaengig davon, welches Stacking-Problem den inneren Button betrifft. */
+    .global-map-exit-fs {
+      position: fixed !important;
+      bottom: 16px;
+      right: 16px;
+      z-index: 999999;
+      background: var(--bg-panel);
+      border: 2px solid var(--red);
+      color: var(--text-bright);
+      font-family: var(--text-display);
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      padding: 10px 16px;
+      cursor: pointer;
     }
 
     /* Override Leaflet popup styles for the radar aesthetic */
@@ -1713,6 +1737,30 @@
   <symbol id="icon-hexagon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 2l8 4.5v11L12 22l-8-4.5v-11z"/>
   </symbol>
+  <!-- 1:1-Nachbildungen der urspruenglichen Unicode-Dingbats (◈◎▦), nicht generische
+       Ersatz-Icons -- gleiches Prinzip wie icon-hexagon oben fuer ⬡. -->
+  <symbol id="icon-diamond" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 2L22 12L12 22L2 12z"/>
+    <path d="M12 9l3 3-3 3-3-3z" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="icon-bullseye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="9"/>
+    <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="icon-crosshatch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="18" height="18"/>
+    <line x1="3" y1="9" x2="21" y2="9"/>
+    <line x1="3" y1="15" x2="21" y2="15"/>
+    <line x1="9" y1="3" x2="9" y2="21"/>
+    <line x1="15" y1="3" x2="15" y2="21"/>
+  </symbol>
+  <symbol id="icon-shrimp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 4c-1.2 1-1.2 2.6 0 3.6"/>
+    <path d="M8 6.3c6-1 12.5 3 12.5 10 0 2.6-2.1 4.3-4.7 4.3-2.1 0-3.7-1.4-3.7-3.4 0-1.6 1.1-2.4 2.4-2.4"/>
+    <path d="M16 20.3c1 .9 2.7.9 3.6-.3"/>
+    <path d="M8.5 9.3l-2.3-1M8 12.5H5.2M8.5 15.7l-2.3 1.3"/>
+    <circle cx="8.4" cy="6.8" r="0.7" fill="currentColor" stroke="none"/>
+  </symbol>
   <symbol id="icon-fullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M8 3H4a1 1 0 0 0-1 1v4"/>
     <path d="M16 3h4a1 1 0 0 1 1 1v4"/>
@@ -1726,11 +1774,6 @@
     <rect x="11.5" y="4" width="3.25" height="4" fill="currentColor" stroke="none"/>
     <rect x="8.25" y="8" width="3.25" height="4" fill="currentColor" stroke="none"/>
     <rect x="14.75" y="8" width="3.25" height="4" fill="currentColor" stroke="none"/>
-  </symbol>
-  <symbol id="icon-cargo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M3 8l9-4 9 4-9 4-9-4z"/>
-    <path d="M3 8v9l9 4 9-4V8"/>
-    <line x1="12" y1="12" x2="12" y2="21"/>
   </symbol>
   <symbol id="icon-package" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M3 7l9-4 9 4-9 4-9-4z"/>
@@ -1841,7 +1884,7 @@
        ===================================================================== -->
   <header>
     <div class="logo">
-      <span class="logo-prefix">◈</span>FRIESENSPY
+      <span class="logo-prefix"><svg class="icon"><use href="#icon-diamond"/></svg></span>FRIESENSPY
     </div>
     <div class="header-right">
       <span id="userBox" hidden style="display:inline-flex;gap:8px;align-items:center;font-size:.8rem;">
@@ -1947,9 +1990,9 @@
        ===================================================================== -->
   <nav class="tab-nav">
     <button class="tab-btn active" data-tab="live"><svg class="icon"><use href="#icon-hexagon"/></svg> LIVE</button>
-    <button class="tab-btn" data-tab="karte">◎ KARTE</button>
-    <button class="tab-btn" data-tab="statistiken">▦ STATISTIKEN</button>
-    <button class="tab-btn" data-tab="events">◈ EVENTS</button>
+    <button class="tab-btn" data-tab="karte"><svg class="icon"><use href="#icon-bullseye"/></svg> KARTE</button>
+    <button class="tab-btn" data-tab="statistiken"><svg class="icon"><use href="#icon-crosshatch"/></svg> STATISTIKEN</button>
+    <button class="tab-btn" data-tab="events"><svg class="icon"><use href="#icon-diamond"/></svg> EVENTS</button>
   </nav>
 
   <!-- =====================================================================
@@ -1997,7 +2040,7 @@
     <div class="panel" style="margin-top:16px;">
       <div class="panel-title">Karten-Legende</div>
       <span class="mono text-green" style="font-size:0.8rem;">
-        ◈ Flugzeug-Marker rotieren mit dem aktuellen Heading · Klick für Details
+        <svg class="icon"><use href="#icon-diamond"/></svg> Flugzeug-Marker rotieren mit dem aktuellen Heading · Klick für Details
       </span>
     </div>
   </div>
@@ -2056,7 +2099,7 @@
     <div id="kutter-results" class="hidden">
       <div class="panel">
         <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <span id="kutter-title"><svg class="icon"><use href="#icon-cargo"/></svg> FriesenKutter</span>
+          <span id="kutter-title"><svg class="icon"><use href="#icon-shrimp"/></svg> FriesenKutter</span>
           <button class="btn-share" onclick="copyKutterShareHeader(this)">⎘ Teilen</button>
         </div>
         <div id="kutter-content"></div>
@@ -3517,7 +3560,7 @@ function renderFriesenEvents(data) {
   let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';
   data.forEach((ev, i) => {
     const badge = ev.is_bummel ? '<span class="bummel-badge">' + icon('checkered-flag') + ' BUMMEL</span>'
-      : ev.is_transport ? '<span class="bummel-badge">' + icon('cargo') + ' KUTTER</span>' : '';
+      : ev.is_transport ? '<span class="bummel-badge">' + icon('shrimp') + ' KUTTER</span>' : '';
     const manuelHint = ev._manual ? ' <span class="text-label" style="font-size:0.8em;">(manuell)</span>' : '';
     // Kutter: kein Routen-Kettentext (irreführend, s. #12) — nur das Ziel, wohin die Fracht soll.
     // Fallback (Kalender-Events ohne destination): letzter ICAO der Route = Default-Ziel.
@@ -3850,7 +3893,7 @@ async function fetchKutterActive() {
 function _kutterBannerBlock(d) {
     // Exakte Bummel-Banner-Parität: kein Teilen hier — das gibt es rechts oben in der
     // Events-Ansicht (Nutzer-Entscheidung 02.07.).
-    let html = `<div class="kutter-live-block"><div class="bb-title">${icon('cargo')} ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
+    let html = `<div class="kutter-live-block"><div class="bb-title">${icon('shrimp')} ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
     // Kein Strecken-Kettentext mehr (verwirrte im Live-Test — war weder geflogene Strecke noch
     // Flugplan, sondern die Aneinanderreihung der Ladeplätze). Stattdessen prominent NUR das Ziel,
     // wohin alle Fracht soll; die Reise je Fracht (Ladeplatz -> Ziel) steht in der Tabelle unten.
@@ -3920,7 +3963,7 @@ function _kutterBannerBlock(d) {
     }
     // Exakt wie der Bummel-Banner: nur der Sprung zur vollen Ansicht — Teilen gibt es
     // dort rechts oben im Panel-Header (wie überall).
-    html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openKutterById(${d.id})">${icon('cargo')} Zum Kutter</button></div>`;
+    html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openKutterById(${d.id})">${icon('shrimp')} Zum Kutter</button></div>`;
     html += '</div>';
     return html;
 }
@@ -4830,7 +4873,7 @@ function renderSpecialEventStats(data) {
   const rows = [];
   if ((k.event_count || 0) > 0) {
     rows.push(`<div class="stats-kpi-row">
-      ${_kpiCard(k.event_count, icon('cargo') + ' FriesenKutter')}
+      ${_kpiCard(k.event_count, icon('shrimp') + ' FriesenKutter')}
       ${_kpiCard(k.participations, 'Teilnahmen')}
       ${_kpiCard(k.flights, 'Flüge')}
       ${_kpiCard(_fmtTons(k.delivered_kg), 'Tonnage')}
@@ -5852,7 +5895,7 @@ function _kDualKg(net, gross) {
 
 function _kutterDetailBody(d) {
   const summary = d.summary_quip
-    ? '<div class="kutter-summary">' + icon('cargo') + ' ' + _kesc(d.summary_quip) + '</div>' : '';
+    ? '<div class="kutter-summary">' + icon('shrimp') + ' ' + _kesc(d.summary_quip) + '</div>' : '';
   // Ziel-Überschrift wie im Live-Banner (Z. ~3093): wohin alle Fracht soll. Prominent oben,
   // bevor der Gesamtbalken kommt — bislang fehlte sie in der Events-Detailansicht.
   const dest = '<div class="kutter-dest">' + icon('target') + ' Ziel: '
@@ -5935,7 +5978,7 @@ async function _refreshKutterDetail() {
   try {
     const d = await fetch('/api/transport/event/' + _kutterOpenId).then(r => r.json());
     _lastKutterDetail = d;
-    document.getElementById('kutter-title').innerHTML = icon('cargo') + ' ' + escHtml(d.name || 'FriesenKutter');
+    document.getElementById('kutter-title').innerHTML = icon('shrimp') + ' ' + escHtml(d.name || 'FriesenKutter');
     document.getElementById('kutter-content').innerHTML = _kutterDetailBody(d);
   } catch (e) {}
 }
@@ -6247,10 +6290,25 @@ function toggleMapFullscreen(wrapId, btn, getMap) {
   const isFs = wrap.classList.toggle('map-is-fullscreen');
   btn.innerHTML = isFs ? icon('x') + ' Vollbild verlassen' : icon('fullscreen') + ' Vollbild';
   document.body.style.overflow = isFs ? 'hidden' : '';
+  const globalExit = document.getElementById('global-map-exit-fs');
+  if (globalExit) globalExit.hidden = !isFs;
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const map = getMap();
     if (map) map.invalidateSize();
   }));
+}
+
+// Unabhaengiger Fallback-Ausgang (s. CSS-Kommentar bei .global-map-exit-fs): setzt den
+// Vollbild-Zustand direkt zurueck, falls der Button INNERHALB der Karte nicht erreichbar war.
+function exitAnyMapFullscreen() {
+  const fsWrap = document.querySelector('.map-is-fullscreen');
+  if (!fsWrap) return;
+  const innerBtn = fsWrap.querySelector('.map-fullscreen-btn');
+  if (innerBtn) { innerBtn.click(); return; }
+  fsWrap.classList.remove('map-is-fullscreen');
+  document.body.style.overflow = '';
+  const globalExit = document.getElementById('global-map-exit-fs');
+  if (globalExit) globalExit.hidden = true;
 }
 
 document.addEventListener('keydown', (e) => {
@@ -6277,5 +6335,6 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 </script>
+<button id="global-map-exit-fs" class="global-map-exit-fs" hidden onclick="exitAnyMapFullscreen()"><svg class="icon"><use href="#icon-x"/></svg> Vollbild verlassen</button>
 </body>
 </html>
