@@ -39,7 +39,7 @@
   {
     "version": "11.8.0",
     "date": "2026-08-13",
-    "highlight": true,
+    "highlight": false,
     "title": "Kein ständiges Neu-Anmelden mehr im MSFS-Panel",
     "items": [
       "🔓 Das Panel im Simulator verlangte bei jedem Neustart wieder eine Anmeldung — teils schon nach wenigen Minuten, weil die Anzeige-Engine im Simulator Anmelde-Daten nicht dauerhaft behält. Jetzt merkt sich das Zusatzpaket eine Gerätekennung dort, wo der Simulator seine eigenen Einstellungen ablegt: einmal anmelden, danach ist das Panel dauerhaft eingeloggt — auch über Simulator-Neustarts hinweg.",

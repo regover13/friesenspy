@@ -1098,13 +1098,21 @@
        verlassen gibt -- im Flug nimmt er sonst keinen Platz weg.
        Absichtlich schwebend statt feste Kopfleiste: Vertikaler Platz ist auf dem Tablet
        knapp, eine Dauerleiste haette staendig Hoehe gekostet. */
+    /* Volle Breite als eigene Leiste am oberen Rand statt schwebend in der Ecke.
+       Vorher lag der Knopf bei top:10px/left:10px -- also genau ueber Logo und Uhrzeit der
+       Kopfzeile und war dort kaum zu treffen oder zu sehen (Live-Fund 13.08.2026). Statt ihn
+       nur zu verschieben (und dabei die naechste Ueberlappung zu riskieren), bekommt er eine
+       eigene Zeile: Ist er sichtbar, rueckt der Seiteninhalt per .panel-has-back nach unten,
+       es kann also nichts mehr verdeckt werden. Unsichtbar kostet er keinen Platz. */
     .panel-back-btn {
       position: fixed;
-      top: 10px;
-      left: 10px;
+      top: 0;
+      left: 0;
+      right: 0;
       z-index: 999997;
       display: flex;
       align-items: center;
+      justify-content: flex-start;
       gap: 8px;
       /* 44px Mindestgroesse -- Fingerbedienung im Cockpit, nicht Mauszeiger. */
       min-height: 44px;
@@ -1121,6 +1129,9 @@
     .panel-back-btn[hidden] { display: none; }
     /* Ausserhalb des Panels nie zeigen -- die Website hat ihre Browser-Navigation. */
     html:not(.vr-panel) .panel-back-btn { display: none !important; }
+    /* Platz fuer die Leiste schaffen, solange sie sichtbar ist -- so verdeckt sie nie
+       Kopfzeile, Logo oder Uhrzeit (der Fehler, den sie vorher hatte). */
+    html.vr-panel.panel-has-back body { padding-top: 60px; }
 
     /* ===================================================================
        KARTEN STATT BREITER TABELLEN (nur MSFS-EFB-Panel)
@@ -6953,7 +6964,12 @@ function _updatePanelBackBtn() {
   const btn = document.getElementById('panel-back-btn');
   if (!btn) return;
   const soll = !_panelCanGoBack();
-  if (btn.hidden !== soll) btn.hidden = soll;
+  if (btn.hidden !== soll) {
+    btn.hidden = soll;
+    // Inhalt nach unten ruecken, solange die Leiste steht -- sonst laege sie ueber der
+    // Kopfzeile (Logo/Uhrzeit) wie in der ersten Fassung.
+    document.documentElement.classList.toggle('panel-has-back', !soll);
+  }
 }
 
 function _initPanelBackButton() {
