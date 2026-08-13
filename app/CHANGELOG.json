@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.16.1",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Beschriftungen im MSFS-Panel sitzen wieder richtig",
+    "items": [
+      "📋 In den Karten-Ansichten des MSFS-Panels stand jede Beschriftung neben dem falschen Wert — sie rutschte aus ihrer eigenen Zeile heraus. Betroffen waren der Kutter-Feed und die Flugliste unter Events. Die Werte selbst waren immer vollständig da."
+    ]
+  },
+  {
     "version": "11.16.0",
     "date": "2026-08-13",
     "highlight": false,

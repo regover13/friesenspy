@@ -549,3 +549,28 @@ def test_back_button_logik_ohne_klassenschalter():
     assert "classList.toggle('panel-has-back'" not in INDEX
     assert "panel-has-back body" not in INDEX
     assert "html.vr-panel.panel-has-back" not in INDEX
+
+
+def test_karten_zellen_ohne_flexbox():
+    """Die Beschriftung muss NEBEN ihrem Wert stehen, nicht darueber -- und zwar in einer
+    Engine, die Flexbox auf einem <td> nicht umsetzt.
+
+    Live-Befund 14.08.2026 (drei Screenshots, gleiches Muster in Kutter-Feed UND
+    Events-Flugliste): die Beschriftung von Zeile N stand auf derselben Zeile wie der Wert
+    von Zeile N-1. Es sah aus wie ein Zellen-Versatz und war keiner -- die Werte waren
+    vollstaendig da. Der Nutzer hat es mit einem Satz geklaert ("nur das Layout ist
+    schlecht"), nachdem ich zweimal in der falschen Richtung gesucht hatte.
+
+    float + overflow:hidden statt flex: CSS 2.1 statt CSS 3, und `overflow: hidden`
+    schliesst den Float in seiner Zelle ein -- ohne das wandert die Beschriftung in die
+    naechste Zeile hinein, was genau den beobachteten Versatz erzeugt."""
+    m = re.search(r"html\.vr-panel \.panel-cards tbody td \{(.*?)\}", INDEX, re.S)
+    assert m, "Karten-Zellenregel nicht gefunden"
+    zelle = m.group(1)
+    assert "display: flex" not in zelle, "Flexbox auf <td> -- in Coherent GT wirkungslos"
+    assert "overflow: hidden" in zelle, "ohne BFC verlaesst der Float seine Zelle"
+
+    b = re.search(r"html\.vr-panel \.panel-cards tbody td::before \{(.*?)\}", INDEX, re.S)
+    assert b, "Beschriftungsregel nicht gefunden"
+    assert "float: left" in b.group(1)
+    assert "flex:" not in b.group(1)

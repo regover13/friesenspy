@@ -1239,27 +1239,35 @@
       margin-bottom: 10px;
       padding: 6px 4px;
     }
+    /* Beschriftung links, Wert rechts -- OHNE Flexbox.
+       Erste Fassung nahm `display: flex` auf der Zelle. Im Browser sieht das richtig aus,
+       im Sim NICHT: Coherent GT setzt Flexbox auf einem <td> nicht um, die Zelle faellt auf
+       Block zurueck, und damit steht die Beschriftung auf einer eigenen Zeile UEBER ihrem
+       Wert. Beim Lesen sieht das aus, als gehoerte jeder Wert zur naechsten Beschriftung --
+       genau der "Versatz um eine Position", den der Nutzer gemeldet hat (14.08.2026). Die
+       Werte waren immer vollstaendig da; sein Satz "nur das Layout ist schlecht" hat es
+       geklaert, nachdem ich zweimal in der falschen Richtung gesucht hatte.
+       Deshalb hier float statt flex: CSS 2.1, das kann jede Engine. `overflow: hidden` an
+       der Zelle schliesst den Float ein, sonst ragt er aus der Karte heraus. */
     html.vr-panel .panel-cards tbody td {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
+      display: block;
+      overflow: hidden;
       white-space: normal;   /* nowrap ist hier kontraproduktiv, die Karte darf umbrechen */
       border: none;
       padding: 5px 10px;
       text-align: right;
+      min-height: 1.4em;     /* auch eine Zelle ohne Wert behaelt ihre Beschriftungszeile */
     }
-    /* Beschriftung aus data-label; leere Zellen bleiben leer statt eine leere Zeile zu zeigen. */
     html.vr-panel .panel-cards tbody td::before {
       content: attr(data-label);
+      float: left;
+      max-width: 55%;        /* eine lange Beschriftung darf den Wert nicht verdraengen */
       color: var(--text-label);
       font-family: var(--text-display);
       font-size: 0.68rem;
       letter-spacing: 0.12em;
       text-transform: uppercase;
       text-align: left;
-      flex: 0 0 auto;
-      /* Abstand bewusst als margin, NICHT als flex-gap: `gap` gibt es in Coherent GT nicht
-         (gemessen, CSS.supports('gap','1px') = false) und faellt dort ersatzlos weg. */
       margin-right: 14px;
     }
     html.vr-panel .panel-cards tbody td:empty { display: none; }
