@@ -5,7 +5,7 @@
     "highlight": false,
     "title": "MSFS-Panel: lädt endlich neu und meldet Fehler selbst",
     "items": [
-      "🔄 Das Panel lud beim Schließen und Wiederöffnen des Tablets nie neu — die App blieb samt Seite im Speicher liegen, ein kompletter Simulator-Neustart war nötig, um eine neue Version zu sehen. Jetzt reicht Tablet zu und wieder auf.",
+      "🔄 Das Panel bekam neue Versionen innerhalb einer Simulator-Sitzung gar nicht mit — die App bleibt beim Schließen des Tablets absichtlich im Speicher (damit sie im Flug sofort und ohne Neuladen da ist), lud dadurch aber auch nie nach. Jetzt erkennt die Seite eine neue Version selbst und blendet unten links einen „Neu laden\"-Knopf ein. Im Flug passiert nichts, nach einem Deploy genügt ein Tipp.",
       "🔬 Neue Selbstdiagnose: Das Panel misst im Simulator selbst, welche Zeichen darstellbar sind, ob breite Tabellen scrollen können, welche CSS-Fähigkeiten die Engine hat und ob die Kartenkacheln laden — und meldet das an den Server. Damit lassen sich Fehler untersuchen, die sich in einem normalen Browser gar nicht zeigen, ohne dass jemand am Simulator sitzen und nachschauen muss."
     ]
   },

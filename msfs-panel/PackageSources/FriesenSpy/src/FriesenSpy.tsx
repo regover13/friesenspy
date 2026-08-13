@@ -48,16 +48,22 @@ class FriesenSpy extends App {
 
   public BootMode = AppBootMode.COLD;
   /**
-   * TERMINATE statt SLEEP (Live-Test-Fund 13.08.2026): Mit SLEEP bleibt die App beim
-   * Schliessen des Tablets samt geladenem iframe im Speicher -- die Seite wurde dadurch NIE
-   * neu geladen, auch nicht nach einem Deploy. Der Nutzer musste den kompletten Sim
-   * beenden, um eine neue Version zu sehen, und mehrere "live getestete" Fixes wurden in
-   * Wahrheit nie geladen. TERMINATE zerstoert die App beim Verlassen
-   * (s. efb_api/dist/AppLifecycle.d.ts), sodass ein Schliessen/Oeffnen des Tablets die
-   * Seite frisch holt. Kosten: das Panel laedt beim Oeffnen jedes Mal neu -- akzeptabel,
-   * weil die Seite ohnehin ihren Zustand aus der URL (#tab=...) wiederherstellt.
+   * SLEEP ist hier bewusst die richtige Wahl -- auch wenn sie das Testen unbequemer macht.
+   *
+   * Vorgeschichte (13.08.2026): Mit SLEEP bleibt die App beim Schliessen des Tablets samt
+   * geladenem iframe im Speicher, die Seite wird also NIE neu geladen. Das hat waehrend der
+   * Entwicklung viel Verwirrung gestiftet (mehrere "live getestete" Fixes hat das Panel nie
+   * geladen). Der naheliegende Griff zu TERMINATE waere aber ein schlechter Tausch: Er
+   * erkauft bequemes Testen damit, dass das Panel MITTEN IM FLUG bei jedem Aufklappen neu
+   * laedt -- inklusive Verbindungsaufbau, verlorener Scroll-Position und ggf. neuem Login.
+   * Das ist der weitaus haeufigere Fall und waere fuer den Nutzer der schlechtere.
+   *
+   * Stattdessen loest die Web-Seite das Problem dort, wo es hingehoert: Sie erkennt eine
+   * neue Version selbst (Versionsvergleich gegen /api/frontend-config) und bietet im
+   * Panel-Modus einen "Neu laden"-Knopf an. Im Flug passiert damit nichts, nach einem
+   * Deploy genuegt ein Tipp -- und fuer die Fehlersuche reicht das ebenso.
    */
-  public SuspendMode = AppSuspendMode.TERMINATE;
+  public SuspendMode = AppSuspendMode.SLEEP;
 
   public async install(_props: AppInstallProps): Promise<void> {
     Efb.loadCss(`${BASE_URL}/FriesenSpy.css`);

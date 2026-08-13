@@ -903,6 +903,30 @@
       cursor: pointer;
     }
 
+    /* Hinweis auf eine neue Version -- nur im MSFS-EFB-Panel.
+       Hintergrund: Die EFB-App wird beim Schliessen des Tablets nur schlafen gelegt
+       (AppSuspendMode.SLEEP, bewusst so -- s. Kommentar in FriesenSpy.tsx), damit das Panel
+       im Flug beim Aufklappen sofort und ohne Neuladen da ist. Preis dafuer: Die Seite laedt
+       innerhalb einer Sim-Sitzung von allein nie neu, bekommt also auch keinen Deploy mit.
+       Statt den Lebenszyklus zu opfern, erkennt die Seite eine neue Version selbst und
+       bietet hier einen Knopf an. Im Flug bleibt er unsichtbar. */
+    .panel-update-hint {
+      position: fixed;
+      bottom: 14px;
+      left: 14px;
+      z-index: 999998;
+      background: var(--bg-panel);
+      border: 2px solid var(--green);
+      color: var(--green);
+      font-family: var(--text-display);
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+      padding: 10px 16px;
+      cursor: pointer;
+      box-shadow: 0 0 14px var(--green-glow);
+    }
+    .panel-update-hint[hidden] { display: none; }
+
     /* Override Leaflet popup styles for the radar aesthetic */
     .leaflet-popup-content-wrapper {
       background: var(--bg-panel) !important;
@@ -6431,7 +6455,46 @@ const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cf
     _registerServiceWorker();
   }
   _initVersionUI(cfg.version, cfg.changelog, cfg.banner_version);
+  _startPanelUpdateWatch(cfg.version);
 }).catch(() => {});
+
+// ==========================================================================
+//  NEUE-VERSION-HINWEIS (nur MSFS-EFB-Panel)
+// ==========================================================================
+// Die EFB-App wird beim Schliessen des Tablets nur schlafen gelegt (AppSuspendMode.SLEEP,
+// bewusst so -- im Flug soll das Panel beim Aufklappen sofort da sein, ohne Neuladen,
+// Verbindungsaufbau und verlorene Position). Damit laedt die Seite innerhalb einer
+// Sim-Sitzung aber nie von allein neu und bekommt einen Deploy nicht mit.
+// Statt den Lebenszyklus zu opfern, prueft die Seite selbst: Aendert sich die Version, wird
+// unten links ein Knopf sichtbar. Bewusst KEIN automatisches Neuladen -- mitten im Flug
+// waere das ein Ueberfall.
+function _startPanelUpdateWatch(loadedVersion) {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+  if (!loadedVersion) return;
+
+  const btn = document.getElementById('panel-update-hint');
+  if (!btn) return;
+
+  let stopped = false;
+  const check = async () => {
+    if (stopped) return;
+    try {
+      const cfg = await fetch('/api/frontend-config', { cache: 'no-store' }).then(r => r.json());
+      if (cfg && cfg.version && cfg.version !== loadedVersion) {
+        btn.hidden = false;
+        stopped = true;  // einmal gemeldet reicht; weiteres Pollen waere nur Last
+      }
+    } catch (e) { /* Netz weg im Flug ist normal -- nie stoeren */ }
+  };
+
+  // Beim Aufklappen des Tablets pruefen (haeufigster Moment, in dem ein Deploy dazwischenlag).
+  // Ob Coherent GT diese Ereignisse beim Schlafenlegen/Aufwecken der EFB-App ueberhaupt
+  // feuert, ist ungewiss -- deshalb beide, und als verlaesslichen Weg zusaetzlich das
+  // Intervall unten. Eines davon greift immer.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+  window.addEventListener('focus', check);
+  setInterval(check, 5 * 60 * 1000);
+}
 
 // Eigener, unabhängiger Fetch (nicht an _configPromise gekoppelt) -- ~28k Einträge, JSON-Payload
 // spielt für den restlichen Seitenaufbau keine Rolle, wird nur lazy von airportLinkIcon() genutzt.
@@ -6535,5 +6598,6 @@ document.addEventListener('visibilitychange', async () => {
 
 </script>
 <button id="global-map-exit-fs" class="global-map-exit-fs" hidden onclick="exitAnyMapFullscreen()"><svg class="icon"><use href="#icon-x"/></svg> Vollbild verlassen</button>
+<button id="panel-update-hint" class="panel-update-hint" hidden onclick="location.reload()"><svg class="icon"><use href="#icon-refresh"/></svg> Neue Version &ndash; neu laden</button>
 </body>
 </html>
