@@ -50,6 +50,12 @@
        (echter Live-Test-Absturz-Fund). Sprite-Defs direkt nach <body>, Verwendung überall via
        <svg class="icon"><use href="#icon-name"/></svg> statt Emoji. */
     .icon { width: 1em; height: 1em; vertical-align: -0.125em; display: inline-block; fill: none; }
+    /* Selbst gehostete Twemoji-Grafiken (Zwölftausendneunhundert Twitter, Inc und andere
+       Mitwirkende, CC-BY 4.0) fuer Icons, bei denen eine handgezeichnete Nachbildung optisch
+       zu weit vom Original-Emoji abweicht (Live-Test-Fund 13.08.2026: Nutzer will exakt dasselbe
+       Aussehen wie vorher, nicht nur "aehnlich"). Self-hosted statt Font-Emoji, damit es auch in
+       Coherent GT (MSFS-EFB-Panel, kein Emoji-Font-Fallback) korrekt rendert. */
+    .emoji-icon { width: 1.15em; height: 1.15em; vertical-align: -0.2em; display: inline-block; }
 
     :root {
       --bg-body:      #04080f;
@@ -1699,10 +1705,6 @@
 
 <!-- Self-gehostete Icon-Sprite (Coherent-GT-Emoji-Ersatz, s. .icon-Klasse im <style>) -->
 <svg style="display:none" aria-hidden="true">
-  <symbol id="icon-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M6 8a6 6 0 0 1 12 0c0 4.5 1.5 6.5 2 7H4c.5-.5 2-2.5 2-7z"/>
-    <path d="M9.5 19a2.5 2.5 0 0 0 5 0"/>
-  </symbol>
   <symbol id="icon-headset" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M4 14a8 8 0 0 1 16 0"/>
     <rect x="3" y="14" width="4" height="6" rx="1.5"/>
@@ -1754,29 +1756,11 @@
     <line x1="9" y1="3" x2="9" y2="21"/>
     <line x1="15" y1="3" x2="15" y2="21"/>
   </symbol>
-  <!-- Feste Goldfarbe (#c8933a) statt currentColor -- derselbe Farbton, der im Kutter-Kontext
-       bereits für Fracht/Balken verwendet wird (.kl-cap, .kutter-seg-Gradient), damit der Anker
-       eine eigene Identität behält statt im einfarbigen Blau der übrigen Icons unterzugehen. -->
-  <symbol id="icon-anchor" viewBox="0 0 24 24" fill="none" stroke="#c8933a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="5" r="2"/>
-    <line x1="12" y1="7" x2="12" y2="21"/>
-    <path d="M5 12a7 7 0 0 0 7 9 7 7 0 0 0 7-9"/>
-    <line x1="4" y1="12" x2="8" y2="12"/>
-    <line x1="16" y1="12" x2="20" y2="12"/>
-  </symbol>
   <symbol id="icon-fullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M8 3H4a1 1 0 0 0-1 1v4"/>
     <path d="M16 3h4a1 1 0 0 1 1 1v4"/>
     <path d="M3 16v4a1 1 0 0 0 1 1h4"/>
     <path d="M21 16v4a1 1 0 0 1-1 1h-4"/>
-  </symbol>
-  <symbol id="icon-checkered-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="5" y1="21" x2="5" y2="3"/>
-    <rect x="5" y="4" width="13" height="8"/>
-    <rect x="5" y="4" width="3.25" height="4" fill="currentColor" stroke="none"/>
-    <rect x="11.5" y="4" width="3.25" height="4" fill="currentColor" stroke="none"/>
-    <rect x="8.25" y="8" width="3.25" height="4" fill="currentColor" stroke="none"/>
-    <rect x="14.75" y="8" width="3.25" height="4" fill="currentColor" stroke="none"/>
   </symbol>
   <symbol id="icon-package" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M3 7l9-4 9 4-9 4-9-4z"/>
@@ -1894,7 +1878,7 @@
         <span id="userName" style="color:#fff;font-family:ui-monospace,monospace;"></span>
       </span>
       <a href="https://github.com/regover13/friesenspy#readme" target="_blank" rel="noopener" class="help-btn" title="Hilfe &amp; Dokumentation (GitHub)">? HILFE</a>
-      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><svg class="icon"><use href="#icon-bell"/></svg></button>
+      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img class="emoji-icon" src="/static/emoji/bell.svg" alt="" /></button>
       <div id="sse-badge" class="sse-badge disconnected">
         <div class="sse-dot"></div>
         <span class="sse-label" id="sse-label">GETRENNT</span>
@@ -2092,7 +2076,7 @@
     <div id="bummel-results" class="hidden">
       <div class="panel">
         <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <span id="bummel-title"><svg class="icon"><use href="#icon-checkered-flag"/></svg> FriesenFliegerBummel</span>
+          <span id="bummel-title"><img class="emoji-icon" src="/static/emoji/checkered-flag.svg" alt="" /> FriesenFliegerBummel</span>
           <button class="btn-share" onclick="copyBummelShareHeader(this)">⎘ Teilen</button>
         </div>
         <div id="bummel-content"></div>
@@ -2102,7 +2086,7 @@
     <div id="kutter-results" class="hidden">
       <div class="panel">
         <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <span id="kutter-title"><svg class="icon"><use href="#icon-anchor"/></svg> FriesenKutter</span>
+          <span id="kutter-title"><img class="emoji-icon" src="/static/emoji/shrimp.svg" alt="" /> FriesenKutter</span>
           <button class="btn-share" onclick="copyKutterShareHeader(this)">⎘ Teilen</button>
         </div>
         <div id="kutter-content"></div>
@@ -3215,6 +3199,11 @@ function icon(name) {
   return '<svg class="icon"><use href="#icon-' + name + '"/></svg>';
 }
 
+// Self-gehostete Twemoji-Grafik statt handgezeichneter Icon-Naeherung -- s. .emoji-icon-Kommentar.
+function emoji(name) {
+  return '<img class="emoji-icon" src="/static/emoji/' + name + '.svg" alt="" />';
+}
+
 // ==========================================================================
 //  MUSTER-INFO-PANEL
 // ==========================================================================
@@ -3570,8 +3559,8 @@ function renderFriesenEvents(data) {
   }
   let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';
   data.forEach((ev, i) => {
-    const badge = ev.is_bummel ? '<span class="bummel-badge">' + icon('checkered-flag') + ' BUMMEL</span>'
-      : ev.is_transport ? '<span class="bummel-badge">' + icon('anchor') + ' KUTTER</span>' : '';
+    const badge = ev.is_bummel ? '<span class="bummel-badge">' + emoji('checkered-flag') + ' BUMMEL</span>'
+      : ev.is_transport ? '<span class="bummel-badge">' + emoji('shrimp') + ' KUTTER</span>' : '';
     const manuelHint = ev._manual ? ' <span class="text-label" style="font-size:0.8em;">(manuell)</span>' : '';
     // Kutter: kein Routen-Kettentext (irreführend, s. #12) — nur das Ziel, wohin die Fracht soll.
     // Fallback (Kalender-Events ohne destination): letzter ICAO der Route = Default-Ziel.
@@ -3650,7 +3639,7 @@ async function openBummel(ev) {
   wrap.classList.remove('hidden');
   // Bummel-View in den Sichtbereich holen (sonst scrollt searchEvents() unten zur Karte vorbei).
   wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  title.innerHTML = icon('checkered-flag') + ' ' + escHtml(ev.summary || 'FriesenFliegerBummel');
+  title.innerHTML = emoji('checkered-flag') + ' ' + escHtml(ev.summary || 'FriesenFliegerBummel');
   content.innerHTML = '<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade…</div>';
   _activeBummel = null;
   document.getElementById('events-results').classList.add('hidden');
@@ -3754,10 +3743,10 @@ function _bummelStandingBadge(cid) {
   if (s.complete) {
     const medal = s.rank === 1 ? icon('trophy') + ' ' : '';
     const abst = _fmtSignedDelta(s.delta_sec);
-    return `<span class="bummel-badge" title="Bummel-Wertung">${icon('checkered-flag')} ${medal}Platz ${s.rank} · ${_fmtMin(s.total_min)} · ${abst}</span>`;
+    return `<span class="bummel-badge" title="Bummel-Wertung">${emoji('checkered-flag')} ${medal}Platz ${s.rank} · ${_fmtMin(s.total_min)} · ${abst}</span>`;
   }
   const missing = (s.missing || []).join(', ');
-  return `<span class="bummel-badge" title="Bummel-Wertung">${icon('checkered-flag')} unvollständig${missing ? ' — fehlt ' + escHtml(missing) : ''}</span>`;
+  return `<span class="bummel-badge" title="Bummel-Wertung">${emoji('checkered-flag')} unvollständig${missing ? ' — fehlt ' + escHtml(missing) : ''}</span>`;
 }
 
 // Forum-fertiger Ergebnistext (für „Für Forum kopieren").
@@ -3858,8 +3847,8 @@ async function fetchBummelActive() {
     const v = await res.json();
     if (!v) { banner.hidden = true; banner.innerHTML = ''; return; }
     const head = v.status === 'waiting'
-      ? `${icon('checkered-flag')} ${escHtml(v.name || 'FriesenFliegerBummel')} — wartet auf Nachzügler`
-      : `${icon('checkered-flag')} ${escHtml(v.name || 'FriesenFliegerBummel')} läuft gerade`;
+      ? `${emoji('checkered-flag')} ${escHtml(v.name || 'FriesenFliegerBummel')} — wartet auf Nachzügler`
+      : `${emoji('checkered-flag')} ${escHtml(v.name || 'FriesenFliegerBummel')} läuft gerade`;
     let html = `<div class="bb-title">${head}</div>`;
     html += `<div class="bb-sub">Strecke: ${escHtml((v.route || []).join(' - '))}</div>`;
     html += `<div class="bb-sub">${v.participant_count} Teilnehmer · ${icon('lock')} Ergebnisse nach Renn-Ende</div>`;
@@ -3867,7 +3856,7 @@ async function fetchBummelActive() {
       html += `<div class="bb-sub">${icon('plane-departure')} Unterwegs: ${v.in_progress.map(p => escHtml(p.name || p.callsign || ('CID ' + p.cid))).join(', ')}</div>`;
     }
     if (v.id != null) {
-      html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openBummelById(${v.id})">${icon('checkered-flag')} Zum Bummel</button></div>`;
+      html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openBummelById(${v.id})">${emoji('checkered-flag')} Zum Bummel</button></div>`;
     }
     banner.innerHTML = html;
     banner.hidden = false;
@@ -3904,7 +3893,7 @@ async function fetchKutterActive() {
 function _kutterBannerBlock(d) {
     // Exakte Bummel-Banner-Parität: kein Teilen hier — das gibt es rechts oben in der
     // Events-Ansicht (Nutzer-Entscheidung 02.07.).
-    let html = `<div class="kutter-live-block"><div class="bb-title">${icon('anchor')} ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
+    let html = `<div class="kutter-live-block"><div class="bb-title">${emoji('shrimp')} ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
     // Kein Strecken-Kettentext mehr (verwirrte im Live-Test — war weder geflogene Strecke noch
     // Flugplan, sondern die Aneinanderreihung der Ladeplätze). Stattdessen prominent NUR das Ziel,
     // wohin alle Fracht soll; die Reise je Fracht (Ladeplatz -> Ziel) steht in der Tabelle unten.
@@ -3974,7 +3963,7 @@ function _kutterBannerBlock(d) {
     }
     // Exakt wie der Bummel-Banner: nur der Sprung zur vollen Ansicht — Teilen gibt es
     // dort rechts oben im Panel-Header (wie überall).
-    html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openKutterById(${d.id})">${icon('anchor')} Zum Kutter</button></div>`;
+    html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openKutterById(${d.id})">${emoji('shrimp')} Zum Kutter</button></div>`;
     html += '</div>';
     return html;
 }
@@ -4886,7 +4875,7 @@ function renderSpecialEventStats(data) {
   const rows = [];
   if ((k.event_count || 0) > 0) {
     rows.push(`<div class="stats-kpi-row">
-      ${_kpiCard(k.event_count, icon('anchor') + ' FriesenKutter')}
+      ${_kpiCard(k.event_count, emoji('shrimp') + ' FriesenKutter')}
       ${_kpiCard(k.participations, 'Teilnahmen')}
       ${_kpiCard(k.flights, 'Flüge')}
       ${_kpiCard(_fmtTons(k.delivered_kg), 'Tonnage')}
@@ -4896,7 +4885,7 @@ function renderSpecialEventStats(data) {
   }
   if ((b.race_count || 0) > 0) {
     rows.push(`<div class="stats-kpi-row">
-      ${_kpiCard(b.race_count, icon('checkered-flag') + ' FriesenBummel')}
+      ${_kpiCard(b.race_count, emoji('checkered-flag') + ' FriesenBummel')}
       ${_kpiCard(b.participations, 'Teilnahmen')}
       ${_kpiCard(b.legs, 'Flüge')}
       ${_kpiCard(_fmtAvgMin(b.avg_absolute_min), 'Ø Absoluter Durchschnitt')}
@@ -5909,7 +5898,7 @@ function _kDualKg(net, gross) {
 
 function _kutterDetailBody(d) {
   const summary = d.summary_quip
-    ? '<div class="kutter-summary">' + icon('anchor') + ' ' + _kesc(d.summary_quip) + '</div>' : '';
+    ? '<div class="kutter-summary">' + emoji('shrimp') + ' ' + _kesc(d.summary_quip) + '</div>' : '';
   // Ziel-Überschrift wie im Live-Banner (Z. ~3093): wohin alle Fracht soll. Prominent oben,
   // bevor der Gesamtbalken kommt — bislang fehlte sie in der Events-Detailansicht.
   const dest = '<div class="kutter-dest">' + icon('target') + ' Ziel: '
@@ -5992,7 +5981,7 @@ async function _refreshKutterDetail() {
   try {
     const d = await fetch('/api/transport/event/' + _kutterOpenId).then(r => r.json());
     _lastKutterDetail = d;
-    document.getElementById('kutter-title').innerHTML = icon('anchor') + ' ' + escHtml(d.name || 'FriesenKutter');
+    document.getElementById('kutter-title').innerHTML = emoji('shrimp') + ' ' + escHtml(d.name || 'FriesenKutter');
     document.getElementById('kutter-content').innerHTML = _kutterDetailBody(d);
   } catch (e) {}
 }

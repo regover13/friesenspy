@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.5.8",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Glocke, Kutter und Bummel wieder mit den Original-Emoji-Grafiken",
+    "items": [
+      "🔔 Glocke, 🦐 Kutter und 🏁 Bummel zeigen jetzt selbst gehostete Twemoji-Grafiken statt handgezeichneter Näherungen — sehen exakt so aus wie die ursprünglichen Emoji, funktionieren aber zusätzlich zuverlässig im MSFS-EFB-Panel (Coherent GT hat keinen Font-Fallback für Emoji-Zeichen). Alle übrigen Icons (Karte/Statistiken/Events-Tab, Logo) bleiben unverändert bei den Original-Zeichen."
+    ]
+  },
+  {
     "version": "11.5.6",
     "date": "2026-08-13",
     "highlight": false,
