@@ -1748,3 +1748,16 @@ scp friesenspy-efb.zip server:/opt/friesenspy/data/efb/friesenspy-efb.zip
 ```
 
 Kein Neustart nötig — Pfad und Version werden bei jedem Aufruf frisch gelesen.
+
+## GET /api/version
+
+```json
+{ "version": "11.13.3" }
+```
+
+Nur die Versionsnummer, keine Datenbankabfrage. Die Neue-Version-Wache im MSFS-Panel fragt
+sie im Minutentakt ab (`_startPanelUpdateWatch` in `index.html`).
+
+Warum nicht `/api/frontend-config`: dort hängt der komplette Changelog mit dran (weit über
+hundert Einträge). Der wird beim Seitenaufbau genau einmal gebraucht — ihn jede Minute
+mitzuschleppen, nur um eine Nummer zu vergleichen, wäre Verschwendung.

@@ -316,3 +316,24 @@ def test_ebenen_haken_wird_selbst_gezeichnet():
     -- der Zustand ist richtig, Coherent GT malt die eingebauten Haken nur nicht."""
     assert "html.vr-panel .leaflet-control-layers-selector {" in INDEX
     assert "html.vr-panel .leaflet-control-layers-selector:checked { background: var(--green); }" in INDEX
+
+
+def test_versions_endpunkt_ist_schlank(env):
+    """Die Neue-Version-Wache fragt im Minutentakt. /api/frontend-config haengt den
+    kompletten Changelog an -- den im Minutentakt mitzuschleppen, nur um eine Nummer zu
+    vergleichen, waere Verschwendung."""
+    r = env.client.get("/api/version")
+    assert r.status_code == 200
+    assert set(r.json()) == {"version"}
+    assert r.json()["version"] == main.VERSION
+
+
+def test_wache_fragt_den_schlanken_endpunkt_und_im_minutentakt():
+    """Beim Live-Test 13.08. erschien der Knopf nicht: visibilitychange/focus kommen in
+    Coherent GT offenbar nie, und das Intervall stand auf fuenf Minuten."""
+    m = re.search(r"function _startPanelUpdateWatch\(loadedVersion\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_startPanelUpdateWatch nicht gefunden"
+    rumpf = m.group(1)
+    assert "fetch('/api/version'" in rumpf
+    assert "/api/frontend-config" not in rumpf
+    assert "setInterval(check, 60 * 1000)" in rumpf

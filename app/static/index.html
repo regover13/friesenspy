@@ -7282,7 +7282,7 @@ function _startPanelUpdateWatch(loadedVersion) {
   const check = async () => {
     if (stopped) return;
     try {
-      const cfg = await fetch('/api/frontend-config', { cache: 'no-store' }).then(r => r.json());
+      const cfg = await fetch('/api/version', { cache: 'no-store' }).then(r => r.json());
       if (cfg && cfg.version && cfg.version !== loadedVersion) {
         btn.hidden = false;
         stopped = true;  // einmal gemeldet reicht; weiteres Pollen waere nur Last
@@ -7292,11 +7292,14 @@ function _startPanelUpdateWatch(loadedVersion) {
 
   // Beim Aufklappen des Tablets pruefen (haeufigster Moment, in dem ein Deploy dazwischenlag).
   // Ob Coherent GT diese Ereignisse beim Schlafenlegen/Aufwecken der EFB-App ueberhaupt
-  // feuert, ist ungewiss -- deshalb beide, und als verlaesslichen Weg zusaetzlich das
-  // Intervall unten. Eines davon greift immer.
+  // feuert, ist ungewiss -- deshalb beide. Nach dem Live-Test 13.08. sieht es danach aus,
+  // dass KEINES von beiden kommt: der Knopf erschien erst durch das Intervall, und das
+  // stand auf fuenf Minuten. Genau so lange stand der Nutzer vor einer alten Version, ohne
+  // dass die Seite es ihm sagen konnte. Jetzt jede Minute -- die Abfrage geht an
+  // /api/version und kostet weder Datenbank noch Changelog.
   document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
   window.addEventListener('focus', check);
-  setInterval(check, 5 * 60 * 1000);
+  setInterval(check, 60 * 1000);
 }
 
 // Eigener, unabhängiger Fetch (nicht an _configPromise gekoppelt) -- ~28k Einträge, JSON-Payload

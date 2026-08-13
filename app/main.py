@@ -583,6 +583,17 @@ async def frontend_config():
     }
 
 
+@app.get("/api/version")
+async def app_version():
+    """Nur die Versionsnummer -- fuer die Neue-Version-Wache im MSFS-Panel.
+
+    Warum ein eigener Endpunkt statt /api/frontend-config: dort haengt der komplette
+    Changelog mit dran (weit ueber hundert Eintraege). Der wird beim Seitenaufbau genau
+    einmal gebraucht -- ihn im Minutentakt mitzuschleppen, nur um eine Versionsnummer zu
+    vergleichen, waere Verschwendung. Diese Antwort kostet keine Datenbankabfrage."""
+    return {"version": VERSION}
+
+
 @app.post("/api/push/subscribe")
 async def push_subscribe(request: Request):
     """Browser-Push-Subscription speichern."""
