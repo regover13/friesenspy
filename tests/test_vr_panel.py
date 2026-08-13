@@ -599,3 +599,25 @@ def test_flugliste_fuellt_ihren_kasten_ohne_herauszuragen():
     # Nur der STIL darf weg sein -- der Kommentar daneben nennt den alten Wert weiterhin,
     # damit ihn niemand versehentlich wieder einbaut.
     assert 'style="width:100%;margin-left:24px;"' not in INDEX
+
+
+def test_kein_html_kommentar_in_erzeugtem_markup():
+    """Ein HTML-Kommentar IM erzeugten Markup hat mit seinen Backticks den Template-String
+    beendet -- SyntaxError, das GESAMTE Skript tot, Website und Panel weiss (v11.16.2 bis
+    .4, live beim Nutzer). Erklaerungen gehoeren in den Code, nicht in die Zeichenkette,
+    die der Code erzeugt. Zweiter Vorfall dieser Art an einem Tag: v11.5.3 schloss einen
+    HTML-Kommentar mit `*/` statt `-->` und verschluckte 23 von 35 Icons."""
+    m = re.search(r"function renderEventsResults.*?\n\}", INDEX, re.S)
+    assert m, "renderEventsResults nicht gefunden"
+    assert "<!--" not in m.group(0), "HTML-Kommentar in einem Template-String"
+
+
+def test_hauptskript_ist_syntaktisch_heil():
+    """Billigster moeglicher Schutz gegen genau den Ausfall von oben: Ein Template-String,
+    der von einem Backtick im Inhalt beendet wird, hinterlaesst eine ungerade Zahl -- der
+    Rest der Datei verrutscht dann in eine Zeichenkette. Kein Ersatz fuer einen Parser,
+    aber es haette den Totalausfall gefangen."""
+    m = re.search(r"\n<script>\n(.*)\n</script>", INDEX, re.S)
+    assert m, "Hauptskript nicht gefunden"
+    skript = m.group(1)
+    assert skript.count("`") % 2 == 0, "ungerade Zahl an Backticks -- Template-String offen?"

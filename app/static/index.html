@@ -4074,6 +4074,17 @@ function escHtml(str) {
  *
  * Ausserhalb des Panels passiert nichts.
  */
+// Warum die Flugliste unter einem Piloten `width:100%` traegt und KEINEN margin:
+// `width:100%` muss bleiben, sonst fuellt der Kasten seinen Platz nicht aus und schrumpft
+// auf Inhaltsbreite. Ein margin daneben darf NICHT stehen -- ein Rand liegt ausserhalb der
+// Box, das rechnet auch box-sizing:border-box nicht weg, und der Kasten wird genau um ihn
+// zu breit (Nutzer-Fund 14.08.2026: er schaute rechts heraus). Die frueher dort stehende
+// Einrueckung ist ersatzlos entfallen.
+//
+// Diese Begruendung stand kurzzeitig als HTML-Kommentar IM erzeugten Markup -- und hat mit
+// ihren Backticks den Template-String beendet. Ergebnis: SyntaxError, das gesamte Skript
+// tot, Website und Panel weiss (v11.16.2 bis .4). Erklaerungen gehoeren in den Code, nicht
+// in die Zeichenkette, die der Code erzeugt.
 function _panelKartenLayout(wurzel) {
   if (!document.documentElement.classList.contains('vr-panel')) return;
   if (!wurzel || wurzel.nodeType !== 1) return;
@@ -6659,11 +6670,6 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             ${_bummelStandingBadge(p.cid)}
           </div>
         </div>
-        <!-- width:100% MUSS bleiben (der Kasten fuellt sonst seinen Platz nicht aus), der
-             Rand daneben nicht: `margin-left:24px` machte die Box genau um den Rand breiter
-             als ihren Platz, weil ein Rand ausserhalb der Box liegt -- das rechnet auch
-             box-sizing:border-box nicht weg. Sie schaute dadurch rechts heraus
-             (Nutzer-Fund 14.08.2026). Die Einrueckung ist ersatzlos entfallen. -->
         ${flightRows ? `<div class="live-table-wrap" style="width:100%;"><table style="font-size:0.8rem;">
           <thead><tr>
             <th>Callsign</th><th>Aircraft</th><th>Strecke</th><th>Flugplan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>

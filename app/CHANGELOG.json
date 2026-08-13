@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.16.5",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Website und Panel gehen wieder",
+    "items": [
+      "🚨 Seit v11.16.2 war die Seite unbenutzbar: ein Kommentar im erzeugten Markup hat mit seinen Backticks eine Zeichenkette im Skript beendet, dadurch brach das gesamte Frontend. Behoben; zwei Tests halten diese Fehlerart künftig fest."
+    ]
+  },
+  {
     "version": "11.16.4",
     "date": "2026-08-14",
     "highlight": false,
