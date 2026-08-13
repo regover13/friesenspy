@@ -349,3 +349,66 @@ def test_kachel_einblendung_im_panel_abgeschaltet():
     assert "const _KARTE_EINBLENDEN = !document.documentElement.classList.contains('vr-panel');" in INDEX
     # Alle drei Karten muessen die Option bekommen, sonst bleibt eine Ansicht kaputt
     assert INDEX.count("fadeAnimation: _KARTE_EINBLENDEN") == 3
+
+
+# ---------------------------------------------------------------------------
+#  Fracht-Emoji als self-gehostetes SVG statt Roh-Zeichen (Folgefund zu v11.11.0)
+# ---------------------------------------------------------------------------
+# _translitText (s. oben) entfernt unbekannte Emoji-Zeichen im Panel inzwischen komplett --
+# die Fracht-Emoji aus cargo_catalog.emoji verschwanden damit dort ganz. emojiChar() ersetzt
+# das Roh-Zeichen durch ein Twemoji-SVG, dessen Dateiname sich rein aus dem Unicode-Codepoint
+# ergibt (keine Zeichen->Name-Tabelle zu pflegen).
+
+
+def test_frachtstellen_nutzen_emojichar_statt_rohes_kesc():
+    """Vor dieser Umstellung gaben alle fuenf Stellen l.emoji/c.emoji roh (nur HTML-escaped)
+    aus -- im Panel entweder ein leerer Kasten oder (seit v11.11.0) gar nichts. Keine Stelle
+    darf mehr direkt _kesc(...emoji...) aufrufen."""
+    assert re.search(r"_kesc\([^)]*emoji[^)]*\)", INDEX, re.I) is None
+    # Alle fuenf bekannten Aufrufstellen (Live-Kutter, Kutter-Detail, zwei Legenden, Je-Abholplatz)
+    assert INDEX.count("emojiChar(") >= 5
+
+
+def test_emojidateiname_entfernt_variantenselektor_vor_codepoint_bildung():
+    """U+FE0F steuert nur Text- vs. Emoji-Darstellung und steht bei mehreren Fracht-Emoji
+    (Filmrollen, Sonnenschirm, Strandspielzeug) hinter dem eigentlichen Zeichen -- Twemoji
+    fuehrt es im Dateinamen NICHT, ein vergessenes Entfernen liefe also immer auf 404."""
+    m = re.search(r"function _emojiDateiname\(ch\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_emojiDateiname nicht gefunden"
+    rumpf = m.group(1)
+    assert "ohneVs" in rumpf
+    # Surrogatpaar-Zusammenfassung darf nicht fehlen, sonst zerfallen Zeichen jenseits von
+    # U+FFFF (z. B. 🦐, U+1F990) in zwei fuer sich bedeutungslose Haelften.
+    assert "0xd800" in rumpf and "0xdc00" in rumpf
+    assert "punkte.join('-')" in rumpf
+
+
+def test_emojichar_faellt_bei_fehlender_datei_auf_rohzeichen_zurueck():
+    """Kein hartes Scheitern, wenn zu einem (z. B. kuenftig neu angelegten) Fracht-Emoji noch
+    keine SVG unter /static/emoji/ liegt: onerror ersetzt das <img> durch das Roh-Zeichen --
+    exakt der Zustand vor dieser Umstellung, nie ein kaputtes Bild-Icon."""
+    m = re.search(r"function emojiChar\(ch\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "emojiChar nicht gefunden"
+    rumpf = m.group(1)
+    assert "onerror=" in rumpf
+    assert "data-fb" in rumpf
+    assert "escHtml(ch)" in rumpf  # Roh-Zeichen muss escaped ins Attribut, sonst XSS-Luecke
+
+
+def test_alle_katalog_emoji_haben_eine_self_gehostete_svg():
+    """Kein Zeichen aus dem tatsaechlichen Fracht-Katalog (Seed + Live-DB-Erweiterungen wie
+    das generische Heringe-Symbol) darf beim Live-Test als leerer Kasten enden, weil die
+    zugehoerige Twemoji-SVG schlicht fehlt."""
+    from app.database import _CARGO_SEED
+
+    emoji_dir = STATIC / "emoji"
+    for name, em, _mx in _CARGO_SEED:
+        # Python-Nachbau derselben Regel wie _emojiDateiname in JS: Variantenselektor raus,
+        # verbleibende Codepoints klein-hex mit '-' verbunden. Python-Strings sind bereits
+        # codepoint-basiert (kein Surrogatpaar-Zerfall wie in JS-UTF-16-Strings), deshalb
+        # reicht hier ord(c) direkt.
+        codepoints = [c for c in em if ord(c) != 0xFE0F]
+        dateiname = "-".join(format(ord(c), "x") for c in codepoints)
+        assert (emoji_dir / f"{dateiname}.svg").exists(), (
+            f"SVG fuer '{name}' ({em!r} -> {dateiname}.svg) fehlt unter app/static/emoji/"
+        )

@@ -4211,6 +4211,45 @@ function emoji(name) {
   return '<img class="emoji-icon" src="/static/emoji/' + name + '.svg" alt="" />';
 }
 
+// Twemoji-Dateiname aus dem Unicode-Codepoint des Zeichens ableiten (Twemoji-Konvention:
+// Kleinbuchstaben-Hex, bei Mehrfach-Codepoints mit '-' verbunden). Der Variantenselektor
+// U+FE0F (steuert nur Text- vs. Emoji-Darstellung, z. B. hinter dem Filmrollen- oder
+// Sonnenschirm-Zeichen) taucht im Twemoji-Dateinamen NICHT auf und muss vorher raus, sonst
+// gibt es zur Datei keinen Treffer.
+function _emojiDateiname(ch) {
+  const ohneVs = ch.replace(/️/g, '');
+  const punkte = [];
+  for (let i = 0; i < ohneVs.length; i++) {
+    let code = ohneVs.charCodeAt(i);
+    // Surrogatpaar (Zeichen jenseits von U+FFFF, z. B. 🦐) zu EINEM Codepoint zusammenfassen --
+    // sonst zerfaellt das Zeichen in zwei fuer sich bedeutungslose Haelften.
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < ohneVs.length) {
+      const tief = ohneVs.charCodeAt(i + 1);
+      if (tief >= 0xdc00 && tief <= 0xdfff) {
+        code = (code - 0xd800) * 0x400 + (tief - 0xdc00) + 0x10000;
+        i++;
+      }
+    }
+    punkte.push(code.toString(16));
+  }
+  return punkte.join('-');
+}
+
+// Rohes Emoji-ZEICHEN (aus cargo_catalog.emoji, kein Name wie bei emoji()) als self-gehostetes
+// Twemoji-SVG. Der Dateiname folgt ausschliesslich dem Codepoint -- keine Zeichen->Name-Tabelle
+// zu pflegen, jede kuenftig im Katalog ergaenzte Fracht-Art bekommt ihr Icon automatisch, sobald
+// die passende SVG unter /static/emoji/ liegt. Fehlt die Datei (z. B. neue Fracht-Art vor dem
+// Besorgen der SVG), faengt onerror das ab und ersetzt das <img> durch das Roh-Zeichen -- also
+// exakt den bisherigen Zustand vor dieser Umstellung, nie ein kaputtes Bild-Icon.
+function emojiChar(ch) {
+  if (!ch) return '';
+  const datei = _emojiDateiname(ch);
+  if (!datei) return escHtml(ch);
+  const roh = escHtml(ch);
+  return '<img class="emoji-icon" src="/static/emoji/' + datei + '.svg" alt="" data-fb="' + roh
+    + '" onerror="this.outerHTML=this.getAttribute(\'data-fb\')" />';
+}
+
 // ==========================================================================
 //  MUSTER-INFO-PANEL
 // ==========================================================================
@@ -4938,7 +4977,7 @@ function _kutterBannerBlock(d) {
     if (active.length) {
       const rows = active.map(a => {
         const load = a.lines.length
-          ? a.lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
+          ? a.lines.map(l => (l.emoji ? emojiChar(l.emoji) + ' ' : '') + _kesc(l.name)
               + (a.lines.length > 1 ? ' (' + Math.round(l.kg) + ')' : '')).join(' + ')
           : (a.kg > 0 ? Math.round(a.kg) + ' kg' : 'leer');
         // Ware an Bord -> Getragen-Blau (kf-carry, wie im Events-Feed); nichts an Bord -> neutral.
@@ -6699,7 +6738,7 @@ function _kCargoLabel(f) {
   // zeigte, mal wegwarf — daher „leer"/„unterwegs" trotz Ware an Bord, Fund Michael 19.07.)
   const lines = f.cargo_lines || [];
   const cargoTxt = lines.length
-    ? lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
+    ? lines.map(l => (l.emoji ? emojiChar(l.emoji) + ' ' : '') + _kesc(l.name)
         + ' (' + Math.round(l.kg) + ')').join(' + ')
     : _kesc(f.cargo_name || '');
   const quip = f.quip ? '<span class="kutter-quip">' + icon('message') + ' ' + _kesc(f.quip) + '</span>' : '';
@@ -6758,7 +6797,7 @@ function _kSegLegend(items, totalTarget, sub) {
       + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i>' + lost + res + '</div>';
   }).join('');
   const legend = items.map(({ c, gi }) => {
-    const mark = c.emoji ? _kesc(c.emoji) + ' '
+    const mark = c.emoji ? emojiChar(c.emoji) + ' '
       : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
     // #3 Rundung: „reserviert" als Differenz zum gerundeten (delivered+reserved), damit sich die
     // angezeigten Teile SICHTBAR aufsummieren — sonst runden zwei „,5"-Werte beide hoch (137+24=161
@@ -6794,7 +6833,7 @@ function _kStockLegend(items, totalTarget) {
       + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i></div>';
   }).join('');
   const legend = items.map(({ c, gi }) => {
-    const mark = c.emoji ? _kesc(c.emoji) + ' '
+    const mark = c.emoji ? emojiChar(c.emoji) + ' '
       : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
     const cap = c.per_flight_max_kg != null
       ? ' <span class="kl-cap" title="Obergrenze pro Flug">' + icon('warning') + ' ' + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
@@ -6877,7 +6916,7 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
         const segs = contents.map(([name, kg]) => '<div class="kutter-seg" style="width:'
           + (100 * kg / totalHere).toFixed(2) + '%"><i style="width:100%;background:' + _kColor(nameIdx[name] || 0) + '"></i></div>').join('');
         const legend = contents.map(([name, kg]) => '<span>'
-          + (emojiByName[name] ? _kesc(emojiByName[name]) + ' ' : '') + _kesc(name) + ' ' + _kfmtT(kg) + '</span>').join('');
+          + (emojiByName[name] ? emojiChar(emojiByName[name]) + ' ' : '') + _kesc(name) + ' ' + _kfmtT(kg) + '</span>').join('');
         bar += '<div class="kutter-bar kutter-bar--sub">' + segs + '</div><div class="kutter-legend kutter-legend--sub">' + legend + '</div>';
       });
     }
