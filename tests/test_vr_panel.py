@@ -569,6 +569,10 @@ def test_karten_zellen_ohne_flexbox():
     zelle = m.group(1)
     assert "display: flex" not in zelle, "Flexbox auf <td> -- in Coherent GT wirkungslos"
     assert "position: relative" in zelle, "Bezugsrahmen fuer die absolute Beschriftung"
+    # Entscheidend: Der Platz der Beschriftung wird per padding RESERVIERT, statt die
+    # Engine um Einrueckung zu bitten. Mit `float: left` hat sie den Text NICHT umflossen,
+    # Beschriftung und Wert lagen uebereinander ("CALLSIGFRS61", v11.16.1/.2 im Sim).
+    assert "5px 46%" in zelle or "5px 44%" in zelle, "linke Spalte nicht freigehalten"
 
     b = re.search(r"html\.vr-panel \.panel-cards tbody td::before \{(.*?)\}", INDEX, re.S)
     assert b, "Beschriftungsregel nicht gefunden"
@@ -587,4 +591,13 @@ def test_eingerueckte_flugliste_ragt_nicht_aus_ihrem_kasten():
     Piloten dadurch rechts heraus (Nutzer-Fund 14.08.2026). Ohne width fuellt der Block von
     selbst den Rest, die Einrueckung bleibt."""
     assert 'style="width:100%;margin-left:24px;"' not in INDEX
-    assert 'class="live-table-wrap" style="margin-left:24px;"' in INDEX
+    # Einrueckung als Klasse statt Inline-Stil -- nur so ist sie im Panel abschaltbar.
+    assert '.flugliste-eingerueckt { margin-left: 24px; }' in INDEX
+    assert 'class="live-table-wrap flugliste-eingerueckt"' in INDEX
+
+
+def test_einrueckung_im_panel_abgeschaltet():
+    """24px von rund 413 nutzbaren Pixeln sind gut sechs Prozent der Breite, die jeder Karte
+    fehlen. Im Tablet zaehlt die Breite mehr als die Gliederung -- die Karten tragen ohnehin
+    einen farbigen Balken links. Auf der Website bleibt die Einrueckung."""
+    assert 'html.vr-panel .flugliste-eingerueckt { margin-left: 0; }' in INDEX

@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.16.3",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Beschriftung und Wert liegen nicht mehr übereinander",
+    "items": [
+      "📋 In den Karten-Ansichten des MSFS-Panels überlagerten sich Beschriftung und Wert. Die linke Spalte wird jetzt fest freigehalten, statt sich auf das Umfließen der Anzeige-Engine zu verlassen.",
+      "📐 Die Einrückung der Flugliste unter einem Piloten entfällt im MSFS-Panel — sie kostete 24 von rund 413 nutzbaren Pixeln. Auf der Website bleibt sie."
+    ]
+  },
+  {
     "version": "11.16.2",
     "date": "2026-08-14",
     "highlight": false,
