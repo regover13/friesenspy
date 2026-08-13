@@ -2953,7 +2953,17 @@ function _diagKarte(map, name, aipLayer) {
   if (!document.documentElement.classList.contains('vr-panel')) return;
   if (typeof window._panelDiag !== 'function') return;
 
+  // Deckel gegen Melde-Flut: 'resize' feuert bei jedem Fensterwechsel und bei jedem
+  // Vollbild-Umschalten. Ein paar Messungen beantworten die Frage, hundert verstopfen nur
+  // die Tabelle (sie haelt ohnehin nur die letzten 500 Eintraege).
+  let zuletzt = 0;
+  let anzahl = 0;
   const messen = (anlass) => {
+    const jetzt = Date.now();
+    if (anzahl >= 12) return;
+    if (anlass !== 'bereit' && jetzt - zuletzt < 8000) return;
+    zuletzt = jetzt;
+    anzahl += 1;
     try {
       const el = map.getContainer();
       const kacheln = el.querySelectorAll('.leaflet-tile');
@@ -2980,6 +2990,10 @@ function _diagKarte(map, name, aipLayer) {
       window._panelDiag('karte', {
         karte: name, anlass: anlass,
         vollbild: el.closest('.map-is-fullscreen') !== null,
+        // Ohne dieses Feld ist die Messung nicht auswertbar: liegt die Karte gerade auf
+        // einem nicht sichtbaren Tab, meldet sie 0x0 -- das sieht nach dem gesuchten
+        // Fehler aus, ist aber nur ein verdeckter Container (in Chrome so passiert).
+        sichtbar: el.clientWidth > 0 && el.clientHeight > 0,
         containerBreite: el.clientWidth, containerHoehe: el.clientHeight,
         kartenGroesse: [map.getSize().x, map.getSize().y],
         zoom: map.getZoom(),
@@ -2998,6 +3012,9 @@ function _diagKarte(map, name, aipLayer) {
   // Einmal, wenn die Kacheln Zeit zum Laden hatten -- und bei jedem Ebenenwechsel, weil
   // genau dort der Unterschied zwischen "Haken" und "Wirklichkeit" entsteht.
   map.whenReady(() => setTimeout(() => messen('bereit'), 4000));
+  // Beim Wechsel auf den Karten-Tab ruft die App invalidateSize() -- Leaflet meldet das als
+  // 'resize'. Genau dann ist die Karte erstmals wirklich sichtbar und die Messung aussagekraeftig.
+  map.on('resize', () => setTimeout(() => messen('sichtbar'), 3000));
   map.on('baselayerchange', (e) => setTimeout(() => messen('basis:' + (e.name || '?')), 2500));
   map.on('overlayadd',      (e) => setTimeout(() => messen('overlay-an:' + (e.name || '?')), 2500));
   map.on('overlayremove',   (e) => setTimeout(() => messen('overlay-aus:' + (e.name || '?')), 2500));
