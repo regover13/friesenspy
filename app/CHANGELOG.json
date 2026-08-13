@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.5.5",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Minus-Zeichen im Karten-Zoom repariert",
+    "items": [
+      "➖ Leaflets eingebauter Zoom-Control benutzt für den „−”-Button ein echtes Unicode-Minuszeichen (U+2212) statt eines normalen Bindestrichs — Bibliothekscode, nicht Teil unseres Icon-Umbaus, deshalb bisher übersehen. Auf allen drei Karten (Live, Events, Track) auf ASCII „-” gepatcht."
+    ]
+  },
+  {
     "version": "11.5.4",
     "date": "2026-08-13",
     "highlight": true,

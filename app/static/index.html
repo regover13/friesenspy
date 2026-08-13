@@ -2331,6 +2331,14 @@ const TILE_ATTR = TILE_DARK_ATTR;
 
 const OFM_NATIVE_MAX_ZOOM = 11; // OFM hat native Tiles bis Zoom 11; ab Zoom 13 Auto-Switch zu Satellit
 
+// Leaflets eingebauter Zoom-Control benutzt für den "−"-Button ein echtes Unicode-Minuszeichen
+// (U+2212, nicht der normale Bindestrich) -- Bibliothekscode, nicht unser eigener Icon-Umbau,
+// deshalb hier separat auf ASCII "-" gepatcht (Live-Test-Fund 13.08.2026 im MSFS-EFB-Panel).
+function _fixLeafletZoomMinus(map) {
+  const btn = map.getContainer().querySelector('.leaflet-control-zoom-out');
+  if (btn) btn.textContent = '-';
+}
+
 function _makeTileLayers() {
   return {
     ofm:  L.tileLayer(TILE_OFM_URL,  { attribution: TILE_OFM_ATTR,  maxNativeZoom: OFM_NATIVE_MAX_ZOOM, maxZoom: 19, minZoom: 6 }),
@@ -4544,6 +4552,7 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff, aut
       await _configPromise;
       if (!trackMapInitialized) {
         trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
+        _fixLeafletZoomMinus(trackMap);
         const trackLayers = _makeTileLayers();
         _getPreferredLayer(trackLayers).addTo(trackMap);
         const trackAIP = _makeAIPOverlay();
@@ -4675,6 +4684,7 @@ async function initLiveMap() {
     zoomControl: true,
     attributionControl: true,
   });
+  _fixLeafletZoomMinus(liveMap);
 
   const liveLayers = _makeTileLayers();
   _getPreferredLayer(liveLayers).addTo(liveMap);
@@ -5521,6 +5531,7 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
   if (!eventsMapInitialized) {
     await _configPromise;
     eventsMap = L.map('events-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
+    _fixLeafletZoomMinus(eventsMap);
     const evLayers = _makeTileLayers();
     _getPreferredLayer(evLayers).addTo(eventsMap);
     const evAIP = _makeAIPOverlay();
