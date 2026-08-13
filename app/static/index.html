@@ -8,9 +8,205 @@
       // /panel als eigene Route (Task 1) ODER ?vr=1 als gleichwertiger Trigger auf jeder URL.
       // Muss VOR dem <style>-Block laufen, damit html.vr-panel beim ersten Paint schon greift.
       var qs = new URLSearchParams(location.search);
-      if (location.pathname === '/panel' || qs.get('vr') === '1') {
+      var isPanel = location.pathname === '/panel' || qs.get('vr') === '1';
+      if (isPanel) {
         document.documentElement.classList.add('vr-panel');
       }
+
+      // ===================================================================
+      //  SELBSTDIAGNOSE (nur Panel, oder erzwungen per ?diag=1)
+      // ===================================================================
+      // Warum ausgerechnet HIER, im winzigen Kopf-Skript, und nicht unten beim Rest des
+      // JavaScripts: Coherent GT (die Engine im MSFS-EFB) kennt einige neuere Sprachmittel
+      // nicht (?., ??, Spread, flatMap) und wirft dann einen Parse-Fehler, der das GESAMTE
+      // betroffene <script> lahmlegt. Läge die Diagnose im großen Skript, würde sie in genau
+      // dem Fall mitsterben, den sie melden soll. Dieser Block ist bewusst klein und auf
+      // ES2017 beschränkt -- er überlebt einen Totalausfall des Hauptskripts und meldet ihn.
+      //
+      // Zweck: Die Engine ist von außen praktisch nicht untersuchbar (SDK-Debugger stürzt
+      // reproduzierbar ab). Statt den Nutzer am Sim zu jeder Einzelfrage zurückzufragen,
+      // misst das Panel selbst und meldet an /api/panel-diag.
+      if (!isPanel && qs.get('diag') !== '1') return;
+
+      var events = [];
+      var sent = false;
+
+      function note(kind, data) {
+        if (events.length < 40) events.push({ t: Date.now(), kind: kind, data: data });
+      }
+
+      window.addEventListener('error', function (e) {
+        note('error', {
+          msg: String(e.message || ''),
+          src: String(e.filename || ''),
+          line: e.lineno, col: e.colno,
+          stack: (e.error && e.error.stack) ? String(e.error.stack).slice(0, 600) : null
+        });
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        note('rejection', { reason: String(e.reason).slice(0, 600) });
+      });
+
+      /** Breite eines Zeichens im Seiten-Font messen (für den Tofu-Vergleich). */
+      function glyphWidth(probe, ch) {
+        probe.textContent = ch;
+        return probe.getBoundingClientRect().width;
+      }
+
+      /**
+       * Fehlende Glyphen erkennen: Ein Zeichen aus dem Private-Use-Bereich (U+E000) hat
+       * garantiert in KEINEM Font eine Darstellung und liefert damit die Referenzbreite
+       * einer Tofu-Box. Jedes Zeichen mit derselben Breite wird ebenfalls als Kästchen
+       * gerendert -- so lässt sich ohne Screenshot beweisen, ob z. B. das "×" des
+       * Schließen-Knopfes oder die Umlaute überhaupt darstellbar sind.
+       */
+      function probeGlyphs() {
+        var probe = document.createElement('span');
+        probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;' +
+          'font-family:var(--text-display),sans-serif;font-size:32px;left:-9999px;top:0;';
+        document.body.appendChild(probe);
+        var tofuW = glyphWidth(probe, '');
+        var chars = {
+          a: 'a', ae: 'ä', oe: 'ö', ue: 'ü',
+          times: '×', bigX: '✕', fullscreen: '⛶',
+          arrow: '→', diamond: '◈', circle: '◎', grid: '▦',
+          hex: '⬡', bell: '🔔'
+        };
+        var out = { tofuRefWidth: Math.round(tofuW * 100) / 100, chars: {} };
+        for (var k in chars) {
+          if (!Object.prototype.hasOwnProperty.call(chars, k)) continue;
+          var w = glyphWidth(probe, chars[k]);
+          out.chars[k] = {
+            w: Math.round(w * 100) / 100,
+            // Gleiche Breite wie die Referenz-Tofu-Box => Glyph fehlt.
+            missing: Math.abs(w - tofuW) < 0.5
+          };
+        }
+        probe.parentNode.removeChild(probe);
+        return out;
+      }
+
+      /** Misst, ob breite Tabellen wirklich über ihren Rahmen hinauswachsen (Scroll-Frage). */
+      function probeTables() {
+        var out = [];
+        var wraps = document.querySelectorAll('.live-table-wrap, .table-scroll');
+        for (var i = 0; i < wraps.length && i < 6; i++) {
+          var w = wraps[i];
+          var t = w.querySelector('table');
+          if (!t) continue;
+          var cs = window.getComputedStyle(t);
+          out.push({
+            cls: w.className,
+            wrapClientW: w.clientWidth,
+            wrapScrollW: w.scrollWidth,
+            tableOffsetW: t.offsetWidth,
+            tableCssWidth: cs.width,
+            // Das ist die Kernfrage: kann der Wrapper ueberhaupt scrollen?
+            canScroll: w.scrollWidth > w.clientWidth + 1
+          });
+        }
+        return out;
+      }
+
+      function probeCss() {
+        var s = (window.CSS && window.CSS.supports)
+          ? function (p, v) { try { return window.CSS.supports(p, v); } catch (_) { return null; } }
+          : function () { return null; };
+        return {
+          maxContent: s('width', 'max-content'),
+          webkitMaxContent: s('width', '-webkit-max-content'),
+          inset: s('inset', '0'),
+          gap: s('gap', '1px'),
+          zoom: s('zoom', '1.35'),
+          position_sticky: s('position', 'sticky')
+        };
+      }
+
+      function probeFeatures() {
+        function has(fn) { try { return !!fn(); } catch (_) { return false; } }
+        return {
+          postMessage: typeof window.postMessage === 'function',
+          localStorage: has(function () { window.localStorage.setItem('_d', '1');
+                                          window.localStorage.removeItem('_d'); return true; }),
+          EventSource: typeof window.EventSource !== 'undefined',
+          fetch: typeof window.fetch === 'function',
+          documentFonts: typeof document.fonts !== 'undefined',
+          IntersectionObserver: typeof window.IntersectionObserver !== 'undefined',
+          inIframe: (function () { try { return window.self !== window.top; } catch (_) { return true; } })()
+        };
+      }
+
+      /** Laedt je eine Kachel der fraglichen Anbieter -- klaert die Satelliten-Frage. */
+      function probeTiles() {
+        var urls = {
+          satellit: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/7/42/67',
+          ofm: 'https://nwy-tiles-api.prod.newaydata.com/tiles/7/67/42.png?path=latest/aero/latest'
+        };
+        var keys = Object.keys(urls);
+        return Promise.all(keys.map(function (k) {
+          return new Promise(function (resolve) {
+            var img = new Image();
+            var done = false;
+            var t0 = Date.now();
+            function finish(ok, why) {
+              if (done) return;
+              done = true;
+              resolve({ name: k, ok: ok, why: why, ms: Date.now() - t0,
+                        w: img.naturalWidth || 0, h: img.naturalHeight || 0 });
+            }
+            img.onload = function () { finish(true, null); };
+            img.onerror = function () { finish(false, 'error'); };
+            setTimeout(function () { finish(false, 'timeout'); }, 8000);
+            img.src = urls[k];
+          });
+        }));
+      }
+
+      function send(payload) {
+        try {
+          window.fetch('/api/panel-diag', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          }).catch(function () { /* Diagnose darf nie stoeren */ });
+        } catch (_) { /* ebenso */ }
+      }
+
+      function report() {
+        if (sent) return;
+        sent = true;
+        var versionEl = document.getElementById('app-version');
+        var base = {
+          kind: 'report',
+          appVersion: versionEl ? versionEl.textContent : null,
+          url: location.href,
+          isPanel: isPanel,
+          viewport: { w: window.innerWidth, h: window.innerHeight,
+                      dpr: window.devicePixelRatio || 1 },
+          screen: { w: (screen && screen.width) || null, h: (screen && screen.height) || null },
+          css: probeCss(),
+          features: probeFeatures(),
+          events: events
+        };
+        try { base.glyphs = probeGlyphs(); } catch (err) { base.glyphs = { error: String(err) }; }
+        try { base.tables = probeTables(); } catch (err) { base.tables = { error: String(err) }; }
+
+        // Kacheln sind asynchron -- Bericht lieber vollstaendig etwas spaeter senden als
+        // unvollstaendig sofort; bei Zeitueberschreitung trotzdem raus.
+        var fallback = setTimeout(function () { send(base); }, 9000);
+        try {
+          probeTiles().then(function (tiles) {
+            clearTimeout(fallback);
+            base.tiles = tiles;
+            send(base);
+          }, function () { clearTimeout(fallback); send(base); });
+        } catch (_) { clearTimeout(fallback); send(base); }
+      }
+
+      // Nach dem Laden messen; genug Vorlauf, damit Fonts/Tabellen wirklich stehen.
+      window.addEventListener('load', function () { setTimeout(report, 2500); });
+      // Sicherheitsnetz: Bleibt 'load' aus (haengendes Asset), trotzdem berichten.
+      setTimeout(report, 12000);
     })();
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />

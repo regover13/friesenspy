@@ -389,6 +389,22 @@ CREATE TABLE IF NOT EXISTS progress_snapshot (
     payload_json TEXT NOT NULL,
     PRIMARY KEY (kind, ref_id)
 );
+
+-- Selbstdiagnose des MSFS-EFB-Panels: Die Rendering-Engine dort (Coherent GT) laesst sich
+-- praktisch nicht von aussen untersuchen -- der SDK-Debugger stuerzt ab, und jede Frage
+-- ("rendert Zeichen X?", "kennt die Engine max-content?") kostete bisher eine Rueckfrage an
+-- den Nutzer am Sim. Stattdessen meldet das Panel seine Fehler und Messwerte selbst hierher;
+-- auswertbar per Admin-Ansicht oder direkt per sqlite3 auf dem VPS. Bewusst schemalos
+-- (payload_json), weil sich die Messfragen mit jedem Fund aendern.
+CREATE TABLE IF NOT EXISTS panel_diag (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at   TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    app_version  TEXT,
+    user_agent   TEXT,
+    payload_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_panel_diag_created ON panel_diag(created_at DESC);
 """
 
 
@@ -877,6 +893,54 @@ def set_app_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
         (key, value, _now_utc()),
     )
+
+
+# ---------------------------------------------------------------------------
+# Panel-Selbstdiagnose (MSFS-EFB)
+# ---------------------------------------------------------------------------
+
+# Obergrenze: Die Diagnose ist ein Werkzeug für die Fehlersuche, kein Langzeitarchiv --
+# ohne Deckel würde ein Panel in einer Fehlerschleife die DB vollschreiben.
+PANEL_DIAG_KEEP = 500
+
+
+def insert_panel_diag(
+    conn: sqlite3.Connection,
+    kind: str,
+    payload_json: str,
+    app_version: str | None = None,
+    user_agent: str | None = None,
+) -> None:
+    """Einen Diagnose-Datensatz aus dem EFB-Panel ablegen (kein commit).
+
+    Beschneidet anschließend auf die neuesten ``PANEL_DIAG_KEEP`` Einträge.
+    """
+    conn.execute(
+        "INSERT INTO panel_diag (created_at, kind, app_version, user_agent, payload_json) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (_now_utc(), kind, app_version, user_agent, payload_json),
+    )
+    conn.execute(
+        "DELETE FROM panel_diag WHERE id NOT IN ("
+        "  SELECT id FROM panel_diag ORDER BY id DESC LIMIT ?"
+        ")",
+        (PANEL_DIAG_KEEP,),
+    )
+
+
+def list_panel_diag(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
+    """Neueste Diagnose-Datensätze (neueste zuerst)."""
+    rows = conn.execute(
+        "SELECT id, created_at, kind, app_version, user_agent, payload_json "
+        "FROM panel_diag ORDER BY id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def clear_panel_diag(conn: sqlite3.Connection) -> None:
+    """Alle Diagnose-Datensätze löschen (kein commit) -- für einen sauberen Messlauf."""
+    conn.execute("DELETE FROM panel_diag")
 
 
 # ---------------------------------------------------------------------------

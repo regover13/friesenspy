@@ -1566,3 +1566,59 @@ Pilot anlegen oder Namen aktualisieren (`added_at` bleibt beim Update erhalten).
 Pilot aus der `pilots`-Tabelle entfernen.
 
 **Response** `{"status": "ok"}`
+
+## Panel-Selbstdiagnose (MSFS-EFB)
+
+Die Rendering-Engine im EFB-Panel (Coherent GT) ist von außen praktisch nicht untersuchbar:
+Der SDK-Debugger stürzt reproduzierbar ab, und jede Einzelfrage („rendert Zeichen X?",
+„kennt die Engine `max-content`?") kostete bisher eine Rückfrage an den Nutzer am laufenden
+Simulator. Das Panel misst deshalb selbst und meldet die Werte hierher.
+
+### POST /api/panel-diag
+
+Nimmt einen Diagnose-Datensatz aus dem Panel entgegen. **Bewusst ohne Anmeldung erreichbar**
+(im Login-Gate freigeschaltet): Ein wesentlicher Teil der Fehlersuche betrifft genau die
+Fälle, in denen die Anmeldung im Panel scheitert — läge der Endpunkt hinter dem Gate,
+fehlten die Messwerte ausgerechnet dann. Der Endpunkt gibt nichts preis.
+
+Gesendet wird automatisch von `app/static/index.html` (kleines Kopf-Skript), sobald die Seite
+im Panel-Modus läuft (`/panel` oder `?vr=1`) oder per `?diag=1` erzwungen wird.
+
+**Body** — schemalos (die Messfragen ändern sich mit jedem Fund), max. 64 KB, muss ein Objekt
+sein. Übliche Felder:
+
+| Feld | Bedeutung |
+|------|-----------|
+| `kind` | Art des Datensatzes (Default `report`) |
+| `appVersion` | Versionsanzeige der Seite |
+| `css` | `CSS.supports`-Proben (`maxContent`, `inset`, `gap`, `zoom`, …) |
+| `glyphs` | Zeichen-Breitenmessung; `missing: true` = Glyph fehlt (Tofu-Kästchen) |
+| `tables` | Wrapper- vs. Tabellenbreite je Scroll-Container (`canScroll`) |
+| `features` | Verfügbarkeit von `postMessage`, `localStorage`, `EventSource`, … |
+| `tiles` | Ladeergebnis je Kartenanbieter (Satellit, OpenFlightMap) |
+| `events` | Aufgelaufene `error`/`unhandledrejection`-Ereignisse |
+
+**Responses**
+- `200 {"status": "ok"}`
+- `400` — ungültiges JSON oder kein Objekt
+- `413` — Datensatz größer als 64 KB
+
+**Glyph-Messung:** Als Referenz dient ein Zeichen aus dem Private-Use-Bereich (U+E000), das
+garantiert in keinem Font existiert und damit die Breite einer Tofu-Box liefert. Jedes Zeichen
+mit derselben Breite wird ebenfalls als leeres Kästchen gerendert — so lässt sich ohne
+Screenshot beweisen, ob z. B. das `×` eines Schließen-Knopfes überhaupt darstellbar ist.
+
+### GET /api/admin/panel-diag
+
+Diagnose-Datensätze lesen (Admin). Query `limit` (1–500, Default 50), neueste zuerst.
+
+**Response** `{"entries": [{id, created_at, kind, app_version, user_agent, payload_json}, …]}`
+
+### DELETE /api/admin/panel-diag
+
+Alle Datensätze löschen (Admin) — für einen sauberen Messlauf.
+
+**Response** `{"status": "ok"}`
+
+Es werden immer nur die neuesten 500 Einträge behalten (`PANEL_DIAG_KEEP`), damit ein Panel in
+einer Fehlerschleife die Datenbank nicht vollschreibt.

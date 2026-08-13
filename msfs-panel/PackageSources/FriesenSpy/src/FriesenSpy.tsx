@@ -47,7 +47,17 @@ class FriesenSpy extends App {
   }
 
   public BootMode = AppBootMode.COLD;
-  public SuspendMode = AppSuspendMode.SLEEP;
+  /**
+   * TERMINATE statt SLEEP (Live-Test-Fund 13.08.2026): Mit SLEEP bleibt die App beim
+   * Schliessen des Tablets samt geladenem iframe im Speicher -- die Seite wurde dadurch NIE
+   * neu geladen, auch nicht nach einem Deploy. Der Nutzer musste den kompletten Sim
+   * beenden, um eine neue Version zu sehen, und mehrere "live getestete" Fixes wurden in
+   * Wahrheit nie geladen. TERMINATE zerstoert die App beim Verlassen
+   * (s. efb_api/dist/AppLifecycle.d.ts), sodass ein Schliessen/Oeffnen des Tablets die
+   * Seite frisch holt. Kosten: das Panel laedt beim Oeffnen jedes Mal neu -- akzeptabel,
+   * weil die Seite ohnehin ihren Zustand aus der URL (#tab=...) wiederherstellt.
+   */
+  public SuspendMode = AppSuspendMode.TERMINATE;
 
   public async install(_props: AppInstallProps): Promise<void> {
     Efb.loadCss(`${BASE_URL}/FriesenSpy.css`);

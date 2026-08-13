@@ -69,6 +69,9 @@ from app.database import (
     get_app_setting,
     get_calendar_events,
     get_connection,
+    insert_panel_diag,
+    list_panel_diag,
+    clear_panel_diag,
     get_push_subscription_by_endpoint,
     get_pilot_visibility,
     set_pilot_visibility,
@@ -244,6 +247,11 @@ _GATE_ALLOW_PREFIXES = (
     "/auth/", "/static/", "/health", "/robots.txt", "/favicon",
     "/impressum", "/datenschutz", "/admin", "/api/admin/",
     "/manifest", "/sw.js", "/api/me", "/widget",
+    # Panel-Selbstdiagnose bewusst gate-frei: Ein wesentlicher Teil der Fehlersuche betrifft
+    # genau die Faelle, in denen die Anmeldung im Panel NICHT klappt -- laege sie hinter dem
+    # Gate, fehlten die Messwerte ausgerechnet dann. Der Endpunkt nimmt nur Diagnosedaten
+    # entgegen und gibt nichts preis (s. panel_diag-Kommentar in database.py).
+    "/api/panel-diag",
 )
 
 # Break-glass-Kopie des Admin-Cookies auf ``path=/`` — das eigentliche Admin-Cookie liegt auf
@@ -347,6 +355,75 @@ async def datenschutz_page():
 
 @app.get("/health")
 async def health():
+    return {"status": "ok"}
+
+
+# Deckel gegen Missbrauch/Endlosschleifen: Der Endpunkt ist bewusst gate-frei (s.
+# _GATE_ALLOW_PREFIXES), deshalb hier eine harte Größenbegrenzung statt Vertrauen.
+_PANEL_DIAG_MAX_BYTES = 64 * 1024
+
+
+@app.post("/api/panel-diag", include_in_schema=False)
+async def panel_diag(request: Request):
+    """Selbstdiagnose aus dem MSFS-EFB-Panel entgegennehmen.
+
+    Hintergrund: Die Rendering-Engine im Panel (Coherent GT) ist von außen praktisch nicht
+    untersuchbar -- der SDK-Debugger stürzt reproduzierbar ab, und jede Frage ("rendert
+    Zeichen X?", "kennt die Engine max-content?") kostete bisher eine Rückfrage an den Nutzer
+    am laufenden Simulator. Das Panel misst deshalb selbst und meldet hierher; auswertbar per
+    Admin-Ansicht oder direkt per ``sqlite3`` auf dem VPS.
+
+    Nimmt bewusst beliebiges JSON entgegen (schemalos) -- die Messfragen ändern sich mit jedem
+    Fund. Gibt nichts preis und verlangt keine Anmeldung, weil ein wesentlicher Teil der
+    Fehlersuche genau die Fälle betrifft, in denen die Anmeldung im Panel scheitert.
+    """
+    raw = await request.body()
+    if len(raw) > _PANEL_DIAG_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Diagnose-Datensatz zu groß")
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HTTPException(status_code=400, detail="Ungültiges JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Objekt erwartet")
+
+    kind = str(body.get("kind", "report"))[:40]
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        insert_panel_diag(
+            conn,
+            kind=kind,
+            payload_json=json.dumps(body, ensure_ascii=False)[:_PANEL_DIAG_MAX_BYTES],
+            app_version=str(body.get("appVersion") or "")[:40] or None,
+            user_agent=request.headers.get("user-agent", "")[:300] or None,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok"}
+
+
+@app.get("/api/admin/panel-diag")
+async def admin_list_panel_diag(request: Request, limit: int = 50):
+    """Diagnose-Datensätze aus dem EFB-Panel lesen (Admin)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return {"entries": list_panel_diag(conn, limit=max(1, min(500, limit)))}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/panel-diag")
+async def admin_clear_panel_diag(request: Request):
+    """Diagnose-Datensätze löschen (Admin) -- für einen sauberen Messlauf."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        clear_panel_diag(conn)
+        conn.commit()
+    finally:
+        conn.close()
     return {"status": "ok"}
 
 

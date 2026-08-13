@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.6.0",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "MSFS-Panel: lädt endlich neu und meldet Fehler selbst",
+    "items": [
+      "🔄 Das Panel lud beim Schließen und Wiederöffnen des Tablets nie neu — die App blieb samt Seite im Speicher liegen, ein kompletter Simulator-Neustart war nötig, um eine neue Version zu sehen. Jetzt reicht Tablet zu und wieder auf.",
+      "🔬 Neue Selbstdiagnose: Das Panel misst im Simulator selbst, welche Zeichen darstellbar sind, ob breite Tabellen scrollen können, welche CSS-Fähigkeiten die Engine hat und ob die Kartenkacheln laden — und meldet das an den Server. Damit lassen sich Fehler untersuchen, die sich in einem normalen Browser gar nicht zeigen, ohne dass jemand am Simulator sitzen und nachschauen muss."
+    ]
+  },
+  {
     "version": "11.5.8",
     "date": "2026-08-13",
     "highlight": false,
