@@ -984,20 +984,23 @@ def get_panel_device(conn: sqlite3.Connection, device_id: str) -> dict | None:
 
 
 def bind_panel_device(conn: sqlite3.Connection, device_id: str, cid: int, name: str | None) -> bool:
-    """Gerät an eine CID binden (kein commit). ``False``, wenn die ID unbrauchbar ist.
+    """Gerät an eine CID binden (kein commit). ``False``, wenn die Bindung abzulehnen ist.
 
-    Ist das Gerät bereits gebunden, wird die Bindung aktualisiert -- meldet sich am selben
-    Simulator jemand anderes an, gehört das Gerät danach ihm. Das ist gewollt: Die ID lebt in
-    der lokalen MSFS-Installation, und wer dort einen Forum-Login schafft, sitzt ohnehin am
-    Rechner.
+    Abgelehnt wird eine unbrauchbar kurze ID -- und, sicherheitsrelevant, eine ID, die bereits
+    an eine ANDERE CID gebunden ist. Ein stilles Überschreiben wäre ein Übernahme-Weg: Wer eine
+    fremde Geräte-ID kennt, könnte sie sonst auf sich selbst umbiegen. Wechselt der Simulator
+    tatsächlich den Besitzer, hebt ein Widerruf im Admin die alte Bindung auf.
     """
     if not device_id or len(device_id) < PANEL_DEVICE_MIN_LEN:
+        return False
+    vorhanden = get_panel_device(conn, device_id)
+    if vorhanden and int(vorhanden["cid"]) != int(cid):
         return False
     now = _now_utc()
     conn.execute(
         "INSERT INTO panel_devices (device_id, cid, name, created_at, last_seen_at) "
         "VALUES (?, ?, ?, ?, ?) "
-        "ON CONFLICT(device_id) DO UPDATE SET cid = excluded.cid, name = excluded.name, "
+        "ON CONFLICT(device_id) DO UPDATE SET name = excluded.name, "
         "last_seen_at = excluded.last_seen_at",
         (device_id, int(cid), name, now, now),
     )

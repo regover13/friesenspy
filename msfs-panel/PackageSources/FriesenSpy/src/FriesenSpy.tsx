@@ -25,28 +25,26 @@ const PANEL_URL = "https://friesenspy.devprops.de/panel";
 const DEVICE_KEY = "friesenspy_device";
 
 /**
- * Zufaellige Geraete-ID erzeugen.
+ * Zufaellige Geraete-ID erzeugen -- oder "" , wenn das nicht sicher moeglich ist.
  *
- * Sie ist ein Zugangsschluessel (wer sie hat, ist als der gebundene Nutzer angemeldet),
- * deshalb so viel Zufall wie die Umgebung hergibt. `crypto.getRandomValues` ist in Coherent GT
- * nicht garantiert vorhanden -- ist es da, wird es genommen; sonst ein Notbehelf aus
- * Math.random und Zeitstempel. Der Server weist alles unter 32 Zeichen ohnehin ab.
+ * Die ID ist ein Zugangsschluessel: Wer sie hat, ist als der gebundene Nutzer angemeldet.
+ * Deshalb NUR aus einem kryptographischen Zufallsgenerator. Ob `crypto.getRandomValues` in
+ * Coherent GT vorhanden ist, ist nicht gesichert -- fehlt es, wird bewusst KEINE Ersatz-ID
+ * aus Math.random/Zeitstempel gebaut: Die waere vorhersagbar und damit ein ratbarer
+ * Dauerzugang. Lieber verzichtet das Panel auf die Bequemlichkeit und meldet sich wie bisher
+ * normal an (buildPanelUrl faellt dann auf die schlichte Panel-Adresse zurueck).
  */
 function makeDeviceId(): string {
   const c = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
-  if (c && typeof c.getRandomValues === "function") {
-    const bytes = c.getRandomValues(new Uint8Array(24));
-    let out = "";
-    for (let i = 0; i < bytes.length; i++) {
-      out += bytes[i].toString(16).padStart(2, "0");
-    }
-    return out;
+  if (!c || typeof c.getRandomValues !== "function") {
+    return "";
   }
-  let fallback = Date.now().toString(16);
-  while (fallback.length < 48) {
-    fallback += Math.floor(Math.random() * 0xffffffff).toString(16);
+  const bytes = c.getRandomValues(new Uint8Array(24));
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, "0");
   }
-  return fallback.slice(0, 48);
+  return out;
 }
 
 /**

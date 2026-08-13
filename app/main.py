@@ -17,7 +17,8 @@ from urllib.parse import quote
 import httpx as _httpx
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import (
-    FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse,
+    FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response,
+    StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
 
@@ -1863,10 +1864,15 @@ def _safe_next_path(raw: str) -> str | None:
     return raw
 
 
-# Cookie, das die Geräte-ID über den Forum-Login-Umweg rettet. Kurzlebig und auf /auth
-# beschränkt -- es dient nur dazu, nach der Rückkehr zu wissen, welches Gerät gebunden werden
-# soll. Der eigentliche Zugang läuft danach über das normale Sitzungs-Cookie.
-_DEVICE_BIND_COOKIE = "fs_dev_bind"
+def _device_bind_csrf(user_token: str) -> str:
+    """CSRF-Marke für die Geräte-Bestätigung, abgeleitet aus dem Sitzungs-Cookie.
+
+    Muss sein, weil das Sitzungs-Cookie ``SameSite=None`` trägt (sonst funktioniert das Panel
+    im iframe nicht) -- es würde also auch bei einem seitenfremden POST mitgeschickt. Die
+    Marke steht nur im HTML der Bestätigungsseite, das eine fremde Seite nicht auslesen kann.
+    """
+    return hmac.new(get_settings().SECRET_KEY.encode(), b"devbind:" + user_token.encode(),
+                    "sha256").hexdigest()
 
 
 @app.get("/auth/device", include_in_schema=False)
@@ -1880,18 +1886,24 @@ async def auth_device(request: Request, device: str = "", next: str = "/panel"):
     Route auf, statt direkt ``/panel``.
 
     - **Gerät bekannt:** Sitzungs-Cookie ausstellen und weiter zum Ziel. Kein Login nötig.
-    - **Gerät unbekannt:** ID kurz merken und in den normalen Forum-Login schicken; die
-      Bindung passiert nach erfolgreicher Anmeldung im Callback.
+    - **Gerät unbekannt, nicht angemeldet:** in den normalen Forum-Login, mit Rückweg hierher.
+    - **Gerät unbekannt, angemeldet:** Bestätigungsseite. Gebunden wird ausschließlich durch
+      einen bewussten POST von dieser Seite.
 
-    Die Weiterleitung geht bewusst auf einen Pfad OHNE die Geräte-ID, damit der
-    Zugangsschlüssel nicht in der finalen Adresse (und damit in Verlauf/Verweisen) stehen
-    bleibt.
+    **Warum nicht automatisch beim Login binden** (so war es zuerst gebaut, es war eine
+    Sicherheitslücke): Ein Angreifer hätte einen Link mit SEINER Geräte-ID schicken können.
+    Das Opfer meldet sich ganz normal an -- und die fremde ID wäre an seine CID gebunden
+    worden, der Angreifer dauerhaft als das Opfer angemeldet (Session-Fixierung). Dass die ID
+    schwer zu raten ist, half dort nichts: Der Angreifer wählt sie ja selbst. Deshalb bindet
+    jetzt nur noch eine sichtbare, bewusste Bestätigung -- ein untergeschobener Link führt
+    sichtbar zu einer Frage, die man verneinen kann.
     """
     settings = get_settings()
     dest = _safe_next_path(next) or "/panel"
     device = (device or "").strip()
+    brauchbar = bool(device) and len(device) >= PANEL_DEVICE_MIN_LEN
 
-    if device and len(device) >= PANEL_DEVICE_MIN_LEN:
+    if brauchbar:
         conn = get_connection(settings.DB_PATH)
         try:
             dev = get_panel_device(conn, device)
@@ -1902,6 +1914,8 @@ async def auth_device(request: Request, device: str = "", next: str = "/panel"):
                 )
                 touch_panel_device(conn, device)
                 conn.commit()
+                # Ziel bewusst OHNE die Geräte-ID, damit der Zugangsschlüssel nicht in der
+                # finalen Adresse (und damit im Verlauf) stehen bleibt.
                 resp = RedirectResponse(dest, status_code=302, headers=_HTML_NO_CACHE)
                 resp.set_cookie(USER_COOKIE, user_token, httponly=True,
                                 secure=_is_https(request), samesite=_iframe_samesite(request),
@@ -1910,13 +1924,91 @@ async def auth_device(request: Request, device: str = "", next: str = "/panel"):
         finally:
             conn.close()
 
-    # Unbekannt (oder unbrauchbar kurz): normaler Login-Weg, ID für die Bindung merken.
-    resp = RedirectResponse(f"/auth/forum/login?next={quote(dest, safe='')}", status_code=302,
-                            headers=_HTML_NO_CACHE)
-    if device and len(device) >= PANEL_DEVICE_MIN_LEN:
-        resp.set_cookie(_DEVICE_BIND_COOKIE, device, httponly=True, secure=_is_https(request),
-                        samesite=_iframe_samesite(request), path="/auth", max_age=600)
-    return resp
+    user_token = request.cookies.get(USER_COOKIE, "")
+    claims = verify_user_token(user_token, settings.SECRET_KEY) if user_token else None
+
+    if not claims:
+        # Noch nicht angemeldet: normaler Login-Weg, danach zurück hierher. Es wird NICHTS
+        # gemerkt -- die Bindung entscheidet erst die Bestätigungsseite unten.
+        zurueck = f"/auth/device?device={quote(device, safe='')}&next={quote(dest, safe='')}" \
+            if brauchbar else dest
+        return RedirectResponse(f"/auth/forum/login?next={quote(zurueck, safe='')}",
+                                status_code=302, headers=_HTML_NO_CACHE)
+
+    if not brauchbar:
+        return RedirectResponse(dest, status_code=302, headers=_HTML_NO_CACHE)
+
+    # Angemeldet, Gerät noch nicht gebunden → bewusst bestätigen lassen.
+    name = _html.escape(str(claims.get("name", "")))
+    marke = _device_bind_csrf(user_token)
+    seite = f"""<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Gerät anmelden</title>
+<link href="/static/fonts/fonts.css" rel="stylesheet">
+<style>
+ body {{ background:#04080f; color:#d4e8f5; font-family:'Exo 2',sans-serif; margin:0;
+        display:flex; align-items:center; justify-content:center; min-height:100vh; padding:24px; }}
+ .box {{ background:#071525; border:1px solid rgba(45,156,219,0.3); padding:28px 32px;
+         max-width:520px; box-shadow:0 0 20px rgba(45,156,219,0.2); }}
+ h1 {{ color:#2d9cdb; font-size:1.2rem; letter-spacing:0.08em; margin:0 0 14px; }}
+ p {{ line-height:1.6; font-size:0.95rem; }}
+ .hinweis {{ color:#6b9ab8; font-size:0.82rem; }}
+ button, a.nein {{ font-family:'Exo 2',sans-serif; font-size:0.9rem; letter-spacing:0.08em;
+         padding:14px 22px; min-height:44px; cursor:pointer; display:inline-block;
+         text-decoration:none; margin-top:18px; }}
+ button {{ background:#2d9cdb; color:#04080f; border:none; font-weight:700; }}
+ a.nein {{ background:transparent; color:#6b9ab8; border:1px solid rgba(45,156,219,0.3);
+           margin-left:10px; }}
+</style></head><body><div class="box">
+<h1>Dieses Gerät dauerhaft anmelden?</h1>
+<p>Angemeldet als <strong>{name}</strong>.</p>
+<p>Danach meldet sich FriesenSpy auf diesem Simulator von selbst an — auch nach einem
+Neustart. Du kannst das jederzeit im Admin-Bereich wieder entziehen.</p>
+<p class="hinweis">Wenn du diese Frage nicht erwartet hast, z.&nbsp;B. weil du einem Link
+gefolgt bist: auf „Nein“ tippen. Es wird dann nichts gespeichert.</p>
+<form method="post" action="/auth/device/bind">
+  <input type="hidden" name="device" value="{_html.escape(device)}">
+  <input type="hidden" name="next" value="{_html.escape(dest)}">
+  <input type="hidden" name="csrf" value="{marke}">
+  <button type="submit">Ja, Gerät merken</button>
+  <a class="nein" href="{_html.escape(dest)}">Nein, nur diesmal</a>
+</form></div></body></html>"""
+    return HTMLResponse(seite, headers=_HTML_NO_CACHE)
+
+
+@app.post("/auth/device/bind", include_in_schema=False)
+async def auth_device_bind(request: Request):
+    """Geräte-Bindung ausführen -- nur mit gültiger Sitzung UND passender CSRF-Marke.
+
+    Der einzige Weg, eine Bindung anzulegen. Ein bloßer Aufruf per untergeschobenem Link
+    genügt nicht: Die Marke steht nur im HTML der Bestätigungsseite, das eine fremde Seite
+    nicht auslesen kann (s. ``_device_bind_csrf``).
+    """
+    settings = get_settings()
+    user_token = request.cookies.get(USER_COOKIE, "")
+    claims = verify_user_token(user_token, settings.SECRET_KEY) if user_token else None
+    if not claims:
+        raise HTTPException(status_code=401, detail="Nicht angemeldet")
+
+    form = await request.form()
+    device = str(form.get("device", "")).strip()
+    dest = _safe_next_path(str(form.get("next", ""))) or "/panel"
+    if not hmac.compare_digest(str(form.get("csrf", "")), _device_bind_csrf(user_token)):
+        raise HTTPException(status_code=403, detail="Ungültige Bestätigung")
+
+    raw_cid = str(claims.get("cid", "")).strip()
+    if not raw_cid.isdigit():
+        raise HTTPException(status_code=400, detail="Keine CID in der Sitzung")
+
+    conn = get_connection(settings.DB_PATH)
+    try:
+        if not bind_panel_device(conn, device, int(raw_cid), str(claims.get("name", ""))):
+            # Zu kurz oder bereits an eine andere CID gebunden -- nicht stillschweigend
+            # überschreiben (das wäre ein Übernahme-Weg), sondern klar ablehnen.
+            raise HTTPException(status_code=409, detail="Gerät nicht bindbar (ggf. bereits vergeben)")
+        conn.commit()
+    finally:
+        conn.close()
+    return RedirectResponse(dest, status_code=303, headers=_HTML_NO_CACHE)
 
 
 @app.get("/auth/forum/login")
@@ -2001,22 +2093,10 @@ async def forum_callback(request: Request):
         except Exception:
             _logger.warning("forum_callsign-Persistierung fehlgeschlagen (Login läuft weiter)",
                             exc_info=True)
-    # Kam der Login über die Geräte-Bindung fürs EFB-Panel (/auth/device), das Gerät jetzt --
-    # nach nachgewiesener Forum-Anmeldung -- an die CID binden. Ab dann meldet sich das Panel
-    # ohne Zutun an, auch über Simulator-Neustarts hinweg. Bewusst best-effort: Scheitert die
-    # Bindung, ist der Nutzer trotzdem regulär angemeldet.
-    device_to_bind = request.cookies.get(_DEVICE_BIND_COOKIE, "").strip()
-    if device_to_bind and str(claims.get("cid", "")).strip().isdigit():
-        try:
-            conn = get_connection(settings.DB_PATH)
-            try:
-                bind_panel_device(conn, device_to_bind, int(str(claims.get("cid")).strip()),
-                                  str(claims.get("name", "")))
-                conn.commit()
-            finally:
-                conn.close()
-        except Exception:
-            _logger.warning("Geräte-Bindung fehlgeschlagen (Login läuft weiter)", exc_info=True)
+    # HIER wird bewusst KEIN Gerät gebunden. Ein früherer Entwurf tat das automatisch, sobald
+    # ein Geräte-Cookie vorlag -- das war eine Session-Fixierung: Ein untergeschobener Link
+    # mit fremder Geräte-ID hätte diese nach der Anmeldung des Opfers an dessen CID gebunden.
+    # Gebunden wird ausschließlich über die bestätigte POST-Route /auth/device/bind.
 
     # Nach erfolgreichem Login zum gemerkten Ziel (z. B. /admin) zurück, sonst zur Startseite.
     dest = _safe_next_path(request.cookies.get("fs_sso_next", "")) or "/"
@@ -2025,7 +2105,10 @@ async def forum_callback(request: Request):
                     samesite=_iframe_samesite(request), path="/", max_age=settings.USER_SESSION_MAX_AGE_SEC)
     resp.delete_cookie("fs_sso_state", path="/auth/forum")
     resp.delete_cookie("fs_sso_next", path="/auth/forum")
-    resp.delete_cookie(_DEVICE_BIND_COOKIE, path="/auth")
+    # Aufräum-Rest: Ein früherer Entwurf merkte die Geräte-ID hier in einem Cookie (die
+    # Session-Fixierung, s. Kommentar oben). Das Löschen bleibt, damit bei Nutzern, die den
+    # alten Stand geladen hatten, kein verwaistes Cookie liegen bleibt.
+    resp.delete_cookie("fs_dev_bind", path="/auth")
     return resp
 
 

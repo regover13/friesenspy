@@ -107,16 +107,23 @@ class TestDatenbank:
         finally:
             conn.close()
 
-    def test_erneute_bindung_ueberschreibt_cid(self, env):
-        """Meldet sich am selben Simulator jemand anderes an, gehört das Gerät danach ihm."""
-        _bind(env.db, cid=111)
-        _bind(env.db, cid=222)
+    def test_bindung_an_fremde_cid_wird_abgelehnt(self, env):
+        """Ein stilles Überschreiben wäre ein Übernahme-Weg: Wer eine fremde Geräte-ID kennt,
+        könnte sie sonst auf sich umbiegen. Wechselt der Simulator wirklich den Besitzer,
+        hebt ein Widerruf im Admin die alte Bindung auf."""
+        assert _bind(env.db, cid=111) is True
+        assert _bind(env.db, cid=222) is False
         conn = get_connection(env.db)
         try:
-            assert get_panel_device(conn, GERAET)["cid"] == 222
+            assert get_panel_device(conn, GERAET)["cid"] == 111   # unverändert
             assert len(list_panel_devices(conn)) == 1
         finally:
             conn.close()
+
+    def test_erneute_bindung_derselben_cid_ist_erlaubt(self, env):
+        """Dasselbe Gerät, derselbe Nutzer -- z. B. nach einem Widerruf und Neu-Anmelden."""
+        assert _bind(env.db, cid=CID) is True
+        assert _bind(env.db, cid=CID) is True
 
 
 class TestAuthDeviceEndpunkt:
@@ -142,17 +149,15 @@ class TestAuthDeviceEndpunkt:
         r = env.client.get(f"/auth/device?device={'z' * 48}", follow_redirects=False)
         assert r.status_code == 302
         assert r.headers["location"].startswith("/auth/forum/login")
-        # ID wird für die spätere Bindung gemerkt ...
-        assert r.cookies.get(main._DEVICE_BIND_COOKIE)
-        # ... aber es gibt noch KEINE Sitzung.
         assert not r.cookies.get(USER_COOKIE)
+        # Es darf NICHTS gemerkt werden -- ein gemerktes Gerät wäre der Fixierungs-Weg.
+        assert not r.cookies.get("fs_dev_bind")
 
-    def test_zu_kurze_id_meldet_nicht_an_und_wird_nicht_gemerkt(self, env):
+    def test_zu_kurze_id_meldet_nicht_an(self, env):
         r = env.client.get(f"/auth/device?device={KURZ}", follow_redirects=False)
         assert r.status_code == 302
         assert r.headers["location"].startswith("/auth/forum/login")
         assert not r.cookies.get(USER_COOKIE)
-        assert not r.cookies.get(main._DEVICE_BIND_COOKIE)
 
     def test_ohne_geraet_normaler_login(self, env):
         r = env.client.get("/auth/device", follow_redirects=False)
@@ -188,6 +193,115 @@ class TestAuthDeviceEndpunkt:
         assert r.status_code == 302
         assert r.headers["location"] == "/panel"
         assert r.cookies.get(USER_COOKIE)
+
+
+class TestBindungNurMitBestaetigung:
+    """Die Bindung ist der sicherheitskritische Schritt -- hier liegt der Schwerpunkt.
+
+    Ein früherer Entwurf band automatisch, sobald nach dem Login ein Geräte-Cookie vorlag.
+    Das war eine Session-Fixierung: Ein untergeschobener Link mit der Geräte-ID des
+    Angreifers hätte diese an die CID des Opfers gebunden -- der Angreifer wäre dauerhaft als
+    das Opfer angemeldet gewesen. Dass die ID schwer zu raten ist, half nicht: Der Angreifer
+    wählt sie selbst.
+    """
+
+    def _login(self, env, cid: int = CID, name: str = "Tobias EDKB") -> str:
+        """Sitzungs-Cookie wie nach einem Forum-Login setzen."""
+        import time as _t
+        from app.forum_sso import make_user_token
+        token = make_user_token(SECRET, name, str(cid), False, _t.time() + 3600)
+        env.client.cookies.set(USER_COOKIE, token)
+        return token
+
+    def test_angemeldet_und_unbekannt_zeigt_bestaetigung_statt_zu_binden(self, env):
+        self._login(env)
+        r = env.client.get(f"/auth/device?device={GERAET}", follow_redirects=False)
+        assert r.status_code == 200
+        assert "Dieses Gerät dauerhaft anmelden?" in r.text
+        # Entscheidend: Das blosse Aufrufen bindet NICHT.
+        conn = get_connection(env.db)
+        try:
+            assert get_panel_device(conn, GERAET) is None
+        finally:
+            conn.close()
+
+    def test_bindung_mit_gueltiger_marke(self, env):
+        token = self._login(env)
+        marke = main._device_bind_csrf(token)
+        r = env.client.post("/auth/device/bind",
+                            data={"device": GERAET, "next": "/panel", "csrf": marke},
+                            follow_redirects=False)
+        assert r.status_code == 303
+        assert r.headers["location"] == "/panel"
+        conn = get_connection(env.db)
+        try:
+            assert get_panel_device(conn, GERAET)["cid"] == CID
+        finally:
+            conn.close()
+
+    def test_bindung_ohne_marke_abgelehnt(self, env):
+        """Das Sitzungs-Cookie trägt SameSite=None (nötig fürs iframe) und würde bei einem
+        seitenfremden POST mitgeschickt -- die Marke ist der eigentliche Schutz."""
+        self._login(env)
+        r = env.client.post("/auth/device/bind",
+                            data={"device": GERAET, "next": "/panel", "csrf": "falsch"},
+                            follow_redirects=False)
+        assert r.status_code == 403
+        conn = get_connection(env.db)
+        try:
+            assert get_panel_device(conn, GERAET) is None
+        finally:
+            conn.close()
+
+    def test_bindung_ohne_anmeldung_abgelehnt(self, env):
+        r = env.client.post("/auth/device/bind",
+                            data={"device": GERAET, "next": "/panel", "csrf": "egal"},
+                            follow_redirects=False)
+        assert r.status_code == 401
+
+    def test_marke_eines_anderen_nutzers_greift_nicht(self, env):
+        """Die Marke ist an die konkrete Sitzung gebunden, nicht global gültig."""
+        fremd = self._login(env, cid=999, name="Fremd")
+        fremde_marke = main._device_bind_csrf(fremd)
+        eigen = self._login(env, cid=CID)
+        assert fremde_marke != main._device_bind_csrf(eigen)
+        r = env.client.post("/auth/device/bind",
+                            data={"device": GERAET, "next": "/panel", "csrf": fremde_marke},
+                            follow_redirects=False)
+        assert r.status_code == 403
+
+    def test_fremdes_geraet_kann_nicht_uebernommen_werden(self, env):
+        """Wer eine fremde Geräte-ID kennt, darf sie nicht auf sich umbiegen können."""
+        _bind(env.db, cid=111)                      # gehört jemand anderem
+        token = self._login(env, cid=222)
+        r = env.client.post("/auth/device/bind",
+                            data={"device": GERAET, "next": "/panel",
+                                  "csrf": main._device_bind_csrf(token)},
+                            follow_redirects=False)
+        assert r.status_code == 409
+        conn = get_connection(env.db)
+        try:
+            assert get_panel_device(conn, GERAET)["cid"] == 111   # unverändert
+        finally:
+            conn.close()
+
+    def test_login_bindet_nichts_automatisch(self, env):
+        """Kernschutz gegen die Fixierung: Der Login-Callback darf NIE binden."""
+        env.client.cookies.set("fs_dev_bind", GERAET)
+        self._login(env)
+        conn = get_connection(env.db)
+        try:
+            assert get_panel_device(conn, GERAET) is None
+        finally:
+            conn.close()
+
+    def test_kein_open_redirect_beim_binden(self, env):
+        token = self._login(env)
+        r = env.client.post("/auth/device/bind",
+                            data={"device": GERAET, "next": "https://boese.example/",
+                                  "csrf": main._device_bind_csrf(token)},
+                            follow_redirects=False)
+        assert r.headers["location"] == "/panel"
 
 
 class TestAdminGeraete:

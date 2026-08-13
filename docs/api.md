@@ -1649,9 +1649,33 @@ vorbei.
 **Verhalten**
 - **Gerät bekannt:** Sitzungs-Cookie (`fs_user`) für die gebundene CID ausstellen, `302` auf
   `next`. Kein Login nötig.
-- **Gerät unbekannt / ID zu kurz / kein `device`:** `302` in den normalen Forum-Login. Bei
-  brauchbarer ID wird sie in `fs_dev_bind` (httponly, `path=/auth`, 10 min) gemerkt; die
-  Bindung erfolgt nach erfolgreicher Anmeldung in `/auth/forum/callback`.
+- **Gerät unbekannt, nicht angemeldet:** `302` in den normalen Forum-Login, mit Rückweg
+  hierher. Es wird **nichts** gemerkt.
+- **Gerät unbekannt, angemeldet:** Bestätigungsseite („Dieses Gerät dauerhaft anmelden?").
+
+> **Gebunden wird ausschließlich über `POST /auth/device/bind`, nie automatisch.** Ein
+> früherer Entwurf band beim Login, sobald ein Geräte-Cookie vorlag — das war eine
+> Session-Fixierung: Ein untergeschobener Link mit der Geräte-ID des Angreifers hätte diese
+> an die CID des Opfers gebunden, der Angreifer wäre dauerhaft als das Opfer angemeldet
+> gewesen. Dass die ID schwer zu raten ist, half dort nicht — der Angreifer wählt sie selbst.
+
+### POST /auth/device/bind
+
+Führt die Bindung aus. Verlangt eine gültige Sitzung **und** die CSRF-Marke aus der
+Bestätigungsseite (`_device_bind_csrf`, HMAC über das Sitzungs-Cookie). Die Marke ist nötig,
+weil `fs_user` `SameSite=None` trägt (sonst funktioniert das Panel im iframe nicht) und
+deshalb auch bei einem seitenfremden POST mitgeschickt würde; die Marke steht nur im HTML der
+Bestätigungsseite, das eine fremde Seite nicht auslesen kann.
+
+| Feld (Formular) | Bedeutung |
+|-----------------|-----------|
+| `device` | Geräte-ID |
+| `next` | Ziel danach, nur seitenintern |
+| `csrf` | Marke aus der Bestätigungsseite |
+
+**Responses** `303` auf `next` · `401` nicht angemeldet · `403` falsche Marke ·
+`409` ID zu kurz **oder bereits an eine andere CID gebunden** (kein stilles Überschreiben —
+das wäre ein Übernahme-Weg; erst im Admin widerrufen).
 
 Die Weiterleitung geht bewusst auf einen Pfad **ohne** die Geräte-ID, damit der Schlüssel
 nicht in der finalen Adresse und damit im Verlauf stehen bleibt. `next` wird über
