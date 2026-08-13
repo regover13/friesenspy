@@ -110,6 +110,16 @@
     html.vr-panel #app-version {
       display: none !important;
     }
+    /* Kartenbereiche haben feste px-Höhen (580/560/460px), auf die restliche Seite abgestimmt --
+       unter der 1.35er VR-Skalierung (s. oben) wachsen die um denselben Faktor mit und werden
+       höher als das EFB-Tablet, man muss zum unteren Rand scrollen (Live-Test-Fund 13.08.2026).
+       Viewport-relativ statt fix, damit es sich an die tatsächliche Panel-Höhe anpasst. Startwert,
+       im Sim nachjustierbar -- #track-map-wrap hat die Höhe als Inline-Style, deshalb !important. */
+    html.vr-panel #map-container,
+    html.vr-panel #events-map-container,
+    html.vr-panel #track-map-wrap {
+      height: 50vh !important;
+    }
 
     html, body {
       height: 100%;

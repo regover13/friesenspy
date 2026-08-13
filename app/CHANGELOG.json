@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.5.1",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Umlaute im MSFS-EFB-Panel repariert",
+    "items": [
+      "🔤 Ä/Ö/Ü/ä/ö/ü erschienen im MSFS-EFB-Panel als leere Kästchen, obwohl sie im geladenen Font-Subset enthalten sind — Coherent GT wählt bei mehreren Schriftschnitten derselben Familie vermutlich nicht korrekt per unicode-range aus, sondern nimmt den zuerst deklarierten. Reihenfolge in fonts.css getauscht (Live-Test-Fund 13.08.2026).",
+      "🗺️ Die Kartenbereiche waren im MSFS-EFB-Panel höher als das Tablet — musste zum unteren Rand scrollen. Grund: feste Pixel-Höhen wachsen unter der VR-Skalierung mit. Jetzt viewport-relativ (Live-Test-Fund 13.08.2026)."
+    ]
+  },
+  {
     "version": "11.5.0",
     "date": "2026-08-13",
     "highlight": false,
