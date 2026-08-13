@@ -126,6 +126,48 @@ Jede davon stammt aus einem echten Live-Test, nicht aus Vermutung:
 | Emoji-/Symbolzeichen | kein Font-Fallback → leere Kästchen (auch bei UI-Zeichen wie `×`!) |
 | SVG mit `<image>`-Referenz | Icon verschwindet; reine Vektor-SVGs funktionieren |
 | `Cache-Control` | wird nicht zuverlässig befolgt |
+| CSS `gap` (Flex/Grid) | `CSS.supports('gap','1px')` = false; Abstand fällt ersatzlos weg — `margin` benutzen |
+| CSS `position: sticky` | nicht unterstützt |
+| `IntersectionObserver` | nicht vorhanden |
+| **Jede** Schriftdatei | siehe unten — die Engine nimmt überhaupt keine an |
+| **Waagerechtes Scrollen** | siehe unten — technisch möglich, aber nicht bedienbar |
 
 **Leaflet selbst läuft einwandfrei** (Karte, Marker, Popups) — es ist kein generelles
 „alte Engine"-Problem, sondern diese konkreten Lücken.
+
+### Schriften: eine Sackgasse, keine Aufgabe (gemessen 13.08.2026)
+
+Drei Anläufe an der Schrift-Auslieferung waren nicht falsch, sondern **wirkungslos** — es
+gibt dort nichts zu reparieren:
+
+- `document.fonts` bleibt bei **0 Einträgen**; keine einzige `@font-face` kommt an.
+- `"Exo 2"` / `sans-serif` / `serif` / `monospace` / `Arial` / `Verdana` / `"Segoe UI"` /
+  `Tahoma` rendern denselben Text auf **exakt 252,59 px** → es gibt genau EINE eingebaute
+  Schrift, `font-family` wird komplett ignoriert.
+- Diese Schrift kann **kein Zeichen über U+007F**: ä/ö/ü/×/✕/⛶/→/🔔 liegen alle exakt auf
+  der Tofu-Referenzbreite (U+E000).
+- Gegenprobe mit **eingebetteter** Schrift (dieselbe Datei per `fetch` geholt, als
+  `data:`-URI angeboten): `status 200`, `bytes 40896` — vollständig angekommen — aber
+  `wurdeAngewandt: false`, `faceCount: 0`. Die Engine lehnt Schriften **nicht wegen der
+  Herkunft** ab, sondern generell.
+
+→ Konsequenz: Text umschreiben statt Schrift ausliefern. `_TRANSLIT_MAP` /
+`_initPanelTranslit` in `app/static/index.html`, nur bei `html.vr-panel`, zentral über
+einen MutationObserver.
+
+### Waagerechtes Scrollen ist nicht bedienbar (gemessen 13.08.2026)
+
+Die Messung sagt, dass es *funktioniert* — und trotzdem kommt niemand an die Spalten:
+
+```
+{"cls": "live-table-wrap", "wrapClientW": 334, "wrapScrollW": 501, "canScroll": true}
+```
+
+CSS und Layout stimmen also. Was fehlt, sind **alle drei Bedienwege**: Coherent GT zeichnet
+keine Scrollleiste (`::-webkit-scrollbar` bleibt wirkungslos), kennt kein Ziehen mit
+Finger/Maus, und ein Mausrad gibt es im Tablet nicht.
+
+→ Konsequenz: im Panel gar nicht erst waagerecht scrollen. Jede Tabelle ab drei Spalten in
+einem `.live-table-wrap`/`.table-scroll`-Wrapper wird zu gestapelten Karten
+(`_panelKartenLayout`). **Nicht** durch besseres CSS zu beheben — wer das nächste Mal an
+den Scroll-Styles ansetzt, repariert etwas, das bereits funktioniert.

@@ -120,3 +120,105 @@ def test_panel_bleibt_hinter_dem_login_gate(env):
     loc = r.headers["location"]
     assert loc.startswith("/auth/forum/login")
     assert loc == "/auth/forum/login?next=%2Fpanel"
+
+
+# ---------------------------------------------------------------------------
+#  Umschreibung deutscher Sonderzeichen im Panel (v11.11.0)
+# ---------------------------------------------------------------------------
+# Hintergrund: Coherent GT hat genau EINE eingebaute Schrift und nimmt nachweislich keine
+# zweite an (gemessen ueber /api/panel-diag: document.fonts leer, neun Familien identisch
+# breit, eine eingebettete data:-URI-Schrift kam vollstaendig an und wurde trotzdem nicht
+# angewandt). Diese Schrift kann kein Zeichen ueber U+007F. Deshalb wird der Text
+# umgeschrieben statt die Schrift repariert -- die Tests sichern das Verfahren, nicht die
+# einzelne Zeichentabelle.
+
+
+def test_panel_schreibt_deutsche_sonderzeichen_um():
+    """ä/ö/ü/ß muessen auf ae/oe/ue/ss abgebildet sein -- sonst stehen im Tablet leere
+    Kaesten statt Text."""
+    for zeichen, ersatz in [("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")]:
+        assert f"'{zeichen}': '{ersatz}'" in INDEX, f"{zeichen} fehlt in _TRANSLIT_MAP"
+
+
+def test_umschreibung_haengt_an_einer_zentralen_stelle():
+    """Die Umschreibung muss ueber den MutationObserver laufen, nicht in einzelnen Renderern.
+    Text entsteht an weit ueber hundert Stellen; jede einzeln anzufassen hiesse, die naechste
+    neue zwangslaeufig zu vergessen -- und der Fehler faellt erst im Sim auf."""
+    assert "new MutationObserver" in INDEX
+    assert "_translitBaum(e.addedNodes[i])" in INDEX
+    assert "characterData: true" in INDEX
+
+
+def test_umschreibung_nur_im_panel():
+    """Die normale Webseite behaelt echte Umlaute -- die Umschreibung ist eine Kroete, die
+    nur der Sim schlucken muss."""
+    m = re.search(r"function _initPanelTranslit\(\) \{\n(.*?)\n\}", INDEX, re.S)
+    assert m, "_initPanelTranslit nicht gefunden"
+    assert "classList.contains('vr-panel')" in m.group(1).split("\n")[0] + m.group(1)
+
+
+def test_umschreibung_schreibt_nur_bei_echter_aenderung():
+    """Ohne diese Wache weckt der Beobachter sich endlos selbst: eine Zuweisung meldet auch
+    dann eine Mutation, wenn sich der Wert nicht geaendert hat."""
+    assert "if (neu !== knoten.nodeValue) knoten.nodeValue = neu;" in INDEX
+    assert "td.getAttribute('data-label') !== heads[i]" in INDEX
+
+
+# ---------------------------------------------------------------------------
+#  Karten statt waagerechtem Scrollen (v11.11.0)
+# ---------------------------------------------------------------------------
+# Messung v11.10.1: Der Wrapper meldet korrekt canScroll=true (scrollWidth 501 gegen
+# clientWidth 334) -- CSS und Layout stimmen also. Coherent GT zeichnet aber keine
+# Scrollleiste, kennt kein Ziehen und hat kein Mausrad: die Spalten rechts vom Rand sind
+# schlicht unerreichbar. Karten umgehen das, statt es zu bekaempfen.
+
+
+def test_karten_layout_gilt_fuer_alle_breiten_tabellen():
+    """Die erste Fassung fasste nur Live-Positionen und Events an und liess u. a. die
+    Flugplaene stehen -- genau die Ansicht, die der Nutzer im Sim nicht bedienen konnte."""
+    m = re.search(r"function _panelKartenLayout\(wurzel\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_panelKartenLayout nicht gefunden"
+    rumpf = m.group(1)
+    assert ".live-table-wrap, .table-scroll" in rumpf, "beide Wrapper-Klassen noetig"
+    assert "kopfzellen.length < 3" in rumpf, "Zweispalter bleiben absichtlich Tabellen"
+
+
+def test_karten_layout_wird_zentral_ausgeloest_nicht_je_renderer():
+    """Regression: _panelLabelCells wurde von genau zwei Renderern aufgerufen. Jede neue
+    Tabelle haette den Fix wieder verpasst."""
+    assert "_panelLabelCells" not in INDEX, "alter Einzelaufruf-Weg lebt noch"
+    assert "_panelKartenLayout(e.addedNodes[i])" in INDEX
+    assert "_panelKartenLayout(document.body)" in INDEX
+
+
+def test_sortierbare_kopfzeilen_ueberleben_das_karten_layout():
+    """thead ist im Karten-Modus ausgeblendet -- bei sortierbaren Tabellen (Muster-Statistik,
+    Rangliste) waeren damit die einzigen Sortier-Bedienelemente weg. Sie bleiben als Reihe
+    antippbarer Schalter stehen."""
+    assert "panel-cards-sortable" in INDEX
+    assert "html.vr-panel .panel-cards-sortable thead { display: block; }" in INDEX
+    assert "th.hasAttribute('onclick')" in INDEX
+
+
+def test_karten_layout_nutzt_kein_flex_gap():
+    """CSS.supports('gap','1px') ist in Coherent GT false (gemessen) -- ein Abstand ueber
+    flex-gap faellt dort ersatzlos weg. Im Karten-Layout deshalb margin statt gap."""
+    m = re.search(r"html\.vr-panel \.panel-cards tbody td \{(.*?)\}", INDEX, re.S)
+    assert m, "Karten-Zellenregel nicht gefunden"
+    assert "gap:" not in m.group(1)
+
+
+def test_panel_initialisierung_wartet_auf_das_fertige_dokument():
+    """Die festen Knoepfe stehen HINTER dem Inline-Skript. Ein direkter Aufruf fand per
+    getElementById nur null -- _initPanelBackButton brach dann stumm an seiner eigenen Wache
+    ab, und der Zurueck-Knopf blieb fuer immer versteckt."""
+    assert "_initPanelBackButton();\n_initPanelTranslit();" not in INDEX
+    m = re.search(r"document\.addEventListener\('DOMContentLoaded', \(\) => \{\n"
+                  r"  _initPanelBackButton\(\);\n  _initPanelTranslit\(\);\n\}\);", INDEX)
+    assert m, "Panel-Initialisierung haengt nicht an DOMContentLoaded"
+
+
+def test_flugaktivitaets_grafik_im_panel_ausgeblendet():
+    """Chart.js 4.x benutzt Class-Field-Syntax (ES2022), die Coherent GT nicht parst. Ein
+    bestehendes try/catch faengt das ab -- uebrig bleibt ein leerer Kasten mit Ueberschrift."""
+    assert "html.vr-panel #stats-activity-wrap { display: none; }" in INDEX

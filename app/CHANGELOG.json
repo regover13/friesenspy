@@ -1,5 +1,17 @@
 [
   {
+    "version": "11.11.0",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "MSFS-Panel: breite Tabellen als Karten, lesbarer Text",
+    "items": [
+      "📋 Breite Tabellen im MSFS-Panel stehen jetzt durchgehend als gestapelte Karten untereinander — auch die Flugpläne, die Statistik-Listen und der Kutter-Feed. Waagerechtes Scrollen gibt es im Tablet schlicht nicht: keine Scrollleiste, kein Ziehen, kein Mausrad. Alles, was bisher rechts vom Rand lag, war damit unerreichbar.",
+      "🔤 Der Text im MSFS-Panel ist wieder lesbar: ä/ö/ü/ß erscheinen dort als ae/oe/ue/ss. Die Engine des Simulators hat genau eine eingebaute Schrift und nimmt keine weitere an — auch keine mitgelieferte. Statt leerer Kästchen steht jetzt Text da. Auf der Website bleibt alles, wie es war.",
+      "↩️ Der Zurück-Balken im MSFS-Panel funktioniert wieder — er war seit seiner Einführung nie aktiv geworden.",
+      "📊 Die Flugaktivitäts-Grafik wird im MSFS-Panel ausgeblendet, statt als leerer Kasten dazustehen; auf der Website bleibt sie unverändert."
+    ]
+  },
+  {
     "version": "11.10.1",
     "date": "2026-08-13",
     "highlight": false,
