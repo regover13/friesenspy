@@ -443,4 +443,106 @@ def test_kein_zweiter_ausgang_aus_dem_vollbild_im_panel():
 def test_leaflet_bedienelemente_liegen_nicht_unter_der_zurueck_leiste():
     """Zoom sitzt oben links, Ebenen oben rechts -- im Vollbild genau unter der Leiste am
     oberen Rand. Der Plus-Knopf war dadurch nicht erreichbar (Nutzer-Fund)."""
-    assert "html.vr-panel.panel-has-back .map-is-fullscreen .leaflet-top { margin-top: 60px; }" in INDEX
+    assert "html.vr-panel .map-is-fullscreen .leaflet-top { margin-top: 46px; }" in INDEX
+
+
+# ---------------------------------------------------------------------------
+#  Vereinheitlichte Kopf-/Tab-Leiste (v11.15.0)
+# ---------------------------------------------------------------------------
+# Nutzerwunsch 13.08.2026: "Tab-Navigation in den Balken mit zurueck einbauen, als
+# Hintergrund dieser Leiste das FriesenSpy-Schriftzug". Kopfzeile + Tab-Reihe fraßen bis
+# dahin durchgehend zwei Zeilen auf dem 790px hohen Tablet (gemessen mit Playwright:
+# 57px Kopfzeile + 119.8px Tab-Reihe, weil "STATISTIKEN" bei 558px Fensterbreite in eine
+# zweite Zeile umbrach) -- jetzt eine feste ~46px-Leiste.
+
+
+def test_alte_kopfzeile_im_panel_komplett_ausgeblendet():
+    """Die Kopfzeile (Logo/Hilfe/Login-Name/Uhr/Verbindungsanzeige) ist ueberfluessig, sobald
+    Zurueck-Knopf und Tabs eine eigene feste Leiste haben -- sonst waere der Hoehengewinn
+    nur auf dem Papier da."""
+    assert "html.vr-panel header { display: none !important; }" in INDEX
+
+
+def test_tab_leiste_ist_immer_sichtbar_und_bricht_nie_um():
+    """Vorher stand die Tab-Reihe nur bei Bedarf (Zurueck-Balken) fest bzw. brach bei vier
+    Tabs in zwei Zeilen um (s. Modul-Docstring) -- beides darf nicht zurueckkommen: die
+    Leiste steht permanent (position:fixed) und nowrap erzwingt eine einzige Zeile."""
+    m = re.search(r"html\.vr-panel \.panel-topbar \{([^}]*)\}", INDEX, re.S)
+    assert m, "html.vr-panel .panel-topbar nicht gefunden"
+    rumpf = m.group(1)
+    assert "position: fixed;" in rumpf
+    assert "flex-wrap: nowrap;" in rumpf
+    assert "min-height: 44px;" in rumpf
+
+
+def test_friesenspy_schriftzug_als_leisten_hintergrund():
+    """Kernstueck des Nutzerwunsches: das Wort FRIESENSPY dezent (niedrige Opazitaet) hinter
+    Zurueck-Knopf/Tabs/Verbindungsanzeige -- nicht so kraeftig, dass es die Tab-Beschriftung
+    stoert."""
+    m = re.search(r"html\.vr-panel \.panel-topbar::before \{([^}]*)\}", INDEX, re.S)
+    assert m, "Schriftzug-Pseudoelement nicht gefunden"
+    rumpf = m.group(1)
+    assert "content: 'FRIESENSPY';" in rumpf
+    opazitaet = re.search(r"opacity:\s*([\d.]+);", rumpf)
+    assert opazitaet and float(opazitaet.group(1)) <= 0.2, "Schriftzug muss dezent bleiben"
+
+
+def test_panel_topbar_haengt_ausserhalb_von_app():
+    """Kritischer Fund (Playwright, elementFromPoint ueber offenem Flugplan-Fenster): #app hat
+    'position:relative; z-index:1' und kapselt damit einen eigenen Stapelkontext -- jeder
+    Nachfahre darin landet beim Vergleich mit Elementen AUSSERHALB von #app hoechstens auf
+    Rang 1, egal welchen z-index er selbst traegt. Haenge/wuerde die Leiste stattdessen die
+    bestehende <nav class="tab-nav"> (die IN #app steckt) umbauen, verschwaende der
+    Zurueck-Knopf hinter jedem Modal (z-index 10000) -- genau die Situation, die er loesen
+    soll. #panel-topbar muss deshalb als eigenes Element NACH dem schliessenden </script>
+    stehen, wie die drei anderen schwebenden Knoepfe davor (#global-map-exit-fs,
+    #panel-update-hint, #panel-back-btn) -- alle vier sind Geschwister von #app, nicht
+    seine Nachfahren."""
+    # rindex, nicht index: ganz am Dateianfang steht bereits ein winziges Inline-<script>
+    # fuer die vr-panel-Erkennung (s. Kommentar dort), dessen </script> waere hier ein
+    # falsch-positiver erster Treffer.
+    script_ende = INDEX.rindex("</script>")
+    topbar_stelle = INDEX.index('<div id="panel-topbar"')
+    app_oeffnung = INDEX.index('<div id="app"')
+    zurueck_knopf_stelle = INDEX.index('id="panel-back-btn"')
+    assert topbar_stelle > script_ende, "#panel-topbar muss hinter dem Inline-Skript stehen"
+    # #app oeffnet weit vor dem Skript-Ende (Kopfzeile/Tabs/Tab-Panels stehen alle darin) --
+    # #panel-topbar dagegen erst danach, zusammen mit den uebrigen schwebenden Knoepfen.
+    assert app_oeffnung < script_ende
+    assert zurueck_knopf_stelle < topbar_stelle
+
+
+def test_zurueck_knopf_tabs_und_verbindung_wandern_per_js_in_die_topbar():
+    """Verschieben statt Duplizieren: dieselben Elemente (gleiche ID/Klasse), keine zweite
+    Wahrheit -- bestehende Klick-Handler (data-tab) und der SSE-Status-Updater laufen
+    unveraendert weiter, weil es keine Kopien sind."""
+    m = re.search(r"function _initPanelBackButton\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_initPanelBackButton nicht gefunden"
+    rumpf = m.group(1)
+    assert "getElementById('panel-topbar')" in rumpf
+    assert "topbar.appendChild(btn);" in rumpf
+    assert "querySelectorAll('.tab-btn').forEach((t) => topbar.appendChild(t));" in rumpf
+    assert "if (sseBadge) topbar.appendChild(sseBadge);" in rumpf
+
+
+def test_versteckt_knopf_gewinnt_gegen_die_flex_regel():
+    """Regression, beim Bau selbst gefunden (Playwright-Messung: Knopf blieb trotz
+    hidden=true 102x59px gross): eine allgemeine Flex-Regel fuer den Knopf IN der Leiste hat
+    per CSS-Spezifitaet mehr Gewicht als das einfache '.panel-back-btn[hidden]' von vorher
+    und ueberschrieb dessen 'display:none'. Der gezielte Override muss existieren."""
+    assert "html.vr-panel .panel-topbar .panel-back-btn[hidden] { display: none; }" in INDEX
+
+
+def test_back_button_logik_ohne_klassenschalter():
+    """Seit die Leiste permanent steht, braucht es kein '.panel-has-back' mehr, das den
+    Seiten-Abstand per Klasse umschaltet -- nur noch der Knopf selbst blendet sich ein/aus."""
+    m = re.search(r"function _updatePanelBackBtn\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_updatePanelBackBtn nicht gefunden"
+    rumpf = m.group(1)
+    assert "classList.toggle('panel-has-back'" not in rumpf
+    assert "btn.hidden = !_panelCanGoBack();" in rumpf
+    # Die Klasse darf nirgends mehr GESETZT (JS) oder als CSS-Selektor benutzt werden --
+    # Kommentare, die den alten Namen zur Einordnung noch nennen, sind kein Fund hier.
+    assert "classList.toggle('panel-has-back'" not in INDEX
+    assert "panel-has-back body" not in INDEX
+    assert "html.vr-panel.panel-has-back" not in INDEX

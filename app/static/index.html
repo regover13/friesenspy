@@ -1103,48 +1103,135 @@
     }
     .panel-update-hint[hidden] { display: none; }
 
-    /* Zurueck-Knopf fuers MSFS-EFB-Panel. Dort gibt es keine Browser-Bedienleiste -- kein
-       Zurueck, keine Adresszeile. Wer ein Fenster (z. B. die Muster-Ansicht) oeffnete, war
-       auf den Schliessen-Knopf IM Fenster angewiesen; fehlte dessen Glyph, sass man fest
-       (Live-Test-Fund 13.08.2026). Dieser Knopf haengt bewusst AUSSERHALB aller Fenster,
-       ist ein SVG (schriftunabhaengig) und erscheint nur, wenn es wirklich etwas zu
-       verlassen gibt -- im Flug nimmt er sonst keinen Platz weg.
-       Absichtlich schwebend statt feste Kopfleiste: Vertikaler Platz ist auf dem Tablet
-       knapp, eine Dauerleiste haette staendig Hoehe gekostet. */
-    /* Volle Breite als eigene Leiste am oberen Rand statt schwebend in der Ecke.
-       Vorher lag der Knopf bei top:10px/left:10px -- also genau ueber Logo und Uhrzeit der
-       Kopfzeile und war dort kaum zu treffen oder zu sehen (Live-Fund 13.08.2026). Statt ihn
-       nur zu verschieben (und dabei die naechste Ueberlappung zu riskieren), bekommt er eine
-       eigene Zeile: Ist er sichtbar, rueckt der Seiteninhalt per .panel-has-back nach unten,
-       es kann also nichts mehr verdeckt werden. Unsichtbar kostet er keinen Platz. */
-    .panel-back-btn {
+    /* ===================================================================
+       VEREINHEITLICHTE KOPF-/TAB-LEISTE (nur MSFS-EFB-Panel, v11.15.0)
+       ===================================================================
+       Vorgeschichte: Der Zurueck-Knopf lag zunaechst schwebend in der Ecke (ueberlappte dort
+       Logo/Uhrzeit, Live-Fund 13.08.2026), dann als eigene volle Zeile ueber der Kopfzeile.
+       Beides zusammen -- Kopfzeile UND Tab-Reihe -- kostete auf dem nur 790px hohen Tablet
+       durchgehend zwei Zeilen; bei vier Tabs reichte die Breite ausserdem oft nicht fuer eine
+       einzige Zeile ("STATISTIKEN" brach um, gemessen 119.8px statt 44px Leisten-Hoehe).
+       Nutzerwunsch 13.08.2026: "Tab-Navigation in den Balken mit zurueck einbauen, als
+       Hintergrund dieser Leiste das FriesenSpy-Schriftzug". Jetzt EINE feste Leiste: Zurueck-
+       Knopf, die vier Tabs und die Verbindungsanzeige sind Flex-Kinder derselben Zeile (das
+       Umhaengen der bestehenden Elemente -- nicht Duplizieren -- passiert in JS, s.
+       _initPanelBackButton). Die alte Kopfzeile faellt komplett weg (Logo/Hilfe/Login-Name
+       waren im Panel ohnehin schon einzeln ausgeblendet). Die Uhrzeit fliegt OHNE Ersatz raus
+       -- keine Willkuer, sondern dieselbe Entscheidung, die die Website selbst bei schmalen
+       Bildschirmen trifft (".utc-clock { display:none }" @media max-width:768px, oben in
+       diesem Block): das Tablet hat mit ~413 nutzbaren CSS-Pixeln (558px Fensterbreite / zoom
+       1.35) weniger Platz als jedes Handy, fuer das die Regel schon gilt. Die
+       Verbindungsanzeige bleibt (echter Diagnosewert bei Live-Ausfaellen im Cockpit), aber
+       nur als Punkt -- fuer den Text ("VERBUNDEN"/"GETRENNT") ist in der Breite kein Platz
+       mehr, die Farbe traegt dieselbe Information.
+
+       WICHTIG -- eigenes Element #panel-topbar statt Umbau von <nav class="tab-nav">: Die
+       Leiste braucht denselben "immer ueber allem"-Rang wie vorher der Zurueck-Balken
+       (z-index 999997, ueber den Modal-Overlays bei 10000 -- der Knopf MUSS auch bei
+       offenem Fenster klickbar bleiben, sonst waere genau die Situation wieder da, die ihn
+       urspruenglich noetig machte, "sass man fest", Live-Test-Fund 13.08.2026). Gemessen
+       (Playwright, elementFromPoint ueber offenem Flugplan-Fenster): Wuerde man stattdessen
+       <nav class="tab-nav"> selbst fixieren, bleibt sie trotz z-index:999997 UNTER jedem
+       Modal, weil sie im DOM innerhalb von #app haengt und #app selbst "position:relative;
+       z-index:1" hat -- ein positionierter Vorfahre mit eigenem z-index kapselt eine neue
+       Stapel-Ebene, in der JEDES Kind hoechstens auf Rang 1 landet, egal welchen z-index-Wert
+       es selbst traegt (Stapelkontext-Grundregel, nicht browserspezifisch). #panel-topbar
+       haengt deshalb wie vorher der Zurueck-Balken direkt am </body> AUSSERHALB von #app. */
+    html.vr-panel header { display: none !important; }
+    /* Die urspruengliche Tab-Reihe bleibt im DOM (ihre Kinder wandern per JS in #panel-topbar,
+       s. _initPanelBackButton) -- ausblenden statt loeschen, sonst zeigt sie eine leere Zeile. */
+    html.vr-panel .tab-nav { display: none; }
+
+    .panel-topbar { display: none; }
+    html.vr-panel .panel-topbar {
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
+      top: 0; left: 0; right: 0;
       z-index: 999997;
       display: flex;
+      align-items: stretch;
+      flex-wrap: nowrap; /* nie umbrechen -- genau das kostete vorher die zweite Zeile */
+      min-height: 44px;
+      background: var(--bg-panel);
+      border-bottom: 2px solid var(--green);
+      box-shadow: 0 0 14px var(--green-glow);
+      overflow: hidden;
+    }
+    /* FriesenSpy-Schriftzug als dezenter Leisten-Hintergrund. ::before statt echtem
+       background-image -- die Schriftart ist ohnehin schon geladen (.logo nutzt dieselbe).
+       Steht im Quelltext vor allen Flex-Kindern (Zurueck-Knopf/Tabs/Verbindungsanzeige),
+       malt also zuerst und damit darunter -- kein zusaetzlicher z-index noetig. */
+    html.vr-panel .panel-topbar::before {
+      content: 'FRIESENSPY';
+      position: absolute;
+      top: 0; right: 0; bottom: 0; left: 0;
+      display: flex;
       align-items: center;
-      justify-content: flex-start;
-      gap: 8px;
+      justify-content: center;
+      font-family: var(--text-display);
+      font-weight: 700;
+      font-size: 1.2rem;
+      letter-spacing: 0.3em;
+      color: var(--green);
+      opacity: 0.12;
+      pointer-events: none;
+    }
+    /* Platz fuer die jetzt IMMER sichtbare Leiste -- anders als beim frueheren Zurueck-Balken
+       (der nur bei Bedarf per .panel-has-back-Klasse Platz schuf) braucht das keinen
+       JS-Klassenschalter mehr, die Leiste steht konstant. Gemessen (Playwright, 558px
+       Fensterbreite): die Leiste rendert trotz min-height:44px real ~45.5px hoch (Icon+Text-
+       Zeilenhoehe treibt die Buttons ueber das Minimum) -- 46px Puffer, sonst ein 1-2px-
+       Ueberlapp mit dem ersten Seiteninhalt. Im Sim nachjustierbar wie die Kartenhoehe. */
+    html.vr-panel body { padding-top: 46px; }
+
+    /* Zurueck-Knopf als normales Flex-Kind der Leiste statt eigener schwebender Balken. */
+    html.vr-panel .panel-topbar .panel-back-btn {
+      position: static;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       /* 44px Mindestgroesse -- Fingerbedienung im Cockpit, nicht Mauszeiger. */
       min-height: 44px;
-      padding: 8px 18px 8px 14px;
-      background: var(--bg-panel);
-      border: 2px solid var(--green);
+      padding: 6px 10px;
+      background: transparent;
+      border: none;
+      border-right: 1px solid var(--green-dim);
       color: var(--green);
       font-family: var(--text-display);
-      font-size: 0.85rem;
-      letter-spacing: 0.08em;
+      font-size: 0.65rem;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
       cursor: pointer;
-      box-shadow: 0 0 14px var(--green-glow);
+      box-shadow: none;
     }
+    /* Abstand zwischen Icon und Text als margin, NICHT als flex-gap -- CSS.supports('gap','1px')
+       ist in Coherent GT false (gemessen, s. Karten-Layout weiter unten), gap faellt dort
+       ersatzlos weg. */
+    html.vr-panel .panel-topbar .panel-back-btn svg { margin-right: 4px; }
     .panel-back-btn[hidden] { display: none; }
+    /* Muss die Flex-Regel oben (html.vr-panel .panel-topbar .panel-back-btn { display:flex })
+       per Spezifitaet schlagen -- sonst gewinnt "display:flex" gegen "display:none" trotz
+       [hidden]-Attribut, weil die Flex-Regel die hoehere Selektor-Spezifitaet hat (Fund beim
+       Messen mit Playwright: Knopf blieb trotz hidden=true 102x59px gross sichtbar). */
+    html.vr-panel .panel-topbar .panel-back-btn[hidden] { display: none; }
     /* Ausserhalb des Panels nie zeigen -- die Website hat ihre Browser-Navigation. */
     html:not(.vr-panel) .panel-back-btn { display: none !important; }
-    /* Platz fuer die Leiste schaffen, solange sie sichtbar ist -- so verdeckt sie nie
-       Kopfzeile, Logo oder Uhrzeit (der Fehler, den sie vorher hatte). */
-    html.vr-panel.panel-has-back body { padding-top: 60px; }
+
+    /* Verbindungsanzeige (#sse-badge) wandert per JS aus der (jetzt ausgeblendeten)
+       Kopfzeile ans Ende derselben Leiste -- nur der Punkt, s. Begruendung oben. */
+    html.vr-panel .panel-topbar #sse-badge {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 12px;
+      background: transparent;
+      border: none;
+      border-left: 1px solid var(--green-dim);
+      box-shadow: none;
+    }
+    html.vr-panel .panel-topbar #sse-badge .sse-label { display: none; }
 
     /* ===================================================================
        KARTEN STATT BREITER TABELLEN (nur MSFS-EFB-Panel)
@@ -1220,10 +1307,9 @@
     /* ===================================================================
        PLATZ UND FINGERBEDIENUNG (nur MSFS-EFB-Panel)
        =================================================================== */
-    /* Der grosse Logo-Kopf kostet auf dem Tablet wertvolle Hoehe, ohne im Flug etwas
-       beizutragen -- wer das Panel offen hat, weiss, welche App er benutzt. */
-    html.vr-panel .logo { font-size: 1.25rem; }
-    html.vr-panel header { padding: 8px 0 6px; }
+    /* .logo/header-Feinschliff entfallen seit v11.15.0 -- die Kopfzeile ist im Panel komplett
+       ausgeblendet (s. "VEREINHEITLICHTE KOPF-/TAB-LEISTE" weiter oben), das Logo darin also
+       nie sichtbar. */
     /* Mindestgroesse fuer alles Antippbare: im Cockpit wird mit dem Finger bedient, nicht
        mit dem Mauszeiger. 44px ist das gaengige Mindestmass. */
     html.vr-panel .tab-btn,
@@ -1233,7 +1319,24 @@
     html.vr-panel .modal-close {
       min-height: 44px;
     }
-    html.vr-panel .tab-btn { padding-left: 18px; padding-right: 18px; }
+    /* Tabs sitzen jetzt in der schmalen vereinheitlichten Leiste (~413 nutzbare CSS-Pixel
+       fuer Zurueck-Knopf + 4 Tabs + Verbindungspunkt zusammen, s. oben) -- die alte
+       18px-Innenabstand-Regel fuer die frei stehende Tab-Reihe passt dort nicht mehr.
+       flex:1 teilt die verbleibende Breite gleichmaessig auf; min-width:0 ist Pflicht, sonst
+       schrumpft ein Flex-Kind per CSS-Default nie unter seine Textbreite (Flexbox-Falle, s.
+       CLAUDE.md) und "STATISTIKEN" würde die Leiste wieder sprengen. text-overflow:ellipsis
+       als letztes Netz, falls ein Tabname trotzdem nicht ganz reinpasst. */
+    html.vr-panel .panel-topbar .tab-btn {
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 6px 4px;
+      font-size: 0.62rem;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: center;
+    }
 
     /* Die Flugaktivitaets-Grafik bleibt im Panel leer: Chart.js 4.x benutzt Class-Field-
        Syntax (ES2022), die Coherent GT nicht parst -- ein bestehendes try/catch faengt das
@@ -1307,8 +1410,9 @@
        Vollbild also genau unter der Zurueck-Leiste, die fest am oberen Rand klebt. Der
        Plus-Knopf war dadurch nicht erreichbar (Nutzer-Fund). Ausserhalb des Vollbilds
        schiebt bereits body { padding-top } alles nach unten, dort waere ein zweiter
-       Versatz zu viel -- deshalb nur hier. */
-    html.vr-panel.panel-has-back .map-is-fullscreen .leaflet-top { margin-top: 60px; }
+       Versatz zu viel -- deshalb nur hier. Die Leiste steht seit der Zusammenlegung von
+       Kopfzeile und Tabs IMMER, deshalb ohne Bedingung und mit deren Hoehe. */
+    html.vr-panel .map-is-fullscreen .leaflet-top { margin-top: 46px; }
     html.vr-panel .sse-dot { animation: none !important; }
 
     /* Override Leaflet popup styles for the radar aesthetic */
@@ -7514,18 +7618,34 @@ function panelGoBack() {
 function _updatePanelBackBtn() {
   const btn = document.getElementById('panel-back-btn');
   if (!btn) return;
-  const soll = !_panelCanGoBack();
-  if (btn.hidden !== soll) {
-    btn.hidden = soll;
-    // Inhalt nach unten ruecken, solange die Leiste steht -- sonst laege sie ueber der
-    // Kopfzeile (Logo/Uhrzeit) wie in der ersten Fassung.
-    document.documentElement.classList.toggle('panel-has-back', !soll);
-  }
+  // Seit v11.15.0 steckt der Knopf IN der Tab-Leiste, die selbst immer sichtbar ist -- kein
+  // Platz-Umschalten am <html>-Element mehr noetig (das erledigte vorher .panel-has-back),
+  // die Leiste reserviert ihren Platz per festem CSS (html.vr-panel body { padding-top }).
+  // Nur der Knopf selbst blendet sich weiterhin je nach Zustand ein/aus.
+  btn.hidden = !_panelCanGoBack();
 }
 
 function _initPanelBackButton() {
   if (!document.documentElement.classList.contains('vr-panel')) return;
-  if (!document.getElementById('panel-back-btn')) return;
+  const btn = document.getElementById('panel-back-btn');
+  if (!btn) return;
+
+  // Zurueck-Knopf, die vier echten Tab-Buttons und die Verbindungsanzeige wandern aus ihrer
+  // alten Position (schwebender Balken, <nav class="tab-nav">, Kopfzeile) in #panel-topbar --
+  // Nutzerwunsch 13.08.2026: Tab-Navigation und Zurueck in EINEN gemeinsamen Balken.
+  // Verschieben statt Duplizieren: dieselben Elemente, dieselbe ID -- jeder bestehende
+  // Klick-Handler (data-tab) und Updater (SSE-Status) laeuft unveraendert weiter, es entsteht
+  // keine zweite Wahrheit. #panel-topbar liegt bewusst AUSSERHALB von #app (s. "WICHTIG" im
+  // CSS) -- sonst waere der Zurueck-Knopf ueber offenen Modalen unerreichbar. Die Uhrzeit
+  // (#utc-clock) bleibt bewusst in der jetzt ausgeblendeten Kopfzeile zurueck, s. Begruendung
+  // bei ".panel-topbar::before" im CSS.
+  const topbar = document.getElementById('panel-topbar');
+  if (topbar) {
+    topbar.appendChild(btn);
+    document.querySelectorAll('.tab-btn').forEach((t) => topbar.appendChild(t));
+    const sseBadge = document.getElementById('sse-badge');
+    if (sseBadge) topbar.appendChild(sseBadge);
+  }
 
   // Bewusst KEIN Einklinken in jede einzelne oeffnende/schliessende Stelle: Fenster und Tabs
   // werden an vielen Orten umgeschaltet (Klick, Escape, Klick-daneben, Deep-Link beim Laden)
@@ -7581,5 +7701,13 @@ document.addEventListener('visibilitychange', async () => {
 <button id="global-map-exit-fs" class="global-map-exit-fs" hidden onclick="exitAnyMapFullscreen()"><svg class="icon"><use href="#icon-x"/></svg> Vollbild verlassen</button>
 <button id="panel-update-hint" class="panel-update-hint" hidden onclick="location.reload()"><svg class="icon"><use href="#icon-refresh"/></svg> Neue Version &ndash; neu laden</button>
 <button id="panel-back-btn" class="panel-back-btn" hidden onclick="panelGoBack()"><svg class="icon"><use href="#icon-arrow-left"/></svg> Zur&uuml;ck</button>
+<!-- Vereinheitlichte Kopf-/Tab-Leiste (nur MSFS-EFB-Panel, v11.15.0): leer im Markup, JS
+     (_initPanelBackButton) haengt Zurueck-Knopf, die vier echten Tab-Buttons und die
+     Verbindungsanzeige hier ein. Steht bewusst AUSSERHALB von #app (wie die drei Knoepfe
+     darueber) -- #app hat "position:relative; z-index:1" und wuerde sonst jeden Nachfahren
+     unabhaengig von dessen eigenem z-index auf Rang 1 kappen, der Zurueck-Knopf waere dann
+     hinter jedem Modal-Overlay (z-index 10000) verschwunden (gemessen mit Playwright:
+     elementFromPoint traf ueber einem offenen Fenster das Modal, nicht den Knopf). -->
+<div id="panel-topbar" class="panel-topbar"></div>
 </body>
 </html>
