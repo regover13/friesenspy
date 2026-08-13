@@ -222,3 +222,56 @@ def test_flugaktivitaets_grafik_im_panel_ausgeblendet():
     """Chart.js 4.x benutzt Class-Field-Syntax (ES2022), die Coherent GT nicht parst. Ein
     bestehendes try/catch faengt das ab -- uebrig bleibt ein leerer Kasten mit Ueberschrift."""
     assert "html.vr-panel #stats-activity-wrap { display: none; }" in INDEX
+
+
+# ---------------------------------------------------------------------------
+#  Eine Darstellung fuer alle Strecken-Zellen (v11.12.0)
+# ---------------------------------------------------------------------------
+# Nutzer-Frage 13.08.: "Wieso haben wir immer noch verschiedene Ansichten für Flugpläne??
+# Macht doch gar keinen Sinn." -- zu Recht: dasselbe Abflug-Ziel-Paar wurde an vier Stellen
+# unterschiedlich gebaut.
+
+
+def test_streckenzellen_kommen_alle_aus_einer_funktion():
+    """Vier Fassungen desselben Paares gab es vorher: fmtRoute (Live-Tabelle, reiner Text),
+    zwei handgebaute Vorlagen (Flugplan-Tabelle, Flugliste) und fmtRouteHtml (nur im
+    Karten-Popup). Nur letztere zeigte die Flugplatz-Karten-Symbole."""
+    assert "function fmtRoute(" not in INDEX, "reine Textfassung lebt noch"
+    # Kein handgebautes "DEP - ARR" mehr in den Renderern
+    assert "${planDep ? escHtml(planDep) : '—'} - " not in INDEX
+    assert "`${escHtml(p.departure)} - ${escHtml(p.arrival)}`" not in INDEX
+    assert INDEX.count("fmtRouteHtml(") >= 6, "nicht alle Aufrufstellen umgestellt"
+
+
+def test_streckenzelle_kann_sonderfaelle_ohne_zweite_fassung():
+    """Die Flugliste braucht zwei Abweichungen (laufender Flug, beide Seiten leer). Sie
+    gehoeren in die gemeinsame Funktion -- sonst entsteht die naechste Sonderfassung."""
+    m = re.search(r"function fmtRouteHtml\(dep, arr, opts\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "fmtRouteHtml nicht gefunden"
+    assert "o.arrHtml" in m.group(1)
+    assert "o.leerHtml" in m.group(1)
+
+
+def test_flugplan_spalte_heisst_ueberall_gleich():
+    """Dieselbe Angabe hiess in der Flugliste 'Plan' und sonst 'Flugplan'."""
+    assert "<th>Plan</th>" not in INDEX
+    assert INDEX.count("<th>Flugplan</th>") >= 3
+
+
+def test_flugplatz_symbol_haelt_abstand_ueber_css():
+    """Im Panel ist das Symbol ausgeblendet -- ein Leerzeichen im Text bliebe sichtbar
+    stehen ('EDDE  - EDDC')."""
+    assert ".airport-link-icon { margin-left: 4px; }" in INDEX
+    assert "return ' <a href=" not in INDEX
+
+
+def test_karten_selbstdiagnose_meldet_nach():
+    """Der Bericht beim Laden hilft bei Kartenfragen nicht -- die Karte entsteht erst beim
+    Wechsel auf den Karten-Tab. Deshalb ein Nachtrag-Kanal."""
+    assert "window._panelDiag = function (kind, data)" in INDEX
+    assert "function _diagKarte(map, name, aipLayer)" in INDEX
+    for karte in ["_diagKarte(liveMap, 'live'", "_diagKarte(trackMap, 'track'",
+                  "_diagKarte(eventsMap, 'events'"]:
+        assert karte in INDEX, f"{karte} nicht verdrahtet"
+    # Die zwei offenen Fragen muessen tatsaechlich gemessen werden
+    assert "aipAufKarte" in INDEX and "kachelStil" in INDEX

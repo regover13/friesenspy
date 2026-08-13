@@ -352,6 +352,18 @@
         } catch (_) { clearTimeout(fallback); send(base); }
       }
 
+      // Nachmeldungen aus dem Hauptskript. Der Bericht oben laeuft einmal beim Laden --
+      // die Karte gibt es zu dem Zeitpunkt aber noch gar nicht (sie entsteht erst beim
+      // Wechsel auf den Karten-Tab). Alles, was erst spaeter messbar wird, kommt hierdurch.
+      // Bewusst OHNE die 'sent'-Wache: das ist kein zweiter Bericht, sondern ein Nachtrag.
+      window._panelDiag = function (kind, data) {
+        try {
+          var el = document.getElementById('app-version');
+          send({ kind: kind, appVersion: el ? el.textContent : null,
+                 url: location.href, isPanel: isPanel, data: data });
+        } catch (_) { /* Diagnose darf nie stoeren */ }
+      };
+
       // Nach dem Laden messen; genug Vorlauf, damit Fonts/Tabellen wirklich stehen.
       window.addEventListener('load', function () { setTimeout(report, 2500); });
       // Sicherheitsnetz: Bleibt 'load' aus (haengendes Asset), trotzdem berichten.
@@ -395,6 +407,7 @@
        (echter Live-Test-Absturz-Fund). Sprite-Defs direkt nach <body>, Verwendung überall via
        <svg class="icon"><use href="#icon-name"/></svg> statt Emoji. */
     .icon { width: 1em; height: 1em; vertical-align: -0.125em; display: inline-block; fill: none; }
+    .airport-link-icon { margin-left: 4px; }
     /* Selbst gehostete Twemoji-Grafiken (Zwölftausendneunhundert Twitter, Inc und andere
        Mitwirkende, CC-BY 4.0) fuer Icons, bei denen eine handgezeichnete Nachbildung optisch
        zu weit vom Original-Emoji abweicht (Live-Test-Fund 13.08.2026: Nutzer will exakt dasselbe
@@ -1229,6 +1242,15 @@
        Fix moeglich sein"), wird der ganze Block dort ausgeblendet. Auf der Website
        unveraendert vorhanden. */
     html.vr-panel #stats-activity-wrap { display: none; }
+
+    /* Flugplatz-Karten-Symbole oeffnen mit target="_blank" eine externe Seite -- im Panel
+       gibt es kein zweites Fenster, das oeffnen koennte. Seit v11.12.0 stehen sie in JEDER
+       Strecken-Zelle (vorher nur im Karten-Popup), waeren im Tablet also ueberall ein Symbol,
+       das nichts tut. Lieber ausblenden als eine kaputte Funktion anbieten -- dieselbe
+       Entscheidung wie bei Teilen/Benachrichtigungen. Auf der Website unveraendert.
+       OFFEN: ob Coherent GT target="_blank" doch irgendwie bedient, ist ungeprueft -- falls
+       ja, waere ein Chart-Link im Cockpit das Gegenteil von ueberfluessig. */
+    html.vr-panel .airport-link-icon { display: none; }
 
     /* Override Leaflet popup styles for the radar aesthetic */
     .leaflet-popup-content-wrapper {
@@ -2914,6 +2936,73 @@ function _addPreferredAIPLayer(map, aipLayer) {
   if (aipLayer && _loadAIPPref()) aipLayer.addTo(map);
 }
 
+// ==========================================================================
+//  KARTEN-SELBSTDIAGNOSE (nur MSFS-EFB-Panel)
+// ==========================================================================
+// Zwei Beobachtungen aus dem Live-Test sind bis heute ungeklaert, und beide habe ich schon
+// einmal falsch geraten:
+//   1. Satelliten-Kacheln laden nachweislich (Netzwerk-Tab), rendern aber nur im
+//      Karten-Vollbild -- in der Normalansicht bleibt die Flaeche leer.
+//   2. Der OpenAIP-Haken zeigt den falschen Zustand, obwohl das Ein-/Ausschalten wirkt.
+// Beides ist im Sim nicht per Konsole zu untersuchen (SDK-Debugger stuerzt ab) und im
+// normalen Browser nicht nachstellbar. Also misst die Karte sich selbst und meldet.
+//
+// Der Bericht beim Laden hilft hier nicht: die Karte entsteht erst beim Wechsel auf den
+// Karten-Tab, lange nach dem Bericht. Deshalb ein eigener Nachtrag ueber window._panelDiag.
+function _diagKarte(map, name, aipLayer) {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+  if (typeof window._panelDiag !== 'function') return;
+
+  const messen = (anlass) => {
+    try {
+      const el = map.getContainer();
+      const kacheln = el.querySelectorAll('.leaflet-tile');
+      const geladen = el.querySelectorAll('.leaflet-tile-loaded');
+      const probe = kacheln[0];
+      const ps = probe ? getComputedStyle(probe) : null;
+      // Der eigentliche Verdacht bei (1): die Kachel ist da und geladen, wird aber mit
+      // Groesse 0, opacity 0 oder ausserhalb des sichtbaren Bereichs positioniert.
+      const kachelStil = ps ? {
+        breite: ps.width, hoehe: ps.height, opacity: ps.opacity,
+        display: ps.display, visibility: ps.visibility,
+        transform: (ps.transform || '').slice(0, 60),
+        natBreite: probe.naturalWidth || 0, natHoehe: probe.naturalHeight || 0,
+        komplett: !!probe.complete, geladen: probe.classList.contains('leaflet-tile-loaded'),
+      } : null;
+
+      // Bei (2): stimmt der Haken mit dem tatsaechlichen Zustand der Ebene ueberein?
+      const kaesten = [];
+      el.querySelectorAll('.leaflet-control-layers input').forEach((i) => {
+        const label = i.parentNode ? (i.parentNode.textContent || '').trim() : '';
+        kaesten.push({ typ: i.type, beschriftung: label.slice(0, 24), angehakt: !!i.checked });
+      });
+
+      window._panelDiag('karte', {
+        karte: name, anlass: anlass,
+        vollbild: el.closest('.map-is-fullscreen') !== null,
+        containerBreite: el.clientWidth, containerHoehe: el.clientHeight,
+        kartenGroesse: [map.getSize().x, map.getSize().y],
+        zoom: map.getZoom(),
+        kachelnGesamt: kacheln.length, kachelnGeladen: geladen.length,
+        kachelStil: kachelStil,
+        // Wahrheit der Ebene gegen Anzeige des Hakens -- der Kern von Frage (2).
+        aipAufKarte: aipLayer ? map.hasLayer(aipLayer) : null,
+        aipGemerkt: _loadAIPPref(),
+        kaesten: kaesten,
+      });
+    } catch (e) {
+      window._panelDiag('karte-fehler', { karte: name, anlass: anlass, fehler: String(e) });
+    }
+  };
+
+  // Einmal, wenn die Kacheln Zeit zum Laden hatten -- und bei jedem Ebenenwechsel, weil
+  // genau dort der Unterschied zwischen "Haken" und "Wirklichkeit" entsteht.
+  map.whenReady(() => setTimeout(() => messen('bereit'), 4000));
+  map.on('baselayerchange', (e) => setTimeout(() => messen('basis:' + (e.name || '?')), 2500));
+  map.on('overlayadd',      (e) => setTimeout(() => messen('overlay-an:' + (e.name || '?')), 2500));
+  map.on('overlayremove',   (e) => setTimeout(() => messen('overlay-aus:' + (e.name || '?')), 2500));
+}
+
 // OFM ist nur bei Zoom 7–12 sinnvoll (unter 7 sparse, über 12 blank).
 // Außerhalb dieses Bereichs wird automatisch auf Satellit gewechselt.
 // Manuell zu OFM zurückwechseln reaktiviert den Auto-Switch.
@@ -3636,11 +3725,6 @@ function fmtOnlineTime(logonIso) {
   return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
 }
 
-function fmtRoute(dep, arr) {
-  const d = (dep || '').toUpperCase() || '—';
-  const a = (arr || '').toUpperCase() || '—';
-  return d + ' - ' + a;
-}
 
 // Karten-Link (amtliche DFS-AIP-VFR für Deutschland, sonst ChartFox-Fallback für bekannte
 // ICAO-Codes) — _airportLinks wird einmalig beim Start geladen (s. _airportLinksPromise unten).
@@ -3652,16 +3736,32 @@ function airportLinkIcon(icao) {
   if (!icao) return '';
   const url = _airportLinks[String(icao).toUpperCase()];
   if (!url) return '';
-  return ' <a href="' + escHtml(url) + '" target="_blank" rel="noopener" class="airport-link-icon" '
+  // Abstand als CSS-Rand, NICHT als Leerzeichen im Text: im Panel ist das Symbol
+  // ausgeblendet, ein Leerzeichen davor bliebe aber stehen ("EDDE  - EDDC").
+  return '<a href="' + escHtml(url) + '" target="_blank" rel="noopener" class="airport-link-icon" '
     + 'title="Flugplatz-Karte" onclick="event.stopPropagation()">' + icon('map') + '</a>';
 }
 
-// HTML-sichere Variante von fmtRoute() inkl. Karten-Link-Icons je Seite — für Stellen, die das
-// Ergebnis per innerHTML einsetzen (fmtRoute() selbst bleibt unverändert für reine Text-Stellen).
-function fmtRouteHtml(dep, arr) {
+// Strecken-Zelle "EDDH - EDDW" inkl. Flugplatz-Karten-Symbol je Seite.
+//
+// EINE Darstellung für ALLE Strecken-Zellen (Nutzer-Frage 13.08.: „Wieso haben wir immer noch
+// verschiedene Ansichten für Flugpläne?? Macht doch gar keinen Sinn."). Vorher gab es vier
+// Fassungen desselben Abflug-Ziel-Paares: die Live-Tabelle nahm fmtRoute (reiner Text), die
+// Flugplan-Tabelle und die Flugliste bauten sich ihr Format je selbst zusammen, und nur das
+// Karten-Popup benutzte diese Funktion hier -- weshalb die Flugplatz-Karten-Symbole
+// ausgerechnet dort auftauchten, wo man sie am wenigsten braucht, und in den Tabellen fehlten.
+// Jetzt hat jede Zelle dieselbe Form und dieselben Verknüpfungen.
+//
+// opts.arrHtml  — fertiges HTML statt des Zielplatzes (die Flugliste zeigt bei laufenden
+//                 Flügen ein „läuft"-Abzeichen an dieser Stelle).
+// opts.leerHtml — was erscheint, wenn BEIDE Seiten fehlen; ohne Angabe „— - —".
+function fmtRouteHtml(dep, arr, opts) {
+  const o = opts || {};
   const d = (dep || '').toUpperCase();
   const a = (arr || '').toUpperCase();
-  return (d ? escHtml(d) + airportLinkIcon(d) : '—') + ' - ' + (a ? escHtml(a) + airportLinkIcon(a) : '—');
+  if (!d && !a && o.leerHtml !== undefined && o.arrHtml === undefined) return o.leerHtml;
+  const seite = (code) => (code ? escHtml(code) + airportLinkIcon(code) : '—');
+  return seite(d) + ' - ' + (o.arrHtml !== undefined ? o.arrHtml : seite(a));
 }
 
 // ==========================================================================
@@ -3713,7 +3813,7 @@ function renderLiveTable(pilots) {
             <td class="td-callsign" data-cs="${escHtml(p.callsign || '')}">${escHtml((p.callsign || '').toUpperCase())}</td>
             <td>${escHtml(p.name || '—')}</td>
             <td class="mono">${acLink(p.aircraft)}</td>
-            <td class="td-route td-callsign-link text-green" data-cs="${escHtml(p.callsign || '')}">${escHtml(fmtRoute(p.departure, p.arrival))}</td>
+            <td class="td-route td-callsign-link text-green" data-cs="${escHtml(p.callsign || '')}">${fmtRouteHtml(p.departure, p.arrival)}</td>
             <td class="td-alt">${fmtAlt(p.altitude)}</td>
             <td class="td-gs">${fmtGS(p.groundspeed)}</td>
             <td class="td-time">${fmtOnlineTime(p.logon_time)}</td>
@@ -4138,9 +4238,7 @@ function renderPrefiles(data) {
   }
   let html = '<div class="live-table-wrap"><table><thead><tr><th>Callsign</th><th>Pilot</th><th>Flugplan</th><th>Abflug (geplant)</th><th></th></tr></thead><tbody>';
   data.forEach((p, i) => {
-    const route = p.departure && p.arrival
-      ? `${escHtml(p.departure)} - ${escHtml(p.arrival)}`
-      : '—';
+    const route = fmtRouteHtml(p.departure, p.arrival, { leerHtml: '—' });
     const dofMatch = (p.remarks || '').match(/DOF\/(\d{2})(\d{2})(\d{2})/);
     const dateStr = dofMatch ? `${dofMatch[3]}.${dofMatch[2]}.20${dofMatch[1]}, ` : '';
     const timeStr = p.deptime ? String(p.deptime).padStart(4,'0').replace(/(\d{2})(\d{2})/, '$1:$2') + ' UTC' : '';
@@ -5101,18 +5199,14 @@ function _flightRowHtml(f, rowAttrs) {
   // Fehlender Wert überall einheitlich "—" (wie sonst in der Tabelle), kein Sonderzeichen wie
   // "????"/"N/A"/"?". „läuft" NUR wenn tatsächlich live (offen UND letzte GPS-Position frisch).
   // connection_closed steuert das NICHT mehr (Flugplan-Begriff).
-  const dep = gpsDep ? escHtml(gpsDep) : '—';
-  const arrCell = live ? `<span class="badge-live">${icon('plane-departure')} läuft</span>` : (gpsArr ? escHtml(gpsArr) : '—');
-  // Fehlen GPS-Dep UND -Arr komplett (und der Flug läuft nicht), sieht "— -> —" als Route
-  // unschön aus — eine einzelne zentrierte "—" statt zweier Platzhalter mit Pfeil dazwischen.
-  const routeCell = (!gpsDep && !gpsArr && !live)
-    ? `<span style="display:block;text-align:center;">—</span>`
-    : `${dep} - ${arrCell}`;
+  // Fehlen GPS-Dep UND -Arr komplett (und der Flug läuft nicht), sieht "— - —" als Route
+  // unschön aus — eine einzelne zentrierte "—" statt zweier Platzhalter mit Trennstrich.
+  const routeCell = fmtRouteHtml(gpsDep, gpsArr, live
+    ? { arrHtml: `<span class="badge-live">${icon('plane-departure')} läuft</span>` }
+    : { leerHtml: `<span style="display:block;text-align:center;">—</span>` });
   const planDep = f.plan_departure || '';
   const planArr = f.plan_arrival || '';
-  const planText = (planDep || planArr)
-    ? `${planDep ? escHtml(planDep) : '—'} - ${planArr ? escHtml(planArr) : '—'}`
-    : '—';
+  const planText = fmtRouteHtml(planDep, planArr, { leerHtml: '—' });
   const dt = f.logon_time ? f.logon_time.slice(0, 10) : '—';
   const durMin = f.duration_min;
   const dur = durMin != null
@@ -5248,7 +5342,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
   } else {
     html += `<div class="live-table-wrap"><table>
       <thead><tr>
-        <th>Callsign</th><th>Aircraft</th><th>Strecke</th><th>Plan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>
+        <th>Callsign</th><th>Aircraft</th><th>Strecke</th><th>Flugplan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>
       </tr></thead><tbody>`;
 
     for (const f of flights) {
@@ -5312,6 +5406,7 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff, aut
           trackAIP ? { 'OpenAIP': trackAIP } : {}, { position: 'topright', collapsed: true }
         ).addTo(trackMap);
         _setupAIPPref(trackMap, trackAIP);
+        _diagKarte(trackMap, 'track', trackAIP);
         _setupOFMAutoSwitch(trackMap, trackLayers);
         trackMapInitialized = true;
       } else {
@@ -5449,6 +5544,7 @@ async function initLiveMap() {
     { position: 'topright', collapsed: true }
   ).addTo(liveMap);
   _setupAIPPref(liveMap, liveAIP);
+  _diagKarte(liveMap, 'live', liveAIP);
   _setupOFMAutoSwitch(liveMap, liveLayers);
 
   // Style Leaflet controls
@@ -6234,7 +6330,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
         </div>
         ${flightRows ? `<div class="live-table-wrap" style="width:100%;margin-left:24px;"><table style="font-size:0.8rem;">
           <thead><tr>
-            <th>Callsign</th><th>Aircraft</th><th>Strecke</th><th>Plan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>
+            <th>Callsign</th><th>Aircraft</th><th>Strecke</th><th>Flugplan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>
           </tr></thead>
           <tbody>${flightRows}</tbody>
         </table></div>` : ''}
@@ -6300,6 +6396,7 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
       evAIP ? { 'OpenAIP': evAIP } : {}, { position: 'topright', collapsed: true }
     ).addTo(eventsMap);
     _setupAIPPref(eventsMap, evAIP);
+    _diagKarte(eventsMap, 'events', evAIP);
     _setupOFMAutoSwitch(eventsMap, evLayers);
     eventsMapInitialized = true;
   } else {
