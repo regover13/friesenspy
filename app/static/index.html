@@ -4077,6 +4077,87 @@ function _translitBaum(wurzel) {
   for (const kn of knoten) _translitTextknoten(kn);
 }
 
+// ==========================================================================
+//  FLACKER-AUFZEICHNUNG (nur Panel, nur Karten-Tab)
+// ==========================================================================
+// Der Nutzer sieht im Karten-Tab ein kurzes, unregelmaessiges Aufblitzen. Eine Vermutung
+// (setIcon baute Marker in jedem Takt neu) war nachweislich falsch -- nach dem Fix blitzt
+// es weiter. Statt der naechsten Vermutung zeichnet die Karte jetzt 30 Sekunden lang auf,
+// WAS sich wann in ihr aendert, und meldet eine Zusammenfassung. Kachel-Abgaenge sind
+// dabei das Verraeterische: eine entfernte und gleich wieder eingefuegte Kachel ist genau
+// das, was als Blitz zu sehen waere.
+function _diagFlackern(map) {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+  if (typeof window._panelDiag !== 'function' || typeof MutationObserver !== 'function') return;
+
+  const el = map.getContainer();
+  const start = Date.now();
+  const takte = {};        // Sekunde seit Start -> Zaehler
+  const fremde = {};       // Was ausserhalb der Karte im selben Moment neu gebaut wurde
+
+  function takt() {
+    const s = Math.floor((Date.now() - start) / 1000);
+    if (!takte[s]) takte[s] = { kachelWeg: 0, kachelNeu: 0, markerWeg: 0, markerNeu: 0, sonst: 0 };
+    return takte[s];
+  }
+  function istKachel(n) { return n.nodeType === 1 && n.classList && n.classList.contains('leaflet-tile'); }
+  function istMarker(n) { return n.nodeType === 1 && n.classList && n.classList.contains('leaflet-marker-icon'); }
+
+  const inKarte = new MutationObserver((eintraege) => {
+    const t = takt();
+    for (const e of eintraege) {
+      for (let i = 0; i < e.removedNodes.length; i++) {
+        const n = e.removedNodes[i];
+        if (istKachel(n)) t.kachelWeg += 1;
+        else if (istMarker(n)) t.markerWeg += 1;
+        else t.sonst += 1;
+      }
+      for (let i = 0; i < e.addedNodes.length; i++) {
+        const n = e.addedNodes[i];
+        if (istKachel(n)) t.kachelNeu += 1;
+        else if (istMarker(n)) t.markerNeu += 1;
+      }
+    }
+  });
+  inKarte.observe(el, { childList: true, subtree: true });
+
+  // Zweiter Beobachter fuer den Rest der Seite: Wenn im selben Moment ein grosser Block
+  // ausserhalb der Karte neu gebaut wird, ist DAS der Ausloeser und nicht die Karte selbst.
+  const ausserhalb = new MutationObserver((eintraege) => {
+    const s = Math.floor((Date.now() - start) / 1000);
+    for (const e of eintraege) {
+      if (el.contains(e.target)) continue;
+      if (!e.addedNodes.length) continue;
+      const ziel = e.target;
+      const name = (ziel.id ? '#' + ziel.id : (ziel.nodeName + '.' + (ziel.className || '')).slice(0, 40));
+      const schluessel = s + ' ' + name;
+      fremde[schluessel] = (fremde[schluessel] || 0) + e.addedNodes.length;
+    }
+  });
+  ausserhalb.observe(document.body, { childList: true, subtree: true });
+
+  setTimeout(() => {
+    inKarte.disconnect();
+    ausserhalb.disconnect();
+    // Nur Sekunden melden, in denen ueberhaupt etwas passiert ist -- der Rest ist Rauschen.
+    const auffaellig = {};
+    for (const s of Object.keys(takte)) {
+      const t = takte[s];
+      if (t.kachelWeg || t.markerWeg || t.sonst > 3) auffaellig[s] = t;
+    }
+    // Die groessten Fremd-Umbauten, nach Anzahl
+    const oben = Object.keys(fremde).sort((a, b) => fremde[b] - fremde[a]).slice(0, 12);
+    const grosse = {};
+    for (const k of oben) if (fremde[k] > 2) grosse[k] = fremde[k];
+    window._panelDiag('flackern', {
+      dauerSek: 30,
+      auffaelligeSekunden: auffaellig,
+      anzahlSekundenMitAenderung: Object.keys(takte).length,
+      grosseUmbautenAusserhalb: grosse,
+    });
+  }, 30000);
+}
+
 function _initPanelTranslit() {
   if (!document.documentElement.classList.contains('vr-panel')) return;
 
@@ -5602,6 +5683,7 @@ async function initLiveMap() {
   ).addTo(liveMap);
   _setupAIPPref(liveMap, liveAIP);
   _diagKarte(liveMap, 'live', liveAIP);
+  _diagFlackern(liveMap);
   _setupOFMAutoSwitch(liveMap, liveLayers);
 
   // Style Leaflet controls
