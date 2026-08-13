@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.10.0",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Neue Kennzahl „Blockzeit“ in Statistik und Widget",
+    "items": [
+      "🕐 Im Statistik-Tab steht jetzt neben den Flugstunden eine eigene Karte „Blockzeit“ (Summe über den gewählten Zeitraum). Dieselbe Zahl erscheint auch im Widget-Banner neben den Flugstunden der letzten 7 Tage."
+    ]
+  },
+  {
     "version": "11.9.0",
     "date": "2026-08-13",
     "highlight": false,

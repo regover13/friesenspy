@@ -2030,12 +2030,13 @@ def get_stats(
         if f.get("logoff_time") is None and not f.get("connection_closed"):
             continue  # in-progress: kein Landepunkt, Connection offen — noch nicht gewertet
         cid = f["cid"]
-        a = agg.setdefault(cid, {"fs": 0, "st": 0, "dur": 0, "last": None, "last_cs": ""})
+        a = agg.setdefault(cid, {"fs": 0, "st": 0, "dur": 0, "block": 0, "last": None, "last_cs": ""})
         if f.get("source") == "statsim":
             a["st"] += 1
         else:
             a["fs"] += 1
         a["dur"] += f.get("duration_min") or 0
+        a["block"] += f.get("block_min") or 0
         lt = f.get("logon_time") or ""
         if lt and (a["last"] is None or lt > a["last"]):
             a["last"] = lt
@@ -2047,7 +2048,7 @@ def get_stats(
         "AND callsign LIKE ? AND logon_time >= ?",
         (prefix_pat, start),
     ).fetchall():
-        agg.setdefault(row[0], {"fs": 0, "st": 0, "dur": 0, "last": None, "last_cs": ""})
+        agg.setdefault(row[0], {"fs": 0, "st": 0, "dur": 0, "block": 0, "last": None, "last_cs": ""})
 
     result = []
     for cid, a in agg.items():
@@ -2063,6 +2064,7 @@ def get_stats(
             "st_count": a["st"],
             "flight_count": a["fs"] + a["st"],
             "total_duration_min": a["dur"],
+            "total_block_min": a["block"],
             "last_flight": a["last"],
         })
     return result

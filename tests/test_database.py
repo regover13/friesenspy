@@ -1096,6 +1096,27 @@ class TestGetStatsInProgressGpsLeg:
         assert stats[0]["last_flight"] is None
         conn.close()
 
+    def test_get_stats_includes_total_block_min(self):
+        """Neue KPI "Blockzeit" (Statistik-Tab + /widget-Banner): total_block_min
+        aggregiert block_min genau wie total_duration_min die Flugzeit aggregiert.
+        Blockzeit ist gate-to-gate inkl. Taxi -> nie kuerzer als die Flugzeit (#Blockzeit
+        ist mindestens so gross wie die Flugzeit, s. CHANGELOG 11.4.3)."""
+        conn = _make_conn()
+        cid = 9103
+        ensure_pilot(conn, cid, "Block Pilot")
+        conn.commit()
+
+        now = datetime.now(timezone.utc)
+        self._seed_completed_flight(conn, cid, "FRS93", now - timedelta(hours=2))
+
+        stats = get_stats(conn, days=30)
+        assert len(stats) == 1
+        s = stats[0]
+        assert "total_block_min" in s
+        assert s["total_block_min"] > 0
+        assert s["total_block_min"] >= s["total_duration_min"]
+        conn.close()
+
 
 # ---------------------------------------------------------------------------
 # cleanup_old_history
