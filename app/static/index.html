@@ -595,7 +595,14 @@
        auf schmalen Screens horizontal gescrollt werden kann; min-width:100% füllt sie aus,
        wenn der Inhalt schmaler als der Wrapper ist. */
     .live-table-wrap table {
-      width: max-content;
+      /* width:auto statt max-content: Eine Tabelle mit `white-space:nowrap` in den Zellen
+         waechst auch mit `auto` ueber ihren Rahmen hinaus -- das ist CSS 2.1 und laeuft
+         ueberall. `max-content` ist dagegen modernes Sizing; kennt eine Engine es nicht,
+         wird die Deklaration verworfen, die globale Regel `table { width:100% }` greift,
+         die Tabelle wird nie breiter als ihr Rahmen -- und dann gibt es schlicht nichts zu
+         scrollen (Verdacht aus dem MSFS-EFB-Live-Test 13.08.2026; die Selbstdiagnose misst
+         `CSS.supports('width','max-content')` und die tatsaechlichen Breiten mit). */
+      width: auto;
       min-width: 100%;
     }
     /* =====================================================================
@@ -610,7 +617,14 @@
       -webkit-overflow-scrolling: touch;
     }
     .table-scroll table {
-      width: max-content;
+      /* width:auto statt max-content: Eine Tabelle mit `white-space:nowrap` in den Zellen
+         waechst auch mit `auto` ueber ihren Rahmen hinaus -- das ist CSS 2.1 und laeuft
+         ueberall. `max-content` ist dagegen modernes Sizing; kennt eine Engine es nicht,
+         wird die Deklaration verworfen, die globale Regel `table { width:100% }` greift,
+         die Tabelle wird nie breiter als ihr Rahmen -- und dann gibt es schlicht nichts zu
+         scrollen (Verdacht aus dem MSFS-EFB-Live-Test 13.08.2026; die Selbstdiagnose misst
+         `CSS.supports('width','max-content')` und die tatsaechlichen Breiten mit). */
+      width: auto;
       min-width: 100%;
     }
     /* Windows/Edge/Chrome blenden Overlay-Scrollbars standardmäßig aus (nur beim aktiven
@@ -2079,6 +2093,33 @@
     <line x1="12" y1="9" x2="12" y2="14"/>
     <circle cx="12" cy="17.3" r="0.9" fill="currentColor" stroke="none"/>
   </symbol>
+  <!-- 1:1-Ersatz fuer Unicode-Zeichen, die im MSFS-EFB-Panel als leere Kaesten erscheinen
+       (Coherent GT hat keinen Font-Fallback). Optisch bewusst nah am Original, damit sich
+       auf der Website nichts sichtbar aendert: ● ○ fuer die Quellen-Abzeichen, ▲ ▼ fuer die
+       Sortierrichtung, › ⌄ fuer das Auf-/Zuklappen, ⏳ fuer "Rennen noch nicht gestartet". -->
+  <symbol id="icon-dot-filled" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="6" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="icon-dot-hollow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+    <circle cx="12" cy="12" r="5.5"/>
+  </symbol>
+  <symbol id="icon-tri-up" viewBox="0 0 24 24">
+    <path d="M12 7l7 11H5z" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="icon-tri-down" viewBox="0 0 24 24">
+    <path d="M12 17L5 6h14z" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="icon-caret-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 5l7 7-7 7"/>
+  </symbol>
+  <symbol id="icon-caret-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 9l7 7 7-7"/>
+  </symbol>
+  <symbol id="icon-hourglass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 3h10M7 21h10"/>
+    <path d="M8 3v4l4 5 4-5V3"/>
+    <path d="M8 21v-4l4-5 4 5v4"/>
+  </symbol>
 </svg>
 
 <!-- Scan line overlay -->
@@ -2135,7 +2176,7 @@
     <div id="visibility-section" hidden
          style="border-top:1px solid rgba(45,156,219,0.2); margin-top:14px; padding-top:10px;">
       <a href="#" id="visibility-toggle"
-         style="color:var(--green); cursor:pointer; text-decoration:none; font-size:0.82rem; font-weight:500;"><svg class="icon"><use href="#icon-lock"/></svg> Wer darf über mich benachrichtigt werden? <span id="visibility-caret">›</span></a>
+         style="color:var(--green); cursor:pointer; text-decoration:none; font-size:0.82rem; font-weight:500;"><svg class="icon"><use href="#icon-lock"/></svg> Wer darf über mich benachrichtigt werden? <span id="visibility-caret"><svg class="icon"><use href="#icon-caret-right"/></svg></span></a>
       <div id="visibility-body" class="notif-filter-section" hidden style="margin-top:10px;">
         <div class="notif-radio-row">
           <label><input type="radio" name="visibility-mode" value="everyone" checked> Alle</label>
@@ -2499,7 +2540,11 @@
   <div class="modal-box" onclick="event.stopPropagation()">
     <div class="ac-topbar">
       <button class="btn-share" onclick="copyAcShareUrl(this)" title="Deep-Link auf dieses Muster kopieren">⎘ Teilen</button>
-      <button class="modal-close" onclick="closeAcModal()">×</button>
+      <!-- SVG statt "×": Im MSFS-EFB-Panel fehlt dem Font das Glyph, der Knopf wurde dort zu
+           einer leeren Box. Er war die ganze Zeit vorhanden und klickbar -- nur unsichtbar,
+           weshalb man aus der Muster-Ansicht scheinbar nicht mehr herauskam (Live-Test-Fund
+           13.08.2026). Die uebrigen fuenf Modals nutzen bereits icon-x. -->
+      <button class="modal-close" onclick="closeAcModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
     </div>
     <div id="ac-body"></div>
   </div>
@@ -3065,7 +3110,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const caret = document.getElementById('visibility-caret');
     if (!body) return;
     body.hidden = !body.hidden;
-    if (caret) caret.textContent = body.hidden ? '›' : '⌄';
+    // innerHTML statt textContent: SVG statt Unicode-Pfeil, sonst leere Box im EFB-Panel.
+    if (caret) caret.innerHTML = icon(body.hidden ? 'caret-right' : 'caret-down');
   });
 
   _on(document.getElementById('notif-reset-btn'), 'click', async () => {
@@ -3906,7 +3952,7 @@ function renderBummelParticipants(view) {
   const startTxt = view.dtstart ? `${view.dtstart.slice(8,10)}.${view.dtstart.slice(5,7)}. ${view.dtstart.slice(11,16)}z` : '';
   let statusText, lockIcon;
   if (view.status === 'scheduled') {
-    lockIcon = '⏳';
+    lockIcon = icon('hourglass');
     statusText = `Rennen noch nicht gestartet${startTxt ? ' — geplanter Start ' + startTxt : ''}. Ergebnisse erscheinen erst nach Renn-Ende.`;
   } else if (view.status === 'waiting') {
     lockIcon = icon('lock');
@@ -4583,8 +4629,8 @@ function _flightRowHtml(f, rowAttrs) {
   const distNm = f.distance_nm != null ? Math.round(f.distance_nm) : null;
   const dist = distNm != null && distNm > 0 ? `${distNm} nm` : '—';
   const sourceTag = f.source === 'friesenspy'
-    ? `<span class="source-badge source-fs">● FriesenSpy</span>`
-    : `<span class="source-badge source-st">○ StatSim</span>`;
+    ? `<span class="source-badge source-fs">${icon('dot-filled')} FriesenSpy</span>`
+    : `<span class="source-badge source-st">${icon('dot-hollow')} StatSim</span>`;
   // Phase 2b: renderFlightsList zeigt (callsign_prefix='') auch Fremd-Callsigns — die
   // zählen ohnehin nicht in Statistik/Bummel/Kutter (die filtern auf CALLSIGN_PREFIX).
   const csUpper = (f.callsign || '').toUpperCase();
@@ -4699,7 +4745,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
       <button class="btn-share" style="margin-left:auto;" onclick="copyShareUrl(this)">⎘ Teilen</button>
     </div>`;
   if (statsimStatus === 'updating') {
-    html += `<div style="text-align:center;padding:4px 0;font-size:0.8em;color:var(--color-label)">⟳ StatSim wird aktualisiert…</div>`;
+    html += `<div style="text-align:center;padding:4px 0;font-size:0.8em;color:var(--color-label)">${icon('refresh')} StatSim wird aktualisiert…</div>`;
   }
 
   if (flights.length === 0) {
@@ -4837,8 +4883,11 @@ async function _loadAndDrawTrack(source, id, logon, logoff) {
       }).bindTooltip('Ende', { className: 'mono' }).addTo(trackMap);
     }
     trackMap.fitBounds(latlngs, { padding: [40, 40] });
-    document.getElementById('track-modal-info').textContent =
-      `${positions.length} Track-Punkte  ·  ${source === 'friesenspy' ? '● FriesenSpy' : '○ StatSim'}`;
+    // innerHTML statt textContent: SVG-Punkt statt ●/○, sonst leere Box im EFB-Panel.
+    // positions.length ist eine Zahl, source ein interner Bezeichner -- keine Fremddaten.
+    document.getElementById('track-modal-info').innerHTML =
+      `${positions.length} Track-Punkte  ·  ${source === 'friesenspy'
+        ? icon('dot-filled') + ' FriesenSpy' : icon('dot-hollow') + ' StatSim'}`;
   } catch (e) {
     document.getElementById('track-modal-info').textContent = 'Fehler beim Laden des Tracks.';
   }
@@ -5405,7 +5454,7 @@ function renderTopMusterCard(top) {
 
 function _typesSortIndicator(field) {
   if (_typesSortBy !== field) return '<span style="opacity:0.3"> ' + icon('sort') + '</span>';
-  return _typesSortDir === 'asc' ? ' ▲' : ' ▼';
+  return ' ' + icon(_typesSortDir === 'asc' ? 'tri-up' : 'tri-down');
 }
 
 function _typesSortClick(field) {
@@ -5505,7 +5554,7 @@ function copyTypesShareUrl(btn) {
 
 function _sortIndicator(field) {
   if (_statsSortBy !== field) return '<span style="opacity:0.3"> ' + icon('sort') + '</span>';
-  return _statsSortDir === 'asc' ? ' ▲' : ' ▼';
+  return ' ' + icon(_statsSortDir === 'asc' ? 'tri-up' : 'tri-down');
 }
 
 function _statsSortClick(field) {

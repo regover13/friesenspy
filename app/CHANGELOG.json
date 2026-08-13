@@ -1,5 +1,16 @@
 [
   {
+    "version": "11.6.1",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Muster-Fenster ließ sich im MSFS-Panel nicht schließen",
+    "items": [
+      "❎ Im MSFS-EFB-Panel schien man aus der Muster-Ansicht nicht mehr herauszukommen. Der Schließen-Knopf war die ganze Zeit da und klickbar — nur unsichtbar, weil die Anzeige-Engine im Simulator für das „×\" kein Zeichen hat und eine leere Box zeichnete. Jetzt ein Symbol, das nicht von der Schriftart abhängt (die anderen fünf Fenster hatten das bereits).",
+      "🔣 Gleiches Problem bei Sortierpfeilen, Quellen-Punkten, Auf-/Zuklapp-Pfeil und Lade-Anzeige — alle auf schriftunabhängige Symbole umgestellt. Auf der Website sieht alles aus wie bisher.",
+      "↔️ Breite Tabellen ließen sich im Panel nicht seitwärts schieben: Die verwendete Breiten-Angabe kennt die alte Engine nicht, wodurch die Tabelle nie über ihren Rahmen hinauswuchs — und es damit nichts zu schieben gab. Auf eine Variante umgestellt, die überall funktioniert."
+    ]
+  },
+  {
     "version": "11.6.0",
     "date": "2026-08-13",
     "highlight": false,
