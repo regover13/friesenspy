@@ -275,3 +275,44 @@ def test_karten_selbstdiagnose_meldet_nach():
         assert karte in INDEX, f"{karte} nicht verdrahtet"
     # Die zwei offenen Fragen muessen tatsaechlich gemessen werden
     assert "aipAufKarte" in INDEX and "kachelStil" in INDEX
+
+
+# ---------------------------------------------------------------------------
+#  Keine Arbeit fuer verdeckte Ansichten (v11.13.x)
+# ---------------------------------------------------------------------------
+# Nutzer-Fund im Sim: im Events-Tab blitzten alle paar Sekunden die Kartenkacheln weg, im
+# Karten-Tab dagegen nie -- und zusaetzlich, seltener und kuerzer, ein Aufblitzen IN der
+# Karte. Zwei verschiedene Ursachen, beide unnoetige Arbeit.
+
+
+def test_verdeckte_ansichten_werden_nicht_gezeichnet():
+    """renderLiveTable und updateMap liefen auch dann, wenn ihre Ansicht verdeckt war --
+    im Events-Tab also alle 10 UND alle 15 Sekunden umsonst."""
+    assert "function _istSichtbar(el)" in INDEX
+    m = re.search(r"function renderLiveTable\(pilots\) \{\n(.*?)\n\n", INDEX, re.S)
+    assert m and "_istSichtbar(container)" in m.group(1)
+    m2 = re.search(r"function updateMap\(pilots\) \{(.*?)\n\n", INDEX, re.S)
+    assert m2 and "_istSichtbar(liveMap.getContainer())" in m2.group(1)
+
+
+def test_marker_werden_nur_bei_kursaenderung_neu_gebaut():
+    """setIcon ersetzt das DOM-Element des Markers komplett. In jedem Takt fuer jeden
+    Flieger aufgerufen heisst: alle 10 bzw. 15 Sekunden die halbe Karte neu aufbauen."""
+    assert "_fsHeading !== hdg" in INDEX
+    assert "vorhanden._fsHeading = hdg;" in INDEX
+    assert "marker._fsHeading = hdg;" in INDEX
+    # Der alte, bedingungslose Aufruf darf nicht zurueckkehren
+    assert ".setIcon(icon)" not in INDEX
+
+
+def test_login_name_im_panel_ausgeblendet():
+    """Im Tablet weiss man, wer man ist -- auf der Website ist der Name dagegen der einzige
+    Hinweis darauf, als wer man angemeldet ist."""
+    assert "html.vr-panel #userBox { display: none !important; }" in INDEX
+
+
+def test_ebenen_haken_wird_selbst_gezeichnet():
+    """Gemessen: hasLayer, gemerkter Wunsch und Kaestchen-Zustand stimmen alle drei ueberein
+    -- der Zustand ist richtig, Coherent GT malt die eingebauten Haken nur nicht."""
+    assert "html.vr-panel .leaflet-control-layers-selector {" in INDEX
+    assert "html.vr-panel .leaflet-control-layers-selector:checked { background: var(--green); }" in INDEX

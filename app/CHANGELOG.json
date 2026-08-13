@@ -1,13 +1,14 @@
 [
   {
-    "version": "11.13.0",
+    "version": "11.13.1",
     "date": "2026-08-13",
     "highlight": false,
     "title": "FriesenSpy fürs Cockpit zum Herunterladen",
     "items": [
       "🛩️ Neue Seite „FriesenSpy im Cockpit“ (unten im Fußbereich verlinkt): dort gibt es die MSFS-App als Paket zum Herunterladen, mit Einbauanleitung für Store und Steam.",
       "🗺️ Verdeckte Ansichten werden nicht mehr im Hintergrund neu gezeichnet. Im MSFS-Panel blitzten dadurch im Events-Tab regelmäßig die Kartenkacheln weg, während im Hintergrund die Live-Tabelle und die verdeckte Karte aktualisiert wurden.",
-      "☑️ Die Ebenen-Auswahl der Karte zeigt im MSFS-Panel jetzt an, was aktiv ist. Der Zustand stimmte schon immer — der Simulator zeichnet die eingebauten Häkchen nur nicht."
+      "☑️ Die Ebenen-Auswahl der Karte zeigt im MSFS-Panel jetzt an, was aktiv ist. Der Zustand stimmte schon immer — der Simulator zeichnet die eingebauten Häkchen nur nicht.",
+      "✈️ Flugzeug-Symbole auf der Karte werden nur noch neu gezeichnet, wenn sich der Kurs wirklich geändert hat — vorher passierte das in jedem Takt und blitzte im MSFS-Panel kurz auf."
     ]
   },
   {

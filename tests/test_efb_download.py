@@ -150,3 +150,12 @@ def test_installationsseite_nennt_beide_community_pfade():
     seite = (Path(__file__).resolve().parents[1] / "app" / "static" / "efb.html").read_text(encoding="utf-8")
     assert "Microsoft.Limitless_8wekyb3d8bbwe" in seite
     assert "Microsoft Flight Simulator 2024" in seite
+
+
+def test_seite_verspricht_keine_selbstverwaltung_der_geraete(env):
+    """Die erste Fassung schrieb, man koenne "das Geraet in der Verwaltung wieder abmelden"
+    -- das gibt es nur als Admin-Endpunkt (/api/admin/panel-devices), nicht fuer Mitglieder.
+    Vom Nutzer erwischt. Eine Seite darf nichts versprechen, was die App nicht kann."""
+    seite = (Path(__file__).resolve().parents[1] / "app" / "static" / "efb.html").read_text(encoding="utf-8")
+    assert "in der Verwaltung wieder\n      abmelden" not in seite
+    assert "das macht aber die Verwaltung" in seite

@@ -1276,6 +1276,11 @@
     /* Die Zeilen der Ebenen-Auswahl sind im Cockpit Tippziele, keine Mauszeiger-Ziele. */
     html.vr-panel .leaflet-control-layers label { min-height: 32px; padding: 4px 0; }
 
+    /* Der eigene Name kostet in der schmalen Kopfzeile des Tablets Platz und sagt nichts:
+       wer das Panel offen hat, weiss, wer er ist. Auf der Website bleibt er stehen -- dort
+       ist er der einzige Hinweis darauf, als wer man angemeldet ist. */
+    html.vr-panel #userBox { display: none !important; }
+
     /* Override Leaflet popup styles for the radar aesthetic */
     .leaflet-popup-content-wrapper {
       background: var(--bg-panel) !important;
@@ -5699,16 +5704,29 @@ function updateMap(pilots) {
   // Add / update markers
   for (const p of (pilots || [])) {
     if (p.latitude == null || p.longitude == null) continue;
-    const icon = makeAircraftIcon(p.heading);
-    if (mapMarkers[p.callsign]) {
-      mapMarkers[p.callsign]
-        .setLatLng([p.latitude, p.longitude])
-        .setIcon(icon)
-        .setPopupContent(buildPopupHtml(p));
+    // Auf ganze Grad runden: Das Symbol wird ohnehin nur gedreht, und ein Bruchteil eines
+    // Grades ist keine sichtbare Aenderung -- waere aber jedes Mal ein Grund, es neu zu bauen.
+    const hdg = Math.round(Number(p.heading) || 0);
+    const vorhanden = mapMarkers[p.callsign];
+    if (vorhanden) {
+      vorhanden.setLatLng([p.latitude, p.longitude]);
+      // setIcon ersetzt das DOM-Element des Markers KOMPLETT. Es bisher in jedem Takt fuer
+      // jeden Flieger aufzurufen hiess: alle 10 bzw. 15 Sekunden die halbe Karte neu
+      // aufbauen, obwohl sich am Kurs meist nichts geaendert hat. Im MSFS-Panel war das als
+      // kurzes Aufblitzen zu sehen (Nutzer-Fund 13.08.: "ab und zu blitzt kurz was in der
+      // Karte auf, wirklich nur ein Blitz, nicht regelmaessig") -- unregelmaessig, weil auch
+      // jede SSE-Meldung diesen Weg nimmt.
+      if (vorhanden._fsHeading !== hdg) {
+        vorhanden.setIcon(makeAircraftIcon(hdg));
+        vorhanden._fsHeading = hdg;
+      }
+      // Guenstig, solange das Popup zu ist: Leaflet merkt sich den Inhalt dann nur.
+      vorhanden.setPopupContent(buildPopupHtml(p));
     } else {
-      const marker = L.marker([p.latitude, p.longitude], { icon })
+      const marker = L.marker([p.latitude, p.longitude], { icon: makeAircraftIcon(hdg) })
         .bindPopup(buildPopupHtml(p), { maxWidth: 240 })
         .addTo(liveMap);
+      marker._fsHeading = hdg;
       mapMarkers[p.callsign] = marker;
       // Ersten Track-Fetch triggern wenn Pilot neu erscheint
       if (p.cid) _fetchInitialLiveTrack(p.cid, p.callsign);
