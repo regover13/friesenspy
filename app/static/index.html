@@ -746,13 +746,6 @@
     /* Windows/Edge/Chrome blenden Overlay-Scrollbars standardmäßig aus (nur beim aktiven
        Hover/Scrollen sichtbar) — derselbe Fund wie bei .table-scroll oben, hier erneut
        nötig, weil .live-table-wrap eine eigene, separate Wrapper-Klasse ist. */
-    /* Flugliste unter einem Piloten (Events-Tab): eingerueckt, damit sie sichtbar zu dem
-       Piloten darueber gehoert. Bewusst eine Klasse und kein Inline-Stil -- nur so laesst
-       sie sich im Panel abschalten (s. html.vr-panel-Regel weiter unten). KEINE
-       Breitenangabe dazu: ein Rand liegt ausserhalb der Box, `width:100%` daneben machte
-       den Kasten genau um den Rand zu breit (Nutzer-Fund 14.08.2026). */
-    .flugliste-eingerueckt { margin-left: 24px; }
-
     .live-table-wrap { scrollbar-width: thin; scrollbar-color: var(--green-dim) var(--bg-panel-2); }
     .live-table-wrap::-webkit-scrollbar { height: 10px; }
     .live-table-wrap::-webkit-scrollbar-track { background: var(--bg-panel-2); }
@@ -1302,12 +1295,6 @@
     html.vr-panel .panel-cards-sortable thead th:empty { display: none; }
     /* Der Wrapper darf im Karten-Modus nicht mehr horizontal scrollen -- es gibt nichts mehr. */
     html.vr-panel .panel-cards-wrap { overflow-x: visible; }
-    /* Die Einrueckung der Flugliste unter einem Piloten ist ein Gliederungsmittel: Sie
-       zeigt, dass die Liste zu dem Piloten darueber gehoert. Auf der Website kostet das
-       nichts, im Tablet 24 von rund 413 nutzbaren Pixeln -- gut sechs Prozent der Breite,
-       die jeder Karte fehlen. Dort zaehlt die Breite mehr als die Gliederung, zumal die
-       Karten ohnehin schon einen farbigen Balken links tragen. */
-    html.vr-panel .flugliste-eingerueckt { margin-left: 0; }
 
     /* ===================================================================
        PLATZ UND FINGERBEDIENUNG (nur MSFS-EFB-Panel)
@@ -6672,12 +6659,12 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             ${_bummelStandingBadge(p.cid)}
           </div>
         </div>
-        <!-- width:100% UND margin-left:24px zusammen ergaben einen Kasten, der 24px breiter
-             ist als sein Platz und rechts herausschaut (Nutzer-Fund 14.08.2026 im Panel:
-             "der Kasten in dem anderen Kasten ist nach rechts verschoben und schaut heraus").
-             Ein Rand liegt ausserhalb der Box, den rechnet auch border-box nicht weg. Ohne
-             width fuellt der Block von selbst genau den Rest -- die Einrueckung bleibt. -->
-        ${flightRows ? `<div class="live-table-wrap flugliste-eingerueckt"><table style="font-size:0.8rem;">
+        <!-- width:100% MUSS bleiben (der Kasten fuellt sonst seinen Platz nicht aus), der
+             Rand daneben nicht: `margin-left:24px` machte die Box genau um den Rand breiter
+             als ihren Platz, weil ein Rand ausserhalb der Box liegt -- das rechnet auch
+             box-sizing:border-box nicht weg. Sie schaute dadurch rechts heraus
+             (Nutzer-Fund 14.08.2026). Die Einrueckung ist ersatzlos entfallen. -->
+        ${flightRows ? `<div class="live-table-wrap" style="width:100%;"><table style="font-size:0.8rem;">
           <thead><tr>
             <th>Callsign</th><th>Aircraft</th><th>Strecke</th><th>Flugplan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>
           </tr></thead>

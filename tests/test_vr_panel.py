@@ -584,20 +584,18 @@ def test_karten_zellen_ohne_flexbox():
     assert "flex:" not in b.group(1)
 
 
-def test_eingerueckte_flugliste_ragt_nicht_aus_ihrem_kasten():
-    """`width:100%` zusammen mit `margin-left` ergibt einen Kasten, der genau um den Rand
-    breiter ist als sein Platz -- ein Rand liegt ausserhalb der Box, das rechnet auch
-    box-sizing:border-box nicht weg. Im Panel schaute die eingerueckte Flugliste unter jedem
-    Piloten dadurch rechts heraus (Nutzer-Fund 14.08.2026). Ohne width fuellt der Block von
-    selbst den Rest, die Einrueckung bleibt."""
+def test_flugliste_fuellt_ihren_kasten_ohne_herauszuragen():
+    """Zwei Anforderungen, die zusammen gelten muessen:
+
+    `width:100%` MUSS bleiben -- ohne die Angabe fuellt der Kasten seinen Platz nicht aus
+    und schrumpft auf Inhaltsbreite (im Sim gemessen: die Karte nahm nur noch die halbe
+    Breite ein).
+
+    `margin-left` daneben darf NICHT stehen -- ein Rand liegt ausserhalb der Box, das
+    rechnet auch das globale box-sizing:border-box nicht weg. Beides zusammen ergab einen
+    Kasten, der genau um den Rand breiter war als sein Platz und rechts herausschaute
+    (Nutzer-Fund 14.08.2026). Die Einrueckung ist deshalb ersatzlos entfallen."""
+    assert 'class="live-table-wrap" style="width:100%;"' in INDEX
+    # Nur der STIL darf weg sein -- der Kommentar daneben nennt den alten Wert weiterhin,
+    # damit ihn niemand versehentlich wieder einbaut.
     assert 'style="width:100%;margin-left:24px;"' not in INDEX
-    # Einrueckung als Klasse statt Inline-Stil -- nur so ist sie im Panel abschaltbar.
-    assert '.flugliste-eingerueckt { margin-left: 24px; }' in INDEX
-    assert 'class="live-table-wrap flugliste-eingerueckt"' in INDEX
-
-
-def test_einrueckung_im_panel_abgeschaltet():
-    """24px von rund 413 nutzbaren Pixeln sind gut sechs Prozent der Breite, die jeder Karte
-    fehlen. Im Tablet zaehlt die Breite mehr als die Gliederung -- die Karten tragen ohnehin
-    einen farbigen Balken links. Auf der Website bleibt die Einrueckung."""
-    assert 'html.vr-panel .flugliste-eingerueckt { margin-left: 0; }' in INDEX

@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.16.4",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Flugliste füllt ihren Kasten wieder aus",
+    "items": [
+      "📐 Die Flugliste unter einem Piloten im Events-Tab füllt ihren Platz wieder ganz aus. Beim vorigen Versuch, ihren Überstand nach rechts zu beheben, hatte ich die Breitenangabe statt des Randes entfernt — falsch herum: Der Kasten schrumpfte auf halbe Breite. Die Einrückung ist ersatzlos entfallen."
+    ]
+  },
+  {
     "version": "11.16.3",
     "date": "2026-08-14",
     "highlight": false,
