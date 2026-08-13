@@ -433,7 +433,10 @@ def test_kein_zweiter_ausgang_aus_dem_vollbild_im_panel():
     genau dieses Vollbild -- ein eigener Knopf dafuer ist einer zu viel und kostet Platz
     in der Karte. Der Knopf zum HINEINgehen bleibt."""
     assert "html.vr-panel .map-is-fullscreen .map-fullscreen-btn { display: none !important; }" in INDEX
-    assert "html.vr-panel #global-map-exit-fs { display: none !important; }" in INDEX
+    # Der zweite, eigene Notausgang unten rechts ist ganz entfallen: im Panel uebernimmt
+    # die Zurueck-Leiste, auf der Website stand er als zweiter "Vollbild verlassen"-Knopf
+    # neben dem ersten (Nutzer-Fund 14.08.2026).
+    assert "global-map-exit-fs" not in INDEX
     # panelGoBack muss das Vollbild weiterhin als ERSTE Stufe verlassen, sonst gibt es
     # nach dem Ausblenden gar keinen Weg mehr heraus.
     m = re.search(r"function panelGoBack\(\) \{(.*?)\n\}", INDEX, re.S)
@@ -495,7 +498,7 @@ def test_panel_topbar_haengt_ausserhalb_von_app():
     bestehende <nav class="tab-nav"> (die IN #app steckt) umbauen, verschwaende der
     Zurueck-Knopf hinter jedem Modal (z-index 10000) -- genau die Situation, die er loesen
     soll. #panel-topbar muss deshalb als eigenes Element NACH dem schliessenden </script>
-    stehen, wie die drei anderen schwebenden Knoepfe davor (#global-map-exit-fs,
+    stehen, wie die anderen schwebenden Knoepfe davor (
     #panel-update-hint, #panel-back-btn) -- alle vier sind Geschwister von #app, nicht
     seine Nachfahren."""
     # rindex, nicht index: ganz am Dateianfang steht bereits ein winziges Inline-<script>

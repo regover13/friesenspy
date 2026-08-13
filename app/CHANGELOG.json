@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.16.0",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Mehr Platz im MSFS-Panel: eine Leiste statt zweier Zeilen",
+    "items": [
+      "📐 Im MSFS-Panel sind Kopfzeile und Tab-Reihe zu einer festen Leiste zusammengefasst — mit Zurück-Knopf, den vier Tabs, der Verbindungsanzeige und dem FriesenSpy-Schriftzug als dezentem Hintergrund. Das bringt rund 116 Pixel mehr Höhe für die Karte, etwa ein Siebtel des Tablets. Auf der Website ändert sich nichts.",
+      "🗺️ Auf der Website gab es im Kartenvollbild zwei Knöpfe „Vollbild verlassen“ — der größere war ein Notausgang fürs Tablet und ist dort längst überflüssig. Er ist entfallen."
+    ]
+  },
+  {
     "version": "11.15.0",
     "date": "2026-08-13",
     "highlight": false,

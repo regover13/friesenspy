@@ -1059,26 +1059,6 @@
       height: 100vh !important;
       border: none !important;
     }
-    /* Zweiter, vom Karten-Wrap unabhaengiger Ausgang aus dem Karten-Vollbild (Live-Test-Fund
-       13.08.2026 im MSFS-EFB-Panel: der Button INNERHALB der Karte war weder sicht- noch
-       klickbar, Escape kam nie an -- Nutzer musste den Flug neu laden). Direkt als letztes
-       Element vor </body> eingehaengt, NICHT Nachfahre von #leaflet-map, mit sehr hohem
-       z-index -- unabhaengig davon, welches Stacking-Problem den inneren Button betrifft. */
-    .global-map-exit-fs {
-      position: fixed !important;
-      bottom: 16px;
-      right: 16px;
-      z-index: 999999;
-      background: var(--bg-panel);
-      border: 2px solid var(--red);
-      color: var(--text-bright);
-      font-family: var(--text-display);
-      font-size: 0.85rem;
-      letter-spacing: 0.08em;
-      padding: 10px 16px;
-      cursor: pointer;
-    }
-
     /* Hinweis auf eine neue Version -- nur im MSFS-EFB-Panel.
        Hintergrund: Die EFB-App wird beim Schliessen des Tablets nur schlafen gelegt
        (AppSuspendMode.SLEEP, bewusst so -- s. Kommentar in FriesenSpy.tsx), damit das Panel
@@ -1404,7 +1384,6 @@
        denselben Weg sind einer zu viel -- und der zweite kostet Platz in der Karte.
        Der Knopf zum HINEINgehen bleibt, nur der Rueckweg wandert in die Leiste. */
     html.vr-panel .map-is-fullscreen .map-fullscreen-btn { display: none !important; }
-    html.vr-panel #global-map-exit-fs { display: none !important; }
 
     /* Leaflets Bedienelemente sitzen oben links (Zoom) und oben rechts (Ebenen) -- im
        Vollbild also genau unter der Zurueck-Leiste, die fest am oberen Rand klebt. Der
@@ -7547,16 +7526,18 @@ function toggleMapFullscreen(wrapId, btn, getMap) {
   const isFs = wrap.classList.toggle('map-is-fullscreen');
   btn.innerHTML = isFs ? icon('x') + ' Vollbild verlassen' : icon('fullscreen') + ' Vollbild';
   document.body.style.overflow = isFs ? 'hidden' : '';
-  const globalExit = document.getElementById('global-map-exit-fs');
-  if (globalExit) globalExit.hidden = !isFs;
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const map = getMap();
     if (map) map.invalidateSize();
   }));
 }
 
-// Unabhaengiger Fallback-Ausgang (s. CSS-Kommentar bei .global-map-exit-fs): setzt den
-// Vollbild-Zustand direkt zurueck, falls der Button INNERHALB der Karte nicht erreichbar war.
+// Verlaesst das Karten-Vollbild, egal welche Karte es gerade ist -- benutzt von der
+// Zurueck-Leiste im Panel und von Escape auf der Website. Es gab hier einmal einen ZWEITEN,
+// eigenen Knopf am unteren rechten Rand als Notausgang, weil im Panel der Knopf INNERHALB
+// der Karte nicht erreichbar war. Im Panel uebernimmt das inzwischen die Zurueck-Leiste, auf
+// der Website war er damit nur noch ein zweiter "Vollbild verlassen"-Knopf neben dem ersten
+// (Nutzer-Fund 14.08.2026). Die Funktion bleibt, der Knopf ist weg.
 function exitAnyMapFullscreen() {
   const fsWrap = document.querySelector('.map-is-fullscreen');
   if (!fsWrap) return;
@@ -7564,8 +7545,6 @@ function exitAnyMapFullscreen() {
   if (innerBtn) { innerBtn.click(); return; }
   fsWrap.classList.remove('map-is-fullscreen');
   document.body.style.overflow = '';
-  const globalExit = document.getElementById('global-map-exit-fs');
-  if (globalExit) globalExit.hidden = true;
 }
 
 // ==========================================================================
@@ -7664,7 +7643,7 @@ function _initPanelBackButton() {
 }
 
 // WICHTIG -- erst wenn das Dokument fertig geparst ist: Dieses <script> steht zwar am Ende
-// des <body>, aber die drei festen Knoepfe (#global-map-exit-fs, #panel-update-hint,
+// des <body>, aber die festen Knoepfe (#panel-update-hint,
 // #panel-back-btn) stehen DAHINTER. Ein Inline-Skript haelt den Parser an, also existieren
 // sie beim Ausfuehren noch nicht -- ein direkter Aufruf hier faende per getElementById nur
 // null und _initPanelBackButton haette sich stumm ueber seine eigene Wache verabschiedet.
@@ -7698,7 +7677,6 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 </script>
-<button id="global-map-exit-fs" class="global-map-exit-fs" hidden onclick="exitAnyMapFullscreen()"><svg class="icon"><use href="#icon-x"/></svg> Vollbild verlassen</button>
 <button id="panel-update-hint" class="panel-update-hint" hidden onclick="location.reload()"><svg class="icon"><use href="#icon-refresh"/></svg> Neue Version &ndash; neu laden</button>
 <button id="panel-back-btn" class="panel-back-btn" hidden onclick="panelGoBack()"><svg class="icon"><use href="#icon-arrow-left"/></svg> Zur&uuml;ck</button>
 <!-- Vereinheitlichte Kopf-/Tab-Leiste (nur MSFS-EFB-Panel, v11.15.0): leer im Markup, JS
