@@ -568,9 +568,23 @@ def test_karten_zellen_ohne_flexbox():
     assert m, "Karten-Zellenregel nicht gefunden"
     zelle = m.group(1)
     assert "display: flex" not in zelle, "Flexbox auf <td> -- in Coherent GT wirkungslos"
-    assert "overflow: hidden" in zelle, "ohne BFC verlaesst der Float seine Zelle"
+    assert "position: relative" in zelle, "Bezugsrahmen fuer die absolute Beschriftung"
 
     b = re.search(r"html\.vr-panel \.panel-cards tbody td::before \{(.*?)\}", INDEX, re.S)
     assert b, "Beschriftungsregel nicht gefunden"
-    assert "float: left" in b.group(1)
+    # Der Kern: ausserhalb des Flusses. Weder flex noch float haben gehalten -- beide
+    # liessen die Beschriftung den Wert nach unten schieben. Was nicht im Fluss ist,
+    # beeinflusst keine Zeilenumbrueche; das gilt unabhaengig von der Engine.
+    assert "position: absolute" in b.group(1)
+    assert "float:" not in b.group(1)
     assert "flex:" not in b.group(1)
+
+
+def test_eingerueckte_flugliste_ragt_nicht_aus_ihrem_kasten():
+    """`width:100%` zusammen mit `margin-left` ergibt einen Kasten, der genau um den Rand
+    breiter ist als sein Platz -- ein Rand liegt ausserhalb der Box, das rechnet auch
+    box-sizing:border-box nicht weg. Im Panel schaute die eingerueckte Flugliste unter jedem
+    Piloten dadurch rechts heraus (Nutzer-Fund 14.08.2026). Ohne width fuellt der Block von
+    selbst den Rest, die Einrueckung bleibt."""
+    assert 'style="width:100%;margin-left:24px;"' not in INDEX
+    assert 'class="live-table-wrap" style="margin-left:24px;"' in INDEX

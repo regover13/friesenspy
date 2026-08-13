@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.16.2",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Eingerückte Flugliste ragt nicht mehr aus ihrem Kasten",
+    "items": [
+      "📐 Die eingerückte Flugliste unter jedem Piloten im Events-Tab war 24 Pixel breiter als ihr Platz und schaute rechts heraus — im MSFS-Panel deutlich zu sehen, auf der Website vom Rahmen verdeckt."
+    ]
+  },
+  {
     "version": "11.16.1",
     "date": "2026-08-14",
     "highlight": false,

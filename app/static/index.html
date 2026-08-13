@@ -1239,36 +1239,40 @@
       margin-bottom: 10px;
       padding: 6px 4px;
     }
-    /* Beschriftung links, Wert rechts -- OHNE Flexbox.
-       Erste Fassung nahm `display: flex` auf der Zelle. Im Browser sieht das richtig aus,
-       im Sim NICHT: Coherent GT setzt Flexbox auf einem <td> nicht um, die Zelle faellt auf
-       Block zurueck, und damit steht die Beschriftung auf einer eigenen Zeile UEBER ihrem
-       Wert. Beim Lesen sieht das aus, als gehoerte jeder Wert zur naechsten Beschriftung --
-       genau der "Versatz um eine Position", den der Nutzer gemeldet hat (14.08.2026). Die
-       Werte waren immer vollstaendig da; sein Satz "nur das Layout ist schlecht" hat es
-       geklaert, nachdem ich zweimal in der falschen Richtung gesucht hatte.
-       Deshalb hier float statt flex: CSS 2.1, das kann jede Engine. `overflow: hidden` an
-       der Zelle schliesst den Float ein, sonst ragt er aus der Karte heraus. */
+    /* Beschriftung links, Wert rechts -- die Beschriftung liegt dabei AUSSERHALB des
+       Textflusses.
+       Zwei Anlaeufe davor haben es nicht gebracht, und beide aus demselben Grund: Die
+       Beschriftung stand im Fluss und hat den Wert nach unten geschoben. Mit `display:
+       flex` auf dem <td> (Coherent GT setzt Flexbox auf einer Tabellenzelle nicht um) und
+       danach mit `float: left` landete der Wert jeweils eine Zeile TIEFER als seine eigene
+       Beschriftung -- im Sim sah das aus, als sei die ganze Wertespalte um eine Zeile
+       verrutscht: oben eine Beschriftung ohne Wert, unten ein Wert ohne Beschriftung
+       (Nutzer-Screenshots 14.08.2026, gleiches Muster in Kutter-Feed und Events-Flugliste).
+       `position: absolute` nimmt die Beschriftung komplett aus dem Fluss. Damit KANN sie
+       den Wert nicht mehr verschieben -- das ist keine Hoffnung auf Engine-Unterstuetzung
+       mehr, sondern eine Eigenschaft des Kastenmodells: was nicht im Fluss ist, beeinflusst
+       keine Zeilenumbrueche. Der Wert bekommt seinen Platz ueber padding-left. */
     html.vr-panel .panel-cards tbody td {
       display: block;
-      overflow: hidden;
+      position: relative;
       white-space: normal;   /* nowrap ist hier kontraproduktiv, die Karte darf umbrechen */
       border: none;
-      padding: 5px 10px;
+      padding: 5px 10px 5px 44%;
       text-align: right;
-      min-height: 1.4em;     /* auch eine Zelle ohne Wert behaelt ihre Beschriftungszeile */
+      min-height: 1.5em;     /* auch eine Zelle ohne Wert behaelt ihre Beschriftungszeile */
     }
     html.vr-panel .panel-cards tbody td::before {
       content: attr(data-label);
-      float: left;
-      max-width: 55%;        /* eine lange Beschriftung darf den Wert nicht verdraengen */
+      position: absolute;
+      left: 10px;
+      top: 5px;
+      width: 40%;
       color: var(--text-label);
       font-family: var(--text-display);
       font-size: 0.68rem;
       letter-spacing: 0.12em;
       text-transform: uppercase;
       text-align: left;
-      margin-right: 14px;
     }
     html.vr-panel .panel-cards tbody td:empty { display: none; }
 
@@ -6655,7 +6659,12 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
             ${_bummelStandingBadge(p.cid)}
           </div>
         </div>
-        ${flightRows ? `<div class="live-table-wrap" style="width:100%;margin-left:24px;"><table style="font-size:0.8rem;">
+        <!-- width:100% UND margin-left:24px zusammen ergaben einen Kasten, der 24px breiter
+             ist als sein Platz und rechts herausschaut (Nutzer-Fund 14.08.2026 im Panel:
+             "der Kasten in dem anderen Kasten ist nach rechts verschoben und schaut heraus").
+             Ein Rand liegt ausserhalb der Box, den rechnet auch border-box nicht weg. Ohne
+             width fuellt der Block von selbst genau den Rest -- die Einrueckung bleibt. -->
+        ${flightRows ? `<div class="live-table-wrap" style="margin-left:24px;"><table style="font-size:0.8rem;">
           <thead><tr>
             <th>Callsign</th><th>Aircraft</th><th>Strecke</th><th>Flugplan</th><th>Datum</th><th>Flugzeit</th><th>Block</th><th>Distanz</th><th>Track</th><th>Quelle</th>
           </tr></thead>
