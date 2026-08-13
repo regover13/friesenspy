@@ -2,13 +2,13 @@
   "dependencies": [],
   "content_type": "MISC",
   "title": "FriesenSpy",
-  "manufacturer": "",
+  "manufacturer": "FriesenFlieger",
   "creator": "devprops",
-  "package_version": "0.1.0",
+  "package_version": "1.0.0",
   "minimum_game_version": "1.0.0",
   "release_notes": {
     "neutral": {
-      "LastUpdate": "",
+      "LastUpdate": "Erste Veroeffentlichung (Release \"Kniebrett\"): FriesenSpy als EFB-App im Tablet -- Live-Positionen der Friesen, Karte, Flugplaene, Statistik und Events. Anmeldung bleibt ueber Sim-Neustarts hinweg erhalten.",
       "OlderHistory": ""
     }
   },

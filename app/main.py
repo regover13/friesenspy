@@ -8,6 +8,7 @@ import json
 import logging
 import secrets
 import time
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from datetime import timezone as _timezone
@@ -346,6 +347,71 @@ async def admin_page():
     """Admin-Seite (Login-Formular + Bummel-Rennverwaltung). Schutz erfolgt über die
     /api/admin/*-Endpoints (Cookie); diese Seite selbst ist statisch."""
     return FileResponse("app/static/admin.html", headers=_HTML_NO_CACHE)
+
+
+@app.get("/efb", include_in_schema=False)
+async def efb_page():
+    """Installationsseite für die MSFS-EFB-App (Release „Kniebrett"). Bewusst NICHT unter
+    ``/static/`` — dieser Pfad ist gate-frei, die Seite soll aber wie der Rest der App nur
+    für angemeldete Mitglieder sichtbar sein."""
+    return FileResponse("app/static/efb.html", headers=_HTML_NO_CACHE)
+
+
+# Wo das fertige MSFS-Paket liegt. Standardmäßig neben der Datenbank, also im Volume:
+# Die Datei wird NICHT im Docker-Image mitgeliefert, weil sie aus einem Windows-Build
+# stammt (esbuild + MSFSLayoutGenerator.exe) und in der Linux-CI nicht reproduzierbar
+# wäre. Sie wird pro EFB-Release einmal auf den VPS gelegt — EFB-Releases sind selten
+# und von den Web-Deploys entkoppelt.
+def _efb_zip_path(settings) -> Path:
+    eigen = str(getattr(settings, "EFB_PACKAGE_PATH", "") or "").strip()
+    if eigen:
+        return Path(eigen)
+    return Path(settings.DB_PATH).parent / "efb" / "friesenspy-efb.zip"
+
+
+def _efb_package_version(pfad: Path) -> str | None:
+    """Liest ``package_version`` aus der manifest.json IM Archiv.
+
+    Bewusst aus dem Archiv statt aus einer Begleitdatei: So kann die angezeigte Version
+    gar nicht erst von der ausgelieferten abweichen — es gibt nur eine Wahrheit, und die
+    ist die Datei, die der Nutzer herunterlädt."""
+    try:
+        with zipfile.ZipFile(pfad) as z:
+            for name in z.namelist():
+                if name.endswith("manifest.json") and name.count("/") <= 1:
+                    with z.open(name) as f:
+                        return str(json.loads(f.read().decode("utf-8")).get("package_version") or "") or None
+    except Exception:  # defekte/fehlende Datei darf die Seite nicht mitreißen
+        return None
+    return None
+
+
+@app.get("/api/efb-package", include_in_schema=False)
+async def efb_package_info():
+    """Ist ein Paket hinterlegt, und welches? Speist die Installationsseite."""
+    pfad = _efb_zip_path(get_settings())
+    if not pfad.is_file():
+        return {"verfuegbar": False}
+    stat = pfad.stat()
+    return {
+        "verfuegbar": True,
+        "version": _efb_package_version(pfad),
+        "groesse_kb": round(stat.st_size / 1024),
+        "stand": datetime.fromtimestamp(stat.st_mtime, tz=_timezone.utc).strftime("%d.%m.%Y"),
+    }
+
+
+@app.get("/download/efb", include_in_schema=False)
+async def efb_download():
+    """Das Community-Package als ZIP. Liegt hinter dem Gate wie der Rest der App."""
+    pfad = _efb_zip_path(get_settings())
+    if not pfad.is_file():
+        raise HTTPException(status_code=404, detail="Kein EFB-Paket hinterlegt")
+    return FileResponse(
+        pfad,
+        media_type="application/zip",
+        filename="friesenflieger-friesenspy-efb.zip",
+    )
 
 
 @app.get("/impressum", include_in_schema=False)

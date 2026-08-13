@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     DB_PATH: str = "/opt/friesenspy/data/friesenspy.db"
     STATSIM_API_KEY: str = ""
     OPENAIP_API_KEY: str = ""
+    # Fertiges MSFS-Community-Package (ZIP) fuer /download/efb. Leer = neben der
+    # Datenbank unter efb/friesenspy-efb.zip, also im Volume. Nicht im Docker-Image,
+    # weil der Build Windows-Werkzeuge braucht (esbuild + MSFSLayoutGenerator.exe).
+    EFB_PACKAGE_PATH: str = ""
     # Claude-API (FriesenKutter-Zuladungs-Vorschlag; Phase 2: Flug-Kommentare). Leer = deaktiviert.
     # Denselben Key wie TSBot verwenden (kein neues Secret).
     ANTHROPIC_API_KEY: str = ""

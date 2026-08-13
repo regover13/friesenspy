@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FriesenSpy im Cockpit — Kniebrett</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
+  <link href="/static/fonts/fonts.css" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-body:     #04080f;
+      --bg-panel:    #071525;
+      --bg-panel-2:  #091b30;
+      --accent:      #2d9cdb;
+      --accent-dim:  rgba(45,156,219,0.3);
+      --amber:       #f0a500;
+      --text-bright: #d4e8f5;
+      --text-label:  #6b9ab8;
+      --mono: 'Courier Prime', monospace;
+      --display: 'Exo 2', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-body);
+      color: var(--text-bright);
+      font-family: var(--display);
+      font-weight: 300;
+      line-height: 1.65;
+      padding: 2rem 1.25rem 4rem;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 46rem; margin: 0 auto; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .back {
+      display: inline-block; font-family: var(--mono); font-size: 0.85rem;
+      letter-spacing: 0.05em; margin-bottom: 2rem; text-transform: uppercase;
+    }
+    h1 {
+      font-weight: 700; font-size: 1.8rem; letter-spacing: 0.02em;
+      padding-bottom: 0.6rem; margin-bottom: 0.4rem;
+      border-bottom: 1px solid var(--accent-dim);
+    }
+    .untertitel {
+      font-family: var(--mono); font-size: 0.85rem; color: var(--text-label);
+      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 2rem;
+    }
+    h2 {
+      font-weight: 600; font-size: 1.1rem; letter-spacing: 0.04em;
+      margin: 2.2rem 0 0.8rem; color: var(--accent);
+    }
+    p { margin-bottom: 0.9rem; }
+    ol, ul { margin: 0 0 1rem 1.4rem; }
+    li { margin-bottom: 0.55rem; }
+    code {
+      font-family: var(--mono); font-size: 0.9em;
+      background: var(--bg-panel-2); padding: 2px 6px; border-radius: 3px;
+      color: var(--text-bright); word-break: break-all;
+    }
+    .kasten {
+      background: var(--bg-panel); border: 1px solid var(--accent-dim);
+      border-left: 3px solid var(--accent);
+      padding: 1.1rem 1.3rem; margin: 1.4rem 0;
+    }
+    .kasten.warnung { border-left-color: var(--amber); }
+    .lade-knopf {
+      display: inline-block; font-family: var(--mono); font-size: 1rem;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      background: var(--accent); color: #04080f; font-weight: 700;
+      padding: 14px 26px; border-radius: 4px; margin: 0.4rem 0 0.6rem;
+    }
+    .lade-knopf:hover { text-decoration: none; opacity: 0.88; }
+    .lade-knopf[aria-disabled="true"] {
+      background: var(--bg-panel-2); color: var(--text-label); cursor: default;
+    }
+    .paket-info {
+      font-family: var(--mono); font-size: 0.82rem; color: var(--text-label);
+      letter-spacing: 0.04em;
+    }
+    footer {
+      margin-top: 3rem; padding-top: 1.2rem; border-top: 1px solid var(--accent-dim);
+      font-size: 0.85rem; color: var(--text-label);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/">&larr; Zurück zu FriesenSpy</a>
+
+    <h1>FriesenSpy im Cockpit</h1>
+    <div class="untertitel">Release „Kniebrett" &middot; MSFS 2024</div>
+
+    <p>
+      FriesenSpy gibt es als eigene App fürs Tablet im Flight Simulator 2024. Sie zeigt
+      dasselbe wie die Website — wer gerade online ist, die Karte, eingereichte Flugpläne,
+      Statistik und Events — nur eben im Cockpit, ohne Alt-Tab und auch in VR.
+    </p>
+
+    <div class="kasten">
+      <p style="margin-bottom:0.6rem;"><strong>Herunterladen</strong></p>
+      <a class="lade-knopf" id="lade-knopf" href="/download/efb">Paket herunterladen</a>
+      <div class="paket-info" id="paket-info">wird geprüft&nbsp;…</div>
+    </div>
+
+    <h2>Einbauen</h2>
+    <ol>
+      <li>ZIP-Datei entpacken. Darin liegt ein Ordner namens
+        <code>friesenflieger-friesenspy-efb</code>.</li>
+      <li>Diesen Ordner <strong>als Ganzes</strong> in den Community-Ordner des
+        Simulators kopieren. Der liegt je nach Kaufquelle woanders:
+        <ul>
+          <li>Microsoft Store:
+            <code>%LOCALAPPDATA%\Packages\Microsoft.Limitless_8wekyb3d8bbwe\LocalCache\Packages\Community</code></li>
+          <li>Steam:
+            <code>%APPDATA%\Microsoft Flight Simulator 2024\Packages\Community</code></li>
+        </ul>
+        Wer den Ordner schon einmal für ein anderes Addon gesucht hat: derselbe.
+      </li>
+      <li>Simulator starten. Im Flug das <strong>EFB-Tablet</strong> öffnen — FriesenSpy
+        steht dort in der App-Liste.</li>
+    </ol>
+
+    <h2>Anmelden</h2>
+    <p>
+      Beim ersten Start fragt das Tablet nach der Anmeldung übers Forum — dieselben
+      Zugangsdaten wie hier auf der Website. Danach bleibt die Anmeldung erhalten,
+      auch über einen Neustart des Simulators hinweg. Das Tablet merkt sich dafür eine
+      Gerätekennung; wer sie loswerden will, kann das Gerät in der Verwaltung wieder
+      abmelden.
+    </p>
+
+    <h2>Was im Tablet anders aussieht</h2>
+    <p>
+      Die Anzeige-Engine des Simulators ist kein vollwertiger Browser. Zwei Dinge fallen auf,
+      und beide sind Absicht:
+    </p>
+    <ul>
+      <li><strong>Keine Umlaute.</strong> Dort steht <code>ae</code>, <code>oe</code>,
+        <code>ue</code> und <code>ss</code>. Die Engine bringt genau eine Schrift mit, die
+        nichts jenseits des englischen Alphabets kennt, und nimmt auch keine mitgelieferte an
+        — geprüft. Lesbarer Text war uns wichtiger als richtige Rechtschreibung.</li>
+      <li><strong>Tabellen stehen als Karten untereinander.</strong> Im Tablet lässt sich
+        nichts seitwärts schieben: es gibt keine Scrollleiste, kein Ziehen und kein Mausrad.
+        Breite Tabellen wären damit rechts abgeschnitten und unerreichbar.</li>
+    </ul>
+
+    <div class="kasten warnung">
+      <p style="margin-bottom:0;">
+        <strong>Wenn nach einem Update der alte Stand erscheint:</strong> Das Tablet einmal
+        schließen und wieder öffnen. Oben erscheint dann ein Knopf „Neue Version — neu laden".
+        Der Simulator hält Seiten hartnäckiger fest, als ihm gut tut.
+      </p>
+    </div>
+
+    <h2>Wenn etwas klemmt</h2>
+    <p>
+      Schreib es ins Forum, am besten mit Angabe, was du zuletzt gemacht hast. Das Panel
+      meldet von sich aus technische Messwerte zurück (keine persönlichen Daten, keine
+      Positionen) — damit lässt sich meist nachvollziehen, was passiert ist, ohne dass du
+      etwas mitschneiden musst.
+    </p>
+
+    <footer>
+      <a href="/">FriesenSpy</a> &middot;
+      <a href="/impressum">Impressum</a> &middot;
+      <a href="/datenschutz">Datenschutz</a>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      var knopf = document.getElementById('lade-knopf');
+      var info = document.getElementById('paket-info');
+      fetch('/api/efb-package', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (!d || !d.verfuegbar) {
+            knopf.setAttribute('aria-disabled', 'true');
+            knopf.removeAttribute('href');
+            knopf.textContent = 'Noch nicht verfügbar';
+            info.textContent = 'Es ist gerade kein Paket hinterlegt.';
+            return;
+          }
+          var teile = [];
+          if (d.version) teile.push('Version ' + d.version);
+          if (d.groesse_kb) teile.push(d.groesse_kb + ' kB');
+          if (d.stand) teile.push('Stand ' + d.stand);
+          info.textContent = teile.join('  ·  ');
+        })
+        .catch(function () { info.textContent = ''; });
+    })();
+  </script>
+</body>
+</html>

@@ -1696,3 +1696,55 @@ Bindung widerrufen (Admin + Bestätigung). Angesprochen über dasselbe gekürzte
 Geräte getroffen werden. Das Panel verlangt danach wieder eine Anmeldung.
 
 **Responses** `200 {"status": "ok", "revoked": 1}` · `400` zu kurz · `404` unbekannt
+
+## Verteilung der MSFS-EFB-App (Release „Kniebrett")
+
+Das fertige Community-Package liegt **nicht** im Docker-Image. Es entsteht aus einem
+Windows-Build (`npm run build` + `msfs-panel/build-package.ps1`, letzteres braucht
+`MSFSLayoutGenerator.exe`) und wäre in der Linux-CI nicht reproduzierbar. Deshalb wird es
+pro EFB-Release **einmal ins Volume gelegt** — EFB-Releases sind selten und von den
+Web-Deploys entkoppelt.
+
+Ablage (Standard): `<Verzeichnis der DB>/efb/friesenspy-efb.zip`, auf dem VPS also
+`/opt/friesenspy/data/efb/friesenspy-efb.zip`. Abweichend über `EFB_PACKAGE_PATH`
+in der `config.env`.
+
+Das ZIP muss **einen** Ordner auf oberster Ebene enthalten
+(`friesenflieger-friesenspy-efb/`) — genau der wird vom Nutzer nach `Community` kopiert.
+
+### GET /efb
+
+Installationsseite (HTML). Bewusst **nicht** unter `/static/` abgelegt: dieser Präfix ist
+gate-frei, die Seite gehört aber wie der Rest der App hinter den Forum-Login.
+
+### GET /api/efb-package
+
+Auskunft für die Installationsseite. Fehlt die Datei, ist das kein Fehler:
+
+```json
+{ "verfuegbar": false }
+```
+
+Mit hinterlegtem Paket:
+
+```json
+{ "verfuegbar": true, "version": "1.0.0", "groesse_kb": 109, "stand": "13.08.2026" }
+```
+
+`version` kommt aus der `manifest.json` **im Archiv** — nicht aus einer Begleitdatei.
+So kann die angezeigte Version nicht von der ausgelieferten abweichen. Ist das Archiv
+defekt, bleibt `version` `null`, `verfuegbar` aber `true` (die Seite soll deswegen nicht
+ausfallen).
+
+### GET /download/efb
+
+Liefert das ZIP als `friesenflieger-friesenspy-efb.zip` (`application/zip`).
+`404`, wenn kein Paket hinterlegt ist. Liegt hinter dem Gate.
+
+### Neues Paket hochladen
+
+```bash
+scp friesenspy-efb.zip server:/opt/friesenspy/data/efb/friesenspy-efb.zip
+```
+
+Kein Neustart nötig — Pfad und Version werden bei jedem Aufruf frisch gelesen.
