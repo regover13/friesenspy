@@ -1,5 +1,17 @@
 [
   {
+    "version": "12.0.0",
+    "date": "2026-08-14",
+    "highlight": true,
+    "title": "Kniebrett — FriesenSpy im Cockpit",
+    "items": [
+      "🛩️ FriesenSpy gibt es ab sofort als eigene App im Tablet des Flight Simulator 2024. Dieselben Ansichten wie hier — wer gerade online ist, die Karte, eingereichte Flugpläne, Statistik und Events — nur eben im Cockpit, ohne Alt-Tab und auch in VR. Paket und Anleitung stehen unter „FriesenSpy im Cockpit“ ganz unten auf der Seite.",
+      "🔑 Einmal anmelden genügt: Die Anmeldung bleibt im Tablet erhalten, auch über einen Neustart des Simulators hinweg. Das Tablet merkt sich dafür eine zufällige Gerätekennung — kein Passwort, keine Zugangsdaten.",
+      "📦 Einmal installieren genügt ebenfalls: Das Paket ist nur eine dünne Hülle, alles Weitere kommt vom Server. Künftige Änderungen sind ohne Neuinstallation da.",
+      "📋 Breite Tabellen stehen im Tablet als Karten untereinander statt als Spalten nebeneinander — dort lässt sich nichts seitwärts schieben, als Tabelle wäre die rechte Hälfte unerreichbar. Umlaute erscheinen als ae, oe, ue und ss: Die Anzeige-Engine des Simulators bringt genau eine Schrift mit, die nichts jenseits des englischen Alphabets kennt."
+    ]
+  },
+  {
     "version": "11.16.5",
     "date": "2026-08-14",
     "highlight": false,
