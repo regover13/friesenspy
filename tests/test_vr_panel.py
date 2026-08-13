@@ -52,11 +52,26 @@ def _admin_cookie() -> dict:
 
 def test_panel_liefert_dieselbe_datei_wie_index():
     """/panel MUSS exakt dieselbe Response wie / liefern -- keine zweite HTML-Datei, keine
-    Duplikation (s. Global Constraints)."""
+    Duplikation (s. Global Constraints). Mit aktuellem v= -- sonst liefert panel() den
+    Cache-Bust-Redirect (s. test_panel_ohne_oder_mit_alter_version_leitet_um)."""
     index_resp = asyncio.run(main.index())
-    panel_resp = asyncio.run(main.panel())
+    panel_resp = asyncio.run(main.panel(v=main.VERSION))
     assert panel_resp.path == index_resp.path
     assert dict(panel_resp.headers) == dict(index_resp.headers)
+
+
+def test_panel_ohne_oder_mit_alter_version_leitet_um():
+    """Cache-Bust-Fix (Live-Test-Fund 13.08.2026): Coherent GT hat sich als unzuverlässig beim
+    Befolgen von Cache-Control erwiesen -- /panel ohne oder mit veraltetem v= muss auf die
+    aktuelle, garantiert noch nie angefragte, versionierte URL umleiten statt den (potenziell
+    gecachten) Inhalt direkt auszuliefern."""
+    resp_ohne = asyncio.run(main.panel(v=None))
+    assert resp_ohne.status_code == 302
+    assert resp_ohne.headers["location"] == f"/panel?v={main.VERSION}"
+
+    resp_alt = asyncio.run(main.panel(v="0.0.1"))
+    assert resp_alt.status_code == 302
+    assert resp_alt.headers["location"] == f"/panel?v={main.VERSION}"
 
 
 def test_vr_panel_klasse_wird_bei_panel_pfad_und_query_gesetzt():
@@ -78,10 +93,20 @@ def test_vr_panel_css_skaliert_alles_gemeinsam():
 def test_panel_route_ist_wirklich_unter_slash_panel_registriert(env):
     """Echter Request über TestClient/Routing statt Direktaufruf von main.panel() -- ein
     Tippfehler im @app.get("/panel")-Pfad (den auch die JS-Erkennung in index.html prüft)
-    würde hier auffallen, im alten Direktaufruf-Test dagegen nicht."""
-    r = env.client.get("/panel", headers={"accept": "text/html"}, follow_redirects=False)
+    würde hier auffallen, im alten Direktaufruf-Test dagegen nicht. Mit aktuellem v=, sonst
+    Redirect statt 200 (s. Cache-Bust-Fix)."""
+    r = env.client.get(f"/panel?v={main.VERSION}", headers={"accept": "text/html"}, follow_redirects=False)
     assert r.status_code == 200
     assert "vr-panel" in r.text  # dieselbe Seite wie /, samt VR-Erkennungs-Skript
+
+
+def test_panel_route_leitet_ueber_echten_http_request_um(env):
+    """Cache-Bust-Redirect auch über den echten Routing-Pfad (TestClient), nicht nur bei
+    Direktaufruf von main.panel() -- deckt z. B. ab, dass FastAPI den v-Query-Parameter
+    tatsächlich an die Handler-Signatur durchreicht."""
+    r = env.client.get("/panel", headers={"accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == f"/panel?v={main.VERSION}"
 
 
 def test_panel_bleibt_hinter_dem_login_gate(env):

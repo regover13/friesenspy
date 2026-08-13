@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.5.6",
+    "date": "2026-08-13",
+    "highlight": true,
+    "title": "MSFS-EFB-Panel zeigte trotz Neustart veraltete Inhalte",
+    "items": [
+      "🆘 Coherent GT (die Rendering-Engine im MSFS-EFB-Panel) hat sich als unzuverlässig beim Befolgen von Cache-Control-Headern erwiesen — selbst ein kompletter Neustart der EFB-App zeigte weiter den Stand von mehreren Deploys zuvor. `/panel` leitet jetzt ohne oder mit veralteter Versionsangabe auf eine versionierte URL um, die bei jedem Deploy zwangsläufig neu ist und nie zuvor angefragt wurde — unabhängig davon, ob die Engine Cache-Header korrekt auswertet. Zusätzlich `Cache-Control: no-store` statt `no-cache` als zweite Absicherung."
+    ]
+  },
+  {
     "version": "11.5.5",
     "date": "2026-08-13",
     "highlight": false,

@@ -294,9 +294,12 @@ async def robots_txt():
 
 # HTML-Einstiegsseiten NICHT heuristisch cachen lassen: sonst sieht ein Nutzer nach einem
 # Deploy weiter das alte index.html (mit frischen API-Daten, aber altem Markup/JS) — genau der
-# „neue Version im Changelog, aber neuer Button fehlt“-Effekt. `no-cache` erzwingt eine
-# Revalidierung bei jedem Aufruf; dank ETag/Last-Modified von FileResponse ist das billig (304).
-_HTML_NO_CACHE = {"Cache-Control": "no-cache"}
+# „neue Version im Changelog, aber neuer Button fehlt“-Effekt. `no-store` statt `no-cache`,
+# weil Coherent GT (MSFS-EFB-Panel) `no-cache` nachweislich ignoriert und trotzdem unbegrenzt
+# aus dem eigenen Disk-Cache bedient (Live-Test-Fund 13.08.2026: App komplett schließen und neu
+# öffnen zeigte weiter den Stand von vor mehreren Deploys) -- `no-store` verbietet jegliches
+# Zwischenspeichern, keine Revalidierung nötig, auf die sich die Engine hätte einlassen müssen.
+_HTML_NO_CACHE = {"Cache-Control": "no-store"}
 
 
 @app.get("/")
@@ -305,10 +308,21 @@ async def index():
 
 
 @app.get("/panel", include_in_schema=False)
-async def panel():
+async def panel(v: str | None = None):
     """VR-Panel-Modus fürs MSFS-EFB-Panel (s. Design-Doku) — dieselbe Seite wie `/`, das
     Frontend erkennt den Pfad selbst und skaliert per CSS. Kein eigener Login-Ausnahmefall:
-    läuft durch dasselbe forum_login_gate wie jede andere Route."""
+    läuft durch dasselbe forum_login_gate wie jede andere Route.
+
+    `v`-Query-Parameter (App-Version) ist reiner Cache-Buster, zusätzlich zu `no-store` oben:
+    Coherent GT hat sich als so unzuverlässig beim Befolgen von Cache-Control erwiesen (siehe
+    Kommentar bei `_HTML_NO_CACHE`), dass sich selbst ein Neustart der ganzen EFB-App als
+    wirkungslos zeigte (Live-Test-Fund 13.08.2026). Die im MSFS-Community-Package fest
+    einprogrammierte iframe-URL ist `/panel` ohne Parameter -- fehlt `v` oder stimmt er nicht
+    mit der aktuellen Version überein, wird auf eine versionierte, nie zuvor angefragte URL
+    umgeleitet, die Coherent GT unmöglich schon im Cache haben kann, unabhängig davon, ob die
+    Engine Cache-Control überhaupt korrekt auswertet."""
+    if v != VERSION:
+        return RedirectResponse(f"/panel?v={VERSION}", status_code=302, headers=_HTML_NO_CACHE)
     return FileResponse("app/static/index.html", headers=_HTML_NO_CACHE)
 
 
