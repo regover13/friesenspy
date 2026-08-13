@@ -108,6 +108,81 @@
         return out;
       }
 
+      /**
+       * Warum rendert die Engine nichts oberhalb von ASCII?
+       *
+       * Erste Messung (13.08.2026) zeigte: ä/ö/ü und alle Symbole sind Tofu-Kästchen -- also
+       * nicht bloß "kein Emoji-Fallback", sondern gar keine Zeichen über U+007F. Zwei
+       * mögliche Ursachen, die sich hier unterscheiden lassen:
+       *   (a) Unsere Web-Schrift lädt nicht (z. B. woff2 nicht unterstützt) und es greift eine
+       *       minimale Not-Schrift der Engine -> dann rendert auch eine generische Familie
+       *       keine Umlaute, und `document.fonts.check` meldet die Schrift als nicht geladen.
+       *   (b) Sie lädt, deckt aber die Zeichen nicht ab -> generische Familien können es dann
+       *       sehr wohl, und der Fix liegt bei der Schrift-Auslieferung.
+       * Der Simulator selbst zeigt deutsche Umlaute in seiner Oberfläche, es MUSS also eine
+       * geeignete Schrift geben -- die Frage ist nur, ob unsere Seite sie erreicht.
+       */
+      function probeFonts() {
+        var out = {};
+        try {
+          out.check = {
+            exo300: document.fonts.check('300 32px "Exo 2"'),
+            exo400: document.fonts.check('400 32px "Exo 2"'),
+            courier: document.fonts.check('400 32px "Courier Prime"')
+          };
+        } catch (e) { out.check = 'Fehler: ' + e; }
+
+        var probe = document.createElement('span');
+        probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;' +
+          'font-size:32px;left:-9999px;top:0;';
+        document.body.appendChild(probe);
+        function breite(fam, txt) {
+          probe.style.fontFamily = fam;
+          probe.textContent = txt;
+          return Math.round(probe.getBoundingClientRect().width * 100) / 100;
+        }
+        // Kann IRGENDEINE Familie ein "ä"? Wenn nein, fehlt der Engine schlicht jede
+        // passende Schrift und der Fix muss anderswo ansetzen als bei unserer Auslieferung.
+        var familien = ['"Exo 2"', '"Courier Prime"', 'sans-serif', 'serif', 'monospace',
+                        'Arial', 'Verdana', '"Segoe UI"', 'Tahoma'];
+        out.umlautJeFamilie = {};
+        for (var i = 0; i < familien.length; i++) {
+          var f = familien[i];
+          var wA = breite(f, 'a');
+          var wAe = breite(f, 'ä');
+          out.umlautJeFamilie[f] = {
+            a: wA, ae: wAe,
+            // Gleiche Breite wie das garantiert fehlende Privatzeichen -> Tofu.
+            aeFehlt: Math.abs(wAe - breite(f, '')) < 0.5
+          };
+        }
+        // Wird unsere Web-Schrift ueberhaupt angewandt? Wenn "Exo 2" und eine generische
+        // Familie exakt gleich breit rendern, ist die Web-Schrift nicht aktiv.
+        var refText = 'FriesenSpy 12345';
+        out.angewandt = {
+          exo: breite('"Exo 2"', refText),
+          sans: breite('sans-serif', refText),
+          serif: breite('serif', refText),
+          mono: breite('monospace', refText),
+          courierPrime: breite('"Courier Prime"', refText)
+        };
+        probe.parentNode.removeChild(probe);
+
+        // Welche @font-face-Eintraege kennt die Engine, und wurden sie geladen?
+        try {
+          var faces = [];
+          document.fonts.forEach(function (f) {
+            if (faces.length < 12) {
+              faces.push({ family: f.family, weight: f.weight, status: f.status,
+                           unicodeRange: (f.unicodeRange || '').slice(0, 60) });
+            }
+          });
+          out.faces = faces;
+          out.faceCount = document.fonts.size;
+        } catch (e) { out.faces = 'Fehler: ' + e; }
+        return out;
+      }
+
       function probeCss() {
         var s = (window.CSS && window.CSS.supports)
           ? function (p, v) { try { return window.CSS.supports(p, v); } catch (_) { return null; } }
@@ -189,6 +264,7 @@
           events: events
         };
         try { base.glyphs = probeGlyphs(); } catch (err) { base.glyphs = { error: String(err) }; }
+        try { base.fonts = probeFonts(); } catch (err) { base.fonts = { error: String(err) }; }
         try { base.tables = probeTables(); } catch (err) { base.tables = { error: String(err) }; }
 
         // Kacheln sind asynchron -- Bericht lieber vollstaendig etwas spaeter senden als

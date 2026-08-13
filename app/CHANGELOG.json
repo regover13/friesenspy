@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.8.2",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Schrift-Diagnose fürs MSFS-Panel",
+    "items": [
+      "🔤 Die erste Messung im Simulator zeigte: Dort lässt sich kein einziges Zeichen oberhalb des Grundzeichensatzes darstellen — auch keine deutschen Umlaute. Die Selbstdiagnose prüft jetzt zusätzlich, ob unsere Schrift überhaupt geladen wird und ob irgendeine verfügbare Schrift Umlaute kann, damit die Ursache feststeht, bevor etwas geändert wird."
+    ]
+  },
+  {
     "version": "11.8.0",
     "date": "2026-08-13",
     "highlight": true,
