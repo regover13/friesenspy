@@ -1294,6 +1294,21 @@
        reine Zierde und ebenfalls dauerhaft. Im Cockpit vermisst beides niemand; auf der
        Website bleibt es. */
     html.vr-panel .scanline { display: none !important; }
+
+    /* Im Vollbild gibt es im Panel keinen eigenen Ausgang mehr: Die Zurueck-Leiste ist
+       ohnehin sichtbar (Vollbild zaehlt in _panelCanGoBack als "es gibt etwas zu
+       verlassen") und ihr erster Druck verlaesst genau das Vollbild. Zwei Knoepfe fuer
+       denselben Weg sind einer zu viel -- und der zweite kostet Platz in der Karte.
+       Der Knopf zum HINEINgehen bleibt, nur der Rueckweg wandert in die Leiste. */
+    html.vr-panel .map-is-fullscreen .map-fullscreen-btn { display: none !important; }
+    html.vr-panel #global-map-exit-fs { display: none !important; }
+
+    /* Leaflets Bedienelemente sitzen oben links (Zoom) und oben rechts (Ebenen) -- im
+       Vollbild also genau unter der Zurueck-Leiste, die fest am oberen Rand klebt. Der
+       Plus-Knopf war dadurch nicht erreichbar (Nutzer-Fund). Ausserhalb des Vollbilds
+       schiebt bereits body { padding-top } alles nach unten, dort waere ein zweiter
+       Versatz zu viel -- deshalb nur hier. */
+    html.vr-panel.panel-has-back .map-is-fullscreen .leaflet-top { margin-top: 60px; }
     html.vr-panel .sse-dot { animation: none !important; }
 
     /* Override Leaflet popup styles for the radar aesthetic */
@@ -4124,59 +4139,54 @@ function _translitBaum(wurzel) {
 // das, was als Blitz zu sehen waere.
 function _diagFlackern(map) {
   if (!document.documentElement.classList.contains('vr-panel')) return;
-  if (typeof window._panelDiag !== 'function' || typeof MutationObserver !== 'function') return;
+  if (typeof window._panelDiag !== 'function') return;
 
+  // Vierte Runde, andere Frage. Die drei DOM-Aufzeichnungen davor haben geliefert, was sie
+  // liefern konnten, und damit zwei Ursachen entlarvt (Leaflets Einblendung, den
+  // .scanline-Zierstreifen). Was der Nutzer JETZT noch sieht -- "ab und zu verschwindet die
+  // Kartenansicht fuer 5 bis 10 Sekunden, ist dann wieder 10 Sekunden da, immer wenn ich
+  // nichts bewege" -- hat einen Takt von etwa zehn Sekunden. Genau so oft laeuft updateMap
+  // und ruehrt die Karte an.
+  //
+  // Die entscheidende Unterscheidung ist deshalb nicht mehr "was aendert sich", sondern
+  // "sind die Kacheln waehrend der unsichtbaren Phase ueberhaupt noch in Ordnung":
+  //   - Sind sie weg oder durchsichtig -> Leaflet raeumt sie ab, das koennen wir beheben.
+  //   - Sind sie unveraendert da und trotzdem nicht zu sehen -> die Engine zeichnet einen
+  //     Bereich nicht neu, in dem sich nichts bewegt. Dann liegt es nicht an unserem Code,
+  //     und der Weg waere ein billiger, oertlicher Anstoss statt einer ganzseitigen Zierde.
+  // Deshalb hier eine reine Stichprobe im Halbsekundentakt statt eines Beobachters.
   const el = map.getContainer();
   const start = Date.now();
+  const verlauf = [];
 
-  // Dritte Runde. Was die ersten beiden ausgeschlossen haben, ist genauso wertvoll wie das,
-  // was uebrig bleibt:
-  //   - KEINE Strukturaenderung in der Karte (30 s lang kein Kachel-Abgang, kein
-  //     Marker-Neubau) -> die 25/30/60-Sekunden-Takte scheiden aus.
-  //   - KEIN Klassenwechsel an html/body, Seitenabstand konstant 60px ueber 29 Messungen
-  //     -> die Zurueck-Leiste legt die Seite NICHT staendig neu aus.
-  // Uebrig bleibt genau eines: 66 style- und 8 class-Aenderungen an bereits geladenen
-  // Kacheln in 30 Sekunden. Diese Runde klaert, WELCHE Eigenschaft sich dabei aendert --
-  // eine wandernde Deckkraft (Leaflets Einblend-Animation, die nicht zur Ruhe kommt) sieht
-  // man als Flackern, eine neu gesetzte Position dagegen als Ruckeln.
-  const proben = [];
-  const klassen = [];
-  const zaehler = { style: 0, class: 0 };
-
-  function kurz(t) { return String(t || '').slice(0, 90); }
-
-  const beob = new MutationObserver((eintraege) => {
-    const s = Math.round((Date.now() - start) / 100) / 10;
-    for (const e of eintraege) {
-      const ziel = e.target;
-      if (!ziel.classList || !ziel.classList.contains('leaflet-tile')) continue;
-      if (e.attributeName === 'style') {
-        zaehler.style += 1;
-        if (proben.length < 14) {
-          proben.push({ s: s, vorher: kurz(e.oldValue), nachher: kurz(ziel.getAttribute('style')) });
-        }
-      } else if (e.attributeName === 'class') {
-        zaehler.class += 1;
-        if (klassen.length < 8) {
-          klassen.push({ s: s, vorher: kurz(e.oldValue), nachher: kurz(ziel.className) });
-        }
+  const uhr = setInterval(() => {
+    try {
+      const kacheln = el.querySelectorAll('.leaflet-tile');
+      let blass = 0;
+      for (let i = 0; i < kacheln.length; i++) {
+        const o = kacheln[i].style.opacity;
+        if (o !== '' && o !== '1') blass += 1;
       }
-    }
-  });
-  beob.observe(el, { attributes: true, subtree: true,
-                     attributeFilter: ['style', 'class'], attributeOldValue: true });
+      verlauf.push([Math.round((Date.now() - start) / 500) / 2, kacheln.length, blass]);
+    } catch (_) { /* Diagnose darf nie stoeren */ }
+  }, 500);
 
   setTimeout(() => {
-    beob.disconnect();
-    window._panelDiag('flackern3', {
+    clearInterval(uhr);
+    // Nur melden, wenn sich ueber die Zeit ueberhaupt etwas aendert -- eine Liste aus 60
+    // identischen Zeilen ist keine Erkenntnis.
+    let anzMin = 1e9, anzMax = -1, blassMax = 0;
+    for (const [, anz, blass] of verlauf) {
+      if (anz < anzMin) anzMin = anz;
+      if (anz > anzMax) anzMax = anz;
+      if (blass > blassMax) blassMax = blass;
+    }
+    window._panelDiag('kachelverlauf', {
       dauerSek: 30,
-      anzahl: zaehler,
-      styleProben: proben,
-      klassenwechsel: klassen,
-      // Leaflets Einblend-Animation ist der Hauptverdaechtige -- hier steht, ob sie
-      // ueberhaupt aktiv ist.
-      fadeAnimated: !!map._fadeAnimated,
-      zoomAnimated: !!map._zoomAnimated,
+      kachelnMin: anzMin, kachelnMax: anzMax, hoechstensBlass: blassMax,
+      // Kompakt: [Sekunde, Anzahl Kacheln, davon nicht voll deckend]
+      verlauf: (anzMin !== anzMax || blassMax > 0) ? verlauf : verlauf.slice(0, 4),
+      unveraendert: anzMin === anzMax && blassMax === 0,
     });
   }, 30000);
 }
@@ -4224,6 +4234,51 @@ function icon(name) {
 // Self-gehostete Twemoji-Grafik statt handgezeichneter Icon-Naeherung -- s. .emoji-icon-Kommentar.
 function emoji(name) {
   return '<img class="emoji-icon" src="/static/emoji/' + name + '.svg" alt="" />';
+}
+
+// Twemoji-Dateiname aus dem Unicode-Codepoint des Zeichens ableiten (Twemoji-Konvention:
+// Kleinbuchstaben-Hex, bei Mehrfach-Codepoints mit '-' verbunden). Der Variantenselektor
+// U+FE0F (steuert nur Text- vs. Emoji-Darstellung, z. B. hinter dem Filmrollen- oder
+// Sonnenschirm-Zeichen) taucht im Twemoji-Dateinamen NICHT auf und muss vorher raus, sonst
+// gibt es zur Datei keinen Treffer.
+function _emojiDateiname(ch) {
+  const ohneVs = ch.replace(/️/g, '');
+  const punkte = [];
+  for (let i = 0; i < ohneVs.length; i++) {
+    let code = ohneVs.charCodeAt(i);
+    // Surrogatpaar (Zeichen jenseits von U+FFFF, z. B. 🦐) zu EINEM Codepoint zusammenfassen --
+    // sonst zerfaellt das Zeichen in zwei fuer sich bedeutungslose Haelften.
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < ohneVs.length) {
+      const tief = ohneVs.charCodeAt(i + 1);
+      if (tief >= 0xdc00 && tief <= 0xdfff) {
+        code = (code - 0xd800) * 0x400 + (tief - 0xdc00) + 0x10000;
+        i++;
+      }
+    }
+    punkte.push(code.toString(16));
+  }
+  return punkte.join('-');
+}
+
+// Rohes Emoji-ZEICHEN (aus cargo_catalog.emoji, kein Name wie bei emoji()) als self-gehostetes
+// Twemoji-SVG. Der Dateiname folgt ausschliesslich dem Codepoint -- keine Zeichen->Name-Tabelle
+// zu pflegen, jede kuenftig im Katalog ergaenzte Fracht-Art bekommt ihr Icon automatisch, sobald
+// die passende SVG unter /static/emoji/ liegt. Fehlt die Datei (z. B. neue Fracht-Art vor dem
+// Besorgen der SVG), faengt onerror das ab und ersetzt das <img> durch das Roh-Zeichen -- also
+// exakt den bisherigen Zustand vor dieser Umstellung, nie ein kaputtes Bild-Icon.
+function emojiChar(ch) {
+  if (!ch) return '';
+  const datei = _emojiDateiname(ch);
+  if (!datei) return escHtml(ch);
+  const roh = escHtml(ch);
+  return '<img class="emoji-icon" src="/static/emoji/' + datei + '.svg" alt="" data-fb="' + roh
+    // Rueckfall NICHT ueber outerHTML: getAttribute liefert den DEKODIERTEN Wert, und eine
+    // Zuweisung an outerHTML parst ihn als HTML -- die Maskierung von escHtml waere damit
+    // wieder aufgehoben. Der Fracht-Katalog ist ueber die Verwaltung pflegbar, dort
+    // eingetragenes Markup kaeme so zur Ausfuehrung. Als Textknoten bleibt ein Zeichen ein
+    // Zeichen.
+    + '" onerror="var t=document.createTextNode(this.getAttribute(\'data-fb\')||\'\');'
+    + 'if(this.parentNode)this.parentNode.replaceChild(t,this);" />';
 }
 
 // ==========================================================================
@@ -4953,7 +5008,7 @@ function _kutterBannerBlock(d) {
     if (active.length) {
       const rows = active.map(a => {
         const load = a.lines.length
-          ? a.lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
+          ? a.lines.map(l => (l.emoji ? emojiChar(l.emoji) + ' ' : '') + _kesc(l.name)
               + (a.lines.length > 1 ? ' (' + Math.round(l.kg) + ')' : '')).join(' + ')
           : (a.kg > 0 ? Math.round(a.kg) + ' kg' : 'leer');
         // Ware an Bord -> Getragen-Blau (kf-carry, wie im Events-Feed); nichts an Bord -> neutral.
@@ -6714,7 +6769,7 @@ function _kCargoLabel(f) {
   // zeigte, mal wegwarf — daher „leer"/„unterwegs" trotz Ware an Bord, Fund Michael 19.07.)
   const lines = f.cargo_lines || [];
   const cargoTxt = lines.length
-    ? lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
+    ? lines.map(l => (l.emoji ? emojiChar(l.emoji) + ' ' : '') + _kesc(l.name)
         + ' (' + Math.round(l.kg) + ')').join(' + ')
     : _kesc(f.cargo_name || '');
   const quip = f.quip ? '<span class="kutter-quip">' + icon('message') + ' ' + _kesc(f.quip) + '</span>' : '';
@@ -6773,7 +6828,7 @@ function _kSegLegend(items, totalTarget, sub) {
       + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i>' + lost + res + '</div>';
   }).join('');
   const legend = items.map(({ c, gi }) => {
-    const mark = c.emoji ? _kesc(c.emoji) + ' '
+    const mark = c.emoji ? emojiChar(c.emoji) + ' '
       : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
     // #3 Rundung: „reserviert" als Differenz zum gerundeten (delivered+reserved), damit sich die
     // angezeigten Teile SICHTBAR aufsummieren — sonst runden zwei „,5"-Werte beide hoch (137+24=161
@@ -6809,7 +6864,7 @@ function _kStockLegend(items, totalTarget) {
       + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i></div>';
   }).join('');
   const legend = items.map(({ c, gi }) => {
-    const mark = c.emoji ? _kesc(c.emoji) + ' '
+    const mark = c.emoji ? emojiChar(c.emoji) + ' '
       : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
     const cap = c.per_flight_max_kg != null
       ? ' <span class="kl-cap" title="Obergrenze pro Flug">' + icon('warning') + ' ' + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
@@ -6892,7 +6947,7 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
         const segs = contents.map(([name, kg]) => '<div class="kutter-seg" style="width:'
           + (100 * kg / totalHere).toFixed(2) + '%"><i style="width:100%;background:' + _kColor(nameIdx[name] || 0) + '"></i></div>').join('');
         const legend = contents.map(([name, kg]) => '<span>'
-          + (emojiByName[name] ? _kesc(emojiByName[name]) + ' ' : '') + _kesc(name) + ' ' + _kfmtT(kg) + '</span>').join('');
+          + (emojiByName[name] ? emojiChar(emojiByName[name]) + ' ' : '') + _kesc(name) + ' ' + _kfmtT(kg) + '</span>').join('');
         bar += '<div class="kutter-bar kutter-bar--sub">' + segs + '</div><div class="kutter-legend kutter-legend--sub">' + legend + '</div>';
       });
     }

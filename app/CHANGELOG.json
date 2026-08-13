@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.15.0",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Fracht-Symbole im Kutter, aufgeräumtes Kartenvollbild",
+    "items": [
+      "🦐 Die Fracht-Symbole im FriesenKutter sind jetzt echte Grafiken statt Schriftzeichen — im MSFS-Panel waren sie vorher unsichtbar. Alle 27 Frachtarten haben ihr Bild.",
+      "🗺️ Im Kartenvollbild des MSFS-Panels ist der Knopf „Vollbild verlassen“ verschwunden: Die Zurück-Leiste tut dasselbe und war ohnehin da. Die Zoom- und Ebenen-Knöpfe liegen nicht mehr unter dieser Leiste — das Plus war dort nicht erreichbar."
+    ]
+  },
+  {
     "version": "11.14.1",
     "date": "2026-08-13",
     "highlight": false,

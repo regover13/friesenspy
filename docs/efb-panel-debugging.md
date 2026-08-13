@@ -171,3 +171,27 @@ Finger/Maus, und ein Mausrad gibt es im Tablet nicht.
 einem `.live-table-wrap`/`.table-scroll`-Wrapper wird zu gestapelten Karten
 (`_panelKartenLayout`). **Nicht** durch besseres CSS zu beheben — wer das nächste Mal an
 den Scroll-Styles ansetzt, repariert etwas, das bereits funktioniert.
+
+
+## Zeichenlast: der blinde Fleck jeder DOM-Messung (Fund 13.08.2026)
+
+Drei Aufzeichnungen über den DOM fanden **nichts** — und lagen trotzdem richtig, denn die
+Ursache war gar nicht im DOM:
+
+- **Leaflets Kachel-Einblendung.** `GridLayer._updateOpacity` setzt `style.opacity` und
+  lässt den Wert über `requestAnimationFrame` hochlaufen, solange `map._fadeAnimated`.
+  Kommt die Schleife nicht ans Ziel, bleiben Kacheln unter Deckkraft 1 stehen: **im DOM
+  vorhanden und trotzdem unsichtbar.** Jede Kartenbewegung stößt sie neu an und holt die
+  Einblendung nach — daher „man muss die Karte bewegen, sonst verschwinden die Tiles".
+  Erklärt rückwirkend auch die Satellitenkacheln, die laut Netzwerk-Tab vollständig
+  ankamen und nie erschienen. → `fadeAnimation: false` für alle Karten im Panel.
+- **Eine dauerlaufende Zierde-Animation.** `.scanline`, ein `position:fixed`-Streifen über
+  die ganze Breite mit `z-index: 9999`, zählte im Achtsekundentakt seinen `top`-Wert von
+  -2px auf 100vh hoch — also eine **Layout**-Eigenschaft statt `transform`. Jedes Einzelbild
+  zwang die gesamte Seite zum Neuzeichnen. Im Sim als Stroboskop über der Karte sichtbar,
+  im Desktop-Browser unauffällig. → im Panel abgeschaltet, vom Nutzer als Ursache bestätigt.
+
+**Merksatz:** Wenn eine DOM-Aufzeichnung nichts findet, ist das ein Ergebnis, keine Panne —
+dann liegt die Arbeit im Zeichnen. Dort lohnen sich zwei Fragen: Läuft eine Animation im
+Dauerbetrieb? Und animiert sie eine Layout-Eigenschaft (`top`, `left`, `width`, `height`)
+statt `transform`/`opacity`?
