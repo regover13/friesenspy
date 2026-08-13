@@ -24,7 +24,12 @@ _DDL = """
 CREATE TABLE IF NOT EXISTS pilots (
     cid       INTEGER PRIMARY KEY,
     name      TEXT,
-    added_at  TEXT
+    added_at  TEXT,
+    -- Admin-Checkbox „Aktiv": 0 schließt die CID überall aus (Live-Erkennung UND Statistik).
+    -- Steht bewusst AUCH hier und nicht nur in _PILOTS_MIGRATIONS: Frisch angelegte
+    -- Datenbanken (u. a. in Tests) bekamen die Spalte sonst nie, und jede Auswertung, die
+    -- gesperrte CIDs herausfiltert, lief ins Leere.
+    active    INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -1068,13 +1073,24 @@ def upsert_pilot(conn: sqlite3.Connection, cid: int, name: str, active: bool = T
 
 
 def get_inactive_cids(conn: sqlite3.Connection) -> set[int]:
-    """CIDs, die per Admin-Checkbox von der Friesen-Erkennung ausgeschlossen wurden.
+    """CIDs, die per Admin-Checkbox gesperrt wurden -- überall ausgeschlossen.
 
-    Trotz FRS-Callsign-Präfix sollen diese CIDs NICHT als Friesen gelten (z. B. eine
-    Gast-CID, die für PC-21-Flüge einen FRS-Tag nutzt). Wird vor jedem Poll gegen den
-    Live-VATSIM-Feed abgefragt, s. filter_friesen_pilots() in app/vatsim.py.
+    Trotz FRS-Callsign-Präfix gelten diese CIDs NICHT als Friesen (z. B. eine Gast-CID, die
+    für PC-21-Flüge einen FRS-Tag nutzt). Wirkt an zwei Stellen: vor jedem Poll gegen den
+    Live-VATSIM-Feed (``filter_friesen_pilots()``) und beim Laden gespeicherter Flüge
+    (``_drop_inactive()``), damit gesperrte CIDs auch rückwirkend aus Statistik, Piloten,
+    Bummel und Kutter verschwinden.
+
+    Fehlt die Spalte ``active``, wird eine leere Menge geliefert statt eine Ausnahme zu
+    werfen. Grund: Seit dem Einsatz in ``_drop_inactive`` hängt JEDE Auswertung an dieser
+    Abfrage -- eine Datenbank ohne die Spalte (etwa frisch angelegt oder nicht migriert)
+    würde sonst sämtliche Statistiken lahmlegen statt nur die Sperre zu ignorieren. Ein
+    Fehler an dieser Stelle darf höchstens die Sperre kosten, nie die ganze Auswertung.
     """
-    rows = conn.execute("SELECT cid FROM pilots WHERE active = 0").fetchall()
+    try:
+        rows = conn.execute("SELECT cid FROM pilots WHERE active = 0").fetchall()
+    except sqlite3.OperationalError:
+        return set()
     return {r[0] for r in rows}
 
 
@@ -2436,6 +2452,30 @@ def _is_ghost_row(conn: sqlite3.Connection, cid: int, f: dict) -> bool:
     return has_pos is not None
 
 
+def _drop_inactive(conn: sqlite3.Connection, flights: list[dict]) -> list[dict]:
+    """Flüge gesperrter CIDs entfernen (Admin-Checkbox „Aktiv" in der Piloten-Pflegeliste).
+
+    Warum hier und nicht in jeder Auswertung einzeln: ``canonicalize_flights`` und
+    ``canonicalize_legs`` sind die beiden einzigen Tore, durch die Flüge überhaupt in
+    Statistik, Piloten-Ansicht, Bummel und Kutter gelangen. Ein Filter je Auswertung wäre ein
+    Pflaster -- man übersieht zwangsläufig eine, und dann taucht ein gesperrter Pilot doch
+    wieder irgendwo auf.
+
+    Vorgeschichte (Live-Fund 13.08.2026): Die Sperre wirkte zunächst NUR im Live-Abgleich
+    (``poller`` → ``filter_friesen_pilots``). Das verhindert zwar neue Aufzeichnungen, ließ
+    aber alle bereits gespeicherten Flüge in der Statistik stehen -- der Nutzer sperrte vier
+    IDs und sah sie unverändert weiter. Erwartet ist: gesperrt heißt überall weg, auch
+    rückwirkend. Die Flüge bleiben dabei in der Datenbank (nichts wird gelöscht); wird die
+    Sperre aufgehoben, zählen sie wieder mit.
+    """
+    if not flights:
+        return flights
+    gesperrt = get_inactive_cids(conn)
+    if not gesperrt:
+        return flights
+    return [f for f in flights if f.get("cid") not in gesperrt]
+
+
 def canonicalize_flights(
     conn: sqlite3.Connection,
     *,
@@ -2527,7 +2567,7 @@ def canonicalize_flights(
                 result.append({"source": "statsim", "id": None, **f})
 
     result.sort(key=lambda x: x.get("logon_time") or "", reverse=True)
-    return result
+    return _drop_inactive(conn, result)
 
 
 _PLAN_ROWS_LOOKBACK_H = 12  # muss zum Positions-Lookback unten passen (siehe Docstring)
@@ -3288,7 +3328,7 @@ def canonicalize_legs(
         result.append(f)
 
     result.sort(key=lambda x: x.get("logon_time") or "", reverse=True)
-    return result
+    return _drop_inactive(conn, result)
 
 
 def audit_gps_vs_refile(

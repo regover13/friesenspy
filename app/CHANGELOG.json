@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.9.0",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Gesperrte Piloten verschwinden jetzt wirklich überall",
+    "items": [
+      "🚫 Das Abwählen von „Aktiv\" in der Piloten-Pflegeliste verhinderte bisher nur, dass NEUE Flüge aufgezeichnet werden — bereits gespeicherte Flüge zählten in Statistik, Piloten-Ansicht, Bummel und Kutter unverändert weiter. Gesperrte IDs verschwinden jetzt überall, auch rückwirkend. Die Flüge bleiben dabei erhalten: Wird die Sperre aufgehoben, zählen sie sofort wieder mit.",
+      "🩹 Schwarzes Tablet im MSFS-Panel behoben: Beim Neustart eines Fluges wiederholte die Anzeige-Engine eine alte Formular-Absendung und lief dabei in einen Fehler, nach dem die Seite tot blieb."
+    ]
+  },
+  {
     "version": "11.8.2",
     "date": "2026-08-13",
     "highlight": false,

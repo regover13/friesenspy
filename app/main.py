@@ -1875,7 +1875,7 @@ def _device_bind_csrf(user_token: str) -> str:
                     "sha256").hexdigest()
 
 
-@app.get("/auth/device", include_in_schema=False)
+@app.api_route("/auth/device", methods=["GET", "POST"], include_in_schema=False)
 async def auth_device(request: Request, device: str = "", next: str = "/panel"):
     """Anmeldung per Geräte-Bindung fürs MSFS-EFB-Panel.
 
@@ -1888,7 +1888,14 @@ async def auth_device(request: Request, device: str = "", next: str = "/panel"):
     - **Gerät bekannt:** Sitzungs-Cookie ausstellen und weiter zum Ziel. Kein Login nötig.
     - **Gerät unbekannt, nicht angemeldet:** in den normalen Forum-Login, mit Rückweg hierher.
     - **Gerät unbekannt, angemeldet:** Bestätigungsseite. Gebunden wird ausschließlich durch
-      einen bewussten POST von dieser Seite.
+      einen bewussten POST auf ``/auth/device/bind``.
+
+    **Nimmt bewusst auch POST an** (Live-Fund 13.08.2026): Beim Neustart eines Fluges hat
+    Coherent GT die zuletzt abgeschickte Formular-Navigation wiederholt und dabei auf DIESE
+    Adresse gepostet statt auf ``/auth/device/bind``. Ein reiner GET-Endpunkt antwortete
+    darauf mit 405 -- im Panel blieb das Tablet schwarz. Da der Ablauf hier ohnehin nur
+    Query-Parameter auswertet und nichts verändert, ist POST gefahrlos und beendet diese
+    Sackgasse. Gebunden wird dadurch nichts; das kann weiterhin nur ``/auth/device/bind``.
 
     **Warum nicht automatisch beim Login binden** (so war es zuerst gebaut, es war eine
     Sicherheitslücke): Ein Angreifer hätte einen Link mit SEINER Geräte-ID schicken können.
@@ -1965,13 +1972,39 @@ async def auth_device(request: Request, device: str = "", next: str = "/panel"):
 Neustart. Du kannst das jederzeit im Admin-Bereich wieder entziehen.</p>
 <p class="hinweis">Wenn du diese Frage nicht erwartet hast, z.&nbsp;B. weil du einem Link
 gefolgt bist: auf „Nein“ tippen. Es wird dann nichts gespeichert.</p>
-<form method="post" action="/auth/device/bind">
+<form id="f" method="post" action="/auth/device/bind">
   <input type="hidden" name="device" value="{_html.escape(device)}">
   <input type="hidden" name="next" value="{_html.escape(dest)}">
   <input type="hidden" name="csrf" value="{marke}">
   <button type="submit">Ja, Gerät merken</button>
   <a class="nein" href="{_html.escape(dest)}">Nein, nur diesmal</a>
-</form></div></body></html>"""
+</form>
+<script>
+// Absenden per fetch statt klassischer Formular-Navigation. Grund (Live-Fund 13.08.2026):
+// Coherent GT hat beim Neustart eines Fluges die letzte Formular-Absendung wiederholt und
+// dabei auf die AKTUELLE Adresse gepostet statt auf das action-Ziel -- das Panel lief in
+// einen 405 und blieb schwarz. Ein fetch hinterlaesst keine solche Navigation im Verlauf.
+// Das Formular bleibt als Rueckfallebene stehen, falls fetch fehlt.
+(function () {{
+  var f = document.getElementById('f');
+  if (!f || typeof window.fetch !== 'function') return;
+  f.addEventListener('submit', function (e) {{
+    e.preventDefault();
+    var b = f.querySelector('button');
+    if (b) {{ b.disabled = true; b.textContent = 'Wird gespeichert…'; }}
+    var daten = new URLSearchParams();
+    daten.append('device', f.device.value);
+    daten.append('next', f.next.value);
+    daten.append('csrf', f.csrf.value);
+    window.fetch('/auth/device/bind', {{
+      method: 'POST', credentials: 'same-origin',
+      headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
+      body: daten.toString()
+    }}).then(function () {{ location.replace(f.next.value); }})
+      .catch(function () {{ location.replace(f.next.value); }});
+  }});
+}})();
+</script></div></body></html>"""
     return HTMLResponse(seite, headers=_HTML_NO_CACHE)
 
 

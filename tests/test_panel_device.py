@@ -184,6 +184,26 @@ class TestAuthDeviceEndpunkt:
                            follow_redirects=False)
         assert r.headers["location"] == "/panel"
 
+    def test_post_auf_auth_device_ist_keine_sackgasse(self, env):
+        """Live-Fund 13.08.2026: Beim Neustart eines Fluges wiederholte Coherent GT die letzte
+        Formular-Absendung und postete dabei auf DIESE Adresse statt auf /auth/device/bind.
+        Ein reiner GET-Endpunkt antwortete mit 405 -- im Panel blieb das Tablet schwarz."""
+        _bind(env.db)
+        r = env.client.post(f"/auth/device?device={GERAET}", follow_redirects=False)
+        assert r.status_code != 405, "405 fuehrt im Panel zum schwarzen Tablet"
+        assert r.status_code == 302
+        assert r.headers["location"] == "/panel"
+
+    def test_post_auf_auth_device_bindet_nichts(self, env):
+        """POST wird nur angenommen, um die Sackgasse zu vermeiden -- binden darf es nicht."""
+        r = env.client.post(f"/auth/device?device={GERAET}", follow_redirects=False)
+        assert r.status_code == 302
+        conn = get_connection(env.db)
+        try:
+            assert get_panel_device(conn, GERAET) is None
+        finally:
+            conn.close()
+
     def test_erreichbar_trotz_aktivem_login_gate(self, env):
         """Sonst käme man mit einem gebundenen Gerät nie an der Sperre vorbei."""
         env.client.post("/api/admin/forum-login", json={"enabled": True}, cookies=_admin_cookie())
