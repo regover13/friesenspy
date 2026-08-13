@@ -973,6 +973,72 @@
     /* Ausserhalb des Panels nie zeigen -- die Website hat ihre Browser-Navigation. */
     html:not(.vr-panel) .panel-back-btn { display: none !important; }
 
+    /* ===================================================================
+       KARTEN STATT BREITER TABELLEN (nur MSFS-EFB-Panel)
+       ===================================================================
+       Auf einem Cockpit-Tablet ist seitwaertsschieben einer 8-spaltigen Tabelle mit dem
+       Finger unbrauchbar -- man sieht immer nur einen Ausschnitt und verliert den Bezug
+       zur Zeile. Deshalb wird pro Zeile eine Karte mit "Beschriftung: Wert" gestapelt.
+       Das beseitigt die Notwendigkeit zu scrollen, statt sie zu reparieren.
+       Die Beschriftungen kommen zur Laufzeit aus der Kopfzeile (_panelLabelCells), damit
+       die Renderer unangetastet bleiben und es keine zweite Wahrheit gibt.
+       Bewusst nur fuer die im Flug wichtigen Ansichten (Live-Positionen, Events); alle
+       uebrigen Tabellen bleiben scrollbar. */
+    html.vr-panel .panel-cards thead { display: none; }
+    html.vr-panel .panel-cards,
+    html.vr-panel .panel-cards tbody,
+    html.vr-panel .panel-cards tr,
+    html.vr-panel .panel-cards td { display: block; width: auto; }
+    html.vr-panel .panel-cards tbody tr {
+      border: 1px solid var(--green-dim);
+      border-left: 3px solid var(--green);
+      background: var(--bg-panel-2);
+      margin-bottom: 10px;
+      padding: 6px 4px;
+    }
+    html.vr-panel .panel-cards tbody td {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 14px;
+      white-space: normal;   /* nowrap ist hier kontraproduktiv, die Karte darf umbrechen */
+      border: none;
+      padding: 5px 10px;
+      text-align: right;
+    }
+    /* Beschriftung aus data-label; leere Zellen bleiben leer statt eine leere Zeile zu zeigen. */
+    html.vr-panel .panel-cards tbody td::before {
+      content: attr(data-label);
+      color: var(--text-label);
+      font-family: var(--text-display);
+      font-size: 0.68rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-align: left;
+      flex: 0 0 auto;
+    }
+    html.vr-panel .panel-cards tbody td:empty { display: none; }
+    /* Der Wrapper darf im Karten-Modus nicht mehr horizontal scrollen -- es gibt nichts mehr. */
+    html.vr-panel .panel-cards-wrap { overflow-x: visible; }
+
+    /* ===================================================================
+       PLATZ UND FINGERBEDIENUNG (nur MSFS-EFB-Panel)
+       =================================================================== */
+    /* Der grosse Logo-Kopf kostet auf dem Tablet wertvolle Hoehe, ohne im Flug etwas
+       beizutragen -- wer das Panel offen hat, weiss, welche App er benutzt. */
+    html.vr-panel .logo { font-size: 1.25rem; }
+    html.vr-panel header { padding: 8px 0 6px; }
+    /* Mindestgroesse fuer alles Antippbare: im Cockpit wird mit dem Finger bedient, nicht
+       mit dem Mauszeiger. 44px ist das gaengige Mindestmass. */
+    html.vr-panel .tab-btn,
+    html.vr-panel .btn,
+    html.vr-panel .map-fullscreen-btn,
+    html.vr-panel .fp-close-btn,
+    html.vr-panel .modal-close {
+      min-height: 44px;
+    }
+    html.vr-panel .tab-btn { padding-left: 18px; padding-right: 18px; }
+
     /* Override Leaflet popup styles for the radar aesthetic */
     .leaflet-popup-content-wrapper {
       background: var(--bg-panel) !important;
@@ -3466,6 +3532,7 @@ function renderLiveTable(pilots) {
 
   html += `</tbody></table></div>`;
   container.innerHTML = html;
+  _panelLabelCells(container);  // im Panel: Zeilen zu Karten (s. Funktionskommentar)
 
   // Attach click handlers after DOM update
   container.querySelectorAll('.td-callsign-link').forEach(td => {
@@ -3489,6 +3556,31 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * Macht die Tabellen in `container` im MSFS-EFB-Panel zu gestapelten Karten.
+ *
+ * Warum zur Laufzeit statt data-label direkt in den Renderern: Die Beschriftungen stehen
+ * bereits in der Kopfzeile. Sie dort abzugreifen haelt die Renderer unangetastet und
+ * verhindert, dass Spaltenkopf und Zellen-Beschriftung auseinanderlaufen -- es gibt weiter
+ * genau eine Wahrheit. Ausserhalb des Panels passiert nichts.
+ */
+function _panelLabelCells(container) {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+  if (!container) return;
+  container.querySelectorAll('table').forEach(t => {
+    const heads = Array.from(t.querySelectorAll('thead th')).map(th => th.textContent.trim());
+    if (!heads.length) return;
+    t.querySelectorAll('tbody tr').forEach(tr => {
+      Array.from(tr.children).forEach((td, i) => {
+        if (heads[i]) td.setAttribute('data-label', heads[i]);
+      });
+    });
+    t.classList.add('panel-cards');
+    const wrap = t.closest('.live-table-wrap, .table-scroll');
+    if (wrap) wrap.classList.add('panel-cards-wrap');
+  });
 }
 
 // Self-gehostetes SVG-Icon (Sprite-Defs direkt nach <body>) statt Emoji -- Coherent GT
@@ -3882,6 +3974,7 @@ function renderFriesenEvents(data) {
   });
   html += '</tbody></table></div>';
   container.innerHTML = html;
+  _panelLabelCells(container);  // im Panel: Zeilen zu Karten (s. Funktionskommentar)
   container.querySelectorAll('tr[data-event-idx]').forEach(tr => {
     const ev = data[+tr.dataset.eventIdx];
     tr.addEventListener('click', () => {

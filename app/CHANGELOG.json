@@ -1,5 +1,15 @@
 [
   {
+    "version": "11.7.0",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "MSFS-Panel: Karten statt breiter Tabellen",
+    "items": [
+      "🃏 Live-Positionen und Events erscheinen im Simulator-Panel jetzt als gestapelte Karten mit „Beschriftung: Wert\" statt als achtspaltige Tabelle. Seitwärtsschieben mit dem Finger entfällt damit ganz — man sieht einen Flug vollständig auf einen Blick. Auf der Website bleibt die gewohnte Tabelle.",
+      "👆 Mehr Platz und größere Ziele im Panel: Der große Logo-Kopf ist kleiner (gewinnt Höhe auf dem Tablet), Tabs und Knöpfe sind mindestens 44 Pixel hoch — im Cockpit wird mit dem Finger bedient, nicht mit der Maus."
+    ]
+  },
+  {
     "version": "11.6.2",
     "date": "2026-08-13",
     "highlight": false,
