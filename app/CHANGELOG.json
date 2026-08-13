@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.6.2",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Zurück-Knopf im MSFS-Panel",
+    "items": [
+      "⬅️ Im Simulator-Panel gibt es keine Browser-Leiste — kein Zurück, keine Adresszeile. Wer ein Fenster geöffnet hatte, war auf dessen eigenen Schließen-Knopf angewiesen. Jetzt erscheint oben links ein Zurück-Knopf, sobald es etwas zu verlassen gibt: erst Karten-Vollbild, dann offenes Fenster, dann zurück zum Live-Tab. Auf dem Live-Tab bleibt er unsichtbar und nimmt keinen Platz weg; auf der Website erscheint er gar nicht."
+    ]
+  },
+  {
     "version": "11.6.1",
     "date": "2026-08-13",
     "highlight": false,

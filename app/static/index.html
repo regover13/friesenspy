@@ -941,6 +941,38 @@
     }
     .panel-update-hint[hidden] { display: none; }
 
+    /* Zurueck-Knopf fuers MSFS-EFB-Panel. Dort gibt es keine Browser-Bedienleiste -- kein
+       Zurueck, keine Adresszeile. Wer ein Fenster (z. B. die Muster-Ansicht) oeffnete, war
+       auf den Schliessen-Knopf IM Fenster angewiesen; fehlte dessen Glyph, sass man fest
+       (Live-Test-Fund 13.08.2026). Dieser Knopf haengt bewusst AUSSERHALB aller Fenster,
+       ist ein SVG (schriftunabhaengig) und erscheint nur, wenn es wirklich etwas zu
+       verlassen gibt -- im Flug nimmt er sonst keinen Platz weg.
+       Absichtlich schwebend statt feste Kopfleiste: Vertikaler Platz ist auf dem Tablet
+       knapp, eine Dauerleiste haette staendig Hoehe gekostet. */
+    .panel-back-btn {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 999997;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      /* 44px Mindestgroesse -- Fingerbedienung im Cockpit, nicht Mauszeiger. */
+      min-height: 44px;
+      padding: 8px 18px 8px 14px;
+      background: var(--bg-panel);
+      border: 2px solid var(--green);
+      color: var(--green);
+      font-family: var(--text-display);
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      box-shadow: 0 0 14px var(--green-glow);
+    }
+    .panel-back-btn[hidden] { display: none; }
+    /* Ausserhalb des Panels nie zeigen -- die Website hat ihre Browser-Navigation. */
+    html:not(.vr-panel) .panel-back-btn { display: none !important; }
+
     /* Override Leaflet popup styles for the radar aesthetic */
     .leaflet-popup-content-wrapper {
       background: var(--bg-panel) !important;
@@ -6622,6 +6654,81 @@ function exitAnyMapFullscreen() {
   if (globalExit) globalExit.hidden = true;
 }
 
+// ==========================================================================
+//  ZURUECK-KNOPF (nur MSFS-EFB-Panel)
+// ==========================================================================
+// Im Panel gibt es keine Browser-Bedienleiste: kein Zurueck, keine Adresszeile. Wer ein
+// Fenster oeffnete, war auf dessen eigenen Schliessen-Knopf angewiesen -- und wenn dem Font
+// das Glyph fehlte, sass man fest (Live-Test-Fund 13.08.2026). Der Knopf haengt deshalb
+// ausserhalb aller Fenster und benutzt bewusst die BESTEHENDEN close*()-Funktionen, statt
+// eigene Schliess-Logik danebenzustellen (sonst haetten wir zwei Wahrheiten).
+//
+// Reihenfolge bewusst gestaffelt, immer nur EINE Ebene pro Druck -- wie man es von einem
+// Zurueck-Knopf erwartet:
+//   1. Karten-Vollbild verlassen   2. offenes Fenster schliessen   3. zurueck zum Live-Tab
+
+/** Alle Modals mit ihrer jeweiligen "ist offen"-Bedingung und Schliess-Funktion. */
+const _PANEL_MODALS = [
+  { id: 'ac-modal',        isOpen: el => el.classList.contains('open'),    close: () => closeAcModal() },
+  { id: 'fp-modal',        isOpen: el => !el.classList.contains('hidden'), close: () => closeFpModal() },
+  { id: 'track-modal',     isOpen: el => !el.classList.contains('hidden'), close: () => closeTrackModal() },
+  { id: 'fld-modal',       isOpen: el => !el.classList.contains('hidden'), close: () => closeFldModal() },
+  { id: 'changelog-modal', isOpen: el => !el.classList.contains('hidden'), close: () => closeChangelogModal() },
+  { id: 'types-modal',     isOpen: el => !el.classList.contains('hidden'), close: () => closeTypesModal() },
+];
+
+function _panelOpenModal() {
+  for (const m of _PANEL_MODALS) {
+    const el = document.getElementById(m.id);
+    if (el && m.isOpen(el)) return m;
+  }
+  return null;
+}
+
+/** Gibt es ueberhaupt etwas zu verlassen? Steuert die Sichtbarkeit des Knopfes. */
+function _panelCanGoBack() {
+  if (document.querySelector('.map-is-fullscreen')) return true;
+  if (_panelOpenModal()) return true;
+  const active = document.querySelector('.tab-btn.active');
+  return !!(active && active.dataset.tab !== 'live');
+}
+
+function panelGoBack() {
+  if (document.querySelector('.map-is-fullscreen')) { exitAnyMapFullscreen(); return; }
+  const m = _panelOpenModal();
+  if (m) { try { m.close(); } catch (e) {} return; }
+  const liveTab = document.querySelector('.tab-btn[data-tab="live"]');
+  if (liveTab) liveTab.click();
+}
+
+function _updatePanelBackBtn() {
+  const btn = document.getElementById('panel-back-btn');
+  if (!btn) return;
+  const soll = !_panelCanGoBack();
+  if (btn.hidden !== soll) btn.hidden = soll;
+}
+
+function _initPanelBackButton() {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+  if (!document.getElementById('panel-back-btn')) return;
+
+  // Bewusst KEIN Einklinken in jede einzelne oeffnende/schliessende Stelle: Fenster und Tabs
+  // werden an vielen Orten umgeschaltet (Klick, Escape, Klick-daneben, Deep-Link beim Laden)
+  // -- man wuerde zwangslaeufig eine uebersehen, und der Knopf waere genau dann falsch.
+  // Stattdessen nach jeder Eingabe den Zustand neu bewerten. setTimeout(0), damit die
+  // eigentlichen Klick-/Tasten-Handler vorher fertig sind.
+  const spaeterPruefen = () => setTimeout(_updatePanelBackBtn, 0);
+  document.addEventListener('click', spaeterPruefen);
+  document.addEventListener('keydown', spaeterPruefen);
+
+  // Sicherheitsnetz fuer Zustandswechsel ohne Eingabe (z. B. Deep-Link nach dem Laden,
+  // automatisch schliessende Ansichten). Langsam getaktet -- der reaktive Weg oben traegt
+  // die Hauptlast, und Browser drosseln Intervalle in Hintergrund-Tabs ohnehin stark.
+  setInterval(_updatePanelBackBtn, 1000);
+  _updatePanelBackBtn();
+}
+_initPanelBackButton();
+
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const fsWrap = document.querySelector('.map-is-fullscreen');
@@ -6648,5 +6755,6 @@ document.addEventListener('visibilitychange', async () => {
 </script>
 <button id="global-map-exit-fs" class="global-map-exit-fs" hidden onclick="exitAnyMapFullscreen()"><svg class="icon"><use href="#icon-x"/></svg> Vollbild verlassen</button>
 <button id="panel-update-hint" class="panel-update-hint" hidden onclick="location.reload()"><svg class="icon"><use href="#icon-refresh"/></svg> Neue Version &ndash; neu laden</button>
+<button id="panel-back-btn" class="panel-back-btn" hidden onclick="panelGoBack()"><svg class="icon"><use href="#icon-arrow-left"/></svg> Zur&uuml;ck</button>
 </body>
 </html>
