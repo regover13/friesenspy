@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.5.3",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Kutter-Icon: Anker statt Garnele",
+    "items": [
+      "⚓ Die selbst gezeichnete Garnele für FriesenKutter (v11.5.2) war bei der tatsächlichen Icon-Größe nicht als Garnele erkennbar. Ersetzt durch einen Anker in der bestehenden Kutter-Goldfarbe (#c8933a) — liest sich bei kleiner Größe klar, bleibt aber optisch eigenständig statt im Blau der übrigen Icons unterzugehen."
+    ]
+  },
+  {
     "version": "11.5.2",
     "date": "2026-08-13",
     "highlight": false,

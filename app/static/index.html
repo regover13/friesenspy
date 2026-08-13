@@ -1754,12 +1754,15 @@
     <line x1="9" y1="3" x2="9" y2="21"/>
     <line x1="15" y1="3" x2="15" y2="21"/>
   </symbol>
-  <symbol id="icon-shrimp" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M7 4c-1.2 1-1.2 2.6 0 3.6"/>
-    <path d="M8 6.3c6-1 12.5 3 12.5 10 0 2.6-2.1 4.3-4.7 4.3-2.1 0-3.7-1.4-3.7-3.4 0-1.6 1.1-2.4 2.4-2.4"/>
-    <path d="M16 20.3c1 .9 2.7.9 3.6-.3"/>
-    <path d="M8.5 9.3l-2.3-1M8 12.5H5.2M8.5 15.7l-2.3 1.3"/>
-    <circle cx="8.4" cy="6.8" r="0.7" fill="currentColor" stroke="none"/>
+  <!-- Feste Goldfarbe (#c8933a) statt currentColor -- derselbe Farbton, der im Kutter-Kontext
+       bereits für Fracht/Balken verwendet wird (.kl-cap, .kutter-seg-Gradient), damit der Anker
+       eine eigene Identität behält statt im einfarbigen Blau der übrigen Icons unterzugehen. */
+  <symbol id="icon-anchor" viewBox="0 0 24 24" fill="none" stroke="#c8933a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="5" r="2"/>
+    <line x1="12" y1="7" x2="12" y2="21"/>
+    <path d="M5 12a7 7 0 0 0 7 9 7 7 0 0 0 7-9"/>
+    <line x1="4" y1="12" x2="8" y2="12"/>
+    <line x1="16" y1="12" x2="20" y2="12"/>
   </symbol>
   <symbol id="icon-fullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M8 3H4a1 1 0 0 0-1 1v4"/>
@@ -2099,7 +2102,7 @@
     <div id="kutter-results" class="hidden">
       <div class="panel">
         <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <span id="kutter-title"><svg class="icon"><use href="#icon-shrimp"/></svg> FriesenKutter</span>
+          <span id="kutter-title"><svg class="icon"><use href="#icon-anchor"/></svg> FriesenKutter</span>
           <button class="btn-share" onclick="copyKutterShareHeader(this)">⎘ Teilen</button>
         </div>
         <div id="kutter-content"></div>
@@ -3560,7 +3563,7 @@ function renderFriesenEvents(data) {
   let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';
   data.forEach((ev, i) => {
     const badge = ev.is_bummel ? '<span class="bummel-badge">' + icon('checkered-flag') + ' BUMMEL</span>'
-      : ev.is_transport ? '<span class="bummel-badge">' + icon('shrimp') + ' KUTTER</span>' : '';
+      : ev.is_transport ? '<span class="bummel-badge">' + icon('anchor') + ' KUTTER</span>' : '';
     const manuelHint = ev._manual ? ' <span class="text-label" style="font-size:0.8em;">(manuell)</span>' : '';
     // Kutter: kein Routen-Kettentext (irreführend, s. #12) — nur das Ziel, wohin die Fracht soll.
     // Fallback (Kalender-Events ohne destination): letzter ICAO der Route = Default-Ziel.
@@ -3893,7 +3896,7 @@ async function fetchKutterActive() {
 function _kutterBannerBlock(d) {
     // Exakte Bummel-Banner-Parität: kein Teilen hier — das gibt es rechts oben in der
     // Events-Ansicht (Nutzer-Entscheidung 02.07.).
-    let html = `<div class="kutter-live-block"><div class="bb-title">${icon('shrimp')} ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
+    let html = `<div class="kutter-live-block"><div class="bb-title">${icon('anchor')} ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
     // Kein Strecken-Kettentext mehr (verwirrte im Live-Test — war weder geflogene Strecke noch
     // Flugplan, sondern die Aneinanderreihung der Ladeplätze). Stattdessen prominent NUR das Ziel,
     // wohin alle Fracht soll; die Reise je Fracht (Ladeplatz -> Ziel) steht in der Tabelle unten.
@@ -3963,7 +3966,7 @@ function _kutterBannerBlock(d) {
     }
     // Exakt wie der Bummel-Banner: nur der Sprung zur vollen Ansicht — Teilen gibt es
     // dort rechts oben im Panel-Header (wie überall).
-    html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openKutterById(${d.id})">${icon('shrimp')} Zum Kutter</button></div>`;
+    html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openKutterById(${d.id})">${icon('anchor')} Zum Kutter</button></div>`;
     html += '</div>';
     return html;
 }
@@ -4873,7 +4876,7 @@ function renderSpecialEventStats(data) {
   const rows = [];
   if ((k.event_count || 0) > 0) {
     rows.push(`<div class="stats-kpi-row">
-      ${_kpiCard(k.event_count, icon('shrimp') + ' FriesenKutter')}
+      ${_kpiCard(k.event_count, icon('anchor') + ' FriesenKutter')}
       ${_kpiCard(k.participations, 'Teilnahmen')}
       ${_kpiCard(k.flights, 'Flüge')}
       ${_kpiCard(_fmtTons(k.delivered_kg), 'Tonnage')}
@@ -5895,7 +5898,7 @@ function _kDualKg(net, gross) {
 
 function _kutterDetailBody(d) {
   const summary = d.summary_quip
-    ? '<div class="kutter-summary">' + icon('shrimp') + ' ' + _kesc(d.summary_quip) + '</div>' : '';
+    ? '<div class="kutter-summary">' + icon('anchor') + ' ' + _kesc(d.summary_quip) + '</div>' : '';
   // Ziel-Überschrift wie im Live-Banner (Z. ~3093): wohin alle Fracht soll. Prominent oben,
   // bevor der Gesamtbalken kommt — bislang fehlte sie in der Events-Detailansicht.
   const dest = '<div class="kutter-dest">' + icon('target') + ' Ziel: '
@@ -5978,7 +5981,7 @@ async function _refreshKutterDetail() {
   try {
     const d = await fetch('/api/transport/event/' + _kutterOpenId).then(r => r.json());
     _lastKutterDetail = d;
-    document.getElementById('kutter-title').innerHTML = icon('shrimp') + ' ' + escHtml(d.name || 'FriesenKutter');
+    document.getElementById('kutter-title').innerHTML = icon('anchor') + ' ' + escHtml(d.name || 'FriesenKutter');
     document.getElementById('kutter-content').innerHTML = _kutterDetailBody(d);
   } catch (e) {}
 }
