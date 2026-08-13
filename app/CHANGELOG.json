@@ -1,15 +1,11 @@
 [
   {
-    "version": "11.13.4",
+    "version": "11.14.0",
     "date": "2026-08-13",
     "highlight": false,
-    "title": "FriesenSpy fürs Cockpit zum Herunterladen",
+    "title": "Kartenkacheln im MSFS-Panel verschwinden nicht mehr",
     "items": [
-      "🛩️ Neue Seite „FriesenSpy im Cockpit“ (unten im Fußbereich verlinkt): dort gibt es die MSFS-App als Paket zum Herunterladen, mit Einbauanleitung für Store und Steam.",
-      "🗺️ Verdeckte Ansichten werden nicht mehr im Hintergrund neu gezeichnet. Im MSFS-Panel blitzten dadurch im Events-Tab regelmäßig die Kartenkacheln weg, während im Hintergrund die Live-Tabelle und die verdeckte Karte aktualisiert wurden.",
-      "☑️ Die Ebenen-Auswahl der Karte zeigt im MSFS-Panel jetzt an, was aktiv ist. Der Zustand stimmte schon immer — der Simulator zeichnet die eingebauten Häkchen nur nicht.",
-      "✈️ Flugzeug-Symbole auf der Karte werden nur noch neu gezeichnet, wenn sich der Kurs wirklich geändert hat — vorher passierte das in jedem Takt und blitzte im MSFS-Panel kurz auf.",
-      "🔄 Der Hinweis auf eine neue Version erscheint im MSFS-Panel jetzt innerhalb einer Minute statt erst nach fünf."
+      "🗺️ Im MSFS-Panel blieben Kartenkacheln immer wieder unsichtbar, bis man die Karte bewegte — auch die Satellitenansicht, die schon lange nur im Vollbild erschien. Ursache ist Leaflets weiche Einblendung: Sie lässt die Deckkraft frisch geladener Kacheln über viele Einzelschritte hochlaufen, und diese Schleife kam im Simulator nicht ans Ziel. Im Panel wird sie jetzt übersprungen, die Kacheln sind sofort voll sichtbar. Auf der Website bleibt die Animation."
     ]
   },
   {

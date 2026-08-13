@@ -2940,6 +2940,27 @@ function _makeTileLayers() {
   };
 }
 
+// ==========================================================================
+//  KACHEL-EINBLENDUNG IM PANEL ABSCHALTEN
+// ==========================================================================
+// Leaflet blendet frisch geladene Kacheln weich ein: es setzt `style.opacity` und laesst
+// den Wert ueber requestAnimationFrame hochlaufen (GridLayer._updateOpacity, aktiv nur
+// solange map._fadeAnimated). Kommt diese Schleife nicht ans Ziel, bleiben die Kacheln
+// bei einer Deckkraft unter 1 stehen -- sie sind im DOM vorhanden, aber nicht zu sehen.
+//
+// Genau das zeigen die Messungen aus dem Sim, und zwar alle drei:
+//   - 30 Sekunden lang KEINE Strukturaenderung in der Karte, aber 66 style- und 8
+//     class-Aenderungen an bereits geladenen Kacheln -> die Kacheln sind da, es aendert
+//     sich nur ihr Aussehen.
+//   - Der Nutzer: "man muss die Karte bewegen, sonst verschwinden die Tiles schon auch
+//     mal" -- jede Kartenbewegung stoesst _updateOpacity erneut an und holt die
+//     haengengebliebene Einblendung nach.
+//   - Und der aelteste ungeklaerte Fund passt ebenfalls dazu: Satelliten-Kacheln, die
+//     laut Netzwerk-Tab vollstaendig ankamen und trotzdem nicht erschienen.
+// Ohne Einblendung setzt Leaflet die Deckkraft sofort auf 1 und startet die Schleife gar
+// nicht erst. Auf der Website bleibt die Animation -- dort funktioniert sie.
+const _KARTE_EINBLENDEN = !document.documentElement.classList.contains('vr-panel');
+
 const _LAYER_PREF_KEY = 'friesenspy_layer';
 function _saveLayerPref(key) { try { localStorage.setItem(_LAYER_PREF_KEY, key); } catch(e) {} }
 function _loadLayerPref() { try { return localStorage.getItem(_LAYER_PREF_KEY); } catch(e) { return null; } }
@@ -4092,70 +4113,55 @@ function _diagFlackern(map) {
 
   const el = map.getContainer();
   const start = Date.now();
-  const sek = () => Math.floor((Date.now() - start) / 1000);
 
-  // Erste Aufzeichnung (v11.13.2) sah NUR auf childList und meldete: 30 Sekunden lang
-  // keine einzige Aenderung in der Karte -- kein Kachel-Abgang, kein Marker-Neubau. Das
-  // Aufblitzen ist also KEINE Strukturaenderung. Damit bleibt die Blindstelle jener
-  // Aufzeichnung: Attribute. Ein Klassenwechsel loest ein Neuberechnen des Stils und ein
-  // Neuzeichnen aus, ohne dass ein einziger Knoten dazukommt oder verschwindet.
-  // Hauptverdaechtiger ist die Zurueck-Leiste: _updatePanelBackBtn prueft im Sekundentakt
-  // und schaltet dabei .panel-has-back am <html>, was body { padding-top } umstellt -- das
-  // legt die GANZE Seite neu aus, die Karte eingeschlossen.
-  const strukturJeSek = {};
-  const attributJeSek = {};
-  const wechsel = [];      // konkrete Klassenwechsel an html/body, mit Sekunde
+  // Dritte Runde. Was die ersten beiden ausgeschlossen haben, ist genauso wertvoll wie das,
+  // was uebrig bleibt:
+  //   - KEINE Strukturaenderung in der Karte (30 s lang kein Kachel-Abgang, kein
+  //     Marker-Neubau) -> die 25/30/60-Sekunden-Takte scheiden aus.
+  //   - KEIN Klassenwechsel an html/body, Seitenabstand konstant 60px ueber 29 Messungen
+  //     -> die Zurueck-Leiste legt die Seite NICHT staendig neu aus.
+  // Uebrig bleibt genau eines: 66 style- und 8 class-Aenderungen an bereits geladenen
+  // Kacheln in 30 Sekunden. Diese Runde klaert, WELCHE Eigenschaft sich dabei aendert --
+  // eine wandernde Deckkraft (Leaflets Einblend-Animation, die nicht zur Ruhe kommt) sieht
+  // man als Flackern, eine neu gesetzte Position dagegen als Ruckeln.
+  const proben = [];
+  const klassen = [];
+  const zaehler = { style: 0, class: 0 };
 
-  const struktur = new MutationObserver((eintraege) => {
-    const s = sek();
-    strukturJeSek[s] = (strukturJeSek[s] || 0) + eintraege.length;
-  });
-  struktur.observe(el, { childList: true, subtree: true });
+  function kurz(t) { return String(t || '').slice(0, 90); }
 
-  const attribute = new MutationObserver((eintraege) => {
-    const s = sek();
+  const beob = new MutationObserver((eintraege) => {
+    const s = Math.round((Date.now() - start) / 100) / 10;
     for (const e of eintraege) {
       const ziel = e.target;
-      const name = ziel === document.documentElement ? 'html'
-        : ziel === document.body ? 'body'
-        : (ziel.id ? '#' + ziel.id : (ziel.nodeName + '.' + (ziel.className || '')).slice(0, 34));
-      const schluessel = name + ' [' + e.attributeName + ']';
-      attributJeSek[schluessel] = (attributJeSek[schluessel] || 0) + 1;
-      if ((ziel === document.documentElement || ziel === document.body) && wechsel.length < 20) {
-        wechsel.push({ s: s, was: name + '.' + e.attributeName,
-                       wert: String(ziel.getAttribute(e.attributeName) || '').slice(0, 60) });
+      if (!ziel.classList || !ziel.classList.contains('leaflet-tile')) continue;
+      if (e.attributeName === 'style') {
+        zaehler.style += 1;
+        if (proben.length < 14) {
+          proben.push({ s: s, vorher: kurz(e.oldValue), nachher: kurz(ziel.getAttribute('style')) });
+        }
+      } else if (e.attributeName === 'class') {
+        zaehler.class += 1;
+        if (klassen.length < 8) {
+          klassen.push({ s: s, vorher: kurz(e.oldValue), nachher: kurz(ziel.className) });
+        }
       }
     }
   });
-  // Am <html> und <body> haengt die Seitenauslegung; im Karten-Container haengt alles,
-  // was Leaflet selbst umschaltet.
-  attribute.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
-  attribute.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
-  attribute.observe(el, { attributes: true, subtree: true, attributeFilter: ['class', 'style'] });
-
-  // Was die Zurueck-Leiste tatsaechlich tut, unabhaengig von Beobachtern: einmal je
-  // Sekunde nachsehen, ob sich der Seitenabstand oben aendert. Aendert er sich, rueckt die
-  // Karte -- und genau das waere als Blitz zu sehen.
-  const abstaende = {};
-  const uhr = setInterval(() => {
-    const v = getComputedStyle(document.body).paddingTop;
-    abstaende[v] = (abstaende[v] || 0) + 1;
-  }, 1000);
+  beob.observe(el, { attributes: true, subtree: true,
+                     attributeFilter: ['style', 'class'], attributeOldValue: true });
 
   setTimeout(() => {
-    struktur.disconnect();
-    attribute.disconnect();
-    clearInterval(uhr);
-    const obenAttr = {};
-    Object.keys(attributJeSek).sort((a, b) => attributJeSek[b] - attributJeSek[a])
-      .slice(0, 10).forEach(k => { obenAttr[k] = attributJeSek[k]; });
-    window._panelDiag('flackern2', {
+    beob.disconnect();
+    window._panelDiag('flackern3', {
       dauerSek: 30,
-      strukturaenderungen: strukturJeSek,
-      attributaenderungen: obenAttr,
-      wechselAnHtmlUndBody: wechsel,
-      gemesseneSeitenabstaende: abstaende,
-      backKnopfVersteckt: (document.getElementById('panel-back-btn') || {}).hidden,
+      anzahl: zaehler,
+      styleProben: proben,
+      klassenwechsel: klassen,
+      // Leaflets Einblend-Animation ist der Hauptverdaechtige -- hier steht, ob sie
+      // ueberhaupt aktiv ist.
+      fadeAnimated: !!map._fadeAnimated,
+      zoomAnimated: !!map._zoomAnimated,
     });
   }, 30000);
 }
@@ -5535,7 +5541,8 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff, aut
     requestAnimationFrame(async () => {
       await _configPromise;
       if (!trackMapInitialized) {
-        trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
+        trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6,
+                                                fadeAnimation: _KARTE_EINBLENDEN });
         _fixLeafletZoomMinus(trackMap);
         const trackLayers = _makeTileLayers();
         _getPreferredLayer(trackLayers).addTo(trackMap);
@@ -5666,6 +5673,7 @@ async function initLiveMap() {
   await _configPromise;
 
   liveMap = L.map('leaflet-map', {
+    fadeAnimation: _KARTE_EINBLENDEN,
     center:    [54.5, 8.5],
     zoom:      7,
     minZoom:   6,
@@ -6543,7 +6551,8 @@ function _flightTrackUrl(f) {
 async function renderEventsMap(pilots, icaoStr, radiusKm) {
   if (!eventsMapInitialized) {
     await _configPromise;
-    eventsMap = L.map('events-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6 });
+    eventsMap = L.map('events-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6,
+                                              fadeAnimation: _KARTE_EINBLENDEN });
     _fixLeafletZoomMinus(eventsMap);
     const evLayers = _makeTileLayers();
     _getPreferredLayer(evLayers).addTo(eventsMap);

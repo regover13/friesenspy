@@ -337,3 +337,15 @@ def test_wache_fragt_den_schlanken_endpunkt_und_im_minutentakt():
     assert "fetch('/api/version'" in rumpf
     assert "/api/frontend-config" not in rumpf
     assert "setInterval(check, 60 * 1000)" in rumpf
+
+
+def test_kachel_einblendung_im_panel_abgeschaltet():
+    """Leaflet laesst die Deckkraft frisch geladener Kacheln ueber requestAnimationFrame
+    hochlaufen. Kommt die Schleife nicht ans Ziel, bleiben die Kacheln im DOM stehen und
+    sind trotzdem unsichtbar -- genau das Bild aus dem Sim: keine Strukturaenderung, aber
+    66 style-Aenderungen an geladenen Kacheln in 30 Sekunden, und Bewegen der Karte holt
+    sie zurueck (Nutzer, in beiden Ansichten bestaetigt). Erklaert auch den aeltesten
+    ungeklaerten Fund: Satellitenkacheln, die vollstaendig ankamen und nicht erschienen."""
+    assert "const _KARTE_EINBLENDEN = !document.documentElement.classList.contains('vr-panel');" in INDEX
+    # Alle drei Karten muessen die Option bekommen, sonst bleibt eine Ansicht kaputt
+    assert INDEX.count("fadeAnimation: _KARTE_EINBLENDEN") == 3

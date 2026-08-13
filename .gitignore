@@ -31,3 +31,7 @@ scripts/.cache/
 # IDE
 .vscode/
 .idea/
+
+# SQLite-Begleitdateien der lokalen Test-DB (WAL-Modus)
+*.db-shm
+*.db-wal
