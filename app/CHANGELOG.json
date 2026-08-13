@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.5.4",
+    "date": "2026-08-13",
+    "highlight": true,
+    "title": "Icon-Sprite kaputt seit v11.5.3 -- die halbe Oberfläche zeigte keine Symbole mehr",
+    "items": [
+      "🐞 Ein HTML-Kommentar im Icon-Sprite war mit `*/` (CSS-Syntax) statt `-->` geschlossen worden. Dadurch hat der Browser den Kommentar nie beendet und JEDES Icon danach stillschweigend verschluckt — u. a. Anker, Vollbild, Bummel-Flagge, Kutter, Ziel, Nachricht — 23 von 35 Symbolen fehlten komplett, ohne jeden Konsolenfehler. Betraf sowohl die normale Website als auch das MSFS-EFB-Panel. Ein Zeichen falsch, ganzer Rest der Datei unsichtbar."
+    ]
+  },
+  {
     "version": "11.5.3",
     "date": "2026-08-13",
     "highlight": false,
