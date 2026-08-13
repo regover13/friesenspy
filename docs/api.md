@@ -1622,3 +1622,53 @@ Alle Datensätze löschen (Admin) — für einen sauberen Messlauf.
 
 Es werden immer nur die neuesten 500 Einträge behalten (`PANEL_DIAG_KEEP`), damit ein Panel in
 einer Fehlerschleife die Datenbank nicht vollschreibt.
+
+## Geräte-Bindung fürs EFB-Panel (persistente Anmeldung)
+
+Coherent GT hält Cookies offenbar nur im Speicher — die Anmeldung ging bei jedem
+Simulator-Neustart verloren, teils schon nach Minuten. Für ein Panel, das man im Flug
+aufklappt, ist das unbrauchbar. Das EFB-Paket legt deshalb eine Zufalls-Geräte-ID in MSFS'
+plattenpersistentem Speicher ab (`DataStore` → `SetStoredData`) und weist sich damit aus.
+
+> **Die Geräte-ID ist ein Zugangsschlüssel.** Wer sie hat, ist als der gebundene Nutzer
+> angemeldet. Sie verlässt die lokale MSFS-Installation nicht, wird nach dem Eintausch sofort
+> aus der Adresse entfernt, in der Admin-Übersicht nur gekürzt angezeigt und ist dort einzeln
+> widerrufbar. IDs unter 32 Zeichen werden abgewiesen (`PANEL_DEVICE_MIN_LEN`).
+
+### GET /auth/device
+
+Einstiegspunkt des Panels statt `/panel`. Liegt unter dem `/auth/`-Präfix und ist damit auch
+bei aktivem Login-Gate erreichbar — sonst käme man mit gebundenem Gerät nie an der Sperre
+vorbei.
+
+| Query | Bedeutung |
+|-------|-----------|
+| `device` | Geräte-ID aus dem MSFS-Datenspeicher |
+| `next` | Ziel nach der Anmeldung, nur seitenintern (Default `/panel`) |
+
+**Verhalten**
+- **Gerät bekannt:** Sitzungs-Cookie (`fs_user`) für die gebundene CID ausstellen, `302` auf
+  `next`. Kein Login nötig.
+- **Gerät unbekannt / ID zu kurz / kein `device`:** `302` in den normalen Forum-Login. Bei
+  brauchbarer ID wird sie in `fs_dev_bind` (httponly, `path=/auth`, 10 min) gemerkt; die
+  Bindung erfolgt nach erfolgreicher Anmeldung in `/auth/forum/callback`.
+
+Die Weiterleitung geht bewusst auf einen Pfad **ohne** die Geräte-ID, damit der Schlüssel
+nicht in der finalen Adresse und damit im Verlauf stehen bleibt. `next` wird über
+`_safe_next_path` geprüft (kein Open-Redirect).
+
+### GET /api/admin/panel-devices
+
+Gebundene Geräte auflisten (Admin). Die Geräte-ID wird **nur gekürzt** zurückgegeben
+(`device_prefix`, 12 Zeichen) — ein Zugangsschlüssel hat in einer Übersicht nichts
+vollständig zu suchen.
+
+**Response** `{"devices": [{device_prefix, cid, name, created_at, last_seen_at}, …]}`
+
+### DELETE /api/admin/panel-devices/{device_prefix}
+
+Bindung widerrufen (Admin + Bestätigung). Angesprochen über dasselbe gekürzte Präfix aus der
+Übersicht; Präfixe unter 8 Zeichen werden abgewiesen, damit nicht versehentlich mehrere
+Geräte getroffen werden. Das Panel verlangt danach wieder eine Anmeldung.
+
+**Responses** `200 {"status": "ok", "revoked": 1}` · `400` zu kurz · `404` unbekannt

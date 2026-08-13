@@ -9,7 +9,7 @@ import {
   RequiredProps,
   TVNode,
 } from "@efb/efb-api";
-import { FSComponent, VNode } from "@microsoft/msfs-sdk";
+import { DataStore, FSComponent, VNode } from "@microsoft/msfs-sdk";
 
 import "./FriesenSpy.scss";
 
@@ -21,6 +21,68 @@ declare const BASE_URL: string;
 
 const PANEL_URL = "https://friesenspy.devprops.de/panel";
 
+/** Schluessel im MSFS-Datenspeicher, unter dem die Geraete-ID liegt. */
+const DEVICE_KEY = "friesenspy_device";
+
+/**
+ * Zufaellige Geraete-ID erzeugen.
+ *
+ * Sie ist ein Zugangsschluessel (wer sie hat, ist als der gebundene Nutzer angemeldet),
+ * deshalb so viel Zufall wie die Umgebung hergibt. `crypto.getRandomValues` ist in Coherent GT
+ * nicht garantiert vorhanden -- ist es da, wird es genommen; sonst ein Notbehelf aus
+ * Math.random und Zeitstempel. Der Server weist alles unter 32 Zeichen ohnehin ab.
+ */
+function makeDeviceId(): string {
+  const c = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  if (c && typeof c.getRandomValues === "function") {
+    const bytes = c.getRandomValues(new Uint8Array(24));
+    let out = "";
+    for (let i = 0; i < bytes.length; i++) {
+      out += bytes[i].toString(16).padStart(2, "0");
+    }
+    return out;
+  }
+  let fallback = Date.now().toString(16);
+  while (fallback.length < 48) {
+    fallback += Math.floor(Math.random() * 0xffffffff).toString(16);
+  }
+  return fallback.slice(0, 48);
+}
+
+/**
+ * Geraete-ID aus dem persistenten MSFS-Speicher holen, beim ersten Mal anlegen.
+ *
+ * `DataStore` kapselt `SetStoredData`/`GetStoredData` -- MSFS' eigene, plattenpersistente
+ * Ablage. Genau deshalb ueberlebt die ID einen Simulator-Neustart, waehrend Cookies in
+ * Coherent GT es nicht tun (der Grund fuer das staendige Neu-Anmelden).
+ */
+function getOrCreateDeviceId(): string {
+  try {
+    const vorhanden = DataStore.get<string>(DEVICE_KEY);
+    if (typeof vorhanden === "string" && vorhanden.length >= 32) {
+      return vorhanden;
+    }
+    const neu = makeDeviceId();
+    DataStore.set(DEVICE_KEY, neu);
+    return neu;
+  } catch (e) {
+    // Steht der Datenspeicher nicht zur Verfuegung, laeuft das Panel eben wie bisher mit
+    // normaler Anmeldung weiter -- nie den Start des Panels daran scheitern lassen.
+    return "";
+  }
+}
+
+/**
+ * Ziel-Adresse fuers iframe. Mit Geraete-ID ueber /auth/device (meldet automatisch an, wenn
+ * das Geraet bereits gebunden ist), sonst direkt aufs Panel wie bisher.
+ */
+function buildPanelUrl(): string {
+  const id = getOrCreateDeviceId();
+  if (!id) return PANEL_URL;
+  return "https://friesenspy.devprops.de/auth/device?device=" + encodeURIComponent(id)
+    + "&next=" + encodeURIComponent("/panel");
+}
+
 class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   /**
    * Rendert direkt das eingebettete Panel, ohne AppViewService/Mehrseiten-
@@ -31,7 +93,7 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   public render(): VNode {
     return (
       <div class="friesenspy-app">
-        <iframe class="friesenspy-frame" src={PANEL_URL} />
+        <iframe class="friesenspy-frame" src={buildPanelUrl()} />
       </div>
     );
   }

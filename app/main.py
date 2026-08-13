@@ -72,6 +72,12 @@ from app.database import (
     insert_panel_diag,
     list_panel_diag,
     clear_panel_diag,
+    PANEL_DEVICE_MIN_LEN,
+    get_panel_device,
+    bind_panel_device,
+    touch_panel_device,
+    list_panel_devices,
+    revoke_panel_device,
     get_push_subscription_by_endpoint,
     get_pilot_visibility,
     set_pilot_visibility,
@@ -410,6 +416,55 @@ async def admin_list_panel_diag(request: Request, limit: int = 50):
     conn = get_connection(get_settings().DB_PATH)
     try:
         return {"entries": list_panel_diag(conn, limit=max(1, min(500, limit)))}
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/panel-devices")
+async def admin_list_panel_devices(request: Request):
+    """Gebundene EFB-Geräte auflisten (Admin).
+
+    Die Geräte-ID wird bewusst nur gekürzt zurückgegeben -- sie ist ein Zugangsschlüssel und
+    hat in einer Übersicht (oder gar einem Screenshot davon) nichts vollständig zu suchen.
+    Zum Widerrufen genügt das Präfix.
+    """
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        devices = []
+        for d in list_panel_devices(conn):
+            devices.append({
+                "device_prefix": d["device_id"][:12],
+                "cid": d["cid"],
+                "name": d["name"],
+                "created_at": d["created_at"],
+                "last_seen_at": d["last_seen_at"],
+            })
+        return {"devices": devices}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/admin/panel-devices/{device_prefix}")
+async def admin_revoke_panel_device(request: Request, device_prefix: str):
+    """Geräte-Bindung widerrufen (Admin) -- das Panel verlangt danach wieder eine Anmeldung.
+
+    Angesprochen über dasselbe gekürzte Präfix, das die Übersicht liefert (s. dort).
+    """
+    require_admin(request)
+    require_confirm(request)
+    prefix = (device_prefix or "").strip()
+    if len(prefix) < 8:
+        raise HTTPException(status_code=400, detail="Präfix zu kurz")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        treffer = [d for d in list_panel_devices(conn) if d["device_id"].startswith(prefix)]
+        if not treffer:
+            raise HTTPException(status_code=404, detail="Gerät nicht gefunden")
+        for d in treffer:
+            revoke_panel_device(conn, d["device_id"])
+        conn.commit()
+        return {"status": "ok", "revoked": len(treffer)}
     finally:
         conn.close()
 
@@ -1808,6 +1863,62 @@ def _safe_next_path(raw: str) -> str | None:
     return raw
 
 
+# Cookie, das die Geräte-ID über den Forum-Login-Umweg rettet. Kurzlebig und auf /auth
+# beschränkt -- es dient nur dazu, nach der Rückkehr zu wissen, welches Gerät gebunden werden
+# soll. Der eigentliche Zugang läuft danach über das normale Sitzungs-Cookie.
+_DEVICE_BIND_COOKIE = "fs_dev_bind"
+
+
+@app.get("/auth/device", include_in_schema=False)
+async def auth_device(request: Request, device: str = "", next: str = "/panel"):
+    """Anmeldung per Geräte-Bindung fürs MSFS-EFB-Panel.
+
+    Hintergrund: Coherent GT hält Cookies offenbar nur im Speicher -- die Anmeldung ging bei
+    jedem Simulator-Neustart verloren, teils schon nach Minuten. Für ein Panel, das man im
+    Flug aufklappt, ist das unbrauchbar. Das EFB-Paket legt deshalb eine Zufalls-Geräte-ID in
+    MSFS' plattenpersistentem Speicher ab (``DataStore`` → ``SetStoredData``) und ruft diese
+    Route auf, statt direkt ``/panel``.
+
+    - **Gerät bekannt:** Sitzungs-Cookie ausstellen und weiter zum Ziel. Kein Login nötig.
+    - **Gerät unbekannt:** ID kurz merken und in den normalen Forum-Login schicken; die
+      Bindung passiert nach erfolgreicher Anmeldung im Callback.
+
+    Die Weiterleitung geht bewusst auf einen Pfad OHNE die Geräte-ID, damit der
+    Zugangsschlüssel nicht in der finalen Adresse (und damit in Verlauf/Verweisen) stehen
+    bleibt.
+    """
+    settings = get_settings()
+    dest = _safe_next_path(next) or "/panel"
+    device = (device or "").strip()
+
+    if device and len(device) >= PANEL_DEVICE_MIN_LEN:
+        conn = get_connection(settings.DB_PATH)
+        try:
+            dev = get_panel_device(conn, device)
+            if dev:
+                exp = time.time() + settings.USER_SESSION_MAX_AGE_SEC
+                user_token = make_user_token(
+                    settings.SECRET_KEY, str(dev.get("name") or ""), str(dev["cid"]), False, exp,
+                )
+                touch_panel_device(conn, device)
+                conn.commit()
+                resp = RedirectResponse(dest, status_code=302, headers=_HTML_NO_CACHE)
+                resp.set_cookie(USER_COOKIE, user_token, httponly=True,
+                                secure=_is_https(request), samesite=_iframe_samesite(request),
+                                path="/", max_age=settings.USER_SESSION_MAX_AGE_SEC)
+                return resp
+        finally:
+            conn.close()
+
+    # Unbekannt (oder unbrauchbar kurz): normaler Login-Weg, ID für die Bindung merken.
+    resp = RedirectResponse(f"/auth/forum/login?next={quote(dest, safe='')}", status_code=302,
+                            headers=_HTML_NO_CACHE)
+    if device and len(device) >= PANEL_DEVICE_MIN_LEN:
+        resp.set_cookie(_DEVICE_BIND_COOKIE, device, httponly=True, secure=_is_https(request),
+                        samesite=_iframe_samesite(request), path="/auth", max_age=600)
+    return resp
+
+
 @app.get("/auth/forum/login")
 async def forum_login(request: Request):
     """Startet den Board-Login: Redirect zur Forum-Bridge mit state + Callback.
@@ -1890,6 +2001,23 @@ async def forum_callback(request: Request):
         except Exception:
             _logger.warning("forum_callsign-Persistierung fehlgeschlagen (Login läuft weiter)",
                             exc_info=True)
+    # Kam der Login über die Geräte-Bindung fürs EFB-Panel (/auth/device), das Gerät jetzt --
+    # nach nachgewiesener Forum-Anmeldung -- an die CID binden. Ab dann meldet sich das Panel
+    # ohne Zutun an, auch über Simulator-Neustarts hinweg. Bewusst best-effort: Scheitert die
+    # Bindung, ist der Nutzer trotzdem regulär angemeldet.
+    device_to_bind = request.cookies.get(_DEVICE_BIND_COOKIE, "").strip()
+    if device_to_bind and str(claims.get("cid", "")).strip().isdigit():
+        try:
+            conn = get_connection(settings.DB_PATH)
+            try:
+                bind_panel_device(conn, device_to_bind, int(str(claims.get("cid")).strip()),
+                                  str(claims.get("name", "")))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            _logger.warning("Geräte-Bindung fehlgeschlagen (Login läuft weiter)", exc_info=True)
+
     # Nach erfolgreichem Login zum gemerkten Ziel (z. B. /admin) zurück, sonst zur Startseite.
     dest = _safe_next_path(request.cookies.get("fs_sso_next", "")) or "/"
     resp = RedirectResponse(dest, status_code=302)
@@ -1897,6 +2025,7 @@ async def forum_callback(request: Request):
                     samesite=_iframe_samesite(request), path="/", max_age=settings.USER_SESSION_MAX_AGE_SEC)
     resp.delete_cookie("fs_sso_state", path="/auth/forum")
     resp.delete_cookie("fs_sso_next", path="/auth/forum")
+    resp.delete_cookie(_DEVICE_BIND_COOKIE, path="/auth")
     return resp
 
 

@@ -405,6 +405,24 @@ CREATE TABLE IF NOT EXISTS panel_diag (
     payload_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_panel_diag_created ON panel_diag(created_at DESC);
+
+-- Geraete-Bindung fuers MSFS-EFB-Panel: Coherent GT haelt Cookies offenbar nur im Speicher,
+-- weshalb die Anmeldung jeden Sim-Neustart verlor -- fuer den Nutzer unzumutbar. Das
+-- EFB-Paket legt stattdessen eine Zufalls-Geraete-ID in MSFS' plattenpersistentem Speicher
+-- ab (DataStore -> SetStoredData); nach EINER erfolgreichen Forum-Anmeldung wird sie hier an
+-- die CID gebunden und der Panel-Aufruf kann sich damit ausweisen.
+--
+-- WICHTIG: device_id ist ein Zugangsschluessel -- wer ihn hat, ist als dieser Nutzer
+-- angemeldet. Er verlaesst die lokale MSFS-Installation nicht, und jede Bindung ist im
+-- Admin einzeln widerrufbar (bewusste Entscheidung gegen ein Ablaufdatum, damit genau das
+-- Problem "staendig neu anmelden" nicht durch die Hintertuer zurueckkommt).
+CREATE TABLE IF NOT EXISTS panel_devices (
+    device_id    TEXT PRIMARY KEY,
+    cid          INTEGER NOT NULL,
+    name         TEXT,
+    created_at   TEXT NOT NULL,
+    last_seen_at TEXT
+);
 """
 
 
@@ -941,6 +959,72 @@ def list_panel_diag(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
 def clear_panel_diag(conn: sqlite3.Connection) -> None:
     """Alle Diagnose-Datensätze löschen (kein commit) -- für einen sauberen Messlauf."""
     conn.execute("DELETE FROM panel_diag")
+
+
+# ---------------------------------------------------------------------------
+# Geräte-Bindung fürs EFB-Panel (persistente Anmeldung)
+# ---------------------------------------------------------------------------
+
+# Untergrenze für die Geräte-ID. Sie ist ein Zugangsschlüssel, deshalb wird eine zu kurze
+# (und damit ratbare) ID gar nicht erst angenommen -- die ID entsteht im EFB-Paket, also
+# außerhalb unserer Kontrolle, und muss hier geprüft werden.
+PANEL_DEVICE_MIN_LEN = 32
+
+
+def get_panel_device(conn: sqlite3.Connection, device_id: str) -> dict | None:
+    """Gebundenes Gerät nachschlagen; ``None``, wenn unbekannt oder widerrufen."""
+    if not device_id or len(device_id) < PANEL_DEVICE_MIN_LEN:
+        return None
+    row = conn.execute(
+        "SELECT device_id, cid, name, created_at, last_seen_at FROM panel_devices "
+        "WHERE device_id = ?",
+        (device_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def bind_panel_device(conn: sqlite3.Connection, device_id: str, cid: int, name: str | None) -> bool:
+    """Gerät an eine CID binden (kein commit). ``False``, wenn die ID unbrauchbar ist.
+
+    Ist das Gerät bereits gebunden, wird die Bindung aktualisiert -- meldet sich am selben
+    Simulator jemand anderes an, gehört das Gerät danach ihm. Das ist gewollt: Die ID lebt in
+    der lokalen MSFS-Installation, und wer dort einen Forum-Login schafft, sitzt ohnehin am
+    Rechner.
+    """
+    if not device_id or len(device_id) < PANEL_DEVICE_MIN_LEN:
+        return False
+    now = _now_utc()
+    conn.execute(
+        "INSERT INTO panel_devices (device_id, cid, name, created_at, last_seen_at) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(device_id) DO UPDATE SET cid = excluded.cid, name = excluded.name, "
+        "last_seen_at = excluded.last_seen_at",
+        (device_id, int(cid), name, now, now),
+    )
+    return True
+
+
+def touch_panel_device(conn: sqlite3.Connection, device_id: str) -> None:
+    """Letzte Nutzung festhalten (kein commit) -- damit im Admin sichtbar ist, was noch aktiv
+    ist und was gefahrlos widerrufen werden kann."""
+    conn.execute(
+        "UPDATE panel_devices SET last_seen_at = ? WHERE device_id = ?", (_now_utc(), device_id)
+    )
+
+
+def list_panel_devices(conn: sqlite3.Connection) -> list[dict]:
+    """Alle gebundenen Geräte (neueste zuerst) -- für die Admin-Übersicht."""
+    rows = conn.execute(
+        "SELECT device_id, cid, name, created_at, last_seen_at FROM panel_devices "
+        "ORDER BY COALESCE(last_seen_at, created_at) DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def revoke_panel_device(conn: sqlite3.Connection, device_id: str) -> None:
+    """Geräte-Bindung aufheben (kein commit). Das Panel verlangt danach wieder eine
+    Anmeldung."""
+    conn.execute("DELETE FROM panel_devices WHERE device_id = ?", (device_id,))
 
 
 # ---------------------------------------------------------------------------
