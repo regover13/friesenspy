@@ -183,6 +183,78 @@
         return out;
       }
 
+      /**
+       * Laesst sich eine Schrift EINGEBETTET laden, wenn die verlinkte nicht ankommt?
+       *
+       * Messung 13.08.2026 im Panel: `document.fonts` war LEER -- keine einzige @font-face
+       * ist angekommen, alle Familien rendern identisch, kein Zeichen ueber ASCII. Damit ist
+       * "die Schrift richtig ausliefern" als Loesungsweg tot; die Frage ist nur noch, ob die
+       * Engine ueberhaupt eine Schrift annimmt.
+       *
+       * Test: dieselbe Datei, die als <link> nicht ankommt, per fetch holen und als
+       * data:-URI erneut anbieten. Kommt sie SO an, verweigert die Engine nur entfernte
+       * Schriftdateien -- dann gibt es echte Umlaute. Kommt sie auch so nicht an, bleibt nur
+       * das Umschreiben der Umlaute (ae/oe/ue) im Panel.
+       *
+       * Bewusst zur Laufzeit nachgeladen statt in die Seite eingebettet: Die Datei ist 40 kB
+       * und ginge sonst jeden Aufruf mit, auch auf der Website, wo alles laengst funktioniert.
+       */
+      function probeEmbeddedFont() {
+        return new Promise(function (resolve) {
+          var ergebnis = { versucht: true };
+          var timeout = setTimeout(function () {
+            ergebnis.fehler = 'Zeitueberschreitung';
+            resolve(ergebnis);
+          }, 9000);
+
+          window.fetch('/static/fonts/exo2-300-latin.woff2')
+            .then(function (r) { ergebnis.status = r.status; return r.arrayBuffer(); })
+            .then(function (buf) {
+              var bytes = new Uint8Array(buf);
+              ergebnis.bytes = bytes.length;
+              var bin = '';
+              for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+              var b64 = btoa(bin);
+
+              var st = document.createElement('style');
+              st.textContent = '@font-face{font-family:"ProbeEmbedded";font-style:normal;' +
+                'font-weight:300;src:url(data:font/woff2;base64,' + b64 + ') format("woff2");}';
+              document.head.appendChild(st);
+
+              var span = document.createElement('span');
+              span.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;' +
+                'font-size:32px;left:-9999px;top:0;font-family:"ProbeEmbedded";font-weight:300;';
+              document.body.appendChild(span);
+
+              function messen(txt) {
+                span.textContent = txt;
+                return Math.round(span.getBoundingClientRect().width * 100) / 100;
+              }
+              // Der Engine Zeit geben, die eingebettete Schrift zu verarbeiten.
+              setTimeout(function () {
+                clearTimeout(timeout);
+                var tofu = messen('');
+                ergebnis.a = messen('a');
+                ergebnis.ae = messen('ä');
+                ergebnis.aeFehltWeiterhin = Math.abs(ergebnis.ae - tofu) < 0.5;
+                // Aendert sich die Breite gegenueber der Systemschrift, wurde die
+                // eingebettete Schrift tatsaechlich angewandt.
+                span.style.fontFamily = 'sans-serif';
+                ergebnis.aSystem = messen('a');
+                ergebnis.wurdeAngewandt = Math.abs(ergebnis.a - ergebnis.aSystem) > 0.5;
+                try { document.fonts.forEach(function () {}); ergebnis.faceCount = document.fonts.size; } catch (e) {}
+                span.parentNode.removeChild(span);
+                resolve(ergebnis);
+              }, 1500);
+            })
+            .catch(function (e) {
+              clearTimeout(timeout);
+              ergebnis.fehler = String(e);
+              resolve(ergebnis);
+            });
+        });
+      }
+
       function probeCss() {
         var s = (window.CSS && window.CSS.supports)
           ? function (p, v) { try { return window.CSS.supports(p, v); } catch (_) { return null; } }
@@ -269,11 +341,12 @@
 
         // Kacheln sind asynchron -- Bericht lieber vollstaendig etwas spaeter senden als
         // unvollstaendig sofort; bei Zeitueberschreitung trotzdem raus.
-        var fallback = setTimeout(function () { send(base); }, 9000);
+        var fallback = setTimeout(function () { send(base); }, 14000);
         try {
-          probeTiles().then(function (tiles) {
+          Promise.all([probeTiles(), probeEmbeddedFont()]).then(function (r) {
             clearTimeout(fallback);
-            base.tiles = tiles;
+            base.tiles = r[0];
+            base.embeddedFont = r[1];
             send(base);
           }, function () { clearTimeout(fallback); send(base); });
         } catch (_) { clearTimeout(fallback); send(base); }

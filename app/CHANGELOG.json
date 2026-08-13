@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.10.1",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Schrift-Test fuers MSFS-Panel",
+    "items": [
+      "🔤 Im Simulator kommt keine einzige Schriftdatei an — deshalb dort keine Umlaute. Die Selbstdiagnose testet jetzt, ob eine direkt eingebettete Schrift angenommen wird; davon hängt ab, ob echte Umlaute möglich sind oder im Panel umgeschrieben werden müssen."
+    ]
+  },
+  {
     "version": "11.10.0",
     "date": "2026-08-13",
     "highlight": false,
