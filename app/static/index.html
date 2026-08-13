@@ -45,12 +45,6 @@
       border-radius: 0 !important;
     }
 
-    /* Self-gehostete Ersatz-Icons für Emoji/Symbol-Unicode: Coherent GT (MSFS-EFB-Panel) hat
-       keinen Font-Fallback für Nicht-Latin-Glyphen -- Emojis rendern dort als leere Tofu-Boxen
-       (echter Live-Test-Absturz-Fund). Sprite-Defs direkt nach <body>, Verwendung überall via
-       <svg class="icon"><use href="#icon-name"/></svg> statt Emoji. */
-    .icon { width: 1em; height: 1em; vertical-align: -0.125em; display: inline-block; fill: none; }
-
     :root {
       --bg-body:      #04080f;
       --bg-panel:     #071525;
@@ -113,13 +107,9 @@
     /* Kartenbereiche haben feste px-Höhen (580/560/460px), auf die restliche Seite abgestimmt --
        unter der 1.35er VR-Skalierung (s. oben) wachsen die um denselben Faktor mit und werden
        höher als das EFB-Tablet, man muss zum unteren Rand scrollen (Live-Test-Fund 13.08.2026).
-       Viewport-relativ statt fix, damit es sich an die tatsächliche Panel-Höhe anpasst. Startwert,
-       im Sim nachjustierbar -- #track-map-wrap hat die Höhe als Inline-Style, deshalb !important.
+       Viewport-relativ statt fix, damit es sich an die tatsächliche Panel-Höhe anpasst.
        :not(.map-is-fullscreen) ist Pflicht: #map-container ist ein ID-Selektor, schlaegt also
-       .map-is-fullscreen (Klassen-Selektor) trotz dessen eigenem !important -- ohne die
-       Ausnahme blieb die Karte im Vollbild bei 50vh statt 100vh haengen, mit schwarzer Flaeche
-       darunter und dem Vollbild-Verlassen-Button in der Bildschirmmitte statt am unteren Rand
-       (Live-Test-Fund 13.08.2026, selbst verursachte Regression). */
+       .map-is-fullscreen (Klassen-Selektor) trotz dessen eigenem !important. */
     html.vr-panel #map-container:not(.map-is-fullscreen),
     html.vr-panel #events-map-container:not(.map-is-fullscreen),
     html.vr-panel #track-map-wrap:not(.map-is-fullscreen) {
@@ -388,7 +378,7 @@
     .live-table-wrap::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 5px; }
     .live-table-wrap::-webkit-scrollbar-thumb:hover { background: var(--green); }
     /* Mobile-Scroll-Fix: Tabellen wuchsen nie über die Wrapper-Breite hinaus (width:100%
-       ohne min-width) -> der overflow-x:auto-Wrapper hatte nichts zu scrollen, Zellen wurden
+       ohne min-width) → der overflow-x:auto-Wrapper hatte nichts zu scrollen, Zellen wurden
        gequetscht. width:max-content lässt die Tabelle so breit wie ihr Inhalt werden, sodass
        auf schmalen Screens horizontal gescrollt werden kann; min-width:100% füllt sie aus,
        wenn der Inhalt schmaler als der Wrapper ist. */
@@ -492,7 +482,7 @@
     .kutter-feed td.kf-empty { color: var(--text-label); font-style: italic; }
     .kutter-feed td.kf-kg { color: var(--text-bright); text-align: right; }
     .kutter-total { font-family: var(--text-mono); font-size: 0.82rem; color: var(--text-bright); margin-bottom: 4px; }
-    /* Ziel-Überschrift der Kutter-Detailansicht (Events) — Parität zum Live-Banner (Ziel: …).
+    /* Ziel-Überschrift der Kutter-Detailansicht (Events) — Parität zum Live-Banner (🎯 Ziel: …).
        Eigene Klasse, weil .bb-sub nur auf #kutter-banner gescoped ist und hier nicht greift. */
     .kutter-dest { font-family: var(--text-mono); font-weight: 700; font-size: 0.95rem; color: var(--text-bright); margin: 2px 0 10px; }
     .kutter-quip { display:block; font-style: italic; font-weight: 400; color: #9fc9b6; font-size: 0.76rem; margin-top: 2px; white-space: normal; overflow-wrap: anywhere; }
@@ -683,9 +673,8 @@
     }
     /* Zweiter, vom Karten-Wrap unabhaengiger Ausgang aus dem Karten-Vollbild (Live-Test-Fund
        13.08.2026 im MSFS-EFB-Panel: der Button INNERHALB der Karte war weder sicht- noch
-       klickbar, Escape kam nie an -- Nutzer musste den Flug neu laden). Direkt als letztes
-       Element vor </body> eingehaengt, NICHT Nachfahre von #leaflet-map, mit sehr hohem
-       z-index -- unabhaengig davon, welches Stacking-Problem den inneren Button betrifft. */
+       klickbar). Direkt als letztes Element vor </body> eingehaengt, NICHT Nachfahre von
+       #leaflet-map, mit sehr hohem z-index. */
     .global-map-exit-fs {
       position: fixed !important;
       bottom: 16px;
@@ -837,12 +826,6 @@
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 16px;
       align-items: end;
-    }
-
-    .ev-error {
-      font-size: 0.8rem;
-      color: var(--red);
-      margin-top: 6px;
     }
 
     .form-group {
@@ -1542,7 +1525,7 @@
       border: 1px solid var(--green-dim);
       box-shadow: 0 0 14px var(--green-glow);
     }
-    /* display:flex oben überschreibt sonst das UA-[hidden] -> Banner ließe sich nie ausblenden */
+    /* display:flex oben überschreibt sonst das UA-[hidden] → Banner ließe sich nie ausblenden */
     .install-banner[hidden] { display: none !important; }
     .install-banner-icon { font-size: 1.6rem; line-height: 1; flex-shrink: 0; }
     .install-banner-text {
@@ -1697,186 +1680,6 @@
 </head>
 <body>
 
-<!-- Self-gehostete Icon-Sprite (Coherent-GT-Emoji-Ersatz, s. .icon-Klasse im <style>) -->
-<svg style="display:none" aria-hidden="true">
-  <symbol id="icon-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M6 8a6 6 0 0 1 12 0c0 4.5 1.5 6.5 2 7H4c.5-.5 2-2.5 2-7z"/>
-    <path d="M9.5 19a2.5 2.5 0 0 0 5 0"/>
-  </symbol>
-  <symbol id="icon-headset" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M4 14a8 8 0 0 1 16 0"/>
-    <rect x="3" y="14" width="4" height="6" rx="1.5"/>
-    <rect x="17" y="14" width="4" height="6" rx="1.5"/>
-  </symbol>
-  <symbol id="icon-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="3" y="5" width="18" height="16" rx="2"/>
-    <line x1="3" y1="10" x2="21" y2="10"/>
-    <line x1="8" y1="3" x2="8" y2="7"/>
-    <line x1="16" y1="3" x2="16" y2="7"/>
-  </symbol>
-  <symbol id="icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="4" y="11" width="16" height="10" rx="2"/>
-    <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
-  </symbol>
-  <symbol id="icon-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 15V3"/>
-    <path d="M7 8l5-5 5 5"/>
-    <path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>
-  </symbol>
-  <symbol id="icon-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="6" y="2" width="12" height="20" rx="2"/>
-    <line x1="10" y1="19" x2="14" y2="19"/>
-  </symbol>
-  <symbol id="icon-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="6" y1="6" x2="18" y2="18"/>
-    <line x1="18" y1="6" x2="6" y2="18"/>
-  </symbol>
-  <symbol id="icon-sparkle" viewBox="0 0 24 24">
-    <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z" fill="currentColor" stroke="none"/>
-  </symbol>
-  <symbol id="icon-hexagon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 2l8 4.5v11L12 22l-8-4.5v-11z"/>
-  </symbol>
-  <!-- 1:1-Nachbildungen der urspruenglichen Unicode-Dingbats (◈◎▦), nicht generische
-       Ersatz-Icons -- gleiches Prinzip wie icon-hexagon oben fuer ⬡. -->
-  <symbol id="icon-diamond" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 2L22 12L12 22L2 12z"/>
-    <path d="M12 9l3 3-3 3-3-3z" fill="currentColor" stroke="none"/>
-  </symbol>
-  <symbol id="icon-bullseye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="9"/>
-    <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
-  </symbol>
-  <symbol id="icon-crosshatch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="3" y="3" width="18" height="18"/>
-    <line x1="3" y1="9" x2="21" y2="9"/>
-    <line x1="3" y1="15" x2="21" y2="15"/>
-    <line x1="9" y1="3" x2="9" y2="21"/>
-    <line x1="15" y1="3" x2="15" y2="21"/>
-  </symbol>
-  <!-- Feste Goldfarbe (#c8933a) statt currentColor -- derselbe Farbton, der im Kutter-Kontext
-       bereits für Fracht/Balken verwendet wird (.kl-cap, .kutter-seg-Gradient), damit der Anker
-       eine eigene Identität behält statt im einfarbigen Blau der übrigen Icons unterzugehen. -->
-  <symbol id="icon-anchor" viewBox="0 0 24 24" fill="none" stroke="#c8933a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="5" r="2"/>
-    <line x1="12" y1="7" x2="12" y2="21"/>
-    <path d="M5 12a7 7 0 0 0 7 9 7 7 0 0 0 7-9"/>
-    <line x1="4" y1="12" x2="8" y2="12"/>
-    <line x1="16" y1="12" x2="20" y2="12"/>
-  </symbol>
-  <symbol id="icon-fullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M8 3H4a1 1 0 0 0-1 1v4"/>
-    <path d="M16 3h4a1 1 0 0 1 1 1v4"/>
-    <path d="M3 16v4a1 1 0 0 0 1 1h4"/>
-    <path d="M21 16v4a1 1 0 0 1-1 1h-4"/>
-  </symbol>
-  <symbol id="icon-checkered-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="5" y1="21" x2="5" y2="3"/>
-    <rect x="5" y="4" width="13" height="8"/>
-    <rect x="5" y="4" width="3.25" height="4" fill="currentColor" stroke="none"/>
-    <rect x="11.5" y="4" width="3.25" height="4" fill="currentColor" stroke="none"/>
-    <rect x="8.25" y="8" width="3.25" height="4" fill="currentColor" stroke="none"/>
-    <rect x="14.75" y="8" width="3.25" height="4" fill="currentColor" stroke="none"/>
-  </symbol>
-  <symbol id="icon-package" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M3 7l9-4 9 4-9 4-9-4z"/>
-    <path d="M3 7v10l9 4 9-4V7"/>
-    <line x1="12" y1="11" x2="12" y2="21"/>
-    <line x1="7.5" y1="4.5" x2="16.5" y2="9.5"/>
-  </symbol>
-  <symbol id="icon-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.6 6.8L12 17l-6.2 3.4 1.6-6.8L2.2 9l6.9-.7z"/>
-  </symbol>
-  <symbol id="icon-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/>
-    <line x1="9" y1="4" x2="9" y2="18"/>
-    <line x1="15" y1="6" x2="15" y2="20"/>
-  </symbol>
-  <symbol id="icon-trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M7 4h10v4a5 5 0 0 1-10 0z"/>
-    <path d="M7 5H4a3 3 0 0 0 3 5"/>
-    <path d="M17 5h3a3 3 0 0 1-3 5"/>
-    <line x1="12" y1="13" x2="12" y2="17"/>
-    <line x1="8" y1="21" x2="16" y2="21"/>
-    <line x1="8" y1="21" x2="12" y2="17"/>
-    <line x1="16" y1="21" x2="12" y2="17"/>
-  </symbol>
-  <symbol id="icon-medal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="15" r="6"/>
-    <path d="M9 2h6l2 7-5 3-5-3z"/>
-  </symbol>
-  <symbol id="icon-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="8" y="2" width="8" height="4" rx="1"/>
-    <path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"/>
-    <line x1="8" y1="12" x2="16" y2="12"/>
-    <line x1="8" y1="16" x2="13" y2="16"/>
-  </symbol>
-  <symbol id="icon-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M2 12c1.6-2.2 3.4-2.2 5 0s3.4 2.2 5 0 3.4-2.2 5 0 3.4 2.2 5 0"/>
-    <path d="M2 17c1.6-2.2 3.4-2.2 5 0s3.4 2.2 5 0 3.4-2.2 5 0 3.4 2.2 5 0"/>
-  </symbol>
-  <symbol id="icon-flag-pirate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="5" y1="21" x2="5" y2="3"/>
-    <path d="M5 4h14l-3 4 3 4H5z"/>
-    <line x1="8" y1="5.5" x2="13" y2="10.5"/>
-    <line x1="13" y1="5.5" x2="8" y2="10.5"/>
-  </symbol>
-  <symbol id="icon-skull" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 3a7 7 0 0 0-7 7v3l-1 3h4l1 3h6l1-3h4l-1-3v-3a7 7 0 0 0-7-7z"/>
-    <circle cx="9" cy="11" r="1.3" fill="currentColor" stroke="none"/>
-    <circle cx="15" cy="11" r="1.3" fill="currentColor" stroke="none"/>
-  </symbol>
-  <symbol id="icon-plane" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-    <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2.5 1.5V22l4-1 4 1v-1.5L13 19v-5.5z"/>
-  </symbol>
-  <symbol id="icon-plane-departure" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="2" y1="21" x2="22" y2="21"/>
-    <path d="M20 15l-7-4V4.5a1 1 0 0 0-2 0V11l-7 4v1.5l7-2V19l-2 1v1.3l3-.8 3 .8V20l-2-1v-4.5l7 2z" fill="currentColor" stroke="none"/>
-  </symbol>
-  <symbol id="icon-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="9"/>
-    <circle cx="12" cy="12" r="5"/>
-    <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/>
-  </symbol>
-  <symbol id="icon-message" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M4 4h16v12H8l-4 4z"/>
-  </symbol>
-  <symbol id="icon-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="9"/>
-    <path d="M8 12l3 3 5-6"/>
-  </symbol>
-  <symbol id="icon-shuffle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M4 6h3l9 12h4"/>
-    <path d="M4 18h3l3-4"/>
-    <path d="M14 6h6"/>
-    <path d="M17 3l3 3-3 3"/>
-    <path d="M17 15l3 3-3 3"/>
-  </symbol>
-  <symbol id="icon-sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M8 3v14"/>
-    <path d="M5 14l3 3 3-3"/>
-    <path d="M16 21V7"/>
-    <path d="M13 10l3-3 3 3"/>
-  </symbol>
-  <symbol id="icon-return" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M19 5v6a3 3 0 0 1-3 3H6"/>
-    <path d="M10 10l-4 4 4 4"/>
-  </symbol>
-  <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M20 12a8 8 0 1 1-3-6.2"/>
-    <path d="M20 3v5h-5"/>
-  </symbol>
-  <symbol id="icon-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="19" y1="12" x2="5" y2="12"/>
-    <path d="M11 6l-6 6 6 6"/>
-  </symbol>
-  <symbol id="icon-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 3l10 18H2z"/>
-    <line x1="12" y1="9" x2="12" y2="14"/>
-    <circle cx="12" cy="17.3" r="0.9" fill="currentColor" stroke="none"/>
-  </symbol>
-</svg>
-
 <!-- Scan line overlay -->
 <div class="scanline"></div>
 
@@ -1887,14 +1690,14 @@
        ===================================================================== -->
   <header>
     <div class="logo">
-      <span class="logo-prefix"><svg class="icon"><use href="#icon-diamond"/></svg></span>FRIESENSPY
+      <span class="logo-prefix">◈</span>FRIESENSPY
     </div>
     <div class="header-right">
       <span id="userBox" hidden style="display:inline-flex;gap:8px;align-items:center;font-size:.8rem;">
         <span id="userName" style="color:#fff;font-family:ui-monospace,monospace;"></span>
       </span>
       <a href="https://github.com/regover13/friesenspy#readme" target="_blank" rel="noopener" class="help-btn" title="Hilfe &amp; Dokumentation (GitHub)">? HILFE</a>
-      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><svg class="icon"><use href="#icon-bell"/></svg></button>
+      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden>🔔</button>
       <div id="sse-badge" class="sse-badge disconnected">
         <div class="sse-dot"></div>
         <span class="sse-label" id="sse-label">GETRENNT</span>
@@ -1915,10 +1718,10 @@
         <input type="checkbox" id="notif-prefiles" checked> Auch bei eingereichten Flugplänen
       </label>
       <label class="notif-toggle-row" style="margin-top:8px;">
-        <input type="checkbox" id="notif-ts"> <svg class="icon"><use href="#icon-headset"/></svg> Bei TeamSpeak-Beitritt benachrichtigen
+        <input type="checkbox" id="notif-ts"> 🎧 Bei TeamSpeak-Beitritt benachrichtigen
       </label>
       <label class="notif-toggle-row" style="margin-top:8px;">
-        <input type="checkbox" id="notif-events"> <svg class="icon"><use href="#icon-calendar"/></svg> Events (Erinnerung ~1 h vorher + Bummel-Start/Ergebnis)
+        <input type="checkbox" id="notif-events"> 📅 Events (Erinnerung ~1 h vorher + Bummel-Start/Ergebnis)
       </label>
       <div class="notif-filter-title" style="margin-top:12px;">Benachrichtigen wenn (gilt für Online, Flugplan &amp; TeamSpeak):</div>
       <div class="notif-radio-row">
@@ -1931,7 +1734,7 @@
     <div id="visibility-section" hidden
          style="border-top:1px solid rgba(45,156,219,0.2); margin-top:14px; padding-top:10px;">
       <a href="#" id="visibility-toggle"
-         style="color:var(--green); cursor:pointer; text-decoration:none; font-size:0.82rem; font-weight:500;"><svg class="icon"><use href="#icon-lock"/></svg> Wer darf über mich benachrichtigt werden? <span id="visibility-caret">›</span></a>
+         style="color:var(--green); cursor:pointer; text-decoration:none; font-size:0.82rem; font-weight:500;">🔒 Wer darf über mich benachrichtigt werden? <span id="visibility-caret">›</span></a>
       <div id="visibility-body" class="notif-filter-section" hidden style="margin-top:10px;">
         <div class="notif-radio-row">
           <label><input type="radio" name="visibility-mode" value="everyone" checked> Alle</label>
@@ -1953,7 +1756,7 @@
     </div>
     <div id="notif-ios-hint" class="notif-hint" hidden>
       Für Benachrichtigungen auf dem iPhone:<br>
-      Tippe auf <strong><svg class="icon"><use href="#icon-share"/></svg></strong> - <strong>Zum Home-Bildschirm</strong>
+      Tippe auf <strong>⬆</strong> → <strong>Zum Home-Bildschirm</strong>
     </div>
     <div id="notif-blocked-hint" class="notif-hint" hidden>
       Benachrichtigungen blockiert.<br>Bitte in den Browser-Einstellungen erlauben.
@@ -1966,36 +1769,36 @@
        PWA INSTALL BANNER
        ===================================================================== -->
   <div id="install-banner" class="install-banner" hidden>
-    <span class="install-banner-icon"><svg class="icon"><use href="#icon-phone"/></svg></span>
+    <span class="install-banner-icon">📲</span>
     <div class="install-banner-text">
       <strong>FriesenSpy als App installieren</strong>
       <span id="install-banner-sub">Schneller Zugriff vom Startbildschirm – mit Benachrichtigungen.</span>
     </div>
     <button id="install-banner-btn" class="install-banner-btn">Installieren</button>
-    <button id="install-banner-close" class="install-banner-close" title="Ausblenden"><svg class="icon"><use href="#icon-x"/></svg></button>
+    <button id="install-banner-close" class="install-banner-close" title="Ausblenden">✕</button>
   </div>
 
   <!-- =====================================================================
        CHANGELOG BANNER (Neuerungen dieser Version)
        ===================================================================== -->
   <div id="changelog-banner" class="install-banner changelog-banner" hidden>
-    <span class="install-banner-icon"><svg class="icon"><use href="#icon-sparkle"/></svg></span>
+    <span class="install-banner-icon">✨</span>
     <div class="install-banner-text">
       <strong id="changelog-banner-title">Neu</strong>
       <span id="changelog-banner-sub"></span>
     </div>
     <button id="changelog-banner-more" class="install-banner-btn">Verlauf</button>
-    <button id="changelog-banner-close" class="install-banner-close" title="Ausblenden"><svg class="icon"><use href="#icon-x"/></svg></button>
+    <button id="changelog-banner-close" class="install-banner-close" title="Ausblenden">✕</button>
   </div>
 
   <!-- =====================================================================
        TAB NAVIGATION
        ===================================================================== -->
   <nav class="tab-nav">
-    <button class="tab-btn active" data-tab="live"><svg class="icon"><use href="#icon-hexagon"/></svg> LIVE</button>
-    <button class="tab-btn" data-tab="karte"><svg class="icon"><use href="#icon-bullseye"/></svg> KARTE</button>
-    <button class="tab-btn" data-tab="statistiken"><svg class="icon"><use href="#icon-crosshatch"/></svg> STATISTIKEN</button>
-    <button class="tab-btn" data-tab="events"><svg class="icon"><use href="#icon-diamond"/></svg> EVENTS</button>
+    <button class="tab-btn active" data-tab="live">⬡ LIVE</button>
+    <button class="tab-btn" data-tab="karte">◎ KARTE</button>
+    <button class="tab-btn" data-tab="statistiken">▦ STATISTIKEN</button>
+    <button class="tab-btn" data-tab="events">◈ EVENTS</button>
   </nav>
 
   <!-- =====================================================================
@@ -2027,7 +1830,7 @@
       </div>
     </div>
     <div id="ts-panel" class="panel" style="margin-top:16px;" hidden>
-      <div class="panel-title" id="ts-panel-title"><svg class="icon"><use href="#icon-headset"/></svg> Im TeamSpeak</div>
+      <div class="panel-title" id="ts-panel-title">🎧 Im TeamSpeak</div>
       <div id="ts-content"></div>
     </div>
   </div>
@@ -2038,12 +1841,12 @@
   <div id="tab-karte" class="tab-panel">
     <div id="map-container">
       <div id="leaflet-map"></div>
-      <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('map-container', this, () => liveMap)"><svg class="icon"><use href="#icon-fullscreen"/></svg> Vollbild</button>
+      <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('map-container', this, () => liveMap)">⛶ Vollbild</button>
     </div>
     <div class="panel" style="margin-top:16px;">
       <div class="panel-title">Karten-Legende</div>
       <span class="mono text-green" style="font-size:0.8rem;">
-        <svg class="icon"><use href="#icon-diamond"/></svg> Flugzeug-Marker rotieren mit dem aktuellen Heading · Klick für Details
+        ◈ Flugzeug-Marker rotieren mit dem aktuellen Heading · Klick für Details
       </span>
     </div>
   </div>
@@ -2092,7 +1895,7 @@
     <div id="bummel-results" class="hidden">
       <div class="panel">
         <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <span id="bummel-title"><svg class="icon"><use href="#icon-checkered-flag"/></svg> FriesenFliegerBummel</span>
+          <span id="bummel-title">🏁 FriesenFliegerBummel</span>
           <button class="btn-share" onclick="copyBummelShareHeader(this)">⎘ Teilen</button>
         </div>
         <div id="bummel-content"></div>
@@ -2102,7 +1905,7 @@
     <div id="kutter-results" class="hidden">
       <div class="panel">
         <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <span id="kutter-title"><svg class="icon"><use href="#icon-anchor"/></svg> FriesenKutter</span>
+          <span id="kutter-title">🦐 FriesenKutter</span>
           <button class="btn-share" onclick="copyKutterShareHeader(this)">⎘ Teilen</button>
         </div>
         <div id="kutter-content"></div>
@@ -2140,17 +1943,16 @@
       <div style="font-size:0.75rem;color:var(--text-dim);margin-top:2px;">
         Nur die letzten 365 Tage sind durchsuchbar.
       </div>
-      <div id="ev-error" class="ev-error" hidden></div>
     </div>
 
     <div id="events-results" class="hidden">
       <div id="events-map-container" style="position:relative;">
         <div id="events-leaflet-map"></div>
-        <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('events-map-container', this, () => eventsMap)"><svg class="icon"><use href="#icon-fullscreen"/></svg> Vollbild</button>
+        <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('events-map-container', this, () => eventsMap)">⛶ Vollbild</button>
         <button id="ev-reset-btn" class="hidden"
           onclick="resetEventFlights()"
           style="position:absolute;top:10px;right:10px;z-index:1000;background:var(--bg-panel);border:1px solid var(--green-dim);color:var(--text-bright);font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.08em;padding:6px 12px;cursor:pointer;">
-          <svg class="icon"><use href="#icon-refresh"/></svg> Alle Tracks
+          ↺ Alle Tracks
         </button>
       </div>
       <div class="panel">
@@ -2174,7 +1976,7 @@
       <span class="fp-callsign-title" id="fp-callsign-title">—</span>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
-        <button class="fp-close-btn" onclick="closeFpModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+        <button class="fp-close-btn" onclick="closeFpModal()">✕</button>
       </div>
     </div>
     <div class="fp-section">
@@ -2212,12 +2014,12 @@
       <span class="fp-callsign-title" id="track-modal-title">—</span>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
-        <button class="fp-close-btn" onclick="closeTrackModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+        <button class="fp-close-btn" onclick="closeTrackModal()">✕</button>
       </div>
     </div>
     <div id="track-map-wrap" style="height:460px;position:relative;">
       <div id="track-leaflet-map" style="width:100%;height:100%;"></div>
-      <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('track-map-wrap', this, () => trackMap)"><svg class="icon"><use href="#icon-fullscreen"/></svg> Vollbild</button>
+      <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('track-map-wrap', this, () => trackMap)">⛶ Vollbild</button>
     </div>
     <div class="fp-section" style="padding:10px 20px;">
       <div id="track-modal-info" class="text-label" style="font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.1em;"></div>
@@ -2232,7 +2034,7 @@
       <span class="fp-callsign-title" id="fld-callsign">—</span>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
-        <button class="fp-close-btn" onclick="closeFldModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+        <button class="fp-close-btn" onclick="closeFldModal()">✕</button>
       </div>
     </div>
     <div class="fp-section">
@@ -2259,7 +2061,7 @@
     <div class="fp-modal-header">
       <span class="fp-callsign-title">Versionsverlauf</span>
       <button class="btn-share" style="margin-left:auto; margin-right:12px;" onclick="copyChangelogShareUrl(this)">⎘ Teilen</button>
-      <button class="fp-close-btn" onclick="closeChangelogModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+      <button class="fp-close-btn" onclick="closeChangelogModal()">✕</button>
     </div>
     <div class="fp-section" id="changelog-modal-body"></div>
   </div>
@@ -2271,7 +2073,7 @@
     <div class="fp-modal-header">
       <span class="fp-callsign-title">Alle Muster</span>
       <button class="btn-share" style="margin-left:auto; margin-right:12px;" onclick="copyTypesShareUrl(this)">⎘ Teilen</button>
-      <button class="fp-close-btn" onclick="closeTypesModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+      <button class="fp-close-btn" onclick="closeTypesModal()">✕</button>
     </div>
     <div class="fp-section">
       <div class="stats-controls" style="margin-bottom:0;">
@@ -2332,8 +2134,8 @@ const TILE_ATTR = TILE_DARK_ATTR;
 const OFM_NATIVE_MAX_ZOOM = 11; // OFM hat native Tiles bis Zoom 11; ab Zoom 13 Auto-Switch zu Satellit
 
 // Leaflets eingebauter Zoom-Control benutzt für den "−"-Button ein echtes Unicode-Minuszeichen
-// (U+2212, nicht der normale Bindestrich) -- Bibliothekscode, nicht unser eigener Icon-Umbau,
-// deshalb hier separat auf ASCII "-" gepatcht (Live-Test-Fund 13.08.2026 im MSFS-EFB-Panel).
+// (U+2212, nicht der normale Bindestrich) -- Bibliothekscode, deshalb hier separat auf ASCII "-"
+// gepatcht (Live-Test-Fund 13.08.2026 im MSFS-EFB-Panel).
 function _fixLeafletZoomMinus(map) {
   const btn = map.getContainer().querySelector('.leaflet-control-zoom-out');
   if (btn) btn.textContent = '-';
@@ -2381,15 +2183,15 @@ function _addPreferredAIPLayer(map, aipLayer) {
 // Manuell zu OFM zurückwechseln reaktiviert den Auto-Switch.
 // Manuell zu einem anderen Layer wechseln deaktiviert ihn.
 function _setupOFMAutoSwitch(map, layers) {
-  const SWITCH_HIGH = 12; // > 12 -> Satellit (OFM tiles blank)
-  const SWITCH_LOW  = 7;  // < 7  -> Satellit (OFM tiles sparse)
+  const SWITCH_HIGH = 12; // > 12 → Satellit (OFM tiles blank)
+  const SWITCH_LOW  = 7;  // < 7  → Satellit (OFM tiles sparse)
   let autoMode = (_loadLayerPref() || 'ofm') === 'ofm';
   let autoSwitching = false; // verhindert dass eigene Wechsel autoMode deaktivieren
   map.on('baselayerchange', (e) => {
     if (autoSwitching) return;
     const key = Object.keys(layers).find(k => layers[k] === e.layer);
     if (key) _saveLayerPref(key);
-    // Manuell zurück zu OFM -> Auto-Switch wieder einschalten
+    // Manuell zurück zu OFM → Auto-Switch wieder einschalten
     autoMode = (e.layer === layers.ofm);
   });
   function applyAuto() {
@@ -2443,7 +2245,7 @@ function _showInstallBanner(mode) {  // mode: 'prompt' (Chromium) | 'ios'
   const sub = document.getElementById('install-banner-sub');
   const btn = document.getElementById('install-banner-btn');
   if (mode === 'ios') {
-    if (sub) sub.textContent = 'Zum Installieren: unten auf Teilen tippen - „Zum Home-Bildschirm".';
+    if (sub) sub.textContent = 'Zum Installieren: unten auf Teilen ⬆ tippen → „Zum Home-Bildschirm".';
     if (btn) btn.hidden = true;          // iOS bietet keinen programmatischen Install-Dialog
   } else if (btn) {
     btn.hidden = false;
@@ -2459,7 +2261,7 @@ function _maybeShowInstallBanner() {
   const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
   const isIOSSafari = isIOS && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
   if (isIOSSafari) _showInstallBanner('ios');
-  // Chromium ohne Event: noch nicht installierbar -> auf beforeinstallprompt warten
+  // Chromium ohne Event: noch nicht installierbar → auf beforeinstallprompt warten
 }
 
 window.addEventListener('beforeinstallprompt', e => {
@@ -2665,7 +2467,7 @@ async function _saveNotifFilter() {
   });
   const saveBtn = document.getElementById('notif-save-btn');
   if (saveBtn) {
-    saveBtn.textContent = 'Gespeichert';
+    saveBtn.textContent = '✓ Gespeichert';
     setTimeout(() => { saveBtn.textContent = 'Speichern'; }, 2000);
   }
 }
@@ -2775,7 +2577,7 @@ function saveVisibility() {
   }).then(r => {
     if (!btn) return;
     const t = btn.textContent;
-    btn.textContent = r.ok ? 'Gespeichert' : 'Fehler';
+    btn.textContent = r.ok ? '✓ Gespeichert' : 'Fehler';
     setTimeout(() => { btn.textContent = t; }, 1500);
   }).catch(() => {});
 }
@@ -2787,7 +2589,7 @@ function _claimPushOwnership() {
     method: 'POST', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ endpoint: _pushSubscription.endpoint }),
-  }).then(r => { if (!r.ok) _pushOwnershipClaimed = false; })   // HTTP-Fehler -> nächster Tick erneut
+  }).then(r => { if (!r.ok) _pushOwnershipClaimed = false; })   // HTTP-Fehler → nächster Tick erneut
     .catch(() => { _pushOwnershipClaimed = false; });
 }
 
@@ -2942,7 +2744,7 @@ function _maybeShowChangelogBanner() {
   if (_bannerVersion == null) return;  // Admin hat den Banner ausgeschaltet
   let seen = '';
   try { seen = localStorage.getItem(CHANGELOG_SEEN_KEY) || ''; } catch (_) {}
-  if (seen === _bannerVersion) return;  // dieses Banner schon gesehen -> nicht erneut zeigen
+  if (seen === _bannerVersion) return;  // dieses Banner schon gesehen → nicht erneut zeigen
   // Server bestimmt, welcher Eintrag als Banner gilt (Admin-Auswahl / neuestes Highlight)
   const entry = _changelog.find(e => e.version === _bannerVersion) || _changelog[0];
   const banner = document.getElementById('changelog-banner');
@@ -2969,14 +2771,14 @@ function openChangelogModal() {
           <span class="changelog-entry-ver">v${escHtml(e.version)}</span>
           <span class="changelog-entry-date">${escHtml(_fmtChangelogDate(e.date))}</span>
           <span class="changelog-entry-title">${escHtml(e.title || '')}</span>
-          ${e.highlight ? '<span class="changelog-major-badge">' + icon('star') + ' Großes Update</span>' : ''}
+          ${e.highlight ? '<span class="changelog-major-badge">★ Großes Update</span>' : ''}
         </div>
         <ul>${(e.items || []).map(it => `<li>${escHtml(it)}</li>`).join('')}</ul>
       </div>`).join('');
   }
   document.getElementById('changelog-modal').classList.remove('hidden');
   document.addEventListener('keydown', _changelogEscHandler);
-  _markChangelogSeen();  // Verlauf gesehen -> Banner künftig nicht mehr anzeigen
+  _markChangelogSeen();  // Verlauf gesehen → Banner künftig nicht mehr anzeigen
 }
 
 function closeChangelogModal() {
@@ -3100,7 +2902,7 @@ function fmtOnlineTime(logonIso) {
 function fmtRoute(dep, arr) {
   const d = (dep || '').toUpperCase() || '—';
   const a = (arr || '').toUpperCase() || '—';
-  return d + ' - ' + a;
+  return d + ' → ' + a;
 }
 
 // Karten-Link (amtliche DFS-AIP-VFR für Deutschland, sonst ChartFox-Fallback für bekannte
@@ -3114,7 +2916,7 @@ function airportLinkIcon(icao) {
   const url = _airportLinks[String(icao).toUpperCase()];
   if (!url) return '';
   return ' <a href="' + escHtml(url) + '" target="_blank" rel="noopener" class="airport-link-icon" '
-    + 'title="Flugplatz-Karte" onclick="event.stopPropagation()">' + icon('map') + '</a>';
+    + 'title="Flugplatz-Karte" onclick="event.stopPropagation()">🗺️</a>';
 }
 
 // HTML-sichere Variante von fmtRoute() inkl. Karten-Link-Icons je Seite — für Stellen, die das
@@ -3122,7 +2924,7 @@ function airportLinkIcon(icao) {
 function fmtRouteHtml(dep, arr) {
   const d = (dep || '').toUpperCase();
   const a = (arr || '').toUpperCase();
-  return (d ? escHtml(d) + airportLinkIcon(d) : '—') + ' - ' + (a ? escHtml(a) + airportLinkIcon(a) : '—');
+  return (d ? escHtml(d) + airportLinkIcon(d) : '—') + ' → ' + (a ? escHtml(a) + airportLinkIcon(a) : '—');
 }
 
 // ==========================================================================
@@ -3207,12 +3009,6 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-// Self-gehostetes SVG-Icon (Sprite-Defs direkt nach <body>) statt Emoji -- Coherent GT
-// (MSFS-EFB-Panel) hat keinen Font-Fallback für Nicht-Latin-Glyphen.
-function icon(name) {
-  return '<svg class="icon"><use href="#icon-' + name + '"/></svg>';
 }
 
 // ==========================================================================
@@ -3389,7 +3185,7 @@ function renderPrefiles(data) {
   let html = '<div class="live-table-wrap"><table><thead><tr><th>Callsign</th><th>Pilot</th><th>Flugplan</th><th>Abflug (geplant)</th><th></th></tr></thead><tbody>';
   data.forEach((p, i) => {
     const route = p.departure && p.arrival
-      ? `${escHtml(p.departure)} - ${escHtml(p.arrival)}`
+      ? `${escHtml(p.departure)} → ${escHtml(p.arrival)}`
       : '—';
     const dofMatch = (p.remarks || '').match(/DOF\/(\d{2})(\d{2})(\d{2})/);
     const dateStr = dofMatch ? `${dofMatch[3]}.${dofMatch[2]}.20${dofMatch[1]}, ` : '';
@@ -3442,7 +3238,7 @@ async function showPrefileRoute(dep, arr) {
       [[a1.lat, a1.lon], [a2.lat, a2.lon]],
       { color: '#f0a500', weight: 2, dashArray: '6 4', opacity: 0.8 }
     ).addTo(liveMap);
-    _prefileRouteLine.bindTooltip(`${dep} - ${arr}`, { permanent: false }).openTooltip();
+    _prefileRouteLine.bindTooltip(`${dep} → ${arr}`, { permanent: false }).openTooltip();
     liveMap.fitBounds(_prefileRouteLine.getBounds(), { padding: [40, 40] });
   } catch (e) { /* silent */ }
 }
@@ -3468,12 +3264,12 @@ function renderTeamspeak(data) {
   const container = document.getElementById('ts-content');
   if (!panel || !container) return;
 
-  // TS-Überwachung nicht aktiv -> Panel komplett ausblenden
+  // TS-Überwachung nicht aktiv → Panel komplett ausblenden
   if (!data || !data.enabled) { panel.hidden = true; return; }
   panel.hidden = false;
 
   const users = data.users || [];
-  title.innerHTML = icon('headset') + ` Im TeamSpeak <span class="ts-count">${users.length}</span>`;
+  title.innerHTML = `🎧 Im TeamSpeak <span class="ts-count">${users.length}</span>`;
 
   if (users.length === 0) {
     container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Niemand im TeamSpeak</div></div>';
@@ -3570,8 +3366,8 @@ function renderFriesenEvents(data) {
   }
   let html = '<div class="live-table-wrap" style="max-height:200px;overflow-y:auto;"><table><thead><tr><th>Event</th><th>Beginn (UTC)</th><th>ICAO</th></tr></thead><tbody>';
   data.forEach((ev, i) => {
-    const badge = ev.is_bummel ? '<span class="bummel-badge">' + icon('checkered-flag') + ' BUMMEL</span>'
-      : ev.is_transport ? '<span class="bummel-badge">' + icon('anchor') + ' KUTTER</span>' : '';
+    const badge = ev.is_bummel ? '<span class="bummel-badge">🏁 BUMMEL</span>'
+      : ev.is_transport ? '<span class="bummel-badge">🦐 KUTTER</span>' : '';
     const manuelHint = ev._manual ? ' <span class="text-label" style="font-size:0.8em;">(manuell)</span>' : '';
     // Kutter: kein Routen-Kettentext (irreführend, s. #12) — nur das Ziel, wohin die Fracht soll.
     // Fallback (Kalender-Events ohne destination): letzter ICAO der Route = Default-Ziel.
@@ -3582,7 +3378,7 @@ function renderFriesenEvents(data) {
         || '';
       icaoCell = dest ? 'Ziel: ' + dest : '—';
     } else if (ev.is_bummel && ev.route) {
-      icaoCell = ev.route.replace(/,/g, ' - ');
+      icaoCell = ev.route.replace(/,/g, ' → ');
     } else {
       icaoCell = ev.location || '—';
     }
@@ -3614,7 +3410,7 @@ function _prefillEventForm(ev) {
     document.getElementById('ev-end').value = ev.dtend.slice(0, 16);
   }
   // Volle Strecke suchen (alle ICAOs), nicht nur den ersten Code: deckt Mehr-Flugplatz-Events
-  // ab und ist robust gegen unauflösbare Codes wie FIR-Kürzel (z. B. EDWW -> keine Koordinaten).
+  // ab und ist robust gegen unauflösbare Codes wie FIR-Kürzel (z. B. EDWW → keine Koordinaten).
   document.getElementById('ev-icao').value = ev.route || ev.location || 'global';
   document.getElementById('events-results').classList.add('hidden');
   document.getElementById('bummel-results').classList.add('hidden');
@@ -3650,12 +3446,12 @@ async function openBummel(ev) {
   wrap.classList.remove('hidden');
   // Bummel-View in den Sichtbereich holen (sonst scrollt searchEvents() unten zur Karte vorbei).
   wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  title.innerHTML = icon('checkered-flag') + ' ' + escHtml(ev.summary || 'FriesenFliegerBummel');
+  title.textContent = `🏁 ${ev.summary || 'FriesenFliegerBummel'}`;
   content.innerHTML = '<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade…</div>';
   _activeBummel = null;
   document.getElementById('events-results').classList.add('hidden');
   try {
-    // Kalendertermin -> persistentes Rennen mappen (über _raceId für manuelle Events, sonst calendar_uid)
+    // Kalendertermin → persistentes Rennen mappen (über _raceId für manuelle Events, sonst calendar_uid)
     const races = await (await fetch('/api/bummel/races')).json();
     const race = ev._raceId ? { id: ev._raceId } : (races || []).find(r => r.calendar_uid === ev.uid);
     if (!race) {
@@ -3691,7 +3487,7 @@ async function openBummel(ev) {
 
 // Verdeckte Teilnahme-Ansicht (vor Enthüllung) — bewusst OHNE Zeiten/Schnitt/Ranking.
 function renderBummelParticipants(view) {
-  const route = (view.route || []).join(' - ');
+  const route = (view.route || []).join(' → ');
   // scheduled = Start liegt noch in der Zukunft; NICHT als „läuft" beschriften (sonst wirkt ein
   // geplantes Rennen wie ein bereits gestartetes — Fund 21.07.). waiting = beendet, Nachzügler.
   const startTxt = view.dtstart ? `${view.dtstart.slice(8,10)}.${view.dtstart.slice(5,7)}. ${view.dtstart.slice(11,16)}z` : '';
@@ -3700,10 +3496,10 @@ function renderBummelParticipants(view) {
     lockIcon = '⏳';
     statusText = `Rennen noch nicht gestartet${startTxt ? ' — geplanter Start ' + startTxt : ''}. Ergebnisse erscheinen erst nach Renn-Ende.`;
   } else if (view.status === 'waiting') {
-    lockIcon = icon('lock');
+    lockIcon = '🔒';
     statusText = 'Rennen beendet — warten auf Nachzügler. Ergebnisse erscheinen, sobald alle gelandet (oder offline) sind.';
   } else {
-    lockIcon = icon('lock');
+    lockIcon = '🔒';
     statusText = 'Rennen läuft — Ergebnisse und Ranking erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann.';
   }
   const partLine = view.status === 'scheduled'
@@ -3718,7 +3514,7 @@ function renderBummelParticipants(view) {
     parts.forEach(p => {
       const total = (p.visited || []).length + (p.missing || []).length;
       const miss = (p.missing || []).length ? ` <span class="bi-missing">(fehlt ${escHtml((p.missing || []).join(', '))})</span>` : '';
-      const st = p.in_progress ? icon('plane-departure') + ' unterwegs' : ((p.missing || []).length ? 'unvollständig' : 'alle Etappen');
+      const st = p.in_progress ? '🛫 unterwegs' : ((p.missing || []).length ? 'unvollständig' : '✓ alle Etappen');
       html += `<tr>
         <td>${escHtml(p.name || ('CID ' + p.cid))}</td>
         <td class="mono text-label">${escHtml(p.cid)}</td>
@@ -3737,9 +3533,9 @@ function renderBummelParticipants(view) {
   const known = new Set(parts.map(p => p.cid));
   const flying = (view.in_progress || []).filter(p => !known.has(p.cid));
   if (flying.length) {
-    html += '<div class="bummel-incomplete"><strong>' + icon('plane-departure') + ' Gerade unterwegs:</strong><br>';
+    html += '<div class="bummel-incomplete"><strong>🛫 Gerade unterwegs:</strong><br>';
     html += flying.map(p =>
-      `${escHtml(p.name || p.callsign || ('CID ' + p.cid))} — ${escHtml(p.departure)} - ${escHtml(p.arrival) || 'in der Luft'}`
+      `${escHtml(p.name || p.callsign || ('CID ' + p.cid))} — ${escHtml(p.departure)} → ${escHtml(p.arrival) || 'in der Luft'}`
     ).join('<br>');
     html += '</div>';
   }
@@ -3752,65 +3548,65 @@ function _bummelStandingBadge(cid) {
   const s = _activeBummel.byCid.get(cid);
   if (!s) return '';
   if (s.complete) {
-    const medal = s.rank === 1 ? icon('trophy') + ' ' : '';
+    const medal = s.rank === 1 ? '🏆 ' : '';
     const abst = _fmtSignedDelta(s.delta_sec);
-    return `<span class="bummel-badge" title="Bummel-Wertung">${icon('checkered-flag')} ${medal}Platz ${s.rank} · ${_fmtMin(s.total_min)} · ${abst}</span>`;
+    return `<span class="bummel-badge" title="Bummel-Wertung">🏁 ${medal}Platz ${s.rank} · ${_fmtMin(s.total_min)} · ${abst}</span>`;
   }
   const missing = (s.missing || []).join(', ');
-  return `<span class="bummel-badge" title="Bummel-Wertung">${icon('checkered-flag')} unvollständig${missing ? ' — fehlt ' + escHtml(missing) : ''}</span>`;
+  return `<span class="bummel-badge" title="Bummel-Wertung">🏁 unvollständig${missing ? ' — fehlt ' + escHtml(missing) : ''}</span>`;
 }
 
 // Forum-fertiger Ergebnistext (für „Für Forum kopieren").
 let _bummelForumText = '';
 function _buildBummelForumText(data) {
-  const route = (data.route || []).join(' - ');
-  let t = `FriesenFliegerBummel — ${route}\n`;
+  const route = (data.route || []).join(' → ');
+  let t = `🏁 FriesenFliegerBummel — ${route}\n`;
   t += `Durchschnittszeit: ${_fmtMin(Math.round(data.average_min))}\n\n`;
   (data.complete || []).forEach(e => {
-    const medal = e.rank === 1 ? '[Sieger] ' : '';
+    const medal = e.rank === 1 ? '🏆 ' : '';
     const abst = _fmtSignedDelta(e.delta_sec);
     t += `${e.rank}. ${medal}${e.name || e.callsign || ('CID ' + e.cid)} (${e.aircraft || '?'}) — ${_fmtMin(e.total_min)} (${abst})\n`;
   });
   return t;
 }
 function copyBummelForumText(btn) {
-  _copyText(_bummelForumText, btn, 'kopiert', 1500, false);
+  _copyText(_bummelForumText, btn, '✓ kopiert', 1500, false);
 }
 
 // Badge-Links je Pilot (Forum-PNG öffnen + BBCode kopieren).
 function _bummelBadgeLinks(raceId, cid) {
   if (raceId == null) return '';
   const url = `/api/bummel/race/${raceId}/badge/${cid}.png`;
-  return `<a class="btn-share" href="${url}" target="_blank" rel="noopener" title="Badge als Bild öffnen">${icon('medal')} Badge</a>`
-       + ` <button class="btn-share" onclick="copyBummelBadgeCode(${raceId}, ${cid}, this)" title="Forum-Code (BBCode) kopieren">${icon('clipboard')} Forum</button>`;
+  return `<a class="btn-share" href="${url}" target="_blank" rel="noopener" title="Badge als Bild öffnen">🎖 Badge</a>`
+       + ` <button class="btn-share" onclick="copyBummelBadgeCode(${raceId}, ${cid}, this)" title="Forum-Code (BBCode) kopieren">📋 Forum</button>`;
 }
 function copyBummelBadgeCode(raceId, cid, btn) {
   const code = `[img]${location.origin}/api/bummel/race/${raceId}/badge/${cid}.png[/img]`;
-  _copyText(code, btn, 'kopiert', 1500, false);
+  _copyText(code, btn, '✓ kopiert', 1500, false);
 }
 
 // Baut den Ranking-HTML-Block (ohne äußeren Panel-Rahmen). inProgress optional (Live-Banner).
 // Signierter, sekundengenauer Abstand zum Schnitt: "+1:23" (über Schnitt) / "−0:18" (darunter)
-// / "exakt" (genau auf dem Schnitt). Löst Gleichstände bei gleicher Minuten-Blockzeit sichtbar.
+// / "★ exakt" (genau auf dem Schnitt). Löst Gleichstände bei gleicher Minuten-Blockzeit sichtbar.
 function _fmtSignedDelta(sec) {
   if (sec == null) return '—';
-  if (sec === 0) return icon('star') + ' exakt';
+  if (sec === 0) return '★ exakt';
   const a = Math.abs(sec);
   return `${sec > 0 ? '+' : '-'}${Math.floor(a / 60)}:${String(a % 60).padStart(2, '0')}`;
 }
 
 function renderBummelStandings(data, inProgress) {
-  const route = (data.route || []).join(' - ');
+  const route = (data.route || []).join(' → ');
   let html = `<div class="bummel-sub mono text-label" style="margin-bottom:8px;">Strecke: ${escHtml(route)}</div>`;
 
   if (data.count > 0) {
     _bummelForumText = _buildBummelForumText(data);
     html += `<div class="bummel-avg-row">Durchschnittszeit: <strong>${_fmtMin(Math.round(data.average_min))}</strong> · wer am nächsten dran ist, gewinnt
-      <button class="btn-share" style="margin-left:10px;" onclick="copyBummelForumText(this)">${icon('clipboard')} Für Forum kopieren</button></div>`;
+      <button class="btn-share" style="margin-left:10px;" onclick="copyBummelForumText(this)">📋 Für Forum kopieren</button></div>`;
     html += '<div class="live-table-wrap"><table><thead><tr><th>#</th><th>Pilot</th><th>Flugzeug</th><th>Legs</th><th>Block-Gesamtzeit</th><th>Abstand z. Schnitt</th><th>Badge</th></tr></thead><tbody>';
     data.complete.forEach(e => {
       const cls = e.rank === 1 ? 'bummel-rank-1' : '';
-      const medal = e.rank === 1 ? icon('trophy') + ' ' : '';
+      const medal = e.rank === 1 ? '🏆 ' : '';
       html += `<tr class="${cls}">
         <td class="mono">${e.rank}</td>
         <td>${medal}${escHtml(e.name || e.callsign || ('CID ' + e.cid))}</td>
@@ -3827,9 +3623,9 @@ function renderBummelStandings(data, inProgress) {
   }
 
   if (inProgress && inProgress.length) {
-    html += '<div class="bummel-incomplete"><strong>' + icon('plane-departure') + ' Gerade unterwegs:</strong><br>';
+    html += '<div class="bummel-incomplete"><strong>🛫 Gerade unterwegs:</strong><br>';
     html += inProgress.map(p =>
-      `${escHtml(p.name || p.callsign || ('CID ' + p.cid))} — ${escHtml(p.departure)} - ${escHtml(p.arrival) || 'in der Luft'}`
+      `${escHtml(p.name || p.callsign || ('CID ' + p.cid))} — ${escHtml(p.departure)} → ${escHtml(p.arrival) || 'in der Luft'}`
     ).join('<br>');
     html += '</div>';
   }
@@ -3858,16 +3654,16 @@ async function fetchBummelActive() {
     const v = await res.json();
     if (!v) { banner.hidden = true; banner.innerHTML = ''; return; }
     const head = v.status === 'waiting'
-      ? `${icon('checkered-flag')} ${escHtml(v.name || 'FriesenFliegerBummel')} — wartet auf Nachzügler`
-      : `${icon('checkered-flag')} ${escHtml(v.name || 'FriesenFliegerBummel')} läuft gerade`;
+      ? `🏁 ${escHtml(v.name || 'FriesenFliegerBummel')} — wartet auf Nachzügler`
+      : `🏁 ${escHtml(v.name || 'FriesenFliegerBummel')} läuft gerade`;
     let html = `<div class="bb-title">${head}</div>`;
-    html += `<div class="bb-sub">Strecke: ${escHtml((v.route || []).join(' - '))}</div>`;
-    html += `<div class="bb-sub">${v.participant_count} Teilnehmer · ${icon('lock')} Ergebnisse nach Renn-Ende</div>`;
+    html += `<div class="bb-sub">Strecke: ${escHtml((v.route || []).join(' → '))}</div>`;
+    html += `<div class="bb-sub">${v.participant_count} Teilnehmer · 🔒 Ergebnisse nach Renn-Ende</div>`;
     if (v.in_progress && v.in_progress.length) {
-      html += `<div class="bb-sub">${icon('plane-departure')} Unterwegs: ${v.in_progress.map(p => escHtml(p.name || p.callsign || ('CID ' + p.cid))).join(', ')}</div>`;
+      html += `<div class="bb-sub">🛫 Unterwegs: ${v.in_progress.map(p => escHtml(p.name || p.callsign || ('CID ' + p.cid))).join(', ')}</div>`;
     }
     if (v.id != null) {
-      html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openBummelById(${v.id})">${icon('checkered-flag')} Zum Bummel</button></div>`;
+      html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openBummelById(${v.id})">🏁 Zum Bummel</button></div>`;
     }
     banner.innerHTML = html;
     banner.hidden = false;
@@ -3878,7 +3674,7 @@ async function fetchBummelActive() {
 
 // --- Live-Tab-Block: läuft gerade ein FriesenKutter? (Analogie zum Bummel-Banner) ---
 // Zeigt Balken + Mengen + „wer ist gerade mit welcher Ladung unterwegs" (Callsign statt
-// Name, keine Bilanz — die steht im Flug-Feed der Events-Ansicht). Karten-Icon springt zur Karte.
+// Name, keine Bilanz — die steht im Flug-Feed der Events-Ansicht). 🗺️ springt zur Karte.
 async function fetchKutterActive() {
   const banner = document.getElementById('kutter-banner');
   if (!banner) return;
@@ -3904,11 +3700,11 @@ async function fetchKutterActive() {
 function _kutterBannerBlock(d) {
     // Exakte Bummel-Banner-Parität: kein Teilen hier — das gibt es rechts oben in der
     // Events-Ansicht (Nutzer-Entscheidung 02.07.).
-    let html = `<div class="kutter-live-block"><div class="bb-title">${icon('anchor')} ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
+    let html = `<div class="kutter-live-block"><div class="bb-title">🦐 ${escHtml(d.name || 'FriesenKutter')} läuft gerade</div>`;
     // Kein Strecken-Kettentext mehr (verwirrte im Live-Test — war weder geflogene Strecke noch
     // Flugplan, sondern die Aneinanderreihung der Ladeplätze). Stattdessen prominent NUR das Ziel,
-    // wohin alle Fracht soll; die Reise je Fracht (Ladeplatz -> Ziel) steht in der Tabelle unten.
-    html += `<div class="bb-sub" style="font-weight:600;font-size:1.05em;">${icon('target')} Ziel: ${escHtml(d.destination || '—')}</div>`;
+    // wohin alle Fracht soll; die Reise je Fracht (Ladeplatz → Ziel) steht in der Tabelle unten.
+    html += `<div class="bb-sub" style="font-weight:600;font-size:1.05em;">🎯 Ziel: ${escHtml(d.destination || '—')}</div>`;
     html += _kutterBarAndTotals(d, false);  // Live: nur Gesamtbalken; Aufschlüsselung steckt im Detail
     // Aktive Piloten: das Modell sagt, wer sichtbar ist (Entscheidung 14 — letzter Bodenkontakt
     // an einem teilnehmenden Platz ODER Ladung an Bord). Kein Ziel unterstellt (#23).
@@ -3919,13 +3715,13 @@ function _kutterBannerBlock(d) {
                                     // keine Live-VATSIM-Verbindung) zaehlt in Feed/Wertung, nicht hier.
       // Fertig & ausgeloggt fällt SOFORT aus dem Live-Block: „aktiv" ist nur, wer gerade verbunden
       // ist (online) oder gerade Ware traegt (reserved>0). `visible` ist die Dauer-Sperrklinke
-      // (einmal am Ladeplatz -> fuer immer Teilnehmer) — allein hieße das „ewig dabei", obwohl der
+      // (einmal am Ladeplatz → fuer immer Teilnehmer) — allein hieße das „ewig dabei", obwohl der
       // Pilot laengst offline ist. Sein Beitrag bleibt in Feed, Teilnehmer-Bilanz und Badge.
       if (!(p.online || (p.reserved_kg || 0) > 0)) return;
       const kg = p.reserved_kg || 0;
       const inAir = !p.place;
       const status = inAir
-        ? (kg > 0 ? icon('plane') + ' unterwegs' : icon('plane') + ' dabei')
+        ? (kg > 0 ? '✈️ unterwegs' : '✈️ dabei')
         : ((d.route || []).includes(p.place) && p.place !== d.destination
             ? '🅿️ lädt in ' + _kesc(p.place)
             : '🅿️ steht in ' + _kesc(p.place));
@@ -3937,7 +3733,7 @@ function _kutterBannerBlock(d) {
         // ohne Ware kein Ziel (kein Flugplan-Vertrauen, #23) -> Strecke bleibt leer.
         dep: p.last_ground || '', dest: (kg > 0 ? (d.destination || '') : ''),
         // Am Boden IMMER die Menge — ob er beladen ist, sieht man ihm sonst nicht an.
-        // 'dabei' braucht keine: es bedeutet leer.
+        // '✈️ dabei' braucht keine: es bedeutet leer.
         status: status + (inAir && kg <= 0 ? '' : ' · ' + Math.round(kg) + ' kg'),
       });
     });
@@ -3947,7 +3743,7 @@ function _kutterBannerBlock(d) {
           ? a.lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
               + (a.lines.length > 1 ? ' (' + Math.round(l.kg) + ')' : '')).join(' + ')
           : (a.kg > 0 ? Math.round(a.kg) + ' kg' : 'leer');
-        // Ware an Bord -> Getragen-Blau (kf-carry, wie im Events-Feed); nichts an Bord -> neutral.
+        // Ware an Bord → Getragen-Blau (kf-carry, wie im Events-Feed); nichts an Bord → neutral.
         const loadCls = (a.lines.length || a.kg > 0) ? 'kf-carry' : 'kf-empty';
         // Kein Inline-onclick mit interpoliertem Callsign (XSS: HTML-Escaping schützt den
         // JS-String-Kontext im Attribut nicht) — data-Attribut + delegierter Listener.
@@ -3956,12 +3752,12 @@ function _kutterBannerBlock(d) {
           ? `<td class="td-map-btn" data-callsign="${_kesc(a.callsign)}" title="Auf der Karte zeigen">`
             + '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></td>'
           : '<td></td>';
-        // Strecke = letzter Landeplatz -> Ziel der Ware. Der START (letzter Landeplatz) steht
+        // Strecke = letzter Landeplatz → Ziel der Ware. Der START (letzter Landeplatz) steht
         // immer, wenn bekannt — auch ohne Ware. Das ZIEL kennt man nur MIT Ware (Ziel der Ware);
         // ohne Ware bleibt es '—' (kein Flugplan-Vertrauen, #23). Ganz leer nur, wenn nicht mal
         // der Startplatz bekannt ist. Neutral (mono), kein Link — kein Klick dahinter.
         const strecke = a.dep
-          ? `${_kesc(a.dep)} - ${a.dest ? _kesc(a.dest) : '—'}`
+          ? `${_kesc(a.dep)} → ${a.dest ? _kesc(a.dest) : '—'}`
           : '—';
         // Callsign neutral (keine Link-Farbe — es ist keiner; Links sind hier nur Pin + Zum Kutter).
         return `<tr><td class="mono">${_kesc(a.callsign || '—')}</td><td class="mono">${acLink(a.aircraft)}</td>`
@@ -3974,7 +3770,7 @@ function _kutterBannerBlock(d) {
     }
     // Exakt wie der Bummel-Banner: nur der Sprung zur vollen Ansicht — Teilen gibt es
     // dort rechts oben im Panel-Header (wie überall).
-    html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openKutterById(${d.id})">${icon('anchor')} Zum Kutter</button></div>`;
+    html += `<div style="margin-top:8px;"><button class="btn-share" onclick="openKutterById(${d.id})">🦐 Zum Kutter</button></div>`;
     html += '</div>';
     return html;
 }
@@ -4012,11 +3808,11 @@ function setUrlState(params) {
 // Gemeinsamer Clipboard-Helfer für alle "Teilen"/"Kopieren"-Buttons -- fällt auf die
 // execCommand('copy')-Textarea-Technik zurück, wenn navigator.clipboard fehlt (z. B. im
 // MSFS-EFB-Panel/Coherent GT, das die moderne Clipboard-API vermutlich nicht kennt).
-function _copyText(text, btn, successMsg = 'Kopiert!', ms = 2000, showFail = true) {
+function _copyText(text, btn, successMsg = '✓ Kopiert!', ms = 2000, showFail = true) {
   const orig = btn.textContent;
   const restore = () => setTimeout(() => { btn.textContent = orig; }, ms);
   const onOk = () => { btn.textContent = successMsg; restore(); };
-  const onFail = () => { if (showFail) { btn.textContent = 'Fehler'; restore(); } };
+  const onFail = () => { if (showFail) { btn.textContent = '✗ Fehler'; restore(); } };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(onOk).catch(onFail);
     return;
@@ -4254,7 +4050,7 @@ async function openPilotFlights(cid) {
 
   container.innerHTML = `
     <div class="flights-panel-header">
-      <button class="btn" onclick="closePilotFlights()">${icon('arrow-left')} Zurück</button>
+      <button class="btn" onclick="closePilotFlights()">← Zurück</button>
       <span class="flights-panel-title">${escHtml(pilot.name || String(cid))}</span>
     </div>
     <div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade Flüge...</div>`;
@@ -4344,7 +4140,7 @@ function _isLiveLeg(f) {
 function _flightRowHtml(f, rowAttrs) {
   const live = _isLiveLeg(f);
   const distNm0 = f.distance_nm != null ? Math.round(f.distance_nm) : 0;
-  // Geister-Leg (0 min, ~0 nm, nicht live): Track riss direkt nach dem Start ab -> nicht anzeigen.
+  // Geister-Leg (0 min, ~0 nm, nicht live): Track riss direkt nach dem Start ab → nicht anzeigen.
   if ((f.duration_min || 0) === 0 && distNm0 <= 1 && !live) return '';
   const gpsDep = f.gps_departure || '';
   const gpsArr = f.gps_arrival || '';
@@ -4352,16 +4148,16 @@ function _flightRowHtml(f, rowAttrs) {
   // "????"/"N/A"/"?". „läuft" NUR wenn tatsächlich live (offen UND letzte GPS-Position frisch).
   // connection_closed steuert das NICHT mehr (Flugplan-Begriff).
   const dep = gpsDep ? escHtml(gpsDep) : '—';
-  const arrCell = live ? `<span class="badge-live">${icon('plane-departure')} läuft</span>` : (gpsArr ? escHtml(gpsArr) : '—');
-  // Fehlen GPS-Dep UND -Arr komplett (und der Flug läuft nicht), sieht "— -> —" als Route
+  const arrCell = live ? `<span class="badge-live">🛫 läuft</span>` : (gpsArr ? escHtml(gpsArr) : '—');
+  // Fehlen GPS-Dep UND -Arr komplett (und der Flug läuft nicht), sieht "— → —" als Route
   // unschön aus — eine einzelne zentrierte "—" statt zweier Platzhalter mit Pfeil dazwischen.
   const routeCell = (!gpsDep && !gpsArr && !live)
     ? `<span style="display:block;text-align:center;">—</span>`
-    : `${dep} - ${arrCell}`;
+    : `${dep} → ${arrCell}`;
   const planDep = f.plan_departure || '';
   const planArr = f.plan_arrival || '';
   const planText = (planDep || planArr)
-    ? `${planDep ? escHtml(planDep) : '—'} - ${planArr ? escHtml(planArr) : '—'}`
+    ? `${planDep ? escHtml(planDep) : '—'} → ${planArr ? escHtml(planArr) : '—'}`
     : '—';
   const dt = f.logon_time ? f.logon_time.slice(0, 10) : '—';
   const durMin = f.duration_min;
@@ -4383,8 +4179,8 @@ function _flightRowHtml(f, rowAttrs) {
   const unscoredBadge = unscored
     ? ` <span class="badge-unscored" title="Kein ${escHtml(_callsignPrefix)}-Callsign — zählt nicht in Statistik/Bummel/Kutter">nicht gewertet</span>`
     : '';
-  // Track IMMER über GPS ladbar (GPS-only): StatSim -> statsim_id; FS mit Flugplan-id ->
-  // flights-Endpoint; FS ohne id -> cid-Fenster-Endpoint ('pilot'). Obergrenze ist block_end
+  // Track IMMER über GPS ladbar (GPS-only): StatSim → statsim_id; FS mit Flugplan-id →
+  // flights-Endpoint; FS ohne id → cid-Fenster-Endpoint ('pilot'). Obergrenze ist block_end
   // (Rollen zum Abstellplatz nach der Landung, s. _extend_block_end/database.py) — für
   // OFFENE Legs ist block_end == last_pos_ts (kein "now"-Zug möglich), für Fallback-Zeilen
   // ohne GPS-Leg (kein block_end-Feld) fällt es auf last_pos_ts/logoff_time zurück wie bisher.
@@ -4406,7 +4202,7 @@ function _flightRowHtml(f, rowAttrs) {
           data-arr="${escHtml(gpsArr)}"
           title="GPS-Track anzeigen">${trackIcon}</span>`
     : `<span class="td-map-btn" style="opacity:0.25;cursor:default;" title="Kein Track verfügbar">${trackIcon}</span>`;
-  // Plan-Zelle: klickbar (blau) NUR wenn ein Flugplan vorliegt -> öffnet Flugplan-Detail.
+  // Plan-Zelle: klickbar (blau) NUR wenn ein Flugplan vorliegt → öffnet Flugplan-Detail.
   const hasPlan = !!(planDep || planArr);
   const planCell = hasPlan
     ? `<td class="mono td-plan-link text-green" style="cursor:pointer;" title="Flugplan öffnen">${planText}</td>`
@@ -4447,8 +4243,8 @@ function _flightRowHtml(f, rowAttrs) {
   </tr>`;
 }
 
-// Klick-Verdrahtung für eine per _flightRowHtml gefüllte Tabelle: Strecke (GPS) -> GPS-Erfassung,
-// Plan (wenn vorhanden) -> Flugplan, Track -> GPS-Track. stopPropagation auf allen drei, damit ein
+// Klick-Verdrahtung für eine per _flightRowHtml gefüllte Tabelle: Strecke (GPS) → GPS-Erfassung,
+// Plan (wenn vorhanden) → Flugplan, Track → GPS-Track. stopPropagation auf allen drei, damit ein
 // evtl. Zeilen-Klick des Aufrufers (z. B. Events-Kartenhervorhebung) nicht zusätzlich feuert.
 function _wireFlightRowClicks(container) {
   container.querySelectorAll('.track-btn').forEach(el => {
@@ -4482,7 +4278,7 @@ function renderFlightsList(cid, pilotName, flights, statsimStatus) {
 
   let html = `
     <div class="flights-panel-header">
-      <button class="btn" onclick="closePilotFlights()">${icon('arrow-left')} Zurück</button>
+      <button class="btn" onclick="closePilotFlights()">← Zurück</button>
       <span class="flights-panel-title">${escHtml(pilotName || String(cid))}</span>
       <span class="flights-panel-count">${flights.length} Flüge`;
   if (stCount > 0) html += ` <span class="text-label">(${fsCount} FriesenSpy · ${stCount} StatSim)</span>`;
@@ -4530,12 +4326,12 @@ let trackMapInitialized = false;
 
 async function openTrackModal(source, id, callsign, dep, arr, logon, logoff, autoFullscreen) {
   document.getElementById('track-modal-title').textContent =
-    `${(callsign || '').toUpperCase()}  ·  ${dep || '?'} - ${arr || '?'}`;
+    `${(callsign || '').toUpperCase()}  ·  ${dep || '?'} → ${arr || '?'}`;
   document.getElementById('track-modal-info').textContent = 'Lade Track...';
   document.getElementById('track-modal').classList.remove('hidden');
   document.addEventListener('keydown', _trackEscHandler);
   // Deep-Link nur für id-basierte Tracks (friesenspy/statsim). 'pilot' (GPS-Leg ohne id) hängt
-  // am Zeitfenster, das nicht in der URL steht -> nicht deep-linkbar, sonst würde ein Reload den
+  // am Zeitfenster, das nicht in der URL steht → nicht deep-linkbar, sonst würde ein Reload den
   // ganzen cid-Track ohne Fenster laden.
   const p = getUrlState();
   if (source === 'pilot') {
@@ -4569,8 +4365,8 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff, aut
           if (!(layer instanceof L.TileLayer)) trackMap.removeLayer(layer);
         });
       }
-      // autoFullscreen (z. B. Admin-Prüfliste "Erkennungslücken" -> "Ansehen"): Karte direkt
-      // maximiert öffnen statt erst den "Vollbild"-Button klicken zu müssen. Nur einschalten,
+      // autoFullscreen (z. B. Admin-Prüfliste "Erkennungslücken" → "Ansehen"): Karte direkt
+      // maximiert öffnen statt erst den "⛶ Vollbild"-Button klicken zu müssen. Nur einschalten,
       // wenn nicht schon im Vollbild (kein Doppel-Toggle beim erneuten Öffnen).
       const wrap = document.getElementById('track-map-wrap');
       if (autoFullscreen && wrap && !wrap.classList.contains('map-is-fullscreen')) {
@@ -4864,7 +4660,7 @@ function _kpiCard(value, label, note) {
   const noteHtml = note ? `<span class="stats-kpi-note" style="margin-top:0;">${escHtml(note)}</span>` : '';
   return `<div class="stats-kpi-card">
       <span class="stats-kpi-value">${escHtml(String(value))}</span>
-      <span class="stats-kpi-label">${label}</span>
+      <span class="stats-kpi-label">${escHtml(label)}</span>
       ${noteHtml}
     </div>`;
 }
@@ -4886,17 +4682,17 @@ function renderSpecialEventStats(data) {
   const rows = [];
   if ((k.event_count || 0) > 0) {
     rows.push(`<div class="stats-kpi-row">
-      ${_kpiCard(k.event_count, icon('anchor') + ' FriesenKutter')}
+      ${_kpiCard(k.event_count, '🦐 FriesenKutter')}
       ${_kpiCard(k.participations, 'Teilnahmen')}
       ${_kpiCard(k.flights, 'Flüge')}
       ${_kpiCard(_fmtTons(k.delivered_kg), 'Tonnage')}
-      ${_kpiCard(_fmtTons(k.sunk_kg), icon('wave') + ' Versunken', `${k.sunk_count || 0} Kutter`)}
-      ${_kpiCard(_fmtTons(k.stolen_kg), icon('flag-pirate') + ' Geklaut', `${k.stolen_count || 0} Ladungen`)}
+      ${_kpiCard(_fmtTons(k.sunk_kg), '🌊 Versunken', `${k.sunk_count || 0} Kutter`)}
+      ${_kpiCard(_fmtTons(k.stolen_kg), '🏴‍☠️ Geklaut', `${k.stolen_count || 0} Ladungen`)}
     </div>`);
   }
   if ((b.race_count || 0) > 0) {
     rows.push(`<div class="stats-kpi-row">
-      ${_kpiCard(b.race_count, icon('checkered-flag') + ' FriesenBummel')}
+      ${_kpiCard(b.race_count, '🏁 FriesenBummel')}
       ${_kpiCard(b.participations, 'Teilnahmen')}
       ${_kpiCard(b.legs, 'Flüge')}
       ${_kpiCard(_fmtAvgMin(b.avg_absolute_min), 'Ø Absoluter Durchschnitt')}
@@ -4935,13 +4731,13 @@ const _MON_NAMES = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt'
 
 function _fmtChartLabel(period, grouping) {
   if (grouping === 'day') {
-    // period = YYYY-MM-DD -> "Mo 05.06."
+    // period = YYYY-MM-DD → "Mo 05.06."
     const d = new Date(period + 'T12:00:00Z');
     const dd = String(d.getUTCDate()).padStart(2, '0');
     const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
     return `${_DAY_NAMES[d.getUTCDay()]} ${dd}.${mm}.`;
   }
-  // month: YYYY-MM -> "Jun '26"
+  // month: YYYY-MM → "Jun '26"
   const [y, m] = period.split('-');
   return `${_MON_NAMES[parseInt(m, 10) - 1]} '${y.slice(2)}`;
 }
@@ -5138,7 +4934,7 @@ function renderStatsSummary(stats, days) {
       </div>
       <div class="stats-kpi-card" style="min-width:160px;cursor:pointer;" onclick="openPilotFlights(${(best || {}).cid})">
         <span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml((best || {}).name || '—')}</span>
-        <span class="stats-kpi-label">Aktivster Pilot (${(best || {}).flight_count || 0} Flüge)</span>
+        <span class="stats-kpi-label">Aktivster Pilot (${(best || {}).flight_count || 0} Flüge) →</span>
       </div>
     </div>
     `;
@@ -5190,12 +4986,12 @@ function renderTopMusterCard(top) {
   card.onclick = () => openTypesModal();
   card.innerHTML =
     `<span class="stats-kpi-value" style="font-size:0.85rem;">${escHtml(top.name || top.code)}</span>
-     <span class="stats-kpi-label">Häufigstes Muster (${top.fluege} Flüge)</span>`;
+     <span class="stats-kpi-label">Häufigstes Muster (${top.fluege} Flüge) →</span>`;
   row.appendChild(card);
 }
 
 function _typesSortIndicator(field) {
-  if (_typesSortBy !== field) return '<span style="opacity:0.3"> ' + icon('sort') + '</span>';
+  if (_typesSortBy !== field) return '<span style="opacity:0.3"> ⇅</span>';
   return _typesSortDir === 'asc' ? ' ▲' : ' ▼';
 }
 
@@ -5295,7 +5091,7 @@ function copyTypesShareUrl(btn) {
 }
 
 function _sortIndicator(field) {
-  if (_statsSortBy !== field) return '<span style="opacity:0.3"> ' + icon('sort') + '</span>';
+  if (_statsSortBy !== field) return '<span style="opacity:0.3"> ⇅</span>';
   return _statsSortDir === 'asc' ? ' ▲' : ' ▼';
 }
 
@@ -5379,12 +5175,8 @@ async function searchEvents() {
   const start  = document.getElementById('ev-start').value;
   const end    = document.getElementById('ev-end').value;
 
-  const evError = document.getElementById('ev-error');
-  evError.hidden = true;
-
   if (!icao) {
-    evError.textContent = 'Bitte einen ICAO-Code eingeben oder "global" für weltweite Suche.';
-    evError.hidden = false;
+    alert('Bitte einen ICAO-Code eingeben oder "global" für weltweite Suche.');
     return;
   }
 
@@ -5405,8 +5197,7 @@ async function searchEvents() {
     const data = await res.json();
     renderEventsResults(data, icao, Number(radius), start, end);
   } catch (e) {
-    evError.textContent = 'Fehler bei der Event-Suche.';
-    evError.hidden = false;
+    alert('Fehler bei der Event-Suche.');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Suchen';
@@ -5456,7 +5247,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
     let flightRows = '';
     flights.forEach((f, fi) => {
       const flightKey = `${i}_${fi}`;
-      const rowAttrs = `class="events-flight-row" data-flight-key="${flightKey}" style="cursor:pointer;" title="Klick - Flug auf Karte hervorheben"`;
+      const rowAttrs = `class="events-flight-row" data-flight-key="${flightKey}" style="cursor:pointer;" title="Klick → Flug auf Karte hervorheben"`;
       flightRows += _flightRowHtml(f, rowAttrs);
     });
 
@@ -5483,12 +5274,12 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
   });
   pilotList.innerHTML = cardsHtml;
 
-  // Strecke (GPS) -> GPS-Erfassung, Plan (wenn vorhanden) -> Flugplan, Track -> GPS-Track —
+  // Strecke (GPS) → GPS-Erfassung, Plan (wenn vorhanden) → Flugplan, Track → GPS-Track —
   // identisch zur Statistik-Ansicht (stopPropagation verhindert doppeltes Feuern mit dem
   // Zeilen-Klick unten).
   _wireFlightRowClicks(pilotList);
 
-  // Klick auf Flug-Zeile -> highlight auf Karte
+  // Klick auf Flug-Zeile → highlight auf Karte
   pilotList.querySelectorAll('.events-flight-row').forEach(row => {
     row.addEventListener('click', (e) => {
       // Muster-Designator hat sein eigenes Ziel (Muster-Panel). Der delegierte ac-link-Listener
@@ -5511,7 +5302,7 @@ function renderEventsResults(data, icaoStr, radiusKm, startVal, endVal) {
 }
 
 // Track-URL für einen Flug — dieselbe Quellen-Auswahl wie der Track-Button in _flightRowHtml
-// (#33): StatSim -> statsim_id, FriesenSpy mit Flugplan-id -> flights-Endpoint, sonst ->
+// (#33): StatSim → statsim_id, FriesenSpy mit Flugplan-id → flights-Endpoint, sonst →
 // cid-Fenster-Endpoint. null, wenn kein Track ladbar ist (kein statsim_id/id/cid).
 function _flightTrackUrl(f) {
   // block_start = Rollbeginn (#62) als Track-Untergrenze, Fallback logon_time (Abheben).
@@ -5551,7 +5342,7 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
   }
 
   // Container war bei der Map-Initialisierung evtl. noch 0px groß (gerade erst eingeblendet)
-  // -> Leaflet-Größe neu berechnen, sonst lädt nur eine Kachel (weiße Karte).
+  // → Leaflet-Größe neu berechnen, sonst lädt nur eine Kachel (weiße Karte).
   eventsMap.invalidateSize();
   setTimeout(() => eventsMap && eventsMap.invalidateSize(), 100);
 
@@ -5608,8 +5399,8 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
   if (bounds.length > 0) {
     window._eventAllBounds = bounds;
     eventsMap.fitBounds(bounds, { padding: [40, 40] });
-    // fitBounds feuert bei gleichbleibendem Zoom kein zoomend -> Auto-Switch explizit auswerten
-    // (z. B. Zoom 6 -> Satellit statt leerer OFM-Karte).
+    // fitBounds feuert bei gleichbleibendem Zoom kein zoomend → Auto-Switch explizit auswerten
+    // (z. B. Zoom 6 → Satellit statt leerer OFM-Karte).
     if (eventsMap._applyOFMAuto) eventsMap._applyOFMAuto();
   }
 }
@@ -5670,8 +5461,8 @@ function _kColor(i) {
 function _kCargoLabel(f) {
   // EINE Regel für jede Leg-Zeile: was liegt/lag an Bord? Das steht in `cargo_lines` — gleich, ob
   // geliefert, gerade unterwegs, am Ladeplatz stehend oder als Zwischenleg durchgetragen. Nur wenn
-  // wirklich nichts an Bord ist, „leer". Den ZUSTAND (geliefert kräftig · unterwegs · am Platz
-  // · durchgereicht) trägt schon die Fracht-/kg-Spalte nebenan — die Ladung-Spalte nennt deshalb
+  // wirklich nichts an Bord ist, „leer". Den ZUSTAND (geliefert kräftig · ✈️ unterwegs · 🅿️ am Platz
+  // · 🔀 durchgereicht) trägt schon die Fracht-/kg-Spalte nebenan — die Ladung-Spalte nennt deshalb
   // nur die Ware, nicht nochmal den Status. (Früher: je Zustand ein eigener Zweig, der die Ladung mal
   // zeigte, mal wegwarf — daher „leer"/„unterwegs" trotz Ware an Bord, Fund Michael 19.07.)
   const lines = f.cargo_lines || [];
@@ -5679,7 +5470,7 @@ function _kCargoLabel(f) {
     ? lines.map(l => (l.emoji ? _kesc(l.emoji) + ' ' : '') + _kesc(l.name)
         + ' (' + Math.round(l.kg) + ')').join(' + ')
     : _kesc(f.cargo_name || '');
-  const quip = f.quip ? '<span class="kutter-quip">' + icon('message') + ' ' + _kesc(f.quip) + '</span>' : '';
+  const quip = f.quip ? '<span class="kutter-quip">💬 ' + _kesc(f.quip) + '</span>' : '';
   if (f.loss_kind === 'returned') {
     // „am Ladeplatz abgeladen" ist KEIN Verlust — die Ware ist heil und liegt zum Weitertragen
     // bereit. Helleres Blau (kf-relay, gleiche Farbe wie die Fracht-Spalte kf-relay-kg), NICHT rot
@@ -5706,15 +5497,15 @@ function _kCargoLabel(f) {
 }
 
 function _kLossLabel(kind) {
-  return kind === 'sunk' ? icon('wave') + ' Kutter versunken'
-       : kind === 'stolen' ? icon('flag-pirate') + ' geklaut'
-       : kind === 'returned' ? icon('return') + ' am Ladeplatz abgeladen' : '';
+  return kind === 'sunk' ? '🌊 Kutter versunken'
+       : kind === 'stolen' ? '🏴‍☠️ geklaut'
+       : kind === 'returned' ? '↩️ am Ladeplatz abgeladen' : '';
 }
 
 // Balken + Mengen-Zeile — gemeinsam für die Events-Ansicht und den Live-Tab-Block.
 // Einen Balken + Legende für eine Frachtart-Teilmenge rendern. `items` = [{c, gi}] mit gi =
 // globaler Index in d.cargo (für stabile Farben über Gesamt- und Startplatz-Blöcke hinweg).
-// `sub`=true -> Teil-Balken je Startplatz: dünner + gedämpfte Legende, damit der Gesamtbalken
+// `sub`=true → Teil-Balken je Startplatz: dünner + gedämpfte Legende, damit der Gesamtbalken
 // optisch führt und die Teilbalken untergeordnet wirken (#13).
 function _kSegLegend(items, totalTarget, sub) {
   totalTarget = totalTarget || 1;
@@ -5741,15 +5532,15 @@ function _kSegLegend(items, totalTarget, sub) {
     // angezeigten Teile SICHTBAR aufsummieren — sonst runden zwei „,5"-Werte beide hoch (137+24=161
     // statt 160). Erhaltungssatz stimmt ohnehin, nur die Optik war überzogen.
     const resKg = Math.round((c.delivered_kg || 0) + (c.reserved_kg || 0)) - Math.round(c.delivered_kg || 0);
-    const res = resKg > 0 ? ' (+' + _kfmtT(resKg) + ' ' + icon('plane') + ')' : '';
+    const res = resKg > 0 ? ' (+' + _kfmtT(resKg) + ' ✈️)' : '';
     // Verlust je Frachtart sichtbar machen (vorher stand nur die Gesamt-Summe unten) — sonst wirkt
     // „0 / 200" wie voll offen, obwohl ein Teil unwiederbringlich weg ist (#8).
     // Verlust bleibt in Gesamt UND Teilmengen sichtbar; in den Teilmengen (sub) nur kleiner, damit die
     // wiederholten Totenköpfe dort nicht so schwer wiegen (Nutzer-Wunsch — nicht entfernen, verkleinern).
     const lost = (c.lost_kg || 0) > 0
-      ? ' <span class="kutter-loss' + (sub ? ' kutter-loss--sm' : '') + '">' + icon('skull') + ' ' + _kfmtT(c.lost_kg) + ' verloren</span>' : '';
+      ? ' <span class="kutter-loss' + (sub ? ' kutter-loss--sm' : '') + '">💀 ' + _kfmtT(c.lost_kg) + ' verloren</span>' : '';
     const cap = c.per_flight_max_kg != null
-      ? ' <span class="kl-cap" title="Obergrenze pro Flug — Überschuss zählt nicht als geliefert">' + icon('warning') + ' '
+      ? ' <span class="kl-cap" title="Obergrenze pro Flug — Überschuss zählt nicht als geliefert">⚠ '
         + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
     return '<span>' + mark + _kesc(c.name) + cap + ' ' + _kfmtT(c.delivered_kg) + ' / ' + _kfmtT(c.target_kg) + res + lost + '</span>';
   }).join('');
@@ -5774,7 +5565,7 @@ function _kStockLegend(items, totalTarget) {
     const mark = c.emoji ? _kesc(c.emoji) + ' '
       : '<span class="kl-dot" style="background:' + _kColor(gi) + '"></span>';
     const cap = c.per_flight_max_kg != null
-      ? ' <span class="kl-cap" title="Obergrenze pro Flug">' + icon('warning') + ' ' + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
+      ? ' <span class="kl-cap" title="Obergrenze pro Flug">⚠ ' + Math.round(c.per_flight_max_kg) + '/Flug</span>' : '';
     const picked = Math.max(0, (c.target_kg || 0) - (c.on_stack_kg || 0));
     const pickedTxt = picked > 0.05
       ? ' <span style="opacity:.7">· ' + _kfmtT(picked) + ' abgeholt</span>' : '';
@@ -5848,7 +5639,7 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
       [...places].sort((a, b) => a.localeCompare(b)).forEach(k => {
         const contents = Object.entries(stacks[k] || {}).filter(([, kg]) => kg > 0.05)
           .sort((a, b) => a[0].localeCompare(b[0]));
-        bar += '<div class="kutter-grp-h">' + icon('plane-departure') + ' ' + _kesc(k) + '</div>';
+        bar += '<div class="kutter-grp-h">🛫 ' + _kesc(k) + '</div>';
         if (!contents.length) { bar += '<div class="kutter-legend kutter-legend--sub"><span style="opacity:.6">leer</span></div>'; return; }
         const totalHere = contents.reduce((s, [, kg]) => s + kg, 0) || 1;
         const segs = contents.map(([name, kg]) => '<div class="kutter-seg" style="width:'
@@ -5863,14 +5654,14 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
   const pct = d.progress_pct != null ? ' · ' + Math.min(100, Math.round(d.progress_pct)) + '%' : '';
   // „offen" = was WIRKLICH noch kommen kann: Ziel − geliefert − verloren. Unwiederbringlich
   // Verlorenes (geklaut/versenkt) ist NICHT offen, sondern erledigt (#237-Fund 20.07.: sonst stand
-  // „offen: 310" neben „310 verloren" — dieselben kg doppelt). Ist alles aufgelöst -> 0 -> kein Text.
+  // „offen: 310" neben „💀 310 verloren" — dieselben kg doppelt). Ist alles aufgelöst → 0 → kein Text.
   const open = d.target_kg ? Math.max(0, d.target_kg - d.total_kg - (d.lost_total_kg || 0)) : null;
   const inAir = d.reserved_total_kg || 0;
   const openTxt = open
     ? ' — offen: ' + _kfmtT(open) + (inAir > 0 ? ', davon ' + _kfmtT(inAir) + ' reserviert' : '') : '';
   const lostTxt = (d.lost_total_kg || 0) > 0
-    ? ' <span class="kutter-loss">' + icon('skull') + ' ' + _kfmtT(d.lost_total_kg) + ' verloren</span>' : '';
-  const header = '<div class="kutter-total">' + icon('package') + ' ' + _kfmtT(d.total_kg) + goal + pct
+    ? ' <span class="kutter-loss">💀 ' + _kfmtT(d.lost_total_kg) + ' verloren</span>' : '';
+  const header = '<div class="kutter-total">📦 ' + _kfmtT(d.total_kg) + goal + pct
     + ' — ' + (d.loaded_count || 0) + ' Frachtflüge (' + (d.flight_count || 0) + ' gesamt)'
     + openTxt + lostTxt + '</div>';
   return header + bar;
@@ -5880,24 +5671,24 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
 // Feierabend-Bilanz (summarized_at), analog _bummelBadgeLinks/copyBummelBadgeCode.
 function _kutterBadgeLinks(eventId, cid) {
   const url = `/api/transport/event/${eventId}/badge/${cid}.png`;
-  return `<a class="btn-share" href="${url}" target="_blank" rel="noopener" title="Badge als Bild öffnen">${icon('medal')} Badge</a>`
-       + ` · <button class="btn-share" onclick="copyKutterBadgeCode(${eventId}, ${cid}, this)" title="Forum-Code (BBCode) kopieren">${icon('clipboard')} Forum</button>`;
+  return `<a class="btn-share" href="${url}" target="_blank" rel="noopener" title="Badge als Bild öffnen">🎖 Badge</a>`
+       + ` · <button class="btn-share" onclick="copyKutterBadgeCode(${eventId}, ${cid}, this)" title="Forum-Code (BBCode) kopieren">📋 Forum</button>`;
 }
 function copyKutterBadgeCode(eventId, cid, btn) {
   const code = `[img]${location.origin}/api/transport/event/${eventId}/badge/${cid}.png[/img]`;
-  _copyText(code, btn, 'kopiert', 1500, false);
+  _copyText(code, btn, '✓ kopiert', 1500, false);
 }
 function _kutterBadgeSection(d) {
   // Nur wer wirklich Ware bewegt hat (contributed) bekommt ein Badge — eine reine Am-Platz-
   // Rückgabe oder reines Warten zählt nicht (Backend liefert das Flag; alte Snapshots ohne Flag
-  // -> alle, wie bisher).
+  // → alle, wie bisher).
   const parts = (d.participants || []).filter(p => p.contributed !== false);
   if (!d.summarized_at || !parts.length) return '';
   const rows = parts.map(p =>
     '<div class="kutter-badge-row">' + _kesc(p.callsign || ('CID ' + p.cid)) + ' — '
       + _kutterBadgeLinks(d.id, p.cid) + '</div>'
   ).join('');
-  return '<div class="kutter-badges"><div class="kutter-badges-title">' + icon('medal') + ' Badges</div>' + rows + '</div>';
+  return '<div class="kutter-badges"><div class="kutter-badges-title">🎖 Badges</div>' + rows + '</div>';
 }
 
 // „belegt / an Bord" (#63): zeigt die zweite Zahl nur, wenn Fracht verpuffte (an Bord > belegt) —
@@ -5909,23 +5700,23 @@ function _kDualKg(net, gross) {
 
 function _kutterDetailBody(d) {
   const summary = d.summary_quip
-    ? '<div class="kutter-summary">' + icon('anchor') + ' ' + _kesc(d.summary_quip) + '</div>' : '';
-  // Ziel-Überschrift wie im Live-Banner (Z. ~3093): wohin alle Fracht soll. Prominent oben,
+    ? '<div class="kutter-summary">🦐 ' + _kesc(d.summary_quip) + '</div>' : '';
+  // 🎯 Ziel-Überschrift wie im Live-Banner (Z. ~3093): wohin alle Fracht soll. Prominent oben,
   // bevor der Gesamtbalken kommt — bislang fehlte sie in der Events-Detailansicht.
-  const dest = '<div class="kutter-dest">' + icon('target') + ' Ziel: '
+  const dest = '<div class="kutter-dest">🎯 Ziel: '
     + (d.destination ? _kesc(d.destination) + airportLinkIcon(d.destination) : '—') + '</div>';
   const rows = (d.flights || []).map(f => {
     const t = (f.dep_time || '').slice(11, 16);
-    const kg = f.loaded ? '<td class="kf-kg">' + _kDualKg(f.tonnage_kg, f.onboard_kg) + ' ' + icon('check-circle') + '</td>'
+    const kg = f.loaded ? '<td class="kf-kg">' + _kDualKg(f.tonnage_kg, f.onboard_kg) + ' ✅</td>'
       : f.loss_kind === 'returned'
-        ? '<td class="kf-relay-kg">' + (Math.round((f.cargo_lines || []).reduce((s, l) => s + (l.kg || 0), 0)) || '—') + ' kg ' + icon('return') + '</td>'
-      : f.loss_kind ? '<td class="kf-empty kutter-loss">' + (f.lost_kg ? Math.round(f.lost_kg) + ' kg' : '—') + (f.loss_kind === 'stolen' ? ' ' + icon('flag-pirate') : ' ' + icon('wave')) + '</td>'
+        ? '<td class="kf-relay-kg">' + (Math.round((f.cargo_lines || []).reduce((s, l) => s + (l.kg || 0), 0)) || '—') + ' kg ↩️</td>'
+      : f.loss_kind ? '<td class="kf-empty kutter-loss">' + (f.lost_kg ? Math.round(f.lost_kg) + ' kg' : '—') + (f.loss_kind === 'stolen' ? ' 🏴‍☠️' : ' 🌊') + '</td>'
       : f.in_air ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg)
-                 + (f.airborne ? ' ' + icon('plane') : ' 🅿️') + '</td>'
-      : f.carried_through ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + ' ' + icon('shuffle') + '</td>'
+                 + (f.airborne ? ' ✈️' : ' 🅿️') + '</td>'
+      : f.carried_through ? '<td class="kf-res">' + _kDualKg(f.reserved_kg, f.onboard_reserved_kg) + ' 🔀</td>'
       : '<td class="kf-empty">leer</td>';
     return '<tr><td>' + t + '</td><td>' + _kesc(f.callsign) + '</td><td>' + acLink(f.aircraft)
-      + '</td><td>' + _kesc(f.dep) + ' - ' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';
+      + '</td><td>' + _kesc(f.dep) + '→' + _kesc(f.arr) + '</td>' + kg + _kCargoLabel(f) + '</tr>';
   }).join('');
   const feed = '<div class="table-scroll"><table class="kutter-feed"><thead><tr><th>Zeit</th><th>Callsign</th><th>Muster</th>'
     + '<th title="Von der letzten Landung zum Ziel der Ladung — NICHT der Ladeplatz">Strecke</th><th>Fracht</th><th>Ladung</th></tr></thead><tbody>'
@@ -5935,7 +5726,7 @@ function _kutterDetailBody(d) {
 }
 
 async function openKutter(ev) {
-  // Kalendertermin -> FriesenKutter-Event mappen (über calendar_uid, wie openBummel es für
+  // Kalendertermin → FriesenKutter-Event mappen (über calendar_uid, wie openBummel es für
   // Bummel-Rennen tut) und die Live-Ansicht direkt öffnen — nur per Klick, genau wie Bummel.
   try {
     const events = await (await fetch('/api/transport/events')).json();
@@ -5992,7 +5783,7 @@ async function _refreshKutterDetail() {
   try {
     const d = await fetch('/api/transport/event/' + _kutterOpenId).then(r => r.json());
     _lastKutterDetail = d;
-    document.getElementById('kutter-title').innerHTML = icon('anchor') + ' ' + escHtml(d.name || 'FriesenKutter');
+    document.getElementById('kutter-title').textContent = '🦐 ' + (d.name || 'FriesenKutter');
     document.getElementById('kutter-content').innerHTML = _kutterDetailBody(d);
   } catch (e) {}
 }
@@ -6007,7 +5798,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     // Update URL (preserve no modal params when switching tabs)
     setUrlState({ tab });
 
-    // Wenn Pilot-Drill-Down offen -> zurück zur Übersicht
+    // Wenn Pilot-Drill-Down offen → zurück zur Übersicht
     if (currentStatsCid !== null) {
       clearTimeout(_flightsRefreshTimer);
       currentStatsCid = null;
@@ -6068,7 +5859,7 @@ document.getElementById('stats-days').addEventListener('change', fetchStats);
 
 // Events search
 document.getElementById('events-search-btn').addEventListener('click', () => {
-  // Manuelle Suche -> kein Bummel-/Kutter-Kontext (Ranking + Standing-Badges ausblenden)
+  // Manuelle Suche → kein Bummel-/Kutter-Kontext (Ranking + Standing-Badges ausblenden)
   _activeBummel = null;
   document.getElementById('bummel-results').classList.add('hidden');
   document.getElementById('kutter-results').classList.add('hidden');
@@ -6260,7 +6051,7 @@ fetchAndRenderTeamspeak();
 // Prefiles/TeamSpeak auf eigenem, langsamem Takt pollen — bewusst NICHT an den
 // SSE-'positions'-Push gekoppelt. Sonst feuert ein im Hintergrund gepufferter SSE-
 // Rückstau beim Wiederöffnen hunderte Frames auf einmal, was je Frame ein prefiles+
-// teamspeak-Paar auslöste -> 429-Sturm. Diese Daten ändern sich ohnehin nur langsam.
+// teamspeak-Paar auslöste → 429-Sturm. Diese Daten ändern sich ohnehin nur langsam.
 setInterval(fetchAndRenderPrefiles, 60000);
 setInterval(fetchAndRenderTeamspeak, 30000);
 fetchBummelActive();
@@ -6302,7 +6093,7 @@ setInterval(refreshLiveData, 15000);
 function toggleMapFullscreen(wrapId, btn, getMap) {
   const wrap = document.getElementById(wrapId);
   const isFs = wrap.classList.toggle('map-is-fullscreen');
-  btn.innerHTML = isFs ? icon('x') + ' Vollbild verlassen' : icon('fullscreen') + ' Vollbild';
+  btn.textContent = isFs ? '✕ Vollbild verlassen' : '⛶ Vollbild';
   document.body.style.overflow = isFs ? 'hidden' : '';
   const globalExit = document.getElementById('global-map-exit-fs');
   if (globalExit) globalExit.hidden = !isFs;
@@ -6312,8 +6103,8 @@ function toggleMapFullscreen(wrapId, btn, getMap) {
   }));
 }
 
-// Unabhaengiger Fallback-Ausgang (s. CSS-Kommentar bei .global-map-exit-fs): setzt den
-// Vollbild-Zustand direkt zurueck, falls der Button INNERHALB der Karte nicht erreichbar war.
+// Unabhaengiger Fallback-Ausgang: setzt den Vollbild-Zustand direkt zurueck, falls der Button
+// INNERHALB der Karte nicht erreichbar war (Live-Test-Fund 13.08.2026).
 function exitAnyMapFullscreen() {
   const fsWrap = document.querySelector('.map-is-fullscreen');
   if (!fsWrap) return;
@@ -6349,6 +6140,6 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 </script>
-<button id="global-map-exit-fs" class="global-map-exit-fs" hidden onclick="exitAnyMapFullscreen()"><svg class="icon"><use href="#icon-x"/></svg> Vollbild verlassen</button>
+<button id="global-map-exit-fs" class="global-map-exit-fs" hidden onclick="exitAnyMapFullscreen()">✕ Vollbild verlassen</button>
 </body>
 </html>

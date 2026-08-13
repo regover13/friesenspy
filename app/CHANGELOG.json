@@ -1,5 +1,14 @@
 [
   {
+    "version": "11.5.7",
+    "date": "2026-08-13",
+    "highlight": false,
+    "title": "Icon-Umbau zurückgenommen -- wieder Original-Emoji/-Symbole",
+    "items": [
+      "↩️ Der komplette Icon-Umbau (v11.4.4-v11.5.4, Ersatz der Emoji/Unicode-Symbole durch SVG-Icons für Coherent-GT-Kompatibilität) ist auf Nutzerwunsch zurückgenommen — Glocke, Kutter, Bummel, Tab-Symbole und alle übrigen Icons sehen wieder exakt so aus wie vor dem Umbau. Karten-Vollbild-Fixes, Leaflet-Minuszeichen und der Cache-Bust für /panel bleiben erhalten, da unabhängig von der Icon-Frage."
+    ]
+  },
+  {
     "version": "11.5.6",
     "date": "2026-08-13",
     "highlight": false,
