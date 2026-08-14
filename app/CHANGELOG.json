@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.1.1",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Meldungen im Kniebrett: Ersatzanzeige greift wieder",
+    "items": [
+      "🔔 Im ersten Test im Simulator kam im Tablet nichts an, obwohl der Server die Meldung erzeugt hatte. Ursache für das Schweigen: Die Ersatzanzeige im Panel schaltete sich schon ab, sobald die Tablet-Oberfläche das Ankommen der Nachricht bestätigt hatte — angekommen heißt aber nicht angezeigt. Jetzt bleibt sie an, bis eine echte Meldung sichtbar durchgelaufen ist."
+    ]
+  },
+  {
     "version": "12.1.0",
     "date": "2026-08-14",
     "highlight": false,

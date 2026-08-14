@@ -940,14 +940,19 @@ async def _event_generator(request: Request, poller: VatsimPoller):
                 continue
             if data.get("type") == "notify":
                 if viewer_cid is None:
+                    _logger.info("SSE-Notify %s verworfen: Verbindung nicht angemeldet",
+                                data.get("service"))
                     continue                          # nicht angemeldet → keine Meldungen
                 conn = get_connection(settings.DB_PATH)
                 try:
-                    if not is_visible_to(conn, data.get("subject_cid"), viewer_cid,
-                                         data.get("service")):
-                        continue
+                    sichtbar = is_visible_to(conn, data.get("subject_cid"), viewer_cid,
+                                             data.get("service"))
                 finally:
                     conn.close()
+                _logger.info("SSE-Notify %s an cid=%s: %s", data.get("service"), viewer_cid,
+                            "geliefert" if sichtbar else "verworfen (Sichtbarkeit)")
+                if not sichtbar:
+                    continue
             yield f"data: {json.dumps(data)}\n\n"
     finally:
         poller.unsubscribe_sse(queue)

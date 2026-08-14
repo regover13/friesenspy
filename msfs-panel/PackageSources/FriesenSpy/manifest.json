@@ -4,12 +4,12 @@
   "title": "FriesenSpy",
   "manufacturer": "FriesenFlieger",
   "creator": "devprops",
-  "package_version": "1.1.0",
+  "package_version": "1.1.1",
   "minimum_game_version": "1.0.0",
   "release_notes": {
     "neutral": {
-      "LastUpdate": "Benachrichtigungen im Tablet: FriesenSpy meldet jetzt selbst, wenn jemand online geht, einen Flugplan einreicht, TeamSpeak betritt oder ein Event ansteht. Welche Sorten erscheinen, stellt man im Panel ueber die Glocke ein.",
-      "OlderHistory": "1.0.0 -- Erste Veroeffentlichung (Release \"Kniebrett\"): FriesenSpy als EFB-App im Tablet -- Live-Positionen der Friesen, Karte, Flugplaene, Statistik und Events. Anmeldung bleibt ueber Sim-Neustarts hinweg erhalten."
+      "LastUpdate": "Meldet der Seite jetzt zurueck, ob eine Benachrichtigung wirklich angezeigt wurde. Ohne diese Rueckmeldung schaltete die Seite ihre eigene Ersatzanzeige zu frueh ab und im Tablet blieb es still.",
+      "OlderHistory": "1.1.0 -- Benachrichtigungen im Tablet: FriesenSpy meldet jetzt selbst, wenn jemand online geht, einen Flugplan einreicht, TeamSpeak betritt oder ein Event ansteht. Welche Sorten erscheinen, stellt man im Panel ueber die Glocke ein.\n1.0.0 -- Erste Veroeffentlichung (Release \"Kniebrett\"): FriesenSpy als EFB-App im Tablet -- Live-Positionen der Friesen, Karte, Flugplaene, Statistik und Events. Anmeldung bleibt ueber Sim-Neustarts hinweg erhalten."
     }
   },
   "total_package_size": "00000000000000000000"

@@ -122,6 +122,7 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     }
     const titel = d.titel || "FriesenSpy";
     const text = d.text || "";
+    const antwort = e.source as Window | null;
     try {
       // NotificationManager.getManager statt des geerbten `notificationManager`-Getters: der
       // wirft, wenn die Shell ihn nicht in die Props gelegt hat. getManager liefert dasselbe
@@ -132,8 +133,20 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       NotificationManager.getManager(this.props.bus).addNotification(
         createPermanentNotification(titel, text, 8000, "info"),
       );
-    } catch (_e) {
-      // Lieber still bleiben als die ganze App an einer Benachrichtigung scheitern lassen.
+      // Zustellung bestaetigen. Erst diese Antwort (nicht schon das pong) berechtigt die Seite,
+      // ihre eigene Ersatzanzeige wegzulassen -- sonst sieht der Nutzer im Fehlerfall NICHTS.
+      if (antwort) {
+        antwort.postMessage({ quelle: "friesenspy-shell", art: "notify-ok" }, "*");
+      }
+    } catch (err) {
+      // Lieber still bleiben als die ganze App an einer Benachrichtigung scheitern lassen --
+      // aber die Seite muss davon erfahren, sonst verschluckt das catch den einzigen Hinweis.
+      if (antwort) {
+        antwort.postMessage(
+          { quelle: "friesenspy-shell", art: "notify-fehler", fehler: String(err) },
+          "*",
+        );
+      }
     }
   };
 

@@ -700,3 +700,27 @@ def test_ersatzanzeige_ohne_inset():
     assert m, ".panel-hinweis-stapel nicht gefunden"
     assert "inset" not in m.group(1)
     assert "position: fixed" in m.group(1)
+
+
+def test_ersatzanzeige_haengt_an_der_zustellung_nicht_am_handshake():
+    """Sim-Fund 14.08.2026: Die Shell beantwortete den Handshake (`pong`), im Tablet erschien
+    trotzdem nichts -- und weil die Ersatzanzeige da schon abgeschaltet war, sah der Nutzer
+    GAR nichts. Angenommen heisst nicht angezeigt: erst eine Bestaetigung fuer eine echte
+    Meldung (`notify-ok`) darf den Ersatzweg stilllegen."""
+    m = re.search(r"function _panelBenachrichtigung\(msg\) \{\n(.*?)\n\}", INDEX, re.S)
+    assert m, "_panelBenachrichtigung nicht gefunden"
+    assert "_panelShellZeigt !== true" in m.group(1), \
+        "Ersatzanzeige haengt am Handshake statt an der Zustellbestaetigung"
+    # Und die Bestaetigung muss auch entgegengenommen werden.
+    assert "if (d.art === 'notify-ok') _panelShellZeigt = true;" in INDEX
+
+
+def test_jede_station_meldet_sich():
+    """Ohne Sonde an jeder Station ist ein Ausfall nicht zu lokalisieren -- genau das hat den
+    ersten Sim-Test gekostet. Server: zwei Log-Zeilen; Panel: ein Diagnose-Datensatz."""
+    poller = (Path(__file__).resolve().parents[1] / "app" / "poller.py").read_text(encoding="utf-8")
+    main_py = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    assert "SSE-Abonnent(en)" in poller          # Meldung entstand, N Zuhoerer
+    assert "SSE-Notify %s an cid=%s" in main_py  # geliefert oder verworfen
+    assert "window._panelDiag('notify'" in INDEX # im iframe angekommen
+    assert "'shell-fehler'" in INDEX             # Shell hat sie abgelehnt

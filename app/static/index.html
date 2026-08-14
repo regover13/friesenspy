@@ -4418,8 +4418,14 @@ function _initPanelTranslit() {
 
 const _PANEL_NOTIFY_KEY = 'friesenspy_panel_notify';
 const _PANEL_NOTIFY_ARTEN = ['online', 'prefile', 'ts', 'events'];
-// Ob die EFB-Shell unsere Nachrichten annimmt: null = noch nicht geklaert, true/false = gemessen.
+// Ob die EFB-Shell unsere Nachrichten ANNIMMT: null = noch nicht geklaert, true/false = gemessen.
 let _panelShellDa = null;
+// Ob die EFB-Shell eine Meldung auch wirklich ANZEIGT. Zwei getrennte Fragen -- im ersten
+// Sim-Test (14.08.2026) war die erste mit ja beantwortet und im Tablet erschien trotzdem
+// nichts. Erst eine Bestaetigung fuer eine echte Meldung ('notify-ok') setzt das hier.
+let _panelShellZeigt = null;
+// Letzter Fehler aus der Shell (kommt als 'notify-fehler' zurueck) -- geht in die Diagnose.
+let _panelShellFehler = '';
 
 function _panelNotifyEinstellung() {
   const aus = {};
@@ -4498,10 +4504,20 @@ function _panelBenachrichtigung(msg) {
       gesendet = true;
     } catch (_) { /* Shell nimmt nichts an -- unten der Ersatzweg */ }
   }
-  // Solange die Shell nicht bestaetigt hat, zusaetzlich selbst anzeigen: lieber einmal doppelt
-  // als gar nicht. Sobald der Handshake steht (_panelShellDa === true), faellt das weg.
-  if (!gesendet || _panelShellDa !== true) {
+  // Ersatzanzeige faellt erst weg, wenn die Shell eine ECHTE Meldung bestaetigt hat
+  // (_panelShellZeigt), nicht schon beim beantworteten Handshake. Der Unterschied ist im
+  // ersten Sim-Test aufgefallen: `pong` kam an, im Tablet erschien trotzdem nichts -- der
+  // Handshake beweist nur, dass die Nachricht ankommt, nicht dass sie angezeigt wird.
+  if (!gesendet || _panelShellZeigt !== true) {
     _panelHinweisZeigen(titel, text);
+  }
+
+  if (typeof window._panelDiag === 'function') {
+    window._panelDiag('notify', {
+      service: art, gesendet: gesendet,
+      shellAntwortet: _panelShellDa, shellZeigt: _panelShellZeigt,
+      titel: titel,
+    });
   }
 }
 
@@ -4518,6 +4534,14 @@ function _initPanelShellKanal() {
     const d = e && e.data;
     if (!d || d.quelle !== 'friesenspy-shell') return;
     if (d.art === 'pong') _panelShellDa = true;
+    if (d.art === 'notify-ok') _panelShellZeigt = true;
+    if (d.art === 'notify-fehler') {
+      _panelShellZeigt = false;
+      _panelShellFehler = String(d.fehler || '');
+      if (typeof window._panelDiag === 'function') {
+        window._panelDiag('shell-fehler', { fehler: _panelShellFehler });
+      }
+    }
   });
 
   if (!window.parent || window.parent === window) { _panelShellDa = false; return; }

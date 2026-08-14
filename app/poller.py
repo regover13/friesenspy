@@ -641,6 +641,10 @@ class VatsimPoller:
             "body": payload.get("body", ""),
             "url": payload.get("url", "/"),
         })
+        # Ohne diese Zeile ist von aussen nicht zu sehen, ob eine Meldung ueberhaupt entstand
+        # und ob jemand zugehoert hat -- genau die Frage beim ersten Sim-Test (14.08.2026).
+        logger.info("Notify[%s] subject=%s -> %d SSE-Abonnent(en)",
+                    service, subject_cid, len(self._sse_subscribers))
 
     # ------------------------------------------------------------------
     # Core poll loop
