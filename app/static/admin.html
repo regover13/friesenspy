@@ -1027,6 +1027,10 @@
             <button class="btn btn-sm" id="push-test-btn">&#x1F514; Test an mich</button>
             <span style="color:#8aa0b8;font-size:0.8rem;margin-left:8px;">Nur an dieses Gerät (Push muss in der App aktiv sein).</span>
           </div>
+          <div style="margin-bottom:18px;">
+            <button class="btn btn-sm" id="panel-notify-test-btn">&#x1F6E9;&#xFE0F; Test ins Kniebrett</button>
+            <span style="color:#8aa0b8;font-size:0.8rem;margin-left:8px;">Erscheint nur im eigenen MSFS-Tablet — der Simulator muss laufen und FriesenSpy geladen sein.</span>
+          </div>
           <div class="form-section-title">Broadcast an Abonnenten</div>
           <div class="form-grid" style="margin:10px 0 12px;">
             <div class="form-group">
@@ -2287,6 +2291,18 @@
       if (!res) return;
       if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
       toast('Test-Benachrichtigung gesendet.');
+    });
+
+    document.getElementById('panel-notify-test-btn').addEventListener('click', async () => {
+      // Titel/Text aus dem Broadcast-Formular übernehmen, sonst Standardtext (wie beim
+      // Push-Test daneben). Empfänger ist immer die eigene Anmeldung — das entscheidet der
+      // Server aus dem Session-Cookie, nicht dieses Formular.
+      const title = document.getElementById('bc-title').value.trim();
+      const body  = document.getElementById('bc-body').value.trim();
+      const res = await api('POST', '/api/admin/panel-notify-test', { title, body });
+      if (!res) return;
+      if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
+      toast('Test-Meldung ins Kniebrett geschickt.');
     });
 
     document.getElementById('bc-send-btn').addEventListener('click', async () => {

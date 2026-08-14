@@ -939,6 +939,12 @@ async def _event_generator(request: Request, poller: VatsimPoller):
                 yield ": keepalive\n\n"
                 continue
             if data.get("type") == "notify":
+                nur_cid = data.get("nur_cid")
+                if nur_cid is not None:
+                    if viewer_cid != nur_cid:
+                        continue                      # Test-Meldung, nicht für diese Verbindung
+                    # Empfaenger-Angabe gehoert nicht in die ausgelieferte Nachricht.
+                    data = {k: v for k, v in data.items() if k != "nur_cid"}
                 if viewer_cid is None:
                     _logger.info("SSE-Notify %s verworfen: Verbindung nicht angemeldet",
                                 data.get("service"))
@@ -2491,6 +2497,41 @@ async def admin_push_test(request: Request):
         [sub], payload, label="Admin-Test",
     )
     return {"status": "ok", "sent": 1}
+
+
+@app.post("/api/admin/panel-notify-test")
+async def admin_panel_notify_test(request: Request):
+    """Test-Meldung ins MSFS-Kniebrett — nur an die eigene Anmeldung.
+
+    Ohne diesen Knopf hängt jeder Test daran, dass zufällig jemand online geht; Reconnects
+    sind zusätzlich 15 Minuten gesperrt, eine Wiederholung ist also nicht einmal erzwingbar.
+    Das hat die Fehlersuche am 14.08.2026 mehrfach ausgebremst.
+
+    ``nur_cid`` sorgt dafür, dass die Meldung niemanden sonst im Cockpit erreicht — anders als
+    beim Broadcast-Push ist das hier keine Option, sondern die einzige zulässige Betriebsart.
+    """
+    require_admin(request)
+    settings = get_settings()
+    claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
+    try:
+        cid = int(claims["cid"]) if claims and claims.get("cid") else None
+    except (TypeError, ValueError):
+        cid = None
+    if cid is None:
+        # Ohne Forum-Session (reiner Passwort-Admin) gäbe es kein Ziel — dann lieber gar nicht
+        # senden als an alle.
+        raise HTTPException(status_code=400,
+                            detail="Bitte über den Board-Login anmelden — die Test-Meldung "
+                                   "geht ausschließlich an das eigene Kniebrett.")
+    body = await request.json() if await request.body() else {}
+    dienst = str(body.get("service", "")).strip() or "events"
+    titel = str(body.get("title", "")).strip() or "FriesenSpy Test"
+    text = str(body.get("body", "")).strip() or "Test-Meldung aus dem Admin."
+
+    poller: VatsimPoller = request.app.state.poller
+    poller.broadcast_notify(dienst, None, {"title": titel, "body": text, "url": "/"},
+                            nur_cid=cid)
+    return {"status": "ok", "cid": cid, "service": dienst}
 
 
 @app.post("/api/admin/push/broadcast")

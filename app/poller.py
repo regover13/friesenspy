@@ -621,7 +621,8 @@ class VatsimPoller:
                 except Exception:
                     pass
 
-    def broadcast_notify(self, service: str, subject_cid: int | None, payload: dict) -> None:
+    def broadcast_notify(self, service: str, subject_cid: int | None, payload: dict,
+                         nur_cid: int | None = None) -> None:
         """Eine Benachrichtigung in den SSE-Strom legen (Anzeigefläche: MSFS-Kniebrett).
 
         ``service`` ∈ {'online','prefile','ts','events'} — dieselben Namen wie in
@@ -632,15 +633,22 @@ class VatsimPoller:
         Hier wird bewusst NICHT gefiltert: der Broadcast kennt seine Empfänger nicht. Wer die
         Meldung sehen darf, entscheidet der SSE-Endpoint pro Verbindung
         (``app/main.py`` → ``is_visible_to``) — vorher verlässt sie den Server nicht.
+
+        ``nur_cid`` schränkt die Zustellung auf eine einzige CID ein (Test-Meldung aus dem
+        Admin: die soll niemanden sonst im Cockpit erreichen). Das Feld wird vom Endpoint vor
+        dem Senden entfernt.
         """
-        self.broadcast_sse({
+        nachricht = {
             "type": "notify",
             "service": service,
             "subject_cid": subject_cid,
             "title": payload.get("title", ""),
             "body": payload.get("body", ""),
             "url": payload.get("url", "/"),
-        })
+        }
+        if nur_cid is not None:
+            nachricht["nur_cid"] = int(nur_cid)
+        self.broadcast_sse(nachricht)
         # Ohne diese Zeile ist von aussen nicht zu sehen, ob eine Meldung ueberhaupt entstand
         # und ob jemand zugehoert hat -- genau die Frage beim ersten Sim-Test (14.08.2026).
         logger.info("Notify[%s] subject=%s -> %d SSE-Abonnent(en)",

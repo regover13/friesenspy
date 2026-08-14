@@ -836,6 +836,9 @@ Dieselben Meldungen, die als Web-Push rausgehen — die Nutzlast entsteht in `ap
 | ohne Anmeldung (`fs_user`) | wird geliefert | wird **nicht** geliefert |
 | Subjekt-Sichtbarkeit `nobody`/Allowlist | ohne Wirkung | Ereignis wird verworfen |
 
+Ein optionales `nur_cid` (nur intern, s. `POST /api/admin/panel-notify-test`) schränkt die
+Zustellung auf eine einzige Anmeldung ein; der Endpoint entfernt das Feld vor dem Senden.
+
 Die Prüfung sitzt in `_event_generator` (`app/main.py`) und nutzt `is_visible_to`
 (`app/database.py`), dieselbe Regel wie der Web-Push. Sie kann nicht clientseitig umgangen
 werden: unterdrückte Meldungen verlassen den Server nicht. Die Kategorie-Schalter im Panel
@@ -1473,6 +1476,31 @@ Test-Benachrichtigung **nur** an das angegebene (eigene) Gerät senden — nie a
 - `200 {"status": "ok", "sent": 1}`
 - `400` — VAPID nicht konfiguriert oder `endpoint` fehlt
 - `404` — Endpoint unbekannt (in der App zuerst Push aktivieren)
+
+### POST /api/admin/panel-notify-test
+
+Test-Meldung ins **MSFS-Kniebrett** — nur an die eigene Anmeldung. Kein Web-Push: die Meldung
+geht über den SSE-Strom (`type: "notify"`) und erscheint im Tablet als Benachrichtigung.
+
+Gedacht für die Fehlersuche: Ohne diesen Weg hängt jede Prüfung daran, dass zufällig jemand
+online geht — und Reconnects sind 15 Minuten gesperrt, eine Wiederholung ist also nicht einmal
+erzwingbar.
+
+**Body (JSON, alles optional)**
+
+| Feld | Typ | Beschreibung |
+|------|-----|--------------|
+| `service` | string | `online \| prefile \| ts \| events` (Vorgabe `events`) — steuert, welcher Kategorie-Schalter im Panel greift |
+| `title` | string | Titel (leer → „FriesenSpy Test") |
+| `body` | string | Text (leer → Standardtext) |
+
+**Responses**
+- `200 {"status": "ok", "cid": 1602713, "service": "events"}`
+- `400` — keine Forum-Session (reiner Passwort-Admin hat keine CID; dann gäbe es kein Ziel,
+  und an alle zu senden wäre keine akzeptable Ersatzhandlung)
+
+Das Ziel bestimmt **der Server** aus dem Session-Cookie, nicht der Request — ein Test-Knopf,
+der anderen Friesen ins Cockpit funkt, wäre untauglich.
 
 ### POST /api/admin/push/broadcast
 

@@ -224,3 +224,37 @@ async def test_event_meldungen_brauchen_kein_subjekt(env):
     raus = await _ausgeliefert(_FakeRequest(cookies=_user_cookie(ZUSCHAUER), runden=1),
                                _poller(env.db), aktion)
     assert [e["type"] for e in raus] == ["notify"]
+
+
+# ---------------------------------------------------------------------------
+# Test-Auslöser aus dem Admin (nur an die eigene Anmeldung)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_testmeldung_erreicht_nur_die_eigene_anmeldung(env):
+    """Ein Test-Knopf, der allen im Cockpit eine Meldung schickt, waere untauglich."""
+    def aktion(p):
+        p.broadcast_notify("events", None, {"title": "T", "body": "B", "url": "/"},
+                           nur_cid=ZUSCHAUER)
+        p.broadcast_sse({"type": "positions", "data": []})
+
+    meins = await _ausgeliefert(_FakeRequest(cookies=_user_cookie(ZUSCHAUER), runden=2),
+                                _poller(env.db), aktion)
+    assert [e["type"] for e in meins] == ["notify", "positions"]
+    # Die Empfaenger-Angabe darf die ausgelieferte Nachricht nicht verlassen.
+    assert "nur_cid" not in meins[0]
+
+    fremd = await _ausgeliefert(_FakeRequest(cookies=_user_cookie(4242), runden=2),
+                                _poller(env.db), aktion)
+    assert [e["type"] for e in fremd] == ["positions"]
+
+
+@pytest.mark.asyncio
+async def test_testmeldung_erreicht_auch_keine_anonyme_verbindung(env):
+    def aktion(p):
+        p.broadcast_notify("events", None, {"title": "T", "body": "B", "url": "/"},
+                           nur_cid=ZUSCHAUER)
+        p.broadcast_sse({"type": "positions", "data": []})
+
+    raus = await _ausgeliefert(_FakeRequest(runden=2), _poller(env.db), aktion)
+    assert [e["type"] for e in raus] == ["positions"]

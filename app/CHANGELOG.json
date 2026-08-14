@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.2.0",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Test-Meldung ins Kniebrett",
+    "items": [
+      "🛩️ Der Admin-Bereich hat jetzt einen Knopf „Test ins Kniebrett\". Bisher ließ sich eine Tablet-Meldung nur prüfen, indem man wartete, bis zufällig jemand online ging — und ein zweiter Versuch war 15 Minuten lang gesperrt. Die Test-Meldung erscheint ausschließlich im eigenen Tablet, nie bei anderen."
+    ]
+  },
+  {
     "version": "12.1.2",
     "date": "2026-08-14",
     "highlight": false,

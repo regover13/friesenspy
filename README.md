@@ -583,6 +583,7 @@ FriesenSpy/
 | `/api/admin/bummel/races/{race_id}/badge/{cid}.png` | GET | Badge-Vorschau ohne Reveal-Gate (immer frisch, `no-store`) |
 | `/api/admin/banner` | GET/POST | Hinweis-Banner-Auswahl lesen/setzen (`auto`/`off`/Version) |
 | `/api/admin/push/test` | POST | Test-Push nur ans eigene Gerät (`endpoint`) |
+| `/api/admin/panel-notify-test` | POST | Test-Meldung nur ins eigene MSFS-Kniebrett (über SSE, kein Push) |
 | `/api/admin/push/broadcast` | POST | Freie Push-Nachricht (`title`, `body`, `audience`) |
 | `/api/admin/pilots` | GET/POST | Piloten auflisten / anlegen/umbenennen |
 | `/api/admin/pilots/{cid}` | DELETE | Pilot entfernen |
