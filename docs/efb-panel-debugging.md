@@ -179,8 +179,50 @@ Jede davon stammt aus einem echten Live-Test, nicht aus Vermutung:
 | **Jede** Schriftdatei | siehe unten — die Engine nimmt überhaupt keine an |
 | **Waagerechtes Scrollen** | siehe unten — technisch möglich, aber nicht bedienbar |
 
-**Leaflet selbst läuft einwandfrei** (Karte, Marker, Popups) — es ist kein generelles
-„alte Engine"-Problem, sondern diese konkreten Lücken.
+**Leaflet läuft grundsätzlich einwandfrei** (Karte, Marker, Popups) — es ist kein generelles
+„alte Engine"-Problem, sondern diese konkreten Lücken. Eine Ausnahme gibt es, und sie ist
+keine Coherent-Lücke, sondern ein Simulator-Fehler: siehe unten.
+
+### Kartenflackern: ein Simulator-Fehler, kein Fehler von uns (geklärt 14.08.2026)
+
+**Symptom:** Die Karte im Panel flackert, verschwindet für Sekunden, kommt beim Bewegen
+zurück. In VR so stark, dass die Kartenansichten unbrauchbar sind.
+
+**Ursache:** Leaflet **1.9.4** setzt auf jede Kachel `mix-blend-mode: plus-lighter`
+(`leaflet.css`, Verweis auf Chromium-Bug 600120; neu in 1.9.4 durch Leaflet PR #8891 — in
+1.9.3 nicht enthalten). In MSFS 2024 zerlegt genau diese Regel die Karte.
+
+**Das ist von Asobo bestätigt.** Sylvain (FlyingRaccoon) im DevSupport-Forum, 28.05.2025:
+„So far, we just know it's related to the `mix-blend-mode: plus-lighter` css rule." Betroffen
+ist *jedes* Addon mit Leaflet-Karte im EFB (AzurPoly, PMDG, Fenix, NextGen …), gemeldet seit
+der 2024er-Veröffentlichung, in MSFS 2020 trat es nie auf.
+
+**Fix** (in `app/static/index.html`, nur unter `html.vr-panel`):
+
+```css
+html.vr-panel .leaflet-container img.leaflet-tile { mix-blend-mode: unset !important; }
+```
+
+Auf der Website bleibt die Regel: Dort erfüllt sie ihren Zweck (Nähte beim Einblenden frisch
+geladener Kacheln) und dort hat nie etwas geflackert. Im Panel ist die Einblendung ohnehin
+abgeschaltet (`fadeAnimation: false`), die Regel hat dort also gar keine Aufgabe.
+
+**Warum fünf Runden Eigen-Diagnose daran vorbeiliefen** — als Warnung für das nächste Mal:
+Jede DOM-Messung sah sauber aus (30 s lang unveränderte Kacheln, volle Deckkraft, 22,5
+Bilder/s ohne einen Aussetzer), weil die Regel erst beim *Zusammensetzen* des Bildes wirkt.
+Zwei echte Funde unterwegs (Leaflets Kachel-Einblendung, der `.scanline`-Zierstreifen) haben
+den Verdacht zusätzlich im eigenen Code gehalten. Sogar die entscheidende Beobachtung des
+Nutzers — „das OpenAIP-Overlay flackert als Einziges nicht" — steht wortgleich im
+DevSupport-Thread (*„it only seems to affect the basemap"*).
+
+→ **Merksatz:** Bei einem Symptom, das nur im Sim auftritt und dessen DOM-Messungen alle
+sauber sind, gehört eine Netzrecherche in DevSupport/Foren an den **Anfang**, nicht ans Ende.
+Andere Addon-Entwickler stoßen auf dieselben Engine-Fehler, und dort stand die Antwort seit
+über einem Jahr.
+
+Quellen:
+[DevSupport 10552](https://devsupport.flightsimulator.com/t/msfs2020-aircraft-custom-map-flickering-on-html-gauge/10552),
+[DevSupport 16967](https://devsupport.flightsimulator.com/t/constant-flickering-with-leaflet-added-onto-an-html-instrument/16967)
 
 ### Schriften: eine Sackgasse, keine Aufgabe (gemessen 13.08.2026)
 

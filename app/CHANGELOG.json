@@ -1,5 +1,15 @@
 [
   {
+    "version": "12.5.5",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Kartenflackern im Cockpit behoben",
+    "items": [
+      "🗺️ Die Karte im Kniebrett flackerte im Simulator bis zur Unbrauchbarkeit, in VR besonders schlimm. Ursache war eine einzelne Zeile aus dem Stylesheet der Kartenbibliothek, die in MSFS 2024 fehlerhaft verarbeitet wird — ein bestätigter Simulator-Fehler, der jedes Addon mit Karte im Tablet trifft. Sie ist im Kniebrett jetzt abgeschaltet.",
+      "🧪 Die Messhilfen der Fehlersuche sind wieder raus: Die Kartenebenen haben ihre volle Deckkraft zurück."
+    ]
+  },
+  {
     "version": "12.5.4",
     "date": "2026-08-14",
     "highlight": false,

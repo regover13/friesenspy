@@ -915,41 +915,32 @@ def test_schriftzug_sitzt_zwischen_glocke_und_uhr_des_tablets():
     assert "justify-content: center;" in rumpf
 
 
-def test_jede_basisebene_traegt_eine_eigene_stufe_der_messreihe():
-    """Runde 2 der VR-Flacker-Suche: 0.99 wirkte fast nicht, 0.8 (am Overlay) nachweislich --
-    der Effekt ist graduell, kein Schalter. Statt den naechsten Einzelwert zu raten, traegt
-    jede Basisebene eine andere Stufe, sodass ein Durchschalten der Ebenen-Auswahl im Sim
-    alle Kandidaten unmittelbar gegeneinander zeigt. Die Stufen muessen deshalb
-    VERSCHIEDEN sein -- ein einziger Wert fuer alle macht die Messung wertlos."""
-    m = re.search(r"\? \{ ofm: ([\d.]+), topo: ([\d.]+), dark: ([\d.]+), light: ([\d.]+), sat: ([\d.]+) \}", INDEX)
-    assert m, "Messreihe der Basis-Deckkraft nicht gefunden"
-    stufen = [float(g) for g in m.groups()]
-    assert len(set(stufen)) == len(stufen), f"Stufen nicht unterscheidbar: {stufen}"
-    assert 0.8 in stufen, "der am Overlay bewaehrte Wert 0.8 fehlt in der Reihe"
-    assert 1 in stufen, "die deckkraftfreie Variante (CSS-Compositing) fehlt in der Reihe"
+def test_kartenflackern_mix_blend_mode_ist_im_panel_abgeschaltet():
+    """Die Ursache des Kartenflackerns im Sim, von Asobo selbst bestaetigt: Leaflet 1.9.4
+    setzt auf jede Kachel `mix-blend-mode: plus-lighter` (neu in 1.9.4, Leaflet PR #8891),
+    und genau diese Regel zerlegt die Karte in MSFS 2024. Nur im Panel abschalten -- auf der
+    Website erfuellt sie ihren Zweck (Naehte beim Einblenden), und dort flackert nichts."""
+    m = re.search(r"html\.vr-panel \.leaflet-container img\.leaflet-tile \{([^}]*)\}", INDEX, re.S)
+    assert m, "Gegenregel zu mix-blend-mode fehlt"
+    assert "mix-blend-mode: unset !important;" in m.group(1), \
+        "die Regel muss die Leaflet-eigene ueberschreiben -- ohne !important gewinnt sie nicht"
 
 
-def test_website_behaelt_volle_deckkraft():
-    """Geflackert hat es ausschliesslich im Panel. Die Messreihe darf die Karte im Browser
-    nicht blasser machen -- dort bleibt jede Ebene bei 1."""
-    m = re.search(r": \{ ofm: 1, topo: 1, dark: 1, light: 1, sat: 1 \};", INDEX)
-    assert m, "Website-Zweig der Deckkraft fehlt oder ist nicht mehr voll deckend"
+def test_deckkraft_messreihe_ist_vollstaendig_zurueckgebaut():
+    """Die Messreihe an der Deckkraft war eine Sackgasse (alle fuenf Stufen flackerten). Sie
+    darf keine Spur hinterlassen: Eine Karte mit Deckkraft unter 1 ist dauerhaft blass, und
+    die Ursache lag ganz woanders."""
+    m = re.search(r"function _makeTileLayers\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_makeTileLayers nicht gefunden"
+    rumpf = m.group(1)
+    assert "opacity" not in rumpf, "Basisebenen tragen immer noch eine gedrosselte Deckkraft"
+    assert "className" not in rumpf, "Compositing-Versuch der Messreihe ist noch da"
+    assert ".kachel-ebene" not in INDEX, "CSS der Messreihe ist noch da"
 
 
-def test_deckkraftfreie_variante_haengt_an_css_statt_an_opacity():
-    """Der eigentlich erwuenschte Weg: Eine Deckkraft unter 1 laesst die Karte blasser
-    werden. Greift stattdessen ein expliziter Compositing-Hinweis, kostet die Loesung
-    optisch nichts. Er haengt ueber Leaflets `className` am Container der Satelliten-Ebene."""
-    assert "className: satKlasse" in INDEX
-    m = re.search(r"html\.vr-panel \.kachel-ebene \{([^}]*)\}", INDEX, re.S)
-    assert m, "CSS-Regel fuer die eigene Zeichenebene fehlt"
-    assert "translateZ(0)" in m.group(1)
-
-
-def test_aip_overlay_ist_nach_der_gegenprobe_zurueckgesetzt():
-    """Die Gegenprobe ist gelaufen und hat gesessen (Overlay ohne Deckkraft flackerte
-    ebenfalls). Danach gehoert das Overlay zurueck auf seinen alten Wert -- es ist die eine
-    Ebene, von der wir wissen, dass sie ruhig bleibt, und dient als Vergleich im Bild."""
+def test_aip_overlay_behaelt_seine_deckkraft():
+    """Das Luftraum-Overlay hatte immer 0.8 und soll es behalten -- es liegt ueber der Karte
+    und wuerde sie sonst zudecken. Die Zahl ist kein Ueberbleibsel der Flacker-Suche."""
     assert "const _AIP_DECKKRAFT = 0.8;" in INDEX
     assert "opacity: _AIP_DECKKRAFT," in INDEX
 

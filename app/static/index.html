@@ -1547,16 +1547,36 @@
     html.vr-panel .sse-dot { animation: none !important; }
 
     /* ---------------------------------------------------------------------
-       KACHELEBENE ALS EIGENE ZEICHENEBENE (Messreihe, s. _BASIS_DECKKRAFT).
-       Der Weg ohne Deckkraftverlust: ein expliziter Compositing-Hinweis statt
-       einer Deckkraft unter 1. Haengt an der Satelliten-Ebene, damit er sich im
-       Sim gegen die vier Deckkraft-Stufen der anderen Ebenen vergleichen laesst.
-       translateZ(0) und will-change zusammen, weil unbekannt ist, welches von
-       beiden diese Engine ueberhaupt beachtet -- fuer die Frage "kostet die
-       Loesung optisch etwas?" reicht es zu wissen, DASS einer greift. */
-    html.vr-panel .kachel-ebene {
-      transform: translateZ(0);
-      will-change: transform;
+       DAS KARTENFLACKERN IM SIM -- eine Zeile Fremd-CSS war die Ursache.
+
+       Leaflet 1.9.4 setzt auf JEDE Kachel `mix-blend-mode: plus-lighter`
+       (leaflet.css, mit Verweis auf Chromium-Bug 600120; eingefuehrt in
+       Leaflet PR #8891, in 1.9.3 noch nicht vorhanden). In MSFS 2024 zerlegt
+       genau diese Regel die Karte: sie flackert bis zur Unbrauchbarkeit,
+       besonders in VR.
+
+       Das ist KEIN Fehler unseres Codes und auch keiner von Leaflet, sondern
+       ein bestaetigter Simulator-Fehler. Asobo (FlyingRaccoon) am 28.05.2025
+       im DevSupport-Forum: "So far, we just know it's related to the
+       mix-blend-mode: plus-lighter css rule." Betroffen ist jedes Addon mit
+       Leaflet-Karte im EFB; die verbreiteten Umgehungen sind ein Downgrade auf
+       Leaflet 1.9.3 oder genau diese CSS-Regel.
+       Quellen:
+         devsupport.flightsimulator.com/t/msfs2020-aircraft-custom-map-flickering-on-html-gauge/10552
+         devsupport.flightsimulator.com/t/constant-flickering-with-leaflet-added-onto-an-html-instrument/16967
+
+       Nur im Panel abschalten, nicht auf der Website: Die Regel soll Naehte
+       beim Einblenden frisch geladener Kacheln verhindern -- und die
+       Einblendung ist im Panel ohnehin aus (fadeAnimation: false, s.
+       _KARTE_EINBLENDEN). Sie hat hier also keine Aufgabe und nur Schaden.
+
+       Passt zu allem, was vorher gemessen wurde: Die Kacheln waren im DOM
+       immer einwandfrei (30 s unveraendert, volle Deckkraft) -- die Regel
+       wirkt erst beim Zusammensetzen des Bildes. Und dass ausgerechnet das
+       OpenAIP-Overlay ruhig blieb, berichten andere Entwickler wortgleich
+       ("it only seems to affect the basemap"). */
+    html.vr-panel .leaflet-container img.leaflet-tile {
+      mix-blend-mode: unset !important;
     }
 
     /* ---------------------------------------------------------------------
@@ -3313,51 +3333,24 @@ function _fixLeafletZoomMinus(map) {
 // Deckkraft unter 1 bekommt in WebKit-Engines eine eigene Zeichenebene und wird als Ganzes
 // zusammengesetzt statt im normalen Malpfad mitgezeichnet.
 //
-// Runde 1 (v12.5.3) hat BEIDE Richtungen zugleich geprueft und ein scharfes Ergebnis
-// geliefert -- nur ein anderes als erwartet:
-//   - Overlay ohne Deckkraft (1) -> flackert jetzt AUCH. Die Gegenprobe sitzt, die Deckkraft
-//     ist nachweislich der Hebel.
-//   - Basisebenen mit 0.99 -> flackern weiter. Der Fix wirkt NICHT.
-// Das schliesst die naechstliegende Erklaerung aus: Leaflet prueft nur `opacity < 1` und
-// laeuft danach fuer 0.99 und 0.8 durch exakt denselben Code (Container-Stil setzen,
-// _updateOpacity anstossen). Die Basisebenen hatten mit 0.99 also dieselbe Behandlung wie
-// das stabile Overlay mit 0.8. Es liegt damit nicht am Code-Pfad, sondern am ZAHLENWERT:
-// 0.99 ist der Engine nah genug an 1, um sich die eigene Zeichenebene zu sparen.
+// Zwei Runden Messreihe an der Deckkraft (v12.5.3/12.5.4) sind vollstaendig zurueckgebaut:
+// Die Spur war falsch. Alle fuenf Stufen von 0.99 bis 0.8 haben geflackert, auch der Wert,
+// bei dem das Overlay ruhig blieb, und auch der Weg ueber einen Compositing-Hinweis.
 //
-// Runde 2 raet deshalb nicht den naechsten Einzelwert, sondern legt fuenf Kandidaten
-// nebeneinander -- je einen pro Basisebene. Der Nutzer schaltet im Sim einfach die
-// Ebenen-Auswahl durch, die er ohnehin bedient, und sieht sie unmittelbar gegeneinander:
-//
-//   OpenFlightMap  0.99                 Kontrolle -- muss weiter flackern
-//   OpenTopo       0.8                  der am Overlay bewaehrte Wert, 1:1 auf der Basis
-//   Dark           0.9                  wo genau liegt die Schwelle?
-//   Light          0.95                 dito, feiner
-//   Satellit       1 + translateZ(0)    der Weg OHNE Deckkraftverlust (CSS .kachel-ebene)
-//
-// Der letzte ist der eigentlich erwuenschte: Eine Deckkraft unter 1 laesst die Karte blasser
-// werden -- als Messmittel in Ordnung, als Dauerzustand ein Preis. Wirkt der explizite
-// Compositing-Hinweis, kostet die Loesung nichts.
-//
-// Auf der Website bleibt alles bei 1 bzw. 0.8; dort hat nie etwas geflackert.
+// Die wirkliche Ursache ist eine einzige Zeile FREMD-CSS und steht jetzt im Stylesheet bei
+// `.leaflet-container img.leaflet-tile` -- ein bestaetigter Simulator-Fehler, kein Wert, an
+// dem man hier drehen muesste. Die Deckkraft der Ebenen ist deshalb wieder das, was sie
+// immer war: voll fuer die Karte, 0.8 fuer das Luftraum-Overlay, im Panel wie im Browser.
 const _PANEL_MODUS = document.documentElement.classList.contains('vr-panel');
 const _AIP_DECKKRAFT = 0.8;
 
-// Deckkraft je Basisebene -- im Panel die Messreihe, sonst ueberall volle Deckkraft.
-const _BASIS_DECKKRAFT = _PANEL_MODUS
-  ? { ofm: 0.99, topo: 0.8, dark: 0.9, light: 0.95, sat: 1 }
-  : { ofm: 1, topo: 1, dark: 1, light: 1, sat: 1 };
-
 function _makeTileLayers() {
-  const d = _BASIS_DECKKRAFT;
-  // `className` landet bei Leaflet auf dem Container der Ebene (GridLayer._initContainer) --
-  // damit haengt der Compositing-Versuch fuer Satellit an CSS statt an einer Deckkraft.
-  const satKlasse = _PANEL_MODUS ? 'kachel-ebene' : '';
   return {
-    ofm:  L.tileLayer(TILE_OFM_URL,  { attribution: TILE_OFM_ATTR,  maxNativeZoom: OFM_NATIVE_MAX_ZOOM, maxZoom: 19, minZoom: 6, opacity: d.ofm }),
-    topo: L.tileLayer(TILE_TOPO_URL, { attribution: TILE_TOPO_ATTR, subdomains: 'abc', maxZoom: 17, opacity: d.topo }),
-    light: L.tileLayer(TILE_LIGHT_URL, { attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19, opacity: d.light }),
-    dark: L.tileLayer(TILE_DARK_URL,  { attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19, opacity: d.dark }),
-    sat:  L.tileLayer(TILE_SAT_URL,  { attribution: TILE_SAT_ATTR,  maxZoom: 19, opacity: d.sat, className: satKlasse }),
+    ofm:  L.tileLayer(TILE_OFM_URL,  { attribution: TILE_OFM_ATTR,  maxNativeZoom: OFM_NATIVE_MAX_ZOOM, maxZoom: 19, minZoom: 6 }),
+    topo: L.tileLayer(TILE_TOPO_URL, { attribution: TILE_TOPO_ATTR, subdomains: 'abc', maxZoom: 17 }),
+    light: L.tileLayer(TILE_LIGHT_URL, { attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19 }),
+    dark: L.tileLayer(TILE_DARK_URL,  { attribution: TILE_DARK_ATTR, subdomains: 'abcd', maxZoom: 19 }),
+    sat:  L.tileLayer(TILE_SAT_URL,  { attribution: TILE_SAT_ATTR,  maxZoom: 19 }),
   };
 }
 
