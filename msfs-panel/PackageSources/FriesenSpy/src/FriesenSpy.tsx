@@ -92,7 +92,27 @@ interface PanelNachricht {
   service?: string;
 }
 
+/**
+ * Wie oft die eigene Position in die Seite gereicht wird.
+ *
+ * Zweimal pro Sekunde ist der Punkt, an dem eine Karte fluessig wirkt, ohne dass es
+ * Verschwendung waere: Die Seite zeichnet ihre Marker ohnehin nur im Sekundentakt neu, und
+ * jeder SimVar-Zugriff kostet messbar Zeit (SDK-Doku: "calls to SimVar.GetSimVarValue()
+ * incur a non-negligible performance cost"). Bei 60 Bildern/s waere das 120-mal mehr
+ * Arbeit fuer dieselbe Anzeige.
+ */
+const POSITION_INTERVALL_MS = 500;
+
+/** Nach so vielen Fehlgriffen in Folge gibt die Positionsabfrage auf. */
+const POSITION_MAX_FEHLER = 5;
+
 class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
+  /** Das eingebettete Fenster -- Empfaenger der Positionsmeldungen. */
+  private readonly rahmenRef = FSComponent.createRef<HTMLIFrameElement>();
+
+  private letztePositionMs = 0;
+  private positionFehler = 0;
+  private letzteMeldung = "";
   /**
    * Empfaenger fuer Nachrichten aus dem iframe. Als Feld gehalten, damit er in destroy()
    * wieder abgemeldet werden kann -- die App lebt mit AppSuspendMode.SLEEP lange.
@@ -164,6 +184,84 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     }
   };
 
+  /**
+   * Die eigene Position aus dem Simulator in die Seite reichen.
+   *
+   * Warum ueberhaupt: Die Seite kennt alle anderen Flugzeuge aus dem VATSIM-Datenstrom, aber
+   * das EIGENE nur genauso -- also alle 15 Sekunden und nur, wenn man online verbunden ist.
+   * Fuer eine Karte, die dem eigenen Flieger folgen und sich in Flugrichtung drehen soll, ist
+   * das zu wenig. Der Sim weiss es besser, und zwar nur ueber das eigene Flugzeug: Fremder
+   * Verkehr ist ueber `GET_AIR_TRAFFIC` nicht zu bekommen (kein Multiplayer-Verkehr,
+   * DevSupport 3794; in der Luft erzeugte AI-Objekte fehlen, DevSupport 4993).
+   *
+   * Warum HIER und nicht in einem eigenen Timer: `onUpdate` ist die Schleife der EFB und
+   * laeuft nur, solange die App sichtbar ist. Ein setInterval muesste erst muehsam
+   * herausfinden, ob das Tablet ueberhaupt offen ist -- und liefe im Zweifel weiter, waehrend
+   * niemand hinsieht. Asobo nennt genau diesen Weg (DevSupport 10986).
+   *
+   * Die Einheiten sind die aus Asobos eigenem VFR-Karten-Panel: "degree latitude" /
+   * "degree longitude". Der SimVar-Name "PLANE HEADING DEGREES TRUE" ist irrefuehrend -- die
+   * Variable liegt intern in Radiant, die JS-Schnittstelle rechnet auf die angeforderte
+   * Einheit um, deshalb hier ausdruecklich "degrees".
+   */
+  private positionSenden(): void {
+    const ziel = this.rahmenRef.instance ? this.rahmenRef.instance.contentWindow : null;
+    if (!ziel) {
+      return;
+    }
+    try {
+      const sv = (globalThis as { SimVar?: { GetSimVarValue(n: string, u: string): number } }).SimVar;
+      if (!sv || typeof sv.GetSimVarValue !== "function") {
+        this.positionFehler = POSITION_MAX_FEHLER;   // gibt es hier nicht, gar nicht erst weiter versuchen
+        return;
+      }
+      const lat = sv.GetSimVarValue("PLANE LATITUDE", "degree latitude");
+      const lon = sv.GetSimVarValue("PLANE LONGITUDE", "degree longitude");
+      const hdg = sv.GetSimVarValue("PLANE HEADING DEGREES TRUE", "degrees");
+      const gs = sv.GetSimVarValue("GROUND VELOCITY", "knots");
+
+      // Beim Laden eines Fluges liefern die Variablen kurzzeitig Unsinn (0/0 mitten im
+      // Atlantik oder NaN). So etwas weiterzureichen hiesse, die Karte an einen Ort zu
+      // schieben, an dem niemand ist.
+      if (!isFinite(lat) || !isFinite(lon) || (lat === 0 && lon === 0)) {
+        return;
+      }
+
+      // Nur senden, wenn sich wirklich etwas geaendert hat. Auf 5 Nachkommastellen gerundet
+      // sind das gut anderthalb Meter -- feiner braucht es eine Karte nicht, und am Boden
+      // mit stehendem Motor schweigt die Bruecke damit ganz.
+      const meldung = lat.toFixed(5) + "," + lon.toFixed(5) + "," + Math.round(hdg);
+      if (meldung === this.letzteMeldung) {
+        return;
+      }
+      this.letzteMeldung = meldung;
+
+      ziel.postMessage(
+        { quelle: "friesenspy-shell", art: "position", lat: lat, lon: lon, hdg: hdg, gs: gs },
+        "*",
+      );
+      this.positionFehler = 0;
+    } catch (_e) {
+      // Nie die App an der Positionsabfrage scheitern lassen -- sie ist eine Zugabe, nicht
+      // die Hauptsache. Nach ein paar Fehlgriffen in Folge hoert sie von selbst auf, statt
+      // in jedem Bild erneut in denselben Fehler zu laufen.
+      this.positionFehler++;
+    }
+  }
+
+  /** @inheritdoc */
+  public onUpdate(time: number): void {
+    super.onUpdate(time);
+    if (this.positionFehler >= POSITION_MAX_FEHLER) {
+      return;
+    }
+    if (time - this.letztePositionMs < POSITION_INTERVALL_MS) {
+      return;
+    }
+    this.letztePositionMs = time;
+    this.positionSenden();
+  }
+
   /** @inheritdoc */
   public onAfterRender(node: VNode): void {
     super.onAfterRender(node);
@@ -185,7 +283,7 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   public render(): VNode {
     return (
       <div class="friesenspy-app">
-        <iframe class="friesenspy-frame" src={buildPanelUrl()} />
+        <iframe ref={this.rahmenRef} class="friesenspy-frame" src={buildPanelUrl()} />
       </div>
     );
   }
