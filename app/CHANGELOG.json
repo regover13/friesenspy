@@ -6,7 +6,8 @@
     "title": "Kompass und Moving Map nur, wenn sie etwas können",
     "items": [
       "🧭 Die beiden neuen Kartenknöpfe erscheinen jetzt erst, wenn die Karte weiß, wo dein Flugzeug ist — also während du selbst fliegst. Vorher standen sie auch dann da, wenn sie nichts bewirken konnten.",
-      "✈️ Im MSFS-Tablet reicht dafür der Simulator: Die App reicht deine Position direkt weiter, du musst nicht auf VATSIM verbunden sein. Dafür ist eine Neuinstallation des Tablet-Pakets nötig (Version 1.2.0, siehe „FriesenSpy im Cockpit“ unten auf der Seite)."
+      "✈️ Im MSFS-Tablet reicht dafür der Simulator: Die App reicht deine Position direkt weiter, du musst nicht auf VATSIM verbunden sein. Dafür ist eine Neuinstallation des Tablet-Pakets nötig (Version 1.2.0, siehe „Kniebrett“ unten auf der Seite).",
+      "🏷️ Ein Name für die Sache: Was mal „FriesenSpy im Cockpit“ hieß, heißt jetzt überall schlicht Kniebrett — der Link unten auf der Seite, die Download-Seite und alle Verweise darauf."
     ]
   },
   {
@@ -195,7 +196,7 @@
       "🔔 Das Tablet im Simulator meldet ab sofort selbst, wenn jemand online geht, einen Flugplan einreicht, TeamSpeak betritt oder ein Event ansteht. Die Meldung bleibt danach auf der Benachrichtigungs-Seite des Tablets stehen — wer im falschen Moment aus dem Fenster schaut, verpasst sie also nicht.",
       "🎚️ Über die Glocke oben rechts lässt sich im Kniebrett einstellen, welche der vier Sorten man sehen will. Das gilt nur fürs Tablet; die Benachrichtigungen im Browser bleiben unberührt.",
       "🔒 Wer unter „Wer darf über mich benachrichtigt werden?“ jemanden ausgeschlossen hat, bleibt auch im Kniebrett ausgeschlossen. Diese Entscheidung fällt auf dem Server, nicht im Tablet.",
-      "📦 Dafür ist einmalig das neue Paket nötig — die alte Hülle kennt die Meldungen noch nicht. Download wie gehabt unter „FriesenSpy im Cockpit“ ganz unten auf der Seite."
+      "📦 Dafür ist einmalig das neue Paket nötig — die alte Hülle kennt die Meldungen noch nicht. Download wie gehabt unter „Kniebrett“ ganz unten auf der Seite."
     ]
   },
   {
@@ -204,7 +205,7 @@
     "highlight": true,
     "title": "Kniebrett",
     "items": [
-      "🛩️ FriesenSpy gibt es ab sofort als eigene App im Tablet des Flight Simulator 2024. Dieselben Ansichten wie hier — wer gerade online ist, die Karte, eingereichte Flugpläne, Statistik und Events — nur eben im Cockpit, ohne Alt-Tab und auch in VR. Paket und Anleitung stehen unter „FriesenSpy im Cockpit“ ganz unten auf der Seite.",
+      "🛩️ FriesenSpy gibt es ab sofort als eigene App im Tablet des Flight Simulator 2024. Dieselben Ansichten wie hier — wer gerade online ist, die Karte, eingereichte Flugpläne, Statistik und Events — nur eben im Cockpit, ohne Alt-Tab und auch in VR. Paket und Anleitung stehen unter „Kniebrett“ ganz unten auf der Seite.",
       "🔑 Einmal anmelden genügt: Die Anmeldung bleibt im Tablet erhalten, auch über einen Neustart des Simulators hinweg. Das Tablet merkt sich dafür eine zufällige Gerätekennung — kein Passwort, keine Zugangsdaten.",
       "📦 Einmal installieren genügt ebenfalls: Das Paket ist nur eine dünne Hülle, alles Weitere kommt vom Server. Künftige Änderungen sind ohne Neuinstallation da.",
       "📋 Breite Tabellen stehen im Tablet als Karten untereinander statt als Spalten nebeneinander — dort lässt sich nichts seitwärts schieben, als Tabelle wäre die rechte Hälfte unerreichbar. Umlaute erscheinen als ae, oe, ue und ss: Die Anzeige-Engine des Simulators bringt genau eine Schrift mit, die nichts jenseits des englischen Alphabets kennt."

@@ -1076,6 +1076,20 @@ def test_drehung_nur_mit_geprueftem_plugin():
     assert "rotateControl: false" in INDEX
 
 
+def test_das_ding_heisst_ueberall_kniebrett():
+    """Ein Name fuer eine Sache. Der Link auf der Startseite hiess „FriesenSpy im Cockpit",
+    die Seite dahinter trug beide Namen -- wer nach dem einen sucht, findet das andere nicht.
+    Nutzer, 15.08.2026: "Nenn es ueberall Kniebrett" / "Nix mit im Cockpit bleibt!"
+
+    Geprueft wird nur SICHTBARER Text. In Code-Kommentaren ist "im Cockpit" eine Ortsangabe
+    ("im Cockpit wird mit dem Finger bedient") und kein Produktname -- die bleiben."""
+    assert '<a href="/efb" style="color:var(--green);">Kniebrett</a>' in INDEX
+    efb = (STATIC / "efb.html").read_text(encoding="utf-8")
+    assert "<title>Kniebrett</title>" in efb
+    assert "<h1>Kniebrett</h1>" in efb
+    assert "FriesenSpy im Cockpit" not in efb
+
+
 def test_knoepfe_verschwinden_ohne_eigenes_flugzeug():
     """Ohne eigenes Flugzeug koennen beide Knoepfe nichts ausrichten -- dann sind sie weg,
     statt eine Funktion vorzutaeuschen. Nutzerfrage vom 14.08.2026: "Macht das Sinn, die
