@@ -1,5 +1,16 @@
 [
   {
+    "version": "12.5.4",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Kartenflackern: fünf Kandidaten in einem Durchgang",
+    "items": [
+      "🔬 Die Gegenprobe aus der letzten Version hat gesessen: Die Luftraum-Ebene flackerte ohne ihre Deckkraft ebenfalls. Der bisherige Wert für die Kartenebenen war aber zu nah an voller Deckkraft, um zu wirken — der Effekt ist graduell.",
+      "🗺️ Im Cockpit-Kniebrett trägt deshalb jede Kartenebene vorübergehend eine andere Stufe. Ein Durchschalten der Ebenen-Auswahl zeigt sie unmittelbar gegeneinander, statt dass Version für Version ein einzelner Wert geraten wird.",
+      "🛰️ Der Satellit probiert dabei den Weg ohne Deckkraftverlust. Wirkt er, kostet die Lösung optisch nichts. Auf der Website ändert sich nichts."
+    ]
+  },
+  {
     "version": "12.5.3",
     "date": "2026-08-14",
     "highlight": false,
