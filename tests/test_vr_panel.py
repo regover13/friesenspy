@@ -872,3 +872,13 @@ def test_panel_leiste_ist_in_vr_lesbar_dimensioniert():
     assert "flex: 1 1 auto" in zurueck.group(1), "Zurueck-Knopf bekommt den Rest nicht"
     # Symbole in den Tabs entfallen -- sonst passen Symbol UND Text nicht mehr nebeneinander.
     assert "html.vr-panel .panel-topbar .tab-btn .icon { display: none; }" in INDEX
+
+
+def test_glocke_bleibt_rechts_auch_ohne_zurueck_knopf():
+    """Gemessen im Sim (748px Panel-Breite, kein Zurueck-Knopf sichtbar): Die Glocke stand bei
+    x=220 mitten in der Leiste. Der Zurueck-Knopf traegt als Einziger die Breitenverteilung
+    (flex:1 1 auto) -- ist er ausgeblendet, faellt sie weg. `margin-left:auto` haelt die
+    Glocke unabhaengig davon am rechten Rand."""
+    m = re.search(r"html\.vr-panel \.panel-topbar #notif-btn \{(.*?)\n    \}", INDEX, re.S)
+    assert m, "Glocken-Regel in der Leiste nicht gefunden"
+    assert "margin-left: auto;" in m.group(1)

@@ -1307,6 +1307,11 @@
        #sse-badge an dieser Stelle: nur Trennlinie links, kein eigener Rahmen. */
     html.vr-panel .panel-topbar #notif-btn {
       flex: 0 0 auto;
+      /* Immer ganz rechts -- auch wenn der Zurueck-Knopf ausgeblendet ist. Er traegt sonst
+         als Einziger die Breitenverteilung (flex:1 1 auto); ohne ihn rutschen Tabs und
+         Glocke zusammen nach links und die Glocke steht mitten in der Leiste (gemessen:
+         x=220 bei 748px Breite). */
+      margin-left: auto;
       display: flex;
       align-items: center;
       justify-content: center;

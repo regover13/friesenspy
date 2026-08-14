@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.4.2",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Glocke bleibt am rechten Rand",
+    "items": [
+      "🔔 Im Tablet stand die Glocke mitten in der Leiste statt ganz rechts, solange kein Zurück-Knopf zu sehen war. Sie bleibt jetzt in jedem Fall am rechten Rand."
+    ]
+  },
+  {
     "version": "12.4.1",
     "date": "2026-08-14",
     "highlight": false,
