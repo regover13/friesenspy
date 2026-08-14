@@ -490,21 +490,29 @@ def test_tab_leiste_ist_immer_sichtbar_und_bricht_nie_um():
     rumpf = m.group(1)
     assert "position: fixed;" in rumpf
     assert "flex-wrap: nowrap;" in rumpf
-    assert "min-height: 44px;" in rumpf
+    # Mindesthoehe: nicht der exakte Wert zaehlt, sondern dass die Trefferflaeche fuer den
+    # Finger reicht. Mit zoom 1.35 werden aus 38 CSS-Pixeln real ~51 -- ueber den 44, um die
+    # es urspruenglich ging. Am 14.08.2026 von 44 auf 38 gesenkt, weil der Rest als Leerraum
+    # ueber und unter den Beschriftungen stand (Nutzer-Foto).
+    hoehe = re.search(r"min-height: (\d+)px;", rumpf)
+    assert hoehe, "keine Mindesthoehe gesetzt"
+    assert int(hoehe.group(1)) * 1.35 >= 44, "Trefferflaeche unter der Fingerregel"
 
 
-def test_friesenspy_schriftzug_als_leisten_hintergrund():
-    """Das Wort FRIESENSPY hinter Zurueck-Knopf/Tabs/Glocke. Am 14.08.2026 auf Nutzerwunsch
-    kraeftiger gestellt (in VR war der anfaengliche Hauch von 0.12 kaum wahrnehmbar) -- es
-    bleibt aber Hintergrund: ab etwa 0.3 faengt es an, die Beschriftungen zu stoeren, und die
-    zu lesen ist der eigentliche Zweck der Leiste."""
+def test_friesenspy_schriftzug_steht_oben_in_der_statusleiste():
+    """Der Schriftzug lag urspruenglich als blasser Hintergrund HINTER den Beschriftungen und
+    musste deshalb dezent bleiben. Seit 14.08.2026 steht er stattdessen OBEN auf Hoehe der
+    Tablet-Statusleiste, deren Mitte frei ist (links deren Glocke, rechts Datum/Uhrzeit) --
+    Nutzerwunsch mit Skizze. Dort liegt keine Beschriftung mehr darueber, also darf er
+    kraeftig sein; der Streifen war ohnehin fuer den Abstand reserviert."""
     m = re.search(r"html\.vr-panel \.panel-topbar::before \{([^}]*)\}", INDEX, re.S)
     assert m, "Schriftzug-Pseudoelement nicht gefunden"
     rumpf = m.group(1)
     assert "content: 'FRIESENSPY';" in rumpf
+    assert "top: 0;" in rumpf, "Schriftzug muss oben in der Statusleiste sitzen"
+    assert "height: 26px;" in rumpf, "Schriftzug darf nicht in den Bereich der Tabs reichen"
     opazitaet = re.search(r"opacity:\s*([\d.]+);", rumpf)
-    assert opazitaet, "keine Opazitaet gesetzt"
-    assert 0.15 <= float(opazitaet.group(1)) <= 0.3, "Schriftzug: sichtbar, aber Hintergrund"
+    assert opazitaet and float(opazitaet.group(1)) >= 0.5, "im freien Streifen ruhig deutlich"
 
 
 def test_panel_topbar_haengt_ausserhalb_von_app():
@@ -882,3 +890,11 @@ def test_glocke_bleibt_rechts_auch_ohne_zurueck_knopf():
     m = re.search(r"html\.vr-panel \.panel-topbar #notif-btn \{(.*?)\n    \}", INDEX, re.S)
     assert m, "Glocken-Regel in der Leiste nicht gefunden"
     assert "margin-left: auto;" in m.group(1)
+
+
+def test_tabs_fuellen_die_leiste_wenn_kein_zurueck_knopf_da_ist():
+    """Ohne Zurueck-Knopf traegt niemand mehr die Breitenverteilung -- dann sollen sich die
+    vier Ansichten den Platz gleichmaessig teilen statt links zusammenzurutschen
+    (Nutzerwunsch 14.08.2026). Ueber den Geschwister-Kombinator, weil der Knopf im Markup vor
+    den Tabs steht: kein JavaScript noetig, der Zustand steht im hidden-Attribut."""
+    assert "html.vr-panel .panel-topbar .panel-back-btn[hidden] ~ .tab-btn { flex: 1 1 0; }" in INDEX

@@ -1,5 +1,16 @@
 [
   {
+    "version": "12.5.0",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "FriesenSpy-Schriftzug in der Tablet-Leiste",
+    "items": [
+      "🛩️ Der Schriftzug steht im Tablet jetzt oben in der Statusleiste, zwischen deren Glocke und der Uhrzeit — dort ist Platz frei, und der Streifen war ohnehin für den Abstand reserviert. Weil ihn dort keine Beschriftung mehr überlagert, darf er endlich deutlich sein.",
+      "📏 Die Leiste ist dadurch schmaler geworden: Der Leerraum über und unter den Namen der Ansichten ist weg.",
+      "↔️ Ist gerade nichts geöffnet und damit kein Zurück-Knopf zu sehen, verteilen sich LIVE, MAP, STATS und EVENTS wieder gleichmäßig über die ganze Breite."
+    ]
+  },
+  {
     "version": "12.4.2",
     "date": "2026-08-14",
     "highlight": false,
