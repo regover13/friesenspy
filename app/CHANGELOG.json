@@ -1,5 +1,15 @@
 [
   {
+    "version": "12.6.4",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Neues Flugzeug-Symbol, Moving Map zentriert sofort",
+    "items": [
+      "✈️ Die Flugzeuge auf der Karte haben eine neue Form: ein Leichtflugzeug mit geraden Flügeln, etwas größer als bisher. Das alte Symbol war so gezeichnet, dass Rumpf und Flügel gleich breit waren — vergrößert sah es aus wie ein Stern, auf der Karte wie ein Klecks.",
+      "📍 Nach dem Einschalten von Moving Map dauerte es anderthalb Sekunden, bis die Karte auf das eigene Flugzeug sprang. Grund: Die Kartenknöpfe liegen technisch innerhalb der Karte, und der Druck auf den Knopf zählte als „Karte angefasst\" — was die Nachführung absichtlich kurz aussetzen lässt. Knöpfe sind davon jetzt ausgenommen."
+    ]
+  },
+  {
     "version": "12.6.3",
     "date": "2026-08-15",
     "highlight": false,

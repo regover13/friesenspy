@@ -1047,6 +1047,12 @@ def test_ziehen_schaltet_moving_map_ab_zoomen_nicht():
     # menschlicher dauert Sekunden und kollidiert dabei mit der Nachfuehrung.
     assert "_naviPauseBis" in INDEX
     assert "Date.now() >= _naviPauseBis" in INDEX, "die Pause wird beim Nachfuehren nicht beachtet"
+    # Die Bedienelemente liegen INNERHALB des Kartenbereichs -- ein Druck auf einen Knopf
+    # darf die Nachfuehrung nicht pausieren, sonst zentriert die Karte nach dem Einschalten
+    # erst mit 1,5 s Verzoegerung ("klick auf follow me scheint laenger zu dauern",
+    # gemessen: 1500 ms vorher, 49 ms nachher).
+    assert "ziel.closest('.leaflet-control')" in INDEX, \
+        "ohne diese Ausnahme pausiert schon der Klick auf den Knopf die Nachfuehrung"
     for ereignis in ("pointerdown", "touchstart", "mousedown"):
         assert f"flaeche.addEventListener('{ereignis}', anfassen, true)" in INDEX, \
             f"{ereignis} fehlt -- welches im Sim ankommt, ist ungeprueft"
@@ -1091,6 +1097,21 @@ def test_drehung_nur_mit_geprueftem_plugin():
     # Karte ist schlimmer als eine, die sich nicht drehen laesst.
     assert "touchRotate: false" in INDEX
     assert "shiftKeyRotate: false" in INDEX
+
+
+def test_flugzeug_symbol_ist_mittig_verankert():
+    """Das Symbol ist 26 px gross (Nutzer-Wahl). Der Anker MUSS die Mitte sein und mit der
+    Groesse mitwachsen -- sonst sitzt das Flugzeug nicht auf seiner eigenen Position,
+    sondern daneben, und zwar umso weiter, je groesser das Symbol ist."""
+    assert "const _FLUGZEUG_PX = 26;" in INDEX
+    m = re.search(r"function makeAircraftIcon\(heading\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "makeAircraftIcon nicht gefunden"
+    rumpf = m.group(1)
+    assert "const mitte = _FLUGZEUG_PX / 2;" in rumpf
+    assert "iconAnchor: [mitte, mitte]" in rumpf, "fester Anker haelt der Groesse nicht stand"
+    assert "iconSize:   [_FLUGZEUG_PX, _FLUGZEUG_PX]" in rumpf
+    # Die alte Form (Rumpf und Fluegel gleich breit -- vergroessert ein Stern) ist raus.
+    assert "M12 2L8 10H4" not in INDEX
 
 
 def test_nur_der_takt_bewegt_marker():

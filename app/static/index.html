@@ -6752,7 +6752,8 @@ let _naviPauseBis = 0;
 // Was beim Anfassen der Karte tatsaechlich passiert ist -- fuer die einmalige Messung
 // unten. Ohne sie waere im Sim nicht zu unterscheiden, ob das Ereignis gar nicht kommt
 // oder ob es kommt und die Bedingung es verwirft.
-const _naviSchiebeSpur = { kontakt: 0, movestart: 0, dragstart: 0, abgeschaltet: 0, gemeldet: false };
+const _naviSchiebeSpur = { kontakt: 0, kontaktArt: null, movestart: 0, fremdMovestart: 0,
+                           dragstart: 0, abgeschaltet: 0, gemeldet: false };
 
 /** Kann diese Karte ueberhaupt drehen? Faellt leaflet-rotate aus, ist die Antwort nein. */
 function _kannDrehen(map) {
@@ -6852,6 +6853,7 @@ function _addMovingMapControl(map) {
   map.on('zoomend',   function () { _naviZoomt = false; });
   map.on('movestart', function () {
     _naviSchiebeSpur.movestart++;
+    if (!_naviSelbstBewegt) _naviSchiebeSpur.fremdMovestart++;
     if (!_movingMap || _naviSelbstBewegt || _naviZoomt) return;
     _movingMap = false;
     _naviMerke(_NAVI_MOVING_KEY, false);
@@ -6872,8 +6874,16 @@ function _addMovingMapControl(map) {
   // Objekt waere dort als "truthy" gelesen und stillschweigend zu capture geworden -- das
   // gewuenschte Verhalten, aber aus dem falschen Grund. Lieber gleich hinschreiben.
   const flaeche = map.getContainer();
-  const anfassen = function () {
+  const anfassen = function (e) {
+    // Die Bedienelemente liegen INNERHALB des Kartenbereichs -- ein Druck auf einen Knopf
+    // darf die Nachfuehrung nicht pausieren. Ohne diese Ausnahme zentrierte die Karte nach
+    // dem Einschalten von Moving Map erst mit 1,5 s Verzoegerung, weil der Klick auf den
+    // Knopf selbst als "Karte angefasst" zaehlte (Nutzer-Fund 15.08.2026: "klick auf
+    // follow me scheint laenger zu dauern, bis gecentert wird?").
+    const ziel = e && e.target;
+    if (ziel && typeof ziel.closest === 'function' && ziel.closest('.leaflet-control')) return;
     _naviSchiebeSpur.kontakt++;
+    _naviSchiebeSpur.kontaktArt = e && e.type;
     _naviPauseBis = Date.now() + 1500;
   };
   flaeche.addEventListener('pointerdown', anfassen, true);
@@ -7039,15 +7049,25 @@ function _naviTakt(sofort) {
  */
 function _naviSchiebeMelden() {
   if (_naviSchiebeSpur.gemeldet) return;
-  if (!_naviSchiebeSpur.kontakt && !_naviSchiebeSpur.movestart) return;
+  // NUR bei fremder Aktivitaet melden. Der erste Anlauf hat auch bei `movestart` gemeldet
+  // -- und das feuert unser eigenes Nachfuehren im Sekundentakt selbst. Der Bericht ging
+  // dadurch ab, bevor der Nutzer die Karte ueberhaupt angefasst hatte, und sagte ueber die
+  // Frage, die er beantworten sollte, genau nichts (kontakt 0, movestart 1, 15.08.2026).
+  // Ein Messmittel, das sich selbst ausloest, misst sich selbst.
+  if (!_naviSchiebeSpur.kontakt && !_naviSchiebeSpur.fremdMovestart) return;
   if (typeof window._panelDiag !== 'function') return;
   _naviSchiebeSpur.gemeldet = true;
   window._panelDiag('schieben', {
     kontakt: _naviSchiebeSpur.kontakt,
+    kontaktArt: _naviSchiebeSpur.kontaktArt,
     movestart: _naviSchiebeSpur.movestart,
+    fremdMovestart: _naviSchiebeSpur.fremdMovestart,
     dragstart: _naviSchiebeSpur.dragstart,
     abgeschaltet: _naviSchiebeSpur.abgeschaltet,
-    movingMapJetzt: _movingMap
+    movingMapJetzt: _movingMap,
+    // Kann die Karte ueberhaupt geschoben werden? Wenn Leaflets Dragging aus ist, waere
+    // das die ganze Erklaerung -- und die Frage stellt sich erst, seit kontakt 0 war.
+    draggingAktiv: !!(liveMap && liveMap.dragging && liveMap.dragging.enabled())
   });
 }
 
@@ -7188,18 +7208,34 @@ async function initLiveMap() {
   updateMap(liveData);
 }
 
+// Das Flugzeug auf der Karte: GERADE Fluegel, langer Rumpf, kleines Hoehenleitwerk -- ein
+// Leichtflugzeug, so wie die Friesen fliegen (Nutzer-Wahl 15.08.2026 aus vier Vorschlaegen).
+// Der alte Pfad hatte Rumpf und Fluegel gleich breit; vergroessert sah er aus wie ein Stern,
+// bei 20 px wie ein Klecks.
+//
+// 26 statt 20 Pixel, ebenfalls Nutzer-Wahl: Bei 20 px verschwinden die duennen Stellen
+// zwischen Rumpf und Fluegelwurzel, gerade im Cockpit und erst recht in VR.
+const _FLUGZEUG_PX = 26;
+const _FLUGZEUG_PFAD =
+  'M11.25 2.2c0-.5.34-.9.75-.9s.75.4.75.9v6.05h8.4c.45 0 .8.36.8.8v1.1c0 .44-.35.8-.8.8' +
+  'h-8.4v5.3l3.1 1.5c.3.15.5.45.5.8v.95l-4.35-1.1-4.35 1.1v-.95c0-.35.2-.65.5-.8l3.1-1.5' +
+  'v-5.3H2.85c-.45 0-.8-.36-.8-.8v-1.1c0-.44.35-.8.8-.8h8.4z';
+
 function makeAircraftIcon(heading) {
   const hdg = Number(heading) || 0;
+  const mitte = _FLUGZEUG_PX / 2;
   return L.divIcon({
     className: '',
     html: `<div class="aircraft-marker" style="transform: rotate(${hdg}deg);">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2L8 10H4l3 2-1 4 6-2 6 2-1-4 3-2h-4z"/>
+      <svg width="${_FLUGZEUG_PX}" height="${_FLUGZEUG_PX}" viewBox="0 0 24 24" fill="currentColor">
+        <path d="${_FLUGZEUG_PFAD}"/>
       </svg>
     </div>`,
-    iconSize:   [20, 20],
-    iconAnchor: [10, 10],
-    popupAnchor:[0, -12],
+    iconSize:   [_FLUGZEUG_PX, _FLUGZEUG_PX],
+    // Der Anker MUSS die Mitte sein und mit der Groesse mitwachsen -- sonst sitzt das
+    // Flugzeug nicht mehr auf seiner eigenen Position, sondern daneben.
+    iconAnchor: [mitte, mitte],
+    popupAnchor:[0, -mitte - 2],
   });
 }
 
