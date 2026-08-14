@@ -1,5 +1,16 @@
 [
   {
+    "version": "12.4.0",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Leiste im Kniebrett: größer und lesbar",
+    "items": [
+      "🛩️ Die Navigationsleiste im Tablet war in VR schlecht zu lesen. Die Schrift ist jetzt deutlich größer, und der Zurück-Knopf bekommt den Platz, den die Ansichten übriglassen — im Cockpit ist er das häufigste Ziel.",
+      "🔤 Dafür heißen die Ansichten im Tablet jetzt LIVE, MAP, STATS und EVENTS, der Zurück-Knopf BACK. Die kürzeren Namen schaffen den Platz für die größere Schrift; auf der Webseite bleibt alles deutsch.",
+      "🏷️ Der FriesenSpy-Schriftzug im Hintergrund der Leiste tritt etwas deutlicher hervor."
+    ]
+  },
+  {
     "version": "12.3.2",
     "date": "2026-08-14",
     "highlight": false,

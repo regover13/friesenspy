@@ -484,15 +484,17 @@ def test_tab_leiste_ist_immer_sichtbar_und_bricht_nie_um():
 
 
 def test_friesenspy_schriftzug_als_leisten_hintergrund():
-    """Kernstueck des Nutzerwunsches: das Wort FRIESENSPY dezent (niedrige Opazitaet) hinter
-    Zurueck-Knopf/Tabs/Verbindungsanzeige -- nicht so kraeftig, dass es die Tab-Beschriftung
-    stoert."""
+    """Das Wort FRIESENSPY hinter Zurueck-Knopf/Tabs/Glocke. Am 14.08.2026 auf Nutzerwunsch
+    kraeftiger gestellt (in VR war der anfaengliche Hauch von 0.12 kaum wahrnehmbar) -- es
+    bleibt aber Hintergrund: ab etwa 0.3 faengt es an, die Beschriftungen zu stoeren, und die
+    zu lesen ist der eigentliche Zweck der Leiste."""
     m = re.search(r"html\.vr-panel \.panel-topbar::before \{([^}]*)\}", INDEX, re.S)
     assert m, "Schriftzug-Pseudoelement nicht gefunden"
     rumpf = m.group(1)
     assert "content: 'FRIESENSPY';" in rumpf
     opazitaet = re.search(r"opacity:\s*([\d.]+);", rumpf)
-    assert opazitaet and float(opazitaet.group(1)) <= 0.2, "Schriftzug muss dezent bleiben"
+    assert opazitaet, "keine Opazitaet gesetzt"
+    assert 0.15 <= float(opazitaet.group(1)) <= 0.3, "Schriftzug: sichtbar, aber Hintergrund"
 
 
 def test_panel_topbar_haengt_ausserhalb_von_app():
@@ -535,7 +537,8 @@ def test_zurueck_knopf_tabs_und_glocke_wandern_per_js_in_die_topbar():
     rumpf = m.group(1)
     assert "getElementById('panel-topbar')" in rumpf
     assert "topbar.appendChild(btn);" in rumpf
-    assert "querySelectorAll('.tab-btn').forEach((t) => topbar.appendChild(t));" in rumpf
+    assert "querySelectorAll('.tab-btn').forEach(" in rumpf
+    assert "topbar.appendChild(t);" in rumpf
     assert "topbar.appendChild(glocke)" in rumpf
     assert "topbar.appendChild(sseBadge)" not in rumpf
 
@@ -833,3 +836,29 @@ def test_ersatzanzeige_wartet_auf_die_bestaetigung():
     block = m.group(1)
     assert "setTimeout(" in block and "500" in block
     assert "if (_panelShellZeigt !== true) _panelHinweisZeigen(titel, text);" in block
+
+
+def test_panel_leiste_ist_englisch_beschriftet():
+    """Kurze englische Namen NUR im Panel (die Website bleibt deutsch): Sie sind kuerzer, und
+    der gewonnene Platz geht in groessere Schrift -- in VR war die Leiste schlecht zu lesen
+    (Nutzer, 14.08.2026). Gemessen bei echter Tablet-Breite (413 CSS-Pixel): BACK 154,
+    Tabs zusammen 214, Glocke 44 -- kein Ueberlauf."""
+    assert "_PANEL_TAB_TEXT = { live: 'LIVE', karte: 'MAP', statistiken: 'STATS', events: 'EVENTS' }" in INDEX
+    assert "_panelBeschriftung(btn, 'BACK')" in INDEX
+    # Die Website behaelt ihre deutschen Beschriftungen.
+    assert 'data-tab="statistiken"><svg class="icon"><use href="#icon-crosshatch"/></svg> STATISTIKEN' in INDEX
+    assert 'Zur&uuml;ck</button>' in INDEX
+
+
+def test_panel_leiste_ist_in_vr_lesbar_dimensioniert():
+    """Die Ausgangswerte (Tabs 0.62rem, Zurueck 0.65rem) waren im Headset zu klein. Der
+    Zurueck-Knopf bekommt zusaetzlich den Platz, den die Tabs uebriglassen -- er ist im
+    Cockpit das haeufigste Ziel."""
+    tabs = re.search(r"html\.vr-panel \.panel-topbar \.tab-btn \{(.*?)\}", INDEX, re.S)
+    assert tabs and "font-size: 0.85rem" in tabs.group(1)
+    assert "flex: 0 1 auto" in tabs.group(1), "Tabs duerfen den Platz nicht mehr aufteilen"
+    zurueck = re.search(r"html\.vr-panel \.panel-topbar \.panel-back-btn \{(.*?)\}", INDEX, re.S)
+    assert zurueck and "font-size: 0.95rem" in zurueck.group(1)
+    assert "flex: 1 1 auto" in zurueck.group(1), "Zurueck-Knopf bekommt den Rest nicht"
+    # Symbole in den Tabs entfallen -- sonst passen Symbol UND Text nicht mehr nebeneinander.
+    assert "html.vr-panel .panel-topbar .tab-btn .icon { display: none; }" in INDEX

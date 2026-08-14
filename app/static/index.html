@@ -1220,10 +1220,13 @@
       justify-content: center;
       font-family: var(--text-display);
       font-weight: 700;
-      font-size: 1.2rem;
+      /* Deutlicher als der anfaengliche Hauch (1.2rem / 0.12): In VR war er kaum
+         wahrnehmbar. Er bleibt trotzdem Hintergrund -- die Beschriftungen darueber muessen
+         lesbar bleiben, deshalb kein weiterer Schritt nach oben. */
+      font-size: 1.55rem;
       letter-spacing: 0.3em;
       color: var(--green);
-      opacity: 0.12;
+      opacity: 0.22;
       pointer-events: none;
     }
     /* Platz fuer die jetzt IMMER sichtbare Leiste -- anders als beim frueheren Zurueck-Balken
@@ -1237,19 +1240,21 @@
     /* Zurueck-Knopf als normales Flex-Kind der Leiste statt eigener schwebender Balken. */
     html.vr-panel .panel-topbar .panel-back-btn {
       position: static;
-      flex: 0 0 auto;
+      /* Bekommt den Platz, den die Tabs uebriglassen: im Cockpit das haeufigste Ziel, und mit
+         Handschuhen/in VR das, was am ehesten daneben geht. */
+      flex: 1 1 auto;
       display: flex;
       align-items: center;
       justify-content: center;
       /* 44px Mindestgroesse -- Fingerbedienung im Cockpit, nicht Mauszeiger. */
       min-height: 44px;
-      padding: 6px 10px;
+      padding: 6px 12px;
       background: transparent;
       border: none;
       border-right: 1px solid var(--green-dim);
       color: var(--green);
       font-family: var(--text-display);
-      font-size: 0.65rem;
+      font-size: 0.95rem;
       letter-spacing: 0.03em;
       white-space: nowrap;
       cursor: pointer;
@@ -1413,17 +1418,26 @@
        schrumpft ein Flex-Kind per CSS-Default nie unter seine Textbreite (Flexbox-Falle, s.
        CLAUDE.md) und "STATISTIKEN" würde die Leiste wieder sprengen. text-overflow:ellipsis
        als letztes Netz, falls ein Tabname trotzdem nicht ganz reinpasst. */
+    /* Die Tabs nehmen nur so viel Breite, wie ihr Text braucht (kein `flex:1 1 0` mehr) --
+       der uebrige Platz gehoert dem Zurueck-Knopf, der im Cockpit das haeufigste Ziel ist.
+       Schrift deutlich groesser als die urspruenglichen 0.62rem: in VR war die Leiste
+       schlecht zu lesen (Nutzer, 14.08.2026). */
     html.vr-panel .panel-topbar .tab-btn {
-      flex: 1 1 0;
+      flex: 0 1 auto;
       min-width: 0;
-      padding: 6px 4px;
-      font-size: 0.62rem;
+      padding: 6px 9px;
+      font-size: 0.85rem;
       letter-spacing: 0.01em;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       text-align: center;
     }
+    /* Symbole in den Tabs entfallen im Panel: Mit der groesseren Schrift passen Symbol UND
+       Text nicht mehr in die ~413 nutzbaren CSS-Pixel des Tablets, und von beidem ist der
+       Text der Teil, der die Ansicht benennt. Der Pfeil am Zurueck-Knopf bleibt -- er steht
+       fuer sich allein und braucht keinen Platz neben einem laengeren Wort. */
+    html.vr-panel .panel-topbar .tab-btn .icon { display: none; }
 
     /* Die Flugaktivitaets-Grafik bleibt im Panel leer: Chart.js 4.x benutzt Class-Field-
        Syntax (ES2022), die Coherent GT nicht parst -- ein bestehendes try/catch faengt das
@@ -8018,10 +8032,28 @@ function _initPanelBackButton() {
   // CSS) -- sonst waere der Zurueck-Knopf ueber offenen Modalen unerreichbar. Die Uhrzeit
   // (#utc-clock) bleibt bewusst in der jetzt ausgeblendeten Kopfzeile zurueck, s. Begruendung
   // bei ".panel-topbar::before" im CSS.
+  // Kurze englische Beschriftungen NUR in der Panel-Leiste (die Website bleibt deutsch):
+  // Sie sind im Schnitt deutlich kuerzer als die deutschen, und der gewonnene Platz geht in
+  // groessere Schrift -- in VR war die Leiste sonst schlecht zu lesen (Nutzer, 14.08.2026).
+  const _panelBeschriftung = (el, text) => {
+    if (!el) return;
+    for (let i = el.childNodes.length - 1; i >= 0; i--) {
+      const k = el.childNodes[i];
+      if (k.nodeType === 3 && k.nodeValue.trim()) { k.nodeValue = ' ' + text; return; }
+    }
+    el.appendChild(document.createTextNode(' ' + text));
+  };
+  const _PANEL_TAB_TEXT = { live: 'LIVE', karte: 'MAP', statistiken: 'STATS', events: 'EVENTS' };
+
   const topbar = document.getElementById('panel-topbar');
   if (topbar) {
+    _panelBeschriftung(btn, 'BACK');
     topbar.appendChild(btn);
-    document.querySelectorAll('.tab-btn').forEach((t) => topbar.appendChild(t));
+    document.querySelectorAll('.tab-btn').forEach((t) => {
+      const kurz = _PANEL_TAB_TEXT[t.dataset.tab];
+      if (kurz) _panelBeschriftung(t, kurz);
+      topbar.appendChild(t);
+    });
 
     // Ganz rechts steht die GLOCKE, nicht mehr die Verbindungsanzeige (#sse-badge). Sie
     // uebernimmt beide Aufgaben: Klick oeffnet die Kategorie-Schalter, ihre Farbe zeigt den
