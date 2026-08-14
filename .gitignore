@@ -35,3 +35,8 @@ scripts/.cache/
 # SQLite-Begleitdateien der lokalen Test-DB (WAL-Modus)
 *.db-shm
 *.db-wal
+
+# MSFS-EFB-Build-Artefakte (entstehen aus PackageSources, nie von Hand gepflegt)
+msfs-panel/Package/
+msfs-panel/zip-stage/
+msfs-panel/*.zip

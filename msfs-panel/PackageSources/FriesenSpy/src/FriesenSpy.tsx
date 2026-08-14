@@ -124,19 +124,33 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     const text = d.text || "";
     const antwort = e.source as Window | null;
     try {
-      // NotificationManager.getManager statt des geerbten `notificationManager`-Getters: der
-      // wirft, wenn die Shell ihn nicht in die Props gelegt hat. getManager liefert dasselbe
-      // Singleton (statisches INSTANCE, s. efb_api/dist/index.js:6937) und kann nicht fehlen.
+      // NUR der von der Shell durchgereichte Manager taugt hier.
       //
+      // `NotificationManager.getManager(bus)` sieht robuster aus (statisches Singleton, kann
+      // nicht fehlen) und war im ersten Sim-Test genau deshalb der Fehler: `@efb/efb-api` wird
+      // in unser Bundle EINKOMPILIERT (nur msfs-sdk/garminsdk sind extern, s. build.js). Unsere
+      // Kopie der Klasse hat also ihre eigene statische INSTANCE -- getManager legt eine zweite
+      // Verwaltung an, die niemand rendert. Ergebnis: kein Fehler, keine Anzeige, Glocke auf 0.
+      const verwaltung = this.props.notificationManager;
+      if (!verwaltung) {
+        throw new Error("notificationManager fehlt in den Props");
+      }
+
       // Bleibend statt fluechtig: Im Flug schaut man nicht dauernd aufs Tablet, und eine
       // permanente Meldung bleibt auf der Benachrichtigungs-Seite der EFB nachlesbar.
-      NotificationManager.getManager(this.props.bus).addNotification(
-        createPermanentNotification(titel, text, 8000, "info"),
-      );
-      // Zustellung bestaetigen. Erst diese Antwort (nicht schon das pong) berechtigt die Seite,
-      // ihre eigene Ersatzanzeige wegzulassen -- sonst sieht der Nutzer im Fehlerfall NICHTS.
+      verwaltung.addNotification(createPermanentNotification(titel, text, 8000, "info"));
+
+      // Zustellung belegen statt behaupten: addNotification legt permanente Meldungen sofort in
+      // `_storedNotifications`, was den Ungelesen-Zaehler hochsetzt (efb_api/dist/index.js:6975)
+      // -- denselben, den die Glocke zeigt. Steht er auf 0, ist nichts angekommen, und die
+      // Seite muss ihre eigene Anzeige behalten. Ein blosses "kein Fehler geworfen" hat im
+      // ersten Sim-Test faelschlich Erfolg gemeldet.
+      const ungelesen = verwaltung.unseenNotificationsCount.get();
       if (antwort) {
-        antwort.postMessage({ quelle: "friesenspy-shell", art: "notify-ok" }, "*");
+        antwort.postMessage(
+          { quelle: "friesenspy-shell", art: "notify-ok", ungelesen: ungelesen },
+          "*",
+        );
       }
     } catch (err) {
       // Lieber still bleiben als die ganze App an einer Benachrichtigung scheitern lassen --
@@ -215,7 +229,18 @@ class FriesenSpy extends App {
   }
 
   public render(): TVNode<FriesenSpyView> {
-    return <FriesenSpyView bus={this.bus} />;
+    // Der Benachrichtigungs-Verwalter MUSS von hier an die View gereicht werden: Die View
+    // bekommt nur die Props, die hier im JSX stehen -- und die Instanz, die das Tablet
+    // anzeigt, gibt es nur ueber diesen Weg (s. langer Kommentar in FriesenSpyView).
+    // Der Getter wirft, wenn die Shell ihn nicht gesetzt hat; daran darf das Rendern der
+    // ganzen App nicht scheitern.
+    let verwaltung: NotificationManager | undefined;
+    try {
+      verwaltung = this.notificationManager;
+    } catch (_e) {
+      verwaltung = undefined;
+    }
+    return <FriesenSpyView bus={this.bus} notificationManager={verwaltung} />;
   }
 }
 

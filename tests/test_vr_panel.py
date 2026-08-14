@@ -712,7 +712,7 @@ def test_ersatzanzeige_haengt_an_der_zustellung_nicht_am_handshake():
     assert "_panelShellZeigt !== true" in m.group(1), \
         "Ersatzanzeige haengt am Handshake statt an der Zustellbestaetigung"
     # Und die Bestaetigung muss auch entgegengenommen werden.
-    assert "if (d.art === 'notify-ok') _panelShellZeigt = true;" in INDEX
+    assert "if (d.art === 'notify-ok') {" in INDEX
 
 
 def test_jede_station_meldet_sich():
@@ -724,3 +724,26 @@ def test_jede_station_meldet_sich():
     assert "SSE-Notify %s an cid=%s" in main_py  # geliefert oder verworfen
     assert "window._panelDiag('notify'" in INDEX # im iframe angekommen
     assert "'shell-fehler'" in INDEX             # Shell hat sie abgelehnt
+
+
+def test_shell_bestaetigung_verlangt_einen_zaehlerstand():
+    """Sim-Fund 14.08.2026, zweiter Anlauf: Die Shell meldete Erfolg, die Glocke stand auf 0.
+    `addNotification` lief ohne Wurf -- nur in die falsche Verwaltung (efb-api ist in unser
+    Bundle einkompiliert, die statische INSTANCE ist also NICHT die der Shell). Ein
+    fehlerfreier Aufruf beweist daher nichts; erst der Ungelesen-Zaehler tut es."""
+    assert "Number(d.ungelesen)" in INDEX
+    assert "_panelShellZeigt = (n > 0);" in INDEX
+
+
+def test_efb_app_nutzt_den_durchgereichten_verwalter():
+    """Nur die von der Shell gelieferte Instanz rendert auch. getManager() legt eine zweite an,
+    die niemand anzeigt -- genau der Fehler des ersten Versuchs."""
+    tsx = (Path(__file__).resolve().parents[1] / "msfs-panel" / "PackageSources" / "FriesenSpy"
+           / "src" / "FriesenSpy.tsx").read_text(encoding="utf-8")
+    assert "this.props.notificationManager" in tsx
+    assert "notificationManager={verwaltung}" in tsx, "View bekommt den Verwalter nicht"
+    # Nur echte Aufrufe verbieten -- im Kommentar daneben MUSS der Name stehen bleiben, sonst
+    # greift beim naechsten Mal wieder jemand zum scheinbar robusteren Singleton.
+    code = "\n".join(z for z in tsx.splitlines() if not z.lstrip().startswith("//"))
+    assert "NotificationManager.getManager(" not in code, "getManager liefert die falsche Instanz"
+    assert "unseenNotificationsCount.get()" in tsx, "ohne Zaehler ist die Zustellung unbelegt"

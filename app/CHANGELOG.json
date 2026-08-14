@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.1.2",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Meldungen landen jetzt wirklich im Tablet",
+    "items": [
+      "🔔 Die Meldungen wurden bisher an eine Verwaltung übergeben, die das Tablet gar nicht anzeigt — deshalb blieb die Glocke auf null, ohne dass irgendwo ein Fehler auftrat. Jetzt bekommt die App die richtige Stelle durchgereicht und meldet den Zählerstand zurück; bleibt der bei null, zeigt FriesenSpy die Nachricht wieder selbst an, statt Erfolg zu behaupten."
+    ]
+  },
+  {
     "version": "12.1.1",
     "date": "2026-08-14",
     "highlight": false,

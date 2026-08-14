@@ -4534,7 +4534,16 @@ function _initPanelShellKanal() {
     const d = e && e.data;
     if (!d || d.quelle !== 'friesenspy-shell') return;
     if (d.art === 'pong') _panelShellDa = true;
-    if (d.art === 'notify-ok') _panelShellZeigt = true;
+    if (d.art === 'notify-ok') {
+      // Der mitgeschickte Ungelesen-Zaehler ist der einzige harte Beleg, dass die Meldung in
+      // der Liste der Tablet-Oberflaeche gelandet ist (dieselbe Zahl steht an der Glocke).
+      // Steht er auf 0, ist NICHTS angekommen -- dann bleibt unsere eigene Anzeige an.
+      const n = Number(d.ungelesen);
+      _panelShellZeigt = (n > 0);
+      if (!(n > 0) && typeof window._panelDiag === 'function') {
+        window._panelDiag('shell-fehler', { fehler: 'Ungelesen-Zaehler blieb 0' });
+      }
+    }
     if (d.art === 'notify-fehler') {
       _panelShellZeigt = false;
       _panelShellFehler = String(d.fehler || '');
