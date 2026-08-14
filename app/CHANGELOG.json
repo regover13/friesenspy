@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.4.1",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Leiste weicht der Tablet-Anzeige aus",
+    "items": [
+      "🛩️ Das Tablet blendet oben seine eigene Glocke und Datum/Uhrzeit über die Seite. Die Beschriftungen der Navigationsleiste lagen darunter und waren dadurch schlecht zu lesen. Sie rücken jetzt so weit nach unten, dass sich beides nicht mehr überlagert."
+    ]
+  },
+  {
     "version": "12.4.0",
     "date": "2026-08-14",
     "highlight": false,

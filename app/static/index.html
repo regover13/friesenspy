@@ -502,9 +502,9 @@
        Kein `inset`: wird von Coherent GT still ignoriert und macht fixed-Overlays unsichtbar. */
     .panel-hinweis-stapel {
       position: fixed;
-      /* Unterhalb der festen Tab-Leiste (46px, s. `html.vr-panel body { padding-top }`) --
+      /* Unterhalb der festen Tab-Leiste (72px, s. `html.vr-panel body { padding-top }`) --
          bei top:8px lag der Hinweis mitten auf der Navigation und verdeckte sie. */
-      top: 52px; right: 8px;
+      top: 78px; right: 8px;
       width: 260px;
       z-index: 10000;
     }
@@ -1202,6 +1202,13 @@
       align-items: stretch;
       flex-wrap: nowrap; /* nie umbrechen -- genau das kostete vorher die zweite Zeile */
       min-height: 44px;
+      /* Platz fuer die EIGENE Statusleiste des Tablets: Die EFB-Oberflaeche legt oben ihre
+         Glocke (links) und Datum/Uhrzeit (rechts) UEBER unsere Seite. Ohne diesen Abstand
+         liegen unsere Beschriftungen darunter und beides ist schlecht zu lesen (Nutzer-Fund
+         14.08.2026, Foto). Als padding statt `top`, damit der Leisten-Hintergrund bis zur
+         Oberkante durchlaeuft -- sonst klafft dort ein Loch, durch das der Seiteninhalt
+         scrollt. Wert im Sim nachjustierbar wie die Kartenhoehe. */
+      padding-top: 26px;
       background: var(--bg-panel);
       border-bottom: 2px solid var(--green);
       box-shadow: 0 0 14px var(--green-glow);
@@ -1214,7 +1221,9 @@
     html.vr-panel .panel-topbar::before {
       content: 'FRIESENSPY';
       position: absolute;
-      top: 0; right: 0; bottom: 0; left: 0;
+      /* Gleicher Versatz wie der Leisten-Inhalt (padding-top oben) -- sonst steht der
+         Schriftzug als Einziges noch hinter der Tablet-Statusleiste. */
+      top: 26px; right: 0; bottom: 0; left: 0;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1234,8 +1243,11 @@
        JS-Klassenschalter mehr, die Leiste steht konstant. Gemessen (Playwright, 558px
        Fensterbreite): die Leiste rendert trotz min-height:44px real ~45.5px hoch (Icon+Text-
        Zeilenhoehe treibt die Buttons ueber das Minimum) -- 46px Puffer, sonst ein 1-2px-
-       Ueberlapp mit dem ersten Seiteninhalt. Im Sim nachjustierbar wie die Kartenhoehe. */
-    html.vr-panel body { padding-top: 46px; }
+       Ueberlapp mit dem ersten Seiteninhalt. Im Sim nachjustierbar wie die Kartenhoehe.
+       Dazu die 26px Innenabstand, mit denen die Leiste der Tablet-Statusleiste ausweicht
+       (s. dort): zusammen 72px. Beide Werte muessen zusammen bleiben, sonst schiebt sich
+       der erste Seiteninhalt wieder unter die Leiste. */
+    html.vr-panel body { padding-top: 72px; }
 
     /* Zurueck-Knopf als normales Flex-Kind der Leiste statt eigener schwebender Balken. */
     html.vr-panel .panel-topbar .panel-back-btn {
@@ -1512,7 +1524,7 @@
        schiebt bereits body { padding-top } alles nach unten, dort waere ein zweiter
        Versatz zu viel -- deshalb nur hier. Die Leiste steht seit der Zusammenlegung von
        Kopfzeile und Tabs IMMER, deshalb ohne Bedingung und mit deren Hoehe. */
-    html.vr-panel .map-is-fullscreen .leaflet-top { margin-top: 46px; }
+    html.vr-panel .map-is-fullscreen .leaflet-top { margin-top: 72px; }
     html.vr-panel .sse-dot { animation: none !important; }
 
     /* Override Leaflet popup styles for the radar aesthetic */

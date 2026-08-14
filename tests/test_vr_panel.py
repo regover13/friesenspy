@@ -450,8 +450,18 @@ def test_kein_zweiter_ausgang_aus_dem_vollbild_im_panel():
 
 def test_leaflet_bedienelemente_liegen_nicht_unter_der_zurueck_leiste():
     """Zoom sitzt oben links, Ebenen oben rechts -- im Vollbild genau unter der Leiste am
-    oberen Rand. Der Plus-Knopf war dadurch nicht erreichbar (Nutzer-Fund)."""
-    assert "html.vr-panel .map-is-fullscreen .leaflet-top { margin-top: 46px; }" in INDEX
+    oberen Rand. Der Plus-Knopf war dadurch nicht erreichbar (Nutzer-Fund).
+
+    Der Versatz MUSS der Leistenhoehe folgen: Seit die Leiste der Tablet-Statusleiste mit
+    26px Innenabstand ausweicht, sind es 72px statt 46. Drei Stellen haengen an diesem Wert
+    (body-Abstand, Karten-Bedienelemente, Hinweis-Stapel) -- laufen sie auseinander, schiebt
+    sich wieder etwas unter die Leiste."""
+    versatz = re.search(r"html\.vr-panel \.map-is-fullscreen \.leaflet-top \{ margin-top: (\d+)px; \}",
+                        INDEX)
+    assert versatz, "Versatz der Karten-Bedienelemente nicht gefunden"
+    hoehe = re.search(r"html\.vr-panel body \{ padding-top: (\d+)px; \}", INDEX)
+    assert hoehe, "Leistenhoehe (body padding-top) nicht gefunden"
+    assert versatz.group(1) == hoehe.group(1), "Versatz und Leistenhoehe laufen auseinander"
 
 
 # ---------------------------------------------------------------------------
