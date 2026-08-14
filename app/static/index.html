@@ -1256,6 +1256,30 @@
     }
     html.vr-panel .panel-topbar #sse-badge .sse-label { display: none; }
 
+    /* Glocke ganz rechts in der Leiste -- sie ersetzt dort die Verbindungsanzeige und sagt
+       ueber ihre Farbe dasselbe: gelb = live, rot = getrennt (Klasse .sse-live aus
+       setSSEStatus). Klick oeffnet die Kategorie-Schalter. Optisch wie das fruehere
+       #sse-badge an dieser Stelle: nur Trennlinie links, kein eigener Rahmen. */
+    html.vr-panel .panel-topbar #notif-btn {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      min-height: 44px;
+      padding: 0 12px;
+      background: transparent;
+      border: none;
+      border-left: 1px solid var(--green-dim);
+      box-shadow: none;
+      color: var(--red);
+    }
+    html.vr-panel .panel-topbar #notif-btn.sse-live { color: var(--amber); }
+    html.vr-panel .panel-topbar #notif-btn .icon {
+      width: 20px;
+      height: 20px;
+    }
+
     /* ===================================================================
        KARTEN STATT BREITER TABELLEN (nur MSFS-EFB-Panel)
        ===================================================================
@@ -2461,6 +2485,10 @@
   <symbol id="icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <rect x="4" y="11" width="16" height="10" rx="2"/>
     <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
+  </symbol>
+  <symbol id="icon-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 8 2.5 8h-17S6 15 6 9"/>
+    <path d="M10.3 20.5a2 2 0 0 0 3.4 0"/>
   </symbol>
   <symbol id="icon-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 15V3"/>
@@ -3918,13 +3946,19 @@ updateClock();
 function setSSEStatus(status) {
   const badge = document.getElementById('sse-badge');
   const label = document.getElementById('sse-label');
-  if (status === 'connected') {
+  const live = (status === 'connected');
+  if (live) {
     badge.classList.remove('disconnected');
     label.textContent = 'LIVE';
   } else {
     badge.classList.add('disconnected');
     label.textContent = 'GETRENNT';
   }
+  // Im Panel traegt die Glocke den Verbindungszustand (sie steht dort anstelle des Punktes,
+  // s. _initPanelBackButton). Hier gesetzt und nirgends sonst -- der Zustand hat genau eine
+  // Quelle, egal wie viele Stellen ihn anzeigen.
+  const glocke = document.getElementById('notif-btn');
+  if (glocke) glocke.classList.toggle('sse-live', live);
 }
 
 function connectSSE() {
@@ -4504,21 +4538,41 @@ function _panelBenachrichtigung(msg) {
       gesendet = true;
     } catch (_) { /* Shell nimmt nichts an -- unten der Ersatzweg */ }
   }
-  // Ersatzanzeige faellt erst weg, wenn die Shell eine ECHTE Meldung bestaetigt hat
-  // (_panelShellZeigt), nicht schon beim beantworteten Handshake. Der Unterschied ist im
-  // ersten Sim-Test aufgefallen: `pong` kam an, im Tablet erschien trotzdem nichts -- der
-  // Handshake beweist nur, dass die Nachricht ankommt, nicht dass sie angezeigt wird.
-  if (!gesendet || _panelShellZeigt !== true) {
-    _panelHinweisZeigen(titel, text);
-  }
+  // Ersatzanzeige nur, wenn die Shell die Meldung NICHT anzeigt. Zwei Feinheiten, beide aus
+  // dem Sim-Test vom 14.08.2026:
+  //
+  // 1. Es zaehlt die Bestaetigung fuer eine ECHTE Meldung (_panelShellZeigt), nicht der
+  //    beantwortete Handshake. `pong` kam an und im Tablet erschien trotzdem nichts -- die
+  //    Meldung ging an eine Verwaltung, die niemand rendert.
+  // 2. Beim ERSTEN Ereignis nach dem Laden liegt noch gar keine Bestaetigung vor (sie kommt
+  //    erst als Antwort auf genau diese Meldung). Sofort zu entscheiden hiesse: einmal je
+  //    Seitenladung doppelt anzeigen. Deshalb kurz warten statt raten -- der Weg ueber die
+  //    iframe-Grenze dauert Millisekunden, eine halbe Sekunde ist reichlich. Wer eine alte
+  //    Huelle ohne Benachrichtigungen hat, bekommt seinen Hinweis damit 500 ms spaeter,
+  //    aber weiterhin zuverlaessig.
+  const melden = () => {
+    if (typeof window._panelDiag === 'function') {
+      window._panelDiag('notify', {
+        service: art, gesendet: gesendet,
+        shellAntwortet: _panelShellDa, shellZeigt: _panelShellZeigt,
+        titel: titel,
+      });
+    }
+  };
 
-  if (typeof window._panelDiag === 'function') {
-    window._panelDiag('notify', {
-      service: art, gesendet: gesendet,
-      shellAntwortet: _panelShellDa, shellZeigt: _panelShellZeigt,
-      titel: titel,
-    });
+  if (!gesendet) {
+    _panelHinweisZeigen(titel, text);
+    melden();
+    return;
   }
+  if (_panelShellZeigt === true) {
+    melden();
+    return;
+  }
+  setTimeout(() => {
+    if (_panelShellZeigt !== true) _panelHinweisZeigen(titel, text);
+    melden();
+  }, 500);
 }
 
 /**
@@ -7904,8 +7958,22 @@ function _initPanelBackButton() {
   if (topbar) {
     topbar.appendChild(btn);
     document.querySelectorAll('.tab-btn').forEach((t) => topbar.appendChild(t));
-    const sseBadge = document.getElementById('sse-badge');
-    if (sseBadge) topbar.appendChild(sseBadge);
+
+    // Ganz rechts steht die GLOCKE, nicht mehr die Verbindungsanzeige (#sse-badge). Sie
+    // uebernimmt beide Aufgaben: Klick oeffnet die Kategorie-Schalter, ihre Farbe zeigt den
+    // Verbindungszustand (gelb = live, rot = getrennt, s. setSSEStatus). Ein Punkt daneben,
+    // der dasselbe sagt, waere im Cockpit nur verschenkter Platz.
+    //
+    // #sse-badge bleibt in der ausgeblendeten Kopfzeile zurueck -- ausblenden statt entfernen,
+    // damit setSSEStatus unveraendert weiterschreiben kann (eine Wahrheit, kein Sonderweg).
+    const glocke = document.getElementById('notif-btn');
+    if (glocke) {
+      // Die Twemoji-Grafik nimmt keine Farbe an (fertiges Bild). Im Panel deshalb das
+      // Sprite-Symbol, das `currentColor` folgt -- auf der Website bleibt die bunte Glocke.
+      glocke.innerHTML = icon('bell');
+      glocke.hidden = false;
+      topbar.appendChild(glocke);
+    }
   }
 
   // Bewusst KEIN Einklinken in jede einzelne oeffnende/schliessende Stelle: Fenster und Tabs
@@ -7931,16 +7999,11 @@ function _initPanelBackButton() {
 // null und _initPanelBackButton haette sich stumm ueber seine eigene Wache verabschiedet.
 // Gleiches gilt fuer die Umschreibung, die einmal ueber das gesamte fertige Dokument muss.
 document.addEventListener('DOMContentLoaded', () => {
+  // _initPanelBackButton holt im Panel auch die Glocke in die Leiste und blendet sie ein --
+  // sonst bliebe sie versteckt, weil sie sonst erst mit einem VAPID-Schluessel erscheint.
   _initPanelBackButton();
   _initPanelTranslit();
   _initPanelShellKanal();
-  // Die Glocke bleibt sonst versteckt: Sie wird erst eingeblendet, wenn ein VAPID-Schluessel
-  // vorliegt (Web-Push). Im Panel fuehrt sie jetzt zu den Kategorie-Schaltern und wird
-  // deshalb unabhaengig davon gebraucht.
-  if (document.documentElement.classList.contains('vr-panel')) {
-    const glocke = document.getElementById('notif-btn');
-    if (glocke) glocke.hidden = false;
-  }
 });
 
 document.addEventListener('keydown', (e) => {

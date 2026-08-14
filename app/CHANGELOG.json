@@ -1,5 +1,16 @@
 [
   {
+    "version": "12.3.0",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Die Glocke im Kniebrett",
+    "items": [
+      "🔔 Im Tablet steht die Glocke jetzt ganz rechts in der Leiste — dort, wo bisher nur der Verbindungspunkt saß. Sie übernimmt dessen Aufgabe gleich mit: gelb heißt verbunden, rot heißt getrennt. Ein Tipp darauf öffnet die Schalter, mit denen sich die vier Sorten Meldungen einzeln an- und abstellen lassen.",
+      "🛠️ Diese Schalter waren im Tablet zuvor gar nicht erreichbar: Sie hingen an der Kopfzeile, die es im Kniebrett nicht gibt.",
+      "🔕 Die erste Meldung nach jedem Öffnen erschien doppelt — einmal als Tablet-Benachrichtigung und einmal als Hinweis in FriesenSpy selbst. Der Hinweis erscheint jetzt nur noch, wenn das Tablet die Meldung tatsächlich nicht anzeigt."
+    ]
+  },
+  {
     "version": "12.2.0",
     "date": "2026-08-14",
     "highlight": false,

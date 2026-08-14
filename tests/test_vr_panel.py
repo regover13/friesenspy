@@ -214,6 +214,7 @@ def test_panel_initialisierung_wartet_auf_das_fertige_dokument():
     ab, und der Zurueck-Knopf blieb fuer immer versteckt."""
     assert "_initPanelBackButton();\n_initPanelTranslit();" not in INDEX
     m = re.search(r"document\.addEventListener\('DOMContentLoaded', \(\) => \{\n"
+                  r"(?:  //.*\n)*"                     # erklaerende Kommentare erlaubt
                   r"  _initPanelBackButton\(\);\n  _initPanelTranslit\(\);\n"
                   r"(?:.*\n)*?\}\);", INDEX)
     assert m, "Panel-Initialisierung haengt nicht an DOMContentLoaded"
@@ -519,17 +520,24 @@ def test_panel_topbar_haengt_ausserhalb_von_app():
     assert zurueck_knopf_stelle < topbar_stelle
 
 
-def test_zurueck_knopf_tabs_und_verbindung_wandern_per_js_in_die_topbar():
+def test_zurueck_knopf_tabs_und_glocke_wandern_per_js_in_die_topbar():
     """Verschieben statt Duplizieren: dieselben Elemente (gleiche ID/Klasse), keine zweite
     Wahrheit -- bestehende Klick-Handler (data-tab) und der SSE-Status-Updater laufen
-    unveraendert weiter, weil es keine Kopien sind."""
+    unveraendert weiter, weil es keine Kopien sind.
+
+    Ganz rechts steht seit dem 14.08.2026 die GLOCKE statt der Verbindungsanzeige: Sie sagt
+    ueber ihre Farbe dasselbe und ist zusaetzlich der Weg zu den Kategorie-Schaltern. Ein
+    Punkt daneben, der nur den Zustand wiederholt, waere im Cockpit verschenkter Platz.
+    #sse-badge bleibt in der ausgeblendeten Kopfzeile -- ausblenden statt entfernen, damit
+    setSSEStatus unveraendert weiterschreiben kann."""
     m = re.search(r"function _initPanelBackButton\(\) \{(.*?)\n\}", INDEX, re.S)
     assert m, "_initPanelBackButton nicht gefunden"
     rumpf = m.group(1)
     assert "getElementById('panel-topbar')" in rumpf
     assert "topbar.appendChild(btn);" in rumpf
     assert "querySelectorAll('.tab-btn').forEach((t) => topbar.appendChild(t));" in rumpf
-    assert "if (sseBadge) topbar.appendChild(sseBadge);" in rumpf
+    assert "topbar.appendChild(glocke)" in rumpf
+    assert "topbar.appendChild(sseBadge)" not in rumpf
 
 
 def test_versteckt_knopf_gewinnt_gegen_die_flex_regel():
@@ -747,3 +755,49 @@ def test_efb_app_nutzt_den_durchgereichten_verwalter():
     code = "\n".join(z for z in tsx.splitlines() if not z.lstrip().startswith("//"))
     assert "NotificationManager.getManager(" not in code, "getManager liefert die falsche Instanz"
     assert "unseenNotificationsCount.get()" in tsx, "ohne Zaehler ist die Zustellung unbelegt"
+
+
+def test_glocke_steht_in_der_panel_leiste():
+    """Fund 14.08.2026: Die Kopfzeile ist im Panel ausgeblendet (`html.vr-panel header
+    { display: none }`) -- die Glocke darin war damit unerreichbar, obwohl sie per JS
+    eingeblendet wurde. Ein lokaler Test hatte das nicht gefangen, weil er den Knopf per
+    JavaScript geklickt hat statt mit der Maus: die Funktion lief, das Element war unsichtbar.
+    Sie muss deshalb wie Zurueck-Knopf und Tabs in die Panel-Leiste wandern."""
+    m = re.search(r"function _initPanelBackButton\(\) \{\n(.*?)\n\}\n", INDEX, re.S)
+    assert m, "_initPanelBackButton nicht gefunden"
+    block = m.group(1)
+    assert "getElementById('notif-btn')" in block
+    assert "topbar.appendChild(glocke)" in block
+    assert "html.vr-panel header { display: none !important; }" in INDEX  # der Grund
+
+
+def test_glocke_zeigt_den_verbindungszustand():
+    """Sie ersetzt in der Leiste den Punkt und muss dessen Aufgabe mituebernehmen: gelb =
+    live, rot = getrennt. Gesetzt wird das NUR in setSSEStatus -- eine Quelle fuer den
+    Zustand, egal wie viele Stellen ihn anzeigen."""
+    m = re.search(r"function setSSEStatus\(status\) \{\n(.*?)\n\}", INDEX, re.S)
+    assert m, "setSSEStatus nicht gefunden"
+    assert "classList.toggle('sse-live', live)" in m.group(1)
+    assert "html.vr-panel .panel-topbar #notif-btn.sse-live { color: var(--amber); }" in INDEX
+    assert re.search(r"html\.vr-panel \.panel-topbar #notif-btn \{[^}]*color: var\(--red\)", INDEX)
+
+
+def test_glocke_im_panel_ist_einfaerbbar():
+    """Die Twemoji-Grafik ist ein fertiges Bild und nimmt keine Farbe an. Im Panel muss
+    deshalb das Sprite-Symbol stehen, das `currentColor` folgt."""
+    assert 'id="icon-bell"' in INDEX, "Glocken-Symbol fehlt im Sprite"
+    assert "glocke.innerHTML = icon('bell')" in INDEX
+    # Auf der Website bleibt die bunte Grafik.
+    assert 'id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img' in INDEX
+
+
+def test_ersatzanzeige_wartet_auf_die_bestaetigung():
+    """Sonst erscheint die erste Meldung jeder Sitzung doppelt: entschieden wird, bevor die
+    Bestaetigung der Shell eintreffen kann. Der Weg ueber die iframe-Grenze dauert
+    Millisekunden -- eine halbe Sekunde Warten reicht und behaelt den Ersatzweg fuer alle,
+    die noch eine Huelle ohne Benachrichtigungen haben."""
+    m = re.search(r"function _panelBenachrichtigung\(msg\) \{\n(.*?)\n\}", INDEX, re.S)
+    assert m, "_panelBenachrichtigung nicht gefunden"
+    block = m.group(1)
+    assert "setTimeout(" in block and "500" in block
+    assert "if (_panelShellZeigt !== true) _panelHinweisZeigen(titel, text);" in block
