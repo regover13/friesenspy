@@ -1302,17 +1302,29 @@
       flex: none;              /* nicht mitschrumpfen, wenn der Text laenger wird */
       vertical-align: 0;       /* die globale Grundlinien-Korrektur stoert im Flex-Kontext */
     }
-    /* KEIN width:100vw/height:100vh -- die vier Raender auf 0 machen das bei position:fixed
-       ohnehin, und die Viewport-Einheiten sind hier nachweislich falsch:
-       Im Kniebrett steht auf dem Wurzelelement `zoom: 1.35` (damit die Schrift im Cockpit
-       lesbar ist). Viewport-Einheiten ignorieren diesen Zoom -- gemessen bei 748 px
-       Fensterbreite: 100vw = 1010 px. Die Karte wurde im Vollbild also ein Drittel zu breit,
-       und ALLES am rechten Rand rutschte aus dem Bild: Ebenen-Auswahl, Kompass und
-       Moving-Map-Knopf waren im Vollbild schlicht nicht mehr da (Nutzer-Fund 15.08.2026,
-       "vollbild hat keine Buttons"). Die Raender kennen den Zoom, die Einheiten nicht. */
+    /* Vollbild heisst: die vier Raender auf 0, und sonst NICHTS ueber die Groesse sagen.
+       Zwei Fallen stecken hier, beide gemessen und beide teuer bezahlt:
+
+       1. KEINE Viewport-Einheiten. Im Kniebrett steht auf dem Wurzelelement `zoom: 1.35`
+          (damit die Schrift im Cockpit lesbar ist), und Viewport-Einheiten ignorieren
+          diesen Zoom -- gemessen bei 748 px Fensterbreite: 100vw = 1010 px. Die Karte war
+          im Vollbild ein Drittel zu breit, und alles am rechten Rand rutschte aus dem Bild:
+          Ebenen-Auswahl, Kompass und Moving-Map-Knopf fehlten dort schlicht (Nutzer-Fund
+          15.08.2026, "vollbild hat keine Buttons"). Die Raender kennen den Zoom, die
+          Einheiten nicht.
+
+       2. Die fremden Masse muessen ausdruecklich AUFGEHOBEN werden, nicht nur weggelassen.
+          `#map-container` traegt eine feste `height: 580px`, und ein ID-Selektor schlaegt
+          diesen Klassen-Selektor. Als in Punkt 1 die eigene Hoehe verschwand, gewann
+          ploetzlich die 580er-Regel: Das Vollbild hoerte unten vor dem Bildschirmrand auf
+          ("vollbild ist kein richtiges vollbild, was soll der rand unten?"). `auto`
+          gewinnt mit !important gegen die ID-Regel und laesst die Raender bestimmen --
+          ohne selbst eine Zahl zu behaupten, die spaeter wieder falsch waere. */
     .map-is-fullscreen {
       position: fixed !important;
       top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important;
+      width: auto !important;
+      height: auto !important;
       z-index: 3000 !important;
       border: none !important;
     }
@@ -6723,6 +6735,25 @@ let _movingKnopf  = null;   // der Knopf selbst, fuer den An/Aus-Anstrich
 let _naviSelbstBewegt = false;
 let _naviZoomt = false;
 
+// Bis wann das Nachfuehren ausgesetzt ist, weil jemand die Karte anfasst.
+//
+// Das ist der eigentliche Grund, warum sich Moving Map nicht durch Verschieben abschalten
+// liess: Leaflet erkennt ein Verschieben erst ab einer Mindestbewegung -- und solange
+// Moving Map an war, zog unser Sekundentakt die Karte jede Sekunde auf das Flugzeug
+// zurueck. Die Mindestbewegung kam dadurch nie zustande; der Nutzer zog buchstaeblich
+// gegen die eigene Nachfuehrung an ("auch hier wird der pfeil nicht dunkel, wenn man die
+// karte schiebt", 15.08.2026 -- im Browser behoben, im Tablet zunaechst nicht).
+//
+// Statt auf Leaflets Ergebnis zu warten, wird beim ersten Zeigerkontakt kurz die Hand vom
+// Steuer genommen. Dann kann Leaflet den Zug normal erkennen und `movestart` feuern. Wer
+// nur tippt, verliert nichts: Nach Ablauf der Pause fuehrt die Karte weiter nach.
+let _naviPauseBis = 0;
+
+// Was beim Anfassen der Karte tatsaechlich passiert ist -- fuer die einmalige Messung
+// unten. Ohne sie waere im Sim nicht zu unterscheiden, ob das Ereignis gar nicht kommt
+// oder ob es kommt und die Bedingung es verwirft.
+const _naviSchiebeSpur = { kontakt: 0, movestart: 0, dragstart: 0, abgeschaltet: 0, gemeldet: false };
+
 /** Kann diese Karte ueberhaupt drehen? Faellt leaflet-rotate aus, ist die Antwort nein. */
 function _kannDrehen(map) {
   return !window._leafletRotateFehlt && map && typeof map.setBearing === 'function';
@@ -6820,11 +6851,34 @@ function _addMovingMapControl(map) {
   map.on('zoomstart', function () { _naviZoomt = true; });
   map.on('zoomend',   function () { _naviZoomt = false; });
   map.on('movestart', function () {
+    _naviSchiebeSpur.movestart++;
     if (!_movingMap || _naviSelbstBewegt || _naviZoomt) return;
     _movingMap = false;
     _naviMerke(_NAVI_MOVING_KEY, false);
+    _naviSchiebeSpur.abgeschaltet++;
     _naviKnopfAnstrich();
   });
+  // Nur zur Messung -- die Entscheidung haengt an movestart (s. oben).
+  map.on('dragstart', function () { _naviSchiebeSpur.dragstart++; });
+
+  // Hand vom Steuer, sobald jemand die Karte anfasst (s. _naviPauseBis). Drei Ereignisse,
+  // weil nicht sicher ist, welches im Sim ankommt: Coherent GT ist Chrome 49, dort gibt es
+  // Pointer-Events noch nicht ueberall, und ob der Simulator Beruehrungen als touch- oder
+  // als Mausereignisse durchreicht, ist ungeprueft. Mehrfaches Auslösen schadet nicht --
+  // es verlaengert nur die Pause.
+  //
+  // Drittes Argument bewusst `true` (capture) statt `{ passive: true }`: Die Optionen-Form
+  // von addEventListener kennt Chrome erst ab Version 51, das Panel laeuft auf 49. Ein
+  // Objekt waere dort als "truthy" gelesen und stillschweigend zu capture geworden -- das
+  // gewuenschte Verhalten, aber aus dem falschen Grund. Lieber gleich hinschreiben.
+  const flaeche = map.getContainer();
+  const anfassen = function () {
+    _naviSchiebeSpur.kontakt++;
+    _naviPauseBis = Date.now() + 1500;
+  };
+  flaeche.addEventListener('pointerdown', anfassen, true);
+  flaeche.addEventListener('touchstart', anfassen, true);
+  flaeche.addEventListener('mousedown', anfassen, true);
 }
 
 /**
@@ -6945,8 +6999,10 @@ function _naviTakt(sofort) {
     }
   }
 
-  // 4. Nachfuehren
-  if (_movingMap && eigen) {
+  // 4. Nachfuehren -- aber nicht, solange jemand die Karte anfasst. Ohne diese Pause
+  //    kaempft der Nutzer gegen die eigene Nachfuehrung an, und Leaflet erkennt seinen Zug
+  //    nie als Zug (s. _naviPauseBis).
+  if (_movingMap && eigen && Date.now() >= _naviPauseBis) {
     // Ohne Bewegungsanimation: Leaflets `animate` laesst die Karte ueber mehrere Bilder
     // gleiten -- in Coherent GT genau die Sorte Dauerbewegung, die uns schon einmal
     // Flackern beschert hat. Der Sprung von einer Sekunde ist ohnehin winzig.
@@ -6964,6 +7020,35 @@ function _naviTakt(sofort) {
   }
 
   _naviKnopfAnstrich();
+  _naviSchiebeMelden();
+}
+
+/**
+ * Einmal melden, was beim Anfassen der Karte wirklich passiert ist.
+ *
+ * Der Fehler "Pfeil wird beim Verschieben nicht dunkel" liess sich im Browser nicht
+ * nachstellen -- weil ein maschineller Zug in Millisekunden durchlaeuft, ein menschlicher
+ * aber Sekunden dauert und dabei mit der Nachfuehrung kollidiert. Statt weiter zu raten,
+ * meldet die Karte selbst, welche Ereignisse ankamen:
+ *
+ *   kontakt > 0, movestart = 0  -> die Beruehrung kommt an, Leaflet macht keinen Zug daraus
+ *   kontakt = 0                 -> nicht einmal die Beruehrung erreicht uns
+ *   movestart > abgeschaltet    -> das Ereignis kommt, eine Bedingung verwirft es
+ *
+ * Einmalig, sobald etwas passiert ist -- kein Dauer-Messmittel im Renderpfad.
+ */
+function _naviSchiebeMelden() {
+  if (_naviSchiebeSpur.gemeldet) return;
+  if (!_naviSchiebeSpur.kontakt && !_naviSchiebeSpur.movestart) return;
+  if (typeof window._panelDiag !== 'function') return;
+  _naviSchiebeSpur.gemeldet = true;
+  window._panelDiag('schieben', {
+    kontakt: _naviSchiebeSpur.kontakt,
+    movestart: _naviSchiebeSpur.movestart,
+    dragstart: _naviSchiebeSpur.dragstart,
+    abgeschaltet: _naviSchiebeSpur.abgeschaltet,
+    movingMapJetzt: _movingMap
+  });
 }
 
 /** Eigenes Callsign aus dem VATSIM-Strom (fuer die Zuordnung des eigenen Markers). */

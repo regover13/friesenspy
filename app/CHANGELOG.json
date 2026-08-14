@@ -1,5 +1,15 @@
 [
   {
+    "version": "12.6.3",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Vollbild jetzt wirklich voll, Moving Map lässt sich abschalten",
+    "items": [
+      "⛶ Das Vollbild hörte unten vor dem Bildschirmrand auf und ließ einen Streifen frei. Jetzt füllt es den Bildschirm genau.",
+      "📍 Der Moving-Map-Schalter ließ sich immer noch nicht durch Verschieben abschalten: Solange er an war, zog die Karte sich jede Sekunde selbst zurück — die Fingerbewegung kam nie über die Schwelle, ab der sie als Verschieben zählt. Beim Anfassen der Karte setzt die Nachführung jetzt kurz aus."
+    ]
+  },
+  {
     "version": "12.6.2",
     "date": "2026-08-15",
     "highlight": false,

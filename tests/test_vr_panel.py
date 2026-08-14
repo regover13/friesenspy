@@ -1040,10 +1040,19 @@ def test_ziehen_schaltet_moving_map_ab_zoomen_nicht():
     assert t and "setView" in t.group(1)
     assert "} finally {" in INDEX
 
-    # NICHT dragstart: Leaflet feuert das erst nach einer Mindestbewegung, die bei aktivem
-    # Nachfuehren nie zustande kam -- und das Dreh-Plugin ersetzt L.Draggable darunter.
-    assert "map.on('dragstart'" not in INDEX, \
-        "dragstart ist hier der unzuverlaessige Weg, s. Kommentar im Code"
+    # Und die Ursache selbst: Beim Anfassen der Karte setzt das Nachfuehren aus. Ohne diese
+    # Pause zieht der Sekundentakt die Karte waehrend des Ziehens zurueck, Leaflets
+    # Mindestbewegung kommt nie zustande und es gibt gar kein movestart. Im Browser fiel das
+    # zuerst nicht auf, weil ein maschineller Zug in Millisekunden durchlaeuft -- ein
+    # menschlicher dauert Sekunden und kollidiert dabei mit der Nachfuehrung.
+    assert "_naviPauseBis" in INDEX
+    assert "Date.now() >= _naviPauseBis" in INDEX, "die Pause wird beim Nachfuehren nicht beachtet"
+    for ereignis in ("pointerdown", "touchstart", "mousedown"):
+        assert f"flaeche.addEventListener('{ereignis}', anfassen, true)" in INDEX, \
+            f"{ereignis} fehlt -- welches im Sim ankommt, ist ungeprueft"
+    # Drittes Argument als Boolean, nicht als Options-Objekt: Chrome 49 (das Panel) kennt
+    # die Optionen-Form von addEventListener noch nicht.
+    assert "anfassen, { passive" not in INDEX
 
 
 def test_fortrechnung_faelscht_die_tracks_nicht():
@@ -1149,6 +1158,13 @@ def test_vollbild_ohne_viewport_einheiten():
     # Die vier Raender muessen da sein, sonst fuellt das Element gar nichts mehr.
     for seite in ("top", "right", "bottom", "left"):
         assert f"{seite}: 0 !important" in regel, f"{seite}-Rand fehlt"
+    # Die fremden Masse muessen AUFGEHOBEN werden, nicht nur weggelassen: `#map-container`
+    # traegt eine feste `height: 580px`, und ein ID-Selektor schlaegt diesen Klassen-
+    # Selektor. Als die eigene Hoehe wegfiel, gewann diese Regel -- das Vollbild hoerte
+    # unten vor dem Bildschirmrand auf ("was soll der rand unten?", 15.08.2026).
+    assert "height: auto !important" in regel, \
+        "ohne auto gewinnt #map-container{height:580px} und das Vollbild bleibt zu kurz"
+    assert "width: auto !important" in regel
 
 
 def test_fremder_drehknopf_ist_global_abgeschaltet():
