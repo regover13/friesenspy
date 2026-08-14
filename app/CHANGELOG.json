@@ -5,7 +5,9 @@
     "highlight": false,
     "title": "Vollbild im Tablet: die rechten Knöpfe sind zurück",
     "items": [
-      "✈️ Das eigene Flugzeug sprang im Tablet regelmäßig zurück: Die genaue Position aus dem Simulator wurde alle 15 Sekunden von der älteren VATSIM-Meldung überschrieben. Jetzt gilt eine klare Rangfolge — solange der Simulator meldet, hat er recht, bei Position und Kurs.",
+      "✈️ Die Flugzeuge sprangen ständig vor und zurück: Die Karte zeichnete zwar gleichmäßig weiter, wurde aber alle paar Sekunden auf den letzten Meldepunkt zurückgesetzt — an drei Stellen gleichzeitig, eine davon ohne neue Daten. Ab jetzt bewegt genau eine Stelle die Flugzeuge.",
+      "🛰️ Das eigene Flugzeug sprang zusätzlich zurück, weil die genaue Position aus dem Simulator alle 15 Sekunden von der älteren VATSIM-Meldung überschrieben wurde. Jetzt gilt eine klare Rangfolge — solange der Simulator meldet, hat er recht, bei Position und Kurs.",
+      "📍 Der Moving-Map-Schalter ließ sich nicht mehr durch Verschieben der Karte abschalten: Solange er an war, zog die Karte sich jede Sekunde selbst zurück, und die Bewegung des Fingers kam nie über die Schwelle, ab der sie als Verschieben zählt.",
       "⛶ Im Kniebrett fehlten im Vollbild alle Bedienelemente am rechten Rand — Ebenen-Auswahl, Kompass und Moving Map. Die Karte wurde dort um ein Drittel breiter als der Bildschirm, alles Rechte lag außerhalb. Behoben.",
       "🗺️ Im Track-Fenster und auf der Events-Karte war ein kleiner Dreh-Knopf aufgetaucht, der dort gar nichts bewirken kann — er stammt aus der neu eingebundenen Dreh-Bibliothek, die ihn ungefragt an jede Karte hängt. Er ist jetzt überall abgeschaltet; der Kompass auf der Live-Karte bleibt davon unberührt.",
       "🧭 Kompass und Moving Map verschwanden im Tablet nach wenigen Sekunden wieder, sobald das Flugzeug still stand. Die Anzeige hielt die Verbindung zum Simulator für abgerissen, weil von dort nur bei Bewegung etwas kam. Braucht die neue Paket-Version 1.2.1."

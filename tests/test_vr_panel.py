@@ -1026,15 +1026,24 @@ def test_ziehen_schaltet_moving_map_ab_zoomen_nicht():
     """Wer die Karte von Hand verschiebt, will woanders hinschauen -- dann geht Moving Map
     aus (Nutzerwunsch). Zoomen zaehlt ausdruecklich NICHT: naeher herangehen heisst nicht,
     den eigenen Flieger aus den Augen verlieren zu wollen."""
-    m = re.search(r"map\.on\('dragstart', function \(\) \{(.*?)\n  \}\);", INDEX, re.S)
-    assert m, "dragstart-Verknuepfung fehlt"
-    assert "_movingMap = false" in m.group(1)
-    # Nur INNERHALB der Moving-Map-Verdrahtung pruefen: anderswo gibt es sehr wohl
-    # Zoom-Handler (der Auto-Wechsel der Kachelebene haengt daran), die hier nichts zur
-    # Sache tun.
-    mm = re.search(r"function _addMovingMapControl\(map\) \{(.*?)\n\}", INDEX, re.S)
-    assert mm, "_addMovingMapControl nicht gefunden"
-    assert "'zoom" not in mm.group(1), "Zoomen darf Moving Map nicht abschalten"
+    m = re.search(r"map\.on\('movestart', function \(\) \{(.*?)\n  \}\);", INDEX, re.S)
+    assert m, "movestart-Verknuepfung fehlt"
+    rumpf = m.group(1)
+    assert "_movingMap = false" in rumpf
+    # Zwei Ausnahmen sind Pflicht, sonst schaltet sich Moving Map selbst ab: das eigene
+    # Nachfuehren (setView feuert movestart) und Zoomen (feuert es ebenfalls).
+    assert "_naviSelbstBewegt" in rumpf, "das eigene Nachfuehren wuerde Moving Map abschalten"
+    assert "_naviZoomt" in rumpf, "Zoomen wuerde Moving Map abschalten"
+    # Der Merker muss um den setView-Aufruf herum stehen -- und ihn auch bei einem Fehler
+    # wieder freigeben, sonst schaltet danach gar nichts mehr ab.
+    t = re.search(r"_naviSelbstBewegt = true;(.*?)_naviSelbstBewegt = false;", INDEX, re.S)
+    assert t and "setView" in t.group(1)
+    assert "} finally {" in INDEX
+
+    # NICHT dragstart: Leaflet feuert das erst nach einer Mindestbewegung, die bei aktivem
+    # Nachfuehren nie zustande kam -- und das Dreh-Plugin ersetzt L.Draggable darunter.
+    assert "map.on('dragstart'" not in INDEX, \
+        "dragstart ist hier der unzuverlaessige Weg, s. Kommentar im Code"
 
 
 def test_fortrechnung_faelscht_die_tracks_nicht():
@@ -1075,6 +1084,28 @@ def test_drehung_nur_mit_geprueftem_plugin():
     assert "shiftKeyRotate: false" in INDEX
 
 
+def test_nur_der_takt_bewegt_marker():
+    """updateMap darf Marker anlegen und beschriften, aber nicht mehr bewegen.
+
+    Es laeuft auf DREI Wegen: SSE-Meldung, ein 10-Sekunden-Neuzeichnen mit UNVERAENDERTEN
+    Daten und ein 15-Sekunden-Abruf. Jeder Aufruf setzte die Marker auf den letzten
+    Meldepunkt zurueck und machte die Fortrechnung zunichte -- sichtbar als staendiges
+    Vor- und Zurueckspringen (Nutzer, 15.08.2026: "zeichnet die position immer 3-8 sekunden
+    weiter und springt dann immer wieder zurueck zum gezeichneten track").
+
+    Eine bewegte Anzeige braucht genau eine Stelle, die sie bewegt."""
+    m = re.search(r"function updateMap\(pilots\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "updateMap nicht gefunden"
+    rumpf = m.group(1)
+    # Genau EIN setLatLng darf uebrig sein: das beim Anlegen eines neuen Markers.
+    assert rumpf.count("setLatLng") == 0, \
+        "updateMap bewegt weiterhin Marker -- das macht nur noch _naviTakt"
+    # Und die Empfangszeit nur bei wirklich neuen Werten, sonst startet die Fortrechnung
+    # bei jedem der drei Aufrufe von vorn.
+    assert "const neuerWert = !alt ||" in rumpf
+    assert "if (neuerWert) {" in rumpf
+
+
 def test_eigener_marker_hat_nur_eine_quelle():
     """Solange der Simulator meldet, setzt NUR er den eigenen Marker.
 
@@ -1086,11 +1117,13 @@ def test_eigener_marker_hat_nur_eine_quelle():
 
     Zwei Quellen fuer dieselbe Sache brauchen eine Rangfolge, keinen Wettlauf."""
     assert "function _markerGehoertDemSim(callsign)" in INDEX
-    # updateMap darf den eigenen Marker dann nicht mehr anfassen.
+    # Positionen setzt updateMap gar nicht mehr (s. test_nur_der_takt_bewegt_marker) --
+    # beim KURS ist die Ausnahme aber weiterhin noetig: Er kam ebenfalls von VATSIM und
+    # haette das Symbol wieder in die Richtung von vor bis zu 15 Sekunden gedreht.
     m = re.search(r"const demSim = _markerGehoertDemSim\(p\.callsign\);(.*?)\n    \} else \{", INDEX, re.S)
     assert m, "die Abfrage fehlt in updateMap"
-    assert "if (!demSim) vorhanden.setLatLng" in m.group(1), \
-        "updateMap ueberschreibt die Sim-Position weiterhin"
+    assert "if (!demSim && vorhanden._fsHeading !== hdg)" in m.group(1), \
+        "updateMap ueberschreibt den Kurs aus dem Simulator weiterhin"
     # Und der Takt rechnet den eigenen Flieger nicht als einen von vielen fort.
     t = re.search(r"function _naviTakt\(sofort\) \{(.*?)\n\}", INDEX, re.S)
     assert t and "if (_markerGehoertDemSim(cs)) continue;" in t.group(1), \
