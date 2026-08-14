@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.3.2",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Glocke im Tablet, zweiter Anlauf",
+    "items": [
+      "🔔 Die Glocke blieb im Tablet weiter unsichtbar. Die Messung zeigte: Sie sitzt an der richtigen Stelle und hat die richtige Größe — sie wird nur nicht gezeichnet. Ursache ist der Verweis auf die zentrale Symbol-Sammlung, den die Anzeige-Engine des Simulators hier ins Leere laufen lässt. Die Glocke bekommt ihre Form jetzt direkt, ohne diesen Umweg."
+    ]
+  },
+  {
     "version": "12.3.1",
     "date": "2026-08-14",
     "highlight": false,

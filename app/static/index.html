@@ -2514,10 +2514,6 @@
     <rect x="4" y="11" width="16" height="10" rx="2"/>
     <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
   </symbol>
-  <symbol id="icon-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 8 2.5 8h-17S6 15 6 9"/>
-    <path d="M10.3 20.5a2 2 0 0 0 3.4 0"/>
-  </symbol>
   <symbol id="icon-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 15V3"/>
     <path d="M7 8l5-5 5 5"/>
@@ -2705,11 +2701,15 @@
       <a href="https://github.com/regover13/friesenspy#readme" target="_blank" rel="noopener" class="help-btn" title="Hilfe &amp; Dokumentation (GitHub)">? HILFE</a>
       <!-- Zwei Glocken, eine sichtbar: Die Twemoji-Grafik ist ein fertiges Bild und nimmt
            keine Farbe an; im Panel zeigt die Glocke aber ueber ihre Farbe den
-           Verbindungszustand, dort braucht es das Sprite-Symbol mit currentColor. Beide
-           stehen fest im Markup und werden per CSS umgeschaltet -- nicht per JavaScript
-           erzeugt: ein per innerHTML eingesetztes <svg> blieb in Coherent GT unsichtbar
-           (Sim-Fund 14.08.2026). -->
-      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img class="emoji-icon notif-glocke-web" src="/static/emoji/bell.svg" alt="" /><svg class="icon notif-glocke-panel"><use href="#icon-bell"/></svg></button>
+           Verbindungszustand, dort braucht es Vektorform mit currentColor.
+           ZWEI Sim-Funde vom 14.08.2026 stecken in dieser einen Zeile:
+           1. Per innerHTML eingesetztes <svg> blieb unsichtbar -> beide stehen fest im Markup.
+           2. Auch fest im Markup blieb die <use>-Fassung unsichtbar -- gemessen: Knopf 44x44,
+              SVG 20x20, richtig platziert, nur eben nichts gezeichnet. Deshalb hier als
+              EINZIGES Icon der App der Pfad direkt inline statt per Sprite-Verweis. Wer das
+              wieder auf <use href="#icon-bell"> umstellt, macht die Glocke im Tablet erneut
+              unsichtbar. -->
+      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img class="emoji-icon notif-glocke-web" src="/static/emoji/bell.svg" alt="" /><svg class="icon notif-glocke-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 8 2 8H4s2-2 2-8"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg></button>
       <div id="sse-badge" class="sse-badge disconnected">
         <div class="sse-dot"></div>
         <span class="sse-label" id="sse-label">GETRENNT</span>

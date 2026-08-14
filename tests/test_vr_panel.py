@@ -790,12 +790,16 @@ def test_glocke_im_panel_ist_einfaerbbar_und_steht_fest_im_markup():
     eingesetztes <svg> blieb in Coherent GT unsichtbar, obwohl dieselbe Sprite-Referenz im
     festen Markup einwandfrei rendert (Sim-Fund 14.08.2026). Wer das wieder auf JavaScript
     umstellt, macht die Glocke im Tablet erneut unsichtbar."""
-    assert 'id="icon-bell"' in INDEX, "Glocken-Symbol fehlt im Sprite"
     assert 'class="emoji-icon notif-glocke-web"' in INDEX
-    assert 'class="icon notif-glocke-panel"><use href="#icon-bell"/>' in INDEX
     assert "html.vr-panel .notif-glocke-panel { display: inline-block; }" in INDEX
     assert "html.vr-panel .notif-glocke-web { display: none; }" in INDEX
     assert "glocke.innerHTML" not in INDEX, "Glocke darf nicht per JavaScript erzeugt werden"
+    # Der Pfad steht DIREKT im Knopf, nicht als Sprite-Verweis: die <use>-Fassung blieb im
+    # Tablet unsichtbar, obwohl gemessen richtig platziert und dimensioniert (44x44 / 20x20).
+    m = re.search(r'<svg class="icon notif-glocke-panel"(.*?)</svg>', INDEX, re.S)
+    assert m, "Panel-Glocke nicht gefunden"
+    assert "<path" in m.group(1), "Glocke ohne eigenen Pfad"
+    assert "<use" not in m.group(1), "Sprite-Verweis -- im Tablet unsichtbar"
 
 
 def test_kategorie_schalter_zeigen_ihren_zustand_als_text():
