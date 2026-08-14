@@ -1,5 +1,18 @@
 [
   {
+    "version": "12.6.0",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Karte: Kompass, Moving Map und gleich große Zoomknöpfe",
+    "items": [
+      "🧭 Neuer Kompass unter der Ebenen-Auswahl: Ein Druck dreht die Karte in Flugrichtung, der nächste stellt sie wieder nach Norden. Die Nadel zeigt dabei immer dorthin, wo Norden liegt.",
+      "📍 Neuer Schalter unten rechts: Die Karte folgt dem eigenen Flugzeug. Wer die Karte von Hand verschiebt, schaltet ihn damit automatisch ab — Zoomen nicht.",
+      "✈️ Alle Flugzeuge wandern jetzt gleichmäßig über die Karte, statt alle 15 Sekunden zu springen: Zwischen zwei VATSIM-Meldungen wird ihre Position aus Kurs und Geschwindigkeit weitergerechnet. Die aufgezeichneten Flugwege bleiben davon unberührt und enthalten weiterhin nur echte Messpunkte.",
+      "➕ Die Zoomknöpfe sind jetzt gezeichnet statt geschrieben: Plus und Minus benutzen denselben Balken und sind damit endlich gleich groß.",
+      "⛶ Der Vollbild-Knopf sitzt sauber zentriert und trägt sein Symbol wieder — seit die Symbole im Tablet ankommen, lohnt es sich."
+    ]
+  },
+  {
     "version": "12.5.7",
     "date": "2026-08-14",
     "highlight": false,

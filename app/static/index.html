@@ -1192,21 +1192,111 @@
       height: 100%;
     }
 
+    /* Leaflets Bedienelemente im Farbschema der App. Stand bis v12.5.8 als per JavaScript
+       erzeugter <style>-Block in initLiveMap -- also erst vorhanden, wenn jemand die
+       Live-Karte einmal geöffnet hatte, und dann global für alle drei Karten. Hier im
+       Stylesheet gilt es von Anfang an und für alle, ohne Umweg. */
+    .leaflet-control-zoom a {
+      background: #071525 !important;
+      color: #2d9cdb !important;
+      border-color: rgba(45,156,219,0.3) !important;
+      /* Mittig, damit die gezeichneten Symbole nicht an der Grundlinie kleben (sie sind
+         keine Schriftzeichen mehr, s. _zoomSymbol). */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .zoom-symbol { width: 1em; height: 1em; display: block; }
+
+    /* Kompass und Moving-Map-Schalter (Karte-Tab). Bewusst deutlich groesser als Leaflets
+       eigene 26px-Knoepfe: Im Cockpit wird mit dem Finger getippt, nicht mit dem Mauszeiger
+       gezielt -- und in VR trifft man kleine Ziele noch schlechter. 44px ist das gaengige
+       Mindestmass fuer Tippziele und gilt hier auf der Website gleich mit; ein grosszuegiger
+       Knopf schadet dort nicht. */
+    /* Warum hier !important steht, und zwar zu Recht: Leaflets eigenes Stylesheet setzt die
+       Knopfmasse ueber `.leaflet-touch .leaflet-bar a { width:30px; height:30px }` und die
+       Farbe ueber `.leaflet-bar a { background:#fff }`. Der erste Selektor ist mit zwei
+       Klassen PLUS Element spezifischer als alles, was wir mit unseren eigenen Klassennamen
+       erreichen -- zwei Anlaeufe mit hoeherer Selektor-Tiefe blieben messbar wirkungslos
+       (Knopf 30px, weiss). Dieselbe Entscheidung war fuer die Zoom-Knoepfe schon vorher
+       getroffen, s. `.leaflet-control-zoom a` daneben. */
+    .navi-bar { border: none !important; background: none !important; margin-top: 8px; }
+    .navi-bar .navi-knopf {
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      width: 44px !important;
+      height: 44px !important;
+      background: #071525 !important;
+      border: 1px solid rgba(45,156,219,0.3) !important;
+      color: #2d9cdb !important;
+      cursor: pointer;
+    }
+    .navi-bar .navi-knopf:hover { background: #0b2036 !important; }
+    .navi-bar .kompass-nadel, .navi-bar .moving-pfeil { width: 28px; height: 28px; display: block; }
+    /* Die Nadel dreht sich gegen die Karte (zeigt also weiter nach Norden) -- der Uebergang
+       macht aus dem Sprung eine Bewegung, ohne dauerhaft etwas zu animieren. */
+    .kompass-nadel { transition: transform 0.25s linear; }
+    /* Moving Map an: der Knopf traegt die Akzentfarbe, nicht nur einen zarten Rand --
+       im Flug muss auf einen Blick klar sein, ob die Karte gerade von selbst mitwandert. */
+    .navi-bar.navi-an .navi-knopf {
+      background: #2d9cdb;
+      color: #04080f;
+      border-color: #2d9cdb;
+    }
+    /* Kein Drehen moeglich (leaflet-rotate nicht geladen): Knopf bleibt sichtbar, aber
+       erkennbar wirkungslos -- lieber ein stummer Knopf als ein Knopf, der nichts tut und
+       so aussieht, als muesste er. */
+    .navi-bar.navi-stumm { opacity: 0.35; pointer-events: none; }
+    /* Der Moving-Map-Knopf sitzt unten rechts, wo auch Leaflets Herkunftsangabe klebt --
+       ohne Abstand liegt er darauf. */
+    .leaflet-bottom.leaflet-right .navi-bar { margin-bottom: 18px; margin-right: 4px; }
+    .leaflet-control-attribution {
+      background: rgba(4,8,15,0.8) !important;
+      color: #6b9ab8 !important;
+      font-size: 9px !important;
+    }
+    .leaflet-control-attribution a { color: #2d9cdb !important; }
+
     /* Vollbild-Toggle für Kartenansichten (Karte-Tab, Events-Tab, Track-Modal) — unten links,
        damit es nicht mit Leaflets Zoom-Control (+/-, oben links) kollidiert. */
+    /* Sauber eingepasst und zentriert (Nutzerwunsch 14.08.2026). Das Symbol war zwischendurch
+       raus -- der Nutzer hatte es aufgegeben, weil es im Kniebrett nie erschien. Seit v12.5.7
+       erscheint es (es fehlte `xlink:href`, s. Kommentar bei `.icon`), also darf es bleiben.
+
+       Es ist hier allerdings groesser als sonst: Bei 0.72rem Schriftgroesse waeren 1em gerade
+       8,3 Pixel Zeichnung (gemessen im Sim, sprites.echterKnopf) -- vorhanden, aber nicht zu
+       erkennen. 1.35em bringt es auf eine Groesse, die man auch mit dem Kopf im
+       Virtual-Reality-Bild noch als Symbol liest.
+
+       Der Abstand zum Text kommt per margin, NICHT per `gap`: Coherent GT kennt `gap` nicht
+       (bestaetigte Luecke, s. docs/efb-panel-debugging.md) und liesse die beiden sonst
+       aneinanderkleben. */
     .map-fullscreen-btn {
       position: absolute;
       bottom: 10px;
       left: 10px;
       z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
       background: var(--bg-panel);
       border: 1px solid var(--green-dim);
       color: var(--text-bright);
       font-family: var(--text-display);
       font-size: 0.72rem;
       letter-spacing: 0.08em;
-      padding: 6px 10px;
+      padding: 6px 14px;
+      white-space: nowrap;
       cursor: pointer;
+    }
+    .map-fullscreen-btn .icon {
+      width: 1.35em;
+      height: 1.35em;
+      margin-right: 7px;
+      flex: none;              /* nicht mitschrumpfen, wenn der Text laenger wird */
+      vertical-align: 0;       /* die globale Grundlinien-Korrektur stoert im Flex-Kontext */
     }
     .map-is-fullscreen {
       position: fixed !important;
@@ -3322,6 +3412,20 @@
 
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<!-- Kartendrehung fuer Track-up ("in Flugrichtung schauen"). Leaflet selbst kann das nicht;
+     dieses Plugin ergaenzt es, indem es Teile des Leaflet-Kerns per L.Class.include ersetzt.
+     Genau deshalb bewusst ohne async/defer direkt hinter Leaflet: Es MUSS fertig sein, bevor
+     die erste Karte entsteht.
+
+     Bewusst die unkomprimierte -src-Fassung: Sie ist auf Coherent-GT-Vertraeglichkeit
+     geprueft (kein ?., kein ??, kein Spread, keine class-Syntax -- das sind die Sprachmittel,
+     an denen die Engine sonst ein ganzes <script> fallen laesst), und bei einem Fehler im Sim
+     ist eine lesbare Zeilennummer mehr wert als 30 KB weniger.
+
+     Faellt das Skript aus (Netz weg, Hash passt nicht, Engine stolpert), laufen alle Karten
+     unveraendert weiter -- jede Drehung haengt an einer Pruefung auf map.setBearing, s.
+     _kannDrehen(). Track-up ist dann nicht verfuegbar, sonst aendert sich nichts. -->
+<script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js" integrity="sha256-+Qs8D9zbGHhw1CGR1C/Ty+hiG/oYv998Rs2DntIXIrY=" crossorigin="" onerror="window._leafletRotateFehlt = true;"></script>
 
 <script>
 'use strict';
@@ -3350,12 +3454,40 @@ const TILE_ATTR = TILE_DARK_ATTR;
 
 const OFM_NATIVE_MAX_ZOOM = 11; // OFM hat native Tiles bis Zoom 11; ab Zoom 13 Auto-Switch zu Satellit
 
-// Leaflets eingebauter Zoom-Control benutzt für den "−"-Button ein echtes Unicode-Minuszeichen
-// (U+2212, nicht der normale Bindestrich) -- Bibliothekscode, nicht unser eigener Icon-Umbau,
-// deshalb hier separat auf ASCII "-" gepatcht (Live-Test-Fund 13.08.2026 im MSFS-EFB-Panel).
-function _fixLeafletZoomMinus(map) {
-  const btn = map.getContainer().querySelector('.leaflet-control-zoom-out');
-  if (btn) btn.textContent = '-';
+// ==========================================================================
+//  ZOOM-KNOEPFE: GEZEICHNET STATT GESCHRIEBEN
+// ==========================================================================
+// Leaflets Zoom-Control setzt Textzeichen in seine beiden Knoepfe: ein "+" und ein echtes
+// Unicode-Minus (U+2212, nicht der Bindestrich). Daran hingen zwei Probleme:
+//   1. Coherent GT malt U+2212 nicht -- der Knopf blieb leer (Live-Test 13.08.2026).
+//   2. Der ASCII-Ersatz "-" ist als Schriftzeichen deutlich kleiner und duenner als das "+".
+//      Die beiden Knoepfe sahen dadurch ungleich aus (Nutzer-Fund 14.08.2026).
+//
+// Punkt 2 laesst sich mit Schriftzeichen nicht sauber loesen: "+" und "-" sind in JEDER
+// Schrift unterschiedlich gross, das ist kein Fehler, sondern Typografie. Also gar kein
+// Zeichen mehr, sondern zwei Vektorformen, die denselben Balken benutzen -- der waagerechte
+// Balken ist in beiden Knoepfen exakt derselbe, das Plus hat nur einen zweiten dazu.
+//
+// Bewusst INLINE gezeichnet statt per <use href="#icon-...">: Diese Symbole setzt JavaScript
+// per innerHTML ein, und genau dieser Weg ist im Panel ein eigener, noch ungeklaerter Fund
+// (s. der Kommentar an der Glocke: "per innerHTML eingesetztes <svg> blieb unsichtbar").
+// Ein Symbol ganz ohne Verweis kann daran nicht scheitern. Gefuellte Flaechen statt Striche,
+// aus demselben Grund: eine Flaeche kann die Engine nicht auf null runden.
+function _zoomSymbol(mitSenkrechte) {
+  const balken = '<rect x="4" y="11" width="16" height="2" fill="currentColor"/>';
+  const senkrecht = '<rect x="11" y="4" width="2" height="16" fill="currentColor"/>';
+  return '<svg class="zoom-symbol" viewBox="0 0 24 24" aria-hidden="true">'
+    + balken + (mitSenkrechte ? senkrecht : '') + '</svg>';
+}
+
+function _fixLeafletZoomIcons(map) {
+  const c = map.getContainer();
+  const rein = c.querySelector('.leaflet-control-zoom-in');
+  const raus = c.querySelector('.leaflet-control-zoom-out');
+  // innerHTML ersetzt nur den Inhalt -- title/aria-label von Leaflet bleiben erhalten, die
+  // Knoepfe bleiben also weiterhin benannt und bedienbar, auch ohne sichtbares Symbol.
+  if (rein) rein.innerHTML = _zoomSymbol(true);
+  if (raus) raus.innerHTML = _zoomSymbol(false);
 }
 
 // ==========================================================================
@@ -3844,6 +3976,9 @@ function fsRefreshSession() {
     .then(d => {
       if (d && d.logged_in) {
         _fsWasLoggedIn = true;
+        // Die eigene CID ist die einzige Moeglichkeit, den eigenen Flieger im VATSIM-Strom
+        // wiederzuerkennen -- Grundlage von Moving Map und Track-up ohne Sim-Position.
+        _meineCid = d.cid || null;
         document.getElementById('userName').textContent = d.name || ('CID ' + (d.cid || '—'));
         document.getElementById('userBox').hidden = false;
         // Sichtbarkeits-Panel nur für eingeloggte Mitglieder (CID bekannt).
@@ -4830,6 +4965,16 @@ function _initPanelShellKanal() {
     const d = e && e.data;
     if (!d || d.quelle !== 'friesenspy-shell') return;
     if (d.art === 'pong') _panelShellDa = true;
+    if (d.art === 'position') {
+      // Die eigene Position aus dem Simulator -- die einzige, die der Sim wirklich kennt
+      // (s. der lange Kommentar bei _eigenePosition). Zahlen pruefen statt vertrauen: Ein
+      // einziges NaN hier wuerde die Karte an einen undefinierten Ort schieben.
+      const lat = Number(d.lat), lon = Number(d.lon);
+      if (isFinite(lat) && isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+        _simPos = { lat: lat, lon: lon,
+                    hdg: Number(d.hdg) || 0, gs: Number(d.gs) || 0, ts: Date.now() };
+      }
+    }
     if (d.art === 'notify-ok') {
       // Der mitgeschickte Ungelesen-Zaehler ist der einzige harte Beleg, dass die Meldung in
       // der Liste der Tablet-Oberflaeche gelandet ist (dieselbe Zahl steht an der Glocke).
@@ -6302,7 +6447,7 @@ async function openTrackModal(source, id, callsign, dep, arr, logon, logoff, aut
       if (!trackMapInitialized) {
         trackMap = L.map('track-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6,
                                                 fadeAnimation: _KARTE_EINBLENDEN });
-        _fixLeafletZoomMinus(trackMap);
+        _fixLeafletZoomIcons(trackMap);
         const trackLayers = _makeTileLayers();
         _getPreferredLayer(trackLayers).addTo(trackMap);
         const trackAIP = _makeAIPOverlay();
@@ -6424,6 +6569,321 @@ async function fetchLiveInitial() {
 }
 
 // ==========================================================================
+//  EIGENE POSITION, MOVING MAP UND TRACK-UP
+// ==========================================================================
+// Zwei Quellen, klar getrennt -- und das ist keine Doppelung, sondern der Kern der Sache:
+//
+//   * DAS EIGENE Flugzeug kommt aus dem Simulator (SimVar, von der EFB-Shell per
+//     postMessage hereingereicht). Es ist das einzige, dessen Position der Sim wirklich
+//     kennt, dafuer kennt er sie auf den Meter genau und ohne Verzoegerung.
+//   * ALLE ANDEREN kommen von VATSIM, alle 15 Sekunden. Aus dem Sim waeren sie NICHT zu
+//     bekommen: `Coherent.call("GET_AIR_TRAFFIC")` liefert keinen Multiplayer-Verkehr
+//     (Asobo, DevSupport 3794, seit 2022 im Backlog), und die von vPilot in der Luft
+//     erzeugten AI-Objekte fehlen dort ohnehin (DevSupport 4993, ebenfalls bestaetigt und
+//     offen). Selbst wenn: Der Sim kennt nur, was um einen herum geladen ist -- ein Friese
+//     300 km weiter existiert dort gar nicht --, und die Objekte tragen keinen brauchbaren
+//     Namen (DevSupport 13002), waeren also keinem Callsign zuzuordnen.
+//
+// Damit die anderen trotzdem gleiten statt alle 15 Sekunden zu springen, wird ihre Position
+// zwischen zwei Meldungen aus Kurs und Grundgeschwindigkeit fortgerechnet.
+
+let _simPos = null;      // {lat, lon, hdg, gs, ts} -- aus dem Sim, oder null
+let _meineCid = null;    // eigene CID aus /api/me, fuer den Fallback ohne Sim
+
+// Aelter als das, gilt die Sim-Position als tot: Kommt nichts mehr (Tablet zu, Shell weg),
+// soll die Karte nicht ewig eine eingefrorene Position nachfuehren.
+const _SIM_POS_MAX_ALTER_MS = 5000;
+
+/**
+ * Wo bin ich, und wohin schaue ich? Gestaffelt, beste Quelle zuerst:
+ *   1. frische Sim-Position (nur im Kniebrett vorhanden)
+ *   2. der eigene Flieger aus dem VATSIM-Strom (Website, oder Shell antwortet nicht)
+ *   3. gar nichts -- dann bleiben Moving Map und Track-up wirkungslos
+ */
+function _eigenePosition() {
+  if (_simPos && (Date.now() - _simPos.ts) < _SIM_POS_MAX_ALTER_MS) return _simPos;
+  if (_meineCid != null) {
+    const liste = liveData || [];
+    for (let i = 0; i < liste.length; i++) {
+      const p = liste[i];
+      if (String(p.cid) !== String(_meineCid)) continue;
+      if (p.latitude == null || p.longitude == null) return null;
+      const roh = _positionsRoh[p.callsign];
+      // Auch die eigene VATSIM-Position wird fortgerechnet -- sonst ruckelt ausgerechnet
+      // die Karte, die einem folgen soll, im 15-Sekunden-Takt.
+      return roh ? _jetztGerechnet(roh)
+                 : { lat: p.latitude, lon: p.longitude,
+                     hdg: Number(p.heading) || 0, gs: Number(p.groundspeed) || 0, ts: Date.now() };
+    }
+  }
+  return null;
+}
+
+// Rohwerte je Callsign, so wie VATSIM sie gemeldet hat, mit Empfangszeit. Basis der
+// Fortrechnung -- absichtlich getrennt von dem, was auf der Karte steht.
+const _positionsRoh = {};
+
+/**
+ * Position aus Kurs und Grundgeschwindigkeit fortschreiben.
+ *
+ * Ebene Naeherung statt Grosskreis: Auf den 15 Sekunden zwischen zwei VATSIM-Meldungen legt
+ * selbst ein Verkehrsflugzeug keine 4 km zurueck; der Unterschied zur exakten Rechnung liegt
+ * dabei im Zentimeterbereich und waere reine Ziererei.
+ *
+ * Bekannte Ungenauigkeit, bewusst in Kauf genommen: VATSIM meldet `heading` -- den
+ * Steuerkurs, nicht den Weg ueber Grund. Bei Wind laeuft die Schaetzung also leicht schraeg,
+ * und beim naechsten echten Wert springt der Punkt ein Stueck zurecht. Ueber 15 Sekunden ist
+ * dieser Versatz kleiner als das Flugzeugsymbol selbst.
+ */
+function _jetztGerechnet(roh) {
+  const sek = (Date.now() - roh.ts) / 1000;
+  const gs = Number(roh.gs) || 0;
+  if (sek <= 0 || gs <= 0) return { lat: roh.lat, lon: roh.lon, hdg: roh.hdg, gs: gs, ts: roh.ts };
+  const km = gs * 1.852 / 3600 * sek;             // Knoten -> km/h -> zurueckgelegte km
+  const rad = (Number(roh.hdg) || 0) * Math.PI / 180;
+  const dLat = km * Math.cos(rad) / 111.32;
+  const nenner = Math.cos(roh.lat * Math.PI / 180);
+  // Nahe den Polen geht der Nenner gegen null und die Laengengrad-Rechnung explodiert.
+  // Auf Friesen-Breiten nie ein Thema, aber ein Sicherheitsnetz kostet hier nichts.
+  const dLon = Math.abs(nenner) < 0.01 ? 0 : km * Math.sin(rad) / (111.32 * nenner);
+  return { lat: roh.lat + dLat, lon: roh.lon + dLon, hdg: roh.hdg, gs: gs, ts: roh.ts };
+}
+
+// --------------------------------------------------------------------------
+//  Die beiden Knoepfe: Kompass (Track-up) und Moving Map
+// --------------------------------------------------------------------------
+// Vorbild ist die Bedienung, die jeder vom Telefon kennt (Nutzerwunsch 14.08.2026):
+// Kompassnadel gleich unter der Ebenen-Auswahl, Moving-Map-Schalter unten rechts.
+//
+// Beide Symbole sind INLINE gezeichnet und benutzen gefuellte Flaechen. Das ist kein Zufall:
+// Ein <use href="#icon-...">-Verweis war im Kniebrett bis v12.5.7 unsichtbar, und die per
+// JavaScript eingesetzte Fassung ist dort ein eigener, noch ungeklaerter Fund (s. Glocke).
+// Eine Flaeche ohne jeden Verweis kann an beidem nicht scheitern.
+
+const _NAVI_TRACKUP_KEY = 'friesenspy_trackup';
+const _NAVI_MOVING_KEY  = 'friesenspy_movingmap';
+function _naviLies(key) { try { return localStorage.getItem(key) === '1'; } catch (e) { return false; } }
+function _naviMerke(key, an) { try { localStorage.setItem(key, an ? '1' : '0'); } catch (e) {} }
+
+let _trackUp   = _naviLies(_NAVI_TRACKUP_KEY);
+let _movingMap = _naviLies(_NAVI_MOVING_KEY);
+let _kompassNadel = null;   // das drehbare <svg> im Kompassknopf
+let _movingKnopf  = null;   // der Knopf selbst, fuer den An/Aus-Anstrich
+
+/** Kann diese Karte ueberhaupt drehen? Faellt leaflet-rotate aus, ist die Antwort nein. */
+function _kannDrehen(map) {
+  return !window._leafletRotateFehlt && map && typeof map.setBearing === 'function';
+}
+
+/** Gemeinsames Aussehen der beiden runden Knoepfe -- im Cockpit Tippziele, keine Mauszeiger-Ziele. */
+function _naviKnopf(titel, inhalt, beiKlick) {
+  const a = L.DomUtil.create('a', 'navi-knopf');
+  a.href = '#';
+  a.title = titel;
+  a.setAttribute('role', 'button');
+  a.setAttribute('aria-label', titel);   // ohne sichtbares Symbol trotzdem benannt
+  a.innerHTML = inhalt;
+  L.DomEvent.on(a, 'click', function (e) {
+    L.DomEvent.stop(e);   // sonst zoomt die Karte beim Doppeltippen mit
+    beiKlick();
+  });
+  return a;
+}
+
+/**
+ * Kompass: ein Druck schaltet zwischen genordet und "in Flugrichtung" um.
+ *
+ * Die Nadel zeigt IMMER nach Norden -- sie dreht sich also gegen die Karte. Bei genordeter
+ * Karte steht sie senkrecht, bei Track-up schraeg. Genau das macht sie brauchbar: Man sieht
+ * auf einen Blick, wo Norden liegt, ohne die Beschriftung lesen zu muessen.
+ */
+function _addKompassControl(map) {
+  const Kompass = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function () {
+      const box = L.DomUtil.create('div', 'leaflet-bar navi-bar');
+      const nadel =
+        '<svg class="kompass-nadel" viewBox="0 0 24 24" aria-hidden="true">' +
+        // Nordhaelfte rot, Suedhaelfte hell -- die uebliche Lesart, ohne Beschriftung.
+        '<path d="M12 3 L16 13 L12 11 Z" fill="#e05555"/>' +
+        '<path d="M12 21 L8 11 L12 13 Z" fill="#cfe3f0"/>' +
+        '</svg>';
+      const a = _naviKnopf('Karte drehen: genordet / in Flugrichtung', nadel, function () {
+        _trackUp = !_trackUp;
+        _naviMerke(_NAVI_TRACKUP_KEY, _trackUp);
+        _naviTakt(true);
+      });
+      box.appendChild(a);
+      _kompassNadel = a.querySelector('.kompass-nadel');
+      if (!_kannDrehen(map)) box.classList.add('navi-stumm');
+      return box;
+    }
+  });
+  map.addControl(new Kompass());
+}
+
+/**
+ * Moving Map: die Karte bleibt auf dem eigenen Flugzeug stehen.
+ *
+ * Wer die Karte von Hand verschiebt, will offensichtlich woanders hinschauen -- dann geht der
+ * Schalter von selbst aus (Nutzerwunsch). Zoomen zaehlt ausdruecklich NICHT als Verschieben:
+ * naeher heranzugehen heisst nicht, den eigenen Flieger aus den Augen verlieren zu wollen.
+ */
+function _addMovingMapControl(map) {
+  const Moving = L.Control.extend({
+    options: { position: 'bottomright' },
+    onAdd: function () {
+      const box = L.DomUtil.create('div', 'leaflet-bar navi-bar');
+      const pfeil =
+        '<svg class="moving-pfeil" viewBox="0 0 24 24" aria-hidden="true">' +
+        '<path d="M12 3 L20 20 L12 16 L4 20 Z" fill="currentColor"/>' +
+        '</svg>';
+      const a = _naviKnopf('Karte folgt dem eigenen Flugzeug', pfeil, function () {
+        _movingMap = !_movingMap;
+        _naviMerke(_NAVI_MOVING_KEY, _movingMap);
+        _naviTakt(true);
+      });
+      box.appendChild(a);
+      _movingKnopf = box;
+      return box;
+    }
+  });
+  map.addControl(new Moving());
+
+  map.on('dragstart', function () {
+    if (!_movingMap) return;
+    _movingMap = false;
+    _naviMerke(_NAVI_MOVING_KEY, false);
+    _naviKnopfAnstrich();
+  });
+}
+
+/** An/Aus am Moving-Map-Knopf sichtbar machen. */
+function _naviKnopfAnstrich() {
+  if (_movingKnopf) _movingKnopf.classList.toggle('navi-an', !!_movingMap);
+}
+
+// --------------------------------------------------------------------------
+//  Der Takt, der alles bewegt
+// --------------------------------------------------------------------------
+// EIN Zeitgeber fuer alles Bewegte: fortgerechnete Marker, Kartendrehung, Nachfuehrung.
+// Bewusst nicht drei einzelne -- drei Zeitgeber, die alle an derselben Karte ziehen, waeren
+// drei Gelegenheiten, sich gegenseitig ins Gehege zu kommen.
+//
+// Ein Sekundentakt, nicht requestAnimationFrame: Die Lehre aus der Flackersuche (v12.5.2)
+// ist, dass eine Schleife, die in JEDEM Einzelbild etwas anfasst, in Coherent GT die
+// Zeichenlast dauerhaft hochhaelt. Einmal pro Sekunde reicht voellig -- schneller als das
+// bewegt sich auf einer Karte in diesem Massstab ohnehin nichts Sichtbares.
+let _naviTimer = null;
+
+function _naviTakt(sofort) {
+  if (!liveMap) return;
+  // Auf einer verdeckten Karte ist jede Bewegung Arbeit ohne Wirkung (dieselbe Ueberlegung
+  // wie in updateMap). `sofort` kommt vom Knopfdruck und geht auch dann durch.
+  if (!sofort && !_istSichtbar(liveMap.getContainer())) return;
+
+  const eigen = _eigenePosition();
+
+  // 1. Drehung
+  if (_kannDrehen(liveMap)) {
+    // Track-up heisst: der eigene Kurs zeigt nach oben. Die Karte muss also um den Kurs
+    // GEGEN den Uhrzeigersinn gedreht werden.
+    const soll = (_trackUp && eigen) ? -(Number(eigen.hdg) || 0) : 0;
+    if (Math.round(liveMap.getBearing() || 0) !== Math.round(soll)) liveMap.setBearing(soll);
+    if (_kompassNadel) {
+      // Die Nadel MIT der Karte drehen, nicht gegen sie -- sie soll ja weiter dorthin zeigen,
+      // wo auf der Karte Norden liegt. Gemessen: Bei Kurs 090 dreht die Karte um -90 Grad,
+      // Norden liegt danach links, und genau dorthin zeigt die Nadel mit rotate(-90deg).
+      // Das Vorzeichen war hier zuerst umgekehrt und liess die Nadel spiegelverkehrt nach
+      // Osten zeigen -- im Cockpit die denkbar schlechteste Art von Fehler.
+      _kompassNadel.style.transform = 'rotate(' + soll + 'deg)';
+    }
+  }
+
+  // 2. Alle anderen fortrechnen
+  for (const cs in mapMarkers) {
+    if (!Object.prototype.hasOwnProperty.call(mapMarkers, cs)) continue;
+    const roh = _positionsRoh[cs];
+    if (!roh) continue;
+    const p = _jetztGerechnet(roh);
+    mapMarkers[cs].setLatLng([p.lat, p.lon]);
+  }
+
+  // 3. Das eigene Flugzeug: hat der Sim eine Position, gilt SIE -- nicht die von VATSIM.
+  //    Sonst haetten wir fuer dasselbe Flugzeug zwei Wahrheiten, und die Karte waere schon
+  //    nachgefuehrt, waehrend der eigene Marker noch bis zu 15 Sekunden hinterherhinkt.
+  if (_simPos && _meineCid != null && (Date.now() - _simPos.ts) < _SIM_POS_MAX_ALTER_MS) {
+    const meinCs = _meinCallsign();
+    if (meinCs && mapMarkers[meinCs]) {
+      mapMarkers[meinCs].setLatLng([_simPos.lat, _simPos.lon]);
+    }
+  }
+
+  // 4. Nachfuehren
+  if (_movingMap && eigen) {
+    // Ohne Bewegungsanimation: Leaflets `animate` laesst die Karte ueber mehrere Bilder
+    // gleiten -- in Coherent GT genau die Sorte Dauerbewegung, die uns schon einmal
+    // Flackern beschert hat. Der Sprung von einer Sekunde ist ohnehin winzig.
+    liveMap.setView([eigen.lat, eigen.lon], liveMap.getZoom(), { animate: false });
+  }
+
+  _naviKnopfAnstrich();
+}
+
+/** Eigenes Callsign aus dem VATSIM-Strom (fuer die Zuordnung des eigenen Markers). */
+function _meinCallsign() {
+  const liste = liveData || [];
+  for (let i = 0; i < liste.length; i++) {
+    if (String(liste[i].cid) === String(_meineCid)) return liste[i].callsign;
+  }
+  return null;
+}
+
+function _naviStarten() {
+  if (_naviTimer) return;
+  _naviTimer = setInterval(_naviTakt, 1000);
+}
+
+/**
+ * Einmalige Messung: Welcher Weg greift im Sim wirklich?
+ *
+ * Drei Fragen, die sich am Schreibtisch nicht beantworten lassen und im Cockpit auch nicht
+ * durch Hinsehen: Kommt die Sim-Position an (oder laeuft der VATSIM-Fallback)? Hat
+ * leaflet-rotate den Kern erfolgreich erweitert? Und dreht die Karte dann auch wirklich?
+ *
+ * Bewusst EINMALIG, 20 Sekunden nach dem Aufbau der Karte -- lange genug, dass die Shell
+ * geantwortet und VATSIM einmal geliefert haben kann, aber kein Dauer-Messmittel im
+ * Renderpfad. Die Lehre aus v12.5.2 (die rAF-Schleife, die das Flackern selbst verstaerkt
+ * hat) gilt hier genauso: messen, melden, aufhoeren.
+ */
+function _diagNavi(map) {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+  if (typeof window._panelDiag !== 'function') return;
+  setTimeout(function () {
+    try {
+      const eigen = _eigenePosition();
+      const simFrisch = !!(_simPos && (Date.now() - _simPos.ts) < _SIM_POS_MAX_ALTER_MS);
+      window._panelDiag('navi', {
+        rotatePluginDa: !window._leafletRotateFehlt && typeof map.setBearing === 'function',
+        bearing: (typeof map.getBearing === 'function') ? map.getBearing() : null,
+        trackUp: _trackUp,
+        movingMap: _movingMap,
+        simPositionDa: simFrisch,
+        simAlterMs: _simPos ? (Date.now() - _simPos.ts) : null,
+        // Woher kam die Position, die tatsaechlich benutzt wurde? Das ist die eigentliche
+        // Frage -- "Sim-Position vorhanden" und "Sim-Position benutzt" sind zweierlei.
+        quelle: simFrisch ? 'sim' : (eigen ? 'vatsim' : 'keine'),
+        eigeneCidBekannt: _meineCid != null,
+        markerGesamt: Object.keys(mapMarkers).length,
+        rohGesamt: Object.keys(_positionsRoh).length
+      });
+    } catch (e) {
+      window._panelDiag('navi-fehler', { fehler: String(e) });
+    }
+  }, 20000);
+}
+
+// ==========================================================================
 //  KARTE TAB — Leaflet
 // ==========================================================================
 async function initLiveMap() {
@@ -6438,8 +6898,15 @@ async function initLiveMap() {
     minZoom:   6,
     zoomControl: true,
     attributionControl: true,
+    // Kartendrehung fuer Track-up. Drehen soll AUSSCHLIESSLICH ueber den Kompassknopf gehen:
+    // Eine im Cockpit versehentlich verdrehte Karte ist schlimmer als eine, die sich nicht
+    // drehen laesst. Deshalb der eingebaute Dreh-Knopf des Plugins aus und beide Gesten dazu.
+    rotate: true,
+    rotateControl: false,
+    touchRotate: false,
+    shiftKeyRotate: false,
   });
-  _fixLeafletZoomMinus(liveMap);
+  _fixLeafletZoomIcons(liveMap);
 
   const liveLayers = _makeTileLayers();
   _getPreferredLayer(liveLayers).addTo(liveMap);
@@ -6455,22 +6922,16 @@ async function initLiveMap() {
   _diagFlackern(liveMap);
   _setupOFMAutoSwitch(liveMap, liveLayers);
 
-  // Style Leaflet controls
-  const styleEl = document.createElement('style');
-  styleEl.textContent = `
-    .leaflet-control-zoom a {
-      background: #071525 !important;
-      color: #2d9cdb !important;
-      border-color: rgba(45,156,219,0.3) !important;
-    }
-    .leaflet-control-attribution {
-      background: rgba(4,8,15,0.8) !important;
-      color: #6b9ab8 !important;
-      font-size: 9px !important;
-    }
-    .leaflet-control-attribution a { color: #2d9cdb !important; }
-  `;
-  document.head.appendChild(styleEl);
+  // Die Gestaltung der Leaflet-Bedienelemente stand hier frueher als per JS erzeugter
+  // <style>-Block. Sie liegt jetzt im Stylesheet (s. ".leaflet-control-zoom a") -- dort gilt
+  // sie fuer alle drei Karten von Anfang an, statt erst ab dem ersten Oeffnen dieser einen.
+
+  // Kompass NACH der Ebenen-Auswahl anmelden: Leaflet stapelt die Bedienelemente einer Ecke
+  // in der Reihenfolge, in der sie dazukommen -- so sitzt die Nadel darunter, wie gewuenscht.
+  _addKompassControl(liveMap);
+  _addMovingMapControl(liveMap);
+  _naviStarten();
+  _diagNavi(liveMap);
 
   // Render current liveData on map
   updateMap(liveData);
@@ -6552,9 +7013,24 @@ function updateMap(pilots) {
     }
   }
 
+  // Rohwerte, die nicht mehr gemeldet werden, wieder loswerden -- sonst rechnet der Takt
+  // eine Position endlos weiter, deren Flugzeug laengst offline ist.
+  for (const cs in _positionsRoh) {
+    if (!currentCallsigns.has(cs)) delete _positionsRoh[cs];
+  }
+
   // Add / update markers
   for (const p of (pilots || [])) {
     if (p.latitude == null || p.longitude == null) continue;
+    // Rohwert mit Empfangszeit merken: Grundlage der Fortrechnung zwischen zwei Meldungen
+    // (s. _jetztGerechnet). Bewusst NEBEN dem Marker gefuehrt und nicht aus ihm gelesen --
+    // auf dem Marker steht gleich eine geschaetzte Position, und aus einer Schaetzung die
+    // naechste Schaetzung abzuleiten, waere ein Fehler, der sich aufsummiert.
+    _positionsRoh[p.callsign] = {
+      lat: p.latitude, lon: p.longitude,
+      hdg: Number(p.heading) || 0, gs: Number(p.groundspeed) || 0,
+      ts: Date.now()
+    };
     // Auf ganze Grad runden: Das Symbol wird ohnehin nur gedreht, und ein Bruchteil eines
     // Grades ist keine sichtbare Aenderung -- waere aber jedes Mal ein Grund, es neu zu bauen.
     const hdg = Math.round(Number(p.heading) || 0);
@@ -7312,7 +7788,7 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
     await _configPromise;
     eventsMap = L.map('events-leaflet-map', { center: [54.5, 8.5], zoom: 6, minZoom: 6,
                                               fadeAnimation: _KARTE_EINBLENDEN });
-    _fixLeafletZoomMinus(eventsMap);
+    _fixLeafletZoomIcons(eventsMap);
     const evLayers = _makeTileLayers();
     _getPreferredLayer(evLayers).addTo(eventsMap);
     const evAIP = _makeAIPOverlay();

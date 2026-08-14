@@ -126,12 +126,19 @@ Interaktive Karte mit allen aktuell fliegenden Friesen.
 - Flugzeug-Symbole, die sich in Flugrichtung drehen
 - Beim Klick auf ein Symbol: Popup mit Callsign, Strecke, Flugzeugtyp, Höhe und Geschwindigkeit
 - Den bisherigen **GPS-Track** des aktuellen Fluges als Linie — der Track wächst alle 15 Sekunden mit und zeigt den genauen Weg seit dem Start
+- Die Symbole **wandern gleichmäßig**, statt alle 15 Sekunden zu springen: Zwischen zwei VATSIM-Meldungen wird ihre Position aus Kurs und Geschwindigkeit weitergerechnet. Der eingezeichnete Track bleibt davon unberührt — dort stehen nur echte Messpunkte
 
 **Was du tun kannst:**
 - Karte frei verschieben und zoomen
 - Karten-Layer wechseln (Auswahl oben rechts, siehe [Karten-Layer](#️-karten-layer))
+- **🧭 Kompass** (unter der Ebenen-Auswahl) — dreht die Karte in Flugrichtung („Track-up") und wieder zurück nach Norden. Die Nadel zeigt dabei immer dorthin, wo Norden liegt
+- **📍 Moving Map** (unten rechts) — die Karte folgt dem eigenen Flugzeug. Verschiebst du die Karte von Hand, schaltet sie sich automatisch ab (Zoomen nicht)
 - Von einem anderen Tab aus mit ◎ direkt zu einem bestimmten Piloten springen
 - **⛶ Vollbild** (Button unten links) — Karte auf den ganzen Bildschirm vergrößern, **Esc** oder erneuter Klick verlässt es wieder
+
+> **Wo kommt „mein Flugzeug" her?** Im MSFS-Kniebrett direkt aus dem Simulator, sonst aus dem
+> VATSIM-Datenstrom (dafür musst du eingeloggt und online sein). Ohne beides bleiben Kompass
+> und Moving Map wirkungslos.
 
 ---
 

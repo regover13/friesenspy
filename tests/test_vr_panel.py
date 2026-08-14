@@ -994,6 +994,111 @@ def test_jedes_referenzierte_symbol_ist_definiert():
     assert not fehlend, f"referenziert, aber nirgends definiert: {sorted(fehlend)}"
 
 
+def test_zoom_knoepfe_sind_gezeichnet_nicht_geschrieben():
+    """Plus und Minus benutzen denselben waagerechten Balken -- das Plus hat nur einen
+    zweiten dazu. Als Schriftzeichen war das nicht zu loesen: "+" und "-" sind in JEDER
+    Schrift unterschiedlich gross, und der Nutzer sah genau das (Minus kleiner als Plus).
+    Zusaetzlich malte Coherent GT Leaflets echtes Unicode-Minus (U+2212) gar nicht."""
+    m = re.search(r"function _zoomSymbol\(mitSenkrechte\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_zoomSymbol nicht gefunden"
+    rumpf = m.group(1)
+    # EIN Balken, in beiden Knoepfen derselbe -- daran haengt die Gleichheit.
+    assert rumpf.count("const balken") == 1
+    assert "mitSenkrechte ? senkrecht" in rumpf
+    assert "_fixLeafletZoomMinus" not in INDEX, "die alte Textzeichen-Fassung ist noch da"
+    assert INDEX.count("_fixLeafletZoomIcons") >= 4, "nicht alle drei Karten benutzen die neue Fassung"
+
+
+def test_karte_hat_kompass_und_moving_map():
+    """Die beiden neuen Bedienelemente der Live-Karte, an der Position aus dem Vorbild:
+    Kompass unter der Ebenen-Auswahl (topright), Moving Map unten rechts."""
+    assert "function _addKompassControl(map)" in INDEX
+    assert "function _addMovingMapControl(map)" in INDEX
+    assert "_addKompassControl(liveMap);" in INDEX
+    assert "_addMovingMapControl(liveMap);" in INDEX
+    # Reihenfolge: Der Kompass muss NACH L.control.layers dazukommen, sonst sitzt er darueber.
+    pos_layers = INDEX.index("L.control.layers(")
+    pos_kompass = INDEX.index("_addKompassControl(liveMap);")
+    assert pos_layers < pos_kompass, "der Kompass sitzt sonst ueber der Ebenen-Auswahl statt darunter"
+
+
+def test_ziehen_schaltet_moving_map_ab_zoomen_nicht():
+    """Wer die Karte von Hand verschiebt, will woanders hinschauen -- dann geht Moving Map
+    aus (Nutzerwunsch). Zoomen zaehlt ausdruecklich NICHT: naeher herangehen heisst nicht,
+    den eigenen Flieger aus den Augen verlieren zu wollen."""
+    m = re.search(r"map\.on\('dragstart', function \(\) \{(.*?)\n  \}\);", INDEX, re.S)
+    assert m, "dragstart-Verknuepfung fehlt"
+    assert "_movingMap = false" in m.group(1)
+    # Nur INNERHALB der Moving-Map-Verdrahtung pruefen: anderswo gibt es sehr wohl
+    # Zoom-Handler (der Auto-Wechsel der Kachelebene haengt daran), die hier nichts zur
+    # Sache tun.
+    mm = re.search(r"function _addMovingMapControl\(map\) \{(.*?)\n\}", INDEX, re.S)
+    assert mm, "_addMovingMapControl nicht gefunden"
+    assert "'zoom" not in mm.group(1), "Zoomen darf Moving Map nicht abschalten"
+
+
+def test_fortrechnung_faelscht_die_tracks_nicht():
+    """Die aufgezeichneten Wege duerfen NUR echte VATSIM-Punkte enthalten. Fortgerechnete
+    Positionen sind Schaetzungen -- landeten sie im Track, waere die Aufzeichnung erfunden.
+    Deshalb bewegt der Takt ausschliesslich Marker."""
+    m = re.search(r"function _naviTakt\(sofort\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_naviTakt nicht gefunden"
+    rumpf = m.group(1)
+    assert "liveTrackPoints" not in rumpf, "der Takt fasst die Track-Punkte an"
+    assert "_drawLiveTrackLine" not in rumpf, "der Takt zeichnet Track-Linien neu"
+    assert "setLatLng" in rumpf, "der Takt bewegt gar keine Marker"
+
+
+def test_schaetzung_baut_nicht_auf_schaetzung_auf():
+    """Fortgerechnet wird IMMER vom letzten echten VATSIM-Wert aus, nie vom zuletzt
+    gezeichneten Punkt. Sonst summiert sich der Fehler mit jedem Takt auf."""
+    assert "const _positionsRoh = {}" in INDEX
+    m = re.search(r"function _jetztGerechnet\(roh\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_jetztGerechnet nicht gefunden"
+    # Der Zeitbezug ist der EMPFANGSZEITPUNKT des Rohwerts, nicht der letzte Takt.
+    assert "Date.now() - roh.ts" in m.group(1)
+
+
+def test_drehung_nur_mit_geprueftem_plugin():
+    """leaflet-rotate erweitert den Leaflet-Kern. Faellt es aus (Netz, Hash, Engine), muss
+    die Karte unveraendert weiterlaufen -- ohne Track-up, aber ohne Fehler."""
+    assert 'onerror="window._leafletRotateFehlt = true;"' in INDEX
+    assert "leaflet-rotate@0.2.8" in INDEX
+    assert "integrity=\"sha256-+Qs8D9zbGHhw1CGR1C/Ty+hiG/oYv998Rs2DntIXIrY=\"" in INDEX
+    m = re.search(r"function _kannDrehen\(map\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_kannDrehen nicht gefunden"
+    assert "_leafletRotateFehlt" in m.group(1)
+    assert "typeof map.setBearing === 'function'" in m.group(1)
+    # Gedreht wird ausschliesslich per Knopf -- eine im Cockpit versehentlich verdrehte
+    # Karte ist schlimmer als eine, die sich nicht drehen laesst.
+    assert "touchRotate: false" in INDEX
+    assert "shiftKeyRotate: false" in INDEX
+    assert "rotateControl: false" in INDEX
+
+
+def test_kompassnadel_dreht_mit_der_karte():
+    """Die Nadel zeigt dorthin, wo auf der Karte Norden liegt -- sie dreht also MIT der
+    Karte, nicht gegen sie. Das Vorzeichen war zuerst umgekehrt (gemessen: bei Kurs 090
+    zeigte sie nach Osten statt nach Westen), deshalb steht es hier fest."""
+    assert "_kompassNadel.style.transform = 'rotate(' + soll + 'deg)'" in INDEX
+
+
+def test_vollbildknopf_ist_zentriert_und_hat_sein_symbol_zurueck():
+    """Der Knopf war zwischendurch ohne Symbol -- der Nutzer hatte es aufgegeben, weil es im
+    Kniebrett nie erschien. Seit dem xlink-Fix erscheint es, also ist es wieder da; nur
+    groesser als sonst, weil 1em hier gerade 8,3 Pixel waeren."""
+    m = re.search(r"\.map-fullscreen-btn \{([^}]*)\}", INDEX, re.S)
+    assert m, ".map-fullscreen-btn nicht gefunden"
+    regel = m.group(1)
+    assert "justify-content: center" in regel and "align-items: center" in regel
+    assert INDEX.count('<svg class="icon"><use href="#icon-fullscreen"') == 3, \
+        "nicht alle drei Vollbild-Knoepfe tragen ihr Symbol"
+    m2 = re.search(r"\.map-fullscreen-btn \.icon \{([^}]*)\}", INDEX, re.S)
+    assert m2, "eigene Symbolgroesse fehlt"
+    # gap gibt es in Coherent GT nicht -- der Abstand MUSS ueber margin kommen.
+    assert "margin-right" in m2.group(1)
+
+
 def test_sprite_messung_ist_im_bericht():
     """Der Beleg fuer den Fix. Die Glyphen-Messung zeigt nur, dass die ZEICHEN fehlen (⛶, ✕)
     -- dass die SVG-Ersatzsymbole ankommen, hat vorher niemand gemessen, und genau dort lag

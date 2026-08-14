@@ -60,6 +60,30 @@ ssh server "sqlite3 /opt/friesenspy/data/friesenspy.db \
 Shell muss anders gebaut werden (Plan B: die EFB-App öffnet die SSE-Verbindung selbst,
 authentifiziert über die Geräte-ID aus `panel_devices`).
 
+**Datensatz `kind="navi"`** (seit v12.6.0): Beantwortet nach **einem** Sim-Lauf, welcher Weg für
+Moving Map und Track-up tatsächlich greift. Einmalig 20 s nach dem Aufbau der Karte — lange
+genug, dass die Shell geantwortet und VATSIM einmal geliefert haben kann, aber bewusst kein
+Dauer-Messmittel im Renderpfad (Lehre aus `kind="zeichnen"`, s. u.).
+
+```bash
+ssh server "docker exec friesenspy-friesenspy-1 python -c \"
+import sqlite3,json
+c=sqlite3.connect('/opt/friesenspy/data/friesenspy.db')
+r=c.execute('SELECT created_at, payload_json FROM panel_diag WHERE kind=? ORDER BY id DESC LIMIT 1',('navi',)).fetchone()
+print(r[0]); print(json.dumps(json.loads(r[1]), indent=2, ensure_ascii=False))
+\""
+```
+
+Das entscheidende Feld ist **`quelle`**: `sim` = die SimVar-Position aus der EFB-Shell kam an,
+`vatsim` = der Fallback über den eigenen Flieger im Datenstrom lief, `keine` = weder noch (nicht
+eingeloggt oder nicht online). „Sim-Position vorhanden" und „Sim-Position benutzt" sind
+zweierlei, deshalb steht beides drin (`simPositionDa`, `simAlterMs`). `rotatePluginDa` sagt, ob
+`leaflet-rotate` den Leaflet-Kern erfolgreich erweitert hat.
+
+**Hinweis zu `sqlite3`:** Im Container ist das CLI-Werkzeug **nicht** installiert — die Aufrufe
+weiter oben mit `sqlite3 …` funktionieren nur auf dem Host. Aus dem Container heraus geht es
+über Python, wie in diesem Beispiel.
+
 **Datensatz `kind="zeichnen"`** (v12.5.2 bis v12.5.5, wieder ausgebaut): Hat gemessen, ob die
 Engine während des Flackerns überhaupt noch Bilder zeichnet — zwei kleine Anzeigen im Panel,
 eine auf der Karte, eine daneben, je mit Sekundenzähler und einem per `requestAnimationFrame`
