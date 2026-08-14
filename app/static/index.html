@@ -1248,6 +1248,10 @@
        erkennbar wirkungslos -- lieber ein stummer Knopf als ein Knopf, der nichts tut und
        so aussieht, als muesste er. */
     .navi-bar.navi-stumm { opacity: 0.35; pointer-events: none; }
+    /* Ohne eigenes Flugzeug koennen beide Knoepfe nichts -- dann sind sie ganz weg, an
+       BEIDEN Orten gleich (s. _naviKnopfAnstrich). Ein Knopf, der nichts tut, ist an keiner
+       Stelle besser als kein Knopf. */
+    .navi-bar.navi-weg { display: none !important; }
     /* Der Moving-Map-Knopf sitzt unten rechts, wo auch Leaflets Herkunftsangabe klebt --
        ohne Abstand liegt er darauf. */
     .leaflet-bottom.leaflet-right .navi-bar { margin-bottom: 18px; margin-right: 4px; }
@@ -6758,9 +6762,57 @@ function _addMovingMapControl(map) {
   });
 }
 
-/** An/Aus am Moving-Map-Knopf sichtbar machen. */
+/**
+ * Wie die beiden Knoepfe gerade aussehen sollen.
+ *
+ * Beide haengen an genau einer Voraussetzung: Es muss ein eigenes Flugzeug geben. Ohne das
+ * kann die Karte niemandem folgen und sich an nichts ausrichten -- die Knoepfe waeren
+ * Attrappen. Nutzerfrage vom 14.08.2026: "Macht das Sinn, die Buttons anzuzeigen, wenn ich
+ * gar nicht online bin?" -- nein. Also: Sie sind da, wenn sie etwas koennen, und sonst nicht.
+ *
+ * EINE Regel fuer beide Orte, bewusst. Ein erster Anlauf hatte sie getrennt (Website
+ * ausblenden, Kniebrett nur blass) mit der Begruendung, im Browser sei "ich fliege gerade
+ * selbst" die Ausnahme. Das stimmt nicht: "2d piloten werden eher die Website nutzen"
+ * (Nutzer) -- dort ist online genauso normal. Beide Orte sind gemischt, und fuer denselben
+ * Fall zwei Verhaltensweisen zu bauen, waere eine Sonderregel ohne Anlass.
+ *
+ * Der Wechsel stoert dabei nicht: Er passiert einmal beim Online-Gehen bzw. beim Start des
+ * Fluges, nicht dauernd. Ein auftauchender Knopf ist dann sogar ein brauchbares Zeichen --
+ * "jetzt kennt die Karte dein Flugzeug".
+ */
 function _naviKnopfAnstrich() {
-  if (_movingKnopf) _movingKnopf.classList.toggle('navi-an', !!_movingMap);
+  const eigen = _eigenePosition();
+  const stumm = !eigen;
+  if (_movingKnopf) _movingKnopf.classList.toggle('navi-weg', stumm);
+  if (_kompassNadel) {
+    const b = _kompassNadel.parentElement ? _kompassNadel.parentElement.parentElement : null;
+    if (b) b.classList.toggle('navi-weg', stumm || !_kannDrehen(liveMap));
+  }
+  const grund = stumm
+    ? 'Kein eigenes Flugzeug gefunden — dafuer im Simulator fliegen oder auf VATSIM online sein'
+    : null;
+
+  if (_movingKnopf) {
+    _movingKnopf.classList.toggle('navi-an', !!_movingMap && !stumm);
+    _movingKnopf.classList.toggle('navi-stumm', stumm);
+    const a = _movingKnopf.querySelector('a');
+    if (a) a.title = grund || 'Karte folgt dem eigenen Flugzeug';
+  }
+  if (_kompassNadel) {
+    const box = _kompassNadel.parentElement ? _kompassNadel.parentElement.parentElement : null;
+    if (box) {
+      // Der fehlende Drehantrieb schaltet den Kompass ebenfalls stumm -- das steht schon
+      // beim Anlegen fest und darf hier nicht versehentlich wieder aufgehoben werden.
+      const ohneDrehung = !_kannDrehen(liveMap);
+      box.classList.toggle('navi-stumm', stumm || ohneDrehung);
+      const a = box.querySelector('a');
+      if (a) {
+        a.title = ohneDrehung
+          ? 'Drehen ist auf diesem Geraet nicht verfuegbar'
+          : (grund || 'Karte drehen: genordet / in Flugrichtung');
+      }
+    }
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -6841,6 +6893,9 @@ function _meinCallsign() {
 
 function _naviStarten() {
   if (_naviTimer) return;
+  // Einmal sofort: Sonst stehen die beiden Knoepfe die erste Sekunde lang im falschen
+  // Zustand da -- ausgerechnet in dem Moment, in dem man sie zum ersten Mal sieht.
+  _naviTakt(true);
   _naviTimer = setInterval(_naviTakt, 1000);
 }
 

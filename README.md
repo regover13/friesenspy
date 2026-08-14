@@ -136,9 +136,11 @@ Interaktive Karte mit allen aktuell fliegenden Friesen.
 - Von einem anderen Tab aus mit ◎ direkt zu einem bestimmten Piloten springen
 - **⛶ Vollbild** (Button unten links) — Karte auf den ganzen Bildschirm vergrößern, **Esc** oder erneuter Klick verlässt es wieder
 
-> **Wo kommt „mein Flugzeug" her?** Im MSFS-Kniebrett direkt aus dem Simulator, sonst aus dem
-> VATSIM-Datenstrom (dafür musst du eingeloggt und online sein). Ohne beides bleiben Kompass
-> und Moving Map wirkungslos.
+> **Wo kommt „mein Flugzeug" her?** Im MSFS-Kniebrett direkt aus dem Simulator — dafür genügt
+> es zu fliegen, VATSIM ist nicht nötig. Sonst aus dem VATSIM-Datenstrom (dann musst du
+> eingeloggt und online sein). **Ohne beides erscheinen Kompass und Moving Map gar nicht
+> erst** — ein Knopf, der nichts tun kann, ist kein Knopf. Sie tauchen auf, sobald die Karte
+> dein Flugzeug kennt.
 
 ---
 

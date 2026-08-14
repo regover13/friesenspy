@@ -1076,6 +1076,25 @@ def test_drehung_nur_mit_geprueftem_plugin():
     assert "rotateControl: false" in INDEX
 
 
+def test_knoepfe_verschwinden_ohne_eigenes_flugzeug():
+    """Ohne eigenes Flugzeug koennen beide Knoepfe nichts ausrichten -- dann sind sie weg,
+    statt eine Funktion vorzutaeuschen. Nutzerfrage vom 14.08.2026: "Macht das Sinn, die
+    Buttons anzuzeigen, wenn ich gar nicht online bin?"
+
+    EINE Regel fuer Website und Kniebrett. Ein erster Anlauf hatte beide getrennt behandelt
+    mit der Begruendung, im Browser sei Selbstfliegen die Ausnahme -- das stimmt nicht ("2d
+    piloten werden eher die Website nutzen"). Beide Orte sind gemischt; zwei Verhaltensweisen
+    fuer denselben Fall waeren eine Sonderregel ohne Anlass."""
+    m = re.search(r"function _naviKnopfAnstrich\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_naviKnopfAnstrich nicht gefunden"
+    rumpf = m.group(1)
+    assert "_eigenePosition()" in rumpf, "der Anstrich fragt gar nicht, ob es eine Position gibt"
+    assert "navi-weg" in rumpf
+    assert "_PANEL_MODUS" not in rumpf, "Website und Kniebrett duerfen sich hier nicht unterscheiden"
+    m2 = re.search(r"\.navi-bar\.navi-weg \{([^}]*)\}", INDEX, re.S)
+    assert m2 and "display: none" in m2.group(1)
+
+
 def test_kompassnadel_dreht_mit_der_karte():
     """Die Nadel zeigt dorthin, wo auf der Karte Norden liegt -- sie dreht also MIT der
     Karte, nicht gegen sie. Das Vorzeichen war zuerst umgekehrt (gemessen: bei Kurs 090

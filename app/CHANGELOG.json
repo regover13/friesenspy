@@ -1,5 +1,15 @@
 [
   {
+    "version": "12.6.1",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Kompass und Moving Map nur, wenn sie etwas können",
+    "items": [
+      "🧭 Die beiden neuen Kartenknöpfe erscheinen jetzt erst, wenn die Karte weiß, wo dein Flugzeug ist — also während du selbst fliegst. Vorher standen sie auch dann da, wenn sie nichts bewirken konnten.",
+      "✈️ Im MSFS-Tablet reicht dafür der Simulator: Die App reicht deine Position direkt weiter, du musst nicht auf VATSIM verbunden sein. Dafür ist eine Neuinstallation des Tablet-Pakets nötig (Version 1.2.0, siehe „FriesenSpy im Cockpit“ unten auf der Seite)."
+    ]
+  },
+  {
     "version": "12.6.0",
     "date": "2026-08-14",
     "highlight": false,
