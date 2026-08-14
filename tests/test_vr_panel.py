@@ -913,3 +913,30 @@ def test_schriftzug_sitzt_zwischen_glocke_und_uhr_des_tablets():
     assert re.search(r"left: \d+%;", rumpf), "kein linker Rand fuer den freien Streifen"
     assert re.search(r"right: \d+%;", rumpf), "kein rechter Rand fuer den freien Streifen"
     assert "justify-content: center;" in rumpf
+
+
+def test_zeichen_takt_bleibt_im_panel():
+    """Die zwei Messkaesten der Flacker-Suche (M auf der Karte, P daneben) sind ein
+    Diagnosemittel, kein Bestandteil der Website. Grundzustand ist deshalb `display: none`,
+    sichtbar werden sie ausschliesslich unter html.vr-panel."""
+    assert ".panel-takt { display: none; }" in INDEX
+    assert "html.vr-panel .panel-takt {" in INDEX
+
+
+def test_zeichen_takt_bewegt_nur_transform():
+    """Der wandernde Punkt soll messen, nicht selbst Last erzeugen: Eine animierte
+    Layout-Eigenschaft (top/left) zwaenge die ganze Seite in jedem Bild zum Neuzeichnen --
+    genau der Fehler, der bei der .scanline schon einmal die Karte zerlegt hat."""
+    m = re.search(r"const schritt = \(\) => \{(.*?)\n  \};", INDEX, re.S)
+    assert m, "Takt-Schleife nicht gefunden"
+    rumpf = m.group(1)
+    assert "style.transform = 'translateX(" in rumpf
+    assert "style.left" not in rumpf and "style.top" not in rumpf
+
+
+def test_zeichen_takt_hoert_mit_dem_melden_auf():
+    """Acht Fenster zu 30 Sekunden beantworten die Frage. Ohne Deckel meldet die Schleife
+    stundenlang weiter und verdraengt aeltere Messungen aus der Tabelle (sie haelt nur die
+    letzten 500 Eintraege) -- die Bewegung selbst laeuft weiter, damit beliebig lange
+    beobachtet werden kann."""
+    assert "berichte < 8" in INDEX

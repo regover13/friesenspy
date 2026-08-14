@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.5.2",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Messung: warum flackert die Karte in VR?",
+    "items": [
+      "🔍 Im Cockpit-Kniebrett stehen vorübergehend zwei kleine Messkästchen an der Karte („M\" und „P\"). Sie gehören zur Fehlersuche am Flackern in VR und verschwinden wieder, sobald die Ursache feststeht. Auf der Website ist davon nichts zu sehen."
+    ]
+  },
+  {
     "version": "12.5.1",
     "date": "2026-08-14",
     "highlight": false,

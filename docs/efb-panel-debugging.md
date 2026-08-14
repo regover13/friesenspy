@@ -53,6 +53,37 @@ ssh server "sqlite3 /opt/friesenspy/data/friesenspy.db \
 Shell muss anders gebaut werden (Plan B: die EFB-App öffnet die SSE-Verbindung selbst,
 authentifiziert über die Geräte-ID aus `panel_devices`).
 
+**Datensatz `kind="zeichnen"`** (seit v12.5.2): Misst, ob die Engine überhaupt noch Bilder
+zeichnet, während die Karte für den Nutzer verschwunden ist. Nötig geworden, weil vier
+DOM-Messungen in Folge ein sauberes Bild lieferten (`kachelverlauf`: 30 s lang 18 Kacheln, keine
+unter voller Deckkraft, `unveraendert: true`) und das Symptom trotzdem blieb — im DOM steht eine
+*Beschreibung* des Bildes, der Nutzer sieht das *Bild*, und dazwischen liegt die Engine.
+
+Zwei kleine Anzeigen stellen dieselbe Frage von zwei Orten: **„M"** liegt auf der Karte,
+**„P"** fest daneben im Panel. Beide zählen im Sekundentakt (Zeitgeber läuft) und schieben
+einen Punkt per `requestAnimationFrame` (es entstehen wirklich Bilder). Was während des
+Verschwindens zu sehen ist, trennt die Fälle:
+
+| Beobachtung | Bedeutung |
+|---|---|
+| beide Punkte laufen, Karte weg | Engine zeichnet, lässt aber die stillstehende Kachelfläche stehen |
+| nur „P" läuft | der gesamte Kartenbereich wird nicht mehr gezeichnet |
+| beide Zahlen stehen | die View friert ein (JS hält an) — Sim-Seite |
+| Zahlen laufen, Punkte stehen | keine Frames trotz Zeitgeber — `rAF` gedrosselt |
+| alles weg, auch die Kästen | die ganze Panel-Textur fehlt, nicht nur die Karte |
+
+Der Bericht liefert dazu `bilderProSek`, `laengstePauseMs` und die Liste `luecken`
+(`[Sekunde im Fenster, Pause in ms]`, alles über 200 ms), acht Fenster à 30 s.
+
+**Beobachtereffekt ist hier Teil der Messung:** Ein wandernder Punkt hält seine eigene Ecke
+dauerhaft „schmutzig". Verschwindet das Flackern schon dadurch, ist die Ursache belegt und ein
+billiger, örtlicher Anstoß die Lösung. Bleibt es, ist sie widerlegt.
+
+```bash
+ssh server "sqlite3 /opt/friesenspy/data/friesenspy.db \
+  \"SELECT created_at, payload_json FROM panel_diag WHERE kind='zeichnen' ORDER BY id DESC LIMIT 4;\""
+```
+
 Die Sonde liegt bewusst im **kleinen Kopf-Skript** von `app/static/index.html`, nicht im großen
 Skriptblock: Coherent GT wirft bei unbekannten Sprachmitteln (`?.`, `??`, Spread, `flatMap`)
 einen Parse-Fehler, der das gesamte betroffene `<script>` lahmlegt. Läge die Diagnose dort,
