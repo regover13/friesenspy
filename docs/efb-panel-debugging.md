@@ -53,36 +53,21 @@ ssh server "sqlite3 /opt/friesenspy/data/friesenspy.db \
 Shell muss anders gebaut werden (Plan B: die EFB-App öffnet die SSE-Verbindung selbst,
 authentifiziert über die Geräte-ID aus `panel_devices`).
 
-**Datensatz `kind="zeichnen"`** (seit v12.5.2): Misst, ob die Engine überhaupt noch Bilder
-zeichnet, während die Karte für den Nutzer verschwunden ist. Nötig geworden, weil vier
-DOM-Messungen in Folge ein sauberes Bild lieferten (`kachelverlauf`: 30 s lang 18 Kacheln, keine
-unter voller Deckkraft, `unveraendert: true`) und das Symptom trotzdem blieb — im DOM steht eine
-*Beschreibung* des Bildes, der Nutzer sieht das *Bild*, und dazwischen liegt die Engine.
+**Datensatz `kind="zeichnen"`** (v12.5.2 bis v12.5.5, wieder ausgebaut): Hat gemessen, ob die
+Engine während des Flackerns überhaupt noch Bilder zeichnet — zwei kleine Anzeigen im Panel,
+eine auf der Karte, eine daneben, je mit Sekundenzähler und einem per `requestAnimationFrame`
+wandernden Punkt.
 
-Zwei kleine Anzeigen stellen dieselbe Frage von zwei Orten: **„M"** liegt auf der Karte,
-**„P"** fest daneben im Panel. Beide zählen im Sekundentakt (Zeitgeber läuft) und schieben
-einen Punkt per `requestAnimationFrame` (es entstehen wirklich Bilder). Was während des
-Verschwindens zu sehen ist, trennt die Fälle:
+**Ergebnis:** 22,5 Bilder pro Sekunde, auf die Nachkommastelle konstant, längste Pause 80 ms,
+keine Aussetzer — und beide Punkte liefen durchgehend weiter, während die Karte flackerte.
+Damit fielen alle Erklärungen weg, die auf Stocken, Einfrieren oder gedrosseltem `rAF`
+beruhen; die eigentliche Ursache stand kurz darauf fest (Leaflets `mix-blend-mode`, s. u.).
 
-| Beobachtung | Bedeutung |
-|---|---|
-| beide Punkte laufen, Karte weg | Engine zeichnet, lässt aber die stillstehende Kachelfläche stehen |
-| nur „P" läuft | der gesamte Kartenbereich wird nicht mehr gezeichnet |
-| beide Zahlen stehen | die View friert ein (JS hält an) — Sim-Seite |
-| Zahlen laufen, Punkte stehen | keine Frames trotz Zeitgeber — `rAF` gedrosselt |
-| alles weg, auch die Kästen | die ganze Panel-Textur fehlt, nicht nur die Karte |
-
-Der Bericht liefert dazu `bilderProSek`, `laengstePauseMs` und die Liste `luecken`
-(`[Sekunde im Fenster, Pause in ms]`, alles über 200 ms), acht Fenster à 30 s.
-
-**Beobachtereffekt ist hier Teil der Messung:** Ein wandernder Punkt hält seine eigene Ecke
-dauerhaft „schmutzig". Verschwindet das Flackern schon dadurch, ist die Ursache belegt und ein
-billiger, örtlicher Anstoß die Lösung. Bleibt es, ist sie widerlegt.
-
-```bash
-ssh server "sqlite3 /opt/friesenspy/data/friesenspy.db \
-  \"SELECT created_at, payload_json FROM panel_diag WHERE kind='zeichnen' ORDER BY id DESC LIMIT 4;\""
-```
+**Warum es wieder raus ist — und die Lehre daraus:** Die Messschleife hat in *jedem* Bild ein
+`transform` gesetzt und damit dauerhaft eine Neuzeichnung angestoßen. Genau das hat das
+Flackern während der Messung von „alle paar Sekunden weg" auf „hochfrequent" verstärkt. Ein
+Dauer-Messmittel im Renderpfad verändert sein eigenes Messobjekt: als Sonde brauchbar, als
+Inventar gefährlich. Wer so etwas wieder einbaut, baut es hinterher auch wieder aus.
 
 Die Sonde liegt bewusst im **kleinen Kopf-Skript** von `app/static/index.html`, nicht im großen
 Skriptblock: Coherent GT wirft bei unbekannten Sprachmitteln (`?.`, `??`, Spread, `flatMap`)

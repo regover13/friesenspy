@@ -1579,56 +1579,6 @@
       mix-blend-mode: unset !important;
     }
 
-    /* ---------------------------------------------------------------------
-       ZEICHEN-TAKT (Diagnose, nur Panel) -- s. _diagZeichnen im Skript.
-       Zwei winzige Anzeigen, die dieselbe Frage von zwei Seiten stellen:
-       "M" liegt AUF der Karte, "P" fest im Panel daneben. Jede zeigt eine
-       Sekundenzahl (Zeitgeber laeuft) und einen wandernden Punkt (die Engine
-       zeichnet wirklich Bilder). Aus der Kombination beim Verschwinden folgt,
-       WO es klemmt -- das ist im DOM prinzipiell nicht messbar.
-       Beide bewegen ausschliesslich transform, kosten also kein Layout. */
-    .panel-takt { display: none; }
-    html.vr-panel .panel-takt {
-      display: block;
-      position: absolute;
-      bottom: 8px;
-      right: 8px;
-      z-index: 1200;
-      background: rgba(0,0,0,0.78);
-      border: 1px solid var(--green);
-      padding: 2px 6px;
-      font-size: 0.85rem;
-      line-height: 1.1;
-      color: var(--green);
-      white-space: nowrap;
-      pointer-events: none;
-    }
-    html.vr-panel .panel-takt-fest {
-      position: fixed;
-      top: 72px;
-      right: 8px;
-      bottom: auto;
-      z-index: 3000;
-      border-color: var(--amber);
-      color: var(--amber);
-    }
-    html.vr-panel .panel-takt-bahn {
-      display: inline-block;
-      position: relative;
-      width: 96px;
-      height: 9px;
-      margin-left: 6px;
-      border-bottom: 1px solid var(--green-dim);
-    }
-    html.vr-panel .panel-takt-punkt {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 9px;
-      height: 9px;
-      background: var(--amber);
-    }
-
     /* Override Leaflet popup styles for the radar aesthetic */
     .leaflet-popup-content-wrapper {
       background: var(--bg-panel) !important;
@@ -4604,131 +4554,6 @@ function _diagFlackern(map) {
   }, 30000);
 }
 
-// ==========================================================================
-//  ZEICHEN-TAKT (nur Panel, nur Karten-Tab)
-// ==========================================================================
-// Fuenfte Runde am selben Symptom, und die erste, die den DOM verlaesst. Die vierte Runde
-// hat naemlich ein klares Ergebnis geliefert, nur eben ein negatives: 30 Sekunden lang 18
-// Kacheln, keine einzige unter voller Deckkraft, "unveraendert: true" -- und trotzdem war
-// die Karte fuer den Nutzer zwischendurch weg. In VR ist daraus ein Dauerflackern geworden.
-//
-// Damit ist im DOM nichts mehr zu holen: Wir messen dort eine Beschreibung des Bildes, der
-// Nutzer sieht das Bild. Zwischen beidem liegt die Engine, und genau ueber die sagt keine
-// unserer bisherigen Messungen etwas. Diese hier fragt sie direkt, mit zwei Anzeigen an
-// verschiedenen Orten:
-//
-//   "M" liegt AUF der Karte, "P" fest daneben im Panel. Beide zaehlen im Sekundentakt
-//   (Zeitgeber) und schieben einen Punkt per requestAnimationFrame hin und her (Bilder).
-//
-// Was der Nutzer waehrend des Verschwindens sieht, trennt die Faelle sauber:
-//   - beide Punkte laufen, Karte weg  -> die Engine zeichnet, laesst aber die stillstehende
-//                                        Kachelflaeche stehen (oertliche Neuzeichnung)
-//   - nur "P" laeuft                  -> der gesamte Kartenbereich wird nicht mehr gezeichnet
-//   - beide Zahlen stehen             -> die View friert ein (JS haelt an, Sim-Seite)
-//   - Zahlen laufen, Punkte stehen    -> keine Frames, aber Zeitgeber -- rAF ist gedrosselt
-//   - alles weg, auch die Kaesten     -> die ganze Panel-Textur fehlt, nicht nur die Karte
-//
-// Der Bericht liefert dazu die Bildrate: kommt sie in VR unter jede brauchbare Schwelle
-// oder stockt sie in langen Pausen, steht das hier als Zahl statt als Eindruck.
-//
-// BEOBACHTEREFFEKT, bewusst in Kauf genommen: Ein wandernder Punkt haelt seine eigene Ecke
-// dauernd "schmutzig". Behebt das allein schon das Flackern, ist die Ursache damit belegt --
-// dann ist ein billiger, oertlicher Anstoss die Loesung. Bleibt es, ist sie widerlegt.
-// Beide Ausgaenge sind ein Ergebnis; deshalb sind die Kaesten absichtlich klein.
-function _diagZeichnen(map) {
-  if (!document.documentElement.classList.contains('vr-panel')) return;
-  if (typeof window._panelDiag !== 'function') return;
-
-  const jetzt = () => (window.performance && performance.now) ? performance.now() : Date.now();
-
-  const bauen = (kuerzel, eltern, fest) => {
-    const box = document.createElement('div');
-    box.className = 'panel-takt' + (fest ? ' panel-takt-fest' : '');
-    const zahl = document.createElement('span');
-    zahl.textContent = kuerzel + '0';
-    const bahn = document.createElement('span');
-    bahn.className = 'panel-takt-bahn';
-    const punkt = document.createElement('span');
-    punkt.className = 'panel-takt-punkt';
-    bahn.appendChild(punkt);
-    box.appendChild(zahl);
-    box.appendChild(bahn);
-    eltern.appendChild(box);
-    return { zahl: zahl, punkt: punkt, kuerzel: kuerzel };
-  };
-
-  const takte = [bauen('M', map.getContainer(), false), bauen('P', document.body, true)];
-
-  let sek = 0;
-  setInterval(() => {
-    sek += 1;
-    for (let i = 0; i < takte.length; i++) {
-      takte[i].zahl.textContent = takte[i].kuerzel + (sek % 100);
-    }
-  }, 1000);
-
-  const start = jetzt();
-  let fensterStart = start;
-  let letzte = start;
-  let frames = 0;
-  let laengste = 0;
-  let luecken = [];
-  let berichte = 0;
-
-  const schritt = () => {
-    const t = jetzt();
-    const d = t - letzte;
-    letzte = t;
-    frames += 1;
-    if (d > laengste) laengste = d;
-    // Nur echte Aussetzer festhalten -- alles unter einer Fuenftelsekunde ist normales
-    // Bildraten-Rauschen und wuerde die Liste nur zumuellen.
-    if (d > 200 && luecken.length < 30) {
-      luecken.push([Math.round((t - fensterStart) / 100) / 10, Math.round(d)]);
-    }
-
-    // Reine transform-Bewegung, kein Layout: 200er-Schleife, hin und zurueck.
-    const p = (t / 12) % 200;
-    const x = p > 100 ? 200 - p : p;
-    for (let i = 0; i < takte.length; i++) {
-      takte[i].punkt.style.transform = 'translateX(' + x.toFixed(1) + 'px)';
-    }
-
-    // Nach acht Fenstern (vier Minuten) ist die Frage beantwortet und es wird nichts mehr
-    // gemeldet -- der Punkt laeuft aber weiter, damit der Nutzer beliebig lange
-    // weiterbeobachten kann.
-    if (t - fensterStart >= 30000 && berichte < 8) {
-      const dauer = t - fensterStart;
-      berichte += 1;
-      try {
-        window._panelDiag('zeichnen', {
-          fenster: berichte,
-          dauerSek: Math.round(dauer / 100) / 10,
-          frames: frames,
-          bilderProSek: Math.round(frames / (dauer / 1000) * 10) / 10,
-          laengstePauseMs: Math.round(laengste),
-          // [Sekunde im Fenster, Laenge der Pause in ms]
-          luecken: luecken,
-          vollbild: map.getContainer().closest('.map-is-fullscreen') !== null,
-          kachelnGesamt: map.getContainer().querySelectorAll('.leaflet-tile').length,
-        });
-      } catch (_) { /* Diagnose darf nie stoeren */ }
-      fensterStart = t;
-      frames = 0;
-      laengste = 0;
-      luecken = [];
-    }
-
-    requestAnimationFrame(schritt);
-  };
-
-  if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(schritt);
-  } else {
-    window._panelDiag('zeichnen', { fehler: 'requestAnimationFrame fehlt' });
-  }
-}
-
 function _initPanelTranslit() {
   if (!document.documentElement.classList.contains('vr-panel')) return;
 
@@ -6532,7 +6357,6 @@ async function initLiveMap() {
   _setupAIPPref(liveMap, liveAIP);
   _diagKarte(liveMap, 'live', liveAIP);
   _diagFlackern(liveMap);
-  _diagZeichnen(liveMap);
   _setupOFMAutoSwitch(liveMap, liveLayers);
 
   // Style Leaflet controls
