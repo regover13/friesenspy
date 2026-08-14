@@ -404,6 +404,39 @@ Browser                     FastAPI                  VatsimPoller
    │  (Disconnect → unsubscribe_sse() im finally)         │
 ```
 
+### Zweiter Ereignistyp: `notify` (Sim-Benachrichtigungen, v12.1.0)
+
+Web-Push existiert in Coherent GT nicht (kein OS-Push-Kanal). Damit das MSFS-Kniebrett
+trotzdem meldet, wenn jemand online geht, laufen dieselben Meldungen zusätzlich über den
+ohnehin offenen SSE-Strom:
+
+```
+poller.broadcast_notify(service, subject_cid, payload)   ← neben jedem Web-Push-Auslöser,
+        │                                                  bewusst außerhalb des
+        │                                                  `if vapid_private_key`-Zweigs
+        ▼
+_event_generator  ── is_visible_to(subject, viewer, service)? ── nein → verworfen
+        │                                                        (verlässt den Server nie)
+        ▼ ja
+index.html  ── Kategorie-Schalter (localStorage) ── _translitText ──► window.parent.postMessage
+        │                                                             │
+        │  Ersatzweg, falls die Shell nicht antwortet:                ▼
+        └─ eigener Hinweis im Panel (.panel-hinweis)     FriesenSpy.tsx: NotificationManager
+                                                          .addNotification(createPermanent…)
+```
+
+Drei Punkte, die das Verhalten bestimmen:
+
+- **Die Zuschauer-CID wird einmal beim Verbindungsaufbau aus `fs_user` gelesen.** Ohne Session
+  gibt es keine `notify`-Ereignisse; `positions` bleibt öffentlich wie bisher.
+- **Der Text wird im Panel aufbereitet** (`_panelMeldungstext` → `_translitText`), *bevor* er
+  hochgereicht wird. Die EFB-Shell zeichnet ihn außerhalb unseres iframes — der
+  MutationObserver, der sonst Umlaute und Emoji umschreibt, sieht ihn nie.
+- **Ein ping/pong-Handshake** (`_initPanelShellKanal`) misst, ob `postMessage` die
+  iframe-Grenze in Coherent GT überhaupt überquert; das Ergebnis landet als
+  `panel_diag`-Datensatz `kind="shell"`. Solange die Shell nicht bestätigt hat, zeigt das
+  Panel jede Meldung zusätzlich selbst an.
+
 ## Datenfluss TS-Login-Benachrichtigung (Phase 1)
 
 ```

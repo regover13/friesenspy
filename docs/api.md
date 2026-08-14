@@ -816,6 +816,31 @@ data: {"type": "positions", "data": [...]}
 
 Das `data`-Feld ist identisch mit der Antwort von `/api/live`.
 
+**Zweiter Ereignistyp: `notify`** (seit v12.1.0, Anzeigefläche MSFS-Kniebrett)
+
+```
+data: {"type": "notify", "service": "online", "subject_cid": 1234567,
+       "title": "FRS61 ist online! ✈", "body": "EDWG → EDXP · C172", "url": "/"}
+
+```
+
+Dieselben Meldungen, die als Web-Push rausgehen — die Nutzlast entsteht in `app/poller.py`
+(`payload_online`/`payload_prefile`/`payload_ts`) und speist beide Kanäle. `service` ∈
+`online | prefile | ts | events`; `subject_cid` ist der Pilot, über den benachrichtigt wird
+(`null` bei Event-Meldungen ohne Person).
+
+**Filterung pro Verbindung** — `notify` verhält sich anders als `positions`:
+
+| | `positions` | `notify` |
+|---|---|---|
+| ohne Anmeldung (`fs_user`) | wird geliefert | wird **nicht** geliefert |
+| Subjekt-Sichtbarkeit `nobody`/Allowlist | ohne Wirkung | Ereignis wird verworfen |
+
+Die Prüfung sitzt in `_event_generator` (`app/main.py`) und nutzt `is_visible_to`
+(`app/database.py`), dieselbe Regel wie der Web-Push. Sie kann nicht clientseitig umgangen
+werden: unterdrückte Meldungen verlassen den Server nicht. Die Kategorie-Schalter im Panel
+(`localStorage`, Vorgabe alle an) filtern zusätzlich, aber nur nach Geschmack.
+
 Alle 30 Sekunden wird ein SSE-Kommentar gesendet um Proxy-Timeouts zu verhindern:
 
 ```

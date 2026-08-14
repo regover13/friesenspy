@@ -214,8 +214,12 @@ def test_panel_initialisierung_wartet_auf_das_fertige_dokument():
     ab, und der Zurueck-Knopf blieb fuer immer versteckt."""
     assert "_initPanelBackButton();\n_initPanelTranslit();" not in INDEX
     m = re.search(r"document\.addEventListener\('DOMContentLoaded', \(\) => \{\n"
-                  r"  _initPanelBackButton\(\);\n  _initPanelTranslit\(\);\n\}\);", INDEX)
+                  r"  _initPanelBackButton\(\);\n  _initPanelTranslit\(\);\n"
+                  r"(?:.*\n)*?\}\);", INDEX)
     assert m, "Panel-Initialisierung haengt nicht an DOMContentLoaded"
+    # Alles Weitere, was Elemente aus dem Dokument braucht, gehoert in denselben Block --
+    # sonst wiederholt sich der Fehler von damals mit der naechsten Init-Funktion.
+    assert "_initPanelShellKanal();" in m.group(0)
 
 
 def test_flugaktivitaets_grafik_im_panel_ausgeblendet():
@@ -621,3 +625,78 @@ def test_hauptskript_ist_syntaktisch_heil():
     assert m, "Hauptskript nicht gefunden"
     skript = m.group(1)
     assert skript.count("`") % 2 == 0, "ungerade Zahl an Backticks -- Template-String offen?"
+
+
+# ---------------------------------------------------------------------------
+# Sim-Benachrichtigungen (Kniebrett) — s. tests/test_sse_notify.py für die Server-Seite
+# ---------------------------------------------------------------------------
+
+def test_sse_client_kennt_den_notify_zweig():
+    """Ohne diesen Zweig kaeme die Meldung zwar am Client an, wuerde aber verworfen."""
+    m = re.search(r"sseSource\.onmessage = \(e\) => \{.*?\n  \};", INDEX, re.S)
+    assert m, "SSE-Handler nicht gefunden"
+    assert "msg.type === 'notify'" in m.group(0)
+    assert "_panelBenachrichtigung(msg)" in m.group(0)
+
+
+def test_benachrichtigung_ausserhalb_des_panels_ein_no_op():
+    """Auf der normalen Web-Seite gibt es Web-Push -- eine zweite Anzeige waere doppelt."""
+    m = re.search(r"function _panelBenachrichtigung\(msg\) \{\n(.*?)\n\}", INDEX, re.S)
+    assert m, "_panelBenachrichtigung nicht gefunden"
+    erste = m.group(1).strip().splitlines()[0]
+    assert "vr-panel" in erste and "return" in erste
+
+
+def test_meldungstext_wird_umgeschrieben():
+    """Die EFB-Shell zeichnet den Text AUSSERHALB unseres iframes -- der MutationObserver,
+    der sonst die Umlaute umschreibt, sieht ihn nie. Also muss der Text vorher durch."""
+    m = re.search(r"function _panelMeldungstext\(s\) \{\n(.*?)\n\}", INDEX, re.S)
+    assert m, "_panelMeldungstext nicht gefunden"
+    assert "_translitText(" in m.group(1)
+    # In _panelBenachrichtigung darf nichts UNaufbereitet weitergereicht werden.
+    b = re.search(r"function _panelBenachrichtigung\(msg\) \{\n(.*?)\n\}", INDEX, re.S)
+    assert "_panelMeldungstext(msg.title)" in b.group(1)
+    assert "_panelMeldungstext(msg.body)" in b.group(1)
+
+
+def test_kategorie_schalter_stehen_nur_im_panel():
+    """Vier Schalter, Vorgabe an -- und nur im Panel sichtbar (auf der Web-Seite steuern die
+    Web-Push-Abos, was ankommt)."""
+    for art in ("online", "prefile", "ts", "events"):
+        assert f'id="panel-notif-{art}"' in INDEX
+    assert '<div id="panel-notif" hidden>' in INDEX
+    m = re.search(r"function _showNotifPanelContent\(\) \{\n(.*?)\n\}", INDEX, re.S)
+    assert m, "_showNotifPanelContent nicht gefunden"
+    # Der Panel-Zweig muss VOR der Web-Push-Logik greifen -- sonst laeuft im Tablet erst die
+    # Push-Erkennung durch und blendet den falschen Hinweis ein.
+    vorspann = m.group(1).split("const isIOS")[0]
+    assert "vr-panel" in vorspann and "_panelNotifyPanelAufbauen()" in vorspann
+
+
+def test_web_push_teile_im_panel_ausgeblendet():
+    """Sie haengen alle am Browser-Push, den es in Coherent GT nicht gibt."""
+    for sel in ("#notif-enabled-row", "#notif-filter", "#notif-install-btn",
+                "#notif-reset-btn", "#notif-ios-hint", "#notif-blocked-hint"):
+        assert f"html.vr-panel {sel}" in INDEX
+    # Die Glocke selbst wird jetzt gebraucht -- sie fuehrt zu den Kategorie-Schaltern.
+    assert "html.vr-panel #notif-btn," not in INDEX
+
+
+def test_handshake_mit_der_shell():
+    """Dass postMessage existiert, sagt nichts darueber, ob es die iframe-Grenze ueberquert.
+    Der ping/pong-Handshake macht genau das messbar."""
+    m = re.search(r"function _initPanelShellKanal\(\) \{\n(.*?)\n\}\n", INDEX, re.S)
+    assert m, "_initPanelShellKanal nicht gefunden"
+    block = m.group(1)
+    assert "art: 'ping'" in block
+    assert "'friesenspy-shell'" in block and "'pong'" in block
+    assert "window._panelDiag('shell'" in block
+
+
+def test_ersatzanzeige_ohne_inset():
+    """`inset` wird von Coherent GT still ignoriert -- ein fixed-Overlay waere unsichtbar und
+    wuerde trotzdem alle Klicks schlucken (Live-Fund, s. docs/efb-panel-debugging.md)."""
+    m = re.search(r"\.panel-hinweis-stapel \{\n(.*?)\n    \}", INDEX, re.S)
+    assert m, ".panel-hinweis-stapel nicht gefunden"
+    assert "inset" not in m.group(1)
+    assert "position: fixed" in m.group(1)

@@ -588,6 +588,6 @@ FriesenSpy/
 | `/api/admin/pilots/{cid}` | DELETE | Pilot entfernen |
 | `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles + TS-Zähler `🎧 N im TS`) |
 | `/widget/preview` | GET | Vorschau + Einbettungscode für das Widget |
-| `/api/sse` | GET | Server-Sent Events Stream |
+| `/api/sse` | GET | Server-Sent Events Stream (`positions` öffentlich, `notify` nur angemeldet + nach Subjekt-Sichtbarkeit) |
 
 Details: siehe [docs/api.md](docs/api.md)

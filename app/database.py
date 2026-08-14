@@ -7885,6 +7885,24 @@ def visible_recipients(conn: sqlite3.Connection, subject_cid: int | None,
     return [r for r in recipients if r.get("owner_cid") in allow]
 
 
+def is_visible_to(conn: sqlite3.Connection, subject_cid: int | None,
+                  viewer_cid: int | None, service: str | None = None) -> bool:
+    """Darf ``viewer_cid`` über ``subject_cid`` benachrichtigt werden?
+
+    Einzelfall-Variante von :func:`visible_recipients` — sie ruft diese auf, statt die Regeln
+    ein zweites Mal auszulegen. Gebraucht für den SSE-Strom, der pro VERBINDUNG entscheidet
+    (ein Zuschauer) statt pro Empfängerliste.
+
+    ``subject_cid`` None → immer sichtbar (Meldung ohne Person, z. B. Event-Erinnerung).
+    ``viewer_cid`` None → nie sichtbar (nicht angemeldet, also kein Empfänger).
+    """
+    if subject_cid is None:
+        return True
+    if viewer_cid is None:
+        return False
+    return bool(visible_recipients(conn, subject_cid, [{"owner_cid": viewer_cid}], service))
+
+
 # ---------------------------------------------------------------------------
 # Forum-Callsign-Map (autoritatives Callsign→CID aus dem Forum-Login)
 # ---------------------------------------------------------------------------

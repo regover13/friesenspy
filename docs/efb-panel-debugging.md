@@ -37,6 +37,22 @@ oder als Admin über `GET /api/admin/panel-diag` (s. `docs/api.md`).
 Verfügbarkeit von `postMessage`/`localStorage`/`EventSource`, Ladeergebnis der Kartenkacheln
 sowie alle aufgelaufenen JavaScript-Fehler.
 
+**Datensatz `kind="shell"`** (seit v12.1.0): Beantwortet die Frage, ob `postMessage` die
+iframe-Grenze in Coherent GT tatsächlich überquert. Dass die Funktion *existiert*, ist gemessen
+(`features.postMessage: true`) — das sagt über die Zustellung nichts. Das Panel schickt beim
+Start einmal `{quelle:'friesenspy', art:'ping'}` an die EFB-App; die antwortet `pong`. Nach 5 s
+geht das Ergebnis raus:
+
+```bash
+ssh server "sqlite3 /opt/friesenspy/data/friesenspy.db \
+  \"SELECT created_at, payload_json FROM panel_diag WHERE kind='shell' ORDER BY id DESC LIMIT 1;\""
+```
+
+`shellAntwortet: true` → die Meldungen erscheinen als Tablet-Benachrichtigung.
+`false` → das Panel zeigt sie im eigenen Fenster an (`.panel-hinweis`), und der Weg über die
+Shell muss anders gebaut werden (Plan B: die EFB-App öffnet die SSE-Verbindung selbst,
+authentifiziert über die Geräte-ID aus `panel_devices`).
+
 Die Sonde liegt bewusst im **kleinen Kopf-Skript** von `app/static/index.html`, nicht im großen
 Skriptblock: Coherent GT wirft bei unbekannten Sprachmitteln (`?.`, `??`, Spread, `flatMap`)
 einen Parse-Fehler, der das gesamte betroffene `<script>` lahmlegt. Läge die Diagnose dort,

@@ -82,6 +82,7 @@ from app.database import (
     revoke_panel_device,
     get_push_subscription_by_endpoint,
     get_pilot_visibility,
+    is_visible_to,
     set_pilot_visibility,
     set_push_subscription_owner,
     upsert_forum_callsign,
@@ -908,7 +909,25 @@ async def _event_generator(request: Request, poller: VatsimPoller):
 
     Jede Verbindung registriert ihre eigene Queue (Per-Client-Fan-out) und deregistriert sie
     beim Disconnect im finally — so bekommt JEDER Client jedes Update (statt nur einer).
+
+    Zwei Sorten Nachrichten mit sehr unterschiedlichen Regeln:
+    - ``positions`` — die Live-Anzeige, öffentlich wie eh und je.
+    - ``notify`` — Benachrichtigungen (Anzeigefläche: MSFS-Kniebrett). Die gehen NUR an
+      angemeldete Verbindungen und nur, wenn die Subjekt-Sichtbarkeit des betroffenen Piloten
+      das hergibt. Wer „nobody" gesetzt hat, taucht bei niemandem auf — die Meldung wird hier
+      verworfen und verlässt den Server gar nicht erst. Der Kategorie-Schalter im Panel ist
+      Geschmack, DIESE Prüfung ist der Schutz und gehört deshalb auf den Server.
     """
+    settings = get_settings()
+    claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
+    try:
+        # Die CID steht im Token je nach Herkunft als Zahl ODER als Zeichenkette. Ungecastet
+        # verglichen träfe sie nie eine Allowlist (die hält ints) — jede Einschränkung sähe
+        # dann wie „darf nicht" aus, was zwar sicher, aber falsch wäre.
+        viewer_cid = int(claims["cid"]) if claims and claims.get("cid") else None
+    except (TypeError, ValueError):
+        viewer_cid = None
+
     queue = poller.subscribe_sse()
     try:
         while True:
@@ -916,9 +935,20 @@ async def _event_generator(request: Request, poller: VatsimPoller):
                 break
             try:
                 data = await asyncio.wait_for(queue.get(), timeout=30.0)
-                yield f"data: {json.dumps(data)}\n\n"
             except asyncio.TimeoutError:
                 yield ": keepalive\n\n"
+                continue
+            if data.get("type") == "notify":
+                if viewer_cid is None:
+                    continue                          # nicht angemeldet → keine Meldungen
+                conn = get_connection(settings.DB_PATH)
+                try:
+                    if not is_visible_to(conn, data.get("subject_cid"), viewer_cid,
+                                         data.get("service")):
+                        continue
+                finally:
+                    conn.close()
+            yield f"data: {json.dumps(data)}\n\n"
     finally:
         poller.unsubscribe_sse(queue)
 

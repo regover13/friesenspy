@@ -5,7 +5,9 @@ import {
   AppSuspendMode,
   AppView,
   AppViewProps,
+  createPermanentNotification,
   Efb,
+  NotificationManager,
   RequiredProps,
   TVNode,
 } from "@efb/efb-api";
@@ -81,7 +83,72 @@ function buildPanelUrl(): string {
     + "&next=" + encodeURIComponent("/panel");
 }
 
+/** Nachricht, die die eingebettete Seite an diese App schickt. */
+interface PanelNachricht {
+  quelle?: string;
+  art?: string;
+  titel?: string;
+  text?: string;
+  service?: string;
+}
+
 class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
+  /**
+   * Empfaenger fuer Nachrichten aus dem iframe. Als Feld gehalten, damit er in destroy()
+   * wieder abgemeldet werden kann -- die App lebt mit AppSuspendMode.SLEEP lange.
+   */
+  private readonly onNachricht = (e: MessageEvent): void => {
+    const d = (e && e.data) as PanelNachricht | undefined;
+    if (!d || d.quelle !== "friesenspy") {
+      return;
+    }
+
+    // Handshake: Die Seite fragt einmal nach, ob wir ihre Nachrichten ueberhaupt bekommen.
+    // Ohne Antwort zeigt sie ihre Hinweise selbst an (und meldet den Befund an den Server).
+    if (d.art === "ping") {
+      const quelle = e.source as Window | null;
+      if (quelle) {
+        try {
+          quelle.postMessage({ quelle: "friesenspy-shell", art: "pong" }, "*");
+        } catch (_e) {
+          // Antwortweg zu, Seite faellt auf ihre eigene Anzeige zurueck.
+        }
+      }
+      return;
+    }
+
+    if (d.art !== "notify") {
+      return;
+    }
+    const titel = d.titel || "FriesenSpy";
+    const text = d.text || "";
+    try {
+      // NotificationManager.getManager statt des geerbten `notificationManager`-Getters: der
+      // wirft, wenn die Shell ihn nicht in die Props gelegt hat. getManager liefert dasselbe
+      // Singleton (statisches INSTANCE, s. efb_api/dist/index.js:6937) und kann nicht fehlen.
+      //
+      // Bleibend statt fluechtig: Im Flug schaut man nicht dauernd aufs Tablet, und eine
+      // permanente Meldung bleibt auf der Benachrichtigungs-Seite der EFB nachlesbar.
+      NotificationManager.getManager(this.props.bus).addNotification(
+        createPermanentNotification(titel, text, 8000, "info"),
+      );
+    } catch (_e) {
+      // Lieber still bleiben als die ganze App an einer Benachrichtigung scheitern lassen.
+    }
+  };
+
+  /** @inheritdoc */
+  public onAfterRender(node: VNode): void {
+    super.onAfterRender(node);
+    window.addEventListener("message", this.onNachricht);
+  }
+
+  /** @inheritdoc */
+  public destroy(): void {
+    window.removeEventListener("message", this.onNachricht);
+    super.destroy();
+  }
+
   /**
    * Rendert direkt das eingebettete Panel, ohne AppViewService/Mehrseiten-
    * Navigation -- s. Design-Doku 2026-08-12: nur Web-Einbettung, keine eigene

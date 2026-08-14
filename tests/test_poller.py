@@ -19,6 +19,20 @@ from app.poller import VatsimPoller, create_poller, _TS_BASELINE_STREAK, _lead_p
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _naechste_positionen(q) -> dict:
+    """Nächstes ``positions``-Ereignis aus der SSE-Queue holen.
+
+    Seit den Sim-Benachrichtigungen liegen in derselben Queue auch ``notify``-Ereignisse
+    (ein Pilot, der online geht, erzeugt beides). Ein blindes ``get_nowait`` erwischt sonst
+    je nach Reihenfolge die Benachrichtigung statt der Positionsliste.
+    """
+    while not q.empty():
+        ereignis = q.get_nowait()
+        if ereignis.get("type") == "positions":
+            return ereignis
+    raise AssertionError("kein positions-Ereignis in der Queue")
+
+
 def _make_poller(db_path: str = ":memory:", **kwargs) -> VatsimPoller:
     return VatsimPoller(
         db_path=db_path,
@@ -301,8 +315,7 @@ class TestPollOnceExceptionHandling:
             await poller._poll_once()
 
         assert not q.empty()
-        event = q.get_nowait()
-        assert event["type"] == "positions"
+        event = _naechste_positionen(q)
         assert event["data"] == []
 
     @pytest.mark.asyncio
@@ -351,8 +364,7 @@ class TestPollOnceExceptionHandling:
         assert 1234567 in poller._active_flights
 
         assert not q.empty()
-        event = q.get_nowait()
-        assert event["type"] == "positions"
+        event = _naechste_positionen(q)
         assert len(event["data"]) == 1
         assert event["data"][0]["cid"] == 1234567
 
@@ -399,7 +411,7 @@ class TestPollOnceExceptionHandling:
             await poller._poll_once()
 
         assert 1234567 in poller._active_flights
-        q.get_nowait()
+        _naechste_positionen(q)          # Queue leeren, damit unten der zweite Poll drinsteht
 
         vatsim_offline = {"pilots": []}
         with patch(
@@ -410,8 +422,7 @@ class TestPollOnceExceptionHandling:
 
         assert 1234567 not in poller._active_flights
 
-        event = q.get_nowait()
-        assert event["type"] == "positions"
+        event = _naechste_positionen(q)
         assert event["data"] == []
 
 

@@ -448,14 +448,57 @@
          vermutlich zu blass. */
       font-weight: 400;
     }
-    /* Im MSFS-EFB-Panel fehl am Platz: Push-Benachrichtigungen funktionieren dort ohnehin
-       nicht (kein OS-Push-Kanal in Coherent GT) -- lieber ausblenden als eine kaputte
-       Funktion anzubieten. Impressum/Datenschutz ersetzen im Panel-Kontext die ganze
-       Cockpit-Ansicht durch eine Rechtstext-Seite, ohne echten Nutzen dort; über die normale
-       Web-Seite (/) bleiben beide weiterhin erreichbar. */
-    html.vr-panel #notif-btn,
+    /* Impressum/Datenschutz ersetzen im Panel-Kontext die ganze Cockpit-Ansicht durch eine
+       Rechtstext-Seite, ohne echten Nutzen dort; über die normale Web-Seite (/) bleiben sie
+       weiterhin erreichbar. */
     html.vr-panel footer {
       display: none !important;
+    }
+    /* Die Glocke war im Panel lange ganz ausgeblendet, weil Web-Push in Coherent GT nicht
+       existiert (kein OS-Push-Kanal). Seit die Meldungen das Tablet über die EFB-Shell
+       erreichen, hat sie hier wieder eine Aufgabe -- allerdings NUR die Kategorie-Schalter:
+       alles, was am Browser-Push hängt (An/Aus, Piloten-Filter, Installieren, Zurücksetzen,
+       iOS-Hinweis), bliebe im Panel wirkungslos und wird deshalb ausgeblendet. */
+    html.vr-panel #notif-enabled-row,
+    html.vr-panel #notif-filter,
+    html.vr-panel #notif-ios-hint,
+    html.vr-panel #notif-blocked-hint,
+    html.vr-panel #notif-install-btn,
+    html.vr-panel #notif-reset-btn,
+    html.vr-panel #visibility-section {
+      display: none !important;
+    }
+    /* Ersatz-Anzeige, falls die Meldung die EFB-Shell nicht erreicht (postMessage kommt in
+       Coherent GT nicht bestaetigt ueber die iframe-Grenze -- vorhanden ist die Funktion,
+       zugestellt wird sie erst im Sim gemessen). Dann zeigt das Panel den Hinweis eben selbst.
+       Kein `inset`: wird von Coherent GT still ignoriert und macht fixed-Overlays unsichtbar. */
+    .panel-hinweis-stapel {
+      position: fixed;
+      /* Unterhalb der festen Tab-Leiste (46px, s. `html.vr-panel body { padding-top }`) --
+         bei top:8px lag der Hinweis mitten auf der Navigation und verdeckte sie. */
+      top: 52px; right: 8px;
+      width: 260px;
+      z-index: 10000;
+    }
+    .panel-hinweis {
+      background: rgba(10, 22, 34, 0.96);
+      border: 1px solid var(--green-dim);
+      border-left: 3px solid var(--green);
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    }
+    .panel-hinweis-titel {
+      color: var(--green);
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .panel-hinweis-text {
+      color: var(--text-label);
+      font-size: 0.78rem;
     }
     /* Teilen/Kopieren-Buttons (Link, Forum-BBCode) und Versionsverlauf: mitten im Flug ohne
        Nutzen (kopierter Link/Code hat kein Ziel, Release-Notes sind keine Cockpit-Info). Über
@@ -2617,7 +2660,29 @@
   <!-- Notification Panel (fixed overlay) -->
   <div id="notif-panel" class="notif-panel" hidden>
     <div class="notif-panel-title">Benachrichtigungen</div>
-    <label class="notif-toggle-row">
+    <!-- Im MSFS-Kniebrett gibt es keinen Web-Push (kein OS-Push-Kanal in Coherent GT). Dort
+         zeigt das Tablet die Meldungen selbst an; gesteuert wird das ueber diese vier
+         Schalter, gespeichert im Tablet. Wer NICHT will, dass ueber ihn benachrichtigt wird,
+         regelt das weiterhin unter "Wer darf ueber mich benachrichtigt werden?" -- das wirkt
+         serverseitig und gilt hier genauso. -->
+    <div id="panel-notif" hidden>
+      <label class="notif-toggle-row">
+        <input type="checkbox" id="panel-notif-online" checked> Wenn jemand online geht
+      </label>
+      <label class="notif-toggle-row" style="margin-top:8px;">
+        <input type="checkbox" id="panel-notif-prefile" checked> Bei eingereichten Flugplänen
+      </label>
+      <label class="notif-toggle-row" style="margin-top:8px;">
+        <input type="checkbox" id="panel-notif-ts" checked> <svg class="icon"><use href="#icon-headset"/></svg> Bei TeamSpeak-Beitritt
+      </label>
+      <label class="notif-toggle-row" style="margin-top:8px;">
+        <input type="checkbox" id="panel-notif-events" checked> <svg class="icon"><use href="#icon-calendar"/></svg> Events (Erinnerung, Bummel, Kutter)
+      </label>
+      <div class="notif-hint" style="color:var(--text-dim); margin-top:10px;">
+        Erscheint im Tablet, solange der Simulator läuft und FriesenSpy geladen ist.
+      </div>
+    </div>
+    <label class="notif-toggle-row" id="notif-enabled-row">
       <input type="checkbox" id="notif-enabled"> Beim Online-gehen benachrichtigen
     </label>
     <div id="notif-filter" class="notif-filter-section" hidden>
@@ -3328,6 +3393,12 @@ function _updateNotifBtn() {
 }
 
 function _showNotifPanelContent() {
+  // Im Kniebrett steht hier NUR die Kategorie-Auswahl: Web-Push existiert dort nicht, und der
+  // Rest dieses Fensters (An/Aus, Piloten-Filter, Installieren) haengt komplett daran.
+  if (document.documentElement.classList.contains('vr-panel')) {
+    _panelNotifyPanelAufbauen();
+    return;
+  }
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches
                     || !!window.navigator.standalone;
@@ -3880,6 +3951,10 @@ function connectSSE() {
         // Prefiles/TeamSpeak NICHT hier mitfeuern — sie laufen auf eigenem, langsamerem
         // Takt (siehe setInterval unten). Sonst feuerte das Paar bei jedem 15s-Push und
         // sprengte zusammen mit mehreren Geräten pro IP das geteilte /api/-Rate-Limit (429).
+      } else if (msg.type === 'notify') {
+        // Benachrichtigung fürs MSFS-Kniebrett. Auf der normalen Web-Seite ein No-Op —
+        // dort gibt es Web-Push, eine zweite Anzeige wäre nur doppelt.
+        _panelBenachrichtigung(msg);
       }
     } catch (_) { /* ignore parse errors */ }
   };
@@ -4329,6 +4404,157 @@ function _initPanelTranslit() {
     childList: true, subtree: true, characterData: true,
     attributes: true, attributeFilter: _TRANSLIT_ATTRS,
   });
+}
+
+// ==========================================================================
+//  Sim-Benachrichtigungen (nur im MSFS-Kniebrett)
+// ==========================================================================
+// Web-Push gibt es in Coherent GT nicht. Die Meldungen kommen deshalb ueber den ohnehin
+// offenen SSE-Strom herein und werden an die EFB-Shell weitergereicht, die sie als
+// Tablet-Benachrichtigung anzeigt (NotificationManager aus @efb/efb-api).
+//
+// WER etwas sehen darf, entscheidet der Server (Subjekt-Sichtbarkeit, s. is_visible_to in
+// app/database.py) -- hier wird nur noch nach Geschmack gefiltert.
+
+const _PANEL_NOTIFY_KEY = 'friesenspy_panel_notify';
+const _PANEL_NOTIFY_ARTEN = ['online', 'prefile', 'ts', 'events'];
+// Ob die EFB-Shell unsere Nachrichten annimmt: null = noch nicht geklaert, true/false = gemessen.
+let _panelShellDa = null;
+
+function _panelNotifyEinstellung() {
+  const aus = {};
+  for (let i = 0; i < _PANEL_NOTIFY_ARTEN.length; i++) {
+    const art = _PANEL_NOTIFY_ARTEN[i];
+    let wert = null;
+    try { wert = localStorage.getItem(_PANEL_NOTIFY_KEY + '_' + art); } catch (_) { }
+    aus[art] = wert !== '0';                        // Vorgabe: alles an
+  }
+  return aus;
+}
+
+function _panelNotifySetzen(art, an) {
+  try { localStorage.setItem(_PANEL_NOTIFY_KEY + '_' + art, an ? '1' : '0'); } catch (_) { }
+}
+
+/**
+ * Text fuer die Tablet-Anzeige aufbereiten.
+ *
+ * Wichtig: Dieser Text wird von der EFB-Shell AUSSERHALB unseres iframes gezeichnet und laeuft
+ * damit NICHT durch den MutationObserver, der sonst die Umlaute umschreibt. Also hier selbst --
+ * _translitText erledigt Umlaute, Emoji (die Astral-Paare fallen weg) und Typografie in einem
+ * Zug ("EDWG -> EDXP"). Danach bleiben von entfernten Zeichen nur doppelte Leerzeichen uebrig.
+ */
+function _panelMeldungstext(s) {
+  return _translitText(String(s || '')).replace(/\s+/g, ' ').trim();
+}
+
+/** Hinweis im Panel selbst zeigen -- Ersatzweg, wenn die EFB-Shell nicht antwortet. */
+function _panelHinweisZeigen(titel, text) {
+  let stapel = document.getElementById('panel-hinweise');
+  if (!stapel) {
+    stapel = document.createElement('div');
+    stapel.id = 'panel-hinweise';
+    stapel.className = 'panel-hinweis-stapel';
+    document.body.appendChild(stapel);
+  }
+  const box = document.createElement('div');
+  box.className = 'panel-hinweis';
+  const t = document.createElement('div');
+  t.className = 'panel-hinweis-titel';
+  t.textContent = titel;
+  const b = document.createElement('div');
+  b.className = 'panel-hinweis-text';
+  b.textContent = text;
+  box.appendChild(t);
+  box.appendChild(b);
+  box.addEventListener('click', () => { if (box.parentNode) box.parentNode.removeChild(box); });
+  stapel.appendChild(box);
+  // Nicht endlos stapeln: aelteste Hinweise verschwinden, sobald mehr als vier anstehen.
+  while (stapel.childNodes.length > 4) stapel.removeChild(stapel.firstChild);
+  setTimeout(() => { if (box.parentNode) box.parentNode.removeChild(box); }, 20000);
+}
+
+/**
+ * Eine Benachrichtigung aus dem SSE-Strom verarbeiten. Ausserhalb des Panels ein No-Op --
+ * im Browser gibt es dafuer Web-Push, eine zweite Anzeige waere nur doppelt.
+ */
+function _panelBenachrichtigung(msg) {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+  const art = msg.service || '';
+  if (_PANEL_NOTIFY_ARTEN.indexOf(art) < 0) return;
+  if (!_panelNotifyEinstellung()[art]) return;
+
+  const titel = _panelMeldungstext(msg.title);
+  const text = _panelMeldungstext(msg.body);
+  if (!titel && !text) return;
+
+  let gesendet = false;
+  if (_panelShellDa !== false && window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage({
+        quelle: 'friesenspy', art: 'notify',
+        titel: titel, text: text, service: art,
+      }, '*');
+      gesendet = true;
+    } catch (_) { /* Shell nimmt nichts an -- unten der Ersatzweg */ }
+  }
+  // Solange die Shell nicht bestaetigt hat, zusaetzlich selbst anzeigen: lieber einmal doppelt
+  // als gar nicht. Sobald der Handshake steht (_panelShellDa === true), faellt das weg.
+  if (!gesendet || _panelShellDa !== true) {
+    _panelHinweisZeigen(titel, text);
+  }
+}
+
+/**
+ * Handshake mit der EFB-Shell: Wir rufen einmal "ping", die App antwortet "pong". Erst damit
+ * ist belegt, dass postMessage die iframe-Grenze in Coherent GT wirklich ueberquert -- die
+ * blosse Existenz der Funktion (gemessen: postMessage true) sagt darueber nichts.
+ * Das Ergebnis geht an die Panel-Diagnose, damit es nach EINEM Sim-Lauf feststeht.
+ */
+function _initPanelShellKanal() {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+
+  window.addEventListener('message', (e) => {
+    const d = e && e.data;
+    if (!d || d.quelle !== 'friesenspy-shell') return;
+    if (d.art === 'pong') _panelShellDa = true;
+  });
+
+  if (!window.parent || window.parent === window) { _panelShellDa = false; return; }
+  try {
+    window.parent.postMessage({ quelle: 'friesenspy', art: 'ping' }, '*');
+  } catch (_) {
+    _panelShellDa = false;
+  }
+
+  setTimeout(() => {
+    if (_panelShellDa === null) _panelShellDa = false;
+    if (typeof window._panelDiag === 'function') {
+      window._panelDiag('shell', {
+        shellAntwortet: _panelShellDa,
+        imIframe: window.self !== window.top,
+        schalter: _panelNotifyEinstellung(),
+      });
+    }
+  }, 5000);
+}
+
+/** Kategorie-Schalter im Benachrichtigungs-Fenster des Panels vorbereiten. */
+function _panelNotifyPanelAufbauen() {
+  const block = document.getElementById('panel-notif');
+  if (!block) return;
+  block.hidden = false;
+  const zustand = _panelNotifyEinstellung();
+  for (let i = 0; i < _PANEL_NOTIFY_ARTEN.length; i++) {
+    const art = _PANEL_NOTIFY_ARTEN[i];
+    const cb = document.getElementById('panel-notif-' + art);
+    if (!cb) continue;
+    cb.checked = zustand[art];
+    if (!cb.dataset.gebunden) {
+      cb.dataset.gebunden = '1';
+      cb.addEventListener('change', () => _panelNotifySetzen(art, cb.checked));
+    }
+  }
 }
 
 // Self-gehostetes SVG-Icon (Sprite-Defs direkt nach <body>) statt Emoji -- Coherent GT
@@ -7674,6 +7900,14 @@ function _initPanelBackButton() {
 document.addEventListener('DOMContentLoaded', () => {
   _initPanelBackButton();
   _initPanelTranslit();
+  _initPanelShellKanal();
+  // Die Glocke bleibt sonst versteckt: Sie wird erst eingeblendet, wenn ein VAPID-Schluessel
+  // vorliegt (Web-Push). Im Panel fuehrt sie jetzt zu den Kategorie-Schaltern und wird
+  // deshalb unabhaengig davon gebraucht.
+  if (document.documentElement.classList.contains('vr-panel')) {
+    const glocke = document.getElementById('notif-btn');
+    if (glocke) glocke.hidden = false;
+  }
 });
 
 document.addEventListener('keydown', (e) => {

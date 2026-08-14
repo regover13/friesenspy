@@ -1,5 +1,17 @@
 [
   {
+    "version": "12.1.0",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Meldungen im Kniebrett",
+    "items": [
+      "🔔 Das Tablet im Simulator meldet ab sofort selbst, wenn jemand online geht, einen Flugplan einreicht, TeamSpeak betritt oder ein Event ansteht. Die Meldung bleibt danach auf der Benachrichtigungs-Seite des Tablets stehen — wer im falschen Moment aus dem Fenster schaut, verpasst sie also nicht.",
+      "🎚️ Über die Glocke oben rechts lässt sich im Kniebrett einstellen, welche der vier Sorten man sehen will. Das gilt nur fürs Tablet; die Benachrichtigungen im Browser bleiben unberührt.",
+      "🔒 Wer unter „Wer darf über mich benachrichtigt werden?“ jemanden ausgeschlossen hat, bleibt auch im Kniebrett ausgeschlossen. Diese Entscheidung fällt auf dem Server, nicht im Tablet.",
+      "📦 Dafür ist einmalig das neue Paket nötig — die alte Hülle kennt die Meldungen noch nicht. Download wie gehabt unter „FriesenSpy im Cockpit“ ganz unten auf der Seite."
+    ]
+  },
+  {
     "version": "12.0.0",
     "date": "2026-08-14",
     "highlight": true,

@@ -192,6 +192,58 @@ async def send_web_push(
             logger.warning("%s: Endpoint-Cleanup/Diagnose fehlgeschlagen", label)
 
 
+# ---------------------------------------------------------------------------
+# Nutzlasten der Benachrichtigungen — EINE Formulierung je Kategorie
+# ---------------------------------------------------------------------------
+# Web-Push (Browser) und Sim-Benachrichtigung (MSFS-Kniebrett) sind zwei Anzeigeflächen
+# für dieselbe Meldung. Ihre Texte werden deshalb hier gebaut und nicht an jeder
+# Auslöse-Stelle neu formuliert — sonst laufen die beiden Kanäle über die Zeit auseinander.
+
+def payload_online(pilot: dict) -> dict:
+    """„FRS61 ist online" — Nutzlast für einen Piloten, der gerade online gegangen ist."""
+    callsign = pilot.get("callsign", "?")
+    dep = pilot.get("departure") or "?"
+    arr = pilot.get("arrival") or "?"
+    aircraft = pilot.get("aircraft_short") or pilot.get("aircraft") or ""
+    return {
+        "title": f"{callsign} ist online! ✈",
+        "body": f"{dep} → {arr}" + (f" · {aircraft}" if aircraft else ""),
+        "url": "/",
+    }
+
+
+def payload_prefile(prefile: dict) -> dict:
+    """„FRS61 hat Flugplan eingereicht" — Nutzlast für einen neu eingereichten Flugplan."""
+    import re as _re
+    callsign = prefile.get("callsign", "?")
+    fp = prefile.get("flight_plan") or {}
+    dep = fp.get("departure") or "?"
+    arr = fp.get("arrival") or "?"
+    aircraft = fp.get("aircraft_short") or fp.get("aircraft") or ""
+    deptime = fp.get("deptime") or ""
+    remarks = fp.get("remarks") or ""
+
+    dof_m = _re.search(r'DOF/(\d{2})(\d{2})(\d{2})', remarks)
+    date_str = f"{dof_m.group(3)}.{dof_m.group(2)}.20{dof_m.group(1)}" if dof_m else ""
+    time_str = f"{deptime[:2]}:{deptime[2:]} UTC" if len(deptime) == 4 else ""
+    when = " · ".join(filter(None, [date_str, time_str]))
+
+    return {
+        "title": f"{callsign} hat Flugplan eingereicht 📋",
+        "body": f"{dep} → {arr}" + (f" · {when}" if when else "") + (f" · {aircraft}" if aircraft else ""),
+        "url": "/",
+    }
+
+
+def payload_ts(nick: str) -> dict:
+    """„Micha ist im TeamSpeak" — Nutzlast für einen bestätigten TeamSpeak-Beitritt."""
+    return {
+        "title": f"🎧 {nick} ist im TeamSpeak",
+        "body": "FriesenFlieger TeamSpeak",
+        "url": "/",
+    }
+
+
 async def send_web_push_notifications(
     vapid_private_key: str,
     vapid_contact_email: str,
@@ -201,15 +253,7 @@ async def send_web_push_notifications(
     """Push-Notification an alle passenden Subscriptions senden."""
     cid = pilot.get("cid")
     callsign = pilot.get("callsign", "?")
-    dep = pilot.get("departure") or "?"
-    arr = pilot.get("arrival") or "?"
-    aircraft = pilot.get("aircraft_short") or pilot.get("aircraft") or ""
-
-    payload = {
-        "title": f"{callsign} ist online! ✈",
-        "body": f"{dep} → {arr}" + (f" · {aircraft}" if aircraft else ""),
-        "url": "/",
-    }
+    payload = payload_online(pilot)
     conn = get_connection(db_path)
     try:
         subscriptions = get_push_subscriptions_for_pilot(conn, cid)
@@ -233,30 +277,9 @@ async def send_prefile_push_notifications(
     """Push-Notification für neu eingereichten Flugplan an abonnierte Nutzer."""
     import json as _json
 
-    import re as _re
     cid = prefile.get("cid")
     callsign = prefile.get("callsign", "?")
-    fp = prefile.get("flight_plan") or {}
-    dep = fp.get("departure") or "?"
-    arr = fp.get("arrival") or "?"
-    aircraft = fp.get("aircraft_short") or fp.get("aircraft") or ""
-    deptime = fp.get("deptime") or ""
-    remarks = fp.get("remarks") or ""
-
-    dof_m = _re.search(r'DOF/(\d{2})(\d{2})(\d{2})', remarks)
-    if dof_m:
-        date_str = f"{dof_m.group(3)}.{dof_m.group(2)}.20{dof_m.group(1)}"
-    else:
-        date_str = ""
-    time_str = f"{deptime[:2]}:{deptime[2:]} UTC" if len(deptime) == 4 else ""
-    when = " · ".join(filter(None, [date_str, time_str]))
-
-    payload = {
-        "title": f"{callsign} hat Flugplan eingereicht 📋",
-        "body": f"{dep} → {arr}" + (f" · {when}" if when else "") + (f" · {aircraft}" if aircraft else ""),
-        "url": "/",
-    }
-    data = _json.dumps(payload)
+    data = _json.dumps(payload_prefile(prefile))
 
     conn = get_connection(db_path)
     try:
@@ -598,6 +621,27 @@ class VatsimPoller:
                 except Exception:
                     pass
 
+    def broadcast_notify(self, service: str, subject_cid: int | None, payload: dict) -> None:
+        """Eine Benachrichtigung in den SSE-Strom legen (Anzeigefläche: MSFS-Kniebrett).
+
+        ``service`` ∈ {'online','prefile','ts','events'} — dieselben Namen wie in
+        ``VISIBILITY_SERVICES``, damit die Subjekt-Sichtbarkeit ohne Übersetzung greift.
+        ``subject_cid`` ist die CID des Piloten, ÜBER den benachrichtigt wird (None bei
+        Event-Meldungen, die keine Person betreffen).
+
+        Hier wird bewusst NICHT gefiltert: der Broadcast kennt seine Empfänger nicht. Wer die
+        Meldung sehen darf, entscheidet der SSE-Endpoint pro Verbindung
+        (``app/main.py`` → ``is_visible_to``) — vorher verlässt sie den Server nicht.
+        """
+        self.broadcast_sse({
+            "type": "notify",
+            "service": service,
+            "subject_cid": subject_cid,
+            "title": payload.get("title", ""),
+            "body": payload.get("body", ""),
+            "url": payload.get("url", "/"),
+        })
+
     # ------------------------------------------------------------------
     # Core poll loop
     # ------------------------------------------------------------------
@@ -818,6 +862,11 @@ class VatsimPoller:
                             except Exception:
                                 logger.exception("Error sending Telegram alert for cid=%s", cid)
 
+                        # Sim-Benachrichtigung fürs Kniebrett — bewusst außerhalb der
+                        # VAPID-Bedingung: sie hängt nicht am Web-Push. Aber INNERHALB des
+                        # Rejoin-Debounce, sonst meldet jeder vPilot-Reconnect ins Cockpit.
+                        self.broadcast_notify("online", cid, payload_online(pos))
+
                         # Web Push notifications
                         if self.vapid_private_key:
                             asyncio.create_task(
@@ -989,11 +1038,13 @@ class VatsimPoller:
 
             # 4. Prefile-Benachrichtigungen für neu eingereichte/geänderte Flugpläne
             # Nur wenn Pilot NICHT bereits online ist (Prefile = Ankündigung, kein Duplikat)
-            if self.vapid_private_key and new_prefiles:
-                for pf in new_prefiles:
-                    cid = pf.get("cid")
-                    if not cid or cid in self._active_flights:
-                        continue
+            for pf in new_prefiles:
+                cid = pf.get("cid")
+                if not cid or cid in self._active_flights:
+                    continue
+                # Sim-Benachrichtigung unabhängig von VAPID (s. broadcast_notify)
+                self.broadcast_notify("prefile", cid, payload_prefile(pf))
+                if self.vapid_private_key:
                     asyncio.create_task(
                         send_prefile_push_notifications(
                             self.vapid_private_key,
@@ -1072,15 +1123,16 @@ class VatsimPoller:
                 finally:
                     conn.close()
 
+                nick = nick_by_frs.get(frs, frs)
+                payload = payload_ts(nick)
+
+                # Sim-Benachrichtigung fürs Kniebrett — VOR der Empfänger-Prüfung: `recipients`
+                # sind die Web-Push-Abos, und ohne die soll das Cockpit trotzdem etwas sehen.
+                self.broadcast_notify("ts", subject_cid, payload)
+
                 if not recipients:
                     continue
 
-                nick = nick_by_frs.get(frs, frs)
-                payload = {
-                    "title": f"🎧 {nick} ist im TeamSpeak",
-                    "body": "FriesenFlieger TeamSpeak",
-                    "url": "/",
-                }
                 asyncio.create_task(
                     send_web_push(
                         self.vapid_private_key,
@@ -1280,6 +1332,8 @@ class VatsimPoller:
                 logger.info("Bummel gestartet: %s", started)
             if revealed:
                 logger.info("Bummel enthüllt: Rennen %s", revealed)
+            for payload in pushes:
+                self.broadcast_notify("events", None, payload)
             if pushes and subscriptions and self.vapid_private_key:
                 for payload in pushes:
                     asyncio.create_task(send_web_push(
@@ -1439,6 +1493,8 @@ class VatsimPoller:
                 subscriptions = get_push_subscriptions_for_events(conn) if pushes else []
             finally:
                 conn.close()
+            for payload in pushes:
+                self.broadcast_notify("events", None, payload)
             if pushes and subscriptions and self.vapid_private_key:
                 for payload in pushes:
                     asyncio.create_task(send_web_push(
@@ -1970,33 +2026,32 @@ class VatsimPoller:
                     [e["uid"] for e in generic], [r["id"] for r in bummels],
                     [k["id"] for k in kutters],
                 )
-            if any_due and subscriptions and self.vapid_private_key:
-                for ev in generic:
-                    payload = {
-                        "title": "FriesenEvent",
-                        "body": f"🗓 {_lead_phrase(ev['dtstart'], now)}: {ev.get('summary') or 'FriesenEvent'}",
-                        "url": "/",
-                    }
-                    asyncio.create_task(send_web_push(
-                        self.vapid_private_key, self.vapid_contact_email, self.db_path,
-                        subscriptions, payload, label="Event-Erinnerung",
-                    ))
-                for r in bummels:
-                    payload = {
-                        "title": "FriesenFliegerBummel",
-                        "body": f"🗓 {_lead_phrase(r['dtstart'], now)}: {r.get('name') or 'FriesenFliegerBummel'}",
-                        "url": "/",
-                    }
-                    asyncio.create_task(send_web_push(
-                        self.vapid_private_key, self.vapid_contact_email, self.db_path,
-                        subscriptions, payload, label="Event-Erinnerung",
-                    ))
-                for k in kutters:
-                    payload = {
-                        "title": "FriesenKutter",
-                        "body": f"🗓 {_lead_phrase(k['dtstart'], now)}: {k.get('name') or 'FriesenKutter'}",
-                        "url": "/",
-                    }
+            # Nutzlasten einmal bauen — sie speisen beide Anzeigeflächen (Web-Push im Browser,
+            # Sim-Benachrichtigung im Kniebrett). Vorher hing die Formulierung im
+            # VAPID-Zweig fest; ohne Web-Push-Schlüssel wäre im Cockpit nichts angekommen.
+            reminder_pushes: list[dict] = []
+            for ev in generic:
+                reminder_pushes.append({
+                    "title": "FriesenEvent",
+                    "body": f"🗓 {_lead_phrase(ev['dtstart'], now)}: {ev.get('summary') or 'FriesenEvent'}",
+                    "url": "/",
+                })
+            for r in bummels:
+                reminder_pushes.append({
+                    "title": "FriesenFliegerBummel",
+                    "body": f"🗓 {_lead_phrase(r['dtstart'], now)}: {r.get('name') or 'FriesenFliegerBummel'}",
+                    "url": "/",
+                })
+            for k in kutters:
+                reminder_pushes.append({
+                    "title": "FriesenKutter",
+                    "body": f"🗓 {_lead_phrase(k['dtstart'], now)}: {k.get('name') or 'FriesenKutter'}",
+                    "url": "/",
+                })
+            for payload in reminder_pushes:
+                self.broadcast_notify("events", None, payload)
+            if reminder_pushes and subscriptions and self.vapid_private_key:
+                for payload in reminder_pushes:
                     asyncio.create_task(send_web_push(
                         self.vapid_private_key, self.vapid_contact_email, self.db_path,
                         subscriptions, payload, label="Event-Erinnerung",
