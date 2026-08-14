@@ -106,6 +106,22 @@ const POSITION_INTERVALL_MS = 500;
 /** Nach so vielen Fehlgriffen in Folge gibt die Positionsabfrage auf. */
 const POSITION_MAX_FEHLER = 5;
 
+/**
+ * Spaetestens nach dieser Zeit wird auch eine UNVERAENDERTE Position gemeldet.
+ *
+ * Das ist kein Feinschliff, sondern die Behebung eines handfesten Fehlers (Live-Test
+ * 15.08.2026): Die App sendete nur bei Aenderung, die Seite verwarf eine Position aber nach
+ * fuenf Sekunden als tot. Stand das Flugzeug still, kam nichts mehr -- und die Seite hielt
+ * die Bruecke fuer abgerissen. Gemessen im Sim: `simAlterMs: 22990` bei `quelle: "keine"`,
+ * also eine 23 Sekunden alte Position und beide Kartenknoepfe verschwunden.
+ *
+ * Zwei fuer sich vernuenftige Entscheidungen ergaben zusammen einen Fehler. Wer regelmaessig
+ * gehoert werden will, muss regelmaessig etwas sagen: Ohne Lebenszeichen kann der Empfaenger
+ * "frisch" gar nicht beurteilen. Die Aenderungspruefung bleibt trotzdem -- sie haelt die
+ * Meldungen klein --, sie kann jetzt nur nicht mehr laenger als diese Spanne schweigen.
+ */
+const POSITION_HERZSCHLAG_MS = 2000;
+
 class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   /** Das eingebettete Fenster -- Empfaenger der Positionsmeldungen. */
   private readonly rahmenRef = FSComponent.createRef<HTMLIFrameElement>();
@@ -113,6 +129,8 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   private letztePositionMs = 0;
   private positionFehler = 0;
   private letzteMeldung = "";
+  /** Wann zuletzt wirklich gesendet wurde (nicht nur geprueft) -- fuer den Herzschlag. */
+  private letztesSendenMs = 0;
   /**
    * Empfaenger fuer Nachrichten aus dem iframe. Als Feld gehalten, damit er in destroy()
    * wieder abgemeldet werden kann -- die App lebt mit AppSuspendMode.SLEEP lange.
@@ -204,7 +222,7 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
    * Variable liegt intern in Radiant, die JS-Schnittstelle rechnet auf die angeforderte
    * Einheit um, deshalb hier ausdruecklich "degrees".
    */
-  private positionSenden(): void {
+  private positionSenden(jetztMs: number): void {
     const ziel = this.rahmenRef.instance ? this.rahmenRef.instance.contentWindow : null;
     if (!ziel) {
       return;
@@ -227,14 +245,18 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
         return;
       }
 
-      // Nur senden, wenn sich wirklich etwas geaendert hat. Auf 5 Nachkommastellen gerundet
-      // sind das gut anderthalb Meter -- feiner braucht es eine Karte nicht, und am Boden
-      // mit stehendem Motor schweigt die Bruecke damit ganz.
+      // Unveraenderte Positionen werden uebersprungen -- aber NIE laenger als der Herzschlag.
+      // Genau daran ist es beim ersten Live-Test gescheitert: Am Boden mit stehendem
+      // Flugzeug schwieg die Bruecke ganz, und die Seite hielt sie fuer abgerissen
+      // (s. POSITION_HERZSCHLAG_MS). Auf 5 Nachkommastellen gerundet sind das gut anderthalb
+      // Meter -- feiner braucht es eine Karte nicht.
       const meldung = lat.toFixed(5) + "," + lon.toFixed(5) + "," + Math.round(hdg);
-      if (meldung === this.letzteMeldung) {
+      const stillGenugLange = (jetztMs - this.letztesSendenMs) >= POSITION_HERZSCHLAG_MS;
+      if (meldung === this.letzteMeldung && !stillGenugLange) {
         return;
       }
       this.letzteMeldung = meldung;
+      this.letztesSendenMs = jetztMs;
 
       ziel.postMessage(
         { quelle: "friesenspy-shell", art: "position", lat: lat, lon: lon, hdg: hdg, gs: gs },
@@ -259,7 +281,7 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       return;
     }
     this.letztePositionMs = time;
-    this.positionSenden();
+    this.positionSenden(time);
   }
 
   /** @inheritdoc */

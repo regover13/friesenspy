@@ -1302,12 +1302,18 @@
       flex: none;              /* nicht mitschrumpfen, wenn der Text laenger wird */
       vertical-align: 0;       /* die globale Grundlinien-Korrektur stoert im Flex-Kontext */
     }
+    /* KEIN width:100vw/height:100vh -- die vier Raender auf 0 machen das bei position:fixed
+       ohnehin, und die Viewport-Einheiten sind hier nachweislich falsch:
+       Im Kniebrett steht auf dem Wurzelelement `zoom: 1.35` (damit die Schrift im Cockpit
+       lesbar ist). Viewport-Einheiten ignorieren diesen Zoom -- gemessen bei 748 px
+       Fensterbreite: 100vw = 1010 px. Die Karte wurde im Vollbild also ein Drittel zu breit,
+       und ALLES am rechten Rand rutschte aus dem Bild: Ebenen-Auswahl, Kompass und
+       Moving-Map-Knopf waren im Vollbild schlicht nicht mehr da (Nutzer-Fund 15.08.2026,
+       "vollbild hat keine Buttons"). Die Raender kennen den Zoom, die Einheiten nicht. */
     .map-is-fullscreen {
       position: fixed !important;
       top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important;
       z-index: 3000 !important;
-      width: 100vw !important;
-      height: 100vh !important;
       border: none !important;
     }
     /* Hinweis auf eine neue Version -- nur im MSFS-EFB-Panel.
@@ -6622,7 +6628,18 @@ let _meineCid = null;    // eigene CID aus /api/me, fuer den Fallback ohne Sim
 
 // Aelter als das, gilt die Sim-Position als tot: Kommt nichts mehr (Tablet zu, Shell weg),
 // soll die Karte nicht ewig eine eingefrorene Position nachfuehren.
-const _SIM_POS_MAX_ALTER_MS = 5000;
+//
+// Die Zahl haengt am Herzschlag der Gegenseite: Die EFB-App meldet sich spaetestens alle
+// 2 Sekunden, auch wenn sich nichts geaendert hat. 10 Sekunden Frist vertragen damit vier
+// ausgefallene Meldungen, bevor wir die Bruecke fuer tot erklaeren.
+//
+// Anfangs standen hier 5 Sekunden -- und die App sendete gleichzeitig nur bei AENDERUNG.
+// Beides zusammen ergab den Fehler aus dem ersten Live-Test: Am Boden mit stehendem
+// Flugzeug kam nichts mehr, die Position galt als tot, und beide Kartenknoepfe
+// verschwanden vor den Augen des Nutzers (gemessen: simAlterMs 22990 bei quelle "keine").
+// Behoben ist es auf der Senderseite (Herzschlag); die groessere Frist hier ist der
+// zweite Riegel, damit ein einzelner verschluckter Takt nicht sofort alles abschaltet.
+const _SIM_POS_MAX_ALTER_MS = 10000;
 
 /**
  * Wo bin ich, und wohin schaue ich? Gestaffelt, beste Quelle zuerst:
@@ -6878,22 +6895,31 @@ function _naviTakt(sofort) {
     }
   }
 
-  // 2. Alle anderen fortrechnen
+  // 2. Alle anderen fortrechnen -- den eigenen Flieger ausdruecklich NICHT, solange der
+  //    Simulator meldet. Ihn erst auf den geschaetzten VATSIM-Punkt zu setzen und gleich
+  //    darauf zu korrigieren, waere genau das Zucken, das behoben werden soll.
   for (const cs in mapMarkers) {
     if (!Object.prototype.hasOwnProperty.call(mapMarkers, cs)) continue;
+    if (_markerGehoertDemSim(cs)) continue;
     const roh = _positionsRoh[cs];
     if (!roh) continue;
     const p = _jetztGerechnet(roh);
     mapMarkers[cs].setLatLng([p.lat, p.lon]);
   }
 
-  // 3. Das eigene Flugzeug: hat der Sim eine Position, gilt SIE -- nicht die von VATSIM.
-  //    Sonst haetten wir fuer dasselbe Flugzeug zwei Wahrheiten, und die Karte waere schon
-  //    nachgefuehrt, waehrend der eigene Marker noch bis zu 15 Sekunden hinterherhinkt.
-  if (_simPos && _meineCid != null && (Date.now() - _simPos.ts) < _SIM_POS_MAX_ALTER_MS) {
+  // 3. Das eigene Flugzeug aus der Sim-Position -- die einzige Stelle, die es setzt.
+  if (_simPosFrisch() && _meineCid != null) {
     const meinCs = _meinCallsign();
     if (meinCs && mapMarkers[meinCs]) {
       mapMarkers[meinCs].setLatLng([_simPos.lat, _simPos.lon]);
+      // Auch der Kurs kommt dann aus dem Sim: Sonst zeigt das Symbol in die Richtung von
+      // vor bis zu 15 Sekunden, waehrend es an der richtigen Stelle steht.
+      const hdg = Math.round(Number(_simPos.hdg) || 0);
+      const m = mapMarkers[meinCs];
+      if (m._fsHeading !== hdg) {
+        m.setIcon(makeAircraftIcon(hdg));
+        m._fsHeading = hdg;
+      }
     }
   }
 
@@ -6915,6 +6941,32 @@ function _meinCallsign() {
     if (String(liste[i].cid) === String(_meineCid)) return liste[i].callsign;
   }
   return null;
+}
+
+/** Ist die Sim-Position frisch genug, um die VATSIM-Meldung zu schlagen? */
+function _simPosFrisch() {
+  return !!(_simPos && (Date.now() - _simPos.ts) < _SIM_POS_MAX_ALTER_MS);
+}
+
+/**
+ * Gehoert dieser Marker MIR -- und gilt fuer ihn die Sim-Position?
+ *
+ * Das ist die eine Stelle, an der entschieden wird, wem der eigene Marker gehoert. Sie ist
+ * noetig geworden, weil er anfangs von ZWEI Seiten gesetzt wurde: Der Sekundentakt schrieb
+ * die genaue Sim-Position hinein, und der VATSIM-Zulauf (updateMap, alle 15 Sekunden)
+ * ueberschrieb sie danach wieder mit seiner groberen Meldung. Sichtbar war das als
+ * regelmaessiges Zurueckspringen des eigenen Flugzeugs auf eine Position, an der es nicht
+ * mehr war (Nutzer-Fund 15.08.2026: "springt immer kurz zu einem berechneten Wert, der
+ * aber nicht mit der tatsaechlichen live position zusammenpasst").
+ *
+ * Zwei Quellen fuer dieselbe Sache brauchen eine Rangfolge, keinen Wettlauf: Solange der
+ * Simulator meldet, hat er recht -- er kennt die Position auf den Meter, VATSIM auf 15
+ * Sekunden.
+ */
+function _markerGehoertDemSim(callsign) {
+  if (!_simPosFrisch()) return false;
+  const meins = _meinCallsign();
+  return !!meins && meins === callsign;
 }
 
 function _naviStarten() {
@@ -7117,8 +7169,12 @@ function updateMap(pilots) {
     // Grades ist keine sichtbare Aenderung -- waere aber jedes Mal ein Grund, es neu zu bauen.
     const hdg = Math.round(Number(p.heading) || 0);
     const vorhanden = mapMarkers[p.callsign];
+    // Gehoert der Marker dem Simulator, ruehrt VATSIM ihn nicht an -- weder Position noch
+    // Kurs. Genau dieses Dazwischenfunken alle 15 Sekunden war als Zurueckspringen des
+    // eigenen Flugzeugs sichtbar (s. _markerGehoertDemSim).
+    const demSim = _markerGehoertDemSim(p.callsign);
     if (vorhanden) {
-      vorhanden.setLatLng([p.latitude, p.longitude]);
+      if (!demSim) vorhanden.setLatLng([p.latitude, p.longitude]);
       // setIcon ersetzt das DOM-Element des Markers KOMPLETT. Es bisher in jedem Takt fuer
       // jeden Flieger aufzurufen hiess: alle 10 bzw. 15 Sekunden die halbe Karte neu
       // aufbauen, obwohl sich am Kurs meist nichts geaendert hat. Im MSFS-Panel war das als

@@ -1075,6 +1075,49 @@ def test_drehung_nur_mit_geprueftem_plugin():
     assert "shiftKeyRotate: false" in INDEX
 
 
+def test_eigener_marker_hat_nur_eine_quelle():
+    """Solange der Simulator meldet, setzt NUR er den eigenen Marker.
+
+    Anfangs taten es zwei: Der Sekundentakt schrieb die genaue Sim-Position hinein, und der
+    VATSIM-Zulauf (updateMap, alle 15 s) ueberschrieb sie danach wieder mit seiner groberen
+    Meldung. Sichtbar war das als regelmaessiges Zurueckspringen des eigenen Flugzeugs
+    (Nutzer-Fund 15.08.2026: "springt immer kurz zu einem berechneten Wert, der aber nicht
+    mit der tatsaechlichen live position zusammenpasst").
+
+    Zwei Quellen fuer dieselbe Sache brauchen eine Rangfolge, keinen Wettlauf."""
+    assert "function _markerGehoertDemSim(callsign)" in INDEX
+    # updateMap darf den eigenen Marker dann nicht mehr anfassen.
+    m = re.search(r"const demSim = _markerGehoertDemSim\(p\.callsign\);(.*?)\n    \} else \{", INDEX, re.S)
+    assert m, "die Abfrage fehlt in updateMap"
+    assert "if (!demSim) vorhanden.setLatLng" in m.group(1), \
+        "updateMap ueberschreibt die Sim-Position weiterhin"
+    # Und der Takt rechnet den eigenen Flieger nicht als einen von vielen fort.
+    t = re.search(r"function _naviTakt\(sofort\) \{(.*?)\n\}", INDEX, re.S)
+    assert t and "if (_markerGehoertDemSim(cs)) continue;" in t.group(1), \
+        "der Takt setzt den eigenen Marker erst auf den Schaetzwert und korrigiert dann"
+
+
+def test_vollbild_ohne_viewport_einheiten():
+    """Im Vollbild darf die Karte NICHT ueber Viewport-Einheiten bemessen werden.
+
+    Das Kniebrett setzt `zoom: 1.35` auf das Wurzelelement, damit die Schrift im Cockpit
+    lesbar ist. Viewport-Einheiten ignorieren diesen Zoom: Gemessen bei 748 px Fensterbreite
+    ergab `width: 100vw` glatte 1010 px. Die Karte wurde im Vollbild also ein Drittel zu
+    breit, und alles am rechten Rand -- Ebenen-Auswahl, Kompass, Moving-Map-Knopf -- lag
+    ausserhalb des Bildschirms (Nutzer-Fund 15.08.2026: "vollbild hat keine Buttons").
+
+    Die vier Raender auf 0 erledigen dasselbe bei `position: fixed` und kennen den Zoom.
+    Deshalb hier festgehalten, dass die Masse NICHT zurueckkommen."""
+    m = re.search(r"\n    \.map-is-fullscreen \{([^}]*)\}", INDEX, re.S)
+    assert m, ".map-is-fullscreen nicht gefunden"
+    regel = m.group(1)
+    assert "100vw" not in regel, "width:100vw ist im Panel um den Zoomfaktor zu breit"
+    assert "100vh" not in regel, "height:100vh ist im Panel um den Zoomfaktor zu hoch"
+    # Die vier Raender muessen da sein, sonst fuellt das Element gar nichts mehr.
+    for seite in ("top", "right", "bottom", "left"):
+        assert f"{seite}: 0 !important" in regel, f"{seite}-Rand fehlt"
+
+
 def test_fremder_drehknopf_ist_global_abgeschaltet():
     """Das Plugin haengt seinen eigenen Dreh-Knopf per addInitHook an JEDE Karte -- die
     Voreinstellung ist `rotateControl: true`, unabhaengig von `rotate`. Im Track-Fenster und
