@@ -3433,6 +3433,29 @@
      unveraendert weiter -- jede Drehung haengt an einer Pruefung auf map.setBearing, s.
      _kannDrehen(). Track-up ist dann nicht verfuegbar, sonst aendert sich nichts. -->
 <script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate-src.js" integrity="sha256-+Qs8D9zbGHhw1CGR1C/Ty+hiG/oYv998Rs2DntIXIrY=" crossorigin="" onerror="window._leafletRotateFehlt = true;"></script>
+<script>
+  // Den eingebauten Dreh-Knopf des Plugins abschalten -- fuer ALLE Karten, an einer Stelle.
+  //
+  // Das Plugin setzt `L.Map.mergeOptions({ rotateControl: true })` und haengt den Knopf per
+  // addInitHook an JEDE Karte, ganz unabhaengig davon, ob sie ueberhaupt `rotate: true` hat.
+  // Genau das ist passiert: Im Track-Fenster und auf der Events-Karte tauchte ein fremder
+  // Knopf auf, der dort gar nichts bewirken kann (Nutzer-Fund 15.08.2026, "Track hat einen
+  // kompassbutton?"). Die Option nur bei der Live-Karte zu setzen, hat den beiden anderen
+  // nicht geholfen.
+  //
+  // Deshalb hier die VOREINSTELLUNG selbst umgestellt, statt die Option an drei Karten zu
+  // wiederholen: So gilt sie auch fuer jede Karte, die spaeter dazukommt, ohne dass jemand
+  // daran denken muss. Unsere eigene Kompass-Nadel auf der Live-Karte ist davon unberuehrt --
+  // sie ist ein eigener Control und haengt nicht an dieser Option.
+  if (window.L && L.Map && typeof L.Map.mergeOptions === 'function') {
+    L.Map.mergeOptions({ rotateControl: false });
+  }
+  // NEBENBEFUND, beim Nachmessen aufgefallen und hier notiert, weil er sonst irgendwann
+  // jemanden kostet: Mit geladenem Plugin bricht `L.map(el)` OHNE zweites Argument
+  // ("Cannot read properties of undefined (reading 'rotate')" in dessen initialize). Unsere
+  // drei Karten uebergeben alle ein Options-Objekt, sind also nicht betroffen -- eine neue
+  // Karte muss aber mindestens `L.map(el, {})` schreiben.
+</script>
 
 <script>
 'use strict';
@@ -6956,11 +6979,12 @@ async function initLiveMap() {
     minZoom:   6,
     zoomControl: true,
     attributionControl: true,
-    // Kartendrehung fuer Track-up. Drehen soll AUSSCHLIESSLICH ueber den Kompassknopf gehen:
-    // Eine im Cockpit versehentlich verdrehte Karte ist schlimmer als eine, die sich nicht
-    // drehen laesst. Deshalb der eingebaute Dreh-Knopf des Plugins aus und beide Gesten dazu.
+    // Kartendrehung fuer Track-up -- nur hier, nicht auf den anderen beiden Karten.
+    // Gedreht wird AUSSCHLIESSLICH ueber unseren Kompassknopf: Eine im Cockpit versehentlich
+    // verdrehte Karte ist schlimmer als eine, die sich nicht drehen laesst. Deshalb beide
+    // Dreh-Gesten aus. Der eingebaute Knopf des Plugins ist bereits global abgeschaltet
+    // (s. Skriptblock direkt hinter dem Plugin) -- er wuerde sonst auf JEDER Karte auftauchen.
     rotate: true,
-    rotateControl: false,
     touchRotate: false,
     shiftKeyRotate: false,
   });

@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.6.2",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Fremder Dreh-Knopf auf den anderen Karten entfernt",
+    "items": [
+      "🗺️ Im Track-Fenster und auf der Events-Karte war ein kleiner Dreh-Knopf aufgetaucht, der dort gar nichts bewirken kann — er stammt aus der neu eingebundenen Dreh-Bibliothek, die ihn ungefragt an jede Karte hängt. Er ist jetzt überall abgeschaltet; der Kompass auf der Live-Karte bleibt davon unberührt."
+    ]
+  },
+  {
     "version": "12.6.1",
     "date": "2026-08-15",
     "highlight": false,

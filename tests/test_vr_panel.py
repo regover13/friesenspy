@@ -1073,7 +1073,24 @@ def test_drehung_nur_mit_geprueftem_plugin():
     # Karte ist schlimmer als eine, die sich nicht drehen laesst.
     assert "touchRotate: false" in INDEX
     assert "shiftKeyRotate: false" in INDEX
-    assert "rotateControl: false" in INDEX
+
+
+def test_fremder_drehknopf_ist_global_abgeschaltet():
+    """Das Plugin haengt seinen eigenen Dreh-Knopf per addInitHook an JEDE Karte -- die
+    Voreinstellung ist `rotateControl: true`, unabhaengig von `rotate`. Im Track-Fenster und
+    auf der Events-Karte tauchte dadurch ein Knopf auf, der dort nichts bewirken kann
+    (Nutzer-Fund 15.08.2026: "Track hat einen kompassbutton?").
+
+    Die Option nur an der Live-Karte zu setzen, half den anderen beiden nicht. Deshalb wird
+    die VOREINSTELLUNG umgestellt -- eine Stelle, gilt auch fuer jede Karte, die spaeter
+    dazukommt. Genau deshalb darf sie NICHT wieder in die einzelnen Karten wandern."""
+    assert "L.Map.mergeOptions({ rotateControl: false })" in INDEX
+    # Die globale Umstellung muss NACH dem Plugin stehen, sonst ueberschreibt es sie wieder.
+    pos_plugin = INDEX.index("leaflet-rotate@0.2.8")
+    pos_aus = INDEX.index("L.Map.mergeOptions({ rotateControl: false })")
+    assert pos_plugin < pos_aus, "das Plugin wuerde die Voreinstellung danach wieder setzen"
+    # Und keine Wiederholung in den einzelnen Karten -- sonst zwei Wahrheiten.
+    assert "rotateControl: false," not in INDEX
 
 
 def test_das_ding_heisst_ueberall_kniebrett():
