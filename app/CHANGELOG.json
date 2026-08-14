@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.3.1",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Glocke und Schalter erscheinen im Tablet",
+    "items": [
+      "🔔 Im Tablet blieb die Glocke unsichtbar und die Kästchen zeigten nicht, ob eine Sorte an- oder abgeschaltet ist. Beides lag an Darstellungsformen, die die Anzeige-Engine des Simulators nicht mitmacht: ein per Skript eingesetztes Symbol und die üblichen Kontrollkästchen. Die Glocke steht jetzt fest im Seitentext, und der Zustand jeder Sorte steht als [X] beziehungsweise [ ] daneben — schlicht, aber sichtbar."
+    ]
+  },
+  {
     "version": "12.3.0",
     "date": "2026-08-14",
     "highlight": false,

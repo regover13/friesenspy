@@ -782,13 +782,41 @@ def test_glocke_zeigt_den_verbindungszustand():
     assert re.search(r"html\.vr-panel \.panel-topbar #notif-btn \{[^}]*color: var\(--red\)", INDEX)
 
 
-def test_glocke_im_panel_ist_einfaerbbar():
+def test_glocke_im_panel_ist_einfaerbbar_und_steht_fest_im_markup():
     """Die Twemoji-Grafik ist ein fertiges Bild und nimmt keine Farbe an. Im Panel muss
-    deshalb das Sprite-Symbol stehen, das `currentColor` folgt."""
+    deshalb das Sprite-Symbol stehen, das `currentColor` folgt.
+
+    BEIDE Glocken stehen fest im Markup und werden per CSS umgeschaltet: Ein per innerHTML
+    eingesetztes <svg> blieb in Coherent GT unsichtbar, obwohl dieselbe Sprite-Referenz im
+    festen Markup einwandfrei rendert (Sim-Fund 14.08.2026). Wer das wieder auf JavaScript
+    umstellt, macht die Glocke im Tablet erneut unsichtbar."""
     assert 'id="icon-bell"' in INDEX, "Glocken-Symbol fehlt im Sprite"
-    assert "glocke.innerHTML = icon('bell')" in INDEX
-    # Auf der Website bleibt die bunte Grafik.
-    assert 'id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img' in INDEX
+    assert 'class="emoji-icon notif-glocke-web"' in INDEX
+    assert 'class="icon notif-glocke-panel"><use href="#icon-bell"/>' in INDEX
+    assert "html.vr-panel .notif-glocke-panel { display: inline-block; }" in INDEX
+    assert "html.vr-panel .notif-glocke-web { display: none; }" in INDEX
+    assert "glocke.innerHTML" not in INDEX, "Glocke darf nicht per JavaScript erzeugt werden"
+
+
+def test_kategorie_schalter_zeigen_ihren_zustand_als_text():
+    """Sim-Fund 14.08.2026: <input type="checkbox"> zeigte im Tablet keinen Zustand an --
+    angehakt und nicht angehakt sahen gleich aus, die Schalter waren unbrauchbar. Reiner
+    ASCII-Text ist das Einzige, was diese Engine sicher zeichnet."""
+    assert "panel-notif-kasten" in INDEX
+    assert "'[X]' : '[ ]'" in INDEX
+    m = re.search(r'<div id="panel-notif" hidden>(.*?)</div>', INDEX, re.S)
+    assert m, "Panel-Schalter-Block nicht gefunden"
+    assert 'type="checkbox"' not in m.group(1), "native Kontrollkaestchen im Panel"
+    for art in ("online", "prefile", "ts", "events"):
+        assert f'data-art="{art}"' in m.group(1)
+
+
+def test_klick_auf_einen_schalter_schliesst_nicht_das_fenster():
+    """Der document-Klick-Handler schliesst #notif-panel bei jedem Klick daneben -- ohne
+    stopPropagation waere nach jedem Umschalten das Fenster zu."""
+    m = re.search(r"function _panelNotifyPanelAufbauen\(\) \{\n(.*?)\n\}", INDEX, re.S)
+    assert m, "_panelNotifyPanelAufbauen nicht gefunden"
+    assert "e.stopPropagation();" in m.group(1)
 
 
 def test_ersatzanzeige_wartet_auf_die_bestaetigung():

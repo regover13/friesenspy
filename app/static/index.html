@@ -414,6 +414,34 @@
        Aussehen wie vorher, nicht nur "aehnlich"). Self-hosted statt Font-Emoji, damit es auch in
        Coherent GT (MSFS-EFB-Panel, kein Emoji-Font-Fallback) korrekt rendert. */
     .emoji-icon { width: 1.15em; height: 1.15em; vertical-align: -0.2em; display: inline-block; }
+    /* Kategorie-Schalter im Panel: Knoepfe, keine Kontrollkaestchen (s. Kommentar am Markup).
+       Bewusst schlicht -- der Zustand steht als Text im Kaestchen, nicht in einer Farbe oder
+       Form, die die Engine womoeglich auch nicht zeichnet. */
+    .panel-notif-schalter {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      padding: 7px 0;
+      margin: 0;
+      color: var(--text-bright);
+      font-family: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+      min-height: 44px;
+    }
+    .panel-notif-kasten {
+      font-family: var(--text-mono);
+      color: var(--text-label);
+      margin-right: 6px;
+    }
+    .panel-notif-schalter.an .panel-notif-kasten { color: var(--green); }
+
+    /* Von den zwei Glocken im Knopf ist immer genau eine sichtbar (s. Kommentar am Knopf). */
+    .notif-glocke-panel { display: none; }
+    html.vr-panel .notif-glocke-panel { display: inline-block; }
+    html.vr-panel .notif-glocke-web { display: none; }
 
     :root {
       --bg-body:      #04080f;
@@ -2675,7 +2703,13 @@
         <span id="userName" style="color:#fff;font-family:ui-monospace,monospace;"></span>
       </span>
       <a href="https://github.com/regover13/friesenspy#readme" target="_blank" rel="noopener" class="help-btn" title="Hilfe &amp; Dokumentation (GitHub)">? HILFE</a>
-      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img class="emoji-icon" src="/static/emoji/bell.svg" alt="" /></button>
+      <!-- Zwei Glocken, eine sichtbar: Die Twemoji-Grafik ist ein fertiges Bild und nimmt
+           keine Farbe an; im Panel zeigt die Glocke aber ueber ihre Farbe den
+           Verbindungszustand, dort braucht es das Sprite-Symbol mit currentColor. Beide
+           stehen fest im Markup und werden per CSS umgeschaltet -- nicht per JavaScript
+           erzeugt: ein per innerHTML eingesetztes <svg> blieb in Coherent GT unsichtbar
+           (Sim-Fund 14.08.2026). -->
+      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img class="emoji-icon notif-glocke-web" src="/static/emoji/bell.svg" alt="" /><svg class="icon notif-glocke-panel"><use href="#icon-bell"/></svg></button>
       <div id="sse-badge" class="sse-badge disconnected">
         <div class="sse-dot"></div>
         <span class="sse-label" id="sse-label">GETRENNT</span>
@@ -2693,19 +2727,23 @@
          Schalter, gespeichert im Tablet. Wer NICHT will, dass ueber ihn benachrichtigt wird,
          regelt das weiterhin unter "Wer darf ueber mich benachrichtigt werden?" -- das wirkt
          serverseitig und gilt hier genauso. -->
+    <!-- Knoepfe mit ASCII-Kaestchen statt <input type="checkbox">: Im Tablet zeigten die
+         nativen Kaestchen ihren Zustand nicht an (Sim-Fund 14.08.2026) -- angehakt und nicht
+         angehakt sahen gleich aus, die Schalter waren damit unbrauchbar. [X] und [ ] sind
+         reiner Text und damit das Einzige, was in dieser Engine sicher erscheint. -->
     <div id="panel-notif" hidden>
-      <label class="notif-toggle-row">
-        <input type="checkbox" id="panel-notif-online" checked> Wenn jemand online geht
-      </label>
-      <label class="notif-toggle-row" style="margin-top:8px;">
-        <input type="checkbox" id="panel-notif-prefile" checked> Bei eingereichten Flugplänen
-      </label>
-      <label class="notif-toggle-row" style="margin-top:8px;">
-        <input type="checkbox" id="panel-notif-ts" checked> <svg class="icon"><use href="#icon-headset"/></svg> Bei TeamSpeak-Beitritt
-      </label>
-      <label class="notif-toggle-row" style="margin-top:8px;">
-        <input type="checkbox" id="panel-notif-events" checked> <svg class="icon"><use href="#icon-calendar"/></svg> Events (Erinnerung, Bummel, Kutter)
-      </label>
+      <button type="button" class="panel-notif-schalter" id="panel-notif-online" data-art="online">
+        <span class="panel-notif-kasten">[ ]</span> Wenn jemand online geht
+      </button>
+      <button type="button" class="panel-notif-schalter" id="panel-notif-prefile" data-art="prefile">
+        <span class="panel-notif-kasten">[ ]</span> Bei eingereichten Flugplänen
+      </button>
+      <button type="button" class="panel-notif-schalter" id="panel-notif-ts" data-art="ts">
+        <span class="panel-notif-kasten">[ ]</span> <svg class="icon"><use href="#icon-headset"/></svg> Bei TeamSpeak-Beitritt
+      </button>
+      <button type="button" class="panel-notif-schalter" id="panel-notif-events" data-art="events">
+        <span class="panel-notif-kasten">[ ]</span> <svg class="icon"><use href="#icon-calendar"/></svg> Events (Erinnerung, Bummel, Kutter)
+      </button>
       <div class="notif-hint" style="color:var(--text-dim); margin-top:10px;">
         Erscheint im Tablet, solange der Simulator läuft und FriesenSpy geladen ist.
       </div>
@@ -4617,10 +4655,25 @@ function _initPanelShellKanal() {
   setTimeout(() => {
     if (_panelShellDa === null) _panelShellDa = false;
     if (typeof window._panelDiag === 'function') {
+      // Sichtbarkeit der Bedienelemente mitmessen. Der Sim-Fund vom 14.08.2026 (Glocke gar
+      // nicht gezeichnet, Kaestchen ohne erkennbaren Zustand) war von aussen nicht zu sehen --
+      // "ist im DOM" und "wird gezeichnet" sind in dieser Engine zwei verschiedene Dinge.
+      const masse = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { b: Math.round(r.width), h: Math.round(r.height), oben: Math.round(r.top),
+                 links: Math.round(r.left) };
+      };
+      const glocke = document.getElementById('notif-btn');
       window._panelDiag('shell', {
         shellAntwortet: _panelShellDa,
         imIframe: window.self !== window.top,
         schalter: _panelNotifyEinstellung(),
+        glocke: masse(glocke),
+        glockeSymbol: masse(glocke && glocke.querySelector('.notif-glocke-panel')),
+        glockeInLeiste: !!(glocke && glocke.parentElement
+                           && glocke.parentElement.id === 'panel-topbar'),
+        schalterKasten: masse(document.querySelector('.panel-notif-kasten')),
       });
     }
   }, 5000);
@@ -4634,12 +4687,23 @@ function _panelNotifyPanelAufbauen() {
   const zustand = _panelNotifyEinstellung();
   for (let i = 0; i < _PANEL_NOTIFY_ARTEN.length; i++) {
     const art = _PANEL_NOTIFY_ARTEN[i];
-    const cb = document.getElementById('panel-notif-' + art);
-    if (!cb) continue;
-    cb.checked = zustand[art];
-    if (!cb.dataset.gebunden) {
-      cb.dataset.gebunden = '1';
-      cb.addEventListener('change', () => _panelNotifySetzen(art, cb.checked));
+    const knopf = document.getElementById('panel-notif-' + art);
+    if (!knopf) continue;
+    const kasten = knopf.querySelector('.panel-notif-kasten');
+    const zeichnen = (an) => {
+      if (kasten) kasten.textContent = an ? '[X]' : '[ ]';
+      knopf.classList.toggle('an', an);
+    };
+    zeichnen(zustand[art]);
+    if (!knopf.dataset.gebunden) {
+      knopf.dataset.gebunden = '1';
+      knopf.addEventListener('click', (e) => {
+        // Sonst schliesst der Klick ueber den document-Handler gleich das ganze Fenster.
+        e.stopPropagation();
+        const neu = !_panelNotifyEinstellung()[art];
+        _panelNotifySetzen(art, neu);
+        zeichnen(neu);
+      });
     }
   }
 }
@@ -7968,9 +8032,9 @@ function _initPanelBackButton() {
     // damit setSSEStatus unveraendert weiterschreiben kann (eine Wahrheit, kein Sonderweg).
     const glocke = document.getElementById('notif-btn');
     if (glocke) {
-      // Die Twemoji-Grafik nimmt keine Farbe an (fertiges Bild). Im Panel deshalb das
-      // Sprite-Symbol, das `currentColor` folgt -- auf der Website bleibt die bunte Glocke.
-      glocke.innerHTML = icon('bell');
+      // Welche der beiden Glocken im Knopf sichtbar ist, entscheidet CSS (s. dort) -- hier
+      // wird NICHTS erzeugt: ein per innerHTML eingesetztes <svg> blieb in Coherent GT
+      // unsichtbar, obwohl dieselbe Sprite-Referenz im festen Markup einwandfrei rendert.
       glocke.hidden = false;
       topbar.appendChild(glocke);
     }
