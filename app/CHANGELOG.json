@@ -1,5 +1,15 @@
 [
   {
+    "version": "12.5.3",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Kartenflackern in VR: die Ursache steht",
+    "items": [
+      "🗺️ Im Cockpit-Kniebrett flackerte die Karte in VR so stark, dass sie unbrauchbar war — die Luftraum-Ebene darüber aber nie. Ihr einziger Unterschied: eine Deckkraft knapp unter 100 %, was der Engine eine eigene Zeichenebene abringt. Die Kartenebenen bekommen jetzt dasselbe.",
+      "🔬 Zur Sicherheit läuft die Gegenprobe mit: Die Luftraum-Ebene liegt vorübergehend auf voller Deckkraft und müsste damit ihrerseits anfangen zu flackern. Danach geht sie zurück auf ihren alten Wert."
+    ]
+  },
+  {
     "version": "12.5.2",
     "date": "2026-08-14",
     "highlight": false,

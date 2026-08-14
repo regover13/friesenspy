@@ -915,6 +915,30 @@ def test_schriftzug_sitzt_zwischen_glocke_und_uhr_des_tablets():
     assert "justify-content: center;" in rumpf
 
 
+def test_kachelebenen_bekommen_im_panel_eine_eigene_zeichenebene():
+    """Der Kern der VR-Flacker-Suche: Das OpenAIP-Overlay flackerte als einzige Ebene NICHT,
+    und sein einziger Unterschied war `opacity: 0.8`. Leaflet setzt den Stil nur bei einem
+    Wert unter 1 (GridLayer._initContainer), eine Flaeche mit Deckkraft unter 1 bekommt in
+    WebKit eine eigene Zeichenebene. Die Basisebenen muessen im Panel deshalb ebenfalls unter
+    1 liegen -- und auf der Website unveraendert bei 1 bleiben, dort hat nie etwas
+    geflackert."""
+    assert "const _BASIS_DECKKRAFT = _PANEL_MODUS ? 0.99 : 1;" in INDEX
+    m = re.search(r"function _makeTileLayers\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_makeTileLayers nicht gefunden"
+    rumpf = m.group(1)
+    assert rumpf.count("opacity: d") == 5, \
+        "nicht alle fuenf Basisebenen bekommen die Deckkraft aus der Konstante"
+
+
+def test_aip_overlay_haengt_an_derselben_konstante():
+    """Die feste 0.8 im Overlay ist der Grund, warum ausgerechnet DIESE Ebene stabil war.
+    Sie darf nicht fest verdrahtet bleiben: Solange die Ursache geprueft wird, laeuft
+    darueber die Gegenprobe, und danach bleibt es die eine Stelle, an der die Deckkraft der
+    Ebenen im Panel steht."""
+    assert "opacity: _AIP_DECKKRAFT," in INDEX
+    assert "const _AIP_DECKKRAFT   = _PANEL_MODUS ? 1 : 0.8;" in INDEX
+
+
 def test_zeichen_takt_bleibt_im_panel():
     """Die zwei Messkaesten der Flacker-Suche (M auf der Karte, P daneben) sind ein
     Diagnosemittel, kein Bestandteil der Website. Grundzustand ist deshalb `display: none`,
