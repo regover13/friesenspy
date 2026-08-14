@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.5.1",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Schriftzug sitzt jetzt richtig",
+    "items": [
+      "🛩️ Der FriesenSpy-Schriftzug war über die ganze Leistenbreite mittig gesetzt und landete dadurch unter der Uhrzeit des Tablets. Er sitzt jetzt mittig im freien Streifen zwischen dessen Glocke und der Uhr — und in voller Farbe statt halbdurchsichtig."
+    ]
+  },
+  {
     "version": "12.5.0",
     "date": "2026-08-14",
     "highlight": false,

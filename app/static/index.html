@@ -1229,17 +1229,22 @@
          (Nutzerwunsch 14.08.2026, mit Skizze). Der Streifen war ohnehin fuer den Abstand
          reserviert; so traegt er etwas, statt leer zu sein. Und weil hier keine
          Beschriftung mehr darueberliegt, darf der Schriftzug endlich kraeftig sein. */
-      top: 0; right: 0; left: 0;
+      /* Mittig im FREIEN Streifen, nicht in der Leistenmitte: Links steht die Glocke der
+         EFB-Oberflaeche (endet bei ~14% der Breite), rechts Datum/Uhrzeit (beginnt bei ~56%,
+         aus dem Nutzer-Foto ausgemessen). Zentriert man ueber die volle Breite, landet der
+         Schriftzug unter der Uhrzeit. Prozent statt Pixel, weil die Statusleiste des Tablets
+         mit dessen Groesse skaliert -- gemessene Breite dort: 748 CSS-Pixel. */
+      top: 0; left: 14%; right: 44%;
       height: 26px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-family: var(--text-display);
       font-weight: 700;
-      font-size: 1.05rem;
-      letter-spacing: 0.3em;
+      font-size: 1.15rem;
+      letter-spacing: 0.28em;
       color: var(--green);
-      opacity: 0.75;
+      opacity: 1;
       pointer-events: none;
     }
     /* Platz fuer die jetzt IMMER sichtbare Leiste -- anders als beim frueheren Zurueck-Balken

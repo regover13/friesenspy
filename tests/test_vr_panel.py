@@ -898,3 +898,18 @@ def test_tabs_fuellen_die_leiste_wenn_kein_zurueck_knopf_da_ist():
     (Nutzerwunsch 14.08.2026). Ueber den Geschwister-Kombinator, weil der Knopf im Markup vor
     den Tabs steht: kein JavaScript noetig, der Zustand steht im hidden-Attribut."""
     assert "html.vr-panel .panel-topbar .panel-back-btn[hidden] ~ .tab-btn { flex: 1 1 0; }" in INDEX
+
+
+def test_schriftzug_sitzt_zwischen_glocke_und_uhr_des_tablets():
+    """Nicht ueber die volle Leistenbreite zentrieren: Links sitzt die Glocke der
+    EFB-Oberflaeche, rechts Datum/Uhrzeit -- ueber die ganze Breite mittig landet der
+    Schriftzug unter der Uhrzeit (Nutzer, 14.08.2026). Er wird deshalb auf den freien
+    Streifen dazwischen eingegrenzt und DORT zentriert."""
+    m = re.search(r"html\.vr-panel \.panel-topbar::before \{([^}]*)\}", INDEX, re.S)
+    assert m, "Schriftzug-Pseudoelement nicht gefunden"
+    rumpf = m.group(1)
+    assert "left: 0;" not in rumpf and "right: 0;" not in rumpf, \
+        "Schriftzug spannt ueber die ganze Leiste statt ueber den freien Streifen"
+    assert re.search(r"left: \d+%;", rumpf), "kein linker Rand fuer den freien Streifen"
+    assert re.search(r"right: \d+%;", rumpf), "kein rechter Rand fuer den freien Streifen"
+    assert "justify-content: center;" in rumpf
