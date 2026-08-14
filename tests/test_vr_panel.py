@@ -864,7 +864,10 @@ def test_panel_leiste_ist_englisch_beschriftet():
     assert "_PANEL_TAB_TEXT = { live: 'LIVE', karte: 'MAP', statistiken: 'STATS', events: 'EVENTS' }" in INDEX
     assert "_panelBeschriftung(btn, 'BACK')" in INDEX
     # Die Website behaelt ihre deutschen Beschriftungen.
-    assert 'data-tab="statistiken"><svg class="icon"><use href="#icon-crosshatch"/></svg> STATISTIKEN' in INDEX
+    # Nur die Beschriftung festnageln, nicht das Symbol-Markup dazwischen -- sonst bricht der
+    # Test bei jeder Aenderung an den Sprite-Verweisen (passiert beim xlink-Fix).
+    assert re.search(r'data-tab="statistiken">.*?STATISTIKEN', INDEX), \
+        "die Website muss ihre deutschen Tab-Beschriftungen behalten"
     assert 'Zur&uuml;ck</button>' in INDEX
 
 
@@ -955,3 +958,49 @@ def test_zeichen_takt_ist_wieder_ausgebaut():
     Messobjekt veraendert, darf nicht liegenbleiben."""
     assert "_diagZeichnen" not in INDEX, "Takt-Funktion oder ihr Aufruf sind noch da"
     assert "panel-takt" not in INDEX, "CSS der Messkaesten ist noch da"
+
+
+def test_jedes_use_hat_xlink_fallback():
+    """Jeder Sprite-Verweis braucht BEIDE Attribute -- sonst ist im Kniebrett kein einziges
+    Symbol zu sehen.
+
+    Coherent GT meldet sich als "Chrome/49.0.2623 ... CoherentGT/2.0" (gemessener User-Agent
+    aus panel_diag). Das SVG-2-Attribut `href` am <use>-Element kennt Chrome aber erst ab
+    Version 50 (MDN browser-compat-data, svg.elements.use.href) -- eine Version zu spaet. Das
+    alte `xlink:href` versteht jede Version, und sind beide gesetzt, gewinnt `href`; moderne
+    Browser aendern sich also nicht.
+
+    Der Fehler war lange unsichtbar, weil er wie ein Layout-Problem aussah: Der Knopf ist da,
+    das <svg> hat seine Groesse, nur gezeichnet wird nichts. Deshalb prueft dieser Test die
+    GANZE Datei und nicht einzelne Stellen -- ein einziges vergessenes `xlink:href` faellt im
+    Browser nicht auf und im Tablet sofort."""
+    ohne_fallback = re.findall(r'<use href="(#icon-[a-z0-9-]+)"(?![^>]*xlink:href)', INDEX)
+    assert not ohne_fallback, (
+        "Diese Verweise haben kein xlink:href und sind im Panel unsichtbar: "
+        + ", ".join(sorted(set(ohne_fallback)))
+    )
+    # Auch der dynamische Weg ueber icon() -- er erzeugt die meisten Symbole der App.
+    m = re.search(r"function icon\(name\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "icon() nicht gefunden"
+    assert "xlink:href" in m.group(1), "icon() erzeugt Symbole ohne xlink:href-Fallback"
+
+
+def test_jedes_referenzierte_symbol_ist_definiert():
+    """Ein Verweis auf ein nicht vorhandenes <symbol> zeichnet nichts -- und faellt genauso
+    wenig auf wie der xlink-Fehler oben. Deshalb hier mitgeprueft."""
+    definiert = set(re.findall(r'<symbol id="(icon-[a-z0-9-]+)"', INDEX))
+    referenziert = set(re.findall(r'<use href="#(icon-[a-z0-9-]+)"', INDEX))
+    fehlend = referenziert - definiert
+    assert not fehlend, f"referenziert, aber nirgends definiert: {sorted(fehlend)}"
+
+
+def test_sprite_messung_ist_im_bericht():
+    """Der Beleg fuer den Fix. Die Glyphen-Messung zeigt nur, dass die ZEICHEN fehlen (⛶, ✕)
+    -- dass die SVG-Ersatzsymbole ankommen, hat vorher niemand gemessen, und genau dort lag
+    der Fehler. probeSprites vergleicht href gegen xlink:href und misst zusaetzlich ein
+    Symbol aus dem echten Markup."""
+    assert "function probeSprites()" in INDEX
+    assert "base.sprites = probeSprites();" in INDEX, "Messung laeuft, geht aber nicht in den Bericht"
+    # getBBox statt getBoundingClientRect: das aeussere <svg> hat seine Groesse immer, nur die
+    # Bounding-Box des INHALTS ist 0, wenn der Verweis ins Leere lief.
+    assert "getBBox()" in INDEX, "ohne getBBox misst die Probe nur den leeren Rahmen"

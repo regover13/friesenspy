@@ -86,6 +86,75 @@
         return out;
       }
 
+      /**
+       * Kommen die Sprite-Symbole ueberhaupt an?
+       *
+       * Die Glyphen-Messung oben beantwortet nur die halbe Frage: Sie zeigt, dass ⛶/✕/→ als
+       * Tofu-Kaesten rendern -- deshalb wurden sie durch SVG ersetzt. Ob die ERSATZ-Symbole
+       * ankommen, hat nie jemand nachgemessen, und genau dort lag der Fehler: Coherent GT ist
+       * Chrome 49, das SVG-2-Attribut `href` am <use> gibt es erst ab Chrome 50 (MDN
+       * browser-compat-data). Ohne `xlink:href` blieb JEDES Symbol der App unsichtbar.
+       *
+       * Diese Messung beweist beides in einem Zug: `mitHref` ist die Breite dessen, was ein
+       * <use href=...> zeichnet, `mitXlink` dasselbe mit dem alten Attribut. In Coherent GT
+       * war die erste Zahl 0 und die zweite groesser 0 -- im normalen Browser sind beide
+       * groesser 0. `echterKnopf` misst zusaetzlich ein Symbol aus dem echten Markup, damit
+       * die Aussage nicht nur fuer ein Laborelement gilt.
+       *
+       * getBBox() ist hier das richtige Mass, nicht getBoundingClientRect(): Das aeussere
+       * <svg> hat seine 1em immer, egal ob darin etwas gezeichnet wird. Nur die Bounding-Box
+       * des INHALTS ist 0, wenn der Verweis ins Leere lief -- das war der Punkt, an dem die
+       * fruehere Messung ("Knopf 44x44, SVG 20x20, richtig platziert") stehen blieb.
+       */
+      function probeSprites() {
+        var out = {};
+        function inhaltsBreite(svg) {
+          try {
+            var u = svg.firstChild;
+            var b = u.getBBox();
+            return Math.round(b.width * 100) / 100;
+          } catch (e) { return -1; }   // -1 = nicht messbar, klar unterscheidbar von 0
+        }
+        var halter = document.createElement('div');
+        halter.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;top:0;';
+        // Bewusst ein Symbol, das es sicher gibt und das gefuellte Flaeche hat. Die beiden
+        // Verweise sind absichtlich EINZELN gesetzt -- nur so laesst sich die Frage
+        // beantworten, welches Attribut die Engine versteht. Zusammengesetzt statt am Stueck
+        // geschrieben, damit der Test, der ueberall xlink:href verlangt, hier nicht anschlaegt
+        // (diese zwei Sonden sind die einzige Stelle, an der ein einzelnes Attribut korrekt ist).
+        var ziel = '"#icon-diamond"';
+        halter.innerHTML =
+          '<svg width="32" height="32"><use ' + 'href=' + ziel + '/></svg>' +
+          '<svg width="32" height="32"><use ' + 'xlink:href=' + ziel + '/></svg>';
+        document.body.appendChild(halter);
+        var svgs = halter.getElementsByTagName('svg');
+        out.mitHref  = svgs.length > 0 ? inhaltsBreite(svgs[0]) : -1;
+        out.mitXlink = svgs.length > 1 ? inhaltsBreite(svgs[1]) : -1;
+        halter.parentNode.removeChild(halter);
+
+        // Ein Symbol aus dem echten Markup -- Laborwert und Wirklichkeit sollen
+        // uebereinstimmen. Die Auswahl ist heikler als sie aussieht: getBBox() liefert fuer
+        // nicht gerenderte Elemente 0, und viele .icon-Traeger der Seite sind beim Start
+        // ausgeblendet (Banner, Modale, der Zurueck-Knopf selbst). Ein blind gegriffenes
+        // Element haette also 0 gemeldet und den Fehler vorgetaeuscht, den es messen soll.
+        // Deshalb: erstes .icon, das WIRKLICH gerendert wird und ein <use> als Kind hat.
+        try {
+          var kandidaten = document.querySelectorAll('svg.icon');
+          out.echterKnopf = null;
+          for (var i = 0; i < kandidaten.length; i++) {
+            var sv = kandidaten[i];
+            var kind = sv.firstChild;
+            if (!kind || String(kind.nodeName).toLowerCase() !== 'use') continue;
+            if (sv.getBoundingClientRect().width <= 0) continue;   // ausgeblendet
+            out.echterKnopf = inhaltsBreite(sv);
+            out.echterKnopfZiel = kind.getAttribute('href') || kind.getAttribute('xlink:href');
+            break;
+          }
+        } catch (e) { out.echterKnopf = -1; }
+
+        return out;
+      }
+
       /** Misst, ob breite Tabellen wirklich über ihren Rahmen hinauswachsen (Scroll-Frage). */
       function probeTables() {
         var out = [];
@@ -336,6 +405,7 @@
           events: events
         };
         try { base.glyphs = probeGlyphs(); } catch (err) { base.glyphs = { error: String(err) }; }
+        try { base.sprites = probeSprites(); } catch (err) { base.sprites = { error: String(err) }; }
         try { base.fonts = probeFonts(); } catch (err) { base.fonts = { error: String(err) }; }
         try { base.tables = probeTables(); } catch (err) { base.tables = { error: String(err) }; }
 
@@ -405,7 +475,23 @@
     /* Self-gehostete Ersatz-Icons für Emoji/Symbol-Unicode: Coherent GT (MSFS-EFB-Panel) hat
        keinen Font-Fallback für Nicht-Latin-Glyphen -- Emojis rendern dort als leere Tofu-Boxen
        (echter Live-Test-Absturz-Fund). Sprite-Defs direkt nach <body>, Verwendung überall via
-       <svg class="icon"><use href="#icon-name"/></svg> statt Emoji. */
+       <svg class="icon"><use href="#icon-NAME" xlink:href="#icon-NAME"/></svg> statt Emoji.
+
+       BEIDE Verweis-Attribute sind Pflicht, und zwar aus einem gemessenen Grund (14.08.2026):
+       Das Panel meldet sich als "Chrome/49.0.2623 ... CoherentGT/2.0" (echter User-Agent aus
+       panel_diag, kind='report'). Das SVG-2-Attribut `href` am <use>-Element kennt Chrome aber
+       erst ab Version 50 (MDN browser-compat-data, svg.elements.use.href: chrome 50, safari
+       12.1); das alte `xlink:href` versteht jede Version. Mit NUR `href` war deshalb im
+       Kniebrett KEIN EINZIGES Sprite-Symbol zu sehen -- der Zurueck-Pfeil nicht, die
+       Schliessen-Kreuze nicht, das Vollbild-Zeichen nicht. Gemessen wurde das schon vorher
+       (Glocke: "Knopf 44x44, SVG 20x20, richtig platziert, nur eben nichts gezeichnet"), nur
+       die Ursache war unbekannt, und es blieb bei einem inline gezeichneten Einzelfall.
+
+       Das ist auch die Erklaerung dafuer, warum der ganze Icon-Umbau (Phase 1) das Problem nie
+       geloest hat: Die fehlenden Schriftzeichen wurden korrekt durch SVG ersetzt -- die
+       Ersatz-SVGs kamen im Tablet nur nie an. Sind beide Attribute gesetzt, gewinnt `href`
+       (SVG-2-Regel), moderne Browser sind also unveraendert. Wer `xlink:href` wieder entfernt,
+       macht das Tablet erneut blind: der Test `test_jedes_use_hat_xlink_fallback` haelt dagegen. */
     .icon { width: 1em; height: 1em; vertical-align: -0.125em; display: inline-block; fill: none; }
     .airport-link-icon { margin-left: 4px; }
     /* Selbst gehostete Twemoji-Grafiken (Zwölftausendneunhundert Twitter, Inc und andere
@@ -2770,7 +2856,7 @@
        ===================================================================== -->
   <header>
     <div class="logo">
-      <span class="logo-prefix"><svg class="icon"><use href="#icon-diamond"/></svg></span>FRIESENSPY
+      <span class="logo-prefix"><svg class="icon"><use href="#icon-diamond" xlink:href="#icon-diamond"/></svg></span>FRIESENSPY
     </div>
     <div class="header-right">
       <span id="userBox" hidden style="display:inline-flex;gap:8px;align-items:center;font-size:.8rem;">
@@ -2783,10 +2869,18 @@
            ZWEI Sim-Funde vom 14.08.2026 stecken in dieser einen Zeile:
            1. Per innerHTML eingesetztes <svg> blieb unsichtbar -> beide stehen fest im Markup.
            2. Auch fest im Markup blieb die <use>-Fassung unsichtbar -- gemessen: Knopf 44x44,
-              SVG 20x20, richtig platziert, nur eben nichts gezeichnet. Deshalb hier als
-              EINZIGES Icon der App der Pfad direkt inline statt per Sprite-Verweis. Wer das
-              wieder auf <use href="#icon-bell"> umstellt, macht die Glocke im Tablet erneut
-              unsichtbar. -->
+              SVG 20x20, richtig platziert, nur eben nichts gezeichnet.
+
+           Fund 2 ist inzwischen an der Wurzel geklaert und behoben: Coherent GT ist Chrome 49
+           und kennt `href` am <use> noch nicht (erst ab 50), es fehlte schlicht `xlink:href`
+           -- s. der ausfuehrliche Kommentar bei `.icon` im Stylesheet. Betroffen war nicht nur
+           die Glocke, sondern JEDES Symbol der App.
+
+           Der inline gezeichnete Pfad bleibt hier trotzdem stehen, jetzt aber als bewusste
+           Wahl statt als Notloesung: Fund 1 (innerHTML) betrifft diese Stelle weiterhin, und
+           die Glocke ist der einzige Fall mit zwei Fassungen (Twemoji fuer die Website,
+           Vektor fuer den Verbindungszustand im Panel) -- ein Sprite-Verweis brauechte hier
+           also ohnehin eine Sonderbehandlung, ohne irgendetwas zu gewinnen. -->
       <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img class="emoji-icon notif-glocke-web" src="/static/emoji/bell.svg" alt="" /><svg class="icon notif-glocke-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 8 2 8H4s2-2 2-8"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg></button>
       <div id="sse-badge" class="sse-badge disconnected">
         <div class="sse-dot"></div>
@@ -2817,10 +2911,10 @@
         <span class="panel-notif-kasten">[ ]</span> Bei eingereichten Flugplänen
       </button>
       <button type="button" class="panel-notif-schalter" id="panel-notif-ts" data-art="ts">
-        <span class="panel-notif-kasten">[ ]</span> <svg class="icon"><use href="#icon-headset"/></svg> Bei TeamSpeak-Beitritt
+        <span class="panel-notif-kasten">[ ]</span> <svg class="icon"><use href="#icon-headset" xlink:href="#icon-headset"/></svg> Bei TeamSpeak-Beitritt
       </button>
       <button type="button" class="panel-notif-schalter" id="panel-notif-events" data-art="events">
-        <span class="panel-notif-kasten">[ ]</span> <svg class="icon"><use href="#icon-calendar"/></svg> Events (Erinnerung, Bummel, Kutter)
+        <span class="panel-notif-kasten">[ ]</span> <svg class="icon"><use href="#icon-calendar" xlink:href="#icon-calendar"/></svg> Events (Erinnerung, Bummel, Kutter)
       </button>
       <div class="notif-hint" style="color:var(--text-dim); margin-top:10px;">
         Erscheint im Tablet, solange der Simulator läuft und FriesenSpy geladen ist.
@@ -2834,10 +2928,10 @@
         <input type="checkbox" id="notif-prefiles" checked> Auch bei eingereichten Flugplänen
       </label>
       <label class="notif-toggle-row" style="margin-top:8px;">
-        <input type="checkbox" id="notif-ts"> <svg class="icon"><use href="#icon-headset"/></svg> Bei TeamSpeak-Beitritt benachrichtigen
+        <input type="checkbox" id="notif-ts"> <svg class="icon"><use href="#icon-headset" xlink:href="#icon-headset"/></svg> Bei TeamSpeak-Beitritt benachrichtigen
       </label>
       <label class="notif-toggle-row" style="margin-top:8px;">
-        <input type="checkbox" id="notif-events"> <svg class="icon"><use href="#icon-calendar"/></svg> Events (Erinnerung ~1 h vorher + Bummel-Start/Ergebnis)
+        <input type="checkbox" id="notif-events"> <svg class="icon"><use href="#icon-calendar" xlink:href="#icon-calendar"/></svg> Events (Erinnerung ~1 h vorher + Bummel-Start/Ergebnis)
       </label>
       <div class="notif-filter-title" style="margin-top:12px;">Benachrichtigen wenn (gilt für Online, Flugplan &amp; TeamSpeak):</div>
       <div class="notif-radio-row">
@@ -2850,7 +2944,7 @@
     <div id="visibility-section" hidden
          style="border-top:1px solid rgba(45,156,219,0.2); margin-top:14px; padding-top:10px;">
       <a href="#" id="visibility-toggle"
-         style="color:var(--green); cursor:pointer; text-decoration:none; font-size:0.82rem; font-weight:500;"><svg class="icon"><use href="#icon-lock"/></svg> Wer darf über mich benachrichtigt werden? <span id="visibility-caret"><svg class="icon"><use href="#icon-caret-right"/></svg></span></a>
+         style="color:var(--green); cursor:pointer; text-decoration:none; font-size:0.82rem; font-weight:500;"><svg class="icon"><use href="#icon-lock" xlink:href="#icon-lock"/></svg> Wer darf über mich benachrichtigt werden? <span id="visibility-caret"><svg class="icon"><use href="#icon-caret-right" xlink:href="#icon-caret-right"/></svg></span></a>
       <div id="visibility-body" class="notif-filter-section" hidden style="margin-top:10px;">
         <div class="notif-radio-row">
           <label><input type="radio" name="visibility-mode" value="everyone" checked> Alle</label>
@@ -2872,7 +2966,7 @@
     </div>
     <div id="notif-ios-hint" class="notif-hint" hidden>
       Für Benachrichtigungen auf dem iPhone:<br>
-      Tippe auf <strong><svg class="icon"><use href="#icon-share"/></svg></strong> - <strong>Zum Home-Bildschirm</strong>
+      Tippe auf <strong><svg class="icon"><use href="#icon-share" xlink:href="#icon-share"/></svg></strong> - <strong>Zum Home-Bildschirm</strong>
     </div>
     <div id="notif-blocked-hint" class="notif-hint" hidden>
       Benachrichtigungen blockiert.<br>Bitte in den Browser-Einstellungen erlauben.
@@ -2885,36 +2979,36 @@
        PWA INSTALL BANNER
        ===================================================================== -->
   <div id="install-banner" class="install-banner" hidden>
-    <span class="install-banner-icon"><svg class="icon"><use href="#icon-phone"/></svg></span>
+    <span class="install-banner-icon"><svg class="icon"><use href="#icon-phone" xlink:href="#icon-phone"/></svg></span>
     <div class="install-banner-text">
       <strong>FriesenSpy als App installieren</strong>
       <span id="install-banner-sub">Schneller Zugriff vom Startbildschirm – mit Benachrichtigungen.</span>
     </div>
     <button id="install-banner-btn" class="install-banner-btn">Installieren</button>
-    <button id="install-banner-close" class="install-banner-close" title="Ausblenden"><svg class="icon"><use href="#icon-x"/></svg></button>
+    <button id="install-banner-close" class="install-banner-close" title="Ausblenden"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
   </div>
 
   <!-- =====================================================================
        CHANGELOG BANNER (Neuerungen dieser Version)
        ===================================================================== -->
   <div id="changelog-banner" class="install-banner changelog-banner" hidden>
-    <span class="install-banner-icon"><svg class="icon"><use href="#icon-sparkle"/></svg></span>
+    <span class="install-banner-icon"><svg class="icon"><use href="#icon-sparkle" xlink:href="#icon-sparkle"/></svg></span>
     <div class="install-banner-text">
       <strong id="changelog-banner-title">Neu</strong>
       <span id="changelog-banner-sub"></span>
     </div>
     <button id="changelog-banner-more" class="install-banner-btn">Verlauf</button>
-    <button id="changelog-banner-close" class="install-banner-close" title="Ausblenden"><svg class="icon"><use href="#icon-x"/></svg></button>
+    <button id="changelog-banner-close" class="install-banner-close" title="Ausblenden"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
   </div>
 
   <!-- =====================================================================
        TAB NAVIGATION
        ===================================================================== -->
   <nav class="tab-nav">
-    <button class="tab-btn active" data-tab="live"><svg class="icon"><use href="#icon-hexagon"/></svg> LIVE</button>
-    <button class="tab-btn" data-tab="karte"><svg class="icon"><use href="#icon-bullseye"/></svg> KARTE</button>
-    <button class="tab-btn" data-tab="statistiken"><svg class="icon"><use href="#icon-crosshatch"/></svg> STATISTIKEN</button>
-    <button class="tab-btn" data-tab="events"><svg class="icon"><use href="#icon-diamond"/></svg> EVENTS</button>
+    <button class="tab-btn active" data-tab="live"><svg class="icon"><use href="#icon-hexagon" xlink:href="#icon-hexagon"/></svg> LIVE</button>
+    <button class="tab-btn" data-tab="karte"><svg class="icon"><use href="#icon-bullseye" xlink:href="#icon-bullseye"/></svg> KARTE</button>
+    <button class="tab-btn" data-tab="statistiken"><svg class="icon"><use href="#icon-crosshatch" xlink:href="#icon-crosshatch"/></svg> STATISTIKEN</button>
+    <button class="tab-btn" data-tab="events"><svg class="icon"><use href="#icon-diamond" xlink:href="#icon-diamond"/></svg> EVENTS</button>
   </nav>
 
   <!-- =====================================================================
@@ -2946,7 +3040,7 @@
       </div>
     </div>
     <div id="ts-panel" class="panel" style="margin-top:16px;" hidden>
-      <div class="panel-title" id="ts-panel-title"><svg class="icon"><use href="#icon-headset"/></svg> Im TeamSpeak</div>
+      <div class="panel-title" id="ts-panel-title"><svg class="icon"><use href="#icon-headset" xlink:href="#icon-headset"/></svg> Im TeamSpeak</div>
       <div id="ts-content"></div>
     </div>
   </div>
@@ -2957,12 +3051,12 @@
   <div id="tab-karte" class="tab-panel">
     <div id="map-container">
       <div id="leaflet-map"></div>
-      <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('map-container', this, () => liveMap)"><svg class="icon"><use href="#icon-fullscreen"/></svg> Vollbild</button>
+      <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('map-container', this, () => liveMap)"><svg class="icon"><use href="#icon-fullscreen" xlink:href="#icon-fullscreen"/></svg> Vollbild</button>
     </div>
     <div class="panel" style="margin-top:16px;">
       <div class="panel-title">Karten-Legende</div>
       <span class="mono text-green" style="font-size:0.8rem;">
-        <svg class="icon"><use href="#icon-diamond"/></svg> Flugzeug-Marker rotieren mit dem aktuellen Heading · Klick für Details
+        <svg class="icon"><use href="#icon-diamond" xlink:href="#icon-diamond"/></svg> Flugzeug-Marker rotieren mit dem aktuellen Heading · Klick für Details
       </span>
     </div>
   </div>
@@ -3065,11 +3159,11 @@
     <div id="events-results" class="hidden">
       <div id="events-map-container" style="position:relative;">
         <div id="events-leaflet-map"></div>
-        <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('events-map-container', this, () => eventsMap)"><svg class="icon"><use href="#icon-fullscreen"/></svg> Vollbild</button>
+        <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('events-map-container', this, () => eventsMap)"><svg class="icon"><use href="#icon-fullscreen" xlink:href="#icon-fullscreen"/></svg> Vollbild</button>
         <button id="ev-reset-btn" class="hidden"
           onclick="resetEventFlights()"
           style="position:absolute;top:10px;right:10px;z-index:1000;background:var(--bg-panel);border:1px solid var(--green-dim);color:var(--text-bright);font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.08em;padding:6px 12px;cursor:pointer;">
-          <svg class="icon"><use href="#icon-refresh"/></svg> Alle Tracks
+          <svg class="icon"><use href="#icon-refresh" xlink:href="#icon-refresh"/></svg> Alle Tracks
         </button>
       </div>
       <div class="panel">
@@ -3095,7 +3189,7 @@
       <span class="fp-callsign-title" id="fp-callsign-title">—</span>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
-        <button class="fp-close-btn" onclick="closeFpModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+        <button class="fp-close-btn" onclick="closeFpModal()"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
       </div>
     </div>
     <div class="fp-section">
@@ -3133,12 +3227,12 @@
       <span class="fp-callsign-title" id="track-modal-title">—</span>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
-        <button class="fp-close-btn" onclick="closeTrackModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+        <button class="fp-close-btn" onclick="closeTrackModal()"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
       </div>
     </div>
     <div id="track-map-wrap" style="height:460px;position:relative;">
       <div id="track-leaflet-map" style="width:100%;height:100%;"></div>
-      <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('track-map-wrap', this, () => trackMap)"><svg class="icon"><use href="#icon-fullscreen"/></svg> Vollbild</button>
+      <button class="map-fullscreen-btn" onclick="toggleMapFullscreen('track-map-wrap', this, () => trackMap)"><svg class="icon"><use href="#icon-fullscreen" xlink:href="#icon-fullscreen"/></svg> Vollbild</button>
     </div>
     <div class="fp-section" style="padding:10px 20px;">
       <div id="track-modal-info" class="text-label" style="font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.1em;"></div>
@@ -3153,7 +3247,7 @@
       <span class="fp-callsign-title" id="fld-callsign">—</span>
       <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn-share" onclick="copyShareUrl(this)">⎘ Teilen</button>
-        <button class="fp-close-btn" onclick="closeFldModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+        <button class="fp-close-btn" onclick="closeFldModal()"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
       </div>
     </div>
     <div class="fp-section">
@@ -3180,7 +3274,7 @@
     <div class="fp-modal-header">
       <span class="fp-callsign-title">Versionsverlauf</span>
       <button class="btn-share" style="margin-left:auto; margin-right:12px;" onclick="copyChangelogShareUrl(this)">⎘ Teilen</button>
-      <button class="fp-close-btn" onclick="closeChangelogModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+      <button class="fp-close-btn" onclick="closeChangelogModal()"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
     </div>
     <div class="fp-section" id="changelog-modal-body"></div>
   </div>
@@ -3192,7 +3286,7 @@
     <div class="fp-modal-header">
       <span class="fp-callsign-title">Alle Muster</span>
       <button class="btn-share" style="margin-left:auto; margin-right:12px;" onclick="copyTypesShareUrl(this)">⎘ Teilen</button>
-      <button class="fp-close-btn" onclick="closeTypesModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+      <button class="fp-close-btn" onclick="closeTypesModal()"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
     </div>
     <div class="fp-section">
       <div class="stats-controls" style="margin-bottom:0;">
@@ -3220,7 +3314,7 @@
            einer leeren Box. Er war die ganze Zeit vorhanden und klickbar -- nur unsichtbar,
            weshalb man aus der Muster-Ansicht scheinbar nicht mehr herauskam (Live-Test-Fund
            13.08.2026). Die uebrigen fuenf Modals nutzen bereits icon-x. -->
-      <button class="modal-close" onclick="closeAcModal()"><svg class="icon"><use href="#icon-x"/></svg></button>
+      <button class="modal-close" onclick="closeAcModal()"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
     </div>
     <div id="ac-body"></div>
   </div>
@@ -4820,8 +4914,10 @@ function _panelNotifyPanelAufbauen() {
 
 // Self-gehostetes SVG-Icon (Sprite-Defs direkt nach <body>) statt Emoji -- Coherent GT
 // (MSFS-EFB-Panel) hat keinen Font-Fallback für Nicht-Latin-Glyphen.
+// BEIDE Verweis-Attribute, und das ist kein Gürtel-und-Hosenträger, sondern der Unterschied
+// zwischen sichtbar und unsichtbar im Kniebrett -- s. der lange Kommentar bei den Sprite-Defs.
 function icon(name) {
-  return '<svg class="icon"><use href="#icon-' + name + '"/></svg>';
+  return '<svg class="icon"><use href="#icon-' + name + '" xlink:href="#icon-' + name + '"/></svg>';
 }
 
 // Self-gehostete Twemoji-Grafik statt handgezeichneter Icon-Naeherung -- s. .emoji-icon-Kommentar.
@@ -8222,8 +8318,8 @@ document.addEventListener('visibilitychange', async () => {
 });
 
 </script>
-<button id="panel-update-hint" class="panel-update-hint" hidden onclick="location.reload()"><svg class="icon"><use href="#icon-refresh"/></svg> Neue Version &ndash; neu laden</button>
-<button id="panel-back-btn" class="panel-back-btn" hidden onclick="panelGoBack()"><svg class="icon"><use href="#icon-arrow-left"/></svg> Zur&uuml;ck</button>
+<button id="panel-update-hint" class="panel-update-hint" hidden onclick="location.reload()"><svg class="icon"><use href="#icon-refresh" xlink:href="#icon-refresh"/></svg> Neue Version &ndash; neu laden</button>
+<button id="panel-back-btn" class="panel-back-btn" hidden onclick="panelGoBack()"><svg class="icon"><use href="#icon-arrow-left" xlink:href="#icon-arrow-left"/></svg> Zur&uuml;ck</button>
 <!-- Vereinheitlichte Kopf-/Tab-Leiste (nur MSFS-EFB-Panel, v11.15.0): leer im Markup, JS
      (_initPanelBackButton) haengt Zurueck-Knopf, die vier echten Tab-Buttons und die
      Verbindungsanzeige hier ein. Steht bewusst AUSSERHALB von #app (wie die drei Knoepfe

@@ -33,9 +33,16 @@ ssh server "sqlite3 /opt/friesenspy/data/friesenspy.db \
 oder als Admin über `GET /api/admin/panel-diag` (s. `docs/api.md`).
 
 **Was gemessen wird:** CSS-Unterstützung (`max-content`, `inset`, `gap`, `zoom`), Glyph-Breiten
-(erkennt fehlende Zeichen/Tofu-Kästchen), Wrapper- vs. Tabellenbreite (Scroll-Frage),
-Verfügbarkeit von `postMessage`/`localStorage`/`EventSource`, Ladeergebnis der Kartenkacheln
-sowie alle aufgelaufenen JavaScript-Fehler.
+(erkennt fehlende Zeichen/Tofu-Kästchen), **Sprite-Symbole** (s. u.), Wrapper- vs.
+Tabellenbreite (Scroll-Frage), Verfügbarkeit von `postMessage`/`localStorage`/`EventSource`,
+Ladeergebnis der Kartenkacheln sowie alle aufgelaufenen JavaScript-Fehler.
+
+**Feld `sprites`** (seit v12.5.7): Zeichnet ein `<use>` überhaupt etwas? `mitHref` und
+`mitXlink` sind die Bounding-Box-Breiten desselben Symbols, einmal über jedes Attribut
+angesprochen; `echterKnopf` misst zusätzlich ein Symbol aus dem laufenden Markup. In Coherent
+GT war `mitHref` **0** und `mitXlink` > 0 — der Beleg für den `xlink:href`-Fehler weiter unten.
+Gemessen wird `getBBox()` des Inhalts, nicht die Größe des `<svg>`: Der Rahmen hat seine Maße
+immer, auch wenn der Verweis ins Leere läuft. Genau daran war die frühere Messung gescheitert.
 
 **Datensatz `kind="shell"`** (seit v12.1.0): Beantwortet die Frage, ob `postMessage` die
 iframe-Grenze in Coherent GT tatsächlich überquert. Dass die Funktion *existiert*, ist gemessen
@@ -157,6 +164,7 @@ Jede davon stammt aus einem echten Live-Test, nicht aus Vermutung:
 | Chart.js 4.x (ES2022) | bricht komplett; bereits durch `try/catch` abgefangen |
 | Emoji-/Symbolzeichen | kein Font-Fallback → leere Kästchen (auch bei UI-Zeichen wie `×`!) |
 | SVG mit `<image>`-Referenz | Icon verschwindet; reine Vektor-SVGs funktionieren |
+| `<use href="…">` **ohne** `xlink:href` | zeichnet nichts — siehe unten, betraf **alle** Symbole der App |
 | `Cache-Control` | wird nicht zuverlässig befolgt |
 | CSS `gap` (Flex/Grid) | `CSS.supports('gap','1px')` = false; Abstand fällt ersatzlos weg — `margin` benutzen |
 | CSS `position: sticky` | nicht unterstützt |
@@ -167,6 +175,44 @@ Jede davon stammt aus einem echten Live-Test, nicht aus Vermutung:
 **Leaflet läuft grundsätzlich einwandfrei** (Karte, Marker, Popups) — es ist kein generelles
 „alte Engine"-Problem, sondern diese konkreten Lücken. Eine Ausnahme gibt es, und sie ist
 keine Coherent-Lücke, sondern ein Simulator-Fehler: siehe unten.
+
+### Kein einziges Symbol war je sichtbar: `href` am `<use>` (geklärt 14.08.2026)
+
+**Symptom:** Im Panel erscheint kein Bediensymbol — kein Zurück-Pfeil, kein Schließen-Kreuz,
+kein Vollbild-Zeichen. Der Knopf selbst ist da und funktioniert.
+
+**Ursache:** Coherent GT meldet sich als
+`AppleWebKit/604.1.38 (KHTML, like Gecko) Chrome/49.0.2623 Safari/604.1.38 CoherentGT/2.0`
+(echter User-Agent aus `panel_diag`). Das SVG-2-Attribut `href` am `<use>`-Element kennt
+Chrome erst ab Version **50** — eine Version zu spät (MDN `browser-compat-data`,
+`svg.elements.use.href`: Chrome 50, Safari 12.1). Das alte `xlink:href` versteht jede Version.
+Unser `icon()` schrieb ausschließlich `href`.
+
+**Fix:** Beide Attribute setzen. Sind beide da, gewinnt `href` (SVG-2-Regel) — moderne Browser
+verhalten sich unverändert. Gesichert durch `test_jedes_use_hat_xlink_fallback`, der über die
+ganze `index.html` läuft.
+
+**Warum das so lange unentdeckt blieb — die eigentliche Lehre:**
+
+- Der Fehler *sieht aus* wie ein Layout-Problem. Die Messung vom selben Tag steht im Code:
+  „Knopf 44x44, SVG 20x20, richtig platziert, nur eben nichts gezeichnet." Alles stimmte —
+  gemessen wurde nur nie die Bounding-Box des **Inhalts** (`getBBox()`), und die war 0. Das
+  äußere `<svg>` hat seine Größe immer, egal ob der Verweis ins Leere läuft.
+- Die Selbstdiagnose hatte einen blinden Fleck: `probeGlyphs` prüft, ob die *Schriftzeichen*
+  fehlen (⛶, ✕, →) — und beantwortete damit scheinbar die Symbol-Frage. Dass die
+  **Ersatz**-Symbole ankommen, hat niemand gemessen. Genau in dieser Lücke saß der Fehler.
+  Deshalb gibt es jetzt `probeSprites` (`base.sprites` im Bericht): es vergleicht `href` gegen
+  `xlink:href` und misst zusätzlich ein Symbol aus dem echten Markup.
+- Der ganze Icon-Umbau (Phase 1, „Bediensymbole als SVG statt fehlender Glyphen") hat deshalb
+  nie gewirkt: Die Zeichen wurden korrekt ersetzt, die Ersatz-SVGs kamen nur nie an.
+- Ein Einzelfall war schon aufgefallen (die Glocke) und wurde mit einem inline gezeichneten
+  Pfad umgangen — ein Pflaster über einer unerkannten Wurzel. Wenn genau ein Element eine
+  Sonderbehandlung braucht, damit es funktioniert, ist das der Hinweis, die Klasse dahinter zu
+  suchen, statt die Ausnahme festzuschreiben.
+
+**Merksatz:** Bei „Element ist da, zeichnet aber nichts" gehört die Frage nach der
+Attribut-**Schreibweise** an den Anfang. Die Engine ist von 2016 — jede Web-Neuerung ab 2016
+ist verdächtig, auch eine, die heute selbstverständlich aussieht.
 
 ### Kartenflackern: ein Simulator-Fehler, kein Fehler von uns (geklärt 14.08.2026)
 

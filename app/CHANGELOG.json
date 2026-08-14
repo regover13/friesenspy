@@ -1,5 +1,15 @@
 [
   {
+    "version": "12.5.7",
+    "date": "2026-08-14",
+    "highlight": false,
+    "title": "Symbole im Kniebrett endlich sichtbar",
+    "items": [
+      "🔣 Im Tablet war bisher kein einziges Bediensymbol zu sehen — kein Zurück-Pfeil, kein Schließen-Kreuz, kein Vollbild-Zeichen. Ursache: Die Anzeige-Engine des Simulators ist auf dem Stand von 2016 und kennt die neuere Schreibweise für Symbolverweise noch nicht. Jetzt steht überall zusätzlich die alte Schreibweise daneben, und die Symbole erscheinen.",
+      "🧪 Das Tablet misst außerdem selbst nach, ob die Symbole wirklich ankommen — bisher wurde nur geprüft, ob die ersetzten Schriftzeichen fehlen, nicht ob der Ersatz sichtbar ist. Genau in dieser Lücke saß der Fehler."
+    ]
+  },
+  {
     "version": "12.5.6",
     "date": "2026-08-14",
     "highlight": false,
