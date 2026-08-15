@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.6.6",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Eigenes Flugzeug auch ohne VATSIM sichtbar",
+    "items": [
+      "✈️ Im Kniebrett war ohne VATSIM-Verbindung kein eigenes Flugzeug auf der Karte zu sehen — die Karte zentrierte zwar richtig, aber auf eine leere Stelle. Der Grund: Die Flugzeuge kamen bisher ausnahmslos aus dem VATSIM-Datenstrom. Jetzt zeichnet die Position aus dem Simulator ihr eigenes Flugzeug, und sobald du online gehst, übernimmt wieder der reguläre Eintrag mit Flugplan und Details."
+    ]
+  },
+  {
     "version": "12.6.5",
     "date": "2026-08-15",
     "highlight": false,

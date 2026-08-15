@@ -7004,20 +7004,7 @@ function _naviTakt(sofort) {
   }
 
   // 3. Das eigene Flugzeug aus der Sim-Position -- die einzige Stelle, die es setzt.
-  if (_simPosFrisch() && _meineCid != null) {
-    const meinCs = _meinCallsign();
-    if (meinCs && mapMarkers[meinCs]) {
-      mapMarkers[meinCs].setLatLng([_simPos.lat, _simPos.lon]);
-      // Auch der Kurs kommt dann aus dem Sim: Sonst zeigt das Symbol in die Richtung von
-      // vor bis zu 15 Sekunden, waehrend es an der richtigen Stelle steht.
-      const hdg = Math.round(Number(_simPos.hdg) || 0);
-      const m = mapMarkers[meinCs];
-      if (m._fsHeading !== hdg) {
-        m.setIcon(makeAircraftIcon(hdg));
-        m._fsHeading = hdg;
-      }
-    }
-  }
+  _eigenesFlugzeugZeichnen();
 
   // 4. Nachfuehren -- aber nicht, solange jemand die Karte anfasst. Ohne diese Pause
   //    kaempft der Nutzer gegen die eigene Nachfuehrung an, und Leaflet erkennt seinen Zug
@@ -7079,6 +7066,66 @@ function _naviSchiebeMelden() {
     // das die ganze Erklaerung -- und die Frage stellt sich erst, seit kontakt 0 war.
     draggingAktiv: !!(liveMap && liveMap.dragging && liveMap.dragging.enabled())
   });
+}
+
+/**
+ * Das eigene Flugzeug auf die Karte bringen -- auch ohne VATSIM.
+ *
+ * Zwei Faelle, und der zweite fehlte bis 15.08.2026 ganz:
+ *
+ *   ONLINE: Es gibt bereits einen Marker aus dem VATSIM-Strom. Der bekommt Position und
+ *   Kurs aus dem Simulator (genauer und aktueller), behaelt aber sein Popup mit Flugplan,
+ *   Hoehe und Geschwindigkeit.
+ *
+ *   OFFLINE: Kein VATSIM, also kein Eintrag in liveData -- und damit gab es gar kein
+ *   Flugzeug zu sehen. Die Karte zentrierte korrekt auf eine leere Stelle (Nutzer-Fund:
+ *   "Offline wird das Flugzeug nicht angezeigt. aber es wird richtig zentriert"). Dann
+ *   gehoert dem Simulator ein eigener Marker.
+ *
+ * Der Eigenbau-Marker verschwindet, sobald der VATSIM-Marker da ist -- sonst staende man
+ * doppelt auf der Karte.
+ */
+let _eigenerSimMarker = null;
+
+function _eigenesFlugzeugZeichnen() {
+  if (!liveMap) return;
+  if (!_simPosFrisch()) {
+    // Keine Sim-Position mehr: Der Eigenbau-Marker haette nichts mehr auszusagen.
+    if (_eigenerSimMarker) { liveMap.removeLayer(_eigenerSimMarker); _eigenerSimMarker = null; }
+    return;
+  }
+
+  const hdg = Math.round(Number(_simPos.hdg) || 0);
+  const meinCs = _meineCid != null ? _meinCallsign() : null;
+  const vatsimMarker = meinCs ? mapMarkers[meinCs] : null;
+
+  if (vatsimMarker) {
+    // Online: den vorhandenen Marker fuehren, den Eigenbau abraeumen.
+    if (_eigenerSimMarker) { liveMap.removeLayer(_eigenerSimMarker); _eigenerSimMarker = null; }
+    vatsimMarker.setLatLng([_simPos.lat, _simPos.lon]);
+    // Auch der Kurs kommt aus dem Sim: Sonst zeigt das Symbol in die Richtung von vor bis
+    // zu 15 Sekunden, waehrend es an der richtigen Stelle steht.
+    if (vatsimMarker._fsHeading !== hdg) {
+      vatsimMarker.setIcon(makeAircraftIcon(hdg));
+      vatsimMarker._fsHeading = hdg;
+    }
+    return;
+  }
+
+  // Offline (oder noch nicht im VATSIM-Strom): eigener Marker.
+  if (!_eigenerSimMarker) {
+    _eigenerSimMarker = L.marker([_simPos.lat, _simPos.lon], { icon: makeAircraftIcon(hdg) })
+      .bindPopup('<div class="popup-callsign">DEIN FLUGZEUG</div>'
+               + '<div class="popup-row">Quelle: <span>Simulator</span></div>', { maxWidth: 240 })
+      .addTo(liveMap);
+    _eigenerSimMarker._fsHeading = hdg;
+    return;
+  }
+  _eigenerSimMarker.setLatLng([_simPos.lat, _simPos.lon]);
+  if (_eigenerSimMarker._fsHeading !== hdg) {
+    _eigenerSimMarker.setIcon(makeAircraftIcon(hdg));
+    _eigenerSimMarker._fsHeading = hdg;
+  }
 }
 
 /** Eigenes Callsign aus dem VATSIM-Strom (fuer die Zuordnung des eigenen Markers). */

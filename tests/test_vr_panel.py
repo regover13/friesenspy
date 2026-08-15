@@ -1120,6 +1120,28 @@ def test_moving_map_an_ist_auch_sichtbar():
     assert g and "background: #071525 !important" in g.group(1)
 
 
+def test_eigenes_flugzeug_auch_ohne_vatsim():
+    """Ohne VATSIM gibt es keinen Eintrag in liveData -- und damit war ueberhaupt kein
+    eigenes Flugzeug auf der Karte, obwohl die Sim-Position vorlag und die Karte korrekt
+    darauf zentrierte (Nutzer-Fund 15.08.2026: "Offline wird das Flugzeug nicht angezeigt.
+    aber es wird richtig zentriert").
+
+    Der Simulator bekommt deshalb einen eigenen Marker -- der aber verschwinden MUSS, sobald
+    der VATSIM-Marker da ist, sonst steht man doppelt auf der Karte. Und ebenso, wenn die
+    Sim-Position veraltet: ein Flugzeug an einer Stelle, an der laengst niemand mehr ist,
+    waere schlimmer als keins."""
+    m = re.search(r"function _eigenesFlugzeugZeichnen\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_eigenesFlugzeugZeichnen nicht gefunden"
+    rumpf = m.group(1)
+    assert "if (!_simPosFrisch())" in rumpf, "veraltete Position wird nicht abgeraeumt"
+    assert rumpf.count("removeLayer(_eigenerSimMarker)") >= 2, \
+        "der Eigenbau-Marker wird nicht in BEIDEN Faellen entfernt (veraltet / VATSIM da)"
+    assert "if (vatsimMarker) {" in rumpf, "der Online-Fall fehlt -- man staende doppelt da"
+    # Aufgerufen wird er aus dem Takt, nicht aus updateMap (dort gilt: nur eine Stelle bewegt).
+    t = re.search(r"function _naviTakt\(sofort\) \{(.*?)\n\}", INDEX, re.S)
+    assert t and "_eigenesFlugzeugZeichnen();" in t.group(1)
+
+
 def test_moving_map_zustand_ist_wirklich_zu_sehen():
     """Der An-Zustand braucht !important -- sonst sieht man ihn nicht.
 
