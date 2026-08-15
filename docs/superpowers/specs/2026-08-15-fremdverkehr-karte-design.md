@@ -116,8 +116,10 @@ Karten-Website zeigt.
 - Poller noch nicht gelaufen oder Momentaufnahme älter als 120 s → `{"age": null,
   "traffic": []}`, Status 200. Eine leere Karte ist die richtige Antwort, kein Fehler.
 - Ungültige Parameter → 422 (FastAPI-Standard über Query-Validierung).
-- Keine Anmeldung nötig — die Daten sind öffentlich, und der Endpunkt wird auch aus dem
-  Kniebrett aufgerufen, wo die Anmeldung ein eigener Weg ist.
+- **Kein Sonderweg bei der Anmeldung:** Der Endpunkt verhält sich exakt wie `/api/live` —
+  bei aktivem Forum-Gate hinter dem Gate, sonst offen. Er kommt **nicht** in
+  `_GATE_ALLOW_PREFIXES`. Das Kniebrett ist über seinen Geräte-Token angemeldet und
+  erreicht ihn damit wie jeden anderen Endpunkt auch.
 
 ---
 
@@ -147,10 +149,13 @@ Solange die Ebene an ist, alle 15 s:
    (`liveMap.getBounds().getNorthEast()`), auf 250 km gekappt.
 3. `GET /api/traffic?lat=…&lon=…&r=…`
 
-**Zoom-Schwelle:** Unterhalb Zoomstufe 8 wird **nicht abgefragt und nichts gezeichnet**,
-und vorhandene Marker werden entfernt. Bei Zoom 7 liegt halb Europa im Bild; sechzig
-Flugzeuge dort sind keine Information, sondern Rauschen — und im Kniebrett kostet jeder
-Marker Rechenzeit in Coherent GT.
+**Zoom-Schwelle:** Unterhalb Zoomstufe **7** wird nicht abgefragt und nichts gezeichnet,
+und vorhandene Marker werden entfernt. 7 ist die Zoomstufe, mit der die Live-Karte öffnet
+(`minZoom` ist 6) — die Schwelle darf nicht darüber liegen, sonst schaltet man die Ebene
+ein und es passiert sichtbar nichts. Ganz herausgezoomt (Zoom 6) bleibt sie stumm.
+
+Der eigentliche Schutz gegen Marker-Fluten sind nicht die Zoomstufen, sondern die beiden
+Deckel: 250 km Radius und 60 Flugzeuge.
 
 Zusätzlich ein Abruf sofort beim Einschalten der Ebene und nach jedem `moveend`, aber
 frühestens 3 s nach dem letzten Abruf (Drossel gegen Dauerziehen an der Karte).
@@ -164,7 +169,13 @@ const _verkehrRoh = {};   // callsign -> {lat, lon, hdg, gs, ts}
 ```
 
 `ts` wird beim Eintragen um `age` zurückdatiert (`Date.now() - age * 1000`), damit die
-Fortrechnung dort beginnt, wo VATSIM gemessen hat, und nicht dort, wo die Antwort ankam.
+Fortrechnung dort beginnt, wo **der Poller die Daten geholt hat**, und nicht dort, wo die
+Antwort beim Client ankam.
+
+**Das ist ausdrücklich nicht der Messzeitpunkt.** Der VATSIM-Feed ist beim Abruf durch den
+Poller selbst schon bis zu ~15 s alt; die Anzeige läuft also weiterhin etwas hinterher, nur
+deutlich weniger. Den echten Messzeitpunkt trüge das Feld `last_updated` je Pilot — das
+mitzuführen ist eine spätere Verbesserung und bewusst nicht Teil dieses Teilprojekts.
 
 Die vorhandene Funktion `_jetztGerechnet(roh)` wird **unverändert wiederverwendet** — sie
 kennt ihre Datenstruktur, nicht ihren Besitzer. Bewegt wird ausschließlich im laufenden
@@ -202,6 +213,17 @@ Klick öffnet ein Popup mit Callsign, Muster, Höhe, Geschwindigkeit und Route �
 Aufbau wie `buildPopupHtml`, aber ohne Pilotenname und Online-Zeit, die der Feed für
 Fremde nicht sinnvoll liefert.
 
+**Die Höhe im Popup benutzt dieselbe Funktion wie das Label.** Das vorhandene `fmtAlt`
+schreibt Flugflächen erst ab 18 000 ft — nähme das Popup `fmtAlt` und das Label die neue
+Regel, stünde am Symbol `FL120` und einen Klick daneben `12.000 ft`. Genau die zweite
+Wahrheit, die dieser Abschnitt verhindern soll.
+
+**Das eigene Flugzeug wird ausgefiltert.** Wer ausnahmsweise ohne `FRS`-Callsign fliegt,
+fällt serverseitig nicht durch das Präfix-Sieb und bekäme einen grauen Fremdmarker an
+seiner VATSIM-Position — direkt neben dem eigenen, vom Simulator gesteuerten Marker. Zwei
+Flugzeuge, die nie zusammenpassen. Der Client verwirft deshalb beim Übernehmen jeden
+Eintrag, dessen Callsign dem eigenen entspricht.
+
 ### 3.2 Label — die Regel
 
 **Callsign wird gezeigt, wenn das Flugzeug tief fliegt oder ein Friese ist.**
@@ -228,24 +250,25 @@ ist. Was oben drüberzieht, ist Linienverkehr; Muster, Level und Speed genügen.
 Das Label ist **neu für beide Seiten** — die Friesen-Marker haben heute gar kein
 dauerhaftes Label, nur ein Popup.
 
-### 3.3 Das Label darf nicht mitdrehen
+### 3.3 Das Label dreht nicht mit — nachgeprüft
 
-`rotateWithView: true` dreht das gesamte Marker-Element. Ein Label innerhalb des Icons
-stünde bei Track-up auf dem Kopf.
+`rotateWithView: true` dreht das gesamte Marker-Element; ein Label **innerhalb** des Icons
+stünde bei Track-up auf dem Kopf. Deshalb sitzt es außerhalb, als Leaflet-Tooltip:
+`bindTooltip(text, {permanent: true, direction: 'bottom', className: 'traffic-label'})`.
 
-**Erster Ansatz:** `bindTooltip(text, {permanent: true, direction: 'bottom', className:
-'traffic-label'})`. Tooltips sind eigene DOM-Elemente in einem eigenen Pane, nicht Teil des
-Marker-Icons — sie sollten von `rotateWithView` unberührt bleiben.
+Dass das trägt, ist **im Quelltext des eingebundenen Plugins nachgesehen** und keine
+Annahme (`leaflet-rotate@0.2.8`, die per `integrity` festgenagelte Fassung):
 
-**Das ist eine Annahme und muss gemessen werden**, denn `leaflet-rotate` dreht den ganzen
-Karten-Pane per CSS-Transform. Verfahren: Karte im Browser auf ein Bearing setzen und die
-tatsächliche Bildschirm-Matrix des Label-Elements über `getScreenCTM()` auslesen — **nicht**
-das eigene `transform` des Elements, das die Drehungen der Vorfahren nicht enthält.
+- Das Plugin legt zwei Panes an. In den **drehenden** kommen `tilePane` und `overlayPane`,
+  in den **nicht drehenden** `shadowPane`, `markerPane`, `tooltipPane` und `popupPane`.
+  Tooltips werden also grundsätzlich nicht mitgedreht.
+- Das Plugin überschreibt `L.Tooltip._updatePosition` und rechnet die gedrehte Position um —
+  der Tooltip sitzt bei gedrehter Karte an der richtigen Stelle.
+- `rotateWithView` wirkt ausschließlich als CSS-Drehung auf `marker._icon`, nicht auf den
+  Tooltip.
 
-**Fallback, falls das Label mitdreht:** ein zweiter, eigener Marker je Flugzeug mit
-`rotateWithView: false` (dann hält das Plugin ihn aufrecht) und einem `iconAnchor`, der ihn
-in Bildschirmpixeln unter das Symbol setzt. Beide Marker werden vom selben Takt bewegt.
-Kostet doppelt so viele DOM-Knoten — deshalb zweite Wahl, aber sicher.
+Es braucht also **keinen** zweiten Marker je Flugzeug und keine Gegendrehung. Beim
+Umsetzen genügt ein Blick auf die gedrehte Karte zur Bestätigung.
 
 ---
 
@@ -287,7 +310,10 @@ Paketversion steigt auf **1.3.0**. Auswertung später über die Admin-Ansicht
 
 **Server** (`tests/test_traffic_api.py`, neu):
 
-- Momentaufnahme enthält nach einem Poll-Zyklus alle Nicht-FRS-Piloten und **keinen** FRS.
+- Die reine Filterfunktion liefert alle Nicht-FRS-Piloten und **keinen** FRS.
+- **Ein Zyklus von `_poll_once` füllt die Momentaufnahme tatsächlich.** Ohne diesen Test
+  prüfen alle anderen nur eine Attrappe, und die zwei Zeilen im Poller — die einzige
+  Stelle, an der beides zusammenkommt — sind von nichts gedeckt.
 - Einträge ohne Koordinate fallen raus.
 - Radiusfilter: ein Flugzeug knapp innerhalb ist dabei, eins knapp außerhalb nicht.
 - Sortierung nach Entfernung, Kappung bei 60.
@@ -296,8 +322,9 @@ Paketversion steigt auf **1.3.0**. Auswertung später über die Admin-Ansicht
 
 **Frontend** (`tests/test_vr_panel.py`, ergänzt — statische Quellprüfungen wie bisher):
 
-- Die Höhen-Formatierung existiert als **eine** Funktion und wird sowohl für Friesen als
-  auch für Fremde benutzt (keine zweite, abweichende Kopie).
+- Die Höhen-Formatierung existiert als **eine** Funktion und wird für Label **und** Popup
+  benutzt — der Test muss ausdrücklich prüfen, dass im Verkehrs-Popup **nicht** `fmtAlt`
+  steht, sonst ist er blind gegen genau den Fehler, den er verhindern soll.
 - Die Label-Regel prüft „unter 10 000 **oder** Friese", nicht nur eines von beidem.
 - Der Verkehrs-Layer wird vor dem Bau der Layers-Control hinzugefügt (die OpenAIP-Falle).
 - Der Verkehr wird ausschließlich im Sekundentakt bewegt — keine `setLatLng` auf
@@ -316,9 +343,11 @@ die mit der ersten auseinanderlaufen kann. Stattdessen:
 - Ihr Verhalten wird **einmal im Browser gemessen** — mit den Grenzfällen 0, 9999, 10000,
   10499 und 10500 sowie je einem Friesen und einem Fremden über und unter der Grenze.
 
-**Ebenfalls einmalig im Browser zu messen:** dass das Label bei Track-up aufrecht steht —
-über `getScreenCTM()`, wie unter 3.3 beschrieben, nicht über das eigene `transform` des
-Elements.
+**Einmalig im Browser anzusehen:** dass das Label bei Track-up aufrecht steht (s. 3.3 — im
+Plugin-Quelltext bereits geklärt, der Blick ist die Bestätigung). Falls doch gemessen wird:
+Breite und Höhe von `getBoundingClientRect()` über mehrere Bearings vergleichen — sie
+bleiben bei aufrechtem Label konstant. **Nicht** `getScreenCTM()`: das ist eine
+SVG-Methode, und der Tooltip ist ein `div`.
 
 ## 6. Mitzuführende Dokumentation
 
@@ -343,6 +372,9 @@ kein Anklicken eines Fremden zum Verfolgen, keine Tracks hinter Fremdverkehr.
   DOM als heute. Die Zoom-Schwelle und die Kappung bei 60 sind die Gegenmittel; sollte das
   Kniebrett trotzdem träge werden, ist der nächste Hebel eine niedrigere Kappung speziell
   für das Panel, nicht ein Umbau der Anzeige.
-- **Das Label könnte mitdrehen** (s. 3.3). Fallback ist beschrieben und getestet
-  entscheidbar.
+- **Flackern an der Kappungsgrenze.** Der Server schneidet hart bei 60 nach Entfernung ab,
+  ohne Hysterese. Ein Flugzeug auf Rang 60/61 wechselt zwischen zwei Abrufen hin und her;
+  der Client löscht seinen Marker und baut ihn 15 s später neu. Genau dieses Neuaufbauen
+  war im Kniebrett schon einmal als Aufblitzen sichtbar. **Gegenmittel:** Ein Marker wird
+  erst entfernt, wenn sein Callsign **zwei** Abrufe hintereinander gefehlt hat.
 - **Die Sonde läuft im Simulator.** Deshalb dreimalig, gekapselt und selbstbegrenzt.
