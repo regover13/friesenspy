@@ -52,6 +52,64 @@ Aktuelle Live-Positionen aller online Friesen (Callsign-Prefix `FRS`).
 
 ---
 
+## GET /api/traffic
+
+Fremder VATSIM-Verkehr im Umkreis eines Punktes — **ohne** die eigenen Leute. Speist die
+abschaltbare Ebene „Verkehr" auf der Live-Karte.
+
+Die Friesen kommen über `/api/live` und SSE; sie hier noch einmal mitzuliefern hieße, sie
+doppelt auf der Karte zu haben. Ausgeschlossen wird allein über das Callsign-Präfix — ein per
+Admin-Checkbox auf „inaktiv" gesetzter Pilot fällt damit aus beiden Listen heraus.
+Zusätzlich wird der **Anfragende selbst** über seine CID aussortiert: Fliegt er ausnahmsweise
+ohne `FRS`-Callsign, bekäme er sonst einen zweiten Marker neben seinem eigenen.
+
+Kein Sonderweg bei der Anmeldung: verhält sich wie `/api/live` und steht bei aktivem
+Forum-Gate ebenfalls dahinter.
+
+**Query-Parameter**
+
+| Name | Typ | Pflicht | Bereich | Bedeutung |
+|------|-----|---------|---------|-----------|
+| `lat` | float | ja | −90 … 90 | Bezugspunkt, im Frontend die Kartenmitte |
+| `lon` | float | ja | −180 … 180 | Bezugspunkt |
+| `r` | float | nein | 1 … 250 (Default 100) | Radius in km |
+
+Werte außerhalb der Bereiche → `422`.
+
+**Response**
+
+```json
+{
+  "age": 7.2,
+  "traffic": [
+    {
+      "cs": "DLH4AB",
+      "lat": 53.51,
+      "lon": 8.12,
+      "alt": 34000,
+      "gs": 452,
+      "hdg": 271,
+      "ac": "A320",
+      "dep": "EDDH",
+      "arr": "EDDL"
+    }
+  ]
+}
+```
+
+- Kurze Feldnamen, weil dieselbe Antwort über die Netzwerkverbindung des Simulators ins
+  Kniebrett geht. Bei 60 Flugzeugen sind das rund 5 KB.
+- `age` — Alter der Momentaufnahme in Sekunden, gerechnet **ab dem Abruf durch den Poller**,
+  nicht ab dem Messzeitpunkt bei VATSIM (den trüge `last_updated` je Pilot). Das Frontend
+  datiert seine Fortrechnung damit zurück.
+- Sortiert nach Entfernung zum Bezugspunkt, **gekappt bei 60 Flugzeugen**. Was näher ist,
+  gewinnt.
+- Läuft der Poller nicht oder ist die Momentaufnahme älter als 45 Sekunden (drei verpasste
+  Zyklen), kommt `{"age": null, "traffic": []}` mit Status `200`. Eine leere Karte ist
+  ehrlicher als alte Positionen.
+
+---
+
 ## GET /api/stats/activity
 
 Flugaktivität über Zeit — für das Liniendiagramm im Statistiken-Tab.

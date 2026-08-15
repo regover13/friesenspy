@@ -120,10 +120,11 @@ Die Liste aktualisiert sich über eine permanente Server-Verbindung (Server-Sent
 
 ### 🗺️ Karte
 
-Interaktive Karte mit allen aktuell fliegenden Friesen.
+Interaktive Karte mit allen aktuell fliegenden Friesen. Sie geht über Wangerooge (EDWG) auf.
 
 **Was du siehst:**
 - Flugzeug-Symbole, die sich in Flugrichtung drehen
+- Am Symbol stehen **Muster, Höhe und Geschwindigkeit** (z. B. `C172 4500 105`). Wer tief fliegt, zeigt darüber sein Rufzeichen — bei den Friesen steht es immer da. Ab 10 000 Fuß wird die Höhe als Flugfläche geschrieben (`FL350`)
 - Beim Klick auf ein Symbol: Popup mit Callsign, Strecke, Flugzeugtyp, Höhe und Geschwindigkeit
 - Den bisherigen **GPS-Track** des aktuellen Fluges als Linie — der Track wächst alle 15 Sekunden mit und zeigt den genauen Weg seit dem Start
 - Die Symbole **wandern gleichmäßig**, statt alle 15 Sekunden zu springen: Zwischen zwei VATSIM-Meldungen wird ihre Position aus Kurs und Geschwindigkeit weitergerechnet. Der eingezeichnete Track bleibt davon unberührt — dort stehen nur echte Messpunkte
@@ -131,6 +132,7 @@ Interaktive Karte mit allen aktuell fliegenden Friesen.
 **Was du tun kannst:**
 - Karte frei verschieben und zoomen
 - Karten-Layer wechseln (Auswahl oben rechts, siehe [Karten-Layer](#️-karten-layer))
+- **✈️ Verkehr** (Haken in der Ebenen-Auswahl) — zeigt zusätzlich **anderen VATSIM-Verkehr** im sichtbaren Kartenausschnitt, kleiner und grau, damit die Friesen die auffälligen bleiben. Die fremden Flugzeuge gleiten genauso wie die eigenen. Der Haken schaltet **nur** den Fremdverkehr; die Friesen sind immer da. Weit herausgezoomt bleibt die Ebene still — dort wären es hunderte Symbole ohne Aussage
 - **🧭 Kompass** (unter der Ebenen-Auswahl) — dreht die Karte in Flugrichtung („Track-up") und wieder zurück nach Norden. Die Nadel zeigt dabei immer dorthin, wo Norden liegt
 - **📍 Moving Map** (unten rechts) — die Karte folgt dem eigenen Flugzeug. Verschiebst du die Karte von Hand, schaltet sie sich automatisch ab (Zoomen nicht)
 - Von einem anderen Tab aus mit ◎ direkt zu einem bestimmten Piloten springen

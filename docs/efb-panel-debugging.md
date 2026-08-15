@@ -84,6 +84,30 @@ zweierlei, deshalb steht beides drin (`simPositionDa`, `simAlterMs`). `rotatePlu
 weiter oben mit `sqlite3 …` funktionieren nur auf dem Host. Aus dem Container heraus geht es
 über Python, wie in diesem Beispiel.
 
+**Datensatz `kind="traffic-sonde"`** (seit Kniebrett-Paket 1.3.0): Beantwortet nebenbei im
+normalen Flug, ob der Simulator den von vPilot injizierten Verkehr über den **JS-Weg**
+herausgibt — und damit, ob ein späterer Sim-Verkehr im Kniebrett ohne C++-WASM-Modul auskommt.
+Drei Messungen je Panel-Start (20 s, 2 min, 5 min), dann Ruhe; beim ersten Messpunkt ist oft
+noch nichts injiziert.
+
+| Feld | Bedeutung |
+|------|-----------|
+| `messpunkt` | 1, 2 oder 3 — welcher der drei Zeitpunkte |
+| `coherentDa` | Ob `Coherent.call` überhaupt existiert |
+| `viewListener` | `angemeldet` / `unbekannt` / `fehler: …` — der `JS_LISTENER_MAPS`-Vorlauf, in MSFS 2020 Vorbedingung für den Aufruf |
+| `typ` | `Object.prototype.toString` der Antwort |
+| `anzahl` | Länge der Liste, oder `null` wenn kein Array |
+| `felder` | Feldnamen des **ersten** Eintrags — bewusst keine Positionen: Die Frage ist, OB und WAS herauskommt, nicht wo jemand fliegt |
+| `fehler` | Nur wenn der Aufruf geworfen hat |
+
+**So ist das Ergebnis zu lesen:** `anzahl > 0` mit plausiblen Feldnamen **bei verbundenem
+vPilot in einer Gegend mit Verkehr** heißt, der JS-Weg trägt und der Sim-Verkehr kommt ohne
+WASM aus. `anzahl: 0` oder `null` unter denselben Bedingungen bestätigt
+[DevSupport 4993](https://devsupport.flightsimulator.com/t/ai-aircraft-generated-airborne-do-not-get-returned-with-the-get-air-traffic-coherent-call/4993)
+für MSFS 2024 — dann führt nur ein Standalone-WASM-Modul mit SimConnect und CommBus zum Ziel.
+**Ohne vPilot-Verbindung sagt die Messung nichts**; sie ist dann nur der Beleg, dass die Sonde
+läuft.
+
 **Datensatz `kind="zeichnen"`** (v12.5.2 bis v12.5.5, wieder ausgebaut): Hat gemessen, ob die
 Engine während des Flackerns überhaupt noch Bilder zeichnet — zwei kleine Anzeigen im Panel,
 eine auf der Karte, eine daneben, je mit Sekundenzähler und einem per `requestAnimationFrame`
