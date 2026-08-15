@@ -1,5 +1,18 @@
 [
   {
+    "version": "12.10.0",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Verkehr aus dem Simulator",
+    "items": [
+      "✈️ Im Kniebrett kommt der fremde Verkehr jetzt aus dem Simulator selbst — jede Sekunde statt alle 15, und mit der Position, die wirklich gilt, statt einer zwischen zwei Abrufen geschätzten. Die Symbole gleiten, statt zu springen.",
+      "📡 Das gilt auch ohne VATSIM-Verbindung: Dann zeigt die Karte den Verkehr, den der Simulator selbst erzeugt. Reißt die Verbindung zum Tablet ab, übernimmt still wieder der bisherige Weg über VATSIM — man merkt es allenfalls daran, dass die Symbole wieder springen.",
+      "🅿️ Geparkte Flugzeuge bleiben weg — am Heimatplatz wären das dreißig Symbole übereinander, keines davon eine Information. Rollende Flugzeuge sind ausdrücklich dabei; am Platz sind sie das Wichtigste, was es zu sehen gibt.",
+      "🔬 Der Simulator gibt fremden Verkehr über seine Schnittstelle also doch heraus. Das war bis zur Messung am 15.08.2026 die offene Frage des ganzen Vorhabens — und die Antwort erspart ein eigenes Zusatzmodul, das sonst nötig geworden wäre.",
+      "🧰 Dafür braucht es das Kniebrett-Paket 1.5.0 im Simulator. Auf der Webseite ändert sich nichts."
+    ]
+  },
+  {
     "version": "12.7.1",
     "date": "2026-08-15",
     "highlight": false,

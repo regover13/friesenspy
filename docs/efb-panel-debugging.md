@@ -84,29 +84,34 @@ zweierlei, deshalb steht beides drin (`simPositionDa`, `simAlterMs`). `rotatePlu
 weiter oben mit `sqlite3 …` funktionieren nur auf dem Host. Aus dem Container heraus geht es
 über Python, wie in diesem Beispiel.
 
-**Datensatz `kind="traffic-sonde"`** (seit Kniebrett-Paket 1.3.0): Beantwortet nebenbei im
-normalen Flug, ob der Simulator den von vPilot injizierten Verkehr über den **JS-Weg**
-herausgibt — und damit, ob ein späterer Sim-Verkehr im Kniebrett ohne C++-WASM-Modul auskommt.
-Drei Messungen je Panel-Start (20 s, 2 min, 5 min), dann Ruhe; beim ersten Messpunkt ist oft
-noch nichts injiziert.
+**Datensatz `kind="sim-verkehr"`** (seit Kniebrett-Paket 1.5.0): Einmal je Sitzung, beim
+ersten Eintreffen einer **nichtleeren** Verkehrsliste aus dem Simulator. Er ersetzt die alte
+Sonde `kind="traffic-sonde"` aus Paket 1.3.0/1.4.0, die mit festen Terminen nach dem Öffnen
+der App maß und deshalb den richtigen Moment nur zufällig traf — der Flug wird geladen, dann
+ist das Tablet schon offen, und **erst danach** verbindet vPilot.
 
 | Feld | Bedeutung |
 |------|-----------|
-| `messpunkt` | 1, 2 oder 3 — welcher der drei Zeitpunkte |
-| `coherentDa` | Ob `Coherent.call` überhaupt existiert |
-| `viewListener` | `angemeldet` / `unbekannt` / `fehler: …` — der `JS_LISTENER_MAPS`-Vorlauf, in MSFS 2020 Vorbedingung für den Aufruf |
-| `typ` | `Object.prototype.toString` der Antwort |
-| `anzahl` | Länge der Liste, oder `null` wenn kein Array |
-| `felder` | Feldnamen des **ersten** Eintrags — bewusst keine Positionen: Die Frage ist, OB und WAS herauskommt, nicht wo jemand fliegt |
-| `fehler` | Nur wenn der Aufruf geworfen hat |
+| `anzahl` | Wie viele Flugzeuge der Simulator in diesem Takt meldet |
+| `weitesteKm` | Entfernung des am weitesten entfernten — wie weit reicht der Sim-Horizont? |
+| `felder` | Feldnamen des aufbereiteten Eintrags |
+| `ersterEintrag` | Der **vollständige** erste Eintrag mit Werten (`id`, `lat`, `lon`, `alt`, `hdg`, `gs`, `ac`, `cs`, `gnd`) |
+| `vatsimNah` | Gegenprobe: wie viele Flugzeuge VATSIM im selben Moment im 75-km-Umkreis kennt |
+| `eigenLat` / `eigenLon` | Eigene Position, auf drei Stellen gerundet |
 
-**So ist das Ergebnis zu lesen:** `anzahl > 0` mit plausiblen Feldnamen **bei verbundenem
-vPilot in einer Gegend mit Verkehr** heißt, der JS-Weg trägt und der Sim-Verkehr kommt ohne
-WASM aus. `anzahl: 0` oder `null` unter denselben Bedingungen bestätigt
-[DevSupport 4993](https://devsupport.flightsimulator.com/t/ai-aircraft-generated-airborne-do-not-get-returned-with-the-get-air-traffic-coherent-call/4993)
-für MSFS 2024 — dann führt nur ein Standalone-WASM-Modul mit SimConnect und CommBus zum Ziel.
-**Ohne vPilot-Verbindung sagt die Messung nichts**; sie ist dann nur der Beleg, dass die Sonde
-läuft.
+**So ist das Ergebnis zu lesen** — vier offene Fragen, ein Datensatz:
+
+| Feld | Was es entscheidet |
+|---|---|
+| `ersterEintrag.cs` | Trägt `name` den Callsign? Davon hängt Teilprojekt 2b ab (Callsign + Flugplan am Sim-Verkehr). [DevSupport 13002](https://devsupport.flightsimulator.com/t/js-npcplane-parameter-name-always-empty-msfs2020-2024/13002) behauptet „immer leer" |
+| `ersterEintrag.ac` | `C172` oder ein Asobo-interner Modellname? Entscheidet, ob das Label taugt |
+| `ersterEintrag.alt` | Plausibel gegen `vatsimNah`? Ein Airliner muss ~35 000 zeigen, nicht ~10 700 — sonst stimmt die Umrechnung Meter → Fuß nicht |
+| `weitesteKm` vs. `vatsimNah` | Wie weit der Sim sieht, verglichen mit dem, was VATSIM kennt |
+
+**Die Gegenprobe ist der Kern, nicht Beiwerk.** Eine Zahl aus dem Simulator ist für sich
+genommen nicht lesbar: „Sim 0, VATSIM 7" ist eine Antwort, „Sim 0, VATSIM 0" ist keine. Genau
+daran scheiterte die erste Messung (15.08.2026) — dreimal null, jedes Mal gemessen, bevor der
+Nutzer überhaupt mit vPilot verbunden war.
 
 **Datensatz `kind="zeichnen"`** (v12.5.2 bis v12.5.5, wieder ausgebaut): Hat gemessen, ob die
 Engine während des Flackerns überhaupt noch Bilder zeichnet — zwei kleine Anzeigen im Panel,
