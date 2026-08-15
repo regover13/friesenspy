@@ -1161,8 +1161,8 @@ def test_flugzeuge_drehen_mit_der_karte():
     Die Alternative waere gewesen, bei jeder Kursaenderung jedes Symbol neu zu zeichnen --
     bei Track-up dreht sich die Karte staendig mit, das haette die halbe Karte dauernd in
     Bewegung gehalten (und genau davor warnt der Kommentar an setIcon in updateMap)."""
-    assert INDEX.count("rotateWithView: true") == 2, \
-        "beide Marker-Arten (VATSIM und Sim) brauchen die Option"
+    assert INDEX.count("rotateWithView: true") == 3, \
+        "alle drei Marker-Arten (VATSIM, Sim, Fremdverkehr) brauchen die Option"
     for stelle in ("icon: makeAircraftIcon(hdg), rotateWithView: true",):
         assert stelle in INDEX
 
@@ -1216,12 +1216,16 @@ def test_flugzeug_symbol_ist_mittig_verankert():
     Groesse mitwachsen -- sonst sitzt das Flugzeug nicht auf seiner eigenen Position,
     sondern daneben, und zwar umso weiter, je groesser das Symbol ist."""
     assert "const _FLUGZEUG_PX = 26;" in INDEX
-    m = re.search(r"function makeAircraftIcon\(heading\) \{(.*?)\n\}", INDEX, re.S)
+    # Seit v12.7.0 nimmt die Funktion einen zweiten Parameter fuer den kleineren, grauen
+    # Fremdverkehr. Der Anker muss dann erst recht mitwachsen -- er darf sich nicht mehr auf
+    # eine feste Groesse verlassen.
+    assert "const _FLUGZEUG_PX_FREMD = 18;" in INDEX
+    m = re.search(r"function makeAircraftIcon\(heading, fremd\) \{(.*?)\n\}", INDEX, re.S)
     assert m, "makeAircraftIcon nicht gefunden"
     rumpf = m.group(1)
-    assert "const mitte = _FLUGZEUG_PX / 2;" in rumpf
+    assert "const mitte = px / 2;" in rumpf
     assert "iconAnchor: [mitte, mitte]" in rumpf, "fester Anker haelt der Groesse nicht stand"
-    assert "iconSize:   [_FLUGZEUG_PX, _FLUGZEUG_PX]" in rumpf
+    assert "iconSize:   [px, px]" in rumpf
     # Die alte Form (Rumpf und Fluegel gleich breit -- vergroessert ein Stern) ist raus.
     assert "M12 2L8 10H4" not in INDEX
 
@@ -1424,3 +1428,79 @@ def test_label_ist_nicht_blau():
     m = re.search(r"\.traffic-label \.lbl-cs\s*\{([^}]*)\}", INDEX)
     assert m, "Regel fuer den Callsign im Label fehlt"
     assert "2d9cdb" not in m.group(1)
+
+
+# ---------------------------------------------------------------------------
+# Verkehrs-Ebene (v12.7.0)
+# ---------------------------------------------------------------------------
+
+def test_verkehr_layer_kommt_vor_der_ebenen_auswahl():
+    """Die OpenAIP-Falle: Ein nach dem Bau der Control hinzugefuegter Layer feuert keines der
+    Ereignisse, auf die die Control lauscht -- der Haken zeigt dann dauerhaft den falschen
+    Zustand. Steht so schon als Kommentar bei _addPreferredAIPLayer.
+
+    ACHTUNG beim Aendern: INDEX.index(sub, start) liefert per Definition immer einen Wert
+    >= start -- ein "assert vorher < INDEX.index('L.control.layers(', vorher)" koennte gar
+    nicht fehlschlagen. Die Control MUSS unabhaengig gefunden werden (es gibt drei
+    L.control.layers-Aufrufe in der Datei), hier ueber ihren eindeutigen Nachbarn.
+    """
+    vorher = INDEX.index("_addPreferredVerkehrLayer(liveMap")
+    control = INDEX.index("liveOverlays,")
+    assert vorher < control
+
+
+def test_verkehr_popup_nimmt_dieselbe_hoehen_regel():
+    """Sonst steht am Symbol FL120 und einen Klick daneben 12.000 ft: das vorhandene fmtAlt
+    schreibt Flugflaechen erst ab 18 000 ft."""
+    stelle = INDEX.index("function _verkehrPopup(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_labelHoehe(" in rumpf
+    assert "fmtAlt(" not in rumpf
+
+
+def test_eigener_abruf_loest_keinen_neuen_abruf_aus():
+    """_naviTakt ruft bei eingeschalteter Moving Map jede Sekunde setView auf, und das feuert
+    moveend. Ohne die Wache liefe der Verkehrs-Abruf alle 3 Sekunden statt alle 15 --
+    dauerhaft, ausgerechnet ueber die Netzwerkverbindung des Simulators."""
+    stelle = INDEX.index("map.on('moveend'")
+    assert "_naviSelbstBewegt" in INDEX[stelle:stelle + 200]
+
+
+def test_verkehr_ruht_auf_verdeckter_karte():
+    """updateMap und _naviTakt brechen auf einer verdeckten Karte ab -- der Abruf muss das
+    auch, sonst laufen die Rohwerte weiter, waehrend der Takt die Marker nicht bewegt, und
+    beim Zurueckwechseln springen sie."""
+    stelle = INDEX.index("function _verkehrAbrufen(")
+    assert "_istSichtbar(" in INDEX[stelle:stelle + 600]
+
+
+def test_nur_der_takt_bewegt_den_fremdverkehr():
+    """Eine bewegte Anzeige braucht genau eine Stelle, die sie bewegt -- sonst springt sie
+    zurueck. Derselbe Fehler kostete bei den Friesen drei Anlaeufe."""
+    assert INDEX.count("_verkehrMarker[cs].setLatLng(") == 1
+
+
+def test_verkehr_zeitstempel_nur_bei_neuen_werten():
+    stelle = INDEX.index("function _verkehrUebernehmen(")
+    rumpf = INDEX[stelle:stelle + 2500]
+    assert "alt.lat !== e.lat" in rumpf and "alt.lon !== e.lon" in rumpf
+
+
+def test_verkehr_hat_eine_einzige_zoom_schwelle():
+    """Der Wert steht genau einmal als Zahl -- eine zweite Stelle daneben waere die Sorte
+    Fehler, die man erst im Cockpit bemerkt."""
+    assert INDEX.count("_VERKEHR_MIN_ZOOM") >= 2
+    assert INDEX.count("_VERKEHR_MIN_ZOOM =") == 1
+
+
+def test_verkehr_datiert_die_fortrechnung_zurueck():
+    stelle = INDEX.index("function _verkehrUebernehmen(")
+    assert "Date.now() - Math.round(ageSek * 1000)" in INDEX[stelle:stelle + 1200]
+
+
+def test_verkehr_verschwindet_erst_beim_zweiten_fehlen():
+    """Der Server kappt hart bei 60 nach Entfernung. Ohne Hysterese flackert das Flugzeug auf
+    Rang 60/61 zwischen zwei Abrufen -- und jedes Neuanlegen ist im Kniebrett ein Aufblitzen."""
+    stelle = INDEX.index("function _verkehrUebernehmen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", INDEX.index("for (const cs in _verkehrMarker)", stelle))]
+    assert "_verkehrFehlt[cs] < 2" in rumpf

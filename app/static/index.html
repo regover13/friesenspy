@@ -1857,11 +1857,16 @@
       filter: drop-shadow(0 0 4px rgba(45,156,219,0.7));
     }
 
-    /* Fremdverkehr ist Kulisse, die Friesen sind die Aussage -- deshalb kleiner und grau,
-       ohne den blauen Schein. */
+    /* Fremdverkehr ist Kulisse, die Friesen sind die Aussage -- deshalb kleiner und ohne den
+       blauen Schein.
+       Dunkel mit HELLEM Saum, nicht mittelgrau mit dunklem: Die Standard-Karte
+       (OpenFlightMap) ist hell, und ein mittelgraues Symbol mit schwarzem Schatten war
+       darauf praktisch unsichtbar (im Browser nachgesehen, 15.08.2026). Diese Kombination
+       traegt auf beiden Kartensorten -- auf heller Karte die dunkle Flaeche, auf dunkler
+       (Satellit/Dark) der helle Saum. */
     .aircraft-marker-fremd {
-      color: #8a97a8;
-      filter: drop-shadow(0 0 3px rgba(0,0,0,0.8));
+      color: #2b3440;
+      filter: drop-shadow(0 0 2px rgba(255,255,255,0.95));
     }
 
     /* Das Label am Flugzeug sitzt als Leaflet-Tooltip unter dem Symbol -- bewusst NICHT im
@@ -3694,6 +3699,207 @@ function _setupAIPPref(map, aipLayer) {
 // Control-Checkbox von Anfang an korrekt "angehakt" gerendert wird (s. Kommentar oben).
 function _addPreferredAIPLayer(map, aipLayer) {
   if (aipLayer && _loadAIPPref()) aipLayer.addTo(map);
+}
+
+// --------------------------------------------------------------------------
+//  Fremdverkehr als Karten-Ebene
+// --------------------------------------------------------------------------
+// Bedient wird er wie OpenAIP: ein Haken in der Ebenen-Auswahl, kein eigener Knopf. Die
+// Karte hat im Cockpit ohnehin wenig Platz, und eine Ebene ist genau das, was er ist.
+//
+// Geschaltet wird AUSSCHLIESSLICH der Fremdverkehr. Die Friesen sind der Kern der Anwendung
+// und kommen ueber einen anderen Weg (SSE / /api/live) -- sie bleiben immer sichtbar.
+const _VERKEHR_PREF_KEY = 'friesenspy_verkehr';
+// Unterhalb dieser Zoomstufe wird nicht abgefragt und nichts gezeichnet. 7 ist die Stufe,
+// mit der die Live-Karte oeffnet (minZoom ist 6): Laege die Schwelle darueber, schaltete man
+// die Ebene ein und es passierte sichtbar nichts. Vom Nutzer am laufenden Bild bestaetigt
+// (15.08.2026). Steht genau einmal hier und nirgends sonst als Zahl.
+const _VERKEHR_MIN_ZOOM = 7;
+const _VERKEHR_TAKT_MS  = 15000;   // wie der VATSIM-Poll -- oefter gaebe es nichts Neues
+const _VERKEHR_MAX_KM   = 250;     // serverseitige Obergrenze, hier gespiegelt
+const _VERKEHR_DROSSEL_MS = 3000;  // gegen Dauerziehen an der Karte
+
+const _verkehrRoh    = {};   // callsign -> {lat, lon, hdg, gs, ts} -- gemeldete Rohwerte
+const _verkehrMarker = {};   // callsign -> L.Marker
+const _verkehrFehlt  = {};   // callsign -> wie oft in Folge nicht gemeldet (Hysterese)
+let _verkehrGruppe   = null;
+let _verkehrTimer    = null;
+let _verkehrLetzterAbruf = 0;
+let _verkehrNachholer = null;
+
+function _saveVerkehrPref(an) { try { localStorage.setItem(_VERKEHR_PREF_KEY, an ? '1' : '0'); } catch (e) {} }
+function _loadVerkehrPref() { try { return localStorage.getItem(_VERKEHR_PREF_KEY) === '1'; } catch (e) { return false; } }
+
+function _makeVerkehrLayer() { return L.layerGroup(); }
+
+// Wie bei OpenAIP: NUR die Listener anmelden, den Layer NICHT hinzufuegen (s. Kommentar bei
+// _setupAIPPref -- sonst sieht die Layers-Control den Zustand nie).
+function _setupVerkehrPref(map, gruppe) {
+  if (!gruppe) return;
+  map.on('overlayadd',    (e) => { if (e.layer === gruppe) { _saveVerkehrPref(true);  _verkehrStarten(map); } });
+  map.on('overlayremove', (e) => { if (e.layer === gruppe) { _saveVerkehrPref(false); _verkehrStoppen(); } });
+  // Die Wache ist hier NICHT optional: Bei eingeschalteter Moving Map ruft _naviTakt jede
+  // Sekunde setView auf, und Leaflet feuert danach moveend. Ohne sie liefe der Abruf
+  // dauerhaft im Drossel-Takt (alle 3 s statt alle 15 s) -- ausgerechnet ueber die
+  // Netzwerkverbindung des Simulators. setView ist synchron und der Merker steht
+  // waehrenddessen (s. _naviTakt), die Wache greift also.
+  map.on('moveend', () => { if (!_naviSelbstBewegt) _verkehrAbrufen(map); });
+}
+
+// Und wie bei OpenAIP: VOR dem Bau der Layers-Control -- sonst zeigt der Haken dauerhaft den
+// falschen Zustand.
+function _addPreferredVerkehrLayer(map, gruppe) {
+  if (gruppe && _loadVerkehrPref()) gruppe.addTo(map);
+}
+
+function _verkehrStarten(map) {
+  if (_verkehrTimer) return;
+  _verkehrAbrufen(map);
+  _verkehrTimer = setInterval(() => _verkehrAbrufen(map), _VERKEHR_TAKT_MS);
+}
+
+function _verkehrStoppen() {
+  if (_verkehrTimer) { clearInterval(_verkehrTimer); _verkehrTimer = null; }
+  if (_verkehrNachholer) { clearTimeout(_verkehrNachholer); _verkehrNachholer = null; }
+  _verkehrLeeren();
+}
+
+function _verkehrLeeren() {
+  for (const cs in _verkehrMarker) {
+    if (_verkehrGruppe) _verkehrGruppe.removeLayer(_verkehrMarker[cs]);
+    delete _verkehrMarker[cs];
+  }
+  for (const cs in _verkehrRoh) delete _verkehrRoh[cs];
+  for (const cs in _verkehrFehlt) delete _verkehrFehlt[cs];
+}
+
+// Radius so, dass der sichtbare Ausschnitt abgedeckt ist: Mitte bis Ecke. Gekappt auf die
+// serverseitige Obergrenze -- daraus wird bei weit herausgezoomter Karte ein Kreis in der
+// Mitte statt eines vollen Bildes, und das ist die richtige Entscheidung: Was am Rand von
+// halb Europa fliegt, ist keine Information mehr.
+function _verkehrRadiusKm(map) {
+  const km = map.getCenter().distanceTo(map.getBounds().getNorthEast()) / 1000;
+  return Math.max(1, Math.min(_VERKEHR_MAX_KM, Math.round(km)));
+}
+
+function _verkehrAbrufen(map) {
+  if (!map || !_verkehrGruppe || !map.hasLayer(_verkehrGruppe)) return;
+  // Auf einer verdeckten Karte ist der Abruf Arbeit ohne Wirkung -- und schlimmer als
+  // nutzlos: Die Rohwerte liefen weiter, waehrend der Takt (der ebenfalls abbricht) die
+  // Marker nicht bewegt. Beim Zurueckwechseln saehe man sie springen.
+  if (!_istSichtbar(map.getContainer())) return;
+  if (map.getZoom() < _VERKEHR_MIN_ZOOM) { _verkehrLeeren(); return; }
+
+  const jetzt = Date.now();
+  // Drossel mit Nachhol-Termin: Verwerfen allein hiesse, dass nach einem Zug an der Karte
+  // der neue Ausschnitt bis zu 15 Sekunden ohne Verkehr bleibt.
+  if (jetzt - _verkehrLetzterAbruf < _VERKEHR_DROSSEL_MS) {
+    if (!_verkehrNachholer) {
+      _verkehrNachholer = setTimeout(function () {
+        _verkehrNachholer = null;
+        _verkehrAbrufen(map);
+      }, _VERKEHR_DROSSEL_MS - (jetzt - _verkehrLetzterAbruf));
+    }
+    return;
+  }
+  _verkehrLetzterAbruf = jetzt;
+
+  const c = map.getCenter();
+  fetch('/api/traffic?lat=' + c.lat.toFixed(4) + '&lon=' + c.lng.toFixed(4)
+        + '&r=' + _verkehrRadiusKm(map))
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => { if (d) _verkehrUebernehmen(d.traffic || [], Number(d.age) || 0); })
+    // Netz weg (im Kniebrett keine Seltenheit): stillschweigend beim naechsten Takt wieder.
+    .catch(() => {});
+}
+
+function _verkehrUebernehmen(liste, ageSek) {
+  if (!_verkehrGruppe) return;
+  // Die Fortrechnung muss dort beginnen, wo der Poller die Daten geholt hat, nicht dort, wo
+  // die Antwort ankam -- sonst laeuft die Anzeige um das Alter der Momentaufnahme hinterher.
+  const gemessenTs = Date.now() - Math.round(ageSek * 1000);
+  const gesehen = Object.create(null);
+
+  for (let i = 0; i < liste.length; i++) {
+    const e  = liste[i];
+    const cs = e && e.cs;
+    if (!cs) continue;
+    // Das eigene Flugzeug ist hier nicht auszufiltern -- das erledigt der Server ueber die
+    // CID. Clientseitig ginge es nicht: _meinCallsign() liest aus liveData, und dort stehen
+    // nur FRS-Piloten -- also gerade nicht der Fall, um den es geht (eigener Flug ohne
+    // FRS-Callsign).
+    gesehen[cs] = true;
+    delete _verkehrFehlt[cs];
+
+    // Zeitstempel NUR bei wirklich neuen Koordinaten -- sonst faengt die Fortrechnung bei
+    // jedem Abruf von vorn an und der Marker springt zurueck. Genau dieser Fehler kostete
+    // bei den Friesen drei Anlaeufe (s. Kommentar in updateMap).
+    const alt = _verkehrRoh[cs];
+    if (!alt || alt.lat !== e.lat || alt.lon !== e.lon) {
+      _verkehrRoh[cs] = { lat: e.lat, lon: e.lon,
+                          hdg: Number(e.hdg) || 0, gs: Number(e.gs) || 0, ts: gemessenTs };
+    }
+
+    const hdg = Math.round(Number(e.hdg) || 0);
+    const beschriftung = _verkehrLabel(e, false);
+    const popup = _verkehrPopup(e);
+    const vorhanden = _verkehrMarker[cs];
+    if (vorhanden) {
+      if (vorhanden._fsHeading !== hdg) {
+        vorhanden.setIcon(makeAircraftIcon(hdg, true));
+        vorhanden._fsHeading = hdg;
+      }
+      if (vorhanden._fsLabel !== beschriftung) {
+        vorhanden.setTooltipContent(beschriftung);
+        vorhanden._fsLabel = beschriftung;
+      }
+      // Auch hier nur bei echter Aenderung -- 60 Popups bei jedem Abruf neu zu bauen ist
+      // dieselbe unnoetige Arbeit, die beim Tooltip zwei Zeilen darueber vermieden wird.
+      if (vorhanden._fsPopup !== popup) {
+        vorhanden.setPopupContent(popup);
+        vorhanden._fsPopup = popup;
+      }
+    } else {
+      const m = L.marker([e.lat, e.lon], { icon: makeAircraftIcon(hdg, true), rotateWithView: true })
+        .bindPopup(popup, { maxWidth: 220 })
+        .bindTooltip(beschriftung, { permanent: true, direction: 'bottom', offset: [0, 2],
+                                     className: 'traffic-label', opacity: 1 })
+        .addTo(_verkehrGruppe);
+      m._fsHeading = hdg;
+      m._fsLabel = beschriftung;
+      m._fsPopup = popup;
+      _verkehrMarker[cs] = m;
+    }
+  }
+
+  // Wer nicht mehr gemeldet wird, verschwindet -- sonst rechnet der Takt eine Position
+  // endlos weiter, deren Flugzeug laengst ausser Reichweite ist.
+  //
+  // Aber erst beim ZWEITEN Fehlen: Der Server kappt hart bei 60 nach Entfernung, ohne
+  // Hysterese. Ein Flugzeug auf Rang 60/61 wechselt zwischen zwei Abrufen hin und her, und
+  // jedes Loeschen samt Neuanlegen ist im Kniebrett als Aufblitzen sichtbar (derselbe Fund,
+  // der schon setIcon aus dem Takt genommen hat).
+  for (const cs in _verkehrMarker) {
+    if (gesehen[cs]) continue;
+    _verkehrFehlt[cs] = (_verkehrFehlt[cs] || 0) + 1;
+    if (_verkehrFehlt[cs] < 2) continue;
+    _verkehrGruppe.removeLayer(_verkehrMarker[cs]);
+    delete _verkehrMarker[cs];
+    delete _verkehrRoh[cs];
+    delete _verkehrFehlt[cs];
+  }
+}
+
+// Die Hoehe kommt aus _labelHoehe, NICHT aus dem vorhandenen fmtAlt: Das schreibt
+// Flugflaechen erst ab 18 000 ft. Am Symbol staende dann FL120 und einen Klick daneben
+// 12.000 ft -- zwei Wahrheiten ueber dieselbe Zahl.
+function _verkehrPopup(e) {
+  const route = (e.dep || e.arr) ? fmtRouteHtml(e.dep, e.arr) : '—';
+  return '<div class="popup-callsign">' + escHtml(String(e.cs || '').toUpperCase()) + '</div>'
+       + '<div class="popup-row">Muster: <span>' + acLink(e.ac || '') + '</span></div>'
+       + '<div class="popup-row">Flugplan: <span>' + route + '</span></div>'
+       + '<div class="popup-row">Höhe: <span>' + _labelHoehe(e.alt) + '</span></div>'
+       + '<div class="popup-row">GS: <span>' + fmtGS(e.gs) + '</span></div>';
 }
 
 // ==========================================================================
@@ -7069,6 +7275,16 @@ function _naviTakt(sofort) {
     mapMarkers[cs].setLatLng([p.lat, p.lon]);
   }
 
+  // 2b. Fremdverkehr -- gleiche Rechnung, eigene Datenquelle. Auch hier gilt: Bewegt wird
+  //     NUR hier. Steht der Rohwert nicht (mehr) da, bleibt der Marker stehen, statt auf
+  //     eine geratene Position zu springen.
+  for (const cs in _verkehrMarker) {
+    const roh = _verkehrRoh[cs];
+    if (!roh) continue;
+    const p = _jetztGerechnet(roh);
+    _verkehrMarker[cs].setLatLng([p.lat, p.lon]);
+  }
+
   // 3. Das eigene Flugzeug aus der Sim-Position -- die einzige Stelle, die es setzt.
   _eigenesFlugzeugZeichnen();
 
@@ -7307,12 +7523,21 @@ async function initLiveMap() {
   _getPreferredLayer(liveLayers).addTo(liveMap);
   const liveAIP = _makeAIPOverlay();
   _addPreferredAIPLayer(liveMap, liveAIP);
+  _verkehrGruppe = _makeVerkehrLayer();
+  _addPreferredVerkehrLayer(liveMap, _verkehrGruppe);
+  const liveOverlays = {};
+  if (liveAIP) liveOverlays['OpenAIP'] = liveAIP;
+  liveOverlays['Verkehr'] = _verkehrGruppe;
   L.control.layers(
     { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Light': liveLayers.light, 'Dark': liveLayers.dark },
-    liveAIP ? { 'OpenAIP': liveAIP } : {},
+    liveOverlays,
     { position: 'topright', collapsed: true }
   ).addTo(liveMap);
   _setupAIPPref(liveMap, liveAIP);
+  _setupVerkehrPref(liveMap, _verkehrGruppe);
+  // War die Ebene vorher an, laeuft sie sofort wieder -- overlayadd feuert bei einem vor
+  // dem Bau der Control hinzugefuegten Layer nicht mehr.
+  if (liveMap.hasLayer(_verkehrGruppe)) _verkehrStarten(liveMap);
   _diagKarte(liveMap, 'live', liveAIP);
   _diagFlackern(liveMap);
   _setupOFMAutoSwitch(liveMap, liveLayers);
@@ -7382,17 +7607,23 @@ function _verkehrLabel(p, istFriese) {
   return '<span class="lbl-dat">' + daten + '</span>';
 }
 
-function makeAircraftIcon(heading) {
+// Fremdverkehr ist Kulisse, die Friesen sind die Aussage -- deshalb kleiner (s. auch die
+// graue Farbe in .aircraft-marker-fremd).
+const _FLUGZEUG_PX_FREMD = 18;
+
+function makeAircraftIcon(heading, fremd) {
   const hdg = Number(heading) || 0;
-  const mitte = _FLUGZEUG_PX / 2;
+  const px = fremd ? _FLUGZEUG_PX_FREMD : _FLUGZEUG_PX;
+  const mitte = px / 2;
+  const klasse = fremd ? 'aircraft-marker aircraft-marker-fremd' : 'aircraft-marker';
   return L.divIcon({
     className: '',
-    html: `<div class="aircraft-marker" style="transform: rotate(${hdg}deg);">
-      <svg width="${_FLUGZEUG_PX}" height="${_FLUGZEUG_PX}" viewBox="0 0 24 24" fill="currentColor">
+    html: `<div class="${klasse}" style="transform: rotate(${hdg}deg);">
+      <svg width="${px}" height="${px}" viewBox="0 0 24 24" fill="currentColor">
         <path d="${_FLUGZEUG_PFAD}"/>
       </svg>
     </div>`,
-    iconSize:   [_FLUGZEUG_PX, _FLUGZEUG_PX],
+    iconSize:   [px, px],
     // Der Anker MUSS die Mitte sein und mit der Groesse mitwachsen -- sonst sitzt das
     // Flugzeug nicht mehr auf seiner eigenen Position, sondern daneben.
     iconAnchor: [mitte, mitte],
