@@ -1220,6 +1220,32 @@
        erreichen -- zwei Anlaeufe mit hoeherer Selektor-Tiefe blieben messbar wirkungslos
        (Knopf 30px, weiss). Dieselbe Entscheidung war fuer die Zoom-Knoepfe schon vorher
        getroffen, s. `.leaflet-control-zoom a` daneben. */
+    /* Die Ebenen-Auswahl ist das einzige Bedienelement, das Leaflet selbst zeichnet -- und
+       sie kam als weisser Kasten mit schwarzem Symbol daher, mitten zwischen unseren
+       dunklen Knoepfen (Nutzer, 15.08.2026: "findest du das weisse layer symbol in der
+       karte gut? das passt nicht zu den anderen"). Symbol und Kasten hier also selbst.
+
+       Das Symbol ist ein eingebettetes SVG statt Leaflets PNG: Ein PNG liesse sich nur
+       umfaerben, indem man es invertiert -- das ergibt weiss, nicht die Akzentfarbe. Als
+       Vektor ist es ausserdem in jeder Aufloesung scharf, was auf dem Tablet zaehlt. */
+    .leaflet-control-layers {
+      background: #071525 !important;
+      border: 1px solid rgba(45,156,219,0.3) !important;
+      color: #cfe3f0 !important;
+      box-shadow: none !important;
+    }
+    .leaflet-control-layers-toggle {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2 22 8 12 14 2 8z' fill='%232d9cdb'/%3E%3Cpath d='M12 16.4 4.4 11.9 2 13.2l10 5.9 10-5.9-2.4-1.3z' fill='%232d9cdb' opacity='.6'/%3E%3C/svg%3E") !important;
+      background-size: 26px 26px !important;
+      background-position: center !important;
+      background-repeat: no-repeat !important;
+      width: 44px !important;
+      height: 44px !important;
+    }
+    /* Aufgeklappt: die Liste selbst gehoert ins gleiche Bild wie der Knopf. */
+    .leaflet-control-layers-expanded { padding: 8px 10px !important; }
+    .leaflet-control-layers-separator { border-top-color: rgba(45,156,219,0.25) !important; }
+
     .navi-bar { border: none !important; background: none !important; margin-top: 8px; }
     .navi-bar .navi-knopf {
       display: flex !important;
@@ -1233,6 +1259,10 @@
       cursor: pointer;
     }
     .navi-bar .navi-knopf:hover { background: #0b2036 !important; }
+    /* Die Suedhaelfte der Kompassnadel ist normalerweise hell -- auf dem blauen Grund des
+       eingeschalteten Zustands waere sie kaum zu sehen. Dort also dunkel, genau wie der
+       Moving-Map-Pfeil sein Symbol umkehrt. */
+    .navi-bar.navi-an .kompass-sued { fill: #04080f; }
     .navi-bar .kompass-nadel, .navi-bar .moving-pfeil { width: 28px; height: 28px; display: block; }
     /* Die Nadel dreht sich gegen die Karte (zeigt also weiter nach Norden) -- der Uebergang
        macht aus dem Sprung eine Bewegung, ohne dauerhaft etwas zu animieren. */
@@ -6800,8 +6830,10 @@ function _addKompassControl(map) {
       const nadel =
         '<svg class="kompass-nadel" viewBox="0 0 24 24" aria-hidden="true">' +
         // Nordhaelfte rot, Suedhaelfte hell -- die uebliche Lesart, ohne Beschriftung.
+        // Die Suedhaelfte traegt eine Klasse, weil sie im eingeschalteten Zustand dunkel
+        // werden muss (auf blauem Grund waere hell auf hell, s. CSS).
         '<path d="M12 3 L16 13 L12 11 Z" fill="#e05555"/>' +
-        '<path d="M12 21 L8 11 L12 13 Z" fill="#cfe3f0"/>' +
+        '<path class="kompass-sued" d="M12 21 L8 11 L12 13 Z" fill="#cfe3f0"/>' +
         '</svg>';
       const a = _naviKnopf('Karte drehen: genordet / in Flugrichtung', nadel, function () {
         _trackUp = !_trackUp;
@@ -6943,6 +6975,10 @@ function _naviKnopfAnstrich() {
       // Der fehlende Drehantrieb schaltet den Kompass ebenfalls stumm -- das steht schon
       // beim Anlegen fest und darf hier nicht versehentlich wieder aufgehoben werden.
       const ohneDrehung = !_kannDrehen(liveMap);
+      // Track-up an = derselbe Anstrich wie beim Moving-Map-Knopf. Zwei Schalter direkt
+      // uebereinander, die ihren Zustand verschieden anzeigen, waeren im Cockpit eine
+      // unnoetige Denkaufgabe (Nutzer, 15.08.2026).
+      box.classList.toggle('navi-an', !!_trackUp && !stumm && !ohneDrehung);
       box.classList.toggle('navi-stumm', stumm || ohneDrehung);
       const a = box.querySelector('a');
       if (a) {

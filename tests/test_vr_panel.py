@@ -1120,6 +1120,36 @@ def test_moving_map_an_ist_auch_sichtbar():
     assert g and "background: #071525 !important" in g.group(1)
 
 
+def test_kartenknoepfe_sehen_gleich_aus():
+    """Alle Bedienelemente der Karte gehoeren ins selbe Bild.
+
+    Die Ebenen-Auswahl ist das einzige, das Leaflet selbst zeichnet -- und kam als weisser
+    Kasten mit schwarzem Symbol zwischen unseren dunklen Knoepfen daher. Das Symbol ist
+    deshalb ein eingebettetes SVG in der Akzentfarbe: Ein PNG liesse sich nur invertieren
+    (ergibt weiss, nicht blau) und waere auf dem Tablet ausserdem unscharf."""
+    m = re.search(r"\.leaflet-control-layers \{([^}]*)\}", INDEX, re.S)
+    assert m and "#071525" in m.group(1), "die Ebenen-Auswahl traegt nicht den dunklen Grund"
+    t = re.search(r"\.leaflet-control-layers-toggle \{([^}]*)\}", INDEX, re.S)
+    assert t, "Ebenen-Symbol nicht gefunden"
+    assert "data:image/svg+xml" in t.group(1), "Leaflets PNG-Symbol ist noch da"
+    assert "%232d9cdb" in t.group(1), "das Symbol traegt nicht die Akzentfarbe"
+    assert "44px !important" in t.group(1), "die Ebenen-Auswahl ist kleiner als die anderen Knoepfe"
+
+
+def test_kompass_zeigt_seinen_zustand_wie_der_pfeil():
+    """Track-up an sieht aus wie Moving Map an -- zwei Schalter direkt uebereinander, die
+    ihren Zustand verschieden anzeigen, waeren im Cockpit eine unnoetige Denkaufgabe.
+
+    Dabei muss die helle Suedhaelfte der Nadel dunkel werden: auf dem blauen Grund des
+    eingeschalteten Zustands waere sie sonst hell auf hell."""
+    m = re.search(r"function _naviKnopfAnstrich\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert m and "box.classList.toggle('navi-an', !!_trackUp" in m.group(1), \
+        "der Kompass zeigt seinen Zustand nicht an"
+    assert re.search(r"\.navi-bar\.navi-an \.kompass-sued \{[^}]*fill:", INDEX), \
+        "die Nadel-Suedhaelfte bleibt hell auf hell"
+    assert 'class="kompass-sued"' in INDEX
+
+
 def test_flugzeuge_drehen_mit_der_karte():
     """Bei Track-up MUSS das Flugzeugsymbol mitdrehen -- seine Richtung ist die Aussage.
 

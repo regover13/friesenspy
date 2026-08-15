@@ -1,5 +1,15 @@
 [
   {
+    "version": "12.6.8",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Kartenknöpfe aus einem Guss",
+    "items": [
+      "🗂️ Die Ebenen-Auswahl war als einziges Bedienelement ein weißer Kasten mit schwarzem Symbol — sie stammt aus der Kartenbibliothek und hatte deren Aussehen behalten. Jetzt trägt sie denselben dunklen Grund und dasselbe Blau wie die übrigen Knöpfe und ist genauso groß.",
+      "🧭 Der Kompass zeigt jetzt wie der Moving-Map-Knopf durch Farbumkehr an, ob er eingeschaltet ist. Zwei Schalter direkt übereinander, die ihren Zustand unterschiedlich anzeigen, wären im Cockpit unnötig zu entziffern."
+    ]
+  },
+  {
     "version": "12.6.7",
     "date": "2026-08-15",
     "highlight": false,
