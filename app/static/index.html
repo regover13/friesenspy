@@ -1246,6 +1246,16 @@
     .leaflet-control-layers-expanded { padding: 8px 10px !important; }
     .leaflet-control-layers-separator { border-top-color: rgba(45,156,219,0.25) !important; }
 
+    /* Ein Haken, der zu der Ebene ueber ihm gehoert, statt eine eigene zu sein: eingerueckt und
+       eine Spur leiser. Ohne beides laese er sich als sechste Ebene, und der Blick suchte
+       vergeblich, was "Schilder" fuer eine Karte sein soll. */
+    .leaflet-control-layers .ebenen-unterpunkt {
+      display: block;
+      padding-left: 18px;
+      color: var(--text-label);
+      font-size: 0.92em;
+    }
+
     .navi-bar { border: none !important; background: none !important; margin-top: 8px; }
     .navi-bar .navi-knopf {
       display: flex !important;
@@ -1934,6 +1944,15 @@
        deshalb ueber Helligkeit und Fettung ab, nicht ueber die Farbe. */
     .traffic-label .lbl-cs  { display: block; color: #eef2f7; font-weight: 700; }
     .traffic-label .lbl-dat { display: block; }
+
+    /* Schilder ausgeblendet (Schalter unter der Verkehrs-Ebene).
+       Ueber CSS und nicht ueber bind/unbindTooltip: Die Schilder sollen im selben Augenblick
+       weg sein, in dem der Haken faellt -- nicht erst beim naechsten Zulauf. Ausserdem bleibt
+       damit jeder Marker unangetastet, und ein neu dazukommendes Flugzeug hat automatisch den
+       richtigen Zustand, ohne dass die Zeichenroutine ihn kennen muss.
+       Betroffen ist nur der fremde Verkehr: Die eigene Maschine und die Friesen sind die
+       Aussage der Karte, sie tragen ihr Schild weiter. */
+    .leaflet-container.ohne-verkehrsschilder .traffic-label-fremd { display: none; }
 
     /* ICAO-Beschriftung der FSE-Plaetze: anders als .traffic-label (das den eigenen/fremden
        Verkehr hervorheben soll) ist diese Ebene reine Kulisse, keine Aussage -- deshalb kein
@@ -4292,50 +4311,74 @@ function _verkehrQuelleWechseln(simIstQuelle) {
 function _saveVerkehrPref(an) { try { localStorage.setItem(_VERKEHR_PREF_KEY, an ? '1' : '0'); } catch (e) {} }
 function _loadVerkehrPref() { try { return localStorage.getItem(_VERKEHR_PREF_KEY) === '1'; } catch (e) { return false; } }
 
-// Ab dieser Zoomstufe werden auch geparkte Flugzeuge geholt und gezeichnet.
+// --- Schilder am fremden Verkehr, ein- und ausschaltbar ----------------------------------
 //
-// Weiter draussen bleiben sie weg, und zwar aus einem handfesten Grund: Sie stehen auf dem
-// eigenen Platz und sind damit IMMER die naechsten -- sie wuerden den Entfernungs-Deckel von
-// vorne auffressen und ausgerechnet den fliegenden Verkehr verdraengen. Ab 13 zeigt die Karte
-// ohnehin nur noch den Platz und seine Umgebung; dort ist das belegte Vorfeld die Information,
-// und der Deckel reicht bequem. Steht genau einmal hier.
-const _VERKEHR_GEPARKT_AB_ZOOM = 13;
-// Darunter gilt ein Flugzeug am Boden als geparkt -- dieselbe Schwelle wie im Panel.
-const _VERKEHR_GEPARKT_KT = 5;
+// Sie sind die Aussage der Ebene und deshalb standardmaessig AN (anders als bei den uebrigen
+// Merkern, wo "noch nie entschieden" gleich "aus" heisst). Wer sie ausschaltet, will das Bild
+// ruhig haben -- ueber dem Platz stehen sonst dreissig Beschriftungen nebeneinander.
+const _VERKEHR_SCHILDER_PREF_KEY = 'fs_verkehr_schilder';
 
-let _verkehrSchalterZuletzt = null;   // zuletzt gemeldeter Zustand, gegen Dauerfeuer beim Zoomen
-
-function _verkehrGeparkteSichtbar(map) {
-  return !!(map && map.getZoom() >= _VERKEHR_GEPARKT_AB_ZOOM);
+function _saveSchilderPref(an) { try { localStorage.setItem(_VERKEHR_SCHILDER_PREF_KEY, an ? '1' : '0'); } catch (e) {} }
+function _loadSchilderPref() {
+  try { return localStorage.getItem(_VERKEHR_SCHILDER_PREF_KEY) !== '0'; } catch (e) { return true; }
 }
 
-// Ein Eintrag, den der Simulator als stehend am Boden meldet. Der VATSIM-Feed kennt kein `gnd`
-// und faellt hier nie hinein -- dort bleibt alles wie bisher.
-function _verkehrIstGeparkt(e) {
-  return e.gnd === true && (Number(e.gs) || 0) < _VERKEHR_GEPARKT_KT;
+// Der Zustand haengt am Karten-Container, nicht an den einzelnen Markern: So gilt er sofort,
+// auch fuer Flugzeuge, die erst danach dazukommen (s. Kommentar bei .ohne-verkehrsschilder).
+function _schilderAnwenden(map, an) {
+  if (!map || !map.getContainer) return;
+  const behaelter = map.getContainer();
+  if (!behaelter) return;
+  if (an) behaelter.classList.remove('ohne-verkehrsschilder');
+  else behaelter.classList.add('ohne-verkehrsschilder');
 }
 
-// Dem Kniebrett sagen, ob die Ebene an ist und ob es die Geparkten mitschicken soll. Ohne diese
-// Meldung fragt es den Simulator gar nicht erst ab -- ein Coherent.call je Sekunde, dessen
-// Ergebnis niemand zeichnet, ist Arbeit ohne Gegenwert. Ausserhalb des Kniebretts geht die
-// Meldung ins Leere, und das ist richtig so.
-function _verkehrSchalterMelden(an, geparkt) {
-  const zustand = (an ? '1' : '0') + (geparkt ? '1' : '0');
-  _verkehrSchalterZuletzt = zustand;
+// Haengt einen zweiten Haken unter den der Verkehrs-Ebene. Leaflet sieht dafuer nichts vor --
+// die Ebenen-Auswahl kennt nur Ebenen -- deshalb der Griff ins fertige DOM. Findet er den
+// Anker nicht (andere Leaflet-Fassung, umbenannte Ebene), passiert schlicht nichts: Die Karte
+// bleibt bedienbar, nur der Zusatzhaken fehlt.
+function _schilderSchalterEinbauen(map, control) {
+  if (!control || typeof control.getContainer !== 'function') return;
+  const behaelter = control.getContainer();
+  if (!behaelter) return;
+  const zeilen = behaelter.querySelectorAll('.leaflet-control-layers-overlays label');
+  let anker = null;
+  for (let i = 0; i < zeilen.length; i++) {
+    if (zeilen[i].textContent.trim() === 'Verkehr') { anker = zeilen[i]; break; }
+  }
+  if (!anker || !anker.parentNode) return;
+
+  const zeile = document.createElement('label');
+  zeile.className = 'ebenen-unterpunkt';
+  const kasten = document.createElement('input');
+  kasten.type = 'checkbox';
+  kasten.checked = _loadSchilderPref();
+  const text = document.createElement('span');
+  text.textContent = ' Schilder';
+  zeile.appendChild(kasten);
+  zeile.appendChild(text);
+  kasten.addEventListener('change', function () {
+    _saveSchilderPref(kasten.checked);
+    _schilderAnwenden(map, kasten.checked);
+  });
+  anker.parentNode.insertBefore(zeile, anker.nextSibling);
+}
+
+// Dem Kniebrett sagen, ob die Ebene an ist. Ohne diese Meldung fragt es den Simulator gar
+// nicht erst ab -- ein Coherent.call je Sekunde, dessen Ergebnis niemand zeichnet, ist Arbeit
+// ohne Gegenwert. Ausserhalb des Kniebretts geht die Meldung ins Leere, und das ist richtig so.
+//
+// Kein Wort mehr ueber geparkte Flugzeuge: Es gab hier eine Zoomschwelle, ab der sie zusaetzlich
+// erscheinen sollten. Sie ist am 15.08.2026 im Flug durchgefallen -- geparkte Maschinen standen
+// mit Schild auf dem Vorfeld, obwohl die Regel sie stumm haette schalten muessen. Der Grund ist
+// die Erkennung selbst: Ob ein Eintrag "am Boden steht", laesst sich aus den vorliegenden Daten
+// nicht verlaesslich sagen (der VATSIM-Feed kennt gar kein solches Feld). Eine Regel, die nur
+// manchmal greift, ist schlechter als keine -- also keine. Alle sehen gleich aus (Nutzer-Wahl).
+function _verkehrSchalterMelden(an) {
   try {
     if (!window.parent || window.parent === window) return;
-    window.parent.postMessage({ quelle: 'friesenspy', art: 'verkehr-schalter',
-                               an: !!an, geparkt: !!geparkt }, '*');
+    window.parent.postMessage({ quelle: 'friesenspy', art: 'verkehr-schalter', an: !!an }, '*');
   } catch (e) {}
-}
-
-// Beim Zoomen nur melden, wenn sich am Zustand wirklich etwas aendert -- `zoomend` feuert bei
-// jeder Stufe, und die Nachricht ist sonst reines Rauschen.
-function _verkehrSchalterNachziehen(map, gruppe) {
-  const an = !!(map && gruppe && map.hasLayer(gruppe));
-  const zustand = (an ? '1' : '0') + (_verkehrGeparkteSichtbar(map) ? '1' : '0');
-  if (zustand === _verkehrSchalterZuletzt) return;
-  _verkehrSchalterMelden(an, _verkehrGeparkteSichtbar(map));
 }
 
 // Was steht wirklich drin? Die alte Sonde meldete nur die FELDNAMEN -- damit blieb offen, ob
@@ -4375,11 +4418,8 @@ function _makeVerkehrLayer() { return L.layerGroup(); }
 // _setupAIPPref -- sonst sieht die Layers-Control den Zustand nie).
 function _setupVerkehrPref(map, gruppe) {
   if (!gruppe) return;
-  map.on('overlayadd',    (e) => { if (e.layer === gruppe) { _saveVerkehrPref(true);  _verkehrSchalterMelden(true, _verkehrGeparkteSichtbar(map));  _verkehrStarten(map); } });
-  map.on('overlayremove', (e) => { if (e.layer === gruppe) { _saveVerkehrPref(false); _verkehrSchalterMelden(false, false); _verkehrStoppen(); } });
-  // Beim Zoomen kippt die Entscheidung ueber die geparkten Flugzeuge -- das Panel muss davon
-  // erfahren, sonst schickt es sie nie oder dauernd.
-  map.on('zoomend', () => _verkehrSchalterNachziehen(map, gruppe));
+  map.on('overlayadd',    (e) => { if (e.layer === gruppe) { _saveVerkehrPref(true);  _verkehrSchalterMelden(true);  _verkehrStarten(map); } });
+  map.on('overlayremove', (e) => { if (e.layer === gruppe) { _saveVerkehrPref(false); _verkehrSchalterMelden(false); _verkehrStoppen(); } });
   // Die Wache ist hier NICHT optional: Bei eingeschalteter Moving Map ruft _naviTakt jede
   // Sekunde setView auf, und Leaflet feuert danach moveend. Ohne sie liefe der Abruf
   // dauerhaft im Drossel-Takt (alle 3 s statt alle 15 s) -- ausgerechnet ueber die
@@ -4396,7 +4436,7 @@ function _addPreferredVerkehrLayer(map, gruppe) {
   // Auch ein "aus" melden: Das Panel startet mit verkehrAn = false, aber nach einem Neuladen
   // der Seite bei eingeschalteter Ebene wuerde sonst niemand jemals ein "an" schicken --
   // overlayadd feuert hier nicht, das ist ja gerade der Grund fuer diese Funktion.
-  _verkehrSchalterMelden(an, an && _verkehrGeparkteSichtbar(map));
+  _verkehrSchalterMelden(an);
 }
 
 function _verkehrStarten(map) {
@@ -4509,11 +4549,9 @@ function _verkehrZeichnen(liste, gemessenTs, schluesselVon) {
     }
 
     const hdg = Math.round(Number(e.hdg) || 0);
-    // Geparkte tragen KEIN dauerhaftes Schild. Sie stehen dicht an dicht auf dem Vorfeld;
-    // dreissig ueberlappende Beschriftungen waeren genau dort unlesbar, wo die Karte am
-    // meisten leisten muss. Angeklickt zeigen sie trotzdem alles.
-    const geparkt = _verkehrIstGeparkt(e);
-    const beschriftung = geparkt ? null : _verkehrLabel(e, false);
+    // Jedes Flugzeug traegt sein Schild -- auch das geparkte auf dem Vorfeld. Es gab hier eine
+    // Ausnahme fuer Stehende; sie ist raus (Nutzer-Wahl 15.08.2026, s. _verkehrSchalterMelden).
+    const beschriftung = _verkehrLabel(e, false);
     const popup = _verkehrPopup(e);
     const vorhanden = _verkehrMarker[cs];
     if (vorhanden) {
@@ -4521,18 +4559,8 @@ function _verkehrZeichnen(liste, gemessenTs, schluesselVon) {
         vorhanden.setIcon(makeAircraftIcon(hdg, true));
         vorhanden._fsHeading = hdg;
       }
-      // Ein Flugzeug kann anrollen und wieder stehenbleiben -- das Schild muss also in beide
-      // Richtungen mitgehen, nicht nur einmal beim Anlegen gesetzt werden.
       if (vorhanden._fsLabel !== beschriftung) {
-        if (beschriftung === null) {
-          vorhanden.unbindTooltip();
-        } else if (vorhanden.getTooltip()) {
-          vorhanden.setTooltipContent(beschriftung);
-        } else {
-          vorhanden.bindTooltip(beschriftung, { permanent: true, direction: 'bottom',
-                                                offset: [0, 2], className: 'traffic-label',
-                                                opacity: 1 });
-        }
+        vorhanden.setTooltipContent(beschriftung);
         vorhanden._fsLabel = beschriftung;
       }
       // Auch hier nur bei echter Aenderung -- 60 Popups bei jedem Abruf neu zu bauen ist
@@ -4544,11 +4572,9 @@ function _verkehrZeichnen(liste, gemessenTs, schluesselVon) {
     } else {
       const m = L.marker([e.lat, e.lon], { icon: makeAircraftIcon(hdg, true), rotateWithView: true })
         .bindPopup(popup, { maxWidth: 220 })
+        .bindTooltip(beschriftung, { permanent: true, direction: 'bottom', offset: [0, 2],
+                                     className: 'traffic-label traffic-label-fremd', opacity: 1 })
         .addTo(_verkehrGruppe);
-      if (beschriftung !== null) {
-        m.bindTooltip(beschriftung, { permanent: true, direction: 'bottom', offset: [0, 2],
-                                      className: 'traffic-label', opacity: 1 });
-      }
       m._fsHeading = hdg;
       m._fsLabel = beschriftung;
       m._fsPopup = popup;
@@ -8162,9 +8188,13 @@ function _eigenesFlugzeugZeichnen() {
  *
  * Eigene Zusammensetzung, weil der Simulator andere Dinge weiss als VATSIM: Er kennt Hoehe
  * und Geschwindigkeit auf die Sekunde genau, aber weder Callsign noch Flugzeugmuster --
- * beides steht im Flugplan, den es offline nicht gibt. Deshalb oben "DEIN FLUGZEUG" statt
- * eines Rufzeichens und unten nur die Werte, die wirklich vorliegen; ein "?" fuers Muster
- * waere eine Luecke, die wie ein Fehler aussieht.
+ * beides steht im Flugplan, den es offline nicht gibt. Also nur die Werte, die wirklich
+ * vorliegen; ein "?" fuers Muster waere eine Luecke, die wie ein Fehler aussieht.
+ *
+ * Hier stand einmal "DEIN FLUGZEUG" in der Kopfzeile. Es ist raus (Nutzer-Wahl 15.08.2026):
+ * Welches Symbol das eigene ist, sieht man an der Farbe und daran, dass die Karte ihm folgt --
+ * dafuer braucht es keine Beschriftung, die als einzige auf der ganzen Karte aus der Reihe
+ * faellt. Jetzt traegt das eigene Flugzeug dasselbe Schild wie jedes andere.
  *
  * Die Hoehenregel selbst kommt aus _labelHoehe -- es gibt sie genau einmal, sonst liefen
  * die Fassungen auseinander (s. Kommentar dort).
@@ -8173,8 +8203,7 @@ function _eigenLabel() {
   const gs = Math.round(Number(_simPos && _simPos.gs) || 0);
   const alt = (_simPos && _simPos.alt != null) ? _labelHoehe(_simPos.alt) : null;
   const daten = alt === null ? String(gs) : (alt + ' ' + gs);
-  return '<span class="lbl-cs">DEIN FLUGZEUG</span>'
-       + '<span class="lbl-dat">' + daten + '</span>';
+  return '<span class="lbl-dat">' + daten + '</span>';
 }
 
 /** Eigenes Callsign aus dem VATSIM-Strom (fuer die Zuordnung des eigenen Markers). */
@@ -8302,11 +8331,14 @@ async function initLiveMap() {
   liveOverlays['FSE-Plätze'] = _fsePlaetzeGruppe;
   _addPreferredFseLayer(liveMap);
   _fsePlaetzeZoomWache(liveMap);
-  L.control.layers(
+  const liveEbenen = L.control.layers(
     { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Light': liveLayers.light, 'Dark': liveLayers.dark },
     liveOverlays,
     { position: 'topright', collapsed: true }
   ).addTo(liveMap);
+  // Der Zusatzhaken fuer die Schilder -- erst jetzt, die Ebenen-Auswahl muss stehen.
+  _schilderAnwenden(liveMap, _loadSchilderPref());
+  _schilderSchalterEinbauen(liveMap, liveEbenen);
   _setupAIPPref(liveMap, liveAIP);
   _setupVerkehrPref(liveMap, _verkehrGruppe);
   // War die Ebene vorher an, laeuft sie sofort wieder -- overlayadd feuert bei einem vor

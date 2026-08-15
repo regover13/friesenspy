@@ -1568,8 +1568,18 @@ def test_eigenes_flugzeug_hat_auch_ein_label():
     stelle = INDEX.index("function _eigenLabel(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "_labelHoehe(" in rumpf, "eigene Hoehenregel statt der gemeinsamen"
-    assert "DEIN FLUGZEUG" in rumpf
     assert "_eigenLabel()" in INDEX, "Label wird nie gesetzt"
+
+
+def test_eigenes_label_traegt_keine_kopfzeile():
+    """Am eigenen Flugzeug stand "DEIN FLUGZEUG" -- als einziges Schild auf der ganzen Karte
+    mit einer Kopfzeile, die kein Rufzeichen ist (Nutzer-Wahl 15.08.2026). Jetzt dieselbe Form
+    wie bei allen anderen: nur die Werte."""
+    stelle = INDEX.index("function _eigenLabel(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "DEIN FLUGZEUG" not in rumpf
+    assert 'class="lbl-cs"' not in rumpf, "keine Kopfzeile ohne Rufzeichen"
+    assert 'class="lbl-dat"' in rumpf
 
 
 def test_hoehe_kommt_aus_dem_simulator():
@@ -1714,14 +1724,18 @@ def test_unplausible_geschwindigkeiten_werden_verworfen():
 
 
 @ohne_panel
-def test_stehende_flugzeuge_werden_nicht_gemeldet():
-    """Am Heimatplatz stehen sonst dreissig Symbole uebereinander, alle ohne Aussage.
-    Rollverkehr dagegen ist am Platz die wertvollste Information ueberhaupt -- deshalb die
-    Schwelle an der Geschwindigkeit und nicht an isOnGround allein."""
+def test_stehende_flugzeuge_werden_mitgemeldet():
+    """Es gab einen Filter gegen stehende Flugzeuge am Boden. Er ist raus (Nutzer-Wahl
+    15.08.2026): Am Platz ist das belegte Vorfeld die Information, und ob `isOnGround`
+    ueberhaupt geliefert wird, ist offen -- ein Filter, der nur manchmal greift, ist
+    schlechter als keiner."""
     stelle = PANEL_TSX.index("private verkehrAufbereiten(")
     rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
-    assert "VERKEHR_STEHT_KT" in rumpf
-    assert "isOnGround" in rumpf
+    assert "VERKEHR_STEHT_KT" not in rumpf
+    assert "if (r.isOnGround" not in rumpf, "keine Entscheidung mehr an einem unsicheren Feld"
+    # Weitergereicht wird es trotzdem: Solange offen ist, ob der Simulator das Feld ueberhaupt
+    # liefert, ist `gnd` die einzige Spur, an der sich das ueberhaupt ablesen laesst.
+    assert "gnd: r.isOnGround === true" in rumpf
 
 
 @ohne_panel
@@ -1855,53 +1869,88 @@ def test_frischewache_benutzt_dieselbe_grenze_wie_die_position():
 
 
 # --- Geparkte Flugzeuge -----------------------------------------------------------------
+#
+# Es gab hier eine Sonderbehandlung: Stehende am Boden erschienen erst ab Zoomstufe 13 und
+# trugen kein Schild. Sie ist am 15.08.2026 komplett entfernt worden (Nutzer-Wahl), nachdem
+# sie im Flug wirkungslos blieb -- ob ein Eintrag am Boden steht, laesst sich aus den
+# vorliegenden Daten nicht verlaesslich sagen. Die Tests halten jetzt fest, dass die
+# Sonderbehandlung WEG ist: Ohne sie waere die naechste Sitzung versucht, sie wieder
+# einzubauen, weil das Argument dafuer nach wie vor plausibel klingt.
 
-def test_geparkte_erst_ab_naher_zoomstufe():
-    """Geparkte stehen auf dem eigenen Platz und sind damit IMMER die naechsten -- weit
-    draussen wuerden sie den Entfernungs-Deckel von vorne auffressen und den fliegenden
-    Verkehr verdraengen. Ab Zoom 13 zeigt die Karte ohnehin nur noch den Platz."""
-    m = re.search(r"const _VERKEHR_GEPARKT_AB_ZOOM = (\d+);", INDEX)
-    assert m and int(m.group(1)) == 13
-    assert INDEX.count("_VERKEHR_GEPARKT_AB_ZOOM =") == 1
-    assert INDEX.count("_VERKEHR_GEPARKT_AB_ZOOM") >= 2
+def test_keine_zoomschwelle_fuer_geparkte():
+    """Die Schwelle ist raus -- samt der Meldung an das Panel, die an ihr hing."""
+    assert "_VERKEHR_GEPARKT_AB_ZOOM" not in INDEX
+    assert "_verkehrIstGeparkt" not in INDEX
+    assert "_verkehrSchalterNachziehen" not in INDEX
 
 
-def test_zoomstufe_wird_dem_panel_gemeldet():
-    """Das Panel kennt die Karte nicht -- die Entscheidung faellt auf der Seite und muss
-    hinueber. Ohne die Meldung schickte das Panel die Geparkten nie oder dauernd."""
-    assert "geparkt: !!geparkt" in INDEX
-    stelle = INDEX.index("function _setupVerkehrPref(")
+def test_schalter_meldet_nur_noch_an_und_aus():
+    """Der Rueckkanal traegt genau eine Aussage: Ist die Ebene an? Alles Weitere entschied
+    ueber geparkte Flugzeuge und ist mit ihnen entfallen."""
+    stelle = INDEX.index("function _verkehrSchalterMelden(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "zoomend" in rumpf
-    assert "_verkehrSchalterNachziehen" in rumpf
+    assert "an: !!an" in rumpf
+    assert "geparkt" not in rumpf
 
 
-def test_schalter_meldet_nicht_bei_jeder_zoomstufe():
-    """zoomend feuert bei jeder Stufe. Ohne Vergleich mit dem zuletzt gemeldeten Zustand
-    waere die Nachricht reines Rauschen."""
-    stelle = INDEX.index("function _verkehrSchalterNachziehen(")
-    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "_verkehrSchalterZuletzt" in rumpf
-
-
-def test_geparkte_tragen_kein_schild():
-    """Dreissig Abstellpositionen heissen dreissig ueberlappende Beschriftungen -- genau dort,
-    wo die Karte am meisten leisten muss. Das Popup bleibt, nur das dauerhafte Schild faellt."""
+def test_jedes_flugzeug_traegt_sein_schild():
+    """Auch das geparkte auf dem Vorfeld. Ein Marker ohne Tooltip kam nur aus der entfernten
+    Sonderbehandlung -- gibt es sie nicht mehr, gibt es auch kein unbindTooltip."""
     stelle = INDEX.index("function _verkehrZeichnen(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "_verkehrIstGeparkt(e)" in rumpf
-    assert "unbindTooltip" in rumpf, "ein anrollendes Flugzeug muss sein Schild zurueckbekommen"
-
-
-def test_vatsim_verkehr_bleibt_unberuehrt():
-    """Der VATSIM-Feed kennt kein `gnd` -- dort darf sich nichts aendern, sonst verschwaenden
-    Schilder von Flugzeugen, ueber die wir gar nichts wissen."""
-    stelle = INDEX.index("function _verkehrIstGeparkt(")
-    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "e.gnd === true" in rumpf
+    assert "const beschriftung = _verkehrLabel(e, false);" in rumpf
+    assert "unbindTooltip" not in rumpf
 
 
 @ohne_panel
-def test_panel_filtert_geparkte_nur_auf_ansage():
-    m = re.search(r"if \(!this\.verkehrGeparkt && r\.isOnGround === true", PANEL_TSX)
-    assert m, "Filter haengt nicht mehr am Schalter der Seite"
+def test_panel_filtert_nicht_nach_bodenstatus():
+    """Der Filter im Panel haing an `isOnGround`. Ob der Simulator das Feld ueberhaupt
+    liefert, ist offen -- deshalb faellt hier keine Entscheidung mehr daran."""
+    assert "verkehrGeparkt" not in PANEL_TSX
+    assert "VERKEHR_STEHT_KT" not in PANEL_TSX
+
+
+# --- Schalter fuer die Schilder ----------------------------------------------------------
+
+def test_schilder_schalter_sitzt_unter_der_verkehrsebene():
+    """Ein zweiter Haken, eingehaengt unter dem der Verkehrs-Ebene. Leaflet sieht dafuer
+    nichts vor -- die Ebenen-Auswahl kennt nur Ebenen."""
+    stelle = INDEX.index("function _schilderSchalterEinbauen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "'Verkehr'" in rumpf, "der Anker ist der Eintrag der Verkehrs-Ebene"
+    assert "insertBefore" in rumpf and "nextSibling" in rumpf, "muss DARUNTER landen"
+    assert "_saveSchilderPref" in rumpf and "_schilderAnwenden" in rumpf
+
+
+def test_schilder_schalter_faellt_weich_aus():
+    """Findet er seinen Anker nicht (andere Leaflet-Fassung, umbenannte Ebene), darf die Karte
+    davon nichts merken -- ein fehlender Zusatzhaken ist kein Grund, die Karte zu verlieren."""
+    stelle = INDEX.index("function _schilderSchalterEinbauen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "if (!anker" in rumpf
+    assert "if (!control" in rumpf
+
+
+def test_schilder_sind_standardmaessig_an():
+    """Anders als die uebrigen Merker: "noch nie entschieden" heisst hier AN, denn die
+    Schilder sind die Aussage der Ebene."""
+    stelle = INDEX.index("function _loadSchilderPref(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "!== '0'" in rumpf, "nur ein ausdrueckliches Aus schaltet sie ab"
+
+
+def test_schilder_werden_ueber_css_ausgeblendet():
+    """Nicht ueber unbindTooltip: Der Haken soll sofort wirken, nicht erst beim naechsten
+    Zulauf -- und ein neu dazukommendes Flugzeug hat den Zustand automatisch richtig."""
+    assert ".leaflet-container.ohne-verkehrsschilder .traffic-label-fremd { display: none; }" in INDEX
+    assert "classList.add('ohne-verkehrsschilder')" in INDEX
+    assert "classList.remove('ohne-verkehrsschilder')" in INDEX
+
+
+def test_nur_fremder_verkehr_verliert_seine_schilder():
+    """Die eigene Maschine und die Friesen sind die Aussage der Karte -- sie behalten ihr
+    Schild, sonst blendete der Haken mehr aus, als sein Platz in der Liste verspricht."""
+    assert INDEX.count("traffic-label traffic-label-fremd") == 1
+    stelle = INDEX.index("function _eigenesFlugzeugZeichnen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "traffic-label-fremd" not in rumpf

@@ -91,7 +91,6 @@ interface PanelNachricht {
   text?: string;
   service?: string;
   an?: boolean;
-  geparkt?: boolean;
 }
 
 /**
@@ -167,9 +166,6 @@ const VERKEHR_MAX_GS_KT = 1500;
  */
 const VERKEHR_GLAETTUNG_S = 2 / Math.LN2;
 
-/** Darunter gilt ein Flugzeug am Boden als stehend und wird nicht gezeichnet. */
-const VERKEHR_STEHT_KT = 5;
-
 /** Naeher und hoehengleicher als das ist kein fremdes Flugzeug -- das sind wir selbst. */
 const VERKEHR_EIGEN_M = 150;
 const VERKEHR_EIGEN_FT = 100;
@@ -233,16 +229,6 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
 
   /** Ist die Verkehrs-Ebene auf der Seite eingeschaltet? Gemeldet ueber den Rueckkanal. */
   private verkehrAn = false;
-  /**
-   * Will die Seite gerade auch die geparkten Flugzeuge sehen?
-   *
-   * Entschieden wird das auf der Seite (an der Zoomstufe), nicht hier -- das Panel kennt die
-   * Karte nicht. Weit draussen bleiben Geparkte weg, weil sie sonst zwei Dinge verderben: Sie
-   * stehen auf dem eigenen Platz und sind damit IMMER die naechsten, fressen also den
-   * Entfernungs-Deckel von vorne auf und verdraengen genau den fliegenden Verkehr, um den es
-   * geht. Beim Anflug dreht sich das um -- dort ist das belegte Vorfeld die Information.
-   */
-  private verkehrGeparkt = false;
   /** Riegel gegen Doppelaufrufe -- das offizielle SDK haelt an derselben Stelle `isBusy`. */
   private verkehrLaeuft = false;
   private letzterVerkehrMs = 0;
@@ -288,7 +274,6 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     // dessen Ergebnis niemand zeichnet, ist Arbeit im Simulator ohne jeden Gegenwert.
     if (d.art === "verkehr-schalter") {
       this.verkehrAn = d.an === true;
-      this.verkehrGeparkt = d.geparkt === true;
       if (!this.verkehrAn) {
         this.letzteVerkehrMeldung = "";
         this.verkehrSpur.clear();
@@ -554,12 +539,11 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       if (eigen && abstand < VERKEHR_EIGEN_M && Math.abs(altFt - eigen.alt) < VERKEHR_EIGEN_FT) {
         continue;
       }
-      // Geparkte -- aber nur, solange die Seite sie nicht ausdruecklich haben will
-      // (s. verkehrGeparkt). Rollende bleiben immer drin: am Platz sind sie das Wichtigste.
-      if (!this.verkehrGeparkt && r.isOnGround === true && gs < VERKEHR_STEHT_KT) {
-        continue;
-      }
-
+      // Hier stand ein Filter, der stehende Flugzeuge am Boden aussortierte. Er ist raus
+      // (Nutzer-Wahl 15.08.2026): Im Flug erwiesen sich geparkte Maschinen als das, was man am
+      // Platz sehen will, und die Erkennung "steht am Boden" war ohnehin nicht verlaesslich --
+      // ob `isOnGround` ueberhaupt kommt, ist offen. Ein Filter, der nur manchmal greift, ist
+      // schlechter als keiner. Es wird also alles gemeldet, was der Simulator kennt.
       mitAbstand.push({
         d: abstand,
         e: {
