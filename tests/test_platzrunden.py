@@ -1,5 +1,6 @@
 """Platzrunden-Datensatz und -Ebene (v12.8.0)."""
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -207,11 +208,34 @@ class FakeFeatureGroup extends FakeGroupBase {
 global.L = {
   layerGroup: () => new FakeLayerGroup('layerGroup'),
   featureGroup: () => new FakeFeatureGroup('featureGroup'),
-  geoJSON: (gj, opts) => ({
-    _style: null,
-    setStyle(s) { this._style = s; },
-    addTo(gruppe) { gruppe.addLayer(this); return this; },
-  }),
+  geoJSON: (gj, opts) => {
+    // Ein Feature-Layer je Feature -- die Zoom-Wache iteriert seit der Fanglinie verschachtelt
+    // (Gruppe -> GeoJSON-Layer -> Feature-Layer) und unterscheidet die Lagen an der CSS-Klasse.
+    const stil = typeof opts.style === 'function' ? opts.style() : (opts.style || {});
+    const feature = {
+      options: { className: stil.className },
+      _style: null,
+      _tooltip: null,
+      _tooltipOffen: false,
+      setStyle(s) { this._style = s; },
+      bindTooltip(txt, o) { this._tooltip = { txt, o }; return this; },
+      getTooltip() { return this._tooltip; },
+      openTooltip() { this._tooltipOffen = true; return this; },
+      closeTooltip() { this._tooltipOffen = false; return this; },
+      getLatLngs() { return [[{lat:53,lng:8},{lat:54,lng:8},{lat:54,lng:9}]]; },
+      on() { return this; },
+      bindPopup() { return this; },
+    };
+    if (opts.onEachFeature) opts.onEachFeature(gj.features[0], feature);
+    return {
+      _style: null,
+      _layers: [feature],
+      setStyle(s) { this._style = s; },
+      eachLayer(fn) { this._layers.forEach(fn); return this; },
+      addTo(gruppe) { gruppe.addLayer(this); return this; },
+    };
+  },
+  latLng: (lat, lng) => ({ lat, lng }),
 };
 
 class FakeMap {
@@ -233,10 +257,19 @@ _platzrundenZoomWache(map);
 _platzrundenLaden().then(() => {
   setImmediate(() => {
     try {
-      assert.strictEqual(_platzrundenGruppe._layers.length, 1, 'kein Layer eingehaengt -- fetch-Mock kaputt?');
-      const geladenerLayer = _platzrundenGruppe._layers[0];
-      assert.ok(geladenerLayer._style, "layeradd hat anpassen() nicht ausgeloest -- die Ebene bliebe bei voller Deckkraft, bis der Nutzer erneut zoomt (der urspruengliche Bug)");
-      assert.strictEqual(geladenerLayer._style.opacity, 0, 'Deckkraft haette unterhalb der Zoom-Schwelle 0 sein muessen');
+      // Zwei Lagen je Platzrunde: die breite Fanglinie fuer den Klick, darueber die sichtbare.
+      assert.strictEqual(_platzrundenGruppe._layers.length, 2, 'erwartet werden Fanglinie und sichtbare Linie -- fetch-Mock kaputt?');
+      const alleFeatures = [];
+      _platzrundenGruppe._layers.forEach(g => g.eachLayer(l => alleFeatures.push(l)));
+      assert.strictEqual(alleFeatures.length, 2, 'je Lage ein Feature-Layer erwartet');
+      alleFeatures.forEach(l => {
+        assert.ok(l._style, "layeradd hat anpassen() nicht ausgeloest -- die Ebene bliebe bei voller Deckkraft, bis der Nutzer erneut zoomt (der urspruengliche Bug)");
+        assert.strictEqual(l._style.opacity, 0, 'Deckkraft haette unterhalb der Zoom-Schwelle 0 sein muessen');
+      });
+      // Und das Hoehenschild darf unterhalb der Schwelle nicht offen stehen.
+      const mitSchild = alleFeatures.filter(l => l.getTooltip());
+      assert.strictEqual(mitSchild.length, 1, 'genau die sichtbare Linie traegt das Hoehenschild');
+      assert.strictEqual(mitSchild[0]._tooltipOffen, false, 'Hoehenschild haette unterhalb der Schwelle geschlossen sein muessen');
       console.log('OK');
     } catch (err) {
       console.error(err && err.stack ? err.stack : String(err));
@@ -256,3 +289,60 @@ _platzrundenLaden().then(() => {
     assert ergebnis.returncode == 0 and "OK" in ergebnis.stdout, (
         f"Node-Lauf fehlgeschlagen -- stdout={ergebnis.stdout!r} stderr={ergebnis.stderr!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Sichtbarkeit und Bedienbarkeit (v13.0.2)
+# ---------------------------------------------------------------------------
+
+def test_klickflaeche_ist_breiter_als_die_linie():
+    """Bei einem Pfad ohne Fuellung ist ALLEIN der Strich die Trefferflaeche. Mit 1,5 px traf
+    der Nutzer die Platzrunde am Desktop kaum und auf dem Tablet gar nicht -- deshalb liegt
+    unter jeder sichtbaren Linie eine breite, praktisch unsichtbare Fanglinie."""
+    fang = int(re.search(r"_PLATZRUNDEN_FANG_STAERKE = (\d+)", INDEX).group(1))
+    linie = int(re.search(r"_PLATZRUNDEN_STAERKE = (\d+)", INDEX).group(1))
+    assert fang >= 4 * linie, "die Fanglinie muss deutlich breiter sein als die sichtbare"
+
+
+def test_fanglinie_ist_nicht_voellig_durchsichtig():
+    """Ein SVG-Pfad mit opacity 0 wird von pointer-events nicht getroffen -- die Fanglinie
+    braucht einen Wert knapp ueber null, sonst faengt sie nichts."""
+    wert = float(re.search(r"_PLATZRUNDEN_FANG_OPACITY = ([\d.]+)", INDEX).group(1))
+    assert 0 < wert <= 0.05
+
+
+def test_hoehenschild_nur_bei_echten_hoehen():
+    """147 der 412 Eintraege tragen einen Platzhalter statt einer Hoehe. Eine geratene Zahl
+    gross auf der Karte waere schlimmer als das Popup, in dem wenigstens 'Hoehe nicht bekannt'
+    steht."""
+    stelle = INDEX.index("function _platzrundenHoehenLabel(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "hoehe_geschaetzt" in rumpf and "return" in rumpf
+
+
+def test_hoehenschild_sitzt_auf_der_laengsten_kante():
+    """Der Gegenanflug ist bei einer Platzrunde die lange Parallele zur Piste -- also die
+    laengste Kante des Rings. Dort will der Nutzer die Zahl lesen, nicht im Schwerpunkt."""
+    assert "_laengsteKanteMitte(" in INDEX
+    stelle = INDEX.index("function _platzrundenHoehenLabel(")
+    assert "_laengsteKanteMitte(" in INDEX[stelle:INDEX.index("\n}", stelle)]
+
+
+def test_schilder_haben_eine_eigene_zoomschwelle():
+    """Die Linien ergeben schon frueh ein Bild, 265 Zahlen dagegen waeren eine Wolke."""
+    assert INDEX.count("_PLATZRUNDEN_LABEL_MIN_ZOOM =") == 1
+    label = int(re.search(r"_PLATZRUNDEN_LABEL_MIN_ZOOM = (\d+)", INDEX).group(1))
+    linien = int(re.search(r"_PLATZRUNDEN_MIN_ZOOM = (\d+)", INDEX).group(1))
+    assert label > linien
+
+
+def test_maus_macht_eine_zoomstufe_je_rastung():
+    """Leaflets Standard sind 60 px je Stufe; viele Maeuse senden 100-120 px pro Rastung und
+    springen deshalb zwei Stufen auf einmal. Vom Nutzer bestaetigt: von 12 landete das Rad
+    direkt auf 14 -- uebersprungen wurde ausgerechnet die 13, auf der man die Platzrunde
+    anschaut."""
+    assert INDEX.count("_RAD_PX_JE_ZOOMSTUFE =") == 1
+    px = int(re.search(r"_RAD_PX_JE_ZOOMSTUFE = (\d+)", INDEX).group(1))
+    assert px >= 100
+    # alle drei Karten, nicht nur die Live-Karte
+    assert INDEX.count("wheelPxPerZoomLevel: _RAD_PX_JE_ZOOMSTUFE") == 3

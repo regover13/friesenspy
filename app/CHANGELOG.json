@@ -1,5 +1,18 @@
 [
   {
+    "version": "13.0.1",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Platzrunden und FSE-Plätze: sichtbarer und treffbarer",
+    "items": [
+      "🛬 Die Platzrunden sind jetzt kräftiger gezeichnet — schiefergrau mit einem hellen Saum rundherum, damit sie auf jeder Kartensorte stehen: auf dem hellen Straßenatlas ebenso wie auf dem Satellitenbild.",
+      "📏 Die Platzrundenhöhe steht ab Zoomstufe 11 als Schild direkt auf dem Gegenanflug — dort, wo man sie im Anflug liest. Wo die Höhe in der Quelle fehlt, bleibt das Schild weg statt eine Zahl zu erfinden.",
+      "🎯 Platzrunden und FSE-Plätze lassen sich endlich treffen. Unter jeder Platzrunde liegt eine unsichtbare, breite Fanglinie, und die FSE-Punkte haben einen weichen Rand bekommen — vorher war die Klickfläche gerade anderthalb bzw. drei Pixel breit und auf dem Tablet praktisch nicht zu bedienen.",
+      "🔤 Ab Zoomstufe 11 trägt jeder FSE-Platz seinen ICAO-Code als Beschriftung.",
+      "🖱️ Das Mausrad springt nicht mehr über eine Zoomstufe. Viele Mäuse senden pro Rastung doppelt so viel wie die Karte erwartete — von Stufe 12 landete man direkt auf 14 und übersprang ausgerechnet die 13, auf der man sich eine Platzrunde ansieht."
+    ]
+  },
+  {
     "version": "13.0.0",
     "date": "2026-08-15",
     "highlight": true,

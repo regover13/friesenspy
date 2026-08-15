@@ -231,6 +231,7 @@ class FakeLayerGroup {
   addLayer(l) { this._layers.push(l); return this; }
   eachLayer(fn) { this._layers.forEach(fn); return this; }
   bindPopup() { return this; }
+  bindTooltip() { return this; }   // seit der Label-Zoom-Wache haengt _fsePlaetzeZeichnen auch das an
 }
 // bringToBack existiert in echtem Leaflet NUR auf FeatureGroup (ueber deren invoke()),
 // NICHT auf dem schlichten LayerGroup -- absichtlich nachgebildet, damit der Test auch
@@ -291,6 +292,146 @@ setImmediate(() => {
     process.exitCode = 1;
   }
 });
+"""
+
+    skript = harness + "\n" + quelltext + "\n" + treiber
+    ergebnis = subprocess.run(
+        [_NODE, "-e", skript], capture_output=True, text=True, timeout=10
+    )
+    assert ergebnis.returncode == 0 and "OK" in ergebnis.stdout, (
+        f"Node-Lauf fehlgeschlagen -- stdout={ergebnis.stdout!r} stderr={ergebnis.stderr!r}"
+    )
+
+
+def test_klickflaeche_ist_kein_miniradius_mehr():
+    """Nutzer-Fund: radius: 3 war bei SVG-Paths auch die Trefferflaeche -- drei Pixel sind am
+    Desktop knapp und auf dem Tablet praktisch nicht zu treffen. Der Fix legt einen weichen Halo
+    (hoeheres weight, niedrige opacity) um den sichtbaren Punkt; hier wird geprueft, dass Radius
+    und Strichbreite nicht wieder auf die alten Mini-Werte zurueckfallen."""
+    stelle = INDEX.index("function _fsePlaetzeZeichnen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    radius = re.search(r"radius:\s*(\d+)", rumpf)
+    weight = re.search(r"weight:\s*(\d+)", rumpf)
+    assert radius and int(radius.group(1)) >= 5, "Radius wieder auf Mini-Groesse zurueckgefallen"
+    assert weight and int(weight.group(1)) >= 4, (
+        "Strichbreite zu duenn, um die Trefferflaeche spuerbar zu vergroessern"
+    )
+
+
+def test_fse_plaetze_gruppe_ist_featuregroup():
+    """Wie bei _platzrundenGruppe (s. dortiger Kommentar): Nur L.featureGroup().addLayer() feuert
+    'layeradd'. Die Label-Zoom-Wache haengt sich daran, um Marker, die erst NACH dem Einschalten
+    nachladen, sofort auf die aktuelle Zoomstufe zu bringen. Ein Rueckfall auf L.layerGroup()
+    waere ein stiller Bug: Tooltips blieben bis zur naechsten Zoomaenderung falsch (un)sichtbar."""
+    assert "const _fsePlaetzeGruppe = L.featureGroup();" in INDEX
+
+
+def test_label_zoom_schwelle_steht_genau_einmal():
+    assert INDEX.count("_FSE_PLAETZE_LABEL_MIN_ZOOM =") == 1
+    assert INDEX.count("_FSE_PLAETZE_LABEL_MIN_ZOOM") >= 2
+
+
+def test_label_klasse_ist_dezent_ohne_rahmen():
+    """Die FSE-Plaetze sind Kulisse, keine Aussage -- die Beschriftung soll das nicht
+    konterkarieren: kein Rahmen, gedeckte statt grelle Farbe."""
+    stelle = INDEX.index(".fse-platz-label {")
+    rumpf = INDEX[stelle:INDEX.index("}", stelle)]
+    assert "border: none" in rumpf
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_labels_folgen_der_zoom_schwelle():
+    """Unterhalb von _FSE_PLAETZE_LABEL_MIN_ZOOM duerfen die Tooltips nicht offen sein (sonst
+    liegen bei 2.335 Plaetzen hunderte Beschriftungen uebereinander), oberhalb schon. Wie beim
+    Platzrunden-Pendant (test_zoom_wache_greift_wenn_die_daten_nach_dem_einschalten_eintreffen)
+    deckt ein reiner Stringtest den eigentlichen Fehlerfall nicht ab: erst der extrahierte
+    Quelltext, wirklich in Node ausgefuehrt, zeigt, ob ein nach dem Einschalten der Wache
+    nachgeladener Marker (der reale Ablauf: Checkbox an -> fetch() laeuft -> _fsePlaetzeZeichnen)
+    seinen Tooltip korrekt nach der aktuellen Zoomstufe setzt."""
+    start = INDEX.index("const _FSE_PLAETZE_URL")
+    ende_start = INDEX.index("function _fsePlaetzeZoomWache(")
+    ende = INDEX.index("\n}", ende_start) + len("\n}")
+    quelltext = INDEX[start:ende]
+
+    harness = """
+'use strict';
+const assert = require('assert');
+
+class FakeGroupBase {
+  constructor(art) { this.art = art; this._layers = []; this._handlers = {}; }
+  addLayer(l) { this._layers.push(l); return this; }
+  addTo(ziel) { return this; }
+  eachLayer(fn) { this._layers.forEach(fn); return this; }
+  on(evt, fn) { (this._handlers[evt] = this._handlers[evt] || []).push(fn); return this; }
+}
+// Wie beim Platzrunden-Test: 'layeradd' feuert nur auf FeatureGroup-artigen Objekten, wie im
+// echten Leaflet -- ein Rueckfall auf L.layerGroup() in der Produktion wuerde diesen Test reissen.
+class FakeFeatureGroup extends FakeGroupBase {
+  addLayer(l) {
+    super.addLayer(l);
+    (this._handlers['layeradd'] || []).forEach(fn => fn({ layer: l }));
+    return this;
+  }
+}
+
+// Minimaler Marker-Fake: haelt fest, ob ein permanenter Tooltip gebunden und geoeffnet ist --
+// genau das Verhalten, an dem _fsePlaetzeZoomWache dreht.
+class FakeCircleMarker {
+  constructor() { this._tooltipBound = false; this._tooltipOpen = false; }
+  bindPopup() { return this; }
+  bindTooltip() { this._tooltipBound = true; return this; }
+  addTo(gruppe) { gruppe.addLayer(this); return this; }
+  getTooltip() { return this._tooltipBound ? {} : null; }
+  isTooltipOpen() { return this._tooltipOpen; }
+  openTooltip() { this._tooltipOpen = true; }
+  closeTooltip() { this._tooltipOpen = false; }
+}
+
+global.L = {
+  featureGroup: () => new FakeFeatureGroup('featureGroup'),
+  circleMarker: () => new FakeCircleMarker(),
+};
+
+class FakeMap {
+  constructor(zoom) { this._zoom = zoom; this._handlers = {}; }
+  getZoom() { return this._zoom; }
+  on(evt, fn) { (this._handlers[evt] = this._handlers[evt] || []).push(fn); return this; }
+  setZoomUndFeuern(zoom) {
+    this._zoom = zoom;
+    (this._handlers['zoomend'] || []).forEach(fn => fn());
+  }
+}
+"""
+
+    treiber = """
+try {
+  // Zoomstufe klar UNTERHALB der Schwelle -- die Wache haengt schon, BEVOR der Platz eintrifft
+  // (der reale Ablauf: Checkbox an -> Wache registriert -> fetch() laeuft nach).
+  const map = new FakeMap(0);
+  _fsePlaetzeZoomWache(map);
+
+  _fsePlaetzeZeichnen({ EDXX: { lat: 53, lon: 8, name: 'Test', msfs: ['EDXX'] } });
+
+  assert.strictEqual(_fsePlaetzeGruppe._layers.length, 1, 'kein Marker eingehaengt');
+  const marker = _fsePlaetzeGruppe._layers[0];
+  assert.strictEqual(marker.isTooltipOpen(), false,
+    'Tooltip war unterhalb der Zoom-Schwelle offen -- layeradd hat anpassen() nicht ausgeloest');
+
+  // Klar OBERHALB der Schwelle: zoomend muss den Tooltip oeffnen.
+  map.setZoomUndFeuern(20);
+  assert.strictEqual(marker.isTooltipOpen(), true,
+    'Tooltip blieb oberhalb der Zoom-Schwelle zu');
+
+  // Und zurueck unterhalb: zoomend muss ihn wieder schliessen.
+  map.setZoomUndFeuern(0);
+  assert.strictEqual(marker.isTooltipOpen(), false,
+    'Tooltip schloss beim Zurueckzoomen unter die Schwelle nicht wieder');
+
+  console.log('OK');
+} catch (err) {
+  console.error(err && err.stack ? err.stack : String(err));
+  process.exitCode = 1;
+}
 """
 
     skript = harness + "\n" + quelltext + "\n" + treiber
