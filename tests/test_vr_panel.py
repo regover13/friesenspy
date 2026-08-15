@@ -1384,3 +1384,43 @@ def test_sprite_messung_ist_im_bericht():
     # getBBox statt getBoundingClientRect: das aeussere <svg> hat seine Groesse immer, nur die
     # Bounding-Box des INHALTS ist 0, wenn der Verweis ins Leere lief.
     assert "getBBox()" in INDEX, "ohne getBBox misst die Probe nur den leeren Rahmen"
+
+
+# ---------------------------------------------------------------------------
+# Label am Flugzeug (v12.7.0)
+# ---------------------------------------------------------------------------
+
+def test_label_hat_genau_eine_hoehen_funktion():
+    """Eine Regel, eine Funktion.
+
+    Eine zweite Fassung fuer den Fremdverkehr waere die eigentliche Gefahr: Zwei
+    Formatierungen derselben Hoehe laufen frueher oder spaeter auseinander, und der Fehler
+    faellt erst im Cockpit auf.
+    """
+    assert INDEX.count("function _labelHoehe(") == 1
+    assert INDEX.count("function _verkehrLabel(") == 1
+
+
+def test_label_grenze_steht_bei_zehntausend():
+    assert "_LABEL_FL_AB_FT = 10000" in INDEX
+
+
+def test_label_zeigt_callsign_bei_tief_oder_friese():
+    """Die Regel ist ein ODER -- nur eine der beiden Bedingungen waere ein halbes Feature."""
+    stelle = INDEX.index("function _verkehrLabel(")
+    rumpf = INDEX[stelle:stelle + 1200]
+    assert "istFriese ||" in rumpf and "_LABEL_FL_AB_FT" in rumpf
+
+
+def test_friesen_marker_tragen_das_label():
+    """Das Label ist fuer die Friesen genauso neu wie fuer den Fremdverkehr."""
+    assert "_verkehrLabel(p, true)" in INDEX
+    assert "className: 'traffic-label'" in INDEX
+
+
+def test_label_ist_nicht_blau():
+    """Blau (#2d9cdb) ist in diesem Projekt Klickbarem vorbehalten (CLAUDE.md, UI-Regeln).
+    Ein Tooltip ist per Default nicht anklickbar."""
+    m = re.search(r"\.traffic-label \.lbl-cs\s*\{([^}]*)\}", INDEX)
+    assert m, "Regel fuer den Callsign im Label fehlt"
+    assert "2d9cdb" not in m.group(1)

@@ -1857,6 +1857,36 @@
       filter: drop-shadow(0 0 4px rgba(45,156,219,0.7));
     }
 
+    /* Fremdverkehr ist Kulisse, die Friesen sind die Aussage -- deshalb kleiner und grau,
+       ohne den blauen Schein. */
+    .aircraft-marker-fremd {
+      color: #8a97a8;
+      filter: drop-shadow(0 0 3px rgba(0,0,0,0.8));
+    }
+
+    /* Das Label am Flugzeug sitzt als Leaflet-Tooltip unter dem Symbol -- bewusst NICHT im
+       Marker-Icon: Der Marker wird bei Track-up mitgedreht (rotateWithView), ein Label darin
+       stuende dann auf dem Kopf. Tooltips liegen bei leaflet-rotate im nicht drehenden Pane
+       (im Quelltext des Plugins nachgesehen), bleiben also aufrecht. */
+    .traffic-label {
+      background: rgba(4,8,15,0.72);
+      border: none;
+      box-shadow: none;
+      color: #cfd8e3;
+      font-family: var(--text-mono, monospace);
+      font-size: 10px;
+      line-height: 1.15;
+      padding: 1px 3px;
+      white-space: nowrap;
+      text-align: center;
+    }
+    .traffic-label::before { display: none; }   /* Leaflets Sprechblasen-Zipfel */
+    /* NICHT blau: Blau (#2d9cdb) ist in diesem Projekt Klickbarem vorbehalten (s. UI-Regeln
+       in CLAUDE.md). Ein Tooltip ist per Default nicht anklickbar -- der Callsign hebt sich
+       deshalb ueber Helligkeit und Fettung ab, nicht ueber die Farbe. */
+    .traffic-label .lbl-cs  { display: block; color: #eef2f7; font-weight: 700; }
+    .traffic-label .lbl-dat { display: block; }
+
     /* =====================================================================
        STATISTIKEN
        ===================================================================== */
@@ -7315,6 +7345,43 @@ const _FLUGZEUG_PFAD =
   'h-8.4v5.3l3.1 1.5c.3.15.5.45.5.8v.95l-4.35-1.1-4.35 1.1v-.95c0-.35.2-.65.5-.8l3.1-1.5' +
   'v-5.3H2.85c-.45 0-.8-.36-.8-.8v-1.1c0-.44.35-.8.8-.8h8.4z';
 
+// --------------------------------------------------------------------------
+//  Label am Flugzeug: MUSTER HOEHE GS, darueber der Callsign -- wenn er zaehlt
+// --------------------------------------------------------------------------
+// Die Regel ist eine HOEHEN-Regel, keine Friesen-Regel: Der Callsign steht am Symbol, wenn
+// das Flugzeug TIEF fliegt oder wenn es ein Friese ist. Was tief fliegt, ist in der eigenen
+// Naehe -- da will man wissen, wer es ist. Was oben drueberzieht, ist Linienverkehr; Muster,
+// Level und Speed genuegen. Bei dreissig Fliegern im Bild ist jede eingesparte Zeile ein
+// Stueck Lesbarkeit.
+const _LABEL_FL_AB_FT = 10000;
+
+// Genau 10 000 zaehlt als oben (FL100). Unterhalb der Grenze reine Fusszahl ohne Einheit.
+//
+// Diese Funktion gilt fuer Label UND Popup. Das vorhandene fmtAlt schreibt Flugflaechen erst
+// ab 18 000 ft -- naehme das Popup fmtAlt, staende am Symbol FL120 und einen Klick daneben
+// 12.000 ft. Zwei Wahrheiten ueber dieselbe Zahl.
+function _labelHoehe(altFt) {
+  const alt = Math.round(Number(altFt) || 0);
+  if (alt >= _LABEL_FL_AB_FT) return 'FL' + Math.round(alt / 100);
+  return String(alt);
+}
+
+// Nimmt beide Datenformen entgegen: die kurzen Feldnamen aus /api/traffic (cs/ac/alt/gs) und
+// die langen der Friesen-Positionen (callsign/aircraft/altitude/groundspeed). Eine Funktion
+// statt zweier -- zwei Fassungen derselben Regel laufen frueher oder spaeter auseinander,
+// und der Fehler faellt erst im Cockpit auf.
+function _verkehrLabel(p, istFriese) {
+  const alt    = Math.round(Number(p.alt != null ? p.alt : p.altitude) || 0);
+  const gs     = Math.round(Number(p.gs  != null ? p.gs  : p.groundspeed) || 0);
+  const muster = String(p.ac || p.aircraft || '').trim() || '?';
+  const daten  = escHtml(muster) + ' ' + _labelHoehe(alt) + ' ' + gs;
+  if (istFriese || alt < _LABEL_FL_AB_FT) {
+    const cs = escHtml(String(p.cs || p.callsign || '').toUpperCase());
+    return '<span class="lbl-cs">' + cs + '</span><span class="lbl-dat">' + daten + '</span>';
+  }
+  return '<span class="lbl-dat">' + daten + '</span>';
+}
+
 function makeAircraftIcon(heading) {
   const hdg = Number(heading) || 0;
   const mitte = _FLUGZEUG_PX / 2;
@@ -7452,6 +7519,15 @@ function updateMap(pilots) {
       }
       // Guenstig, solange das Popup zu ist: Leaflet merkt sich den Inhalt dann nur.
       vorhanden.setPopupContent(buildPopupHtml(p));
+      // Nur schreiben, wenn sich der Text wirklich geaendert hat: setTooltipContent ersetzt
+      // das DOM-Element, und updateMap laeuft auf DREI Wegen (SSE, 10-Sekunden-Neuzeichnen,
+      // 15-Sekunden-Abruf). Genau dieses unnoetige Neuaufbauen war schon einmal als
+      // Aufblitzen im Kniebrett sichtbar.
+      const beschriftung = _verkehrLabel(p, true);
+      if (vorhanden._fsLabel !== beschriftung) {
+        vorhanden.setTooltipContent(beschriftung);
+        vorhanden._fsLabel = beschriftung;
+      }
     } else {
       // rotateWithView: Ohne das dreht das Dreh-Plugin die Marker GEGEN die Karte, damit
       // sie aufrecht bleiben -- bei Track-up zeigte dann jedes Flugzeug in die falsche
@@ -7464,8 +7540,15 @@ function updateMap(pilots) {
       const marker = L.marker([p.latitude, p.longitude],
                               { icon: makeAircraftIcon(hdg), rotateWithView: true })
         .bindPopup(buildPopupHtml(p), { maxWidth: 240 })
+        // Das Label als Tooltip, NICHT im Icon: Der Marker dreht bei Track-up mit
+        // (rotateWithView), ein Label darin stuende auf dem Kopf. Tooltips liegen bei
+        // leaflet-rotate im nicht drehenden Pane und bleiben aufrecht.
+        .bindTooltip(_verkehrLabel(p, true),
+                     { permanent: true, direction: 'bottom', offset: [0, 4],
+                       className: 'traffic-label', opacity: 1 })
         .addTo(liveMap);
       marker._fsHeading = hdg;
+      marker._fsLabel = _verkehrLabel(p, true);
       mapMarkers[p.callsign] = marker;
       // Ersten Track-Fetch triggern wenn Pilot neu erscheint
       if (p.cid) _fetchInitialLiveTrack(p.cid, p.callsign);
