@@ -19,9 +19,13 @@ Format unverändert gegenüber den bisherigen EU-Dateien:
 "EDWG": [[53.6615,8.0757], [53.8201,7.6904], …]        // Zone
 ```
 
-Zonenkoordinaten sind auf **4 Nachkommastellen** gerundet (~11 m). Das halbiert die Datei von
-7,15 auf 3,18 MB. Zonen sind Zuständigkeitsgebiete, keine Navigationsdaten — eine Grenze auf
-den Meter zu führen wäre Genauigkeit, die niemand nutzt.
+**Die Daten sind unverändert**, Koordinate für Koordinate wie in der Quelle. Dass die
+Zonendatei nur 3,18 statt 7,15 MB misst, liegt allein am kompakten Schreiben (keine
+Leerzeichen) — nicht an weggeworfener Genauigkeit. Eine Rundung wäre ohnehin wirkungslos: Die
+Rohdaten haben bereits höchstens vier Nachkommastellen.
+
+Falls diese Ebene je zu langsam wird: **Nicht an der Datenmenge sparen.** Das Problem ist die
+Zeichenlast (siehe unten), und die hängt nicht an der Dateigröße.
 
 **Der Ablageort ist bewusst `app/data/`, nicht `app/static/`.** Was unter `static/` liegt,
 wird als Ganzes ausgeliefert — genau das soll hier nicht passieren.

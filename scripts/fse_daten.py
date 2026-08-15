@@ -45,10 +45,19 @@ ROH_PLAETZE = ("https://raw.githubusercontent.com/piero-la-lune/FSE-Planner"
 ROH_ZONEN = ("https://raw.githubusercontent.com/piero-la-lune/FSE-Planner"
              "/master/public/data/zones.json")
 
-# Vier Nachkommastellen sind rund 11 Meter. Die Zonen sind Zustaendigkeitsgebiete, keine
-# Navigationsdaten -- eine Grenze auf den Meter genau zu fuehren waere Genauigkeit, die
-# niemand nutzt, und kostet ueber 23.780 Polygone hinweg mehrere Megabyte.
-STELLEN = 4
+# Die Zonen werden UNVERAENDERT uebernommen, Koordinate fuer Koordinate.
+#
+# Hier stand kurzzeitig eine Rundung auf vier Nachkommastellen. Sie ist raus -- aus zwei
+# Gruenden, und der zweite ist der wichtigere:
+#
+# 1. Sie war wirkungslos. Die Rohdaten des FSE-Planners haben bereits hoechstens vier
+#    Nachkommastellen (nachgemessen ueber alle Polygone). Die Rundung hat nie etwas entfernt;
+#    dass die Datei von 7,2 auf 3,2 MB faellt, liegt allein am kompakten Schreiben
+#    (separators ohne Leerzeichen).
+# 2. Sie waere auch dann falsch gewesen. Das Problem dieser Ebene ist die ZEICHENLAST, nicht
+#    die Dateigroesse (Nutzer-Entscheidung 16.08.2026). Genauigkeit wegzuwerfen, um ein
+#    Problem zu lindern, das man gar nicht hat, ist ein schlechter Tausch -- und nachholen
+#    laesst er sich jederzeit, falls es wirklich einmal zu langsam wird.
 
 
 def echte_msfs(eintrag):
@@ -65,10 +74,6 @@ def laden(url):
 def in_europa(eintrag):
     return (LAT[0] <= eintrag["lat"] <= LAT[1]
             and LON[0] <= eintrag["lon"] <= LON[1])
-
-
-def zone_kuerzen(punkte):
-    return [[round(p[0], STELLEN), round(p[1], STELLEN)] for p in punkte]
 
 
 def schreiben(pfad, daten):
@@ -99,7 +104,7 @@ def main(argumente):
                    "msfs": echte_msfs(v), "rwy": v["runway"], "surface": v["surface"],
                    "elev": v["elev"]}
                for k, v in plaetze.items()}
-    zs = {k: zone_kuerzen(zonen[k]) for k in plaetze if k in zonen}
+    zs = {k: zonen[k] for k in plaetze if k in zonen}
 
     ZIEL.mkdir(parents=True, exist_ok=True)
     endung = "eu" if nur_europa else "world"
