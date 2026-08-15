@@ -1860,6 +1860,23 @@ scp friesenspy-efb.zip server:/opt/friesenspy/data/efb/friesenspy-efb.zip
 
 Kein Neustart nötig — Pfad und Version werden bei jedem Aufruf frisch gelesen.
 
+> ⚠️ **Dieser Schritt gehört zu jedem Paket-Release und wird von keiner CI erledigt.** Er ist
+> schon zweimal liegengeblieben (`/efb` bot 1.2.1, während der Changelog 1.5.0 verlangte;
+> später 1.6.0 gegen 1.7.0). Beide Male stimmte alles im Repo — nur die Datei, die die Leute
+> tatsächlich herunterladen, war eine andere. Deshalb nach jedem Paket-Bump prüfen:
+>
+> ```bash
+> ssh server "unzip -p /opt/friesenspy/data/efb/friesenspy-efb.zip \
+>   'friesenflieger-friesenspy-efb/manifest.json' | grep package_version"
+> ```
+>
+> Die Zahl muss mit `manifest.json` im Repo **und** mit der im Changelog und im
+> Forumsbeitrag genannten übereinstimmen. Vor dem Überschreiben eine Sicherung anlegen
+> (`cp … friesenspy-efb.zip.<alte-version>.bak`) — die alten liegen bereits dort.
+>
+> Der SSH-Zugang läuft über den Alias **`server`** aus `~/.ssh/config`; mit der IP direkt
+> greift der Config-Eintrag nicht und die Anmeldung scheitert mit `Permission denied`.
+
 ## GET /api/version
 
 ```json
