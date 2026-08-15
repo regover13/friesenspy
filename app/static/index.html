@@ -6038,6 +6038,13 @@ function _initPanelShellKanal() {
     const d = e && e.data;
     if (!d || d.quelle !== 'friesenspy-shell') return;
     if (d.art === 'pong') _panelShellDa = true;
+    // Was der erste Abruf im Simulator ergeben hat -- einmal je Sitzung, auch wenn er nichts
+    // ergeben hat. Genau dieser Fall (Vorbedingung fehlte, Aufruf lieferte lautlos nichts)
+    // hinterliess bis zum 15.08.2026 keine einzige Spur.
+    if (d.art === 'sim-verkehr-start') {
+      _diagnoseMitVergleichMelden('sim-verkehr-start', d.befund || {});
+      return;
+    }
     if (d.art === 'sim-verkehr') {
       const liste = Array.isArray(d.liste) ? d.liste : [];
       _simVerkehr = { ts: Date.now(), liste: liste };

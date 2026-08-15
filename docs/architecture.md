@@ -382,20 +382,19 @@ Single-File-SPA ohne Build-Step. Vier Tabs:
 
 **Verkehr aus dem Simulator (v12.10.0, Kniebrett-Paket 1.5.0).** Im Kniebrett ersetzt der Sim den VATSIM-Feed: 1 Hz statt 15 s, echte statt geschätzter Positionen, und auch ohne VATSIM-Verbindung (dann der AI-Verkehr des Simulators). Spec: `docs/superpowers/specs/2026-08-15-sim-verkehr-design.md`.
 
-> ⚠️ **Im Simulator kommt davon bislang nichts an** (Stand 15.08.2026, Paket 1.6.0). Im Kniebrett erscheint nur der VATSIM-Verkehr. Belegt ist bisher nur, wo der Fehler **nicht** liegt:
+> ⚠️ **Die Vorbedingung ist Teil des Aufrufs** (Fund 15.08.2026, behoben in Paket 1.7.0). Vor `GET_AIR_TRAFFIC` muss der Karten-Listener angemeldet sein:
 >
-> | Geprüft | Ergebnis |
-> |---|---|
-> | Installierte Paketversion | 1.6.0, seit 16:36 im `Community2024`-Ordner |
-> | Verkehrscode im ausgelieferten Bundle | vorhanden (`GET_AIR_TRAFFIC`, `verkehr-schalter`, `sim-verkehr`) |
-> | Aufrufkette im Build | intakt: `onUpdate` → `verkehrTakt` → `verkehrHolen` → `Coherent.call` |
-> | Diagnose-Datensätze der Sitzung (20:04–20:24 UTC) | `shell`, `report`, `karte`, `navi`, `notify` — **kein einziger `sim-verkehr`** |
+> ```js
+> RegisterViewListener('JS_LISTENER_MAPS').trigger('JS_BIND_BINGMAP', '<name>', true);
+> ```
 >
-> **Offen und nicht per Quelltext zu klären:** Ob `GET_AIR_TRAFFIC` in **MSFS 2024** überhaupt existiert. Die Belege für die Schnittstelle (Tabelle unten) stammen sämtlich aus **MSFS-2020**-Paketen — 15 Fundstellen unter `Microsoft.FlightSimulator\…\Official`. In der 2024-Installation lässt sich das **nicht gegenprüfen**: `Official2024` enthält ein einziges Paket, `StreamedPackages` 1161 Ordner, zusammen **null** `.js`-Dateien. MSFS 2024 streamt seine Inhalte; lokal liegt kein durchsuchbarer Code. Die Abwesenheit des Namens dort ist daher **kein** Beweis.
+> Ohne sie gibt der Simulator **nichts** heraus — und meldet auch keinen Fehler. Der Aufruf löst nicht auf, der Ein-Sekunden-Abbruch greift, `verkehrSenden` kehrt wortlos um. Im Kniebrett blieb dabei der VATSIM-Verkehr stehen, was aussieht wie „funktioniert, nur langsam".
 >
-> **Warum der Fehler still bleibt:** `Coherent.call` auf einen nicht registrierten Namen liefert ein Promise, das nie auflöst. Der 1-Sekunden-Abbruch in `verkehrHolen` greift, gibt `null` zurück, und `verkehrSenden` kehrt wortlos um — kein Fehler, kein Log, keine Diagnose. Ununterscheidbar von „Simulator kennt gerade keinen Verkehr".
+> **Wie es dazu kam — der eigentliche Lehrsatz.** Die Messsonde (Paket 1.3.0) hatte die Zeile und lieferte am 15.08.2026 um 10:33 UTC sechs Flugzeuge (`viewListener: "angemeldet"`, `typ: "[object Array]"`, `anzahl: 6`, `vatsimNah: 6` — das ist die 6:6-Messung). Beim Ausbau der Sonde wurde die *Messfunktion* entfernt und die Vorbedingung mit ihr, ohne dass sie in den Produktivcode wanderte. **Wird eine Sonde durch Produktivcode ersetzt, muss jede Zeile geprüft werden, die zum Erfolg der Messung beigetragen hat — nicht nur die, die das Ergebnis liest.**
 >
-> **Nächster Schritt:** eine Diagnose, die **auch das Ausbleiben meldet** — je Sitzung einmal, mit dem, was auf jeder Stufe passiert ist (Schalter angekommen? `Coherent` vorhanden? Aufruf aufgelöst, abgebrochen oder Nicht-Array? Liste leer?). Ohne sie ist jede weitere Aussage geraten.
+> **Und warum es so lange unentdeckt blieb:** Es gab keine Meldung über das Ausbleiben. `_simVerkehrDiagnoseEinmal` feuert nur bei **nichtleerer** Liste; „nichts gekommen" war von „nichts in der Nähe" nicht zu unterscheiden. Seit 1.7.0 geht deshalb ein `sim-verkehr-start`-Befund einmal je Sitzung raus, **bevor** über die Liste entschieden wird — mit `coherentDa`, `viewListener`, `typ`, `anzahl` und den Feldnamen. Eine Diagnose, die nur den Erfolgsfall meldet, ist im Fehlerfall wertlos.
+>
+> Nebenbei belegt derselbe Datensatz die offenen Feldfragen: `GET_AIR_TRAFFIC` liefert `__Type, name, plane_model_icao, uId, lat, lon, alt, heading, isOnGround` — `isOnGround` **wird** also geliefert.
 
 - **Datenweg**: `onUpdate` der EFB-App → `Coherent.call('GET_AIR_TRAFFIC')` → aufbereiten → `postMessage {art:'sim-verkehr', liste}` → `_simVerkehrUebernehmen` → `_verkehrZeichnen` → `_verkehrRoh`. Kein Server, kein Netz, kein WASM-Modul.
 - **Die Einheiten stehen in keiner Dokumentation, aber im ausgelieferten Simulator.** Nachgelesen in Asobos eigenen Auswertern unter `…\Packages\Official\OneStore\` — `workingtitle-instruments-g1000\…\msfssdk.js` (`TrafficInstrument`) und `workingtitle-ingamepanels-vfrmap\…\GameVFRMap.js` (`VfrTrafficManager`):

@@ -229,6 +229,11 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
 
   /** Ist die Verkehrs-Ebene auf der Seite eingeschaltet? Gemeldet ueber den Rueckkanal. */
   private verkehrAn = false;
+  /** Ist der Karten-Listener angemeldet? Vorbedingung fuer GET_AIR_TRAFFIC, s. dort. */
+  private kartenListenerDa = false;
+  /** Erster Befund des Verkehrsabrufs -- geht einmal je Sitzung an die Diagnose. */
+  private startBefund: Record<string, unknown> | null = null;
+  private startBefundGemeldet = false;
   /** Riegel gegen Doppelaufrufe -- das offizielle SDK haelt an derselben Stelle `isBusy`. */
   private verkehrLaeuft = false;
   private letzterVerkehrMs = 0;
@@ -415,6 +420,46 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   }
 
   /**
+   * Die Vorbedingung fuer `GET_AIR_TRAFFIC`: den Karten-Listener anmelden.
+   *
+   * **Das ist die Zeile, an der Teilprojekt 2 zunaechst gescheitert ist.** Die Messsonde
+   * (Paket 1.3.0) hatte sie -- und lieferte 6 Flugzeuge, belegt im Diagnose-Datensatz vom
+   * 15.08.2026, 10:33 UTC (`viewListener: "angemeldet"`, `typ: "[object Array]"`,
+   * `anzahl: 6`). Beim Ausbau der Sonde wurde die Messfunktion entfernt, diese Vorbedingung
+   * aber nicht in den Produktivcode uebernommen. Ergebnis: `GET_AIR_TRAFFIC` gab nichts mehr
+   * heraus, und zwar lautlos -- der Aufruf loest nicht auf, der Ein-Sekunden-Abbruch greift,
+   * `verkehrSenden` kehrt wortlos um. Im Kniebrett blieb der VATSIM-Verkehr stehen, was wie
+   * "funktioniert, nur langsam" aussieht (Nutzer-Fund 15.08.2026).
+   *
+   * Warum das ueberhaupt noetig ist: Der Verkehr haengt am Karten-Subsystem des Simulators.
+   * Ohne angemeldeten Listener existiert die Datenquelle fuer diese View schlicht nicht.
+   *
+   * Einmal je Sitzung genuegt, aber ein Fehlversuch darf nicht endgueltig sein -- deshalb
+   * wird der Merker nur bei Erfolg gesetzt.
+   */
+  private kartenListenerAnmelden(): void {
+    if (this.kartenListenerDa) {
+      return;
+    }
+    try {
+      const rvl = (globalThis as {
+        RegisterViewListener?: (n: string) => { trigger?: (...a: unknown[]) => void };
+      }).RegisterViewListener;
+      if (typeof rvl !== "function") {
+        return;
+      }
+      const l = rvl("JS_LISTENER_MAPS");
+      if (l && typeof l.trigger === "function") {
+        l.trigger("JS_BIND_BINGMAP", "FRIESENSPY_VERKEHR", true);
+      }
+      this.kartenListenerDa = true;
+    } catch (_e) {
+      // Bleibt beim naechsten Abruf offen -- eine App, die daran stirbt, waere schlimmer als
+      // eine Verkehrsebene, die nichts zeigt.
+    }
+  }
+
+  /**
    * Den Verkehr aus dem Simulator holen -- oder `null`, wenn das nicht geht.
    *
    * Der Wettlauf gegen eine Sekunde ist kein Feinschliff: `Coherent.call` kann haengen
@@ -424,12 +469,28 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   private async verkehrHolen(): Promise<SimVerkehrRoh[] | null> {
     const c = (globalThis as { Coherent?: { call(n: string): Promise<unknown> } }).Coherent;
     if (!c || typeof c.call !== "function") {
+      this.startBefund = { coherentDa: false };
       return null;
     }
+    this.kartenListenerAnmelden();
     const abbruch = new Promise<null>((loesen) =>
       setTimeout(() => loesen(null), VERKEHR_WARTE_MAX_MS),
     );
     const daten = await Promise.race([c.call("GET_AIR_TRAFFIC"), abbruch]);
+    // Einmal je Sitzung festhalten, WAS herauskam -- auch (und gerade) wenn nichts herauskam.
+    // Der Fehler oben blieb genau deshalb so lange unentdeckt: Ein Ausbleiben sah aus wie
+    // "gerade kein Verkehr in der Naehe" und hinterliess keine Spur.
+    if (!this.startBefundGemeldet && this.startBefund === null) {
+      this.startBefund = {
+        coherentDa: true,
+        viewListener: this.kartenListenerDa ? "angemeldet" : "nicht angemeldet",
+        typ: Object.prototype.toString.call(daten),
+        anzahl: Array.isArray(daten) ? daten.length : null,
+        felder: Array.isArray(daten) && daten.length
+          ? Object.keys(daten[0] as object)
+          : [],
+      };
+    }
     return Array.isArray(daten) ? (daten as SimVerkehrRoh[]) : null;
   }
 
@@ -461,6 +522,10 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       return;
     }
     const roh = await this.verkehrHolen();
+    // Der Startbefund geht raus, BEVOR ueber die Liste entschieden wird -- auch bei `null`
+    // und auch bei einer leeren Liste. Ein Abruf, der nichts hergibt, ist die interessanteste
+    // Meldung von allen; genau die fehlte, als die Vorbedingung oben fehlte.
+    this.startBefundSenden(ziel);
     if (roh === null) {
       return;
     }
@@ -478,6 +543,22 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     this.letztesVerkehrSendenMs = jetztMs;
 
     ziel.postMessage({ quelle: "friesenspy-shell", art: "sim-verkehr", liste: liste }, "*");
+  }
+
+  /** Den ersten Befund des Verkehrsabrufs einmal je Sitzung an die Seite reichen. */
+  private startBefundSenden(ziel: Window): void {
+    if (this.startBefundGemeldet || this.startBefund === null) {
+      return;
+    }
+    this.startBefundGemeldet = true;
+    try {
+      ziel.postMessage(
+        { quelle: "friesenspy-shell", art: "sim-verkehr-start", befund: this.startBefund },
+        "*",
+      );
+    } catch (_e) {
+      // Meldung verloren -- kein Grund, den Verkehr scheitern zu lassen.
+    }
   }
 
   /**

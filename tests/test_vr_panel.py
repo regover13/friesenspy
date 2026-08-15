@@ -1910,6 +1910,50 @@ def test_panel_filtert_nicht_nach_bodenstatus():
     assert "VERKEHR_STEHT_KT" not in PANEL_TSX
 
 
+# --- Vorbedingung fuer GET_AIR_TRAFFIC ---------------------------------------------------
+#
+# Der teuerste Fehler dieses Teilprojekts: Die Messsonde meldete am 15.08.2026 um 10:33 UTC
+# sechs Flugzeuge (`viewListener: "angemeldet"`, `typ: "[object Array]"`, `anzahl: 6`), weil
+# sie VOR dem Aufruf den Karten-Listener anmeldete. Beim Ausbau der Sonde ist die Messfunktion
+# verschwunden -- und diese Vorbedingung mit ihr, ohne dass sie in den Produktivcode kam.
+# Danach lieferte GET_AIR_TRAFFIC lautlos nichts mehr.
+
+@ohne_panel
+def test_karten_listener_wird_vor_dem_abruf_angemeldet():
+    """Ohne angemeldeten Listener existiert die Datenquelle fuer diese View nicht."""
+    assert 'rvl("JS_LISTENER_MAPS")' in PANEL_TSX
+    assert '"JS_BIND_BINGMAP"' in PANEL_TSX
+    stelle = PANEL_TSX.index("private async verkehrHolen(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert rumpf.index("this.kartenListenerAnmelden()") < rumpf.index("GET_AIR_TRAFFIC"), \
+        "die Anmeldung muss VOR dem Aufruf stehen"
+
+
+@ohne_panel
+def test_fehlversuch_bei_der_anmeldung_ist_nicht_endgueltig():
+    """Der Merker darf nur bei Erfolg fallen -- sonst haengt eine ganze Sitzung an einem
+    einzigen zu fruehen Versuch."""
+    stelle = PANEL_TSX.index("private kartenListenerAnmelden(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert rumpf.count("this.kartenListenerDa = true") == 1
+    assert rumpf.index("l.trigger") < rumpf.index("this.kartenListenerDa = true")
+
+
+@ohne_panel
+def test_erster_abruf_wird_gemeldet_auch_wenn_er_leer_bleibt():
+    """Das Ausbleiben ist die interessanteste Meldung von allen -- sie fehlte genau dann, als
+    sie gebraucht wurde."""
+    stelle = PANEL_TSX.index("private async verkehrSenden(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert rumpf.index("this.startBefundSenden(ziel)") < rumpf.index("if (roh === null)"), \
+        "der Befund muss raus, bevor ueber die Liste entschieden wird"
+
+
+def test_startbefund_landet_in_der_diagnose():
+    assert "d.art === 'sim-verkehr-start'" in INDEX
+    assert "_diagnoseMitVergleichMelden('sim-verkehr-start'" in INDEX
+
+
 # --- Schalter fuer die Schilder ----------------------------------------------------------
 
 def test_schilder_schalter_sitzt_unter_der_verkehrsebene():
