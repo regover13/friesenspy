@@ -1,5 +1,19 @@
 [
   {
+    "version": "13.0.0",
+    "date": "2026-08-15",
+    "highlight": true,
+    "title": "Platzhirsch",
+    "items": [
+      "✈️ Im Kniebrett kommt der fremde Verkehr jetzt aus dem Simulator selbst — jede Sekunde statt alle 15, und mit der Position, die wirklich gilt, statt einer zwischen zwei Abrufen geschätzten. Die Symbole gleiten, statt zu springen. Das funktioniert auch ohne VATSIM-Verbindung: Dann siehst du den Verkehr, den der Simulator selbst erzeugt. Geparkte Flugzeuge bleiben weg — am Heimatplatz wären das dreißig Symbole übereinander —, rollende sind ausdrücklich dabei.",
+      "🛬 Neue Ebene „Platzrunden“: 412 deutsche Platzrunden mit Höhe, sichtbar über jeder Kartensorte und auf jeder Zoomstufe. Ein Klick zeigt Platz, Bahn und Platzrundenhöhe. Wo die Höhe in der Quelle fehlt, steht „Höhe nicht bekannt“ — und keine geratene Zahl; eine erfundene Höhe im Cockpit wäre schlimmer als gar keine.",
+      "🗺️ Die Luftfahrtkarte zeigt endlich, was sie schon immer konnte: Platzrunden, Meldepunkte und VFR-Strecken. Sie zeichnet die erst ab einer bestimmten Zoomstufe — und ausgerechnet die war bei uns übersprungen. Jetzt einfach näher heranzoomen.",
+      "🛩️ Zwei neue Ebenen aus den FSEconomy-Daten: „FSE-Plätze“ zeigt rund 2 300 europäische Plätze mit Bahnlänge, Belag und Höhe, „FSE-Landeflächen“ die Gebiete, deren Landungen FSEconomy dem jeweiligen Platz zurechnet. Wichtiger als beides: Das Popup nennt den Namen, unter dem der Platz im Simulator zu finden ist. Bei gut einem Drittel aller Plätze weicht er ab, bei einem Zehntel gibt es den Platz in MSFS gar nicht — Emden etwa heißt dort EHOW, Papenburg EDHJ. Das stand bisher nirgends.",
+      "🔬 Nebenbei ist eine alte Frage beantwortet: Der Simulator gibt fremden Verkehr über seine Schnittstelle also doch heraus. Das war die offene Frage des ganzen Vorhabens — und die Antwort erspart ein eigenes Zusatzmodul, das sonst nötig geworden wäre.",
+      "📦 Für den Verkehr aus dem Simulator braucht es das Kniebrett-Paket 1.5.0. Auf der Webseite ändert sich daran nichts — die Karten-Ebenen sind überall da."
+    ]
+  },
+  {
     "version": "12.10.0",
     "date": "2026-08-15",
     "highlight": false,
