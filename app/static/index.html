@@ -3752,14 +3752,55 @@ let _verkehrNachholer = null;
 function _saveVerkehrPref(an) { try { localStorage.setItem(_VERKEHR_PREF_KEY, an ? '1' : '0'); } catch (e) {} }
 function _loadVerkehrPref() { try { return localStorage.getItem(_VERKEHR_PREF_KEY) === '1'; } catch (e) { return false; } }
 
+// Dem Kniebrett sagen, ob die Ebene an ist. Ohne diese Meldung fragt es den Simulator gar
+// nicht erst ab -- ein Coherent.call je Sekunde, dessen Ergebnis niemand zeichnet, ist Arbeit
+// ohne Gegenwert. Ausserhalb des Kniebretts geht die Meldung ins Leere, und das ist richtig so.
+function _verkehrSchalterMelden(an) {
+  try {
+    if (!window.parent || window.parent === window) return;
+    window.parent.postMessage({ quelle: 'friesenspy', art: 'verkehr-schalter', an: !!an }, '*');
+  } catch (e) {}
+}
+
+// Was steht wirklich drin? Die alte Sonde meldete nur die FELDNAMEN -- damit blieb offen, ob
+// `name` den Callsign traegt und was `plane_model_icao` enthaelt. Genau davon haengt ab, ob
+// Sim-Positionen und VATSIM-Flugplaene zusammengefuehrt werden koennen (Teilprojekt 2b).
+//
+// Einmal je Sitzung, beim ersten nichtleeren Eintreffen -- mit den Rohwerten, mit der
+// groessten Entfernung (wie weit reicht der Sim-Horizont?) und mit der Gegenprobe gegen
+// VATSIM. Vier offene Fragen, ein einziger Datensatz, kein Zusatzaufwand im Flug.
+let _simVerkehrDiagnoseGemeldet = false;
+
+function _simVerkehrDiagnoseEinmal(liste) {
+  if (_simVerkehrDiagnoseGemeldet || !liste.length) return;
+  _simVerkehrDiagnoseGemeldet = true;
+  let weitesteKm = null;
+  if (_simPos && _simPosFrisch()) {
+    // Leaflet rechnet das bereits -- keine zweite Entfernungsformel in dieser Datei.
+    // Denselben Weg geht _verkehrRadiusKm ein paar Zeilen weiter unten.
+    const eigen = L.latLng(_simPos.lat, _simPos.lon);
+    weitesteKm = 0;
+    for (let i = 0; i < liste.length; i++) {
+      const km = eigen.distanceTo([liste[i].lat, liste[i].lon]) / 1000;
+      if (km > weitesteKm) weitesteKm = Math.round(km);
+    }
+  }
+  _diagnoseMitVergleichMelden('sim-verkehr', {
+    anzahl: liste.length,
+    weitesteKm: weitesteKm,
+    felder: Object.keys(liste[0]),
+    ersterEintrag: liste[0],
+  });
+}
+
 function _makeVerkehrLayer() { return L.layerGroup(); }
 
 // Wie bei OpenAIP: NUR die Listener anmelden, den Layer NICHT hinzufuegen (s. Kommentar bei
 // _setupAIPPref -- sonst sieht die Layers-Control den Zustand nie).
 function _setupVerkehrPref(map, gruppe) {
   if (!gruppe) return;
-  map.on('overlayadd',    (e) => { if (e.layer === gruppe) { _saveVerkehrPref(true);  _verkehrStarten(map); } });
-  map.on('overlayremove', (e) => { if (e.layer === gruppe) { _saveVerkehrPref(false); _verkehrStoppen(); } });
+  map.on('overlayadd',    (e) => { if (e.layer === gruppe) { _saveVerkehrPref(true);  _verkehrSchalterMelden(true);  _verkehrStarten(map); } });
+  map.on('overlayremove', (e) => { if (e.layer === gruppe) { _saveVerkehrPref(false); _verkehrSchalterMelden(false); _verkehrStoppen(); } });
   // Die Wache ist hier NICHT optional: Bei eingeschalteter Moving Map ruft _naviTakt jede
   // Sekunde setView auf, und Leaflet feuert danach moveend. Ohne sie liefe der Abruf
   // dauerhaft im Drossel-Takt (alle 3 s statt alle 15 s) -- ausgerechnet ueber die
@@ -3771,7 +3812,12 @@ function _setupVerkehrPref(map, gruppe) {
 // Und wie bei OpenAIP: VOR dem Bau der Layers-Control -- sonst zeigt der Haken dauerhaft den
 // falschen Zustand.
 function _addPreferredVerkehrLayer(map, gruppe) {
-  if (gruppe && _loadVerkehrPref()) gruppe.addTo(map);
+  const an = !!(gruppe && _loadVerkehrPref());
+  if (an) gruppe.addTo(map);
+  // Auch ein "aus" melden: Das Panel startet mit verkehrAn = false, aber nach einem Neuladen
+  // der Seite bei eingeschalteter Ebene wuerde sonst niemand jemals ein "an" schicken --
+  // overlayadd feuert hier nicht, das ist ja gerade der Grund fuer diese Funktion.
+  _verkehrSchalterMelden(an);
 }
 
 function _verkehrStarten(map) {

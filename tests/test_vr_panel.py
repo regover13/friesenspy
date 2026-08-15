@@ -1784,3 +1784,35 @@ def test_popup_bleibt_lesbar_ohne_callsign():
     stelle = INDEX.index("function _verkehrPopup(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "Verkehr" in rumpf
+
+
+def test_schalter_wird_an_die_shell_gemeldet():
+    assert "art: 'verkehr-schalter'" in INDEX
+    stelle = INDEX.index("function _setupVerkehrPref(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_verkehrSchalterMelden" in rumpf
+
+
+def test_schalter_wird_auch_ohne_klick_gemeldet():
+    """Eine gespeicherte Praeferenz schaltet die Ebene beim Aufbau ein, ohne dass jemand
+    klickt -- overlayadd feuert dabei nicht. Ohne diese Meldung bliebe das Panel stumm, und
+    der Nutzer saehe eine eingeschaltete Ebene ohne Verkehr."""
+    stelle = INDEX.index("function _addPreferredVerkehrLayer(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_verkehrSchalterMelden" in rumpf
+
+
+def test_diagnose_meldet_genau_einmal():
+    """Eine Meldung je Sekunde waere kein Befund, sondern eine Flut."""
+    stelle = INDEX.index("function _simVerkehrDiagnoseEinmal(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_simVerkehrDiagnoseGemeldet" in rumpf
+
+
+def test_diagnose_meldet_die_werte_nicht_nur_die_feldnamen():
+    """Die alte Sonde meldete nur Object.keys -- damit blieb offen, WAS in `name` und
+    `plane_model_icao` steht, und genau davon haengt Teilprojekt 2b ab."""
+    stelle = INDEX.index("function _simVerkehrDiagnoseEinmal(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "ersterEintrag" in rumpf
+    assert "_diagnoseMitVergleichMelden('sim-verkehr'" in rumpf
