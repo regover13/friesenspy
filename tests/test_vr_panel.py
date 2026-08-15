@@ -1575,6 +1575,32 @@ def test_sonde_wird_mit_zwei_argumenten_gemeldet():
     assert "window._panelDiag('traffic-sonde', d.befund)" in INDEX
 
 
+def test_eigenes_flugzeug_hat_auch_ein_label():
+    """Im Sim ohne VATSIM stand am eigenen Flugzeug gar nichts -- nur ein Popup auf Klick
+    (Live-Test 15.08.2026). Die Werte muessen am Symbol stehen wie bei allen anderen."""
+    stelle = INDEX.index("function _eigenLabel(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_labelHoehe(" in rumpf, "eigene Hoehenregel statt der gemeinsamen"
+    assert "DEIN FLUGZEUG" in rumpf
+    assert "_eigenLabel()" in INDEX, "Label wird nie gesetzt"
+
+
+def test_hoehe_kommt_aus_dem_simulator():
+    """Ohne PLANE ALTITUDE kann am eigenen Flugzeug keine Hoehe stehen -- die Seite kennt sie
+    offline aus keiner anderen Quelle."""
+    assert 'GetSimVarValue("PLANE ALTITUDE", "feet")' in PANEL_TSX
+    assert "alt: isFinite(alt) ? alt : null" in PANEL_TSX, \
+        "unbrauchbare Hoehe muss als null gehen, nicht als NaN"
+
+
+def test_fehlende_hoehe_ist_nicht_null_fuss():
+    """Ein aelteres Kniebrett schickt keine Hoehe. `null` heisst unbekannt und wird
+    weggelassen; 0 ist ein gueltiger Wert (Flugzeug auf Meereshoehe)."""
+    stelle = INDEX.index("if (d.art === 'position')")
+    rumpf = INDEX[stelle:stelle + 900]
+    assert "(d.alt == null) ? null : Number(d.alt)" in rumpf
+
+
 def test_fremde_haben_eine_eigene_silhouette():
     """Form UND Groesse unterscheiden die beiden -- die Farbe allein tut es nicht mehr, seit
     beide dunkel sind. Friesen: gerade Fluegel (Leichtflugzeug). Fremde: gepfeilte Fluegel
@@ -1587,16 +1613,20 @@ def test_fremde_haben_eine_eigene_silhouette():
     assert "const pfad = fremd ?" in INDEX, "makeAircraftIcon waehlt die Form nicht aus"
 
 
-def test_friesen_tragen_das_vereinsblau():
-    """#191D53 ist die Vereinsfarbe (Nutzer-Wahl 15.08.2026), nicht das UI-Blau #2d9cdb --
-    letzteres ist in diesem Projekt Klickbarem vorbehalten."""
-    m = re.search(r"\.aircraft-marker \{([^}]*)\}", INDEX)
-    assert m, "Regel fuer den Friesen-Marker fehlt"
-    regel = m.group(1)
-    assert "#191D53" in regel
-    # Heller Saum, nicht der alte blaue Schein -- sonst verschwindet das dunkle Symbol auf
-    # der Satelliten- und der Dark-Karte.
-    assert "rgba(255,255,255" in regel
+def test_die_beiden_marker_saeume_sind_gegenlaeufig():
+    """Friesen hell mit dunklem Saum, Fremde dunkel mit hellem -- so tragen beide auf jeder
+    Kartensorte UND sind voneinander zu unterscheiden.
+
+    Die Gegenprobe wurde im Sim gemacht (15.08.2026): dunkles Vereinsblau mit hellem Saum
+    las sich auf allen Karten ausser "Dark" als Schwarz, und die beiden Marker-Arten waren
+    nicht mehr auseinanderzuhalten. Beide dunkel ist der Fehler, den dieser Test verhindert.
+    """
+    m_eigen = re.search(r"\.aircraft-marker \{([^}]*)\}", INDEX)
+    m_fremd = re.search(r"\.aircraft-marker-fremd \{([^}]*)\}", INDEX)
+    assert m_eigen and m_fremd
+    assert "color: var(--green)" in m_eigen.group(1), "Friesen nicht mehr im hellen Blau"
+    assert "rgba(0,0,0" in m_eigen.group(1), "heller Marker braucht einen dunklen Saum"
+    assert "rgba(255,255,255" in m_fremd.group(1), "dunkler Marker braucht einen hellen Saum"
 
 
 def test_live_karte_oeffnet_ueber_edwg():

@@ -1849,16 +1849,21 @@
     }
 
     /* Aircraft markers */
-    /* Vereinsblau (#191D53) mit hellem Saum -- Nutzer-Wahl 15.08.2026. Der Saum ist hier
-       nicht Zierde, sondern das, was die dunkle Flaeche auf einer dunklen Karte
-       (Satellit/Dark) ueberhaupt sichtbar haelt; auf der hellen Standard-Karte traegt die
-       Flaeche selbst. Vorher war es Hellblau mit blauem Schein. */
+    /* Helles Blau mit DUNKLEM Saum -- und das ist die zweite Fassung.
+       Das Vereinsblau #191D53 mit hellem Saum war der Wunsch, ist im Sim aber durchgefallen
+       (Live-Test 15.08.2026): Auf allen Karten ausser "Dark" las es sich schlicht als
+       Schwarz, und ein heller Saum ist auf hellem Grund per Definition unsichtbar. Die
+       Kombination dunkel+hell traegt nur auf dunklem Untergrund.
+       Umgekehrt herum traegt sie ueberall: Die helle Flaeche steht auf dunkler Karte fuer
+       sich, auf heller Karte gibt ihr der dunkle Saum die Kante. Zusaetzlich ist das der
+       groesstmoegliche Abstand zum Fremdverkehr (dunkel mit hellem Saum) -- die beiden
+       waren als "beide dunkel" nicht mehr auseinanderzuhalten. */
     .aircraft-marker {
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #191D53;
-      filter: drop-shadow(0 0 2px rgba(255,255,255,0.95));
+      color: var(--green);
+      filter: drop-shadow(0 0 2px rgba(0,0,0,0.9));
     }
 
     /* Fremdverkehr: dieselbe Behandlung wie die Friesen, aber neutrales Schiefergrau statt
@@ -5312,8 +5317,13 @@ function _initPanelShellKanal() {
       // einziges NaN hier wuerde die Karte an einen undefinierten Ort schieben.
       const lat = Number(d.lat), lon = Number(d.lon);
       if (isFinite(lat) && isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+        // Hoehe erst seit Paket 1.4.0 -- ein aelteres Kniebrett schickt sie nicht. `null`
+        // heisst "unbekannt" und wird im Label weggelassen; 0 ist ein gueltiger Wert
+        // (Flugzeug auf Meereshoehe) und muss davon unterscheidbar bleiben.
+        const alt = (d.alt == null) ? null : Number(d.alt);
         _simPos = { lat: lat, lon: lon,
-                    hdg: Number(d.hdg) || 0, gs: Number(d.gs) || 0, ts: Date.now() };
+                    hdg: Number(d.hdg) || 0, gs: Number(d.gs) || 0,
+                    alt: isFinite(alt) ? alt : null, ts: Date.now() };
       }
     }
     if (d.art === 'notify-ok') {
@@ -7412,13 +7422,18 @@ function _eigenesFlugzeugZeichnen() {
   }
 
   // Offline (oder noch nicht im VATSIM-Strom): eigener Marker.
+  const beschriftung = _eigenLabel();
   if (!_eigenerSimMarker) {
     _eigenerSimMarker = L.marker([_simPos.lat, _simPos.lon],
                                  { icon: makeAircraftIcon(hdg), rotateWithView: true })
       .bindPopup('<div class="popup-callsign">DEIN FLUGZEUG</div>'
                + '<div class="popup-row">Quelle: <span>Simulator</span></div>', { maxWidth: 240 })
+      .bindTooltip(beschriftung,
+                   { permanent: true, direction: 'bottom', offset: [0, 4],
+                     className: 'traffic-label', opacity: 1 })
       .addTo(liveMap);
     _eigenerSimMarker._fsHeading = hdg;
+    _eigenerSimMarker._fsLabel = beschriftung;
     return;
   }
   _eigenerSimMarker.setLatLng([_simPos.lat, _simPos.lon]);
@@ -7426,6 +7441,30 @@ function _eigenesFlugzeugZeichnen() {
     _eigenerSimMarker.setIcon(makeAircraftIcon(hdg));
     _eigenerSimMarker._fsHeading = hdg;
   }
+  if (_eigenerSimMarker._fsLabel !== beschriftung) {
+    _eigenerSimMarker.setTooltipContent(beschriftung);
+    _eigenerSimMarker._fsLabel = beschriftung;
+  }
+}
+
+/**
+ * Label fuer das eigene Flugzeug, wenn es NICHT im VATSIM-Strom steht.
+ *
+ * Eigene Zusammensetzung, weil der Simulator andere Dinge weiss als VATSIM: Er kennt Hoehe
+ * und Geschwindigkeit auf die Sekunde genau, aber weder Callsign noch Flugzeugmuster --
+ * beides steht im Flugplan, den es offline nicht gibt. Deshalb oben "DEIN FLUGZEUG" statt
+ * eines Rufzeichens und unten nur die Werte, die wirklich vorliegen; ein "?" fuers Muster
+ * waere eine Luecke, die wie ein Fehler aussieht.
+ *
+ * Die Hoehenregel selbst kommt aus _labelHoehe -- es gibt sie genau einmal, sonst liefen
+ * die Fassungen auseinander (s. Kommentar dort).
+ */
+function _eigenLabel() {
+  const gs = Math.round(Number(_simPos && _simPos.gs) || 0);
+  const alt = (_simPos && _simPos.alt != null) ? _labelHoehe(_simPos.alt) : null;
+  const daten = alt === null ? String(gs) : (alt + ' ' + gs);
+  return '<span class="lbl-cs">DEIN FLUGZEUG</span>'
+       + '<span class="lbl-dat">' + daten + '</span>';
 }
 
 /** Eigenes Callsign aus dem VATSIM-Strom (fuer die Zuordnung des eigenen Markers). */

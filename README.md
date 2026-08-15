@@ -123,7 +123,7 @@ Die Liste aktualisiert sich über eine permanente Server-Verbindung (Server-Sent
 Interaktive Karte mit allen aktuell fliegenden Friesen. Sie geht über Wangerooge (EDWG) auf.
 
 **Was du siehst:**
-- Flugzeug-Symbole, die sich in Flugrichtung drehen — die Friesen im Vereinsblau als Leichtflugzeug mit geraden Flügeln, der Fremdverkehr kleiner und grau als Verkehrsflugzeug mit gepfeilten Flügeln
+- Flugzeug-Symbole, die sich in Flugrichtung drehen — die Friesen hellblau als Leichtflugzeug mit geraden Flügeln, der Fremdverkehr kleiner und dunkel als Verkehrsflugzeug mit gepfeilten Flügeln. Beide tragen einen gegenläufigen Saum (hell auf dunkel, dunkel auf hell), damit sie auf jeder Kartensorte zu sehen sind
 - Am Symbol stehen **Muster, Höhe und Geschwindigkeit** (z. B. `C172 4500 105`). Wer tief fliegt, zeigt darüber sein Rufzeichen — bei den Friesen steht es immer da. Ab 10 000 Fuß wird die Höhe als Flugfläche geschrieben (`FL350`)
 - Beim Klick auf ein Symbol: Popup mit Callsign, Strecke, Flugzeugtyp, Höhe und Geschwindigkeit
 - Den bisherigen **GPS-Track** des aktuellen Fluges als Linie — der Track wächst alle 15 Sekunden mit und zeigt den genauen Weg seit dem Start

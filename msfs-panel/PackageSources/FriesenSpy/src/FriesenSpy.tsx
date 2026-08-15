@@ -253,6 +253,11 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       const lon = sv.GetSimVarValue("PLANE LONGITUDE", "degree longitude");
       const hdg = sv.GetSimVarValue("PLANE HEADING DEGREES TRUE", "degrees");
       const gs = sv.GetSimVarValue("GROUND VELOCITY", "knots");
+      // Hoehe ueber MSL fuer das Label am eigenen Flugzeug. Ohne sie stand dort im Sim gar
+      // nichts (Live-Test 15.08.2026) -- die Seite kennt offline weder Hoehe noch Muster,
+      // und die Hoehe ist der Wert, den man im Cockpit auf der Karte sehen will.
+      // "PLANE ALTITUDE" in Fuss, dieselbe Einheit wie in Asobos eigenem VFR-Karten-Panel.
+      const alt = sv.GetSimVarValue("PLANE ALTITUDE", "feet");
 
       // Beim Laden eines Fluges liefern die Variablen kurzzeitig Unsinn (0/0 mitten im
       // Atlantik oder NaN). So etwas weiterzureichen hiesse, die Karte an einen Ort zu
@@ -275,7 +280,13 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       this.letztesSendenMs = jetztMs;
 
       ziel.postMessage(
-        { quelle: "friesenspy-shell", art: "position", lat: lat, lon: lon, hdg: hdg, gs: gs },
+        {
+          quelle: "friesenspy-shell", art: "position",
+          lat: lat, lon: lon, hdg: hdg, gs: gs,
+          // Nur senden, wenn die Variable etwas Brauchbares liefert -- die Seite behandelt
+          // ein fehlendes Feld anders als eine echte Null (Flugzeug auf Meereshoehe).
+          alt: isFinite(alt) ? alt : null,
+        },
         "*",
       );
       this.positionFehler = 0;
