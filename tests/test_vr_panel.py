@@ -21,6 +21,13 @@ from app.database import init_db
 STATIC = Path(__file__).resolve().parents[1] / "app" / "static"
 INDEX = (STATIC / "index.html").read_text(encoding="utf-8")
 
+# Die MSFS-App. Bewusst NICHT bedingungslos gelesen: Fehlt msfs-panel/ in irgendeiner
+# Umgebung, braeche sonst das Sammeln der ganzen Datei ab, nicht nur der Panel-Tests.
+_TSX_PFAD = (Path(__file__).resolve().parents[1] / "msfs-panel" / "PackageSources"
+             / "FriesenSpy" / "src" / "FriesenSpy.tsx")
+PANEL_TSX = _TSX_PFAD.read_text(encoding="utf-8") if _TSX_PFAD.exists() else ""
+ohne_panel = pytest.mark.skipif(not _TSX_PFAD.exists(), reason="msfs-panel nicht vorhanden")
+
 SECRET = "s3cr3t-key"
 PW = "test-admin-pw"
 
@@ -1504,3 +1511,65 @@ def test_verkehr_verschwindet_erst_beim_zweiten_fehlen():
     stelle = INDEX.index("function _verkehrUebernehmen(")
     rumpf = INDEX[stelle:INDEX.index("\n}", INDEX.index("for (const cs in _verkehrMarker)", stelle))]
     assert "_verkehrFehlt[cs] < 2" in rumpf
+
+
+# ---------------------------------------------------------------------------
+# Messsonde fuer den Sim-Verkehr (Kniebrett-Paket 1.3.0)
+# ---------------------------------------------------------------------------
+
+def _sonde_rumpf() -> str:
+    """Der Methodenrumpf bis zur schliessenden Klammer.
+
+    Feste Zeichenfenster (…[stelle:stelle+1800]) waeren hier die falsche Wahl: Zwei
+    zusaetzliche Kommentarzeilen -- bei diesem Kommentarstil normal -- kippten den Test,
+    ohne dass sich am Verhalten etwas aendert.
+    """
+    stelle = PANEL_TSX.index("private async sondeMessen")
+    return PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+
+
+@ohne_panel
+def test_sonde_ist_selbstbegrenzt():
+    """Eine Sonde, die im Dauerbetrieb laeuft, ist eine Wanze. Drei Messpunkte, dann Ruhe --
+    und die Termine werden in destroy() wieder abgeraeumt."""
+    assert PANEL_TSX.count("_SONDE_ZEITPUNKTE = [20000, 120000, 300000]") == 1
+    assert "clearTimeout" in PANEL_TSX
+
+
+@ohne_panel
+def test_sonde_kann_den_panel_start_nicht_zerreissen():
+    """Eine unbeantwortete Frage ist besser als ein abstuerzendes Kniebrett."""
+    rumpf = _sonde_rumpf()
+    assert "try {" in rumpf and "catch" in rumpf
+
+
+@ohne_panel
+def test_sonde_meldet_keine_fremden_positionen():
+    """Gemessen wird, OB und WAS der Sim herausgibt -- nicht, wo jemand fliegt."""
+    assert "Object.keys(t[0] as object)" in _sonde_rumpf()
+
+
+@ohne_panel
+def test_sonde_meldung_traegt_die_quelle():
+    """Ohne quelle='friesenspy-shell' verwirft der Empfaenger in index.html die Nachricht in
+    seiner ersten Zeile -- die Sonde waere toter Code."""
+    assert 'quelle: "friesenspy-shell", art: "panel-diag"' in PANEL_TSX
+
+
+@ohne_panel
+def test_sonde_greift_auf_die_richtige_referenz_zu():
+    """FSComponent.createRef liefert eine NodeReference mit .instance. `.current` ist
+    React-Syntax und waere ein Compilefehler."""
+    assert "this.rahmenRef.instance" in _sonde_melden_rumpf()
+    assert ".current" not in PANEL_TSX
+
+
+def _sonde_melden_rumpf() -> str:
+    stelle = PANEL_TSX.index("private sondeMelden")
+    return PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+
+
+def test_sonde_wird_mit_zwei_argumenten_gemeldet():
+    """window._panelDiag(kind, data). Mit einem Argument landete der ganze Befund im Feld
+    kind, und der Datensatz kind='traffic-sonde' entstuende nie."""
+    assert "window._panelDiag('traffic-sonde', d.befund)" in INDEX

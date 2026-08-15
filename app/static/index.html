@@ -5289,6 +5289,13 @@ function _initPanelShellKanal() {
     const d = e && e.data;
     if (!d || d.quelle !== 'friesenspy-shell') return;
     if (d.art === 'pong') _panelShellDa = true;
+    if (d.art === 'panel-diag' && d.befund && typeof window._panelDiag === 'function') {
+      // ZWEI Argumente: window._panelDiag(kind, data). Mit nur einem landete das ganze
+      // Objekt im Feld `kind`, der Server schneidet es auf 40 Zeichen ab, und der
+      // Datensatz kind="traffic-sonde" entstuende nie.
+      window._panelDiag('traffic-sonde', d.befund);
+      return;
+    }
     if (d.art === 'position') {
       // Die eigene Position aus dem Simulator -- die einzige, die der Sim wirklich kennt
       // (s. der lange Kommentar bei _eigenePosition). Zahlen pruefen statt vertrauen: Ein

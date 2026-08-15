@@ -122,6 +122,20 @@ const POSITION_MAX_FEHLER = 5;
  */
 const POSITION_HERZSCHLAG_MS = 2000;
 
+/**
+ * Messsonde fuer den spaeteren Sim-Verkehr (Teilprojekt 2).
+ *
+ * Die Frage: Gibt der Simulator den von vPilot injizierten Verkehr ueber den JS-Weg heraus?
+ * DevSupport 4993 sagt nein -- in der Luft erzeugte AI-Objekte tauchen bei GET_AIR_TRAFFIC
+ * nicht auf, von Asobo bestaetigt, und genau so injiziert vPilot. Fuer MSFS 2024 ist das
+ * nicht bestaetigt, und die Antwort entscheidet, ob ein C++-WASM-Modul noetig wird. Also
+ * einmal messen statt weiter vermuten -- nebenbei im normalen Flug, ohne DevMode.
+ *
+ * Drei Zeitpunkte, weil beim ersten oft noch nichts injiziert ist: gerade gestartet, im
+ * Steigflug, unterwegs. Danach ist Schluss -- eine Sonde im Dauerbetrieb waere eine Wanze.
+ */
+const _SONDE_ZEITPUNKTE = [20000, 120000, 300000];
+
 class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   /** Das eingebettete Fenster -- Empfaenger der Positionsmeldungen. */
   private readonly rahmenRef = FSComponent.createRef<HTMLIFrameElement>();
@@ -131,6 +145,8 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   private letzteMeldung = "";
   /** Wann zuletzt wirklich gesendet wurde (nicht nur geprueft) -- fuer den Herzschlag. */
   private letztesSendenMs = 0;
+  /** Die drei Sonden-Termine, damit destroy() sie abraeumen kann (s. _SONDE_ZEITPUNKTE). */
+  private sondeTermine: ReturnType<typeof setTimeout>[] = [];
   /**
    * Empfaenger fuer Nachrichten aus dem iframe. Als Feld gehalten, damit er in destroy()
    * wieder abgemeldet werden kann -- die App lebt mit AppSuspendMode.SLEEP lange.
@@ -284,15 +300,85 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     this.positionSenden(time);
   }
 
+  /**
+   * Einmalige Messung: Was gibt `GET_AIR_TRAFFIC` heraus?
+   *
+   * Vollstaendig gekapselt -- eine Sonde, die den Panel-Start zerreisst, ist schlimmer als
+   * eine unbeantwortete Frage. Auch der Fehlerfall wird gemeldet: "der Aufruf wirft" ist ein
+   * ebenso brauchbares Ergebnis wie eine leere Liste.
+   */
+  private async sondeMessen(nummer: number): Promise<void> {
+    const befund: Record<string, unknown> = { messpunkt: nummer };
+    try {
+      const c = (globalThis as { Coherent?: { call(n: string): Promise<unknown> } }).Coherent;
+      befund.coherentDa = !!(c && typeof c.call === "function");
+      if (!c || typeof c.call !== "function") {
+        this.sondeMelden(befund);
+        return;
+      }
+
+      // In MSFS 2020 war das die Vorbedingung dafuer, dass der Aufruf ueberhaupt etwas
+      // lieferte. Ob sie in 2024 noch gilt, weiss niemand -- also mitmessen.
+      try {
+        const rvl = (globalThis as {
+          RegisterViewListener?: (n: string) => { trigger?: (...a: unknown[]) => void };
+        }).RegisterViewListener;
+        if (typeof rvl === "function") {
+          const l = rvl("JS_LISTENER_MAPS");
+          if (l && typeof l.trigger === "function") {
+            l.trigger("JS_BIND_BINGMAP", "FS_SONDE", true);
+          }
+          befund.viewListener = "angemeldet";
+        } else {
+          befund.viewListener = "unbekannt";
+        }
+      } catch (e) {
+        befund.viewListener = "fehler: " + String(e instanceof Error ? e.message : e);
+      }
+
+      const t = await c.call("GET_AIR_TRAFFIC");
+      befund.typ = Object.prototype.toString.call(t);
+      befund.anzahl = Array.isArray(t) ? t.length : null;
+      // Nur die FELDNAMEN des ersten Eintrags, keine Positionen: Die Frage ist, OB und WAS
+      // der Sim herausgibt, nicht wo jemand fliegt.
+      befund.felder = Array.isArray(t) && t.length ? Object.keys(t[0] as object) : [];
+    } catch (e) {
+      befund.fehler = String(e instanceof Error ? e.message : e);
+    }
+    this.sondeMelden(befund);
+  }
+
+  private sondeMelden(befund: Record<string, unknown>): void {
+    try {
+      const ziel = this.rahmenRef.instance ? this.rahmenRef.instance.contentWindow : null;
+      // `quelle` ist PFLICHT: Der Empfaenger in index.html verwirft in seiner ersten Zeile
+      // jede Nachricht ohne `quelle === "friesenspy-shell"`.
+      if (ziel) {
+        ziel.postMessage(
+          { quelle: "friesenspy-shell", art: "panel-diag", befund: befund },
+          "*",
+        );
+      }
+    } catch (_e) {
+      // Meldung verloren -- schlimmer waere ein Absturz.
+    }
+  }
+
   /** @inheritdoc */
   public onAfterRender(node: VNode): void {
     super.onAfterRender(node);
     window.addEventListener("message", this.onNachricht);
+    this.sondeTermine = _SONDE_ZEITPUNKTE.map((ms, i) =>
+      setTimeout(() => {
+        void this.sondeMessen(i + 1);
+      }, ms),
+    );
   }
 
   /** @inheritdoc */
   public destroy(): void {
     window.removeEventListener("message", this.onNachricht);
+    this.sondeTermine.forEach((t) => clearTimeout(t));
     super.destroy();
   }
 
