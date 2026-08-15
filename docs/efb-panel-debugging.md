@@ -85,7 +85,8 @@ weiter oben mit `sqlite3 …` funktionieren nur auf dem Host. Aus dem Container 
 über Python, wie in diesem Beispiel.
 
 **Datensatz `kind="sim-verkehr"`** (seit Kniebrett-Paket 1.5.0): Einmal je Sitzung, beim
-ersten Eintreffen einer **nichtleeren** Verkehrsliste aus dem Simulator. Er ersetzt die alte
+ersten Eintreffen einer **nichtleeren** Verkehrsliste aus dem Simulator — für den Fall, dass
+gar nichts kommt, gibt es seit 1.7.0 zusätzlich `sim-verkehr-start` (weiter unten). Er ersetzt die alte
 Sonde `kind="traffic-sonde"` aus Paket 1.3.0/1.4.0, die mit festen Terminen nach dem Öffnen
 der App maß und deshalb den richtigen Moment nur zufällig traf — der Flug wird geladen, dann
 ist das Tablet schon offen, und **erst danach** verbindet vPilot.
@@ -99,19 +100,40 @@ ist das Tablet schon offen, und **erst danach** verbindet vPilot.
 | `vatsimNah` | Gegenprobe: wie viele Flugzeuge VATSIM im selben Moment im 75-km-Umkreis kennt |
 | `eigenLat` / `eigenLon` | Eigene Position, auf drei Stellen gerundet |
 
-**So ist das Ergebnis zu lesen** — vier offene Fragen, ein Datensatz:
+**So war das Ergebnis zu lesen — und so ist es ausgefallen** (Messung 15./16.08.2026):
 
-| Feld | Was es entscheidet |
-|---|---|
-| `ersterEintrag.cs` | Trägt `name` den Callsign? Davon hängt Teilprojekt 2b ab (Callsign + Flugplan am Sim-Verkehr). [DevSupport 13002](https://devsupport.flightsimulator.com/t/js-npcplane-parameter-name-always-empty-msfs2020-2024/13002) behauptet „immer leer" |
-| `ersterEintrag.ac` | `C172` oder ein Asobo-interner Modellname? Entscheidet, ob das Label taugt |
-| `ersterEintrag.alt` | Plausibel gegen `vatsimNah`? Ein Airliner muss ~35 000 zeigen, nicht ~10 700 — sonst stimmt die Umrechnung Meter → Fuß nicht |
-| `weitesteKm` vs. `vatsimNah` | Wie weit der Sim sieht, verglichen mit dem, was VATSIM kennt |
+| Feld | Was es entschied | Ergebnis |
+|---|---|---|
+| `ersterEintrag.cs` | Trägt `name` den Callsign? Davon hängt Teilprojekt 2b ab. [DevSupport 13002](https://devsupport.flightsimulator.com/t/js-npcplane-parameter-name-always-empty-msfs2020-2024/13002) behauptet „immer leer" | **Leer.** DevSupport behält recht. Deshalb kommt die Identität aus VATSIM (`_verkehrZusammenfuehren`) |
+| `ersterEintrag.ac` | `C172` oder ein Asobo-interner Modellname? | **Leer**, ebenfalls |
+| `ersterEintrag.alt` | Plausibel? Ein Airliner muss ~35 000 zeigen, nicht ~10 700 | **Stimmt.** Gegenprobe am Bildschirm: Sim `FL320`/`FL145` gegen VATSIM `FL323`/`FL156` — die Differenz ist der Zeitversatz bei steigenden Flugzeugen. Meter → Fuß ist richtig |
+| `weitesteKm` vs. `vatsimNah` | Wie weit der Sim sieht | **Keine Eigenschaft des Sims**, sondern von vPilot: Dessen Sichtbarkeitsgrenze (z. B. „Do not display aircraft beyond 100nm") bestimmt, was überhaupt injiziert wird. `weitesteKm` sagt nur, wie weit das entfernteste *gemeldete* Flugzeug war — bei einem einzigen in der Nähe also gar nichts. **Nicht als Reichweite lesen** |
+
+Ein weiterer Befund ohne eigenes Feld: **vPilot spawnt nicht jede Maschine**, die VATSIM kennt
+(Model Matching, Sichtbarkeitsgrenzen). Der Simulator ist deshalb nie die vollständige Quelle —
+der Grund für die Zusammenführung beider Quellen ab v13.2.0.
 
 **Die Gegenprobe ist der Kern, nicht Beiwerk.** Eine Zahl aus dem Simulator ist für sich
 genommen nicht lesbar: „Sim 0, VATSIM 7" ist eine Antwort, „Sim 0, VATSIM 0" ist keine. Genau
 daran scheiterte die erste Messung (15.08.2026) — dreimal null, jedes Mal gemessen, bevor der
 Nutzer überhaupt mit vPilot verbunden war.
+
+**Datensatz `kind="sim-verkehr-start"`** (seit Kniebrett-Paket 1.7.0): Einmal je Sitzung, beim
+**ersten** Abruf — und zwar **bevor** über die Liste entschieden wird, also auch bei `null` und
+bei leerer Liste. Genau diese Meldung fehlte, als sie gebraucht wurde: Zwischen 1.5.0 und 1.6.0
+lieferte `GET_AIR_TRAFFIC` gar nichts, weil die Vorbedingung fehlte (s. `architecture.md`), und
+weil `sim-verkehr` nur bei **nichtleerer** Liste feuert, hinterließ der Fehler keine Spur. Ein
+Ausbleiben war von „gerade kein Verkehr in der Nähe" nicht zu unterscheiden.
+
+| Feld | Bedeutung |
+|------|-----------|
+| `coherentDa` | Gibt es `Coherent.call` überhaupt? |
+| `viewListener` | `angemeldet` / `nicht angemeldet` — die Vorbedingung `JS_BIND_BINGMAP`. Steht hier etwas anderes als `angemeldet`, ist alles Weitere hinfällig |
+| `typ` | `Object.prototype.toString` der Rückgabe — `[object Array]` oder eben nicht |
+| `anzahl` | Länge der Rohliste, `null` wenn kein Array |
+| `felder` | Feldnamen des **Roh**satzes (`__Type`, `name`, `plane_model_icao`, `uId`, `lat`, `lon`, `alt`, `heading`, `isOnGround`) |
+
+**Merksatz:** Eine Diagnose, die nur den Erfolgsfall meldet, ist im Fehlerfall wertlos.
 
 **Datensatz `kind="zeichnen"`** (v12.5.2 bis v12.5.5, wieder ausgebaut): Hat gemessen, ob die
 Engine während des Flackerns überhaupt noch Bilder zeichnet — zwei kleine Anzeigen im Panel,
