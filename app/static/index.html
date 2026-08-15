@@ -4032,14 +4032,50 @@ function _verkehrQuelleWechseln(simIstQuelle) {
 function _saveVerkehrPref(an) { try { localStorage.setItem(_VERKEHR_PREF_KEY, an ? '1' : '0'); } catch (e) {} }
 function _loadVerkehrPref() { try { return localStorage.getItem(_VERKEHR_PREF_KEY) === '1'; } catch (e) { return false; } }
 
-// Dem Kniebrett sagen, ob die Ebene an ist. Ohne diese Meldung fragt es den Simulator gar
-// nicht erst ab -- ein Coherent.call je Sekunde, dessen Ergebnis niemand zeichnet, ist Arbeit
-// ohne Gegenwert. Ausserhalb des Kniebretts geht die Meldung ins Leere, und das ist richtig so.
-function _verkehrSchalterMelden(an) {
+// Ab dieser Zoomstufe werden auch geparkte Flugzeuge geholt und gezeichnet.
+//
+// Weiter draussen bleiben sie weg, und zwar aus einem handfesten Grund: Sie stehen auf dem
+// eigenen Platz und sind damit IMMER die naechsten -- sie wuerden den Entfernungs-Deckel von
+// vorne auffressen und ausgerechnet den fliegenden Verkehr verdraengen. Ab 13 zeigt die Karte
+// ohnehin nur noch den Platz und seine Umgebung; dort ist das belegte Vorfeld die Information,
+// und der Deckel reicht bequem. Steht genau einmal hier.
+const _VERKEHR_GEPARKT_AB_ZOOM = 13;
+// Darunter gilt ein Flugzeug am Boden als geparkt -- dieselbe Schwelle wie im Panel.
+const _VERKEHR_GEPARKT_KT = 5;
+
+let _verkehrSchalterZuletzt = null;   // zuletzt gemeldeter Zustand, gegen Dauerfeuer beim Zoomen
+
+function _verkehrGeparkteSichtbar(map) {
+  return !!(map && map.getZoom() >= _VERKEHR_GEPARKT_AB_ZOOM);
+}
+
+// Ein Eintrag, den der Simulator als stehend am Boden meldet. Der VATSIM-Feed kennt kein `gnd`
+// und faellt hier nie hinein -- dort bleibt alles wie bisher.
+function _verkehrIstGeparkt(e) {
+  return e.gnd === true && (Number(e.gs) || 0) < _VERKEHR_GEPARKT_KT;
+}
+
+// Dem Kniebrett sagen, ob die Ebene an ist und ob es die Geparkten mitschicken soll. Ohne diese
+// Meldung fragt es den Simulator gar nicht erst ab -- ein Coherent.call je Sekunde, dessen
+// Ergebnis niemand zeichnet, ist Arbeit ohne Gegenwert. Ausserhalb des Kniebretts geht die
+// Meldung ins Leere, und das ist richtig so.
+function _verkehrSchalterMelden(an, geparkt) {
+  const zustand = (an ? '1' : '0') + (geparkt ? '1' : '0');
+  _verkehrSchalterZuletzt = zustand;
   try {
     if (!window.parent || window.parent === window) return;
-    window.parent.postMessage({ quelle: 'friesenspy', art: 'verkehr-schalter', an: !!an }, '*');
+    window.parent.postMessage({ quelle: 'friesenspy', art: 'verkehr-schalter',
+                               an: !!an, geparkt: !!geparkt }, '*');
   } catch (e) {}
+}
+
+// Beim Zoomen nur melden, wenn sich am Zustand wirklich etwas aendert -- `zoomend` feuert bei
+// jeder Stufe, und die Nachricht ist sonst reines Rauschen.
+function _verkehrSchalterNachziehen(map, gruppe) {
+  const an = !!(map && gruppe && map.hasLayer(gruppe));
+  const zustand = (an ? '1' : '0') + (_verkehrGeparkteSichtbar(map) ? '1' : '0');
+  if (zustand === _verkehrSchalterZuletzt) return;
+  _verkehrSchalterMelden(an, _verkehrGeparkteSichtbar(map));
 }
 
 // Was steht wirklich drin? Die alte Sonde meldete nur die FELDNAMEN -- damit blieb offen, ob
@@ -4079,8 +4115,11 @@ function _makeVerkehrLayer() { return L.layerGroup(); }
 // _setupAIPPref -- sonst sieht die Layers-Control den Zustand nie).
 function _setupVerkehrPref(map, gruppe) {
   if (!gruppe) return;
-  map.on('overlayadd',    (e) => { if (e.layer === gruppe) { _saveVerkehrPref(true);  _verkehrSchalterMelden(true);  _verkehrStarten(map); } });
-  map.on('overlayremove', (e) => { if (e.layer === gruppe) { _saveVerkehrPref(false); _verkehrSchalterMelden(false); _verkehrStoppen(); } });
+  map.on('overlayadd',    (e) => { if (e.layer === gruppe) { _saveVerkehrPref(true);  _verkehrSchalterMelden(true, _verkehrGeparkteSichtbar(map));  _verkehrStarten(map); } });
+  map.on('overlayremove', (e) => { if (e.layer === gruppe) { _saveVerkehrPref(false); _verkehrSchalterMelden(false, false); _verkehrStoppen(); } });
+  // Beim Zoomen kippt die Entscheidung ueber die geparkten Flugzeuge -- das Panel muss davon
+  // erfahren, sonst schickt es sie nie oder dauernd.
+  map.on('zoomend', () => _verkehrSchalterNachziehen(map, gruppe));
   // Die Wache ist hier NICHT optional: Bei eingeschalteter Moving Map ruft _naviTakt jede
   // Sekunde setView auf, und Leaflet feuert danach moveend. Ohne sie liefe der Abruf
   // dauerhaft im Drossel-Takt (alle 3 s statt alle 15 s) -- ausgerechnet ueber die
@@ -4097,7 +4136,7 @@ function _addPreferredVerkehrLayer(map, gruppe) {
   // Auch ein "aus" melden: Das Panel startet mit verkehrAn = false, aber nach einem Neuladen
   // der Seite bei eingeschalteter Ebene wuerde sonst niemand jemals ein "an" schicken --
   // overlayadd feuert hier nicht, das ist ja gerade der Grund fuer diese Funktion.
-  _verkehrSchalterMelden(an);
+  _verkehrSchalterMelden(an, an && _verkehrGeparkteSichtbar(map));
 }
 
 function _verkehrStarten(map) {
@@ -4210,7 +4249,11 @@ function _verkehrZeichnen(liste, gemessenTs, schluesselVon) {
     }
 
     const hdg = Math.round(Number(e.hdg) || 0);
-    const beschriftung = _verkehrLabel(e, false);
+    // Geparkte tragen KEIN dauerhaftes Schild. Sie stehen dicht an dicht auf dem Vorfeld;
+    // dreissig ueberlappende Beschriftungen waeren genau dort unlesbar, wo die Karte am
+    // meisten leisten muss. Angeklickt zeigen sie trotzdem alles.
+    const geparkt = _verkehrIstGeparkt(e);
+    const beschriftung = geparkt ? null : _verkehrLabel(e, false);
     const popup = _verkehrPopup(e);
     const vorhanden = _verkehrMarker[cs];
     if (vorhanden) {
@@ -4218,8 +4261,18 @@ function _verkehrZeichnen(liste, gemessenTs, schluesselVon) {
         vorhanden.setIcon(makeAircraftIcon(hdg, true));
         vorhanden._fsHeading = hdg;
       }
+      // Ein Flugzeug kann anrollen und wieder stehenbleiben -- das Schild muss also in beide
+      // Richtungen mitgehen, nicht nur einmal beim Anlegen gesetzt werden.
       if (vorhanden._fsLabel !== beschriftung) {
-        vorhanden.setTooltipContent(beschriftung);
+        if (beschriftung === null) {
+          vorhanden.unbindTooltip();
+        } else if (vorhanden.getTooltip()) {
+          vorhanden.setTooltipContent(beschriftung);
+        } else {
+          vorhanden.bindTooltip(beschriftung, { permanent: true, direction: 'bottom',
+                                                offset: [0, 2], className: 'traffic-label',
+                                                opacity: 1 });
+        }
         vorhanden._fsLabel = beschriftung;
       }
       // Auch hier nur bei echter Aenderung -- 60 Popups bei jedem Abruf neu zu bauen ist
@@ -4231,9 +4284,11 @@ function _verkehrZeichnen(liste, gemessenTs, schluesselVon) {
     } else {
       const m = L.marker([e.lat, e.lon], { icon: makeAircraftIcon(hdg, true), rotateWithView: true })
         .bindPopup(popup, { maxWidth: 220 })
-        .bindTooltip(beschriftung, { permanent: true, direction: 'bottom', offset: [0, 2],
-                                     className: 'traffic-label', opacity: 1 })
         .addTo(_verkehrGruppe);
+      if (beschriftung !== null) {
+        m.bindTooltip(beschriftung, { permanent: true, direction: 'bottom', offset: [0, 2],
+                                      className: 'traffic-label', opacity: 1 });
+      }
       m._fsHeading = hdg;
       m._fsLabel = beschriftung;
       m._fsPopup = popup;

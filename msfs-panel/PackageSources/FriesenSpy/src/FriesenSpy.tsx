@@ -91,6 +91,7 @@ interface PanelNachricht {
   text?: string;
   service?: string;
   an?: boolean;
+  geparkt?: boolean;
 }
 
 /**
@@ -232,6 +233,16 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
 
   /** Ist die Verkehrs-Ebene auf der Seite eingeschaltet? Gemeldet ueber den Rueckkanal. */
   private verkehrAn = false;
+  /**
+   * Will die Seite gerade auch die geparkten Flugzeuge sehen?
+   *
+   * Entschieden wird das auf der Seite (an der Zoomstufe), nicht hier -- das Panel kennt die
+   * Karte nicht. Weit draussen bleiben Geparkte weg, weil sie sonst zwei Dinge verderben: Sie
+   * stehen auf dem eigenen Platz und sind damit IMMER die naechsten, fressen also den
+   * Entfernungs-Deckel von vorne auf und verdraengen genau den fliegenden Verkehr, um den es
+   * geht. Beim Anflug dreht sich das um -- dort ist das belegte Vorfeld die Information.
+   */
+  private verkehrGeparkt = false;
   /** Riegel gegen Doppelaufrufe -- das offizielle SDK haelt an derselben Stelle `isBusy`. */
   private verkehrLaeuft = false;
   private letzterVerkehrMs = 0;
@@ -277,6 +288,7 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     // dessen Ergebnis niemand zeichnet, ist Arbeit im Simulator ohne jeden Gegenwert.
     if (d.art === "verkehr-schalter") {
       this.verkehrAn = d.an === true;
+      this.verkehrGeparkt = d.geparkt === true;
       if (!this.verkehrAn) {
         this.letzteVerkehrMeldung = "";
         this.verkehrSpur.clear();
@@ -542,8 +554,9 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       if (eigen && abstand < VERKEHR_EIGEN_M && Math.abs(altFt - eigen.alt) < VERKEHR_EIGEN_FT) {
         continue;
       }
-      // Geparkte. Rollende bleiben ausdruecklich drin -- am Platz sind sie das Wichtigste.
-      if (r.isOnGround === true && gs < VERKEHR_STEHT_KT) {
+      // Geparkte -- aber nur, solange die Seite sie nicht ausdruecklich haben will
+      // (s. verkehrGeparkt). Rollende bleiben immer drin: am Platz sind sie das Wichtigste.
+      if (!this.verkehrGeparkt && r.isOnGround === true && gs < VERKEHR_STEHT_KT) {
         continue;
       }
 

@@ -1846,3 +1846,56 @@ def test_frischewache_benutzt_dieselbe_grenze_wie_die_position():
     stelle = INDEX.index("function _simVerkehrFrisch(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "_SIM_POS_MAX_ALTER_MS" in rumpf
+
+
+# --- Geparkte Flugzeuge -----------------------------------------------------------------
+
+def test_geparkte_erst_ab_naher_zoomstufe():
+    """Geparkte stehen auf dem eigenen Platz und sind damit IMMER die naechsten -- weit
+    draussen wuerden sie den Entfernungs-Deckel von vorne auffressen und den fliegenden
+    Verkehr verdraengen. Ab Zoom 13 zeigt die Karte ohnehin nur noch den Platz."""
+    m = re.search(r"const _VERKEHR_GEPARKT_AB_ZOOM = (\d+);", INDEX)
+    assert m and int(m.group(1)) == 13
+    assert INDEX.count("_VERKEHR_GEPARKT_AB_ZOOM =") == 1
+    assert INDEX.count("_VERKEHR_GEPARKT_AB_ZOOM") >= 2
+
+
+def test_zoomstufe_wird_dem_panel_gemeldet():
+    """Das Panel kennt die Karte nicht -- die Entscheidung faellt auf der Seite und muss
+    hinueber. Ohne die Meldung schickte das Panel die Geparkten nie oder dauernd."""
+    assert "geparkt: !!geparkt" in INDEX
+    stelle = INDEX.index("function _setupVerkehrPref(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "zoomend" in rumpf
+    assert "_verkehrSchalterNachziehen" in rumpf
+
+
+def test_schalter_meldet_nicht_bei_jeder_zoomstufe():
+    """zoomend feuert bei jeder Stufe. Ohne Vergleich mit dem zuletzt gemeldeten Zustand
+    waere die Nachricht reines Rauschen."""
+    stelle = INDEX.index("function _verkehrSchalterNachziehen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_verkehrSchalterZuletzt" in rumpf
+
+
+def test_geparkte_tragen_kein_schild():
+    """Dreissig Abstellpositionen heissen dreissig ueberlappende Beschriftungen -- genau dort,
+    wo die Karte am meisten leisten muss. Das Popup bleibt, nur das dauerhafte Schild faellt."""
+    stelle = INDEX.index("function _verkehrZeichnen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "_verkehrIstGeparkt(e)" in rumpf
+    assert "unbindTooltip" in rumpf, "ein anrollendes Flugzeug muss sein Schild zurueckbekommen"
+
+
+def test_vatsim_verkehr_bleibt_unberuehrt():
+    """Der VATSIM-Feed kennt kein `gnd` -- dort darf sich nichts aendern, sonst verschwaenden
+    Schilder von Flugzeugen, ueber die wir gar nichts wissen."""
+    stelle = INDEX.index("function _verkehrIstGeparkt(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "e.gnd === true" in rumpf
+
+
+@ohne_panel
+def test_panel_filtert_geparkte_nur_auf_ansage():
+    m = re.search(r"if \(!this\.verkehrGeparkt && r\.isOnGround === true", PANEL_TSX)
+    assert m, "Filter haengt nicht mehr am Schalter der Seite"

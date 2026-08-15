@@ -5,10 +5,10 @@
     "highlight": true,
     "title": "Platzhirsch",
     "items": [
-      "✈️ Neue Ebene „Verkehr“: auf der Karte erscheinen jetzt auch die anderen auf VATSIM, mit Muster, Höhe und Geschwindigkeit am Symbol. Im Kniebrett kommt dieser Verkehr direkt aus dem Simulator — jede Sekunde statt alle 15, und auch ohne VATSIM-Verbindung. Geparkte Flugzeuge bleiben weg, rollende nicht.",
+      "✈️ Neue Ebene „Verkehr“: auf der Karte erscheinen jetzt auch die anderen auf VATSIM, mit Muster, Höhe und Geschwindigkeit am Symbol. Im Kniebrett kommt dieser Verkehr direkt aus dem Simulator — jede Sekunde statt alle 15, und auch ohne VATSIM-Verbindung. Beim Anflug siehst du zusätzlich, was auf dem Vorfeld steht.",
       "🛬 Neue Ebene „Platzrunden“: 412 deutsche Platzrunden mit Höhe, über jeder Kartensorte und auf jeder Zoomstufe. Fehlt die Höhe in der Quelle, steht „Höhe nicht bekannt“ statt einer geratenen Zahl. Auch die Luftfahrtkarte zeigt ihre eigenen Platzrunden jetzt — die nötige Zoomstufe war bisher übersprungen.",
       "🛩️ Neue Ebenen „FSE-Plätze“ und „FSE-Landeflächen“: rund 2 300 europäische Plätze mit Bahnlänge, Belag und Höhe — und im Popup der Name, unter dem der Platz im Simulator zu finden ist. Emden heißt dort EHOW, Papenburg EDHJ.",
-      "📦 Für den Verkehr aus dem Simulator braucht es das Kniebrett-Paket 1.5.0. Die Karten-Ebenen sind ohne Neuinstallation da."
+      "📦 Für den Verkehr aus dem Simulator braucht es das Kniebrett-Paket 1.6.0. Die Karten-Ebenen sind ohne Neuinstallation da."
     ]
   },
   {
