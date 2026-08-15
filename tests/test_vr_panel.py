@@ -1416,17 +1416,60 @@ def test_label_grenze_steht_bei_zehntausend():
     assert "_LABEL_FL_AB_FT = 10000" in INDEX
 
 
-def test_label_zeigt_callsign_bei_tief_oder_friese():
-    """Die Regel ist ein ODER -- nur eine der beiden Bedingungen waere ein halbes Feature."""
+def test_label_zeigt_immer_alles():
+    """Es gab zwei Ausnahmen: Der Callsign erschien nur unter 10 000 Fuss oder bei einem
+    Friesen. Beide sind raus (Nutzer-Wahl 15.08.2026) -- wer es ruhiger will, schaltet die
+    Label ganz ab. Eine Karte, die selbst entscheidet, welche Zeile man wohl braucht, ist die
+    schlechtere Loesung als ein Schalter."""
     stelle = INDEX.index("function _verkehrLabel(")
-    rumpf = INDEX[stelle:stelle + 1200]
-    assert "istFriese ||" in rumpf and "_LABEL_FL_AB_FT" in rumpf
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "istFriese" not in rumpf
+    assert "_LABEL_FL_AB_FT" not in rumpf, "keine Hoehenregel mehr fuer den Callsign"
+    assert 'class="lbl-cs"' in rumpf and 'class="lbl-dat"' in rumpf
+
+
+def test_label_nimmt_nur_noch_ein_argument():
+    """Der zweite Parameter unterschied Friesen von Fremden -- ohne Unterscheidung ist er
+    ueberfluessig, und ein ungenutzter Parameter ist eine Einladung zum Missverstaendnis."""
+    assert "function _verkehrLabel(p)" in INDEX
+    assert "_verkehrLabel(p, " not in INDEX and "_verkehrLabel(e, " not in INDEX
+
+
+def test_eigenes_flugzeug_nutzt_dieselbe_labelfunktion():
+    """Zwei Fassungen desselben Schildes laufen auseinander -- und beim eigenen Flugzeug
+    faellt es zuletzt auf, weil man es fuer selbstverstaendlich haelt."""
+    stelle = INDEX.index("function _eigenLabel(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_verkehrLabel({" in rumpf
+    assert "lbl-dat" not in rumpf, "kein eigener Zusammenbau mehr"
 
 
 def test_friesen_marker_tragen_das_label():
     """Das Label ist fuer die Friesen genauso neu wie fuer den Fremdverkehr."""
-    assert "_verkehrLabel(p, true)" in INDEX
+    assert "_verkehrLabel(p)" in INDEX
     assert "className: 'traffic-label'" in INDEX
+
+
+def test_ebenen_stehen_in_der_gewaehlten_reihenfolge():
+    """Nutzer-Wahl 16.08.2026: erst die Karten-Ebenen von der groessten zur kleinsten Flaeche,
+    ganz am Ende der Verkehr -- die einzige, die sich bewegt und einen Unterpunkt traegt.
+    Die Reihenfolge im Objekt IST die Reihenfolge in der Auswahl."""
+    stelle = INDEX.index("const liveOverlays = {};")
+    rumpf = INDEX[stelle:INDEX.index("L.control.layers(", stelle)]
+    reihe = [n for n in ["'OpenAIP'", "'Platzrunden'", "'FSE-Landeflächen'",
+                         "'FSE-Plätze'", "'Verkehr'"] if n in rumpf]
+    stellen = [rumpf.index(n) for n in reihe]
+    assert stellen == sorted(stellen), "Reihenfolge stimmt nicht: " + str(reihe)
+    assert reihe[-1] == "'Verkehr'", "Verkehr gehoert ans Ende"
+
+
+def test_eigener_haken_sieht_aus_wie_die_von_leaflet():
+    """Im Kniebrett baut das Stylesheet die Kaestchen komplett neu (die Engine zeichnet native
+    nicht brauchbar). Ohne Leaflets Klasse blieb unser Haken immer gleich -- an wie aus
+    (Nutzer-Fund 16.08.2026)."""
+    stelle = INDEX.index("function _schilderSchalterEinbauen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "kasten.className = 'leaflet-control-layers-selector'" in rumpf
 
 
 def test_label_ist_nicht_blau():
@@ -1565,21 +1608,19 @@ def test_diagnose_wird_mit_zwei_argumenten_gemeldet():
 def test_eigenes_flugzeug_hat_auch_ein_label():
     """Im Sim ohne VATSIM stand am eigenen Flugzeug gar nichts -- nur ein Popup auf Klick
     (Live-Test 15.08.2026). Die Werte muessen am Symbol stehen wie bei allen anderen."""
+    assert "_eigenLabel()" in INDEX, "Label wird nie gesetzt"
     stelle = INDEX.index("function _eigenLabel(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "_labelHoehe(" in rumpf, "eigene Hoehenregel statt der gemeinsamen"
-    assert "_eigenLabel()" in INDEX, "Label wird nie gesetzt"
+    assert "_simPos.alt" in rumpf and "_simPos.gs" in rumpf
 
 
-def test_eigenes_label_traegt_keine_kopfzeile():
-    """Am eigenen Flugzeug stand "DEIN FLUGZEUG" -- als einziges Schild auf der ganzen Karte
-    mit einer Kopfzeile, die kein Rufzeichen ist (Nutzer-Wahl 15.08.2026). Jetzt dieselbe Form
-    wie bei allen anderen: nur die Werte."""
+def test_eigenes_label_traegt_keine_sonderform():
+    """Am eigenen Flugzeug stand erst "DEIN FLUGZEUG", danach ein verkuerztes eigenes Label.
+    Beides ist raus (Nutzer-Wahl 15.08.2026) -- es ist jetzt dasselbe Schild wie ueberall."""
     stelle = INDEX.index("function _eigenLabel(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "DEIN FLUGZEUG" not in rumpf
-    assert 'class="lbl-cs"' not in rumpf, "keine Kopfzeile ohne Rufzeichen"
-    assert 'class="lbl-dat"' in rumpf
+    assert "<span" not in rumpf, "kein eigener Zusammenbau -- das macht _verkehrLabel"
 
 
 def test_hoehe_kommt_aus_dem_simulator():
@@ -1771,31 +1812,94 @@ def test_spur_wird_aufgeraeumt():
 
 def test_beide_quellen_zeichnen_ueber_denselben_weg():
     """Zwei Kopien derselben Markerpflege waeren zwei Orte, an denen dieselbe Hysterese, das
-    Icon-Sparen und das Popup-Sparen kaputtgehen koennen."""
+    Icon-Sparen und das Popup-Sparen kaputtgehen koennen. Es gibt genau einen Zeichenpunkt."""
     assert "function _verkehrZeichnen(" in INDEX
-    stelle = INDEX.index("function _verkehrUebernehmen(")
+    stelle = INDEX.index("function _verkehrNeuZeichnen(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "_verkehrZeichnen(" in rumpf
-    stelle = INDEX.index("function _simVerkehrUebernehmen(")
-    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "_verkehrZeichnen(" in rumpf
+    assert "_verkehrZeichnen(_verkehrZusammenfuehren())" in rumpf
+    assert INDEX.count("_verkehrZeichnen(") == 2, "Aufruf nur an einer Stelle (plus Definition)"
 
 
 def test_sim_schluessel_kollidiert_nicht_mit_callsigns():
-    """Beide Quellen legen in derselben Ablage ab. Ein Sim-Schluessel muss deshalb erkennbar
-    ein Sim-Schluessel sein, auch wenn sich die Quellen einmal ueberschneiden."""
-    stelle = INDEX.index("function _simVerkehrUebernehmen(")
-    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "'sim:'" in rumpf
+    """Ein ungepaartes Sim-Flugzeug muss erkennbar eines sein -- beide Quellen legen in
+    derselben Ablage ab."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "'sim:' + s.id" in rumpf
 
 
-def test_sim_positionen_gelten_ab_jetzt():
-    """Der VATSIM-Feed traegt ein Alter (die Momentaufnahme des Pollers), der Sim nicht -- er
-    meldet, was in dieser Sekunde gilt. Ein Alter dazuzurechnen wuerde die Fortrechnung um
-    genau diesen Betrag zu weit laufen lassen."""
-    stelle = INDEX.index("function _simVerkehrUebernehmen(")
-    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "Date.now()" in rumpf
+def test_jeder_eintrag_bringt_seinen_messzeitpunkt_mit():
+    """Seit beide Quellen in EINER Liste stehen, geht ein gemeinsamer Zeitpunkt nicht mehr:
+    Eine Sim-Meldung gilt fuer diese Sekunde, eine VATSIM-Meldung ist bis zu 15 Sekunden alt.
+    Mit einem gemeinsamen Wert wuerde die eine Haelfte falsch fortgerechnet."""
+    stelle = INDEX.index("function _verkehrZeichnen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "const gemessenTs = e._ts" in rumpf
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    zus = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "e._ts = _simVerkehr.ts" in zus
+    assert "e._ts = _vatsimVerkehr.gemessenTs" in zus
+
+
+# --- Zusammenfuehrung beider Quellen -----------------------------------------------------
+#
+# Die erste Fassung liess immer nur EINE Quelle gelten. Im Flug war das sofort sichtbar
+# (Nutzer-Fund 15.08.2026): Beim vPilot-Connect verschwanden Flugzeuge, die VATSIM kannte und
+# der Simulator nicht -- und mit ihnen alle Rufzeichen.
+
+def test_vatsim_wird_nicht_mehr_verdraengt():
+    """Der Netzabruf laeuft weiter, auch wenn der Simulator liefert."""
+    stelle = INDEX.index("function _verkehrAbrufen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "if (_simVerkehrFrisch()) return;" not in rumpf
+    assert "_verkehrQuelleWechseln" not in INDEX, "die Umschaltung ist ersatzlos entfallen"
+
+
+def test_gepaarte_flugzeuge_erben_die_identitaet_von_vatsim():
+    """Bewegung vom Simulator (jede Sekunde gemessen), Identitaet von VATSIM -- der Sim
+    liefert weder Rufzeichen noch Flugplan."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "e.cs  = partner.cs" in rumpf
+    assert "e.dep = partner.dep" in rumpf and "e.arr = partner.arr" in rumpf
+    assert "e.lat = " not in rumpf, "die Position muss vom Simulator bleiben"
+
+
+def test_gepaarte_behalten_den_vatsim_schluessel():
+    """Reisst die Paarung ab und kommt wieder, muss es derselbe Marker bleiben -- sonst
+    blitzt bei jedem Wechsel ein neuer auf."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "e._key = partner.cs" in rumpf
+
+
+def test_nur_von_vatsim_gekannte_flugzeuge_bleiben_stehen():
+    """Der Fall, der den Umbau ausgeloest hat: vPilot spawnt nicht jedes Flugzeug."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "if (!v.cs || belegt[v.cs]) continue;" in rumpf
+
+
+def test_paarung_braucht_naehe_und_aehnliche_hoehe():
+    """Die Hoehe ist das schaerfere Merkmal: Die VATSIM-Position ist bis zu 15 s alt, ein
+    Verkehrsflugzeug legt darin rund 3 km zurueck -- eine enge Ortsschranke wuerde also
+    ausgerechnet die schnellen nie paaren."""
+    stelle = INDEX.index("function _verkehrPartnerSuchen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "_PAARUNG_MAX_M" in rumpf and "_PAARUNG_MAX_FT" in rumpf
+    assert "if (m < besteM)" in rumpf, "das naechstgelegene gewinnt, nicht das erstbeste"
+    m = re.search(r"const _PAARUNG_MAX_M = (\d+);", INDEX)
+    assert m and int(m.group(1)) >= 3000, "unter 3 km faellt schneller Verkehr durch"
+
+
+def test_ein_vatsim_flugzeug_wird_nur_einmal_gepaart():
+    """Ohne Belegung koennten zwei Sim-Meldungen dasselbe Rufzeichen tragen."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "belegt[partner.cs] = true" in rumpf
+    stelle = INDEX.index("function _verkehrPartnerSuchen(")
+    such = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "belegt[v.cs]" in such
 
 
 def test_popup_bleibt_lesbar_ohne_callsign():
@@ -1842,22 +1946,27 @@ def test_sim_verkehr_wird_empfangen():
     assert "d.art === 'sim-verkehr'" in INDEX
 
 
-def test_solange_der_sim_liefert_wird_nicht_abgefragt():
-    """Beide Quellen gleichzeitig zu zeichnen hiesse: jedes Flugzeug zweimal, 15 Sekunden
-    versetzt. Und der Netzabruf waere Arbeit, die niemand sieht -- ausgerechnet ueber die
-    Verbindung des Simulators."""
-    stelle = INDEX.index("function _verkehrAbrufen(")
-    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "_simVerkehrFrisch()" in rumpf
+def test_doppelte_symbole_verhindert_die_paarung_statt_eines_abbruchs():
+    """Frueher brach der Netzabruf ab, solange der Simulator lieferte -- damit jedes Flugzeug
+    nur einmal erscheint. Das kostete zu viel (s. Abschnitt "Zusammenfuehrung"). Die Aufgabe
+    uebernimmt jetzt die Paarung: Ein VATSIM-Eintrag, der zu einer Sim-Meldung gehoert, wird
+    nicht ein zweites Mal gezeichnet."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "belegt[partner.cs] = true" in rumpf
+    assert "if (!v.cs || belegt[v.cs]) continue;" in rumpf
+    # Und die Frischewache entscheidet nur noch, ob die Sim-Liste ueberhaupt zaehlt.
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    assert "_simVerkehrFrisch()" in INDEX[stelle:stelle + 400]
 
 
-def test_beim_quellwechsel_wird_geleert():
-    """Beide Quellen schreiben in dieselben Ablagen. Ohne das Leeren blieben die Marker der
-    alten Quelle stehen -- und _naviTakt rechnete ihre Position endlos weiter, obwohl niemand
-    sie mehr meldet."""
-    stelle = INDEX.index("function _verkehrQuelleWechseln(")
-    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "_verkehrLeeren()" in rumpf
+def test_verschwundene_flugzeuge_raeumen_sich_selbst_ab():
+    """Es gab dafuer ein Leeren beim Quellwechsel. Ohne Wechsel braucht es das nicht mehr --
+    was nicht mehr gemeldet wird, faellt ueber die vorhandene Hysterese heraus, und zwar
+    einzeln statt alles auf einmal."""
+    stelle = INDEX.index("function _verkehrZeichnen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "_verkehrFehlt" in rumpf
 
 
 def test_frischewache_benutzt_dieselbe_grenze_wie_die_position():
@@ -1898,7 +2007,7 @@ def test_jedes_flugzeug_traegt_sein_schild():
     Sonderbehandlung -- gibt es sie nicht mehr, gibt es auch kein unbindTooltip."""
     stelle = INDEX.index("function _verkehrZeichnen(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "const beschriftung = _verkehrLabel(e, false);" in rumpf
+    assert "const beschriftung = _verkehrLabel(e);" in rumpf
     assert "unbindTooltip" not in rumpf
 
 
@@ -2015,10 +2124,10 @@ def test_leere_sim_liste_verdraengt_vatsim_nicht():
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "_simVerkehrLetzteMitInhalt" in rumpf
     assert "_simVerkehr &&" not in rumpf, "die blosse Meldung reicht nicht mehr"
-    # Und der Empfaenger darf bei leerer Liste gar nicht erst umschalten.
+    # Und der Empfaenger darf eine leere Liste gar nicht erst als Lieferung werten.
     stelle = INDEX.index("if (d.art === 'sim-verkehr')")
     zweig = INDEX[stelle:stelle + 700]
-    assert zweig.index("if (!liste.length) return;") < zweig.index("_verkehrQuelleWechseln(true)")
+    assert zweig.index("if (!liste.length) return;") < zweig.index("_simVerkehrLetzteMitInhalt = Date.now()")
 
 
 def test_schilder_schalter_faellt_weich_aus():

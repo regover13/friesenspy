@@ -1248,12 +1248,19 @@
 
     /* Ein Haken, der zu der Ebene ueber ihm gehoert, statt eine eigene zu sein: eingerueckt und
        eine Spur leiser. Ohne beides laese er sich als sechste Ebene, und der Blick suchte
-       vergeblich, was "Schilder" fuer eine Karte sein soll. */
+       vergeblich, was "Radar Label" fuer eine Karte sein soll. */
     .leaflet-control-layers .ebenen-unterpunkt {
       display: block;
       padding-left: 18px;
       color: var(--text-label);
       font-size: 0.92em;
+    }
+    /* Im Kniebrett aber nicht leiser: Dort wird aus zwei Metern Entfernung gelesen, oft in VR.
+       --text-label (#6b9ab8) ist dafuer zu schwach -- derselbe Befund wie bei den
+       Knopfbeschriftungen weiter unten. Die Einrueckung ordnet den Haken ohnehin schon zu. */
+    html.vr-panel .leaflet-control-layers .ebenen-unterpunkt {
+      color: #cfe3f0;
+      font-size: 1em;
     }
 
     .navi-bar { border: none !important; background: none !important; margin-top: 8px; }
@@ -4291,8 +4298,19 @@ let _verkehrNachholer = null;
 // Genau EINE Quelle ist aktiv. Beides gleichzeitig zu zeichnen hiesse: jedes Flugzeug
 // zweimal, 15 Sekunden versetzt.
 let _simVerkehr = null;             // { ts, liste } -- zuletzt gemeldet, oder null
-let _simVerkehrWarQuelle = false;   // wer zuletzt geliefert hat (fuer den Wechsel)
+let _vatsimVerkehr = null;          // { gemessenTs, liste } -- letzte Antwort von /api/traffic
 let _simVerkehrLetzteMitInhalt = 0; // wann der Sim zuletzt WIRKLICH etwas zu zeigen hatte
+
+// Wie nah sich zwei Meldungen sein muessen, damit sie dasselbe Flugzeug sind.
+//
+// Grosszuegig, und das mit Absicht: Die VATSIM-Position ist bis zu 15 Sekunden alt. Ein
+// Verkehrsflugzeug legt in dieser Zeit rund 3 km zurueck -- eine enge Schranke wuerde also
+// ausgerechnet die schnellen Flugzeuge nie paaren. Die Hoehe ist dabei das schaerfere
+// Merkmal: Zwei Maschinen im selben Umkreis unterscheiden sich fast immer um mehr als 1500
+// Fuss. Verwechselt die Paarung doch einmal, steht ein falsches Rufzeichen an einem Symbol;
+// das ist unschoen, aber niemand navigiert danach.
+const _PAARUNG_MAX_M = 6000;
+const _PAARUNG_MAX_FT = 1500;
 
 // Dieselbe Grenze wie fuer die eigene Position: Es ist dieselbe Bruecke, und zwei Grenzen
 // waeren zwei Wahrheiten darueber, ob der Simulator noch da ist.
@@ -4308,13 +4326,77 @@ function _simVerkehrFrisch() {
       && (Date.now() - _simVerkehrLetzteMitInhalt) < _SIM_POS_MAX_ALTER_MS;
 }
 
-// Der einzige Umschaltpunkt. Beide Quellen schreiben in dieselben Ablagen (_verkehrRoh,
-// _verkehrMarker) -- ohne das Leeren blieben beim Wechsel die Marker der alten Quelle stehen,
-// und _naviTakt rechnete ihre Position endlos weiter, obwohl niemand sie mehr meldet.
-function _verkehrQuelleWechseln(simIstQuelle) {
-  if (simIstQuelle === _simVerkehrWarQuelle) return;
-  _simVerkehrWarQuelle = simIstQuelle;
-  _verkehrLeeren();
+// Beide Quellen zu EINER Liste zusammenfuehren.
+//
+// Die erste Fassung liess immer nur eine Quelle gelten: Sobald der Simulator lieferte,
+// verdraengte er VATSIM. Das war zu grob und im Flug sofort sichtbar (Nutzer-Fund
+// 15.08.2026) -- der Simulator kennt nur, was vPilot ihm einspeist, VATSIM dagegen alles im
+// Kartenausschnitt. Beim Umschalten verschwanden Flugzeuge, die es wirklich gab, und mit
+// ihnen alle Rufzeichen: Der Simulator liefert dazu nichts.
+//
+// Jetzt gilt: Jede Meldung des Simulators wird mit der VATSIM-Meldung gepaart, die am selben
+// Ort in derselben Hoehe steht. Dann kommt die BEWEGUNG vom Simulator (jede Sekunde
+// gemessen statt vierzehn von fuenfzehn Sekunden geschaetzt) und die IDENTITAET von VATSIM
+// (Rufzeichen, Muster, Flugplan). Was nur eine der beiden Quellen kennt, wird trotzdem
+// gezeichnet -- lieber ein Flugzeug ohne Rufzeichen als ein fehlendes.
+function _verkehrZusammenfuehren() {
+  const sim = (_simVerkehrFrisch() && _simVerkehr) ? _simVerkehr.liste : [];
+  const vat = _vatsimVerkehr ? _vatsimVerkehr.liste : [];
+  const belegt = Object.create(null);
+  const out = [];
+
+  for (let i = 0; i < sim.length; i++) {
+    const s = sim[i];
+    const partner = _verkehrPartnerSuchen(s, vat, belegt);
+    const e = { lat: s.lat, lon: s.lon, alt: s.alt, hdg: s.hdg, gs: s.gs,
+                ac: s.ac, cs: s.cs, gnd: s.gnd };
+    if (partner) {
+      belegt[partner.cs] = true;
+      e.cs  = partner.cs;
+      e.ac  = partner.ac || s.ac;
+      e.dep = partner.dep;
+      e.arr = partner.arr;
+      // Den VATSIM-Schluessel behalten: Reisst die Paarung einmal ab und kommt wieder,
+      // bleibt es derselbe Marker, statt einen neuen aufblitzen zu lassen.
+      e._key = partner.cs;
+    } else {
+      e._key = 'sim:' + s.id;
+    }
+    e._ts = _simVerkehr.ts;
+    out.push(e);
+  }
+
+  for (let i = 0; i < vat.length; i++) {
+    const v = vat[i];
+    if (!v.cs || belegt[v.cs]) continue;
+    const e = Object.assign({}, v);
+    e._key = v.cs;
+    e._ts = _vatsimVerkehr.gemessenTs;
+    out.push(e);
+  }
+  return out;
+}
+
+// Das naechstgelegene noch freie VATSIM-Flugzeug in vertraeglicher Hoehe -- oder null.
+function _verkehrPartnerSuchen(s, vat, belegt) {
+  if (!vat.length || !isFinite(s.lat) || !isFinite(s.lon)) return null;
+  const p = L.latLng(s.lat, s.lon);
+  const hoehe = Number(s.alt) || 0;
+  let beste = null;
+  let besteM = _PAARUNG_MAX_M;
+  for (let i = 0; i < vat.length; i++) {
+    const v = vat[i];
+    if (!v.cs || belegt[v.cs]) continue;
+    if (Math.abs((Number(v.alt) || 0) - hoehe) > _PAARUNG_MAX_FT) continue;
+    const m = p.distanceTo([v.lat, v.lon]);
+    if (m < besteM) { besteM = m; beste = v; }
+  }
+  return beste;
+}
+
+// Der eine Punkt, an dem gezeichnet wird -- egal welche Quelle sich gemeldet hat.
+function _verkehrNeuZeichnen() {
+  _verkehrZeichnen(_verkehrZusammenfuehren());
 }
 
 function _saveVerkehrPref(an) { try { localStorage.setItem(_VERKEHR_PREF_KEY, an ? '1' : '0'); } catch (e) {} }
@@ -4387,6 +4469,11 @@ function _schilderSchalterEinbauen(map, control) {
   zeile.className = 'ebenen-unterpunkt';
   const kasten = document.createElement('input');
   kasten.type = 'checkbox';
+  // DIESELBE Klasse wie Leaflets eigene Kaestchen. Ohne sie sah der Haken im Kniebrett immer
+  // gleich aus, ob an oder aus (Nutzer-Fund 16.08.2026): Das Panel-Stylesheet baut die
+  // Kaestchen dort komplett neu (`html.vr-panel .leaflet-control-layers-selector`, noetig
+  // weil die Engine native Kaestchen nicht brauchbar zeichnet) -- und traf unseres nicht.
+  kasten.className = 'leaflet-control-layers-selector';
   kasten.checked = _loadSchilderPref();
   const text = document.createElement('span');
   // In der Oberflaeche heisst der Haken "Radar Label" (Nutzer-Wahl 15.08.2026). Im Quelltext
@@ -4532,13 +4619,10 @@ function _verkehrAbrufen(map) {
   if (!_istSichtbar(map.getContainer())) return;
   if (map.getZoom() < _VERKEHR_MIN_ZOOM) { _verkehrLeeren(); return; }
 
-  // Solange der Simulator liefert, ist er die Quelle -- der Netzabruf waere Arbeit, die
-  // niemand zeichnet, ausgerechnet ueber dessen Verbindung. Faellt er aus, merkt es
-  // spaetestens der naechste Takt (15 s) und die Quelle wechselt still zurueck. Dass das
-  // reicht, liegt am Herzschlag der Bruecke: Sie meldet sich alle zwei Sekunden, ein
-  // Ausfall heisst also praktisch "Tablet zu" -- und dann sieht ohnehin niemand hin.
-  if (_simVerkehrFrisch()) return;
-  _verkehrQuelleWechseln(false);
+  // Hier stand einmal ein Abbruch, solange der Simulator liefert -- eine Quelle sollte die
+  // andere ersetzen. Das ist raus (s. _verkehrZusammenfuehren): VATSIM kennt Flugzeuge, die
+  // der Simulator nicht kennt, und als einzige Quelle die Rufzeichen. Der Netzabruf laeuft
+  // also weiter, auch im Kniebrett; er kostet alle 15 Sekunden eine kleine Antwort.
 
   const jetzt = Date.now();
   // Drossel mit Nachhol-Termin: Verwerfen allein hiesse, dass nach einem Zug an der Karte
@@ -4566,27 +4650,25 @@ function _verkehrAbrufen(map) {
 function _verkehrUebernehmen(liste, ageSek) {
   // Die Fortrechnung muss dort beginnen, wo der Poller die Daten geholt hat, nicht dort, wo
   // die Antwort ankam -- sonst laeuft die Anzeige um das Alter der Momentaufnahme hinterher.
-  _verkehrZeichnen(liste, Date.now() - Math.round(ageSek * 1000),
-                   function (e) { return e.cs; });
-}
-
-// Der Simulator meldet, was in DIESER Sekunde gilt -- kein Alter, nichts nachzuholen.
-// Der Schluessel traegt sein Praefix, damit er nie mit einem VATSIM-Callsign kollidieren kann.
-function _simVerkehrUebernehmen(liste) {
-  _verkehrZeichnen(liste, Date.now(), function (e) { return 'sim:' + e.id; });
+  _vatsimVerkehr = { gemessenTs: Date.now() - Math.round(ageSek * 1000), liste: liste };
+  _verkehrNeuZeichnen();
 }
 
 // Marker anlegen, fortschreiben, aufraeumen -- fuer beide Quellen derselbe Weg. Der
-// zeichnende Teil kennt seinen Zulieferer nicht: Er bekommt eine Liste, den Zeitpunkt, zu dem
-// sie gemessen wurde, und eine Vorschrift, wie ein Eintrag zu seinem Schluessel kommt.
-function _verkehrZeichnen(liste, gemessenTs, schluesselVon) {
+// zeichnende Teil kennt seinen Zulieferer nicht: Jeder Eintrag bringt seinen Schluessel
+// (`_key`) und den Zeitpunkt seiner Messung (`_ts`) selbst mit. Das muss am Eintrag haengen
+// und nicht an der Liste, seit beide Quellen in EINER Liste stehen: Eine Sim-Meldung gilt
+// fuer diese Sekunde, eine VATSIM-Meldung ist bis zu 15 Sekunden alt -- mit einem gemeinsamen
+// Zeitpunkt wuerde die eine Haelfte falsch fortgerechnet.
+function _verkehrZeichnen(liste) {
   if (!_verkehrGruppe) return;
   const gesehen = Object.create(null);
 
   for (let i = 0; i < liste.length; i++) {
     const e  = liste[i];
-    const cs = e && schluesselVon(e);
+    const cs = e && e._key;
     if (!cs) continue;
+    const gemessenTs = e._ts || Date.now();
     // Das eigene Flugzeug ist hier nicht auszufiltern -- beim VATSIM-Feed erledigt das der
     // Server ueber die CID, beim Sim-Verkehr das Panel ueber die Entfernung. Clientseitig
     // ginge es nicht: _meinCallsign() liest aus liveData, und dort stehen nur FRS-Piloten --
@@ -4606,7 +4688,7 @@ function _verkehrZeichnen(liste, gemessenTs, schluesselVon) {
     const hdg = Math.round(Number(e.hdg) || 0);
     // Jedes Flugzeug traegt sein Schild -- auch das geparkte auf dem Vorfeld. Es gab hier eine
     // Ausnahme fuer Stehende; sie ist raus (Nutzer-Wahl 15.08.2026, s. _verkehrSchalterMelden).
-    const beschriftung = _verkehrLabel(e, false);
+    const beschriftung = _verkehrLabel(e);
     const popup = _verkehrPopup(e);
     const vorhanden = _verkehrMarker[cs];
     if (vorhanden) {
@@ -6104,12 +6186,11 @@ function _initPanelShellKanal() {
       const liste = Array.isArray(d.liste) ? d.liste : [];
       _simVerkehr = { ts: Date.now(), liste: liste };
       _simVerkehrDiagnoseEinmal(liste);
-      // Eine leere Liste aendert die Quelle NICHT (s. _simVerkehrFrisch): Sonst stuende die
-      // Karte ganz ohne Verkehr da, obwohl VATSIM welchen kennt.
+      // Eine leere Liste zaehlt nicht als Lieferung (s. _simVerkehrFrisch) -- sonst gaebe der
+      // Simulator vor, die Lage zu kennen, waehrend er nichts weiss.
       if (!liste.length) return;
       _simVerkehrLetzteMitInhalt = Date.now();
-      _verkehrQuelleWechseln(true);
-      _simVerkehrUebernehmen(liste);
+      _verkehrNeuZeichnen();
       return;
     }
     if (d.art === 'position') {
@@ -8252,24 +8333,21 @@ function _eigenesFlugzeugZeichnen() {
 /**
  * Label fuer das eigene Flugzeug, wenn es NICHT im VATSIM-Strom steht.
  *
- * Eigene Zusammensetzung, weil der Simulator andere Dinge weiss als VATSIM: Er kennt Hoehe
- * und Geschwindigkeit auf die Sekunde genau, aber weder Callsign noch Flugzeugmuster --
- * beides steht im Flugplan, den es offline nicht gibt. Also nur die Werte, die wirklich
- * vorliegen; ein "?" fuers Muster waere eine Luecke, die wie ein Fehler aussieht.
+ * Es gab hier zwei Sonderwege nacheinander: erst "DEIN FLUGZEUG" als Kopfzeile, dann ein
+ * eigenes, verkuerztes Label. Beides ist raus (Nutzer-Wahl 15.08.2026) -- das eigene
+ * Flugzeug traegt jetzt genau dasselbe Schild wie jedes andere, gebaut von derselben
+ * Funktion. Welches Symbol das eigene ist, sagen Farbe und die Karte, die ihm folgt.
  *
- * Hier stand einmal "DEIN FLUGZEUG" in der Kopfzeile. Es ist raus (Nutzer-Wahl 15.08.2026):
- * Welches Symbol das eigene ist, sieht man an der Farbe und daran, dass die Karte ihm folgt --
- * dafuer braucht es keine Beschriftung, die als einzige auf der ganzen Karte aus der Reihe
- * faellt. Jetzt traegt das eigene Flugzeug dasselbe Schild wie jedes andere.
- *
- * Die Hoehenregel selbst kommt aus _labelHoehe -- es gibt sie genau einmal, sonst liefen
- * die Fassungen auseinander (s. Kommentar dort).
+ * Der Simulator kennt offline weder Callsign noch Muster; beides bleibt dann leer bzw. "?".
+ * Das ist ehrlicher als eine eigene Darstellung, die anderswo nirgends vorkommt.
  */
 function _eigenLabel() {
-  const gs = Math.round(Number(_simPos && _simPos.gs) || 0);
-  const alt = (_simPos && _simPos.alt != null) ? _labelHoehe(_simPos.alt) : null;
-  const daten = alt === null ? String(gs) : (alt + ' ' + gs);
-  return '<span class="lbl-dat">' + daten + '</span>';
+  return _verkehrLabel({
+    alt: (_simPos && _simPos.alt != null) ? _simPos.alt : 0,
+    gs:  (_simPos && _simPos.gs) || 0,
+    ac:  '',
+    cs:  '',
+  });
 }
 
 /** Eigenes Callsign aus dem VATSIM-Strom (fuer die Zuordnung des eigenen Markers). */
@@ -8387,9 +8465,14 @@ async function initLiveMap() {
   _addPreferredAIPLayer(liveMap, liveAIP);
   _verkehrGruppe = _makeVerkehrLayer();
   _addPreferredVerkehrLayer(liveMap, _verkehrGruppe);
+  // Die Reihenfolge in DIESEM Objekt ist die Reihenfolge in der Ebenen-Auswahl (Nutzer-Wahl
+  // 16.08.2026): erst die Karten-Ebenen von der groessten zur kleinsten Flaeche -- Luftraum,
+  // Platzrunden, FSE --, ganz am Ende der Verkehr. Er ist die einzige Ebene, die sich
+  // bewegt, und traegt als einzige einen Unterpunkt; unten steht beides ungestoert.
+  // Mit der STAPELUNG auf der Karte hat das nichts zu tun -- die folgt dem addTo-Zeitpunkt
+  // (s. Kommentar bei _addPreferredFseLayer), deshalb bleiben die Aufrufe, wo sie sind.
   const liveOverlays = {};
   if (liveAIP) liveOverlays['OpenAIP'] = liveAIP;
-  liveOverlays['Verkehr'] = _verkehrGruppe;
   liveOverlays['Platzrunden'] = _platzrundenGruppe;
   _addPreferredPlatzrundenLayer(liveMap, _platzrundenGruppe);
   _platzrundenZoomWache(liveMap);
@@ -8397,6 +8480,7 @@ async function initLiveMap() {
   liveOverlays['FSE-Plätze'] = _fsePlaetzeGruppe;
   _addPreferredFseLayer(liveMap);
   _fsePlaetzeZoomWache(liveMap);
+  liveOverlays['Verkehr'] = _verkehrGruppe;
   const liveEbenen = L.control.layers(
     { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Light': liveLayers.light, 'Dark': liveLayers.dark },
     liveOverlays,
@@ -8443,13 +8527,17 @@ const _FLUGZEUG_PFAD =
   'v-5.3H2.85c-.45 0-.8-.36-.8-.8v-1.1c0-.44.35-.8.8-.8h8.4z';
 
 // --------------------------------------------------------------------------
-//  Label am Flugzeug: MUSTER HOEHE GS, darueber der Callsign -- wenn er zaehlt
+//  Label am Flugzeug: Callsign, darunter MUSTER HOEHE GS -- immer, ohne Ausnahme
 // --------------------------------------------------------------------------
-// Die Regel ist eine HOEHEN-Regel, keine Friesen-Regel: Der Callsign steht am Symbol, wenn
-// das Flugzeug TIEF fliegt oder wenn es ein Friese ist. Was tief fliegt, ist in der eigenen
-// Naehe -- da will man wissen, wer es ist. Was oben drueberzieht, ist Linienverkehr; Muster,
-// Level und Speed genuegen. Bei dreissig Fliegern im Bild ist jede eingesparte Zeile ein
-// Stueck Lesbarkeit.
+// Hier standen zwei Ausnahmen: Der Callsign erschien nur unterhalb von 10 000 Fuss oder wenn
+// das Flugzeug ein Friese war, und das eigene Flugzeug hatte ein eigenes Label. Beides ist
+// raus (Nutzer-Wahl 15.08.2026). Der Gedanke dahinter war Sparsamkeit im Bild -- dafuer gibt
+// es jetzt den Haken "Radar Label", und der ist das ehrlichere Mittel: Er raeumt auf Wunsch
+// ALLES weg, statt dass die Karte selbst entscheidet, welche Zeile man wohl braucht.
+//
+// Was bleibt, ist eine reine Darstellungsfrage: Ab 10 000 Fuss steht die Hoehe als Flugflaeche
+// (FL100), darunter als Fusszahl. Das ist keine Unterscheidung ZWISCHEN Flugzeugen, sondern
+// die uebliche Schreibweise -- "FL0" an einem Flugzeug auf dem Vorfeld waere unbrauchbar.
 const _LABEL_FL_AB_FT = 10000;
 
 // Genau 10 000 zaehlt als oben (FL100). Unterhalb der Grenze reine Fusszahl ohne Einheit.
@@ -8467,16 +8555,13 @@ function _labelHoehe(altFt) {
 // die langen der Friesen-Positionen (callsign/aircraft/altitude/groundspeed). Eine Funktion
 // statt zweier -- zwei Fassungen derselben Regel laufen frueher oder spaeter auseinander,
 // und der Fehler faellt erst im Cockpit auf.
-function _verkehrLabel(p, istFriese) {
+function _verkehrLabel(p) {
   const alt    = Math.round(Number(p.alt != null ? p.alt : p.altitude) || 0);
   const gs     = Math.round(Number(p.gs  != null ? p.gs  : p.groundspeed) || 0);
   const muster = String(p.ac || p.aircraft || '').trim() || '?';
   const daten  = escHtml(muster) + ' ' + _labelHoehe(alt) + ' ' + gs;
-  if (istFriese || alt < _LABEL_FL_AB_FT) {
-    const cs = escHtml(String(p.cs || p.callsign || '').toUpperCase());
-    return '<span class="lbl-cs">' + cs + '</span><span class="lbl-dat">' + daten + '</span>';
-  }
-  return '<span class="lbl-dat">' + daten + '</span>';
+  const cs     = escHtml(String(p.cs || p.callsign || '').toUpperCase());
+  return '<span class="lbl-cs">' + cs + '</span><span class="lbl-dat">' + daten + '</span>';
 }
 
 // Fremdverkehr ist Kulisse, die Friesen sind die Aussage -- deshalb kleiner, und mit einer
@@ -8633,7 +8718,7 @@ function updateMap(pilots) {
       // das DOM-Element, und updateMap laeuft auf DREI Wegen (SSE, 10-Sekunden-Neuzeichnen,
       // 15-Sekunden-Abruf). Genau dieses unnoetige Neuaufbauen war schon einmal als
       // Aufblitzen im Kniebrett sichtbar.
-      const beschriftung = _verkehrLabel(p, true);
+      const beschriftung = _verkehrLabel(p);
       if (vorhanden._fsLabel !== beschriftung) {
         vorhanden.setTooltipContent(beschriftung);
         vorhanden._fsLabel = beschriftung;
@@ -8653,12 +8738,12 @@ function updateMap(pilots) {
         // Das Label als Tooltip, NICHT im Icon: Der Marker dreht bei Track-up mit
         // (rotateWithView), ein Label darin stuende auf dem Kopf. Tooltips liegen bei
         // leaflet-rotate im nicht drehenden Pane und bleiben aufrecht.
-        .bindTooltip(_verkehrLabel(p, true),
+        .bindTooltip(_verkehrLabel(p),
                      { permanent: true, direction: 'bottom', offset: [0, 4],
                        className: 'traffic-label', opacity: 1 })
         .addTo(liveMap);
       marker._fsHeading = hdg;
-      marker._fsLabel = _verkehrLabel(p, true);
+      marker._fsLabel = _verkehrLabel(p);
       mapMarkers[p.callsign] = marker;
       // Ersten Track-Fetch triggern wenn Pilot neu erscheint
       if (p.cid) _fetchInitialLiveTrack(p.cid, p.callsign);
