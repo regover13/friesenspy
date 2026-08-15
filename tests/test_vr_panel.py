@@ -1099,6 +1099,49 @@ def test_drehung_nur_mit_geprueftem_plugin():
     assert "shiftKeyRotate: false" in INDEX
 
 
+def test_moving_map_an_ist_auch_sichtbar():
+    """Der An-Zustand muss sich SEHEN lassen, nicht nur im DOM stehen.
+
+    Die Grundfarbe des Knopfes traegt !important (noetig gegen Leaflets Stylesheet) -- die
+    An-Regel aber nicht. Damit gewann immer die Grundfarbe: Der Knopf blieb dunkel, egal ob
+    Moving Map an oder aus war. Von aussen sah es aus, als wuerde das Abschalten nicht
+    funktionieren; die Messung aus dem Sim zeigte das Gegenteil (abgeschaltet 1,
+    movingMapJetzt false -- bei unveraendertem Aussehen).
+
+    Und der Grund, warum das so lange durchging: Meine eigenen Browser-Tests haben die
+    CSS-KLASSE geprueft. Eine gesetzte Klasse ist kein Beleg dafuer, dass man etwas sieht."""
+    m = re.search(r"\.navi-bar\.navi-an \.navi-knopf \{([^}]*)\}", INDEX, re.S)
+    assert m, "An-Zustand des Moving-Map-Knopfes nicht gefunden"
+    regel = m.group(1)
+    assert "background: #2d9cdb !important" in regel, \
+        "ohne !important gewinnt die Grundfarbe und der Knopf sieht an wie aus aus"
+    # Gegenprobe: Die Grundfarbe traegt es tatsaechlich -- sonst waere das obige unnoetig.
+    g = re.search(r"\.navi-bar \.navi-knopf \{([^}]*)\}", INDEX, re.S)
+    assert g and "background: #071525 !important" in g.group(1)
+
+
+def test_moving_map_zustand_ist_wirklich_zu_sehen():
+    """Der An-Zustand braucht !important -- sonst sieht man ihn nicht.
+
+    Die Grundfarbe des Knopfes traegt !important (noetig gegen Leaflets eigenes Stylesheet)
+    und gewann damit gegen die An-Regel: Der Knopf blieb dunkel, egal ob Moving Map an oder
+    aus war. Von aussen sah es aus, als wuerde das Abschalten beim Verschieben nicht
+    funktionieren -- tatsaechlich funktionierte es die ganze Zeit, nur ohne es zu zeigen
+    (Messung aus dem Sim: abgeschaltet 1, movingMapJetzt false, Aussehen unveraendert).
+
+    Der Fehler hat drei Runden gekostet, weil meine Tests die gesetzte CSS-KLASSE geprueft
+    haben. Eine Klasse ist kein Beleg dafuer, dass man etwas sieht."""
+    m = re.search(r"\.navi-bar\.navi-an \.navi-knopf \{([^}]*)\}", INDEX, re.S)
+    assert m, "An-Zustand des Moving-Map-Knopfes nicht gefunden"
+    regel = m.group(1)
+    for eigenschaft in ("background", "color", "border-color"):
+        zeile = [z for z in regel.split(";") if z.strip().startswith(eigenschaft)]
+        assert zeile, f"{eigenschaft} fehlt im An-Zustand"
+        assert "!important" in zeile[0], (
+            f"{eigenschaft} ohne !important -- die Grundfarbe (die es hat) gewinnt, "
+            "und der Zustand ist unsichtbar")
+
+
 def test_flugzeug_symbol_ist_mittig_verankert():
     """Das Symbol ist 26 px gross (Nutzer-Wahl). Der Anker MUSS die Mitte sein und mit der
     Groesse mitwachsen -- sonst sitzt das Flugzeug nicht auf seiner eigenen Position,

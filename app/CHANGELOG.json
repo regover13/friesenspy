@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.6.5",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Moving-Map-Knopf zeigt endlich, ob er an ist",
+    "items": [
+      "📍 Der Knopf sah an und aus gleich aus — die Farbe für „an\" wurde von der Grundfarbe überschrieben. Das Ein- und Ausschalten hat die ganze Zeit funktioniert, man konnte es nur nicht sehen. Jetzt leuchtet er blau, solange die Karte dem Flugzeug folgt, und wird dunkel, sobald man die Karte von Hand verschiebt."
+    ]
+  },
+  {
     "version": "12.6.4",
     "date": "2026-08-15",
     "highlight": false,

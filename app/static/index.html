@@ -1238,11 +1238,21 @@
        macht aus dem Sprung eine Bewegung, ohne dauerhaft etwas zu animieren. */
     .kompass-nadel { transition: transform 0.25s linear; }
     /* Moving Map an: der Knopf traegt die Akzentfarbe, nicht nur einen zarten Rand --
-       im Flug muss auf einen Blick klar sein, ob die Karte gerade von selbst mitwandert. */
+       im Flug muss auf einen Blick klar sein, ob die Karte gerade von selbst mitwandert.
+
+       Das !important ist hier PFLICHT, und sein Fehlen war ein echter Fehler: Die
+       Grundfarbe daruber traegt es (noetig gegen Leaflets eigenes Stylesheet, s. dort) und
+       gewann damit gegen diese Regel -- der Knopf blieb dunkel, egal ob an oder aus. Von
+       aussen sah es aus, als wuerde das Abschalten nicht funktionieren; tatsaechlich
+       funktionierte es die ganze Zeit, nur ohne es zu zeigen (Messung aus dem Sim:
+       abgeschaltet 1, movingMapJetzt false -- bei unveraendertem Aussehen).
+
+       Lehre fuers Pruefen: Eine gesetzte CSS-Klasse ist KEIN Beleg dafuer, dass man etwas
+       sieht. Meine Tests haben die Klasse abgefragt und waren deshalb blind. */
     .navi-bar.navi-an .navi-knopf {
-      background: #2d9cdb;
-      color: #04080f;
-      border-color: #2d9cdb;
+      background: #2d9cdb !important;
+      color: #04080f !important;
+      border-color: #2d9cdb !important;
     }
     /* Kein Drehen moeglich (leaflet-rotate nicht geladen): Knopf bleibt sichtbar, aber
        erkennbar wirkungslos -- lieber ein stummer Knopf als ein Knopf, der nichts tut und
