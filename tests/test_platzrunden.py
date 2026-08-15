@@ -51,3 +51,68 @@ def test_korrigierte_icaos_sind_drin():
     korrigiert = {f["properties"]["icao"]: f["properties"].get("icao_original")
                   for f in gj["features"] if f["properties"].get("icao_original")}
     assert korrigiert == {"EDLH": "EDFJ", "EDBM": "EDBC", "EDFS": "EDQT", "EDRZ": "EDRP"}
+
+
+def test_ebene_wird_vor_der_layers_control_registriert():
+    """Die OpenAIP-Falle, dritte Auflage: Ein nach dem Bau der Control hinzugefuegter Layer
+    feuert keines der Ereignisse, auf die sie lauscht -- der Haken zeigt dann dauerhaft den
+    falschen Zustand. Die Control unabhaengig ueber ihren eindeutigen Nachbarn finden, nicht
+    ueber INDEX.index(sub, start): das liefert per Definition immer einen Wert >= start und
+    koennte gar nicht fehlschlagen."""
+    vorher = INDEX.index("_addPreferredPlatzrundenLayer(liveMap")
+    control = INDEX.index("liveOverlays,")
+    assert vorher < control
+
+
+def test_ebene_steht_in_der_ebenen_auswahl():
+    assert "liveOverlays['Platzrunden']" in INDEX
+
+
+def test_datensatz_wird_erst_beim_einschalten_geholt():
+    """28 KB gzip rechtfertigen keinen Abruf beim Seitenaufbau -- die meisten Besucher
+    schalten die Ebene nie ein."""
+    stelle = INDEX.index("function _platzrundenLaden(")
+    assert "fetch(" in INDEX[stelle:stelle + 800]
+    # der fetch darf nirgends beim Aufbau stehen, nur in dieser Funktion
+    assert INDEX.count("/static/data/platzrunden_de.geojson") == 1
+
+
+def test_datensatz_wird_nur_einmal_geholt():
+    """Ein- und Ausschalten der Ebene darf den Abruf nicht wiederholen."""
+    stelle = INDEX.index("function _platzrundenLaden(")
+    rumpf = INDEX[stelle:stelle + 800]
+    assert "_platzrundenGeladen" in rumpf
+
+
+def test_zoom_schwelle_steht_genau_einmal():
+    assert INDEX.count("_PLATZRUNDEN_MIN_ZOOM =") == 1
+    assert INDEX.count("_PLATZRUNDEN_MIN_ZOOM") >= 2
+
+
+def test_popup_verzweigt_auf_das_flag_nicht_auf_das_label():
+    """hoehe_label lautet bei den 147 Platzhaltern 'keine Angabe (Annahme 1000 ft)'. Wer das
+    Feld rendert, zeigt die erfundene Zahl doch an -- nur in Klammern. Deshalb muss das Popup
+    auf hoehe_geschaetzt verzweigen und hoehe_label gar nicht erst anfassen."""
+    stelle = INDEX.index("function _platzrundenPopup(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "hoehe_geschaetzt" in rumpf
+    assert "hoehe_label" not in rumpf
+
+
+def test_popup_schreibt_msl_auch_bei_unsicherem_bezug():
+    """127 Eintraege tragen 'MSL?'. Gegen die Platzhoehe gerechnet liegen sie im selben Band
+    wie die 138 expliziten MSL-Angaben (Median 895 vs. 864 ft ueber Grund) -- derselbe Bezug.
+    Ein Fragezeichen im Cockpit hilft niemandem."""
+    stelle = INDEX.index("function _platzrundenPopup(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "MSL?" not in rumpf
+
+
+def test_zoom_wache_haengt_am_zoomend():
+    """Weit herausgezoomt sind 412 Polygone kein Bild mehr, sondern Grauschleier. Ausblenden
+    heisst hier: die Linien verschwinden, der Haken bleibt gesetzt -- sonst muesste der Nutzer
+    die Ebene nach jedem Herauszoomen neu einschalten."""
+    stelle = INDEX.index("function _platzrundenZoomWache(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "zoomend" in rumpf
+    assert "_PLATZRUNDEN_MIN_ZOOM" in rumpf

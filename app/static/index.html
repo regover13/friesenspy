@@ -3723,6 +3723,101 @@ function _addPreferredAIPLayer(map, aipLayer) {
   if (aipLayer && _loadAIPPref()) aipLayer.addTo(map);
 }
 
+// ==========================================================================
+//  PLATZRUNDEN
+// ==========================================================================
+// Warum eine eigene Ebene, wo die Luftfahrtkarte sie doch zeichnet: OFM hat sie nur auf
+// Zoom 12, darueber schaltet der Auto-Switch auf Satellit (s. OFM_NATIVE_MAX_ZOOM). Topo,
+// CARTO und Satellit tragen ueberhaupt keine Luftfahrtdaten. Beim Anflug zoomt man aber
+// weiter hinein -- genau dann verschwaende die Runde wieder. Diese Ebene liegt ueber jeder
+// Karte und auf jeder Stufe, und sie traegt die Hoehe, die OFM nirgends hinschreibt.
+const _PLATZRUNDEN_URL      = '/static/data/platzrunden_de.geojson';
+const _PLATZRUNDEN_MIN_ZOOM = 9;   // darunter sind 412 Polygone nur noch Rauschen
+const _PLATZRUNDEN_PREF_KEY = 'friesenspy_platzrunden';
+
+const _platzrundenGruppe = L.layerGroup();
+let   _platzrundenGeladen = false;   // Abruf genau einmal, nicht bei jedem Einschalten
+
+function _savePlatzrundenPref(an) {
+  try { localStorage.setItem(_PLATZRUNDEN_PREF_KEY, an ? '1' : '0'); } catch (e) {}
+}
+function _loadPlatzrundenPref() {
+  try { return localStorage.getItem(_PLATZRUNDEN_PREF_KEY) === '1'; } catch (e) { return false; }
+}
+
+function _platzrundenStil() {
+  return { color: '#8ab4d8', weight: 1.5, opacity: 0.9, fill: false };
+}
+
+// Die Hoehe ist der Grund fuer diese Ebene -- aber nur, wenn sie echt ist. 147 der 412
+// Eintraege tragen im Rohdatensatz einen Platzhalter (pauschal 1000 ft); der steht als
+// hoehe_geschaetzt: true und hoehe_ft: null. hoehe_label wird hier bewusst NICHT benutzt:
+// es enthaelt bei diesen Eintraegen den Text "keine Angabe (Annahme 1000 ft)" und wuerde
+// die erfundene Zahl doch anzeigen.
+function _platzrundenPopup(p) {
+  const kopf = (p.icao ? '<b>' + p.icao + '</b> ' : '') + (p.name || '');
+  const zeilen = [kopf];
+  if (p.bahn) zeilen.push('Bahn ' + p.bahn);
+  if (p.typ === 'strecke') {
+    zeilen.push('An-/Abflugstrecke');
+  } else if (p.hoehe_geschaetzt || p.hoehe_ft === null) {
+    zeilen.push('Höhe nicht bekannt');
+  } else {
+    // Ein Teil der Eintraege traegt im Datensatz keinen ausgeschriebenen Hoehenbezug. Gegen die
+    // Platzhoehe gerechnet liegen sie im selben Band wie die ausdruecklich als MSL markierten
+    // (Median 895 gegen 864 ft ueber Grund) -- also derselbe Bezug. Ein Fragezeichen hinter der
+    // Zahl wuerde im Cockpit niemandem helfen.
+    zeilen.push('Platzrunde ' + p.hoehe_ft + ' ft MSL');
+  }
+  if (p.info) zeilen.push('<span class="pr-info">' + p.info + '</span>');
+  return zeilen.join('<br>');
+}
+
+function _platzrundenLaden() {
+  if (_platzrundenGeladen) return Promise.resolve();
+  _platzrundenGeladen = true;
+  return fetch(_PLATZRUNDEN_URL)
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(gj => {
+      L.geoJSON(gj, {
+        style: _platzrundenStil,
+        onEachFeature: (f, layer) => { layer.bindPopup(_platzrundenPopup(f.properties)); }
+      }).addTo(_platzrundenGruppe);
+    })
+    .catch(e => {
+      // Beim naechsten Einschalten neu versuchen -- ein einmaliger Netzfehler soll die
+      // Ebene nicht dauerhaft leer lassen.
+      _platzrundenGeladen = false;
+      console.warn('Platzrunden konnten nicht geladen werden:', e);
+    });
+}
+
+// Wie bei OpenAIP und Verkehr: VOR dem Bau der Layers-Control aufrufen -- sonst zeigt der
+// Haken dauerhaft den falschen Zustand.
+function _addPreferredPlatzrundenLayer(map, gruppe) {
+  map.on('overlayadd', (e) => {
+    if (e.layer === gruppe) { _savePlatzrundenPref(true); _platzrundenLaden(); }
+  });
+  map.on('overlayremove', (e) => {
+    if (e.layer === gruppe) { _savePlatzrundenPref(false); }
+  });
+  if (gruppe && _loadPlatzrundenPref()) { gruppe.addTo(map); _platzrundenLaden(); }
+}
+
+// Ausblenden ueber die Deckkraft statt ueber removeLayer: Die Ebene bleibt in der Auswahl
+// angehakt, der Nutzer muss sie nach dem Herauszoomen nicht neu einschalten.
+function _platzrundenZoomWache(map) {
+  const anpassen = () => {
+    const sichtbar = map.getZoom() >= _PLATZRUNDEN_MIN_ZOOM;
+    _platzrundenGruppe.eachLayer(l => {
+      if (l.setStyle) l.setStyle({ opacity: sichtbar ? 0.9 : 0 });
+    });
+  };
+  map.on('zoomend', anpassen);
+  _platzrundenGruppe.on('layeradd', anpassen);
+  anpassen();
+}
+
 // --------------------------------------------------------------------------
 //  Fremdverkehr als Karten-Ebene
 // --------------------------------------------------------------------------
@@ -7725,6 +7820,9 @@ async function initLiveMap() {
   const liveOverlays = {};
   if (liveAIP) liveOverlays['OpenAIP'] = liveAIP;
   liveOverlays['Verkehr'] = _verkehrGruppe;
+  liveOverlays['Platzrunden'] = _platzrundenGruppe;
+  _addPreferredPlatzrundenLayer(liveMap, _platzrundenGruppe);
+  _platzrundenZoomWache(liveMap);
   L.control.layers(
     { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Light': liveLayers.light, 'Dark': liveLayers.dark },
     liveOverlays,
