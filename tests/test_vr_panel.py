@@ -1684,3 +1684,66 @@ def test_verkehrsmeldung_traegt_die_quelle():
     """Der Empfaenger in index.html verwirft in seiner ersten Zeile jede Nachricht ohne
     quelle === 'friesenspy-shell'. Ohne sie kommt nichts an, ohne jede Fehlermeldung."""
     assert 'quelle: "friesenspy-shell", art: "sim-verkehr"' in PANEL_TSX
+
+
+@ohne_panel
+def test_geschwindigkeit_wird_abgeleitet_und_geglaettet():
+    """GET_AIR_TRAFFIC liefert KEINE Grundgeschwindigkeit -- beide Auswerter im Simulator
+    (offizielles SDK und Asobos VFR-Karte) leiten sie aus Positionsdifferenzen ab. Ungeglaettet
+    zappelt die Zahl im Label bei jedem Abruf; das SDK glaettet sie ausdruecklich 'to reduce
+    artifacts from potentially noisy data'."""
+    stelle = PANEL_TSX.index("private verkehrGsAbleiten(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert "Math.exp" in rumpf, "keine exponentielle Glaettung"
+    assert "VERKEHR_MAX_GS_KT" in rumpf, "kein Verwerfen unplausibler Werte"
+
+
+@ohne_panel
+def test_unplausible_geschwindigkeiten_werden_verworfen():
+    """1500 kt ist die Grenze, die das offizielle SDK selbst ansetzt
+    (TrafficContactClass.MAX_VALID_GROUND_SPEED). Ein Sprung in den Rohdaten ergaebe sonst
+    kurz vierstellige Werte im Label."""
+    m = re.search(r"const VERKEHR_MAX_GS_KT = (\d+);", PANEL_TSX)
+    assert m and int(m.group(1)) == 1500
+
+
+@ohne_panel
+def test_stehende_flugzeuge_werden_nicht_gemeldet():
+    """Am Heimatplatz stehen sonst dreissig Symbole uebereinander, alle ohne Aussage.
+    Rollverkehr dagegen ist am Platz die wertvollste Information ueberhaupt -- deshalb die
+    Schwelle an der Geschwindigkeit und nicht an isOnGround allein."""
+    stelle = PANEL_TSX.index("private verkehrAufbereiten(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert "VERKEHR_STEHT_KT" in rumpf
+    assert "isOnGround" in rumpf
+
+
+@ohne_panel
+def test_eigenes_flugzeug_wird_ausgefiltert():
+    """Nach heutigem Stand steht es gar nicht in der Liste (Messung 6 = 6; Asobos eigene Karte
+    filtert es auch nicht heraus und zeichnet trotzdem kein Doppelsymbol). Der Filter kostet
+    nichts und verhindert ein zweites Symbol genau dort, wo es am meisten stoeren wuerde."""
+    stelle = PANEL_TSX.index("private verkehrAufbereiten(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert "VERKEHR_EIGEN_M" in rumpf
+    assert "VERKEHR_EIGEN_FT" in rumpf
+
+
+@ohne_panel
+def test_deckel_greift_nach_entfernung_nicht_nach_reihenfolge():
+    """Die ersten 60 aus der Rohliste waeren eine beliebige Auswahl. Was zaehlt, ist Naehe --
+    dieselbe Regel wie serverseitig in /api/traffic."""
+    stelle = PANEL_TSX.index("private verkehrAufbereiten(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert ".sort(" in rumpf
+    assert "VERKEHR_MAX" in rumpf
+
+
+@ohne_panel
+def test_spur_wird_aufgeraeumt():
+    """Ohne Aufraeumen waechst die Map ueber einen langen Flug mit jedem Flugzeug, das je in
+    Reichweite war -- und die abgeleitete Geschwindigkeit eines wiederkehrenden uId waere aus
+    einer Stunde alten Daten gerechnet."""
+    stelle = PANEL_TSX.index("private verkehrAufbereiten(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert "verkehrSpur.delete" in rumpf

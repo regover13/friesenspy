@@ -154,6 +154,41 @@ const FUSS_JE_METER = 3.28084;
 /** Hoechstens so viele Flugzeuge in die Seite reichen -- wie die Obergrenze in /api/traffic. */
 const VERKEHR_MAX = 60;
 
+/** Darueber ist der Wert kein Messfehler mehr, sondern Unsinn (SDK: MAX_VALID_GROUND_SPEED). */
+const VERKEHR_MAX_GS_KT = 1500;
+
+/**
+ * Zeitkonstante der Glaettung, in Sekunden.
+ *
+ * `2 / Math.LN2` ist der Wert, den das offizielle SDK fuer genau diese Groesse ansetzt
+ * (`TrafficContactClass.GROUND_SPEED_TIME_CONSTANT`). Die Rohdaten sind rauschig; ohne
+ * Glaettung zappelt die Zahl im Label bei jedem Abruf um zweistellige Betraege.
+ */
+const VERKEHR_GLAETTUNG_S = 2 / Math.LN2;
+
+/** Darunter gilt ein Flugzeug am Boden als stehend und wird nicht gezeichnet. */
+const VERKEHR_STEHT_KT = 5;
+
+/** Naeher und hoehengleicher als das ist kein fremdes Flugzeug -- das sind wir selbst. */
+const VERKEHR_EIGEN_M = 150;
+const VERKEHR_EIGEN_FT = 100;
+
+/** Erdradius in Metern -- fuer die Entfernung zwischen zwei Meldungen. */
+const ERDRADIUS_M = 6371000;
+
+/** Meter je Seemeile -- fuer die Umrechnung der abgeleiteten Geschwindigkeit in Knoten. */
+const METER_JE_NM = 1852;
+
+/** Grosskreisentfernung in Metern. Dieselbe Formel wie app/geo.py, nur hier. */
+function entfernungM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const bog = Math.PI / 180;
+  const dLat = (lat2 - lat1) * bog;
+  const dLon = (lon2 - lon1) * bog;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+    + Math.cos(lat1 * bog) * Math.cos(lat2 * bog) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * ERDRADIUS_M * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
 /** Ein Eintrag, wie ihn `GET_AIR_TRAFFIC` liefert. Alle Felder defensiv als optional. */
 interface SimVerkehrRoh {
   uId?: number;
@@ -203,6 +238,18 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   private letzteVerkehrMeldung = "";
   private letztesVerkehrSendenMs = 0;
   /**
+   * Letzte Meldung je uId -- die Grundlage der abgeleiteten Geschwindigkeit.
+   *
+   * `gs: null` heisst "noch nie gerechnet"; der erste Wert wird dann ungeglaettet
+   * uebernommen, sonst kroche die Anzeige ueber mehrere Sekunden von 0 aus hoch.
+   */
+  private readonly verkehrSpur = new Map<
+    number,
+    { lat: number; lon: number; t: number; gs: number | null }
+  >();
+  /** Die zuletzt gemeldete eigene Position -- fuer Eigenfilter und Entfernungssortierung. */
+  private eigenPos: { lat: number; lon: number; alt: number } | null = null;
+  /**
    * Empfaenger fuer Nachrichten aus dem iframe. Als Feld gehalten, damit er in destroy()
    * wieder abgemeldet werden kann -- die App lebt mit AppSuspendMode.SLEEP lange.
    */
@@ -232,6 +279,7 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       this.verkehrAn = d.an === true;
       if (!this.verkehrAn) {
         this.letzteVerkehrMeldung = "";
+        this.verkehrSpur.clear();
       }
       return;
     }
@@ -332,6 +380,11 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
         return;
       }
 
+      // Auch dann merken, wenn die Meldung gleich als unveraendert verworfen wird: Der
+      // Verkehrsteil braucht die eigene Position in JEDEM Takt, nicht nur dann, wenn sich
+      // etwas bewegt hat -- sonst faellt am stehenden Flugzeug die Entfernungssortierung aus.
+      this.eigenPos = { lat: lat, lon: lon, alt: isFinite(alt) ? alt : 0 };
+
       // Unveraenderte Positionen werden uebersprungen -- aber NIE laenger als der Herzschlag.
       // Genau daran ist es beim ersten Live-Test gescheitert: Am Boden mit stehendem
       // Flugzeug schwieg die Bruecke ganz, und die Seite hielt sie fuer abgerissen
@@ -430,9 +483,47 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     ziel.postMessage({ quelle: "friesenspy-shell", art: "sim-verkehr", liste: liste }, "*");
   }
 
-  private verkehrAufbereiten(roh: SimVerkehrRoh[], _jetztMs: number): SimVerkehrEintrag[] {
-    const out: SimVerkehrEintrag[] = [];
-    for (let i = 0; i < roh.length && out.length < VERKEHR_MAX; i++) {
+  /**
+   * Grundgeschwindigkeit aus zwei aufeinanderfolgenden Positionen, in Knoten.
+   *
+   * `GET_AIR_TRAFFIC` liefert sie nicht -- beide Auswerter im Simulator rechnen sie selbst
+   * aus. Geglaettet wird exponentiell mit der Zeitkonstante des SDK; unplausible Werte (ein
+   * Sprung in den Rohdaten, ein neu geladenes Flugzeug) werden verworfen statt angezeigt.
+   */
+  private verkehrGsAbleiten(id: number, lat: number, lon: number, jetztMs: number): number {
+    const vorher = this.verkehrSpur.get(id);
+    let gs: number | null = null;
+    if (vorher) {
+      gs = vorher.gs;
+      const dtS = (jetztMs - vorher.t) / 1000;
+      if (dtS > 0) {
+        const knoten = (entfernungM(vorher.lat, vorher.lon, lat, lon) / METER_JE_NM)
+          / (dtS / 3600);
+        if (isFinite(knoten) && knoten <= VERKEHR_MAX_GS_KT) {
+          gs = vorher.gs === null
+            ? knoten
+            : vorher.gs + (1 - Math.exp(-dtS / VERKEHR_GLAETTUNG_S)) * (knoten - vorher.gs);
+        }
+      }
+    }
+    this.verkehrSpur.set(id, { lat: lat, lon: lon, t: jetztMs, gs: gs });
+    return gs === null ? 0 : gs;
+  }
+
+  /**
+   * Aus dem Rohsatz die Liste machen, die die Seite zeichnen kann.
+   *
+   * Die Reihenfolge ist nicht beliebig: Die Geschwindigkeit muss VOR dem Stehen-Filter
+   * abgeleitet werden (sonst gibt es nichts zu pruefen), und die Spur muss auch fuer
+   * herausgefilterte Flugzeuge fortgeschrieben werden -- sonst faengt die Ableitung bei einem
+   * anrollenden Flugzeug jedes Mal von vorn an und es kaeme nie ueber die Schwelle.
+   */
+  private verkehrAufbereiten(roh: SimVerkehrRoh[], jetztMs: number): SimVerkehrEintrag[] {
+    const eigen = this.eigenPos;
+    const gesehen = new Set<number>();
+    const mitAbstand: { d: number; e: SimVerkehrEintrag }[] = [];
+
+    for (let i = 0; i < roh.length; i++) {
       const r = roh[i];
       const id = Number(r.uId);
       const lat = Number(r.lat);
@@ -440,17 +531,53 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       if (!isFinite(id) || !isFinite(lat) || !isFinite(lon) || (lat === 0 && lon === 0)) {
         continue;
       }
-      out.push({
-        id: id,
-        lat: Number(lat.toFixed(5)),
-        lon: Number(lon.toFixed(5)),
-        alt: Math.round(Number(r.alt) * FUSS_JE_METER) || 0,
-        hdg: (((Math.round(Number(r.heading)) || 0) % 360) + 360) % 360,
-        gs: 0,
-        ac: String(r.plane_model_icao || ""),
-        cs: String(r.name || ""),
-        gnd: r.isOnGround === true,
+      gesehen.add(id);
+
+      const altFt = Math.round(Number(r.alt) * FUSS_JE_METER) || 0;
+      const gs = Math.round(this.verkehrGsAbleiten(id, lat, lon, jetztMs));
+      const abstand = eigen ? entfernungM(eigen.lat, eigen.lon, lat, lon) : 0;
+
+      // Wir selbst. Nach heutigem Stand steht das eigene Flugzeug gar nicht in der Liste --
+      // aber falls doch, laege sein Symbol genau ueber dem eigenen.
+      if (eigen && abstand < VERKEHR_EIGEN_M && Math.abs(altFt - eigen.alt) < VERKEHR_EIGEN_FT) {
+        continue;
+      }
+      // Geparkte. Rollende bleiben ausdruecklich drin -- am Platz sind sie das Wichtigste.
+      if (r.isOnGround === true && gs < VERKEHR_STEHT_KT) {
+        continue;
+      }
+
+      mitAbstand.push({
+        d: abstand,
+        e: {
+          id: id,
+          lat: Number(lat.toFixed(5)),
+          lon: Number(lon.toFixed(5)),
+          alt: altFt,
+          hdg: (((Math.round(Number(r.heading)) || 0) % 360) + 360) % 360,
+          gs: gs,
+          ac: String(r.plane_model_icao || ""),
+          cs: String(r.name || ""),
+          gnd: r.isOnGround === true,
+        },
       });
+    }
+
+    // Wer nicht mehr gemeldet wird, fliegt aus der Spur -- sonst waechst sie ueber einen
+    // langen Flug mit jedem Flugzeug, das je in Reichweite war, und die Geschwindigkeit eines
+    // wiederkehrenden uId waere aus einer Stunde alten Daten gerechnet.
+    this.verkehrSpur.forEach((_wert, id) => {
+      if (!gesehen.has(id)) {
+        this.verkehrSpur.delete(id);
+      }
+    });
+
+    // Naehe entscheidet, nicht die Reihenfolge im Rohsatz -- dieselbe Regel wie in
+    // /api/traffic. Ohne eigene Position bleibt die Reihenfolge, wie sie kam.
+    mitAbstand.sort((a, b) => a.d - b.d);
+    const out: SimVerkehrEintrag[] = [];
+    for (let i = 0; i < mitAbstand.length && i < VERKEHR_MAX; i++) {
+      out.push(mitAbstand[i].e);
     }
     return out;
   }
