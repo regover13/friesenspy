@@ -1575,6 +1575,30 @@ def test_sonde_wird_mit_zwei_argumenten_gemeldet():
     assert "window._panelDiag('traffic-sonde', d.befund)" in INDEX
 
 
+def test_fremde_haben_eine_eigene_silhouette():
+    """Form UND Groesse unterscheiden die beiden -- die Farbe allein tut es nicht mehr, seit
+    beide dunkel sind. Friesen: gerade Fluegel (Leichtflugzeug). Fremde: gepfeilte Fluegel
+    (Verkehrsflugzeug)."""
+    assert "const _FLUGZEUG_PFAD_FREMD =" in INDEX
+    m_eigen = re.search(r"const _FLUGZEUG_PFAD =\s*(.*?);", INDEX, re.S)
+    m_fremd = re.search(r"const _FLUGZEUG_PFAD_FREMD =\s*(.*?);", INDEX, re.S)
+    assert m_eigen and m_fremd
+    assert m_eigen.group(1) != m_fremd.group(1), "beide Marker zeichnen dieselbe Form"
+    assert "const pfad = fremd ?" in INDEX, "makeAircraftIcon waehlt die Form nicht aus"
+
+
+def test_friesen_tragen_das_vereinsblau():
+    """#191D53 ist die Vereinsfarbe (Nutzer-Wahl 15.08.2026), nicht das UI-Blau #2d9cdb --
+    letzteres ist in diesem Projekt Klickbarem vorbehalten."""
+    m = re.search(r"\.aircraft-marker \{([^}]*)\}", INDEX)
+    assert m, "Regel fuer den Friesen-Marker fehlt"
+    regel = m.group(1)
+    assert "#191D53" in regel
+    # Heller Saum, nicht der alte blaue Schein -- sonst verschwindet das dunkle Symbol auf
+    # der Satelliten- und der Dark-Karte.
+    assert "rgba(255,255,255" in regel
+
+
 def test_live_karte_oeffnet_ueber_edwg():
     """EDWG (Wangerooge) ist der Heimatplatz. Der alte Startpunkt lag in der offenen Nordsee,
     rund 130 km westlich -- jedes Oeffnen begann mit Schieben."""

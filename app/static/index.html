@@ -1849,21 +1849,23 @@
     }
 
     /* Aircraft markers */
+    /* Vereinsblau (#191D53) mit hellem Saum -- Nutzer-Wahl 15.08.2026. Der Saum ist hier
+       nicht Zierde, sondern das, was die dunkle Flaeche auf einer dunklen Karte
+       (Satellit/Dark) ueberhaupt sichtbar haelt; auf der hellen Standard-Karte traegt die
+       Flaeche selbst. Vorher war es Hellblau mit blauem Schein. */
     .aircraft-marker {
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--green);
-      filter: drop-shadow(0 0 4px rgba(45,156,219,0.7));
+      color: #191D53;
+      filter: drop-shadow(0 0 2px rgba(255,255,255,0.95));
     }
 
-    /* Fremdverkehr ist Kulisse, die Friesen sind die Aussage -- deshalb kleiner und ohne den
-       blauen Schein.
+    /* Fremdverkehr: dieselbe Behandlung wie die Friesen, aber neutrales Schiefergrau statt
+       Vereinsblau -- die Zugehoerigkeit gehoert den eigenen Leuten.
        Dunkel mit HELLEM Saum, nicht mittelgrau mit dunklem: Die Standard-Karte
        (OpenFlightMap) ist hell, und ein mittelgraues Symbol mit schwarzem Schatten war
-       darauf praktisch unsichtbar (im Browser nachgesehen, 15.08.2026). Diese Kombination
-       traegt auf beiden Kartensorten -- auf heller Karte die dunkle Flaeche, auf dunkler
-       (Satellit/Dark) der helle Saum. */
+       darauf praktisch unsichtbar (im Browser nachgesehen, 15.08.2026). */
     .aircraft-marker-fremd {
       color: #2b3440;
       filter: drop-shadow(0 0 2px rgba(255,255,255,0.95));
@@ -3680,7 +3682,7 @@ const _KARTE_EINBLENDEN = !document.documentElement.classList.contains('vr-panel
 // der Karteninitialisierung. Der Zoom haengt mit _VERKEHR_MIN_ZOOM zusammen: Die
 // Verkehrs-Ebene schweigt unterhalb davon, sie darf nicht ueber der Start-Zoomstufe liegen.
 const _KARTE_MITTE = [53.78278, 7.91389];
-const _KARTE_ZOOM  = 7;
+const _KARTE_ZOOM  = 10;
 
 const _LAYER_PREF_KEY = 'friesenspy_layer';
 function _saveLayerPref(key) { try { localStorage.setItem(_LAYER_PREF_KEY, key); } catch(e) {} }
@@ -7622,20 +7624,27 @@ function _verkehrLabel(p, istFriese) {
   return '<span class="lbl-dat">' + daten + '</span>';
 }
 
-// Fremdverkehr ist Kulisse, die Friesen sind die Aussage -- deshalb kleiner (s. auch die
-// graue Farbe in .aircraft-marker-fremd).
+// Fremdverkehr ist Kulisse, die Friesen sind die Aussage -- deshalb kleiner, und mit einer
+// ANDEREN Form: gepfeilte Fluegel, schlanker Rumpf, die Silhouette eines Verkehrsflugzeugs,
+// wie man sie von Flugverfolgungs-Karten kennt (Nutzer-Wahl 15.08.2026, damals Variante B).
+// Die Friesen behalten die geraden Fluegel des Leichtflugzeugs. Form UND Groesse
+// unterscheiden die beiden -- die Farbe allein tut es nicht mehr, seit beide dunkel sind.
 const _FLUGZEUG_PX_FREMD = 18;
+const _FLUGZEUG_PFAD_FREMD =
+  'M12 1.6c-.85 0-1.4 1.3-1.4 3.1v3.4L2.2 12.6v2.1l8.4-2.5v4.3l-2.5 1.7v1.6l3.9-1.1 3.9 1.1' +
+  'v-1.6l-2.5-1.7v-4.3l8.4 2.5v-2.1l-8.4-4.5V4.7c0-1.8-.55-3.1-1.4-3.1z';
 
 function makeAircraftIcon(heading, fremd) {
   const hdg = Number(heading) || 0;
   const px = fremd ? _FLUGZEUG_PX_FREMD : _FLUGZEUG_PX;
+  const pfad = fremd ? _FLUGZEUG_PFAD_FREMD : _FLUGZEUG_PFAD;
   const mitte = px / 2;
   const klasse = fremd ? 'aircraft-marker aircraft-marker-fremd' : 'aircraft-marker';
   return L.divIcon({
     className: '',
     html: `<div class="${klasse}" style="transform: rotate(${hdg}deg);">
       <svg width="${px}" height="${px}" viewBox="0 0 24 24" fill="currentColor">
-        <path d="${_FLUGZEUG_PFAD}"/>
+        <path d="${pfad}"/>
       </svg>
     </div>`,
     iconSize:   [px, px],
