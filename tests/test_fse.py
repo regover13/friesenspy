@@ -186,7 +186,8 @@ def test_addPreferredFseLayer_haengt_beide_gruppen_ein_und_zwingt_zonen_nach_hin
     ueber eine mitgeloggte Sequenz, nicht nur, ob bringToBack() irgendwann aufgerufen wurde.
     Ausserdem: die FSE-Planner-Attribution (Review-Fund, Attribution) muss beim Einhaengen
     tatsaechlich am Attribution-Control landen."""
-    start = INDEX.index("const _FSE_PLAETZE_URL")
+    # Der Viewport-Helfer steht vor dem FSE-Block und wird von der Label-Wache gebraucht.
+    start = INDEX.index("function _labelsImSichtbereich(")
     ende_start = INDEX.index("function _fseAttributionAus(")
     ende = INDEX.index("\n}", ende_start) + len("\n}")
     quelltext = INDEX[start:ende]
@@ -241,6 +242,8 @@ class FakeFeatureGroup extends FakeLayerGroup {
   bringToBack() { this.bringToBackCalls++; return this; }
 }
 global.L = {
+  // Seit dem Canvas-Umbau reicht Leaflet einen Renderer durch -- der Fake muss ihn liefern.
+  canvas: () => ({}),
   layerGroup: () => new FakeLayerGroup('layerGroup'),
   featureGroup: () => new FakeFeatureGroup(),
   polyline: () => new FakeLayerGroup('polyline'),
@@ -348,7 +351,8 @@ def test_labels_folgen_der_zoom_schwelle():
     Quelltext, wirklich in Node ausgefuehrt, zeigt, ob ein nach dem Einschalten der Wache
     nachgeladener Marker (der reale Ablauf: Checkbox an -> fetch() laeuft -> _fsePlaetzeZeichnen)
     seinen Tooltip korrekt nach der aktuellen Zoomstufe setzt."""
-    start = INDEX.index("const _FSE_PLAETZE_URL")
+    # Der Viewport-Helfer steht vor dem FSE-Block und wird von der Label-Wache gebraucht.
+    start = INDEX.index("function _labelsImSichtbereich(")
     ende_start = INDEX.index("function _fsePlaetzeZoomWache(")
     ende = INDEX.index("\n}", ende_start) + len("\n}")
     quelltext = INDEX[start:ende]
@@ -377,10 +381,14 @@ class FakeFeatureGroup extends FakeGroupBase {
 // Minimaler Marker-Fake: haelt fest, ob ein permanenter Tooltip gebunden und geoeffnet ist --
 // genau das Verhalten, an dem _fsePlaetzeZoomWache dreht.
 class FakeCircleMarker {
-  constructor() { this._tooltipBound = false; this._tooltipOpen = false; }
+  constructor(ll) { this._ll = ll; this._tooltipBound = false; this._tooltipOpen = false; }
   bindPopup() { return this; }
+  // Seit dem Viewport-Umbau wird ein Label erst im Bild GEBUNDEN und danach wieder GELOEST --
+  // 2.335 dauerhaft gebundene Tooltips waren die Ursache der haengenden Karte.
   bindTooltip() { this._tooltipBound = true; return this; }
+  unbindTooltip() { this._tooltipBound = false; this._tooltipOpen = false; return this; }
   addTo(gruppe) { gruppe.addLayer(this); return this; }
+  getLatLng() { return this._ll; }
   getTooltip() { return this._tooltipBound ? {} : null; }
   isTooltipOpen() { return this._tooltipOpen; }
   openTooltip() { this._tooltipOpen = true; }
@@ -388,13 +396,19 @@ class FakeCircleMarker {
 }
 
 global.L = {
+  // Seit dem Canvas-Umbau reicht die Produktion einen Renderer durch -- der Fake muss ihn
+  // liefern, auch wenn er hier wirkungslos ist.
+  canvas: () => ({}),
   featureGroup: () => new FakeFeatureGroup('featureGroup'),
-  circleMarker: () => new FakeCircleMarker(),
+  circleMarker: (ll) => new FakeCircleMarker(ll),
 };
 
 class FakeMap {
   constructor(zoom) { this._zoom = zoom; this._handlers = {}; }
   getZoom() { return this._zoom; }
+  // Der Testplatz liegt immer im Bild -- geprueft wird hier die Zoom-Schwelle, nicht der
+  // Ausschnitt.
+  getBounds() { return { pad: () => ({ contains: () => true }) }; }
   on(evt, fn) { (this._handlers[evt] = this._handlers[evt] || []).push(fn); return this; }
   setZoomUndFeuern(zoom) {
     this._zoom = zoom;

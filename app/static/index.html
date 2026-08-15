@@ -1889,14 +1889,14 @@
        Marker-Icon: Der Marker wird bei Track-up mitgedreht (rotateWithView), ein Label darin
        stuende dann auf dem Kopf. Tooltips liegen bei leaflet-rotate im nicht drehenden Pane
        (im Quelltext des Plugins nachgesehen), bleiben also aufrecht. */
-    /* Platzrunden: Schiefergrau mit hellem Saum rundherum. Der Saum ist ein drop-shadow OHNE
+    /* Platzrunden: hellblaue Linie mit schiefergrauem Saum rundherum. Der Saum ist ein drop-shadow OHNE
        Versatz -- kein Schlagschatten nach einer Seite, sondern ein gleichmaessiger Rand. Er
-       traegt die dunkle Linie sowohl auf dem hellen CARTO als auch auf dem Satellitenbild;
+       traegt die helle Linie sowohl auf dem hellen CARTO als auch auf dem Satellitenbild;
        eine einfarbige Linie verschwindet je nach Untergrund auf der einen oder anderen Karte.
        Als Leaflet-Pfadoption laesst sich ein Filter nicht setzen, deshalb ueber die Klasse. */
     .platzrunde {
-      filter: drop-shadow(0 0 1.5px rgba(255,255,255,0.95))
-              drop-shadow(0 0 1.5px rgba(255,255,255,0.95));
+      filter: drop-shadow(0 0 1.5px rgba(43,52,64,0.95))
+              drop-shadow(0 0 1.5px rgba(43,52,64,0.95));
     }
 
     /* Das Hoehenschild sitzt auf dem Gegenanflug, also mitten auf der Linie. Deshalb heller
@@ -3783,6 +3783,33 @@ function _addPreferredAIPLayer(map, aipLayer) {
 }
 
 // ==========================================================================
+//  BESCHRIFTUNGEN NUR IM SICHTBEREICH
+// ==========================================================================
+// Ein permanenter Tooltip ist ein DOM-Element, das Leaflet bei JEDER Kartenbewegung neu
+// positioniert. Bei 2.335 FSE-Plaetzen und 265 Hoehenschildern waren das ueber 2.500 Elemente,
+// die auch dann mitliefen, wenn keines davon zu sehen war -- die Karte hing (Nutzer-Fund am
+// laufenden Bild, 15.08.2026). Deshalb wird ein Label erst gebunden, wenn sein Punkt wirklich
+// im Bild ist, und wieder geloest, sobald er es verlaesst. Sichtbar sind je nach Zoom zwanzig
+// bis achtzig Stueck statt tausender.
+//
+// `wo` ist bei den FSE-Plaetzen die Markerposition, bei den Platzrunden der zuvor berechnete
+// Punkt auf dem Gegenanflug (_hoeheAufStrich) -- deshalb die Fallunterscheidung.
+function _labelsImSichtbereich(map, gruppe, an, textVon, optionen) {
+  if (!gruppe) return;
+  const bounds = an ? map.getBounds().pad(0.15) : null;
+  gruppe.eachLayer(l => {
+    const wo = l.getLatLng ? l.getLatLng() : l._hoeheAufStrich;
+    const drin = !!(an && wo && bounds.contains(wo));
+    if (drin) {
+      if (!l.getTooltip()) l.bindTooltip(textVon(l), optionen);
+      l.openTooltip(l.getLatLng ? undefined : l._hoeheAufStrich);
+    } else if (l.getTooltip()) {
+      l.unbindTooltip();
+    }
+  });
+}
+
+// ==========================================================================
 //  PLATZRUNDEN
 // ==========================================================================
 // Warum eine eigene Ebene, wo die Luftfahrtkarte sie doch zeichnet: OFM hat sie nur auf
@@ -3803,7 +3830,8 @@ const _PLATZRUNDEN_OPACITY  = 0.9;
 // die Schwelle erschienen alle 412 Polygone kurz mit voller Deckkraft, bis zur naechsten
 // Zoomaenderung. Derselbe Kniff steht bereits bei _fseZonenGruppe weiter unten.
 const _platzrundenGruppe = L.featureGroup();
-let   _platzrundenGeladen = false;   // Abruf genau einmal, nicht bei jedem Einschalten
+let   _platzrundenGeladen = false;  // Abruf genau einmal, nicht bei jedem Einschalten
+let   _platzrundenLinien  = null;   // die sichtbare Lage -- nur sie traegt Hoehenschilder
 
 function _savePlatzrundenPref(an) {
   try { localStorage.setItem(_PLATZRUNDEN_PREF_KEY, an ? '1' : '0'); } catch (e) {}
@@ -3812,12 +3840,15 @@ function _loadPlatzrundenPref() {
   try { return localStorage.getItem(_PLATZRUNDEN_PREF_KEY) === '1'; } catch (e) { return false; }
 }
 
-// Schiefergrau mit hellem Saum rundherum, vom Nutzer so vorgegeben. Der Saum ist ein
-// drop-shadow OHNE Versatz -- er liegt gleichmaessig um die Linie und traegt sie damit auf
-// jeder Kartensorte: auf dem hellen CARTO wie auf dem Satellitenbild. Er steckt in der
-// CSS-Klasse .platzrunde (Filter lassen sich nicht als Leaflet-Pfadoption setzen).
-const _PLATZRUNDEN_FARBE  = '#2b3440';
-const _PLATZRUNDEN_STAERKE = 3;
+// Der Saum ist ein drop-shadow OHNE Versatz -- er liegt gleichmaessig um die Linie und traegt
+// sie damit auf jeder Kartensorte: auf dem hellen CARTO wie auf dem Satellitenbild. Er steckt
+// in der CSS-Klasse .platzrunde (Filter lassen sich nicht als Leaflet-Pfadoption setzen).
+// Hellblaue Linie mit dunklem Saum rundherum -- nicht umgekehrt. Der erste Anlauf hatte die
+// Linie schiefergrau gezeichnet; auf der Karte blieb davon nur ein grauer Strich uebrig, die
+// Platzrunde war als solche nicht mehr zu erkennen. Das Hellblau IST die Platzrunde, das
+// Schiefergrau ist der Saum, der sie auf hellem Untergrund traegt.
+const _PLATZRUNDEN_FARBE  = '#8ab4d8';
+const _PLATZRUNDEN_STAERKE = 4;
 // Unsichtbare Fanglinie unter der sichtbaren: Bei einem Pfad ohne Fuellung ist ALLEIN der
 // Strich die Trefferflaeche -- bei 3 Pixeln trifft man ihn mit der Maus kaum und auf dem
 // Tablet gar nicht. Deshalb je Platzrunde eine zweite, breite Linie darunter, die den Klick
@@ -3852,20 +3883,39 @@ function _platzrundenFangStil() {
 // "Hoehe nicht bekannt" steht.
 const _PLATZRUNDEN_LABEL_MIN_ZOOM = 11;
 
-function _laengsteKanteMitte(latlngs) {
-  let beste = null, bestesQuadrat = -1;
+// Der Gegenanflug, nicht irgendeine lange Kante: Eine Platzrunde hat ZWEI lange Seiten -- den
+// Gegenanflug und die Seite ueber der Piste. Nur die laengste zu nehmen trifft mal die eine,
+// mal die andere. Unterscheiden lassen sie sich ueber den Abstand zur Mitte: Die Piste liegt
+// im Zentrum der Runde, der Gegenanflug am weitesten davon entfernt.
+//
+// Warum das wichtig ist: Ein Hoehenschild mitten in der Runde -- dort, wo der Platz liegt --
+// liest sich wie die PLATZhoehe. Es muss auf dem Strich sitzen, auf dem geflogen wird.
+function _gegenanflugMitte(latlngs) {
+  if (latlngs.length < 3) {
+    const a = latlngs[0], b = latlngs[latlngs.length - 1];
+    return L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2);
+  }
+  const cos = Math.cos(latlngs[0].lat * Math.PI / 180);
+  // Schwerpunkt der Stuetzpunkte -- gut genug, um "innen" von "aussen" zu trennen.
+  let mLat = 0, mLng = 0;
+  for (const q of latlngs) { mLat += q.lat; mLng += q.lng; }
+  mLat /= latlngs.length; mLng /= latlngs.length;
+
+  const kanten = [];
   for (let i = 0; i < latlngs.length - 1; i++) {
     const a = latlngs[i], b = latlngs[i + 1];
-    // Ebene Naeherung reicht: Wir vergleichen nur Kanten derselben Platzrunde miteinander.
-    const dx = (b.lng - a.lng) * Math.cos(a.lat * Math.PI / 180);
-    const dy = (b.lat - a.lat);
-    const q = dx * dx + dy * dy;
-    if (q > bestesQuadrat) {
-      bestesQuadrat = q;
-      beste = L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2);
-    }
+    const mitteLat = (a.lat + b.lat) / 2, mitteLng = (a.lng + b.lng) / 2;
+    const dx = (b.lng - a.lng) * cos, dy = (b.lat - a.lat);
+    const ex = (mitteLng - mLng) * cos, ey = (mitteLat - mLat);
+    kanten.push({ laenge: Math.hypot(dx, dy), abstand: Math.hypot(ex, ey),
+                  lat: mitteLat, lng: mitteLng });
   }
-  return beste;
+  if (!kanten.length) return null;
+  // Unter den langen Kanten (mindestens 70 % der laengsten) die aeusserste waehlen.
+  const maxLaenge = Math.max(...kanten.map(k => k.laenge));
+  const lange = kanten.filter(k => k.laenge >= 0.7 * maxLaenge);
+  const beste = lange.reduce((a, b) => (b.abstand > a.abstand ? b : a));
+  return L.latLng(beste.lat, beste.lng);
 }
 
 function _platzrundenHoehenLabel(f, layer) {
@@ -3876,14 +3926,16 @@ function _platzrundenHoehenLabel(f, layer) {
   const ring = Array.isArray(ll[0]) ? ll[0] : ll;
   if (!ring || ring.length < 2) return;
   const geschlossen = ring.length > 2 ? ring.concat([ring[0]]) : ring;
-  const mitte = _laengsteKanteMitte(geschlossen);
+  const mitte = _gegenanflugMitte(geschlossen);
   if (!mitte) return;
-  layer.bindTooltip(p.hoehe_ft + ' ft', {
-    permanent: true, direction: 'center', className: 'platzrunden-hoehe', opacity: 1,
-  });
-  // Der permanente Tooltip oeffnet sich am Schwerpunkt, sobald der Layer zur Karte kommt --
-  // wir wollen ihn am Gegenanflug. Deshalb beim Hinzufuegen nochmal gezielt dort oeffnen.
-  layer.on('add', () => { layer.openTooltip(mitte); });
+  // Nur merken, NICHT binden: Ein permanenter Tooltip je Platzrunde waeren 265 DOM-Elemente,
+  // die bei jeder Kartenbewegung mitlaufen. Gebunden wird erst im Sichtbereich (s.
+  // _labelsImSichtbereich). Die Position MUSS dabei am Layer haengen -- Leaflet setzt einen
+  // permanenten Tooltip bei jedem openTooltip() OHNE Argument zurueck auf den Schwerpunkt des
+  // Polygons, also mitten in die Runde, wo der Platz liegt. Genau so gelesen wirkt die Zahl
+  // wie die PLATZhoehe statt der Platzrundenhoehe.
+  layer._hoeheAufStrich = mitte;
+  layer._hoeheText = p.hoehe_ft + ' ft';
 }
 
 function _platzrundenPopup(p) {
@@ -3924,13 +3976,14 @@ function _platzrundenLaden() {
         style: _platzrundenFangStil,
         onEachFeature: (f, layer) => { layer.bindPopup(_platzrundenPopup(f.properties)); }
       }).addTo(_platzrundenGruppe);
-      L.geoJSON(gj, {
+      _platzrundenLinien = L.geoJSON(gj, {
         style: _platzrundenStil,
         onEachFeature: (f, layer) => {
           layer.bindPopup(_platzrundenPopup(f.properties));
           _platzrundenHoehenLabel(f, layer);
         }
-      }).addTo(_platzrundenGruppe);
+      });
+      _platzrundenLinien.addTo(_platzrundenGruppe);
     })
     .catch(e => {
       // Beim naechsten Einschalten neu versuchen -- ein einmaliger Netzfehler soll die
@@ -3961,25 +4014,36 @@ function _addPreferredPlatzrundenLayer(map, gruppe) {
 // Die Fanglinien duerfen dabei NICHT auf die volle Deckkraft gesetzt werden -- sie sind 16
 // Pixel breit und wuerden die Karte zupflastern. Sie kennzeichnen sich ueber ihre CSS-Klasse.
 function _platzrundenZoomWache(map) {
+  // Unterhalb der Schwelle werden die Pfade aus der Karte GENOMMEN, nicht nur auf Deckkraft 0
+  // gesetzt: Ein unsichtbarer Pfad kostet genauso viel wie ein sichtbarer, Leaflet rechnet ihn
+  // bei jedem Zoom und jedem Ziehen neu. Bei 824 Pfaden (Fanglinie + Linie je Platzrunde) war
+  // das der Unterschied zwischen fluessig und haengend.
+  // Kein Merker fuer den letzten Zustand, sondern jedes Mal den Zielzustand herstellen: Beim
+  // ersten Aufruf ist die Gruppe noch leer (die Daten kommen erst mit dem Einschalten), ein
+  // Zustandsvergleich haette danach nie wieder ausgeloest -- und genau die frisch geladenen
+  // Pfade waeren drin geblieben.
   const anpassen = () => {
     const z = map.getZoom();
     const linienAn = z >= _PLATZRUNDEN_MIN_ZOOM;
-    const schilderAn = z >= _PLATZRUNDEN_LABEL_MIN_ZOOM;
-    _platzrundenGruppe.eachLayer(gruppe => {
-      if (!gruppe.eachLayer) return;
-      gruppe.eachLayer(l => {
-        const istFang = l.options && l.options.className === 'platzrunde-fang';
-        const voll = istFang ? _PLATZRUNDEN_FANG_OPACITY : _PLATZRUNDEN_OPACITY;
-        if (l.setStyle) l.setStyle({ opacity: linienAn ? voll : 0 });
-        // Die Fanglinie traegt kein Schild -- nur die sichtbare Linie hat einen Tooltip.
-        if (l.getTooltip && l.getTooltip()) {
-          if (schilderAn && linienAn) l.openTooltip();
-          else l.closeTooltip();
-        }
-      });
+    _platzrundenGruppe.eachLayer(g => {
+      if (!g.getLayers) return;
+      if (!g._pfadeAus) g._pfadeAus = [];
+      if (!linienAn && g.getLayers().length) {
+        g._pfadeAus = g.getLayers();
+        g.clearLayers();
+      } else if (linienAn && g._pfadeAus.length) {
+        g._pfadeAus.forEach(l => g.addLayer(l));
+        g._pfadeAus = [];
+      }
     });
+    _labelsImSichtbereich(
+      map, _platzrundenLinien, linienAn && z >= _PLATZRUNDEN_LABEL_MIN_ZOOM,
+      l => l._hoeheText,
+      { permanent: true, direction: 'center', className: 'platzrunden-hoehe', opacity: 1 }
+    );
   };
   map.on('zoomend', anpassen);
+  map.on('moveend', anpassen);
   _platzrundenGruppe.on('layeradd', anpassen);
   anpassen();
 }
@@ -4028,10 +4092,23 @@ function _loadFsePref(key) {
   try { return localStorage.getItem(key) === '1'; } catch (e) { return false; }
 }
 
+// Canvas statt SVG: Bei 2.335 Zonen und 2.335 Plaetzen entstuenden sonst rund 4.700
+// DOM-Elemente, die Leaflet bei JEDEM Zoom und JEDEM Ziehen einzeln neu positioniert -- die
+// Karte wurde damit unbedienbar (Nutzer-Fund am laufenden Bild, 15.08.2026). Ein Canvas je
+// Ebene zeichnet dieselbe Menge in einem Rutsch. Der Renderer wird einmal erzeugt und von
+// beiden Ebenen geteilt; die Stapelung Zonen-unter-Plaetzen ergibt sich weiterhin aus der
+// Zeichenreihenfolge in _fseLaden.
+let _fseCanvas = null;
+function _fseRenderer() {
+  if (!_fseCanvas) _fseCanvas = L.canvas({ padding: 0.3 });
+  return _fseCanvas;
+}
+
 function _fseZonenZeichnen(zonen) {
   for (const icao in zonen) {
     L.polyline(zonen[icao], {
-      weight: 1, color: '#888', opacity: 0.5, interactive: false, fill: false
+      weight: 1, color: '#888', opacity: 0.5, interactive: false, fill: false,
+      renderer: _fseRenderer(),
     }).addTo(_fseZonenGruppe);
   }
 }
@@ -4066,39 +4143,40 @@ function _fsePopup(icao, a) {
 function _fsePlaetzeZeichnen(plaetze) {
   for (const icao in plaetze) {
     const a = plaetze[icao];
-    L.circleMarker([a.lat, a.lon], {
+    const m = L.circleMarker([a.lat, a.lon], {
       // Nutzer-Fund: der bisherige Mini-Radius von drei Pixeln war bei SVG-Paths auch die
       // Trefferflaeche -- am Desktop knapp, auf dem Tablet praktisch nicht zu treffen. Ein
       // hoeheres weight bei niedriger opacity legt einen weichen, kaum sichtbaren Halo um den
       // kleinen sichtbaren Punkt und zieht die Trefferflaeche damit auf effektiv 8 px Radius
       // (radius + halbe Strichbreite) -- ohne einen zweiten, unsichtbaren Marker, der die
       // Objektzahl bei 2.335 Plaetzen verdoppeln wuerde.
-      radius: 5, weight: 6, opacity: 0.2, color: '#d8a45e', fillColor: '#d8a45e', fillOpacity: 0.85
-    })
-      .bindPopup(_fsePopup(icao, a))
-      // permanent + eigene Klasse: Der Tooltip ist reine Beschriftung, kein Hover-Hinweis --
-      // die Sichtbarkeit steuert allein die Zoom-Wache unten, nicht Leaflets Default-Verhalten.
-      .bindTooltip(icao, { permanent: true, direction: 'right', className: 'fse-platz-label' })
-      .addTo(_fsePlaetzeGruppe);
+      radius: 5, weight: 6, opacity: 0.2, color: '#d8a45e', fillColor: '#d8a45e', fillOpacity: 0.85,
+      renderer: _fseRenderer(),
+    });
+    // Das Label wird NICHT hier gebunden. 2.335 permanente Tooltips sind 2.335 DOM-Elemente,
+    // die Leaflet bei jeder Kartenbewegung neu setzt -- genau daran hing die Karte. Gebunden
+    // wird erst im Sichtbereich (s. _labelsImSichtbereich); der Code dafuer holt sich den
+    // Platznamen aus _icao.
+    m._icao = icao;
+    m.bindPopup(_fsePopup(icao, a)).addTo(_fsePlaetzeGruppe);
   }
 }
 
 // Ausblenden ueber openTooltip()/closeTooltip() statt ueber eine CSS-Klasse an der Gruppe: Ein
-// permanenter Tooltip haengt an seinem Marker, nicht an der Gruppe, css-display liesse sich zwar
-// pauschal ueber einen Klassenwechsel am Pane erzwingen, wuerde dann aber ALLE Tooltips der Karte
-// treffen (sie teilen sich das tooltipPane). Je Marker openTooltip()/closeTooltip() ist zwar eine
-// Schleife ueber alle Plaetze bei jedem zoomend, aber 2.335 einfache Objektpruefungen sind kein
-// spuerbarer Aufwand.
+// Die Annahme "2.335 Objektpruefungen sind kein spuerbarer Aufwand" stimmte -- die Pruefung war
+// nie das Problem. Teuer waren die 2.335 permanent GEBUNDENEN Tooltips: Jeder ist ein
+// DOM-Element, das Leaflet bei jeder Kartenbewegung neu positioniert, ob geoeffnet oder nicht.
+// Deshalb bindet _labelsImSichtbereich sie erst im Bild und loest sie danach wieder.
 function _fsePlaetzeZoomWache(map) {
   const anpassen = () => {
-    const sichtbar = map.getZoom() >= _FSE_PLAETZE_LABEL_MIN_ZOOM;
-    _fsePlaetzeGruppe.eachLayer(l => {
-      if (!l.getTooltip || !l.getTooltip()) return;
-      if (sichtbar) { if (!l.isTooltipOpen()) l.openTooltip(); }
-      else if (l.isTooltipOpen()) { l.closeTooltip(); }
-    });
+    _labelsImSichtbereich(
+      map, _fsePlaetzeGruppe, map.getZoom() >= _FSE_PLAETZE_LABEL_MIN_ZOOM,
+      l => l._icao,
+      { permanent: true, direction: 'right', className: 'fse-platz-label' }
+    );
   };
   map.on('zoomend', anpassen);
+  map.on('moveend', anpassen);
   _fsePlaetzeGruppe.on('layeradd', anpassen);
   anpassen();
 }

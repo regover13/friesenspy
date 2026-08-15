@@ -167,7 +167,8 @@ def test_zoom_wache_greift_wenn_die_daten_nach_dem_einschalten_eintreffen():
     angemerkt) -- deshalb hier der extrahierte Quelltext wirklich in Node ausgefuehrt, mit einem
     Leaflet-Fake, der 'layeradd' bewusst nur auf FeatureGroup-artigen Objekten feuert (wie das
     echte Leaflet)."""
-    start = INDEX.index("const _PLATZRUNDEN_URL")
+    # Der Viewport-Helfer steht VOR dem Platzrunden-Block und wird von der Wache gebraucht.
+    start = INDEX.index("function _labelsImSichtbereich(")
     ende_start = INDEX.index("function _platzrundenZoomWache(")
     ende = INDEX.index("\n}", ende_start) + len("\n}")
     quelltext = INDEX[start:ende]
@@ -190,7 +191,9 @@ class FakeGroupBase {
   constructor(art) { this.art = art; this._layers = []; this._handlers = {}; }
   addLayer(l) { this._layers.push(l); return this; }
   addTo(ziel) { return this; }
-  eachLayer(fn) { this._layers.forEach(fn); return this; }
+  eachLayer(fn) { this._layers.slice().forEach(fn); return this; }
+  getLayers() { return this._layers.slice(); }
+  clearLayers() { this._layers = []; return this; }
   on(evt, fn) { (this._handlers[evt] = this._handlers[evt] || []).push(fn); return this; }
 }
 // addLayer() feuert hier bewusst NICHTS -- wie das echte L.LayerGroup. Wuerde die Produktion
@@ -231,7 +234,12 @@ global.L = {
       _style: null,
       _layers: [feature],
       setStyle(s) { this._style = s; },
-      eachLayer(fn) { this._layers.forEach(fn); return this; },
+      eachLayer(fn) { this._layers.slice().forEach(fn); return this; },
+      // Die Zoom-Wache nimmt die Pfade unterhalb der Schwelle aus der Karte und haengt sie
+      // spaeter wieder ein -- dafuer braucht der Fake dieselben drei Methoden wie L.GeoJSON.
+      getLayers() { return this._layers.slice(); },
+      clearLayers() { this._layers = []; return this; },
+      addLayer(l) { this._layers.push(l); return this; },
       addTo(gruppe) { gruppe.addLayer(this); return this; },
     };
   },
@@ -241,6 +249,7 @@ global.L = {
 class FakeMap {
   constructor(zoom) { this._zoom = zoom; this._handlers = {}; }
   getZoom() { return this._zoom; }
+  getBounds() { return { pad: () => ({ contains: () => true }) }; }
   on(evt, fn) { (this._handlers[evt] = this._handlers[evt] || []).push(fn); return this; }
 }
 """
@@ -257,19 +266,17 @@ _platzrundenZoomWache(map);
 _platzrundenLaden().then(() => {
   setImmediate(() => {
     try {
-      // Zwei Lagen je Platzrunde: die breite Fanglinie fuer den Klick, darueber die sichtbare.
+      // Unterhalb der Schwelle nimmt die Wache die Pfade AUS der Karte, statt sie nur auf
+      // Deckkraft 0 zu setzen -- ein unsichtbarer Pfad kostet Leaflet genauso viel wie ein
+      // sichtbarer, und bei 824 Pfaden hing die Karte daran (Nutzer-Fund am laufenden Bild).
       assert.strictEqual(_platzrundenGruppe._layers.length, 2, 'erwartet werden Fanglinie und sichtbare Linie -- fetch-Mock kaputt?');
-      const alleFeatures = [];
-      _platzrundenGruppe._layers.forEach(g => g.eachLayer(l => alleFeatures.push(l)));
-      assert.strictEqual(alleFeatures.length, 2, 'je Lage ein Feature-Layer erwartet');
-      alleFeatures.forEach(l => {
-        assert.ok(l._style, "layeradd hat anpassen() nicht ausgeloest -- die Ebene bliebe bei voller Deckkraft, bis der Nutzer erneut zoomt (der urspruengliche Bug)");
-        assert.strictEqual(l._style.opacity, 0, 'Deckkraft haette unterhalb der Zoom-Schwelle 0 sein muessen');
-      });
-      // Und das Hoehenschild darf unterhalb der Schwelle nicht offen stehen.
-      const mitSchild = alleFeatures.filter(l => l.getTooltip());
-      assert.strictEqual(mitSchild.length, 1, 'genau die sichtbare Linie traegt das Hoehenschild');
-      assert.strictEqual(mitSchild[0]._tooltipOffen, false, 'Hoehenschild haette unterhalb der Schwelle geschlossen sein muessen');
+      const leer = _platzrundenGruppe._layers.every(g => g.getLayers().length === 0);
+      assert.ok(leer, "die Pfade haetten unterhalb der Zoom-Schwelle aus der Karte genommen sein muessen (der urspruengliche Bug: sie blieben drin und wurden bei jeder Bewegung neu gerechnet)");
+      // Und kein Hoehenschild darf gebunden sein.
+      const geparkt = [];
+      _platzrundenGruppe._layers.forEach(g => (g._pfadeAus || []).forEach(l => geparkt.push(l)));
+      assert.ok(geparkt.length >= 1, 'die entnommenen Pfade muessen gemerkt sein, sonst kaemen sie nie zurueck');
+      assert.ok(geparkt.every(l => !l.getTooltip()), 'unterhalb der Schwelle darf kein Hoehenschild gebunden sein');
       console.log('OK');
     } catch (err) {
       console.error(err && err.stack ? err.stack : String(err));
@@ -320,12 +327,16 @@ def test_hoehenschild_nur_bei_echten_hoehen():
     assert "hoehe_geschaetzt" in rumpf and "return" in rumpf
 
 
-def test_hoehenschild_sitzt_auf_der_laengsten_kante():
-    """Der Gegenanflug ist bei einer Platzrunde die lange Parallele zur Piste -- also die
-    laengste Kante des Rings. Dort will der Nutzer die Zahl lesen, nicht im Schwerpunkt."""
-    assert "_laengsteKanteMitte(" in INDEX
+def test_hoehenschild_sitzt_auf_dem_gegenanflug():
+    """Eine Platzrunde hat ZWEI lange Seiten: den Gegenanflug und die Seite ueber der Piste.
+    Nur die laengste zu nehmen trifft mal die eine, mal die andere. Der Gegenanflug ist die
+    lange Kante mit dem groessten Abstand zur Mitte -- die Piste liegt im Zentrum.
+
+    Warum das zaehlt: Ein Schild mitten in der Runde, dort wo der Platz liegt, liest sich wie
+    die PLATZhoehe statt der Platzrundenhoehe. Genau das hat der Nutzer beanstandet."""
+    assert "_gegenanflugMitte(" in INDEX
     stelle = INDEX.index("function _platzrundenHoehenLabel(")
-    assert "_laengsteKanteMitte(" in INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_gegenanflugMitte(" in INDEX[stelle:INDEX.index("\n}", stelle)]
 
 
 def test_schilder_haben_eine_eigene_zoomschwelle():

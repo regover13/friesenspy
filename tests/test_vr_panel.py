@@ -1469,8 +1469,14 @@ def test_eigener_abruf_loest_keinen_neuen_abruf_aus():
     """_naviTakt ruft bei eingeschalteter Moving Map jede Sekunde setView auf, und das feuert
     moveend. Ohne die Wache liefe der Verkehrs-Abruf alle 3 Sekunden statt alle 15 --
     dauerhaft, ausgerechnet ueber die Netzwerkverbindung des Simulators."""
-    stelle = INDEX.index("map.on('moveend'")
-    assert "_naviSelbstBewegt" in INDEX[stelle:stelle + 200]
+    # Gezielt DEN moveend-Handler suchen, der den Verkehr abruft: Es gibt inzwischen mehrere
+    # (Platzrunden- und FSE-Beschriftungen haengen ebenfalls an moveend, weil sie nur im
+    # Sichtbereich gebunden werden). Ein index() auf die blosse Zeichenkette traefe den
+    # erstbesten und pruefte damit die falsche Stelle.
+    stelle = INDEX.index("_verkehrAbrufen(map); });")
+    kontext = INDEX[max(0, stelle - 200):stelle]
+    assert "map.on('moveend'" in kontext
+    assert "_naviSelbstBewegt" in kontext
 
 
 def test_verkehr_ruht_auf_verdeckter_karte():
