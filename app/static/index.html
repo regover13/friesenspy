@@ -3749,6 +3749,33 @@ let _verkehrTimer    = null;
 let _verkehrLetzterAbruf = 0;
 let _verkehrNachholer = null;
 
+// --------------------------------------------------------------------------
+//  Zweite Quelle: der Simulator
+// --------------------------------------------------------------------------
+// Im Kniebrett weiss der Simulator es besser als VATSIM: jede Sekunde statt alle 15, die
+// echte Position statt einer fortgerechneten -- und auch dann, wenn gar keine
+// VATSIM-Verbindung besteht (dann ist es der AI-Verkehr des Simulators).
+//
+// Genau EINE Quelle ist aktiv. Beides gleichzeitig zu zeichnen hiesse: jedes Flugzeug
+// zweimal, 15 Sekunden versetzt.
+let _simVerkehr = null;             // { ts, liste } -- zuletzt gemeldet, oder null
+let _simVerkehrWarQuelle = false;   // wer zuletzt geliefert hat (fuer den Wechsel)
+
+// Dieselbe Grenze wie fuer die eigene Position: Es ist dieselbe Bruecke, und zwei Grenzen
+// waeren zwei Wahrheiten darueber, ob der Simulator noch da ist.
+function _simVerkehrFrisch() {
+  return !!(_simVerkehr && (Date.now() - _simVerkehr.ts) < _SIM_POS_MAX_ALTER_MS);
+}
+
+// Der einzige Umschaltpunkt. Beide Quellen schreiben in dieselben Ablagen (_verkehrRoh,
+// _verkehrMarker) -- ohne das Leeren blieben beim Wechsel die Marker der alten Quelle stehen,
+// und _naviTakt rechnete ihre Position endlos weiter, obwohl niemand sie mehr meldet.
+function _verkehrQuelleWechseln(simIstQuelle) {
+  if (simIstQuelle === _simVerkehrWarQuelle) return;
+  _simVerkehrWarQuelle = simIstQuelle;
+  _verkehrLeeren();
+}
+
 function _saveVerkehrPref(an) { try { localStorage.setItem(_VERKEHR_PREF_KEY, an ? '1' : '0'); } catch (e) {} }
 function _loadVerkehrPref() { try { return localStorage.getItem(_VERKEHR_PREF_KEY) === '1'; } catch (e) { return false; } }
 
@@ -3857,6 +3884,14 @@ function _verkehrAbrufen(map) {
   // Marker nicht bewegt. Beim Zurueckwechseln saehe man sie springen.
   if (!_istSichtbar(map.getContainer())) return;
   if (map.getZoom() < _VERKEHR_MIN_ZOOM) { _verkehrLeeren(); return; }
+
+  // Solange der Simulator liefert, ist er die Quelle -- der Netzabruf waere Arbeit, die
+  // niemand zeichnet, ausgerechnet ueber dessen Verbindung. Faellt er aus, merkt es
+  // spaetestens der naechste Takt (15 s) und die Quelle wechselt still zurueck. Dass das
+  // reicht, liegt am Herzschlag der Bruecke: Sie meldet sich alle zwei Sekunden, ein
+  // Ausfall heisst also praktisch "Tablet zu" -- und dann sieht ohnehin niemand hin.
+  if (_simVerkehrFrisch()) return;
+  _verkehrQuelleWechseln(false);
 
   const jetzt = Date.now();
   // Drossel mit Nachhol-Termin: Verwerfen allein hiesse, dass nach einem Zug an der Karte
@@ -5409,6 +5444,14 @@ function _initPanelShellKanal() {
     const d = e && e.data;
     if (!d || d.quelle !== 'friesenspy-shell') return;
     if (d.art === 'pong') _panelShellDa = true;
+    if (d.art === 'sim-verkehr') {
+      const liste = Array.isArray(d.liste) ? d.liste : [];
+      _simVerkehr = { ts: Date.now(), liste: liste };
+      _simVerkehrDiagnoseEinmal(liste);
+      _verkehrQuelleWechseln(true);
+      _simVerkehrUebernehmen(liste);
+      return;
+    }
     if (d.art === 'position') {
       // Die eigene Position aus dem Simulator -- die einzige, die der Sim wirklich kennt
       // (s. der lange Kommentar bei _eigenePosition). Zahlen pruefen statt vertrauen: Ein

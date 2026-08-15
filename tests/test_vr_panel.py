@@ -1816,3 +1816,33 @@ def test_diagnose_meldet_die_werte_nicht_nur_die_feldnamen():
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "ersterEintrag" in rumpf
     assert "_diagnoseMitVergleichMelden('sim-verkehr'" in rumpf
+
+
+def test_sim_verkehr_wird_empfangen():
+    assert "d.art === 'sim-verkehr'" in INDEX
+
+
+def test_solange_der_sim_liefert_wird_nicht_abgefragt():
+    """Beide Quellen gleichzeitig zu zeichnen hiesse: jedes Flugzeug zweimal, 15 Sekunden
+    versetzt. Und der Netzabruf waere Arbeit, die niemand sieht -- ausgerechnet ueber die
+    Verbindung des Simulators."""
+    stelle = INDEX.index("function _verkehrAbrufen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_simVerkehrFrisch()" in rumpf
+
+
+def test_beim_quellwechsel_wird_geleert():
+    """Beide Quellen schreiben in dieselben Ablagen. Ohne das Leeren blieben die Marker der
+    alten Quelle stehen -- und _naviTakt rechnete ihre Position endlos weiter, obwohl niemand
+    sie mehr meldet."""
+    stelle = INDEX.index("function _verkehrQuelleWechseln(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_verkehrLeeren()" in rumpf
+
+
+def test_frischewache_benutzt_dieselbe_grenze_wie_die_position():
+    """Zwei Grenzen fuer dieselbe Bruecke waeren zwei Wahrheiten darueber, ob der Simulator
+    noch da ist."""
+    stelle = INDEX.index("function _simVerkehrFrisch(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_SIM_POS_MAX_ALTER_MS" in rumpf
