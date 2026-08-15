@@ -122,29 +122,6 @@ const POSITION_MAX_FEHLER = 5;
  */
 const POSITION_HERZSCHLAG_MS = 2000;
 
-/**
- * Messsonde fuer den spaeteren Sim-Verkehr (Teilprojekt 2).
- *
- * Die Frage: Gibt der Simulator den von vPilot injizierten Verkehr ueber den JS-Weg heraus?
- * DevSupport 4993 sagt nein -- in der Luft erzeugte AI-Objekte tauchen bei GET_AIR_TRAFFIC
- * nicht auf, von Asobo bestaetigt, und genau so injiziert vPilot. Fuer MSFS 2024 ist das
- * nicht bestaetigt, und die Antwort entscheidet, ob ein C++-WASM-Modul noetig wird. Also
- * einmal messen statt weiter vermuten -- nebenbei im normalen Flug, ohne DevMode.
- *
- * **Die Zeitpunkte sind der eigentliche Knackpunkt.** Erste Fassung mass 20 s, 2 min und
- * 5 min nach dem Oeffnen des Tablets -- und lieferte dreimal "0 Flugzeuge", weil der Nutzer
- * zu allen drei Zeitpunkten noch gar nicht mit vPilot verbunden war (gemessen 15.08.2026:
- * Sonde um 09:52/09:54/09:57, Verbindung erst um 10:01). Eine Null, die nur heisst "es war
- * nichts da", beantwortet gar nichts.
- *
- * Deshalb jetzt ueber die erste Stunde verteilt statt in den ersten fuenf Minuten. Das
- * Gegenstueck dazu steht auf der Seite: Sie haengt an jede Messung die Zahl der Flugzeuge,
- * die VATSIM im selben Moment in der Naehe kennt (s. `art === 'panel-diag'` in index.html).
- * Erst dieser Vergleich macht einen Datensatz aussagekraeftig -- "Sim 0, VATSIM 7" ist eine
- * Antwort, "Sim 0, VATSIM 0" ist keine.
- */
-const _SONDE_ZEITPUNKTE = [120000, 600000, 1200000, 2100000, 3000000];
-
 class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   /** Das eingebettete Fenster -- Empfaenger der Positionsmeldungen. */
   private readonly rahmenRef = FSComponent.createRef<HTMLIFrameElement>();
@@ -154,8 +131,6 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   private letzteMeldung = "";
   /** Wann zuletzt wirklich gesendet wurde (nicht nur geprueft) -- fuer den Herzschlag. */
   private letztesSendenMs = 0;
-  /** Die drei Sonden-Termine, damit destroy() sie abraeumen kann (s. _SONDE_ZEITPUNKTE). */
-  private sondeTermine: ReturnType<typeof setTimeout>[] = [];
   /**
    * Empfaenger fuer Nachrichten aus dem iframe. Als Feld gehalten, damit er in destroy()
    * wieder abgemeldet werden kann -- die App lebt mit AppSuspendMode.SLEEP lange.
@@ -233,9 +208,10 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
    * Warum ueberhaupt: Die Seite kennt alle anderen Flugzeuge aus dem VATSIM-Datenstrom, aber
    * das EIGENE nur genauso -- also alle 15 Sekunden und nur, wenn man online verbunden ist.
    * Fuer eine Karte, die dem eigenen Flieger folgen und sich in Flugrichtung drehen soll, ist
-   * das zu wenig. Der Sim weiss es besser, und zwar nur ueber das eigene Flugzeug: Fremder
-   * Verkehr ist ueber `GET_AIR_TRAFFIC` nicht zu bekommen (kein Multiplayer-Verkehr,
-   * DevSupport 3794; in der Luft erzeugte AI-Objekte fehlen, DevSupport 4993).
+   * das zu wenig. Der Sim weiss es besser -- und zwar nicht nur ueber das eigene Flugzeug:
+   * Den fremden Verkehr liefert `GET_AIR_TRAFFIC` (s. `verkehrHolen`), auch den von vPilot
+   * injizierten. DevSupport 4993 sagt dazu nein, ist fuer MSFS 2024 aber ueberholt -- am
+   * 15.08.2026 gemessen, Sim 6 zu VATSIM 6 im selben Umkreis.
    *
    * Warum HIER und nicht in einem eigenen Timer: `onUpdate` ist die Schleife der EFB und
    * laeuft nur, solange die App sichtbar ist. Ein setInterval muesste erst muehsam
@@ -320,85 +296,15 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     this.positionSenden(time);
   }
 
-  /**
-   * Einmalige Messung: Was gibt `GET_AIR_TRAFFIC` heraus?
-   *
-   * Vollstaendig gekapselt -- eine Sonde, die den Panel-Start zerreisst, ist schlimmer als
-   * eine unbeantwortete Frage. Auch der Fehlerfall wird gemeldet: "der Aufruf wirft" ist ein
-   * ebenso brauchbares Ergebnis wie eine leere Liste.
-   */
-  private async sondeMessen(nummer: number): Promise<void> {
-    const befund: Record<string, unknown> = { messpunkt: nummer };
-    try {
-      const c = (globalThis as { Coherent?: { call(n: string): Promise<unknown> } }).Coherent;
-      befund.coherentDa = !!(c && typeof c.call === "function");
-      if (!c || typeof c.call !== "function") {
-        this.sondeMelden(befund);
-        return;
-      }
-
-      // In MSFS 2020 war das die Vorbedingung dafuer, dass der Aufruf ueberhaupt etwas
-      // lieferte. Ob sie in 2024 noch gilt, weiss niemand -- also mitmessen.
-      try {
-        const rvl = (globalThis as {
-          RegisterViewListener?: (n: string) => { trigger?: (...a: unknown[]) => void };
-        }).RegisterViewListener;
-        if (typeof rvl === "function") {
-          const l = rvl("JS_LISTENER_MAPS");
-          if (l && typeof l.trigger === "function") {
-            l.trigger("JS_BIND_BINGMAP", "FS_SONDE", true);
-          }
-          befund.viewListener = "angemeldet";
-        } else {
-          befund.viewListener = "unbekannt";
-        }
-      } catch (e) {
-        befund.viewListener = "fehler: " + String(e instanceof Error ? e.message : e);
-      }
-
-      const t = await c.call("GET_AIR_TRAFFIC");
-      befund.typ = Object.prototype.toString.call(t);
-      befund.anzahl = Array.isArray(t) ? t.length : null;
-      // Nur die FELDNAMEN des ersten Eintrags, keine Positionen: Die Frage ist, OB und WAS
-      // der Sim herausgibt, nicht wo jemand fliegt.
-      befund.felder = Array.isArray(t) && t.length ? Object.keys(t[0] as object) : [];
-    } catch (e) {
-      befund.fehler = String(e instanceof Error ? e.message : e);
-    }
-    this.sondeMelden(befund);
-  }
-
-  private sondeMelden(befund: Record<string, unknown>): void {
-    try {
-      const ziel = this.rahmenRef.instance ? this.rahmenRef.instance.contentWindow : null;
-      // `quelle` ist PFLICHT: Der Empfaenger in index.html verwirft in seiner ersten Zeile
-      // jede Nachricht ohne `quelle === "friesenspy-shell"`.
-      if (ziel) {
-        ziel.postMessage(
-          { quelle: "friesenspy-shell", art: "panel-diag", befund: befund },
-          "*",
-        );
-      }
-    } catch (_e) {
-      // Meldung verloren -- schlimmer waere ein Absturz.
-    }
-  }
-
   /** @inheritdoc */
   public onAfterRender(node: VNode): void {
     super.onAfterRender(node);
     window.addEventListener("message", this.onNachricht);
-    this.sondeTermine = _SONDE_ZEITPUNKTE.map((ms, i) =>
-      setTimeout(() => {
-        void this.sondeMessen(i + 1);
-      }, ms),
-    );
   }
 
   /** @inheritdoc */
   public destroy(): void {
     window.removeEventListener("message", this.onNachricht);
-    this.sondeTermine.forEach((t) => clearTimeout(t));
     super.destroy();
   }
 

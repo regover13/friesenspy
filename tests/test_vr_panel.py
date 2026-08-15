@@ -1514,46 +1514,25 @@ def test_verkehr_verschwindet_erst_beim_zweiten_fehlen():
 
 
 # ---------------------------------------------------------------------------
-# Messsonde fuer den Sim-Verkehr (Kniebrett-Paket 1.3.0)
+# Die Messsonde ist ausgebaut (Kniebrett-Paket 1.5.0)
 # ---------------------------------------------------------------------------
 
-def _sonde_rumpf() -> str:
-    """Der Methodenrumpf bis zur schliessenden Klammer.
-
-    Feste Zeichenfenster (…[stelle:stelle+1800]) waeren hier die falsche Wahl: Zwei
-    zusaetzliche Kommentarzeilen -- bei diesem Kommentarstil normal -- kippten den Test,
-    ohne dass sich am Verhalten etwas aendert.
-    """
-    stelle = PANEL_TSX.index("private async sondeMessen")
-    return PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
-
-
 @ohne_panel
-def test_sonde_ist_selbstbegrenzt():
-    """Eine Sonde, die im Dauerbetrieb laeuft, ist eine Wanze. Feste Messpunkte, dann Ruhe --
-    und die Termine werden in destroy() wieder abgeraeumt."""
-    m = re.search(r"const _SONDE_ZEITPUNKTE = \[([^\]]*)\];", PANEL_TSX)
-    assert m, "Messpunkte fehlen"
-    punkte = [int(x) for x in m.group(1).split(",")]
-    assert 3 <= len(punkte) <= 8, "so viele Messungen sind Dauerbetrieb"
-    assert "clearTimeout" in PANEL_TSX
+def test_alte_sonde_ist_raus():
+    """Feste Termine nach dem Oeffnen der App treffen den richtigen Moment nur zufaellig: Der
+    Nutzer laedt erst den Flug -- dann ist das Tablet schon offen -- und verbindet ERST DANACH
+    vPilot. Genau daran ist die erste Messung gescheitert (dreimal 'null Flugzeuge', alle drei
+    vor der Verbindung). Ersetzt durch eine Diagnose aus dem echten Zulieferer."""
+    assert "_SONDE_ZEITPUNKTE" not in PANEL_TSX
+    assert "sondeMessen" not in PANEL_TSX
+    assert "traffic-sonde" not in INDEX
 
 
-@ohne_panel
-def test_sonde_misst_nicht_nur_in_den_ersten_minuten():
-    """Die erste Fassung mass 20 s / 2 min / 5 min und lieferte dreimal null -- der Nutzer
-    war zu allen drei Zeitpunkten noch nicht mit vPilot verbunden (15.08.2026). In den ersten
-    Minuten ist man am Vorbereiten, nicht in der Luft."""
-    m = re.search(r"const _SONDE_ZEITPUNKTE = \[([^\]]*)\];", PANEL_TSX)
-    punkte = [int(x) for x in m.group(1).split(",")]
-    assert max(punkte) >= 20 * 60 * 1000, "spaeteste Messung liegt vor der 20. Minute"
-
-
-def test_sonde_wird_gegen_vatsim_gegengeprueft():
-    """Eine Null ohne Gegenprobe beantwortet nichts: Sie kann heissen "der Sim gibt nichts
-    heraus" ODER "es war nichts da". Erst die Zahl der Flugzeuge, die VATSIM im selben
-    Moment in der Naehe kennt, unterscheidet die beiden Faelle."""
-    stelle = INDEX.index("function _sondeMitVergleichMelden(")
+def test_gegenprobe_gegen_vatsim_bleibt():
+    """Eine Null ohne Vergleich beantwortet nichts. 'Sim 0, VATSIM 7' ist eine Antwort,
+    'Sim 0, VATSIM 0' ist keine -- deshalb haengt an jeder Diagnose die Zahl der Flugzeuge,
+    die VATSIM im selben Moment in der Naehe kennt."""
+    stelle = INDEX.index("function _diagnoseMitVergleichMelden(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "/api/traffic?lat=" in rumpf
     assert "befund.vatsimNah" in rumpf
@@ -1563,42 +1542,18 @@ def test_sonde_wird_gegen_vatsim_gegengeprueft():
 
 
 @ohne_panel
-def test_sonde_kann_den_panel_start_nicht_zerreissen():
-    """Eine unbeantwortete Frage ist besser als ein abstuerzendes Kniebrett."""
-    rumpf = _sonde_rumpf()
-    assert "try {" in rumpf and "catch" in rumpf
-
-
-@ohne_panel
-def test_sonde_meldet_keine_fremden_positionen():
-    """Gemessen wird, OB und WAS der Sim herausgibt -- nicht, wo jemand fliegt."""
-    assert "Object.keys(t[0] as object)" in _sonde_rumpf()
-
-
-@ohne_panel
-def test_sonde_meldung_traegt_die_quelle():
-    """Ohne quelle='friesenspy-shell' verwirft der Empfaenger in index.html die Nachricht in
-    seiner ersten Zeile -- die Sonde waere toter Code."""
-    assert 'quelle: "friesenspy-shell", art: "panel-diag"' in PANEL_TSX
-
-
-@ohne_panel
-def test_sonde_greift_auf_die_richtige_referenz_zu():
-    """FSComponent.createRef liefert eine NodeReference mit .instance. `.current` ist
-    React-Syntax und waere ein Compilefehler."""
-    assert "this.rahmenRef.instance" in _sonde_melden_rumpf()
+def test_panel_benutzt_nodereference_nicht_react():
+    """FSComponent.createRef liefert eine NodeReference mit .instance -- NICHT .current wie
+    React. Der Griff daneben kostet keinen Compilerfehler, nur eine Funktion, die zur Laufzeit
+    nichts tut."""
+    assert ".instance" in PANEL_TSX
     assert ".current" not in PANEL_TSX
 
 
-def _sonde_melden_rumpf() -> str:
-    stelle = PANEL_TSX.index("private sondeMelden")
-    return PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
-
-
-def test_sonde_wird_mit_zwei_argumenten_gemeldet():
+def test_diagnose_wird_mit_zwei_argumenten_gemeldet():
     """window._panelDiag(kind, data). Mit einem Argument landete der ganze Befund im Feld
-    kind, und der Datensatz kind='traffic-sonde' entstuende nie."""
-    assert "window._panelDiag('traffic-sonde', befund)" in INDEX
+    kind, und der Datensatz bekaeme nie seine Art."""
+    assert "window._panelDiag(art, befund)" in INDEX
 
 
 def test_eigenes_flugzeug_hat_auch_ein_label():

@@ -5305,22 +5305,23 @@ function _panelBenachrichtigung(msg) {
  * Das Ergebnis geht an die Panel-Diagnose, damit es nach EINEM Sim-Lauf feststeht.
  */
 /**
- * Sonden-Befund um die Gegenprobe ergaenzen und melden.
+ * Eine Diagnose melden -- und ihr die Gegenprobe gegen VATSIM anhaengen.
  *
- * Ohne Gegenprobe ist eine Null nichts wert: Die erste Fassung meldete dreimal "0 Flugzeuge"
- * -- gemessen zu einem Zeitpunkt, an dem der Nutzer noch gar nicht mit vPilot verbunden war
- * (15.08.2026). Erst der Vergleich mit dem, was VATSIM im selben Moment in der Naehe kennt,
- * macht den Datensatz aussagekraeftig:
- *   simAnzahl 0, vatsimNah 7  -> der Simulator gibt injizierten Verkehr NICHT heraus
- *   simAnzahl 0, vatsimNah 0  -> es war nichts da, die Messung sagt nichts
- *   simAnzahl > 0             -> er gibt ihn heraus, kein WASM-Modul noetig
+ * Das ist der Kern des Verfahrens, nicht Beiwerk: Eine Zahl aus dem Simulator ist fuer sich
+ * genommen nicht lesbar. Erst neben der Zahl der Flugzeuge, die VATSIM im selben Moment im
+ * 75-km-Umkreis kennt, wird sie zur Aussage:
+ *   Sim 0, VATSIM 7  -> der Simulator gibt injizierten Verkehr NICHT heraus
+ *   Sim 0, VATSIM 0  -> es war nichts da, die Messung sagt nichts
+ *   Sim > 0          -> er gibt ihn heraus
+ * Die erste Messung (15.08.2026) war ohne diesen Vergleich wertlos: dreimal null, jedes Mal
+ * zu einem Zeitpunkt gemessen, an dem der Nutzer noch gar nicht mit vPilot verbunden war.
  *
  * 75 km ist bewusst etwas mehr als vPilots Injektionsradius von ~40 NM -- lieber ein paar
  * Flugzeuge zu viel gezaehlt als eine Gegenprobe, die faelschlich null meldet.
  */
-function _sondeMitVergleichMelden(befund) {
+function _diagnoseMitVergleichMelden(art, befund) {
   const melden = function () {
-    try { window._panelDiag('traffic-sonde', befund); } catch (e) {}
+    try { window._panelDiag(art, befund); } catch (e) {}
   };
   if (!_simPos || !_simPosFrisch()) {
     befund.vatsimNah = null;   // ohne eigene Position keine Gegenprobe moeglich
@@ -5345,10 +5346,6 @@ function _initPanelShellKanal() {
     const d = e && e.data;
     if (!d || d.quelle !== 'friesenspy-shell') return;
     if (d.art === 'pong') _panelShellDa = true;
-    if (d.art === 'panel-diag' && d.befund && typeof window._panelDiag === 'function') {
-      _sondeMitVergleichMelden(d.befund);
-      return;
-    }
     if (d.art === 'position') {
       // Die eigene Position aus dem Simulator -- die einzige, die der Sim wirklich kennt
       // (s. der lange Kommentar bei _eigenePosition). Zahlen pruefen statt vertrauen: Ein
