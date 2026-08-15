@@ -1,5 +1,16 @@
 [
   {
+    "version": "13.1.1",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Zwei Fehler am neuen Verkehr",
+    "items": [
+      "🏷️ Der Haken „Schilder“ verschwand nach kurzer Zeit wieder. Die Ebenen-Auswahl baut ihre Liste bei jeder Änderung von Grund auf neu — alles, was nicht von ihr selbst stammt, war danach fort. Jetzt setzt er sich nach jedem Neuaufbau wieder ein.",
+      "✈️ Im Kniebrett konnte der Verkehr ganz verschwinden. Meldete der Simulator „keine Flugzeuge in der Nähe“, galt er trotzdem als die bessere Quelle und verdrängte VATSIM — die Karte blieb leer, obwohl es etwas zu zeigen gab. Der Simulator übernimmt jetzt erst, wenn er wirklich etwas liefert.",
+      "🔧 Beides betrifft nur die Webseite. Das Kniebrett-Paket 1.7.0 bleibt unverändert."
+    ]
+  },
+  {
     "version": "13.1.0",
     "date": "2026-08-15",
     "highlight": false,

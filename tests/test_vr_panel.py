@@ -1966,6 +1966,40 @@ def test_schilder_schalter_sitzt_unter_der_verkehrsebene():
     assert "_saveSchilderPref" in rumpf and "_schilderAnwenden" in rumpf
 
 
+def test_schilder_schalter_ueberlebt_den_neuaufbau_der_liste():
+    """Leaflets Ebenen-Auswahl baut ihre Liste bei jeder Layer-Aenderung per innerHTML neu --
+    alles Fremde ist danach fort. Einmal einhaengen genuegt also nicht (Nutzer-Fund
+    15.08.2026: kurz gesehen, dann weg). `_update` wird deshalb umhuellt."""
+    stelle = INDEX.index("function _schilderSchalterAnhaengen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "control._update = function" in rumpf
+    assert "original.call(this)" in rumpf, "das Original muss zuerst laufen"
+    assert rumpf.index("original.call(this)") < rumpf.index("_schilderSchalterEinbauen(map, this)")
+    assert "_schilderSchalterAnhaengen(liveMap, liveEbenen)" in INDEX, "sonst greift nichts davon"
+
+
+def test_schilder_schalter_haengt_sich_nicht_doppelt_ein():
+    """Die Einbau-Funktion laeuft jetzt nach JEDEM Neuaufbau -- ohne Wache staende dort
+    irgendwann eine Reihe gleicher Kaestchen."""
+    stelle = INDEX.index("function _schilderSchalterEinbauen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "querySelector('.ebenen-unterpunkt')" in rumpf
+
+
+def test_leere_sim_liste_verdraengt_vatsim_nicht():
+    """Eine leere Liste ist eine gueltige Antwort des Simulators (allein am Himmel, vPilot
+    noch nicht verbunden). Sie als Quelle zu werten hiess: VATSIM weg, nichts gezeichnet,
+    Karte leer -- waehrend die Webseite daneben Verkehr zeigte (Nutzer-Fund 15.08.2026)."""
+    stelle = INDEX.index("function _simVerkehrFrisch(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_simVerkehrLetzteMitInhalt" in rumpf
+    assert "_simVerkehr &&" not in rumpf, "die blosse Meldung reicht nicht mehr"
+    # Und der Empfaenger darf bei leerer Liste gar nicht erst umschalten.
+    stelle = INDEX.index("if (d.art === 'sim-verkehr')")
+    zweig = INDEX[stelle:stelle + 700]
+    assert zweig.index("if (!liste.length) return;") < zweig.index("_verkehrQuelleWechseln(true)")
+
+
 def test_schilder_schalter_faellt_weich_aus():
     """Findet er seinen Anker nicht (andere Leaflet-Fassung, umbenannte Ebene), darf die Karte
     davon nichts merken -- ein fehlender Zusatzhaken ist kein Grund, die Karte zu verlieren."""

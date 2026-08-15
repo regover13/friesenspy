@@ -4292,11 +4292,20 @@ let _verkehrNachholer = null;
 // zweimal, 15 Sekunden versetzt.
 let _simVerkehr = null;             // { ts, liste } -- zuletzt gemeldet, oder null
 let _simVerkehrWarQuelle = false;   // wer zuletzt geliefert hat (fuer den Wechsel)
+let _simVerkehrLetzteMitInhalt = 0; // wann der Sim zuletzt WIRKLICH etwas zu zeigen hatte
 
 // Dieselbe Grenze wie fuer die eigene Position: Es ist dieselbe Bruecke, und zwei Grenzen
 // waeren zwei Wahrheiten darueber, ob der Simulator noch da ist.
+//
+// Gezaehlt wird aber nur eine Meldung MIT INHALT -- und das ist der Unterschied zwischen
+// "Sim uebernimmt" und "gar kein Verkehr mehr". Eine leere Liste ist eine gueltige Antwort
+// des Simulators (allein am Himmel, vPilot noch nicht verbunden). Sie als Quelle zu werten
+// hiess: VATSIM verdraengt, nichts gezeichnet, Karte leer. Genau das passierte im Kniebrett,
+// waehrend die Webseite daneben Verkehr zeigte (Nutzer-Fund 15.08.2026). Der Sim uebernimmt
+// also erst, wenn er etwas zu zeigen hat, und gibt nach derselben Frist wieder ab.
 function _simVerkehrFrisch() {
-  return !!(_simVerkehr && (Date.now() - _simVerkehr.ts) < _SIM_POS_MAX_ALTER_MS);
+  return _simVerkehrLetzteMitInhalt > 0
+      && (Date.now() - _simVerkehrLetzteMitInhalt) < _SIM_POS_MAX_ALTER_MS;
 }
 
 // Der einzige Umschaltpunkt. Beide Quellen schreiben in dieselben Ablagen (_verkehrRoh,
@@ -4337,10 +4346,36 @@ function _schilderAnwenden(map, an) {
 // die Ebenen-Auswahl kennt nur Ebenen -- deshalb der Griff ins fertige DOM. Findet er den
 // Anker nicht (andere Leaflet-Fassung, umbenannte Ebene), passiert schlicht nichts: Die Karte
 // bleibt bedienbar, nur der Zusatzhaken fehlt.
+//
+// EINMAL einhaengen genuegt NICHT, und das war der Fehler der ersten Fassung (Nutzer-Fund
+// 15.08.2026: "hab ich kurz gesehen, jetzt ist es weg"). Leaflets Ebenen-Auswahl baut ihre
+// Liste bei jeder Layer-Aenderung von Grund auf neu -- `_update()` leert den Kasten per
+// innerHTML und setzt alle Eintraege wieder hinein. Alles, was nicht aus ihrer eigenen
+// Layer-Liste stammt, ist danach fort. Ausgeloest wird das schon vom automatischen
+// Kartenwechsel (s. _setupOFMAutoSwitch, map.removeLayer) -- also mitten im Betrieb.
+//
+// Deshalb wird `_update` umhuellt: erst das Original, dann unser Haken wieder hinein. Kein
+// Nachbau der Leaflet-Logik, nur ein Anhaengsel an ihr Ende.
+function _schilderSchalterAnhaengen(map, control) {
+  if (!control || typeof control._update !== 'function') {
+    _schilderSchalterEinbauen(map, control);
+    return;
+  }
+  const original = control._update;
+  control._update = function () {
+    original.call(this);
+    _schilderSchalterEinbauen(map, this);
+  };
+  _schilderSchalterEinbauen(map, control);
+}
+
 function _schilderSchalterEinbauen(map, control) {
   if (!control || typeof control.getContainer !== 'function') return;
   const behaelter = control.getContainer();
   if (!behaelter) return;
+  // Schon da? Dann nichts tun -- diese Funktion laeuft nach JEDEM Neuaufbau der Liste, und
+  // ein zweites Kaestchen waere schlimmer als gar keines.
+  if (behaelter.querySelector('.ebenen-unterpunkt')) return;
   const zeilen = behaelter.querySelectorAll('.leaflet-control-layers-overlays label');
   let anker = null;
   for (let i = 0; i < zeilen.length; i++) {
@@ -6049,6 +6084,10 @@ function _initPanelShellKanal() {
       const liste = Array.isArray(d.liste) ? d.liste : [];
       _simVerkehr = { ts: Date.now(), liste: liste };
       _simVerkehrDiagnoseEinmal(liste);
+      // Eine leere Liste aendert die Quelle NICHT (s. _simVerkehrFrisch): Sonst stuende die
+      // Karte ganz ohne Verkehr da, obwohl VATSIM welchen kennt.
+      if (!liste.length) return;
+      _simVerkehrLetzteMitInhalt = Date.now();
       _verkehrQuelleWechseln(true);
       _simVerkehrUebernehmen(liste);
       return;
@@ -8345,7 +8384,7 @@ async function initLiveMap() {
   ).addTo(liveMap);
   // Der Zusatzhaken fuer die Schilder -- erst jetzt, die Ebenen-Auswahl muss stehen.
   _schilderAnwenden(liveMap, _loadSchilderPref());
-  _schilderSchalterEinbauen(liveMap, liveEbenen);
+  _schilderSchalterAnhaengen(liveMap, liveEbenen);
   _setupAIPPref(liveMap, liveAIP);
   _setupVerkehrPref(liveMap, _verkehrGruppe);
   // War die Ebene vorher an, laeuft sie sofort wieder -- overlayadd feuert bei einem vor
