@@ -13,6 +13,16 @@
     ]
   },
   {
+    "version": "12.9.0",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "FSE-Plätze und ihre MSFS-Namen",
+    "items": [
+      "🛩️ Zwei neue Ebenen aus den FSEconomy-Daten: „FSE-Plätze“ zeigt rund 2 300 europäische Plätze mit Bahnlänge, Belag und Höhe, „FSE-Landeflächen“ die Gebiete, deren Landungen FSEconomy dem jeweiligen Platz zurechnet.",
+      "🔤 Wichtiger als beides: Das Popup nennt den Namen, unter dem der Platz im Simulator zu finden ist. Bei gut einem Drittel aller Plätze weicht er ab, bei einem Zehntel gibt es den Platz in MSFS gar nicht — beides stand bisher nirgends."
+    ]
+  },
+  {
     "version": "12.8.0",
     "date": "2026-08-15",
     "highlight": false,

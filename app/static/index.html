@@ -3818,6 +3818,89 @@ function _platzrundenZoomWache(map) {
   anpassen();
 }
 
+// ==========================================================================
+//  FSE-PLAETZE UND LANDEFLAECHEN
+// ==========================================================================
+// Daten aus dem FSE-Planner (MIT, github.com/piero-la-lune/FSE-Planner), auf Europa
+// zugeschnitten (s. scripts/fse_zuschnitt.py). Die Landeflaeche ist das Gebiet, dessen
+// Landungen FSEconomy diesem Platz zurechnet -- eine Voronoi-Zelle. Sie liegt als reine
+// Linie unter allem anderen und faengt keine Klicks: sonst kaeme man an keinen Marker mehr.
+const _FSE_PLAETZE_URL = '/static/data/fse_airports_eu.json';
+const _FSE_ZONEN_URL   = '/static/data/fse_zones_eu.json';
+const _FSE_PREF_KEY    = 'friesenspy_fse';
+
+const _fsePlaetzeGruppe = L.layerGroup();
+const _fseZonenGruppe   = L.layerGroup();
+let   _fseGeladen = false;
+
+function _saveFsePref(an) {
+  try { localStorage.setItem(_FSE_PREF_KEY, an ? '1' : '0'); } catch (e) {}
+}
+function _loadFsePref() {
+  try { return localStorage.getItem(_FSE_PREF_KEY) === '1'; } catch (e) { return false; }
+}
+
+function _fseZonenZeichnen(zonen) {
+  for (const icao in zonen) {
+    L.polyline(zonen[icao], {
+      weight: 1, color: '#888', opacity: 0.5, interactive: false, fill: false
+    }).addTo(_fseZonenGruppe);
+  }
+}
+
+// Die MSFS-Entsprechung ist der eigentliche Gewinn dieses Datensatzes: Bei gut einem Drittel
+// aller Plaetze heisst der Platz im Simulator anders, bei einem Zehntel gibt es ihn dort gar
+// nicht. Ist der Code derselbe (gut die Haelfte), bleibt die Zeile weg -- sie waere Rauschen.
+const _FSE_BELAG = { 0: 'unbekannt', 1: 'Asphalt', 2: 'Beton', 3: 'Gras', 4: 'Sand',
+                     5: 'Wasser', 6: 'Erde', 7: 'Schnee' };
+
+function _fsePopup(icao, a) {
+  const zeilen = ['<b>' + icao + '</b> ' + (a.name || '')];
+  const belag = _FSE_BELAG[a.surface] || '';
+  if (a.rwy) zeilen.push('Bahn ' + a.rwy + ' ft' + (belag ? ' ' + belag : ''));
+  if (a.elev !== undefined) zeilen.push(a.elev + ' ft');
+  const andere = (a.msfs || []).filter(m => m !== icao);
+  if (!a.msfs || !a.msfs.length) {
+    zeilen.push('<i>In MSFS nicht vorhanden</i>');
+  } else if (andere.length) {
+    zeilen.push('In MSFS als: ' + andere.join(', '));
+  }
+  return zeilen.join('<br>');
+}
+
+function _fsePlaetzeZeichnen(plaetze) {
+  for (const icao in plaetze) {
+    const a = plaetze[icao];
+    L.circleMarker([a.lat, a.lon], {
+      radius: 3, weight: 1, color: '#d8a45e', fillColor: '#d8a45e', fillOpacity: 0.7
+    }).bindPopup(_fsePopup(icao, a)).addTo(_fsePlaetzeGruppe);
+  }
+}
+
+function _fseLaden() {
+  if (_fseGeladen) return Promise.resolve();
+  _fseGeladen = true;
+  return Promise.all([
+    fetch(_FSE_PLAETZE_URL).then(r => r.json()),
+    fetch(_FSE_ZONEN_URL).then(r => r.json())
+  ]).then(([plaetze, zonen]) => {
+    _fsePlaetzeZeichnen(plaetze);
+    _fseZonenZeichnen(zonen);
+  }).catch(e => {
+    _fseGeladen = false;
+    console.warn('FSE-Daten konnten nicht geladen werden:', e);
+  });
+}
+
+// Wie bei OpenAIP und Platzrunden: VOR dem Bau der Layers-Control aufrufen -- sonst zeigt
+// der Haken dauerhaft den falschen Zustand.
+function _addPreferredFseLayer(map) {
+  const meine = (l) => l === _fsePlaetzeGruppe || l === _fseZonenGruppe;
+  map.on('overlayadd',    (e) => { if (meine(e.layer)) { _saveFsePref(true);  _fseLaden(); } });
+  map.on('overlayremove', (e) => { if (meine(e.layer)) { _saveFsePref(false); } });
+  if (_loadFsePref()) { _fsePlaetzeGruppe.addTo(map); _fseLaden(); }
+}
+
 // --------------------------------------------------------------------------
 //  Fremdverkehr als Karten-Ebene
 // --------------------------------------------------------------------------
@@ -7823,6 +7906,9 @@ async function initLiveMap() {
   liveOverlays['Platzrunden'] = _platzrundenGruppe;
   _addPreferredPlatzrundenLayer(liveMap, _platzrundenGruppe);
   _platzrundenZoomWache(liveMap);
+  liveOverlays['FSE-Landeflächen'] = _fseZonenGruppe;
+  liveOverlays['FSE-Plätze'] = _fsePlaetzeGruppe;
+  _addPreferredFseLayer(liveMap);
   L.control.layers(
     { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Light': liveLayers.light, 'Dark': liveLayers.dark },
     liveOverlays,

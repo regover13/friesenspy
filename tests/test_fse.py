@@ -42,3 +42,47 @@ def test_die_inseln_sind_dabei():
     for icao in ("EDWG", "EDWY", "EDWJ", "EDWL", "EDWR", "EDWZ"):
         assert icao in ap, icao
     assert "EHOW" in ap["EDWE"]["msfs"], "Emden heisst in MSFS auch EHOW"
+
+
+def test_fse_ebenen_stehen_in_der_auswahl():
+    assert "liveOverlays['FSE-Plätze']" in INDEX
+    assert "liveOverlays['FSE-Landeflächen']" in INDEX
+
+
+def test_fse_wird_vor_der_layers_control_registriert():
+    vorher = INDEX.index("_addPreferredFseLayer(liveMap")
+    control = INDEX.index("liveOverlays,")
+    assert vorher < control
+
+
+def test_zonen_fangen_keine_klicks():
+    """Die Zellen liegen flaechendeckend ueber der Karte. Waeren sie klickbar, kaeme man an
+    keinen Marker und an kein Platzrunden-Popup mehr heran."""
+    stelle = INDEX.index("function _fseZonenZeichnen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "interactive: false" in rumpf
+    assert "fill: false" in rumpf
+
+
+def test_fse_daten_werden_lazy_geholt():
+    assert INDEX.count("/static/data/fse_airports_eu.json") == 1
+    assert INDEX.count("/static/data/fse_zones_eu.json") == 1
+    stelle = INDEX.index("function _fseLaden(")
+    assert "_fseGeladen" in INDEX[stelle:stelle + 900]
+
+
+def test_popup_nennt_die_msfs_entsprechung():
+    """Bei 35,6 % aller Plaetze heisst der Platz im Simulator anders, bei 9,7 % gibt es ihn
+    dort gar nicht. Diese Frage stellt man am konkreten Platz -- deshalb ins Popup."""
+    stelle = INDEX.index("function _fsePopup(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "In MSFS als" in rumpf
+    assert "In MSFS nicht vorhanden" in rumpf
+
+
+def test_popup_meldet_gleiche_icaos_nicht_als_alternative():
+    """Bei 54,7 % der Plaetze ist der MSFS-Code derselbe. 'In MSFS als: EDWG' unter der
+    Ueberschrift EDWG waere Rauschen."""
+    stelle = INDEX.index("function _fsePopup(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "!== icao" in rumpf or "!= icao" in rumpf
