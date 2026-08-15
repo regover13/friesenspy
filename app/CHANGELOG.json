@@ -1,5 +1,14 @@
 [
   {
+    "version": "13.1.2",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Schilder-Haken nur bei eingeschaltetem Verkehr",
+    "items": [
+      "🏷️ Der Haken „Schilder“ erscheint nur noch, solange die Ebene „Verkehr“ an ist. Vorher stand er auch dann in der Liste, wenn es gar keine Schilder zu schalten gab."
+    ]
+  },
+  {
     "version": "13.1.1",
     "date": "2026-08-15",
     "highlight": false,

@@ -4397,6 +4397,19 @@ function _schilderSchalterEinbauen(map, control) {
     _schilderAnwenden(map, kasten.checked);
   });
   anker.parentNode.insertBefore(zeile, anker.nextSibling);
+  _schilderSchalterSichtbarkeit(map);
+}
+
+// Ist die Verkehrs-Ebene aus, hat ihr Unterpunkt nichts zu sagen -- dann verschwindet er.
+// Ausgeblendet statt ausgegraut: Ein Haken, der zu einer abgeschalteten Ebene gehoert, ist
+// kein deaktivierter Haken, sondern gar keiner.
+function _schilderSchalterSichtbarkeit(map) {
+  if (!map || !map.getContainer) return;
+  const an = !!(_verkehrGruppe && map.hasLayer(_verkehrGruppe));
+  const zeilen = document.querySelectorAll('.leaflet-control-layers .ebenen-unterpunkt');
+  for (let i = 0; i < zeilen.length; i++) {
+    zeilen[i].style.display = an ? '' : 'none';
+  }
 }
 
 // Dem Kniebrett sagen, ob die Ebene an ist. Ohne diese Meldung fragt es den Simulator gar
@@ -4453,8 +4466,11 @@ function _makeVerkehrLayer() { return L.layerGroup(); }
 // _setupAIPPref -- sonst sieht die Layers-Control den Zustand nie).
 function _setupVerkehrPref(map, gruppe) {
   if (!gruppe) return;
-  map.on('overlayadd',    (e) => { if (e.layer === gruppe) { _saveVerkehrPref(true);  _verkehrSchalterMelden(true);  _verkehrStarten(map); } });
-  map.on('overlayremove', (e) => { if (e.layer === gruppe) { _saveVerkehrPref(false); _verkehrSchalterMelden(false); _verkehrStoppen(); } });
+  // Der Unterpunkt geht mit der Ebene mit -- Leaflet ruft bei einem Klick IN der Auswahl
+  // absichtlich kein _update (s. _handlingClick), der Weg ueber die Umhuellung greift hier
+  // also nicht.
+  map.on('overlayadd',    (e) => { if (e.layer === gruppe) { _saveVerkehrPref(true);  _verkehrSchalterMelden(true);  _verkehrStarten(map); _schilderSchalterSichtbarkeit(map); } });
+  map.on('overlayremove', (e) => { if (e.layer === gruppe) { _saveVerkehrPref(false); _verkehrSchalterMelden(false); _verkehrStoppen(); _schilderSchalterSichtbarkeit(map); } });
   // Die Wache ist hier NICHT optional: Bei eingeschalteter Moving Map ruft _naviTakt jede
   // Sekunde setView auf, und Leaflet feuert danach moveend. Ohne sie liefe der Abruf
   // dauerhaft im Drossel-Takt (alle 3 s statt alle 15 s) -- ausgerechnet ueber die

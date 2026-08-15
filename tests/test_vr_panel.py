@@ -1978,6 +1978,20 @@ def test_schilder_schalter_ueberlebt_den_neuaufbau_der_liste():
     assert "_schilderSchalterAnhaengen(liveMap, liveEbenen)" in INDEX, "sonst greift nichts davon"
 
 
+def test_schilder_schalter_verschwindet_mit_der_verkehrsebene():
+    """Ein Unterpunkt zu einer abgeschalteten Ebene hat nichts zu sagen (Nutzer-Wunsch
+    15.08.2026). Leaflet ruft bei einem Klick IN der Auswahl absichtlich kein _update, die
+    Umhuellung greift hier also nicht -- es braucht die eigene Nachfuehrung."""
+    stelle = INDEX.index("function _schilderSchalterSichtbarkeit(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "map.hasLayer(_verkehrGruppe)" in rumpf
+    assert "style.display" in rumpf
+    stelle = INDEX.index("function _setupVerkehrPref(")
+    setup = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert setup.count("_schilderSchalterSichtbarkeit(map)") == 2, \
+        "an UND aus muessen nachziehen"
+
+
 def test_schilder_schalter_haengt_sich_nicht_doppelt_ein():
     """Die Einbau-Funktion laeuft jetzt nach JEDEM Neuaufbau -- ohne Wache staende dort
     irgendwann eine Reihe gleicher Kaestchen."""
