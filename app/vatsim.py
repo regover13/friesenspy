@@ -120,3 +120,71 @@ def pilot_to_position(pilot: dict) -> dict:
         "route": route,
         "remarks": remarks,
     }
+
+
+def snapshot_other_traffic(callsign_prefix: str, vatsim_data: dict) -> list[dict]:
+    """Alle NICHT-Friesen als schlanke Karten-Einträge für ``/api/traffic``.
+
+    Bewusst kurze Feldnamen: Dieselbe Antwort geht über die Netzwerkverbindung des
+    Simulators ins Kniebrett, und bei 60 Flugzeugen sparen die kurzen Namen rund ein
+    Drittel der Nutzlast.
+
+    Ausgeschlossen wird allein über das Callsign-Präfix -- ein per Admin-Checkbox auf
+    "inaktiv" gesetzter Pilot fällt damit aus BEIDEN Listen heraus (er ist kein Friese mehr
+    und wird auch nicht als Fremdverkehr nachgereicht). Das ist die Absicht der Checkbox.
+
+    Args:
+        callsign_prefix: Präfix der eigenen Leute, z. B. 'FRS'.
+        vatsim_data: Rohantwort der VATSIM-API.
+
+    Returns:
+        Liste von Dicts mit cid/cs/lat/lon/alt/gs/hdg/ac/dep/arr. Leer bei kaputter Eingabe.
+        ``cid`` dient nur dazu, den Anfragenden selbst aussortieren zu können, und geht
+        nicht an den Client (s. ``/api/traffic``).
+    """
+    pilots = vatsim_data.get("pilots") if isinstance(vatsim_data, dict) else None
+    if not isinstance(pilots, list):
+        return []
+
+    prefix = (callsign_prefix or "").upper()
+
+    def _zahl(wert) -> int:
+        try:
+            return int(float(wert))
+        except (TypeError, ValueError):
+            return 0
+
+    out: list[dict] = []
+    for p in pilots:
+        if not isinstance(p, dict):
+            continue
+        cs = str(p.get("callsign") or "")
+        if not cs or (prefix and cs.upper().startswith(prefix)):
+            continue
+        lat, lon = p.get("latitude"), p.get("longitude")
+        if lat is None or lon is None:
+            continue
+        try:
+            lat, lon = float(lat), float(lon)
+        except (TypeError, ValueError):
+            continue
+        # 0/0 ist im Feed der Platzhalter für "noch keine Position" -- ein echtes Flugzeug
+        # im Golf von Guinea wäre der Preis dafür, und den zahlen wir gern.
+        if lat == 0.0 and lon == 0.0:
+            continue
+        fp = p.get("flight_plan")
+        fp = fp if isinstance(fp, dict) else {}
+
+        out.append({
+            "cid": p.get("cid"),
+            "cs": cs,
+            "lat": lat,
+            "lon": lon,
+            "alt": _zahl(p.get("altitude")),
+            "gs": _zahl(p.get("groundspeed")),
+            "hdg": _zahl(p.get("heading")),
+            "ac": str(fp.get("aircraft_short") or ""),
+            "dep": str(fp.get("departure") or ""),
+            "arr": str(fp.get("arrival") or ""),
+        })
+    return out
