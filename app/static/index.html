@@ -4389,7 +4389,11 @@ function _schilderSchalterEinbauen(map, control) {
   kasten.type = 'checkbox';
   kasten.checked = _loadSchilderPref();
   const text = document.createElement('span');
-  text.textContent = ' Schilder';
+  // In der Oberflaeche heisst der Haken "Radar Label" (Nutzer-Wahl 15.08.2026). Im Quelltext
+  // heisst dieselbe Sache weiter "Schilder" -- ein Rename ueber alle Funktionen, Klassen und
+  // Merker hinweg brauchte es dafuer nicht, und ein halb umbenannter Code waere schlimmer als
+  // ein durchgaengiger mit einem eigenen Namen fuer die Anzeige.
+  text.textContent = ' Radar Label';
   zeile.appendChild(kasten);
   zeile.appendChild(text);
   kasten.addEventListener('change', function () {

@@ -136,7 +136,7 @@ Interaktive Karte mit allen aktuell fliegenden Friesen. Sie geht über Wangeroog
   - Auf der Webseite kommt der Verkehr von **VATSIM** (alle 15 Sekunden, dazwischen fortgerechnet)
   - Im **Kniebrett** (MSFS-Tablet, ab Paket 1.5.0) kommt er direkt aus dem **Simulator** — jede Sekunde und mit der Position, die wirklich gilt. Das funktioniert auch ohne VATSIM-Verbindung; dann siehst du den Verkehr, den der Simulator selbst erzeugt
   - **Geparkte Flugzeuge** sind dabei wie alle anderen, mit Schild. Es gab dafür kurzzeitig eine Sonderregel (sichtbar erst ab einer nahen Zoomstufe, dann ohne Schild); sie ist wieder raus
-  - **Schilder** (zweiter Haken direkt unter „Verkehr") — blendet die Beschriftungen am fremden Verkehr aus, wenn das Bild ruhiger sein soll. Über dem Platz stehen sonst schnell dreißig nebeneinander. Die Friesen und das eigene Flugzeug behalten ihres, und ein Klick aufs Symbol zeigt ohnehin alles
+  - **Radar Label** (zweiter Haken direkt unter „Verkehr", erscheint nur bei eingeschalteter Ebene) — blendet die Beschriftungen am fremden Verkehr aus, wenn das Bild ruhiger sein soll. Über dem Platz stehen sonst schnell dreißig nebeneinander. Die Friesen und das eigene Flugzeug behalten ihres, und ein Klick aufs Symbol zeigt ohnehin alles
 - **🧭 Kompass** (unter der Ebenen-Auswahl) — dreht die Karte in Flugrichtung („Track-up") und wieder zurück nach Norden. Die Nadel zeigt dabei immer dorthin, wo Norden liegt
 - **📍 Moving Map** (unten rechts) — die Karte folgt dem eigenen Flugzeug. Verschiebst du die Karte von Hand, schaltet sie sich automatisch ab (Zoomen nicht)
 - Von einem anderen Tab aus mit ◎ direkt zu einem bestimmten Piloten springen

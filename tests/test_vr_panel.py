@@ -1978,6 +1978,13 @@ def test_schilder_schalter_ueberlebt_den_neuaufbau_der_liste():
     assert "_schilderSchalterAnhaengen(liveMap, liveEbenen)" in INDEX, "sonst greift nichts davon"
 
 
+def test_schilder_haken_heisst_in_der_oberflaeche_radar_label():
+    """Nutzer-Wahl 15.08.2026. Im Quelltext heisst dieselbe Sache weiter "Schilder" -- der
+    Anzeigename steht deshalb genau an einer Stelle."""
+    assert "' Radar Label'" in INDEX
+    assert "' Schilder'" not in INDEX
+
+
 def test_schilder_schalter_verschwindet_mit_der_verkehrsebene():
     """Ein Unterpunkt zu einer abgeschalteten Ebene hat nichts zu sagen (Nutzer-Wunsch
     15.08.2026). Leaflet ruft bei einem Klick IN der Auswahl absichtlich kein _update, die

@@ -1,11 +1,20 @@
 [
   {
+    "version": "13.1.3",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Radar Label",
+    "items": [
+      "🏷️ Der Haken unter „Verkehr“ heißt jetzt „Radar Label“ statt „Schilder“ — er tut dasselbe wie vorher."
+    ]
+  },
+  {
     "version": "13.1.2",
     "date": "2026-08-15",
     "highlight": false,
     "title": "Schilder-Haken nur bei eingeschaltetem Verkehr",
     "items": [
-      "🏷️ Der Haken „Schilder“ erscheint nur noch, solange die Ebene „Verkehr“ an ist. Vorher stand er auch dann in der Liste, wenn es gar keine Schilder zu schalten gab."
+      "🏷️ Der Haken „Radar Label“ erscheint nur noch, solange die Ebene „Verkehr“ an ist. Vorher stand er auch dann in der Liste, wenn es gar keine Schilder zu schalten gab."
     ]
   },
   {
@@ -14,7 +23,7 @@
     "highlight": false,
     "title": "Zwei Fehler am neuen Verkehr",
     "items": [
-      "🏷️ Der Haken „Schilder“ verschwand nach kurzer Zeit wieder. Die Ebenen-Auswahl baut ihre Liste bei jeder Änderung von Grund auf neu — alles, was nicht von ihr selbst stammt, war danach fort. Jetzt setzt er sich nach jedem Neuaufbau wieder ein.",
+      "🏷️ Der Haken „Radar Label“ verschwand nach kurzer Zeit wieder. Die Ebenen-Auswahl baut ihre Liste bei jeder Änderung von Grund auf neu — alles, was nicht von ihr selbst stammt, war danach fort. Jetzt setzt er sich nach jedem Neuaufbau wieder ein.",
       "✈️ Im Kniebrett konnte der Verkehr ganz verschwinden. Meldete der Simulator „keine Flugzeuge in der Nähe“, galt er trotzdem als die bessere Quelle und verdrängte VATSIM — die Karte blieb leer, obwohl es etwas zu zeigen gab. Der Simulator übernimmt jetzt erst, wenn er wirklich etwas liefert.",
       "🔧 Beides betrifft nur die Webseite. Das Kniebrett-Paket 1.7.0 bleibt unverändert."
     ]
@@ -25,7 +34,7 @@
     "highlight": false,
     "title": "Schilder zum Abschalten",
     "items": [
-      "🏷️ Neuer Haken „Schilder“ direkt unter „Verkehr“: Er blendet die Beschriftungen am fremden Verkehr aus, wenn das Bild ruhiger sein soll — über einem großen Platz stehen sonst schnell dreißig nebeneinander. Die Friesen und dein eigenes Flugzeug behalten ihres, und ein Klick aufs Symbol zeigt ohnehin alles.",
+      "🏷️ Neuer Haken „Radar Label“ direkt unter „Verkehr“: Er blendet die Beschriftungen am fremden Verkehr aus, wenn das Bild ruhiger sein soll — über einem großen Platz stehen sonst schnell dreißig nebeneinander. Die Friesen und dein eigenes Flugzeug behalten ihres, und ein Klick aufs Symbol zeigt ohnehin alles.",
       "🅿️ Geparkte Flugzeuge sind wieder ganz normal dabei, mit Schild. Die Sonderregel von gestern — sichtbar erst beim Hineinzoomen, dann ohne Beschriftung — griff in Wahrheit nie, weil sich aus den Daten gar nicht verlässlich ablesen lässt, ob ein Flugzeug steht.",
       "✈️ Am eigenen Flugzeug steht nicht mehr „DEIN FLUGZEUG“, sondern dasselbe Schild wie bei allen anderen. Welches das eigene ist, sagen Farbe und die Karte, die ihm folgt.",
       "📦 Enthält das Kniebrett-Paket 1.7.0. Auf der Webseite wirkt der neue Haken sofort."
