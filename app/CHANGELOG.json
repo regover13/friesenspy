@@ -13,6 +13,27 @@
     ]
   },
   {
+    "version": "12.9.0",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "FSE-Plätze und ihre MSFS-Namen",
+    "items": [
+      "🛩️ Zwei neue Ebenen aus den FSEconomy-Daten: „FSE-Plätze“ zeigt rund 2 300 europäische Plätze mit Bahnlänge, Belag und Höhe, „FSE-Landeflächen“ die Gebiete, deren Landungen FSEconomy dem jeweiligen Platz zurechnet.",
+      "🔤 Wichtiger als beides: Das Popup nennt den Namen, unter dem der Platz im Simulator zu finden ist. Bei gut einem Drittel aller Plätze weicht er ab, bei einem Zehntel gibt es den Platz in MSFS gar nicht — beides stand bisher nirgends."
+    ]
+  },
+  {
+    "version": "12.8.0",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Platzrunden mit Höhe auf jeder Karte",
+    "items": [
+      "🛬 Neue Ebene „Platzrunden“ in der Ebenen-Auswahl: 412 deutsche Platzrunden, sichtbar über jeder Kartensorte und auf jeder Zoomstufe — anders als bei der Luftfahrtkarte, die sie nur auf einer einzigen Stufe zeichnet und darüber auf Satellit umschaltet. Ein Klick auf die Runde zeigt Platz, Bahn und Platzrundenhöhe.",
+      "📏 Wo die Höhe nicht bekannt ist, steht „Höhe nicht bekannt“ — und keine geratene Zahl. Bei 147 der Runden fehlt sie in der Quelle; eine erfundene Höhe im Cockpit wäre schlimmer als gar keine.",
+      "🔍 Weit herausgezoomt bleiben die Runden aus — dort wären es 412 Vierecke ohne Aussage. Der Haken bleibt dabei gesetzt."
+    ]
+  },
+  {
     "version": "12.7.1",
     "date": "2026-08-15",
     "highlight": false,
