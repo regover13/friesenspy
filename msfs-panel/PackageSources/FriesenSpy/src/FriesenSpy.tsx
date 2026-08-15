@@ -90,6 +90,7 @@ interface PanelNachricht {
   titel?: string;
   text?: string;
   service?: string;
+  an?: boolean;
 }
 
 /**
@@ -122,6 +123,68 @@ const POSITION_MAX_FEHLER = 5;
  */
 const POSITION_HERZSCHLAG_MS = 2000;
 
+/**
+ * Wie oft der Verkehr aus dem Simulator geholt wird.
+ *
+ * Eine Sekunde ist nicht geschaetzt, sondern Asobos eigener Takt in seiner eigenen VFR-Karte
+ * (`VfrTrafficManager.POLL_INTERVAL = 1000` im ausgelieferten `GameVFRMap.js`). Zwischen zwei
+ * Abrufen rechnet die Seite die Positionen fort -- genau wie Asobos Karte es tut.
+ */
+const VERKEHR_INTERVALL_MS = 1000;
+
+/**
+ * So lange darf ein Abruf hoechstens dauern.
+ *
+ * `Coherent.call` kann haengen bleiben; das offizielle SDK laesst ihn deshalb gegen eine
+ * Sekunde antreten (`Promise.race([Coherent.call(…), Wait.awaitDelay(1000)])`). Ohne diese
+ * Grenze bliebe der Riegel gegen Doppelaufrufe im Fehlerfall fuer immer zu.
+ */
+const VERKEHR_WARTE_MAX_MS = 1000;
+
+/**
+ * `alt` kommt aus `GET_AIR_TRAFFIC` in METERN.
+ *
+ * Nirgends dokumentiert, aber im ausgelieferten Simulator nachzulesen: Das offizielle SDK
+ * rechnet in `TrafficInstrument.createContact` mit
+ * `UnitType.METER.convertTo(entry.alt, UnitType.FOOT)` um. Ohne diese Zeile stuende an einem
+ * Airliner in FL350 die Zahl 10 668 -- und im Label FL107.
+ */
+const FUSS_JE_METER = 3.28084;
+
+/** Hoechstens so viele Flugzeuge in die Seite reichen -- wie die Obergrenze in /api/traffic. */
+const VERKEHR_MAX = 60;
+
+/** Ein Eintrag, wie ihn `GET_AIR_TRAFFIC` liefert. Alle Felder defensiv als optional. */
+interface SimVerkehrRoh {
+  uId?: number;
+  name?: string;
+  plane_model_icao?: string;
+  lat?: number;
+  lon?: number;
+  alt?: number;
+  heading?: number;
+  isOnGround?: boolean;
+}
+
+/**
+ * Ein Eintrag, wie ihn die Seite bekommt: fertig gerechnet, in Fuss und Knoten.
+ *
+ * Die Feldnamen sind genau die, die `_verkehrLabel` und `_verkehrPopup` in index.html
+ * ohnehin lesen (`ac`, `cs`, `alt`, `gs`, `hdg`) -- deshalb kommt die Seite ohne
+ * Uebersetzungsschicht aus und zeichnet beide Quellen ueber denselben Weg.
+ */
+interface SimVerkehrEintrag {
+  id: number;
+  lat: number;
+  lon: number;
+  alt: number;
+  hdg: number;
+  gs: number;
+  ac: string;
+  cs: string;
+  gnd: boolean;
+}
+
 class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   /** Das eingebettete Fenster -- Empfaenger der Positionsmeldungen. */
   private readonly rahmenRef = FSComponent.createRef<HTMLIFrameElement>();
@@ -131,6 +194,14 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   private letzteMeldung = "";
   /** Wann zuletzt wirklich gesendet wurde (nicht nur geprueft) -- fuer den Herzschlag. */
   private letztesSendenMs = 0;
+
+  /** Ist die Verkehrs-Ebene auf der Seite eingeschaltet? Gemeldet ueber den Rueckkanal. */
+  private verkehrAn = false;
+  /** Riegel gegen Doppelaufrufe -- das offizielle SDK haelt an derselben Stelle `isBusy`. */
+  private verkehrLaeuft = false;
+  private letzterVerkehrMs = 0;
+  private letzteVerkehrMeldung = "";
+  private letztesVerkehrSendenMs = 0;
   /**
    * Empfaenger fuer Nachrichten aus dem iframe. Als Feld gehalten, damit er in destroy()
    * wieder abgemeldet werden kann -- die App lebt mit AppSuspendMode.SLEEP lange.
@@ -151,6 +222,16 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
         } catch (_e) {
           // Antwortweg zu, Seite faellt auf ihre eigene Anzeige zurueck.
         }
+      }
+      return;
+    }
+
+    // Die Ebene ist aus? Dann wird gar nicht erst abgefragt. Ein Coherent.call je Sekunde,
+    // dessen Ergebnis niemand zeichnet, ist Arbeit im Simulator ohne jeden Gegenwert.
+    if (d.art === "verkehr-schalter") {
+      this.verkehrAn = d.an === true;
+      if (!this.verkehrAn) {
+        this.letzteVerkehrMeldung = "";
       }
       return;
     }
@@ -283,9 +364,105 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     }
   }
 
+  /**
+   * Den Verkehr aus dem Simulator holen -- oder `null`, wenn das nicht geht.
+   *
+   * Der Wettlauf gegen eine Sekunde ist kein Feinschliff: `Coherent.call` kann haengen
+   * bleiben, und der Riegel in `verkehrTakt` bliebe dann fuer immer zu. Das offizielle SDK
+   * macht an derselben Stelle dasselbe.
+   */
+  private async verkehrHolen(): Promise<SimVerkehrRoh[] | null> {
+    const c = (globalThis as { Coherent?: { call(n: string): Promise<unknown> } }).Coherent;
+    if (!c || typeof c.call !== "function") {
+      return null;
+    }
+    const abbruch = new Promise<null>((loesen) =>
+      setTimeout(() => loesen(null), VERKEHR_WARTE_MAX_MS),
+    );
+    const daten = await Promise.race([c.call("GET_AIR_TRAFFIC"), abbruch]);
+    return Array.isArray(daten) ? (daten as SimVerkehrRoh[]) : null;
+  }
+
+  /**
+   * Ein Abruf je Sekunde, aber nie zwei gleichzeitig.
+   *
+   * Warum HIER und nicht in einem setInterval: `onUpdate` ist die Schleife der EFB und laeuft
+   * nur, solange die App sichtbar ist -- derselbe Grund wie bei der Positionsmeldung.
+   */
+  private verkehrTakt(time: number): void {
+    if (!this.verkehrAn || this.verkehrLaeuft) {
+      return;
+    }
+    if (time - this.letzterVerkehrMs < VERKEHR_INTERVALL_MS) {
+      return;
+    }
+    this.letzterVerkehrMs = time;
+    this.verkehrLaeuft = true;
+    const auf = (): void => {
+      this.verkehrLaeuft = false;
+    };
+    void this.verkehrSenden(time).then(auf, auf);
+  }
+
+  /** Abrufen, aufbereiten, in die Seite reichen. */
+  private async verkehrSenden(jetztMs: number): Promise<void> {
+    const ziel = this.rahmenRef.instance ? this.rahmenRef.instance.contentWindow : null;
+    if (!ziel) {
+      return;
+    }
+    const roh = await this.verkehrHolen();
+    if (roh === null) {
+      return;
+    }
+    const liste = this.verkehrAufbereiten(roh, jetztMs);
+
+    // Dieselbe Regel wie bei der Position, aus demselben Grund: Die Seite verwirft eine
+    // Quelle, die schweigt. Bei bewegtem Verkehr aendert sich ohnehin jede Sekunde etwas --
+    // der Herzschlag greift nur, wenn die Liste unveraendert (oder leer) bleibt.
+    const meldung = JSON.stringify(liste);
+    const stillGenugLange = (jetztMs - this.letztesVerkehrSendenMs) >= POSITION_HERZSCHLAG_MS;
+    if (meldung === this.letzteVerkehrMeldung && !stillGenugLange) {
+      return;
+    }
+    this.letzteVerkehrMeldung = meldung;
+    this.letztesVerkehrSendenMs = jetztMs;
+
+    ziel.postMessage({ quelle: "friesenspy-shell", art: "sim-verkehr", liste: liste }, "*");
+  }
+
+  private verkehrAufbereiten(roh: SimVerkehrRoh[], _jetztMs: number): SimVerkehrEintrag[] {
+    const out: SimVerkehrEintrag[] = [];
+    for (let i = 0; i < roh.length && out.length < VERKEHR_MAX; i++) {
+      const r = roh[i];
+      const id = Number(r.uId);
+      const lat = Number(r.lat);
+      const lon = Number(r.lon);
+      if (!isFinite(id) || !isFinite(lat) || !isFinite(lon) || (lat === 0 && lon === 0)) {
+        continue;
+      }
+      out.push({
+        id: id,
+        lat: Number(lat.toFixed(5)),
+        lon: Number(lon.toFixed(5)),
+        alt: Math.round(Number(r.alt) * FUSS_JE_METER) || 0,
+        hdg: (((Math.round(Number(r.heading)) || 0) % 360) + 360) % 360,
+        gs: 0,
+        ac: String(r.plane_model_icao || ""),
+        cs: String(r.name || ""),
+        gnd: r.isOnGround === true,
+      });
+    }
+    return out;
+  }
+
   /** @inheritdoc */
   public onUpdate(time: number): void {
     super.onUpdate(time);
+    this.positionTakt(time);
+    this.verkehrTakt(time);
+  }
+
+  private positionTakt(time: number): void {
     if (this.positionFehler >= POSITION_MAX_FEHLER) {
       return;
     }

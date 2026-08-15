@@ -1625,3 +1625,62 @@ def test_start_zoom_liegt_nicht_unter_der_verkehrs_schwelle():
     m_verkehr = re.search(r"const _VERKEHR_MIN_ZOOM = (\d+);", INDEX)
     assert m_start and m_verkehr
     assert int(m_start.group(1)) >= int(m_verkehr.group(1))
+
+
+# ---------------------------------------------------------------------------
+# Verkehr aus dem Simulator (Teilprojekt 2a, Kniebrett-Paket 1.5.0)
+# ---------------------------------------------------------------------------
+
+@ohne_panel
+def test_verkehr_wird_im_sekundentakt_geholt():
+    """1000 ms ist nicht geraten, sondern Asobos eigener Takt in seiner eigenen VFR-Karte
+    (VfrTrafficManager.POLL_INTERVAL im ausgelieferten GameVFRMap.js)."""
+    m = re.search(r"const VERKEHR_INTERVALL_MS = (\d+);", PANEL_TSX)
+    assert m and int(m.group(1)) == 1000
+
+
+@ohne_panel
+def test_verkehr_hat_einen_riegel_gegen_doppelaufrufe():
+    """Das offizielle SDK haelt einen isBusy-Riegel um genau diesen Aufruf. Ohne ihn stapeln
+    sich bei einem langsamen Aufruf die Anfragen, und die Antworten kommen durcheinander."""
+    assert "verkehrLaeuft" in PANEL_TSX
+    stelle = PANEL_TSX.index("private verkehrTakt(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert "this.verkehrLaeuft" in rumpf
+
+
+@ohne_panel
+def test_verkehr_wartet_nicht_ewig():
+    """Coherent.call kann haengen bleiben. Das SDK laesst den Aufruf gegen eine Sekunde
+    antreten (Promise.race mit Wait.awaitDelay(1000)) -- ohne das bliebe der Riegel aus dem
+    Test darueber fuer immer zu."""
+    stelle = PANEL_TSX.index("private async verkehrHolen(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert "Promise.race" in rumpf
+    assert "VERKEHR_WARTE_MAX_MS" in rumpf
+
+
+@ohne_panel
+def test_hoehe_wird_von_metern_in_fuss_gerechnet():
+    """`alt` kommt in METERN. Belegt im ausgelieferten msfssdk.js des Simulators:
+    UnitType.METER.convertTo(entry.alt, UnitType.FOOT). Ohne die Umrechnung stuende an einem
+    Airliner in FL350 die Zahl 10 668 -- und im Label FL107."""
+    m = re.search(r"const FUSS_JE_METER = ([\d.]+);", PANEL_TSX)
+    assert m and abs(float(m.group(1)) - 3.28084) < 0.001
+
+
+@ohne_panel
+def test_ohne_eingeschaltete_ebene_wird_nicht_abgefragt():
+    """Ein Coherent.call je Sekunde, den niemand zeichnet, ist Arbeit im Simulator ohne
+    Gegenwert. Die Seite meldet den Zustand der Ebene ueber den bestehenden Rueckkanal."""
+    assert '"verkehr-schalter"' in PANEL_TSX
+    stelle = PANEL_TSX.index("private verkehrTakt(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert "this.verkehrAn" in rumpf
+
+
+@ohne_panel
+def test_verkehrsmeldung_traegt_die_quelle():
+    """Der Empfaenger in index.html verwirft in seiner ersten Zeile jede Nachricht ohne
+    quelle === 'friesenspy-shell'. Ohne sie kommt nichts an, ohne jede Fehlermeldung."""
+    assert 'quelle: "friesenspy-shell", art: "sim-verkehr"' in PANEL_TSX
