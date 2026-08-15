@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.7.1",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Platzrunden auf der Luftfahrtkarte",
+    "items": [
+      "🛬 Die Luftfahrtkarte (OpenFlightMap) zeigt jetzt Platzrunden, Meldepunkte und VFR-Strecken — sie waren immer da, wurden aber nie geladen. Die Karte hat diese Dinge erst ab einer bestimmten Zoomstufe gezeichnet, und ausgerechnet die war bei uns übersprungen: Beim Hineinzoomen wurde die gröbere Stufe vergrößert, statt die feinere zu holen, und eine Stufe später schaltete die Karte schon auf Satellit um. Jetzt einfach näher heranzoomen — die Runden erscheinen als blaue Rechtecke um den Platz."
+    ]
+  },
+  {
     "version": "12.7.0",
     "date": "2026-08-15",
     "highlight": false,

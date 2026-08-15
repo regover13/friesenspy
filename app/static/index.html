@@ -3582,7 +3582,14 @@ const TILE_AIP_ATTR  = '&copy; <a href="https://www.openaip.net">OpenAIP</a>';
 const TILE_URL  = TILE_DARK_URL;
 const TILE_ATTR = TILE_DARK_ATTR;
 
-const OFM_NATIVE_MAX_ZOOM = 11; // OFM hat native Tiles bis Zoom 11; ab Zoom 13 Auto-Switch zu Satellit
+// OFM hat native Tiles bis Zoom 12 -- NICHT 11, wie hier bis v12.7.1 stand. Die 11 war der
+// Grund, warum die Karte nie eine Platzrunde zeigte: OFM zeichnet Platzrunden, Meldepunkte
+// und VFR-Strecken ERST ab Zoom 12, und bei maxNativeZoom 11 skaliert Leaflet auf Kartenzoom
+// 12 die z11-Kachel hoch, statt die z12-Kachel zu laden. Zusammen mit SWITCH_HIGH = 12 (ab 13
+// Satellit) war damit genau die eine Zoomstufe mit Platzrunden unerreichbar. An den Kacheln
+// nachgemessen: z11 nur Platzsymbol und Lufträume, z12 mit Platzrunden, z13/z14 liefern
+// 1233 Byte -- die leere Kachel. 12 ist also wirklich die Obergrenze, mehr geht nicht.
+const OFM_NATIVE_MAX_ZOOM = 12;
 
 // ==========================================================================
 //  ZOOM-KNOEPFE: GEZEICHNET STATT GESCHRIEBEN
