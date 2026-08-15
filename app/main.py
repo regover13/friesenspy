@@ -238,6 +238,12 @@ async def lifespan(app: FastAPI):
 # Vor dem StaticFiles-Mount registrieren, damit guess_type den korrekten Typ liefert.
 import mimetypes as _mimetypes
 _mimetypes.add_type("application/manifest+json", ".webmanifest")
+# .geojson kennt Pythons mimetypes-DB ebenfalls nicht → StaticFiles liefert es als
+# application/octet-stream aus. Für den Browser folgenlos (r.json() parst ohnehin), aber die
+# gzip_types-Regel in nginx/friesenspy.devprops.de.conf greift dann NICHT: Sie listet
+# application/geo+json, und dieser Typ käme nie an. Die Platzrunden-Datei ist mit 209 KB die
+# größte der drei Datendateien — ohne diese Zeile ginge ausgerechnet sie unkomprimiert raus.
+_mimetypes.add_type("application/geo+json", ".geojson")
 
 app = FastAPI(title="FriesenSpy", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

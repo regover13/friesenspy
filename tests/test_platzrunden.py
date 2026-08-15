@@ -357,3 +357,13 @@ def test_maus_macht_eine_zoomstufe_je_rastung():
     assert px >= 100
     # alle drei Karten, nicht nur die Live-Karte
     assert INDEX.count("wheelPxPerZoomLevel: _RAD_PX_JE_ZOOMSTUFE") == 3
+
+
+def test_geojson_wird_als_geojson_ausgeliefert():
+    """Ohne diese Registrierung liefert StaticFiles die Datei als application/octet-stream --
+    und die gzip_types-Regel in nginx/friesenspy.devprops.de.conf listet application/geo+json.
+    Der Typ kaeme also nie an, und ausgerechnet die groesste der drei Datendateien (209 KB)
+    ginge unkomprimiert raus."""
+    import mimetypes
+    import app.main  # noqa: F401  -- der Import registriert den Typ
+    assert mimetypes.guess_type("x.geojson")[0] == "application/geo+json"
