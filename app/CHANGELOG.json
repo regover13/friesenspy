@@ -1,5 +1,14 @@
 [
   {
+    "version": "12.6.7",
+    "date": "2026-08-15",
+    "highlight": false,
+    "title": "Flugzeuge zeigen bei gedrehter Karte wieder richtig",
+    "items": [
+      "🧭 Mit eingeschaltetem Kompass (Karte in Flugrichtung) zeigten die Flugzeugsymbole in die falsche Richtung — sie behielten ihre Ausrichtung bei, während sich die Karte unter ihnen drehte. Die Dreh-Bibliothek hält Kartensymbole von Haus aus aufrecht, damit Beschriftungen lesbar bleiben; bei Flugzeugen ist die Richtung aber genau die Aussage. Jetzt drehen sie mit."
+    ]
+  },
+  {
     "version": "12.6.6",
     "date": "2026-08-15",
     "highlight": false,

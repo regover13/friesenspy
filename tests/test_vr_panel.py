@@ -1120,6 +1120,23 @@ def test_moving_map_an_ist_auch_sichtbar():
     assert g and "background: #071525 !important" in g.group(1)
 
 
+def test_flugzeuge_drehen_mit_der_karte():
+    """Bei Track-up MUSS das Flugzeugsymbol mitdrehen -- seine Richtung ist die Aussage.
+
+    Das Dreh-Plugin haelt Marker standardmaessig aufrecht (rotateWithView: false), damit
+    Beschriftungen lesbar bleiben. Fuer Flugzeuge ist das genau verkehrt: Gemessen zeigte
+    das Symbol bei um 270 Grad gedrehter Karte exakt denselben Winkel wie vorher, also in
+    die falsche Richtung (Nutzer-Fund 15.08.2026).
+
+    Die Alternative waere gewesen, bei jeder Kursaenderung jedes Symbol neu zu zeichnen --
+    bei Track-up dreht sich die Karte staendig mit, das haette die halbe Karte dauernd in
+    Bewegung gehalten (und genau davor warnt der Kommentar an setIcon in updateMap)."""
+    assert INDEX.count("rotateWithView: true") == 2, \
+        "beide Marker-Arten (VATSIM und Sim) brauchen die Option"
+    for stelle in ("icon: makeAircraftIcon(hdg), rotateWithView: true",):
+        assert stelle in INDEX
+
+
 def test_eigenes_flugzeug_auch_ohne_vatsim():
     """Ohne VATSIM gibt es keinen Eintrag in liveData -- und damit war ueberhaupt kein
     eigenes Flugzeug auf der Karte, obwohl die Sim-Position vorlag und die Karte korrekt

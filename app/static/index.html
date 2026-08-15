@@ -7114,7 +7114,8 @@ function _eigenesFlugzeugZeichnen() {
 
   // Offline (oder noch nicht im VATSIM-Strom): eigener Marker.
   if (!_eigenerSimMarker) {
-    _eigenerSimMarker = L.marker([_simPos.lat, _simPos.lon], { icon: makeAircraftIcon(hdg) })
+    _eigenerSimMarker = L.marker([_simPos.lat, _simPos.lon],
+                                 { icon: makeAircraftIcon(hdg), rotateWithView: true })
       .bindPopup('<div class="popup-callsign">DEIN FLUGZEUG</div>'
                + '<div class="popup-row">Quelle: <span>Simulator</span></div>', { maxWidth: 240 })
       .addTo(liveMap);
@@ -7416,7 +7417,16 @@ function updateMap(pilots) {
       // Guenstig, solange das Popup zu ist: Leaflet merkt sich den Inhalt dann nur.
       vorhanden.setPopupContent(buildPopupHtml(p));
     } else {
-      const marker = L.marker([p.latitude, p.longitude], { icon: makeAircraftIcon(hdg) })
+      // rotateWithView: Ohne das dreht das Dreh-Plugin die Marker GEGEN die Karte, damit
+      // sie aufrecht bleiben -- bei Track-up zeigte dann jedes Flugzeug in die falsche
+      // Richtung (Nutzer-Fund 15.08.2026, gemessen: Karte um 270 Grad gedreht, Symbolwinkel
+      // davor und danach identisch). Fuer Flugzeuge ist das genau verkehrt: Ihre Richtung
+      // IST die Aussage. Die Option laesst das Plugin das Karten-Bearing auf die
+      // Marker-Drehung addieren -- ohne dass wir jedes Symbol bei jeder Kursaenderung neu
+      // zeichnen muessten (das war die Alternative und haette die halbe Karte in Bewegung
+      // gehalten). Ohne geladenes Plugin ist die Option schlicht unbekannt und wirkungslos.
+      const marker = L.marker([p.latitude, p.longitude],
+                              { icon: makeAircraftIcon(hdg), rotateWithView: true })
         .bindPopup(buildPopupHtml(p), { maxWidth: 240 })
         .addTo(liveMap);
       marker._fsHeading = hdg;
