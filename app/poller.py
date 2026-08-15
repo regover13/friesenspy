@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -44,7 +45,12 @@ from app.database import (
     upsert_live_position,
     upsert_statsim_flights,
 )
-from app.vatsim import fetch_vatsim_data, filter_friesen_pilots, pilot_to_position
+from app.vatsim import (
+    fetch_vatsim_data,
+    filter_friesen_pilots,
+    pilot_to_position,
+    snapshot_other_traffic,
+)
 from app.alerts import format_online_message, send_telegram_alert
 from app.statsim import fetch_flight_track, fetch_pilot_flights
 from app.teamspeak import fetch_channel_clients, parse_channel_ids
@@ -381,6 +387,14 @@ class VatsimPoller:
         self._http_client: httpx.AsyncClient | None = None
         # State: cid → {"id": flight_id, "dep": departure, "arr": arrival}
         self._active_flights: dict[int, dict] = {}
+        # Momentaufnahme des GESAMTEN Feeds für die Verkehrsanzeige (/api/traffic).
+        # Nur im Speicher: Fremdverkehr wird nicht historisiert -- er ist reine Anzeige, und
+        # eine Historie über ~1000 Flugzeuge im 15-Sekunden-Takt wäre in Tagen größer als
+        # alles andere in dieser Datenbank zusammen.
+        # Öffentlich benannt (kein Unterstrich) wie last_prefiles und ts_clients -- alles,
+        # was die API aus dem Poller liest, ist in diesem Projekt öffentlich.
+        self.traffic_snapshot: list[dict] = []
+        self.traffic_snapshot_ts: float = 0.0
         # SSE: jede aktive Client-Verbindung registriert ihre EIGENE Queue; broadcast_sse()
         # verteilt jedes Update an alle. (Eine geteilte Queue lieferte jede Nachricht nur an
         # EINEN Consumer → nicht alle Clients bekamen Updates.)
@@ -677,6 +691,12 @@ class VatsimPoller:
 
             # 1. Fetch + filter
             vatsim_data = await fetch_vatsim_data(self._http_client)
+
+            # Vor jeder weiteren Verarbeitung: Der Feed ist hier vollständig in der Hand,
+            # später nicht mehr. Kostet einen Durchlauf über ~1000 Einträge alle 15 s.
+            self.traffic_snapshot = snapshot_other_traffic(self.callsign_prefix, vatsim_data)
+            self.traffic_snapshot_ts = time.time()
+
             excl_conn = get_connection(self.db_path)
             try:
                 excluded_cids = get_inactive_cids(excl_conn)

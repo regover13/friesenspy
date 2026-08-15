@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import httpx as _httpx
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import (
     FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response,
     StreamingResponse,
@@ -652,6 +652,66 @@ async def get_live(request: Request):
     finally:
         conn.close()
     return positions
+
+
+# Höchstzahl gleichzeitig ausgelieferter Fremdflugzeuge. Der Deckel schützt nicht den Server
+# (die Rechnung ist trivial), sondern die Karte: Jeder Marker ist im Kniebrett DOM in
+# Coherent GT, und dort wird es ab ein paar hundert Elementen zäh.
+_TRAFFIC_MAX = 60
+# Ab wann eine Momentaufnahme nicht mehr gezeigt wird: drei verpasste Poll-Zyklen bei
+# VATSIM_POLL_INTERVAL = 15 s. Dann steht der Poller, und eine leere Karte ist ehrlicher als
+# Positionen von vor einer Minute.
+_TRAFFIC_MAX_AGE_SEC = 45.0
+
+
+@app.get("/api/traffic")
+async def get_traffic(
+    request: Request,
+    lat: float = Query(..., ge=-90, le=90, description="Bezugspunkt, i. d. R. die Kartenmitte"),
+    lon: float = Query(..., ge=-180, le=180),
+    r: float = Query(100.0, ge=1, le=250, description="Radius in km"),
+):
+    """Fremder VATSIM-Verkehr im Umkreis eines Punktes — ohne die eigenen Leute.
+
+    Die Friesen kommen über ``/api/live`` und SSE; sie hier noch einmal mitzuliefern hieße,
+    sie doppelt auf der Karte zu haben. Gefiltert wird schon in der Momentaufnahme
+    (s. :func:`app.vatsim.snapshot_other_traffic`).
+
+    Kein Sonderweg bei der Anmeldung: verhält sich wie ``/api/live``, steht also bei aktivem
+    Forum-Gate ebenfalls dahinter und gehört NICHT in ``_GATE_ALLOW_PREFIXES``.
+
+    ``age`` ist das Alter der Momentaufnahme in Sekunden — gerechnet ab dem Abruf durch den
+    Poller, NICHT ab dem Messzeitpunkt bei VATSIM (den trüge ``last_updated`` je Pilot). Das
+    Frontend datiert seine Fortrechnung damit zurück und läuft dadurch deutlich weniger
+    hinterher, aber nicht gar nicht.
+    """
+    poller = getattr(request.app.state, "poller", None)
+    schnappschuss = getattr(poller, "traffic_snapshot", None) or []
+    stand = getattr(poller, "traffic_snapshot_ts", 0.0) or 0.0
+    alter = time.time() - stand
+    if not schnappschuss or stand <= 0 or alter > _TRAFFIC_MAX_AGE_SEC:
+        return {"age": None, "traffic": []}
+
+    # Den Anfragenden selbst nie als Fremdverkehr ausliefern. Fliegt er ausnahmsweise ohne
+    # FRS-Callsign, fällt er nicht durch das Präfix-Sieb und bekäme einen grauen Marker an
+    # seiner VATSIM-Position — direkt neben seinem eigenen, vom Simulator gesteuerten. Zwei
+    # Flugzeuge, die sich bewegen und nie zusammenpassen. Clientseitig ist das nicht zu
+    # lösen: Dort ist nur bekannt, wer in liveData steht, und das sind nur die Friesen.
+    eigene_cid = _current_cid(request, get_settings())
+
+    nah: list[tuple[float, dict]] = []
+    for e in schnappschuss:
+        if eigene_cid is not None and e.get("cid") == eigene_cid:
+            continue
+        d = geo.haversine(lat, lon, e["lat"], e["lon"])
+        if d <= r:
+            nah.append((d, e))
+    nah.sort(key=lambda paar: paar[0])
+    # cid bleibt serverseitig — der Client braucht sie nicht.
+    return {
+        "age": round(alter, 1),
+        "traffic": [{k: v for k, v in e.items() if k != "cid"} for _, e in nah[:_TRAFFIC_MAX]],
+    }
 
 
 @app.get("/api/stats/activity")
