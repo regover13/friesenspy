@@ -1573,3 +1573,20 @@ def test_sonde_wird_mit_zwei_argumenten_gemeldet():
     """window._panelDiag(kind, data). Mit einem Argument landete der ganze Befund im Feld
     kind, und der Datensatz kind='traffic-sonde' entstuende nie."""
     assert "window._panelDiag('traffic-sonde', d.befund)" in INDEX
+
+
+def test_live_karte_oeffnet_ueber_edwg():
+    """EDWG (Wangerooge) ist der Heimatplatz. Der alte Startpunkt lag in der offenen Nordsee,
+    rund 130 km westlich -- jedes Oeffnen begann mit Schieben."""
+    assert "const _KARTE_MITTE = [53.78278, 7.91389];" in INDEX
+    assert "center:    [54.5, 8.5]" not in INDEX
+    assert "center:    _KARTE_MITTE," in INDEX
+
+
+def test_start_zoom_liegt_nicht_unter_der_verkehrs_schwelle():
+    """Laege die Verkehrs-Schwelle ueber der Start-Zoomstufe, schaltete man die Ebene ein und
+    es passierte sichtbar nichts."""
+    m_start = re.search(r"const _KARTE_ZOOM\s*=\s*(\d+);", INDEX)
+    m_verkehr = re.search(r"const _VERKEHR_MIN_ZOOM = (\d+);", INDEX)
+    assert m_start and m_verkehr
+    assert int(m_start.group(1)) >= int(m_verkehr.group(1))

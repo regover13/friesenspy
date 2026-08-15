@@ -3674,6 +3674,14 @@ function _makeTileLayers() {
 // nicht erst. Auf der Website bleibt die Animation -- dort funktioniert sie.
 const _KARTE_EINBLENDEN = !document.documentElement.classList.contains('vr-panel');
 
+// Startpunkt der Live-Karte: EDWG (Wangerooge), der Heimatplatz. Vorher stand hier ein Punkt
+// in der offenen Nordsee, rund 130 km westlich -- jedes Oeffnen begann mit Schieben.
+// Als Konstanten, damit Startpunkt und Zoomstufe an einer Stelle stehen und nicht mitten in
+// der Karteninitialisierung. Der Zoom haengt mit _VERKEHR_MIN_ZOOM zusammen: Die
+// Verkehrs-Ebene schweigt unterhalb davon, sie darf nicht ueber der Start-Zoomstufe liegen.
+const _KARTE_MITTE = [53.78278, 7.91389];
+const _KARTE_ZOOM  = 7;
+
 const _LAYER_PREF_KEY = 'friesenspy_layer';
 function _saveLayerPref(key) { try { localStorage.setItem(_LAYER_PREF_KEY, key); } catch(e) {} }
 function _loadLayerPref() { try { return localStorage.getItem(_LAYER_PREF_KEY); } catch(e) { return null; } }
@@ -7510,8 +7518,8 @@ async function initLiveMap() {
 
   liveMap = L.map('leaflet-map', {
     fadeAnimation: _KARTE_EINBLENDEN,
-    center:    [54.5, 8.5],
-    zoom:      7,
+    center:    _KARTE_MITTE,
+    zoom:      _KARTE_ZOOM,
     minZoom:   6,
     zoomControl: true,
     attributionControl: true,
