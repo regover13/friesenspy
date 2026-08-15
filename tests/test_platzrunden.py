@@ -1,6 +1,10 @@
 """Platzrunden-Datensatz und -Ebene (v12.8.0)."""
 import json
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 STATIC = Path(__file__).resolve().parents[1] / "app" / "static"
 GEOJSON = STATIC / "data" / "platzrunden_de.geojson"
@@ -99,6 +103,33 @@ def test_popup_verzweigt_auf_das_flag_nicht_auf_das_label():
     assert "hoehe_label" not in rumpf
 
 
+def test_popup_zeigt_hoehe_auch_bei_strecken_mit_echter_hoehe():
+    """Review-Fund (Minor): Der strecke-Zweig stand VOR dem Hoehenzweig und hat die Hoehe damit
+    fuer alle vier An-/Abflugstrecken unterschlagen -- dabei tragen genau diese vier eine echte,
+    geprueften Hoehe (EDQA 1700 ft, EDWP 1000 ft). Beide Aussagen muessen jetzt unabhaengig
+    voneinander ausgeloest werden koennen, kein else-if, das den einen Zweig gegen den anderen
+    ausschliesst."""
+    gj = json.loads(GEOJSON.read_text(encoding="utf-8"))
+    strecken = [f["properties"] for f in gj["features"] if f["properties"].get("typ") == "strecke"]
+    assert len(strecken) == 4
+    assert all(not p["hoehe_geschaetzt"] and p["hoehe_ft"] is not None for p in strecken), (
+        "Testannahme veraltet: nicht mehr alle Strecken haben eine geprüfte Höhe -- Fix prüfen"
+    )
+
+    stelle = INDEX.index("function _platzrundenPopup(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "if (p.typ === 'strecke') zeilen.push" in rumpf, (
+        "Die Strecken-Kennzeichnung darf keinen Hoehenzweig mehr ausschliessen (kein else-if)"
+    )
+    assert "hoeheEcht" in rumpf
+
+
+def test_pr_info_klasse_existiert_im_stylesheet():
+    """Review-Fund (Minor): <span class="pr-info"> verwies auf eine Klasse, die es im
+    Stylesheet nicht gab."""
+    assert ".pr-info {" in INDEX
+
+
 def test_popup_schreibt_msl_auch_bei_unsicherem_bezug():
     """127 Eintraege tragen 'MSL?'. Gegen die Platzhoehe gerechnet liegen sie im selben Band
     wie die 138 expliziten MSL-Angaben (Median 895 vs. 864 ft ueber Grund) -- derselbe Bezug.
@@ -116,3 +147,112 @@ def test_zoom_wache_haengt_am_zoomend():
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "zoomend" in rumpf
     assert "_PLATZRUNDEN_MIN_ZOOM" in rumpf
+
+
+_NODE = shutil.which("node") or shutil.which("nodejs")
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_zoom_wache_greift_wenn_die_daten_nach_dem_einschalten_eintreffen():
+    """Review-Fund (Important): _platzrundenGruppe war ein L.layerGroup() -- dessen addLayer()
+    feuert in echtem Leaflet KEIN 'layeradd'-Ereignis, nur L.FeatureGroup tut das. Die Zoom-Wache
+    haengt sich aber genau an dieses Ereignis, um frisch geladene Polygone sofort auf die
+    aktuelle Zoomstufe zu bringen. Der reale Fehlerfall: Nutzer zoomt auf Stufe 7 heraus und
+    hakt "Platzrunden" an -> die Daten laden nach -> alle 412 Polygone erscheinen mit voller
+    Deckkraft, weil der Listener nie lief. Erst die naechste Zoomaenderung korrigiert es.
+
+    Der vorhandene test_zoom_wache_haengt_am_zoomend prueft nur Zeichenketten im Quelltext und
+    haette diesen Fehler prinzipiell nicht fangen koennen (das Review hat das zu Recht
+    angemerkt) -- deshalb hier der extrahierte Quelltext wirklich in Node ausgefuehrt, mit einem
+    Leaflet-Fake, der 'layeradd' bewusst nur auf FeatureGroup-artigen Objekten feuert (wie das
+    echte Leaflet)."""
+    start = INDEX.index("const _PLATZRUNDEN_URL")
+    ende_start = INDEX.index("function _platzrundenZoomWache(")
+    ende = INDEX.index("\n}", ende_start) + len("\n}")
+    quelltext = INDEX[start:ende]
+
+    harness = """
+'use strict';
+const assert = require('assert');
+
+// Ein GeoJSON mit einem Feature reicht -- es geht nur darum, ob der ECHTE Ladepfad
+// (_platzrundenLaden -> L.geoJSON(...).addTo(_platzrundenGruppe)) das 'layeradd'-Ereignis
+// ausloest, das die Zoom-Wache braucht.
+global.fetch = () => Promise.resolve({
+  ok: true,
+  json: () => Promise.resolve({ type: 'FeatureCollection', features: [
+    { type: 'Feature', properties: { icao: 'EDXX' }, geometry: { type: 'Polygon', coordinates: [[[8,53],[8,54],[9,54],[8,53]]] } }
+  ] }),
+});
+
+class FakeGroupBase {
+  constructor(art) { this.art = art; this._layers = []; this._handlers = {}; }
+  addLayer(l) { this._layers.push(l); return this; }
+  addTo(ziel) { return this; }
+  eachLayer(fn) { this._layers.forEach(fn); return this; }
+  on(evt, fn) { (this._handlers[evt] = this._handlers[evt] || []).push(fn); return this; }
+}
+// addLayer() feuert hier bewusst NICHTS -- wie das echte L.LayerGroup. Wuerde die Produktion
+// wieder auf L.layerGroup() zurueckfallen, bliebe der 'layeradd'-Handler unten stumm und der
+// Test schlaegt fehl.
+class FakeLayerGroup extends FakeGroupBase {}
+// NUR FeatureGroup feuert 'layeradd' beim addLayer() -- wie im echten Leaflet.
+class FakeFeatureGroup extends FakeGroupBase {
+  addLayer(l) {
+    super.addLayer(l);
+    (this._handlers['layeradd'] || []).forEach(fn => fn({ layer: l }));
+    return this;
+  }
+}
+global.L = {
+  layerGroup: () => new FakeLayerGroup('layerGroup'),
+  featureGroup: () => new FakeFeatureGroup('featureGroup'),
+  geoJSON: (gj, opts) => ({
+    _style: null,
+    setStyle(s) { this._style = s; },
+    addTo(gruppe) { gruppe.addLayer(this); return this; },
+  }),
+};
+
+class FakeMap {
+  constructor(zoom) { this._zoom = zoom; this._handlers = {}; }
+  getZoom() { return this._zoom; }
+  on(evt, fn) { (this._handlers[evt] = this._handlers[evt] || []).push(fn); return this; }
+}
+"""
+
+    treiber = """
+// Zoomstufe UNTERHALB der Schwelle (_PLATZRUNDEN_MIN_ZOOM = 9) -- genau der Fehlerfall aus dem
+// Review: Nutzer ist herausgezoomt, wenn die Ebene eingeschaltet und nachgeladen wird.
+const map = new FakeMap(7);
+
+// Reihenfolge wie im echten initLiveMap(): erst die Zoom-Wache registrieren (Karte existiert
+// bereits beim App-Start), die Daten kommen erst spaeter durch das Einschalten der Checkbox.
+_platzrundenZoomWache(map);
+
+_platzrundenLaden().then(() => {
+  setImmediate(() => {
+    try {
+      assert.strictEqual(_platzrundenGruppe._layers.length, 1, 'kein Layer eingehaengt -- fetch-Mock kaputt?');
+      const geladenerLayer = _platzrundenGruppe._layers[0];
+      assert.ok(geladenerLayer._style, "layeradd hat anpassen() nicht ausgeloest -- die Ebene bliebe bei voller Deckkraft, bis der Nutzer erneut zoomt (der urspruengliche Bug)");
+      assert.strictEqual(geladenerLayer._style.opacity, 0, 'Deckkraft haette unterhalb der Zoom-Schwelle 0 sein muessen');
+      console.log('OK');
+    } catch (err) {
+      console.error(err && err.stack ? err.stack : String(err));
+      process.exitCode = 1;
+    }
+  });
+}).catch(err => {
+  console.error(err && err.stack ? err.stack : String(err));
+  process.exitCode = 1;
+});
+"""
+
+    skript = harness + "\n" + quelltext + "\n" + treiber
+    ergebnis = subprocess.run(
+        [_NODE, "-e", skript], capture_output=True, text=True, timeout=10
+    )
+    assert ergebnis.returncode == 0 and "OK" in ergebnis.stdout, (
+        f"Node-Lauf fehlgeschlagen -- stdout={ergebnis.stdout!r} stderr={ergebnis.stderr!r}"
+    )

@@ -1,5 +1,6 @@
 """FSE-Ebenen (v12.9.0)."""
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -46,6 +47,50 @@ def test_die_inseln_sind_dabei():
     for icao in ("EDWG", "EDWY", "EDWJ", "EDWL", "EDWR", "EDWZ"):
         assert icao in ap, icao
     assert "EHOW" in ap["EDWE"]["msfs"], "Emden heisst in MSFS auch EHOW"
+
+
+def _fse_belag_tabelle():
+    """Liest die _FSE_BELAG-Tabelle aus dem Quelltext von index.html -- nicht nachbauen,
+    sondern denselben Text pruefen, der auch im Browser laeuft."""
+    start = INDEX.index("const _FSE_BELAG = {")
+    ende = INDEX.index("};", start)
+    rumpf = INDEX[start:ende]
+    paare = re.findall(r"(\d+):\s*'([^']+)'", rumpf)
+    assert paare, "Konnte _FSE_BELAG nicht aus index.html lesen"
+    return {int(code): text for code, text in paare}
+
+
+def test_belag_tabelle_stimmt_mit_fse_planner_ueberein():
+    """Review-Fund (Critical): Die Tabelle war ab Code 3 falsch und liess Code 8 aus. Massgeblich
+    ist airportSurface() in FSE-Planner (src/util/utility.js, identisch in SurfacePicker.js):
+    1 Asphalt, 2 Concrete, 3 Dirt, 4 Grass, 5 Gravel, 6 Helipad, 7 Snow, 8 Water."""
+    belag = _fse_belag_tabelle()
+    erwartet = {
+        1: "Asphalt", 2: "Beton", 3: "Erde", 4: "Gras",
+        5: "Kies", 6: "Hubschrauberplatz", 7: "Schnee", 8: "Wasser",
+    }
+    for code, text in erwartet.items():
+        assert belag.get(code) == text, f"Code {code}: erwartet {text!r}, war {belag.get(code)!r}"
+
+
+def test_belag_stimmt_gegen_echte_plaetze():
+    """EGHP Popham ist ein bekannter Grasplatz, EGPR Barra ein bekannter Dirt-Platz (die Landung
+    faellt buchstaeblich auf den Strand). Vor dem Fix zeigte EGHP faelschlich 'Sand' (surface 4
+    landete auf dem alten Tabelleneintrag fuer 'Sand') und EGEP Papa Westray (Kies) 'Wasser'."""
+    ap = json.loads(AIRPORTS.read_text(encoding="utf-8"))
+    belag = _fse_belag_tabelle()
+
+    eghp = ap["EGHP"]
+    assert eghp["surface"] == 4
+    assert belag[eghp["surface"]] == "Gras"
+
+    egpr = ap["EGPR"]
+    assert egpr["surface"] == 3
+    assert belag[egpr["surface"]] == "Erde"
+
+    egep = ap["EGEP"]
+    assert egep["surface"] == 5
+    assert belag[egep["surface"]] == "Kies"
 
 
 def test_fse_ebenen_stehen_in_der_auswahl():
@@ -102,6 +147,19 @@ def test_fse_ebenen_haben_getrennte_praeferenz_schluessel():
     assert "'friesenspy_fse_zonen'" in INDEX
 
 
+def test_attribution_nennt_fse_planner():
+    """Review-Fund (Important): Die MIT-Lizenz verlangt einen Hinweis auf FSE-Planner. Vorher
+    stand er nur in einem Quelltext-Kommentar -- fuer niemanden sichtbar. Muss jetzt tatsaechlich
+    am Leaflet-Attribution-Control landen (addAttribution/removeAttribution), nicht nur als
+    Text irgendwo im Code stehen."""
+    assert "github.com/piero-la-lune/FSE-Planner" in INDEX
+    assert "attributionControl.addAttribution" in INDEX
+    assert "attributionControl.removeAttribution" in INDEX
+    stelle = INDEX.index("function _addPreferredFseLayer(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_fseAttributionAn(map)" in rumpf
+
+
 _NODE = shutil.which("node") or shutil.which("nodejs")
 
 
@@ -118,9 +176,18 @@ def test_addPreferredFseLayer_haengt_beide_gruppen_ein_und_zwingt_zonen_nach_hin
     Recht angemerkt) -- deshalb hier der extrahierte Quelltext wirklich in Node ausgefuehrt,
     mit einem Leaflet-Fake, der bringToBack() bewusst nur auf FeatureGroup-artigen Objekten
     kennt (wie das echte Leaflet: das schlichte LayerGroup, das die Zonen-Gruppe vorher war,
-    hat diese Methode gar nicht)."""
+    hat diese Methode gar nicht).
+
+    Zweiter Review-Fund (Important), hier mit erweitertem Test nachgezogen: bringToBack() lief
+    in _addPreferredFseLayer, BEVOR _fseLaden() die Polylinien ueberhaupt gezeichnet hatte -- auf
+    einer leeren Gruppe ein No-Op. Der alte Test zaehlte nur `bringToBackCalls >= 1` und war
+    deshalb gruen, obwohl die Wirkung ausblieb. Der Fix zeichnet die Zonen jetzt VOR den Plaetzen
+    (s. Kommentar in _fseLaden) -- dieser Test prueft deshalb die tatsaechliche Zeichenreihenfolge
+    ueber eine mitgeloggte Sequenz, nicht nur, ob bringToBack() irgendwann aufgerufen wurde.
+    Ausserdem: die FSE-Planner-Attribution (Review-Fund, Attribution) muss beim Einhaengen
+    tatsaechlich am Attribution-Control landen."""
     start = INDEX.index("const _FSE_PLAETZE_URL")
-    ende_start = INDEX.index("function _addPreferredFseLayer(")
+    ende_start = INDEX.index("function _fseAttributionAus(")
     ende = INDEX.index("\n}", ende_start) + len("\n}")
     quelltext = INDEX[start:ende]
 
@@ -137,11 +204,30 @@ global.localStorage = (() => {
   };
 })();
 
-global.fetch = () => Promise.resolve({ json: () => Promise.resolve({}) });
+// Je eine Beispiel-Zone und ein Beispiel-Platz -- genug, damit _fseZonenZeichnen und
+// _fsePlaetzeZeichnen wirklich je einen Layer erzeugen und die Reihenfolge messbar wird.
+global.fetch = (url) => {
+  if (String(url).indexOf('zones') !== -1) {
+    return Promise.resolve({ json: () => Promise.resolve({ EDXX: [[53, 8], [54, 8]] }) });
+  }
+  return Promise.resolve({
+    json: () => Promise.resolve({ EDXX: { lat: 53, lon: 8, name: 'Test', msfs: ['EDXX'] } }),
+  });
+};
+
+// Mitgeloggte Reihenfolge, in der Zonen- bzw. Plaetze-Layer tatsaechlich eingehaengt werden --
+// das ist bei Leaflet-Path-Layern im gemeinsamen overlayPane genau das, was die Stapelung
+// bestimmt (spaeter eingehaengt = weiter oben).
+global._reihenfolge = [];
 
 class FakeLayerGroup {
   constructor(art) { this.art = art; this.addToCalls = []; this._layers = []; }
-  addTo(map) { this.addToCalls.push(map); return this; }
+  addTo(ziel) {
+    this.addToCalls.push(ziel);
+    if (this.art === 'polyline') global._reihenfolge.push('zone');
+    if (this.art === 'circleMarker') global._reihenfolge.push('platz');
+    return this;
+  }
   addLayer(l) { this._layers.push(l); return this; }
   eachLayer(fn) { this._layers.forEach(fn); return this; }
   bindPopup() { return this; }
@@ -160,8 +246,14 @@ global.L = {
   circleMarker: () => new FakeLayerGroup('circleMarker'),
 };
 
+class FakeAttributionControl {
+  constructor() { this.calls = []; }
+  addAttribution(text) { this.calls.push({ art: 'add', text }); }
+  removeAttribution(text) { this.calls.push({ art: 'remove', text }); }
+}
+
 class FakeMap {
-  constructor() { this._handlers = {}; }
+  constructor() { this._handlers = {}; this.attributionControl = new FakeAttributionControl(); }
   on(event, handler) { (this._handlers[event] = this._handlers[event] || []).push(handler); return this; }
 }
 """
@@ -173,11 +265,32 @@ localStorage.setItem(_FSE_ZONEN_PREF_KEY, '1');
 const map = new FakeMap();
 _addPreferredFseLayer(map);
 
-assert.strictEqual(_fsePlaetzeGruppe.addToCalls.length, 1, 'Plaetze-Gruppe wurde nicht eingehaengt');
-assert.strictEqual(_fseZonenGruppe.addToCalls.length, 1, 'Zonen-Gruppe wurde nicht eingehaengt (der urspruengliche Bug)');
-assert.ok(_fseZonenGruppe.bringToBackCalls >= 1, 'bringToBack() wurde nicht auf der Zonen-Gruppe aufgerufen');
+// fetch() ist bei uns ein natives Promise ohne echte I/O -- ein setImmediate() (Makrotask)
+// laeuft garantiert erst, nachdem Node die gesamte Mikrotask-Kette (fetch -> json -> Promise.all
+// -> then) abgearbeitet hat.
+setImmediate(() => {
+  try {
+    assert.strictEqual(_fsePlaetzeGruppe.addToCalls.length, 1, 'Plaetze-Gruppe wurde nicht eingehaengt');
+    assert.strictEqual(_fseZonenGruppe.addToCalls.length, 1, 'Zonen-Gruppe wurde nicht eingehaengt (der urspruengliche Bug)');
+    assert.ok(_fseZonenGruppe.bringToBackCalls >= 1, 'bringToBack() wurde nicht auf der Zonen-Gruppe aufgerufen');
 
-console.log('OK');
+    assert.ok(global._reihenfolge.length >= 2, 'fetch-Mock hat keine Layer erzeugt -- Test kann die Reihenfolge nicht pruefen');
+    const ersteZoneIdx = global._reihenfolge.indexOf('zone');
+    const erstePlatzIdx = global._reihenfolge.indexOf('platz');
+    assert.ok(ersteZoneIdx !== -1 && erstePlatzIdx !== -1, 'nicht beide Layer-Arten wurden gezeichnet');
+    assert.ok(ersteZoneIdx < erstePlatzIdx,
+      'Zonen wurden NICHT vor den Plaetzen gezeichnet -- die Kulisse liegt ueber den Markern (Review-Fund, bringToBack() ist auf der leeren Gruppe ein No-Op)');
+
+    const attributionCalls = map.attributionControl.calls.filter(c => c.art === 'add');
+    assert.ok(attributionCalls.length >= 1, 'FSE-Planner-Attribution wurde beim Einhaengen nicht hinzugefuegt');
+    assert.ok(attributionCalls.every(c => c.text === _FSE_ATTR), 'Attribution enthaelt nicht den erwarteten FSE-Planner-Hinweis');
+
+    console.log('OK');
+  } catch (err) {
+    console.error(err && err.stack ? err.stack : String(err));
+    process.exitCode = 1;
+  }
+});
 """
 
     skript = harness + "\n" + quelltext + "\n" + treiber

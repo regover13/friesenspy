@@ -1848,6 +1848,15 @@
       color: var(--text-bright);
     }
 
+    /* Freitext-Zusatz im Platzrunden-Popup (Bahnlaenge/Belag/Anmerkung, z. B. "520 m, UL") --
+       Review-Fund (Minor): Der Span verwies auf diese Klasse, ohne dass es sie gab. Gedaempft
+       und kleiner als Bahn/Hoehe, damit sich der Zusatz optisch unterordnet. */
+    .pr-info {
+      display: block;
+      color: var(--text-label);
+      font-size: 0.75rem;
+    }
+
     /* Aircraft markers */
     /* Helles Blau mit DUNKLEM Saum -- und das ist die zweite Fassung.
        Das Vereinsblau #191D53 mit hellem Saum war der Wunsch, ist im Sim aber durchgefallen
@@ -3734,8 +3743,16 @@ function _addPreferredAIPLayer(map, aipLayer) {
 const _PLATZRUNDEN_URL      = '/static/data/platzrunden_de.geojson';
 const _PLATZRUNDEN_MIN_ZOOM = 9;   // darunter sind 412 Polygone nur noch Rauschen
 const _PLATZRUNDEN_PREF_KEY = 'friesenspy_platzrunden';
+// Einmal definiert statt zweimal wörtlich (Stil und Zoom-Wache) -- Review-Fund (Minor).
+const _PLATZRUNDEN_OPACITY  = 0.9;
 
-const _platzrundenGruppe = L.layerGroup();
+// FeatureGroup statt LayerGroup (Review-Fund, Important): Leaflets LayerGroup.addLayer() feuert
+// KEIN 'layeradd'-Ereignis, nur FeatureGroup tut das. Die Zoom-Wache unten haengt sich per
+// `.on('layeradd', ...)` an diese Gruppe, um frisch geladene Polygone sofort auf die aktuelle
+// Zoomstufe zu bringen -- mit LayerGroup lief dieser Listener nie, und beim Herauszoomen unter
+// die Schwelle erschienen alle 412 Polygone kurz mit voller Deckkraft, bis zur naechsten
+// Zoomaenderung. Derselbe Kniff steht bereits bei _fseZonenGruppe weiter unten.
+const _platzrundenGruppe = L.featureGroup();
 let   _platzrundenGeladen = false;   // Abruf genau einmal, nicht bei jedem Einschalten
 
 function _savePlatzrundenPref(an) {
@@ -3746,7 +3763,7 @@ function _loadPlatzrundenPref() {
 }
 
 function _platzrundenStil() {
-  return { color: '#8ab4d8', weight: 1.5, opacity: 0.9, fill: false };
+  return { color: '#8ab4d8', weight: 1.5, opacity: _PLATZRUNDEN_OPACITY, fill: false };
 }
 
 // Die Hoehe ist der Grund fuer diese Ebene -- aber nur, wenn sie echt ist. 147 der 412
@@ -3758,16 +3775,22 @@ function _platzrundenPopup(p) {
   const kopf = (p.icao ? '<b>' + p.icao + '</b> ' : '') + (p.name || '');
   const zeilen = [kopf];
   if (p.bahn) zeilen.push('Bahn ' + p.bahn);
-  if (p.typ === 'strecke') {
-    zeilen.push('An-/Abflugstrecke');
-  } else if (p.hoehe_geschaetzt || p.hoehe_ft === null) {
-    zeilen.push('Höhe nicht bekannt');
-  } else {
+  // Review-Fund (Minor): Der strecke-Zweig stand VOR dem Hoehenzweig und hat sie deshalb fuer
+  // alle vier An-/Abflugstrecken unterschlagen -- dabei tragen genau diese vier eine echte,
+  // geprueften Hoehe (z. B. EDQA 1700 ft, EDWP 1000 ft). Jetzt beides unter denselben
+  // Bedingungen wie sonst: die Kennzeichnung als Strecke IMMER, die Hoehe nur, wenn sie echt ist.
+  if (p.typ === 'strecke') zeilen.push('An-/Abflugstrecke');
+  const hoeheEcht = !(p.hoehe_geschaetzt || p.hoehe_ft === null);
+  if (hoeheEcht) {
     // Ein Teil der Eintraege traegt im Datensatz keinen ausgeschriebenen Hoehenbezug. Gegen die
     // Platzhoehe gerechnet liegen sie im selben Band wie die ausdruecklich als MSL markierten
     // (Median 895 gegen 864 ft ueber Grund) -- also derselbe Bezug. Ein Fragezeichen hinter der
     // Zahl wuerde im Cockpit niemandem helfen.
-    zeilen.push('Platzrunde ' + p.hoehe_ft + ' ft MSL');
+    zeilen.push((p.typ === 'strecke' ? '' : 'Platzrunde ') + p.hoehe_ft + ' ft MSL');
+  } else if (p.typ !== 'strecke') {
+    // Fuer Strecken ohne geprüfte Hoehe (in den aktuellen Daten keine) bewusst KEINE Zeile --
+    // "Höhe nicht bekannt" war bei der Strecke ohnehin nie gemeint, sie galt nur den Runden.
+    zeilen.push('Höhe nicht bekannt');
   }
   if (p.info) zeilen.push('<span class="pr-info">' + p.info + '</span>');
   return zeilen.join('<br>');
@@ -3810,7 +3833,7 @@ function _platzrundenZoomWache(map) {
   const anpassen = () => {
     const sichtbar = map.getZoom() >= _PLATZRUNDEN_MIN_ZOOM;
     _platzrundenGruppe.eachLayer(l => {
-      if (l.setStyle) l.setStyle({ opacity: sichtbar ? 0.9 : 0 });
+      if (l.setStyle) l.setStyle({ opacity: sichtbar ? _PLATZRUNDEN_OPACITY : 0 });
     });
   };
   map.on('zoomend', anpassen);
@@ -3827,6 +3850,14 @@ function _platzrundenZoomWache(map) {
 // Linie unter allem anderen und faengt keine Klicks: sonst kaeme man an keinen Marker mehr.
 const _FSE_PLAETZE_URL = '/static/data/fse_airports_eu.json';
 const _FSE_ZONEN_URL   = '/static/data/fse_zones_eu.json';
+// Review-Fund (Important): Die MIT-Lizenz verlangt einen Hinweis, und "FSE-Planner" stand bisher
+// nur im Quelltext-Kommentar oben -- fuer niemanden sichtbar. L.TileLayer traegt seine Attribution
+// automatisch ein (GridLayer.getAttribution), aber L.circleMarker/L.polyline/LayerGroup kennen das
+// gar nicht -- deshalb hier von Hand ueber addAttribution()/removeAttribution() auf dem
+// Attribution-Control, ausgeloest genau dann, wenn eine der beiden FSE-Ebenen an ist. Leaflet
+// zaehlt dieselbe Zeichenkette intern mit (addAttribution erhoeht, removeAttribution verringert
+// einen Zaehler) -- zwei gleichzeitig aktive FSE-Ebenen zeigen den Hinweis trotzdem nur einmal.
+const _FSE_ATTR = '<a href="https://github.com/piero-la-lune/FSE-Planner">FSE-Planner</a>';
 // Zwei Haken in der Auswahl, zwei Schluessel: Ein gemeinsamer Schluessel wuerde beim
 // Ausschalten NUR der Landeflaechen auch den Zustand der Plaetze ueberschreiben.
 const _FSE_PLAETZE_PREF_KEY = 'friesenspy_fse_plaetze';
@@ -3857,8 +3888,15 @@ function _fseZonenZeichnen(zonen) {
 // Die MSFS-Entsprechung ist der eigentliche Gewinn dieses Datensatzes: Bei gut einem Drittel
 // aller Plaetze heisst der Platz im Simulator anders, bei einem Zehntel gibt es ihn dort gar
 // nicht. Ist der Code derselbe (gut die Haelfte), bleibt die Zeile weg -- sie waere Rauschen.
-const _FSE_BELAG = { 0: 'unbekannt', 1: 'Asphalt', 2: 'Beton', 3: 'Gras', 4: 'Sand',
-                     5: 'Wasser', 6: 'Erde', 7: 'Schnee' };
+//
+// Review-Fund (Critical): Diese Tabelle war ab Code 3 falsch und liess Code 8 ganz aus -- sie
+// stammte offenbar aus dem Kopf, nicht aus der Quelle. Massgeblich ist airportSurface() in
+// FSE-Planner (src/util/utility.js, identisch in SurfacePicker.js): 1 Asphalt, 2 Beton (Concrete),
+// 3 Erde (Dirt), 4 Gras (Grass), 5 Kies (Gravel), 6 Hubschrauberplatz (Helipad), 7 Schnee (Snow),
+// 8 Wasser (Water). Folge der falschen Tabelle: EGHP Popham (ein Grasplatz, surface 4) zeigte
+// "Sand", EGEP Papa Westray (Kies, surface 5) zeigte "Wasser" -- 594 von 2335 Plaetzen betroffen.
+const _FSE_BELAG = { 0: 'unbekannt', 1: 'Asphalt', 2: 'Beton', 3: 'Erde', 4: 'Gras',
+                     5: 'Kies', 6: 'Hubschrauberplatz', 7: 'Schnee', 8: 'Wasser' };
 
 function _fsePopup(icao, a) {
   const zeilen = ['<b>' + icao + '</b> ' + (a.name || '')];
@@ -3890,8 +3928,19 @@ function _fseLaden() {
     fetch(_FSE_PLAETZE_URL).then(r => r.json()),
     fetch(_FSE_ZONEN_URL).then(r => r.json())
   ]).then(([plaetze, zonen]) => {
-    _fsePlaetzeZeichnen(plaetze);
+    // Review-Fund (Important): _addPreferredFseLayer ruft bringToBack() auf, BEVOR dieser
+    // Promise-Zweig ueberhaupt lief -- auf der zu dem Zeitpunkt noch leeren Zonen-Gruppe ist das
+    // ein No-Op, und die danach gezeichneten Zonen-Linien landen ueber den Plaetze-Markern. Der
+    // sichere Fix haengt nicht an einem zweiten bringToBack()-Aufruf zur richtigen Zeit, sondern
+    // an der Zeichenreihenfolge selbst: Path-Layer werden im gemeinsamen overlayPane in der
+    // Reihenfolge sichtbar, in der sie eingehaengt werden -- Zonen zuerst zeichnen platziert sie
+    // beim allerersten Laden automatisch UNTER die danach gezeichneten Plaetze, unabhaengig
+    // davon, wann bringToBack() lief oder ob es das ueberhaupt gibt. Die bringToBack()-Aufrufe
+    // in _addPreferredFseLayer bleiben trotzdem stehen: Sie fangen den Fall ab, dass die Zonen
+    // NACH einem bereits abgeschlossenen Laden erneut ein-/ausgeschaltet werden (dann sind schon
+    // Marker vorhanden und die reine Zeichenreihenfolge greift nicht mehr).
     _fseZonenZeichnen(zonen);
+    _fsePlaetzeZeichnen(plaetze);
   }).catch(e => {
     _fseGeladen = false;
     console.warn('FSE-Daten konnten nicht geladen werden:', e);
@@ -3904,18 +3953,27 @@ function _fseLaden() {
 // der einen den gespeicherten Zustand der anderen.
 function _addPreferredFseLayer(map) {
   map.on('overlayadd', (e) => {
-    if (e.layer === _fsePlaetzeGruppe) { _saveFsePref(_FSE_PLAETZE_PREF_KEY, true); _fseLaden(); }
-    if (e.layer === _fseZonenGruppe)   { _saveFsePref(_FSE_ZONEN_PREF_KEY, true);   _fseLaden(); _fseZonenGruppe.bringToBack(); }
+    if (e.layer === _fsePlaetzeGruppe) { _saveFsePref(_FSE_PLAETZE_PREF_KEY, true); _fseLaden(); _fseAttributionAn(map); }
+    if (e.layer === _fseZonenGruppe)   { _saveFsePref(_FSE_ZONEN_PREF_KEY, true);   _fseLaden(); _fseZonenGruppe.bringToBack(); _fseAttributionAn(map); }
   });
   map.on('overlayremove', (e) => {
-    if (e.layer === _fsePlaetzeGruppe) _saveFsePref(_FSE_PLAETZE_PREF_KEY, false);
-    if (e.layer === _fseZonenGruppe)   _saveFsePref(_FSE_ZONEN_PREF_KEY, false);
+    if (e.layer === _fsePlaetzeGruppe) { _saveFsePref(_FSE_PLAETZE_PREF_KEY, false); _fseAttributionAus(map); }
+    if (e.layer === _fseZonenGruppe)   { _saveFsePref(_FSE_ZONEN_PREF_KEY, false);   _fseAttributionAus(map); }
   });
   // Zonen zuerst einhaengen und danach zusaetzlich per bringToBack() zurechtruecken -- die
   // Einhaenge-Reihenfolge allein reicht nicht, sobald spaeter noch mehr Path-Layer im selben
   // overlayPane dazukommen.
-  if (_loadFsePref(_FSE_ZONEN_PREF_KEY))   { _fseZonenGruppe.addTo(map); _fseZonenGruppe.bringToBack(); _fseLaden(); }
-  if (_loadFsePref(_FSE_PLAETZE_PREF_KEY)) { _fsePlaetzeGruppe.addTo(map); _fseLaden(); }
+  if (_loadFsePref(_FSE_ZONEN_PREF_KEY))   { _fseZonenGruppe.addTo(map); _fseZonenGruppe.bringToBack(); _fseLaden(); _fseAttributionAn(map); }
+  if (_loadFsePref(_FSE_PLAETZE_PREF_KEY)) { _fsePlaetzeGruppe.addTo(map); _fseLaden(); _fseAttributionAn(map); }
+}
+
+// addAttribution()/removeAttribution() sind ihrerseits schon zaehlend -- pro Ebene EINMAL
+// aufrufen reicht, Leaflet haelt selbst nach, wie oft dieselbe Zeichenkette noch aktiv ist.
+function _fseAttributionAn(map) {
+  if (map.attributionControl) map.attributionControl.addAttribution(_FSE_ATTR);
+}
+function _fseAttributionAus(map) {
+  if (map.attributionControl) map.attributionControl.removeAttribution(_FSE_ATTR);
 }
 
 // --------------------------------------------------------------------------
