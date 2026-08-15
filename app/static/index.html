@@ -5297,6 +5297,40 @@ function _panelBenachrichtigung(msg) {
  * blosse Existenz der Funktion (gemessen: postMessage true) sagt darueber nichts.
  * Das Ergebnis geht an die Panel-Diagnose, damit es nach EINEM Sim-Lauf feststeht.
  */
+/**
+ * Sonden-Befund um die Gegenprobe ergaenzen und melden.
+ *
+ * Ohne Gegenprobe ist eine Null nichts wert: Die erste Fassung meldete dreimal "0 Flugzeuge"
+ * -- gemessen zu einem Zeitpunkt, an dem der Nutzer noch gar nicht mit vPilot verbunden war
+ * (15.08.2026). Erst der Vergleich mit dem, was VATSIM im selben Moment in der Naehe kennt,
+ * macht den Datensatz aussagekraeftig:
+ *   simAnzahl 0, vatsimNah 7  -> der Simulator gibt injizierten Verkehr NICHT heraus
+ *   simAnzahl 0, vatsimNah 0  -> es war nichts da, die Messung sagt nichts
+ *   simAnzahl > 0             -> er gibt ihn heraus, kein WASM-Modul noetig
+ *
+ * 75 km ist bewusst etwas mehr als vPilots Injektionsradius von ~40 NM -- lieber ein paar
+ * Flugzeuge zu viel gezaehlt als eine Gegenprobe, die faelschlich null meldet.
+ */
+function _sondeMitVergleichMelden(befund) {
+  const melden = function () {
+    try { window._panelDiag('traffic-sonde', befund); } catch (e) {}
+  };
+  if (!_simPos || !_simPosFrisch()) {
+    befund.vatsimNah = null;   // ohne eigene Position keine Gegenprobe moeglich
+    melden();
+    return;
+  }
+  befund.eigenLat = Number(_simPos.lat.toFixed(3));
+  befund.eigenLon = Number(_simPos.lon.toFixed(3));
+  fetch('/api/traffic?lat=' + _simPos.lat.toFixed(4) + '&lon=' + _simPos.lon.toFixed(4) + '&r=75')
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) { befund.vatsimNah = d ? (d.traffic || []).length : null; })
+    .catch(function () { befund.vatsimNah = null; })
+    // Gemeldet wird in JEDEM Fall -- eine fehlgeschlagene Gegenprobe darf die Messung
+    // nicht verschlucken.
+    .then(melden, melden);
+}
+
 function _initPanelShellKanal() {
   if (!document.documentElement.classList.contains('vr-panel')) return;
 
@@ -5305,10 +5339,7 @@ function _initPanelShellKanal() {
     if (!d || d.quelle !== 'friesenspy-shell') return;
     if (d.art === 'pong') _panelShellDa = true;
     if (d.art === 'panel-diag' && d.befund && typeof window._panelDiag === 'function') {
-      // ZWEI Argumente: window._panelDiag(kind, data). Mit nur einem landete das ganze
-      // Objekt im Feld `kind`, der Server schneidet es auf 40 Zeichen ab, und der
-      // Datensatz kind="traffic-sonde" entstuende nie.
-      window._panelDiag('traffic-sonde', d.befund);
+      _sondeMitVergleichMelden(d.befund);
       return;
     }
     if (d.art === 'position') {

@@ -1530,10 +1530,36 @@ def _sonde_rumpf() -> str:
 
 @ohne_panel
 def test_sonde_ist_selbstbegrenzt():
-    """Eine Sonde, die im Dauerbetrieb laeuft, ist eine Wanze. Drei Messpunkte, dann Ruhe --
+    """Eine Sonde, die im Dauerbetrieb laeuft, ist eine Wanze. Feste Messpunkte, dann Ruhe --
     und die Termine werden in destroy() wieder abgeraeumt."""
-    assert PANEL_TSX.count("_SONDE_ZEITPUNKTE = [20000, 120000, 300000]") == 1
+    m = re.search(r"const _SONDE_ZEITPUNKTE = \[([^\]]*)\];", PANEL_TSX)
+    assert m, "Messpunkte fehlen"
+    punkte = [int(x) for x in m.group(1).split(",")]
+    assert 3 <= len(punkte) <= 8, "so viele Messungen sind Dauerbetrieb"
     assert "clearTimeout" in PANEL_TSX
+
+
+@ohne_panel
+def test_sonde_misst_nicht_nur_in_den_ersten_minuten():
+    """Die erste Fassung mass 20 s / 2 min / 5 min und lieferte dreimal null -- der Nutzer
+    war zu allen drei Zeitpunkten noch nicht mit vPilot verbunden (15.08.2026). In den ersten
+    Minuten ist man am Vorbereiten, nicht in der Luft."""
+    m = re.search(r"const _SONDE_ZEITPUNKTE = \[([^\]]*)\];", PANEL_TSX)
+    punkte = [int(x) for x in m.group(1).split(",")]
+    assert max(punkte) >= 20 * 60 * 1000, "spaeteste Messung liegt vor der 20. Minute"
+
+
+def test_sonde_wird_gegen_vatsim_gegengeprueft():
+    """Eine Null ohne Gegenprobe beantwortet nichts: Sie kann heissen "der Sim gibt nichts
+    heraus" ODER "es war nichts da". Erst die Zahl der Flugzeuge, die VATSIM im selben
+    Moment in der Naehe kennt, unterscheidet die beiden Faelle."""
+    stelle = INDEX.index("function _sondeMitVergleichMelden(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "/api/traffic?lat=" in rumpf
+    assert "befund.vatsimNah" in rumpf
+    # Auch wenn die Gegenprobe scheitert, MUSS gemeldet werden -- sonst verschluckt ein
+    # Netzfehler die eigentliche Messung.
+    assert ".then(melden, melden)" in rumpf
 
 
 @ohne_panel
@@ -1572,7 +1598,7 @@ def _sonde_melden_rumpf() -> str:
 def test_sonde_wird_mit_zwei_argumenten_gemeldet():
     """window._panelDiag(kind, data). Mit einem Argument landete der ganze Befund im Feld
     kind, und der Datensatz kind='traffic-sonde' entstuende nie."""
-    assert "window._panelDiag('traffic-sonde', d.befund)" in INDEX
+    assert "window._panelDiag('traffic-sonde', befund)" in INDEX
 
 
 def test_eigenes_flugzeug_hat_auch_ein_label():

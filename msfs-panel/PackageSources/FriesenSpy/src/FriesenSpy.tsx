@@ -131,10 +131,19 @@ const POSITION_HERZSCHLAG_MS = 2000;
  * nicht bestaetigt, und die Antwort entscheidet, ob ein C++-WASM-Modul noetig wird. Also
  * einmal messen statt weiter vermuten -- nebenbei im normalen Flug, ohne DevMode.
  *
- * Drei Zeitpunkte, weil beim ersten oft noch nichts injiziert ist: gerade gestartet, im
- * Steigflug, unterwegs. Danach ist Schluss -- eine Sonde im Dauerbetrieb waere eine Wanze.
+ * **Die Zeitpunkte sind der eigentliche Knackpunkt.** Erste Fassung mass 20 s, 2 min und
+ * 5 min nach dem Oeffnen des Tablets -- und lieferte dreimal "0 Flugzeuge", weil der Nutzer
+ * zu allen drei Zeitpunkten noch gar nicht mit vPilot verbunden war (gemessen 15.08.2026:
+ * Sonde um 09:52/09:54/09:57, Verbindung erst um 10:01). Eine Null, die nur heisst "es war
+ * nichts da", beantwortet gar nichts.
+ *
+ * Deshalb jetzt ueber die erste Stunde verteilt statt in den ersten fuenf Minuten. Das
+ * Gegenstueck dazu steht auf der Seite: Sie haengt an jede Messung die Zahl der Flugzeuge,
+ * die VATSIM im selben Moment in der Naehe kennt (s. `art === 'panel-diag'` in index.html).
+ * Erst dieser Vergleich macht einen Datensatz aussagekraeftig -- "Sim 0, VATSIM 7" ist eine
+ * Antwort, "Sim 0, VATSIM 0" ist keine.
  */
-const _SONDE_ZEITPUNKTE = [20000, 120000, 300000];
+const _SONDE_ZEITPUNKTE = [120000, 600000, 1200000, 2100000, 3000000];
 
 class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
   /** Das eingebettete Fenster -- Empfaenger der Positionsmeldungen. */
