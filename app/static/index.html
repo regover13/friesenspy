@@ -3827,17 +3827,23 @@ function _platzrundenZoomWache(map) {
 // Linie unter allem anderen und faengt keine Klicks: sonst kaeme man an keinen Marker mehr.
 const _FSE_PLAETZE_URL = '/static/data/fse_airports_eu.json';
 const _FSE_ZONEN_URL   = '/static/data/fse_zones_eu.json';
-const _FSE_PREF_KEY    = 'friesenspy_fse';
+// Zwei Haken in der Auswahl, zwei Schluessel: Ein gemeinsamer Schluessel wuerde beim
+// Ausschalten NUR der Landeflaechen auch den Zustand der Plaetze ueberschreiben.
+const _FSE_PLAETZE_PREF_KEY = 'friesenspy_fse_plaetze';
+const _FSE_ZONEN_PREF_KEY   = 'friesenspy_fse_zonen';
 
 const _fsePlaetzeGruppe = L.layerGroup();
-const _fseZonenGruppe   = L.layerGroup();
+// FeatureGroup statt LayerGroup: Nur sie kennt bringToBack(), das die Kulisse unter die
+// Marker zwingt -- auch dann, wenn der Nutzer die Landeflaechen NACH den Plaetzen einschaltet
+// (die Stapelung im overlayPane folgt dem addTo-Zeitpunkt, nicht der Reihenfolge in liveOverlays).
+const _fseZonenGruppe   = L.featureGroup();
 let   _fseGeladen = false;
 
-function _saveFsePref(an) {
-  try { localStorage.setItem(_FSE_PREF_KEY, an ? '1' : '0'); } catch (e) {}
+function _saveFsePref(key, an) {
+  try { localStorage.setItem(key, an ? '1' : '0'); } catch (e) {}
 }
-function _loadFsePref() {
-  try { return localStorage.getItem(_FSE_PREF_KEY) === '1'; } catch (e) { return false; }
+function _loadFsePref(key) {
+  try { return localStorage.getItem(key) === '1'; } catch (e) { return false; }
 }
 
 function _fseZonenZeichnen(zonen) {
@@ -3893,12 +3899,23 @@ function _fseLaden() {
 }
 
 // Wie bei OpenAIP und Platzrunden: VOR dem Bau der Layers-Control aufrufen -- sonst zeigt
-// der Haken dauerhaft den falschen Zustand.
+// der Haken dauerhaft den falschen Zustand. Jede der beiden Ebenen mit ihrem EIGENEN
+// Praeferenz-Schluessel behandeln (s. Kommentar oben) -- sonst ueberschreibt das Umschalten
+// der einen den gespeicherten Zustand der anderen.
 function _addPreferredFseLayer(map) {
-  const meine = (l) => l === _fsePlaetzeGruppe || l === _fseZonenGruppe;
-  map.on('overlayadd',    (e) => { if (meine(e.layer)) { _saveFsePref(true);  _fseLaden(); } });
-  map.on('overlayremove', (e) => { if (meine(e.layer)) { _saveFsePref(false); } });
-  if (_loadFsePref()) { _fsePlaetzeGruppe.addTo(map); _fseLaden(); }
+  map.on('overlayadd', (e) => {
+    if (e.layer === _fsePlaetzeGruppe) { _saveFsePref(_FSE_PLAETZE_PREF_KEY, true); _fseLaden(); }
+    if (e.layer === _fseZonenGruppe)   { _saveFsePref(_FSE_ZONEN_PREF_KEY, true);   _fseLaden(); _fseZonenGruppe.bringToBack(); }
+  });
+  map.on('overlayremove', (e) => {
+    if (e.layer === _fsePlaetzeGruppe) _saveFsePref(_FSE_PLAETZE_PREF_KEY, false);
+    if (e.layer === _fseZonenGruppe)   _saveFsePref(_FSE_ZONEN_PREF_KEY, false);
+  });
+  // Zonen zuerst einhaengen und danach zusaetzlich per bringToBack() zurechtruecken -- die
+  // Einhaenge-Reihenfolge allein reicht nicht, sobald spaeter noch mehr Path-Layer im selben
+  // overlayPane dazukommen.
+  if (_loadFsePref(_FSE_ZONEN_PREF_KEY))   { _fseZonenGruppe.addTo(map); _fseZonenGruppe.bringToBack(); _fseLaden(); }
+  if (_loadFsePref(_FSE_PLAETZE_PREF_KEY)) { _fsePlaetzeGruppe.addTo(map); _fseLaden(); }
 }
 
 // --------------------------------------------------------------------------
