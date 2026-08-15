@@ -3836,20 +3836,33 @@ function _verkehrAbrufen(map) {
 }
 
 function _verkehrUebernehmen(liste, ageSek) {
-  if (!_verkehrGruppe) return;
   // Die Fortrechnung muss dort beginnen, wo der Poller die Daten geholt hat, nicht dort, wo
   // die Antwort ankam -- sonst laeuft die Anzeige um das Alter der Momentaufnahme hinterher.
-  const gemessenTs = Date.now() - Math.round(ageSek * 1000);
+  _verkehrZeichnen(liste, Date.now() - Math.round(ageSek * 1000),
+                   function (e) { return e.cs; });
+}
+
+// Der Simulator meldet, was in DIESER Sekunde gilt -- kein Alter, nichts nachzuholen.
+// Der Schluessel traegt sein Praefix, damit er nie mit einem VATSIM-Callsign kollidieren kann.
+function _simVerkehrUebernehmen(liste) {
+  _verkehrZeichnen(liste, Date.now(), function (e) { return 'sim:' + e.id; });
+}
+
+// Marker anlegen, fortschreiben, aufraeumen -- fuer beide Quellen derselbe Weg. Der
+// zeichnende Teil kennt seinen Zulieferer nicht: Er bekommt eine Liste, den Zeitpunkt, zu dem
+// sie gemessen wurde, und eine Vorschrift, wie ein Eintrag zu seinem Schluessel kommt.
+function _verkehrZeichnen(liste, gemessenTs, schluesselVon) {
+  if (!_verkehrGruppe) return;
   const gesehen = Object.create(null);
 
   for (let i = 0; i < liste.length; i++) {
     const e  = liste[i];
-    const cs = e && e.cs;
+    const cs = e && schluesselVon(e);
     if (!cs) continue;
-    // Das eigene Flugzeug ist hier nicht auszufiltern -- das erledigt der Server ueber die
-    // CID. Clientseitig ginge es nicht: _meinCallsign() liest aus liveData, und dort stehen
-    // nur FRS-Piloten -- also gerade nicht der Fall, um den es geht (eigener Flug ohne
-    // FRS-Callsign).
+    // Das eigene Flugzeug ist hier nicht auszufiltern -- beim VATSIM-Feed erledigt das der
+    // Server ueber die CID, beim Sim-Verkehr das Panel ueber die Entfernung. Clientseitig
+    // ginge es nicht: _meinCallsign() liest aus liveData, und dort stehen nur FRS-Piloten --
+    // also gerade nicht der Fall, um den es geht (eigener Flug ohne FRS-Callsign).
     gesehen[cs] = true;
     delete _verkehrFehlt[cs];
 
@@ -3900,7 +3913,8 @@ function _verkehrUebernehmen(liste, ageSek) {
   // Aber erst beim ZWEITEN Fehlen: Der Server kappt hart bei 60 nach Entfernung, ohne
   // Hysterese. Ein Flugzeug auf Rang 60/61 wechselt zwischen zwei Abrufen hin und her, und
   // jedes Loeschen samt Neuanlegen ist im Kniebrett als Aufblitzen sichtbar (derselbe Fund,
-  // der schon setIcon aus dem Takt genommen hat).
+  // der schon setIcon aus dem Takt genommen hat). Beim Sim-Verkehr gilt dasselbe -- dort
+  // deckelt das Panel, nach derselben Regel und mit derselben harten Kante.
   for (const cs in _verkehrMarker) {
     if (gesehen[cs]) continue;
     _verkehrFehlt[cs] = (_verkehrFehlt[cs] || 0) + 1;
@@ -3917,7 +3931,10 @@ function _verkehrUebernehmen(liste, ageSek) {
 // 12.000 ft -- zwei Wahrheiten ueber dieselbe Zahl.
 function _verkehrPopup(e) {
   const route = (e.dep || e.arr) ? fmtRouteHtml(e.dep, e.arr) : '—';
-  return '<div class="popup-callsign">' + escHtml(String(e.cs || '').toUpperCase()) + '</div>'
+  // Der Simulator liefert nach heutigem Stand keinen Callsign -- eine leere fette Zeile ganz
+  // oben waere ein sichtbarer Fehler, kein leeres Feld.
+  const kopf = String(e.cs || '').toUpperCase() || 'Verkehr';
+  return '<div class="popup-callsign">' + escHtml(kopf) + '</div>'
        + '<div class="popup-row">Muster: <span>' + acLink(e.ac || '') + '</span></div>'
        + '<div class="popup-row">Flugplan: <span>' + route + '</span></div>'
        + '<div class="popup-row">Höhe: <span>' + _labelHoehe(e.alt) + '</span></div>'

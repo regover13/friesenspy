@@ -1747,3 +1747,40 @@ def test_spur_wird_aufgeraeumt():
     stelle = PANEL_TSX.index("private verkehrAufbereiten(")
     rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
     assert "verkehrSpur.delete" in rumpf
+
+
+def test_beide_quellen_zeichnen_ueber_denselben_weg():
+    """Zwei Kopien derselben Markerpflege waeren zwei Orte, an denen dieselbe Hysterese, das
+    Icon-Sparen und das Popup-Sparen kaputtgehen koennen."""
+    assert "function _verkehrZeichnen(" in INDEX
+    stelle = INDEX.index("function _verkehrUebernehmen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_verkehrZeichnen(" in rumpf
+    stelle = INDEX.index("function _simVerkehrUebernehmen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_verkehrZeichnen(" in rumpf
+
+
+def test_sim_schluessel_kollidiert_nicht_mit_callsigns():
+    """Beide Quellen legen in derselben Ablage ab. Ein Sim-Schluessel muss deshalb erkennbar
+    ein Sim-Schluessel sein, auch wenn sich die Quellen einmal ueberschneiden."""
+    stelle = INDEX.index("function _simVerkehrUebernehmen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "'sim:'" in rumpf
+
+
+def test_sim_positionen_gelten_ab_jetzt():
+    """Der VATSIM-Feed traegt ein Alter (die Momentaufnahme des Pollers), der Sim nicht -- er
+    meldet, was in dieser Sekunde gilt. Ein Alter dazuzurechnen wuerde die Fortrechnung um
+    genau diesen Betrag zu weit laufen lassen."""
+    stelle = INDEX.index("function _simVerkehrUebernehmen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "Date.now()" in rumpf
+
+
+def test_popup_bleibt_lesbar_ohne_callsign():
+    """Der Simulator liefert nach heutigem Stand keinen Callsign. Eine leere fette Zeile ganz
+    oben im Popup waere ein sichtbarer Fehler."""
+    stelle = INDEX.index("function _verkehrPopup(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "Verkehr" in rumpf
