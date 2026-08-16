@@ -50,6 +50,27 @@ mkdir -p /opt/friesenspy/data
 # certbot: certbot --nginx -d friesenspy.devprops.de
 ```
 
+## Kniebrett-Standards (stehende Regeln — IMMER einhalten)
+
+- **Im MSFS-Kniebrett hält KEIN Browser-Speicher über einen Sim-Neustart.** Nicht
+  `localStorage`, nicht `sessionStorage`, nicht Cookies — unabhängig von Attributen und
+  Laufzeiten. Beim Start ist der gesamte Bereich leer (gemessen 16.08.2026: `localStorage` von
+  8 Schlüsseln auf 0, gesetztes Cookie fort). Wer etwas merken will, hat genau zwei
+  Möglichkeiten: **MSFS' eigene Ablage** (`SetStoredData`, in der EFB-Shell als `DataStore` —
+  derselbe Weg wie beim GTN 750), oder den **Server**, verankert an einer dort abgelegten
+  Kennung (so machen es `panel_devices` und `panel_prefs`). Eine dritte gibt es nicht.
+- **`features.localStorage` in der Selbstdiagnose beantwortet das NICHT.** Die Sonde schreibt
+  und liest im selben Atemzug; sie kann „funktioniert" von „überlebt einen Neustart" nicht
+  unterscheiden. Dasselbe gilt inzwischen für `speicher.merkerDa` (s.
+  `docs/efb-panel-debugging.md`). Der einzige gültige Nachweis ist ein Wert, der **vor** der
+  Sitzung geschrieben wurde.
+- **Funktioniert etwas im Kniebrett nachweislich, ist es die Vorlage — nicht nur der Beleg.**
+  Am 16.08.2026 sind zwei Releases (13.6.0, 13.6.2) verpufft, weil aus „das Anmelde-Cookie hält
+  ja auch" auf Cookie-Persistenz geschlossen wurde, statt `_iframe_samesite` und
+  `getOrCreateDeviceId` zu lesen. Beide hätten die Antwort gegeben; in `panel_devices` stand
+  seit dem 13.08. wörtlich, dass Coherent GT Cookies nur im Speicher hält. Erst die
+  Konfiguration des funktionierenden Vorbilds lesen, dann die eigene schreiben.
+
 ## UI-Standards (stehende Regeln — IMMER einhalten)
 
 - **Blau (#2d9cdb, CSS-Variable `--green` — historischer Name!) ist Klickbarem vorbehalten:**

@@ -536,3 +536,26 @@ verankert an der Kennung, die über `/auth/device` aus genau dieser Geräte-ID e
 Attributen und Laufzeiten. Dauerhaft ist nur, was über den *Simulator* geht: `DataStore` in der
 Shell, oder ein Server, an dem eine dort abgelegte Kennung hängt. Wer etwas merken will, muss
 eine dieser beiden Welten benutzen; die dritte gibt es nicht.
+
+**Vorbehalt zur `speicher`-Sonde (seit v13.6.3):** `merkerDa` ist als Überlebens-Nachweis
+**wertlos geworden**. Die Sonde läuft rund 2,5 s nach dem Laden — da hat die Antwort von
+`/api/prefs` das Cookie längst neu geschrieben. Sie meldet seither nur noch, dass der eigene
+Code lief, nicht, dass etwas den Neustart überstanden hat. Das ist genau die Verwechslung, an
+der `features.localStorage` heute zweimal schuld war; bewusst nicht nachgeschärft, weil der
+Beweis inzwischen woanders steht und eindeutiger ist:
+
+```sql
+-- Was war gespeichert?
+SELECT kontext, prefs_json, updated_at FROM panel_prefs WHERE cid = <cid>;
+-- Was kam beim Start tatsächlich an? (kind='karte', anlass='bereit')
+SELECT created_at, payload_json FROM panel_diag WHERE kind='karte' ORDER BY id DESC LIMIT 5;
+```
+
+Gemessen am 16.08.2026 über einen echten Sim-Neustart (Gerät zuletzt gesehen 20:18:44,
+Kartenaufbau 20:19:39): neun von neun Merkern wiederhergestellt — `Dark`, Vollbild,
+Karten-Reiter, OpenAIP + Platzrunden + Verkehr, Track-up, Moving Map, und die Mitte auf
+`53.6341, 10.0036` gegen gespeicherte `53.6341, 10.0037`. Der Zoom stand auf 13 statt 16, weil
+Moving Map die Karte in der Sekunde nach dem Aufbau auf das Flugzeug zog — kein Fehler.
+
+**`lsSchlüssel` bleibt dagegen aussagekräftig:** Es zählt, was tatsächlich im Browser-Speicher
+liegt, und ist unmittelbar nach einem Sim-Start ~0.

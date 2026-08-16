@@ -910,6 +910,28 @@ Sichtbarkeit setzen („Wer darf über mich benachrichtigt werden?"). Nur eingel
 
 ---
 
+## GET /api/prefs · PUT /api/prefs
+
+Karten-Merker des eingeloggten Nutzers (Basiskarte, Ebenen-Haken, Track-up, Moving Map, zuletzt betrachteter Ausschnitt, aktiver Tab, Vollbild). Seit v13.6.3.
+
+**Warum serverseitig:** Im MSFS-Kniebrett hält **kein** Browser-Speicher über einen Sim-Neustart — gemessen am 16.08.2026 fällt `localStorage` von 8 Schlüsseln auf 0, ein gesetztes Cookie ist fort. Zwei Anläufe (localStorage in v13.6.0, Cookie in v13.6.2) sind daran gescheitert. Dauerhaft ist dort nur MSFS' eigene Ablage (`SetStoredData`, s. `panel_devices` und `docs/efb-panel-debugging.md`); über die dort liegende Geräte-ID bekommt das Panel bei jedem Start ein frisches Sitzungs-Cookie, und daran hängen diese Merker.
+
+**Query** `kontext=panel|web` (Default `web`). Trennt Kniebrett und Website — der Kartenwechsel am Schreibtisch soll nicht die Karte im Cockpit umstellen. Unbekannte Werte fallen auf `web` zurück, damit ein Aufrufer nicht beliebig viele Zeilen je CID anlegen kann.
+
+**GET** — ohne Anmeldung `{"prefs": {}}` statt `401`: Die Karte soll dann mit ihren Vorgaben aufgehen, nicht mit einem Fehler. Ein Merker ist kein Geheimnis, sein Fehlen kein Ausnahmefall.
+
+**Response** `{"prefs": {"<schlüssel>": "<wert>", …}}` — Werte immer als Zeichenkette. Unlesbares JSON in der Datenbank gilt als „nichts gespeichert"; ein beschädigter Eintrag darf die Karte nicht am Aufgehen hindern.
+
+**PUT** — nur eingeloggt (sonst `401`). Ersetzt den Stand vollständig, statt zu ergänzen: Das Frontend schickt immer alles, und ein abgewählter Merker muss verschwinden können.
+
+**Body (JSON)** `{"prefs": {"<schlüssel>": "<wert>", …}}` — flach, höchstens 40 Schlüssel, Schlüssel und Werte je höchstens 200 Zeichen. Zahlen und Wahrheitswerte werden zu Zeichenketten normalisiert (das Frontend vergleicht gegen `'1'`). Verstöße → `400`.
+
+**Response** `{"ok": true, "anzahl": <int>}`
+
+**Speicher:** Tabelle `panel_prefs` (`cid` + `kontext` als Schlüssel, `prefs_json`, `updated_at`).
+
+---
+
 ## DELETE /api/push/unsubscribe
 
 Push-Subscription entfernen.

@@ -6,31 +6,43 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
-## 2026-08-16 — Karten-Merker ins Cookie (v13.6.0)
+## 2026-08-16 — Karten-Merker auf dem Server (v13.6.3)
 
-**Betrifft `app/static/index.html`** — bitte beim Rebase beachten, die Datei wird gerade
-von zwei Seiten angefasst (parallel: Radar-Label-Zuordnung / Sim-Verkehr).
+**Betrifft `app/static/index.html`, `app/main.py`, `app/database.py`** — bitte beim Rebase
+beachten, `index.html` wird gerade von zwei Seiten angefasst.
 
-**Was sich geaendert hat:** Alle neun Karten-Merker lesen und schreiben nicht mehr direkt
-ueber `localStorage`, sondern ueber `_prefLies(key)` / `_prefSchreib(key, wert)`. Darunter
-liegt ein Cookie `fs_karte`. Die **Signaturen der bekannten Zugriffsfunktionen sind
-unveraendert** (`_loadLayerPref`, `_loadAIPPref`, `_loadFsePref`, `_naviLies`, …) — wer sie
-aufruft, merkt nichts. Nur wer `localStorage.getItem('friesenspy_…')` **direkt** schreibt,
-greift ins Leere.
+**Dieser Eintrag ersetzt einen frueheren.** Er beschrieb einen Cookie-Speicher (v13.6.0/13.6.2)
+— der Weg ist **verworfen**. Wer ihn noch im Kopf hat: Es gibt kein `fs_karte` als Wahrheit
+mehr, nur noch als lokalen Zwischenspeicher.
 
-**Grund:** Im Kniebrett ueberlebt `localStorage` keinen Sim-Neustart. Beleg ist ein
-Panel-Start, der einen zwei Stunden alten Wert zurueckbekam — das kann kein Anwendungsfehler
-sein. Ausfuehrlich in `docs/efb-panel-debugging.md` und `docs/architecture.md`.
+**Was gilt:** Alle Karten-Merker laufen ueber `_prefLies(key)` / `_prefSchreib(key, wert)`.
+Fuehrende Quelle ist `GET/PUT /api/prefs?kontext=panel|web`, Tabelle `panel_prefs`
+(cid + kontext). Die **Signaturen der bekannten Zugriffsfunktionen sind unveraendert**
+(`_loadLayerPref`, `_loadAIPPref`, `_loadFsePref`, `_naviLies`, …) — wer sie aufruft, merkt
+nichts. Nur wer `localStorage.getItem('friesenspy_…')` direkt liest, greift ins Leere.
 
-**Neu:** `_ausschnittStart()` / `_ausschnittBeobachten(map)` merken Mitte und Zoom der
-Live-Karte. Die Karte startet deshalb **nicht mehr unbedingt ueber EDWG** — das ist jetzt der
-Rueckfall. Wer sich in einem Test auf `center: _KARTE_MITTE` verlassen hat: Die Zusicherung
-steht jetzt in `test_live_karte_oeffnet_ueber_edwg` am Rumpf von `_ausschnittStart`.
+**Warum:** Im Kniebrett haelt kein Browser-Speicher ueber einen Sim-Neustart — `localStorage`
+faellt von 8 Schluesseln auf 0, ein Cookie ist fort. Zwei Anlaeufe sind daran gescheitert,
+obwohl es in `panel_devices` und in der EFB-Shell seit dem 13.08. dokumentiert stand.
+Ausfuehrlich in `docs/efb-panel-debugging.md` und `docs/architecture.md`.
 
-**Fuer Node-Tests wichtig:** Ein Quelltext-Ausschnitt, der `_loadFsePref` o. ae. enthaelt,
-braucht jetzt auch den Speicher — sonst `_prefLies is not defined`. Muster steht in
-`tests/test_fse.py` (`_pref_quelltext()`) und `tests/test_karte_merker.py` (Cookie-Glas als
-Attrappe). Suite nach dem Rebase auf 8a7f5dc: **1744 gruen**.
+**Drei Fallen, wenn ihr an dem Bereich arbeitet:**
+- `initLiveMap` wartet mit `await _prefsPromise`, BEVOR die Karte gebaut wird. Ohne das
+  springt die Basisebene um und der Ebenen-Haken steht falsch.
+- `_prefServerPlanen` sendet nichts vor der Serverantwort (`if (!_prefVomServer) return;`).
+  Im Kniebrett ist der lokale Stand beim Aufbau leer — ein Zuruecksenden ueberschriebe den
+  gespeicherten Stand mit Leere.
+- `_trackUp`/`_movingMap` werden beim LADEN des Skripts gelesen, also vor der Antwort. Sie
+  werden in `_prefsPromise` nachgezogen, aber nur solange `_naviBeruehrt` false ist.
+
+**Neu dazu:** `friesenspy_tab` und `friesenspy_vollbild` (Zustand des Kniebretts). Die Karte
+startet deshalb **nicht mehr unbedingt ueber EDWG** und **nicht mehr unbedingt auf LIVE** —
+beides ist jetzt Rueckfall. Zusicherungen dazu stehen in `tests/test_karte_merker.py`.
+
+**Fuer Node-Tests:** Ein Quelltext-Ausschnitt, der `_loadFsePref` o. ae. enthaelt, braucht den
+Speicher mit (`_pref_quelltext()` in `tests/test_fse.py`) und im Harness ein
+`document.documentElement` sowie ein `fetch` — Muster in `tests/test_karte_merker.py`.
+Suite nach dem Rebase auf 4fef390: **1786 gruen**.
 
 ---
 
