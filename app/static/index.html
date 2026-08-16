@@ -8585,6 +8585,24 @@ function _eigenesFlugzeugZeichnen() {
       vatsimMarker.setIcon(makeAircraftIcon(hdg));
       vatsimMarker._fsHeading = hdg;
     }
+    // Und das Schild ebenso. Es stand hier NICHT, und der Fehler war im Flug sofort sichtbar
+    // (Nutzer-Fund 16.08.2026): Position und Kurs liefen im Sekundentakt, Hoehe und
+    // Geschwindigkeit sprangen daneben nur alle 15 Sekunden -- an EINEM Symbol zwei
+    // verschiedene Zeitstaende.
+    //
+    // Die Regel dahinter gilt ueberall: Wo eine Sim-Angabe vorliegt, hat sie Vorrang; von
+    // VATSIM kommt nur, was der Simulator nicht weiss (hier Rufzeichen und Muster).
+    const meiner = _meinLiveEintrag();
+    const meinLabel = _verkehrLabel({
+      alt: (_simPos.alt != null) ? _simPos.alt : (meiner ? meiner.altitude : 0),
+      gs:  _simPos.gs,
+      ac:  meiner ? meiner.aircraft : '',
+      cs:  meinCs,
+    });
+    if (vatsimMarker._fsLabel !== meinLabel) {
+      if (vatsimMarker.getTooltip()) vatsimMarker.setTooltipContent(meinLabel);
+      vatsimMarker._fsLabel = meinLabel;
+    }
     return;
   }
 
@@ -8695,9 +8713,16 @@ function _latenzMelden() {
 
 /** Eigenes Callsign aus dem VATSIM-Strom (fuer die Zuordnung des eigenen Markers). */
 function _meinCallsign() {
+  const e = _meinLiveEintrag();
+  return e ? e.callsign : null;
+}
+
+/** Der eigene Datensatz aus dem VATSIM-Strom -- fuer alles, was der Simulator nicht weiss. */
+function _meinLiveEintrag() {
+  if (_meineCid == null) return null;
   const liste = liveData || [];
   for (let i = 0; i < liste.length; i++) {
-    if (String(liste[i].cid) === String(_meineCid)) return liste[i].callsign;
+    if (String(liste[i].cid) === String(_meineCid)) return liste[i];
   }
   return null;
 }

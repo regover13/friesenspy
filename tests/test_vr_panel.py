@@ -1674,6 +1674,20 @@ def test_diagnose_wird_mit_zwei_argumenten_gemeldet():
     assert "window._panelDiag(art, befund)" in INDEX
 
 
+def test_eigenes_label_folgt_dem_simulator_nicht_vatsim():
+    """Nutzer-Fund 16.08.2026 im Flug: Position und Kurs liefen im Sekundentakt, Hoehe und
+    Geschwindigkeit sprangen daneben nur alle 15 Sekunden -- an EINEM Symbol zwei verschiedene
+    Zeitstaende. Wo eine Sim-Angabe vorliegt, hat sie Vorrang; von VATSIM kommt nur, was der
+    Simulator nicht weiss (Rufzeichen, Muster)."""
+    stelle = INDEX.index("function _eigenesFlugzeugZeichnen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    zweig = rumpf[rumpf.index("if (vatsimMarker) {"):]
+    assert "_simPos.gs" in zweig, "Geschwindigkeit muss aus dem Simulator kommen"
+    assert "_simPos.alt" in zweig, "Hoehe ebenso"
+    assert "meiner ? meiner.aircraft" in zweig, "Muster kennt nur VATSIM"
+    assert "setTooltipContent" in zweig, "sonst wird das Schild nie aktualisiert"
+
+
 def test_eigenes_flugzeug_hat_auch_ein_label():
     """Im Sim ohne VATSIM stand am eigenen Flugzeug gar nichts -- nur ein Popup auf Klick
     (Live-Test 15.08.2026). Die Werte muessen am Symbol stehen wie bei allen anderen."""

@@ -1,5 +1,14 @@
 [
   {
+    "version": "13.4.1",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Eigene Höhe und Geschwindigkeit im Sekundentakt",
+    "items": [
+      "✈️ Am eigenen Flugzeug liefen Position und Kurs aus dem Simulator, Höhe und Geschwindigkeit daneben sprangen aber weiter im 15-Sekunden-Takt von VATSIM — an einem Symbol zwei verschiedene Zeitstände. Jetzt gilt überall dieselbe Regel: Wo der Simulator etwas weiß, hat er Vorrang; von VATSIM kommt nur, was er nicht weiß — Rufzeichen und Muster."
+    ]
+  },
+  {
     "version": "13.4.0",
     "date": "2026-08-16",
     "highlight": false,
