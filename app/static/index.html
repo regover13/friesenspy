@@ -4626,6 +4626,9 @@ const _PAARUNG_LOESEN_TAKTE = 4;    // erst nach so vielen Verstoessen IN FOLGE
 let _paarungen = Object.create(null);
 // uId -> { alt, ts } -- fuer die Steig-/Sinkrate aus den Sim-Hoehen.
 let _simHoehenSpur = Object.create(null);
+// callsign -> { alt, gs } eines Friesen, den der Simulator gerade liefert. Nur die Werte, die
+// VATSIM nicht besser weiss; Position und Kurs gehen ueber _positionsRoh (s. dort).
+let _friesenSimWerte = Object.create(null);
 
 // Dieselbe Grenze wie fuer die eigene Position: Es ist dieselbe Bruecke, und zwei Grenzen
 // waeren zwei Wahrheiten darueber, ob der Simulator noch da ist.
@@ -4760,7 +4763,18 @@ function _verkehrZusammenfuehren() {
     const v = zugeordnet[s.id];
     // Einem Friesen zugeordnet? Dann ist er schon gezeichnet -- blau, mit Callsign, aus
     // /api/live. Ein zweites Symbol daneben waere die Dopplung, um die es geht.
-    if (v && v._friese) continue;
+    //
+    // Stattdessen bekommt SEIN Marker die Sim-Werte: Position und Kurs ueber _positionsRoh
+    // (dort liest der Sekundentakt, und mit ts=jetzt ist die Fortrechnung praktisch null),
+    // Hoehe und Geschwindigkeit ueber _friesenSimWerte fuers Schild. Damit bewegt sich ein
+    // Friese im Kniebrett so genau wie das eigene Flugzeug -- gemessen jede Sekunde statt
+    // vierzehn von fuenfzehn Sekunden geschaetzt.
+    if (v && v._friese) {
+      _positionsRoh[v.cs] = { lat: s.lat, lon: s.lon, hdg: Number(s.hdg) || 0,
+                              gs: Number(s.gs) || 0, ts: _simVerkehr.ts };
+      _friesenSimWerte[v.cs] = { alt: s.alt, gs: s.gs };
+      continue;
+    }
     const e = { lat: s.lat, lon: s.lon, alt: s.alt, hdg: s.hdg, gs: s.gs,
                 ac: s.ac, cs: s.cs, gnd: s.gnd };
     if (v) {
@@ -4895,6 +4909,11 @@ function _paarungenAufraeumen(sim) {
   for (let i = 0; i < sim.length; i++) da[sim[i].id] = true;
   for (const id in _paarungen) if (!da[id]) delete _paarungen[id];
   for (const id in _simHoehenSpur) if (!da[id]) delete _simHoehenSpur[id];
+  // Und die Friesen, die der Simulator nicht mehr liefert: Ihr Marker muss zurueck an den
+  // VATSIM-Zulauf, sonst stuende er fuer immer auf der letzten Sim-Position.
+  const simCs = Object.create(null);
+  for (const id in _paarungen) simCs[_paarungen[id].cs] = true;
+  for (const cs in _friesenSimWerte) if (!simCs[cs]) delete _friesenSimWerte[cs];
 }
 
 // Der eine Punkt, an dem gezeichnet wird -- egal welche Quelle sich gemeldet hat.
@@ -9007,7 +9026,30 @@ function _simPosFrisch() {
  * Simulator meldet, hat er recht -- er kennt die Position auf den Meter, VATSIM auf 15
  * Sekunden.
  */
+/**
+ * Den VATSIM-Datensatz eines Friesen mit den Sim-Werten ueberschreiben, soweit vorhanden.
+ *
+ * Dieselbe Regel wie ueberall: Wo eine Sim-Angabe vorliegt, hat sie Vorrang; von VATSIM kommt
+ * nur, was der Simulator nicht weiss (Rufzeichen, Muster, Flugplan). Ohne das stuende an einem
+ * Friesen-Symbol, das sich im Sekundentakt bewegt, eine Hoehe von vor einer halben Minute --
+ * genau der Fehler, der beim eigenen Flugzeug schon aufgefallen ist (Nutzer-Fund 16.08.2026).
+ *
+ * Das Original bleibt unangetastet: `p` steckt in liveData und wird anderswo weiterverwendet.
+ */
+function _mitSimWerten(p) {
+  const sim = p && p.callsign ? _friesenSimWerte[p.callsign] : null;
+  if (!sim) return p;
+  const kopie = Object.assign({}, p);
+  if (sim.alt != null) kopie.altitude = sim.alt;
+  if (sim.gs != null) kopie.groundspeed = sim.gs;
+  return kopie;
+}
+
 function _markerGehoertDemSim(callsign) {
+  // Ein Friese, den der Simulator gerade liefert und dem eine Zuordnung sicher gelungen ist
+  // (s. _verkehrZusammenfuehren). Fuer ihn gilt dasselbe wie fuer das eigene Flugzeug: Der
+  // Simulator kennt seine Position auf den Meter, VATSIM auf 29 Sekunden.
+  if (_friesenSimWerte[callsign] && _simVerkehrFrisch()) return true;
   if (!_simPosFrisch()) return false;
   const meins = _meinCallsign();
   return !!meins && meins === callsign;
@@ -9354,7 +9396,7 @@ function updateMap(pilots) {
       // das DOM-Element, und updateMap laeuft auf DREI Wegen (SSE, 10-Sekunden-Neuzeichnen,
       // 15-Sekunden-Abruf). Genau dieses unnoetige Neuaufbauen war schon einmal als
       // Aufblitzen im Kniebrett sichtbar.
-      const beschriftung = _verkehrLabel(p);
+      const beschriftung = _verkehrLabel(_mitSimWerten(p));
       if (vorhanden._fsLabel !== beschriftung) {
         vorhanden.setTooltipContent(beschriftung);
         vorhanden._fsLabel = beschriftung;
@@ -9374,12 +9416,12 @@ function updateMap(pilots) {
         // Das Label als Tooltip, NICHT im Icon: Der Marker dreht bei Track-up mit
         // (rotateWithView), ein Label darin stuende auf dem Kopf. Tooltips liegen bei
         // leaflet-rotate im nicht drehenden Pane und bleiben aufrecht.
-        .bindTooltip(_verkehrLabel(p),
+        .bindTooltip(_verkehrLabel(_mitSimWerten(p)),
                      { permanent: true, direction: 'bottom', offset: [0, 4],
                        className: 'traffic-label', opacity: 1 })
         .addTo(liveMap);
       marker._fsHeading = hdg;
-      marker._fsLabel = _verkehrLabel(p);
+      marker._fsLabel = _verkehrLabel(_mitSimWerten(p));
       mapMarkers[p.callsign] = marker;
       // Ersten Track-Fetch triggern wenn Pilot neu erscheint
       if (p.cid) _fetchInitialLiveTrack(p.cid, p.callsign);

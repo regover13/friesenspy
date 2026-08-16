@@ -7,7 +7,7 @@
     "items": [
       "✈️ Die Karte sucht nicht mehr in jeder Sekunde neu, welches Symbol aus dem Simulator zu welchem Rufzeichen gehört — sie erkennt es einmal und merkt es sich. Damit hören die Schilder auf zu flackern, und ein sinkendes Flugzeug behält seines.",
       "🎯 Erkannt wird nur, wenn es eindeutig ist. Kommen zwei Flugzeuge in Frage, bleibt das Symbol lieber ohne Rufzeichen — ein falscher Name wäre schlimmer als gar keiner. Bleibt am Ende genau eines übrig, ist auch das eindeutig: Fliegen fünf zusammen und vier sind erkannt, ist der fünfte klar.",
-      "🅿️ Am FriesenFlieger-Freitag stand bisher jeder Friese doppelt auf der Karte — einmal blau mit Rufzeichen, einmal grau daneben aus dem Simulator. Das ist behoben.",
+      "🅿️ Am FriesenFlieger-Freitag stand bisher jeder Friese doppelt auf der Karte — einmal blau mit Rufzeichen, einmal grau daneben aus dem Simulator. Das ist behoben. Mehr noch: Erkennt der Simulator einen Friesen, bewegt sich dessen Symbol jetzt genauso genau wie dein eigenes — jede Sekunde gemessen statt alle fünfzehn, und mit Höhe und Geschwindigkeit aus dem Simulator statt von VATSIM.",
       "📐 Wie weit ein Flugzeug von seiner VATSIM-Meldung abweichen darf, wird jetzt gerechnet statt festgelegt: aus seiner Geschwindigkeit und den gemessenen 29 Sekunden Verzögerung. Eine Cessna darf 3 km abweichen, ein Airliner 13 — vorher galt für beide dieselbe Zahl."
     ]
   },

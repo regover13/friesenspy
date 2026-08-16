@@ -2077,7 +2077,46 @@ def test_friesen_erscheinen_nicht_doppelt():
     stelle = INDEX.index("function _verkehrZusammenfuehren(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
     assert "_friesenAlsKandidaten()" in rumpf, "sie muessen zuordenbar sein"
-    assert "if (v && v._friese) continue;" in rumpf, "aber nicht noch einmal gezeichnet"
+    assert "if (v && v._friese) {" in rumpf, "aber nicht noch einmal gezeichnet"
+
+
+def test_friesen_bewegen_sich_mit_sim_position():
+    """Ist ein Friese zugeordnet, bekommt SEIN Marker die Sim-Werte -- ueber _positionsRoh,
+    wo der Sekundentakt liest. Mit ts=jetzt ist die Fortrechnung praktisch null."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "_positionsRoh[v.cs] = {" in rumpf
+    assert "ts: _simVerkehr.ts" in rumpf
+    assert "_friesenSimWerte[v.cs]" in rumpf
+
+
+def test_vatsim_ruehrt_sim_gefuehrte_friesen_nicht_an():
+    """Sonst setzte updateMap sie alle 15 Sekunden auf die alte Meldung zurueck -- genau das
+    Zurueckspringen, das beim eigenen Flugzeug schon einmal auffiel."""
+    stelle = INDEX.index("function _markerGehoertDemSim(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_friesenSimWerte[callsign]" in rumpf
+    assert "_simVerkehrFrisch()" in rumpf
+
+
+def test_friesen_label_zeigt_sim_hoehe_und_speed():
+    """Dieselbe Regel wie ueberall: Wo eine Sim-Angabe vorliegt, hat sie Vorrang. Sonst
+    staende an einem Symbol, das sich im Sekundentakt bewegt, eine Hoehe von vor einer halben
+    Minute."""
+    assert INDEX.count("_verkehrLabel(_mitSimWerten(p))") == 3, \
+        "alle drei Stellen in updateMap -- sonst laufen sie auseinander"
+    stelle = INDEX.index("function _mitSimWerten(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "Object.assign({}, p)" in rumpf, "liveData darf nicht veraendert werden"
+    assert "kopie.altitude" in rumpf and "kopie.groundspeed" in rumpf
+
+
+def test_sim_werte_werden_freigegeben():
+    """Meldet der Simulator einen Friesen nicht mehr, muss sein Marker zurueck an den
+    VATSIM-Zulauf -- sonst stuende er fuer immer auf der letzten Sim-Position."""
+    stelle = INDEX.index("function _paarungenAufraeumen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "delete _friesenSimWerte[cs]" in rumpf
 
 
 def test_eigenes_flugzeug_ist_kein_friesen_kandidat():
