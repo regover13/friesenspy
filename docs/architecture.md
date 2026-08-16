@@ -817,3 +817,13 @@ Font-Fallback und zeichnet `href` allein nicht.
 **Wegklicken** merkt sich `friesenspy_paket_hinweis = <fassung>` in `panel_prefs`; der Hinweis
 kommt erst bei einer neueren Fassung wieder. Genau dafür musste der Merker serverseitig liegen —
 im Kniebrett übersteht nichts einen Neustart.
+
+**Schweigen, solange nichts Meldendes ausgeliefert wird:** Liegt auf dem Server ein Paket
+**vor** 1.10.0, meldet auch das aktuelle keine Version — ein fehlender Versionsbericht sagt
+dann gar nichts, und der Hinweis forderte Leute auf, auf genau die Fassung zu wechseln, die
+sie bereits haben. `_paketVeraltet` prüft deshalb `_PAKET_ERSTE_MELDENDE` gegen die
+ausgelieferte Fassung. Genau dieser Zustand lag am 16.08.2026 vor: Repo auf 1.10.0,
+`/api/efb-package` noch 1.9.0. **Das Paket wird von Hand hinterlegt, nicht vom Deploy
+gebaut** (`msfs-panel/build-package.ps1` läuft auf Windows und braucht den
+MSFSLayoutGenerator) — der Hinweis wird also erst wirksam, wenn ein 1.10.0-Archiv unter
+`data/efb/friesenspy-efb.zip` liegt.

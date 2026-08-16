@@ -33,9 +33,12 @@ _NODE = shutil.which("node")
 
 
 def _versionsvergleich_quelltext():
+    """Die Konstante gehoert mit in die Scheibe -- _paketVeraltet liest sie."""
+    konst = re.search(r"const _PAKET_ERSTE_MELDENDE = '[^']+';", INDEX)
+    assert konst, "_PAKET_ERSTE_MELDENDE fehlt"
     start = INDEX.index("function _versionKleiner(")
     ende = INDEX.index("function _paketHinweisPruefen(")
-    return INDEX[start:ende]
+    return konst.group(0) + "\n" + INDEX[start:ende]
 
 
 def _node_lauf(treiber):
@@ -112,6 +115,25 @@ assert.strictEqual(_paketVeraltet('1.9.0', '1.10.0'), true);
 // Ohne Vergleichswert vom Server gibt es keine Aussage -- lieber schweigen als raten.
 assert.strictEqual(_paketVeraltet(null, null), false);
 assert.strictEqual(_paketVeraltet('1.2.0', null), false);
+console.log('OK');
+""")
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_schweigt_solange_noch_kein_meldendes_paket_ausgeliefert_wird():
+    """Der Fall vom 16.08.2026: Im Repo stand bereits 1.10.0, ausgeliefert war noch 1.9.0
+    (das Paket wird von Hand hinterlegt, nicht vom Deploy gebaut).
+
+    Dann meldet auch das AKTUELLE Paket keine Version -- eine fehlende Meldung sagt also
+    nichts. Ohne diese Bedingung forderte der Hinweis Leute auf, auf genau die Fassung zu
+    wechseln, die sie bereits installiert haben.
+    """
+    _node_lauf("""
+assert.strictEqual(_paketVeraltet(null, '1.9.0'), false, 'darf noch nicht meckern');
+assert.strictEqual(_paketVeraltet(null, '1.10.0'), true, 'ab der meldenden Fassung schon');
+assert.strictEqual(_paketVeraltet(null, '1.11.0'), true);
+// Wer meldet, wird immer verglichen -- unabhaengig davon, was ausgeliefert wird.
+assert.strictEqual(_paketVeraltet('1.10.0', '1.9.0'), false);
 console.log('OK');
 """)
 

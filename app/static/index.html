@@ -7174,6 +7174,9 @@ const _PAKET_HINWEIS_KEY = 'friesenspy_paket_hinweis';
 // veraltetes aus und der Hinweis blitzte auf. Der Handshake braucht Millisekunden; fuenf
 // Sekunden sind dieselbe Groessenordnung, mit der auch die Shell-Diagnose arbeitet.
 const _PAKET_WARTEN_MS = 5000;
+// Erste Fassung, die ihre Version ueberhaupt meldet. Solange auf dem Server etwas Aelteres
+// liegt, schweigt der Hinweis -- s. _paketVeraltet.
+const _PAKET_ERSTE_MELDENDE = '1.10.0';
 let _paketVersion = null;      // aus dem pong; null = Paket meldet keine Version
 let _paketAktuell = null;      // vom Server, s. /api/efb-package
 
@@ -7188,11 +7191,16 @@ function _versionKleiner(a, b) {
   return false;
 }
 
-/** Ist das installierte Paket veraltet? `null` als installierte Version heisst JA -- erst ab
- *  1.10.0 meldet die Huelle sich ueberhaupt, davor gab es nichts zu melden. */
+/** Ist das installierte Paket veraltet?
+ *
+ *  `null` als installierte Version heisst JA -- aber nur, wenn ueberhaupt schon eine meldende
+ *  Fassung ausgeliefert wird. Liegt auf dem Server noch ein Paket VOR 1.10.0, sagt ein
+ *  fehlender Versionsbericht gar nichts: Dann meldet auch das topaktuelle Paket nichts, und
+ *  der Hinweis forderte Leute auf, auf die Fassung zu wechseln, die sie bereits haben.
+ *  (Genau dieser Fall lag am 16.08.2026 vor -- Repo auf 1.10.0, ausgeliefert noch 1.9.0.) */
 function _paketVeraltet(installiert, aktuell) {
   if (!aktuell) return false;                       // ohne Vergleichswert keine Aussage
-  if (!installiert) return true;
+  if (!installiert) return !_versionKleiner(aktuell, _PAKET_ERSTE_MELDENDE);
   return _versionKleiner(installiert, aktuell);
 }
 
