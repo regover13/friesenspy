@@ -783,3 +783,37 @@ CREATE TABLE app_settings (
     updated_at TEXT
 );
 ```
+
+### Hinweis auf ein veraltetes Kniebrett-Paket (v13.6.4)
+
+Die Seite kommt vom Server und ist immer aktuell, die Hülle im Community-Ordner nicht. Bis
+v13.6.4 liess sich von aussen **überhaupt nicht** erkennen, welches Paket dort liegt — ein
+veraltetes fiel erst auf, wenn etwas fehlte (in Paket 1.5.0/1.6.0 blieb der Verkehr aus dem
+Simulator lautlos aus).
+
+**Erkennung:** Seit Paket **1.10.0** schickt die Hülle `paketVersion` im `pong` mit
+(`PAKET_VERSION` in `FriesenSpy.tsx`, per Test an `manifest.json` gebunden — der Wert steht
+doppelt, weil das Manifest zur Laufzeit nicht lesbar ist). Ein älteres Paket schickt das Feld
+gar nicht: **Sein Fehlen ist die Aussage „älter als 1.10.0"**, kein Fehlerfall. Verglichen wird
+gegen `/api/efb-package`.
+
+- `_versionKleiner` vergleicht **zahlenweise**. Als Zeichenkette ist `'1.10.0'` kleiner als
+  `'1.9.0'` — ein naiver Vergleich hielte das neuere Paket für das ältere und meldete sich nie
+  wieder.
+- **Schonfrist `_PAKET_WARTEN_MS` (5 s):** Antwortet `/api/efb-package` vor dem `pong`, sähe ein
+  topaktuelles Paket kurz wie ein veraltetes aus. Entschieden wird deshalb erst nach Ablauf —
+  meldet das Paket seine Version, greift der `pong`-Weg ohnehin früher.
+- **Entschieden wird nach `_prefsPromise`**, sonst blitzt der Hinweis bei jedem Start auf,
+  bevor klar ist, dass er für diese Fassung längst weggeklickt wurde.
+
+**Darstellung:** Ein gedämpftes Kästchen unten links (`#panel-paket-hinweis`), über dem
+Neue-Version-Knopf (`bottom: 58px` gegen `14px`) — beides kann gleichzeitig zutreffen.
+Bewusst **keine** Glocken-Benachrichtigung: Die ist dem vorbehalten, was andere Piloten tun,
+und käme bei jedem Neustart erneut. Bewusst **kein** Link: Im Tablet lässt sich nichts
+herunterladen, die Adresse steht als Text zum Abtippen am PC. Das Kreuz zum Wegklicken ist ein
+**Sprite** (`#icon-x`, mit `href` *und* `xlink:href`) — Coherent GT hat für `×` keinen
+Font-Fallback und zeichnet `href` allein nicht.
+
+**Wegklicken** merkt sich `friesenspy_paket_hinweis = <fassung>` in `panel_prefs`; der Hinweis
+kommt erst bei einer neueren Fassung wieder. Genau dafür musste der Merker serverseitig liegen —
+im Kniebrett übersteht nichts einen Neustart.

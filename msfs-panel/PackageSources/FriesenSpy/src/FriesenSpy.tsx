@@ -27,6 +27,18 @@ const PANEL_URL = "https://friesenspy.devprops.de/panel";
 const DEVICE_KEY = "friesenspy_device";
 
 /**
+ * Version DIESES Pakets -- muss mit `package_version` in der manifest.json uebereinstimmen.
+ *
+ * Wird im "pong" mitgeschickt, damit die Seite erkennen kann, ob im Community-Ordner noch ein
+ * altes Paket liegt. Der Wert steht hier doppelt (Manifest und Quelltext), weil das Manifest
+ * zur Laufzeit nicht lesbar ist; `tests/test_efb_paket.py` haelt beide aneinander.
+ *
+ * WICHTIG fuer die Auswertung auf der Seite: Ein Paket VOR 1.10.0 schickt dieses Feld gar
+ * nicht. Sein Fehlen ist deshalb kein Fehler, sondern die Aussage "aelter als 1.10.0".
+ */
+const PAKET_VERSION = "1.10.0";
+
+/**
  * Zufaellige Geraete-ID erzeugen -- oder "" , wenn das nicht sicher moeglich ist.
  *
  * Die ID ist ein Zugangsschluessel: Wer sie hat, ist als der gebundene Nutzer angemeldet.
@@ -267,7 +279,10 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       const quelle = e.source as Window | null;
       if (quelle) {
         try {
-          quelle.postMessage({ quelle: "friesenspy-shell", art: "pong" }, "*");
+          quelle.postMessage(
+            { quelle: "friesenspy-shell", art: "pong", paketVersion: PAKET_VERSION },
+            "*",
+          );
         } catch (_e) {
           // Antwortweg zu, Seite faellt auf ihre eigene Anzeige zurueck.
         }

@@ -1,5 +1,16 @@
 [
   {
+    "version": "13.6.4",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Das Kniebrett sagt jetzt, wenn das Paket veraltet ist",
+    "items": [
+      "📦 Die Seite kommt vom Server und ist damit immer aktuell — die App im Community-Ordner nicht. Bisher war ein veraltetes Paket von außen überhaupt nicht zu erkennen; es fiel erst auf, wenn etwas fehlte. Jetzt meldet die App ihre Version, und das Kniebrett weist unten links darauf hin, wenn eine neuere bereitsteht — mit der Adresse zum Abtippen am PC.",
+      "🔕 Bewusst kein Eintrag bei den Benachrichtigungen: Die Glocke bleibt dem vorbehalten, was andere Piloten tun. Und der Hinweis lässt sich wegklicken — er kommt erst wieder, wenn es wirklich ein neueres Paket gibt, nicht bei jedem Neustart.",
+      "📥 Dafür einmal das neue Paket einspielen (1.10.0): https://friesenspy.devprops.de/efb — wer das nicht tut, sieht den Hinweis, weil ältere Pakete ihre Version nicht melden. Genau das ist die Aussage."
+    ]
+  },
+  {
     "version": "13.6.3",
     "date": "2026-08-16",
     "highlight": false,

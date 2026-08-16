@@ -1507,6 +1507,44 @@
     }
     .panel-update-hint[hidden] { display: none; }
 
+    /* Hinweis auf ein veraltetes Kniebrett-Paket. Bewusst DEZENTER als der
+       Neue-Version-Knopf darueber: Der laesst sich mit einem Druck erledigen, dieser hier
+       nicht -- im Tablet kann man nichts herunterladen, das muss am PC passieren. Ein grell
+       leuchtendes Kaestchen, das man nicht abarbeiten kann, waere im Flug nur Aergernis.
+       Deshalb gedaempfte Farbe, kein Leuchten, und ein eigenes Kreuz zum Wegklicken.
+       Sitzt UEBER dem Neue-Version-Knopf (bottom: 58px), damit sich beide nicht ueberdecken,
+       wenn ausnahmsweise beides zutrifft. */
+    .panel-paket-hinweis {
+      position: fixed;
+      bottom: 58px;
+      left: 14px;
+      z-index: 999998;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: calc(100vw - 28px);
+      background: var(--bg-panel);
+      border: 1px solid var(--text-dim);
+      color: var(--text-dim);
+      font-family: var(--text-display);
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+      padding: 8px 12px;
+    }
+    .panel-paket-hinweis[hidden] { display: none; }
+    .panel-paket-hinweis button {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 0 2px;
+      cursor: pointer;
+      /* 44px Mindesthoehe gilt im Panel fuer alles Bedienbare (s. UI-Standards). */
+      min-height: 44px;
+      min-width: 44px;
+    }
+
     /* ===================================================================
        VEREINHEITLICHTE KOPF-/TAB-LEISTE (nur MSFS-EFB-Panel, v11.15.0)
        ===================================================================
@@ -7114,13 +7152,99 @@ function _diagnoseMitVergleichMelden(art, befund) {
     .then(melden, melden);
 }
 
+// ==========================================================================
+//  VERALTETES KNIEBRETT-PAKET
+// ==========================================================================
+// Die Seite kommt vom Server und ist damit immer aktuell -- die Huelle im Community-Ordner
+// nicht. Bis v13.6.4 liess sich von aussen ueberhaupt nicht erkennen, welches Paket dort
+// liegt; ein veraltetes fiel erst auf, wenn etwas fehlte (der Verkehr aus dem Simulator blieb
+// in 1.5.0/1.6.0 lautlos aus -- niemand konnte das sehen).
+//
+// Seit Paket 1.10.0 schickt die Huelle ihre Version im "pong" mit. Ein aelteres Paket schickt
+// das Feld gar nicht: Sein FEHLEN ist deshalb die Aussage "aelter als 1.10.0", kein Fehlerfall.
+//
+// Bewusst KEINE Benachrichtigung ueber die Glocke: Die ist dem vorbehalten, was andere Leute
+// tun (jemand geht online, TeamSpeak, Events). Eine Software-Meldung dazwischen wuerde genau
+// die Aufmerksamkeit verbrauchen, die dort gebraucht wird -- und sie kaeme bei jedem Neustart
+// erneut. Stattdessen derselbe stille Weg wie beim Versionshinweis der Seite: ein Kaestchen
+// unten links, das sich wegklicken laesst.
+const _PAKET_HINWEIS_KEY = 'friesenspy_paket_hinweis';
+// Schonfrist, bevor "keine Version gemeldet" als "altes Paket" gilt. Ohne sie entstuende ein
+// Wettlauf: Antwortet /api/efb-package vor dem pong, saehe ein topaktuelles Paket kurz wie ein
+// veraltetes aus und der Hinweis blitzte auf. Der Handshake braucht Millisekunden; fuenf
+// Sekunden sind dieselbe Groessenordnung, mit der auch die Shell-Diagnose arbeitet.
+const _PAKET_WARTEN_MS = 5000;
+let _paketVersion = null;      // aus dem pong; null = Paket meldet keine Version
+let _paketAktuell = null;      // vom Server, s. /api/efb-package
+
+/** "1.10.0" > "1.9.0" -- ein Zeichenkettenvergleich saehe das genau andersherum. */
+function _versionKleiner(a, b) {
+  const za = String(a || '').split('.').map(Number);
+  const zb = String(b || '').split('.').map(Number);
+  for (let i = 0; i < Math.max(za.length, zb.length); i++) {
+    const x = za[i] || 0, y = zb[i] || 0;
+    if (x !== y) return x < y;
+  }
+  return false;
+}
+
+/** Ist das installierte Paket veraltet? `null` als installierte Version heisst JA -- erst ab
+ *  1.10.0 meldet die Huelle sich ueberhaupt, davor gab es nichts zu melden. */
+function _paketVeraltet(installiert, aktuell) {
+  if (!aktuell) return false;                       // ohne Vergleichswert keine Aussage
+  if (!installiert) return true;
+  return _versionKleiner(installiert, aktuell);
+}
+
+function _paketHinweisPruefen() {
+  const kasten = document.getElementById('panel-paket-hinweis');
+  if (!kasten || !_paketAktuell) return;            // beide Seiten noch nicht da
+  if (!_paketVeraltet(_paketVersion, _paketAktuell)) return;
+  // Erst nach den Merkern entscheiden: Vorher ist unbekannt, ob der Hinweis fuer diese
+  // Fassung schon weggeklickt wurde -- er blitzte sonst bei jedem Start kurz auf.
+  _prefsPromise.then(function () {
+    // Einmal weggeklickt gilt fuer GENAU diese Fassung; bei einer neueren kommt er wieder.
+    // Der Merker liegt beim Server (s. panel_prefs) -- im Kniebrett ueberlebt nichts einen
+    // Neustart, der Hinweis stuende sonst jedes Mal erneut da.
+    if (_prefLies(_PAKET_HINWEIS_KEY) === _paketAktuell) return;
+    const text = document.getElementById('panel-paket-hinweis-text');
+    if (text) {
+      text.textContent = 'Neues Kniebrett-Paket ' + _paketAktuell
+                       + (_paketVersion ? ' (installiert: ' + _paketVersion + ')' : '')
+                       + ' — friesenspy.devprops.de/efb';
+    }
+    kasten.hidden = false;
+  });
+}
+
+function _paketHinweisWeg() {
+  const kasten = document.getElementById('panel-paket-hinweis');
+  if (kasten) kasten.hidden = true;
+  if (_paketAktuell) _prefSchreib(_PAKET_HINWEIS_KEY, _paketAktuell);
+}
+
 function _initPanelShellKanal() {
   if (!document.documentElement.classList.contains('vr-panel')) return;
+  // Die aktuelle Paketfassung holen; die installierte kommt aus dem pong. Erst wenn BEIDE da
+  // sind, entscheidet _paketHinweisPruefen -- die Reihenfolge ist nicht vorhersagbar.
+  fetch('/api/efb-package').then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      _paketAktuell = (d && d.version) ? String(d.version) : null;
+      // NICHT sofort entscheiden -- erst wenn der Handshake Zeit hatte (s. _PAKET_WARTEN_MS).
+      // Meldet das Paket seine Version, greift der pong-Weg ohnehin frueher.
+      setTimeout(_paketHinweisPruefen, _PAKET_WARTEN_MS);
+    }).catch(function () {});
 
   window.addEventListener('message', (e) => {
     const d = e && e.data;
     if (!d || d.quelle !== 'friesenspy-shell') return;
-    if (d.art === 'pong') _panelShellDa = true;
+    if (d.art === 'pong') {
+      _panelShellDa = true;
+      // Fehlt das Feld, ist das KEIN Fehler, sondern die Aussage "Paket aelter als 1.10.0" --
+      // erst ab dort schickt die Huelle ihre Version mit (s. _paketHinweisPruefen).
+      _paketVersion = (typeof d.paketVersion === 'string') ? d.paketVersion : null;
+      _paketHinweisPruefen();
+    }
     // Was der erste Abruf im Simulator ergeben hat -- einmal je Sitzung, auch wenn er nichts
     // ergeben hat. Genau dieser Fall (Vorbedingung fehlte, Aufruf lieferte lautlos nichts)
     // hinterliess bis zum 15.08.2026 keine einzige Spur.
@@ -11630,6 +11754,15 @@ document.addEventListener('visibilitychange', async () => {
 
 </script>
 <button id="panel-update-hint" class="panel-update-hint" hidden onclick="location.reload()"><svg class="icon"><use href="#icon-refresh" xlink:href="#icon-refresh"/></svg> Neue Version &ndash; neu laden</button>
+<!-- Kein Knopf, sondern ein Kaestchen mit Text: Herunterladen laesst sich im Tablet nichts,
+     die Adresse muss man am PC eintippen. Ein Klick-Ziel waere ein leeres Versprechen. -->
+<div id="panel-paket-hinweis" class="panel-paket-hinweis" hidden>
+  <span id="panel-paket-hinweis-text"></span>
+  <!-- Sprite statt "×": Coherent GT hat fuer UI-Zeichen keinen Font-Fallback, dort staende
+       ein leeres Kaestchen (s. docs/efb-panel-debugging.md). Und `href` UND `xlink:href`,
+       weil `href` allein im Panel nichts zeichnet -- derselbe Fund. -->
+  <button type="button" onclick="_paketHinweisWeg()" aria-label="Hinweis ausblenden"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
+</div>
 <button id="panel-back-btn" class="panel-back-btn" hidden onclick="panelGoBack()"><svg class="icon"><use href="#icon-arrow-left" xlink:href="#icon-arrow-left"/></svg> Zur&uuml;ck</button>
 <!-- Vereinheitlichte Kopf-/Tab-Leiste (nur MSFS-EFB-Panel, v11.15.0): leer im Markup, JS
      (_initPanelBackButton) haengt Zurueck-Knopf, die vier echten Tab-Buttons und die
