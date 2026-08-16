@@ -455,3 +455,146 @@ try {
     assert ergebnis.returncode == 0 and "OK" in ergebnis.stdout, (
         f"Node-Lauf fehlgeschlagen -- stdout={ergebnis.stdout!r} stderr={ergebnis.stderr!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Servermodul app/fse.py — Ausschnitt-Auslieferung (Spec 2026-08-16)
+# ---------------------------------------------------------------------------
+
+from app import fse as fse_modul  # noqa: E402
+
+WELT = Path(__file__).resolve().parents[1] / "app" / "data" / "fse"
+
+# Messpunkte (16.08.2026 gegen die echten Weltdateien nachgerechnet). Die Radien sind die
+# Halbdiagonalen eines 900x700-Panels auf der jeweiligen BREITE -- dieselbe Zoomstufe deckt
+# auf 40,7 N mehr Kilometer ab als auf 53,8 N. Ein gemeinsamer Kilometerwert fuer beide Orte
+# waere falsch (der Fehler stand in der ersten Fassung des Plans).
+EDWG = (53.7872, 7.91583)
+KJFK = (40.7, -74.0)
+ATLANTIK = (40.0, -40.0)
+
+
+@pytest.fixture(scope="module")
+def bestand():
+    return fse_modul.laden(WELT)
+
+
+def _umschliessende(bestand, treffer, lat, lon):
+    return [
+        i for i in treffer
+        if bestand.zonen_bbox[i][0] <= lat <= bestand.zonen_bbox[i][1]
+        and bestand.zonen_bbox[i][2] <= lon <= bestand.zonen_bbox[i][3]
+    ]
+
+
+def test_laden_liest_beide_weltdateien(bestand):
+    assert len(bestand.plaetze) == 23780
+    # 23.778, nicht 23.780: die zwei Pol-umschliessenden Zellen werden verworfen
+    # (s. test_polzellen_werden_gar_nicht_erst_ausgeliefert).
+    assert len(bestand.zonen) == 23778
+    assert len(bestand.zonen_bbox) == 23778
+
+
+def test_plaetze_im_umkreis_liefert_nur_nahes(bestand):
+    """Wangerooge z10 = 51 km auf 53,8 N."""
+    treffer, gekappt = fse_modul.plaetze_im_umkreis(bestand, *EDWG, 51)
+    assert "EDWG" in treffer
+    assert "KJFK" not in treffer
+    assert len(treffer) == 14
+    assert not gekappt
+
+
+def test_plaetze_deckel_greift_und_meldet_sich(bestand):
+    """New York bei 150 km: 359 Plaetze im Ausschnitt, 250 duerfen raus. Bewusst ein Radius
+    weit weg von jeder Deckelgrenze -- ein knapper Wert machte den Test zum Wackelkandidaten."""
+    treffer, gekappt = fse_modul.plaetze_im_umkreis(bestand, *KJFK, 150)
+    assert len(treffer) == fse_modul.MAX_PUNKTE_PLAETZE
+    assert gekappt
+
+
+def test_zonen_deckel_rechnet_in_punkten_nicht_in_stueck(bestand):
+    """Eine Zone kostet ihre Eckenzahl (Mittel 7, max 21), ein Platz genau 1. Bei New York
+    150 km stehen 2.719 Punkte an, 900 duerfen raus -- ein Stueckzahl-Deckel wuerde die
+    falsche Ebene schonen (die Zonen stellen dort 88 % der Zeichenlast)."""
+    treffer, gekappt = fse_modul.zonen_im_umkreis(bestand, *KJFK, 150)
+    punkte = sum(len(p) for p in treffer.values())
+    assert punkte <= fse_modul.MAX_PUNKTE_ZONEN
+    assert punkte > fse_modul.MAX_PUNKTE_ZONEN - 21   # bis dicht an die Grenze gefuellt
+    assert gekappt
+
+
+def test_grosse_zone_reisst_kleinere_dahinter_nicht_mit(bestand):
+    """Die Deckelschleife ueberspringt eine Zone, die nicht mehr passt, statt abzubrechen --
+    sonst kappte eine 21-Punkte-Zelle in der Mitte der Liste alles Kleinere dahinter mit."""
+    treffer, _ = fse_modul.zonen_im_umkreis(bestand, *KJFK, 150)
+    rest = fse_modul.MAX_PUNKTE_ZONEN - sum(len(p) for p in treffer.values())
+    assert rest < 4, f"{rest} Punkte Budget verschenkt -- die Schleife bricht ab statt zu ueberspringen"
+
+
+def test_ozeanzelle_kommt_mit_egal_wie_gross_sie_ist(bestand):
+    """Der Kern der Sortierentscheidung: Voronoi-Zellen ueber dem Atlantik haben bis zu
+    14.127 km Diagonale (NZPG), ihr Flugplatz liegt womoeglich Hunderte Kilometer vom
+    Ausschnitt entfernt. Wer nach Flugplatzentfernung sortiert, wirft genau die Zelle weg,
+    in der man steht."""
+    treffer, gekappt = fse_modul.zonen_im_umkreis(bestand, *ATLANTIK, 150)
+    assert len(treffer) == 3
+    assert sum(len(p) for p in treffer.values()) == 26
+    assert not gekappt
+    assert _umschliessende(bestand, treffer, *ATLANTIK), "die umschliessende Zelle fehlt"
+
+
+def test_ozeanzelle_ueberlebt_auch_einen_vollen_deckel(bestand):
+    """Gegenprobe an einem Ort, wo der Deckel wirklich greift: Auch in New York muss die
+    Zelle, die den Ausschnitt umschliesst, ausgeliefert werden -- sie hat Abstand 0 und steht
+    damit ganz vorn."""
+    treffer, gekappt = fse_modul.zonen_im_umkreis(bestand, *KJFK, 150)
+    assert gekappt
+    assert _umschliessende(bestand, treffer, *KJFK)
+
+
+def test_leerer_ausschnitt_ist_kein_fehler(bestand):
+    """Ein plaetzeleerer Ausschnitt existiert (Nordatlantik). Ein ZONENleerer vermutlich
+    nirgends -- die Voronoi-Zellen ueberdecken die Erde lueckenlos, auch die Antarktis."""
+    treffer, gekappt = fse_modul.plaetze_im_umkreis(bestand, *ATLANTIK, 150)
+    assert treffer == {} and not gekappt
+
+
+def test_radius_wird_serverseitig_gedeckelt(bestand):
+    """Wer r=5000 anfragt, bekommt den 250-km-Ausschnitt, nicht den halben Planeten."""
+    weit, _ = fse_modul.plaetze_im_umkreis(bestand, *EDWG, 5000)
+    genau, _ = fse_modul.plaetze_im_umkreis(bestand, *EDWG, fse_modul.MAX_KM)
+    assert weit.keys() == genau.keys()
+
+
+def test_polzellen_werden_gar_nicht_erst_ausgeliefert():
+    """CYLT (Alert) und NZPG (McMurdo) umschliessen je einen Pol: Ihre Ecken laufen einmal ganz
+    um die Erde. So ein Ring hat in Laenge/Breite keine nahtfreie Darstellung -- Leaflet zieht
+    daraus ein Band quer ueber die Karte, und zwar bei JEDER Abfrage in ihrem Breitenband,
+    weil ihre Bbox fast den ganzen Laengenbereich abdeckt. Eine Zweig-Korrektur reicht nicht:
+    bei CYLT bringt sie die Spanne nur von 342 auf 234 Grad."""
+    b = fse_modul.laden(WELT)
+    assert "CYLT" not in b.zonen
+    assert "NZPG" not in b.zonen
+    assert len(b.zonen) == 23778
+
+
+def test_zweig_korrektur_laesst_die_heilen_zonen_in_ruhe():
+    """34 der 36 Zonen jenseits +-180 sind DURCHGEHEND (NFNA 175,98 -> 181,65) und zeichnen
+    sich ueber die Datumsgrenze korrekt. Pauschales Normalisieren auf +-180 machte aus genau
+    diesen 34 die Baender, die hier beseitigt werden sollen."""
+    b = fse_modul.laden(WELT)
+    roh = json.loads((WELT / "fse_zones_world.json").read_text(encoding="utf-8"))
+    assert b.zonen["NFNA"] == roh["NFNA"], "eine heile Zone wurde faelschlich veraendert"
+    assert max(p[1] for p in b.zonen["NFNA"]) > 180
+    jenseits = [k for k, v in roh.items() if any(p[1] > 180 or p[1] < -180 for p in v)]
+    assert len(jenseits) == 36
+    assert sum(1 for k in jenseits if k in b.zonen) == 34
+
+
+def test_die_zelle_in_der_man_steht_kommt_zuerst(bestand):
+    """Gemessen wird vom Bezugspunkt, nicht vom Ausschnitts-Rechteck. Gegen das Rechteck haette
+    jede schneidende Zone Abstand 0 -- bei New York 389 Stueck -- und der Deckel entschiede
+    zwischen ihnen alphabetisch. Die umschliessende Zelle flog dabei heraus."""
+    treffer, gekappt = fse_modul.zonen_im_umkreis(bestand, *KJFK, 150)
+    assert gekappt
+    assert _umschliessende(bestand, treffer, *KJFK)
