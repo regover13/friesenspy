@@ -180,6 +180,38 @@ Eine enge Schranke erhöht die Sicherheit **nicht**, sie verhindert nur, dass de
 
 Die Höhe ist hier entsprechend unkritisch — sie muss die Zuordnung nicht tragen.
 
+**Aber eine feste Zahl taugt trotzdem nicht** (Nutzer-Einwand, 16.08.2026: „dann habe ich ein
+Problem mit einer FA18 Hornet im Überschall"). Der erwartete Versatz ist reine Kinematik:
+
+```
+maxAbstand = GS × 29 s × Sicherheitsfaktor
+```
+
+Die Geschwindigkeit kommt aus den **Sim-Daten** — aktuell und zuverlässig, anders als die
+29 Sekunden alte VATSIM-Angabe.
+
+| Muster | GS | Strecke in 29 s | × 2 |
+|---|---|---|---|
+| C172 | 100 kt | 1,5 km | 3,0 km |
+| Turboprop | 250 kt | 3,7 km | 7,5 km |
+| Airliner | 440 kt | 6,6 km | 13,1 km |
+| Hornet, hoch | 600 kt | 9,0 km | 17,9 km |
+| Hornet, Überschall | 750 kt | 11,2 km | 22,4 km |
+
+Eine feste Schranke von 8 km wäre für die C172 **fünffach zu weit** — schlecht für die
+Eindeutigkeit genau dort, wo Flugzeuge dicht beieinander sind — und für die Hornet **zu eng**,
+sie fiele ganz aus der Zuordnung.
+
+Zwei Ergänzungen zur Formel:
+
+- **Mindestwert**, ein paar hundert Meter. Bei Geschwindigkeit null wäre die Schranke sonst
+  null, und ein stehendes Flugzeug fände nie einen Partner — ausgerechnet im besten
+  Zuordnungsmoment (s. oben). Deckt GPS-Rauschen und kleine Positionsunterschiede ab.
+- **Der Sicherheitsfaktor ist ein Vorschlag, kein Messwert.** Er trägt die Streuung der Latenz
+  (±1,5 s ≈ 5 %), Wind, und dass die Fortrechnung geradeaus läuft, während das Flugzeug leicht
+  kurvt. 2 ist komfortabel, 1,5 wäre schärfer und damit besser für die Eindeutigkeit. Im Flug
+  zu entscheiden.
+
 ### B) Lösen — hier wird gerechnet, nicht geschrankt
 
 **Nach dem Merken kann Flackern nur noch an einer einzigen Stelle entstehen: beim Lösen.**
@@ -212,11 +244,16 @@ Lösen hält dagegen eine falsche Zuordnung zu lange. Vorschlag zum Ausprobieren
 Takte in Folge deutlich außerhalb der Erwartung. Im Flug zu beobachten, nicht am Schreibtisch
 zu entscheiden.
 
-### 2. Wie viel Toleranz um die berechnete Erwartung?
+### 2. Wie groß der Sicherheitsfaktor?
 
 `GS × 29 s` ist der Sollwert, nicht die Grenze — Wind, Kurven und die Streuung der Latenz
-(±1,5 s gemessen) kommen dazu. Ein Faktor auf den Erwartungswert ist vermutlich robuster als
-ein fester Zuschlag, weil er mit der Geschwindigkeit mitwächst.
+(±1,5 s gemessen) kommen dazu. Ein **Faktor** ist dabei richtiger als ein fester Zuschlag,
+weil er mit der Geschwindigkeit mitwächst: Was für die C172 großzügig ist, wäre für die Hornet
+nichts.
+
+Gilt für beide Schranken — Erstzuordnung wie Lösen —, aber nicht notwendig in derselben Höhe:
+Beim Lösen darf er größer sein, weil ein zu frühes Lösen das Flackern zurückbringt, während
+eine zu großzügige Erstzuordnung nur die Eindeutigkeit kostet.
 
 ### 3. Vertikalgeschwindigkeit aus den Sim-Höhen
 
