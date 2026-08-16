@@ -246,6 +246,7 @@ Jede davon stammt aus einem echten Live-Test, nicht aus Vermutung:
 | `IntersectionObserver` | nicht vorhanden |
 | **Jede** Schriftdatei | siehe unten — die Engine nimmt überhaupt keine an |
 | **Waagerechtes Scrollen** | siehe unten — technisch möglich, aber nicht bedienbar |
+| `localStorage` **über einen Sim-Neustart** | siehe unten — schreibt und liest innerhalb der Sitzung, hält aber nicht; Cookies halten |
 
 **Leaflet läuft grundsätzlich einwandfrei** (Karte, Marker, Popups) — es ist kein generelles
 „alte Engine"-Problem, sondern diese konkreten Lücken. Eine Ausnahme gibt es, und sie ist
@@ -390,3 +391,39 @@ Ursache war gar nicht im DOM:
 dann liegt die Arbeit im Zeichnen. Dort lohnen sich zwei Fragen: Läuft eine Animation im
 Dauerbetrieb? Und animiert sie eine Layout-Eigenschaft (`top`, `left`, `width`, `height`)
 statt `transform`/`opacity`?
+
+## `localStorage` überlebt keinen Sim-Neustart (geklärt 16.08.2026)
+
+**Symptom:** Das Kniebrett merkt sich keine Karteneinstellung — nach jedem Start wieder
+OpenFlightMap, Ebenen aus, Track-up und Moving Map aus. Im Browser hält alles.
+
+**Die Falle:** Die Sonde in der Selbstdiagnose meldet `features.localStorage: true`. Das ist
+keine Fehlmessung, sondern ihre Grenze — sie schreibt und liest im **selben Atemzug** und kann
+„funktioniert" von „überlebt einen Neustart" gar nicht unterscheiden. Wer sich auf sie verlässt,
+sucht den Fehler anschließend im Anwendungscode, wo keiner ist.
+
+**Der Beleg** kommt aus der aufgezeichneten Diagnose, nicht aus dem Code. `panel_diag`
+`kind="karte"` mit `anlass="bereit"` trägt in `kaesten[]` den Zustand **beim Kartenaufbau**;
+`anlass="basis:…"` bzw. `"overlay-an:…"` halten jede spätere Wahl fest. Beides
+gegeneinandergelegt ergibt für jeden Start: Was war zuletzt gewählt, und was kam zurück?
+
+```sql
+SELECT created_at, payload_json FROM panel_diag WHERE kind='karte' ORDER BY id;
+```
+
+Über 40 Starts kam eine vom Standard abweichende Basiskarte meist **nicht** zurück. Entscheidend
+ist aber ein einzelner Datensatz: Am 16.08.2026 um 16:28 startete das Panel mit **`Light`** — dem
+Wert von 14:59 — obwohl um 15:21 **`Satellit`** gewählt worden war. Ein *veralteter* Wert
+schließt einen Anwendungsfehler aus: Der Code liest den Schlüssel oder liest ihn nicht; einen
+früheren Stand kann nur die Speicherschicht selbst liefern.
+
+**Cookies halten dagegen.** Das Login-Gate ist aktiv (`forum_login_enabled = 1`), und der erste
+Panel-Aufruf einer frischen Sitzung bekommt `200 OK` **ohne** vorherige Anmeldung — das
+Anmelde-Cookie war also schon vor dem ersten Byte da. Genau das schafft `localStorage` nicht.
+
+→ Alle Karten-Merker liegen seit v13.6.0 in einem Cookie (`fs_karte`, s. `docs/architecture.md`).
+`localStorage` bleibt Rückfallebene und Quelle der einmaligen Übernahme.
+
+**Merksatz:** Eine Fähigkeitssonde beantwortet „ist da?", nie „hält?". Für alles, was einen
+Neustart überstehen soll, ist der einzige gültige Test ein Wert, der **vor** der Sitzung
+geschrieben wurde — im Zweifel die eigene Aufzeichnung über mehrere Starts.

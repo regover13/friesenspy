@@ -3847,17 +3847,139 @@ const _KARTE_EINBLENDEN = !document.documentElement.classList.contains('vr-panel
 const _KARTE_MITTE = [53.78278, 7.91389];
 const _KARTE_ZOOM  = 10;
 
+// ==========================================================================
+//  MERKER, DIE EINEN SIM-NEUSTART UEBERLEBEN
+// ==========================================================================
+// Bis zum 16.08.2026 lagen alle Merker dieser Seite in localStorage. Im Browser traegt das,
+// im MSFS-Kniebrett NICHT. Die Panel-Aufzeichnung ueber 40 Starts zeigt: Eine gewaehlte
+// Basiskarte kam nach einem Sim-Neustart meist nicht zurueck. Der Beleg, dass das NICHT am
+// Anwendungscode liegt, ist der Start am 16.08. um 16:28 -- dort kam `Light` zurueck, der Wert
+// von 14:59, obwohl um 15:21 `Satellit` gewaehlt worden war. Einen VERALTETEN Wert kann der
+// Code nicht erzeugen: Er liest den Schluessel oder liest ihn nicht. Nur die Speicherschicht
+// selbst kann einen frueheren Stand liefern.
+//
+// Die Sonde in der Selbstdiagnose meldet trotzdem `localStorage: true`. Das ist kein
+// Widerspruch, sondern ihre Grenze: Sie schreibt und liest im selben Atemzug und kann
+// "funktioniert" von "ueberlebt einen Neustart" gar nicht unterscheiden.
+//
+// Cookies ueberleben im Kniebrett dagegen nachweislich: Das Login-Gate ist aktiv
+// (`forum_login_enabled = 1`), und der erste Panel-Aufruf einer frischen Sitzung bekommt
+// 200 OK ohne Anmeldung -- das Anmelde-Cookie war also schon da. Deshalb liegen die Merker
+// jetzt in EINEM Cookie statt in neun localStorage-Schluesseln.
+//
+// localStorage bleibt als zweites Standbein: Es wird weiter mitgeschrieben (falls Cookies
+// abgeschaltet sind) und beim ersten Lesen eines Schluessels einmalig ins Cookie uebernommen.
+// Deshalb verliert niemand beim Update seine bisherigen Einstellungen.
+const _PREF_COOKIE  = 'fs_karte';
+const _PREF_MAX_AGE = 60 * 60 * 24 * 365;   // ein Jahr
+let   _prefSpeicher = null;                 // Schluessel -> Zeichenkette, einmal geparst
+
+function _prefCookieLesen() {
+  try {
+    const marke = _PREF_COOKIE + '=';
+    const teile = String(document.cookie || '').split('; ');
+    for (let i = 0; i < teile.length; i++) {
+      if (teile[i].indexOf(marke) !== 0) continue;
+      const o = JSON.parse(decodeURIComponent(teile[i].slice(marke.length)));
+      return (o && typeof o === 'object' && !Array.isArray(o)) ? o : null;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function _prefCookieSchreiben(o) {
+  try {
+    document.cookie = _PREF_COOKIE + '=' + encodeURIComponent(JSON.stringify(o))
+                    + '; path=/; max-age=' + _PREF_MAX_AGE + '; samesite=lax';
+  } catch (e) {}
+}
+
+function _prefLaden() {
+  if (!_prefSpeicher) _prefSpeicher = _prefCookieLesen() || {};
+  return _prefSpeicher;
+}
+
+/** Liest einen Merker. Kennt das Cookie ihn nicht, wird er einmalig aus localStorage geholt
+ *  und dorthin uebernommen -- die Uebernahme braucht deshalb keine Liste aller Schluessel,
+ *  die hier ohnehin nur als Zeichenketten stuende (die Konstanten stehen weiter unten). */
+function _prefLies(key) {
+  const o = _prefLaden();
+  if (Object.prototype.hasOwnProperty.call(o, key)) return o[key];
+  let alt = null;
+  try { alt = localStorage.getItem(key); } catch (e) {}
+  if (alt !== null) { o[key] = alt; _prefCookieSchreiben(o); }
+  return alt;
+}
+
+function _prefSchreib(key, wert) {
+  const o = _prefLaden();
+  o[key] = String(wert);
+  _prefCookieSchreiben(o);
+  try { localStorage.setItem(key, String(wert)); } catch (e) {}
+}
+
+// --- Zuletzt betrachteter Ausschnitt ------------------------------------------------------
+//
+// Gespeichert wird als "lat,lon,zoom". Der gelesene Wert wird streng geprueft, bevor er in
+// L.map(...) landet: Ein beschaedigtes Cookie darf die Karte nicht unbrauchbar machen, und
+// NaN als Mittelpunkt tut genau das -- Leaflet wirft dann beim ersten Zeichnen und der
+// gesamte Karten-Tab bleibt leer.
+const _KARTE_AUSSCHNITT_KEY = 'friesenspy_ausschnitt';
+const _KARTE_ZOOM_MIN = 6;    // wie minZoom in initLiveMap
+const _KARTE_ZOOM_MAX = 19;
+// Nicht bei jedem `moveend` schreiben: Beim Schieben feuert das Ereignis in Serie, und jeder
+// Schreibvorgang setzt das komplette Cookie neu.
+const _AUSSCHNITT_RUHE_MS = 2000;
+let _ausschnittTimer = null;
+
+/** Der Ausschnitt fuer den Kartenaufbau -- der gemerkte, sonst EDWG. */
+function _ausschnittStart() {
+  const vorgabe = { center: _KARTE_MITTE, zoom: _KARTE_ZOOM };
+  const roh = _prefLies(_KARTE_AUSSCHNITT_KEY);
+  if (!roh) return vorgabe;
+  const teile = String(roh).split(',');
+  if (teile.length !== 3) return vorgabe;
+  const lat = parseFloat(teile[0]), lon = parseFloat(teile[1]), z = parseInt(teile[2], 10);
+  if (!isFinite(lat) || !isFinite(lon) || !isFinite(z)) return vorgabe;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return vorgabe;
+  return {
+    center: [lat, lon],
+    zoom: Math.min(_KARTE_ZOOM_MAX, Math.max(_KARTE_ZOOM_MIN, z)),
+  };
+}
+
+/** Merkt sich Mitte und Zoomstufe -- aber nur, wenn der NUTZER die Karte bewegt hat. */
+function _ausschnittBeobachten(map) {
+  map.on('moveend zoomend', function () {
+    // Nachgefuehrte Bewegungen zaehlen nicht: Bei eingeschalteter Moving Map zieht unser
+    // Sekundentakt die Karte staendig auf das Flugzeug, das waere ein Cookie-Schreibvorgang
+    // pro Sekunde -- und beim naechsten Start staende der Ausschnitt dort, wo der letzte Flug
+    // endete, statt dort, wo der Nutzer zuletzt hingesehen hat.
+    if (_naviSelbstBewegt || _naviZoomt) return;
+    if (_ausschnittTimer) return;
+    _ausschnittTimer = setTimeout(function () {
+      _ausschnittTimer = null;
+      try {
+        let m = map.getCenter();
+        if (m && typeof m.wrap === 'function') m = m.wrap();   // ueber die Datumsgrenze hinaus
+        _prefSchreib(_KARTE_AUSSCHNITT_KEY,
+                     [m.lat.toFixed(4), m.lng.toFixed(4), map.getZoom()].join(','));
+      } catch (e) {}
+    }, _AUSSCHNITT_RUHE_MS);
+  });
+}
+
 const _LAYER_PREF_KEY = 'friesenspy_layer';
-function _saveLayerPref(key) { try { localStorage.setItem(_LAYER_PREF_KEY, key); } catch(e) {} }
-function _loadLayerPref() { try { return localStorage.getItem(_LAYER_PREF_KEY); } catch(e) { return null; } }
+function _saveLayerPref(key) { _prefSchreib(_LAYER_PREF_KEY, key); }
+function _loadLayerPref() { return _prefLies(_LAYER_PREF_KEY); }
 function _getPreferredLayer(layers) {
   const pref = _loadLayerPref();
   return (pref && layers[pref]) ? layers[pref] : layers.ofm;
 }
 
 const _AIP_PREF_KEY = 'friesenspy_aip';
-function _saveAIPPref(on) { try { localStorage.setItem(_AIP_PREF_KEY, on ? '1' : '0'); } catch(e) {} }
-function _loadAIPPref() { try { return localStorage.getItem(_AIP_PREF_KEY) === '1'; } catch(e) { return false; } }
+function _saveAIPPref(on) { _prefSchreib(_AIP_PREF_KEY, on ? '1' : '0'); }
+function _loadAIPPref() { return _prefLies(_AIP_PREF_KEY) === '1'; }
 // WICHTIG: Diese Funktion NUR die overlayadd/overlayremove-Listener registrieren lassen, NICHT
 // den Layer selbst hinzufügen -- das muss VOR L.control.layers(...) passieren (s.
 // _addPreferredAIPLayer unten), sonst sieht die Layers-Control-Checkbox den Zustand nie, weil
@@ -3933,10 +4055,10 @@ let   _platzrundenGeladen = false;  // Abruf genau einmal, nicht bei jedem Einsc
 let   _platzrundenLinien  = null;   // die sichtbare Lage -- nur sie traegt Hoehenschilder
 
 function _savePlatzrundenPref(an) {
-  try { localStorage.setItem(_PLATZRUNDEN_PREF_KEY, an ? '1' : '0'); } catch (e) {}
+  _prefSchreib(_PLATZRUNDEN_PREF_KEY, an ? '1' : '0');
 }
 function _loadPlatzrundenPref() {
-  try { return localStorage.getItem(_PLATZRUNDEN_PREF_KEY) === '1'; } catch (e) { return false; }
+  return _prefLies(_PLATZRUNDEN_PREF_KEY) === '1';
 }
 
 // Der Saum ist ein drop-shadow OHNE Versatz -- er liegt gleichmaessig um die Linie und traegt
@@ -4223,10 +4345,10 @@ let _fseRunde = 0;
 let _fseLetzteAnfrage = null;
 
 function _saveFsePref(key, an) {
-  try { localStorage.setItem(key, an ? '1' : '0'); } catch (e) {}
+  _prefSchreib(key, an ? '1' : '0');
 }
 function _loadFsePref(key) {
-  try { return localStorage.getItem(key) === '1'; } catch (e) { return false; }
+  return _prefLies(key) === '1';
 }
 
 // KEIN Canvas-Renderer -- die FSE-Ebenen zeichnen als SVG, wie alles andere auf dieser Karte.
@@ -5009,8 +5131,8 @@ function _verkehrNeuZeichnen() {
   _verkehrZeichnen(_verkehrZusammenfuehren());
 }
 
-function _saveVerkehrPref(an) { try { localStorage.setItem(_VERKEHR_PREF_KEY, an ? '1' : '0'); } catch (e) {} }
-function _loadVerkehrPref() { try { return localStorage.getItem(_VERKEHR_PREF_KEY) === '1'; } catch (e) { return false; } }
+function _saveVerkehrPref(an) { _prefSchreib(_VERKEHR_PREF_KEY, an ? '1' : '0'); }
+function _loadVerkehrPref() { return _prefLies(_VERKEHR_PREF_KEY) === '1'; }
 
 // --- Schilder am fremden Verkehr, ein- und ausschaltbar ----------------------------------
 //
@@ -5019,9 +5141,9 @@ function _loadVerkehrPref() { try { return localStorage.getItem(_VERKEHR_PREF_KE
 // ruhig haben -- ueber dem Platz stehen sonst dreissig Beschriftungen nebeneinander.
 const _VERKEHR_SCHILDER_PREF_KEY = 'fs_verkehr_schilder';
 
-function _saveSchilderPref(an) { try { localStorage.setItem(_VERKEHR_SCHILDER_PREF_KEY, an ? '1' : '0'); } catch (e) {} }
+function _saveSchilderPref(an) { _prefSchreib(_VERKEHR_SCHILDER_PREF_KEY, an ? '1' : '0'); }
 function _loadSchilderPref() {
-  try { return localStorage.getItem(_VERKEHR_SCHILDER_PREF_KEY) !== '0'; } catch (e) { return true; }
+  return _prefLies(_VERKEHR_SCHILDER_PREF_KEY) !== '0';
 }
 
 // Der Zustand haengt am Karten-Container, nicht an den einzelnen Markern: So gilt er sofort,
@@ -8539,8 +8661,8 @@ function _jetztGerechnet(roh) {
 
 const _NAVI_TRACKUP_KEY = 'friesenspy_trackup';
 const _NAVI_MOVING_KEY  = 'friesenspy_movingmap';
-function _naviLies(key) { try { return localStorage.getItem(key) === '1'; } catch (e) { return false; } }
-function _naviMerke(key, an) { try { localStorage.setItem(key, an ? '1' : '0'); } catch (e) {} }
+function _naviLies(key) { return _prefLies(key) === '1'; }
+function _naviMerke(key, an) { _prefSchreib(key, an ? '1' : '0'); }
 
 let _trackUp   = _naviLies(_NAVI_TRACKUP_KEY);
 let _movingMap = _naviLies(_NAVI_MOVING_KEY);
@@ -9198,11 +9320,14 @@ async function initLiveMap() {
   mapInitialized = true;
   await _configPromise;
 
+  // Der zuletzt betrachtete Ausschnitt, sonst EDWG (s. _ausschnittStart).
+  const _start = _ausschnittStart();
+
   liveMap = L.map('leaflet-map', {
     fadeAnimation: _KARTE_EINBLENDEN,
-    center:    _KARTE_MITTE,
-    zoom:      _KARTE_ZOOM,
-    minZoom:   6,
+    center:    _start.center,
+    zoom:      _start.zoom,
+    minZoom:   _KARTE_ZOOM_MIN,
     wheelPxPerZoomLevel: _RAD_PX_JE_ZOOMSTUFE,
     zoomControl: true,
     attributionControl: true,
@@ -9216,6 +9341,7 @@ async function initLiveMap() {
     shiftKeyRotate: false,
   });
   _fixLeafletZoomIcons(liveMap);
+  _ausschnittBeobachten(liveMap);
 
   const liveLayers = _makeTileLayers();
   _getPreferredLayer(liveLayers).addTo(liveMap);

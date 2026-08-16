@@ -1777,10 +1777,22 @@ def test_die_beiden_marker_saeume_sind_gegenlaeufig():
 
 def test_live_karte_oeffnet_ueber_edwg():
     """EDWG (Wangerooge) ist der Heimatplatz. Der alte Startpunkt lag in der offenen Nordsee,
-    rund 130 km westlich -- jedes Oeffnen begann mit Schieben."""
+    rund 130 km westlich -- jedes Oeffnen begann mit Schieben.
+
+    Seit v13.6.0 oeffnet die Karte auf dem zuletzt betrachteten Ausschnitt; EDWG ist der
+    RUECKFALL, wenn keiner gemerkt ist. Geprueft wird deshalb der Rueckfall in
+    _ausschnittStart -- dort, wo die Vorgabe jetzt wirklich entschieden wird.
+    """
     assert "const _KARTE_MITTE = [53.78278, 7.91389];" in INDEX
     assert "center:    [54.5, 8.5]" not in INDEX
-    assert "center:    _KARTE_MITTE," in INDEX
+
+    stelle = INDEX.index("function _ausschnittStart(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "const vorgabe = { center: _KARTE_MITTE, zoom: _KARTE_ZOOM };" in rumpf
+    # Jeder Abbruch in der Pruefung muss auf EDWG zurueckfallen -- ein `return null` daneben
+    # gaebe Leaflet einen leeren Mittelpunkt.
+    assert rumpf.count("return vorgabe;") >= 4
+    assert "return null" not in rumpf
 
 
 def test_start_zoom_liegt_nicht_unter_der_verkehrs_schwelle():

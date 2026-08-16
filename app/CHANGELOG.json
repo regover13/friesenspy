@@ -1,5 +1,17 @@
 [
   {
+    "version": "13.6.0",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Das Kniebrett merkt sich seine Karteneinstellungen",
+    "items": [
+      "🗺️ Basiskarte, eingeschaltete Ebenen, Track-up und Moving Map überstehen jetzt einen Neustart des Simulators. Bisher stand das Kniebrett nach jedem Start wieder auf OpenFlightMap mit ausgeschalteten Ebenen — und zwar auch dann, wenn kurz vorher etwas anderes gewählt war.",
+      "🔍 Der Grund lag nicht am Programm, sondern am Speicher: Der Ablageort, den Browser dafür anbieten, überlebt im Kniebrett keinen Neustart verlässlich. Die Aufzeichnung von 40 Panel-Starts zeigt sogar Fälle, in denen ein zwei Stunden alter Stand zurückkam. Die Einstellungen liegen deshalb jetzt woanders — dort, wo auch die Anmeldung liegt, die im Kniebrett seit jeher hält.",
+      "📍 Neu dazu: Auch der zuletzt betrachtete Kartenausschnitt wird gemerkt. Wer die Karte über Hamburg stehen lässt, findet sie beim nächsten Start dort wieder statt über Wangerooge. Nachgeführte Bewegungen zählen dabei nicht — bei eingeschalteter Moving Map bleibt gemerkt, wohin du zuletzt selbst gesehen hast.",
+      "🔒 Bisherige Einstellungen gehen nicht verloren: Sie werden beim ersten Start einmalig übernommen."
+    ]
+  },
+  {
     "version": "13.5.2",
     "date": "2026-08-16",
     "highlight": false,

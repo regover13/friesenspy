@@ -186,6 +186,21 @@ global.localStorage = (() => {
   };
 })();
 
+// Seit dem 16.08.2026 liegen die Merker im Cookie (s. tests/test_karte_merker.py). Die Treiber
+// unten setzen weiter localStorage -- das bleibt gueltig, weil _prefLies genau darauf
+// zurueckfaellt, wenn das Cookie den Schluessel nicht kennt.
+global._jar = {};
+global.document = {
+  get cookie() {
+    return Object.keys(global._jar).map((k) => k + '=' + global._jar[k]).join('; ');
+  },
+  set cookie(zeile) {
+    const erstes = String(zeile).split('; ')[0];
+    const i = erstes.indexOf('=');
+    global._jar[erstes.slice(0, i)] = erstes.slice(i + 1);
+  },
+};
+
 // Stehen im Quelltext VOR dem FSE-Block und sind hier nur Beiwerk.
 global._istSichtbar = () => true;
 // NUR setzen, wenn die Scheibe die echte Funktion nicht mitbringt. Funktionsdeklarationen
@@ -336,8 +351,17 @@ def _node_starten(skript, timeout):
                               timeout=timeout)
 
 
+def _pref_quelltext():
+    """Der gemeinsame Merker-Speicher. _loadFsePref ruft ihn auf -- ohne diese Scheibe
+    scheitert jeder Node-Lauf an `_prefLies is not defined`."""
+    start = INDEX.index("const _PREF_COOKIE")
+    ende = INDEX.index("const _KARTE_AUSSCHNITT_KEY")
+    return INDEX[start:ende]
+
+
 def _node_lauf(treiber, quelltext=None):
-    skript = _FSE_HARNESS + "\n" + (quelltext or _fse_quelltext()) + "\n" + treiber
+    skript = (_FSE_HARNESS + "\n" + _pref_quelltext() + "\n"
+              + (quelltext or _fse_quelltext()) + "\n" + treiber)
     ergebnis = _node_starten(skript, 15)
     assert ergebnis.returncode == 0 and "OK" in ergebnis.stdout, (
         f"Node-Lauf fehlgeschlagen -- stdout={ergebnis.stdout!r} stderr={ergebnis.stderr!r}"
