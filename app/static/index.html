@@ -106,6 +106,27 @@
        * des INHALTS ist 0, wenn der Verweis ins Leere lief -- das war der Punkt, an dem die
        * fruehere Messung ("Knopf 44x44, SVG 20x20, richtig platziert") stehen blieb.
        */
+      // Der Canvas-Renderer traegt beide FSE-Ebenen und die Platzrunden. Ob Coherent GT
+      // wirklich zeichnet, ist nie gemessen worden -- und die Lehre aus probeSprites lautet,
+      // den INHALT zu pruefen und nicht den Rahmen: Ein <canvas> hat seine Masse immer, auch
+      // wenn nichts darin ankommt.
+      function probeCanvas() {
+        var c = document.createElement('canvas');
+        c.width = 8; c.height = 8;
+        var ctx = c.getContext && c.getContext('2d');
+        if (!ctx) return { kontext: false, zeichnet: false };
+        ctx.fillStyle = '#ff0000';
+        ctx.fillRect(1, 1, 6, 6);
+        var gesetzt = false;
+        try {
+          var d = ctx.getImageData(4, 4, 1, 1).data;
+          gesetzt = d[0] > 200 && d[3] > 200;
+        } catch (err) {
+          return { kontext: true, zeichnet: false, fehler: String(err) };
+        }
+        return { kontext: true, zeichnet: gesetzt };
+      }
+
       function probeSprites() {
         var out = {};
         function inhaltsBreite(svg) {
@@ -406,6 +427,7 @@
         };
         try { base.glyphs = probeGlyphs(); } catch (err) { base.glyphs = { error: String(err) }; }
         try { base.sprites = probeSprites(); } catch (err) { base.sprites = { error: String(err) }; }
+        try { base.canvas = probeCanvas(); } catch (err) { base.canvas = { error: String(err) }; }
         try { base.fonts = probeFonts(); } catch (err) { base.fonts = { error: String(err) }; }
         try { base.tables = probeTables(); } catch (err) { base.tables = { error: String(err) }; }
 

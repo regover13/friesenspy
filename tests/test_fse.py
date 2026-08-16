@@ -921,3 +921,19 @@ setImmediate(() => {
 });
 """
     _node_lauf(treiber)
+
+
+def test_diagnose_misst_canvas():
+    """docs/efb-panel-debugging.md: 'Ein in Chrome geprueftes Fix ist nicht verifiziert,
+    solange er nicht im Panel gemessen wurde.' Der Canvas-Renderer der FSE-Ebenen laeuft seit
+    dem 15.08.2026 produktiv und ist in Coherent GT nie gemessen worden -- die Selbstdiagnose
+    prueft CSS, Glyphen, Sprites und Kacheln, aber kein Canvas.
+
+    Gemessen wird der INHALT, nicht der Rahmen: Ein <canvas> existiert immer und hat immer
+    Masse. Genau daran war die fruehere Sprite-Messung gescheitert (sie mass die Groesse des
+    <svg> statt der Zeichnung, s. den Kommentar bei probeSprites)."""
+    assert "base.canvas = probeCanvas()" in INDEX
+    stelle = INDEX.index("function probeCanvas(")
+    rumpf = INDEX[stelle:INDEX.index("\n      }", stelle)]
+    assert "getContext" in rumpf
+    assert "getImageData" in rumpf, "ohne Pixelpruefung misst der Test nur den Rahmen"
