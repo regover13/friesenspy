@@ -110,6 +110,62 @@ Werte außerhalb der Bereiche → `422`.
 
 ---
 
+## GET /api/fse/airports · GET /api/fse/zones
+
+FSE-Plätze und ihre Landeflächen im Kartenausschnitt. Speisen die zwei abschaltbaren Ebenen
+„FSE-Plätze" und „FSE-Landeflächen".
+
+Der Bestand ist **weltweit** (23.780 Plätze) und liegt seit dem 16.08.2026 nicht mehr als
+statische Datei unter `static/`, sondern im Serverspeicher (`app/fse.py`, einmal beim Start
+gelesen, rund 51 MB). Ausgeliefert wird nur, was im Bild ist — deshalb lädt der Browser heute
+**weniger** als früher mit dem Europa-Zuschnitt: über Wangerooge auf Zoom 10 sind das 14 Plätze
+statt 2.335.
+
+Zwei Endpunkte statt einem, weil die beiden Ebenen einzeln schaltbar sind: Wer nur die
+Landeflächen anhat, soll die Plätze nicht mitladen.
+
+Kein Sonderweg bei der Anmeldung: verhalten sich wie `/api/traffic`.
+
+**Query-Parameter** (beide Endpunkte identisch)
+
+| Name | Typ | Pflicht | Bereich | Bedeutung |
+|------|-----|---------|---------|-----------|
+| `lat` | float | ja | −90 … 90 | Bezugspunkt, im Frontend die Kartenmitte |
+| `lon` | float | ja | −180 … 180 | Bezugspunkt |
+| `r` | float | nein | 1 … 250 (Default 50) | Radius in km |
+
+Werte außerhalb der Bereiche → `422`.
+
+**Response**
+
+```json
+{ "plaetze": { "EDWG": { "lat": 53.7872, "lon": 7.91583, "name": "Wangerooge",
+                         "msfs": ["EDWG"], "rwy": 2803, "surface": 1, "elev": 5 } },
+  "gekappt": false }
+
+{ "zonen": { "EDWG": [[53.6615, 8.0757], [53.8201, 7.6904]] },
+  "gekappt": false }
+```
+
+**`gekappt`** meldet, dass der Mengendeckel gegriffen hat und der Nutzer eine **Scheibe statt
+des vollen Rechtecks** sieht — dieselbe Entscheidung wie beim Verkehr, aus demselben Grund.
+
+Gedeckelt wird in **Punkten**, nicht in Stück: Ein Platz ist ein `CircleMarker` mit 1 Punkt,
+eine Zone ein Polygon mit im Mittel 7 (max 21). Bei New York stellen die Zonen damit 88 % der
+Zeichenlast — ein Stückzahl-Deckel schonte die falsche Ebene. Grenzen: 250 Punkte für Plätze,
+900 für Zonen. Abgeschnitten wird nach Entfernung zum Bezugspunkt.
+
+Über dem offenen Ozean greift der Deckel nie: Dort steht eine einzelne große Voronoi-Zelle mit
+7 Ecken, die niemand um das Budget bedrängt. Damit sie auch dort ankommt, sortieren die Zonen
+nach dem **Abstand des Bezugspunkts zu ihrer Bounding-Box** und nicht nach der Entfernung zu
+ihrem Flugplatz — der kann Hunderte Kilometer außerhalb des Bildes liegen.
+
+**Nicht ausgeliefert werden zwei Zonen:** `CYLT` (Alert) und `NZPG` (McMurdo) umschließen je
+einen Pol, ihre Ecken laufen einmal um die Erde. So ein Ring hat in Länge/Breite keine
+nahtfreie Darstellung; Leaflet zöge daraus ein Band quer über die Karte.
+
+---
+
 ## GET /api/stats/activity
 
 Flugaktivität über Zeit — für das Liniendiagramm im Statistiken-Tab.

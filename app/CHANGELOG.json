@@ -1,5 +1,17 @@
 [
   {
+    "version": "13.3.0",
+    "date": "2026-08-16",
+    "highlight": true,
+    "title": "FSE-Plätze jetzt weltweit — und die Karte lädt weniger als vorher",
+    "items": [
+      "🌍 Die beiden FSE-Ebenen zeigen nicht mehr nur Europa, sondern alle 23.780 Plätze der Welt. Wer nach Island, Neuseeland oder Alaska fliegt, sieht dort dieselben Landeflächen wie zu Hause.",
+      "⚡ Und trotzdem lädt der Browser weniger: Geholt wird nur, was im Bild ist. Über Wangerooge auf mittlerer Zoomstufe sind das 14 Plätze statt bisher 2.335 — im MSFS-Kniebrett der Unterschied zwischen ruckelig und flüssig.",
+      "🛫 Nachgeladen wird nach geflogener Strecke, nicht bei jeder Kartenbewegung. Eine Platzrunde über dem Feld kostet gar keine Anfrage; im Reiseflug ist es etwa eine alle anderthalb Minuten.",
+      "🌊 Über dem offenen Ozean bleibt die große Zuständigkeitsfläche sichtbar — sie war bisher gar nicht dabei, weil der Datensatz an Europas Rand endete."
+    ]
+  },
+  {
     "version": "13.2.0",
     "date": "2026-08-16",
     "highlight": false,

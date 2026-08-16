@@ -8,8 +8,11 @@ from pathlib import Path
 import pytest
 
 STATIC = Path(__file__).resolve().parents[1] / "app" / "static"
-AIRPORTS = STATIC / "data" / "fse_airports_eu.json"
-ZONES = STATIC / "data" / "fse_zones_eu.json"
+# Der Europa-Zuschnitt ist am 16.08.2026 entfallen: Es gibt nur noch den Weltbestand, und der
+# liegt unter app/data/ statt app/static/ -- was unter static/ liegt, wird als Ganzes
+# ausgeliefert, und genau das soll hier nicht passieren.
+AIRPORTS = Path(__file__).resolve().parents[1] / "app" / "data" / "fse" / "fse_airports_world.json"
+ZONES = Path(__file__).resolve().parents[1] / "app" / "data" / "fse" / "fse_zones_world.json"
 INDEX = (STATIC / "index.html").read_text(encoding="utf-8")
 
 
@@ -17,19 +20,11 @@ def test_dateien_liegen_im_repo():
     assert AIRPORTS.exists() and ZONES.exists()
 
 
-def test_europa_zuschnitt_ist_klein_genug():
-    """Weltweit waeren es 17 MB. Der Europa-Ausschnitt muss unter 1 MB roh bleiben, sonst ist
-    das Lazy Load die Wartezeit nicht wert."""
-    assert AIRPORTS.stat().st_size < 1_000_000
-    assert ZONES.stat().st_size < 1_000_000
-
-
-def test_plaetze_liegen_in_europa():
+def test_weltbestand_ist_vollstaendig():
+    """Kein Zuschnitt mehr -- die Begrenzung passiert am Endpunkt, nicht am Datensatz."""
     ap = json.loads(AIRPORTS.read_text(encoding="utf-8"))
-    assert 2000 < len(ap) < 3000
-    for icao, a in ap.items():
-        assert 35 <= a["lat"] <= 72, icao
-        assert -25 <= a["lon"] <= 45, icao
+    assert len(ap) == 23780
+    assert "KJFK" in ap and "NZWN" in ap and "EDWG" in ap
 
 
 def test_msfs_feld_ist_bereinigt():

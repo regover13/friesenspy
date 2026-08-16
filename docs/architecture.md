@@ -260,6 +260,43 @@ Ein einziges `conn.commit()` am Ende — kein partieller Schreibzustand möglich
 - `_check_event_reminders` (`app/poller.py`) speist die ~1h-Erinnerung jetzt aus drei Quellen: `events_due_for_reminder` (generische Kalender-Events; schließt `is_bummel`/`is_transport` aus), `bummel_races_due_for_reminder` und `transport_events_due_for_reminder` (beide manuell + Kalender, `push_enabled`-gated). Dedup läuft über synthetische Keys `bummel:{id}` / `kutter:{id}` in der bestehenden `event_reminders_sent`-Tabelle (`uid` ist reiner Text, kein Fremdschlüssel — kein Schema-Umbau nötig).
 - **Boden-Beladung GPS-only (v8.22.0, #5):** Der Login-Ort eines Piloten (der `login`-Event-`airport`, den `derive_stacks` als Standort verbucht) wird in `_stack_inputs` **rein aus GPS** bestimmt, kein Flugplan-Fallback: kennt das erste GPS-Leg der Session einen `gps_departure`, gilt der; sonst die **aktuelle** Live-Position (`_current_pos` → `live_positions`, am Boden `groundspeed < _BLOCK_GS_KT`), sonst die erste Position der Session (`_first_pos`-Muster). Liegt der Platz nicht in der Route (≠ Ziel), gilt der Pilot als in der Luft/anderswo eingeloggt (unsichtbar) — ein alter Plan verortet nie falsch. Wer am Boden an einem Ladeplatz steht, lädt sofort vom Stapel; das Frontend zeigt ihn als „🅿️ lädt in <Platz>". Ein zurückgekehrter Pilot, der an einem Ladeplatz landet, erscheint dadurch mit `status: loading` („lädt", bereit für die nächste Runde) — den früheren `returning`-Status gibt es nicht mehr (der #65-Bug bleibt behoben).
 
+### `app/fse.py`
+
+Hält den FSE-Weltbestand (23.780 Plätze + Landeflächen aus dem FSE-Planner) im Speicher und
+schneidet den Kartenausschnitt heraus. Einmal beim Start gelesen (`lifespan`), danach nur
+gelesen — deshalb ohne Sperre. Speist `/api/fse/airports` und `/api/fse/zones`.
+
+**Speicher:** rund **51 MB** dauerhaft (Container 141 → ~192 MB). Erwogen und **gemessen
+verworfen** war, die Zonen als vorserialisierte JSON-Zeichenketten zu halten: `json.load` baut
+die Listenstruktur ohnehin, bevor irgendetwas daraus abgeleitet werden kann, die Zeichenketten
+kämen also obendrauf — und der freigegebene Listenspeicher geht nicht ans Betriebssystem
+zurück (mit `malloc_trim` gegengeprüft). Gemessen 55,3 statt 50,8 MB, also 4,5 MB **teurer**.
+
+**Deckel in Punkten, nicht in Stück** (`MAX_PUNKTE_PLAETZE = 250`, `MAX_PUNKTE_ZONEN = 900`):
+Ein Platz ist ein `CircleMarker` mit 1 Punkt, eine Zone ein Polygon mit im Mittel 7 (max 21).
+Bei New York stellen die Zonen 88 % der Zeichenlast — ein Stückzahl-Deckel schonte die falsche
+Ebene. Die Werte sind gegen Coherent GT gewählt (s. `main.py`: „ab ein paar hundert Elementen
+zäh") und stehen zur Korrektur, sobald die Panel-Selbstdiagnose Canvas misst (Feld `canvas`).
+
+**Zonen sortieren nach dem Abstand des Bezugspunkts zu ihrer Bounding-Box**, nicht nach der
+Entfernung zu ihrem Flugplatz: Voronoi-Zellen über dem Ozean haben bis zu 14.127 km Diagonale
+(p99: 1.348 km), ihr Flugplatz kann Hunderte Kilometer außerhalb des Bildes liegen — nach
+Flugplatzentfernung sortiert fiele ausgerechnet die Zelle als Erstes aus dem Deckel, in der man
+gerade steht. Gemessen wird vom **Punkt**, nicht vom Ausschnitts-Rechteck: gegen das Rechteck
+hätte jede schneidende Zone Abstand 0 (bei New York 389 Stück), und der Deckel entschiede
+zwischen ihnen alphabetisch.
+
+**Zwei Zonen werden beim Laden verworfen:** `CYLT` (Alert) und `NZPG` (McMurdo) umschließen je
+einen Pol — ihre Ecken laufen einmal um die Erde, ein solcher Ring hat in Länge/Breite keine
+nahtfreie Darstellung. Erkannt datengetrieben (Längenspanne > 180° nach Zweig-Korrektur), nicht
+über eine ICAO-Liste. Die übrigen 34 Zonen mit Koordinaten jenseits ±180 sind **durchgehend**
+(`NFNA` 175,98 → 181,65) und bleiben unangetastet: pauschales Normalisieren machte aus genau
+ihnen die Bänder, die hier vermieden werden.
+
+**Bekannter Rest:** Das Abfragefenster rechnet nicht über die Datumsgrenze — bei Länge 179,5
+fällt alles westlich von −180 weg. Betroffen sind 14 der 23.780 Plätze (Fiji, Neuseeland,
+Marshallinseln, Aleuten). Nutzer-Entscheidung 16.08.2026: nicht in dieser Umstellung.
+
 ### `app/geo.py`
 
 - `haversine(lat1, lon1, lat2, lon2)` — Großkreis-Abstand in km

@@ -33,6 +33,26 @@ wird als Ganzes ausgeliefert — genau das soll hier nicht passieren.
 Die bisherigen EU-Dateien unter `app/static/data/` sind **unangetastet**; die Ebene
 funktioniert unverändert weiter, bis umgestellt wird.
 
+## Umgesetzt am 16.08.2026
+
+Die Umstellung ist erfolgt. Maßgeblich ist jetzt
+`docs/superpowers/specs/2026-08-16-fse-weltweit-ausschnitt-design.md`; die Endpunkte stehen in
+`docs/api.md`, das Modul in `docs/architecture.md`.
+
+Kurzfassung dessen, was aus der Skizze unten wurde: Zwei Endpunkte (`/api/fse/airports`,
+`/api/fse/zones`) liefern den Kartenausschnitt, gedeckelt in **Punkten** statt in Stück (eine
+Zone kostet das Siebenfache eines Platzes). Das Frontend ruft **nicht** bei jeder
+Kartenbewegung ab, sondern nach zurückgelegter Strecke — `moveend` mit `!_naviSelbstBewegt`
+wäre hier ein Fehler gewesen: Bei eingeschalteter Moving Map bewegt die Karte sich selbst, und
+anders als der Verkehr hat diese Ebene keinen Takt als zweite Quelle.
+
+Die EU-Dateien und `scripts/fse_zuschnitt.py` sind gelöscht.
+
+Der Rest dieses Dokuments ist die ursprüngliche Übergabe und bleibt als Herkunftsnachweis
+stehen.
+
+---
+
 ## Was noch fehlt — und warum es so laufen sollte
 
 Der Zuschnitt auf Europa war eine Notlösung gegen die **Zeichenlast**, nicht gegen die

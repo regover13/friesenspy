@@ -6,7 +6,8 @@ Quelle: https://github.com/piero-la-lune/FSE-Planner (MIT), Dateien ``src/data/i
 Bruchteil; die Zonen sind reine Polygonzuege und lassen sich nur ueber die Genauigkeit der
 Koordinaten verkleinern.
 
-**Warum es diese Datei zusaetzlich zu fse_zuschnitt.py gibt.** Der Zuschnitt auf Europa war
+**Warum es diese Datei gibt.** Der frueher benutzte Zuschnitt auf Europa (scripts/fse_zuschnitt.py,
+am 16.08.2026 geloescht) war
 eine Notloesung gegen die Zeichenlast: Alle Plaetze liegen gleichzeitig in der Karte, und
 Leaflet setzt bei jeder Kartenbewegung jeden Pfad neu -- bei 2.335 Plaetzen war das schon
 spuerbar, bei 23.780 waere es unbenutzbar. Der Zuschnitt hat das Symptom bekaempft und dabei
