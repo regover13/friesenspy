@@ -107,17 +107,20 @@ def test_fse_wird_vor_der_layers_control_registriert():
 def test_zonen_fangen_keine_klicks():
     """Die Zellen liegen flaechendeckend ueber der Karte. Waeren sie klickbar, kaeme man an
     keinen Marker und an kein Platzrunden-Popup mehr heran."""
-    stelle = INDEX.index("function _fseZonenZeichnen(")
+    stelle = INDEX.index("function _fseZoneBauen(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "interactive: false" in rumpf
     assert "fill: false" in rumpf
 
 
-def test_fse_daten_werden_lazy_geholt():
-    assert INDEX.count("/static/data/fse_airports_eu.json") == 1
-    assert INDEX.count("/static/data/fse_zones_eu.json") == 1
-    stelle = INDEX.index("function _fseLaden(")
-    assert "_fseGeladen" in INDEX[stelle:stelle + 900]
+def test_fse_daten_kommen_aus_dem_ausschnitt_endpunkt():
+    """Loest den frueheren Lazy-Load-Test ab: Es gibt keine statischen Europadateien mehr, und
+    kein Einmal-Flag. Geholt wird bei jeder nennenswerten Kartenbewegung der Ausschnitt."""
+    assert "/static/data/fse_airports_eu.json" not in INDEX
+    assert "/static/data/fse_zones_eu.json" not in INDEX
+    assert "_fseGeladen" not in INDEX
+    assert "'/api/fse/airports'" in INDEX
+    assert "'/api/fse/zones'" in INDEX
 
 
 def test_popup_nennt_die_msfs_entsprechung():
@@ -163,36 +166,18 @@ def test_attribution_nennt_fse_planner():
 _NODE = shutil.which("node") or shutil.which("nodejs")
 
 
-@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
-def test_addPreferredFseLayer_haengt_beide_gruppen_ein_und_zwingt_zonen_nach_hinten():
-    """Fix nach Review-Fund (Critical): _addPreferredFseLayer haengte beim Laden nur die
-    Plaetze-Gruppe ein (`_fsePlaetzeGruppe.addTo(map)`) -- die Zonen-Gruppe wurde NIRGENDS
-    `.addTo(map)` gerufen. Zwei Folgen: Die Checkbox "FSE-Landeflaechen" zeigte nach einem
-    Reload den falschen Zustand, und ohne bringToBack() haette ein spaeteres manuelles
-    Zuschalten die Landeflaechen ueber die Plaetze-Marker gelegt (beide Layer teilen sich den
-    overlayPane, Stapelung folgt dem addTo-Zeitpunkt, nicht der Reihenfolge in liveOverlays).
+def _fse_quelltext():
+    """Der FSE-Block von den Konstanten bis hinter _fseAttributionAus.
 
-    Ein reiner String-Test auf INDEX kann das prinzipiell nicht fangen (das hat das Review zu
-    Recht angemerkt) -- deshalb hier der extrahierte Quelltext wirklich in Node ausgefuehrt,
-    mit einem Leaflet-Fake, der bringToBack() bewusst nur auf FeatureGroup-artigen Objekten
-    kennt (wie das echte Leaflet: das schlichte LayerGroup, das die Zonen-Gruppe vorher war,
-    hat diese Methode gar nicht).
-
-    Zweiter Review-Fund (Important), hier mit erweitertem Test nachgezogen: bringToBack() lief
-    in _addPreferredFseLayer, BEVOR _fseLaden() die Polylinien ueberhaupt gezeichnet hatte -- auf
-    einer leeren Gruppe ein No-Op. Der alte Test zaehlte nur `bringToBackCalls >= 1` und war
-    deshalb gruen, obwohl die Wirkung ausblieb. Der Fix zeichnet die Zonen jetzt VOR den Plaetzen
-    (s. Kommentar in _fseLaden) -- dieser Test prueft deshalb die tatsaechliche Zeichenreihenfolge
-    ueber eine mitgeloggte Sequenz, nicht nur, ob bringToBack() irgendwann aufgerufen wurde.
-    Ausserdem: die FSE-Planner-Attribution (Review-Fund, Attribution) muss beim Einhaengen
-    tatsaechlich am Attribution-Control landen."""
-    # Der Viewport-Helfer steht vor dem FSE-Block und wird von der Label-Wache gebraucht.
-    start = INDEX.index("function _labelsImSichtbereich(")
+    Die Scheibe MUSS _fseAbrufen enthalten -- endete sie bei _fseAbgleichen, waere die
+    Funktion gar nicht geladen und jeder Test darueber gruen, ohne etwas zu pruefen.
+    """
+    start = INDEX.index("const _FSE_PLAETZE_API")
     ende_start = INDEX.index("function _fseAttributionAus(")
-    ende = INDEX.index("\n}", ende_start) + len("\n}")
-    quelltext = INDEX[start:ende]
+    return INDEX[start:INDEX.index("\n}", ende_start) + len("\n}")]
 
-    harness = """
+
+_FSE_HARNESS = """
 'use strict';
 const assert = require('assert');
 
@@ -205,49 +190,79 @@ global.localStorage = (() => {
   };
 })();
 
-// Je eine Beispiel-Zone und ein Beispiel-Platz -- genug, damit _fseZonenZeichnen und
-// _fsePlaetzeZeichnen wirklich je einen Layer erzeugen und die Reihenfolge messbar wird.
+// Stehen im Quelltext VOR dem FSE-Block und sind hier nur Beiwerk.
+global._istSichtbar = () => true;
+global._labelsImSichtbereich = () => {};
+
+// Antworten je Endpunkt, vom Treiber umsetzbar. WICHTIG: mit r.ok und mit der Huelle
+// {plaetze:...} bzw. {zonen:...} -- ohne beides liefe `r.ok ? r.json() : null` bzw. `d.plaetze`
+// ins Leere, und die Tests waeren gruen, ohne etwas zu pruefen.
+global._antwortPlaetze = { EDXX: { lat: 53, lon: 8, name: 'Test', msfs: ['EDXX'] } };
+global._antwortZonen   = { EDXX: [[53, 8], [54, 8]] };
+global._fetchLog = [];
 global.fetch = (url) => {
-  if (String(url).indexOf('zones') !== -1) {
-    return Promise.resolve({ json: () => Promise.resolve({ EDXX: [[53, 8], [54, 8]] }) });
-  }
+  global._fetchLog.push(String(url));
+  const zonen = String(url).indexOf('/zones') !== -1;
   return Promise.resolve({
-    json: () => Promise.resolve({ EDXX: { lat: 53, lon: 8, name: 'Test', msfs: ['EDXX'] } }),
+    ok: true,
+    json: () => Promise.resolve(
+      zonen ? { zonen: global._antwortZonen, gekappt: false }
+            : { plaetze: global._antwortPlaetze, gekappt: false }),
   });
 };
 
-// Mitgeloggte Reihenfolge, in der Zonen- bzw. Plaetze-Layer tatsaechlich eingehaengt werden --
-// das ist bei Leaflet-Path-Layern im gemeinsamen overlayPane genau das, was die Stapelung
-// bestimmt (spaeter eingehaengt = weiter oben).
+// Mitgeloggte Reihenfolge, in der Zonen- bzw. Plaetze-Layer eingehaengt werden, und wann
+// bringToBack() dazwischen lief.
 global._reihenfolge = [];
 
+class FakeLayer {
+  constructor(art) { this.art = art; }
+  bindPopup() { return this; }
+  bindTooltip() { return this; }
+  unbindTooltip() { return this; }
+  addTo(gruppe) { gruppe.addLayer(this); return this; }
+}
+
 class FakeLayerGroup {
-  constructor(art) { this.art = art; this.addToCalls = []; this._layers = []; }
-  addTo(ziel) {
-    this.addToCalls.push(ziel);
-    if (this.art === 'polyline') global._reihenfolge.push('zone');
-    if (this.art === 'circleMarker') global._reihenfolge.push('platz');
+  constructor(art) { this.art = art; this.addToCalls = []; this._layers = []; this._handlers = {}; }
+  addTo(ziel) { this.addToCalls.push(ziel); ziel._ebenen.add(this); return this; }
+  addLayer(l) {
+    this._layers.push(l);
+    global._reihenfolge.push(l.art === 'polyline' ? 'zone' : 'platz');
+    (this._handlers['layeradd'] || []).forEach(fn => fn({ layer: l }));
     return this;
   }
-  addLayer(l) { this._layers.push(l); return this; }
+  removeLayer(l) {
+    const i = this._layers.indexOf(l);
+    if (i !== -1) this._layers.splice(i, 1);
+    global._reihenfolge.push('weg');
+    return this;
+  }
+  clearLayers() { this._layers.length = 0; return this; }
   eachLayer(fn) { this._layers.forEach(fn); return this; }
-  bindPopup() { return this; }
-  bindTooltip() { return this; }   // seit der Label-Zoom-Wache haengt _fsePlaetzeZeichnen auch das an
+  on(evt, fn) { (this._handlers[evt] = this._handlers[evt] || []).push(fn); return this; }
 }
-// bringToBack existiert in echtem Leaflet NUR auf FeatureGroup (ueber deren invoke()),
-// NICHT auf dem schlichten LayerGroup -- absichtlich nachgebildet, damit der Test auch
-// einen Rueckfall auf L.layerGroup() fuer die Zonen-Gruppe faengt.
+// bringToBack existiert in echtem Leaflet NUR auf FeatureGroup (ueber deren invoke()), NICHT
+// auf dem schlichten LayerGroup -- absichtlich nachgebildet, damit ein Rueckfall auffaellt.
 class FakeFeatureGroup extends FakeLayerGroup {
   constructor() { super('featureGroup'); this.bringToBackCalls = 0; }
-  bringToBack() { this.bringToBackCalls++; return this; }
+  bringToBack() { this.bringToBackCalls++; global._reihenfolge.push('nachHinten'); return this; }
 }
+
+function _ll(lat, lng) {
+  return {
+    lat: lat, lng: lng,
+    // Grob, aber fuer die Streckensperre genau genug: 1 Grad Breite = 111,32 km.
+    distanceTo: (a) => Math.hypot((a.lat - lat) * 111320, (a.lng - lng) * 111320 * Math.cos(lat * Math.PI / 180)),
+  };
+}
+
 global.L = {
-  // Seit dem Canvas-Umbau reicht Leaflet einen Renderer durch -- der Fake muss ihn liefern.
   canvas: () => ({}),
   layerGroup: () => new FakeLayerGroup('layerGroup'),
   featureGroup: () => new FakeFeatureGroup(),
-  polyline: () => new FakeLayerGroup('polyline'),
-  circleMarker: () => new FakeLayerGroup('circleMarker'),
+  polyline: () => new FakeLayer('polyline'),
+  circleMarker: () => new FakeLayer('circleMarker'),
 };
 
 class FakeAttributionControl {
@@ -257,53 +272,79 @@ class FakeAttributionControl {
 }
 
 class FakeMap {
-  constructor() { this._handlers = {}; this.attributionControl = new FakeAttributionControl(); }
-  on(event, handler) { (this._handlers[event] = this._handlers[event] || []).push(handler); return this; }
+  constructor(zoom) {
+    this._zoom = zoom === undefined ? 10 : zoom;
+    this._mitte = _ll(53.0, 8.0);
+    this._handlers = {};
+    this._ebenen = new Set();
+    this.attributionControl = new FakeAttributionControl();
+  }
+  on(event, handler) {
+    // Leaflet nimmt mehrere Ereignisse durch Leerzeichen getrennt entgegen.
+    String(event).split(' ').forEach(e => (this._handlers[e] = this._handlers[e] || []).push(handler));
+    return this;
+  }
+  getZoom() { return this._zoom; }
+  getCenter() { return this._mitte; }
+  // Ecke rund 40 km von der Mitte -- mal _FSE_RAND ergibt einen glatten Abrufradius.
+  getBounds() { return { getNorthEast: () => _ll(this._mitte.lat + 0.25, this._mitte.lng + 0.5) }; }
+  hasLayer(l) { return this._ebenen.has(l); }
+  getContainer() { return {}; }
+  feuern(evt) { (this._handlers[evt] || []).forEach(fn => fn()); }
+  zieheNach(lat, lng) { this._mitte = _ll(lat, lng); this.feuern('moveend'); }
+  setzeZoom(z) { this._zoom = z; this.feuern('zoomend'); }
 }
 """
 
+
+def _node_lauf(treiber, quelltext=None):
+    skript = _FSE_HARNESS + "\n" + (quelltext or _fse_quelltext()) + "\n" + treiber
+    ergebnis = subprocess.run([_NODE, "-e", skript], capture_output=True, text=True, timeout=15)
+    assert ergebnis.returncode == 0 and "OK" in ergebnis.stdout, (
+        f"Node-Lauf fehlgeschlagen -- stdout={ergebnis.stdout!r} stderr={ergebnis.stderr!r}"
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_addPreferredFseLayer_haengt_beide_gruppen_ein_und_ruft_einmal_ab():
+    """Fix nach Review-Fund (Critical, urspruenglich): _addPreferredFseLayer haengte beim Laden
+    nur die Plaetze-Gruppe ein -- die Zonen-Gruppe wurde nirgends `.addTo(map)` gerufen.
+
+    Seit der Umstellung auf den Ausschnitt kommt ein zweiter Fehler derselben Stelle hinzu:
+    Wuerde je Zweig ein eigenes _fseAbrufen laufen, saehe der erste die zweite Gruppe noch
+    nicht (hasLayer false), und der zweite liefe in die Streckensperre -- die Plaetze blieben
+    nach jedem Seitenaufruf leer. Deshalb wird hier geprueft, dass GENAU EIN Abrufpaar
+    ausgeht und beide Ebenen etwas bekommen."""
     treiber = """
 localStorage.setItem(_FSE_PLAETZE_PREF_KEY, '1');
 localStorage.setItem(_FSE_ZONEN_PREF_KEY, '1');
 
-const map = new FakeMap();
+const map = new FakeMap(10);
 _addPreferredFseLayer(map);
 
-// fetch() ist bei uns ein natives Promise ohne echte I/O -- ein setImmediate() (Makrotask)
-// laeuft garantiert erst, nachdem Node die gesamte Mikrotask-Kette (fetch -> json -> Promise.all
-// -> then) abgearbeitet hat.
 setImmediate(() => {
   try {
     assert.strictEqual(_fsePlaetzeGruppe.addToCalls.length, 1, 'Plaetze-Gruppe wurde nicht eingehaengt');
-    assert.strictEqual(_fseZonenGruppe.addToCalls.length, 1, 'Zonen-Gruppe wurde nicht eingehaengt (der urspruengliche Bug)');
-    assert.ok(_fseZonenGruppe.bringToBackCalls >= 1, 'bringToBack() wurde nicht auf der Zonen-Gruppe aufgerufen');
+    assert.strictEqual(_fseZonenGruppe.addToCalls.length, 1, 'Zonen-Gruppe wurde nicht eingehaengt');
 
-    assert.ok(global._reihenfolge.length >= 2, 'fetch-Mock hat keine Layer erzeugt -- Test kann die Reihenfolge nicht pruefen');
-    const ersteZoneIdx = global._reihenfolge.indexOf('zone');
-    const erstePlatzIdx = global._reihenfolge.indexOf('platz');
-    assert.ok(ersteZoneIdx !== -1 && erstePlatzIdx !== -1, 'nicht beide Layer-Arten wurden gezeichnet');
-    assert.ok(ersteZoneIdx < erstePlatzIdx,
-      'Zonen wurden NICHT vor den Plaetzen gezeichnet -- die Kulisse liegt ueber den Markern (Review-Fund, bringToBack() ist auf der leeren Gruppe ein No-Op)');
+    const zonenAbrufe   = global._fetchLog.filter(u => u.indexOf('/zones') !== -1);
+    const plaetzeAbrufe = global._fetchLog.filter(u => u.indexOf('/airports') !== -1);
+    assert.strictEqual(zonenAbrufe.length, 1, 'Zonen wurden ' + zonenAbrufe.length + '-mal abgerufen, erwartet genau 1');
+    assert.strictEqual(plaetzeAbrufe.length, 1,
+      'Plaetze wurden ' + plaetzeAbrufe.length + '-mal abgerufen -- 0 heisst, die Streckensperre hat den zweiten Zweig weggeblockt');
+
+    assert.strictEqual(_fseZonenTabelle.size, 1, 'keine Zone gezeichnet');
+    assert.strictEqual(_fsePlaetzeTabelle.size, 1, 'kein Platz gezeichnet');
 
     const attributionCalls = map.attributionControl.calls.filter(c => c.art === 'add');
     assert.ok(attributionCalls.length >= 1, 'FSE-Planner-Attribution wurde beim Einhaengen nicht hinzugefuegt');
-    assert.ok(attributionCalls.every(c => c.text === _FSE_ATTR), 'Attribution enthaelt nicht den erwarteten FSE-Planner-Hinweis');
+    assert.ok(attributionCalls.every(c => c.text === _FSE_ATTR), 'Attribution enthaelt nicht den erwarteten Hinweis');
 
     console.log('OK');
-  } catch (err) {
-    console.error(err && err.stack ? err.stack : String(err));
-    process.exitCode = 1;
-  }
+  } catch (err) { console.error(err && err.stack ? err.stack : String(err)); process.exitCode = 1; }
 });
 """
-
-    skript = harness + "\n" + quelltext + "\n" + treiber
-    ergebnis = subprocess.run(
-        [_NODE, "-e", skript], capture_output=True, text=True, timeout=10
-    )
-    assert ergebnis.returncode == 0 and "OK" in ergebnis.stdout, (
-        f"Node-Lauf fehlgeschlagen -- stdout={ergebnis.stdout!r} stderr={ergebnis.stderr!r}"
-    )
+    _node_lauf(treiber)
 
 
 def test_klickflaeche_ist_kein_miniradius_mehr():
@@ -311,7 +352,7 @@ def test_klickflaeche_ist_kein_miniradius_mehr():
     Desktop knapp und auf dem Tablet praktisch nicht zu treffen. Der Fix legt einen weichen Halo
     (hoeheres weight, niedrige opacity) um den sichtbaren Punkt; hier wird geprueft, dass Radius
     und Strichbreite nicht wieder auf die alten Mini-Werte zurueckfallen."""
-    stelle = INDEX.index("function _fsePlaetzeZeichnen(")
+    stelle = INDEX.index("function _fsePlatzBauen(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     radius = re.search(r"radius:\s*(\d+)", rumpf)
     weight = re.search(r"weight:\s*(\d+)", rumpf)
@@ -424,7 +465,8 @@ try {
   const map = new FakeMap(0);
   _fsePlaetzeZoomWache(map);
 
-  _fsePlaetzeZeichnen({ EDXX: { lat: 53, lon: 8, name: 'Test', msfs: ['EDXX'] } });
+  // Spiegelt, was _fseAbgleichen tut: bauen, dann einhaengen.
+  _fsePlatzBauen('EDXX', { lat: 53, lon: 8, name: 'Test', msfs: ['EDXX'] }).addTo(_fsePlaetzeGruppe);
 
   assert.strictEqual(_fsePlaetzeGruppe._layers.length, 1, 'kein Marker eingehaengt');
   const marker = _fsePlaetzeGruppe._layers[0];
@@ -690,3 +732,192 @@ def test_bestand_wird_beim_start_geladen():
     rumpf = quelle[quelle.index("async def lifespan("):quelle.index("\n    yield")]
     assert "app.state.fse = fse.laden(" in rumpf
     assert rumpf.index("conn.close()") < rumpf.index("app.state.fse = fse.laden(")
+
+
+# ---------------------------------------------------------------------------
+# Frontend: Abruf ueber Strecke, Abgleich statt Neuzeichnen
+# ---------------------------------------------------------------------------
+
+
+def test_frontend_konstanten_stehen_wie_spezifiziert():
+    assert re.search(r"_FSE_RAND\s*=\s*1\.25", INDEX)
+    # 0.2, nicht 0.25: der Anteil rechnet gegen den ABGERUFENEN Radius (1,25 R), und
+    # 0,2 x 1,25 R ergibt genau die Reserve von 0,25 R, die der Rand bereitstellt. Mit 0,25
+    # bliebe zwischen 0,25 R und 0,3125 R Fahrtstrecke ein Streifen am vorderen Bildrand ohne
+    # Daten -- genau das Loch, das der Rand verhindern soll.
+    assert re.search(r"_FSE_NACHLADEN_ANTEIL\s*=\s*0\.2\b", INDEX)
+    assert re.search(r"_FSE_MIN_ZOOM\s*=\s*6", INDEX)
+    assert re.search(r"_FSE_MAX_KM\s*=\s*250", INDEX), \
+        "der Serverdeckel gehoert gespiegelt, nicht als Literal in _fseRadiusKm"
+
+
+def test_frontend_haengt_nicht_an_naviSelbstBewegt():
+    """Der Verkehr filtert moveend ueber !_naviSelbstBewegt (index.html:4570). Fuer die
+    FSE-Ebene waere das ein Fehler: Bei eingeschalteter Moving Map bewegt die Karte sich
+    selbst, die Wache griffe also immer -- und anders als der Verkehr hat diese Ebene keinen
+    Takt als zweite Quelle. Sie wuerde im Kniebrett waehrend des ganzen Fluges nie nachladen."""
+    stelle = INDEX.index("function _addPreferredFseLayer(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_fseAbrufen(map)" in rumpf
+    assert "_naviSelbstBewegt" not in rumpf
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_frontend_ruft_nicht_bei_jeder_bewegung_ab():
+    """Kern der Streckensperre. Der Abrufradius ergibt sich in der Attrappe zu 54 km, die
+    Schwelle liegt damit bei 10,8 km:
+      - Zoom 5 (unter _FSE_MIN_ZOOM): gar kein Abruf
+      - erster Abruf auf Zoom 10:     geht raus
+      - 5,6 km gewandert:             KEIN weiterer
+      - 22,3 km gewandert:            weiterer
+      - Zoomwechsel ohne Bewegung:    weiterer
+    """
+    treiber = """
+const map = new FakeMap(5);
+_fsePlaetzeGruppe.addTo(map);
+
+_fseAbrufen(map);
+assert.strictEqual(global._fetchLog.length, 0, 'unterhalb _FSE_MIN_ZOOM wurde abgerufen');
+
+map._zoom = 10;
+_fseAbrufen(map);
+assert.strictEqual(global._fetchLog.length, 1, 'der erste Abruf blieb aus');
+
+map._mitte = _ll(53.05, 8.0);          // rund 5,6 km -- unter der Schwelle
+_fseAbrufen(map);
+assert.strictEqual(global._fetchLog.length, 1, 'nach 5,6 km wurde erneut abgerufen -- die Sperre greift nicht');
+
+map._mitte = _ll(53.2, 8.0);           // rund 22,3 km -- ueber der Schwelle
+_fseAbrufen(map);
+assert.strictEqual(global._fetchLog.length, 2, 'nach 22,3 km wurde NICHT nachgeladen');
+
+map._zoom = 11;
+_fseAbrufen(map);
+assert.strictEqual(global._fetchLog.length, 3, 'ein Zoomwechsel muss immer ausloesen');
+
+console.log('OK');
+"""
+    _node_lauf(treiber)
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_frontend_holt_beim_einschalten_sofort():
+    """Ohne Ruecksetzen von _fseLetzteMitte blockt die Streckensperre den Abruf, der auf
+    'overlayadd' folgt -- die frisch zugeschaltete Ebene bliebe leer, bis der Nutzer ein
+    Fuenftel Radius fliegt."""
+    treiber = """
+const map = new FakeMap(10);
+_addPreferredFseLayer(map);                 // beide Praeferenzen aus -> nichts eingehaengt
+assert.strictEqual(global._fetchLog.length, 0);
+
+// Zonen von Hand einschalten und das Ereignis feuern, wie die Layers-Control es tut.
+_fseZonenGruppe.addTo(map);
+(map._handlers['overlayadd'] || []).forEach(fn => fn({ layer: _fseZonenGruppe }));
+
+setImmediate(() => {
+  try {
+    assert.strictEqual(global._fetchLog.filter(u => u.indexOf('/zones') !== -1).length, 1,
+      'Einschalten hat keinen Abruf ausgeloest');
+    assert.strictEqual(_fseZonenTabelle.size, 1, 'nach dem Einschalten ist die Ebene leer');
+
+    // Jetzt die Plaetze dazu -- OHNE dass die Karte sich bewegt hat.
+    _fsePlaetzeGruppe.addTo(map);
+    (map._handlers['overlayadd'] || []).forEach(fn => fn({ layer: _fsePlaetzeGruppe }));
+    setImmediate(() => {
+      try {
+        assert.strictEqual(global._fetchLog.filter(u => u.indexOf('/airports') !== -1).length, 1,
+          'die zweite Ebene wurde von der Streckensperre weggeblockt');
+        assert.strictEqual(_fsePlaetzeTabelle.size, 1);
+        console.log('OK');
+      } catch (e) { console.error(e.stack || String(e)); process.exitCode = 1; }
+    });
+  } catch (err) { console.error(err && err.stack ? err.stack : String(err)); process.exitCode = 1; }
+});
+"""
+    _node_lauf(treiber)
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_frontend_gleicht_ab_statt_neu_zu_zeichnen():
+    """Der Abgleich ist der Grund, warum die permanenten ICAO-Beschriftungen beim Fliegen
+    nicht flackern: Ein ICAO, der in zwei aufeinanderfolgenden Antworten steht, muss
+    UNANGETASTET bleiben -- nicht entfernt und neu gezeichnet. Was wegfaellt, muss dagegen
+    wirklich aus der Karte verschwinden, sonst waechst sie im Flug endlos."""
+    treiber = """
+const map = new FakeMap(10);
+_fsePlaetzeGruppe.addTo(map);
+
+global._antwortPlaetze = {
+  AAAA: { lat: 53, lon: 8, name: 'Bleibt', msfs: ['AAAA'] },
+  BBBB: { lat: 53.1, lon: 8.1, name: 'Faellt weg', msfs: ['BBBB'] },
+};
+_fseAbrufen(map);
+
+setImmediate(() => {
+  try {
+    assert.strictEqual(_fsePlaetzeTabelle.size, 2);
+    const bleibt = _fsePlaetzeTabelle.get('AAAA');
+
+    // Zweite Antwort: AAAA bleibt, BBBB faellt weg, CCCC kommt dazu.
+    global._antwortPlaetze = {
+      AAAA: { lat: 53, lon: 8, name: 'Bleibt', msfs: ['AAAA'] },
+      CCCC: { lat: 53.2, lon: 8.2, name: 'Neu', msfs: ['CCCC'] },
+    };
+    map._mitte = _ll(53.3, 8.0);      // weit genug fuer einen neuen Abruf
+    _fseAbrufen(map);
+
+    setImmediate(() => {
+      try {
+        assert.strictEqual(_fsePlaetzeTabelle.size, 2, 'Tabelle nach dem Abgleich falsch gross');
+        assert.ok(_fsePlaetzeTabelle.has('CCCC'), 'der neue Platz fehlt');
+        assert.ok(!_fsePlaetzeTabelle.has('BBBB'), 'der weggefallene Platz liegt noch in der Karte');
+        assert.strictEqual(_fsePlaetzeTabelle.get('AAAA'), bleibt,
+          'AAAA wurde neu gezeichnet, obwohl er in beiden Antworten steht -- genau das laesst die Beschriftungen flackern');
+        assert.strictEqual(_fsePlaetzeGruppe._layers.length, 2, 'die Gruppe waechst statt abzugleichen');
+        console.log('OK');
+      } catch (e) { console.error(e.stack || String(e)); process.exitCode = 1; }
+    });
+  } catch (err) { console.error(err && err.stack ? err.stack : String(err)); process.exitCode = 1; }
+});
+"""
+    _node_lauf(treiber)
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_frontend_zwingt_die_zonen_nach_jedem_nachladen_nach_hinten():
+    """Beide Ebenen teilen sich EINEN Canvas-Renderer (index.html, _fseRenderer) -- massgeblich
+    ist die Zeichenreihenfolge im Canvas, nicht der overlayPane. Zwei unabhaengige fetch ordnen
+    sich nicht, und jedes Nachladen haengt neue Zonen ans ENDE der Zeichenliste, also ueber die
+    vorhandenen Platzmarker. Ohne bringToBack() NACH JEDEM Zonen-Abgleich liegt die graue
+    Kulisse nach ein paar Minuten Flug obenauf."""
+    treiber = """
+const map = new FakeMap(10);
+_fseZonenGruppe.addTo(map);
+_fsePlaetzeGruppe.addTo(map);
+
+_fseAbrufen(map);
+setImmediate(() => {
+  try {
+    const ersteRunde = _fseZonenGruppe.bringToBackCalls;
+    assert.ok(ersteRunde >= 1, 'bringToBack() lief beim ersten Zeichnen nicht');
+
+    // Zweite Runde mit einer ANDEREN Zone, damit wirklich neu eingehaengt wird.
+    global._antwortZonen = { EDYY: [[55, 9], [56, 9]] };
+    map._mitte = _ll(53.3, 8.0);
+    _fseAbrufen(map);
+    setImmediate(() => {
+      try {
+        assert.ok(_fseZonenGruppe.bringToBackCalls > ersteRunde,
+          'bringToBack() lief nur beim Einschalten -- die Kulisse wandert beim Nachladen ueber die Marker');
+        // Und zwar NACH dem Einhaengen, nicht davor: auf einer leeren Gruppe waere es ein No-Op.
+        const letztesEinhaengen = global._reihenfolge.lastIndexOf('zone');
+        const letztesNachHinten = global._reihenfolge.lastIndexOf('nachHinten');
+        assert.ok(letztesNachHinten > letztesEinhaengen,
+          'bringToBack() lief VOR dem Einhaengen der neuen Zonen -- auf der noch leeren Gruppe ein No-Op');
+        console.log('OK');
+      } catch (e) { console.error(e.stack || String(e)); process.exitCode = 1; }
+    });
+  } catch (err) { console.error(err && err.stack ? err.stack : String(err)); process.exitCode = 1; }
+});
+"""
+    _node_lauf(treiber)

@@ -4081,8 +4081,32 @@ function _platzrundenZoomWache(map) {
 // zugeschnitten (s. scripts/fse_zuschnitt.py). Die Landeflaeche ist das Gebiet, dessen
 // Landungen FSEconomy diesem Platz zurechnet -- eine Voronoi-Zelle. Sie liegt als reine
 // Linie unter allem anderen und faengt keine Klicks: sonst kaeme man an keinen Marker mehr.
-const _FSE_PLAETZE_URL = '/static/data/fse_airports_eu.json';
-const _FSE_ZONEN_URL   = '/static/data/fse_zones_eu.json';
+// Nicht mehr zwei statische Dateien, sondern der Ausschnitt: Der Weltbestand (23.780 Plaetze)
+// liegt im Server, der Browser bekommt nur, was im Bild ist -- gedeckelt nach Zeichenlast,
+// nicht nach Stueckzahl (s. app/fse.py und die Spec vom 16.08.2026).
+const _FSE_PLAETZE_API = '/api/fse/airports';
+const _FSE_ZONEN_API   = '/api/fse/zones';
+// Darunter macht die serverseitige Kappung von r aus jeder Antwort einen Punkt in der Mitte
+// einer Kontinentansicht -- eine Anfrage ohne Aussage. Kein Dichteregler: die Dichte regelt
+// das Punktebudget im Server, und zwar ortsabhaengig.
+const _FSE_MIN_ZOOM = 6;
+// Serverseitige Obergrenze, hier gespiegelt (wie _VERKEHR_MAX_KM).
+const _FSE_MAX_KM = 250;
+// Abgerufen wird mehr, als zu sehen ist. Der Rand deckt genau die Strecke ab, die bis zum
+// naechsten Abruf zurueckgelegt wird -- sonst hat der sichtbare Bereich in Flugrichtung ein
+// Loch, das erst der uebernaechste Abruf schliesst.
+const _FSE_RAND = 1.25;
+// Ausgeloest wird NICHT bei jeder Kartenbewegung. Der naheliegende Weg -- moveend mit
+// !_naviSelbstBewegt, so wie der Verkehr es macht -- waere hier ein Fehler: Bei
+// eingeschalteter Moving Map bewegt die Karte sich selbst, die Wache greift also immer. Der
+// Verkehr uebersteht das, weil sein 15-Sekunden-Takt als zweite Quelle laeuft; diese Ebene
+// hat keinen Takt (die Daten aendern sich nie) und wuerde im Kniebrett waehrend des ganzen
+// Fluges nicht ein einziges Mal nachladen.
+//
+// 0,2 und nicht 0,25, weil gegen den ABGERUFENEN Radius gerechnet wird: 0,2 x 1,25 R ist
+// genau die Reserve von 0,25 R, die der Rand bereitstellt. Mit 0,25 bliebe zwischen 0,25 R
+// und 0,3125 R Fahrtstrecke ein Streifen am vorderen Bildrand ohne Daten.
+const _FSE_NACHLADEN_ANTEIL = 0.2;
 // Review-Fund (Important): Die MIT-Lizenz verlangt einen Hinweis, und "FSE-Planner" stand bisher
 // nur im Quelltext-Kommentar oben -- fuer niemanden sichtbar. L.TileLayer traegt seine Attribution
 // automatisch ein (GridLayer.getAttribution), aber L.circleMarker/L.polyline/LayerGroup kennen das
@@ -4109,7 +4133,14 @@ const _fsePlaetzeGruppe = L.featureGroup();
 // Marker zwingt -- auch dann, wenn der Nutzer die Landeflaechen NACH den Plaetzen einschaltet
 // (die Stapelung im overlayPane folgt dem addTo-Zeitpunkt, nicht der Reihenfolge in liveOverlays).
 const _fseZonenGruppe   = L.featureGroup();
-let   _fseGeladen = false;
+// ICAO -> gezeichnetes Objekt, je Ebene. Grundlage des Abgleichs: Was in zwei
+// aufeinanderfolgenden Antworten steht, bleibt unangetastet -- sonst flackern die permanenten
+// ICAO-Beschriftungen bei jedem Nachladen im Flug.
+const _fsePlaetzeTabelle = new Map();
+const _fseZonenTabelle   = new Map();
+let _fseLetzteMitte = null;
+let _fseLetzterZoom = null;
+let _fseLetzterRadius = 0;
 
 function _saveFsePref(key, an) {
   try { localStorage.setItem(key, an ? '1' : '0'); } catch (e) {}
@@ -4123,20 +4154,21 @@ function _loadFsePref(key) {
 // Karte wurde damit unbedienbar (Nutzer-Fund am laufenden Bild, 15.08.2026). Ein Canvas je
 // Ebene zeichnet dieselbe Menge in einem Rutsch. Der Renderer wird einmal erzeugt und von
 // beiden Ebenen geteilt; die Stapelung Zonen-unter-Plaetzen ergibt sich weiterhin aus der
-// Zeichenreihenfolge in _fseLaden.
+// Zeichenreihenfolge. Seit der Umstellung auf den Ausschnitt reicht die Reihenfolge allein
+// nicht mehr -- s. bringToBack() nach jedem Zonen-Abgleich in _fseAbrufen.
 let _fseCanvas = null;
 function _fseRenderer() {
   if (!_fseCanvas) _fseCanvas = L.canvas({ padding: 0.3 });
   return _fseCanvas;
 }
 
-function _fseZonenZeichnen(zonen) {
-  for (const icao in zonen) {
-    L.polyline(zonen[icao], {
-      weight: 1, color: '#888', opacity: 0.5, interactive: false, fill: false,
-      renderer: _fseRenderer(),
-    }).addTo(_fseZonenGruppe);
-  }
+// Baut EINE Zone. Das Einhaengen macht _fseAbgleichen -- nur so kann es unterscheiden, was
+// schon da ist und was wegfaellt.
+function _fseZoneBauen(icao, punkte) {
+  return L.polyline(punkte, {
+    weight: 1, color: '#888', opacity: 0.5, interactive: false, fill: false,
+    renderer: _fseRenderer(),
+  });
 }
 
 // Die MSFS-Entsprechung ist der eigentliche Gewinn dieses Datensatzes: Bei gut einem Drittel
@@ -4166,26 +4198,24 @@ function _fsePopup(icao, a) {
   return zeilen.join('<br>');
 }
 
-function _fsePlaetzeZeichnen(plaetze) {
-  for (const icao in plaetze) {
-    const a = plaetze[icao];
-    const m = L.circleMarker([a.lat, a.lon], {
-      // Nutzer-Fund: der bisherige Mini-Radius von drei Pixeln war bei SVG-Paths auch die
-      // Trefferflaeche -- am Desktop knapp, auf dem Tablet praktisch nicht zu treffen. Ein
-      // hoeheres weight bei niedriger opacity legt einen weichen, kaum sichtbaren Halo um den
-      // kleinen sichtbaren Punkt und zieht die Trefferflaeche damit auf effektiv 8 px Radius
-      // (radius + halbe Strichbreite) -- ohne einen zweiten, unsichtbaren Marker, der die
-      // Objektzahl bei 2.335 Plaetzen verdoppeln wuerde.
-      radius: 5, weight: 6, opacity: 0.2, color: '#d8a45e', fillColor: '#d8a45e', fillOpacity: 0.85,
-      renderer: _fseRenderer(),
-    });
-    // Das Label wird NICHT hier gebunden. 2.335 permanente Tooltips sind 2.335 DOM-Elemente,
-    // die Leaflet bei jeder Kartenbewegung neu setzt -- genau daran hing die Karte. Gebunden
-    // wird erst im Sichtbereich (s. _labelsImSichtbereich); der Code dafuer holt sich den
-    // Platznamen aus _icao.
-    m._icao = icao;
-    m.bindPopup(_fsePopup(icao, a)).addTo(_fsePlaetzeGruppe);
-  }
+// Baut EINEN Platz; eingehaengt wird in _fseAbgleichen.
+function _fsePlatzBauen(icao, a) {
+  const m = L.circleMarker([a.lat, a.lon], {
+    // Nutzer-Fund: der bisherige Mini-Radius von drei Pixeln war bei SVG-Paths auch die
+    // Trefferflaeche -- am Desktop knapp, auf dem Tablet praktisch nicht zu treffen. Ein
+    // hoeheres weight bei niedriger opacity legt einen weichen, kaum sichtbaren Halo um den
+    // kleinen sichtbaren Punkt und zieht die Trefferflaeche damit auf effektiv 8 px Radius
+    // (radius + halbe Strichbreite) -- ohne einen zweiten, unsichtbaren Marker, der die
+    // Objektzahl verdoppeln wuerde.
+    radius: 5, weight: 6, opacity: 0.2, color: '#d8a45e', fillColor: '#d8a45e', fillOpacity: 0.85,
+    renderer: _fseRenderer(),
+  });
+  // Das Label wird NICHT hier gebunden. Permanente Tooltips sind DOM-Elemente, die Leaflet bei
+  // jeder Kartenbewegung neu setzt -- genau daran hing die Karte am 15.08.2026. Gebunden wird
+  // erst im Sichtbereich (s. _labelsImSichtbereich); der Code dafuer holt sich den Platznamen
+  // aus _icao.
+  m._icao = icao;
+  return m.bindPopup(_fsePopup(icao, a));
 }
 
 // Ausblenden ueber openTooltip()/closeTooltip() statt ueber eine CSS-Klasse an der Gruppe: Ein
@@ -4207,30 +4237,76 @@ function _fsePlaetzeZoomWache(map) {
   anpassen();
 }
 
-function _fseLaden() {
-  if (_fseGeladen) return Promise.resolve();
-  _fseGeladen = true;
-  return Promise.all([
-    fetch(_FSE_PLAETZE_URL).then(r => r.json()),
-    fetch(_FSE_ZONEN_URL).then(r => r.json())
-  ]).then(([plaetze, zonen]) => {
-    // Review-Fund (Important): _addPreferredFseLayer ruft bringToBack() auf, BEVOR dieser
-    // Promise-Zweig ueberhaupt lief -- auf der zu dem Zeitpunkt noch leeren Zonen-Gruppe ist das
-    // ein No-Op, und die danach gezeichneten Zonen-Linien landen ueber den Plaetze-Markern. Der
-    // sichere Fix haengt nicht an einem zweiten bringToBack()-Aufruf zur richtigen Zeit, sondern
-    // an der Zeichenreihenfolge selbst: Path-Layer werden im gemeinsamen overlayPane in der
-    // Reihenfolge sichtbar, in der sie eingehaengt werden -- Zonen zuerst zeichnen platziert sie
-    // beim allerersten Laden automatisch UNTER die danach gezeichneten Plaetze, unabhaengig
-    // davon, wann bringToBack() lief oder ob es das ueberhaupt gibt. Die bringToBack()-Aufrufe
-    // in _addPreferredFseLayer bleiben trotzdem stehen: Sie fangen den Fall ab, dass die Zonen
-    // NACH einem bereits abgeschlossenen Laden erneut ein-/ausgeschaltet werden (dann sind schon
-    // Marker vorhanden und die reine Zeichenreihenfolge greift nicht mehr).
-    _fseZonenZeichnen(zonen);
-    _fsePlaetzeZeichnen(plaetze);
-  }).catch(e => {
-    _fseGeladen = false;
-    console.warn('FSE-Daten konnten nicht geladen werden:', e);
-  });
+function _fseAbgleichen(gruppe, tabelle, neu, bauen) {
+  for (const schluessel in neu) {
+    if (tabelle.has(schluessel)) continue;
+    const l = bauen(schluessel, neu[schluessel]);
+    tabelle.set(schluessel, l);
+    l.addTo(gruppe);
+  }
+  for (const schluessel of Array.from(tabelle.keys())) {
+    if (schluessel in neu) continue;
+    gruppe.removeLayer(tabelle.get(schluessel));
+    tabelle.delete(schluessel);
+  }
+}
+
+// Auch die Streckenmarke zuruecksetzen: Sonst blockt die Sperre in _fseAbrufen den naechsten
+// Abruf, obwohl die Karte gerade geleert wurde.
+function _fseLeeren() {
+  _fsePlaetzeGruppe.clearLayers(); _fsePlaetzeTabelle.clear();
+  _fseZonenGruppe.clearLayers();   _fseZonenTabelle.clear();
+  _fseLetzteMitte = null; _fseLetzterZoom = null;
+}
+
+// Radius so, dass der sichtbare Ausschnitt abgedeckt ist: Mitte bis Ecke, mal Rand.
+function _fseRadiusKm(map) {
+  const km = map.getCenter().distanceTo(map.getBounds().getNorthEast()) / 1000;
+  return Math.max(1, Math.min(_FSE_MAX_KM, Math.round(km * _FSE_RAND)));
+}
+
+function _fseAbrufen(map) {
+  const plaetzeAn = map.hasLayer(_fsePlaetzeGruppe);
+  const zonenAn   = map.hasLayer(_fseZonenGruppe);
+  if (!plaetzeAn && !zonenAn) return;
+  // Ein Abruf auf einer verdeckten Karte ist Arbeit ohne Wirkung (derselbe Grund wie beim
+  // Verkehr, s. _verkehrAbrufen).
+  if (!_istSichtbar(map.getContainer())) return;
+  if (map.getZoom() < _FSE_MIN_ZOOM) { _fseLeeren(); return; }
+
+  const mitte = map.getCenter();
+  const radius = _fseRadiusKm(map);
+  const zoom = map.getZoom();
+  if (_fseLetzteMitte && zoom === _fseLetzterZoom) {
+    const gewandert = mitte.distanceTo(_fseLetzteMitte) / 1000;
+    if (gewandert < _fseLetzterRadius * _FSE_NACHLADEN_ANTEIL) return;
+  }
+  _fseLetzteMitte = mitte; _fseLetzterZoom = zoom; _fseLetzterRadius = radius;
+
+  const frage = '?lat=' + mitte.lat.toFixed(4) + '&lon=' + mitte.lng.toFixed(4) + '&r=' + radius;
+  if (zonenAn) {
+    fetch(_FSE_ZONEN_API + frage)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!d) return;
+        _fseAbgleichen(_fseZonenGruppe, _fseZonenTabelle, d.zonen, _fseZoneBauen);
+        // Nach JEDEM Abgleich, nicht nur beim Einschalten: Beide Ebenen teilen sich einen
+        // Canvas-Renderer, und jedes Nachladen haengt die neuen Zonen ans Ende der
+        // Zeichenliste -- also ueber die bereits vorhandenen Platzmarker. Ohne diese Zeile
+        // liegt die graue Kulisse nach ein paar Minuten Flug obenauf. Die frueher hier
+        // tragende Zeichenreihenfolge (erst Zonen, dann Plaetze) traegt nicht mehr: Es sind
+        // zwei unabhaengige fetch, und die Zonen-Antwort ist die groessere, kommt also
+        // typischerweise spaeter.
+        _fseZonenGruppe.bringToBack();
+      })
+      .catch(() => {});   // Netz weg (im Kniebrett keine Seltenheit): beim naechsten Zug wieder
+  }
+  if (plaetzeAn) {
+    fetch(_FSE_PLAETZE_API + frage)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) _fseAbgleichen(_fsePlaetzeGruppe, _fsePlaetzeTabelle, d.plaetze, _fsePlatzBauen); })
+      .catch(() => {});
+  }
 }
 
 // Wie bei OpenAIP und Platzrunden: VOR dem Bau der Layers-Control aufrufen -- sonst zeigt
@@ -4238,19 +4314,41 @@ function _fseLaden() {
 // Praeferenz-Schluessel behandeln (s. Kommentar oben) -- sonst ueberschreibt das Umschalten
 // der einen den gespeicherten Zustand der anderen.
 function _addPreferredFseLayer(map) {
+  // _fseLetzteMitte = null vor jedem Abruf, der auf ein Ein- oder Ausschalten folgt: Sonst
+  // blockt die Streckensperre in _fseAbrufen ihn weg, weil seit dem letzten Abruf nichts
+  // gewandert ist -- die frisch eingeschaltete Ebene bliebe leer, bis der Nutzer ein Fuenftel
+  // Radius fliegt.
   map.on('overlayadd', (e) => {
-    if (e.layer === _fsePlaetzeGruppe) { _saveFsePref(_FSE_PLAETZE_PREF_KEY, true); _fseLaden(); _fseAttributionAn(map); }
-    if (e.layer === _fseZonenGruppe)   { _saveFsePref(_FSE_ZONEN_PREF_KEY, true);   _fseLaden(); _fseZonenGruppe.bringToBack(); _fseAttributionAn(map); }
+    if (e.layer === _fsePlaetzeGruppe) {
+      _saveFsePref(_FSE_PLAETZE_PREF_KEY, true);
+      _fseLetzteMitte = null; _fseAbrufen(map); _fseAttributionAn(map);
+    }
+    if (e.layer === _fseZonenGruppe) {
+      _saveFsePref(_FSE_ZONEN_PREF_KEY, true);
+      _fseLetzteMitte = null; _fseAbrufen(map); _fseZonenGruppe.bringToBack(); _fseAttributionAn(map);
+    }
   });
   map.on('overlayremove', (e) => {
-    if (e.layer === _fsePlaetzeGruppe) { _saveFsePref(_FSE_PLAETZE_PREF_KEY, false); _fseAttributionAus(map); }
-    if (e.layer === _fseZonenGruppe)   { _saveFsePref(_FSE_ZONEN_PREF_KEY, false);   _fseAttributionAus(map); }
+    if (e.layer === _fsePlaetzeGruppe) {
+      _saveFsePref(_FSE_PLAETZE_PREF_KEY, false); _fseAttributionAus(map);
+      _fsePlaetzeGruppe.clearLayers(); _fsePlaetzeTabelle.clear(); _fseLetzteMitte = null;
+    }
+    if (e.layer === _fseZonenGruppe) {
+      _saveFsePref(_FSE_ZONEN_PREF_KEY, false); _fseAttributionAus(map);
+      _fseZonenGruppe.clearLayers(); _fseZonenTabelle.clear(); _fseLetzteMitte = null;
+    }
   });
-  // Zonen zuerst einhaengen und danach zusaetzlich per bringToBack() zurechtruecken -- die
-  // Einhaenge-Reihenfolge allein reicht nicht, sobald spaeter noch mehr Path-Layer im selben
-  // overlayPane dazukommen.
-  if (_loadFsePref(_FSE_ZONEN_PREF_KEY))   { _fseZonenGruppe.addTo(map); _fseZonenGruppe.bringToBack(); _fseLaden(); _fseAttributionAn(map); }
-  if (_loadFsePref(_FSE_PLAETZE_PREF_KEY)) { _fsePlaetzeGruppe.addTo(map); _fseLaden(); _fseAttributionAn(map); }
+  // Beide Gruppen ZUERST einhaengen, dann EINMAL abrufen. Ein Abruf zwischen den beiden
+  // addTo-Aufrufen saehe die zweite Gruppe noch nicht (hasLayer waere false), und der zweite
+  // liefe in die Streckensperre -- die Plaetze blieben nach jedem Seitenaufruf leer.
+  // (Hier feuert addTo noch kein 'overlayadd': Diese Funktion laeuft VOR dem Bau der
+  // Layers-Control, s. test_fse_wird_vor_der_layers_control_registriert.)
+  const zonenAn   = _loadFsePref(_FSE_ZONEN_PREF_KEY);
+  const plaetzeAn = _loadFsePref(_FSE_PLAETZE_PREF_KEY);
+  if (zonenAn)   { _fseZonenGruppe.addTo(map); _fseZonenGruppe.bringToBack(); _fseAttributionAn(map); }
+  if (plaetzeAn) { _fsePlaetzeGruppe.addTo(map); _fseAttributionAn(map); }
+  if (zonenAn || plaetzeAn) { _fseLetzteMitte = null; _fseAbrufen(map); }
+  map.on('moveend zoomend', () => _fseAbrufen(map));
 }
 
 // addAttribution()/removeAttribution() sind ihrerseits schon zaehlend -- pro Ebene EINMAL
