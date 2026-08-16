@@ -4229,25 +4229,29 @@ function _loadFsePref(key) {
   try { return localStorage.getItem(key) === '1'; } catch (e) { return false; }
 }
 
-// Canvas statt SVG: Bei 2.335 Zonen und 2.335 Plaetzen entstuenden sonst rund 4.700
-// DOM-Elemente, die Leaflet bei JEDEM Zoom und JEDEM Ziehen einzeln neu positioniert -- die
-// Karte wurde damit unbedienbar (Nutzer-Fund am laufenden Bild, 15.08.2026). Ein Canvas je
-// Ebene zeichnet dieselbe Menge in einem Rutsch. Der Renderer wird einmal erzeugt und von
-// beiden Ebenen geteilt; die Stapelung Zonen-unter-Plaetzen ergibt sich weiterhin aus der
-// Zeichenreihenfolge. Seit der Umstellung auf den Ausschnitt reicht die Reihenfolge allein
-// nicht mehr -- s. bringToBack() nach jedem Zonen-Abgleich in _fseAbrufen.
-let _fseCanvas = null;
-function _fseRenderer() {
-  if (!_fseCanvas) _fseCanvas = L.canvas({ padding: 0.3 });
-  return _fseCanvas;
-}
+// KEIN Canvas-Renderer -- die FSE-Ebenen zeichnen als SVG, wie alles andere auf dieser Karte.
+//
+// Hier stand bis zum 16.08.2026 ein geteilter L.canvas(). Grund war die alte Fassung mit dem
+// festen Europa-Datensatz: 2.335 Plaetze und 2.335 Zonen ergaben rund 4.700 DOM-Elemente, die
+// Leaflet bei jedem Zoom einzeln neu positionierte -- die Karte wurde unbedienbar.
+//
+// Diese Begruendung ist mit der Umstellung auf den Ausschnitt entfallen. Es sind jetzt
+// hoechstens 250 Plaetze und rund 128 Zonen, zusammen keine 400 Pfade; die Platzrunden fahren
+// seit jeher 412 Polygone als SVG.
+//
+// Geblieben war nur ein Nachteil, und der war teuer: Diese Karte laeuft mit leaflet-rotate,
+// und das Plugin ersetzt Leaflets Positionsrechnung. Es traegt SVG-Pfade und DOM-Marker, den
+// Canvas-Renderer aber nicht -- dessen Pixel-Ursprung blieb stehen. Sichtbar als Versatz, der
+// sich mit JEDER Zoomstufe verdoppelt (Nutzer-Fund am laufenden Bild: auf kleinster Stufe
+// fast richtig, weit hineingezoomt hunderte Kilometer daneben), und der ausschliesslich die
+// FSE-Ebenen traf -- Kacheln, Flugzeuge und Platzrunden sassen immer korrekt. Genau diese
+// Trennschaerfe war der Hinweis: Ein Fehler, der nur EINE Renderer-Art trifft, liegt an ihr.
 
 // Baut EINE Zone. Das Einhaengen macht _fseAbgleichen -- nur so kann es unterscheiden, was
 // schon da ist und was wegfaellt.
 function _fseZoneBauen(icao, punkte) {
   return L.polyline(punkte, {
     weight: 1, color: '#888', opacity: 0.5, interactive: false, fill: false,
-    renderer: _fseRenderer(),
   });
 }
 
@@ -4300,7 +4304,6 @@ function _fsePlatzBauen(icao, a) {
     // statt vorher 5 + 6/2 = 8 px. Die knappen 0,75 px sind der Preis fuer einen Punkt, den
     // man auf jeder Karte sieht -- und der sichtbare Kern ist dabei sogar groesser geworden.
     radius: 6, weight: 2.5, opacity: 1, color: '#2b3440', fillColor: '#d8a45e', fillOpacity: 1,
-    renderer: _fseRenderer(),
   });
   // Das Label wird NICHT hier gebunden. Permanente Tooltips sind DOM-Elemente, die Leaflet bei
   // jeder Kartenbewegung neu setzt -- genau daran hing die Karte am 15.08.2026. Gebunden wird
@@ -4315,19 +4318,18 @@ function _fsePlatzBauen(icao, a) {
 // nie das Problem. Teuer waren die 2.335 permanent GEBUNDENEN Tooltips: Jeder ist ein
 // DOM-Element, das Leaflet bei jeder Kartenbewegung neu positioniert, ob geoeffnet oder nicht.
 // Deshalb bindet _labelsImSichtbereich sie erst im Bild und loest sie danach wieder.
+
 // Groessenaenderungen des Karten-Containers an Leaflet melden.
 //
-// Nutzer-Fund 16.08.2026: Beim Abdocken und Maximieren des EFB sass der FSE-Schwarm bis zu
-// 480 km neben der Kartenmitte -- Kacheln, Flugzeuge und Platzrunden dagegen richtig. Ein
-// Versatz, der AUSSCHLIESSLICH eine Renderer-Art trifft, kann nur aus deren Geometrie kommen:
-// Die FSE-Ebenen sind die einzigen auf dem geteilten Canvas (s. _fseRenderer), und dessen
-// Zeichenflaeche wird beim Einhaengen auf die damalige Containergroesse gelegt. Waechst der
-// Container, ohne dass Leaflet davon erfaehrt, bleibt sie liegen, wo sie war -- und alles
-// darauf erscheint nach oben links versetzt.
+// Nutzer-Fund 16.08.2026: Beim Abdocken und Maximieren des EFB stimmte die Kartengeometrie
+// nicht mehr. invalidateSize() hing bis dahin nur am Vollbild-Knopf und am Tab-Wechsel -- ein
+// abgedocktes Fenster, das jemand maximiert, ist beides nicht, und einen Resize-Beobachter
+// gab es in der ganzen Datei nicht.
 //
-// invalidateSize() war bisher nur an den Vollbild-Knopf und den Tab-Wechsel gebunden. Ein
-// abgedocktes Fenster, das der Nutzer maximiert, ist beides nicht. Der ResizeObserver deckt
-// jede Groessenaenderung ab, egal wodurch sie entsteht.
+// Der damals sichtbare FSE-Versatz hatte allerdings eine ANDERE Ursache (den Canvas-Renderer,
+// s. Kommentar bei _fseZoneBauen) -- diese Wache allein hat ihn nicht behoben. Sie bleibt
+// trotzdem: Eine Groessenaenderung, von der Leaflet nichts erfaehrt, ist unabhaengig davon
+// falsch.
 function _groessenWache(map, el) {
   if (!el || typeof ResizeObserver === 'undefined') return;   // Coherent GT: vorsichtshalber
   let letzte = el.clientWidth + 'x' + el.clientHeight;
@@ -4343,6 +4345,9 @@ function _groessenWache(map, el) {
     anstehend = requestAnimationFrame(() => {
       anstehend = null;
       map.invalidateSize();
+      // Hier stand kurzzeitig ein erzwungener Neuaufbau der Canvas-Zeichenflaeche. Er ist
+      // entfallen, weil der Canvas selbst entfallen ist (s. Kommentar bei _fseZoneBauen).
+      // ein gestrecktes Bitmap -- war falsch; der Ursprung war schuld, nicht die Groesse.
     });
   });
   beobachter.observe(el);
