@@ -4773,6 +4773,8 @@ let _friesenSimWerte = Object.create(null);
 // geloesten Zuordnungen -- das waere das Flackern in Zahlen. Steht eine Zuordnung stabil,
 // bleibt der Zaehler bei null; kippt sie staendig, ist es hier zu lesen und muss nicht aus
 // zuckenden Schildern erraten werden.
+// uId -> gemessene Geschwindigkeit in m/s, wenn der Sim dazu 0 meldet (s. _simHoehenSpurFortschreiben)
+let _simGsFehlt = Object.create(null);
 let _zuordnungGeloest = 0;
 let _zuordnungGetroffen = 0;
 let _zuordnungPerAusschluss = 0;
@@ -4962,6 +4964,14 @@ function _verkehrZusammenfuehren() {
       e.dep = v.dep;
       e.arr = v.arr;
       e._key = v.cs;
+      // KEIN Rueckfall auf die VATSIM-Geschwindigkeit, wenn der Simulator 0 meldet.
+      //
+      // Genau das hatte ich kurzzeitig eingebaut, weil "0 kt an einem bewegten Flugzeug" nach
+      // einer Luecke aussah. Es war der Denkfehler: Eine 0 aus dem Simulator heisst, dass das
+      // Flugzeug STEHT -- und der 29 Sekunden alte VATSIM-Wert sagt nur, dass es damals noch
+      // rollte. Den zu uebernehmen liesse ein stehendes Flugzeug ueber die Karte wandern
+      // (die Fortrechnung haengt an dieser Zahl). Genau das war der eigentliche Fehler, s.
+      // _verkehrZeichnen.
     } else {
       e._key = 'sim:' + s.id;
     }
@@ -4996,21 +5006,34 @@ function _zuordnungDiagnose(sim, vat, zugeordnet, offen) {
   if (Date.now() - _zuordnungErsteMs < _ZUORDNUNG_DIAGNOSE_NACH_MS) return;
   _zuordnungGemeldet = true;
 
-  let mitCs = 0;
+  // Die Rufzeichen mitschicken, nicht nur die Anzahl. Erst damit laesst sich beantworten,
+  // was am Bildschirm auffaellt ("manche haben keine Live-Daten"): Ein Flugzeug, das NUR
+  // VATSIM kennt, muss im 15-Sekunden-Takt haengen -- vPilot hat es nicht gespawnt, es gibt
+  // im Simulator schlicht nichts Schnelleres. Ohne die Listen bleibt das eine Vermutung.
+  const gepaart = [];
   let friesen = 0;
   for (const id in zugeordnet) {
-    mitCs++;
+    gepaart.push(zugeordnet[id].cs);
     if (zugeordnet[id]._friese) friesen++;
+  }
+  const nurVatsim = [];
+  for (let i = 0; i < vat.length; i++) {
+    if (vat[i].cs && gepaart.indexOf(vat[i].cs) < 0) nurVatsim.push(vat[i].cs);
   }
   _diagnoseMitVergleichMelden('zuordnung', {
     sim: sim.length,
     vatsim: vat.length,
-    zugeordnet: mitCs,
+    zugeordnet: gepaart.length,
     davonFriesen: friesen,
     offen: offen.length,
     getroffen: _zuordnungGetroffen,
     perAusschluss: _zuordnungPerAusschluss,
     geloest: _zuordnungGeloest,
+    gepaartCs: gepaart.slice(0, 40),
+    nurVatsimCs: nurVatsim.slice(0, 40),
+    // Bewegt, meldet aber 0 kt -- die abgeleitete Geschwindigkeit faellt bei einzelnen aus.
+    // Der Wert ist die tatsaechlich gemessene Geschwindigkeit in m/s.
+    gsFehlt: _simGsFehlt,
   });
 }
 
@@ -5099,12 +5122,27 @@ function _simHoehenSpurFortschreiben(s) {
   const jetzt = _simVerkehr ? _simVerkehr.ts : Date.now();
   const alt = Number(s.alt) || 0;
   const vorher = _simHoehenSpur[s.id];
-  if (!vorher) { _simHoehenSpur[s.id] = { alt: alt, ts: jetzt, vs: 0 }; return; }
+  if (!vorher) {
+    _simHoehenSpur[s.id] = { alt: alt, ts: jetzt, vs: 0, lat: s.lat, lon: s.lon };
+    return;
+  }
   const dtS = (jetzt - vorher.ts) / 1000;
   if (dtS <= 0) return;
+
+  // Nebenbei mitgemessen: Bewegt sich das Flugzeug, meldet aber Geschwindigkeit null?
+  //
+  // Die Geschwindigkeit liefert der Simulator nicht -- das Panel leitet sie aus zwei
+  // aufeinanderfolgenden Positionen ab. Faellt das aus, steht dauerhaft 0 am Symbol, obwohl
+  // es sich sichtbar bewegt (Nutzer-Fund 16.08.2026, bei einigen wenigen Flugzeugen). Woran
+  // es liegt, laesst sich von hier aus nicht sehen; DASS es passiert, schon -- und wie oft.
+  const m = L.latLng(vorher.lat, vorher.lon).distanceTo([s.lat, s.lon]);
+  if (m / dtS > 10 && (Number(s.gs) || 0) === 0) _simGsFehlt[s.id] = Math.round(m / dtS);
+  else delete _simGsFehlt[s.id];
+
   const roh = (alt - vorher.alt) / dtS * 60;
   const gewicht = 1 - Math.exp(-dtS / 4);
-  _simHoehenSpur[s.id] = { alt: alt, ts: jetzt, vs: vorher.vs + gewicht * (roh - vorher.vs) };
+  _simHoehenSpur[s.id] = { alt: alt, ts: jetzt, lat: s.lat, lon: s.lon,
+                           vs: vorher.vs + gewicht * (roh - vorher.vs) };
 }
 
 function _simSinkrate(id) {
@@ -5422,9 +5460,22 @@ function _verkehrZeichnen(liste) {
     // jedem Abruf von vorn an und der Marker springt zurueck. Genau dieser Fehler kostete
     // bei den Friesen drei Anlaeufe (s. Kommentar in updateMap).
     const alt = _verkehrRoh[cs];
-    if (!alt || alt.lat !== e.lat || alt.lon !== e.lon) {
+    const neueGs = Number(e.gs) || 0;
+    // Auch bei UNVERAENDERTER Position aktualisieren, wenn sich die Geschwindigkeit geaendert
+    // hat. Ohne das blieb der alte Eintrag stehen -- und mit ihm seine Geschwindigkeit.
+    //
+    // Der Fall, an dem es auffiel (Nutzer-Fund 16.08.2026): Ein Flugzeug rollt, wird von
+    // VATSIM mit 15 kt gemeldet, haelt dann an. Der Simulator meldet ab jetzt dieselbe
+    // Position und 0 kt -- die Bedingung "Position geaendert?" schlug also nie an, der
+    // VATSIM-Eintrag mit seinen 15 kt blieb liegen, und _naviTakt schob das stehende
+    // Flugzeug munter weiter ueber die Karte. Am Symbol stand dabei 0, weil das Label aus
+    // der neuen Meldung kommt: dieselbe Maschine, zwei sich widersprechende Aussagen.
+    //
+    // Bei gleicher Position ist ein neuer Zeitstempel unbedenklich -- die Fortrechnung
+    // startet dann an derselben Stelle, es gibt nichts zurueckzuspringen.
+    if (!alt || alt.lat !== e.lat || alt.lon !== e.lon || alt.gs !== neueGs) {
       _verkehrRoh[cs] = { lat: e.lat, lon: e.lon,
-                          hdg: Number(e.hdg) || 0, gs: Number(e.gs) || 0, ts: gemessenTs };
+                          hdg: Number(e.hdg) || 0, gs: neueGs, ts: gemessenTs };
     }
 
     const hdg = Math.round(Number(e.hdg) || 0);

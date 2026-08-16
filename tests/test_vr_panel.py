@@ -1631,9 +1631,13 @@ def test_nur_der_takt_bewegt_den_fremdverkehr():
 
 
 def test_verkehr_zeitstempel_nur_bei_neuen_werten():
-    stelle = INDEX.index("function _verkehrUebernehmen(")
-    rumpf = INDEX[stelle:stelle + 2500]
+    """Sonst faengt die Fortrechnung bei jedem Abruf von vorn an und der Marker springt
+    zurueck. Seit 16.08.2026 zaehlt auch eine geaenderte Geschwindigkeit als neuer Wert --
+    ein anhaltendes Flugzeug behielte sonst die alte und wanderte weiter (s. dort)."""
+    stelle = INDEX.index("function _verkehrZeichnen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
     assert "alt.lat !== e.lat" in rumpf and "alt.lon !== e.lon" in rumpf
+    assert "alt.gs !== neueGs" in rumpf
 
 
 def test_verkehr_hat_eine_einzige_zoom_schwelle():
@@ -2123,6 +2127,41 @@ def test_diagnose_zaehlt_die_geloesten_zuordnungen():
     assert "geloest: _zuordnungGeloest" in rumpf
     assert "perAusschluss" in rumpf, "wie oft der Ausschluss getragen hat"
     assert "davonFriesen" in rumpf
+    # Und die Rufzeichen, nicht nur die Anzahl -- erst damit laesst sich beantworten, WELCHE
+    # Flugzeuge keine Live-Daten haben und warum (Nutzer-Frage 16.08.2026).
+    assert "gepaartCs" in rumpf and "nurVatsimCs" in rumpf
+    assert "gsFehlt" in rumpf
+
+
+def test_stehendes_flugzeug_wird_nicht_weitergerechnet():
+    """Nutzer-Fund 16.08.2026: "sie stehen eigentlich schon, aber werden mit VATSIM Daten
+    weiterberechnet". Ein rollendes Flugzeug wird von VATSIM mit 15 kt gemeldet und haelt an.
+    Der Simulator meldet ab jetzt dieselbe Position und 0 kt -- die alte Bedingung "Position
+    geaendert?" schlug nie an, der VATSIM-Eintrag mit seinen 15 kt blieb liegen, und der
+    Sekundentakt schob das stehende Flugzeug weiter. Am Symbol stand dabei 0."""
+    stelle = INDEX.index("function _verkehrZeichnen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "|| alt.gs !== neueGs" in rumpf
+
+
+def test_kein_rueckfall_auf_die_vatsim_geschwindigkeit():
+    """Eine 0 aus dem Simulator heisst, dass das Flugzeug STEHT -- der 29 Sekunden alte
+    VATSIM-Wert sagt nur, dass es damals noch rollte. Ihn zu uebernehmen liesse ein stehendes
+    Flugzeug ueber die Karte wandern, denn die Fortrechnung haengt an dieser Zahl."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "e.gs = v.gs" not in rumpf
+
+
+def test_fehlende_geschwindigkeit_wird_mitgemessen():
+    """Die Geschwindigkeit liefert der Simulator nicht -- das Panel leitet sie aus zwei
+    Positionen ab. Faellt das bei einzelnen aus, steht dauerhaft 0 am Symbol, obwohl es sich
+    sichtbar bewegt (Nutzer-Fund 16.08.2026). Woran es liegt, ist von der Seite aus nicht zu
+    sehen; DASS es passiert, schon."""
+    stelle = INDEX.index("function _simHoehenSpurFortschreiben(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_simGsFehlt[s.id]" in rumpf
+    assert "delete _simGsFehlt[s.id]" in rumpf, "erholt es sich, muss der Eintrag weg"
     assert "'zuordnung'" in INDEX
     # Der Zaehler muss dort hochgehen, wo wirklich geloest wird.
     stelle = INDEX.index("function _verkehrZusammenfuehren(")

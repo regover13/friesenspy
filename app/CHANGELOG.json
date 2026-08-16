@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.6.1",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Stehende Flugzeuge stehen wieder",
+    "items": [
+      "🛑 Ein Flugzeug, das anhielt, wanderte auf der Karte weiter — mit der Geschwindigkeit, die VATSIM eine halbe Minute zuvor gemeldet hatte. Am Symbol stand dabei „0“: dieselbe Maschine, zwei sich widersprechende Aussagen. Jetzt zählt auch eine geänderte Geschwindigkeit als neue Meldung, und die Bewegung hört auf, wenn das Flugzeug steht.",
+      "🔎 Die Karte meldet zusätzlich, welche Flugzeuge erkannt wurden und welche nur VATSIM kennt — bei letzteren gibt es im Simulator nichts, was schneller wäre."
+    ]
+  },
+  {
     "version": "13.6.0",
     "date": "2026-08-16",
     "highlight": false,
