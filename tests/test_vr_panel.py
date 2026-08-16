@@ -1455,6 +1455,31 @@ def test_latenz_wird_am_eigenen_flugzeug_gemessen():
     assert "_LATENZ_MIN_GS" in rumpf, "im Stand ist der Quotient undefiniert"
 
 
+def test_latenz_misst_nur_bei_stabilem_kurs():
+    """Die wichtigste Bedingung, und sie fehlte in der ersten Fassung: Der erste Messflug war
+    eine Platzrunde. Dort misst der Abstand die Sehne, nicht die Strecke -- die zwoelf Proben
+    blieben bei 1,2-1,4 km, obwohl die Geschwindigkeit zwischen 60 und 96 kt schwankte.
+
+    Die Pruefung kostet nichts: Der VATSIM-Kurs IST der Kurs von vor einer halben Minute."""
+    stelle = INDEX.index("function _latenzProbeNehmen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_LATENZ_MAX_KURSDIFF" in rumpf
+    assert "kursDiff > 180" in rumpf, "Winkeldifferenz muss bei 360 umschlagen"
+    assert rumpf.index("kursDiff > _LATENZ_MAX_KURSDIFF") < rumpf.index("distanceTo"), \
+        "erst pruefen, dann rechnen"
+
+
+def test_uids_kommen_aus_der_nichtleeren_diagnose():
+    """Der Startbefund faellt beim ERSTEN Abruf an -- da ist vPilot typischerweise noch nicht
+    verbunden (zwei von drei Messungen am 16.08.2026 kamen mit null Flugzeugen zurueck).
+    Diese Diagnose feuert beim ersten NICHTLEEREN Eintreffen."""
+    stelle = INDEX.index("function _simVerkehrDiagnoseEinmal(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "ids:" in rumpf
+    assert "slice(0, 20)" in rumpf
+    assert "if (_simVerkehrDiagnoseGemeldet || !liste.length) return;" in rumpf
+
+
 def test_latenz_nimmt_den_median_nicht_den_mittelwert():
     """In einer Kurve misst der Abstand die Kurve mit, nicht die Zeit. Der Median haelt
     solche Proben aus, ein Mittelwert nicht."""

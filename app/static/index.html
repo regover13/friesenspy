@@ -4853,6 +4853,16 @@ function _simVerkehrDiagnoseEinmal(liste) {
     weitesteKm: weitesteKm,
     felder: Object.keys(liste[0]),
     ersterEintrag: liste[0],
+    // Die Kennungen des Simulators (die uId steckt als `id` in jedem Eintrag) -- fuer die
+    // Frage, ob sie einen Neustart ueberleben.
+    //
+    // Sie stehen HIER und nicht im Startbefund des Panels, obwohl sie dort schon gemeldet
+    // werden: Der Startbefund faellt beim ERSTEN Abruf an, und da ist vPilot typischerweise
+    // noch nicht verbunden -- zwei von drei Messungen am 16.08.2026 kamen deshalb mit null
+    // Flugzeugen zurueck. Genau der Fehler, an dem schon die alte Sonde gescheitert ist.
+    // Diese Diagnose dagegen feuert beim ersten NICHTLEEREN Eintreffen, also dann, wenn es
+    // etwas zu melden gibt.
+    ids: liste.slice(0, 20).map(function (e) { return e.id; }),
   });
 }
 
@@ -8706,6 +8716,20 @@ function _eigenLabel() {
 //     der Median statt des Mittels: Ein paar Kurvenproben verzerren ihn nicht.
 const _LATENZ_PROBEN_ZIEL = 12;
 const _LATENZ_MIN_GS = 60;
+// Wie weit Sim-Kurs und gemeldeter VATSIM-Kurs auseinanderliegen duerfen, damit eine Probe
+// zaehlt.
+//
+// Das ist die wichtigste Bedingung, und sie fehlte in der ersten Fassung: Der erste Messflug
+// war eine PLATZRUNDE, und dort misst der Abstand zwischen zwei Positionen nicht die
+// geflogene Strecke, sondern die Sehne -- die nie groesser wird als der Durchmesser der
+// Runde. Die zwoelf Proben zeigten es deutlich: Der Abstand blieb bei 1,2 bis 1,4 km,
+// obwohl die Geschwindigkeit zwischen 60 und 96 kt schwankte. Bei echter Latenz haette er
+// mitwachsen muessen. Der Median von 29 s ist damit eine Untergrenze, kein Ergebnis.
+//
+// Die Pruefung kostet nichts: Der VATSIM-Kurs IST der Kurs von vor einer halben Minute.
+// Weicht er vom aktuellen ab, wurde dazwischen gekurvt -- und genau dann taugt die Probe
+// nicht. Kein Kursspeicher noetig, die Verzoegerung ist selbst das Gedaechtnis.
+const _LATENZ_MAX_KURSDIFF = 10;
 let _latenzProben = [];
 let _latenzGemeldet = false;
 
@@ -8716,6 +8740,10 @@ function _latenzProbeNehmen(p) {
   const gs = Number(p.groundspeed) || 0;
   if (gs < _LATENZ_MIN_GS) return;
 
+  let kursDiff = Math.abs((Number(p.heading) || 0) - (Number(_simPos.hdg) || 0)) % 360;
+  if (kursDiff > 180) kursDiff = 360 - kursDiff;
+  if (kursDiff > _LATENZ_MAX_KURSDIFF) return;
+
   const meter = L.latLng(_simPos.lat, _simPos.lon).distanceTo([p.latitude, p.longitude]);
   const sekunden = meter / (gs * 0.514444);          // Knoten -> m/s
   if (!isFinite(sekunden) || sekunden <= 0 || sekunden > 300) return;
@@ -8724,6 +8752,7 @@ function _latenzProbeNehmen(p) {
     s: Math.round(sekunden * 10) / 10,
     m: Math.round(meter),
     gs: Math.round(gs),
+    kurs: Math.round(kursDiff),
     dAlt: (_simPos.alt != null) ? Math.round(_simPos.alt - (Number(p.altitude) || 0)) : null,
   });
   if (_latenzProben.length >= _LATENZ_PROBEN_ZIEL) _latenzMelden();

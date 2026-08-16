@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.4.2",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Messungen nachgeschärft",
+    "items": [
+      "📐 Die Latenzmessung zählt nur noch Proben aus dem Geradeausflug. In einer Platzrunde misst der Abstand zwischen zwei Positionen nämlich nicht die geflogene Strecke, sondern die Sehne — der erste Messflug lieferte deshalb einen zu kleinen Wert.",
+      "🔬 Die Kennungen des Simulators werden jetzt gemeldet, sobald tatsächlich Verkehr da ist — vorher fiel die Meldung schon beim allerersten Abruf an, und da ist vPilot meist noch nicht verbunden."
+    ]
+  },
+  {
     "version": "13.4.1",
     "date": "2026-08-16",
     "highlight": false,
