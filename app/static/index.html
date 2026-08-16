@@ -4580,25 +4580,52 @@ let _simVerkehr = null;             // { ts, liste } -- zuletzt gemeldet, oder n
 let _vatsimVerkehr = null;          // { gemessenTs, liste } -- letzte Antwort von /api/traffic
 let _simVerkehrLetzteMitInhalt = 0; // wann der Sim zuletzt WIRKLICH etwas zu zeigen hatte
 
-// Wie nah sich zwei Meldungen sein muessen, damit sie dasselbe Flugzeug sind.
+// --------------------------------------------------------------------------
+//  Zuordnung: einmal erkennen, dann festhalten
+// --------------------------------------------------------------------------
+// Spec: docs/superpowers/specs/2026-08-16-verkehr-zuordnung-design.md
 //
-// Sehr grosszuegig, und das mit Absicht. Die naheliegende Rechnung -- "alle 15 Sekunden eine
-// Meldung, also hoechstens 15 Sekunden Versatz" -- ist FALSCH (Nutzer-Korrektur 16.08.2026):
-// Der Abruftakt sagt nichts ueber das Alter der Werte. Eine Position durchlaeuft den
-// Piloten-Client, das VATSIM-Netz und unseren Poller; in Summe hinkt sie bis zu einer Minute
-// hinterher. Ein Airliner mit 440 kt legt darin ueber 13 km zurueck.
+// Die erste Fassung suchte die Zuordnung in JEDEM Takt neu, allein ueber Position und Hoehe.
+// Das ging schief, und zwar auf zwei Arten, die im Flug beide sichtbar wurden: zwei Schilder
+// an einem Airliner, und ein Label, das im Sekundentakt trennt und zusammenfaellt. Beide Male
+// war es ein Grenzfall -- und Grenzfaelle lassen sich nicht wegjustieren, weil es zu JEDEM
+// Schwellwert einen gibt. Der Fehler war, die Frage ueberhaupt jede Sekunde neu zu stellen.
 //
-// Die Fortrechnung (s. _verkehrZusammenfuehren) holt davon nur den BEKANNTEN Teil auf -- das
-// Alter der Momentaufnahme, das der Server mitliefert. Was das VATSIM-Netz selbst an
-// Verzoegerung hinzufuegt, weiss niemand, und es bleibt als Rest stehen. Die Schranke muss
-// deshalb diesen Rest abdecken, nicht den Abrufabstand.
-//
-// Die Hoehe ist das schaerfere Merkmal und traegt die Unterscheidung: Zwei Maschinen im
-// selben Umkreis unterscheiden sich fast immer um mehr als 1500 Fuss. Verwechselt die
-// Paarung doch einmal, steht ein falsches Rufzeichen an einem Symbol -- unschoen, aber
-// niemand navigiert danach, und ein doppeltes Symbol ist der sichtbarere Fehler.
-const _PAARUNG_MAX_M = 15000;
-const _PAARUNG_MAX_FT = 1500;
+// Jetzt gilt: einmal erkennen, dann merken. Dass das reicht, liegt am Ablauf eines Fluges
+// (Nutzer-Einwand, und er verschiebt das Problem an eine loesbare Stelle): Wir starten nicht
+// in der Platzrunde. Piloten loggen sich nacheinander ein, stehen minutenlang, rollen
+// nacheinander an, starten nacheinander. IM STAND ist die Latenz sogar gegenstandslos -- eine
+// 29 Sekunden alte Position eines stehenden Flugzeugs ist exakt richtig. Dort entsteht der
+// Grossteil aller Zuordnungen, auf Meter genau. Bis zur Platzrunde stehen sie laengst.
+
+// Gemessen am 16.08.2026 im Flug: Median 28,9 s bei zwoelf Proben mit stabilem Kurs, Spanne
+// 27,2-30,5 s. Belastbar, weil der Abstand MIT DER GESCHWINDIGKEIT mitwaechst (1494 m bei
+// 97 kt, 1714 m bei 113 kt). Die frueher angenommene "bis zu einer Minute" war fast doppelt
+// so hoch. Steht genau einmal hier.
+const _VATSIM_LATENZ_S = 29;
+
+// Der erwartete Versatz ist reine Kinematik, deshalb wird er GERECHNET und nicht gesetzt:
+// Eine C172 legt in 29 s 1,5 km zurueck, ein Airliner 6,6 km, eine Hornet im Ueberschall
+// 11 km. Jede feste Zahl waere fuer das eine zu weit und fuer das andere zu eng (Nutzer-
+// Einwand 16.08.2026). Die Geschwindigkeit kommt aus den SIM-Daten -- aktuell und
+// zuverlaessig, anders als die 29 Sekunden alte VATSIM-Angabe.
+const _PAARUNG_FAKTOR = 2;          // deckt Latenzstreuung (+/-5%), Wind, leichte Kurven
+const _PAARUNG_MIN_M = 400;         // Untergrenze: sonst faende ein STEHENDES Flugzeug nie
+                                    // einen Partner -- im besten Zuordnungsmoment ueberhaupt
+const _PAARUNG_LOESEN_FAKTOR = 3;   // beim Loesen grosszuegiger als beim Zuordnen: Ein zu
+                                    // fruehes Loesen bringt das Flackern zurueck, eine zu
+                                    // weite Erstzuordnung kostet nur Eindeutigkeit
+const _PAARUNG_LOESEN_TAKTE = 4;    // erst nach so vielen Verstoessen IN FOLGE
+
+// uId -> { cs, verstoesse }. Gilt nur fuer die laufende Sitzung, und das ist keine
+// Sparsamkeit, sondern gemessen: Die uId ueberlebt keinen Neustart des Simulators (zwei
+// Sitzungen am 16.08.2026, 14 und 20 Kennungen, NULL Uebereinstimmungen; die Wertebereiche
+// lagen bei 169 und 102 Millionen, innerhalb einer Sitzung in exakten 16384er-Schritten --
+// ein Handle-Muster). Eine dauerhaft gespeicherte Zuordnung haengte irgendwann ein falsches
+// Rufzeichen an ein fremdes Flugzeug. Fuer den Zweck reicht es: noetig ist sie einmal je Flug.
+let _paarungen = Object.create(null);
+// uId -> { alt, ts } -- fuer die Steig-/Sinkrate aus den Sim-Hoehen.
+let _simHoehenSpur = Object.create(null);
 
 // Dieselbe Grenze wie fuer die eigene Position: Es ist dieselbe Bruecke, und zwei Grenzen
 // waeren zwei Wahrheiten darueber, ob der Simulator noch da ist.
@@ -4630,41 +4657,121 @@ function _simVerkehrFrisch() {
 function _verkehrZusammenfuehren() {
   const sim = (_simVerkehrFrisch() && _simVerkehr) ? _simVerkehr.liste : [];
   const vat = _vatsimVerkehr ? _vatsimVerkehr.liste : [];
-  const belegt = Object.create(null);
   const out = [];
 
   // Verglichen wird gegen die Stelle, an der das VATSIM-Flugzeug JETZT steht -- nicht gegen
-  // die gemeldete. Das ist der Unterschied, an dem die erste Fassung scheiterte (Nutzer-Fund
-  // im VR-Flug 16.08.2026: zwei Schilder an einem Flugzeug, CND65P mit Rufzeichen und ein
-  // namenloses daneben). Ausgerechnet die schnellen Flugzeuge fielen aus der Schranke, und
-  // genau bei ihnen faellt das doppelte Symbol auf.
-  //
-  // Gezeichnet wird der Marker ohnehin an der fortgerechneten Stelle -- also wird auch dort
-  // gepaart, mit derselben Funktion. Aufgeholt wird damit aber nur das Alter, das der Server
-  // mitliefert; die Verzoegerung im VATSIM-Netz bleibt unbekannt und bleibt stehen. Dafuer
-  // ist die Schranke da (s. _PAARUNG_MAX_M).
+  // die gemeldete. Gezeichnet wird der Marker ohnehin an der fortgerechneten Stelle, also
+  // wird auch dort gepaart, mit derselben Funktion. Aufgeholt wird damit aber nur das Alter,
+  // das der Server mitliefert; die Verzoegerung im VATSIM-Netz bleibt als Rest stehen -- fuer
+  // den ist die Schranke da.
   const vatJetzt = [];
+  const frei = Object.create(null);
   for (let i = 0; i < vat.length; i++) {
     const v = vat[i];
+    if (!v.cs) continue;
     const g = _jetztGerechnet({ lat: v.lat, lon: v.lon, hdg: Number(v.hdg) || 0,
                                 gs: Number(v.gs) || 0, ts: _vatsimVerkehr.gemessenTs });
     vatJetzt.push({ v: v, lat: g.lat, lon: g.lon });
+    frei[v.cs] = true;
+  }
+  // Die Friesen kommen MIT in die Kandidatenliste, obwohl sie nicht in /api/traffic stehen
+  // (der Server filtert sie ueber das Praefix heraus, damit sie nicht doppelt gezeichnet
+  // werden -- sie haben ihre eigenen blauen Marker aus /api/live).
+  //
+  // Genau daraus entstand aber ein struktureller Fehler: Der Simulator kennt sie sehr wohl,
+  // vPilot spawnt sie ja. Ihre Sim-Meldung fand in der Verkehrsliste nie einen Partner und
+  // wurde als namenloses graues Symbol gezeichnet -- NEBEN dem blauen. Am
+  // FriesenFlieger-Freitag stuende damit jeder Friese doppelt auf der Karte, bei jedem
+  // gemeinsamen Flug aufs Neue.
+  //
+  // Sie stehen deshalb hier zur Verfuegung, werden aber unten NICHT in die Verkehrsliste
+  // uebernommen: Ihr Marker existiert bereits.
+  const friesen = _friesenAlsKandidaten();
+  for (let i = 0; i < friesen.length; i++) {
+    vatJetzt.push(friesen[i]);
+    frei[friesen[i].v.cs] = true;
   }
 
+  // --- 1. Bestehende Zuordnungen halten oder loesen -------------------------------------
+  // Zuerst, damit die gehaltenen Rufzeichen fuer die Suche unten schon vergeben sind.
+  const zugeordnet = Object.create(null);   // uId -> VATSIM-Datensatz
+  const offen = [];                         // Sim-Eintraege ohne Zuordnung
   for (let i = 0; i < sim.length; i++) {
     const s = sim[i];
-    const partner = _verkehrPartnerSuchen(s, vatJetzt, belegt);
+    _simHoehenSpurFortschreiben(s);
+    const gemerkt = _paarungen[s.id];
+    if (!gemerkt) { offen.push(s); continue; }
+    const partner = _vatsimFinden(vatJetzt, gemerkt.cs);
+    if (!partner) {
+      // VATSIM meldet das Flugzeug nicht mehr -- die Zuordnung hat ihren Gegenstand verloren.
+      delete _paarungen[s.id];
+      offen.push(s);
+      continue;
+    }
+    if (_paarungPlausibel(s, partner)) {
+      gemerkt.verstoesse = 0;
+    } else if (++gemerkt.verstoesse >= _PAARUNG_LOESEN_TAKTE) {
+      // Erst nach mehreren Verstoessen IN FOLGE. Bei einem einzelnen Ausreisser zu loesen
+      // waere das Flackern durch die Hintertuer -- und genau dagegen gibt es das Merken.
+      delete _paarungen[s.id];
+      offen.push(s);
+      continue;
+    }
+    zugeordnet[s.id] = partner.v;
+    delete frei[partner.v.cs];
+  }
+
+  // --- 2. Erstzuordnung, aber NUR bei Eindeutigkeit --------------------------------------
+  const nochOffen = [];
+  for (let i = 0; i < offen.length; i++) {
+    const s = offen[i];
+    const kandidaten = _verkehrKandidaten(s, vatJetzt, frei);
+    if (kandidaten.length === 1) {
+      const v = kandidaten[0].v;
+      _paarungen[s.id] = { cs: v.cs, verstoesse: 0 };
+      zugeordnet[s.id] = v;
+      delete frei[v.cs];
+    } else {
+      // Kein Kandidat oder mehrere: nicht raten. Ein falsches Rufzeichen ist schlimmer als
+      // gar keines -- man sieht ihm nicht an, dass es falsch ist.
+      nochOffen.push(s);
+    }
+  }
+
+  // --- 3. Ausschluss ---------------------------------------------------------------------
+  // Eindeutigkeit entsteht nicht nur aus Naehe, sondern auch daraus, dass nichts anderes
+  // uebrig bleibt: Loggt sich der fuenfte mitten in der Platzrunde ein, sind die anderen vier
+  // laengst bekannt -- dann ist auch er klar (Nutzer, 16.08.2026). Erst NACH allen sicheren
+  // Zuordnungen, sonst nimmt eine schwache Naehe-Zuordnung einen Kandidaten weg, den der
+  // Ausschluss sicher zugeordnet haette.
+  const uebrigVat = vatJetzt.filter(function (e) { return frei[e.v.cs]; });
+  if (nochOffen.length === 1 && uebrigVat.length === 1) {
+    const s = nochOffen[0];
+    const v = uebrigVat[0].v;
+    _paarungen[s.id] = { cs: v.cs, verstoesse: 0 };
+    zugeordnet[s.id] = v;
+    delete frei[v.cs];
+    nochOffen.length = 0;
+  }
+
+  // --- 4. Liste bauen --------------------------------------------------------------------
+  for (let i = 0; i < sim.length; i++) {
+    const s = sim[i];
+    const v = zugeordnet[s.id];
+    // Einem Friesen zugeordnet? Dann ist er schon gezeichnet -- blau, mit Callsign, aus
+    // /api/live. Ein zweites Symbol daneben waere die Dopplung, um die es geht.
+    if (v && v._friese) continue;
     const e = { lat: s.lat, lon: s.lon, alt: s.alt, hdg: s.hdg, gs: s.gs,
                 ac: s.ac, cs: s.cs, gnd: s.gnd };
-    if (partner) {
-      belegt[partner.cs] = true;
-      e.cs  = partner.cs;
-      e.ac  = partner.ac || s.ac;
-      e.dep = partner.dep;
-      e.arr = partner.arr;
-      // Den VATSIM-Schluessel behalten: Reisst die Paarung einmal ab und kommt wieder,
-      // bleibt es derselbe Marker, statt einen neuen aufblitzen zu lassen.
-      e._key = partner.cs;
+    if (v) {
+      // Bewegung vom Simulator, Identitaet von VATSIM -- er liefert weder Rufzeichen noch
+      // Muster noch Flugplan. Den VATSIM-Schluessel behalten, damit ein Abriss der Zuordnung
+      // keinen neuen Marker aufblitzen laesst.
+      e.cs  = v.cs;
+      e.ac  = v.ac || s.ac;
+      e.dep = v.dep;
+      e.arr = v.arr;
+      e._key = v.cs;
     } else {
       e._key = 'sim:' + s.id;
     }
@@ -4674,34 +4781,120 @@ function _verkehrZusammenfuehren() {
 
   for (let i = 0; i < vat.length; i++) {
     const v = vat[i];
-    if (!v.cs || belegt[v.cs]) continue;
+    if (!v.cs || !frei[v.cs]) continue;
     const e = Object.assign({}, v);
     e._key = v.cs;
     e._ts = _vatsimVerkehr.gemessenTs;
     out.push(e);
   }
+
+  _paarungenAufraeumen(sim);
   return out;
 }
 
-// Das naechstgelegene noch freie VATSIM-Flugzeug in vertraeglicher Hoehe -- oder null.
+// Die Friesen im selben Format wie die Verkehrsliste, auf jetzt fortgerechnet -- damit die
+// Zuordnung sie behandeln kann wie jedes andere Flugzeug. `_friese` markiert sie, damit sie
+// unten nicht als Fremdverkehr gezeichnet werden.
 //
-// `vatJetzt` traegt je Eintrag den VATSIM-Datensatz (`v`) UND die auf jetzt fortgerechnete
-// Position; verglichen wird gegen letztere (s. _verkehrZusammenfuehren).
-function _verkehrPartnerSuchen(s, vatJetzt, belegt) {
-  if (!vatJetzt.length || !isFinite(s.lat) || !isFinite(s.lon)) return null;
+// Das eigene Flugzeug bleibt aussen vor: Es hat seinen eigenen Weg (s. _eigenesFlugzeugZeichnen)
+// und wird vom Panel ohnehin schon aus der Sim-Liste gefiltert.
+function _friesenAlsKandidaten() {
+  const liste = liveData || [];
+  const out = [];
+  for (let i = 0; i < liste.length; i++) {
+    const p = liste[i];
+    if (!p || !p.callsign) continue;
+    if (_meineCid != null && String(p.cid) === String(_meineCid)) continue;
+    const roh = _positionsRoh[p.callsign];
+    const g = roh ? _jetztGerechnet(roh) : { lat: p.latitude, lon: p.longitude };
+    out.push({
+      v: { cs: p.callsign, ac: p.aircraft, alt: p.altitude, gs: p.groundspeed,
+           dep: p.departure, arr: p.arrival, _friese: true },
+      lat: g.lat, lon: g.lon,
+    });
+  }
+  return out;
+}
+
+function _vatsimFinden(vatJetzt, cs) {
+  for (let i = 0; i < vatJetzt.length; i++) {
+    if (vatJetzt[i].v.cs === cs) return vatJetzt[i];
+  }
+  return null;
+}
+
+// Wie weit darf ein Flugzeug von seiner VATSIM-Meldung entfernt sein? Das ist keine
+// Geschmacksfrage, sondern Kinematik: Weg = Geschwindigkeit mal Zeit. Die Zeit ist gemessen
+// (_VATSIM_LATENZ_S), die Geschwindigkeit kommt aus dem Simulator.
+function _paarungMaxM(s, faktor) {
+  const gsMs = (Number(s.gs) || 0) * 0.514444;
+  return Math.max(_PAARUNG_MIN_M, gsMs * _VATSIM_LATENZ_S * faktor);
+}
+
+// Dasselbe fuer die Hoehe: Ein sinkendes Flugzeug MUSS von seiner VATSIM-Hoehe abweichen.
+// 2000 ft/min ergeben nach 29 Sekunden 970 Fuss -- das ist der Sollwert, kein Fehler. Genau
+// hier kippte die erste Fassung an einer festen Schranke von 1500 ft (Nutzer-Fund: Sim FL131
+// gegen VATSIM FL147, also 1600 ft, im Sekundentakt hin und her).
+function _paarungMaxFt(s, faktor) {
+  const vsFtMin = _simSinkrate(s.id);
+  const erwartet = Math.abs(vsFtMin) / 60 * _VATSIM_LATENZ_S;
+  return Math.max(300, erwartet * faktor);
+}
+
+function _paarungPlausibel(s, kandidat) {
+  const m = L.latLng(s.lat, s.lon).distanceTo([kandidat.lat, kandidat.lon]);
+  if (m > _paarungMaxM(s, _PAARUNG_LOESEN_FAKTOR)) return false;
+  const dFt = Math.abs((Number(kandidat.v.alt) || 0) - (Number(s.alt) || 0));
+  return dFt <= _paarungMaxFt(s, _PAARUNG_LOESEN_FAKTOR);
+}
+
+// Alle freien VATSIM-Flugzeuge, die zu dieser Sim-Meldung passen KOENNTEN. Zugeordnet wird
+// nur, wenn es genau einer ist -- die Sicherheit kommt aus der Eindeutigkeit, nicht aus der
+// Enge der Schranke.
+function _verkehrKandidaten(s, vatJetzt, frei) {
+  if (!isFinite(s.lat) || !isFinite(s.lon)) return [];
   const p = L.latLng(s.lat, s.lon);
+  const maxM = _paarungMaxM(s, _PAARUNG_FAKTOR);
+  const maxFt = _paarungMaxFt(s, _PAARUNG_FAKTOR);
   const hoehe = Number(s.alt) || 0;
-  let beste = null;
-  let besteM = _PAARUNG_MAX_M;
+  const treffer = [];
   for (let i = 0; i < vatJetzt.length; i++) {
     const e = vatJetzt[i];
-    const v = e.v;
-    if (!v.cs || belegt[v.cs]) continue;
-    if (Math.abs((Number(v.alt) || 0) - hoehe) > _PAARUNG_MAX_FT) continue;
-    const m = p.distanceTo([e.lat, e.lon]);
-    if (m < besteM) { besteM = m; beste = v; }
+    if (!frei[e.v.cs]) continue;
+    if (Math.abs((Number(e.v.alt) || 0) - hoehe) > maxFt) continue;
+    if (p.distanceTo([e.lat, e.lon]) > maxM) continue;
+    treffer.push(e);
   }
-  return beste;
+  return treffer;
+}
+
+// Steig-/Sinkrate in ft/min aus zwei aufeinanderfolgenden Sim-Hoehen, exponentiell geglaettet
+// -- dieselbe Aufgabe wie beim Ground Speed im Panel, und derselbe Weg. Ungeglaettet waere
+// der Wert bei 1 Hz zu zappelig, um eine Schranke darauf zu stuetzen.
+function _simHoehenSpurFortschreiben(s) {
+  const jetzt = _simVerkehr ? _simVerkehr.ts : Date.now();
+  const alt = Number(s.alt) || 0;
+  const vorher = _simHoehenSpur[s.id];
+  if (!vorher) { _simHoehenSpur[s.id] = { alt: alt, ts: jetzt, vs: 0 }; return; }
+  const dtS = (jetzt - vorher.ts) / 1000;
+  if (dtS <= 0) return;
+  const roh = (alt - vorher.alt) / dtS * 60;
+  const gewicht = 1 - Math.exp(-dtS / 4);
+  _simHoehenSpur[s.id] = { alt: alt, ts: jetzt, vs: vorher.vs + gewicht * (roh - vorher.vs) };
+}
+
+function _simSinkrate(id) {
+  const e = _simHoehenSpur[id];
+  return e ? e.vs : 0;
+}
+
+// Was der Simulator nicht mehr meldet, braucht auch keine Zuordnung mehr. Ohne dieses
+// Aufraeumen wuechsen beide Ablagen ueber einen langen Flug hinweg unbegrenzt.
+function _paarungenAufraeumen(sim) {
+  const da = Object.create(null);
+  for (let i = 0; i < sim.length; i++) da[sim[i].id] = true;
+  for (const id in _paarungen) if (!da[id]) delete _paarungen[id];
+  for (const id in _simHoehenSpur) if (!da[id]) delete _simHoehenSpur[id];
 }
 
 // Der eine Punkt, an dem gezeichnet wird -- egal welche Quelle sich gemeldet hat.

@@ -1963,75 +1963,167 @@ def test_vatsim_wird_nicht_mehr_verdraengt():
     assert "_verkehrQuelleWechseln" not in INDEX, "die Umschaltung ist ersatzlos entfallen"
 
 
-def test_gepaarte_flugzeuge_erben_die_identitaet_von_vatsim():
-    """Bewegung vom Simulator (jede Sekunde gemessen), Identitaet von VATSIM -- der Sim
-    liefert weder Rufzeichen noch Flugplan."""
+def test_zuordnung_wird_gemerkt_nicht_je_takt_gesucht():
+    """Der Kern des Umbaus. Die erste Fassung suchte in JEDEM Takt neu -- und kippte an
+    Grenzfaellen (zwei Schilder an einem Airliner; ein Label, das im Sekundentakt trennt).
+    Zu jedem Schwellwert gibt es einen Grenzfall; der Fehler war, die Frage ueberhaupt jede
+    Sekunde neu zu stellen."""
     stelle = INDEX.index("function _verkehrZusammenfuehren(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "e.cs  = partner.cs" in rumpf
-    assert "e.dep = partner.dep" in rumpf and "e.arr = partner.arr" in rumpf
+    assert "_paarungen[s.id]" in rumpf
+    assert "const gemerkt = _paarungen[s.id];" in rumpf
+
+
+def test_zuordnung_gilt_nur_fuer_die_sitzung():
+    """Gemessen am 16.08.2026: Die uId ueberlebt keinen Neustart (zwei Sitzungen, 14 und 20
+    Kennungen, null Uebereinstimmungen). Eine dauerhaft gespeicherte Zuordnung haengte
+    irgendwann ein falsches Rufzeichen an ein fremdes Flugzeug."""
+    assert "let _paarungen = Object.create(null);" in INDEX
+    assert "localStorage" not in INDEX[INDEX.index("let _paarungen"):INDEX.index("let _paarungen") + 400]
+
+
+def test_erstzuordnung_nur_bei_genau_einem_kandidaten():
+    """Die Sicherheit kommt aus der Eindeutigkeit, nicht aus der Enge der Schranke. Bei zwei
+    Kandidaten wird nicht geraten -- ein falsches Rufzeichen ist schlimmer als gar keines."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "kandidaten.length === 1" in rumpf
+    assert "nochOffen.push(s)" in rumpf
+
+
+def test_ausschluss_kommt_nach_der_naehe():
+    """Erst alle sicheren Zuordnungen, DANN der Ausschluss -- sonst nimmt eine schwache
+    Naehe-Zuordnung einen Kandidaten weg, den der Ausschluss sicher zugeordnet haette."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "nochOffen.length === 1 && uebrigVat.length === 1" in rumpf
+    assert rumpf.index("kandidaten.length === 1") < rumpf.index("uebrigVat.length === 1")
+
+
+def test_schranke_wird_aus_der_geschwindigkeit_gerechnet():
+    """Eine feste Zahl ist grundsaetzlich falsch: Eine C172 legt in 29 s 1,5 km zurueck, eine
+    Hornet im Ueberschall 11 km (Nutzer-Einwand 16.08.2026). Die Geschwindigkeit kommt aus dem
+    SIMULATOR -- aktuell, anders als die 29 s alte VATSIM-Angabe."""
+    stelle = INDEX.index("function _paarungMaxM(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_VATSIM_LATENZ_S" in rumpf
+    assert "s.gs" in rumpf
+    assert "_PAARUNG_MIN_M" in rumpf, "sonst faende ein stehendes Flugzeug nie einen Partner"
+    assert "const _PAARUNG_MAX_M" not in INDEX, "die feste Schranke ist ersetzt"
+
+
+def test_latenz_steht_genau_einmal_und_ist_gemessen():
+    """29 s, gemessen im Flug (Median 28,9 bei zwoelf Proben mit stabilem Kurs). Zwei Stellen
+    waeren zwei Wahrheiten ueber dieselbe Groesse."""
+    import re as _re
+    m = _re.search(r"const _VATSIM_LATENZ_S = (\d+);", INDEX)
+    assert m and int(m.group(1)) == 29
+    assert INDEX.count("_VATSIM_LATENZ_S =") == 1
+
+
+def test_hoehenschranke_folgt_der_sinkrate():
+    """Ein sinkendes Flugzeug MUSS von seiner VATSIM-Hoehe abweichen -- 2000 ft/min ergeben
+    nach 29 s 970 Fuss, das ist der Sollwert und kein Fehler. An einer festen Schranke von
+    1500 ft kippte die erste Fassung (Sim FL131 gegen VATSIM FL147)."""
+    stelle = INDEX.index("function _paarungMaxFt(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_simSinkrate(" in rumpf
+    assert "_VATSIM_LATENZ_S" in rumpf
+    assert "const _PAARUNG_MAX_FT" not in INDEX
+
+
+def test_sinkrate_wird_geglaettet():
+    """Bei 1 Hz ist der Rohwert zu zappelig, um eine Schranke darauf zu stuetzen -- dieselbe
+    Aufgabe wie beim Ground Speed im Panel, und derselbe Weg."""
+    stelle = INDEX.index("function _simHoehenSpurFortschreiben(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "Math.exp(" in rumpf
+
+
+def test_geloest_wird_erst_nach_mehreren_verstoessen():
+    """Nach dem Merken kann Flackern nur noch beim Loesen entstehen. Bei einem einzelnen
+    Ausreisser zu loesen waere es durch die Hintertuer."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "++gemerkt.verstoesse >= _PAARUNG_LOESEN_TAKTE" in rumpf
+    assert "gemerkt.verstoesse = 0" in rumpf, "eine plausible Meldung setzt den Zaehler zurueck"
+
+
+def test_loesen_ist_grosszuegiger_als_zuordnen():
+    """Ein zu fruehes Loesen bringt das Flackern zurueck; eine zu weite Erstzuordnung kostet
+    nur Eindeutigkeit."""
+    import re as _re
+    a = int(_re.search(r"const _PAARUNG_FAKTOR = (\d+);", INDEX).group(1))
+    b = int(_re.search(r"const _PAARUNG_LOESEN_FAKTOR = (\d+);", INDEX).group(1))
+    assert b > a
+
+
+def test_gepaarte_flugzeuge_erben_die_identitaet_von_vatsim():
+    """Bewegung vom Simulator, Identitaet von VATSIM -- er liefert weder Rufzeichen noch
+    Muster noch Flugplan."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "e.cs  = v.cs" in rumpf
+    assert "e.dep = v.dep" in rumpf and "e.arr = v.arr" in rumpf
+    assert "e._key = v.cs" in rumpf, "Schluessel bleibt das Callsign -- kein neuer Marker"
     assert "e.lat = " not in rumpf, "die Position muss vom Simulator bleiben"
 
 
-def test_gepaarte_behalten_den_vatsim_schluessel():
-    """Reisst die Paarung ab und kommt wieder, muss es derselbe Marker bleiben -- sonst
-    blitzt bei jedem Wechsel ein neuer auf."""
+def test_friesen_erscheinen_nicht_doppelt():
+    """Der strukturelle Fehler: /api/traffic filtert die Friesen heraus (sie haben eigene
+    blaue Marker), der Simulator kennt sie aber -- vPilot spawnt sie ja. Ihre Sim-Meldung fand
+    nie einen Partner und wurde als namenloses graues Symbol NEBEN dem blauen gezeichnet. Am
+    FriesenFlieger-Freitag stuende damit jeder Friese doppelt auf der Karte."""
     stelle = INDEX.index("function _verkehrZusammenfuehren(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "e._key = partner.cs" in rumpf
+    assert "_friesenAlsKandidaten()" in rumpf, "sie muessen zuordenbar sein"
+    assert "if (v && v._friese) continue;" in rumpf, "aber nicht noch einmal gezeichnet"
+
+
+def test_eigenes_flugzeug_ist_kein_friesen_kandidat():
+    """Es hat seinen eigenen Weg (_eigenesFlugzeugZeichnen) und wird vom Panel ohnehin aus
+    der Sim-Liste gefiltert."""
+    stelle = INDEX.index("function _friesenAlsKandidaten(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_meineCid" in rumpf
+    assert "_jetztGerechnet(" in rumpf, "auch die Friesen-Position ist 15 s alt"
 
 
 def test_nur_von_vatsim_gekannte_flugzeuge_bleiben_stehen():
     """Der Fall, der den Umbau ausgeloest hat: vPilot spawnt nicht jedes Flugzeug."""
     stelle = INDEX.index("function _verkehrZusammenfuehren(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "if (!v.cs || belegt[v.cs]) continue;" in rumpf
+    assert "if (!v.cs || !frei[v.cs]) continue;" in rumpf
+
+
+def test_ein_vatsim_flugzeug_wird_nur_einmal_vergeben():
+    """Ohne die Freiliste koennten zwei Sim-Meldungen dasselbe Rufzeichen tragen."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert rumpf.count("delete frei[") >= 3, "gehalten, erstzugeordnet und per Ausschluss"
+    stelle = INDEX.index("function _verkehrKandidaten(")
+    such = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "if (!frei[e.v.cs]) continue;" in such
+
+
+def test_zuordnungen_werden_aufgeraeumt():
+    """Ohne das wuechsen beide Ablagen ueber einen langen Flug hinweg unbegrenzt."""
+    stelle = INDEX.index("function _paarungenAufraeumen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "delete _paarungen[id]" in rumpf
+    assert "delete _simHoehenSpur[id]" in rumpf
 
 
 def test_paarung_vergleicht_gegen_die_fortgerechnete_position():
-    """Der Fehler, der im VR-Flug am 16.08.2026 auffiel: zwei Schilder an einem Flugzeug
-    (CND65P B738 FL371 442 und darunter ein namenloses ? FL371 456). Verglichen wurde gegen
-    die GEMELDETE VATSIM-Position -- die ist bis zu 15 s alt, ein Airliner mit 440 kt legt
-    darin ueber 3 km zurueck, mit dem Alter der Momentaufnahme bis zu 7. Ausgerechnet die
-    schnellen Flugzeuge fielen so aus der Schranke, und genau bei ihnen faellt das doppelte
-    Symbol auf. Gezeichnet wird der Marker ohnehin an der fortgerechneten Stelle."""
+    """Verglichen wird gegen die Stelle, an der das Flugzeug JETZT steht -- dieselbe, an der
+    auch der Marker gezeichnet wird."""
     stelle = INDEX.index("function _verkehrZusammenfuehren(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "_jetztGerechnet(" in rumpf, "ohne Fortrechnung paart es die schnellen nie"
-    assert "vatJetzt" in rumpf
-    assert rumpf.index("vatJetzt.push") < rumpf.index("_verkehrPartnerSuchen("), \
-        "die Fortrechnung muss VOR der Suche stehen"
-    # Und die Suche darf nicht mehr an der rohen Position messen.
-    stelle = INDEX.index("function _verkehrPartnerSuchen(")
-    such = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "_jetztGerechnet(" in rumpf
+    assert rumpf.index("vatJetzt.push") < rumpf.index("_verkehrKandidaten(")
+    stelle = INDEX.index("function _verkehrKandidaten(")
+    such = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "p.distanceTo([e.lat, e.lon])" in such
-    assert "p.distanceTo([v.lat, v.lon])" not in such
-
-
-def test_paarung_braucht_naehe_und_aehnliche_hoehe():
-    """Die Hoehe ist das schaerfere Merkmal: Die VATSIM-Position ist bis zu 15 s alt, ein
-    Verkehrsflugzeug legt darin rund 3 km zurueck -- eine enge Ortsschranke wuerde also
-    ausgerechnet die schnellen nie paaren."""
-    stelle = INDEX.index("function _verkehrPartnerSuchen(")
-    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "_PAARUNG_MAX_M" in rumpf and "_PAARUNG_MAX_FT" in rumpf
-    assert "if (m < besteM)" in rumpf, "das naechstgelegene gewinnt, nicht das erstbeste"
-    m = re.search(r"const _PAARUNG_MAX_M = (\d+);", INDEX)
-    # Der Abruftakt (15 s) ist NICHT das Alter der Werte: Eine Position durchlaeuft
-    # Piloten-Client, VATSIM-Netz und Poller und hinkt bis zu einer Minute hinterher
-    # (Nutzer-Korrektur 16.08.2026). Bei 440 kt sind das ueber 13 km, und die Fortrechnung
-    # holt davon nur den vom Server gemeldeten Teil auf.
-    assert m and int(m.group(1)) >= 13000, "schneller Verkehr faellt sonst durch"
-
-
-def test_ein_vatsim_flugzeug_wird_nur_einmal_gepaart():
-    """Ohne Belegung koennten zwei Sim-Meldungen dasselbe Rufzeichen tragen."""
-    stelle = INDEX.index("function _verkehrZusammenfuehren(")
-    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "belegt[partner.cs] = true" in rumpf
-    stelle = INDEX.index("function _verkehrPartnerSuchen(")
-    such = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "belegt[v.cs]" in such
 
 
 def test_popup_bleibt_lesbar_ohne_callsign():
@@ -2085,10 +2177,9 @@ def test_doppelte_symbole_verhindert_die_paarung_statt_eines_abbruchs():
     nicht ein zweites Mal gezeichnet."""
     stelle = INDEX.index("function _verkehrZusammenfuehren(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "belegt[partner.cs] = true" in rumpf
-    assert "if (!v.cs || belegt[v.cs]) continue;" in rumpf
+    assert "delete frei[v.cs]" in rumpf, "ein zugeordnetes Callsign ist vergeben"
+    assert "if (!v.cs || !frei[v.cs]) continue;" in rumpf
     # Und die Frischewache entscheidet nur noch, ob die Sim-Liste ueberhaupt zaehlt.
-    stelle = INDEX.index("function _verkehrZusammenfuehren(")
     assert "_simVerkehrFrisch()" in INDEX[stelle:stelle + 400]
 
 
