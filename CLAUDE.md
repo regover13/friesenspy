@@ -21,6 +21,13 @@ uvicorn app.main:app --reload
 pytest tests/ -v
 ```
 
+## Offene Aufgaben
+
+Vom Nutzer vorgemerkte, noch nicht begonnene Arbeiten stehen in
+[`docs/offene-aufgaben.md`](docs/offene-aufgaben.md) — dort nachsehen, bevor etwas Neues
+angefangen wird. Am Projekt arbeiten mehrere Sitzungen parallel (auch in der Cloud): vor dem
+Start pullen und prüfen, ob eine andere die Aufgabe schon erledigt hat.
+
 ## Deployment
 
 GitHub Push → main-Branch → GitHub Actions → GHCR → SSH-Deploy auf VPS
