@@ -1988,7 +1988,18 @@
        Rahmen, kleinere Schrift, gedeckte statt helle Farbe. Derselbe Sprechblasen-Zipfel wie
        bei .traffic-label (s. dortiger Kommentar) wird aus demselben Grund abgeschaltet. */
     .fse-platz-label {
-      background: rgba(4,8,15,0.5);
+      /* Nutzer-Fund am laufenden Bild (16.08.2026, Screenshot Florida): Hier stand 0.5, also
+         ein HALBDURCHSICHTIGES Fast-Schwarz. Ueber der dunklen Karte verschmilzt das und sieht
+         gut aus -- ueber der hellen CARTO-Karte wird daraus ein grauer Schleier, und der
+         blaugraue Text (#6b9ab8) steht Grau auf Grau. Die Beschriftung war also nicht weg,
+         sondern unlesbar.
+         Dieselbe Lehre wie bei den Flugzeugsymbolen: Was nur auf einer Kartensorte geprueft
+         ist, ist nicht geprueft. Das Hoehenlabel der Platzrunden macht es seit jeher richtig
+         (rgba(255,255,255,0.92)) -- ein nahezu deckendes Plaettchen traegt seinen Hintergrund
+         selbst und funktioniert auf JEDER Karte. Auf der dunklen Karte ist der Unterschied
+         zwischen 0.5 und 0.85 kaum zu sehen (der Grund darunter ist ohnehin fast schwarz),
+         auf der hellen ist er der Unterschied zwischen lesbar und nicht. */
+      background: rgba(4,8,15,0.85);
       border: none;
       box-shadow: none;
       color: var(--text-label);
@@ -4232,13 +4243,25 @@ function _fsePopup(icao, a) {
 // Baut EINEN Platz; eingehaengt wird in _fseAbgleichen.
 function _fsePlatzBauen(icao, a) {
   const m = L.circleMarker([a.lat, a.lon], {
-    // Nutzer-Fund: der bisherige Mini-Radius von drei Pixeln war bei SVG-Paths auch die
-    // Trefferflaeche -- am Desktop knapp, auf dem Tablet praktisch nicht zu treffen. Ein
-    // hoeheres weight bei niedriger opacity legt einen weichen, kaum sichtbaren Halo um den
-    // kleinen sichtbaren Punkt und zieht die Trefferflaeche damit auf effektiv 8 px Radius
-    // (radius + halbe Strichbreite) -- ohne einen zweiten, unsichtbaren Marker, der die
-    // Objektzahl verdoppeln wuerde.
-    radius: 5, weight: 6, opacity: 0.2, color: '#d8a45e', fillColor: '#d8a45e', fillOpacity: 0.85,
+    // Zwei Nutzer-Funde stecken in dieser Zeile.
+    //
+    // (1) Der urspruengliche Mini-Radius von drei Pixeln war zugleich die Trefferflaeche --
+    // am Desktop knapp, auf dem Tablet nicht zu treffen. Massgeblich ist `radius + weight/2`;
+    // ein zweiter, unsichtbarer Marker je Platz kaeme nicht in Frage, er wuerde die
+    // Objektzahl verdoppeln.
+    //
+    // (2) Der Punkt war einfarbig sandgelb -- Rand wie Fuellung. Auf der dunklen Karte steht
+    // er damit gut, auf der hellen CARTO-Karte und ueber Satellit sauft er ab (Nutzer-Fund am
+    // laufenden Bild, 16.08.2026). Dieselbe Lehre wie bei den Flugzeugsymbolen, wo sie schon
+    // einmal teuer gelernt wurde: Ein Symbol braucht einen GEGENLAEUFIGEN Saum, sonst haengt
+    // seine Sichtbarkeit an der Kartensorte.
+    //
+    // Der Saum muss deckend und schmal sein, um als Kante zu wirken -- ein breiter Strich bei
+    // niedriger Deckkraft (der alte Halo-Kniff) faerbt den Punkt nur ein. Schmaler Strich
+    // heisst kleinere Trefferflaeche, deshalb waechst der Radius mit: 6 + 2,5/2 = 7,25 px
+    // statt vorher 5 + 6/2 = 8 px. Die knappen 0,75 px sind der Preis fuer einen Punkt, den
+    // man auf jeder Karte sieht -- und der sichtbare Kern ist dabei sogar groesser geworden.
+    radius: 6, weight: 2.5, opacity: 1, color: '#2b3440', fillColor: '#d8a45e', fillOpacity: 1,
     renderer: _fseRenderer(),
   });
   // Das Label wird NICHT hier gebunden. Permanente Tooltips sind DOM-Elemente, die Leaflet bei

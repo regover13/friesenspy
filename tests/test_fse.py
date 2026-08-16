@@ -368,19 +368,51 @@ setImmediate(() => {
     _node_lauf(treiber)
 
 
-def test_klickflaeche_ist_kein_miniradius_mehr():
-    """Nutzer-Fund: radius: 3 war bei SVG-Paths auch die Trefferflaeche -- drei Pixel sind am
-    Desktop knapp und auf dem Tablet praktisch nicht zu treffen. Der Fix legt einen weichen Halo
-    (hoeheres weight, niedrige opacity) um den sichtbaren Punkt; hier wird geprueft, dass Radius
-    und Strichbreite nicht wieder auf die alten Mini-Werte zurueckfallen."""
+def _platz_stil():
+    """Radius, Strichbreite und Farben des FSE-Platzmarkers aus index.html."""
     stelle = INDEX.index("function _fsePlatzBauen(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    radius = re.search(r"radius:\s*(\d+)", rumpf)
-    weight = re.search(r"weight:\s*(\d+)", rumpf)
-    assert radius and int(radius.group(1)) >= 5, "Radius wieder auf Mini-Groesse zurueckgefallen"
-    assert weight and int(weight.group(1)) >= 4, (
-        "Strichbreite zu duenn, um die Trefferflaeche spuerbar zu vergroessern"
-    )
+    zahl = lambda name: float(re.search(rf"{name}:\s*([\d.]+)", rumpf).group(1))
+    farbe = lambda name: re.search(rf"{name}:\s*'#([0-9a-fA-F]{{6}})'", rumpf).group(1)
+    return zahl("radius"), zahl("weight"), farbe("color"), farbe("fillColor")
+
+
+def test_klickflaeche_ist_kein_miniradius_mehr():
+    """Nutzer-Fund: radius 3 war zugleich die Trefferflaeche -- am Desktop knapp, auf dem
+    Tablet nicht zu treffen.
+
+    Geprueft wird die ABGELEITETE Groesse `radius + weight/2`, nicht Radius und Strichbreite
+    einzeln. Die frueher hier stehenden Einzelschwellen (`weight >= 4`) waren an einen
+    bestimmten Kniff gebunden -- einen breiten, fast durchsichtigen Halo -- und schlugen fehl,
+    als der Halo einem schmalen, deckenden Saum wich, obwohl die Trefferflaeche praktisch
+    gleich blieb. Ein Test soll die Eigenschaft festhalten, nicht ihre damalige Umsetzung."""
+    radius, weight, _, _ = _platz_stil()
+    treffer = radius + weight / 2
+    assert treffer >= 7, f"Trefferflaeche nur {treffer} px -- auf dem Tablet zu klein"
+
+
+def test_platzmarker_hat_einen_gegenlaeufigen_saum():
+    """Nutzer-Fund am laufenden Bild (16.08.2026): Der Punkt war einfarbig sandgelb, Rand wie
+    Fuellung. Auf der dunklen Karte steht er gut, auf der hellen CARTO-Karte sauft er ab.
+
+    Dieselbe Lehre wie bei den Flugzeugsymbolen, wo sie schon einmal teuer gelernt wurde: Ein
+    heller Saum ist auf hellem Grund per Definition unsichtbar. Der Saum muss GEGENLAEUFIG zur
+    Fuellung sein und deckend -- ein breiter Strich bei niedriger Deckkraft faerbt den Punkt
+    nur ein, statt ihm eine Kante zu geben."""
+    radius, weight, rand, fuellung = _platz_stil()
+    assert rand != fuellung, "Rand und Fuellung sind gleich -- das ist kein Saum"
+
+    hell = lambda h: _kontrast(tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)), (0xFF, 0xFF, 0xFF))
+    assert hell(rand) > hell(fuellung), (
+        f"Der Saum (#{rand}) ist heller als die Fuellung (#{fuellung}) -- auf heller Karte "
+        "ist genau das unsichtbar")
+    assert _kontrast(tuple(int(rand[i:i + 2], 16) for i in (0, 2, 4)),
+                     (0xF8, 0xF9, 0xFA)) >= 4.5, "Saum hebt sich nicht von der hellen Karte ab"
+
+    stelle = INDEX.index("function _fsePlatzBauen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    deckkraft = float(re.search(r"\bopacity:\s*([\d.]+)", rumpf).group(1))
+    assert deckkraft >= 0.9, f"Saum mit Deckkraft {deckkraft} faerbt den Punkt, statt ihn zu umranden"
 
 
 def test_fse_plaetze_gruppe_ist_featuregroup():
@@ -1278,3 +1310,53 @@ setImmediate(() => {
 });
 """
     _node_lauf(treiber, quelltext)
+
+
+def _kontrast(vordergrund, hintergrund):
+    """Kontrastverhaeltnis nach WCAG. 4,5:1 ist die uebliche Lesbarkeitsschwelle."""
+    def kanal(v):
+        v /= 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+
+    def leuchtdichte(c):
+        r, g, b = (kanal(x) for x in c)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    a, b = leuchtdichte(vordergrund), leuchtdichte(hintergrund)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+# CARTO dark_all und light_all -- die beiden Basiskarten aus TILE_DARK_URL / TILE_LIGHT_URL.
+KARTE_DUNKEL = (0x0E, 0x11, 0x16)
+KARTE_HELL = (0xF8, 0xF9, 0xFA)
+
+
+def test_platz_beschriftung_ist_auf_heller_UND_dunkler_karte_lesbar():
+    """Nutzer-Fund am laufenden Bild (16.08.2026, Screenshot aus Florida): Die ICAO-Codes waren
+    auf der hellen CARTO-Karte nicht zu entziffern. Sie fehlten nicht -- das Plaettchen war
+    halbdurchsichtiges Fast-Schwarz (Alpha 0,5), ueber hellem Grund also ein grauer Schleier,
+    und der blaugraue Text stand Grau auf Grau. Gerechneter Kontrast damals: 1,3:1.
+
+    Ein halbdurchsichtiges Plaettchen uebernimmt die Farbe der Karte darunter. Es muss deckend
+    genug sein, um seinen Hintergrund selbst zu tragen -- so macht es das Hoehenlabel der
+    Platzrunden seit jeher (rgba(255,255,255,0.92))."""
+    start = INDEX.index(".fse-platz-label {")
+    regel = INDEX[start:INDEX.index("}", start)]
+    # An `background:` verankert, nicht frei gesucht: Der erklaerende Kommentar in der Regel
+    # nennt selbst eine rgba-Farbe (die des Platzrunden-Labels), und ein freier Regex las
+    # prompt die statt der Deklaration -- der Test mass damit etwas, das gar nicht gilt.
+    m = re.search(r"background:\s*rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)", regel)
+    assert m, "keine rgba-Hintergrundangabe in .fse-platz-label"
+    grund = (int(m[1]), int(m[2]), int(m[3]))
+    alpha = float(m[4])
+
+    farbe = re.search(r"--text-label:\s*#([0-9a-fA-F]{6})", INDEX)
+    assert farbe, "--text-label nicht gefunden"
+    text = tuple(int(farbe[1][i:i + 2], 16) for i in (0, 2, 4))
+
+    for name, karte in (("dunklen", KARTE_DUNKEL), ("hellen", KARTE_HELL)):
+        plaettchen = tuple(round(g * alpha + k * (1 - alpha)) for g, k in zip(grund, karte))
+        k = _kontrast(text, plaettchen)
+        assert k >= 4.5, (
+            f"Auf der {name} Karte hat die Platz-Beschriftung nur Kontrast {k:.1f}:1 "
+            f"(das Plaettchen wird #{plaettchen[0]:02x}{plaettchen[1]:02x}{plaettchen[2]:02x})")
