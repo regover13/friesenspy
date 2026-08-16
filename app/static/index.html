@@ -8774,8 +8774,13 @@ function _labelHoehe(altFt) {
 function _verkehrLabel(p) {
   const alt    = Math.round(Number(p.alt != null ? p.alt : p.altitude) || 0);
   const gs     = Math.round(Number(p.gs  != null ? p.gs  : p.groundspeed) || 0);
-  const muster = String(p.ac || p.aircraft || '').trim() || '?';
-  const daten  = escHtml(muster) + ' ' + _labelHoehe(alt) + ' ' + gs;
+  // Kein Muster? Dann steht dort nichts -- kein "?" (Nutzer-Wahl 16.08.2026). Das Zeichen
+  // stand fuer eine Luecke, die geschlossen werden sollte: Wo die Paarung greift, kommt das
+  // Muster von VATSIM. Sie greift aber nicht immer, und dann ist ein Fragezeichen am Symbol
+  // nur eine Behauptung ueber Unwissen, die niemandem hilft. Weglassen ist ruhiger und sagt
+  // dasselbe.
+  const muster = String(p.ac || p.aircraft || '').trim();
+  const daten  = (muster ? escHtml(muster) + ' ' : '') + _labelHoehe(alt) + ' ' + gs;
   const cs     = escHtml(String(p.cs || p.callsign || '').toUpperCase());
   return '<span class="lbl-cs">' + cs + '</span><span class="lbl-dat">' + daten + '</span>';
 }

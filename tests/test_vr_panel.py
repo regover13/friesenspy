@@ -1428,6 +1428,27 @@ def test_label_zeigt_immer_alles():
     assert 'class="lbl-cs"' in rumpf and 'class="lbl-dat"' in rumpf
 
 
+def test_label_zeigt_kein_fragezeichen_fuer_fehlendes_muster():
+    """Das "?" stand fuer eine Luecke, die die Paarung schliessen soll -- wo sie nicht greift,
+    ist es nur eine Behauptung ueber Unwissen (Nutzer-Wahl 16.08.2026)."""
+    stelle = INDEX.index("function _verkehrLabel(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "|| '?'" not in rumpf
+    assert "muster ? escHtml(muster) + ' ' : ''" in rumpf, "ohne Muster faellt auch das Leerzeichen weg"
+
+
+@ohne_panel
+def test_diagnose_meldet_die_identitaetsfelder_mit_werten():
+    """`__Type` hat noch nie jemand angesehen; `name` und `plane_model_icao` kamen leer. Nur
+    die Feldnamen zu melden beantwortet nichts -- es braucht die Werte."""
+    stelle = PANEL_TSX.index("private async verkehrHolen(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert "erster.__Type" in rumpf
+    assert "erster.name" in rumpf
+    assert "erster.plane_model_icao" in rumpf
+    assert "erster.lat" not in rumpf, "keine Positionen in die Diagnose"
+
+
 def test_label_nimmt_nur_noch_ein_argument():
     """Der zweite Parameter unterschied Friesen von Fremden -- ohne Unterscheidung ist er
     ueberfluessig, und ein ungenutzter Parameter ist eine Einladung zum Missverstaendnis."""

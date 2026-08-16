@@ -490,6 +490,21 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
           ? Object.keys(daten[0] as object)
           : [],
       };
+      // Die drei Felder, an denen die Identitaet haengt -- mit ihren WERTEN, nicht nur den
+      // Namen. `name` und `plane_model_icao` kamen bei vPilot-Verkehr bisher leer; `__Type`
+      // hat noch nie jemand angesehen. Traegt es einen Objekttyp, liesse sich damit
+      // wenigstens KI-Verkehr von vPilot-Verkehr unterscheiden -- die einzige Information zur
+      // Herkunft, die der JS-Weg ueberhaupt noch hergeben koennte (nachgesehen 16.08.2026:
+      // GET_AIR_TRAFFIC ist Asobos einziger Traffic-Aufruf, es gibt sonst nichts).
+      //
+      // Nur diese drei, bewusst ohne Position: Die Frage ist, WAS der Simulator ueber ein
+      // Flugzeug weiss, nicht wo jemand fliegt.
+      if (Array.isArray(daten) && daten.length) {
+        const erster = daten[0] as Record<string, unknown>;
+        this.startBefund.typFeld = erster.__Type;
+        this.startBefund.name = erster.name;
+        this.startBefund.modell = erster.plane_model_icao;
+      }
     }
     return Array.isArray(daten) ? (daten as SimVerkehrRoh[]) : null;
   }
