@@ -116,38 +116,114 @@ bekommt die genaue Position. Kein zweites Symbol, kein Verzicht auf die Identit�
 > findet ihre Sim-Meldung dort nie einen Partner. Das ist strukturell und passiert bei jedem
 > gemeinsamen Flug.
 
-## Offene Punkte — vor der Umsetzung zu klären
+## Gemessen am 16.08.2026 — die Zahlen stehen
 
-### 1. Überlebt die `uId` eine Sitzung?
+### Latenz: 29 Sekunden
 
-**Vermutung: nein.** Sie ist eine Laufzeit-Objekt-ID, die der Simulator beim Erzeugen vergibt;
-Asobos Traffic-Manager benutzt sie als Schlüssel *innerhalb* einer Sitzung. Freigewordene IDs
-können wiederverwendet werden — eine dauerhaft gespeicherte Zuordnung „uId = FRS49" würde dann
-irgendwann ein falsches Callsign an ein fremdes Flugzeug hängen.
+| | |
+|---|---|
+| Median | **28,9 s** |
+| Spanne | 27,2 – 30,5 s |
+| Proben | 12, alle mit Kursabweichung ≤ 9° |
 
-Der Nutzer hatte auf eine sitzungsübergreifende Speicherung gehofft („irgendwann kennen wir
-alle Friesen"). **Das trägt nicht**, solange nicht gemessen ist.
+Gemessen am eigenen Flugzeug (`_latenzProbeNehmen`): Abstand zwischen Sim-Position und
+gemeldeter VATSIM-Position, geteilt durch die eigene Geschwindigkeit. Belastbar ist die
+Messung, weil der Abstand **mit der Geschwindigkeit mitwächst** — 1494 m bei 97 kt, 1714 m bei
+113 kt; nachgerechnet ergibt 113 kt × 29 s = 1685 m.
 
-**Messung:** Die `uId`s zweier Sitzungen desselben Flugzeugs vergleichen — eine Zeile in der
-Panel-Diagnose. Zwei Flüge, dann ist es entschieden. Bis dahin gilt die Zuordnung **nur
-innerhalb der Sitzung**, was ausreicht: Nötig ist sie ohnehin nur einmal pro Flug.
+> Ein erster Versuch lieferte 29,3 s bei einer Spanne von 24,8–39,7 s — **zufällig fast
+> derselbe Wert, aber wertlos**: Der Messflug war eine Platzrunde, und dort misst der Abstand
+> die Sehne statt der Strecke. Er blieb bei 1,2–1,4 km, obwohl die Geschwindigkeit zwischen 60
+> und 96 kt schwankte. Seitdem zählen nur Proben mit stabilem Kurs (`_LATENZ_MAX_KURSDIFF`).
+> **Lehre:** Ein plausibler Wert ist noch kein gemessener. Erst das erwartete *Verhalten* der
+> Messgröße — hier das Mitwachsen mit der Geschwindigkeit — macht sie belastbar.
 
-### 2. Wie groß ist die Latenz wirklich?
+Damit ist die frühere Annahme „bis zu einer Minute" **halbiert**.
 
-Heute steht „bis zu einer Minute" — geschätzt, nicht gemessen. Zwei unabhängige Messwege:
+### Die `uId` überlebt keine Sitzung — belegt
 
-- **Eigenes Flugzeug**: Es steht in beiden Quellen und ist eindeutig identifiziert. Der Abstand
-  zwischen Sim-Position und fortgerechneter VATSIM-Position *ist* der Fehler.
-- **Höhendifferenz im Steig-/Sinkflug**: geteilt durch die Sinkrate ergibt die Latenz. Die
-  Beobachtung vom 16.08. (1600 ft bei ~2000 ft/min) ergibt rund 48 s.
+| | Anzahl | Wertebereich |
+|---|---|---|
+| Sitzung 1 (16:37) | 14 | 169,5 – 170,5 Mio |
+| Sitzung 2 (17:15, nach Neustart) | 20 | 102,5 – 106,3 Mio |
+| **Gemeinsam** | **0** | — |
 
-Steht die Konstante, lassen sich Position **und Höhe** fortrechnen statt großzügig zu
-schranken.
+Keine einzige Übereinstimmung, die Bereiche liegen komplett auseinander, und innerhalb einer
+Sitzung stehen die Werte in exakten Schritten von 16384 — ein Handle-Muster. **Eine
+sitzungsübergreifende Speicherung ist damit ausgeschlossen.** Sie wäre nicht nur nutzlos,
+sondern gefährlich: Eine wiederverwendete ID hängte ein falsches Rufzeichen an ein fremdes
+Flugzeug und verletzte damit das oberste Akzeptanzkriterium.
 
-### 3. Schranken
+Die Zuordnung gilt also **für die laufende Sitzung**. Das reicht — nötig ist sie ohnehin nur
+einmal pro Flug.
 
-Erst festlegen, wenn Punkt 2 gemessen ist. Grundsatz: Sie sollen die Zuordnung **ermöglichen**,
-nicht sie tragen — getragen wird sie von Eindeutigkeit und vom Festhalten.
+### Zwei Nebenbefunde
+
+- **vPilot spawnt fast alles**: Sim 14 zu VATSIM 14, und Sim 20 zu VATSIM 21. Der fehlende
+  A320 vom 15.08. war die Ausnahme, nicht die Regel.
+- **Der Sim-Horizont reicht mindestens 68 km** — kein Engpass.
+- **`__Type` ist `JS_NPCPlane`** für jedes fremde Flugzeug, `name` und `plane_model_icao` sind
+  leer. Keine Unterscheidung zwischen KI-Verkehr und vPilot, keine Identität. Damit ist
+  endgültig belegt: Rufzeichen und Muster können nur von VATSIM kommen.
+
+## Zwei Schranken, zwei Aufgaben — nicht eine
+
+Das ist die zentrale Einsicht aus der Diskussion (Nutzer, 16.08.2026), und sie räumt mit der
+bisherigen Herangehensweise auf: Es gibt **keine** Schranke, die beides leisten muss.
+
+### A) Erstzuordnung — hier trägt die Eindeutigkeit, nicht die Enge
+
+Ist genau ein Kandidat da, ist er es — ob er 2 oder 7 km entfernt liegt, ändert daran nichts.
+Eine enge Schranke erhöht die Sicherheit **nicht**, sie verhindert nur, dass der Partner
+überhaupt gefunden wird. Sie darf also großzügig sein; getragen wird die Entscheidung vom
+„genau einer" und vom Ausschlussverfahren.
+
+Die Höhe ist hier entsprechend unkritisch — sie muss die Zuordnung nicht tragen.
+
+### B) Lösen — hier wird gerechnet, nicht geschrankt
+
+**Nach dem Merken kann Flackern nur noch an einer einzigen Stelle entstehen: beim Lösen.**
+Deshalb ist das die Schranke, auf die es ankommt — und sie lässt sich ausrechnen, statt sie zu
+raten:
+
+```
+erwarteter Abstand   = GS  × 29 s        (aus den Sim-Werten, live)
+erwartete Höhendiff. = VS  × 29 s        (VS aus den Sim-Höhen ableitbar)
+```
+
+Geprüft wird nicht „ist die Abweichung kleiner als X", sondern **„passt die Abweichung zu dem,
+was dieses Flugzeug gerade tut"**. Ein sinkender Airliner mit 1600 ft Differenz ist damit
+unauffällig — genau das kommt heraus, wenn man seine Sinkrate mit 29 Sekunden multipliziert.
+Es gibt keinen Grenzfall mehr, an dem etwas kippen kann.
+
+**Und gelöst wird erst nach mehrfachem Verstoß in Folge**, nicht beim ersten Ausreißer. Sonst
+ist das Flackern durch die Hintertür zurück.
+
+## Offene Punkte
+
+Die beiden ursprünglich offenen Fragen — Lebensdauer der `uId` und Größe der Latenz — sind am
+16.08.2026 **gemessen und beantwortet** (s. oben). Was bleibt, ist Feinarbeit an der
+Umsetzung:
+
+### 1. Wie oft muss eine Zuordnung verletzt werden, bevor sie fällt?
+
+Ein einzelner Ausreißer darf sie nicht lösen, sonst ist das Flackern zurück. Ein zu träges
+Lösen hält dagegen eine falsche Zuordnung zu lange. Vorschlag zum Ausprobieren: drei bis fünf
+Takte in Folge deutlich außerhalb der Erwartung. Im Flug zu beobachten, nicht am Schreibtisch
+zu entscheiden.
+
+### 2. Wie viel Toleranz um die berechnete Erwartung?
+
+`GS × 29 s` ist der Sollwert, nicht die Grenze — Wind, Kurven und die Streuung der Latenz
+(±1,5 s gemessen) kommen dazu. Ein Faktor auf den Erwartungswert ist vermutlich robuster als
+ein fester Zuschlag, weil er mit der Geschwindigkeit mitwächst.
+
+### 3. Vertikalgeschwindigkeit aus den Sim-Höhen
+
+Für die erwartete Höhendifferenz nötig. Aus zwei aufeinanderfolgenden Sim-Meldungen ableitbar
+(1 Hz), muss aber geglättet werden — dieselbe Aufgabe, die das Panel beim Ground Speed schon
+löst (`verkehrGsAbleiten`, exponentiell mit der Zeitkonstante des SDK). Dort abschauen, nicht
+neu erfinden.
 
 ## Was ausdrücklich nicht gemacht wird
 
@@ -160,7 +236,10 @@ nicht sie tragen — getragen wird sie von Eindeutigkeit und vom Festhalten.
   kennt genau **einen** traffic-bezogenen Aufruf (`GET_AIR_TRAFFIC`), keine AI-SimVars, keine
   Abfrage über die `uId` (durchsucht am 16.08.2026). Ein WASM-Modul wäre ein anderes Kaliber:
   eigene Toolchain, eigener Build, im Fehlerfall keine Diagnose über den Panel-Kanal.
-- **Keine sitzungsübergreifende Speicherung**, bis Punkt 1 gemessen ist.
+- **Keine sitzungsübergreifende Speicherung.** Gemessen und erledigt: Die `uId` überlebt keinen
+  Neustart (0 von 14 bzw. 20 Kennungen stimmten überein).
+- **Keine feste Höhenschranke als Zuordnungskriterium.** Sie muss die Erstzuordnung nicht
+  tragen, und beim Lösen wird gerechnet statt geschrankt.
 
 ## Akzeptanzkriterien
 
