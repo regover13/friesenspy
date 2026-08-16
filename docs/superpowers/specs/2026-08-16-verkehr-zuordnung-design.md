@@ -47,23 +47,46 @@ Der entscheidende Einwand kam vom Nutzer: **Wir starten nicht in der Platzrunde.
 beginnt mit dem Einloggen, dann Rollen, dann Start — und diese Phasen liefern viel bessere
 Gelegenheiten als die Platzrunde selbst:
 
+- **Im Stand ist die Latenz gegenstandslos.** Das ist der beste Moment überhaupt, besser als
+  Rollen: Bei Geschwindigkeit null ist eine vierzig Sekunden alte Position **exakt richtig**.
+  Die Zuordnung gelingt dort auf Meter statt auf Kilometer. Und da die meisten nach dem
+  Einloggen minutenlang stehen, entsteht hier der Großteil aller Zuordnungen — allein über die
+  Position, ohne jedes weitere Merkmal.
 - **Piloten erscheinen nacheinander.** Ein neues Objekt im Simulator und ein neues Callsign
-  bei VATSIM, mit dem erwarteten Zeitversatz — das ist ein starkes Signal.
-- **Am Boden ist die Latenz fast harmlos.** 20 kt × 45 s = 460 m, statt 10 km beim Airliner.
-  Die Positionspaarung ist dort auf ein paar hundert Meter genau.
+  bei VATSIM, mit dem erwarteten Zeitversatz — ein starkes Signal.
+- **Am Boden ist die Latenz auch in Bewegung harmlos.** 20 kt × 45 s = 460 m, statt 10 km beim
+  Airliner.
 - **Bewegungsbeginn ist ein Ereignis, kein Zustand.** Rollt im Simulator genau ein Flugzeug an
   und vierzig Sekunden später bei VATSIM genau eines, ist die Zuordnung sicher — unabhängig
   von der Entfernung der Symbole. Dasselbe gilt fürs Abheben.
-- **Anflug von außen**: ein einzelnes Flugzeug, das sich nähert, ist ohnehin eindeutig.
+- **Anflug von außen**: Wer den Start nicht mitbekommen hat (zu weit weg), begegnet der
+  Maschine später allein im Reiseflug — dort ist sie ohnehin eindeutig.
 
 **Bis die Platzrunde kommt, steht die Zuordnung längst.** Dort wird sie nur noch gehalten,
 nicht gesucht. Damit verschwindet der schwierigste Fall aus der Problemstellung.
+
+### Ausschluss ist das zweite Eindeutigkeitskriterium
+
+Eindeutigkeit entsteht nicht nur aus Nähe, sondern auch daraus, dass **nichts anderes übrig
+bleibt**. Bleibt nach allen bereits getroffenen Zuordnungen genau ein unzugeordnetes
+Sim-Objekt und genau ein unzugeordneter VATSIM-Eintrag im Gebiet, gehören sie zusammen — ohne
+jeden Positionsvergleich.
+
+Das trägt sogar den Fall, der vorher als unlösbar galt (Nutzer, 16.08.2026): *Loggt sich der
+fünfte mitten in der Platzrunde ein, sind die anderen vier längst bekannt — dann ist auch
+Nummer fünf klar.* Die Reihenfolge der Zuordnungen arbeitet also für uns: Jede getroffene
+Zuordnung macht die nächste leichter.
+
+**Konsequenz für die Umsetzung:** Erst alle sicheren Zuordnungen über Nähe treffen, dann
+prüfen, ob auf beiden Seiten genau einer übrig ist. Nicht umgekehrt, und nicht in einem
+Durchgang vermischt.
 
 ## Verfahren
 
 1. **Zuordnung suchen**, solange ein Sim-Eintrag keine hat — aber sie nur **übernehmen, wenn
    sie eindeutig ist**: genau ein Kandidat innerhalb der Schranken. Zwei Kandidaten heißen:
-   nicht zuordnen, später erneut versuchen.
+   nicht zuordnen, später erneut versuchen. Danach der Ausschluss: bleibt beidseitig genau
+   einer übrig, gehören sie zusammen.
 2. **Zuordnung halten**, sobald sie steht — geschlüsselt über die `uId`. Kein Neuvergleich pro
    Takt, kein Flackern, kein Kippen an einer Grenze.
 3. **Zuordnung lösen**, wenn eine Quelle das Flugzeug nicht mehr meldet oder der Abstand
