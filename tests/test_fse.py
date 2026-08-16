@@ -187,7 +187,11 @@ global.localStorage = (() => {
 
 // Stehen im Quelltext VOR dem FSE-Block und sind hier nur Beiwerk.
 global._istSichtbar = () => true;
-global._labelsImSichtbereich = () => {};
+// NUR setzen, wenn die Scheibe die echte Funktion nicht mitbringt. Funktionsdeklarationen
+// werden hochgezogen, existieren hier also bereits -- eine bedingungslose Zuweisung wuerde die
+// echte Funktion ueberschreiben, und ein Test, der genau sie prueft, saehe die leere Attrappe
+// (eigener Fehler, gefunden beim Aufwand-Test 16.08.2026).
+if (typeof _labelsImSichtbereich === 'undefined') global._labelsImSichtbereich = () => {};
 
 // Antworten je Endpunkt, vom Treiber umsetzbar. WICHTIG: mit r.ok und mit der Huelle
 // {plaetze:...} bzw. {zonen:...} -- ohne beides liefe `r.ok ? r.json() : null` bzw. `d.plaetze`
@@ -220,12 +224,20 @@ global.fetch = (url) => {
 // Mitgeloggte Reihenfolge, in der Zonen- bzw. Plaetze-Layer eingehaengt werden, und wann
 // bringToBack() dazwischen lief.
 global._reihenfolge = [];
+global._besuche = 0;   // Layer-Besuche in eachLayer -- misst den Aufwand der Label-Logik
 
 class FakeLayer {
-  constructor(art) { this.art = art; }
+  constructor(art) { this.art = art; this._tip = null; this._offen = false; }
   bindPopup() { return this; }
-  bindTooltip() { return this; }
-  unbindTooltip() { return this; }
+  // Vollstaendige Tooltip-Attrappe: _labelsImSichtbereich bindet erst im Bild und loest
+  // danach wieder -- ohne getTooltip() kann der Aufwand-Test das nicht nachvollziehen.
+  bindTooltip(text) { this._tip = { text: text }; return this; }
+  unbindTooltip() { this._tip = null; this._offen = false; return this; }
+  getTooltip() { return this._tip; }
+  openTooltip() { this._offen = true; }
+  closeTooltip() { this._offen = false; }
+  isTooltipOpen() { return this._offen; }
+  getLatLng() { return _ll(53, 8); }
   addTo(gruppe) { gruppe.addLayer(this); return this; }
 }
 
@@ -245,7 +257,7 @@ class FakeLayerGroup {
     return this;
   }
   clearLayers() { this._layers.length = 0; return this; }
-  eachLayer(fn) { this._layers.forEach(fn); return this; }
+  eachLayer(fn) { global._besuche += this._layers.length; this._layers.forEach(fn); return this; }
   on(evt, fn) { (this._handlers[evt] = this._handlers[evt] || []).push(fn); return this; }
 }
 // bringToBack existiert in echtem Leaflet NUR auf FeatureGroup (ueber deren invoke()), NICHT
@@ -295,7 +307,8 @@ class FakeMap {
   getZoom() { return this._zoom; }
   getCenter() { return this._mitte; }
   // Ecke rund 40 km von der Mitte -- mal _FSE_RAND ergibt einen glatten Abrufradius.
-  getBounds() { return { getNorthEast: () => _ll(this._mitte.lat + 0.25, this._mitte.lng + 0.5) }; }
+  getBounds() { return { getNorthEast: () => _ll(this._mitte.lat + 0.25, this._mitte.lng + 0.5),
+                         pad: () => ({ contains: () => true }) }; }
   hasLayer(l) { return this._ebenen.has(l); }
   getContainer() { return {}; }
   feuern(evt) { (this._handlers[evt] || []).forEach(fn => fn()); }
@@ -1210,3 +1223,58 @@ def test_grosse_nachbarzelle_ueberlebt_den_deckel():
     assert reihenfolge == ["NAH", "NACHBAR", "FERN"], (
         f"Reihenfolge {reihenfolge} -- die grosse Nachbarzelle muss vor die kleine fernere, "
         "sonst reisst die Kulisse auf")
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_label_logik_laeuft_einmal_je_nachladen_nicht_je_marker():
+    """Nutzer-Fund am laufenden Bild (16.08.2026): Auf Zoom 6 ruckelte das Schieben, obwohl der
+    Server in 41 ms antwortet. Ursache war die Label-Wache: Sie hing an 'layeradd', und der
+    Abgleich haengt die Marker EINZELN ein -- also lief die Logik bei jedem eintreffenden
+    Marker ueber die ganze, dabei wachsende Gruppe. Gemessen: 31.375 Layer-Besuche fuer 250
+    Marker, quadratisch.
+
+    Zwei Verbesserungen, hier getrennt geprueft:
+      1. OBERHALB der Label-Schwelle laeuft die Logik einmal je Nachladen statt je Marker.
+         Bei Zoom 6 waere das nicht messbar -- dort greift schon (2).
+      2. UNTERHALB der Schwelle laeuft sie gar nicht, solange nichts gebunden ist. Auf Zoom 6
+         ist jeder Durchlauf ohnehin umsonst, dort erscheint keine einzige Beschriftung.
+    """
+    start = INDEX.index("function _labelsImSichtbereich(")
+    ende_start = INDEX.index("function _fseAttributionAus(")
+    quelltext = INDEX[start:INDEX.index("\n}", ende_start) + len("\n}")]
+
+    treiber = """
+const plaetze = {};
+for (let i = 0; i < 250; i++) plaetze['P' + i] = { lat: 53 + i * 0.001, lon: 8, name: 'x', msfs: [] };
+
+// (1) Oberhalb der Schwelle: der Aufwand muss LINEAR sein.
+const map = new FakeMap(12);
+_fsePlaetzeGruppe.addTo(map);
+_fsePlaetzeZoomWache(map);
+global._antwortPlaetze = plaetze;
+global._besuche = 0;
+_fseAbrufen(map);
+
+setImmediate(() => {
+  try {
+    assert.strictEqual(_fsePlaetzeTabelle.size, 250, 'nicht alle Marker angekommen');
+    assert.ok(global._besuche <= 500,
+      global._besuche + ' Layer-Besuche fuer 250 Marker -- die Label-Logik laeuft wieder je '
+      + 'Marker statt je Nachladen (quadratisch waeren 31.375)');
+    const beispiel = _fsePlaetzeTabelle.get('P0');
+    assert.ok(beispiel.getTooltip(),
+      'oberhalb der Schwelle fehlt die Beschriftung -- der Aufruf nach dem Abgleich fehlt');
+
+    // (2) Unterhalb der Schwelle: gar kein Durchlauf, sobald nichts gebunden ist.
+    map._zoom = 6;
+    _fsePlaetzeLabelsAnpassen();            // loest die vorhandenen Beschriftungen
+    global._besuche = 0;
+    _fsePlaetzeLabelsAnpassen();            // jetzt ist nichts mehr gebunden
+    assert.strictEqual(global._besuche, 0,
+      'unterhalb der Label-Schwelle laeuft die Schleife trotzdem ueber alle Marker');
+
+    console.log('OK');
+  } catch (err) { console.error(err && err.stack ? err.stack : String(err)); process.exitCode = 1; }
+});
+"""
+    _node_lauf(treiber, quelltext)

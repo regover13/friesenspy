@@ -3844,13 +3844,20 @@ function _addPreferredAIPLayer(map, aipLayer) {
 // Punkt auf dem Gegenanflug (_hoeheAufStrich) -- deshalb die Fallunterscheidung.
 function _labelsImSichtbereich(map, gruppe, an, textVon, optionen) {
   if (!gruppe) return;
+  // Frueher Ausstieg, wenn nichts zu tun ist: Unterhalb der Label-Schwelle gibt es nichts zu
+  // binden, und wenn ausserdem nichts gebunden IST, gibt es auch nichts zu loesen. Ohne diese
+  // Zeile laeuft die Schleife auf Zoom 6 ueber 250 Marker, um jedes Mal festzustellen, dass
+  // keiner davon eine Beschriftung hat.
+  if (!an && !gruppe._labelsGebunden) return;
   const bounds = an ? map.getBounds().pad(0.15) : null;
+  gruppe._labelsGebunden = false;
   gruppe.eachLayer(l => {
     const wo = l.getLatLng ? l.getLatLng() : l._hoeheAufStrich;
     const drin = !!(an && wo && bounds.contains(wo));
     if (drin) {
       if (!l.getTooltip()) l.bindTooltip(textVon(l), optionen);
       l.openTooltip(l.getLatLng ? undefined : l._hoeheAufStrich);
+      gruppe._labelsGebunden = true;
     } else if (l.getTooltip()) {
       l.unbindTooltip();
     }
@@ -4247,18 +4254,27 @@ function _fsePlatzBauen(icao, a) {
 // nie das Problem. Teuer waren die 2.335 permanent GEBUNDENEN Tooltips: Jeder ist ein
 // DOM-Element, das Leaflet bei jeder Kartenbewegung neu positioniert, ob geoeffnet oder nicht.
 // Deshalb bindet _labelsImSichtbereich sie erst im Bild und loest sie danach wieder.
+// Wird von _fseAbrufen nach dem Abgleich aufgerufen. Modulweit statt als Closure, weil der
+// Aufrufer sie sonst nicht erreichen koennte.
+let _fsePlaetzeLabelsAnpassen = () => {};
+
 function _fsePlaetzeZoomWache(map) {
-  const anpassen = () => {
+  _fsePlaetzeLabelsAnpassen = () => {
     _labelsImSichtbereich(
       map, _fsePlaetzeGruppe, map.getZoom() >= _FSE_PLAETZE_LABEL_MIN_ZOOM,
       l => l._icao,
       { permanent: true, direction: 'right', className: 'fse-platz-label' }
     );
   };
-  map.on('zoomend', anpassen);
-  map.on('moveend', anpassen);
-  _fsePlaetzeGruppe.on('layeradd', anpassen);
-  anpassen();
+  map.on('zoomend', _fsePlaetzeLabelsAnpassen);
+  map.on('moveend', _fsePlaetzeLabelsAnpassen);
+  // Hier hing frueher `_fsePlaetzeGruppe.on('layeradd', ...)`. Das war quadratisch: Der
+  // Abgleich haengt die Marker EINZELN ein, also lief die Label-Logik bei jedem eintreffenden
+  // Marker ueber die GANZE, dabei wachsende Gruppe. Gemessen (Nutzer-Fund am laufenden Bild,
+  // 16.08.2026): 31.375 Layer-Besuche fuer 250 Marker -- auf Zoom 6 vollstaendig umsonst,
+  // dort erscheinen ueberhaupt keine Beschriftungen. _fseAbrufen ruft jetzt EINMAL nach dem
+  // Abgleich auf: 250 Besuche statt 31.375.
+  _fsePlaetzeLabelsAnpassen();
 }
 
 function _fseAbgleichen(gruppe, tabelle, neu, bauen) {
@@ -4350,6 +4366,8 @@ function _fseAbrufen(map) {
         if (runde !== _fseRunde) return;
         if (!d) { fehlgeschlagen(); return; }
         _fseAbgleichen(_fsePlaetzeGruppe, _fsePlaetzeTabelle, d.plaetze, _fsePlatzBauen);
+        // EINMAL, nicht je Marker -- s. den Kommentar in _fsePlaetzeZoomWache.
+        _fsePlaetzeLabelsAnpassen();
       })
       .catch(fehlgeschlagen);
   }
