@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.4.3",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "FSE-Plätze saßen im Kniebrett neben der Karte",
+    "items": [
+      "🗺️ Im MSFS-Kniebrett lagen die FSE-Plätze und ihre Landeflächen nicht dort, wo sie hingehören — je weiter man hineinzoomte, desto weiter wanderten sie nach Nordwesten. Bei maximiertem Fenster waren es mehrere hundert Kilometer. Die Kartenkacheln, die Flugzeuge, die Platzrunden und die Lufträume saßen dabei immer richtig.",
+      "🔍 Ursache war die Zeichenart: Die beiden FSE-Ebenen liefen als einzige über eine eigene Zeichenfläche, und die verträgt sich nicht mit der drehbaren Karte. Sie zeichnen jetzt wie alles andere auch — der Grund für die Sonderbehandlung war ohnehin entfallen, seit nur noch der sichtbare Ausschnitt geladen wird."
+    ]
+  },
+  {
     "version": "13.4.2",
     "date": "2026-08-16",
     "highlight": false,
