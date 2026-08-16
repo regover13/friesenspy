@@ -167,6 +167,14 @@ der bekannte Layer, ist also von hier aus ohnehin nicht belegbar).
 Für „größer und prominenter" gibt es also genau einen Weg: **eigene Vektordaten, eigene
 Symbole**.
 
+**Und genau so ist dieser Entwurf gemeint** (Nutzer-Klarstellung, 16.08.2026): **Die
+Kachelkarte bleibt, wie sie ist** — OpenAIP als Luftraumbild, OFM/Satellit/Topo als Untergrund,
+unverändert. Darüber blenden wir **nur** die Meldepunkte groß und deutlich ein. Es wird nichts
+ersetzt und nichts nachgebaut; die neue Ebene ist ein Zusatz mit eigenem Haken. Der winzige
+Punkt im Kachelbild bleibt darunter stehen — er ist Teil des Bildes und nicht wegzuretuschieren
+—, aber er verschwindet optisch unter unserem Dreieck. Dasselbe gilt seit jeher für die
+Platzrunden, die OFM ebenfalls zeichnet.
+
 ### 2.1.1 Könnten wir uns die Kachelkarte gleich ganz selbst zusammenbauen?
 
 Technisch ja. Die Core-API führt zehn Listen-Endpunkte, alle mit denselben Filtern

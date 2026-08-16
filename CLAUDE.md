@@ -28,6 +28,22 @@ Vom Nutzer vorgemerkte, noch nicht begonnene Arbeiten stehen in
 angefangen wird. Am Projekt arbeiten mehrere Sitzungen parallel (auch in der Cloud): vor dem
 Start pullen und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
+## Zum Lesen Bestimmtes muss beim Nutzer ankommen (stehende Regel — IMMER einhalten)
+
+**In einer Cloud-Session sieht der Nutzer keine Datei, die nur im Repo liegt.** Die Sitzung
+läuft auf einem fremden Rechner; „steht in `docs/…`" heißt für ihn: nicht lesbar, außer er
+sucht es sich auf GitHub zusammen. Das ist mehrfach passiert und war jedes Mal ärgerlich.
+
+**Regel:** Alles, was der Nutzer *lesen* soll — Specs, Entwürfe, Analysen, Berichte,
+Vergleiche, Empfehlungen — wird **zusätzlich zum Commit als Artifact veröffentlicht**, und die
+Antwort nennt den Link. Nicht auf Nachfrage, sondern unaufgefordert im selben Zug wie der Push.
+Wird ein solches Dokument später geändert, wird **dasselbe** Artifact aktualisiert (gleicher
+Dateipfad bzw. `url`), damit der Link, den er sich gemerkt hat, weiter stimmt.
+
+Nicht gemeint sind Quelltext, Tests und Konfiguration — die gehören ins Repo und sonst nirgends.
+Die Faustregel ist die Absicht: **Soll er es lesen oder soll es laufen?** Nur Ersteres braucht
+einen Link.
+
 ## Deployment
 
 GitHub Push → main-Branch → GitHub Actions → GHCR → SSH-Deploy auf VPS
