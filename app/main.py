@@ -513,7 +513,9 @@ async def admin_list_panel_devices(request: Request):
     Zum Widerrufen genügt das Präfix.
     """
     require_admin(request)
-    conn = get_connection(get_settings().DB_PATH)
+    settings = get_settings()
+    aktuell = _efb_package_version(_efb_zip_path(settings))
+    conn = get_connection(settings.DB_PATH)
     try:
         devices = []
         for d in list_panel_devices(conn):
@@ -523,8 +525,16 @@ async def admin_list_panel_devices(request: Request):
                 "name": d["name"],
                 "created_at": d["created_at"],
                 "last_seen_at": d["last_seen_at"],
+                # Gemeldet beim Anmelden, ab Paket 1.10.0. `null` heißt nicht „unbekannt",
+                # sondern „älter als 1.10.0 oder seither nicht gestartet" -- vorher gab es
+                # nichts zu melden. Genau diese Geräte brauchen ein neues Paket.
+                "paket_version": d["paket_version"],
+                "paket_veraltet": (
+                    None if not aktuell
+                    else _paket_ist_veraltet(d["paket_version"], aktuell)
+                ),
             })
-        return {"devices": devices}
+        return {"devices": devices, "paket_aktuell": aktuell}
     finally:
         conn.close()
 
@@ -2197,8 +2207,66 @@ def _device_bind_csrf(user_token: str) -> str:
                     "sha256").hexdigest()
 
 
+# Erste Paketfassung, die ihre Version überhaupt meldet. Steht bewusst auch im Frontend
+# (`_PAKET_ERSTE_MELDENDE` in index.html) -- beide Seiten treffen dieselbe Entscheidung, und
+# `test_paket_hinweis.py` hält sie aneinander. Eine gemeinsame Quelle gäbe es nur über einen
+# weiteren Endpunkt; das wäre mehr Maschinerie als die eine Zeile wert ist.
+_PAKET_ERSTE_MELDENDE = "1.10.0"
+
+
+def _version_kleiner(a: str | None, b: str | None) -> bool:
+    """Zahlenweiser Vergleich. Als Zeichenkette wäre ``"1.10.0" < "1.9.0"`` -- also genau
+    verkehrt herum."""
+    def teile(v: str | None) -> list[int]:
+        try:
+            return [int(x) for x in str(v or "").split(".")]
+        except ValueError:
+            return []
+    za, zb = teile(a), teile(b)
+    for i in range(max(len(za), len(zb))):
+        x = za[i] if i < len(za) else 0
+        y = zb[i] if i < len(zb) else 0
+        if x != y:
+            return x < y
+    return False
+
+
+def _paket_ist_veraltet(installiert: str | None, aktuell: str | None) -> bool:
+    """Spiegelt ``_paketVeraltet`` im Frontend -- s. dortiger Kommentar.
+
+    ``installiert=None`` heißt „älter als 1.10.0", aber nur, wenn überhaupt schon eine
+    meldende Fassung ausgeliefert wird. Liegt auf dem Server noch etwas Älteres, meldet auch
+    das aktuelle Paket nichts und die Abwesenheit sagt gar nichts.
+    """
+    if not aktuell:
+        return False
+    if not installiert:
+        return not _version_kleiner(aktuell, _PAKET_ERSTE_MELDENDE)
+    return _version_kleiner(installiert, aktuell)
+
+
+def _paket_version_saeubern(roh: str) -> str | None:
+    """Nur eine Versionsnummer, sonst nichts -- z. B. ``"1.10.0"``.
+
+    Der Wert kommt aus der Adresszeile, landet in der Datenbank und später in der
+    Admin-Übersicht. Er wird deshalb an der API-Grenze auf die Form geprüft, statt sich auf
+    die Hülle zu verlassen. Alles Unpassende gilt als „nicht gemeldet" (``None``) -- womit
+    ``touch_panel_device`` den zuletzt bekannten Wert stehen lässt, statt ihn zu leeren.
+
+    ``isascii()`` ist nicht überflüssig: ``"١٢٣".isdigit()`` ist ebenfalls ``True``.
+    """
+    roh = (roh or "").strip()
+    teile = roh.split(".")
+    if not 1 <= len(teile) <= 4:
+        return None
+    if not all(t.isascii() and t.isdigit() and 1 <= len(t) <= 3 for t in teile):
+        return None
+    return roh
+
+
 @app.api_route("/auth/device", methods=["GET", "POST"], include_in_schema=False)
-async def auth_device(request: Request, device: str = "", next: str = "/panel"):
+async def auth_device(request: Request, device: str = "", next: str = "/panel",
+                      paket: str = ""):
     """Anmeldung per Geräte-Bindung fürs MSFS-EFB-Panel.
 
     Hintergrund: Coherent GT hält Cookies offenbar nur im Speicher -- die Anmeldung ging bei
@@ -2241,7 +2309,7 @@ async def auth_device(request: Request, device: str = "", next: str = "/panel"):
                 user_token = make_user_token(
                     settings.SECRET_KEY, str(dev.get("name") or ""), str(dev["cid"]), False, exp,
                 )
-                touch_panel_device(conn, device)
+                touch_panel_device(conn, device, _paket_version_saeubern(paket))
                 conn.commit()
                 # Ziel bewusst OHNE die Geräte-ID, damit der Zugangsschlüssel nicht in der
                 # finalen Adresse (und damit im Verlauf) stehen bleibt.

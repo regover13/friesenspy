@@ -426,7 +426,10 @@ CREATE TABLE IF NOT EXISTS panel_devices (
     cid          INTEGER NOT NULL,
     name         TEXT,
     created_at   TEXT NOT NULL,
-    last_seen_at TEXT
+    last_seen_at TEXT,
+    -- Welche Paketfassung im Community-Ordner liegt (ab Paket 1.10.0 beim Anmelden gemeldet).
+    -- NULL heisst "aelter als 1.10.0 oder seither nicht gestartet", nicht "unbekannt".
+    paket_version TEXT
 );
 
 -- Karten-Merker (Basiskarte, Ebenen, Track-up, Moving Map, zuletzt betrachteter Ausschnitt).
@@ -606,6 +609,14 @@ _PILOTS_MIGRATIONS = [
     "ALTER TABLE pilots ADD COLUMN active INTEGER NOT NULL DEFAULT 1",
 ]
 
+_PANEL_DEVICES_MIGRATIONS = [
+    # Welche Paketfassung im Community-Ordner liegt. Gemeldet beim Anmelden über
+    # /auth/device (ab Paket 1.10.0) -- vorher war von außen überhaupt nicht erkennbar, was
+    # dort installiert ist. NULL heißt deshalb nicht "unbekannt", sondern "älter als 1.10.0"
+    # bzw. "seit der Umstellung nicht mehr gestartet".
+    "ALTER TABLE panel_devices ADD COLUMN paket_version TEXT",
+]
+
 _CUSTOM_AIRPORTS_MIGRATIONS = [
     # #62: Radius-Override für Großflughäfen (z. B. EHAM) -- der Abhebe-/Aufsetzpunkt kann
     # weiter vom airportsdata-Referenzpunkt entfernt liegen als der globale Standardradius.
@@ -720,6 +731,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _PILOTS_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _PANEL_DEVICES_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -1005,8 +1021,8 @@ def get_panel_device(conn: sqlite3.Connection, device_id: str) -> dict | None:
     if not device_id or len(device_id) < PANEL_DEVICE_MIN_LEN:
         return None
     row = conn.execute(
-        "SELECT device_id, cid, name, created_at, last_seen_at FROM panel_devices "
-        "WHERE device_id = ?",
+        "SELECT device_id, cid, name, created_at, last_seen_at, paket_version "
+        "FROM panel_devices WHERE device_id = ?",
         (device_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -1036,9 +1052,21 @@ def bind_panel_device(conn: sqlite3.Connection, device_id: str, cid: int, name: 
     return True
 
 
-def touch_panel_device(conn: sqlite3.Connection, device_id: str) -> None:
+def touch_panel_device(conn: sqlite3.Connection, device_id: str,
+                       paket_version: str | None = None) -> None:
     """Letzte Nutzung festhalten (kein commit) -- damit im Admin sichtbar ist, was noch aktiv
-    ist und was gefahrlos widerrufen werden kann."""
+    ist und was gefahrlos widerrufen werden kann.
+
+    ``paket_version`` wird nur geschrieben, wenn sie mitkommt. Ein Paket vor 1.10.0 meldet
+    nichts; ein ``NULL`` daraufhin zu ÜBERSCHREIBEN wäre falsch -- der zuletzt bekannte Wert
+    ist die bessere Auskunft als „keine Angabe", solange niemand nachweislich zurückrüstet.
+    """
+    if paket_version:
+        conn.execute(
+            "UPDATE panel_devices SET last_seen_at = ?, paket_version = ? WHERE device_id = ?",
+            (_now_utc(), paket_version, device_id),
+        )
+        return
     conn.execute(
         "UPDATE panel_devices SET last_seen_at = ? WHERE device_id = ?", (_now_utc(), device_id)
     )
@@ -1076,8 +1104,8 @@ def set_panel_prefs(conn: sqlite3.Connection, cid: int, kontext: str, prefs: dic
 def list_panel_devices(conn: sqlite3.Connection) -> list[dict]:
     """Alle gebundenen Geräte (neueste zuerst) -- für die Admin-Übersicht."""
     rows = conn.execute(
-        "SELECT device_id, cid, name, created_at, last_seen_at FROM panel_devices "
-        "ORDER BY COALESCE(last_seen_at, created_at) DESC"
+        "SELECT device_id, cid, name, created_at, last_seen_at, paket_version "
+        "FROM panel_devices ORDER BY COALESCE(last_seen_at, created_at) DESC"
     ).fetchall()
     return [dict(r) for r in rows]
 

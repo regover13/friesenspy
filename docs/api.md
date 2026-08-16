@@ -1879,7 +1879,11 @@ Gebundene Geräte auflisten (Admin). Die Geräte-ID wird **nur gekürzt** zurüc
 (`device_prefix`, 12 Zeichen) — ein Zugangsschlüssel hat in einer Übersicht nichts
 vollständig zu suchen.
 
-**Response** `{"devices": [{device_prefix, cid, name, created_at, last_seen_at}, …]}`
+**Response** `{"devices": [{device_prefix, cid, name, created_at, last_seen_at, paket_version, paket_veraltet}, …], "paket_aktuell": "<version>"|null}`
+
+`paket_version` ist die Fassung im Community-Ordner, gemeldet beim Anmelden über `/auth/device?…&paket=…` (ab Paket **1.10.0**). **`null` heißt nicht „unbekannt", sondern „älter als 1.10.0 oder seither nicht gestartet"** — vorher gab es nichts zu melden, und genau diese Geräte brauchen ein neues Paket. Der Wert wird an der API-Grenze auf die Form einer Versionsnummer geprüft (`_paket_version_saeubern`); eine ausbleibende Meldung **überschreibt den zuletzt bekannten Stand nicht**, denn der ist die bessere Auskunft als „keine Angabe".
+
+`paket_aktuell` ist die ausgelieferte Fassung (aus dem Archiv, s. `GET /api/efb-package`), `paket_veraltet` der Vergleich beider — `null`, wenn kein Paket hinterlegt ist. Verglichen wird **zahlenweise**: als Zeichenkette wäre `"1.10.0" < "1.9.0"`.
 
 ### DELETE /api/admin/panel-devices/{device_prefix}
 

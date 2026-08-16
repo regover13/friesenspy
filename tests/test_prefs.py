@@ -166,3 +166,74 @@ class TestDatenbank:
             assert get_panel_prefs(conn, 999, "panel") == {}
         finally:
             conn.close()
+
+
+# ---------------------------------------------------------------------------------------
+#  Paketfassung am Gerät (v13.6.5)
+# ---------------------------------------------------------------------------------------
+
+class TestPaketVersionAmGeraet:
+    @pytest.mark.parametrize("roh,erwartet", [
+        ("1.10.0", "1.10.0"), ("1.9", "1.9"), ("1", "1"), ("1.2.3.4", "1.2.3.4"),
+        ("", None), ("  ", None), ("1.2.3.4.5", None), ("abc", None),
+        ("1.2.3; DROP TABLE", None), ("<script>", None), ("1234", None),
+        ("١٢٣", None),   # arabisch-indische Ziffern -- isdigit() allein sagt hier True
+    ])
+    def test_nur_eine_versionsnummer_wird_uebernommen(self, roh, erwartet):
+        assert main._paket_version_saeubern(roh) == erwartet
+
+    @pytest.mark.parametrize("installiert,aktuell,erwartet", [
+        ("1.9.0", "1.10.0", True),
+        ("1.10.0", "1.10.0", False),
+        ("1.11.0", "1.10.0", False),
+        (None, "1.10.0", True),     # meldet nichts -> aelter als 1.10.0
+        (None, "1.9.0", False),     # noch keine meldende Fassung ausgeliefert -> keine Aussage
+        (None, None, False),
+        ("1.2.0", None, False),
+    ])
+    def test_veraltet_spiegelt_das_frontend(self, installiert, aktuell, erwartet):
+        assert main._paket_ist_veraltet(installiert, aktuell) is erwartet
+
+    def test_zahlenvergleich_nicht_zeichenkette(self):
+        """'1.10.0' ist als Zeichenkette KLEINER als '1.9.0'."""
+        assert main._version_kleiner("1.9.0", "1.10.0") is True
+        assert main._version_kleiner("1.10.0", "1.9.0") is False
+
+    def test_kaputte_version_wirft_nicht(self):
+        assert main._version_kleiner("kaputt", "1.0.0") is True
+        assert main._version_kleiner(None, None) is False
+
+    def test_admin_liefert_die_paketfassung_mit(self, env, monkeypatch):
+        from app.database import bind_panel_device, touch_panel_device
+        conn = get_connection(env.db)
+        try:
+            bind_panel_device(conn, "d" * 48, CID, "Tobias")
+            touch_panel_device(conn, "d" * 48, "1.9.0")
+            conn.commit()
+        finally:
+            conn.close()
+        monkeypatch.setattr(main, "_efb_package_version", lambda p: "1.10.0")
+        from app.auth import make_admin_token, make_confirm_token
+        r = env.client.get("/api/admin/panel-devices", cookies={
+            "fs_admin": make_admin_token(SECRET, "pw"),
+            "fs_confirm": make_confirm_token(SECRET, "pw", 9_999_999_999),
+        })
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["paket_aktuell"] == "1.10.0"
+        assert d["devices"][0]["paket_version"] == "1.9.0"
+        assert d["devices"][0]["paket_veraltet"] is True
+
+    def test_fehlende_meldung_ueberschreibt_den_letzten_stand_nicht(self, env):
+        """Ein Paket vor 1.10.0 meldet nichts. Den bekannten Wert daraufhin zu leeren, waere
+        ein Rueckschritt -- der zuletzt bekannte Stand ist die bessere Auskunft."""
+        from app.database import bind_panel_device, get_panel_device, touch_panel_device
+        conn = get_connection(env.db)
+        try:
+            bind_panel_device(conn, "e" * 48, CID, "Tobias")
+            touch_panel_device(conn, "e" * 48, "1.10.0")
+            touch_panel_device(conn, "e" * 48, None)
+            conn.commit()
+            assert get_panel_device(conn, "e" * 48)["paket_version"] == "1.10.0"
+        finally:
+            conn.close()

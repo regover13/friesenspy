@@ -91,8 +91,13 @@ function getOrCreateDeviceId(): string {
 function buildPanelUrl(): string {
   const id = getOrCreateDeviceId();
   if (!id) return PANEL_URL;
+  // `paket` meldet, welche Fassung im Community-Ordner liegt. Der Server haelt sie am Geraet
+  // fest (panel_devices.paket_version) und kann damit im Admin zeigen, wer noch ein altes
+  // Paket faehrt -- von aussen war das vorher ueberhaupt nicht erkennbar. Ein Paket vor
+  // 1.10.0 schickt den Parameter nicht; die Spalte bleibt dann leer, was genau das aussagt.
   return "https://friesenspy.devprops.de/auth/device?device=" + encodeURIComponent(id)
-    + "&next=" + encodeURIComponent("/panel");
+    + "&next=" + encodeURIComponent("/panel")
+    + "&paket=" + encodeURIComponent(PAKET_VERSION);
 }
 
 /** Nachricht, die die eingebettete Seite an diese App schickt. */

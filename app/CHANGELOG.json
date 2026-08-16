@@ -1,5 +1,14 @@
 [
   {
+    "version": "13.6.5",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Die Geräteübersicht zeigt, wer welches Paket fährt",
+    "items": [
+      "🔧 In der Admin-Übersicht der gebundenen Kniebretter steht jetzt bei jedem Gerät, welche Paketfassung dort installiert ist und ob sie veraltet ist. Die App meldet das beim Anmelden mit. Bleibt die Angabe leer, ist das die Aussage „älter als 1.10.0\" — vorher gab es nichts zu melden."
+    ]
+  },
+  {
     "version": "13.6.4",
     "date": "2026-08-16",
     "highlight": false,
