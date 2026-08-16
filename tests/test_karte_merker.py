@@ -465,6 +465,83 @@ def test_kontext_trennt_kniebrett_und_website():
     assert "vr-panel" in zeile and "'panel'" in zeile and "'web'" in zeile
 
 
+# --------------------------------------------------------------------------------------
+#  Zustand des Kniebretts: Tab und Vollbild
+# --------------------------------------------------------------------------------------
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+@pytest.mark.parametrize("tab", ["live", "karte", "statistiken", "events"])
+def test_bekannter_tab_wird_zurueckgegeben(tab):
+    _node_lauf(f"""
+_prefSchreib(_ZUSTAND_TAB_KEY, {tab!r});
+assert.strictEqual(_zustandTab(), {tab!r});
+console.log('OK');
+""")
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+@pytest.mark.parametrize("mist", ['"] , [x', "karte2", "", "LIVE"])
+def test_unbekannter_tab_wird_verworfen(mist):
+    """Der Wert landet in einem Attribut-Selektor `[data-tab="…"]`. Ein beliebiger Inhalt
+    waere dort im guenstigen Fall ein Syntaxfehler, der den Aufbau abbricht."""
+    _node_lauf(f"""
+_prefSchreib(_ZUSTAND_TAB_KEY, {mist!r});
+assert.strictEqual(_zustandTab(), null);
+console.log('OK');
+""")
+
+
+def test_tab_wird_beim_wechsel_gemerkt():
+    stelle = INDEX.index("document.querySelectorAll('.tab-btn').forEach(btn => {")
+    rumpf = INDEX[stelle:stelle + 1200]
+    assert "_prefSchreib(_ZUSTAND_TAB_KEY, tab);" in rumpf
+
+
+def test_adresse_hat_vorrang_vor_dem_gemerkten_tab():
+    """Ein geteilter Link (#tab=events&bummel=…) muss dort landen, wo er hinzeigt -- nicht
+    dort, wo der Empfaenger zuletzt war."""
+    stelle = INDEX.index("async function initFromUrl(")
+    rumpf = INDEX[stelle:INDEX.index("const tabBtn = document.querySelector", stelle)]
+    assert "let tab = p.get('tab');" in rumpf
+    assert "if (!tab) {" in rumpf, "Der Merker greift nicht nur ersatzweise"
+    assert rumpf.index("p.get('tab')") < rumpf.index("_zustandTab()")
+    assert "await _prefsPromise;" in rumpf, "Merker wird gelesen, bevor der Server geantwortet hat"
+
+
+def test_vollbild_wird_nur_fuer_die_karten_ansicht_gemerkt():
+    """Events-Karte und Track-Modal haengen an einem Rennen bzw. einem Flug, der beim
+    naechsten Start nicht offen ist -- ein wiederhergestelltes Vollbild waere leer."""
+    stelle = INDEX.index("function toggleMapFullscreen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "if (wrapId === _ZUSTAND_KARTE_WRAP)" in rumpf
+    assert "_prefSchreib(_ZUSTAND_VOLLBILD_KEY" in rumpf
+
+
+def test_vollbild_wird_ueber_den_knopf_wiederhergestellt():
+    """Ein direktes classList.add zoege weder Beschriftung noch invalidateSize mit -- die
+    Karte staende in falscher Groesse da."""
+    stelle = INDEX.index("function _vollbildWiederherstellen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "btn.click()" in rumpf
+    assert "classList.add" not in rumpf
+    assert "_vollbildSchonWiederhergestellt = true;" in rumpf, "ohne Sperre wiederholt es sich"
+    assert "if (!_vollbildBeimStart" in rumpf, \
+        "Ohne diese Bedingung zwingt ein alter Merker auch den ersten Handgriff ins Vollbild"
+
+
+def test_vollbild_erst_nach_dem_kartenaufbau():
+    """Der Knopf ruft invalidateSize() -- ohne Karte laeuft das ins Leere.
+
+    Verankert am Karten-Zweig des Tab-Handlers: `await initLiveMap()` steht mehrfach im
+    Quelltext, die erste Fundstelle gehoert zur Flugplan-Linie und sagt hier nichts aus.
+    """
+    handler = INDEX.index("document.querySelectorAll('.tab-btn').forEach(btn => {")
+    stelle = INDEX.index("if (tab === 'karte') {", handler)
+    rumpf = INDEX[stelle:stelle + 800]
+    assert "_vollbildWiederherstellen();" in rumpf
+    assert rumpf.index("await initLiveMap();") < rumpf.index("_vollbildWiederherstellen();")
+
+
 def test_cookie_ueberlebt_die_sitzung():
     """Ohne max-age waere es ein Sitzungscookie -- und damit genauso fluechtig wie das, was
     ersetzt werden sollte. path=/ ist noetig, damit /panel und / dasselbe Cookie sehen."""

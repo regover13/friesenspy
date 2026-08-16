@@ -412,6 +412,13 @@ Single-File-SPA ohne Build-Step. Vier Tabs:
 
 *Zwei Wachen, die leicht zu übersehen sind:* `_prefServerPlanen` sendet **nichts**, solange die Serverantwort aussteht (`if (!_prefVomServer) return;`) — im Kniebrett ist der lokale Stand beim Aufbau leer, ein Zurücksenden überschriebe den gespeicherten Stand mit Leere. Und `_naviBeruehrt` verhindert, dass eine spät eintreffende Antwort `_trackUp`/`_movingMap` zurücksetzt, nachdem der Nutzer die Knöpfe bereits angefasst hat (beide werden beim *Laden* des Skripts gelesen, also vor der Antwort).
 
+**Zustand des Kniebretts (v13.6.3):** `friesenspy_tab` (aktiver Tab) und `friesenspy_vollbild` (Karten-Ansicht maximiert). Nutzerwunsch 16.08.2026: „so wie wenn ich mein Tablet in Realität im Flieger auf Standby stelle und dann wieder aktiviere."
+
+- **Die Adresse hat Vorrang.** `initFromUrl` greift den Merker nur, wenn kein `#tab=` gesetzt ist — ein geteilter Link (`#tab=events&bummel=…`) muss dort landen, wo er hinzeigt, nicht dort, wo der Empfänger zuletzt war.
+- **Weiße Liste beim Lesen** (`_zustandTab`): Der Wert landet in einem Attribut-Selektor `[data-tab="…"]`; ein beliebiger Inhalt wäre dort im günstigen Fall ein Syntaxfehler, der den Aufbau abbricht.
+- **Vollbild nur für die Live-Karte** (`_ZUSTAND_KARTE_WRAP`): Events-Karte und Track-Modal hängen an einem Rennen bzw. einem Flug, der beim nächsten Start nicht offen ist — ein wiederhergestelltes Vollbild wäre eine leere Fläche.
+- **Wiederhergestellt wird über den Knopf**, nicht über `classList.add`: Nur so werden Beschriftung, `body.overflow` und `invalidateSize()` mitgezogen. Und **genau einmal**, gebunden an `_vollbildBeimStart` — sonst zwänge ein alter Merker auch den ersten Handgriff auf den Karten-Tab ins Vollbild, obwohl das Kniebrett zuletzt auf einem anderen Tab zugeklappt wurde.
+
 **Layer-Präferenz:** `_saveLayerPref(key)` / `_loadLayerPref()` / `_getPreferredLayer(layers)` — speichert den zuletzt manuell gewählten Basis-Layer (Schlüssel `friesenspy_layer`). Alle drei Karten (Live, Track-Modal, Events) initialisieren mit dem gespeicherten Layer. OFM-Auto-Switch ist nur aktiv wenn OFM die gespeicherte Präferenz ist; manuell zurück zu OFM → Auto-Switch reaktiviert sich.
 
 **OpenAIP-Overlay-Präferenz:** `_saveAIPPref(on)` / `_loadAIPPref()` / `_setupAIPPref(map, aipLayer)` — speichert ob das OpenAIP-Overlay aktiv war (Schlüssel `friesenspy_aip`, Wert `'1'`/`'0'`). Alle drei Karten rufen `_setupAIPPref` nach dem Layer-Control-Init auf: restauriert den gespeicherten Zustand und registriert `overlayadd`/`overlayremove`-Listener zum Speichern bei Änderung.

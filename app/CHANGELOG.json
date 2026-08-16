@@ -3,11 +3,12 @@
     "version": "13.6.3",
     "date": "2026-08-16",
     "highlight": false,
-    "title": "Karteneinstellungen liegen jetzt beim Server — und bleiben",
+    "title": "Das Kniebrett geht wieder auf, wie du es zugeklappt hast",
     "items": [
       "🗺️ Basiskarte, Ebenen, Track-up, Moving Map und der zuletzt betrachtete Ausschnitt überstehen jetzt einen Neustart des Simulators. Zwei Anläufe zuvor haben das nicht geschafft — und die Messung erklärt auch warum: Das Kniebrett bekommt beim Start einen komplett leeren Speicher. Nicht nur die Einstellungen waren weg, sondern alles.",
       "📌 Sie liegen deshalb nicht mehr im Kniebrett, sondern beim Server — verankert an derselben Kennung, mit der sich dein Tablet ohnehin schon anmeldet. Die überlebt den Neustart, weil sie dort abgelegt ist, wo auch Avionik wie das GTN 750 ihre Einstellungen hinlegt: in der Ablage des Simulators selbst.",
-      "🖥️ Kniebrett und Website behalten getrennte Einstellungen. Ein Kartenwechsel am Schreibtisch stellt nicht die Karte im Cockpit um."
+      "🖥️ Kniebrett und Website behalten getrennte Einstellungen. Ein Kartenwechsel am Schreibtisch stellt nicht die Karte im Cockpit um.",
+      "📱 Neu: Auch der Zustand wird gemerkt — welcher Tab offen war und ob die Karte im Vollbild stand. Wie ein echtes Tablet, das man auf Standby stellt und wieder aktiviert. Ein geteilter Link hat weiterhin Vorrang: Er landet dort, wo er hinzeigt."
     ]
   },
   {

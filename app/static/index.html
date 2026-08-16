@@ -4041,6 +4041,24 @@ function _prefVomServerHolen() {
   }
 }
 
+// --- In welchem Zustand war das Kniebrett? -------------------------------------------------
+//
+// Nutzerwunsch 16.08.2026: „so wie wenn ich mein Tablet in Realitaet im Flieger auf Standby
+// stelle und dann wieder aktiviere". Gemerkt werden der zuletzt benutzte Tab und, fuer die
+// Karten-Ansicht, das Vollbild.
+const _ZUSTAND_TAB_KEY      = 'friesenspy_tab';
+const _ZUSTAND_VOLLBILD_KEY = 'friesenspy_vollbild';
+const _ZUSTAND_KARTE_WRAP   = 'map-container';
+// Weisse Liste statt freier Uebernahme: Der Wert landet in einem Attribut-Selektor
+// (`[data-tab="…"]`). Ein beliebiger Inhalt waere dort im guenstigen Fall ein Syntaxfehler,
+// der den Aufbau abbricht -- und im unguenstigen mehr.
+const _ZUSTAND_TABS = ['live', 'karte', 'statistiken', 'events'];
+
+function _zustandTab() {
+  const t = _prefLies(_ZUSTAND_TAB_KEY);
+  return (_ZUSTAND_TABS.indexOf(t) !== -1) ? t : null;
+}
+
 // --- Zuletzt betrachteter Ausschnitt ------------------------------------------------------
 //
 // Gespeichert wird als "lat,lon,zoom". Der gelesene Wert wird streng geprueft, bevor er in
@@ -11030,6 +11048,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     // Update URL (preserve no modal params when switching tabs)
     setUrlState({ tab });
 
+    // Zustand merken -- das Kniebrett soll aufgehen, wie man es zugeklappt hat.
+    _prefSchreib(_ZUSTAND_TAB_KEY, tab);
+
     // Wenn Pilot-Drill-Down offen -> zurück zur Übersicht
     if (currentStatsCid !== null) {
       clearTimeout(_flightsRefreshTimer);
@@ -11067,6 +11088,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
           if (liveMap) {
             liveMap.invalidateSize();
           }
+          // Erst jetzt: Der Knopf ruft invalidateSize() selbst, und das braucht eine Karte.
+          _vollbildWiederherstellen();
           refreshLiveData();
         });
       });
@@ -11131,7 +11154,15 @@ async function initFromUrl() {
   // optional -- ohne Angabe uebernimmt openTypesModal() den Zeitraum aus #stats-days.
   if (p.get('types')) openTypesModal(p.get('days'));
 
-  const tab = p.get('tab');
+  // Ohne Angabe in der Adresse: der zuletzt benutzte Tab. Die Adresse hat Vorrang -- ein
+  // geteilter Link (#tab=events&bummel=…) muss dort landen, wo er hinzeigt, nicht dort, wo
+  // der Empfaenger zuletzt war.
+  let tab = p.get('tab');
+  if (!tab) {
+    await _prefsPromise;
+    tab = _zustandTab();
+    _vollbildBeimStart = (tab === 'karte');
+  }
   if (!tab) return;
 
   const tabBtn = document.querySelector(`[data-tab="${tab}"]`);
@@ -11387,10 +11418,35 @@ function toggleMapFullscreen(wrapId, btn, getMap) {
   const isFs = wrap.classList.toggle('map-is-fullscreen');
   btn.innerHTML = isFs ? icon('x') + ' Vollbild verlassen' : icon('fullscreen') + ' Vollbild';
   document.body.style.overflow = isFs ? 'hidden' : '';
+  // Nur die Karten-Ansicht wird gemerkt: Das Track-Modal und die Events-Karte haengen an
+  // einem Flug bzw. einem Rennen, das beim naechsten Start nicht mehr offen ist -- ein
+  // wiederhergestelltes Vollbild ohne den zugehoerigen Inhalt waere eine leere Flaeche.
+  if (wrapId === _ZUSTAND_KARTE_WRAP) _prefSchreib(_ZUSTAND_VOLLBILD_KEY, isFs ? '1' : '0');
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const map = getMap();
     if (map) map.invalidateSize();
   }));
+}
+
+// Stellt das Karten-Vollbild beim Start wieder her -- GENAU EINMAL.
+//
+// Einmalig, weil der Merker sonst jeden spaeteren Wechsel auf den Karten-Tab wieder ins
+// Vollbild zwingen wuerde. Und ueber den Knopf statt ueber die Klasse, weil nur dieser Weg
+// Beschriftung, `body.overflow` und `invalidateSize()` mitzieht -- ein `classList.add` allein
+// liesse die Karte in falscher Groesse stehen (derselbe Fehler wie beim Versatz im Kniebrett).
+// Wird NUR gesetzt, wenn beim Start der Karten-Tab aus dem Merker kam. Ohne diese Bedingung
+// zwaenge ein alter Vollbild-Merker auch den ersten HANDgriff auf den Karten-Tab ins
+// Vollbild -- obwohl der Nutzer das Kniebrett zuletzt auf einem anderen Tab zugeklappt hat.
+let _vollbildBeimStart = false;
+let _vollbildSchonWiederhergestellt = false;
+function _vollbildWiederherstellen() {
+  if (!_vollbildBeimStart || _vollbildSchonWiederhergestellt) return;
+  _vollbildSchonWiederhergestellt = true;
+  if (_prefLies(_ZUSTAND_VOLLBILD_KEY) !== '1') return;
+  const wrap = document.getElementById(_ZUSTAND_KARTE_WRAP);
+  if (!wrap || wrap.classList.contains('map-is-fullscreen')) return;
+  const btn = wrap.querySelector('.map-fullscreen-btn');
+  if (btn) btn.click();
 }
 
 // Verlaesst das Karten-Vollbild, egal welche Karte es gerade ist -- benutzt von der
