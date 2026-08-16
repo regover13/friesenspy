@@ -301,10 +301,69 @@ def test_kein_karten_merker_greift_noch_direkt_auf_localstorage():
         assert "_pref" in rumpf, f"{name} benutzt den gemeinsamen Speicher nicht"
 
 
+def test_cookie_gilt_auch_im_eingebetteten_kniebrett():
+    """Der Fehler der ersten Fassung (16.08.2026): `samesite=lax`.
+
+    Das Panel laeuft in einem iframe unter fremder Oberseite -- dort ist jedes Cookie
+    Drittanbieter-Kontext, und ein Lax-Cookie wird gar nicht erst abgelegt. Die Umstellung war
+    damit wirkungslos, obwohl alle Tests gruen waren: Sie liefen gegen ein Cookie-Glas als
+    Attrappe, das SameSite nicht kennt.
+
+    Das Vorbild stand die ganze Zeit im Projekt -- `_iframe_samesite` in app/main.py setzt fuer
+    das Sitzungs-Cookie genau aus diesem Grund `none`. Dieser Test bindet beide aneinander.
+    """
+    stelle = INDEX.index("function _prefCookieAttribute(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "samesite=none" in rumpf and "secure" in rumpf, \
+        "Ohne SameSite=None wird das Cookie im eingebetteten Panel nicht abgelegt"
+    assert "samesite=lax" in rumpf, "Ueber HTTP muss auf lax zurueckgefallen werden"
+    # None OHNE Secure verwirft der Browser komplett -- die beiden gehoeren zusammen.
+    assert re.search(r"samesite=none;\s*secure", rumpf), "SameSite=None ohne Secure ist wertlos"
+
+    haupt = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    assert "def _iframe_samesite(" in haupt, \
+        "Vorbild verschwunden -- dann gehoert diese Regel neu begruendet"
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_ueber_http_wird_kein_secure_gesetzt():
+    """Lokale Entwicklung laeuft ohne TLS. Ein Secure-Cookie kaeme dort nie an."""
+    _node_lauf("""
+global.location = { protocol: 'http:' };
+const a = _prefCookieAttribute();
+assert.ok(a.indexOf('secure') === -1, 'Secure ueber HTTP gesetzt: ' + a);
+assert.ok(a.indexOf('samesite=lax') !== -1, a);
+console.log('OK');
+""")
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_ueber_https_gilt_none_und_secure():
+    _node_lauf("""
+global.location = { protocol: 'https:' };
+const a = _prefCookieAttribute();
+assert.ok(a.indexOf('samesite=none') !== -1, a);
+assert.ok(a.indexOf('secure') !== -1, a);
+console.log('OK');
+""")
+
+
+def test_selbstdiagnose_misst_ob_der_merker_den_neustart_ueberstand():
+    """`features.localStorage` beantwortet die Frage nicht -- die Sonde schreibt und liest im
+    selben Atemzug. Ohne eine eigene Messung bleibt "haelt es?" Vermutungssache, und genau das
+    hat am 16.08.2026 zwei Anlaeufe gekostet."""
+    stelle = INDEX.index("function probeSpeicher(")
+    rumpf = INDEX[stelle:INDEX.index("\n      }", stelle)]
+    assert "merkerDa" in rumpf, "Die entscheidende Frage (lag das Cookie schon vorher da?) fehlt"
+    assert "schreibbar" in rumpf, "Ohne Schreibprobe bleibt eine Sperre unerkannt"
+    assert "samesite=none" in rumpf, "Die Probe muss dieselben Attribute benutzen wie der Merker"
+    assert "speicher: probeSpeicher()," in INDEX, "Sonde ist nicht im Bericht verdrahtet"
+
+
 def test_cookie_ueberlebt_die_sitzung():
     """Ohne max-age waere es ein Sitzungscookie -- und damit genauso fluechtig wie das, was
     ersetzt werden sollte. path=/ ist noetig, damit /panel und / dasselbe Cookie sehen."""
-    stelle = INDEX.index("function _prefCookieSchreiben(")
+    stelle = INDEX.index("function _prefCookieAttribute(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
     assert "max-age=" in rumpf
     assert "path=/" in rumpf

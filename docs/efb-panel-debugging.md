@@ -427,3 +427,34 @@ Anmelde-Cookie war also schon vor dem ersten Byte da. Genau das schafft `localSt
 **Merksatz:** Eine Fähigkeitssonde beantwortet „ist da?", nie „hält?". Für alles, was einen
 Neustart überstehen soll, ist der einzige gültige Test ein Wert, der **vor** der Sitzung
 geschrieben wurde — im Zweifel die eigene Aufzeichnung über mehrere Starts.
+
+### Nachtrag: Cookies brauchen im Panel `SameSite=None` (16.08.2026)
+
+Der erste Anlauf ersetzte `localStorage` durch ein Cookie mit `SameSite=Lax` — und das Panel
+merkte sich **weiterhin nichts** (Start 19:20 wieder auf OpenFlightMap, obwohl um 19:16 `Dark`
+gewählt war). Der Grund steht schon im Bericht der Selbstdiagnose: `features.inIframe: true`.
+
+Das Panel läuft in einem iframe unter **fremder Oberseite**. Damit ist jedes Cookie dort
+Drittanbieter-Kontext, und ein `Lax`-Cookie wird gar nicht erst abgelegt. Nötig ist
+`SameSite=None; Secure` — und `None` **ohne** `Secure` verwirft der Browser komplett, über HTTP
+muss also auf `Lax` zurückgefallen werden.
+
+**Das Vorbild stand die ganze Zeit im Projekt:** `_iframe_samesite()` in `app/main.py` setzt für
+das Sitzungs-Cookie aus genau diesem Grund `none`, samt Begründung im Docstring. Es wurde als
+*Beleg* benutzt („Cookies halten im Kniebrett"), aber nie *gelesen*.
+
+**Merksatz:** Wenn im Projekt schon etwas nachweislich im Panel funktioniert, ist es nicht nur
+der Beleg, dass der Weg trägt — es ist die **Vorlage**. Erst seine Konfiguration lesen, dann die
+eigene schreiben. Die Tests waren gegen diesen Fehler blind, weil sie gegen eine Cookie-Attrappe
+liefen, die `SameSite` nicht kennt: Eine Attrappe kann nur prüfen, was sie nachbildet.
+
+**Seit v13.6.2 misst die Selbstdiagnose das mit** (`speicher` im `report`):
+
+| Feld | Frage |
+|---|---|
+| `schreibbar` | Lässt sich überhaupt ein Cookie setzen und sofort zurücklesen? `false` = gesperrt |
+| `merkerDa` | Lag `fs_karte` schon **vor** dieser Sitzung vor? Das ist die eigentliche Frage |
+| `merkerInhalt` | Welche Schlüssel stehen drin — trennt „leer angelegt" von „gefüllt" |
+| `lsSchlüssel` | Wie viele `localStorage`-Einträge es gibt, zum Vergleich |
+
+`features.localStorage` beantwortet davon **nichts** — es schreibt und liest im selben Atemzug.

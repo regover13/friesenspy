@@ -392,6 +392,48 @@
         };
       }
 
+      /** Ueberlebt ein Merker den Neustart -- und woran liegt es, wenn nicht?
+       *
+       *  `features.localStorage` beantwortet diese Frage NICHT: Die Sonde schreibt und liest
+       *  im selben Atemzug und kann "funktioniert" nicht von "haelt" unterscheiden. Genau
+       *  daran ist die Fehlersuche am 16.08.2026 zweimal vorbeigelaufen -- erst wurde der
+       *  Fehler im Anwendungscode gesucht, wo keiner war, dann ein Cookie mit falschem
+       *  SameSite geschrieben, das im iframe gar nicht erst abgelegt wird.
+       *
+       *  Deshalb hier drei getrennte Aussagen statt einer:
+       *   - `schreibbar`  Laesst sich ueberhaupt ein Cookie setzen und sofort zuruecklesen?
+       *                   Falsch = Drittanbieter-Cookies sind gesperrt, dann traegt der Weg
+       *                   ueber das Cookie grundsaetzlich nicht.
+       *   - `merkerDa`    Lag das Merker-Cookie schon VOR dieser Sitzung vor? Das ist die
+       *                   eigentliche Frage; sie ist nur beim Seitenaufbau beantwortbar.
+       *   - `merkerInhalt` Welche Schluessel stehen drin -- unterscheidet "leer angelegt" von
+       *                   "gefuellt". Werte bleiben draussen, hier steht nichts Geheimes,
+       *                   aber der Bericht soll knapp bleiben. */
+      function probeSpeicher() {
+        var erg = { schreibbar: null, merkerDa: null, merkerInhalt: null, lsSchluessel: null };
+        try {
+          var roh = String(document.cookie || '');
+          erg.merkerDa = roh.indexOf('fs_karte=') !== -1;
+          if (erg.merkerDa) {
+            var teil = roh.split('; ').filter(function (t) { return t.indexOf('fs_karte=') === 0; })[0];
+            var o = JSON.parse(decodeURIComponent(teil.slice('fs_karte='.length)));
+            erg.merkerInhalt = Object.keys(o).sort();
+          }
+        } catch (e) { erg.merkerInhalt = 'unlesbar: ' + String(e); }
+        try {
+          var sicher = location.protocol === 'https:';
+          document.cookie = 'fs_probe=1; path=/; max-age=60'
+                          + (sicher ? '; samesite=none; secure' : '; samesite=lax');
+          erg.schreibbar = String(document.cookie || '').indexOf('fs_probe=1') !== -1;
+          document.cookie = 'fs_probe=; path=/; max-age=0'
+                          + (sicher ? '; samesite=none; secure' : '; samesite=lax');
+        } catch (e) { erg.schreibbar = 'fehler: ' + String(e); }
+        try {
+          erg.lsSchluessel = Object.keys(window.localStorage || {}).length;
+        } catch (e) {}
+        return erg;
+      }
+
       function probeFeatures() {
         function has(fn) { try { return !!fn(); } catch (_) { return false; } }
         return {
@@ -456,6 +498,7 @@
           screen: { w: (screen && screen.width) || null, h: (screen && screen.height) || null },
           css: probeCss(),
           features: probeFeatures(),
+          speicher: probeSpeicher(),
           events: events
         };
         try { base.glyphs = probeGlyphs(); } catch (err) { base.glyphs = { error: String(err) }; }
@@ -3887,10 +3930,28 @@ function _prefCookieLesen() {
   return null;
 }
 
+/** SameSite fuer ein Cookie, das auch aus dem eingebetteten Kniebrett heraus gelten muss.
+ *
+ *  Das Panel laeuft in einem iframe unter einer FREMDEN Oberseite (`features.inIframe: true`).
+ *  Damit ist jedes Cookie dort Drittanbieter-Kontext -- und ein `SameSite=Lax` wird in diesem
+ *  Kontext gar nicht erst abgelegt. Die erste Fassung vom 16.08.2026 schrieb genau das und
+ *  merkte sich deshalb im Kniebrett weiterhin nichts (Panel-Start 19:20 stand wieder auf
+ *  OpenFlightMap, obwohl um 19:16 `Dark` gewaehlt war).
+ *
+ *  `None` verlangt zwingend `Secure`, sonst verwirft der Browser das Cookie KOMPLETT --
+ *  ueber HTTP (lokale Entwicklung) faellt es deshalb auf `lax` zurueck. Das ist dieselbe
+ *  Regel, die serverseitig schon fuer das Sitzungs-Cookie gilt: s. `_iframe_samesite` in
+ *  `app/main.py`. Dieses Vorbild stand die ganze Zeit im Projekt. */
+function _prefCookieAttribute() {
+  const sicher = (typeof location !== 'undefined' && location.protocol === 'https:');
+  return '; path=/; max-age=' + _PREF_MAX_AGE
+       + (sicher ? '; samesite=none; secure' : '; samesite=lax');
+}
+
 function _prefCookieSchreiben(o) {
   try {
     document.cookie = _PREF_COOKIE + '=' + encodeURIComponent(JSON.stringify(o))
-                    + '; path=/; max-age=' + _PREF_MAX_AGE + '; samesite=lax';
+                    + _prefCookieAttribute();
   } catch (e) {}
 }
 

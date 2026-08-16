@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.6.2",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Der Merker aus 13.6.0 kam im Kniebrett nicht an",
+    "items": [
+      "🔧 Die Karteneinstellungen wurden zwar gespeichert, aber im Kniebrett nicht abgelegt — nach dem Neustart stand dort wieder OpenFlightMap. Der Ablageort war richtig gewählt, nur eine Zusatzangabe daran falsch: Das Kniebrett zeigt die Seite eingebettet an, und dafür braucht die Ablage eine ausdrückliche Freigabe, die gefehlt hat.",
+      "📋 Damit so etwas beim nächsten Mal nicht wieder zwei Anläufe kostet, meldet die Selbstdiagnose jetzt, ob sich im Kniebrett überhaupt etwas ablegen lässt und ob die Einstellungen den letzten Neustart überstanden haben. Bisher hat sie nur gemeldet, dass Schreiben und Lesen funktionieren — was über das Überleben eines Neustarts nichts aussagt."
+    ]
+  },
+  {
     "version": "13.6.1",
     "date": "2026-08-16",
     "highlight": false,
