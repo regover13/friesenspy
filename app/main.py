@@ -32,6 +32,7 @@ from app.auth import (
     verify_admin_token,
     verify_confirm_token,
 )
+from app import fse
 from app.config import get_settings
 from app.forum_sso import (
     USER_COOKIE,
@@ -222,6 +223,13 @@ async def lifespan(app: FastAPI):
         geo.set_custom_airports(list_custom_airports(conn))  # #50: Ergänzungs-Flugplätze laden
     finally:
         conn.close()
+    # FSE-Weltbestand einmal beim Start lesen (23.780 Plätze + Zonen, rund 51 MB). Danach nur
+    # noch gelesen, deshalb ohne Sperre. Bewusst HINTER dem finally: das JSON-Parsen dauert
+    # knapp eine Sekunde, und die DB-Verbindung solange offen zu halten wäre grundlos.
+    # Der Pfad ist relativ zum Arbeitsverzeichnis, wie der StaticFiles-Mount weiter unten —
+    # im Container ist das /opt/friesenspy.
+    app.state.fse = fse.laden(Path("app/data/fse"))
+    _logger.info("FSE-Bestand geladen: %d Plätze", len(app.state.fse.plaetze))
     poller = create_poller()
     app.state.poller = poller
     await poller.start()
@@ -718,6 +726,54 @@ async def get_traffic(
         "age": round(alter, 1),
         "traffic": [{k: v for k, v in e.items() if k != "cid"} for _, e in nah[:_TRAFFIC_MAX]],
     }
+
+
+def get_fse_airports(
+    request: Request,
+    lat: float = Query(..., ge=-90, le=90, description="Bezugspunkt, i. d. R. die Kartenmitte"),
+    lon: float = Query(..., ge=-180, le=180),
+    r: float = Query(50.0, ge=1, le=fse.MAX_KM, description="Radius in km"),
+):
+    """FSE-Plätze im Kartenausschnitt.
+
+    Getrennt von den Zonen, weil beide Ebenen einzeln schaltbar sind: Wer nur die
+    Landeflächen anhat, soll die Plätze nicht mitladen. (Der Vorgänger ``_fseLaden`` holte
+    immer beide Dateien, unabhängig davon, welcher Haken gesetzt war.)
+
+    ``gekappt`` meldet, dass der Deckel gegriffen hat und der Nutzer eine Scheibe statt des
+    vollen Rechtecks sieht — dieselbe Entscheidung wie beim Verkehr, aus demselben Grund.
+
+    Bewusst ``def`` und nicht ``async def``: Der Filter läuft linear über 23.780 Einträge und
+    kostet ein paar Millisekunden. In einer Koroutine blockierte das den Event-Loop und damit
+    auch ``/api/sse``; als synchrone Funktion landet sie im Threadpool.
+
+    Kein Sonderweg bei der Anmeldung: verhält sich wie ``/api/traffic`` und gehört NICHT in
+    ``_GATE_ALLOW_PREFIXES``.
+    """
+    plaetze, gekappt = fse.plaetze_im_umkreis(request.app.state.fse, lat, lon, r)
+    return {"plaetze": plaetze, "gekappt": gekappt}
+
+
+def get_fse_zones(
+    request: Request,
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    r: float = Query(50.0, ge=1, le=fse.MAX_KM, description="Radius in km"),
+):
+    """FSE-Landeflächen im Kartenausschnitt.
+
+    Gedeckelt in Punkten, nicht in Stück — eine Zone kostet das Siebenfache eines Platzes
+    (s. ``app/fse.py``). ``def`` aus demselben Grund wie oben.
+    """
+    zonen, gekappt = fse.zonen_im_umkreis(request.app.state.fse, lat, lon, r)
+    return {"zonen": zonen, "gekappt": gekappt}
+
+
+# Getrennt registriert statt per Dekorator: So bleibt die Funktion als Modulattribut
+# erreichbar, und der Test kann sie auf ``async def`` prüfen (FastAPI schickt nur synchrone
+# Endpunkte in den Threadpool — ein übersehenes ``async`` wäre eine stille Bremse).
+app.get("/api/fse/airports")(get_fse_airports)
+app.get("/api/fse/zones")(get_fse_zones)
 
 
 @app.get("/api/stats/activity")

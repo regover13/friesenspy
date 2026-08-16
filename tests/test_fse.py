@@ -598,3 +598,95 @@ def test_die_zelle_in_der_man_steht_kommt_zuerst(bestand):
     treffer, gekappt = fse_modul.zonen_im_umkreis(bestand, *KJFK, 150)
     assert gekappt
     assert _umschliessende(bestand, treffer, *KJFK)
+
+
+# ---------------------------------------------------------------------------
+# Die zwei Endpunkte
+# ---------------------------------------------------------------------------
+
+import inspect  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app import main as main_modul  # noqa: E402
+
+
+@pytest.fixture()
+def klient(bestand, tmp_path, monkeypatch):
+    """TestClient OHNE ``with`` — der Lifespan darf hier nicht laufen.
+
+    Er liest ``SECRET_KEY`` (das hat keinen Default und steht nur in config.env), ruft
+    ``init_db`` auf dem PRODUKTIONSPFAD /opt/friesenspy/data/friesenspy.db und startet den
+    VATSIM-Poller gegen die echte API. Das Hausmuster dagegen steht in
+    tests/test_traffic_api.py:79: Settings per monkeypatch ersetzen und den Zustand direkt an
+    app.state haengen.
+
+    ``bestand`` kommt aus der Fixture weiter oben — so werden die 6 MB einmal je Modul
+    gelesen statt einmal je Test.
+    """
+    einstellungen = SimpleNamespace(DB_PATH=str(tmp_path / "t.db"), CALLSIGN_PREFIX="FRS",
+                                    SECRET_KEY="s3cr3t", SSO_SECRET="", FORUM_SSO_URL="")
+    monkeypatch.setattr(main_modul, "get_settings", lambda: einstellungen)
+    main_modul._reset_gate_cache()
+    vorher = getattr(main_modul.app.state, "fse", None)
+    main_modul.app.state.fse = bestand
+    yield TestClient(main_modul.app)
+    main_modul.app.state.fse = vorher
+
+
+def test_endpunkt_plaetze_liefert_den_ausschnitt(klient):
+    r = klient.get("/api/fse/airports", params={"lat": 53.7872, "lon": 7.91583, "r": 51})
+    assert r.status_code == 200
+    d = r.json()
+    assert "EDWG" in d["plaetze"]
+    assert d["plaetze"]["EDWG"]["name"]
+    assert d["gekappt"] is False
+
+
+def test_endpunkt_zonen_liefert_punktlisten(klient):
+    r = klient.get("/api/fse/zones", params={"lat": 53.7872, "lon": 7.91583, "r": 51})
+    assert r.status_code == 200
+    d = r.json()
+    assert "EDWG" in d["zonen"]
+    assert len(d["zonen"]["EDWG"][0]) == 2      # [lat, lon]
+
+
+def test_endpunkte_weisen_unsinnige_parameter_ab(klient):
+    for params in ({"lat": 91, "lon": 0, "r": 10},
+                   {"lat": 0, "lon": 181, "r": 10},
+                   {"lat": 0, "lon": 0, "r": 0},
+                   {"lat": 0, "lon": 0, "r": 251}):
+        assert klient.get("/api/fse/airports", params=params).status_code == 422
+        assert klient.get("/api/fse/zones", params=params).status_code == 422
+
+
+def test_endpunkt_meldet_die_kappung(klient):
+    d = klient.get("/api/fse/airports", params={"lat": 40.7, "lon": -74.0, "r": 150}).json()
+    assert d["gekappt"] is True
+    assert len(d["plaetze"]) == 250
+
+
+def test_endpunkte_blockieren_den_event_loop_nicht():
+    """10-14 ms je Anfragepaar sind fuer einen Threadpool unauffaellig und fuer den Event-Loop
+    viel: dort haengt auch /api/sse daran. FastAPI schickt NUR sync-Funktionen in den
+    Threadpool -- ein ``async def`` hier waere eine stille Bremse fuer die ganze Anwendung."""
+    for name in ("get_fse_airports", "get_fse_zones"):
+        fn = getattr(main_modul, name)
+        assert not inspect.iscoroutinefunction(fn), f"{name} ist async def"
+
+
+def test_fse_endpunkte_stehen_nicht_im_gate_allowlist():
+    """Wie /api/traffic: kein Sonderweg an der Anmeldung vorbei."""
+    quelle = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    stelle = quelle.index("_GATE_ALLOW_PREFIXES")
+    assert "/api/fse" not in quelle[stelle:quelle.index("\n\n", stelle)]
+
+
+def test_bestand_wird_beim_start_geladen():
+    """Der Ladeschritt gehoert HINTER den try/finally-Block um die DB-Verbindung -- 0,8 s
+    JSON-Parsen mit offen gehaltener Verbindung waere unnoetig."""
+    quelle = (Path(__file__).resolve().parents[1] / "app" / "main.py").read_text(encoding="utf-8")
+    rumpf = quelle[quelle.index("async def lifespan("):quelle.index("\n    yield")]
+    assert "app.state.fse = fse.laden(" in rumpf
+    assert rumpf.index("conn.close()") < rumpf.index("app.state.fse = fse.laden(")
