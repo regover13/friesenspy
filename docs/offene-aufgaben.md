@@ -6,14 +6,24 @@ steht, ist gewollt; was erledigt ist, wird gelöscht (die Geschichte steht im Ch
 Am Projekt arbeiten mehrere Sitzungen parallel, auch in der Cloud. Vor dem Start also pullen
 und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
-## 1. Klick auf `listen.vatsim.net`
+## 1. Mithören über `listen.vatsim.net`
 
-Aus der Oberfläche heraus zu [listen.vatsim.net](https://listen.vatsim.net) verlinken, um
-mitzuhören.
+Ein kleines **Lautsprechersymbol hinter dem Callsign in der Live-Ansicht**, das auf
+`https://listen.vatsim.net/live/<CALLSIGN>` zeigt — dort läuft die Frequenz, auf der der Pilot
+gerade ist. Vorbild ist [vatsim-radar.com](https://vatsim-radar.com), dort sitzt es neben der
+COM1-Frequenz mit dem Titel „Listen as \<Callsign\>" (Nutzer, 16.08.2026).
 
-**Vor der Umsetzung klären:** Von wo aus der Klick gehen soll — Controller-Eintrag, Callsign,
-Live-Tab? Der Auftrag lautete nur „Klick auf listen.vatsim.net" (16.08.2026); der Ort ist
-offen. Nicht raten, sondern nachfragen.
+Beim Umsetzen beachten:
+
+- **Im Kniebrett nicht anzeigen.** Ein externer Link ist dort nutzlos: Das EFB-Panel hat
+  keinen Browser, in den er sich öffnen ließe. Die Wache dafür ist
+  `document.documentElement.classList.contains('vr-panel')`.
+- Blau (`--green`) ist in diesem Projekt Klickbarem vorbehalten — hier also richtig, das
+  Symbol *ist* ein Link. Das Callsign selbst bleibt neutral.
+- Ziel in einem neuen Tab öffnen (`target="_blank"` mit `rel="noopener"`).
+- Ob der Stream für jeden Piloten existiert, ist ungeprüft. Ein toter Link ist verschmerzbar;
+  ein Symbol, das nie funktioniert, wäre es nicht — bei Gelegenheit an einem Friesen
+  ausprobieren.
 
 ## 2. VRP aus OpenAIP größer und prominenter darstellen
 
