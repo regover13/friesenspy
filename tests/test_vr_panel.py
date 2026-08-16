@@ -1982,13 +1982,35 @@ def test_zuordnung_gilt_nur_fuer_die_sitzung():
     assert "localStorage" not in INDEX[INDEX.index("let _paarungen"):INDEX.index("let _paarungen") + 400]
 
 
-def test_erstzuordnung_nur_bei_genau_einem_kandidaten():
-    """Die Sicherheit kommt aus der Eindeutigkeit, nicht aus der Enge der Schranke. Bei zwei
-    Kandidaten wird nicht geraten -- ein falsches Rufzeichen ist schlimmer als gar keines."""
+def test_eindeutig_heisst_deutlicher_vorsprung():
+    """Zwei Fehlversuche am selben Abend zeigten, dass "genau einer innerhalb der Schranke"
+    nicht taugt: Mit 400 m lagen auf dem Vorfeld mehrere im Umkreis -- nichts eindeutig, also
+    keine Zuordnung. Mit 150 m fand mancher gar keinen Partner. Jede Zahl macht an anderer
+    Stelle dasselbe Problem.
+
+    Ein VERHAELTNIS hat die Schwaeche nicht: Steht das eine 20 m von seiner Meldung und das
+    naechste 80 m, ist es klar -- unabhaengig von der Schranke."""
     stelle = INDEX.index("function _verkehrZusammenfuehren(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
-    assert "kandidaten.length === 1" in rumpf
+    assert "_PAARUNG_VORSPRUNG" in rumpf
+    assert "kandidaten[1]._m * _PAARUNG_VORSPRUNG" in rumpf
+    assert "kandidaten.sort(" in rumpf, "der naechste muss vorne stehen"
     assert "nochOffen.push(s)" in rumpf
+
+
+def test_ohne_zuordnung_gewinnt_die_sim_position():
+    """Die Kernvorgabe: "Es ist wichtiger zu wissen, WO sich ein anderes Flugzeug aktuell
+    aufhaelt, als zu wissen wer oder was es ist." Bisher wurde bei fehlender Zuordnung BEIDES
+    gezeichnet -- das namenlose Sim-Symbol und der VATSIM-Marker mit Rufzeichen. Optisch gewann
+    der mit Namen, und der haengt im 15-Sekunden-Takt: genau die Umkehrung der Vorgabe."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    stelle_verdecken = rumpf.index("--- 3b.")
+    verdecken = rumpf[stelle_verdecken:rumpf.index("--- 4.")]
+    assert "delete frei[kandidaten[0].v.cs]" in verdecken
+    assert "_paarungen" not in verdecken, "verdecken ist KEINE Zuordnung -- nichts behaupten"
+    # Genau einer je unzugeordnetem Sim-Eintrag, damit die Anzahl der Symbole stimmt.
+    assert "for (let i = 0; i < nochOffen.length; i++)" in verdecken
 
 
 def test_ausschluss_kommt_nach_der_naehe():
@@ -2009,11 +2031,6 @@ def test_schranke_wird_aus_der_geschwindigkeit_gerechnet():
     assert "_VATSIM_LATENZ_S" in rumpf
     assert "s.gs" in rumpf
     assert "_PAARUNG_MIN_M" in rumpf, "sonst faende ein stehendes Flugzeug nie einen Partner"
-    # ... aber klein: Im Stand ist die Latenz gegenstandslos, die Schranke deckt nur Rauschen
-    # ab. Bei 400 m lagen auf dem Vorfeld mehrere Flugzeuge im selben Umkreis -- nichts war
-    # eindeutig, und damit wurde am Boden gar nicht zugeordnet (Nutzer-Fund 16.08.2026).
-    m2 = re.search(r"const _PAARUNG_MIN_M = (\d+);", INDEX)
-    assert m2 and int(m2.group(1)) <= 200, "auf dem Vorfeld stehen Flugzeuge 50-100 m auseinander"
     assert "const _PAARUNG_MAX_M" not in INDEX, "die feste Schranke ist ersetzt"
 
 

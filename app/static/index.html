@@ -4611,16 +4611,24 @@ const _VATSIM_LATENZ_S = 29;
 // zuverlaessig, anders als die 29 Sekunden alte VATSIM-Angabe.
 const _PAARUNG_FAKTOR = 2;          // deckt Latenzstreuung (+/-5%), Wind, leichte Kurven
 // Untergrenze, damit ein STEHENDES Flugzeug ueberhaupt einen Partner finden kann -- sonst
-// waere die Schranke bei Geschwindigkeit null ebenfalls null.
+// waere die Schranke bei Geschwindigkeit null ebenfalls null. Grosszuegig, denn sie
+// entscheidet NICHT mehr ueber die Eindeutigkeit (s. _PAARUNG_VORSPRUNG).
+const _PAARUNG_MIN_M = 400;
+
+// Eindeutig heisst: Der beste Kandidat ist DEUTLICH naeher als der zweitbeste.
 //
-// Sie muss KLEIN sein, und das ist keine Feinheit: Im Stand ist die Latenz gegenstandslos,
-// eine 29 Sekunden alte Position eines stehenden Flugzeugs ist exakt richtig. Die Schranke
-// deckt hier nur Rauschen ab, nicht Bewegung. Der erste Wert waren 400 m -- und genau daran
-// scheiterte die Zuordnung am Boden (Nutzer-Fund 16.08.2026): Auf einem Vorfeld stehen
-// Flugzeuge 50 bis 100 Meter auseinander, in 400 m Umkreis liegen also mehrere. Damit war
-// nichts mehr eindeutig, und nach unserer Regel wurde gar nicht zugeordnet -- ausgerechnet
-// dort, wo die Position am genauesten ist.
-const _PAARUNG_MIN_M = 150;
+// Das ersetzt "genau einer innerhalb der Schranke", und der Grund dafuer ist eine Lehre aus
+// zwei Fehlversuchen am selben Abend (16.08.2026): Mit 400 m Untergrenze lagen auf dem
+// Vorfeld mehrere Flugzeuge im selben Umkreis -- nichts war eindeutig, also wurde gar nicht
+// zugeordnet. Mit 150 m fand mancher gar keinen Partner mehr und blieb namenlos. Beide Male
+// war die Zahl schuld, und beide Male haette jede andere Zahl an anderer Stelle dasselbe
+// Problem gemacht.
+//
+// Ein VERHAELTNIS hat diese Schwaeche nicht: Steht das eine Flugzeug 20 m von seiner
+// VATSIM-Meldung und das naechste 80 m, ist die Zuordnung klar -- unabhaengig davon, ob die
+// Schranke bei 150 oder 400 m liegt. Die Schranke sagt nur noch, wer ueberhaupt in Frage
+// kommt; entschieden wird ueber den Vorsprung.
+const _PAARUNG_VORSPRUNG = 0.5;     // der beste muss halb so weit weg sein wie der zweitbeste
 const _PAARUNG_LOESEN_FAKTOR = 3;   // beim Loesen grosszuegiger als beim Zuordnen: Ein zu
                                     // fruehes Loesen bringt das Flackern zurueck, eine zu
                                     // weite Erstzuordnung kostet nur Eindeutigkeit
@@ -4750,15 +4758,18 @@ function _verkehrZusammenfuehren() {
   for (let i = 0; i < offen.length; i++) {
     const s = offen[i];
     const kandidaten = _verkehrKandidaten(s, vatJetzt, frei);
-    if (kandidaten.length === 1) {
+    kandidaten.sort(function (a, b) { return a._m - b._m; });
+    const eindeutig = kandidaten.length === 1
+      || (kandidaten.length > 1 && kandidaten[0]._m <= kandidaten[1]._m * _PAARUNG_VORSPRUNG);
+    if (eindeutig) {
       const v = kandidaten[0].v;
       _paarungen[s.id] = { cs: v.cs, verstoesse: 0 };
       zugeordnet[s.id] = v;
       delete frei[v.cs];
       _zuordnungGetroffen++;
     } else {
-      // Kein Kandidat oder mehrere: nicht raten. Ein falsches Rufzeichen ist schlimmer als
-      // gar keines -- man sieht ihm nicht an, dass es falsch ist.
+      // Kein Kandidat, oder mehrere ohne klaren Vorsprung: nicht raten. Ein falsches
+      // Rufzeichen ist schlimmer als gar keines -- man sieht ihm nicht an, dass es falsch ist.
       nochOffen.push(s);
     }
   }
@@ -4779,6 +4790,25 @@ function _verkehrZusammenfuehren() {
     _zuordnungGetroffen++;
     _zuordnungPerAusschluss++;
     nochOffen.length = 0;
+  }
+
+  // --- 3b. Verdecken: Sim-Position schlaegt VATSIM-Identitaet ----------------------------
+  // Bleibt ein Sim-Flugzeug ohne Zuordnung, wurde bisher BEIDES gezeichnet -- das namenlose
+  // Sim-Symbol und der VATSIM-Marker mit Rufzeichen. Auf der Karte gewann optisch der mit
+  // Namen, und der haengt im 15-Sekunden-Takt: genau die Umkehrung der Vorgabe (Nutzer,
+  // 16.08.2026: "Es ist wichtiger zu wissen, WO sich ein anderes Flugzeug aktuell aufhaelt,
+  // als zu wissen wer oder was es ist").
+  //
+  // Deshalb wird der naechstgelegene Kandidat verdeckt -- nicht zugeordnet, nur nicht
+  // gezeichnet. Wir behaupten damit nichts ueber seine Identitaet, sondern nur: Dieses
+  // VATSIM-Flugzeug ist mit grosser Wahrscheinlichkeit eines der Sim-Flugzeuge, die hier
+  // ohnehin schon stehen. Einer je unzugeordnetem Sim-Eintrag, damit die ANZAHL der Symbole
+  // stimmt -- sonst verschwaende ein Flugzeug, das nur VATSIM kennt.
+  for (let i = 0; i < nochOffen.length; i++) {
+    const kandidaten = _verkehrKandidaten(nochOffen[i], vatJetzt, frei);
+    if (!kandidaten.length) continue;
+    kandidaten.sort(function (a, b) { return a._m - b._m; });
+    delete frei[kandidaten[0].v.cs];
   }
 
   // --- 4. Liste bauen --------------------------------------------------------------------
@@ -4932,7 +4962,9 @@ function _verkehrKandidaten(s, vatJetzt, frei) {
     const e = vatJetzt[i];
     if (!frei[e.v.cs]) continue;
     if (Math.abs((Number(e.v.alt) || 0) - hoehe) > maxFt) continue;
-    if (p.distanceTo([e.lat, e.lon]) > maxM) continue;
+    const m = p.distanceTo([e.lat, e.lon]);
+    if (m > maxM) continue;
+    e._m = m;
     treffer.push(e);
   }
   return treffer;

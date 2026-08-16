@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.5.2",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Wo der Simulator zuschaut, gilt seine Position",
+    "items": [
+      "✈️ Konnte ein Flugzeug nicht sicher erkannt werden, zeigte die Karte es doppelt — einmal genau, aber ohne Namen, und daneben mit Namen, aber im Fünfzehn-Sekunden-Takt. Optisch gewann der langsame. Jetzt bleibt das Symbol stehen, das weiß, wo das Flugzeug wirklich ist.",
+      "🎯 Erkannt wird nicht mehr danach, ob nur ein Flugzeug in einem festen Umkreis liegt, sondern ob eines deutlich näher ist als alle anderen. Auf dem Vorfeld stehen Maschinen dicht beieinander, im Reiseflug weit auseinander — eine feste Entfernung passt nie für beides, ein Abstandsvergleich immer."
+    ]
+  },
+  {
     "version": "13.5.1",
     "date": "2026-08-16",
     "highlight": false,
