@@ -45,13 +45,28 @@ Daraus folgt vier Dinge, die für unsere Umsetzung zählen:
 | `^/live/([^/]+)/?$`, Wert wird `decodeURIComponent`-t | Callsign gehört **URL-kodiert** in den Pfad (`encodeURIComponent`) |
 | Wert wird intern auf Großschreibung gezogen | Unsere Groß-/Kleinschreibung ist gleichgültig — wir schreiben trotzdem groß, wie überall |
 | Der Wunsch überlebt in `sessionStorage` und der Pfad wird auf `/` zurückgesetzt | Der Link funktioniert auch, wenn erst noch der **VATSIM-Login (OAuth)** dazwischenkommt: nach dem Rücksprung wird derselbe Pilot aufgeschaltet |
-| `if (!s.callsigns.some(n => n.callsign === e)) { x(`${e} is not currently online`, "error"); return }` | Ist der Pilot nicht da, gibt es eine saubere Fehlermeldung — **kein toter Link, keine leere Seite** |
+| `if (!s.callsigns.some(n => n.callsign === e)) { x(`${e} is not currently online`, "error"); return }` | Fällt der Pilot durch, gibt es eine saubere Fehlermeldung statt einer leeren Seite — **wir werden sie aber kaum je sehen**, s. unten |
 
 `GET /live/DLH123` liefert HTTP 200 (die Anwendung selbst), `GET /live/` erwartungsgemäß 404.
 Damit ist die offene Frage aus der Aufgabenliste („ob der Stream für jeden Piloten existiert,
 ist ungeprüft") beantwortet, soweit sie sich von außen beantworten lässt: Die **Route** gilt für
-jeden Callsign; ob gerade jemand sendet, entscheidet die Gegenstelle und meldet es dem Nutzer.
-Ein Blindflug bleibt nur die Tonqualität — die prüft der erste Friese, der es benutzt.
+jeden Callsign.
+
+**Die Fehlermeldung ist nicht unser Normalfall** (Nutzer-Einwand, 16.08.2026): Wir zeigen das
+Symbol nur bei Piloten, die VATSIM uns gerade als online gemeldet hat. Genau die stehen auf der
+Gegenseite fast immer auch in der Liste. Zwei Lücken bleiben, beide schmal:
+
+- Die Liste dort ist die Sicht des **Audio-Netzes** (AFV, per WebSocket gepusht:
+  `{type:"callsigns", data:[…]}`), nicht der VATSIM-Datenfeed. Wer bei VATSIM steht, aber keine
+  Tonverbindung hat, fehlt.
+- Zwischen unserem Abruf (15 s) und dem Klick vergeht Zeit. Loggt der Pilot dazwischen aus,
+  greift dieselbe Meldung — bzw. nach dem Login-Rücksprung die Schwester dazu,
+  `„… is no longer online"`.
+
+**Der eigentliche Alltagsfall ist Stille, und das ist kein Fehler.** Zu hören gibt es nur, was
+gerade gesprochen wird: Steht kein Lotse auf der Frequenz oder redet niemand, bleibt es still.
+Das gehört so in den Changelog-Text — sonst liest sich der erste stumme Klick als Defekt.
+Ungeprüft bleibt allein die Tonqualität; die prüft der erste Friese, der es benutzt.
 
 **Zu wissen, bevor jemand fragt:** Mithören setzt einen **VATSIM-Login auf listen.vatsim.net**
 voraus (OAuth mit der eigenen CID). Wir bauen dafür nichts; die Gegenstelle regelt es. Das
@@ -256,7 +271,7 @@ intern mit, ein doppelter Eintrag neben dem Kachel-Layer erscheint also nur einm
   "highlight": true,
   "title": "Mithören und deutliche Meldepunkte",
   "items": [
-    "🔊 Hinter jedem Callsign in der Live-Ansicht steht jetzt ein Lautsprecher. Ein Klick öffnet listen.vatsim.net und schaltet auf die Frequenz, auf der dieser Pilot gerade ist. Dafür ist einmal eine Anmeldung mit der eigenen VATSIM-CID nötig; ist der Pilot gerade nicht online, sagt die Seite das. Im Kniebrett erscheint das Symbol nicht — dort gibt es keinen Browser, in dem sich der Link öffnen ließe.",
+    "🔊 Hinter jedem Callsign in der Live-Ansicht steht jetzt ein Lautsprecher. Ein Klick öffnet listen.vatsim.net und schaltet auf die Frequenz, auf der dieser Pilot gerade ist. Dafür ist einmal eine Anmeldung mit der eigenen VATSIM-CID nötig. Zu hören ist, was gerade gesprochen wird — steht kein Lotse auf der Frequenz oder redet niemand, bleibt es still. Im Kniebrett erscheint das Symbol nicht: dort gibt es keinen Browser, in dem sich der Link öffnen ließe.",
     "📍 Neue Karten-Ebene „Meldepunkte\": die visuellen Meldepunkte als eigene Dreiecke mit Namen, statt der winzigen Punkte im OpenAIP-Bild. Gefüllt heißt meldepflichtig, hohl heißt auf Anforderung. Ab Zoomstufe 9, der Name ab Stufe 11. Datenquelle: OpenAIP."
   ]
 }
@@ -277,7 +292,9 @@ intern mit, ein doppelter Eintrag neben dem Kachel-Layer erscheint also nur einm
 **Abnahme:**
 
 - Ein Klick auf den Lautsprecher eines online stehenden Friesen führt in einem neuen Tab zu
-  dessen Frequenz. Bei einem nicht eingeloggten Piloten erscheint die Meldung der Gegenstelle.
+  dessen Frequenz — dort steht sein Callsign als Ziel. Stille ist dabei ein gültiges Ergebnis
+  (s. 1.2) und **kein** Abnahmefehler; abgenommen wird, dass die Gegenstelle den richtigen
+  Piloten aufschaltet, nicht dass jemand spricht.
 - Im Kniebrett ist kein Lautsprecher zu sehen — auch nicht als Lücke oder Leerzeichen.
 - Die Ebene „Meldepunkte" zeigt bei EDWG auf Zoom 11 die dortigen Punkte mit Namen, deutlich
   größer als im OpenAIP-Bild; der Haken überlebt einen Neustart (Server-Merker); die
