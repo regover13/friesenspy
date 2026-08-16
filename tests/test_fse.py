@@ -1395,3 +1395,43 @@ def test_platz_beschriftung_ist_auf_heller_UND_dunkler_karte_lesbar():
         assert k >= 4.5, (
             f"Auf der {name} Karte hat die Platz-Beschriftung nur Kontrast {k:.1f}:1 "
             f"(das Plaettchen wird #{plaettchen[0]:02x}{plaettchen[1]:02x}{plaettchen[2]:02x})")
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_letzter_abruf_wird_fuer_die_diagnose_festgehalten():
+    """Nutzer-Fund 16.08.2026: Im EFB-Panel sass der FSE-Schwarm rund 390 km neben der
+    Kartenmitte, auf dem Desktop im selben Stand exakt mittig. Aus einem Bildschirmfoto ist
+    nicht zu entscheiden, welche von zwei Ursachen vorliegt -- eine Anfrage mit falscher Mitte
+    oder eine alte Antwort, die stehen blieb. Beides sieht auf der Karte identisch aus.
+
+    Deshalb haelt _fseAbrufen fest, WOMIT der letzte Abruf lief. Zusammen mit der Kartenmitte
+    im selben Diagnosesatz beantwortet die Differenz die Frage in einer Zeile."""
+    treiber = """
+const map = new FakeMap(10);
+_fsePlaetzeGruppe.addTo(map);
+map._mitte = _ll(48.1372, 11.5756);        // Muenchen
+_fseAbrufen(map);
+
+setImmediate(() => {
+  try {
+    assert.ok(_fseLetzteAnfrage, 'kein Abruf aufgezeichnet');
+    assert.ok(Math.abs(_fseLetzteAnfrage.lat - 48.1372) < 0.001,
+      'aufgezeichnete Breite passt nicht zur Kartenmitte: ' + _fseLetzteAnfrage.lat);
+    assert.ok(Math.abs(_fseLetzteAnfrage.lon - 11.5756) < 0.001,
+      'aufgezeichnete Laenge passt nicht zur Kartenmitte: ' + _fseLetzteAnfrage.lon);
+    assert.strictEqual(_fseLetzteAnfrage.zoom, 10);
+    assert.ok(_fseLetzteAnfrage.r > 0, 'kein Radius aufgezeichnet');
+    assert.strictEqual(_fseLetzteAnfrage.plaetze, _fsePlaetzeTabelle.size,
+      'die Trefferzahl im Bericht passt nicht zu dem, was auf der Karte liegt');
+
+    // Und der springende Punkt: Bewegt sich die Karte OHNE Abruf, muss der Bericht die ALTE
+    // Mitte zeigen -- daran erkennt man den stehengebliebenen Zustand.
+    map._mitte = _ll(50.0, 8.0);
+    assert.ok(Math.abs(_fseLetzteAnfrage.lat - 48.1372) < 0.001,
+      'der Bericht folgt der Karte, statt den letzten Abruf zu zeigen -- dann kann er die '
+      + 'beiden Ursachen nicht mehr trennen');
+    console.log('OK');
+  } catch (err) { console.error(err && err.stack ? err.stack : String(err)); process.exitCode = 1; }
+});
+"""
+    _node_lauf(treiber)

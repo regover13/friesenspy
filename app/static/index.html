@@ -4216,6 +4216,11 @@ let _fseLetzterZoom = null;
 let _fseLetzterRadius = 0;
 // Laufende Abrufnummer -- s. _fseAbrufen: schuetzt gegen Antworten, die sich ueberholen.
 let _fseRunde = 0;
+// Womit lief der letzte Abruf, und was kam zurueck? Rein zur Diagnose (s. Feld `fseAbruf` in
+// der Karten-Messung). Ohne diese Aufzeichnung ist aus einem Bildschirmfoto nicht zu
+// unterscheiden, ob eine Anfrage mit der falschen Mitte rausging oder ob eine alte Antwort
+// stehen blieb -- beides sieht auf der Karte gleich aus.
+let _fseLetzteAnfrage = null;
 
 function _saveFsePref(key, an) {
   try { localStorage.setItem(key, an ? '1' : '0'); } catch (e) {}
@@ -4390,8 +4395,18 @@ function _fseAbrufen(map) {
   // Fuer die Streckensperre oben bleibt die UNGEZOGENE Mitte massgeblich, sonst risse der
   // Abstand beim Grenzuebertritt auf einen halben Erdumfang auf.
   const anfrage = mitte.wrap();
-  const frage = '?lat=' + Math.max(-90, Math.min(90, anfrage.lat)).toFixed(4)
-              + '&lon=' + anfrage.lng.toFixed(4) + '&r=' + radius;
+  const alat = Math.max(-90, Math.min(90, anfrage.lat));
+  const frage = '?lat=' + alat.toFixed(4) + '&lon=' + anfrage.lng.toFixed(4) + '&r=' + radius;
+  // Fuer die Diagnose festhalten (s. Feld `fseAbruf` in der Karten-Messung). `mitteRoh` ist
+  // die Kartenmitte VOR dem Ziehen auf +-180 -- weicht sie von `lat/lon` ab, war die
+  // Datumsgrenze im Spiel und nicht ein alter Zustand.
+  _fseLetzteAnfrage = {
+    lat: Math.round(alat * 1e4) / 1e4,
+    lon: Math.round(anfrage.lng * 1e4) / 1e4,
+    mitteRoh: [Math.round(mitte.lat * 1e4) / 1e4, Math.round(mitte.lng * 1e4) / 1e4],
+    r: radius, zoom: zoom, runde: runde, alterMs: 0, plaetze: null, zonen: null, gekappt: null,
+  };
+  const seit = Date.now();
   // Ein fehlgeschlagener Abruf muss die Streckenmarke zuruecknehmen. Sonst blockt die Sperre
   // jeden Folgeversuch, bis 0,2 x r geflogen sind -- bei 250 km Radius 50 km, also gut zehn
   // Minuten leere Ebene nach einem einzigen Netzhuepfer. Der Verkehr uebersteht das, weil
@@ -4412,6 +4427,9 @@ function _fseAbrufen(map) {
         // zwei unabhaengige fetch, und die Zonen-Antwort ist die groessere, kommt also
         // typischerweise spaeter.
         _fseZonenGruppe.bringToBack();
+        if (_fseLetzteAnfrage && _fseLetzteAnfrage.runde === runde) {
+          _fseLetzteAnfrage.zonen = _fseZonenTabelle.size;
+        }
       })
       .catch(fehlgeschlagen);   // Netz weg (im Kniebrett keine Seltenheit)
   }
@@ -4424,6 +4442,11 @@ function _fseAbrufen(map) {
         _fseAbgleichen(_fsePlaetzeGruppe, _fsePlaetzeTabelle, d.plaetze, _fsePlatzBauen);
         // EINMAL, nicht je Marker -- s. den Kommentar in _fsePlaetzeZoomWache.
         _fsePlaetzeLabelsAnpassen();
+        if (_fseLetzteAnfrage && _fseLetzteAnfrage.runde === runde) {
+          _fseLetzteAnfrage.plaetze = _fsePlaetzeTabelle.size;
+          _fseLetzteAnfrage.gekappt = !!d.gekappt;
+          _fseLetzteAnfrage.alterMs = Date.now() - seit;
+        }
       })
       .catch(fehlgeschlagen);
   }
@@ -5063,6 +5086,18 @@ function _diagKarte(map, name, aipLayer) {
         containerBreite: el.clientWidth, containerHoehe: el.clientHeight,
         kartenGroesse: [map.getSize().x, map.getSize().y],
         zoom: map.getZoom(),
+        // Nutzer-Fund 16.08.2026: Im Panel sass der FSE-Schwarm rund 390 km neben der
+        // Kartenmitte, auf dem Desktop im selben Stand exakt mittig. Aus einem Bildschirmfoto
+        // ist nicht zu entscheiden, ob die Anfrage mit der falschen Mitte rausging oder ob
+        // eine alte Antwort stehen blieb -- beides sieht gleich aus. Deshalb hier BEIDES
+        // festhalten: wo die Karte JETZT steht, und womit der letzte Abruf wirklich lief.
+        // Die Differenz der beiden beantwortet die Frage in einer Zeile.
+        mitte: [Math.round(map.getCenter().lat * 1e4) / 1e4,
+                Math.round(map.getCenter().lng * 1e4) / 1e4],
+        // leaflet-rotate: ohne Plugin gibt es getBearing() nicht.
+        bearing: map.getBearing ? Math.round(map.getBearing()) : null,
+        fseAbruf: (name === 'live' && typeof _fseLetzteAnfrage !== 'undefined')
+          ? _fseLetzteAnfrage : null,
         kachelnGesamt: kacheln.length, kachelnGeladen: geladen.length,
         kachelStil: kachelStil,
         // Wahrheit der Ebene gegen Anzeige des Hakens -- der Kern von Frage (2).
