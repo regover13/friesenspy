@@ -1435,3 +1435,28 @@ setImmediate(() => {
 });
 """
     _node_lauf(treiber)
+
+
+def test_groessenaenderung_wird_an_leaflet_gemeldet():
+    """Nutzer-Fund 16.08.2026: Beim Abdocken und Maximieren des EFB sass der FSE-Schwarm bis zu
+    480 km neben der Kartenmitte -- Kacheln, Flugzeuge und Platzrunden dagegen richtig.
+
+    Ein Versatz, der AUSSCHLIESSLICH eine Renderer-Art trifft, kann nur aus deren Geometrie
+    kommen: Die FSE-Ebenen sind die einzigen auf dem geteilten Canvas, und dessen Zeichenflaeche
+    liegt auf der Containergroesse vom Zeitpunkt des Einhaengens. Waechst der Container, ohne
+    dass Leaflet es erfaehrt, bleibt sie liegen -- und alles darauf erscheint nach oben links
+    versetzt.
+
+    invalidateSize() hing bis dahin nur am Vollbild-Knopf und am Tab-Wechsel. Ein abgedocktes
+    Fenster, das jemand maximiert, ist beides nicht."""
+    assert "function _groessenWache(" in INDEX
+    stelle = INDEX.index("function _groessenWache(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "ResizeObserver" in rumpf
+    assert "invalidateSize" in rumpf
+    # Eine verdeckte Karte meldet 0x0 -- darauf invalidateSize() zu rufen setzt sie auf null.
+    assert "clientWidth === 0" in rumpf, "kein Schutz gegen den verdeckten Tab (0x0)"
+    # Beim Maximieren feuert der Beobachter mehrfach je Bild.
+    assert "requestAnimationFrame" in rumpf, "ungebuendelt -- feuert mehrfach je Bild"
+    # Und sie muss tatsaechlich an der Live-Karte haengen, nicht nur definiert sein.
+    assert "_groessenWache(liveMap" in INDEX

@@ -4315,6 +4315,39 @@ function _fsePlatzBauen(icao, a) {
 // nie das Problem. Teuer waren die 2.335 permanent GEBUNDENEN Tooltips: Jeder ist ein
 // DOM-Element, das Leaflet bei jeder Kartenbewegung neu positioniert, ob geoeffnet oder nicht.
 // Deshalb bindet _labelsImSichtbereich sie erst im Bild und loest sie danach wieder.
+// Groessenaenderungen des Karten-Containers an Leaflet melden.
+//
+// Nutzer-Fund 16.08.2026: Beim Abdocken und Maximieren des EFB sass der FSE-Schwarm bis zu
+// 480 km neben der Kartenmitte -- Kacheln, Flugzeuge und Platzrunden dagegen richtig. Ein
+// Versatz, der AUSSCHLIESSLICH eine Renderer-Art trifft, kann nur aus deren Geometrie kommen:
+// Die FSE-Ebenen sind die einzigen auf dem geteilten Canvas (s. _fseRenderer), und dessen
+// Zeichenflaeche wird beim Einhaengen auf die damalige Containergroesse gelegt. Waechst der
+// Container, ohne dass Leaflet davon erfaehrt, bleibt sie liegen, wo sie war -- und alles
+// darauf erscheint nach oben links versetzt.
+//
+// invalidateSize() war bisher nur an den Vollbild-Knopf und den Tab-Wechsel gebunden. Ein
+// abgedocktes Fenster, das der Nutzer maximiert, ist beides nicht. Der ResizeObserver deckt
+// jede Groessenaenderung ab, egal wodurch sie entsteht.
+function _groessenWache(map, el) {
+  if (!el || typeof ResizeObserver === 'undefined') return;   // Coherent GT: vorsichtshalber
+  let letzte = el.clientWidth + 'x' + el.clientHeight;
+  let anstehend = null;
+  const beobachter = new ResizeObserver(() => {
+    const jetzt = el.clientWidth + 'x' + el.clientHeight;
+    // Eine verdeckte Karte meldet 0x0 -- das ist keine Groessenaenderung, sondern ein
+    // versteckter Tab. Ein invalidateSize() darauf wuerde die Karte auf 0 setzen.
+    if (jetzt === letzte || el.clientWidth === 0 || el.clientHeight === 0) return;
+    letzte = jetzt;
+    // Gebuendelt: Beim Maximieren feuert der Beobachter mehrfach je Bild.
+    if (anstehend) cancelAnimationFrame(anstehend);
+    anstehend = requestAnimationFrame(() => {
+      anstehend = null;
+      map.invalidateSize();
+    });
+  });
+  beobachter.observe(el);
+}
+
 // Wird von _fseAbrufen nach dem Abgleich aufgerufen. Modulweit statt als Closure, weil der
 // Aufrufer sie sonst nicht erreichen koennte.
 let _fsePlaetzeLabelsAnpassen = () => {};
@@ -8848,6 +8881,8 @@ async function initLiveMap() {
   liveOverlays['FSE-Plätze'] = _fsePlaetzeGruppe;
   _addPreferredFseLayer(liveMap);
   _fsePlaetzeZoomWache(liveMap);
+  // Gegen den Canvas-Versatz beim Abdocken/Maximieren des EFB (s. _groessenWache).
+  _groessenWache(liveMap, document.getElementById('leaflet-map'));
   liveOverlays['Verkehr'] = _verkehrGruppe;
   const liveEbenen = L.control.layers(
     { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Light': liveLayers.light, 'Dark': liveLayers.dark },
