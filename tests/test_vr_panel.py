@@ -2009,6 +2009,11 @@ def test_schranke_wird_aus_der_geschwindigkeit_gerechnet():
     assert "_VATSIM_LATENZ_S" in rumpf
     assert "s.gs" in rumpf
     assert "_PAARUNG_MIN_M" in rumpf, "sonst faende ein stehendes Flugzeug nie einen Partner"
+    # ... aber klein: Im Stand ist die Latenz gegenstandslos, die Schranke deckt nur Rauschen
+    # ab. Bei 400 m lagen auf dem Vorfeld mehrere Flugzeuge im selben Umkreis -- nichts war
+    # eindeutig, und damit wurde am Boden gar nicht zugeordnet (Nutzer-Fund 16.08.2026).
+    m2 = re.search(r"const _PAARUNG_MIN_M = (\d+);", INDEX)
+    assert m2 and int(m2.group(1)) <= 200, "auf dem Vorfeld stehen Flugzeuge 50-100 m auseinander"
     assert "const _PAARUNG_MAX_M" not in INDEX, "die feste Schranke ist ersetzt"
 
 
@@ -2078,6 +2083,31 @@ def test_friesen_erscheinen_nicht_doppelt():
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
     assert "_friesenAlsKandidaten()" in rumpf, "sie muessen zuordenbar sein"
     assert "if (v && v._friese) {" in rumpf, "aber nicht noch einmal gezeichnet"
+
+
+def test_diagnose_zaehlt_die_geloesten_zuordnungen():
+    """Am Bildschirm sieht man, DASS Rufzeichen dastehen -- aber nicht, wie oft eine Zuordnung
+    dazwischen gekippt ist. Genau das waere das Flackern, und es ist die aussagekraeftigste
+    Zahl der ganzen Diagnose."""
+    stelle = INDEX.index("function _zuordnungDiagnose(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "geloest: _zuordnungGeloest" in rumpf
+    assert "perAusschluss" in rumpf, "wie oft der Ausschluss getragen hat"
+    assert "davonFriesen" in rumpf
+    assert "'zuordnung'" in INDEX
+    # Der Zaehler muss dort hochgehen, wo wirklich geloest wird.
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    zus = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert zus.index("_zuordnungGeloest++") > zus.index("_PAARUNG_LOESEN_TAKTE")
+
+
+def test_zuordnungsdiagnose_wartet_eine_weile():
+    """Sofort gemeldet waere sie wertlos: Der Zustand muss sich erst setzen. Und sie darf
+    nicht vor der ERSTEN Zuordnung anfangen zu zaehlen, sonst misst sie die Ladezeit mit."""
+    stelle = INDEX.index("function _zuordnungDiagnose(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_ZUORDNUNG_DIAGNOSE_NACH_MS" in rumpf
+    assert "if (!_zuordnungErsteMs)" in rumpf
 
 
 def test_friesen_bewegen_sich_mit_sim_position():

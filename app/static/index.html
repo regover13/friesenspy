@@ -4610,8 +4610,17 @@ const _VATSIM_LATENZ_S = 29;
 // Einwand 16.08.2026). Die Geschwindigkeit kommt aus den SIM-Daten -- aktuell und
 // zuverlaessig, anders als die 29 Sekunden alte VATSIM-Angabe.
 const _PAARUNG_FAKTOR = 2;          // deckt Latenzstreuung (+/-5%), Wind, leichte Kurven
-const _PAARUNG_MIN_M = 400;         // Untergrenze: sonst faende ein STEHENDES Flugzeug nie
-                                    // einen Partner -- im besten Zuordnungsmoment ueberhaupt
+// Untergrenze, damit ein STEHENDES Flugzeug ueberhaupt einen Partner finden kann -- sonst
+// waere die Schranke bei Geschwindigkeit null ebenfalls null.
+//
+// Sie muss KLEIN sein, und das ist keine Feinheit: Im Stand ist die Latenz gegenstandslos,
+// eine 29 Sekunden alte Position eines stehenden Flugzeugs ist exakt richtig. Die Schranke
+// deckt hier nur Rauschen ab, nicht Bewegung. Der erste Wert waren 400 m -- und genau daran
+// scheiterte die Zuordnung am Boden (Nutzer-Fund 16.08.2026): Auf einem Vorfeld stehen
+// Flugzeuge 50 bis 100 Meter auseinander, in 400 m Umkreis liegen also mehrere. Damit war
+// nichts mehr eindeutig, und nach unserer Regel wurde gar nicht zugeordnet -- ausgerechnet
+// dort, wo die Position am genauesten ist.
+const _PAARUNG_MIN_M = 150;
 const _PAARUNG_LOESEN_FAKTOR = 3;   // beim Loesen grosszuegiger als beim Zuordnen: Ein zu
                                     // fruehes Loesen bringt das Flackern zurueck, eine zu
                                     // weite Erstzuordnung kostet nur Eindeutigkeit
@@ -4629,6 +4638,17 @@ let _simHoehenSpur = Object.create(null);
 // callsign -> { alt, gs } eines Friesen, den der Simulator gerade liefert. Nur die Werte, die
 // VATSIM nicht besser weiss; Position und Kurs gehen ueber _positionsRoh (s. dort).
 let _friesenSimWerte = Object.create(null);
+
+// Zaehler fuer die einmalige Diagnose. Was man beim Hinschauen NICHT sieht, ist die Zahl der
+// geloesten Zuordnungen -- das waere das Flackern in Zahlen. Steht eine Zuordnung stabil,
+// bleibt der Zaehler bei null; kippt sie staendig, ist es hier zu lesen und muss nicht aus
+// zuckenden Schildern erraten werden.
+let _zuordnungGeloest = 0;
+let _zuordnungGetroffen = 0;
+let _zuordnungPerAusschluss = 0;
+let _zuordnungErsteMs = 0;
+let _zuordnungGemeldet = false;
+const _ZUORDNUNG_DIAGNOSE_NACH_MS = 60000;
 
 // Dieselbe Grenze wie fuer die eigene Position: Es ist dieselbe Bruecke, und zwei Grenzen
 // waeren zwei Wahrheiten darueber, ob der Simulator noch da ist.
@@ -4717,6 +4737,7 @@ function _verkehrZusammenfuehren() {
       // Erst nach mehreren Verstoessen IN FOLGE. Bei einem einzelnen Ausreisser zu loesen
       // waere das Flackern durch die Hintertuer -- und genau dagegen gibt es das Merken.
       delete _paarungen[s.id];
+      _zuordnungGeloest++;
       offen.push(s);
       continue;
     }
@@ -4734,6 +4755,7 @@ function _verkehrZusammenfuehren() {
       _paarungen[s.id] = { cs: v.cs, verstoesse: 0 };
       zugeordnet[s.id] = v;
       delete frei[v.cs];
+      _zuordnungGetroffen++;
     } else {
       // Kein Kandidat oder mehrere: nicht raten. Ein falsches Rufzeichen ist schlimmer als
       // gar keines -- man sieht ihm nicht an, dass es falsch ist.
@@ -4754,6 +4776,8 @@ function _verkehrZusammenfuehren() {
     _paarungen[s.id] = { cs: v.cs, verstoesse: 0 };
     zugeordnet[s.id] = v;
     delete frei[v.cs];
+    _zuordnungGetroffen++;
+    _zuordnungPerAusschluss++;
     nochOffen.length = 0;
   }
 
@@ -4803,7 +4827,39 @@ function _verkehrZusammenfuehren() {
   }
 
   _paarungenAufraeumen(sim);
+  _zuordnungDiagnose(sim, vat, zugeordnet, nochOffen);
   return out;
+}
+
+// Einmal je Sitzung, eine Minute nach der ersten Zuordnung -- lange genug, dass sich der
+// Zustand gesetzt hat, kurz genug, dass es nicht vergessen wird.
+//
+// Die aussagekraeftigste Zahl ist `geloest`: Am Bildschirm sieht man, DASS Rufzeichen
+// dastehen, aber nicht, wie oft eine Zuordnung dazwischen gekippt ist. Bleibt sie bei null,
+// traegt das Merken; steigt sie, sind die Schranken oder die Zahl der Verstoesse falsch
+// gewaehlt -- und das laesst sich dann rechnen statt raten.
+function _zuordnungDiagnose(sim, vat, zugeordnet, offen) {
+  if (_zuordnungGemeldet || !sim.length) return;
+  if (!_zuordnungErsteMs) { _zuordnungErsteMs = Date.now(); return; }
+  if (Date.now() - _zuordnungErsteMs < _ZUORDNUNG_DIAGNOSE_NACH_MS) return;
+  _zuordnungGemeldet = true;
+
+  let mitCs = 0;
+  let friesen = 0;
+  for (const id in zugeordnet) {
+    mitCs++;
+    if (zugeordnet[id]._friese) friesen++;
+  }
+  _diagnoseMitVergleichMelden('zuordnung', {
+    sim: sim.length,
+    vatsim: vat.length,
+    zugeordnet: mitCs,
+    davonFriesen: friesen,
+    offen: offen.length,
+    getroffen: _zuordnungGetroffen,
+    perAusschluss: _zuordnungPerAusschluss,
+    geloest: _zuordnungGeloest,
+  });
 }
 
 // Die Friesen im selben Format wie die Verkehrsliste, auf jetzt fortgerechnet -- damit die

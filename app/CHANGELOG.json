@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.5.1",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Am Boden werden Flugzeuge wieder erkannt",
+    "items": [
+      "🅿️ Auf dem Vorfeld blieben Flugzeuge ohne Rufzeichen. Der Grund war eine zu großzügige Untergrenze: In 400 Metern Umkreis stehen dort mehrere Maschinen, damit war keine mehr eindeutig zuzuordnen — und lieber gar kein Name als ein falscher. Ausgerechnet am Boden, wo die Position am genauesten stimmt.",
+      "📊 Die Karte meldet einmal je Sitzung, wie gut die Zuordnung läuft — wie viele Flugzeuge erkannt wurden und wie oft eine Erkennung wieder verworfen werden musste. Das ist im Bild nicht zu sehen und entscheidet, ob die Grenzwerte stimmen."
+    ]
+  },
+  {
     "version": "13.5.0",
     "date": "2026-08-16",
     "highlight": false,
