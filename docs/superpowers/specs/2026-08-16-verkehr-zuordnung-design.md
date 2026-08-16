@@ -231,36 +231,61 @@ Es gibt keinen Grenzfall mehr, an dem etwas kippen kann.
 **Und gelöst wird erst nach mehrfachem Verstoß in Folge**, nicht beim ersten Ausreißer. Sonst
 ist das Flackern durch die Hintertür zurück.
 
+## Umgesetzt und im Flug bestätigt (16.08.2026)
+
+| Version | Sim | VATSIM | zugeordnet | offen | gelöst |
+|---|---|---|---|---|---|
+| 13.5.1 (genau einer im Umkreis) | 26 | 15 | **3** | 23 | 0 |
+| 13.5.2 (Vorsprung zum Zweitbesten) | 30 | 16 | **16** | 14 | 0 |
+
+**16 von 16** — alle, die überhaupt zuzuordnen waren. Die 14 offenen kennt VATSIM nicht (30 im
+Simulator gegen 16 bei VATSIM): KI-Verkehr oder außerhalb des Vergleichsradius. **Gelöst: 0**,
+also kein Flackern, auch nicht im Verborgenen.
+
+### Was den Ausschlag gab
+
+**Eindeutigkeit über den Vorsprung statt über eine Schranke.** Zwei Fehlversuche zeigten, dass
+„genau einer innerhalb der Schranke" nicht taugt: Mit 400 m Untergrenze lagen auf dem Vorfeld
+mehrere im Umkreis — nichts eindeutig, also keine Zuordnung. Mit 150 m fand mancher gar keinen
+Partner. Jede Zahl macht an anderer Stelle dasselbe Problem, weil Flugzeuge am Boden dicht
+beieinander stehen und im Reiseflug weit auseinander.
+
+Ein Verhältnis hat diese Schwäche nicht: Der beste Kandidat muss halb so weit weg sein wie der
+zweitbeste. Steht das eine 20 m von seiner Meldung und das nächste 80 m, ist es klar —
+unabhängig davon, wo die Schranke liegt. Die Schranke sagt nur noch, wer überhaupt in Frage
+kommt; entschieden wird über den Vorsprung.
+
+**Verdecken statt doppelt zeichnen.** Kam keine Zuordnung zustande, wurde beides gezeichnet:
+das namenlose Sim-Symbol und der VATSIM-Marker mit Rufzeichen. Optisch gewann der mit Namen —
+und der hängt im 15-Sekunden-Takt, also genau die Umkehrung der Vorgabe. Jetzt wird der
+nächstgelegene Kandidat verdeckt: nicht zugeordnet, nur nicht gezeichnet. Das behauptet nichts
+über seine Identität, sondern nur, dass er mit hoher Wahrscheinlichkeit eines der Sim-Flugzeuge
+ist. Einer je unzugeordnetem Sim-Eintrag, damit die Anzahl stimmt.
+
+### Damit sind die Faktoren belegt
+
+`_PAARUNG_FAKTOR = 2`, `_PAARUNG_LOESEN_FAKTOR = 3`, `_PAARUNG_LOESEN_TAKTE = 4` und
+`_PAARUNG_VORSPRUNG = 0.5` haben im Flug getragen — 100 % Zuordnung, null Lösungen. Sie waren
+als „im Flug zu entscheiden" markiert; diese Entscheidung ist gefallen.
+
 ## Offene Punkte
 
 Die beiden ursprünglich offenen Fragen — Lebensdauer der `uId` und Größe der Latenz — sind am
-16.08.2026 **gemessen und beantwortet** (s. oben). Was bleibt, ist Feinarbeit an der
-Umsetzung:
+16.08.2026 **gemessen und beantwortet**, die Faktoren im Flug **bestätigt** (s. oben). Damit
+ist die Umsetzung abgeschlossen. Was noch aussteht, ist keine Feinarbeit mehr, sondern zwei
+Fälle, die noch niemand gesehen hat:
 
-### 1. Wie oft muss eine Zuordnung verletzt werden, bevor sie fällt?
+### 1. Mehrere Friesen gleichzeitig
 
-Ein einzelner Ausreißer darf sie nicht lösen, sonst ist das Flackern zurück. Ein zu träges
-Lösen hält dagegen eine falsche Zuordnung zu lange. Vorschlag zum Ausprobieren: drei bis fünf
-Takte in Folge deutlich außerhalb der Erwartung. Im Flug zu beobachten, nicht am Schreibtisch
-zu entscheiden.
+Der Fall, für den das Ganze gebaut wurde, ist ungetestet: Bei den Messflügen war kein zweiter
+Friese online (`davonFriesen: 0`). Zu prüfen am nächsten gemeinsamen Flug — kein Friese doppelt,
+und die Symbole bewegen sich im Sekundentakt statt alle fünfzehn.
 
-### 2. Wie groß der Sicherheitsfaktor?
+### 2. Verbinden mitten im Flug
 
-`GS × 29 s` ist der Sollwert, nicht die Grenze — Wind, Kurven und die Streuung der Latenz
-(±1,5 s gemessen) kommen dazu. Ein **Faktor** ist dabei richtiger als ein fester Zuschlag,
-weil er mit der Geschwindigkeit mitwächst: Was für die C172 großzügig ist, wäre für die Hornet
-nichts.
-
-Gilt für beide Schranken — Erstzuordnung wie Lösen —, aber nicht notwendig in derselben Höhe:
-Beim Lösen darf er größer sein, weil ein zu frühes Lösen das Flackern zurückbringt, während
-eine zu großzügige Erstzuordnung nur die Eindeutigkeit kostet.
-
-### 3. Vertikalgeschwindigkeit aus den Sim-Höhen
-
-Für die erwartete Höhendifferenz nötig. Aus zwei aufeinanderfolgenden Sim-Meldungen ableitbar
-(1 Hz), muss aber geglättet werden — dieselbe Aufgabe, die das Panel beim Ground Speed schon
-löst (`verkehrGsAbleiten`, exponentiell mit der Zeitkonstante des SDK). Dort abschauen, nicht
-neu erfinden.
+vPilot spawnt dann alles auf einmal. Die Zuordnung läuft in jedem Takt für Flugzeuge ohne
+Partner, sollte das also nachholen — sobald sich dicht beieinander fliegende Maschinen trennen.
+Beobachtet ist es nicht.
 
 ## Was ausdrücklich nicht gemacht wird
 
