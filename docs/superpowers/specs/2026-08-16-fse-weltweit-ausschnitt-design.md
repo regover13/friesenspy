@@ -102,17 +102,40 @@ Beide Dateien werden **einmal beim Start** gelesen (aus `lifespan`, `main.py:210
 **Plätze** als Dicts: `{icao: {"lat", "lon", "name", "msfs", "rwy", "surface", "elev"}}`.
 Sie werden nach Entfernung gefiltert und sortiert, dafür braucht es die Zahlen.
 
-**Zonen** als **vorserialisierte JSON-Zeichenketten** je ICAO, dazu eine Bounding-Box-Tabelle
-`{icao: (latmin, latmax, lonmin, lonmax)}` und die Eckenzahl. Gemessen:
+**Zonen** als schlichte Punktlisten, dazu eine Bounding-Box-Tabelle
+`{icao: (latmin, latmax, lonmin, lonmax)}` und die Eckenzahl.
 
-| Haltung | Speicher |
+Erwogen und **verworfen** war, die Zonen als vorserialisierte JSON-Zeichenketten zu halten und
+die Antwort per Verkettung zu bauen. Der Gedanke war, den Speicher zu drücken; gemessen tut er
+das Gegenteil:
+
+| Haltung | dauerhaft gehalten (`VmRSS`, nach `gc` und `malloc_trim`) |
 |---|---|
-| beide Dateien als Python-Objekte | **42 MB** |
-| Zonen als fertige JSON-Strings | **5 MB** |
+| Zonen als Listen | **50,8 MB** |
+| Zonen vorserialisiert | **55,3 MB** |
 
-Der Container liegt heute bei 141 MB — 42 MB wären eine Steigerung um 30 % für Daten, die pro
-Anfrage ohnehin nur durchgereicht werden. Die Antwort entsteht dann durch
-Zeichenketten-Verkettung statt durch Serialisierung je Anfrage.
+Der Grund: `json.load` baut die Listenstruktur ohnehin, bevor irgendetwas daraus abgeleitet
+werden kann. Die Zeichenketten kommen also *obendrauf*, und der freigegebene Listenspeicher
+geht nicht ans Betriebssystem zurück (mit `malloc_trim` gegengeprüft: 56,9 → 55,3 MB, der Rest
+bleibt im Arena-Verschnitt). Die Vorserialisierung kostet damit 4,5 MB, statt 37 zu sparen.
+
+Ihr verbliebener Vorteil wäre gespartes Serialisieren je Anfrage — das ist neben dem linearen
+Durchlauf über 23.780 Einträge (s. unten) nicht messbar und den handgebauten JSON-Rumpf nicht
+wert.
+
+**Der Container wächst also um rund 51 MB** (141 → ~192). Das ist der ehrliche Preis dafür, den
+Weltbestand im Speicher zu halten, und auf einer Maschine mit 11,7 GB unbedenklich.
+
+### Längen jenseits der Datumsgrenze
+
+36 Zonen tragen Koordinaten außerhalb [−180, 180]. **34 davon sind durchgehend** (`NFNA`
+175,98 → 181,65) und zeichnen sich über die Grenze korrekt — sie dürfen **nicht** normalisiert
+werden, das machte aus jeder ein Band quer über die Karte.
+
+Echte Bänder ziehen genau **zwei**: `CYLT` (Alert) mit 342° und `NZPG` (McMurdo) mit 295°
+Längenspanne — ihre Ecken liegen in verschiedenen Zweigen. Beim Laden wird deshalb jedes
+Polygon auf den Zweig seiner **ersten Ecke** gezogen (`p[1] − 360·round((p[1] − basis)/360)`).
+Das ändert nachweislich nur diese zwei und lässt die 34 unangetastet.
 
 **Zonen werden über den Bbox-Schnitt gefiltert, nicht über die Position ihres Flugplatzes.**
 Die Zonen sind Voronoi-Zellen: Median 53 km Diagonale, p99 **1.348 km**, max **14.127 km**.
@@ -127,7 +150,14 @@ Flugplatzposition gefiltert fiele sie genau dann heraus, wenn sie gebraucht wird
 | New York z8 | 389 | 389 |
 | Nordatlantik z8 | 3 | 2 |
 
-Der teure Test spart eine Zone. Er entfällt.
+Der Test spart eine Zone. Er entfällt — nicht wegen seiner Kosten (er liefe über 130–390
+Kandidaten und wäre damit Rauschen), sondern weil er nichts bewirkt.
+
+**Beide Endpunkte sind `def`, nicht `async def`.** Ein Anfragepaar kostet rund 10–14 ms, weil
+beide Filter linear über alle 23.780 Einträge laufen. In einer Koroutine blockierte das den
+Event-Loop und damit auch `/api/sse`; als synchrone Funktion schickt FastAPI sie in den
+Threadpool. Aus demselben Grund wird das Ausschnitt-Rechteck **einmal vor der Schleife**
+gebildet und durchgereicht, statt es je Zone samt `cos`/`radians` neu zu berechnen.
 
 **Die Sortierung für den Zonen-Deckel geht über den Abstand des Ausschnitts zur Bbox**, nicht
 zum Zonenmittelpunkt — was den Ausschnitt umschließt, hat Abstand 0 und ist immer dabei.
@@ -155,8 +185,8 @@ einen späteren Hinweis in der Oberfläche und macht den Effekt in Tests prüfba
 Anmeldung: kein Sonderweg, verhält sich wie `/api/traffic` und gehört **nicht** in
 `_GATE_ALLOW_PREFIXES`.
 
-Die Zonen-Antwort wird als `Response(content=..., media_type="application/json")` aus den
-vorserialisierten Stücken zusammengesetzt — sonst wäre die Vorserialisierung wirkungslos.
+Beide Antworten entstehen als gewöhnliche Dicts; FastAPI serialisiert sie. Kein handgebauter
+JSON-Rumpf — s. die verworfene Vorserialisierung in §4.
 
 **Kompression:** Das nginx-gzip vom 15.08.2026 deckt `application/json` bereits ab, die
 Antworten kommen komprimiert an. Keine weitere Arbeit.
@@ -178,10 +208,12 @@ während des ganzen Fluges nie nachladen.
 | Konstante | Wert | Bedeutung |
 |---|---|---|
 | `_FSE_RAND` | 1.25 | abgerufen wird das 1,25-fache des Sichtradius |
-| `_FSE_NACHLADEN_ANTEIL` | 0.25 | neuer Abruf, wenn die Mitte ein Viertel Radius gewandert ist |
+| `_FSE_NACHLADEN_ANTEIL` | 0.2 | neuer Abruf nach 0,2 × **abgerufenem** Radius |
 
-Der Rand deckt genau die Strecke ab, die bis zum nächsten Abruf zurückgelegt wird — der
-sichtbare Bereich hat nie ein Loch. Ein Zoomwechsel löst immer aus.
+Der Anteil rechnet gegen den abgerufenen Radius, nicht gegen den sichtbaren — deshalb 0,2 und
+nicht 0,25: 0,2 × 1,25 R ergibt genau die Reserve von 0,25 R, die der Rand bereitstellt. Mit
+0,25 bliebe zwischen 0,25 R und 0,3125 R zurückgelegter Strecke ein Streifen am vorderen
+Bildrand ohne Daten. Ein Zoomwechsel löst immer aus.
 
 Praktische Wirkung: Platzrunden über dem Feld = **null Anfragen**. Reiseflug 120 kt bei 31 km
 Sichtradius = ein Abruf alle ~100 Sekunden, je rund 1 KB.
@@ -247,8 +279,11 @@ sitzen muss.
 
 - `app/static/data/fse_airports_eu.json` löschen
 - `app/static/data/fse_zones_eu.json` löschen
-- `scripts/fse_zuschnitt.py` löschen (`scripts/fse_daten.py --europa` kann dasselbe)
-- README: „rund 2 300 europäischen Plätzen" → 23.780 weltweit
+- `scripts/fse_zuschnitt.py` löschen. `scripts/fse_daten.py --europa` erzeugt denselben
+  Zuschnitt, schreibt ihn aber nach `app/data/` statt nach `app/static/data/` — wer den
+  Zuschnitt je zurückholt, sucht sonst im falschen Verzeichnis.
+- README: prüfen. Die Wendung „rund 2 300 europäischen Plätzen" steht **nicht** dort, sondern
+  in `app/CHANGELOG.json` als historischer Release-Eintrag — der bleibt unangetastet.
 - `docs/fse-daten-weltweit.md`: Umstellungsteil auf diese Spec verweisen lassen
 - `docs/api.md`: die zwei neuen Endpunkte
 - `docs/architecture.md`: `app/fse.py` und die Speicherhaltung
@@ -271,7 +306,14 @@ Frontend-Konstanten):
 - Zonen-Budget: höchstens 900 Punkte, `gekappt: true`
 - **Ozean-Fall:** Nordatlantik liefert die umschließende Großzelle — der Test, der die
   Sortierung nach Bbox-Abstand statt nach Flugplatzentfernung festnagelt
-- Zonen-Antwort ist gültiges JSON (die Zeichenketten-Verkettung ist die Fehlerquelle)
+- **Zweig-Korrektur:** `CYLT` und `NZPG` haben nach dem Laden höchstens 180° Längenspanne,
+  `NFNA` behält seine Ecken jenseits 180 unverändert
+
+Die Testfixture darf **nicht** über `with TestClient(app)` laufen. Der Lifespan liest
+`SECRET_KEY` (ohne Default), ruft `init_db` auf dem **Produktionspfad**
+`/opt/friesenspy/data/friesenspy.db` und startet den VATSIM-Poller gegen die echte API.
+Maßgeblich ist das Hausmuster aus `tests/test_traffic_api.py:79` — `TestClient` ohne `with`,
+`get_settings` per `monkeypatch` ersetzt, und `app.state.fse` direkt gesetzt.
 
 **Frontend (Node mit Leaflet-Attrappen, wie die bestehenden):**
 - kein Abruf unterhalb `_FSE_MIN_ZOOM`
@@ -293,11 +335,22 @@ Die Tests gegen die gelöschten Europadateien entfallen mit ihnen.
 | Verworfen | Grund |
 |---|---|
 | Flugzeugposition als Bezugspunkt | gemessen: 1000 NM sind wieder ganz Europa |
-| exakter Polygon-Schnitt am Server | gemessen: spart eine Zone, kostet CPU je Anfrage |
+| exakter Polygon-Schnitt am Server | gemessen: spart genau eine Zone |
+| Zonen vorserialisiert halten | gemessen 4,5 MB **teurer** — `json.load` baut die Listen ohnehin |
+| pauschale Normalisierung der Längen auf ±180 | machte aus 34 heilen Zonen Bänder quer über die Karte |
 | Client-Cache bereits geladener ICAOs | baut den Speicherberg wieder auf, den die Umstellung abträgt |
 | feste Zoomschwelle für Zonen | das Punktebudget entscheidet ortsabhängig und damit richtig |
 | Takt-Timer wie beim Verkehr | die Daten ändern sich nicht |
 | Deckel auf Stückzahlen | eine Zone kostet das Siebenfache eines Platzes |
+
+**Bekannter Rest — das Abfragefenster rechnet nicht über die Datumsgrenze.** `_rechteck`
+liefert bei Länge 179,5 den Ausschnitt `178 … 180`; was westlich von −180 liegt, fällt weg.
+Betroffen sind **14 der 23.780 Plätze** (0,06 %): 8 Fiji/Tonga/Wallis, 3 Neuseeland/Chatham,
+2 Marshallinseln/Wake, 1 Aleuten. Es sieht nicht kaputt aus, es fehlt still — wer in Nadi
+startet, hält die leere Osthälfte für den Datenbestand. Der saubere Schnitt bräuchte zwei
+Rechtecke an der Grenze und einen entsprechend geteilten Bbox-Abstand; **Nutzer-Entscheidung
+16.08.2026: nicht in dieser Umstellung.** Die zwei Bandzonen aus §4 werden trotzdem behoben,
+weil das drei Zeilen sind.
 
 **Offen, nicht Teil dieser Umstellung:** Ob der Deckelwert im Panel trägt. Coherent GT wird
 laut `main.py:665` „ab ein paar hundert Elementen zäh" — das ist für DOM-Marker gemessen, nicht
