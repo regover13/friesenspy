@@ -147,13 +147,56 @@ Die visuellen Meldepunkte des OpenAIP-Layers sind zu klein und zu unauffällig (
 gerenderte PNG. In einem Bild lässt sich eine einzelne Punktart nicht vergrößern. Kein CSS,
 kein Leaflet-Parameter ändert daran etwas; `opacity` und `maxZoom` sind alles, was wir haben.
 
-Auch die zweite naheliegende Idee löst es nicht: OpenAIP bietet offenbar einen **eigenen
-Kachel-Layer nur für Meldepunkte**
-(`https://api.tiles.openaip.net/api/data/reporting-points/{z}/{x}/{y}.png`, mit unserem Key
-gegenzuprüfen — mit einem Phantasie-Key antwortet er wie der bekannte Layer mit 404, das ist
-kein Beleg). Selbst wenn es ihn gibt: Er **trennt** die Meldepunkte vom übrigen Luftraumbild,
-aber er **vergrößert** sie nicht. Für „größer und prominenter" gibt es genau einen Weg:
-**eigene Vektordaten, eigene Symbole**.
+**Es gibt zwei Dinge, die beide „OpenAIP-Schnittstelle nur für Meldepunkte" heißen — und nur
+eines davon hilft** (Nutzer-Rückfrage, 16.08.2026):
+
+| | Was zurückkommt | Größe änderbar? |
+|---|---|---|
+| **Kachel-Endpunkt** `api.tiles.openaip.net/api/data/reporting-points/{z}/{x}/{y}.png` | fertig gezeichnete PNG, nur mit Meldepunkten | **nein** — ein Bild ist ein Bild. Er **trennt** die Meldepunkte vom übrigen Luftraumbild, vergrößert sie aber nicht |
+| **Core-API** `api.core.openaip.net/api/reporting-points` | **Koordinaten** als JSON (`geometry.coordinates`, `name`, `compulsory`, `elevation`) | **ja, vollständig** — wir zeichnen selbst, Form, Farbe und Größe sind allein unsere Entscheidung |
+
+Damit ist die Frage beantwortet, und zwar **ohne Restunsicherheit**: Die Vergrößerung hängt
+nicht daran, was OpenAIP liefert, sondern daran, *dass* es Koordinaten statt Pixel liefert. Was
+ich geprüft habe, ist genau das — Parameter, Felder und Antwortform aus dem OpenAPI-Schema
+(Abschnitt 2.2). Was ich **nicht** geprüft habe: eine echte Abfrage mit gültigem Schlüssel; der
+liegt nur in `config.env` auf dem VPS, nicht in dieser Sitzung. Offen ist dadurch der
+**Datenumfang** (5.2), nicht die Darstellbarkeit. Den Kachel-Endpunkt für Meldepunkte brauchen
+wir nach dieser Entscheidung gar nicht mehr (er antwortet mit Phantasie-Schlüssel mit 404 wie
+der bekannte Layer, ist also von hier aus ohnehin nicht belegbar).
+
+Für „größer und prominenter" gibt es also genau einen Weg: **eigene Vektordaten, eigene
+Symbole**.
+
+### 2.1.1 Könnten wir uns die Kachelkarte gleich ganz selbst zusammenbauen?
+
+Technisch ja. Die Core-API führt zehn Listen-Endpunkte, alle mit denselben Filtern
+(`country`, `pos`+`dist`, `bbox`, `page`/`limit`, `fields`):
+
+`/airports` · `/airspaces` · `/navaids` · `/obstacles` · `/hotspots` · `/hang-glidings` ·
+`/rc-airfields` · `/rc-airfields/airspaces` · `/special-rules-areas` · `/reporting-points`
+
+**Und es gibt einen handfesten Grund, der dafür spricht** — er ist beim Schreiben dieser Spec
+aufgefallen und stand vorher nirgends: Der OpenAIP-Kachel-Layer läuft mit `maxZoom: 14`
+(`index.html:6449`), ohne `maxNativeZoom`. Die Karte selbst geht bis 19 (`_KARTE_ZOOM_MAX`).
+Oberhalb von Stufe 14 ist das Luftraumbild also **ganz weg** — nicht unscharf, weg. Bei OFM
+endet der Luftfahrtinhalt schon bei Stufe 12 (`OFM_NATIVE_MAX_ZOOM`), darüber schaltet der
+Auto-Switch auf Satellit. Genau im Anflug, wo man am weitesten hineinzoomt, tragen beide
+Kachelquellen nichts mehr. Das ist dieselbe Lücke, für die es die Platzrunden-Ebene schon gibt
+— eigene Vektordaten liegen **über jeder Karte und auf jeder Zoomstufe**.
+
+**Trotzdem: nicht jetzt und nicht in einem Stück.** Ein eigener Lufträume-Nachbau ist keine
+Datenfrage, sondern Kartografie — Klassen, Unter- und Obergrenzen, Beschriftung, Entzerrung bei
+Überlappung, und das alles bei einer Zeichenlast, an der Coherent GT schon bei ein paar hundert
+Pfaden zäh wird (deshalb das Punktebudget in `app/fse.py`). Die Kacheln stecken voller
+Darstellungswissen, das wir dann selbst hätten.
+
+**Der Weg ist stattdessen: Element für Element, jedes mit eigenem Anlass.** Meldepunkte sind
+das erste, weil der Anlass da ist — sie sind zu klein. Die Bauteile aus dieser Spec (Skript →
+Abzug im Repo → Ausschnitt-Endpunkt → Ebene mit Merker, Deckel und Attribution) sind bewusst so
+geschnitten, dass das nächste Element sie erbt und nur noch Symbol und Popup mitbringt. Wenn
+die Meldepunkte im Sim stehen, ist der nächste Kandidat leicht zu benennen — meine Vermutung:
+Funkfeuer und Hindernisse, weil beide punktförmig sind und damit denselben Rahmen nutzen.
+Lufträume wären der große Brocken und gehören in eine eigene Spec.
 
 ### 2.2 Woher die Daten kommen — gemessen, nicht vermutet
 
@@ -202,8 +245,8 @@ Warum hier dasselbe und nicht ein Live-Durchgriff auf OpenAIP:
 Konkret:
 
 ```
-scripts/vrp_daten.py   → holt Seite für Seite (limit=1000, page=n) je Land,
-                         schreibt app/data/vrp/vrp_<umfang>.json  (im Repo, wie app/data/fse/)
+scripts/vrp_daten.py   → holt Seite für Seite (limit=1000, page=n), weltweit (s. 5.2),
+                         schreibt app/data/vrp/vrp_welt.json  (im Repo, wie app/data/fse/)
 app/vrp.py             → Bestand beim Start lesen, Umkreis schneiden, Punkte deckeln
 GET /api/vrp?lat&lon&r → { punkte: [...], gekappt: bool }   (gespiegelt von /api/fse/airports)
 index.html             → Ebene „Meldepunkte" in der Ebenen-Auswahl
@@ -272,7 +315,7 @@ intern mit, ein doppelter Eintrag neben dem Kachel-Layer erscheint also nur einm
   "title": "Mithören und deutliche Meldepunkte",
   "items": [
     "🔊 Hinter jedem Callsign in der Live-Ansicht steht jetzt ein Lautsprecher. Ein Klick öffnet listen.vatsim.net und schaltet auf die Frequenz, auf der dieser Pilot gerade ist. Dafür ist einmal eine Anmeldung mit der eigenen VATSIM-CID nötig. Zu hören ist, was gerade gesprochen wird — steht kein Lotse auf der Frequenz oder redet niemand, bleibt es still. Im Kniebrett erscheint das Symbol nicht: dort gibt es keinen Browser, in dem sich der Link öffnen ließe.",
-    "📍 Neue Karten-Ebene „Meldepunkte\": die visuellen Meldepunkte als eigene Dreiecke mit Namen, statt der winzigen Punkte im OpenAIP-Bild. Gefüllt heißt meldepflichtig, hohl heißt auf Anforderung. Ab Zoomstufe 9, der Name ab Stufe 11. Datenquelle: OpenAIP."
+    "📍 Neue Karten-Ebene „Meldepunkte\": die visuellen Meldepunkte als eigene Dreiecke mit Namen, statt der winzigen Punkte im OpenAIP-Bild. Gefüllt heißt meldepflichtig, hohl heißt auf Anforderung. Ab Zoomstufe 9, der Name ab Stufe 11 — weltweit, und anders als das OpenAIP-Bild auch dann noch da, wenn man ganz hineinzoomt. Datenquelle: OpenAIP."
   ]
 }
 ```
@@ -284,8 +327,9 @@ intern mit, ein doppelter Eintrag neben dem Kachel-Layer erscheint also nur einm
 2. **Gegenprobe des API-Schlüssels** (5.1). Fällt sie negativ aus, geht Teil A allein als
    v13.6.6 raus, und Teil B wartet auf einen Schlüssel — beides zusammen zu halten, bis eine
    fremde Zugangsfrage geklärt ist, wäre der falsche Weg herum.
-3. **Abzug ziehen und messen** (5.2): Anzahl und Dateigröße für Deutschland. Erst danach steht
-   der Länderumfang fest.
+3. **Testabzug ziehen** (`--umfang test`, 5.2): damit stehen Skript, Endpunkt und Ebene in
+   Minuten statt in einem Weltabzug. Der Weltabzug (`--umfang welt`) kommt zum Schluss, wenn
+   nichts mehr am Format geändert wird — und er ist der, der ausgeliefert wird.
 4. **Teil B**: `scripts/vrp_daten.py` → `app/vrp.py` + Endpunkt (mit Tests) → Ebene im Frontend.
 5. Ein Changelog-Eintrag, ein Deploy.
 
@@ -313,12 +357,35 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 # 200 = alles gut · 403 = eigener API-Client nötig (accounts.openaip.net → API Clients)
 ```
 
-**5.2 Welcher Länderumfang?** Nicht zu raten, sondern zu messen: erst `country=DE` ziehen,
-Anzahl und Dateigröße ansehen, dann entscheiden. Vorschlag für v1: **Deutschland plus
-Nachbarn** (NL, BE, LU, FR, CH, AT, CZ, PL, DK) — das deckt ab, wohin die Gruppe fliegt.
-Weltweit wie bei FSE ist möglich, aber Meldepunkte sind Sichtflug-Werkzeug; ein Abzug, der
-zehnmal so groß ist wie sein Nutzen, ist keine Verbesserung. Das Skript bekommt die Länderliste
-als Parameter, die Entscheidung bleibt damit umkehrbar.
+**5.2 Der Länderumfang ist entschieden: die ganze Welt** (Nutzer, 16.08.2026). Deutschland und
+Nachbarn dienen nur als **Testabzug** während der Umsetzung.
+
+Die Begründung des Nutzers hebelt meinen Vorschlag sauber aus, und sie gehört festgehalten:
+**In Deutschland fliegt er ohnehin mit der OpenFlightMap, OpenAIP ist die Karte für den Rest
+der Welt.** Ein VRP-Abzug „Deutschland und Nachbarn" hätte also ausgerechnet dort gefehlt, wo
+diese Ebene gebraucht wird. Es ist derselbe Schluss wie beim FSE-Bestand am 16.08.: Der
+Zuschnitt auf Europa bekämpfte die Zeichenlast am falschen Ende und beschnitt dabei die Daten
+— der richtige Hebel ist der **Ausschnitt zur Laufzeit**, und den hat diese Ebene ab dem ersten
+Tag (`/api/vrp?lat&lon&r` plus Punktebudget). Damit ist der Umfang des Abzugs für den Browser
+gleichgültig; er kostet nur Plattenplatz im Repo und Speicher im Server.
+
+Umsetzung im Skript:
+
+```bash
+python3 scripts/vrp_daten.py --umfang test    # DE,NL,BE,LU,FR,CH,AT,CZ,PL,DK -> vrp_test.json
+python3 scripts/vrp_daten.py --umfang welt    # ohne country-Filter, seitenweise -> vrp_welt.json
+```
+
+Weltweit heißt: **ohne `country`-Filter**, `page`/`limit=1000` durchpaginieren, bis `nextPage`
+fehlt, mit Pause zwischen den Seiten (die API drosselt, s. 2.2). `fields` auf das Nötige
+begrenzen (`name,compulsory,geometry,elevation`) — das spart auf jeder Seite den Ballast aus
+`createdBy`, `updatedAt` und Konsorten.
+
+**Was noch zu messen ist, ist die Größe, nicht die Entscheidung.** Zum Vergleich: der
+FSE-Weltbestand sind 23.780 Plätze in 5,8 MB, im Server 49,7 MB. Meldepunkte sind reine Punkte
+mit vier Feldern, also je Stück deutlich leichter als ein FSE-Platz mit Zone. Erst wenn der
+Weltabzug wider Erwarten in eine andere Größenordnung fällt, ist neu zu reden — dann aber über
+Kürzung der Felder oder Koordinatengenauigkeit, nicht über weggelassene Länder.
 
 **5.3 Farbe und Symbolgröße** sind Vorschläge aus der Kartenkonvention, kein Naturgesetz. Sie
 stehen an genau einer Stelle als Konstante und lassen sich nach dem ersten Blick im Sim
