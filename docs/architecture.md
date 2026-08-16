@@ -276,6 +276,12 @@ die Listenstruktur ohnehin, bevor irgendetwas daraus abgeleitet werden kann, die
 kämen also obendrauf — und der freigegebene Listenspeicher geht nicht ans Betriebssystem
 zurück (mit `malloc_trim` gegengeprüft). Gemessen 55,3 statt 50,8 MB, also 4,5 MB **teurer**.
 
+**Kartenfenster:** Die Panel-Selbstdiagnose meldet aus dem MSFS **440 × 620 px**
+(Halbdiagonale 380 px), ein Desktop-Browser eher 900 × 700 (570 px). Dieselbe Zoomstufe deckt
+im Kniebrett also nur rund zwei Drittel der Strecke ab — dort kommen weniger Objekte an
+(z10 über Wangerooge: 7 Plätze statt 14), dafür füllt der 250-km-Deckel auf z6 nur 36 % des
+Bildes. Wer Zoomstufen in Kilometer umrechnet, muss sagen, für welches Fenster.
+
 **Deckel in Punkten, nicht in Stück** (`MAX_PUNKTE_PLAETZE = 250`, `MAX_PUNKTE_ZONEN = 900`):
 Ein Platz ist ein `CircleMarker` mit 1 Punkt, eine Zone ein Polygon mit im Mittel 7 (max 21).
 Bei New York stellen die Zonen 88 % der Zeichenlast — ein Stückzahl-Deckel schonte die falsche

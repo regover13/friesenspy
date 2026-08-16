@@ -119,7 +119,8 @@ Der Bestand ist **weltweit** (23.780 Plätze) und liegt seit dem 16.08.2026 nich
 statische Datei unter `static/`, sondern im Serverspeicher (`app/fse.py`, einmal beim Start
 gelesen, rund 51 MB). Ausgeliefert wird nur, was im Bild ist — deshalb lädt der Browser heute
 **weniger** als früher mit dem Europa-Zuschnitt: über Wangerooge auf Zoom 10 sind das 14 Plätze
-statt 2.335.
+statt 2.335 — im MSFS-Kniebrett mit seinem kleineren Kartenfenster (440 × 620 px, gemessen)
+sogar nur 7.
 
 Zwei Endpunkte statt einem, weil die beiden Ebenen einzeln schaltbar sind: Wer nur die
 Landeflächen anhat, soll die Plätze nicht mitladen.

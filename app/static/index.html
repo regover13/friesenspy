@@ -111,20 +111,53 @@
       // den INHALT zu pruefen und nicht den Rahmen: Ein <canvas> hat seine Masse immer, auch
       // wenn nichts darin ankommt.
       function probeCanvas() {
+        // Zweite Fassung. Die erste las die gezeichneten Pixel per getImageData zurueck und
+        // meldete aus dem Kniebrett viermal `zeichnet: false` -- mit dem Fehler
+        // "NotSupportedError (DOM Exception 9)". Das war ein FALSCHER Alarm: Coherent GT
+        // unterstuetzt nur das Zurueck-LESEN nicht. Leaflets Canvas-Renderer liest nie
+        // zurueck, er zeichnet ausschliesslich. Die Sonde mass also eine Faehigkeit, die das
+        // Feature gar nicht braucht -- derselbe Fehler wie einst bei probeSprites, wo der
+        // Rahmen statt des Inhalts gemessen wurde.
+        //
+        // Gemessen wird jetzt, was wirklich zaehlt: ob das Zeichnen durchlaeuft, und wie lange
+        // es fuer die Menge braucht, die eine volle FSE-Ebene ausmacht (250 Plaetze als Kreise
+        // plus 900 Zonenpunkte als Linienzuege -- die Deckelwerte aus app/fse.py). An dieser
+        // Zahl haengt, ob die Deckel tragen oder gesenkt werden muessen.
+        var ergebnis = { kontext: false, zeichnet: false };
         var c = document.createElement('canvas');
-        c.width = 8; c.height = 8;
+        c.width = 440; c.height = 620;              // Panelgroesse, gemessen im Kniebrett
         var ctx = c.getContext && c.getContext('2d');
-        if (!ctx) return { kontext: false, zeichnet: false };
-        ctx.fillStyle = '#ff0000';
-        ctx.fillRect(1, 1, 6, 6);
-        var gesetzt = false;
+        if (!ctx) return ergebnis;
+        ergebnis.kontext = true;
         try {
-          var d = ctx.getImageData(4, 4, 1, 1).data;
-          gesetzt = d[0] > 200 && d[3] > 200;
+          var t0 = (window.performance && performance.now) ? performance.now() : Date.now();
+          for (var i = 0; i < 250; i++) {           // Plaetze: gefuellter Kreis mit Saum
+            ctx.beginPath();
+            ctx.arc((i * 37) % 440, (i * 53) % 620, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#d8a45e'; ctx.fill();
+            ctx.lineWidth = 2.5; ctx.strokeStyle = '#2b3440'; ctx.stroke();
+          }
+          for (var z = 0; z < 128; z++) {           // Zonen: rund 900 Punkte in 128 Zuegen
+            ctx.beginPath();
+            for (var p = 0; p < 7; p++) {
+              var x = (z * 29 + p * 61) % 440, y = (z * 43 + p * 17) % 620;
+              if (p === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.lineWidth = 1; ctx.strokeStyle = '#888'; ctx.stroke();
+          }
+          var t1 = (window.performance && performance.now) ? performance.now() : Date.now();
+          ergebnis.zeichnet = true;
+          ergebnis.ms = Math.round((t1 - t0) * 10) / 10;
         } catch (err) {
-          return { kontext: true, zeichnet: false, fehler: String(err) };
+          ergebnis.fehler = String(err);
+          return ergebnis;
         }
-        return { kontext: true, zeichnet: gesetzt };
+        // Getrennt und NACH der Messung: Ob sich der Inhalt zurueckholen laesst, ist fuer die
+        // Karte belanglos, aber es ist die Erklaerung fuer die falschen Meldungen der ersten
+        // Fassung -- deshalb festhalten statt vergessen.
+        try { ctx.getImageData(1, 1, 1, 1); ergebnis.rueckLesbar = true; }
+        catch (err) { ergebnis.rueckLesbar = false; ergebnis.rueckLeseFehler = String(err); }
+        return ergebnis;
       }
 
       function probeSprites() {

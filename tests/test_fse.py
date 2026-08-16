@@ -1037,21 +1037,40 @@ setImmediate(() => {
     _node_lauf(treiber)
 
 
-def test_diagnose_misst_canvas():
-    """docs/efb-panel-debugging.md: 'Ein in Chrome geprueftes Fix ist nicht verifiziert,
-    solange er nicht im Panel gemessen wurde.' Der Canvas-Renderer der FSE-Ebenen laeuft seit
-    dem 15.08.2026 produktiv und ist in Coherent GT nie gemessen worden -- die Selbstdiagnose
-    prueft CSS, Glyphen, Sprites und Kacheln, aber kein Canvas.
+def test_diagnose_misst_das_zeichnen_und_nicht_das_zuruecklesen():
+    """Zweite Fassung dieser Sonde, nach einer Messung aus dem Kniebrett (16.08.2026).
 
-    Gemessen wird der INHALT, nicht der Rahmen: Ein <canvas> existiert immer und hat immer
-    Masse. Genau daran war die fruehere Sprite-Messung gescheitert (sie mass die Groesse des
-    <svg> statt der Zeichnung, s. den Kommentar bei probeSprites)."""
+    Die erste las die gezeichneten Pixel per getImageData zurueck und meldete viermal
+    `zeichnet: false` -- mit dem Fehler "NotSupportedError (DOM Exception 9)". Das war ein
+    FALSCHER Alarm: Coherent GT unterstuetzt allein das Zurueck-LESEN nicht. Leaflets
+    Canvas-Renderer liest nie zurueck, er zeichnet ausschliesslich. Die Sonde mass also eine
+    Faehigkeit, die das Feature nicht braucht -- derselbe Fehler wie einst bei probeSprites,
+    wo der Rahmen statt des Inhalts gemessen wurde.
+
+    Gefordert ist jetzt: Das Zeichnen wird ausgefuehrt und GEMESSEN, und ein fehlgeschlagenes
+    Zurueck-Lesen darf das Ergebnis nicht mehr auf `zeichnet: false` ziehen."""
     assert "base.canvas = probeCanvas()" in INDEX
     stelle = INDEX.index("function probeCanvas(")
     rumpf = INDEX[stelle:INDEX.index("\n      }", stelle)]
-    assert "getContext" in rumpf
-    assert "getImageData" in rumpf, "ohne Pixelpruefung misst der Test nur den Rahmen"
 
+    assert "getContext" in rumpf
+    assert ".arc(" in rumpf and ".stroke(" in rumpf, "die Sonde zeichnet gar nichts"
+    assert "performance" in rumpf and "ms" in rumpf, (
+        "die Sonde misst keine Dauer -- genau daran haengt, ob die Deckelwerte tragen")
+
+    # Der Rueckleseversuch darf nur noch ein Nebenbefund sein: NACH der Messung, und er darf
+    # `zeichnet` nicht mehr beruehren.
+    assert "rueckLesbar" in rumpf, "der Rueckleseversuch sollte als eigener Befund bleiben"
+    # An der AUFRUFSTELLE verankert, nicht frei gesucht: Der erklaerende Kommentar der Sonde
+    # nennt getImageData selbst, und ein freier Vergleich fand prompt ihn statt des Aufrufs.
+    # Dritter Fall dieser Art in dieser Datei -- Zeichenkettentests ueber Quelltext muessen
+    # sich an Code binden, nie an Prosa.
+    assert rumpf.index("zeichnet = true") < rumpf.index("ctx.getImageData("), (
+        "getImageData steht vor der Zeichenmessung -- ein nicht unterstuetztes Zuruecklesen "
+        "wuerde wieder als 'zeichnet nicht' gemeldet")
+
+    # Gemessen wird die Menge, die eine volle FSE-Ebene ausmacht.
+    assert "250" in rumpf, "die Sonde zeichnet nicht die gedeckelte Platzzahl"
 
 def test_unveraenderte_zonen_werden_nicht_kopiert(bestand):
     """21 MB haengen an dieser Zeile. Ein bedingungsloser Neubau in _auf_einen_zweig erzeugt

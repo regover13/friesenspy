@@ -84,6 +84,25 @@ ist auf jeder Zoomstufe da, weil dort nichts mit ihr um das Budget konkurriert. 
 Zoomschwelle für die Zonen ist deshalb **nicht** nötig — das Budget tut ortsabhängig, was eine
 Schwelle pauschal täte.
 
+> **Nachtrag 16.08.2026 — die Zoomstufen gelten für einen Desktop-Browser, nicht fürs
+> Kniebrett.** Alle Zoom-Angaben in diesem Dokument sind mit einem Kartenfenster von
+> 900 × 700 px gerechnet (Halbdiagonale 570 px). Die Panel-Selbstdiagnose meldet aus dem MSFS
+> aber **440 × 620 px**, also nur 380 px Halbdiagonale. Dieselbe Zoomstufe deckt dort rund
+> zwei Drittel der Strecke ab. Gemessen über Wangerooge:
+>
+> | Zoom | r im Panel | r im Browser | Plätze | Zonenpunkte | gefülltes Bild |
+> |---|---|---|---|---|---|
+> | 6 | 549 km | 824 km | 159 | 898 | **36 %** |
+> | 7 | 275 km | 412 km | 159 | 898 | **73 %** |
+> | 8 | 137 km | 206 km | 91 | 764 | 100 % |
+> | 10 | 34 km | 51 km | 7 | 121 | 100 % |
+>
+> Zwei Folgen. Im Kniebrett kommen **weniger** Objekte an als hier dokumentiert — auf z10
+> sieben Plätze statt vierzehn, der Deckel greift dort nie. Dafür ist der abgeschnittene Fleck
+> auf z6 und z7 dort **ausgeprägter**: Der 250-km-Deckel füllt nur gut ein Drittel des Bildes.
+> Nutzer-Entscheidung 16.08.2026: `_FSE_MIN_ZOOM` bleibt dennoch bei 6 — erst ansehen, dann
+> entscheiden.
+
 Wo der Deckel greift, sieht der Nutzer eine **Scheibe statt eines vollen Rechtecks**. Dieselbe
 Entscheidung trifft der Verkehr bereits, mit derselben Begründung (`index.html:4605`).
 
