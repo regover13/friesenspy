@@ -118,6 +118,57 @@ genommen nicht lesbar: „Sim 0, VATSIM 7" ist eine Antwort, „Sim 0, VATSIM 0"
 daran scheiterte die erste Messung (15.08.2026) — dreimal null, jedes Mal gemessen, bevor der
 Nutzer überhaupt mit vPilot verbunden war.
 
+**Datensatz `kind="zuordnung"`** (seit v13.5.1): Einmal je Sitzung, **eine Minute nach der
+ersten Zuordnung** — lange genug, dass sich der Zustand gesetzt hat. Beantwortet die Frage, die
+man am Bildschirm nicht beantworten kann: *Wie gut* läuft die Zuordnung von Sim-Verkehr und
+VATSIM?
+
+| Feld | Bedeutung |
+|------|-----------|
+| `sim` / `vatsim` | Größe beider Listen |
+| `zugeordnet` / `offen` | Wie viele Sim-Flugzeuge ein Rufzeichen bekamen, wie viele nicht |
+| `davonFriesen` | Wie viele Zuordnungen einen Friesen betrafen |
+| `perAusschluss` | Wie oft „es bleibt nur einer übrig" den Ausschlag gab |
+| **`geloest`** | **Wie oft eine bestehende Zuordnung wieder verworfen wurde** |
+| `gepaartCs` / `nurVatsimCs` | Die Rufzeichen — welche erkannt wurden und welche nur VATSIM kennt |
+| `gsFehlt` | uId → gemessene Geschwindigkeit (m/s) bei Flugzeugen, die sich bewegen, aber 0 melden |
+
+**`geloest` ist die aussagekräftigste Zahl.** Am Bildschirm sieht man, *dass* Rufzeichen
+dastehen — aber nicht, wie oft eine Zuordnung dazwischen gekippt ist. Bleibt sie bei null,
+trägt das Merken; steigt sie, sind die Schranken oder `_PAARUNG_LOESEN_TAKTE` falsch gewählt.
+
+`nurVatsimCs` beantwortet die häufigste Rückfrage aus dem Cockpit („warum hat *das* keine
+Live-Daten?"): Wo vPilot nichts gespawnt hat, gibt es im Simulator nichts Schnelleres.
+
+Belegte Werte (16.08.2026, zwei Messungen wenige Minuten auseinander):
+
+| Fassung | Sim | VATSIM | zugeordnet | gelöst |
+|---|---|---|---|---|
+| „genau einer im Umkreis" | 26 | 15 | **3** | 0 |
+| Vorsprung zum Zweitbesten | 30 | 16 | **16** | 0 |
+
+**Datensatz `kind="vatsim-latenz"`** (seit v13.4.0): Wie weit hinken die VATSIM-Positionen
+hinter der Wirklichkeit her? Gemessen am **eigenen** Flugzeug — dem einzigen, das in beiden
+Quellen steht und dessen Zuordnung feststeht; es braucht also kein Matching, um das Matching zu
+vermessen. Abstand zwischen Sim-Position und gemeldeter VATSIM-Position, geteilt durch die
+eigene Geschwindigkeit. Zwölf Proben, gemeldet wird der **Median**.
+
+Zwei Bedingungen, ohne die die Messung wertlos ist:
+
+- **> 60 kt** — darunter wird der Quotient instabil, im Stand ist er undefiniert.
+- **Kursabweichung ≤ 10°** (`kurs` je Probe). Der erste Messflug war eine **Platzrunde**, und
+  dort misst der Abstand die *Sehne* statt der Strecke: Er blieb bei 1,2–1,4 km, obwohl die
+  Geschwindigkeit zwischen 60 und 96 kt schwankte. Der Median von 29,3 s war damit zufällig
+  fast richtig, aber unbelegt. Die Pflicht kostet nichts — der VATSIM-Kurs *ist* der Kurs von
+  vor einer halben Minute; weicht er ab, wurde gekurvt.
+
+**Ergebnis: 29 s** (Median 28,9; Spanne 27,2–30,5). Belastbar, weil der Abstand **mit der
+Geschwindigkeit mitwächst**: 1494 m bei 97 kt, 1714 m bei 113 kt — nachgerechnet ergibt
+113 kt × 29 s = 1685 m. Die frühere Annahme „bis zu einer Minute" war fast doppelt so hoch.
+
+> **Merksatz:** Ein plausibler Wert ist noch kein gemessener. Erst das erwartete *Verhalten*
+> der Messgröße macht sie belastbar.
+
 **Datensatz `kind="sim-verkehr-start"`** (seit Kniebrett-Paket 1.7.0): Einmal je Sitzung, beim
 **ersten** Abruf — und zwar **bevor** über die Liste entschieden wird, also auch bei `null` und
 bei leerer Liste. Genau diese Meldung fehlte, als sie gebraucht wurde: Zwischen 1.5.0 und 1.6.0
