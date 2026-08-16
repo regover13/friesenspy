@@ -6,6 +6,34 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-08-16 — Karten-Merker ins Cookie (v13.6.0)
+
+**Betrifft `app/static/index.html`** — bitte beim Rebase beachten, die Datei wird gerade
+von zwei Seiten angefasst (parallel: Radar-Label-Zuordnung / Sim-Verkehr).
+
+**Was sich geaendert hat:** Alle neun Karten-Merker lesen und schreiben nicht mehr direkt
+ueber `localStorage`, sondern ueber `_prefLies(key)` / `_prefSchreib(key, wert)`. Darunter
+liegt ein Cookie `fs_karte`. Die **Signaturen der bekannten Zugriffsfunktionen sind
+unveraendert** (`_loadLayerPref`, `_loadAIPPref`, `_loadFsePref`, `_naviLies`, …) — wer sie
+aufruft, merkt nichts. Nur wer `localStorage.getItem('friesenspy_…')` **direkt** schreibt,
+greift ins Leere.
+
+**Grund:** Im Kniebrett ueberlebt `localStorage` keinen Sim-Neustart. Beleg ist ein
+Panel-Start, der einen zwei Stunden alten Wert zurueckbekam — das kann kein Anwendungsfehler
+sein. Ausfuehrlich in `docs/efb-panel-debugging.md` und `docs/architecture.md`.
+
+**Neu:** `_ausschnittStart()` / `_ausschnittBeobachten(map)` merken Mitte und Zoom der
+Live-Karte. Die Karte startet deshalb **nicht mehr unbedingt ueber EDWG** — das ist jetzt der
+Rueckfall. Wer sich in einem Test auf `center: _KARTE_MITTE` verlassen hat: Die Zusicherung
+steht jetzt in `test_live_karte_oeffnet_ueber_edwg` am Rumpf von `_ausschnittStart`.
+
+**Fuer Node-Tests wichtig:** Ein Quelltext-Ausschnitt, der `_loadFsePref` o. ae. enthaelt,
+braucht jetzt auch den Speicher — sonst `_prefLies is not defined`. Muster steht in
+`tests/test_fse.py` (`_pref_quelltext()`) und `tests/test_karte_merker.py` (Cookie-Glas als
+Attrappe). Suite nach dem Rebase auf 8a7f5dc: **1744 gruen**.
+
+---
+
 ## 2026-07-01 — Fable-Session: Analyse-Auftrag Flug-Tracking (docs/fable-analyse-auftrag.md)
 
 **Branch:** `claude/fable-analyse-auftrag-3hgk13` (Releases werden zusätzlich auf `main` gepusht/deployed).
