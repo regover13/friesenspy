@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.4.0",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Zwei Messungen für die Verkehrs-Zuordnung",
+    "items": [
+      "📐 Die Karte misst jetzt selbst, wie weit die VATSIM-Positionen hinter der Wirklichkeit zurückliegen — an deinem eigenen Flugzeug, das ja in beiden Quellen steht. Bisher war das geschätzt, und genau daran hingen die Fehler der letzten Tage: doppelte Schilder an schnellen Flugzeugen und Beschriftungen, die im Sekundentakt trennen und zusammenfallen.",
+      "🔬 Das Kniebrett-Paket 1.9.0 meldet zusätzlich die internen Kennungen der fremden Flugzeuge. Damit klärt sich, ob die Karte einmal getroffene Zuordnungen dauerhaft behalten kann. Am Bild ändert beides nichts."
+    ]
+  },
+  {
     "version": "13.3.2",
     "date": "2026-08-16",
     "highlight": false,

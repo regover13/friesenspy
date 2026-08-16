@@ -166,8 +166,13 @@ nicht sie tragen — getragen wird sie von Eindeutigkeit und vom Festhalten.
 
 1. Ein sinkender Airliner behält sein Schild — kein Trennen und Zusammenfallen im Sekundentakt.
 2. Am FriesenFlieger-Freitag steht **kein Friese doppelt** auf der Karte.
-3. Fliegen fünf Friesen dieselbe Platzrunde, trägt jedes Symbol entweder das **richtige**
-   Callsign oder gar keines — nie ein falsches.
+3. **Jedes Symbol trägt überall — nicht nur in der Platzrunde — entweder das richtige Callsign
+   und/oder Muster oder gar keines. Nie falsche.** (Nutzer-Formulierung, 16.08.2026.)
+
+   Das ist das oberste Kriterium und weiter gefasst als „Callsign in der Platzrunde": Es
+   umfasst **alle** Identitätsangaben und gilt in **jeder** Fluglage. Eine falsche Angabe ist
+   schlimmer als gar keine, weil man ihr ansieht, dass sie da ist — einer Lücke sieht man an,
+   dass etwas fehlt.
 4. Ein Flugzeug, das der Simulator kennt, erscheint immer, auch ohne Zuordnung.
 5. Ein Flugzeug, das nur VATSIM kennt, erscheint weiterhin (vPilot spawnt nicht jede Maschine).
 6. Auf der Webseite ändert sich nichts.

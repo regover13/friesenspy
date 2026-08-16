@@ -1437,6 +1437,54 @@ def test_label_zeigt_kein_fragezeichen_fuer_fehlendes_muster():
     assert "muster ? escHtml(muster) + ' ' : ''" in rumpf, "ohne Muster faellt auch das Leerzeichen weg"
 
 
+# --- Die beiden Messungen fuer die Zuordnung ---------------------------------------------
+#
+# Spec: docs/superpowers/specs/2026-08-16-verkehr-zuordnung-design.md. Beide Schranken der
+# Zuordnung haengen an Groessen, die bisher geschaetzt sind. Zwei Beobachtungen vom 16.08.2026
+# waren Grenzfaelle -- und Grenzfaelle lassen sich nicht wegjustieren, solange die Groesse
+# unbekannt ist.
+
+def test_latenz_wird_am_eigenen_flugzeug_gemessen():
+    """Das eigene Flugzeug steht in beiden Quellen und seine Zuordnung steht fest -- es
+    braucht also kein Matching, um das Matching zu vermessen."""
+    stelle = INDEX.index("function _latenzProbeNehmen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "_meineCid" in rumpf, "nur das eigene Flugzeug taugt als Massstab"
+    assert "_simPosFrisch()" in rumpf
+    assert "0.514444" in rumpf, "Knoten in m/s"
+    assert "_LATENZ_MIN_GS" in rumpf, "im Stand ist der Quotient undefiniert"
+
+
+def test_latenz_nimmt_den_median_nicht_den_mittelwert():
+    """In einer Kurve misst der Abstand die Kurve mit, nicht die Zeit. Der Median haelt
+    solche Proben aus, ein Mittelwert nicht."""
+    stelle = INDEX.index("function _latenzMelden(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "median" in rumpf
+    assert "sort(" in rumpf
+    assert "'vatsim-latenz'" in INDEX
+
+
+def test_latenz_probe_haengt_am_neuen_wert():
+    """Ohne diese Wache liefe die Messung bei jedem Neuzeichnen mit denselben Daten -- und
+    wuerde eine Latenz messen, die nur die Zeit seit dem letzten Bild ist."""
+    stelle = INDEX.index("const neuerWert = !alt ||")
+    rumpf = INDEX[stelle:stelle + 500]
+    assert "_latenzProbeNehmen(p)" in rumpf
+    assert rumpf.index("if (neuerWert)") < rumpf.index("_latenzProbeNehmen(p)")
+
+
+@ohne_panel
+def test_diagnose_meldet_die_uids_fuer_den_sitzungsvergleich():
+    """Ueberlebt die uId eine Sitzung? Davon haengt ab, ob sich eine Zuordnung dauerhaft
+    speichern laesst. Eine wiederverwendete ID haenge sonst irgendwann ein falsches
+    Rufzeichen an ein fremdes Flugzeug."""
+    stelle = PANEL_TSX.index("private async verkehrHolen(")
+    rumpf = PANEL_TSX[stelle:PANEL_TSX.index("\n  }", stelle)]
+    assert "startBefund.uIds" in rumpf
+    assert "slice(0, 20)" in rumpf, "es geht um das Muster, nicht um Vollstaendigkeit"
+
+
 @ohne_panel
 def test_diagnose_meldet_die_identitaetsfelder_mit_werten():
     """`__Type` hat noch nie jemand angesehen; `name` und `plane_model_icao` kamen leer. Nur

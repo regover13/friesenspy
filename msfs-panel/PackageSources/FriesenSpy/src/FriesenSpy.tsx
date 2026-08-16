@@ -504,6 +504,22 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
         this.startBefund.typFeld = erster.__Type;
         this.startBefund.name = erster.name;
         this.startBefund.modell = erster.plane_model_icao;
+        // Die uIds selbst -- fuer die Frage, ob sie eine Sitzung ueberleben.
+        //
+        // Vermutet wird nein: eine Laufzeit-Objekt-ID, die der Simulator beim Erzeugen
+        // vergibt und nach dem Entfernen wiederverwenden kann. Daran haengt, ob sich eine
+        // Zuordnung "uId = FRS49" dauerhaft speichern laesst (Wunsch des Nutzers) oder nur
+        // fuer die laufende Sitzung. Eine dauerhaft gespeicherte, aber wiederverwendete ID
+        // haenge irgendwann ein falsches Rufzeichen an ein fremdes Flugzeug -- genau der
+        // Fehler, den das oberste Akzeptanzkriterium ausschliesst.
+        //
+        // Zu vergleichen sind die Zahlen ZWEIER Sitzungen am selben Platz mit denselben
+        // Leuten: Bleiben sie gleich, ueberlebt die uId; fangen sie jedes Mal neu an oder
+        // liegen in einem anderen Bereich, tut sie es nicht. Hoechstens 20 Stueck -- es geht
+        // um das Muster, nicht um Vollstaendigkeit.
+        this.startBefund.uIds = (daten as SimVerkehrRoh[])
+          .slice(0, 20)
+          .map((e) => e.uId);
       }
     }
     return Array.isArray(daten) ? (daten as SimVerkehrRoh[]) : null;
