@@ -6,6 +6,10 @@ steht, ist gewollt; was erledigt ist, wird gelöscht (die Geschichte steht im Ch
 Am Projekt arbeiten mehrere Sitzungen parallel, auch in der Cloud. Vor dem Start also pullen
 und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
+**Beide Aufgaben unten sind spezifiziert** und sollen in **einer** Version geliefert werden
+(Vorschlag v13.7.0): [`superpowers/specs/2026-08-16-mithoeren-und-meldepunkte-design.md`](superpowers/specs/2026-08-16-mithoeren-und-meldepunkte-design.md).
+Dort steht auch, was vor der Umsetzung noch zu klären ist (OpenAIP-Schlüssel, Länderumfang).
+
 ## 1. Mithören über `listen.vatsim.net`
 
 Ein kleines **Lautsprechersymbol hinter dem Callsign in der Live-Ansicht**, das auf
