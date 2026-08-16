@@ -80,6 +80,8 @@ from app.database import (
     bind_panel_device,
     touch_panel_device,
     list_panel_devices,
+    get_panel_prefs,
+    set_panel_prefs,
     revoke_panel_device,
     get_push_subscription_by_endpoint,
     get_pilot_visibility,
@@ -596,6 +598,86 @@ async def frontend_config():
         "banner_version": _resolve_banner_version(selected),
         "callsign_prefix": settings.CALLSIGN_PREFIX,
     }
+
+
+# Grenzen fuer die Karten-Merker. Sie stehen hier und nicht in database.py, weil sie zur
+# API-Grenze gehoeren: Alles, was von aussen kommt, wird beim Eintritt geprueft.
+_PREFS_MAX_SCHLUESSEL = 40
+_PREFS_MAX_LAENGE = 200
+_PREFS_KONTEXTE = ("panel", "web")
+
+
+def _prefs_kontext(roh: str) -> str:
+    """Nur bekannte Kontexte -- sonst legte ein Aufrufer beliebig viele Zeilen je CID an."""
+    return roh if roh in _PREFS_KONTEXTE else "web"
+
+
+def _prefs_cid(request: Request) -> int | None:
+    """CID des angemeldeten Nutzers, sonst ``None``.
+
+    Das Kniebrett weist sich per Geraete-ID aus (s. /auth/device) und bekommt dabei ein
+    frisches Sitzungs-Cookie -- das haelt innerhalb der Sitzung zuverlaessig, nur eben nicht
+    darueber hinaus. Genau deshalb liegen die Merker hier und nicht dort.
+    """
+    settings = get_settings()
+    claims = verify_user_token(request.cookies.get(USER_COOKIE, ""), settings.SECRET_KEY)
+    try:
+        return int(claims["cid"]) if claims and claims.get("cid") else None
+    except (TypeError, ValueError):
+        return None
+
+
+@app.get("/api/prefs")
+async def get_prefs(request: Request, kontext: str = "web"):
+    """Karten-Merker des angemeldeten Nutzers.
+
+    Ohne Anmeldung ein leeres Dict statt 401: Die Karte soll dann mit ihren Vorgaben aufgehen,
+    nicht mit einem Fehler. Ein Merker ist kein Geheimnis, sein Fehlen kein Ausnahmefall.
+    """
+    cid = _prefs_cid(request)
+    if cid is None:
+        return {"prefs": {}}
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        return {"prefs": get_panel_prefs(conn, cid, _prefs_kontext(kontext))}
+    finally:
+        conn.close()
+
+
+@app.put("/api/prefs")
+async def put_prefs(request: Request, kontext: str = "web"):
+    """Karten-Merker ersetzen. Nur flache Zeichenketten, begrenzt in Zahl und Laenge."""
+    cid = _prefs_cid(request)
+    if cid is None:
+        return JSONResponse({"detail": "Nicht angemeldet"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"detail": "Ungueltiger Rumpf"}, status_code=400)
+    roh = (body or {}).get("prefs")
+    if not isinstance(roh, dict):
+        return JSONResponse({"detail": "prefs muss ein Objekt sein"}, status_code=400)
+    if len(roh) > _PREFS_MAX_SCHLUESSEL:
+        return JSONResponse({"detail": "zu viele Merker"}, status_code=400)
+
+    sauber: dict[str, str] = {}
+    for k, v in roh.items():
+        if not isinstance(k, str) or not isinstance(v, (str, int, float, bool)):
+            return JSONResponse({"detail": "nur flache Werte erlaubt"}, status_code=400)
+        wert = str(v)
+        if len(k) > _PREFS_MAX_LAENGE or len(wert) > _PREFS_MAX_LAENGE:
+            return JSONResponse({"detail": "Merker zu lang"}, status_code=400)
+        sauber[k] = wert
+
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        set_panel_prefs(conn, cid, _prefs_kontext(kontext), sauber)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "anzahl": len(sauber)}
 
 
 @app.get("/api/version")

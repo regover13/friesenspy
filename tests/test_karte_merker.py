@@ -55,6 +55,26 @@ global.document = {
   },
 };
 
+// Die Seite fragt beim Aufbau, ob sie im Kniebrett laeuft -- hier immer "Website".
+global.document.documentElement = { classList: { contains: () => false } };
+
+// Antworten des Servers, vom Treiber steuerbar. `_puts` sammelt, was hochgeschickt wurde --
+// die Nutzlast wird SOFORT festgehalten, nicht erst beim Aufloesen: Sonst laese eine
+// zurueckgehaltene Antwort den inzwischen geaenderten Stand (derselbe eigene Fehler wie im
+// FSE-Harness, 16.08.2026).
+global._antwort = { prefs: {} };
+global._fetchFehler = false;
+global._puts = [];
+global.fetch = (url, opt) => {
+  if (global._fetchFehler) return Promise.reject(new Error('kein Netz'));
+  if (opt && opt.method === 'PUT') {
+    global._puts.push(JSON.parse(opt.body));
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true }) });
+  }
+  const nutzlast = JSON.parse(JSON.stringify(global._antwort));
+  return Promise.resolve({ ok: true, json: () => Promise.resolve(nutzlast) });
+};
+
 global._lsSpeicher = {};
 global.localStorage = {
   getItem: (k) => (k in global._lsSpeicher ? global._lsSpeicher[k] : null),
@@ -358,6 +378,91 @@ def test_selbstdiagnose_misst_ob_der_merker_den_neustart_ueberstand():
     assert "schreibbar" in rumpf, "Ohne Schreibprobe bleibt eine Sperre unerkannt"
     assert "samesite=none" in rumpf, "Die Probe muss dieselben Attribute benutzen wie der Merker"
     assert "speicher: probeSpeicher()," in INDEX, "Sonde ist nicht im Bericht verdrahtet"
+
+
+def test_karte_wartet_auf_die_merker_vom_server():
+    """Basisebene, Ebenen-Haken und Ausschnitt werden GLEICH beim Aufbau gelesen. Kaeme die
+    Serverantwort danach, baute die Karte sich mit Vorgaben auf -- sichtbares Umspringen, und
+    die Ebenen-Auswahl zeigte den falschen Haken."""
+    stelle = INDEX.index("async function initLiveMap(")
+    kopf = INDEX[stelle:INDEX.index("liveMap = L.map(", stelle)]
+    assert "await _prefsPromise;" in kopf, "Karte baut auf, bevor die Merker da sind"
+    assert kopf.index("await _prefsPromise;") < kopf.index("_ausschnittStart()"), \
+        "Ausschnitt wird gelesen, bevor der Server geantwortet hat"
+
+
+def test_vor_der_serverantwort_wird_nichts_hochgeschrieben():
+    """Der gefaehrlichste Fall: Im Kniebrett ist der lokale Stand beim Aufbau LEER. Wuerde er
+    zurueckgeschickt, ueberschriebe er den gespeicherten Stand mit Leere -- die Einstellungen
+    waeren dann endgueltig weg statt nur lokal."""
+    stelle = INDEX.index("function _prefServerPlanen(")
+    rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
+    assert "if (!_prefVomServer) return;" in rumpf, \
+        "Ohne diese Wache ueberschreibt der leere Startzustand den Server"
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_serverwert_gewinnt_gegen_den_lokalen_stand():
+    """Der lokale Stand kann im Kniebrett nur aelter sein -- dort ueberlebt nichts."""
+    _node_lauf("""
+_prefSchreib('friesenspy_layer', 'topo');       // lokaler Zwischenstand
+global._antwort = { prefs: { friesenspy_layer: 'dark' } };
+_prefVomServerHolen().then(() => {
+  assert.strictEqual(_prefLies('friesenspy_layer'), 'dark');
+  console.log('OK');
+});
+""")
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_scheiternder_abruf_laesst_die_karte_laufen():
+    """Kein Netz heisst Vorgaben -- nicht eine Karte, die gar nicht aufgeht."""
+    _node_lauf("""
+global._fetchFehler = true;
+_prefVomServerHolen().then((o) => {
+  assert.ok(o && typeof o === 'object');
+  assert.strictEqual(_prefVomServer, false, 'Nach einem Fehlschlag darf nicht gesendet werden');
+  console.log('OK');
+});
+""")
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_aenderung_nach_der_antwort_geht_gebuendelt_hinauf():
+    _node_lauf("""
+global._antwort = { prefs: { friesenspy_layer: 'dark' } };
+_prefVomServerHolen().then(() => {
+  global._puts = [];
+  _prefSchreib('friesenspy_layer', 'sat');
+  _prefSchreib('friesenspy_aip', '1');
+  assert.strictEqual(global._puts.length, 0, 'sofort gesendet statt gebuendelt');
+  setTimeout(() => {
+    assert.strictEqual(global._puts.length, 1, 'erwartet genau EIN Senden');
+    assert.strictEqual(global._puts[0].prefs.friesenspy_layer, 'sat');
+    assert.strictEqual(global._puts[0].prefs.friesenspy_aip, '1');
+    console.log('OK');
+  }, _PREF_SENDE_RUHE_MS + 200);
+});
+""")
+
+
+def test_navi_merker_werden_nach_der_serverantwort_nachgezogen():
+    """_trackUp und _movingMap werden beim LADEN des Skripts gelesen -- im Kniebrett ist der
+    lokale Stand dann immer leer. Ohne das Nachziehen stuenden beide dauerhaft auf 'aus'."""
+    stelle = INDEX.index("const _prefsPromise =")
+    rumpf = INDEX[stelle:INDEX.index("}).catch", stelle)]
+    assert "_trackUp   = _naviLies(_NAVI_TRACKUP_KEY);" in rumpf
+    assert "_movingMap = _naviLies(_NAVI_MOVING_KEY);" in rumpf
+    assert "if (!_naviBeruehrt)" in rumpf, \
+        "Eine spaete Antwort darf dem Nutzer die Bedienung nicht aus der Hand nehmen"
+    stelle = INDEX.index("function _naviMerke(")
+    assert "_naviBeruehrt = true;" in INDEX[stelle:INDEX.index("\n", stelle)]
+
+
+def test_kontext_trennt_kniebrett_und_website():
+    stelle = INDEX.index("const _PREF_KONTEXT")
+    zeile = INDEX[stelle:INDEX.index("\n", stelle)]
+    assert "vr-panel" in zeile and "'panel'" in zeile and "'web'" in zeile
 
 
 def test_cookie_ueberlebt_die_sitzung():

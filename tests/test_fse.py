@@ -199,6 +199,8 @@ global.document = {
     const i = erstes.indexOf('=');
     global._jar[erstes.slice(0, i)] = erstes.slice(i + 1);
   },
+  // Der Merker-Speicher fragt beim Laden, ob die Seite im Kniebrett laeuft (_PREF_KONTEXT).
+  documentElement: { classList: { contains: () => false } },
 };
 
 // Stehen im Quelltext VOR dem FSE-Block und sind hier nur Beiwerk.

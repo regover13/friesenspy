@@ -3977,6 +3977,68 @@ function _prefSchreib(key, wert) {
   o[key] = String(wert);
   _prefCookieSchreiben(o);
   try { localStorage.setItem(key, String(wert)); } catch (e) {}
+  _prefServerPlanen();
+}
+
+// --- Der Server ist die einzige Quelle, die einen Sim-Neustart ueberlebt -------------------
+//
+// Im Kniebrett haelt KEIN Browser-Speicher. Gemessen am 16.08.2026 ueber einen Neustart
+// hinweg: `localStorage` faellt von 8 Schluesseln auf 0, das Merker-Cookie ist fort
+// (`speicher.merkerDa: false` im Panel-Bericht). Cookie und localStorage bleiben trotzdem
+// stehen -- sie tragen die Website, sie tragen ohne Anmeldung, und sie ueberbruecken den
+// Moment zwischen Seitenaufbau und Serverantwort. Nur ueberleben koennen sie nichts.
+//
+// Was dort ueberlebt, ist MSFS' eigene Ablage (`SetStoredData`), und genau darin liegt die
+// Geraete-ID des Kniebretts -- derselbe Weg, den auch Avionik wie das GTN 750 geht. Sie
+// verschafft dem Panel bei jedem Start ein frisches Sitzungs-Cookie (s. /auth/device), und
+// damit haengen die Merker an einer Kennung, die den Neustart uebersteht.
+const _PREF_KONTEXT = document.documentElement.classList.contains('vr-panel') ? 'panel' : 'web';
+// Gebuendelt: Ein Zug ueber die Karte setzt mehrere Merker kurz hintereinander.
+const _PREF_SENDE_RUHE_MS = 1000;
+let _prefSendeTimer = null;
+let _prefVomServer = false;   // Antwort da? Vorher nichts zurueckschreiben (s. unten).
+
+function _prefServerPlanen() {
+  // Vor der Serverantwort NICHT senden: Die Seite kennt zu diesem Zeitpunkt nur den lokalen
+  // Zwischenstand, im Kniebrett also fast immer nichts. Ein Zuruecksenden wuerde den
+  // gespeicherten Stand mit Leere ueberschreiben -- genau das, was hier verhindert werden soll.
+  if (!_prefVomServer) return;
+  if (_prefSendeTimer) return;
+  _prefSendeTimer = setTimeout(function () {
+    _prefSendeTimer = null;
+    try {
+      fetch('/api/prefs?kontext=' + encodeURIComponent(_PREF_KONTEXT), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefs: _prefLaden() }),
+      }).catch(function () {});
+    } catch (e) {}
+  }, _PREF_SENDE_RUHE_MS);
+}
+
+/** Holt die Merker vom Server und legt sie ueber den lokalen Stand. */
+function _prefVomServerHolen() {
+  try {
+    return fetch('/api/prefs?kontext=' + encodeURIComponent(_PREF_KONTEXT))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        const vom = (d && d.prefs && typeof d.prefs === 'object') ? d.prefs : null;
+        const o = _prefLaden();
+        if (vom) {
+          // Der Server gewinnt: Der lokale Stand kann im Kniebrett nur aelter sein.
+          Object.keys(vom).forEach(function (k) { o[k] = String(vom[k]); });
+          _prefCookieSchreiben(o);
+        }
+        _prefVomServer = true;
+        // Steht lokal etwas, das der Server noch nicht kennt (Umzug von localStorage,
+        // Aenderung vor der Antwort), gehoert es jetzt hinauf.
+        if (!vom || Object.keys(vom).length !== Object.keys(o).length) _prefServerPlanen();
+        return o;
+      })
+      .catch(function () { _prefVomServer = false; return _prefLaden(); });
+  } catch (e) {
+    return Promise.resolve(_prefLaden());
+  }
 }
 
 // --- Zuletzt betrachteter Ausschnitt ------------------------------------------------------
@@ -8774,7 +8836,10 @@ function _jetztGerechnet(roh) {
 const _NAVI_TRACKUP_KEY = 'friesenspy_trackup';
 const _NAVI_MOVING_KEY  = 'friesenspy_movingmap';
 function _naviLies(key) { return _prefLies(key) === '1'; }
-function _naviMerke(key, an) { _prefSchreib(key, an ? '1' : '0'); }
+// Sobald der Nutzer einen der beiden Knoepfe angefasst hat, darf eine spaet eintreffende
+// Serverantwort seinen Stand nicht mehr ueberschreiben (s. _prefsPromise).
+let _naviBeruehrt = false;
+function _naviMerke(key, an) { _naviBeruehrt = true; _prefSchreib(key, an ? '1' : '0'); }
 
 let _trackUp   = _naviLies(_NAVI_TRACKUP_KEY);
 let _movingMap = _naviLies(_NAVI_MOVING_KEY);
@@ -9431,6 +9496,11 @@ async function initLiveMap() {
   if (mapInitialized) return;
   mapInitialized = true;
   await _configPromise;
+  // Erst die Merker, dann die Karte: Basisebene, Ebenen-Haken und Ausschnitt werden GLEICH
+  // gelesen. Kaeme die Antwort danach, baute die Karte sich mit Vorgaben auf und muesste
+  // hinterher umgestellt werden -- sichtbar als Umspringen, und die Ebenen-Auswahl zeigte
+  // dabei den falschen Haken (derselbe Grund wie bei _addPreferredAIPLayer).
+  await _prefsPromise;
 
   // Der zuletzt betrachtete Ausschnitt, sonst EDWG (s. _ausschnittStart).
   const _start = _ausschnittStart();
@@ -11200,6 +11270,20 @@ const _configPromise = fetch('/api/frontend-config').then(r => r.json()).then(cf
   }
   _initVersionUI(cfg.version, cfg.changelog, cfg.banner_version);
   _startPanelUpdateWatch(cfg.version);
+}).catch(() => {});
+
+// Die Karten-Merker vom Server. Sofort losschicken, nicht erst beim Kartenaufbau -- die
+// Antwort ist dann meist schon da, wenn der Karten-Tab zum ersten Mal geoeffnet wird.
+const _prefsPromise = _prefVomServerHolen().then(function () {
+  // _trackUp und _movingMap werden beim LADEN des Skripts gelesen, also bevor der Server
+  // antworten konnte. Im Kniebrett ist der lokale Stand zu diesem Zeitpunkt immer leer, die
+  // beiden stuenden deshalb dauerhaft auf "aus". Hier nachziehen -- aber nur, solange niemand
+  // die Knoepfe selbst angefasst hat: Sonst nimmt eine spaete Antwort dem Nutzer die Bedienung
+  // wieder aus der Hand.
+  if (!_naviBeruehrt) {
+    _trackUp   = _naviLies(_NAVI_TRACKUP_KEY);
+    _movingMap = _naviLies(_NAVI_MOVING_KEY);
+  }
 }).catch(() => {});
 
 // ==========================================================================

@@ -509,3 +509,30 @@ liefen, die `SameSite` nicht kennt: Eine Attrappe kann nur prüfen, was sie nach
 | `lsSchlüssel` | Wie viele `localStorage`-Einträge es gibt, zum Vergleich |
 
 `features.localStorage` beantwortet davon **nichts** — es schreibt und liest im selben Atemzug.
+
+### Nachtrag 2: Auch Cookies halten nicht — der ganze Speicher wird geleert (16.08.2026)
+
+`SameSite=None` war nötig, aber nicht hinreichend. Die Messung über einen Sim-Neustart hinweg:
+
+| Zeit | `schreibbar` | `merkerDa` | `lsSchlüssel` | Kartenstart |
+|---|---|---|---|---|
+| 19:33:46 | true | **true** (8 Schlüssel) | 8 | Dark + OpenAIP + Platzrunden + Verkehr, Track-up an ✓ |
+| 19:39:48 | true | **false** | **0** | OpenFlightMap, alles aus ✗ |
+
+Innerhalb der Sitzung funktioniert alles — vor dem Neustart wurde sogar korrekt
+wiederhergestellt. Der Neustart leert aber **den gesamten Speicherbereich**: Cookie *und*
+`localStorage`, letzteres von 8 Schlüsseln auf 0. Kein Weg, der im Kniebrett ablegt, trägt.
+
+**Was dort überlebt:** MSFS' eigene, plattenpersistente Ablage — `SetStoredData`/`GetStoredData`,
+im Paket gekapselt als `DataStore`. Genau der Weg, den Avionik-Erweiterungen wie das **GTN 750**
+für ihre Einstellungen gehen. Bei uns liegt dort die Geräte-ID: angelegt am 13.08., zuletzt
+gesehen 19:39:43 — also fünf Sekunden **vor** dem Bericht, der den Speicher leer meldete.
+
+Die Merker liegen deshalb seit v13.6.3 auf dem Server (`panel_prefs`, s. `architecture.md`),
+verankert an der Kennung, die über `/auth/device` aus genau dieser Geräte-ID entsteht.
+
+**Merksatz:** Im Kniebrett gibt es zwei Speicherwelten. Alles, was der *Browser* anbietet
+(`localStorage`, `sessionStorage`, Cookies), ist auf die Sitzung beschränkt — unabhängig von
+Attributen und Laufzeiten. Dauerhaft ist nur, was über den *Simulator* geht: `DataStore` in der
+Shell, oder ein Server, an dem eine dort abgelegte Kennung hängt. Wer etwas merken will, muss
+eine dieser beiden Welten benutzen; die dritte gibt es nicht.

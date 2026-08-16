@@ -428,6 +428,30 @@ CREATE TABLE IF NOT EXISTS panel_devices (
     created_at   TEXT NOT NULL,
     last_seen_at TEXT
 );
+
+-- Karten-Merker (Basiskarte, Ebenen, Track-up, Moving Map, zuletzt betrachteter Ausschnitt).
+--
+-- Sie liegen hier und NICHT im Browser, weil im Kniebrett kein Browser-Speicher haelt: Beim
+-- Sim-Start ist der gesamte Bereich leer -- gemessen am 16.08.2026, `localStorage` faellt von
+-- 8 Schluesseln auf 0, das Merker-Cookie ist fort. Zwei Anlaeufe ueber localStorage bzw. ein
+-- Cookie sind daran gescheitert; es steht schon zwei Tabellen weiter oben, warum (s.
+-- panel_devices). Was dort ueberlebt, ist allein die Geraete-ID in MSFS' eigener Ablage --
+-- genau der Weg, den auch Avionik-Erweiterungen wie das GTN 750 gehen.
+--
+-- Schluessel ist CID + Kontext, nicht die Geraete-ID: Die Seite kennt ihre Geraete-ID
+-- bewusst nicht (sie ist ein Zugangsschluessel und bleibt aus der Adresse heraus, s.
+-- /auth/device). Der Kontext trennt Kniebrett und Website, damit die Karteneinstellung am
+-- Schreibtisch nicht die im Cockpit umstellt.
+--
+-- Schemalos als JSON, aus demselben Grund wie panel_diag: Welche Merker es gibt, aendert sich
+-- mit jeder Ebene, die dazukommt. Die Groessengrenzen stehen an der API (s. main.py).
+CREATE TABLE IF NOT EXISTS panel_prefs (
+    cid        INTEGER NOT NULL,
+    kontext    TEXT NOT NULL,
+    prefs_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (cid, kontext)
+);
 """
 
 
@@ -1017,6 +1041,35 @@ def touch_panel_device(conn: sqlite3.Connection, device_id: str) -> None:
     ist und was gefahrlos widerrufen werden kann."""
     conn.execute(
         "UPDATE panel_devices SET last_seen_at = ? WHERE device_id = ?", (_now_utc(), device_id)
+    )
+
+
+def get_panel_prefs(conn: sqlite3.Connection, cid: int, kontext: str) -> dict:
+    """Karten-Merker eines Nutzers in einem Kontext. Leeres Dict, wenn nichts gespeichert ist.
+
+    Unlesbares JSON wird wie „nichts gespeichert" behandelt: Ein beschädigter Eintrag darf
+    nicht dazu führen, dass die Karte gar nicht erst aufgeht.
+    """
+    row = conn.execute(
+        "SELECT prefs_json FROM panel_prefs WHERE cid = ? AND kontext = ?",
+        (int(cid), str(kontext)),
+    ).fetchone()
+    if not row:
+        return {}
+    try:
+        werte = json.loads(row["prefs_json"])
+    except (ValueError, TypeError):
+        return {}
+    return werte if isinstance(werte, dict) else {}
+
+
+def set_panel_prefs(conn: sqlite3.Connection, cid: int, kontext: str, prefs: dict) -> None:
+    """Karten-Merker ersetzen (kein commit). Die Grenzen prüft der Endpunkt, s. main.py."""
+    conn.execute(
+        "INSERT INTO panel_prefs (cid, kontext, prefs_json, updated_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(cid, kontext) DO UPDATE SET prefs_json = excluded.prefs_json, "
+        "updated_at = excluded.updated_at",
+        (int(cid), str(kontext), json.dumps(prefs, ensure_ascii=False), _now_utc()),
     )
 
 
