@@ -1,5 +1,14 @@
 [
   {
+    "version": "13.3.1",
+    "date": "2026-08-16",
+    "highlight": false,
+    "title": "Doppelte Schilder an schnellen Flugzeugen",
+    "items": [
+      "✈️ An Airlinern standen im Kniebrett zwei Schilder übereinander — eines von VATSIM mit Rufzeichen, eines aus dem Simulator ohne. Beim Zusammenführen wurde die gemeldete VATSIM-Position verglichen statt der Stelle, an der das Flugzeug inzwischen wirklich ist. Bei 440 Knoten sind das über zehn Kilometer, und ausgerechnet die schnellen Flugzeuge fanden so nie zueinander."
+    ]
+  },
+  {
     "version": "13.3.0",
     "date": "2026-08-16",
     "highlight": false,

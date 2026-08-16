@@ -4488,13 +4488,22 @@ let _simVerkehrLetzteMitInhalt = 0; // wann der Sim zuletzt WIRKLICH etwas zu ze
 
 // Wie nah sich zwei Meldungen sein muessen, damit sie dasselbe Flugzeug sind.
 //
-// Grosszuegig, und das mit Absicht: Die VATSIM-Position ist bis zu 15 Sekunden alt. Ein
-// Verkehrsflugzeug legt in dieser Zeit rund 3 km zurueck -- eine enge Schranke wuerde also
-// ausgerechnet die schnellen Flugzeuge nie paaren. Die Hoehe ist dabei das schaerfere
-// Merkmal: Zwei Maschinen im selben Umkreis unterscheiden sich fast immer um mehr als 1500
-// Fuss. Verwechselt die Paarung doch einmal, steht ein falsches Rufzeichen an einem Symbol;
-// das ist unschoen, aber niemand navigiert danach.
-const _PAARUNG_MAX_M = 6000;
+// Sehr grosszuegig, und das mit Absicht. Die naheliegende Rechnung -- "alle 15 Sekunden eine
+// Meldung, also hoechstens 15 Sekunden Versatz" -- ist FALSCH (Nutzer-Korrektur 16.08.2026):
+// Der Abruftakt sagt nichts ueber das Alter der Werte. Eine Position durchlaeuft den
+// Piloten-Client, das VATSIM-Netz und unseren Poller; in Summe hinkt sie bis zu einer Minute
+// hinterher. Ein Airliner mit 440 kt legt darin ueber 13 km zurueck.
+//
+// Die Fortrechnung (s. _verkehrZusammenfuehren) holt davon nur den BEKANNTEN Teil auf -- das
+// Alter der Momentaufnahme, das der Server mitliefert. Was das VATSIM-Netz selbst an
+// Verzoegerung hinzufuegt, weiss niemand, und es bleibt als Rest stehen. Die Schranke muss
+// deshalb diesen Rest abdecken, nicht den Abrufabstand.
+//
+// Die Hoehe ist das schaerfere Merkmal und traegt die Unterscheidung: Zwei Maschinen im
+// selben Umkreis unterscheiden sich fast immer um mehr als 1500 Fuss. Verwechselt die
+// Paarung doch einmal, steht ein falsches Rufzeichen an einem Symbol -- unschoen, aber
+// niemand navigiert danach, und ein doppeltes Symbol ist der sichtbarere Fehler.
+const _PAARUNG_MAX_M = 15000;
 const _PAARUNG_MAX_FT = 1500;
 
 // Dieselbe Grenze wie fuer die eigene Position: Es ist dieselbe Bruecke, und zwei Grenzen
@@ -4530,9 +4539,27 @@ function _verkehrZusammenfuehren() {
   const belegt = Object.create(null);
   const out = [];
 
+  // Verglichen wird gegen die Stelle, an der das VATSIM-Flugzeug JETZT steht -- nicht gegen
+  // die gemeldete. Das ist der Unterschied, an dem die erste Fassung scheiterte (Nutzer-Fund
+  // im VR-Flug 16.08.2026: zwei Schilder an einem Flugzeug, CND65P mit Rufzeichen und ein
+  // namenloses daneben). Ausgerechnet die schnellen Flugzeuge fielen aus der Schranke, und
+  // genau bei ihnen faellt das doppelte Symbol auf.
+  //
+  // Gezeichnet wird der Marker ohnehin an der fortgerechneten Stelle -- also wird auch dort
+  // gepaart, mit derselben Funktion. Aufgeholt wird damit aber nur das Alter, das der Server
+  // mitliefert; die Verzoegerung im VATSIM-Netz bleibt unbekannt und bleibt stehen. Dafuer
+  // ist die Schranke da (s. _PAARUNG_MAX_M).
+  const vatJetzt = [];
+  for (let i = 0; i < vat.length; i++) {
+    const v = vat[i];
+    const g = _jetztGerechnet({ lat: v.lat, lon: v.lon, hdg: Number(v.hdg) || 0,
+                                gs: Number(v.gs) || 0, ts: _vatsimVerkehr.gemessenTs });
+    vatJetzt.push({ v: v, lat: g.lat, lon: g.lon });
+  }
+
   for (let i = 0; i < sim.length; i++) {
     const s = sim[i];
-    const partner = _verkehrPartnerSuchen(s, vat, belegt);
+    const partner = _verkehrPartnerSuchen(s, vatJetzt, belegt);
     const e = { lat: s.lat, lon: s.lon, alt: s.alt, hdg: s.hdg, gs: s.gs,
                 ac: s.ac, cs: s.cs, gnd: s.gnd };
     if (partner) {
@@ -4563,17 +4590,21 @@ function _verkehrZusammenfuehren() {
 }
 
 // Das naechstgelegene noch freie VATSIM-Flugzeug in vertraeglicher Hoehe -- oder null.
-function _verkehrPartnerSuchen(s, vat, belegt) {
-  if (!vat.length || !isFinite(s.lat) || !isFinite(s.lon)) return null;
+//
+// `vatJetzt` traegt je Eintrag den VATSIM-Datensatz (`v`) UND die auf jetzt fortgerechnete
+// Position; verglichen wird gegen letztere (s. _verkehrZusammenfuehren).
+function _verkehrPartnerSuchen(s, vatJetzt, belegt) {
+  if (!vatJetzt.length || !isFinite(s.lat) || !isFinite(s.lon)) return null;
   const p = L.latLng(s.lat, s.lon);
   const hoehe = Number(s.alt) || 0;
   let beste = null;
   let besteM = _PAARUNG_MAX_M;
-  for (let i = 0; i < vat.length; i++) {
-    const v = vat[i];
+  for (let i = 0; i < vatJetzt.length; i++) {
+    const e = vatJetzt[i];
+    const v = e.v;
     if (!v.cs || belegt[v.cs]) continue;
     if (Math.abs((Number(v.alt) || 0) - hoehe) > _PAARUNG_MAX_FT) continue;
-    const m = p.distanceTo([v.lat, v.lon]);
+    const m = p.distanceTo([e.lat, e.lon]);
     if (m < besteM) { besteM = m; beste = v; }
   }
   return beste;

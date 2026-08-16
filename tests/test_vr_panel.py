@@ -1880,6 +1880,26 @@ def test_nur_von_vatsim_gekannte_flugzeuge_bleiben_stehen():
     assert "if (!v.cs || belegt[v.cs]) continue;" in rumpf
 
 
+def test_paarung_vergleicht_gegen_die_fortgerechnete_position():
+    """Der Fehler, der im VR-Flug am 16.08.2026 auffiel: zwei Schilder an einem Flugzeug
+    (CND65P B738 FL371 442 und darunter ein namenloses ? FL371 456). Verglichen wurde gegen
+    die GEMELDETE VATSIM-Position -- die ist bis zu 15 s alt, ein Airliner mit 440 kt legt
+    darin ueber 3 km zurueck, mit dem Alter der Momentaufnahme bis zu 7. Ausgerechnet die
+    schnellen Flugzeuge fielen so aus der Schranke, und genau bei ihnen faellt das doppelte
+    Symbol auf. Gezeichnet wird der Marker ohnehin an der fortgerechneten Stelle."""
+    stelle = INDEX.index("function _verkehrZusammenfuehren(")
+    rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "_jetztGerechnet(" in rumpf, "ohne Fortrechnung paart es die schnellen nie"
+    assert "vatJetzt" in rumpf
+    assert rumpf.index("vatJetzt.push") < rumpf.index("_verkehrPartnerSuchen("), \
+        "die Fortrechnung muss VOR der Suche stehen"
+    # Und die Suche darf nicht mehr an der rohen Position messen.
+    stelle = INDEX.index("function _verkehrPartnerSuchen(")
+    such = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "p.distanceTo([e.lat, e.lon])" in such
+    assert "p.distanceTo([v.lat, v.lon])" not in such
+
+
 def test_paarung_braucht_naehe_und_aehnliche_hoehe():
     """Die Hoehe ist das schaerfere Merkmal: Die VATSIM-Position ist bis zu 15 s alt, ein
     Verkehrsflugzeug legt darin rund 3 km zurueck -- eine enge Ortsschranke wuerde also
@@ -1889,7 +1909,11 @@ def test_paarung_braucht_naehe_und_aehnliche_hoehe():
     assert "_PAARUNG_MAX_M" in rumpf and "_PAARUNG_MAX_FT" in rumpf
     assert "if (m < besteM)" in rumpf, "das naechstgelegene gewinnt, nicht das erstbeste"
     m = re.search(r"const _PAARUNG_MAX_M = (\d+);", INDEX)
-    assert m and int(m.group(1)) >= 3000, "unter 3 km faellt schneller Verkehr durch"
+    # Der Abruftakt (15 s) ist NICHT das Alter der Werte: Eine Position durchlaeuft
+    # Piloten-Client, VATSIM-Netz und Poller und hinkt bis zu einer Minute hinterher
+    # (Nutzer-Korrektur 16.08.2026). Bei 440 kt sind das ueber 13 km, und die Fortrechnung
+    # holt davon nur den vom Server gemeldeten Teil auf.
+    assert m and int(m.group(1)) >= 13000, "schneller Verkehr faellt sonst durch"
 
 
 def test_ein_vatsim_flugzeug_wird_nur_einmal_gepaart():

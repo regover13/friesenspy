@@ -3,6 +3,7 @@ import json
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -318,9 +319,26 @@ class FakeMap {
 """
 
 
+def _node_starten(skript, timeout):
+    """Skript ueber eine DATEI an node geben, nicht ueber ``-e``.
+
+    Windows begrenzt die gesamte Kommandozeile auf 32 767 Zeichen. Der Quelltextausschnitt
+    aus index.html liegt knapp darunter -- als am 16.08.2026 zwanzig Zeilen im Verkehrsteil
+    dazukamen, kippte er darueber, und der Test starb mit ``[WinError 206] Der Dateiname oder
+    die Erweiterung ist zu lang``. Das sah aus wie ein kaputter Test, war aber nur eine zu
+    lange Kommandozeile: eine Grenze, die mit jedem Wachstum der Datei naeher rueckt und mit
+    dem Geprueften nichts zu tun hat. Ueber eine Datei gibt es sie nicht.
+    """
+    with tempfile.TemporaryDirectory() as ordner:
+        pfad = Path(ordner) / "lauf.js"
+        pfad.write_text(skript, encoding="utf-8")
+        return subprocess.run([_NODE, str(pfad)], capture_output=True, text=True,
+                              timeout=timeout)
+
+
 def _node_lauf(treiber, quelltext=None):
     skript = _FSE_HARNESS + "\n" + (quelltext or _fse_quelltext()) + "\n" + treiber
-    ergebnis = subprocess.run([_NODE, "-e", skript], capture_output=True, text=True, timeout=15)
+    ergebnis = _node_starten(skript, 15)
     assert ergebnis.returncode == 0 and "OK" in ergebnis.stdout, (
         f"Node-Lauf fehlgeschlagen -- stdout={ergebnis.stdout!r} stderr={ergebnis.stderr!r}"
     )
@@ -544,9 +562,7 @@ try {
 """
 
     skript = harness + "\n" + quelltext + "\n" + treiber
-    ergebnis = subprocess.run(
-        [_NODE, "-e", skript], capture_output=True, text=True, timeout=10
-    )
+    ergebnis = _node_starten(skript, 10)
     assert ergebnis.returncode == 0 and "OK" in ergebnis.stdout, (
         f"Node-Lauf fehlgeschlagen -- stdout={ergebnis.stdout!r} stderr={ergebnis.stderr!r}"
     )
