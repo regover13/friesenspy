@@ -223,9 +223,9 @@ async def lifespan(app: FastAPI):
         geo.set_custom_airports(list_custom_airports(conn))  # #50: Ergänzungs-Flugplätze laden
     finally:
         conn.close()
-    # FSE-Weltbestand einmal beim Start lesen (23.780 Plätze + Zonen, rund 51 MB). Danach nur
+    # FSE-Weltbestand einmal beim Start lesen (23.780 Plätze + Zonen, rund 50 MB). Danach nur
     # noch gelesen, deshalb ohne Sperre. Bewusst HINTER dem finally: das JSON-Parsen dauert
-    # knapp eine Sekunde, und die DB-Verbindung solange offen zu halten wäre grundlos.
+    # eine halbe Sekunde, und die DB-Verbindung solange offen zu halten wäre grundlos.
     # Der Pfad ist relativ zum Arbeitsverzeichnis, wie der StaticFiles-Mount weiter unten —
     # im Container ist das /opt/friesenspy.
     app.state.fse = fse.laden(Path("app/data/fse"))

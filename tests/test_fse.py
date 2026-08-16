@@ -932,3 +932,43 @@ def test_diagnose_misst_canvas():
     rumpf = INDEX[stelle:INDEX.index("\n      }", stelle)]
     assert "getContext" in rumpf
     assert "getImageData" in rumpf, "ohne Pixelpruefung misst der Test nur den Rahmen"
+
+
+def test_unveraenderte_zonen_werden_nicht_kopiert(bestand):
+    """21 MB haengen an dieser Zeile. Ein bedingungsloser Neubau in _auf_einen_zweig erzeugt
+    23.780 frische Listenstrukturen, waehrend die Rohdaten noch leben -- und den Verschnitt
+    gibt der Allokator nicht ans Betriebssystem zurueck. Gemessen (VmRSS nach gc.collect und
+    malloc_trim, Python 3.12): 70,7 MB bedingungslos, 49,8 MB mit Wiederverwendung.
+
+    Geprueft wird die IDENTITAET, nicht die Gleichheit: Eine Kopie waere gleich und der Test
+    bliebe gruen, waehrend der Speicher wieder da waere."""
+    roh = json.loads((WELT / "fse_zones_world.json").read_text(encoding="utf-8"))
+    unveraendert = [k for k in bestand.zonen if bestand.zonen[k] == roh[k]]
+    assert len(unveraendert) == 23778, "die Zweig-Korrektur hat mehr als die zwei Polzellen angefasst"
+    for icao in ("EDWG", "KJFK", "NFNA"):
+        assert fse_modul._auf_einen_zweig(roh[icao]) is roh[icao], (
+            f"{icao} wurde neu gebaut, obwohl sich nichts aendert -- das kostet 21 MB")
+
+
+def test_zweig_korrektur_greift_bei_gemischten_zweigen():
+    """Auf dem heutigen Bestand aendert _auf_einen_zweig nur die zwei Polzellen, die danach
+    ohnehin verworfen werden -- sie ist also reine Vorsorge fuer kuenftige Daten. Genau
+    deshalb braucht sie einen eigenen Test: Gegen den echten Datensatz bliebe auch eine
+    Identitaetsfunktion gruen (Review-Fund 16.08.2026)."""
+    # Ein Polygon knapp beiderseits der Datumsgrenze, in verschiedenen Zweigen notiert.
+    gemischt = [[10.0, 179.0], [11.0, -179.0], [12.0, 179.5]]
+    assert max(p[1] for p in gemischt) - min(p[1] for p in gemischt) == 358.5
+    assert _polzelle_roh(gemischt), "ungezogen sieht das Polygon wie eine Polzelle aus"
+
+    gezogen = fse_modul._auf_einen_zweig(gemischt)
+    assert gezogen is not gemischt
+    laengen = [p[1] for p in gezogen]
+    assert laengen[1] == 181.0, "-179 gehoert auf den Zweig von 179, also nach +181"
+    assert max(laengen) - min(laengen) <= 2.0, f"nicht auf einen Zweig gezogen: {laengen}"
+    assert [p[0] for p in gezogen] == [10.0, 11.0, 12.0], "Breiten wurden veraendert"
+    assert not fse_modul._polzelle(gezogen), "gezogen darf es keine Polzelle mehr sein"
+
+
+def _polzelle_roh(punkte):
+    laengen = [p[1] for p in punkte]
+    return max(laengen) - min(laengen) > 180.0

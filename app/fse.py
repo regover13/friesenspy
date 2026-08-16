@@ -35,7 +35,9 @@ class FseBestand:
     # json.load baut die Listen ohnehin, bevor irgendetwas daraus abgeleitet werden kann -- die
     # Zeichenketten kaemen obendrauf, und der freigegebene Listenspeicher geht nicht ans
     # Betriebssystem zurueck (mit malloc_trim gegengeprueft). Gemessen 55,3 statt 50,8 MB,
-    # also 4,5 MB TEURER (s. Spec 2026-08-16, Abschnitt 4).
+    # also 4,5 MB TEURER (s. Spec 2026-08-16, Abschnitt 4). Der Bestand haelt insgesamt
+    # 49,7 MB -- aber nur, weil _auf_einen_zweig unveraenderte Listen durchreicht; ohne das
+    # waeren es 70,7 MB (Review-Fund 16.08.2026).
     zonen: dict = field(default_factory=dict)
     zonen_bbox: dict = field(default_factory=dict)
 
@@ -47,8 +49,18 @@ def _auf_einen_zweig(punkte):
     und zeichnen sich ueber die Datumsgrenze korrekt -- sie muessen unangetastet bleiben.
     Pauschales Normalisieren auf +-180 machte aus jeder von ihnen ein Band quer ueber die
     Karte, also genau den Fehler, der hier behoben werden soll.
+
+    Neu gebaut wird die Liste deshalb NUR, wenn sich wirklich etwas aendert. Der Unterschied
+    ist kein Rechenaufwand, sondern Speicher: Ein bedingungsloser Neubau erzeugt 23.780 frische
+    Listenstrukturen, waehrend die Rohdaten noch leben -- und den Verschnitt gibt der Allokator
+    nicht ans Betriebssystem zurueck. Gemessen (VmRSS nach gc.collect und malloc_trim,
+    Python 3.12): 70,7 MB bedingungslos, 49,8 MB so. 21 MB fuer zwei geaenderte Zonen.
     """
     basis = punkte[0][1]
+    # round() liefert genau dann 0, wenn die Differenz in [-180, 180] liegt -- die Bedingung
+    # deckt sich also exakt mit "die Umrechnung waere wirkungslos".
+    if all(-180.0 <= p[1] - basis <= 180.0 for p in punkte):
+        return punkte
     return [[p[0], p[1] - 360.0 * round((p[1] - basis) / 360.0)] for p in punkte]
 
 

@@ -266,7 +266,11 @@ Hält den FSE-Weltbestand (23.780 Plätze + Landeflächen aus dem FSE-Planner) i
 schneidet den Kartenausschnitt heraus. Einmal beim Start gelesen (`lifespan`), danach nur
 gelesen — deshalb ohne Sperre. Speist `/api/fse/airports` und `/api/fse/zones`.
 
-**Speicher:** rund **51 MB** dauerhaft (Container 141 → ~192 MB). Erwogen und **gemessen
+**Speicher:** **49,7 MB** dauerhaft (Container 141 → ~191 MB), Ladezeit 0,5 s. Der Wert hängt
+an einer einzigen Bedingung: `_auf_einen_zweig` reicht unveränderte Punktlisten durch, statt
+sie neu zu bauen. Ein bedingungsloser Neubau erzeugt 23.780 frische Listenstrukturen,
+während die Rohdaten noch leben, und kostet **70,7 MB** — 21 MB für zwei geänderte Zonen
+(Review-Fund 16.08.2026; ein Identitätstest hält es fest). Erwogen und **gemessen
 verworfen** war, die Zonen als vorserialisierte JSON-Zeichenketten zu halten: `json.load` baut
 die Listenstruktur ohnehin, bevor irgendetwas daraus abgeleitet werden kann, die Zeichenketten
 kämen also obendrauf — und der freigegebene Listenspeicher geht nicht ans Betriebssystem

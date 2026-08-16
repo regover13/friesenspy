@@ -123,8 +123,13 @@ Ihr verbliebener Vorteil wäre gespartes Serialisieren je Anfrage — das ist ne
 Durchlauf über 23.780 Einträge (s. unten) nicht messbar und den handgebauten JSON-Rumpf nicht
 wert.
 
-**Der Container wächst also um rund 51 MB** (141 → ~192). Das ist der ehrliche Preis dafür, den
-Weltbestand im Speicher zu halten, und auf einer Maschine mit 11,7 GB unbedenklich.
+**Der Container wächst um 49,7 MB** (141 → ~191), Ladezeit 0,5 s. Das ist der ehrliche Preis
+dafür, den Weltbestand im Speicher zu halten, und auf einer Maschine mit 11,7 GB unbedenklich.
+
+**Nachtrag 16.08.2026 (Review-Fund):** Dieser Wert gilt nur, weil die Zweig-Korrektur
+unveränderte Punktlisten **durchreicht**. Baut sie bedingungslos neu — die erste Umsetzung tat
+das —, entstehen 23.780 frische Listenstrukturen, während die Rohdaten noch leben, und der
+Bedarf steigt auf **70,7 MB**. 21 MB für zwei geänderte Zonen.
 
 ### Längen jenseits der Datumsgrenze
 
