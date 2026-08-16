@@ -143,9 +143,17 @@ Polygon auf den Zweig seiner **ersten Ecke** gezogen (`p[1] − 360·round((p[1]
 Das ändert nachweislich nur diese zwei und lässt die 34 unangetastet.
 
 **Zonen werden über den Bbox-Schnitt gefiltert, nicht über die Position ihres Flugplatzes.**
-Die Zonen sind Voronoi-Zellen: Median 53 km Diagonale, p99 **1.348 km**, max **14.127 km**.
-Die große Ozeanzelle, in der man steht, hat ihren Flugplatz womöglich 600 km entfernt — nach
-Flugplatzposition gefiltert fiele sie genau dann heraus, wenn sie gebraucht wird.
+Die Zonen sind Voronoi-Zellen: Median 53 km Diagonale, p99 **1.348 km**, max **14.127 km**
+(`NZPG` — die allerdings als Polzelle verworfen wird, s. o.; größte ausgelieferte: `SCIP`,
+6.694 km).
+
+> **Korrektur 16.08.2026 (Review).** Hier stand: „nach Flugplatzposition gefiltert fiele sie
+> genau dann heraus, wenn sie gebraucht wird". Das ist **falsch**. Die umschließende Zelle
+> gehört per Voronoi-Definition dem nächstgelegenen Flugplatz und stünde auch nach
+> Flugplatzentfernung ganz vorn (an 131 von 131 geprüften Punkten bestätigt). Der echte Grund
+> für die Bbox: Sie hält auch die großen **Nachbar**zellen im Bild, deren Flugplatz weit
+> außerhalb liegt. Belegt ist dagegen der Vergleich gegen das Ausschnitts-**Rechteck** — dort
+> hätte jede schneidende Zone Abstand 0, und der Deckel entschiede alphabetisch.
 
 **Kein exakter Polygon-Schnitt.** Geprüft, ob die Bbox nennenswert überliefert:
 

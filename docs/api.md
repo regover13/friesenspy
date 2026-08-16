@@ -156,9 +156,11 @@ Zeichenlast — ein Stückzahl-Deckel schonte die falsche Ebene. Grenzen: 250 Pu
 900 für Zonen. Abgeschnitten wird nach Entfernung zum Bezugspunkt.
 
 Über dem offenen Ozean greift der Deckel nie: Dort steht eine einzelne große Voronoi-Zelle mit
-7 Ecken, die niemand um das Budget bedrängt. Damit sie auch dort ankommt, sortieren die Zonen
-nach dem **Abstand des Bezugspunkts zu ihrer Bounding-Box** und nicht nach der Entfernung zu
-ihrem Flugplatz — der kann Hunderte Kilometer außerhalb des Bildes liegen.
+7 Ecken, die niemand um das Budget bedrängt. Die Zonen sortieren nach dem **Abstand des
+Bezugspunkts zu ihrer Bounding-Box** — nicht nach dem Abstand des Ausschnitts-Rechtecks (dort
+hätte jede schneidende Zone 0, und der Deckel entschiede alphabetisch) und nicht nach der
+Entfernung zum Flugplatz (das hielte die großen Nachbarzellen nicht im Bild, deren Flugplatz
+weit außerhalb liegt).
 
 **Nicht ausgeliefert werden zwei Zonen:** `CYLT` (Alert) und `NZPG` (McMurdo) umschließen je
 einen Pol, ihre Ecken laufen einmal um die Erde. So ein Ring hat in Länge/Breite keine

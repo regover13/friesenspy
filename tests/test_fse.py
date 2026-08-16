@@ -195,14 +195,25 @@ global._labelsImSichtbereich = () => {};
 global._antwortPlaetze = { EDXX: { lat: 53, lon: 8, name: 'Test', msfs: ['EDXX'] } };
 global._antwortZonen   = { EDXX: [[53, 8], [54, 8]] };
 global._fetchLog = [];
+// Vom Treiber steuerbar: _fetchOk=false erzwingt den 422/401-Fall, _fetchVerzoegerung haelt
+// die Antwort um n Makrotasks zurueck (fuer den Ueberhol-Test).
+global._fetchOk = true;
+global._fetchVerzoegerung = 0;
 global.fetch = (url) => {
   global._fetchLog.push(String(url));
   const zonen = String(url).indexOf('/zones') !== -1;
-  return Promise.resolve({
-    ok: true,
-    json: () => Promise.resolve(
-      zonen ? { zonen: global._antwortZonen, gekappt: false }
-            : { plaetze: global._antwortPlaetze, gekappt: false }),
+  // Nutzlast JETZT festhalten, nicht erst beim Aufloesen: Sonst liest eine zurueckgehaltene
+  // Antwort den inzwischen geaenderten Zustand, und ein Ueberhol-Test kann gar nichts messen
+  // (eigener Fehler, gefunden per Mutationsprobe 16.08.2026).
+  const nutzlast = zonen ? { zonen: global._antwortZonen, gekappt: false }
+                         : { plaetze: global._antwortPlaetze, gekappt: false };
+  const antwort = { ok: global._fetchOk, json: () => Promise.resolve(nutzlast) };
+  const halten = global._fetchVerzoegerung;
+  if (!halten) return Promise.resolve(antwort);
+  return new Promise((fertig) => {
+    let n = halten;
+    const takt = () => (--n <= 0 ? fertig(antwort) : setImmediate(takt));
+    setImmediate(takt);
   });
 };
 
@@ -249,6 +260,8 @@ function _ll(lat, lng) {
     lat: lat, lng: lng,
     // Grob, aber fuer die Streckensperre genau genug: 1 Grad Breite = 111,32 km.
     distanceTo: (a) => Math.hypot((a.lat - lat) * 111320, (a.lng - lng) * 111320 * Math.cos(lat * Math.PI / 180)),
+    // Wie L.LatLng.wrap(): zieht die Laenge auf [-180, 180], laesst die Breite in Ruhe.
+    wrap: () => _ll(lat, ((lng + 180) % 360 + 360) % 360 - 180),
   };
 }
 
@@ -548,6 +561,22 @@ def test_plaetze_deckel_greift_und_meldet_sich(bestand):
     assert len(treffer) == fse_modul.MAX_PUNKTE_PLAETZE
     assert gekappt
 
+    # Und zwar die NAECHSTEN 250. Ohne diese Pruefung bleibt der Test gruen, wenn man
+    # nah.sort() entfernt -- dann reichen die gelieferten Plaetze bis 210 km statt 145 km,
+    # und 83 der 250 sind andere als die naechstgelegenen (Review-Fund 16.08.2026).
+    def abstand(icao):
+        a = bestand.plaetze[icao]
+        return fse_modul._entfernung_km(KJFK[0], KJFK[1], a["lat"], a["lon"])
+
+    la0, la1, lo0, lo1 = fse_modul._rechteck(*KJFK, 150)
+    im_fenster = {i for i, a in bestand.plaetze.items()
+                  if la0 <= a["lat"] <= la1 and lo0 <= a["lon"] <= lo1}
+    verworfen = im_fenster - set(treffer)
+    assert verworfen
+    assert max(map(abstand, treffer)) <= min(map(abstand, verworfen)), (
+        "ein verworfener Platz liegt naeher als ein gelieferter -- der Deckel schneidet "
+        "nicht nach Entfernung")
+
 
 def test_zonen_deckel_rechnet_in_punkten_nicht_in_stueck(bestand):
     """Eine Zone kostet ihre Eckenzahl (Mittel 7, max 21), ein Platz genau 1. Bei New York
@@ -560,19 +589,48 @@ def test_zonen_deckel_rechnet_in_punkten_nicht_in_stueck(bestand):
     assert gekappt
 
 
-def test_grosse_zone_reisst_kleinere_dahinter_nicht_mit(bestand):
-    """Die Deckelschleife ueberspringt eine Zone, die nicht mehr passt, statt abzubrechen --
-    sonst kappte eine 21-Punkte-Zelle in der Mitte der Liste alles Kleinere dahinter mit."""
-    treffer, _ = fse_modul.zonen_im_umkreis(bestand, *KJFK, 150)
-    rest = fse_modul.MAX_PUNKTE_ZONEN - sum(len(p) for p in treffer.values())
-    assert rest < 4, f"{rest} Punkte Budget verschenkt -- die Schleife bricht ab statt zu ueberspringen"
+def _kunstbestand(zonen_spec):
+    """FseBestand aus (icao, eckenzahl, lon_versatz) — der Versatz staffelt den Abstand zum
+    Bezugspunkt (0, 0) und damit die Reihenfolge im Deckel."""
+    b = fse_modul.FseBestand()
+    for icao, ecken, versatz in zonen_spec:
+        punkte = [[0.0 + i * 0.001, versatz + i * 0.001] for i in range(ecken)]
+        b.zonen[icao] = punkte
+        breiten = [p[0] for p in punkte]; laengen = [p[1] for p in punkte]
+        b.zonen_bbox[icao] = (min(breiten) - 0.5, max(breiten) + 0.5,
+                              min(laengen) - 0.5, max(laengen) + 0.5)
+    return b
+
+
+def test_deckelschleife_ueberspringt_statt_abzubrechen():
+    """Eine Zone, die nicht mehr ins Budget passt, wird UEBERSPRUNGEN. Braeche die Schleife
+    stattdessen ab, risse eine einzelne grosse Zelle mitten in der Liste alles Kleinere
+    dahinter mit -- und das Budget bliebe ungenutzt.
+
+    Bewusst synthetisch: Am naechstliegenden Messpunkt in den Echtdaten (KJFK r=150) fuellen
+    skip und break identisch 899 von 900 Punkten. Er kann die beiden Semantiken gar nicht
+    unterscheiden, und der frueher hier stehende Test war deshalb gruen, egal was der Code
+    tat (Review-Fund 16.08.2026)."""
+    b = _kunstbestand([("GROSS", 890, 0.0), ("PASSTNICHT", 21, 1.0), ("KLEIN", 5, 2.0)])
+    treffer, gekappt = fse_modul.zonen_im_umkreis(b, 0.0, 0.0, 250)
+
+    assert gekappt
+    assert "GROSS" in treffer
+    assert "PASSTNICHT" not in treffer, "890 + 21 > 900 -- die Zone darf nicht mitkommen"
+    assert "KLEIN" in treffer, (
+        "die Schleife bricht ab, statt zu ueberspringen: KLEIN haette mit 890 + 5 = 895 "
+        "bequem ins Budget gepasst")
+    assert sum(len(p) for p in treffer.values()) == 895
 
 
 def test_ozeanzelle_kommt_mit_egal_wie_gross_sie_ist(bestand):
-    """Der Kern der Sortierentscheidung: Voronoi-Zellen ueber dem Atlantik haben bis zu
-    14.127 km Diagonale (NZPG), ihr Flugplatz liegt womoeglich Hunderte Kilometer vom
-    Ausschnitt entfernt. Wer nach Flugplatzentfernung sortiert, wirft genau die Zelle weg,
-    in der man steht."""
+    """Ueber dem offenen Ozean steht eine einzelne grosse Voronoi-Zelle; sie muss ankommen,
+    obwohl ihr Flugplatz Hunderte Kilometer entfernt liegen kann.
+
+    Anmerkung zur Reichweite dieses Tests (Review 16.08.2026): Er faengt die
+    RECHTECK-Variante, nicht die Flugplatz-Variante. Letztere ist auf echten Daten gar nicht
+    unterscheidbar, weil die umschliessende Zelle per Voronoi-Definition dem naechsten
+    Flugplatz gehoert -- s. test_bbox_abstand_misst_vom_punkt."""
     treffer, gekappt = fse_modul.zonen_im_umkreis(bestand, *ATLANTIK, 150)
     assert len(treffer) == 3
     assert sum(len(p) for p in treffer.values()) == 26
@@ -972,3 +1030,183 @@ def test_zweig_korrektur_greift_bei_gemischten_zweigen():
 def _polzelle_roh(punkte):
     laengen = [p[1] for p in punkte]
     return max(laengen) - min(laengen) > 180.0
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_frontend_zieht_die_laenge_auf_die_datumsgrenze():
+    """Review-Fund: Leaflet laesst die Laenge beim Ziehen ueber die Datumsgrenze ueber den Rand
+    hinauslaufen (-185 westlich von Fidschi, 368 nach einer Weltumrundung). Der Server
+    validiert lon in [-180, 180] und antwortet mit 422 -- die Ebene blieb still leer, und weil
+    die Streckensperre schon fortgeschrieben war, auch dauerhaft."""
+    treiber = """
+const map = new FakeMap(10);
+_fsePlaetzeGruppe.addTo(map);
+
+map._mitte = _ll(-17.75, -185.0);      // westlich der Grenze, ausserhalb des gueltigen Bereichs
+_fseAbrufen(map);
+const url = global._fetchLog[global._fetchLog.length - 1];
+const lon = parseFloat(new URL('http://x' + url.slice(url.indexOf('?'))).searchParams.get('lon'));
+assert.ok(lon >= -180 && lon <= 180, 'lon=' + lon + ' liegt ausserhalb [-180, 180] -- der Server antwortet 422');
+assert.ok(Math.abs(lon - 175.0) < 0.01, 'erwartet 175 (= -185 + 360), war ' + lon);
+
+// Und nach einer Weltumrundung nach Osten.
+_fseLetzteMitte = null;
+map._mitte = _ll(53.0, 368.0);
+_fseAbrufen(map);
+const url2 = global._fetchLog[global._fetchLog.length - 1];
+const lon2 = parseFloat(new URL('http://x' + url2.slice(url2.indexOf('?'))).searchParams.get('lon'));
+assert.ok(Math.abs(lon2 - 8.0) < 0.01, 'erwartet 8 (= 368 - 360), war ' + lon2);
+
+console.log('OK');
+"""
+    _node_lauf(treiber)
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_frontend_versucht_es_nach_einem_fehlschlag_wieder():
+    """Review-Fund: Die Streckenmarke wird VOR dem fetch fortgeschrieben. Schlaegt er fehl
+    (Netz weg, oder 401 nach Cookie-Ablauf), blockte die Sperre jeden Folgeversuch, bis
+    0,2 x r geflogen sind -- bei 250 km Radius gut zehn Minuten leere Ebene. Der Verkehr
+    uebersteht das, weil sein 15-Sekunden-Takt es nachholt; diese Ebene hat keinen."""
+    treiber = """
+const map = new FakeMap(10);
+_fsePlaetzeGruppe.addTo(map);
+
+global._fetchOk = false;               // Server antwortet 422/401
+_fseAbrufen(map);
+setImmediate(() => {
+  try {
+    assert.strictEqual(global._fetchLog.length, 1);
+    assert.strictEqual(_fsePlaetzeTabelle.size, 0, 'trotz Fehlschlag wurde gezeichnet');
+
+    // Ohne Bewegung erneut anstossen -- muss es wieder versuchen.
+    global._fetchOk = true;
+    _fseAbrufen(map);
+    setImmediate(() => {
+      try {
+        assert.strictEqual(global._fetchLog.length, 2,
+          'nach dem Fehlschlag blockt die Streckensperre den zweiten Versuch');
+        assert.strictEqual(_fsePlaetzeTabelle.size, 1, 'der zweite Versuch hat nichts gezeichnet');
+        console.log('OK');
+      } catch (e) { console.error(e.stack || String(e)); process.exitCode = 1; }
+    });
+  } catch (err) { console.error(err && err.stack ? err.stack : String(err)); process.exitCode = 1; }
+});
+"""
+    _node_lauf(treiber)
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_frontend_verwirft_ueberholte_antworten():
+    """Review-Fund: Jede Antwort gilt als vollstaendige Wahrheit fuer den Ausschnitt. Kommen
+    zwei Abrufe in umgekehrter Reihenfolge an, entfernt die aeltere die gerade gezeichneten
+    Objekte wieder und zeichnet den alten Ausschnitt -- und weil danach erst wieder Bewegung
+    noetig ist, bleibt der falsche Stand stehen."""
+    treiber = """
+const map = new FakeMap(10);
+_fsePlaetzeGruppe.addTo(map);
+
+// Erster Abruf: Antwort wird lange zurueckgehalten.
+global._antwortPlaetze = { ALT: { lat: 53, lon: 8, name: 'Alt', msfs: ['ALT'] } };
+global._fetchVerzoegerung = 8;
+_fseAbrufen(map);
+
+// Zweiter Abruf, weit genug entfernt, Antwort kommt sofort.
+global._antwortPlaetze = { NEU: { lat: 53.3, lon: 8, name: 'Neu', msfs: ['NEU'] } };
+global._fetchVerzoegerung = 0;
+map._mitte = _ll(53.3, 8.0);
+_fseAbrufen(map);
+
+// Lange genug warten, dass auch die zurueckgehaltene erste Antwort durch ist.
+let n = 20;
+const warten = () => (--n > 0 ? setImmediate(warten) : pruefen());
+function pruefen() {
+  try {
+    assert.strictEqual(global._fetchLog.length, 2, 'es liefen nicht zwei Abrufe');
+    assert.ok(_fsePlaetzeTabelle.has('NEU'), 'der neue Stand fehlt');
+    assert.ok(!_fsePlaetzeTabelle.has('ALT'),
+      'die ueberholte Antwort wurde angewandt -- die Karte zeigt den alten Ausschnitt');
+    console.log('OK');
+  } catch (e) { console.error(e.stack || String(e)); process.exitCode = 1; }
+}
+setImmediate(warten);
+"""
+    _node_lauf(treiber)
+
+
+@pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
+def test_frontend_haengt_wirklich_an_moveend_und_zoomend():
+    """Review-Fund: Alle uebrigen Node-Treiber rufen _fseAbrufen direkt auf. Damit war die
+    EINE Zeile, die das Nachladen im Flug ueberhaupt ausloest, ungetestet -- man haette sie
+    entfernen koennen und die Suite waere gruen geblieben, waehrend das Kernfeature tot ist.
+    Dieser Treiber geht deshalb ausschliesslich ueber die Kartenereignisse."""
+    treiber = """
+localStorage.setItem(_FSE_PLAETZE_PREF_KEY, '1');
+const map = new FakeMap(10);
+_addPreferredFseLayer(map);
+
+setImmediate(() => {
+  try {
+    const nachStart = global._fetchLog.length;
+    assert.ok(nachStart >= 1, 'schon der Startabruf blieb aus');
+
+    // Weit genug ziehen -- NUR ueber das Ereignis, nicht ueber einen Direktaufruf.
+    map.zieheNach(53.3, 8.0);
+    assert.ok(global._fetchLog.length > nachStart,
+      'moveend loest keinen Abruf aus -- die Ebene laedt im Flug nie nach');
+
+    const nachZug = global._fetchLog.length;
+    map.setzeZoom(11);
+    assert.ok(global._fetchLog.length > nachZug, 'zoomend loest keinen Abruf aus');
+
+    console.log('OK');
+  } catch (err) { console.error(err && err.stack ? err.stack : String(err)); process.exitCode = 1; }
+});
+"""
+    _node_lauf(treiber)
+
+
+def test_bbox_abstand_misst_vom_punkt():
+    """Direkttest der Sortier-Funktion, weil die Echtdaten sie nicht pruefen koennen.
+
+    Gegen das Ausschnitts-RECHTECK haette jede schneidende Zone Abstand 0 (bei New York
+    389 Stueck) und der Deckel entschiede alphabetisch. Vom Punkt aus hat nur die
+    umschliessende 0."""
+    cos0 = 1.0
+    umschliessend = (-1.0, 1.0, -1.0, 1.0)
+    daneben = (-1.0, 1.0, 2.0, 3.0)
+    assert fse_modul._bbox_abstand_km(umschliessend, 0.0, 0.0, cos0) == 0.0
+    assert fse_modul._bbox_abstand_km(daneben, 0.0, 0.0, cos0) > 200
+    # Eine riesige Bbox, deren Mitte weit weg liegt, umschliesst den Punkt trotzdem -> 0.
+    riesig = (-60.0, 60.0, -170.0, 5.0)
+    assert fse_modul._bbox_abstand_km(riesig, 0.0, 0.0, cos0) == 0.0
+
+
+def test_grosse_nachbarzelle_ueberlebt_den_deckel():
+    """Der eigentliche Grund fuer den Bbox-Abstand — und der Fall, den der echte Datensatz
+    nicht hergibt (Review-Fund 16.08.2026): Eine grosse NACHBARzelle, die den Ausschnitt
+    schneidet, deren Flugplatz aber weit ausserhalb liegt, muss vor einer kleinen ferneren
+    Zelle kommen. Nach Flugplatzentfernung sortiert waere es umgekehrt, und die graue Kulisse
+    bekaeme genau dort Loecher, wo sie am wenigsten Konkurrenz hat.
+
+    Dass die UMSCHLIESSENDE Zelle nicht herausfaellt, ist dagegen keine Leistung der
+    Sortierung: Sie gehoert per Voronoi-Definition dem naechsten Flugplatz und stuende auch
+    nach Flugplatzentfernung vorn (an 131 von 131 geprueften Punkten bestaetigt)."""
+    b = fse_modul.FseBestand()
+    # Kleine Zelle direkt am Bezugspunkt.
+    b.zonen["NAH"] = [[0.0, 0.0], [0.1, 0.0], [0.1, 0.1]]
+    b.zonen_bbox["NAH"] = (-0.2, 0.2, -0.2, 0.2)
+    # Grosse Nachbarzelle: schneidet den Ausschnitt knapp, reicht aber bis weit nach Osten.
+    b.zonen["NACHBAR"] = [[0.0, 1.0], [1.0, 20.0], [-1.0, 20.0]]
+    b.zonen_bbox["NACHBAR"] = (-1.0, 1.0, 0.5, 20.0)
+    # Kleine Zelle, weiter weg als der Rand der Nachbarzelle, aber naeher als deren Flugplatz.
+    b.zonen["FERN"] = [[0.0, 1.6], [0.1, 1.6], [0.1, 1.7]]
+    b.zonen_bbox["FERN"] = (-0.1, 0.1, 1.55, 1.75)
+
+    reihenfolge = sorted(
+        b.zonen_bbox,
+        key=lambda i: fse_modul._bbox_abstand_km(b.zonen_bbox[i], 0.0, 0.0, 1.0),
+    )
+    assert reihenfolge == ["NAH", "NACHBAR", "FERN"], (
+        f"Reihenfolge {reihenfolge} -- die grosse Nachbarzelle muss vor die kleine fernere, "
+        "sonst reisst die Kulisse auf")

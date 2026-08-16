@@ -282,13 +282,19 @@ Bei New York stellen die Zonen 88 % der Zeichenlast — ein Stückzahl-Deckel sc
 Ebene. Die Werte sind gegen Coherent GT gewählt (s. `main.py`: „ab ein paar hundert Elementen
 zäh") und stehen zur Korrektur, sobald die Panel-Selbstdiagnose Canvas misst (Feld `canvas`).
 
-**Zonen sortieren nach dem Abstand des Bezugspunkts zu ihrer Bounding-Box**, nicht nach der
-Entfernung zu ihrem Flugplatz: Voronoi-Zellen über dem Ozean haben bis zu 14.127 km Diagonale
-(p99: 1.348 km), ihr Flugplatz kann Hunderte Kilometer außerhalb des Bildes liegen — nach
-Flugplatzentfernung sortiert fiele ausgerechnet die Zelle als Erstes aus dem Deckel, in der man
-gerade steht. Gemessen wird vom **Punkt**, nicht vom Ausschnitts-Rechteck: gegen das Rechteck
-hätte jede schneidende Zone Abstand 0 (bei New York 389 Stück), und der Deckel entschiede
-zwischen ihnen alphabetisch.
+**Zonen sortieren nach dem Abstand des Bezugspunkts zu ihrer Bounding-Box.** Zwei
+Entscheidungen stecken darin:
+
+- Gemessen wird vom **Punkt**, nicht vom Ausschnitts-**Rechteck**: gegen das Rechteck hätte
+  jede schneidende Zone Abstand 0 (bei New York 389 Stück), und der Deckel entschiede zwischen
+  ihnen alphabetisch — die Zelle, in der man steht, fiel dabei nachweislich heraus.
+- Gemessen wird zur **Bbox**, nicht zur Position des Flugplatzes. Die ursprüngliche Begründung
+  („sonst fiele die Zelle heraus, in der man steht") war **falsch** und wurde am 16.08.2026 im
+  Review widerlegt: Die Zonen sind Voronoi-Zellen, die umschließende gehört per Definition dem
+  nächstgelegenen Flugplatz und stünde auch nach Flugplatzentfernung ganz vorn (131 von 131
+  geprüften Punkten). Der echte Grund: Die Bbox hält auch die großen **Nachbar**zellen im Bild,
+  deren Flugplatz weit außerhalb liegt — über dem Ozean gerade die, die die graue Kulisse
+  lückenlos machen.
 
 **Zwei Zonen werden beim Laden verworfen:** `CYLT` (Alert) und `NZPG` (McMurdo) umschließen je
 einen Pol — ihre Ecken laufen einmal um die Erde, ein solcher Ring hat in Länge/Breite keine

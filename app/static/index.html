@@ -4163,6 +4163,8 @@ const _fseZonenTabelle   = new Map();
 let _fseLetzteMitte = null;
 let _fseLetzterZoom = null;
 let _fseLetzterRadius = 0;
+// Laufende Abrufnummer -- s. _fseAbrufen: schuetzt gegen Antworten, die sich ueberholen.
+let _fseRunde = 0;
 
 function _saveFsePref(key, an) {
   try { localStorage.setItem(key, an ? '1' : '0'); } catch (e) {}
@@ -4304,13 +4306,31 @@ function _fseAbrufen(map) {
     if (gewandert < _fseLetzterRadius * _FSE_NACHLADEN_ANTEIL) return;
   }
   _fseLetzteMitte = mitte; _fseLetzterZoom = zoom; _fseLetzterRadius = radius;
+  // Laufende Nummer gegen sich ueberholende Antworten: Zwei Abrufe kurz hintereinander (ein
+  // Zug an der Karte reicht) koennen in umgekehrter Reihenfolge ankommen, und weil jede
+  // Antwort als vollstaendige Wahrheit gilt, wuerde die aeltere die neueren Objekte wieder
+  // entfernen. Danach steht der falsche Stand, bis sich die Karte erneut bewegt.
+  const runde = ++_fseRunde;
 
-  const frage = '?lat=' + mitte.lat.toFixed(4) + '&lon=' + mitte.lng.toFixed(4) + '&r=' + radius;
+  // Die Kartenmitte auf +-180 ziehen: Leaflet laesst die Laenge beim Ziehen ueber die
+  // Datumsgrenze ueber den Rand hinauslaufen (-185, 368 nach einer Weltumrundung). Der Server
+  // validiert lon in [-180, 180] und antwortete darauf mit 422 -- die Ebene blieb still leer.
+  // Fuer die Streckensperre oben bleibt die UNGEZOGENE Mitte massgeblich, sonst risse der
+  // Abstand beim Grenzuebertritt auf einen halben Erdumfang auf.
+  const anfrage = mitte.wrap();
+  const frage = '?lat=' + Math.max(-90, Math.min(90, anfrage.lat)).toFixed(4)
+              + '&lon=' + anfrage.lng.toFixed(4) + '&r=' + radius;
+  // Ein fehlgeschlagener Abruf muss die Streckenmarke zuruecknehmen. Sonst blockt die Sperre
+  // jeden Folgeversuch, bis 0,2 x r geflogen sind -- bei 250 km Radius 50 km, also gut zehn
+  // Minuten leere Ebene nach einem einzigen Netzhuepfer. Der Verkehr uebersteht das, weil
+  // sein 15-Sekunden-Takt es nachholt; diese Ebene hat keinen.
+  const fehlgeschlagen = () => { if (runde === _fseRunde) _fseLetzteMitte = null; };
   if (zonenAn) {
     fetch(_FSE_ZONEN_API + frage)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
-        if (!d) return;
+        if (runde !== _fseRunde) return;      // eine neuere Anfrage ist schon unterwegs
+        if (!d) { fehlgeschlagen(); return; }
         _fseAbgleichen(_fseZonenGruppe, _fseZonenTabelle, d.zonen, _fseZoneBauen);
         // Nach JEDEM Abgleich, nicht nur beim Einschalten: Beide Ebenen teilen sich einen
         // Canvas-Renderer, und jedes Nachladen haengt die neuen Zonen ans Ende der
@@ -4321,13 +4341,17 @@ function _fseAbrufen(map) {
         // typischerweise spaeter.
         _fseZonenGruppe.bringToBack();
       })
-      .catch(() => {});   // Netz weg (im Kniebrett keine Seltenheit): beim naechsten Zug wieder
+      .catch(fehlgeschlagen);   // Netz weg (im Kniebrett keine Seltenheit)
   }
   if (plaetzeAn) {
     fetch(_FSE_PLAETZE_API + frage)
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (d) _fseAbgleichen(_fsePlaetzeGruppe, _fsePlaetzeTabelle, d.plaetze, _fsePlatzBauen); })
-      .catch(() => {});
+      .then(d => {
+        if (runde !== _fseRunde) return;
+        if (!d) { fehlgeschlagen(); return; }
+        _fseAbgleichen(_fsePlaetzeGruppe, _fsePlaetzeTabelle, d.plaetze, _fsePlatzBauen);
+      })
+      .catch(fehlgeschlagen);
   }
 }
 

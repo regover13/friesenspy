@@ -138,18 +138,24 @@ def plaetze_im_umkreis(bestand: FseBestand, lat: float, lon: float, r_km: float)
 
 
 def _bbox_abstand_km(bbox, lat: float, lon: float, cos_lat: float) -> float:
-    """Abstand des BEZUGSPUNKTS zur Zonen-Bbox, nicht der Entfernung zum Flugplatz der Zone.
+    """Abstand des BEZUGSPUNKTS zur Zonen-Bbox.
 
-    Das ist die tragende Entscheidung dieses Moduls: Voronoi-Zellen ueber dem Ozean haben bis
-    zu 14.127 km Diagonale (p99: 1.348 km), ihr Flugplatz kann Hunderte Kilometer ausserhalb
-    des Bildes liegen. Nach Flugplatzentfernung sortiert fiele ausgerechnet die Zelle als
-    Erstes aus dem Deckel, in der man gerade steht.
+    Zwei Entscheidungen stecken hier drin.
 
-    Gemessen wird vom PUNKT, nicht vom Ausschnitts-Rechteck. Der Unterschied ist nicht
-    kosmetisch: Gegen das Rechteck hat JEDE schneidende Zone Abstand 0 -- bei New York sind
-    das 389 Stueck, und der Deckel entschiede zwischen ihnen alphabetisch. Die Zelle, in der
-    man steht, flog dabei nachweislich heraus. Vom Punkt aus hat nur sie 0, alle anderen
-    wachsen mit ihrer Entfernung.
+    (1) Gemessen wird vom PUNKT, nicht vom Ausschnitts-RECHTECK. Gegen das Rechteck hat JEDE
+    schneidende Zone Abstand 0 -- bei New York sind das 389 Stueck -- und der Deckel
+    entschiede zwischen ihnen alphabetisch. Die Zelle, in der man steht, flog dabei
+    nachweislich heraus. Vom Punkt aus hat nur sie 0, alle anderen wachsen mit ihrer
+    Entfernung.
+
+    (2) Gemessen wird zur BBOX der Zone, nicht zur Position ihres Flugplatzes. Die frueher
+    hier stehende Begruendung -- "sonst fiele die Zelle heraus, in der man steht" -- war
+    FALSCH und ist am 16.08.2026 in einem Review widerlegt worden: Die Zonen sind
+    Voronoi-Zellen, die umschliessende gehoert also per Definition dem naechstgelegenen
+    Flugplatz und stuende auch nach Flugplatzentfernung ganz vorn (an 131 von 131 geprueften
+    Punkten bestaetigt). Der echte Grund ist ein anderer: Die Bbox haelt auch die grossen
+    NACHBARzellen im Bild, deren Flugplatz weit ausserhalb liegt -- ueber dem Ozean gerade
+    die, die die graue Kulisse lueckenlos machen.
 
     cos(lat) kommt von aussen: es ist ueber die ganze Anfrage konstant, und es je Zone neu zu
     berechnen (23.780-mal cos/radians) kostet fast die Haelfte der Anfragezeit.
