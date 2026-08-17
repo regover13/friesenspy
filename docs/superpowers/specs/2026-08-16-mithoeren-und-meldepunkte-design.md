@@ -330,8 +330,13 @@ intern mit, ein doppelter Eintrag neben dem Kachel-Layer erscheint also nur einm
 
 ## 4. Reihenfolge und Abnahme
 
-1. **Teil A** zuerst und vollständig (Sprite, Helfer, zwei Einbauorte, CSS, Panel-Regel,
-   Tests). Er hängt an nichts und ist danach abgehakt.
+1. ~~**Teil A** zuerst und vollständig (Sprite, Helfer, zwei Einbauorte, CSS, Panel-Regel,
+   Tests). Er hängt an nichts und ist danach abgehakt.~~ **Erledigt am 16.08.2026** auf
+   `claude/saved-tasks-review-q1vzcm`: `#icon-speaker`, `listenLinkIcon()`, `.listen-link-icon`
+   (mit `color: var(--green)`), `html.vr-panel`-Ausblendung, Einbau in Live-Tabelle und
+   Karten-Popup, acht Zusicherungen in `tests/test_mithoeren.py`. Suite: **1832 grün**.
+   Der Changelog-Eintrag wird bewusst erst mit dem Release geschrieben — er soll beide Teile
+   nennen.
 2. **Gegenprobe des API-Schlüssels** (5.1). Fällt sie negativ aus, geht Teil A allein als
    v13.6.6 raus, und Teil B wartet auf einen Schlüssel — beides zusammen zu halten, bis eine
    fremde Zugangsfrage geklärt ist, wäre der falsche Weg herum.

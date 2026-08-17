@@ -592,6 +592,12 @@
        macht das Tablet erneut blind: der Test `test_jedes_use_hat_xlink_fallback` haelt dagegen. */
     .icon { width: 1em; height: 1em; vertical-align: -0.125em; display: inline-block; fill: none; }
     .airport-link-icon { margin-left: 4px; }
+    /* Die Farbe MUSS hier stehen: .icon zeichnet ueber stroke: currentColor, und ein globales
+       `a { color: ... }` gibt es in diesem Stylesheet nicht (nur .leaflet-control-zoom a,
+       .leaflet-control-attribution a und #ac-body .hint a setzen eine). Ohne Angabe naehme der
+       Browser sein Standard-Linkblau. Blau (--green) ist hier richtig: Das Symbol IST ein Link,
+       das Callsign daneben bleibt neutral (s. .td-callsign). */
+    .listen-link-icon { margin-left: 6px; color: var(--green); }
     /* Selbst gehostete Twemoji-Grafiken (Zwölftausendneunhundert Twitter, Inc und andere
        Mitwirkende, CC-BY 4.0) fuer Icons, bei denen eine handgezeichnete Nachbildung optisch
        zu weit vom Original-Emoji abweicht (Live-Test-Fund 13.08.2026: Nutzer will exakt dasselbe
@@ -1878,6 +1884,11 @@
        ja, waere ein Chart-Link im Cockpit das Gegenteil von ueberfluessig. */
     html.vr-panel .airport-link-icon { display: none; }
 
+    /* Mithoeren aus demselben Grund und ohne das OFFEN von oben: Der Ton laeuft auf einer
+       fremden Webseite, die einen VATSIM-Login und eine Tonausgabe braucht. Selbst wenn
+       Coherent GT target="_blank" bediente, waere das im Cockpit nichts, was man will. */
+    html.vr-panel .listen-link-icon { display: none; }
+
     /* Ebenen-Auswahl der Karte: eigener Haken statt des eingebauten.
        Messung 13.08.2026 im Sim (panel_diag, kind='karte'): beim Einschalten von OpenAIP
        meldet die Karte `aipAufKarte: true`, der gemerkte Wunsch `aipGemerkt: true` UND das
@@ -3086,6 +3097,14 @@
     <path d="M4 14a8 8 0 0 1 16 0"/>
     <rect x="3" y="14" width="4" height="6" rx="1.5"/>
     <rect x="17" y="14" width="4" height="6" rx="1.5"/>
+  </symbol>
+  <!-- Mithoeren (listen.vatsim.net). BEWUSST nicht das Headset wiederverwendet: das steht in
+       dieser Anwendung fuer TeamSpeak (Glocke, Live-Tab, Benachrichtigungen). Ein Symbol mit
+       zwei Bedeutungen ist eines zu viel. -->
+  <symbol id="icon-speaker" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/>
+    <path d="M16 9a4 4 0 0 1 0 6"/>
+    <path d="M18.5 6.5a7.5 7.5 0 0 1 0 11"/>
   </symbol>
   <symbol id="icon-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <rect x="3" y="5" width="18" height="16" rx="2"/>
@@ -6581,6 +6600,30 @@ function airportLinkIcon(icao) {
     + 'title="Flugplatz-Karte" onclick="event.stopPropagation()">' + icon('map') + '</a>';
 }
 
+// Mithoeren ueber listen.vatsim.net -- die Frequenz, auf der dieser Pilot gerade ist.
+//
+// Die Route ist geprueft, nicht geraten (16.08.2026, gegen das ausgelieferte Bundle):
+// `/^\/live\/([^/]+)\/?$/i` -- der Wert wird dekodiert, grossgeschrieben, in sessionStorage
+// gelegt und der Pfad auf "/" zurueckgesetzt. Deshalb ueberlebt der Wunsch auch den
+// VATSIM-Login, der zum Mithoeren noetig ist: nach dem Ruecksprung wird derselbe Pilot
+// aufgeschaltet. Ist er dort nicht bekannt, meldet die Gegenstelle das im Klartext.
+//
+// Wir zeigen das Symbol nur bei Piloten, die VATSIM uns als online meldet -- die Meldung
+// "is not currently online" ist damit der Rueckfall, nicht der Normalfall. Der Alltagsfall
+// ist Stille: zu hoeren gibt es nur, was gerade gesprochen wird.
+//
+// Aufbau bewusst wie airportLinkIcon (Abstand als CSS-Rand statt Leerzeichen, damit im Panel
+// keine Luecke stehen bleibt; stopPropagation, weil in der Live-Tabelle Klick-Handler an den
+// Zellen haengen und im Karten-Popup ein Klick daneben die Blase schliesst).
+function listenLinkIcon(callsign) {
+  const cs = String(callsign || '').toUpperCase();
+  if (!cs) return '';
+  return '<a href="https://listen.vatsim.net/live/' + encodeURIComponent(cs) + '" '
+    + 'target="_blank" rel="noopener" class="listen-link-icon" '
+    + 'title="Mithören als ' + escHtml(cs) + '" onclick="event.stopPropagation()">'
+    + icon('speaker') + '</a>';
+}
+
 // Strecken-Zelle "EDDH - EDDW" inkl. Flugplatz-Karten-Symbol je Seite.
 //
 // EINE Darstellung für ALLE Strecken-Zellen (Nutzer-Frage 13.08.: „Wieso haben wir immer noch
@@ -6658,7 +6701,7 @@ function renderLiveTable(pilots) {
     const isNew = !existing.has(p.callsign);
     html += `
           <tr data-callsign="${escHtml(p.callsign)}" ${isNew ? 'class="new-row"' : ''}>
-            <td class="td-callsign" data-cs="${escHtml(p.callsign || '')}">${escHtml((p.callsign || '').toUpperCase())}</td>
+            <td class="td-callsign" data-cs="${escHtml(p.callsign || '')}">${escHtml((p.callsign || '').toUpperCase())}${listenLinkIcon(p.callsign)}</td>
             <td>${escHtml(p.name || '—')}</td>
             <td class="mono">${acLink(p.aircraft)}</td>
             <td class="td-route td-callsign-link text-green" data-cs="${escHtml(p.callsign || '')}">${fmtRouteHtml(p.departure, p.arrival)}</td>
@@ -9820,7 +9863,7 @@ function makeAircraftIcon(heading, fremd) {
 
 function buildPopupHtml(p) {
   return `
-    <div class="popup-callsign">${escHtml((p.callsign || '').toUpperCase())}</div>
+    <div class="popup-callsign">${escHtml((p.callsign || '').toUpperCase())}${listenLinkIcon(p.callsign)}</div>
     <div class="popup-row">Pilot: <span>${escHtml(p.name || '—')}</span></div>
     <div class="popup-row">Muster: <span>${acLink(p.aircraft)}</span></div>
     <div class="popup-row">Flugplan: <span>${fmtRouteHtml(p.departure, p.arrival)}</span></div>
