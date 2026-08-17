@@ -31,12 +31,12 @@ const DEVICE_KEY = "friesenspy_device";
  *
  * Wird im "pong" mitgeschickt, damit die Seite erkennen kann, ob im Community-Ordner noch ein
  * altes Paket liegt. Der Wert steht hier doppelt (Manifest und Quelltext), weil das Manifest
- * zur Laufzeit nicht lesbar ist; `tests/test_efb_paket.py` haelt beide aneinander.
+ * zur Laufzeit nicht lesbar ist; `tests/test_paket_hinweis.py` haelt beide aneinander.
  *
  * WICHTIG fuer die Auswertung auf der Seite: Ein Paket VOR 1.10.0 schickt dieses Feld gar
  * nicht. Sein Fehlen ist deshalb kein Fehler, sondern die Aussage "aelter als 1.10.0".
  */
-const PAKET_VERSION = "1.10.0";
+const PAKET_VERSION = "2.0.0";
 
 /**
  * Zufaellige Geraete-ID erzeugen -- oder "" , wenn das nicht sicher moeglich ist.
