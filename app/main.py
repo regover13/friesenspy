@@ -532,8 +532,8 @@ async def admin_list_panel_devices(request: Request):
                 "name": d["name"],
                 "created_at": d["created_at"],
                 "last_seen_at": d["last_seen_at"],
-                # Gemeldet beim Anmelden, ab Paket 1.10.0. `null` heißt nicht „unbekannt",
-                # sondern „älter als 1.10.0 oder seither nicht gestartet" -- vorher gab es
+                # Gemeldet beim Anmelden, ab Paket 2.0.0. `null` heißt nicht „unbekannt",
+                # sondern „älter als 2.0.0 oder seither nicht gestartet" -- vorher gab es
                 # nichts zu melden. Genau diese Geräte brauchen ein neues Paket.
                 "paket_version": d["paket_version"],
                 "paket_veraltet": (
@@ -2239,7 +2239,7 @@ def _device_bind_csrf(user_token: str) -> str:
 # (`_PAKET_ERSTE_MELDENDE` in index.html) -- beide Seiten treffen dieselbe Entscheidung, und
 # `test_paket_hinweis.py` hält sie aneinander. Eine gemeinsame Quelle gäbe es nur über einen
 # weiteren Endpunkt; das wäre mehr Maschinerie als die eine Zeile wert ist.
-_PAKET_ERSTE_MELDENDE = "1.10.0"
+_PAKET_ERSTE_MELDENDE = "2.0.0"
 
 
 def _version_kleiner(a: str | None, b: str | None) -> bool:
@@ -2262,7 +2262,7 @@ def _version_kleiner(a: str | None, b: str | None) -> bool:
 def _paket_ist_veraltet(installiert: str | None, aktuell: str | None) -> bool:
     """Spiegelt ``_paketVeraltet`` im Frontend -- s. dortiger Kommentar.
 
-    ``installiert=None`` heißt „älter als 1.10.0", aber nur, wenn überhaupt schon eine
+    ``installiert=None`` heißt „älter als 2.0.0", aber nur, wenn überhaupt schon eine
     meldende Fassung ausgeliefert wird. Liegt auf dem Server noch etwas Älteres, meldet auch
     das aktuelle Paket nichts und die Abwesenheit sagt gar nichts.
     """
@@ -2274,7 +2274,7 @@ def _paket_ist_veraltet(installiert: str | None, aktuell: str | None) -> bool:
 
 
 def _paket_version_saeubern(roh: str) -> str | None:
-    """Nur eine Versionsnummer, sonst nichts -- z. B. ``"1.10.0"``.
+    """Nur eine Versionsnummer, sonst nichts -- z. B. ``"2.0.0"``.
 
     Der Wert kommt aus der Adresszeile, landet in der Datenbank und später in der
     Admin-Übersicht. Er wird deshalb an der API-Grenze auf die Form geprüft, statt sich auf

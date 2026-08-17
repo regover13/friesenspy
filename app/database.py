@@ -427,8 +427,8 @@ CREATE TABLE IF NOT EXISTS panel_devices (
     name         TEXT,
     created_at   TEXT NOT NULL,
     last_seen_at TEXT,
-    -- Welche Paketfassung im Community-Ordner liegt (ab Paket 1.10.0 beim Anmelden gemeldet).
-    -- NULL heisst "aelter als 1.10.0 oder seither nicht gestartet", nicht "unbekannt".
+    -- Welche Paketfassung im Community-Ordner liegt (ab Paket 2.0.0 beim Anmelden gemeldet).
+    -- NULL heisst "aelter als 2.0.0 oder seither nicht gestartet", nicht "unbekannt".
     paket_version TEXT
 );
 
@@ -611,8 +611,8 @@ _PILOTS_MIGRATIONS = [
 
 _PANEL_DEVICES_MIGRATIONS = [
     # Welche Paketfassung im Community-Ordner liegt. Gemeldet beim Anmelden über
-    # /auth/device (ab Paket 1.10.0) -- vorher war von außen überhaupt nicht erkennbar, was
-    # dort installiert ist. NULL heißt deshalb nicht "unbekannt", sondern "älter als 1.10.0"
+    # /auth/device (ab Paket 2.0.0) -- vorher war von außen überhaupt nicht erkennbar, was
+    # dort installiert ist. NULL heißt deshalb nicht "unbekannt", sondern "älter als 2.0.0"
     # bzw. "seit der Umstellung nicht mehr gestartet".
     "ALTER TABLE panel_devices ADD COLUMN paket_version TEXT",
 ]
@@ -1057,7 +1057,7 @@ def touch_panel_device(conn: sqlite3.Connection, device_id: str,
     """Letzte Nutzung festhalten (kein commit) -- damit im Admin sichtbar ist, was noch aktiv
     ist und was gefahrlos widerrufen werden kann.
 
-    ``paket_version`` wird nur geschrieben, wenn sie mitkommt. Ein Paket vor 1.10.0 meldet
+    ``paket_version`` wird nur geschrieben, wenn sie mitkommt. Ein Paket vor 2.0.0 meldet
     nichts; ein ``NULL`` daraufhin zu ÜBERSCHREIBEN wäre falsch -- der zuletzt bekannte Wert
     ist die bessere Auskunft als „keine Angabe", solange niemand nachweislich zurückrüstet.
     """

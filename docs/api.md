@@ -1934,9 +1934,9 @@ vollständig zu suchen.
 
 **Response** `{"devices": [{device_prefix, cid, name, created_at, last_seen_at, paket_version, paket_veraltet}, …], "paket_aktuell": "<version>"|null}`
 
-`paket_version` ist die Fassung im Community-Ordner, gemeldet beim Anmelden über `/auth/device?…&paket=…` (ab Paket **1.10.0**). **`null` heißt nicht „unbekannt", sondern „älter als 1.10.0 oder seither nicht gestartet"** — vorher gab es nichts zu melden, und genau diese Geräte brauchen ein neues Paket. Der Wert wird an der API-Grenze auf die Form einer Versionsnummer geprüft (`_paket_version_saeubern`); eine ausbleibende Meldung **überschreibt den zuletzt bekannten Stand nicht**, denn der ist die bessere Auskunft als „keine Angabe".
+`paket_version` ist die Fassung im Community-Ordner, gemeldet beim Anmelden über `/auth/device?…&paket=…` (ab Paket **2.0.0**). **`null` heißt nicht „unbekannt", sondern „älter als 2.0.0 oder seither nicht gestartet"** — vorher gab es nichts zu melden, und genau diese Geräte brauchen ein neues Paket. Der Wert wird an der API-Grenze auf die Form einer Versionsnummer geprüft (`_paket_version_saeubern`); eine ausbleibende Meldung **überschreibt den zuletzt bekannten Stand nicht**, denn der ist die bessere Auskunft als „keine Angabe".
 
-`paket_aktuell` ist die ausgelieferte Fassung (aus dem Archiv, s. `GET /api/efb-package`), `paket_veraltet` der Vergleich beider — `null`, wenn kein Paket hinterlegt ist. Verglichen wird **zahlenweise**: als Zeichenkette wäre `"1.10.0" < "1.9.0"`.
+`paket_aktuell` ist die ausgelieferte Fassung (aus dem Archiv, s. `GET /api/efb-package`), `paket_veraltet` der Vergleich beider — `null`, wenn kein Paket hinterlegt ist. Verglichen wird **zahlenweise**: als Zeichenkette wäre `"1.10.0" < "1.9.0"` — und `"2.0.0" < "1.99.99"`.
 
 ### DELETE /api/admin/panel-devices/{device_prefix}
 

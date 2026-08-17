@@ -33,8 +33,8 @@ const DEVICE_KEY = "friesenspy_device";
  * altes Paket liegt. Der Wert steht hier doppelt (Manifest und Quelltext), weil das Manifest
  * zur Laufzeit nicht lesbar ist; `tests/test_paket_hinweis.py` haelt beide aneinander.
  *
- * WICHTIG fuer die Auswertung auf der Seite: Ein Paket VOR 1.10.0 schickt dieses Feld gar
- * nicht. Sein Fehlen ist deshalb kein Fehler, sondern die Aussage "aelter als 1.10.0".
+ * WICHTIG fuer die Auswertung auf der Seite: Ein Paket VOR 2.0.0 schickt dieses Feld gar
+ * nicht. Sein Fehlen ist deshalb kein Fehler, sondern die Aussage "aelter als 2.0.0".
  */
 const PAKET_VERSION = "2.0.0";
 
@@ -94,7 +94,7 @@ function buildPanelUrl(): string {
   // `paket` meldet, welche Fassung im Community-Ordner liegt. Der Server haelt sie am Geraet
   // fest (panel_devices.paket_version) und kann damit im Admin zeigen, wer noch ein altes
   // Paket faehrt -- von aussen war das vorher ueberhaupt nicht erkennbar. Ein Paket vor
-  // 1.10.0 schickt den Parameter nicht; die Spalte bleibt dann leer, was genau das aussagt.
+  // 2.0.0 schickt den Parameter nicht; die Spalte bleibt dann leer, was genau das aussagt.
   return "https://friesenspy.devprops.de/auth/device?device=" + encodeURIComponent(id)
     + "&next=" + encodeURIComponent("/panel")
     + "&paket=" + encodeURIComponent(PAKET_VERSION);

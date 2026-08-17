@@ -791,10 +791,10 @@ v13.6.4 liess sich von aussen **überhaupt nicht** erkennen, welches Paket dort 
 veraltetes fiel erst auf, wenn etwas fehlte (in Paket 1.5.0/1.6.0 blieb der Verkehr aus dem
 Simulator lautlos aus).
 
-**Erkennung:** Seit Paket **1.10.0** schickt die Hülle `paketVersion` im `pong` mit
+**Erkennung:** Seit Paket **2.0.0** schickt die Hülle `paketVersion` im `pong` mit
 (`PAKET_VERSION` in `FriesenSpy.tsx`, per Test an `manifest.json` gebunden — der Wert steht
 doppelt, weil das Manifest zur Laufzeit nicht lesbar ist). Ein älteres Paket schickt das Feld
-gar nicht: **Sein Fehlen ist die Aussage „älter als 1.10.0"**, kein Fehlerfall. Verglichen wird
+gar nicht: **Sein Fehlen ist die Aussage „älter als 2.0.0"**, kein Fehlerfall. Verglichen wird
 gegen `/api/efb-package`.
 
 - `_versionKleiner` vergleicht **zahlenweise**. Als Zeichenkette ist `'1.10.0'` kleiner als
@@ -819,11 +819,11 @@ kommt erst bei einer neueren Fassung wieder. Genau dafür musste der Merker serv
 im Kniebrett übersteht nichts einen Neustart.
 
 **Schweigen, solange nichts Meldendes ausgeliefert wird:** Liegt auf dem Server ein Paket
-**vor** 1.10.0, meldet auch das aktuelle keine Version — ein fehlender Versionsbericht sagt
+**vor** 2.0.0, meldet auch das aktuelle keine Version — ein fehlender Versionsbericht sagt
 dann gar nichts, und der Hinweis forderte Leute auf, auf genau die Fassung zu wechseln, die
 sie bereits haben. `_paketVeraltet` prüft deshalb `_PAKET_ERSTE_MELDENDE` gegen die
-ausgelieferte Fassung. Genau dieser Zustand lag am 16.08.2026 vor: Repo auf 1.10.0,
+ausgelieferte Fassung. Genau dieser Zustand lag am 16.08.2026 vor: Repo schon weiter,
 `/api/efb-package` noch 1.9.0. **Das Paket wird von Hand hinterlegt, nicht vom Deploy
 gebaut** (`msfs-panel/build-package.ps1` läuft auf Windows und braucht den
-MSFSLayoutGenerator) — der Hinweis wird also erst wirksam, wenn ein 1.10.0-Archiv unter
+MSFSLayoutGenerator) — der Hinweis wird also erst wirksam, wenn ein 2.0.0-Archiv unter
 `data/efb/friesenspy-efb.zip` liegt.

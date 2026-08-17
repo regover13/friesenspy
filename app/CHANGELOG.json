@@ -28,7 +28,7 @@
     "highlight": false,
     "title": "Die Geräteübersicht zeigt, wer welches Paket fährt",
     "items": [
-      "🔧 In der Admin-Übersicht der gebundenen Kniebretter steht jetzt bei jedem Gerät, welche Paketfassung dort installiert ist und ob sie veraltet ist. Die App meldet das beim Anmelden mit. Bleibt die Angabe leer, ist das die Aussage „älter als 1.10.0\" — vorher gab es nichts zu melden."
+      "🔧 In der Admin-Übersicht der gebundenen Kniebretter steht jetzt bei jedem Gerät, welche Paketfassung dort installiert ist und ob sie veraltet ist. Die App meldet das beim Anmelden mit. Bleibt die Angabe leer, ist das die Aussage „älter als 2.0.0\" — vorher gab es nichts zu melden."
     ]
   },
   {
@@ -39,7 +39,7 @@
     "items": [
       "📦 Die Seite kommt vom Server und ist damit immer aktuell — die App im Community-Ordner nicht. Bisher war ein veraltetes Paket von außen überhaupt nicht zu erkennen; es fiel erst auf, wenn etwas fehlte. Jetzt meldet die App ihre Version, und das Kniebrett weist unten links darauf hin, wenn eine neuere bereitsteht — mit der Adresse zum Abtippen am PC.",
       "🔕 Bewusst kein Eintrag bei den Benachrichtigungen: Die Glocke bleibt dem vorbehalten, was andere Piloten tun. Und der Hinweis lässt sich wegklicken — er kommt erst wieder, wenn es wirklich ein neueres Paket gibt, nicht bei jedem Neustart.",
-      "📥 Dafür einmal das neue Paket einspielen (1.10.0): https://friesenspy.devprops.de/efb — wer das nicht tut, sieht den Hinweis, weil ältere Pakete ihre Version nicht melden. Genau das ist die Aussage."
+      "📥 Dafür einmal das neue Paket einspielen (2.0.0): https://friesenspy.devprops.de/efb — wer das nicht tut, sieht den Hinweis, weil ältere Pakete ihre Version nicht melden. Genau das ist die Aussage."
     ]
   },
   {

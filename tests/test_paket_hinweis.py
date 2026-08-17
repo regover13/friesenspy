@@ -5,8 +5,8 @@ hierher liess sich von aussen überhaupt nicht erkennen, welches Paket dort lieg
 veraltetes fiel erst auf, wenn etwas fehlte (in 1.5.0/1.6.0 blieb der Verkehr aus dem
 Simulator lautlos aus -- niemand konnte das sehen).
 
-Seit Paket 1.10.0 schickt die Hülle ihre Version im ``pong``. Ein älteres Paket schickt das
-Feld gar nicht: Sein FEHLEN ist die Aussage „älter als 1.10.0", kein Fehlerfall. Genau diese
+Seit Paket 2.0.0 schickt die Hülle ihre Version im ``pong``. Ein älteres Paket schickt das
+Feld gar nicht: Sein FEHLEN ist die Aussage „älter als 2.0.0", kein Fehlerfall. Genau diese
 Auslegung prüfen die Tests hier -- sie ist der Kern des Verfahrens.
 """
 from __future__ import annotations
@@ -81,9 +81,15 @@ def test_paketversion_stimmt_mit_dem_manifest_ueberein():
 
 
 def test_manifest_ist_mindestens_die_erste_meldende_fassung():
-    """Vor 1.10.0 gab es das Feld nicht -- ein Manifest darunter wäre in sich widersprüchlich."""
+    """Vor 2.0.0 gab es das Feld nicht -- ein Manifest darunter wäre in sich widersprüchlich.
+
+    2.0.0 ist die erste Fassung, die tatsächlich ausgeliefert wurde und ihre Version meldet.
+    Ein meldendes Paket UNTERHALB dieser Schwelle würde die Schweigebedingung aushebeln:
+    Alle Nichtmelder gälten dann fälschlich als aktuell. (Eine 1.10.0 war gebaut, aber nie
+    veröffentlicht -- die Nummer sprang auf 2.0.0.)
+    """
     teile = [int(x) for x in MANIFEST["package_version"].split(".")]
-    assert teile >= [1, 10, 0], MANIFEST["package_version"]
+    assert teile >= [2, 0, 0], MANIFEST["package_version"]
 
 
 # ---------------------------------------------------------------------------------------
@@ -106,12 +112,12 @@ console.log('OK');
 
 @pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
 def test_fehlende_version_gilt_als_veraltet():
-    """Der Kern des Verfahrens: Ein Paket vor 1.10.0 schickt gar nichts. Würde `null` als
+    """Der Kern des Verfahrens: Ein Paket vor 2.0.0 schickt gar nichts. Würde `null` als
     „unbekannt, also in Ruhe lassen" ausgelegt, sähe genau die Zielgruppe den Hinweis nie."""
     _node_lauf("""
-assert.strictEqual(_paketVeraltet(null, '1.10.0'), true, 'keine Meldung = altes Paket');
-assert.strictEqual(_paketVeraltet('1.10.0', '1.10.0'), false);
-assert.strictEqual(_paketVeraltet('1.9.0', '1.10.0'), true);
+assert.strictEqual(_paketVeraltet(null, '2.0.0'), true, 'keine Meldung = altes Paket');
+assert.strictEqual(_paketVeraltet('2.0.0', '2.0.0'), false);
+assert.strictEqual(_paketVeraltet('1.9.0', '2.0.0'), true);
 // Ohne Vergleichswert vom Server gibt es keine Aussage -- lieber schweigen als raten.
 assert.strictEqual(_paketVeraltet(null, null), false);
 assert.strictEqual(_paketVeraltet('1.2.0', null), false);
@@ -121,7 +127,7 @@ console.log('OK');
 
 @pytest.mark.skipif(_NODE is None, reason="Node.js nicht verfuegbar")
 def test_schweigt_solange_noch_kein_meldendes_paket_ausgeliefert_wird():
-    """Der Fall vom 16.08.2026: Im Repo stand bereits 1.10.0, ausgeliefert war noch 1.9.0
+    """Der Fall vom 16.08.2026: Im Repo stand die neue Fassung bereits, ausgeliefert war 1.9.0
     (das Paket wird von Hand hinterlegt, nicht vom Deploy gebaut).
 
     Dann meldet auch das AKTUELLE Paket keine Version -- eine fehlende Meldung sagt also
@@ -130,10 +136,10 @@ def test_schweigt_solange_noch_kein_meldendes_paket_ausgeliefert_wird():
     """
     _node_lauf("""
 assert.strictEqual(_paketVeraltet(null, '1.9.0'), false, 'darf noch nicht meckern');
-assert.strictEqual(_paketVeraltet(null, '1.10.0'), true, 'ab der meldenden Fassung schon');
-assert.strictEqual(_paketVeraltet(null, '1.11.0'), true);
+assert.strictEqual(_paketVeraltet(null, '2.0.0'), true, 'ab der meldenden Fassung schon');
+assert.strictEqual(_paketVeraltet(null, '2.1.0'), true);
 // Wer meldet, wird immer verglichen -- unabhaengig davon, was ausgeliefert wird.
-assert.strictEqual(_paketVeraltet('1.10.0', '1.9.0'), false);
+assert.strictEqual(_paketVeraltet('2.0.0', '1.9.0'), false);
 console.log('OK');
 """)
 

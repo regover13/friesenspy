@@ -183,10 +183,10 @@ class TestPaketVersionAmGeraet:
         assert main._paket_version_saeubern(roh) == erwartet
 
     @pytest.mark.parametrize("installiert,aktuell,erwartet", [
-        ("1.9.0", "1.10.0", True),
-        ("1.10.0", "1.10.0", False),
-        ("1.11.0", "1.10.0", False),
-        (None, "1.10.0", True),     # meldet nichts -> aelter als 1.10.0
+        ("1.9.0", "2.0.0", True),
+        ("2.0.0", "2.0.0", False),
+        ("2.1.0", "2.0.0", False),
+        (None, "2.0.0", True),      # meldet nichts -> aelter als 2.0.0
         (None, "1.9.0", False),     # noch keine meldende Fassung ausgeliefert -> keine Aussage
         (None, None, False),
         ("1.2.0", None, False),
@@ -212,7 +212,7 @@ class TestPaketVersionAmGeraet:
             conn.commit()
         finally:
             conn.close()
-        monkeypatch.setattr(main, "_efb_package_version", lambda p: "1.10.0")
+        monkeypatch.setattr(main, "_efb_package_version", lambda p: "2.0.0")
         from app.auth import make_admin_token, make_confirm_token
         r = env.client.get("/api/admin/panel-devices", cookies={
             "fs_admin": make_admin_token(SECRET, "pw"),
@@ -220,20 +220,20 @@ class TestPaketVersionAmGeraet:
         })
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["paket_aktuell"] == "1.10.0"
+        assert d["paket_aktuell"] == "2.0.0"
         assert d["devices"][0]["paket_version"] == "1.9.0"
         assert d["devices"][0]["paket_veraltet"] is True
 
     def test_fehlende_meldung_ueberschreibt_den_letzten_stand_nicht(self, env):
-        """Ein Paket vor 1.10.0 meldet nichts. Den bekannten Wert daraufhin zu leeren, waere
+        """Ein Paket vor 2.0.0 meldet nichts. Den bekannten Wert daraufhin zu leeren, waere
         ein Rueckschritt -- der zuletzt bekannte Stand ist die bessere Auskunft."""
         from app.database import bind_panel_device, get_panel_device, touch_panel_device
         conn = get_connection(env.db)
         try:
             bind_panel_device(conn, "e" * 48, CID, "Tobias")
-            touch_panel_device(conn, "e" * 48, "1.10.0")
+            touch_panel_device(conn, "e" * 48, "2.0.0")
             touch_panel_device(conn, "e" * 48, None)
             conn.commit()
-            assert get_panel_device(conn, "e" * 48)["paket_version"] == "1.10.0"
+            assert get_panel_device(conn, "e" * 48)["paket_version"] == "2.0.0"
         finally:
             conn.close()
