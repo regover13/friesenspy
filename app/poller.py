@@ -623,8 +623,9 @@ class VatsimPoller:
         # Meldepunkte (VRP): einmal kurz nach Start prüfen, danach täglich. Geholt wird nur,
         # wenn der abgelegte Bestand fehlt oder älter als VRP_MAX_ALTER_TAGE ist — der
         # tägliche Lauf ist also fast immer ein Blick auf ein Datum, kein Abruf.
-        # Nicht im Lifespan: Der Weltbestand sind einige zehntausend Punkte über mehrere
-        # Seiten; das gehört nicht zwischen Start und erste Antwort.
+        # Nicht im Lifespan: Der Weltbestand geht über mehrere Seiten und hat beim ersten Lauf
+        # am 17.08.2026 rund 23 Sekunden gedauert; das gehört nicht zwischen Start und erste
+        # Antwort.
         self._scheduler.add_job(
             self._refresh_vrp,
             "date",

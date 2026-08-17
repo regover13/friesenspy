@@ -60,9 +60,15 @@ _METER_JE_FUSS = 0.3048
 class VrpBestand:
     """Ein Punkt ist ``(name, lat, lon, meldepflichtig, hoehe_ft|None)``.
 
-    Tupel statt Wörterbüchern: Es sind weltweit einige zehntausend, und die Feldnamen wären
-    bei jedem einzelnen noch einmal im Speicher. Nach außen (``punkte_im_umkreis``) werden
-    daraus benannte Felder — dort sind es höchstens ein paar hundert.
+    Tupel statt Wörterbüchern: Die Feldnamen wären bei jedem einzelnen noch einmal im Speicher.
+    Nach außen (``punkte_im_umkreis``) werden daraus benannte Felder — dort sind es höchstens
+    ein paar hundert.
+
+    Gemessen 17.08.2026: **6.121 Punkte weltweit**, 334 KB in der Ablage, rund 1,2 MB im
+    Speicher. Deutlich weniger als die „einigen zehntausend", von denen dieser Kommentar bis
+    dahin ausging — der Abruf ist trotzdem vollständig, die API meldet denselben
+    ``totalCount``. Der Bestand ist stark europalastig (Europa 4.683, Südamerika 1.017,
+    Nordamerika 2); Einzelheiten in der Spec vom 16.08.2026, Abschnitt 5.2.
     """
 
     punkte: list = field(default_factory=list)

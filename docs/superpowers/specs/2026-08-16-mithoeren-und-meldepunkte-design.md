@@ -410,12 +410,59 @@ gleichgültig; er kostet nur Plattenplatz im Repo und Speicher im Server.
 Ballast aus `createdBy`, `updatedAt` und Konsorten. Der Testabzug nach Ländern ist als
 Parameter von `vrp.abrufen(laender=[…])` erhalten geblieben; ausgeliefert wird der Weltbestand.
 
-**Die Größe ist noch nicht gemessen** — dafür braucht es den Schlüssel, also den ersten Lauf auf
-dem Server. Zum Vergleich: der FSE-Weltbestand sind 23.780 Plätze in 5,8 MB, im Server 49,7 MB.
-Ein Meldepunkt ist ein Tupel aus fünf Feldern, also deutlich leichter als ein FSE-Platz mit
-Zone. Fällt der Weltbestand wider Erwarten in eine andere Größenordnung, ist über Kürzung der
-Felder oder der Koordinatengenauigkeit zu reden — nicht über weggelassene Länder. **Nach dem
-ersten Deploy im Log nachsehen:** `Meldepunkte geladen: N Punkte`.
+**Gemessen am 17.08.2026 nach dem ersten Lauf auf dem Server: 6.121 Meldepunkte weltweit**
+(Log: `Meldepunkte geladen: 6121 Punkte (Stand 2026-08-17T06:47:38+00:00)`). Die Ablage
+`/opt/friesenspy/data/vrp_openaip.json` ist **334 KB**, im Server belegt die Punkteliste rund
+**1,2 MB**. Der Vergleichsfall FSE ist damit rund 17-mal schwerer auf der Platte und 40-mal im
+Server: 23.780 Plätze in 5,8 MB bzw. 49,7 MB. Über Kürzung der Felder oder der Koordinaten ist
+nach dieser Messung nicht zu reden — es gibt nichts zu sparen.
+
+**Die Zahl ist niedriger, als die Umsetzung erwartet hatte** (die Kommentare in `app/vrp.py`
+und `app/poller.py` sprachen von „einigen zehntausend"; sie sind mit dieser Messung
+richtiggestellt) — **und das ist kein Abbruch der Paginierung.** Gegenprobe direkt an der API,
+mit demselben Schlüssel:
+`GET /api/reporting-points?limit=1` meldet `totalCount: 6121` — der Abruf holt also den
+vollständigen Bestand. `_MAX_SEITEN = 200` ist bei 7 tatsächlich gelaufenen Seiten weit von der
+Bremse entfernt.
+
+**Was die Zahl über die Daten verrät, ist wichtiger als die Zahl selbst: Der Bestand ist stark
+europalastig.** Grobe Zuordnung über Koordinaten-Rechtecke, also nicht auf den Punkt genau:
+
+| Region | Punkte |
+|---|---|
+| Europa | 4.683 |
+| Südamerika | 1.017 |
+| Asien und übrige | 304 |
+| Afrika | 111 |
+| Ozeanien | 4 |
+| **Nordamerika** | **2** |
+
+Das berührt die Entscheidung aus 5.2 — „OpenAIP ist die Karte für den Rest der Welt" — an einer
+Stelle, an der niemand nachgesehen hatte: In den USA und Kanada liefert diese Ebene faktisch
+nichts. Nicht, weil wir etwas weggelassen hätten, sondern weil OpenAIP dort keine Meldepunkte
+führt (VFR-Meldepunkte im europäischen Sinn sind dort auch nicht das übliche Verfahren). Die
+Ebene bleibt richtig so, wie sie ist; die Erwartung an sie gehört nur zurechtgerückt.
+
+**Der Punktedeckel `MAX_PUNKTE = 300` greift im Alltag nicht.** Gemessen gegen den ausgelieferten
+Bestand, bei Radien, die den sichtbaren Zoomstufen entsprechen (Zoom 11 ≈ r 25–30 km, Zoom 9 ≈
+r 100 km):
+
+| Ort | r 30 | r 60 | r 100 | r 150 |
+|---|---|---|---|---|
+| LOWW Wien | 33 | 75 | 102 | 160 |
+| EGLL London | 31 | 74 | 112 | 146 |
+| LSZH Zürich | 32 | 32 | 76 | 153 |
+| EDDM München | 4 | 13 | 64 | 136 |
+| EDWG Wangerooge | 1 | 7 | 28 | 72 |
+
+Gekappt wird erst bei `r = 250`, dem Höchstwert des Endpunkts — und der ist nur erreichbar, wenn
+die Karte so weit herausgezoomt ist, dass die Ebene über `_VRP_MIN_ZOOM` ohnehin abschaltet. Die
+Zahl 300 darf stehen bleiben.
+
+**Für die Sichtprüfung im Sim taugt EDWG schlecht.** Auf Zoom 11 steht dort **ein** Meldepunkt
+(NOVEMBER, rund 25 km entfernt), im engeren Ausschnitt gar keiner — die Deutsche Bucht ist dünn
+besetzt. Wer die Ebene ansehen will, nimmt Wien, London oder Zürich: dort stehen auf derselben
+Zoomstufe rund 30 Dreiecke im Bild.
 
 **5.3 Farbe und Symbolgröße** sind Vorschläge aus der Kartenkonvention, kein Naturgesetz. Sie
 stehen an genau einer Stelle als Konstante und lassen sich nach dem ersten Blick im Sim
