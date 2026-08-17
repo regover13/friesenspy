@@ -367,8 +367,11 @@ intern mit, ein doppelter Eintrag neben dem Kachel-Layer erscheint also nur einm
 4. ~~**Teil B**~~ **Erledigt am 17.08.2026**: `app/vrp.py` (Abruf, Ablage, Ausschnitt, Deckel),
    Poller-Jobs `vrp_initial`/`vrp_refresh`, `GET /api/vrp`, Ebene „Meldepunkte" im Frontend,
    `tests/test_vrp.py` mit 42 Zusicherungen. Suite: **1874 grün**.
-5. **Changelog v13.7.0 steht** — bleibt noch: nach `main` bringen und deployen. Der erste Start
-   nach dem Deploy holt die Meldepunkte selbst; bis dahin (Sekunden) ist die Ebene leer.
+5. ~~**Changelog v13.7.0**, nach `main`, Deploy.~~ **Erledigt am 17.08.2026**: `928ce51` auf
+   `main`, Deploy-Lauf 611 in 63 s durchgelaufen (Build, GHCR, VPS, Health-Check, Discord).
+   Der erste Start danach holt die Meldepunkte selbst; bis dahin (Sekunden) war die Ebene leer.
+   **Offen bleibt allein die Messung** — wie groß der Weltbestand ist, steht im Container-Log
+   (s. 5.2), und dafür braucht es eine Sitzung mit Zugang zum VPS.
 
 **Abnahme:**
 
