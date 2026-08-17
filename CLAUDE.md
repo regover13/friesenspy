@@ -28,6 +28,19 @@ Vom Nutzer vorgemerkte, noch nicht begonnene Arbeiten stehen in
 angefangen wird. Am Projekt arbeiten mehrere Sitzungen parallel (auch in der Cloud): vor dem
 Start pullen und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
+## Versionsnummern: PATCH, außer der Nutzer sagt etwas anderes (stehende Regel — IMMER einhalten)
+
+Ein neuer Changelog-Eintrag bekommt die **nächste Patch-Nummer** (13.6.5 → 13.6.6). Das gilt
+auch dann, wenn die Änderung sich groß anfühlt: neue Funktion, neue Karten-Ebene, mehrere Teile
+in einem Release — alles Patch. Ebenso bleibt `"highlight"` auf `false`.
+
+**Eine MINOR-Nummer (13.6.x → 13.7.0) vergibt allein der Nutzer**, ausdrücklich und in seinen
+eigenen Worten. Nicht selbst herleiten, nicht aus dem Umfang schließen, nicht „weil es sich
+anbietet". Im Zweifel Patch und kurz nachfragen — das ist der Fall, der ihn nicht ärgert.
+
+Am 17.08.2026 ist genau das schiefgegangen: Aus zwei Features wurde ungefragt v13.7.0 mit
+`highlight: true`. Zurückgenommen auf v13.6.6.
+
 ## Zum Lesen Bestimmtes muss beim Nutzer ankommen (stehende Regel — IMMER einhalten)
 
 **In einer Cloud-Session sieht der Nutzer keine Datei, die nur im Repo liegt.** Die Sitzung

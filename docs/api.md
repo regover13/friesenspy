@@ -172,7 +172,7 @@ nahtfreie Darstellung; Leaflet zöge daraus ein Band quer über die Karte.
 ## GET /api/vrp
 
 Meldepunkte (VRP) im Kartenausschnitt. Speist die abschaltbare Ebene „Meldepunkte" (seit
-v13.7.0).
+v13.6.6).
 
 **Warum es diese Ebene gibt:** Der OpenAIP-Kachel-Layer zeichnet Meldepunkte zu klein, und an
 einem Bild lässt sich die Größe einer einzelnen Punktart nicht ändern. Die Kachelkarte bleibt
