@@ -292,7 +292,7 @@ niemandem. `remarks` ist bei den meisten Punkten leer; nachrüstbar, wenn es jem
 
 | Frage | Entscheidung | Begründung |
 |---|---|---|
-| Symbolform | **Dreieck**, Spitze nach oben | Das ist das Kartenzeichen für Meldepunkte; ein Kreis wäre mit den FSE-Plätzen verwechselbar |
+| Symbolform | **Dreieck**, Spitze nach oben, seit 17.08. **in einem Ring** | Das ist das Kartenzeichen für Meldepunkte; ein Kreis *anstelle* des Dreiecks wäre mit den FSE-Plätzen verwechselbar (s. Nachtrag unter der Tabelle) |
 | meldepflichtig / auf Anforderung | **gefüllt** (`compulsory: true`) / **hohl** | Genau die Unterscheidung, die die Quelle hergibt — und die einzige, die im Flug zählt |
 | Größe | 11 px bis Zoom 10, 15 px darüber | „größer und prominenter" heißt sichtbar auf Reiseflug-Zoom, nicht bildschirmfüllend im Anflug |
 | Farbe | Magenta `#e07be0` mit dunklem Saum (`drop-shadow` ohne Versatz, CSS-Klasse wie `.platzrunde`) | Kartenüblich für Meldepunkte, und im Haus noch frei: Blau `#2d9cdb` ist Klickbarem vorbehalten, Hellblau `#8ab4d8` sind die Platzrunden, Grau die FSE-Landeflächen. Der Saum trägt das Symbol auf Satellit **und** auf hellem CARTO |
@@ -301,6 +301,37 @@ niemandem. `remarks` ist bei den meisten Punkten leer; nachrüstbar, wenn es jem
 | Untere Zoomgrenze | **9** | Darunter wird jede Region zum Punktteppich — dieselbe Überlegung wie `_PLATZRUNDEN_MIN_ZOOM` |
 | Deckel | Punktbudget im Server (`MAX_PUNKTE_VRP`, Startwert 300), gemeldet als `gekappt` | Wie bei FSE: nach Zeichenlast, nicht nach Stückzahl |
 | Doppelt mit dem OpenAIP-Kachel-Layer? | **hinnehmen** | Genau wie die Platzrunden, die OFM ebenfalls zeichnet. Wer es sauber will, schaltet OpenAIP ab — beide Haken stehen nebeneinander |
+
+**Nachtrag 17.08.2026 — das Dreieck steht jetzt in einem Ring** (Nutzerwunsch nach dem ersten
+Blick auf die ausgelieferte Ebene).
+
+Die Zeile „Symbolform" oben liest sich wie ein Verbot, ist aber keins: Die Frage dort war,
+**welche Form** das Symbol bekommt, und die verworfene Alternative war ein Kreis **anstelle**
+des Dreiecks. Der wäre mit den FSE-Plätzen verwechselbar gewesen — die sind sandgelbe
+Vollkreise (`L.circleMarker`, Radius 6, `#d8a45e`), und zwei Kreissorten, die sich nur in der
+Farbe unterscheiden, fallen im Flug als erstes zusammen. Ein Ring **um** ein Dreieck ist der
+andere Fall: Die Form bleibt eindeutig ein Dreieck, und der Ring macht sie sogar
+unverwechselbarer. Diese Variante war bis zum 17.08. schlicht nie betrachtet worden.
+
+Umgesetzt mit der ausdrücklichen Auflage, **das Dreieck nicht zu verkleinern**. Beides zugleich
+geht nur über einen größeren Kasten: `viewBox` **und** Pixelmaß wachsen gemeinsam von 20 auf
+28, eine SVG-Einheit bleibt damit ein Pixel und das Dreieck exakt 15 px breit wie zuvor. Wäre
+nur die `viewBox` gewachsen, hätte der Ring das Dreieck zusammengeschrumpft — genau das, was
+nicht gewollt war. Die Zoom-Skalierung (`scale(0.72)` / `scale(1)`) ist unberührt und wirkt auf
+den ganzen Kasten.
+
+Das Dreieck sitzt um +4/+2,34 verschoben, damit sein **Umkreismittelpunkt** auf der Kastenmitte
+liegt (rechnerisch `(10; 11,66)` bei den alten Ecken, Radius 8,66) und nicht sein Schwerpunkt.
+Um den Schwerpunkt gelegt säße der Ring sichtbar schief, weil ein Dreieck nach oben spitz und
+nach unten breit ist. `r = 10,5` lässt ringsum knapp 1,8 Einheiten Luft; der Ring ist mit
+`stroke-width: 1.6` dünner als das Dreieck (2,2) — er ist die Zutat, nicht die Aussage.
+
+**Der Ring bleibt immer hohl**, auch bei meldepflichtig: gefüllt um ein gefülltes Dreieck herum
+wäre er ein magentafarbener Klumpen. Gefüllt/hohl trägt weiter allein das Dreieck.
+
+Dazu derselbe Saum wie bei den Flugzeugen (`drop-shadow(0 0 2px rgba(0,0,0,0.9))`) statt der
+knapperen 1,6 px — zwei benachbarte Saumstärken auf derselben Karte sind eine Abweichung, die
+man im Cockpit sieht und im Quelltext nicht erklären kann.
 
 Bedienung wie jede andere Ebene: ein Haken **„Meldepunkte"** in der Ebenen-Auswahl, einsortiert
 zwischen `Platzrunden` und `FSE-Landeflächen` (Reihenfolge in `liveOverlays`,

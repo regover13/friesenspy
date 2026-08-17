@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.7.1",
+    "date": "2026-08-17",
+    "highlight": false,
+    "title": "Meldepunkte mit Ring",
+    "items": [
+      "📍 Die Meldepunkte stehen jetzt in einem Ring: das Dreieck unverändert groß, ein magentafarbener Kreis darum. Dazu derselbe dunkle Saum, den die Flugzeuge tragen — damit steht das Zeichen auf dem Satellitenbild genauso wie auf der hellen Karte.",
+      "Gefüllt heißt weiterhin meldepflichtig, hohl auf Anforderung. Der Ring ist immer hohl und ändert an dieser Unterscheidung nichts."
+    ]
+  },
+  {
     "version": "13.7.0",
     "date": "2026-08-17",
     "highlight": false,

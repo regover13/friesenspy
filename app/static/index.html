@@ -2141,21 +2141,32 @@
        Unterscheidung, die OpenAIP hergibt, und die einzige, die im Flug zaehlt.
        Magenta, weil es im Haus frei ist: Blau (--green) gehoert Klickbarem, Hellblau den
        Platzrunden, Grau den FSE-Landeflaechen.
+       Seit 17.08.2026 steht das Dreieck zusaetzlich in einem RING (Nutzerwunsch). Er aendert
+       nichts an der Aussage -- gefuellt/hohl bleibt die Unterscheidung, und die traegt weiter
+       allein das Dreieck. Der Ring bleibt deshalb IMMER hohl: gefuellt um ein gefuelltes
+       Dreieck herum waere er ein magentafarbener Klumpen. Geometrie im Kommentar bei
+       _vrpMarke.
        Der Saum ist ein drop-shadow OHNE Versatz -- derselbe Kniff wie bei .platzrunde. Er
        traegt das Zeichen auf dem Satellitenbild wie auf dem hellen CARTO. Ein Zeichen, das nur
-       auf einer Kartensorte geprueft ist, ist nicht geprueft (Lehre vom 16.08.2026). */
-    .vrp-marke { filter: drop-shadow(0 0 1.6px rgba(4,8,15,0.95)); }
+       auf einer Kartensorte geprueft ist, ist nicht geprueft (Lehre vom 16.08.2026).
+       Seit 17.08.2026 derselbe Wert wie bei .aircraft-marker (Nutzerwunsch): breiter und
+       reines Schwarz statt der knapperen 1,6px. Zwei benachbarte Saumstaerken auf derselben
+       Karte sind eine Abweichung, die man im Cockpit sieht und im Quelltext nicht erklaeren
+       kann. */
+    .vrp-marke { filter: drop-shadow(0 0 2px rgba(0,0,0,0.9)); }
     /* Die Groesse haengt an einer Klasse am Karten-Container, NICHT an setIcon(): Ein
        setIcon je Marker beim Ueberschreiten der Zoomschwelle ist im Kniebrett als Aufblitzen
        sichtbar (derselbe Fund, der setIcon aus dem Verkehrs-Takt genommen hat). Skaliert wird
        um die Mitte, der Ankerpunkt bleibt also der Meldepunkt selbst.
        Ohne Uebergang: Eine Animation ueber hunderte Marker ist genau die Sorte Arbeit, die
        Coherent GT nicht hat. */
-    .vrp-marke svg { width: 20px; height: 20px; overflow: visible;
+    .vrp-marke svg { width: 28px; height: 28px; overflow: visible;
                      transform: scale(0.72); transform-origin: 50% 50%; }
     .leaflet-container.vrp-gross .vrp-marke svg { transform: scale(1); }
     .vrp-marke polygon { fill: none; stroke: #e07be0; stroke-width: 2.2; stroke-linejoin: round; }
     .vrp-marke.vrp-pflicht polygon { fill: #e07be0; }
+    /* Der Ring duenner als das Dreieck: Er ist die Zutat, nicht die Aussage. */
+    .vrp-marke circle { fill: none; stroke: #e07be0; stroke-width: 1.6; }
     /* Wie .fse-platz-label: ein nahezu deckendes Plaettchen traegt seinen Hintergrund selbst
        und ist damit auf JEDER Kartensorte lesbar. */
     .vrp-label {
@@ -4945,12 +4956,28 @@ function _loadVrpPref()   { return _prefLies(_VRP_PREF_KEY) === '1'; }
 // KEIN Canvas-Renderer und kein CircleMarker: Die Live-Karte laeuft mit leaflet-rotate, und das
 // Plugin traegt SVG-Pfade und DOM-Marker, den Canvas-Ursprung aber nicht (s. _fseZoneBauen).
 // Ein divIcon ist ein DOM-Marker und damit auf der sicheren Seite.
+// Der Ring um das Dreieck ist ein Nutzerwunsch vom 17.08.2026, ausdruecklich MIT unveraendert
+// grossem Dreieck. Beides zusammen geht nur ueber einen groesseren Kasten: viewBox UND
+// Pixelmass wachsen gemeinsam von 20 auf 28, eine SVG-Einheit bleibt damit ein Pixel und das
+// Dreieck exakt 15 px breit wie zuvor. Waere nur die viewBox gewachsen, haette der Ring das
+// Dreieck zusammengeschrumpft -- genau das, was nicht gewollt war.
+//
+// Das Dreieck sitzt um +4/+2,34 verschoben, damit sein UMKREISMITTELPUNKT auf der Kastenmitte
+// liegt (rechnerisch (10; 11,66) bei den alten Ecken, Radius 8,66) und nicht sein
+// Schwerpunkt. Um den Schwerpunkt gelegt saesse der Ring sichtbar schief, weil ein Dreieck
+// nach oben spitz und nach unten breit ist. r = 10,5 laesst ringsum knapp 1,8 Einheiten Luft.
+//
+// Die Spec (2.4) verwarf einen Kreis ALS SYMBOLFORM -- der waere mit den FSE-Plaetzen
+// verwechselbar gewesen (sandgelbe Vollkreise). Ein Ring UM ein Dreieck ist der andere Fall:
+// Die Form bleibt eindeutig ein Dreieck, der Ring macht sie sogar unverwechselbarer.
 function _vrpMarke(pflicht) {
   return L.divIcon({
     className: 'vrp-marke' + (pflicht ? ' vrp-pflicht' : ''),
-    html: '<svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="10,3 17.5,16 2.5,16"/></svg>',
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
+    html: '<svg viewBox="0 0 28 28" aria-hidden="true">'
+        + '<circle cx="14" cy="14" r="10.5"/>'
+        + '<polygon points="14,5.34 21.5,18.34 6.5,18.34"/></svg>',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
 }
 

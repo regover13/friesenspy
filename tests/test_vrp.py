@@ -373,6 +373,39 @@ def test_meldepflicht_ist_am_symbol_zu_sehen():
     assert ".vrp-marke.vrp-pflicht polygon { fill: #e07be0; }" in INDEX
 
 
+def test_ring_umschliesst_das_dreieck():
+    """Nutzerwunsch 17.08.2026: ein Ring um das Dreieck, das Dreieck dabei NICHT kleiner.
+
+    Der Ring bleibt hohl, auch bei meldepflichtig — ein gefüllter Ring um ein gefülltes
+    Dreieck wäre ein Klumpen, und die Unterscheidung trägt allein das Dreieck (s. den Test
+    darüber). Deshalb hier `fill: none` ohne eine `.vrp-pflicht`-Ausnahme.
+    """
+    assert '<circle cx="14" cy="14" r="10.5"/>' in INDEX
+    assert ".vrp-marke circle { fill: none;" in INDEX
+    assert ".vrp-marke.vrp-pflicht circle" not in INDEX
+
+
+def test_dreieck_behaelt_seine_groesse_trotz_ring():
+    """Der Kasten wächst von 20 auf 28 Einheiten UND von 20 auf 28 px — eine SVG-Einheit
+    bleibt damit ein Pixel, das Dreieck also exakt so groß wie vor dem Ring (15 px breit).
+    Wäre nur die viewBox gewachsen, hätte der Ring das Dreieck zusammengeschrumpft.
+    """
+    assert 'viewBox="0 0 28 28"' in INDEX
+    assert ".vrp-marke svg { width: 28px; height: 28px;" in INDEX
+    assert "iconSize: [28, 28]" in INDEX
+    assert "iconAnchor: [14, 14]" in INDEX
+    # Kantenlänge unverändert: 21.5 - 6.5 = 15, wie zuvor 17.5 - 2.5 = 15.
+    assert '<polygon points="14,5.34 21.5,18.34 6.5,18.34"/>' in INDEX
+
+
+def test_saum_ist_der_gleiche_wie_bei_den_flugzeugen():
+    """Nutzerwunsch 17.08.2026. Die Flugzeuge tragen ihren Saum seit dem 15.08. in genau
+    dieser Form; ein zweiter, knapperer Wert daneben wäre eine Sorte Abweichung, die man
+    im Cockpit sieht und im Quelltext nicht erklären kann."""
+    assert ".vrp-marke { filter: drop-shadow(0 0 2px rgba(0,0,0,0.9)); }" in INDEX
+    assert "filter: drop-shadow(0 0 2px rgba(0,0,0,0.9));" in INDEX  # .aircraft-marker
+
+
 def test_name_erscheint_erst_ab_der_labelschwelle():
     assert "const _VRP_LABEL_MIN_ZOOM = 11;" in INDEX
     assert "className: 'vrp-label'" in INDEX
