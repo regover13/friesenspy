@@ -2135,6 +2135,41 @@
     }
     .fse-platz-label::before { display: none; }   /* Leaflets Sprechblasen-Zipfel */
 
+    /* Meldepunkte (VRP) -- eigene Ebene ueber der Kachelkarte.
+       Das Dreieck ist das Kartenzeichen fuer Meldepunkte; ein Kreis waere mit den FSE-Plaetzen
+       verwechselbar. Gefuellt = meldepflichtig, hohl = auf Anforderung: genau die
+       Unterscheidung, die OpenAIP hergibt, und die einzige, die im Flug zaehlt.
+       Magenta, weil es im Haus frei ist: Blau (--green) gehoert Klickbarem, Hellblau den
+       Platzrunden, Grau den FSE-Landeflaechen.
+       Der Saum ist ein drop-shadow OHNE Versatz -- derselbe Kniff wie bei .platzrunde. Er
+       traegt das Zeichen auf dem Satellitenbild wie auf dem hellen CARTO. Ein Zeichen, das nur
+       auf einer Kartensorte geprueft ist, ist nicht geprueft (Lehre vom 16.08.2026). */
+    .vrp-marke { filter: drop-shadow(0 0 1.6px rgba(4,8,15,0.95)); }
+    /* Die Groesse haengt an einer Klasse am Karten-Container, NICHT an setIcon(): Ein
+       setIcon je Marker beim Ueberschreiten der Zoomschwelle ist im Kniebrett als Aufblitzen
+       sichtbar (derselbe Fund, der setIcon aus dem Verkehrs-Takt genommen hat). Skaliert wird
+       um die Mitte, der Ankerpunkt bleibt also der Meldepunkt selbst.
+       Ohne Uebergang: Eine Animation ueber hunderte Marker ist genau die Sorte Arbeit, die
+       Coherent GT nicht hat. */
+    .vrp-marke svg { width: 20px; height: 20px; overflow: visible;
+                     transform: scale(0.72); transform-origin: 50% 50%; }
+    .leaflet-container.vrp-gross .vrp-marke svg { transform: scale(1); }
+    .vrp-marke polygon { fill: none; stroke: #e07be0; stroke-width: 2.2; stroke-linejoin: round; }
+    .vrp-marke.vrp-pflicht polygon { fill: #e07be0; }
+    /* Wie .fse-platz-label: ein nahezu deckendes Plaettchen traegt seinen Hintergrund selbst
+       und ist damit auf JEDER Kartensorte lesbar. */
+    .vrp-label {
+      background: rgba(4,8,15,0.85);
+      border: none;
+      box-shadow: none;
+      color: #f0c4ef;
+      font-family: var(--text-mono, monospace);
+      font-size: 9px;
+      padding: 0 3px;
+      white-space: nowrap;
+    }
+    .vrp-label::before { display: none; }
+
     /* =====================================================================
        STATISTIKEN
        ===================================================================== */
@@ -4859,6 +4894,193 @@ function _fseAttributionAn(map) {
 }
 function _fseAttributionAus(map) {
   if (map.attributionControl) map.attributionControl.removeAttribution(_FSE_ATTR);
+}
+
+// ==========================================================================
+//  MELDEPUNKTE (VRP)
+// ==========================================================================
+// Warum eine eigene Ebene, wo der OpenAIP-Layer sie doch zeichnet: Er zeichnet sie zu klein
+// (Nutzer, 16.08.2026), und an einem Kachelbild laesst sich die Groesse einer einzelnen
+// Punktart nicht aendern. Die Kachelkarte bleibt deshalb unangetastet -- diese Ebene legt sich
+// nur mit grossen Zeichen darueber (Spec vom 16.08.2026, Teil B).
+//
+// Zwei Dinge kommen gratis dazu: Der OpenAIP-Layer endet bei maxZoom 14 und OFM traegt
+// Luftfahrtinhalt nur bis Stufe 12 -- im Anflug, wo man am weitesten hineinzoomt, tragen also
+// BEIDE Kachelquellen nichts mehr. Diese Ebene liegt ueber jeder Karte und auf jeder Stufe,
+// genau wie die Platzrunden.
+//
+// Der Bestand liegt im Server (weltweit, aus der OpenAIP-Core-API), der Browser bekommt nur
+// den Ausschnitt -- dasselbe Muster wie bei FSE, s. app/vrp.py.
+const _VRP_API = '/api/vrp';
+// Darunter waere jede Region ein Punktteppich (dieselbe Ueberlegung wie _PLATZRUNDEN_MIN_ZOOM).
+const _VRP_MIN_ZOOM = 9;
+// Ein Meldepunkt ohne Namen ist nutzlos -- man meldet ihn ja beim Namen. Ab hier steht er dran,
+// und ab hier wird das Zeichen gross (.vrp-gross).
+const _VRP_LABEL_MIN_ZOOM = 11;
+// Serverseitige Obergrenze, hier gespiegelt (wie _FSE_MAX_KM).
+const _VRP_MAX_KM = 250;
+// Rand und Nachlade-Anteil wie bei FSE, aus derselben Rechnung: 0,2 x 1,25 R ist genau die
+// Reserve, die der Rand bereitstellt.
+const _VRP_RAND = 1.25;
+const _VRP_NACHLADEN_ANTEIL = 0.2;
+const _VRP_PREF_KEY = 'friesenspy_vrp';
+// CC BY-NC 4.0 verlangt die Namensnennung, und L.marker bringt anders als L.TileLayer keine
+// mit -- deshalb von Hand, genau solange die Ebene an ist (wie bei FSE). Der Kachel-Layer
+// traegt seine eigene; Leaflet zaehlt gleiche Zeichenketten intern zusammen.
+const _VRP_ATTR = '&copy; <a href="https://www.openaip.net">OpenAIP</a>';
+
+// FeatureGroup statt LayerGroup: nur sie feuert 'layeradd' (s. _platzrundenGruppe).
+const _vrpGruppe = L.featureGroup();
+// Schluessel -> Marker. Grundlage des Abgleichs: Was in zwei aufeinanderfolgenden Antworten
+// steht, bleibt unangetastet -- sonst flackern die Beschriftungen bei jedem Nachladen im Flug.
+const _vrpTabelle = new Map();
+let _vrpLetzteMitte = null;
+let _vrpLetzterZoom = null;
+let _vrpLetzterRadius = 0;
+let _vrpRunde = 0;
+
+function _saveVrpPref(an) { _prefSchreib(_VRP_PREF_KEY, an ? '1' : '0'); }
+function _loadVrpPref()   { return _prefLies(_VRP_PREF_KEY) === '1'; }
+
+// KEIN Canvas-Renderer und kein CircleMarker: Die Live-Karte laeuft mit leaflet-rotate, und das
+// Plugin traegt SVG-Pfade und DOM-Marker, den Canvas-Ursprung aber nicht (s. _fseZoneBauen).
+// Ein divIcon ist ein DOM-Marker und damit auf der sicheren Seite.
+function _vrpMarke(pflicht) {
+  return L.divIcon({
+    className: 'vrp-marke' + (pflicht ? ' vrp-pflicht' : ''),
+    html: '<svg viewBox="0 0 20 20" aria-hidden="true"><polygon points="10,3 17.5,16 2.5,16"/></svg>',
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+  });
+}
+
+function _vrpPopup(p) {
+  const art = p.c ? 'meldepflichtig' : 'auf Anforderung';
+  let html = '<div class="popup-callsign">' + escHtml(p.n) + '</div>'
+           + '<div class="popup-row">Meldepunkt: <span>' + art + '</span></div>';
+  // Nur echte Hoehen. Fehlt die Angabe, steht keine Zeile da -- eine erfundene Zahl auf einer
+  // Karte, nach der geflogen wird, waere schlimmer als eine fehlende (dieselbe Regel wie bei
+  // den Platzrunden-Hoehenschildern).
+  if (p.e !== null && p.e !== undefined) {
+    html += '<div class="popup-row">Höhe: <span>' + p.e.toLocaleString('de-DE') + ' ft MSL</span></div>';
+  }
+  return html;
+}
+
+function _vrpBauen(schluessel, p) {
+  const m = L.marker([p.y, p.x], { icon: _vrpMarke(p.c), keyboard: false });
+  // Der Name wird NICHT hier als Tooltip gebunden -- permanente Tooltips sind DOM-Elemente,
+  // die Leaflet bei jeder Kartenbewegung neu setzt. Gebunden wird erst im Sichtbereich
+  // (s. _labelsImSichtbereich), und der Text kommt von hier.
+  m._vrpName = p.n;
+  return m.bindPopup(_vrpPopup(p));
+}
+
+// Wird von _vrpAbrufen nach dem Abgleich aufgerufen -- modulweit, damit der Aufrufer sie
+// erreicht (wie _fsePlaetzeLabelsAnpassen).
+let _vrpLabelsAnpassen = () => {};
+
+function _vrpZoomWache(map) {
+  _vrpLabelsAnpassen = () => {
+    const gross = map.getZoom() >= _VRP_LABEL_MIN_ZOOM;
+    // Eine Klasse am Container statt setIcon je Marker (s. CSS-Kommentar bei .vrp-marke svg).
+    const el = map.getContainer();
+    if (el) el.classList.toggle('vrp-gross', gross);
+    _labelsImSichtbereich(
+      map, _vrpGruppe, gross,
+      l => l._vrpName,
+      { permanent: true, direction: 'right', className: 'vrp-label' }
+    );
+  };
+  map.on('zoomend', _vrpLabelsAnpassen);
+  map.on('moveend', _vrpLabelsAnpassen);
+  _vrpLabelsAnpassen();
+}
+
+// Auch die Streckenmarke zuruecksetzen -- sonst blockt die Sperre in _vrpAbrufen den naechsten
+// Abruf, obwohl die Karte gerade geleert wurde (Fund aus _fseLeeren).
+function _vrpLeeren() {
+  _vrpGruppe.clearLayers();
+  _vrpTabelle.clear();
+  _vrpLetzteMitte = null;
+  _vrpLetzterZoom = null;
+}
+
+function _vrpRadiusKm(map) {
+  const km = map.getCenter().distanceTo(map.getBounds().getNorthEast()) / 1000;
+  return Math.max(1, Math.min(_VRP_MAX_KM, Math.round(km * _VRP_RAND)));
+}
+
+function _vrpAbrufen(map) {
+  if (!map.hasLayer(_vrpGruppe)) return;
+  if (!_istSichtbar(map.getContainer())) return;   // verdeckte Karte: Arbeit ohne Wirkung
+  if (map.getZoom() < _VRP_MIN_ZOOM) { _vrpLeeren(); return; }
+
+  const mitte = map.getCenter();
+  const radius = _vrpRadiusKm(map);
+  const zoom = map.getZoom();
+  if (_vrpLetzteMitte && zoom === _vrpLetzterZoom) {
+    const gewandert = mitte.distanceTo(_vrpLetzteMitte) / 1000;
+    if (gewandert < _vrpLetzterRadius * _VRP_NACHLADEN_ANTEIL) return;
+  }
+  _vrpLetzteMitte = mitte; _vrpLetzterZoom = zoom; _vrpLetzterRadius = radius;
+  // Laufende Nummer gegen sich ueberholende Antworten (s. _fseAbrufen).
+  const runde = ++_vrpRunde;
+
+  // Die Mitte auf +-180 ziehen: Leaflet laesst die Laenge ueber die Datumsgrenze hinauslaufen,
+  // der Server validiert lon in [-180, 180] und antwortete sonst mit 422 -- die Ebene bliebe
+  // still leer.
+  const anfrage = mitte.wrap();
+  const alat = Math.max(-90, Math.min(90, anfrage.lat));
+  const frage = '?lat=' + alat.toFixed(4) + '&lon=' + anfrage.lng.toFixed(4) + '&r=' + radius;
+  // Ein fehlgeschlagener Abruf nimmt die Streckenmarke zurueck -- sonst blockt die Sperre jeden
+  // Folgeversuch, bis ein Fuenftel Radius geflogen ist. Diese Ebene hat keinen eigenen Takt,
+  // der das nachholen wuerde.
+  const fehlgeschlagen = () => { if (runde === _vrpRunde) _vrpLetzteMitte = null; };
+  fetch(_VRP_API + frage)
+    .then(r => (r.ok ? r.json() : null))
+    .then(d => {
+      if (runde !== _vrpRunde) return;      // eine neuere Anfrage ist schon unterwegs
+      if (!d) { fehlgeschlagen(); return; }
+      _fseAbgleichen(_vrpGruppe, _vrpTabelle, d.punkte, _vrpBauen);
+      // EINMAL nach dem Abgleich, nicht je Marker -- s. _fsePlaetzeZoomWache.
+      _vrpLabelsAnpassen();
+    })
+    .catch(fehlgeschlagen);   // Netz weg (im Kniebrett keine Seltenheit)
+}
+
+// Wie bei OpenAIP, Platzrunden und FSE: VOR dem Bau der Layers-Control aufrufen -- sonst zeigt
+// der Haken dauerhaft den falschen Zustand.
+function _addPreferredVrpLayer(map) {
+  map.on('overlayadd', (e) => {
+    if (e.layer !== _vrpGruppe) return;
+    _saveVrpPref(true);
+    // Streckenmarke zuruecksetzen, sonst blockt die Sperre den ersten Abruf der frisch
+    // eingeschalteten Ebene (Fund aus _addPreferredFseLayer).
+    _vrpLetzteMitte = null;
+    _vrpAbrufen(map);
+    _vrpAttributionAn(map);
+  });
+  map.on('overlayremove', (e) => {
+    if (e.layer !== _vrpGruppe) return;
+    _saveVrpPref(false);
+    _vrpAttributionAus(map);
+    _vrpLeeren();
+  });
+  if (_loadVrpPref()) {
+    _vrpGruppe.addTo(map);
+    _vrpAttributionAn(map);
+    _vrpLetzteMitte = null;
+    _vrpAbrufen(map);
+  }
+  map.on('moveend zoomend', () => _vrpAbrufen(map));
+}
+
+function _vrpAttributionAn(map) {
+  if (map.attributionControl) map.attributionControl.addAttribution(_VRP_ATTR);
+}
+function _vrpAttributionAus(map) {
+  if (map.attributionControl) map.attributionControl.removeAttribution(_VRP_ATTR);
 }
 
 // --------------------------------------------------------------------------
@@ -9735,6 +9957,10 @@ async function initLiveMap() {
   liveOverlays['Platzrunden'] = _platzrundenGruppe;
   _addPreferredPlatzrundenLayer(liveMap, _platzrundenGruppe);
   _platzrundenZoomWache(liveMap);
+  // Meldepunkte zwischen Platzrunden und FSE: von der groessten zur kleinsten Flaeche.
+  liveOverlays['Meldepunkte'] = _vrpGruppe;
+  _vrpZoomWache(liveMap);
+  _addPreferredVrpLayer(liveMap);
   liveOverlays['FSE-Landeflächen'] = _fseZonenGruppe;
   liveOverlays['FSE-Plätze'] = _fsePlaetzeGruppe;
   _addPreferredFseLayer(liveMap);

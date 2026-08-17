@@ -1,5 +1,18 @@
 [
   {
+    "version": "13.7.0",
+    "date": "2026-08-17",
+    "highlight": true,
+    "title": "Mithören und deutliche Meldepunkte",
+    "items": [
+      "🔊 Hinter jedem Callsign in der Live-Ansicht steht jetzt ein Lautsprecher — in der Tabelle und im Karten-Popup. Ein Klick öffnet listen.vatsim.net und schaltet auf die Frequenz, auf der dieser Pilot gerade ist. Dafür ist einmal eine Anmeldung mit der eigenen VATSIM-CID nötig; der Wunsch überlebt die Anmeldung, danach läuft der richtige Pilot. Zu hören ist, was gerade gesprochen wird — steht kein Lotse auf der Frequenz oder redet niemand, bleibt es still.",
+      "🔕 Im Kniebrett erscheint das Symbol bewusst nicht: Dort gibt es keinen Browser, in dem sich der Link öffnen ließe.",
+      "📍 Neue Karten-Ebene „Meldepunkte\": die visuellen Meldepunkte als eigene große Dreiecke mit Namen, statt der winzigen Punkte im OpenAIP-Bild. Gefüllt heißt meldepflichtig, hohl heißt auf Anforderung; das Popup nennt die Höhe, wenn sie veröffentlicht ist. Ab Zoomstufe 9, der Name ab Stufe 11 — weltweit.",
+      "🗺️ Die Kachelkarte bleibt dabei unangetastet, die Ebene legt sich nur darüber. Ihr Gewinn zeigt sich im Anflug: Das OpenAIP-Bild endet bei Zoomstufe 14 und die OpenFlightMap trägt Luftfahrtinhalt nur bis Stufe 12 — die Meldepunkte stehen auf jeder Stufe und über jeder Karte, auch über dem Satellitenbild.",
+      "🔄 Nichts davon ist von Hand zu pflegen: Der Server holt die Meldepunkte selbst bei OpenAIP und frischt sie monatlich auf. Datenquelle: OpenAIP (CC BY-NC 4.0)."
+    ]
+  },
+  {
     "version": "13.6.5",
     "date": "2026-08-16",
     "highlight": false,

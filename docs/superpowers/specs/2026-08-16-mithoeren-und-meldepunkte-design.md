@@ -250,15 +250,37 @@ Warum hier dasselbe und nicht ein Live-Durchgriff auf OpenAIP:
 - **Es funktioniert im Kniebrett.** Dieselbe Antwortform wie FSE, derselbe Deckel gegen die
   Zeichenlast von Coherent GT.
 
-Konkret:
+**Abweichung bei der Umsetzung (17.08.2026): kein Abzug im Repo, der Server holt selbst.**
+Der Entwurf sah ein Skript vor, das den Bestand zieht und als Datei ins Repo legt — nach dem
+FSE-Vorbild. Beim Bauen zeigte sich, dass das Vorbild an genau dem Punkt nicht trägt: Die
+FSE-Daten liegen im Repo, weil ihre Quelle ein öffentliches GitHub-Repo **ohne Schlüssel** ist;
+jeder kann sie ziehen, auch die Entwicklungssitzung. OpenAIP verlangt einen Schlüssel, und der
+steht ausschließlich in `config.env` auf dem Server. Ein Abzug im Repo hieße: Er kann nur dort
+erzeugt werden, wo der Schlüssel liegt, und muss von Hand nachgezogen werden, damit er nicht
+vergreist — Arbeit, die niemand bestellt hat.
+
+Der Server kann beides selbst: Er hat den Schlüssel, und mit dem Datenverzeichnis
+(`/opt/friesenspy/data/`, das Volume) hat er eine Ablage, die den Container überlebt. Alle vier
+Gründe von oben bleiben dabei gültig — der Abruf passiert **einmal im Monat**, nicht je
+Kartenbewegung.
 
 ```
-scripts/vrp_daten.py   → holt Seite für Seite (limit=1000, page=n), weltweit (s. 5.2),
-                         schreibt app/data/vrp/vrp_welt.json  (im Repo, wie app/data/fse/)
-app/vrp.py             → Bestand beim Start lesen, Umkreis schneiden, Punkte deckeln
-GET /api/vrp?lat&lon&r → { punkte: [...], gekappt: bool }   (gespiegelt von /api/fse/airports)
-index.html             → Ebene „Meldepunkte" in der Ebenen-Auswahl
+Poller-Job vrp_refresh  → holt Seite für Seite (limit=1000, page=n), weltweit, wenn die
+                          Ablage fehlt oder älter als 30 Tage ist; Schlüssel im HEADER
+                          (x-openaip-api-key), nicht in der URL — die landet im Zweifel im Log
+app/vrp.py              → Ablage lesen/schreiben, Bestand im Modul, Umkreis schneiden, deckeln
+GET /api/vrp?lat&lon&r  → { punkte: {...}, gekappt: bool }   (gespiegelt von /api/fse/airports)
+index.html              → Ebene „Meldepunkte" in der Ebenen-Auswahl
 ```
+
+Der Bestand liegt als Modulzustand in `app/vrp.py` und **nicht** in `app.state` wie bei FSE:
+Der Auffrischungs-Job hängt im Poller, und der kennt die FastAPI-App nicht. Der Austausch ist
+eine einzelne Zuweisung — es gibt also keinen Moment, in dem eine Anfrage einen halb ersetzten
+Bestand sieht.
+
+Schlüssel im Ergebnis ist die **Position im Bestand**, nicht der Name: Namen gibt es weltweit
+vielfach („NOVEMBER" hunderte Male), und zwei gleichnamige Punkte im selben Ausschnitt würden
+sich sonst gegenseitig verschlucken.
 
 Format je Punkt, bewusst knapp (der Bestand liegt im Speicher, s. `app/fse.py`):
 `{ n: Name, y: lat, x: lon, c: 1|0 (meldepflichtig), e: Höhe in ft MSL|null }`.
@@ -337,14 +359,16 @@ intern mit, ein doppelter Eintrag neben dem Kachel-Layer erscheint also nur einm
    Karten-Popup, acht Zusicherungen in `tests/test_mithoeren.py`. Suite: **1832 grün**.
    Der Changelog-Eintrag wird bewusst erst mit dem Release geschrieben — er soll beide Teile
    nennen.
-2. **Gegenprobe des API-Schlüssels** (5.1). Fällt sie negativ aus, geht Teil A allein als
-   v13.6.6 raus, und Teil B wartet auf einen Schlüssel — beides zusammen zu halten, bis eine
-   fremde Zugangsfrage geklärt ist, wäre der falsche Weg herum.
-3. **Testabzug ziehen** (`--umfang test`, 5.2): damit stehen Skript, Endpunkt und Ebene in
-   Minuten statt in einem Weltabzug. Der Weltabzug (`--umfang welt`) kommt zum Schluss, wenn
-   nichts mehr am Format geändert wird — und er ist der, der ausgeliefert wird.
-4. **Teil B**: `scripts/vrp_daten.py` → `app/vrp.py` + Endpunkt (mit Tests) → Ebene im Frontend.
-5. Ein Changelog-Eintrag, ein Deploy.
+2. ~~**Gegenprobe des API-Schlüssels** (5.1).~~ **Erledigt am 17.08.2026** — der Nutzer hat sie
+   auf dem VPS gefahren: Der Endpunkt antwortet, der vorhandene Schlüssel gilt auch für die
+   Core-API. Damit entfiel der Rückfall „Teil A allein als v13.6.6".
+3. ~~**Testabzug ziehen**~~ — entfallen mit der Architektur-Abweichung in 2.3: Es gibt kein
+   Skript und keinen Abzug mehr, der Server holt den Weltbestand selbst.
+4. ~~**Teil B**~~ **Erledigt am 17.08.2026**: `app/vrp.py` (Abruf, Ablage, Ausschnitt, Deckel),
+   Poller-Jobs `vrp_initial`/`vrp_refresh`, `GET /api/vrp`, Ebene „Meldepunkte" im Frontend,
+   `tests/test_vrp.py` mit 42 Zusicherungen. Suite: **1874 grün**.
+5. **Changelog v13.7.0 steht** — bleibt noch: nach `main` bringen und deployen. Der erste Start
+   nach dem Deploy holt die Meldepunkte selbst; bis dahin (Sekunden) ist die Ebene leer.
 
 **Abnahme:**
 
@@ -360,15 +384,11 @@ intern mit, ein doppelter Eintrag neben dem Kachel-Layer erscheint also nur einm
 
 ## 5. Offene Punkte
 
-**5.1 Gilt unser vorhandener Schlüssel auch für die Core-API?** Die Kacheln nutzen `apiKey` als
-Query-Parameter, die Core-API ebenfalls — sehr wahrscheinlich derselbe Schlüssel. Nachweisbar
-ist es nur mit dem echten Wert, der in `config.env` steht (nicht im Repo). Ein Befehl genügt:
-
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' \
-  "https://api.core.openaip.net/api/reporting-points?country=DE&limit=1&apiKey=$OPENAIP_API_KEY"
-# 200 = alles gut · 403 = eigener API-Client nötig (accounts.openaip.net → API Clients)
-```
+**5.1 ~~Gilt unser vorhandener Schlüssel auch für die Core-API?~~ Ja** — der Nutzer hat es am
+17.08.2026 auf dem VPS geprüft, der Endpunkt antwortet. Ein zweiter API-Client bei OpenAIP war
+nicht nötig. In der Umsetzung geht der Schlüssel allerdings als **Header**
+(`x-openaip-api-key`) raus und nicht als Query-Parameter: Beides ist erlaubt, aber eine URL
+landet im Zweifel in einem Log oder einer Fehlermeldung.
 
 **5.2 Der Länderumfang ist entschieden: die ganze Welt** (Nutzer, 16.08.2026). Deutschland und
 Nachbarn dienen nur als **Testabzug** während der Umsetzung.
@@ -382,23 +402,17 @@ Zuschnitt auf Europa bekämpfte die Zeichenlast am falschen Ende und beschnitt d
 Tag (`/api/vrp?lat&lon&r` plus Punktebudget). Damit ist der Umfang des Abzugs für den Browser
 gleichgültig; er kostet nur Plattenplatz im Repo und Speicher im Server.
 
-Umsetzung im Skript:
+**Umgesetzt genau so:** ohne `country`-Filter, `page`/`limit=1000` durchpaginieren, bis
+`nextPage` fehlt, `fields=name,compulsory,geometry,elevation` — das spart auf jeder Seite den
+Ballast aus `createdBy`, `updatedAt` und Konsorten. Der Testabzug nach Ländern ist als
+Parameter von `vrp.abrufen(laender=[…])` erhalten geblieben; ausgeliefert wird der Weltbestand.
 
-```bash
-python3 scripts/vrp_daten.py --umfang test    # DE,NL,BE,LU,FR,CH,AT,CZ,PL,DK -> vrp_test.json
-python3 scripts/vrp_daten.py --umfang welt    # ohne country-Filter, seitenweise -> vrp_welt.json
-```
-
-Weltweit heißt: **ohne `country`-Filter**, `page`/`limit=1000` durchpaginieren, bis `nextPage`
-fehlt, mit Pause zwischen den Seiten (die API drosselt, s. 2.2). `fields` auf das Nötige
-begrenzen (`name,compulsory,geometry,elevation`) — das spart auf jeder Seite den Ballast aus
-`createdBy`, `updatedAt` und Konsorten.
-
-**Was noch zu messen ist, ist die Größe, nicht die Entscheidung.** Zum Vergleich: der
-FSE-Weltbestand sind 23.780 Plätze in 5,8 MB, im Server 49,7 MB. Meldepunkte sind reine Punkte
-mit vier Feldern, also je Stück deutlich leichter als ein FSE-Platz mit Zone. Erst wenn der
-Weltabzug wider Erwarten in eine andere Größenordnung fällt, ist neu zu reden — dann aber über
-Kürzung der Felder oder Koordinatengenauigkeit, nicht über weggelassene Länder.
+**Die Größe ist noch nicht gemessen** — dafür braucht es den Schlüssel, also den ersten Lauf auf
+dem Server. Zum Vergleich: der FSE-Weltbestand sind 23.780 Plätze in 5,8 MB, im Server 49,7 MB.
+Ein Meldepunkt ist ein Tupel aus fünf Feldern, also deutlich leichter als ein FSE-Platz mit
+Zone. Fällt der Weltbestand wider Erwarten in eine andere Größenordnung, ist über Kürzung der
+Felder oder der Koordinatengenauigkeit zu reden — nicht über weggelassene Länder. **Nach dem
+ersten Deploy im Log nachsehen:** `Meldepunkte geladen: N Punkte`.
 
 **5.3 Farbe und Symbolgröße** sind Vorschläge aus der Kartenkonvention, kein Naturgesetz. Sie
 stehen an genau einer Stelle als Konstante und lassen sich nach dem ersten Blick im Sim

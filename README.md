@@ -470,7 +470,11 @@ PUSH_OVERVIEW_PASSWORD=                     # Optional: Extra-Passwort für die 
 TELEGRAM_BOT_TOKEN=                         # Optional
 TELEGRAM_CHAT_ID=                           # Optional
 STATSIM_API_KEY=                            # Optional: historische Flüge via statsim.net
-OPENAIP_API_KEY=                            # Optional: OpenAIP-Overlay (Luftraum, Navaids)
+OPENAIP_API_KEY=                            # Optional: OpenAIP-Overlay (Luftraum, Navaids) UND
+                                            # die Ebene „Meldepunkte" (seit v13.7.0): Ohne Key
+                                            # fehlen beide, alles andere läuft. Der Server holt
+                                            # die Meldepunkte damit selbst (monatlich, Ablage im
+                                            # Datenverzeichnis) — nichts von Hand nachzupflegen.
 VAPID_PUBLIC_KEY=                           # Optional: Web Push Public Key (base64url)
 VAPID_PRIVATE_KEY=                          # Optional: Web Push Private Key (base64url, 43 Zeichen)
 VAPID_CONTACT_EMAIL=                        # Optional: mailto:... für Web Push

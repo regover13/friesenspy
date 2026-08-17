@@ -54,6 +54,7 @@ from app.vatsim import (
 from app.alerts import format_online_message, send_telegram_alert
 from app.statsim import fetch_flight_track, fetch_pilot_flights
 from app.teamspeak import fetch_channel_clients, parse_channel_ids
+from app import vrp
 
 logger = logging.getLogger(__name__)
 
@@ -341,6 +342,27 @@ async def send_prefile_push_notifications(
             conn2.close()
 
 
+# Die Daten ändern sich in Monaten, nicht in Minuten (ein Meldepunkt ist eine
+# AIP-Veröffentlichung). 30 Tage sind der Kompromiss zwischen „aktuell genug" und „die API
+# sieht uns praktisch nie".
+VRP_MAX_ALTER_TAGE = 30
+
+
+def _vrp_faellig(stand: str) -> bool:
+    """Ist der abgelegte Bestand älter als VRP_MAX_ALTER_TAGE?
+
+    Ein unlesbares oder fehlendes Datum gilt als fällig — lieber einmal zu viel geholt als ein
+    Bestand, der stillschweigend vergreist.
+    """
+    try:
+        gesetzt = datetime.fromisoformat(stand)
+    except (TypeError, ValueError):
+        return True
+    if gesetzt.tzinfo is None:
+        gesetzt = gesetzt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - gesetzt).days >= VRP_MAX_ALTER_TAGE
+
+
 class VatsimPoller:
     def __init__(
         self,
@@ -363,6 +385,7 @@ class VatsimPoller:
         ts_min_dwell_polls: int = 1,
         ts_poll_interval: int = 30,
         ts_rejoin_debounce_sec: int = 900,
+        openaip_api_key: str = "",
     ) -> None:
         self.db_path = db_path
         self.callsign_prefix = callsign_prefix
@@ -383,6 +406,7 @@ class VatsimPoller:
         self.ts_min_dwell_polls = ts_min_dwell_polls
         self.ts_poll_interval = ts_poll_interval
         self.ts_rejoin_debounce_sec = ts_rejoin_debounce_sec
+        self.openaip_api_key = openaip_api_key
         self._scheduler: AsyncIOScheduler | None = None
         self._http_client: httpx.AsyncClient | None = None
         # State: cid → {"id": flight_id, "dep": departure, "arr": arrival}
@@ -596,6 +620,52 @@ class VatsimPoller:
             minutes=5,
             id="payload_research_retry",
         )
+        # Meldepunkte (VRP): einmal kurz nach Start prüfen, danach täglich. Geholt wird nur,
+        # wenn der abgelegte Bestand fehlt oder älter als VRP_MAX_ALTER_TAGE ist — der
+        # tägliche Lauf ist also fast immer ein Blick auf ein Datum, kein Abruf.
+        # Nicht im Lifespan: Der Weltbestand sind einige zehntausend Punkte über mehrere
+        # Seiten; das gehört nicht zwischen Start und erste Antwort.
+        self._scheduler.add_job(
+            self._refresh_vrp,
+            "date",
+            id="vrp_initial",
+        )
+        self._scheduler.add_job(
+            self._refresh_vrp,
+            "interval",
+            hours=24,
+            id="vrp_refresh",
+        )
+
+    async def _refresh_vrp(self) -> None:
+        """Meldepunkte holen, ablegen und in den Speicher schwenken — wenn fällig.
+
+        Silent fail wie bei den Telegram-Alerts: Kommt OpenAIP nicht, bleibt der bisherige
+        Bestand stehen (beim allerersten Mal: keine Ebene). Nichts daran ist es wert, den
+        Scheduler oder gar den Start zu gefährden.
+        """
+        if not self.openaip_api_key:
+            return
+        alt = vrp.bestand()
+        if alt.punkte and not _vrp_faellig(alt.stand):
+            return
+        try:
+            punkte = await vrp.abrufen(self.openaip_api_key)
+        except Exception as exc:
+            logger.warning("Meldepunkte: Abruf fehlgeschlagen (%r) — Ebene bleibt, wie sie war", exc)
+            return
+        if not punkte:
+            logger.warning("Meldepunkte: Abruf lieferte nichts — Bestand unverändert")
+            return
+        stand = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        try:
+            vrp.speichern(vrp.pfad_fuer(self.db_path), punkte, stand)
+        except OSError as exc:
+            # Schreiben ist der Bonus, nicht der Zweck: Der Bestand steht auch ohne Datei —
+            # er müsste nach einem Neustart nur erneut geholt werden.
+            logger.warning("Meldepunkte: Ablage nicht schreibbar (%r)", exc)
+        vrp.bestand_setzen(vrp.VrpBestand(punkte=punkte, stand=stand))
+        logger.info("Meldepunkte geladen: %d Punkte (Stand %s)", len(punkte), stand)
 
     async def stop(self) -> None:
         """Scheduler + HTTP-Client sauber beenden."""
@@ -2137,4 +2207,5 @@ def create_poller() -> VatsimPoller:
         ts_min_dwell_polls=settings.TS_MIN_DWELL_POLLS,
         ts_poll_interval=settings.TS_POLL_INTERVAL,
         ts_rejoin_debounce_sec=settings.TS_REJOIN_DEBOUNCE_SEC,
+        openaip_api_key=settings.OPENAIP_API_KEY,
     )

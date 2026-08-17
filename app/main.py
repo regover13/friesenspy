@@ -32,7 +32,7 @@ from app.auth import (
     verify_admin_token,
     verify_confirm_token,
 )
-from app import fse
+from app import fse, vrp
 from app.config import get_settings
 from app.forum_sso import (
     USER_COOKIE,
@@ -232,6 +232,13 @@ async def lifespan(app: FastAPI):
     # im Container ist das /opt/friesenspy.
     app.state.fse = fse.laden(Path("app/data/fse"))
     _logger.info("FSE-Bestand geladen: %d Plätze", len(app.state.fse.plaetze))
+    # Meldepunkte aus der Ablage im Datenverzeichnis. Ist dort nichts (erster Start nach dem
+    # Deploy), bleibt die Ebene leer, bis der Poller-Job sie geholt hat — Sekunden später.
+    # Anders als der FSE-Bestand liegt dieser NICHT im Repo: Die Quelle verlangt einen
+    # Schlüssel, und der steht nur in config.env (Begründung ausführlich in app/vrp.py).
+    _vrp = vrp.aus_ablage_laden(settings.DB_PATH)
+    _logger.info("Meldepunkte geladen: %d Punkte (Stand %s)",
+                 len(_vrp.punkte), _vrp.stand or "—")
     poller = create_poller()
     app.state.poller = poller
     await poller.start()
@@ -866,6 +873,27 @@ def get_fse_zones(
 # Endpunkte in den Threadpool — ein übersehenes ``async`` wäre eine stille Bremse).
 app.get("/api/fse/airports")(get_fse_airports)
 app.get("/api/fse/zones")(get_fse_zones)
+
+
+def get_vrp(
+    lat: float = Query(..., ge=-90, le=90, description="Bezugspunkt, i. d. R. die Kartenmitte"),
+    lon: float = Query(..., ge=-180, le=180),
+    r: float = Query(50.0, ge=1, le=vrp.MAX_KM, description="Radius in km"),
+):
+    """Meldepunkte (VRP) im Kartenausschnitt.
+
+    Der Bestand liegt im Modul, nicht in ``app.state``: Der Auffrischungs-Job hängt im Poller,
+    und der kennt die App nicht (s. app/vrp.py).
+
+    ``def`` und nicht ``async def``, aus demselben Grund wie bei den FSE-Endpunkten: Der Filter
+    läuft linear über den ganzen Bestand. In einer Koroutine blockierte das den Event-Loop und
+    damit auch ``/api/sse``.
+    """
+    punkte, gekappt = vrp.punkte_im_umkreis(vrp.bestand(), lat, lon, r)
+    return {"punkte": punkte, "gekappt": gekappt}
+
+
+app.get("/api/vrp")(get_vrp)
 
 
 @app.get("/api/stats/activity")

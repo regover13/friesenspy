@@ -169,6 +169,59 @@ nahtfreie Darstellung; Leaflet zöge daraus ein Band quer über die Karte.
 
 ---
 
+## GET /api/vrp
+
+Meldepunkte (VRP) im Kartenausschnitt. Speist die abschaltbare Ebene „Meldepunkte" (seit
+v13.7.0).
+
+**Warum es diese Ebene gibt:** Der OpenAIP-Kachel-Layer zeichnet Meldepunkte zu klein, und an
+einem Bild lässt sich die Größe einer einzelnen Punktart nicht ändern. Die Kachelkarte bleibt
+deshalb unangetastet — diese Ebene legt sich nur mit großen Zeichen darüber. Zwei Dinge kommen
+gratis dazu: Der OpenAIP-Layer endet bei `maxZoom: 14`, OFM trägt Luftfahrtinhalt nur bis
+Stufe 12 — im Anflug tragen also beide Kachelquellen nichts mehr; diese Ebene liegt über jeder
+Karte und auf jeder Zoomstufe.
+
+Der Bestand ist **weltweit** und liegt im Serverspeicher (`app/vrp.py`). Anders als der
+FSE-Bestand **nicht im Repo**: Die Quelle (OpenAIP-Core-API) verlangt einen Schlüssel, den nur
+der Server hat. Er holt sie deshalb selbst — beim ersten Start und danach, sobald die Ablage
+älter als 30 Tage ist (Job `vrp_refresh`, Ablage neben der Datenbank im Datenverzeichnis).
+Ohne `OPENAIP_API_KEY` bleibt die Ebene leer, alles andere läuft.
+
+Kein Sonderweg bei der Anmeldung: verhält sich wie `/api/traffic`.
+
+**Query-Parameter**
+
+| Name | Typ | Pflicht | Bereich | Bedeutung |
+|------|-----|---------|---------|-----------|
+| `lat` | float | ja | −90 … 90 | Bezugspunkt, im Frontend die Kartenmitte |
+| `lon` | float | ja | −180 … 180 | Bezugspunkt |
+| `r` | float | nein | 1 … 250 (Default 50) | Radius in km |
+
+Werte außerhalb der Bereiche → `422`.
+
+**Response**
+
+```json
+{ "punkte": { "4711": { "n": "WHISKEY", "y": 53.51, "x": 8.51, "c": 1, "e": 98 } },
+  "gekappt": false }
+```
+
+`c` = meldepflichtig (1) oder auf Anforderung (0), `e` = Höhe in ft MSL oder `null`. Fehlt die
+Höhe, zeigt das Popup keine — eine erfundene Zahl auf einer Karte, nach der geflogen wird, wäre
+schlimmer als eine fehlende.
+
+**Der Schlüssel ist die Position im Bestand**, nicht der Name: Namen gibt es weltweit vielfach
+(„NOVEMBER" hunderte Male). Er ist innerhalb einer Serverlaufzeit stabil, und genau das braucht
+der Abgleich im Browser — was in zwei aufeinanderfolgenden Antworten steht, bleibt unangetastet,
+sonst flackern die Beschriftungen bei jedem Nachladen im Flug.
+
+**`gekappt`** meldet wie bei FSE und beim Verkehr, dass der Nutzer eine Scheibe statt des vollen
+Rechtecks sieht. Gedeckelt wird hier in **Stück** (300) und nicht in Punkten: Ein Meldepunkt ist
+immer genau ein Marker mit einer Beschriftung, es gibt keine zweite Ebene mit anderer
+Zeichenlast.
+
+---
+
 ## GET /api/stats/activity
 
 Flugaktivität über Zeit — für das Liniendiagramm im Statistiken-Tab.
