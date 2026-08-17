@@ -1,8 +1,8 @@
 [
   {
-    "version": "13.7.0",
+    "version": "13.6.6",
     "date": "2026-08-17",
-    "highlight": true,
+    "highlight": false,
     "title": "Mithören und deutliche Meldepunkte",
     "items": [
       "🔊 Hinter jedem Callsign in der Live-Ansicht steht jetzt ein Lautsprecher — in der Tabelle und im Karten-Popup. Ein Klick öffnet listen.vatsim.net und schaltet auf die Frequenz, auf der dieser Pilot gerade ist. Dafür ist einmal eine Anmeldung mit der eigenen VATSIM-CID nötig; der Wunsch überlebt die Anmeldung, danach läuft der richtige Pilot. Zu hören ist, was gerade gesprochen wird — steht kein Lotse auf der Frequenz oder redet niemand, bleibt es still.",
