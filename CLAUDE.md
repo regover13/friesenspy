@@ -28,18 +28,19 @@ Vom Nutzer vorgemerkte, noch nicht begonnene Arbeiten stehen in
 angefangen wird. Am Projekt arbeiten mehrere Sitzungen parallel (auch in der Cloud): vor dem
 Start pullen und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
-## Versionsnummern: PATCH, außer der Nutzer sagt etwas anderes (stehende Regel — IMMER einhalten)
+## `"highlight": false` — „GROSSES UPDATE" vergibt allein der Nutzer (stehende Regel)
 
-Ein neuer Changelog-Eintrag bekommt die **nächste Patch-Nummer** (13.6.5 → 13.6.6). Das gilt
-auch dann, wenn die Änderung sich groß anfühlt: neue Funktion, neue Karten-Ebene, mehrere Teile
-in einem Release — alles Patch. Ebenso bleibt `"highlight"` auf `false`.
+Jeder neue Changelog-Eintrag bekommt **`"highlight": false`**. Ohne Ausnahme, egal wie groß die
+Änderung sich anfühlt: neue Funktion, neue Karten-Ebene, mehrere Teile in einem Release — der
+Haken bleibt aus. Er zeichnet im Versionsverlauf die rote Marke **„GROSSES UPDATE"**, und die
+setzt **ausschließlich der Nutzer**, ausdrücklich und in seinen eigenen Worten.
 
-**Eine MINOR-Nummer (13.6.x → 13.7.0) vergibt allein der Nutzer**, ausdrücklich und in seinen
-eigenen Worten. Nicht selbst herleiten, nicht aus dem Umfang schließen, nicht „weil es sich
-anbietet". Im Zweifel Patch und kurz nachfragen — das ist der Fall, der ihn nicht ärgert.
+**Die Versionsnummer ist davon unberührt** und keine Streitfrage: Ein Release bekommt die
+Nummer, die passt (auch MINOR, 13.6.x → 13.7.0). Wer hier korrigiert, korrigiert `highlight` —
+nicht die Nummer.
 
-Am 17.08.2026 ist genau das schiefgegangen: Aus zwei Features wurde ungefragt v13.7.0 mit
-`highlight: true`. Zurückgenommen auf v13.6.6.
+Am 17.08.2026 schiefgegangen: v13.7.0 ging mit `highlight: true` raus. Beim Zurücknehmen wurde
+dann fälschlich die Nummer angefasst statt des Hakens — der Ärger kam von der roten Marke.
 
 ## Zum Lesen Bestimmtes muss beim Nutzer ankommen (stehende Regel — IMMER einhalten)
 

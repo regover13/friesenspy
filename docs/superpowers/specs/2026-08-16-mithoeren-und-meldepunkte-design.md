@@ -2,7 +2,7 @@
 
 **Stand:** 16.08.2026 · **Betrifft:** `app/static/index.html`, `app/main.py`, neu `app/vrp.py`,
 `scripts/vrp_daten.py` · **Quelle:** die beiden Einträge in `docs/offene-aufgaben.md`
-(Nutzer, 16.08.2026) · **Ziel:** beides in **einer** Version — Vorschlag **v13.6.6**
+(Nutzer, 16.08.2026) · **Ziel:** beides in **einer** Version — Vorschlag **v13.7.0**
 
 Zwei Aufgaben, ein Release. Sie haben nichts miteinander zu tun außer dem Ort: beide sitzen in
 der Live-Ansicht, beide fassen `index.html` an. Genau deshalb gehören sie in eine Fassung —
@@ -335,11 +335,11 @@ intern mit, ein doppelter Eintrag neben dem Kachel-Layer erscheint also nur einm
 
 ---
 
-## 3. Was der Nutzer sieht (Changelog-Entwurf v13.6.6)
+## 3. Was der Nutzer sieht (Changelog-Entwurf v13.7.0)
 
 ```json
 {
-  "version": "13.6.6",
+  "version": "13.7.0",
   "date": "2026-08-1X",
   "highlight": true,
   "title": "Mithören und deutliche Meldepunkte",
@@ -367,7 +367,7 @@ intern mit, ein doppelter Eintrag neben dem Kachel-Layer erscheint also nur einm
 4. ~~**Teil B**~~ **Erledigt am 17.08.2026**: `app/vrp.py` (Abruf, Ablage, Ausschnitt, Deckel),
    Poller-Jobs `vrp_initial`/`vrp_refresh`, `GET /api/vrp`, Ebene „Meldepunkte" im Frontend,
    `tests/test_vrp.py` mit 42 Zusicherungen. Suite: **1874 grün**.
-5. ~~**Changelog v13.6.6**, nach `main`, Deploy.~~ **Erledigt am 17.08.2026**: `928ce51` auf
+5. ~~**Changelog v13.7.0**, nach `main`, Deploy.~~ **Erledigt am 17.08.2026**: `928ce51` auf
    `main`, Deploy-Lauf 611 in 63 s durchgelaufen (Build, GHCR, VPS, Health-Check, Discord).
    Der erste Start danach holt die Meldepunkte selbst; bis dahin (Sekunden) war die Ebene leer.
    **Offen bleibt allein die Messung** — wie groß der Weltbestand ist, steht im Container-Log

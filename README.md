@@ -471,7 +471,7 @@ TELEGRAM_BOT_TOKEN=                         # Optional
 TELEGRAM_CHAT_ID=                           # Optional
 STATSIM_API_KEY=                            # Optional: historische Flüge via statsim.net
 OPENAIP_API_KEY=                            # Optional: OpenAIP-Overlay (Luftraum, Navaids) UND
-                                            # die Ebene „Meldepunkte" (seit v13.6.6): Ohne Key
+                                            # die Ebene „Meldepunkte" (seit v13.7.0): Ohne Key
                                             # fehlen beide, alles andere läuft. Der Server holt
                                             # die Meldepunkte damit selbst (monatlich, Ablage im
                                             # Datenverzeichnis) — nichts von Hand nachzupflegen.
