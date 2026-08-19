@@ -17,4 +17,19 @@ ENV DB_PATH=/opt/friesenspy/data/friesenspy.db
 # SECRET_KEY wird über config.env gesetzt (Pflichtfeld — kein Fallback)
 
 EXPOSE 8091
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8091", "--log-level", "info"]
+# --proxy-headers seit 2026-08-19 (Security-Audit):
+# Ohne die Option ist request.client.host fuer JEDE Anfrage 127.0.0.1 -- die
+# Adresse von nginx, nicht die des Besuchers. Das hatte zwei Folgen:
+#
+#   1. Die Login-Bremse (5 Fehlversuche/60 s, main.py) zaehlte GLOBAL statt
+#      je Adresse. Ein Fremder konnte mit fuenf Fehlversuchen den echten
+#      Admin fuer das Zeitfenster aussperren.
+#   2. Die Warnung "Fehlgeschlagener Login von %s" nannte immer 127.0.0.1 --
+#      die Adresse des Angreifers war forensisch verloren.
+#
+# --forwarded-allow-ips begrenzt das Vertrauen auf nginx; ohne diese Angabe
+# wuerde uvicorn den Header von jedem Absender glauben, und dann koennte
+# sich jeder eine beliebige Herkunft ausdenken.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8091", \
+     "--log-level", "info", \
+     "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
