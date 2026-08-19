@@ -30,6 +30,14 @@ EXPOSE 8091
 # --forwarded-allow-ips begrenzt das Vertrauen auf nginx; ohne diese Angabe
 # wuerde uvicorn den Header von jedem Absender glauben, und dann koennte
 # sich jeder eine beliebige Herkunft ausdenken.
+#
+# Warum nicht nur 127.0.0.1: nginx laeuft auf dem Host und erreicht den
+# Container ueber die Docker-Bruecke -- aus Sicht von uvicorn kommt die
+# Verbindung also von 172.25.0.1, nicht von Loopback. Mit 127.0.0.1 allein
+# verwarf uvicorn den Header und protokollierte weiter die Gateway-Adresse
+# (beim ersten Anlauf am 2026-08-19 genau so passiert). 172.16.0.0/12 deckt
+# alle Docker-Netze ab und bleibt gueltig, wenn ein Netz neu angelegt wird
+# und eine andere Nummer bekommt.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8091", \
      "--log-level", "info", \
-     "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
+     "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1,172.16.0.0/12"]
