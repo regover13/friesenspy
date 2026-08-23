@@ -345,6 +345,26 @@ CREATE TABLE IF NOT EXISTS airport_links (
     updated_at    TEXT
 );
 
+CREATE TABLE IF NOT EXISTS aip_charts (
+    icao          TEXT PRIMARY KEY,     -- ICAO-Code (Grossbuchstaben)
+    bild_hash     TEXT NOT NULL,        -- SHA-256 des Originalblatts, erkennt den AIRAC-Wechsel
+    nord          REAL NOT NULL,        -- Grenzen des GANZEN Blatts: danach wird platziert
+    sued          REAL NOT NULL,
+    west          REAL NOT NULL,
+    ost           REAL NOT NULL,
+    feld_nord     REAL NOT NULL,        -- Grenzen des KARTENFELDS: danach schaltet die
+    feld_sued     REAL NOT NULL,        -- Automatik, und der Lagetest prueft dagegen.
+    feld_west     REAL NOT NULL,        -- Das Blatt ist rund 1,8x so hoch wie das Feld.
+    feld_ost      REAL NOT NULL,
+    rahmen_px     TEXT NOT NULL,        -- "links,oben,rechts,unten" fuer den Geometrievergleich
+    tick_px_lat   REAL NOT NULL,
+    tick_px_lon   REAL NOT NULL,
+    quelle        TEXT NOT NULL,        -- 'auto' oder 'hand'
+    airac         TEXT NOT NULL,
+    status        TEXT NOT NULL,        -- 'gepasst' oder 'ungepasst'
+    geprueft_am   TEXT
+);
+
 CREATE TABLE IF NOT EXISTS flight_cache (
     cache_id          INTEGER PRIMARY KEY AUTOINCREMENT,
     id                INTEGER,              -- Flugplan-/Connection-id aus canonicalize_legs (kann NULL sein)
@@ -6476,6 +6496,60 @@ def delete_airport_link(conn: sqlite3.Connection, icao: str) -> int:
 # über canonicalize_legs (kein eigener Cache), damit ein neu ergänzter Flugplatz sofort aus
 # der Liste verschwindet. "Geprüft" markiert Einzelfälle dauerhaft als kein Datenfehler
 # (Absturz, Recording-Lücke) -- gilt NUR für diesen einen Flug (Schlüssel cid+logon_time).
+
+
+_AIP_FELDER = ("bild_hash", "nord", "sued", "west", "ost",
+               "feld_nord", "feld_sued", "feld_west", "feld_ost",
+               "rahmen_px", "tick_px_lat", "tick_px_lon", "quelle", "airac", "status")
+_AIP_SPALTEN = ("icao", *_AIP_FELDER, "geprueft_am")
+
+
+def upsert_aip_chart(conn: sqlite3.Connection, icao: str, **felder) -> str:
+    """Kartenpassung setzen/aktualisieren. Alle Felder aus _AIP_FELDER sind Pflicht.
+
+    Zwei Rechtecke, die nicht zu verwechseln sind: ``nord/sued/west/ost`` sind die Grenzen
+    des GANZEN Blatts -- danach wird das Overlay platziert. ``feld_*`` sind die Grenzen des
+    Kartenfelds -- danach schaltet die Automatik, und dagegen prueft der Lagetest.
+    """
+    code = (icao or "").strip().upper()
+    fehlt = [f for f in _AIP_FELDER if f not in felder]
+    if fehlt:
+        raise ValueError(f"Pflichtfelder fehlen: {', '.join(fehlt)}")
+    platz = ", ".join("?" * len(_AIP_SPALTEN))
+    setzen = ", ".join(f"{f}=excluded.{f}" for f in (*_AIP_FELDER, "geprueft_am"))
+    conn.execute(
+        f"""INSERT INTO aip_charts ({', '.join(_AIP_SPALTEN)}) VALUES ({platz})
+            ON CONFLICT(icao) DO UPDATE SET {setzen}""",
+        (code, *(felder[f] for f in _AIP_FELDER), _now_utc()),
+    )
+    return code
+
+
+def get_aip_charts(conn: sqlite3.Connection, nur_gepasst: bool = True) -> list[dict]:
+    """Alle Karten, standardmaessig nur die gepassten.
+
+    Die Vorgabe ist Absicht: Eine Karte, die falsch liegt, ist schlimmer als gar keine.
+    """
+    wo = "WHERE status = 'gepasst'" if nur_gepasst else ""
+    rows = conn.execute(
+        f"SELECT {', '.join(_AIP_SPALTEN)} FROM aip_charts {wo} ORDER BY icao"
+    ).fetchall()
+    return [dict(zip(_AIP_SPALTEN, r)) for r in rows]
+
+
+def get_aip_chart(conn: sqlite3.Connection, icao: str) -> dict | None:
+    code = (icao or "").strip().upper()
+    r = conn.execute(
+        f"SELECT {', '.join(_AIP_SPALTEN)} FROM aip_charts WHERE icao = ?", (code,)
+    ).fetchone()
+    return dict(zip(_AIP_SPALTEN, r)) if r else None
+
+
+def delete_aip_chart(conn: sqlite3.Connection, icao: str) -> int:
+    """Karte entfernen. Noetig, wenn ihr Eintrag aus airport_links verschwindet -- sonst
+    bliebe eine Karte im Umlauf, die der Admin bewusst geloescht hat."""
+    code = (icao or "").strip().upper()
+    return conn.execute("DELETE FROM aip_charts WHERE icao = ?", (code,)).rowcount
 
 def list_gps_detection_gaps(conn: sqlite3.Connection) -> list[dict]:
     """Flüge mit fehlendem GPS-Start ODER fehlender GPS-Landung trotz bekanntem Flugplan-Wert,
