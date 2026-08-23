@@ -69,3 +69,55 @@ def test_verwaiste_karte_laesst_sich_entfernen(conn):
 def test_fehlendes_pflichtfeld_wird_abgewiesen(conn):
     with pytest.raises(ValueError):
         upsert_aip_chart(conn, "EDXR", bild_hash="a")
+
+
+# ---------------------------------------------------------------------------
+# Task 2 -- Blatt beschaffen
+# ---------------------------------------------------------------------------
+import base64  # noqa: E402
+
+from app import aip_charts  # noqa: E402
+
+BASIS = "https://aip.dfs.de/BasicVFR/pages/P0016F.html"
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+def test_meta_refresh_wird_aufgeloest():
+    html = ('<html><head><meta http-equiv="Refresh" '
+            'content="0; url=../2026AUG20/pages/ABC.html" /></head></html>')
+    assert aip_charts.airac_url(html, BASIS) == \
+        "https://aip.dfs.de/BasicVFR/2026AUG20/pages/ABC.html"
+
+
+def test_ohne_meta_refresh_kein_ziel():
+    assert aip_charts.airac_url("<html></html>", BASIS) is None
+
+
+def test_airac_kennung_steht_im_pfad():
+    assert aip_charts.airac_kennung(
+        "https://aip.dfs.de/BasicVFR/2026AUG20/pages/ABC.html") == "2026AUG20"
+    assert aip_charts.airac_kennung(BASIS) is None
+
+
+def test_bild_wird_aus_dem_data_uri_geholt():
+    b64 = base64.b64encode(PNG_1X1).decode()
+    html = f'<img id="imgAIP" class="pageImage" src="data:image/png;base64,{b64}"/>'
+    roh = aip_charts.bild_aus_html(html)
+    assert roh is not None
+    assert roh.startswith(b"\x89PNG\r\n\x1a\n")     # echte Magic, keine Zeichenkette
+
+
+def test_seite_ohne_bild_liefert_none():
+    assert aip_charts.bild_aus_html("<html><img src='logo.png'></html>") is None
+
+
+def test_kapitelseiten_ohne_doppelte():
+    html = ('<a href="../pages/AAA.html">1</a>'
+            '<a href="../pages/BBB.html">2</a>'
+            '<a href="../pages/AAA.html">nochmal</a>')
+    seiten = aip_charts.kapitelseiten(
+        html, "https://aip.dfs.de/BasicVFR/2026AUG20/chapter/c.html")
+    assert seiten == ["https://aip.dfs.de/BasicVFR/2026AUG20/pages/AAA.html",
+                      "https://aip.dfs.de/BasicVFR/2026AUG20/pages/BBB.html"]
