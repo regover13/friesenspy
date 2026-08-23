@@ -214,3 +214,59 @@ def test_feines_gitter_wird_nicht_verworfen():
     im = blatt_bauen(tick_lat_px=54.78, tick_lon_px=32.1)
     ty, _tx = aip_charts.tick_positionen(im, aip_charts.rahmen_finden(im))
     assert len(ty) > 10
+
+
+# ---------------------------------------------------------------------------
+# Task 4 -- Grad-Zahlen lesen
+# ---------------------------------------------------------------------------
+from blatt_bauen import ZIFFERN  # noqa: E402
+
+
+def _bitmap(ziffer: str) -> tuple[tuple[int, ...], ...]:
+    return tuple(tuple(1 if z == "#" else 0 for z in zeile) for zeile in ZIFFERN[ziffer])
+
+
+def test_jede_ziffer_der_pruefschrift_wird_erkannt():
+    for z in "0123456789":
+        assert aip_charts.ziffer_erkennen(_bitmap(z)) == int(z), f"Ziffer {z}"
+
+
+def test_ein_pixel_hoeher_wird_noch_erkannt():
+    """Die Schwellwertbildung an den Raendern erzeugt Hoehenunterschiede von einem Pixel --
+    daran scheitert ein Hash-Vergleich, der Schablonenvergleich darf es nicht."""
+    bm = _bitmap("5")
+    assert aip_charts.ziffer_erkennen(bm + (bm[-1],)) == 5
+
+
+def test_unlesbares_zeichen_liefert_none():
+    """Lieber keine Zahl als eine falsche: Eine falsche Minute verschiebt um 1,85 km."""
+    assert aip_charts.ziffer_erkennen(((1, 0, 1), (0, 1, 0), (1, 0, 1))) is None
+
+
+def test_breite_wird_aus_dem_linken_band_gelesen():
+    im = blatt_bauen(breite_links=(54, 14), tick_lat_px=219.0)
+    r = aip_charts.rahmen_finden(im)
+    ty, _tx = aip_charts.tick_positionen(im, r)
+    paare = aip_charts.beschriftung_lesen(im, r, ty, "y")
+    assert len(paare) >= 3
+    assert [round(g, 4) for _p, g in paare[:3]] == [54.2333, 54.2167, 54.2]
+
+
+def test_laenge_wird_aus_dem_oberen_band_gelesen():
+    """Fassung 1 des Plans las nur das linke Band -- damit fehlte die halbe Passung."""
+    im = blatt_bauen(laenge_oben=(9, 36), tick_lon_px=128.4)
+    r = aip_charts.rahmen_finden(im)
+    _ty, tx = aip_charts.tick_positionen(im, r)
+    paare = aip_charts.beschriftung_lesen(im, r, tx, "x")
+    assert len(paare) >= 3
+    assert [round(g, 4) for _p, g in paare[:3]] == [9.6, 9.6167, 9.6333]
+
+
+def test_feines_gitter_bleibt_lesbar():
+    """Mit festen 20-Pixel-Fenstern griffen benachbarte Beschriftungen ineinander: bei
+    dx = 34 waren von 20 Ticks nur 6 lesbar (Gutachten 23.08.2026, Befund B5)."""
+    im = blatt_bauen(laenge_oben=(9, 36), tick_lon_px=34.27)
+    r = aip_charts.rahmen_finden(im)
+    _ty, tx = aip_charts.tick_positionen(im, r)
+    paare = aip_charts.beschriftung_lesen(im, r, tx, "x")
+    assert len(paare) >= 0.8 * len(tx), f"nur {len(paare)} von {len(tx)} lesbar"
