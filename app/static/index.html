@@ -9559,6 +9559,17 @@ function _naviTakt(sofort) {
     if (!roh) continue;
     const p = _jetztGerechnet(roh);
     mapMarkers[cs].setLatLng([p.lat, p.lon]);
+    // Wer bewegt, muss auch drehen. Fuer einen Friesen mit Sim-Werten ruehrt updateMap
+    // den Kurs bewusst nicht mehr an (VATSIM waere 29 Sekunden alt) -- und der Takt tat
+    // es bisher auch nicht. Das Symbol behielt dadurch die Richtung, die es beim Anlegen
+    // hatte, und zeigte irgendwohin (Nutzer, 23.08.2026: "dreht nicht in die Richtung in
+    // die es fliegt"). Nur bei echter Aenderung: setIcon ersetzt das DOM-Element des
+    // Markers komplett und liess das Panel frueher sichtbar aufblitzen.
+    const kurs = Math.round(Number(roh.hdg) || 0);
+    if (mapMarkers[cs]._fsHeading !== kurs) {
+      mapMarkers[cs].setIcon(makeAircraftIcon(kurs));
+      mapMarkers[cs]._fsHeading = kurs;
+    }
   }
 
   // 2b. Fremdverkehr -- gleiche Rechnung, eigene Datenquelle. Auch hier gilt: Bewegt wird
@@ -10220,13 +10231,19 @@ function updateMap(pilots) {
     // Genau das war der zweite Rueckwaertssprung, den der Nutzer gesehen hat: "zeichnet
     // die position immer 3-8 sekunden weiter und springt dann immer wieder zurueck".
     const alt = _positionsRoh[p.callsign];
+    // Gehoert der Marker dem Simulator, darf VATSIM auch seinen ROHWERT nicht anfassen
+    // (s. _istEigenesFlugzeug). Die Latenzprobe laeuft trotzdem: Sie vergleicht die frische
+    // VATSIM-Meldung mit der Sim-Position und braucht gerade den Fall, dass beide da sind.
     const neuerWert = !alt || alt.lat !== p.latitude || alt.lon !== p.longitude;
+    const demSim = _markerGehoertDemSim(p.callsign);
     if (neuerWert) {
-      _positionsRoh[p.callsign] = {
-        lat: p.latitude, lon: p.longitude,
-        hdg: Number(p.heading) || 0, gs: Number(p.groundspeed) || 0,
-        ts: Date.now()
-      };
+      if (!demSim) {
+        _positionsRoh[p.callsign] = {
+          lat: p.latitude, lon: p.longitude,
+          hdg: Number(p.heading) || 0, gs: Number(p.groundspeed) || 0,
+          ts: Date.now()
+        };
+      }
       _latenzProbeNehmen(p);
     }
     // Auf ganze Grad runden: Das Symbol wird ohnehin nur gedreht, und ein Bruchteil eines
@@ -10236,7 +10253,6 @@ function updateMap(pilots) {
     // Gehoert der Marker dem Simulator, ruehrt VATSIM ihn nicht an -- weder Position noch
     // Kurs. Genau dieses Dazwischenfunken alle 15 Sekunden war als Zurueckspringen des
     // eigenen Flugzeugs sichtbar (s. _markerGehoertDemSim).
-    const demSim = _markerGehoertDemSim(p.callsign);
     if (vorhanden) {
       // Marker BEWEGEN tut nur noch der Sekundentakt -- hier nicht mehr. Das ist der Kern
       // des Rueckwaertsspringens: updateMap laeuft auf drei Wegen, einer davon alle 10

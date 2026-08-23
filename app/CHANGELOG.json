@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.7.3",
+    "date": "2026-08-23",
+    "highlight": false,
+    "title": "Friesen im Kniebrett: kein Zucken, richtige Richtung",
+    "items": [
+      "↩️ Ein Friese sprang alle 15 Sekunden kurz weg und eine Sekunde später zurück. Der VATSIM-Zulauf überschrieb den Wert, aus dem die Karte weiterrechnet — obwohl der Simulator ihn genauer liefert. Zwei Quellen, die abwechselnd dasselbe beschreiben; jetzt hat der Simulator Vorrang.",
+      "✈️ Sein Symbol zeigte außerdem nicht in Flugrichtung, sondern behielt die Richtung vom ersten Auftauchen. Wer ein Flugzeug bewegt, muss es auch drehen — das übernimmt jetzt dieselbe Stelle."
+    ]
+  },
+  {
     "version": "13.7.2",
     "date": "2026-08-23",
     "highlight": false,
