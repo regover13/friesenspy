@@ -9682,6 +9682,109 @@ function _naviKnopfAnstrich() {
 // ist, dass eine Schleife, die in JEDEM Einzelbild etwas anfasst, in Coherent GT die
 // Zeichenlast dauerhaft hochhaelt. Einmal pro Sekunde reicht voellig -- schneller als das
 // bewegt sich auf einer Karte in diesem Massstab ohnehin nichts Sichtbares.
+// ==========================================================================
+//  SICHTFLUGKARTE ALS OVERLAY
+// ==========================================================================
+// Das ungeschnittene DFS-Blatt liegt georeferenziert ueber der Karte.
+//
+// ZWEI RECHTECKE, die nicht zu verwechseln sind:
+//   * PLATZIERT wird nach den Blattgrenzen (nord/sued/west/ost) -- gezeigt wird ja das
+//     ganze Blatt, mit Kopfzeile, Frequenzen und Hinweisen.
+//   * GESCHALTET wird nach dem Kartenfeld (feld_*). Das Blatt ist rund 1,8-mal so hoch;
+//     nach ihm zu schalten hiesse, das Overlay erscheint, waehrend das Flugzeug noch unter
+//     der Kopfzeile steht, und benachbarte Blaetter ueberlappen stark.
+//
+// Zur Deckkraft: Der Kommentar bei _AIP_DECKKRAFT haelt fest, dass die Deckkraft-Spur beim
+// Flackern im Kniebrett FALSCH war -- zwei Messreihen wurden zurueckgebaut, die Ursache ist
+// Fremd-CSS bei `.leaflet-container img.leaflet-tile`. Die Frage ist erledigt.
+const _AIP_KARTE_API = '/api/aip-charts';
+const _AIP_KARTE_PREF_KEY = 'friesenspy_aipkarte';
+// Rand, innerhalb dessen ein sichtbares Overlay sichtbar BLEIBT. Ohne diese Hysterese
+// schaltet es am Rand des Kartenfelds bei jedem Positionsupdate um.
+const _AIP_KARTE_HYSTERESE = 0.02;   // Grad, rund 2 km
+const _AIP_KARTE_DECKKRAFT = 0.75;
+
+const _aipKartenGruppe = L.layerGroup();
+let _aipKarten = null;        // Metadaten, einmal geladen
+let _aipKarteAktiv = null;    // ICAO des eingeblendeten Blatts
+let _aipKarteFest = null;     // vom Nutzer festgenagelt -- uebersteuert die Automatik
+let _aipKarteOverlay = null;
+
+function _saveAipKartePref(an) { _prefSchreib(_AIP_KARTE_PREF_KEY, an ? '1' : '0'); }
+function _loadAipKartePref()   { return _prefLies(_AIP_KARTE_PREF_KEY) === '1'; }
+
+// Die Quellenangabe traegt das AIRAC-Datum des gezeigten Blatts, nicht bloss den Namen --
+// eine Karte ohne Ausgabedatum ist im Flug wertlos.
+function _aipKarteAttribution(k) {
+  return '&copy; DFS Deutsche Flugsicherung GmbH, AIRAC ' + (k.airac || '?');
+}
+
+/** Liegt die Position im KARTENFELD? Mit Rand, wenn das Blatt schon sichtbar ist. */
+function _aipKarteImFeld(k, lat, lon, schonSichtbar) {
+  const r = schonSichtbar ? _AIP_KARTE_HYSTERESE : 0;
+  return lat > (k.feld_sued - r) && lat < (k.feld_nord + r)
+      && lon > (k.feld_west - r) && lon < (k.feld_ost + r);
+}
+
+function _aipKarteZeigen(k) {
+  if (_aipKarteAktiv === (k && k.icao)) return;
+  if (_aipKarteOverlay) { _aipKartenGruppe.removeLayer(_aipKarteOverlay); _aipKarteOverlay = null; }
+  _aipKarteAktiv = k ? k.icao : null;
+  if (!k) return;
+  _aipKarteOverlay = L.imageOverlay(k.bild, [[k.sued, k.west], [k.nord, k.ost]], {
+    opacity: _AIP_KARTE_DECKKRAFT, attribution: _aipKarteAttribution(k), interactive: false,
+  });
+  _aipKartenGruppe.addLayer(_aipKarteOverlay);
+}
+
+/** Passendes Blatt nach der eigenen Position waehlen. Festgenageltes hat Vorrang. */
+function _aipKarteNachfuehren() {
+  if (!liveMap || !liveMap.hasLayer(_aipKartenGruppe)) return;
+  if (!_aipKarten) { _aipKartenLaden(); return; }
+  if (_aipKarteFest) {
+    const fest = _aipKarten.find(function (k) { return k.icao === _aipKarteFest; });
+    if (fest) { _aipKarteZeigen(fest); return; }
+    _aipKarteFest = null;
+  }
+  const eigen = _eigenePosition();
+  if (!eigen) { _aipKarteZeigen(null); return; }
+  let treffer = null;
+  for (let i = 0; i < _aipKarten.length; i++) {
+    const k = _aipKarten[i];
+    if (!_aipKarteImFeld(k, eigen.lat, eigen.lon, k.icao === _aipKarteAktiv)) continue;
+    // Bei ueberlappenden Blaettern das, dessen Feldmitte naeher liegt.
+    if (!treffer) { treffer = k; continue; }
+    const d = function (x) {
+      const dy = eigen.lat - (x.feld_nord + x.feld_sued) / 2;
+      const dx = eigen.lon - (x.feld_west + x.feld_ost) / 2;
+      return dy * dy + dx * dx;
+    };
+    if (d(k) < d(treffer)) treffer = k;
+  }
+  _aipKarteZeigen(treffer);
+}
+
+function _aipKartenLaden() {
+  if (_aipKarten) return Promise.resolve(_aipKarten);
+  return fetch(_AIP_KARTE_API).then(function (r) { return r.json(); })
+    .then(function (d) { _aipKarten = (d && d.charts) || []; _aipKarteNachfuehren(); return _aipKarten; })
+    .catch(function () { _aipKarten = []; return _aipKarten; });
+}
+
+// Wie bei OpenAIP, Platzrunden und Meldepunkten: VOR dem Bau der Layers-Control aufrufen,
+// sonst sieht die Checkbox den gemerkten Zustand nie.
+function _addPreferredAipKarteLayer(map) {
+  map.on('overlayadd',    function (e) { if (e.layer === _aipKartenGruppe) { _saveAipKartePref(true); _aipKartenLaden(); } });
+  map.on('overlayremove', function (e) { if (e.layer === _aipKartenGruppe) { _saveAipKartePref(false); _aipKarteZeigen(null); } });
+  if (_loadAipKartePref()) { _aipKartenGruppe.addTo(map); _aipKartenLaden(); }
+}
+
+/** Ein Blatt festnageln (oder mit null wieder freigeben). */
+function _aipKarteFestnageln(icao) {
+  _aipKarteFest = icao || null;
+  _aipKarteNachfuehren();
+}
+
 let _naviTimer = null;
 
 function _naviTakt(sofort) {
@@ -9691,6 +9794,9 @@ function _naviTakt(sofort) {
   if (!sofort && !_istSichtbar(liveMap.getContainer())) return;
 
   const eigen = _eigenePosition();
+
+  // 0. Sichtflugkarte nachfuehren -- hier, weil die eigene Position ohnehin schon vorliegt.
+  _aipKarteNachfuehren();
 
   // 1. Drehung
   if (_kannDrehen(liveMap)) {
@@ -10193,6 +10299,10 @@ async function initLiveMap() {
   _fsePlaetzeZoomWache(liveMap);
   // Gegen den Canvas-Versatz beim Abdocken/Maximieren des EFB (s. _groessenWache).
   _groessenWache(liveMap, document.getElementById('leaflet-map'));
+  // Sichtflugkarte unter den Verkehr: Sie ist die groesste Flaeche und soll die Marker
+  // nicht verdecken.
+  liveOverlays['Sichtflugkarte'] = _aipKartenGruppe;
+  _addPreferredAipKarteLayer(liveMap);
   liveOverlays['Verkehr'] = _verkehrGruppe;
   const liveEbenen = L.control.layers(
     { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Light': liveLayers.light, 'Dark': liveLayers.dark },
