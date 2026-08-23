@@ -127,10 +127,21 @@ Ein Ziffernfehler bricht diese Kette sofort.
 
 **(3) Ausgleichsgerade und Residuen — die eigentliche Absicherung.** Statt nur die erste und
 letzte Stützstelle zu verwenden, wird über **alle** gelesenen Paare eine Gerade gelegt und das
-größte Residuum geprüft. Verlangt werden mindestens **drei** Stützstellen je Achse; bei zweien
-gibt es keine Residuen und damit keine Prüfung. Ein um eine Bogenminute falsch gelesener Wert
-erzeugt bei 219 px je Bogenminute ein Residuum von rund 146 px — die Schwelle liegt bei
-**2 px**. Diese Prüfung fängt die Fehlerklasse, gegen die die cos-Probe blind ist.
+größte Residuum geprüft. Ein um eine Bogenminute falsch gelesener Wert erzeugt bei 219 px je
+Bogenminute ein Residuum von rund 146 px — die Schwelle liegt bei **2 px**. Diese Prüfung
+fängt die Fehlerklasse, gegen die die cos-Probe blind ist.
+
+**Nachtrag vom 24.08.2026 — die Mindestzahl der Stützstellen wurde von drei auf zwei
+gesenkt.** Die erste Fassung verlangte drei, weil es bei zweien keine Residuen gibt. In der
+Umsetzung erwies sich das als der größte Blocker: Viele Blätter tragen nur drei Breiten-Ticks,
+und fällt einer aus, bleiben zwei — daran scheiterten 18 von 100 gemessenen Blättern, die
+Quote stieg von 31 auf 42 Prozent, als die Hürde fiel.
+
+Vertretbar ist das, weil **Prüfung (2) unabhängig davon greift**: Die aus den zwei Zahlen
+gewonnene Skala muss zum gemessenen Rasterabstand passen. Ist eine der beiden Zahlen falsch
+gelesen, ist die Skala falsch und die Prüfung schlägt an. Unentdeckt bliebe nur ein Fehler in
+*beiden* Zahlen um denselben Betrag — und das ist ohnehin die bereits benannte Grenze der
+Kette. Ab drei Stützstellen greift die Residuenprüfung zusätzlich wie beschrieben.
 
 **(4) Lagetest gegen das Kartenfeld.** Die Platzkoordinate muss im **Kartenfeld** liegen, nicht
 bloß irgendwo auf dem Blatt. Das Blatt ist rund 10 km hoch; eine Verschiebung um bis zu 5 km
