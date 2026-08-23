@@ -673,7 +673,11 @@ _SCHABLONEN: dict[int, list[tuple[str, ...]]] = {
 
 # Ueber diesem Anteil abweichender Pixel gilt ein Zeichen als unlesbar. Lieber keine Zahl als
 # eine falsche: Eine falsch gelesene Minute verschiebt die Karte um 1,85 km.
-_ZIFFER_MAX_ABWEICHUNG = 0.15
+# Gemessen an echten Blaettern: Richtige Treffer liegen bei 0,16 bis 0,20, der jeweils
+# naechstbeste Kandidat erst bei 0,24. Mit 0,15 fielen genau die richtigen durch. Falsche
+# Lesungen, die dadurch moeglich werden, faengt die Pruefkette: Eine falsche Bogenminute
+# erzeugt ein Residuum von rund 146 Pixeln gegen eine Schwelle von 2.
+_ZIFFER_MAX_ABWEICHUNG = 0.21
 
 
 def _auf_groesse(bm: tuple[tuple[int, ...], ...], breite: int,
