@@ -2531,3 +2531,41 @@ def test_nur_fremder_verkehr_verliert_seine_schilder():
     stelle = INDEX.index("function _eigenesFlugzeugZeichnen(")
     rumpf = INDEX[stelle:INDEX.index("\n}\n", stelle)]
     assert "traffic-label-fremd" not in rumpf
+
+
+def test_windanzeige_nur_im_kniebrett_und_richtungstreu():
+    """Windpfeil mit Geschwindigkeit (Nutzerwunsch 23.08.2026).
+
+    Der Wind kommt aus dem Simulator; VATSIM kennt ihn nicht. Deshalb wird die Anzeige nur
+    im Panel angemeldet und verschwindet, sobald keine Sim-Meldung mehr da ist.
+
+    Die beiden Richtungen sind der heikle Teil: Die Luftfahrt nennt die Richtung, AUS der
+    der Wind kommt ("270/15"), ein Pfeil zeigt aber, WOHIN er weht. Deshalb +180 am Pfeil
+    und die unveraenderte Zahl im Text. Zusaetzlich das Bearing, sonst zeigt der Pfeil bei
+    gedrehter Karte in die Irre."""
+    assert "function _addWindControl(map)" in INDEX
+    assert "if (_PANEL_MODUS) _addWindControl(liveMap);" in INDEX, \
+        "die Anzeige darf nur im Kniebrett entstehen -- auf der Website gibt es keinen Wind"
+
+    m = re.search(r"function _windAnzeigen\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_windAnzeigen nicht gefunden"
+    rumpf = m.group(1)
+    assert "ri + 180 + bearing" in rumpf, \
+        "Pfeil muss die Wehrichtung zeigen (+180) und die Kartendrehung beruecksichtigen"
+    # Windstille hat keine sinnvolle Richtung -- eine anzuzeigen waere erfunden.
+    assert "'still'" in rumpf
+    assert "_windKnopf.classList.toggle('navi-weg', !frisch)" in rumpf, \
+        "ohne Sim-Meldung muss die Anzeige verschwinden"
+
+    # Die Pfeilspitze zeigt im ungedrehten Zustand nach OBEN. Andersherum stuende die ganze
+    # Drehung um 180 Grad daneben -- an den Zahlen nicht zu sehen, nur am Bild.
+    assert 'd="M12 2.5 L7.4 8.8 L12 6.9 L16.6 8.8 Z"' in INDEX
+
+
+def test_windanzeige_sitzt_nicht_unter_dem_vollbild_knopf():
+    """Oben links, nicht unten links: Der Vollbild-Knopf liegt als `position:absolute`
+    ausserhalb von Leaflets Ecken-Raster und haette die Anzeige schlicht verdeckt (im
+    ersten Anlauf genau so passiert)."""
+    m = re.search(r"const Wind = L\.Control\.extend\(\{(.*?)\}\);", INDEX, re.S)
+    assert m, "Wind-Control nicht gefunden"
+    assert "position: 'topleft'" in m.group(1)

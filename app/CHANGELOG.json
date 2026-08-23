@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.8.0",
+    "date": "2026-08-23",
+    "highlight": false,
+    "title": "Windpfeil auf der Karte im Kniebrett",
+    "items": [
+      "🌬️ Die Karte im Kniebrett zeigt jetzt den Wind: ein Pfeil mit Richtung und Geschwindigkeit, oben links unter den Zoomknöpfen. Der Pfeil zeigt, wohin der Wind weht; die Zahl daneben nennt wie üblich die Richtung, aus der er kommt („270° 15 kt“). Bei gedrehter Karte dreht er mit, bei Windstille steht dort schlicht „still“.",
+      "📦 Den Wind kennt nur der Simulator — auf der Website gibt es die Anzeige daher nicht. Dafür ist die neue Paket-Version 2.1.0 nötig; mit einem älteren Paket bleibt die Anzeige einfach aus."
+    ]
+  },
+  {
     "version": "13.7.3",
     "date": "2026-08-23",
     "highlight": false,

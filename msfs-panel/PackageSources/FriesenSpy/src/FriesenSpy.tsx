@@ -36,7 +36,7 @@ const DEVICE_KEY = "friesenspy_device";
  * WICHTIG fuer die Auswertung auf der Seite: Ein Paket VOR 2.0.0 schickt dieses Feld gar
  * nicht. Sein Fehlen ist deshalb kein Fehler, sondern die Aussage "aelter als 2.0.0".
  */
-const PAKET_VERSION = "2.0.0";
+const PAKET_VERSION = "2.1.0";
 
 /**
  * Zufaellige Geraete-ID erzeugen -- oder "" , wenn das nicht sicher moeglich ist.
@@ -394,6 +394,12 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       // und die Hoehe ist der Wert, den man im Cockpit auf der Karte sehen will.
       // "PLANE ALTITUDE" in Fuss, dieselbe Einheit wie in Asobos eigenem VFR-Karten-Panel.
       const alt = sv.GetSimVarValue("PLANE ALTITUDE", "feet");
+      // Wind am eigenen Flugzeug. `AMBIENT WIND DIRECTION` ist die Richtung, AUS der es
+      // weht -- die luftfahrtuebliche Angabe ("270/15" heisst: aus Westen mit 15 Knoten).
+      // Die Seite dreht daraus den Pfeil; hier wird nichts umgerechnet, damit an genau
+      // einer Stelle steht, was die Zahl bedeutet.
+      const windRi = sv.GetSimVarValue("AMBIENT WIND DIRECTION", "degrees");
+      const windKt = sv.GetSimVarValue("AMBIENT WIND VELOCITY", "knots");
 
       // Beim Laden eines Fluges liefern die Variablen kurzzeitig Unsinn (0/0 mitten im
       // Atlantik oder NaN). So etwas weiterzureichen hiesse, die Karte an einen Ort zu
@@ -427,6 +433,11 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
           // Nur senden, wenn die Variable etwas Brauchbares liefert -- die Seite behandelt
           // ein fehlendes Feld anders als eine echte Null (Flugzeug auf Meereshoehe).
           alt: isFinite(alt) ? alt : null,
+          // Wind erst ab Paket 2.1.0 -- ein aelteres Kniebrett schickt die Felder nicht, und
+          // `null` heisst dort "unbekannt". Windstille ist davon zu unterscheiden: Sie ist
+          // 0 und eine gueltige Aussage.
+          windRi: isFinite(windRi) ? windRi : null,
+          windKt: isFinite(windKt) ? windKt : null,
         },
         "*",
       );

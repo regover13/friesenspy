@@ -1413,6 +1413,34 @@
        BEIDEN Orten gleich (s. _naviKnopfAnstrich). Ein Knopf, der nichts tut, ist an keiner
        Stelle besser als kein Knopf. */
     .navi-bar.navi-weg { display: none !important; }
+
+    /* Windanzeige (nur Kniebrett): Pfeil und Zahl nebeneinander, unten links ueber dem
+       Vollbild-Knopf. Bewusst KEIN Knopf -- man kann nichts damit tun, sie zeigt nur an.
+       Deshalb auch kein Hover-Wechsel und keine Fingergroesse. */
+    .wind-bar { margin-top: 8px; }   /* Abstand zu den Zoom-Knoepfen darueber */
+    .wind-bar .wind-feld {
+      display: flex;
+      align-items: center;
+      background: #071525;
+      border: 1px solid rgba(45,156,219,0.3);
+      color: #2d9cdb;
+      padding: 5px 9px 5px 6px;
+    }
+    .wind-bar .wind-pfeil {
+      width: 22px;
+      height: 22px;
+      display: block;
+      margin-right: 6px;          /* kein gap -- Coherent GT kennt es nicht */
+      flex: none;
+      transition: transform 0.25s linear;
+    }
+    .wind-bar .wind-text {
+      font-family: var(--text-display);
+      font-size: 0.78rem;
+      letter-spacing: 0.05em;
+      color: #cfe3f0;
+      white-space: nowrap;
+    }
     /* Der Moving-Map-Knopf sitzt unten rechts, wo auch Leaflets Herkunftsangabe klebt --
        ohne Abstand liegt er darauf. */
     .leaflet-bottom.leaflet-right .navi-bar { margin-bottom: 18px; margin-right: 4px; }
@@ -7573,9 +7601,16 @@ function _initPanelShellKanal() {
         // heisst "unbekannt" und wird im Label weggelassen; 0 ist ein gueltiger Wert
         // (Flugzeug auf Meereshoehe) und muss davon unterscheidbar bleiben.
         const alt = (d.alt == null) ? null : Number(d.alt);
+        // Wind erst ab Paket 2.1.0. `null` heisst "das Kniebrett meldet keinen Wind" und
+        // blendet die Anzeige aus; 0 kt ist dagegen eine gueltige Aussage (Windstille).
+        const wRi = (d.windRi == null) ? null : Number(d.windRi);
+        const wKt = (d.windKt == null) ? null : Number(d.windKt);
         _simPos = { lat: lat, lon: lon,
                     hdg: Number(d.hdg) || 0, gs: Number(d.gs) || 0,
-                    alt: isFinite(alt) ? alt : null, ts: Date.now() };
+                    alt: isFinite(alt) ? alt : null,
+                    windRi: isFinite(wRi) ? wRi : null,
+                    windKt: isFinite(wKt) ? wKt : null,
+                    ts: Date.now() };
       }
     }
     if (d.art === 'notify-ok') {
@@ -9287,6 +9322,9 @@ let _trackUp   = _naviLies(_NAVI_TRACKUP_KEY);
 let _movingMap = _naviLies(_NAVI_MOVING_KEY);
 let _kompassNadel = null;   // das drehbare <svg> im Kompassknopf
 let _movingKnopf  = null;   // der Knopf selbst, fuer den An/Aus-Anstrich
+let _windKnopf = null;      // die Windanzeige (nur im Kniebrett sichtbar)
+let _windPfeil = null;
+let _windText  = null;
 
 // Zwei Merker, damit `movestart` zwischen "der Nutzer schiebt" und "wir fuehren nach bzw.
 // es wird gezoomt" unterscheiden kann -- ohne sie wuerde Moving Map sich beim ersten
@@ -9366,6 +9404,75 @@ function _addKompassControl(map) {
     }
   });
   map.addControl(new Kompass());
+}
+
+/**
+ * Windpfeil mit Geschwindigkeit -- nur im Kniebrett, denn nur dort gibt es Wind.
+ *
+ * Der Wind kommt aus dem Simulator (`AMBIENT WIND DIRECTION`/`VELOCITY`, gemessen am
+ * eigenen Flugzeug). VATSIM kennt ihn nicht, deshalb bleibt die Anzeige auf der Website
+ * leer -- so wie Kompass und Moving Map dort verschwinden, wenn es kein eigenes Flugzeug
+ * gibt.
+ *
+ * ZWEI RICHTUNGEN, DIE MAN NICHT VERWECHSELN DARF: Die Luftfahrt gibt Wind als die
+ * Richtung an, AUS der er kommt ("270/15" = aus Westen mit 15 Knoten). Ein Pfeil dagegen
+ * zeigt, WOHIN etwas weht. Der Pfeil bekommt deshalb `windRi + 180`; die Zahl daneben
+ * bleibt die gewohnte Kommt-aus-Angabe. Beides zusammen ist eindeutig -- die Zahl sagt,
+ * was ein Flugplatz melden wuerde, der Pfeil zeigt die Trift.
+ *
+ * Und er dreht mit der Karte: Bei Track-up liegt Norden nicht mehr oben, ein starr
+ * gezeichneter Pfeil zeigte dann in die Irre.
+ */
+function _addWindControl(map) {
+  const Wind = L.Control.extend({
+    // Oben links unter den Zoom-Knoepfen. NICHT unten links: Dort sitzt der Vollbild-Knopf,
+    // und der liegt als `position:absolute` ausserhalb von Leaflets Ecken-Raster -- die
+    // Anzeige waere schlicht darunter verschwunden (im ersten Anlauf genau so passiert).
+    options: { position: 'topleft' },
+    onAdd: function () {
+      const box = L.DomUtil.create('div', 'leaflet-bar navi-bar wind-bar');
+      box.innerHTML =
+        '<div class="wind-feld" title="Wind aus dem Simulator">' +
+          '<svg class="wind-pfeil" viewBox="0 0 24 24" aria-hidden="true">' +
+            // Spitze OBEN: Ein ungedrehter Pfeil muss nach Norden zeigen, sonst steht die
+            // ganze Drehung um 180 Grad daneben (erster Anlauf: Wind aus Suedwest zeigte
+            // nach Suedwest statt nach Nordost -- an den Zahlen nicht zu sehen, nur am Bild).
+            '<path d="M12 21.5 L12 2.5" stroke="currentColor" stroke-width="2.4" fill="none"/>' +
+            '<path d="M12 2.5 L7.4 8.8 L12 6.9 L16.6 8.8 Z" fill="currentColor"/>' +
+          '</svg>' +
+          '<span class="wind-text">--</span>' +
+        '</div>';
+      _windKnopf = box;
+      _windPfeil = box.querySelector('.wind-pfeil');
+      _windText  = box.querySelector('.wind-text');
+      return box;
+    }
+  });
+  map.addControl(new Wind());
+}
+
+/** Windanzeige auf den Stand bringen -- im selben Takt wie alles andere Bewegte. */
+function _windAnzeigen() {
+  if (!_windKnopf) return;
+  const frisch = _simPosFrisch() && _simPos && _simPos.windKt != null;
+  _windKnopf.classList.toggle('navi-weg', !frisch);
+  if (!frisch) return;
+
+  const kt = Math.round(_simPos.windKt);
+  const ri = Math.round(((Number(_simPos.windRi) || 0) % 360 + 360) % 360);
+  // Bei Windstille gibt es keine sinnvolle Richtung -- eine anzuzeigen waere erfunden.
+  _windText.textContent = (kt <= 0) ? 'still' : (_windRiText(ri) + ' ' + kt + ' kt');
+  _windPfeil.style.visibility = (kt <= 0) ? 'hidden' : 'visible';
+
+  // Pfeil zeigt, WOHIN der Wind weht (+180), und dreht mit der Karte mit (Bearing).
+  const bearing = _kannDrehen(liveMap) ? (Number(liveMap.getBearing()) || 0) : 0;
+  _windPfeil.style.transform = 'rotate(' + ((ri + 180 + bearing) % 360) + 'deg)';
+}
+
+/** Dreistellige Kommt-aus-Angabe, wie sie am Platz gemeldet wird: 070, nicht 70. */
+function _windRiText(ri) {
+  const g = (ri === 0) ? 360 : ri;   // 360 statt 000, ebenfalls luftfahrtueblich
+  return ('00' + g).slice(-3) + '°';
 }
 
 /**
@@ -9606,6 +9713,7 @@ function _naviTakt(sofort) {
   }
 
   _naviKnopfAnstrich();
+  _windAnzeigen();
   _naviSchiebeMelden();
 }
 
@@ -10056,6 +10164,8 @@ async function initLiveMap() {
   // in der Reihenfolge, in der sie dazukommen -- so sitzt die Nadel darunter, wie gewuenscht.
   _addKompassControl(liveMap);
   _addMovingMapControl(liveMap);
+  // Nur im Kniebrett: Den Wind kennt allein der Simulator, VATSIM meldet ihn nicht.
+  if (_PANEL_MODUS) _addWindControl(liveMap);
   _naviStarten();
   _diagNavi(liveMap);
 
