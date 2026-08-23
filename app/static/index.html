@@ -9551,7 +9551,10 @@ function _naviTakt(sofort) {
   //    darauf zu korrigieren, waere genau das Zucken, das behoben werden soll.
   for (const cs in mapMarkers) {
     if (!Object.prototype.hasOwnProperty.call(mapMarkers, cs)) continue;
-    if (_markerGehoertDemSim(cs)) continue;
+    // NUR das eigene Flugzeug ueberspringen -- es wird gleich aus _simPos gesetzt. Friesen
+    // gehoeren hierher: In ihrem Rohwert steht bereits die Sim-Position (s.
+    // _istEigenesFlugzeug), sie brauchen also dieselbe Behandlung wie alle anderen.
+    if (_istEigenesFlugzeug(cs)) continue;
     const roh = _positionsRoh[cs];
     if (!roh) continue;
     const p = _jetztGerechnet(roh);
@@ -9872,6 +9875,28 @@ function _mitSimWerten(p) {
   if (sim.alt != null) kopie.altitude = sim.alt;
   if (sim.gs != null) kopie.groundspeed = sim.gs;
   return kopie;
+}
+
+/**
+ * Ist das MEIN Flugzeug? Nur dafuer gilt die Sonderbehandlung im Takt.
+ *
+ * Diese Frage war mit `_markerGehoertDemSim` verschmolzen, und daraus wurde ein Fehler:
+ * Seit dem Sim-Matching liefert jene Funktion auch fuer FRIESEN `true`. Der Sekundentakt
+ * ueberspringt aber jeden, fuer den sie `true` sagt -- beim eigenen Flugzeug zu Recht, weil
+ * `_eigenesFlugzeugZeichnen()` es danach setzt. Fuer einen Friesen gibt es diesen Ersatz
+ * nicht: Sein Marker wurde von niemandem mehr bewegt und blieb stehen, wo er angelegt
+ * wurde, waehrend sein Track weiterwuchs (Nutzer, 23.08.2026: "er fliegt gerade und der
+ * flieger steht aber immer noch an der urspruenglichen stelle" -- ausdruecklich nur bei
+ * Friesen, fremder Verkehr lief sauber).
+ *
+ * Die Sim-Werte eines Friesen stehen laengst bereit: `_verkehrZusammenfuehren` schreibt sie
+ * in `_positionsRoh`. Er muss also nicht uebersprungen, sondern ganz normal weitergerechnet
+ * werden -- dann bewegt er sich sekundengenau aus dem Simulator.
+ */
+function _istEigenesFlugzeug(callsign) {
+  if (!_simPosFrisch()) return false;
+  const meins = _meinCallsign();
+  return !!meins && meins === callsign;
 }
 
 function _markerGehoertDemSim(callsign) {

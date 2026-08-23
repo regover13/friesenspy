@@ -1279,8 +1279,17 @@ def test_eigener_marker_hat_nur_eine_quelle():
         "updateMap ueberschreibt den Kurs aus dem Simulator weiterhin"
     # Und der Takt rechnet den eigenen Flieger nicht als einen von vielen fort.
     t = re.search(r"function _naviTakt\(sofort\) \{(.*?)\n\}", INDEX, re.S)
-    assert t and "if (_markerGehoertDemSim(cs)) continue;" in t.group(1), \
-        "der Takt setzt den eigenen Marker erst auf den Schaetzwert und korrigiert dann"
+    assert t, "_naviTakt nicht gefunden"
+    # NUR das eigene Flugzeug wird uebersprungen. Hier stand _markerGehoertDemSim -- und
+    # das wurde zum Fehler, als jene Funktion mit dem Sim-Matching auch fuer FRIESEN "true"
+    # zu liefern begann: Ihr Marker wurde damit vom Takt uebersprungen, und da updateMap
+    # seit v12.6.2 grundsaetzlich keine Marker mehr bewegt, ruehrte ihn niemand mehr an.
+    # Er blieb stehen, wo er angelegt wurde (Nutzer, 23.08.2026 -- ausdruecklich nur bei
+    # Friesen, fremder Verkehr lief sauber).
+    assert "if (_istEigenesFlugzeug(cs)) continue;" in t.group(1), \
+        "der Takt muss NUR das eigene Flugzeug ueberspringen, nicht jeden mit Sim-Werten"
+    assert "_eigenesFlugzeugZeichnen()" in t.group(1), \
+        "ohne diesen Ersatz bliebe das uebersprungene eigene Flugzeug ungesetzt"
 
 
 def test_vollbild_ohne_viewport_einheiten():
