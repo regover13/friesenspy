@@ -547,6 +547,12 @@ class VatsimPoller:
             seconds=60,
             id="transport_event_check",
         )
+        # AIP-Sichtflugkarten woechentlich auffrischen. NICHT monatlich: Der AIRAC-Zyklus
+        # ist 28 Tage lang, ein Monatsjob wuerde frueher oder spaeter eine Ausgabe
+        # ueberspringen. Arbeit faellt ohnehin nur an, wenn sich ein bild_hash geaendert hat.
+        self._scheduler.add_job(
+            self._aip_auffrischen, "interval", weeks=1, id="aip_auffrischen",
+        )
         # Muster-Infos: einmalig kurz nach Start, danach regelmäßig die fälligen.
         self._scheduler.add_job(
             self._resolve_due_aircraft_types, "date", id="aircraft_info_initial",
@@ -1317,6 +1323,27 @@ class VatsimPoller:
             logger.info("flight_cache Warm-up: %d Flüge materialisiert", n)
         except Exception:
             logger.exception("Error in _warmup_flight_cache")
+
+    async def _aip_auffrischen(self) -> None:
+        """AIP-Kartenblaetter neu holen und die Passung nachziehen.
+
+        Ueber ``asyncio.to_thread``, weil die Bildanalyse reines Python ueber jedes Pixel
+        ist: rund eine halbe Sekunde je Blatt allein fuer die Rahmensuche, bei 446 Blaettern
+        also mehrere Minuten, dazu die Abrufe mit ihrer Hoeflichkeitspause. Beim
+        AIRAC-Wechsel aendern sich alle Hashes und der volle Durchgang laeuft -- auf dem
+        Event-Loop stuenden derweil SSE, der 15-Sekunden-Poll und jede einzelne Anfrage.
+        Dasselbe Muster wie beim flight_cache-Rebuild.
+
+        Silent fail: Ein misslungener Durchgang darf den Dienst nicht gefaehrden. Die
+        bestehenden Karten bleiben unangetastet (Regel 1 in scripts/aip_bestand.py).
+        """
+        try:
+            from scripts.aip_bestand import lauf
+            ergebnis = await asyncio.to_thread(lauf)
+            logger.info("AIP-Karten aufgefrischt: %d von %d gepasst (%.1f %%)",
+                        ergebnis["gepasst"], ergebnis["gesamt"], ergebnis["quote"])
+        except Exception:
+            logger.exception("Error in _aip_auffrischen")
 
     async def _refresh_flight_cache(self) -> None:
         """Periodischer inkrementeller Refresh von ``flight_cache`` (~0,5 s, letzte Tage).

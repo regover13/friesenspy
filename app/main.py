@@ -12,6 +12,7 @@ import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from datetime import timezone as _timezone
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -130,6 +131,8 @@ from app.database import (
     upsert_custom_airport,
     delete_custom_airport,
     list_airport_links,
+    get_aip_chart,
+    get_aip_charts,
     get_airport_links,
     upsert_airport_link,
     delete_airport_link,
@@ -364,6 +367,52 @@ async def panel(v: str | None = None):
     if v != VERSION:
         return RedirectResponse(f"/panel?v={VERSION}", status_code=302, headers=_HTML_NO_CACHE)
     return FileResponse("app/static/index.html", headers=_HTML_NO_CACHE)
+
+
+@app.get("/api/aip-charts")
+async def aip_charts_liste():
+    """Metadaten der gepassten Sichtflugkarten.
+
+    Einmal beim Einschalten der Ebene geladen -- dasselbe Muster wie bei Meldepunkten und
+    Platzrunden. Zwei Rechtecke gehen mit: die Blattgrenzen (danach wird das Overlay
+    platziert) und die Feldgrenzen (danach schaltet die Automatik). Innereien wie
+    ``rahmen_px`` bleiben im Server.
+    """
+    einst = get_settings()
+    conn = get_connection(einst.DB_PATH)
+    try:
+        karten = get_aip_charts(conn)
+    finally:
+        conn.close()
+    return {"charts": [
+        {"icao": k["icao"],
+         "nord": k["nord"], "sued": k["sued"], "west": k["west"], "ost": k["ost"],
+         "feld_nord": k["feld_nord"], "feld_sued": k["feld_sued"],
+         "feld_west": k["feld_west"], "feld_ost": k["feld_ost"],
+         "airac": k["airac"],
+         "bild": f"/aip-chart/{k['icao']}.png?h={str(k['bild_hash'])[:12]}"}
+        for k in karten
+    ]}
+
+
+@app.get("/aip-chart/{icao}.png", include_in_schema=False)
+async def aip_chart_bild(icao: str):
+    """Das ungeschnittene Kartenblatt.
+
+    ``Cache-Control`` ist bewusst ``private``: Der Endpunkt liegt hinter dem
+    forum_login_gate, und genau diese Beschraenkung traegt das rechtliche Argument (Spec,
+    Abschnitt 9). ``public`` erlaubte jedem Zwischen-Cache -- nginx, CDN, Firmenproxy --
+    das Ausliefern ohne Anmeldung. Der Hash steht als Abfrageparameter in der URL, deshalb
+    darf trotzdem lange zwischengespeichert werden.
+    """
+    code = (icao or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{4}", code):
+        raise HTTPException(status_code=404, detail="unbekannt")
+    pfad = Path(get_settings().DB_PATH).parent / "aip" / f"{code}.png"
+    if not pfad.is_file():
+        raise HTTPException(status_code=404, detail="unbekannt")
+    return FileResponse(pfad, media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=2592000, immutable"})
 
 
 @app.get("/admin", include_in_schema=False)
