@@ -270,3 +270,49 @@ def test_feines_gitter_bleibt_lesbar():
     _ty, tx = aip_charts.tick_positionen(im, r)
     paare = aip_charts.beschriftung_lesen(im, r, tx, "x")
     assert len(paare) >= 0.8 * len(tx), f"nur {len(paare)} von {len(tx)} lesbar"
+
+
+# ---------------------------------------------------------------------------
+# Task 5 -- Passung rechnen, Pruefkette
+# ---------------------------------------------------------------------------
+
+def test_ausgleichsgerade_meldet_das_groesste_residuum():
+    m, b, res = aip_charts.ausgleichsgerade([(0.0, 0.0), (10.0, 1.0), (20.0, 2.0)])
+    assert m == pytest.approx(0.1) and b == pytest.approx(0.0) and res < 1e-9
+
+
+def test_verfaelschte_stuetzstelle_faellt_auf():
+    """Ein um eine Bogenminute falsch gelesener Wert erzeugt ein riesiges Residuum -- das
+    ist die Pruefung, gegen die die cos-Probe blind ist."""
+    gut = [(0.0, 54.0), (219.0, 54.0 - 1 / 60), (438.0, 54.0 - 2 / 60)]
+    schlecht = [(0.0, 54.0), (219.0, 54.0 - 2 / 60), (438.0, 54.0 - 2 / 60)]
+    assert aip_charts.ausgleichsgerade(gut)[2] < 1e-9
+    assert aip_charts.ausgleichsgerade(schlecht)[2] > 1e-4
+
+
+def test_passung_deckt_das_ganze_blatt_ab():
+    """Die Blattgrenzen liegen AUSSERHALB des Kartenfelds -- das Blatt wird ungeschnitten
+    ausgeliefert, damit Kopfzeile und Frequenzen lesbar bleiben."""
+    im = blatt_bauen(breite_links=(54, 14), laenge_oben=(9, 36))
+    p = aip_charts.passung_rechnen(im, arp_lat=54.21, arp_lon=9.62)
+    assert p is not None
+    assert p.nord > p.feld_nord and p.sued < p.feld_sued
+    assert p.west < p.feld_west and p.ost > p.feld_ost
+
+
+def test_platz_ausserhalb_des_kartenfelds_wird_verworfen():
+    """Nicht nur 'irgendwo auf dem Blatt': Das Blatt ist rund 10 km hoch, eine Verschiebung
+    um 5 km haette den schwaecheren Test bestanden (Gutachten 23.08.2026)."""
+    im = blatt_bauen(breite_links=(54, 14), laenge_oben=(9, 36))
+    assert aip_charts.passung_rechnen(im, arp_lat=54.30, arp_lon=9.62) is None
+
+
+def test_karte_ohne_rahmen_liefert_keine_passung():
+    from PIL import Image
+    assert aip_charts.passung_rechnen(Image.new("L", (875, 1240), 255), 54.0, 9.0) is None
+
+
+def test_cos_probe_verwirft_falsche_breite():
+    """EDWT lag mit 4,14 Grad daneben und wurde verworfen."""
+    im = blatt_bauen(breite_links=(54, 14), laenge_oben=(9, 36))
+    assert aip_charts.passung_rechnen(im, arp_lat=48.0, arp_lon=9.62) is None

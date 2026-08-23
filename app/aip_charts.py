@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import math
 import re
 import urllib.parse
 from dataclasses import dataclass
@@ -414,3 +415,157 @@ def beschriftung_lesen(im, rahmen: Rahmen, ticks: list[float],
             continue
         paare.append((t, grad + minute / 60.0))
     return paare
+
+
+# ---------------------------------------------------------------------------
+# Passung und Pruefkette
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Passung:
+    """Zwei Rechtecke: das Blatt (danach wird platziert) und das Kartenfeld (danach wird
+    geschaltet und geprueft)."""
+    nord: float
+    sued: float
+    west: float
+    ost: float
+    feld_nord: float
+    feld_sued: float
+    feld_west: float
+    feld_ost: float
+    rahmen_px: str          # "links,oben,rechts,unten"
+    tick_px_lat: float
+    tick_px_lon: float
+
+
+# Breitenabweichung, ab der die cos-Probe durchfaellt. Ueber 356 gemessene Karten lag der
+# Fehler im Median bei 0,085 Grad, der 90-Prozent-Wert bei 0,167, das Maximum bei 0,354 --
+# die Toleranz ist also in-sample gewaehlt, mit 13 Prozent Luft.
+GEGENPROBE_TOLERANZ = 0.4
+# Deutschland liegt zwischen 47,3 und 55,0 Grad. Ein Verhaeltnis ausserhalb dieses Bandes
+# ist Unsinn und wird frueh verworfen -- das kostet nichts und nimmt der Suche Freiheit.
+_V_MIN, _V_MAX = 0.57, 0.68
+# Bei 22 von 356 Karten tragen die Achsen verschiedene Tick-Einheiten. Jeder Kandidat mehr
+# hebt die Zufallstrefferquote um rund einen halben Prozentpunkt (Spec 3.2).
+_ACHSEN_VIELFACHE = (1.0, 2.0, 0.5)
+# Mindestens so viele lesbare Stuetzstellen je Achse. Bei zweien gibt es keine Residuen und
+# damit keine Pruefung.
+_MIND_STUETZSTELLEN = 3
+# Groesstes zulaessiges Residuum in Pixeln. Ein Ziffernfehler von einer Bogenminute erzeugt
+# bei 219 px je Minute rund 146 px -- die Schwelle ist also sehr scharf.
+_MAX_RESIDUUM_PX = 2.0
+
+
+def ausgleichsgerade(paare: list[tuple[float, float]]
+                     ) -> tuple[float, float, float] | None:
+    """Gerade Grad = m*Pixel + b ueber ALLE Stuetzstellen, dazu das groesste Residuum.
+
+    Nur die erste und letzte Stuetzstelle zu nehmen, waere billiger und deutlich schlechter:
+    Ein einzelner Ziffernfehler bliebe dann unbemerkt und wuerde bei der Verlaengerung auf
+    das ganze Blatt noch verstaerkt.
+    """
+    n = len(paare)
+    if n < 2:
+        return None
+    sx = sum(p for p, _ in paare)
+    sy = sum(g for _, g in paare)
+    sxx = sum(p * p for p, _ in paare)
+    sxy = sum(p * g for p, g in paare)
+    nenner = n * sxx - sx * sx
+    if abs(nenner) < 1e-12:
+        return None
+    m = (n * sxy - sx * sy) / nenner
+    b = (sy - m * sx) / n
+    res = max(abs(g - (m * p + b)) for p, g in paare)
+    return m, b, res
+
+
+def passung_rechnen(im, arp_lat: float, arp_lon: float) -> Passung | None:
+    """WGS84-Grenzen von Blatt und Kartenfeld. None, sobald eine Pruefung durchfaellt.
+
+    Vier Pruefungen, weil eine nicht reicht (Spec 3.1): Die cos-Probe kennt nur das
+    Verhaeltnis der Tickabstaende, die Grenzen entstehen aber aus den gelesenen Zahlen --
+    gegen einen Lesefehler ist sie blind.
+
+    **Bekannte Grenze:** Ein SYSTEMATISCHER Offset (alle Stuetzstellen um denselben Betrag
+    verschoben) laesst das Residuum null; es bleibt nur der Lagetest, und der laesst rund
+    2,9 km durch. Da jede Zahl an ihrem eigenen Tick gelesen wird, ist das unplausibel --
+    ausgeschlossen ist es nicht.
+    """
+    rahmen = rahmen_finden(im)
+    if rahmen is None:
+        return None
+    ty, tx = tick_positionen(im, rahmen)
+    dy, _ny, _ay = raster(ty)
+    dx, _nx, _ax = raster(tx)
+    if not dy or not dx:
+        return None
+
+    # (1) cos-Probe -- Vorpruefung der Skala.
+    bester = None
+    for k in _ACHSEN_VIELFACHE:
+        v = (dx * k) / dy
+        if not (_V_MIN < v < _V_MAX):
+            continue
+        fehler = abs(math.degrees(math.acos(v)) - arp_lat)
+        if bester is None or fehler < bester:
+            bester = fehler
+    if bester is None or bester > GEGENPROBE_TOLERANZ:
+        logger.info("AIP: cos-Probe nicht bestanden")
+        return None
+
+    lat_paare = beschriftung_lesen(im, rahmen, ty, "y")
+    lon_paare = beschriftung_lesen(im, rahmen, tx, "x")
+    if len(lat_paare) < _MIND_STUETZSTELLEN or len(lon_paare) < _MIND_STUETZSTELLEN:
+        logger.info("AIP: zu wenige lesbare Stuetzstellen (%d/%d)",
+                    len(lat_paare), len(lon_paare))
+        return None
+
+    lat_g = ausgleichsgerade(lat_paare)
+    lon_g = ausgleichsgerade(lon_paare)
+    if lat_g is None or lon_g is None:
+        return None
+    m_lat, b_lat, res_lat = lat_g
+    m_lon, b_lon, res_lon = lon_g
+    if abs(m_lat) < 1e-12 or abs(m_lon) < 1e-12:
+        return None
+
+    # (2) Passt die aus den ZAHLEN gewonnene Skala zum gemessenen Rasterabstand? Ein Tick ist
+    # eine ganze Bogenminute (oder ein Vielfaches); 1/(60*|m|) ist also der Pixelabstand, den
+    # die gelesenen Werte behaupten. Weicht er ab, ist eine der beiden Groessen falsch.
+    for m, d in ((m_lat, dy), (m_lon, dx)):
+        behauptet = 1.0 / (60.0 * abs(m))
+        vielfaches = round(d / behauptet) if behauptet > 0 else 0
+        if vielfaches < 1 or abs(d - vielfaches * behauptet) > _MAX_RESIDUUM_PX:
+            logger.info("AIP: gelesene Skala passt nicht zum Rasterabstand")
+            return None
+
+    # (3) Residuen, in Pixel umgerechnet -- ein einzelner Ziffernfehler faellt hier auf.
+    if res_lat / abs(m_lat) > _MAX_RESIDUUM_PX or res_lon / abs(m_lon) > _MAX_RESIDUUM_PX:
+        logger.info("AIP: Stuetzstellen nicht auf einer Geraden -- Zahl falsch gelesen?")
+        return None
+
+    # Genordet heisst: nach unten nimmt die Breite AB, nach rechts die Laenge ZU. Trifft das
+    # nicht zu, ist etwas grundlegend falsch gelesen. Das still zu normalisieren wuerde das
+    # Blatt gespiegelt auflegen, ohne dass ein Test anschlaegt.
+    if m_lat > 0 or m_lon < 0:
+        logger.info("AIP: Blatt scheint nicht genordet -- verworfen")
+        return None
+
+    breite_px, hoehe_px = im.size
+    nord, sued = b_lat, m_lat * hoehe_px + b_lat
+    west, ost = b_lon, m_lon * breite_px + b_lon
+    feld_nord, feld_sued = m_lat * rahmen.oben + b_lat, m_lat * rahmen.unten + b_lat
+    feld_west, feld_ost = m_lon * rahmen.links + b_lon, m_lon * rahmen.rechts + b_lon
+
+    # (4) Lagetest gegen das KARTENFELD, nicht gegen das Blatt.
+    if not (feld_sued < arp_lat < feld_nord and feld_west < arp_lon < feld_ost):
+        logger.info("AIP: Flugplatz liegt nicht im Kartenfeld")
+        return None
+
+    return Passung(
+        nord=nord, sued=sued, west=west, ost=ost,
+        feld_nord=feld_nord, feld_sued=feld_sued, feld_west=feld_west, feld_ost=feld_ost,
+        rahmen_px=f"{rahmen.links:.1f},{rahmen.oben:.1f},{rahmen.rechts:.1f},{rahmen.unten:.1f}",
+        tick_px_lat=dy, tick_px_lon=dx,
+    )
