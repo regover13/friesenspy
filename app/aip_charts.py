@@ -302,41 +302,85 @@ def tick_positionen(im, rahmen: Rahmen | None) -> tuple[list[float], list[float]
 # Erstlauf meldet dann eine Quote nahe null, und genau das ist der Hinweis, dass hier noch
 # etwas fehlt.
 _SCHABLONEN: dict[int, list[tuple[str, ...]]] = {
-    0: [("#####", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "#####")],
+    # --- Pruefschrift aus tests/fixtures/aip/blatt_bauen.py (5 Pixel breit) ---
+    0: [("#####", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "#####"),
+        # --- DFS-Schrift, gewonnen mit scripts/aip_schablonen.py ---
+        ("..##.", ".#..#", "....#", "....#", "#...#", "#...#", "....#", "....#", ".#..#", "..##.")],
     1: [("..##.", ".#.#.", "...#.", "...#.", "...#.", "...#.", "...#.", "...#.", "#####"),
-        ("..#", "###", "..#", "..#", "..#", "..#", "..#", "..#", "..#")],
-    2: [("#####", "....#", "....#", "....#", "#####", "#....", "#....", "#....", "#####")],
-    3: [("#####", "....#", "....#", "....#", "#####", "....#", "....#", "....#", "#####")],
-    4: [("#...#", "#...#", "#...#", "#...#", "#####", "....#", "....#", "....#", "....#")],
-    5: [("#####", "#....", "#....", "#....", "#####", "....#", "....#", "....#", "#####")],
+        (".#", "##", ".#", ".#", ".#", ".#", ".#", ".#", ".#", ".#"),
+        (".#", "##", ".#", ".#", ".#", ".#", ".#", ".#", ".#"),
+        ("..#", "###", "..#", "..#", "..#", "..#", "..#", "..#", "..#"),
+        (".##", "###", ".##", ".##", ".##", ".##", ".##", ".##", ".##"),
+        ("..#", "..#", "###", "..#", "..#", "..#", "..#", "..#", "..#", "..#"),
+        ("##", ".#", ".#", ".#", ".#", ".#", ".#", ".#", ".#"),
+        (".#", "##", "##", ".#", ".#", ".#", ".#", ".#", ".#", ".#")],
+    2: [("#####", "....#", "....#", "....#", "#####", "#....", "#....", "#....", "#####"),
+        (".##.", "#..#", "...#", "...#", "...#", "..#.", ".#..", "#...", "#...", "####"),
+        (".###.", "#....", "#...#", ".....", "...#.", "..#..", ".#...", "#....", "#....", "####."),
+        (".##..", "#..#.", "#...#", "....#", "...#.", "..#..", ".#...", ".....", "#....", "#####"),
+        ("###.", "#..#", "...#", "...#", "...#", "..#.", ".#..", "#...", "#...", "####")],
+    3: [("#####", "....#", "....#", "....#", "#####", "....#", "....#", "....#", "#####"),
+        (".###.", "#...#", "....#", "....#", "..##.", "....#", "....#", "#...#", "#...#", ".###."),
+        ("####", "#..#", "...#", "..##", "..##", "...#", "...#", "#..#", ".##."),
+        (".###..", ".#..#.", "....#.", "....#.", "..##..", "....#.", ".....#", "#....#", ".#..#.", ".###..")],
+    4: [("#...#", "#...#", "#...#", "#...#", "#####", "....#", "....#", "....#", "....#"),
+        ("...#.", "...#.", "...#.", ".#.#.", "...#.", "#..#.", "#####", "...#.", "...#.", "...#."),
+        ("...##", "...##", "..###", "..###", ".#.##", ".#.##", "##.##", "...##", "...##", "...##"),
+        ("...#", "..##", "...#", ".#.#", "...#", "#..#", "####", "...#", "...#", "...#")],
+    5: [("#####", "#....", "#....", "#....", "#####", "....#", "....#", "....#", "#####"),
+        ("####.", "#....", "#....", "###..", "####.", "...##", "...##", "#..##", "#..#.", "####."),
+        ("####.", "#....", "#....", "#....", "####.", "...##", "...##", "...##", "#..##", "####."),
+        (".#...", ".....", "#....", "####.", "....#", "....#", "....#", "#...#", ".#.#.")],
     6: [("#####", "#....", "#....", "#....", "#####", "#...#", "#...#", "#...#", "#####")],
     7: [("#####", "....#", "....#", "....#", "....#", "....#", "....#", "....#", "....#")],
     8: [("#####", "#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#", "#####")],
     9: [("#####", "#...#", "#...#", "#...#", "#####", "....#", "....#", "....#", "#####")],
 }
+# **Bekannte Luecke:** Fuer 6, 7 und 9 stehen bisher nur die Muster der Pruefschrift, keine
+# der DFS-Schrift -- in einer Stichprobe ueber 54 Blaetter kamen sie nicht haeufig genug vor,
+# um sie sicher zuzuordnen. Eine Zahl mit einer dieser Ziffern gilt deshalb als unlesbar,
+# und die Karte faellt durch. Das ist die sichere Richtung (keine falsche Zahl), kostet aber
+# Quote. Nachtragen mit scripts/aip_schablonen.py ueber alle 446 Blaetter.
+
 # Ueber diesem Anteil abweichender Pixel gilt ein Zeichen als unlesbar. Lieber keine Zahl als
 # eine falsche: Eine falsch gelesene Minute verschiebt die Karte um 1,85 km.
 _ZIFFER_MAX_ABWEICHUNG = 0.15
 
 
-def _auf_hoehe(bm: tuple[tuple[int, ...], ...], hoehe: int) -> tuple[tuple[int, ...], ...]:
-    """Bitmap auf eine Zielhoehe bringen, Zeilen proportional abgetastet."""
-    if not bm or hoehe < 1:
+def _auf_groesse(bm: tuple[tuple[int, ...], ...], breite: int,
+                 hoehe: int) -> tuple[tuple[int, ...], ...]:
+    """Bitmap auf eine Zielgroesse abtasten -- in BEIDEN Richtungen.
+
+    Nur die Hoehe anzugleichen reichte nicht: ``ziffer_erkennen`` verglich dann nur bei
+    exakt gleicher Breite, und ein 4 Pixel breites Zeichen wurde gegen eine 5er-Schablone
+    gar nicht erst geprueft. In einem Lauf ueber 60 echte Blaetter kam so keine einzige
+    Zahl zustande.
+    """
+    if not bm or not bm[0] or breite < 1 or hoehe < 1:
         return bm
-    return tuple(bm[min(len(bm) - 1, int(i * len(bm) / hoehe))] for i in range(hoehe))
+    return tuple(
+        tuple(bm[min(len(bm) - 1, int(y * len(bm) / hoehe))]
+                [min(len(bm[0]) - 1, int(x * len(bm[0]) / breite))]
+              for x in range(breite))
+        for y in range(hoehe)
+    )
 
 
 def ziffer_erkennen(bitmap: tuple[tuple[int, ...], ...]) -> int | None:
     """Ziffer per Schablonenvergleich. None, wenn keine gut genug passt."""
     if not bitmap or not bitmap[0]:
         return None
+    # Seitenverhaeltnis als Vorfilter: Eine "1" ist schmal und hoch, eine "0" fast quadratisch.
+    # Ohne ihn wuerde das Abtasten jede Form in jede andere pressen.
+    verhaeltnis = len(bitmap[0]) / len(bitmap)
     bester: tuple[float, int] | None = None
     for ziffer, muster_liste in _SCHABLONEN.items():
         for muster in muster_liste:
             schablone = tuple(tuple(1 if z == "#" else 0 for z in zeile) for zeile in muster)
-            if len(schablone[0]) != len(bitmap[0]):
+            s_verh = len(schablone[0]) / len(schablone)
+            if not (0.5 < verhaeltnis / s_verh < 2.0):
                 continue
-            angepasst = _auf_hoehe(bitmap, len(schablone))
+            angepasst = _auf_groesse(bitmap, len(schablone[0]), len(schablone))
             falsch = sum(a != b for za, zs in zip(angepasst, schablone)
                          for a, b in zip(za, zs))
             anteil = falsch / (len(schablone) * len(schablone[0]))
@@ -378,6 +422,11 @@ def _zeichen_zerlegen(px, x0: int, x1: int, y0: int, y1: int) -> list:
         ys = [y for y in range(y0, y1) if any(px[x, y] < 128 for x in g)]
         if not ys or len(ys) > 14:
             continue
+        # Zu flach ist keine Ziffer, sondern das Gradzeichen, ein Apostroph oder ein
+        # Bruchstueck. Es mitzuzaehlen liess ``zahl_lesen`` scheitern: Bei EDXR standen
+        # ueber dem Tick "5", "4" und ein 2x4-Fleck -- also drei "Ziffern" fuer "54".
+        if max(ys) - min(ys) + 1 < 6:
+            continue
         out.append(tuple(
             tuple(1 if px[x, y] < 128 else 0 for x in g)
             for y in range(min(ys), max(ys) + 1)
@@ -400,14 +449,24 @@ def zeichen_im_band(im, rahmen: Rahmen, tick: float, achse: str,
     """
     px = im.load()
     grenze = 20 if tick_abstand is None else max(4, int(tick_abstand / 2) - 1)
+    # Abstand zu den Rahmenlinien und zum Tickstrich selbst. Mit nur einem Pixel Luft
+    # geraten sie mit ins Fenster und erscheinen als "Zeichen": Ein Lauf ueber 60 Blaetter
+    # lieferte 63-mal ein 10x1-Muster (waagerechte Linie) und 53-mal ein 2x13 (senkrechter
+    # Strich) -- beides Rahmen, keine Ziffern.
+    # Zum TICK genuegt ein Pixel Abstand -- die Zahl steht dicht am Strich, auf echten
+    # Blaettern wie im Pruefblatt. Zu den RAHMENlinien braucht es mehr: Mit einem Pixel
+    # geraten sie mit ins Fenster und erscheinen als "Zeichen". Ein Lauf ueber 54 Blaetter
+    # lieferte so 63-mal ein 10x1-Muster (waagerechte Linie) und 53-mal ein 2x13
+    # (senkrechter Strich) -- beides Rahmen, keine Ziffern.
+    rand = 3
     if achse == "y":
-        x0, x1 = int(rahmen.band_links) + 1, int(rahmen.links)
+        x0, x1 = int(rahmen.band_links) + rand, int(rahmen.links) - rand + 1
         hoch = min(grenze, 14)
         oben = _zeichen_zerlegen(px, x0, x1, max(0, int(tick) - hoch), int(tick) - 1)
         unten = _zeichen_zerlegen(px, x0, x1, int(tick) + 1,
                                   min(im.size[1], int(tick) + hoch))
         return oben, unten
-    y0, y1 = int(rahmen.band_oben) + 1, int(rahmen.oben)
+    y0, y1 = int(rahmen.band_oben) + rand, int(rahmen.oben) - rand + 1
     links = _zeichen_zerlegen(px, max(0, int(tick) - grenze), int(tick) - 1, y0, y1)
     rechts = _zeichen_zerlegen(px, int(tick) + 1,
                                min(im.size[0], int(tick) + grenze), y0, y1)
