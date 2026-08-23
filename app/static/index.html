@@ -9323,6 +9323,7 @@ let _movingMap = _naviLies(_NAVI_MOVING_KEY);
 let _kompassNadel = null;   // das drehbare <svg> im Kompassknopf
 let _movingKnopf  = null;   // der Knopf selbst, fuer den An/Aus-Anstrich
 let _windKnopf = null;      // die Windanzeige (nur im Kniebrett sichtbar)
+let _windControl = null;    // der Control selbst -- er wechselt im Vollbild die Ecke
 let _windPfeil = null;
 let _windText  = null;
 
@@ -9448,7 +9449,36 @@ function _addWindControl(map) {
       return box;
     }
   });
-  map.addControl(new Wind());
+  _windControl = new Wind();
+  map.addControl(_windControl);
+  _windPlatzieren(!!document.querySelector('.map-is-fullscreen'));
+}
+
+/**
+ * Wo die Windanzeige sitzt -- und warum sie die Ecke wechselt.
+ *
+ * NORMAL: oben links, aber UEBER den Zoomknoepfen (Nutzerwunsch 23.08.2026). Leaflet
+ * stapelt die Bedienelemente einer Ecke in der Reihenfolge, in der sie dazukommen, und der
+ * Zoomknopf entsteht schon beim Anlegen der Karte -- an ihm vorbei kommt man nur, indem man
+ * den Knoten nachtraeglich an den Anfang der Ecke haengt.
+ *
+ * VOLLBILD: unten links. Oben klebt dort die Zurueck-Leiste, und der Vollbild-Knopf, der
+ * sonst unten links sitzt, ist im Vollbild ohnehin ausgeblendet (die Zurueck-Leiste
+ * uebernimmt seine Aufgabe) -- die Ecke ist also frei.
+ */
+function _windPlatzieren(imVollbild) {
+  if (!_windControl) return;
+  const wunsch = imVollbild ? 'bottomleft' : 'topleft';
+  if (_windControl.getPosition() !== wunsch) {
+    // setPosition haengt den Control neu ein; dabei laeuft onAdd erneut und setzt die
+    // Verweise auf Pfeil und Text frisch.
+    _windControl.setPosition(wunsch);
+  }
+  if (!imVollbild && _windKnopf && _windKnopf.parentNode) {
+    const ecke = _windKnopf.parentNode;
+    if (ecke.firstChild !== _windKnopf) ecke.insertBefore(_windKnopf, ecke.firstChild);
+  }
+  _windAnzeigen();
 }
 
 /** Windanzeige auf den Stand bringen -- im selben Takt wie alles andere Bewegte. */
@@ -9461,7 +9491,11 @@ function _windAnzeigen() {
   const kt = Math.round(_simPos.windKt);
   const ri = Math.round(((Number(_simPos.windRi) || 0) % 360 + 360) % 360);
   // Bei Windstille gibt es keine sinnvolle Richtung -- eine anzuzeigen waere erfunden.
-  _windText.textContent = (kt <= 0) ? 'still' : (_windRiText(ri) + ' ' + kt + ' kt');
+  // Ohne Einheiten -- entweder beide oder keine (Nutzer, 23.08.2026: "Wenn du kt
+  // schreibst, brauch es auch Grad. Wenn kein Grad, dann gar nichts"). Das Gradzeichen
+  // scheidet aus, weil Coherent GT es als leeres Kaestchen malt -- also keins von beidem.
+  // "036/8" ist ohnehin die Schreibweise, in der Wind gemeldet wird.
+  _windText.textContent = (kt <= 0) ? 'still' : (_windRiText(ri) + '/' + kt);
   _windPfeil.style.visibility = (kt <= 0) ? 'hidden' : 'visible';
 
   // Pfeil zeigt, WOHIN der Wind weht (+180), und dreht mit der Karte mit (Bearing).
@@ -9469,10 +9503,17 @@ function _windAnzeigen() {
   _windPfeil.style.transform = 'rotate(' + ((ri + 180 + bearing) % 360) + 'deg)';
 }
 
-/** Dreistellige Kommt-aus-Angabe, wie sie am Platz gemeldet wird: 070, nicht 70. */
+/**
+ * Dreistellige Kommt-aus-Angabe, wie sie am Platz gemeldet wird: 070, nicht 70.
+ *
+ * OHNE Gradzeichen, und das ist kein Schoenheitsfehler: Coherent GT malt nichts jenseits
+ * von ASCII -- im Kniebrett stand statt des Grads ein leeres Kaestchen ("038[] 6 kt",
+ * Nutzer-Bild 23.08.2026). Der Schraegstrich ist ohnehin die Schreibweise, die man vom
+ * Wetterbericht kennt: "038/6".
+ */
 function _windRiText(ri) {
   const g = (ri === 0) ? 360 : ri;   // 360 statt 000, ebenfalls luftfahrtueblich
-  return ('00' + g).slice(-3) + '°';
+  return ('00' + g).slice(-3);
 }
 
 /**
@@ -12001,6 +12042,10 @@ function toggleMapFullscreen(wrapId, btn, getMap) {
   // einem Flug bzw. einem Rennen, das beim naechsten Start nicht mehr offen ist -- ein
   // wiederhergestelltes Vollbild ohne den zugehoerigen Inhalt waere eine leere Flaeche.
   if (wrapId === _ZUSTAND_KARTE_WRAP) _prefSchreib(_ZUSTAND_VOLLBILD_KEY, isFs ? '1' : '0');
+  // Die Windanzeige wechselt mit: oben ueber den Zoomknoepfen, im Vollbild unten links
+  // (dort ist der Vollbild-Knopf im Kniebrett ohnehin ausgeblendet). Nur die Live-Karte
+  // hat eine -- bei den anderen tut der Aufruf nichts.
+  if (wrapId === _ZUSTAND_KARTE_WRAP) _windPlatzieren(isFs);
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const map = getMap();
     if (map) map.invalidateSize();

@@ -2562,10 +2562,35 @@ def test_windanzeige_nur_im_kniebrett_und_richtungstreu():
     assert 'd="M12 2.5 L7.4 8.8 L12 6.9 L16.6 8.8 Z"' in INDEX
 
 
-def test_windanzeige_sitzt_nicht_unter_dem_vollbild_knopf():
-    """Oben links, nicht unten links: Der Vollbild-Knopf liegt als `position:absolute`
-    ausserhalb von Leaflets Ecken-Raster und haette die Anzeige schlicht verdeckt (im
-    ersten Anlauf genau so passiert)."""
-    m = re.search(r"const Wind = L\.Control\.extend\(\{(.*?)\}\);", INDEX, re.S)
-    assert m, "Wind-Control nicht gefunden"
-    assert "position: 'topleft'" in m.group(1)
+def test_windanzeige_wechselt_im_vollbild_die_ecke():
+    """Normal oben links UEBER den Zoomknoepfen, im Vollbild unten links (Nutzerwunsch
+    23.08.2026).
+
+    Das Umhaengen ist noetig, weil Leaflet die Bedienelemente einer Ecke in der Reihenfolge
+    stapelt, in der sie dazukommen -- der Zoomknopf entsteht schon beim Anlegen der Karte.
+    Und unten links ist ausserhalb des Vollbilds der falsche Platz: Dort sitzt der
+    Vollbild-Knopf, der als `position:absolute` gar nicht in Leaflets Ecken-Raster liegt und
+    die Anzeige verdeckt haette. Im Vollbild ist er ausgeblendet, die Ecke also frei."""
+    m = re.search(r"function _windPlatzieren\(imVollbild\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_windPlatzieren nicht gefunden"
+    rumpf = m.group(1)
+    assert "imVollbild ? 'bottomleft' : 'topleft'" in rumpf
+    assert "ecke.insertBefore(_windKnopf, ecke.firstChild)" in rumpf, \
+        "ohne Umhaengen sitzt die Anzeige UNTER den Zoomknoepfen"
+    assert "if (wrapId === _ZUSTAND_KARTE_WRAP) _windPlatzieren(isFs);" in INDEX, \
+        "der Vollbild-Wechsel muss die Anzeige mitnehmen"
+
+
+def test_windanzeige_bleibt_bei_ascii():
+    """Coherent GT malt nichts jenseits von ASCII -- ein Gradzeichen wurde im Kniebrett zum
+    leeren Kaestchen ("038[] 6 kt", Nutzer-Bild 23.08.2026). Die Schreibweise "038/6 kt"
+    kommt ohne aus und ist die, die man vom Wetterbericht kennt."""
+    m = re.search(r"function _windRiText\(ri\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_windRiText nicht gefunden"
+    assert "\u00b0" not in m.group(1), "das Gradzeichen ist im Kniebrett ein leeres Kaestchen"
+    # Keine Einheiten: Das Gradzeichen kann das Kniebrett nicht malen, und "kt" allein
+    # waere halb beschriftet (Nutzer, 23.08.2026). "036/8" ist die uebliche Schreibweise.
+    assert "_windRiText(ri) + '/' + kt)" in INDEX
+    w = re.search(r"function _windAnzeigen\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert w, "_windAnzeigen nicht gefunden"
+    assert "' kt'" not in w.group(1), "die Windanzeige darf keine halbe Beschriftung tragen"

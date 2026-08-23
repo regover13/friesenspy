@@ -1,5 +1,15 @@
 [
   {
+    "version": "13.8.1",
+    "date": "2026-08-23",
+    "highlight": false,
+    "title": "Windanzeige: Platz und Schreibweise",
+    "items": [
+      "🌬️ Die Windanzeige sitzt jetzt über den Zoomknöpfen statt darunter — und im Vollbild unten links, wo mehr Platz ist.",
+      "🔤 Die Schreibweise ist jetzt schlicht „036/8“. Das Gradzeichen erschien im Tablet als leeres Kästchen (die Anzeige-Engine des Simulators kennt nichts jenseits des englischen Alphabets), und ein „kt“ ohne Gradzeichen wäre halb beschriftet gewesen. Bei Windstille steht dort weiterhin „still“."
+    ]
+  },
+  {
     "version": "13.8.0",
     "date": "2026-08-23",
     "highlight": false,
