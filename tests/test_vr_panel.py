@@ -2594,3 +2594,27 @@ def test_windanzeige_bleibt_bei_ascii():
     w = re.search(r"function _windAnzeigen\(\) \{(.*?)\n\}", INDEX, re.S)
     assert w, "_windAnzeigen nicht gefunden"
     assert "' kt'" not in w.group(1), "die Windanzeige darf keine halbe Beschriftung tragen"
+
+
+def test_windanzeige_liegt_vor_der_herkunftsangabe():
+    """Im Vollbild sitzt die Windanzeige unten links -- dort laeuft auch Leaflets
+    Herkunftsangabe entlang, die im Kniebrett ueber die volle Breite umbricht und die
+    Anzeige zur Haelfte verdeckt hat (Nutzer-Bild 23.08.2026).
+
+    Angehoben wird die ECKE, nicht der Kasten: Leaflet gibt jeder Ecke `z-index: 1000` und
+    macht damit einen eigenen Stapel-Zusammenhang auf -- ein hoeherer Wert am Kind darin
+    bliebe wirkungslos, verglichen werden die Ecken untereinander. Bei Gleichstand gewinnt
+    die spaetere im Dokument, und das ist die rechte mit der Herkunftsangabe.
+
+    Die Namensnennung selbst bleibt: Sie ist Lizenzbedingung der Kartenquellen und wird
+    nirgends ausgeblendet -- der schmale Kasten verdeckt nur seinen eigenen Platz."""
+    assert "html.vr-panel .leaflet-bottom.leaflet-left { z-index: 1100; }" in INDEX
+    # Gemessen: Ecke links 1100, Ecke rechts 1000.
+    assert "display: none" not in _regel_von(".leaflet-control-attribution"), \
+        "die Herkunftsangabe darf nicht verschwinden -- sie ist Lizenzbedingung"
+
+
+def _regel_von(selektor):
+    """Rumpf der ersten CSS-Regel zu diesem Selektor (fuer Pruefungen wie oben)."""
+    m = re.search(re.escape(selektor) + r"\s*\{([^}]*)\}", INDEX, re.S)
+    return m.group(1) if m else ""

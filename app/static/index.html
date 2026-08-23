@@ -1418,6 +1418,20 @@
        Vollbild-Knopf. Bewusst KEIN Knopf -- man kann nichts damit tun, sie zeigt nur an.
        Deshalb auch kein Hover-Wechsel und keine Fingergroesse. */
     .wind-bar { margin-top: 8px; }   /* Abstand zu den Zoom-Knoepfen darueber */
+
+    /* Im Vollbild sitzt die Windanzeige unten links -- und genau dort laeuft Leaflets
+       Herkunftsangabe entlang, die im Kniebrett ueber die volle Breite umbricht und die
+       Anzeige zur Haelfte verdeckt hat (Nutzer-Bild 23.08.2026).
+
+       Angehoben wird die ECKE, nicht der Kasten: Leaflet gibt jeder Ecke `z-index: 1000`,
+       womit sie einen eigenen Stapel-Zusammenhang aufmacht -- ein hoeherer Wert am Kind
+       darin bliebe wirkungslos, verglichen werden die Ecken untereinander. Bei Gleichstand
+       gewinnt die spaetere im Dokument, und das ist die rechte mit der Herkunftsangabe.
+
+       Die Angabe bleibt lesbar: Der Kasten ist schmal, verdeckt nur seinen eigenen Platz
+       und laesst den uebrigen Text stehen -- die Namensnennung der Kartenquellen ist
+       Lizenzbedingung und darf nicht verschwinden. */
+    html.vr-panel .leaflet-bottom.leaflet-left { z-index: 1100; }
     .wind-bar .wind-feld {
       display: flex;
       align-items: center;

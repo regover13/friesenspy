@@ -1,5 +1,14 @@
 [
   {
+    "version": "13.8.2",
+    "date": "2026-08-23",
+    "highlight": false,
+    "title": "Windanzeige lag hinter der Herkunftsangabe",
+    "items": [
+      "👁️ Im Vollbild lag die Windanzeige hinter der Herkunftsangabe der Kartenquellen und war halb verdeckt — sie liegt jetzt davor. Die Namensnennung selbst bleibt sichtbar; sie ist Lizenzbedingung."
+    ]
+  },
+  {
     "version": "13.8.1",
     "date": "2026-08-23",
     "highlight": false,
