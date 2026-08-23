@@ -84,3 +84,18 @@ def test_blatt_wird_ausgeliefert_und_nicht_oeffentlich_gecacht(client, tmp_path)
     assert r.status_code == 200
     cc = r.headers.get("cache-control", "")
     assert "private" in cc and "public" not in cc
+
+
+def test_admin_liste_braucht_anmeldung(client):
+    assert client.get("/api/admin/aip-charts").status_code in (401, 403)
+
+
+def test_handpassung_braucht_anmeldung(client):
+    r = client.post("/api/admin/aip-charts/EDWJ", json={
+        "breite_px": 875, "hoehe_px": 1240,
+        "links_px": 132, "oben_px": 180, "rechts_px": 817, "unten_px": 865,
+        # feld_* -- die geklickten RAHMENecken, nicht die Blattgrenzen. Dieselben vier Namen
+        # fuer beides waren die Verwechslung hinter dem 45-Prozent-Fehler.
+        "feld_nord": 54.0, "feld_sued": 53.9, "feld_west": 7.0, "feld_ost": 7.1,
+    })
+    assert r.status_code in (401, 403)

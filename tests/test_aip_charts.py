@@ -391,3 +391,44 @@ def test_blatt_beschaffen_meldet_netzfehler_statt_zu_luegen():
         raise OSError("Netz weg")
     with pytest.raises(OSError):
         aip_charts.blatt_beschaffen("https://x/y.html", 54.0, 9.0, kaputt)
+
+
+# ---------------------------------------------------------------------------
+# Task 9 -- Handpassung: Rahmenecken -> Blattgrenzen
+# ---------------------------------------------------------------------------
+
+def test_handpassung_verlaengert_auf_die_blattkanten():
+    """Die geklickten Rahmenecken direkt als Blattgrenzen abzulegen waere falsch: Beim
+    Standardblatt wuerde ein 875x1240-Bild in einen 685x685-Rahmen gequetscht, rund 45 %
+    Massstabsfehler senkrecht -- ausgerechnet bei den Karten, denen man am meisten vertraut
+    (Gutachten 23.08.2026, Befund 5)."""
+    p = aip_charts.handpassung(
+        breite_px=875, hoehe_px=1240,
+        links_px=132, oben_px=180, rechts_px=817, unten_px=865,
+        feld_nord=54.2333, feld_sued=54.2000, feld_west=9.6000, feld_ost=9.6333)
+    assert p is not None
+    # Blatt ragt oben und unten ueber das Feld hinaus
+    assert p.nord > p.feld_nord and p.sued < p.feld_sued
+    assert p.west < p.feld_west and p.ost > p.feld_ost
+    # Und zwar im richtigen Verhaeltnis: 180 px ueber dem Feld bei 685 px Feldhoehe
+    grad_je_px = (p.feld_nord - p.feld_sued) / (865 - 180)
+    assert p.nord == pytest.approx(p.feld_nord + 180 * grad_je_px, abs=1e-9)
+    assert p.sued == pytest.approx(p.feld_sued - (1240 - 865) * grad_je_px, abs=1e-9)
+
+
+def test_handpassung_weist_verdrehte_ecken_ab():
+    assert aip_charts.handpassung(
+        breite_px=875, hoehe_px=1240,
+        links_px=132, oben_px=180, rechts_px=817, unten_px=865,
+        feld_nord=54.20, feld_sued=54.23, feld_west=9.60, feld_ost=9.63) is None
+    assert aip_charts.handpassung(
+        breite_px=875, hoehe_px=1240,
+        links_px=817, oben_px=180, rechts_px=132, unten_px=865,
+        feld_nord=54.23, feld_sued=54.20, feld_west=9.60, feld_ost=9.63) is None
+
+
+def test_handpassung_weist_pixel_ausserhalb_des_blatts_ab():
+    assert aip_charts.handpassung(
+        breite_px=875, hoehe_px=1240,
+        links_px=-5, oben_px=180, rechts_px=817, unten_px=865,
+        feld_nord=54.23, feld_sued=54.20, feld_west=9.60, feld_ost=9.63) is None

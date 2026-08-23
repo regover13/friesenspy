@@ -736,6 +736,10 @@
     .ke-c-opt:hover, .ke-c-opt.sel { background: rgba(45,156,219,0.18); }
     .ke-c-optcap { color: #8aa0b8; font-size: 0.72rem; }
   </style>
+  <!-- Leaflet nur fuer die Handpassung der Sichtflugkarten. Bis dahin kam admin.html
+       ganz ohne Karte aus; dieselbe Fassung wie in index.html. -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
   <div class="scanline"></div>
@@ -1162,6 +1166,44 @@
           <div id="al-container" class="scroll-list"><div class="empty-hint">Lade Links…</div></div>
         </div>
 
+        <!-- AIP-SICHTFLUGKARTEN -->
+        <div class="panel">
+          <div class="panel-title"><span>🗺️ Sichtflugkarten (AIP)</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Karten, die die Automatik nicht passen konnte, lassen sich hier von Hand
+            anlegen: zwei gegenüberliegende <b>Rahmenecken</b> des Kartenfelds anklicken und
+            deren Gradwerte eintragen. Die Blattgrenzen rechnet der Server daraus aus — das
+            Blatt ragt über den Rahmen hinaus, und dieser Unterschied ist der Grund, warum
+            man die geklickten Werte nicht einfach übernehmen darf.
+          </p>
+          <div id="aip-charts" class="table-wrap"><div class="empty-hint">Lade Karten…</div></div>
+          <div id="aip-passen" style="display:none;margin-top:12px;">
+            <div class="form-grid" style="margin:6px 0 8px;">
+              <div class="form-group"><label for="aip-nord">Rahmen Nord (Grad)</label>
+                <input type="text" id="aip-nord" placeholder="54.2333" /></div>
+              <div class="form-group"><label for="aip-sued">Rahmen Süd (Grad)</label>
+                <input type="text" id="aip-sued" placeholder="54.2000" /></div>
+              <div class="form-group"><label for="aip-west">Rahmen West (Grad)</label>
+                <input type="text" id="aip-west" placeholder="9.6000" /></div>
+              <div class="form-group"><label for="aip-ost">Rahmen Ost (Grad)</label>
+                <input type="text" id="aip-ost" placeholder="9.6333" /></div>
+            </div>
+            <p id="aip-klickhinweis" style="color:#8aa0b8;font-size:0.82rem;">
+              Auf das Blatt klicken: erst die <b>obere linke</b>, dann die
+              <b>untere rechte</b> Rahmenecke.
+            </p>
+            <div style="position:relative;max-width:100%;overflow:auto;">
+              <img id="aip-blatt" style="max-width:100%;cursor:crosshair;" alt="Kartenblatt" />
+            </div>
+            <div style="display:flex;gap:8px;margin:8px 0;">
+              <button class="btn btn-sm" id="aip-vorschau-btn">Vorschau auf der Karte</button>
+              <button class="btn btn-primary btn-sm" id="aip-save-btn">Speichern</button>
+              <button class="btn btn-sm" id="aip-abbrechen-btn">Abbrechen</button>
+            </div>
+            <div id="aip-vorschau-karte" style="display:none;height:360px;margin-bottom:10px;"></div>
+          </div>
+        </div>
+
         <!-- ERKENNUNGSLÜCKEN (v8.6.0) -->
         <div class="panel">
           <div class="panel-title"><span>🔍 Erkennungslücken (Start/Landung)</span></div>
@@ -1522,6 +1564,7 @@
       loadKutterAdmin();
       loadCustomAirports();
       loadAirportLinks();
+      loadAipCharts();
       miLoad();
       // Erkennungslücken NICHT automatisch laden -- der Check rechnet den gesamten
       // Flugbestand neu durch (mehrere Sekunden) und läuft nur auf expliziten Klick
@@ -3130,6 +3173,137 @@
       } finally {
         saveBtn.disabled = false;
       }
+    });
+
+    // ====================================================================
+    // AIP-SICHTFLUGKARTEN -- Handpassung der Ausreisser
+    // ====================================================================
+    // Der Mensch klickt zwei RAHMENecken und traegt deren Gradwerte ein. Die Blattgrenzen
+    // rechnet der Server daraus (aip_charts.handpassung): Das Blatt ragt ueber den Rahmen
+    // hinaus, und die geklickten Werte einfach als Blattgrenzen abzulegen ergaebe beim
+    // Standardblatt rund 45 Prozent Massstabsfehler.
+    let _aipPassend = null;      // ICAO, der gerade gepasst wird
+    let _aipEcken = [];          // [{x, y}] in Bildpixeln, hoechstens zwei
+    let _aipVorschauKarte = null;
+
+    async function loadAipCharts() {
+      const box = document.getElementById('aip-charts');
+      try {
+        const res = await api('GET', '/api/admin/aip-charts');
+        if (!res || !res.ok) { box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>'; return; }
+        const charts = (await res.json()).charts || [];
+        if (!charts.length) {
+          box.innerHTML = '<div class="empty-hint">Noch keine Karten geladen — '
+            + 'scripts/aip_bestand.py auf dem Server ausführen.</div>';
+          return;
+        }
+        const offen = charts.filter(c => c.status !== 'gepasst').length;
+        let html = '<table><thead><tr><th>Code</th><th>Status</th><th>Quelle</th>'
+          + '<th>AIRAC</th><th></th></tr></thead><tbody>';
+        charts.forEach(c => {
+          html += '<tr><td>' + escH(c.icao) + '</td>'
+            + '<td>' + (c.status === 'gepasst' ? 'gepasst' : '<b>offen</b>') + '</td>'
+            + '<td>' + escH(c.quelle) + '</td>'
+            + '<td>' + escH(c.airac) + '</td>'
+            + '<td><button class="btn btn-sm" data-aip="' + escA(c.icao) + '">Passen</button></td></tr>';
+        });
+        html += '</tbody></table>';
+        box.innerHTML = '<p style="color:#8aa0b8;font-size:0.82rem;">'
+          + charts.length + ' Karten, davon ' + offen + ' offen.</p>' + html;
+        box.querySelectorAll('button[data-aip]').forEach(b => {
+          b.addEventListener('click', () => aipPassenStarten(b.getAttribute('data-aip')));
+        });
+      } catch (e) {
+        box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>';
+      }
+    }
+
+    function aipPassenStarten(icao) {
+      _aipPassend = icao;
+      _aipEcken = [];
+      document.getElementById('aip-passen').style.display = '';
+      const img = document.getElementById('aip-blatt');
+      img.src = '/aip-chart/' + encodeURIComponent(icao) + '.png?t=' + Date.now();
+      document.getElementById('aip-klickhinweis').innerHTML =
+        'Blatt <b>' + escH(icao) + '</b>: erst die <b>obere linke</b>, dann die '
+        + '<b>untere rechte</b> Rahmenecke anklicken.';
+    }
+
+    document.getElementById('aip-blatt').addEventListener('click', function (e) {
+      const img = e.target;
+      // Von der angezeigten Groesse auf echte Bildpixel zurueckrechnen -- das Blatt wird
+      // per max-width skaliert.
+      const r = img.getBoundingClientRect();
+      const x = Math.round((e.clientX - r.left) * img.naturalWidth / r.width);
+      const y = Math.round((e.clientY - r.top) * img.naturalHeight / r.height);
+      if (_aipEcken.length >= 2) _aipEcken = [];
+      _aipEcken.push({ x: x, y: y });
+      document.getElementById('aip-klickhinweis').textContent =
+        _aipEcken.length === 1
+          ? 'Obere linke Ecke: ' + x + '/' + y + ' — jetzt die untere rechte.'
+          : 'Ecken: ' + _aipEcken.map(p => p.x + '/' + p.y).join('  und  ');
+    });
+
+    function _aipEingaben() {
+      if (!_aipPassend || _aipEcken.length !== 2) { toast('Zwei Ecken anklicken.', true); return null; }
+      const img = document.getElementById('aip-blatt');
+      const werte = ['nord', 'sued', 'west', 'ost'].map(
+        f => parseFloat(document.getElementById('aip-' + f).value.replace(',', '.')));
+      if (werte.some(v => !isFinite(v))) { toast('Alle vier Gradwerte eintragen.', true); return null; }
+      const [a, b] = _aipEcken;
+      return {
+        breite_px: img.naturalWidth, hoehe_px: img.naturalHeight,
+        links_px: Math.min(a.x, b.x), oben_px: Math.min(a.y, b.y),
+        rechts_px: Math.max(a.x, b.x), unten_px: Math.max(a.y, b.y),
+        feld_nord: werte[0], feld_sued: werte[1], feld_west: werte[2], feld_ost: werte[3],
+      };
+    }
+
+    // Vorschau: das Blatt halbtransparent ueber der echten Karte. Erst wenn die Strassen
+    // zusammenfallen, taugt die Passung.
+    document.getElementById('aip-vorschau-btn').addEventListener('click', function () {
+      const daten = _aipEingaben();
+      if (!daten) return;
+      const gy = (daten.feld_sued - daten.feld_nord) / (daten.unten_px - daten.oben_px);
+      const gx = (daten.feld_ost - daten.feld_west) / (daten.rechts_px - daten.links_px);
+      const nord = daten.feld_nord + (0 - daten.oben_px) * gy;
+      const sued = daten.feld_nord + (daten.hoehe_px - daten.oben_px) * gy;
+      const west = daten.feld_west + (0 - daten.links_px) * gx;
+      const ost = daten.feld_west + (daten.breite_px - daten.links_px) * gx;
+      const box = document.getElementById('aip-vorschau-karte');
+      box.style.display = '';
+      if (!_aipVorschauKarte) {
+        _aipVorschauKarte = L.map(box);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          { attribution: '&copy; OpenStreetMap' }).addTo(_aipVorschauKarte);
+      }
+      if (_aipVorschauKarte._blatt) _aipVorschauKarte.removeLayer(_aipVorschauKarte._blatt);
+      _aipVorschauKarte._blatt = L.imageOverlay(
+        document.getElementById('aip-blatt').src, [[sued, west], [nord, ost]],
+        { opacity: 0.7 }).addTo(_aipVorschauKarte);
+      _aipVorschauKarte.fitBounds([[sued, west], [nord, ost]]);
+      setTimeout(() => _aipVorschauKarte.invalidateSize(), 50);
+    });
+
+    document.getElementById('aip-save-btn').addEventListener('click', async function () {
+      const daten = _aipEingaben();
+      if (!daten) return;
+      const res = await api('POST', '/api/admin/aip-charts/' + encodeURIComponent(_aipPassend), daten);
+      if (!res || !res.ok) {
+        let detail = 'Fehler beim Speichern.';
+        try { detail = (await res.json()).detail || detail; } catch (e) {}
+        toast(detail, true);
+        return;
+      }
+      toast('Passung gespeichert.');
+      document.getElementById('aip-passen').style.display = 'none';
+      _aipPassend = null; _aipEcken = [];
+      loadAipCharts();
+    });
+
+    document.getElementById('aip-abbrechen-btn').addEventListener('click', function () {
+      document.getElementById('aip-passen').style.display = 'none';
+      _aipPassend = null; _aipEcken = [];
     });
 
     // ====================================================================

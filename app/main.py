@@ -41,6 +41,7 @@ from app.forum_sso import (
     verify_sso_token,
     verify_user_token,
 )
+from app import aip_charts
 from app.database import (
     _DATA_RETENTION_DAYS,
     aggregate_bummel_kpis,
@@ -133,7 +134,10 @@ from app.database import (
     list_airport_links,
     get_aip_chart,
     get_aip_charts,
+    get_aip_chart,
+    get_aip_charts,
     get_airport_links,
+    upsert_aip_chart,
     upsert_airport_link,
     delete_airport_link,
     rebuild_flight_cache,
@@ -4125,6 +4129,63 @@ async def admin_get_airport_links(request: Request):
     conn = get_connection(get_settings().DB_PATH)
     try:
         return {"links": list_airport_links(conn)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/admin/aip-charts")
+async def admin_get_aip_charts(request: Request):
+    """Alle Sichtflugkarten mit Status -- auch die ungepassten, die von Hand drankommen."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return {"charts": get_aip_charts(conn, nur_gepasst=False)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/aip-charts/{icao}")
+async def admin_set_aip_chart(icao: str, request: Request):
+    """Handpassung: zwei geklickte Rahmenecken plus ihre Gradwerte.
+
+    Die Gradwerte heissen bewusst ``feld_*`` und nicht ``nord/sued/west/ost``: Sie sind die
+    RAHMENecken, nicht die Blattgrenzen. Dieselben vier Namen fuer beides zu verwenden war
+    die Verwechslung hinter dem 45-Prozent-Massstabsfehler; sie darf nicht im Drahtformat
+    weiterleben. Die Blattgrenzen rechnet ``aip_charts.handpassung`` daraus aus.
+    """
+    require_admin(request)
+    body = await request.json()
+    code = (icao or "").strip().upper()
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        bestand = get_aip_chart(conn, code)
+        if bestand is None:
+            # Ohne geladenes Blatt gibt es kein Bild, an dem man klicken koennte.
+            raise HTTPException(status_code=409,
+                                detail="Fuer diesen Platz liegt noch kein Blatt vor")
+        try:
+            felder = {k: float(body[k]) for k in
+                      ("links_px", "oben_px", "rechts_px", "unten_px",
+                       "feld_nord", "feld_sued", "feld_west", "feld_ost")}
+            breite_px = int(body["breite_px"])
+            hoehe_px = int(body["hoehe_px"])
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="unvollstaendige Angaben")
+        passung = aip_charts.handpassung(breite_px=breite_px, hoehe_px=hoehe_px, **felder)
+        if passung is None:
+            raise HTTPException(status_code=400,
+                                detail="Ecken oder Gradwerte passen nicht zusammen")
+        upsert_aip_chart(
+            conn, code, bild_hash=bestand["bild_hash"],
+            nord=passung.nord, sued=passung.sued, west=passung.west, ost=passung.ost,
+            feld_nord=passung.feld_nord, feld_sued=passung.feld_sued,
+            feld_west=passung.feld_west, feld_ost=passung.feld_ost,
+            rahmen_px=passung.rahmen_px,
+            tick_px_lat=passung.tick_px_lat, tick_px_lon=passung.tick_px_lon,
+            quelle="hand", airac=bestand["airac"], status="gepasst")
+        conn.commit()
+        return {"status": "ok", "nord": passung.nord, "sued": passung.sued,
+                "west": passung.west, "ost": passung.ost}
     finally:
         conn.close()
 

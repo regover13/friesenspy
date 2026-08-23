@@ -686,3 +686,36 @@ def blatt_beschaffen(url: str, arp_lat: float, arp_lon: float,
             if passung2 is not None:
                 return roh2, passung2, airac
     return roh, None, airac
+
+
+def handpassung(breite_px: int, hoehe_px: int,
+                links_px: float, oben_px: float, rechts_px: float, unten_px: float,
+                feld_nord: float, feld_sued: float,
+                feld_west: float, feld_ost: float) -> "Passung | None":
+    """Passung aus zwei von Hand geklickten Rahmenecken.
+
+    **Der Handpfad rechnet genauso weiter wie die Automatik.** Aus den zwei Rahmenpunkten
+    wird die lineare Abbildung gebildet und auf die Blattkanten verlaengert; erst das ergibt
+    ``nord/sued/west/ost``. Die geklickten Werte direkt als Blattgrenzen abzulegen waere
+    falsch -- beim Standardblatt wuerde ein 875x1240-Bild in einen 685x685-Rahmen gequetscht,
+    rund 45 Prozent Massstabsfehler senkrecht. Das betraefe ausgerechnet die Karten, denen
+    man am meisten vertraut, weil ein Mensch sie gesetzt hat.
+
+    None, wenn die Angaben nicht zusammenpassen.
+    """
+    if not (0 <= links_px < rechts_px <= breite_px and 0 <= oben_px < unten_px <= hoehe_px):
+        return None
+    if not (feld_sued < feld_nord and feld_west < feld_ost):
+        return None
+    grad_je_y = (feld_sued - feld_nord) / (unten_px - oben_px)     # negativ: nach unten Sueden
+    grad_je_x = (feld_ost - feld_west) / (rechts_px - links_px)
+    return Passung(
+        nord=feld_nord + (0 - oben_px) * grad_je_y,
+        sued=feld_nord + (hoehe_px - oben_px) * grad_je_y,
+        west=feld_west + (0 - links_px) * grad_je_x,
+        ost=feld_west + (breite_px - links_px) * grad_je_x,
+        feld_nord=feld_nord, feld_sued=feld_sued,
+        feld_west=feld_west, feld_ost=feld_ost,
+        rahmen_px=f"{links_px:.1f},{oben_px:.1f},{rechts_px:.1f},{unten_px:.1f}",
+        tick_px_lat=0.0, tick_px_lon=0.0,
+    )

@@ -69,3 +69,42 @@ def test_festnageln_ist_verdrahtet():
     """Nicht nur eine Variable anlegen -- sie muss die Automatik auch uebersteuern."""
     start = INDEX.index("function _aipKarteNachfuehren(")
     assert "_aipKarteFest" in INDEX[start:start + 1200]
+
+
+# ---------------------------------------------------------------------------
+# Admin -- Handpassung
+# ---------------------------------------------------------------------------
+ADMIN = (Path(__file__).resolve().parents[1] / "app" / "static" / "admin.html").read_text(
+    encoding="utf-8"
+)
+
+
+def test_admin_bindet_leaflet_ein():
+    """Vorher enthielt admin.html keinerlei Leaflet -- kein Script-Tag, kein CSS."""
+    assert "leaflet.js" in ADMIN and "leaflet.css" in ADMIN
+
+
+def test_kartenliste_ist_horizontal_scrollbar():
+    """UI-Regel aus CLAUDE.md: breite Tabellen gehoeren in .table-wrap."""
+    start = ADMIN.index('id="aip-charts"')
+    assert "table-wrap" in ADMIN[max(0, start - 400):start + 400]
+
+
+def test_vorschau_zeigt_das_blatt_ueber_der_karte():
+    start = ADMIN.index("aip-vorschau-btn').addEventListener")
+    assert "L.imageOverlay(" in ADMIN[start:start + 1600]
+
+
+def test_handpassung_schickt_die_rahmenecken_als_feld_werte():
+    """Nicht als nord/sued/west/ost -- dieselben Namen fuer Rahmenecken und Blattgrenzen
+    waren die Verwechslung hinter dem 45-Prozent-Massstabsfehler."""
+    start = ADMIN.index("function _aipEingaben(")
+    block = ADMIN[start:start + 1200]
+    assert "feld_nord:" in block and "feld_sued:" in block
+    assert "breite_px:" in block and "hoehe_px:" in block
+
+
+def test_klickkoordinaten_werden_auf_bildpixel_zurueckgerechnet():
+    """Das Blatt wird per max-width skaliert; ungerechnete Klickpixel waeren falsch."""
+    start = ADMIN.index("aip-blatt').addEventListener")
+    assert "naturalWidth" in ADMIN[start:start + 900]
