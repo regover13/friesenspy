@@ -17,15 +17,18 @@ from __future__ import annotations
 import base64
 import logging
 import math
+import os
 import re
 import urllib.parse
 from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _META_REFRESH = re.compile(r'http-equiv=.?Refresh.?[^>]*url=([^"\'>\s]+)', re.I)
 _IMG_AIP = re.compile(r'id="imgAIP"[^>]*src="data:image/png;base64,([^"]+)"')
 _SEITE = re.compile(r'href="(\.\./pages/[0-9A-Fa-f]+\.html)"')
+_KAPITEL = re.compile(r'href="(\.\./chapter/[0-9A-Fa-f]+\.html)"')
 _AIRAC = re.compile(r'/BasicVFR/(\d{4}[A-Z]{3}\d{2})/')
 
 
@@ -45,6 +48,19 @@ def bild_aus_html(html: str) -> bytes | None:
     """Das Kartenblatt aus dem data:-URI. None, wenn die Seite keines enthaelt."""
     m = _IMG_AIP.search(html)
     return base64.b64decode(m.group(1)) if m else None
+
+
+def kapitel_links(html: str, basis: str) -> list[str]:
+    """Die Kapitel-Verweise einer Seite.
+
+    Eine Platzseite verlinkt nicht direkt ihre Geschwister, sondern das Kapitel; erst dessen
+    Seite listet alle Blaetter des Platzes. Ohne diesen Zwischenschritt findet man die Karte
+    von EDAZ nie, weil die Textseite selbst keinen pages-Link traegt.
+    """
+    gesehen: dict[str, None] = {}
+    for treffer in _KAPITEL.findall(html):
+        gesehen.setdefault(urllib.parse.urljoin(basis, treffer), None)
+    return list(gesehen)
 
 
 def kapitelseiten(html: str, basis: str) -> list[str]:
@@ -569,3 +585,104 @@ def passung_rechnen(im, arp_lat: float, arp_lon: float) -> Passung | None:
         rahmen_px=f"{rahmen.links:.1f},{rahmen.oben:.1f},{rahmen.rechts:.1f},{rahmen.unten:.1f}",
         tick_px_lat=dy, tick_px_lon=dx,
     )
+
+
+# ---------------------------------------------------------------------------
+# AIRAC-Nachlauf und Ablage
+# ---------------------------------------------------------------------------
+_TOLERANZ_RAHMEN_PX = 2.0
+# Schaerfer als beim Rahmen: 2 px auf 219 sind 0,9 Prozent und entsprechen ueber
+# dphi/dv = 1/sin(phi) rund 0,5 Grad Breite -- mehr als die cos-Probe zulaesst.
+_TOLERANZ_RASTER_PX = 0.5
+
+
+def geometrie_gleich(alt: dict, neu: "Passung") -> bool:
+    """Traegt das neue Blatt denselben Ausschnitt wie das alte?
+
+    Wenn ja, hat sich nur der Inhalt geaendert (Hindernis ergaenzt, Frequenz korrigiert) und
+    die Passung bleibt gueltig -- auch eine von Hand gesetzte.
+    """
+    try:
+        a = [float(v) for v in str(alt["rahmen_px"]).split(",")]
+        b = [float(v) for v in neu.rahmen_px.split(",")]
+        lat_alt, lon_alt = float(alt["tick_px_lat"]), float(alt["tick_px_lon"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if len(a) != 4 or len(b) != 4:
+        return False
+    if any(abs(x - y) > _TOLERANZ_RAHMEN_PX for x, y in zip(a, b)):
+        return False
+    return (abs(lat_alt - neu.tick_px_lat) <= _TOLERANZ_RASTER_PX
+            and abs(lon_alt - neu.tick_px_lon) <= _TOLERANZ_RASTER_PX)
+
+
+def blatt_schreiben(pfad, roh: bytes) -> None:
+    """Blatt atomar ablegen: erst daneben, dann umbenennen.
+
+    Sonst liefert FileResponse mitten im Austausch ein abgeschnittenes PNG aus.
+    """
+    ziel = Path(pfad)
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    tmp = ziel.with_suffix(ziel.suffix + ".tmp")
+    tmp.write_bytes(roh)
+    os.replace(tmp, ziel)
+
+
+def blatt_pfad(db_path: str, icao: str) -> "Path":
+    """Wo das Blatt liegt. Neben der Datenbank, im Volume -- so ueberlebt es den Container."""
+    return Path(db_path).parent / "aip" / f"{(icao or '').strip().upper()}.png"
+
+
+def blatt_beschaffen(url: str, arp_lat: float, arp_lon: float,
+                     hole) -> tuple[bytes | None, "Passung | None", str | None]:
+    """Blatt und Passung zu einem Kartenlink besorgen.
+
+    ``hole`` ist eine Funktion URL -> HTML. Sie wird hereingereicht, damit diese Funktion
+    ohne Netz pruefbar bleibt; das Skript und der Poller geben ihren httpx-Aufruf mit.
+
+    Traegt die verlinkte Seite keinen Kartenrahmen, werden die uebrigen Seiten desselben
+    Kapitels geprueft -- bei EDAZ oeffnet der Link die Textseite "VFR-Flugverfahren", die
+    Sichtflugkarte ist die vierte Seite. Das betrifft 28 von 446 Karten.
+
+    Fehler beim Abruf werden NICHT geschluckt: Der Aufrufer muss unterscheiden koennen
+    zwischen "Karte passt nicht" und "Netz war weg" -- im zweiten Fall darf er die
+    bestehende Karte nicht entwerten.
+    """
+    from PIL import Image
+    import io
+
+    erste = hole(url)
+    ziel = airac_url(erste, url) or url
+    airac = airac_kennung(ziel)
+    html = hole(ziel) if ziel != url else erste
+
+    def versuche(seiten_html: str) -> tuple[bytes | None, "Passung | None"]:
+        roh = bild_aus_html(seiten_html)
+        if roh is None:
+            return None, None
+        try:
+            im = Image.open(io.BytesIO(roh)).convert("L")
+        except Exception:
+            return None, None
+        return roh, passung_rechnen(im, arp_lat, arp_lon)
+
+    roh, passung = versuche(html)
+    if passung is not None:
+        return roh, passung, airac
+
+    for kapitel in kapitel_links(html, ziel):
+        try:
+            weiter = hole(kapitel)
+        except Exception:
+            logger.info("AIP: Kapitelseite %s nicht erreichbar", kapitel)
+            continue
+        for seite in kapitelseiten(weiter, kapitel):
+            if seite == ziel:
+                continue
+            try:
+                roh2, passung2 = versuche(hole(seite))
+            except Exception:
+                continue
+            if passung2 is not None:
+                return roh2, passung2, airac
+    return roh, None, airac

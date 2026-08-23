@@ -316,3 +316,78 @@ def test_cos_probe_verwirft_falsche_breite():
     """EDWT lag mit 4,14 Grad daneben und wurde verworfen."""
     im = blatt_bauen(breite_links=(54, 14), laenge_oben=(9, 36))
     assert aip_charts.passung_rechnen(im, arp_lat=48.0, arp_lon=9.62) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 6 -- AIRAC-Nachlauf und Ablage
+# ---------------------------------------------------------------------------
+
+def _passung(**abw):
+    grund = dict(nord=1.0, sued=0.0, west=0.0, ost=1.0, feld_nord=0.9, feld_sued=0.1,
+                 feld_west=0.1, feld_ost=0.9, rahmen_px="132.0,180.0,817.0,865.0",
+                 tick_px_lat=219.0, tick_px_lon=128.4)
+    return aip_charts.Passung(**{**grund, **abw})
+
+
+def test_gleiche_geometrie_erhaelt_die_handpassung():
+    alt = {"rahmen_px": "132.0,180.0,817.0,865.0", "tick_px_lat": 219.0, "tick_px_lon": 128.4}
+    assert aip_charts.geometrie_gleich(alt, _passung()) is True
+
+
+def test_verschobener_rahmen_erzwingt_neue_passung():
+    alt = {"rahmen_px": "132.0,180.0,817.0,900.0", "tick_px_lat": 219.0, "tick_px_lon": 128.4}
+    assert aip_charts.geometrie_gleich(alt, _passung()) is False
+
+
+def test_rasterabstand_wird_schaerfer_geprueft_als_der_rahmen():
+    """2 px auf 219 sind 0,9 Prozent, ueber dphi/dv also rund 0,5 Grad Breite -- mehr als die
+    Toleranz der cos-Probe. Fuer Rasterabstaende gelten deshalb 0,5 px."""
+    alt = {"rahmen_px": "132.0,180.0,817.0,865.0", "tick_px_lat": 220.5, "tick_px_lon": 128.4}
+    assert aip_charts.geometrie_gleich(alt, _passung()) is False
+
+
+def test_blatt_wird_atomar_geschrieben(tmp_path):
+    """Sonst liefert FileResponse mitten im Austausch ein abgeschnittenes PNG aus."""
+    ziel = tmp_path / "aip" / "EDXR.png"
+    aip_charts.blatt_schreiben(ziel, PNG_1X1)
+    assert ziel.read_bytes() == PNG_1X1
+    assert not list(ziel.parent.glob("*.tmp"))     # kein Rest
+
+
+def test_kaputte_geometrieangabe_gilt_als_abweichend():
+    assert aip_charts.geometrie_gleich({"rahmen_px": "unsinn"}, _passung()) is False
+    assert aip_charts.geometrie_gleich({}, _passung()) is False
+
+
+def test_blatt_beschaffen_findet_die_karte_auf_der_zweiten_seite(tmp_path):
+    """Fall EDAZ: Der gespeicherte Link zeigt auf die Textseite, die Karte liegt im selben
+    Kapitel. 28 von 446 Karten liegen so."""
+    import io
+    puffer = io.BytesIO()
+    blatt_bauen(breite_links=(54, 14), laenge_oben=(9, 36)).save(puffer, format="PNG")
+    karte_b64 = base64.b64encode(puffer.getvalue()).decode()
+    leer_b64 = base64.b64encode(PNG_1X1).decode()
+
+    seiten = {
+        "https://aip.dfs.de/BasicVFR/pages/P1.html":
+            '<meta http-equiv="Refresh" content="0; url=../2026AUG20/pages/AAAA1111BBBB2222CCCC3333DDDD44.html"/>',
+        "https://aip.dfs.de/BasicVFR/2026AUG20/pages/AAAA1111BBBB2222CCCC3333DDDD44.html":
+            f'<img id="imgAIP" src="data:image/png;base64,{leer_b64}"/>'
+            '<a href="../chapter/abc.html">Kapitel</a>',
+        "https://aip.dfs.de/BasicVFR/2026AUG20/chapter/abc.html":
+            '<a href="../pages/AAAA1111BBBB2222CCCC3333DDDD44.html">1</a><a href="../pages/EEEE5555FFFF6666AAAA7777BBBB88.html">2</a>',
+        "https://aip.dfs.de/BasicVFR/2026AUG20/pages/EEEE5555FFFF6666AAAA7777BBBB88.html":
+            f'<img id="imgAIP" src="data:image/png;base64,{karte_b64}"/>',
+    }
+    roh, passung, airac = aip_charts.blatt_beschaffen(
+        "https://aip.dfs.de/BasicVFR/pages/P1.html", 54.21, 9.62, seiten.__getitem__)
+    assert roh is not None and passung is not None
+    assert airac == "2026AUG20"
+
+
+def test_blatt_beschaffen_meldet_netzfehler_statt_zu_luegen():
+    """Ein fehlgeschlagener Abruf darf keine bestehende Karte entwerten."""
+    def kaputt(_url):
+        raise OSError("Netz weg")
+    with pytest.raises(OSError):
+        aip_charts.blatt_beschaffen("https://x/y.html", 54.0, 9.0, kaputt)
