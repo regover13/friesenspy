@@ -1,0 +1,5574 @@
+{
+ "_hinweis": "Messwerte echter DFS-Sichtflugkarten, erhoben am 23.08.2026 gegen AIRAC 2026AUG20 mit dem Mess-Prototyp. Die Blaetter selbst liegen NICHT im Repo (oeffentlich, Karten sind (c) DFS) -- Messwerte sind Tatsachen, kein Werk. ACHTUNG: Diese Zahlen stammen aus dem Prototyp, nicht aus dem spaeteren Produktionscode. Der unterscheidet sich in zwei Punkten, die die Quote verschieben koennen: raster() prueft die Belegung, und rahmen_finden nimmt das engste Rechteck mit Gradnetz. Die Datei ist ein Anhaltspunkt fuer den Erstlauf, kein Abnahmekriterium auf die Nachkommastelle.",
+ "erhoben": "2026-08-23",
+ "airac": "2026AUG20",
+ "quelle": "Mess-Prototyp, /tmp/aiplauf (nicht im Repo)",
+ "karten_gesamt": 446,
+ "gepasst": 410,
+ "quote": 91.9,
+ "toleranz_grad": 0.4,
+ "wege": {
+  "direkt": 356,
+  "-": 36,
+  "kapitelseite": 28,
+  "openaip": 26
+ },
+ "karten": {
+  "EDAB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    87,
+    238,
+    1150,
+    817
+   ],
+   "dy": 54.78,
+   "dx": 34.27,
+   "kx": 1,
+   "lat_fehler": 0.083
+  },
+  "EDAC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 54.75,
+   "dx": 34.4,
+   "kx": 1,
+   "lat_fehler": 0.092
+  },
+  "EDAD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.5,
+   "kx": 1,
+   "lat_fehler": 0.055
+  },
+  "EDAE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 134.5,
+   "kx": 1,
+   "lat_fehler": 0.088
+  },
+  "EDAG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 139.0,
+   "kx": 1,
+   "lat_fehler": 0.042
+  },
+  "EDAH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 43.84,
+   "dx": 25.81,
+   "kx": 1,
+   "lat_fehler": 0.057
+  },
+  "EDAJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.25,
+   "kx": 1,
+   "lat_fehler": 0.026
+  },
+  "EDAK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.0,
+   "kx": 1,
+   "lat_fehler": 0.032
+  },
+  "EDAM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.0,
+   "kx": 1,
+   "lat_fehler": 0.088
+  },
+  "EDAN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 87.29,
+   "kx": 1,
+   "lat_fehler": 0.076
+  },
+  "EDAO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    177,
+    819,
+    862
+   ],
+   "dy": 219.0,
+   "dx": 136.5,
+   "kx": 1,
+   "lat_fehler": 0.05
+  },
+  "EDAP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 90.67,
+   "kx": 1,
+   "lat_fehler": 0.074
+  },
+  "EDAQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.25,
+   "kx": 1,
+   "lat_fehler": 0.025
+  },
+  "EDAR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.25,
+   "kx": 1,
+   "lat_fehler": 0.124
+  },
+  "EDAS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.0,
+   "kx": 1,
+   "lat_fehler": 0.024
+  },
+  "EDAT": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDAU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 91.33,
+   "kx": 1,
+   "lat_fehler": 0.018
+  },
+  "EDAV": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 88.43,
+   "kx": 1,
+   "lat_fehler": 0.105
+  },
+  "EDAW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.67,
+   "dx": 90.86,
+   "kx": 1,
+   "lat_fehler": 0.167
+  },
+  "EDAX": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 87.33,
+   "kx": 1,
+   "lat_fehler": 0.046
+  },
+  "EDAY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    153,
+    153,
+    1582,
+    1151
+   ],
+   "dy": 146.0,
+   "dx": 89.0,
+   "kx": 1,
+   "lat_fehler": 0.14
+  },
+  "EDAZ": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.127,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDBA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.67,
+   "dx": 92.33,
+   "kx": 1,
+   "lat_fehler": 0.178
+  },
+  "EDBC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 55.0,
+   "dx": 33.79,
+   "kx": 1,
+   "lat_fehler": 0.239
+  },
+  "EDBE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 133.8,
+   "kx": 1,
+   "lat_fehler": 0.096
+  },
+  "EDBF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 132.75,
+   "kx": 1,
+   "lat_fehler": 0.106
+  },
+  "EDBG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    179,
+    817,
+    864
+   ],
+   "dy": 219.0,
+   "dx": 134.25,
+   "kx": 1,
+   "lat_fehler": 0.049
+  },
+  "EDBH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 54.81,
+   "dx": 31.86,
+   "kx": 1,
+   "lat_fehler": 0.127
+  },
+  "EDBI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 92.6,
+   "kx": 1,
+   "lat_fehler": 0.066
+  },
+  "EDBJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 92.14,
+   "kx": 1,
+   "lat_fehler": 0.048
+  },
+  "EDBK": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDBL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.5,
+   "kx": 1,
+   "lat_fehler": 0.138
+  },
+  "EDBM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    84,
+    238,
+    1147,
+    818
+   ],
+   "dy": 54.78,
+   "dx": 33.73,
+   "kx": 1,
+   "lat_fehler": 0.085
+  },
+  "EDBN": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    85,
+    238,
+    1147,
+    818
+   ]
+  },
+  "EDBO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 109.5,
+   "dx": 67.67,
+   "kx": 1,
+   "lat_fehler": 0.067
+  },
+  "EDBP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 86.67,
+   "kx": 1,
+   "lat_fehler": 0.029
+  },
+  "EDBQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.5,
+   "kx": 1,
+   "lat_fehler": 0.227
+  },
+  "EDBR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 146.0,
+   "dx": 91.2,
+   "kx": 1,
+   "lat_fehler": 0.02
+  },
+  "EDBS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.5,
+   "kx": 1,
+   "lat_fehler": 0.091
+  },
+  "EDBT": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDBU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 131.33,
+   "kx": 1,
+   "lat_fehler": 0.028
+  },
+  "EDBV": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 127.8,
+   "kx": 1,
+   "lat_fehler": 0.037
+  },
+  "EDBW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 133.25,
+   "kx": 1,
+   "lat_fehler": 0.21
+  },
+  "EDBX": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDBY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 129.0,
+   "kx": 1,
+   "lat_fehler": 0.061
+  },
+  "EDBZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.67,
+   "dx": 136.5,
+   "kx": 1,
+   "lat_fehler": 0.116
+  },
+  "EDCA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 129.5,
+   "kx": 1,
+   "lat_fehler": 0.084
+  },
+  "EDCB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.75,
+   "kx": 1,
+   "lat_fehler": 0.052
+  },
+  "EDCE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 89.0,
+   "kx": 1,
+   "lat_fehler": 0.041
+  },
+  "EDCG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 85.14,
+   "kx": 1,
+   "lat_fehler": 0.057
+  },
+  "EDCH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.0,
+   "kx": 1,
+   "lat_fehler": 0.103
+  },
+  "EDCI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.25,
+   "kx": 1,
+   "lat_fehler": 0.082
+  },
+  "EDCJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 437.0,
+   "dx": 139.0,
+   "kx": 2,
+   "lat_fehler": 0.253
+  },
+  "EDCL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    816,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 133.0,
+   "kx": 1,
+   "lat_fehler": 0.104
+  },
+  "EDCM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 91.43,
+   "kx": 1,
+   "lat_fehler": 0.069
+  },
+  "EDCO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.25,
+   "kx": 1,
+   "lat_fehler": 0.076
+  },
+  "EDCP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    131,
+    180,
+    816,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 85.71,
+   "kx": 1,
+   "lat_fehler": 0.108
+  },
+  "EDCQ": {
+   "gepasst": false,
+   "grund": "cos_probe_fehl"
+  },
+  "EDCR": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDCS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 134.25,
+   "kx": 1,
+   "lat_fehler": 0.116
+  },
+  "EDCT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.75,
+   "kx": 1,
+   "lat_fehler": 0.035
+  },
+  "EDCU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 129.67,
+   "kx": 1,
+   "lat_fehler": 0.11
+  },
+  "EDCV": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 130.5,
+   "kx": 1,
+   "lat_fehler": 0.081
+  },
+  "EDCW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 129.25,
+   "kx": 1,
+   "lat_fehler": 0.084
+  },
+  "EDCX": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 128.4,
+   "kx": 1,
+   "lat_fehler": 0.057
+  },
+  "EDCY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.5,
+   "kx": 1,
+   "lat_fehler": 0.132
+  },
+  "EDDB": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.134,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDDC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    88,
+    348,
+    1151,
+    1670
+   ],
+   "dy": 54.75,
+   "dx": 34.25,
+   "kx": 1,
+   "lat_fehler": 0.143
+  },
+  "EDDE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    153,
+    153,
+    1582,
+    1151
+   ],
+   "dy": 109.14,
+   "dx": 69.0,
+   "kx": 1,
+   "lat_fehler": 0.192
+  },
+  "EDDF": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.215,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDDG": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.049,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDDH": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.044,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDDK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    122,
+    125,
+    1461,
+    1110
+   ],
+   "dy": 146.0,
+   "dx": 91.44,
+   "kx": 1,
+   "lat_fehler": 0.354
+  },
+  "EDDL": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.053,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDDM": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.008,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDDN": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.147,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDDP": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.037,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDDR": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.005,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDDS": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDDV": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.086,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDDW": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.032,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDEB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.67,
+   "kx": 1,
+   "lat_fehler": 0.077
+  },
+  "EDEG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.25,
+   "kx": 1,
+   "lat_fehler": 0.115
+  },
+  "EDEH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 142.75,
+   "kx": 1,
+   "lat_fehler": 0.024
+  },
+  "EDEL": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDEM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.67,
+   "dx": 91.83,
+   "kx": 1,
+   "lat_fehler": 0.145
+  },
+  "EDEN": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDEP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 94.67,
+   "kx": 1,
+   "lat_fehler": 0.043
+  },
+  "EDEQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.5,
+   "kx": 1,
+   "lat_fehler": 0.105
+  },
+  "EDER": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 139.5,
+   "kx": 1,
+   "lat_fehler": 0.066
+  },
+  "EDEW": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDFA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 93.5,
+   "kx": 1,
+   "lat_fehler": 0.111
+  },
+  "EDFB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 93.29,
+   "kx": 1,
+   "lat_fehler": 0.049
+  },
+  "EDFC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 437.0,
+   "dx": 141.25,
+   "kx": 2,
+   "lat_fehler": 0.214
+  },
+  "EDFD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    178,
+    816,
+    862
+   ],
+   "dy": 145.75,
+   "dx": 93.2,
+   "kx": 1,
+   "lat_fehler": 0.057
+  },
+  "EDFE": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.391,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDFG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 93.67,
+   "kx": 1,
+   "lat_fehler": 0.105
+  },
+  "EDFH": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.027,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDFI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.67,
+   "kx": 1,
+   "lat_fehler": 0.073
+  },
+  "EDFJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 140.5,
+   "kx": 1,
+   "lat_fehler": 0.006
+  },
+  "EDFK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 93.57,
+   "kx": 1,
+   "lat_fehler": 0.07
+  },
+  "EDFL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 93.0,
+   "kx": 1,
+   "lat_fehler": 0.193
+  },
+  "EDFM": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.032,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDFN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 92.2,
+   "kx": 1,
+   "lat_fehler": 0.036
+  },
+  "EDFO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 94.6,
+   "kx": 1,
+   "lat_fehler": 0.149
+  },
+  "EDFP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 93.33,
+   "kx": 1,
+   "lat_fehler": 0.099
+  },
+  "EDFQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    85,
+    238,
+    1147,
+    818
+   ],
+   "dy": 54.78,
+   "dx": 68.87,
+   "kx": 0.5,
+   "lat_fehler": 0.018
+  },
+  "EDFR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 95.17,
+   "kx": 1,
+   "lat_fehler": 0.068
+  },
+  "EDFS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 219.0,
+   "dx": 141.0,
+   "kx": 1,
+   "lat_fehler": 0.089
+  },
+  "EDFT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 139.0,
+   "kx": 1,
+   "lat_fehler": 0.081
+  },
+  "EDFU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 141.75,
+   "kx": 1,
+   "lat_fehler": 0.142
+  },
+  "EDFV": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 94.71,
+   "kx": 1,
+   "lat_fehler": 0.053
+  },
+  "EDFW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 94.33,
+   "kx": 1,
+   "lat_fehler": 0.067
+  },
+  "EDFX": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 143.0,
+   "kx": 1,
+   "lat_fehler": 0.091
+  },
+  "EDFY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.67,
+   "dx": 139.75,
+   "kx": 1,
+   "lat_fehler": 0.152
+  },
+  "EDFZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 94.0,
+   "kx": 1,
+   "lat_fehler": 0.046
+  },
+  "EDGA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 139.25,
+   "kx": 1,
+   "lat_fehler": 0.076
+  },
+  "EDGB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 92.67,
+   "kx": 1,
+   "lat_fehler": 0.074
+  },
+  "EDGE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.0,
+   "kx": 1,
+   "lat_fehler": 0.053
+  },
+  "EDGF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 139.75,
+   "kx": 1,
+   "lat_fehler": 0.128
+  },
+  "EDGH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 283.0,
+   "kx": 0.5,
+   "lat_fehler": 0.048
+  },
+  "EDGI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    177,
+    819,
+    862
+   ],
+   "dy": 219.0,
+   "dx": 143.0,
+   "kx": 1,
+   "lat_fehler": 0.087
+  },
+  "EDGK": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDGL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    177,
+    819,
+    862
+   ],
+   "dy": 219.0,
+   "dx": 142.5,
+   "kx": 1,
+   "lat_fehler": 0.006
+  },
+  "EDGM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 95.17,
+   "kx": 1,
+   "lat_fehler": 0.078
+  },
+  "EDGO": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDGP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 141.33,
+   "kx": 1,
+   "lat_fehler": 0.034
+  },
+  "EDGQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.25,
+   "kx": 1,
+   "lat_fehler": 0.145
+  },
+  "EDGR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 139.25,
+   "kx": 1,
+   "lat_fehler": 0.05
+  },
+  "EDGS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    136,
+    177,
+    821,
+    1152
+   ],
+   "dy": 54.75,
+   "dx": 34.61,
+   "kx": 1,
+   "lat_fehler": 0.082
+  },
+  "EDGT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.75,
+   "kx": 1,
+   "lat_fehler": 0.109
+  },
+  "EDGU": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDGW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.0,
+   "kx": 1,
+   "lat_fehler": 0.031
+  },
+  "EDGX": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 143.0,
+   "kx": 1,
+   "lat_fehler": 0.069
+  },
+  "EDGY": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDGZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 142.33,
+   "kx": 1,
+   "lat_fehler": 0.103
+  },
+  "EDHB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    181,
+    819,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 128.0,
+   "kx": 1,
+   "lat_fehler": 0.01
+  },
+  "EDHC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 132.0,
+   "kx": 1,
+   "lat_fehler": 0.082
+  },
+  "EDHD": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDHE": {
+   "gepasst": false,
+   "grund": "cos_probe_fehl"
+  },
+  "EDHF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 86.0,
+   "kx": 1,
+   "lat_fehler": 0.083
+  },
+  "EDHG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 131.25,
+   "kx": 1,
+   "lat_fehler": 0.07
+  },
+  "EDHI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    178,
+    820,
+    863
+   ],
+   "dy": 219.0,
+   "dx": 130.33,
+   "kx": 1,
+   "lat_fehler": 0.057
+  },
+  "EDHK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 43.84,
+   "dx": 51.0,
+   "kx": 0.5,
+   "lat_fehler": 0.055
+  },
+  "EDHL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 54.73,
+   "dx": 32.25,
+   "kx": 1,
+   "lat_fehler": 0.093
+  },
+  "EDHM": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.085,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDHN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 128.6,
+   "kx": 1,
+   "lat_fehler": 0.039
+  },
+  "EDHO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 129.75,
+   "kx": 1,
+   "lat_fehler": 0.032
+  },
+  "EDHS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 130.25,
+   "kx": 1,
+   "lat_fehler": 0.056
+  },
+  "EDHU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 131.4,
+   "kx": 1,
+   "lat_fehler": 0.077
+  },
+  "EDHW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 129.25,
+   "kx": 1,
+   "lat_fehler": 0.139
+  },
+  "EDHY": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDJA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    181,
+    820,
+    1154
+   ],
+   "dy": 54.69,
+   "dx": 73.22,
+   "kx": 0.5,
+   "lat_fehler": 0.01
+  },
+  "EDJG": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDKA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 92.5,
+   "kx": 1,
+   "lat_fehler": 0.136
+  },
+  "EDKB": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.082,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDKD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.0,
+   "kx": 1,
+   "lat_fehler": 0.037
+  },
+  "EDKF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 138.0,
+   "kx": 1,
+   "lat_fehler": 0.219
+  },
+  "EDKH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.25,
+   "kx": 1,
+   "lat_fehler": 0.073
+  },
+  "EDKI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.75,
+   "kx": 1,
+   "lat_fehler": 0.131
+  },
+  "EDKL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 92.0,
+   "kx": 1,
+   "lat_fehler": 0.155
+  },
+  "EDKM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 91.4,
+   "kx": 1,
+   "lat_fehler": 0.06
+  },
+  "EDKN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.75,
+   "kx": 1,
+   "lat_fehler": 0.1
+  },
+  "EDKO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.75,
+   "kx": 1,
+   "lat_fehler": 0.043
+  },
+  "EDKP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.5,
+   "kx": 1,
+   "lat_fehler": 0.084
+  },
+  "EDKR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 437.0,
+   "dx": 137.5,
+   "kx": 2,
+   "lat_fehler": 0.159
+  },
+  "EDKU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.5,
+   "kx": 1,
+   "lat_fehler": 0.038
+  },
+  "EDKV": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.058,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDKW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.25,
+   "kx": 1,
+   "lat_fehler": 0.105
+  },
+  "EDKZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.75,
+   "kx": 1,
+   "lat_fehler": 0.076
+  },
+  "EDLA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 91.0,
+   "kx": 1,
+   "lat_fehler": 0.041
+  },
+  "EDLB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.75,
+   "kx": 1,
+   "lat_fehler": 0.086
+  },
+  "EDLC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.5,
+   "kx": 1,
+   "lat_fehler": 0.086
+  },
+  "EDLD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.25,
+   "kx": 1,
+   "lat_fehler": 0.089
+  },
+  "EDLE": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.043,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDLF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 137.0,
+   "kx": 1,
+   "lat_fehler": 0.163
+  },
+  "EDLG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.0,
+   "kx": 1,
+   "lat_fehler": 0.08
+  },
+  "EDLH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 90.57,
+   "kx": 1,
+   "lat_fehler": 0.032
+  },
+  "EDLI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.0,
+   "kx": 1,
+   "lat_fehler": 0.021
+  },
+  "EDLJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 90.17,
+   "kx": 1,
+   "lat_fehler": 0.08
+  },
+  "EDLK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.0,
+   "kx": 1,
+   "lat_fehler": 0.109
+  },
+  "EDLM": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.139,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDLN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    59,
+    154,
+    768,
+    1036
+   ],
+   "dy": 48.69,
+   "dx": 60.91,
+   "kx": 0.5,
+   "lat_fehler": 0.055
+  },
+  "EDLO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 90.0,
+   "kx": 1,
+   "lat_fehler": 0.011
+  },
+  "EDLP": {
+   "gepasst": false,
+   "grund": "cos_probe_fehl"
+  },
+  "EDLR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 90.67,
+   "kx": 1,
+   "lat_fehler": 0.078
+  },
+  "EDLS": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDLT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.33,
+   "kx": 1,
+   "lat_fehler": 0.112
+  },
+  "EDLV": {
+   "gepasst": false,
+   "grund": "cos_probe_fehl"
+  },
+  "EDLW": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDLX": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.0,
+   "kx": 1,
+   "lat_fehler": 0.052
+  },
+  "EDLY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.67,
+   "kx": 1,
+   "lat_fehler": 0.132
+  },
+  "EDLZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 90.83,
+   "kx": 1,
+   "lat_fehler": 0.051
+  },
+  "EDMA": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.06,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDMB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 97.5,
+   "kx": 1,
+   "lat_fehler": 0.097
+  },
+  "EDMC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    177,
+    819,
+    862
+   ],
+   "dy": 219.0,
+   "dx": 145.5,
+   "kx": 1,
+   "lat_fehler": 0.055
+  },
+  "EDMD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 97.33,
+   "kx": 1,
+   "lat_fehler": 0.127
+  },
+  "EDME": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.206,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDMF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 96.83,
+   "kx": 1,
+   "lat_fehler": 0.153
+  },
+  "EDMG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    129,
+    178,
+    814,
+    863
+   ],
+   "dy": 219.0,
+   "dx": 145.33,
+   "kx": 1,
+   "lat_fehler": 0.063
+  },
+  "EDMH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    131,
+    192,
+    815,
+    877
+   ],
+   "dy": 218.67,
+   "dx": 143.67,
+   "kx": 1,
+   "lat_fehler": 0.184
+  },
+  "EDMI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    181,
+    814,
+    863
+   ],
+   "dy": 218.0,
+   "dx": 145.67,
+   "kx": 1,
+   "lat_fehler": 0.163
+  },
+  "EDMJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 146.0,
+   "kx": 1,
+   "lat_fehler": 0.016
+  },
+  "EDMK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    133,
+    179,
+    818,
+    1029
+   ],
+   "dy": 145.75,
+   "dx": 98.33,
+   "kx": 1,
+   "lat_fehler": 0.121
+  },
+  "EDML": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 109.4,
+   "dx": 72.71,
+   "kx": 1,
+   "lat_fehler": 0.168
+  },
+  "EDMN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 146.25,
+   "kx": 1,
+   "lat_fehler": 0.123
+  },
+  "EDMO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    181,
+    820,
+    1154
+   ],
+   "dy": 43.79,
+   "dx": 29.2,
+   "kx": 1,
+   "lat_fehler": 0.092
+  },
+  "EDMP": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDMQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 218.5,
+   "dx": 144.67,
+   "kx": 1,
+   "lat_fehler": 0.162
+  },
+  "EDMR": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDMS": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.15,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDMT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 146.75,
+   "kx": 1,
+   "lat_fehler": 0.203
+  },
+  "EDMU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 145.0,
+   "kx": 1,
+   "lat_fehler": 0.03
+  },
+  "EDMV": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    177,
+    819,
+    862
+   ],
+   "dy": 146.0,
+   "dx": 96.5,
+   "kx": 1,
+   "lat_fehler": 0.008
+  },
+  "EDMW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 144.25,
+   "kx": 1,
+   "lat_fehler": 0.029
+  },
+  "EDMY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    184,
+    817,
+    869
+   ],
+   "dy": 219.0,
+   "dx": 146.0,
+   "kx": 1,
+   "lat_fehler": 0.09
+  },
+  "EDMZ": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDNA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 97.33,
+   "kx": 1,
+   "lat_fehler": 0.162
+  },
+  "EDNB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 95.6,
+   "kx": 1,
+   "lat_fehler": 0.029
+  },
+  "EDNC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 146.0,
+   "dx": 96.0,
+   "kx": 1,
+   "lat_fehler": 0.133
+  },
+  "EDND": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 143.75,
+   "kx": 1,
+   "lat_fehler": 0.09
+  },
+  "EDNE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 146.0,
+   "kx": 1,
+   "lat_fehler": 0.153
+  },
+  "EDNF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 144.5,
+   "kx": 1,
+   "lat_fehler": 0.108
+  },
+  "EDNG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 96.67,
+   "kx": 1,
+   "lat_fehler": 0.094
+  },
+  "EDNH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 97.83,
+   "kx": 1,
+   "lat_fehler": 0.091
+  },
+  "EDNI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    130,
+    178,
+    814,
+    863
+   ],
+   "dy": 219.0,
+   "dx": 143.33,
+   "kx": 1,
+   "lat_fehler": 0.012
+  },
+  "EDNJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 144.67,
+   "kx": 1,
+   "lat_fehler": 0.126
+  },
+  "EDNK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    131,
+    178,
+    816,
+    863
+   ],
+   "dy": 219.0,
+   "dx": 146.25,
+   "kx": 1,
+   "lat_fehler": 0.136
+  },
+  "EDNL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 147.25,
+   "kx": 1,
+   "lat_fehler": 0.109
+  },
+  "EDNO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 437.0,
+   "dx": 144.25,
+   "kx": 2,
+   "lat_fehler": 0.184
+  },
+  "EDNP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 145.75,
+   "dx": 97.0,
+   "kx": 1,
+   "lat_fehler": 0.143
+  },
+  "EDNQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 144.5,
+   "kx": 1,
+   "lat_fehler": 0.249
+  },
+  "EDNR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 143.5,
+   "kx": 1,
+   "lat_fehler": 0.081
+  },
+  "EDNS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 146.25,
+   "kx": 1,
+   "lat_fehler": 0.195
+  },
+  "EDNT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 144.0,
+   "kx": 1,
+   "lat_fehler": 0.108
+  },
+  "EDNU": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDNV": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDNW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 146.0,
+   "kx": 1,
+   "lat_fehler": 0.1
+  },
+  "EDNX": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    153,
+    153,
+    1582,
+    1151
+   ],
+   "dy": 109.33,
+   "dx": 73.0,
+   "kx": 1,
+   "lat_fehler": 0.128
+  },
+  "EDNY": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.233,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDNZ": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDOA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 139.5,
+   "kx": 1,
+   "lat_fehler": 0.066
+  },
+  "EDOB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.25,
+   "kx": 1,
+   "lat_fehler": 0.049
+  },
+  "EDOC": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDOD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    181,
+    820,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.25,
+   "kx": 1,
+   "lat_fehler": 0.04
+  },
+  "EDOE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 91.5,
+   "kx": 1,
+   "lat_fehler": 0.022
+  },
+  "EDOF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 91.33,
+   "kx": 1,
+   "lat_fehler": 0.097
+  },
+  "EDOH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 138.0,
+   "kx": 1,
+   "lat_fehler": 0.115
+  },
+  "EDOI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 133.0,
+   "kx": 1,
+   "lat_fehler": 0.057
+  },
+  "EDOJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 134.67,
+   "kx": 1,
+   "lat_fehler": 0.087
+  },
+  "EDOK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 437.0,
+   "dx": 138.75,
+   "kx": 2,
+   "lat_fehler": 0.154
+  },
+  "EDOL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.0,
+   "kx": 1,
+   "lat_fehler": 0.095
+  },
+  "EDOM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.25,
+   "kx": 1,
+   "lat_fehler": 0.087
+  },
+  "EDON": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    864
+   ],
+   "dy": 219.0,
+   "dx": 133.25,
+   "kx": 1,
+   "lat_fehler": 0.09
+  },
+  "EDOQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 137.25,
+   "kx": 1,
+   "lat_fehler": 0.105
+  },
+  "EDOR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 133.0,
+   "kx": 1,
+   "lat_fehler": 0.136
+  },
+  "EDOS": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDOT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 92.67,
+   "kx": 1,
+   "lat_fehler": 0.042
+  },
+  "EDOU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 138.25,
+   "kx": 1,
+   "lat_fehler": 0.109
+  },
+  "EDOV": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 133.0,
+   "kx": 1,
+   "lat_fehler": 0.024
+  },
+  "EDOW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 130.33,
+   "kx": 1,
+   "lat_fehler": 0.09
+  },
+  "EDOX": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.5,
+   "kx": 1,
+   "lat_fehler": 0.151
+  },
+  "EDOY": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    136,
+    179,
+    821,
+    864
+   ]
+  },
+  "EDOZ": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDPA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 96.33,
+   "kx": 1,
+   "lat_fehler": 0.15
+  },
+  "EDPB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 145.25,
+   "kx": 1,
+   "lat_fehler": 0.11
+  },
+  "EDPC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 147.0,
+   "kx": 1,
+   "lat_fehler": 0.208
+  },
+  "EDPD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 96.5,
+   "kx": 1,
+   "lat_fehler": 0.03
+  },
+  "EDPE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.67,
+   "dx": 144.33,
+   "kx": 1,
+   "lat_fehler": 0.181
+  },
+  "EDPF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 95.17,
+   "kx": 1,
+   "lat_fehler": 0.019
+  },
+  "EDPG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 96.0,
+   "kx": 1,
+   "lat_fehler": 0.066
+  },
+  "EDPH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 95.33,
+   "kx": 1,
+   "lat_fehler": 0.119
+  },
+  "EDPI": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDPJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 145.33,
+   "kx": 1,
+   "lat_fehler": 0.19
+  },
+  "EDPK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    130,
+    178,
+    815,
+    863
+   ],
+   "dy": 218.5,
+   "dx": 146.5,
+   "kx": 1,
+   "lat_fehler": 0.152
+  },
+  "EDPM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 144.75,
+   "kx": 1,
+   "lat_fehler": 0.167
+  },
+  "EDPO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 143.0,
+   "kx": 1,
+   "lat_fehler": 0.051
+  },
+  "EDPQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 142.75,
+   "kx": 1,
+   "lat_fehler": 0.109
+  },
+  "EDPR": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    153,
+    153,
+    1582,
+    1151
+   ]
+  },
+  "EDPS": {
+   "gepasst": false,
+   "grund": "kein_rahmen_h"
+  },
+  "EDPT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    178,
+    816,
+    862
+   ],
+   "dy": 218.5,
+   "dx": 145.0,
+   "kx": 1,
+   "lat_fehler": 0.196
+  },
+  "EDPU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    133,
+    178,
+    817,
+    863
+   ],
+   "dy": 219.0,
+   "dx": 144.5,
+   "kx": 1,
+   "lat_fehler": 0.033
+  },
+  "EDPW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    131,
+    195,
+    816,
+    880
+   ],
+   "dy": 218.5,
+   "dx": 143.67,
+   "kx": 1,
+   "lat_fehler": 0.175
+  },
+  "EDPY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 144.0,
+   "kx": 1,
+   "lat_fehler": 0.073
+  },
+  "EDQA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    62,
+    249,
+    811,
+    1181
+   ],
+   "dy": 102.75,
+   "dx": 66.2,
+   "kx": 1,
+   "lat_fehler": 0.032
+  },
+  "EDQB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 142.5,
+   "kx": 1,
+   "lat_fehler": 0.103
+  },
+  "EDQC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    195,
+    817,
+    1169
+   ],
+   "dy": 43.81,
+   "dx": 27.96,
+   "kx": 1,
+   "lat_fehler": 0.088
+  },
+  "EDQD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 54.75,
+   "dx": 35.22,
+   "kx": 1,
+   "lat_fehler": 0.025
+  },
+  "EDQE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 437.0,
+   "dx": 141.67,
+   "kx": 2,
+   "lat_fehler": 0.212
+  },
+  "EDQF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 143.0,
+   "kx": 1,
+   "lat_fehler": 0.127
+  },
+  "EDQG": {
+   "gepasst": false,
+   "grund": "cos_probe_fehl"
+  },
+  "EDQH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 142.25,
+   "kx": 1,
+   "lat_fehler": 0.09
+  },
+  "EDQI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    177,
+    817,
+    862
+   ],
+   "dy": 219.0,
+   "dx": 142.0,
+   "kx": 1,
+   "lat_fehler": 0.026
+  },
+  "EDQK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 140.67,
+   "kx": 1,
+   "lat_fehler": 0.1
+  },
+  "EDQL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 93.67,
+   "kx": 1,
+   "lat_fehler": 0.056
+  },
+  "EDQM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 43.81,
+   "dx": 27.96,
+   "kx": 1,
+   "lat_fehler": 0.062
+  },
+  "EDQN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 142.25,
+   "kx": 1,
+   "lat_fehler": 0.095
+  },
+  "EDQO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 219.0,
+   "dx": 140.5,
+   "kx": 1,
+   "lat_fehler": 0.134
+  },
+  "EDQP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 437.0,
+   "dx": 141.5,
+   "kx": 2,
+   "lat_fehler": 0.224
+  },
+  "EDQR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 140.75,
+   "kx": 1,
+   "lat_fehler": 0.032
+  },
+  "EDQS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 139.25,
+   "kx": 1,
+   "lat_fehler": 0.115
+  },
+  "EDQT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 94.0,
+   "kx": 1,
+   "lat_fehler": 0.096
+  },
+  "EDQW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    127,
+    191,
+    812,
+    900
+   ],
+   "dy": 219.0,
+   "dx": 142.0,
+   "kx": 1,
+   "lat_fehler": 0.1
+  },
+  "EDQX": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 142.0,
+   "kx": 1,
+   "lat_fehler": 0.063
+  },
+  "EDQZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 219.0,
+   "dx": 141.75,
+   "kx": 1,
+   "lat_fehler": 0.098
+  },
+  "EDRA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 139.33,
+   "kx": 1,
+   "lat_fehler": 0.177
+  },
+  "EDRB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 109.4,
+   "dx": 35.25,
+   "kx": 2,
+   "lat_fehler": 0.068
+  },
+  "EDRC": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDRD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 283.0,
+   "kx": 0.5,
+   "lat_fehler": 0.093
+  },
+  "EDRE": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDRF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 142.5,
+   "kx": 1,
+   "lat_fehler": 0.066
+  },
+  "EDRG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 189.0,
+   "kx": 0.5,
+   "lat_fehler": 0.068
+  },
+  "EDRH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 142.0,
+   "kx": 1,
+   "lat_fehler": 0.032
+  },
+  "EDRI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 219.0,
+   "dx": 143.5,
+   "kx": 1,
+   "lat_fehler": 0.08
+  },
+  "EDRJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 143.0,
+   "kx": 1,
+   "lat_fehler": 0.078
+  },
+  "EDRK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 93.33,
+   "kx": 1,
+   "lat_fehler": 0.063
+  },
+  "EDRL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.67,
+   "dx": 95.33,
+   "kx": 1,
+   "lat_fehler": 0.21
+  },
+  "EDRM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 141.0,
+   "kx": 1,
+   "lat_fehler": 0.046
+  },
+  "EDRN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 141.0,
+   "kx": 1,
+   "lat_fehler": 0.049
+  },
+  "EDRO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    130,
+    175,
+    813,
+    859
+   ],
+   "dy": 218.0,
+   "dx": 287.0,
+   "kx": 0.5,
+   "lat_fehler": 0.199
+  },
+  "EDRP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 109.4,
+   "dx": 71.5,
+   "kx": 1,
+   "lat_fehler": 0.075
+  },
+  "EDRQ": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    130,
+    178,
+    814,
+    862
+   ]
+  },
+  "EDRS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 94.43,
+   "kx": 1,
+   "lat_fehler": 0.089
+  },
+  "EDRT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 146.0,
+   "dx": 94.14,
+   "kx": 1,
+   "lat_fehler": 0.016
+  },
+  "EDRV": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 93.0,
+   "kx": 1,
+   "lat_fehler": 0.019
+  },
+  "EDRW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 139.5,
+   "kx": 1,
+   "lat_fehler": 0.134
+  },
+  "EDRY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 95.33,
+   "kx": 1,
+   "lat_fehler": 0.155
+  },
+  "EDRZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    136,
+    179,
+    821,
+    1153
+   ],
+   "dy": 54.71,
+   "dx": 35.72,
+   "kx": 1,
+   "lat_fehler": 0.031
+  },
+  "EDSA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    177,
+    819,
+    862
+   ],
+   "dy": 219.0,
+   "dx": 146.0,
+   "kx": 1,
+   "lat_fehler": 0.06
+  },
+  "EDSB": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.093,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDSD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 96.67,
+   "kx": 1,
+   "lat_fehler": 0.1
+  },
+  "EDSE": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    136,
+    177,
+    821,
+    863
+   ]
+  },
+  "EDSG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 145.25,
+   "kx": 1,
+   "lat_fehler": 0.084
+  },
+  "EDSH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 144.0,
+   "kx": 1,
+   "lat_fehler": 0.032
+  },
+  "EDSI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    133,
+    189,
+    817,
+    873
+   ],
+   "dy": 219.0,
+   "dx": 147.25,
+   "kx": 1,
+   "lat_fehler": 0.05
+  },
+  "EDSK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    133,
+    180,
+    818,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 145.25,
+   "kx": 1,
+   "lat_fehler": 0.109
+  },
+  "EDSL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    177,
+    820,
+    862
+   ],
+   "dy": 218.5,
+   "dx": 147.25,
+   "kx": 1,
+   "lat_fehler": 0.214
+  },
+  "EDSM": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDSN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 147.0,
+   "kx": 1,
+   "lat_fehler": 0.139
+  },
+  "EDSO": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDSR": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ]
+  },
+  "EDST": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    130,
+    179,
+    815,
+    864
+   ]
+  },
+  "EDSV": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDSW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 97.33,
+   "kx": 1,
+   "lat_fehler": 0.08
+  },
+  "EDSZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 97.5,
+   "kx": 1,
+   "lat_fehler": 0.085
+  },
+  "EDTA": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDTB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 96.33,
+   "kx": 1,
+   "lat_fehler": 0.078
+  },
+  "EDTC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 287.0,
+   "kx": 0.5,
+   "lat_fehler": 0.074
+  },
+  "EDTD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 54.75,
+   "dx": 73.12,
+   "kx": 0.5,
+   "lat_fehler": 0.129
+  },
+  "EDTE": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDTF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 109.4,
+   "dx": 73.25,
+   "kx": 1,
+   "lat_fehler": 0.056
+  },
+  "EDTG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 98.0,
+   "kx": 1,
+   "lat_fehler": 0.154
+  },
+  "EDTH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    129,
+    177,
+    814,
+    862
+   ],
+   "dy": 218.5,
+   "dx": 144.33,
+   "kx": 1,
+   "lat_fehler": 0.146
+  },
+  "EDTK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    131,
+    177,
+    816,
+    862
+   ],
+   "dy": 219.0,
+   "dx": 143.33,
+   "kx": 1,
+   "lat_fehler": 0.143
+  },
+  "EDTL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 54.75,
+   "dx": 36.29,
+   "kx": 1,
+   "lat_fehler": 0.121
+  },
+  "EDTM": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.04,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDTN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 145.0,
+   "kx": 1,
+   "lat_fehler": 0.073
+  },
+  "EDTO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 97.0,
+   "kx": 1,
+   "lat_fehler": 0.172
+  },
+  "EDTP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.67,
+   "dx": 98.0,
+   "kx": 1,
+   "lat_fehler": 0.19
+  },
+  "EDTQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 109.4,
+   "dx": 72.12,
+   "kx": 1,
+   "lat_fehler": 0.109
+  },
+  "EDTR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 148.0,
+   "kx": 1,
+   "lat_fehler": 0.197
+  },
+  "EDTS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 109.2,
+   "dx": 73.22,
+   "kx": 1,
+   "lat_fehler": 0.174
+  },
+  "EDTU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.5,
+   "dx": 146.75,
+   "kx": 1,
+   "lat_fehler": 0.222
+  },
+  "EDTW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 97.2,
+   "kx": 1,
+   "lat_fehler": 0.019
+  },
+  "EDTX": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.235,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDTY": {
+   "gepasst": true,
+   "weg": "kapitelseite",
+   "lat_fehler_kapitelseite": 0.229,
+   "hinweis": "Messwerte der verlinkten Seite gehoeren nicht zur gepassten Seite"
+  },
+  "EDTZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    194,
+    817,
+    879
+   ],
+   "dy": 145.75,
+   "dx": 98.5,
+   "kx": 1,
+   "lat_fehler": 0.199
+  },
+  "EDUA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 133.0,
+   "kx": 1,
+   "lat_fehler": 0.046
+  },
+  "EDUF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.67,
+   "dx": 136.5,
+   "kx": 1,
+   "lat_fehler": 0.174
+  },
+  "EDUO": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    133,
+    180,
+    818,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.5,
+   "kx": 1,
+   "lat_fehler": 0.099
+  },
+  "EDUP": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDUW": {
+   "gepasst": false,
+   "grund": "cos_probe_fehl"
+  },
+  "EDUY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    135,
+    178,
+    820,
+    862
+   ],
+   "dy": 219.0,
+   "dx": 136.25,
+   "kx": 1,
+   "lat_fehler": 0.031
+  },
+  "EDUZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 90.0,
+   "kx": 1,
+   "lat_fehler": 0.057
+  },
+  "EDVA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.5,
+   "kx": 1,
+   "lat_fehler": 0.077
+  },
+  "EDVC": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDVE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    85,
+    238,
+    1147,
+    818
+   ],
+   "dy": 54.78,
+   "dx": 66.93,
+   "kx": 0.5,
+   "lat_fehler": 0.022
+  },
+  "EDVF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.33,
+   "kx": 1,
+   "lat_fehler": 0.085
+  },
+  "EDVG": {
+   "gepasst": false,
+   "grund": "cos_probe_fehl"
+  },
+  "EDVH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 132.75,
+   "kx": 1,
+   "lat_fehler": 0.074
+  },
+  "EDVI": {
+   "gepasst": false,
+   "grund": "cos_probe_fehl"
+  },
+  "EDVJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.0,
+   "kx": 1,
+   "lat_fehler": 0.087
+  },
+  "EDVK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    70,
+    240,
+    1133,
+    819
+   ],
+   "dy": 54.75,
+   "dx": 34.15,
+   "kx": 1,
+   "lat_fehler": 0.004
+  },
+  "EDVL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.25,
+   "kx": 1,
+   "lat_fehler": 0.084
+  },
+  "EDVM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 145.75,
+   "dx": 89.67,
+   "kx": 1,
+   "lat_fehler": 0.148
+  },
+  "EDVN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 136.0,
+   "kx": 1,
+   "lat_fehler": 0.096
+  },
+  "EDVP": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDVQ": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDVR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 134.5,
+   "kx": 1,
+   "lat_fehler": 0.066
+  },
+  "EDVT": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDVU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 132.0,
+   "kx": 1,
+   "lat_fehler": 0.05
+  },
+  "EDVW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 135.25,
+   "kx": 1,
+   "lat_fehler": 0.106
+  },
+  "EDVX": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    135,
+    177,
+    819,
+    862
+   ]
+  },
+  "EDVY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 134.5,
+   "kx": 1,
+   "lat_fehler": 0.111
+  },
+  "EDVZ": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    135,
+    177,
+    819,
+    862
+   ]
+  },
+  "EDWC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 133.5,
+   "kx": 1,
+   "lat_fehler": 0.047
+  },
+  "EDWE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    85,
+    238,
+    1147,
+    818
+   ],
+   "dy": 43.83,
+   "dx": 26.1,
+   "kx": 1,
+   "lat_fehler": 0.061
+  },
+  "EDWF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 87.33,
+   "kx": 1,
+   "lat_fehler": 0.011
+  },
+  "EDWG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 129.75,
+   "kx": 1,
+   "lat_fehler": 0.115
+  },
+  "EDWH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 87.83,
+   "kx": 1,
+   "lat_fehler": 0.053
+  },
+  "EDWI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 43.79,
+   "dx": 26.0,
+   "kx": 1,
+   "lat_fehler": 0.071
+  },
+  "EDWJ": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDWK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 87.29,
+   "kx": 1,
+   "lat_fehler": 0.049
+  },
+  "EDWL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 129.75,
+   "kx": 1,
+   "lat_fehler": 0.075
+  },
+  "EDWM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 131.8,
+   "kx": 1,
+   "lat_fehler": 0.055
+  },
+  "EDWN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 54.75,
+   "dx": 33.29,
+   "kx": 1,
+   "lat_fehler": 0.1
+  },
+  "EDWO": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDWP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 131.0,
+   "kx": 1,
+   "lat_fehler": 0.061
+  },
+  "EDWQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 87.83,
+   "kx": 1,
+   "lat_fehler": 0.021
+  },
+  "EDWR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 130.2,
+   "kx": 1,
+   "lat_fehler": 0.075
+  },
+  "EDWS": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 130.25,
+   "kx": 1,
+   "lat_fehler": 0.128
+  },
+  "EDWT": {
+   "gepasst": true,
+   "weg": "openaip",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ]
+  },
+  "EDWU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 88.14,
+   "kx": 1,
+   "lat_fehler": 0.045
+  },
+  "EDWV": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 132.25,
+   "kx": 1,
+   "lat_fehler": 0.114
+  },
+  "EDWX": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 131.25,
+   "kx": 1,
+   "lat_fehler": 0.109
+  },
+  "EDWY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 130.0,
+   "kx": 1,
+   "lat_fehler": 0.12
+  },
+  "EDWZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 218.67,
+   "dx": 129.75,
+   "kx": 1,
+   "lat_fehler": 0.121
+  },
+  "EDXA": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 134.0,
+   "kx": 1,
+   "lat_fehler": 0.102
+  },
+  "EDXB": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 128.5,
+   "kx": 1,
+   "lat_fehler": 0.081
+  },
+  "EDXC": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 85.14,
+   "kx": 1,
+   "lat_fehler": 0.099
+  },
+  "EDXD": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 134.0,
+   "kx": 1,
+   "lat_fehler": 0.076
+  },
+  "EDXE": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 134.25,
+   "kx": 1,
+   "lat_fehler": 0.084
+  },
+  "EDXF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 84.43,
+   "kx": 1,
+   "lat_fehler": 0.103
+  },
+  "EDXG": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 134.5,
+   "kx": 1,
+   "lat_fehler": 0.091
+  },
+  "EDXH": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 128.5,
+   "kx": 1,
+   "lat_fehler": 0.113
+  },
+  "EDXI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 133.0,
+   "kx": 1,
+   "lat_fehler": 0.105
+  },
+  "EDXJ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 127.5,
+   "kx": 1,
+   "lat_fehler": 0.115
+  },
+  "EDXK": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 253.0,
+   "kx": 0.5,
+   "lat_fehler": 0.074
+  },
+  "EDXL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 131.5,
+   "kx": 1,
+   "lat_fehler": 0.067
+  },
+  "EDXM": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 129.0,
+   "kx": 1,
+   "lat_fehler": 0.067
+  },
+  "EDXN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 109.6,
+   "dx": 64.8,
+   "kx": 1,
+   "lat_fehler": 0.012
+  },
+  "EDXO": {
+   "gepasst": false,
+   "grund": "keine_ticks"
+  },
+  "EDXP": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 130.0,
+   "kx": 1,
+   "lat_fehler": 0.12
+  },
+  "EDXQ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 131.75,
+   "kx": 1,
+   "lat_fehler": 0.113
+  },
+  "EDXR": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 128.4,
+   "kx": 1,
+   "lat_fehler": 0.115
+  },
+  "EDXT": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 146.0,
+   "dx": 85.86,
+   "kx": 1,
+   "lat_fehler": 0.087
+  },
+  "EDXU": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 131.0,
+   "kx": 1,
+   "lat_fehler": 0.026
+  },
+  "EDXW": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    150,
+    154,
+    1575,
+    1150
+   ],
+   "dy": 43.69,
+   "dx": 25.08,
+   "kx": 1,
+   "lat_fehler": 0.061
+  },
+  "EDXY": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 127.0,
+   "kx": 1,
+   "lat_fehler": 0.129
+  },
+  "EDXZ": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 219.0,
+   "dx": 130.4,
+   "kx": 1,
+   "lat_fehler": 0.112
+  },
+  "ETHF": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 43.8,
+   "dx": 55.0,
+   "kx": 0.5,
+   "lat_fehler": 0.007
+  },
+  "ETHN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    84,
+    238,
+    1147,
+    816
+   ],
+   "dy": 54.7,
+   "dx": 35.62,
+   "kx": 1,
+   "lat_fehler": 0.022
+  },
+  "ETMN": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 43.8,
+   "dx": 25.88,
+   "kx": 1,
+   "lat_fehler": 0.014
+  },
+  "ETND": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 43.79,
+   "dx": 53.17,
+   "kx": 0.5,
+   "lat_fehler": 0.033
+  },
+  "ETNL": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    1154
+   ],
+   "dy": 43.84,
+   "dx": 25.79,
+   "kx": 1,
+   "lat_fehler": 0.05
+  },
+  "ETSI": {
+   "gepasst": true,
+   "weg": "direkt",
+   "feld": [
+    132,
+    180,
+    817,
+    865
+   ],
+   "dy": 43.79,
+   "dx": 28.86,
+   "kx": 1,
+   "lat_fehler": 0.045
+  }
+ }
+}
