@@ -130,6 +130,43 @@ def test_marken_haengen_in_der_ebene():
     assert "_aipKartenGruppe.removeLayer(" in abschnitt
 
 
+def test_marken_stehen_auf_jeder_zoomstufe():
+    """Nutzer-Wahl 24.08.2026: aus der Uebersicht soll sichtbar sein, wo es ein Blatt gibt.
+
+    Die Schwelle entscheidet seither nur noch ueber Groesse und Beschriftung, nicht mehr
+    darueber, OB eine Marke entsteht. Deshalb an der Zuweisung gebunden: Ein `continue` an
+    der Schwelle waere der Rueckfall.
+    """
+    start = INDEX.index("function _aipMarkenAnpassen(")
+    abschnitt = INDEX[start:start + 3000]
+    assert "_AIP_MARKE_FAKTOR) nah = true" in abschnitt
+    assert "> _AIP_MARKE_FAKTOR) continue" not in abschnitt
+
+
+def test_beschriftung_bleibt_an_der_schwelle():
+    """446 dauerhafte Tooltips auf der Deutschlandkarte sind die Falle vom 15.08.2026.
+
+    Ein permanenter Tooltip ist ein DOM-Element, das Leaflet bei jeder Kartenbewegung neu
+    setzt. Die Marke selbst ist billig, ihre Beschriftung nicht.
+    """
+    start = INDEX.index("function _aipMarkeBeschriften(")
+    abschnitt = INDEX[start:start + 600]
+    assert "bindTooltip" in abschnitt and "unbindTooltip" in abschnitt
+    anpassen = INDEX.index("function _aipMarkenAnpassen(")
+    assert "if (wechsel) _aipMarkeBeschriften(m, nah)" in INDEX[anpassen:anpassen + 3500]
+
+
+def test_beschriftung_nur_beim_wechsel():
+    """Sonst laeuft bei JEDER Kartenbewegung die Tooltip-Logik ueber alle Marken.
+
+    Genau diese quadratische Arbeit kostete bei den FSE-Plaetzen 31.375 Layer-Besuche fuer
+    250 Marker (Nutzer-Fund am laufenden Bild, 16.08.2026).
+    """
+    start = INDEX.index("function _aipMarkenAnpassen(")
+    abschnitt = INDEX[start:start + 3500]
+    assert "const wechsel = (_aipNah !== nah)" in abschnitt
+
+
 def test_marken_schwelle_misst_die_engere_achse():
     """Nutzer-Wahl 24.08.2026: sichtbar, wenn etwas mehr als das ganze Blatt im Bild ist.
 
@@ -140,7 +177,7 @@ def test_marken_schwelle_misst_die_engere_achse():
     """
     start = INDEX.index("function _aipMarkenAnpassen(")
     abschnitt = INDEX[start:start + 3000]
-    assert "Math.min(sichtLat / blattLat, sichtLon / blattLon) > _AIP_MARKE_FAKTOR" in abschnitt
+    assert "Math.min(sichtLat / blattLat, sichtLon / blattLon) <= _AIP_MARKE_FAKTOR" in abschnitt
 
 
 def test_marken_schwelle_laesst_das_ganze_blatt_zu():

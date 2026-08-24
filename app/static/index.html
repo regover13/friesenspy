@@ -2290,7 +2290,15 @@
        er traegt dieselbe Last -- das Symbol muss ueber hellem Kartenblatt und ueber dunkler
        Grundkarte stehen. */
     .aip-marke { filter: drop-shadow(0 0 2px rgba(0,0,0,0.9)); cursor: pointer; }
-    .aip-marke svg { width: 24px; height: 24px; overflow: visible; }
+    /* In der Uebersicht klein: Ab dem 24.08.2026 stehen ALLE Marken auf jeder Zoomstufe,
+       auf der Deutschlandkarte also mehrere hundert. In voller Groesse waeren sie ein
+       Teppich. Skaliert wird um die Mitte, der Ankerpunkt bleibt der Flugplatz.
+       Ueber eine Klasse am Karten-Container statt per setIcon je Marker -- ein setIcon
+       beim Ueberschreiten der Schwelle ist im Kniebrett als Aufblitzen sichtbar
+       (derselbe Fund wie bei .vrp-marke). Ohne Uebergang, aus demselben Grund. */
+    .aip-marke svg { width: 24px; height: 24px; overflow: visible;
+                     transform: scale(0.6); transform-origin: 50% 50%; }
+    .leaflet-container.aip-nah .aip-marke svg { transform: scale(1); }
     .aip-marke rect { fill: rgba(4,8,15,0.45); stroke: #2d9cdb; stroke-width: 2;
                       stroke-linejoin: round; }
     .aip-marke line { stroke: #2d9cdb; stroke-width: 1.5; stroke-linecap: round; }
@@ -9998,6 +10006,7 @@ function _aipKarteFestnageln(icao) {
 // Bildrand hinausragt, und damit nicht dort, wo sie verlangt war.
 const _AIP_MARKE_FAKTOR = 2.0;   // 1,0 = Blatt fuellt die engere Achse genau aus
 const _aipMarken = {};           // ICAO -> L.marker
+let _aipNah = null;              // steht der Ausschnitt auf Blattgroesse?
 
 function _aipMarkeIcon(fest) {
   return L.divIcon({
@@ -10019,21 +10028,40 @@ function _aipMarkenAnpassen() {
   const sichtLat = b ? (b.getNorth() - b.getSouth()) : 0;
   const sichtLon = b ? (b.getEast() - b.getWest()) : 0;
   const soll = {};
+  let nah = false;
   for (let i = 0; an && i < _aipKarten.length; i++) {
     const k = _aipKarten[i];
     const blattLat = k.nord - k.sued, blattLon = k.ost - k.west;
     if (!(blattLat > 0) || !(blattLon > 0)) continue;
-    if (Math.min(sichtLat / blattLat, sichtLon / blattLon) > _AIP_MARKE_FAKTOR) continue;
     // Nach den BLATTgrenzen, nicht nach dem Kartenfeld: So bleibt die Marke des Nachbarblatts
     // erreichbar, solange sein Blatt ueberhaupt in den Ausschnitt ragt.
     if (!b.intersects([[k.sued, k.west], [k.nord, k.ost]])) continue;
+    if (Math.min(sichtLat / blattLat, sichtLon / blattLon) <= _AIP_MARKE_FAKTOR) nah = true;
     soll[k.icao] = k;
+  }
+  // Die Schwelle entscheidet seit dem 24.08.2026 NICHT mehr, OB eine Marke da ist -- der
+  // Nutzer will von weitem sehen, wo es ein Blatt gibt. Sie entscheidet nur noch, wie die
+  // Marke aussieht: klein und stumm in der Uebersicht, gross und beschriftet, sobald das
+  // Blatt ins Bild passt.
+  //
+  // Die Beschriftung haengt weiter daran, und das ist keine Zierde: Ein permanenter Tooltip
+  // ist ein DOM-Element, das Leaflet bei JEDER Kartenbewegung neu setzt. Genau daran hing
+  // die Karte am 15.08.2026 (s. _labelsImSichtbereich). Bei 446 Blaettern waeren es 446
+  // davon auf der Deutschlandkarte.
+  if (liveMap) {
+    const el = liveMap.getContainer();
+    if (el) el.classList.toggle('aip-nah', nah);
   }
   for (const icao in _aipMarken) {
     if (soll[icao]) continue;
     _aipKartenGruppe.removeLayer(_aipMarken[icao]);
     delete _aipMarken[icao];
   }
+  // Nur beim WECHSEL neu beschriften. Bei jeder Kartenbewegung ueber alle Marken zu gehen
+  // waere genau die quadratische Arbeit, die bei den FSE-Plaetzen schon einmal 31.375
+  // Layer-Besuche fuer 250 Marker gekostet hat.
+  const wechsel = (_aipNah !== nah);
+  _aipNah = nah;
   for (const icao in soll) {
     const k = soll[icao];
     const fest = _aipKarteFest === icao;
@@ -10043,18 +10071,31 @@ function _aipMarkenAnpassen() {
       // wegen der Kopfzeile deutlich weiter noerdlich liegt.
       m = L.marker([(k.feld_nord + k.feld_sued) / 2, (k.feld_west + k.feld_ost) / 2],
                    { icon: _aipMarkeIcon(fest), keyboard: false });
-      m.bindTooltip(escHtml(icao), { permanent: true, direction: 'right',
-                                     className: 'aip-marke-label', opacity: 1 });
+      m._fsLabel = escHtml(icao);
       m.on('click', function () { _aipKarteFestnageln(_aipKarteFest === icao ? null : icao); });
       m._fsFest = fest;
       _aipMarken[icao] = m;
       _aipKartenGruppe.addLayer(m);
-    } else if (m._fsFest !== fest) {
+      _aipMarkeBeschriften(m, nah);
+      continue;
+    }
+    if (m._fsFest !== fest) {
       // Nur bei echter Aenderung: setIcon ersetzt das DOM-Element des Markers komplett und
       // laesst ihn sichtbar aufblitzen (dieselbe Lehre wie im Verkehrs-Takt).
       m.setIcon(_aipMarkeIcon(fest));
       m._fsFest = fest;
     }
+    if (wechsel) _aipMarkeBeschriften(m, nah);
+  }
+}
+
+/** Beschriftung an- oder abhaengen -- nur, wenn sich der Zustand wirklich aendert. */
+function _aipMarkeBeschriften(m, nah) {
+  if (nah && !m.getTooltip()) {
+    m.bindTooltip(m._fsLabel, { permanent: true, direction: 'right',
+                                className: 'aip-marke-label', opacity: 1 });
+  } else if (!nah && m.getTooltip()) {
+    m.unbindTooltip();
   }
 }
 
