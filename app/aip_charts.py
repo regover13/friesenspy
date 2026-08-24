@@ -789,7 +789,24 @@ _TEXT_SCHWELLE = 160
 
 
 def _zeichen_zerlegen(px, x0: int, x1: int, y0: int, y1: int) -> list:
-    """Einzelzeichen in einem Rechteck, von links nach rechts."""
+    """Einzelzeichen in einem Rechteck, von links nach rechts.
+
+    **Hier stand am 24.08.2026 kurzzeitig eine Zerlegung ueber zusammenhaengende Flecken.**
+    Der Anlass war richtig: Die Spaltenprojektion kann eine Ziffer nicht von dem Gradzeichen
+    daneben trennen, und die automatische Beschriftung wies solche 10x10-Klumpen als
+    haeufigsten Lesefehler aus. Die Flecken trennten sie auch sauber -- gemessen an EDAR
+    wurde aus einem unlesbaren Klumpen "5" und "0".
+
+    **Zurueckgenommen, weil die Gesamtmessung vernichtend war: 262 gepasste Blaetter vorher,
+    96 nachher.** Der Grund liegt eine Ebene tiefer: Die Laengenbeschriftung traegt fuehrende
+    Nullen ("009"), und getrennte Flecken erzeugen dort ein Zeichen zu viel oder zu wenig --
+    EDXR las 79 statt 9, EDWF 77 statt 7, EDAD 512 statt 51. Verklebt war die Zahl zwar
+    unlesbar, aber sie war nie FALSCH. Ein Blatt, das um einen Grad daneben liegt, ist
+    schlimmer als ein Blatt, das fehlt.
+
+    Wer es erneut versucht, braucht zuerst eine Antwort auf die fuehrenden Nullen -- und
+    misst gegen alle 446 Blaetter, nicht gegen ein Beispiel.
+    """
     if x1 <= x0 or y1 <= y0:
         return []
     spalten = [x for x in range(x0, x1)
@@ -820,6 +837,33 @@ def _zeichen_zerlegen(px, x0: int, x1: int, y0: int, y1: int) -> list:
     return out
 
 
+def _strich_ende(voll, start: int, schritt: int, grenze: int = 4) -> int:
+    """Erste Position hinter dem durchgezogenen Tickstrich, vom Tick aus gesehen.
+
+    **Warum abtasten statt schaetzen.** Hier stand ein fester Abstand von einem Pixel, mit
+    der Begruendung, die Zahl stehe dicht am Strich. Das stimmt -- nur ist der Strich nicht
+    ueberall gleich dick: Auf der 874x1240-Blattserie sind es ZWEI Pixel (gemessen am
+    24.08.2026 an EDAH, Tick y=315: die Zeilen 315 und 316 sind beide durchgezogen).
+
+    Die uebrig gebliebene Zeile ist dann noch im Suchfenster, und sie ist ueber die ganze
+    Bandbreite dunkel. Damit gilt JEDE Spalte als beschrieben, alle Zeichen verschmelzen zu
+    einer Gruppe von 19 Pixeln Breite -- und die faellt durch die Pruefung ``2 <= len(g) <=
+    12``. Herausgekommen ist NULL statt zwei Ziffern, obwohl die Zahl gut lesbar danebensteht.
+
+    Das erklaerte die auffaellige Haeufung von "1 von x" lesbaren Stuetzstellen: Ueber dem
+    Strich lag die Zahl im Fenster, darunter nicht. Von 117 Blaettern dieser Serie waren
+    75 Prozent betroffen, gegenueber 27 Prozent beim 875er-Format.
+
+    ``grenze`` deckelt den Lauf, damit eine grossflaechig dunkle Stelle ihn nicht davontraegt.
+    """
+    p = start
+    for _ in range(grenze):
+        if not voll(p):
+            break
+        p += schritt
+    return p
+
+
 def zeichen_im_band(im, rahmen: Rahmen, tick: float, achse: str,
                     tick_abstand: float | None = None) -> tuple[list, list]:
     """Die beiden Zeichengruppen an einer Tickmarke: (Grad, Minute).
@@ -845,17 +889,29 @@ def zeichen_im_band(im, rahmen: Rahmen, tick: float, achse: str,
     # lieferte so 63-mal ein 10x1-Muster (waagerechte Linie) und 53-mal ein 2x13
     # (senkrechter Strich) -- beides Rahmen, keine Ziffern.
     rand = 3
+    breite_px, hoehe_px = im.size
     if achse == "y":
         x0, x1 = int(rahmen.band_links) + rand, int(rahmen.links) - rand + 1
+
+        def zeile_voll(y: int) -> bool:
+            return (0 <= y < hoehe_px
+                    and all(px[x, y] < _TEXT_SCHWELLE for x in range(x0, x1)))
+
         hoch = min(grenze, 14)
-        oben = _zeichen_zerlegen(px, x0, x1, max(0, int(tick) - hoch), int(tick) - 1)
-        unten = _zeichen_zerlegen(px, x0, x1, int(tick) + 1,
-                                  min(im.size[1], int(tick) + hoch))
+        okante = _strich_ende(zeile_voll, int(tick), -1)
+        ukante = _strich_ende(zeile_voll, int(tick), +1)
+        oben = _zeichen_zerlegen(px, x0, x1, max(0, okante - hoch + 1), okante + 1)
+        unten = _zeichen_zerlegen(px, x0, x1, ukante, min(hoehe_px, ukante + hoch))
         return oben, unten
+    # Die LAENGENachse bleibt beim festen Ein-Spalten-Abstand. Nicht aus Bequemlichkeit,
+    # sondern gemessen: Mit derselben Abtastung wie oben fiel EDAH von 10 auf 5 lesbare
+    # Laengen-Stuetzstellen, EDAC von 10 auf 4. Das um eine Spalte breitere Fenster zieht
+    # dort offenbar Fremdes herein. Der Zwei-Pixel-Strich ist ein Problem der WAAGERECHTEN
+    # Striche; die senkrechten sind auf denselben Blaettern einen Pixel dick.
     y0, y1 = int(rahmen.band_oben) + rand, int(rahmen.oben) - rand + 1
     links = _zeichen_zerlegen(px, max(0, int(tick) - grenze), int(tick) - 1, y0, y1)
     rechts = _zeichen_zerlegen(px, int(tick) + 1,
-                               min(im.size[0], int(tick) + grenze), y0, y1)
+                               min(breite_px, int(tick) + grenze), y0, y1)
     return links, rechts
 
 

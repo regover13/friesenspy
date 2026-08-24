@@ -490,3 +490,45 @@ def test_gelesene_gradzahl_wird_nicht_ueberschrieben():
 def test_ohne_ticks_kommt_nichts_heraus():
     """Kein Sonderfall, aber der Grundwert wird sonst aus einer leeren Folge gebildet."""
     assert aip_charts._grade_ergaenzen([], "y", 53.0) == []
+
+
+# ---------------------------------------------------------------------------
+# Tickstrich abtasten statt schaetzen (24.08.2026)
+# ---------------------------------------------------------------------------
+def test_strich_ende_findet_das_ende_eines_zwei_pixel_strichs():
+    """Auf der 874x1240-Serie ist der waagerechte Tickstrich ZWEI Pixel dick.
+
+    Der feste Ein-Pixel-Abstand liess die zweite Zeile im Suchfenster stehen. Eine
+    durchgezogene Zeile macht jede Spalte dunkel, alle Zeichen verschmelzen zu einer Gruppe
+    von 19 Pixeln Breite -- und die faellt durch ``2 <= len(g) <= 12``. Herausgekommen ist
+    NULL statt zwei Ziffern (gemessen an EDAH, Tick y=315).
+    """
+    voll = {10, 11}.__contains__
+    assert aip_charts._strich_ende(voll, 10, +1) == 12
+    assert aip_charts._strich_ende(voll, 11, -1) == 9
+
+
+def test_strich_ende_laesst_einen_pixel_strich_unveraendert():
+    """Die 875er-Serie hat einen Pixel -- dort darf sich nichts aendern."""
+    voll = {10}.__contains__
+    assert aip_charts._strich_ende(voll, 10, +1) == 11
+    assert aip_charts._strich_ende(voll, 10, -1) == 9
+
+
+def test_strich_ende_laeuft_nicht_davon():
+    """Eine grossflaechig dunkle Stelle darf den Lauf nicht mitnehmen."""
+    assert aip_charts._strich_ende(lambda p: True, 10, +1, grenze=4) == 14
+
+
+def test_laengenachse_behaelt_den_festen_abstand():
+    """Gemessen: Mit derselben Abtastung fiel EDAH von 10 auf 5 lesbare Laengen-Stuetzstellen.
+
+    Der Zwei-Pixel-Strich ist ein Problem der WAAGERECHTEN Striche; die senkrechten sind auf
+    denselben Blaettern einen Pixel dick. Deshalb an den Quelltext gebunden, nicht an eine
+    Beschreibung.
+    """
+    import inspect
+    quelle = inspect.getsource(aip_charts.zeichen_im_band)
+    kopf, rest = quelle.split('if achse == "y":', 1)
+    assert "_strich_ende(zeile_voll" in rest.split("return oben, unten")[0]
+    assert "_strich_ende" not in rest.split("return oben, unten")[1]
