@@ -9,6 +9,20 @@ lässt sich in Ruhe ausprobieren.
 vergeben hat („Highlight ja"). Das ist die einzige zulässige Herkunft dieser Marke; ohne
 seine Ansage bleibt sie `false`.
 
+## Stand 24.08.2026 — die Nummer ist vergeben, die Ankündigung nicht
+
+**13.9.0 ist ausgeliefert**, aber als stumme Zwischenversion: Der Changelog-Eintrag nennt die
+Sichtflugkarten ausdrücklich nicht, `highlight` ist `false`, und die App-Einstellung
+`banner_version` steht auf **`off`** — es erscheint also gar kein Banner.
+
+Grund für die Nummer war nicht das Release, sondern der Panel-Cache: Der Kachel-Buster hing an
+der Versionsnummer, und die stand einen ganzen Tag unverändert auf 13.8.2, während mehrfach
+deployt wurde. Im Kniebrett kam dadurch keine Änderung an. Seither hängt der Kennwert
+zusätzlich am Hash der ausgelieferten `index.html`; die Versionsnummer allein trägt das nicht.
+
+**Wichtig beim nächsten echten Release:** `banner_version` muss im Admin zurück auf `auto`,
+sonst bleibt auch die nächste Ankündigung stumm.
+
 ## Nach der Abnahme
 
 Diesen Block als **ersten** Eintrag in `app/CHANGELOG.json` einfügen — dann springt die

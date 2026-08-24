@@ -101,6 +101,20 @@ mkdir -p /opt/friesenspy/data
   seit dem 13.08. wörtlich, dass Coherent GT Cookies nur im Speicher hält. Erst die
   Konfiguration des funktionierenden Vorbilds lesen, dann die eigene schreiben.
 
+- **Der Cache-Buster des Panels hängt am Dateihash, nicht an der Versionsnummer.**
+  `/panel` leitet auf `/panel?v=<VERSION>.<kurzhash der index.html>` um. Der Hash ist kein
+  Beiwerk: Am 24.08.2026 wurde einen ganzen Tag lang bei unveränderter Version 13.8.2
+  zwölfmal deployt — die URL blieb dieselbe, Coherent GT lieferte aus dem Cache, und im
+  Kniebrett kam **keine einzige** Änderung an. Wer den Kennwert wieder auf `VERSION` allein
+  zurückdreht, baut genau diese Falle neu; `tests/test_vr_panel.py` prüft gegen
+  `_panel_kennwert()` und nicht gegen `VERSION`.
+
+- **Ein Deploy startet den Container neu und trifft jede offene Sitzung.** SSE bricht ab,
+  laufende Anfragen sterben. Am 24.08.2026 wurde dreimal deployt, nachdem ein Mitglied sein
+  EFB-Panel geöffnet hatte; sein Tablet war danach schwarz. Änderungen sammeln statt einzeln
+  ausliefern, und zu Flugzeiten vorher fragen. Ob jemand fliegt, steht im nginx-Log
+  (`/panel`, `/api/live`).
+
 ## UI-Standards (stehende Regeln — IMMER einhalten)
 
 - **Blau (#2d9cdb, CSS-Variable `--green` — historischer Name!) ist Klickbarem vorbehalten:**

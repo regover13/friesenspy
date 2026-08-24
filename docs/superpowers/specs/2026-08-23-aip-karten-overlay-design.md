@@ -483,6 +483,38 @@ kein Nebenschritt, sondern der Aufwandsschwerpunkt der Admin-Arbeit.
 
 Die Liste gehört in einen `.table-wrap`, wie es die UI-Regeln in `CLAUDE.md` verlangen.
 
+### 7.1 Was der erste Live-Einsatz am Admin geändert hat (24.08.2026)
+
+Der Nutzer hat mit dem Werkzeug gearbeitet, und dabei kam fünferlei heraus:
+
+**Grad und Minuten in getrennten Feldern.** Ein einziges Feld „Rahmen Nord (Grad)" steht neben
+einem Blatt, auf dem „14° 15'" gedruckt ist — und wird prompt als „51.17" gefüllt, gemeint als
+51°17'. Gelesen wurde 51,17°, ein Unterschied von zwölf Kilometern, den die Vorschau nur zeigt,
+wenn man genau hinsieht. Dazu die Prüfung Nord > Süd und Ost > West; ohne sie ließ sich eine
+spiegelverkehrte Passung speichern.
+
+**Filter „nur offene" und 20 Karten je Seite.** 446 Zeilen mit je einem eigenen Knopf und
+Ereignis-Handler machten die Seite träge. Der Server brauchte für die Liste 5 ms — die Zeit ging
+im Browser drauf. Die Nutzlast ist zusätzlich von 209 auf 97 KB geschrumpft, weil `bild_hash`
+und Pixelwerte nicht in den Browser gehören.
+
+**Beim Speichern nicht neu laden.** Ein `loadAipCharts()` setzte Seite und Bildlauf zurück; nach
+jeder gepassten Karte stand man wieder ganz oben. Der Eintrag wird jetzt im Speicher an genau
+der einen Stelle nachgezogen.
+
+**Vorbelegen aus der gespeicherten Passung**, nicht aus dem, was zuletzt im Formular stand —
+inklusive der beiden Rahmenecken aus `rahmen_px`. Sonst arbeitet man an Karte B mit den Zahlen
+von Karte A weiter, und das Ergebnis sieht plausibel aus.
+
+**Die Kapitelseite von Hand wählen.** `blatt_beschaffen` nimmt beim Rückfall die **erste** Seite,
+deren Passung durchgeht. Bei EDDK hat das Kapitel sechs Seiten, und die gewählte war nicht die
+gewünschte. Welche die richtige ist, kann die Automatik nicht wissen — sie prüft nur, ob eine
+Karte *irgendwo* passt. Der Admin bekommt deshalb die Liste mit Vorschaubild, Maßen und dem
+Hinweis, welche automatisch passen würde (`GET …/seiten`, 6,8 s für sechs Seiten) und setzt eine
+davon fest (`POST …/seite`). Beides läuft in `asyncio.to_thread`, und der POST nimmt
+ausschließlich URLs von `aip.dfs.de` — sonst wäre er ein offener Abruf beliebiger Adressen vom
+Server aus.
+
 ## 8. Was nicht gebaut wird
 
 Keine Kachelpyramide: Das Kartenfeld hat 685 Pixel für die Kartenfläche, bei den gemessenen
