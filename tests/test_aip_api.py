@@ -119,3 +119,43 @@ def test_dockerfile_liefert_scripts_ins_image():
     # weg, darf dieser Test nicht laenger etwas verlangen, was niemand mehr braucht.
     poller = (wurzel / "app" / "poller.py").read_text()
     assert "from scripts.aip_bestand import lauf" in poller
+
+
+# ---------------------------------------------------------------------------
+# Seitenauswahl (24.08.2026)
+# ---------------------------------------------------------------------------
+def test_seitenliste_braucht_anmeldung(client):
+    assert client.get("/api/admin/aip-charts/EDDK/seiten").status_code in (401, 403)
+
+
+def test_seite_waehlen_braucht_anmeldung(client):
+    r = client.post("/api/admin/aip-charts/EDDK/seite",
+                    json={"url": "https://aip.dfs.de/BasicVFR/2026AUG20/pages/X.html"})
+    assert r.status_code in (401, 403)
+
+
+def test_nur_seiten_der_dfs_werden_geholt():
+    """Sonst waere der Endpunkt ein offener Abruf beliebiger URLs vom Server aus.
+
+    An den Quelltext gebunden und nicht an eine abgelehnte Anfrage: Der Test soll auch dann
+    anschlagen, wenn jemand die Pruefung entfernt und die Route weiterhin 401 liefert, weil
+    der Anmeldeschutz davor greift.
+    """
+    import inspect
+
+    from app import main
+    quelle = inspect.getsource(main.admin_aip_seite_waehlen)
+    assert 'startswith("https://aip.dfs.de/")' in quelle
+
+
+def test_seitenliste_blockiert_den_event_loop_nicht():
+    """Sechs Seiten holen und vermessen dauert um die zehn Sekunden.
+
+    Im Event-Loop stuenden derweil SSE, der 15-Sekunden-Poll und jede andere Anfrage --
+    dasselbe Muster wie beim woechentlichen Job in app/poller.py.
+    """
+    import inspect
+
+    from app import main
+    for f in (main.admin_aip_seiten, main.admin_aip_seite_waehlen):
+        assert "asyncio.to_thread" in inspect.getsource(f)

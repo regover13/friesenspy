@@ -1258,6 +1258,34 @@ def blatt_beschaffen(url: str, arp_lat: float, arp_lon: float,
     return roh, None, airac
 
 
+def seiten_des_kapitels(url: str, hole) -> list[str]:
+    """Alle Seiten-URLs des Kapitels hinter einem Kartenlink, die Zielseite zuerst.
+
+    **Wozu.** ``blatt_beschaffen`` nimmt beim Rueckfall die ERSTE Seite, deren Passung
+    durchgeht. Bei EDDK sind sechs Seiten im Kapitel, und die gewaehlte war nicht die, die
+    der Nutzer wollte (24.08.2026). Welche die richtige ist, kann die Automatik nicht wissen
+    -- sie kann nur pruefen, ob eine Karte *irgendwo* passt. Deshalb muss der Admin
+    auswaehlen koennen, und dafuer braucht er die Liste.
+
+    Fehler beim Abruf einzelner Kapitelseiten werden uebersprungen: Eine unerreichbare Seite
+    darf die Auswahl nicht verhindern.
+    """
+    erste = hole(url)
+    ziel = airac_url(erste, url) or url
+    html = hole(ziel) if ziel != url else erste
+    seiten = [ziel]
+    for kapitel in kapitel_links(html, ziel):
+        try:
+            weiter = hole(kapitel)
+        except Exception:
+            logger.info("AIP: Kapitelseite %s nicht erreichbar", kapitel)
+            continue
+        for seite in kapitelseiten(weiter, kapitel):
+            if seite not in seiten:
+                seiten.append(seite)
+    return seiten
+
+
 def handpassung(breite_px: int, hoehe_px: int,
                 links_px: float, oben_px: float, rechts_px: float, unten_px: float,
                 feld_nord: float, feld_sued: float,

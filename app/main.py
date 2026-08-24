@@ -4190,6 +4190,143 @@ async def admin_get_aip_charts(request: Request):
     ]}
 
 
+_AIP_UA = {"User-Agent": "FriesenSpy/AIP-Kartenabgleich (+https://friesenspy.devprops.de)"}
+
+
+def _aip_holer(client):
+    def holen(u: str) -> str:
+        r = client.get(u, headers=_AIP_UA, timeout=40.0)
+        r.raise_for_status()
+        return r.text
+    return holen
+
+
+def _aip_seiten_sammeln(aip_url: str, lat: float, lon: float) -> list[dict]:
+    """Kandidatenseiten mit Vorschaubild. Laeuft im Thread, nicht im Event-Loop.
+
+    Sechs Seiten zu holen und zu vermessen dauert um die zehn Sekunden -- im Event-Loop
+    stuenden derweil SSE, der 15-Sekunden-Poll und jede andere Anfrage (derselbe Grund wie
+    beim woechentlichen Job in app/poller.py).
+    """
+    import base64
+    import io
+
+    from PIL import Image
+
+    out: list[dict] = []
+    with _httpx.Client(follow_redirects=True, timeout=60.0) as client:
+        hole = _aip_holer(client)
+        for i, seite in enumerate(aip_charts.seiten_des_kapitels(aip_url, hole)):
+            eintrag = {"nr": i, "url": seite, "breite": 0, "hoehe": 0, "kb": 0,
+                       "passt": False, "vorschau": None}
+            try:
+                roh = aip_charts.bild_aus_html(hole(seite))
+            except Exception:
+                roh = None
+            if roh:
+                eintrag["kb"] = len(roh) // 1024
+                try:
+                    im = Image.open(io.BytesIO(roh))
+                    eintrag["breite"], eintrag["hoehe"] = im.size
+                    eintrag["passt"] = aip_charts.passung_rechnen(
+                        im.convert("L"), lat, lon) is not None
+                    # Kleines Vorschaubild: Ohne Bild ist die Auswahl ein Ratespiel, mit
+                    # sechs vollen Blaettern waeren es mehrere Megabyte.
+                    klein = im.convert("RGB")
+                    klein.thumbnail((190, 260))
+                    puffer = io.BytesIO()
+                    klein.save(puffer, "JPEG", quality=70)
+                    eintrag["vorschau"] = ("data:image/jpeg;base64,"
+                                           + base64.b64encode(puffer.getvalue()).decode())
+                except Exception:
+                    pass
+            out.append(eintrag)
+    return out
+
+
+@app.get("/api/admin/aip-charts/{icao}/seiten")
+async def admin_aip_seiten(icao: str, request: Request):
+    """Welche Seiten das Kapitel dieses Platzes hergibt -- mit Vorschau zum Auswaehlen."""
+    require_admin(request)
+    code = (icao or "").strip().upper()
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        zeile = conn.execute("SELECT aip_url FROM airport_links WHERE icao = ?",
+                             (code,)).fetchone()
+    finally:
+        conn.close()
+    if zeile is None:
+        raise HTTPException(status_code=404, detail="kein Kartenlink fuer diesen Platz")
+    # geo.icao_to_coords statt airportsdata direkt: Es kennt zusaetzlich die Ergaenzungen
+    # aus _CUSTOM_AIRPORTS, und der Rest der Anwendung fragt ebenfalls dort.
+    koord = geo.icao_to_coords(code)
+    if koord is None:
+        raise HTTPException(status_code=409, detail="Koordinate des Platzes unbekannt")
+    seiten = await asyncio.to_thread(_aip_seiten_sammeln, zeile["aip_url"], koord[0], koord[1])
+    return {"icao": code, "seiten": seiten}
+
+
+@app.post("/api/admin/aip-charts/{icao}/seite")
+async def admin_aip_seite_waehlen(icao: str, request: Request):
+    """Eine bestimmte Kapitelseite als Blatt uebernehmen.
+
+    Die Automatik nimmt die erste Seite, deren Passung durchgeht. Das ist nicht immer die
+    richtige -- bei EDDK enthaelt das Kapitel sechs Seiten, und die gewaehlte war die falsche
+    (Nutzer, 24.08.2026). Hier setzt der Admin die Seite fest; die Passung wird danach
+    versucht, und schlaegt sie fehl, bleibt die Karte ``ungepasst`` und kann von Hand
+    gepasst werden.
+    """
+    require_admin(request)
+    code = (icao or "").strip().upper()
+    body = await request.json()
+    seite = str((body or {}).get("url") or "").strip()
+    # Nur Seiten der DFS -- sonst waere das ein offener Abruf beliebiger URLs vom Server aus.
+    if not seite.startswith("https://aip.dfs.de/"):
+        raise HTTPException(status_code=400, detail="nur Seiten von aip.dfs.de")
+
+    def arbeit() -> dict:
+        import io
+        import hashlib as _h
+
+        from PIL import Image
+        einst = get_settings()
+        with _httpx.Client(follow_redirects=True, timeout=60.0) as client:
+            roh = aip_charts.bild_aus_html(_aip_holer(client)(seite))
+        if roh is None:
+            raise HTTPException(status_code=422, detail="Auf dieser Seite steht kein Bild")
+        koord = geo.icao_to_coords(code)
+        passung = None
+        if koord:
+            try:
+                passung = aip_charts.passung_rechnen(
+                    Image.open(io.BytesIO(roh)).convert("L"), koord[0], koord[1])
+            except Exception:
+                passung = None
+        aip_charts.blatt_schreiben(aip_charts.blatt_pfad(einst.DB_PATH, code), roh)
+        conn = get_connection(einst.DB_PATH)
+        try:
+            alt = get_aip_chart(conn, code)
+            airac = (alt["airac"] if alt else "") or aip_charts.airac_kennung(seite) or ""
+            leer = dict(nord=0.0, sued=0.0, west=0.0, ost=0.0, feld_nord=0.0, feld_sued=0.0,
+                        feld_west=0.0, feld_ost=0.0, rahmen_px="", tick_px_lat=0.0,
+                        tick_px_lon=0.0)
+            werte = leer if passung is None else dict(
+                nord=passung.nord, sued=passung.sued, west=passung.west, ost=passung.ost,
+                feld_nord=passung.feld_nord, feld_sued=passung.feld_sued,
+                feld_west=passung.feld_west, feld_ost=passung.feld_ost,
+                rahmen_px=passung.rahmen_px, tick_px_lat=passung.tick_px_lat,
+                tick_px_lon=passung.tick_px_lon)
+            upsert_aip_chart(conn, code, bild_hash=_h.sha256(roh).hexdigest(),
+                             quelle="auto" if passung else "hand", airac=airac,
+                             status="gepasst" if passung else "ungepasst", **werte)
+            conn.commit()
+        finally:
+            conn.close()
+        return {"status": "ok", "gepasst": passung is not None}
+
+    return await asyncio.to_thread(arbeit)
+
+
 @app.post("/api/admin/aip-charts/{icao}")
 async def admin_set_aip_chart(icao: str, request: Request):
     """Handpassung: zwei geklickte Rahmenecken plus ihre Gradwerte.
