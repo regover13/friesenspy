@@ -4190,6 +4190,26 @@ async def admin_get_aip_charts(request: Request):
     ]}
 
 
+def _aip_karten_geaendert(request: Request) -> None:
+    """Allen offenen Seiten sagen, dass sich der Kartenbestand geaendert hat.
+
+    Ohne das erscheint eine frisch gepasste Karte erst, wenn jemand die Ebene aus- und wieder
+    einschaltet -- und im Kniebrett auch dann nur, wenn die Seite ueberhaupt neu geladen wurde.
+    Sie wird dort innerhalb einer Sim-Sitzung nie neu geladen (die EFB-App wird beim Zuklappen
+    nur schlafen gelegt). Der Nutzer hat am 24.08.2026 EDVM gepasst und es blieb aus.
+
+    Silent fail: Steht der Poller nicht (Testlauf, Startphase), ist das kein Grund, eine
+    gespeicherte Passung scheitern zu lassen.
+    """
+    poller = getattr(request.app.state, "poller", None)
+    if poller is None:
+        return
+    try:
+        poller.broadcast_sse({"type": "aip_charts"})
+    except Exception:
+        logger.exception("Error beim Melden geaenderter AIP-Karten")
+
+
 _AIP_UA = {"User-Agent": "FriesenSpy/AIP-Kartenabgleich (+https://friesenspy.devprops.de)"}
 
 
@@ -4324,7 +4344,9 @@ async def admin_aip_seite_waehlen(icao: str, request: Request):
             conn.close()
         return {"status": "ok", "gepasst": passung is not None}
 
-    return await asyncio.to_thread(arbeit)
+    ergebnis = await asyncio.to_thread(arbeit)
+    _aip_karten_geaendert(request)
+    return ergebnis
 
 
 @app.post("/api/admin/aip-charts/{icao}")
@@ -4367,6 +4389,7 @@ async def admin_set_aip_chart(icao: str, request: Request):
             tick_px_lat=passung.tick_px_lat, tick_px_lon=passung.tick_px_lon,
             quelle="hand", airac=bestand["airac"], status="gepasst")
         conn.commit()
+        _aip_karten_geaendert(request)
         return {"status": "ok", "nord": passung.nord, "sued": passung.sued,
                 "west": passung.west, "ost": passung.ost}
     finally:

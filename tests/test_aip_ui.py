@@ -427,3 +427,16 @@ def test_kartenliste_wird_beim_einschalten_aufgefrischt():
     # jeder Takt die Liste neu.
     laden = INDEX.index("function _aipKartenLaden(")
     assert "if (_aipKarten && !erzwingen) return" in INDEX[laden:laden + 400]
+
+
+def test_frontend_frischt_auf_statt_neu_zu_laden():
+    """Ein Neu-laden-Hinweis waere im Flug entweder unbrauchbar oder stoerend.
+
+    Aufgefrischt wird nur, wenn die Liste ueberhaupt schon geholt wurde -- sonst zieht ein
+    Admin-Klick auf JEDEM offenen Geraet einen Abruf nach sich.
+    """
+    start = INDEX.index("sseSource.onmessage")
+    abschnitt = INDEX[start:start + 2200]
+    assert "msg.type === 'aip_charts'" in abschnitt
+    assert "if (_aipKarten) _aipKartenLaden(true)" in abschnitt
+    assert "location.reload" not in abschnitt

@@ -6965,6 +6965,16 @@ function connectSSE() {
         // Prefiles/TeamSpeak NICHT hier mitfeuern — sie laufen auf eigenem, langsamerem
         // Takt (siehe setInterval unten). Sonst feuerte das Paar bei jedem 15s-Push und
         // sprengte zusammen mit mehreren Geräten pro IP das geteilte /api/-Rate-Limit (429).
+      } else if (msg.type === 'aip_charts') {
+        // Im Admin wurde eine Karte gepasst oder ihre Seite getauscht. Auffrischen statt
+        // neu laden: Das Kniebrett laedt innerhalb einer Sim-Sitzung nie neu (die EFB-App
+        // wird beim Zuklappen nur schlafen gelegt), ein Neu-laden-Hinweis waere im Flug
+        // also entweder unbrauchbar oder stoerend. Die Kartenliste ist 24 KB.
+        //
+        // Nur, wenn die Liste ueberhaupt schon geholt wurde: Sonst zieht ein Admin-Klick
+        // auf JEDEM offenen Geraet einen Abruf nach sich, auch dort, wo die Ebene nie
+        // eingeschaltet war.
+        if (_aipKarten) _aipKartenLaden(true);
       } else if (msg.type === 'notify') {
         // Benachrichtigung fürs MSFS-Kniebrett. Auf der normalen Web-Seite ein No-Op —
         // dort gibt es Web-Push, eine zweite Anzeige wäre nur doppelt.

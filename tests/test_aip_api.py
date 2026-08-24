@@ -159,3 +159,29 @@ def test_seitenliste_blockiert_den_event_loop_nicht():
     from app import main
     for f in (main.admin_aip_seiten, main.admin_aip_seite_waehlen):
         assert "asyncio.to_thread" in inspect.getsource(f)
+
+
+# ---------------------------------------------------------------------------
+# Sofortmeldung an offene Seiten (24.08.2026)
+# ---------------------------------------------------------------------------
+def test_gepasste_karte_wird_an_offene_seiten_gemeldet():
+    """Sonst erscheint sie erst nach einem Neuladen -- im Kniebrett also gar nicht.
+
+    Die EFB-App wird beim Zuklappen nur schlafen gelegt; die Seite laedt innerhalb einer
+    Sim-Sitzung nie neu. Der Nutzer hat am 24.08.2026 EDVM gepasst und es blieb aus.
+    """
+    import inspect
+
+    from app import main
+    for f in (main.admin_set_aip_chart, main.admin_aip_seite_waehlen):
+        assert "_aip_karten_geaendert(request)" in inspect.getsource(f)
+
+
+def test_meldung_laesst_die_passung_nicht_scheitern():
+    """Steht der Poller nicht (Testlauf, Startphase), darf das Speichern trotzdem gelingen."""
+    import inspect
+
+    from app import main
+    quelle = inspect.getsource(main._aip_karten_geaendert)
+    assert "if poller is None:" in quelle
+    assert "except Exception:" in quelle
