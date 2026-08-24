@@ -432,3 +432,61 @@ def test_handpassung_weist_pixel_ausserhalb_des_blatts_ab():
         breite_px=875, hoehe_px=1240,
         links_px=-5, oben_px=180, rechts_px=817, unten_px=865,
         feld_nord=54.23, feld_sued=54.20, feld_west=9.60, feld_ost=9.63) is None
+
+
+# ---------------------------------------------------------------------------
+# Fehlende Gradzahlen ergaenzen (24.08.2026)
+# ---------------------------------------------------------------------------
+def _erg(roh, achse, arp):
+    return [(t, g + m / 60.0) for t, g, m in aip_charts._grade_ergaenzen(roh, achse, arp)]
+
+
+def test_fehlende_gradzahl_kommt_vom_lesbaren_nachbarn():
+    """Steht die Gradzahl an EINEM Tick, folgt sie fuer alle -- die Ticks sind aequidistant."""
+    # Breite: nach unten (wachsender Pixel) nimmt der Wert AB, die Minuten also auch.
+    roh = [(100.0, 53, 20), (150.0, None, 19), (200.0, None, 18)]
+    assert _erg(roh, "y", 53.31) == [
+        (200.0, 53 + 18 / 60), (150.0, 53 + 19 / 60), (100.0, 53 + 20 / 60)]
+
+
+def test_ohne_jede_gradzahl_liefert_die_platzkoordinate_den_grundwert():
+    """Das Kartenfeld ist rund fuenf Bogenminuten hoch und enthaelt den Platz.
+
+    Die mittlere Tickzahl liegt damit wenige Minuten neben ihm; ein Griff daneben waere
+    ein ganzer Grad, also 60 Minuten.
+    """
+    roh = [(100.0, None, 20), (150.0, None, 19), (200.0, None, 18)]
+    werte = dict(_erg(roh, "y", 53.317))
+    assert werte[100.0] == 53 + 20 / 60
+    assert werte[200.0] == 53 + 18 / 60
+
+
+def test_gradgrenze_im_kartenfeld_wird_aufgerollt():
+    """Springt die Minute in Richtung wachsender Werte zurueck, ist ein Grad ueberschritten.
+
+    Ein Platz bei 53°59' hat Ticks bei 58', 59', 00', 01' -- die letzten beiden gehoeren
+    zu 54°. Sie stumpf auf 53° zu setzen, legte das Blatt 111 km zu weit sued.
+    """
+    # Laenge: nach rechts (wachsender Pixel) nimmt der Wert ZU.
+    roh = [(100.0, None, 58), (150.0, None, 59), (200.0, None, 0), (250.0, None, 1)]
+    werte = dict(_erg(roh, "x", 6.995))
+    assert werte[150.0] == 6 + 59 / 60
+    assert werte[200.0] == 7.0
+    assert werte[250.0] == 7 + 1 / 60
+
+
+def test_gelesene_gradzahl_wird_nicht_ueberschrieben():
+    """Sie muss sich weiter an Pruefung (2) und den Residuen messen lassen.
+
+    Der Zusatz ist rein additiv -- was vorher durchlief, laeuft unveraendert durch. Hier
+    steht an einem Tick absichtlich eine unpassende Gradzahl: Sie bleibt stehen, damit die
+    Residuenpruefung sie sieht, statt still weggebuegelt zu werden.
+    """
+    roh = [(100.0, 53, 20), (150.0, 99, 19), (200.0, None, 18)]
+    werte = dict(_erg(roh, "y", 53.31))
+    assert werte[150.0] == 99 + 19 / 60
+
+
+def test_ohne_ticks_kommt_nichts_heraus():
+    """Kein Sonderfall, aber der Grundwert wird sonst aus einer leeren Folge gebildet."""
+    assert aip_charts._grade_ergaenzen([], "y", 53.0) == []

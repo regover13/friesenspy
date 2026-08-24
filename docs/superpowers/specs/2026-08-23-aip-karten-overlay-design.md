@@ -168,7 +168,36 @@ Fehlerklasse vollständig ab.** Wer die Anzeige härter absichern will, braucht 
 unabhängigen Anker im Bild — etwa die erkannte Lage des Flugplatzsymbols. Das ist hier
 bewusst nicht gebaut.
 
-### 3.2 Freiheitsgrade schwächen die Probe — auch die verbliebenen
+#### 3.1a Fehlende Gradzahlen ergänzen (Nachtrag 24.08.2026)
+
+Gemessen über alle 446 Blätter: **360 Ticks tragen eine lesbare Minute, aber keine lesbare
+Gradzahl** — sie fielen ersatzlos heraus, weil `beschriftung_lesen` beide Zahlen verlangte.
+86 Blätter hätten allein dadurch genug Stützstellen gehabt.
+
+Die Ticks liegen äquidistant und sind nach Bogenminuten beschriftet. Springt die Minute in
+Richtung wachsender Werte zurück (58, 59, 00, 01), ist eine Gradgrenze überschritten; daraus
+folgt die Gradzahl **jedes** Ticks, sobald sie für **einen** feststeht. Steht sie für keinen,
+liefert die Platzkoordinate den Grundwert — das Kartenfeld ist rund fünf Bogenminuten hoch und
+enthält den Platz, die mittlere Tickzahl liegt also wenige Minuten neben ihm.
+
+**Was das kostet, ausdrücklich:** Für Ticks mit *ergänzter* Gradzahl prüft der Lagetest (4)
+die Gradzahl nicht mehr unabhängig — sie ist ja gerade so gewählt, dass der Platz im Feld
+liegt. Gegen alles andere behält er seine Kraft: falsch gelesene Minuten, verrutschte Ticks,
+eine schiefe Ausgleichsgerade. **Gelesene Gradzahlen werden nicht überschrieben**, der Zusatz
+ist rein additiv.
+
+**Ergebnis, gemessen an denselben 446 Blättern:** 216 → **250** gepasst. Von 52 Blättern, die
+die Stützstellen-Hürde neu nehmen, kommen 34 ganz durch; 18 fallen an einer der übrigen
+Prüfungen — die also arbeitet.
+
+**Was ausdrücklich NICHT gemacht wird: eine einzige Stützstelle je Achse zulassen.** Es wäre
+verlockend, denn 57 Blätter scheitern noch daran, und die Steigung ließe sich aus dem
+Rasterabstand gewinnen. Der Preis wäre aber, dass ein einziger Ziffernfehler ungeprüft
+durchginge: Eine um eine Bogenminute falsch gelesene Breite verschiebt das Blatt um 1,85 km,
+und der Lagetest lässt rund 2,9 km durch. Prüfung (2) wäre dabei tautologisch, Residuen gibt
+es bei einem Punkt nicht. Zwei Stützstellen bleiben die Untergrenze.
+
+## 3.2 Freiheitsgrade schwächen die Probe — auch die verbliebenen
 
 Eine Zwischenfassung der Rastersuche durfte den gefundenen Tick-Abstand unterteilen. Bei EDAB
 kam dabei **ein Drittel** des echten Abstands heraus (18,26 statt 54,78 Pixel) — bei einem

@@ -860,22 +860,76 @@ def zeichen_im_band(im, rahmen: Rahmen, tick: float, achse: str,
 
 
 def beschriftung_lesen(im, rahmen: Rahmen, ticks: list[float],
-                       achse: str) -> list[tuple[float, float]]:
+                       achse: str, arp: float | None = None) -> list[tuple[float, float]]:
     """Paare (Pixelposition, Winkel in Grad) fuer jeden beschrifteten Tick.
 
     Nur Ticks, die auf dem Raster liegen, kommen infrage -- ein Hindernissymbol mit einer Zahl
-    daneben darf keine Stuetzstelle werden. Ticks mit unlesbarer Zahl fallen heraus.
+    daneben darf keine Stuetzstelle werden.
+
+    **``arp`` ergaenzt fehlende GRADzahlen** (Messung 24.08.2026, s. unten). Ohne den Parameter
+    bleibt es beim alten Verhalten: Ein Tick zaehlt nur, wenn Grad UND Minute lesbar sind.
     """
     d, _anzahl, anker = raster(ticks)
     echte = raster_treffer(ticks, d, anker) if d else ticks
-    paare: list[tuple[float, float]] = []
+    roh: list[tuple[float, int | None, int]] = []
     for t in echte:
         a, b = zeichen_im_band(im, rahmen, t, achse, d)
         grad, minute = zahl_lesen(a), zahl_lesen(b)
-        if grad is None or minute is None or not (0 <= minute < 60):
+        if minute is None or not (0 <= minute < 60):
             continue
-        paare.append((t, grad + minute / 60.0))
-    return paare
+        roh.append((t, grad, minute))
+    if arp is None:
+        return [(t, g + m / 60.0) for t, g, m in roh if g is not None]
+    return [(t, gr + m / 60.0) for t, gr, m in _grade_ergaenzen(roh, achse, arp)]
+
+
+def _grade_ergaenzen(roh: list[tuple[float, int | None, int]], achse: str,
+                     arp: float) -> list[tuple[float, int, int]]:
+    """Fehlende Gradzahlen aus der Minutenfolge und der Platzkoordinate ergaenzen.
+
+    **Warum ueberhaupt.** Gemessen ueber alle 446 Blaetter: 360 Ticks tragen eine lesbare
+    Minute, aber keine lesbare Gradzahl -- sie fielen bisher ersatzlos heraus. 86 Blaetter
+    haetten allein dadurch genug Stuetzstellen (Diagnoselauf 24.08.2026).
+
+    **Wie.** Die Ticks liegen aequidistant und sind nach Bogenminuten beschriftet. Springt die
+    Minute in Richtung wachsender Werte zurueck (58, 59, 0, 1), ist eine Gradgrenze
+    ueberschritten; daraus folgt die Gradzahl JEDES Ticks, sobald sie fuer EINEN feststeht.
+    Steht sie fuer keinen, liefert die Platzkoordinate den Grundwert: Das Kartenfeld ist rund
+    fuenf Bogenminuten hoch und enthaelt den Platz, die mittlere Tickzahl liegt also wenige
+    Minuten neben ihm -- eine Verwechslung um einen ganzen Grad waere 60 Minuten daneben.
+
+    **Was das kostet, ausdruecklich gesagt.** Fuer Ticks mit ERGAENZTER Gradzahl prueft der
+    Lagetest (4) die Gradzahl nicht mehr unabhaengig -- sie ist ja gerade so gewaehlt, dass der
+    Platz im Feld liegt. Er behaelt seine Kraft gegen alles andere: falsch gelesene Minuten,
+    verrutschte Ticks, eine schiefe Ausgleichsgerade. Und der Fehler, den er dort nicht mehr
+    faengt, kann durch die Konstruktion nicht mehr auftreten.
+
+    **Gelesene Gradzahlen werden NICHT ueberschrieben.** Sie bleiben stehen und muessen sich
+    weiter an Pruefung (2) und den Residuen (3) messen lassen. Der Zusatz ist rein additiv:
+    Was vorher durchlief, laeuft unveraendert durch.
+    """
+    if not roh:
+        return []
+    # In Richtung wachsender Werte ordnen: Nach unten nimmt die Breite ab, nach rechts nimmt
+    # die Laenge zu.
+    geordnet = sorted(roh, key=lambda p: p[0], reverse=(achse == "y"))
+    stufen: list[int] = []
+    stufe = 0
+    for i, (_t, _g, m) in enumerate(geordnet):
+        if i and m < geordnet[i - 1][2]:
+            stufe += 1
+        stufen.append(stufe)
+
+    grund = None
+    for (_t, g, _m), st in zip(geordnet, stufen):
+        if g is not None:
+            grund = g - st
+            break
+    if grund is None:
+        mitten = sorted(m / 60.0 + st for (_t, _g, m), st in zip(geordnet, stufen))
+        grund = round(arp - mitten[len(mitten) // 2])
+    return [(t, g if g is not None else grund + st, m)
+            for (t, g, m), st in zip(geordnet, stufen)]
 
 
 # ---------------------------------------------------------------------------
@@ -985,8 +1039,8 @@ def passung_rechnen(im, arp_lat: float, arp_lon: float) -> Passung | None:
         logger.info("AIP: cos-Probe nicht bestanden")
         return None
 
-    lat_paare = beschriftung_lesen(im, rahmen, ty, "y")
-    lon_paare = beschriftung_lesen(im, rahmen, tx, "x")
+    lat_paare = beschriftung_lesen(im, rahmen, ty, "y", arp_lat)
+    lon_paare = beschriftung_lesen(im, rahmen, tx, "x", arp_lon)
     if len(lat_paare) < _MIND_STUETZSTELLEN or len(lon_paare) < _MIND_STUETZSTELLEN:
         logger.info("AIP: zu wenige lesbare Stuetzstellen (%d/%d)",
                     len(lat_paare), len(lon_paare))
