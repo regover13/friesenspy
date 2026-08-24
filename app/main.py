@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import html as _html
 import json
@@ -348,6 +349,26 @@ async def robots_txt():
 # Zwischenspeichern, keine Revalidierung nötig, auf die sich die Engine hätte einlassen müssen.
 _HTML_NO_CACHE = {"Cache-Control": "no-store"}
 
+_PANEL_INDEX = Path("app/static/index.html")
+_panel_kennwert_cache: dict[str, str] = {}
+
+
+def _panel_kennwert() -> str:
+    """Kennwert fuer die Panel-URL: Version PLUS Kurz-Hash der ausgelieferten index.html.
+
+    Einmal je Prozess berechnet -- die Datei liegt im Image und aendert sich nur mit einem
+    neuen Container. Ein Neuberechnen bei jeder Anfrage waere ein Dateilesen im Event-Loop
+    fuer einen Wert, der sich nicht aendern kann.
+    """
+    if "wert" not in _panel_kennwert_cache:
+        try:
+            roh = _PANEL_INDEX.read_bytes()
+            kurz = hashlib.sha256(roh).hexdigest()[:8]
+        except OSError:
+            kurz = "0"
+        _panel_kennwert_cache["wert"] = f"{VERSION}.{kurz}"
+    return _panel_kennwert_cache["wert"]
+
 
 @app.get("/")
 async def index():
@@ -365,11 +386,20 @@ async def panel(v: str | None = None):
     Kommentar bei `_HTML_NO_CACHE`), dass sich selbst ein Neustart der ganzen EFB-App als
     wirkungslos zeigte (Live-Test-Fund 13.08.2026). Die im MSFS-Community-Package fest
     einprogrammierte iframe-URL ist `/panel` ohne Parameter -- fehlt `v` oder stimmt er nicht
-    mit der aktuellen Version überein, wird auf eine versionierte, nie zuvor angefragte URL
+    mit dem aktuellen Stand überein, wird auf eine versionierte, nie zuvor angefragte URL
     umgeleitet, die Coherent GT unmöglich schon im Cache haben kann, unabhängig davon, ob die
-    Engine Cache-Control überhaupt korrekt auswertet."""
-    if v != VERSION:
-        return RedirectResponse(f"/panel?v={VERSION}", status_code=302, headers=_HTML_NO_CACHE)
+    Engine Cache-Control überhaupt korrekt auswertet.
+
+    **Der Kennwert hängt an der DATEI, nicht an der Release-Nummer** (24.08.2026). Vorher war
+    es allein `VERSION`. Das trägt nur, solange jede Auslieferung auch eine neue Version hat --
+    und genau das war den ganzen 24.08. nicht der Fall: Die Sichtflugkarten wurden bei
+    unveränderter Version 13.8.2 mehrfach am Tag deployt, die URL blieb `/panel?v=13.8.2`, und
+    im Kniebrett kam keine einzige Änderung an. Der Nutzer sah stundenlang den Stand vom
+    Morgen. Mit dem Kurz-Hash der ausgelieferten `index.html` im Kennwert kann das nicht mehr
+    passieren; er ändert sich, sobald sich die Datei ändert, unabhängig von der Version."""
+    if v != _panel_kennwert():
+        return RedirectResponse(f"/panel?v={_panel_kennwert()}", status_code=302,
+                                headers=_HTML_NO_CACHE)
     return FileResponse("app/static/index.html", headers=_HTML_NO_CACHE)
 
 
@@ -4135,13 +4165,29 @@ async def admin_get_airport_links(request: Request):
 
 @app.get("/api/admin/aip-charts")
 async def admin_get_aip_charts(request: Request):
-    """Alle Sichtflugkarten mit Status -- auch die ungepassten, die von Hand drankommen."""
+    """Alle Sichtflugkarten mit Status -- auch die ungepassten, die von Hand drankommen.
+
+    **Nur die Felder, die der Admin braucht.** Die volle Zeile ergab 209 KB fuer 446 Karten,
+    groesstenteils ``bild_hash`` (64 Zeichen je Zeile) und Pixelwerte, die im Browser
+    niemand ansieht. Der Server brauchte dafuer 5 ms -- die Zeit ging beim Aufbauen der
+    Liste drauf (Nutzer, 24.08.2026: "die Seite ist extrem langsam geworden").
+
+    ``feld_*`` und ``rahmen_px`` bleiben drin: Damit kann die Handpassung eine bestehende
+    Karte vorbelegen, statt mit leeren Feldern und den zuletzt getippten Werten zu starten.
+    """
     require_admin(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
-        return {"charts": get_aip_charts(conn, nur_gepasst=False)}
+        karten = get_aip_charts(conn, nur_gepasst=False)
     finally:
         conn.close()
+    return {"charts": [
+        {"icao": k["icao"], "status": k["status"], "quelle": k["quelle"], "airac": k["airac"],
+         "feld_nord": k["feld_nord"], "feld_sued": k["feld_sued"],
+         "feld_west": k["feld_west"], "feld_ost": k["feld_ost"],
+         "rahmen_px": k["rahmen_px"]}
+        for k in karten
+    ]}
 
 
 @app.post("/api/admin/aip-charts/{icao}")

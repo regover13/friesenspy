@@ -257,7 +257,10 @@ def test_handpassung_schickt_die_rahmenecken_als_feld_werte():
     """Nicht als nord/sued/west/ost -- dieselben Namen fuer Rahmenecken und Blattgrenzen
     waren die Verwechslung hinter dem 45-Prozent-Massstabsfehler."""
     start = ADMIN.index("function _aipEingaben(")
-    block = ADMIN[start:start + 1200]
+    # Bis zum Ende der Funktion statt einer festen Zeichenzahl: Ein Zusatz am Anfang (etwa
+    # die Grad/Minuten-Pruefung vom 24.08.2026) schob den Rumpf sonst aus dem Fenster, und
+    # der Test schlug an, ohne dass sich das Verhalten geaendert hatte.
+    block = ADMIN[start:ADMIN.index("\n    }", start)]
     assert "feld_nord:" in block and "feld_sued:" in block
     assert "breite_px:" in block and "hoehe_px:" in block
 

@@ -1,5 +1,14 @@
 [
   {
+    "version": "13.9.0",
+    "date": "2026-08-24",
+    "highlight": false,
+    "title": "Zwischenversion",
+    "items": [
+      "🔧 Eine technische Auslieferung ohne Ankündigung: Im Hintergrund wird an den Sichtflugkarten gearbeitet. Sie bekommen ihre eigene Meldung, sobald sie fertig sind."
+    ]
+  },
+  {
     "version": "13.8.2",
     "date": "2026-08-23",
     "highlight": false,

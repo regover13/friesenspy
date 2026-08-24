@@ -263,6 +263,13 @@
 
     select option { background: var(--bg-panel-2); }
 
+    /* Grad und Minuten nebeneinander, mit den Zeichen dazwischen -- so steht es auch auf
+       dem Blatt ("14° 15'"). Die Zeichen sind Text, kein Emoji: admin.html laeuft zwar nur
+       im Browser, aber ° und ′ sind ohnehin Standardzeichen. */
+    .aip-gm { display: flex; align-items: center; gap: 4px; }
+    .aip-gm input { width: 100%; min-width: 0; }
+    .aip-gm span { color: #8aa0b8; font-family: var(--text-mono, monospace); }
+
     .form-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -1178,19 +1185,34 @@
           </p>
           <div id="aip-charts" class="table-wrap"><div class="empty-hint">Lade Karten…</div></div>
           <div id="aip-passen" style="display:none;margin-top:12px;">
+            <p id="aip-passen-kopf" style="font-weight:700;margin:4px 0 2px;"></p>
+            <!-- Grad UND Minuten getrennt, nicht als Dezimalzahl. Auf dem Blatt steht
+                 "14° 15'", und ein einzelnes Feld mit der Beschriftung "(Grad)" verleitet
+                 dann dazu, 14.15 einzutragen -- gemeint waeren 14,25°. Der Unterschied sind
+                 zwoelf Kilometer, und die Vorschau zeigt ihn nur, wenn man genau hinsieht.
+                 Am 24.08.2026 genau so passiert. -->
             <div class="form-grid" style="margin:6px 0 8px;">
-              <div class="form-group"><label for="aip-nord">Rahmen Nord (Grad)</label>
-                <input type="text" id="aip-nord" placeholder="54.2333" /></div>
-              <div class="form-group"><label for="aip-sued">Rahmen Süd (Grad)</label>
-                <input type="text" id="aip-sued" placeholder="54.2000" /></div>
-              <div class="form-group"><label for="aip-west">Rahmen West (Grad)</label>
-                <input type="text" id="aip-west" placeholder="9.6000" /></div>
-              <div class="form-group"><label for="aip-ost">Rahmen Ost (Grad)</label>
-                <input type="text" id="aip-ost" placeholder="9.6333" /></div>
+              <div class="form-group"><label for="aip-nord-g">Rahmen Nord</label>
+                <div class="aip-gm"><input type="text" id="aip-nord-g" placeholder="54" /><span>°</span>
+                  <input type="text" id="aip-nord-m" placeholder="14" /><span>&prime;</span></div></div>
+              <div class="form-group"><label for="aip-sued-g">Rahmen Süd</label>
+                <div class="aip-gm"><input type="text" id="aip-sued-g" placeholder="54" /><span>°</span>
+                  <input type="text" id="aip-sued-m" placeholder="12" /><span>&prime;</span></div></div>
+              <div class="form-group"><label for="aip-west-g">Rahmen West</label>
+                <div class="aip-gm"><input type="text" id="aip-west-g" placeholder="9" /><span>°</span>
+                  <input type="text" id="aip-west-m" placeholder="36" /><span>&prime;</span></div></div>
+              <div class="form-group"><label for="aip-ost-g">Rahmen Ost</label>
+                <div class="aip-gm"><input type="text" id="aip-ost-g" placeholder="9" /><span>°</span>
+                  <input type="text" id="aip-ost-m" placeholder="38" /><span>&prime;</span></div></div>
             </div>
             <p id="aip-klickhinweis" style="color:#8aa0b8;font-size:0.82rem;">
               Auf das Blatt klicken: erst die <b>obere linke</b>, dann die
               <b>untere rechte</b> Rahmenecke.
+            </p>
+            <p style="color:#8aa0b8;font-size:0.82rem;margin-top:-4px;">
+              Gemeint ist die Ecke des <b>Kartenfelds</b> — dort, wo die beschriftete
+              Gradleiste das Kartenbild einrahmt, nicht der Blattrand. Die vier Werte sind
+              die Gradzahlen genau an diesen beiden Ecken.
             </p>
             <div style="position:relative;max-width:100%;overflow:auto;">
               <img id="aip-blatt" style="max-width:100%;cursor:crosshair;" alt="Kartenblatt" />
@@ -3186,21 +3208,50 @@
     let _aipEcken = [];          // [{x, y}] in Bildpixeln, hoechstens zwei
     let _aipVorschauKarte = null;
 
-    async function loadAipCharts() {
+    // Alle Karten, einmal geladen. Gefiltert und geblaettert wird im Browser -- 446 Zeilen
+    // auf einmal zu zeichnen war der Grund fuer die traege Seite (Nutzer, 24.08.2026).
+    let _aipAlle = [];
+    let _aipSeite = 0;
+    let _aipNurOffene = true;
+    const _AIP_JE_SEITE = 20;
+
+    function _aipGefiltert() {
+      return _aipNurOffene ? _aipAlle.filter(c => c.status !== 'gepasst') : _aipAlle;
+    }
+
+    /** Nur neu zeichnen, nicht neu laden -- der Bestand steht schon im Speicher. */
+    function _aipListeZeichnen() {
       const box = document.getElementById('aip-charts');
-      try {
-        const res = await api('GET', '/api/admin/aip-charts');
-        if (!res || !res.ok) { box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>'; return; }
-        const charts = (await res.json()).charts || [];
-        if (!charts.length) {
-          box.innerHTML = '<div class="empty-hint">Noch keine Karten geladen — '
-            + 'scripts/aip_bestand.py auf dem Server ausführen.</div>';
-          return;
-        }
-        const offen = charts.filter(c => c.status !== 'gepasst').length;
-        let html = '<table><thead><tr><th>Code</th><th>Status</th><th>Quelle</th>'
+      const liste = _aipGefiltert();
+      const seiten = Math.max(1, Math.ceil(liste.length / _AIP_JE_SEITE));
+      if (_aipSeite >= seiten) _aipSeite = seiten - 1;
+      const offen = _aipAlle.filter(c => c.status !== 'gepasst').length;
+      const von = _aipSeite * _AIP_JE_SEITE;
+      const teil = liste.slice(von, von + _AIP_JE_SEITE);
+
+      let html = '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;'
+        + 'margin-bottom:8px;color:#8aa0b8;font-size:0.82rem;">'
+        + '<label style="display:flex;gap:5px;align-items:center;cursor:pointer;">'
+        + '<input type="checkbox" id="aip-nur-offene"' + (_aipNurOffene ? ' checked' : '') + ' />'
+        + 'nur offene</label>'
+        + '<span>' + _aipAlle.length + ' Karten, davon ' + offen + ' offen'
+        + (_aipNurOffene ? '' : '') + '</span>'
+        + '<span style="margin-left:auto;display:flex;gap:6px;align-items:center;">'
+        + '<button class="btn btn-sm" id="aip-zurueck"' + (_aipSeite <= 0 ? ' disabled' : '') + '>&lsaquo;</button>'
+        + '<span>' + (liste.length ? (von + 1) : 0) + '–' + Math.min(von + _AIP_JE_SEITE, liste.length)
+        + ' von ' + liste.length + '</span>'
+        + '<button class="btn btn-sm" id="aip-vor"' + (_aipSeite >= seiten - 1 ? ' disabled' : '') + '>&rsaquo;</button>'
+        + '</span></div>';
+
+      if (!teil.length) {
+        html += '<div class="empty-hint">'
+          + (_aipAlle.length ? 'Keine Karte in dieser Auswahl.'
+             : 'Noch keine Karten geladen — scripts/aip_bestand.py auf dem Server ausführen.')
+          + '</div>';
+      } else {
+        html += '<table><thead><tr><th>Code</th><th>Status</th><th>Quelle</th>'
           + '<th>AIRAC</th><th></th></tr></thead><tbody>';
-        charts.forEach(c => {
+        teil.forEach(c => {
           html += '<tr><td>' + escH(c.icao) + '</td>'
             + '<td>' + (c.status === 'gepasst' ? 'gepasst' : '<b>offen</b>') + '</td>'
             + '<td>' + escH(c.quelle) + '</td>'
@@ -3208,11 +3259,33 @@
             + '<td><button class="btn btn-sm" data-aip="' + escA(c.icao) + '">Passen</button></td></tr>';
         });
         html += '</tbody></table>';
-        box.innerHTML = '<p style="color:#8aa0b8;font-size:0.82rem;">'
-          + charts.length + ' Karten, davon ' + offen + ' offen.</p>' + html;
-        box.querySelectorAll('button[data-aip]').forEach(b => {
-          b.addEventListener('click', () => aipPassenStarten(b.getAttribute('data-aip')));
-        });
+      }
+      box.innerHTML = html;
+
+      // Ein Handler fuer die ganze Tabelle statt einer je Zeile.
+      box.addEventListener('click', _aipListeKlick);
+      const haken = document.getElementById('aip-nur-offene');
+      if (haken) haken.addEventListener('change', function () {
+        _aipNurOffene = this.checked; _aipSeite = 0; _aipListeZeichnen();
+      });
+      const zur = document.getElementById('aip-zurueck');
+      if (zur) zur.addEventListener('click', () => { _aipSeite--; _aipListeZeichnen(); });
+      const vor = document.getElementById('aip-vor');
+      if (vor) vor.addEventListener('click', () => { _aipSeite++; _aipListeZeichnen(); });
+    }
+
+    function _aipListeKlick(e) {
+      const b = e.target.closest && e.target.closest('button[data-aip]');
+      if (b) aipPassenStarten(b.getAttribute('data-aip'));
+    }
+
+    async function loadAipCharts() {
+      const box = document.getElementById('aip-charts');
+      try {
+        const res = await api('GET', '/api/admin/aip-charts');
+        if (!res || !res.ok) { box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>'; return; }
+        _aipAlle = (await res.json()).charts || [];
+        _aipListeZeichnen();
       } catch (e) {
         box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>';
       }
@@ -3224,6 +3297,23 @@
       document.getElementById('aip-passen').style.display = '';
       const img = document.getElementById('aip-blatt');
       img.src = '/aip-chart/' + encodeURIComponent(icao) + '.png?t=' + Date.now();
+      // Der Kopf nennt den Platz gross: In der Liste steht darueber eine andere Zeile, und
+      // am 24.08.2026 war unklar, welches Blatt gerade bearbeitet wird.
+      const eintrag = _aipAlle.find(c => c.icao === icao) || {};
+      document.getElementById('aip-passen-kopf').textContent =
+        'Blatt ' + icao + ' von Hand passen'
+        + (eintrag.status === 'gepasst' ? ' (bereits gepasst — Werte sind vorbelegt)' : '');
+      // Vorbelegen aus der GESPEICHERTEN Passung, nicht aus dem, was zuletzt im Formular
+      // stand. Sonst arbeitet man an Karte B mit den Zahlen von Karte A weiter, und die
+      // Vorschau sieht auf den ersten Blick plausibel aus (Nutzer-Fund 24.08.2026).
+      _aipFelderSetzen(eintrag);
+      // Auch die beiden Ecken: Sie stehen als "links,oben,rechts,unten" in rahmen_px.
+      _aipEcken = [];
+      const px = String(eintrag.rahmen_px || '').split(',').map(parseFloat);
+      if (px.length === 4 && px.every(isFinite)) {
+        _aipEcken = [{ x: Math.round(px[0]), y: Math.round(px[1]) },
+                     { x: Math.round(px[2]), y: Math.round(px[3]) }];
+      }
       document.getElementById('aip-klickhinweis').innerHTML =
         'Blatt <b>' + escH(icao) + '</b>: erst die <b>obere linke</b>, dann die '
         + '<b>untere rechte</b> Rahmenecke anklicken.';
@@ -3244,12 +3334,50 @@
           : 'Ecken: ' + _aipEcken.map(p => p.x + '/' + p.y).join('  und  ');
     });
 
+    /** Die vier Felder aus einer gespeicherten Passung fuellen -- oder leeren. */
+    function _aipFelderSetzen(eintrag) {
+      ['nord', 'sued', 'west', 'ost'].forEach(function (f) {
+        const g = document.getElementById('aip-' + f + '-g');
+        const m = document.getElementById('aip-' + f + '-m');
+        const w = eintrag && eintrag['feld_' + f];
+        if (typeof w !== 'number' || !isFinite(w)) { g.value = ''; m.value = ''; return; }
+        const grad = Math.floor(w);
+        // Auf zwei Nachkommastellen: Die Blaetter sind auf ganze Bogenminuten beschriftet,
+        // eine gerechnete Passung trifft sie nur naeherungsweise. Ohne Rundung stuenden hier
+        // Zahlen wie 13.999999, die zum Abtippen untauglich sind.
+        let min = Math.round((w - grad) * 60 * 100) / 100;
+        if (min >= 60) { min = 0; }
+        g.value = String(grad);
+        m.value = String(min);
+      });
+    }
+
+    /** Ein Wert aus Grad- und Minutenfeld. null, wenn etwas fehlt oder unsinnig ist. */
+    function _aipWinkel(name) {
+      const z = id => document.getElementById(id).value.replace(',', '.').trim();
+      const g = parseFloat(z('aip-' + name + '-g'));
+      const mRoh = z('aip-' + name + '-m');
+      const m = mRoh === '' ? 0 : parseFloat(mRoh);
+      if (!isFinite(g) || !isFinite(m)) return null;
+      // Minuten gehen bis 59,99 -- 60 waere ein Grad und ein haeufiger Vertipper.
+      if (m < 0 || m >= 60) return null;
+      return g + m / 60;
+    }
+
     function _aipEingaben() {
       if (!_aipPassend || _aipEcken.length !== 2) { toast('Zwei Ecken anklicken.', true); return null; }
       const img = document.getElementById('aip-blatt');
-      const werte = ['nord', 'sued', 'west', 'ost'].map(
-        f => parseFloat(document.getElementById('aip-' + f).value.replace(',', '.')));
-      if (werte.some(v => !isFinite(v))) { toast('Alle vier Gradwerte eintragen.', true); return null; }
+      const werte = ['nord', 'sued', 'west', 'ost'].map(_aipWinkel);
+      if (werte.some(v => v === null)) {
+        toast('Alle vier Werte als Grad und Minuten eintragen (Minuten 0 bis 59).', true);
+        return null;
+      }
+      // Nord muss noerdlich von Sued liegen und Ost oestlich von West. Ohne diese Pruefung
+      // laesst sich eine spiegelverkehrte Passung speichern, und die Vorschau zeigt dann
+      // nur ein leeres Rechteck -- schwer zu deuten (Nutzer-Fund 24.08.2026: Nord 51,17
+      // und Sued 51,6 eingetragen, weil das Blatt "51°17'" und "51°6'" nennt).
+      if (!(werte[0] > werte[1])) { toast('Nord muss groesser sein als Sued.', true); return null; }
+      if (!(werte[3] > werte[2])) { toast('Ost muss groesser sein als West.', true); return null; }
       const [a, b] = _aipEcken;
       return {
         breite_px: img.naturalWidth, hoehe_px: img.naturalHeight,
@@ -3296,9 +3424,21 @@
         return;
       }
       toast('Passung gespeichert.');
+      // NICHT neu laden: Ein loadAipCharts() setzte Seite und Bildlauf zurueck, und man stand
+      // nach jeder gespeicherten Karte wieder ganz oben (Nutzer, 24.08.2026). Der Bestand im
+      // Speicher wird stattdessen an genau der einen Stelle nachgezogen.
+      const eintrag = _aipAlle.find(c => c.icao === _aipPassend);
+      if (eintrag) {
+        eintrag.status = 'gepasst';
+        eintrag.quelle = 'hand';
+        eintrag.feld_nord = daten.feld_nord; eintrag.feld_sued = daten.feld_sued;
+        eintrag.feld_west = daten.feld_west; eintrag.feld_ost = daten.feld_ost;
+        eintrag.rahmen_px = [daten.links_px, daten.oben_px,
+                             daten.rechts_px, daten.unten_px].join(',');
+      }
       document.getElementById('aip-passen').style.display = 'none';
       _aipPassend = null; _aipEcken = [];
-      loadAipCharts();
+      _aipListeZeichnen();
     });
 
     document.getElementById('aip-abbrechen-btn').addEventListener('click', function () {
