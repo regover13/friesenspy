@@ -99,3 +99,23 @@ def test_handpassung_braucht_anmeldung(client):
         "feld_nord": 54.0, "feld_sued": 53.9, "feld_west": 7.0, "feld_ost": 7.1,
     })
     assert r.status_code in (401, 403)
+
+
+def test_dockerfile_liefert_scripts_ins_image():
+    """Der Wochenjob importiert ``scripts.aip_bestand`` -- also muss ``scripts/`` im Image sein.
+
+    Der Job faengt jede Exception ab (silent fail, damit ein misslungener Durchgang den
+    Dienst nicht gefaehrdet). Ein fehlendes ``scripts/`` faellt deshalb nicht auf: Der
+    ImportError landet im Log und der Kartenbestand veraltet stillschweigend ueber
+    AIRAC-Zyklen hinweg. Genau das lag beim ersten Deploy-Anlauf am 24.08.2026 vor.
+    """
+    import pathlib
+    wurzel = pathlib.Path(__file__).resolve().parents[1]
+    zeilen = (wurzel / "Dockerfile").read_text().splitlines()
+    kopiert = [z for z in zeilen if z.startswith("COPY") and "scripts/" in z]
+    assert kopiert, "Dockerfile kopiert scripts/ nicht ins Image"
+
+    # An den Import binden, nicht an eine freie Textsuche: Faellt der Import in poller.py
+    # weg, darf dieser Test nicht laenger etwas verlangen, was niemand mehr braucht.
+    poller = (wurzel / "app" / "poller.py").read_text()
+    assert "from scripts.aip_bestand import lauf" in poller

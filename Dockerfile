@@ -11,6 +11,12 @@ COPY --chown=friesenspy:friesenspy requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 COPY --chown=friesenspy:friesenspy app/ ./app/
+# scripts/ gehoert ins Image, weil der woechentliche AIP-Job in app/poller.py
+# `from scripts.aip_bestand import lauf` macht. Ohne diese Zeile scheitert er mit
+# ImportError -- und zwar lautlos, denn der Job faengt jede Exception ab. Der
+# Kartenbestand waere dann einfach nie aufgefrischt. tests/test_aip_api.py haelt
+# das fest.
+COPY --chown=friesenspy:friesenspy scripts/ ./scripts/
 
 ENV PATH="/home/friesenspy/.local/bin:$PATH"
 ENV DB_PATH=/opt/friesenspy/data/friesenspy.db
