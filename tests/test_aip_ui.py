@@ -349,3 +349,65 @@ def test_overlay_nimmt_den_eingestellten_wert():
     abschnitt = INDEX[start:start + 1200]
     assert "opacity: _aipDeckkraft" in abschnitt
     assert "opacity: _AIP_KARTE_DECKKRAFT" not in abschnitt
+
+
+# ---------------------------------------------------------------------------
+# Marke als Schalter (Nutzerwunsch 24.08.2026)
+# ---------------------------------------------------------------------------
+def test_marke_schaltet_auch_ein_automatisch_gebrachtes_blatt_aus():
+    """Am Platz blendet die Automatik ein -- man muss es trotzdem wegklicken koennen.
+
+    Vorher nagelte ein Klick die Karte zusaetzlich fest, statt sie loszuwerden; am Platz war
+    sie damit nicht abzuschalten.
+    """
+    start = INDEX.index("function _aipMarkeGeklickt(")
+    abschnitt = INDEX[start:start + 700]
+    assert "_aipKarteAktiv === icao" in abschnitt
+    assert "_aipKarteAus = icao" in abschnitt
+    assert "_aipKarteZeigen(null)" in abschnitt
+
+
+def test_weggeklicktes_blatt_bleibt_aus_solange_die_automatik_es_will():
+    """Sonst brächte der naechste Takt es sofort zurueck -- eine Sekunde spaeter."""
+    start = INDEX.index("function _aipKarteNachfuehren(")
+    abschnitt = INDEX[start:INDEX.index("\n}", start)]
+    assert "treffer.icao === _aipKarteAus) treffer = null" in abschnitt
+
+
+def test_sperre_faellt_beim_verlassen_des_platzes():
+    """Ohne Zuruecksetzen muesste man jedes weggeklickte Blatt fuer immer von Hand einschalten."""
+    # Bis zum Ende der Funktion statt einer festen Zeichenzahl -- ein Zusatz weiter oben
+    # schoebe die Zeile sonst aus dem Fenster (derselbe Fehler wie bei _aipEingaben).
+    start = INDEX.index("function _aipKarteNachfuehren(")
+    abschnitt = INDEX[start:INDEX.index("\n}", start)]
+    assert "!treffer || treffer.icao !== _aipKarteAus" in abschnitt
+    assert "_aipKarteAus = null;" in abschnitt
+
+
+def test_symbol_zeigt_liegt_gerade_nicht_festgenagelt():
+    """Ein automatisch eingeblendetes Blatt sah sonst aus wie ein ausgeschaltetes."""
+    start = INDEX.index("function _aipMarkenAnpassen(")
+    assert "const fest = _aipKarteAktiv === icao" in INDEX[start:start + 3500]
+    anstrich = INDEX.index("function _aipMarkenAnstrich(")
+    assert "const an = _aipKarteAktiv === icao" in INDEX[anstrich:anstrich + 600]
+
+
+def test_automatischer_wechsel_zieht_den_anstrich_nach():
+    """Sonst bliebe das Symbol des vorigen Blatts gefuellt, obwohl ein anderes liegt."""
+    start = INDEX.index("function _aipKarteZeigen(")
+    abschnitt = INDEX[start:start + 1400]
+    assert abschnitt.count("_aipMarkenAnstrich()") == 2
+
+
+def test_ebenen_auswahl_ist_sichtbar_scrollbar():
+    """Mit der Sichtflugkarte ist die Liste eine Zeile laenger und passt nicht mehr in die Karte.
+
+    Leaflet begrenzt sie dann selbst und macht sie scrollbar -- aber Windows/Edge/Chrome
+    blenden eine korrekt scrollende Box unsichtbar, wenn keine Scrollbar-Styles gesetzt sind.
+    Im Kniebrett war der letzte Eintrag ("Radar Label") dadurch nicht mehr erreichbar
+    (Nutzer-Bild 24.08.2026). Beide Teile sind noetig, einer allein reicht nicht -- derselbe
+    Fund wie bei .scroll-list in CLAUDE.md.
+    """
+    assert "leaflet-control-layers-scrollbar::-webkit-scrollbar-thumb" in INDEX
+    assert "scrollbar-color: rgba(45,156,219,0.7)" in INDEX
+    assert "max-height: 60vh" in INDEX

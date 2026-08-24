@@ -1350,6 +1350,40 @@
     .leaflet-control-layers-expanded { padding: 8px 10px !important; }
     .leaflet-control-layers-separator { border-top-color: rgba(45,156,219,0.25) !important; }
 
+    /* Die Liste ist laenger als die Karte hoch ist -- Leaflet begrenzt sie dann selbst und
+       macht sie scrollbar (`leaflet-control-layers-scrollbar`). Nur SIEHT man das nicht:
+       Windows/Edge/Chrome blenden eine korrekt scrollende Box unsichtbar, wenn keine
+       Scrollbar-Styles gesetzt sind (Overlay-Scrollbar, nur bei aktivem Hover sichtbar).
+       Genau derselbe Fund wie bei .scroll-list, s. CLAUDE.md.
+
+       Aufgefallen ist es, als die Ebene "Sichtflugkarte" die Liste um eine Zeile verlaengert
+       hat: Im Kniebrett war der letzte Eintrag ("Radar Label") nicht mehr erreichbar
+       (Nutzer-Bild 24.08.2026). Er war nicht weg, man sah nur nicht, dass es weitergeht.
+
+       `max-height` zusaetzlich zu Leaflets Inline-Hoehe: Die Rechnung dort haengt an
+       `map.getSize()` und geht daneben, wenn die Karte zwischen Auf- und Zuklappen ihre
+       Groesse aendert -- im Panel beim Wechsel in den Vollbildmodus der Normalfall. */
+    .leaflet-control-layers-expanded .leaflet-control-layers-list,
+    .leaflet-control-layers-scrollbar {
+      max-height: 60vh;
+      overflow-y: auto !important;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(45,156,219,0.7) rgba(45,156,219,0.12);
+    }
+    .leaflet-control-layers-expanded .leaflet-control-layers-list::-webkit-scrollbar,
+    .leaflet-control-layers-scrollbar::-webkit-scrollbar { width: 10px; }
+    .leaflet-control-layers-expanded .leaflet-control-layers-list::-webkit-scrollbar-track,
+    .leaflet-control-layers-scrollbar::-webkit-scrollbar-track {
+      background: rgba(45,156,219,0.12);
+    }
+    .leaflet-control-layers-expanded .leaflet-control-layers-list::-webkit-scrollbar-thumb,
+    .leaflet-control-layers-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(45,156,219,0.7);
+      border-radius: 5px;
+    }
+
     /* Ein Haken, der zu der Ebene ueber ihm gehoert, statt eine eigene zu sein: eingerueckt und
        eine Spur leiser. Ohne beides laese er sich als sechste Ebene, und der Blick suchte
        vergeblich, was "Radar Label" fuer eine Karte sein soll. */
@@ -9861,6 +9895,7 @@ const _aipKartenGruppe = L.layerGroup();
 let _aipKarten = null;        // Metadaten, einmal geladen
 let _aipKarteAktiv = null;    // ICAO des eingeblendeten Blatts
 let _aipKarteFest = null;     // vom Nutzer festgenagelt -- uebersteuert die Automatik
+let _aipKarteAus = null;      // vom Nutzer weggeklickt -- die Automatik laesst es liegen
 let _aipKarteOverlay = null;
 
 function _saveAipKartePref(an) { _prefSchreib(_AIP_KARTE_PREF_KEY, an ? '1' : '0'); }
@@ -9885,12 +9920,15 @@ function _aipKarteZeigen(k) {
   _aipKarteAktiv = k ? k.icao : null;
   // Der Regler haengt am gezeigten Blatt, nicht an der Ebene: Ist die Ebene an, liegt aber
   // gerade kein Blatt, gaebe es nichts zu regeln.
-  if (!k) { _aipDeckkraftAnzeigen(); return; }
+  if (!k) { _aipDeckkraftAnzeigen(); _aipMarkenAnstrich(); return; }
   _aipKarteOverlay = L.imageOverlay(k.bild, [[k.sued, k.west], [k.nord, k.ost]], {
     opacity: _aipDeckkraft, attribution: _aipKarteAttribution(k), interactive: false,
   });
   _aipKartenGruppe.addLayer(_aipKarteOverlay);
   _aipDeckkraftAnzeigen();
+  // Die Marke des liegenden Blatts wird gefuellt, die des vorigen wieder hohl -- auch
+  // wenn die AUTOMATIK gewechselt hat. Sonst zeigte das Symbol den falschen Zustand.
+  _aipMarkenAnstrich();
 }
 
 /**
@@ -9947,6 +9985,12 @@ function _aipKarteNachfuehren() {
     };
     if (d(k) < d(treffer)) treffer = k;
   }
+  // Vom Nutzer weggeklickt (24.08.2026): Solange die Automatik DASSELBE Blatt will, bleibt
+  // es aus. Waehlt sie ein anderes oder gar keins, ist der Platz verlassen -- dann faellt die
+  // Sperre, und beim naechsten Anflug erscheint das Blatt wieder von allein. Ohne dieses
+  // Zuruecksetzen muesste man jedes weggeklickte Blatt fuer immer von Hand einschalten.
+  if (_aipKarteAus && (!treffer || treffer.icao !== _aipKarteAus)) _aipKarteAus = null;
+  if (treffer && treffer.icao === _aipKarteAus) treffer = null;
   _aipKarteZeigen(treffer);
 }
 
@@ -10012,9 +10056,17 @@ const _AIP_MARKE_FAKTOR = 2.0;   // 1,0 = Blatt fuellt die engere Achse genau au
 const _aipMarken = {};           // ICAO -> L.marker
 let _aipNah = null;              // steht der Ausschnitt auf Blattgroesse?
 
-function _aipMarkeIcon(fest) {
+/**
+ * Marke fuer ein Blatt. ``an`` heisst: Das Blatt LIEGT gerade -- egal ob die Automatik es
+ * gebracht hat oder der Nutzer es festgenagelt hat (Nutzerwunsch 24.08.2026).
+ *
+ * Vorher stand das gefuellte Symbol fuer "festgenagelt". Damit sah eine automatisch
+ * eingeblendete Karte aus wie eine ausgeschaltete, und ein Klick darauf nagelte sie fest,
+ * statt sie wegzunehmen -- man bekam sie am Platz nicht mehr los.
+ */
+function _aipMarkeIcon(an) {
   return L.divIcon({
-    className: 'aip-marke' + (fest ? ' aip-marke-fest' : ''),
+    className: 'aip-marke' + (an ? ' aip-marke-fest' : ''),
     html: '<svg viewBox="0 0 24 24" aria-hidden="true">'
         + '<rect x="5.5" y="3.5" width="13" height="17" rx="2"/>'
         + '<line x1="9" y1="9" x2="15" y2="9"/>'
@@ -10068,7 +10120,7 @@ function _aipMarkenAnpassen() {
   _aipNah = nah;
   for (const icao in soll) {
     const k = soll[icao];
-    const fest = _aipKarteFest === icao;
+    const fest = _aipKarteAktiv === icao;
     let m = _aipMarken[icao];
     if (!m) {
       // Sitzt auf der FELDmitte, also auf dem Flugplatz -- nicht auf der Blattmitte, die
@@ -10076,7 +10128,7 @@ function _aipMarkenAnpassen() {
       m = L.marker([(k.feld_nord + k.feld_sued) / 2, (k.feld_west + k.feld_ost) / 2],
                    { icon: _aipMarkeIcon(fest), keyboard: false });
       m._fsLabel = escHtml(icao);
-      m.on('click', function () { _aipKarteFestnageln(_aipKarteFest === icao ? null : icao); });
+      m.on('click', function () { _aipMarkeGeklickt(icao); });
       m._fsFest = fest;
       _aipMarken[icao] = m;
       _aipKartenGruppe.addLayer(m);
@@ -10090,6 +10142,40 @@ function _aipMarkenAnpassen() {
       m._fsFest = fest;
     }
     if (wechsel) _aipMarkeBeschriften(m, nah);
+  }
+}
+
+/**
+ * Klick auf eine Marke: Blatt an oder aus.
+ *
+ * Liegt es gerade, wird es weggenommen -- auch wenn die AUTOMATIK es gebracht hat. Genau das
+ * ging vorher nicht: Am Platz blendete sie das Blatt ein, und ein Klick auf die Marke nagelte
+ * es zusaetzlich fest, statt es loszuwerden (Nutzerwunsch 24.08.2026).
+ *
+ * Liegt es nicht, wird es festgenagelt -- auch dann, wenn die Automatik es gleich selbst
+ * gebracht haette. Wer eine Marke antippt, will dieses Blatt sehen.
+ */
+function _aipMarkeGeklickt(icao) {
+  if (_aipKarteAktiv === icao) {
+    _aipKarteFest = null;
+    _aipKarteAus = icao;
+    _aipKarteZeigen(null);
+    return;
+  }
+  _aipKarteAus = null;
+  _aipKarteFestnageln(icao);
+}
+
+/** Nur den Anstrich der vorhandenen Marken nachziehen -- kein Neuaufbau, keine Bounds. */
+function _aipMarkenAnstrich() {
+  for (const icao in _aipMarken) {
+    const m = _aipMarken[icao];
+    const an = _aipKarteAktiv === icao;
+    if (m._fsFest === an) continue;
+    // Nur bei echter Aenderung: setIcon ersetzt das DOM-Element des Markers komplett und
+    // laesst ihn sichtbar aufblitzen (dieselbe Lehre wie im Verkehrs-Takt).
+    m.setIcon(_aipMarkeIcon(an));
+    m._fsFest = an;
   }
 }
 
