@@ -1,3 +1,18 @@
+# Release 14.0.0 — „Zettelwirtschaft" (veröffentlicht 24.08.2026)
+
+Der Name kommt vom Nutzer (24.08.2026) und ist Selbstironie: Wir haben Bildanalyse,
+Gradnetz-Vermessung und eine vierstufige Prüfkette gebaut, um am Ende **Papier** ins Cockpit
+zu legen — und 169 der 446 Blätter liegen noch von Hand nach.
+
+**`highlight: true` ist hier zulässig**, weil der Nutzer es ausdrücklich vergeben hat
+(„Erstelle die Version V14 als Highlight"). Das ist die einzige gültige Herkunft dieser Marke;
+ohne seine Ansage bleibt sie `false`.
+
+**`banner_version` wurde dafür von `off` auf `auto` zurückgestellt** — ohne das bliebe auch
+dieses Release stumm, s. den Abschnitt unten.
+
+---
+
 # Release 13.9.0 — Entwurf, noch nicht veröffentlicht
 
 **Status:** wartet auf die Abnahme durch den Nutzer. Der Eintrag steht bewusst **nicht** in

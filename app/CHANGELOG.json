@@ -1,5 +1,20 @@
 [
   {
+    "version": "14.0.0",
+    "date": "2026-08-24",
+    "highlight": true,
+    "title": "Zettelwirtschaft",
+    "items": [
+      "🗺️ Neue Karten-Ebene „Sichtflugkarte“: Die amtliche DFS-Sichtflugkarte des Platzes liegt halbdurchsichtig über der Karte, und dein Flugzeug bewegt sich darauf — im Browser wie im Kniebrett. Am Platz blendet sie sich von selbst ein und wieder aus, wenn du weg bist.",
+      "📄 Gezeigt wird das ganze Blatt, nicht nur der Kartenausschnitt: Frequenzen, Platzrundenhöhen und Hinweise bleiben lesbar.",
+      "📌 Wo es ein Blatt gibt, steht eine kleine Marke. Ein Tipp darauf schaltet die Karte an, der nächste wieder aus — auch die, die sich gerade selbst eingeblendet hat. Die Deckkraft stellst du mit dem Regler links unter den Zoomknöpfen ein.",
+      "🎯 277 von 446 Plätzen sind bereit. Die Georeferenzierung rechnet der Server selbst aus Kartenrahmen und Gradnetz; vier voneinander unabhängige Prüfungen entscheiden, ob ein Blatt gezeigt wird. Besteht eine davon nicht, bleibt es aus — eine Karte, die falsch liegt, wäre schlimmer als gar keine. Der Rest kommt nach und nach dazu.",
+      "🌬️ Die Karte im Kniebrett zeigt jetzt den Wind: ein Pfeil mit Richtung und Stärke, der sich mit der Karte dreht. Dafür ist die Paket-Version 2.1.0 nötig; mit einem älteren Paket bleibt die Anzeige einfach aus.",
+      "✈️ Behoben: Ein Friese, den der Simulator kennt, blieb im Kniebrett stehen, zuckte im 15-Sekunden-Takt oder zeigte in die falsche Richtung. Alle drei sind erledigt.",
+      "ℹ️ Die Karten stammen von der DFS und sind urheberrechtlich geschützt; sie sind nur angemeldeten Mitgliedern zugänglich."
+    ]
+  },
+  {
     "version": "13.9.0",
     "date": "2026-08-24",
     "highlight": false,
