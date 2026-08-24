@@ -106,14 +106,83 @@ def test_festnageln_ist_auch_ausloesbar():
     assert aufrufe - deklaration >= 1, "niemand ruft _aipKarteFestnageln auf"
 
 
-def test_platz_popup_wird_erst_beim_oeffnen_gebaut():
-    """Sonst friert die Festnagel-Zeile im Stand vom Anlegen des Markers ein.
+def test_festnageln_haengt_nicht_an_einer_fremden_ebene():
+    """Am 24.08.2026 sass die Handhabe im Popup der FSE-Plaetze -- vom Nutzer beanstandet.
 
-    Die Marker entstehen in ``_fseAbgleichen``, oft bevor die Kartenliste geladen ist.
+    FSEconomy hat mit den DFS-Blaettern nichts zu tun; wer die Sichtflugkarte sehen wollte,
+    musste eine sachfremde Ebene einschalten, um an den Knopf zu kommen. Die Ebene bringt
+    ihre Handhabe jetzt selbst mit. Der Test bindet an ``_fsePopup``, damit der Rueckfall
+    auffliegt, nicht an eine Beschriftung.
     """
-    start = INDEX.index("function _fsePlatzBauen(")
+    start = INDEX.index("function _fsePopup(")
+    ende = INDEX.index("function _fsePlatzBauen(")
+    assert "_aipKarte" not in INDEX[start:ende]
+
+
+# ---------------------------------------------------------------------------
+# Marken -- der eigene Zugriff der Ebene
+# ---------------------------------------------------------------------------
+def test_marken_haengen_in_der_ebene():
+    """Sie muessen mit der Ebene kommen und gehen, sonst bleiben sie nach dem Abwaehlen stehen."""
+    start = INDEX.index("function _aipMarkenAnpassen(")
     abschnitt = INDEX[start:start + 3000]
-    assert "bindPopup(function ()" in abschnitt
+    assert "_aipKartenGruppe.addLayer(m)" in abschnitt
+    assert "_aipKartenGruppe.removeLayer(" in abschnitt
+
+
+def test_marken_schwelle_misst_die_engere_achse():
+    """Nutzer-Wahl 24.08.2026: sichtbar, wenn etwas mehr als das ganze Blatt im Bild ist.
+
+    ``Math.min`` und nicht ``Math.max``: An der engeren Achse entscheidet sich, ob das Blatt
+    ins Fenster passt. Bei breitem Fenster und hochkantem Blatt zeigt die Waagerechte laengst
+    zwei Blattbreiten, waehrend die Senkrechte gerade eine Blatthoehe fasst -- nach ``max``
+    erschiene die Marke dort nie.
+    """
+    start = INDEX.index("function _aipMarkenAnpassen(")
+    abschnitt = INDEX[start:start + 3000]
+    assert "Math.min(sichtLat / blattLat, sichtLon / blattLon) > _AIP_MARKE_FAKTOR" in abschnitt
+
+
+def test_marken_schwelle_laesst_das_ganze_blatt_zu():
+    """Zoomstufen springen in Zweierschritten -- eine zu enge Schwelle ueberspringt die Stufe.
+
+    Nachgerechnet an den drei Blattmassstaeben im Bestand: Die erreichbaren Verhaeltnisse
+    liegen bei 0,86 / 1,72 / 3,44 (bzw. 1,13 / 2,26). Eine Schwelle unter 1,72 liesse die
+    Marke erst erscheinen, wenn das Blatt schon ueber den Bildrand hinausragt; ab 3,44 waere
+    sie auf der Deutschlandkarte zu sehen. Der zulaessige Bereich ist also eng.
+    """
+    import re
+    m = re.search(r"_AIP_MARKE_FAKTOR = ([\d.]+)", INDEX)
+    assert m, "Schwelle nicht gefunden"
+    assert 1.72 < float(m.group(1)) < 3.44
+
+
+def test_marke_sitzt_auf_der_feldmitte():
+    """Nicht auf der Blattmitte: Die liegt wegen der Kopfzeile deutlich weiter noerdlich.
+
+    Dieselbe Verwechslung von Blatt und Kartenfeld, die im Handpfad 45 Prozent Massstabsfehler
+    gekostet haette.
+    """
+    start = INDEX.index("function _aipMarkenAnpassen(")
+    abschnitt = INDEX[start:start + 3000]
+    assert "(k.feld_nord + k.feld_sued) / 2" in abschnitt
+    assert "(k.nord + k.sued) / 2" not in abschnitt
+
+
+def test_marken_laufen_nicht_im_sekundentakt():
+    """_naviTakt laeuft jede Sekunde. Die Marken haengen an zoomend/moveend, nicht dort."""
+    start = INDEX.index("function _naviTakt(")
+    assert "_aipMarkenAnpassen" not in INDEX[start:start + 4000]
+    wache = INDEX.index("function _aipMarkenWache(")
+    abschnitt = INDEX[wache:wache + 800]
+    assert "'zoomend'" in abschnitt and "'moveend'" in abschnitt
+
+
+def test_marke_wechselt_ihr_symbol_nur_bei_echter_aenderung():
+    """setIcon ersetzt das DOM-Element und laesst den Marker aufblitzen (Verkehrs-Takt-Lehre)."""
+    start = INDEX.index("function _aipMarkenAnpassen(")
+    abschnitt = INDEX[start:start + 3000]
+    assert "m._fsFest !== fest" in abschnitt
 
 
 def test_festnageln_schaltet_die_ebene_mit_ein():

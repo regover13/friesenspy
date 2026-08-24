@@ -598,9 +598,6 @@
        Browser sein Standard-Linkblau. Blau (--green) ist hier richtig: Das Symbol IST ein Link,
        das Callsign daneben bleibt neutral (s. .td-callsign). */
     .listen-link-icon { margin-left: 6px; color: var(--green); }
-    /* Aus demselben Grund wie eine Zeile darueber: ohne Angabe naehme der Browser sein
-       Standard-Linkblau. Blau (--green) ist richtig, die Zeile IST klickbar. */
-    .aip-pin { color: var(--green); cursor: pointer; }
     /* Selbst gehostete Twemoji-Grafiken (Zwölftausendneunhundert Twitter, Inc und andere
        Mitwirkende, CC-BY 4.0) fuer Icons, bei denen eine handgezeichnete Nachbildung optisch
        zu weit vom Original-Emoji abweicht (Live-Test-Fund 13.08.2026: Nutzer will exakt dasselbe
@@ -2225,6 +2222,37 @@
       white-space: nowrap;
     }
     .vrp-label::before { display: none; }
+
+    /* --- Marken der Sichtflugkarten ------------------------------------------------------
+       Sie sind die einzige Handhabe der Ebene und liegen ueber dem Blatt, also ueber dem
+       Flugplatz. Deshalb HOHL: Ein Vollsymbol deckte genau die Stelle zu, auf die es
+       ankommt. Gefuellt wird erst, wenn das Blatt festgenagelt ist -- dann ist die Marke
+       Zustandsanzeige und darf auffallen.
+       Blau (--green) ist hier richtig und keine Ausnahme von der Farbregel: Die Marke IST
+       klickbar, sie ist sogar das einzige klickbare Symbol dieser Karte.
+       Der Schlagschatten statt eines zweiten Strichs: derselbe Weg wie bei .vrp-marke, und
+       er traegt dieselbe Last -- das Symbol muss ueber hellem Kartenblatt und ueber dunkler
+       Grundkarte stehen. */
+    .aip-marke { filter: drop-shadow(0 0 2px rgba(0,0,0,0.9)); cursor: pointer; }
+    .aip-marke svg { width: 24px; height: 24px; overflow: visible; }
+    .aip-marke rect { fill: rgba(4,8,15,0.45); stroke: #2d9cdb; stroke-width: 2;
+                      stroke-linejoin: round; }
+    .aip-marke line { stroke: #2d9cdb; stroke-width: 1.5; stroke-linecap: round; }
+    .aip-marke-fest rect { fill: #2d9cdb; }
+    .aip-marke-fest line { stroke: #04080f; }
+    /* Plaettchen wie .vrp-label -- aus demselben Grund: deckender Grund, sonst ist die
+       Beschriftung auf der hellen CARTO-Karte oder auf dem Blatt selbst nicht zu lesen. */
+    .aip-marke-label {
+      background: rgba(4,8,15,0.85);
+      border: none;
+      box-shadow: none;
+      color: #9fd4f5;
+      font-family: var(--text-mono, monospace);
+      font-size: 9px;
+      padding: 0 3px;
+      white-space: nowrap;
+    }
+    .aip-marke-label::before { display: none; }
 
     /* =====================================================================
        STATISTIKEN
@@ -4690,20 +4718,6 @@ function _fsePopup(icao, a) {
   } else if (andere.length) {
     zeilen.push('In MSFS als: ' + andere.join(', '));
   }
-  // "Karte festnageln" aus Abschnitt 6 der Spec. Ohne diese Zeile ist die Ebene fuer jeden
-  // unbedienbar, der nicht gerade im Sim oder auf VATSIM unterwegs ist: Die Automatik
-  // braucht eine eigene Position, und ohne sie blendet _aipKarteNachfuehren alles aus.
-  // Die Zeile erscheint nur, wenn fuer den Platz ein gepasstes Blatt vorliegt -- die Liste
-  // vom Metadaten-Endpunkt enthaelt ausschliesslich solche. Ist sie noch nicht geladen
-  // (Ebene nie eingeschaltet), bleibt die Zeile weg, statt einen wirkungslosen Klick
-  // anzubieten. Deshalb wird das Popup erst beim Oeffnen gebaut, s. _fsePlatzBauen.
-  if ((_aipKarten || []).some(function (k) { return k.icao === icao; })) {
-    const fest = _aipKarteFest === icao;
-    zeilen.push('<a href="#" class="aip-pin" onclick="_aipKarteFestnageln('
-                + (fest ? '' : "'" + icao + "'") + ');return false;">'
-                + (fest ? '📌 Sichtflugkarte freigeben' : '🗺️ Sichtflugkarte festnageln')
-                + '</a>');
-  }
   return zeilen.join('<br>');
 }
 
@@ -4735,11 +4749,7 @@ function _fsePlatzBauen(icao, a) {
   // erst im Sichtbereich (s. _labelsImSichtbereich); der Code dafuer holt sich den Platznamen
   // aus _icao.
   m._icao = icao;
-  // Als Funktion gebunden, nicht als fertige Zeichenkette: Die Marker entstehen in
-  // _fseAbgleichen, oft bevor die Kartenliste geladen ist -- und ob ein Blatt
-  // festgenagelt ist, aendert sich ohnehin waehrend der Sitzung. Ein einmal gebautes
-  // Popup zeigte beides fuer immer im Stand vom Anlegen.
-  return m.bindPopup(function () { return _fsePopup(icao, a); });
+  return m.bindPopup(_fsePopup(icao, a));
 }
 
 // Ausblenden ueber openTooltip()/closeTooltip() statt ueber eine CSS-Klasse an der Gruppe: Ein
@@ -9788,7 +9798,8 @@ function _aipKarteNachfuehren() {
 function _aipKartenLaden() {
   if (_aipKarten) return Promise.resolve(_aipKarten);
   return fetch(_AIP_KARTE_API).then(function (r) { return r.json(); })
-    .then(function (d) { _aipKarten = (d && d.charts) || []; _aipKarteNachfuehren(); return _aipKarten; })
+    .then(function (d) { _aipKarten = (d && d.charts) || []; _aipKarteNachfuehren();
+                         _aipMarkenAnpassen(); return _aipKarten; })
     .catch(function () { _aipKarten = []; return _aipKarten; });
 }
 
@@ -9814,6 +9825,102 @@ function _aipKarteFestnageln(icao) {
   // Sind die Metadaten noch nicht da, fuehrt _aipKartenLaden selbst nach, sobald sie stehen.
   if (!_aipKarten) { _aipKartenLaden(); return; }
   _aipKarteNachfuehren();
+  _aipMarkenAnpassen();
+}
+
+// --------------------------------------------------------------------------
+//  Marken: der eigene Zugriff der Ebene
+// --------------------------------------------------------------------------
+// Ohne sie ist die Ebene nur bedienbar, wenn eine eigene Position vorliegt -- am Schreibtisch
+// also gar nicht, und im Kniebrett erst nach dem Start. Sie zeigen nebenbei, wo es ueberhaupt
+// ein Blatt gibt.
+//
+// SICHTBAR AB welchem Zoom (Nutzer-Wahl 24.08.2026: "etwa so, dass etwas mehr als das ganze
+// Blatt angezeigt wird"): Gemessen wird nicht in Zoomstufen, sondern am Verhaeltnis von
+// Ausschnitt zu Blatt. Eine feste Zoomschwelle haengt an der Fenstergroesse -- was am
+// Schreibtisch passt, stimmt im Kniebrett nicht mehr, und die Blaetter sind ohnehin
+// verschieden gross (EDXW ist fast doppelt so breit wie ein Standardblatt).
+//
+// Massgeblich ist die ENGERE der beiden Achsen: An ihr entscheidet sich, ob das Blatt ins
+// Fenster passt. Bei einem breiten Fenster und einem hochkanten Blatt zeigt die Waagerechte
+// laengst zwei Blattbreiten, waehrend die Senkrechte gerade eine Blatthoehe fasst -- das Blatt
+// passt trotzdem. Mit Math.max() erschiene die Marke in dieser Lage nie.
+// Der Wert ist an echten Blaettern nachgerechnet, nicht geschaetzt. Zoomstufen sind
+// ganzzahlig und verdoppeln sich, das Verhaeltnis springt also in Zweierschritten. Fuer
+// die drei Blattmassstaebe im Bestand (0,094 / 0,142 / 0,189 Grad Blatthoehe) liegen die
+// erreichbaren Werte bei 0,86 / 1,72 / 3,44 bzw. 1,13 / 2,26 und 0,86 / 1,72. Eine
+// Schwelle von 2,0 trennt sauber: Sie laesst genau die erste Stufe zu, auf der das ganze
+// Blatt ins Bild passt, und schliesst die naechste heraus. Mit 1,4 waere ausgerechnet
+// diese Stufe herausgefallen -- die Marke erschiene erst, wenn das Blatt schon ueber den
+// Bildrand hinausragt, und damit nicht dort, wo sie verlangt war.
+const _AIP_MARKE_FAKTOR = 2.0;   // 1,0 = Blatt fuellt die engere Achse genau aus
+const _aipMarken = {};           // ICAO -> L.marker
+
+function _aipMarkeIcon(fest) {
+  return L.divIcon({
+    className: 'aip-marke' + (fest ? ' aip-marke-fest' : ''),
+    html: '<svg viewBox="0 0 24 24" aria-hidden="true">'
+        + '<rect x="5.5" y="3.5" width="13" height="17" rx="2"/>'
+        + '<line x1="9" y1="9" x2="15" y2="9"/>'
+        + '<line x1="9" y1="12.5" x2="15" y2="12.5"/>'
+        + '<line x1="9" y1="16" x2="12.5" y2="16"/></svg>',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
+/** Marken an Ausschnitt und Zustand angleichen. Laeuft auf zoomend/moveend, nicht im Takt. */
+function _aipMarkenAnpassen() {
+  const an = liveMap && liveMap.hasLayer(_aipKartenGruppe) && _aipKarten;
+  const b = an ? liveMap.getBounds() : null;
+  const sichtLat = b ? (b.getNorth() - b.getSouth()) : 0;
+  const sichtLon = b ? (b.getEast() - b.getWest()) : 0;
+  const soll = {};
+  for (let i = 0; an && i < _aipKarten.length; i++) {
+    const k = _aipKarten[i];
+    const blattLat = k.nord - k.sued, blattLon = k.ost - k.west;
+    if (!(blattLat > 0) || !(blattLon > 0)) continue;
+    if (Math.min(sichtLat / blattLat, sichtLon / blattLon) > _AIP_MARKE_FAKTOR) continue;
+    // Nach den BLATTgrenzen, nicht nach dem Kartenfeld: So bleibt die Marke des Nachbarblatts
+    // erreichbar, solange sein Blatt ueberhaupt in den Ausschnitt ragt.
+    if (!b.intersects([[k.sued, k.west], [k.nord, k.ost]])) continue;
+    soll[k.icao] = k;
+  }
+  for (const icao in _aipMarken) {
+    if (soll[icao]) continue;
+    _aipKartenGruppe.removeLayer(_aipMarken[icao]);
+    delete _aipMarken[icao];
+  }
+  for (const icao in soll) {
+    const k = soll[icao];
+    const fest = _aipKarteFest === icao;
+    let m = _aipMarken[icao];
+    if (!m) {
+      // Sitzt auf der FELDmitte, also auf dem Flugplatz -- nicht auf der Blattmitte, die
+      // wegen der Kopfzeile deutlich weiter noerdlich liegt.
+      m = L.marker([(k.feld_nord + k.feld_sued) / 2, (k.feld_west + k.feld_ost) / 2],
+                   { icon: _aipMarkeIcon(fest), keyboard: false });
+      m.bindTooltip(escHtml(icao), { permanent: true, direction: 'right',
+                                     className: 'aip-marke-label', opacity: 1 });
+      m.on('click', function () { _aipKarteFestnageln(_aipKarteFest === icao ? null : icao); });
+      m._fsFest = fest;
+      _aipMarken[icao] = m;
+      _aipKartenGruppe.addLayer(m);
+    } else if (m._fsFest !== fest) {
+      // Nur bei echter Aenderung: setIcon ersetzt das DOM-Element des Markers komplett und
+      // laesst ihn sichtbar aufblitzen (dieselbe Lehre wie im Verkehrs-Takt).
+      m.setIcon(_aipMarkeIcon(fest));
+      m._fsFest = fest;
+    }
+  }
+}
+
+function _aipMarkenWache(map) {
+  map.on('zoomend', _aipMarkenAnpassen);
+  map.on('moveend', _aipMarkenAnpassen);
+  map.on('overlayadd', function (e) { if (e.layer === _aipKartenGruppe) _aipMarkenAnpassen(); });
+  map.on('overlayremove', function (e) { if (e.layer === _aipKartenGruppe) _aipMarkenAnpassen(); });
+  _aipMarkenAnpassen();
 }
 
 let _naviTimer = null;
@@ -10339,6 +10446,7 @@ async function initLiveMap() {
   // Ebenen-Auswahl -- wer ihn verschiebt, aendert also, was was verdeckt. Der Listenplatz
   // steht oben bei OpenAIP (s. dort) und beruehrt das nicht.
   _addPreferredAipKarteLayer(liveMap);
+  _aipMarkenWache(liveMap);
   liveOverlays['Verkehr'] = _verkehrGruppe;
   const liveEbenen = L.control.layers(
     { 'OpenFlightMap': liveLayers.ofm, 'OpenTopo': liveLayers.topo, 'Satellit': liveLayers.sat, 'Light': liveLayers.light, 'Dark': liveLayers.dark },

@@ -345,11 +345,17 @@ Eine Ebene genügt für beide Ziele: `/panel` liefert **dieselbe** `index.html` 
 - **Platziert** wird das Overlay dagegen nach den **Blattgrenzen** — es wird ja das ganze Blatt
   gezeigt.
 - **Übersteuern.** „Karte festnageln" im Platz-Popup; festgenagelt bleibt sie bis zum Abwählen.
-  **Nachtrag 24.08.2026:** So gebaut — und zwar im Popup der **FSE-Plätze**, weil die Karte
-  kein anderes Platz-Popup kennt. Der Nutzer hat diese Verkopplung noch am selben Tag
-  beanstandet, zu Recht: FSEconomy hat mit den DFS-Blättern nichts zu tun. Die Ebene muss
-  ihren eigenen Zugriff mitbringen; steht in `docs/offene-aufgaben.md`. Wer das umsetzt,
-  baut es **nicht** wieder in ein fremdes Popup.
+  **Nachtrag 24.08.2026 — die Handhabe gehört der Ebene, nicht einem fremden Popup.**
+  Zuerst im Popup der **FSE-Plätze** gebaut, weil die Karte kein anderes Platz-Popup
+  kennt. Der Nutzer hat das noch am selben Tag beanstandet, zu Recht: FSEconomy hat mit
+  den DFS-Blättern nichts zu tun, und man musste eine sachfremde Ebene einschalten, um
+  an den Knopf zu kommen. Ersetzt durch **eigene Marken der Ebene**: Für jedes gepasste
+  Blatt sitzt eine Marke auf der Feldmitte, ein Klick nagelt fest, der nächste gibt frei.
+  Sie erscheinen ab dem Zoom, auf dem etwas mehr als das ganze Blatt ins Bild passt, und
+  bleiben sichtbar, während ein Blatt liegt (beides Nutzer-Wahl 24.08.2026).
+  Gemessen wird dafür **nicht in Zoomstufen**, sondern am Verhältnis von Ausschnitt zu
+  Blatt, und zwar auf der **engeren** Achse — eine feste Zoomschwelle hinge an der
+  Fenstergröße, und die Blätter sind in drei verschiedenen Maßstäben unterwegs.
 - **Deckkraft** über einen Regler.
 - **Attribution:** Quelle **samt AIRAC-Datum** des eingeblendeten Blatts, solange die Ebene an
   ist — also aus den Metadaten gebildet, nicht als feste Zeichenkette.
