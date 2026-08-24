@@ -71,6 +71,36 @@ def test_festnageln_ist_verdrahtet():
     assert "_aipKarteFest" in INDEX[start:start + 1200]
 
 
+def test_festnageln_ist_auch_ausloesbar():
+    """Die Uebersteuerung muss jemand ANSTOSSEN koennen -- sonst ist sie unerreichbar.
+
+    Genau das lag am 24.08.2026 vor: ``_aipKarteFestnageln`` war geschrieben, getestet war
+    nur, dass ``_aipKarteNachfuehren`` sie beachtet -- aufgerufen hat sie niemand. Ohne
+    Sim-Position blendet die Automatik alles aus, die Ebene war damit fuer jeden unbedienbar,
+    der nicht gerade fliegt. Deshalb an den Aufruf gebunden, nicht an die Deklaration.
+    """
+    aufrufe = INDEX.count("_aipKarteFestnageln(")
+    deklaration = INDEX.count("function _aipKarteFestnageln(")
+    assert aufrufe - deklaration >= 1, "niemand ruft _aipKarteFestnageln auf"
+
+
+def test_platz_popup_wird_erst_beim_oeffnen_gebaut():
+    """Sonst friert die Festnagel-Zeile im Stand vom Anlegen des Markers ein.
+
+    Die Marker entstehen in ``_fseAbgleichen``, oft bevor die Kartenliste geladen ist.
+    """
+    start = INDEX.index("function _fsePlatzBauen(")
+    abschnitt = INDEX[start:start + 3000]
+    assert "bindPopup(function ()" in abschnitt
+
+
+def test_festnageln_schaltet_die_ebene_mit_ein():
+    """Bei ausgeschalteter Ebene steigt _aipKarteNachfuehren sofort aus -- der Klick verpuffte."""
+    start = INDEX.index("function _aipKarteFestnageln(")
+    abschnitt = INDEX[start:start + 1200]
+    assert "hasLayer(_aipKartenGruppe)" in abschnitt and "addTo(liveMap)" in abschnitt
+
+
 # ---------------------------------------------------------------------------
 # Admin -- Handpassung
 # ---------------------------------------------------------------------------

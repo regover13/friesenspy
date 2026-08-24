@@ -598,6 +598,9 @@
        Browser sein Standard-Linkblau. Blau (--green) ist hier richtig: Das Symbol IST ein Link,
        das Callsign daneben bleibt neutral (s. .td-callsign). */
     .listen-link-icon { margin-left: 6px; color: var(--green); }
+    /* Aus demselben Grund wie eine Zeile darueber: ohne Angabe naehme der Browser sein
+       Standard-Linkblau. Blau (--green) ist richtig, die Zeile IST klickbar. */
+    .aip-pin { color: var(--green); cursor: pointer; }
     /* Selbst gehostete Twemoji-Grafiken (Zwölftausendneunhundert Twitter, Inc und andere
        Mitwirkende, CC-BY 4.0) fuer Icons, bei denen eine handgezeichnete Nachbildung optisch
        zu weit vom Original-Emoji abweicht (Live-Test-Fund 13.08.2026: Nutzer will exakt dasselbe
@@ -4687,6 +4690,20 @@ function _fsePopup(icao, a) {
   } else if (andere.length) {
     zeilen.push('In MSFS als: ' + andere.join(', '));
   }
+  // "Karte festnageln" aus Abschnitt 6 der Spec. Ohne diese Zeile ist die Ebene fuer jeden
+  // unbedienbar, der nicht gerade im Sim oder auf VATSIM unterwegs ist: Die Automatik
+  // braucht eine eigene Position, und ohne sie blendet _aipKarteNachfuehren alles aus.
+  // Die Zeile erscheint nur, wenn fuer den Platz ein gepasstes Blatt vorliegt -- die Liste
+  // vom Metadaten-Endpunkt enthaelt ausschliesslich solche. Ist sie noch nicht geladen
+  // (Ebene nie eingeschaltet), bleibt die Zeile weg, statt einen wirkungslosen Klick
+  // anzubieten. Deshalb wird das Popup erst beim Oeffnen gebaut, s. _fsePlatzBauen.
+  if ((_aipKarten || []).some(function (k) { return k.icao === icao; })) {
+    const fest = _aipKarteFest === icao;
+    zeilen.push('<a href="#" class="aip-pin" onclick="_aipKarteFestnageln('
+                + (fest ? '' : "'" + icao + "'") + ');return false;">'
+                + (fest ? '📌 Sichtflugkarte freigeben' : '🗺️ Sichtflugkarte festnageln')
+                + '</a>');
+  }
   return zeilen.join('<br>');
 }
 
@@ -4718,7 +4735,11 @@ function _fsePlatzBauen(icao, a) {
   // erst im Sichtbereich (s. _labelsImSichtbereich); der Code dafuer holt sich den Platznamen
   // aus _icao.
   m._icao = icao;
-  return m.bindPopup(_fsePopup(icao, a));
+  // Als Funktion gebunden, nicht als fertige Zeichenkette: Die Marker entstehen in
+  // _fseAbgleichen, oft bevor die Kartenliste geladen ist -- und ob ein Blatt
+  // festgenagelt ist, aendert sich ohnehin waehrend der Sitzung. Ein einmal gebautes
+  // Popup zeigte beides fuer immer im Stand vom Anlegen.
+  return m.bindPopup(function () { return _fsePopup(icao, a); });
 }
 
 // Ausblenden ueber openTooltip()/closeTooltip() statt ueber eine CSS-Klasse an der Gruppe: Ein
@@ -9782,6 +9803,16 @@ function _addPreferredAipKarteLayer(map) {
 /** Ein Blatt festnageln (oder mit null wieder freigeben). */
 function _aipKarteFestnageln(icao) {
   _aipKarteFest = icao || null;
+  // Wer festnagelt, will das Blatt sehen -- auch wenn die Ebene noch aus ist. Ohne das hier
+  // verpufft der Klick: _aipKarteNachfuehren steigt bei ausgeschalteter Ebene sofort aus.
+  // Das Einhaengen loest 'overlayadd' aus und damit Vorliebe-Merken und Laden.
+  if (_aipKarteFest && liveMap && !liveMap.hasLayer(_aipKartenGruppe)) {
+    _aipKartenGruppe.addTo(liveMap);
+  }
+  // Popup zu: Es wird beim naechsten Oeffnen neu gebaut und heisst dann "freigeben".
+  if (liveMap) liveMap.closePopup();
+  // Sind die Metadaten noch nicht da, fuehrt _aipKartenLaden selbst nach, sobald sie stehen.
+  if (!_aipKarten) { _aipKartenLaden(); return; }
   _aipKarteNachfuehren();
 }
 
