@@ -1426,32 +1426,37 @@
     .deckkraft-bar { display: none; margin-top: 8px; border: none !important;
                      background: none !important; }
     .deckkraft-bar.deckkraft-an { display: block; }
+    /* Senkrecht und schmal, in der Spalte der Zoomknoepfe (Nutzer nach dem Kniebrett-Test,
+       24.08.2026: "der Deckkraft ist ein wenig sehr prominent, richte ihn senkrecht unter
+       Plus/Minus aus"). 30 px ist die Breite, die Leaflet seinen Knoepfen im Touch-Modus
+       gibt (`.leaflet-touch .leaflet-bar a`); daran richtet sich der Kasten aus. */
     .deckkraft-feld {
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 7px;
-      height: 40px;
-      padding: 0 9px;
+      width: 30px;
+      padding: 6px 0 3px;
       background: #071525;
       border: 1px solid rgba(45,156,219,0.3);
       color: #2d9cdb;
     }
-    /* Ein SVG, KEIN Emoji: Coherent GT hat keinen Emoji-Font-Fallback, ein 🗺 waere im
-       Kniebrett ein leeres Kaestchen -- derselbe Befund wie beim Gradzeichen der
-       Windanzeige. Dieselbe Form wie die Marken, damit erkennbar ist, wozu der Regler
-       gehoert. */
-    .deckkraft-feld svg { width: 17px; height: 17px; flex: none; }
-    .deckkraft-feld rect { fill: none; stroke: currentColor; stroke-width: 2;
-                           stroke-linejoin: round; }
-    .deckkraft-feld line { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+    /* GEDREHT statt `appearance: slider-vertical`: Diese Eigenschaft ist in Chromium ab 121
+       entfernt, ihr Nachfolger `writing-mode: vertical-*` wirkt erst ab derselben Fassung --
+       welche in Coherent GT steckt, ist unbekannt, und ein Regler, der in einer der beiden
+       Welten waagerecht liegen bleibt, ist im Cockpit unbrauchbar. Eine Drehung koennen
+       beide. Minus 90 Grad legt das Minimum nach UNTEN, wie man es erwartet. */
+    .deckkraft-schacht { position: relative; width: 22px; height: 104px; }
+    .deckkraft-regler {
+      position: absolute; top: 50%; left: 50%;
+      width: 104px; height: 22px; margin: 0;
+      transform: translate(-50%, -50%) rotate(-90deg);
+      -webkit-appearance: none; appearance: none;
+      background: none; cursor: pointer;
+    }
     /* Bahn und Griff ausdruecklich gezeichnet statt `accent-color`: Dieselbe Lehre wie bei
        den Scrollbalken -- was nur der Browser von sich aus malt, sieht in einer anderen
        Engine anders aus oder gar nicht. Der Griff ist 22 px gross, damit er im Cockpit mit
        dem Finger zu treffen ist. */
-    .deckkraft-regler {
-      -webkit-appearance: none; appearance: none;
-      width: 104px; height: 22px; margin: 0; background: none; cursor: pointer;
-    }
     .deckkraft-regler::-webkit-slider-runnable-track {
       height: 4px; background: rgba(45,156,219,0.35); border-radius: 2px;
     }
@@ -1469,10 +1474,10 @@
     }
     .deckkraft-text {
       font-family: var(--text-mono, monospace);
-      font-size: 11px;
+      font-size: 9px;
+      line-height: 1.2;
       color: #cfe3f0;
-      min-width: 30px;
-      text-align: right;
+      margin-top: 3px;
     }
 
     /* Im Vollbild sitzt die Windanzeige unten links -- und genau dort laeuft Leaflets
@@ -9545,16 +9550,15 @@ function _addDeckkraftControl(map) {
     options: { position: 'topleft' },
     onAdd: function () {
       const box = L.DomUtil.create('div', 'leaflet-bar navi-bar deckkraft-bar');
+      // Kein Symbol mehr: Der Regler steht in der Zoom-Spalte und erscheint nur, wenn
+      // wirklich ein Blatt liegt -- wozu er gehoert, ist damit klar. Das Blatt-Symbol machte
+      // ihn nur breiter, und breit war genau der Einwand.
       box.innerHTML =
         '<div class="deckkraft-feld">' +
-          '<svg viewBox="0 0 24 24" aria-hidden="true">' +
-            '<rect x="5.5" y="3.5" width="13" height="17" rx="2"/>' +
-            '<line x1="9" y1="9" x2="15" y2="9"/>' +
-            '<line x1="9" y1="12.5" x2="15" y2="12.5"/>' +
-            '<line x1="9" y1="16" x2="12.5" y2="16"/>' +
-          '</svg>' +
-          '<input class="deckkraft-regler" type="range" step="0.05" ' +
-                 'aria-label="Deckkraft der Sichtflugkarte">' +
+          '<div class="deckkraft-schacht">' +
+            '<input class="deckkraft-regler" type="range" step="0.05" ' +
+                   'aria-label="Deckkraft der Sichtflugkarte">' +
+          '</div>' +
           '<span class="deckkraft-text">--</span>' +
         '</div>';
       _deckkraftBox = box;

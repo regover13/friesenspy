@@ -289,13 +289,30 @@ def test_regler_erscheint_nur_bei_liegendem_blatt():
 def test_regler_nutzt_kein_emoji():
     """Coherent GT hat keinen Emoji-Font-Fallback -- im Kniebrett waere es ein leeres Kaestchen.
 
-    Derselbe Befund wie beim Gradzeichen der Windanzeige (v13.8.1). Das Symbol ist deshalb
-    ein SVG, wie bei den Marken.
+    Derselbe Befund wie beim Gradzeichen der Windanzeige (v13.8.1). Seit dem 24.08.2026 traegt
+    der Regler ueberhaupt kein Symbol mehr; die Regel gilt trotzdem weiter fuer alles, was
+    dort spaeter hinzukaeme.
     """
     start = INDEX.index("function _addDeckkraftControl(")
     abschnitt = INDEX[start:start + 2500]
-    assert "<svg viewBox=" in abschnitt
-    assert "🗺" not in abschnitt and "📌" not in abschnitt
+    assert "\U0001F5FA" not in abschnitt and "\U0001F4CC" not in abschnitt
+
+
+def test_regler_steht_senkrecht():
+    """Nutzer nach dem Kniebrett-Test 24.08.2026: schmal, senkrecht, in der Zoom-Spalte.
+
+    Gedreht statt ``appearance: slider-vertical``: Diese Eigenschaft ist in Chromium ab 121
+    entfernt, ihr Nachfolger ``writing-mode: vertical-*`` wirkt erst ab derselben Fassung.
+    Welche Fassung in Coherent GT steckt, ist unbekannt -- ein Regler, der in einer der
+    beiden Welten waagerecht liegen bleibt, ist im Cockpit unbrauchbar. Drehen koennen beide.
+    """
+    assert "rotate(-90deg)" in INDEX
+    # An die DEKLARATION gebunden, nicht an das Wort: Der Kommentar im Stylesheet nennt
+    # `appearance: slider-vertical` ausdruecklich, um zu begruenden, warum es NICHT benutzt
+    # wird. Ein Test, der das Wort verbietet, schlaegt an der Begruendung an.
+    assert "slider-vertical;" not in INDEX
+    start = INDEX.index("function _addDeckkraftControl(")
+    assert "deckkraft-schacht" in INDEX[start:start + 2500]
 
 
 def test_regler_verschluckt_die_wischgeste():
