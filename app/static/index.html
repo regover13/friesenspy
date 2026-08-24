@@ -10311,12 +10311,16 @@ async function initLiveMap() {
   _addPreferredVerkehrLayer(liveMap, _verkehrGruppe);
   // Die Reihenfolge in DIESEM Objekt ist die Reihenfolge in der Ebenen-Auswahl (Nutzer-Wahl
   // 16.08.2026): erst die Karten-Ebenen von der groessten zur kleinsten Flaeche -- Luftraum,
-  // Platzrunden, FSE --, ganz am Ende der Verkehr. Er ist die einzige Ebene, die sich
-  // bewegt, und traegt als einzige einen Unterpunkt; unten steht beides ungestoert.
+  // Sichtflugkarte, Platzrunden, FSE --, ganz am Ende der Verkehr. Er ist die einzige Ebene,
+  // die sich bewegt, und traegt als einzige einen Unterpunkt; unten steht beides ungestoert.
   // Mit der STAPELUNG auf der Karte hat das nichts zu tun -- die folgt dem addTo-Zeitpunkt
   // (s. Kommentar bei _addPreferredFseLayer), deshalb bleiben die Aufrufe, wo sie sind.
   const liveOverlays = {};
   if (liveAIP) liveOverlays['OpenAIP'] = liveAIP;
+  // Die Sichtflugkarte gleich hinter OpenAIP (Nutzer-Wahl 24.08.2026): Beides sind
+  // Luftfahrtkarten, sie gehoeren beieinander. Ihr Platz auf der KARTE bleibt davon
+  // unberuehrt -- der haengt allein am addTo weiter unten, das nicht mit umgezogen ist.
+  liveOverlays['Sichtflugkarte'] = _aipKartenGruppe;
   liveOverlays['Platzrunden'] = _platzrundenGruppe;
   _addPreferredPlatzrundenLayer(liveMap, _platzrundenGruppe);
   _platzrundenZoomWache(liveMap);
@@ -10330,9 +10334,10 @@ async function initLiveMap() {
   _fsePlaetzeZoomWache(liveMap);
   // Gegen den Canvas-Versatz beim Abdocken/Maximieren des EFB (s. _groessenWache).
   _groessenWache(liveMap, document.getElementById('leaflet-map'));
-  // Sichtflugkarte unter den Verkehr: Sie ist die groesste Flaeche und soll die Marker
-  // nicht verdecken.
-  liveOverlays['Sichtflugkarte'] = _aipKartenGruppe;
+  // Hier steht nur noch der Einhaeng-Zeitpunkt, nicht mehr der Listenplatz. Der Aufruf
+  // bleibt bewusst an dieser Stelle: Die STAPELUNG auf der Karte folgt dem addTo, nicht der
+  // Ebenen-Auswahl -- wer ihn verschiebt, aendert also, was was verdeckt. Der Listenplatz
+  // steht oben bei OpenAIP (s. dort) und beruehrt das nicht.
   _addPreferredAipKarteLayer(liveMap);
   liveOverlays['Verkehr'] = _verkehrGruppe;
   const liveEbenen = L.control.layers(

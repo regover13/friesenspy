@@ -17,6 +17,28 @@ def test_ebene_haengt_in_der_ebenen_auswahl():
     assert "liveOverlays['Sichtflugkarte']" in INDEX
 
 
+def test_ebene_steht_direkt_hinter_openaip():
+    """Nutzer-Wahl 24.08.2026: beides Luftfahrtkarten, sie gehoeren beieinander.
+
+    Die Reihenfolge der Zuweisungen an ``liveOverlays`` IST die Reihenfolge in der Auswahl.
+    """
+    oa = INDEX.index("liveOverlays['OpenAIP']")
+    sfk = INDEX.index("liveOverlays['Sichtflugkarte']")
+    pr = INDEX.index("liveOverlays['Platzrunden']")
+    assert oa < sfk < pr
+
+
+def test_listenplatz_aendert_die_stapelung_nicht():
+    """Der Listenplatz haengt an ``liveOverlays``, die Stapelung am addTo-Zeitpunkt.
+
+    Beim Hochziehen in der Auswahl am 24.08.2026 blieb der addTo-Aufruf absichtlich stehen,
+    damit sich auf der Karte nichts verschiebt. Was dort genau wen verdeckt, ist hier NICHT
+    behauptet -- gemessen ist es nicht. Festgehalten ist nur, dass die Reihenfolge der
+    Aufrufe dieselbe geblieben ist, und damit auch das Verhalten.
+    """
+    assert INDEX.index("_addPreferredFseLayer(liveMap") < INDEX.index("_addPreferredAipKarteLayer(liveMap")
+
+
 def test_vorliebe_wird_vor_der_control_gesetzt():
     """Sonst sieht die Checkbox den Zustand nie (derselbe Fallstrick wie bei OpenAIP)."""
     assert INDEX.index("_addPreferredAipKarteLayer(liveMap") < INDEX.index("liveOverlays,")
