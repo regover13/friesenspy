@@ -197,6 +197,56 @@ durchginge: Eine um eine Bogenminute falsch gelesene Breite verschiebt das Blatt
 und der Lagetest lässt rund 2,9 km durch. Prüfung (2) wäre dabei tautologisch, Residuen gibt
 es bei einem Punkt nicht. Zwei Stützstellen bleiben die Untergrenze.
 
+### 3.1b Der Tickstrich ist nicht überall ein Pixel dick (24.08.2026)
+
+Die Blätter zerfallen in zwei Serien, und die Quote hing daran:
+
+| Format | Blätter | gepasst |
+|---|---:|---:|
+| 875×1240 | 291 | 70,1 % |
+| 874×1240 | 117 | 34,2 % |
+
+Ein Pixel Unterschied in der Breite, und die Quote halbiert sich. Die Ursache ist nicht die
+Breite, sondern der **waagerechte Tickstrich: auf der 874er-Serie zwei Pixel dick, auf der
+875er einen.** `zeichen_im_band` hielt einen festen Abstand von einem Pixel; die übrige Zeile
+blieb im Suchfenster stehen, und weil sie über die ganze Bandbreite dunkel ist, gilt jede
+Spalte als beschrieben. Alle Zeichen verschmelzen zu einer Gruppe von 19 Pixeln Breite und
+fallen durch die Prüfung `2 <= len(g) <= 12`. Herausgekommen ist **null statt zwei Ziffern**,
+obwohl die Zahl gut lesbar danebensteht (gemessen an EDAH, Tick y=315).
+
+Das erklärt auch die auffällige Häufung von „1 von x" lesbaren Stützstellen: Über dem Strich
+lag die Zahl im Fenster, darunter nicht. Der Strich wird jetzt abgetastet.
+
+**Nur die waagerechten Striche.** Dieselbe Abtastung auf der Längenachse ließ EDAH von 10 auf
+5 lesbare Stützstellen fallen, EDAC von 10 auf 4 — das um eine Spalte breitere Fenster zieht
+dort Fremdes herein. Die senkrechten Striche sind auf denselben Blättern einen Pixel dick.
+
+**Ergebnis: 250 → 262** an denselben 446 Blättern, alle zwölf im 874er-Format (34 % → 46 %),
+keine Verschlechterung beim 875er.
+
+### 3.1c Zwei Ideen, die gemessen durchgefallen sind (24.08.2026)
+
+Beide sind hier festgehalten, damit sie niemand für ungeprüft hält und wiederholt.
+
+**Segmentierung über zusammenhängende Flecken statt Spaltenprojektion.** Der Anlass war
+richtig: Die häufigsten unlesbaren Formen sind Klumpen aus Ziffer *und* Gradzeichen, die keine
+Spaltenprojektion trennen kann. Die Flecken trennten sie auch — aus einem unlesbaren
+10×10-Klumpen bei EDAR wurden sauber „5" und „0". **Über alle Blätter gemessen: 262 → 96.**
+Der Grund liegt tiefer: Die Längenbeschriftung trägt führende Nullen („009°34'"), und
+getrennte Flecken erzeugen dort ein Zeichen zu viel oder zu wenig. EDXR las 79° statt 9°,
+EDWF 77° statt 7°, EDAD 512° statt 51°. Verklebt war die Zahl unlesbar, aber nie **falsch** —
+und ein Blatt, das um einen Grad daneben liegt, ist schlimmer als eines, das fehlt. Wer es
+erneut versucht, braucht zuerst eine Antwort auf die führenden Nullen.
+
+**Textschwelle anheben.** Die automatische Beschriftung zeigte zerfallene Ziffern mit leeren
+Zeilen in der Mitte, was nach einer zu strengen Schwelle aussah. Gemessen ist das Gegenteil:
+
+| Schwelle | 160 | 172 | 184 | 196 |
+|---|---:|---:|---:|---:|
+| gepasst von 417 | **262** | 217 | 174 | 103 |
+
+Höhere Schwellen holen Hintergrund herein statt Schrift. 160 bleibt.
+
 ## 3.2 Freiheitsgrade schwächen die Probe — auch die verbliebenen
 
 Eine Zwischenfassung der Rastersuche durfte den gefundenen Tick-Abstand unterteilen. Bei EDAB
