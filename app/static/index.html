@@ -1419,6 +1419,62 @@
        Deshalb auch kein Hover-Wechsel und keine Fingergroesse. */
     .wind-bar { margin-top: 8px; }   /* Abstand zu den Zoom-Knoepfen darueber */
 
+    /* --- Deckkraft der Sichtflugkarte ----------------------------------------------------
+       Nur zu sehen, solange wirklich ein Blatt liegt (Nutzer-Wahl 24.08.2026). Ein
+       Dauerregler kostete im Cockpit Platz fuer etwas, das die meiste Zeit nichts tut --
+       die Ebene ist ueberwiegend aus, und wenn sie an ist, liegt nicht immer ein Blatt. */
+    .deckkraft-bar { display: none; margin-top: 8px; border: none !important;
+                     background: none !important; }
+    .deckkraft-bar.deckkraft-an { display: block; }
+    .deckkraft-feld {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      height: 40px;
+      padding: 0 9px;
+      background: #071525;
+      border: 1px solid rgba(45,156,219,0.3);
+      color: #2d9cdb;
+    }
+    /* Ein SVG, KEIN Emoji: Coherent GT hat keinen Emoji-Font-Fallback, ein 🗺 waere im
+       Kniebrett ein leeres Kaestchen -- derselbe Befund wie beim Gradzeichen der
+       Windanzeige. Dieselbe Form wie die Marken, damit erkennbar ist, wozu der Regler
+       gehoert. */
+    .deckkraft-feld svg { width: 17px; height: 17px; flex: none; }
+    .deckkraft-feld rect { fill: none; stroke: currentColor; stroke-width: 2;
+                           stroke-linejoin: round; }
+    .deckkraft-feld line { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+    /* Bahn und Griff ausdruecklich gezeichnet statt `accent-color`: Dieselbe Lehre wie bei
+       den Scrollbalken -- was nur der Browser von sich aus malt, sieht in einer anderen
+       Engine anders aus oder gar nicht. Der Griff ist 22 px gross, damit er im Cockpit mit
+       dem Finger zu treffen ist. */
+    .deckkraft-regler {
+      -webkit-appearance: none; appearance: none;
+      width: 104px; height: 22px; margin: 0; background: none; cursor: pointer;
+    }
+    .deckkraft-regler::-webkit-slider-runnable-track {
+      height: 4px; background: rgba(45,156,219,0.35); border-radius: 2px;
+    }
+    .deckkraft-regler::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 22px; height: 22px; margin-top: -9px; border-radius: 50%;
+      background: #2d9cdb; border: 2px solid #04080f;
+    }
+    .deckkraft-regler::-moz-range-track {
+      height: 4px; background: rgba(45,156,219,0.35); border-radius: 2px;
+    }
+    .deckkraft-regler::-moz-range-thumb {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #2d9cdb; border: 2px solid #04080f;
+    }
+    .deckkraft-text {
+      font-family: var(--text-mono, monospace);
+      font-size: 11px;
+      color: #cfe3f0;
+      min-width: 30px;
+      text-align: right;
+    }
+
     /* Im Vollbild sitzt die Windanzeige unten links -- und genau dort laeuft Leaflets
        Herkunftsangabe entlang, die im Kniebrett ueber die volle Breite umbricht und die
        Anzeige zur Haelfte verdeckt hat (Nutzer-Bild 23.08.2026).
@@ -9469,6 +9525,56 @@ function _addKompassControl(map) {
  * Und er dreht mit der Karte: Bei Track-up liegt Norden nicht mehr oben, ein starr
  * gezeichneter Pfeil zeigte dann in die Irre.
  */
+/**
+ * Regler fuer die Deckkraft des Blatts -- oben links unter den Zoom-Knoepfen.
+ *
+ * Dieselbe Ecke wie die Windanzeige und aus demselben Grund: Unten links sitzt der
+ * Vollbild-Knopf als `position:absolute` ausserhalb von Leaflets Ecken-Raster, dort waere
+ * der Regler schlicht darunter verschwunden.
+ */
+function _addDeckkraftControl(map) {
+  const Regler = L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd: function () {
+      const box = L.DomUtil.create('div', 'leaflet-bar navi-bar deckkraft-bar');
+      box.innerHTML =
+        '<div class="deckkraft-feld">' +
+          '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+            '<rect x="5.5" y="3.5" width="13" height="17" rx="2"/>' +
+            '<line x1="9" y1="9" x2="15" y2="9"/>' +
+            '<line x1="9" y1="12.5" x2="15" y2="12.5"/>' +
+            '<line x1="9" y1="16" x2="12.5" y2="16"/>' +
+          '</svg>' +
+          '<input class="deckkraft-regler" type="range" step="0.05" ' +
+                 'aria-label="Deckkraft der Sichtflugkarte">' +
+          '<span class="deckkraft-text">--</span>' +
+        '</div>';
+      _deckkraftBox = box;
+      _deckkraftRegler = box.querySelector('.deckkraft-regler');
+      _deckkraftText = box.querySelector('.deckkraft-text');
+      // Grenzen aus den Konstanten, nicht im Markup wiederholt: Sonst stehen sie an zwei
+      // Orten und _aipDeckkraftSetzen klemmt gegen andere Werte als der Regler zulaesst.
+      _deckkraftRegler.min = String(_AIP_KARTE_DECKKRAFT_MIN);
+      _deckkraftRegler.max = '1';
+      // Ohne das zieht ein Wisch ueber den Regler die Karte mit -- im Kniebrett per Finger
+      // ist das der Normalfall, nicht der Ausnahmefall.
+      L.DomEvent.disableClickPropagation(box);
+      L.DomEvent.disableScrollPropagation(box);
+      // Erst jetzt lesen: Die Server-Merker sind zu diesem Zeitpunkt da (die Karte wird nach
+      // `await _prefsPromise` gebaut), beim Anlegen der Variablen waren sie es nicht.
+      _aipDeckkraft = _aipDeckkraftLesen();
+      _deckkraftRegler.value = String(_aipDeckkraft);
+      _deckkraftRegler.addEventListener('input', function () {
+        _aipDeckkraftSetzen(parseFloat(this.value), true);
+      });
+      _aipDeckkraftSetzen(_aipDeckkraft, false);
+      _aipDeckkraftAnzeigen();
+      return box;
+    }
+  });
+  map.addControl(new Regler());
+}
+
 function _addWindControl(map) {
   const Wind = L.Control.extend({
     // Oben links unter den Zoom-Knoepfen. NICHT unten links: Dort sitzt der Vollbild-Knopf,
@@ -9733,7 +9839,11 @@ const _AIP_KARTE_PREF_KEY = 'friesenspy_aipkarte';
 // Rand, innerhalb dessen ein sichtbares Overlay sichtbar BLEIBT. Ohne diese Hysterese
 // schaltet es am Rand des Kartenfelds bei jedem Positionsupdate um.
 const _AIP_KARTE_HYSTERESE = 0.02;   // Grad, rund 2 km
-const _AIP_KARTE_DECKKRAFT = 0.75;
+const _AIP_KARTE_DECKKRAFT = 0.75;       // Vorgabe, wenn nichts gemerkt ist
+const _AIP_KARTE_DECKKRAFT_MIN = 0.3;    // darunter ist das Blatt nicht mehr zu lesen
+const _AIP_KARTE_DECKKRAFT_KEY = 'friesenspy_aipdeckkraft';
+let _aipDeckkraft = _AIP_KARTE_DECKKRAFT;
+let _deckkraftBox = null, _deckkraftRegler = null, _deckkraftText = null;
 
 const _aipKartenGruppe = L.layerGroup();
 let _aipKarten = null;        // Metadaten, einmal geladen
@@ -9761,11 +9871,44 @@ function _aipKarteZeigen(k) {
   if (_aipKarteAktiv === (k && k.icao)) return;
   if (_aipKarteOverlay) { _aipKartenGruppe.removeLayer(_aipKarteOverlay); _aipKarteOverlay = null; }
   _aipKarteAktiv = k ? k.icao : null;
-  if (!k) return;
+  // Der Regler haengt am gezeigten Blatt, nicht an der Ebene: Ist die Ebene an, liegt aber
+  // gerade kein Blatt, gaebe es nichts zu regeln.
+  if (!k) { _aipDeckkraftAnzeigen(); return; }
   _aipKarteOverlay = L.imageOverlay(k.bild, [[k.sued, k.west], [k.nord, k.ost]], {
-    opacity: _AIP_KARTE_DECKKRAFT, attribution: _aipKarteAttribution(k), interactive: false,
+    opacity: _aipDeckkraft, attribution: _aipKarteAttribution(k), interactive: false,
   });
   _aipKartenGruppe.addLayer(_aipKarteOverlay);
+  _aipDeckkraftAnzeigen();
+}
+
+/**
+ * Deckkraft der Sichtflugkarte.
+ *
+ * Der Regler erscheint nur, solange wirklich ein Blatt liegt, und verschwindet mit ihm --
+ * so kostet er im Cockpit keinen Dauerplatz.
+ *
+ * NICHT zu verwechseln mit der Flackersuche: Der lange Kommentar bei _AIP_DECKKRAFT haelt
+ * fest, dass die Deckkraft NICHT die Ursache des Flackerns im Kniebrett war (zwei Messreihen
+ * zurueckgebaut, Ursache ist Fremd-CSS). Dieser Regler ist kein neuer Anlauf in dieser
+ * Richtung, sondern schlicht eine Bedienung: Wie viel Untergrund durch das Blatt zu sehen
+ * sein soll, ist Geschmack und haengt vom Gelaende ab.
+ */
+function _aipDeckkraftLesen() {
+  const roh = parseFloat(_prefLies(_AIP_KARTE_DECKKRAFT_KEY));
+  // Kein isNaN-Test allein: Ein gemerkter Unsinn (0, 5, -1) muss genauso auf die Vorgabe
+  // fallen wie ein fehlender Wert. Ein unlesbares Blatt waere schlimmer als gar keins.
+  return (roh >= _AIP_KARTE_DECKKRAFT_MIN && roh <= 1) ? roh : _AIP_KARTE_DECKKRAFT;
+}
+
+function _aipDeckkraftSetzen(wert, merken) {
+  _aipDeckkraft = Math.min(1, Math.max(_AIP_KARTE_DECKKRAFT_MIN, Number(wert) || _AIP_KARTE_DECKKRAFT));
+  if (_aipKarteOverlay) _aipKarteOverlay.setOpacity(_aipDeckkraft);
+  if (_deckkraftText) _deckkraftText.textContent = Math.round(_aipDeckkraft * 100) + '%';
+  if (merken) _prefSchreib(_AIP_KARTE_DECKKRAFT_KEY, _aipDeckkraft.toFixed(2));
+}
+
+function _aipDeckkraftAnzeigen() {
+  if (_deckkraftBox) _deckkraftBox.classList.toggle('deckkraft-an', !!_aipKarteAktiv);
 }
 
 /** Passendes Blatt nach der eigenen Position waehlen. Festgenageltes hat Vorrang. */
@@ -10472,6 +10615,7 @@ async function initLiveMap() {
   // Kompass NACH der Ebenen-Auswahl anmelden: Leaflet stapelt die Bedienelemente einer Ecke
   // in der Reihenfolge, in der sie dazukommen -- so sitzt die Nadel darunter, wie gewuenscht.
   _addKompassControl(liveMap);
+  _addDeckkraftControl(liveMap);
   _addMovingMapControl(liveMap);
   // Nur im Kniebrett: Den Wind kennt allein der Simulator, VATSIM meldet ihn nicht.
   if (_PANEL_MODUS) _addWindControl(liveMap);

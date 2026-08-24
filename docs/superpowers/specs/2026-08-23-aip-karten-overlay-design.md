@@ -357,6 +357,17 @@ Eine Ebene genügt für beide Ziele: `/panel` liefert **dieselbe** `index.html` 
   Blatt, und zwar auf der **engeren** Achse — eine feste Zoomschwelle hinge an der
   Fenstergröße, und die Blätter sind in drei verschiedenen Maßstäben unterwegs.
 - **Deckkraft** über einen Regler.
+  **Nachtrag 24.08.2026:** Gebaut als eigenes Leaflet-Control oben links unter den
+  Zoom-Knöpfen — dieselbe Ecke wie die Windanzeige und aus demselben Grund (unten links
+  sitzt der Vollbild-Knopf außerhalb von Leaflets Ecken-Raster). Er erscheint **nur,
+  solange wirklich ein Blatt liegt**, nicht schon, wenn die Ebene an ist: Sonst stünde er
+  im Cockpit dauerhaft herum, ohne etwas zu tun. Der Wert wird über die Server-Merker
+  gehalten (`friesenspy_aipdeckkraft`), nicht im Browser-Speicher — im Kniebrett
+  überlebt der keinen Sim-Neustart. Untergrenze 0,3; ein gemerkter Wert außerhalb
+  0,3–1,0 fällt auf die Vorgabe 0,75 zurück.
+  **Das ist kein neuer Anlauf in der Flackersuche** — siehe den Absatz weiter unten:
+  Die Deckkraft war dort nachweislich die falsche Spur, und daran ändert der Regler
+  nichts. Er ist eine Bedienung, keine Messreihe.
 - **Attribution:** Quelle **samt AIRAC-Datum** des eingeblendeten Blatts, solange die Ebene an
   ist — also aus den Metadaten gebildet, nicht als feste Zeichenkette.
 - **Z-Reihenfolge:** über den Basiskacheln, unter den Verkehrs-Markern.

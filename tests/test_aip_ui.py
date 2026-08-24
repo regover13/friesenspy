@@ -229,3 +229,66 @@ def test_klickkoordinaten_werden_auf_bildpixel_zurueckgerechnet():
     """Das Blatt wird per max-width skaliert; ungerechnete Klickpixel waeren falsch."""
     start = ADMIN.index("aip-blatt').addEventListener")
     assert "naturalWidth" in ADMIN[start:start + 900]
+
+
+# ---------------------------------------------------------------------------
+# Deckkraft-Regler
+# ---------------------------------------------------------------------------
+def test_regler_erscheint_nur_bei_liegendem_blatt():
+    """Nutzer-Wahl 24.08.2026. Er haengt am gezeigten Blatt, NICHT an der Ebene.
+
+    Ist die Ebene an, liegt aber gerade kein Blatt, gaebe es nichts zu regeln -- ein
+    Dauerregler kostete im Cockpit Platz fuer etwas, das nichts tut.
+    """
+    start = INDEX.index("function _aipDeckkraftAnzeigen(")
+    abschnitt = INDEX[start:start + 400]
+    assert "classList.toggle('deckkraft-an', !!_aipKarteAktiv)" in abschnitt
+    # ... und beide Wege durch _aipKarteZeigen muessen ihn nachziehen, auch der frueh
+    # abbrechende fuer "kein Blatt".
+    zeigen = INDEX.index("function _aipKarteZeigen(")
+    assert INDEX[zeigen:zeigen + 1200].count("_aipDeckkraftAnzeigen()") == 2
+
+
+def test_regler_nutzt_kein_emoji():
+    """Coherent GT hat keinen Emoji-Font-Fallback -- im Kniebrett waere es ein leeres Kaestchen.
+
+    Derselbe Befund wie beim Gradzeichen der Windanzeige (v13.8.1). Das Symbol ist deshalb
+    ein SVG, wie bei den Marken.
+    """
+    start = INDEX.index("function _addDeckkraftControl(")
+    abschnitt = INDEX[start:start + 2500]
+    assert "<svg viewBox=" in abschnitt
+    assert "🗺" not in abschnitt and "📌" not in abschnitt
+
+
+def test_regler_verschluckt_die_wischgeste():
+    """Sonst zieht ein Wisch ueber den Regler die Karte mit -- im Kniebrett der Normalfall."""
+    start = INDEX.index("function _addDeckkraftControl(")
+    abschnitt = INDEX[start:start + 2500]
+    assert "L.DomEvent.disableClickPropagation(box)" in abschnitt
+
+
+def test_deckkraft_wird_ueber_den_server_gemerkt():
+    """Im Kniebrett haelt kein Browser-Speicher einen Sim-Neustart aus (CLAUDE.md)."""
+    assert "_prefSchreib(_AIP_KARTE_DECKKRAFT_KEY" in INDEX
+    assert "_prefLies(_AIP_KARTE_DECKKRAFT_KEY)" in INDEX
+
+
+def test_gemerkter_unsinn_faellt_auf_die_vorgabe():
+    """Ein gespeicherter Wert von 0 machte das Blatt unsichtbar, einer von 5 die Karte darunter.
+
+    Deshalb Bereichspruefung statt blossem isNaN -- und dieselben Grenzen wie am Regler.
+    """
+    start = INDEX.index("function _aipDeckkraftLesen(")
+    abschnitt = INDEX[start:start + 600]
+    assert "roh >= _AIP_KARTE_DECKKRAFT_MIN && roh <= 1" in abschnitt
+    regler = INDEX.index("function _addDeckkraftControl(")
+    assert "_deckkraftRegler.min = String(_AIP_KARTE_DECKKRAFT_MIN)" in INDEX[regler:regler + 2500]
+
+
+def test_overlay_nimmt_den_eingestellten_wert():
+    """Sonst zeigt der Regler etwas anderes an, als auf der Karte liegt."""
+    start = INDEX.index("function _aipKarteZeigen(")
+    abschnitt = INDEX[start:start + 1200]
+    assert "opacity: _aipDeckkraft" in abschnitt
+    assert "opacity: _AIP_KARTE_DECKKRAFT" not in abschnitt
