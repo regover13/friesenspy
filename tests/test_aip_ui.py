@@ -411,3 +411,19 @@ def test_ebenen_auswahl_ist_sichtbar_scrollbar():
     assert "leaflet-control-layers-scrollbar::-webkit-scrollbar-thumb" in INDEX
     assert "scrollbar-color: rgba(45,156,219,0.7)" in INDEX
     assert "max-height: 60vh" in INDEX
+
+
+def test_kartenliste_wird_beim_einschalten_aufgefrischt():
+    """Sonst erscheint eine frisch gepasste Karte nie.
+
+    Die Liste wird einmal beim Seitenaufbau geholt, und im Kniebrett laedt die Seite innerhalb
+    einer Sim-Sitzung nicht neu (die EFB-App wird nur schlafen gelegt). Der Nutzer hat am
+    24.08.2026 EDVM von Hand gepasst und es blieb aus -- in der Datenbank stand es laengst.
+    """
+    start = INDEX.index("function _addPreferredAipKarteLayer(")
+    abschnitt = INDEX[start:start + 900]
+    assert "_aipKartenLaden(true)" in abschnitt
+    # Und der Zwischenspeicher muss weiter greifen, wenn NICHT erzwungen wird -- sonst holt
+    # jeder Takt die Liste neu.
+    laden = INDEX.index("function _aipKartenLaden(")
+    assert "if (_aipKarten && !erzwingen) return" in INDEX[laden:laden + 400]

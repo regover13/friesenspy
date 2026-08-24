@@ -9994,8 +9994,19 @@ function _aipKarteNachfuehren() {
   _aipKarteZeigen(treffer);
 }
 
-function _aipKartenLaden() {
-  if (_aipKarten) return Promise.resolve(_aipKarten);
+/**
+ * Kartenliste holen. ``erzwingen`` laedt auch dann neu, wenn sie schon im Speicher steht.
+ *
+ * Ohne das erscheint eine frisch von Hand gepasste Karte nie: Die Liste wird einmal beim
+ * Seitenaufbau geholt, und im Kniebrett laedt die Seite innerhalb einer Sim-Sitzung ueberhaupt
+ * nicht neu (die EFB-App wird nur schlafen gelegt, s. Kommentar bei .panel-update-hint). Der
+ * Nutzer hat am 24.08.2026 EDVM gepasst und es blieb aus -- in der Datenbank stand es laengst.
+ *
+ * Aufgefrischt wird beim EINSCHALTEN der Ebene: Das ist der Griff, den man ohnehin tut, wenn
+ * man nachsehen will, und es kostet 24 KB.
+ */
+function _aipKartenLaden(erzwingen) {
+  if (_aipKarten && !erzwingen) return Promise.resolve(_aipKarten);
   return fetch(_AIP_KARTE_API).then(function (r) { return r.json(); })
     .then(function (d) { _aipKarten = (d && d.charts) || []; _aipKarteNachfuehren();
                          _aipMarkenAnpassen(); return _aipKarten; })
@@ -10005,7 +10016,7 @@ function _aipKartenLaden() {
 // Wie bei OpenAIP, Platzrunden und Meldepunkten: VOR dem Bau der Layers-Control aufrufen,
 // sonst sieht die Checkbox den gemerkten Zustand nie.
 function _addPreferredAipKarteLayer(map) {
-  map.on('overlayadd',    function (e) { if (e.layer === _aipKartenGruppe) { _saveAipKartePref(true); _aipKartenLaden(); } });
+  map.on('overlayadd',    function (e) { if (e.layer === _aipKartenGruppe) { _saveAipKartePref(true); _aipKartenLaden(true); } });
   map.on('overlayremove', function (e) { if (e.layer === _aipKartenGruppe) { _saveAipKartePref(false); _aipKarteZeigen(null); } });
   if (_loadAipKartePref()) { _aipKartenGruppe.addTo(map); _aipKartenLaden(); }
 }
