@@ -266,6 +266,24 @@
     /* Grad und Minuten nebeneinander, mit den Zeichen dazwischen -- so steht es auch auf
        dem Blatt ("14° 15'"). Die Zeichen sind Text, kein Emoji: admin.html laeuft zwar nur
        im Browser, aber ° und ′ sind ohnehin Standardzeichen. */
+    /* Fadenkreuz ueber dem Kartenblatt: zwei Linien ueber die ganze Breite und Hoehe, die
+       der Maus folgen. Eine Rahmenecke trifft man damit auf den Pixel genau -- ohne die
+       Linien schaetzt man, ob man auf der Rahmenlinie steht oder daneben, und der Fehler
+       geht in die gerechnete Passung ein. `pointer-events: none`, sonst schluckten die
+       Linien den Klick, den sie ausrichten sollen. */
+    .aip-blatt-box { position: relative; max-width: 100%; overflow: auto; }
+    .aip-fadenkreuz {
+      position: absolute;
+      display: none;
+      pointer-events: none;
+      background: #2d9cdb;
+      /* Ein heller Saum, damit die Linie auch ueber dunklen Stellen des Blatts steht --
+         dieselbe Ueberlegung wie beim Saum der Flugzeugsymbole auf der Karte. */
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.55);
+    }
+    .aip-fadenkreuz-x { left: 0; height: 1px; }
+    .aip-fadenkreuz-y { top: 0; width: 1px; }
+
     .aip-gm { display: flex; align-items: center; gap: 4px; }
     .aip-gm input { width: 100%; min-width: 0; }
     .aip-gm span { color: #8aa0b8; font-family: var(--text-mono, monospace); }
@@ -1215,8 +1233,10 @@
               Gradleiste das Kartenbild einrahmt, nicht der Blattrand. Die vier Werte sind
               die Gradzahlen genau an diesen beiden Ecken.
             </p>
-            <div style="position:relative;max-width:100%;overflow:auto;">
-              <img id="aip-blatt" style="max-width:100%;cursor:crosshair;" alt="Kartenblatt" />
+            <div id="aip-blatt-box" class="aip-blatt-box">
+              <img id="aip-blatt" style="max-width:100%;cursor:crosshair;display:block;" alt="Kartenblatt" />
+              <div id="aip-fk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
+              <div id="aip-fk-y" class="aip-fadenkreuz aip-fadenkreuz-y"></div>
             </div>
             <div style="display:flex;gap:8px;margin:8px 0;">
               <button class="btn btn-sm" id="aip-vorschau-btn">Vorschau auf der Karte</button>
@@ -3381,6 +3401,31 @@
         'Blatt <b>' + escH(icao) + '</b>: erst die <b>obere linke</b>, dann die '
         + '<b>untere rechte</b> Rahmenecke anklicken.';
     }
+
+    // Fadenkreuz: zwei Linien ueber das ganze Blatt, die der Maus folgen. Gerechnet wird
+    // gegen das BILD, nicht gegen den Kasten -- das Blatt wird per max-width skaliert, und
+    // beide fallen nur zufaellig zusammen, solange kein Rand dazwischen liegt.
+    (function () {
+      const img = document.getElementById('aip-blatt');
+      const lx = document.getElementById('aip-fk-x');
+      const ly = document.getElementById('aip-fk-y');
+      if (!img || !lx || !ly) return;
+      img.addEventListener('mousemove', function (e) {
+        const r = img.getBoundingClientRect();
+        lx.style.top = Math.round(e.clientY - r.top) + 'px';
+        lx.style.width = img.offsetWidth + 'px';
+        ly.style.left = Math.round(e.clientX - r.left) + 'px';
+        ly.style.height = img.offsetHeight + 'px';
+        lx.style.display = 'block';
+        ly.style.display = 'block';
+      });
+      // Verlaesst die Maus das Blatt, verschwindet das Kreuz -- eine stehen gebliebene Linie
+      // sieht aus wie eine Markierung und wuerde beim naechsten Klick in die Irre fuehren.
+      img.addEventListener('mouseleave', function () {
+        lx.style.display = 'none';
+        ly.style.display = 'none';
+      });
+    })();
 
     document.getElementById('aip-blatt').addEventListener('click', function (e) {
       const img = e.target;

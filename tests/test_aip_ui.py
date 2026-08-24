@@ -440,3 +440,25 @@ def test_frontend_frischt_auf_statt_neu_zu_laden():
     assert "msg.type === 'aip_charts'" in abschnitt
     assert "if (_aipKarten) _aipKartenLaden(true)" in abschnitt
     assert "location.reload" not in abschnitt
+
+
+def test_fadenkreuz_ueber_dem_kartenblatt():
+    """Nutzerwunsch 24.08.2026: eine waagerechte und eine senkrechte Linie ueber das ganze Blatt.
+
+    Ohne sie schaetzt man beim Klicken, ob man auf der Rahmenlinie steht oder daneben -- und
+    der Fehler geht unmittelbar in die gerechnete Passung ein.
+    """
+    assert 'id="aip-fk-x"' in ADMIN and 'id="aip-fk-y"' in ADMIN
+    start = ADMIN.index("const lx = document.getElementById('aip-fk-x')")
+    abschnitt = ADMIN[start:start + 1200]
+    assert "mousemove" in abschnitt and "mouseleave" in abschnitt
+    # Gegen das BILD gerechnet, nicht gegen den Kasten: Das Blatt wird per max-width
+    # skaliert, beide fallen nur zufaellig zusammen.
+    assert "img.getBoundingClientRect()" in abschnitt
+
+
+def test_fadenkreuz_schluckt_den_klick_nicht():
+    """Die Linien liegen ueber dem Bild -- ohne pointer-events:none faenge sie der Klick,
+    den sie ausrichten sollen."""
+    start = ADMIN.index(".aip-fadenkreuz {")
+    assert "pointer-events: none" in ADMIN[start:start + 400]
