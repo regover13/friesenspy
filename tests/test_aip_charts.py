@@ -532,3 +532,47 @@ def test_laengenachse_behaelt_den_festen_abstand():
     kopf, rest = quelle.split('if achse == "y":', 1)
     assert "_strich_ende(zeile_voll" in rest.split("return oben, unten")[0]
     assert "_strich_ende" not in rest.split("return oben, unten")[1]
+
+
+# ---------------------------------------------------------------------------
+# Rasterabstand berichtigen (25.08.2026)
+# ---------------------------------------------------------------------------
+def test_raster_berichtigen_erkennt_ein_vielfaches():
+    """Bei EDWE lieferte raster() 263 px fuer die Breite -- der echte Abstand ist 43,8.
+
+    Genau das Sechsfache. Erkannt wird es ueber die Physik: Eine Bogenminute Laenge ist um
+    cos(Breite) kuerzer als eine Bogenminute Breite, also muss dx/dy = cos(Breite) gelten.
+    """
+    dy, dx = aip_charts._raster_berichtigen(263.0, 26.1, 53.39)
+    assert round(dy, 1) == 43.8
+    assert dx == 26.1
+
+
+def test_raster_berichtigen_laesst_stimmiges_in_ruhe():
+    """Passt dx/dy schon zur Breite, darf nichts angefasst werden."""
+    import math
+    lat = 51.5
+    dy = 219.0
+    dx = dy * math.cos(math.radians(lat))
+    assert aip_charts._raster_berichtigen(dy, dx, lat) == (dy, dx)
+
+
+def test_raster_berichtigen_korrigiert_nur_bei_sauberem_faktor():
+    """EDUW misst 127 statt 146 px -- das ist KEIN Vielfaches, sondern der Abstand zweier
+    zufaellig gefundener Striche. Dort darf nicht geraten werden.
+
+    Diese Grenze ist der Grund, warum die Berichtigung nichts durchlassen kann, was vorher
+    zu Recht abgelehnt wurde: Ohne ganzzahligen Faktor bleibt alles beim gemessenen Wert.
+    """
+    assert aip_charts._raster_berichtigen(127.0, 86.0, 53.92) == (127.0, 86.0)
+
+
+def test_raster_berichtigen_kann_auch_die_laenge_treffen():
+    """Der Fehler sitzt nicht immer auf der Breitenachse."""
+    import math
+    lat = 50.0
+    dy = 100.0
+    echt = dy * math.cos(math.radians(lat))
+    dy2, dx2 = aip_charts._raster_berichtigen(dy, echt * 3, lat)
+    assert dy2 == dy
+    assert abs(dx2 - echt) < 0.01

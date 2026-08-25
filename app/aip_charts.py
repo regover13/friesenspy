@@ -1019,6 +1019,8 @@ _V_MIN, _V_MAX = 0.57, 0.68
 # Bei 22 von 356 Karten tragen die Achsen verschiedene Tick-Einheiten. Jeder Kandidat mehr
 # hebt die Zufallstrefferquote um rund einen halben Prozentpunkt (Spec 3.2).
 _ACHSEN_VIELFACHE = (1.0, 2.0, 0.5)
+# Wie genau dx/dy die cos-Beziehung treffen muss, damit der Rasterabstand als richtig gilt.
+_RASTER_COS_TOLERANZ = 0.02
 # Mindestens so viele lesbare Stuetzstellen je Achse.
 #
 # Drei waeren schoener -- erst ab dreien gibt es Residuen und damit Pruefung (3). Viele
@@ -1061,6 +1063,37 @@ def ausgleichsgerade(paare: list[tuple[float, float]]
     return m, b, res
 
 
+def _raster_berichtigen(dy: float, dx: float, arp_lat: float) -> tuple[float, float]:
+    """Einen als Vielfaches danebengegriffenen Rasterabstand zurechtruecken.
+
+    **Warum das noetig ist.** ``raster()`` bestimmt den Tickabstand aus den gefundenen
+    Strichen. Hat eine Achse Luecken oder werden nur zwei Striche gefunden, greift es das
+    Vielfache statt des Abstands: Bei EDWE lieferte es 263 px fuer die Breite, der echte
+    Abstand ist 43,8 -- genau das Sechsfache (gemessen 25.08.2026). Jede daran haengende
+    Rechnung ist dann um denselben Faktor falsch, und Pruefung (2) verwirft anschliessend
+    auch voellig richtig gelesene Zahlen.
+
+    **Berichtigt wird ueber die Physik, nicht ueber ein Raten.** Eine Bogenminute Laenge ist
+    um cos(Breite) kuerzer als eine Bogenminute Breite, es muss also ``dx/dy = cos(Breite)``
+    gelten. Weicht das ab, wird geprueft, ob eine der beiden Groessen ein ganzzahliges
+    Vielfaches der Wahrheit ist. Nur bei einem sauberen Faktor wird korrigiert; sonst bleibt
+    alles, wie es war, und die Pruefkette lehnt wie bisher ab. Die Korrektur kann also
+    nichts durchlassen, was vorher richtig abgelehnt wurde -- sie kann nur Faelle retten,
+    in denen der gemessene Abstand nachweislich ein Vielfaches ist.
+    """
+    ziel = math.cos(math.radians(arp_lat))
+    if not (0 < ziel < 1) or abs(dx / dy - ziel) <= _RASTER_COS_TOLERANZ:
+        return dy, dx
+    for n in range(2, 13):
+        if abs(dx / (dy / n) - ziel) < _RASTER_COS_TOLERANZ * ziel:
+            logger.info("AIP: Breiten-Raster %.1f -> %.1f px (war das %d-fache)", dy, dy / n, n)
+            return dy / n, dx
+        if abs((dx / n) / dy - ziel) < _RASTER_COS_TOLERANZ * ziel:
+            logger.info("AIP: Laengen-Raster %.1f -> %.1f px (war das %d-fache)", dx, dx / n, n)
+            return dy, dx / n
+    return dy, dx
+
+
 def passung_rechnen(im, arp_lat: float, arp_lon: float) -> Passung | None:
     """WGS84-Grenzen von Blatt und Kartenfeld. None, sobald eine Pruefung durchfaellt.
 
@@ -1081,6 +1114,7 @@ def passung_rechnen(im, arp_lat: float, arp_lon: float) -> Passung | None:
     dx, _nx, _ax = raster(tx)
     if not dy or not dx:
         return None
+    dy, dx = _raster_berichtigen(dy, dx, arp_lat)
 
     # (1) cos-Probe -- Vorpruefung der Skala.
     bester = None

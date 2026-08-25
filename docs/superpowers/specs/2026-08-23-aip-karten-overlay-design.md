@@ -247,6 +247,33 @@ Zeilen in der Mitte, was nach einer zu strengen Schwelle aussah. Gemessen ist da
 
 Höhere Schwellen holen Hintergrund herein statt Schrift. 160 bleibt.
 
+### 3.1d Ein danebengegriffener Rasterabstand (25.08.2026)
+
+`raster()` bestimmt den Tickabstand aus den gefundenen Strichen. Hat eine Achse Lücken oder
+werden nur zwei Striche gefunden, greift es **das Vielfache statt des Abstands**:
+
+| Blatt | gemessen | richtig | Faktor |
+|---|---:|---:|---:|
+| EDWE (Breite) | 263 px | 43,8 px | 6 |
+| EDWI (Breite) | 131 px | 43,8 px | 3 |
+| EDUW (Breite) | 127 px | 146 px | — kein ganzzahliger |
+| EDCQ (Länge) | 181 px | 135 px | — kein ganzzahliger |
+
+Jede daran hängende Rechnung ist dann um denselben Faktor falsch, und Prüfung (2) verwirft
+anschließend auch völlig richtig gelesene Zahlen.
+
+**Berichtigt wird über die Physik.** Eine Bogenminute Länge ist um cos(Breite) kürzer als eine
+Bogenminute Breite, es muss also `dx/dy = cos(Breite)` gelten. Weicht das ab, wird geprüft, ob
+eine der beiden Größen ein **ganzzahliges** Vielfaches der Wahrheit ist. Nur bei einem sauberen
+Faktor unter zwei Prozent Abweichung wird korrigiert.
+
+**Die Korrektur kann nichts verschlimmern.** Trifft kein ganzzahliger Faktor zu — wie bei EDUW
+und EDCQ, wo schlicht der Abstand zweier zufälliger Striche gemessen wurde —, bleibt alles beim
+gemessenen Wert und die Prüfkette lehnt ab wie bisher. Etwas, das vorher zu Recht verworfen
+wurde, kann dadurch nicht durchrutschen.
+
+**Ergebnis: 262 → 264** an denselben 446 Blättern.
+
 ## 3.2 Freiheitsgrade schwächen die Probe — auch die verbliebenen
 
 Eine Zwischenfassung der Rastersuche durfte den gefundenen Tick-Abstand unterteilen. Bei EDAB
