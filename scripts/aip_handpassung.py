@@ -5,6 +5,7 @@ Aufruf:
     python scripts/aip_handpassung.py EDAH --breite 315=54:00,534=53:55 --laenge 764=14:20
     ... --schreiben          legt sie ab; ohne das Flag ist es ein Probelauf
     ... --rahmen l,o,r,u,bl,bo,br,bu   erzwingt einen Rahmen (s. unten)
+    ... --drehen 270         quer gedrucktes Blatt zuerst norden (s. unten)
 
 Womit man die Zahlen findet: ``scripts/aip_band_zeigen.py`` rendert das Randband eines
 Blattes gross und beziffert die erkannten Ticks -- die Positionen von dort kommen hier
@@ -39,6 +40,20 @@ Die Proben im Einzelnen:
    gegen OpenAIP gegengeprueft, bevor verworfen wird: ``airportsdata`` liegt bei einzelnen
    Plaetzen daneben (EDGL 7 km, EDTK 30 km, EDSD 100 km).
 5. **genordet** -- ``m_lat < 0 < m_lon``.
+
+``--drehen`` ist fuer quer gedruckte Blaetter, die die Automatik nicht genordet ablegen
+konnte. Normalerweise besorgt das ``aip_charts.genordet_rechnen``: Es erkennt die Querlage am
+Achsenverhaeltnis und probiert beide Richtungen, die Pruefkette entscheidet. Kommt KEINE
+Richtung durch -- weil die Passung aus einem anderen Grund scheitert --, bleibt das Blatt
+quer liegen, und dann greift Probe 5 ("genordet") und lehnt jede Handpassung ab. EDDN ist
+der Fall: Seine Seite 3 ist eine regulaere Sichtflugkarte mit Gradnetz, aber die
+beschrifteten Ticks fehlen in der Tickliste (die Zahl unterbricht den Strich), die Belegung
+faellt unter 0,75 und ``raster()`` greift das Drei- bzw. Doppelte des echten Abstands.
+Richtig ist dort ``--drehen 270``.
+
+**Welche Richtung, sieht man dem Blatt an**, nicht der Rechnung: Bei einem genordeten Blatt
+steht "Sichtflugkarte / Visual Operation Chart" links oben und der Platzname rechts oben.
+Wer raet, bekommt es von Probe 5 gesagt -- aber erst nach der ganzen Ableserei.
 
 ``--rahmen`` ist fuer Blaetter, bei denen ``rahmen_finden`` scheitert, weil eine Seite des
 Doppelrahmens zu schwach gedruckt ist (EDLS, EDEL, EDMP, EDPS). Die acht Zahlen sind
@@ -114,6 +129,11 @@ ap.add_argument("--schreiben", action="store_true")
 ap.add_argument("--blatt", default=None,
                 help="PNG direkt angeben, statt es ueber die Einstellungen zu suchen "
                      "(nur fuer Probelaeufe -- --schreiben braucht ohnehin die Datenbank)")
+ap.add_argument("--drehen", type=int, choices=(90, 180, 270), default=None,
+                help="Blatt vor dem Rechnen um diesen Winkel GEGEN den Uhrzeigersinn drehen. "
+                     "Fuer quer gedruckte Seiten, die die Automatik nicht genordet ablegen "
+                     "konnte. Mit --schreiben wird das gedrehte Blatt mit abgelegt, sonst "
+                     "gehoerte die Passung zu einem Bild, das so nirgends liegt.")
 ap.add_argument("--rahmen", default=None,
                 help="links,oben,rechts,unten,band_links,band_oben,band_rechts,band_unten -- "
                      "erzwingt diesen Rahmen statt der Automatik (fuer Blaetter, bei denen "
@@ -122,7 +142,16 @@ a = ap.parse_args()
 icao = a.icao.upper()
 
 from app.config import get_settings as _gs
-im = Image.open(a.blatt or A.blatt_pfad(_gs().DB_PATH, icao)).convert("L")
+if a.drehen and a.blatt and a.schreiben:
+    raise SystemExit("--drehen --schreiben legt das Blatt in der ABLAGE ab; --blatt waere "
+                     "dann zweideutig. Entweder Probelauf mit --blatt oder Ablage ohne.")
+_DREHUNG = {90: Image.ROTATE_90, 180: Image.ROTATE_180, 270: Image.ROTATE_270}
+_quelle = a.blatt or A.blatt_pfad(_gs().DB_PATH, icao)
+_bild = Image.open(_quelle)
+if a.drehen:
+    _bild = _bild.transpose(_DREHUNG[a.drehen])
+    print(f"   gedreht um {a.drehen} Grad gegen den Uhrzeigersinn -> {_bild.size[0]}x{_bild.size[1]}")
+im = _bild.convert("L")
 if a.rahmen:
     werte8 = [float(x) for x in a.rahmen.split(",")]
     r = A.Rahmen(*werte8)
@@ -324,7 +353,20 @@ conn = get_connection("/opt/friesenspy/data/friesenspy.db")
 alt_z = get_aip_chart(conn, icao)
 if alt_z is None:
     print("kein Bestandseintrag -- nichts geschrieben"); sys.exit(1)
-upsert_aip_chart(conn, icao, bild_hash=alt_z["bild_hash"],
+# Das gedrehte Blatt gehoert mit in die Ablage: Die Passung ist auf SEINE Pixel gerechnet.
+# Bliebe das alte, quer liegende Bild stehen, waere die Passung darauf sinnlos -- und das
+# faellt niemandem auf, weil beide Teile fuer sich stimmig aussehen.
+_hash = alt_z["bild_hash"]
+if a.drehen:
+    import hashlib as _hl
+    import io as _io
+    _puffer = _io.BytesIO()
+    _bild.save(_puffer, "PNG")
+    _roh = _puffer.getvalue()
+    A.blatt_schreiben(A.blatt_pfad(_gs().DB_PATH, icao), _roh)
+    _hash = _hl.sha256(_roh).hexdigest()
+    print("-> gedrehtes Blatt abgelegt")
+upsert_aip_chart(conn, icao, bild_hash=_hash,
                  nord=p.nord, sued=p.sued, west=p.west, ost=p.ost,
                  feld_nord=p.feld_nord, feld_sued=p.feld_sued,
                  feld_west=p.feld_west, feld_ost=p.feld_ost,

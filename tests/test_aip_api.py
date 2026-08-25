@@ -208,3 +208,51 @@ def test_seitenwahl_loescht_keine_handpassung_am_selben_blatt():
     assert 'alt["quelle"] == "hand"' in quelle
     # Und der Rueckfall muss VOR dem Schreiben greifen.
     assert quelle.index('alt["bild_hash"] == neuer_hash') < quelle.index("upsert_aip_chart")
+
+
+def test_seitenwahl_legt_quer_gedruckte_blaetter_genordet_ab():
+    """Der Seitenwaehler drehte bis 25.08.2026 NIE -- die Drehlogik war eine Closure.
+
+    ``blatt_beschaffen`` hatte sie als lokale Funktion ``versuche``; erreichbar war sie damit
+    nur ueber den Abruf. Der Seitenwaehler rief ``passung_rechnen`` direkt auf und legte ein
+    quer gedrucktes Blatt unveraendert ab. Genau so ist EDDN quer in die Ablage gelangt,
+    obwohl seine Seite 3 eine regulaere Sichtflugkarte mit Gradnetz ist -- ein Blatt, das
+    weder automatisch noch von Hand zu passen war, ohne dass man ihm ansah, warum.
+    """
+    import inspect
+
+    from app import main
+    quelle = inspect.getsource(main.admin_aip_seite_waehlen)
+    assert "genordet_rechnen(" in quelle, "der Seitenwaehler muss die Drehlogik benutzen"
+    assert "aip_charts.passung_rechnen(" not in quelle, \
+        "der direkte Aufruf umgeht das Drehen"
+    # Der Hash muss zu den abgelegten Bytes gehoeren -- also NACH dem Drehen gebildet werden,
+    # sonst greift die Handpassungs-Sicherung am falschen Bild.
+    assert quelle.index("genordet_rechnen(") < quelle.index("_h.sha256(roh)")
+
+
+def test_seitenwahl_kennt_dieselben_plaetze_wie_der_bestandslauf():
+    """airportsdata kennt 29 der 446 Plaetze nicht -- EDMR ist einer davon.
+
+    Der woechentliche Bestandslauf faellt fuer sie seit jeher auf OpenAIP zurueck
+    (``platz_koordinate``) und passt sie problemlos. Die Admin-Endpunkte fragten dagegen nur
+    ``geo.icao_to_coords`` und antworteten mit 409 "Koordinate des Platzes unbekannt" --
+    ausgerechnet bei den Plaetzen, fuer die man den Seitenwaehler am ehesten braucht.
+
+    Gebunden an die gemeinsame Funktion, nicht an eine zweite Fassung derselben Aufloesung:
+    Zwei Antworten auf dieselbe Frage laufen frueher oder spaeter auseinander.
+    """
+    import inspect
+
+    from app import main
+    helfer = inspect.getsource(main._platz_koordinate)
+    assert "geo.icao_to_coords" in helfer, "die guenstige Quelle zuerst"
+    assert "platz_koordinate" in helfer, "der OpenAIP-Rueckfall des Jobs muss es sein"
+    for endpunkt in (main.admin_aip_seiten, main.admin_aip_seite_waehlen):
+        quelle = inspect.getsource(endpunkt)
+        # Ohne Klammer geprueft: Der Seiten-Endpunkt reicht die Funktion als Referenz an
+        # ``asyncio.to_thread`` weiter (sie macht einen Netzabruf und darf den Event-Loop
+        # nicht blockieren), der Seitenwaehler ruft sie direkt auf.
+        assert "_platz_koordinate" in quelle, f"{endpunkt.__name__} umgeht den Rueckfall"
+        assert "geo.icao_to_coords(" not in quelle, \
+            f"{endpunkt.__name__} fragt noch direkt und verliert die 29 Plaetze"

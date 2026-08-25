@@ -8,55 +8,49 @@ und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
 ---
 
-## Sichtflugkarten: die letzten neun, und was die Automatik nicht kann
+## Sichtflugkarten: es fehlen noch zwei
 
-Stand 25.08.2026: **437 von 446 gepasst (98 %)** — davon **283 rein automatisch (63,5 %)**, der
-Rest von Hand. Die beiden Zahlen und warum beide gebraucht werden, stehen in
-[`superpowers/specs/2026-08-23-aip-karten-overlay-design.md`](superpowers/specs/2026-08-23-aip-karten-overlay-design.md),
-Abschnitt 3.5.
+Stand 25.08.2026 abends, aus der Datenbank: **444 von 446 gepasst**. Offen sind nur noch
+**EDDN** und **EDMR**.
 
-**Die Automatikquote zu heben lohnt sich weniger, als hier bis zum 25.08.2026 stand.**
-Handpassungen sind unbedingt dauerhaft: `scripts/aip_bestand.py` behält sie bei **jedem**
-Fehlschlag der Automatik, unabhängig von AIRAC und Geometrie. Eine höhere Quote schützt die 437
-also nicht — sie hilft nur bei neuen Plätzen (selten) und bei einem Wiederaufbau aus dem Nichts
-(hypothetisch). Wer es trotzdem angeht, nimmt **einen** begrenzten Versuch am dokumentierten
-Ansatz und misst gegen 283, nicht gegen 437:
+**Die frühere Liste "die letzten neun" war falsch — in beide Richtungen.** Sie stand hier
+noch mit 437 und nannte neun Karten als grundsätzlich unlösbar, darunter EDFH, EDDF, EDDH,
+EDDS, EDDG, EDLW und EDCQ. Sieben davon hat der Nutzer inzwischen von Hand gesetzt. Die
+Begründung, die hier stand ("große Verkehrsflughäfen mit eigenem Kartentyp, Bewegungskarte
+ohne Gradnetz"), war zudem sachlich falsch: EDFH etwa trägt auf Seite 3 eine reguläre,
+genordete Sichtflugkarte mit vollem Gradnetz, EDDN auf Seite 3 ebenfalls. Die Einordnung
+war aus dem *Scheitern der Automatik* erschlossen, nicht aus dem Blatt — geprüft hatte ich
+nur die abgelegte Seite, nicht das Kapitel.
 
-1. **Beschriftete Ticks fehlen oft in der Tickliste**, weil die Zahl den Strich unterbricht (bei
-   ETND und EDDE waren genau die beschrifteten Positionen die Lücken im sonst gleichmäßigen
-   Raster). Die Rasterlücken als Lesepositionen mitzunehmen, würde vermutlich viele Blätter
-   erschließen. Der Hebel liegt beim **Lesen der Zahlen**, nicht beim Finden des Gitters —
-   Rahmen und Raster werden bei rund 92 % gefunden.
-2. Alles, was Abschnitt 3.4 der Spec zur Segmentierung sagt, gilt weiter.
+**Lehre für die nächste solche Liste:** „die Automatik schafft es nicht" und „es gibt keine
+Karte" sind zwei verschiedene Aussagen. Wer die zweite schreibt, muss die Kapitelseiten
+angesehen haben.
 
-**Nichts davon ist dringend.** Die neun offenen Karten sind ausnahmslos Plätze mit einem
-grundsätzlichen Problem, nicht mit einem Bedienfehler:
+### EDDN — quer gedruckt
 
-- **EDFH, EDMR** — hier liegt in der Quelle **keine Sichtflugkarte**. Nichts zu holen, außer die
-  DFS ergänzt eine. Kein Aufwand hineinstecken.
-- **EDDF, EDDH, EDDN, EDDS** — große Verkehrsflughäfen mit eigenem Kartentyp (Bewegungskarte
-  ohne Gradnetz). Wäre nur mit einer zweiten, andersartigen Erkennung zu lösen; ob das lohnt,
-  entscheidet, ob dort überhaupt VFR geflogen wird.
-- **EDDG, EDLW** — 1:200 000-Karten, deren Gradnetz von Kartensymbolen überdeckt ist. Die
-  Prüfkette lehnt ab (EDDG: 7 px Residuum, zulässig sind 2). **Nicht von Hand erzwingen** — das
-  hebelte genau die Sicherung aus, die den Wert der übrigen 437 garantiert.
-- **EDCQ** — das *gedruckte* Gitter ist selbst ungenau (bis 11 px, wo sonst 0–2 px gelten).
-  Unlösbar, solange die DFS das Blatt nicht neu satzt.
-
-## Sichtflugkarten: nach jedem wöchentlichen Lauf ins Log sehen
-
-Seit 25.08.2026 frischt der Bestandslauf auch handgepasste Blätter auf, sofern das neue Bild
-nachweislich denselben Ausschnitt zeigt (Spec 4.2a). Tut es das nicht, fasst er nichts an und
-meldet den Platz als **Warnung**:
+Seite 3 ist eine reguläre Sichtflugkarte, um 90° gedreht gesetzt. Genordet wird sie mit
+`--drehen 270`. Die Handpassung ist gerechnet und besteht alle sieben Proben:
 
 ```
-AIP-Karten: n Handpassung(en) koennten veraltet sein (Blatt geaendert, Ausschnitt abweichend): …
+Breite 299=49:35, 518=49:30, 737=49:25
+Länge  192=10:50, 334=10:55, 476=11:00, 618=11:05, 760=11:10, 903=11:15, 1045=11:20
+Rahmen 85,238 .. 1147,817   Residuen 0,00 px / 0,67 px   cos-Probe 49,52° gegen 49,50°
 ```
 
-Das ist der einzige Fall, der Handarbeit verlangt: Blatt ansehen, und wenn der Ausschnitt
-wirklich ein anderer ist, mit `scripts/aip_handpassung.py` neu setzen. Bis zum ersten Lauf nach
-dem nächsten AIRAC-Wechsel ist unbekannt, wie oft das vorkommt — **diese Zahl gehört gemessen**,
-bevor jemand über weitere Automatik nachdenkt.
+Warum die Automatik dort scheitert, ist gemessen und gehört zum Rasterlücken-Thema: Die
+beschrifteten Ticks fehlen in der Tickliste, weil die Zahl den Strich unterbricht. Damit
+fällt die Belegung unter 0,75 und `raster()` greift das Drei- bzw. Doppelte des echten
+Abstands (131,25 statt 43,75 px; 56,89 statt 28,44 px).
+
+### EDMR — Koordinate
+
+`airportsdata` kennt EDMR nicht, wie 28 weitere der 446 Plätze. Der wöchentliche
+Bestandslauf fällt für sie seit jeher auf OpenAIP zurück (`platz_koordinate`); die
+Admin-Endpunkte taten es nicht und antworteten mit **409 „Koordinate des Platzes
+unbekannt"** — ausgerechnet bei den Plätzen, für die man den Seitenwähler am ehesten
+braucht. Behoben: beide Endpunkte benutzen jetzt dieselbe Auflösung wie der Job.
+
+EDMRs Karte ist Seite 2 (Ottobrunn HEL, 1:50 000, genordet, Ticks im Minutenabstand).
 
 ## Forum
 

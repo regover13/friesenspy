@@ -4264,6 +4264,34 @@ def _aip_seiten_sammeln(aip_url: str, lat: float, lon: float) -> list[dict]:
     return out
 
 
+def _platz_koordinate(code: str) -> tuple[float, float] | None:
+    """Koordinate eines Platzes -- dieselbe Aufloesung wie im woechentlichen Job.
+
+    ``geo.icao_to_coords`` kennt airportsdata und die Ergaenzungsplaetze. Das reicht fuer den
+    laufenden Betrieb, aber nicht fuer die AIP-Blaetter: **airportsdata kennt 29 der 446
+    Plaetze nicht** (EDMR, EDBN, EDGO, EDHD, ... ). Der Bestandslauf faellt fuer sie seit
+    jeher auf OpenAIP zurueck und passt sie problemlos; die Admin-Seitenwahl tat es nicht und
+    antwortete mit 409 "Koordinate des Platzes unbekannt" -- ausgerechnet fuer die Plaetze,
+    bei denen man den Seitenwaehler am ehesten braucht.
+
+    Dieselbe Funktion wie im Job, nicht eine zweite Fassung davon: Zwei Aufloesungen fuer
+    dieselbe Frage laufen frueher oder spaeter auseinander.
+    """
+    koord = geo.icao_to_coords(code)
+    if koord is not None:
+        return koord
+    einst = get_settings()
+    if not einst.OPENAIP_API_KEY:
+        return None
+    try:
+        from scripts.aip_bestand import platz_koordinate
+        with _httpx.Client(follow_redirects=True) as client:
+            return platz_koordinate(code, client, einst.OPENAIP_API_KEY, {})
+    except Exception:
+        logger.exception("%s: Koordinate ueber OpenAIP fehlgeschlagen", code)
+        return None
+
+
 @app.get("/api/admin/aip-charts/{icao}/seiten")
 async def admin_aip_seiten(icao: str, request: Request):
     """Welche Seiten das Kapitel dieses Platzes hergibt -- mit Vorschau zum Auswaehlen."""
@@ -4277,9 +4305,7 @@ async def admin_aip_seiten(icao: str, request: Request):
         conn.close()
     if zeile is None:
         raise HTTPException(status_code=404, detail="kein Kartenlink fuer diesen Platz")
-    # geo.icao_to_coords statt airportsdata direkt: Es kennt zusaetzlich die Ergaenzungen
-    # aus _CUSTOM_AIRPORTS, und der Rest der Anwendung fragt ebenfalls dort.
-    koord = geo.icao_to_coords(code)
+    koord = await asyncio.to_thread(_platz_koordinate, code)
     if koord is None:
         raise HTTPException(status_code=409, detail="Koordinate des Platzes unbekannt")
     seiten = await asyncio.to_thread(_aip_seiten_sammeln, zeile["aip_url"], koord[0], koord[1])
@@ -4305,23 +4331,31 @@ async def admin_aip_seite_waehlen(icao: str, request: Request):
         raise HTTPException(status_code=400, detail="nur Seiten von aip.dfs.de")
 
     def arbeit() -> dict:
-        import io
         import hashlib as _h
 
-        from PIL import Image
         einst = get_settings()
         with _httpx.Client(follow_redirects=True, timeout=60.0) as client:
             roh = aip_charts.bild_aus_html(_aip_holer(client)(seite))
         if roh is None:
             raise HTTPException(status_code=422, detail="Auf dieser Seite steht kein Bild")
-        koord = geo.icao_to_coords(code)
+        koord = _platz_koordinate(code)
         passung = None
         if koord:
             try:
-                passung = aip_charts.passung_rechnen(
-                    Image.open(io.BytesIO(roh)).convert("L"), koord[0], koord[1])
+                # Ueber ``genordet_rechnen``, nicht direkt ueber ``passung_rechnen``: Ein
+                # quer gedrucktes Blatt muss GENORDET abgelegt werden, sonst ist es weder
+                # automatisch noch von Hand zu passen. Bis 25.08.2026 stand hier der
+                # direkte Aufruf, und die Drehlogik steckte als Closure in
+                # ``blatt_beschaffen`` -- ueber den Seitenwaehler bestimmte Blaetter wurden
+                # deshalb NIE gedreht. So ist EDDN quer in der Ablage gelandet, obwohl
+                # seine Seite 3 ein regulaeres Gradnetz traegt.
+                gedreht, passung = aip_charts.genordet_rechnen(roh, koord[0], koord[1])
+                if gedreht is not None:
+                    roh = gedreht
             except Exception:
                 passung = None
+        # Der Hash wird NACH dem Drehen gebildet -- er muss zu den Bytes gehoeren, die
+        # wirklich abgelegt werden, sonst greift die Handpassungs-Sicherung unten daneben.
         aip_charts.blatt_schreiben(aip_charts.blatt_pfad(einst.DB_PATH, code), roh)
         neuer_hash = _h.sha256(roh).hexdigest()
         conn = get_connection(einst.DB_PATH)

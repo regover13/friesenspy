@@ -69,10 +69,19 @@ def main() -> None:
     ap.add_argument("--rahmen", default=None, help="l,o,r,u,bl,bo,br,bu von Hand")
     ap.add_argument("--blatt", default=None,
                     help="PNG direkt angeben, statt es ueber die Einstellungen zu suchen")
+    ap.add_argument("--drehen", type=int, choices=(90, 180, 270), default=None,
+                    help="Blatt vor dem Rendern gegen den Uhrzeigersinn drehen -- dieselbe "
+                         "Angabe wie bei aip_handpassung.py und ZWINGEND dieselbe: Die "
+                         "abgelesenen Pixelwerte gelten nur fuer die Lage, in der gelesen "
+                         "wurde. Quer gerendert, genordet gerechnet waere still falsch.")
     a = ap.parse_args()
 
     icao = a.icao.upper()
     im = blatt_oeffnen(icao, a.blatt)
+    if a.drehen:
+        drehung = {90: Image.ROTATE_90, 180: Image.ROTATE_180, 270: Image.ROTATE_270}
+        im = im.transpose(drehung[a.drehen])
+        print(f"{icao}: um {a.drehen} Grad gedreht -> {im.size[0]}x{im.size[1]}")
     r = rahmen_holen(im, a.rahmen)
     if r is None:
         raise SystemExit(f"{icao}: kein Rahmen gefunden -- mit --rahmen einen vorgeben")

@@ -729,9 +729,13 @@ def test_quer_gedruckte_blaetter_werden_in_BEIDEN_richtungen_probiert():
     an der Pruefkette, nicht an einer neuen Festlegung.
     """
     import inspect
-    quelle = inspect.getsource(aip_charts.blatt_beschaffen)
+    quelle = inspect.getsource(aip_charts.genordet_rechnen)
     assert "ROTATE_270" in quelle and "ROTATE_90" in quelle, \
         "beide Drehrichtungen muessen probiert werden"
+    # Seit 25.08.2026 eine eigene Funktion: Als Closure in blatt_beschaffen war sie fuer die
+    # Admin-Seitenwahl unerreichbar, und die drehte deshalb nie. Beide Wege muessen sie
+    # benutzen, sonst faellt der Seitenwaehler wieder still hinter den Abruf zurueck.
+    assert "genordet_rechnen(" in inspect.getsource(aip_charts.blatt_beschaffen)
     # Die Reihenfolge entscheidet, dass die sieben bereits erkannten Blaetter unveraendert
     # bleiben: ROTATE_270 zuerst, ROTATE_90 nur als Rueckfall.
     assert quelle.index("ROTATE_270") < quelle.index("ROTATE_90")

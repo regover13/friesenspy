@@ -1464,6 +1464,54 @@ def blatt_pfad(db_path: str, icao: str) -> "Path":
     return Path(db_path).parent / "aip" / f"{(icao or '').strip().upper()}.png"
 
 
+def genordet_rechnen(roh: bytes, arp_lat: float,
+                     arp_lon: float) -> tuple[bytes | None, "Passung | None"]:
+    """Blatt und Passung -- quer gedruckte Blaetter kommen GENORDET zurueck.
+
+    Quer gedruckte Blaetter werden genordet abgelegt: Sieben der 446 haben Norden zur Seite
+    (s. ``ist_quer_gedruckt``). Sie einmal zu drehen ist der einzige Eingriff, der noetig ist
+    -- danach gilt fuer sie alles Weitere unveraendert, von der Passungsrechnung bis zur
+    Platzierung im Browser. Die Alternative waere ein gedreht aufgelegtes Overlay, und das
+    kann Leaflets ImageOverlay nicht.
+
+    **Welche der beiden Richtungen, entscheidet die Pruefkette -- nicht eine Festlegung.**
+    ``ist_quer_gedruckt`` sieht am Achsenverhaeltnis, DASS das Blatt quer steht, aber nicht,
+    wohin Norden zeigt; beides kommt vor. Bis 25.08.2026 stand hier fest ``ROTATE_270``, und
+    das ist fuer EDTX richtig -- bei EDCQ liefert erst ``ROTATE_90`` ein genordetes Blatt.
+    Ein falsch gedrehtes faellt durch den Genordet-Test in ``passung_rechnen``, es kann also
+    nichts Falsches abgelegt werden.
+
+    **Eigene Funktion seit 25.08.2026, vorher eine Closure in ``blatt_beschaffen``.** Damit
+    war sie fuer die Admin-Seitenwahl unerreichbar, und die rief ``passung_rechnen`` direkt
+    auf -- eine ueber den Seitenwaehler bestimmte Karte wurde also NIE gedreht. Genau so ist
+    EDDN quer in der Ablage gelandet, obwohl seine Seite 3 eine regulaere Sichtflugkarte mit
+    Gradnetz ist. Wer den Drehschritt umgeht, bekommt kein falsches Ergebnis, sondern gar
+    keins -- und sieht dem Blatt nicht an, warum.
+    """
+    from PIL import Image
+    import io
+
+    try:
+        im = Image.open(io.BytesIO(roh)).convert("L")
+    except Exception:
+        return None, None
+    try:
+        if ist_quer_gedruckt(im, arp_lat):
+            for drehung in (Image.ROTATE_270, Image.ROTATE_90):
+                gedreht = Image.open(io.BytesIO(roh)).transpose(drehung)
+                passung_gedreht = passung_rechnen(gedreht.convert("L"), arp_lat, arp_lon)
+                if passung_gedreht is not None:
+                    puffer = io.BytesIO()
+                    gedreht.save(puffer, "PNG")
+                    logger.info("AIP: Blatt war quer gedruckt, genordet abgelegt")
+                    return puffer.getvalue(), passung_gedreht
+            # Keine Richtung kommt durch -- ungedreht weiterreichen, die Passung scheitert
+            # dann regulaer und das Blatt landet als ``ungepasst``.
+    except Exception:
+        logger.exception("AIP: Quer-Pruefung fehlgeschlagen")
+    return roh, passung_rechnen(im, arp_lat, arp_lon)
+
+
 def blatt_beschaffen(url: str, arp_lat: float, arp_lon: float,
                      hole) -> tuple[bytes | None, "Passung | None", str | None]:
     """Blatt und Passung zu einem Kartenlink besorgen.
@@ -1479,9 +1527,6 @@ def blatt_beschaffen(url: str, arp_lat: float, arp_lon: float,
     zwischen "Karte passt nicht" und "Netz war weg" -- im zweiten Fall darf er die
     bestehende Karte nicht entwerten.
     """
-    from PIL import Image
-    import io
-
     erste = hole(url)
     ziel = airac_url(erste, url) or url
     airac = airac_kennung(ziel)
@@ -1491,38 +1536,7 @@ def blatt_beschaffen(url: str, arp_lat: float, arp_lon: float,
         roh = bild_aus_html(seiten_html)
         if roh is None:
             return None, None
-        try:
-            im = Image.open(io.BytesIO(roh)).convert("L")
-        except Exception:
-            return None, None
-        # Quer gedruckte Blaetter werden GENORDET abgelegt: Sieben der 446 haben Norden zur
-        # Seite (s. ist_quer_gedruckt). Sie hier einmal zu drehen ist der einzige Eingriff,
-        # der noetig ist -- danach gilt fuer sie alles Weitere unveraendert, von der
-        # Passungsrechnung bis zur Platzierung im Browser. Die Alternative waere ein gedreht
-        # aufgelegtes Overlay, und das kann Leaflets ImageOverlay nicht.
-        #
-        # **Welche der beiden Richtungen, entscheidet die Pruefkette -- nicht eine
-        # Festlegung.** ``ist_quer_gedruckt`` sieht am Achsenverhaeltnis, DASS das Blatt
-        # quer steht, aber nicht, wohin Norden zeigt; beides kommt vor. Bis 25.08.2026 stand
-        # hier fest ``ROTATE_270``, und das ist fuer EDTX richtig -- bei EDCQ liefert erst
-        # ``ROTATE_90`` ein genordetes Blatt. Ein falsch gedrehtes faellt durch den
-        # Genordet-Test in ``passung_rechnen``, es kann also nichts Falsches abgelegt
-        # werden; die feste Richtung liess die andere Haelfte nur unnoetig durchfallen.
-        try:
-            if ist_quer_gedruckt(im, arp_lat):
-                for drehung in (Image.ROTATE_270, Image.ROTATE_90):
-                    gedreht = Image.open(io.BytesIO(roh)).transpose(drehung)
-                    passung_gedreht = passung_rechnen(gedreht.convert("L"), arp_lat, arp_lon)
-                    if passung_gedreht is not None:
-                        puffer = io.BytesIO()
-                        gedreht.save(puffer, "PNG")
-                        logger.info("AIP: Blatt war quer gedruckt, genordet abgelegt")
-                        return puffer.getvalue(), passung_gedreht
-                # Keine Richtung kommt durch -- ungedreht weiterreichen, die Passung
-                # scheitert dann regulaer und das Blatt landet als ``ungepasst``.
-        except Exception:
-            logger.exception("AIP: Quer-Pruefung fehlgeschlagen")
-        return roh, passung_rechnen(im, arp_lat, arp_lon)
+        return genordet_rechnen(roh, arp_lat, arp_lon)
 
     roh, passung = versuche(html)
     if passung is not None:
