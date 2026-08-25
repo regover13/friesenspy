@@ -130,20 +130,50 @@ def test_marken_haengen_in_der_ebene():
     assert "_aipKartenGruppe.removeLayer(" in abschnitt
 
 
-def test_marke_erscheint_erst_wenn_das_blatt_ins_bild_passt():
-    """Nutzer-Wunsch 25.08.2026: die Zoom-Sichtbarkeit wieder einbauen.
+def test_marke_erscheint_ab_der_sichtbarkeitsschwelle():
+    """Nutzer-Wunsch 25.08.2026: die Zoom-Sichtbarkeit wieder einbauen -- aber frueher.
 
-    Am 24.08.2026 stand hier das Gegenteil -- Marken auf jeder Zoomstufe, die Schwelle
-    entschied nur noch ueber Groesse und Beschriftung (Commit c485eaa). Einen Tag spaeter
-    zurueckgenommen: Die Schwelle entscheidet wieder, OB eine Marke entsteht.
+    Am 24.08.2026 stand hier das Gegenteil: Marken auf jeder Zoomstufe, die Schwelle
+    entschied nur noch ueber Groesse und Beschriftung (Commit c485eaa). Am 25.08. mittags
+    zurueckgenommen, am selben Abend nachjustiert -- sie kamen zu spaet.
 
     An den Aussprung gebunden, nicht an den blossen Namen der Schwelle: Eine reine Zuweisung
-    ``... <= _AIP_MARKE_FAKTOR) nah = true`` waere genau der Rueckfall.
+    statt des ``continue`` waere genau der Rueckfall auf den 24.08.
     """
     start = INDEX.index("function _aipMarkenAnpassen(")
     abschnitt = INDEX[start:start + 3000]
-    assert "> _AIP_MARKE_FAKTOR) continue" in abschnitt
-    assert "<= _AIP_MARKE_FAKTOR) nah = true" not in abschnitt
+    assert "> _AIP_MARKE_SICHTBAR_FAKTOR) continue" in abschnitt
+    assert "> _AIP_MARKE_FAKTOR) continue" not in abschnitt, \
+        "die strenge Schwelle darf die Marke nicht mehr verstecken"
+
+
+def test_sichtbarkeit_und_naehe_sind_zwei_schwellen():
+    """Die lockere entscheidet OB, die strenge ueber Groesse und Beschriftung.
+
+    Sie zusammenzulegen war der Stand vom 25.08.2026 nachmittags und ging nur gut, solange
+    beide dasselbe bedeuteten. Bei vierfachem Ausschnitt stehen viele Marken im Bild -- in
+    voller Groesse ein Teppich, mit je einem permanenten Tooltip die Falle vom 15.08.2026.
+    """
+    start = INDEX.index("function _aipMarkenAnpassen(")
+    abschnitt = INDEX[start:start + 3000]
+    assert "if (enge <= _AIP_MARKE_FAKTOR) nah = true" in abschnitt
+    # Und die Verkleinerung muss es wieder geben, sonst ist der Teppich da.
+    assert "transform: scale(0.6)" in INDEX
+    assert ".leaflet-container.aip-nah .aip-marke svg { transform: scale(1); }" in INDEX
+
+
+def test_sichtbarkeitsschwelle_ist_ein_vielfaches_von_zwei():
+    """Nutzer-Wunsch 25.08.2026 abends: Marken schon beim VIERFACHEN Ausschnitt.
+
+    Eine Zoomstufe verdoppelt die Kantenlaenge, also auch das Verhaeltnis Ausschnitt/Blatt.
+    Vorgegeben war der Ausschnitt (4x), nicht die Stufenzahl -- gebunden wird deshalb an den
+    Faktor. Zwischenwerte waeren wirkungslos, weil Zoomstufen ganzzahlig sind.
+    """
+    import re
+    m = re.search(r"_AIP_MARKE_SICHTBAR_FAKTOR = _AIP_MARKE_FAKTOR \* (\d+)", INDEX)
+    assert m, "Sichtbarkeitsschwelle nicht als Vielfaches der strengen definiert"
+    faktor = int(m.group(1))
+    assert faktor == 4, f"Nutzer-Vorgabe ist der vierfache Ausschnitt, gefunden {faktor}"
 
 
 def test_beschriftung_bleibt_an_der_schwelle():
@@ -180,7 +210,7 @@ def test_marken_schwelle_misst_die_engere_achse():
     """
     start = INDEX.index("function _aipMarkenAnpassen(")
     abschnitt = INDEX[start:start + 3000]
-    assert "Math.min(sichtLat / blattLat, sichtLon / blattLon) > _AIP_MARKE_FAKTOR" in abschnitt
+    assert "const enge = Math.min(sichtLat / blattLat, sichtLon / blattLon)" in abschnitt
 
 
 def test_marken_schwelle_laesst_das_ganze_blatt_zu():

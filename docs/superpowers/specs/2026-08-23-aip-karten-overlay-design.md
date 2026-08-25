@@ -664,11 +664,29 @@ Eine Ebene genügt für beide Ziele: `/panel` liefert **dieselbe** `index.html` 
   Blatt, und zwar auf der **engeren** Achse — eine feste Zoomschwelle hinge an der
   Fenstergröße, und die Blätter sind in drei verschiedenen Maßstäben unterwegs.
 
-  **Hin und zurück (24. → 25.08.2026).** Am 24.08. wurde die Schwelle entschärft: Marken
-  auf *jeder* Zoomstufe, klein und stumm in der Übersicht, groß und beschriftet erst nah
-  (Commit `c485eaa`). Am 25.08. auf Wunsch des Nutzers zurückgenommen — die Schwelle
-  entscheidet wieder, **ob** eine Marke entsteht. Der Absatz oben beschreibt also erneut
-  den gebauten Zustand.
+  **Hin und her (24. → 25.08.2026), und wo es gelandet ist.** Am 24.08. wurde die Schwelle
+  entschärft: Marken auf *jeder* Zoomstufe, klein und stumm in der Übersicht, groß und
+  beschriftet erst nah (Commit `c485eaa`). Am 25.08. mittags auf Wunsch zurückgenommen —
+  eine einzige Schwelle, sie entschied wieder, **ob** eine Marke entsteht. Am selben Abend
+  nachjustiert: So kamen die Marken zu spät.
+
+  **Der gebaute Zustand sind jetzt ZWEI Schwellen am selben Verhältnis:**
+
+  | Schwelle | Wert | entscheidet |
+  |---|---|---|
+  | `_AIP_MARKE_SICHTBAR_FAKTOR` | `_AIP_MARKE_FAKTOR * 4` = 8,0 | **ob** die Marke da ist |
+  | `_AIP_MARKE_FAKTOR` | 2,0 | **wie** sie aussieht: groß und beschriftet |
+
+  Vorgegeben hatte der Nutzer den Ausschnitt („4× größer"), nicht die Stufenzahl; da eine
+  Zoomstufe die Kantenlänge verdoppelt, sind das zwei Stufen früher. Die Trennung ist
+  nicht kosmetisch: Bei vierfachem Ausschnitt stehen viele Marken im Bild. In voller Größe
+  wären sie ein Teppich, und ein permanenter Tooltip je Marke ist ein DOM-Element, das
+  Leaflet bei jeder Kartenbewegung neu setzt — die Falle vom 15.08.2026. Die
+  Verkleinerung auf `scale(0.6)` und die Beschriftung hängen deshalb weiter an der
+  **strengen** Schwelle.
+
+  Wer das Sichtfenster ändert, verdoppelt oder halbiert den Faktor. Zwischenwerte tun
+  nichts, weil Zoomstufen ganzzahlig sind.
 
   Bemerkenswert ist der Zwischenzustand: `c485eaa` hat diesen Absatz **nicht** angefasst.
   Die Spec beschrieb einen Tag lang eine Sichtbarkeitsregel, die der Code nicht mehr
