@@ -274,6 +274,28 @@ wurde, kann dadurch nicht durchrutschen.
 
 **Ergebnis: 262 → 264** an denselben 446 Blättern.
 
+### 3.1e Sieben Blätter sind quer gedruckt (25.08.2026)
+
+Bei **EDLP** steht die Kopfzeile „PADERBORN/LIPPSTADT EDLP" **hochkant**, im oberen Band stehen
+51°40', 51°35', 51°30' — also **Breiten, die entlang der x-Achse abnehmen** — und im linken Band
+die Länge. Das Blatt ist um 90 Grad gedreht gedruckt, mit Norden zur Seite. Betroffen sind sieben
+der 446: EDCQ, EDHE, EDLP, EDLV, EDMA, EDQG, EDTY.
+
+Diese Blätter waren mit keinem Leseverfahren zu retten — die Achsen sind vertauscht, die Schrift
+liegt auf der Seite, und die gesamte Rechnung setzt ein genordetes Blatt voraus. Abschnitt 8 sagt
+ausdrücklich „keine Rotation: Die Karten sind genordet". Für diese sieben stimmt das nicht.
+
+**Erkannt wird an der Geometrie, nicht an der Schrift.** Auf einem genordeten Blatt ist eine
+Bogenminute Länge um cos(Breite) kürzer als eine der Breite, also `dx < dy`. Steht das Blatt quer,
+tauschen die Achsen ihre Rollen und das Verhältnis kippt. Geprüft wird gegen beide Möglichkeiten;
+nur wenn die gedrehte deutlich besser passt, gilt das Blatt als quer. **An 380 genordeten Blättern
+kein einziger Fehlalarm** — und ein Fehlalarm wäre teuer, das Blatt läge danach quer auf der Karte.
+
+**Gedreht wird beim Abruf, nicht bei der Anzeige.** Das Blatt wird einmal genordet und so
+abgelegt; danach gilt für es alles Weitere unverändert, von der Passungsrechnung bis zur
+Platzierung im Browser. Die Alternative wäre ein gedreht aufgelegtes Overlay, und das kann
+Leaflets `ImageOverlay` nicht.
+
 ## 3.2 Freiheitsgrade schwächen die Probe — auch die verbliebenen
 
 Eine Zwischenfassung der Rastersuche durfte den gefundenen Tick-Abstand unterteilen. Bei EDAB

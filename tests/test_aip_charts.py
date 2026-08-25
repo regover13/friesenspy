@@ -576,3 +576,38 @@ def test_raster_berichtigen_kann_auch_die_laenge_treffen():
     dy2, dx2 = aip_charts._raster_berichtigen(dy, echt * 3, lat)
     assert dy2 == dy
     assert abs(dx2 - echt) < 0.01
+
+
+def test_quer_gedruckte_blaetter_werden_erkannt():
+    """Sieben der 446 Blaetter haben Norden zur SEITE (EDLP, EDMA, EDCQ, EDHE, EDLV, EDQG, EDTY).
+
+    Bei EDLP steht die Kopfzeile hochkant, im oberen Band stehen Breiten (51°40', 51°35') statt
+    Laengen. Ohne Erkennung sind sie nicht zu retten: Achsen vertauscht, Schrift auf der Seite.
+
+    Erkannt wird an der Geometrie: Auf einem genordeten Blatt ist eine Bogenminute Laenge um
+    cos(Breite) kuerzer als eine der Breite, also dx < dy. Steht das Blatt quer, kippt das.
+    """
+    import math
+
+    class _Bild:
+        pass
+
+    lat = 51.61
+    cos = math.cos(math.radians(lat))
+    # Genordet: dx/dy == cos -> kein Quer-Verdacht.
+    assert not aip_charts._quer_verdacht(100.0, 100.0 * cos, lat)
+    # Quer: die Achsen tauschen die Rollen.
+    assert aip_charts._quer_verdacht(100.0 * cos, 100.0, lat)
+
+
+def test_quer_test_schlaegt_bei_genordeten_nicht_an():
+    """An 380 genordeten Blaettern hat der Test keinen Fehlalarm erzeugt (25.08.2026).
+
+    Ein Fehlalarm waere teuer: Das Blatt wuerde gedreht abgelegt und laege danach quer auf
+    der Karte -- schlimmer als ein Blatt, das fehlt.
+    """
+    import math
+    for lat in (47.5, 50.0, 51.6, 53.9, 55.0):
+        cos = math.cos(math.radians(lat))
+        for k in (1.0, 2.0, 5.0):
+            assert not aip_charts._quer_verdacht(100.0 * k, 100.0 * k * cos, lat)

@@ -1021,6 +1021,9 @@ _V_MIN, _V_MAX = 0.57, 0.68
 _ACHSEN_VIELFACHE = (1.0, 2.0, 0.5)
 # Wie genau dx/dy die cos-Beziehung treffen muss, damit der Rasterabstand als richtig gilt.
 _RASTER_COS_TOLERANZ = 0.02
+# Vielfache, die beim Quer-Test zugelassen sind, und wie genau es passen muss.
+_QUER_VIELFACHE = (1.0, 2.0, 5.0, 0.5, 0.2)
+_QUER_TOLERANZ = 0.03
 # Mindestens so viele lesbare Stuetzstellen je Achse.
 #
 # Drei waeren schoener -- erst ab dreien gibt es Residuen und damit Pruefung (3). Viele
@@ -1061,6 +1064,46 @@ def ausgleichsgerade(paare: list[tuple[float, float]]
     b = (sy - m * sx) / n
     res = max(abs(g - (m * p + b)) for p, g in paare)
     return m, b, res
+
+
+def ist_quer_gedruckt(im, arp_lat: float) -> bool:
+    """Ist das Blatt um 90 Grad gedreht gedruckt, also mit Norden zur Seite?
+
+    **Solche Blaetter gibt es wirklich.** Bei EDLP steht die Kopfzeile
+    „PADERBORN/LIPPSTADT EDLP" hochkant, im OBEREN Band stehen 51°40', 51°35', 51°30' --
+    also BREITEN, die entlang der x-Achse abnehmen -- und im linken Band die Laenge. Sieben
+    der 446 Blaetter sind so gedruckt (25.08.2026): EDCQ EDHE EDLP EDLV EDMA EDQG EDTY.
+
+    Ohne diese Erkennung sind sie nicht zu retten: Die Beschriftung liegt auf der Seite, die
+    Achsen sind vertauscht, und die ganze Rechnung setzt ein genordetes Blatt voraus.
+
+    **Erkannt wird es an der Geometrie, nicht an der Schrift.** Auf einem genordeten Blatt
+    ist eine Bogenminute Laenge um cos(Breite) kuerzer als eine Bogenminute Breite, also
+    ``dx < dy``. Steht das Blatt quer, tauschen die Achsen ihre Rollen und das Verhaeltnis
+    kippt. Geprueft wird gegen beide Moeglichkeiten; nur wenn die gedrehte deutlich besser
+    passt, gilt das Blatt als quer. An 380 genordeten Blaettern hat der Test keinen einzigen
+    Fehlalarm erzeugt.
+    """
+    rahmen = rahmen_finden(im)
+    if rahmen is None:
+        return False
+    ty, tx = tick_positionen(im, rahmen)
+    dy, _n1, _a1 = raster(ty)
+    dx, _n2, _a2 = raster(tx)
+    if not dy or not dx:
+        return False
+    return _quer_verdacht(dy, dx, arp_lat)
+
+
+def _quer_verdacht(dy: float, dx: float, arp_lat: float) -> bool:
+    """Der reine Geometrievergleich, ohne Bild -- damit er sich pruefen laesst."""
+    if not dy or not dx:
+        return False
+    ziel = math.cos(math.radians(arp_lat))
+    v = dx / dy
+    normal = min(abs(v / k - ziel) for k in _QUER_VIELFACHE)
+    quer = min(abs((1 / v) / k - ziel) for k in _QUER_VIELFACHE)
+    return quer < normal and quer < _QUER_TOLERANZ
 
 
 def _raster_berichtigen(dy: float, dx: float, arp_lat: float) -> tuple[float, float]:
@@ -1268,6 +1311,21 @@ def blatt_beschaffen(url: str, arp_lat: float, arp_lon: float,
             im = Image.open(io.BytesIO(roh)).convert("L")
         except Exception:
             return None, None
+        # Quer gedruckte Blaetter werden GENORDET abgelegt: Sieben der 446 haben Norden zur
+        # Seite (s. ist_quer_gedruckt). Sie hier einmal zu drehen ist der einzige Eingriff,
+        # der noetig ist -- danach gilt fuer sie alles Weitere unveraendert, von der
+        # Passungsrechnung bis zur Platzierung im Browser. Die Alternative waere ein gedreht
+        # aufgelegtes Overlay, und das kann Leaflets ImageOverlay nicht.
+        try:
+            if ist_quer_gedruckt(im, arp_lat):
+                gedreht = Image.open(io.BytesIO(roh)).transpose(Image.ROTATE_270)
+                puffer = io.BytesIO()
+                gedreht.save(puffer, "PNG")
+                roh = puffer.getvalue()
+                im = gedreht.convert("L")
+                logger.info("AIP: Blatt war quer gedruckt, genordet abgelegt")
+        except Exception:
+            logger.exception("AIP: Quer-Pruefung fehlgeschlagen")
         return roh, passung_rechnen(im, arp_lat, arp_lon)
 
     roh, passung = versuche(html)
