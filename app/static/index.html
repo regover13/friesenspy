@@ -2352,8 +2352,14 @@
       box-shadow: none;
       color: #9fd4f5;
       font-family: var(--text-mono, monospace);
-      font-size: 9px;
-      padding: 0 3px;
+      /* 11px statt 9px (Nutzerwunsch 25.08.2026): 9 war zu klein. Feste Pixel und nicht
+         rem -- die Beschriftung sitzt AUF der Karte und muss zur 24-px-Marke passen, nicht
+         zur Schriftgroesse der Seite. Die uebrigen Kartenbeschriftungen teilen sich zwar
+         dieselben Werte, bleiben aber bei 9px: Hier ging es um DIESE Marke, und ein
+         stillschweigendes Mitziehen der anderen waere keine Anpassung, sondern ein
+         Nebeneffekt. */
+      font-size: 11px;
+      padding: 0 4px;
       white-space: nowrap;
     }
     .aip-marke-label::before { display: none; }
