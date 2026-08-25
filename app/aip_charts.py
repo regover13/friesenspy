@@ -1384,14 +1384,26 @@ def blatt_beschaffen(url: str, arp_lat: float, arp_lon: float,
         # der noetig ist -- danach gilt fuer sie alles Weitere unveraendert, von der
         # Passungsrechnung bis zur Platzierung im Browser. Die Alternative waere ein gedreht
         # aufgelegtes Overlay, und das kann Leaflets ImageOverlay nicht.
+        #
+        # **Welche der beiden Richtungen, entscheidet die Pruefkette -- nicht eine
+        # Festlegung.** ``ist_quer_gedruckt`` sieht am Achsenverhaeltnis, DASS das Blatt
+        # quer steht, aber nicht, wohin Norden zeigt; beides kommt vor. Bis 25.08.2026 stand
+        # hier fest ``ROTATE_270``, und das ist fuer EDTX richtig -- bei EDCQ liefert erst
+        # ``ROTATE_90`` ein genordetes Blatt. Ein falsch gedrehtes faellt durch den
+        # Genordet-Test in ``passung_rechnen``, es kann also nichts Falsches abgelegt
+        # werden; die feste Richtung liess die andere Haelfte nur unnoetig durchfallen.
         try:
             if ist_quer_gedruckt(im, arp_lat):
-                gedreht = Image.open(io.BytesIO(roh)).transpose(Image.ROTATE_270)
-                puffer = io.BytesIO()
-                gedreht.save(puffer, "PNG")
-                roh = puffer.getvalue()
-                im = gedreht.convert("L")
-                logger.info("AIP: Blatt war quer gedruckt, genordet abgelegt")
+                for drehung in (Image.ROTATE_270, Image.ROTATE_90):
+                    gedreht = Image.open(io.BytesIO(roh)).transpose(drehung)
+                    passung_gedreht = passung_rechnen(gedreht.convert("L"), arp_lat, arp_lon)
+                    if passung_gedreht is not None:
+                        puffer = io.BytesIO()
+                        gedreht.save(puffer, "PNG")
+                        logger.info("AIP: Blatt war quer gedruckt, genordet abgelegt")
+                        return puffer.getvalue(), passung_gedreht
+                # Keine Richtung kommt durch -- ungedreht weiterreichen, die Passung
+                # scheitert dann regulaer und das Blatt landet als ``ungepasst``.
         except Exception:
             logger.exception("AIP: Quer-Pruefung fehlgeschlagen")
         return roh, passung_rechnen(im, arp_lat, arp_lon)

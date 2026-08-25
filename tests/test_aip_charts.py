@@ -611,3 +611,27 @@ def test_quer_test_schlaegt_bei_genordeten_nicht_an():
         cos = math.cos(math.radians(lat))
         for k in (1.0, 2.0, 5.0):
             assert not aip_charts._quer_verdacht(100.0 * k, 100.0 * k * cos, lat)
+
+
+def test_quer_gedruckte_blaetter_werden_in_BEIDEN_richtungen_probiert():
+    """Norden kann bei einem quer gedruckten Blatt nach links ODER nach rechts zeigen.
+
+    ``ist_quer_gedruckt`` sieht am Achsenverhaeltnis, DASS das Blatt quer steht -- nicht,
+    wohin Norden zeigt. Bis 25.08.2026 stand in ``blatt_beschaffen`` fest ``ROTATE_270``;
+    das ist fuer EDTX richtig, bei EDCQ liefert erst ``ROTATE_90`` ein genordetes Blatt.
+    Die feste Richtung liess die andere Haelfte unnoetig durchfallen.
+
+    Der Test bindet an den QUELLTEXT, weil der Pfad einen echten Netzabruf braucht: Beide
+    Konstanten muessen vorkommen, und die Wahl muss an ``passung_rechnen`` haengen -- also
+    an der Pruefkette, nicht an einer neuen Festlegung.
+    """
+    import inspect
+    quelle = inspect.getsource(aip_charts.blatt_beschaffen)
+    assert "ROTATE_270" in quelle and "ROTATE_90" in quelle, \
+        "beide Drehrichtungen muessen probiert werden"
+    # Die Reihenfolge entscheidet, dass die sieben bereits erkannten Blaetter unveraendert
+    # bleiben: ROTATE_270 zuerst, ROTATE_90 nur als Rueckfall.
+    assert quelle.index("ROTATE_270") < quelle.index("ROTATE_90")
+    # Und die Richtung wird nicht geraten, sondern gepruft.
+    kern = quelle[quelle.index("ist_quer_gedruckt"):]
+    assert "passung_rechnen" in kern, "die Pruefkette muss die Richtung entscheiden"

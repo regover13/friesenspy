@@ -296,6 +296,45 @@ abgelegt; danach gilt für es alles Weitere unverändert, von der Passungsrechnu
 Platzierung im Browser. Die Alternative wäre ein gedreht aufgelegtes Overlay, und das kann
 Leaflets `ImageOverlay` nicht.
 
+### 3.1f Nicht jedes Blatt beschriftet links und oben (25.08.2026)
+
+`tick_positionen` suchte die Ticks je Achse in **einem** Randband: Breite links, Länge oben. Über
+die 45 damals offenen Karten gemessen trugen **zehn** ihr Breiten-Gradnetz ausschließlich
+**rechts** (EDAT, EDBK, EDBT, EDEW, EDGK, EDNZ, EDOZ, EDWO u. a.), **EDOS** sein Längen-Gradnetz
+ausschließlich **unten**. Dort fand der Code null Ticks, und das Blatt fiel durch — obwohl es ein
+vollständiges, sauber lesbares Gradnetz trägt.
+
+Auffällig war es an einer unmöglichen Kombination: *ein Rahmen wurde gefunden, die Längenachse
+lieferte vier bis sechs Ticks, die Breitenachse null.* Eine Sichtflugkarte ohne Gradnetz auf einer
+Achse gibt es nicht; wenn eine Achse liest und die andere nicht, liegt es am Suchort, nicht am
+Blatt.
+
+`tick_positionen_mit_band` probiert deshalb je Achse **zuerst das übliche Band, das
+gegenüberliegende nur bei Fehlschlag** — und nennt dem Aufrufer, welches es war, damit
+`zeichen_im_band` die Zahlen an derselben Seite liest. Die Reihenfolge ist kein Detail: Sie hält
+jedes bisher erkannte Blatt bitgleich, die Erweiterung kann nur zusätzlich finden. Sie erweitert
+auch den Suchraum nicht auf Verdacht (s. 3.2), sondern nur dort, wo sonst gar nichts stünde.
+
+**Die äußeren Rahmenlinien rechts und unten fielen dabei schon an** — `rahmen_finden` hatte sie
+nur verworfen (`_ra`, `_ua`). `Rahmen` trägt sie jetzt als `band_rechts`/`band_unten`; beide sind
+`None`, wenn ein Rahmen aus vier gespeicherten Zahlen wiederhergestellt wurde, und `band_grenzen`
+liefert dann `None` statt zu raten.
+
+Gegenprobe über alle 446 Blätter, alter gegen neuen Code: **0 Regressionen, 0 veränderte
+Passungen, 7 zusätzlich automatisch erkannt.**
+
+### 3.1g Beide Drehrichtungen gehören probiert (25.08.2026)
+
+Nachtrag zu 3.1e: `ist_quer_gedruckt` sieht am Achsenverhältnis, **dass** ein Blatt quer steht —
+nicht, **wohin** Norden zeigt. Dafür stand in `blatt_beschaffen` fest `ROTATE_270`. Das ist für
+EDTX richtig; bei **EDCQ** liefert erst `ROTATE_90` ein genordetes Blatt. Die feste Richtung ließ
+die andere Hälfte unnötig durchfallen.
+
+Jetzt werden beide probiert, `ROTATE_270` zuerst (damit die bereits erkannten unverändert
+bleiben), und **die Prüfkette entscheidet** — ein falsch gedrehtes Blatt fällt durch den
+Genordet-Test, es kann also nichts Falsches abgelegt werden. Dasselbe Muster wie bei der
+Seitensuche: nicht raten, sondern versuchen und prüfen lassen.
+
 ## 3.2 Freiheitsgrade schwächen die Probe — auch die verbliebenen
 
 Eine Zwischenfassung der Rastersuche durfte den gefundenen Tick-Abstand unterteilen. Bei EDAB
@@ -373,6 +412,46 @@ zusammengefasst. Das ist der erwartete Ort für Mehraufwand.
 Wie viele Karten am Ende wirklich durchlaufen, steht erst nach dem ersten vollständigen Lauf
 fest. **Diese Zahl gehört gemeldet, bevor jemand mit der Handarbeit anfängt.**
 
+### 3.5 Die Zahl, gemessen (25.08.2026)
+
+Nachtrag zu 3.4, gemessen mit dem deployten Stand über alle 446 Blätter:
+
+| | Karten | |
+|---|---:|---|
+| **rein automatisch** | **283 von 446** | **63,5 %** |
+| davon an der Bilderkennung gescheitert | 163 | |
+| davon an fehlender Platzkoordinate gescheitert | 0 | OpenAIP deckt alle ab |
+| **Gesamtstand mit Handarbeit** | **437 von 446** | **98,0 %** |
+
+**Die 91,9 % aus Abschnitt 3 waren die Obergrenze der Geometrie, nicht die fertige Passung** —
+die Spec sagt das dort ausdrücklich. Der Abstand zwischen 91,9 % (Rahmen und Raster gefunden) und
+63,5 % (Passung durchgerechnet und geprüft) ist genau das, was Abschnitt 3.4 vorhergesagt hat: Es
+liegt am **Lesen der Zahlen**, nicht am Finden des Gitters.
+
+**Die beiden Zahlen beantworten verschiedene Fragen, und beide werden gebraucht:**
+
+- **437/446** ist der Stand, den die Nutzer sehen. Er hält: Der wöchentliche AIRAC-Lauf erhält
+  jede Handpassung, solange sich die Blattgeometrie nicht ändert (`hand_behalten`, s. 4.2). Für
+  die sieben Blätter, deren Seite von Hand getauscht wurde, ist das am 25.08.2026 gegengeprüft
+  worden — ein simulierter Frischabruf liefert dort weiterhin `passung=None`, die Handkorrektur
+  bleibt also geschützt.
+- **283/446** ist, was der Code allein kann. Das ist die Zahl, die zählt, wenn ein **neuer**
+  Flugplatz dazukommt oder die DFS ein Blatt neu satzt. Handarbeit erhöht den sichtbaren Stand,
+  aber nicht die Fähigkeit — wer die Erkennung verbessern will, misst gegen 283, nicht gegen 437.
+
+Die neun, die auch von Hand nicht zu retten waren, mit Grund:
+
+| ICAO | Warum |
+|---|---|
+| EDFH, EDMR | In der Quelle liegt **keine Sichtflugkarte** — Frankfurt-Hahn nur Textseiten, EDMR ein Hubschrauber-Detailplan ohne Gradnetz |
+| EDDF, EDDH, EDDN, EDDS | Große Verkehrsflughäfen mit eigenem Kartentyp (Bewegungskarte ohne Gradnetz) |
+| EDDG, EDLW | 1:200 000-Karten, deren Gradnetz von Kartensymbolen so überdeckt ist, dass die Residuen die Prüfkette nicht bestehen (EDDG: 7 px, zulässig sind 2) |
+| EDCQ | Das **gedruckte Gitter selbst** ist ungenau — bis 11 px Abweichung von der Geraden, wo sonst 0–2 px gelten |
+
+Bei EDDG und EDCQ wurde bewusst **nichts** geschrieben: Die Prüfkette hat abgelehnt, und eine
+abgelehnte Passung von Hand zu erzwingen würde genau die Sicherung aushebeln, die den Wert der
+übrigen 437 garantiert.
+
 ---
 
 ## 4. Server — neues Modul `app/aip_charts.py`
@@ -448,6 +527,41 @@ Punkte, die die erste Fassung offengelassen hatte:
 - **Verschwindet ein Eintrag aus `airport_links`**, wird die zugehörige Zeile in `aip_charts`
   entfernt und das Blatt gelöscht. Sonst bliebe eine Karte im Umlauf, die der Admin bewusst
   entfernt hat.
+
+### 4.4 Werkzeuge für die Handarbeit (25.08.2026)
+
+Zwei Skripte in `scripts/`, entstanden in der Nacht, in der 154 Blätter von Hand gesetzt wurden.
+Sie gehören ins Repo und nicht nach `/tmp`: Die Arbeit wiederholt sich bei jedem neuen Platz und
+bei jedem Blatt, das die DFS neu satzt.
+
+| Skript | Zweck |
+|---|---|
+| `scripts/aip_band_zeigen.py` | Randband eines Blattes groß rendern, erkannte Ticks rot einzeichnen und beziffern — daraus liest ein Mensch die Gradzahlen |
+| `scripts/aip_handpassung.py` | Aus den abgelesenen `<pixel>=<grad>:<minute>`-Paaren eine **geprüfte** Passung rechnen und ablegen |
+
+**Der Ablauf:** Band rendern → Zahlen ablesen → `aip_handpassung.py` ohne `--schreiben` als
+Probelauf → erst wenn alle Proben `OK` melden, mit `--schreiben` ablegen.
+
+**Die Prüfkette ist der Kern, nicht die Bequemlichkeit.** `aip_handpassung.py` rechnet dieselben
+Proben wie die Automatik, plus zwei eigene (Residuen über ≥3 Stützstellen; Skala aus den
+Ablesungen, wenn das gemessene Raster selbst der Fehler ist). In der Nacht zum 25.08.2026 hat sie
+**jeden** Fehler gefangen: sechs eigene Rechenfehler im Werkzeug (u. a. ein Vorzeichenfehler, der
+EDBC 36 Bogenminuten nach Süden schob) und jede Fehlablesung der Lese-Agenten. **Keine falsche
+Passung ist in die Datenbank gelangt** — nachgeprüft: keines der gepassten Blätter hat einen
+`rahmen_px` außerhalb seines Bildes.
+
+Zwei Eigenheiten, die beim Nachbauen Zeit sparen:
+
+- **`--rahmen l,o,r,u,bl,bo,br,bu`** erzwingt einen Rahmen, wenn `rahmen_finden` scheitert, weil
+  eine Seite des Doppelrahmens zu schwach gedruckt ist (EDLS, EDEL, EDMP, EDPS). Die inneren
+  Linien stehen in der Linienliste von `_linien`, die äußeren liegen rund 24 px weiter außen.
+- **`--blatt PFAD`** umgeht `get_settings()`. Ein Anzeigewerkzeug soll auch dort laufen, wo nur
+  ein heruntergeladenes PNG liegt und keine Betriebsgeheimnisse gesetzt sind.
+
+**Das Breitenband wird mit `rotate(90)` gedreht, gegen den Uhrzeigersinn.** Mit `rotate(-90)`
+sitzen die roten Marken gespiegelt zu ihren Ticks, und die abgelesene Breite nimmt nach rechts
+scheinbar zu statt ab. Zuerst so gebaut und erst am widersinnigen Verlauf bemerkt — die Zahlen
+wären um die halbe Blattbreite daneben gewesen.
 
 ## 5. API
 

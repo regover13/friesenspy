@@ -185,3 +185,26 @@ def test_meldung_laesst_die_passung_nicht_scheitern():
     quelle = inspect.getsource(main._aip_karten_geaendert)
     assert "if poller is None:" in quelle
     assert "except Exception:" in quelle
+
+
+def test_seitenwahl_loescht_keine_handpassung_am_selben_blatt():
+    """Dieselbe Seite erneut zu waehlen darf eine Handpassung nicht auf Null setzen.
+
+    Am 25.08.2026 passiert: Ein Aufruf, der nur die SSE-Benachrichtigung ausloesen sollte,
+    schickte dieselbe (richtige) Seite noch einmal -- die Automatik scheiterte darauf wie
+    zuvor, und der Endpunkt schrieb daraufhin ``leer`` und ``status='ungepasst'``. Die von
+    Hand gesetzte Passung fuer EDAZ war weg und musste neu gesetzt werden.
+
+    Entscheidend ist der BILDhash, nicht der Seitenvergleich: Bei einer ANDEREN Seite ist
+    das Nullsetzen richtig, denn die alte Passung gilt dann fuer ein anderes Blatt und waere
+    darauf falsch. Der Test bindet an genau diese Unterscheidung.
+    """
+    import inspect
+
+    from app import main
+    quelle = inspect.getsource(main.admin_aip_seite_waehlen)
+    assert 'alt["bild_hash"] == neuer_hash' in quelle, \
+        "Bildgleichheit muss der Test sein, nicht die Seiten-URL"
+    assert 'alt["quelle"] == "hand"' in quelle
+    # Und der Rueckfall muss VOR dem Schreiben greifen.
+    assert quelle.index('alt["bild_hash"] == neuer_hash') < quelle.index("upsert_aip_chart")

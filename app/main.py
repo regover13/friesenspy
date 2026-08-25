@@ -4323,9 +4323,24 @@ async def admin_aip_seite_waehlen(icao: str, request: Request):
             except Exception:
                 passung = None
         aip_charts.blatt_schreiben(aip_charts.blatt_pfad(einst.DB_PATH, code), roh)
+        neuer_hash = _h.sha256(roh).hexdigest()
         conn = get_connection(einst.DB_PATH)
         try:
             alt = get_aip_chart(conn, code)
+            # **Dasselbe Bild wie bisher? Dann bleibt eine Handpassung darauf stehen.**
+            # Sonst loescht ein erneutes Waehlen DERSELBEN Seite eine muehsam gesetzte
+            # Handpassung -- am 25.08.2026 genau so passiert: Der Aufruf sollte nur die
+            # SSE-Benachrichtigung ausloesen und setzte EDAZ dabei auf Null zurueck.
+            #
+            # Der Test ist bewusst der BILDhash, nicht der Seiten-Vergleich: Bei einer
+            # anderen Seite ist das Nullsetzen richtig, denn die alte Passung gilt dann
+            # fuer ein anderes Blatt und waere darauf falsch. Dieselbe Unterscheidung
+            # trifft ``hand_behalten`` im woechentlichen Job (scripts/aip_bestand.py),
+            # dort ueber die Geometrie.
+            if (passung is None and alt and alt["quelle"] == "hand"
+                    and alt["status"] == "gepasst" and alt["bild_hash"] == neuer_hash):
+                logger.info("%s: Seite unveraendert, Handpassung bleibt", code)
+                return {"status": "ok", "gepasst": True, "hand_behalten": True}
             airac = (alt["airac"] if alt else "") or aip_charts.airac_kennung(seite) or ""
             leer = dict(nord=0.0, sued=0.0, west=0.0, ost=0.0, feld_nord=0.0, feld_sued=0.0,
                         feld_west=0.0, feld_ost=0.0, rahmen_px="", tick_px_lat=0.0,
@@ -4336,7 +4351,7 @@ async def admin_aip_seite_waehlen(icao: str, request: Request):
                 feld_west=passung.feld_west, feld_ost=passung.feld_ost,
                 rahmen_px=passung.rahmen_px, tick_px_lat=passung.tick_px_lat,
                 tick_px_lon=passung.tick_px_lon)
-            upsert_aip_chart(conn, code, bild_hash=_h.sha256(roh).hexdigest(),
+            upsert_aip_chart(conn, code, bild_hash=neuer_hash,
                              quelle="auto" if passung else "hand", airac=airac,
                              status="gepasst" if passung else "ungepasst", **werte)
             conn.commit()
