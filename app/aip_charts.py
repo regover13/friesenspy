@@ -89,14 +89,24 @@ class Rahmen:
     unten: float
     band_links: float   # aeussere senkrechte Rahmenlinie
     band_oben: float    # aeussere waagerechte Rahmenlinie
+    band_rechts: float | None = None   # aeussere Linie rechts
+    band_unten: float | None = None    # aeussere Linie unten
 
 
 # Der Doppelrahmen liegt rund 24 Pixel auseinander.
 _PAAR_MIN, _PAAR_MAX = 15, 35
 _FELD_MIN = 200
-_SCHWELLEN = (0.65, 0.55, 0.45, 0.35)
+_SCHWELLEN = (0.65, 0.55, 0.45, 0.35, 0.25)
 # Streng zuerst. Bei EDBY lieferte erst die strengste Schwelle den richtigen Abstand;
 # die lockere holte zwei Stoerstriche herein und drueckte 219 auf 28,7.
+#
+# 0.25 kam am 25.08.2026 dazu: Bei EDCQ und EDCR ist die INNERE der beiden waagerechten
+# Rahmenlinien deutlich schwaecher gedruckt als die aeussere (Anteil 0.30 statt >0.35) --
+# unterhalb der bisherigen Schwelle unsichtbar. Die senkrechten Linien beider Blaetter
+# waren bei jeder Schwelle sauber; nur eine einzelne waagerechte Linie fehlte. Eine
+# lockerere Schwelle kann hoechstens einen FALSCHEN Kandidaten liefern, keinen falsch
+# ABGELEGTEN -- die Pruefkette in passung_rechnen faengt das ab, sie prueft nicht, ob
+# rahmen_finden ihr vertraut hat.
 _TICK_SCHWELLEN = (0.95, 0.85, 0.7, 0.55)
 # Grosszuegig: ueber die Gueltigkeit entscheidet die Gleichmaessigkeit in raster(), nicht die
 # Anzahl. Eine Grenze von 30 warf Querformat-Karten hinaus (EDAB 31 Ticks, EDWE 39).
@@ -244,7 +254,7 @@ def rahmen_finden(im) -> Rahmen | None:
              for (oben_a, oben_i) in hp for (unten_i, unten_a) in hp
              if unten_i - oben_i >= _FELD_MIN),
             key=lambda k: k[0])
-        for _h, (oben_a, oben_i), (unten_i, _ua) in kombis:
+        for _h, (oben_a, oben_i), (unten_i, unten_a) in kombis:
             senkrecht = _anteile(px, breite, hoehe, "v", int(oben_i), int(unten_i))
             for sv in _SCHWELLEN:
                 vp = _paare(_linien(senkrecht, sv))
@@ -253,10 +263,11 @@ def rahmen_finden(im) -> Rahmen | None:
                      for (links_a, links_i) in vp for (rechts_i, rechts_a) in vp
                      if rechts_i - links_i >= _FELD_MIN),
                     key=lambda k: k[0])
-                for _b, (links_a, links_i), (rechts_i, _ra) in vkombis:
+                for _b, (links_a, links_i), (rechts_i, rechts_a) in vkombis:
                     kandidat = Rahmen(links=links_i, oben=oben_i,
                                       rechts=rechts_i, unten=unten_i,
-                                      band_links=links_a, band_oben=oben_a)
+                                      band_links=links_a, band_oben=oben_a,
+                                      band_rechts=rechts_a, band_unten=unten_a)
                     y_netz = _traegt_gradnetz(px, links_a + 2, links_i - 2,
                                               oben_i + 2, unten_i - 2, "y")
                     x_netz = _traegt_gradnetz(px, oben_a + 2, oben_i - 2,
@@ -273,30 +284,79 @@ def rahmen_finden(im) -> Rahmen | None:
     return notfall[0]
 
 
-def tick_positionen(im, rahmen: Rahmen | None) -> tuple[list[float], list[float]]:
-    """Tickpositionen in den Randbaendern: (senkrecht/Breite, waagerecht/Laenge).
+# Je Achse das uebliche Band zuerst, dann das gegenueberliegende.
+_BAENDER = {"y": ("links", "rechts"), "x": ("oben", "unten")}
+
+
+def band_grenzen(rahmen: Rahmen, achse: str, band: str) -> tuple[float | None, float | None]:
+    """Innere und aeussere Rahmenlinie des Randbands, in dem Ticks und Zahlen stehen.
+
+    Zurueck kommt immer (kleinere, groessere) Koordinate. ``None``, wenn die aeussere Linie
+    dieser Seite nicht bekannt ist -- ein aus vier Zahlen wiederhergestellter Rahmen kennt
+    nur links und oben.
+    """
+    if achse == "y":
+        if band == "rechts":
+            return rahmen.rechts, rahmen.band_rechts
+        return rahmen.band_links, rahmen.links
+    if band == "unten":
+        return rahmen.unten, rahmen.band_unten
+    return rahmen.band_oben, rahmen.oben
+
+
+def _ticks_im_band(px, rahmen: Rahmen, achse: str, band: str) -> list[float]:
+    fest_von, fest_bis = band_grenzen(rahmen, achse, band)
+    if fest_von is None or fest_bis is None:
+        return []
+    if achse == "y":
+        von, bis = rahmen.oben + 2, rahmen.unten - 2
+    else:
+        von, bis = rahmen.links + 2, rahmen.rechts - 2
+    for sw in _TICK_SCHWELLEN:
+        k = _striche(px, fest_von + 2, fest_bis - 2, von, bis, achse, sw)
+        if 2 <= len(k) <= _TICK_MAX and raster(k)[0]:
+            return k
+    return []
+
+
+def tick_positionen_mit_band(im, rahmen: Rahmen | None
+                             ) -> tuple[list[float], str, list[float], str]:
+    """Wie ``tick_positionen``, nennt aber das Band, aus dem die Ticks stammen.
+
+    **Warum ueberhaupt zwei Baender je Achse:** Nicht jedes Blatt beschriftet sein Gradnetz
+    links und oben. Gemessen am 25.08.2026 ueber die 45 damals offenen Karten trugen zehn von
+    ihnen Breiten-Ticks ausschliesslich RECHTS (EDAT, EDBK, EDBT, EDEW, EDGK, EDNZ, EDOZ,
+    EDWO und zwei weitere je zusaetzlich), EDOS seine Laengen-Ticks ausschliesslich UNTEN.
+    Vorher fand der Code dort null Ticks und das Blatt fiel durch.
+
+    Die Reihenfolge ist entscheidend: **zuerst das uebliche Band, das zweite nur bei
+    Fehlschlag.** Damit bleibt jedes heute erkannte Blatt bitgleich -- die Erweiterung kann
+    nichts verschlechtern, nur zusaetzlich finden. Sie erweitert auch den Suchraum nicht auf
+    Verdacht, was nach Spec 3.2 die Zufallstrefferquote heben wuerde.
 
     Genommen wird die ERSTE Schwelle, die ein gueltiges Raster ergibt -- bewusst nicht die
     beste aus allen Kombinationen. Wuerde man 4x4 Schwellenkombinationen gegen die Gegenprobe
     optimieren, stiege deren Zufallstrefferquote von 1,45 auf rund 21 Prozent (Spec 3.2).
     """
     if rahmen is None:
-        return [], []
+        return [], "links", [], "oben"
     px = im.load()
-    ty: list[float] = []
-    tx: list[float] = []
-    for sw in _TICK_SCHWELLEN:
-        k = _striche(px, rahmen.band_links + 2, rahmen.links - 2,
-                     rahmen.oben + 2, rahmen.unten - 2, "y", sw)
-        if 2 <= len(k) <= _TICK_MAX and raster(k)[0]:
-            ty = k
-            break
-    for sw in _TICK_SCHWELLEN:
-        k = _striche(px, rahmen.band_oben + 2, rahmen.oben - 2,
-                     rahmen.links + 2, rahmen.rechts - 2, "x", sw)
-        if 2 <= len(k) <= _TICK_MAX and raster(k)[0]:
-            tx = k
-            break
+    gefunden: dict[str, tuple[list[float], str]] = {}
+    for achse, baender in _BAENDER.items():
+        gefunden[achse] = ([], baender[0])
+        for band in baender:
+            k = _ticks_im_band(px, rahmen, achse, band)
+            if k:
+                gefunden[achse] = (k, band)
+                break
+    ty, band_y = gefunden["y"]
+    tx, band_x = gefunden["x"]
+    return ty, band_y, tx, band_x
+
+
+def tick_positionen(im, rahmen: Rahmen | None) -> tuple[list[float], list[float]]:
+    """Tickpositionen in den Randbaendern: (senkrecht/Breite, waagerecht/Laenge)."""
+    ty, _band_y, tx, _band_x = tick_positionen_mit_band(im, rahmen)
     return ty, tx
 
 
@@ -865,12 +925,16 @@ def _strich_ende(voll, start: int, schritt: int, grenze: int = 4) -> int:
 
 
 def zeichen_im_band(im, rahmen: Rahmen, tick: float, achse: str,
-                    tick_abstand: float | None = None) -> tuple[list, list]:
+                    tick_abstand: float | None = None,
+                    band: str | None = None) -> tuple[list, list]:
     """Die beiden Zeichengruppen an einer Tickmarke: (Grad, Minute).
 
-    Bei der Breite (``achse='y'``) steht der Gradwert im linken Band UEBER dem Strich, die
-    Minute darunter. Bei der Laenge (``achse='x'``) steht beides im oberen Band, links und
-    rechts des Strichs.
+    Bei der Breite (``achse='y'``) steht der Gradwert UEBER dem Strich, die Minute darunter.
+    Bei der Laenge (``achse='x'``) steht beides nebeneinander, links und rechts des Strichs.
+
+    ``band`` waehlt die Seite: ``"links"``/``"rechts"`` bei der Breite, ``"oben"``/``"unten"``
+    bei der Laenge; ohne Angabe die uebliche. Die Anordnung von Grad und Minute ist auf beiden
+    Seiten dieselbe -- eine gespiegelte Lesart faellt ohnehin durch die Skalenprobe.
 
     **Das Suchfenster richtet sich nach dem Tickabstand**, nicht nach einer festen Zahl. Mit
     starren 20 Pixeln griffen benachbarte Beschriftungen ineinander, sobald das Gitter fein
@@ -890,8 +954,11 @@ def zeichen_im_band(im, rahmen: Rahmen, tick: float, achse: str,
     # (senkrechter Strich) -- beides Rahmen, keine Ziffern.
     rand = 3
     breite_px, hoehe_px = im.size
+    innen, aussen = band_grenzen(rahmen, achse, band or _BAENDER[achse][0])
+    if innen is None or aussen is None:
+        return [], []
     if achse == "y":
-        x0, x1 = int(rahmen.band_links) + rand, int(rahmen.links) - rand + 1
+        x0, x1 = int(innen) + rand, int(aussen) - rand + 1
 
         def zeile_voll(y: int) -> bool:
             return (0 <= y < hoehe_px
@@ -908,7 +975,7 @@ def zeichen_im_band(im, rahmen: Rahmen, tick: float, achse: str,
     # Laengen-Stuetzstellen, EDAC von 10 auf 4. Das um eine Spalte breitere Fenster zieht
     # dort offenbar Fremdes herein. Der Zwei-Pixel-Strich ist ein Problem der WAAGERECHTEN
     # Striche; die senkrechten sind auf denselben Blaettern einen Pixel dick.
-    y0, y1 = int(rahmen.band_oben) + rand, int(rahmen.oben) - rand + 1
+    y0, y1 = int(innen) + rand, int(aussen) - rand + 1
     links = _zeichen_zerlegen(px, max(0, int(tick) - grenze), int(tick) - 1, y0, y1)
     rechts = _zeichen_zerlegen(px, int(tick) + 1,
                                min(breite_px, int(tick) + grenze), y0, y1)
@@ -916,7 +983,8 @@ def zeichen_im_band(im, rahmen: Rahmen, tick: float, achse: str,
 
 
 def beschriftung_lesen(im, rahmen: Rahmen, ticks: list[float],
-                       achse: str, arp: float | None = None) -> list[tuple[float, float]]:
+                       achse: str, arp: float | None = None,
+                       band: str | None = None) -> list[tuple[float, float]]:
     """Paare (Pixelposition, Winkel in Grad) fuer jeden beschrifteten Tick.
 
     Nur Ticks, die auf dem Raster liegen, kommen infrage -- ein Hindernissymbol mit einer Zahl
@@ -929,7 +997,7 @@ def beschriftung_lesen(im, rahmen: Rahmen, ticks: list[float],
     echte = raster_treffer(ticks, d, anker) if d else ticks
     roh: list[tuple[float, int | None, int]] = []
     for t in echte:
-        a, b = zeichen_im_band(im, rahmen, t, achse, d)
+        a, b = zeichen_im_band(im, rahmen, t, achse, d, band)
         grad, minute = zahl_lesen(a), zahl_lesen(b)
         if minute is None or not (0 <= minute < 60):
             continue
@@ -1152,7 +1220,7 @@ def passung_rechnen(im, arp_lat: float, arp_lon: float) -> Passung | None:
     rahmen = rahmen_finden(im)
     if rahmen is None:
         return None
-    ty, tx = tick_positionen(im, rahmen)
+    ty, band_y, tx, band_x = tick_positionen_mit_band(im, rahmen)
     dy, _ny, _ay = raster(ty)
     dx, _nx, _ax = raster(tx)
     if not dy or not dx:
@@ -1172,8 +1240,8 @@ def passung_rechnen(im, arp_lat: float, arp_lon: float) -> Passung | None:
         logger.info("AIP: cos-Probe nicht bestanden")
         return None
 
-    lat_paare = beschriftung_lesen(im, rahmen, ty, "y", arp_lat)
-    lon_paare = beschriftung_lesen(im, rahmen, tx, "x", arp_lon)
+    lat_paare = beschriftung_lesen(im, rahmen, ty, "y", arp_lat, band_y)
+    lon_paare = beschriftung_lesen(im, rahmen, tx, "x", arp_lon, band_x)
     if len(lat_paare) < _MIND_STUETZSTELLEN or len(lon_paare) < _MIND_STUETZSTELLEN:
         logger.info("AIP: zu wenige lesbare Stuetzstellen (%d/%d)",
                     len(lat_paare), len(lon_paare))
