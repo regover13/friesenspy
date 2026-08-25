@@ -130,17 +130,20 @@ def test_marken_haengen_in_der_ebene():
     assert "_aipKartenGruppe.removeLayer(" in abschnitt
 
 
-def test_marken_stehen_auf_jeder_zoomstufe():
-    """Nutzer-Wahl 24.08.2026: aus der Uebersicht soll sichtbar sein, wo es ein Blatt gibt.
+def test_marke_erscheint_erst_wenn_das_blatt_ins_bild_passt():
+    """Nutzer-Wunsch 25.08.2026: die Zoom-Sichtbarkeit wieder einbauen.
 
-    Die Schwelle entscheidet seither nur noch ueber Groesse und Beschriftung, nicht mehr
-    darueber, OB eine Marke entsteht. Deshalb an der Zuweisung gebunden: Ein `continue` an
-    der Schwelle waere der Rueckfall.
+    Am 24.08.2026 stand hier das Gegenteil -- Marken auf jeder Zoomstufe, die Schwelle
+    entschied nur noch ueber Groesse und Beschriftung (Commit c485eaa). Einen Tag spaeter
+    zurueckgenommen: Die Schwelle entscheidet wieder, OB eine Marke entsteht.
+
+    An den Aussprung gebunden, nicht an den blossen Namen der Schwelle: Eine reine Zuweisung
+    ``... <= _AIP_MARKE_FAKTOR) nah = true`` waere genau der Rueckfall.
     """
     start = INDEX.index("function _aipMarkenAnpassen(")
     abschnitt = INDEX[start:start + 3000]
-    assert "_AIP_MARKE_FAKTOR) nah = true" in abschnitt
-    assert "> _AIP_MARKE_FAKTOR) continue" not in abschnitt
+    assert "> _AIP_MARKE_FAKTOR) continue" in abschnitt
+    assert "<= _AIP_MARKE_FAKTOR) nah = true" not in abschnitt
 
 
 def test_beschriftung_bleibt_an_der_schwelle():
@@ -177,7 +180,7 @@ def test_marken_schwelle_misst_die_engere_achse():
     """
     start = INDEX.index("function _aipMarkenAnpassen(")
     abschnitt = INDEX[start:start + 3000]
-    assert "Math.min(sichtLat / blattLat, sichtLon / blattLon) <= _AIP_MARKE_FAKTOR" in abschnitt
+    assert "Math.min(sichtLat / blattLat, sichtLon / blattLon) > _AIP_MARKE_FAKTOR" in abschnitt
 
 
 def test_marken_schwelle_laesst_das_ganze_blatt_zu():

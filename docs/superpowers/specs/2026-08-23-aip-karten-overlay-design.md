@@ -663,6 +663,17 @@ Eine Ebene genügt für beide Ziele: `/panel` liefert **dieselbe** `index.html` 
   Gemessen wird dafür **nicht in Zoomstufen**, sondern am Verhältnis von Ausschnitt zu
   Blatt, und zwar auf der **engeren** Achse — eine feste Zoomschwelle hinge an der
   Fenstergröße, und die Blätter sind in drei verschiedenen Maßstäben unterwegs.
+
+  **Hin und zurück (24. → 25.08.2026).** Am 24.08. wurde die Schwelle entschärft: Marken
+  auf *jeder* Zoomstufe, klein und stumm in der Übersicht, groß und beschriftet erst nah
+  (Commit `c485eaa`). Am 25.08. auf Wunsch des Nutzers zurückgenommen — die Schwelle
+  entscheidet wieder, **ob** eine Marke entsteht. Der Absatz oben beschreibt also erneut
+  den gebauten Zustand.
+
+  Bemerkenswert ist der Zwischenzustand: `c485eaa` hat diesen Absatz **nicht** angefasst.
+  Die Spec beschrieb einen Tag lang eine Sichtbarkeitsregel, die der Code nicht mehr
+  hatte — und niemandem fiel es auf, weil beide Fassungen für sich plausibel klingen. Wer
+  hier wieder etwas ändert, ändert diesen Absatz mit.
 - **Deckkraft** über einen Regler.
   **Nachtrag 24.08.2026:** Gebaut als eigenes Leaflet-Control oben links unter den
   Zoom-Knöpfen — dieselbe Ecke wie die Windanzeige und aus demselben Grund (unten links

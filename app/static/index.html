@@ -2329,15 +2329,11 @@
        er traegt dieselbe Last -- das Symbol muss ueber hellem Kartenblatt und ueber dunkler
        Grundkarte stehen. */
     .aip-marke { filter: drop-shadow(0 0 2px rgba(0,0,0,0.9)); cursor: pointer; }
-    /* In der Uebersicht klein: Ab dem 24.08.2026 stehen ALLE Marken auf jeder Zoomstufe,
-       auf der Deutschlandkarte also mehrere hundert. In voller Groesse waeren sie ein
-       Teppich. Skaliert wird um die Mitte, der Ankerpunkt bleibt der Flugplatz.
-       Ueber eine Klasse am Karten-Container statt per setIcon je Marker -- ein setIcon
-       beim Ueberschreiten der Schwelle ist im Kniebrett als Aufblitzen sichtbar
-       (derselbe Fund wie bei .vrp-marke). Ohne Uebergang, aus demselben Grund. */
-    .aip-marke svg { width: 24px; height: 24px; overflow: visible;
-                     transform: scale(0.6); transform-origin: 50% 50%; }
-    .leaflet-container.aip-nah .aip-marke svg { transform: scale(1); }
+    /* Volle Groesse, ohne Zoom-Abstufung: Seit dem 25.08.2026 erscheint eine Marke erst,
+       wenn ihr Blatt ins Bild passt -- eine verkleinerte Uebersichtsform gibt es damit nicht
+       mehr zu sehen. Die Klasse .aip-nah setzt das Skript weiterhin; sie traegt hier bewusst
+       keine Regel mehr, statt eine unerreichbare zu behalten. */
+    .aip-marke svg { width: 24px; height: 24px; overflow: visible; }
     .aip-marke rect { fill: rgba(4,8,15,0.45); stroke: #2d9cdb; stroke-width: 2;
                       stroke-linejoin: round; }
     .aip-marke line { stroke: #2d9cdb; stroke-width: 1.5; stroke-linecap: round; }
@@ -10113,18 +10109,19 @@ function _aipMarkenAnpassen() {
     // Nach den BLATTgrenzen, nicht nach dem Kartenfeld: So bleibt die Marke des Nachbarblatts
     // erreichbar, solange sein Blatt ueberhaupt in den Ausschnitt ragt.
     if (!b.intersects([[k.sued, k.west], [k.nord, k.ost]])) continue;
-    if (Math.min(sichtLat / blattLat, sichtLon / blattLon) <= _AIP_MARKE_FAKTOR) nah = true;
+    // Sichtbar ERST, wenn das Blatt ins Bild passt (Nutzer-Wunsch 25.08.2026, zurueck zum
+    // Stand vor c485eaa). Zwischen dem 24. und dem 25.08.2026 stand hier statt des
+    // Aussprungs eine blosse Zuweisung -- die Marken standen dann auf jeder Zoomstufe.
+    if (Math.min(sichtLat / blattLat, sichtLon / blattLon) > _AIP_MARKE_FAKTOR) continue;
+    nah = true;
     soll[k.icao] = k;
   }
-  // Die Schwelle entscheidet seit dem 24.08.2026 NICHT mehr, OB eine Marke da ist -- der
-  // Nutzer will von weitem sehen, wo es ein Blatt gibt. Sie entscheidet nur noch, wie die
-  // Marke aussieht: klein und stumm in der Uebersicht, gross und beschriftet, sobald das
-  // Blatt ins Bild passt.
-  //
-  // Die Beschriftung haengt weiter daran, und das ist keine Zierde: Ein permanenter Tooltip
-  // ist ein DOM-Element, das Leaflet bei JEDER Kartenbewegung neu setzt. Genau daran hing
-  // die Karte am 15.08.2026 (s. _labelsImSichtbereich). Bei 446 Blaettern waeren es 446
-  // davon auf der Deutschlandkarte.
+  // ``nah`` ist jetzt gleichbedeutend mit "es steht ueberhaupt eine Marke da": Der Aussprung
+  // oben laesst nur Blaetter durch, die ins Bild passen. Die Beschriftungslogik bleibt
+  // trotzdem stehen, und zwar als Sicherung -- wer die Schwelle noch einmal lockert, bekommt
+  // sonst 446 dauerhafte Tooltips auf der Deutschlandkarte. Ein permanenter Tooltip ist ein
+  // DOM-Element, das Leaflet bei JEDER Kartenbewegung neu setzt; genau daran hing die Karte
+  // am 15.08.2026 (s. _labelsImSichtbereich).
   if (liveMap) {
     const el = liveMap.getContainer();
     if (el) el.classList.toggle('aip-nah', nah);
