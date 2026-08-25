@@ -14,6 +14,11 @@ Drei Regeln, die auch der woechentliche Job einhaelt:
 2. **Verwaiste Karten werden abgeraeumt:** Was nicht mehr in ``airport_links`` steht,
    verliert Zeile und Blatt.
 3. **Unveraenderte Geometrie erhaelt die Passung** -- auch eine von Hand gesetzte.
+4. **Ein handgepasstes Blatt wird trotzdem aufgefrischt**, wenn das neue Bild nachweislich
+   denselben Kartenausschnitt zeigt. Sonst bleibt alles unangetastet und der Platz landet in
+   ``handpassung_pruefen`` -- diese Liste nennt die Karten, deren Handpassung veraltet sein
+   koennte, und **gehoert gemeldet**. Ohne Regel 4 fror jede handgepasste Karte auf dem Stand
+   ihrer Handarbeit ein, denn die Automatik scheitert an ihr ja dauerhaft.
 
 Spec: docs/superpowers/specs/2026-08-23-aip-karten-overlay-design.md
 """
@@ -90,11 +95,46 @@ def platz_koordinate(icao: str, client: httpx.Client, schluessel: str | None,
     return None
 
 
+def _handblatt_auffrischen(conn, einst, icao: str, roh: bytes, airac: str | None,
+                           alt: dict, zaehler, nachsehen: list[str]) -> None:
+    """Das neue Bild unter eine bestehende Handpassung legen -- aber nur, wenn es dieselbe
+    Karte ist.
+
+    **Warum das noetig wurde.** Die Regel "Automatik scheitert, Handpassung bleibt" liess
+    frueher auch das BILD unangetastet: Der Zweig sprang vor ``blatt_schreiben`` heraus. Da
+    die Automatik an genau diesen Blaettern dauerhaft scheitert -- sonst waeren sie nicht von
+    Hand gesetzt --, bekamen sie nie wieder ein neues Bild. 154 Sichtflugkarten waren damit
+    auf dem Stand ihrer Handarbeit eingefroren, ohne dass irgendwo etwas auffiel.
+
+    **Warum trotzdem nicht einfach geschrieben wird.** ``blatt_beschaffen`` liefert bei
+    gescheiterter Passung das Bild der VERLINKTEN Seite. Bei 28 Plaetzen ist das nicht die
+    Sichtflugkarte, sondern eine Textseite oder ein anderes Blatt desselben Kapitels -- blind
+    geschrieben laege dort die falsche Karte unter einer richtigen Passung. Deshalb
+    entscheidet ``blatt_auffrischen``, und im Zweifel wird nichts angefasst.
+    """
+    frisch = aip_charts.blatt_auffrischen(roh, alt)
+    if frisch is None:
+        logger.warning("%s: Blatt hat sich geaendert, zeigt aber nicht denselben Ausschnitt "
+                       "wie die Handpassung -- nichts angetastet, bitte nachsehen", icao)
+        zaehler["handpassung_pruefen"] += 1
+        nachsehen.append(icao)
+        return
+    aip_charts.blatt_schreiben(aip_charts.blatt_pfad(einst.DB_PATH, icao), frisch)
+    upsert_aip_chart(conn, icao, **{k: alt[k] for k in (
+        "nord", "sued", "west", "ost", "feld_nord", "feld_sued",
+        "feld_west", "feld_ost", "rahmen_px", "tick_px_lat", "tick_px_lon", "quelle")},
+        bild_hash=hashlib.sha256(frisch).hexdigest(),
+        airac=airac or alt["airac"], status="gepasst")
+    logger.info("%s: Blatt aufgefrischt, Handpassung gilt unveraendert weiter", icao)
+    zaehler["hand_blatt_aufgefrischt"] += 1
+
+
 def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
     einst = get_settings()
     conn = get_connection(einst.DB_PATH)
     zaehler: collections.Counter = collections.Counter()
     ungepasst: list[str] = []
+    nachsehen: list[str] = []
     koordinaten: dict = {}
     try:
         links = get_airport_links(conn)
@@ -154,6 +194,9 @@ def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
                     if alt and alt["quelle"] == "hand" and alt["status"] == "gepasst":
                         logger.info("%s: Automatik scheitert, Handpassung bleibt", icao)
                         zaehler["hand_behalten"] += 1
+                        if neuer_hash != alt["bild_hash"]:
+                            _handblatt_auffrischen(conn, einst, icao, roh, airac,
+                                                   alt, zaehler, nachsehen)
                         continue
                     aip_charts.blatt_schreiben(aip_charts.blatt_pfad(einst.DB_PATH, icao), roh)
                     upsert_aip_chart(
@@ -190,7 +233,8 @@ def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
     gut = zaehler["gepasst"] + zaehler["geometrie_unveraendert"] + zaehler["hand_behalten"]
     return {"zaehler": dict(zaehler), "gesamt": gesamt, "gepasst": gut,
             "quote": round(100 * gut / gesamt, 1) if gesamt else 0.0,
-            "ungepasst": sorted(ungepasst)}
+            "ungepasst": sorted(ungepasst),
+            "handpassung_pruefen": sorted(nachsehen)}
 
 
 def main() -> None:
@@ -210,6 +254,10 @@ def main() -> None:
         print(f"\nVon Hand nachzutragen ({len(ergebnis['ungepasst'])}):")
         for j in range(0, len(ergebnis["ungepasst"]), 14):
             print("   " + " ".join(ergebnis["ungepasst"][j:j + 14]))
+    if ergebnis["handpassung_pruefen"]:
+        print(f"\nBlatt geaendert, Ausschnitt passt nicht zur Handpassung "
+              f"({len(ergebnis['handpassung_pruefen'])}) -- nachsehen:")
+        print("   " + " ".join(ergebnis["handpassung_pruefen"]))
     print("\nZum Vergleich: Der Mess-Prototyp kam am 23.08.2026 auf 91,9 Prozent "
           "(tests/fixtures/aip/messwerte.json). Weicht die Quote deutlich ab, erst melden.")
 

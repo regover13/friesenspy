@@ -1342,6 +1342,14 @@ class VatsimPoller:
             ergebnis = await asyncio.to_thread(lauf)
             logger.info("AIP-Karten aufgefrischt: %d von %d gepasst (%.1f %%)",
                         ergebnis["gepasst"], ergebnis["gesamt"], ergebnis["quote"])
+            # Regel 4: Handgepasste Blaetter, deren Bild sich geaendert hat, ohne dass der
+            # Ausschnitt wiederzuerkennen war. Als Warnung, weil nur ein Mensch das aufloesen
+            # kann -- und weil ein stiller Eintrag genau der Fehler war, den Regel 4 behebt.
+            pruefen = ergebnis.get("handpassung_pruefen") or []
+            if pruefen:
+                logger.warning("AIP-Karten: %d Handpassung(en) koennten veraltet sein "
+                               "(Blatt geaendert, Ausschnitt abweichend): %s",
+                               len(pruefen), " ".join(pruefen))
         except Exception:
             logger.exception("Error in _aip_auffrischen")
 

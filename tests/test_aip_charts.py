@@ -359,6 +359,109 @@ def test_kaputte_geometrieangabe_gilt_als_abweichend():
     assert aip_charts.geometrie_gleich({}, _passung()) is False
 
 
+# ---------------------------------------------------------------------------
+# Handgepasste Blaetter auffrischen, ohne sie zu verschieben
+# ---------------------------------------------------------------------------
+
+def _handzeile(im, **abw):
+    """Eine Ablagezeile, wie ``handpassung()`` sie schreibt -- mit Nullen im Rasterfeld.
+
+    Genau daran haengt der Sinn der Pruefung: ``geometrie_gleich`` vergleicht
+    ``tick_px_lat``/``tick_px_lon``, und die stehen bei jeder Handpassung auf 0. Fuer die
+    154 handgepassten Blaetter traegt allein der Rahmen samt Feldgrenzen die Skala.
+    """
+    p = aip_charts.passung_rechnen(im, arp_lat=54.21, arp_lon=9.62)
+    assert p is not None
+    zeile = {"rahmen_px": p.rahmen_px, "feld_nord": p.feld_nord, "feld_sued": p.feld_sued,
+             "feld_west": p.feld_west, "feld_ost": p.feld_ost,
+             "tick_px_lat": 0.0, "tick_px_lon": 0.0}
+    zeile.update(abw)
+    return zeile
+
+
+def test_dasselbe_blatt_wird_trotz_fehlender_rasterwerte_wiedererkannt():
+    """Der Normalfall: Das Blatt kam neu herein, zeigt aber dieselbe Karte.
+
+    An 50 echten Blaettern gegengeprueft (25.08.2026): 50 von 50 wiedererkannt.
+    """
+    im = blatt_bauen()
+    assert aip_charts.zeigt_denselben_ausschnitt(im, _handzeile(im)) is True
+
+
+def test_verschobener_ausschnitt_faellt_durch_die_phasenpruefung():
+    """Der Rahmen ist unveraendert, das Kartenfenster liegt eine halbe Bogenminute daneben.
+
+    Genau dieser Fall ist der gefaehrliche: Die DFS-Blaetter sind einheitlich gesetzt, ein
+    verschobener Ausschnitt behaelt sein Rahmenrechteck. Erkannt wird er daran, dass die
+    Ticks dann nicht mehr auf ganzen Bogenminuten der abgelegten Passung liegen.
+    """
+    im = blatt_bauen()
+    zeile = _handzeile(im)
+    versatz = 0.5 / 60.0
+    zeile["feld_nord"] += versatz
+    zeile["feld_sued"] += versatz
+    assert aip_charts.zeigt_denselben_ausschnitt(im, zeile) is False
+
+
+def test_anderer_massstab_faellt_durch():
+    """Gleicher Rahmen, anderer Tickabstand -- eine andere Karte desselben Layouts."""
+    zeile = _handzeile(blatt_bauen())
+    fremd = blatt_bauen(tick_lat_px=180.0, tick_lon_px=105.0)
+    assert aip_charts.zeigt_denselben_ausschnitt(fremd, zeile) is False
+
+
+def test_blatt_ohne_rahmen_gilt_als_abweichend():
+    """Eine Textseite -- genau das, was ``blatt_beschaffen`` bei 28 Plaetzen zurueckgibt,
+    wenn die Passung scheitert. Sie darf die Karte niemals ueberschreiben."""
+    from PIL import Image
+    zeile = _handzeile(blatt_bauen())
+    assert aip_charts.zeigt_denselben_ausschnitt(Image.new("L", (875, 1240), 255), zeile) is False
+
+
+def test_kaputte_ablagezeile_gilt_als_abweichend():
+    assert aip_charts.gerade_aus_bestand({"rahmen_px": "unsinn"}) is None
+    assert aip_charts.gerade_aus_bestand({}) is None
+    im = blatt_bauen()
+    assert aip_charts.zeigt_denselben_ausschnitt(im, {"rahmen_px": "132,180,817,865"}) is False
+
+
+def test_auffrischen_liefert_das_bild_nur_bei_gleichem_ausschnitt():
+    import io
+    im = blatt_bauen()
+    puffer = io.BytesIO()
+    im.save(puffer, "PNG")
+    roh = puffer.getvalue()
+    assert aip_charts.blatt_auffrischen(roh, _handzeile(im)) == roh
+    fremd = _handzeile(im)
+    fremd["feld_nord"] += 0.5 / 60.0
+    fremd["feld_sued"] += 0.5 / 60.0
+    assert aip_charts.blatt_auffrischen(roh, fremd) is None
+
+
+def test_auffrischen_verkraftet_kaputte_bilddaten():
+    """Regel 1 sinngemaess: Was nicht zu lesen ist, darf nichts ueberschreiben."""
+    assert aip_charts.blatt_auffrischen(b"kein PNG", _handzeile(blatt_bauen())) is None
+
+
+def test_handzweig_frischt_das_blatt_auf_statt_es_einzufrieren():
+    """Der Zweig sprang frueher VOR ``blatt_schreiben`` heraus -- 154 Karten waren damit
+    dauerhaft eingefroren, weil die Automatik an ihnen ja gerade scheitert.
+
+    Geprueft am Quelltext, nicht am Verhalten: Der Lauf braucht Netz und Datenbank.
+    """
+    quelle = (Path(__file__).resolve().parents[1] / "scripts" / "aip_bestand.py").read_text()
+    zweig = quelle.split('zaehler["hand_behalten"] += 1')[1]
+    assert "_handblatt_auffrischen" in zweig.split("continue")[0], \
+        "der Handzweig frischt das Blatt nicht mehr auf"
+    assert 'neuer_hash != alt["bild_hash"]' in zweig.split("continue")[0], \
+        "unveraenderte Blaetter duerfen nicht jedes Mal neu geprueft werden"
+    # An den qualifizierten AUFRUF gebunden, nicht an den blossen Namen: Der Doc-Kommentar
+    # des Helfers nennt ``blatt_schreiben`` selbst, und eine freie Suche findet ihn zuerst.
+    helfer = quelle.split("def _handblatt_auffrischen")[1]
+    assert helfer.index("aip_charts.blatt_auffrischen(") < helfer.index("aip_charts.blatt_schreiben("), \
+        "es wird geschrieben, bevor der Ausschnitt geprueft ist"
+
+
 def test_blatt_beschaffen_findet_die_karte_auf_der_zweiten_seite(tmp_path):
     """Fall EDAZ: Der gespeicherte Link zeigt auf die Textseite, die Karte liegt im selben
     Kapitel. 28 von 446 Karten liegen so."""

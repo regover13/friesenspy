@@ -505,6 +505,71 @@ Rahmenkanten sind 2 Pixel richtig, für die Rasterabstände zu grob — 2 px auf
 was über `dφ/dv = 1/sin φ` rund 0,5° Breite entspricht und damit mehr als die Toleranz der
 cos-Probe. Für Rasterabstände gilt deshalb 0,5 px.
 
+#### 4.2a Handgepasste Blätter waren eingefroren (25.08.2026)
+
+Der Absatz oben beschreibt, was gedacht war. Gebaut war es anders — und der Unterschied blieb
+zwei Tage unbemerkt, weil er nichts kaputtmacht, sondern etwas *unterlässt*.
+
+`scripts/aip_bestand.py` fing den Fehlschlag der Automatik in einem eigenen Zweig ab:
+
+```python
+if passung is None:
+    if alt and alt["quelle"] == "hand" and alt["status"] == "gepasst":
+        continue        # ← vor blatt_schreiben
+```
+
+Für die Passung ist das genau richtig. Für das **Bild** war es falsch: Der Sprung ging vor
+`blatt_schreiben`, das Blatt wurde also nie ersetzt. Und da die Automatik an genau diesen
+Blättern *dauerhaft* scheitert — sonst wären sie nicht von Hand gesetzt worden — hätte sie das
+auch in keinem späteren Durchgang getan. **154 Sichtflugkarten waren damit auf dem Stand ihrer
+Handarbeit eingefroren:** keine neuen Hindernisse, keine geänderten Lufträume, keine
+korrigierten Frequenzen, und nirgends ein Hinweis darauf.
+
+Das ist die Sorte Fehler, die eine Quotenmessung nicht findet. Alle 437 Karten waren „gepasst",
+die Zahl stimmte — nur bezog sie sich bei 154 von ihnen auf ein Blatt, das nie wieder jünger
+wurde.
+
+**Warum man nicht einfach schreiben darf.** `blatt_beschaffen` liefert bei gescheiterter
+Passung das Bild der **verlinkten** Seite. Bei 28 Plätzen ist das nicht die Sichtflugkarte,
+sondern eine Textseite oder ein anderes Blatt desselben Kapitels (Abschnitt 1). Blind
+geschrieben läge dort die falsche Karte unter einer richtigen Passung — schlimmer als der
+eingefrorene Zustand.
+
+**Die Prüfung, die entscheidet** (`aip_charts.zeigt_denselben_ausschnitt`). Drei Stufen, und
+die dritte trägt:
+
+1. Das Rahmenrechteck muss auf 2 px stimmen. **Notwendig, aber fast wertlos:** Gemessen an
+   50 zufälligen echten Blättern teilen sich **39** dasselbe Rahmenrechteck
+   (132, 180, 817, 865) — die DFS setzt einheitlich. Von 2450 Fremdpaaren kamen 1492 allein
+   über diese Stufe.
+2. Mindestens zwei Ticks je Achse müssen gefunden werden.
+3. **Jeder gefundene Tick muss nach der abgelegten Passung auf einer ganzen Bogenminute
+   liegen.** Das prüft Maßstab und Lage in einem: Ein verschobener Ausschnitt verschiebt die
+   Phase des Gitters, ein anderer Maßstab seinen Abstand. Und es kommt ohne Zahlenlesen aus —
+   ausgerechnet das funktioniert auf diesen Blättern ja nicht.
+
+**Gemessen (25.08.2026), gegen echte Blätter, nicht gegen das Prüfblatt:**
+
+| Probe | Ergebnis |
+|---|---|
+| Eigenes Blatt wiedererkannt | **50 von 50** |
+| Fremdes Blatt mit **identischem** Rahmenrechteck fälschlich akzeptiert | **0 von 1492** |
+
+**Die Skala steht nicht in `tick_px_lat`/`tick_px_lon`.** `handpassung()` legt dort `0.0` ab —
+ein von Hand gesetzter Rahmen kennt keinen gemessenen Rasterabstand. Ausgerechnet die 154
+Blätter, um die es hier geht, tragen also gar keine Rasterwerte, und `geometrie_gleich` kann
+bei ihnen nie greifen. `gerade_aus_bestand()` rechnet die Abbildung Pixel → Grad deshalb aus
+`rahmen_px` und den Feldgrenzen; die sind bei jeder Passung gefüllt.
+
+**Was bleibt, wenn die Prüfung ablehnt:** nichts wird angefasst, und der Platz landet in
+`handpassung_pruefen`. Diese Liste gibt `lauf()` zurück, `main()` druckt sie, und der
+wöchentliche Job meldet sie als **Warnung** ins Log. Ein stiller Eintrag wäre derselbe Fehler
+noch einmal.
+
+**Grenze, ausdrücklich gesagt:** Zwei Blätter desselben Platzes mit gleichem Rahmen, gleichem
+Maßstab und zufällig gleicher Gitterphase wären nicht zu unterscheiden. Der Tickabstand ist
+eine Bogenminute (rund 220 px); die Phase müsste auf 2 px zusammenfallen.
+
 ### 4.3 Betrieb
 
 Punkte, die die erste Fassung offengelassen hatte:

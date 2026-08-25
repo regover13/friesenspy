@@ -1331,6 +1331,122 @@ def geometrie_gleich(alt: dict, neu: "Passung") -> bool:
             and abs(lon_alt - neu.tick_px_lon) <= _TOLERANZ_RASTER_PX)
 
 
+def gerade_aus_bestand(alt: dict) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    """Die beiden Abbildungen Pixel -> Grad, wie sie in der Ablage stehen: (Breite, Laenge).
+
+    Gerechnet wird aus ``rahmen_px`` und den Feldgrenzen, ausdruecklich NICHT aus
+    ``tick_px_lat``/``tick_px_lon``: ``handpassung()`` legt dort Nullen ab, weil ein von Hand
+    gesetzter Rahmen keinen gemessenen Rasterabstand kennt. Ausgerechnet die Blaetter, um die
+    es hier geht, tragen also keinen einzigen Rasterwert -- ueber Rahmen und Feldgrenzen ist
+    ihre Skala trotzdem eindeutig.
+    """
+    try:
+        links, oben, rechts, unten = (float(v) for v in str(alt["rahmen_px"]).split(","))
+        feld_nord, feld_sued = float(alt["feld_nord"]), float(alt["feld_sued"])
+        feld_west, feld_ost = float(alt["feld_west"]), float(alt["feld_ost"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if unten <= oben or rechts <= links:
+        return None
+    m_lat = (feld_sued - feld_nord) / (unten - oben)
+    m_lon = (feld_ost - feld_west) / (rechts - links)
+    if abs(m_lat) < 1e-12 or abs(m_lon) < 1e-12:
+        return None
+    return (m_lat, feld_nord - m_lat * oben), (m_lon, feld_west - m_lon * links)
+
+
+def zeigt_denselben_ausschnitt(im, alt: dict) -> bool:
+    """Zeigt dieses Blatt denselben Kartenausschnitt wie die abgelegte Passung?
+
+    **Wofuer das gebraucht wird.** Scheitert die Automatik an einem handgepassten Blatt --
+    und das tut sie dort dauerhaft, sonst waere es nicht von Hand gesetzt worden --, dann
+    laesst der Auffrischlauf es unangetastet. Das ist fuer die Passung richtig und fuer das
+    BILD falsch: Es wird nie wieder geschrieben, die Karte friert auf dem Stand ihrer
+    Handarbeit ein und bekommt weder neue Hindernisse noch geaenderte Lufträume. Diese
+    Pruefung entscheidet, ob das neue Bild unter die alte Passung darf.
+
+    **Drei Stufen, und die dritte ist die tragende.**
+
+    1. Das Rahmenrechteck muss auf ``_TOLERANZ_RAHMEN_PX`` stimmen. Notwendig, aber schwach:
+       Die DFS-Blaetter sind einheitlich gesetzt, zwei voellig verschiedene Karten koennen
+       denselben Rahmen an derselben Stelle haben.
+    2. Es muessen ueberhaupt Ticks gefunden werden, mindestens zwei je Achse.
+    3. **Jeder gefundene Tick muss nach der ABGELEGTEN Passung auf einer ganzen Bogenminute
+       liegen.** Das prueft Massstab UND Lage in einem: Ein verschobener Ausschnitt
+       verschiebt die Phase des Gitters, ein anderer Massstab seinen Abstand. Beides faellt
+       auf, ohne dass eine einzige Zahl gelesen werden muss -- und Zahlenlesen ist genau das,
+       was auf diesen Blaettern nicht funktioniert.
+
+    **Was die Pruefung nicht kann.** Zwei Blaetter desselben Platzes mit gleichem Rahmen,
+    gleichem Massstab und zufaellig gleicher Gitterphase waeren nicht zu unterscheiden. Der
+    Abstand betraegt eine ganze Bogenminute; die Phase muesste also auf zwei Pixel von rund
+    220 zusammenfallen. Ausgeschlossen ist es nicht, unwahrscheinlich schon.
+    """
+    rahmen = rahmen_finden(im)
+    if rahmen is None:
+        return False
+    try:
+        gespeichert = [float(v) for v in str(alt["rahmen_px"]).split(",")]
+    except (KeyError, TypeError, ValueError):
+        return False
+    gemessen = [rahmen.links, rahmen.oben, rahmen.rechts, rahmen.unten]
+    if len(gespeichert) != 4:
+        return False
+    if any(abs(x - y) > _TOLERANZ_RAHMEN_PX for x, y in zip(gespeichert, gemessen)):
+        return False
+
+    geraden = gerade_aus_bestand(alt)
+    if geraden is None:
+        return False
+    ty, _band_y, tx, _band_x = tick_positionen_mit_band(im, rahmen)
+    for ticks, (m, b) in ((ty, geraden[0]), (tx, geraden[1])):
+        d, _anzahl, anker = raster(ticks)
+        if not d:
+            return False
+        sauber = raster_treffer(ticks, d, anker)
+        if len(sauber) < 2:
+            return False
+        # Wie weit ein Tick von der ganzen Bogenminute abweichen darf, in Minuten gerechnet.
+        toleranz = _MAX_RESIDUUM_PX * abs(m) * 60.0
+        for t in sauber:
+            minuten = (m * t + b) * 60.0
+            if abs(minuten - round(minuten)) > toleranz:
+                return False
+    return True
+
+
+def blatt_auffrischen(roh: bytes, alt: dict) -> bytes | None:
+    """Das neue Blatt in der Ausrichtung, in der es zur abgelegten Passung passt.
+
+    ``None``, wenn keine Ausrichtung denselben Ausschnitt zeigt -- dann darf nichts
+    geschrieben werden und ein Mensch muss nachsehen.
+
+    **Warum ueberhaupt gedreht wird.** Sieben der 446 Blaetter sind quer gedruckt und liegen
+    genordet ab (s. ``blatt_beschaffen``). Kommt ein solches Blatt neu herein, ist es wieder
+    quer; ungedreht verglichen wuerde es immer abgelehnt. Welche Richtung stimmt, entscheidet
+    wie ueberall der Vergleich, nicht eine Festlegung.
+    """
+    from PIL import Image
+    import io
+
+    try:
+        Image.open(io.BytesIO(roh)).verify()
+    except Exception:
+        return None
+    if zeigt_denselben_ausschnitt(Image.open(io.BytesIO(roh)).convert("L"), alt):
+        return roh
+    for drehung in (Image.ROTATE_270, Image.ROTATE_90):
+        try:
+            gedreht = Image.open(io.BytesIO(roh)).transpose(drehung)
+        except Exception:
+            continue
+        if zeigt_denselben_ausschnitt(gedreht.convert("L"), alt):
+            puffer = io.BytesIO()
+            gedreht.save(puffer, "PNG")
+            return puffer.getvalue()
+    return None
+
+
 def blatt_schreiben(pfad, roh: bytes) -> None:
     """Blatt atomar ablegen: erst daneben, dann umbenennen.
 
