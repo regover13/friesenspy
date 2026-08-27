@@ -692,6 +692,7 @@ async def frontend_config():
         conn.close()
     return {
         "openaip_api_key": settings.OPENAIP_API_KEY,
+        "carto_api_key": settings.CARTO_API_KEY,
         "vapid_public_key": settings.VAPID_PUBLIC_KEY,
         "version": VERSION,
         "changelog": CHANGELOG,

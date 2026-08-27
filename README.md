@@ -475,6 +475,11 @@ OPENAIP_API_KEY=                            # Optional: OpenAIP-Overlay (Luftrau
                                             # fehlen beide, alles andere läuft. Der Server holt
                                             # die Meldepunkte damit selbst (monatlich, Ablage im
                                             # Datenverzeichnis) — nichts von Hand nachzupflegen.
+CARTO_API_KEY=                              # Optional: Kacheln der Ebenen „Light"/„Dark".
+                                            # Ohne Key legt CARTO seit dem 27.08.2026 ein
+                                            # „API KEY REQUIRED" über jede Kachel; die Karte
+                                            # funktioniert, sieht aber beschriftet aus.
+                                            # Kostenlos: carto.com/basemaps/apikey
 VAPID_PUBLIC_KEY=                           # Optional: Web Push Public Key (base64url)
 VAPID_PRIVATE_KEY=                          # Optional: Web Push Private Key (base64url, 43 Zeichen)
 VAPID_CONTACT_EMAIL=                        # Optional: mailto:... für Web Push

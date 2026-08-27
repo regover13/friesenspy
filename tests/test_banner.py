@@ -35,7 +35,7 @@ def db(tmp_path, monkeypatch):
         main, "get_settings",
         lambda: SimpleNamespace(
             DB_PATH=p, CALLSIGN_PREFIX="FRS", SECRET_KEY=SECRET, ADMIN_PASSWORD=PW,
-            OPENAIP_API_KEY="", VAPID_PUBLIC_KEY="",
+            OPENAIP_API_KEY="", CARTO_API_KEY="", VAPID_PUBLIC_KEY="",
         ),
     )
     return p

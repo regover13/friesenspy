@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.0.1",
+    "date": "2026-08-27",
+    "highlight": false,
+    "title": "Karte ohne Aufdruck",
+    "items": [
+      "🗺️ Behoben: Auf den Ebenen „Light“ und „Dark“ lag quer über der Karte der Schriftzug „API KEY REQUIRED“. Der Kartenanbieter CARTO verlangt seit dem 27.08.2026 eine Anmeldung für seine Kacheln; sie ist eingerichtet, der Aufdruck ist weg. Die übrigen Ebenen waren nie betroffen."
+    ]
+  },
+  {
     "version": "14.0.0",
     "date": "2026-08-24",
     "highlight": true,

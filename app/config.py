@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     DB_PATH: str = "/opt/friesenspy/data/friesenspy.db"
     STATSIM_API_KEY: str = ""
     OPENAIP_API_KEY: str = ""
+    # Kacheln der Ebenen „Light" und „Dark" (CARTO Positron / Dark Matter). Seit dem
+    # 27.08.2026 stempelt CARTO „API KEY REQUIRED" in jede Kachel, die ohne Key angefragt
+    # wird — die Kacheln kommen weiter, nur eben beschriftet. Kostenlos bis 5 Mio. Kacheln
+    # im Monat, angefordert über carto.com/basemaps/apikey. Leer = Wasserzeichen.
+    CARTO_API_KEY: str = ""
     # Fertiges MSFS-Community-Package (ZIP) fuer /download/efb. Leer = neben der
     # Datenbank unter efb/friesenspy-efb.zip, also im Volume. Nicht im Docker-Image,
     # weil der Build Windows-Werkzeuge braucht (esbuild + MSFSLayoutGenerator.exe).
