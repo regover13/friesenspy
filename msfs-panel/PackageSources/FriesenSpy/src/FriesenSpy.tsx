@@ -92,9 +92,17 @@ function getOrCreateDeviceId(): string {
     // Gegenprobe: `DataStore.set` meldet keinen Fehler, wenn nichts ankommt. Ohne sie hiesse
     // "kein Fehler" faelschlich "gespeichert", und beim naechsten Start begaenne dasselbe
     // Spiel von vorn -- fuer den Nutzer als ewiges Neu-Anmelden sichtbar.
+    //
+    // VORBEHALT, ungeprueft: Ob `DataStore.set` sofort nachlesbar ist, ist nicht belegt --
+    // schreibt MSFS verzoegert, schlaegt diese Probe beim ALLERERSTEN Start eines Geraets
+    // faelschlich an. Der Wortlaut sagt deshalb, was gemessen wurde ("nicht sofort
+    // nachlesbar"), nicht, was daraus folgt. Sie greift ohnehin nur einmal je Geraet: Ist die
+    // Kennung erst abgelegt, kommt der Ablauf gar nicht mehr hierher. Entschieden ist der
+    // Fall erst beim Folgestart -- kommt dann eine `device=`-Kennung im Server-Log an, hat es
+    // gehalten, und die Meldung war ein Fehlalarm.
     const probe = DataStore.get<string>(DEVICE_KEY);
     if (typeof probe !== "string" || probe.length < 32) {
-      geraeteIdGrund = "DataStore nimmt die Kennung nicht an";
+      geraeteIdGrund = "DataStore.set nicht sofort nachlesbar (beim ersten Start moeglich)";
     }
     return neu;
   } catch (e) {
