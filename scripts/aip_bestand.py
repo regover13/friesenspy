@@ -47,6 +47,7 @@ from app.database import (  # noqa: E402
     get_connection,
     upsert_aip_chart,
     verwaisen,
+    vorschlag_anlegen,
 )
 
 logger = logging.getLogger("aip_bestand")
@@ -131,6 +132,32 @@ def _handblatt_auffrischen(conn, einst, icao: str, roh: bytes, airac: str | None
     zaehler["hand_blatt_aufgefrischt"] += 1
 
 
+def _blatt_holen(icao: str, url: str, alt, koord, holen):
+    """Blatt beschaffen -- eine vom Admin festgelegte Seite hat Vorrang.
+
+    ``blatt_beschaffen`` sucht sich "die erste Seite, deren Passung durchgeht". Das ist die
+    richtige Vorgabe, macht aber jede Seitenwahl des Admins beim naechsten Lauf zunichte:
+    Bei EDDK enthaelt das Kapitel sechs Seiten, und die automatisch gewaehlte war die
+    falsche (Nutzer, 24.08.2026). Steht eine Wahl in ``seite_url``, wird genau die geholt.
+
+    Nebeneffekt, der die Sache billig macht: Der Kapiteldurchlauf entfaellt. Er ist der
+    teuerste Teil des Laufs -- bei jedem Blatt, dessen Passung scheitert, werden 4 bis 12
+    weitere Seiten einzeln geholt und vermessen.
+    """
+    gewaehlt = (alt or {}).get("seite_url") or ""
+    if not gewaehlt:
+        return aip_charts.blatt_beschaffen(url, koord[0], koord[1], holen)
+    roh = aip_charts.bild_aus_html(holen(gewaehlt))
+    if roh is None:
+        # Die gemerkte Seite traegt kein Bild mehr -- der AIRAC-Wechsel hat sie umbenannt
+        # oder entfernt. Zurueck auf die Suche; die Handpassung selbst bleibt davon
+        # unberuehrt, sie wird von der Sperre in upsert_aip_chart geschuetzt.
+        logger.info("%s: gemerkte Seite liefert kein Bild mehr, suche im Kapitel", icao)
+        return aip_charts.blatt_beschaffen(url, koord[0], koord[1], holen)
+    gedreht, passung = aip_charts.genordet_rechnen(roh, koord[0], koord[1])
+    return (gedreht or roh), passung, aip_charts.airac_kennung(gewaehlt)
+
+
 def _karte_schreiben(conn, icao: str, zaehler, vorschlag_faellig: list, **felder) -> bool:
     """Passung ablegen und eine gesperrte Handpassung sauber abfangen.
 
@@ -148,6 +175,13 @@ def _karte_schreiben(conn, icao: str, zaehler, vorschlag_faellig: list, **felder
         logger.info("%s: Handpassung gilt, Automatikergebnis wird nur vorgeschlagen", icao)
         zaehler["hand_gesperrt"] += 1
         vorschlag_faellig.append(icao)
+        vorschlag_anlegen(
+            conn, "sichtflug", icao, felder.get("bild_hash", ""),
+            {k: felder[k] for k in ("nord", "sued", "west", "ost", "feld_nord",
+                                    "feld_sued", "feld_west", "feld_ost", "rahmen_px",
+                                    "tick_px_lat", "tick_px_lon", "airac")
+             if k in felder},
+            "Automatik weicht von der Handpassung ab")
         return False
 
 
@@ -193,9 +227,9 @@ def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
                     zaehler["ohne_koordinate"] += 1
                     ungepasst.append(icao)
                     continue
+                alt = get_aip_chart(conn, icao)
                 try:
-                    roh, passung, airac = aip_charts.blatt_beschaffen(
-                        url, koord[0], koord[1], holen)
+                    roh, passung, airac = _blatt_holen(icao, url, alt, koord, holen)
                 except Exception as e:
                     # Regel 1: Netzfehler entwertet keine bestehende Karte.
                     logger.warning("%s: Abruf fehlgeschlagen (%s) -- Bestand bleibt",
@@ -211,7 +245,6 @@ def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
                     continue
 
                 neuer_hash = hashlib.sha256(roh).hexdigest()
-                alt = get_aip_chart(conn, icao)
 
                 # Regel 3: Unveraenderte Geometrie erhaelt die Passung, auch die von Hand.
                 if (alt and alt["status"] == "gepasst" and passung is not None
@@ -257,6 +290,13 @@ def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
                     tick_px_lat=passung.tick_px_lat, tick_px_lon=passung.tick_px_lon,
                     quelle="auto", airac=airac or "", status="gepasst")
                 if not geschrieben:
+                    # Das vorgeschlagene Blatt daneben legen, damit der Admin beide
+                    # vergleichen kann. art UND Hash gehoeren in den Namen: Zu einer ICAO
+                    # koennen ein Sichtflug- und ein Ground-Vorschlag gleichzeitig offen
+                    # sein, und zu jeder Art mehrere Rohblaetter.
+                    aip_charts.blatt_schreiben(
+                        aip_charts.blatt_pfad(einst.DB_PATH, icao).with_name(
+                            f"{icao}.sichtflug.{neuer_hash[:12]}.png"), roh)
                     continue
                 aip_charts.blatt_schreiben(aip_charts.blatt_pfad(einst.DB_PATH, icao), roh)
                 zaehler["gepasst"] += 1

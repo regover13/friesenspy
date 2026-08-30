@@ -255,3 +255,121 @@ def test_aufraeumzweig_unterscheidet_hand_und_auto():
     assert quelle.index('karte["quelle"] == "hand"') < quelle.index("delete_aip_chart")
     zwischen = quelle[quelle.index('karte["quelle"] == "hand"'):quelle.index("delete_aip_chart")]
     assert "continue" in zwischen, "Der Handzweig muss abbrechen, bevor geloescht wird"
+
+
+# ---------------------------------------------------------------------------
+# Aufgabe 5: die Seitenwahl geht ohne jedes Ueberschreiben verloren
+# ---------------------------------------------------------------------------
+
+def test_seitenwahl_wird_gespeichert(conn):
+    """Bei EDDK enthaelt das Kapitel sechs Seiten, und die automatisch gewaehlte war die
+    falsche (Nutzer, 24.08.2026)."""
+    _hand(conn, icao="EDDK",
+          seite_url="https://aip.dfs.de/BasicVFR/2026AUG20/pages/s4.html")
+    assert get_aip_chart(conn, "EDDK")["seite_url"].endswith("s4.html")
+
+
+def test_ein_lauf_ohne_seitenangabe_loescht_die_wahl_nicht(conn):
+    """Das ist der eigentliche Fallstrick.
+
+    Der Auffrischlauf kennt seite_url nicht und gibt sie nicht mit. Wuerde sie dabei auf ''
+    zurueckfallen, ginge die Handkorrektur verloren -- und zwar OHNE jedes Ueberschreiben
+    einer Passung, also an der Sperre aus Aufgabe 1 vorbei.
+    """
+    _hand(conn, icao="EDDK",
+          seite_url="https://aip.dfs.de/BasicVFR/2026AUG20/pages/s4.html")
+    _hand(conn, icao="EDDK", bild_hash="c" * 64)          # ohne seite_url
+    assert get_aip_chart(conn, "EDDK")["seite_url"].endswith("s4.html")
+
+
+def test_neue_karte_ohne_seitenwahl_bekommt_leeren_wert(conn):
+    upsert_aip_chart(conn, "EDWJ", bild_hash="a" * 64, **BOUNDS, **GEO,
+                     quelle="auto", airac="x", status="gepasst")
+    assert get_aip_chart(conn, "EDWJ")["seite_url"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Aufgabe 6: Vorschlaege mit Grabstein
+# ---------------------------------------------------------------------------
+
+def test_verworfener_vorschlag_kommt_nicht_wieder(conn):
+    """Ein DELETE waere wirkungslos: UNIQUE verhindert Doppel nur, solange die Zeile
+    existiert. Der naechste Wochenlauf faende denselben unveraenderten quell_hash und legte
+    den Vorschlag sofort neu an -- die Liste waere dauerhaft unaufraeumbar."""
+    from app.database import get_vorschlaege, vorschlag_anlegen, vorschlag_verwerfen
+
+    vid = vorschlag_anlegen(conn, "sichtflug", "EDDL", "h1", {"nord": 55.0}, "weicht ab")
+    assert vorschlag_verwerfen(conn, vid) == 1
+    assert get_vorschlaege(conn) == []
+    vorschlag_anlegen(conn, "sichtflug", "EDDL", "h1", {"nord": 55.0}, "weicht ab")
+    assert get_vorschlaege(conn) == []
+
+
+def test_ein_neues_rohblatt_ist_ein_neuer_vorschlag(conn):
+    from app.database import get_vorschlaege, vorschlag_anlegen, vorschlag_verwerfen
+
+    vid = vorschlag_anlegen(conn, "sichtflug", "EDDL", "h1", {"nord": 55.0}, "weicht ab")
+    vorschlag_verwerfen(conn, vid)
+    vorschlag_anlegen(conn, "sichtflug", "EDDL", "h2", {"nord": 56.0}, "weicht ab")
+    assert len(get_vorschlaege(conn)) == 1
+
+
+def test_beide_kartentypen_koennen_gleichzeitig_offen_sein(conn):
+    """Der Dateiname des Vorschlagsbilds muss art UND quell_hash tragen -- sonst
+    ueberschreiben sich zwei offene Vorschlaege zu EDDL gegenseitig."""
+    from app.database import get_vorschlaege, vorschlag_anlegen
+
+    vorschlag_anlegen(conn, "sichtflug", "EDDL", "h1", {}, "a")
+    vorschlag_anlegen(conn, "ground", "EDDL", "h1", {}, "b")
+    assert len(get_vorschlaege(conn)) == 2
+    assert len(get_vorschlaege(conn, art="ground")) == 1
+
+
+def test_passung_kommt_als_dict_zurueck(conn):
+    from app.database import get_vorschlaege, vorschlag_anlegen
+
+    vorschlag_anlegen(conn, "ground", "EDDM", "h1", {"drehung": 353.5}, "neu")
+    assert get_vorschlaege(conn, art="ground")[0]["passung"]["drehung"] == pytest.approx(353.5)
+
+
+# ---------------------------------------------------------------------------
+# Aufgabe 8: Der Job muss ueberhaupt laufen -- aber nicht bei jedem Deploy
+# ---------------------------------------------------------------------------
+
+def test_job_laeuft_nach_deploy_nur_wenn_wirklich_faellig(conn):
+    """Zwoelf Deploys an einem Tag duerfen nicht zwoelf Vollcrawls der DFS ausloesen.
+
+    Der Lauf holt ueber 1000 Seiten: zwei je Platz, dazu bei jedem Blatt mit gescheiterter
+    Passung ein kompletter Kapiteldurchlauf ueber 4 bis 12 weitere Seiten.
+    """
+    from app.database import job_erledigt, job_faellig
+
+    assert job_faellig(conn, "aip_auffrischen", 7 * 24 * 3600) is True
+    job_erledigt(conn, "aip_auffrischen")
+    assert job_faellig(conn, "aip_auffrischen", 7 * 24 * 3600) is False
+    assert job_faellig(conn, "aip_auffrischen", 0) is True
+    assert job_faellig(conn, "anderer_job", 7 * 24 * 3600) is True
+
+
+def test_der_job_meldet_seine_aenderungen():
+    """_aip_auffrischen rief bis 31.08.2026 kein _aip_karten_geaendert.
+
+    Sobald er laeuft und Karten aendert, bliebe jedes offene Kniebrett auf dem alten Stand
+    -- genau das Fehlerbild, das der Helfer am 24.08.2026 beheben sollte (Nutzer passte
+    EDVM, und es erschien nicht).
+    """
+    import inspect
+
+    from app import poller
+
+    quelle = _ohne_kommentare(inspect.getsource(poller.VatsimPoller._aip_auffrischen))
+    assert "broadcast_sse" in quelle
+
+
+def test_der_job_prueft_die_faelligkeit_selbst():
+    import inspect
+
+    from app import poller
+
+    quelle = _ohne_kommentare(inspect.getsource(poller.VatsimPoller._aip_auffrischen))
+    assert "job_faellig" in quelle and "job_erledigt" in quelle

@@ -359,10 +359,45 @@ CREATE TABLE IF NOT EXISTS aip_charts (
     rahmen_px     TEXT NOT NULL,        -- "links,oben,rechts,unten" fuer den Geometrievergleich
     tick_px_lat   REAL NOT NULL,
     tick_px_lon   REAL NOT NULL,
+    seite_url     TEXT NOT NULL DEFAULT '',  -- gewaehlte Kapitelseite; Teil der Handkorrektur
     quelle        TEXT NOT NULL,        -- 'auto' oder 'hand'
     airac         TEXT NOT NULL,
     status        TEXT NOT NULL,        -- 'gepasst' oder 'ungepasst'
     geprueft_am   TEXT
+);
+
+-- Vorschlaege: Automatikfunde zu handgepassten Karten, die NICHT eingespielt werden.
+--
+-- Verwerfen loescht nicht, es setzt zustand='verworfen'. Ein DELETE waere wirkungslos:
+-- UNIQUE verhindert Doppel nur, solange die Zeile existiert -- der naechste Wochenlauf
+-- faende denselben unveraenderten quell_hash und legte den Vorschlag sofort wieder an.
+-- Die Liste waere nach dem ersten Verwerfen dauerhaft unaufraeumbar. Ein Grabstein haelt
+-- den Fund fern, bis sich das Rohblatt wirklich aendert.
+-- Wann ein wiederkehrender Job zuletzt wirklich gearbeitet hat.
+--
+-- APScheduler haelt seine Jobs im MemoryJobStore: Jeder Containerstart meldet sie neu an,
+-- und "interval, weeks=1" plant den ersten Lauf eine Woche SPAETER. Der AIP-Auffrischlauf
+-- hat deshalb von seiner Einfuehrung bis zum 31.08.2026 kein einziges Mal gearbeitet.
+--
+-- Ein fester next_run_time kurz nach dem Start behebt das, macht daraus aber einen
+-- Deploy-Job: Der Lauf holt ueber 1000 Seiten von aip.dfs.de, und an einem Tag mit zwoelf
+-- Deploys waeren das zwoelf Vollcrawls. Erst dieser Merker macht "woechentlich" wirklich
+-- woechentlich, unabhaengig davon, wie oft der Container neu startet.
+CREATE TABLE IF NOT EXISTS job_laeufe (
+    name          TEXT PRIMARY KEY,
+    zuletzt       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS aip_chart_vorschlaege (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    art           TEXT NOT NULL,        -- 'sichtflug' oder 'ground'
+    icao          TEXT NOT NULL,
+    quell_hash    TEXT NOT NULL,        -- welches Rohblatt der Vorschlag betrifft
+    passung       TEXT NOT NULL,        -- JSON; die Form haengt an 'art'
+    grund         TEXT NOT NULL,
+    zustand       TEXT NOT NULL,        -- 'offen' oder 'verworfen'
+    gefunden_am   TEXT NOT NULL,
+    UNIQUE(art, icao, quell_hash)
 );
 
 CREATE TABLE IF NOT EXISTS flight_cache (
@@ -558,6 +593,21 @@ _PUSH_MIGRATIONS = [
     "ALTER TABLE push_subscriptions ADD COLUMN last_status TEXT",
 ]
 
+_AIP_CHARTS_MIGRATIONS = [
+    # seite_url: WELCHE Kapitelseite gilt. Nachgetragen am 31.08.2026.
+    #
+    # Die Seitenwahl ist Teil der Handkorrektur und ging bis dahin spurlos verloren. Bei
+    # EDDK enthaelt das Kapitel sechs Seiten, und die automatisch gewaehlte war die falsche
+    # (Nutzer, 24.08.2026); der Admin konnte sie festlegen, aber aip_charts merkte es sich
+    # nicht. Der naechste Auffrischlauf rief blatt_beschaffen(url, ...), und die nimmt
+    # wieder "die erste Seite, deren Passung durchgeht" -- also erneut die falsche.
+    #
+    # Das Tueckische daran: Es geschieht, OHNE dass quelle je auf 'hand' steht. Die Sperre
+    # in upsert_aip_chart sieht davon nichts. Eine Handkorrektur kann also auch ohne jedes
+    # Ueberschreiben verlorengehen.
+    "ALTER TABLE aip_charts ADD COLUMN seite_url TEXT NOT NULL DEFAULT ''",
+]
+
 _PANEL_DIAG_MIGRATIONS = [
     # cid: WER hat gemeldet. Nachgetragen am 30.08.2026, weil eine Auswertung ohne sie nicht
     # moeglich war: Am selben Vormittag flogen zwei Mitglieder gemeinsam in South Dakota,
@@ -742,6 +792,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _PANEL_DIAG_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _AIP_CHARTS_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -6525,7 +6580,12 @@ def delete_airport_link(conn: sqlite3.Connection, icao: str) -> int:
 _AIP_FELDER = ("bild_hash", "nord", "sued", "west", "ost",
                "feld_nord", "feld_sued", "feld_west", "feld_ost",
                "rahmen_px", "tick_px_lat", "tick_px_lon", "quelle", "airac", "status")
-_AIP_SPALTEN = ("icao", *_AIP_FELDER, "geprueft_am")
+# seite_url steht bewusst NICHT in _AIP_FELDER: Das machte sie zum Pflichtfeld fuer alle
+# sieben Schreibpfade, von denen sechs sie gar nicht kennen. Sie wird optional
+# durchgereicht und faellt sonst auf den bestehenden Wert zurueck -- ein Auffrischlauf,
+# der sie nicht mitgibt, darf eine gesetzte Wahl nicht loeschen.
+_AIP_OPTIONAL = ("seite_url",)
+_AIP_SPALTEN = ("icao", *_AIP_FELDER, *_AIP_OPTIONAL, "geprueft_am")
 
 
 class HandpassungGesperrt(Exception):
@@ -6575,12 +6635,18 @@ def upsert_aip_chart(conn: sqlite3.Connection, icao: str, *,
         if alt is not None and alt["quelle"] == "hand":
             raise HandpassungGesperrt(
                 f"{code}: Handpassung wird nicht automatisch ueberschrieben")
+    # Optionale Felder nur nachziehen, wenn sie mitgegeben wurden. Ein Auffrischlauf kennt
+    # seite_url nicht und darf eine vom Admin gesetzte Wahl nicht auf '' zuruecksetzen --
+    # das waere derselbe stille Verlust, gegen den die Spalte eingefuehrt wurde.
+    mitgegeben = [f for f in _AIP_OPTIONAL if f in felder]
     platz = ", ".join("?" * len(_AIP_SPALTEN))
-    setzen = ", ".join(f"{f}=excluded.{f}" for f in (*_AIP_FELDER, "geprueft_am"))
+    setzen = ", ".join(f"{f}=excluded.{f}"
+                       for f in (*_AIP_FELDER, *mitgegeben, "geprueft_am"))
     conn.execute(
         f"""INSERT INTO aip_charts ({', '.join(_AIP_SPALTEN)}) VALUES ({platz})
             ON CONFLICT(icao) DO UPDATE SET {setzen}""",
-        (code, *(felder[f] for f in _AIP_FELDER), _now_utc()),
+        (code, *(felder[f] for f in _AIP_FELDER),
+         *(felder.get(f, "") for f in _AIP_OPTIONAL), _now_utc()),
     )
     return code
 
@@ -6615,6 +6681,100 @@ def delete_aip_chart(conn: sqlite3.Connection, icao: str) -> int:
     """
     code = (icao or "").strip().upper()
     return conn.execute("DELETE FROM aip_charts WHERE icao = ?", (code,)).rowcount
+
+
+def job_faellig(conn: sqlite3.Connection, name: str, abstand_s: float) -> bool:
+    """Ist dieser Job wieder dran?
+
+    ``True``, wenn er noch nie gelaufen ist oder der letzte Lauf laenger als ``abstand_s``
+    zurueckliegt. Siehe die Tabelle ``job_laeufe`` fuer den Grund.
+    """
+    zeile = conn.execute(
+        "SELECT zuletzt FROM job_laeufe WHERE name = ?", (name,)).fetchone()
+    if zeile is None:
+        return True
+    try:
+        zuletzt = datetime.fromisoformat(str(zeile["zuletzt"]).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return True
+    if zuletzt.tzinfo is None:
+        zuletzt = zuletzt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - zuletzt).total_seconds() >= abstand_s
+
+
+def job_erledigt(conn: sqlite3.Connection, name: str) -> None:
+    """Lauf vermerken. Erst danach ist der Job fuer ``abstand_s`` wieder ruhig."""
+    conn.execute(
+        """INSERT INTO job_laeufe (name, zuletzt) VALUES (?, ?)
+           ON CONFLICT(name) DO UPDATE SET zuletzt = excluded.zuletzt""",
+        (name, _now_utc()))
+
+
+def vorschlag_anlegen(conn: sqlite3.Connection, art: str, icao: str, quell_hash: str,
+                      passung: dict, grund: str) -> int:
+    """Automatikergebnis zu einer gesperrten Handpassung ablegen, statt sie zu ueberschreiben.
+
+    ``UNIQUE(art, icao, quell_hash)`` haelt die Liste kurz: Solange dasselbe Rohblatt
+    vorliegt, erscheint der Fund einmal und nicht bei jedem Wochenlauf erneut. Ein bereits
+    VERWORFENER Vorschlag bleibt verworfen -- er wird nicht wieder auf 'offen' gesetzt.
+
+    Rueckgabe ist die id, auch wenn nichts eingefuegt wurde.
+    """
+    code = (icao or "").strip().upper()
+    conn.execute(
+        """INSERT INTO aip_chart_vorschlaege (art, icao, quell_hash, passung, grund,
+                                              zustand, gefunden_am)
+           VALUES (?, ?, ?, ?, ?, 'offen', ?)
+           ON CONFLICT(art, icao, quell_hash) DO NOTHING""",
+        (art, code, quell_hash, json.dumps(passung, sort_keys=True), grund, _now_utc()))
+    zeile = conn.execute(
+        "SELECT id FROM aip_chart_vorschlaege WHERE art=? AND icao=? AND quell_hash=?",
+        (art, code, quell_hash)).fetchone()
+    return int(zeile["id"]) if zeile else 0
+
+
+def get_vorschlaege(conn: sqlite3.Connection, art: str | None = None,
+                    zustand: str = "offen") -> list[dict]:
+    """Vorschlaege, standardmaessig nur die offenen."""
+    bedingungen, werte = [], []
+    if art:
+        bedingungen.append("art = ?"); werte.append(art)
+    if zustand:
+        bedingungen.append("zustand = ?"); werte.append(zustand)
+    wo = ("WHERE " + " AND ".join(bedingungen)) if bedingungen else ""
+    rows = conn.execute(
+        f"""SELECT id, art, icao, quell_hash, passung, grund, zustand, gefunden_am
+            FROM aip_chart_vorschlaege {wo} ORDER BY gefunden_am DESC, icao""",
+        tuple(werte)).fetchall()
+    aus = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["passung"] = json.loads(d["passung"])
+        except (TypeError, ValueError):
+            d["passung"] = {}
+        aus.append(d)
+    return aus
+
+
+def vorschlag_verwerfen(conn: sqlite3.Connection, id_: int) -> int:
+    """Grabstein setzen statt loeschen.
+
+    Ein DELETE waere wirkungslos: ``UNIQUE`` verhindert Doppel nur, solange die Zeile
+    existiert -- der naechste Wochenlauf faende denselben unveraenderten ``quell_hash`` und
+    legte den Vorschlag sofort wieder an. Die Liste waere nach dem ersten Verwerfen
+    dauerhaft unaufraeumbar.
+    """
+    return conn.execute(
+        "UPDATE aip_chart_vorschlaege SET zustand = 'verworfen' WHERE id = ?",
+        (int(id_),)).rowcount
+
+
+def vorschlag_entfernen(conn: sqlite3.Connection, id_: int) -> int:
+    """Zeile wirklich loeschen -- nach dem Uebernehmen, wo der Grabstein nichts nuetzt:
+    Das Rohblatt ist dann das gueltige, ein erneuter Fund dazu kann nicht entstehen."""
+    return conn.execute(
+        "DELETE FROM aip_chart_vorschlaege WHERE id = ?", (int(id_),)).rowcount
 
 
 def verwaisen(conn: sqlite3.Connection, icao: str) -> int:

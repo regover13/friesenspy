@@ -13,6 +13,7 @@ import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from datetime import timezone as _timezone
+import os
 import re
 from pathlib import Path
 from urllib.parse import quote
@@ -139,7 +140,10 @@ from app.database import (
     get_aip_charts,
     get_airport_links,
     HandpassungGesperrt,
+    get_vorschlaege,
     upsert_aip_chart,
+    vorschlag_entfernen,
+    vorschlag_verwerfen,
     upsert_airport_link,
     delete_airport_link,
     rebuild_flight_cache,
@@ -4222,6 +4226,132 @@ def _aip_karten_geaendert(request: Request) -> None:
         logger.exception("Error beim Melden geaenderter AIP-Karten")
 
 
+def _vorschlag_blatt(db_path: str, icao: str, art: str, quell_hash: str) -> Path:
+    """Wo das Blatt zu einem Vorschlag liegt.
+
+    ``art`` und ``quell_hash`` gehoeren in den Namen: Zu einer ICAO koennen ein Sichtflug-
+    und ein Ground-Vorschlag gleichzeitig offen sein, und zu jeder Art mehrere Rohblaetter.
+    Ohne beides ueberschreiben sie sich gegenseitig.
+    """
+    return (Path(db_path).parent / "aip"
+            / f"{icao.upper()}.{art}.{str(quell_hash)[:12]}.png")
+
+
+@app.get("/api/admin/aip-vorschlaege")
+async def admin_get_aip_vorschlaege(request: Request):
+    """Offene Vorschlaege beider Kartentypen.
+
+    Ein Vorschlag entsteht, wenn die Automatik fuer eine handgepasste Karte ein
+    abweichendes Ergebnis findet. Live geht davon nichts -- erst die Uebernahme hier.
+    """
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return {"vorschlaege": get_vorschlaege(conn)}
+    finally:
+        conn.close()
+
+
+@app.get("/aip-vorschlag/{vid}.png", include_in_schema=False)
+async def aip_vorschlag_bild(vid: int, request: Request):
+    """Das Blatt zu einem Vorschlag, zum Vergleich neben dem gueltigen.
+
+    Eigener Endpunkt, weil ``/aip-chart/{icao}.png`` das nicht kann: Dort steht
+    ``re.fullmatch(r"[A-Z0-9]{4}", code)``, und der Dateiname eines Vorschlags traegt
+    zusaetzlich Art und Hash.
+    """
+    require_admin(request)
+    einst = get_settings()
+    conn = get_connection(einst.DB_PATH)
+    try:
+        treffer = [v for v in get_vorschlaege(conn, zustand="") if v["id"] == vid]
+    finally:
+        conn.close()
+    if not treffer:
+        raise HTTPException(status_code=404, detail="unbekannt")
+    v = treffer[0]
+    pfad = _vorschlag_blatt(einst.DB_PATH, v["icao"], v["art"], v["quell_hash"])
+    if not pfad.is_file():
+        raise HTTPException(status_code=404, detail="kein Blatt zu diesem Vorschlag")
+    return FileResponse(pfad, media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=3600"})
+
+
+@app.post("/api/admin/aip-vorschlaege/{vid}/uebernehmen")
+async def admin_aip_vorschlag_uebernehmen(vid: int, request: Request):
+    """Einen Vorschlag zur gueltigen Passung machen.
+
+    **Der einzige Ort im ganzen Programm, der ``hand_ueberschreiben=True`` setzt.** Das ist
+    der ausdrueckliche Handgriff, den die Festlegung des Nutzers vom 30.08.2026 verlangt:
+    "Wenn es eine neue Version gibt, kann diese zur Pruefung angezeigt werden."
+    """
+    require_admin(request)
+    einst = get_settings()
+    conn = get_connection(einst.DB_PATH)
+    try:
+        treffer = [v for v in get_vorschlaege(conn) if v["id"] == vid]
+        if not treffer:
+            raise HTTPException(status_code=404, detail="unbekannter Vorschlag")
+        v = treffer[0]
+        if v["art"] != "sichtflug":
+            raise HTTPException(status_code=400,
+                                detail="fuer diese Kartenart noch nicht unterstuetzt")
+        p = v["passung"]
+        fehlend = [k for k in ("nord", "sued", "west", "ost", "feld_nord", "feld_sued",
+                               "feld_west", "feld_ost") if k not in p]
+        if fehlend:
+            raise HTTPException(status_code=422,
+                                detail=f"Vorschlag unvollstaendig: {', '.join(fehlend)}")
+        upsert_aip_chart(
+            conn, v["icao"], bild_hash=v["quell_hash"],
+            nord=p["nord"], sued=p["sued"], west=p["west"], ost=p["ost"],
+            feld_nord=p["feld_nord"], feld_sued=p["feld_sued"],
+            feld_west=p["feld_west"], feld_ost=p["feld_ost"],
+            rahmen_px=p.get("rahmen_px", ""),
+            tick_px_lat=p.get("tick_px_lat", 0.0),
+            tick_px_lon=p.get("tick_px_lon", 0.0),
+            quelle="auto", airac=p.get("airac", ""), status="gepasst",
+            hand_ueberschreiben=True)
+        # Erst JETZT wird das vorgeschlagene Blatt zum gueltigen. Vorher lag es bewusst
+        # daneben, damit die alte Passung nicht auf einem neuen Bild sass -- genau die
+        # Verzerrung, die der Nutzer verboten hat.
+        quelle_bild = _vorschlag_blatt(einst.DB_PATH, v["icao"], v["art"], v["quell_hash"])
+        if quelle_bild.is_file():
+            os.replace(quelle_bild, aip_charts.blatt_pfad(einst.DB_PATH, v["icao"]))
+        vorschlag_entfernen(conn, vid)
+        conn.commit()
+    finally:
+        conn.close()
+    _aip_karten_geaendert(request)
+    return {"status": "ok"}
+
+
+@app.post("/api/admin/aip-vorschlaege/{vid}/verwerfen")
+async def admin_aip_vorschlag_verwerfen(vid: int, request: Request):
+    """Vorschlag verwerfen. Die bestehende Passung bleibt unberuehrt.
+
+    Kein ``DELETE``: Ein geloeschter Vorschlag entstuende beim naechsten Wochenlauf sofort
+    wieder, weil derselbe ``quell_hash`` noch vorliegt. Der Grabstein haelt ihn fern, bis
+    sich das Rohblatt wirklich aendert.
+    """
+    require_admin(request)
+    einst = get_settings()
+    conn = get_connection(einst.DB_PATH)
+    try:
+        treffer = [v for v in get_vorschlaege(conn) if v["id"] == vid]
+        if treffer:
+            v = treffer[0]
+            _vorschlag_blatt(einst.DB_PATH, v["icao"], v["art"],
+                             v["quell_hash"]).unlink(missing_ok=True)
+        n = vorschlag_verwerfen(conn, vid)
+        conn.commit()
+    finally:
+        conn.close()
+    if not n:
+        raise HTTPException(status_code=404, detail="unbekannter Vorschlag")
+    return {"status": "ok"}
+
+
 _AIP_UA = {"User-Agent": "FriesenSpy/AIP-Kartenabgleich (+https://friesenspy.devprops.de)"}
 
 
@@ -4405,7 +4535,7 @@ async def admin_aip_seite_waehlen(icao: str, request: Request):
                 # je Handarbeit zu enthalten. Der Zustand "wartet auf Handarbeit" steht in
                 # status='ungepasst'; ein zweites Feld dafuer war die Verwechslung.
                 upsert_aip_chart(conn, code, bild_hash=neuer_hash,
-                                 quelle="auto", airac=airac,
+                                 quelle="auto", airac=airac, seite_url=seite,
                                  status="gepasst" if passung else "ungepasst", **werte)
             except HandpassungGesperrt:
                 # Die alte Sicherung oben haengt an `passung is None` und greift nicht,

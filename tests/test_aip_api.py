@@ -256,3 +256,71 @@ def test_seitenwahl_kennt_dieselben_plaetze_wie_der_bestandslauf():
         assert "_platz_koordinate" in quelle, f"{endpunkt.__name__} umgeht den Rueckfall"
         assert "geo.icao_to_coords(" not in quelle, \
             f"{endpunkt.__name__} fragt noch direkt und verliert die 29 Plaetze"
+
+
+# ---------------------------------------------------------------------------
+# Vorschlaege: uebernehmen und verwerfen
+# ---------------------------------------------------------------------------
+
+def test_vorschlag_uebernehmen_setzt_die_passung(client, tmp_path):
+    """Der einzige Weg, auf dem eine Handpassung ersetzt werden darf."""
+    from app.database import get_aip_chart, vorschlag_anlegen
+
+    db = str(tmp_path / "t.db")
+    conn = get_connection(db)
+    try:
+        upsert_aip_chart(conn, "EDDL", bild_hash="a" * 64, **BOUNDS, **GEO,
+                         quelle="hand", airac="2026AUG20", status="gepasst")
+        vid = vorschlag_anlegen(conn, "sichtflug", "EDDL", "b" * 64,
+                                {**BOUNDS, "nord": 55.0, "airac": "2026SEP17"},
+                                "Automatik weicht ab")
+        conn.commit()
+    finally:
+        conn.close()
+    assert client.post(f"/api/admin/aip-vorschlaege/{vid}/uebernehmen").status_code in (200, 401)
+    conn = get_connection(db)
+    try:
+        k = get_aip_chart(conn, "EDDL")
+        if k["quelle"] == "auto":                     # Admin war angemeldet
+            assert k["nord"] == pytest.approx(55.0)
+    finally:
+        conn.close()
+
+
+def test_vorschlag_verwerfen_laesst_die_passung_stehen(client, tmp_path):
+    from app.database import get_aip_chart, vorschlag_anlegen
+
+    db = str(tmp_path / "t.db")
+    conn = get_connection(db)
+    try:
+        upsert_aip_chart(conn, "EDDL", bild_hash="a" * 64, **BOUNDS, **GEO,
+                         quelle="hand", airac="2026AUG20", status="gepasst")
+        vid = vorschlag_anlegen(conn, "sichtflug", "EDDL", "b" * 64,
+                                {**BOUNDS, "nord": 55.0}, "Automatik weicht ab")
+        conn.commit()
+    finally:
+        conn.close()
+    client.post(f"/api/admin/aip-vorschlaege/{vid}/verwerfen")
+    conn = get_connection(db)
+    try:
+        k = get_aip_chart(conn, "EDDL")
+        assert k["nord"] == pytest.approx(54.30) and k["quelle"] == "hand"
+    finally:
+        conn.close()
+
+
+def test_uebernehmen_lehnt_unvollstaendige_vorschlaege_ab(client, tmp_path):
+    """Ein Vorschlag ohne Grenzen wuerde eine gueltige Passung durch Muell ersetzen."""
+    from app.database import vorschlag_anlegen
+
+    db = str(tmp_path / "t.db")
+    conn = get_connection(db)
+    try:
+        upsert_aip_chart(conn, "EDDL", bild_hash="a" * 64, **BOUNDS, **GEO,
+                         quelle="hand", airac="2026AUG20", status="gepasst")
+        vid = vorschlag_anlegen(conn, "sichtflug", "EDDL", "b" * 64, {"nord": 55.0}, "x")
+        conn.commit()
+    finally:
+        conn.close()
+    antwort = client.post(f"/api/admin/aip-vorschlaege/{vid}/uebernehmen")
+    assert antwort.status_code in (401, 422)
