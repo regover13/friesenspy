@@ -124,12 +124,12 @@ def test_popup_nennt_die_msfs_entsprechung():
     dort gar nicht. Diese Frage stellt man am konkreten Platz -- deshalb ins Popup."""
     stelle = INDEX.index("function _fsePopup(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
-    assert "In MSFS als" in rumpf
+    assert "MSFS Alternative" in rumpf
     assert "In MSFS nicht vorhanden" in rumpf
 
 
 def test_popup_meldet_gleiche_icaos_nicht_als_alternative():
-    """Bei 54,7 % der Plaetze ist der MSFS-Code derselbe. 'In MSFS als: EDWG' unter der
+    """Bei 54,7 % der Plaetze ist der MSFS-Code derselbe. 'MSFS Alternative: EDWG' unter der
     Ueberschrift EDWG waere Rauschen."""
     stelle = INDEX.index("function _fsePopup(")
     rumpf = INDEX[stelle:INDEX.index("\n}", stelle)]
