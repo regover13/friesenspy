@@ -2677,11 +2677,30 @@ def test_ebenen_diagnose_haelt_den_scrollstand_fest():
 
 def test_ebenen_diagnose_haengt_am_aufklappen_nicht_am_kartenaufbau():
     """Vor dem Aufklappen hat die Liste weder Groesse noch Position -- dort gemessen waere
-    jedes Rechteck 0. Leaflet feuert dafuer kein Ereignis, also wird `_expand` umhuellt
-    (dasselbe Muster wie bei `_update` in _schilderSchalterAnhaengen)."""
+    jedes Rechteck 0. Leaflet feuert dafuer kein Ereignis, also wird die Aufklapp-Methode
+    umhuellt (dasselbe Muster wie bei `_update` in _schilderSchalterAnhaengen)."""
     rumpf = _rumpf_diag_ebenen()
-    assert "control._expand" in rumpf
+    assert "control.expand" in rumpf
     assert "original.apply(this, arguments)" in rumpf
+
+
+def test_ebenen_diagnose_haengt_an_expand_nicht_an_unterstrich_expand():
+    """Der erste Anlauf am 30.08.2026 griff `control._expand` und erzeugte NULL Meldungen:
+    Leaflet 1.9.4 hat diese Methode nicht. Aufgeklappt wird ueber `_expandSafely()` (Touch)
+    bzw. `_expandIfNotCollapsed()`, und beide rufen die oeffentliche `expand()`.
+
+    Der Test bindet an das Fehlen des Unterstrichs, weil genau dieser Tippfehler die Messung
+    lautlos abschaltet -- der Wachposten steigt aus, und von aussen sieht alles normal aus."""
+    rumpf = _rumpf_diag_ebenen()
+    assert "control._expand" not in rumpf
+
+
+def test_ebenen_diagnose_meldet_wenn_sie_selbst_nicht_greift():
+    """Lehre aus demselben Fehlgriff: Ein stiller `return` verbirgt, dass die Messung gar
+    nicht laeuft. Fehlt die erwartete Methode, gehoert das gemeldet."""
+    rumpf = _rumpf_diag_ebenen()
+    stelle = rumpf.index("typeof control.expand !== 'function'")
+    assert "ebenen-auswahl-fehler" in rumpf[stelle:stelle + 600]
 
 
 def test_ebenen_diagnose_nur_im_kniebrett_und_gedeckelt():

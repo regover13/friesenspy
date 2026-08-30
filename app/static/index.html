@@ -6312,19 +6312,32 @@ function _diagKarte(map, name, aipLayer) {
 // Namen benannt -- und zwar ohne Rueckfrage an den Nutzer am laufenden Simulator.
 //
 // Ausgeloest beim AUFKLAPPEN, nicht beim Kartenaufbau: Vorher hat die Liste keine Groesse und
-// keine Position. Leaflet feuert dafuer kein Ereignis, also wird `_expand` umhuellt -- dasselbe
-// Muster wie bei `_update` in _schilderSchalterAnhaengen, und aus demselben Grund: kein
-// Nachbau fremder Logik, nur ein Anhaengsel an ihr Ende.
+// keine Position. Leaflet feuert dafuer kein Ereignis, also wird die Aufklapp-Methode umhuellt
+// -- dasselbe Muster wie bei `_update` in _schilderSchalterAnhaengen, und aus demselben Grund:
+// kein Nachbau fremder Logik, nur ein Anhaengsel an ihr Ende.
+//
+// UMHUELLT WIRD `expand`, NICHT `_expand`. Der erste Anlauf (30.08.2026) griff `_expand` und
+// hat deshalb NULL Meldungen erzeugt -- die Methode heisst in Leaflet 1.9.4 gar nicht mehr so.
+// Aufgeklappt wird ueber `_expandSafely()` (Touch) bzw. `_expandIfNotCollapsed()`, und beide
+// rufen die OEFFENTLICHE `expand()`. Wer hier den Unterstrich wieder ergaenzt, schaltet die
+// Messung still ab: Der Wachposten unten steigt dann wortlos aus, und im Quelltext-Test sieht
+// beides gleich aus (er kann nicht wissen, was Leaflet wirklich anbietet).
 function _diagEbenenAuswahl(map, control) {
   if (!document.documentElement.classList.contains('vr-panel')) return;
   if (typeof window._panelDiag !== 'function') return;
-  if (!control || typeof control._expand !== 'function') return;
+  if (!control || typeof control.expand !== 'function') {
+    // Nicht stillschweigend aussteigen: Genau dieses Aussteigen hat den ersten Anlauf
+    // unbemerkt wirkungslos gemacht. Eine Meldung kostet nichts und beantwortet die Frage
+    // "warum kommt nichts an?" beim naechsten Mal sofort.
+    try { window._panelDiag('ebenen-auswahl-fehler', { fehler: 'expand fehlt an der Control' }); } catch (e) {}
+    return;
+  }
 
   // Deckel wie in _diagKarte: Auf- und Zuklappen ist ein Handgriff, den man im Cockpit oft
   // tut. Ein paar Messungen beantworten die Frage, hundert verstopfen nur die Tabelle.
   let anzahl = 0;
-  const original = control._expand;
-  control._expand = function () {
+  const original = control.expand;
+  control.expand = function () {
     const ergebnis = original.apply(this, arguments);
     if (anzahl >= 6) return ergebnis;
     anzahl += 1;
