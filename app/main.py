@@ -138,6 +138,7 @@ from app.database import (
     get_aip_chart,
     get_aip_charts,
     get_airport_links,
+    HandpassungGesperrt,
     upsert_aip_chart,
     upsert_airport_link,
     delete_airport_link,
@@ -4396,9 +4397,25 @@ async def admin_aip_seite_waehlen(icao: str, request: Request):
                 feld_west=passung.feld_west, feld_ost=passung.feld_ost,
                 rahmen_px=passung.rahmen_px, tick_px_lat=passung.tick_px_lat,
                 tick_px_lon=passung.tick_px_lon)
-            upsert_aip_chart(conn, code, bild_hash=neuer_hash,
-                             quelle="auto" if passung else "hand", airac=airac,
-                             status="gepasst" if passung else "ungepasst", **werte)
+            try:
+                # quelle='auto' auch bei gescheiterter Passung. Bis 30.08.2026 stand hier
+                # "auto" if passung else "hand" -- das benannte eine Zeile als handgesetzt,
+                # die kein Mensch je angefasst hatte. Mit der Sperre in upsert_aip_chart
+                # waere sie dadurch fuer immer gegen die Automatik gesperrt gewesen, ohne
+                # je Handarbeit zu enthalten. Der Zustand "wartet auf Handarbeit" steht in
+                # status='ungepasst'; ein zweites Feld dafuer war die Verwechslung.
+                upsert_aip_chart(conn, code, bild_hash=neuer_hash,
+                                 quelle="auto", airac=airac,
+                                 status="gepasst" if passung else "ungepasst", **werte)
+            except HandpassungGesperrt:
+                # Die alte Sicherung oben haengt an `passung is None` und greift nicht,
+                # wenn die Automatik auf der gewaehlten Seite ein Ergebnis liefert. Das
+                # Bild wurde bereits geschrieben -- das ist hier richtig, denn der Admin
+                # hat diese Seite ausdruecklich gewaehlt; falsch waere nur, die Passung
+                # mitzuziehen.
+                conn.rollback()
+                logger.info("%s: Seite uebernommen, Handpassung bleibt unberuehrt", code)
+                return {"status": "ok", "gepasst": True, "hand_behalten": True}
             conn.commit()
         finally:
             conn.close()

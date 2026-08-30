@@ -6607,9 +6607,31 @@ def get_aip_chart(conn: sqlite3.Connection, icao: str) -> dict | None:
 
 def delete_aip_chart(conn: sqlite3.Connection, icao: str) -> int:
     """Karte entfernen. Noetig, wenn ihr Eintrag aus airport_links verschwindet -- sonst
-    bliebe eine Karte im Umlauf, die der Admin bewusst geloescht hat."""
+    bliebe eine Karte im Umlauf, die der Admin bewusst geloescht hat.
+
+    **Nur fuer Automatikkarten.** Eine Handpassung wird stattdessen ueber ``verwaisen()``
+    aus der Anzeige genommen; siehe dort. Die Sperre in ``upsert_aip_chart`` greift hier
+    nicht -- sie sitzt im Schreibpfad, nicht im Loeschpfad.
+    """
     code = (icao or "").strip().upper()
     return conn.execute("DELETE FROM aip_charts WHERE icao = ?", (code,)).rowcount
+
+
+def verwaisen(conn: sqlite3.Connection, icao: str) -> int:
+    """Karte aus der Anzeige nehmen, ohne sie zu verlieren.
+
+    Fuer handgepasste Karten, deren Eintrag aus ``airport_links`` verschwunden ist. Eine
+    Automatikkarte ist in Minuten neu gerechnet und wird geloescht; eine Handpassung ist
+    Arbeit eines Menschen und bleibt erhalten. ``get_aip_charts()`` filtert auf
+    ``status='gepasst'`` und laesst sie damit von allein aus der Liste.
+
+    Taucht der Link wieder auf -- ein AIRAC-Wechsel benennt Kapitelseiten um --, genuegt ein
+    erneutes Setzen mit ``status='gepasst'``, um sie zurueckzuholen. Das Blatt bleibt
+    liegen: 1,4 MB sind billiger als eine verlorene Handpassung.
+    """
+    code = (icao or "").strip().upper()
+    return conn.execute(
+        "UPDATE aip_charts SET status = 'verwaist' WHERE icao = ?", (code,)).rowcount
 
 def list_gps_detection_gaps(conn: sqlite3.Connection) -> list[dict]:
     """Flüge mit fehlendem GPS-Start ODER fehlender GPS-Landung trotz bekanntem Flugplan-Wert,

@@ -39,12 +39,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import aip_charts  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.database import (  # noqa: E402
+    HandpassungGesperrt,
     delete_aip_chart,
     get_aip_chart,
     get_aip_charts,
     get_airport_links,
     get_connection,
     upsert_aip_chart,
+    verwaisen,
 )
 
 logger = logging.getLogger("aip_bestand")
@@ -129,12 +131,33 @@ def _handblatt_auffrischen(conn, einst, icao: str, roh: bytes, airac: str | None
     zaehler["hand_blatt_aufgefrischt"] += 1
 
 
+def _karte_schreiben(conn, icao: str, zaehler, vorschlag_faellig: list, **felder) -> bool:
+    """Passung ablegen und eine gesperrte Handpassung sauber abfangen.
+
+    Der Lauf darf an einer gesperrten Karte nicht abbrechen: Eine Ausnahme mitten im
+    Durchgang liesse die restlichen 400 Karten liegen, und der naechste Lauf finge wieder
+    von vorn an. Gemeldet wird sie stattdessen -- ihr Fund wird zum Vorschlag, den der
+    Admin ansehen kann.
+
+    Rueckgabe: True, wenn geschrieben wurde. Nur dann darf der Aufrufer das BILD tauschen.
+    """
+    try:
+        upsert_aip_chart(conn, icao, **felder)
+        return True
+    except HandpassungGesperrt:
+        logger.info("%s: Handpassung gilt, Automatikergebnis wird nur vorgeschlagen", icao)
+        zaehler["hand_gesperrt"] += 1
+        vorschlag_faellig.append(icao)
+        return False
+
+
 def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
     einst = get_settings()
     conn = get_connection(einst.DB_PATH)
     zaehler: collections.Counter = collections.Counter()
     ungepasst: list[str] = []
     nachsehen: list[str] = []
+    vorschlag_faellig: list[str] = []
     koordinaten: dict = {}
     try:
         links = get_airport_links(conn)
@@ -144,10 +167,22 @@ def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
         # Regel 2: Was nicht mehr verlinkt ist, verschwindet auch aus dem Bestand.
         if not nur:
             for karte in get_aip_charts(conn, nur_gepasst=False):
-                if karte["icao"] not in links:
-                    delete_aip_chart(conn, karte["icao"])
-                    aip_charts.blatt_pfad(einst.DB_PATH, karte["icao"]).unlink(missing_ok=True)
-                    zaehler["verwaist_entfernt"] += 1
+                if karte["icao"] in links:
+                    continue
+                if karte["quelle"] == "hand":
+                    # Eine Handpassung ist Arbeit eines Menschen. Sie verschwindet aus der
+                    # Anzeige, aber nicht von der Platte -- Blatt und Zeile bleiben. Taucht
+                    # der Link wieder auf (ein AIRAC-Wechsel benennt Kapitelseiten um),
+                    # genuegt ein Setzen auf status='gepasst'.
+                    if karte["status"] != "verwaist":
+                        verwaisen(conn, karte["icao"])
+                        logger.info("%s: Link verschwunden, Handpassung bleibt erhalten "
+                                    "(status=verwaist)", karte["icao"])
+                        zaehler["hand_verwaist"] += 1
+                    continue
+                delete_aip_chart(conn, karte["icao"])
+                aip_charts.blatt_pfad(einst.DB_PATH, karte["icao"]).unlink(missing_ok=True)
+                zaehler["verwaist_entfernt"] += 1
             conn.commit()
 
         with httpx.Client(follow_redirects=True) as client:
@@ -209,9 +244,11 @@ def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
                     ungepasst.append(icao)
                     continue
 
-                aip_charts.blatt_schreiben(aip_charts.blatt_pfad(einst.DB_PATH, icao), roh)
-                upsert_aip_chart(
-                    conn, icao, bild_hash=neuer_hash,
+                # Erst die Passung, dann das Bild. Andersherum laege bei einer gesperrten
+                # Handpassung das NEUE Blatt unter der ALTEN Passung -- und genau das ist
+                # die Verzerrung, die der Nutzer am 30.08.2026 verboten hat.
+                geschrieben = _karte_schreiben(
+                    conn, icao, zaehler, vorschlag_faellig, bild_hash=neuer_hash,
                     nord=passung.nord, sued=passung.sued,
                     west=passung.west, ost=passung.ost,
                     feld_nord=passung.feld_nord, feld_sued=passung.feld_sued,
@@ -219,6 +256,9 @@ def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
                     rahmen_px=passung.rahmen_px,
                     tick_px_lat=passung.tick_px_lat, tick_px_lon=passung.tick_px_lon,
                     quelle="auto", airac=airac or "", status="gepasst")
+                if not geschrieben:
+                    continue
+                aip_charts.blatt_schreiben(aip_charts.blatt_pfad(einst.DB_PATH, icao), roh)
                 zaehler["gepasst"] += 1
                 if i % 25 == 0:
                     conn.commit()
@@ -234,7 +274,8 @@ def lauf(nur: set[str] | None = None, pause: float = 0.4) -> dict:
     return {"zaehler": dict(zaehler), "gesamt": gesamt, "gepasst": gut,
             "quote": round(100 * gut / gesamt, 1) if gesamt else 0.0,
             "ungepasst": sorted(ungepasst),
-            "handpassung_pruefen": sorted(nachsehen)}
+            "handpassung_pruefen": sorted(nachsehen),
+            "vorschlag_faellig": sorted(vorschlag_faellig)}
 
 
 def main() -> None:
