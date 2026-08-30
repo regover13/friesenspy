@@ -132,3 +132,101 @@ class TestPanelDiagPruning:
             assert json.loads(rows[0]["payload_json"])["n"] == PANEL_DIAG_KEEP + 14
         finally:
             conn.close()
+
+
+# --- Wer hat gemeldet? (cid, nachgetragen 30.08.2026) -----------------------------------
+#
+# Anlass: Am Vormittag des 30.08.2026 flogen zwei Mitglieder gemeinsam in South Dakota, beide
+# mit offenem Kniebrett. Ihre Meldungen waren in panel_diag nicht auseinanderzuhalten --
+# gleicher User-Agent (CoherentGT), gleiche App-Version, teils gleiche Fenstergroesse. Zwei
+# Meldungen im Abstand einer Sekunde zeigten widersprechende Ebenen-Zustaende; das sah wie ein
+# Fehler aus und waren schlicht zwei Leute. Ohne die cid ist jede Messung mehrdeutig, sobald
+# mehr als einer fliegt.
+
+def _login_scharf(env):
+    """Board-Login aktivieren -- ohne das liefert _current_cid grundsaetzlich None."""
+    from app.database import set_app_setting
+    conn = get_connection(env.db)
+    set_app_setting(conn, "forum_login_enabled", "1")
+    conn.commit()
+    conn.close()
+    main._reset_gate_cache()
+
+
+def _user_cookie(cid: int) -> dict:
+    import time
+
+    from app import forum_sso
+    return {"fs_user": forum_sso.make_user_token(SECRET, "Pilot", str(cid), False,
+                                                 time.time() + 3600)}
+
+
+class TestPanelDiagCid:
+    def test_meldung_traegt_die_cid_des_angemeldeten(self, env):
+        _login_scharf(env)
+        r = env.client.post("/api/panel-diag", json={"kind": "karte"},
+                            cookies=_user_cookie(1602713))
+        assert r.status_code == 200
+
+        conn = get_connection(env.db)
+        try:
+            rows = list_panel_diag(conn)
+        finally:
+            conn.close()
+        assert rows[0]["cid"] == 1602713
+
+    def test_ohne_anmeldung_weiter_annehmen__cid_bleibt_leer(self, env):
+        """Der Endpunkt darf NICHT anmeldepflichtig werden: Gerade die Faelle, in denen die
+        Anmeldung im Panel scheitert, sollen meldbar bleiben."""
+        _login_scharf(env)
+        r = env.client.post("/api/panel-diag", json={"kind": "report"})
+        assert r.status_code == 200
+
+        conn = get_connection(env.db)
+        try:
+            rows = list_panel_diag(conn)
+        finally:
+            conn.close()
+        assert rows[0]["cid"] is None
+
+    def test_zwei_melder_bleiben_unterscheidbar(self, env):
+        """Der Fall vom 30.08.2026: zwei Kniebretter, sonst nicht zu trennen."""
+        _login_scharf(env)
+        env.client.post("/api/panel-diag", json={"kind": "karte"}, cookies=_user_cookie(1602713))
+        env.client.post("/api/panel-diag", json={"kind": "karte"}, cookies=_user_cookie(1642160))
+
+        conn = get_connection(env.db)
+        try:
+            rows = list_panel_diag(conn)
+        finally:
+            conn.close()
+        assert {r["cid"] for r in rows} == {1602713, 1642160}
+
+    def test_migration_ergaenzt_die_spalte_in_einer_alten_datenbank(self, tmp_path):
+        """Bestandsdatenbanken auf dem VPS haben die Spalte nicht -- init_db muss sie
+        nachziehen, sonst schlaegt der erste INSERT nach dem Deploy fehl."""
+        import sqlite3
+
+        from app.database import init_db as _init
+        p = str(tmp_path / "alt.db")
+        conn = sqlite3.connect(p)
+        conn.executescript(
+            "CREATE TABLE panel_diag ("
+            "  id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,"
+            "  kind TEXT NOT NULL, app_version TEXT, user_agent TEXT,"
+            "  payload_json TEXT NOT NULL)"
+        )
+        conn.commit()
+        conn.close()
+
+        _init(p)
+
+        conn = get_connection(p)
+        try:
+            spalten = {r[1] for r in conn.execute("PRAGMA table_info(panel_diag)")}
+            assert "cid" in spalten
+            insert_panel_diag(conn, kind="karte", payload_json="{}", cid=42)
+            conn.commit()
+            assert list_panel_diag(conn)[0]["cid"] == 42
+        finally:
+            conn.close()

@@ -6282,6 +6282,111 @@ function _diagKarte(map, name, aipLayer) {
   map.on('overlayremove',   (e) => setTimeout(() => messen('overlay-aus:' + (e.name || '?')), 2500));
 }
 
+// --------------------------------------------------------------------------
+//  Warum kommt ein Tipp auf eine Ebenen-Zeile nicht an?
+// --------------------------------------------------------------------------
+//
+// Nutzer-Fund 30.08.2026, Flug in South Dakota: "Ich konnte das AIP Layer nicht im Tablet
+// aktivieren -- die Checkbox liess sich nicht anklicken." Getroffen hat es OpenAIP, den
+// OBERSTEN Eintrag der Overlay-Liste; Platzrunden (Platz 3), Meldepunkte (Platz 4) und die
+// FSE-Ebenen (Platz 5/6) gingen im selben Zeitraum nachweislich an (`overlay-an:...` in
+// panel_diag).
+//
+// Aus der vorhandenen Diagnose war die Ursache NICHT zu bestimmen. Sie haelt zwar fest, WELCHE
+// Haken gesetzt sind -- aber nicht, ob eine Zeile ueberhaupt erreichbar ist. Beide plausiblen
+// Erklaerungen sehen dort identisch aus:
+//
+//   (1) Ueber der Zeile liegt ein anderes Element und faengt den Tipp ab. In der oberen
+//       rechten Ecke draengen sich im Vollbild mehrere Bedienelemente (Zurueck-Leiste mit
+//       Glocke, Kompass, Wind), und `html.vr-panel .map-is-fullscreen .leaflet-top` schiebt
+//       Leaflets Ecke bereits um 66px nach unten -- genau wegen eines solchen Falls beim
+//       Zoom-Knopf (frueherer Nutzer-Fund).
+//   (2) Die Liste ist laenger als die Karte hoch ist und scrollt (s. CSS bei
+//       `.leaflet-control-layers-expanded`). Dann steht die Zeile schlicht ausserhalb des
+//       sichtbaren Fensters -- sichtbar ist sie trotzdem nicht "weg", man sieht nur nicht,
+//       dass es weitergeht. Genau diese Falle gab es hier schon einmal (Radar Label,
+//       24.08.2026).
+//
+// Gemessen wird deshalb das, was der Tipp tatsaechlich trifft: `elementFromPoint` auf den
+// Mittelpunkt JEDES Kaestchens. Liegt dort nicht das eigene <input>, ist der Uebeltaeter mit
+// Namen benannt -- und zwar ohne Rueckfrage an den Nutzer am laufenden Simulator.
+//
+// Ausgeloest beim AUFKLAPPEN, nicht beim Kartenaufbau: Vorher hat die Liste keine Groesse und
+// keine Position. Leaflet feuert dafuer kein Ereignis, also wird `_expand` umhuellt -- dasselbe
+// Muster wie bei `_update` in _schilderSchalterAnhaengen, und aus demselben Grund: kein
+// Nachbau fremder Logik, nur ein Anhaengsel an ihr Ende.
+function _diagEbenenAuswahl(map, control) {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+  if (typeof window._panelDiag !== 'function') return;
+  if (!control || typeof control._expand !== 'function') return;
+
+  // Deckel wie in _diagKarte: Auf- und Zuklappen ist ein Handgriff, den man im Cockpit oft
+  // tut. Ein paar Messungen beantworten die Frage, hundert verstopfen nur die Tabelle.
+  let anzahl = 0;
+  const original = control._expand;
+  control._expand = function () {
+    const ergebnis = original.apply(this, arguments);
+    if (anzahl >= 6) return ergebnis;
+    anzahl += 1;
+    const behaelter = this.getContainer ? this.getContainer() : null;
+    // Erst nach dem Layout messen: Leaflet setzt in _expand selbst noch eine Hoehe auf die
+    // Liste (getSize()-abhaengig), vorher stimmen die Rechtecke nicht.
+    setTimeout(function () {
+      try {
+        if (!behaelter) return;
+        const liste = behaelter.querySelector('.leaflet-control-layers-list');
+        const kasten = behaelter.getBoundingClientRect();
+        const zeilen = [];
+        behaelter.querySelectorAll('label').forEach(function (label) {
+          const eingabe = label.querySelector('input');
+          const r = (eingabe || label).getBoundingClientRect();
+          const x = Math.round(r.left + r.width / 2);
+          const y = Math.round(r.top + r.height / 2);
+          const oben = document.elementFromPoint(x, y);
+          // Der Tipp gilt als erreichbar, wenn das oberste Element an diesem Punkt die Zeile
+          // selbst ist oder in ihr liegt -- ein Klick auf das <label> schaltet das <input>
+          // ebenso wie einer direkt darauf.
+          const erreichbar = !!oben && (oben === label || label.contains(oben) || oben.contains(label));
+          zeilen.push({
+            text: (label.textContent || '').trim().slice(0, 24),
+            typ: eingabe ? eingabe.type : null,
+            angehakt: eingabe ? !!eingabe.checked : null,
+            rechteck: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)],
+            // Null-Groesse heisst: die Zeile ist gar nicht gerendert. Ein anderer Fall als
+            // "verdeckt" und aus dem Ergebnis von elementFromPoint allein nicht zu trennen.
+            gerendert: r.width > 0 && r.height > 0,
+            erreichbar: erreichbar,
+            // Nur wenn NICHT erreichbar: was liegt dann darueber? Klasse und Tag genuegen,
+            // um das Element im Quelltext wiederzufinden.
+            davor: erreichbar ? null : (oben ? {
+              tag: oben.tagName,
+              klasse: String(oben.className || '').slice(0, 60),
+              id: oben.id || null,
+            } : 'nichts'),
+          });
+        });
+        window._panelDiag('ebenen-auswahl', {
+          karte: 'live',
+          vollbild: map.getContainer().closest('.map-is-fullscreen') !== null,
+          kartenGroesse: [map.getSize().x, map.getSize().y],
+          fenster: [window.innerWidth, window.innerHeight],
+          kasten: [Math.round(kasten.left), Math.round(kasten.top),
+                   Math.round(kasten.width), Math.round(kasten.height)],
+          // Scrollt die Liste, und steht sie oben? Beantwortet Erklaerung (2) allein.
+          scroll: liste ? {
+            sichtbar: liste.clientHeight, gesamt: liste.scrollHeight, stand: liste.scrollTop,
+            scrollt: liste.scrollHeight > liste.clientHeight + 1,
+          } : null,
+          zeilen: zeilen,
+        });
+      } catch (e) {
+        window._panelDiag('ebenen-auswahl-fehler', { fehler: String(e) });
+      }
+    }, 300);
+    return ergebnis;
+  };
+}
+
 // OFM ist nur bei Zoom 7–12 sinnvoll (unter 7 sparse, über 12 blank).
 // Außerhalb dieses Bereichs wird automatisch auf Satellit gewechselt.
 // Manuell zu OFM zurückwechseln reaktiviert den Auto-Switch.
@@ -10783,6 +10888,9 @@ async function initLiveMap() {
   // Der Zusatzhaken fuer die Schilder -- erst jetzt, die Ebenen-Auswahl muss stehen.
   _schilderAnwenden(liveMap, _loadSchilderPref());
   _schilderSchalterAnhaengen(liveMap, liveEbenen);
+  // Nach dem Zusatzhaken: Die Messung zaehlt die Zeilen der fertigen Liste, und "Radar Label"
+  // gehoert dazu.
+  _diagEbenenAuswahl(liveMap, liveEbenen);
   _setupAIPPref(liveMap, liveAIP);
   _setupVerkehrPref(liveMap, _verkehrGruppe);
   // War die Ebene vorher an, laeuft sie sofort wieder -- overlayadd feuert bei einem vor

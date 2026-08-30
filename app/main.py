@@ -568,7 +568,16 @@ async def panel_diag(request: Request):
         raise HTTPException(status_code=400, detail="Objekt erwartet")
 
     kind = str(body.get("kind", "report"))[:40]
-    conn = get_connection(get_settings().DB_PATH)
+    settings = get_settings()
+    # WER gemeldet hat -- best effort aus dem Sitzungs-Cookie, ohne die Anmeldung zur Pflicht
+    # zu machen (s. Docstring oben). Ohne diese Zuordnung ist jede Messung mehrdeutig, sobald
+    # mehr als einer gleichzeitig fliegt; die Begründung mit dem konkreten Fall steht bei
+    # ``_PANEL_DIAG_MIGRATIONS`` in database.py.
+    try:
+        cid = _current_cid(request, settings)
+    except Exception:
+        cid = None
+    conn = get_connection(settings.DB_PATH)
     try:
         insert_panel_diag(
             conn,
@@ -576,6 +585,7 @@ async def panel_diag(request: Request):
             payload_json=json.dumps(body, ensure_ascii=False)[:_PANEL_DIAG_MAX_BYTES],
             app_version=str(body.get("appVersion") or "")[:40] or None,
             user_agent=request.headers.get("user-agent", "")[:300] or None,
+            cid=cid,
         )
         conn.commit()
     finally:

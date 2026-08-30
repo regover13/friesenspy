@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.0.2",
+    "date": "2026-08-30",
+    "highlight": false,
+    "title": "Kleinkram und eine Messung",
+    "items": [
+      "\ud83d\uddfa\ufe0f Im Popup eines FSE-Platzes hei\u00dft die Zeile mit dem abweichenden Simulator-Code jetzt \u201eMSFS Alternative:\u201c statt \u201eIn MSFS als:\u201c.",
+      "\ud83d\udd0d Im Kniebrett misst die Ebenen-Auswahl beim Aufklappen selbst nach, ob jede Zeile wirklich antippbar ist \u2014 Vorarbeit f\u00fcr einen gemeldeten Fall, in dem sich ein Haken nicht setzen lie\u00df. F\u00fcr die Bedienung \u00e4ndert sich nichts."
+    ]
+  },
+  {
     "version": "14.0.1",
     "date": "2026-08-27",
     "highlight": false,

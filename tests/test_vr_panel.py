@@ -2625,3 +2625,76 @@ def _regel_von(selektor):
     """Rumpf der ersten CSS-Regel zu diesem Selektor (fuer Pruefungen wie oben)."""
     m = re.search(re.escape(selektor) + r"\s*\{([^}]*)\}", INDEX, re.S)
     return m.group(1) if m else ""
+
+
+# ==========================================================================================
+#  Erreichbarkeit der Ebenen-Auswahl messen (Nutzer-Fund 30.08.2026)
+# ==========================================================================================
+#
+# "Ich konnte das AIP Layer nicht im Tablet aktivieren -- die Checkbox liess sich nicht
+# anklicken." Getroffen hat es OpenAIP, den OBERSTEN Overlay-Eintrag; Platzrunden, Meldepunkte
+# und die FSE-Ebenen (Plaetze 3 bis 6) gingen im selben Zeitraum nachweislich an. Die
+# vorhandene Diagnose haelt fest, WELCHE Haken gesetzt sind -- nicht, ob eine Zeile ueberhaupt
+# erreichbar ist. Die beiden plausiblen Ursachen (etwas liegt darueber / die Liste scrollt und
+# die Zeile steht ausserhalb) sehen dort identisch aus.
+
+def _rumpf_diag_ebenen() -> str:
+    """Nur den Funktionsrumpf, ohne die Kommentare davor.
+
+    Freie Zeichenkettensuche ueber INDEX faende sonst die Begruendung im Kommentarblock statt
+    der Messung selbst -- die Tests waeren gruen, ohne dass die Funktion irgendetwas tut.
+    """
+    stelle = INDEX.index("function _diagEbenenAuswahl(")
+    return INDEX[stelle:INDEX.index("\n}\n", stelle)]
+
+
+def test_ebenen_diagnose_misst_was_der_tipp_wirklich_trifft():
+    """Der Kern: `elementFromPoint` auf den Mittelpunkt jedes Kaestchens. Ohne diese Messung
+    bleibt "verdeckt" von "nicht da" ununterscheidbar."""
+    rumpf = _rumpf_diag_ebenen()
+    assert "document.elementFromPoint(" in rumpf
+    assert "erreichbar:" in rumpf
+    # Bei einem Treffer daneben MUSS der Uebeltaeter benannt werden, sonst weiss man nur,
+    # dass es klemmt, aber nicht woran.
+    assert "davor:" in rumpf
+
+
+def test_ebenen_diagnose_trennt_verdeckt_von_nicht_gerendert():
+    """Eine Zeile mit Rechteck 0x0 ist gar nicht gezeichnet -- ein anderer Fall als "verdeckt"
+    und aus elementFromPoint allein nicht zu erkennen."""
+    rumpf = _rumpf_diag_ebenen()
+    assert "gerendert:" in rumpf
+
+
+def test_ebenen_diagnose_haelt_den_scrollstand_fest():
+    """Die zweite Erklaerung: Die Liste ist laenger als die Karte hoch ist (s. CSS bei
+    .leaflet-control-layers-expanded) und die Zeile steht ausserhalb des Fensters. Genau diese
+    Falle gab es hier schon einmal (Radar Label, 24.08.2026)."""
+    rumpf = _rumpf_diag_ebenen()
+    assert "scrollt:" in rumpf
+    assert "scrollTop" in rumpf
+
+
+def test_ebenen_diagnose_haengt_am_aufklappen_nicht_am_kartenaufbau():
+    """Vor dem Aufklappen hat die Liste weder Groesse noch Position -- dort gemessen waere
+    jedes Rechteck 0. Leaflet feuert dafuer kein Ereignis, also wird `_expand` umhuellt
+    (dasselbe Muster wie bei `_update` in _schilderSchalterAnhaengen)."""
+    rumpf = _rumpf_diag_ebenen()
+    assert "control._expand" in rumpf
+    assert "original.apply(this, arguments)" in rumpf
+
+
+def test_ebenen_diagnose_nur_im_kniebrett_und_gedeckelt():
+    """Auf der Website zeichnet der Browser die Kaestchen ohnehin korrekt; und Auf-/Zuklappen
+    ist im Cockpit ein haeufiger Handgriff -- ohne Deckel verstopft die Tabelle."""
+    rumpf = _rumpf_diag_ebenen()
+    assert "'vr-panel'" in rumpf
+    assert "anzahl >= " in rumpf
+
+
+def test_ebenen_diagnose_laeuft_nach_dem_zusatzhaken():
+    """Die Messung zaehlt die Zeilen der FERTIGEN Liste. Vor _schilderSchalterAnhaengen fehlte
+    "Radar Label" -- und ausgerechnet der Zusatzhaken ist der einzige Eintrag, den nicht
+    Leaflet selbst setzt."""
+    assert (INDEX.index("_schilderSchalterAnhaengen(liveMap, liveEbenen)")
+            < INDEX.index("_diagEbenenAuswahl(liveMap, liveEbenen)"))

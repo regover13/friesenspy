@@ -427,6 +427,7 @@ CREATE TABLE IF NOT EXISTS panel_diag (
     kind         TEXT NOT NULL,
     app_version  TEXT,
     user_agent   TEXT,
+    cid          INTEGER,
     payload_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_panel_diag_created ON panel_diag(created_at DESC);
@@ -555,6 +556,21 @@ _PUSH_MIGRATIONS = [
     "ALTER TABLE push_subscriptions ADD COLUMN last_ok_at TEXT",
     "ALTER TABLE push_subscriptions ADD COLUMN last_fail_at TEXT",
     "ALTER TABLE push_subscriptions ADD COLUMN last_status TEXT",
+]
+
+_PANEL_DIAG_MIGRATIONS = [
+    # cid: WER hat gemeldet. Nachgetragen am 30.08.2026, weil eine Auswertung ohne sie nicht
+    # moeglich war: Am selben Vormittag flogen zwei Mitglieder gemeinsam in South Dakota,
+    # beide mit offenem Kniebrett. Ihre Meldungen landeten ununterscheidbar in derselben
+    # Tabelle -- gleicher User-Agent (CoherentGT), gleiche App-Version, teils gleiche
+    # Fenstergroesse. Zwei Meldungen im Abstand EINER Sekunde zeigten widerspruechliche
+    # Ebenen-Zustaende, was wie ein Fehler aussah und keiner war: Es waren schlicht zwei
+    # Leute. Ohne diese Spalte ist jede Messung mehrdeutig, sobald mehr als einer fliegt.
+    #
+    # Best effort und bewusst NULLABLE: Der Endpunkt verlangt keine Anmeldung (s. dortiger
+    # Docstring) -- gerade die Faelle, in denen die Anmeldung scheitert, sollen meldbar
+    # bleiben. Steht kein Sitzungs-Cookie an, bleibt die Spalte leer.
+    "ALTER TABLE panel_diag ADD COLUMN cid INTEGER",
 ]
 
 _VISIBILITY_MIGRATIONS = [
@@ -721,6 +737,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _PUSH_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _PANEL_DIAG_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -993,15 +1014,18 @@ def insert_panel_diag(
     payload_json: str,
     app_version: str | None = None,
     user_agent: str | None = None,
+    cid: int | None = None,
 ) -> None:
     """Einen Diagnose-Datensatz aus dem EFB-Panel ablegen (kein commit).
+
+    ``cid`` ist best effort und darf ``None`` sein -- s. ``_PANEL_DIAG_MIGRATIONS``.
 
     Beschneidet anschließend auf die neuesten ``PANEL_DIAG_KEEP`` Einträge.
     """
     conn.execute(
-        "INSERT INTO panel_diag (created_at, kind, app_version, user_agent, payload_json) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (_now_utc(), kind, app_version, user_agent, payload_json),
+        "INSERT INTO panel_diag (created_at, kind, app_version, user_agent, cid, payload_json) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (_now_utc(), kind, app_version, user_agent, cid, payload_json),
     )
     conn.execute(
         "DELETE FROM panel_diag WHERE id NOT IN ("
@@ -1014,7 +1038,7 @@ def insert_panel_diag(
 def list_panel_diag(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
     """Neueste Diagnose-Datensätze (neueste zuerst)."""
     rows = conn.execute(
-        "SELECT id, created_at, kind, app_version, user_agent, payload_json "
+        "SELECT id, created_at, kind, app_version, user_agent, cid, payload_json "
         "FROM panel_diag ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
