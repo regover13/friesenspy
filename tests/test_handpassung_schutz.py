@@ -373,3 +373,64 @@ def test_der_job_prueft_die_faelligkeit_selbst():
 
     quelle = _ohne_kommentare(inspect.getsource(poller.VatsimPoller._aip_auffrischen))
     assert "job_faellig" in quelle and "job_erledigt" in quelle
+
+
+# ---------------------------------------------------------------------------
+# Die Sperre gilt fuer BEIDE Kartentypen -- eine Fassung, nicht zwei
+# ---------------------------------------------------------------------------
+
+_GROUND = dict(sorte="flugplatzkarte", quell_hash="b" * 64, bild_hash="c" * 64,
+               nord=51.30, sued=51.27, west=6.74, ost=6.80,
+               feld_nord=51.295, feld_sued=51.275, feld_west=6.745, feld_ost=6.795,
+               drehung=322.8, mps=1.69, rest_max=5.7, bahnen=2,
+               airac="2026AUG20", status="gepasst")
+
+
+def test_ground_handpassung_ist_ebenso_gesperrt(conn):
+    from app.database import get_ground_chart, upsert_ground_chart
+
+    upsert_ground_chart(conn, "EDDL", quelle="hand", **_GROUND)
+    with pytest.raises(HandpassungGesperrt):
+        upsert_ground_chart(conn, "EDDL", quelle="auto", **{**_GROUND, "drehung": 0.0})
+    assert get_ground_chart(conn, "EDDL")["drehung"] == pytest.approx(322.8)
+
+
+def test_ground_mensch_darf_sich_selbst_korrigieren(conn):
+    from app.database import get_ground_chart, upsert_ground_chart
+
+    upsert_ground_chart(conn, "EDDL", quelle="hand", **_GROUND)
+    upsert_ground_chart(conn, "EDDL", quelle="hand", **{**_GROUND, "drehung": 320.0})
+    assert get_ground_chart(conn, "EDDL")["drehung"] == pytest.approx(320.0)
+
+
+def test_ground_admin_darf_ausdruecklich_ueberschreiben(conn):
+    from app.database import get_ground_chart, upsert_ground_chart
+
+    upsert_ground_chart(conn, "EDDL", quelle="hand", **_GROUND)
+    upsert_ground_chart(conn, "EDDL", quelle="auto", hand_ueberschreiben=True,
+                        **{**_GROUND, "drehung": 10.0})
+    assert get_ground_chart(conn, "EDDL")["drehung"] == pytest.approx(10.0)
+
+
+def test_die_sperre_existiert_nur_einmal():
+    """Zwei Fassungen derselben Regel laufen auseinander. Beide upsert-Funktionen rufen
+    denselben Helfer -- das ist der Kern von Abschnitt 7.1 der Spec."""
+    import inspect
+
+    from app import database
+
+    for fn in (database.upsert_aip_chart, database.upsert_ground_chart):
+        quelle = _ohne_kommentare(inspect.getsource(fn))
+        assert "_handpassung_pruefen(" in quelle
+        assert "raise HandpassungGesperrt" not in quelle
+
+
+def test_ground_karte_nur_gepasste_in_der_liste(conn):
+    from app.database import get_ground_charts, upsert_ground_chart, verwaisen_ground
+
+    upsert_ground_chart(conn, "EDDL", quelle="hand", **_GROUND)
+    upsert_ground_chart(conn, "EDDM", quelle="auto", **{**_GROUND, "status": "ungepasst"})
+    assert [k["icao"] for k in get_ground_charts(conn)] == ["EDDL"]
+    assert len(get_ground_charts(conn, nur_gepasst=False)) == 2
+    verwaisen_ground(conn, "EDDL")
+    assert get_ground_charts(conn) == []

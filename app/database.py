@@ -373,6 +373,40 @@ CREATE TABLE IF NOT EXISTS aip_charts (
 -- faende denselben unveraenderten quell_hash und legte den Vorschlag sofort wieder an.
 -- Die Liste waere nach dem ersten Verwerfen dauerhaft unaufraeumbar. Ein Grabstein haelt
 -- den Fund fern, bis sich das Rohblatt wirklich aendert.
+-- Flugplatzkarten (Aerodrome Chart / Ground Movement Chart).
+--
+-- Eigene Tabelle, nicht eine Erweiterung von aip_charts: Die Felder sind zu verschieden.
+-- Eine Flugplatzkarte hat keinen Rahmen, keine Ticks und keine Gradnetz-Beschriftung,
+-- dafuer einen Drehwinkel, einen Massstab, eine Sorte und einen Restfehler. Zusammengelegt
+-- waere die Haelfte jeder Zeile leer.
+CREATE TABLE IF NOT EXISTS aip_ground_charts (
+    icao          TEXT PRIMARY KEY,
+    sorte         TEXT NOT NULL,        -- 'rollkarte' oder 'flugplatzkarte'
+    seite_url     TEXT NOT NULL DEFAULT '',
+    quell_hash    TEXT NOT NULL,        -- SHA-256 des ROHblatts: DAS ist der
+                                        -- Aenderungsdetektor.
+    bild_hash     TEXT NOT NULL,        -- SHA-256 des genordeten Blatts, nur fuer die URL.
+                                        -- NIE als Aenderungsdetektor: Er haengt am
+                                        -- Resampling des Drehens, ein Pillow-Update
+                                        -- aenderte ihn ohne jede inhaltliche Aenderung.
+    nord          REAL NOT NULL,        -- Grenzen des GENORDETEN Blatts
+    sued          REAL NOT NULL,
+    west          REAL NOT NULL,
+    ost           REAL NOT NULL,
+    feld_nord     REAL NOT NULL,        -- Huelle der Bahnen plus Saum: danach schaltet die
+    feld_sued     REAL NOT NULL,        -- Automatik. NICHT die Blattgrenzen -- nach dem
+    feld_west     REAL NOT NULL,        -- Drehen zeigt das Blatt viel freie Flaeche.
+    feld_ost      REAL NOT NULL,
+    drehung       REAL NOT NULL,        -- Grad, im Uhrzeigersinn gegen Nord
+    mps           REAL NOT NULL,        -- Meter je Pixel im ROHblatt
+    rest_max      REAL NOT NULL,        -- groesster Restfehler in Metern
+    bahnen        INTEGER NOT NULL,     -- Zahl der zur Passung verwendeten Bahnen
+    quelle        TEXT NOT NULL,        -- 'auto' oder 'hand' -- 'hand' ist eine SPERRE
+    airac         TEXT NOT NULL,
+    status        TEXT NOT NULL,        -- 'gepasst', 'ungepasst' oder 'verwaist'
+    geprueft_am   TEXT
+);
+
 -- Wann ein wiederkehrender Job zuletzt wirklich gearbeitet hat.
 --
 -- APScheduler haelt seine Jobs im MemoryJobStore: Jeder Containerstart meldet sie neu an,
@@ -6629,12 +6663,7 @@ def upsert_aip_chart(conn: sqlite3.Connection, icao: str, *,
     fehlt = [f for f in _AIP_FELDER if f not in felder]
     if fehlt:
         raise ValueError(f"Pflichtfelder fehlen: {', '.join(fehlt)}")
-    if not hand_ueberschreiben and felder.get("quelle") != "hand":
-        alt = conn.execute(
-            "SELECT quelle FROM aip_charts WHERE icao = ?", (code,)).fetchone()
-        if alt is not None and alt["quelle"] == "hand":
-            raise HandpassungGesperrt(
-                f"{code}: Handpassung wird nicht automatisch ueberschrieben")
+    _handpassung_pruefen(conn, "aip_charts", code, felder, hand_ueberschreiben)
     # Optionale Felder nur nachziehen, wenn sie mitgegeben wurden. Ein Auffrischlauf kennt
     # seite_url nicht und darf eine vom Admin gesetzte Wahl nicht auf '' zuruecksetzen --
     # das waere derselbe stille Verlust, gegen den die Spalte eingefuehrt wurde.
@@ -6708,6 +6737,87 @@ def job_erledigt(conn: sqlite3.Connection, name: str) -> None:
         """INSERT INTO job_laeufe (name, zuletzt) VALUES (?, ?)
            ON CONFLICT(name) DO UPDATE SET zuletzt = excluded.zuletzt""",
         (name, _now_utc()))
+
+
+_GROUND_FELDER = ("sorte", "quell_hash", "bild_hash", "nord", "sued", "west", "ost",
+                  "feld_nord", "feld_sued", "feld_west", "feld_ost",
+                  "drehung", "mps", "rest_max", "bahnen", "quelle", "airac", "status")
+_GROUND_OPTIONAL = ("seite_url",)
+_GROUND_SPALTEN = ("icao", *_GROUND_FELDER, *_GROUND_OPTIONAL, "geprueft_am")
+
+
+def _handpassung_pruefen(conn: sqlite3.Connection, tabelle: str, code: str,
+                         felder: dict, hand_ueberschreiben: bool) -> None:
+    """Die Sperre aus Abschnitt 7 der Spec -- fuer beide Kartentabellen dieselbe.
+
+    Gesperrt ist genau ein Fall: ein Schreibversuch mit quelle='auto' auf eine bestehende
+    Zeile mit quelle='hand'. Zwei Fassungen davon wuerden auseinanderlaufen; die
+    Flugplatzkarten sind genauso schutzwuerdig wie die Sichtflugkarten.
+    """
+    if hand_ueberschreiben or felder.get("quelle") == "hand":
+        return
+    alt = conn.execute(
+        f"SELECT quelle FROM {tabelle} WHERE icao = ?", (code,)).fetchone()
+    if alt is not None and alt["quelle"] == "hand":
+        raise HandpassungGesperrt(
+            f"{code}: Handpassung wird nicht automatisch ueberschrieben")
+
+
+def upsert_ground_chart(conn: sqlite3.Connection, icao: str, *,
+                        hand_ueberschreiben: bool = False, **felder) -> str:
+    """Flugplatzkarten-Passung setzen. Dieselbe Sperre wie bei den Sichtflugkarten."""
+    code = (icao or "").strip().upper()
+    fehlt = [f for f in _GROUND_FELDER if f not in felder]
+    if fehlt:
+        raise ValueError(f"Pflichtfelder fehlen: {', '.join(fehlt)}")
+    _handpassung_pruefen(conn, "aip_ground_charts", code, felder, hand_ueberschreiben)
+    mitgegeben = [f for f in _GROUND_OPTIONAL if f in felder]
+    platz = ", ".join("?" * len(_GROUND_SPALTEN))
+    setzen = ", ".join(f"{f}=excluded.{f}"
+                       for f in (*_GROUND_FELDER, *mitgegeben, "geprueft_am"))
+    conn.execute(
+        f"""INSERT INTO aip_ground_charts ({', '.join(_GROUND_SPALTEN)}) VALUES ({platz})
+            ON CONFLICT(icao) DO UPDATE SET {setzen}""",
+        (code, *(felder[f] for f in _GROUND_FELDER),
+         *(felder.get(f, "") for f in _GROUND_OPTIONAL), _now_utc()),
+    )
+    return code
+
+
+def get_ground_charts(conn: sqlite3.Connection, nur_gepasst: bool = True) -> list[dict]:
+    """Alle Flugplatzkarten, standardmaessig nur die gepassten.
+
+    Die Vorgabe ist dieselbe wie bei den Sichtflugkarten und aus demselben Grund: Eine
+    falsch liegende Karte ist schlimmer als gar keine -- beim Rollen wird sie geglaubt.
+    """
+    wo = "WHERE status = 'gepasst'" if nur_gepasst else ""
+    rows = conn.execute(
+        f"SELECT {', '.join(_GROUND_SPALTEN)} FROM aip_ground_charts {wo} ORDER BY icao"
+    ).fetchall()
+    return [dict(zip(_GROUND_SPALTEN, r)) for r in rows]
+
+
+def get_ground_chart(conn: sqlite3.Connection, icao: str) -> dict | None:
+    code = (icao or "").strip().upper()
+    r = conn.execute(
+        f"SELECT {', '.join(_GROUND_SPALTEN)} FROM aip_ground_charts WHERE icao = ?",
+        (code,)).fetchone()
+    return dict(zip(_GROUND_SPALTEN, r)) if r else None
+
+
+def delete_ground_chart(conn: sqlite3.Connection, icao: str) -> int:
+    """Nur fuer Automatikkarten. Eine Handpassung wird ueber verwaisen_ground() aus der
+    Anzeige genommen -- dieselbe Unterscheidung wie bei den Sichtflugkarten."""
+    code = (icao or "").strip().upper()
+    return conn.execute(
+        "DELETE FROM aip_ground_charts WHERE icao = ?", (code,)).rowcount
+
+
+def verwaisen_ground(conn: sqlite3.Connection, icao: str) -> int:
+    code = (icao or "").strip().upper()
+    return conn.execute(
+        "UPDATE aip_ground_charts SET status = 'verwaist' WHERE icao = ?",
+        (code,)).rowcount
 
 
 def vorschlag_anlegen(conn: sqlite3.Connection, art: str, icao: str, quell_hash: str,
