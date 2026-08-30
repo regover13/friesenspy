@@ -2799,3 +2799,23 @@ def test_seite_nimmt_den_brueckenzustand_entgegen():
     assert "d.art === 'position-bruecke'" in INDEX
     stelle = INDEX.index("d.art === 'position-bruecke'")
     assert "_panelDiag('position-bruecke'" in INDEX[stelle:stelle + 400]
+
+
+def test_ebenen_diagnose_haelt_elementFromPoint_streng():
+    """Der erste Anlauf hatte `oben.contains(label)` in der Bedingung und meldete deshalb
+    ausnahmslos alles als erreichbar (Messung 30.08.2026: 13 von 13, darunter eine Zeile
+    zehn Pixel unterhalb des Kastens). Liefert elementFromPoint einen VORFAHREN -- der
+    Normalfall, wenn dort nichts Eigenes liegt --, ist die Bedingung immer wahr.
+
+    Kommentare werden gefiltert: Die verbotene Bedingung steht in der Erklaerung, warum sie
+    verboten ist. Dieselbe Falle wie bei der Positionsbruecke -- zweimal am selben Tag."""
+    rumpf = _ohne_kommentare(_rumpf_diag_ebenen())
+    assert "label.contains(oben)" in rumpf
+    assert "oben.contains(label)" not in rumpf
+
+
+def test_ebenen_diagnose_prueft_das_fenster_der_liste_getrennt():
+    """Eine ausgescrollte Zeile ist weder verdeckt noch ungerendert -- elementFromPoint allein
+    kann sie nicht melden. Genau diese Falle gab es hier schon (Radar Label, 24.08.2026)."""
+    rumpf = _rumpf_diag_ebenen()
+    assert "imFenster:" in rumpf

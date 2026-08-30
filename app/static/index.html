@@ -6349,6 +6349,12 @@ function _diagEbenenAuswahl(map, control) {
         if (!behaelter) return;
         const liste = behaelter.querySelector('.leaflet-control-layers-list');
         const kasten = behaelter.getBoundingClientRect();
+        // Fenster der scrollbaren Liste. Zweite, von elementFromPoint UNABHAENGIGE Probe:
+        // Eine ausgescrollte Zeile ist nicht verdeckt und nicht ungerendert -- sie steht
+        // schlicht ausserhalb. Ohne diesen Vergleich sieht das aus wie "alles in Ordnung",
+        // und genau daran ist die Ebenen-Auswahl hier schon einmal gescheitert (Radar Label,
+        // 24.08.2026).
+        const fenster = liste ? liste.getBoundingClientRect() : kasten;
         const zeilen = [];
         behaelter.querySelectorAll('label').forEach(function (label) {
           const eingabe = label.querySelector('input');
@@ -6359,7 +6365,14 @@ function _diagEbenenAuswahl(map, control) {
           // Der Tipp gilt als erreichbar, wenn das oberste Element an diesem Punkt die Zeile
           // selbst ist oder in ihr liegt -- ein Klick auf das <label> schaltet das <input>
           // ebenso wie einer direkt darauf.
-          const erreichbar = !!oben && (oben === label || label.contains(oben) || oben.contains(label));
+          //
+          // KEIN `oben.contains(label)`. Der erste Anlauf hatte das drin und meldete damit
+          // ausnahmslos alles als erreichbar (Messung 30.08.2026, 13 von 13) -- auch die
+          // unterste Zeile, die nachweislich zehn Pixel UNTERHALB des Kastens lag. Der Grund
+          // ist trivial und macht die Probe wertlos: Liefert elementFromPoint irgendeinen
+          // VORFAHREN (der Normalfall, wenn an dieser Stelle gar nichts Eigenes liegt), dann
+          // enthaelt der das Label natuerlich -- und die Bedingung ist immer wahr.
+          const erreichbar = !!oben && (oben === label || label.contains(oben));
           zeilen.push({
             text: (label.textContent || '').trim().slice(0, 24),
             typ: eingabe ? eingabe.type : null,
@@ -6368,6 +6381,9 @@ function _diagEbenenAuswahl(map, control) {
             // Null-Groesse heisst: die Zeile ist gar nicht gerendert. Ein anderer Fall als
             // "verdeckt" und aus dem Ergebnis von elementFromPoint allein nicht zu trennen.
             gerendert: r.width > 0 && r.height > 0,
+            // Ganz im Fenster der Liste? Ein angeschnittener Tippunkt zaehlt nicht als
+            // erreichbar -- im Cockpit trifft man ihn nicht.
+            imFenster: r.top >= fenster.top && r.bottom <= fenster.bottom,
             erreichbar: erreichbar,
             // Nur wenn NICHT erreichbar: was liegt dann darueber? Klasse und Tag genuegen,
             // um das Element im Quelltext wiederzufinden.
