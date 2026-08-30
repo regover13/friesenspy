@@ -68,6 +68,19 @@ function makeDeviceId(): string {
  * Ablage. Genau deshalb ueberlebt die ID einen Simulator-Neustart, waehrend Cookies in
  * Coherent GT es nicht tun (der Grund fuer das staendige Neu-Anmelden).
  */
+/**
+ * Warum die Geraete-ID fehlt -- leer, solange alles in Ordnung ist.
+ *
+ * Nachgetragen am 30.08.2026. Ein Mitglied hatte das Kniebrett nachweislich installiert und
+ * benutzt (`shellAntwortet: true`, Coherent GT, eigene Panel-Merker), tauchte aber nie in
+ * `panel_devices` auf und musste sich bei jedem Start neu anmelden -- zehn
+ * `/auth/forum/callback` in den Logs, kein einziges `/auth/device`. Der Grund war von aussen
+ * nicht zu ermitteln: `getOrCreateDeviceId` gab im Fehlerfall stumm "" zurueck, und
+ * `buildPanelUrl` fiel daraufhin ebenso stumm auf die Adresse ohne Bindung zurueck. Ob der
+ * Datenspeicher fehlschlug oder das Paket zu alt war, sah in den Logs voellig gleich aus.
+ */
+let geraeteIdGrund = "";
+
 function getOrCreateDeviceId(): string {
   try {
     const vorhanden = DataStore.get<string>(DEVICE_KEY);
@@ -76,10 +89,19 @@ function getOrCreateDeviceId(): string {
     }
     const neu = makeDeviceId();
     DataStore.set(DEVICE_KEY, neu);
+    // Gegenprobe: `DataStore.set` meldet keinen Fehler, wenn nichts ankommt. Ohne sie hiesse
+    // "kein Fehler" faelschlich "gespeichert", und beim naechsten Start begaenne dasselbe
+    // Spiel von vorn -- fuer den Nutzer als ewiges Neu-Anmelden sichtbar.
+    const probe = DataStore.get<string>(DEVICE_KEY);
+    if (typeof probe !== "string" || probe.length < 32) {
+      geraeteIdGrund = "DataStore nimmt die Kennung nicht an";
+    }
     return neu;
   } catch (e) {
     // Steht der Datenspeicher nicht zur Verfuegung, laeuft das Panel eben wie bisher mit
-    // normaler Anmeldung weiter -- nie den Start des Panels daran scheitern lassen.
+    // normaler Anmeldung weiter -- nie den Start des Panels daran scheitern lassen. Der Grund
+    // wird aber festgehalten und mit dem naechsten `pong` gemeldet.
+    geraeteIdGrund = "DataStore nicht verfuegbar: " + String(e).slice(0, 120);
     return "";
   }
 }
@@ -90,7 +112,14 @@ function getOrCreateDeviceId(): string {
  */
 function buildPanelUrl(): string {
   const id = getOrCreateDeviceId();
-  if (!id) return PANEL_URL;
+  if (!id) {
+    // Ohne Kennung gibt es keine Bindung: Das Panel laeuft, aber die Anmeldung ueberlebt
+    // keinen Sim-Neustart. Das ist ein spuerbarer Mangel und darf nicht lautlos passieren.
+    if (!geraeteIdGrund) {
+      geraeteIdGrund = "Kennung leer, Grund unbekannt";
+    }
+    return PANEL_URL;
+  }
   // `paket` meldet, welche Fassung im Community-Ordner liegt. Der Server haelt sie am Geraet
   // fest (panel_devices.paket_version) und kann damit im Admin zeigen, wer noch ein altes
   // Paket faehrt -- von aussen war das vorher ueberhaupt nicht erkennbar. Ein Paket vor
@@ -311,7 +340,10 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
       if (quelle) {
         try {
           quelle.postMessage(
-            { quelle: "friesenspy-shell", art: "pong", paketVersion: PAKET_VERSION },
+            { quelle: "friesenspy-shell", art: "pong", paketVersion: PAKET_VERSION,
+              // Leer heisst "Bindung in Ordnung". Steht hier etwas, erklaert es, warum
+              // sich der Nutzer bei jedem Start neu anmelden muss.
+              geraeteIdGrund: geraeteIdGrund },
             "*",
           );
         } catch (_e) {

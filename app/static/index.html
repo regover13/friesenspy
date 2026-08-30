@@ -7881,6 +7881,17 @@ function _initPanelShellKanal() {
       // erst ab dort schickt die Huelle ihre Version mit (s. _paketHinweisPruefen).
       _paketVersion = (typeof d.paketVersion === 'string') ? d.paketVersion : null;
       _paketHinweisPruefen();
+      // Warum es keine Geraetebindung gibt (ab Paket 2.2.0). Leer = alles in Ordnung.
+      //
+      // Ohne diese Meldung war der Fall nicht aufzuklaeren: Ein Mitglied hatte das Kniebrett
+      // installiert und benutzt, tauchte aber nie in der Geraeteliste auf und musste sich bei
+      // jedem Start neu anmelden. In den Logs lagen zehn `/auth/forum/callback` und kein
+      // einziges `/auth/device` -- und ob der Datenspeicher im Simulator fehlschlug oder das
+      // Paket schlicht zu alt war, sah dabei exakt gleich aus (Fund 30.08.2026).
+      if (typeof d.geraeteIdGrund === 'string' && d.geraeteIdGrund
+          && typeof window._panelDiag === 'function') {
+        window._panelDiag('geraet-ohne-bindung', { grund: d.geraeteIdGrund.slice(0, 200) });
+      }
     }
     // Was der erste Abruf im Simulator ergeben hat -- einmal je Sitzung, auch wenn er nichts
     // ergeben hat. Genau dieser Fall (Vorbedingung fehlte, Aufruf lieferte lautlos nichts)

@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.0.6",
+    "date": "2026-08-30",
+    "highlight": false,
+    "items": [
+      "\ud83d\udd11 Das Kniebrett sagt jetzt, wenn es sich kein Ger\u00e4t merken kann. Wem der Simulator die Kennung nicht ablegt, der muss sich bei jedem Start neu anmelden und taucht in der Ger\u00e4teliste gar nicht erst auf \u2014 bisher war von au\u00dfen nicht zu erkennen, ob das Kniebrett fehlt, zu alt ist oder nur die Ablage klemmt. Ben\u00f6tigt Paket 2.2.0."
+    ],
+    "title": "Wer sich nicht merken l\u00e4sst"
+  },
+  {
     "version": "14.0.5",
     "date": "2026-08-30",
     "highlight": false,

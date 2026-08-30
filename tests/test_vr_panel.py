@@ -2819,3 +2819,44 @@ def test_ebenen_diagnose_prueft_das_fenster_der_liste_getrennt():
     kann sie nicht melden. Genau diese Falle gab es hier schon (Radar Label, 24.08.2026)."""
     rumpf = _rumpf_diag_ebenen()
     assert "imFenster:" in rumpf
+
+
+# ==========================================================================================
+#  Warum ein installiertes Kniebrett nicht in der Geraeteliste auftaucht (Fund 30.08.2026)
+# ==========================================================================================
+#
+# Ein Mitglied hatte das Kniebrett nachweislich installiert und benutzt (Coherent GT,
+# `shellAntwortet: true`, eigene Panel-Merker), stand aber nie in `panel_devices` und musste
+# sich bei jedem Start neu anmelden: zehn `/auth/forum/callback` in den Logs, kein einziges
+# `/auth/device`. Ursache war ein doppelt stiller Rueckfall -- `getOrCreateDeviceId` gab im
+# Fehlerfall "" zurueck, `buildPanelUrl` nahm daraufhin die Adresse ohne Bindung. Von aussen
+# war "Datenspeicher schlaegt fehl" nicht von "Paket zu alt" zu unterscheiden.
+
+@ohne_panel
+def test_geraete_id_haelt_ihren_fehlgrund_fest():
+    """Ein leerer Rueckgabewert allein sagt nicht, WARUM es keine Kennung gibt."""
+    stelle = PANEL_TSX.index("function getOrCreateDeviceId(")
+    rumpf = _ohne_kommentare(PANEL_TSX[stelle:PANEL_TSX.index("\n}", stelle)])
+    assert "geraeteIdGrund =" in rumpf
+
+
+@ohne_panel
+def test_geraete_id_prueft_ob_der_speicher_sie_annimmt():
+    """`DataStore.set` meldet keinen Fehler, wenn nichts ankommt -- ohne Gegenprobe hiesse
+    "kein Fehler" faelschlich "gespeichert", und der Nutzer meldet sich ewig neu an."""
+    stelle = PANEL_TSX.index("function getOrCreateDeviceId(")
+    rumpf = _ohne_kommentare(PANEL_TSX[stelle:PANEL_TSX.index("\n}", stelle)])
+    assert rumpf.count("DataStore.get") >= 2
+
+
+@ohne_panel
+def test_pong_meldet_den_grund_mit():
+    """Der Grund muss die App verlassen, sonst liegt er im Simulator und niemand sieht ihn."""
+    assert "geraeteIdGrund: geraeteIdGrund" in PANEL_TSX
+
+
+def test_seite_legt_fehlende_bindung_in_der_diagnose_ab():
+    """Ohne diesen Zweig verpufft die Meldung der App."""
+    assert "'geraet-ohne-bindung'" in INDEX
+    stelle = INDEX.index("d.geraeteIdGrund")
+    assert "_panelDiag('geraet-ohne-bindung'" in INDEX[stelle:stelle + 500]
