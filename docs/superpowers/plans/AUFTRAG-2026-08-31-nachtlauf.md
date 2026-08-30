@@ -10,7 +10,26 @@
 
 ## Was umzusetzen ist
 
-`docs/superpowers/plans/2026-08-30-handpassung-schutz.md`, **Aufgabe 1 bis 8, vollständig**.
+**BEIDE Pläne, vollständig.** Nachgeschärft vom Nutzer um 23:15 CEST: „Nein alles umsetzen!!
+A und B!!" — Plan B ist also nicht „soweit die Zeit reicht", sondern Auftrag.
+
+**Plan A:** `docs/superpowers/plans/2026-08-30-handpassung-schutz.md`, Aufgabe 1 bis 8.
+**Plan B:** `docs/superpowers/plans/2026-08-30-ground-chart-overlay.md`, Aufgabe 7 bis 18.
+Reihenfolge: A zuerst, weil B dessen Sperre und den reparierten Auffrischlauf braucht.
+
+Zu Plan B gehören die Korrekturen aus den beiden Gutachten, die in der Spec stehen, aber im
+Plandokument teilweise noch die alte Fassung tragen. **Maßgeblich ist die Spec, Fassung 2**,
+insbesondere: Nordungsfenster (100°, 260°) statt (90°, 270°); Meridiangrad als Reihe statt
+110540; transparente Füllung beim Drehen statt weiß; Toleranzen in Metern statt Pixeln;
+Querabdeckung 70 % statt 55 %; Maßstabsprüfung gegen den Fit statt nur untereinander;
+Permutation auch auf der Bildseite; Achsen vorher zusammenfassen; Notbremse verwirft.
+
+**Wenn Plan B die Ausbeute nicht hebt** (heute 2 von rund 10 Blättern unter 15 m), wird er
+trotzdem vollständig gebaut — die Prüfkette weist schlechte Passungen ab, es erscheint dann
+eben nur für wenige Plätze eine Karte. Das ist kein Grund anzuhalten, gehört aber in den
+Schlussbericht mit der gemessenen Quote.
+
+
 
 Aufgabe 1 ist bereits erledigt (Commit steht aus): `HandpassungGesperrt` und die Sperre in
 `upsert_aip_chart` sind in `app/database.py`, `tests/test_handpassung_schutz.py` hat 7 grüne
