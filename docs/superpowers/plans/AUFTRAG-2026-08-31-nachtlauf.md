@@ -24,10 +24,36 @@ insbesondere: Nordungsfenster (100°, 260°) statt (90°, 270°); Meridiangrad a
 Querabdeckung 70 % statt 55 %; Maßstabsprüfung gegen den Fit statt nur untereinander;
 Permutation auch auf der Bildseite; Achsen vorher zusammenfassen; Notbremse verwirft.
 
-**Wenn Plan B die Ausbeute nicht hebt** (heute 2 von rund 10 Blättern unter 15 m), wird er
-trotzdem vollständig gebaut — die Prüfkette weist schlechte Passungen ab, es erscheint dann
-eben nur für wenige Plätze eine Karte. Das ist kein Grund anzuhalten, gehört aber in den
-Schlussbericht mit der gemessenen Quote.
+### Nachgeschärft um 23:20 CEST: Ich passe die Blätter selbst
+
+Wörtlich: „Dann mach die Charts einfach selbst!! Das ist dann eine einmalige Anpassung.
+Updates kommen nur selten. Die späteren Updates kann ich dann Manuel unter admin abarbeiten.
+Sie sollen dann einfach als nur offene angezeigt werden."
+
+**Das dreht Plan B um und macht ihn kleiner.** Die Bahnvermessung wird nicht mehr zum
+Produktionsjob, der wöchentlich 61 Plätze neu rechnet, sondern zu **meinem Werkzeug für einen
+einmaligen Durchgang**. Konkret:
+
+1. Alle Kandidatenblätter holen, Sorte am Kopf erkennen.
+2. Bahnvermessung als **Startwert** rechnen — sie ist bei EDDL und EDDM auf 6 m genau.
+3. **Jedes Blatt selbst ansehen.** Kontrollpunkte (Schwellen, ARP) ins Bild zeichnen und
+   prüfen, ob sie auf den Bahnenden liegen. Wo es nicht sitzt, die Passung von Hand setzen.
+4. Ergebnis als **`quelle='hand'`** ablegen. Damit greift die Sperre aus Plan A: Kein
+   späterer Lauf kann meine Arbeit überschreiben.
+
+**Der wöchentliche Ground-Job passt danach nichts mehr.** Er vergleicht nur noch den
+`quell_hash` des Rohblatts. Ändert sich einer, wird der Platz als **offener Punkt** im Admin
+angezeigt — die Vorschlagsliste aus Plan A Aufgabe 6 und 7 ist genau dafür da. Der Nutzer
+arbeitet sie von Hand ab.
+
+Das löst nebenbei drei Befunde der Gutachten: Der Job ist jetzt wirklich arbeitsarm (nur zwei
+Abrufe je Platz, keine Bildanalyse), die Ausbeutefrage aus Spec 14.1 ist gegenstandslos, und
+die 180°-Mehrdeutigkeit bei symmetrischem Querdruck entscheide ich mit den Augen.
+
+**Die Prüfkette bleibt trotzdem im Code** (`app/ground_charts.py`) — als Startwertlieferant
+für neue Plätze und als Beleg der Messungen. Sie darf nur nichts mehr allein veröffentlichen.
+
+Im Schlussbericht: wie viele Blätter ich gepasst habe, wie viele ich verworfen habe und warum.
 
 
 
