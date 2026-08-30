@@ -2860,3 +2860,15 @@ def test_seite_legt_fehlende_bindung_in_der_diagnose_ab():
     assert "'geraet-ohne-bindung'" in INDEX
     stelle = INDEX.index("d.geraeteIdGrund")
     assert "_panelDiag('geraet-ohne-bindung'" in INDEX[stelle:stelle + 500]
+
+
+def test_ebenen_diagnose_warnt_vor_elementFromPoint_im_kniebrett():
+    """Messreihe 30.08.2026: Coherent GT liefert an JEDEM Punkt der aufgeklappten Liste
+    `DIV#leaflet-map` statt des Labels -- in allen 13 Zeilen, bei jedem Scrollstand. Streng
+    gelesen hiesse das "keine Zeile bedienbar", waehrend der Nutzer gerade Ebenen schaltete.
+
+    Der Hinweis muss am Code stehen, sonst wertet der naechste Leser `erreichbar` aus und
+    zieht daraus den genau falschen Schluss."""
+    stelle = INDEX.index("function _diagEbenenAuswahl(")
+    block = INDEX[stelle:INDEX.index("\n}\n", stelle)]
+    assert "leaflet-map" in block and "imFenster" in block

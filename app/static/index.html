@@ -6372,6 +6372,17 @@ function _diagEbenenAuswahl(map, control) {
           // ist trivial und macht die Probe wertlos: Liefert elementFromPoint irgendeinen
           // VORFAHREN (der Normalfall, wenn an dieser Stelle gar nichts Eigenes liegt), dann
           // enthaelt der das Label natuerlich -- und die Bedingung ist immer wahr.
+          //
+          // ABER: `erreichbar` ist im KNIEBRETT trotzdem nicht auswertbar, und das ist die
+          // eigentliche Lehre aus derselben Messreihe. Coherent GT liefert an jedem Punkt der
+          // aufgeklappten Liste `DIV#leaflet-map` zurueck, nie das Label selbst -- in allen
+          // 13 Zeilen, bei jedem Scrollstand. Streng gelesen hiesse das "keine einzige Zeile
+          // bedienbar", waehrend der Nutzer im selben Moment nachweislich Ebenen schaltete.
+          // Die Engine gibt hier also einen Container statt des tiefsten Elements.
+          //
+          // Auf der Website stimmt die Probe; im Panel taugt allein `imFenster` unten, weil
+          // das reine Geometrie ist und keine Auskunft der Engine braucht. Wer diese Messung
+          // auswertet, liest fuer das Kniebrett `imFenster` und ignoriert `erreichbar`.
           const erreichbar = !!oben && (oben === label || label.contains(oben));
           zeilen.push({
             text: (label.textContent || '').trim().slice(0, 24),
