@@ -6528,17 +6528,53 @@ _AIP_FELDER = ("bild_hash", "nord", "sued", "west", "ost",
 _AIP_SPALTEN = ("icao", *_AIP_FELDER, "geprueft_am")
 
 
-def upsert_aip_chart(conn: sqlite3.Connection, icao: str, **felder) -> str:
+class HandpassungGesperrt(Exception):
+    """Versuch, eine von Hand gesetzte Passung automatisch zu ueberschreiben.
+
+    Die Sperre sitzt in ``upsert_aip_chart`` und nicht bei den Aufrufern, weil es sieben
+    Schreibpfade auf ``aip_charts`` gibt (Stand 30.08.2026): drei in
+    scripts/aip_bestand.py, zwei in app/main.py, einer in scripts/aip_handpassung.py, dazu
+    delete_aip_chart. Zwei davon haben Handpassungen ueberschrieben, ein dritter war beim
+    Entwurf der Spec nicht einmal bekannt. Eine Pruefung an jeder Aufrufstelle waere beim
+    naechsten neuen Pfad wieder unvollstaendig.
+    """
+
+
+def upsert_aip_chart(conn: sqlite3.Connection, icao: str, *,
+                     hand_ueberschreiben: bool = False, **felder) -> str:
     """Kartenpassung setzen/aktualisieren. Alle Felder aus _AIP_FELDER sind Pflicht.
 
     Zwei Rechtecke, die nicht zu verwechseln sind: ``nord/sued/west/ost`` sind die Grenzen
     des GANZEN Blatts -- danach wird das Overlay platziert. ``feld_*`` sind die Grenzen des
     Kartenfelds -- danach schaltet die Automatik, und dagegen prueft der Lagetest.
+
+    **Gesperrt ist genau ein Fall: ein Schreibversuch mit quelle='auto' auf eine bestehende
+    Zeile mit quelle='hand'.** Nicht "keine Handzeile ueberschreiben" -- das braeche drei
+    berechtigte Pfade: ``_handblatt_auffrischen`` (zieht das Bild nach, hand ueber hand),
+    ``admin_set_aip_chart`` und ``scripts/aip_handpassung.py`` (ein Mensch korrigiert seine
+    eigene Passung, so wie der Nutzer es am 30.08.2026 bei EDDL tun musste).
+
+    ``hand_ueberschreiben=True`` ist ausschliesslich fuer die Uebernahme eines Vorschlags
+    durch den Admin gedacht. Kein automatischer Pfad setzt es.
+
+    Der ``status`` spielt bewusst KEINE Rolle: Der Seitenwaehler erzeugte bis 30.08.2026
+    Zeilen mit quelle='hand' und status='ungepasst'. An den status gebunden fielen genau
+    die durch die Sperre.
+
+    Grundlage ist die Festlegung des Nutzers vom 30.08.2026: "Eine manuell durchgefuehrte
+    Korrektur darf nicht einfach ueberschrieben werden! Wenn es eine neue Version gibt,
+    kann diese zur Pruefung angezeigt werden. Aber keinesfalls erneut verzerrt werden!"
     """
     code = (icao or "").strip().upper()
     fehlt = [f for f in _AIP_FELDER if f not in felder]
     if fehlt:
         raise ValueError(f"Pflichtfelder fehlen: {', '.join(fehlt)}")
+    if not hand_ueberschreiben and felder.get("quelle") != "hand":
+        alt = conn.execute(
+            "SELECT quelle FROM aip_charts WHERE icao = ?", (code,)).fetchone()
+        if alt is not None and alt["quelle"] == "hand":
+            raise HandpassungGesperrt(
+                f"{code}: Handpassung wird nicht automatisch ueberschrieben")
     platz = ", ".join("?" * len(_AIP_SPALTEN))
     setzen = ", ".join(f"{f}=excluded.{f}" for f in (*_AIP_FELDER, "geprueft_am"))
     conn.execute(
