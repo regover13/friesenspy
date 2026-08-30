@@ -1,9 +1,15 @@
 # Flugplatzkarten als Karten-Overlay — Design
 
-**Stand:** 30.08.2026
+**Stand:** 30.08.2026, Fassung 2 nach zwei Gutachten
 **Vorgänger:** [`2026-08-23-aip-karten-overlay-design.md`](2026-08-23-aip-karten-overlay-design.md)
 (Sichtflugkarten). Dieses Dokument baut darauf auf und ändert es an einer Stelle: dem Schutz
 der Handpassung, Abschnitt 7.
+
+**Zwei Vorhaben, zwei Pläne.** Abschnitt 7 und 8 beschreiben den **Schutz der
+Handkorrektur** — er betrifft die 444 bestehenden Sichtflugkarten, ist ohne alles andere
+lieferbar und hat einen eigenen Plan. Der Rest beschreibt den **Neubau**. Die Kopplung geht
+nur in eine Richtung: Der Neubau braucht den reparierten Auffrischlauf, der Schutz braucht
+den Neubau nicht.
 
 ---
 
@@ -21,8 +27,6 @@ schließt.
 
 ### 1.1 Zwei Sorten, ein Eintrag im Menü
 
-Die DFS gibt im BasicVFR-Teil zwei verschiedene Blätter heraus:
-
 | Sorte | Titel auf dem Blatt | Inhalt |
 |---|---|---|
 | Flugplatzkarte | „Flugplatzkarte / Aerodrome Chart" | Bahnen mit Maßen, Vorfelder, Gebäude, LOC-Antennen, Umgebung |
@@ -33,15 +37,14 @@ Blätter), EDDM und EDDN je eine von beiden.
 
 Aufgenommen werden beide. **Die Rollkarte hat Vorrang**, weil sie beim Rollen mehr trägt;
 fehlt sie, tritt die Flugplatzkarte an ihre Stelle. Im Ebenen-Menü steht deshalb nur **ein**
-Eintrag „Flugplatzkarte" — welches Blatt dahinter liegt, ist eine Frage des Bestands und
-keine, die der Nutzer im Cockpit beantworten will.
+Eintrag „Flugplatzkarte".
 
 ### 1.2 Abgrenzung
 
 Ausdrücklich **nicht** Teil dieses Vorhabens:
 
-- Mehrblattrige Rollkarten zusammensetzen. EDDV hat drei Blätter, die Ausschnitte zeigen.
-  Ein Blatt je Platz und Sorte, das andere wird verworfen (Abschnitt 5.7).
+- Mehrblattrige Rollkarten zusammensetzen. EDDV hat drei Blätter mit Ausschnitten. Ein Blatt
+  je Platz und Sorte, das andere wird verworfen (Abschnitt 5.8).
 - Anflugkarten, Hindernisblätter, Textseiten des Kapitels.
 - Plätze außerhalb Deutschlands. Die Quelle ist die DFS.
 
@@ -50,8 +53,7 @@ Ausdrücklich **nicht** Teil dieses Vorhabens:
 ## 2. Was gemessen wurde
 
 Die Machbarkeit wurde am 30.08.2026 an 31 Blättern von 14 Verkehrsflughäfen geprüft, bevor
-dieses Dokument entstand. Die Zahlen unten sind Messwerte, keine Schätzungen. Der Prototyp
-liegt als `scripts/ground_chart_probe.py` im Repo (Abschnitt 12).
+dieses Dokument entstand. Der Prototyp liegt als `scripts/ground_chart_probe.py` im Repo.
 
 ### 2.1 Die Sichtflugkarten-Automatik greift hier nicht
 
@@ -60,8 +62,7 @@ Gradnetz** — keine Ticks, keine Grad-Beschriftung, keinen vergleichbaren Rahme
 einen Maßstabsbalken, ein ARP-Kreuz und eine Missweisungsrose.
 
 Das ist auch der Grund, warum dieses Design nirgends ein Zeichen liest. Die Ziffernerkennung
-der Sichtflugkarten hat 171 von 446 Blättern der Handarbeit überlassen; sie hier ein zweites
-Mal zu versuchen wäre eine Wiederholung mit schlechteren Karten.
+der Sichtflugkarten hat 171 von 446 Blättern der Handarbeit überlassen.
 
 ### 2.2 Die Blätter sind gedreht, nicht genordet
 
@@ -74,8 +75,7 @@ Sie sind so gesetzt, dass die Hauptbahn waagerecht liegt. Gemessene Kartendrehun
 | EDDH | 152,9° | 90,0° |
 
 `L.imageOverlay` kann nicht rotieren. Das Blatt wird deshalb **genordet abgelegt**
-(Abschnitt 6) — dasselbe Verfahren, das für die sieben quer gedruckten Sichtflugkarten schon
-läuft, nur mit beliebigem statt rechtem Winkel.
+(Abschnitt 6).
 
 ### 2.3 Die Bahnen sind im Bild sauber zu fassen
 
@@ -84,13 +84,10 @@ Ein Histogramm über EDDL zeigt einen einzelnen dominanten Mittelgrauton: **Wert
 Schnitt durch die Blattmitte trifft genau zwei Bänder dieser Farbe von je 28 px Breite — die
 beiden Bahnen, 45 m breit, also 1,6 m je Pixel.
 
-Der Ton ist **nicht konstant**: Die Flugplatzkarte nutzt 153/154, die Rollkarte 179/180. Er
-wird deshalb gemessen und nicht festgelegt (Abschnitt 5.2).
+Der Ton ist **nicht konstant**: Flugplatzkarte 153/154, Rollkarte 179/180. Er wird gemessen,
+nicht festgelegt (Abschnitt 5.2).
 
 ### 2.4 Restfehler der fertigen Passung
-
-Passung aus den Bahnen gerechnet, danach gegen dieselben Schwellenkoordinaten geprüft, mit
-vier Freiheitsgraden:
 
 | Blatt | Sorte | Restfehler | Bahnen erkannt |
 |---|---|---|---|
@@ -99,24 +96,31 @@ vier Freiheitsgraden:
 | EDDH | Flugplatzkarte | 29,6 m | 2 |
 | EDDM | Rollkarte | 74,0 m | 2 |
 
-Zum Maßstab: Eine Bahn ist 45 m breit, ein Rollweg 23 m. Ein Fehler von 30 m setzt das
-Flugzeug neben den Rollweg, auf dem es steht.
+Zum Maßstab: Eine Bahn ist 45 m breit, ein Rollweg 23 m.
 
-**Zwei von rund zehn echten Flugplatzkarten sitzen heute unter 15 m.** Das ist die ehrliche
-Ausgangslage; die Ausbeute zu heben ist die Arbeit des Plans, nicht dieser Spec. Das
-Verfahren ist damit belegt, seine Robustheit nicht.
+**Zwei von rund zehn echten Flugplatzkarten sitzen heute unter 15 m.** Das Verfahren ist
+belegt, seine Robustheit nicht.
 
-### 2.5 Die Prüfungen wirken
+**Diese Zahlen enthalten einen bekannten Modellfehler.** Der Prototyp rechnet mit festen
+Metern je Breitengrad (Abschnitt 5.1); der daraus folgende Anisotropiefehler von rund 0,45 %
+trägt bei einem langgestreckten Layout wie EDDL etwa 1 m bei, bei einem großflächigen Platz
+mit kreuzenden Bahnen bis zu 5 m. Nach der Korrektur werden die Werte also eher besser
+ausfallen — die Tabelle ist eine Obergrenze, keine Punktschätzung.
+
+### 2.5 Die Prüfungen wirken — mit einer Einschränkung
 
 Vier Passungen mit 229 m, 793 m, 849 m und 1152 m Fehler wurden von den Prüfungen aus
-Abschnitt 5.6 zuverlässig abgewiesen, statt still zu erscheinen. Das ist der wichtigere
-Befund: Das Verfahren scheitert **erkennbar**.
+Abschnitt 5.7 abgewiesen, statt still zu erscheinen. Das Verfahren scheitert **erkennbar**.
+
+**Die Maßstabsprüfung schaltet sich allerdings still ab**, sobald nur eine Bahn unverstümmelt
+gemessen wurde (Randlage, mehrblattrige Rollkarte). Sie ist dann wirkungslos, ohne dass es
+auffällt. Abschnitt 5.7 Punkt 5 sagt, was stattdessen gilt.
 
 ### 2.6 Umfang
 
 Ein Durchlauf über alle 446 Einträge in `airport_links` (30.08.2026, ohne einen einzigen
 Abruffehler) findet **61 Plätze** mit mindestens einem Blatt in Frage kommender Größe,
-14 davon mit mehreren. Das Vorhaben betrifft also rund ein Siebtel des Bestands.
+14 davon mit mehreren.
 
 ---
 
@@ -124,223 +128,317 @@ Abruffehler) findet **61 Plätze** mit mindestens einem Blatt in Frage kommender
 
 ### 3.1 Eigene Tabelle
 
-`aip_ground_charts`, **nicht** eine Erweiterung von `aip_charts`. Begründung: Die Felder sind
-zu verschieden. Eine Flugplatzkarte hat keinen Rahmen, keine Ticks und keine Feldgrenzen,
-dafür einen Drehwinkel, einen Maßstab, eine Sorte und einen Restfehler. Zusammengelegt wäre
-die Hälfte jeder Zeile leer und `nur_gepasst=True` bekäme eine zweite Bedeutung.
+`aip_ground_charts`, **nicht** eine Erweiterung von `aip_charts`. Die Felder sind zu
+verschieden: keine Ticks, keine Rahmen, dafür Drehwinkel, Maßstab, Sorte, Restfehler.
 
 ```sql
 CREATE TABLE IF NOT EXISTS aip_ground_charts (
-    icao          TEXT PRIMARY KEY,     -- ICAO-Code (Grossbuchstaben)
+    icao          TEXT PRIMARY KEY,
     sorte         TEXT NOT NULL,        -- 'rollkarte' oder 'flugplatzkarte'
-    seite_url     TEXT NOT NULL,        -- gewaehlte Kapitelseite; der Admin kann sie setzen
-    bild_hash     TEXT NOT NULL,        -- SHA-256 des GENORDETEN Blatts, wie abgelegt
-    quell_hash    TEXT NOT NULL,        -- SHA-256 des Rohblatts, erkennt den AIRAC-Wechsel
+    seite_url     TEXT NOT NULL,        -- gewaehlte Kapitelseite; Teil der Handkorrektur
+    quell_hash    TEXT NOT NULL,        -- SHA-256 des ROHblatts. DAS ist der Aenderungs-
+                                        -- detektor -- siehe die Warnung unten.
+    bild_hash     TEXT NOT NULL,        -- SHA-256 des genordeten Blatts, nur fuer die URL
     nord          REAL NOT NULL,        -- Grenzen des genordeten Blatts fuer L.imageOverlay
     sued          REAL NOT NULL,
     west          REAL NOT NULL,
     ost           REAL NOT NULL,
-    feld_nord     REAL NOT NULL,        -- Huelle der Bahnen und Rollwege: danach schaltet
-    feld_sued     REAL NOT NULL,        -- die Automatik (Abschnitt 10.2)
+    feld_nord     REAL NOT NULL,        -- Huelle der Bahnen plus Saum: danach schaltet die
+    feld_sued     REAL NOT NULL,        -- Automatik. NICHT die Blattgrenzen.
     feld_west     REAL NOT NULL,
     feld_ost      REAL NOT NULL,
-    drehung       REAL NOT NULL,        -- Grad, um die das Rohblatt genordet wurde
-    mps           REAL NOT NULL,        -- Meter je Pixel im Rohblatt
-    rest_max      REAL NOT NULL,        -- groesster Restfehler in Metern, siehe 5.6
+    drehung       REAL NOT NULL,        -- Grad; Vorzeichenkonvention siehe Abschnitt 6
+    mps           REAL NOT NULL,        -- Meter je Pixel im ROHblatt
+    rest_max      REAL NOT NULL,        -- groesster Restfehler in Metern
     bahnen        INTEGER NOT NULL,     -- Zahl der zur Passung verwendeten Bahnen
-    quelle        TEXT NOT NULL,        -- 'auto' oder 'hand' -- 'hand' ist eine SPERRE
+    quelle        TEXT NOT NULL,        -- 'auto' oder 'hand'
     airac         TEXT NOT NULL,
     status        TEXT NOT NULL,        -- 'gepasst' oder 'ungepasst'
     geprueft_am   TEXT
 );
 ```
 
-### 3.2 Vorschläge
+**`bild_hash` darf nie als Änderungsdetektor dienen.** Er hängt am Resampling des Drehens:
+Ein Pillow-Update ändert ihn ohne jede inhaltliche Änderung und löste damit eine Neupassung
+des ganzen Bestands aus. Dafür ist `quell_hash` da. `bild_hash` ist nur der Cache-Schlüssel
+in der Bild-URL.
 
-Findet der Auffrischlauf für eine **handgepasste** Karte ein neues Blatt, darf er die
-bestehende Passung nicht anfassen (Abschnitt 7). Er legt seinen Fund stattdessen hier ab:
+**Ein ungepasstes Blatt hat keine Drehung.** `status = 'ungepasst'` heißt: Die Prüfkette ist
+nicht durchgekommen, es gibt keine bekannte Nordung, und das Blatt liegt **roh** ab. Die
+Zahlenfelder tragen dann Nullen. Der Admin passt auf dem Rohblatt (Abschnitt 11); die
+Nordung entsteht erst aus seinen Klicks.
+
+### 3.2 `aip_charts` bekommt `seite_url`
+
+**Die Seitenwahl ist Teil der Handkorrektur und geht heute verloren.** `_AIP_FELDER`
+(`app/database.py:6525`) enthält keine URL. Wählt der Admin für EDDK bewusst Seite 4, merkt
+sich `aip_charts` das nicht; der nächste Auffrischlauf ruft `blatt_beschaffen(url, …)` und
+die nimmt wieder „die erste Seite, deren Passung durchgeht" — also erneut die falsche.
+
+Das geschieht, **ohne dass `quelle` je auf `hand` stand**, und wird von der Sperre aus
+Abschnitt 7 deshalb nicht erfasst. `aip_charts` bekommt dieselbe Spalte wie
+`aip_ground_charts`, und der Auffrischlauf bevorzugt sie.
+
+### 3.3 Vorschläge
 
 ```sql
 CREATE TABLE IF NOT EXISTS aip_chart_vorschlaege (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     art           TEXT NOT NULL,        -- 'sichtflug' oder 'ground'
     icao          TEXT NOT NULL,
-    quell_hash    TEXT NOT NULL,        -- welches Rohblatt der Vorschlag betrifft
-    passung       TEXT NOT NULL,        -- JSON: die gerechneten Werte, Form je nach art
-    grund         TEXT NOT NULL,        -- warum vorgeschlagen statt uebernommen
+    quell_hash    TEXT NOT NULL,
+    passung       TEXT NOT NULL,        -- JSON; die Form haengt an 'art'
+    grund         TEXT NOT NULL,
+    zustand       TEXT NOT NULL,        -- 'offen' oder 'verworfen' -- siehe unten
     gefunden_am   TEXT NOT NULL,
     UNIQUE(art, icao, quell_hash)
 );
 ```
 
-Das Blatt zum Vorschlag liegt als `<ICAO>.vorschlag.png` neben dem Livebild — es zu
-verwerfen und beim Übernehmen neu zu holen wäre unnötig und beim nächsten AIRAC-Wechsel
-nicht mehr möglich.
+**Verwerfen löscht nicht, es setzt `zustand = 'verworfen'`.** Ein `DELETE` wäre wirkungslos:
+`UNIQUE` verhindert Doppel nur, solange die Zeile existiert — der nächste Wochenlauf fände
+denselben unveränderten `quell_hash` und legte den Vorschlag sofort wieder an. Die Liste
+wäre nach dem ersten Verwerfen dauerhaft unaufräumbar. Ein Grabstein hält den Fund fern, bis
+sich das Rohblatt wirklich ändert.
 
-`UNIQUE(art, icao, quell_hash)` verhindert, dass derselbe Fund bei jedem Wochenlauf erneut
-in der Liste erscheint. Die Tabelle gilt **für beide Kartentypen** — der Schutz aus
-Abschnitt 7 betrifft die 171 handgepassten Sichtflugkarten genauso.
+Das Blatt zum Vorschlag liegt als **`<ICAO>.<art>.<quell_hash[:12]>.png`**. Weder `art` noch
+`quell_hash` dürfen im Dateinamen fehlen: Zu einer ICAO können gleichzeitig ein
+Sichtflug- und ein Ground-Vorschlag offen sein, und zu jeder Art mehrere Rohblätter.
 
 ---
 
 ## 4. Beschaffung: welches Blatt ist eine Flugplatzkarte?
 
 Die Kapitelseiten kommen über die bestehende Kette: `airac_url` → `seiten_des_kapitels` →
-`bild_aus_html`. Neu ist nur die Frage, welche der 4 bis 12 Seiten die gesuchte ist.
+`bild_aus_html`.
 
 ### 4.1 Nicht über die Bildgröße
 
-Naheliegend, aber untauglich: Die Blätter sind zwischen 1240×1754 und 3800×1170 groß, und
-Anflugkarten liegen im selben Bereich. Die Größe taugt als Vorfilter, nicht als Entscheidung.
+Die Blätter liegen zwischen 1240×1754 und 3800×1170; Anflugkarten liegen im selben Bereich.
+Die Größe taugt als Vorfilter, nicht als Entscheidung.
 
 ### 4.2 Über den Kopfbereich, ohne ein Zeichen zu lesen
 
 Der Titel steht bei allen Blättern **an derselben Stelle oben links und in derselben
-Setzung**. Ein Vergleich dieses Ausschnitts gegen zwei hinterlegte Muster — eines je Sorte —
-entscheidet die Zuordnung. Verglichen wird nicht per Hash, sondern über den Anteil
-übereinstimmender Pixel mit einer Schranke, damit ein einzelnes verändertes Pixel nicht die
-ganze Erkennung kippt.
+Setzung**. Verglichen wird der Anteil übereinstimmender Pixel gegen zwei hinterlegte Muster,
+nicht ein Hash — ein einzelnes verändertes Pixel darf die Erkennung nicht kippen.
 
-Die Muster werden einmalig aus je einem belegten Blatt gewonnen
-(EDDL Seite 6 für die Flugplatzkarte, EDDM Seite 7 für die Rollkarte) und liegen als
-PNG unter `app/data/ground_chart_kopf/`. Sie gehören ins Repo, nicht in die Datenbank: Sie
-sind Programmbestandteil und müssen bei einem Neuaufbau des Volumes vorhanden sein.
+Die Muster liegen als PNG unter `app/data/ground_chart_kopf/`. Sie gehören ins Repo, nicht
+in die Datenbank: Sie sind Programmbestandteil und müssen nach einem Neuaufbau des Volumes
+vorhanden sein.
 
 **Bekannte Schwäche.** Eine Voruntersuchung über einen Hash desselben Ausschnitts hat vier
-verschiedene Cluster über Blätter geliefert, die alle Flugplatzkarten sein müssten. Der
-Ausschnitt war dabei nach Augenmaß gewählt und traf bei den breiteren Blättern teilweise
-Weißraum. Der Plan muss den Ausschnitt **vermessen**, nicht schätzen — dazu Task 3.
+Cluster über Blätter geliefert, die alle Flugplatzkarten sein müssten — der Ausschnitt war
+nach Augenmaß gewählt und traf bei den breiteren Blättern Weißraum. Der Ausschnitt muss
+**vermessen** werden, über die ganze Breitenspanne von 1240 bis 3800 px.
 
 ### 4.3 Der Admin sticht die Automatik
 
-Wie bei den Sichtflugkarten (`/api/admin/aip-charts/{icao}/seiten`) kann ein Mensch die
-Seite festlegen. Die gewählte URL steht in `seite_url` und wird beim Auffrischen bevorzugt.
+Die gewählte URL steht in `seite_url` und wird beim Auffrischen bevorzugt (Abschnitt 3.2).
 
 ---
 
 ## 5. Passung über die Bahngeometrie
 
-Der Kern. Ablauf für ein Blatt:
-
 ### 5.1 Referenz beschaffen
 
 Bahnschwellen aus **OurAirports** (`runways.csv`). Diese Quelle ist im Projekt bereits in
-Gebrauch (`scripts/nearby_airports.py`), es kommt kein neuer Lieferant hinzu — nur eine
-zweite Datei desselben.
+Gebrauch (`scripts/nearby_airports.py`), es kommt kein neuer Lieferant hinzu.
 
 Geprüft am 30.08.2026: Alle 15 untersuchten Verkehrsflughäfen haben Schwellenkoordinaten,
 meist für jede Bahn; die daraus gerechneten Bahnlängen stimmen auf wenige Meter mit der
 Längenangabe derselben Zeile überein.
 
-**OpenAIP scheidet aus.** Es liefert keine Schwellenkoordinaten, sondern nur `trueHeading` —
-für EDDL den Wert 50 bei tatsächlich 052,7°. Drei Grad sind auf 3 km Bahnlänge 150 m.
+**OpenAIP scheidet aus.** Es liefert keine Schwellenkoordinaten, nur `trueHeading` — für
+EDDL den Wert 50 bei tatsächlich 052,7°. Drei Grad sind auf 3 km 150 m.
+
+**Der Zwischenspeicher gehört neben die Datenbank**, nicht nach `scripts/.cache/` wie bei
+`nearby_airports.py`. Dieses Verzeichnis steht in `.gitignore` und ist im Container eine
+Image-Schicht: bei jedem Deploy weg, also bei jedem Containerstart neu zu laden. Richtig ist
+`Path(DB_PATH).parent`, aus demselben Grund, aus dem `blatt_pfad` dorthin zeigt.
+
+**Die Meterumrechnung braucht den richtigen Meridiangrad.** Der Prototyp rechnet mit dem
+Äquatorwert 110540 m; der Meridiangrad beträgt bei 47,5–55° N aber 111 181 bis 111 324 m —
+ein Fehler von 0,58 bis 0,70 %. Zusammen mit dem Längengrad-Fehler von 0,2 % ergibt das eine
+**Anisotropie von rund 0,45 %, die eine Ähnlichkeitstransformation prinzipiell nicht
+absorbieren kann**: bis zu 5 m auf einem großflächigen Platz, also ein Drittel der
+Restfehler-Schranke, völlig ohne Not. Richtig sind die üblichen Reihen
+
+```
+meridian(φ) = 111132,95 − 559,82·cos 2φ + 1,175·cos 4φ
+laengen(φ)  = 111412,84·cos φ − 93,5·cos 3φ
+```
+
+und `φ` je Punktpaar, nicht einmal fest an der ersten Schwelle — über 3 km Nordausdehnung
+sind das nochmals rund 2 m Scherung.
 
 ### 5.2 Bahnfarbe messen
 
 Der häufigste Grauwert zwischen 100 und 210, wenn er mindestens 0,6 % einer Stichprobe
 (jedes dritte Pixel je Achse) ausmacht. Ergebnisse: 153/154 auf Flugplatzkarten, 179/180 auf
-Rollkarten. Wird kein solcher Ton gefunden, ist das Blatt keine Flugplatzkarte — die Passung
-endet hier.
+Rollkarten. Wird kein solcher Ton gefunden, ist das Blatt keine Flugplatzkarte.
 
 ### 5.3 Bahnflächen finden
 
-Zusammenhangskomponenten in dieser Farbe (± 6), zeilenweise Läufe mit Union-Find. Eine
-Fläche gilt als Bahnkandidat bei mindestens 8000 Pixeln, einer Breite ab 4 px und einem
-Verhältnis Länge zu Breite von mindestens 8.
+Zusammenhangskomponenten in dieser Farbe (± 6), zeilenweise Läufe mit Union-Find.
+Bahnkandidat ab 8000 Pixeln, Breite ab 4 px, Verhältnis Länge zu Breite ab 8.
 
-Reines Pillow, wie `app/aip_charts.py`. **Keine neue Abhängigkeit** — numpy, scipy und OpenCV
-sind im Projekt nicht vorhanden und werden es nicht.
+Reines Pillow, wie `app/aip_charts.py`. **Keine neue Abhängigkeit** — numpy, scipy und
+OpenCV sind im Projekt nicht vorhanden und werden es nicht.
 
 ### 5.4 Achse und Enden
 
-Die Längsachse folgt aus den zweiten Momenten der Fläche. Gemessen wurde, dass die Achsen
-zweier Parallelbahnen desselben Blattes auf **0,01° bis 0,06°** übereinstimmen — der Winkel
-ist also die verlässlichste Größe der ganzen Kette.
+Die Längsachse folgt aus den zweiten Momenten. Gemessen: Die Achsen zweier Parallelbahnen
+desselben Blattes stimmen auf **0,01° bis 0,06°** überein — der Winkel ist die
+verlässlichste Größe der ganzen Kette.
 
 Die Fläche selbst ist es nicht: Rollwegabzweige und Markierungen trennen sie, gemessene
 Längen fielen bis zu 24 % zu kurz aus. Die Enden werden deshalb **entlang der Achse
-abgetastet**, mit einer erlaubten Lücke von 60 px und einer geforderten Querabdeckung von
-55 %. Bei EDDL hob das die gemessene Länge von 1414 auf 1769 px — den korrekten Wert.
+abgetastet**. Bei EDDL hob das die Länge von 1414 auf die richtigen 1769 px.
 
-### 5.5 Zuordnung durchprobieren
+**Toleranzen gehören in Meter, nicht in Pixel.** Die erlaubte Lücke von 60 px sind bei
+1,6 m/px rund 96 m, bei 2,6 m/px rund 156 m — bei Blattbreiten von 1240 bis 3800 px schwankt
+dieselbe Zahl real zwischen etwa 60 und 190 m. Dasselbe gilt für den Randsaum von 45 px
+(Abschnitt 5.6). Beide werden über eine Grobskala umgerechnet, die vor dem Abtasten aus der
+längsten Komponente und der längsten Referenzbahn schätzbar ist.
 
-Welche Bildbahn welcher echten Bahn entspricht, wird **nicht geraten**. Alle Zuordnungen und
+**Zwei Wege, auf denen das Abtasten überschießt:**
+
+- **Ohne jede Lücke.** Wendehämmer, Stopways und Blast Pads schließen unmittelbar an und
+  sind gleichfarbig gezeichnet. Sie werden immer mitgemessen, unabhängig vom
+  Lückenparameter. Das ist die wahrscheinlichste Ursache der 29,6 m bei EDDH und der 74 m
+  bei der EDDM-Rollkarte (Abschnitt 14.1).
+- **Mit Lücke.** Jede gleichfarbige Fläche innerhalb der Toleranz hinter dem Ende, die die
+  geforderte Querabdeckung erreicht, verbindet den Scan wieder. Ein 23-m-Rollweg senkrecht
+  über die verlängerte Achse einer 45-m-Bahn deckt 51 % — die Schwelle von 55 % steht also
+  **ohne Sicherheitsabstand direkt neben dem häufigsten Störer**. Schräg kreuzend oder mit
+  Schultern liegt er darüber. Die Schwelle gehört auf 70 % angehoben und der Wert im Test
+  gegen einen gezeichneten Querrollweg belegt.
+
+**Die Notbremse darf kein Ergebnis liefern.** Läuft der Scan bis an die Abbruchgrenze, gibt
+der Prototyp `u − r·leer` als „Ende" zurück — einen Wert mitten im Nirgendwo. Richtig ist,
+die Bahn zu verwerfen.
+
+### 5.5 Zuordnung durchprobieren — auf beiden Seiten
+
+Welche Bildbahn welcher echten Bahn entspricht, wird nicht geraten. Alle Zuordnungen und
 beide Laufrichtungen je Bahn werden durchgerechnet; es gewinnt die mit dem kleinsten
-Restfehler. Ein Sortieren nach Länge — der erste Versuch — hat bei EDDV zwei verschiedene
-Maßstäbe für dasselbe Blatt geliefert und die Passung um 145 m verfehlt.
+Restfehler. Ein Sortieren nach Länge hat bei EDDV zwei verschiedene Maßstäbe für dasselbe
+Blatt geliefert und die Passung um 145 m verfehlt.
 
-**Ein Bahnende dicht am Blattrand ist kein Passpunkt.** Dort ist die Bahn nur abgeschnitten;
-mehrblattrige Rollkarten zeigen Ausschnitte. Es geht als Achsrichtung ein, nicht als Punkt.
+**Auch die Bildseite muss in die Auswahl.** Der Prototyp permutiert nur die Referenzbahnen
+und nimmt auf der Bildseite immer die vier längsten Achsen. Eine lange Nicht-Bahn im
+Bahnton — eine Vorfeldkante, auf Rollkarten ein Rollleitlinien-Band — verdrängt dann eine
+echte Bahn, und keine Permutation der anderen Seite kann das heilen. Das ist eine plausible,
+noch ungeprüfte Spur für die 74 m der EDDM-Rollkarte.
 
-### 5.6 Die Prüfkette
+**Nahe beieinanderliegende Achsen werden vorher zusammengefasst.** Eine durch Abzweige
+zerteilte Bahn liefert mehrere Komponenten, deren Abtasten alle auf dieselben Vollenden
+zieht — zwei praktisch gleiche Achsen, welche die Permutation auf zwei verschiedene
+Parallelbahnen legen kann.
 
-Fünf Prüfungen. **Eine Karte, die eine davon nicht besteht, wird nicht angezeigt** — dieselbe
-Regel wie bei den Sichtflugkarten, und aus demselben Grund: Eine falsch liegende Karte ist
-schlimmer als gar keine, weil sie im Rollverkehr geglaubt wird.
+### 5.6 Bahnenden am Blattrand
 
-1. **Mindestens vier Passpunkte.** Bei vier Unbekannten sind vier Punkte acht Gleichungen und
-   damit vier Freiheitsgrade. Zwei Punkte bestimmen die Passung exakt und lassen keinen
+**Ein Bahnende innerhalb des Randsaums ist kein Passpunkt.** Dort ist die Bahn nur
+abgeschnitten; mehrblattrige Rollkarten zeigen Ausschnitte. Die Achsrichtung geht trotzdem
+ein, der Punkt nicht.
+
+### 5.7 Die Prüfkette
+
+Fünf Prüfungen. **Eine Karte, die eine davon nicht besteht, wird nicht angezeigt** —
+dieselbe Regel wie bei den Sichtflugkarten. Eine falsch liegende Karte ist schlimmer als gar
+keine, weil sie im Rollverkehr geglaubt wird.
+
+1. **Mindestens vier Passpunkte.** Vier Punkte sind acht Gleichungen auf vier Unbekannte,
+   also vier Freiheitsgrade. Zwei Punkte bestimmen die Passung exakt und lassen keinen
    Restfehler übrig — sie ist dann *unprüfbar*, nicht *richtig*. Das ist die Lage bei jedem
-   Platz mit nur einer Bahn (EDDB, EDDC, EDDE, EDDG, EDDR, EDDW); Abschnitt 5.8.
+   Platz mit nur einer Bahn (Abschnitt 5.9).
+   Einschränkung, die dazugehört: **Die vier Punkte sind nicht unabhängig.** Beide Enden
+   einer Bahn teilen sich dieselbe Achsschätzung; die vier Freiheitsgrade sind statistisch
+   weniger wert, als die Zahl nahelegt.
 2. **Ähnlichkeit, nicht Affinität.** Vier Unbekannte: Drehung, Maßstab, zwei Verschiebungen.
-   Eine Karte ist nicht geschert. Eine affine Rechnung mit sechs Unbekannten auf vier Punkte
-   hat in der Vorabprobe einen Restfehler von 1,7 m vorgetäuscht, wo tatsächlich 5,7 m
-   standen — überbestimmte Modelle schmeicheln sich selbst.
+   Eine Karte ist nicht geschert. Die affine Rechnung mit sechs Unbekannten hat in der
+   Vorabprobe 1,7 m ausgewiesen, wo tatsächlich 5,7 m standen — sie hat **zwei statt vier
+   Freiheitsgrade** und schmeichelt deshalb; zusätzlich absorbiert die Scherung genau jene
+   Anisotropie, die der Meterfehler aus 5.1 erzeugt, und verdeckt damit einen echten
+   Modellfehler.
 3. **Die y-Achse wird gespiegelt.** Bildkoordinaten laufen nach unten, Nordmeter nach oben.
-   Ohne die Spiegelung liegt die richtige Lösung nicht im Suchraum; die Vorabprobe lieferte
-   dann 59 m statt 5,7 m für dasselbe Blatt.
-4. **Nordung zwischen 270° und 90°.** Ein DFS-Blatt ist nie kopfüber gedruckt. Zwei gleich
-   lange Parallelbahnen sind unter einer 180°-Drehung symmetrisch, der Restfehler kann das
-   nicht unterscheiden — bei EDDM wählte die Rechnung ohne diese Bedingung 173,5° statt der
-   richtigen 353,5°, bei gleich kleinem Restfehler.
-5. **Maßstabskonsistenz.** Weichen die aus zwei Bahnen desselben Blattes gerechneten
-   Maßstäbe um mehr als 8 % voneinander ab, ist die Zuordnung falsch. Eine Karte hat genau
-   einen Maßstab. Diese Prüfung hat die vier Fehlpassungen aus Abschnitt 2.5 abgewiesen.
+   Die Ähnlichkeitsmatrix `[[a,−b],[b,a]]` hat die Determinante `a²+b² > 0`, ist also
+   **immer** orientierungserhaltend; die wahre Abbildung ist orientierungsumkehrend und
+   liegt ohne Spiegelung nicht im Suchraum. Die Vorabprobe lieferte dann 59 m statt 5,7 m
+   für dasselbe Blatt.
+4. **Nordung: verworfen wird nur das Fenster (100°, 260°).** Der Zweck ist allein, die
+   180°-Alternative auszuschließen — dafür genügt jede Marge unter 80°. Ein strenges Fenster
+   (90°, 270°) wäre falsch: **EDDH liegt bei gemessenen 89,97°**, also 0,03° neben der
+   Kante, bei einem Achsrauschen von 0,01 bis 0,06°. Ob die richtige Passung durchkommt,
+   entschiede dort der Zufall. Der Fall ist nicht exotisch — er tritt bei jedem quer
+   gedruckten, an sich genordeten Blatt auf; bei den Sichtflugkarten gibt es sieben davon.
+   **Was diese Prüfung nicht kann:** Liegt die Nordung nahe 90°, liegt die Kopfüber-Variante
+   nahe 270° und damit ebenfalls am Fensterrand. Bei zwei gleich langen Parallelbahnen im
+   Querdruck ist die 180°-Frage dann prinzipiell nicht entscheidbar. Bei EDDH retten die
+   sich kreuzenden Bahnen die Eindeutigkeit über den Restfehler; ein EDDM-artiges Layout im
+   Querdruck hätte diese Rettung nicht. Eine solche Karte wird verworfen, nicht geraten.
+5. **Maßstabskonsistenz — gegen den Fit, nicht nur untereinander.** Der Prototyp vergleicht
+   die aus je zwei Bahnen gerechneten Maßstäbe miteinander und schaltet sich damit **still
+   ab, sobald nur eine Bahn unverstümmelt ist**. Verglichen wird stattdessen jede einzelne
+   Bahnskala gegen die aus dem Fit gewonnene Skala `hypot(a, b)`; dann greift die Prüfung
+   auch bei einer Bahn.
+   Die Schranke ist **nicht** fest 8 %. Der Malfehler an den Bahnenden ist additiv (feste
+   Meter je Ende), der Skalenfehler damit umgekehrt proportional zur Bahnlänge: 120 m Anbau
+   an einer 1630-m-Bahn sind 7,4 %, an einer 3000-m-Bahn 4,0 %. Eine feste Schranke verwirft
+   deshalb bevorzugt richtige Passungen kurzer Bahnen. Sie wird über die Bahnlänge
+   gestaffelt, mit einem festen Meterbetrag als Grundlage.
 
 **Schranke für den Restfehler: 15 m.** Ein Drittel Bahnbreite, weniger als eine Rollwegbreite.
-Darüber wird die Karte als `ungepasst` abgelegt und wartet auf die Handpassung. Nach heutigem
-Stand bestehen EDDL und EDDM diese Schranke, EDDH (29,6 m) und die Rollkarte von EDDM (74 m)
-nicht.
+Darüber wird die Karte als `ungepasst` abgelegt.
 
-### 5.7 Mehrere Blätter derselben Sorte
+### 5.8 Mehrere Blätter derselben Sorte
 
-Es gewinnt das Blatt mit dem kleinsten Restfehler. Zeigen zwei Blätter verschiedene
-Ausschnitte desselben Platzes (EDDV), wird das andere verworfen — Zusammensetzen ist
-ausgeschlossen (Abschnitt 1.2).
+Es gewinnt das Blatt mit dem kleinsten Restfehler. Zusammensetzen ist ausgeschlossen.
 
-### 5.8 Plätze mit einer Bahn
+### 5.9 Plätze mit einer Bahn
 
-Sechs der geprüften Plätze haben nur eine Bahn und liefern damit zwei Passpunkte: bestimmt,
-aber unprüfbar. Für sie kommt ein drittes Merkmal hinzu: **das ARP-Kreuz**, das auf jedem
-Blatt eingezeichnet und mit „ARP" beschriftet ist. Seine echte Koordinate steht in
-`airportsdata` und in OpenAIP.
+Sechs der geprüften Plätze (EDDB, EDDC, EDDE, EDDG, EDDR, EDDW) haben nur eine Bahn und
+liefern zwei Passpunkte: bestimmt, aber unprüfbar. Für sie käme das **ARP-Kreuz** als
+drittes Merkmal in Frage — drei Punkte, sechs Gleichungen, zwei Freiheitsgrade. Der Gewinn
+ist die **Prüfbarkeit**, nicht die Genauigkeit.
 
-Mit ARP sind es drei Punkte, sechs Gleichungen, zwei Freiheitsgrade — die Passung wird
-**prüfbar**. Das ist der Gewinn, nicht die höhere Genauigkeit.
-
-Das ARP-Kreuz zu finden ist eigene Bildanalyse mit eigener Fehlerquelle. Es steht deshalb als
-abtrennbarer Schritt im Plan: Fällt er weg, verlieren diese sechs Plätze ihr Overlay, alle
-übrigen bleiben unberührt.
+Das ist ein eigenes Vorhaben mit eigener Bildanalyse und eigener Fehlerquelle. **Es hat in
+diesem Design keinen Umsetzungsschritt.** Diese sechs Plätze bekommen vorerst kein Overlay;
+das ist eine bewusste Lücke, kein Versehen.
 
 ---
 
 ## 6. Genordete Ablage
 
-Das Rohblatt wird um `drehung` gedreht (`Image.rotate(winkel, expand=True,
-resample=BICUBIC, fillcolor=weiß)`) und in dieser Form abgelegt. Danach ist es ein
-nordorientiertes Rechteck und `L.imageOverlay` genügt.
+Das Rohblatt wird gedreht und in dieser Form abgelegt. Danach ist es ein nordorientiertes
+Rechteck und `L.imageOverlay` genügt.
 
-Zwei Folgen, die im Plan Tests brauchen:
+**Die gesamte Analyse läuft auf dem Rohblatt.** `mps` ist Meter je Pixel im Rohblatt, nicht
+im gedrehten. Das Drehen ist der letzte Schritt und ändert an der Passung nichts.
 
-- **Die Blattgrenzen wachsen.** `expand=True` vergrößert das Bild; die Ecken des gedrehten
-  Blattes bestimmen `nord/sued/west/ost`. Bei 37° Drehung wächst die Fläche um rund 60 %.
-- **`feld_*` ist nicht `nord/sued/west/ost`.** Die Feldgrenzen sind die Hülle der erkannten
-  Bahnen zuzüglich eines Saums von 1 km, nicht die Blattgrenzen. Danach schaltet die
-  Automatik: Das Blatt zeigt nach dem Drehen viel Weißraum, und über dem würde die Karte
-  sonst schon einschalten, während der Platz noch weit weg ist.
+Vier Punkte, die im Plan Tests brauchen:
 
-Dieselbe Verwechslung — Blattgrenzen gegen Feldgrenzen — steckte hinter dem
-45-Prozent-Maßstabsfehler der Sichtflugkarten. Sie darf hier nicht wiederkehren.
+- **Das Vorzeichen der Drehung ist zu belegen, nicht anzunehmen.** `Image.rotate` dreht
+  gegen den Uhrzeigersinn. Ob 322,8 oder 37,2 zu übergeben ist, entscheidet über ein exakt
+  falsch herum liegendes Blatt. Der Prototyp dreht nie — das ist ungetestet.
+- **Die Füllfläche muss durchsichtig sein, nicht weiß.** `expand=True` lässt an den Ecken
+  Fläche frei; bei 37° ist das rund die Hälfte des abgelegten Rechtecks. Weiß gefüllt läge
+  ein großes Dreieckspaar halbdeckend über der Umgebung des Platzes. Nötig ist RGBA mit
+  `fillcolor=(0,0,0,0)` und ein PNG mit Alphakanal. Die quer gedruckten Sichtflugkarten
+  kennen dieses Problem nicht — 90° drehen lässt nichts frei.
+- **Das Blatt wächst erheblich.** Nicht „rund 60 %", wie eine frühere Fassung dieses
+  Dokuments behauptete: bei 37,2° wachsen 1754×1240 um **102 %**, 3101×1754 um **112 %**,
+  3800×1170 um **171 %**. 60 % entsprächen einer Drehung um etwa 18°. Das ist für die
+  Bildgröße im Browser relevant und gehört im Plan gemessen.
+- **PIL rundet Größe und Versatz des gedrehten Bildes.** Die Umrechnung von Passung auf
+  `nord/sued/west/ost` muss aus PILs tatsächlicher Formel folgen, nicht aus der idealen
+  Hüllbox — sonst bleiben Subpixel-Verschiebungen von bis zu 1 px, hier rund 1,6 m.
+
+**`feld_*` ist nicht `nord/sued/west/ost`.** Die Feldgrenzen sind die Hülle der erkannten
+Bahnen zuzüglich eines Saums von 1 km. Nach dem Drehen zeigt das Blatt viel freie Fläche,
+und über der dürfte die Automatik nicht schon einschalten. Dieselbe Verwechslung steckte
+hinter dem 45-Prozent-Maßstabsfehler der Sichtflugkarten.
 
 ---
 
@@ -352,38 +450,64 @@ Dieselbe Verwechslung — Blattgrenzen gegen Feldgrenzen — steckte hinter dem
 > neue Version gibt, kann diese zur Prüfung angezeigt werden. Aber keinesfalls erneut
 > verzerrt werden!"
 
-Das gilt **für beide Kartentypen**, also auch für die 171 handgepassten Sichtflugkarten.
+Gilt **für beide Kartentypen**, also auch für die 171 handgepassten Sichtflugkarten.
 
-### 7.1 `quelle == "hand"` ist eine Sperre
+### 7.1 Die Bedingung, genau formuliert
 
-Kein automatischer Pfad schreibt über eine Zeile mit `quelle = 'hand'`. Weder der
-Auffrischlauf noch der Seitenwähler, und ausdrücklich auch dann nicht, wenn die Automatik ein
-Ergebnis liefert. Die Sperre wird an genau einer Stelle geprüft, damit sie nicht an drei
-Stellen auseinanderlaufen kann.
+Gesperrt ist **ein Schreibversuch mit `quelle = 'auto'` auf eine bestehende Zeile mit
+`quelle = 'hand'`**.
 
-Was bleibt erlaubt: das **Bild** unter einer bestehenden Handpassung auffrischen, wenn
-`zeigt_denselben_ausschnitt` nachweist, dass es dieselbe Karte ist. Das ist keine Änderung
-der Passung und war der Grund für Regel 4 in `scripts/aip_bestand.py`.
+Diese Formulierung ist nicht schmückend, sie trägt die ganze Umsetzung. Die naheliegende
+Fassung „keine Zeile mit `quelle='hand'` überschreiben" bräche drei **legitime** Pfade:
 
-### 7.2 Zwei belegte Lücken im heutigen Code
+- `_handblatt_auffrischen` (`scripts/aip_bestand.py:123`) — schreibt hand über hand und ist
+  von dieser Festlegung ausdrücklich gedeckt: Es frischt das *Bild* auf, nachdem
+  `zeigt_denselben_ausschnitt` nachgewiesen hat, dass es dieselbe Karte ist.
+- `admin_set_aip_chart` (`app/main.py:4443`) — ein Mensch korrigiert seine eigene Passung.
+- `scripts/aip_handpassung.py:369` — dasselbe von der Kommandozeile.
+
+Die Prüfung sitzt in `upsert_aip_chart` selbst, nicht bei den Aufrufern: Es gibt **sieben**
+Schreibpfade, und der nächste neue wäre sonst wieder ungeschützt.
+
+### 7.2 Vier Lücken im heutigen Code
 
 | Ort | Was passiert |
 |---|---|
-| `scripts/aip_bestand.py`, letzter Zweig | Gelingt die Automatik, wird bedingungslos mit `quelle="auto"` geschrieben — ohne Blick auf `alt["quelle"]`. Die Sicherung davor (`geometrie_gleich`) kann bei Handpassungen **prinzipiell nie greifen**, weil `handpassung()` `tick_px_lat` und `tick_px_lon` als Null ablegt und gegen gemessene ~219 verglichen wird. |
-| `app/main.py`, Seitenwähler | Die Handpassungs-Sicherung hängt an `passung is None`. Liefert die Automatik auf der gewählten Seite ein Ergebnis, ist die Handpassung weg — auch bei unverändertem Bild. |
+| `scripts/aip_bestand.py:213` | Gelingt die Automatik, wird bedingungslos mit `quelle="auto"` geschrieben — ohne Blick auf `alt["quelle"]`. |
+| `app/main.py:4399` (Seitenwähler) | Die Sicherung hängt an `passung is None`. Liefert die Automatik auf der gewählten Seite ein Ergebnis, ist die Handpassung weg. |
+| `scripts/aip_bestand.py:202` | Der Schutz darüber verlangt `alt["status"] == "gepasst"`. Eine Zeile mit `quelle='hand'` und `status='ungepasst'` fällt durch und wird auf `auto` genullt. |
+| `scripts/aip_bestand.py:148` (`delete_aip_chart`) | Regel 2 räumt jede Karte ab, deren ICAO nicht mehr in `airport_links` steht — Zeile **und** Blatt. Für eine Handpassung ist das unwiederbringlich. |
 
-Ob eine davon die EDDL-Passung des Nutzers erwischt hat, ist **nicht nachweisbar**:
-`aip_charts` führt keine Historie, `geprueft_am` wird bei jedem Schreiben überschrieben. Der
-Auffrischlauf war es nachweislich nicht — siehe 8.1.
+**Zur dritten Lücke gehört, dass der Seitenwähler diesen Zustand aktiv erzeugt:**
+`quelle="auto" if passung else "hand"` (`app/main.py:4400`). Scheitert die Automatik auf der
+gewählten Seite, steht dort `quelle='hand'`, obwohl kein Mensch etwas gepasst hat. Das ist
+die eigentliche Fehlbenennung — `'hand'` heißt dort „wartet auf Handarbeit" statt „von Hand
+gesetzt". Sie gehört behoben, nicht durch eine Sonderregel in der Sperre umgangen.
+
+**Zur vierten:** Ob `quelle='hand'` auch gegen Löschen sperrt, ist eine Entscheidung, keine
+Ableitung. Vorschlag: Eine handgepasste Karte, deren Link verschwindet, wird **nicht**
+gelöscht, sondern auf `status='verwaist'` gesetzt und im Admin gemeldet. Sie ist dann aus
+der Anzeige, die Arbeit bleibt erhalten.
+
+**Warum `geometrie_gleich` hier nicht hilft.** `handpassung()` legt `tick_px_lat` und
+`tick_px_lon` als Null ab (`app/aip_charts.py:1620`); `geometrie_gleich` vergleicht sie mit
+`_TOLERANZ_RASTER_PX = 0.5` gegen gemessene ~219 px. Regel 3 fällt für **jede** der 171
+Handpassungen durch. Der Code weiß das an anderer Stelle bereits: `gerade_aus_bestand`
+rechnet ausdrücklich nicht über die Tick-Werte, „weil `handpassung()` dort Nullen ablegt".
+Dieselbe Einsicht ist in `geometrie_gleich` nie angekommen — **dort liegt die vorhandene
+Lösung, es braucht keine neue.**
+
+**Ob eine dieser Lücken die EDDL-Passung erwischt hat, ist nicht nachweisbar:** `aip_charts`
+führt keine Historie, `geprueft_am` wird bei jedem Schreiben überschrieben.
 
 ### 7.3 Der Vorschlagsweg
 
-Findet die Automatik für eine handgepasste Karte ein neues Blatt mit abweichender Passung:
+Findet die Automatik für eine handgepasste Karte ein abweichendes Ergebnis:
 
-1. Passung rechnen, aber **nicht** in `aip_charts`/`aip_ground_charts` schreiben.
-2. Zeile in `aip_chart_vorschlaege` anlegen, Bild als `<ICAO>.vorschlag.png` ablegen.
+1. Passung rechnen, aber **nicht** schreiben.
+2. Zeile in `aip_chart_vorschlaege` anlegen, Bild als `<ICAO>.<art>.<hash>.png` ablegen.
 3. Im Admin erscheint der Vorschlag mit beiden Blättern nebeneinander.
-4. Übernehmen ist ein ausdrücklicher Handgriff. Erst er schreibt und setzt `quelle = 'auto'`.
+4. Übernehmen ist ein ausdrücklicher Handgriff. Erst er schreibt.
 
 Live geht bis dahin nichts davon.
 
@@ -393,26 +517,60 @@ Live geht bis dahin nichts davon.
 
 ### 8.1 Der bestehende Job hat noch nie gearbeitet
 
-`app/poller.py` meldet ihn als `"interval", weeks=1` an — **ohne `next_run_time`**.
-APScheduler plant den ersten Lauf damit eine Woche nach dem Anmelden, und angemeldet wird bei
-jedem Containerstart neu. FriesenSpy wird deutlich häufiger als wöchentlich deployt.
+`app/poller.py:553` meldet ihn als `"interval", weeks=1` — **ohne `next_run_time`**.
+APScheduler setzt dann `start_date = now + interval`, und `_register_jobs()` läuft bei jedem
+Containerstart neu gegen einen `MemoryJobStore`. Erster Lauf also frühestens sieben Tage nach
+dem letzten Deploy; FriesenSpy wird deutlich häufiger deployt.
 
-Belegt durch den Bestand: Von 446 Karten trägt keine ein `geprueft_am` nach dem 25.08.2026,
-außer der einen, die der Nutzer am 30.08. von Hand gepasst hat. Ein Durchlauf hätte alle 446
-angefasst.
+**Beleg, in der richtigen Stärke:** Von 446 Karten trägt keine ein `geprueft_am` nach dem
+25.08.2026, außer der einen vom 30.08. Ein Durchlauf hätte allerdings **nicht** alle 446
+angefasst — `lauf()` schreibt in vier Fällen nichts (`ohne_koordinate`, `abruf_fehler`,
+`kein_blatt` und, der große Posten, `hand_behalten` bei unverändertem Bild). Er hätte die
+rund 273 automatisch gepassten angefasst. Da keine einzige davon neuer ist, trägt der
+Schluss trotzdem.
 
-**Zu ändern:** `next_run_time` auf wenige Minuten nach dem Start setzen. Der Lauf ist
-ohnehin arbeitsarm, solange sich kein `quell_hash` geändert hat.
+**Die billigere Gegenprobe ist das Containerlog.** `_aip_auffrischen` protokolliert jeden
+Lauf und jeden Fehlschlag. Ein Blick dorthin entscheidet die Frage direkt.
 
-Diese Reparatur ist die Voraussetzung dafür, dass Abschnitt 7 überhaupt gebraucht wird — und
-gleichzeitig der Grund, sie nicht ohne ihn auszuliefern.
+### 8.2 Der Lauf ist teuer — nicht „arbeitsarm"
 
-### 8.2 Regeln
+Eine frühere Fassung dieses Dokuments behauptete, es falle nur Arbeit an, wenn sich ein Hash
+geändert habe. **Das ist falsch: Der Hash wird erst gebildet, nachdem die ganze Arbeit
+getan ist** (`scripts/aip_bestand.py:178`). Vorher läuft für **jeden** der 446 Plätze:
 
-Es gelten die vier Regeln aus `scripts/aip_bestand.py` sinngemäß, ergänzt um:
+- mindestens zwei HTTP-Abrufe plus 0,4 s Höflichkeitspause,
+- die volle Bildanalyse über `genordet_rechnen` → `passung_rechnen`,
+- und bei gescheiterter Passung — also bei allen ~171 handgepassten Blättern — zusätzlich
+  ein **kompletter Kapiteldurchlauf** über 4 bis 12 weitere Seiten, jede einzeln geholt und
+  vermessen (`app/aip_charts.py:1544-1560`).
 
-5. **Handpassung ist unantastbar** (Abschnitt 7). Verdrängt die bisherige Regel 3, soweit
-   diese eine Handpassung durch eine Automatikpassung ersetzen ließ.
+Realistisch sind über 1000 Abrufe gegen `aip.dfs.de` und mehrere Minuten reine CPU je Lauf.
+Drei Folgen:
+
+1. **`next_run_time` auf „wenige Minuten nach dem Start" wäre falsch.** Es machte aus dem
+   Wochenjob einen Deploy-Job; an einem Tag mit zwölf Deploys wären das zwölf Vollcrawls der
+   DFS. Richtig ist ein **persistenter Fälligkeitsmerker** in der Datenbank: Der Job läuft
+   kurz nach dem Start nur, wenn der letzte Lauf mehr als eine Woche zurückliegt.
+2. **`asyncio.to_thread` schützt weniger, als der Kommentar dort verspricht.** Die Analyse
+   ist eine reine Python-Pixelschleife und hält den GIL. Ein Lauf, der zur falschen Zeit
+   startet, trifft die Sitzung, die gerade fliegt.
+3. **Der zweite Job ist teurer als der erste**, nicht billiger: `ground_chart_bestand` muss
+   jede Kapitelseite gegen zwei Kopfmuster prüfen, während `blatt_beschaffen` bei der ersten
+   passenden Seite abbricht. Beide Jobs dürfen nicht gleichzeitig laufen.
+
+### 8.3 Der Job meldet seine Änderungen nicht
+
+`_aip_auffrischen` ruft kein `_aip_karten_geaendert`. Sobald er tatsächlich läuft und Karten
+ändert, bleibt jedes offene Kniebrett auf dem alten Stand — genau das Fehlerbild, das der
+Helfer am 24.08.2026 beheben sollte.
+
+### 8.4 Regeln
+
+Die vier Regeln aus `scripts/aip_bestand.py` gelten sinngemäß, ergänzt um:
+
+5. **Handpassung ist unantastbar** (Abschnitt 7). Verdrängt Regel 3, soweit diese eine
+   Handpassung durch eine Automatikpassung ersetzen ließ.
+6. **Die gespeicherte Seitenwahl hat Vorrang** vor der Suche nach der ersten passenden Seite.
 
 ---
 
@@ -420,71 +578,109 @@ Es gelten die vier Regeln aus `scripts/aip_bestand.py` sinngemäß, ergänzt um:
 
 | Methode und Pfad | Zweck |
 |---|---|
-| `GET /api/aip-ground-charts` | Metadaten der gepassten Blätter. Form wie `/api/aip-charts`, zusätzlich `sorte`. |
-| `GET /aip-ground-chart/{icao}.png` | Das genordete Blatt. `Cache-Control: private` wie beim Vorbild — die Beschränkung auf angemeldete Nutzer trägt das rechtliche Argument. |
-| `GET /api/admin/aip-ground-charts` | Liste mit Status, Sorte, Restfehler, Bahnenzahl. Nur die Felder, die der Admin braucht (die Vollzeile hat bei den Sichtflugkarten 209 KB ergeben und die Seite lahmgelegt). |
-| `GET /api/admin/aip-ground-charts/{icao}/seiten` | Kapitelseiten mit Vorschau zur Auswahl. |
+| `GET /api/aip-ground-charts` | Metadaten der gepassten Blätter, zusätzlich `sorte`. |
+| `GET /aip-ground-chart/{icao}.png` | Das genordete Blatt. `Cache-Control: private` wie beim Vorbild. |
+| `GET /aip-vorschlag/{id}.png` | Das Blatt zu einem Vorschlag. **Eigener Endpunkt:** `/aip-chart/{icao}.png` kann es nicht ausliefern, dort steht `re.fullmatch(r"[A-Z0-9]{4}", code)`. |
+| `GET /api/admin/aip-ground-charts` | Liste mit Status, Sorte, Restfehler, Bahnenzahl. |
+| `GET /api/admin/aip-ground-charts/{icao}/seiten` | Kapitelseiten mit Vorschau. |
 | `POST /api/admin/aip-ground-charts/{icao}/seite` | Seite festlegen. |
-| `POST /api/admin/aip-ground-charts/{icao}` | Handpassung: zwei geklickte Punkte mit ihren Koordinaten, dazu die Drehung. |
+| `POST /api/admin/aip-ground-charts/{icao}` | Handpassung: zwei geklickte Punkte mit Koordinaten. |
 | `GET /api/admin/aip-vorschlaege` | Offene Vorschläge beider Kartentypen. |
 | `POST /api/admin/aip-vorschlaege/{id}/uebernehmen` | Vorschlag übernehmen. |
-| `DELETE /api/admin/aip-vorschlaege/{id}` | Vorschlag verwerfen. |
+| `POST /api/admin/aip-vorschlaege/{id}/verwerfen` | **Nicht `DELETE`** — setzt `zustand='verworfen'`, siehe 3.3. |
 
-Nach jeder ändernden Operation `broadcast_sse({"type": "aip_charts"})` — ohne das erscheint
-eine frisch gepasste Karte im Kniebrett erst nach einem Neuladen, das dort innerhalb einer
-Sim-Sitzung nie stattfindet.
+**Nur die Felder, die der Admin braucht.** Die Vollzeile hat bei den Sichtflugkarten 209 KB
+für 446 Karten ergeben und die Seite lahmgelegt.
+
+Nach jeder ändernden Operation der vorhandene Helfer **`_aip_karten_geaendert(request)`**
+(`app/main.py:4204`) — nicht `broadcast_sse` direkt; der Helfer trägt den Silent-Fail für
+den Fall, dass kein Poller am `app.state` hängt.
 
 ---
 
 ## 10. Frontend
 
-### 10.1 Eigene Ebene, geteilte Mechanik
+### 10.1 Der Zustand muss doppelt geführt werden
 
-Ein zweiter Eintrag `liveOverlays['Flugplatzkarte']` neben `liveOverlays['Sichtflugkarte']`.
-Die Mechanik der Sichtflugkarten-Ebene wird geteilt, nicht kopiert: Nachführen nach Position,
-Hysterese am Feldrand, Festnageln, Wegklicken, Deckkraftregler und Marken haben dort bereits
-je einen Kommentar, der einen Nutzerbefund festhält. Zwei Fassungen davon würden auseinander
-laufen.
+Die Sichtflugkarten-Ebene führt ihren Zustand **auf ICAO geschlüsselt und einfach
+vorhanden**: `_aipKarteAktiv`, `_aipKarteFest`, `_aipKarteAus`, `_aipKarteOverlay`,
+`_aipMarken` als ICAO→Marker, dazu **ein** Deckkraftregler mit **einem** Merker.
 
-### 10.2 Automatik: ersetzt, schaltet zurück
+Die Sichtflugkarte EDDL und die Flugplatzkarte EDDL tragen **dieselbe ICAO**. „Mechanik
+teilen" heißt deshalb nicht Wiederverwendung derselben Variablen — jeder dieser Zustände
+braucht eine zweite Ausprägung. Geteilt werden die Funktionen, parametrisiert über die
+Kartensorte; `_aipKarteImFeld` muss dafür die Hysterese als Argument nehmen statt sie als
+Konstante einzubacken.
 
-Liegt die eigene Position im `feld_*` einer Flugplatzkarte, erscheint sie und die
-**Sichtflugkarte wird ausgeblendet**. Beim Verlassen des Feldes kehrt die Sichtflugkarte
-zurück. Nur eine Karte gleichzeitig — zwei halbtransparente Blätter übereinander sind nicht
-lesbar, und beim Rollen trägt die Sichtflugkarte nichts.
+**Das bricht bestehende Tests.** `tests/test_aip_ui.py` bindet an `_AIP_KARTE_HYSTERESE` und
+an ein gutes Dutzend weiterer `_aipKarte*`-Deklarationen. Diese Tests sind nachzuziehen,
+nicht zu löschen.
 
-Die Hysterese von 0,02° aus der Sichtflugkarten-Ebene ist hier zu grob: 2 km sind größer als
-mancher Platz. Für die Flugplatzkarte gilt **0,003°**, rund 300 m.
+### 10.2 Automatik: verdeckt, schaltet zurück
 
-Die Sichtflugkarte bleibt dabei als Ebene eingeschaltet; sie wird nur verdeckt. Andernfalls
-stünde nach der Landung ein Häkchen aus, das der Nutzer nie weggeklickt hat.
+Liegt die eigene Position im `feld_*` einer Flugplatzkarte **und liegt tatsächlich ein
+Blatt**, wird die Sichtflugkarte verdeckt. Die Sichtflugkarte bleibt als Ebene
+eingeschaltet; sonst stünde nach der Landung ein Häkchen aus, das niemand weggeklickt hat.
+
+Drei Zustände, die eine frühere Fassung offen ließ:
+
+- **Die Bedingung ist „ein Blatt liegt", nicht „die Position liegt im Feld".** Ist die Ebene
+  „Flugplatzkarte" im Menü abgehakt, wäre sonst die Sichtflugkarte weg und die
+  Flugplatzkarte nicht da — beim Rollen bliebe die Karte leer.
+- **Eine festgenagelte Sichtflugkarte schlägt die Automatik.** `_aipKarteNachfuehren` steigt
+  bei festgenageltem Blatt vor jeder Positionsprüfung aus. Ein ausdrücklicher Nutzerbefehl
+  darf nicht still überstimmt werden; solange eine Sichtflugkarte festgenagelt ist, bleibt
+  sie sichtbar und die Flugplatzkarte tritt nicht an.
+- **Wegklicken braucht zwei getrennte Merker.** `_aipKarteAus` speichert eine ICAO. Mit
+  einer geteilten Variablen machte ein Wegklick der Flugplatzkarte EDDL auch die
+  Sichtflugkarte EDDL unerreichbar — und die Sperre fiele nie, weil beide Automatiken
+  dieselbe ICAO wollen.
+
+**Hysterese in beide Richtungen.** Für die Flugplatzkarte gilt 0,003° statt der 0,02° der
+Sichtflugkarte — 2 km sind größer als mancher Platz. Die Rückkehr der Sichtflugkarte wird
+**aus der Sichtbarkeit der Flugplatzkarte abgeleitet**, nicht unabhängig geprüft; sonst
+flackert sie am Feldrand bei jedem Positionsupdate.
+
+**Der Listenplatz im Ebenen-Menü ist festzulegen.** `tests/test_aip_ui.py` fordert heute
+`OpenAIP < Sichtflugkarte < Platzrunden`. Die Flugplatzkarte gehört unmittelbar hinter die
+Sichtflugkarte. Die Zeilenzahl der Liste ist unkritisch — sie ist seit `max-height: 60vh`
+mit erzwungener Scrollbar abgesichert.
 
 ### 10.3 Marke in Magenta
 
-Zweites Symbol nach dem Vorbild von `.aip-marke`, aber in Magenta statt `#2d9cdb`. Hohl wie
-das Vorbild und aus demselben Grund: Es liegt über dem Platz, ein Vollsymbol deckte genau die
-Stelle zu, auf die es ankommt. Gefüllt erst, wenn das Blatt festgenagelt ist.
+Zweites Symbol nach dem Vorbild von `.aip-marke`, in Magenta statt `#2d9cdb`, hohl aus
+demselben Grund: Es liegt über dem Platz, ein Vollsymbol deckte genau die Stelle zu, auf die
+es ankommt.
 
-Für die Kontrastprüfung gilt dieselbe Doppellast wie bei `.aip-marke`: Das Symbol muss über
-dem hellen Kartenblatt und über der dunklen Grundkarte stehen.
+**Zwei Dinge sind dabei zu erledigen, nicht zu übersehen:**
+
+- Der Kommentar bei `.aip-marke` (`index.html:2361`) hält fest, sie sei „das einzige
+  klickbare Symbol dieser Karte". Das wird durch die zweite Marke falsch und ist
+  mitzuändern — ein Kommentar, der lügt, ist schlimmer als keiner.
+- Beide Markensätze liegen **exakt übereinander** (beide auf dem Platz) und teilen sich heute
+  `_aipMarken` sowie die containerweite Klasse `.leaflet-container.aip-nah`, die pro Karte
+  nur einen Nah-Zustand ausdrücken kann. Beides braucht eine zweite Ausprägung, und die
+  Marken brauchen einen Versatz gegeneinander, sonst ist die untere nicht anklickbar.
 
 ---
 
 ## 11. Admin
 
-Eine Ansicht neben der bestehenden Sichtflugkarten-Liste, mit denselben Handgriffen:
-Seitenauswahl, Handpassung durch Klicken zweier Punkte, Vorbelegung aus dem Bestand.
-
-Zwei Dinge kommen hinzu:
+Eine Ansicht neben der Sichtflugkarten-Liste, mit denselben Handgriffen. Zwei Dinge kommen
+hinzu:
 
 - **Der Restfehler steht in der Liste.** Er ist die einzige Zahl, an der ein Mensch von außen
   erkennt, ob eine automatische Passung sitzt.
 - **Die Vorschlagsliste** aus Abschnitt 7.3, mit beiden Blättern nebeneinander.
 
-Die Handpassung braucht hier einen Punkt mehr als bei den Sichtflugkarten: Zwei Punkte plus
-Drehung. Die Drehung folgt aus den beiden Punkten, wenn ihre Koordinaten bekannt sind —
-gefragt wird also nach zwei Punkten, nicht nach einem Winkel. Ein Winkel ist nichts, was
-jemand auf einer Karte ablesen kann.
+**Die Handpassung arbeitet auf dem Rohblatt.** Ein ungepasstes Blatt hat keine bekannte
+Drehung und liegt deshalb ungedreht ab (Abschnitt 3.1). Gefragt wird nach **zwei Punkten mit
+ihren Koordinaten** — Drehung, Maßstab und Grenzen werden daraus *hergeleitet*, so wie
+`aip_charts.handpassung()` die Blattgrenzen aus zwei Rahmenecken herleitet, statt die Klicks
+direkt abzulegen. Genau an dieser Unterscheidung hing bei den Sichtflugkarten der
+45-Prozent-Maßstabsfehler.
+
+Nach einem Winkel wird nicht gefragt — den kann niemand auf einer Karte ablesen.
 
 ---
 
@@ -492,19 +688,31 @@ jemand auf einer Karte ablesen kann.
 
 | Datei | Verantwortung |
 |---|---|
-| `app/ground_charts.py` (neu) | Bahnfarbe, Flächen, Achsen, Zuordnung, Prüfkette, Nordung — ohne DB- und FastAPI-Bezug, wie `aip_charts.py` |
-| `app/data/ground_chart_kopf/*.png` (neu) | Kopfmuster je Sorte, Abschnitt 4.2 |
-| `app/database.py` | zwei Tabellen, Lese- und Schreibfunktionen, **die Sperre aus 7.1 an einer Stelle** |
-| `app/main.py` | die Endpoints aus Abschnitt 9, dazu die Lücke im Seitenwähler |
-| `app/poller.py` | `next_run_time` (8.1), zweiter Auffrischjob |
-| `scripts/aip_bestand.py` | die Lücke aus 7.2 |
+| `app/ground_charts.py` (neu) | Bahnfarbe, Flächen, Achsen, Zuordnung, Prüfkette, Nordung |
+| `app/runway_ref.py` (neu) | OurAirports-Schwellen, Zwischenspeicher neben der DB |
+| `app/data/ground_chart_kopf/*.png` (neu) | Kopfmuster je Sorte |
+| `app/database.py` | Sperre, `seite_url` in `aip_charts`, zwei neue Tabellen |
+| `app/main.py` | Endpoints, die Lücke im Seitenwähler, die Fehlbenennung `quelle='hand'` |
+| `app/poller.py` | Fälligkeitsmerker, `_aip_karten_geaendert`, zweiter Job |
+| `scripts/aip_bestand.py` | drei der vier Lücken aus 7.2 |
+| `scripts/aip_handpassung.py` | prüfen, ob er `quelle='hand'` setzt |
 | `scripts/ground_chart_bestand.py` (neu) | Erstbefüllung und Auffrischung |
-| `scripts/ground_chart_probe.py` (neu) | der Prototyp der Vorabprobe, als Beleg der Messwerte aus Abschnitt 2 |
+| `scripts/ground_chart_probe.py` | liegt bereits im Repo, Beleg der Messwerte |
 | `app/static/index.html` | Ebene, Automatik, Marke |
 | `app/static/admin.html` | Liste, Handpassung, Vorschläge |
+| `app/CHANGELOG.json` | je ein Eintrag, `"highlight": false` |
+| `tests/test_handpassung_schutz.py` (neu) | die Sperre, für beide Kartentypen |
 | `tests/test_ground_charts.py` (neu) | Bildanalyse und Prüfkette |
 | `tests/test_ground_chart_api.py` (neu) | Endpoints |
-| `tests/test_handpassung_schutz.py` (neu) | **die Sperre aus 7.1, für beide Kartentypen** |
+| `tests/test_aip_ui.py` | nachziehen, siehe 10.1 |
+
+**Das Blatt braucht einen eigenen Ablageort.** `<db>/aip/<ICAO>.png` ist von den
+Sichtflugkarten belegt; ein Ground Chart mit derselben ICAO überschriebe sie. Vorgesehen ist
+`<db>/aip_ground/<ICAO>.png`.
+
+**`scripts/` muss weiter ins Image.** Der Dockerfile-Kommentar hält fest, dass das nur wegen
+`from scripts.aip_bestand import lauf` geschieht und ein Fehlen **lautlos** scheitert, weil
+der Job jede Exception schluckt. Für den zweiten Job gilt dasselbe.
 
 ---
 
@@ -512,11 +720,12 @@ jemand auf einer Karte ablesen kann.
 
 - **Keine neue Abhängigkeit.** Pillow, httpx, airportsdata, APScheduler sind vorhanden.
 - **Echte Namen:** `init_db(db_path: str)` nimmt einen Pfad, `get_connection(db_path: str)`
-  (es gibt kein `get_conn`), `settings.DB_PATH` (es gibt kein `settings.DATEN_PFAD`).
+  (es gibt kein `get_conn`), `settings.DB_PATH`. `broadcast_sse` ist eine **Methode am
+  Poller**; im Endpoint wird `_aip_karten_geaendert(request)` benutzt.
 - **Es gibt kein `tests/conftest.py`.** Fixtures je Testdatei, DB über `tmp_path`.
 - `conn = get_connection(...)` / `try` / `finally: conn.close()`. `with conn` ist in sqlite3
   eine Transaktion, kein Close.
-- Deutsche Bezeichner und Kommentare im neuen Modul.
+- Deutsche Bezeichner und Kommentare in neuen Modulen.
 - **`"highlight": false`** in jedem Changelog-Eintrag, ohne Ausnahme.
 - Kein `localStorage` im Frontend — `_prefLies` / `_prefSchreib`.
 - Frontend-Tests binden an Deklarationen, nicht an Kommentare.
@@ -525,17 +734,19 @@ jemand auf einer Karte ablesen kann.
 
 ## 14. Offene Risiken
 
-1. **Die Ausbeute ist heute zu klein.** Zwei von rund zehn Blättern unter 15 m. Der Plan muss
-   EDDH (29,6 m) und die Rollkarte von EDDM (74 m) untersuchen — beide haben zwei erkannte
-   Bahnen, es liegt also nicht an fehlenden Passpunkten. Wenn sich zeigt, dass die
-   abgetasteten Enden systematisch neben den Schwellen liegen (Stopways und Blast Pads sind
-   in derselben Farbe gezeichnet), ändert das Abschnitt 5.4.
+1. **Die Ausbeute ist heute zu klein.** Zwei von rund zehn Blättern unter 15 m. Die
+   wahrscheinlichste Ursache steht in 5.4: Stopways und Blast Pads schließen gleichfarbig an
+   die Bahn an und werden immer mitgemessen — der Malfehler ist additiv und trifft kurze
+   Bahnen prozentual härter. Das erklärt zwanglos, warum EDDH (29,6 m) und die EDDM-Rollkarte
+   (74 m) knapp danebenliegen, statt grob falsch zu sein. **Zu prüfen, bevor der Apparat
+   gebaut wird.**
 2. **Der Kopfvergleich ist noch nicht vermessen** (4.2).
-3. **Die Rollkarten mit drei Blättern** (EDDV) liefern nach dieser Spec ein Blatt und
-   verwerfen zwei. Ob das brauchbar ist, weiß erst der Nutzer im Sim.
+3. **Die Rollkarten mit drei Blättern** (EDDV) liefern ein Blatt und verwerfen zwei. Ob das
+   brauchbar ist, weiß erst der Nutzer im Sim.
 4. **OurAirports ist eine Fremdquelle ohne Zusage.** Fällt sie aus, sind neue Passungen
-   unmöglich; bestehende bleiben unberührt. Die Datei gehört deshalb zwischengespeichert,
-   wie es `scripts/nearby_airports.py` bereits tut.
-5. **Der reparierte Auffrischjob fasst 446 Sichtflugkarten an**, sobald er läuft. Er darf
-   erst zusammen mit der Sperre aus Abschnitt 7 in Betrieb gehen, sonst tut er beim ersten
-   Lauf genau das, was der Nutzer verboten hat.
+   unmöglich; bestehende bleiben unberührt.
+5. **Der reparierte Auffrischlauf fasst 446 Sichtflugkarten an**, sobald er läuft. Er darf
+   erst zusammen mit Abschnitt 7 in Betrieb gehen.
+6. **Die 180°-Frage ist bei Querdruck mit symmetrischen Parallelbahnen unentscheidbar**
+   (5.7 Punkt 4). Ein solcher Platz bekommt keine Karte. Unter den 61 Kandidaten ist noch
+   nicht ausgezählt, ob es ihn gibt.
