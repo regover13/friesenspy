@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.0.4",
+    "date": "2026-08-30",
+    "highlight": false,
+    "title": "Das Kniebrett findet sich wieder selbst",
+    "items": [
+      "\u2708\ufe0f Behoben: Im Kniebrett fehlten mitunter das eigene Flugzeug, der Kompass, der Zentrieren-Knopf und die Windanzeige \u2014 alle vier h\u00e4ngen an der eigenen Position, und die kam nicht an. Die App fragt sie beim Start ab, und das Tablet startet zusammen mit dem Flug: Waren die Werte da noch nicht bereit, gab sie auf und versuchte es f\u00fcr den Rest des Fluges kein einziges Mal wieder. Jetzt legt sie nur eine kurze Pause ein.",
+      "\ud83d\udce6 Daf\u00fcr ist die Paket-Version 2.2.0 n\u00f6tig \u2014 das Kniebrett weist selbst darauf hin, wenn im Community-Ordner noch ein \u00e4lteres liegt.",
+      "\ud83d\udd0d Ein solcher Ausfall wird jetzt gemeldet statt verschwiegen. Von au\u00dfen war er bisher nicht davon zu unterscheiden, dass der Simulator gerade nichts liefert."
+    ]
+  },
+  {
     "version": "14.0.3",
     "date": "2026-08-30",
     "highlight": false,

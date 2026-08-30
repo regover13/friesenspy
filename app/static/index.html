@@ -7873,6 +7873,18 @@ function _initPanelShellKanal() {
       _diagnoseMitVergleichMelden('sim-verkehr-start', d.befund || {});
       return;
     }
+    // Zustand der Positionsbruecke (ab Paket 2.2.0). Bis dahin gab die Bruecke lautlos auf,
+    // und von aussen war "der Sim liefert nichts" nicht von "wir fragen gar nicht mehr" zu
+    // unterscheiden -- beide Male stand in der Diagnose nur `simPositionDa: false`. Genau das
+    // hat am 30.08.2026 die Suche gekostet: Auf der Karte fehlten eigenes Flugzeug, Kompass,
+    // Zentrieren-Knopf und Wind, waehrend Ping/Pong und der Verkehrsteil gesund meldeten.
+    // Ein aelteres Paket schickt diese Nachricht nicht; dann bleibt es beim alten Bild.
+    if (d.art === 'position-bruecke') {
+      if (typeof window._panelDiag === 'function') {
+        window._panelDiag('position-bruecke', d.befund || {});
+      }
+      return;
+    }
     if (d.art === 'sim-verkehr') {
       const liste = Array.isArray(d.liste) ? d.liste : [];
       _simVerkehr = { ts: Date.now(), liste: liste };

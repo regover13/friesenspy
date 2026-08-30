@@ -2717,3 +2717,85 @@ def test_ebenen_diagnose_laeuft_nach_dem_zusatzhaken():
     Leaflet selbst setzt."""
     assert (INDEX.index("_schilderSchalterAnhaengen(liveMap, liveEbenen)")
             < INDEX.index("_diagEbenenAuswahl(liveMap, liveEbenen)"))
+
+
+# ==========================================================================================
+#  Die Positionsbruecke darf nicht endgueltig aufgeben (Nutzer-Fund 30.08.2026)
+# ==========================================================================================
+#
+# Im Flug fehlten das eigene Flugzeug, der Kompass, der Zentrieren-Knopf und die Windanzeige.
+# Alle vier haengen an der Eigenposition (`navi-weg`), und die kam nicht an: `simPositionDa:
+# false`, `quelle: "keine"` -- bei gleichzeitig `shellAntwortet: true` und `viewListener:
+# "angemeldet"`, weil Ping/Pong und der Verkehrsteil ueber andere Pfade laufen.
+#
+# Ursache in der alten Fassung: Fehlte `SimVar` beim ERSTEN Versuch, setzte die App
+# `positionFehler = POSITION_MAX_FEHLER`, und `positionTakt` stieg fuer die restliche Sitzung
+# aus. Zurueckgesetzt wurde der Zaehler nur bei einem erfolgreichen Senden -- das danach nie
+# wieder stattfand.
+#
+# Das ist kein Randfall: **Das Kniebrett startet automatisch mit dem Flug**, die erste Abfrage
+# faellt also regelmaessig mitten ins Laden. Der Nutzer hat keinen Handgriff, das zu umgehen;
+# eine Empfehlung "erst laden, dann oeffnen" geht ins Leere.
+
+def _ohne_kommentare(text: str) -> str:
+    """Zeilen- und Blockkommentare entfernen.
+
+    Noetig, weil die verbotene Zuweisung in der ERKLAERUNG steht, warum sie verboten ist
+    ("FRUEHER stand hier ..."). Eine freie Suche findet den Kommentar statt des Codes und
+    laesst den Test scheitern, obwohl der Code stimmt -- beim ersten Anlauf genau so passiert.
+    """
+    return re.sub(r"//[^\n]*", "", re.sub(r"/\*.*?\*/", "", text, flags=re.S))
+
+
+@ohne_panel
+def test_positionsbruecke_gibt_bei_fehlendem_simvar_nicht_endgueltig_auf():
+    """Der Kern des Fehlers: `SimVar` fehlt beim Autostart NOCH, es gibt es nicht etwa gar
+    nicht. Wer hier wieder auf das Maximum setzt, schaltet die Bruecke fuer den ganzen Flug ab."""
+    stelle = PANEL_TSX.index("private positionSenden(")
+    rumpf = _ohne_kommentare(PANEL_TSX[stelle:PANEL_TSX.index("\n  private ", stelle + 10)])
+    assert "typeof sv.GetSimVarValue" in rumpf
+    assert "positionFehler = POSITION_MAX_FEHLER" not in rumpf
+    assert "this.positionFehlgriff(" in rumpf
+
+
+@ohne_panel
+def test_positionstakt_pausiert_statt_zu_enden():
+    """`positionTakt` muss aus der Sperre wieder herausfinden -- ohne diesen Weg bleibt der
+    Zaehler auf dem Maximum stehen, denn zurueckgesetzt wird er nur beim Senden."""
+    stelle = PANEL_TSX.index("private positionTakt(")
+    rumpf = _ohne_kommentare(PANEL_TSX[stelle:PANEL_TSX.index("\n  /** @inheritdoc */", stelle)])
+    assert "POSITION_PAUSE_MS" in rumpf
+    # Der Ausweg: nach der Pause faellt der Zaehler und es wird erneut versucht.
+    assert "this.positionFehler = 0" in rumpf
+
+
+@ohne_panel
+def test_positionsbruecke_meldet_ihren_ausfall():
+    """Der eigentliche Fortschritt. Vorher war von aussen nicht zu unterscheiden, ob der
+    Simulator nichts liefert oder ob gar nicht mehr gefragt wird -- beide Male stand in der
+    Diagnose nur `simPositionDa: false`."""
+    stelle = PANEL_TSX.index("private positionFehlgriff(")
+    rumpf = _ohne_kommentare(PANEL_TSX[stelle:PANEL_TSX.index("\n  private ", stelle + 10)])
+    assert "positionZustandMelden(" in rumpf
+    assert "positionAusfallGemeldet" in rumpf   # nur EINMAL, sonst flutet es die Diagnose
+    assert '"position-bruecke"' in PANEL_TSX
+
+
+@ohne_panel
+def test_paketversion_gehoben_und_gleichlaufend():
+    """Die Seite entscheidet an der Paketversion, was das Kniebrett kann. Weicht sie vom
+    Manifest ab, meldet die App eine Fassung, die sie nicht ist."""
+    import json
+    from pathlib import Path
+    manifest = json.loads(
+        (Path(__file__).resolve().parents[1] / "msfs-panel" / "PackageSources" / "FriesenSpy"
+         / "manifest.json").read_text(encoding="utf-8"))
+    assert 'const PAKET_VERSION = "2.2.0"' in PANEL_TSX
+    assert manifest["package_version"] == "2.2.0"
+
+
+def test_seite_nimmt_den_brueckenzustand_entgegen():
+    """Ohne diesen Zweig verpufft die neue Meldung der App und landet nie in panel_diag."""
+    assert "d.art === 'position-bruecke'" in INDEX
+    stelle = INDEX.index("d.art === 'position-bruecke'")
+    assert "_panelDiag('position-bruecke'" in INDEX[stelle:stelle + 400]

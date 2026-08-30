@@ -36,7 +36,7 @@ const DEVICE_KEY = "friesenspy_device";
  * WICHTIG fuer die Auswertung auf der Seite: Ein Paket VOR 2.0.0 schickt dieses Feld gar
  * nicht. Sein Fehlen ist deshalb kein Fehler, sondern die Aussage "aelter als 2.0.0".
  */
-const PAKET_VERSION = "2.1.0";
+const PAKET_VERSION = "2.2.0";
 
 /**
  * Zufaellige Geraete-ID erzeugen -- oder "" , wenn das nicht sicher moeglich ist.
@@ -121,8 +121,30 @@ interface PanelNachricht {
  */
 const POSITION_INTERVALL_MS = 500;
 
-/** Nach so vielen Fehlgriffen in Folge gibt die Positionsabfrage auf. */
+/** Nach so vielen Fehlgriffen in Folge legt die Positionsabfrage eine Pause ein. */
 const POSITION_MAX_FEHLER = 5;
+
+/**
+ * Wie lange die Positionsabfrage nach zu vielen Fehlgriffen pausiert, bevor sie es WIEDER
+ * versucht.
+ *
+ * Bis zum 30.08.2026 gab es diese Pause nicht: Der Zaehler blieb auf dem Maximum stehen und
+ * `positionTakt` stieg fuer die restliche Sitzung aus. Zurueckgesetzt wurde er nur bei einem
+ * erfolgreichen Senden -- das nach dem Ausstieg nie wieder stattfand. Ein einziger
+ * unguenstiger Moment schaltete die Bruecke also dauerhaft ab.
+ *
+ * Genau dieser Moment ist hier der Normalfall und kein Ausreisser: **Das Kniebrett startet
+ * automatisch mit dem Flug**, also waehrend geladen wird. `SimVar` ist dann haeufig noch
+ * nicht bereit. Der Nutzer hat keinen Handgriff, mit dem er das umgehen koennte -- er kann
+ * die App nicht "spaeter" oeffnen. Also muss der Code den fruehen Start aushalten.
+ *
+ * Beobachtet am 30.08.2026 im Flug: `simPositionDa: false`, `quelle: "keine"`, dabei
+ * `shellAntwortet: true` und `viewListener: "angemeldet"` -- Ping/Pong und der Verkehrsteil
+ * laufen ueber andere Pfade und sahen deshalb gesund aus. Auf der Karte fehlten das eigene
+ * Flugzeug, der Kompass, der Zentrieren-Knopf und die Windanzeige (alle vier haengen an der
+ * Eigenposition, s. `navi-weg` in index.html).
+ */
+const POSITION_PAUSE_MS = 10000;
 
 /**
  * Spaetestens nach dieser Zeit wird auch eine UNVERAENDERTE Position gemeldet.
@@ -240,6 +262,10 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
 
   private letztePositionMs = 0;
   private positionFehler = 0;
+  /** Wann die Pause nach zu vielen Fehlgriffen begann (0 = keine Pause). */
+  private positionPauseSeitMs = 0;
+  /** Ist der Ausfall schon gemeldet? Einmal genuegt, sonst flutet er die Diagnose. */
+  private positionAusfallGemeldet = false;
   private letzteMeldung = "";
   /** Wann zuletzt wirklich gesendet wurde (nicht nur geprueft) -- fuer den Herzschlag. */
   private letztesSendenMs = 0;
@@ -382,7 +408,12 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     try {
       const sv = (globalThis as { SimVar?: { GetSimVarValue(n: string, u: string): number } }).SimVar;
       if (!sv || typeof sv.GetSimVarValue !== "function") {
-        this.positionFehler = POSITION_MAX_FEHLER;   // gibt es hier nicht, gar nicht erst weiter versuchen
+        // FRUEHER stand hier `this.positionFehler = POSITION_MAX_FEHLER` -- ein endgueltiges
+        // Aus beim allerersten Versuch. Das war die Fehlannahme, SimVar sei entweder da oder
+        // gebe es "hier" gar nicht. Tatsaechlich ist es beim Autostart mit dem Flug schlicht
+        // NOCH NICHT da; wenige Sekunden spaeter schon. Ein fehlendes SimVar ist deshalb ein
+        // gewoehnlicher Fehlgriff wie jeder andere und faellt unter dieselbe Pausenregel.
+        this.positionFehlgriff("SimVar noch nicht verfuegbar");
         return;
       }
       const lat = sv.GetSimVarValue("PLANE LATITUDE", "degree latitude");
@@ -442,11 +473,19 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
         "*",
       );
       this.positionFehler = 0;
-    } catch (_e) {
+      this.positionPauseSeitMs = 0;
+      // Lief es wieder an, nachdem es gemeldet gestanden hatte, gehoert auch DAS in die
+      // Diagnose -- sonst steht dort ein Ausfall ohne Ende und sieht schlimmer aus als er war.
+      if (this.positionAusfallGemeldet) {
+        this.positionAusfallGemeldet = false;
+        this.positionZustandMelden({ zustand: "laeuft wieder" });
+      }
+    } catch (e) {
       // Nie die App an der Positionsabfrage scheitern lassen -- sie ist eine Zugabe, nicht
-      // die Hauptsache. Nach ein paar Fehlgriffen in Folge hoert sie von selbst auf, statt
-      // in jedem Bild erneut in denselben Fehler zu laufen.
-      this.positionFehler++;
+      // die Hauptsache. Nach ein paar Fehlgriffen in Folge legt sie eine Pause ein, statt in
+      // jedem Takt erneut in denselben Fehler zu laufen. Eine PAUSE, kein Ende: s.
+      // POSITION_PAUSE_MS.
+      this.positionFehlgriff(String(e));
     }
   }
 
@@ -729,9 +768,52 @@ class FriesenSpyView extends AppView<RequiredProps<AppViewProps, "bus">> {
     this.verkehrTakt(time);
   }
 
+  /**
+   * Einen Fehlgriff der Positionsabfrage verbuchen.
+   *
+   * Beim Erreichen der Grenze beginnt eine Pause und der Ausfall wird EINMAL gemeldet. Das
+   * Melden ist der eigentliche Fortschritt: Vorher gab die Bruecke lautlos auf, und von
+   * aussen war der Unterschied zwischen "der Sim liefert nichts" und "wir fragen gar nicht
+   * mehr" nicht zu sehen. Genau diese Sorte stiller Ausstieg hat hier schon einmal Tage
+   * gekostet (s. Kommentar bei `sim-verkehr-start`).
+   */
+  private positionFehlgriff(grund: string): void {
+    this.positionFehler++;
+    if (this.positionFehler < POSITION_MAX_FEHLER || this.positionAusfallGemeldet) {
+      return;
+    }
+    this.positionAusfallGemeldet = true;
+    this.positionZustandMelden({ zustand: "pausiert", grund: grund.slice(0, 200) });
+  }
+
+  /** Zustand der Positionsbruecke an die Seite melden; sie legt ihn in panel_diag ab. */
+  private positionZustandMelden(befund: Record<string, unknown>): void {
+    const ziel = this.rahmenRef.instance ? this.rahmenRef.instance.contentWindow : null;
+    if (!ziel) {
+      return;
+    }
+    try {
+      ziel.postMessage({ quelle: "friesenspy-shell", art: "position-bruecke", befund: befund }, "*");
+    } catch (_e) {
+      // Eine Diagnose, die selbst zum Fehler wird, waere die schlechteste aller Varianten.
+    }
+  }
+
   private positionTakt(time: number): void {
     if (this.positionFehler >= POSITION_MAX_FEHLER) {
-      return;
+      // Pausieren statt aufgeben. Die alte Fassung stieg hier fuer die restliche Sitzung aus
+      // -- toedlich, weil das Kniebrett automatisch mit dem Flug startet und die erste
+      // Abfrage deshalb regelmaessig ins Laden faellt.
+      if (this.positionPauseSeitMs === 0) {
+        this.positionPauseSeitMs = time;
+        return;
+      }
+      if (time - this.positionPauseSeitMs < POSITION_PAUSE_MS) {
+        return;
+      }
+      // Pause vorbei: der Zaehler faellt, es wird wieder versucht.
+      this.positionFehler = 0;
+      this.positionPauseSeitMs = 0;
     }
     if (time - this.letztePositionMs < POSITION_INTERVALL_MS) {
       return;
