@@ -1527,6 +1527,28 @@
        und laesst den uebrigen Text stehen -- die Namensnennung der Kartenquellen ist
        Lizenzbedingung und darf nicht verschwinden. */
     html.vr-panel .leaflet-bottom.leaflet-left { z-index: 1100; }
+
+    /* Dieselbe Behandlung fuer die Ebenen-Auswahl, aus demselben Grund und nach demselben
+       Muster (Nutzer-Wunsch 30.08.2026: "wir haben den Windpfeil bereits ueber diesen DFS,
+       OpenStreetMap CARTO Banner geblendet -- sorge auch dafuer, dass das Kartenlayer
+       darueber liegt").
+
+       Aufgeklappt reicht die Liste im Kniebrett bis an den unteren Kartenrand: gemessen
+       endet der Kasten bei y=489 -- exakt dort, wo die Karte aufhoert -- und die untersten
+       Eintraege liegen bei y=453 und y=471. Genau dort laeuft die Herkunftsangabe entlang,
+       die hier ueber die volle Breite umbricht. Sie hat den letzten Eintrag ueberdeckt, und
+       damit war "Radar Label" nicht anzutippen, obwohl es sichtbar war.
+
+       Wie oben wird die ECKE angehoben, nicht der Kasten: Leaflet gibt jeder Ecke
+       `z-index: 1000` und macht damit einen eigenen Stapel-Zusammenhang auf -- ein hoeherer
+       Wert am Kind darin bliebe wirkungslos. Bei Gleichstand gewinnt die spaetere Ecke im
+       Dokument, und die Herkunftsangabe sitzt unten rechts, also nach oben rechts.
+
+       Die Angabe bleibt lesbar: Verdeckt wird sie nur, solange die Liste aufgeklappt ist,
+       und die klappt man zum Umschalten auf -- nicht zum Lesen. Zugeklappt ist der Knopf
+       44x44 Pixel und beruehrt die Zeile gar nicht. Die Namensnennung der Kartenquellen ist
+       Lizenzbedingung und darf nicht dauerhaft verschwinden. */
+    html.vr-panel .leaflet-top.leaflet-right { z-index: 1100; }
     .wind-bar .wind-feld {
       display: flex;
       align-items: center;
@@ -2047,6 +2069,19 @@
     }
     html.vr-panel input.leaflet-control-layers-selector[type="radio"] { border-radius: 50%; }
     html.vr-panel .leaflet-control-layers-selector:checked { background: var(--green); }
+    /* Gesperrt muss man SEHEN. Leaflet sperrt die Checkbox einer Ebene, die im aktuellen
+       Zoom nichts liefern kann (`_checkDisabledLayers`), und das eingebaute Kaestchen zeigt
+       das von selbst an -- unseres nicht, es ist ja selbst gezeichnet. Genau daran hat der
+       Nutzer am 30.08.2026 einen halben Tag verloren: OpenAIP war ab Zoom 15 gesperrt und
+       sah dabei aus wie jede andere Ebene, die sich schalten laesst.
+
+       Die Ursache dieses einen Falls ist behoben (s. _makeAIPOverlay), aber die Anzeige
+       gehoert trotzdem hierher: Die naechste Ebene mit einer Zoom-Grenze bekaeme sonst
+       dasselbe stumme Verhalten. */
+    html.vr-panel .leaflet-control-layers-selector:disabled { border-color: #44637a; }
+    html.vr-panel .leaflet-control-layers label:has(.leaflet-control-layers-selector:disabled) {
+      opacity: 0.45;
+    }
     /* Die Zeilen der Ebenen-Auswahl sind im Cockpit Tippziele, keine Mauszeiger-Ziele. */
     html.vr-panel .leaflet-control-layers label { min-height: 32px; padding: 4px 0; }
 
@@ -4073,6 +4108,9 @@ const TILE_ATTR = TILE_DARK_ATTR;
 // nachgemessen: z11 nur Platzsymbol und Lufträume, z12 mit Platzrunden, z13/z14 liefern
 // 1233 Byte -- die leere Kachel. 12 ist also wirklich die Obergrenze, mehr geht nicht.
 const OFM_NATIVE_MAX_ZOOM = 12;
+// Bis hierher liefert OpenAIP Kacheln. Als `maxNativeZoom` gesetzt, nicht als `maxZoom` --
+// warum, steht ausfuehrlich bei _makeAIPOverlay.
+const AIP_NATIVE_MAX_ZOOM = 14;
 
 // ==========================================================================
 //  ZOOM-KNOEPFE: GEZEICHNET STATT GESCHRIEBEN
@@ -7047,12 +7085,30 @@ function closeChangelogModal() {
 
 function _changelogEscHandler(e) { if (e.key === 'Escape') closeChangelogModal(); }
 
+// OpenAIP liefert Kacheln bis Zoom 14. Das gehoert als `maxNativeZoom` gesagt, NICHT als
+// `maxZoom` -- genau wie beim OFM-Layer oben, der dieselbe Lage hat (s. OFM_NATIVE_MAX_ZOOM).
+//
+// Der Unterschied ist keine Feinheit, er war ein handfester Fehler: Leaflets Ebenen-Auswahl
+// SPERRT die Checkbox einer Ebene, die im aktuellen Zoom nichts liefert --
+// `_checkDisabledLayers` setzt `input.disabled = zoom > layer.options.maxZoom`. Mit
+// `maxZoom: 14` liess sich OpenAIP ab Zoom 15 also weder ein- noch ausschalten.
+//
+// Im Kniebrett war das nicht einmal zu sehen: Die Kaestchen sind dort selbst gezeichnet
+// (`html.vr-panel .leaflet-control-layers-selector`, `appearance: none`), weil Coherent GT
+// native Formularelemente nicht brauchbar malt -- und ein selbst gezeichnetes Kaestchen hat
+// keinen Gesperrt-Zustand. Der Nutzer sah ein voellig normales Kaestchen, das auf nichts
+// reagierte (Fund 30.08.2026, nach mehreren Fehlspuren: Ueberdeckung, Scrollstand,
+// Merker-Konflikt -- alle falsch).
+//
+// Mit `maxNativeZoom` skaliert Leaflet die Zoom-14-Kachel hoch, statt die Ebene auszuknipsen.
+// Unscharf ist besser als weg, und vor allem bleibt der Haken bedienbar.
 function _makeAIPOverlay() {
   if (!_openaipKey) return null;
   // Deckkraft aus der Konstante, NICHT fest 0.8 -- im Panel laeuft darueber gerade die
   // Gegenprobe der Flacker-Ursache (s. Kommentar bei _BASIS_DECKKRAFT).
   return L.tileLayer(TILE_AIP_URL + _openaipKey, {
-    attribution: TILE_AIP_ATTR, maxZoom: 14, opacity: _AIP_DECKKRAFT,
+    attribution: TILE_AIP_ATTR, maxNativeZoom: AIP_NATIVE_MAX_ZOOM, maxZoom: 19,
+    opacity: _AIP_DECKKRAFT,
   });
 }
 

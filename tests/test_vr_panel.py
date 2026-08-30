@@ -2872,3 +2872,53 @@ def test_ebenen_diagnose_warnt_vor_elementFromPoint_im_kniebrett():
     stelle = INDEX.index("function _diagEbenenAuswahl(")
     block = INDEX[stelle:INDEX.index("\n}\n", stelle)]
     assert "leaflet-map" in block and "imFenster" in block
+
+
+def test_ebenen_auswahl_liegt_ueber_der_herkunftsangabe():
+    """Aufgeklappt reicht die Liste im Kniebrett bis an den unteren Kartenrand (gemessen
+    30.08.2026: Kasten endet bei y=489, Karte ist 489 hoch, unterste Eintraege bei y=453 und
+    y=471). Dort laeuft Leaflets Herkunftsangabe entlang, die hier ueber die volle Breite
+    umbricht -- sie hat den letzten Eintrag ueberdeckt.
+
+    Angehoben wird die ECKE, nicht der Kasten: Leaflet gibt jeder Ecke `z-index: 1000` und
+    macht damit einen eigenen Stapel-Zusammenhang auf; ein hoeherer Wert am Kind darin bliebe
+    wirkungslos. Gleiches Muster wie beim Windpfeil unten links."""
+    assert "html.vr-panel .leaflet-top.leaflet-right { z-index: 1100; }" in INDEX
+    # Der Windpfeil-Fall bleibt bestehen -- beide Ecken brauchen die Anhebung.
+    assert "html.vr-panel .leaflet-bottom.leaflet-left { z-index: 1100; }" in INDEX
+
+
+# ==========================================================================================
+#  Die AIP-Checkbox liess sich beim Hereinzoomen nicht mehr schalten (Nutzer-Fund 30.08.2026)
+# ==========================================================================================
+#
+# Leaflets Ebenen-Auswahl SPERRT die Checkbox einer Ebene, die im aktuellen Zoom nichts
+# liefern kann:
+#
+#     input.disabled = (... zoom < layer.options.minZoom) || (... zoom > layer.options.maxZoom)
+#
+# Der OpenAIP-Layer trug `maxZoom: 14`, war ab Zoom 15 also weder ein- noch auszuschalten.
+# Die Messwerte des Tages passen genau: Die Schaltversuche lagen bei z=15, 16 und 17,
+# waehrend die Ebenen ohne Zoom-Grenze (Platzrunden, Meldepunkte, FSE) durchgingen.
+#
+# Vorher wurden drei falsche Faehrten verfolgt -- Ueberdeckung durch ein anderes Element, der
+# Scrollstand der Liste, ein Konflikt der gemerkten Vorlieben. Keine trug.
+
+def test_aip_ebene_bleibt_beim_hereinzoomen_schaltbar():
+    """`maxNativeZoom` sagt "so weit gibt es Kacheln", `maxZoom` sagt "darueber gibt es mich
+    nicht" -- und nur Letzteres sperrt die Checkbox. Dasselbe Muster wie beim OFM-Layer, der
+    im selben Projekt seit jeher `maxNativeZoom: OFM_NATIVE_MAX_ZOOM, maxZoom: 19` benutzt."""
+    stelle = INDEX.index("function _makeAIPOverlay(")
+    rumpf = _ohne_kommentare(INDEX[stelle:INDEX.index("\n}", stelle)])
+    assert "maxNativeZoom: AIP_NATIVE_MAX_ZOOM" in rumpf
+    # Der springende Punkt: KEIN maxZoom auf Kachel-Reichweite. 19 ist die Kartengrenze.
+    assert "maxZoom: 14" not in rumpf
+    assert "maxZoom: 19" in rumpf
+
+
+def test_gesperrte_ebene_ist_im_kniebrett_zu_erkennen():
+    """Das eingebaute Kaestchen zeigt "gesperrt" von selbst an -- unseres nicht, es ist selbst
+    gezeichnet (`appearance: none`, weil Coherent GT Formularelemente nicht brauchbar malt).
+    Eine Ebene, die nicht reagiert und dabei normal aussieht, kostet Stunden."""
+    assert "html.vr-panel .leaflet-control-layers-selector:disabled" in INDEX
+    assert ".leaflet-control-layers-selector:disabled) {" in INDEX

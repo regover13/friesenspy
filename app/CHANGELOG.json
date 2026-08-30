@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.0.7",
+    "date": "2026-08-30",
+    "highlight": false,
+    "title": "Der Haken mit dem Zoom",
+    "items": [
+      "\ud83d\udee9\ufe0f Behoben: Die Ebene \u201eOpenAIP\u201c lie\u00df sich beim nahen Hereinzoomen weder ein- noch ausschalten. OpenAIP liefert seine Karten nur bis Zoom 14, und der Haken war deshalb ab Zoom 15 gesperrt \u2014 im Kniebrett ohne jedes sichtbare Zeichen. Die Ebene bleibt jetzt schaltbar und wird oberhalb von Zoom 14 vergr\u00f6\u00dfert dargestellt.",
+      "\ud83d\uddfa\ufe0f Im Kniebrett lag der unterste Eintrag der Ebenen-Auswahl unter der Herkunftsangabe der Kartenquellen und lie\u00df sich nicht antippen \u2014 sichtbar, aber nicht bedienbar. Die Liste liegt jetzt dar\u00fcber, wie der Windpfeil unten links auch.",
+      "\ud83d\udc41\ufe0f Eine Ebene, die im aktuellen Zoom nichts zeigen kann, ist im Kniebrett jetzt als gesperrt zu erkennen statt stumm zu bleiben."
+    ]
+  },
+  {
     "version": "14.0.6",
     "date": "2026-08-30",
     "highlight": false,
