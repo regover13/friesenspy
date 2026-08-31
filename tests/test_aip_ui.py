@@ -45,7 +45,9 @@ def test_vorliebe_wird_vor_der_control_gesetzt():
 
 
 def test_daten_kommen_vom_metadaten_endpunkt():
-    assert "'/api/aip-charts'" in INDEX
+    """Seit dem Rueckbau (31.08.2026) liefert EIN Endpunkt beide Kartentypen; das Frontend
+    filtert nach k.sorte. Der alte '/api/aip-charts' gibt es nicht mehr."""
+    assert "'/api/aip-charts-dfs'" in INDEX
 
 
 def test_merker_laeuft_ueber_den_server_nicht_localstorage():
@@ -279,10 +281,15 @@ def test_regler_erscheint_nur_bei_liegendem_blatt():
 
     Ist die Ebene an, liegt aber gerade kein Blatt, gaebe es nichts zu regeln -- ein
     Dauerregler kostete im Cockpit Platz fuer etwas, das nichts tut.
+
+    Seit dem 31.08.2026 zaehlt JEDES Blatt, nicht nur die Sichtflugkarte: Lag eine
+    Flugplatzkarte allein, verschwand der Regler vorher ausgerechnet dann, wenn es etwas
+    zu regeln gab.
     """
     start = INDEX.index("function _aipDeckkraftAnzeigen(")
-    abschnitt = INDEX[start:start + 400]
-    assert "classList.toggle('deckkraft-an', !!_aipKarteAktiv)" in abschnitt
+    abschnitt = INDEX[start:start + 700]
+    assert "!!_aipKarteAktiv || !!_groundAktiv" in abschnitt
+    assert "classList.toggle('deckkraft-an', liegt)" in abschnitt
     # ... und beide Wege durch _aipKarteZeigen muessen ihn nachziehen, auch der frueh
     # abbrechende fuer "kein Blatt".
     zeigen = INDEX.index("function _aipKarteZeigen(")

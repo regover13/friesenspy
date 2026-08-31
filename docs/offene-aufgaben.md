@@ -8,49 +8,38 @@ und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
 ---
 
-## Sichtflugkarten: es fehlen noch zwei
+## AIP-Kartenblätter: was noch von Hand durchzusehen ist
 
-Stand 25.08.2026 abends, aus der Datenbank: **444 von 446 gepasst**. Offen sind nur noch
-**EDDN** und **EDMR**.
+Stand 31.08.2026, aus der Datenbank. **Die beiden früher hier offenen Sichtflugkarten (EDDN,
+EDMR) sind gepasst** — der Nutzer hat sie von Hand gesetzt.
 
-**Die frühere Liste "die letzten neun" war falsch — in beide Richtungen.** Sie stand hier
-noch mit 437 und nannte neun Karten als grundsätzlich unlösbar, darunter EDFH, EDDF, EDDH,
-EDDS, EDDG, EDLW und EDCQ. Sieben davon hat der Nutzer inzwischen von Hand gesetzt. Die
-Begründung, die hier stand ("große Verkehrsflughäfen mit eigenem Kartentyp, Bewegungskarte
-ohne Gradnetz"), war zudem sachlich falsch: EDFH etwa trägt auf Seite 3 eine reguläre,
-genordete Sichtflugkarte mit vollem Gradnetz, EDDN auf Seite 3 ebenfalls. Die Einordnung
-war aus dem *Scheitern der Automatik* erschlossen, nicht aus dem Blatt — geprüft hatte ich
-nur die abgelegte Seite, nicht das Kapitel.
+Nach dem Rückbau der Automatik (31.08.2026) sagt der Status, ob ein **Mensch** die Karte
+angesehen hat. Danach steht:
 
-**Lehre für die nächste solche Liste:** „die Automatik schafft es nicht" und „es gibt keine
-Karte" sind zwei verschiedene Aussagen. Wer die zweite schreibt, muss die Kapitelseiten
-angesehen haben.
+| Sorte | Status | Zahl | Was zu tun ist |
+|---|---|---|---|
+| Sichtflugkarte | `gepasst` | 171 | nichts |
+| Sichtflugkarte | `auto` | 275 | durchsehen; bestätigen macht daraus `gepasst` |
+| Flugplatzkarte | `auto` | 30 | dito — von Claude gesetzt, vom Nutzer ungeprüft |
+| Flugplatzkarte | `offen` | 10 | Blatt liegt vor, Lage fehlt |
+| Rollkarte | `auto` | 38 | durchsehen |
+| Rollkarte | `offen` | 32 | Blatt liegt vor, Lage fehlt |
 
-### EDDN — quer gedruckt
+**`auto` heißt ungeprüft, nicht falsch.** Der Status stirbt aus, sobald der Nutzer eine Karte
+durchsieht; neu entsteht er nur, wenn er Claude eine Passung aufträgt.
 
-Seite 3 ist eine reguläre Sichtflugkarte, um 90° gedreht gesetzt. Genordet wird sie mit
-`--drehen 270`. Die Handpassung ist gerechnet und besteht alle sieben Proben:
+**Die 336 Plätze ohne Flugplatzkarten-Zeile stehen als „nicht nachgesehen".** Der alte
+Bestandslauf hat sie durchaus geprüft und dort kein Blatt in Flugplatzkarten-Farbe gefunden —
+dieses Ergebnis wurde aber nie festgehalten, es fiel mit der Automatik weg. Das ist kein
+Datenverlust, sondern die ausdrückliche Absicht: „Vielleicht finde ich ja eine geeignete
+Karte, die du nicht gefunden hast." Wer nachsieht und keine findet, hält das jetzt mit
+„keine passende Seite" fest — dann steht dort `nicht gefunden` statt „nicht nachgesehen".
 
-```
-Breite 299=49:35, 518=49:30, 737=49:25
-Länge  192=10:50, 334=10:55, 476=11:00, 618=11:05, 760=11:10, 903=11:15, 1045=11:20
-Rahmen 85,238 .. 1147,817   Residuen 0,00 px / 0,67 px   cos-Probe 49,52° gegen 49,50°
-```
-
-Warum die Automatik dort scheitert, ist gemessen und gehört zum Rasterlücken-Thema: Die
-beschrifteten Ticks fehlen in der Tickliste, weil die Zahl den Strich unterbricht. Damit
-fällt die Belegung unter 0,75 und `raster()` greift das Drei- bzw. Doppelte des echten
-Abstands (131,25 statt 43,75 px; 56,89 statt 28,44 px).
-
-### EDMR — Koordinate
-
-`airportsdata` kennt EDMR nicht, wie 28 weitere der 446 Plätze. Der wöchentliche
-Bestandslauf fällt für sie seit jeher auf OpenAIP zurück (`platz_koordinate`); die
-Admin-Endpunkte taten es nicht und antworteten mit **409 „Koordinate des Platzes
-unbekannt"** — ausgerechnet bei den Plätzen, für die man den Seitenwähler am ehesten
-braucht. Behoben: beide Endpunkte benutzen jetzt dieselbe Auflösung wie der Job.
-
-EDMRs Karte ist Seite 2 (Ottobrunn HEL, 1:50 000, genordet, Ticks im Minutenabstand).
+**Die 13 Plätze mit auffälligen OurAirports-Längen** (EDAK, EDAZ, EDBH, EDPH, EDSI, EDMB,
+EDLA, EDQA, EDNG, EDQC, EDRB, EDLP, dazu EDDN/EDDS) wurden beim maschinellen Passen
+übersprungen, weil dort Stopways in derselben Grauabstufung wie die Bahn gezeichnet sind und
+die Längenmessung verfälschten (EDDV: 2784 m für eine 2340-m-Bahn). Von Hand ist das kein
+Hindernis — man klickt die Schwellen, statt sie zu messen.
 
 ## Forum
 

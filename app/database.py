@@ -345,6 +345,9 @@ CREATE TABLE IF NOT EXISTS airport_links (
     updated_at    TEXT
 );
 
+-- STILLGELEGT seit 31.08.2026: abgeloest von aip_charts_dfs. Die Tabelle bleibt stehen,
+-- bis der neue Stand geprueft ist (Spec 3.1) -- sie traegt 446 Zeilen, darunter 171
+-- Handpassungen, aus denen die Migration liest.
 CREATE TABLE IF NOT EXISTS aip_charts (
     icao          TEXT PRIMARY KEY,     -- ICAO-Code (Grossbuchstaben)
     bild_hash     TEXT NOT NULL,        -- SHA-256 des Originalblatts, erkennt den AIRAC-Wechsel
@@ -366,14 +369,11 @@ CREATE TABLE IF NOT EXISTS aip_charts (
     geprueft_am   TEXT
 );
 
--- Vorschlaege: Automatikfunde zu handgepassten Karten, die NICHT eingespielt werden.
---
--- Verwerfen loescht nicht, es setzt zustand='verworfen'. Ein DELETE waere wirkungslos:
--- UNIQUE verhindert Doppel nur, solange die Zeile existiert -- der naechste Wochenlauf
--- faende denselben unveraenderten quell_hash und legte den Vorschlag sofort wieder an.
--- Die Liste waere nach dem ersten Verwerfen dauerhaft unaufraeumbar. Ein Grabstein haelt
--- den Fund fern, bis sich das Rohblatt wirklich aendert.
 -- Flugplatzkarten (Aerodrome Chart / Ground Movement Chart).
+--
+-- STILLGELEGT seit 31.08.2026: abgeloest von aip_charts_dfs. Die Tabelle bleibt stehen,
+-- bis der neue Stand geprueft ist (Spec 3.1) -- sie traegt 110 Zeilen, aus denen die
+-- Migration liest.
 --
 -- Eigene Tabelle, nicht eine Erweiterung von aip_charts: Die Felder sind zu verschieden.
 -- Eine Flugplatzkarte hat keinen Rahmen, keine Ticks und keine Gradnetz-Beschriftung,
@@ -471,6 +471,16 @@ CREATE TABLE IF NOT EXISTS job_laeufe (
     zuletzt       TEXT NOT NULL
 );
 
+-- STILLGELEGT seit 31.08.2026. Vorschlaege waren Automatikfunde zu handgepassten Karten,
+-- die NICHT eingespielt, sondern zur Pruefung vorgelegt wurden. Ohne Automatik gibt es
+-- nichts vorzuschlagen; an ihre Stelle tritt der Status 'pruefen' in aip_charts_dfs.
+--
+-- Ihr Grabstein-Gedanke lebt dort weiter: Auch "verwerfen" zieht den gesehener_hash nach.
+-- Sonst faende der naechste Wochenlauf denselben abweichenden Hash und legte die Zeile
+-- sofort wieder vor -- die Liste waere nach dem ersten Verwerfen dauerhaft unaufraeumbar.
+--
+-- Die Tabelle bleibt stehen, bis der neue Stand geprueft ist (Spec 3.1). Ein DROP waere
+-- der einzige Weg, sie loszuwerden, und ist eine eigene, bewusste Entscheidung.
 CREATE TABLE IF NOT EXISTS aip_chart_vorschlaege (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     art           TEXT NOT NULL,        -- 'sichtflug' oder 'ground'
@@ -7111,73 +7121,6 @@ def verwaisen_ground(conn: sqlite3.Connection, icao: str) -> int:
     return conn.execute(
         "UPDATE aip_ground_charts SET status = 'verwaist' WHERE icao = ?",
         (code,)).rowcount
-
-
-def vorschlag_anlegen(conn: sqlite3.Connection, art: str, icao: str, quell_hash: str,
-                      passung: dict, grund: str) -> int:
-    """Automatikergebnis zu einer gesperrten Handpassung ablegen, statt sie zu ueberschreiben.
-
-    ``UNIQUE(art, icao, quell_hash)`` haelt die Liste kurz: Solange dasselbe Rohblatt
-    vorliegt, erscheint der Fund einmal und nicht bei jedem Wochenlauf erneut. Ein bereits
-    VERWORFENER Vorschlag bleibt verworfen -- er wird nicht wieder auf 'offen' gesetzt.
-
-    Rueckgabe ist die id, auch wenn nichts eingefuegt wurde.
-    """
-    code = (icao or "").strip().upper()
-    conn.execute(
-        """INSERT INTO aip_chart_vorschlaege (art, icao, quell_hash, passung, grund,
-                                              zustand, gefunden_am)
-           VALUES (?, ?, ?, ?, ?, 'offen', ?)
-           ON CONFLICT(art, icao, quell_hash) DO NOTHING""",
-        (art, code, quell_hash, json.dumps(passung, sort_keys=True), grund, _now_utc()))
-    zeile = conn.execute(
-        "SELECT id FROM aip_chart_vorschlaege WHERE art=? AND icao=? AND quell_hash=?",
-        (art, code, quell_hash)).fetchone()
-    return int(zeile["id"]) if zeile else 0
-
-
-def get_vorschlaege(conn: sqlite3.Connection, art: str | None = None,
-                    zustand: str = "offen") -> list[dict]:
-    """Vorschlaege, standardmaessig nur die offenen."""
-    bedingungen, werte = [], []
-    if art:
-        bedingungen.append("art = ?"); werte.append(art)
-    if zustand:
-        bedingungen.append("zustand = ?"); werte.append(zustand)
-    wo = ("WHERE " + " AND ".join(bedingungen)) if bedingungen else ""
-    rows = conn.execute(
-        f"""SELECT id, art, icao, quell_hash, passung, grund, zustand, gefunden_am
-            FROM aip_chart_vorschlaege {wo} ORDER BY gefunden_am DESC, icao""",
-        tuple(werte)).fetchall()
-    aus = []
-    for r in rows:
-        d = dict(r)
-        try:
-            d["passung"] = json.loads(d["passung"])
-        except (TypeError, ValueError):
-            d["passung"] = {}
-        aus.append(d)
-    return aus
-
-
-def vorschlag_verwerfen(conn: sqlite3.Connection, id_: int) -> int:
-    """Grabstein setzen statt loeschen.
-
-    Ein DELETE waere wirkungslos: ``UNIQUE`` verhindert Doppel nur, solange die Zeile
-    existiert -- der naechste Wochenlauf faende denselben unveraenderten ``quell_hash`` und
-    legte den Vorschlag sofort wieder an. Die Liste waere nach dem ersten Verwerfen
-    dauerhaft unaufraeumbar.
-    """
-    return conn.execute(
-        "UPDATE aip_chart_vorschlaege SET zustand = 'verworfen' WHERE id = ?",
-        (int(id_),)).rowcount
-
-
-def vorschlag_entfernen(conn: sqlite3.Connection, id_: int) -> int:
-    """Zeile wirklich loeschen -- nach dem Uebernehmen, wo der Grabstein nichts nuetzt:
-    Das Rohblatt ist dann das gueltige, ein erneuter Fund dazu kann nicht entstehen."""
-    return conn.execute(
-        "DELETE FROM aip_chart_vorschlaege WHERE id = ?", (int(id_),)).rowcount
 
 
 def verwaisen(conn: sqlite3.Connection, icao: str) -> int:

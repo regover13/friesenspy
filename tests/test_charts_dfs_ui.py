@@ -135,3 +135,74 @@ def test_fadenkreuz_ueber_dem_kartenblatt():
     block = ADMIN[stelle:stelle + 1200]
     assert "mousemove" in block and "mouseleave" in block
     assert "img.getBoundingClientRect()" in block
+
+
+# ---------------------------------------------------------------------------
+# Task 8: Stapelung und Transparenzregler im Kniebrett (index.html)
+# ---------------------------------------------------------------------------
+INDEX = (Path(__file__).resolve().parents[1] / "app" / "static"
+         / "index.html").read_text(encoding="utf-8")
+INDEX_RUMPF = _ohne_kommentare(INDEX)
+
+
+def test_die_platzkarte_liegt_ueber_der_sichtflugkarte():
+    """Ein um 37 Grad gedrehtes Blatt wird als achsenparalleles Rechteck abgelegt, dessen
+    Ecken durchsichtig sind -- bei EDDL rund die Haelfte der Flaeche. Darunter gehoert die
+    Sichtflugkarte, nicht die nackte Grundkarte (Nutzerentscheidung 31.08.2026)."""
+    z_sicht = int(re.search(r"_Z_SICHTFLUG\s*=\s*(\d+)", INDEX_RUMPF).group(1))
+    z_platz = int(re.search(r"_Z_PLATZKARTE\s*=\s*(\d+)", INDEX_RUMPF).group(1))
+    assert z_platz > z_sicht
+
+
+def test_die_stapelung_haengt_nicht_an_der_einfuegereihenfolge():
+    """bringToFront() kippt, sobald eine Karte nachgeladen wird -- etwa nach dem
+    SSE-Ereignis, das den Kartenbestand neu holt."""
+    assert "bringToFront" not in INDEX_RUMPF
+    for name in ("_Z_SICHTFLUG", "_Z_PLATZKARTE"):
+        assert re.search(rf"zIndex:\s*{name}", INDEX_RUMPF), name
+
+
+def test_die_verdeckungslogik_ist_entfernt():
+    """Mit ihr entfallen die drei Zustaende, die sie noetig gemacht hatte: festgenagelte
+    Sichtflugkarte gegen anlaufende Automatik, abgehakte Ebene ohne Ersatz, geteilter
+    Wegklick-Merker."""
+    assert "_groundVerdecktSichtflug" not in INDEX_RUMPF
+
+
+def test_der_deckkraftregler_erscheint_auch_bei_flugplatzkarten():
+    """Er hing an _aipKarteAktiv; liegt eine Flugplatzkarte, ist der null und der Regler
+    verschwand -- obwohl genau dann etwas zu regeln waere."""
+    stelle = INDEX_RUMPF.index("function _aipDeckkraftAnzeigen")
+    block = INDEX_RUMPF[stelle:stelle + 400]
+    assert "_groundAktiv" in block
+
+
+def test_der_regler_bedient_beide_overlays():
+    """Mit demselben Wert -- zwei verschiedene waeren ein zweiter Regler, und im Cockpit
+    ist ein Regler besser als zwei."""
+    stelle = INDEX_RUMPF.index("function _aipDeckkraftSetzen")
+    block = INDEX_RUMPF[stelle:stelle + 700]
+    assert "_aipKarteOverlay" in block and "_groundOverlay" in block
+
+
+def test_der_kartenzustand_haengt_an_icao_und_sorte():
+    """Sichtflug- und Flugplatzkarte desselben Platzes tragen dieselbe ICAO. Sobald ein
+    Platz Flugplatz- UND Rollkarte hat -- was der Rueckbau ermoeglicht --, ist der
+    Schluessel mehrdeutig und find(k => k.icao === _groundFest) trifft die erste von
+    zweien."""
+    assert "function _groundSchluessel" in INDEX_RUMPF
+    stelle = INDEX_RUMPF.index("function _groundSchluessel")
+    assert "sorte" in INDEX_RUMPF[stelle:stelle + 200]
+    assert "k.icao === _groundFest" not in INDEX_RUMPF
+    assert "k.icao === _groundAktiv" not in INDEX_RUMPF
+
+
+def test_beide_kartentypen_kommen_aus_einem_endpunkt():
+    """Eine Tabelle, ein Endpunkt -- das Frontend filtert nach k.sorte, statt zwei
+    Endpunkte zu befragen."""
+    assert "/api/aip-charts-dfs" in INDEX_RUMPF
+    assert "/api/aip-ground-charts" not in INDEX_RUMPF
+    for name, bedingung in (("_aipKartenLaden", "=== 'sichtflug'"),
+                            ("_groundKartenLaden", "!== 'sichtflug'")):
+        stelle = INDEX_RUMPF.index("function " + name)
+        assert bedingung in INDEX_RUMPF[stelle:stelle + 800], name

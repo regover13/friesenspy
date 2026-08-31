@@ -1861,21 +1861,48 @@ AIP-Teilsystem, und in drei Monaten rekonstruiert das sonst niemand:
   mit dem nächsten Zyklus.
 * **`quelle='hand'` ist zu `status='gepasst'` geworden** — das Prädikat der Sperre.
 
-- [ ] **Schritt 3b: Blätter verschieben**
+- [ ] **Schritt 3b: Blätter verschieben** — Skript: `scripts/blaetter_verschieben.sh`
 
-**Vor** dem ersten Start mit dem neuen Stand — ohne diesen Schritt zeigt jede Karte ins Leere:
+**Vor** dem ersten Start mit dem neuen Stand — ohne diesen Schritt zeigt jede Karte ins Leere.
+
+**Eine frühere Fassung dieses Schritts war falsch** und hätte den Deploy unbrauchbar
+gemacht. Drei Befunde aus dem Trockenlauf am 31.08.2026:
+
+1. **Sichtflugkarten brauchen ZWEI Dateien, nicht eine.** Der alte Weg kannte keine Trennung
+   zwischen Rohblatt und ausgeliefertem Blatt: `aip/<ICAO>.png` war beides, der Admin
+   klickte auf genau diese Datei, und `rahmen_px` — also die migrierten Klickpunkte —
+   bezieht sich darauf. Ohne eine Kopie als `.roh.png` läuft jedes „Passen" bei allen 446
+   Sichtflugkarten auf 404.
+2. **EDDL, EDDM und EDDP haben kein Rohblatt.** Es sind genau die drei Plätze, an denen die
+   alte Bahnvermessung funktionierte; ihr Pfad legte nur das genordete Blatt ab. Für sie
+   tritt das genordete an die Stelle des Rohblatts — es ist north-up, ein Nachpassen darauf
+   ergibt eine Drehung nahe 0, und genau das ist richtig.
+3. Die neun `aip/<ICAO>.sichtflug.<hash>.png` sind Vorschlagsbilder eines Wegs, den es nicht
+   mehr gibt. Sie werden **nicht** mitgenommen und bleiben liegen; ein Aufräumen ist eine
+   eigene Entscheidung.
 
 ```bash
-sudo -u 1001 mkdir -p /opt/friesenspy/data/aip_dfs
-cd /opt/friesenspy/data
-for f in aip/*.png;        do sudo mv "$f" "aip_dfs/$(basename "$f" .png).sichtflug.png"; done
-# Die Ground-Blaetter tragen die Sorte nicht im Namen -- sie steht in der Datenbank.
-sudo sqlite3 friesenspy.db "SELECT icao||' '||sorte FROM aip_ground_charts;" | \
-  while read icao sorte; do
-    [ -f "aip_ground/$icao.png" ] && sudo mv "aip_ground/$icao.png" "aip_dfs/$icao.$sorte.png"
-  done
-ls aip_dfs | wc -l       # erwartet: 556
+sudo scripts/blaetter_verschieben.sh /opt/friesenspy/data/aip_dfs ja
 ```
+
+**Erwartet:** 1070 Dateien — 556 `.roh.png` (eine je Zeile, kein Ausfall) und 514
+ausgelieferte (446 Sichtflug + 68 gepasste Ground). Gegenprobe:
+
+```bash
+cd /opt/friesenspy/data/aip_dfs
+ls *.roh.png | wc -l                                    # 556
+ls *.png | grep -vc '\.roh\.png$'                       # 514
+sudo sqlite3 ../friesenspy.db \
+  "SELECT icao||'.sichtflug' FROM aip_charts UNION ALL
+   SELECT icao||'.'||sorte FROM aip_ground_charts;" | sort > /tmp/soll.txt
+ls *.roh.png | sed 's/\.roh\.png$//' | sort > /tmp/ist.txt
+comm -23 /tmp/soll.txt /tmp/ist.txt | wc -l             # 0 -- keine Zeile ohne Rohblatt
+```
+
+Das Skript **kopiert** (`cp`), es verschiebt nicht: `aip/` (236 MB) und `aip_ground/`
+(88 MB) bleiben als Rückfallebene stehen, solange die alten Tabellen stehen. Das neue
+Verzeichnis belegt **556 MB** (gemessen am Trockenlauf, nicht geschätzt); bei 111 GB frei
+ist das der günstige Preis dafür, dass ein Rückrollen ohne Bandsicherung möglich bleibt.
 
 - [ ] **Schritt 4: Deploy, dann sofort die Gegenprobe**
 

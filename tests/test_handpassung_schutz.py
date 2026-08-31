@@ -261,47 +261,39 @@ def test_neue_karte_ohne_seitenwahl_bekommt_leeren_wert(conn):
 
 
 # ---------------------------------------------------------------------------
-# Aufgabe 6: Vorschlaege mit Grabstein
+# Aufgabe 6: Der Vorschlagsweg ist fort -- die Sperre nicht
 # ---------------------------------------------------------------------------
 
-def test_verworfener_vorschlag_kommt_nicht_wieder(conn):
-    """Ein DELETE waere wirkungslos: UNIQUE verhindert Doppel nur, solange die Zeile
-    existiert. Der naechste Wochenlauf faende denselben unveraenderten quell_hash und legte
-    den Vorschlag sofort neu an -- die Liste waere dauerhaft unaufraeumbar."""
-    from app.database import get_vorschlaege, vorschlag_anlegen, vorschlag_verwerfen
+def test_der_vorschlagsweg_ist_fort():
+    """Ohne gerechnete Alternative gibt es nichts vorzuschlagen -- und "gueltig ·
+    Vorschlag" zeigte ohnehin meist zweimal dasselbe Bild (Nutzer, 31.08.2026).
 
-    vid = vorschlag_anlegen(conn, "sichtflug", "EDDL", "h1", {"nord": 55.0}, "weicht ab")
-    assert vorschlag_verwerfen(conn, vid) == 1
-    assert get_vorschlaege(conn) == []
-    vorschlag_anlegen(conn, "sichtflug", "EDDL", "h1", {"nord": 55.0}, "weicht ab")
-    assert get_vorschlaege(conn) == []
+    An seine Stelle tritt der Status 'pruefen' in aip_charts_dfs. Der Grabstein-Gedanke
+    lebt dort weiter: Auch "verwerfen" zieht den gesehener_hash nach, sonst faende der
+    naechste Wochenlauf denselben abweichenden Hash und legte die Zeile sofort wieder vor.
+    """
+    from app import database
 
-
-def test_ein_neues_rohblatt_ist_ein_neuer_vorschlag(conn):
-    from app.database import get_vorschlaege, vorschlag_anlegen, vorschlag_verwerfen
-
-    vid = vorschlag_anlegen(conn, "sichtflug", "EDDL", "h1", {"nord": 55.0}, "weicht ab")
-    vorschlag_verwerfen(conn, vid)
-    vorschlag_anlegen(conn, "sichtflug", "EDDL", "h2", {"nord": 56.0}, "weicht ab")
-    assert len(get_vorschlaege(conn)) == 1
+    for weg in ("vorschlag_anlegen", "get_vorschlaege", "vorschlag_verwerfen",
+                "vorschlag_entfernen"):
+        assert not hasattr(database, weg), weg
 
 
-def test_beide_kartentypen_koennen_gleichzeitig_offen_sein(conn):
-    """Der Dateiname des Vorschlagsbilds muss art UND quell_hash tragen -- sonst
-    ueberschreiben sich zwei offene Vorschlaege zu EDDL gegenseitig."""
-    from app.database import get_vorschlaege, vorschlag_anlegen
+def test_kein_job_und_kein_skript_schreibt_eine_passung():
+    """Die zweite Verteidigungslinie neben der Sperre: Was gar nicht erst schreiben kann,
+    muss auch nicht abgewiesen werden.
 
-    vorschlag_anlegen(conn, "sichtflug", "EDDL", "h1", {}, "a")
-    vorschlag_anlegen(conn, "ground", "EDDL", "h1", {}, "b")
-    assert len(get_vorschlaege(conn)) == 2
-    assert len(get_vorschlaege(conn, art="ground")) == 1
+    upsert_chart_dfs darf ausschliesslich aus database.py und main.py heraus gerufen
+    werden -- nicht aus poller.py. Der Wochenlauf in scripts/aip_bestand.py setzt Status,
+    gesehener_hash und seite_nr; er rechnet keine Passung.
+    """
+    import subprocess
 
-
-def test_passung_kommt_als_dict_zurueck(conn):
-    from app.database import get_vorschlaege, vorschlag_anlegen
-
-    vorschlag_anlegen(conn, "ground", "EDDM", "h1", {"drehung": 353.5}, "neu")
-    assert get_vorschlaege(conn, art="ground")[0]["passung"]["drehung"] == pytest.approx(353.5)
+    treffer = subprocess.run(
+        ["grep", "-rn", "upsert_chart_dfs", "--include=*.py", "app/", "scripts/"],
+        capture_output=True, text=True).stdout.splitlines()
+    dateien = {z.split(":")[0] for z in treffer}
+    assert dateien <= {"app/database.py", "app/main.py", "scripts/aip_bestand.py"}, dateien
 
 
 # ---------------------------------------------------------------------------

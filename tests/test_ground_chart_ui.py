@@ -44,13 +44,18 @@ def test_engere_hysterese_als_bei_der_sichtflugkarte():
     assert float(m.group(1)) < float(a.group(1))
 
 
-def test_sichtflugkarte_tritt_zurueck_wenn_ein_blatt_liegt():
-    """Bedingung ist "ein Blatt LIEGT", nicht "die Position ist im Feld": Ist die Ebene
-    Flugplatzkarte abgehakt, bliebe sonst beim Rollen gar keine Karte uebrig."""
-    assert "_groundVerdecktSichtflug" in RUMPF
-    stelle = RUMPF.index("function _aipKarteNachfuehren")
-    block = RUMPF[stelle:stelle + 1600]
-    assert "_groundVerdecktSichtflug()" in block
+def test_sichtflugkarte_tritt_NICHT_mehr_zurueck():
+    """Umgekehrt seit dem 31.08.2026: Die Platzkarte legt sich per zIndex UEBER die
+    Sichtflugkarte, statt sie zu verdraengen (Nutzerentscheidung "die Platzkarte soll auf
+    der Karte immer ueber der Sichtflugkarte liegen").
+
+    Der Grund ist die Flaeche: Ein um 37 Grad gedrehtes Blatt wird als achsenparalleles
+    Rechteck abgelegt, dessen Ecken durchsichtig sind -- bei EDDL rund die Haelfte. Die
+    fuellt jetzt die Sichtflugkarte darunter, nicht die nackte Grundkarte.
+
+    Ausfuehrlich getestet in tests/test_charts_dfs_ui.py.
+    """
+    assert "_groundVerdecktSichtflug" not in RUMPF
 
 
 def test_festgenagelte_sichtflugkarte_schlaegt_die_automatik():

@@ -149,12 +149,63 @@ mkdir -p /opt/friesenspy/data
   Buttons in eine eigene Zeile UNTER die Daten zu legen (`colspan`), statt in eine Spalte ganz
   rechts, die sonst erst nach Scrollen erreichbar ist (Erkennungslücken-Muster).
 
+## AIP-Kartenblätter (stehende Regeln — IMMER einhalten)
+
+Sichtflug-, Flugplatz- und Rollkarten der DFS, als Ebenen über der Live-Karte. Seit dem
+31.08.2026 vollständig ohne Automatik — der Rückbau war eine ausdrückliche
+Nutzerentscheidung („Wir bauen die Automatik komplett zurück. Für alle Kartentypen! Wir
+belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
+
+- **Eine Tabelle: `aip_charts_dfs`, Schlüssel `(icao, sorte)`.** Nicht `icao` allein — alle
+  110 Plätze mit Flugplatzkarte haben auch eine Sichtflugkarte (gemessen), mit einteiligem
+  Schlüssel kollidierten genau diese 110 Zeilen. Dasselbe gilt im Frontend: `_groundAktiv`
+  und Geschwister halten `"<ICAO>|<sorte>"`, nie die nackte ICAO.
+- **Eine Passung entsteht ausschließlich aus zwei geklickten Punkten mit Koordinaten**
+  (`ground_charts.handpassung`). Wer Rahmenerkennung, Gradnetz-Vermessung oder
+  Ziffernlesen zurückbaut, baut etwas zurück, das bewusst entfernt wurde: Das Verfahren kam
+  über drei von 107 Plätzen nicht hinaus, weil 271 der 446 Plätze in OurAirports keine
+  Schwellenkoordinaten haben. `tests/test_aip_charts.py` und `tests/test_ground_charts.py`
+  binden an die **Abwesenheit** dieser Funktionen.
+- **`nicht_gefunden` wird geschrieben, nicht hergeleitet.** Ein Platz ohne Zeile heißt
+  „nicht nachgesehen" — das ist kein Status, sondern die Abwesenheit eines Eintrags. Wäre
+  der Status hergeleitet, ließe sich „ich habe nachgesehen, es gibt keine" nicht
+  festhalten, und die Arbeitsliste bliebe dauerhaft unabarbeitbar.
+- **Die Seite wird als `seite_nr` geführt, nie als URL.** Eine DFS-Seiten-URL enthält den
+  AIRAC (`…/BasicVFR/2026AUG20/pages/…`) und liefert nach dem nächsten Zyklus 404 — für
+  **alle** Zeilen gleichzeitig, und zwar genau dann, wenn sich Blätter ändern könnten. Der
+  dauerhafte Bezeichner ist `airport_links.aip_url`; der Job löst daraus frisch auf.
+- **`gesehener_hash` ist der DFS-Rohbytes-Hash, über den zuletzt jemand geurteilt hat** —
+  nicht der Hash der Datei auf der Platte. Nach einem „verwerfen" fallen die beiden
+  auseinander, und das ist richtig so: Ohne das Nachziehen fände der nächste Wochenlauf
+  denselben abweichenden Hash und legte die Zeile sofort wieder vor.
+- **Die Sperre heißt `PassungGesperrt`, ihr Prädikat ist `status='gepasst'`** (früher
+  `quelle='hand'`). Sie greift nur, wenn ein **Lagefeld** mitkommt — der Wochenlauf soll
+  melden können, ohne die Passung anzurühren. Sie ist weiterhin nötig, obwohl kein Job mehr
+  rechnet: Der Seitenwähler bleibt, und am 25.08.2026 hat genau der EDAZ auf 0/0/0/0
+  gesetzt.
+- **Eine Karte ohne Passung geht nie nach `pruefen`.** Die Frage „stimmt die Passung auf dem
+  neuen Blatt noch?" ist dort gegenstandslos; bei `offen` wird das neue Blatt schlicht das
+  gültige. Damit kann eine Zeile mit `nord=sued=west=ost=0` konstruktiv nicht in einen
+  Zustand geraten, aus dem ein Fehlgriff sie ans Kniebrett ausliefert.
+- **Die Platzkarte liegt per `zIndex` über der Sichtflugkarte, nie an ihrer Stelle.** Ein um
+  37° gedrehtes Blatt wird als achsenparalleles Rechteck abgelegt, dessen Ecken durchsichtig
+  sind (bei EDDL rund die halbe Fläche) — die füllt die Sichtflugkarte darunter. **Nicht**
+  über `bringToFront()`: Das hängt an der Einfügereihenfolge und kippt, sobald eine Karte
+  nach dem SSE-Ereignis neu geladen wird.
+- **`aip_charts`, `aip_ground_charts` und `aip_chart_vorschlaege` sind stillgelegt, aber
+  nicht gelöscht.** Sie tragen die Daten, aus denen die Migration liest. Ein `DROP` ist eine
+  eigene, bewusste Entscheidung — erst wenn der neue Stand geprüft ist.
+
 ## Projektstruktur
 
 - `app/config.py` — pydantic-settings, CALLSIGN_PREFIX (Friesen-Erkennung), ADMIN_PASSWORD, VAPID
 - `app/database.py` — SQLite WAL, alle DB-Funktionen
 - `app/vatsim.py` — VATSIM-API-Client
 - `app/geo.py` — Haversine, ICAO→Koordinaten, Event-Filter
+- `app/aip_charts.py` — DFS-Blätter beschaffen und ablegen (AIRAC-Auflösung, Kapitelseiten)
+- `app/ground_charts.py` — Blattkunde, Handpassung aus zwei Punkten, Nordung
+- `app/runway_ref.py` — Bahnschwellen aus OurAirports (Hilfe beim Passen)
+- `scripts/aip_bestand.py` — Wochenlauf: Hash-Vergleich, meldet Änderungen, rechnet nichts
 - `app/alerts.py` — Telegram-Alerts (silent fail)
 - `app/teamspeak.py` — TeamSpeak-ServerQuery-Client (parse_frs, fetch_channel_clients)
 - `app/poller.py` — APScheduler, Flug-State-Machine, SSE-Queue
