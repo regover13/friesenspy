@@ -290,3 +290,102 @@ def test_eine_leere_datenbank_verbraucht_die_migration_nicht(tmp_path):
         assert migration_charts_dfs(c) == 1
     finally:
         c.close()
+
+
+# ------------------------------------------------------------------- Task 2: Zugriff, Sperre
+def test_status_muss_bekannt_sein(conn):
+    """Ein Tippfehler im Status waere sonst eine Zeile, die kein Filter je findet."""
+    with pytest.raises(ValueError):
+        upsert_chart_dfs(conn, "EDDL", "sichtflug", status="halbgepasst", **LAGE)
+
+
+def test_sorte_muss_bekannt_sein(conn):
+    with pytest.raises(ValueError):
+        upsert_chart_dfs(conn, "EDDL", "anflugkarte", status="offen", **LAGE)
+
+
+def test_unbekannte_felder_werden_abgewiesen(conn):
+    """Ein Tippfehler im Feldnamen fiele sonst still unter den Tisch -- der Aufrufer
+    glaubte zu schreiben, und nichts geschieht."""
+    with pytest.raises(ValueError):
+        upsert_chart_dfs(conn, "EDDL", "sichtflug", status="offen", drehnung=1.0)
+
+
+def test_filter_nach_status_und_sorte(conn):
+    from app.database import get_charts_dfs
+
+    upsert_chart_dfs(conn, "EDAA", "sichtflug", status="gepasst", **LAGE)
+    upsert_chart_dfs(conn, "EDAB", "sichtflug", status="offen", **LAGE)
+    upsert_chart_dfs(conn, "EDAC", "rollkarte", status="offen", **LAGE)
+    assert len(get_charts_dfs(conn, status=["offen"])) == 2
+    assert len(get_charts_dfs(conn, status=["offen"], sorte=["rollkarte"])) == 1
+    assert len(get_charts_dfs(conn, status=["gepasst", "offen"])) == 3
+    assert len(get_charts_dfs(conn)) == 3
+
+
+def test_eine_gepasste_karte_wird_nicht_stillschweigend_ueberschrieben(conn):
+    """Die Sperre bleibt -- nur ihr Praedikat wechselt von quelle='hand' auf
+    status='gepasst'.
+
+    Der Rueckbau nimmt zwar dem JOB die Faehigkeit, eine Passung zu rechnen. Der
+    Seitenwaehler bleibt aber und schreibt bei gescheiterter Passung alle Lagefelder auf 0
+    (app/main.py:4694). Nach dem Rueckbau ist ``passung`` dort IMMER None -- der nullende
+    Zweig waere der einzige. Genau das ist am 25.08.2026 schon einmal passiert: EDAZ stand
+    danach auf 0/0/0/0.
+    """
+    from app.database import PassungGesperrt
+
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst", **LAGE)
+    with pytest.raises(PassungGesperrt):
+        upsert_chart_dfs(conn, "EDDL", "sichtflug", status="auto",
+                         **{**LAGE, "nord": 0, "sued": 0, "west": 0, "ost": 0})
+
+
+def test_mit_ausdruecklicher_ansage_geht_es_doch(conn):
+    """Der Nutzer selbst muss eine gepasste Karte neu passen koennen -- die Sperre richtet
+    sich gegen stillschweigendes Ueberschreiben, nicht gegen ihn."""
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst", **LAGE)
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst",
+                     **{**LAGE, "drehung": 7.5}, hand_ueberschreiben=True)
+    assert get_chart_dfs(conn, "EDDL", "sichtflug")["drehung"] == pytest.approx(7.5)
+
+
+def test_der_status_allein_darf_ohne_ansage_wechseln(conn):
+    """Der Job setzt status='pruefen' und gesehener_hash auf einer gepassten Karte -- er
+    ruehrt die Lage nicht an. Wuerde die Sperre auch das abweisen, koennte er nichts
+    melden."""
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst", **LAGE)
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="pruefen",
+                     status_vorher="gepasst", gesehener_hash="n" * 64)
+    k = get_chart_dfs(conn, "EDDL", "sichtflug")
+    assert k["status"] == "pruefen" and k["status_vorher"] == "gepasst"
+    assert k["nord"] == pytest.approx(LAGE["nord"])
+
+
+def test_die_sperre_greift_nicht_auf_einer_neuen_zeile(conn):
+    """Es gibt noch nichts zu ueberschreiben -- eine ganz neue Karte darf mit gesetzter
+    Lage direkt auf 'gepasst' gehen, ohne hand_ueberschreiben."""
+    upsert_chart_dfs(conn, "EDXX", "sichtflug", status="gepasst", **LAGE)
+    assert get_chart_dfs(conn, "EDXX", "sichtflug")["status"] == "gepasst"
+
+
+def test_geprueft_am_wird_bei_jedem_schreiben_gesetzt(conn):
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="offen", **LAGE)
+    assert get_chart_dfs(conn, "EDDL", "sichtflug")["geprueft_am"]
+
+
+def test_icao_wird_normalisiert(conn):
+    upsert_chart_dfs(conn, "eddl", "sichtflug", status="offen", **LAGE)
+    assert get_chart_dfs(conn, "EDDL", "sichtflug") is not None
+
+
+def test_delete_chart_dfs_entfernt_genau_eine_sorte(conn):
+    """Der Schluessel ist (icao, sorte) -- ein DELETE darf die andere Sorte desselben
+    Platzes nicht mitreissen."""
+    from app.database import delete_chart_dfs
+
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="offen", **LAGE)
+    upsert_chart_dfs(conn, "EDDL", "rollkarte", status="offen", **LAGE)
+    assert delete_chart_dfs(conn, "EDDL", "sichtflug") == 1
+    assert get_chart_dfs(conn, "EDDL", "sichtflug") is None
+    assert get_chart_dfs(conn, "EDDL", "rollkarte") is not None
