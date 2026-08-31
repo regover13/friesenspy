@@ -107,6 +107,67 @@ Drei Ursachen, in dieser Reihenfolge prüfen:
 
 ---
 
+## Vor dem Klicken: die OurAirports-Koordinaten selbst prüfen
+
+**Gefund am 01.09.2026, bevor die 43 Karten bearbeitet wurden.** Die Gegenprobe gegen die
+Maßstabsleiste prüft nur, ob der Klick zu den ANGEGEBENEN Koordinaten passt — nicht, ob
+diese Koordinaten selbst richtig sind. Bei 12 der 43 offenen Plätze weicht der geodätische
+Abstand zwischen `le_latitude_deg`/`le_longitude_deg` und den `he_*`-Werten um 5 bis 66
+Prozent von der `length_ft`-Angabe **derselben Zeile** ab — ein interner Widerspruch, der
+nur eine falsche Geokodierung bedeuten kann. Dort wäre selbst ein pixelgenauer Klick an
+einer falschen Stelle auf der echten Karte verankert, und die Gegenprobe würde das NICHT
+bemerken.
+
+**Deshalb vor jedem Passen prüfen:**
+
+```python
+from app import runway_ref
+import math
+for b in runway_ref.bahnen(icao, "/opt/friesenspy/data/runways.csv"):
+    geo = math.hypot(*runway_ref.meter(b.le, b.he))
+    print(b.name, "gerechnet", round(geo), "m vs. Tabelle", round(b.laenge), "m")
+```
+
+`b.laenge` in `runway_ref.Bahn` ist bereits die geodätische Länge aus den Koordinaten —
+Abweichung > 5 % von der auf dem Blatt gedruckten Bahnlänge heißt: **diese Koordinaten
+nicht als Anker benutzen.**
+
+**Der Vorfilter ist ein Hinweis, kein Ausschlusskriterium.** EDLO zeigt, warum: Seine
+Koordinaten sind intern selbstkonsistent (Geo-Abstand 595 m passt zur eigenen
+`length_ft`-Angabe 594 m) — und trotzdem falsch, denn das DFS-Blatt selbst druckt für
+dieselbe Bahn 04/22 „800 x 20 m ASPH". Der Vorfilter hätte das nicht gefunden. Gefunden hat
+es die **Leisten-Gegenprobe**: Ein Klick auf die tatsächlichen, sichtbaren Schwellen ergab
+2,04 m/px, die Leiste 2,70 m/px — 24 % Abweichung, durchgefallen. Die Gegenprobe ist damit
+der eigentliche Schutz, nicht der Vorfilter davor.
+
+**Deshalb: Jeder Platz wird geklickt und gegen die Leiste geprüft — der Vorfilter blockiert
+nichts, er warnt nur vorab.** Plätze mit auffälligem Vorfilter (Stand 01.09.2026): EDAK,
+EDAZ, EDBH, EDLA, EDLF, EDLO, EDPH, EDQA, EDQC, EDSN, EDTF, EDWH. EDKB hat gar keine
+Koordinaten und bleibt der einzige echte Sonderfall (Gradnetz ablesen, keine Gegenprobe
+möglich).
+
+**Gerettet über eine zweite Bahn auf demselben Blatt:** EDBR (`17/35` 25 % verdächtig →
+`17R/35L` 0,1 % sauber), EDMA (`07/25` 20 % verdächtig → `07R/25L` 0,1 % sauber), EDTB
+(`03/21` 5,0 % grenzwertig → `03L/21R` 1,8 % sauber). Wenn das Blatt beide Bahnen zeigt,
+zählt für die Georeferenz nur, DASS zwei Schwellen sicher zuzuordnen sind — nicht, welche
+Bahn davon die längste ist.
+
+## Dritte Fehlerklasse: die Leiste selbst widerspricht dem Blatt
+
+**EDBM Flugplatzkarte, 01.09.2026.** Schwellenabstand (Bars bei den Beschriftungen "09"/"27",
+pixelgenau mit Rastersuche vermessen) ergibt 1,51 m/px — deckt sich auf 0,2 % mit der
+OurAirports-Länge UND mit dem auf dem Blatt selbst gedruckten Text "1000 x 30 m". Die
+Maßstabsleiste ergibt dagegen 1,266 m/px, mehrfach nachgemessen (vier 100-m-Segmente exakt
+je 79 px, keine Messunsicherheit). Beide Werte sind für sich genommen präzise — sie
+widersprechen sich trotzdem um 20 %.
+
+Drei voneinander unabhängige Quellen (OurAirports-Länge, gedruckter Text, Schwellenabstand)
+stimmen überein; nur die grafische Leiste weicht ab. Nahliegendste Erklärung: Die Leiste ist
+auf diesem einen Blatt nicht im selben Maßstab gerendert wie der Rest der Zeichnung — ein
+Fehler der Quelle, nicht der Messung. Trotzdem **nicht gespeichert**: Die Gegenprobe ist
+genau dafür da, sich nicht auf die plausiblere Erklärung zu verlassen, sondern auf eine
+zweite Messung zu bestehen. EDBM bleibt offen, bis jemand das Blatt ansieht.
+
 ## Sonderfälle
 
 * **EDKB Flugplatzkarte** hat keine Schwellenkoordinaten bei OurAirports. Dort müssen die
