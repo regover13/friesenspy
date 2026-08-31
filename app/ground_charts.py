@@ -67,7 +67,25 @@ SORTE_TON = {
     "rollkarte": (176, 184),
 }
 
-FELD_SAUM_M = 1000.0
+# Wie weit ueber die Passpunkte hinaus die Ebene noch einschaltet.
+#
+# Bei einer Sichtflugkarte sind die Passpunkte zwei Rahmenecken -- der Rahmen IST das
+# Kartenfeld, ein Saum waere schlicht falsch. Bei einer Flugplatz- oder Rollkarte sind es
+# zwei Bahnschwellen mitten auf dem Platz; ohne Saum schaltete die Karte erst ein, wenn man
+# schon auf der Bahn steht.
+FELD_SAUM_M = {"sichtflug": 0.0, "flugplatzkarte": 1000.0, "rollkarte": 1000.0}
+
+# Unter dieser Schwelle wird nicht gedreht. Aus zwei Rahmenecken faellt fast immer ein
+# Restwinkel von Hundertsteln bis Zehnteln Grad an (an EDWE und EDAZ gemessen: 0,04 bis
+# 0,09). rotate(expand=True) liesse die Leinwand um ein bis zwei Pixel wachsen und
+# interpolierte jedes Pixel -- an einem Blatt mit drei Pixel breiten Gradnetzstrichen. Der
+# bild_hash aenderte sich ohne inhaltlichen Grund, und der Job meldete eine Aenderung, die
+# keine ist.
+DREH_SCHWELLE = 0.25
+
+_VIERTEL = {90: Image.Transpose.ROTATE_90,
+            180: Image.Transpose.ROTATE_180,
+            270: Image.Transpose.ROTATE_270}
 
 
 @dataclass
@@ -175,7 +193,24 @@ def handpassung(p1_px: tuple[float, float], p1_geo: tuple[float, float],
 
 
 # --------------------------------------------------------------------------- Nordung
-def norden(roh: bytes, p: GroundPassung) -> tuple[bytes, dict] | None:
+def _drehen(im: Image.Image, drehung: float) -> tuple[Image.Image, float]:
+    """Blatt nach Norden drehen. Rueckgabe: Bild und die TATSAECHLICH angewandte Drehung.
+
+    Unter ``DREH_SCHWELLE`` wird gar nicht gedreht. Bei 90/180/270 Grad (auf dieselbe
+    Schwelle genau) wird ``transpose`` statt ``rotate`` verwendet -- verlustfrei, genau der
+    Fall der sieben quer gedruckten Blaetter.
+    """
+    rest = drehung % 360.0
+    if min(rest, 360.0 - rest) < DREH_SCHWELLE:
+        return im, 0.0
+    for grad, wie in _VIERTEL.items():
+        if abs(rest - grad) < DREH_SCHWELLE:
+            return im.transpose(wie), float(grad)
+    return im.rotate(-drehung, resample=Image.BICUBIC, expand=True,
+                     fillcolor=(0, 0, 0, 0)), drehung
+
+
+def norden(roh: bytes, p: GroundPassung, sorte: str) -> tuple[bytes, dict] | None:
     """Blatt genordet ablegen und seine Grenzen ausrechnen.
 
     ``L.imageOverlay`` kann nicht rotieren, die DFS-Blaetter sind aber nach der
@@ -191,16 +226,20 @@ def norden(roh: bytes, p: GroundPassung) -> tuple[bytes, dict] | None:
     **Das Blatt waechst erheblich:** bei 37,2 Grad um 102 bis 171 Prozent, je nach
     Seitenverhaeltnis. Nicht "rund 60 Prozent", wie eine fruehere Fassung der Spec behauptete.
 
-    **Vorzeichen:** ``Image.rotate(w)`` dreht gegen den Uhrzeigersinn. Das Blatt ist um
-    ``drehung`` im Uhrzeigersinn gegen Nord verdreht, also wird ``-drehung`` uebergeben.
+    **Vorzeichen:** Das Blatt ist um ``p.drehung`` im Uhrzeigersinn gegen Nord verdreht,
+    ``_drehen`` uebergibt deshalb ``-p.drehung`` an ``rotate``.
+
+    **``sorte`` bestimmt den Saum von ``feld_*``** (s. ``FELD_SAUM_M``) -- 0 bei einer
+    Sichtflugkarte, wo der Rahmen das Kartenfeld exakt definiert, 1000 m bei einer
+    Flugplatz- oder Rollkarte, wo die Passpunkte zwei Bahnschwellen mitten auf dem Platz
+    sind.
     """
     try:
         quelle = Image.open(io.BytesIO(roh)).convert("RGBA")
     except Exception:
         return None
     breite, hoehe = quelle.size
-    gedreht = quelle.rotate(-p.drehung, resample=Image.BICUBIC, expand=True,
-                            fillcolor=(0, 0, 0, 0))
+    gedreht, tatsaechlich = _drehen(quelle, p.drehung)
     puffer = io.BytesIO()
     gedreht.save(puffer, "PNG")
 
@@ -212,17 +251,19 @@ def norden(roh: bytes, p: GroundPassung) -> tuple[bytes, dict] | None:
     ost = [q[0] for q in ecken_m]
     nord = [q[1] for q in ecken_m]
     grenzen = _grenzen_in_grad(p.bezug, min(ost), max(ost), min(nord), max(nord))
+    grenzen["drehung"] = tatsaechlich
 
     # **feld_* ist NICHT nord/sued/west/ost.** Die Feldgrenzen sind die Huelle der
-    # gesetzten Punkte zuzueglich eines Saums; nach dem Drehen zeigt das Blatt viel freie
-    # Flaeche, und ueber der duerfte die Automatik nicht schon einschalten. Dieselbe
-    # Verwechslung steckte hinter dem 45-Prozent-Massstabsfehler der Sichtflugkarten.
+    # gesetzten Punkte zuzueglich eines sortenabhaengigen Saums; nach dem Drehen zeigt das
+    # Blatt viel freie Flaeche, und ueber der duerfte die Ebene nicht schon einschalten.
+    # Dieselbe Verwechslung steckte hinter dem 45-Prozent-Massstabsfehler der
+    # Sichtflugkarten.
+    saum = FELD_SAUM_M.get(sorte, 1000.0)
     o0, o1, n0, n1 = p.huelle_m
-    feld = _grenzen_in_grad(p.bezug, o0 - FELD_SAUM_M, o1 + FELD_SAUM_M,
-                            n0 - FELD_SAUM_M, n1 + FELD_SAUM_M)
+    feld = _grenzen_in_grad(p.bezug, o0 - saum, o1 + saum, n0 - saum, n1 + saum)
     # **Und nie ueber das Blatt hinaus.** Bei einem kleinen Blatt oder zwei nah gesetzten
-    # Punkten ragt die Huelle samt Saum sonst ueber den Rand -- die Automatik schaltete
-    # dann dort ein, wo die Karte gar nichts zeigt. Gemessen an einem 2200x1000-Testblatt:
+    # Punkten ragt die Huelle samt Saum sonst ueber den Rand -- die Ebene schaltete dann
+    # dort ein, wo die Karte gar nichts zeigt. Gemessen an einem 2200x1000-Testblatt:
     # feld_nord lag 12 m ueber nord.
     feld["nord"] = min(feld["nord"], grenzen["nord"])
     feld["sued"] = max(feld["sued"], grenzen["sued"])

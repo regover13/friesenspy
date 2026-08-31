@@ -148,7 +148,7 @@ def test_gedrehtes_blatt_waechst_und_bekommt_durchsichtige_ecken():
     Umgebung des Platzes."""
     im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2200, 1000))
     p = ground_charts.handpassung((200.0, 500.0), S_05R, (1970.0, 500.0), S_23L)
-    gedreht, _grenzen = ground_charts.norden(_png(im), p)
+    gedreht, _grenzen = ground_charts.norden(_png(im), p, "flugplatzkarte")
     neu = Image.open(io.BytesIO(gedreht))
     assert neu.mode == "RGBA"
     assert neu.size[0] > im.size[0] and neu.size[1] > im.size[1]
@@ -158,7 +158,7 @@ def test_gedrehtes_blatt_waechst_und_bekommt_durchsichtige_ecken():
 def test_grenzen_sind_richtig_orientiert():
     im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2200, 1000))
     p = ground_charts.handpassung((200.0, 500.0), S_05R, (1970.0, 500.0), S_23L)
-    _, g = ground_charts.norden(_png(im), p)
+    _, g = ground_charts.norden(_png(im), p, "flugplatzkarte")
     assert g["nord"] > g["sued"] and g["ost"] > g["west"]
 
 
@@ -168,7 +168,7 @@ def test_feldgrenzen_sind_die_punkthuelle_nicht_die_blattgrenzen():
     freie Flaeche -- ueber der duerfte die Automatik nicht schon einschalten."""
     im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2200, 1000))
     p = ground_charts.handpassung((200.0, 500.0), S_05R, (1970.0, 500.0), S_23L)
-    _, g = ground_charts.norden(_png(im), p)
+    _, g = ground_charts.norden(_png(im), p, "flugplatzkarte")
     assert g["feld_nord"] <= g["nord"] and g["feld_sued"] >= g["sued"]
     assert g["feld_west"] >= g["west"] and g["feld_ost"] <= g["ost"]
 
@@ -179,7 +179,7 @@ def test_das_feld_ragt_nie_ueber_das_blatt_hinaus():
     zeigt. Gemessen an einem 2200x1000-Blatt: feld_nord lag 12 m ueber nord."""
     im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2100, 700))
     p = ground_charts.handpassung((200.0, 500.0), S_05R, (1970.0, 500.0), S_23L)
-    _, g = ground_charts.norden(_png(im), p)
+    _, g = ground_charts.norden(_png(im), p, "flugplatzkarte")
     for k in ("nord", "sued", "west", "ost"):
         assert g["sued"] <= g["feld_" + k] <= g["nord"] or k in ("west", "ost")
     assert g["feld_nord"] <= g["nord"]
@@ -188,17 +188,95 @@ def test_das_feld_ragt_nie_ueber_das_blatt_hinaus():
 
 def test_die_drehung_wird_gegen_den_uhrzeigersinn_angewandt():
     """Image.rotate dreht gegen den Uhrzeigersinn. Ob 322,8 oder 37,2 uebergeben wird,
-    entscheidet ueber ein exakt falsch herum liegendes Blatt."""
+    entscheidet ueber ein exakt falsch herum liegendes Blatt.
+
+    Die Drehung sitzt seit Task 4b in _drehen, nicht mehr direkt in norden.
+    """
     import inspect
     import re
 
-    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(ground_charts.norden))
-    assert "rotate(-p.drehung" in quelle
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(ground_charts._drehen))
+    assert "rotate(-drehung" in quelle
 
 
 def test_kaputte_bilddaten_geben_none_statt_einer_ausnahme():
     p = ground_charts.handpassung((200.0, 500.0), S_05R, (1970.0, 500.0), S_23L)
-    assert ground_charts.norden(b"kein PNG", p) is None
+    assert ground_charts.norden(b"kein PNG", p, "flugplatzkarte") is None
+
+
+# --------------------------------------------------------------------------- Sorte und Saum
+def test_der_saum_haengt_an_der_sorte():
+    """Zwei Bedeutungen in einer Spalte waeren sonst die Folge.
+
+    Das alte aip_charts.handpassung legte feld_* EXAKT auf die geklickten Rahmenecken --
+    richtig, denn bei einer Sichtflugkarte definiert der Rahmen das Kartenfeld praezise.
+    ground_charts.norden legt es auf die Huelle plus 1000 m -- richtig fuer eine
+    Flugplatzkarte, wo die Passpunkte zwei Bahnschwellen mitten auf dem Platz sind und die
+    Karte sonst erst einschaltete, wenn man schon auf der Bahn steht.
+
+    Beides durch dieselbe Funktion und ohne Sorte hiesse: die 171 migrierten
+    Sichtflugzeilen behielten ihr rahmengenaues feld_*, jede neu gesetzte bekaeme das
+    andere -- und die Ebene schaltete auf allen vier Seiten einen Kilometer zu frueh ein.
+    """
+    im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2200, 1000))
+    p = ground_charts.handpassung((200.0, 500.0), S_05R, (1970.0, 500.0), S_23L)
+    _, sicht = ground_charts.norden(_png(im), p, "sichtflug")
+    _, platz = ground_charts.norden(_png(im), p, "flugplatzkarte")
+    assert platz["feld_nord"] > sicht["feld_nord"]
+    assert platz["feld_sued"] < sicht["feld_sued"]
+    assert platz["feld_ost"] > sicht["feld_ost"]
+    assert platz["feld_west"] < sicht["feld_west"]
+
+
+def test_ohne_saum_ist_das_feld_genau_die_punkthuelle():
+    """Die Gegenprobe zum rahmengenauen Verhalten der 171 Bestandszeilen."""
+    im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2200, 1000))
+    p = ground_charts.handpassung((200.0, 500.0), S_05R, (1970.0, 500.0), S_23L)
+    _, g = ground_charts.norden(_png(im), p, "sichtflug")
+    assert g["feld_nord"] == pytest.approx(max(S_05R[0], S_23L[0]), abs=1e-4)
+    assert g["feld_sued"] == pytest.approx(min(S_05R[0], S_23L[0]), abs=1e-4)
+
+
+# Fast genau Ost, mit einem Nord-Versatz von 3 m ueber rund 3488 m -- das ergibt eine
+# Drehung nahe 0 (bzw. 360, je nach Vorzeichen), aber nicht exakt 0. An EDWE und EDAZ
+# gemessen faellt aus zwei Rahmenecken tatsaechlich ein Restwinkel von 0,04 bis 0,09 Grad an.
+FAST_OST = (51.28, 6.75)
+FAST_OST_ZIEL = (51.280027098626237, 6.80)      # +3 m Nord
+
+
+def test_eine_winzige_drehung_dreht_nicht():
+    """rotate(expand=True) liesse die Leinwand um ein bis zwei Pixel wachsen und jedes
+    Pixel interpolieren -- an einem Blatt, dessen Gradnetzstriche drei Pixel breit sind.
+    Der bild_hash aenderte sich, obwohl inhaltlich nichts geschieht, und der Job meldete
+    beim naechsten Lauf eine Aenderung."""
+    im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2200, 1000))
+    p = ground_charts.handpassung((200.0, 500.0), FAST_OST, (1970.0, 500.0), FAST_OST_ZIEL)
+    gedreht, g = ground_charts.norden(_png(im), p, "sichtflug")
+    assert Image.open(io.BytesIO(gedreht)).size == im.size
+    assert g["drehung"] == 0.0
+
+
+def test_rechte_winkel_werden_verlustfrei_gedreht():
+    """Die sieben quer gedruckten Blaetter sind genau dieser Fall. transpose() ist
+    verlustfrei, rotate(resample=BICUBIC) interpoliert jedes Pixel."""
+    import inspect
+    import re
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(ground_charts._drehen))
+    assert "transpose" in quelle
+    modul = re.sub(r"#[^\n]*", "", inspect.getsource(ground_charts))
+    assert "ROTATE_90" in modul and "ROTATE_180" in modul and "ROTATE_270" in modul
+
+
+def test_norden_gibt_die_tatsaechlich_angewandte_drehung_zurueck_nicht_die_gerechnete():
+    """Es gibt eine GERECHNETE Drehung -- nahe 0 bzw. 360, aber nicht exakt. Die Rueckgabe
+    muss trotzdem 0.0 sagen, sonst schriebe der Aufrufer eine Drehung in die Datenbank,
+    waehrend das Blatt ungedreht liegt."""
+    im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2200, 1000))
+    p = ground_charts.handpassung((200.0, 500.0), FAST_OST, (1970.0, 500.0), FAST_OST_ZIEL)
+    assert p.drehung not in (0.0, 360.0)
+    _, g = ground_charts.norden(_png(im), p, "sichtflug")
+    assert g["drehung"] == 0.0
 
 
 def test_die_bahnvermessung_ist_zurueckgebaut():
