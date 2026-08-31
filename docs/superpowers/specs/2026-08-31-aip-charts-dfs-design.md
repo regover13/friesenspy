@@ -188,12 +188,16 @@ Nutzer die Sorte; die Tonerkennung (153/154 → Flugplatzkarte, 179/180 → Roll
 über 30 Blätter ohne Überschneidung) belegt sie vor. Eine Seite darf jeder Sorte zugeordnet
 werden — die Erkennung schlägt vor, sie entscheidet nicht.
 
-**Die Spalte „passt" verschwindet.** `_aip_seiten_sammeln` (`app/main.py:4566`) ruft heute
-für jede Kapitelseite `passung_rechnen` auf und zeigt an, ob die Automatik dort ein Gitternetz
-findet. Mit dem Rückbau gibt es diese Auskunft nicht mehr. An ihre Stelle treten Angaben, die
-ohne Deutung auskommen und in der Praxis mehr getragen haben: **Bildgröße, Dateigröße,
-erkannter Bahnton und die daraus vorgeschlagene Sorte**. Die Vorschaubilder bleiben — sie sind
-das, wonach ein Mensch die Seite ohnehin auswählt.
+**Die Spalte „passt" verschwindet ersatzlos.** `_aip_seiten_sammeln` (`app/main.py:4566`)
+ruft heute für jede Kapitelseite `passung_rechnen` auf und zeigt an, ob die Automatik dort ein
+Gitternetz findet. Das ist nicht nur überflüssig, sondern irreführend: Genau diese Automatik
+hat bei EDDK aus sechs Kapitelseiten die falsche gewählt (Nutzer, 24.08.2026). Ein Häkchen,
+das behauptet, eine Seite sei die richtige, obwohl es nur ein Gitternetz erkannt hat, ist
+schlechter als keins.
+
+An seine Stelle tritt **nichts**. Die Seitenauswahl zeigt Vorschaubild und Seitennummer --
+danach wählt ein Mensch ohnehin aus, und der Titel steht auf jedem Blatt. Bildgröße,
+Dateigröße und Bahnton bleiben Innereien und werden nicht angezeigt.
 
 ---
 
