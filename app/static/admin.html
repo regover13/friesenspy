@@ -1213,6 +1213,37 @@
             <b>Ungepasst</b> heißt: Blätter sind da, aber keine Lage bestand die Prüfung.
           </p>
           <div id="ground-charts" class="table-wrap"><div class="empty-hint">Lade…</div></div>
+          <div id="ground-passen" style="display:none;margin-top:12px;">
+            <p id="ground-passen-kopf" style="font-weight:700;margin:4px 0 2px;"></p>
+            <p style="color:#8aa0b8;font-size:0.82rem;margin:2px 0 8px;">
+              Zwei gut wiedererkennbare Stellen anklicken und ihre Koordinaten eintragen —
+              am besten zwei <b>gegenüberliegende Bahnschwellen</b>. Je weiter sie
+              auseinanderliegen, desto genauer die Passung: Ein Klickfehler von einem Pixel
+              wirkt sich umgekehrt proportional zu ihrem Abstand aus. Drehung und Maßstab
+              rechnet der Server daraus aus.
+            </p>
+            <div style="max-height:420px;overflow:auto;border:1px solid #24384d;">
+              <img id="ground-blatt" style="display:block;cursor:crosshair;max-width:none;">
+            </div>
+            <table style="margin-top:8px;font-size:0.85rem;">
+              <tr><th></th><th>Bild x</th><th>Bild y</th><th>Breite °</th><th>Länge °</th></tr>
+              <tr><td>Punkt 1</td>
+                <td><input id="gp1x" size="7" readonly></td>
+                <td><input id="gp1y" size="7" readonly></td>
+                <td><input id="gp1lat" size="11" placeholder="51.279598"></td>
+                <td><input id="gp1lon" size="11" placeholder="6.751990"></td></tr>
+              <tr><td>Punkt 2</td>
+                <td><input id="gp2x" size="7" readonly></td>
+                <td><input id="gp2y" size="7" readonly></td>
+                <td><input id="gp2lat" size="11" placeholder="51.295898"></td>
+                <td><input id="gp2lon" size="11" placeholder="6.786220"></td></tr>
+            </table>
+            <p style="margin:8px 0 0;">
+              <button class="btn" onclick="groundPassungSpeichern()">Passung speichern</button>
+              <button class="btn" onclick="groundPassenSchliessen()">Abbrechen</button>
+              <span id="ground-passen-hinweis" style="margin-left:10px;color:#8aa0b8;font-size:0.82rem;"></span>
+            </p>
+          </div>
         </div>
 
         <div class="panel">
@@ -3438,6 +3469,67 @@
       else alert('Verwerfen fehlgeschlagen.');
     }
 
+    // Handpassung einer Flugplatzkarte: zwei Punkte auf dem ROHblatt.
+    let _gpIcao = null, _gpNaechster = 1;
+
+    function groundPassen(icao) {
+      _gpIcao = icao; _gpNaechster = 1;
+      document.getElementById('ground-passen-kopf').textContent =
+        icao + ' passen — Punkt 1 anklicken';
+      document.getElementById('ground-passen-hinweis').textContent = '';
+      for (const f of ['gp1x','gp1y','gp2x','gp2y']) document.getElementById(f).value = '';
+      const img = document.getElementById('ground-blatt');
+      // Das ROHblatt, nicht das genordete: Letzteres entsteht erst aus der Passung, die
+      // hier gerade bestimmt werden soll.
+      img.src = '/aip-ground-chart/' + icao + '.roh.png?t=' + Date.now();
+      img.onclick = function (ev) {
+        const r = img.getBoundingClientRect();
+        // Auf die NATÜRLICHE Bildgröße umrechnen: Der Server kennt nur Originalpixel,
+        // der Browser skaliert das Bild aber auf seine Anzeigebreite.
+        const sx = img.naturalWidth / r.width, sy = img.naturalHeight / r.height;
+        const x = Math.round((ev.clientX - r.left) * sx);
+        const y = Math.round((ev.clientY - r.top) * sy);
+        document.getElementById('gp' + _gpNaechster + 'x').value = x;
+        document.getElementById('gp' + _gpNaechster + 'y').value = y;
+        _gpNaechster = _gpNaechster === 1 ? 2 : 1;
+        document.getElementById('ground-passen-kopf').textContent =
+          icao + ' passen — Punkt ' + _gpNaechster + ' anklicken';
+      };
+      document.getElementById('ground-passen').style.display = '';
+    }
+
+    function groundPassenSchliessen() {
+      document.getElementById('ground-passen').style.display = 'none';
+      _gpIcao = null;
+    }
+
+    async function groundPassungSpeichern() {
+      if (!_gpIcao) return;
+      const w = function (id) { return document.getElementById(id).value.trim(); };
+      const daten = {
+        p1_x: w('gp1x'), p1_y: w('gp1y'), p1_lat: w('gp1lat'), p1_lon: w('gp1lon'),
+        p2_x: w('gp2x'), p2_y: w('gp2y'), p2_lat: w('gp2lat'), p2_lon: w('gp2lon'),
+      };
+      for (const k in daten) {
+        if (!daten[k]) {
+          document.getElementById('ground-passen-hinweis').textContent =
+            'Es fehlt noch: ' + k;
+          return;
+        }
+      }
+      const res = await api('POST', '/api/admin/aip-ground-charts/' + _gpIcao, daten);
+      if (res && res.ok) {
+        const d = await res.json();
+        document.getElementById('ground-passen-hinweis').textContent =
+          'Gespeichert — Drehung ' + d.drehung + '°, ' + d.mps + ' m/px';
+        loadGroundCharts();
+      } else {
+        let text = 'Fehlgeschlagen.';
+        try { text = (await res.json()).detail || text; } catch (e) {}
+        document.getElementById('ground-passen-hinweis').textContent = text;
+      }
+    }
+
     async function loadGroundCharts() {
       const box = document.getElementById('ground-charts');
       try {
@@ -3466,6 +3558,7 @@
              + '<td>' + (offen ? '—' : k.drehung.toFixed(1) + '°') + '</td>'
              + '<td>' + (k.seite_url ? '<a href="' + k.seite_url + '" target="_blank">DFS</a>' : '—')
              + (offen ? '' : ' · <a href="/aip-ground-chart/' + k.icao + '.png" target="_blank">genordet</a>')
+             + ' · <button class="btn" onclick="groundPassen(\'' + k.icao + '\')">passen</button>'
              + '</td></tr>';
         }
         box.innerHTML = h + '</tbody></table>';

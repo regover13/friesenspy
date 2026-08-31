@@ -2359,7 +2359,9 @@
        ankommt. Gefuellt wird erst, wenn das Blatt festgenagelt ist -- dann ist die Marke
        Zustandsanzeige und darf auffallen.
        Blau (--green) ist hier richtig und keine Ausnahme von der Farbregel: Die Marke IST
-       klickbar, sie ist sogar das einzige klickbare Symbol dieser Karte.
+       klickbar. Seit dem 31.08.2026 ist sie nicht mehr das einzige klickbare Symbol der
+       Karte -- die Flugplatzkarte hat eine zweite, ebenfalls blaue; unterschieden wird
+       ueber die Form, nicht die Farbe (s. .ground-marke).
        Der Schlagschatten statt eines zweiten Strichs: derselbe Weg wie bei .vrp-marke, und
        er traegt dieselbe Last -- das Symbol muss ueber hellem Kartenblatt und ueber dunkler
        Grundkarte stehen. */
@@ -2400,11 +2402,14 @@
     .aip-marke-label::before { display: none; }
 
     /* --- Marken der Flugplatzkarten -------------------------------------------------------
-       Magenta statt Blau, auf Wunsch des Nutzers (30.08.2026). Das weicht von der stehenden
-       Farbregel ab, nach der Blau (--green) Klickbarem vorbehalten ist -- und der Kommentar
-       bei .aip-marke, sie sei "das einzige klickbare Symbol dieser Karte", stimmt seitdem
-       nicht mehr. Beides ist eine bewusste Nutzerentscheidung, keine Nachlaessigkeit: Zwei
-       gleichfarbige Marken uebereinander waeren im Cockpit nicht zu unterscheiden.
+       Blau wie .aip-marke (Nutzerentscheidung 31.08.2026, nach einem kurzen Zwischenstand
+       in Magenta). Damit bleibt die stehende Farbregel unangetastet: Blau ist Klickbarem
+       vorbehalten, und diese Marke IST klickbar.
+
+       Unterschieden werden die beiden Marken deshalb nicht ueber die Farbe, sondern ueber
+       die FORM: Die Sichtflugkarte traegt ein hochkantes Blatt mit Textzeilen, die
+       Flugplatzkarte ein liegendes Rechteck mit Quer- und Laengsstrichen -- ein Rollfeld.
+       Dazu liegen sie versetzt (s. _groundMarkenAnpassen).
 
        Hohl aus demselben Grund wie beim Vorbild: Die Marke liegt UEBER dem Platz, ein
        Vollsymbol deckte genau die Stelle zu, auf die es ankommt. Der Schlagschatten traegt
@@ -2414,10 +2419,10 @@
     .ground-marke svg { width: 24px; height: 24px; overflow: visible;
                         transform: scale(0.6); transform-origin: 50% 50%; }
     .leaflet-container.aip-nah .ground-marke svg { transform: scale(1); }
-    .ground-marke rect { fill: rgba(4,8,15,0.45); stroke: #e05fd0; stroke-width: 2;
+    .ground-marke rect { fill: rgba(4,8,15,0.45); stroke: #2d9cdb; stroke-width: 2;
                          stroke-linejoin: round; }
-    .ground-marke line { stroke: #e05fd0; stroke-width: 1.5; stroke-linecap: round; }
-    .ground-marke-fest rect { fill: #e05fd0; }
+    .ground-marke line { stroke: #2d9cdb; stroke-width: 1.5; stroke-linecap: round; }
+    .ground-marke-fest rect { fill: #2d9cdb; }
     .ground-marke-fest line { stroke: #04080f; }
 
     /* =====================================================================

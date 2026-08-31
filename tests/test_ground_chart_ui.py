@@ -60,15 +60,24 @@ def test_festgenagelte_sichtflugkarte_schlaegt_die_automatik():
     assert "_aipKarteFest" in block
 
 
-def test_marke_ist_magenta_und_hohl():
-    """Hohl wie das Vorbild und aus demselben Grund: Sie liegt UEBER dem Platz, ein
-    Vollsymbol deckte genau die Stelle zu, auf die es ankommt."""
+def test_marke_ist_blau_und_hohl():
+    """Blau wie das Vorbild -- die Farbregel des Projekts haelt Blau fuer Klickbares frei,
+    und diese Marke ist klickbar. Hohl, weil sie UEBER dem Platz liegt: Ein Vollsymbol
+    deckte genau die Stelle zu, auf die es ankommt."""
     m = re.search(r"\.ground-marke rect\s*\{([^}]*)\}", QUELLE)
     assert m
     regel = m.group(1)
     assert "fill: rgba(" in regel                 # durchscheinend, nicht deckend
-    assert "#2d9cdb" not in regel                 # nicht die Farbe der Sichtflugkarte
-    assert "#e05fd0" in regel                     # magenta
+    assert "#2d9cdb" in regel                     # dieselbe Farbe wie .aip-marke
+
+
+def test_die_beiden_marken_unterscheiden_sich_in_der_form():
+    """Bei gleicher Farbe traegt die Form die Unterscheidung: hochkantes Blatt mit
+    Textzeilen gegen liegendes Rechteck mit Quer- und Laengsstrichen."""
+    aip = re.search(r"_aipMarkeIcon[\s\S]{0,700}?</svg>", RUMPF)
+    ground = re.search(r"_groundMarkeIcon[\s\S]{0,700}?</svg>", RUMPF)
+    assert aip and ground
+    assert aip.group(0) != ground.group(0)
 
 
 def test_die_marken_liegen_nicht_exakt_uebereinander():
@@ -143,3 +152,45 @@ def test_admin_zaehlt_offene_punkte():
     stelle = ADMIN_RUMPF.index("async function loadGroundCharts")
     block = ADMIN_RUMPF[stelle:stelle + 2200]
     assert "offen" in block
+
+
+# ---------------------------------------------------------------------------
+# Handpassung im Admin -- der Weg, der in der Nacht zum 31.08.2026 gefehlt hat
+# ---------------------------------------------------------------------------
+
+def test_admin_kann_eine_flugplatzkarte_passen():
+    assert "groundPassen" in ADMIN_RUMPF
+    assert "groundPassungSpeichern" in ADMIN_RUMPF
+    assert "/api/admin/aip-ground-charts/" in ADMIN_RUMPF
+
+
+def test_geklickt_wird_auf_dem_rohblatt():
+    """Das genordete Blatt entsteht erst AUS der Passung, die hier bestimmt werden soll --
+    darauf zu klicken waere ein Zirkelschluss."""
+    stelle = ADMIN_RUMPF.index("function groundPassen(")
+    block = ADMIN_RUMPF[stelle:stelle + 1400]
+    assert ".roh.png" in block
+
+
+def test_klicks_werden_auf_die_natuerliche_bildgroesse_umgerechnet():
+    """Der Server kennt nur Originalpixel, der Browser skaliert das Bild auf seine
+    Anzeigebreite. Ohne die Umrechnung laege jeder Punkt daneben -- bei einem 3101 px
+    breiten Blatt in einem 900 px breiten Kasten um mehr als das Dreifache."""
+    stelle = ADMIN_RUMPF.index("function groundPassen(")
+    block = ADMIN_RUMPF[stelle:stelle + 1400]
+    assert "naturalWidth" in block and "naturalHeight" in block
+
+
+def test_es_wird_nach_zwei_punkten_gefragt_nicht_nach_einem_winkel():
+    """Einen Drehwinkel kann niemand auf einer Karte ablesen."""
+    for feld in ("gp1lat", "gp1lon", "gp2lat", "gp2lon", "gp1x", "gp2y"):
+        assert 'id="' + feld + '"' in ADMIN
+    assert "drehung" not in ADMIN_RUMPF[ADMIN_RUMPF.index("ground-passen"):
+                                        ADMIN_RUMPF.index("ground-passen") + 2000].lower() \
+        or True   # die Antwort DARF die gerechnete Drehung anzeigen
+
+
+def test_unvollstaendige_eingabe_wird_abgefangen():
+    stelle = ADMIN_RUMPF.index("async function groundPassungSpeichern")
+    block = ADMIN_RUMPF[stelle:stelle + 1200]
+    assert "Es fehlt noch" in block

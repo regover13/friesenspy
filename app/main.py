@@ -4319,6 +4319,97 @@ async def admin_get_ground_charts(request: Request):
     ]}
 
 
+@app.post("/api/admin/aip-ground-charts/{icao}")
+async def admin_set_ground_chart(icao: str, request: Request):
+    """Handpassung einer Flugplatzkarte: zwei geklickte Punkte mit ihren Koordinaten.
+
+    **Gefragt wird nach zwei Punkten, nicht nach einem Winkel.** Einen Drehwinkel kann
+    niemand auf einer Karte ablesen; zwei wiedererkennbare Stellen -- Bahnschwellen, das
+    ARP-Kreuz -- schon. Drehung, Massstab und Grenzen werden daraus hergeleitet.
+
+    Gearbeitet wird auf dem ROHblatt, so wie es abgelegt ist. Das Drehen geschieht erst
+    hier, mit der eben bestimmten Nordung.
+    """
+    require_admin(request)
+    code = (icao or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{4}", code):
+        raise HTTPException(status_code=400, detail="unbekannter Platz")
+    body = await request.json() or {}
+    try:
+        p1_px = (float(body["p1_x"]), float(body["p1_y"]))
+        p2_px = (float(body["p2_x"]), float(body["p2_y"]))
+        p1_geo = (float(body["p1_lat"]), float(body["p1_lon"]))
+        p2_geo = (float(body["p2_lat"]), float(body["p2_lon"]))
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400,
+                            detail="zwei Punkte mit Pixel- und Gradwerten noetig")
+
+    def arbeit() -> dict:
+        import hashlib as _h
+
+        einst = get_settings()
+        roh_pfad = _ground_blatt_pfad(einst.DB_PATH, code).with_name(f"{code}.roh.png")
+        if not roh_pfad.is_file():
+            roh_pfad = _ground_blatt_pfad(einst.DB_PATH, code)
+        if not roh_pfad.is_file():
+            raise HTTPException(status_code=409, detail="kein Blatt fuer diesen Platz")
+        roh = roh_pfad.read_bytes()
+        passung = ground_charts.handpassung(p1_px, p1_geo, p2_px, p2_geo)
+        if passung is None:
+            raise HTTPException(status_code=422,
+                                detail="Die beiden Punkte ergeben keine Passung")
+        genordet = ground_charts.norden(roh, passung)
+        if genordet is None:
+            raise HTTPException(status_code=422, detail="Blatt liess sich nicht drehen")
+        bild, g = genordet
+        aip_charts.blatt_schreiben(_ground_blatt_pfad(einst.DB_PATH, code), bild)
+        conn = get_connection(einst.DB_PATH)
+        try:
+            alt = get_ground_chart(conn, code) or {}
+            upsert_ground_chart(
+                conn, code, sorte=alt.get("sorte") or "flugplatzkarte",
+                seite_url=alt.get("seite_url") or "",
+                quell_hash=alt.get("quell_hash") or _h.sha256(roh).hexdigest(),
+                bild_hash=_h.sha256(bild).hexdigest(),
+                nord=g["nord"], sued=g["sued"], west=g["west"], ost=g["ost"],
+                feld_nord=g["feld_nord"], feld_sued=g["feld_sued"],
+                feld_west=g["feld_west"], feld_ost=g["feld_ost"],
+                drehung=passung.drehung, mps=passung.mps, rest_max=0.0, bahnen=0,
+                # 'hand' ist hier die Wahrheit UND die Sperre: Ab jetzt kann kein
+                # automatischer Pfad diese Passung mehr anfassen.
+                quelle="hand", airac=alt.get("airac") or "", status="gepasst")
+            conn.commit()
+        finally:
+            conn.close()
+        return {"status": "ok", "drehung": round(passung.drehung, 2),
+                "mps": round(passung.mps, 4)}
+
+    ergebnis = await asyncio.to_thread(arbeit)
+    _aip_karten_geaendert(request)
+    return ergebnis
+
+
+@app.get("/aip-ground-chart/{icao}.roh.png", include_in_schema=False)
+async def aip_ground_chart_rohblatt(icao: str, request: Request):
+    """Das UNGEDREHTE Blatt -- darauf klickt der Admin seine zwei Punkte.
+
+    Auf dem genordeten zu klicken waere falsch: Es entsteht erst aus der Passung, die hier
+    gerade bestimmt werden soll.
+    """
+    require_admin(request)
+    code = (icao or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{4}", code):
+        raise HTTPException(status_code=404, detail="unbekannt")
+    einst = get_settings()
+    pfad = _ground_blatt_pfad(einst.DB_PATH, code).with_name(f"{code}.roh.png")
+    if not pfad.is_file():
+        pfad = _ground_blatt_pfad(einst.DB_PATH, code)
+    if not pfad.is_file():
+        raise HTTPException(status_code=404, detail="unbekannt")
+    return FileResponse(pfad, media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=3600"})
+
+
 @app.get("/api/admin/aip-vorschlaege")
 async def admin_get_aip_vorschlaege(request: Request):
     """Offene Vorschlaege beider Kartentypen.

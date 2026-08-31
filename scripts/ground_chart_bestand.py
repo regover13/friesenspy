@@ -6,18 +6,16 @@ Aufruf:  python scripts/ground_chart_bestand.py [--nur EDDL,EDDM] [--pause 0.4]
 
 **Zwei Betriebsarten, und das ist der Kern dieses Skripts.**
 
-``lauf()`` rechnet Passungen -- das ist die Erstbefuellung. Sie geschieht **einmal**, unter
-Aufsicht, und ihre Ergebnisse werden angesehen, bevor sie gelten.
+``lauf()`` beschafft Blaetter und traegt sie als offene Punkte ein. Es **passt nichts** --
+die Lage setzt ein Mensch im Admin.
 
 ``melden()`` rechnet nichts. Es vergleicht nur den ``quell_hash`` des Rohblatts und traegt
 jede Aenderung als offenen Punkt ein. Das ist die Betriebsart des Wochenjobs.
 
-**Warum die Trennung.** Die Passung ueber die Bahngeometrie traegt, wo sie traegt: An
-31 Blaettern gemessen kamen vier durch die Pruefkette, die uebrigen wurden abgewiesen --
-meist, weil Stopways und Blast Pads in derselben Grauabstufung an die Bahn anschliessen und
-mitgemessen werden (EDDV: 2784 m fuer eine 2340-m-Bahn). Eine Automatik, die woechentlich
-ueber alles laeuft, wuerde daran nichts besser machen, aber jede Woche dieselbe Arbeit tun
-und dabei ueber 1000 Seiten von aip.dfs.de holen.
+**Warum keine Automatik.** Ein erster Anlauf hat die Lage aus der Bahngeometrie gerechnet
+und kam ueber drei von 107 Plaetzen nicht hinaus -- 271 der 446 Plaetze haben gar keine
+Schwellenkoordinaten, und wo es sie gibt, verlaengern gleichfarbige Stopways die Messung
+(EDDV: 2784 m fuer eine 2340-m-Bahn). Der Verlauf steht in scripts/ground_chart_probe.py.
 
 Der Nutzer hat deshalb am 30.08.2026 entschieden: die Blaetter einmal von Hand passen,
 Aenderungen danach nur melden. Wortlaut: "Das ist dann eine einmalige Anpassung. Updates
@@ -40,13 +38,12 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app import aip_charts, ground_charts, runway_ref  # noqa: E402
+from app import aip_charts, ground_charts  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.database import (  # noqa: E402
     HandpassungGesperrt,
     get_airport_links,
     get_connection,
-    get_ground_chart,
     get_ground_charts,
     upsert_ground_chart,
     vorschlag_anlegen,
@@ -110,21 +107,23 @@ def kandidaten(html_seiten: list[str], holen, pause: float = 0.3):
     return aus
 
 
-def platz_bearbeiten(icao: str, kapitel_url: str, holen, csv_pfad, db_path: str,
-                     pause: float = 0.3, schranke: float | None = None) -> dict:
-    """Ein Platz: Blaetter holen, passen, das beste ablegen.
+def platz_bearbeiten(icao: str, kapitel_url: str, holen, db_path: str,
+                     pause: float = 0.3) -> dict:
+    """Ein Platz: Kandidatenblaetter holen und das beste ROH ablegen.
 
-    Rueckgabe ist ein Bericht -- was gefunden, was gepasst, was abgewiesen wurde. Er ist
-    fuer die Erstbefuellung gedacht, bei der ein Mensch die Ergebnisse ansieht.
+    **Gepasst wird hier nichts.** Die Automatik ist am 31.08.2026 zurueckgebaut worden --
+    sie kam ueber drei von 107 Plaetzen nicht hinaus. Dieses Skript sorgt nur noch dafuer,
+    dass das richtige Blatt vorliegt; die Lage setzt ein Mensch im Admin.
+
+    Das Blatt wird UNGEDREHT abgelegt: Es gibt noch keine bekannte Nordung, und der Admin
+    klickt auf dem Rohblatt. Gedreht wird erst beim Speichern der Handpassung.
+
+    Die Rollkarte hat Vorrang, wo es beide gibt -- sie traegt beim Rollen mehr.
     """
     from PIL import Image
     import io as _io
 
     bericht = {"icao": icao, "blaetter": [], "gewaehlt": None}
-    bahnen = runway_ref.bahnen(icao, csv_pfad)
-    if not bahnen:
-        bericht["grund"] = "keine Schwellenkoordinaten"
-        return bericht
     try:
         seiten = aip_charts.seiten_des_kapitels(kapitel_url, holen)
     except Exception as e:
@@ -134,102 +133,52 @@ def platz_bearbeiten(icao: str, kapitel_url: str, holen, csv_pfad, db_path: str,
     beste = None
     for url, roh, sorte, ton in kandidaten(seiten, holen, pause):
         im = Image.open(_io.BytesIO(roh)).convert("L")
-        # Die Schranke laesst sich anheben -- fuer Blaetter, die ein Mensch angesehen und
-        # fuer gut befunden hat. EDDH kam am 31.08.2026 auf 15,6 m: sechs Zentimeter ueber
-        # der Vorgabe, bei Achsen, die im markierten Bild exakt auf beiden Bahnen lagen.
-        # Eine solche Karte wegen 0,6 m zu verwerfen waere Buchhaltung, nicht Sorgfalt.
-        alte_schranke = ground_charts.REST_SCHRANKE_M
-        if schranke is not None:
-            ground_charts.REST_SCHRANKE_M = schranke
-        try:
-            passung = ground_charts.passung_rechnen(im, bahnen, ton)
-        except Exception as e:
-            logger.info("%s: Passung geworfen (%s)", icao, str(e)[:60])
-            passung = None
-        finally:
-            ground_charts.REST_SCHRANKE_M = alte_schranke
-        eintrag = {"url": url, "sorte": sorte, "ton": ton,
-                   "rest": None if passung is None else round(passung.rest_max, 2),
-                   "bahnen": 0 if passung is None else passung.bahnen}
-        bericht["blaetter"].append(eintrag)
-        if passung is None:
-            continue
-        # Erst nach Sorte (Rollkarte vorn), dann nach Restfehler.
-        schluessel = (_VORRANG.get(sorte, 9), passung.rest_max)
+        bericht["blaetter"].append({"url": url, "sorte": sorte, "ton": ton,
+                                    "groesse": im.size})
+        schluessel = (_VORRANG.get(sorte, 9), -im.size[0] * im.size[1])
         if beste is None or schluessel < beste[0]:
-            beste = (schluessel, url, roh, sorte, passung)
+            beste = (schluessel, url, roh, sorte)
 
     if beste is None:
-        bericht["grund"] = "keine Passung bestand die Pruefkette"
+        bericht["grund"] = "kein Blatt in Flugplatzkarten-Farbe"
         return bericht
 
-    _s, url, roh, sorte, passung = beste
-    genordet = ground_charts.norden(roh, passung)
-    if genordet is None:
-        bericht["grund"] = "Nordung fehlgeschlagen"
-        return bericht
-    bild, grenzen = genordet
-    ziel = blatt_pfad(db_path, icao)
-    aip_charts.blatt_schreiben(ziel, bild)
+    _s, url, roh, sorte = beste
+    # Als ".roh.png" ablegen, NICHT unter dem Auslieferungsnamen: Das Rohblatt ist
+    # ungedreht und noch ohne Lage. Der Admin klickt darauf; erst seine Passung erzeugt das
+    # genordete Blatt, das ausgeliefert wird.
+    aip_charts.blatt_schreiben(blatt_pfad(db_path, icao).with_name(f"{icao}.roh.png"), roh)
     bericht["gewaehlt"] = {
-        "url": url, "sorte": sorte, "rest": round(passung.rest_max, 2),
-        "bahnen": passung.bahnen, "drehung": round(passung.drehung, 2),
-        "mps": round(passung.mps, 4), "grenzen": grenzen,
+        "url": url, "sorte": sorte,
         "quell_hash": hashlib.sha256(roh).hexdigest(),
-        "bild_hash": hashlib.sha256(bild).hexdigest(),
         "airac": aip_charts.airac_kennung(url) or "",
     }
     return bericht
 
 
-def _offen_vermerken(conn, icao: str, bericht: dict, db_path: str) -> None:
-    """Einen Platz als offenen Punkt eintragen: Blaetter da, Passung nicht bestanden.
+def blatt_vermerken(conn, icao: str, gewaehlt: dict) -> None:
+    """Ein beschafftes Blatt eintragen -- ungepasst, mit Nullen in allen Lagefeldern.
 
-    Die Zeile traegt Nullen in allen Zahlenfeldern und ``status='ungepasst'`` -- das ist
-    ehrlich: Es gibt keine bekannte Lage. ``get_ground_charts()`` filtert sie aus der
-    Auslieferung, der Admin sieht sie.
+    Das ist ehrlich: Es gibt keine bekannte Lage. ``get_ground_charts()`` filtert die Zeile
+    aus der Auslieferung, der Admin sieht sie als offenen Punkt und passt sie.
 
     ``quelle='auto'`` und NICHT 'hand': 'hand' hiesse "von einem Menschen gesetzt" und
     wuerde die Zeile fuer immer gegen jeden spaeteren Lauf sperren, ohne je Handarbeit zu
     enthalten. Genau diese Fehlbenennung ist am 31.08.2026 bei den Sichtflugkarten behoben
     worden.
     """
-    beste_sorte = (bericht["blaetter"][0]["sorte"] if bericht["blaetter"]
-                   else "flugplatzkarte")
-    beste_url = bericht["blaetter"][0]["url"] if bericht["blaetter"] else ""
-    try:
-        upsert_ground_chart(
-            conn, icao, sorte=beste_sorte, seite_url=beste_url,
-            quell_hash="", bild_hash="",
-            nord=0.0, sued=0.0, west=0.0, ost=0.0,
-            feld_nord=0.0, feld_sued=0.0, feld_west=0.0, feld_ost=0.0,
-            drehung=0.0, mps=0.0, rest_max=0.0, bahnen=0,
-            quelle="auto", airac="", status="ungepasst")
-    except HandpassungGesperrt:
-        pass          # eine bestehende Handpassung wird davon nicht angeruehrt
-
-
-def ablegen(conn, icao: str, gewaehlt: dict, quelle: str = "auto") -> bool:
-    """Einen Bericht in die Tabelle schreiben. ``False``, wenn eine Handpassung sperrt."""
-    g = gewaehlt["grenzen"]
     try:
         upsert_ground_chart(
             conn, icao, sorte=gewaehlt["sorte"], seite_url=gewaehlt["url"],
-            quell_hash=gewaehlt["quell_hash"], bild_hash=gewaehlt["bild_hash"],
-            nord=g["nord"], sued=g["sued"], west=g["west"], ost=g["ost"],
-            feld_nord=g["feld_nord"], feld_sued=g["feld_sued"],
-            feld_west=g["feld_west"], feld_ost=g["feld_ost"],
-            drehung=gewaehlt["drehung"], mps=gewaehlt["mps"],
-            rest_max=gewaehlt["rest"], bahnen=gewaehlt["bahnen"],
-            quelle=quelle, airac=gewaehlt["airac"], status="gepasst")
-        return True
+            quell_hash=gewaehlt["quell_hash"], bild_hash="",
+            nord=0.0, sued=0.0, west=0.0, ost=0.0,
+            feld_nord=0.0, feld_sued=0.0, feld_west=0.0, feld_ost=0.0,
+            drehung=0.0, mps=0.0, rest_max=0.0, bahnen=0,
+            quelle="auto", airac=gewaehlt["airac"], status="ungepasst")
     except HandpassungGesperrt:
-        logger.info("%s: Handpassung gilt, Automatikergebnis wird nur vorgeschlagen", icao)
-        vorschlag_anlegen(conn, "ground", icao, gewaehlt["quell_hash"],
-                          {k: gewaehlt[k] for k in ("sorte", "url", "rest", "bahnen",
-                                                    "drehung", "mps", "airac")},
-                          "Automatik weicht von der Handpassung ab")
-        return False
+        # Eine bestehende Handpassung wird davon nicht angeruehrt. Das neue Blatt liegt
+        # trotzdem auf der Platte -- melden() traegt es als Vorschlag ein.
+        logger.info("%s: Handpassung gilt, Blatt bleibt unberuehrt", icao)
 
 
 def melden(pause: float = 0.4) -> dict:
@@ -288,16 +237,9 @@ def melden(pause: float = 0.4) -> dict:
 
 
 def lauf(nur: set[str] | None = None, pause: float = 0.3,
-         schreiben: bool = True, quelle: str = "auto",
-         schranke: float | None = None) -> dict:
-    """Erstbefuellung: Passungen rechnen und ablegen.
-
-    ``schreiben=False`` rechnet nur und berichtet -- fuer den Blick vor der Uebernahme.
-    ``quelle="hand"`` legt die Ergebnisse als Handpassung ab; dann sind sie durch die
-    Sperre geschuetzt und kein spaeterer Lauf kann sie anfassen.
-    """
+         schreiben: bool = True) -> dict:
+    """Blaetter beschaffen und als offene Punkte eintragen. Passt nichts."""
     einst = get_settings()
-    csv_pfad = runway_ref.datei_holen(Path(einst.DB_PATH).parent / "runways.csv")
     conn = get_connection(einst.DB_PATH)
     berichte = []
     zaehler: collections.Counter = collections.Counter()
@@ -308,34 +250,23 @@ def lauf(nur: set[str] | None = None, pause: float = 0.3,
         with httpx.Client(follow_redirects=True) as client:
             holen = _hole(client)
             for i, (icao, url) in enumerate(sorted(links.items()), 1):
-                b = platz_bearbeiten(icao, url, holen, csv_pfad, einst.DB_PATH, pause,
-                                     schranke)
+                b = platz_bearbeiten(icao, url, holen, einst.DB_PATH, pause)
                 berichte.append(b)
                 if b["gewaehlt"] is None:
-                    zaehler[b.get("grund", "unbekannt")[:30]] += 1
-                    # **Als offenen Punkt ablegen, nicht schweigend uebergehen.** Ein Platz
-                    # mit Kandidatenblaettern, deren Passung die Pruefkette nicht bestand,
-                    # ist genau der Fall, den der Nutzer im Admin abarbeiten will
-                    # (Entscheidung 30.08.2026: "Sie sollen dann einfach als nur offene
-                    # angezeigt werden"). Ohne Zeile erschiene er nirgends.
-                    if schreiben and b["blaetter"]:
-                        _offen_vermerken(conn, icao, b, einst.DB_PATH)
-                        zaehler["offen"] += 1
+                    zaehler[b.get("grund", "unbekannt")[:32]] += 1
                     continue
-                zaehler["gepasst"] += 1
+                zaehler[b["gewaehlt"]["sorte"]] += 1
                 if schreiben:
-                    if ablegen(conn, icao, b["gewaehlt"], quelle):
-                        zaehler["geschrieben"] += 1
-                    else:
-                        zaehler["hand_gesperrt"] += 1
+                    blatt_vermerken(conn, icao, b["gewaehlt"])
                 if i % 10 == 0:
                     conn.commit()
                     logger.info("%d/%d", i, len(links))
         conn.commit()
     finally:
         conn.close()
+    mit_blatt = sum(1 for b in berichte if b["gewaehlt"])
     return {"zaehler": dict(zaehler), "berichte": berichte,
-            "gepasst": zaehler["gepasst"], "gesamt": len(berichte)}
+            "mit_blatt": mit_blatt, "gesamt": len(berichte)}
 
 
 def main() -> None:
@@ -343,12 +274,9 @@ def main() -> None:
     p.add_argument("--nur", default="")
     p.add_argument("--pause", type=float, default=0.3)
     p.add_argument("--nur-melden", action="store_true",
-                   help="nichts rechnen, nur geaenderte Blaetter melden")
-    p.add_argument("--trocken", action="store_true", help="rechnen, aber nicht schreiben")
-    p.add_argument("--schranke", type=float, default=None,
-                   help="Restfehler-Schranke in Metern anheben (nur nach Augenschein)")
-    p.add_argument("--als-hand", action="store_true",
-                   help="Ergebnisse als Handpassung ablegen (gegen spaetere Laeufe gesperrt)")
+                   help="nichts beschaffen, nur geaenderte Blaetter melden")
+    p.add_argument("--trocken", action="store_true",
+                   help="holen und berichten, aber nichts eintragen")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -358,18 +286,13 @@ def main() -> None:
         print(e["zaehler"])
         return
     nur = {x.strip().upper() for x in a.nur.split(",") if x.strip()} or None
-    e = lauf(nur, a.pause, schreiben=not a.trocken,
-             quelle="hand" if a.als_hand else "auto", schranke=a.schranke)
-    print(f"gepasst: {e['gepasst']} von {e['gesamt']}")
+    e = lauf(nur, a.pause, schreiben=not a.trocken)
+    print(f"Blaetter gefunden: {e['mit_blatt']} von {e['gesamt']}")
     print(e["zaehler"])
     for b in e["berichte"]:
         if b["gewaehlt"]:
             g = b["gewaehlt"]
-            print(f"  {b['icao']}: {g['sorte']:15s} Rest={g['rest']:6.2f} m  "
-                  f"Bahnen={g['bahnen']}  Drehung={g['drehung']:6.2f}")
-        else:
-            print(f"  {b['icao']}: -- {b.get('grund', '?')} "
-                  f"({len(b['blaetter'])} Kandidatenblaetter)")
+            print(f"  {b['icao']}: {g['sorte']:15s} {g['url'][-24:]}")
 
 
 if __name__ == "__main__":
