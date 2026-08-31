@@ -46,17 +46,31 @@ Bahnflächen —, wird gelöscht.
 | `aip_charts`, `quelle='auto'` | 275 | `sorte='sichtflug'`, `status='auto'` |
 | `aip_ground_charts`, `status='gepasst'` | 68 | Sorte übernehmen, `status='auto'` |
 | `aip_ground_charts`, `status='ungepasst'` | 42 | Sorte übernehmen, `status='offen'` |
-| `airport_links` ohne Zeile | — | erscheinen als `nicht_gefunden` (nur in der Liste, nicht in der Tabelle) |
+| | **Summe** | **556** |
 
 **Alle 110 Ground-ICAOs haben auch eine Sichtflugkarte.** Ohne den zweiteiligen Schlüssel
 kollidieren genau diese 110 Zeilen — gemessen, nicht vermutet.
+
+**`nicht_gefunden` wird geschrieben, nicht hergeleitet.** Eine frühere Fassung dieses Plans
+ließ Plätze „ohne Zeile" als `nicht_gefunden` erscheinen. Gemessen am 31.08.2026 gibt es
+davon **keinen einzigen**: `aip_charts` deckt `airport_links` mit 446 zu 446 exakt ab. Der
+Status entsteht, wenn jemand die Seitenauswahl öffnet und keine passende Seite findet — dabei
+entsteht auch die Zeile. Ein Platz **ohne** Zeile erscheint als **„— nicht nachgesehen"**;
+das ist kein Status, sondern die Abwesenheit eines Eintrags (Spec 4.2).
+
+**Die Klickpunkte der 446 Sichtflugkarten sind nicht verloren.** `rahmen_px` ist bei ihnen
+das Klickprotokoll, keine Innerei der Automatik: `EDWE  rahmen_px = "85.0,238.0,1147.0,818.0"`
+sind `p1_x,p1_y,p2_x,p2_y`, und `feld_nord/feld_west` bzw. `feld_sued/feld_ost` sind deren
+Koordinaten. **Alle 446 Zeilen sind wohlgeformt, kein einziger Ausfall** — die Migration
+füllt daraus `p1_*`/`p2_*` (Task 1). Bei den 110 Ground-Zeilen wurden die Punkte nie abgelegt;
+dort bleiben sie leer. Das ist der einzige echte Verlust der Migration.
 
 ## Dateien
 
 | Datei | Verantwortung |
 |---|---|
 | `app/database.py` | Tabelle `aip_charts_dfs`, Migration, Lese-/Schreibfunktionen |
-| `app/ground_charts.py` | bleibt: `handpassung`, `norden`, `bahnfarbe`, `sorte_aus_ton` |
+| `app/ground_charts.py` | bleibt: `handpassung`, `norden`, `bahnfarbe`, `sorte_aus_ton`; `norden` bekommt Sorte und Drehschwelle (Task 4b) |
 | `app/aip_charts.py` | schrumpft auf Beschaffung: AIRAC, Kapitelseiten, Bild, Ablage |
 | `app/runway_ref.py` | unverändert |
 | `app/main.py` | eine Endpunktgruppe `/api/admin/aip-charts-dfs`, alte entfallen |
@@ -64,7 +78,9 @@ kollidieren genau diese 110 Zeilen — gemessen, nicht vermutet.
 | `scripts/aip_bestand.py` | schrumpft auf den Hash-Vergleich |
 | `scripts/ground_chart_bestand.py` | **gelöscht** — geht in `aip_bestand.py` auf |
 | `scripts/ground_chart_probe.py` | **gelöscht** |
-| `scripts/aip_handpassung.py` | prüfen, dann löschen oder anpassen (Task 4) |
+| `scripts/aip_handpassung.py` | **gelöscht** — ruft `Rahmen`, `rahmen_finden`, `tick_positionen_mit_band` und `raster` **produktiv** (Zeilen 157–161), nicht nur im Kommentar |
+| `scripts/aip_band_zeigen.py` | **gelöscht** — `Rahmen`, `rahmen_finden`, `tick_positionen_mit_band`, `band_grenzen` |
+| `scripts/aip_schablonen.py` | **gelöscht** — `rahmen_finden`, `raster`, `tick_positionen`, `zeichen_im_band`, `_SCHABLONEN` |
 | `app/static/admin.html` | eine Ansicht „AIP Charts DFS" |
 | `app/static/index.html` | Transparenzregler, sonst unverändert |
 | `tests/test_charts_dfs.py` (neu) | Tabelle, Migration, Statusübergänge |
@@ -72,7 +88,7 @@ kollidieren genau diese 110 Zeilen — gemessen, nicht vermutet.
 | `tests/test_charts_dfs_ui.py` (neu) | Admin- und Frontend-Quelltext |
 | `tests/test_aip_charts.py` | 744 Zeilen — der Automatiktest, wird stark gekürzt |
 | `tests/test_ground_charts.py` | Bahnvermessungsreste entfernen |
-| `tests/test_handpassung_schutz.py` | 436 Zeilen — Sperre entfällt, Task 9 |
+| `tests/test_handpassung_schutz.py` | 436 Zeilen — die Sperre **bleibt**, das Prädikat wechselt auf `status='gepasst'` (Task 9) |
 | `tests/test_aip_api.py` | alte Endpunkte entfallen |
 
 ---
@@ -85,6 +101,13 @@ kollidieren genau diese 110 Zeilen — gemessen, nicht vermutet.
 `init_db` läuft bei **jedem Containerstart**. Eine Migration, die zweimal läuft und dabei
 Nutzerarbeit überschreibt, wäre genau der Fehler, gegen den die ganze Vorgängerspec
 geschrieben wurde.
+
+**Und sie kann den Dienststart verhindern.** Das Migrationsmuster in `app/database.py:830-837`
+lautet `except sqlite3.OperationalError: pass` — das ist ausschließlich für
+`ALTER TABLE … ADD COLUMN` idempotent. Ein `INSERT` in eine Tabelle mit Primärschlüssel wirft
+`IntegrityError`, und die ist **kein** `OperationalError`: `init_db` bräche ab, die App
+startete nicht. Deshalb **drei** Riegel statt einem — Merker, `ON CONFLICT DO NOTHING` und
+ein eigener `try`-Block mit `except sqlite3.Error`.
 
 **Dateien:**
 - Ändern: `app/database.py`
@@ -139,9 +162,12 @@ def _alt_sichtflug(conn, icao="EDDL", quelle="hand"):
                                    rahmen_px, tick_px_lat, tick_px_lon,
                                    quelle, airac, status, seite_url, geprueft_am)
            VALUES (?, 'a', 51.32, 51.25, 6.71, 6.82, 51.31, 51.26, 6.72, 6.81,
-                   '1,2,3,4', 0, 0, ?, '2026AUG20', 'gepasst', 'https://x/s.html',
+                   '85.0,238.0,1147.0,818.0', 0, 0, ?, '2026AUG20', 'gepasst', '',
                    '2026-08-30T12:00:00Z')""",
         (icao, quelle))
+# rahmen_px traegt echte Werte, weil die Migration daraus die Klickpunkte gewinnt -- die
+# Zahlen sind der Bestandswert von EDWE. seite_url ist leer, weil sie es im Bestand in
+# ALLEN 446 Zeilen ist (gemessen 31.08.2026).
 
 
 def _alt_ground(conn, icao="EDDL", sorte="rollkarte", status="gepasst"):
@@ -216,14 +242,75 @@ def test_die_alten_tabellen_bleiben_stehen(conn):
     assert conn.execute("SELECT COUNT(*) FROM aip_charts").fetchone()[0] == 1
 
 
-def test_automatik_innereien_wandern_nicht_mit(conn):
-    """rahmen_px, tick_px_* und rest_max waren Innereien der Passungsrechnung."""
+def test_die_klickpunkte_der_sichtflugkarten_wandern_mit(conn):
+    """rahmen_px IST bei den Sichtflugkarten das Klickprotokoll, keine Innerei.
+
+    Gemessen am Bestand: EDWE traegt rahmen_px = '85.0,238.0,1147.0,818.0', und
+    feld_nord/feld_west (53.512167/6.886654) bzw. feld_sued/feld_ost (53.291635/7.564815)
+    sind genau die Koordinaten dieser beiden Ecken. Alle 446 Zeilen sind wohlgeformt.
+
+    Wer die Spalte als Automatikrest verwirft, zerstoert die Eingabe, die er aufheben will.
+    """
+    _alt_sichtflug(conn, "EDDL")
+    conn.commit()
+    migration_charts_dfs(conn)
+    k = get_chart_dfs(conn, "EDDL", "sichtflug")
+    assert (k["p1_x"], k["p1_y"]) == pytest.approx((85.0, 238.0))
+    assert (k["p2_x"], k["p2_y"]) == pytest.approx((1147.0, 818.0))
+    assert k["p1_lat"] == pytest.approx(51.31)      # feld_nord
+    assert k["p1_lon"] == pytest.approx(6.72)       # feld_west
+    assert k["p2_lat"] == pytest.approx(51.26)      # feld_sued
+    assert k["p2_lon"] == pytest.approx(6.81)       # feld_ost
+
+
+def test_kaputtes_rahmen_px_bricht_die_migration_nicht(conn):
+    """Im Bestand kommt das nicht vor -- aber eine Migration, die an einer einzigen
+    unlesbaren Zeile abbricht, laesst die anderen 445 liegen."""
+    conn.execute(
+        """INSERT INTO aip_charts (icao, bild_hash, nord, sued, west, ost,
+                                   feld_nord, feld_sued, feld_west, feld_ost,
+                                   rahmen_px, tick_px_lat, tick_px_lon,
+                                   quelle, airac, status, seite_url, geprueft_am)
+           VALUES ('EDXX', 'a', 51.32, 51.25, 6.71, 6.82, 51.31, 51.26, 6.72, 6.81,
+                   'kaputt', 0, 0, 'hand', '2026AUG20', 'gepasst', '', NULL)""")
+    _alt_sichtflug(conn, "EDDL")
+    conn.commit()
+    assert migration_charts_dfs(conn) == 2
+    assert get_chart_dfs(conn, "EDXX", "sichtflug")["p1_x"] is None
+    assert get_chart_dfs(conn, "EDXX", "sichtflug")["status"] == "gepasst"
+
+
+def test_quell_hash_kommt_aus_bild_hash(conn):
+    """Der Aenderungsdetektor muss belegt sein, sonst meldete der erste Joblauf alle 556
+    Karten als geaendert. bild_hash ist die beste vorhandene Naeherung -- mit der
+    Einschraenkung aus Task 6: er wird NACH dem Drehen gebildet, stimmt also bei den sieben
+    quer gedruckten Blaettern nicht mit dem Rohblatt ueberein."""
+    _alt_sichtflug(conn, "EDDL")
+    conn.commit()
+    migration_charts_dfs(conn)
+    assert get_chart_dfs(conn, "EDDL", "sichtflug")["quell_hash"] == "a"
+
+
+def test_die_seitennummer_bleibt_leer(conn):
+    """seite_url ist im Bestand in ALLEN 446 Zeilen leer -- es gibt nichts zu uebernehmen.
+    Die Nummer traegt der erste Joblauf nach (Task 6)."""
+    _alt_sichtflug(conn, "EDDL")
+    conn.commit()
+    migration_charts_dfs(conn)
+    assert get_chart_dfs(conn, "EDDL", "sichtflug")["seite_nr"] is None
+
+
+def test_die_urspruenglichen_spalten_wandern_nicht_mit(conn):
+    """tick_px_*, rest_max und bahnen waren Innereien der Passungsrechnung -- rahmen_px
+    ausdruecklich NICHT, dessen Inhalt wandert (s. o.). seite_url faellt, weil sie den
+    AIRAC enthaelt und den naechsten Zyklus nicht ueberlebt (Task 6)."""
     _alt_sichtflug(conn, "EDDL")
     conn.commit()
     migration_charts_dfs(conn)
     spalten = {r[1] for r in conn.execute("PRAGMA table_info(aip_charts_dfs)")}
     assert not spalten & {"rahmen_px", "tick_px_lat", "tick_px_lon", "rest_max", "bahnen",
-                          "quelle"}
+                          "quelle", "seite_url"}
+    assert {"p1_x", "p2_lon", "seite_nr", "status_vorher"} <= spalten
 ```
 
 - [ ] **Schritt 2: Test laufen lassen, Fehlschlag prüfen**
@@ -242,7 +329,12 @@ In `app/database.py`, im SCHEMA-String hinter `aip_ground_charts`:
 CREATE TABLE IF NOT EXISTS aip_charts_dfs (
     icao          TEXT NOT NULL,
     sorte         TEXT NOT NULL,              -- 'sichtflug' | 'flugplatzkarte' | 'rollkarte'
-    seite_url     TEXT NOT NULL DEFAULT '',
+    -- Die SEITENNUMMER, nicht die URL: die enthaelt den AIRAC
+    -- (https://aip.dfs.de/BasicVFR/2026AUG20/pages/8E6E....html) und liefert nach dem
+    -- naechsten Zyklus 404 -- fuer ALLE Zeilen gleichzeitig, und zwar genau dann, wenn
+    -- sich Blaetter tatsaechlich aendern koennten. Der dauerhafte Bezeichner ist
+    -- airport_links.aip_url; der Job loest daraus bei jedem Lauf frisch auf.
+    seite_nr      INTEGER,
     quell_hash    TEXT NOT NULL DEFAULT '',   -- SHA-256 des ROHblatts: der Aenderungsdetektor
     bild_hash     TEXT NOT NULL DEFAULT '',   -- des abgelegten Blatts, nur Cache-Schluessel
     nord          REAL NOT NULL DEFAULT 0,
@@ -257,7 +349,10 @@ CREATE TABLE IF NOT EXISTS aip_charts_dfs (
     mps           REAL NOT NULL DEFAULT 0,    -- Meter je Pixel im Rohblatt
     p1_x          REAL, p1_y REAL, p1_lat REAL, p1_lon REAL,
     p2_x          REAL, p2_y REAL, p2_lat REAL, p2_lon REAL,
-    status        TEXT NOT NULL,              -- gepasst|auto|offen|nicht_gefunden|pruefen
+    -- gepasst|auto|offen|nicht_gefunden|pruefen|verwaist. 'pruefen' OHNE Umlaut: der Wert
+    -- wird in Python, SQL, JavaScript und Testliteralen verglichen.
+    status        TEXT NOT NULL,
+    status_vorher TEXT,                       -- woher 'pruefen' kam; siehe Task 5/6
     airac         TEXT NOT NULL DEFAULT '',
     geprueft_am   TEXT,
     PRIMARY KEY (icao, sorte)
@@ -267,13 +362,32 @@ CREATE TABLE IF NOT EXISTS aip_charts_dfs (
 - [ ] **Schritt 4: Migration schreiben**
 
 ```python
-_DFS_SPALTEN = ("icao", "sorte", "seite_url", "quell_hash", "bild_hash",
+_DFS_SPALTEN = ("icao", "sorte", "seite_nr", "quell_hash", "bild_hash",
                 "nord", "sued", "west", "ost",
                 "feld_nord", "feld_sued", "feld_west", "feld_ost",
                 "drehung", "mps",
                 "p1_x", "p1_y", "p1_lat", "p1_lon",
                 "p2_x", "p2_y", "p2_lat", "p2_lon",
-                "status", "airac", "geprueft_am")
+                "status", "status_vorher", "airac", "geprueft_am")
+
+
+def _punkte_aus_rahmen(rahmen_px, r):
+    """Die beiden geklickten Rahmenecken aus dem Bestand zurueckgewinnen.
+
+    ``rahmen_px`` ist bei den Sichtflugkarten das Klickprotokoll: vier Zahlen
+    ``p1_x,p1_y,p2_x,p2_y``, und ``feld_nord/feld_west`` bzw. ``feld_sued/feld_ost`` sind
+    deren Koordinaten. Alle 446 Bestandszeilen sind wohlgeformt (gemessen 31.08.2026); der
+    Ausfallweg ist trotzdem noetig, damit eine einzige unlesbare Zeile nicht die anderen
+    445 liegen laesst.
+
+    Rueckgabe: acht Werte, oder achtmal None.
+    """
+    try:
+        x1, y1, x2, y2 = (float(t) for t in (rahmen_px or "").split(","))
+    except (ValueError, AttributeError):
+        return (None,) * 8
+    return (x1, y1, r["feld_nord"], r["feld_west"],
+            x2, y2, r["feld_sued"], r["feld_ost"])
 
 
 def migration_charts_dfs(conn: sqlite3.Connection) -> int:
@@ -298,30 +412,39 @@ def migration_charts_dfs(conn: sqlite3.Connection) -> int:
     # Sichtflugkarten. quelle='hand' heisst "vom Nutzer gesetzt" -> gepasst.
     # quelle='auto' heisst "gerechnet, ungeprueft" -> auto.
     for r in conn.execute(
-            """SELECT icao, seite_url, bild_hash, nord, sued, west, ost,
+            """SELECT icao, rahmen_px, bild_hash, nord, sued, west, ost,
                       feld_nord, feld_sued, feld_west, feld_ost,
                       quelle, airac, status, geprueft_am
                FROM aip_charts""").fetchall():
-        status = "gepasst" if r["quelle"] == "hand" else "auto"
+        # 'verwaist' bleibt 'verwaist': Der Link ist verschwunden, die Passung nicht. Sie
+        # kehrt zurueck, sobald der Link wieder auftaucht -- ein AIRAC-Wechsel benennt
+        # Kapitelseiten um. Wer sie hier auf 'gepasst' hebt, verliert die Information.
         if r["status"] == "verwaist":
-            # Der Link ist verschwunden, die Passung blieb erhalten. Sie ist Arbeit eines
-            # Menschen und bleibt es -- sichtbar wird sie ueber den Statusfilter.
+            status = "verwaist"
+        else:
             status = "gepasst" if r["quelle"] == "hand" else "auto"
+        p = _punkte_aus_rahmen(r["rahmen_px"], r)
         conn.execute(
             f"""INSERT INTO aip_charts_dfs ({', '.join(_DFS_SPALTEN)})
                 VALUES ({', '.join('?' * len(_DFS_SPALTEN))})
                 ON CONFLICT(icao, sorte) DO NOTHING""",
-            (r["icao"], "sichtflug", r["seite_url"] or "", "", r["bild_hash"] or "",
+            # seite_nr bleibt None: seite_url ist im Bestand in ALLEN 446 Zeilen leer, es
+            # gibt nichts zu uebernehmen. Der erste Joblauf traegt sie nach (Task 6).
+            # quell_hash aus bild_hash -- die beste vorhandene Naeherung; die Abweichung
+            # bei den sieben quer gedruckten Blaettern faengt Task 6 ab.
+            (r["icao"], "sichtflug", None, r["bild_hash"] or "", r["bild_hash"] or "",
              r["nord"], r["sued"], r["west"], r["ost"],
              r["feld_nord"], r["feld_sued"], r["feld_west"], r["feld_ost"],
-             0.0, 0.0, None, None, None, None, None, None, None, None,
-             status, r["airac"] or "", r["geprueft_am"]))
+             0.0, 0.0, *p,
+             status, None, r["airac"] or "", r["geprueft_am"]))
         n += 1
 
     # Flugplatz- und Rollkarten. ALLE bestehenden Passungen stammen von Claude, nicht vom
     # Nutzer -- sie fallen deshalb auf 'auto' zurueck, nicht auf 'gepasst'.
+    # Die Klickpunkte sind hier UNRETTBAR: Sie wurden nie abgelegt. p1_*/p2_* bleiben leer;
+    # wer nachjustieren will, klickt neu. Das ist der einzige echte Verlust der Migration.
     for r in conn.execute(
-            """SELECT icao, sorte, seite_url, quell_hash, bild_hash,
+            """SELECT icao, sorte, quell_hash, bild_hash,
                       nord, sued, west, ost, feld_nord, feld_sued, feld_west, feld_ost,
                       drehung, mps, airac, status, geprueft_am
                FROM aip_ground_charts""").fetchall():
@@ -330,12 +453,12 @@ def migration_charts_dfs(conn: sqlite3.Connection) -> int:
             f"""INSERT INTO aip_charts_dfs ({', '.join(_DFS_SPALTEN)})
                 VALUES ({', '.join('?' * len(_DFS_SPALTEN))})
                 ON CONFLICT(icao, sorte) DO NOTHING""",
-            (r["icao"], r["sorte"], r["seite_url"] or "", r["quell_hash"] or "",
+            (r["icao"], r["sorte"], None, r["quell_hash"] or "",
              r["bild_hash"] or "",
              r["nord"], r["sued"], r["west"], r["ost"],
              r["feld_nord"], r["feld_sued"], r["feld_west"], r["feld_ost"],
              r["drehung"], r["mps"], None, None, None, None, None, None, None, None,
-             status, r["airac"] or "", r["geprueft_am"]))
+             status, None, r["airac"] or "", r["geprueft_am"]))
         n += 1
 
     conn.execute("INSERT INTO job_laeufe (name, zuletzt) VALUES (?, ?)",
@@ -349,19 +472,28 @@ wurde.
 
 - [ ] **Schritt 5: In `init_db` aufrufen**
 
-Nach den Migrationslisten, im selben `try`-Block wie die Tabellenerstellung:
+Nach den Migrationslisten, in einem **eigenen** `try`-Block — **nicht** im Block der
+Spaltenmigrationen:
 
 ```python
+        # EIGENER Block mit sqlite3.Error, nicht OperationalError. Das Muster darueber
+        # (app/database.py:830-837) faengt nur OperationalError -- richtig fuer
+        # "ALTER TABLE ... ADD COLUMN", das bei vorhandener Spalte genau den wirft. Ein
+        # INSERT in eine Tabelle mit Primaerschluessel wirft dagegen IntegrityError, und
+        # die ist KEIN OperationalError: init_db braeche ab, die App startete nicht.
+        #
+        # Ein Fehlschlag der Migration darf den Dienststart nicht verhindern -- er wird
+        # protokolliert, die alten Tabellen stehen noch, und der Merker bleibt ungesetzt,
+        # sodass der naechste Start es erneut versucht.
         try:
             uebernommen = migration_charts_dfs(conn)
             if uebernommen:
                 logger.info("aip_charts_dfs: %d Zeilen uebernommen", uebernommen)
-        except sqlite3.OperationalError:
-            # Frische Datenbank ohne die alten Tabellen -- nichts zu tun.
-            pass
+        except sqlite3.Error:
+            logger.exception("aip_charts_dfs: Migration fehlgeschlagen")
 ```
 
-- [ ] **Schritt 6: Tests laufen lassen** — `pytest tests/test_charts_dfs.py -v`, 6 PASS
+- [ ] **Schritt 6: Tests laufen lassen** — `pytest tests/test_charts_dfs.py -v`, 11 PASS
 
 - [ ] **Schritt 7: Commit**
 
@@ -383,7 +515,8 @@ git commit -m "Eine Tabelle fuer beide Kartentypen, Migration laeuft genau einma
 - Produziert: `get_charts_dfs(conn, status=None, sorte=None) -> list[dict]`
 - Produziert: `get_chart_dfs(conn, icao, sorte) -> dict | None`
 - Produziert: `delete_chart_dfs(conn, icao, sorte) -> int`
-- Produziert: `STATUS_DFS = ("gepasst", "auto", "offen", "nicht_gefunden", "pruefen")`
+- Produziert: `STATUS_DFS = ("gepasst", "auto", "offen", "nicht_gefunden", "pruefen", "verwaist")`
+- Produziert: `PassungGesperrt(Exception)` — Nachfolgerin von `HandpassungGesperrt`
 
 - [ ] **Schritt 1: Fehlschlagenden Test schreiben**
 
@@ -412,6 +545,54 @@ def test_filter_nach_status_und_sorte(conn):
     assert len(get_charts_dfs(conn)) == 3
 
 
+def test_verwaist_ist_ein_gueltiger_status(conn):
+    """Eine Karte, deren Eintrag in airport_links verschwindet, wird NICHT geloescht --
+    sie kehrt zurueck, sobald der Link wieder auftaucht (ein AIRAC-Wechsel benennt
+    Kapitelseiten um). Nutzerentscheidung vom 30.08.2026."""
+    from app.database import get_chart_dfs, upsert_chart_dfs
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="verwaist", **LAGE)
+    assert get_chart_dfs(conn, "EDDL", "sichtflug")["status"] == "verwaist"
+
+
+def test_eine_gepasste_karte_wird_nicht_stillschweigend_ueberschrieben(conn):
+    """Die Sperre bleibt -- nur ihr Praedikat wechselt von quelle='hand' auf
+    status='gepasst'.
+
+    Der Rueckbau nimmt zwar dem JOB die Faehigkeit, eine Passung zu rechnen. Der
+    Seitenwaehler bleibt aber und schreibt bei gescheiterter Passung alle Lagefelder auf 0
+    (app/main.py:4694). Nach dem Rueckbau ist ``passung`` dort IMMER None -- der nullende
+    Zweig waere der einzige. Genau das ist am 25.08.2026 schon einmal passiert: EDAZ stand
+    danach auf 0/0/0/0.
+    """
+    from app.database import PassungGesperrt, upsert_chart_dfs
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst", **LAGE)
+    with pytest.raises(PassungGesperrt):
+        upsert_chart_dfs(conn, "EDDL", "sichtflug", status="auto",
+                         **{**LAGE, "nord": 0, "sued": 0, "west": 0, "ost": 0})
+
+
+def test_mit_ausdruecklicher_ansage_geht_es_doch(conn):
+    """Der Nutzer selbst muss eine gepasste Karte neu passen koennen -- die Sperre richtet
+    sich gegen stillschweigendes Ueberschreiben, nicht gegen ihn."""
+    from app.database import get_chart_dfs, upsert_chart_dfs
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst", **LAGE)
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst",
+                     **{**LAGE, "drehung": 7.5}, hand_ueberschreiben=True)
+    assert get_chart_dfs(conn, "EDDL", "sichtflug")["drehung"] == pytest.approx(7.5)
+
+
+def test_der_status_allein_darf_ohne_ansage_wechseln(conn):
+    """Der Job setzt status='pruefen' und quell_hash auf einer gepassten Karte -- er ruehrt
+    die Lage nicht an. Wuerde die Sperre auch das abweisen, koennte er nichts melden."""
+    from app.database import get_chart_dfs, upsert_chart_dfs
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst", **LAGE)
+    upsert_chart_dfs(conn, "EDDL", "sichtflug", status="pruefen",
+                     status_vorher="gepasst", quell_hash="n" * 64)
+    k = get_chart_dfs(conn, "EDDL", "sichtflug")
+    assert k["status"] == "pruefen" and k["status_vorher"] == "gepasst"
+    assert k["nord"] == pytest.approx(LAGE["nord"])
+
+
 def test_geprueft_am_wird_bei_jedem_schreiben_gesetzt(conn):
     from app.database import get_chart_dfs, upsert_chart_dfs
     upsert_chart_dfs(conn, "EDDL", "sichtflug", status="offen", **LAGE)
@@ -430,26 +611,55 @@ def test_icao_wird_normalisiert(conn):
 Die Statusprüfung gehört in `upsert_chart_dfs`:
 
 ```python
-STATUS_DFS = ("gepasst", "auto", "offen", "nicht_gefunden", "pruefen")
+# 'pruefen' OHNE Umlaut: der Wert wird in Python, SQL, JavaScript und Testliteralen
+# verglichen -- ein Umlaut darin ist eine Fehlerquelle ohne Gegenwert.
+STATUS_DFS = ("gepasst", "auto", "offen", "nicht_gefunden", "pruefen", "verwaist")
 SORTEN_DFS = ("sichtflug", "flugplatzkarte", "rollkarte")
 
+# Die Lagefelder. Wer eines davon anfasst, passt -- und braucht bei einer gepassten Karte
+# die ausdrueckliche Ansage. Wer nur Status, quell_hash oder seite_nr setzt, nicht.
+_LAGE_FELDER = ("nord", "sued", "west", "ost",
+                "feld_nord", "feld_sued", "feld_west", "feld_ost",
+                "drehung", "mps",
+                "p1_x", "p1_y", "p1_lat", "p1_lon", "p2_x", "p2_y", "p2_lat", "p2_lon")
 
-def upsert_chart_dfs(conn: sqlite3.Connection, icao: str, sorte: str, **felder) -> None:
+
+class PassungGesperrt(Exception):
+    """Eine vom Nutzer gepasste Karte sollte stillschweigend ueberschrieben werden."""
+
+
+def upsert_chart_dfs(conn: sqlite3.Connection, icao: str, sorte: str,
+                     hand_ueberschreiben: bool = False, **felder) -> None:
     """Karte setzen. ``status`` ist Pflicht und muss aus STATUS_DFS stammen.
 
-    Es gibt hier KEINE Sperre wie im alten upsert_aip_chart: Nach dem Rueckbau existiert
-    kein automatischer Schreibpfad mehr, der eine Passung ueberschreiben koennte. Der Job
-    setzt ausschliesslich status='pruefen' und quell_hash (s. Task 6), er rechnet nichts.
+    **Die Sperre bleibt, das Praedikat wechselt** -- von ``quelle='hand'`` auf
+    ``status='gepasst'``. Der Rueckbau nimmt zwar dem Job die Faehigkeit, eine Passung zu
+    rechnen; der Seitenwaehler bleibt aber und schreibt bei gescheiterter Passung alle
+    Lagefelder auf 0 (heute app/main.py:4694). Nach dem Rueckbau ist ``passung`` dort
+    IMMER None -- der nullende Zweig waere der einzige. Am 25.08.2026 hat genau das EDAZ
+    auf 0/0/0/0 gesetzt.
+
+    Die Sperre greift nur, wenn ein LAGEfeld mitkommt. Der Job setzt Status, ``quell_hash``
+    und ``seite_nr`` -- er soll melden koennen, ohne die Passung anzuruehren.
     """
     code = (icao or "").strip().upper()
     if sorte not in SORTEN_DFS:
         raise ValueError(f"unbekannte Sorte: {sorte!r}")
     if felder.get("status") not in STATUS_DFS:
         raise ValueError(f"unbekannter Status: {felder.get('status')!r}")
+    if not hand_ueberschreiben and any(f in felder for f in _LAGE_FELDER):
+        alt = conn.execute(
+            "SELECT status FROM aip_charts_dfs WHERE icao = ? AND sorte = ?",
+            (code, sorte)).fetchone()
+        if alt is not None and alt["status"] == "gepasst":
+            raise PassungGesperrt(
+                f"{code}/{sorte} ist vom Nutzer gepasst -- hand_ueberschreiben noetig")
     # Nur die mitgegebenen Felder nachziehen. Ein Aufruf, der bloss den Status aendert
     # (etwa der Job mit status='pruefen'), darf die Passung nicht auf Null zuruecksetzen.
     setzbar = [f for f in _DFS_SPALTEN
                if f not in ("icao", "sorte", "geprueft_am") and f in felder]
+    if not setzbar:
+        raise ValueError("nichts zu setzen")
     spalten = ("icao", "sorte", *setzbar, "geprueft_am")
     platz = ", ".join("?" * len(spalten))
     nachziehen = ", ".join(f"{f}=excluded.{f}" for f in (*setzbar, "geprueft_am"))
@@ -562,17 +772,37 @@ sie erzeugen Blätter mit Gradnetz für eine Messung, die es nicht mehr gibt.
 ## Task 4: `scripts/` aufräumen
 
 **Dateien:**
-- Ändern: `scripts/aip_bestand.py` (347 → ~120)
-- Löschen: `scripts/ground_chart_bestand.py`, `scripts/ground_chart_probe.py`
-- Prüfen: `scripts/aip_handpassung.py`
+- Ändern: `scripts/aip_bestand.py` (347 → ~140)
+- Löschen: `scripts/ground_chart_bestand.py`, `scripts/ground_chart_probe.py`,
+  `scripts/aip_handpassung.py`, `scripts/aip_band_zeigen.py`, `scripts/aip_schablonen.py`
 
-- [ ] **Schritt 1: `aip_handpassung.py` lesen und entscheiden**
+- [ ] **Schritt 1: Die drei Skripte gehen mit — sie brechen sonst beim Import**
 
-Das Skript ist bisher nicht geprüft worden. Es schreibt in `aip_charts` (Zeile 369) und
-erwähnt `genordet_rechnen` im Kommentar. **Lies es ganz.** Entweder es kann Passungen setzen,
-die die neue Maske nicht kann — dann wird es auf `aip_charts_dfs` und
-`ground_charts.handpassung` umgestellt —, oder es ist ein Vorläufer der Admin-Maske und wird
-gelöscht. Entscheidung im Commit begründen.
+Eine frühere Fassung dieses Plans wollte `aip_handpassung.py` „prüfen und entscheiden" mit
+der Begründung, es erwähne die Automatik nur im Kommentar. **Es ruft sie in vier Zeilen
+auf** (157–161: `A.Rahmen`, `A.rahmen_finden`, `A.tick_positionen_mit_band`, `A.raster`).
+Ohne Task 3 lief es; nach Task 3 bricht es beim Import. Dasselbe gilt für zwei weitere:
+
+| Skript | ruft |
+|---|---|
+| `scripts/aip_handpassung.py` | `Rahmen`, `rahmen_finden`, `tick_positionen_mit_band`, `raster` |
+| `scripts/aip_band_zeigen.py` | `Rahmen`, `rahmen_finden`, `tick_positionen_mit_band`, `band_grenzen` |
+| `scripts/aip_schablonen.py` | `rahmen_finden`, `raster`, `tick_positionen`, `zeichen_im_band`, `_SCHABLONEN` |
+
+Alle drei sind Werkzeuge der Automatik: Sie zeigen Rahmen, Bänder und Schablonen an, damit
+man die Erkennung nachvollziehen kann. Fällt die Erkennung, haben sie keinen Gegenstand
+mehr. Die Passen-Maske aus Task 7 kann alles, was `aip_handpassung.py` konnte, und mehr —
+sie zeigt das Blatt.
+
+**Gegenprobe vor dem Löschen:**
+
+```bash
+grep -rn "aip_handpassung\|aip_band_zeigen\|aip_schablonen" --include=*.py --include=*.md \
+     --include=*.yml app/ scripts/ tests/ docs/ .github/
+```
+
+Erwartet: nur Treffer in den Skripten selbst und in dieser Planungsdatei. Gibt es einen
+Aufrufer in `.github/workflows/`, wird der zuerst entfernt.
 
 - [ ] **Schritt 2: Fehlschlagenden Test schreiben**
 
@@ -601,15 +831,168 @@ Der verbleibende Lauf:
 
 ```python
 def melden(pause: float = 0.4) -> dict:
-    """Fuer jede Karte mit gesetzter seite_url das Rohblatt holen und den Hash vergleichen.
+    """Fuer jede Karte das Rohblatt holen und den Hash vergleichen.
 
-    Weicht er ab, wird status='pruefen' gesetzt und das neue Blatt daneben gelegt. Sonst
-    passiert nichts. Kein Rechnen, kein Schreiben einer Passung.
+    Weicht er ab, wird status='pruefen' gesetzt (mit status_vorher) und das neue Blatt
+    daneben gelegt. Sonst passiert nichts. Kein Rechnen, kein Schreiben einer Passung.
 
-    Zeilen OHNE seite_url werden uebersprungen -- bei ihnen ist nicht bekannt, welches Blatt
-    zu pruefen waere. Sie erscheinen in der Liste als 'offen' und warten auf die
-    Seitenauswahl.
+    **Die Seite wird als Nummer gefuehrt, nicht als URL.** ``seite_url`` enthielt den AIRAC
+    (https://aip.dfs.de/BasicVFR/2026AUG20/pages/8E6E....html) und liefert nach dem
+    naechsten Zyklus 404 -- fuer ALLE Zeilen gleichzeitig, und zwar genau dann, wenn sich
+    Blaetter tatsaechlich aendern koennten. Der Lauf loest deshalb bei jedem Durchgang
+    ueber ``airport_links.aip_url`` (ohne AIRAC, Meta-Refresh) frisch auf.
+
+    **Zeilen ohne seite_nr werden NICHT uebersprungen.** Im Bestand ist ``seite_url`` in
+    ALLEN 446 Sichtflugzeilen leer -- ein Lauf, der nur Zeilen mit gesetzter Seite prueft,
+    pruefte 110 von 556 und ausgerechnet keine Sichtflugkarte. Fuer eine Zeile ohne
+    ``seite_nr`` sucht der Lauf einmalig die Kapitelseite, deren Bild dem gespeicherten
+    ``bild_hash`` entspricht, und merkt sich die Nummer. Findet er keine, bleibt sie leer
+    und die Zeile erscheint als "Seite unbekannt" -- sichtbar, nicht stumm uebersprungen.
+
+    Kosten: **ein** Abruf je Karte, nicht zwei -- das Bild steckt als data-URI in derselben
+    HTML-Seite (``bild_aus_html``). Dazu je Platz einen fuer die Kapitelaufloesung.
     """
+```
+
+---
+
+## Task 4b: `norden` bekommt die Sorte und eine Drehschwelle
+
+Zwei Fehler, die erst auffallen, wenn dieselbe Funktion **beide** Kartentypen bedient — was
+sie ab Task 5 tut.
+
+**Dateien:**
+- Ändern: `app/ground_charts.py`
+- Test: `tests/test_ground_charts.py`
+
+**Interfaces:**
+- Ändert: `norden(png: bytes, p: GroundPassung, sorte: str) -> tuple[bytes, dict] | None`
+- Produziert: `FELD_SAUM_M = {"sichtflug": 0.0, "flugplatzkarte": 1000.0, "rollkarte": 1000.0}`
+- Produziert: `DREH_SCHWELLE = 0.25`
+
+- [ ] **Schritt 1: Fehlschlagende Tests schreiben**
+
+```python
+# tests/test_ground_charts.py
+def test_der_saum_haengt_an_der_sorte():
+    """Zwei Bedeutungen in einer Spalte waeren sonst die Folge.
+
+    Das alte aip_charts.handpassung legte feld_* EXAKT auf die geklickten Rahmenecken --
+    richtig, denn bei einer Sichtflugkarte definiert der Rahmen das Kartenfeld praezise.
+    ground_charts.norden legt es auf die Huelle plus 1000 m -- richtig fuer eine
+    Flugplatzkarte, wo die Passpunkte zwei Bahnschwellen mitten auf dem Platz sind und die
+    Karte sonst erst einschaltete, wenn man schon auf der Bahn steht.
+
+    Beides durch dieselbe Funktion und ohne Sorte hiesse: die 171 migrierten
+    Sichtflugzeilen behielten ihr rahmengenaues feld_*, jede neu gesetzte bekaeme das
+    andere -- und die Ebene schaltete auf allen vier Seiten einen Kilometer zu frueh ein.
+    """
+    im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2200, 1000))
+    p = ground_charts.handpassung((200.0, 500.0), S_05R, (1970.0, 500.0), S_23L)
+    _, sicht = ground_charts.norden(_png(im), p, "sichtflug")
+    _, platz = ground_charts.norden(_png(im), p, "flugplatzkarte")
+    # Mit Saum liegt das Feld weiter aussen -- also naeher an den Blattgrenzen.
+    assert platz["feld_nord"] > sicht["feld_nord"]
+    assert platz["feld_sued"] < sicht["feld_sued"]
+    assert platz["feld_ost"] > sicht["feld_ost"]
+    assert platz["feld_west"] < sicht["feld_west"]
+
+
+def test_ohne_saum_ist_das_feld_genau_die_punkthuelle():
+    """Die Gegenprobe zum rahmengenauen Verhalten der 171 Bestandszeilen."""
+    im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2200, 1000))
+    p = ground_charts.handpassung((200.0, 500.0), S_05R, (1970.0, 500.0), S_23L)
+    _, g = ground_charts.norden(_png(im), p, "sichtflug")
+    assert g["feld_nord"] == pytest.approx(max(S_05R[0], S_23L[0]), abs=1e-4)
+    assert g["feld_sued"] == pytest.approx(min(S_05R[0], S_23L[0]), abs=1e-4)
+
+
+def test_eine_winzige_drehung_dreht_nicht():
+    """An EDWE und EDAZ gemessen ergibt die Rechnung aus den Rahmenecken 0,04 bis 0,09 Grad.
+
+    rotate(expand=True) liesse die Leinwand um ein bis zwei Pixel wachsen und jedes Pixel
+    interpolieren -- an einem Blatt, dessen Gradnetzstriche drei Pixel breit sind. Der
+    bild_hash aenderte sich, obwohl inhaltlich nichts geschieht, und der Job meldete beim
+    naechsten Lauf eine Aenderung.
+    """
+    im = _blatt([(200, 500, 1970, 500, 28)], groesse=(2200, 1000))
+    # Zwei Punkte auf einer fast waagerechten Linie, die genau nach Osten zeigt.
+    p = ground_charts.handpassung((200.0, 500.0), (51.28, 6.75), (1970.0, 500.0), (51.28, 6.80))
+    gedreht, g = ground_charts.norden(_png(im), p, "sichtflug")
+    assert Image.open(io.BytesIO(gedreht)).size == im.size
+    assert g["drehung"] == 0.0
+
+
+def test_rechte_winkel_werden_verlustfrei_gedreht():
+    """Die sieben quer gedruckten Blaetter sind genau dieser Fall. transpose() ist
+    verlustfrei, rotate(resample=BICUBIC) interpoliert jedes Pixel."""
+    import inspect
+    import re
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(ground_charts.norden))
+    assert "transpose" in quelle
+    assert "ROTATE_90" in quelle and "ROTATE_180" in quelle and "ROTATE_270" in quelle
+```
+
+- [ ] **Schritt 2: Tests laufen lassen** — vier FAIL
+
+- [ ] **Schritt 3: `norden` umbauen**
+
+```python
+# Wie weit ueber die Passpunkte hinaus die Ebene noch einschaltet.
+#
+# Bei einer Sichtflugkarte sind die Passpunkte zwei Rahmenecken -- der Rahmen IST das
+# Kartenfeld, ein Saum waere schlicht falsch. Bei einer Flugplatzkarte sind es zwei
+# Bahnschwellen mitten auf dem Platz; ohne Saum schaltete die Karte erst ein, wenn man
+# schon auf der Bahn steht.
+FELD_SAUM_M = {"sichtflug": 0.0, "flugplatzkarte": 1000.0, "rollkarte": 1000.0}
+
+# Unter dieser Schwelle wird nicht gedreht. Aus zwei Rahmenecken faellt fast immer ein
+# Restwinkel von Hundertsteln bis Zehnteln Grad an (an EDWE und EDAZ: 0,04 bis 0,09).
+# rotate(expand=True) liesse die Leinwand um ein bis zwei Pixel wachsen und interpolierte
+# jedes Pixel -- an einem Blatt mit drei Pixel breiten Gradnetzstrichen. Der bild_hash
+# aenderte sich ohne inhaltlichen Grund.
+DREH_SCHWELLE = 0.25
+
+_VIERTEL = {90: Image.Transpose.ROTATE_90,
+            180: Image.Transpose.ROTATE_180,
+            270: Image.Transpose.ROTATE_270}
+
+
+def _drehen(im: Image.Image, drehung: float) -> tuple[Image.Image, float]:
+    """Blatt nach Norden drehen. Rueckgabe: Bild und die TATSAECHLICH angewandte Drehung."""
+    if min(drehung % 360.0, 360.0 - (drehung % 360.0)) < DREH_SCHWELLE:
+        return im, 0.0
+    for grad, wie in _VIERTEL.items():
+        if abs((drehung % 360.0) - grad) < DREH_SCHWELLE:
+            # Verlustfrei -- genau der Fall der sieben quer gedruckten Blaetter.
+            return im.transpose(wie), float(grad)
+    return im.rotate(-drehung, resample=Image.BICUBIC, expand=True,
+                     fillcolor=(0, 0, 0, 0)), drehung
+```
+
+`norden` nimmt `sorte` als drittes Argument, holt den Saum aus `FELD_SAUM_M`, dreht über
+`_drehen` und gibt die **tatsächlich angewandte** Drehung in `grenzen["drehung"]` zurück —
+sonst schriebe der Aufrufer 0,07° in die Datenbank, während das Blatt ungedreht liegt.
+
+**Die vier Blattecken werden weiterhin durch die Abbildung geschickt**, nicht die Hülle der
+Passpunkte — das ist die Absicherung gegen den 45-Prozent-Maßstabsfehler und bleibt
+unverändert. Nur `feld_*` bekommt den sortenabhängigen Saum.
+
+- [ ] **Schritt 4: Bestandstests nachziehen**
+
+Alle bisherigen Aufrufe von `norden` in `tests/test_ground_charts.py` brauchen das dritte
+Argument. `test_feldgrenzen_sind_die_punkthuelle_nicht_die_blattgrenzen` und
+`test_das_feld_ragt_nie_ueber_das_blatt_hinaus` prüfen den Saumfall — dort
+`"flugplatzkarte"` übergeben.
+
+- [ ] **Schritt 5: Tests laufen lassen** — `pytest tests/test_ground_charts.py -v`
+
+- [ ] **Schritt 6: Commit**
+
+```bash
+git add app/ground_charts.py tests/test_ground_charts.py
+git commit -m "norden: Saum haengt an der Sorte, keine Drehung unter 0,25 Grad"
 ```
 
 ---
@@ -632,14 +1015,29 @@ def melden(pause: float = 0.4) -> dict:
 | `GET /api/admin/aip-charts-dfs` | Liste über **alle 446 Plätze**, mit Status und Filter |
 | `GET /api/admin/aip-charts-dfs/{icao}/seiten` | Kapitelseiten mit Vorschau |
 | `POST /api/admin/aip-charts-dfs/{icao}/seite` | Seite und Sorte festlegen |
+| `POST /api/admin/aip-charts-dfs/{icao}/nicht-gefunden` | Status `nicht_gefunden` **schreiben** |
 | `POST /api/admin/aip-charts-dfs/{icao}/{sorte}` | Passung setzen: zwei Punkte + Drehung |
-| `POST /api/admin/aip-charts-dfs/{icao}/{sorte}/bestaetigen` | Status `prüfen` → `gepasst` |
+| `POST /api/admin/aip-charts-dfs/{icao}/{sorte}/uebernehmen` | neues Blatt gilt, `quell_hash` nachziehen, → `gepasst` |
+| `POST /api/admin/aip-charts-dfs/{icao}/{sorte}/verwerfen` | altes Blatt bleibt, `quell_hash` **trotzdem** nachziehen, → `status_vorher` |
 | `DELETE /api/admin/aip-charts-dfs/{icao}/{sorte}` | Karte entfernen |
 
-**Die Rohbild-Route bekommt einen eigenen Pfad**, nicht `.roh.png` als Suffix:
+**Aus `pruefen` heraus gibt es drei Wege, und keiner endet pauschal auf `gepasst`.** Beim
+Setzen von `pruefen` merkt sich der Job den bisherigen Status in `status_vorher`; „verwerfen"
+stellt ihn zurück. Ohne das landete eine der 42 als `offen` migrierten Zeilen — Lagefelder
+alle 0 — nach einem Blattwechsel auf `gepasst` und damit im Kniebrett, mit
+`nord=sued=west=ost=0`.
+
+**Auch „verwerfen" zieht `quell_hash` nach.** Sonst findet der nächste Wochenlauf denselben
+abweichenden Hash und setzt die Zeile erneut auf `pruefen` — die Liste wäre nach dem ersten
+Verwerfen dauerhaft unaufräumbar. Diese Falle war bei der Vorschlagstabelle schon einmal
+gestellt und behoben (`app/database.py:371-377`).
+
+**Die Rohbild-Route bekommt einen eigenen Pfad**, nicht `.roh.png` als Suffix — **und
+`require_admin`**, das die heute erreichbare Route nicht hat und die unerreichbare schon:
 
 ```python
 @app.get("/aip-chart-roh/{icao}/{sorte}.png", include_in_schema=False)
+async def aip_chart_roh(icao: str, sorte: str, _=Depends(require_admin)):
 ```
 
 - [ ] **Schritt 1: Fehlschlagenden Test schreiben**
@@ -662,7 +1060,15 @@ def test_rohbild_wird_ausgeliefert(client, tmp_path):
 
 def test_liste_zeigt_auch_plaetze_ohne_blatt(client, db_pfad):
     """Ausdruecklicher Wunsch: 'Vielleicht finde ich ja eine geeignete Karte, die du nicht
-    gefunden hast.' Ein Platz ohne Zeile erscheint als nicht_gefunden."""
+    gefunden hast.' Ein Platz OHNE Zeile erscheint mit status=None -- die Oberflaeche
+    schreibt dafuer 'nicht nachgesehen'.
+
+    Das ist KEIN Status: 'nicht_gefunden' heisst 'nachgesehen, es gibt keine', und das ist
+    eine Aussage, die jemand getroffen hat. Waere sie hergeleitet, liesse sie sich nicht
+    speichern -- die Arbeitsliste bliebe dauerhaft rund 780 Eintraege lang, in denen nichts
+    abhakbar ist.
+    """
+    c, db_pfad, _tmp = client
     conn = get_connection(db_pfad)
     try:
         conn.execute("INSERT INTO airport_links (icao, aip_url, updated_at) "
@@ -672,7 +1078,51 @@ def test_liste_zeigt_auch_plaetze_ohne_blatt(client, db_pfad):
         conn.close()
     d = c.get("/api/admin/aip-charts-dfs").json()
     zzz = [k for k in d["charts"] if k["icao"] == "EDZZ"]
-    assert zzz and zzz[0]["status"] == "nicht_gefunden"
+    assert zzz and zzz[0]["status"] is None
+
+
+def test_nicht_gefunden_wird_geschrieben(client, db_pfad):
+    """Wer die Seitenauswahl oeffnet und keine passende Seite findet, haelt das fest --
+    dabei entsteht die Zeile. Sonst kaeme derselbe Platz beim naechsten Durchgang wieder."""
+    from app.database import get_chart_dfs, get_connection
+
+    c, db_pfad, _tmp = client
+    antwort = c.post("/api/admin/aip-charts-dfs/EDZZ/nicht-gefunden",
+                     json={"sorte": "rollkarte"})
+    assert antwort.status_code == 200
+    conn = get_connection(db_pfad)
+    try:
+        assert get_chart_dfs(conn, "EDZZ", "rollkarte")["status"] == "nicht_gefunden"
+    finally:
+        conn.close()
+
+
+def test_eine_gepasste_karte_wird_ueber_die_api_nicht_stillschweigend_genullt(client, db_pfad):
+    """Der Seitenwaehler schrieb bei gescheiterter Passung alle Lagefelder auf 0
+    (app/main.py:4694). Nach dem Rueckbau ist die Passung dort IMMER None -- der nullende
+    Zweig waere der einzige. Am 25.08.2026 hat genau das EDAZ auf 0/0/0/0 gesetzt.
+
+    Deshalb schreibt der Seitenwaehler bei unveraendertem Blatthash GAR NICHTS: Er waehlt
+    die Seite, er passt nicht.
+    """
+    from app.database import get_chart_dfs, get_connection, upsert_chart_dfs
+
+    c, db_pfad, _tmp = client
+    conn = get_connection(db_pfad)
+    try:
+        upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst", **LAGE)
+        conn.commit()
+    finally:
+        conn.close()
+    c.post("/api/admin/aip-charts-dfs/EDDL/seite",
+           json={"sorte": "sichtflug", "seite_nr": 3})
+    conn = get_connection(db_pfad)
+    try:
+        k = get_chart_dfs(conn, "EDDL", "sichtflug")
+        assert k["nord"] == pytest.approx(LAGE["nord"])
+        assert k["status"] == "gepasst"
+    finally:
+        conn.close()
 
 
 # Die beiden Schwellen der EDDL-Bahn 05R/23L, UNGERUNDET aus runways.csv. Auf fuenf
@@ -726,28 +1176,76 @@ def test_die_drehung_laesst_sich_ueberschreiben(client, db_pfad, tmp_path):
         conn.close()
 
 
-def test_bestaetigen_hebt_pruefen_auf(client, db_pfad):
+def test_uebernehmen_hebt_pruefen_auf(client, db_pfad):
     """Neues Blatt angesehen, Passung stimmt noch: quell_hash nachziehen, Status gepasst.
 
-    Die Passung selbst bleibt dabei unangetastet -- das ist der Unterschied zum Uebernehmen
-    eines Vorschlags, das es nicht mehr gibt.
+    Die Passung selbst bleibt dabei unangetastet.
     """
     from app.database import get_chart_dfs, get_connection, upsert_chart_dfs
 
-    c, _db, _tmp = client
+    c, db_pfad, _tmp = client
     conn = get_connection(db_pfad)
     try:
+        upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst", **LAGE)
         upsert_chart_dfs(conn, "EDDL", "sichtflug", status="pruefen",
-                         quell_hash="neu" + "0" * 61, drehung=322.8, **LAGE_OHNE_DREHUNG)
+                         status_vorher="gepasst", quell_hash="n" * 64)
         conn.commit()
     finally:
         conn.close()
-    assert c.post("/api/admin/aip-charts-dfs/EDDL/sichtflug/bestaetigen").status_code == 200
+    assert c.post("/api/admin/aip-charts-dfs/EDDL/sichtflug/uebernehmen").status_code == 200
     conn = get_connection(db_pfad)
     try:
         k = get_chart_dfs(conn, "EDDL", "sichtflug")
         assert k["status"] == "gepasst"
-        assert k["drehung"] == pytest.approx(322.8)
+        assert k["drehung"] == pytest.approx(LAGE["drehung"])
+    finally:
+        conn.close()
+
+
+def test_verwerfen_stellt_den_alten_status_zurueck(client, db_pfad):
+    """NICHT pauschal auf 'gepasst'. Eine der 42 als 'offen' migrierten Zeilen hat
+    Lagefelder von 0 -- sie landete sonst nach einem Blattwechsel im Kniebrett, mit
+    nord=sued=west=ost=0."""
+    from app.database import get_chart_dfs, get_connection, upsert_chart_dfs
+
+    c, db_pfad, _tmp = client
+    conn = get_connection(db_pfad)
+    try:
+        upsert_chart_dfs(conn, "EDZZ", "rollkarte", status="offen",
+                         **{k: 0.0 for k in LAGE})
+        upsert_chart_dfs(conn, "EDZZ", "rollkarte", status="pruefen",
+                         status_vorher="offen", quell_hash="n" * 64)
+        conn.commit()
+    finally:
+        conn.close()
+    assert c.post("/api/admin/aip-charts-dfs/EDZZ/rollkarte/verwerfen").status_code == 200
+    conn = get_connection(db_pfad)
+    try:
+        assert get_chart_dfs(conn, "EDZZ", "rollkarte")["status"] == "offen"
+    finally:
+        conn.close()
+
+
+def test_auch_verwerfen_zieht_den_quell_hash_nach(client, db_pfad):
+    """Sonst findet der naechste Wochenlauf denselben abweichenden Hash und setzt die Zeile
+    erneut auf 'pruefen' -- die Liste waere nach dem ersten Verwerfen dauerhaft
+    unaufraeumbar. Dieselbe Falle war bei der Vorschlagstabelle schon einmal gestellt."""
+    from app.database import get_chart_dfs, get_connection, upsert_chart_dfs
+
+    c, db_pfad, _tmp = client
+    conn = get_connection(db_pfad)
+    try:
+        upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst",
+                         quell_hash="alt" + "0" * 61, **LAGE)
+        upsert_chart_dfs(conn, "EDDL", "sichtflug", status="pruefen",
+                         status_vorher="gepasst", quell_hash="n" * 64)
+        conn.commit()
+    finally:
+        conn.close()
+    c.post("/api/admin/aip-charts-dfs/EDDL/sichtflug/verwerfen")
+    conn = get_connection(db_pfad)
+    try:
+        assert get_chart_dfs(conn, "EDDL", "sichtflug")["quell_hash"] == "n" * 64
     finally:
         conn.close()
 
@@ -768,9 +1266,35 @@ def _rohblatt(pfad, breite: int, hoehe: int) -> None:
   `_aip_karten_geaendert(request)` — ohne das erscheint eine frisch gepasste Karte im
   Kniebrett erst nach einem Neuladen, das dort innerhalb einer Sim-Sitzung nie stattfindet.
 
+Der Passen-Endpunkt ruft `ground_charts.handpassung` und dann
+`ground_charts.norden(png, passung, sorte)` — **mit der Sorte** (Task 4b): Bei `sichtflug`
+ist der Saum 0, bei Flugplatz- und Rollkarten 1000 m. Geschrieben wird die von `norden`
+**tatsächlich angewandte** Drehung, nicht die gerechnete; unter 0,25° sind das 0,0.
+
+Weil der Nutzer selbst passt, ist `hand_ueberschreiben=True` richtig — die Sperre aus Task 2
+richtet sich gegen stillschweigendes Überschreiben, nicht gegen ihn. Der **Seitenwähler**
+ruft `upsert_chart_dfs` dagegen ohne dieses Flag und **ohne ein einziges Lagefeld**: Er wählt
+die Seite, er passt nicht.
+
 **Alte Endpunkte entfallen:** `/api/aip-charts`, `/aip-chart/{icao}.png`,
 `/api/admin/aip-charts*`, `/api/aip-ground-charts`, `/aip-ground-chart/*`,
 `/api/admin/aip-ground-charts*`, `/api/admin/aip-vorschlaege*`, `/aip-vorschlag/{id}.png`.
+
+**Die Blätter bekommen einen neuen Pfad, und die Migration verschiebt sie mit.** Heute liegen
+sie unter `<db>/aip/<ICAO>.png` und `<db>/aip_ground/<ICAO>.png`; der Ground-Pfad ist **nur
+auf ICAO geschlüsselt** (`app/main.py:4243`), Flugplatz- und Rollkarte desselben Platzes
+überschrieben sich also. Künftig:
+
+```
+<db>/aip_dfs/<ICAO>.<sorte>.png                 # abgelegt, ggf. gedreht
+<db>/aip_dfs/<ICAO>.<sorte>.roh.png             # Rohblatt, zum Klicken
+<db>/aip_dfs/<ICAO>.<sorte>.neu.<hash8>.png     # neues Blatt bei Status 'pruefen'
+```
+
+Der Hash im Namen des neuen Blatts ist kein Schmuck: Ändert sich ein Blatt ein **zweites**
+Mal, während `pruefen` noch steht, sieht der Nutzer sonst ein anderes Bild als das, was er
+bestätigt. **Ohne das Verschieben zeigt nach dem Deploy jede Karte ins Leere** — der Schritt
+gehört in Task 10, vor die Gegenprobe.
 
 ---
 
@@ -783,6 +1307,29 @@ def _rohblatt(pfad, breite: int, hoehe: int) -> None:
 **Interfaces:**
 - Produziert: `VatsimPoller._aip_hash_pruefen()`, Job-Kennung `aip_hash_pruefen`
 - Entfällt: `_aip_auffrischen`, `_ground_charts_melden`
+
+**Was der Job je Zeile tut:**
+
+1. Kapitel über `airport_links.aip_url` auflösen (ohne AIRAC, Meta-Refresh), Seite `seite_nr`
+   holen.
+2. Ist `seite_nr` leer: einmalig die Kapitelseite suchen, deren Bild dem gespeicherten
+   `bild_hash` entspricht, und die Nummer merken. Ohne Fund bleibt sie leer — die Zeile
+   erscheint als „Seite unbekannt", nicht stumm übersprungen.
+3. Rohbytes hashen, mit `quell_hash` vergleichen.
+4. Weicht er ab → `status_vorher` sichern, Status `pruefen`, neues Blatt daneben legen, SSE
+   `{"type": "aip_charts"}`.
+5. Steht der Platz nicht mehr in `airport_links` → Status `verwaist` (nicht löschen).
+
+**Kosten: ein Abruf je Karte**, nicht zwei — das Bild steckt als data-URI in derselben
+HTML-Seite (`bild_aus_html`). 556 Zeilen, plus je Platz einen für die Kapitelauflösung. Der
+Kommentar in `app/poller.py:569`, der 1100 nennt, war schon dort falsch.
+
+**Die Ausnahme beim ersten Lauf.** `quell_hash` stammt aus `aip_charts.bild_hash`, und der
+ist **nicht** der Hash der DFS-Rohbytes, sondern der des abgelegten, ggf. gedrehten Blatts
+(`app/main.py:4671`: „Der Hash wird NACH dem Drehen gebildet"). Für die sieben quer
+gedruckten Blätter stimmt er nicht überein. Findet der Job einen abweichenden Hash und trägt
+die Zeile noch den AIRAC der Migration, füllt er `quell_hash` **stumm** nach, statt `pruefen`
+zu setzen. Erst ab dem zweiten Zyklus ist eine Abweichung eine echte Änderung.
 
 - [ ] **Schritt 1: Fehlschlagenden Test schreiben**
 
@@ -798,6 +1345,59 @@ def test_es_gibt_genau_einen_kartenjob():
     assert 'id="aip_hash_pruefen"' in quelle
     assert "aip_auffrischen" not in quelle
     assert "ground_charts_melden" not in quelle
+
+
+def test_der_erste_lauf_meldet_die_quer_gedruckten_blaetter_nicht():
+    """quell_hash stammt aus aip_charts.bild_hash -- und der wird NACH dem Drehen gebildet
+    (app/main.py:4671). Fuer die sieben quer gedruckten Blaetter stimmt er nicht mit dem
+    Rohblatt ueberein.
+
+    Ohne die Nachfuellregel meldete der erste Lauf sieben Karten als geaendert, die es
+    nicht sind -- und der Nutzer haette sieben Blaetter zu pruefen, an denen nichts ist.
+    """
+    import inspect
+
+    from app import poller
+
+    quelle = inspect.getsource(poller.VatsimPoller._aip_hash_pruefen)
+    assert "airac" in quelle          # der Zyklusvergleich, an dem die Regel haengt
+
+
+def test_der_job_traegt_fehlende_seitennummern_nach():
+    """seite_url ist im Bestand in ALLEN 446 Sichtflugzeilen leer. Ein Lauf, der nur Zeilen
+    mit gesetzter Seite prueft, pruefte 110 von 556 -- und ausgerechnet keine
+    Sichtflugkarte."""
+    import inspect
+
+    from app import poller
+
+    quelle = inspect.getsource(poller.VatsimPoller._aip_hash_pruefen)
+    assert "seite_nr" in quelle and "bild_hash" in quelle
+
+
+def test_der_job_merkt_sich_den_vorherigen_status():
+    """Ohne status_vorher landete eine der 42 als 'offen' migrierten Zeilen -- Lagefelder
+    alle 0 -- nach einem Blattwechsel auf 'gepasst' und damit im Kniebrett."""
+    import inspect
+
+    from app import poller
+
+    quelle = inspect.getsource(poller.VatsimPoller._aip_hash_pruefen)
+    assert "status_vorher" in quelle
+
+
+def test_der_job_loest_die_seiten_url_frisch_auf():
+    """Eine gemerkte seite_url enthaelt den AIRAC und liefert nach dem naechsten Zyklus 404
+    -- fuer ALLE Zeilen gleichzeitig, und zwar genau dann, wenn sich Blaetter tatsaechlich
+    aendern koennten."""
+    import inspect
+    import re
+
+    from app import poller
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(poller.VatsimPoller._aip_hash_pruefen))
+    assert "seite_url" not in quelle
+    assert "airac_url" in quelle or "seiten_des_kapitels" in quelle
 
 
 def test_der_job_haengt_am_faelligkeitsmerker():
@@ -833,9 +1433,17 @@ Eine Ansicht ersetzt beide alten. Enthält:
 2. **Liste** — ICAO, Sorte, Status, AIRAC, Drehung, Blattlink, Aktionen.
 3. **Seitenauswahl** — Vorschaubild und Seitennummer je Kapitelseite. **Sonst nichts** —
    keine „passt"-Spalte, kein Bahnton, keine Dateigröße. Beim Übernehmen wählt der Nutzer
-   die Sorte, vorbelegt aus dem Ton.
+   die Sorte, vorbelegt aus dem Ton. Dazu ein Knopf **„keine passende Seite"**, der
+   `nicht_gefunden` schreibt — sonst kommt derselbe Platz beim nächsten Durchgang wieder.
 4. **Passen-Maske** — Rohblatt zum Klicken, zwei Punkte mit Grad **und** Minuten getrennt,
-   Drehung als eigenes Feld mit Vorschau.
+   Drehung als eigenes Feld mit Vorschau. Bei Flugplatz- und Rollkarten zusätzlich die
+   **Bahnschwellen des Platzes** aus `runway_ref.bahnen()` — Bezeichnung, Länge und beide
+   Koordinaten in Grad und Minuten, zum Abschreiben. Auf diesem Weg sind die 68
+   Ground-Karten überhaupt entstanden; bei Sichtflugkarten steht die Anzeige nicht, dort
+   liest man die Werte vom Kartenrand ab.
+5. **Zwei Anzeigen, die keine Status sind** — „— nicht nachgesehen" für einen Platz ohne
+   Zeile, „Seite unbekannt" für eine Zeile ohne `seite_nr`. Beides sichtbar machen, nicht
+   verschweigen.
 
 - [ ] **Schritt 1: Fehlschlagenden Test schreiben**
 
@@ -874,6 +1482,28 @@ def test_statusfilter_erlaubt_mehrfachauswahl():
 
 def test_drehung_ist_ein_eigenes_feld():
     assert 'id="dfs-drehung"' in ADMIN
+
+
+def test_die_bahnschwellen_helfen_beim_passen():
+    """Auf diesem Weg sind die 68 Ground-Karten entstanden: Schwellenkoordinaten aus
+    runways.csv abschreiben. Ohne die Anzeige haette runway_ref.bahnen() keinen
+    Produktivaufrufer mehr -- 110 Zeilen toter Code mit zehn Tests dahinter."""
+    stelle = ADMIN_RUMPF.index("function dfsPassen(")
+    block = ADMIN_RUMPF[stelle:stelle + 3000]
+    assert "schwellen" in block.lower()
+
+
+def test_die_seitenauswahl_kann_nicht_gefunden_festhalten():
+    """Sonst kommt derselbe Platz beim naechsten Durchgang wieder -- und die Arbeitsliste
+    bliebe dauerhaft rund 780 Eintraege lang, in denen nichts abhakbar ist."""
+    stelle = ADMIN_RUMPF.index("function dfsSeiten(")
+    block = ADMIN_RUMPF[stelle:stelle + 3000]
+    assert "nicht-gefunden" in block
+
+
+def test_platz_ohne_zeile_heisst_nicht_nachgesehen():
+    """Nicht 'nicht gefunden'. Der Unterschied ist, ob jemand nachgesehen hat."""
+    assert "nicht nachgesehen" in ADMIN
 ```
 
 - [ ] **Schritt 2 bis 6:** wie zuvor.
@@ -892,6 +1522,8 @@ Sichtflugkarte statt an ihrer Stelle (Spec 8a), und der Deckkraftregler muss bei
 **Interfaces:**
 - Produziert: `_Z_SICHTFLUG = 300`, `_Z_PLATZKARTE = 310`
 - Entfällt: `_groundVerdecktSichtflug()`
+- Ändert: `_groundAktiv`, `_groundFest`, `_groundAus` halten künftig `"<ICAO>|<sorte>"`
+  statt einer nackten ICAO
 
 - [ ] **Schritt 1: Fehlschlagenden Test schreiben**
 
@@ -932,6 +1564,22 @@ def test_der_deckkraftregler_erscheint_auch_bei_flugplatzkarten():
     assert "_groundAktiv" in block
 
 
+def test_der_kartenzustand_haengt_an_icao_und_sorte():
+    """_groundAktiv, _groundFest und _groundAus halten heute eine ICAO (index.html:10404);
+    der Kommentar darueber begruendet den getrennten Zustand ausdruecklich damit, dass
+    Sichtflug- und Flugplatzkarte desselben Platzes dieselbe ICAO tragen.
+
+    Sobald ein Platz Flugplatz- UND Rollkarte hat -- was diese Spec ermoeglicht --, ist der
+    Schluessel mehrdeutig und find(k => k.icao === _groundFest) trifft die erste von zweien.
+    """
+    rumpf = _ohne_kommentare(QUELLE)
+    stelle = rumpf.index("function _groundSchluessel")
+    assert "sorte" in rumpf[stelle:stelle + 300]
+    # Kein Vergleich mehr auf die nackte ICAO.
+    assert "k.icao === _groundFest" not in rumpf
+    assert "k.icao === _groundAktiv" not in rumpf
+
+
 def test_der_regler_bedient_beide_overlays():
     """Mit demselben Wert -- zwei verschiedene waeren ein zweiter Regler, und im Cockpit
     ist ein Regler besser als zwei."""
@@ -941,7 +1589,7 @@ def test_der_regler_bedient_beide_overlays():
     assert "_aipKarteOverlay" in block and "_groundOverlay" in block
 ```
 
-- [ ] **Schritt 2: Test laufen lassen** — alle fünf FAIL
+- [ ] **Schritt 2: Test laufen lassen** — alle sechs FAIL
 
 - [ ] **Schritt 3: Stapelung setzen**
 
@@ -979,7 +1627,20 @@ function _aipDeckkraftAnzeigen() {
 
 und in `_aipDeckkraftSetzen` zusätzlich `if (_groundOverlay) _groundOverlay.setOpacity(_aipDeckkraft);`
 
-- [ ] **Schritt 6: Tests laufen lassen** — fünf PASS
+- [ ] **Schritt 5b: Kartenzustand auf `(icao, sorte)` umstellen**
+
+```javascript
+// Sichtflug- und Flugplatzkarte desselben Platzes tragen dieselbe ICAO -- deshalb reicht
+// sie als Schluessel nicht. Sobald ein Platz Flugplatz- UND Rollkarte hat, traefe
+// find(k => k.icao === _groundFest) die erste von zweien, und der Nutzer bekaeme beim
+// Festnageln eine andere Karte als die, auf die er getippt hat.
+function _groundSchluessel(k) { return k.icao + '|' + k.sorte; }
+```
+
+`_groundAktiv`, `_groundFest` und `_groundAus` halten künftig diesen Schlüssel; jedes
+`find(k => k.icao === …)` wird zu `find(k => _groundSchluessel(k) === …)`.
+
+- [ ] **Schritt 6: Tests laufen lassen** — sechs PASS
 
 - [ ] **Schritt 7: Im Kniebrett ansehen.** Nicht nur im Browser: Coherent GT rendert
   anders, und die Stapelung zweier halbtransparenter Bilder ist genau die Art Detail, die
@@ -992,25 +1653,41 @@ und in `_aipDeckkraftSetzen` zusätzlich `if (_groundOverlay) _groundOverlay.set
 
 # Phase 4 — Abschluss
 
-## Task 9: Vorschlagsweg und Sperre entfernen
+## Task 9: Vorschlagsweg entfernen — die Sperre bleibt
 
 **Dateien:**
 - Ändern: `app/database.py`, `app/main.py`, `app/static/admin.html`
-- Ändern: `tests/test_handpassung_schutz.py` (436 Zeilen)
+- Ändern: `tests/test_handpassung_schutz.py` (436 Zeilen) — **anpassen, nicht löschen**
 
-Die Vorschlagstabelle, `HandpassungGesperrt`, `_handpassung_pruefen`, `vorschlag_anlegen`,
-`get_vorschlaege`, `vorschlag_verwerfen`, `vorschlag_entfernen` und `verwaisen` entfallen.
+**Was entfällt, ist die Vorschlagstabelle:** `vorschlag_anlegen`, `get_vorschlaege`,
+`vorschlag_verwerfen`, `vorschlag_entfernen`, `/api/admin/aip-vorschlaege*`,
+`/aip-vorschlag/{id}.png` und die zugehörige Admin-Ansicht. Ohne gerechnete Alternative gibt
+es nichts vorzuschlagen; ihr Grabstein-Mechanismus (`zustand='verworfen'`) lebt in
+„verwerfen zieht `quell_hash` nach" (Task 5) weiter.
 
-- [ ] **Schritt 1: Belegen, dass die Sperre wirklich entbehrlich ist**
+**`HandpassungGesperrt` bleibt** — als `PassungGesperrt`, mit dem Prädikat `status='gepasst'`
+statt `quelle='hand'` (Task 2). Eine frühere Fassung dieses Plans strich sie mit der
+Begründung, es gebe nach dem Rückbau keinen automatischen Schreibpfad mehr. **Für den Job
+stimmt das, für das System nicht:** Der Seitenwähler bleibt und schreibt bei gescheiterter
+Passung alle Lagefelder auf 0 (`app/main.py:4694`). Nach dem Rückbau ist `passung` dort
+**immer** `None` — der nullende Zweig wäre der einzige. Am 25.08.2026 hat genau das EDAZ auf
+0/0/0/0 gesetzt; die zwei Riegel, die seitdem davorstehen (Bildhash-Vergleich `:4686` und
+`HandpassungGesperrt` `:4713`), sind der Grund, dass es nicht wieder passiert ist.
+
+**`verwaisen` bleibt ebenfalls** — als Teil des Jobs (Task 6). Eine Karte, deren Eintrag in
+`airport_links` verschwindet, geht auf `verwaist` und kehrt zurück, sobald der Link wieder
+auftaucht; ein AIRAC-Wechsel benennt Kapitelseiten um. Nutzerentscheidung vom 30.08.2026.
+
+- [ ] **Schritt 1: Belegen, dass kein Job mehr eine Passung schreiben kann**
 
 ```python
-def test_es_gibt_keinen_automatischen_schreibpfad_auf_eine_passung():
-    """Die Sperre war noetig, solange ein Job Passungen rechnen und schreiben konnte. Nach
-    dem Rueckbau schreibt nur noch der Admin-Endpunkt -- und der wird von einem Menschen
-    ausgeloest.
+def test_kein_job_und_kein_skript_schreibt_eine_passung():
+    """Die zweite Verteidigungslinie neben der Sperre: Was gar nicht erst schreiben kann,
+    muss auch nicht abgewiesen werden.
 
-    Der Test bindet an die Aufrufer: upsert_chart_dfs darf ausschliesslich aus main.py und
-    aus der Migration heraus gerufen werden, nicht aus poller.py oder scripts/.
+    upsert_chart_dfs darf ausschliesslich aus database.py und main.py heraus gerufen
+    werden -- nicht aus poller.py. Der Job setzt Status, quell_hash und seite_nr; dafuer
+    gibt es status_melden().
     """
     import subprocess
 
@@ -1019,21 +1696,48 @@ def test_es_gibt_keinen_automatischen_schreibpfad_auf_eine_passung():
         capture_output=True, text=True).stdout.splitlines()
     dateien = {z.split(":")[0] for z in treffer}
     assert dateien <= {"app/database.py", "app/main.py"}, dateien
+
+
+def test_der_vorschlagsweg_ist_fort():
+    """Ohne gerechnete Alternative gibt es nichts vorzuschlagen -- und 'gueltig .
+    Vorschlag' zeigte ohnehin meist zweimal dasselbe Bild (Nutzer, 31.08.2026)."""
+    from app import database
+
+    for weg in ("vorschlag_anlegen", "get_vorschlaege", "vorschlag_verwerfen",
+                "vorschlag_entfernen"):
+        assert not hasattr(database, weg), weg
 ```
 
-- [ ] **Schritt 2 bis 6:** Test laufen lassen, entfernen, `test_handpassung_schutz.py`
-  löschen (es prüft eine Sperre, die es nicht mehr gibt — der Test oben ersetzt sie),
-  Gesamtlauf, Commit.
+- [ ] **Schritt 2: `test_handpassung_schutz.py` umschreiben, nicht löschen**
 
-**`test_handpassung_schutz.py` wird gelöscht, nicht angepasst.** Es prüft auf 436 Zeilen
-den Schutz gegen einen automatischen Schreibpfad. Fällt der Pfad weg, prüft es nichts mehr.
-Was bleiben muss, ist der eine Test aus Schritt 1.
+Es prüft auf 436 Zeilen eine Invariante, die bleibt: **Eine vom Nutzer gesetzte Passung wird
+nicht stillschweigend überschrieben.** Der erste Joblauf unter dieser Sperre hat am
+30.08.2026 neun Handpassungen geschützt, darunter EDDL, dessen `geprueft_am` bis heute den
+Zeitstempel des Nutzers trägt.
+
+Was sich ändert, ist mechanisch:
+
+| alt | neu |
+|---|---|
+| `HandpassungGesperrt` | `PassungGesperrt` |
+| `quelle='hand'` | `status='gepasst'` |
+| `upsert_aip_chart` | `upsert_chart_dfs` |
+| `aip_charts` | `aip_charts_dfs` |
+| Vorschlagstests | ersatzlos gelöscht |
+
+**Tests, die die Vorschlagstabelle prüfen, gehen mit. Tests, die die Sperre prüfen, bleiben.**
+
+- [ ] **Schritt 3 bis 6:** Test laufen lassen, entfernen, Gesamtlauf, Commit.
 
 ---
 
 ## Task 10: Deploy und Gegenprobe
 
 - [ ] **Schritt 1: Datenbank sichern**
+
+Die Migration bewegt 556 Zeilen und **verschiebt Dateien**; einen Rückwärtsgang im Code gibt
+es nicht. Sie ist durch drei Riegel gegen Doppellauf gesichert, aber wenn die Abbildung selbst
+falsch ist, hilft nur diese Sicherung.
 
 ```bash
 sudo mkdir -p /root/charts-dfs-backup-2026-08-31
@@ -1050,15 +1754,47 @@ Erwartet: keine Fehlschläge. Die Gesamtzahl **sinkt** gegenüber 2130 — rund 
 Tests prüfen gelöschtes Verhalten. Das ist richtig; entscheidend ist, dass kein Test
 fehlschlägt und die neuen Dateien alle Anforderungen der Spec abdecken.
 
-- [ ] **Schritt 3: Changelog und Version**
+- [ ] **Schritt 3: Changelog, Version und `CLAUDE.md`**
 
-Ein Eintrag, `"highlight": false`.
+Ein Changelog-Eintrag, `"highlight": false`.
+
+Dazu bekommt `CLAUDE.md` die Invarianten des neuen Standes — heute steht dort nichts zum
+AIP-Teilsystem, und in drei Monaten rekonstruiert das sonst niemand:
+
+* **Eine Tabelle** `aip_charts_dfs`, Schlüssel `(icao, sorte)`. Alle 110 Plätze mit
+  Flugplatzkarte haben auch eine Sichtflugkarte.
+* **Keine Automatik.** Eine Passung entsteht ausschließlich aus zwei geklickten Punkten mit
+  Koordinaten. Wer Rahmenerkennung oder Ziffernlesen zurückbaut, baut etwas zurück, das
+  bewusst entfernt wurde.
+* **`nicht_gefunden` wird geschrieben, nicht hergeleitet.** Ein Platz ohne Zeile heißt
+  „nicht nachgesehen".
+* **Die Seite wird als Nummer geführt.** Eine gemerkte DFS-URL enthält den AIRAC und stirbt
+  mit dem nächsten Zyklus.
+* **`quelle='hand'` ist zu `status='gepasst'` geworden** — das Prädikat der Sperre.
+
+- [ ] **Schritt 3b: Blätter verschieben**
+
+**Vor** dem ersten Start mit dem neuen Stand — ohne diesen Schritt zeigt jede Karte ins Leere:
+
+```bash
+sudo -u 1001 mkdir -p /opt/friesenspy/data/aip_dfs
+cd /opt/friesenspy/data
+for f in aip/*.png;        do sudo mv "$f" "aip_dfs/$(basename "$f" .png).sichtflug.png"; done
+# Die Ground-Blaetter tragen die Sorte nicht im Namen -- sie steht in der Datenbank.
+sudo sqlite3 friesenspy.db "SELECT icao||' '||sorte FROM aip_ground_charts;" | \
+  while read icao sorte; do
+    [ -f "aip_ground/$icao.png" ] && sudo mv "aip_ground/$icao.png" "aip_dfs/$icao.$sorte.png"
+  done
+ls aip_dfs | wc -l       # erwartet: 556
+```
 
 - [ ] **Schritt 4: Deploy, dann sofort die Gegenprobe**
 
 ```bash
 sudo sqlite3 /opt/friesenspy/data/friesenspy.db \
-  "SELECT sorte,status,COUNT(*) FROM aip_charts_dfs GROUP BY 1,2;"
+  "SELECT sorte,status,COUNT(*) FROM aip_charts_dfs GROUP BY 1,2;
+   SELECT COUNT(*) FROM aip_charts_dfs WHERE sorte='sichtflug' AND p1_x IS NOT NULL;
+   SELECT COUNT(*) FROM aip_charts_dfs WHERE quell_hash = '';"
 ```
 
 **Erwartet, aus dem Bestand gerechnet:**
@@ -1073,14 +1809,32 @@ sudo sqlite3 /opt/friesenspy/data/friesenspy.db \
 | rollkarte | offen | 32 |
 | | **Summe** | **556** |
 
+Dazu **446 Sichtflugzeilen mit gesetztem `p1_x`** — die aus `rahmen_px` gewonnenen
+Klickpunkte, alle 446 Bestandszeilen sind wohlgeformt — und **null Zeilen mit leerem
+`quell_hash`**. Wäre der leer, meldete der erste Joblauf alle 556 Karten als geändert.
+
 **Weicht eine Zahl ab, wird zurückgerollt** — die Sicherung aus Schritt 1 zurückspielen und
 die Ursache suchen, bevor irgendetwas anderes geschieht.
 
 - [ ] **Schritt 5: Im Admin ansehen**
 
-Filter auf „alles außer gepasst" — es müssen 385 Zeilen erscheinen (275 + 30 + 10 + 38 + 32),
-dazu die Plätze ohne Blatt als `nicht_gefunden`. Eine Karte probeweise passen und im
-Kniebrett prüfen, dass sie erscheint.
+Filter auf „alles außer gepasst" — es müssen 385 Zeilen erscheinen (275 + 30 + 10 + 38 + 32).
+Plätze ohne Zeile erscheinen als „— nicht nachgesehen"; **es gibt davon keinen**, weil
+`aip_charts` `airport_links` mit 446 zu 446 exakt abdeckt. Eine Karte probeweise passen und
+im Kniebrett prüfen, dass sie erscheint — und dass die Platzkarte über der Sichtflugkarte
+liegt.
+
+- [ ] **Schritt 5b: Den ersten Joblauf abwarten und ansehen**
+
+Er trägt 556 `seite_nr` nach und füllt bei den sieben quer gedruckten Blättern den
+`quell_hash` stumm nach. **Erwartet: null Zeilen auf `pruefen`.** Stehen dort sieben, greift
+die Nachfüllregel nicht; stehen dort hunderte, stimmt die Hash-Bildung nicht.
+
+```bash
+sudo sqlite3 /opt/friesenspy/data/friesenspy.db \
+  "SELECT status,COUNT(*) FROM aip_charts_dfs GROUP BY 1;
+   SELECT COUNT(*) FROM aip_charts_dfs WHERE seite_nr IS NULL;"
+```
 
 - [ ] **Schritt 6: Nicht während eines Fluges deployen.** Jeder Push startet den Container
   neu und reißt offene Sitzungen ab; ob jemand fliegt, steht im nginx-Log (`/panel`,
@@ -1094,13 +1848,16 @@ Gegen die Spec durchgegangen; jeder Abschnitt hat einen Task:
 
 | Spec | Task |
 |---|---|
-| 2 Rückbau | 3, 4 |
-| 3 Tabelle, 3.1 Migration | 1 |
-| 4 Status | 2 |
-| 5 Passen-Maske | 5 (Endpunkt), 7 (Maske) |
-| 6 Liste, Filter, Seitenauswahl | 5, 7 |
+| 2 Rückbau, 2.1 die drei Skripte, 2.2 `runway_ref` | 3, 4 (Skripte), 7 (Schwellenanzeige) |
+| 3 Tabelle, 3.1 drei Riegel, 3.2 `rahmen_px`, 3.3 Blattpfade | 1, 5 (Pfade), 10 (Verschieben) |
+| 4 Status, 4.2 `nicht_gefunden`, 4.3 aus `pruefen` heraus, 4.5 `verwaist` | 2, 5 |
+| 5 Passen-Maske, 5.1 Saum, 5.2 Drehschwelle, 5.3 Schwellen, 5.4 `pruefen` | 4b, 5, 7 |
+| 6 Liste, 6.1 `seite_nr`, 6.2 Nachtragen, 6.3 Seitenauswahl | 5, 6, 7 |
 | 7 Job | 6 |
-| 8 die drei Fehler | 5 (Route), 8 (Regler), 9 (Vorschläge) |
+| 8 die Sperre bleibt | 2, 9 |
+| 9 Platzkarte über Sichtflugkarte, Zustand `(icao, sorte)` | 8 |
+| 10 die drei Fehler | 5 (Route), 8 (Regler), 9 (Vorschläge) |
+| 11 `CLAUDE.md` bekommt die Invarianten | 10, Schritt 3 |
 
 **Zwei Punkte, die ein Bearbeiter kennen muss:**
 
@@ -1109,7 +1866,14 @@ Gegen die Spec durchgegangen; jeder Abschnitt hat einen Task:
    gesamten Dienst. Schritt 1 von Task 3 listet die Aufrufer deshalb **vor** dem Löschen
    auf.
 
-2. **Die Migration hat keinen Rückwärtsgang im Code.** Sie ist durch den Merker und
-   `ON CONFLICT DO NOTHING` gegen Doppellauf gesichert, aber wenn die Abbildung selbst
-   falsch ist, hilft nur die Sicherung aus Task 10 Schritt 1. Deshalb steht die Gegenprobe
-   mit den erwarteten Zahlen dort und nicht am Ende.
+2. **Die Migration hat keinen Rückwärtsgang im Code.** Sie ist durch drei Riegel gegen
+   Doppellauf gesichert — Merker, `ON CONFLICT DO NOTHING` und einen eigenen `try`-Block
+   mit `except sqlite3.Error` —, aber wenn die Abbildung selbst falsch ist, hilft nur die
+   Sicherung aus Task 10 Schritt 1. Deshalb steht die Gegenprobe mit den erwarteten Zahlen
+   dort und nicht am Ende.
+
+3. **Task 4b ist keine Kür.** Er behebt zwei Fehler, die erst sichtbar werden, wenn
+   dieselbe Funktion beide Kartentypen bedient — und beide schreiben stillschweigend
+   falsche Werte in die Datenbank, statt sichtbar zu scheitern: `feld_*` einen Kilometer zu
+   weit außen bei Sichtflugkarten, und ein neuer `bild_hash` nach einer 0,07°-Drehung, die
+   nichts bewirkt. Wer ihn überspringt, merkt es beim ersten Joblauf.
