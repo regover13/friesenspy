@@ -390,6 +390,12 @@ Alle Karten in FriesenSpy (Live-Tab, Track-Ansicht, Event-Suche) verwenden diese
 
 **OpenAIP-Overlay** (zusätzliche Checkbox): Legt Lufträume, Flugplätze und Navaids aus der OpenAIP-Datenbank über den gewählten Basis-Layer. Besonders nützlich in Kombination mit Satellit oder CARTO. Ist nur verfügbar, wenn auf dem Server ein OpenAIP API-Key konfiguriert ist.
 
+**Sichtflugkarte** (blaues Symbol): Die amtliche DFS-Sichtflugkarte eines Platzes, halbtransparent über der Karte. Sie erscheint von allein, sobald du im Kartenfeld fliegst. Antippen des Symbols nagelt das Blatt fest oder nimmt es weg.
+
+**Flugplatzkarte** (magenta Symbol): Die DFS-Flugplatz- oder Rollkarte eines Verkehrsflughafens — mit Rollwegnamen, Haltepunkten und Standplatznummern. Sie tritt über dem Platz an die Stelle der Sichtflugkarte, weil die dort im Maßstab 1:100 000 nichts mehr hergibt, und weicht beim Verlassen wieder zurück.
+
+Diese Blätter sind nach der Bahnrichtung gedruckt statt genordet; sie werden beim Ablegen gedreht. Ihre Lage wird aus den Bahnen im Bild gerechnet und gegen amtliche Schwellenkoordinaten geprüft — **eine Karte, die diese Prüfung nicht besteht, wird nicht angezeigt**. Eine falsch liegende Karte wäre beim Rollen schlimmer als gar keine. Der verbleibende Fehler steht im Admin; zum Vergleich: Eine Bahn ist 45 m breit, ein Rollweg 23 m.
+
 ---
 
 ## 🔗 Links teilen & Deep-Linking
