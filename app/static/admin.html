@@ -761,10 +761,6 @@
     .ke-c-opt:hover, .ke-c-opt.sel { background: rgba(45,156,219,0.18); }
     .ke-c-optcap { color: #8aa0b8; font-size: 0.72rem; }
   </style>
-  <!-- Leaflet nur fuer die Handpassung der Sichtflugkarten. Bis dahin kam admin.html
-       ganz ohne Karte aus; dieselbe Fassung wie in index.html. -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
   <div class="scanline"></div>
@@ -1193,114 +1189,96 @@
 
         <!-- AIP-SICHTFLUGKARTEN -->
         <div class="panel">
-          <div class="panel-title"><span>📬 Offene Kartenpunkte</span></div>
+          <div class="panel-title"><span>🗂️ AIP Charts DFS</span></div>
           <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Hier stehen Automatikergebnisse zu Karten, die von Hand gepasst wurden — sie
-            werden <b>nicht</b> eingespielt, sondern nur vorgeschlagen. Übernehmen ersetzt
-            die bestehende Passung, Verwerfen lässt sie stehen und blendet den Fund aus,
-            bis sich das Blatt bei der DFS wirklich ändert.
+            Sichtflug-, Flugplatz- und Rollkarten in einer Liste. Eine Passung entsteht aus
+            zwei geklickten Punkten mit ihren Koordinaten — es gibt keine Automatik, die
+            eine bestehende Passung ungefragt ändern könnte. <b>prüfen</b> heißt: Die DFS hat
+            ein neues Blatt veröffentlicht, die alte Passung liegt noch bereit und wartet auf
+            Bestätigung.
           </p>
-          <div id="aip-vorschlaege" class="table-wrap"><div class="empty-hint">Lade…</div></div>
-        </div>
+          <div id="dfs-filter" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px;">
+            <div>
+              <div style="font-size:0.78rem;color:#8aa0b8;margin-bottom:4px;">Status</div>
+              <div id="dfsFilterStatus" style="display:flex;gap:10px;flex-wrap:wrap;font-size:0.82rem;">
+                <label style="display:flex;gap:4px;align-items:center;cursor:pointer;">
+                  <input type="checkbox" class="dfs-status-cb" value="auto" checked> auto</label>
+                <label style="display:flex;gap:4px;align-items:center;cursor:pointer;">
+                  <input type="checkbox" class="dfs-status-cb" value="offen" checked> offen</label>
+                <label style="display:flex;gap:4px;align-items:center;cursor:pointer;">
+                  <input type="checkbox" class="dfs-status-cb" value="pruefen" checked> prüfen</label>
+                <label style="display:flex;gap:4px;align-items:center;cursor:pointer;">
+                  <input type="checkbox" class="dfs-status-cb" value="nicht_gefunden" checked> nicht gefunden</label>
+                <label style="display:flex;gap:4px;align-items:center;cursor:pointer;">
+                  <input type="checkbox" class="dfs-status-cb" value="verwaist" checked> verwaist</label>
+                <label style="display:flex;gap:4px;align-items:center;cursor:pointer;">
+                  <input type="checkbox" class="dfs-status-cb" value="nicht_nachgesehen" checked> nicht nachgesehen</label>
+                <label style="display:flex;gap:4px;align-items:center;cursor:pointer;">
+                  <input type="checkbox" class="dfs-status-cb" value="gepasst"> gepasst</label>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:0.78rem;color:#8aa0b8;margin-bottom:4px;">Sorte</div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:0.82rem;">
+                <label style="display:flex;gap:4px;align-items:center;cursor:pointer;">
+                  <input type="checkbox" class="dfs-sorte-cb" value="sichtflug" checked> Sichtflugkarte</label>
+                <label style="display:flex;gap:4px;align-items:center;cursor:pointer;">
+                  <input type="checkbox" class="dfs-sorte-cb" value="flugplatzkarte" checked> Flugplatzkarte</label>
+                <label style="display:flex;gap:4px;align-items:center;cursor:pointer;">
+                  <input type="checkbox" class="dfs-sorte-cb" value="rollkarte" checked> Rollkarte</label>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:0.78rem;color:#8aa0b8;margin-bottom:4px;">ICAO</div>
+              <input type="text" id="dfs-suche" placeholder="z. B. EDDL" size="8">
+            </div>
+          </div>
+          <div id="dfs-charts" class="table-wrap"><div class="empty-hint">Lade Karten…</div></div>
 
-        <div class="panel">
-          <div class="panel-title"><span>🛬 Flugplatzkarten</span></div>
-          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Flugplatz- und Rollkarten der Verkehrsflughäfen. Der <b>Restfehler</b> ist die
-            Zahl, an der man erkennt, ob eine Passung sitzt: Er entsteht aus dem Vergleich
-            der gerechneten Lage mit amtlichen Schwellenkoordinaten. Eine Bahn ist 45 m
-            breit, ein Rollweg 23 m — alles über 15 m wird gar nicht erst angezeigt.
-            <b>Ungepasst</b> heißt: Blätter sind da, aber keine Lage bestand die Prüfung.
-          </p>
-          <div id="ground-charts" class="table-wrap"><div class="empty-hint">Lade…</div></div>
-          <div id="ground-passen" style="display:none;margin-top:12px;">
-            <p id="ground-passen-kopf" style="font-weight:700;margin:4px 0 2px;"></p>
+          <div id="dfs-seiten" style="display:none;margin-top:12px;"></div>
+
+          <div id="dfs-passen" style="display:none;margin-top:12px;">
+            <p id="dfs-passen-kopf" style="font-weight:700;margin:4px 0 2px;"></p>
             <p style="color:#8aa0b8;font-size:0.82rem;margin:2px 0 8px;">
-              Zwei gut wiedererkennbare Stellen anklicken und ihre Koordinaten eintragen —
-              am besten zwei <b>gegenüberliegende Bahnschwellen</b>. Je weiter sie
-              auseinanderliegen, desto genauer die Passung: Ein Klickfehler von einem Pixel
-              wirkt sich umgekehrt proportional zu ihrem Abstand aus. Drehung und Maßstab
-              rechnet der Server daraus aus.
+              Zwei gut wiedererkennbare Punkte anklicken und ihre Koordinaten eintragen — am
+              besten zwei gegenüberliegende <b>Bahnschwellen</b> oder <b>Rahmenecken</b>. Je
+              weiter sie auseinanderliegen, desto genauer die Passung. Grad und Minuten
+              <b>getrennt</b> eintragen, wie auf dem Blatt gedruckt.
             </p>
-            <div style="max-height:420px;overflow:auto;border:1px solid #24384d;">
-              <img id="ground-blatt" style="display:block;cursor:crosshair;max-width:none;">
+            <div id="dfs-schwellen" style="display:none;margin-bottom:10px;font-size:0.82rem;color:#8aa0b8;"></div>
+            <div id="dfs-blatt-box" class="aip-blatt-box">
+              <img id="dfs-blatt" style="max-width:100%;cursor:crosshair;display:block;" alt="Kartenblatt">
+              <div id="dfs-fk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
+              <div id="dfs-fk-y" class="aip-fadenkreuz aip-fadenkreuz-y"></div>
             </div>
             <table style="margin-top:8px;font-size:0.85rem;">
-              <tr><th></th><th>Bild x</th><th>Bild y</th><th>Breite °</th><th>Länge °</th></tr>
+              <tr><th></th><th>Bild x</th><th>Bild y</th><th>Breite (Nord/Süd)</th><th>Länge (Ost/West)</th></tr>
               <tr><td>Punkt 1</td>
-                <td><input id="gp1x" size="7" readonly></td>
-                <td><input id="gp1y" size="7" readonly></td>
-                <td><input id="gp1lat" size="11" placeholder="51.279598"></td>
-                <td><input id="gp1lon" size="11" placeholder="6.751990"></td></tr>
+                <td><input id="p1-x" size="6" readonly></td>
+                <td><input id="p1-y" size="6" readonly></td>
+                <td><div class="aip-gm"><input type="text" id="p1-lat-grad" size="3" placeholder="51"><span>°</span>
+                  <input type="text" id="p1-lat-min" size="6" placeholder="16,78"><span>&prime;</span></div></td>
+                <td><div class="aip-gm"><input type="text" id="p1-lon-grad" size="3" placeholder="6"><span>°</span>
+                  <input type="text" id="p1-lon-min" size="6" placeholder="45,12"><span>&prime;</span></div></td></tr>
               <tr><td>Punkt 2</td>
-                <td><input id="gp2x" size="7" readonly></td>
-                <td><input id="gp2y" size="7" readonly></td>
-                <td><input id="gp2lat" size="11" placeholder="51.295898"></td>
-                <td><input id="gp2lon" size="11" placeholder="6.786220"></td></tr>
+                <td><input id="p2-x" size="6" readonly></td>
+                <td><input id="p2-y" size="6" readonly></td>
+                <td><div class="aip-gm"><input type="text" id="p2-lat-grad" size="3" placeholder="51"><span>°</span>
+                  <input type="text" id="p2-lat-min" size="6" placeholder="17,75"><span>&prime;</span></div></td>
+                <td><div class="aip-gm"><input type="text" id="p2-lon-grad" size="3" placeholder="6"><span>°</span>
+                  <input type="text" id="p2-lon-min" size="6" placeholder="47,17"><span>&prime;</span></div></td></tr>
             </table>
-            <p style="margin:8px 0 0;">
-              <button class="btn" onclick="groundPassungSpeichern()">Passung speichern</button>
-              <button class="btn" onclick="groundPassenSchliessen()">Abbrechen</button>
-              <span id="ground-passen-hinweis" style="margin-left:10px;color:#8aa0b8;font-size:0.82rem;"></span>
+            <p style="margin:8px 0 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+              <label style="display:flex;gap:5px;align-items:center;">Drehung
+                <input type="text" id="dfs-drehung" size="6" placeholder="wird berechnet"></label>
+              <button class="btn btn-primary btn-sm" id="dfs-save-btn">Passung speichern</button>
+              <button class="btn btn-sm" id="dfs-abbrechen-btn">Abbrechen</button>
+              <span id="dfs-passen-hinweis" style="color:#8aa0b8;font-size:0.82rem;"></span>
             </p>
           </div>
         </div>
 
-        <div class="panel">
-          <div class="panel-title"><span>🗺️ Sichtflugkarten (AIP)</span></div>
-          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Karten, die die Automatik nicht passen konnte, lassen sich hier von Hand
-            anlegen: zwei gegenüberliegende <b>Rahmenecken</b> des Kartenfelds anklicken und
-            deren Gradwerte eintragen. Die Blattgrenzen rechnet der Server daraus aus — das
-            Blatt ragt über den Rahmen hinaus, und dieser Unterschied ist der Grund, warum
-            man die geklickten Werte nicht einfach übernehmen darf.
-          </p>
-          <div id="aip-charts" class="table-wrap"><div class="empty-hint">Lade Karten…</div></div>
-          <div id="aip-seiten" style="display:none;margin-top:12px;"></div>
-          <div id="aip-passen" style="display:none;margin-top:12px;">
-            <p id="aip-passen-kopf" style="font-weight:700;margin:4px 0 2px;"></p>
-            <!-- Grad UND Minuten getrennt, nicht als Dezimalzahl. Auf dem Blatt steht
-                 "14° 15'", und ein einzelnes Feld mit der Beschriftung "(Grad)" verleitet
-                 dann dazu, 14.15 einzutragen -- gemeint waeren 14,25°. Der Unterschied sind
-                 zwoelf Kilometer, und die Vorschau zeigt ihn nur, wenn man genau hinsieht.
-                 Am 24.08.2026 genau so passiert. -->
-            <div class="form-grid" style="margin:6px 0 8px;">
-              <div class="form-group"><label for="aip-nord-g">Rahmen Nord</label>
-                <div class="aip-gm"><input type="text" id="aip-nord-g" placeholder="54" /><span>°</span>
-                  <input type="text" id="aip-nord-m" placeholder="14" /><span>&prime;</span></div></div>
-              <div class="form-group"><label for="aip-sued-g">Rahmen Süd</label>
-                <div class="aip-gm"><input type="text" id="aip-sued-g" placeholder="54" /><span>°</span>
-                  <input type="text" id="aip-sued-m" placeholder="12" /><span>&prime;</span></div></div>
-              <div class="form-group"><label for="aip-west-g">Rahmen West</label>
-                <div class="aip-gm"><input type="text" id="aip-west-g" placeholder="9" /><span>°</span>
-                  <input type="text" id="aip-west-m" placeholder="36" /><span>&prime;</span></div></div>
-              <div class="form-group"><label for="aip-ost-g">Rahmen Ost</label>
-                <div class="aip-gm"><input type="text" id="aip-ost-g" placeholder="9" /><span>°</span>
-                  <input type="text" id="aip-ost-m" placeholder="38" /><span>&prime;</span></div></div>
-            </div>
-            <p id="aip-klickhinweis" style="color:#8aa0b8;font-size:0.82rem;">
-              Auf das Blatt klicken: erst die <b>obere linke</b>, dann die
-              <b>untere rechte</b> Rahmenecke.
-            </p>
-            <p style="color:#8aa0b8;font-size:0.82rem;margin-top:-4px;">
-              Gemeint ist die Ecke des <b>Kartenfelds</b> — dort, wo die beschriftete
-              Gradleiste das Kartenbild einrahmt, nicht der Blattrand. Die vier Werte sind
-              die Gradzahlen genau an diesen beiden Ecken.
-            </p>
-            <div id="aip-blatt-box" class="aip-blatt-box">
-              <img id="aip-blatt" style="max-width:100%;cursor:crosshair;display:block;" alt="Kartenblatt" />
-              <div id="aip-fk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
-              <div id="aip-fk-y" class="aip-fadenkreuz aip-fadenkreuz-y"></div>
-            </div>
-            <div style="display:flex;gap:8px;margin:8px 0;">
-              <button class="btn btn-sm" id="aip-vorschau-btn">Vorschau auf der Karte</button>
-              <button class="btn btn-primary btn-sm" id="aip-save-btn">Speichern</button>
-              <button class="btn btn-sm" id="aip-abbrechen-btn">Abbrechen</button>
-            </div>
-            <div id="aip-vorschau-karte" style="display:none;height:360px;margin-bottom:10px;"></div>
-          </div>
-        </div>
-
+        <!-- ERKENNUNGSLÜCKEN (v8.6.0) -->
         <!-- ERKENNUNGSLÜCKEN (v8.6.0) -->
         <div class="panel">
           <div class="panel-title"><span>🔍 Erkennungslücken (Start/Landung)</span></div>
@@ -1661,9 +1639,7 @@
       loadKutterAdmin();
       loadCustomAirports();
       loadAirportLinks();
-      loadAipCharts();
-      loadAipVorschlaege();
-      loadGroundCharts();
+      loadDfsCharts();
       miLoad();
       // Erkennungslücken NICHT automatisch laden -- der Check rechnet den gesamten
       // Flugbestand neu durch (mehrere Sekunden) und läuft nur auf expliziten Klick
@@ -3275,103 +3251,112 @@
     });
 
     // ====================================================================
-    // AIP-SICHTFLUGKARTEN -- Handpassung der Ausreisser
+    // AIP CHARTS DFS -- eine Ansicht fuer beide Kartentypen
     // ====================================================================
-    // Der Mensch klickt zwei RAHMENecken und traegt deren Gradwerte ein. Die Blattgrenzen
-    // rechnet der Server daraus (aip_charts.handpassung): Das Blatt ragt ueber den Rahmen
-    // hinaus, und die geklickten Werte einfach als Blattgrenzen abzulegen ergaebe beim
-    // Standardblatt rund 45 Prozent Massstabsfehler.
-    let _aipPassend = null;      // ICAO, der gerade gepasst wird
-    let _aipEcken = [];          // [{x, y}] in Bildpixeln, hoechstens zwei
-    let _aipVorschauKarte = null;
+    // Es gibt keine Automatik mehr (Nutzerentscheidung 31.08.2026). Eine Passung entsteht
+    // ausschliesslich aus zwei geklickten Punkten mit Koordinaten -- fuer Sichtflug-,
+    // Flugplatz- und Rollkarten gleichermassen, ueber dieselbe Maske.
+    let _dfsAlle = [];
+    let _dfsPassend = null;      // {icao, sorte} der gerade gepassten Karte, oder null
+    let _dfsEcken = [];          // [{x, y}] in Bildpixeln, hoechstens zwei
+    let _dfsPruefenZeile = null; // die Zeile, wenn gerade eine 'pruefen'-Karte offen ist
 
-    // Alle Karten, einmal geladen. Gefiltert und geblaettert wird im Browser -- 446 Zeilen
-    // auf einmal zu zeichnen war der Grund fuer die traege Seite (Nutzer, 24.08.2026).
-    let _aipAlle = [];
-    let _aipSeite = 0;
-    let _aipNurOffene = true;
-    const _AIP_JE_SEITE = 20;
+    function _dfsSchluessel(k) { return k.icao + '|' + (k.sorte || ''); }
 
-    function _aipGefiltert() {
-      return _aipNurOffene ? _aipAlle.filter(c => c.status !== 'gepasst') : _aipAlle;
-    }
-
-    /** Nur neu zeichnen, nicht neu laden -- der Bestand steht schon im Speicher. */
-    function _aipListeZeichnen() {
-      const box = document.getElementById('aip-charts');
-      const liste = _aipGefiltert();
-      const seiten = Math.max(1, Math.ceil(liste.length / _AIP_JE_SEITE));
-      if (_aipSeite >= seiten) _aipSeite = seiten - 1;
-      const offen = _aipAlle.filter(c => c.status !== 'gepasst').length;
-      const von = _aipSeite * _AIP_JE_SEITE;
-      const teil = liste.slice(von, von + _AIP_JE_SEITE);
-
-      let html = '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;'
-        + 'margin-bottom:8px;color:#8aa0b8;font-size:0.82rem;">'
-        + '<label style="display:flex;gap:5px;align-items:center;cursor:pointer;">'
-        + '<input type="checkbox" id="aip-nur-offene"' + (_aipNurOffene ? ' checked' : '') + ' />'
-        + 'nur offene</label>'
-        + '<span>' + _aipAlle.length + ' Karten, davon ' + offen + ' offen'
-        + (_aipNurOffene ? '' : '') + '</span>'
-        + '<span style="margin-left:auto;display:flex;gap:6px;align-items:center;">'
-        + '<button class="btn btn-sm" id="aip-zurueck"' + (_aipSeite <= 0 ? ' disabled' : '') + '>&lsaquo;</button>'
-        + '<span>' + (liste.length ? (von + 1) : 0) + '–' + Math.min(von + _AIP_JE_SEITE, liste.length)
-        + ' von ' + liste.length + '</span>'
-        + '<button class="btn btn-sm" id="aip-vor"' + (_aipSeite >= seiten - 1 ? ' disabled' : '') + '>&rsaquo;</button>'
-        + '</span></div>';
-
-      if (!teil.length) {
-        html += '<div class="empty-hint">'
-          + (_aipAlle.length ? 'Keine Karte in dieser Auswahl.'
-             : 'Noch keine Karten geladen — scripts/aip_bestand.py auf dem Server ausführen.')
-          + '</div>';
-      } else {
-        html += '<table><thead><tr><th>Code</th><th>Status</th><th>Quelle</th>'
-          + '<th>AIRAC</th><th></th></tr></thead><tbody>';
-        teil.forEach(c => {
-          html += '<tr><td>' + escH(c.icao) + '</td>'
-            + '<td>' + (c.status === 'gepasst' ? 'gepasst' : '<b>offen</b>') + '</td>'
-            + '<td>' + escH(c.quelle) + '</td>'
-            + '<td>' + escH(c.airac) + '</td>'
-            + '<td style="white-space:nowrap;">'
-            + '<button class="btn btn-sm" data-aip="' + escA(c.icao) + '">Passen</button> '
-            + '<button class="btn btn-sm" data-aip-seiten="' + escA(c.icao) + '">Seite…</button>'
-            + '</td></tr>';
-        });
-        html += '</tbody></table>';
-      }
-      box.innerHTML = html;
-
-      // Ein Handler fuer die ganze Tabelle statt einer je Zeile.
-      box.addEventListener('click', _aipListeKlick);
-      const haken = document.getElementById('aip-nur-offene');
-      if (haken) haken.addEventListener('change', function () {
-        _aipNurOffene = this.checked; _aipSeite = 0; _aipListeZeichnen();
+    function _dfsGefiltert() {
+      const status = Array.from(document.querySelectorAll('.dfs-status-cb:checked')).map(c => c.value);
+      const sorten = Array.from(document.querySelectorAll('.dfs-sorte-cb:checked')).map(c => c.value);
+      const suche = (document.getElementById('dfs-suche').value || '').trim().toUpperCase();
+      return _dfsAlle.filter(function (k) {
+        const s = k.status === null ? 'nicht_nachgesehen' : k.status;
+        if (!status.includes(s)) return false;
+        if (k.sorte !== null && !sorten.includes(k.sorte)) return false;
+        if (suche && k.icao.indexOf(suche) === -1) return false;
+        return true;
       });
-      const zur = document.getElementById('aip-zurueck');
-      if (zur) zur.addEventListener('click', () => { _aipSeite--; _aipListeZeichnen(); });
-      const vor = document.getElementById('aip-vor');
-      if (vor) vor.addEventListener('click', () => { _aipSeite++; _aipListeZeichnen(); });
     }
 
-    function _aipListeKlick(e) {
+    function _dfsStatusText(k) {
+      if (k.status === null) return 'nicht nachgesehen';
+      if (k.status === 'nicht_gefunden') return 'nicht gefunden';
+      if (k.status === 'pruefen') return 'prüfen';
+      return k.status;
+    }
+
+    function _dfsSorteText(sorte) {
+      if (sorte === 'sichtflug') return 'Sichtflugkarte';
+      if (sorte === 'flugplatzkarte') return 'Flugplatzkarte';
+      if (sorte === 'rollkarte') return 'Rollkarte';
+      return '—';
+    }
+
+    function dfsListeZeichnen() {
+      const box = document.getElementById('dfs-charts');
+      const liste = _dfsGefiltert();
+      if (!liste.length) {
+        box.innerHTML = '<div class="empty-hint">Keine Karte in dieser Auswahl.</div>';
+        return;
+      }
+      let html = '<table><thead><tr><th>ICAO</th><th>Sorte</th><th>Status</th>'
+        + '<th>AIRAC</th><th>Drehung</th><th>Blatt</th><th></th></tr></thead><tbody>';
+      liste.forEach(function (k) {
+        const bild = k.sorte ? '/aip-chart-dfs/' + k.icao + '/' + k.sorte + '.png' : null;
+        html += '<tr>'
+          + '<td><b>' + escH(k.icao) + '</b></td>'
+          + '<td>' + _dfsSorteText(k.sorte) + '</td>'
+          + '<td>' + (k.status === 'gepasst' ? k.status : '<b>' + _dfsStatusText(k) + '</b>') + '</td>'
+          + '<td>' + escH(k.airac || '—') + '</td>'
+          + '<td>' + (typeof k.drehung === 'number' ? k.drehung.toFixed(1) + '°' : '—') + '</td>'
+          + '<td>' + (bild ? '<a href="' + bild + '" target="_blank">Blatt</a>' : '—') + '</td>'
+          + '<td style="white-space:nowrap;">'
+          + '<button class="btn btn-sm" data-dfs-seiten="' + escA(k.icao) + '">Seite…</button> '
+          + (k.sorte ? '<button class="btn btn-sm" data-dfs-passen="' + escA(k.icao) + '|' + escA(k.sorte) + '">Passen</button> ' : '')
+          + (k.status === 'pruefen' ? '<button class="btn btn-sm" data-dfs-pruefen="' + escA(k.icao) + '|' + escA(k.sorte) + '">Prüfen…</button> ' : '')
+          + (k.sorte ? '<button class="btn btn-sm" data-dfs-loeschen="' + escA(k.icao) + '|' + escA(k.sorte) + '">Löschen</button>' : '')
+          + '</td></tr>';
+      });
+      box.innerHTML = html + '</tbody></table>';
+    }
+
+    document.getElementById('dfs-charts').addEventListener('click', function (e) {
       if (!e.target.closest) return;
-      const b = e.target.closest('button[data-aip]');
-      if (b) { aipPassenStarten(b.getAttribute('data-aip')); return; }
-      const t = e.target.closest('button[data-aip-seiten]');
-      if (t) aipSeitenZeigen(t.getAttribute('data-aip-seiten'));
+      let b = e.target.closest('button[data-dfs-seiten]');
+      if (b) { dfsSeiten(b.getAttribute('data-dfs-seiten')); return; }
+      b = e.target.closest('button[data-dfs-passen]');
+      if (b) { const [icao, sorte] = b.getAttribute('data-dfs-passen').split('|'); dfsPassenStarten(icao, sorte); return; }
+      b = e.target.closest('button[data-dfs-pruefen]');
+      if (b) { const [icao, sorte] = b.getAttribute('data-dfs-pruefen').split('|'); dfsPruefenZeigen(icao, sorte); return; }
+      b = e.target.closest('button[data-dfs-loeschen]');
+      if (b) { const [icao, sorte] = b.getAttribute('data-dfs-loeschen').split('|'); dfsLoeschen(icao, sorte); return; }
+    });
+
+    document.querySelectorAll('.dfs-status-cb, .dfs-sorte-cb').forEach(function (cb) {
+      cb.addEventListener('change', dfsListeZeichnen);
+    });
+    document.getElementById('dfs-suche').addEventListener('input', dfsListeZeichnen);
+
+    async function loadDfsCharts() {
+      const box = document.getElementById('dfs-charts');
+      try {
+        const res = await api('GET', '/api/admin/aip-charts-dfs');
+        if (!res || !res.ok) { box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>'; return; }
+        _dfsAlle = (await res.json()).charts || [];
+        dfsListeZeichnen();
+      } catch (e) {
+        box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>';
+      }
     }
 
     // --- Seitenauswahl -----------------------------------------------------------------
-    // Die Automatik nimmt die erste Kapitelseite, deren Passung durchgeht. Welche die
-    // richtige ist, kann sie nicht wissen -- bei EDDK waren es sechs Seiten und die
-    // gewaehlte war die falsche (24.08.2026). Hier sieht man sie und waehlt selbst.
-    async function aipSeitenZeigen(icao) {
-      const box = document.getElementById('aip-seiten');
+    // Keine "passt"-Spalte, kein Bahnton, keine Dateigroesse: Dieselbe Automatik hat bei
+    // EDDK aus sechs Kapitelseiten die falsche gewaehlt (Nutzer, 24.08.2026) -- die Spalte
+    // war irrefuehrend, nicht hilfreich.
+    async function dfsSeiten(icao) {
+      const box = document.getElementById('dfs-seiten');
       box.style.display = '';
       box.innerHTML = '<div class="empty-hint">Seiten von ' + escH(icao)
         + ' werden geholt — das dauert einige Sekunden.</div>';
-      const res = await api('GET', '/api/admin/aip-charts/' + encodeURIComponent(icao) + '/seiten');
+      const res = await api('GET', '/api/admin/aip-charts-dfs/' + encodeURIComponent(icao) + '/seiten');
       if (!res || !res.ok) {
         let detail = 'Seiten nicht abrufbar.';
         try { detail = (await res.json()).detail || detail; } catch (e) {}
@@ -3380,7 +3365,7 @@
       }
       const seiten = (await res.json()).seiten || [];
       let html = '<p style="font-weight:700;margin:4px 0;">Seiten im Kapitel von '
-        + escH(icao) + ' — die gewünschte anklicken</p>'
+        + escH(icao) + ' — die gewünschte anklicken, dann die Sorte wählen</p>'
         + '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
       seiten.forEach(function (s) {
         html += '<div style="width:200px;border:1px solid var(--green-grid);padding:6px;">'
@@ -3388,232 +3373,133 @@
               ? '<img src="' + s.vorschau + '" style="width:100%;display:block;" alt="" />'
               : '<div class="empty-hint">kein Bild</div>')
           + '<div style="font-size:0.75rem;color:#8aa0b8;margin:4px 0;">Seite ' + (s.nr + 1)
-          + ' · ' + s.breite + '×' + s.hoehe + ' · ' + s.kb + ' KB'
-          + (s.passt ? ' · <b>passt automatisch</b>' : '') + '</div>'
-          + '<button class="btn btn-sm" data-seite="' + escA(s.url) + '" '
-          + 'data-icao="' + escA(icao) + '">Diese nehmen</button></div>';
+          + ' · ' + s.breite + '×' + s.hoehe + ' · ' + s.kb + ' KB</div>'
+          + '<select class="dfs-seite-sorte" style="width:100%;margin-bottom:4px;">'
+          + '<option value="sichtflug">Sichtflugkarte</option>'
+          + '<option value="flugplatzkarte">Flugplatzkarte</option>'
+          + '<option value="rollkarte">Rollkarte</option></select>'
+          + '<button class="btn btn-sm" data-seite-nr="' + s.nr + '" '
+          + 'data-icao="' + escA(icao) + '" style="width:100%;">Diese nehmen</button></div>';
       });
-      box.innerHTML = html + '</div>';
+      html += '</div><p style="margin-top:10px;">'
+        + '<select id="dfs-nicht-gefunden-sorte">'
+        + '<option value="sichtflug">Sichtflugkarte</option>'
+        + '<option value="flugplatzkarte">Flugplatzkarte</option>'
+        + '<option value="rollkarte">Rollkarte</option></select> '
+        + '<button class="btn btn-sm" id="dfs-nicht-gefunden-btn" data-icao="' + escA(icao)
+        + '">Keine passende Seite — als nicht gefunden vermerken</button></p>';
+      box.innerHTML = html;
     }
 
-    document.getElementById('aip-seiten').addEventListener('click', async function (e) {
-      const b = e.target.closest && e.target.closest('button[data-seite]');
-      if (!b) return;
-      const icao = b.getAttribute('data-icao');
-      b.disabled = true;
-      const res = await api('POST', '/api/admin/aip-charts/' + encodeURIComponent(icao) + '/seite',
-                            { url: b.getAttribute('data-seite') });
-      b.disabled = false;
-      if (!res || !res.ok) {
-        let detail = 'Seite nicht übernommen.';
-        try { detail = (await res.json()).detail || detail; } catch (err) {}
-        toast(detail, true);
+    document.getElementById('dfs-seiten').addEventListener('click', async function (e) {
+      const nimm = e.target.closest && e.target.closest('button[data-seite-nr]');
+      if (nimm) {
+        const icao = nimm.getAttribute('data-icao');
+        const sorte = nimm.closest('div').querySelector('.dfs-seite-sorte').value;
+        nimm.disabled = true;
+        const res = await api('POST', '/api/admin/aip-charts-dfs/' + encodeURIComponent(icao) + '/seite',
+                              { sorte: sorte, seite_nr: parseInt(nimm.getAttribute('data-seite-nr'), 10) });
+        nimm.disabled = false;
+        if (!res || !res.ok) {
+          let detail = 'Seite nicht übernommen.';
+          try { detail = (await res.json()).detail || detail; } catch (err) {}
+          toast(detail, true);
+          return;
+        }
+        toast('Seite übernommen — jetzt passen.');
+        document.getElementById('dfs-seiten').style.display = 'none';
+        await loadDfsCharts();
+        dfsPassenStarten(icao, sorte);
         return;
       }
-      const erg = await res.json();
-      toast(erg.gepasst ? 'Seite übernommen und automatisch gepasst.'
-                        : 'Seite übernommen — jetzt von Hand passen.');
-      document.getElementById('aip-seiten').style.display = 'none';
-      await loadAipCharts();
-      aipPassenStarten(icao);
+      const ngB = e.target.closest && e.target.closest('button#dfs-nicht-gefunden-btn');
+      if (ngB) {
+        const icao = ngB.getAttribute('data-icao');
+        const sorte = document.getElementById('dfs-nicht-gefunden-sorte').value;
+        ngB.disabled = true;
+        const res = await api('POST', '/api/admin/aip-charts-dfs/' + encodeURIComponent(icao) + '/nicht-gefunden',
+                              { sorte: sorte });
+        ngB.disabled = false;
+        if (res && res.ok) {
+          toast('Vermerkt: keine passende Seite.');
+          document.getElementById('dfs-seiten').style.display = 'none';
+          await loadDfsCharts();
+        } else {
+          toast('Fehlgeschlagen.', true);
+        }
+      }
     });
 
-    // ---------------------------------------------------------------------------------
-    // Offene Kartenpunkte und Flugplatzkarten
-    // ---------------------------------------------------------------------------------
-    async function loadAipVorschlaege() {
-      const box = document.getElementById('aip-vorschlaege');
-      try {
-        const res = await api('GET', '/api/admin/aip-vorschlaege');
-        if (!res || !res.ok) { box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>'; return; }
-        const liste = (await res.json()).vorschlaege || [];
-        if (!liste.length) {
-          // Ganz verbergen statt eine leere Ueberschrift stehen zu lassen: Ein dauerhaft
-          // leerer Abschnitt ist ein Reiz, den niemand braucht.
-          box.closest('.panel').style.display = 'none';
-          return;
-        }
-        box.closest('.panel').style.display = '';
-        let h = '<table><thead><tr><th>Platz</th><th>Art</th><th>Grund</th>'
-              + '<th>Gefunden</th><th>Blätter</th><th></th></tr></thead><tbody>';
-        for (const v of liste) {
-          const alt = v.art === 'ground'
-            ? '/aip-ground-chart/' + v.icao + '.png'
-            : '/aip-chart/' + v.icao + '.png';
-          h += '<tr><td><b>' + v.icao + '</b></td><td>' + v.art + '</td>'
-             + '<td style="font-size:0.8rem">' + (v.grund || '') + '</td>'
-             + '<td style="font-size:0.8rem">' + (v.gefunden_am || '').slice(0, 10) + '</td>'
-             + '<td><a href="' + alt + '" target="_blank">gültig</a> · '
-             + '<a href="/aip-vorschlag/' + v.id + '.png" target="_blank">Vorschlag</a></td>'
-             + '<td style="white-space:nowrap">'
-             + '<button class="btn" onclick="vorschlagUebernehmen(' + v.id + ')">Übernehmen</button> '
-             + '<button class="btn" onclick="vorschlagVerwerfen(' + v.id + ')">Verwerfen</button>'
-             + '</td></tr>';
-        }
-        box.innerHTML = h + '</tbody></table>';
-      } catch (e) {
-        box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>';
-      }
-    }
-
-    async function vorschlagUebernehmen(id) {
-      if (!confirm('Diesen Vorschlag übernehmen? Die bestehende Passung wird ersetzt.')) return;
-      const res = await api('POST', '/api/admin/aip-vorschlaege/' + id + '/uebernehmen');
-      if (res && res.ok) { loadAipVorschlaege(); loadAipCharts(); }
-      else alert('Übernehmen fehlgeschlagen.');
-    }
-
-    async function vorschlagVerwerfen(id) {
-      const res = await api('POST', '/api/admin/aip-vorschlaege/' + id + '/verwerfen');
-      if (res && res.ok) loadAipVorschlaege();
-      else alert('Verwerfen fehlgeschlagen.');
-    }
-
-    // Handpassung einer Flugplatzkarte: zwei Punkte auf dem ROHblatt.
-    let _gpIcao = null, _gpNaechster = 1;
-
-    function groundPassen(icao) {
-      _gpIcao = icao; _gpNaechster = 1;
-      document.getElementById('ground-passen-kopf').textContent =
-        icao + ' passen — Punkt 1 anklicken';
-      document.getElementById('ground-passen-hinweis').textContent = '';
-      for (const f of ['gp1x','gp1y','gp2x','gp2y']) document.getElementById(f).value = '';
-      const img = document.getElementById('ground-blatt');
-      // Das ROHblatt, nicht das genordete: Letzteres entsteht erst aus der Passung, die
-      // hier gerade bestimmt werden soll.
-      img.src = '/aip-ground-chart/' + icao + '.roh.png?t=' + Date.now();
-      img.onclick = function (ev) {
-        const r = img.getBoundingClientRect();
-        // Auf die NATÜRLICHE Bildgröße umrechnen: Der Server kennt nur Originalpixel,
-        // der Browser skaliert das Bild aber auf seine Anzeigebreite.
-        const sx = img.naturalWidth / r.width, sy = img.naturalHeight / r.height;
-        const x = Math.round((ev.clientX - r.left) * sx);
-        const y = Math.round((ev.clientY - r.top) * sy);
-        document.getElementById('gp' + _gpNaechster + 'x').value = x;
-        document.getElementById('gp' + _gpNaechster + 'y').value = y;
-        _gpNaechster = _gpNaechster === 1 ? 2 : 1;
-        document.getElementById('ground-passen-kopf').textContent =
-          icao + ' passen — Punkt ' + _gpNaechster + ' anklicken';
-      };
-      document.getElementById('ground-passen').style.display = '';
-    }
-
-    function groundPassenSchliessen() {
-      document.getElementById('ground-passen').style.display = 'none';
-      _gpIcao = null;
-    }
-
-    async function groundPassungSpeichern() {
-      if (!_gpIcao) return;
-      const w = function (id) { return document.getElementById(id).value.trim(); };
-      const daten = {
-        p1_x: w('gp1x'), p1_y: w('gp1y'), p1_lat: w('gp1lat'), p1_lon: w('gp1lon'),
-        p2_x: w('gp2x'), p2_y: w('gp2y'), p2_lat: w('gp2lat'), p2_lon: w('gp2lon'),
-      };
-      for (const k in daten) {
-        if (!daten[k]) {
-          document.getElementById('ground-passen-hinweis').textContent =
-            'Es fehlt noch: ' + k;
-          return;
-        }
-      }
-      const res = await api('POST', '/api/admin/aip-ground-charts/' + _gpIcao, daten);
-      if (res && res.ok) {
-        const d = await res.json();
-        document.getElementById('ground-passen-hinweis').textContent =
-          'Gespeichert — Drehung ' + d.drehung + '°, ' + d.mps + ' m/px';
-        loadGroundCharts();
-      } else {
-        let text = 'Fehlgeschlagen.';
-        try { text = (await res.json()).detail || text; } catch (e) {}
-        document.getElementById('ground-passen-hinweis').textContent = text;
-      }
-    }
-
-    async function loadGroundCharts() {
-      const box = document.getElementById('ground-charts');
-      try {
-        const res = await api('GET', '/api/admin/aip-ground-charts');
-        if (!res || !res.ok) { box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>'; return; }
-        const liste = (await res.json()).charts || [];
-        if (!liste.length) {
-          box.innerHTML = '<div class="empty-hint">Noch keine Flugplatzkarten.</div>';
-          return;
-        }
-        const gepasst = liste.filter(function (k) { return k.status === 'gepasst'; });
-        let h = '<p style="font-size:0.82rem;color:#8aa0b8;margin:0 0 8px;">'
-              + gepasst.length + ' gepasst, ' + (liste.length - gepasst.length)
-              + ' offen.</p>'
-              + '<table><thead><tr><th>Platz</th><th>Sorte</th><th>Status</th>'
-              + '<th>Restfehler</th><th>Bahnen</th><th>Drehung</th><th>Blatt</th>'
-              + '</tr></thead><tbody>';
-        for (const k of liste) {
-          const offen = k.status !== 'gepasst';
-          h += '<tr' + (offen ? ' style="opacity:0.65"' : '') + '>'
-             + '<td><b>' + k.icao + '</b></td>'
-             + '<td>' + (k.sorte === 'rollkarte' ? 'Rollkarte' : 'Flugplatzkarte') + '</td>'
-             + '<td>' + (offen ? 'offen' : (k.quelle === 'hand' ? 'gepasst (Hand)' : 'gepasst')) + '</td>'
-             + '<td>' + (offen ? '—' : k.rest_max.toFixed(1) + ' m') + '</td>'
-             + '<td>' + (k.bahnen || '—') + '</td>'
-             + '<td>' + (offen ? '—' : k.drehung.toFixed(1) + '°') + '</td>'
-             + '<td>' + (k.seite_url ? '<a href="' + k.seite_url + '" target="_blank">DFS</a>' : '—')
-             + (offen ? '' : ' · <a href="/aip-ground-chart/' + k.icao + '.png" target="_blank">genordet</a>')
-             + ' · <button class="btn" onclick="groundPassen(\'' + k.icao + '\')">passen</button>'
-             + '</td></tr>';
-        }
-        box.innerHTML = h + '</tbody></table>';
-      } catch (e) {
-        box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>';
-      }
-    }
-
-    async function loadAipCharts() {
-      const box = document.getElementById('aip-charts');
-      try {
-        const res = await api('GET', '/api/admin/aip-charts');
-        if (!res || !res.ok) { box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>'; return; }
-        _aipAlle = (await res.json()).charts || [];
-        _aipListeZeichnen();
-      } catch (e) {
-        box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>';
-      }
-    }
-
-    function aipPassenStarten(icao) {
-      _aipPassend = icao;
-      _aipEcken = [];
-      document.getElementById('aip-passen').style.display = '';
-      const img = document.getElementById('aip-blatt');
-      img.src = '/aip-chart/' + encodeURIComponent(icao) + '.png?t=' + Date.now();
-      // Der Kopf nennt den Platz gross: In der Liste steht darueber eine andere Zeile, und
-      // am 24.08.2026 war unklar, welches Blatt gerade bearbeitet wird.
-      const eintrag = _aipAlle.find(c => c.icao === icao) || {};
-      document.getElementById('aip-passen-kopf').textContent =
-        'Blatt ' + icao + ' von Hand passen'
+    // --- Passen-Maske --------------------------------------------------------------------
+    async function dfsPassenStarten(icao, sorte) {
+      _dfsPassend = { icao: icao, sorte: sorte };
+      _dfsEcken = [];
+      document.getElementById('dfs-passen').style.display = '';
+      document.getElementById('dfs-seiten').style.display = 'none';
+      const img = document.getElementById('dfs-blatt');
+      img.src = '/aip-chart-roh/' + encodeURIComponent(icao) + '/' + encodeURIComponent(sorte)
+        + '.png?t=' + Date.now();
+      const eintrag = _dfsAlle.find(k => k.icao === icao && k.sorte === sorte) || {};
+      document.getElementById('dfs-passen-kopf').textContent =
+        icao + ' — ' + _dfsSorteText(sorte) + ' passen'
         + (eintrag.status === 'gepasst' ? ' (bereits gepasst — Werte sind vorbelegt)' : '');
-      // Vorbelegen aus der GESPEICHERTEN Passung, nicht aus dem, was zuletzt im Formular
-      // stand. Sonst arbeitet man an Karte B mit den Zahlen von Karte A weiter, und die
-      // Vorschau sieht auf den ersten Blick plausibel aus (Nutzer-Fund 24.08.2026).
-      _aipFelderSetzen(eintrag);
-      // Auch die beiden Ecken: Sie stehen als "links,oben,rechts,unten" in rahmen_px.
-      _aipEcken = [];
-      const px = String(eintrag.rahmen_px || '').split(',').map(parseFloat);
-      if (px.length === 4 && px.every(isFinite)) {
-        _aipEcken = [{ x: Math.round(px[0]), y: Math.round(px[1]) },
-                     { x: Math.round(px[2]), y: Math.round(px[3]) }];
+      document.getElementById('dfs-passen-hinweis').textContent = '';
+      _dfsPunkteSetzen(eintrag);
+      document.getElementById('dfs-drehung').value =
+        typeof eintrag.drehung === 'number' ? eintrag.drehung.toFixed(1) : '';
+
+      // Bahnschwellen als Hilfe -- nur bei Flugplatz-/Rollkarten. Auf diesem Weg sind die
+      // ersten 68 Ground-Passungen ueberhaupt entstanden.
+      const sBox = document.getElementById('dfs-schwellen');
+      if (sorte === 'sichtflug') {
+        sBox.style.display = 'none';
+      } else {
+        sBox.style.display = '';
+        sBox.innerHTML = 'Bahnschwellen werden geladen…';
+        const res = await api('GET', '/api/admin/aip-charts-dfs/' + encodeURIComponent(icao) + '/schwellen');
+        const bahnen = res && res.ok ? (await res.json()).bahnen || [] : [];
+        if (!bahnen.length) {
+          sBox.innerHTML = 'Keine Bahnschwellen bei OurAirports gefunden — vom Kartenrand ablesen.';
+        } else {
+          sBox.innerHTML = '<b>Bahnschwellen zum Abschreiben:</b><br>' + bahnen.map(function (b) {
+            return b.name + ' (' + b.laenge_m + ' m): '
+              + b.le_lat_grad + '°' + b.le_lat_min + '′ / ' + b.le_lon_grad + '°' + b.le_lon_min + '′'
+              + '  —  '
+              + b.he_lat_grad + '°' + b.he_lat_min + '′ / ' + b.he_lon_grad + '°' + b.he_lon_min + '′';
+          }).join('<br>');
+        }
       }
-      document.getElementById('aip-klickhinweis').innerHTML =
-        'Blatt <b>' + escH(icao) + '</b>: erst die <b>obere linke</b>, dann die '
-        + '<b>untere rechte</b> Rahmenecke anklicken.';
     }
 
-    // Fadenkreuz: zwei Linien ueber das ganze Blatt, die der Maus folgen. Gerechnet wird
-    // gegen das BILD, nicht gegen den Kasten -- das Blatt wird per max-width skaliert, und
-    // beide fallen nur zufaellig zusammen, solange kein Rand dazwischen liegt.
+    /** Zwei Punkte aus der gespeicherten Zeile vorbelegen -- oder leeren. */
+    function _dfsPunkteSetzen(eintrag) {
+      _dfsEcken = [];
+      ['p1', 'p2'].forEach(function (p) {
+        const x = eintrag[p + '_x'], y = eintrag[p + '_y'];
+        const lat = eintrag[p + '_lat'], lon = eintrag[p + '_lon'];
+        document.getElementById(p + '-x').value = typeof x === 'number' ? Math.round(x) : '';
+        document.getElementById(p + '-y').value = typeof y === 'number' ? Math.round(y) : '';
+        [['lat', lat], ['lon', lon]].forEach(function (kv) {
+          const [achse, w] = kv;
+          const g = document.getElementById(p + '-' + achse + '-grad');
+          const m = document.getElementById(p + '-' + achse + '-min');
+          if (typeof w !== 'number' || !isFinite(w)) { g.value = ''; m.value = ''; return; }
+          const grad = Math.trunc(w);
+          let min = Math.round((Math.abs(w) - Math.abs(grad)) * 60 * 100) / 100;
+          if (min >= 60) min = 0;
+          g.value = String(grad);
+          m.value = String(min);
+        });
+        if (typeof x === 'number' && typeof y === 'number') _dfsEcken.push({ x: x, y: y });
+      });
+    }
+
+    // Fadenkreuz: zwei Linien ueber das ganze Blatt, die der Maus folgen -- eine Ecke trifft
+    // man damit auf den Pixel genau.
     (function () {
-      const img = document.getElementById('aip-blatt');
-      const lx = document.getElementById('aip-fk-x');
-      const ly = document.getElementById('aip-fk-y');
+      const img = document.getElementById('dfs-blatt');
+      const lx = document.getElementById('dfs-fk-x');
+      const ly = document.getElementById('dfs-fk-y');
       if (!img || !lx || !ly) return;
       img.addEventListener('mousemove', function (e) {
         const r = img.getBoundingClientRect();
@@ -3624,140 +3510,133 @@
         lx.style.display = 'block';
         ly.style.display = 'block';
       });
-      // Verlaesst die Maus das Blatt, verschwindet das Kreuz -- eine stehen gebliebene Linie
-      // sieht aus wie eine Markierung und wuerde beim naechsten Klick in die Irre fuehren.
       img.addEventListener('mouseleave', function () {
         lx.style.display = 'none';
         ly.style.display = 'none';
       });
     })();
 
-    document.getElementById('aip-blatt').addEventListener('click', function (e) {
+    document.getElementById('dfs-blatt').addEventListener('click', function (e) {
       const img = e.target;
-      // Von der angezeigten Groesse auf echte Bildpixel zurueckrechnen -- das Blatt wird
-      // per max-width skaliert.
+      // Auf die NATUERLICHE Bildgroesse umrechnen: Der Server kennt nur Originalpixel, der
+      // Browser skaliert das Bild aber auf seine Anzeigebreite.
       const r = img.getBoundingClientRect();
       const x = Math.round((e.clientX - r.left) * img.naturalWidth / r.width);
       const y = Math.round((e.clientY - r.top) * img.naturalHeight / r.height);
-      if (_aipEcken.length >= 2) _aipEcken = [];
-      _aipEcken.push({ x: x, y: y });
-      document.getElementById('aip-klickhinweis').textContent =
-        _aipEcken.length === 1
-          ? 'Obere linke Ecke: ' + x + '/' + y + ' — jetzt die untere rechte.'
-          : 'Ecken: ' + _aipEcken.map(p => p.x + '/' + p.y).join('  und  ');
+      if (_dfsEcken.length >= 2) _dfsEcken = [];
+      _dfsEcken.push({ x: x, y: y });
+      const feld = _dfsEcken.length === 1 ? 'p1' : 'p2';
+      document.getElementById(feld + '-x').value = x;
+      document.getElementById(feld + '-y').value = y;
+      document.getElementById('dfs-passen-hinweis').textContent =
+        _dfsEcken.length === 1 ? 'Punkt 1 gesetzt — jetzt Punkt 2 anklicken.'
+                               : 'Beide Punkte gesetzt — Koordinaten eintragen und speichern.';
     });
-
-    /** Die vier Felder aus einer gespeicherten Passung fuellen -- oder leeren. */
-    function _aipFelderSetzen(eintrag) {
-      ['nord', 'sued', 'west', 'ost'].forEach(function (f) {
-        const g = document.getElementById('aip-' + f + '-g');
-        const m = document.getElementById('aip-' + f + '-m');
-        const w = eintrag && eintrag['feld_' + f];
-        if (typeof w !== 'number' || !isFinite(w)) { g.value = ''; m.value = ''; return; }
-        const grad = Math.floor(w);
-        // Auf zwei Nachkommastellen: Die Blaetter sind auf ganze Bogenminuten beschriftet,
-        // eine gerechnete Passung trifft sie nur naeherungsweise. Ohne Rundung stuenden hier
-        // Zahlen wie 13.999999, die zum Abtippen untauglich sind.
-        let min = Math.round((w - grad) * 60 * 100) / 100;
-        if (min >= 60) { min = 0; }
-        g.value = String(grad);
-        m.value = String(min);
-      });
-    }
 
     /** Ein Wert aus Grad- und Minutenfeld. null, wenn etwas fehlt oder unsinnig ist. */
-    function _aipWinkel(name) {
+    function _dfsWinkel(feld) {
       const z = id => document.getElementById(id).value.replace(',', '.').trim();
-      const g = parseFloat(z('aip-' + name + '-g'));
-      const mRoh = z('aip-' + name + '-m');
+      const g = parseFloat(z(feld + '-grad'));
+      const mRoh = z(feld + '-min');
       const m = mRoh === '' ? 0 : parseFloat(mRoh);
-      if (!isFinite(g) || !isFinite(m)) return null;
-      // Minuten gehen bis 59,99 -- 60 waere ein Grad und ein haeufiger Vertipper.
-      if (m < 0 || m >= 60) return null;
-      return g + m / 60;
+      if (!isFinite(g) || !isFinite(m) || m < 0 || m >= 60) return null;
+      return g < 0 ? g - m / 60 : g + m / 60;
     }
 
-    function _aipEingaben() {
-      if (!_aipPassend || _aipEcken.length !== 2) { toast('Zwei Ecken anklicken.', true); return null; }
-      const img = document.getElementById('aip-blatt');
-      const werte = ['nord', 'sued', 'west', 'ost'].map(_aipWinkel);
-      if (werte.some(v => v === null)) {
-        toast('Alle vier Werte als Grad und Minuten eintragen (Minuten 0 bis 59).', true);
+    function _dfsEingaben() {
+      if (!_dfsPassend || _dfsEcken.length !== 2) { toast('Zwei Punkte anklicken.', true); return null; }
+      const p1lat = _dfsWinkel('p1-lat'), p1lon = _dfsWinkel('p1-lon');
+      const p2lat = _dfsWinkel('p2-lat'), p2lon = _dfsWinkel('p2-lon');
+      if ([p1lat, p1lon, p2lat, p2lon].some(v => v === null)) {
+        toast('Beide Punkte brauchen Grad und Minuten (Minuten 0 bis 59).', true);
         return null;
       }
-      // Nord muss noerdlich von Sued liegen und Ost oestlich von West. Ohne diese Pruefung
-      // laesst sich eine spiegelverkehrte Passung speichern, und die Vorschau zeigt dann
-      // nur ein leeres Rechteck -- schwer zu deuten (Nutzer-Fund 24.08.2026: Nord 51,17
-      // und Sued 51,6 eingetragen, weil das Blatt "51°17'" und "51°6'" nennt).
-      if (!(werte[0] > werte[1])) { toast('Nord muss groesser sein als Sued.', true); return null; }
-      if (!(werte[3] > werte[2])) { toast('Ost muss groesser sein als West.', true); return null; }
-      const [a, b] = _aipEcken;
-      return {
-        breite_px: img.naturalWidth, hoehe_px: img.naturalHeight,
-        links_px: Math.min(a.x, b.x), oben_px: Math.min(a.y, b.y),
-        rechts_px: Math.max(a.x, b.x), unten_px: Math.max(a.y, b.y),
-        feld_nord: werte[0], feld_sued: werte[1], feld_west: werte[2], feld_ost: werte[3],
+      const daten = {
+        p1_x: _dfsEcken[0].x, p1_y: _dfsEcken[0].y, p1_lat: p1lat, p1_lon: p1lon,
+        p2_x: _dfsEcken[1].x, p2_y: _dfsEcken[1].y, p2_lat: p2lat, p2_lon: p2lon,
       };
+      const drehRoh = document.getElementById('dfs-drehung').value.replace(',', '.').trim();
+      if (drehRoh !== '') {
+        const dreh = parseFloat(drehRoh);
+        if (!isFinite(dreh)) { toast('Drehung muss eine Zahl sein.', true); return null; }
+        daten.drehung = dreh;
+      }
+      return daten;
     }
 
-    // Vorschau: das Blatt halbtransparent ueber der echten Karte. Erst wenn die Strassen
-    // zusammenfallen, taugt die Passung.
-    document.getElementById('aip-vorschau-btn').addEventListener('click', function () {
-      const daten = _aipEingaben();
-      if (!daten) return;
-      const gy = (daten.feld_sued - daten.feld_nord) / (daten.unten_px - daten.oben_px);
-      const gx = (daten.feld_ost - daten.feld_west) / (daten.rechts_px - daten.links_px);
-      const nord = daten.feld_nord + (0 - daten.oben_px) * gy;
-      const sued = daten.feld_nord + (daten.hoehe_px - daten.oben_px) * gy;
-      const west = daten.feld_west + (0 - daten.links_px) * gx;
-      const ost = daten.feld_west + (daten.breite_px - daten.links_px) * gx;
-      const box = document.getElementById('aip-vorschau-karte');
-      box.style.display = '';
-      if (!_aipVorschauKarte) {
-        _aipVorschauKarte = L.map(box);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          { attribution: '&copy; OpenStreetMap' }).addTo(_aipVorschauKarte);
-      }
-      if (_aipVorschauKarte._blatt) _aipVorschauKarte.removeLayer(_aipVorschauKarte._blatt);
-      _aipVorschauKarte._blatt = L.imageOverlay(
-        document.getElementById('aip-blatt').src, [[sued, west], [nord, ost]],
-        { opacity: 0.7 }).addTo(_aipVorschauKarte);
-      _aipVorschauKarte.fitBounds([[sued, west], [nord, ost]]);
-      setTimeout(() => _aipVorschauKarte.invalidateSize(), 50);
-    });
-
-    document.getElementById('aip-save-btn').addEventListener('click', async function () {
-      const daten = _aipEingaben();
-      if (!daten) return;
-      const res = await api('POST', '/api/admin/aip-charts/' + encodeURIComponent(_aipPassend), daten);
+    document.getElementById('dfs-save-btn').addEventListener('click', async function () {
+      const daten = _dfsEingaben();
+      if (!daten || !_dfsPassend) return;
+      const res = await api('POST', '/api/admin/aip-charts-dfs/' + encodeURIComponent(_dfsPassend.icao)
+        + '/' + encodeURIComponent(_dfsPassend.sorte), daten);
       if (!res || !res.ok) {
         let detail = 'Fehler beim Speichern.';
         try { detail = (await res.json()).detail || detail; } catch (e) {}
         toast(detail, true);
         return;
       }
-      toast('Passung gespeichert.');
-      // NICHT neu laden: Ein loadAipCharts() setzte Seite und Bildlauf zurueck, und man stand
-      // nach jeder gespeicherten Karte wieder ganz oben (Nutzer, 24.08.2026). Der Bestand im
-      // Speicher wird stattdessen an genau der einen Stelle nachgezogen.
-      const eintrag = _aipAlle.find(c => c.icao === _aipPassend);
-      if (eintrag) {
-        eintrag.status = 'gepasst';
-        eintrag.quelle = 'hand';
-        eintrag.feld_nord = daten.feld_nord; eintrag.feld_sued = daten.feld_sued;
-        eintrag.feld_west = daten.feld_west; eintrag.feld_ost = daten.feld_ost;
-        eintrag.rahmen_px = [daten.links_px, daten.oben_px,
-                             daten.rechts_px, daten.unten_px].join(',');
-      }
-      document.getElementById('aip-passen').style.display = 'none';
-      _aipPassend = null; _aipEcken = [];
-      _aipListeZeichnen();
+      const erg = await res.json();
+      toast('Passung gespeichert — Drehung ' + erg.drehung + '°, ' + erg.mps + ' m/px.');
+      document.getElementById('dfs-passen').style.display = 'none';
+      _dfsPassend = null; _dfsEcken = [];
+      await loadDfsCharts();
     });
 
-    document.getElementById('aip-abbrechen-btn').addEventListener('click', function () {
-      document.getElementById('aip-passen').style.display = 'none';
-      _aipPassend = null; _aipEcken = [];
+    document.getElementById('dfs-abbrechen-btn').addEventListener('click', function () {
+      document.getElementById('dfs-passen').style.display = 'none';
+      _dfsPassend = null; _dfsEcken = [];
     });
+
+    // --- Status 'pruefen' -----------------------------------------------------------------
+    // Die Maske zeigt das NEUE Blatt mit den ALTEN Passpunkten darauf -- so sieht man auf
+    // einen Blick, ob sie noch dort liegen, wo sie sollen. Ersetzt eine maschinelle Pruefung
+    // bewusst durch den Augenschein (Spec 5.4).
+    async function dfsPruefenZeigen(icao, sorte) {
+      const zeile = _dfsAlle.find(k => k.icao === icao && k.sorte === sorte);
+      if (!zeile) return;
+      _dfsPruefenZeile = zeile;
+      const box = document.getElementById('dfs-seiten');
+      box.style.display = '';
+      box.innerHTML = '<p style="font-weight:700;margin:4px 0;">' + escH(icao) + ' — '
+        + _dfsSorteText(sorte) + ': neues Blatt bei der DFS</p>'
+        + '<p style="color:#8aa0b8;font-size:0.82rem;">Stimmen Inhalt und Position noch? '
+        + 'Die Markierungen zeigen die bisherigen Klickpunkte.</p>'
+        + '<div class="aip-blatt-box" style="max-width:600px;">'
+        + '<img id="dfs-pruefen-blatt" style="max-width:100%;display:block;" '
+        + 'src="/aip-chart-roh/' + encodeURIComponent(icao) + '/' + encodeURIComponent(sorte)
+        + '.roh.png?t=' + Date.now() + '"></div>'
+        + '<p style="margin-top:8px;">'
+        + '<button class="btn btn-sm" id="dfs-uebernehmen-btn">Übernehmen — neues Blatt gilt</button> '
+        + '<button class="btn btn-sm" data-dfs-passen="' + escA(icao) + '|' + escA(sorte) + '">Neu passen</button> '
+        + '<button class="btn btn-sm" id="dfs-verwerfen-btn">Verwerfen — altes Blatt bleibt</button>'
+        + '</p>';
+    }
+
+    document.getElementById('dfs-seiten').addEventListener('click', async function (e) {
+      const b = e.target.closest && (e.target.closest('button#dfs-uebernehmen-btn')
+        || e.target.closest('button#dfs-verwerfen-btn'));
+      if (!b || !_dfsPruefenZeile) return;
+      const weg = b.id === 'dfs-uebernehmen-btn' ? 'uebernehmen' : 'verwerfen';
+      const res = await api('POST', '/api/admin/aip-charts-dfs/' + encodeURIComponent(_dfsPruefenZeile.icao)
+        + '/' + encodeURIComponent(_dfsPruefenZeile.sorte) + '/' + weg);
+      if (res && res.ok) {
+        toast(weg === 'uebernehmen' ? 'Übernommen.' : 'Verworfen.');
+        document.getElementById('dfs-seiten').style.display = 'none';
+        _dfsPruefenZeile = null;
+        await loadDfsCharts();
+      } else {
+        toast('Fehlgeschlagen.', true);
+      }
+    });
+
+    async function dfsLoeschen(icao, sorte) {
+      if (!confirm(icao + ' (' + _dfsSorteText(sorte) + ') wirklich entfernen?')) return;
+      const res = await api('DELETE', '/api/admin/aip-charts-dfs/' + encodeURIComponent(icao)
+        + '/' + encodeURIComponent(sorte));
+      if (res && res.ok) { toast('Entfernt.'); await loadDfsCharts(); }
+      else toast('Fehlgeschlagen.', true);
+    }
+
 
     // ====================================================================
     // ERKENNUNGSLÜCKEN (v8.6.0)

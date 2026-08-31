@@ -263,45 +263,12 @@ def test_festnageln_schaltet_die_ebene_mit_ein():
 
 
 # ---------------------------------------------------------------------------
-# Admin -- Handpassung
+# Admin -- Handpassung ist mit dem Rueckbau (31.08.2026) in die vereinigte Maske
+# "AIP Charts DFS" aufgegangen. Siehe tests/test_charts_dfs_ui.py.
 # ---------------------------------------------------------------------------
 ADMIN = (Path(__file__).resolve().parents[1] / "app" / "static" / "admin.html").read_text(
     encoding="utf-8"
 )
-
-
-def test_admin_bindet_leaflet_ein():
-    """Vorher enthielt admin.html keinerlei Leaflet -- kein Script-Tag, kein CSS."""
-    assert "leaflet.js" in ADMIN and "leaflet.css" in ADMIN
-
-
-def test_kartenliste_ist_horizontal_scrollbar():
-    """UI-Regel aus CLAUDE.md: breite Tabellen gehoeren in .table-wrap."""
-    start = ADMIN.index('id="aip-charts"')
-    assert "table-wrap" in ADMIN[max(0, start - 400):start + 400]
-
-
-def test_vorschau_zeigt_das_blatt_ueber_der_karte():
-    start = ADMIN.index("aip-vorschau-btn').addEventListener")
-    assert "L.imageOverlay(" in ADMIN[start:start + 1600]
-
-
-def test_handpassung_schickt_die_rahmenecken_als_feld_werte():
-    """Nicht als nord/sued/west/ost -- dieselben Namen fuer Rahmenecken und Blattgrenzen
-    waren die Verwechslung hinter dem 45-Prozent-Massstabsfehler."""
-    start = ADMIN.index("function _aipEingaben(")
-    # Bis zum Ende der Funktion statt einer festen Zeichenzahl: Ein Zusatz am Anfang (etwa
-    # die Grad/Minuten-Pruefung vom 24.08.2026) schob den Rumpf sonst aus dem Fenster, und
-    # der Test schlug an, ohne dass sich das Verhalten geaendert hatte.
-    block = ADMIN[start:ADMIN.index("\n    }", start)]
-    assert "feld_nord:" in block and "feld_sued:" in block
-    assert "breite_px:" in block and "hoehe_px:" in block
-
-
-def test_klickkoordinaten_werden_auf_bildpixel_zurueckgerechnet():
-    """Das Blatt wird per max-width skaliert; ungerechnete Klickpixel waeren falsch."""
-    start = ADMIN.index("aip-blatt').addEventListener")
-    assert "naturalWidth" in ADMIN[start:start + 900]
 
 
 # ---------------------------------------------------------------------------
@@ -473,21 +440,6 @@ def test_frontend_frischt_auf_statt_neu_zu_laden():
     assert "msg.type === 'aip_charts'" in abschnitt
     assert "if (_aipKarten) _aipKartenLaden(true)" in abschnitt
     assert "location.reload" not in abschnitt
-
-
-def test_fadenkreuz_ueber_dem_kartenblatt():
-    """Nutzerwunsch 24.08.2026: eine waagerechte und eine senkrechte Linie ueber das ganze Blatt.
-
-    Ohne sie schaetzt man beim Klicken, ob man auf der Rahmenlinie steht oder daneben -- und
-    der Fehler geht unmittelbar in die gerechnete Passung ein.
-    """
-    assert 'id="aip-fk-x"' in ADMIN and 'id="aip-fk-y"' in ADMIN
-    start = ADMIN.index("const lx = document.getElementById('aip-fk-x')")
-    abschnitt = ADMIN[start:start + 1200]
-    assert "mousemove" in abschnitt and "mouseleave" in abschnitt
-    # Gegen das BILD gerechnet, nicht gegen den Kasten: Das Blatt wird per max-width
-    # skaliert, beide fallen nur zufaellig zusammen.
-    assert "img.getBoundingClientRect()" in abschnitt
 
 
 def test_fadenkreuz_schluckt_den_klick_nicht():
