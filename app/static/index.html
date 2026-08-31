@@ -2399,6 +2399,27 @@
     }
     .aip-marke-label::before { display: none; }
 
+    /* --- Marken der Flugplatzkarten -------------------------------------------------------
+       Magenta statt Blau, auf Wunsch des Nutzers (30.08.2026). Das weicht von der stehenden
+       Farbregel ab, nach der Blau (--green) Klickbarem vorbehalten ist -- und der Kommentar
+       bei .aip-marke, sie sei "das einzige klickbare Symbol dieser Karte", stimmt seitdem
+       nicht mehr. Beides ist eine bewusste Nutzerentscheidung, keine Nachlaessigkeit: Zwei
+       gleichfarbige Marken uebereinander waeren im Cockpit nicht zu unterscheiden.
+
+       Hohl aus demselben Grund wie beim Vorbild: Die Marke liegt UEBER dem Platz, ein
+       Vollsymbol deckte genau die Stelle zu, auf die es ankommt. Der Schlagschatten traegt
+       dieselbe Last -- das Symbol muss ueber hellem Kartenblatt und ueber dunkler Grundkarte
+       stehen. */
+    .ground-marke { filter: drop-shadow(0 0 2px rgba(0,0,0,0.9)); cursor: pointer; }
+    .ground-marke svg { width: 24px; height: 24px; overflow: visible;
+                        transform: scale(0.6); transform-origin: 50% 50%; }
+    .leaflet-container.aip-nah .ground-marke svg { transform: scale(1); }
+    .ground-marke rect { fill: rgba(4,8,15,0.45); stroke: #e05fd0; stroke-width: 2;
+                         stroke-linejoin: round; }
+    .ground-marke line { stroke: #e05fd0; stroke-width: 1.5; stroke-linecap: round; }
+    .ground-marke-fest rect { fill: #e05fd0; }
+    .ground-marke-fest line { stroke: #04080f; }
+
     /* =====================================================================
        STATISTIKEN
        ===================================================================== */
@@ -7193,6 +7214,7 @@ function connectSSE() {
         // auf JEDEM offenen Geraet einen Abruf nach sich, auch dort, wo die Ebene nie
         // eingeschaltet war.
         if (_aipKarten) _aipKartenLaden(true);
+        if (_groundKarten) _groundKartenLaden(true);
       } else if (msg.type === 'notify') {
         // Benachrichtigung fürs MSFS-Kniebrett. Auf der normalen Web-Seite ein No-Op —
         // dort gibt es Web-Push, eine zweite Anzeige wäre nur doppelt.
@@ -10221,6 +10243,16 @@ function _aipKarteNachfuehren() {
     if (fest) { _aipKarteZeigen(fest); return; }
     _aipKarteFest = null;
   }
+  // Liegt eine Flugplatzkarte, tritt die Sichtflugkarte zurueck. Bedingung ist "ein Blatt
+  // LIEGT", nicht "die Position ist im Feld": Ist die Ebene Flugplatzkarte abgehakt, bliebe
+  // sonst beim Rollen gar keine Karte. Die Sichtflugkarte bleibt dabei als EBENE
+  // eingeschaltet -- sonst stuende nach der Landung ein Haekchen aus, das niemand
+  // weggeklickt hat.
+  if (typeof _groundVerdecktSichtflug === 'function' && _groundVerdecktSichtflug()
+      && !_aipKarteFest) {
+    _aipKarteZeigen(null);
+    return;
+  }
   const eigen = _eigenePosition();
   if (!eigen) { _aipKarteZeigen(null); return; }
   let treffer = null;
@@ -10329,6 +10361,180 @@ const _AIP_MARKE_SICHTBAR_FAKTOR = _AIP_MARKE_FAKTOR * 4;
 // Tooltip je Marke ist ein DOM-Element, das Leaflet bei JEDER Kartenbewegung neu setzt (die
 // Falle vom 15.08.2026, s. _labelsImSichtbereich). Gross und beschriftet wird deshalb
 // weiterhin erst, wenn das Blatt wirklich ins Bild passt.
+// ---------------------------------------------------------------------------------------
+// Flugplatzkarten (Aerodrome Chart / Ground Movement Chart)
+//
+// Eigener Zustand, nicht der der Sichtflugkarte. Der ist auf ICAO geschluesselt und einfach
+// vorhanden -- die Sichtflugkarte EDDL und die Flugplatzkarte EDDL tragen aber DIESELBE
+// ICAO. Mit geteilten Variablen machte ein Wegklick der einen die andere unerreichbar, und
+// die Sperre fiele nie, weil beide Automatiken dasselbe Blatt wollen.
+// ---------------------------------------------------------------------------------------
+const _GROUND_API = '/api/aip-ground-charts';
+const _GROUND_PREF_KEY = 'friesenspy_groundkarte';
+// 0,003 Grad statt der 0,02 der Sichtflugkarte: 2 km sind groesser als mancher Flugplatz.
+const _GROUND_HYSTERESE = 0.003;
+
+const _groundGruppe = L.layerGroup();
+let _groundKarten = null;
+let _groundAktiv = null;
+let _groundFest = null;
+let _groundAus = null;
+let _groundOverlay = null;
+
+function _saveGroundPref(an) { _prefSchreib(_GROUND_PREF_KEY, an ? '1' : '0'); }
+function _loadGroundPref()   { return _prefLies(_GROUND_PREF_KEY) === '1'; }
+
+function _groundAttribution(k) {
+  return '&copy; DFS Deutsche Flugsicherung GmbH, AIRAC ' + (k.airac || '?');
+}
+
+/** Liegt die Position im Feld? Das Feld ist die Huelle der Bahnen, nicht das Blatt. */
+function _groundImFeld(k, lat, lon, schonSichtbar) {
+  const r = schonSichtbar ? _GROUND_HYSTERESE : 0;
+  return lat > (k.feld_sued - r) && lat < (k.feld_nord + r)
+      && lon > (k.feld_west - r) && lon < (k.feld_ost + r);
+}
+
+function _groundZeigen(k) {
+  if (_groundAktiv === (k && k.icao)) return;
+  if (_groundOverlay) { _groundGruppe.removeLayer(_groundOverlay); _groundOverlay = null; }
+  _groundAktiv = k ? k.icao : null;
+  if (k) {
+    _groundOverlay = L.imageOverlay(k.bild, [[k.sued, k.west], [k.nord, k.ost]], {
+      opacity: _aipDeckkraft, attribution: _groundAttribution(k), interactive: false,
+    });
+    _groundGruppe.addLayer(_groundOverlay);
+  }
+  // Die Sichtflugkarte tritt zurueck, sobald hier wirklich ein Blatt LIEGT -- nicht schon,
+  // wenn die Position im Feld liegt. Sonst waere sie weg und die Flugplatzkarte nicht da:
+  // Ist die Ebene "Flugplatzkarte" abgehakt, bliebe beim Rollen gar keine Karte uebrig.
+  _aipKarteNachfuehren();
+  _groundMarkenAnstrich();
+}
+
+/** Liegt gerade eine Flugplatzkarte? Die Sichtflugkarte fragt danach. */
+function _groundVerdecktSichtflug() {
+  return !!_groundAktiv;
+}
+
+/**
+ * Passendes Blatt nach der eigenen Position waehlen.
+ *
+ * Eine festgenagelte SICHTFLUGkarte schlaegt die Automatik: Ein ausdruecklicher
+ * Nutzerbefehl darf nicht still ueberstimmt werden.
+ */
+function _groundNachfuehren() {
+  if (!liveMap || !liveMap.hasLayer(_groundGruppe)) { _groundZeigen(null); return; }
+  if (!_groundKarten) { _groundKartenLaden(); return; }
+  if (_aipKarteFest) { _groundZeigen(null); return; }
+  if (_groundFest) {
+    const fest = _groundKarten.find(function (k) { return k.icao === _groundFest; });
+    if (fest) { _groundZeigen(fest); return; }
+    _groundFest = null;
+  }
+  const eigen = _eigenePosition();
+  if (!eigen) { _groundZeigen(null); return; }
+  let treffer = null;
+  for (let i = 0; i < _groundKarten.length; i++) {
+    const k = _groundKarten[i];
+    if (!_groundImFeld(k, eigen.lat, eigen.lon, k.icao === _groundAktiv)) continue;
+    if (!treffer) { treffer = k; continue; }
+    const d = function (x) {
+      const dy = eigen.lat - (x.feld_nord + x.feld_sued) / 2;
+      const dx = eigen.lon - (x.feld_west + x.feld_ost) / 2;
+      return dy * dy + dx * dx;
+    };
+    if (d(k) < d(treffer)) treffer = k;
+  }
+  // Eigener Merker, nicht der der Sichtflugkarte -- sonst machte ein Wegklick hier auch
+  // die Sichtflugkarte desselben Platzes unerreichbar.
+  if (_groundAus && (!treffer || treffer.icao !== _groundAus)) _groundAus = null;
+  if (treffer && treffer.icao === _groundAus) treffer = null;
+  _groundZeigen(treffer);
+}
+
+function _groundKartenLaden(erzwingen) {
+  if (_groundKarten && !erzwingen) return Promise.resolve(_groundKarten);
+  return fetch(_GROUND_API, { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : { charts: [] }; })
+    .then(function (d) {
+      _groundKarten = d.charts || [];
+      _groundMarkenAnpassen();
+      _groundNachfuehren();
+      return _groundKarten;
+    })
+    .catch(function () { _groundKarten = []; return _groundKarten; });
+}
+
+// Marken der Flugplatzkarten. Eigenes Verzeichnis, eigener Nah-Zustand: Beide Markensaetze
+// liegen ueber demselben Platz und wuerden sich mit einem gemeinsamen Objekt gegenseitig
+// ueberschreiben.
+const _groundMarken = {};
+
+function _groundMarkeIcon(an) {
+  return L.divIcon({
+    className: 'ground-marke' + (an ? ' ground-marke-fest' : ''),
+    html: '<svg viewBox="0 0 24 24" aria-hidden="true">'
+        + '<rect x="4" y="7" width="16" height="10" rx="1.5"/>'
+        + '<line x1="7" y1="12" x2="17" y2="12"/>'
+        + '<line x1="10" y1="9" x2="10" y2="15"/>'
+        + '<line x1="14" y1="9" x2="14" y2="15"/></svg>',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
+function _groundMarkeGeklickt(icao) {
+  if (_groundAktiv === icao) {
+    _groundFest = null;
+    _groundAus = icao;
+    _groundZeigen(null);
+    return;
+  }
+  _groundAus = null;
+  _groundFest = icao;
+  const k = (_groundKarten || []).find(function (x) { return x.icao === icao; });
+  if (k) _groundZeigen(k);
+}
+
+function _groundMarkenAnstrich() {
+  for (const icao in _groundMarken) {
+    _groundMarken[icao].setIcon(_groundMarkeIcon(_groundAktiv === icao));
+  }
+}
+
+/** Marken an Ausschnitt und Zustand angleichen. Muster wie bei _aipMarkenAnpassen. */
+function _groundMarkenAnpassen() {
+  const an = liveMap && liveMap.hasLayer(_groundGruppe) && _groundKarten;
+  if (!an) {
+    for (const icao in _groundMarken) {
+      _groundGruppe.removeLayer(_groundMarken[icao]);
+      delete _groundMarken[icao];
+    }
+    return;
+  }
+  const b = liveMap.getBounds();
+  for (let i = 0; i < _groundKarten.length; i++) {
+    const k = _groundKarten[i];
+    const lat = (k.feld_nord + k.feld_sued) / 2;
+    const lon = (k.feld_west + k.feld_ost) / 2;
+    if (!b.contains([lat, lon])) {
+      if (_groundMarken[k.icao]) {
+        _groundGruppe.removeLayer(_groundMarken[k.icao]);
+        delete _groundMarken[k.icao];
+      }
+      continue;
+    }
+    if (_groundMarken[k.icao]) continue;
+    // Versatz nach unten: Beide Markensaetze liegen sonst exakt uebereinander und die
+    // untere waere nicht anklickbar.
+    const m = L.marker([lat - 0.004, lon], { icon: _groundMarkeIcon(_groundAktiv === k.icao) });
+    m.on('click', function () { _groundMarkeGeklickt(k.icao); });
+    m.addTo(_groundGruppe);
+    _groundMarken[k.icao] = m;
+  }
+}
+
 const _aipMarken = {};           // ICAO -> L.marker
 let _aipNah = null;              // steht der Ausschnitt auf Blattgroesse?
 
@@ -10484,7 +10690,10 @@ function _naviTakt(sofort) {
 
   const eigen = _eigenePosition();
 
-  // 0. Sichtflugkarte nachfuehren -- hier, weil die eigene Position ohnehin schon vorliegt.
+  // 0. Flugplatz- und Sichtflugkarte nachfuehren -- hier, weil die eigene Position
+  //    ohnehin schon vorliegt. Die Flugplatzkarte zuerst: Sie entscheidet, ob die
+  //    Sichtflugkarte zuruecktritt.
+  if (typeof _groundNachfuehren === 'function') _groundNachfuehren();
   _aipKarteNachfuehren();
 
   // 1. Drehung
@@ -10979,6 +11188,21 @@ async function initLiveMap() {
   // Luftfahrtkarten, sie gehoeren beieinander. Ihr Platz auf der KARTE bleibt davon
   // unberuehrt -- der haengt allein am addTo weiter unten, das nicht mit umgezogen ist.
   liveOverlays['Sichtflugkarte'] = _aipKartenGruppe;
+  // Unmittelbar hinter der Sichtflugkarte: Beide zeigen amtliche DFS-Blaetter, und die
+  // Flugplatzkarte tritt ueber dem Platz an ihre Stelle.
+  liveOverlays['Flugplatzkarte'] = _groundGruppe;
+  liveMap.on('overlayadd', function (e) {
+    if (e.layer !== _groundGruppe) return;
+    _saveGroundPref(true);
+    _groundKartenLaden().then(function () { _groundMarkenAnpassen(); _groundNachfuehren(); });
+  });
+  liveMap.on('overlayremove', function (e) {
+    if (e.layer !== _groundGruppe) return;
+    _saveGroundPref(false);
+    _groundZeigen(null);
+    _groundMarkenAnpassen();
+  });
+  if (_loadGroundPref()) liveMap.addLayer(_groundGruppe);
   liveOverlays['Platzrunden'] = _platzrundenGruppe;
   _addPreferredPlatzrundenLayer(liveMap, _platzrundenGruppe);
   _platzrundenZoomWache(liveMap);

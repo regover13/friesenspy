@@ -564,6 +564,18 @@ class VatsimPoller:
             self._aip_auffrischen, "interval", weeks=1, id="aip_auffrischen",
             next_run_time=datetime.now(timezone.utc) + timedelta(minutes=10),
         )
+        # Flugplatzkarten: NUR melden, nicht rechnen. Der Nutzer passt sie einmal von Hand
+        # (Entscheidung 30.08.2026); dieser Job vergleicht danach ausschliesslich den
+        # quell_hash des Rohblatts und traegt Aenderungen als offenen Punkt ein. Zwei
+        # Abrufe je Karte statt eines Kapiteldurchlaufs mit Bildanalyse -- und er kann per
+        # Bauart keine bestehende Passung beschaedigen.
+        #
+        # Zwei Stunden versetzt gegen aip_auffrischen: Beide ziehen dieselbe Bandbreite von
+        # derselben Quelle.
+        self._scheduler.add_job(
+            self._ground_charts_melden, "interval", weeks=1, id="ground_charts_melden",
+            next_run_time=datetime.now(timezone.utc) + timedelta(minutes=130),
+        )
         # Muster-Infos: einmalig kurz nach Start, danach regelmäßig die fälligen.
         self._scheduler.add_job(
             self._resolve_due_aircraft_types, "date", id="aircraft_info_initial",
@@ -1391,6 +1403,45 @@ class VatsimPoller:
                                len(pruefen), " ".join(pruefen))
         except Exception:
             logger.exception("Error in _aip_auffrischen")
+
+    async def _ground_charts_melden(self) -> None:
+        """Geaenderte Flugplatzblaetter als offenen Punkt eintragen -- mehr nicht.
+
+        Ueber ``asyncio.to_thread`` wie der Schwesterjob, aber deutlich billiger: keine
+        Bildanalyse, nur ein Hashvergleich je Karte.
+
+        Silent fail: Ein misslungener Durchgang darf den Dienst nicht gefaehrden. Es geht
+        nichts verloren -- beim naechsten Lauf steht dasselbe neue Blatt noch da.
+        """
+        from app.database import get_connection, job_erledigt, job_faellig
+
+        conn = get_connection(self.db_path)
+        try:
+            if not job_faellig(conn, "ground_charts_melden", 7 * 24 * 3600):
+                logger.debug("Flugplatzkarten: noch nicht faellig, uebersprungen")
+                return
+        finally:
+            conn.close()
+        try:
+            from scripts.ground_chart_bestand import melden
+            ergebnis = await asyncio.to_thread(melden)
+            conn = get_connection(self.db_path)
+            try:
+                job_erledigt(conn, "ground_charts_melden")
+                conn.commit()
+            finally:
+                conn.close()
+            geaendert = ergebnis.get("geaendert") or []
+            if geaendert:
+                logger.warning("Flugplatzkarten: %d Blatt/Blaetter haben sich geaendert und "
+                               "warten im Admin auf eine Handpassung: %s",
+                               len(geaendert), " ".join(geaendert))
+                self.broadcast_sse({"type": "aip_charts"})
+            else:
+                logger.info("Flugplatzkarten: nichts geaendert (%s)",
+                            ergebnis.get("zaehler"))
+        except Exception:
+            logger.exception("Error in _ground_charts_melden")
 
     async def _refresh_flight_cache(self) -> None:
         """Periodischer inkrementeller Refresh von ``flight_cache`` (~0,5 s, letzte Tage).
