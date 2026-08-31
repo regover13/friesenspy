@@ -1,13 +1,14 @@
 [
   {
-    "version": "14.2.0",
+    "version": "14.2.1",
     "date": "2026-08-31",
     "highlight": false,
     "title": "Flugplatzkarten zum Rollen",
     "items": [
       "\ud83d\udeeb Neue Karten-Ebene \u201eFlugplatzkarte\u201c: Die amtliche DFS-Flugplatz- oder Rollkarte eines Verkehrsflughafens liegt georeferenziert \u00fcber der Karte, mit Rollwegnamen, Haltepunkten und Standplatznummern. Sie erscheint von allein \u00fcber dem Platz und tritt beim Verlassen wieder hinter die Sichtflugkarte zur\u00fcck.",
       "\ud83d\udfe3 Eigenes Symbol in Magenta, neben dem blauen der Sichtflugkarte. Antippen nagelt das Blatt fest oder nimmt es weg \u2014 wie gewohnt.",
-      "\ud83d\udcd0 Die Karten sind nach der Bahnrichtung gedruckt, nicht genordet; sie werden beim Ablegen gedreht. Die Lage wird aus den Bahnen im Bild gerechnet und gegen amtliche Schwellenkoordinaten gepr\u00fcft \u2014 eine Karte, die diese Pr\u00fcfung nicht besteht, wird nicht angezeigt."
+      "\ud83d\udcd0 Die Karten sind nach der Bahnrichtung gedruckt, nicht genordet; sie werden beim Ablegen gedreht. Die Lage wird aus den Bahnen im Bild gerechnet und gegen amtliche Schwellenkoordinaten gepr\u00fcft \u2014 eine Karte, die diese Pr\u00fcfung nicht besteht, wird nicht angezeigt.",
+      "\ud83d\udcac Im Admin: eine Liste der Flugplatzkarten mit ihrem Restfehler und den noch offenen Pl\u00e4tzen, dazu ein Bereich f\u00fcr Kartenpunkte, die zur Pr\u00fcfung anstehen."
     ]
   },
   {

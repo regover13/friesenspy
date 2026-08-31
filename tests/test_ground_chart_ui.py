@@ -90,3 +90,56 @@ def test_merker_ohne_localstorage():
     block = RUMPF[stelle:stelle + 900]
     assert "_prefSchreib" in block and "_prefLies" in block
     assert "localStorage" not in block
+
+
+# ---------------------------------------------------------------------------
+# Admin: offene Punkte und Flugplatzkarten
+# ---------------------------------------------------------------------------
+ADMIN = (Path(__file__).resolve().parents[1] / "app" / "static"
+         / "admin.html").read_text(encoding="utf-8")
+ADMIN_RUMPF = _ohne_kommentare(ADMIN)
+
+
+def test_admin_zeigt_offene_kartenpunkte():
+    assert "loadAipVorschlaege" in ADMIN_RUMPF
+    assert "/api/admin/aip-vorschlaege" in ADMIN_RUMPF
+    assert "vorschlagUebernehmen" in ADMIN_RUMPF
+    assert "vorschlagVerwerfen" in ADMIN_RUMPF
+
+
+def test_verwerfen_geht_per_post_nicht_per_delete():
+    """Ein DELETE waere wirkungslos -- der naechste Wochenlauf faende denselben
+    quell_hash und legte den Vorschlag sofort wieder an."""
+    stelle = ADMIN_RUMPF.index("async function vorschlagVerwerfen")
+    block = ADMIN_RUMPF[stelle:stelle + 400]
+    assert "'POST'" in block and "'DELETE'" not in block
+
+
+def test_leere_vorschlagsliste_wird_ganz_verborgen():
+    """Eine dauerhaft leere Ueberschrift ist ein Reiz, den niemand braucht."""
+    stelle = ADMIN_RUMPF.index("async function loadAipVorschlaege")
+    block = ADMIN_RUMPF[stelle:stelle + 1200]
+    assert "display = 'none'" in block
+
+
+def test_uebernehmen_fragt_nach():
+    """Es ersetzt eine von Hand gesetzte Passung -- der einzige Weg, auf dem das ueberhaupt
+    geschehen darf."""
+    stelle = ADMIN_RUMPF.index("async function vorschlagUebernehmen")
+    block = ADMIN_RUMPF[stelle:stelle + 400]
+    assert "confirm(" in block
+
+
+def test_admin_zeigt_den_restfehler_in_der_liste():
+    """Er ist die einzige Zahl, an der ein Mensch von aussen erkennt, ob eine automatische
+    Passung sitzt -- also gehoert er sichtbar in die Liste."""
+    stelle = ADMIN_RUMPF.index("async function loadGroundCharts")
+    block = ADMIN_RUMPF[stelle:stelle + 2200]
+    assert "rest_max" in block
+    assert "Restfehler" in block
+
+
+def test_admin_zaehlt_offene_punkte():
+    stelle = ADMIN_RUMPF.index("async function loadGroundCharts")
+    block = ADMIN_RUMPF[stelle:stelle + 2200]
+    assert "offen" in block

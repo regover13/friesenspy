@@ -173,6 +173,33 @@ def platz_bearbeiten(icao: str, kapitel_url: str, holen, csv_pfad, db_path: str,
     return bericht
 
 
+def _offen_vermerken(conn, icao: str, bericht: dict, db_path: str) -> None:
+    """Einen Platz als offenen Punkt eintragen: Blaetter da, Passung nicht bestanden.
+
+    Die Zeile traegt Nullen in allen Zahlenfeldern und ``status='ungepasst'`` -- das ist
+    ehrlich: Es gibt keine bekannte Lage. ``get_ground_charts()`` filtert sie aus der
+    Auslieferung, der Admin sieht sie.
+
+    ``quelle='auto'`` und NICHT 'hand': 'hand' hiesse "von einem Menschen gesetzt" und
+    wuerde die Zeile fuer immer gegen jeden spaeteren Lauf sperren, ohne je Handarbeit zu
+    enthalten. Genau diese Fehlbenennung ist am 31.08.2026 bei den Sichtflugkarten behoben
+    worden.
+    """
+    beste_sorte = (bericht["blaetter"][0]["sorte"] if bericht["blaetter"]
+                   else "flugplatzkarte")
+    beste_url = bericht["blaetter"][0]["url"] if bericht["blaetter"] else ""
+    try:
+        upsert_ground_chart(
+            conn, icao, sorte=beste_sorte, seite_url=beste_url,
+            quell_hash="", bild_hash="",
+            nord=0.0, sued=0.0, west=0.0, ost=0.0,
+            feld_nord=0.0, feld_sued=0.0, feld_west=0.0, feld_ost=0.0,
+            drehung=0.0, mps=0.0, rest_max=0.0, bahnen=0,
+            quelle="auto", airac="", status="ungepasst")
+    except HandpassungGesperrt:
+        pass          # eine bestehende Handpassung wird davon nicht angeruehrt
+
+
 def ablegen(conn, icao: str, gewaehlt: dict, quelle: str = "auto") -> bool:
     """Einen Bericht in die Tabelle schreiben. ``False``, wenn eine Handpassung sperrt."""
     g = gewaehlt["grenzen"]
@@ -275,6 +302,14 @@ def lauf(nur: set[str] | None = None, pause: float = 0.3,
                 berichte.append(b)
                 if b["gewaehlt"] is None:
                     zaehler[b.get("grund", "unbekannt")[:30]] += 1
+                    # **Als offenen Punkt ablegen, nicht schweigend uebergehen.** Ein Platz
+                    # mit Kandidatenblaettern, deren Passung die Pruefkette nicht bestand,
+                    # ist genau der Fall, den der Nutzer im Admin abarbeiten will
+                    # (Entscheidung 30.08.2026: "Sie sollen dann einfach als nur offene
+                    # angezeigt werden"). Ohne Zeile erschiene er nirgends.
+                    if schreiben and b["blaetter"]:
+                        _offen_vermerken(conn, icao, b, einst.DB_PATH)
+                        zaehler["offen"] += 1
                     continue
                 zaehler["gepasst"] += 1
                 if schreiben:

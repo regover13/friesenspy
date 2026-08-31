@@ -1193,6 +1193,29 @@
 
         <!-- AIP-SICHTFLUGKARTEN -->
         <div class="panel">
+          <div class="panel-title"><span>📬 Offene Kartenpunkte</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Hier stehen Automatikergebnisse zu Karten, die von Hand gepasst wurden — sie
+            werden <b>nicht</b> eingespielt, sondern nur vorgeschlagen. Übernehmen ersetzt
+            die bestehende Passung, Verwerfen lässt sie stehen und blendet den Fund aus,
+            bis sich das Blatt bei der DFS wirklich ändert.
+          </p>
+          <div id="aip-vorschlaege" class="table-wrap"><div class="empty-hint">Lade…</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title"><span>🛬 Flugplatzkarten</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Flugplatz- und Rollkarten der Verkehrsflughäfen. Der <b>Restfehler</b> ist die
+            Zahl, an der man erkennt, ob eine Passung sitzt: Er entsteht aus dem Vergleich
+            der gerechneten Lage mit amtlichen Schwellenkoordinaten. Eine Bahn ist 45 m
+            breit, ein Rollweg 23 m — alles über 15 m wird gar nicht erst angezeigt.
+            <b>Ungepasst</b> heißt: Blätter sind da, aber keine Lage bestand die Prüfung.
+          </p>
+          <div id="ground-charts" class="table-wrap"><div class="empty-hint">Lade…</div></div>
+        </div>
+
+        <div class="panel">
           <div class="panel-title"><span>🗺️ Sichtflugkarten (AIP)</span></div>
           <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
             Karten, die die Automatik nicht passen konnte, lassen sich hier von Hand
@@ -1608,6 +1631,8 @@
       loadCustomAirports();
       loadAirportLinks();
       loadAipCharts();
+      loadAipVorschlaege();
+      loadGroundCharts();
       miLoad();
       // Erkennungslücken NICHT automatisch laden -- der Check rechnet den gesamten
       // Flugbestand neu durch (mehrere Sekunden) und läuft nur auf expliziten Klick
@@ -3361,6 +3386,93 @@
       await loadAipCharts();
       aipPassenStarten(icao);
     });
+
+    // ---------------------------------------------------------------------------------
+    // Offene Kartenpunkte und Flugplatzkarten
+    // ---------------------------------------------------------------------------------
+    async function loadAipVorschlaege() {
+      const box = document.getElementById('aip-vorschlaege');
+      try {
+        const res = await api('GET', '/api/admin/aip-vorschlaege');
+        if (!res || !res.ok) { box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>'; return; }
+        const liste = (await res.json()).vorschlaege || [];
+        if (!liste.length) {
+          // Ganz verbergen statt eine leere Ueberschrift stehen zu lassen: Ein dauerhaft
+          // leerer Abschnitt ist ein Reiz, den niemand braucht.
+          box.closest('.panel').style.display = 'none';
+          return;
+        }
+        box.closest('.panel').style.display = '';
+        let h = '<table><thead><tr><th>Platz</th><th>Art</th><th>Grund</th>'
+              + '<th>Gefunden</th><th>Blätter</th><th></th></tr></thead><tbody>';
+        for (const v of liste) {
+          const alt = v.art === 'ground'
+            ? '/aip-ground-chart/' + v.icao + '.png'
+            : '/aip-chart/' + v.icao + '.png';
+          h += '<tr><td><b>' + v.icao + '</b></td><td>' + v.art + '</td>'
+             + '<td style="font-size:0.8rem">' + (v.grund || '') + '</td>'
+             + '<td style="font-size:0.8rem">' + (v.gefunden_am || '').slice(0, 10) + '</td>'
+             + '<td><a href="' + alt + '" target="_blank">gültig</a> · '
+             + '<a href="/aip-vorschlag/' + v.id + '.png" target="_blank">Vorschlag</a></td>'
+             + '<td style="white-space:nowrap">'
+             + '<button class="btn" onclick="vorschlagUebernehmen(' + v.id + ')">Übernehmen</button> '
+             + '<button class="btn" onclick="vorschlagVerwerfen(' + v.id + ')">Verwerfen</button>'
+             + '</td></tr>';
+        }
+        box.innerHTML = h + '</tbody></table>';
+      } catch (e) {
+        box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>';
+      }
+    }
+
+    async function vorschlagUebernehmen(id) {
+      if (!confirm('Diesen Vorschlag übernehmen? Die bestehende Passung wird ersetzt.')) return;
+      const res = await api('POST', '/api/admin/aip-vorschlaege/' + id + '/uebernehmen');
+      if (res && res.ok) { loadAipVorschlaege(); loadAipCharts(); }
+      else alert('Übernehmen fehlgeschlagen.');
+    }
+
+    async function vorschlagVerwerfen(id) {
+      const res = await api('POST', '/api/admin/aip-vorschlaege/' + id + '/verwerfen');
+      if (res && res.ok) loadAipVorschlaege();
+      else alert('Verwerfen fehlgeschlagen.');
+    }
+
+    async function loadGroundCharts() {
+      const box = document.getElementById('ground-charts');
+      try {
+        const res = await api('GET', '/api/admin/aip-ground-charts');
+        if (!res || !res.ok) { box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>'; return; }
+        const liste = (await res.json()).charts || [];
+        if (!liste.length) {
+          box.innerHTML = '<div class="empty-hint">Noch keine Flugplatzkarten.</div>';
+          return;
+        }
+        const gepasst = liste.filter(function (k) { return k.status === 'gepasst'; });
+        let h = '<p style="font-size:0.82rem;color:#8aa0b8;margin:0 0 8px;">'
+              + gepasst.length + ' gepasst, ' + (liste.length - gepasst.length)
+              + ' offen.</p>'
+              + '<table><thead><tr><th>Platz</th><th>Sorte</th><th>Status</th>'
+              + '<th>Restfehler</th><th>Bahnen</th><th>Drehung</th><th>Blatt</th>'
+              + '</tr></thead><tbody>';
+        for (const k of liste) {
+          const offen = k.status !== 'gepasst';
+          h += '<tr' + (offen ? ' style="opacity:0.65"' : '') + '>'
+             + '<td><b>' + k.icao + '</b></td>'
+             + '<td>' + (k.sorte === 'rollkarte' ? 'Rollkarte' : 'Flugplatzkarte') + '</td>'
+             + '<td>' + (offen ? 'offen' : (k.quelle === 'hand' ? 'gepasst (Hand)' : 'gepasst')) + '</td>'
+             + '<td>' + (offen ? '—' : k.rest_max.toFixed(1) + ' m') + '</td>'
+             + '<td>' + (k.bahnen || '—') + '</td>'
+             + '<td>' + (offen ? '—' : k.drehung.toFixed(1) + '°') + '</td>'
+             + '<td>' + (k.seite_url ? '<a href="' + k.seite_url + '" target="_blank">DFS</a>' : '—')
+             + (offen ? '' : ' · <a href="/aip-ground-chart/' + k.icao + '.png" target="_blank">genordet</a>')
+             + '</td></tr>';
+        }
+        box.innerHTML = h + '</tbody></table>';
+      } catch (e) {
+        box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>';
+      }
+    }
 
     async function loadAipCharts() {
       const box = document.getElementById('aip-charts');

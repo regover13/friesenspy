@@ -409,11 +409,13 @@ def passung_rechnen(im: Image.Image, bahnen: list, ton: int | None = None
         for bild_wahl in itertools.combinations(range(len(achsen)), anzahl):
             for ref_wahl in itertools.permutations(range(len(bahnen)), anzahl):
                 for drehungen in itertools.product((False, True), repeat=anzahl):
-                    ergebnis = _versuch(achsen, bahnen, ziel, bild_wahl, ref_wahl, drehungen)
-                    if ergebnis is None:
-                        continue
-                    if bestes is None or ergebnis[0] < bestes[0]:
-                        bestes = ergebnis
+                    for getrimmt in (False, True):
+                        ergebnis = _versuch(achsen, bahnen, ziel, bild_wahl, ref_wahl,
+                                            drehungen, getrimmt)
+                        if ergebnis is None:
+                            continue
+                        if bestes is None or ergebnis[0] < bestes[0]:
+                            bestes = ergebnis
         if bestes is not None:
             break            # mit der groesstmoeglichen Zahl von Bahnen zufrieden geben
 
@@ -435,15 +437,52 @@ def passung_rechnen(im: Image.Image, bahnen: list, ton: int | None = None
                          huelle_m=(min(ost), max(ost), min(nord), max(nord)))
 
 
-def _versuch(achsen, bahnen, ziel, bild_wahl, ref_wahl, drehungen):
-    """Eine konkrete Zuordnung durchrechnen. ``None``, wenn eine Pruefung sie abweist."""
+def _versuch(achsen, bahnen, ziel, bild_wahl, ref_wahl, drehungen, getrimmt=False):
+    """Eine konkrete Zuordnung durchrechnen. ``None``, wenn eine Pruefung sie abweist.
+
+    ``getrimmt=True`` setzt die Passpunkte auf **Mitte plus/minus halbe Referenzlaenge**
+    statt auf die abgetasteten Enden.
+
+    **Wofuer das gebraucht wird.** Stopways und Blast Pads schliessen gleichfarbig an die
+    Bahn an und werden immer mitgemessen -- bei EDDV 2784 m fuer eine 2340-m-Bahn, bei EDDS
+    6759 m fuer 3345 m. Die ACHSE ist davon unberuehrt (Parallelbahnen stimmen auf 0,01
+    Grad), und die Trimmung ist an beiden Enden aehnlich, also bleibt auch die MITTE
+    brauchbar. Nur die Laenge ist es nicht -- und die steht in der Referenz.
+
+    Das ist kein Freibrief: Der Restfehler prueft danach weiterhin die Lage der Bahnen
+    ZUEINANDER, und die kann eine erzwungene Laenge nicht schoenrechnen.
+    """
     paare = []
     skalen = []
+    # Skala des ganzen Satzes: die groesste der einzelnen Bahnskalen (siehe unten, warum).
+    kandidaten = [bahnen[ri].laenge / achsen[bi].voll
+                  for bi, ri in zip(bild_wahl, ref_wahl)
+                  if achsen[bi].voll > 1 and not achsen[bi].ra and not achsen[bi].rb]
+    mps_satz = max(kandidaten) if kandidaten else None
+    if getrimmt and mps_satz is None:
+        return None
     for k, (bi, ri) in enumerate(zip(bild_wahl, ref_wahl)):
         a = achsen[bi]
         name = bahnen[ri].name
         m_le, m_he = ziel[name]
         z_a, z_b = (m_he, m_le) if drehungen[k] else (m_le, m_he)
+        if getrimmt:
+            if a.ra or a.rb or a.voll <= 1:
+                continue          # an einem Rand abgeschnitten: die Mitte sagt nichts
+            # Die Skala muss von der am WENIGSTEN verfaelschten Bahn kommen, nicht von
+            # dieser. Ein Malfehler macht die gemessene Laenge zu gross und damit die
+            # Skala (Referenz durch Bild) zu klein -- die groesste Skala im Satz ist also
+            # die verlaesslichste. Der erste Anlauf leitete sie aus derselben Bahn ab und
+            # war damit zirkulaer: halb_px kam wieder auf a.voll/2 heraus und die Trimmung
+            # aenderte nichts.
+            halb_px = (bahnen[ri].laenge / mps_satz) / 2.0
+            mitte_u = (a.ua + a.ub) / 2.0
+            ca, sa = math.cos(a.winkel_rad), math.sin(a.winkel_rad)
+            p_a = (a.cx + (mitte_u - halb_px) * ca, a.cy + (mitte_u - halb_px) * sa)
+            p_b = (a.cx + (mitte_u + halb_px) * ca, a.cy + (mitte_u + halb_px) * sa)
+            paare.append((p_a, z_a))
+            paare.append((p_b, z_b))
+            continue
         if not a.ra:
             paare.append((a.pa, z_a))
         if not a.rb:
