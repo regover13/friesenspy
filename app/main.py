@@ -140,7 +140,10 @@ from app.database import (
     get_aip_charts,
     get_airport_links,
     HandpassungGesperrt,
+    get_ground_chart,
+    get_ground_charts,
     get_vorschlaege,
+    upsert_ground_chart,
     upsert_aip_chart,
     vorschlag_entfernen,
     vorschlag_verwerfen,
@@ -4235,6 +4238,85 @@ def _vorschlag_blatt(db_path: str, icao: str, art: str, quell_hash: str) -> Path
     """
     return (Path(db_path).parent / "aip"
             / f"{icao.upper()}.{art}.{str(quell_hash)[:12]}.png")
+
+
+def _ground_blatt_pfad(db_path: str, icao: str) -> Path:
+    """Wo ein genordetes Flugplatzblatt liegt.
+
+    Eigenes Verzeichnis: ``<db>/aip/<ICAO>.png`` ist von den Sichtflugkarten belegt, und
+    ein Ground Chart mit derselben ICAO ueberschriebe sie.
+    """
+    return (Path(db_path).parent / "aip_ground"
+            / f"{(icao or '').strip().upper()}.png")
+
+
+@app.get("/api/aip-ground-charts")
+async def aip_ground_charts_liste():
+    """Metadaten der gepassten Flugplatzkarten.
+
+    Einmal beim Einschalten der Ebene geladen -- dasselbe Muster wie bei den
+    Sichtflugkarten. ``feld_*`` ist die Huelle der Bahnen, danach schaltet die Automatik;
+    ``nord/sued/west/ost`` sind die Grenzen des genordeten Blatts.
+    """
+    einst = get_settings()
+    conn = get_connection(einst.DB_PATH)
+    try:
+        karten = get_ground_charts(conn)
+    finally:
+        conn.close()
+    return {"charts": [
+        {"icao": k["icao"], "sorte": k["sorte"],
+         "nord": k["nord"], "sued": k["sued"], "west": k["west"], "ost": k["ost"],
+         "feld_nord": k["feld_nord"], "feld_sued": k["feld_sued"],
+         "feld_west": k["feld_west"], "feld_ost": k["feld_ost"],
+         "airac": k["airac"],
+         "bild": f"/aip-ground-chart/{k['icao']}.png?h={str(k['bild_hash'])[:12]}"}
+        for k in karten
+    ]}
+
+
+@app.get("/aip-ground-chart/{icao}.png", include_in_schema=False)
+async def aip_ground_chart_bild(icao: str):
+    """Das genordete Flugplatzblatt.
+
+    ``Cache-Control: private`` wie beim Vorbild: Der Endpunkt liegt hinter dem
+    forum_login_gate, und genau diese Beschraenkung traegt das rechtliche Argument.
+    ``public`` erlaubte jedem Zwischen-Cache das Ausliefern ohne Anmeldung.
+    """
+    code = (icao or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{4}", code):
+        raise HTTPException(status_code=404, detail="unbekannt")
+    pfad = _ground_blatt_pfad(get_settings().DB_PATH, code)
+    if not pfad.is_file():
+        raise HTTPException(status_code=404, detail="unbekannt")
+    return FileResponse(pfad, media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=2592000, immutable"})
+
+
+@app.get("/api/admin/aip-ground-charts")
+async def admin_get_ground_charts(request: Request):
+    """Liste mit Status, Sorte, Restfehler und Bahnenzahl.
+
+    Der **Restfehler** gehoert sichtbar in die Liste und nicht in ein Aufklappmenue: Er ist
+    die einzige Zahl, an der ein Mensch von aussen erkennt, ob eine automatische Passung
+    sitzt.
+
+    Nur die Felder, die der Admin braucht -- die Vollzeile hat bei den Sichtflugkarten
+    209 KB fuer 446 Karten ergeben und die Seite lahmgelegt.
+    """
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        karten = get_ground_charts(conn, nur_gepasst=False)
+    finally:
+        conn.close()
+    return {"charts": [
+        {"icao": k["icao"], "sorte": k["sorte"], "status": k["status"],
+         "quelle": k["quelle"], "airac": k["airac"], "rest_max": k["rest_max"],
+         "bahnen": k["bahnen"], "drehung": k["drehung"], "mps": k["mps"],
+         "seite_url": k["seite_url"]}
+        for k in karten
+    ]}
 
 
 @app.get("/api/admin/aip-vorschlaege")

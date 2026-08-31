@@ -544,32 +544,37 @@ def _grenzen_in_grad(bezug, ost_min, ost_max, nord_min, nord_max) -> dict:
 
 
 # --------------------------------------------------------------------------- Kartensorte
-KOPF_ECKE = (0, 0)
-KOPF_SCHRANKE = 0.97
-_MUSTER_ORT = Path(__file__).resolve().parent / "data" / "ground_chart_kopf"
+# --------------------------------------------------------------------------- Kartensorte
+# Die Sorte steckt im Bahnton selbst. Gemessen am 31.08.2026 ueber 30 Blaetter von 14
+# Verkehrsflughaefen:
+#
+#   153/154 -> 15 Blaetter, darunter beide belegten Flugplatzkarten (EDDL, EDDM)
+#   179/180 ->  8 Blaetter, darunter beide belegten Rollkarten (EDDM, EDDV)
+#   194-210 ->  4 Blaetter anderer Art (Anflugkarten und dergleichen)
+#
+# Keine einzige Ueberschneidung. Das ist belegbar und kostet nichts -- der Ton wird ohnehin
+# gemessen.
+#
+# Der zuerst gebaute Weg ueber den Titelkasten oben links traegt NICHT: Der Kopf steht nicht
+# bei allen Blaettern an derselben Stelle (EDDL, EDDM, EDDB bei y 53; EDDV bei y 149), und
+# es gibt mindestens zwei Setzungsvarianten. Das war die als offen vermerkte Schwaeche aus
+# Abschnitt 4.2 der Spec -- sie ist damit nicht behoben, sondern umgangen.
+SORTE_TON = {
+    "flugplatzkarte": (150, 158),
+    "rollkarte": (176, 184),
+}
 
 
-def sorte_erkennen(im: Image.Image, muster_ort: Path | None = None) -> str | None:
-    """Welche Kartensorte das Blatt ist -- am Kopfbereich, ohne ein Zeichen zu lesen.
-
-    Der Titel steht bei allen Blaettern an derselben Stelle oben links und in derselben
-    Setzung. Verglichen wird der ANTEIL uebereinstimmender Pixel, nicht ein Hash: Ein
-    einzelnes veraendertes Pixel darf die Erkennung nicht kippen.
-    """
-    ort = Path(muster_ort) if muster_ort else _MUSTER_ORT
-    if not ort.is_dir():
+def sorte_aus_ton(ton: int | None) -> str | None:
+    """Welche Kartensorte dieser Bahnton bedeutet. ``None`` heisst: keine von beiden."""
+    if ton is None:
         return None
-    bestes, bester_wert = None, 0.0
-    for datei in sorted(ort.glob("*.png")):
-        muster = Image.open(datei).convert("L")
-        mb, mh = muster.size
-        if im.size[0] < KOPF_ECKE[0] + mb or im.size[1] < KOPF_ECKE[1] + mh:
-            continue
-        ausschnitt = im.convert("L").crop(
-            (KOPF_ECKE[0], KOPF_ECKE[1], KOPF_ECKE[0] + mb, KOPF_ECKE[1] + mh))
-        gleich = sum(1 for p, q in zip(ausschnitt.getdata(), muster.getdata())
-                     if abs(p - q) <= 24)
-        anteil = gleich / float(mb * mh)
-        if anteil > bester_wert:
-            bestes, bester_wert = datei.stem, anteil
-    return bestes if bester_wert >= KOPF_SCHRANKE else None
+    for name, (tief, hoch) in SORTE_TON.items():
+        if tief <= ton <= hoch:
+            return name
+    return None
+
+
+def sorte_erkennen(im: Image.Image) -> str | None:
+    """Kartensorte eines Blattes -- ohne ein Zeichen zu lesen."""
+    return sorte_aus_ton(bahnfarbe(im))

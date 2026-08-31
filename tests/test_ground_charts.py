@@ -305,3 +305,25 @@ def test_analyse_laeuft_auf_dem_rohblatt():
         ((-1200, -200), (1200, -200)), ((-1350, 250), (1350, 250))])
     p = ground_charts.passung_rechnen(im, bahnen)
     assert p.mps == pytest.approx(soll["mps"], rel=0.05)
+
+
+# --------------------------------------------------------------------------- Kartensorte
+def test_sorte_kommt_aus_dem_bahnton():
+    """Gemessen ueber 30 Blaetter von 14 Verkehrsflughaefen: 153/154 sind Flugplatzkarten
+    (15 Blaetter), 179/180 Rollkarten (8), 194 bis 210 anderes. Keine Ueberschneidung."""
+    assert ground_charts.sorte_aus_ton(153) == "flugplatzkarte"
+    assert ground_charts.sorte_aus_ton(154) == "flugplatzkarte"
+    assert ground_charts.sorte_aus_ton(179) == "rollkarte"
+    assert ground_charts.sorte_aus_ton(180) == "rollkarte"
+
+
+def test_fremde_toene_sind_keine_flugplatzkarte():
+    for ton in (194, 195, 200, 210, None):
+        assert ground_charts.sorte_aus_ton(ton) is None
+
+
+def test_sorte_am_blatt():
+    assert ground_charts.sorte_erkennen(_blatt([(100, 400, 1300, 400, 28)])) == "flugplatzkarte"
+    assert ground_charts.sorte_erkennen(
+        _blatt([(100, 400, 1300, 400, 28)], ton=179)) == "rollkarte"
+    assert ground_charts.sorte_erkennen(Image.new("L", (1400, 800), 255)) is None
