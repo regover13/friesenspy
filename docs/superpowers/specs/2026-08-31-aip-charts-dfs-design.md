@@ -239,6 +239,35 @@ Passung darauf.
 
 ---
 
+## 8a. Beide Karten liegen übereinander
+
+**Die Flugplatzkarte liegt immer über der Sichtflugkarte, nicht an ihrer Stelle.**
+Entscheidung des Nutzers vom 31.08.2026; sie ersetzt die Verdeckungslogik aus der
+Vorgängerspec (dort Abschnitt 10.2: „Ersetzt die Sichtflugkarte, schaltet beim Verlassen
+zurück").
+
+Der Grund liegt in der Nordung: Ein um 37° gedrehtes Blatt wird als achsenparalleles
+Rechteck abgelegt, dessen Ecken durchsichtig sind — bei EDDL rund die Hälfte der Fläche.
+Liegt darunter die Sichtflugkarte, füllt sie genau diese Ecken und den Rand des Platzes.
+Das ist besser als die nackte Grundkarte, und es macht den Übergang beim An- und Abflug
+stetig statt sprunghaft.
+
+**Umsetzung:** `L.imageOverlay` nimmt `zIndex`. Die Sichtflugkarte bekommt einen festen
+niedrigeren, die Flugplatzkarte einen höheren Wert; beide liegen im selben `overlayPane`,
+also entscheidet allein der `zIndex`. Kein `bringToFront()` — das hängt von der
+Einfügereihenfolge ab und kippt, sobald eine Karte nachgeladen wird.
+
+**Was entfällt:** `_groundVerdecktSichtflug()` (`index.html:10421`) und der Block in
+`_aipKarteNachfuehren`, der die Sichtflugkarte ausblendet (`index.html:10256`). Damit
+entfallen auch die drei Zustände, die diese Logik nötig gemacht hatte — festgenagelte
+Sichtflugkarte gegen anlaufende Automatik, abgehakte Ebene ohne Ersatz, geteilter
+Wegklick-Merker.
+
+**Der Deckkraftregler bedient beide Overlays mit demselben Wert** (Abschnitt 8). Zwei
+verschiedene Werte wären ein zweiter Regler, und im Cockpit ist ein Regler besser als zwei.
+
+---
+
 ## 9. Vorgaben
 
 * **Keine neue Abhängigkeit.** Pillow, httpx, airportsdata, APScheduler sind vorhanden.

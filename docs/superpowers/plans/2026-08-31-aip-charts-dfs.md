@@ -880,15 +880,49 @@ def test_drehung_ist_ein_eigenes_feld():
 
 ---
 
-## Task 8: Transparenzregler im Frontend
+## Task 8: Stapelung und Transparenzregler im Frontend
+
+Zwei Änderungen an derselben Stelle: Die Flugplatzkarte liegt künftig **über** der
+Sichtflugkarte statt an ihrer Stelle (Spec 8a), und der Deckkraftregler muss beide bedienen.
 
 **Dateien:**
 - Ändern: `app/static/index.html`
 - Test: `tests/test_charts_dfs_ui.py`
 
+**Interfaces:**
+- Produziert: `_Z_SICHTFLUG = 300`, `_Z_PLATZKARTE = 310`
+- Entfällt: `_groundVerdecktSichtflug()`
+
 - [ ] **Schritt 1: Fehlschlagenden Test schreiben**
 
 ```python
+def test_die_platzkarte_liegt_ueber_der_sichtflugkarte():
+    """Ein um 37 Grad gedrehtes Blatt wird als achsenparalleles Rechteck abgelegt, dessen
+    Ecken durchsichtig sind -- bei EDDL rund die Haelfte der Flaeche. Darunter gehoert die
+    Sichtflugkarte, nicht die nackte Grundkarte."""
+    rumpf = _ohne_kommentare(QUELLE)
+    z_sicht = int(re.search(r"_Z_SICHTFLUG\s*=\s*(\d+)", rumpf).group(1))
+    z_platz = int(re.search(r"_Z_PLATZKARTE\s*=\s*(\d+)", rumpf).group(1))
+    assert z_platz > z_sicht
+
+
+def test_die_stapelung_haengt_nicht_an_der_einfuegereihenfolge():
+    """bringToFront() kippt, sobald eine Karte nachgeladen wird -- etwa nach dem
+    SSE-Ereignis, das den Kartenbestand neu holt."""
+    rumpf = _ohne_kommentare(QUELLE)
+    assert "bringToFront" not in rumpf
+    for name in ("_Z_SICHTFLUG", "_Z_PLATZKARTE"):
+        assert re.search(rf"zIndex:\s*{name}", rumpf), name
+
+
+def test_die_verdeckungslogik_ist_entfernt():
+    """Mit ihr entfallen die drei Zustaende, die sie noetig gemacht hatte: festgenagelte
+    Sichtflugkarte gegen anlaufende Automatik, abgehakte Ebene ohne Ersatz, geteilter
+    Wegklick-Merker."""
+    rumpf = _ohne_kommentare(QUELLE)
+    assert "_groundVerdecktSichtflug" not in rumpf
+
+
 def test_der_deckkraftregler_erscheint_auch_bei_flugplatzkarten():
     """Er haengt heute an _aipKarteAktiv; liegt eine Flugplatzkarte, ist der null und der
     Regler verschwindet -- obwohl genau dann etwas zu regeln waere."""
@@ -899,13 +933,60 @@ def test_der_deckkraftregler_erscheint_auch_bei_flugplatzkarten():
 
 
 def test_der_regler_bedient_beide_overlays():
+    """Mit demselben Wert -- zwei verschiedene waeren ein zweiter Regler, und im Cockpit
+    ist ein Regler besser als zwei."""
     rumpf = _ohne_kommentare(QUELLE)
     stelle = rumpf.index("function _aipDeckkraftSetzen")
     block = rumpf[stelle:stelle + 600]
     assert "_aipKarteOverlay" in block and "_groundOverlay" in block
 ```
 
-- [ ] **Schritt 2 bis 5:** beide Funktionen anpassen, Tests, Commit.
+- [ ] **Schritt 2: Test laufen lassen** — alle fünf FAIL
+
+- [ ] **Schritt 3: Stapelung setzen**
+
+Bei den übrigen Konstanten der Kartenebenen:
+
+```javascript
+// Beide Blaetter liegen im selben overlayPane; allein der zIndex entscheidet, welches oben
+// liegt. NICHT ueber bringToFront() -- das haengt an der Einfuegereihenfolge und kippt,
+// sobald eine Karte nachgeladen wird (etwa nach dem SSE-Ereignis 'aip_charts').
+const _Z_SICHTFLUG = 300;
+const _Z_PLATZKARTE = 310;
+```
+
+In `_aipKarteZeigen`: `zIndex: _Z_SICHTFLUG` an die `L.imageOverlay`-Optionen.
+In `_groundZeigen`: `zIndex: _Z_PLATZKARTE`.
+
+- [ ] **Schritt 4: Verdeckungslogik entfernen**
+
+`_groundVerdecktSichtflug()` löschen (`index.html:10421`), dazu den Block in
+`_aipKarteNachfuehren` (`index.html:10256`), der bei liegender Flugplatzkarte
+`_aipKarteZeigen(null)` ruft. Der Aufruf von `_aipKarteNachfuehren()` am Ende von
+`_groundZeigen` wird ebenfalls überflüssig — die Sichtflugkarte führt sich selbst nach.
+
+- [ ] **Schritt 5: Deckkraftregler auf beide Karten**
+
+```javascript
+function _aipDeckkraftAnzeigen() {
+  // Der Regler haengt an "irgendein Blatt liegt", nicht an einem bestimmten. Bis zum
+  // 31.08.2026 fragte er nur _aipKarteAktiv ab und verschwand deshalb, sobald eine
+  // Flugplatzkarte allein lag -- also genau dann, wenn etwas zu regeln war.
+  const liegt = !!_aipKarteAktiv || !!_groundAktiv;
+  if (_deckkraftBox) _deckkraftBox.classList.toggle('deckkraft-an', liegt);
+}
+```
+
+und in `_aipDeckkraftSetzen` zusätzlich `if (_groundOverlay) _groundOverlay.setOpacity(_aipDeckkraft);`
+
+- [ ] **Schritt 6: Tests laufen lassen** — fünf PASS
+
+- [ ] **Schritt 7: Im Kniebrett ansehen.** Nicht nur im Browser: Coherent GT rendert
+  anders, und die Stapelung zweier halbtransparenter Bilder ist genau die Art Detail, die
+  dort abweicht. Über einem Platz mit beiden Karten prüfen, dass die Platzkarte oben liegt
+  und die Sichtflugkarte die durchsichtigen Ecken füllt.
+
+- [ ] **Schritt 8: Commit**
 
 ---
 
