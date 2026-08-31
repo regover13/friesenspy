@@ -280,7 +280,7 @@ def test_kaputtes_rahmen_px_bricht_die_migration_nicht(conn):
     assert get_chart_dfs(conn, "EDXX", "sichtflug")["status"] == "gepasst"
 
 
-def test_quell_hash_bleibt_leer(conn):
+def test_sichtflugkarten_starten_ohne_gesehenen_hash(conn):
     """Einen Startwert, den wir nicht haben, traegt man nicht ein.
 
     Naheliegend waere bild_hash -- fuer 439 der 446 Zeilen sogar richtig, denn
@@ -290,15 +290,30 @@ def test_quell_hash_bleibt_leer(conn):
     neu kodierten Blatts (app/main.py:4671) -- ein Wert, den die DFS nie geliefert hat.
 
     Leer heisst 'noch nie gesehen': Der erste Joblauf traegt den echten Rohbytes-Hash ein
-    und meldet nichts. Kein einziger Fehlalarm, und die Regel haengt an einem leeren Feld
-    statt an einem Vergleich mit dem AIRAC der Migration.
+    und meldet nichts. Die Regel haengt an einem leeren Feld statt an einem Vergleich mit
+    dem AIRAC der Migration -- was in sechs Monaten niemand mehr versteht, fliegt beim
+    naechsten Umbau heraus.
     """
     _alt_sichtflug(conn, "EDDL")
     conn.commit()
     migration_charts_dfs(conn)
     k = get_chart_dfs(conn, "EDDL", "sichtflug")
-    assert k["quell_hash"] == ""
+    assert k["gesehener_hash"] == ""
     assert k["bild_hash"] == "a"          # der bleibt -- er ist der Cache-Schluessel
+
+
+def test_die_ground_zeilen_behalten_ihren_hash(conn):
+    """aip_ground_charts.quell_hash IST der echte Rohbytes-Hash --
+    scripts/ground_chart_bestand.py:153 hasht ``roh``, vor jedem Drehen. Alle 110 Zeilen
+    tragen 64 Zeichen (gemessen 31.08.2026 an der Produktionsdatenbank).
+
+    Sie wegzuwerfen kostete nichts, brachte aber auch nichts: So haben diese 110 Karten ab
+    dem ersten Tag eine gueltige Aenderungserkennung.
+    """
+    _alt_ground(conn, "EDDL", "rollkarte")
+    conn.commit()
+    migration_charts_dfs(conn)
+    assert get_chart_dfs(conn, "EDDL", "rollkarte")["gesehener_hash"] == "q"
 
 
 def test_die_seitennummer_bleibt_leer(conn):
@@ -345,7 +360,10 @@ CREATE TABLE IF NOT EXISTS aip_charts_dfs (
     -- sich Blaetter tatsaechlich aendern koennten. Der dauerhafte Bezeichner ist
     -- airport_links.aip_url; der Job loest daraus bei jedem Lauf frisch auf.
     seite_nr      INTEGER,
-    quell_hash    TEXT NOT NULL DEFAULT '',   -- SHA-256 des ROHblatts: der Aenderungsdetektor
+    -- SHA-256 der DFS-ROHbytes, ueber die zuletzt jemand geurteilt hat. NICHT der Hash
+    -- der Datei auf der Platte: nach einem 'verwerfen' fallen die beiden auseinander.
+    -- Hiess bis 31.08.2026 quell_hash -- der Name log ab genau diesem Punkt.
+    gesehener_hash TEXT NOT NULL DEFAULT '',
     bild_hash     TEXT NOT NULL DEFAULT '',   -- des abgelegten Blatts, nur Cache-Schluessel
     nord          REAL NOT NULL DEFAULT 0,
     sued          REAL NOT NULL DEFAULT 0,
@@ -372,7 +390,7 @@ CREATE TABLE IF NOT EXISTS aip_charts_dfs (
 - [ ] **Schritt 4: Migration schreiben**
 
 ```python
-_DFS_SPALTEN = ("icao", "sorte", "seite_nr", "quell_hash", "bild_hash",
+_DFS_SPALTEN = ("icao", "sorte", "seite_nr", "gesehener_hash", "bild_hash",
                 "nord", "sued", "west", "ost",
                 "feld_nord", "feld_sued", "feld_west", "feld_ost",
                 "drehung", "mps",
@@ -438,11 +456,11 @@ def migration_charts_dfs(conn: sqlite3.Connection) -> int:
             f"""INSERT INTO aip_charts_dfs ({', '.join(_DFS_SPALTEN)})
                 VALUES ({', '.join('?' * len(_DFS_SPALTEN))})
                 ON CONFLICT(icao, sorte) DO NOTHING""",
-            # seite_nr bleibt None und quell_hash leer: seite_url ist im Bestand in ALLEN
+            # seite_nr bleibt None und gesehener_hash leer: seite_url ist im Bestand in ALLEN
             # 446 Zeilen leer, und den Rohbytes-Hash haben wir nicht -- bild_hash wird NACH
             # dem Drehen gebildet (app/main.py:4671) und stimmt bei den sieben quer
             # gedruckten Blaettern nicht. Beides traegt der erste Joblauf nach (Task 6);
-            # leerer quell_hash heisst dort "noch nie gesehen: eintragen, nicht melden".
+            # leerer gesehener_hash heisst dort "noch nie gesehen: eintragen, nicht melden".
             (r["icao"], "sichtflug", None, "", r["bild_hash"] or "",
              r["nord"], r["sued"], r["west"], r["ost"],
              r["feld_nord"], r["feld_sued"], r["feld_west"], r["feld_ost"],
@@ -454,6 +472,11 @@ def migration_charts_dfs(conn: sqlite3.Connection) -> int:
     # Nutzer -- sie fallen deshalb auf 'auto' zurueck, nicht auf 'gepasst'.
     # Die Klickpunkte sind hier UNRETTBAR: Sie wurden nie abgelegt. p1_*/p2_* bleiben leer;
     # wer nachjustieren will, klickt neu. Das ist der einzige echte Verlust der Migration.
+    #
+    # Der Hash dagegen wandert MIT: aip_ground_charts.quell_hash ist der echte
+    # Rohbytes-Hash (scripts/ground_chart_bestand.py:153 hasht ``roh``, vor jedem Drehen),
+    # alle 110 Zeilen tragen 64 Zeichen. Diese Karten haben ab dem ersten Tag eine
+    # gueltige Aenderungserkennung -- anders als die 446 Sichtflugzeilen oben.
     for r in conn.execute(
             """SELECT icao, sorte, quell_hash, bild_hash,
                       nord, sued, west, ost, feld_nord, feld_sued, feld_west, feld_ost,
@@ -593,12 +616,12 @@ def test_mit_ausdruecklicher_ansage_geht_es_doch(conn):
 
 
 def test_der_status_allein_darf_ohne_ansage_wechseln(conn):
-    """Der Job setzt status='pruefen' und quell_hash auf einer gepassten Karte -- er ruehrt
+    """Der Job setzt status='pruefen' und gesehener_hash auf einer gepassten Karte -- er ruehrt
     die Lage nicht an. Wuerde die Sperre auch das abweisen, koennte er nichts melden."""
     from app.database import get_chart_dfs, upsert_chart_dfs
     upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst", **LAGE)
     upsert_chart_dfs(conn, "EDDL", "sichtflug", status="pruefen",
-                     status_vorher="gepasst", quell_hash="n" * 64)
+                     status_vorher="gepasst", gesehener_hash="n" * 64)
     k = get_chart_dfs(conn, "EDDL", "sichtflug")
     assert k["status"] == "pruefen" and k["status_vorher"] == "gepasst"
     assert k["nord"] == pytest.approx(LAGE["nord"])
@@ -628,7 +651,7 @@ STATUS_DFS = ("gepasst", "auto", "offen", "nicht_gefunden", "pruefen", "verwaist
 SORTEN_DFS = ("sichtflug", "flugplatzkarte", "rollkarte")
 
 # Die Lagefelder. Wer eines davon anfasst, passt -- und braucht bei einer gepassten Karte
-# die ausdrueckliche Ansage. Wer nur Status, quell_hash oder seite_nr setzt, nicht.
+# die ausdrueckliche Ansage. Wer nur Status, gesehener_hash oder seite_nr setzt, nicht.
 _LAGE_FELDER = ("nord", "sued", "west", "ost",
                 "feld_nord", "feld_sued", "feld_west", "feld_ost",
                 "drehung", "mps",
@@ -650,7 +673,7 @@ def upsert_chart_dfs(conn: sqlite3.Connection, icao: str, sorte: str,
     IMMER None -- der nullende Zweig waere der einzige. Am 25.08.2026 hat genau das EDAZ
     auf 0/0/0/0 gesetzt.
 
-    Die Sperre greift nur, wenn ein LAGEfeld mitkommt. Der Job setzt Status, ``quell_hash``
+    Die Sperre greift nur, wenn ein LAGEfeld mitkommt. Der Job setzt Status, ``gesehener_hash``
     und ``seite_nr`` -- er soll melden koennen, ohne die Passung anzuruehren.
     """
     code = (icao or "").strip().upper()
@@ -1028,8 +1051,8 @@ git commit -m "norden: Saum haengt an der Sorte, keine Drehung unter 0,25 Grad"
 | `POST /api/admin/aip-charts-dfs/{icao}/seite` | Seite und Sorte festlegen |
 | `POST /api/admin/aip-charts-dfs/{icao}/nicht-gefunden` | Status `nicht_gefunden` **schreiben** |
 | `POST /api/admin/aip-charts-dfs/{icao}/{sorte}` | Passung setzen: zwei Punkte + Drehung |
-| `POST /api/admin/aip-charts-dfs/{icao}/{sorte}/uebernehmen` | neues Blatt gilt, `quell_hash` nachziehen, → `gepasst` |
-| `POST /api/admin/aip-charts-dfs/{icao}/{sorte}/verwerfen` | altes Blatt bleibt, `quell_hash` **trotzdem** nachziehen, → `status_vorher` |
+| `POST /api/admin/aip-charts-dfs/{icao}/{sorte}/uebernehmen` | neues Blatt gilt, `gesehener_hash` nachziehen, → `gepasst` |
+| `POST /api/admin/aip-charts-dfs/{icao}/{sorte}/verwerfen` | altes Blatt bleibt, `gesehener_hash` **trotzdem** nachziehen, → `status_vorher` |
 | `DELETE /api/admin/aip-charts-dfs/{icao}/{sorte}` | Karte entfernen |
 
 **Aus `pruefen` heraus gibt es drei Wege, und keiner endet pauschal auf `gepasst`.** Beim
@@ -1038,7 +1061,7 @@ stellt ihn zurück. Ohne das landete eine der 42 als `offen` migrierten Zeilen �
 alle 0 — nach einem Blattwechsel auf `gepasst` und damit im Kniebrett, mit
 `nord=sued=west=ost=0`.
 
-**Auch „verwerfen" zieht `quell_hash` nach.** Sonst findet der nächste Wochenlauf denselben
+**Auch „verwerfen" zieht `gesehener_hash` nach.** Sonst findet der nächste Wochenlauf denselben
 abweichenden Hash und setzt die Zeile erneut auf `pruefen` — die Liste wäre nach dem ersten
 Verwerfen dauerhaft unaufräumbar. Diese Falle war bei der Vorschlagstabelle schon einmal
 gestellt und behoben (`app/database.py:371-377`).
@@ -1188,7 +1211,7 @@ def test_die_drehung_laesst_sich_ueberschreiben(client, db_pfad, tmp_path):
 
 
 def test_uebernehmen_hebt_pruefen_auf(client, db_pfad):
-    """Neues Blatt angesehen, Passung stimmt noch: quell_hash nachziehen, Status gepasst.
+    """Neues Blatt angesehen, Passung stimmt noch: gesehener_hash nachziehen, Status gepasst.
 
     Die Passung selbst bleibt dabei unangetastet.
     """
@@ -1199,7 +1222,7 @@ def test_uebernehmen_hebt_pruefen_auf(client, db_pfad):
     try:
         upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst", **LAGE)
         upsert_chart_dfs(conn, "EDDL", "sichtflug", status="pruefen",
-                         status_vorher="gepasst", quell_hash="n" * 64)
+                         status_vorher="gepasst", gesehener_hash="n" * 64)
         conn.commit()
     finally:
         conn.close()
@@ -1225,7 +1248,7 @@ def test_verwerfen_stellt_den_alten_status_zurueck(client, db_pfad):
         upsert_chart_dfs(conn, "EDZZ", "rollkarte", status="offen",
                          **{k: 0.0 for k in LAGE})
         upsert_chart_dfs(conn, "EDZZ", "rollkarte", status="pruefen",
-                         status_vorher="offen", quell_hash="n" * 64)
+                         status_vorher="offen", gesehener_hash="n" * 64)
         conn.commit()
     finally:
         conn.close()
@@ -1237,7 +1260,7 @@ def test_verwerfen_stellt_den_alten_status_zurueck(client, db_pfad):
         conn.close()
 
 
-def test_auch_verwerfen_zieht_den_quell_hash_nach(client, db_pfad):
+def test_auch_verwerfen_zieht_den_gesehener_hash_nach(client, db_pfad):
     """Sonst findet der naechste Wochenlauf denselben abweichenden Hash und setzt die Zeile
     erneut auf 'pruefen' -- die Liste waere nach dem ersten Verwerfen dauerhaft
     unaufraeumbar. Dieselbe Falle war bei der Vorschlagstabelle schon einmal gestellt."""
@@ -1247,16 +1270,16 @@ def test_auch_verwerfen_zieht_den_quell_hash_nach(client, db_pfad):
     conn = get_connection(db_pfad)
     try:
         upsert_chart_dfs(conn, "EDDL", "sichtflug", status="gepasst",
-                         quell_hash="alt" + "0" * 61, **LAGE)
+                         gesehener_hash="alt" + "0" * 61, **LAGE)
         upsert_chart_dfs(conn, "EDDL", "sichtflug", status="pruefen",
-                         status_vorher="gepasst", quell_hash="n" * 64)
+                         status_vorher="gepasst", gesehener_hash="n" * 64)
         conn.commit()
     finally:
         conn.close()
     c.post("/api/admin/aip-charts-dfs/EDDL/sichtflug/verwerfen")
     conn = get_connection(db_pfad)
     try:
-        assert get_chart_dfs(conn, "EDDL", "sichtflug")["quell_hash"] == "n" * 64
+        assert get_chart_dfs(conn, "EDDL", "sichtflug")["gesehener_hash"] == "n" * 64
     finally:
         conn.close()
 
@@ -1326,32 +1349,55 @@ gehört in Task 10, vor die Gegenprobe.
 2. Ist `seite_nr` leer: einmalig die Kapitelseite suchen, deren Bild dem gespeicherten
    `bild_hash` entspricht, und die Nummer merken. Ohne Fund bleibt sie leer — die Zeile
    erscheint als „Seite unbekannt", nicht stumm übersprungen.
-3. Rohbytes hashen, mit `quell_hash` vergleichen.
-4. Weicht er ab → `status_vorher` sichern, Status `pruefen`, neues Blatt daneben legen, SSE
-   `{"type": "aip_charts"}`.
-5. Steht der Platz nicht mehr in `airport_links` → Status `verwaist` (nicht löschen).
+3. Rohbytes hashen, mit `gesehener_hash` vergleichen.
+4. Ist `gesehener_hash` leer → eintragen, **nichts melden**.
+5. **Eine Karte ohne Passung hat nichts zu prüfen.** Bei `offen` wird das neue Blatt zum
+   gültigen, der Hash nachgezogen — und sonst nichts. `nicht_gefunden` und `verwaist` haben
+   keine `seite_nr` bzw. keinen Link und werden gar nicht erst geholt.
+6. Nur bei `gepasst` und `auto`: weicht der Hash ab → `status_vorher` sichern, Status
+   `pruefen`, neues Blatt **daneben** legen, SSE `{"type": "aip_charts"}`.
+7. Steht der Platz nicht mehr in `airport_links` → Status `verwaist` (nicht löschen).
 
 **Kosten: ein Abruf je Karte**, nicht zwei — das Bild steckt als data-URI in derselben
 HTML-Seite (`bild_aus_html`). 556 Zeilen, plus je Platz einen für die Kapitelauflösung. Der
 Kommentar in `app/poller.py:569`, der 1100 nennt, war schon dort falsch.
 
-**Ein leerer `quell_hash` wird eingetragen, nicht verglichen.** Nach der Migration ist er in
+**Ein leerer `gesehener_hash` wird eingetragen, nicht verglichen.** Nach der Migration ist er in
 allen 556 Zeilen leer — den Rohbytes-Hash gab es nie zu übernehmen (`bild_hash` wird nach dem
 Drehen gebildet und stimmt bei den sieben quer gedruckten Blättern nicht). Der erste Lauf
 trägt ihn ein und meldet nichts:
 
 ```python
-if not zeile["quell_hash"]:
+if not zeile["gesehener_hash"]:
     # Noch nie gesehen -- es gibt nichts zu vergleichen. Eintragen, nicht melden.
     # Ohne diesen Zweig meldete der erste Lauf alle 556 Karten als geaendert.
-    status_melden(conn, icao, sorte, quell_hash=roh_hash)
+    status_melden(conn, icao, sorte, gesehener_hash=roh_hash)
     continue
-if roh_hash != zeile["quell_hash"]:
+if roh_hash != zeile["gesehener_hash"]:
     ...
 ```
 
 **Verglichen wird immer Roh gegen Roh**, nie Roh gegen Gedreht — einen wiederkehrenden
 Fehlalarm kann es deshalb nicht geben. Betroffen war ausschließlich der Startwert.
+
+**Und `pruefen` bekommt nur, wer eine Passung hat.** `pruefen` heißt „Stimmt die bestehende
+Passung auf dem neuen Blatt noch?" — bei einer Karte ohne Passung ist die Frage
+gegenstandslos:
+
+```python
+if zeile["status"] not in ("gepasst", "auto"):
+    # Nichts zu pruefen. Bei 'offen' wird das neue Blatt schlicht das gueltige -- es ist
+    # ohnehin das, worauf der Nutzer klickt, wenn er die Karte irgendwann passt.
+    blatt_schreiben(blatt_pfad(db, icao, sorte), roh)
+    status_melden(conn, icao, sorte, gesehener_hash=roh_hash)
+    continue
+```
+
+Das ist **zusätzlich** zum Zurückstellen über `status_vorher`, nicht statt dessen: Es
+verhindert konstruktiv, dass eine Zeile mit `nord=sued=west=ost=0` überhaupt in einen
+Zustand gerät, aus dem ein Fehlgriff sie als `gepasst` ausliefern könnte. `status_vorher`
+trägt danach nur noch `gepasst` oder `auto` — und unterscheidet damit weiterhin die geprüfte
+von der ungeprüften Passung, was kein anderes Feld kann.
 
 - [ ] **Schritt 1: Fehlschlagenden Test schreiben**
 
@@ -1369,7 +1415,7 @@ def test_es_gibt_genau_einen_kartenjob():
     assert "ground_charts_melden" not in quelle
 
 
-def test_ein_leerer_quell_hash_wird_eingetragen_nicht_gemeldet():
+def test_ein_leerer_gesehener_hash_wird_eingetragen_nicht_gemeldet():
     """Nach der Migration ist er in allen 556 Zeilen leer -- den Rohbytes-Hash gab es nie zu
     uebernehmen. Ohne diesen Zweig meldete der erste Lauf alle 556 Karten als geaendert.
 
@@ -1383,8 +1429,27 @@ def test_ein_leerer_quell_hash_wird_eingetragen_nicht_gemeldet():
     from app import poller
 
     quelle = re.sub(r"#[^\n]*", "", inspect.getsource(poller.VatsimPoller._aip_hash_pruefen))
-    stelle = quelle.index("quell_hash")
+    stelle = quelle.index("gesehener_hash")
     assert "not " in quelle[max(0, stelle - 40):stelle + 40]
+
+
+def test_eine_karte_ohne_passung_geht_nie_nach_pruefen():
+    """'pruefen' heisst "Stimmt die bestehende Passung auf dem neuen Blatt noch?" -- bei
+    einer Karte ohne Passung ist die Frage gegenstandslos.
+
+    42 der migrierten Zeilen stehen auf 'offen' und haben Lagefelder von 0. Kaeme eine von
+    ihnen nach 'pruefen', genuegte ein Fehlgriff beim Verlassen, um sie als 'gepasst' ans
+    Kniebrett auszuliefern -- als Kartenebene bei 0 Grad Nord, 0 Grad Ost.
+    """
+    import inspect
+    import re
+
+    from app import poller
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(poller.VatsimPoller._aip_hash_pruefen))
+    stelle = quelle.index("pruefen")
+    umfeld = quelle[max(0, stelle - 500):stelle]
+    assert '"gepasst"' in umfeld and '"auto"' in umfeld
 
 
 def test_der_job_traegt_fehlende_seitennummern_nach():
@@ -1687,7 +1752,7 @@ function _groundSchluessel(k) { return k.icao + '|' + k.sorte; }
 `vorschlag_verwerfen`, `vorschlag_entfernen`, `/api/admin/aip-vorschlaege*`,
 `/aip-vorschlag/{id}.png` und die zugehörige Admin-Ansicht. Ohne gerechnete Alternative gibt
 es nichts vorzuschlagen; ihr Grabstein-Mechanismus (`zustand='verworfen'`) lebt in
-„verwerfen zieht `quell_hash` nach" (Task 5) weiter.
+„verwerfen zieht `gesehener_hash` nach" (Task 5) weiter.
 
 **`HandpassungGesperrt` bleibt** — als `PassungGesperrt`, mit dem Prädikat `status='gepasst'`
 statt `quelle='hand'` (Task 2). Eine frühere Fassung dieses Plans strich sie mit der
@@ -1710,7 +1775,7 @@ def test_kein_job_und_kein_skript_schreibt_eine_passung():
     muss auch nicht abgewiesen werden.
 
     upsert_chart_dfs darf ausschliesslich aus database.py und main.py heraus gerufen
-    werden -- nicht aus poller.py. Der Job setzt Status, quell_hash und seite_nr; dafuer
+    werden -- nicht aus poller.py. Der Job setzt Status, gesehener_hash und seite_nr; dafuer
     gibt es status_melden().
     """
     import subprocess
@@ -1818,7 +1883,7 @@ ls aip_dfs | wc -l       # erwartet: 556
 sudo sqlite3 /opt/friesenspy/data/friesenspy.db \
   "SELECT sorte,status,COUNT(*) FROM aip_charts_dfs GROUP BY 1,2;
    SELECT COUNT(*) FROM aip_charts_dfs WHERE sorte='sichtflug' AND p1_x IS NOT NULL;
-   SELECT COUNT(*) FROM aip_charts_dfs WHERE quell_hash = '';"
+   SELECT sorte, COUNT(*) FROM aip_charts_dfs WHERE gesehener_hash = '' GROUP BY 1;"
 ```
 
 **Erwartet, aus dem Bestand gerechnet:**
@@ -1834,9 +1899,11 @@ sudo sqlite3 /opt/friesenspy/data/friesenspy.db \
 | | **Summe** | **556** |
 
 Dazu **446 Sichtflugzeilen mit gesetztem `p1_x`** — die aus `rahmen_px` gewonnenen
-Klickpunkte, alle 446 Bestandszeilen sind wohlgeformt — und **556 Zeilen mit leerem
-`quell_hash`**: Der Rohbytes-Hash war nie vorhanden, der erste Joblauf trägt ihn nach. Steht
-dort eine andere Zahl als 556, hat die Migration einen Wert erfunden.
+Klickpunkte, alle 446 Bestandszeilen sind wohlgeformt — und **genau 446 Zeilen mit leerem
+`gesehener_hash`, alle davon `sichtflug`**: Dort war der Rohbytes-Hash nie vorhanden, der
+erste Joblauf trägt ihn nach. Steht dort eine höhere Zahl, hat die Migration die 110
+Ground-Hashes weggeworfen; steht dort eine niedrigere, hat sie für Sichtflugkarten einen
+Wert erfunden.
 
 **Weicht eine Zahl ab, wird zurückgerollt** — die Sicherung aus Schritt 1 zurückspielen und
 die Ursache suchen, bevor irgendetwas anderes geschieht.
@@ -1851,9 +1918,9 @@ liegt.
 
 - [ ] **Schritt 5b: Den ersten Joblauf abwarten und ansehen**
 
-Er trägt 556 `seite_nr` **und** 556 `quell_hash` nach. **Erwartet: null Zeilen auf
-`pruefen`** und null mit leerem `quell_hash`. Stehen dort hunderte auf `pruefen`, fehlt der
-Leer-Zweig; stehen dort noch leere Hashes, hat der Lauf Zeilen übersprungen.
+Er trägt 556 `seite_nr` und die 446 fehlenden `gesehener_hash` nach. **Erwartet: null Zeilen
+auf `pruefen`** und null mit leerem `gesehener_hash`. Stehen dort hunderte auf `pruefen`,
+fehlt der Leer-Zweig; stehen dort noch leere Hashes, hat der Lauf Zeilen übersprungen.
 
 ```bash
 sudo sqlite3 /opt/friesenspy/data/friesenspy.db \

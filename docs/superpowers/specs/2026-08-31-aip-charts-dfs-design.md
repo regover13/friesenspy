@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS aip_charts_dfs (
     icao          TEXT NOT NULL,
     sorte         TEXT NOT NULL,   -- 'sichtflug' | 'flugplatzkarte' | 'rollkarte'
     seite_nr      INTEGER,         -- Seite im Kapitel, NICHT die URL. Siehe 6.1.
-    quell_hash    TEXT NOT NULL DEFAULT '',
+    gesehener_hash TEXT NOT NULL DEFAULT '',   -- der zuletzt beurteilte DFS-Rohbytes-Hash
     bild_hash     TEXT NOT NULL DEFAULT '',
     nord          REAL NOT NULL DEFAULT 0,
     sued          REAL NOT NULL DEFAULT 0,
@@ -147,18 +147,28 @@ Bei den 110 Ground-Zeilen sind die Punkte **unrettbar**: Sie wurden nie abgelegt
 bleiben `p1_*`/`p2_*` leer; wer nachjustieren will, klickt neu. Das ist der einzige echte
 Verlust der Migration.
 
-**`quell_hash` bleibt bei der Migration leer.** Naheliegend wäre, ihn aus `bild_hash` zu
-übernehmen — für 439 der 446 Zeilen wäre das sogar richtig: `genordet_rechnen` gibt die
-DFS-Bytes unverändert zurück, wenn nicht gedreht wird, ohne Pillow-Re-Encode. Für die
-**sieben quer gedruckten Blätter** aber nicht: Dort ist `bild_hash` der Hash des gedrehten,
-neu kodierten Blatts (`app/main.py:4671`: „Der Hash wird NACH dem Drehen gebildet") — ein
-Wert, den die DFS nie geliefert hat.
+**`gesehener_hash` heißt: der DFS-Rohbytes-Hash, über den zuletzt jemand geurteilt hat.**
+Nicht der Hash der Datei auf der Platte — nach einem „verwerfen" (4.3) fallen die beiden
+auseinander, und ein Name wie `quell_hash` löge dann. `geprueft_hash` schied aus, weil
+daneben `geprueft_am` steht (Zeitstempel des letzten Schreibens); die beiden sähen wie ein
+Paar aus, das sie nicht sind.
+
+**Bei den 446 Sichtflugzeilen bleibt er leer.** Naheliegend wäre `bild_hash` — für 439 von
+ihnen sogar richtig: `genordet_rechnen` gibt die DFS-Bytes unverändert zurück, wenn nicht
+gedreht wird, ohne Pillow-Re-Encode. Für die **sieben quer gedruckten Blätter** aber nicht:
+Dort ist `bild_hash` der Hash des gedrehten, neu kodierten Blatts (`app/main.py:4671`: „Der
+Hash wird NACH dem Drehen gebildet") — ein Wert, den die DFS nie geliefert hat.
+
+**Die 110 Ground-Zeilen behalten ihren.** `aip_ground_charts.quell_hash` ist der echte
+Rohbytes-Hash (`scripts/ground_chart_bestand.py:153` hasht `roh`), und alle 110 tragen 64
+Zeichen — geprüft am 31.08.2026. Sie haben ab dem ersten Tag eine gültige
+Änderungserkennung.
 
 Einen Startwert, den wir nicht haben, trägt man nicht ein. **Die Regel ist deshalb:**
 
 ```
-quell_hash == ''  →  "noch nie gesehen": eintragen, NICHT melden
-quell_hash != ''  →  vergleichen
+gesehener_hash == ''  →  "noch nie gesehen": eintragen, NICHT melden
+gesehener_hash != ''  →  vergleichen
 ```
 
 Der erste Joblauf holt ohnehin jedes Blatt — er braucht es für `seite_nr` (6.2) — und trägt
@@ -245,15 +255,15 @@ der Job den bisherigen Status in `status_vorher`:
 
 | Weg | Wirkung |
 |---|---|
-| **übernehmen** | neues Blatt wird zum gültigen, `quell_hash` nachziehen, Status → `gepasst` |
+| **übernehmen** | neues Blatt wird zum gültigen, `gesehener_hash` nachziehen, Status → `gepasst` |
 | **neu passen** | zwei Punkte neu setzen, Status → `gepasst` |
-| **verwerfen** | altes Blatt bleibt, **`quell_hash` trotzdem nachziehen**, Status → `status_vorher` |
+| **verwerfen** | altes Blatt bleibt, **`gesehener_hash` trotzdem nachziehen**, Status → `status_vorher` |
 
 Ohne das Zurückstellen landete eine der 42 als `offen` migrierten Zeilen — Lagefelder alle
 0 — nach einem Blattwechsel auf `gepasst` und damit im Kniebrett, mit
 `nord=sued=west=ost=0`.
 
-**Auch „verwerfen" zieht `quell_hash` nach.** Sonst findet der nächste Wochenlauf denselben
+**Auch „verwerfen" zieht `gesehener_hash` nach.** Sonst findet der nächste Wochenlauf denselben
 abweichenden Hash und setzt die Zeile erneut auf `pruefen` — die Liste wäre nach dem ersten
 Verwerfen dauerhaft unaufräumbar. Diese Falle war bei der Vorschlagstabelle schon einmal
 gestellt und behoben; die Begründung steht als Kommentar im heutigen Schema
@@ -261,7 +271,7 @@ gestellt und behoben; die Begründung steht als Kommentar im heutigen Schema
 
 ### 4.4 Zweite Änderung, während `pruefen` steht
 
-Der Job überschreibt `quell_hash` **nicht** und legt das neue Blatt unter einem Namen mit
+Der Job überschreibt `gesehener_hash` **nicht** und legt das neue Blatt unter einem Namen mit
 Hash ab (3.3). Wer das erste neue Blatt schon angesehen hat, sieht in der Maske weiterhin
 genau das, was er bestätigen würde.
 
@@ -393,13 +403,29 @@ Ein Job, `aip_hash_pruefen`, wöchentlich. Je Zeile:
 
 1. Kapitel über `airport_links.aip_url` auflösen, Seite `seite_nr` holen (6.1).
 2. Ist `seite_nr` leer: einmalig über den `bild_hash` suchen und merken (6.2).
-3. Rohbytes hashen, mit `quell_hash` vergleichen.
-4. Ist `quell_hash` leer, wird er **eingetragen und nichts gemeldet** (3.2). Sonst: weicht
-   er ab → `status_vorher` sichern, Status `pruefen`, neues Blatt ablegen, SSE
-   `{"type": "aip_charts"}` senden.
-5. Steht der Platz nicht mehr in `airport_links` → Status `verwaist` (4.5).
+3. Rohbytes hashen, mit `gesehener_hash` vergleichen.
+4. Ist `gesehener_hash` leer, wird er **eingetragen und nichts gemeldet** (3.2).
+5. **Eine Karte ohne Passung hat nichts zu prüfen.** Bei `offen` wird das neue Blatt
+   eingespielt, der Hash nachgezogen — und sonst nichts. Siehe 7.1.
+6. Sonst — also nur bei `gepasst` und `auto` — weicht der Hash ab → `status_vorher` sichern,
+   Status `pruefen`, neues Blatt daneben legen, SSE `{"type": "aip_charts"}` senden.
+7. Steht der Platz nicht mehr in `airport_links` → Status `verwaist` (4.5).
 
 Sonst nichts. Kein Rechnen, kein Schreiben einer Passung.
+
+### 7.1 Nur `gepasst` und `auto` gehen nach `pruefen`
+
+`pruefen` heißt: *„Stimmt die bestehende Passung auf dem neuen Blatt noch?"* Bei einer Karte
+ohne Passung ist die Frage gegenstandslos. Für `offen` wird das neue Blatt schlicht das
+gültige — es ist ohnehin das, worauf der Nutzer klicken wird, wenn er sie irgendwann passt;
+ein veraltetes Blatt liegen zu lassen wäre der schlechtere Zustand. `nicht_gefunden` und
+`verwaist` haben keine `seite_nr` bzw. keinen Link und werden gar nicht erst geholt.
+
+Das ist **zusätzlich** zum Zurückstellen über `status_vorher` (4.3), nicht statt dessen: Es
+verhindert konstruktiv, dass eine Zeile mit `nord=sued=west=ost=0` überhaupt in einen Zustand
+gerät, aus dem heraus ein Fehlgriff sie als `gepasst` ausliefern könnte. `status_vorher` trägt
+danach nur noch `gepasst` oder `auto` — es unterscheidet weiterhin die geprüfte von der
+ungeprüften Passung, und das kann kein anderes Feld.
 
 **Kosten: ein Abruf je Karte**, nicht zwei — das Bild steckt als data-URI in derselben
 HTML-Seite (`bild_aus_html`). Bei 556 Zeilen also 556 Abrufe, plus je Platz einen für die
