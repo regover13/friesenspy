@@ -43,7 +43,7 @@ from app.forum_sso import (
     verify_sso_token,
     verify_user_token,
 )
-from app import aip_charts, ground_charts
+from app import aip_charts, ground_charts, runway_ref
 from app.database import (
     _DATA_RETENTION_DAYS,
     aggregate_bummel_kpis,
@@ -134,24 +134,19 @@ from app.database import (
     upsert_custom_airport,
     delete_custom_airport,
     list_airport_links,
-    get_aip_chart,
-    get_aip_charts,
-    get_aip_chart,
-    get_aip_charts,
     get_airport_links,
-    HandpassungGesperrt,
-    get_ground_chart,
-    get_ground_charts,
-    get_vorschlaege,
-    upsert_ground_chart,
-    upsert_aip_chart,
-    vorschlag_entfernen,
-    vorschlag_verwerfen,
     upsert_airport_link,
     delete_airport_link,
     rebuild_flight_cache,
     list_gps_detection_gaps,
     dismiss_gps_detection_gap,
+    get_charts_dfs,
+    get_chart_dfs,
+    upsert_chart_dfs,
+    delete_chart_dfs,
+    SORTEN_DFS,
+    STATUS_DFS,
+    PassungGesperrt,
 )
 from app import geo
 from app.geo import filter_event_pilots
@@ -411,46 +406,52 @@ async def panel(v: str | None = None):
     return FileResponse("app/static/index.html", headers=_HTML_NO_CACHE)
 
 
-@app.get("/api/aip-charts")
-async def aip_charts_liste():
-    """Metadaten der gepassten Sichtflugkarten.
+@app.get("/api/aip-charts-dfs")
+async def aip_charts_dfs_liste():
+    """Metadaten aller gepassten Karten, beider Sorten -- einmal beim Einschalten der
+    Ebenen geladen, dasselbe Muster wie bei Meldepunkten und Platzrunden.
 
-    Einmal beim Einschalten der Ebene geladen -- dasselbe Muster wie bei Meldepunkten und
-    Platzrunden. Zwei Rechtecke gehen mit: die Blattgrenzen (danach wird das Overlay
-    platziert) und die Feldgrenzen (danach schaltet die Automatik). Innereien wie
-    ``rahmen_px`` bleiben im Server.
+    Nur ``gepasst`` und ``auto``: eine Karte ohne Passung hat nichts zum Anzeigen. Zwei
+    Rechtecke gehen je Karte mit -- die Blattgrenzen (danach wird das Overlay platziert)
+    und die Feldgrenzen (danach schaltet die Ebene).
     """
     einst = get_settings()
     conn = get_connection(einst.DB_PATH)
     try:
-        karten = get_aip_charts(conn)
+        karten = get_charts_dfs(conn, status=["gepasst", "auto"])
     finally:
         conn.close()
     return {"charts": [
-        {"icao": k["icao"],
+        {"icao": k["icao"], "sorte": k["sorte"],
          "nord": k["nord"], "sued": k["sued"], "west": k["west"], "ost": k["ost"],
          "feld_nord": k["feld_nord"], "feld_sued": k["feld_sued"],
          "feld_west": k["feld_west"], "feld_ost": k["feld_ost"],
          "airac": k["airac"],
-         "bild": f"/aip-chart/{k['icao']}.png?h={str(k['bild_hash'])[:12]}"}
+         "bild": (f"/aip-chart-dfs/{k['icao']}/{k['sorte']}.png"
+                  f"?h={str(k['bild_hash'])[:12]}")}
         for k in karten
     ]}
 
 
-@app.get("/aip-chart/{icao}.png", include_in_schema=False)
-async def aip_chart_bild(icao: str):
-    """Das ungeschnittene Kartenblatt.
+def _dfs_blatt_pfad(db_path: str, icao: str, sorte: str, teil: str = "") -> Path:
+    """Alias auf ``aip_charts.dfs_blatt_pfad`` -- dieselbe Funktion nutzt auch
+    ``scripts/aip_bestand.py`` fuer den Wochenlauf, damit Server und Job niemals an
+    verschiedene Pfade schreiben."""
+    return aip_charts.dfs_blatt_pfad(db_path, icao, sorte, teil)
 
-    ``Cache-Control`` ist bewusst ``private``: Der Endpunkt liegt hinter dem
-    forum_login_gate, und genau diese Beschraenkung traegt das rechtliche Argument (Spec,
-    Abschnitt 9). ``public`` erlaubte jedem Zwischen-Cache -- nginx, CDN, Firmenproxy --
-    das Ausliefern ohne Anmeldung. Der Hash steht als Abfrageparameter in der URL, deshalb
-    darf trotzdem lange zwischengespeichert werden.
+
+@app.get("/aip-chart-dfs/{icao}/{sorte}.png", include_in_schema=False)
+async def aip_chart_dfs_bild(icao: str, sorte: str):
+    """Das abgelegte (ggf. gedrehte) Kartenblatt.
+
+    ``Cache-Control: private``: Der Endpunkt liegt hinter dem forum_login_gate, und genau
+    diese Beschraenkung traegt das rechtliche Argument (Spec, Abschnitt 9). Der Hash steht
+    als Abfrageparameter in der URL, deshalb darf trotzdem lange zwischengespeichert werden.
     """
     code = (icao or "").strip().upper()
-    if not re.fullmatch(r"[A-Z0-9]{4}", code):
+    if not re.fullmatch(r"[A-Z0-9]{4}", code) or sorte not in SORTEN_DFS:
         raise HTTPException(status_code=404, detail="unbekannt")
-    pfad = Path(get_settings().DB_PATH).parent / "aip" / f"{code}.png"
+    pfad = _dfs_blatt_pfad(get_settings().DB_PATH, code, sorte)
     if not pfad.is_file():
         raise HTTPException(status_code=404, detail="unbekannt")
     return FileResponse(pfad, media_type="image/png",
@@ -4182,40 +4183,51 @@ async def admin_get_airport_links(request: Request):
         conn.close()
 
 
-@app.get("/api/admin/aip-charts")
-async def admin_get_aip_charts(request: Request):
-    """Alle Sichtflugkarten mit Status -- auch die ungepassten, die von Hand drankommen.
+@app.get("/api/admin/aip-charts-dfs")
+async def admin_get_charts_dfs(request: Request):
+    """Alle Karten beider Sorten, mit Status -- auch die ungepassten und die geprueften.
 
-    **Nur die Felder, die der Admin braucht.** Die volle Zeile ergab 209 KB fuer 446 Karten,
-    groesstenteils ``bild_hash`` (64 Zeichen je Zeile) und Pixelwerte, die im Browser
-    niemand ansieht. Der Server brauchte dafuer 5 ms -- die Zeit ging beim Aufbauen der
-    Liste drauf (Nutzer, 24.08.2026: "die Seite ist extrem langsam geworden").
-
-    ``feld_*`` und ``rahmen_px`` bleiben drin: Damit kann die Handpassung eine bestehende
-    Karte vorbelegen, statt mit leeren Feldern und den zuletzt getippten Werten zu starten.
+    **Ausdruecklicher Nutzerwunsch:** "Vielleicht finde ich ja eine geeignete Karte, die du
+    nicht gefunden hast." Ein Platz, der noch KEINE Zeile hat (nie nachgesehen), erscheint
+    deshalb ebenfalls -- mit ``sorte`` und ``status`` gleich ``None``. Das ist kein Status,
+    sondern die Abwesenheit eines Eintrags; das Frontend zeigt dafuer "nicht nachgesehen".
     """
     require_admin(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
-        karten = get_aip_charts(conn, nur_gepasst=False)
+        karten = get_charts_dfs(conn)
+        fehlend = conn.execute(
+            "SELECT icao FROM airport_links WHERE icao NOT IN "
+            "(SELECT icao FROM aip_charts_dfs)").fetchall()
     finally:
         conn.close()
-    return {"charts": [
-        {"icao": k["icao"], "status": k["status"], "quelle": k["quelle"], "airac": k["airac"],
-         "feld_nord": k["feld_nord"], "feld_sued": k["feld_sued"],
-         "feld_west": k["feld_west"], "feld_ost": k["feld_ost"],
-         "rahmen_px": k["rahmen_px"]}
+    aus = [
+        {"icao": k["icao"], "sorte": k["sorte"], "status": k["status"],
+         "status_vorher": k["status_vorher"], "airac": k["airac"],
+         "seite_nr": k["seite_nr"], "drehung": k["drehung"],
+         "geprueft_am": k["geprueft_am"],
+         "p1_x": k["p1_x"], "p1_y": k["p1_y"], "p1_lat": k["p1_lat"], "p1_lon": k["p1_lon"],
+         "p2_x": k["p2_x"], "p2_y": k["p2_y"], "p2_lat": k["p2_lat"], "p2_lon": k["p2_lon"]}
         for k in karten
-    ]}
+    ]
+    aus += [
+        {"icao": r["icao"], "sorte": None, "status": None, "status_vorher": None,
+         "airac": None, "seite_nr": None, "drehung": None, "geprueft_am": None,
+         "p1_x": None, "p1_y": None, "p1_lat": None, "p1_lon": None,
+         "p2_x": None, "p2_y": None, "p2_lat": None, "p2_lon": None}
+        for r in fehlend
+    ]
+    return {"charts": aus}
 
 
-def _aip_karten_geaendert(request: Request) -> None:
+def _dfs_karten_geaendert(request: Request) -> None:
     """Allen offenen Seiten sagen, dass sich der Kartenbestand geaendert hat.
 
-    Ohne das erscheint eine frisch gepasste Karte erst, wenn jemand die Ebene aus- und wieder
-    einschaltet -- und im Kniebrett auch dann nur, wenn die Seite ueberhaupt neu geladen wurde.
-    Sie wird dort innerhalb einer Sim-Sitzung nie neu geladen (die EFB-App wird beim Zuklappen
-    nur schlafen gelegt). Der Nutzer hat am 24.08.2026 EDVM gepasst und es blieb aus.
+    Ohne das erscheint eine frisch gepasste Karte erst, wenn jemand die Ebene aus- und
+    wieder einschaltet -- und im Kniebrett auch dann nur, wenn die Seite ueberhaupt neu
+    geladen wurde. Sie wird dort innerhalb einer Sim-Sitzung nie neu geladen (die EFB-App
+    wird beim Zuklappen nur schlafen gelegt). Der Nutzer hat am 24.08.2026 EDVM gepasst und
+    es blieb aus.
 
     Silent fail: Steht der Poller nicht (Testlauf, Startphase), ist das kein Grund, eine
     gespeicherte Passung scheitern zu lassen.
@@ -4226,303 +4238,41 @@ def _aip_karten_geaendert(request: Request) -> None:
     try:
         poller.broadcast_sse({"type": "aip_charts"})
     except Exception:
-        logger.exception("Error beim Melden geaenderter AIP-Karten")
+        _logger.exception("Error beim Melden geaenderter AIP-Karten")
 
 
-def _vorschlag_blatt(db_path: str, icao: str, art: str, quell_hash: str) -> Path:
-    """Wo das Blatt zu einem Vorschlag liegt.
-
-    ``art`` und ``quell_hash`` gehoeren in den Namen: Zu einer ICAO koennen ein Sichtflug-
-    und ein Ground-Vorschlag gleichzeitig offen sein, und zu jeder Art mehrere Rohblaetter.
-    Ohne beides ueberschreiben sie sich gegenseitig.
-    """
-    return (Path(db_path).parent / "aip"
-            / f"{icao.upper()}.{art}.{str(quell_hash)[:12]}.png")
-
-
-def _ground_blatt_pfad(db_path: str, icao: str) -> Path:
-    """Wo ein genordetes Flugplatzblatt liegt.
-
-    Eigenes Verzeichnis: ``<db>/aip/<ICAO>.png`` ist von den Sichtflugkarten belegt, und
-    ein Ground Chart mit derselben ICAO ueberschriebe sie.
-    """
-    return (Path(db_path).parent / "aip_ground"
-            / f"{(icao or '').strip().upper()}.png")
-
-
-@app.get("/api/aip-ground-charts")
-async def aip_ground_charts_liste():
-    """Metadaten der gepassten Flugplatzkarten.
-
-    Einmal beim Einschalten der Ebene geladen -- dasselbe Muster wie bei den
-    Sichtflugkarten. ``feld_*`` ist die Huelle der Bahnen, danach schaltet die Automatik;
-    ``nord/sued/west/ost`` sind die Grenzen des genordeten Blatts.
-    """
-    einst = get_settings()
-    conn = get_connection(einst.DB_PATH)
-    try:
-        karten = get_ground_charts(conn)
-    finally:
-        conn.close()
-    return {"charts": [
-        {"icao": k["icao"], "sorte": k["sorte"],
-         "nord": k["nord"], "sued": k["sued"], "west": k["west"], "ost": k["ost"],
-         "feld_nord": k["feld_nord"], "feld_sued": k["feld_sued"],
-         "feld_west": k["feld_west"], "feld_ost": k["feld_ost"],
-         "airac": k["airac"],
-         "bild": f"/aip-ground-chart/{k['icao']}.png?h={str(k['bild_hash'])[:12]}"}
-        for k in karten
-    ]}
-
-
-@app.get("/aip-ground-chart/{icao}.png", include_in_schema=False)
-async def aip_ground_chart_bild(icao: str):
-    """Das genordete Flugplatzblatt.
-
-    ``Cache-Control: private`` wie beim Vorbild: Der Endpunkt liegt hinter dem
-    forum_login_gate, und genau diese Beschraenkung traegt das rechtliche Argument.
-    ``public`` erlaubte jedem Zwischen-Cache das Ausliefern ohne Anmeldung.
-    """
-    code = (icao or "").strip().upper()
-    if not re.fullmatch(r"[A-Z0-9]{4}", code):
-        raise HTTPException(status_code=404, detail="unbekannt")
-    pfad = _ground_blatt_pfad(get_settings().DB_PATH, code)
-    if not pfad.is_file():
-        raise HTTPException(status_code=404, detail="unbekannt")
-    return FileResponse(pfad, media_type="image/png",
-                        headers={"Cache-Control": "private, max-age=2592000, immutable"})
-
-
-@app.get("/api/admin/aip-ground-charts")
-async def admin_get_ground_charts(request: Request):
-    """Liste mit Status, Sorte, Restfehler und Bahnenzahl.
-
-    Der **Restfehler** gehoert sichtbar in die Liste und nicht in ein Aufklappmenue: Er ist
-    die einzige Zahl, an der ein Mensch von aussen erkennt, ob eine automatische Passung
-    sitzt.
-
-    Nur die Felder, die der Admin braucht -- die Vollzeile hat bei den Sichtflugkarten
-    209 KB fuer 446 Karten ergeben und die Seite lahmgelegt.
-    """
-    require_admin(request)
-    conn = get_connection(get_settings().DB_PATH)
-    try:
-        karten = get_ground_charts(conn, nur_gepasst=False)
-    finally:
-        conn.close()
-    return {"charts": [
-        {"icao": k["icao"], "sorte": k["sorte"], "status": k["status"],
-         "quelle": k["quelle"], "airac": k["airac"], "rest_max": k["rest_max"],
-         "bahnen": k["bahnen"], "drehung": k["drehung"], "mps": k["mps"],
-         "seite_url": k["seite_url"]}
-        for k in karten
-    ]}
-
-
-@app.post("/api/admin/aip-ground-charts/{icao}")
-async def admin_set_ground_chart(icao: str, request: Request):
-    """Handpassung einer Flugplatzkarte: zwei geklickte Punkte mit ihren Koordinaten.
-
-    **Gefragt wird nach zwei Punkten, nicht nach einem Winkel.** Einen Drehwinkel kann
-    niemand auf einer Karte ablesen; zwei wiedererkennbare Stellen -- Bahnschwellen, das
-    ARP-Kreuz -- schon. Drehung, Massstab und Grenzen werden daraus hergeleitet.
-
-    Gearbeitet wird auf dem ROHblatt, so wie es abgelegt ist. Das Drehen geschieht erst
-    hier, mit der eben bestimmten Nordung.
-    """
-    require_admin(request)
+def _dfs_blatt_normalisieren(icao: str, sorte: str) -> str:
     code = (icao or "").strip().upper()
     if not re.fullmatch(r"[A-Z0-9]{4}", code):
         raise HTTPException(status_code=400, detail="unbekannter Platz")
-    body = await request.json() or {}
-    try:
-        p1_px = (float(body["p1_x"]), float(body["p1_y"]))
-        p2_px = (float(body["p2_x"]), float(body["p2_y"]))
-        p1_geo = (float(body["p1_lat"]), float(body["p1_lon"]))
-        p2_geo = (float(body["p2_lat"]), float(body["p2_lon"]))
-    except (KeyError, TypeError, ValueError):
-        raise HTTPException(status_code=400,
-                            detail="zwei Punkte mit Pixel- und Gradwerten noetig")
-
-    def arbeit() -> dict:
-        import hashlib as _h
-
-        einst = get_settings()
-        roh_pfad = _ground_blatt_pfad(einst.DB_PATH, code).with_name(f"{code}.roh.png")
-        if not roh_pfad.is_file():
-            roh_pfad = _ground_blatt_pfad(einst.DB_PATH, code)
-        if not roh_pfad.is_file():
-            raise HTTPException(status_code=409, detail="kein Blatt fuer diesen Platz")
-        roh = roh_pfad.read_bytes()
-        passung = ground_charts.handpassung(p1_px, p1_geo, p2_px, p2_geo)
-        if passung is None:
-            raise HTTPException(status_code=422,
-                                detail="Die beiden Punkte ergeben keine Passung")
-        genordet = ground_charts.norden(roh, passung)
-        if genordet is None:
-            raise HTTPException(status_code=422, detail="Blatt liess sich nicht drehen")
-        bild, g = genordet
-        aip_charts.blatt_schreiben(_ground_blatt_pfad(einst.DB_PATH, code), bild)
-        conn = get_connection(einst.DB_PATH)
-        try:
-            alt = get_ground_chart(conn, code) or {}
-            upsert_ground_chart(
-                conn, code, sorte=alt.get("sorte") or "flugplatzkarte",
-                seite_url=alt.get("seite_url") or "",
-                quell_hash=alt.get("quell_hash") or _h.sha256(roh).hexdigest(),
-                bild_hash=_h.sha256(bild).hexdigest(),
-                nord=g["nord"], sued=g["sued"], west=g["west"], ost=g["ost"],
-                feld_nord=g["feld_nord"], feld_sued=g["feld_sued"],
-                feld_west=g["feld_west"], feld_ost=g["feld_ost"],
-                drehung=passung.drehung, mps=passung.mps, rest_max=0.0, bahnen=0,
-                # 'hand' ist hier die Wahrheit UND die Sperre: Ab jetzt kann kein
-                # automatischer Pfad diese Passung mehr anfassen.
-                quelle="hand", airac=alt.get("airac") or "", status="gepasst")
-            conn.commit()
-        finally:
-            conn.close()
-        return {"status": "ok", "drehung": round(passung.drehung, 2),
-                "mps": round(passung.mps, 4)}
-
-    ergebnis = await asyncio.to_thread(arbeit)
-    _aip_karten_geaendert(request)
-    return ergebnis
+    if sorte not in SORTEN_DFS:
+        raise HTTPException(status_code=400, detail="unbekannte Sorte")
+    return code
 
 
-@app.get("/aip-ground-chart/{icao}.roh.png", include_in_schema=False)
-async def aip_ground_chart_rohblatt(icao: str, request: Request):
+@app.get("/aip-chart-roh/{icao}/{sorte}.png", include_in_schema=False)
+async def aip_chart_roh(icao: str, sorte: str, request: Request):
     """Das UNGEDREHTE Blatt -- darauf klickt der Admin seine zwei Punkte.
 
-    Auf dem genordeten zu klicken waere falsch: Es entsteht erst aus der Passung, die hier
-    gerade bestimmt werden soll.
+    **Mit require_admin.** Die alte Ground-Route dieses Zwecks
+    (``/aip-ground-chart/{icao}.roh.png``) hatte diesen Schutz -- die alte Sichtflug-Route
+    war oeffentlich, weil ihr Rohblatt zugleich das ausgelieferte war. Hier gibt es das
+    Rohblatt fuer BEIDE Sorten, deshalb einheitlich geschuetzt.
+
+    Eigener Pfad, nicht ``.roh.png`` als Suffix: Starlettes ``str``-Konvertor ist greedy,
+    ein davor registrierter ``{icao}.png``-Pfad wuerde ``EDDL.roh`` als ICAO lesen und mit
+    404 an der Vierzeichenpruefung scheitern -- genau der Fehler, an dem die alte
+    Ground-Route litt (nie erreichbar, seit ihrer Einfuehrung).
     """
     require_admin(request)
+    if not re.fullmatch(r"[A-Z0-9]{4}", (icao or "").strip().upper()) or sorte not in SORTEN_DFS:
+        raise HTTPException(status_code=404, detail="unbekannt")
     code = (icao or "").strip().upper()
-    if not re.fullmatch(r"[A-Z0-9]{4}", code):
-        raise HTTPException(status_code=404, detail="unbekannt")
-    einst = get_settings()
-    pfad = _ground_blatt_pfad(einst.DB_PATH, code).with_name(f"{code}.roh.png")
-    if not pfad.is_file():
-        pfad = _ground_blatt_pfad(einst.DB_PATH, code)
+    pfad = _dfs_blatt_pfad(get_settings().DB_PATH, code, sorte, "roh")
     if not pfad.is_file():
         raise HTTPException(status_code=404, detail="unbekannt")
     return FileResponse(pfad, media_type="image/png",
                         headers={"Cache-Control": "private, max-age=3600"})
-
-
-@app.get("/api/admin/aip-vorschlaege")
-async def admin_get_aip_vorschlaege(request: Request):
-    """Offene Vorschlaege beider Kartentypen.
-
-    Ein Vorschlag entsteht, wenn die Automatik fuer eine handgepasste Karte ein
-    abweichendes Ergebnis findet. Live geht davon nichts -- erst die Uebernahme hier.
-    """
-    require_admin(request)
-    conn = get_connection(get_settings().DB_PATH)
-    try:
-        return {"vorschlaege": get_vorschlaege(conn)}
-    finally:
-        conn.close()
-
-
-@app.get("/aip-vorschlag/{vid}.png", include_in_schema=False)
-async def aip_vorschlag_bild(vid: int, request: Request):
-    """Das Blatt zu einem Vorschlag, zum Vergleich neben dem gueltigen.
-
-    Eigener Endpunkt, weil ``/aip-chart/{icao}.png`` das nicht kann: Dort steht
-    ``re.fullmatch(r"[A-Z0-9]{4}", code)``, und der Dateiname eines Vorschlags traegt
-    zusaetzlich Art und Hash.
-    """
-    require_admin(request)
-    einst = get_settings()
-    conn = get_connection(einst.DB_PATH)
-    try:
-        treffer = [v for v in get_vorschlaege(conn, zustand="") if v["id"] == vid]
-    finally:
-        conn.close()
-    if not treffer:
-        raise HTTPException(status_code=404, detail="unbekannt")
-    v = treffer[0]
-    pfad = _vorschlag_blatt(einst.DB_PATH, v["icao"], v["art"], v["quell_hash"])
-    if not pfad.is_file():
-        raise HTTPException(status_code=404, detail="kein Blatt zu diesem Vorschlag")
-    return FileResponse(pfad, media_type="image/png",
-                        headers={"Cache-Control": "private, max-age=3600"})
-
-
-@app.post("/api/admin/aip-vorschlaege/{vid}/uebernehmen")
-async def admin_aip_vorschlag_uebernehmen(vid: int, request: Request):
-    """Einen Vorschlag zur gueltigen Passung machen.
-
-    **Der einzige Ort im ganzen Programm, der ``hand_ueberschreiben=True`` setzt.** Das ist
-    der ausdrueckliche Handgriff, den die Festlegung des Nutzers vom 30.08.2026 verlangt:
-    "Wenn es eine neue Version gibt, kann diese zur Pruefung angezeigt werden."
-    """
-    require_admin(request)
-    einst = get_settings()
-    conn = get_connection(einst.DB_PATH)
-    try:
-        treffer = [v for v in get_vorschlaege(conn) if v["id"] == vid]
-        if not treffer:
-            raise HTTPException(status_code=404, detail="unbekannter Vorschlag")
-        v = treffer[0]
-        if v["art"] != "sichtflug":
-            raise HTTPException(status_code=400,
-                                detail="fuer diese Kartenart noch nicht unterstuetzt")
-        p = v["passung"]
-        fehlend = [k for k in ("nord", "sued", "west", "ost", "feld_nord", "feld_sued",
-                               "feld_west", "feld_ost") if k not in p]
-        if fehlend:
-            raise HTTPException(status_code=422,
-                                detail=f"Vorschlag unvollstaendig: {', '.join(fehlend)}")
-        upsert_aip_chart(
-            conn, v["icao"], bild_hash=v["quell_hash"],
-            nord=p["nord"], sued=p["sued"], west=p["west"], ost=p["ost"],
-            feld_nord=p["feld_nord"], feld_sued=p["feld_sued"],
-            feld_west=p["feld_west"], feld_ost=p["feld_ost"],
-            rahmen_px=p.get("rahmen_px", ""),
-            tick_px_lat=p.get("tick_px_lat", 0.0),
-            tick_px_lon=p.get("tick_px_lon", 0.0),
-            quelle="auto", airac=p.get("airac", ""), status="gepasst",
-            hand_ueberschreiben=True)
-        # Erst JETZT wird das vorgeschlagene Blatt zum gueltigen. Vorher lag es bewusst
-        # daneben, damit die alte Passung nicht auf einem neuen Bild sass -- genau die
-        # Verzerrung, die der Nutzer verboten hat.
-        quelle_bild = _vorschlag_blatt(einst.DB_PATH, v["icao"], v["art"], v["quell_hash"])
-        if quelle_bild.is_file():
-            os.replace(quelle_bild, aip_charts.blatt_pfad(einst.DB_PATH, v["icao"]))
-        vorschlag_entfernen(conn, vid)
-        conn.commit()
-    finally:
-        conn.close()
-    _aip_karten_geaendert(request)
-    return {"status": "ok"}
-
-
-@app.post("/api/admin/aip-vorschlaege/{vid}/verwerfen")
-async def admin_aip_vorschlag_verwerfen(vid: int, request: Request):
-    """Vorschlag verwerfen. Die bestehende Passung bleibt unberuehrt.
-
-    Kein ``DELETE``: Ein geloeschter Vorschlag entstuende beim naechsten Wochenlauf sofort
-    wieder, weil derselbe ``quell_hash`` noch vorliegt. Der Grabstein haelt ihn fern, bis
-    sich das Rohblatt wirklich aendert.
-    """
-    require_admin(request)
-    einst = get_settings()
-    conn = get_connection(einst.DB_PATH)
-    try:
-        treffer = [v for v in get_vorschlaege(conn) if v["id"] == vid]
-        if treffer:
-            v = treffer[0]
-            _vorschlag_blatt(einst.DB_PATH, v["icao"], v["art"],
-                             v["quell_hash"]).unlink(missing_ok=True)
-        n = vorschlag_verwerfen(conn, vid)
-        conn.commit()
-    finally:
-        conn.close()
-    if not n:
-        raise HTTPException(status_code=404, detail="unbekannter Vorschlag")
-    return {"status": "ok"}
 
 
 _AIP_UA = {"User-Agent": "FriesenSpy/AIP-Kartenabgleich (+https://friesenspy.devprops.de)"}
@@ -4536,12 +4286,13 @@ def _aip_holer(client):
     return holen
 
 
-def _aip_seiten_sammeln(aip_url: str, lat: float, lon: float) -> list[dict]:
-    """Kandidatenseiten mit Vorschaubild. Laeuft im Thread, nicht im Event-Loop.
+def _dfs_seiten_sammeln(aip_url: str) -> list[dict]:
+    """Kandidatenseiten mit Vorschau und Seitennummer.
 
-    Sechs Seiten zu holen und zu vermessen dauert um die zehn Sekunden -- im Event-Loop
-    stuenden derweil SSE, der 15-Sekunden-Poll und jede andere Anfrage (derselbe Grund wie
-    beim woechentlichen Job in app/poller.py).
+    **Sonst nichts** -- keine "passt"-Spalte, kein Bahnton, keine Dateigroesse. Dieselbe
+    Automatik hat bei EDDK aus sechs Kapitelseiten die falsche gewaehlt (Nutzer,
+    24.08.2026); die Spalte war irrefuehrend, nicht hilfreich. Laeuft im Thread, nicht im
+    Event-Loop -- mehrere Seiten zu holen und zu verkleinern dauert Sekunden.
     """
     import base64
     import io
@@ -4553,7 +4304,7 @@ def _aip_seiten_sammeln(aip_url: str, lat: float, lon: float) -> list[dict]:
         hole = _aip_holer(client)
         for i, seite in enumerate(aip_charts.seiten_des_kapitels(aip_url, hole)):
             eintrag = {"nr": i, "url": seite, "breite": 0, "hoehe": 0, "kb": 0,
-                       "passt": False, "vorschau": None}
+                       "vorschau": None}
             try:
                 roh = aip_charts.bild_aus_html(hole(seite))
             except Exception:
@@ -4563,10 +4314,6 @@ def _aip_seiten_sammeln(aip_url: str, lat: float, lon: float) -> list[dict]:
                 try:
                     im = Image.open(io.BytesIO(roh))
                     eintrag["breite"], eintrag["hoehe"] = im.size
-                    eintrag["passt"] = aip_charts.passung_rechnen(
-                        im.convert("L"), lat, lon) is not None
-                    # Kleines Vorschaubild: Ohne Bild ist die Auswahl ein Ratespiel, mit
-                    # sechs vollen Blaettern waeren es mehrere Megabyte.
                     klein = im.convert("RGB")
                     klein.thumbnail((190, 260))
                     puffer = io.BytesIO()
@@ -4579,36 +4326,8 @@ def _aip_seiten_sammeln(aip_url: str, lat: float, lon: float) -> list[dict]:
     return out
 
 
-def _platz_koordinate(code: str) -> tuple[float, float] | None:
-    """Koordinate eines Platzes -- dieselbe Aufloesung wie im woechentlichen Job.
-
-    ``geo.icao_to_coords`` kennt airportsdata und die Ergaenzungsplaetze. Das reicht fuer den
-    laufenden Betrieb, aber nicht fuer die AIP-Blaetter: **airportsdata kennt 29 der 446
-    Plaetze nicht** (EDMR, EDBN, EDGO, EDHD, ... ). Der Bestandslauf faellt fuer sie seit
-    jeher auf OpenAIP zurueck und passt sie problemlos; die Admin-Seitenwahl tat es nicht und
-    antwortete mit 409 "Koordinate des Platzes unbekannt" -- ausgerechnet fuer die Plaetze,
-    bei denen man den Seitenwaehler am ehesten braucht.
-
-    Dieselbe Funktion wie im Job, nicht eine zweite Fassung davon: Zwei Aufloesungen fuer
-    dieselbe Frage laufen frueher oder spaeter auseinander.
-    """
-    koord = geo.icao_to_coords(code)
-    if koord is not None:
-        return koord
-    einst = get_settings()
-    if not einst.OPENAIP_API_KEY:
-        return None
-    try:
-        from scripts.aip_bestand import platz_koordinate
-        with _httpx.Client(follow_redirects=True) as client:
-            return platz_koordinate(code, client, einst.OPENAIP_API_KEY, {})
-    except Exception:
-        logger.exception("%s: Koordinate ueber OpenAIP fehlgeschlagen", code)
-        return None
-
-
-@app.get("/api/admin/aip-charts/{icao}/seiten")
-async def admin_aip_seiten(icao: str, request: Request):
+@app.get("/api/admin/aip-charts-dfs/{icao}/seiten")
+async def admin_dfs_seiten(icao: str, request: Request):
     """Welche Seiten das Kapitel dieses Platzes hergibt -- mit Vorschau zum Auswaehlen."""
     require_admin(request)
     code = (icao or "").strip().upper()
@@ -4620,160 +4339,325 @@ async def admin_aip_seiten(icao: str, request: Request):
         conn.close()
     if zeile is None:
         raise HTTPException(status_code=404, detail="kein Kartenlink fuer diesen Platz")
-    koord = await asyncio.to_thread(_platz_koordinate, code)
-    if koord is None:
-        raise HTTPException(status_code=409, detail="Koordinate des Platzes unbekannt")
-    seiten = await asyncio.to_thread(_aip_seiten_sammeln, zeile["aip_url"], koord[0], koord[1])
+    seiten = await asyncio.to_thread(_dfs_seiten_sammeln, zeile["aip_url"])
     return {"icao": code, "seiten": seiten}
 
 
-@app.post("/api/admin/aip-charts/{icao}/seite")
-async def admin_aip_seite_waehlen(icao: str, request: Request):
-    """Eine bestimmte Kapitelseite als Blatt uebernehmen.
+@app.post("/api/admin/aip-charts-dfs/{icao}/nicht-gefunden")
+async def admin_dfs_nicht_gefunden(icao: str, request: Request):
+    """Festhalten, dass es fuer diese Sorte keine passende Kapitelseite gibt.
 
-    Die Automatik nimmt die erste Seite, deren Passung durchgeht. Das ist nicht immer die
-    richtige -- bei EDDK enthaelt das Kapitel sechs Seiten, und die gewaehlte war die falsche
-    (Nutzer, 24.08.2026). Hier setzt der Admin die Seite fest; die Passung wird danach
-    versucht, und schlaegt sie fehl, bleibt die Karte ``ungepasst`` und kann von Hand
-    gepasst werden.
+    Ohne diesen Weg waere der Status nur herleitbar, nicht speicherbar: Derselbe Platz
+    erschiene beim naechsten Durchgang wieder in der Arbeitsliste, obwohl schon einmal
+    jemand nachgesehen hat.
     """
     require_admin(request)
     code = (icao or "").strip().upper()
-    body = await request.json()
-    seite = str((body or {}).get("url") or "").strip()
-    # Nur Seiten der DFS -- sonst waere das ein offener Abruf beliebiger URLs vom Server aus.
-    if not seite.startswith("https://aip.dfs.de/"):
-        raise HTTPException(status_code=400, detail="nur Seiten von aip.dfs.de")
+    if not re.fullmatch(r"[A-Z0-9]{4}", code):
+        raise HTTPException(status_code=400, detail="unbekannter Platz")
+    body = await request.json() or {}
+    sorte = str(body.get("sorte") or "").strip()
+    if sorte not in SORTEN_DFS:
+        raise HTTPException(status_code=400, detail="unbekannte Sorte")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        upsert_chart_dfs(conn, code, sorte, status="nicht_gefunden")
+        conn.commit()
+    finally:
+        conn.close()
+    _dfs_karten_geaendert(request)
+    return {"status": "ok"}
+
+
+@app.post("/api/admin/aip-charts-dfs/{icao}/seite")
+async def admin_dfs_seite_waehlen(icao: str, request: Request):
+    """Eine bestimmte Kapitelseite als Rohblatt fuer diese Sorte uebernehmen.
+
+    **Ruehrt nie ein Lagefeld an -- strukturell, nicht nur bei unveraendertem Hash.** Der
+    Seitenwaehler schrieb frueher bei gescheiterter Automatik alle Lagefelder auf 0
+    (app/main.py, historisch Zeile 4694) und hat damit am 25.08.2026 EDAZ genullt. Nach dem
+    Rueckbau gibt es keine Automatik mehr, die hier etwas rechnen koennte -- der Endpunkt
+    waehlt die Seite, er passt nicht. Eine bestehende Passung bleibt deshalb unter jeder
+    Bedingung unangetastet.
+    """
+    require_admin(request)
+    code = (icao or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{4}", code):
+        raise HTTPException(status_code=400, detail="unbekannter Platz")
+    body = await request.json() or {}
+    sorte = str(body.get("sorte") or "").strip()
+    if sorte not in SORTEN_DFS:
+        raise HTTPException(status_code=400, detail="unbekannte Sorte")
+    try:
+        seite_nr = int(body.get("seite_nr"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="seite_nr erforderlich")
 
     def arbeit() -> dict:
         import hashlib as _h
 
         einst = get_settings()
+        conn0 = get_connection(einst.DB_PATH)
+        try:
+            zeile = conn0.execute("SELECT aip_url FROM airport_links WHERE icao = ?",
+                                  (code,)).fetchone()
+        finally:
+            conn0.close()
+        if zeile is None:
+            raise HTTPException(status_code=404, detail="kein Kartenlink fuer diesen Platz")
         with _httpx.Client(follow_redirects=True, timeout=60.0) as client:
-            roh = aip_charts.bild_aus_html(_aip_holer(client)(seite))
+            hole = _aip_holer(client)
+            seiten = aip_charts.seiten_des_kapitels(zeile["aip_url"], hole)
+            if not (0 <= seite_nr < len(seiten)):
+                raise HTTPException(status_code=400, detail="unbekannte Seitennummer")
+            roh = aip_charts.bild_aus_html(hole(seiten[seite_nr]))
         if roh is None:
             raise HTTPException(status_code=422, detail="Auf dieser Seite steht kein Bild")
-        koord = _platz_koordinate(code)
-        passung = None
-        if koord:
-            try:
-                # Ueber ``genordet_rechnen``, nicht direkt ueber ``passung_rechnen``: Ein
-                # quer gedrucktes Blatt muss GENORDET abgelegt werden, sonst ist es weder
-                # automatisch noch von Hand zu passen. Bis 25.08.2026 stand hier der
-                # direkte Aufruf, und die Drehlogik steckte als Closure in
-                # ``blatt_beschaffen`` -- ueber den Seitenwaehler bestimmte Blaetter wurden
-                # deshalb NIE gedreht. So ist EDDN quer in der Ablage gelandet, obwohl
-                # seine Seite 3 ein regulaeres Gradnetz traegt.
-                gedreht, passung = aip_charts.genordet_rechnen(roh, koord[0], koord[1])
-                if gedreht is not None:
-                    roh = gedreht
-            except Exception:
-                passung = None
-        # Der Hash wird NACH dem Drehen gebildet -- er muss zu den Bytes gehoeren, die
-        # wirklich abgelegt werden, sonst greift die Handpassungs-Sicherung unten daneben.
-        aip_charts.blatt_schreiben(aip_charts.blatt_pfad(einst.DB_PATH, code), roh)
-        neuer_hash = _h.sha256(roh).hexdigest()
+        aip_charts.blatt_schreiben(_dfs_blatt_pfad(einst.DB_PATH, code, sorte, "roh"), roh)
         conn = get_connection(einst.DB_PATH)
         try:
-            alt = get_aip_chart(conn, code)
-            # **Dasselbe Bild wie bisher? Dann bleibt eine Handpassung darauf stehen.**
-            # Sonst loescht ein erneutes Waehlen DERSELBEN Seite eine muehsam gesetzte
-            # Handpassung -- am 25.08.2026 genau so passiert: Der Aufruf sollte nur die
-            # SSE-Benachrichtigung ausloesen und setzte EDAZ dabei auf Null zurueck.
-            #
-            # Der Test ist bewusst der BILDhash, nicht der Seiten-Vergleich: Bei einer
-            # anderen Seite ist das Nullsetzen richtig, denn die alte Passung gilt dann
-            # fuer ein anderes Blatt und waere darauf falsch. Dieselbe Unterscheidung
-            # trifft ``hand_behalten`` im woechentlichen Job (scripts/aip_bestand.py),
-            # dort ueber die Geometrie.
-            if (passung is None and alt and alt["quelle"] == "hand"
-                    and alt["status"] == "gepasst" and alt["bild_hash"] == neuer_hash):
-                logger.info("%s: Seite unveraendert, Handpassung bleibt", code)
-                return {"status": "ok", "gepasst": True, "hand_behalten": True}
-            airac = (alt["airac"] if alt else "") or aip_charts.airac_kennung(seite) or ""
-            leer = dict(nord=0.0, sued=0.0, west=0.0, ost=0.0, feld_nord=0.0, feld_sued=0.0,
-                        feld_west=0.0, feld_ost=0.0, rahmen_px="", tick_px_lat=0.0,
-                        tick_px_lon=0.0)
-            werte = leer if passung is None else dict(
-                nord=passung.nord, sued=passung.sued, west=passung.west, ost=passung.ost,
-                feld_nord=passung.feld_nord, feld_sued=passung.feld_sued,
-                feld_west=passung.feld_west, feld_ost=passung.feld_ost,
-                rahmen_px=passung.rahmen_px, tick_px_lat=passung.tick_px_lat,
-                tick_px_lon=passung.tick_px_lon)
-            try:
-                # quelle='auto' auch bei gescheiterter Passung. Bis 30.08.2026 stand hier
-                # "auto" if passung else "hand" -- das benannte eine Zeile als handgesetzt,
-                # die kein Mensch je angefasst hatte. Mit der Sperre in upsert_aip_chart
-                # waere sie dadurch fuer immer gegen die Automatik gesperrt gewesen, ohne
-                # je Handarbeit zu enthalten. Der Zustand "wartet auf Handarbeit" steht in
-                # status='ungepasst'; ein zweites Feld dafuer war die Verwechslung.
-                upsert_aip_chart(conn, code, bild_hash=neuer_hash,
-                                 quelle="auto", airac=airac, seite_url=seite,
-                                 status="gepasst" if passung else "ungepasst", **werte)
-            except HandpassungGesperrt:
-                # Die alte Sicherung oben haengt an `passung is None` und greift nicht,
-                # wenn die Automatik auf der gewaehlten Seite ein Ergebnis liefert. Das
-                # Bild wurde bereits geschrieben -- das ist hier richtig, denn der Admin
-                # hat diese Seite ausdruecklich gewaehlt; falsch waere nur, die Passung
-                # mitzuziehen.
-                conn.rollback()
-                logger.info("%s: Seite uebernommen, Handpassung bleibt unberuehrt", code)
-                return {"status": "ok", "gepasst": True, "hand_behalten": True}
+            bestand = get_chart_dfs(conn, code, sorte)
+            status_neu = bestand["status"] if bestand else "offen"
+            upsert_chart_dfs(conn, code, sorte, status=status_neu, seite_nr=seite_nr,
+                             gesehener_hash=_h.sha256(roh).hexdigest())
             conn.commit()
         finally:
             conn.close()
-        return {"status": "ok", "gepasst": passung is not None}
+        return {"status": "ok"}
 
     ergebnis = await asyncio.to_thread(arbeit)
-    _aip_karten_geaendert(request)
+    _dfs_karten_geaendert(request)
     return ergebnis
 
 
-@app.post("/api/admin/aip-charts/{icao}")
-async def admin_set_aip_chart(icao: str, request: Request):
-    """Handpassung: zwei geklickte Rahmenecken plus ihre Gradwerte.
+def _grad_minuten(dezimal: float) -> tuple[int, float]:
+    grad = int(abs(dezimal))
+    minuten = (abs(dezimal) - grad) * 60.0
+    return (grad if dezimal >= 0 else -grad), minuten
 
-    Die Gradwerte heissen bewusst ``feld_*`` und nicht ``nord/sued/west/ost``: Sie sind die
-    RAHMENecken, nicht die Blattgrenzen. Dieselben vier Namen fuer beides zu verwenden war
-    die Verwechslung hinter dem 45-Prozent-Massstabsfehler; sie darf nicht im Drahtformat
-    weiterleben. Die Blattgrenzen rechnet ``aip_charts.handpassung`` daraus aus.
+
+@app.get("/api/admin/aip-charts-dfs/{icao}/schwellen")
+async def admin_dfs_schwellen(icao: str, request: Request):
+    """Bahnschwellen dieses Platzes aus OurAirports -- Hilfe beim Passen einer Flugplatz-
+    oder Rollkarte, in Grad UND Minuten zum Abschreiben.
+
+    Auf diesem Weg sind die 68 zuerst gepassten Ground-Karten entstanden: Zwei
+    wiedererkennbare Punkte auf der Karte -- Bahnschwellen -- mit ihren echten Koordinaten.
+    Bei Sichtflugkarten steht die Anzeige nicht, dort liest man die Werte vom Kartenrand ab.
     """
     require_admin(request)
-    body = await request.json()
     code = (icao or "").strip().upper()
-    conn = get_connection(get_settings().DB_PATH)
+    einst = get_settings()
+    datei = Path(einst.DB_PATH).parent / "runways.csv"
     try:
-        bestand = get_aip_chart(conn, code)
-        if bestand is None:
-            # Ohne geladenes Blatt gibt es kein Bild, an dem man klicken koennte.
-            raise HTTPException(status_code=409,
-                                detail="Fuer diesen Platz liegt noch kein Blatt vor")
-        try:
-            felder = {k: float(body[k]) for k in
-                      ("links_px", "oben_px", "rechts_px", "unten_px",
-                       "feld_nord", "feld_sued", "feld_west", "feld_ost")}
-            breite_px = int(body["breite_px"])
-            hoehe_px = int(body["hoehe_px"])
-        except (KeyError, TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="unvollstaendige Angaben")
-        passung = aip_charts.handpassung(breite_px=breite_px, hoehe_px=hoehe_px, **felder)
+        await asyncio.to_thread(runway_ref.datei_holen, datei)
+        bahnen = await asyncio.to_thread(runway_ref.bahnen, code, datei)
+    except Exception:
+        _logger.exception("%s: Bahnschwellen nicht verfuegbar", code)
+        return {"icao": code, "bahnen": []}
+    aus = []
+    for b in bahnen:
+        le_g, le_m = _grad_minuten(b.le[0])
+        le_g2, le_m2 = _grad_minuten(b.le[1])
+        he_g, he_m = _grad_minuten(b.he[0])
+        he_g2, he_m2 = _grad_minuten(b.he[1])
+        aus.append({"name": b.name, "laenge_m": round(b.laenge, 1),
+                    "le_lat": b.le[0], "le_lon": b.le[1],
+                    "he_lat": b.he[0], "he_lon": b.he[1],
+                    "le_lat_grad": le_g, "le_lat_min": round(le_m, 3),
+                    "le_lon_grad": le_g2, "le_lon_min": round(le_m2, 3),
+                    "he_lat_grad": he_g, "he_lat_min": round(he_m, 3),
+                    "he_lon_grad": he_g2, "he_lon_min": round(he_m2, 3)})
+    return {"icao": code, "bahnen": aus}
+
+
+@app.post("/api/admin/aip-charts-dfs/{icao}/{sorte}")
+async def admin_dfs_passen(icao: str, sorte: str, request: Request):
+    """Passung setzen: zwei geklickte Punkte mit ihren Koordinaten, Drehung ueberschreibbar.
+
+    **Eine einzige Maske fuer beide Kartentypen.** ``ground_charts.handpassung`` bildet die
+    Passung, ``ground_charts.norden`` dreht (nur wenn noetig, Task 4b) und legt ab -- mit
+    dem sortenabhaengigen Saum. Weil der Nutzer selbst passt, ist
+    ``hand_ueberschreiben=True`` richtig: Die Sperre aus Task 2 richtet sich gegen
+    stillschweigendes Ueberschreiben, nicht gegen ihn.
+    """
+    require_admin(request)
+    code = _dfs_blatt_normalisieren(icao, sorte)
+    body = await request.json() or {}
+    try:
+        p1_px = (float(body["p1_x"]), float(body["p1_y"]))
+        p2_px = (float(body["p2_x"]), float(body["p2_y"]))
+        p1_geo = (float(body["p1_lat"]), float(body["p1_lon"]))
+        p2_geo = (float(body["p2_lat"]), float(body["p2_lon"]))
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400,
+                            detail="zwei Punkte mit Pixel- und Gradwerten noetig")
+    drehung_ueberschrieben = body.get("drehung")
+
+    def arbeit() -> dict:
+        import hashlib as _h
+
+        einst = get_settings()
+        roh_pfad = _dfs_blatt_pfad(einst.DB_PATH, code, sorte, "roh")
+        if not roh_pfad.is_file():
+            raise HTTPException(status_code=409, detail="kein Blatt fuer diesen Platz")
+        roh = roh_pfad.read_bytes()
+        passung = ground_charts.handpassung(p1_px, p1_geo, p2_px, p2_geo)
         if passung is None:
-            raise HTTPException(status_code=400,
-                                detail="Ecken oder Gradwerte passen nicht zusammen")
-        upsert_aip_chart(
-            conn, code, bild_hash=bestand["bild_hash"],
-            nord=passung.nord, sued=passung.sued, west=passung.west, ost=passung.ost,
-            feld_nord=passung.feld_nord, feld_sued=passung.feld_sued,
-            feld_west=passung.feld_west, feld_ost=passung.feld_ost,
-            rahmen_px=passung.rahmen_px,
-            tick_px_lat=passung.tick_px_lat, tick_px_lon=passung.tick_px_lon,
-            quelle="hand", airac=bestand["airac"], status="gepasst")
+            raise HTTPException(status_code=422,
+                                detail="Die beiden Punkte ergeben keine Passung")
+        if drehung_ueberschrieben is not None:
+            try:
+                passung = ground_charts.drehung_ueberschreiben(
+                    passung, p1_px, float(drehung_ueberschrieben))
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="Drehung muss eine Zahl sein")
+        genordet = ground_charts.norden(roh, passung, sorte)
+        if genordet is None:
+            raise HTTPException(status_code=422, detail="Blatt liess sich nicht drehen")
+        bild, g = genordet
+        aip_charts.blatt_schreiben(_dfs_blatt_pfad(einst.DB_PATH, code, sorte), bild)
+        conn = get_connection(einst.DB_PATH)
+        try:
+            upsert_chart_dfs(
+                conn, code, sorte, status="gepasst", hand_ueberschreiben=True,
+                nord=g["nord"], sued=g["sued"], west=g["west"], ost=g["ost"],
+                feld_nord=g["feld_nord"], feld_sued=g["feld_sued"],
+                feld_west=g["feld_west"], feld_ost=g["feld_ost"],
+                drehung=g["drehung"], mps=passung.mps,
+                p1_x=p1_px[0], p1_y=p1_px[1], p1_lat=p1_geo[0], p1_lon=p1_geo[1],
+                p2_x=p2_px[0], p2_y=p2_px[1], p2_lat=p2_geo[0], p2_lon=p2_geo[1],
+                bild_hash=_h.sha256(bild).hexdigest())
+            conn.commit()
+        finally:
+            conn.close()
+        return {"status": "ok", "drehung": round(g["drehung"], 2),
+                "mps": round(passung.mps, 4)}
+
+    ergebnis = await asyncio.to_thread(arbeit)
+    _dfs_karten_geaendert(request)
+    return ergebnis
+
+
+def _passung_aus_zeile(z: dict) -> "ground_charts.GroundPassung | None":
+    """Eine GroundPassung aus einer gespeicherten Zeile rekonstruieren.
+
+    Wird beim Uebernehmen eines neuen Blatts gebraucht, um es mit der BESTEHENDEN Passung
+    neu abzulegen -- die Klickpunkte bleiben, nur das Bild wechselt. Beruecksichtigt eine
+    von Hand ueberschriebene Drehung (Task 5): stimmt die gespeicherte Drehung nicht mit
+    der aus den Punkten berechneten ueberein, wird sie wiederhergestellt.
+    """
+    if z.get("p1_x") is None or z.get("p2_x") is None:
+        return None
+    p1_px = (z["p1_x"], z["p1_y"])
+    p1_geo = (z["p1_lat"], z["p1_lon"])
+    p2_px = (z["p2_x"], z["p2_y"])
+    p2_geo = (z["p2_lat"], z["p2_lon"])
+    p = ground_charts.handpassung(p1_px, p1_geo, p2_px, p2_geo)
+    if p is None:
+        return None
+    if z.get("drehung") is not None:
+        diff = abs(((z["drehung"] - p.drehung) + 180.0) % 360.0 - 180.0)
+        if diff > 0.05:
+            p = ground_charts.drehung_ueberschreiben(p, p1_px, z["drehung"])
+    return p
+
+
+@app.post("/api/admin/aip-charts-dfs/{icao}/{sorte}/uebernehmen")
+async def admin_dfs_uebernehmen(icao: str, sorte: str, request: Request):
+    """Ein neues DFS-Blatt wird das gueltige. Die Passung selbst bleibt unangetastet.
+
+    Aus ``pruefen`` gibt es drei Wege, und keiner endet pauschal auf ``gepasst``
+    (Spec 4.3) -- hier ist der Nutzer sich sicher, dass Inhalt UND Position noch stimmen.
+    """
+    require_admin(request)
+    code = _dfs_blatt_normalisieren(icao, sorte)
+    einst = get_settings()
+    conn = get_connection(einst.DB_PATH)
+    try:
+        z = get_chart_dfs(conn, code, sorte)
+        if z is None or z["status"] != "pruefen":
+            raise HTTPException(status_code=404,
+                                detail="keine offene Pruefung fuer diese Karte")
+        neu_pfad = _dfs_blatt_pfad(einst.DB_PATH, code, sorte,
+                                   f"neu.{(z['gesehener_hash'] or '')[:12]}")
+
+        def arbeit() -> None:
+            roh_bytes = neu_pfad.read_bytes()
+            p = _passung_aus_zeile(z)
+            if p is not None:
+                genordet = ground_charts.norden(roh_bytes, p, sorte)
+                if genordet is not None:
+                    bild, _g = genordet
+                    aip_charts.blatt_schreiben(_dfs_blatt_pfad(einst.DB_PATH, code, sorte),
+                                               bild)
+            aip_charts.blatt_schreiben(_dfs_blatt_pfad(einst.DB_PATH, code, sorte, "roh"),
+                                       roh_bytes)
+            neu_pfad.unlink(missing_ok=True)
+
+        if neu_pfad.is_file():
+            await asyncio.to_thread(arbeit)
+        else:
+            # Kein hinterlegtes neues Blatt -- kommt in Produktion nicht vor (der Job legt
+            # es beim Setzen von 'pruefen' immer ab), soll den Statuswechsel aber nicht
+            # blockieren.
+            _logger.warning("%s/%s: uebernehmen ohne hinterlegtes neues Blatt", code, sorte)
+        # Bewusst OHNE Lagefeld: Die Passung bleibt, wie sie war.
+        upsert_chart_dfs(conn, code, sorte, status="gepasst")
         conn.commit()
-        _aip_karten_geaendert(request)
-        return {"status": "ok", "nord": passung.nord, "sued": passung.sued,
-                "west": passung.west, "ost": passung.ost}
     finally:
         conn.close()
+    _dfs_karten_geaendert(request)
+    return {"status": "ok"}
+
+
+@app.post("/api/admin/aip-charts-dfs/{icao}/{sorte}/verwerfen")
+async def admin_dfs_verwerfen(icao: str, sorte: str, request: Request):
+    """Neues Blatt verworfen -- das alte bleibt gueltig, der Status geht zurueck.
+
+    **NICHT pauschal auf 'gepasst'.** Der Job merkt sich in ``status_vorher``, woher
+    ``pruefen`` kam -- eine als 'offen' migrierte Zeile (Lagefelder 0) landete sonst nach
+    einem Blattwechsel im Kniebrett, mit ``nord=sued=west=ost=0``.
+
+    **Auch hier wird ``gesehener_hash`` NICHT zurueckgesetzt** -- er wurde beim Setzen von
+    ``pruefen`` schon auf den neuen DFS-Stand gezogen. Ohne das faende der naechste
+    Wochenlauf denselben abweichenden Hash und setzte die Zeile sofort wieder auf
+    ``pruefen`` -- dieselbe Falle, die bei der Vorschlagstabelle schon einmal gestellt war.
+    """
+    require_admin(request)
+    code = _dfs_blatt_normalisieren(icao, sorte)
+    einst = get_settings()
+    conn = get_connection(einst.DB_PATH)
+    try:
+        z = get_chart_dfs(conn, code, sorte)
+        if z is None or z["status"] != "pruefen":
+            raise HTTPException(status_code=404,
+                                detail="keine offene Pruefung fuer diese Karte")
+        neu_pfad = _dfs_blatt_pfad(einst.DB_PATH, code, sorte,
+                                   f"neu.{(z['gesehener_hash'] or '')[:12]}")
+        neu_pfad.unlink(missing_ok=True)
+        upsert_chart_dfs(conn, code, sorte, status=z["status_vorher"] or "offen")
+        conn.commit()
+    finally:
+        conn.close()
+    _dfs_karten_geaendert(request)
+    return {"status": "ok"}
+
+
+@app.delete("/api/admin/aip-charts-dfs/{icao}/{sorte}")
+async def admin_dfs_loeschen(icao: str, sorte: str, request: Request):
+    require_admin(request)
+    code = _dfs_blatt_normalisieren(icao, sorte)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        n = delete_chart_dfs(conn, code, sorte)
+        conn.commit()
+    finally:
+        conn.close()
+    if not n:
+        raise HTTPException(status_code=404, detail="unbekannt")
+    _dfs_karten_geaendert(request)
+    return {"status": "ok"}
 
 
 @app.post("/api/admin/airport-links")

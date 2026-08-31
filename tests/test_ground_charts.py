@@ -279,6 +279,23 @@ def test_norden_gibt_die_tatsaechlich_angewandte_drehung_zurueck_nicht_die_gerec
     assert g["drehung"] == 0.0
 
 
+def test_drehung_ueberschreiben_behaelt_massstab_und_ankerpunkt():
+    """Bei zwei nah beieinanderliegenden Punkten ist der abgeleitete Wert schlecht --
+    Nachjustieren von Hand muss den Massstab und den Ankerpunkt unangetastet lassen, sonst
+    verschiebt sich das Blatt beim Korrigieren der Drehung."""
+    p1_px = (200.0, 500.0)
+    p = ground_charts.handpassung(p1_px, S_05R, (1970.0, 500.0), S_23L)
+    ueberschrieben = ground_charts.drehung_ueberschreiben(p, p1_px, 15.0)
+    assert ueberschrieben.drehung == pytest.approx(15.0)
+    assert ueberschrieben.mps == pytest.approx(p.mps)
+    assert ueberschrieben.bezug == p.bezug
+    # p1 bildet unter der neuen Passung weiterhin auf den Nullpunkt (0,0) ab -- derselbe
+    # Ankerpunkt wie bei der urspruenglichen Berechnung.
+    a, b, e, f = ueberschrieben.koeff
+    x, y = p1_px[0], -p1_px[1]
+    assert (a * x - b * y + e, b * x + a * y + f) == pytest.approx((0.0, 0.0), abs=1e-6)
+
+
 def test_die_bahnvermessung_ist_zurueckgebaut():
     """Sie kam ueber drei von 107 Plaetzen nicht hinaus (Nutzerentscheidung 31.08.2026:
     "Was bringt eine Automatik fuer 3 Plaetze?").

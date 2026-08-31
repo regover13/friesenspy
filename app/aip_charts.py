@@ -1459,9 +1459,17 @@ def blatt_schreiben(pfad, roh: bytes) -> None:
     os.replace(tmp, ziel)
 
 
-def blatt_pfad(db_path: str, icao: str) -> "Path":
-    """Wo das Blatt liegt. Neben der Datenbank, im Volume -- so ueberlebt es den Container."""
-    return Path(db_path).parent / "aip" / f"{(icao or '').strip().upper()}.png"
+def dfs_blatt_pfad(db_path: str, icao: str, sorte: str, teil: str = "") -> "Path":
+    """Wo ein Blatt liegt. ``teil`` haengt einen weiteren Namensteil an, z.B. 'roh'.
+
+    Eigenes Verzeichnis ``aip_dfs/``, ICAO UND Sorte im Namen: Ein Platz kann eine
+    Sichtflug- UND eine Flugplatzkarte haben (110 von 446 -- gemessen 31.08.2026), beide
+    duerfen sich nicht ueberschreiben. Der alte Ground-Pfad war nur auf ICAO geschluesselt
+    und tat genau das.
+    """
+    code = (icao or "").strip().upper()
+    name = f"{code}.{sorte}" + (f".{teil}" if teil else "") + ".png"
+    return Path(db_path).parent / "aip_dfs" / name
 
 
 def genordet_rechnen(roh: bytes, arp_lat: float,

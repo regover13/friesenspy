@@ -147,26 +147,19 @@ def _ohne_kommentare(text: str) -> str:
     return re.sub(r"#[^\n]*", "", text)
 
 
-def test_seitenwaehler_behauptet_keine_handpassung_mehr():
-    """'hand' heisst 'von einem Menschen gesetzt', nicht 'wartet auf einen Menschen'.
+def test_seitenwaehler_existiert_in_der_alten_form_nicht_mehr():
+    """admin_aip_seite_waehlen ist mit dem Rueckbau (31.08.2026) entfallen -- Nachfolgerin
+    ist admin_dfs_seite_waehlen, die kein Lagefeld mehr anfasst (Task 5) und darum die
+    alte quelle/Sperre-Unterscheidung nicht mehr braucht, um eine Handpassung zu schuetzen.
 
-    Bis 30.08.2026 stand im Seitenwaehler ``quelle="auto" if passung else "hand"``. Das
-    benannte eine Zeile als handgesetzt, die kein Mensch je angefasst hatte -- und mit der
-    Sperre oben waere sie fuer immer gegen die Automatik gesperrt gewesen, ohne je
-    Handarbeit zu enthalten. Der Zustand "wartet auf Handarbeit" steht in
-    status='ungepasst'; ein zweites Feld dafuer war die Verwechslung.
+    Die vollstaendige Ablösung dieser Datei steht noch aus (Task 9): Bis dahin testet sie
+    weiterhin die ALTE Sperre auf den ALTEN Tabellen, die erst mit dem Rueckbau der
+    Automatik (Task 3/4/6) verschwinden.
     """
     from app import main
-    quelle = _ohne_kommentare(inspect.getsource(main.admin_aip_seite_waehlen))
-    assert 'if passung else "hand"' not in quelle
 
-
-def test_seitenwaehler_faengt_die_sperre_ab():
-    """Die alte Sicherung hing an ``passung is None``. Lieferte die Automatik auf der
-    gewaehlten Seite ein Ergebnis, war die Handpassung weg."""
-    from app import main
-    quelle = inspect.getsource(main.admin_aip_seite_waehlen)
-    assert "HandpassungGesperrt" in quelle
+    assert not hasattr(main, "admin_aip_seite_waehlen")
+    assert hasattr(main, "admin_dfs_seite_waehlen")
 
 
 def test_lauf_bricht_an_einer_gesperrten_karte_nicht_ab(conn):

@@ -210,6 +210,30 @@ def _drehen(im: Image.Image, drehung: float) -> tuple[Image.Image, float]:
                      fillcolor=(0, 0, 0, 0)), drehung
 
 
+def drehung_ueberschreiben(p: GroundPassung, p1_px: tuple[float, float],
+                          neue_drehung: float) -> GroundPassung:
+    """Die gerechnete Drehung durch eine von Hand eingegebene ersetzen.
+
+    Bei zwei nah beieinanderliegenden Punkten ist der abgeleitete Wert schlecht -- dann ist
+    Nachjustieren von Hand der schnellere Weg als neu zu klicken. Massstab (``mps``) und
+    Bezugspunkt bleiben unveraendert; nur die Richtung dreht sich. ``p1_px`` verankert die
+    neue Passung an derselben Stelle wie die urspruengliche Berechnung -- ``bezug`` war
+    schon immer ``p1_geo``, und die Koeffizienten wurden immer an ``p1_px`` verankert.
+
+    Herleitung spiegelbildlich zu ``handpassung``: dort ist
+    ``drehung = (-degrees(atan2(b, a))) % 360``, also ``atan2(b, a) = -radians(drehung)``.
+    """
+    winkel = -math.radians(neue_drehung)
+    a = p.mps * math.cos(winkel)
+    b = p.mps * math.sin(winkel)
+    x1, y1 = float(p1_px[0]), -float(p1_px[1])
+    z1 = (0.0, 0.0)
+    e = z1[0] - a * x1 + b * y1
+    f = z1[1] - b * x1 - a * y1
+    return GroundPassung(drehung=neue_drehung % 360.0, mps=p.mps, koeff=(a, b, e, f),
+                         bezug=p.bezug, huelle_m=p.huelle_m)
+
+
 def norden(roh: bytes, p: GroundPassung, sorte: str) -> tuple[bytes, dict] | None:
     """Blatt genordet ablegen und seine Grenzen ausrechnen.
 
