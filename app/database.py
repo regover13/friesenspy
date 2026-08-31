@@ -407,6 +407,55 @@ CREATE TABLE IF NOT EXISTS aip_ground_charts (
     geprueft_am   TEXT
 );
 
+-- Beide Kartentypen in EINER Tabelle -- Nachfolgerin von aip_charts und aip_ground_charts.
+--
+-- Der Schluessel ist zweiteilig, weil ein Platz eine Sichtflugkarte UND eine Flugplatzkarte
+-- haben kann: Gemessen am 31.08.2026 trifft das auf ALLE 110 Plaetze mit Flugplatzkarte zu.
+-- Mit icao allein kollidierten genau diese 110 Zeilen.
+--
+-- Es gibt keine Automatik mehr (Nutzerentscheidung 31.08.2026). Eine Passung entsteht
+-- ausschliesslich aus zwei geklickten Punkten mit Koordinaten; der Wochenlauf vergleicht
+-- nur noch Hashes. Wer hier Rahmenerkennung oder Ziffernlesen zurueckbaut, baut etwas
+-- zurueck, das bewusst entfernt wurde.
+CREATE TABLE IF NOT EXISTS aip_charts_dfs (
+    icao          TEXT NOT NULL,
+    sorte         TEXT NOT NULL,              -- 'sichtflug'|'flugplatzkarte'|'rollkarte'
+    -- Die SEITENNUMMER im Kapitel, NICHT die URL: die enthaelt den AIRAC
+    -- (https://aip.dfs.de/BasicVFR/2026AUG20/pages/8E6E....html) und liefert nach dem
+    -- naechsten Zyklus 404 -- fuer ALLE Zeilen gleichzeitig, und zwar genau dann, wenn
+    -- sich Blaetter tatsaechlich aendern koennten. Der dauerhafte Bezeichner ist
+    -- airport_links.aip_url (ohne AIRAC, Meta-Refresh); der Job loest daraus frisch auf.
+    seite_nr      INTEGER,
+    -- SHA-256 der DFS-ROHbytes, ueber die zuletzt jemand geurteilt hat. NICHT der Hash der
+    -- Datei auf der Platte: nach einem 'verwerfen' fallen die beiden auseinander. Hiess
+    -- bis 31.08.2026 quell_hash -- der Name log ab genau diesem Punkt.
+    gesehener_hash TEXT NOT NULL DEFAULT '',
+    bild_hash     TEXT NOT NULL DEFAULT '',   -- des ABGELEGTEN Blatts, nur Cache-Schluessel
+    nord          REAL NOT NULL DEFAULT 0,    -- Grenzen des ganzen Blatts: danach platziert
+    sued          REAL NOT NULL DEFAULT 0,
+    west          REAL NOT NULL DEFAULT 0,
+    ost           REAL NOT NULL DEFAULT 0,
+    feld_nord     REAL NOT NULL DEFAULT 0,    -- Grenzen des KARTENFELDS: danach schaltet
+    feld_sued     REAL NOT NULL DEFAULT 0,    -- die Ebene. NICHT die Blattgrenzen -- diese
+    feld_west     REAL NOT NULL DEFAULT 0,    -- Verwechslung war der 45-Prozent-Fehler.
+    feld_ost      REAL NOT NULL DEFAULT 0,
+    drehung       REAL NOT NULL DEFAULT 0,    -- Grad, im Uhrzeigersinn gegen Nord
+    mps           REAL NOT NULL DEFAULT 0,    -- Meter je Pixel im Rohblatt
+    -- Die beiden geklickten Passpunkte. Bei den Sichtflugkarten aus rahmen_px gewonnen:
+    -- Die Spalte war dort das Klickprotokoll, keine Innerei der Automatik.
+    p1_x REAL, p1_y REAL, p1_lat REAL, p1_lon REAL,
+    p2_x REAL, p2_y REAL, p2_lat REAL, p2_lon REAL,
+    -- gepasst|auto|offen|nicht_gefunden|pruefen|verwaist. 'pruefen' OHNE Umlaut: der Wert
+    -- wird in Python, SQL, JavaScript und Testliteralen verglichen.
+    status        TEXT NOT NULL,
+    status_vorher TEXT,                       -- woher 'pruefen' kam; 'verwerfen' stellt es
+                                              -- zurueck. Nur 'gepasst' oder 'auto': eine
+                                              -- Karte ohne Passung geht nie nach 'pruefen'.
+    airac         TEXT NOT NULL DEFAULT '',
+    geprueft_am   TEXT,
+    PRIMARY KEY (icao, sorte)
+);
+
 -- Wann ein wiederkehrender Job zuletzt wirklich gearbeitet hat.
 --
 -- APScheduler haelt seine Jobs im MemoryJobStore: Jeder Containerstart meldet sie neu an,
@@ -1038,6 +1087,24 @@ def init_db(db_path: str) -> None:
         except Exception:
             conn.rollback()
             _logger.exception("Track-Rekonstruktion fehlgeschlagen — Start ohne Reparatur")
+        # AIP-Karten: aip_charts + aip_ground_charts -> aip_charts_dfs.
+        #
+        # EIGENER Block mit sqlite3.Error, NICHT OperationalError. Das Muster der
+        # Spaltenmigrationen oben faengt nur OperationalError -- richtig fuer
+        # "ALTER TABLE ... ADD COLUMN", das bei vorhandener Spalte genau den wirft. Ein
+        # INSERT in eine Tabelle mit Primaerschluessel wirft dagegen IntegrityError, und
+        # die ist KEIN OperationalError: init_db braeche ab, die App startete nicht.
+        #
+        # Ein Fehlschlag darf den Dienststart nicht verhindern. Die alten Tabellen stehen
+        # noch, der Merker bleibt ungesetzt -- der naechste Start versucht es erneut.
+        try:
+            _uebernommen = migration_charts_dfs(conn)
+            conn.commit()
+            if _uebernommen:
+                _logger.info("aip_charts_dfs: %d Zeilen uebernommen", _uebernommen)
+        except sqlite3.Error:
+            conn.rollback()
+            _logger.exception("aip_charts_dfs: Migration fehlgeschlagen, Start ohne sie")
         # Strukturelle Dedup-Sperre: pro (cid, logon_time) nur EIN aktiver Flug.
         try:
             conn.execute(
@@ -6609,6 +6676,232 @@ def delete_airport_link(conn: sqlite3.Connection, icao: str) -> int:
 # über canonicalize_legs (kein eigener Cache), damit ein neu ergänzter Flugplatz sofort aus
 # der Liste verschwindet. "Geprüft" markiert Einzelfälle dauerhaft als kein Datenfehler
 # (Absturz, Recording-Lücke) -- gilt NUR für diesen einen Flug (Schlüssel cid+logon_time).
+
+
+# =========================================================================== AIP Charts DFS
+# Beide Kartentypen in einer Tabelle. Ab hier gibt es keine Automatik mehr: Eine Passung
+# entsteht ausschliesslich aus zwei geklickten Punkten (app/ground_charts.handpassung).
+
+# 'pruefen' OHNE Umlaut: der Wert wird in Python, SQL, JavaScript und Testliteralen
+# verglichen -- ein Umlaut darin ist eine Fehlerquelle ohne Gegenwert.
+STATUS_DFS = ("gepasst", "auto", "offen", "nicht_gefunden", "pruefen", "verwaist")
+SORTEN_DFS = ("sichtflug", "flugplatzkarte", "rollkarte")
+
+_DFS_SPALTEN = ("icao", "sorte", "seite_nr", "gesehener_hash", "bild_hash",
+                "nord", "sued", "west", "ost",
+                "feld_nord", "feld_sued", "feld_west", "feld_ost",
+                "drehung", "mps",
+                "p1_x", "p1_y", "p1_lat", "p1_lon",
+                "p2_x", "p2_y", "p2_lat", "p2_lon",
+                "status", "status_vorher", "airac", "geprueft_am")
+
+# Die Lagefelder. Wer eines davon anfasst, passt -- und braucht bei einer gepassten Karte
+# die ausdrueckliche Ansage. Wer nur Status, gesehener_hash oder seite_nr setzt, nicht:
+# Der Wochenlauf soll melden koennen, ohne die Passung anzuruehren.
+_DFS_LAGE = ("nord", "sued", "west", "ost",
+             "feld_nord", "feld_sued", "feld_west", "feld_ost", "drehung", "mps",
+             "p1_x", "p1_y", "p1_lat", "p1_lon", "p2_x", "p2_y", "p2_lat", "p2_lon")
+
+
+class PassungGesperrt(Exception):
+    """Eine vom Nutzer gepasste Karte sollte stillschweigend ueberschrieben werden.
+
+    Nachfolgerin von ``HandpassungGesperrt``; das Praedikat wechselt von ``quelle='hand'``
+    auf ``status='gepasst'``.
+
+    **Die Sperre bleibt auch nach dem Rueckbau noetig.** Sie richtete sich gegen einen Job,
+    der Passungen rechnen konnte -- den gibt es nicht mehr. Aber der Seitenwaehler bleibt,
+    und der schreibt bei gescheiterter Passung alle Lagefelder auf 0. Nach dem Rueckbau ist
+    die Passung dort IMMER None, der nullende Zweig waere also der einzige. Am 25.08.2026
+    hat genau das EDAZ auf 0/0/0/0 gesetzt.
+    """
+
+
+def _dfs_zeilen(conn: sqlite3.Connection, sql: str, *args):
+    """Abfrage mit eigenem Cursor und row_factory -- unabhaengig von der Verbindung.
+
+    ``init_db`` oeffnet mit ``sqlite3.connect()``, OHNE row_factory: Dort liefert eine
+    Abfrage Tupel, und ein Namenszugriff wie ``r["icao"]`` wirft TypeError. Genau daran ist
+    v8.14.0 schon einmal gescheitert (s. den Kommentar bei der transport_cargo-Migration
+    weiter unten). Ein eigener Cursor loest es, ohne die Verbindung des Aufrufers zu
+    veraendern -- ``conn.row_factory`` zu setzen und zurueckzustellen waere ein Nebeneffekt
+    auf fremdem Zustand.
+    """
+    cur = conn.cursor()
+    cur.row_factory = sqlite3.Row
+    return cur.execute(sql, args).fetchall()
+
+
+def _punkte_aus_rahmen(rahmen_px, r):
+    """Die beiden geklickten Rahmenecken aus dem Bestand zurueckgewinnen.
+
+    ``rahmen_px`` ist bei den Sichtflugkarten das Klickprotokoll: vier Zahlen
+    ``p1_x,p1_y,p2_x,p2_y``, und ``feld_nord/feld_west`` bzw. ``feld_sued/feld_ost`` sind
+    deren Koordinaten -- links-oben ist (Nord, West), rechts-unten ist (Sued, Ost).
+
+    Alle 446 Bestandszeilen sind wohlgeformt (gemessen 31.08.2026); der Ausfallweg ist
+    trotzdem noetig, damit eine einzige unlesbare Zeile nicht die anderen 445 liegen laesst.
+
+    Rueckgabe: acht Werte in der Reihenfolge von _DFS_SPALTEN, oder achtmal None.
+    """
+    try:
+        x1, y1, x2, y2 = (float(t) for t in (rahmen_px or "").split(","))
+    except (ValueError, AttributeError):
+        return (None,) * 8
+    return (x1, y1, r["feld_nord"], r["feld_west"],
+            x2, y2, r["feld_sued"], r["feld_ost"])
+
+
+def migration_charts_dfs(conn: sqlite3.Connection) -> int:
+    """Bestand aus aip_charts und aip_ground_charts nach aip_charts_dfs uebernehmen.
+
+    **Laeuft genau einmal.** ``init_db`` wird bei jedem Containerstart aufgerufen; eine
+    Migration, die dabei erneut liefe, wuerde Nutzerarbeit zuruecksetzen. Drei Riegel:
+
+    1. Merker in ``job_laeufe`` -- steht er, passiert nichts.
+    2. ``ON CONFLICT DO NOTHING`` -- auch wenn jemand den Merker loescht, wird keine
+       bearbeitete Zeile ueberschrieben.
+    3. Der Aufrufer faengt ``sqlite3.Error``, nicht ``OperationalError``: Ein INSERT in
+       eine Tabelle mit Primaerschluessel wirft ``IntegrityError``, und die ist KEIN
+       OperationalError -- ``init_db`` braeche ab, die App startete nicht.
+
+    Die alten Tabellen bleiben stehen. Erst wenn der neue Stand geprueft ist, darf jemand
+    sie loeschen -- bis dahin ist die Migration nach Loeschen des Merkers wiederholbar.
+
+    Rueckgabe: Zahl der uebernommenen Zeilen, 0 wenn schon gelaufen.
+    """
+    if _dfs_zeilen(conn, "SELECT 1 FROM job_laeufe WHERE name = 'migration_charts_dfs'"):
+        return 0
+
+    platzhalter = ", ".join("?" * len(_DFS_SPALTEN))
+    einfuegen = (f"INSERT INTO aip_charts_dfs ({', '.join(_DFS_SPALTEN)}) "
+                 f"VALUES ({platzhalter}) ON CONFLICT(icao, sorte) DO NOTHING")
+    n = 0
+
+    # --- Sichtflugkarten -----------------------------------------------------------
+    # quelle='hand' heisst "vom Nutzer gesetzt" -> gepasst.
+    # quelle='auto' heisst "gerechnet, ungeprueft" -> auto.
+    for r in _dfs_zeilen(conn, """SELECT icao, rahmen_px, bild_hash, nord, sued, west, ost,
+                                        feld_nord, feld_sued, feld_west, feld_ost,
+                                        quelle, airac, status, geprueft_am
+                                 FROM aip_charts"""):
+        # 'verwaist' bleibt 'verwaist': Der Link ist verschwunden, die Passung nicht. Sie
+        # kehrt zurueck, sobald der Link wieder auftaucht -- ein AIRAC-Wechsel benennt
+        # Kapitelseiten um. Wer sie hier auf 'gepasst' hebt, verliert die Information.
+        if r["status"] == "verwaist":
+            status = "verwaist"
+        else:
+            status = "gepasst" if r["quelle"] == "hand" else "auto"
+        # seite_nr bleibt None und gesehener_hash leer: seite_url ist im Bestand in ALLEN
+        # 446 Zeilen leer, und den Rohbytes-Hash haben wir nicht -- bild_hash wird NACH dem
+        # Drehen gebildet (app/main.py) und stimmt bei den sieben quer gedruckten Blaettern
+        # nicht. Beides traegt der erste Joblauf nach; leerer Hash heisst dort "noch nie
+        # gesehen: eintragen, nicht melden".
+        conn.execute(einfuegen,
+                     (r["icao"], "sichtflug", None, "", r["bild_hash"] or "",
+                      r["nord"], r["sued"], r["west"], r["ost"],
+                      r["feld_nord"], r["feld_sued"], r["feld_west"], r["feld_ost"],
+                      0.0, 0.0, *_punkte_aus_rahmen(r["rahmen_px"], r),
+                      status, None, r["airac"] or "", r["geprueft_am"]))
+        n += 1
+
+    # --- Flugplatz- und Rollkarten -------------------------------------------------
+    # ALLE bestehenden Passungen stammen von Claude, nicht vom Nutzer -- sie fallen deshalb
+    # auf 'auto' zurueck, nicht auf 'gepasst'.
+    #
+    # Die Klickpunkte sind hier UNRETTBAR: Sie wurden nie abgelegt. p1_*/p2_* bleiben leer;
+    # wer nachjustieren will, klickt neu. Das ist der einzige echte Verlust der Migration.
+    #
+    # Der Hash dagegen wandert MIT: aip_ground_charts.quell_hash ist der echte
+    # Rohbytes-Hash (scripts/ground_chart_bestand.py hasht ``roh``, vor jedem Drehen), alle
+    # 110 Zeilen tragen 64 Zeichen. Diese Karten haben ab dem ersten Tag eine gueltige
+    # Aenderungserkennung -- anders als die 446 Sichtflugzeilen oben.
+    for r in _dfs_zeilen(conn, """SELECT icao, sorte, quell_hash, bild_hash,
+                                        nord, sued, west, ost,
+                                        feld_nord, feld_sued, feld_west, feld_ost,
+                                        drehung, mps, airac, status, geprueft_am
+                                 FROM aip_ground_charts"""):
+        status = "auto" if r["status"] == "gepasst" else "offen"
+        conn.execute(einfuegen,
+                     (r["icao"], r["sorte"], None, r["quell_hash"] or "",
+                      r["bild_hash"] or "",
+                      r["nord"], r["sued"], r["west"], r["ost"],
+                      r["feld_nord"], r["feld_sued"], r["feld_west"], r["feld_ost"],
+                      r["drehung"], r["mps"], None, None, None, None, None, None, None,
+                      None, status, None, r["airac"] or "", r["geprueft_am"]))
+        n += 1
+
+    if n:
+        # Merker NUR bei tatsaechlich uebernommenen Zeilen. Auf einer frischen Datenbank
+        # laeuft init_db, bevor irgendetwas in den alten Tabellen steht -- der Merker waere
+        # dann gesetzt und die Migration verbraucht, ohne je gearbeitet zu haben. Ist
+        # nichts zu tun, kostet ein erneuter Lauf zwei Abfragen auf leere Tabellen.
+        conn.execute("INSERT INTO job_laeufe (name, zuletzt) VALUES (?, ?)",
+                     ("migration_charts_dfs", _now_utc()))
+    return n
+
+
+def upsert_chart_dfs(conn: sqlite3.Connection, icao: str, sorte: str,
+                     hand_ueberschreiben: bool = False, **felder) -> None:
+    """Karte setzen. ``status`` ist Pflicht und muss aus STATUS_DFS stammen.
+
+    Nur die MITGEGEBENEN Felder werden nachgezogen. Ein Aufruf, der bloss den Status
+    aendert -- etwa der Wochenlauf mit ``status='pruefen'`` --, darf die Passung nicht auf
+    Null zuruecksetzen.
+
+    Die Sperre (s. ``PassungGesperrt``) greift nur, wenn ein LAGEfeld mitkommt.
+    """
+    code = (icao or "").strip().upper()
+    if sorte not in SORTEN_DFS:
+        raise ValueError(f"unbekannte Sorte: {sorte!r}")
+    if felder.get("status") not in STATUS_DFS:
+        raise ValueError(f"unbekannter Status: {felder.get('status')!r}")
+    unbekannt = set(felder) - set(_DFS_SPALTEN)
+    if unbekannt:
+        # Ein Tippfehler im Feldnamen fiele sonst still unter den Tisch -- der Aufrufer
+        # glaubte zu schreiben, und nichts geschieht.
+        raise ValueError(f"unbekannte Felder: {sorted(unbekannt)}")
+    if not hand_ueberschreiben and any(f in felder for f in _DFS_LAGE):
+        alt = _dfs_zeilen(
+            conn, "SELECT status FROM aip_charts_dfs WHERE icao = ? AND sorte = ?",
+            code, sorte)
+        if alt and alt[0]["status"] == "gepasst":
+            raise PassungGesperrt(
+                f"{code}/{sorte} ist vom Nutzer gepasst -- hand_ueberschreiben noetig")
+
+    setzbar = [f for f in _DFS_SPALTEN
+               if f not in ("icao", "sorte", "geprueft_am") and f in felder]
+    spalten = ("icao", "sorte", *setzbar, "geprueft_am")
+    nachziehen = ", ".join(f"{f}=excluded.{f}" for f in (*setzbar, "geprueft_am"))
+    conn.execute(
+        f"INSERT INTO aip_charts_dfs ({', '.join(spalten)}) "
+        f"VALUES ({', '.join('?' * len(spalten))}) "
+        f"ON CONFLICT(icao, sorte) DO UPDATE SET {nachziehen}",
+        (code, sorte, *(felder[f] for f in setzbar), _now_utc()))
+
+
+def get_charts_dfs(conn: sqlite3.Connection, status=None, sorte=None) -> list[dict]:
+    """Karten lesen, wahlweise gefiltert. ``status`` und ``sorte`` sind Listen."""
+    bedingungen, args = [], []
+    for spalte, werte in (("status", status), ("sorte", sorte)):
+        if werte:
+            bedingungen.append(f"{spalte} IN ({', '.join('?' * len(werte))})")
+            args.extend(werte)
+    wo = (" WHERE " + " AND ".join(bedingungen)) if bedingungen else ""
+    return [dict(r) for r in _dfs_zeilen(
+        conn, f"SELECT * FROM aip_charts_dfs{wo} ORDER BY icao, sorte", *args)]
+
+
+def get_chart_dfs(conn: sqlite3.Connection, icao: str, sorte: str) -> dict | None:
+    r = _dfs_zeilen(conn, "SELECT * FROM aip_charts_dfs WHERE icao = ? AND sorte = ?",
+                    (icao or "").strip().upper(), sorte)
+    return dict(r[0]) if r else None
+
+
+def delete_chart_dfs(conn: sqlite3.Connection, icao: str, sorte: str) -> int:
+    cur = conn.execute("DELETE FROM aip_charts_dfs WHERE icao = ? AND sorte = ?",
+                       ((icao or "").strip().upper(), sorte))
+    return cur.rowcount
 
 
 _AIP_FELDER = ("bild_hash", "nord", "sued", "west", "ost",
