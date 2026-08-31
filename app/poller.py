@@ -547,34 +547,25 @@ class VatsimPoller:
             seconds=60,
             id="transport_event_check",
         )
-        # AIP-Sichtflugkarten woechentlich auffrischen. NICHT monatlich: Der AIRAC-Zyklus
-        # ist 28 Tage lang, ein Monatsjob wuerde frueher oder spaeter eine Ausgabe
-        # ueberspringen. Arbeit faellt ohnehin nur an, wenn sich ein bild_hash geaendert hat.
+        # EIN Job fuer beide Kartentypen -- die Automatik ist zurueckgebaut (31.08.2026),
+        # der Job vergleicht nur noch Hashes und meldet Aenderungen. Zwei Jobs, die dieselbe
+        # Quelle abfragen, waren eine Folge der zwei getrennten Tabellen (aip_charts /
+        # aip_ground_charts); die gibt es seit dem Rueckbau nicht mehr.
+        #
         # `next_run_time` ist nicht schmueckend: Ohne die Angabe plant APScheduler den
         # ERSTEN Lauf eine Woche nach dem Anmelden, und angemeldet wird bei jedem
-        # Containerstart neu. Zwischen zwei Deploys liegt hier selten eine Woche -- der Job
-        # hat von seiner Einfuehrung bis zum 31.08.2026 kein einziges Mal gearbeitet.
-        # Belegt am Bestand: Von 446 Karten trug keine ein geprueft_am nach dem 25.08.
+        # Containerstart neu. Zwischen zwei Deploys liegt hier selten eine Woche -- der
+        # Vorgaengerjob hat von seiner Einfuehrung bis zum 31.08.2026 kein einziges Mal
+        # gearbeitet. Belegt am Bestand: Von 446 Karten trug keine ein geprueft_am nach
+        # dem 25.08.
         #
         # Ob dann WIRKLICH gearbeitet wird, entscheidet der Merker in job_laeufe -- nicht
         # dieser Zeitpunkt. Sonst waere aus dem Wochenjob ein Deploy-Job geworden.
         # Zehn Minuten Verzug, damit der Start nicht mit dem flight_cache-Warmlauf
         # zusammenfaellt.
         self._scheduler.add_job(
-            self._aip_auffrischen, "interval", weeks=1, id="aip_auffrischen",
+            self._aip_hash_pruefen, "interval", weeks=1, id="aip_hash_pruefen",
             next_run_time=datetime.now(timezone.utc) + timedelta(minutes=10),
-        )
-        # Flugplatzkarten: NUR melden, nicht rechnen. Der Nutzer passt sie einmal von Hand
-        # (Entscheidung 30.08.2026); dieser Job vergleicht danach ausschliesslich den
-        # quell_hash des Rohblatts und traegt Aenderungen als offenen Punkt ein. Zwei
-        # Abrufe je Karte statt eines Kapiteldurchlaufs mit Bildanalyse -- und er kann per
-        # Bauart keine bestehende Passung beschaedigen.
-        #
-        # Zwei Stunden versetzt gegen aip_auffrischen: Beide ziehen dieselbe Bandbreite von
-        # derselben Quelle.
-        self._scheduler.add_job(
-            self._ground_charts_melden, "interval", weeks=1, id="ground_charts_melden",
-            next_run_time=datetime.now(timezone.utc) + timedelta(minutes=130),
         )
         # Muster-Infos: einmalig kurz nach Start, danach regelmäßig die fälligen.
         self._scheduler.add_job(
@@ -1347,101 +1338,48 @@ class VatsimPoller:
         except Exception:
             logger.exception("Error in _warmup_flight_cache")
 
-    async def _aip_auffrischen(self) -> None:
-        """AIP-Kartenblaetter neu holen und die Passung nachziehen.
+    async def _aip_hash_pruefen(self) -> None:
+        """AIP-Kartenblaetter: nur noch Hashes vergleichen, nichts rechnen.
 
-        Ueber ``asyncio.to_thread``, weil die Bildanalyse reines Python ueber jedes Pixel
-        ist: rund eine halbe Sekunde je Blatt allein fuer die Rahmensuche, bei 446 Blaettern
-        also mehrere Minuten, dazu die Abrufe mit ihrer Hoeflichkeitspause. Beim
-        AIRAC-Wechsel aendern sich alle Hashes und der volle Durchgang laeuft -- auf dem
-        Event-Loop stuenden derweil SSE, der 15-Sekunden-Poll und jede einzelne Anfrage.
-        Dasselbe Muster wie beim flight_cache-Rebuild.
-
-        Silent fail: Ein misslungener Durchgang darf den Dienst nicht gefaehrden. Die
-        bestehenden Karten bleiben unangetastet (Regel 1 in scripts/aip_bestand.py).
-        """
-        from app.database import get_connection, job_erledigt, job_faellig
-
-        # Der Merker macht "woechentlich" wirklich woechentlich. Ohne ihn liefe der Job
-        # zehn Minuten nach JEDEM Containerstart -- bei zwoelf Deploys an einem Tag waeren
-        # das zwoelf Vollcrawls von aip.dfs.de mit ueber 1000 Seitenabrufen je Durchgang.
-        conn = get_connection(self.db_path)
-        try:
-            if not job_faellig(conn, "aip_auffrischen", 7 * 24 * 3600):
-                logger.debug("AIP-Karten: noch nicht faellig, uebersprungen")
-                return
-        finally:
-            conn.close()
-        try:
-            from scripts.aip_bestand import lauf
-            ergebnis = await asyncio.to_thread(lauf)
-            logger.info("AIP-Karten aufgefrischt: %d von %d gepasst (%.1f %%)",
-                        ergebnis["gepasst"], ergebnis["gesamt"], ergebnis["quote"])
-            # Regel 4: Handgepasste Blaetter, deren Bild sich geaendert hat, ohne dass der
-            # Ausschnitt wiederzuerkennen war. Als Warnung, weil nur ein Mensch das aufloesen
-            # kann -- und weil ein stiller Eintrag genau der Fehler war, den Regel 4 behebt.
-            conn = get_connection(self.db_path)
-            try:
-                job_erledigt(conn, "aip_auffrischen")
-                conn.commit()
-            finally:
-                conn.close()
-            # Ohne diese Meldung bleibt jedes offene Kniebrett auf dem alten Stand: Die
-            # EFB-App wird beim Zuklappen nur schlafen gelegt und laedt innerhalb einer
-            # Sim-Sitzung nie neu. Derselbe Fall wie am 24.08.2026, als eine frisch
-            # gepasste Karte (EDVM) nicht erschien.
-            self.broadcast_sse({"type": "aip_charts"})
-            gesperrt = (ergebnis.get("zaehler") or {}).get("hand_gesperrt", 0)
-            if gesperrt:
-                logger.warning("AIP-Karten: %d Handpassung(en) blieben unangetastet, ihre "
-                               "Automatikergebnisse liegen als Vorschlag bereit: %s",
-                               gesperrt, " ".join(ergebnis.get("vorschlag_faellig") or []))
-            pruefen = ergebnis.get("handpassung_pruefen") or []
-            if pruefen:
-                logger.warning("AIP-Karten: %d Handpassung(en) koennten veraltet sein "
-                               "(Blatt geaendert, Ausschnitt abweichend): %s",
-                               len(pruefen), " ".join(pruefen))
-        except Exception:
-            logger.exception("Error in _aip_auffrischen")
-
-    async def _ground_charts_melden(self) -> None:
-        """Geaenderte Flugplatzblaetter als offenen Punkt eintragen -- mehr nicht.
-
-        Ueber ``asyncio.to_thread`` wie der Schwesterjob, aber deutlich billiger: keine
-        Bildanalyse, nur ein Hashvergleich je Karte.
+        Ueber ``asyncio.to_thread`` wie der Vorgaenger -- 556 Abrufe mit Hoeflichkeitspause
+        blockierten sonst den Event-Loop fuer Minuten (SSE, 15-Sekunden-Poll, jede andere
+        Anfrage stuenden derweil still).
 
         Silent fail: Ein misslungener Durchgang darf den Dienst nicht gefaehrden. Es geht
         nichts verloren -- beim naechsten Lauf steht dasselbe neue Blatt noch da.
         """
         from app.database import get_connection, job_erledigt, job_faellig
 
+        # Der Merker macht "woechentlich" wirklich woechentlich. Ohne ihn liefe der Job
+        # zehn Minuten nach JEDEM Containerstart -- bei zwoelf Deploys an einem Tag waeren
+        # das zwoelf Vollcrawls von aip.dfs.de mit 556 Seitenabrufen je Durchgang.
         conn = get_connection(self.db_path)
         try:
-            if not job_faellig(conn, "ground_charts_melden", 7 * 24 * 3600):
-                logger.debug("Flugplatzkarten: noch nicht faellig, uebersprungen")
+            if not job_faellig(conn, "aip_hash_pruefen", 7 * 24 * 3600):
+                logger.debug("AIP-Karten: noch nicht faellig, uebersprungen")
                 return
         finally:
             conn.close()
         try:
-            from scripts.ground_chart_bestand import melden
+            from scripts.aip_bestand import melden
             ergebnis = await asyncio.to_thread(melden)
             conn = get_connection(self.db_path)
             try:
-                job_erledigt(conn, "ground_charts_melden")
+                job_erledigt(conn, "aip_hash_pruefen")
                 conn.commit()
             finally:
                 conn.close()
-            geaendert = ergebnis.get("geaendert") or []
-            if geaendert:
-                logger.warning("Flugplatzkarten: %d Blatt/Blaetter haben sich geaendert und "
-                               "warten im Admin auf eine Handpassung: %s",
-                               len(geaendert), " ".join(geaendert))
+            logger.info("AIP-Karten geprueft: %d, zur Pruefung vorgelegt: %d (%s)",
+                        ergebnis["gesamt"], len(ergebnis["geaendert"]),
+                        ergebnis["zaehler"])
+            if ergebnis["geaendert"]:
+                # Ohne diese Meldung bleibt jedes offene Kniebrett auf dem alten Stand: Die
+                # EFB-App wird beim Zuklappen nur schlafen gelegt und laedt innerhalb einer
+                # Sim-Sitzung nie neu. Betrifft hier zwar nur die Admin-Ansicht, nicht das
+                # Panel -- dasselbe SSE-Ereignis bedient beide.
                 self.broadcast_sse({"type": "aip_charts"})
-            else:
-                logger.info("Flugplatzkarten: nichts geaendert (%s)",
-                            ergebnis.get("zaehler"))
         except Exception:
-            logger.exception("Error in _ground_charts_melden")
+            logger.exception("Error in _aip_hash_pruefen")
 
     async def _refresh_flight_cache(self) -> None:
         """Periodischer inkrementeller Refresh von ``flight_cache`` (~0,5 s, letzte Tage).

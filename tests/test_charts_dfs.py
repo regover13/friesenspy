@@ -389,3 +389,133 @@ def test_delete_chart_dfs_entfernt_genau_eine_sorte(conn):
     assert delete_chart_dfs(conn, "EDDL", "sichtflug") == 1
     assert get_chart_dfs(conn, "EDDL", "sichtflug") is None
     assert get_chart_dfs(conn, "EDDL", "rollkarte") is not None
+
+
+# ---------------------------------------------------------------------- Task 4: Skripte
+def test_der_bestandslauf_rechnet_nichts_mehr():
+    """Er vergleicht Hashes. Mehr nicht -- damit kann er per Bauart keine Passung
+    beschaedigen, und die Sperre wird zur zweiten statt zur einzigen Verteidigungslinie."""
+    import inspect
+    import re
+
+    from scripts import aip_bestand
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(aip_bestand))
+    for weg in ("passung_rechnen", "genordet_rechnen", "geometrie_gleich",
+                "blatt_beschaffen", "blatt_auffrischen", "platz_koordinate",
+                "handpassung", "rahmen_finden"):
+        assert weg not in quelle, weg
+    assert "sha256" in quelle
+
+
+def test_die_geloeschten_skripte_haben_keinen_aufrufer_mehr():
+    """aip_handpassung.py rief die Automatik produktiv auf (Zeilen 157-161), nicht nur im
+    Kommentar -- eine fruehere Fassung dieser Spec hatte das uebersehen. Zusammen mit
+    aip_band_zeigen.py und aip_schablonen.py stehen alle drei auf der Loeschliste; wer sie
+    doch noch braucht, findet sie in der Git-Historie."""
+    import subprocess
+
+    treffer = subprocess.run(
+        ["grep", "-rln",
+         "from scripts.aip_handpassung\\|from scripts.aip_band_zeigen\\|"
+         "from scripts.aip_schablonen\\|from scripts.ground_chart_bestand\\|"
+         "from scripts.ground_chart_probe",
+         "--include=*.py", "app/", "scripts/"],
+        capture_output=True, text=True).stdout.splitlines()
+    assert treffer == [], treffer
+
+
+# ---------------------------------------------------------------------- Task 6: der Job
+def test_es_gibt_genau_einen_kartenjob():
+    """Zwei Jobs, die dieselbe Quelle abfragen, waren eine Folge der zwei Tabellen."""
+    import inspect
+    import re
+
+    from app import poller
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(poller.VatsimPoller._register_jobs))
+    assert 'id="aip_hash_pruefen"' in quelle
+    assert "aip_auffrischen" not in quelle
+    assert "ground_charts_melden" not in quelle
+
+
+def test_der_job_haengt_am_faelligkeitsmerker():
+    """interval ohne next_run_time plant den ersten Lauf eine Woche nach dem Anmelden --
+    und angemeldet wird bei jedem Containerstart. Der Vorgaengerjob hat deshalb von seiner
+    Einfuehrung bis zum 31.08.2026 kein einziges Mal gearbeitet.
+
+    next_run_time allein macht daraus aber einen Deploy-Job. Erst der Merker in job_laeufe
+    macht 'woechentlich' wirklich woechentlich.
+    """
+    import inspect
+
+    from app import poller
+
+    quelle = inspect.getsource(poller.VatsimPoller._aip_hash_pruefen)
+    assert "job_faellig" in quelle and "job_erledigt" in quelle
+
+
+def test_eine_karte_ohne_passung_geht_nie_nach_pruefen():
+    """'pruefen' heisst "Stimmt die bestehende Passung auf dem neuen Blatt noch?" -- bei
+    einer Karte ohne Passung ist die Frage gegenstandslos.
+
+    42 der migrierten Zeilen stehen auf 'offen' und haben Lagefelder von 0. Kaeme eine von
+    ihnen nach 'pruefen', genuegte ein Fehlgriff beim Verlassen, um sie als 'gepasst' ans
+    Kniebrett auszuliefern -- als Kartenebene bei 0 Grad Nord, 0 Grad Ost.
+    """
+    import inspect
+    import re
+
+    from scripts import aip_bestand
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(aip_bestand.melden))
+    assert '("gepasst", "auto")' in quelle
+    assert quelle.count('status="pruefen"') == 1
+
+
+def test_ein_leerer_gesehener_hash_wird_eingetragen_nicht_gemeldet():
+    """Nach der Migration ist er bei allen 446 Sichtflugzeilen leer -- den Rohbytes-Hash
+    gab es nie zu uebernehmen. Ohne diesen Zweig meldete der erste Lauf 446 Karten als
+    geaendert, die es nicht sind."""
+    import inspect
+    import re
+
+    from scripts import aip_bestand
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(aip_bestand.melden))
+    stelle = quelle.index('gesehener_hash"]')
+    assert "not " in quelle[max(0, stelle - 20):stelle]
+
+
+def test_der_job_traegt_fehlende_seitennummern_nach():
+    """seite_url ist im Bestand in ALLEN 446 Sichtflugzeilen leer. Ein Lauf, der nur Zeilen
+    mit gesetzter Seite prueft, pruefte 110 von 556 -- und ausgerechnet keine
+    Sichtflugkarte."""
+    import inspect
+
+    from scripts import aip_bestand
+
+    quelle = inspect.getsource(aip_bestand.melden)
+    assert "seite_nr" in quelle and "bild_hash" in quelle
+
+
+def test_dockerfile_liefert_scripts_ins_image():
+    """Der Wochenjob importiert ``scripts.aip_bestand`` -- also muss ``scripts/`` im Image
+    sein.
+
+    Der Job faengt jede Exception ab (silent fail, damit ein misslungener Durchgang den
+    Dienst nicht gefaehrdet). Ein fehlendes ``scripts/`` faellt deshalb nicht auf: Der
+    ImportError landet im Log und der Kartenbestand veraltet stillschweigend ueber
+    AIRAC-Zyklen hinweg. Genau das lag beim ersten Deploy-Anlauf am 24.08.2026 vor.
+    """
+    import pathlib
+
+    wurzel = pathlib.Path(__file__).resolve().parents[1]
+    zeilen = (wurzel / "Dockerfile").read_text().splitlines()
+    kopiert = [z for z in zeilen if z.startswith("COPY") and "scripts/" in z]
+    assert kopiert, "Dockerfile kopiert scripts/ nicht ins Image"
+
+    # An den Import binden, nicht an eine freie Textsuche: Faellt der Import in poller.py
+    # weg, darf dieser Test nicht laenger etwas verlangen, was niemand mehr braucht.
+    poller_quelle = (wurzel / "app" / "poller.py").read_text()
+    assert "from scripts.aip_bestand import melden" in poller_quelle

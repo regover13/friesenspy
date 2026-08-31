@@ -162,37 +162,16 @@ def test_seitenwaehler_existiert_in_der_alten_form_nicht_mehr():
     assert hasattr(main, "admin_dfs_seite_waehlen")
 
 
-def test_lauf_bricht_an_einer_gesperrten_karte_nicht_ab(conn):
-    """Eine Ausnahme mitten im Durchgang liesse die restlichen 400 Karten liegen, und der
-    naechste Lauf finge wieder von vorn an."""
+def test_lauf_und_karte_schreiben_existieren_in_der_alten_form_nicht_mehr():
+    """scripts.aip_bestand._karte_schreiben() war die Passungs-Schreibfunktion von lauf()
+    (Erstbefuellung) -- beide sind mit dem Rueckbau (31.08.2026) entfallen. Was den
+    Kernbefund dieser beiden Tests ersetzt (kein Bildtausch unter einer alten Passung,
+    kein Abbruch mitten im Durchgang) ist heute Aufgabe der Sperre in upsert_chart_dfs
+    (Task 2) -- getestet in tests/test_charts_dfs.py."""
     import scripts.aip_bestand as bestand
 
-    _hand(conn, icao="EDDL")
-    conn.commit()
-    zaehler, faellig = collections.Counter(), []
-    ergebnis = bestand._karte_schreiben(
-        conn, "EDDL", zaehler, faellig, bild_hash="b" * 64,
-        **{**BOUNDS, "nord": 55.0}, **GEO, quelle="auto", airac="y", status="gepasst")
-    assert ergebnis is False
-    assert zaehler["hand_gesperrt"] == 1
-    assert faellig == ["EDDL"]
-    assert get_aip_chart(conn, "EDDL")["nord"] == pytest.approx(54.24)
-
-
-def test_bei_gesperrter_karte_wird_auch_das_bild_nicht_getauscht():
-    """Der Kern der Nutzerfestlegung: "keinesfalls erneut verzerrt werden".
-
-    Ein neues Bild unter der alten Passung IST die Verzerrung -- schlimmer als beides alt.
-    ``blatt_schreiben`` darf deshalb erst nach einem erfolgreichen ``_karte_schreiben``
-    laufen, nicht davor.
-    """
-    import scripts.aip_bestand as bestand
-
-    quelle = inspect.getsource(bestand.lauf)
-    stelle = quelle.index("_karte_schreiben")
-    danach = quelle[stelle:]
-    assert "if not geschrieben" in danach
-    assert danach.index("if not geschrieben") < danach.index("blatt_schreiben")
+    assert not hasattr(bestand, "lauf")
+    assert not hasattr(bestand, "_karte_schreiben")
 
 
 # ---------------------------------------------------------------------------
@@ -237,17 +216,17 @@ def test_automatikkarte_wird_weiterhin_geloescht(conn):
     assert get_aip_chart(conn, "EDWJ") is None
 
 
-def test_aufraeumzweig_unterscheidet_hand_und_auto():
-    """Der Lauf darf nicht blind delete_aip_chart rufen."""
+def test_lauf_existiert_in_der_alten_form_nicht_mehr():
+    """scripts.aip_bestand.lauf() -- die automatische Erstbefuellung mit
+    Automatik-vs-Hand-Aufraeumzweig -- ist mit dem Rueckbau (31.08.2026) entfallen.
+
+    Ein Platz ohne Zeile wird nicht mehr automatisch befuellt; er erscheint im Admin als
+    'nicht nachgesehen' und wartet auf eine bewusste Seitenauswahl (Spec 4.2). Was bleibt,
+    ist ausschliesslich melden() -- der Hash-Vergleich des Wochenjobs."""
     import scripts.aip_bestand as bestand
 
-    quelle = _ohne_kommentare(inspect.getsource(bestand.lauf))
-    # An der Struktur binden, nicht an einem Zeichenabstand: Ein Fenster von N Zeichen
-    # haengt an der Kommentardichte und war beim ersten Anlauf zu klein (400 statt 530).
-    assert "verwaisen(" in quelle
-    assert quelle.index('karte["quelle"] == "hand"') < quelle.index("delete_aip_chart")
-    zwischen = quelle[quelle.index('karte["quelle"] == "hand"'):quelle.index("delete_aip_chart")]
-    assert "continue" in zwischen, "Der Handzweig muss abbrechen, bevor geloescht wird"
+    assert not hasattr(bestand, "lauf")
+    assert hasattr(bestand, "melden")
 
 
 # ---------------------------------------------------------------------------
@@ -344,28 +323,15 @@ def test_job_laeuft_nach_deploy_nur_wenn_wirklich_faellig(conn):
     assert job_faellig(conn, "anderer_job", 7 * 24 * 3600) is True
 
 
-def test_der_job_meldet_seine_aenderungen():
-    """_aip_auffrischen rief bis 31.08.2026 kein _aip_karten_geaendert.
-
-    Sobald er laeuft und Karten aendert, bliebe jedes offene Kniebrett auf dem alten Stand
-    -- genau das Fehlerbild, das der Helfer am 24.08.2026 beheben sollte (Nutzer passte
-    EDVM, und es erschien nicht).
-    """
-    import inspect
-
+def test_aip_auffrischen_existiert_in_der_alten_form_nicht_mehr():
+    """Nachfolgerin ist poller.VatsimPoller._aip_hash_pruefen -- getestet in
+    tests/test_charts_dfs.py (test_es_gibt_genau_einen_kartenjob,
+    test_der_job_haengt_am_faelligkeitsmerker)."""
     from app import poller
 
-    quelle = _ohne_kommentare(inspect.getsource(poller.VatsimPoller._aip_auffrischen))
-    assert "broadcast_sse" in quelle
-
-
-def test_der_job_prueft_die_faelligkeit_selbst():
-    import inspect
-
-    from app import poller
-
-    quelle = _ohne_kommentare(inspect.getsource(poller.VatsimPoller._aip_auffrischen))
-    assert "job_faellig" in quelle and "job_erledigt" in quelle
+    assert not hasattr(poller.VatsimPoller, "_aip_auffrischen")
+    assert not hasattr(poller.VatsimPoller, "_ground_charts_melden")
+    assert hasattr(poller.VatsimPoller, "_aip_hash_pruefen")
 
 
 # ---------------------------------------------------------------------------
