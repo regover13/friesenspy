@@ -280,15 +280,25 @@ def test_kaputtes_rahmen_px_bricht_die_migration_nicht(conn):
     assert get_chart_dfs(conn, "EDXX", "sichtflug")["status"] == "gepasst"
 
 
-def test_quell_hash_kommt_aus_bild_hash(conn):
-    """Der Aenderungsdetektor muss belegt sein, sonst meldete der erste Joblauf alle 556
-    Karten als geaendert. bild_hash ist die beste vorhandene Naeherung -- mit der
-    Einschraenkung aus Task 6: er wird NACH dem Drehen gebildet, stimmt also bei den sieben
-    quer gedruckten Blaettern nicht mit dem Rohblatt ueberein."""
+def test_quell_hash_bleibt_leer(conn):
+    """Einen Startwert, den wir nicht haben, traegt man nicht ein.
+
+    Naheliegend waere bild_hash -- fuer 439 der 446 Zeilen sogar richtig, denn
+    genordet_rechnen gibt die DFS-Bytes unveraendert zurueck, wenn nicht gedreht wird
+    (app/aip_charts.py, letzte Zeile: 'return roh, ...'), ohne Pillow-Re-Encode. Fuer die
+    SIEBEN quer gedruckten Blaetter aber nicht: dort ist bild_hash der Hash des gedrehten,
+    neu kodierten Blatts (app/main.py:4671) -- ein Wert, den die DFS nie geliefert hat.
+
+    Leer heisst 'noch nie gesehen': Der erste Joblauf traegt den echten Rohbytes-Hash ein
+    und meldet nichts. Kein einziger Fehlalarm, und die Regel haengt an einem leeren Feld
+    statt an einem Vergleich mit dem AIRAC der Migration.
+    """
     _alt_sichtflug(conn, "EDDL")
     conn.commit()
     migration_charts_dfs(conn)
-    assert get_chart_dfs(conn, "EDDL", "sichtflug")["quell_hash"] == "a"
+    k = get_chart_dfs(conn, "EDDL", "sichtflug")
+    assert k["quell_hash"] == ""
+    assert k["bild_hash"] == "a"          # der bleibt -- er ist der Cache-Schluessel
 
 
 def test_die_seitennummer_bleibt_leer(conn):
@@ -428,11 +438,12 @@ def migration_charts_dfs(conn: sqlite3.Connection) -> int:
             f"""INSERT INTO aip_charts_dfs ({', '.join(_DFS_SPALTEN)})
                 VALUES ({', '.join('?' * len(_DFS_SPALTEN))})
                 ON CONFLICT(icao, sorte) DO NOTHING""",
-            # seite_nr bleibt None: seite_url ist im Bestand in ALLEN 446 Zeilen leer, es
-            # gibt nichts zu uebernehmen. Der erste Joblauf traegt sie nach (Task 6).
-            # quell_hash aus bild_hash -- die beste vorhandene Naeherung; die Abweichung
-            # bei den sieben quer gedruckten Blaettern faengt Task 6 ab.
-            (r["icao"], "sichtflug", None, r["bild_hash"] or "", r["bild_hash"] or "",
+            # seite_nr bleibt None und quell_hash leer: seite_url ist im Bestand in ALLEN
+            # 446 Zeilen leer, und den Rohbytes-Hash haben wir nicht -- bild_hash wird NACH
+            # dem Drehen gebildet (app/main.py:4671) und stimmt bei den sieben quer
+            # gedruckten Blaettern nicht. Beides traegt der erste Joblauf nach (Task 6);
+            # leerer quell_hash heisst dort "noch nie gesehen: eintragen, nicht melden".
+            (r["icao"], "sichtflug", None, "", r["bild_hash"] or "",
              r["nord"], r["sued"], r["west"], r["ost"],
              r["feld_nord"], r["feld_sued"], r["feld_west"], r["feld_ost"],
              0.0, 0.0, *p,
@@ -1324,12 +1335,23 @@ gehört in Task 10, vor die Gegenprobe.
 HTML-Seite (`bild_aus_html`). 556 Zeilen, plus je Platz einen für die Kapitelauflösung. Der
 Kommentar in `app/poller.py:569`, der 1100 nennt, war schon dort falsch.
 
-**Die Ausnahme beim ersten Lauf.** `quell_hash` stammt aus `aip_charts.bild_hash`, und der
-ist **nicht** der Hash der DFS-Rohbytes, sondern der des abgelegten, ggf. gedrehten Blatts
-(`app/main.py:4671`: „Der Hash wird NACH dem Drehen gebildet"). Für die sieben quer
-gedruckten Blätter stimmt er nicht überein. Findet der Job einen abweichenden Hash und trägt
-die Zeile noch den AIRAC der Migration, füllt er `quell_hash` **stumm** nach, statt `pruefen`
-zu setzen. Erst ab dem zweiten Zyklus ist eine Abweichung eine echte Änderung.
+**Ein leerer `quell_hash` wird eingetragen, nicht verglichen.** Nach der Migration ist er in
+allen 556 Zeilen leer — den Rohbytes-Hash gab es nie zu übernehmen (`bild_hash` wird nach dem
+Drehen gebildet und stimmt bei den sieben quer gedruckten Blättern nicht). Der erste Lauf
+trägt ihn ein und meldet nichts:
+
+```python
+if not zeile["quell_hash"]:
+    # Noch nie gesehen -- es gibt nichts zu vergleichen. Eintragen, nicht melden.
+    # Ohne diesen Zweig meldete der erste Lauf alle 556 Karten als geaendert.
+    status_melden(conn, icao, sorte, quell_hash=roh_hash)
+    continue
+if roh_hash != zeile["quell_hash"]:
+    ...
+```
+
+**Verglichen wird immer Roh gegen Roh**, nie Roh gegen Gedreht — einen wiederkehrenden
+Fehlalarm kann es deshalb nicht geben. Betroffen war ausschließlich der Startwert.
 
 - [ ] **Schritt 1: Fehlschlagenden Test schreiben**
 
@@ -1347,20 +1369,22 @@ def test_es_gibt_genau_einen_kartenjob():
     assert "ground_charts_melden" not in quelle
 
 
-def test_der_erste_lauf_meldet_die_quer_gedruckten_blaetter_nicht():
-    """quell_hash stammt aus aip_charts.bild_hash -- und der wird NACH dem Drehen gebildet
-    (app/main.py:4671). Fuer die sieben quer gedruckten Blaetter stimmt er nicht mit dem
-    Rohblatt ueberein.
+def test_ein_leerer_quell_hash_wird_eingetragen_nicht_gemeldet():
+    """Nach der Migration ist er in allen 556 Zeilen leer -- den Rohbytes-Hash gab es nie zu
+    uebernehmen. Ohne diesen Zweig meldete der erste Lauf alle 556 Karten als geaendert.
 
-    Ohne die Nachfuellregel meldete der erste Lauf sieben Karten als geaendert, die es
-    nicht sind -- und der Nutzer haette sieben Blaetter zu pruefen, an denen nichts ist.
+    Die Regel haengt an einem leeren Feld, NICHT an einem Vergleich mit dem AIRAC der
+    Migration: Was in sechs Monaten niemand mehr versteht, wird beim naechsten Umbau
+    herausgeworfen.
     """
     import inspect
+    import re
 
     from app import poller
 
-    quelle = inspect.getsource(poller.VatsimPoller._aip_hash_pruefen)
-    assert "airac" in quelle          # der Zyklusvergleich, an dem die Regel haengt
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(poller.VatsimPoller._aip_hash_pruefen))
+    stelle = quelle.index("quell_hash")
+    assert "not " in quelle[max(0, stelle - 40):stelle + 40]
 
 
 def test_der_job_traegt_fehlende_seitennummern_nach():
@@ -1810,8 +1834,9 @@ sudo sqlite3 /opt/friesenspy/data/friesenspy.db \
 | | **Summe** | **556** |
 
 Dazu **446 Sichtflugzeilen mit gesetztem `p1_x`** — die aus `rahmen_px` gewonnenen
-Klickpunkte, alle 446 Bestandszeilen sind wohlgeformt — und **null Zeilen mit leerem
-`quell_hash`**. Wäre der leer, meldete der erste Joblauf alle 556 Karten als geändert.
+Klickpunkte, alle 446 Bestandszeilen sind wohlgeformt — und **556 Zeilen mit leerem
+`quell_hash`**: Der Rohbytes-Hash war nie vorhanden, der erste Joblauf trägt ihn nach. Steht
+dort eine andere Zahl als 556, hat die Migration einen Wert erfunden.
 
 **Weicht eine Zahl ab, wird zurückgerollt** — die Sicherung aus Schritt 1 zurückspielen und
 die Ursache suchen, bevor irgendetwas anderes geschieht.
@@ -1826,9 +1851,9 @@ liegt.
 
 - [ ] **Schritt 5b: Den ersten Joblauf abwarten und ansehen**
 
-Er trägt 556 `seite_nr` nach und füllt bei den sieben quer gedruckten Blättern den
-`quell_hash` stumm nach. **Erwartet: null Zeilen auf `pruefen`.** Stehen dort sieben, greift
-die Nachfüllregel nicht; stehen dort hunderte, stimmt die Hash-Bildung nicht.
+Er trägt 556 `seite_nr` **und** 556 `quell_hash` nach. **Erwartet: null Zeilen auf
+`pruefen`** und null mit leerem `quell_hash`. Stehen dort hunderte auf `pruefen`, fehlt der
+Leer-Zweig; stehen dort noch leere Hashes, hat der Lauf Zeilen übersprungen.
 
 ```bash
 sudo sqlite3 /opt/friesenspy/data/friesenspy.db \

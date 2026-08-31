@@ -147,15 +147,26 @@ Bei den 110 Ground-Zeilen sind die Punkte **unrettbar**: Sie wurden nie abgelegt
 bleiben `p1_*`/`p2_*` leer; wer nachjustieren will, klickt neu. Das ist der einzige echte
 Verlust der Migration.
 
-**`quell_hash` kommt aus `bild_hash`** — mit einer Einschränkung, die zählt:
-`aip_charts.bild_hash` ist nicht der Hash der DFS-Rohbytes, sondern der des abgelegten, ggf.
-gedrehten Blatts (`app/main.py:4671`: „Der Hash wird NACH dem Drehen gebildet"). Für die
-sieben quer gedruckten Blätter stimmt er nicht mit dem Rohblatt überein.
+**`quell_hash` bleibt bei der Migration leer.** Naheliegend wäre, ihn aus `bild_hash` zu
+übernehmen — für 439 der 446 Zeilen wäre das sogar richtig: `genordet_rechnen` gibt die
+DFS-Bytes unverändert zurück, wenn nicht gedreht wird, ohne Pillow-Re-Encode. Für die
+**sieben quer gedruckten Blätter** aber nicht: Dort ist `bild_hash` der Hash des gedrehten,
+neu kodierten Blatts (`app/main.py:4671`: „Der Hash wird NACH dem Drehen gebildet") — ein
+Wert, den die DFS nie geliefert hat.
 
-**Regel daraus:** Findet der Job einen abweichenden Hash und trägt die Zeile noch den AIRAC
-der Migration, füllt er `quell_hash` **stumm** nach, statt `pruefen` zu setzen. Erst ab dem
-zweiten Zyklus ist eine Abweichung eine echte Änderung. Ohne diese Regel meldete der erste
-Lauf sieben Karten als geändert, die es nicht sind.
+Einen Startwert, den wir nicht haben, trägt man nicht ein. **Die Regel ist deshalb:**
+
+```
+quell_hash == ''  →  "noch nie gesehen": eintragen, NICHT melden
+quell_hash != ''  →  vergleichen
+```
+
+Der erste Joblauf holt ohnehin jedes Blatt — er braucht es für `seite_nr` (6.2) — und trägt
+dabei den echten Rohbytes-Hash ein. Kein einziger Fehlalarm, und die Regel hängt an einem
+leeren Feld statt an einem Vergleich mit dem AIRAC der Migration.
+
+**Einen Dauer-Fehlalarm gab es nie:** Der Job vergleicht Roh gegen Roh, nie Roh gegen
+Gedreht. Betroffen war ausschließlich der Startwert.
 
 `airac` ist in beiden Tabellen durchgehend `'2026AUG20'`, `geprueft_am` in keiner Zeile
 NULL — geprüft, keine Typkonflikte.
@@ -383,8 +394,9 @@ Ein Job, `aip_hash_pruefen`, wöchentlich. Je Zeile:
 1. Kapitel über `airport_links.aip_url` auflösen, Seite `seite_nr` holen (6.1).
 2. Ist `seite_nr` leer: einmalig über den `bild_hash` suchen und merken (6.2).
 3. Rohbytes hashen, mit `quell_hash` vergleichen.
-4. Weicht er ab → `status_vorher` sichern, Status `pruefen`, neues Blatt ablegen, SSE
-   `{"type": "aip_charts"}` senden. **Ausnahme:** die Nachfüllregel aus 3.2.
+4. Ist `quell_hash` leer, wird er **eingetragen und nichts gemeldet** (3.2). Sonst: weicht
+   er ab → `status_vorher` sichern, Status `pruefen`, neues Blatt ablegen, SSE
+   `{"type": "aip_charts"}` senden.
 5. Steht der Platz nicht mehr in `airport_links` → Status `verwaist` (4.5).
 
 Sonst nichts. Kein Rechnen, kein Schreiben einer Passung.
