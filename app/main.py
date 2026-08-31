@@ -43,7 +43,7 @@ from app.forum_sso import (
     verify_sso_token,
     verify_user_token,
 )
-from app import aip_charts
+from app import aip_charts, ground_charts
 from app.database import (
     _DATA_RETENTION_DAYS,
     aggregate_bummel_kpis,
