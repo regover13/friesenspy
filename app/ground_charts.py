@@ -416,6 +416,18 @@ def passung_rechnen(im: Image.Image, bahnen: list, ton: int | None = None
                             continue
                         if bestes is None or ergebnis[0] < bestes[0]:
                             bestes = ergebnis
+                        # **Ein zweiter Durchgang mit der Skala aus dem ersten.** Die
+                        # Trimmung braucht eine Skala, um die Referenzlaenge in Pixel zu
+                        # rechnen -- nimmt man sie aus den gemessenen Bahnen, steckt der
+                        # Malfehler schon drin. Der Fit liefert eine bessere; damit
+                        # getrimmt wird die naechste noch besser. Zwei Durchgaenge
+                        # genuegen, danach bewegt sich nichts mehr.
+                        if not getrimmt:
+                            a_, b_ = ergebnis[1][0], ergebnis[1][1]
+                            nach = _versuch(achsen, bahnen, ziel, bild_wahl, ref_wahl,
+                                            drehungen, True, math.hypot(a_, b_))
+                            if nach is not None and (bestes is None or nach[0] < bestes[0]):
+                                bestes = nach
         if bestes is not None:
             break            # mit der groesstmoeglichen Zahl von Bahnen zufrieden geben
 
@@ -437,7 +449,8 @@ def passung_rechnen(im: Image.Image, bahnen: list, ton: int | None = None
                          huelle_m=(min(ost), max(ost), min(nord), max(nord)))
 
 
-def _versuch(achsen, bahnen, ziel, bild_wahl, ref_wahl, drehungen, getrimmt=False):
+def _versuch(achsen, bahnen, ziel, bild_wahl, ref_wahl, drehungen, getrimmt=False,
+             skala_vorgabe=None):
     """Eine konkrete Zuordnung durchrechnen. ``None``, wenn eine Pruefung sie abweist.
 
     ``getrimmt=True`` setzt die Passpunkte auf **Mitte plus/minus halbe Referenzlaenge**
@@ -476,6 +489,8 @@ def _versuch(achsen, bahnen, ziel, bild_wahl, ref_wahl, drehungen, getrimmt=Fals
             # war damit zirkulaer: halb_px kam wieder auf a.voll/2 heraus und die Trimmung
             # aenderte nichts.
             halb_px = (bahnen[ri].laenge / mps_satz) / 2.0
+            if skala_vorgabe:
+                halb_px = (bahnen[ri].laenge / skala_vorgabe) / 2.0
             mitte_u = (a.ua + a.ub) / 2.0
             ca, sa = math.cos(a.winkel_rad), math.sin(a.winkel_rad)
             p_a = (a.cx + (mitte_u - halb_px) * ca, a.cy + (mitte_u - halb_px) * sa)

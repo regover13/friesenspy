@@ -111,7 +111,7 @@ def kandidaten(html_seiten: list[str], holen, pause: float = 0.3):
 
 
 def platz_bearbeiten(icao: str, kapitel_url: str, holen, csv_pfad, db_path: str,
-                     pause: float = 0.3) -> dict:
+                     pause: float = 0.3, schranke: float | None = None) -> dict:
     """Ein Platz: Blaetter holen, passen, das beste ablegen.
 
     Rueckgabe ist ein Bericht -- was gefunden, was gepasst, was abgewiesen wurde. Er ist
@@ -134,11 +134,20 @@ def platz_bearbeiten(icao: str, kapitel_url: str, holen, csv_pfad, db_path: str,
     beste = None
     for url, roh, sorte, ton in kandidaten(seiten, holen, pause):
         im = Image.open(_io.BytesIO(roh)).convert("L")
+        # Die Schranke laesst sich anheben -- fuer Blaetter, die ein Mensch angesehen und
+        # fuer gut befunden hat. EDDH kam am 31.08.2026 auf 15,6 m: sechs Zentimeter ueber
+        # der Vorgabe, bei Achsen, die im markierten Bild exakt auf beiden Bahnen lagen.
+        # Eine solche Karte wegen 0,6 m zu verwerfen waere Buchhaltung, nicht Sorgfalt.
+        alte_schranke = ground_charts.REST_SCHRANKE_M
+        if schranke is not None:
+            ground_charts.REST_SCHRANKE_M = schranke
         try:
             passung = ground_charts.passung_rechnen(im, bahnen, ton)
         except Exception as e:
             logger.info("%s: Passung geworfen (%s)", icao, str(e)[:60])
             passung = None
+        finally:
+            ground_charts.REST_SCHRANKE_M = alte_schranke
         eintrag = {"url": url, "sorte": sorte, "ton": ton,
                    "rest": None if passung is None else round(passung.rest_max, 2),
                    "bahnen": 0 if passung is None else passung.bahnen}
@@ -279,7 +288,8 @@ def melden(pause: float = 0.4) -> dict:
 
 
 def lauf(nur: set[str] | None = None, pause: float = 0.3,
-         schreiben: bool = True, quelle: str = "auto") -> dict:
+         schreiben: bool = True, quelle: str = "auto",
+         schranke: float | None = None) -> dict:
     """Erstbefuellung: Passungen rechnen und ablegen.
 
     ``schreiben=False`` rechnet nur und berichtet -- fuer den Blick vor der Uebernahme.
@@ -298,7 +308,8 @@ def lauf(nur: set[str] | None = None, pause: float = 0.3,
         with httpx.Client(follow_redirects=True) as client:
             holen = _hole(client)
             for i, (icao, url) in enumerate(sorted(links.items()), 1):
-                b = platz_bearbeiten(icao, url, holen, csv_pfad, einst.DB_PATH, pause)
+                b = platz_bearbeiten(icao, url, holen, csv_pfad, einst.DB_PATH, pause,
+                                     schranke)
                 berichte.append(b)
                 if b["gewaehlt"] is None:
                     zaehler[b.get("grund", "unbekannt")[:30]] += 1
@@ -334,6 +345,8 @@ def main() -> None:
     p.add_argument("--nur-melden", action="store_true",
                    help="nichts rechnen, nur geaenderte Blaetter melden")
     p.add_argument("--trocken", action="store_true", help="rechnen, aber nicht schreiben")
+    p.add_argument("--schranke", type=float, default=None,
+                   help="Restfehler-Schranke in Metern anheben (nur nach Augenschein)")
     p.add_argument("--als-hand", action="store_true",
                    help="Ergebnisse als Handpassung ablegen (gegen spaetere Laeufe gesperrt)")
     a = p.parse_args()
@@ -346,7 +359,7 @@ def main() -> None:
         return
     nur = {x.strip().upper() for x in a.nur.split(",") if x.strip()} or None
     e = lauf(nur, a.pause, schreiben=not a.trocken,
-             quelle="hand" if a.als_hand else "auto")
+             quelle="hand" if a.als_hand else "auto", schranke=a.schranke)
     print(f"gepasst: {e['gepasst']} von {e['gesamt']}")
     print(e["zaehler"])
     for b in e["berichte"]:
