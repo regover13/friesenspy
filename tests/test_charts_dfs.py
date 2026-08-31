@@ -12,6 +12,7 @@ import sqlite3
 
 import pytest
 
+from scripts import aip_bestand
 from app.database import (
     get_chart_dfs,
     get_charts_dfs,
@@ -519,3 +520,69 @@ def test_dockerfile_liefert_scripts_ins_image():
     # weg, darf dieser Test nicht laenger etwas verlangen, was niemand mehr braucht.
     poller_quelle = (wurzel / "app" / "poller.py").read_text()
     assert "from scripts.aip_bestand import melden" in poller_quelle
+
+
+# ------------------------------------------------- Der Lauf darf den Betrieb nicht stoeren
+def test_keine_transaktion_umspannt_einen_netzabruf():
+    """Ein einziges commit() am Ende hielt eine Schreibtransaktion ueber den GANZEN Lauf
+    offen -- ueber hunderte Netzabrufe hinweg.
+
+    In WAL bleiben Leser davon unberuehrt, andere SCHREIBER nicht: Am 31.08.2026 scheiterte
+    ``save_prefile_sigs`` im 15-Sekunden-Poll 79 Mal mit "database is locked", bevor der
+    Lauf abgebrochen wurde.
+
+    Der Test bindet an die Struktur: Auf jeden Schreibaufruf muss ein commit folgen, bevor
+    die Schleife den naechsten Abruf startet.
+    """
+    import inspect
+    import re
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(aip_bestand.melden))
+    schreibt = quelle.count("upsert_chart_dfs(")
+    committet = quelle.count("conn.commit()")
+    assert schreibt > 0
+    assert committet >= schreibt, f"{schreibt} Schreibaufrufe, aber nur {committet} commits"
+
+
+def test_die_hoeflichkeitspause_sitzt_im_abrufer():
+    """Sie stand nur um die zwei offensichtlichen Abrufe je Karte; die Kapitelaufloesung in
+    seiten_des_kapitels ging ungebremst durch und feuerte 28 Anfragen je Sekunde auf
+    aip.dfs.de (gemessen: drei Kapitelseiten in 71 ms).
+
+    Im Abrufer gebunden ist jeder Weg zur DFS gebremst, auch ein kuenftiger.
+    """
+    import inspect
+    import re
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(aip_bestand._hole))
+    assert "time.sleep(pause)" in quelle
+    # ...und NICHT mehr neben den Aufrufstellen, sonst wird doppelt gewartet.
+    lauf = re.sub(r"#[^\n]*", "", inspect.getsource(aip_bestand.melden))
+    assert "time.sleep(" not in lauf
+
+
+def test_das_kapitel_wird_je_platz_nur_einmal_aufgeloest():
+    """110 der 446 Plaetze haben zwei Zeilen (Sichtflug- und Flugplatzkarte). Ohne
+    Zwischenspeicher liefe die Aufloesung doppelt -- bei rund vier Abrufen je Aufloesung
+    sind das 440 Anfragen umsonst."""
+    import inspect
+    import re
+
+    quelle = re.sub(r"#[^\n]*", "", inspect.getsource(aip_bestand.melden))
+    assert "kapitel_speicher" in quelle
+
+
+def test_bei_platzkarten_wird_die_seite_nicht_ueber_den_hash_gesucht():
+    """Ihr abgelegtes Blatt ist IMMER das genordete -- der Hash kann mit keiner DFS-Rohseite
+    uebereinstimmen. Eine Suche crawlte das ganze Kapitel und faende garantiert nichts, und
+    zwar in JEDEM Wochenlauf erneut. Am 31.08.2026 waren das 68 Zeilen zu je rund sechs
+    Seiten."""
+    def nie_abrufen(url):
+        raise AssertionError("es haette gar nicht abgerufen werden duerfen")
+
+    assert aip_bestand._seite_ueber_bild_hash(
+        ["a", "b"], nie_abrufen, "h" * 64, "rollkarte") is None
+    assert aip_bestand._seite_ueber_bild_hash(
+        ["a", "b"], nie_abrufen, "h" * 64, "flugplatzkarte") is None
+    assert aip_bestand._seite_ueber_bild_hash(
+        ["a", "b"], nie_abrufen, "", "sichtflug") is None

@@ -10454,13 +10454,20 @@ function _groundZeigen(k) {
 /**
  * Passendes Blatt nach der eigenen Position waehlen.
  *
- * Eine festgenagelte SICHTFLUGkarte schlaegt die Automatik: Ein ausdruecklicher
- * Nutzerbefehl darf nicht still ueberstimmt werden.
+ * **Unabhaengig von der Sichtflugkarte.** Bis 31.08.2026 stand hier
+ * ``if (_aipKarteFest) { _groundZeigen(null); return; }`` -- ein Rest aus der Zeit, als die
+ * Flugplatzkarte die Sichtflugkarte VERDRAENGTE: Wer eine Sichtflugkarte festgenagelt
+ * hatte, sollte sie nicht still verlieren.
+ *
+ * Seit die Platzkarte per zIndex DARUEBER liegt, ist die Regel nicht nur ueberfluessig,
+ * sondern falsch. Sie stand ausserdem VOR der ``_groundFest``-Pruefung und ueberstimmte
+ * damit sogar ein ausdrueckliches Festnageln der Flugplatzkarte: Antippen blendete sie ein,
+ * der naechste Positionstakt nahm sie eine Sekunde spaeter wieder weg (Nutzer-Fund
+ * 31.08.2026 an EDDL).
  */
 function _groundNachfuehren() {
   if (!liveMap || !liveMap.hasLayer(_groundGruppe)) { _groundZeigen(null); return; }
   if (!_groundKarten) { _groundKartenLaden(); return; }
-  if (_aipKarteFest) { _groundZeigen(null); return; }
   if (_groundFest) {
     const fest = _groundKarten.find(function (k) { return _groundSchluessel(k) === _groundFest; });
     if (fest) { _groundZeigen(fest); return; }

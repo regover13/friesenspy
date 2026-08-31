@@ -58,11 +58,19 @@ def test_sichtflugkarte_tritt_NICHT_mehr_zurueck():
     assert "_groundVerdecktSichtflug" not in RUMPF
 
 
-def test_festgenagelte_sichtflugkarte_schlaegt_die_automatik():
-    """Ein ausdruecklicher Nutzerbefehl darf nicht still ueberstimmt werden."""
+def test_die_sichtflugkarte_schlaegt_die_flugplatzkarte_NICHT_mehr():
+    """Umgekehrt seit dem 31.08.2026. Die Regel war noetig, solange die Flugplatzkarte die
+    Sichtflugkarte VERDRAENGTE: Wer eine Sichtflugkarte festgenagelt hatte, sollte sie nicht
+    still verlieren.
+
+    Seit die Platzkarte per zIndex darueber liegt, ist sie nicht nur ueberfluessig, sondern
+    schaedlich -- sie stand VOR der _groundFest-Pruefung und ueberstimmte damit sogar ein
+    ausdrueckliches Festnageln der Flugplatzkarte: Antippen blendete sie ein, der naechste
+    Positionstakt nahm sie eine Sekunde spaeter wieder weg (Nutzer-Fund an EDDL).
+    """
     stelle = RUMPF.index("function _groundNachfuehren")
-    block = RUMPF[stelle:stelle + 900]
-    assert "_aipKarteFest" in block
+    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
+    assert "_aipKarteFest" not in block
 
 
 def test_marke_ist_blau_und_hohl():

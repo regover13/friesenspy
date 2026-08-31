@@ -284,9 +284,28 @@
     .aip-fadenkreuz-x { left: 0; height: 1px; }
     .aip-fadenkreuz-y { top: 0; width: 1px; }
 
-    .aip-gm { display: flex; align-items: center; gap: 4px; }
-    .aip-gm input { width: 100%; min-width: 0; }
+    .aip-gm { display: inline-flex; align-items: center; gap: 4px; }
     .aip-gm span { color: #8aa0b8; font-family: var(--text-mono, monospace); }
+
+    /* Die Passen-Eingaben. KEIN Tabellenraster: Fuenf Spalten auf einem Telefon quetschen
+       die Felder auf ihre Polsterbreite zusammen (8px 12px, also 24px), der eingetragene
+       Wert ist dann unsichtbar abgeschnitten -- am 31.08.2026 genau so gemeldet ("Auto
+       passung von edkb. Keine Koordinaten!!?"), obwohl die Werte im DOM standen.
+       Stattdessen umbrechende Bloecke mit Feldern, die eine Mindestbreite haben. */
+    .dfs-punkte { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0; }
+    .dfs-punkt {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+      border: 1px solid var(--green-grid); padding: 8px 10px; flex: 1 1 320px;
+    }
+    .dfs-punkt-kopf { font-weight: 700; width: 100%; }
+    .dfs-punkt label {
+      display: inline-flex; align-items: center; gap: 5px;
+      color: #8aa0b8; font-size: 0.8rem; white-space: nowrap;
+    }
+    /* width:auto schlaegt die 100-Prozent-Regel der allgemeinen input-Formatierung; ohne
+       sie sprengt jedes Feld seine Zeile. Die Mindestbreite ist der eigentliche Schutz. */
+    .dfs-punkt input { width: auto; min-width: 4.5em; padding: 6px 8px; }
+    .dfs-punkt .aip-gm input:first-child { min-width: 3em; }
 
     .form-grid {
       display: grid;
@@ -1251,23 +1270,26 @@
               <div id="dfs-fk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
               <div id="dfs-fk-y" class="aip-fadenkreuz aip-fadenkreuz-y"></div>
             </div>
-            <table style="margin-top:8px;font-size:0.85rem;">
-              <tr><th></th><th>Bild x</th><th>Bild y</th><th>Breite (Nord/Süd)</th><th>Länge (Ost/West)</th></tr>
-              <tr><td>Punkt 1</td>
-                <td><input id="p1-x" size="6" readonly></td>
-                <td><input id="p1-y" size="6" readonly></td>
-                <td><div class="aip-gm"><input type="text" id="p1-lat-grad" size="3" placeholder="51"><span>°</span>
-                  <input type="text" id="p1-lat-min" size="6" placeholder="16,78"><span>&prime;</span></div></td>
-                <td><div class="aip-gm"><input type="text" id="p1-lon-grad" size="3" placeholder="6"><span>°</span>
-                  <input type="text" id="p1-lon-min" size="6" placeholder="45,12"><span>&prime;</span></div></td></tr>
-              <tr><td>Punkt 2</td>
-                <td><input id="p2-x" size="6" readonly></td>
-                <td><input id="p2-y" size="6" readonly></td>
-                <td><div class="aip-gm"><input type="text" id="p2-lat-grad" size="3" placeholder="51"><span>°</span>
-                  <input type="text" id="p2-lat-min" size="6" placeholder="17,75"><span>&prime;</span></div></td>
-                <td><div class="aip-gm"><input type="text" id="p2-lon-grad" size="3" placeholder="6"><span>°</span>
-                  <input type="text" id="p2-lon-min" size="6" placeholder="47,17"><span>&prime;</span></div></td></tr>
-            </table>
+            <div class="dfs-punkte">
+              <div class="dfs-punkt">
+                <div class="dfs-punkt-kopf">Punkt 1</div>
+                <label>Bild x <input type="text" id="p1-x" readonly></label>
+                <label>Bild y <input type="text" id="p1-y" readonly></label>
+                <label>Breite <span class="aip-gm"><input type="text" id="p1-lat-grad" placeholder="51"><span>°</span>
+                  <input type="text" id="p1-lat-min" placeholder="16,78"><span>&prime;</span></span></label>
+                <label>Länge <span class="aip-gm"><input type="text" id="p1-lon-grad" placeholder="6"><span>°</span>
+                  <input type="text" id="p1-lon-min" placeholder="45,12"><span>&prime;</span></span></label>
+              </div>
+              <div class="dfs-punkt">
+                <div class="dfs-punkt-kopf">Punkt 2</div>
+                <label>Bild x <input type="text" id="p2-x" readonly></label>
+                <label>Bild y <input type="text" id="p2-y" readonly></label>
+                <label>Breite <span class="aip-gm"><input type="text" id="p2-lat-grad" placeholder="51"><span>°</span>
+                  <input type="text" id="p2-lat-min" placeholder="17,75"><span>&prime;</span></span></label>
+                <label>Länge <span class="aip-gm"><input type="text" id="p2-lon-grad" placeholder="6"><span>°</span>
+                  <input type="text" id="p2-lon-min" placeholder="47,17"><span>&prime;</span></span></label>
+              </div>
+            </div>
             <p style="margin:8px 0 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
               <label style="display:flex;gap:5px;align-items:center;">Drehung
                 <input type="text" id="dfs-drehung" size="6" placeholder="wird berechnet"></label>

@@ -121,6 +121,37 @@ def test_alte_admin_funktionen_sind_fort():
         assert alt not in ADMIN_RUMPF, alt
 
 
+def test_die_passen_eingaben_koennen_auf_dem_telefon_nicht_zusammenquetschen():
+    """Am 31.08.2026 gemeldet: "Auto passung von edkb. Keine Koordinaten!!?" -- die Werte
+    STANDEN im DOM (Endpunkt und Fuellfunktion nachgemessen), aber die Felder lagen in
+    einem fuenfspaltigen Tabellenraster ohne .table-wrap. Auf einem Telefon bleibt davon
+    nach der Polsterung (8px 12px = 24px je Feld) keine Inhaltsbreite uebrig, und der
+    eingetragene Wert ist unsichtbar abgeschnitten.
+
+    Der Test bindet an die Struktur, nicht an das Aussehen: keine Tabelle, dafuer eine
+    Mindestbreite je Feld.
+    """
+    stelle = ADMIN.index('id="p1-lat-grad"')
+    umfeld = ADMIN[max(0, stelle - 1500):stelle]
+    assert "<table" not in umfeld, "Passen-Eingaben stehen wieder in einer Tabelle"
+    assert "dfs-punkte" in umfeld
+    m = re.search(r"\.dfs-punkt input\s*\{([^}]*)\}", ADMIN)
+    assert m, "keine Regel fuer .dfs-punkt input"
+    assert "min-width" in m.group(1)
+    # width:auto muss die 100-Prozent-Regel der allgemeinen input-Formatierung schlagen.
+    assert "width: auto" in m.group(1)
+
+
+def test_alle_eingabefelder_tragen_type_text():
+    """Ohne ``type="text"`` greift die Themenregel ``input[type="text"]`` nicht -- das Feld
+    erscheint dann in der Browser-Vorgabe (weiss auf dunklem Grund) und sieht aus, als
+    gehoere es nicht dazu. So fielen die Bild-x/y-Felder am 31.08.2026 auf."""
+    for feld in ("p1-x", "p1-y", "p2-x", "p2-y",
+                 "p1-lat-grad", "p1-lat-min", "p2-lon-grad", "p2-lon-min"):
+        stelle = ADMIN.index('id="' + feld + '"')
+        assert 'type="text"' in ADMIN[max(0, stelle - 60):stelle], feld
+
+
 def test_kartenliste_ist_horizontal_scrollbar():
     """UI-Regel aus CLAUDE.md: breite Tabellen gehoeren in .table-wrap."""
     start = ADMIN.index('id="dfs-charts"')
@@ -195,6 +226,27 @@ def test_der_kartenzustand_haengt_an_icao_und_sorte():
     assert "sorte" in INDEX_RUMPF[stelle:stelle + 200]
     assert "k.icao === _groundFest" not in INDEX_RUMPF
     assert "k.icao === _groundAktiv" not in INDEX_RUMPF
+
+
+def test_die_flugplatzkarte_haengt_nicht_an_der_sichtflugkarte():
+    """Beide Ebenen sind unabhaengig, seit die Platzkarte per zIndex darueber liegt.
+
+    Bis 31.08.2026 stand in _groundNachfuehren
+    ``if (_aipKarteFest) { _groundZeigen(null); return; }`` -- ein Rest aus der Zeit der
+    Verdraengung. Er stand VOR der _groundFest-Pruefung und ueberstimmte damit sogar ein
+    ausdrueckliches Festnageln der Flugplatzkarte: Antippen blendete sie ein, der naechste
+    Positionstakt nahm sie eine Sekunde spaeter wieder weg (Nutzer-Fund an EDDL).
+    """
+    stelle = INDEX_RUMPF.index("function _groundNachfuehren")
+    block = INDEX_RUMPF[stelle:INDEX_RUMPF.index("\n}", stelle)]
+    assert "_aipKarteFest" not in block
+
+
+def test_ein_festgenageltes_platzblatt_ueberlebt_den_naechsten_takt():
+    """_groundFest muss VOR jeder Automatik greifen -- sonst ist Antippen wirkungslos."""
+    stelle = INDEX_RUMPF.index("function _groundNachfuehren")
+    block = INDEX_RUMPF[stelle:INDEX_RUMPF.index("\n}", stelle)]
+    assert block.index("_groundFest") < block.index("_eigenePosition")
 
 
 def test_beide_kartentypen_kommen_aus_einem_endpunkt():

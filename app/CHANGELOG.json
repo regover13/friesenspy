@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.4.1",
+    "date": "2026-08-31",
+    "highlight": false,
+    "title": "Nachbesserungen an den AIP-Karten",
+    "items": [
+      "🐛 Die Flugplatzkarte verschwand gleich wieder, wenn zugleich eine Sichtflugkarte festgenagelt war — ein Rest aus der Zeit, als die eine die andere verdrängte. Beide Ebenen sind jetzt wirklich unabhängig.",
+      "📱 Die Eingabefelder zum Passen waren auf dem Telefon so schmal gequetscht, dass die eingetragenen Koordinaten unsichtbar abgeschnitten wurden. Sie stehen jetzt in umbrechenden Blöcken statt in einem fünfspaltigen Raster.",
+      "⏱️ Der wöchentliche Kartenabgleich hielt eine Datenbank-Transaktion über den ganzen Lauf offen und blockierte dabei den Flug-Poller. Er schreibt jetzt in kurzen Schritten und ruft die DFS spürbar behutsamer ab."
+    ]
+  },
+  {
     "version": "14.4.0",
     "date": "2026-08-31",
     "highlight": false,

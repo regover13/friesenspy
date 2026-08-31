@@ -195,6 +195,15 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
 - **`aip_charts`, `aip_ground_charts` und `aip_chart_vorschlaege` sind stillgelegt, aber
   nicht gelöscht.** Sie tragen die Daten, aus denen die Migration liest. Ein `DROP` ist eine
   eigene, bewusste Entscheidung — erst wenn der neue Stand geprüft ist.
+- **Keine Datenbank-Transaktion darf einen Netzabruf umspannen.** Der Wochenlauf committete
+  anfangs erst am Ende und hielt damit eine Schreibtransaktion über hunderte DFS-Abrufe
+  offen. In WAL bleiben Leser unberührt, andere **Schreiber** nicht: `save_prefile_sigs` im
+  15-Sekunden-Poll scheiterte am 31.08.2026 79 Mal mit „database is locked". Jetzt wird nach
+  jedem Schreiben committet.
+- **Die Höflichkeitspause gehört in den Abrufer, nicht neben die Aufrufstelle.** Stand sie
+  nur um die zwei offensichtlichen Abrufe je Karte, ging die Kapitelauflösung ungebremst
+  durch — gemessen 28 Anfragen je Sekunde auf aip.dfs.de. In `_hole()` gebunden ist jeder
+  Weg zur DFS gebremst, auch ein künftiger.
 
 ## Projektstruktur
 
