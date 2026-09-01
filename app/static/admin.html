@@ -3781,8 +3781,13 @@
       _dfsKopfSetzen(icao, sorte,
         abgeleitet ? 'aus der gespeicherten Lage zurückgerechnet — nachbessern und speichern'
         : (eintrag.p1_x !== null && eintrag.p1_x !== undefined) ? 'Werte sind vorbelegt' : '');
+      // Das Feld startet LEER. Eine vorbelegte Zahl ist nicht nur ueberfluessig, sondern
+      // gefaehrlich: Steht darin etwas, ueberschreibt der Server damit die gerechnete
+      // Drehung. Jede offene Zeile traegt drehung=0.0 -- die Maske haette also ueberall
+      // "0.0" angeboten und ein Speichern die Drehung auf null gezwungen.
+      // Vorbelegt wird nur, was wirklich eine ueberschriebene Drehung IST.
       document.getElementById('dfs-drehung').value =
-        typeof eintrag.drehung === 'number' ? eintrag.drehung.toFixed(1) : '';
+        _dfsIstUeberschrieben(eintrag.drehung) ? eintrag.drehung.toFixed(1) : '';
 
       _dfsKarteFuellen(icao, sorte, hilfe.mitte);
       _dfsDrehungAnzeigen();
@@ -3983,6 +3988,19 @@
       const mps = Math.hypot(a, bb);
       if (!isFinite(mps) || mps <= 0) return null;
       return { drehung: ((-Math.atan2(bb, a) * 180 / Math.PI) % 360 + 360) % 360, mps: mps };
+    }
+
+    /** Weicht die GESPEICHERTE Drehung von der aus den Punkten gerechneten ab?
+     *
+     *  Nur dann wurde sie von Hand ueberschrieben und gehoert wieder ins Feld -- sonst ginge
+     *  sie beim naechsten Speichern verloren, weil der Server sie aus den Punkten neu
+     *  rechnete, und genau davon wich sie ja bewusst ab. */
+    function _dfsIstUeberschrieben(gespeichert) {
+      if (typeof gespeichert !== 'number' || !isFinite(gespeichert)) return false;
+      const e = _dfsDrehungBerechnet();
+      if (!e) return false;
+      const d = Math.abs(e.drehung - gespeichert);
+      return Math.min(d, 360 - d) > 0.5;
     }
 
     function _dfsDrehungAnzeigen() {

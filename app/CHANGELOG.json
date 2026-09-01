@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.7.3",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Keine vorbelegte 0 mehr im Feld \u201eDrehung \u00fcberschreiben\u201c",
+    "items": [
+      "\ud83d\udee1\ufe0f Das Feld startet jetzt leer. Die vorbelegte 0 war nicht nur \u00fcberfl\u00fcssig, sondern gef\u00e4hrlich: Steht darin etwas, \u00fcberschreibt der Server damit die gerechnete Drehung \u2014 und jede offene Zeile tr\u00e4gt drehung=0,0, die Maske h\u00e4tte also \u00fcberall eine 0 angeboten und ein Speichern die Drehung auf null gezwungen. Vorbelegt wird nur noch, was wirklich eine von Hand \u00fcberschriebene Drehung ist \u2014 sonst ginge die beim n\u00e4chsten Speichern verloren."
+    ]
+  },
+  {
     "version": "14.7.2",
     "date": "2026-09-01",
     "highlight": false,

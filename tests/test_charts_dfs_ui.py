@@ -589,3 +589,24 @@ def test_die_hoehenbegrenzung_des_blattes_beschneidet_die_vorschau_nicht():
     stelle = ADMIN.index('id="dfs-vorschau-box"')
     zeile = ADMIN[stelle:ADMIN.index('>', stelle)]
     assert "max-height:none" in zeile
+
+
+def test_das_drehfeld_wird_nicht_mit_null_vorbelegt():
+    """Eine vorbelegte 0 ist nicht nur ueberfluessig, sie ist gefaehrlich: Steht im Feld
+    etwas, ueberschreibt der Server damit die GERECHNETE Drehung. Jede offene Zeile traegt
+    drehung=0.0, die Maske haette also bei jeder ein "0.0" angeboten -- und ein Speichern
+    haette die Drehung auf null gezwungen (Nutzerfund 01.09.2026)."""
+    stelle = ADMIN_RUMPF.index("async function dfsPassenStarten(")
+    block = ADMIN_RUMPF[stelle:stelle + 3000]
+    # Der ALTE Waechter -- "ist eine Zahl da? dann rein damit" -- muss fort sein.
+    assert "typeof eintrag.drehung === 'number' ? eintrag.drehung" not in block, \
+        "belegt weiterhin blind vor"
+    assert "_dfsIstUeberschrieben" in block
+
+
+def test_eine_wirklich_ueberschriebene_drehung_bleibt_stehen():
+    """Sonst ginge sie beim naechsten Speichern verloren -- der Server rechnete sie dann
+    aus den Punkten neu, und genau davon wich sie ja bewusst ab."""
+    stelle = ADMIN_RUMPF.index("function _dfsIstUeberschrieben")
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("\n    }", stelle)]
+    assert "_dfsDrehungBerechnet" in block and "360" in block
