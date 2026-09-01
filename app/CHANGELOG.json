@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.6.5",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Vorschaufenster doppelt so hoch",
+    "items": [
+      "\ud83d\udd0d Die Vorschaukarte beim Passen ist doppelt so hoch (840 statt 420 Pixel) \u2014 auf dem Luftbild eine Bahnschwelle anzuklicken braucht Platz."
+    ]
+  },
+  {
     "version": "14.6.4",
     "date": "2026-09-01",
     "highlight": false,
