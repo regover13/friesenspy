@@ -275,7 +275,12 @@
        Linien schaetzt man, ob man auf der Rahmenlinie steht oder daneben, und der Fehler
        geht in die gerechnete Passung ein. `pointer-events: none`, sonst schluckten die
        Linien den Klick, den sie ausrichten sollen. */
-    .aip-blatt-box { position: relative; max-width: 100%; overflow: auto; }
+    .aip-blatt-box { position: relative; max-width: 100%; max-height: 78vh;
+      overflow: auto; scrollbar-width: thin; }
+    /* Dauerhaft sichtbare Leisten: Windows/Edge/Chrome blenden eine korrekt scrollende Box
+       sonst unsichtbar (Overlay-Scrollbar) -- dieselbe Falle wie bei .table-wrap. */
+    .aip-blatt-box::-webkit-scrollbar { width: 10px; height: 10px; }
+    .aip-blatt-box::-webkit-scrollbar-thumb { background: #2d9cdb88; border-radius: 5px; }
     .aip-fadenkreuz {
       position: absolute;
       display: none;
@@ -1307,7 +1312,7 @@
                   <input type="range" id="dfs-vorschau-deckkraft" min="0" max="100" value="65" style="width:120px;">
                 </label>
               </div>
-              <div id="dfs-vorschau-box" class="aip-blatt-box" style="overflow:hidden;">
+              <div id="dfs-vorschau-box" class="aip-blatt-box" style="overflow:hidden;max-height:none;max-width:none;">
                 <div id="dfs-vorschau-karte" style="height:840px;border:1px solid var(--green-grid);cursor:crosshair;"></div>
                 <div id="dfs-vk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
                 <div id="dfs-vk-y" class="aip-fadenkreuz aip-fadenkreuz-y"></div>
@@ -1320,6 +1325,14 @@
 
             <!-- 2. KARTENBLATT — direkt unter der Vorschau: Beide anklickbaren Flaechen
                  liegen so beieinander, statt die Werte dazwischen zu haben. -->
+            <p style="margin:0 0 6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:0.82rem;color:#8aa0b8;">
+              Blatt
+              <button class="btn btn-sm" id="dfs-blatt-zoom-minus" title="kleiner">−</button>
+              <button class="btn btn-sm" id="dfs-blatt-zoom-breite" title="auf Fensterbreite">Breite</button>
+              <button class="btn btn-sm" id="dfs-blatt-zoom-plus" title="größer">+</button>
+              <span id="dfs-blatt-zoom-wert"></span>
+              <span>— zum genauen Treffen vergrößern, der Kasten scrollt.</span>
+            </p>
             <div id="dfs-blatt-box" class="aip-blatt-box" style="margin:0 0 12px;">
               <img id="dfs-blatt" style="max-width:100%;cursor:crosshair;display:block;" alt="Kartenblatt">
               <div id="dfs-fk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
@@ -3748,6 +3761,8 @@
       const img = document.getElementById('dfs-blatt');
       img.src = '/aip-chart-roh/' + encodeURIComponent(icao) + '/' + encodeURIComponent(sorte)
         + '.png?t=' + Date.now();
+      img.onload = function () { _dfsBlattZoom(0); };
+      _dfsBlattZoom(0);
       const eintrag = _dfsAlle.find(k => k.icao === icao && k.sorte === sorte) || {};
       document.getElementById('dfs-passen-hinweis').textContent = '';
       _dfsZielSetzen(1);
@@ -3856,6 +3871,40 @@
         ly.style.display = 'none';
       });
     })();
+
+    // --- Blatt zoomen ---------------------------------------------------------------------
+    // Ein 3691 px breites Blatt auf Fensterbreite gequetscht heisst: ein Klick trifft vier
+    // Originalpixel auf einmal. Der Klick rechnet zwar auf die natuerliche Groesse um (s.
+    // unten), aber genauer als die Anzeige kann er nicht werden.
+    let _dfsZoom = 0;   // 0 = auf Fensterbreite, sonst Faktor zur Originalgroesse
+
+    function _dfsBlattZoom(faktor) {
+      const img = document.getElementById('dfs-blatt');
+      _dfsZoom = faktor;
+      if (!faktor) {
+        // Zurueck auf "passt in den Kasten" -- ueber max-width, wie ohne Zoom.
+        img.style.width = '';
+        img.style.maxWidth = '100%';
+      } else {
+        // maxWidth muss weg: sonst deckelt es jede Stufe wieder auf Fensterbreite.
+        img.style.maxWidth = 'none';
+        img.style.width = Math.round((img.naturalWidth || 0) * faktor) + 'px';
+      }
+      document.getElementById('dfs-blatt-zoom-wert').textContent =
+        faktor ? Math.round(faktor * 100) + ' %' : 'Fensterbreite';
+    }
+
+    function _dfsZoomStufe(richtung) {
+      const img = document.getElementById('dfs-blatt');
+      // Aus "Fensterbreite" heraus vom TATSAECHLICH angezeigten Faktor weiterzaehlen, nicht
+      // von 1 -- sonst springt der erste Klick um ein Vielfaches.
+      const jetzt = _dfsZoom || (img.naturalWidth ? img.clientWidth / img.naturalWidth : 1);
+      _dfsBlattZoom(Math.min(6, Math.max(0.1, jetzt * (richtung > 0 ? 1.4 : 1 / 1.4))));
+    }
+
+    document.getElementById('dfs-blatt-zoom-plus').addEventListener('click', () => _dfsZoomStufe(1));
+    document.getElementById('dfs-blatt-zoom-minus').addEventListener('click', () => _dfsZoomStufe(-1));
+    document.getElementById('dfs-blatt-zoom-breite').addEventListener('click', () => _dfsBlattZoom(0));
 
     document.getElementById('dfs-blatt').addEventListener('click', function (e) {
       const img = e.target;

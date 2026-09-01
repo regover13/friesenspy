@@ -549,3 +549,43 @@ def test_die_gerechnete_drehung_steht_schon_beim_oeffnen_da():
     stelle = ADMIN_RUMPF.index("async function dfsPassenStarten(")
     block = ADMIN_RUMPF[stelle:stelle + 2600]
     assert "_dfsDrehungAnzeigen()" in block
+
+
+# ------------------------------------------------------------------ Blatt zoomen
+
+def test_das_blatt_laesst_sich_zoomen():
+    """Ein 3691 px breites Blatt auf Fensterbreite gequetscht heisst: ein Klick trifft vier
+    Originalpixel auf einmal. Der Klick rechnet zwar auf die natuerliche Groesse um, aber
+    genauer als die Anzeige kann er nicht werden."""
+    assert 'id="dfs-blatt-zoom-plus"' in ADMIN and 'id="dfs-blatt-zoom-minus"' in ADMIN
+    assert "function _dfsBlattZoom" in ADMIN_RUMPF
+
+
+def test_der_zoom_setzt_die_breite_in_originalpixeln():
+    """Ueber `max-width: 100%` waere jede Zoomstufe wieder auf Fensterbreite gedeckelt."""
+    stelle = ADMIN_RUMPF.index("function _dfsBlattZoom")
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("\n    }", stelle)]
+    assert "naturalWidth" in block
+    assert "maxWidth" in block
+
+
+def test_der_kasten_um_das_blatt_begrenzt_die_hoehe():
+    """Ohne Deckel schiebt ein gezoomtes Blatt alles andere aus dem Bild -- und die
+    Parameter stehen darunter."""
+    m = re.search(r"\.aip-blatt-box\s*\{([^}]*)\}", ADMIN)
+    assert m and "max-height" in m.group(1) and "overflow" in m.group(1)
+
+
+def test_der_zoom_faengt_bei_jedem_blatt_neu_an():
+    """Sonst steht das naechste, ganz anders grosse Blatt in einer sinnlosen Stufe."""
+    stelle = ADMIN_RUMPF.index("async function dfsPassenStarten(")
+    assert "_dfsBlattZoom(" in ADMIN_RUMPF[stelle:stelle + 2600]
+
+
+def test_die_hoehenbegrenzung_des_blattes_beschneidet_die_vorschau_nicht():
+    """Der Vorschaukasten teilt sich die Klasse `.aip-blatt-box` mit dem Blatt -- er braucht
+    daraus nur `position: relative` fuer das Fadenkreuz. Die beim Zoom eingefuehrte
+    Hoehenbegrenzung haette die 840 px hohe Karte abgeschnitten."""
+    stelle = ADMIN.index('id="dfs-vorschau-box"')
+    zeile = ADMIN[stelle:ADMIN.index('>', stelle)]
+    assert "max-height:none" in zeile

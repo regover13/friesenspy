@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.7.2",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Kartenblatt l\u00e4sst sich zoomen",
+    "items": [
+      "\ud83d\udd0d Das Blatt in der Passen-Maske l\u00e4sst sich vergr\u00f6\u00dfern (\u2212 / Breite / +). Auf Fensterbreite gequetscht trifft ein Klick bei einem 3691 px breiten Blatt vier Originalpixel auf einmal \u2014 der Klick rechnet zwar auf die nat\u00fcrliche Gr\u00f6\u00dfe um, aber genauer als die Anzeige kann er nicht werden.",
+      "\ud83d\udcd0 Der Kasten um das Blatt ist auf 78 Prozent der Fensterh\u00f6he gedeckelt und scrollt \u2014 sonst sch\u00f6be ein gezoomtes Blatt die Parameter darunter aus dem Bild."
+    ]
+  },
+  {
     "version": "14.7.1",
     "date": "2026-09-01",
     "highlight": false,
