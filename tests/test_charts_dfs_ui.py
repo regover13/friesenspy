@@ -488,3 +488,29 @@ def test_die_sortenfelder_werden_aus_einer_stelle_gebaut():
     Felder, die auseinanderlaufen."""
     assert ADMIN_RUMPF.count("<option value=\"flugplatzkarte\">") == 0
     assert "const sortenFeld = function" in ADMIN_RUMPF
+
+
+# ------------------------------------------------------------- Filter merken
+
+def test_die_filtereinstellung_wird_gemerkt():
+    """Sonst stellt man Status und Sorte nach jedem Neuladen wieder von Hand ein."""
+    assert "_dfsFilterMerken" in ADMIN_RUMPF and "_dfsFilterHolen" in ADMIN_RUMPF
+    stelle = ADMIN_RUMPF.index("function _dfsNeuFiltern")
+    assert "_dfsFilterMerken()" in ADMIN_RUMPF[stelle:stelle + 300]
+
+
+def test_die_gemerkte_einstellung_darf_nicht_alles_ausblenden():
+    """Ein Stand ohne einen einzigen Haken zeigte bei jedem Laden eine leere Liste, ohne
+    erkennbaren Grund -- genau die Sorte Sackgasse, die am 01.09.2026 schon zweimal wie ein
+    Datenverlust aussah."""
+    stelle = ADMIN_RUMPF.index("function _dfsFilterHolen")
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("\n    }", stelle)]
+    assert "length" in block, "kein Rückfall auf die Vorgabe"
+
+
+def test_die_suche_wird_NICHT_gemerkt():
+    """Eine vergessene ICAO-Suche laesst die Liste beim naechsten Oeffnen leer aussehen --
+    und man sucht den Fehler in den Daten statt im Suchfeld."""
+    stelle = ADMIN_RUMPF.index("function _dfsFilterMerken")
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("\n    }", stelle)]
+    assert "dfs-suche" not in block

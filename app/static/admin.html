@@ -3433,8 +3433,43 @@
       if (b) { const [icao, sorte] = b.getAttribute('data-dfs-loeschen').split('|'); dfsLoeschen(icao, sorte); return; }
     });
 
+    // --- Filter merken -------------------------------------------------------------------
+    // localStorage ist hier richtig: Die Projektregel dagegen gilt dem MSFS-Kniebrett, wo
+    // Coherent GT den Speicher bei jedem Sim-Start leert. Diese Seite wird dort nie geladen.
+    //
+    // Die ICAO-Suche wird BEWUSST nicht gemerkt. Eine vergessene Suche laesst die Liste beim
+    // naechsten Oeffnen leer aussehen, und man sucht den Fehler dann in den Daten statt im
+    // Suchfeld -- dieselbe Sackgasse, die am 01.09.2026 schon zweimal wie ein Datenverlust
+    // aussah.
+    const DFS_FILTER_KEY = 'friesenspy_dfs_filter';
+
+    function _dfsFilterMerken() {
+      try {
+        const an = k => Array.from(document.querySelectorAll(k + ':checked')).map(c => c.value);
+        localStorage.setItem(DFS_FILTER_KEY, JSON.stringify(
+          { status: an('.dfs-status-cb'), sorte: an('.dfs-sorte-cb') }));
+      } catch (e) { /* privater Modus, voller Speicher -- der Filter ist es nicht wert */ }
+    }
+
+    function _dfsFilterHolen() {
+      let stand = null;
+      try { stand = JSON.parse(localStorage.getItem(DFS_FILTER_KEY) || 'null'); } catch (e) {}
+      if (!stand) return;
+      // Ein Stand ohne einen einzigen Haken zeigte bei jedem Laden eine leere Liste, ohne
+      // erkennbaren Grund. Dann lieber die Vorgabe aus dem Markup stehen lassen.
+      [['.dfs-status-cb', stand.status], ['.dfs-sorte-cb', stand.sorte]].forEach(function (kv) {
+        const [wahl, werte] = kv;
+        if (!Array.isArray(werte) || !werte.length) return;
+        document.querySelectorAll(wahl).forEach(function (cb) {
+          cb.checked = werte.indexOf(cb.value) !== -1;
+        });
+      });
+    }
+
     // Jede Filteraenderung faengt wieder auf Seite 1 an -- sonst steht man hinter dem Ende.
-    function _dfsNeuFiltern() { _dfsSeite = 0; dfsListeZeichnen(); }
+    function _dfsNeuFiltern() { _dfsSeite = 0; _dfsFilterMerken(); dfsListeZeichnen(); }
+
+    _dfsFilterHolen();
 
     document.querySelectorAll('.dfs-status-cb, .dfs-sorte-cb').forEach(function (cb) {
       cb.addEventListener('change', _dfsNeuFiltern);

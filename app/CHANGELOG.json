@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.6.6",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Filtereinstellung wird gemerkt",
+    "items": [
+      "\ud83d\udcbe Status- und Sortenfilter der Kartenliste bleiben \u00fcber das Neuladen hinweg stehen. Die ICAO-Suche bewusst nicht: Eine vergessene Suche l\u00e4sst die Liste beim n\u00e4chsten \u00d6ffnen leer aussehen, und man sucht den Fehler dann in den Daten statt im Suchfeld."
+    ]
+  },
+  {
     "version": "14.6.5",
     "date": "2026-09-01",
     "highlight": false,
