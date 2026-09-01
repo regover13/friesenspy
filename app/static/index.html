@@ -10452,6 +10452,16 @@ function _groundAttribution(k) {
   return '&copy; DFS Deutsche Flugsicherung GmbH, AIRAC ' + (k.airac || '?');
 }
 
+/** Welche Bodenkarte gewinnt, wenn zwei ueber derselben Position liegen?
+ *
+ * Die Rollkarte (Nutzerentscheidung 01.09.2026): Am Boden braucht man Rollwege und
+ * Positionen, nicht die Uebersicht. Die Flugplatzkarte bleibt ueber ihre Marke erreichbar.
+ *
+ * Bis dahin entschied allein der naehere Feldmittelpunkt. Das fiel nie auf, weil kein Platz
+ * beide Sorten hatte -- die zurueckgebaute Automatik griff je Platz genau eine Seite.
+ */
+function _groundRang(k) { return k.sorte === 'rollkarte' ? 0 : 1; }
+
 /** Liegt die Position im Feld? Das Feld ist die Huelle der Bahnen, nicht das Blatt. */
 function _groundImFeld(k, lat, lon, schonSichtbar) {
   const r = schonSichtbar ? _GROUND_HYSTERESE : 0;
@@ -10511,6 +10521,13 @@ function _groundNachfuehren() {
       const dx = eigen.lon - (x.feld_west + x.feld_ost) / 2;
       return dy * dy + dx * dx;
     };
+    // Der Rang ZUERST, der Abstand nur unter Gleichrangigen: Zwei Blaetter desselben
+    // Platzes haben praktisch denselben Feldmittelpunkt -- der Abstand entschiede dort
+    // Zentimeter und koennte beim Rollen umschlagen.
+    if (_groundRang(k) !== _groundRang(treffer)) {
+      if (_groundRang(k) < _groundRang(treffer)) treffer = k;
+      continue;
+    }
     if (d(k) < d(treffer)) treffer = k;
   }
   // Eigener Merker, nicht der der Sichtflugkarte -- sonst machte ein Wegklick hier auch
@@ -10588,11 +10605,20 @@ function _groundMarkenAnpassen() {
     return;
   }
   const b = liveMap.getBounds();
+  // Wo ein Platz ZWEI Bodenkarten hat, muessen ihre Marken auseinander -- der Versatz von
+  // 0,004 Grad unten trennt Boden- von Sichtflugkarten, nicht zwei Bodenkarten voneinander.
+  // Bei 109 von 111 Plaetzen gibt es nur eine; deren Marke darf nicht wandern.
+  const _groundDoppelt = {};
+  for (let i = 0; i < _groundKarten.length; i++) {
+    const c = _groundKarten[i].icao;
+    _groundDoppelt[c] = (_groundDoppelt[c] || 0) + 1;
+  }
   for (let i = 0; i < _groundKarten.length; i++) {
     const k = _groundKarten[i];
     const sl = _groundSchluessel(k);
     const lat = (k.feld_nord + k.feld_sued) / 2;
-    const lon = (k.feld_west + k.feld_ost) / 2;
+    const lon = (k.feld_west + k.feld_ost) / 2
+      + (_groundDoppelt[k.icao] > 1 ? (k.sorte === 'rollkarte' ? -0.006 : 0.006) : 0);
     if (!b.contains([lat, lon])) {
       if (_groundMarken[sl]) {
         _groundGruppe.removeLayer(_groundMarken[sl]);

@@ -159,3 +159,44 @@ def test_der_eintrag_verschwindet_aus_der_ebenen_auswahl():
     stelle = RUMPF.index("function _groundEbeneAnwenden")
     block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
     assert "removeLayer(_groundGruppe)" in block
+
+
+# ------------------------------------- Zwei Bodenkarten an einem Platz (Nutzerentscheidung)
+
+def test_die_rollkarte_hat_vorrang_vor_der_flugplatzkarte():
+    """Liegen beide ueber der Position, gewinnt die Rollkarte: Am Boden braucht man
+    Rollwege und Positionen, nicht die Uebersicht.
+
+    Vorher entschied allein, welcher FELDMITTELPUNKT naeher liegt. Bei zwei Blaettern
+    desselben Platzes liegen die praktisch aufeinander -- die Wahl haette also Zentimeter
+    entschieden und konnte beim Rollen umschlagen.
+    """
+    stelle = RUMPF.index("function _groundNachfuehren")
+    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
+    assert "_groundRang" in block, "keine Vorrangregel im Auswahlschritt"
+    # Die Regel selbst steht in _groundRang -- dort muss die Rollkarte den kleineren Rang
+    # haben, denn der kleinere gewinnt.
+    rang = re.search(r"function _groundRang\(k\)\s*\{[^}]*\}", RUMPF)
+    assert rang and "'rollkarte' ? 0" in rang.group(0)
+
+
+def test_der_rang_steht_vor_dem_abstand():
+    """Sonst schlaegt ein zufaellig naeherer Mittelpunkt den Vorrang wieder."""
+    stelle = RUMPF.index("function _groundNachfuehren")
+    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
+    assert block.index("_groundRang(k)") < block.index("if (d(k) < d(treffer))")
+
+
+def test_zwei_bodenkarten_eines_platzes_bekommen_getrennte_marken():
+    """Der Versatz von 0,004 Grad trennt Boden- von Sichtflugkarten, nicht zwei Bodenkarten
+    voneinander -- die laegen exakt uebereinander und die untere waere nicht antippbar."""
+    stelle = RUMPF.index("function _groundMarkenAnpassen")
+    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
+    assert "_groundDoppelt" in block
+
+
+def test_der_versatz_greift_nur_wo_es_wirklich_zwei_gibt():
+    """109 der 111 Plaetze haben genau eine Bodenkarte. Deren Marke darf nicht wandern."""
+    stelle = RUMPF.index("function _groundMarkenAnpassen")
+    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
+    assert "> 1" in block
