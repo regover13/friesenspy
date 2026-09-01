@@ -4551,6 +4551,17 @@ const _PLATZRUNDEN_OPACITY  = 0.9;
 // Zoomstufe zu bringen -- mit LayerGroup lief dieser Listener nie, und beim Herauszoomen unter
 // die Schwelle erschienen alle 412 Polygone kurz mit voller Deckkraft, bis zur naechsten
 // Zoomaenderung. Derselbe Kniff steht bereits bei _fseZonenGruppe weiter unten.
+// Eigener Pane fuer die Platzrunden. Sie gehoeren UEBER alle Kartenblaetter
+// (Nutzerentscheidung 01.09.2026): Beide Blaetter liegen als imageOverlay im overlayPane
+// (zIndex 300 und 310, s. _Z_SICHTFLUG/_Z_PLATZKARTE), die Platzrunden sind SVG-Pfade im
+// SELBEN Pane -- ohne eigenen zIndex liegen sie damit zwangslaeufig darunter.
+//
+// Der Pane steht ueber dem GANZEN overlayPane (400), nicht nur ueber den beiden Werten
+// darin. Wer _Z_PLATZKARTE spaeter aendert, bricht die Reihenfolge hier also nicht.
+// Tooltips (650) und Popups (700) liegen ohnehin darueber.
+const _PLATZRUNDEN_PANE = 'platzrunden';
+const _PLATZRUNDEN_PANE_Z = 450;
+
 const _platzrundenGruppe = L.featureGroup();
 let   _platzrundenGeladen = false;  // Abruf genau einmal, nicht bei jedem Einschalten
 let   _platzrundenLinien  = null;   // die sichtbare Lage -- nur sie traegt Hoehenschilder
@@ -4695,10 +4706,12 @@ function _platzrundenLaden() {
       // sichtbare. Das Popup haengt an BEIDEN -- wer genau auf den Strich trifft, soll nicht
       // ins Leere klicken.
       L.geoJSON(gj, {
+        pane: _PLATZRUNDEN_PANE,
         style: _platzrundenFangStil,
         onEachFeature: (f, layer) => { layer.bindPopup(_platzrundenPopup(f.properties)); }
       }).addTo(_platzrundenGruppe);
       _platzrundenLinien = L.geoJSON(gj, {
+        pane: _PLATZRUNDEN_PANE,
         style: _platzrundenStil,
         onEachFeature: (f, layer) => {
           layer.bindPopup(_platzrundenPopup(f.properties));
@@ -11308,6 +11321,11 @@ async function initLiveMap() {
   });
   if (_loadGroundPref()) liveMap.addLayer(_groundGruppe);
   liveOverlays['Platzrunden'] = _platzrundenGruppe;
+  // Muss stehen, BEVOR die Ebene eingehaengt wird: Leaflet loest den Pane-Namen beim
+  // Einhaengen auf, und ein fehlender Pane bricht das Zeichnen.
+  if (!liveMap.getPane(_PLATZRUNDEN_PANE)) {
+    liveMap.createPane(_PLATZRUNDEN_PANE).style.zIndex = _PLATZRUNDEN_PANE_Z;
+  }
   _addPreferredPlatzrundenLayer(liveMap, _platzrundenGruppe);
   _platzrundenZoomWache(liveMap);
   // Meldepunkte zwischen Platzrunden und FSE: von der groessten zur kleinsten Flaeche.

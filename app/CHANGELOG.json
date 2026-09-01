@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.8.0",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Platzrunden liegen jetzt \u00fcber den Kartenbl\u00e4ttern",
+    "items": [
+      "\ud83d\udd01 Die Platzrunden werden jetzt \u00fcber Sichtflug- und Flugplatzkarte gezeichnet. Vorher verschwanden sie darunter, sobald ein Blatt lag \u2014 beide liegen als Bild in derselben Leaflet-Ebene, und ohne eigene Stapelangabe gewinnt das Bild. Popups und die H\u00f6henangaben lagen schon immer oben."
+    ]
+  },
+  {
     "version": "14.7.5",
     "date": "2026-09-01",
     "highlight": false,

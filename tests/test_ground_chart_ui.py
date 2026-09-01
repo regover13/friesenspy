@@ -200,3 +200,33 @@ def test_der_versatz_greift_nur_wo_es_wirklich_zwei_gibt():
     stelle = RUMPF.index("function _groundMarkenAnpassen")
     block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
     assert "> 1" in block
+
+
+# ------------------------------------- Platzrunden ueber den Kartenblaettern
+
+def test_die_platzrunden_liegen_ueber_allen_kartenblaettern():
+    """Nutzerentscheidung 01.09.2026. Beide Blaetter liegen als imageOverlay im overlayPane
+    (zIndex 300 und 310); die Platzrunden sind SVG-Pfade im SELBEN Pane und damit ohne
+    eigenen zIndex zwangslaeufig darunter."""
+    assert "_PLATZRUNDEN_PANE" in RUMPF
+    assert "createPane(_PLATZRUNDEN_PANE).style.zIndex = _PLATZRUNDEN_PANE_Z" in RUMPF
+    m = re.search(r"_PLATZRUNDEN_PANE_Z\s*=\s*(\d+)", RUMPF)
+    assert m, "kein eigener Pane fuer die Platzrunden"
+    # Ueber dem GANZEN overlayPane (400), nicht nur ueber den beiden zIndex-Werten darin --
+    # so bricht es nicht, wenn jemand _Z_PLATZKARTE spaeter aendert.
+    assert int(m.group(1)) > 400
+    # ... und unter Schatten (500), Marken (600) und Popups (700).
+    assert int(m.group(1)) < 500
+
+
+def test_beide_platzrunden_lagen_benutzen_den_eigenen_pane():
+    """Die breite Fanglinie und die sichtbare Linie -- laege nur eine oben, klickte man
+    ueber einem Blatt ins Leere oder saehe die Linie nicht."""
+    stelle = RUMPF.index("function _platzrundenLaden")
+    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
+    assert block.count("pane: _PLATZRUNDEN_PANE") == 2
+
+
+def test_der_pane_steht_bevor_die_platzrunden_geladen_werden():
+    """Leaflet loest den Pane-Namen beim Einhaengen auf; fehlt er, bricht es."""
+    assert RUMPF.index("createPane(_PLATZRUNDEN_PANE)") < RUMPF.index("_addPreferredPlatzrundenLayer(liveMap")
