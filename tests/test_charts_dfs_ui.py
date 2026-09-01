@@ -321,13 +321,14 @@ def test_die_vorschau_laesst_sich_durchsichtig_stellen():
 
 # --------------------------------------------- Passen-Maske: Reihenfolge, Klicks, Sekunden
 
-def test_die_maske_steht_in_der_reihenfolge_vorschau_parameter_seite():
-    """Nutzerwunsch 01.09.2026, ausdruecklich korrigiert: erst die Vorschau, dann die
-    Werte, dann das Blatt."""
+def test_die_maske_steht_in_der_reihenfolge_vorschau_blatt_parameter():
+    """Nutzerwunsch 01.09.2026, zweimal nachgeschaerft: Vorschau, Kartenblatt, Parameter.
+    Die beiden anklickbaren Flaechen liegen damit beieinander, statt die Werte dazwischen
+    zu haben."""
     kasten = ADMIN[ADMIN.index('<div id="dfs-passen"'):ADMIN.index('<!-- ERKENNUNGSLÜCKEN')]
     assert (kasten.index('id="dfs-vorschau"')
-            < kasten.index('class="dfs-punkte"')
-            < kasten.index('id="dfs-blatt-box"'))
+            < kasten.index('id="dfs-blatt-box"')
+            < kasten.index('class="dfs-punkte"'))
 
 
 def test_die_koordinaten_lassen_sich_von_der_karte_abgreifen():
@@ -458,3 +459,32 @@ def test_der_hinweis_erklaert_das_verschwinden_aus_der_liste():
     stelle2 = ADMIN_RUMPF.index("document.getElementById('dfs-save-btn')")
     block = ADMIN_RUMPF[stelle2:ADMIN_RUMPF.index("dfs-abbrechen-btn", stelle2)]
     assert ".dfs-status-cb:checked" in block and "aus der Liste gefallen" in block
+
+
+def test_die_seitenauswahl_kennt_die_sorte_der_zeile():
+    """DER Fehler vom 01.09.2026: In den Sortenfeldern der Seitenauswahl stand immer
+    "Sichtflugkarte", ohne jeden Bezug zur Zeile, aus der geklickt wurde -- und was dort
+    stand, gewann. Wer aus "EDAK Rollkarte" heraus eine Seite waehlte, schrieb sie in die
+    FLUGPLATZkarte, und die anschliessend geoeffnete Passen-Maske stand ebenfalls auf der
+    falschen Sorte. Die Passung landete auf einem Blatt, das man nie angesehen hatte; die
+    Rollkarte blieb offen und sah aus, als sei nichts gespeichert worden.
+    """
+    # Der Knopf traegt die Sorte seiner Zeile mit.
+    stelle = ADMIN_RUMPF.index("data-dfs-seiten=")
+    assert "escA(k.sorte || '')" in ADMIN_RUMPF[stelle:stelle + 300]
+    # Und der Klickfaenger reicht sie durch.
+    stelle2 = ADMIN_RUMPF.index("closest('button[data-dfs-seiten]')")
+    assert "dfsSeiten(icao, sorte)" in ADMIN_RUMPF[stelle2:stelle2 + 300]
+    # Die Funktion nimmt sie an ...
+    assert "async function dfsSeiten(icao, sorte)" in ADMIN_RUMPF
+    # ... und waehlt sie in den Auswahlfeldern vor.
+    stelle3 = ADMIN_RUMPF.index("const opt = function (wert, text)")
+    assert "wert === sorte ? ' selected' : ''" in ADMIN_RUMPF[stelle3:stelle3 + 400]
+
+
+def test_die_sortenfelder_werden_aus_einer_stelle_gebaut():
+    """Vorher standen die drei Optionen dreimal woertlich da -- einmal je Auswahlfeld. Eine
+    Vorauswahl haette man dann an drei Stellen nachtragen muessen, und genau so entstehen
+    Felder, die auseinanderlaufen."""
+    assert ADMIN_RUMPF.count("<option value=\"flugplatzkarte\">") == 0
+    assert "const sortenFeld = function" in ADMIN_RUMPF

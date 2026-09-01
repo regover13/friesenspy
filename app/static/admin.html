@@ -1318,7 +1318,15 @@
               </p>
             </div>
 
-            <!-- 2. PARAMETER -->
+            <!-- 2. KARTENBLATT — direkt unter der Vorschau: Beide anklickbaren Flaechen
+                 liegen so beieinander, statt die Werte dazwischen zu haben. -->
+            <div id="dfs-blatt-box" class="aip-blatt-box" style="margin:0 0 12px;">
+              <img id="dfs-blatt" style="max-width:100%;cursor:crosshair;display:block;" alt="Kartenblatt">
+              <div id="dfs-fk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
+              <div id="dfs-fk-y" class="aip-fadenkreuz aip-fadenkreuz-y"></div>
+            </div>
+
+            <!-- 3. PARAMETER -->
             <div id="dfs-schwellen" style="display:none;margin-bottom:10px;font-size:0.82rem;color:#8aa0b8;"></div>
             <div class="dfs-punkte">
               <div class="dfs-punkt">
@@ -1344,12 +1352,6 @@
               <span id="dfs-passen-hinweis" style="color:#8aa0b8;font-size:0.82rem;"></span>
             </p>
 
-            <!-- 3. SEITE -->
-            <div id="dfs-blatt-box" class="aip-blatt-box" style="margin-top:12px;">
-              <img id="dfs-blatt" style="max-width:100%;cursor:crosshair;display:block;" alt="Kartenblatt">
-              <div id="dfs-fk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
-              <div id="dfs-fk-y" class="aip-fadenkreuz aip-fadenkreuz-y"></div>
-            </div>
           </div>
         </div>
 
@@ -3393,7 +3395,7 @@
           + '<td>' + (typeof k.drehung === 'number' ? k.drehung.toFixed(1) + '°' : '—') + '</td>'
           + '<td>' + (bild ? '<a href="' + bild + '" target="_blank">Blatt</a>' : '—') + '</td>'
           + '<td style="white-space:nowrap;">'
-          + '<button class="btn btn-sm" data-dfs-seiten="' + escA(k.icao) + '">Seite…</button> '
+          + '<button class="btn btn-sm" data-dfs-seiten="' + escA(k.icao) + '|' + escA(k.sorte || '') + '">Seite…</button> '
           + (k.sorte ? '<button class="btn btn-sm" data-dfs-passen="' + escA(k.icao) + '|' + escA(k.sorte) + '">Passen</button> ' : '')
           + (k.nord !== null && k.bild ? '<button class="btn btn-sm" data-dfs-vorschau="' + escA(k.icao) + '|' + escA(k.sorte) + '">Vorschau</button> ' : '')
           + (k.status === 'pruefen' ? '<button class="btn btn-sm" data-dfs-pruefen="' + escA(k.icao) + '|' + escA(k.sorte) + '">Prüfen…</button> ' : '')
@@ -3420,7 +3422,7 @@
         return;
       }
       b = e.target.closest('button[data-dfs-seiten]');
-      if (b) { dfsSeiten(b.getAttribute('data-dfs-seiten')); return; }
+      if (b) { const [icao, sorte] = b.getAttribute('data-dfs-seiten').split('|'); dfsSeiten(icao, sorte); return; }
       b = e.target.closest('button[data-dfs-passen]');
       if (b) { const [icao, sorte] = b.getAttribute('data-dfs-passen').split('|'); dfsPassenStarten(icao, sorte); return; }
       b = e.target.closest('button[data-dfs-vorschau]');
@@ -3599,7 +3601,15 @@
     // Keine "passt"-Spalte, kein Bahnton, keine Dateigroesse: Dieselbe Automatik hat bei
     // EDDK aus sechs Kapitelseiten die falsche gewaehlt (Nutzer, 24.08.2026) -- die Spalte
     // war irrefuehrend, nicht hilfreich.
-    async function dfsSeiten(icao) {
+    /** Seitenauswahl. ``sorte`` ist die der ZEILE, aus der geklickt wurde.
+     *
+     *  Sie muss mitgereicht werden: Vorher stand in den Sortenfeldern immer "Sichtflugkarte",
+     *  ohne jeden Bezug zur Zeile -- und was dort stand, gewann. Wer aus der Zeile
+     *  "EDAK Rollkarte" heraus eine Seite waehlte, schrieb sie in die Flugplatzkarte, und die
+     *  anschliessend geoeffnete Passen-Maske stand ebenfalls auf der falschen Sorte. Die
+     *  Passung landete dann auf einem Blatt, das man nie angesehen hatte (01.09.2026, EDAK).
+     */
+    async function dfsSeiten(icao, sorte) {
       const box = document.getElementById('dfs-seiten');
       box.style.display = '';
       box.innerHTML = '<div class="empty-hint">Seiten von ' + escH(icao)
@@ -3612,8 +3622,18 @@
         return;
       }
       const seiten = (await res.json()).seiten || [];
+      const opt = function (wert, text) {
+        return '<option value="' + wert + '"' + (wert === sorte ? ' selected' : '') + '>' + text + '</option>';
+      };
+      const sortenFeld = function (klasse, id) {
+        return '<select ' + (id ? 'id="' + id + '" ' : 'class="' + klasse + '" ')
+          + 'style="width:100%;margin-bottom:4px;">'
+          + opt('sichtflug', 'Sichtflugkarte') + opt('flugplatzkarte', 'Flugplatzkarte')
+          + opt('rollkarte', 'Rollkarte') + '</select>';
+      };
       let html = '<p style="font-weight:700;margin:4px 0;">Seiten im Kapitel von '
-        + escH(icao) + ' — die gewünschte anklicken, dann die Sorte wählen</p>'
+        + escH(icao) + (sorte ? ' — vorgewählt: <u>' + _dfsSorteText(sorte) + '</u>' : '')
+        + ' — die gewünschte anklicken</p>'
         + '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
       seiten.forEach(function (s) {
         html += '<div style="width:200px;border:1px solid var(--green-grid);padding:6px;">'
@@ -3622,18 +3642,12 @@
               : '<div class="empty-hint">kein Bild</div>')
           + '<div style="font-size:0.75rem;color:#8aa0b8;margin:4px 0;">Seite ' + (s.nr + 1)
           + ' · ' + s.breite + '×' + s.hoehe + ' · ' + s.kb + ' KB</div>'
-          + '<select class="dfs-seite-sorte" style="width:100%;margin-bottom:4px;">'
-          + '<option value="sichtflug">Sichtflugkarte</option>'
-          + '<option value="flugplatzkarte">Flugplatzkarte</option>'
-          + '<option value="rollkarte">Rollkarte</option></select>'
+          + sortenFeld('dfs-seite-sorte', '')
           + '<button class="btn btn-sm" data-seite-nr="' + s.nr + '" '
           + 'data-icao="' + escA(icao) + '" style="width:100%;">Diese nehmen</button></div>';
       });
       html += '</div><p style="margin-top:10px;">'
-        + '<select id="dfs-nicht-gefunden-sorte">'
-        + '<option value="sichtflug">Sichtflugkarte</option>'
-        + '<option value="flugplatzkarte">Flugplatzkarte</option>'
-        + '<option value="rollkarte">Rollkarte</option></select> '
+        + sortenFeld('', 'dfs-nicht-gefunden-sorte') + ' '
         + '<button class="btn btn-sm" id="dfs-nicht-gefunden-btn" data-icao="' + escA(icao)
         + '">Keine passende Seite — als nicht gefunden vermerken</button></p>';
       box.innerHTML = html;
@@ -3679,7 +3693,8 @@
     });
 
     // --- Passen-Maske --------------------------------------------------------------------
-    // Reihenfolge im Kasten: VORSCHAU, PARAMETER, SEITE (Nutzerwunsch 01.09.2026).
+    // Reihenfolge im Kasten: VORSCHAU, KARTENBLATT, PARAMETER (Nutzerwunsch 01.09.2026).
+    // Die beiden anklickbaren Flaechen liegen damit beieinander.
     async function dfsPassenStarten(icao, sorte) {
       _dfsPassend = { icao: icao, sorte: sorte };
       document.getElementById('dfs-passen').style.display = '';

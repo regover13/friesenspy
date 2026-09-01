@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.6.3",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Seitenauswahl schrieb in die falsche Kartensorte",
+    "items": [
+      "\ud83d\udc1b Die Seitenauswahl kannte die Zeile nicht, aus der man sie ge\u00f6ffnet hatte: In den Sortenfeldern stand immer \u201eSichtflugkarte\u201c, und was dort stand, gewann. Wer aus \u201eEDAK Rollkarte\u201c heraus eine Seite w\u00e4hlte, schrieb sie in die Flugplatzkarte \u2014 und die anschlie\u00dfend ge\u00f6ffnete Passen-Maske stand ebenfalls auf der falschen Sorte. Die Passung landete auf einem Blatt, das man nie angesehen hatte, w\u00e4hrend die Rollkarte offen blieb und aussah, als sei nichts gespeichert worden. Die Sorte der Zeile wird jetzt durchgereicht und vorgew\u00e4hlt.",
+      "\ud83d\udcd0 Die Passen-Maske steht jetzt in der Reihenfolge Vorschau, Kartenblatt, Parameter \u2014 die beiden anklickbaren Fl\u00e4chen liegen damit beieinander."
+    ]
+  },
+  {
     "version": "14.6.2",
     "date": "2026-09-01",
     "highlight": false,
