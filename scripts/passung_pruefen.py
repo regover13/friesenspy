@@ -53,9 +53,16 @@ KLICK_PX = 3.0
 SICHERHEIT = 3.0     # wieviele Standardabweichungen noch als "in Ordnung" gelten
 SCHRANKE_MIN = 0.008  # darunter wird es Rauschen, egal wie lang gemessen wurde
 
-# Grobes Plausibilitaetsband, gemessen an den 68 bereits gepassten Blaettern (01.09.2026):
-# 1,10 bis 4,61 m/px. Das faengt Faktor-2-Fehler, nicht mehr -- es ersetzt die Leiste NICHT.
-MPS_MIN, MPS_MAX = 0.8, 6.0
+# Grobes Plausibilitaetsband. Es faengt Faktor-2-Fehler, nicht mehr -- es ersetzt die Leiste
+# NICHT und ist nur dort ueberhaupt die einzige Bremse, wo gar keine Leiste gemessen wurde.
+#
+# Die Untergrenze stand zuerst bei 0,8 und war damit falsch: gemessen war sie an den 68
+# damals gepassten Blaettern (1,10 bis 4,61 m/px), und in denen war kein einziges im
+# Massstab 1:3000. EDLP ist eines -- 0,51 m/px --, und die Probe wies es am 01.09.2026 ab,
+# obwohl sie mit 0,61 Prozent Abweichung zur Leiste so gut bestanden hatte wie kaum eine
+# andere. Eine an vorhandenen Faellen kalibrierte Schranke kennt eben nur die vorhandenen
+# Faelle. 0,35 laesst 1:3000 durch und faengt einen Faktor-2-Fehler von dort immer noch.
+MPS_MIN, MPS_MAX = 0.35, 6.0
 
 
 def massstab_aus_leiste(a: tuple[float, float], b: tuple[float, float],

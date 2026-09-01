@@ -133,3 +133,32 @@ def test_mit_langer_leiste_faellt_auch_ein_kleiner_stopway_durch():
     lang = pruefe(P1, S_05R, p2_falsch, S_23L, _mps_leiste(), 1180.0)
     assert kurz["ok"], "bei kurzer Leiste ist das erwartet -- sie kann es nicht aufloesen"
     assert not lang["ok"], "bei langer Leiste muss er gefangen werden"
+
+
+def test_ein_feines_blatt_faellt_nicht_am_plausibilitaetsband_durch():
+    """1:3000 gibt rund 0,51 m/px. Die Untergrenze stand bei 0,8 und wies EDLP deshalb ab,
+    obwohl die Leiste nur 0,61 Prozent abwich.
+
+    Der Fehler war die Kalibrierung: Die Grenze war an 68 bereits gepassten Blaettern
+    gemessen, unter denen kein einziges 1:3000 war. Eine an vorhandenen Faellen geeichte
+    Schranke kennt nur die vorhandenen Faelle.
+    """
+    p2_fein = (P1[0] + 1770.0, P1[1])
+    mps_fein = 0.51
+    leiste_a, leiste_b = (100.0, 1150.0), (100.0 + 500.0 / mps_fein, 1150.0)
+    # Zwei Punkte, die bei 0,51 m/px genau 1770 px auseinanderliegen.
+    import app.runway_ref as rr
+    strecke = mps_fein * 1770.0
+    ziel = (S_05R[0], S_05R[1] + strecke / (111320.0 * math.cos(math.radians(S_05R[0]))))
+    e = pruefe(P1, S_05R, p2_fein, ziel,
+               massstab_aus_leiste(leiste_a, leiste_b, 500.0),
+               leiste_px(leiste_a, leiste_b))
+    assert e["im_band"], f"{e['mps_bahn']} m/px faellt aus dem Band"
+    assert e["ok"], e.get("grund")
+
+
+def test_ein_faktor_zwei_fehler_bleibt_auch_unten_gefangen():
+    """Die Untergrenze darf nicht so weit rutschen, dass sie nichts mehr faengt."""
+    from scripts.passung_pruefen import MPS_MIN
+    assert MPS_MIN <= 0.51 / 1.3, "1:3000 muss durchpassen"
+    assert MPS_MIN >= 0.51 / 2.0, "ein halbierter 1:3000-Massstab muss noch anschlagen"

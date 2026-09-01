@@ -152,6 +152,59 @@ möglich).
 zählt für die Georeferenz nur, DASS zwei Schwellen sicher zuzuordnen sind — nicht, welche
 Bahn davon die längste ist.
 
+## Der bessere Weg, wenn das Blatt ein Gradnetz hat
+
+Alles oben Beschriebene holt die Koordinaten aus OurAirports. Genau daran liegen dreizehn
+der offenen Blätter fest — die Daten stimmen dort nicht (EDRB: 3056 m stillgelegte Vollbahn
+statt 1230 m genutztem Abschnitt; für EDDN liegt airportsdata um 775 m daneben).
+
+**Ein Blatt mit gedrucktem Gradnetz braucht davon nichts.** Die Linien tragen ihre
+Koordinaten selbst; zwei Schnittpunkte genügen für die Passung. So sind am 01.09.2026
+EDDH, EDDS, EDDN und EDLP gepasst worden, mit 0,08 bis 0,61 Prozent Abweichung gegen die
+gedruckte Maßstabsleiste — besser als jede Schwellenpassung dieser Runde.
+
+```bash
+python scripts/gradnetz.py EDDS rollkarte --bild /tmp/netz.png
+```
+
+Danach `/tmp/netz.png` ansehen, die nummerierten Linien den gedruckten Beschriftungen
+zuordnen, zwei weit auseinanderliegende Schnittpunkte mit `punkt()` rechnen und wie gewohnt
+gegen die Leiste prüfen.
+
+**Nur vier der 27 offenen Blätter haben überhaupt eines.** Die kleinen Platzblätter
+(875×1240) tragen bloß die ARP-Koordinate im Kopf. Das Verfahren ersetzt das
+Schwellenverfahren also nicht, es ist der Weg für die großen Blätter.
+
+### Drei Fallen, jede davon einmal zugeschnappt
+
+1. **Das Winkelfenster.** EDLP ist um 57 Grad gedreht. Eine Suche über ±8 Grad findet dort
+   nichts — und meldet trotzdem einen Treffer, nämlich irgendwelche Rollwege, gleichmäßig
+   genug, um zu überzeugen. Das Fenster steht deshalb auf ±46 Grad.
+
+2. **Welche Schar welche ist, entscheidet nicht die Neigung.** Bei EDLP sind die
+   *waagerechteren* Linien die der **Längen**, nicht der Breiten. Wer das verwechselt,
+   bekommt ein Abstandsverhältnis, das nach einem Fehler im Blatt aussieht, und sucht ihn an
+   der falschen Stelle. Die Probe dagegen kommt ohne Beschriftung aus und steht als
+   `verhaeltnis_stimmt()` im Werkzeug: Sind beide Scharen 10-Sekunden-Linien, muss der
+   Abstand der Breiten zu dem der Längen stehen wie 1/cos(Breite).
+
+3. **Die Beschriftung niemals durch Zuschneiden an einer gerechneten Stelle ablesen.**
+   Dabei erwischt man das Etikett der Nachbarlinie. Bei EDDS kostete das einen um eins
+   verzählten Index und 8,28 Prozent Abweichung — die Gegenprobe hat es gefangen, aber
+   erst nach zwei Stunden. `--bild` zeichnet die erkannten Linien nummeriert ins Blatt;
+   erst danebengelegt ist die Zuordnung belegt.
+
+### Die Leiste bleibt die Gegenprobe, nicht der Schiedsrichter
+
+Bei EDDN weicht sie um 3,4 Prozent vom Netz ab. Nachgeprüft hat **das Netz** recht: Es ist
+in sich stimmig (Abstandsverhältnis 1,535 gegen 1/cos(49,5°) = 1,540), beide Beschriftungen
+sind zweifach belegt, und die Bahnmitte aus den Schwellenkoordinaten landet 31 m neben dem
+ARP-Symbol. Eine gedruckte Maßstabsleiste kann falsch sein — zweiter Fall nach EDBM.
+
+**Was daraus folgt, wenn Netz und Leiste sich widersprechen:** nicht raten, sondern eine
+dritte, unabhängige Größe holen. Das war hier die Bahnmitte aus den Schwellenkoordinaten,
+gegen das gedruckte ARP-Symbol gehalten.
+
 ## Dritte Fehlerklasse: die Leiste selbst widerspricht dem Blatt
 
 **EDBM Flugplatzkarte, 01.09.2026.** Schwellenabstand (Bars bei den Beschriftungen "09"/"27",
