@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.6.1",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Passen: Fadenkreuz über der Karte, Zielpunkt springt weiter",
+    "items": [
+      "\u2795 Fadenkreuz jetzt auch \u00fcber der Vorschaukarte. Leaflets eigener Zeiger ist eine Greifhand \u2014 damit zielt man beim Abgreifen einer Bahnschwelle ins Ungef\u00e4hre.",
+      "\u27a1\ufe0f Der Zielpunkt springt nach einem vollst\u00e4ndig gesetzten Punkt 1 von allein auf Punkt 2. Vorher blieb er bei vorbelegten Karten immer auf 1 stehen \u2014 die Bedingung fragte, ob die Felder gef\u00fcllt sind, und das sind sie dort ja bereits."
+    ]
+  },
+  {
     "version": "14.6.0",
     "date": "2026-09-01",
     "highlight": false,

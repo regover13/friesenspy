@@ -401,3 +401,32 @@ def test_die_drei_winkelfelder_duerfen_umbrechen():
     assert "flex-wrap: wrap" in ADMIN[ADMIN.index(".aip-gm {"):ADMIN.index(".aip-gm {") + 2000]
     r = re.search(r"\.dfs-punkt \.aip-gm input\s*\{([^}]*)\}", ADMIN)
     assert r and "min-width" in r.group(1) and "max-width" in r.group(1)
+
+
+def test_das_umschalten_haengt_am_selbst_gesetzten_nicht_am_gefuellten_feld():
+    """Die erste Fassung fragte, ob die FELDER gefuellt sind. Bei einer vorbelegten Karte
+    sind sie das immer -- also rueckte sie nie weiter, und man musste jedes Mal von Hand
+    umschalten. Genau solche Karten bearbeitet man, seit die auto-Karten ihre Punkte
+    mitbringen (Nutzer, 01.09.2026)."""
+    stelle = ADMIN_RUMPF.index("function _dfsZielNachziehen")
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("\n    }", stelle)]
+    assert "_dfsGesetzt[1].px" in block and "_dfsGesetzt[1].geo" in block
+    assert "_dfsPunktKomplett" not in ADMIN_RUMPF, "die alte Bedingung ist fort"
+    # Beide Haelften werden auch wirklich vermerkt.
+    assert "_dfsGesetzt[n].px = true" in ADMIN_RUMPF
+    assert "_dfsGesetzt[n].geo = true" in ADMIN_RUMPF
+    # Und beim Oeffnen zurueckgesetzt, sonst rueckt die naechste Karte sofort weiter.
+    stelle2 = ADMIN_RUMPF.index("async function dfsPassenStarten(")
+    assert "_dfsGesetztLeeren()" in ADMIN_RUMPF[stelle2:stelle2 + 1200]
+
+
+def test_fadenkreuz_auch_ueber_der_vorschaukarte():
+    """Eine Bahnschwelle im Luftbild trifft man nur auf wenige Meter, wenn man sieht, wo der
+    Zeiger steht. Leaflets eigener Zeiger ist eine Greifhand."""
+    assert 'id="dfs-vk-x"' in ADMIN and 'id="dfs-vk-y"' in ADMIN
+    stelle = ADMIN_RUMPF.index("getElementById('dfs-vorschau-box')")
+    block = ADMIN_RUMPF[stelle:stelle + 1200]
+    assert "mousemove" in block and "mouseleave" in block
+    # Leaflet setzt `cursor: grab` auf seinem Container -- das muss ueberstimmt werden.
+    m = re.search(r"#dfs-vorschau-karte[^{]*\{([^}]*)\}", ADMIN)
+    assert m and "crosshair" in m.group(1)

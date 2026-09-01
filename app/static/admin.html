@@ -287,6 +287,11 @@
     }
     .aip-fadenkreuz-x { left: 0; height: 1px; }
     .aip-fadenkreuz-y { top: 0; width: 1px; }
+    /* Leaflet setzt auf seinem Container `cursor: grab`. Ohne diese Regel bekommt man ueber
+       der Vorschau die Greifhand statt des Fadenkreuzes -- und zielt beim Abgreifen einer
+       Bahnschwelle ins Ungefaehre. */
+    #dfs-vorschau-karte, #dfs-vorschau-karte .leaflet-grab,
+    #dfs-vorschau-karte .leaflet-interactive { cursor: crosshair; }
 
     .aip-gm { display: inline-flex; align-items: center; gap: 4px; }
     .aip-gm span { color: #8aa0b8; font-family: var(--text-mono, monospace); }
@@ -1302,7 +1307,11 @@
                   <input type="range" id="dfs-vorschau-deckkraft" min="0" max="100" value="65" style="width:120px;">
                 </label>
               </div>
-              <div id="dfs-vorschau-karte" style="height:420px;border:1px solid var(--green-grid);"></div>
+              <div id="dfs-vorschau-box" class="aip-blatt-box" style="overflow:hidden;">
+                <div id="dfs-vorschau-karte" style="height:420px;border:1px solid var(--green-grid);cursor:crosshair;"></div>
+                <div id="dfs-vk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
+                <div id="dfs-vk-y" class="aip-fadenkreuz aip-fadenkreuz-y"></div>
+              </div>
               <p style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;">
                 Die roten Marken sind die eingetragenen Passpunkte. Deckt sich die Bahn mit dem
                 Luftbild und sitzen die Marken auf dem, was sie bezeichnen sollen, stimmt die Passung.
@@ -3471,15 +3480,21 @@
       const r = document.querySelector('input[name="dfs-ziel"][value="' + n + '"]');
       if (r) r.checked = true;
     }
-    /** Punkt vollstaendig? Bildpunkt UND Koordinate. */
-    function _dfsPunktKomplett(n) {
-      const w = id => document.getElementById(id).value.trim();
-      return w('p' + n + '-x') !== '' && w('p' + n + '-y') !== ''
-          && _dfsWinkel('p' + n + '-lat') !== null && _dfsWinkel('p' + n + '-lon') !== null;
+    /** Was der Nutzer SEIT DEM OEFFNEN der Maske selbst gesetzt hat. */
+    let _dfsGesetzt = { 1: { px: false, geo: false }, 2: { px: false, geo: false } };
+    function _dfsGesetztLeeren() {
+      _dfsGesetzt = { 1: { px: false, geo: false }, 2: { px: false, geo: false } };
     }
-    /** Nach einer Eingabe automatisch auf Punkt 2 weiterruecken -- aber nie zurueck. */
+
+    /** Nach einem Klick automatisch auf Punkt 2 weiterruecken -- aber nie zurueck.
+     *
+     *  Ausschlaggebend ist, was in DIESER Sitzung gesetzt wurde, nicht ob die Felder
+     *  gefuellt sind. Die erste Fassung fragte nach "Feld gefuellt" und rueckte deshalb bei
+     *  einer vorbelegten Karte NIE weiter -- und genau die bearbeitet man gerade, seit die
+     *  auto-Karten ihre Punkte mitbringen. Man musste jedes Mal von Hand umschalten. */
     function _dfsZielNachziehen() {
-      if (_dfsZiel() === 1 && _dfsPunktKomplett(1) && !_dfsPunktKomplett(2)) _dfsZielSetzen(2);
+      const n = _dfsZiel();
+      if (n === 1 && _dfsGesetzt[1].px && _dfsGesetzt[1].geo) _dfsZielSetzen(2);
       _dfsMarkenNachziehen();
     }
 
@@ -3492,6 +3507,7 @@
         const n = _dfsZiel();
         _dfsGradSetzen('p' + n + '-lat', e.latlng.lat);
         _dfsGradSetzen('p' + n + '-lon', e.latlng.lng);
+        _dfsGesetzt[n].geo = true;
         document.getElementById('dfs-passen-hinweis').textContent =
           'Koordinate von Punkt ' + n + ' von der Karte übernommen.';
         _dfsZielNachziehen();
@@ -3536,6 +3552,30 @@
       // Leaflet misst beim Bau die Kastengroesse; der Kasten war eben noch display:none.
       setTimeout(() => _dfsKarte.invalidateSize(), 60);
     }
+
+    // Fadenkreuz ueber der Vorschaukarte -- dieselbe Ueberlegung wie ueber dem Blatt: Eine
+    // Bahnschwelle im Luftbild trifft man nur dann auf wenige Meter, wenn man sieht, wo der
+    // Zeiger wirklich steht. Leaflets eigener Zeiger ist eine Greifhand.
+    (function () {
+      const box = document.getElementById('dfs-vorschau-box');
+      const karte = document.getElementById('dfs-vorschau-karte');
+      const lx = document.getElementById('dfs-vk-x');
+      const ly = document.getElementById('dfs-vk-y');
+      if (!box || !karte || !lx || !ly) return;
+      karte.addEventListener('mousemove', function (e) {
+        const r = box.getBoundingClientRect();
+        lx.style.top = Math.round(e.clientY - r.top) + 'px';
+        lx.style.width = box.offsetWidth + 'px';
+        ly.style.left = Math.round(e.clientX - r.left) + 'px';
+        ly.style.height = box.offsetHeight + 'px';
+        lx.style.display = 'block';
+        ly.style.display = 'block';
+      });
+      karte.addEventListener('mouseleave', function () {
+        lx.style.display = 'none';
+        ly.style.display = 'none';
+      });
+    })();
 
     document.getElementById('dfs-vorschau-deckkraft').addEventListener('input', function (e) {
       if (_dfsKarteBlatt) _dfsKarteBlatt.setOpacity(e.target.value / 100);
@@ -3650,6 +3690,7 @@
       const eintrag = _dfsAlle.find(k => k.icao === icao && k.sorte === sorte) || {};
       document.getElementById('dfs-passen-hinweis').textContent = '';
       _dfsZielSetzen(1);
+      _dfsGesetztLeeren();
 
       // Die Hilfsangaben holen: Bahnschwellen, Platzmitte -- und, wenn die Zeile eine Lage
       // OHNE geklickte Punkte traegt, zwei daraus zurueckgerechnete Punkte. Genau das ist
@@ -3751,6 +3792,7 @@
       const n = _dfsZiel();
       document.getElementById('p' + n + '-x').value = x;
       document.getElementById('p' + n + '-y').value = y;
+      _dfsGesetzt[n].px = true;
       document.getElementById('dfs-passen-hinweis').textContent =
         'Bildpunkt ' + n + ' gesetzt (' + x + '/' + y + ').';
       _dfsZielNachziehen();
