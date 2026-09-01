@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FriesenSpy – Admin</title>
   <link href="/static/fonts/fonts.css" rel="stylesheet" />
+  <!-- Leaflet, nur fuer die Vorschau der Kartenpassung. Dieselbe Fassung wie index.html --
+       die Vorschau soll das Blatt genau so auflegen wie das Kniebrett, nicht aehnlich. -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -1252,7 +1256,37 @@
               <input type="text" id="dfs-suche" placeholder="z. B. EDDL" size="8">
             </div>
           </div>
+          <div style="margin:10px 0 6px;padding:8px 10px;border:1px solid var(--green-grid);">
+            <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;color:#cfe6e2;cursor:pointer;">
+              <input type="checkbox" id="dfs-ebene-toggle" />
+              Ebene „Flugplatzkarte“ ausliefern (Flugplatz- <b>und</b> Rollkarten)
+            </label>
+            <p style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;">
+              Aus = die Ebene erscheint im Kniebrett und im Web gar nicht erst. Die
+              Sichtflugkarte bleibt davon unberührt, und <b>keine Passung geht verloren</b> —
+              nach dem Wiedereinschalten ist alles wie vorher.
+            </p>
+          </div>
           <div id="dfs-charts" class="table-wrap"><div class="empty-hint">Lade Karten…</div></div>
+
+          <!-- Vorschau der Passung: das abgelegte Blatt ueber dem Luftbild, mit Regler.
+               Deckend sieht man nicht, wogegen man vergleicht; darum startet sie bei 65 %. -->
+          <div id="dfs-vorschau" style="display:none;margin-top:12px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px;">
+              <b id="dfs-vorschau-kopf"></b>
+              <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:#8aa0b8;">
+                Deckkraft
+                <input type="range" id="dfs-vorschau-deckkraft" min="0" max="100" value="65" style="width:130px;">
+              </label>
+              <button class="btn btn-sm" id="dfs-vorschau-zu">Schließen</button>
+            </div>
+            <div id="dfs-vorschau-karte" style="height:460px;border:1px solid var(--green-grid);"></div>
+            <p style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;">
+              Die beiden Marken sind die eingetragenen Passpunkte. Liegen sie auf dem, was sie
+              bezeichnen sollen (Schwelle, Ecke), und deckt sich die Bahn mit dem Luftbild,
+              stimmt die Passung.
+            </p>
+          </div>
 
           <div id="dfs-seiten" style="display:none;margin-top:12px;"></div>
 
@@ -3333,6 +3367,7 @@
           + '<td style="white-space:nowrap;">'
           + '<button class="btn btn-sm" data-dfs-seiten="' + escA(k.icao) + '">Seite…</button> '
           + (k.sorte ? '<button class="btn btn-sm" data-dfs-passen="' + escA(k.icao) + '|' + escA(k.sorte) + '">Passen</button> ' : '')
+          + (k.nord !== null && k.bild ? '<button class="btn btn-sm" data-dfs-vorschau="' + escA(k.icao) + '|' + escA(k.sorte) + '">Vorschau</button> ' : '')
           + (k.status === 'pruefen' ? '<button class="btn btn-sm" data-dfs-pruefen="' + escA(k.icao) + '|' + escA(k.sorte) + '">Prüfen…</button> ' : '')
           + (k.sorte ? '<button class="btn btn-sm" data-dfs-loeschen="' + escA(k.icao) + '|' + escA(k.sorte) + '">Löschen</button>' : '')
           + '</td></tr>';
@@ -3346,6 +3381,8 @@
       if (b) { dfsSeiten(b.getAttribute('data-dfs-seiten')); return; }
       b = e.target.closest('button[data-dfs-passen]');
       if (b) { const [icao, sorte] = b.getAttribute('data-dfs-passen').split('|'); dfsPassenStarten(icao, sorte); return; }
+      b = e.target.closest('button[data-dfs-vorschau]');
+      if (b) { const [icao, sorte] = b.getAttribute('data-dfs-vorschau').split('|'); dfsVorschauZeigen(icao, sorte); return; }
       b = e.target.closest('button[data-dfs-pruefen]');
       if (b) { const [icao, sorte] = b.getAttribute('data-dfs-pruefen').split('|'); dfsPruefenZeigen(icao, sorte); return; }
       b = e.target.closest('button[data-dfs-loeschen]');
@@ -3362,12 +3399,85 @@
       try {
         const res = await api('GET', '/api/admin/aip-charts-dfs');
         if (!res || !res.ok) { box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>'; return; }
-        _dfsAlle = (await res.json()).charts || [];
+        const d = await res.json();
+        _dfsAlle = d.charts || [];
+        // Den Haken aus dem Serverzustand zeichnen, nicht aus dem Markup: Sonst stuende er
+        // nach jedem Neuladen auf "an", egal was gilt, und der naechste Klick schaltete die
+        // Ebene aus Versehen wieder frei.
+        const et = document.getElementById('dfs-ebene-toggle');
+        if (et) et.checked = d.ebene_aktiv !== false;
         dfsListeZeichnen();
       } catch (e) {
         box.innerHTML = '<div class="empty-hint">Nicht geladen.</div>';
       }
     }
+
+    // --- Vorschau der Passung ----------------------------------------------------------
+    // Sie legt das ABGELEGTE Blatt auf, nicht das Rohblatt: Die Drehung steckt im Bild, das
+    // Overlay liegt achsenparallel -- genau wie im Kniebrett (index.html, _groundZeigen).
+    // Eine Vorschau, die anders auflegt als die App, prueft die falsche Sache.
+    let _dfsVorschauKarte = null;
+    let _dfsVorschauBlatt = null;
+
+    function dfsVorschauZeigen(icao, sorte) {
+      const k = _dfsAlle.find(x => x.icao === icao && x.sorte === sorte);
+      if (!k || k.nord === null || !k.bild) { toast('Diese Karte hat keine Passung.', true); return; }
+      const box = document.getElementById('dfs-vorschau');
+      box.style.display = '';
+      document.getElementById('dfs-vorschau-kopf').textContent =
+        icao + ' · ' + _dfsSorteText(sorte)
+        + (typeof k.drehung === 'number' ? ' · Drehung ' + k.drehung.toFixed(1) + '°' : '')
+        + (typeof k.mps === 'number' ? ' · ' + k.mps.toFixed(3) + ' m/px' : '');
+
+      if (!_dfsVorschauKarte) {
+        _dfsVorschauKarte = L.map('dfs-vorschau-karte', { zoomControl: true });
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          { maxZoom: 19, attribution: 'Tiles &copy; Esri' }).addTo(_dfsVorschauKarte);
+      }
+      if (_dfsVorschauBlatt) { _dfsVorschauKarte.removeLayer(_dfsVorschauBlatt); _dfsVorschauBlatt = null; }
+      (_dfsVorschauKarte._passMarken || []).forEach(m => _dfsVorschauKarte.removeLayer(m));
+      _dfsVorschauKarte._passMarken = [];
+
+      const grenzen = [[k.sued, k.west], [k.nord, k.ost]];
+      const deck = document.getElementById('dfs-vorschau-deckkraft').value / 100;
+      _dfsVorschauBlatt = L.imageOverlay(k.bild, grenzen, { opacity: deck }).addTo(_dfsVorschauKarte);
+
+      // Die Passpunkte SIND die Passung -- sitzen sie daneben, sieht man hier sofort, ob der
+      // Klick danebensass oder die Koordinate falsch war.
+      [[k.p1_lat, k.p1_lon, '1'], [k.p2_lat, k.p2_lon, '2']].forEach(function (p) {
+        if (typeof p[0] !== 'number' || typeof p[1] !== 'number') return;
+        const m = L.circleMarker([p[0], p[1]], {
+          radius: 7, color: '#ff3b30', weight: 2, fillColor: '#ff3b30', fillOpacity: 0.35,
+        }).bindTooltip('Punkt ' + p[2], { permanent: true, direction: 'right' })
+          .addTo(_dfsVorschauKarte);
+        _dfsVorschauKarte._passMarken.push(m);
+      });
+
+      _dfsVorschauKarte.fitBounds(grenzen, { padding: [20, 20] });
+      // Leaflet misst beim Bau die Kastengroesse; der Kasten war eben noch display:none.
+      setTimeout(() => _dfsVorschauKarte.invalidateSize(), 60);
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    document.getElementById('dfs-vorschau-deckkraft').addEventListener('input', function (e) {
+      if (_dfsVorschauBlatt) _dfsVorschauBlatt.setOpacity(e.target.value / 100);
+    });
+    document.getElementById('dfs-vorschau-zu').addEventListener('click', function () {
+      document.getElementById('dfs-vorschau').style.display = 'none';
+    });
+
+    document.getElementById('dfs-ebene-toggle').addEventListener('change', async (e) => {
+      const desired = e.target.checked;
+      const ok = await confirmCritical('Ebene „Flugplatzkarte“ umschalten?',
+        desired
+          ? 'Flugplatz- und Rollkarten erscheinen wieder in der Ebenen-Auswahl — im Kniebrett und im Web.'
+          : 'Flugplatz- und Rollkarten verschwinden aus der Ebenen-Auswahl. Die Sichtflugkarte bleibt. Es geht keine Passung verloren.',
+        'Umschalten', false);
+      if (!ok) { e.target.checked = !desired; return; }   // Auswahl zurücksetzen
+      const res = await api('POST', '/api/admin/aip-charts-dfs/ebene', { enabled: desired });
+      if (!res || !res.ok) { toast('Fehler.', true); e.target.checked = !desired; return; }
+      toast(desired ? 'Ebene „Flugplatzkarte“ eingeschaltet.' : 'Ebene „Flugplatzkarte“ stillgelegt.');
+    });
 
     // --- Seitenauswahl -----------------------------------------------------------------
     // Keine "passt"-Spalte, kein Bahnton, keine Dateigroesse: Dieselbe Automatik hat bei
@@ -3600,8 +3710,12 @@
       const erg = await res.json();
       toast('Passung gespeichert — Drehung ' + erg.drehung + '°, ' + erg.mps + ' m/px.');
       document.getElementById('dfs-passen').style.display = 'none';
+      const gepasst = { icao: _dfsPassend.icao, sorte: _dfsPassend.sorte };
       _dfsPassend = null; _dfsEcken = [];
       await loadDfsCharts();
+      // Sofort hinsehen. Zahlen allein sagen nicht, ob das Blatt richtig liegt -- eine um
+      // 180 Grad verdrehte Zuordnung der beiden Punkte liefert denselben Massstab.
+      dfsVorschauZeigen(gepasst.icao, gepasst.sorte);
     });
 
     document.getElementById('dfs-abbrechen-btn').addEventListener('click', function () {

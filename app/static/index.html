@@ -10406,6 +10406,32 @@ const _GROUND_HYSTERESE = 0.003;
 
 const _groundGruppe = L.layerGroup();
 let _groundKarten = null;
+
+// Hauptschalter aus dem Admin (POST /api/admin/aip-charts-dfs/ebene). Steht er auf aus,
+// liefert der Server keine Bodenblaetter mehr -- dann muss auch der EINTRAG aus der
+// Ebenen-Auswahl verschwinden. Ein Haken, hinter dem nichts liegt, sieht aus wie ein Fehler.
+let _groundEbeneAktiv = true;
+let _liveEbenenControl = null;
+// Waehrend des Stilllegens die Nutzer-Wahl NICHT mitschreiben: liveMap.removeLayer loest
+// overlayremove aus, und der Haken darunter merkte sich sonst "aus". Schaltet der Admin die
+// Ebene spaeter wieder frei, bliebe sie beim Nutzer verschwunden, ohne dass der das je
+// veranlasst haette -- ein Fehler, den niemand mehr mit dem Schalter in Verbindung braechte.
+let _groundEbeneStilllegen = false;
+
+function _groundEbeneAnwenden() {
+  if (_groundEbeneAktiv) return;
+  _groundEbeneStilllegen = true;
+  try {
+    if (typeof liveMap !== 'undefined' && liveMap && liveMap.hasLayer(_groundGruppe)) {
+      liveMap.removeLayer(_groundGruppe);
+    }
+    if (_liveEbenenControl) _liveEbenenControl.removeLayer(_groundGruppe);
+  } finally {
+    _groundEbeneStilllegen = false;
+  }
+  _groundZeigen(null);
+  _groundMarkenAnpassen();
+}
 // Der Schluessel ist "<ICAO>|<sorte>", NICHT die nackte ICAO. Sichtflug- und
 // Flugplatzkarte desselben Platzes tragen dieselbe ICAO -- deshalb schon immer ein eigener
 // Zustand neben dem der Sichtflugkarte. Seit dem Rueckbau (31.08.2026) kann ein Platz
@@ -10501,7 +10527,12 @@ function _groundKartenLaden(erzwingen) {
     .then(function (d) {
       // Derselbe Endpunkt liefert auch Sichtflugkarten -- die sind Sache von
       // _aipKartenLaden.
-      _groundKarten = (d.charts || []).filter(function (k) { return k.sorte !== 'sichtflug'; });
+      // Fehlt das Feld (alter Server), gilt AN -- so wie bisher.
+      _groundEbeneAktiv = (d.flugplatzkarte_aktiv !== false);
+      _groundKarten = _groundEbeneAktiv
+        ? (d.charts || []).filter(function (k) { return k.sorte !== 'sichtflug'; })
+        : [];
+      _groundEbeneAnwenden();
       _groundMarkenAnpassen();
       _groundNachfuehren();
       return _groundKarten;
@@ -11243,7 +11274,9 @@ async function initLiveMap() {
   });
   liveMap.on('overlayremove', function (e) {
     if (e.layer !== _groundGruppe) return;
-    _saveGroundPref(false);
+    // Nur wenn der NUTZER abschaltet. Legt der Hauptschalter die Ebene still, bleibt seine
+    // Wahl stehen -- sonst waere sie nach dem Wiederfreigeben weg (s. _groundEbeneAnwenden).
+    if (!_groundEbeneStilllegen) _saveGroundPref(false);
     _groundZeigen(null);
     _groundMarkenAnpassen();
   });
@@ -11273,6 +11306,12 @@ async function initLiveMap() {
     liveOverlays,
     { position: 'topright', collapsed: true }
   ).addTo(liveMap);
+  _liveEbenenControl = liveEbenen;
+  // Den Kartenbestand EINMAL beim Start holen, auch wenn die Ebene aus ist. Sonst erfaehrt
+  // die Seite den Hauptschalter nie: _groundNachfuehren steigt aus, solange die Ebene nicht
+  // liegt, und laedt die Liste dann auch nicht -- der tote Eintrag bliebe genau in dem Fall
+  // stehen, fuer den es den Schalter gibt.
+  _groundKartenLaden();
   // Der Zusatzhaken fuer die Schilder -- erst jetzt, die Ebenen-Auswahl muss stehen.
   _schilderAnwenden(liveMap, _loadSchilderPref());
   _schilderSchalterAnhaengen(liveMap, liveEbenen);

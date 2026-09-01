@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.5.0",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Flugplatzkarten: Hauptschalter und Vorschau der Passung",
+    "items": [
+      "\ud83d\udd0c Im Admin gibt es jetzt einen Hauptschalter f\u00fcr die Ebene \u201eFlugplatzkarte\u201c. Aus hei\u00dft: Flugplatz- und Rollkarten erscheinen im Kniebrett und im Web gar nicht erst \u2014 solange die Passungen noch nicht \u00fcberzeugen. Die Sichtflugkarte bleibt unber\u00fchrt, und es geht keine Passung verloren.",
+      "\ud83d\uddfa\ufe0f Neue Vorschau der Passung: Das Blatt liegt \u00fcber dem Luftbild, mit Regler f\u00fcr die Deckkraft und Marken auf den beiden Passpunkten. Deckt sich die Bahn, stimmt die Passung. Nach dem Speichern geht sie von allein auf \u2014 Zahlen allein verraten nicht, ob ein Blatt richtig liegt."
+    ]
+  },
+  {
     "version": "14.4.1",
     "date": "2026-08-31",
     "highlight": false,

@@ -107,11 +107,55 @@ def test_sse_laedt_beide_kartenarten_neu():
 
 
 def test_merker_ohne_localstorage():
-    """Im Kniebrett haelt kein Browser-Speicher ueber einen Sim-Neustart."""
-    stelle = RUMPF.index("_GROUND_PREF_KEY")
-    block = RUMPF[stelle:stelle + 900]
-    assert "_prefSchreib" in block and "_prefLies" in block
-    assert "localStorage" not in block
+    """Im Kniebrett haelt kein Browser-Speicher ueber einen Sim-Neustart.
+
+    Gebunden an die beiden Funktionen selbst, nicht an ein Zeichenfenster hinter
+    ``_GROUND_PREF_KEY``: Das Fenster mass frueher 900 Zeichen und zerbrach, sobald jemand
+    zwischen Schluessel und Funktionen etwas einfuegte -- ohne dass am Merker etwas falsch
+    gewesen waere.
+    """
+    schreib = re.search(r"function _saveGroundPref\([^)]*\)\s*\{[^}]*\}", RUMPF)
+    lies = re.search(r"function _loadGroundPref\([^)]*\)\s*\{[^}]*\}", RUMPF)
+    assert schreib and lies
+    assert "_prefSchreib(_GROUND_PREF_KEY" in schreib.group(0)
+    assert "_prefLies(_GROUND_PREF_KEY" in lies.group(0)
+    assert "localStorage" not in schreib.group(0) + lies.group(0)
 
 # Der Admin-Teil (offene Punkte, Flugplatzkarten passen) ist mit dem Rueckbau (31.08.2026)
 # in die vereinigte Maske "AIP Charts DFS" aufgegangen. Siehe tests/test_charts_dfs_ui.py.
+
+
+# ---------------------------------------------------- Hauptschalter aus dem Admin
+#
+# Der Server liefert bei ausgeschalteter Ebene keine Bodenblaetter mehr. Das Frontend muss
+# daraufhin auch den EINTRAG aus der Ebenen-Auswahl nehmen -- ein Haken, hinter dem nichts
+# liegt, sieht aus wie ein Fehler und war genau der Anlass fuer den Schalter.
+
+def test_der_hauptschalter_wird_aus_der_antwort_gelesen():
+    assert "flugplatzkarte_aktiv" in RUMPF
+
+
+def test_die_liste_wird_beim_start_geholt():
+    """Ohne diesen Abruf erfaehrt die Seite den Schalter nie: ``_groundNachfuehren`` steigt
+    aus, solange die Ebene AUS ist, und laedt die Liste dann auch nicht. Der tote Eintrag
+    bliebe genau in dem Fall stehen, fuer den es den Schalter gibt."""
+    stelle = RUMPF.index("const liveEbenen = L.control.layers(")
+    assert "_groundKartenLaden(" in RUMPF[stelle:stelle + 2000]
+
+
+def test_das_stilllegen_ueberschreibt_die_nutzerwahl_nicht():
+    """``map.removeLayer`` loest ``overlayremove`` aus. Ungebremst schriebe das die
+    gemerkte Nutzer-Wahl auf AUS -- schaltet der Admin die Ebene spaeter wieder frei,
+    bliebe sie beim Nutzer trotzdem verschwunden, ohne dass er es veranlasst hat."""
+    stelle = RUMPF.index("function _groundEbeneAnwenden")
+    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
+    assert "_groundEbeneStilllegen = true" in block
+    stelle2 = RUMPF.index("liveMap.on('overlayremove'")
+    haken = RUMPF[stelle2:stelle2 + 400]
+    assert "_groundEbeneStilllegen" in haken and "_saveGroundPref(false)" in haken
+
+
+def test_der_eintrag_verschwindet_aus_der_ebenen_auswahl():
+    stelle = RUMPF.index("function _groundEbeneAnwenden")
+    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
+    assert "removeLayer(_groundGruppe)" in block

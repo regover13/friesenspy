@@ -406,6 +406,38 @@ async def panel(v: str | None = None):
     return FileResponse("app/static/index.html", headers=_HTML_NO_CACHE)
 
 
+# Hauptschalter der Platzkarten-Ebene. Im Kniebrett tragen Flugplatz- UND Rollkarte
+# denselben Eintrag "Flugplatzkarte" in der Ebenen-Auswahl; der Schalter legt genau diesen
+# Eintrag still. Er ruehrt keine Passung an -- das ist der Unterschied zum Loeschen, und der
+# Grund, warum es ihn gibt: Handarbeit an 110 Blaettern soll eine Auslieferung ueberleben,
+# mit der man noch nicht zufrieden ist.
+EBENE_PLATZKARTEN = "ground_charts_enabled"
+
+
+def _blattgrenzen(k) -> dict:
+    """Die vier Blattgrenzen fuer die Vorschau -- oder ``None``, wenn es keine Lage gibt.
+
+    Eine Zeile ohne Passung traegt ``nord=sued=west=ost=0`` (nicht NULL, s. CLAUDE.md). Wer
+    das ungeprueft weiterreicht, legt das Blatt in der Vorschau auf 0/0 in den Golf von
+    Guinea -- und es sieht aus wie eine kaputte Passung statt wie gar keine.
+    """
+    ecken = (k["nord"], k["sued"], k["west"], k["ost"])
+    if not any(ecken) or k["nord"] == k["sued"] or k["west"] == k["ost"]:
+        return {"nord": None, "sued": None, "west": None, "ost": None, "bild": None}
+    return {"nord": k["nord"], "sued": k["sued"], "west": k["west"], "ost": k["ost"],
+            "bild": (f"/aip-chart-dfs/{k['icao']}/{k['sorte']}.png"
+                     f"?h={str(k['bild_hash'])[:12]}")}
+
+
+def _platzkarten_ebene_an(conn) -> bool:
+    """Fehlender Eintrag heisst AN -- also 'wie bisher'.
+
+    Andersherum wuerde ein Deploy auf eine Datenbank ohne den Schluessel die Ebene
+    stillschweigend abschalten. Wer sie aus haben will, sagt es ausdruecklich.
+    """
+    return get_app_setting(conn, EBENE_PLATZKARTEN, "1") == "1"
+
+
 @app.get("/api/aip-charts-dfs")
 async def aip_charts_dfs_liste():
     """Metadaten aller gepassten Karten, beider Sorten -- einmal beim Einschalten der
@@ -414,14 +446,21 @@ async def aip_charts_dfs_liste():
     Nur ``gepasst`` und ``auto``: eine Karte ohne Passung hat nichts zum Anzeigen. Zwei
     Rechtecke gehen je Karte mit -- die Blattgrenzen (danach wird das Overlay platziert)
     und die Feldgrenzen (danach schaltet die Ebene).
+
+    Steht der Hauptschalter auf aus, bleiben die Bodenkarten hier weg. Die Sperre gehoert
+    auf den Server und nicht ins Frontend: Ein Kniebrett laedt diese Liste einmal je
+    Sim-Sitzung und wird nie neu geladen -- was einmal drin war, bliebe sonst liegen.
     """
     einst = get_settings()
     conn = get_connection(einst.DB_PATH)
     try:
         karten = get_charts_dfs(conn, status=["gepasst", "auto"])
+        ebene_an = _platzkarten_ebene_an(conn)
     finally:
         conn.close()
-    return {"charts": [
+    if not ebene_an:
+        karten = [k for k in karten if k["sorte"] == "sichtflug"]
+    return {"flugplatzkarte_aktiv": ebene_an, "charts": [
         {"icao": k["icao"], "sorte": k["sorte"],
          "nord": k["nord"], "sued": k["sued"], "west": k["west"], "ost": k["ost"],
          "feld_nord": k["feld_nord"], "feld_sued": k["feld_sued"],
@@ -4199,6 +4238,7 @@ async def admin_get_charts_dfs(request: Request):
         fehlend = conn.execute(
             "SELECT icao FROM airport_links WHERE icao NOT IN "
             "(SELECT icao FROM aip_charts_dfs)").fetchall()
+        ebene_an = _platzkarten_ebene_an(conn)
     finally:
         conn.close()
     aus = [
@@ -4207,17 +4247,50 @@ async def admin_get_charts_dfs(request: Request):
          "seite_nr": k["seite_nr"], "drehung": k["drehung"],
          "geprueft_am": k["geprueft_am"],
          "p1_x": k["p1_x"], "p1_y": k["p1_y"], "p1_lat": k["p1_lat"], "p1_lon": k["p1_lon"],
-         "p2_x": k["p2_x"], "p2_y": k["p2_y"], "p2_lat": k["p2_lat"], "p2_lon": k["p2_lon"]}
+         "p2_x": k["p2_x"], "p2_y": k["p2_y"], "p2_lat": k["p2_lat"], "p2_lon": k["p2_lon"],
+         # Fuer die Vorschau: dieselben Blattgrenzen und dasselbe Bild, mit denen das
+         # Kniebrett die Karte auflegt. Etwas anderes zu zeigen hiesse, eine Passung an
+         # einer Darstellung zu pruefen, die es so nirgends gibt.
+         "mps": k["mps"], **_blattgrenzen(k)}
         for k in karten
     ]
     aus += [
         {"icao": r["icao"], "sorte": None, "status": None, "status_vorher": None,
          "airac": None, "seite_nr": None, "drehung": None, "geprueft_am": None,
          "p1_x": None, "p1_y": None, "p1_lat": None, "p1_lon": None,
-         "p2_x": None, "p2_y": None, "p2_lat": None, "p2_lon": None}
+         "p2_x": None, "p2_y": None, "p2_lat": None, "p2_lon": None,
+         "nord": None, "sued": None, "west": None, "ost": None,
+         "mps": None, "bild": None}
         for r in fehlend
     ]
-    return {"charts": aus}
+    return {"charts": aus, "ebene_aktiv": ebene_an}
+
+
+@app.post("/api/admin/aip-charts-dfs/ebene")
+async def admin_set_platzkarten_ebene(request: Request):
+    """Die Ebene "Flugplatzkarte" im Kniebrett/Web an- und ausschalten.
+
+    Betrifft BEIDE Bodensorten (``flugplatzkarte`` und ``rollkarte``) -- sie haengen dort an
+    einem einzigen Eintrag der Ebenen-Auswahl. Die Sichtflugkarte bleibt unberuehrt.
+
+    ``require_confirm`` wie bei den anderen beiden Schaltern des Projekts
+    (``forum_login_enabled``, ``transport_quips_enabled``): Der Schalter ist zwar
+    verlustfrei, aber er wirkt sofort auf alle offenen Sitzungen.
+    """
+    require_admin(request)
+    require_confirm(request)
+    body = await request.json()
+    enabled = bool(body.get("enabled"))
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        set_app_setting(conn, EBENE_PLATZKARTEN, "1" if enabled else "0")
+        conn.commit()
+    finally:
+        conn.close()
+    # Ohne das merkt eine offene Sitzung den Schalter erst beim naechsten Neuladen -- im
+    # Kniebrett also nie, s. _dfs_karten_geaendert.
+    _dfs_karten_geaendert(request)
+    return {"status": "ok", "enabled": enabled}
 
 
 def _dfs_karten_geaendert(request: Request) -> None:

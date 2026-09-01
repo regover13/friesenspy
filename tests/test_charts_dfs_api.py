@@ -4,12 +4,14 @@ Spec: docs/superpowers/specs/2026-08-31-aip-charts-dfs-design.md
 """
 from __future__ import annotations
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from app import main
-from app.auth import ADMIN_COOKIE, make_admin_token
+from app.auth import ADMIN_COOKIE, CONFIRM_COOKIE, make_admin_token, make_confirm_token
 from app.config import Settings
 from app.database import (
     get_chart_dfs,
@@ -356,3 +358,133 @@ def test_delete_entfernt_die_karte(client):
 def test_delete_unbekannter_karte_ist_404(client):
     c, _db, _tmp = client
     assert c.delete("/api/admin/aip-charts-dfs/EDZZ/sichtflug").status_code == 404
+
+
+# ------------------------------------------------------- Hauptschalter der Platzkarten-Ebene
+#
+# Die Ebene "Flugplatzkarte" traegt im Kniebrett BEIDE Bodensorten (flugplatzkarte und
+# rollkarte) -- sie ist ein einziger Eintrag in der Ebenen-Auswahl. Der Schalter legt genau
+# diesen Eintrag still, ohne eine einzige Passung anzuruehren: Die Handarbeit an den
+# Blaettern soll eine schlechte Auslieferung ueberleben, sonst muesste man zum Abschalten
+# loeschen.
+
+def _ebene(c, an: bool):
+    """Der Schalter verlangt zusaetzlich das Step-up-Token -- wie die beiden anderen
+    globalen Schalter des Projekts."""
+    c.cookies.set(CONFIRM_COOKIE,
+                  make_confirm_token(SECRET, PW, int(time.time()) + 300))
+    return c.post("/api/admin/aip-charts-dfs/ebene", json={"enabled": an})
+
+
+def test_ohne_eintrag_ist_die_platzkarten_ebene_an(client):
+    """Kein Eintrag heisst 'wie bisher'. Ein Deploy darf die Ebene nicht stillschweigend
+    abschalten -- wer sie aus haben will, sagt es."""
+    c, db, _tmp = client
+    _karte(db, "EDDL", "flugplatzkarte")
+    d = c.get("/api/aip-charts-dfs").json()
+    assert d["flugplatzkarte_aktiv"] is True
+    assert [k["sorte"] for k in d["charts"]] == ["flugplatzkarte"]
+
+
+def test_der_hauptschalter_nimmt_beide_bodensorten_aus_der_liste(client):
+    """Rollkarte MUSS mit verschwinden: Im Kniebrett haengen beide an demselben Eintrag.
+    Bliebe die Rollkarte, waere die Ebene sichtbar 'aus' und trotzdem belegt."""
+    c, db, _tmp = client
+    _karte(db, "EDDL", "sichtflug")
+    _karte(db, "EDDL", "flugplatzkarte")
+    _karte(db, "EDDH", "rollkarte")
+    assert _ebene(c, False).status_code == 200
+    d = c.get("/api/aip-charts-dfs").json()
+    assert d["flugplatzkarte_aktiv"] is False
+    assert [k["sorte"] for k in d["charts"]] == ["sichtflug"]
+
+
+def test_der_hauptschalter_laesst_die_passungen_stehen(client):
+    """Der Unterschied zu 'Loeschen'. Nach dem Zurueckschalten muss dieselbe Karte wieder
+    da sein, mit derselben Lage -- sonst waere der Schalter eine Falle."""
+    c, db, _tmp = client
+    _karte(db, "EDDL", "flugplatzkarte")
+    _ebene(c, False)
+    conn = get_connection(db)
+    try:
+        assert get_chart_dfs(conn, "EDDL", "flugplatzkarte")["status"] == "gepasst"
+    finally:
+        conn.close()
+    _ebene(c, True)
+    d = c.get("/api/aip-charts-dfs").json()
+    assert [k["sorte"] for k in d["charts"]] == ["flugplatzkarte"]
+    assert d["flugplatzkarte_aktiv"] is True
+
+
+def test_die_admin_liste_nennt_den_zustand_der_ebene(client):
+    """Die Admin-Ansicht muss den Schalter richtig herum zeichnen koennen, ohne zu raten."""
+    c, _db, _tmp = client
+    assert c.get("/api/admin/aip-charts-dfs").json()["ebene_aktiv"] is True
+    _ebene(c, False)
+    assert c.get("/api/admin/aip-charts-dfs").json()["ebene_aktiv"] is False
+
+
+def test_der_hauptschalter_braucht_anmeldung(client):
+    c, _db, _tmp = client
+    c.cookies.clear()
+    assert c.post("/api/admin/aip-charts-dfs/ebene", json={"enabled": False}).status_code == 401
+
+
+def test_der_hauptschalter_verdeckt_die_route_auf_eine_einzelne_karte_nicht(client):
+    """'ebene' steht an derselben Stelle wie eine ICAO. Faengt die neue Route zu gierig,
+    waere das Passen von Hand kaputt -- und zwar lautlos."""
+    c, db, tmp = client
+    _rohblatt(tmp / "aip_dfs" / "EDDL.flugplatzkarte.roh.png", 1200, 900)
+    _karte(db, "EDDL", "flugplatzkarte", status="offen")
+    r = c.post("/api/admin/aip-charts-dfs/EDDL/flugplatzkarte", json={
+        "p1_x": 100, "p1_y": 200, "p1_lat": S_05R[0], "p1_lon": S_05R[1],
+        "p2_x": 900, "p2_y": 700, "p2_lat": S_23L[0], "p2_lon": S_23L[1]})
+    assert r.status_code == 200, r.text
+
+
+# ------------------------------------------------------------ Vorschau der Passung
+#
+# Um zu sehen, ob eine Passung stimmt, braucht die Admin-Ansicht dieselben Grenzen, mit
+# denen das Kniebrett das Blatt auflegt -- sonst zeigt die Vorschau etwas anderes als die
+# App, und genau dafuer waere sie nutzlos.
+
+def test_die_admin_liste_liefert_die_blattgrenzen_fuer_die_vorschau(client):
+    c, db, _tmp = client
+    _karte(db, "EDDL", "flugplatzkarte")
+    k = [x for x in c.get("/api/admin/aip-charts-dfs").json()["charts"]
+         if x["icao"] == "EDDL" and x["sorte"] == "flugplatzkarte"][0]
+    assert (k["nord"], k["sued"], k["west"], k["ost"]) == (
+        LAGE["nord"], LAGE["sued"], LAGE["west"], LAGE["ost"])
+    assert k["mps"] == LAGE["mps"]
+    assert k["bild"].startswith("/aip-chart-dfs/EDDL/flugplatzkarte.png")
+
+
+def test_die_vorschau_bekommt_denselben_bildpfad_wie_das_kniebrett(client):
+    """Nicht das Rohblatt: Die Drehung steckt im ABGELEGTEN Bild, das Overlay liegt
+    achsenparallel. Wer hier /aip-chart-roh/ zeigte, saehe eine schiefe Karte und suchte
+    einen Fehler, den es nicht gibt."""
+    c, db, _tmp = client
+    _karte(db, "EDDL", "flugplatzkarte")
+    admin = [x for x in c.get("/api/admin/aip-charts-dfs").json()["charts"]
+             if x["sorte"] == "flugplatzkarte"][0]
+    oeff = c.get("/api/aip-charts-dfs").json()["charts"][0]
+    assert admin["bild"].split("?")[0] == oeff["bild"].split("?")[0]
+
+
+def test_eine_karte_ohne_passung_hat_keine_grenzen(client):
+    """Damit die Ansicht den Vorschau-Knopf weglassen kann, statt eine leere Karte zu zeigen.
+
+    Achtung, die Falle: Eine Zeile ohne Passung traegt ``nord=sued=west=ost=0`` -- NULL ist
+    es nicht (s. CLAUDE.md). Ungeprueft weitergereicht laege das Blatt in der Vorschau bei
+    0/0 im Golf von Guinea und saehe aus wie eine kaputte Passung statt wie gar keine.
+    """
+    c, db, _tmp = client
+    conn = get_connection(db)
+    try:
+        upsert_chart_dfs(conn, "EDWJ", "flugplatzkarte", status="offen")
+        conn.commit()
+    finally:
+        conn.close()
+    k = [x for x in c.get("/api/admin/aip-charts-dfs").json()["charts"]
+         if x["icao"] == "EDWJ"][0]
+    assert k["nord"] is None

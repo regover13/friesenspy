@@ -258,3 +258,62 @@ def test_beide_kartentypen_kommen_aus_einem_endpunkt():
                             ("_groundKartenLaden", "!== 'sichtflug'")):
         stelle = INDEX_RUMPF.index("function " + name)
         assert bedingung in INDEX_RUMPF[stelle:stelle + 800], name
+
+
+# ------------------------------------------------------------- Hauptschalter der Ebene
+
+def test_der_hauptschalter_der_platzkarten_ebene_steht_im_admin():
+    assert 'id="dfs-ebene-toggle"' in ADMIN
+
+
+def test_der_hauptschalter_spricht_seinen_endpunkt_an():
+    assert "'/api/admin/aip-charts-dfs/ebene'" in ADMIN_RUMPF
+
+
+def test_der_hauptschalter_wird_aus_dem_serverzustand_gezeichnet():
+    """Sonst steht der Haken nach jedem Neuladen auf 'an', egal was gilt -- und der Admin
+    schaltet aus Versehen wieder frei."""
+    assert "ebene_aktiv" in ADMIN_RUMPF
+
+
+def test_der_hauptschalter_nennt_beide_bodensorten():
+    """Wer 'Flugplatzkarte' liest und Rollkarten weiter erwartet, wundert sich. Im
+    Kniebrett haengen beide an demselben Eintrag."""
+    stelle = ADMIN.index('id="dfs-ebene-toggle"')
+    umfeld = ADMIN[stelle - 400:stelle + 700]
+    assert "Rollkarte" in umfeld
+
+
+# ------------------------------------------------------------ Vorschau der Passung
+
+def test_die_vorschau_bringt_leaflet_mit():
+    """Ohne Kartenbibliothek keine Vorschau. Sie war beim Rueckbau herausgeflogen, weil
+    nichts sie mehr benutzte."""
+    assert "leaflet@1.9.4/dist/leaflet.css" in ADMIN
+    assert "leaflet@1.9.4/dist/leaflet.js" in ADMIN
+
+
+def test_die_vorschau_hat_einen_platz():
+    assert 'id="dfs-vorschau"' in ADMIN
+    assert 'id="dfs-vorschau-karte"' in ADMIN
+
+
+def test_die_vorschau_legt_das_blatt_wie_das_kniebrett_auf():
+    """Dieselbe Eckenreihenfolge wie in index.html: [[sued, west], [nord, ost]]. Vertauscht
+    faellt das Blatt an die falsche Stelle -- und die Vorschau spraeche einer richtigen
+    Passung ihre Richtigkeit ab."""
+    assert re.search(r"grenzen\s*=\s*\[\[\s*k\.sued\s*,\s*k\.west\s*\]\s*,"
+                     r"\s*\[\s*k\.nord\s*,\s*k\.ost\s*\]\s*\]", ADMIN_RUMPF)
+    assert re.search(r"L\.imageOverlay\(\s*k\.bild\s*,\s*grenzen\b", ADMIN_RUMPF)
+
+
+def test_die_vorschau_zeigt_die_beiden_passpunkte():
+    """Der Sinn der Vorschau: Liegt das Blatt schief, sieht man an den Marken sofort, ob
+    ein Klick danebensass oder die Koordinate falsch war."""
+    assert "p1_lat" in ADMIN_RUMPF and "p2_lat" in ADMIN_RUMPF
+
+
+def test_die_vorschau_laesst_sich_durchsichtig_stellen():
+    """Ohne Regler liegt das Blatt deckend auf dem Luftbild -- man sieht dann gerade das
+    nicht, wogegen man vergleichen will."""
+    assert 'id="dfs-vorschau-deckkraft"' in ADMIN
