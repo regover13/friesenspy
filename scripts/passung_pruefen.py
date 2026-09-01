@@ -53,16 +53,19 @@ KLICK_PX = 3.0
 SICHERHEIT = 3.0     # wieviele Standardabweichungen noch als "in Ordnung" gelten
 SCHRANKE_MIN = 0.008  # darunter wird es Rauschen, egal wie lang gemessen wurde
 
-# Grobes Plausibilitaetsband. Es faengt Faktor-2-Fehler, nicht mehr -- es ersetzt die Leiste
-# NICHT und ist nur dort ueberhaupt die einzige Bremse, wo gar keine Leiste gemessen wurde.
+# Sehr grobes Plausibilitaetsband -- es faengt nur noch groben Unfug, und das mit Absicht.
 #
-# Die Untergrenze stand zuerst bei 0,8 und war damit falsch: gemessen war sie an den 68
-# damals gepassten Blaettern (1,10 bis 4,61 m/px), und in denen war kein einziges im
-# Massstab 1:3000. EDLP ist eines -- 0,51 m/px --, und die Probe wies es am 01.09.2026 ab,
-# obwohl sie mit 0,61 Prozent Abweichung zur Leiste so gut bestanden hatte wie kaum eine
-# andere. Eine an vorhandenen Faellen kalibrierte Schranke kennt eben nur die vorhandenen
-# Faelle. 0,35 laesst 1:3000 durch und faengt einen Faktor-2-Fehler von dort immer noch.
-MPS_MIN, MPS_MAX = 0.35, 6.0
+# Es stand zuerst bei 0,8 bis 6,0, gemessen an den 68 damals gepassten Blaettern
+# (1,10 bis 4,61 m/px). Beide Grenzen waren falsch, und beide haben am 01.09.2026 eine
+# richtige Passung abgewiesen: EDLP im Massstab 1:3000 mit 0,51 m/px (0,61 Prozent
+# Abweichung zur Leiste) und ETSI im Massstab 1:40000 mit 6,82 (0,54 Prozent). Eine an
+# vorhandenen Faellen geeichte Schranke kennt eben nur die vorhandenen Faelle.
+#
+# Die tatsaechliche Spanne der DFS-Blaetter reicht von 1:3000 bis 1:40000, also ueber den
+# Faktor dreizehn. Ein Band darueber kann einen Faktor-2-Fehler grundsaetzlich nicht mehr
+# fangen -- diesen Anspruch gibt es hier also nicht mehr. Die Arbeit macht die Leiste; das
+# Band ist nur noch der Notnagel gegen eine Passung, die um Groessenordnungen danebenliegt.
+MPS_MIN, MPS_MAX = 0.3, 12.0
 
 
 def massstab_aus_leiste(a: tuple[float, float], b: tuple[float, float],
@@ -195,3 +198,68 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Verfahren ARP: passen ohne brauchbare Schwellenkoordinaten
+# ---------------------------------------------------------------------------
+#
+# Zwoelf der offenen Blaetter liegen daran fest, dass die OurAirports-Schwellen nicht zum
+# Blatt passen -- mal laenger (EDRB: 3056 m stillgelegte Vollbahn gegen 1230 m genutzten
+# Abschnitt), mal kuerzer (EDWH: 536 gegen 778 m). Auf den betroffenen Blaettern stimmt
+# aber alles andere:
+#
+#   * die ARP-Koordinate im Blattkopf (auf 0,01 Bogenminute, also rund 15 m),
+#   * das ARP-Symbol auf der Karte,
+#   * die gedruckte Massstabsleiste,
+#   * und die BAHNRICHTUNG aus OurAirports -- die bleibt auch dann richtig, wenn die Laenge
+#     falsch ist, weil ein veralteter Eintrag dieselbe Achse beschreibt. Gemessen am
+#     01.09.2026 liegt sie fuer 19 der 23 offenen Plaetze unter 0,7 Grad genau; nur EDPH,
+#     EDQA und EDQC sind mit 7 bis 41 Grad zu grob gerundet, und EDKB hat gar keine Daten.
+#
+# Daraus laesst sich die Passung vollstaendig bauen. Die Gegenprobe ist dann NICHT mehr die
+# Leiste (die steckt ja schon im Massstab), sondern die gezeichnete Bahnlaenge gegen die auf
+# dem Blatt GEDRUCKTE -- zwei Angaben desselben Blatts, die nichts voneinander wissen.
+
+def aus_arp(arp_px, arp_geo, mps: float, drehung: float, abstand_px: float = 500.0):
+    """Zwei Punktpaare aus ARP, Massstab und Blattdrehung bauen.
+
+    ``drehung`` ist die Drehung des Blattes in Grad: wahre Peilung = Schirmpeilung +
+    Drehung. Der zweite Punkt wird auf dem Blatt senkrecht nach oben gesetzt; auf dem Boden
+    liegt er damit unter der Peilung ``drehung``.
+
+    Rueckgabe ``(p1_px, p1_geo, p2_px, p2_geo)`` -- direkt fuer ``handpassung`` und fuer den
+    Speicheraufruf.
+    """
+    strecke = abstand_px * mps
+    t = math.radians(drehung)
+    nord, ost = strecke * math.cos(t), strecke * math.sin(t)
+    m_lon, m_lat = runway_ref.meter_je_grad(arp_geo[0])
+    p2_geo = (arp_geo[0] + nord / m_lat, arp_geo[1] + ost / m_lon)
+    return (tuple(arp_px), tuple(arp_geo),
+            (arp_px[0], arp_px[1] - abstand_px), p2_geo)
+
+
+def blattdrehung(bahn_px_a, bahn_px_b, wahrer_kurs: float) -> float:
+    """Blattdrehung aus der gezeichneten Bahn und ihrer wahren Peilung.
+
+    ``bahn_px_a`` -> ``bahn_px_b`` muss dieselbe Richtung meinen wie ``wahrer_kurs``
+    (also von der Schwelle mit der kleineren Kennzahl zur groesseren).
+    """
+    schirm = math.degrees(math.atan2(bahn_px_b[0] - bahn_px_a[0],
+                                     -(bahn_px_b[1] - bahn_px_a[1])))
+    return (wahrer_kurs - schirm) % 360.0
+
+
+def probe_bahnlaenge(bahn_px_a, bahn_px_b, mps: float, gedruckte_laenge: float) -> dict:
+    """Die Gegenprobe des ARP-Verfahrens: gezeichnete Bahn gegen gedruckte Laenge.
+
+    Sie ist unabhaengig von ARP und von OurAirports -- misst also wirklich etwas anderes als
+    das, woraus die Passung gebaut wurde. Die Schranke ist mit drei Prozent bewusst weiter
+    als bei der Leiste: Die gedruckte Laenge ist gerundet (EDBM nennt 1000 m fuer 1001,6).
+    """
+    gemessen = math.hypot(bahn_px_b[0] - bahn_px_a[0],
+                          bahn_px_b[1] - bahn_px_a[1]) * mps
+    abw = abs(gemessen - gedruckte_laenge) / gedruckte_laenge
+    return {"gemessen_m": round(gemessen, 1), "gedruckt_m": gedruckte_laenge,
+            "abweichung_prozent": round(abw * 100, 2), "ok": bool(abw <= 0.03)}

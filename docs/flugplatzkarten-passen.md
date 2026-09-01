@@ -152,6 +152,45 @@ möglich).
 zählt für die Georeferenz nur, DASS zwei Schwellen sicher zuzuordnen sind — nicht, welche
 Bahn davon die längste ist.
 
+## Wenn OurAirports nicht zum Blatt passt: das ARP-Verfahren
+
+Zwölf der offenen Blätter lagen daran fest, dass die OurAirports-Schwellen nicht zum Blatt
+passen — mal länger (EDRB: 3056 m stillgelegte Vollbahn gegen 1230 m genutzten Abschnitt),
+mal kürzer (EDWH: 536 gegen 778 m). Die Schwellenkoordinaten sind dort unbrauchbar. **Alles
+andere auf dem Blatt ist es nicht:**
+
+| Was | Woher | Genauigkeit |
+|---|---|---|
+| Lage | ARP-Symbol auf der Karte + ARP-Koordinate im Blattkopf | rund 20 m |
+| Maßstab | gedruckte Maßstabsleiste | 0,1–0,6 % |
+| Drehung | gezeichnete Bahnrichtung gegen den **Kurs** aus OurAirports | unter 0,7° |
+
+**Der Kurs bleibt richtig, auch wenn die Länge falsch ist** — ein veralteter Eintrag
+beschreibt dieselbe Achse. Gemessen am 01.09.2026 liegt er für 19 der 23 offenen Plätze
+unter 0,7° genau; nur EDPH (±9,5°), EDQA (±41°) und EDQC (±7,4°) sind zu grob gerundet, und
+EDKB hat gar keine Daten. Gegenprobe der Peilung, wo das Blatt sie druckt: `062 MAG` plus
+`VAR 3° E` ergibt 065 — genau den OurAirports-Kurs (EDSI).
+
+```python
+from scripts.passung_pruefen import aus_arp, blattdrehung, probe_bahnlaenge
+dreh = blattdrehung(bahn_ende_a, bahn_ende_b, kurs_aus_ourairports)
+probe_bahnlaenge(bahn_ende_a, bahn_ende_b, mps_aus_leiste, gedruckte_laenge)   # muss bestehen
+p1, g1, p2, g2 = aus_arp(arp_pixel, arp_aus_dem_blattkopf, mps_aus_leiste, dreh)
+```
+
+**Die Gegenprobe ist hier eine andere.** Die Leiste steckt schon im Maßstab, kann also nicht
+mehr prüfen. An ihre Stelle tritt die **gezeichnete Bahnlänge gegen die auf dem Blatt
+gedruckte** — zwei Angaben desselben Blatts, die nichts voneinander wissen. Bei EDSI: 859,5
+gegen 860 m, also 0,06 %. Die Schranke steht bei drei Prozent, weil die gedruckte Länge
+gerundet ist (EDBM nennt 1000 m für 1001,6).
+
+**Voraussetzung ist das ARP-Symbol auf der Karte.** Ohne das gibt es keinen Lage-Anker, und
+das Verfahren greift nicht — EDWH ist so ein Fall: Maßstab und Drehung ließen sich sauber
+bestimmen (gezeichnet 782 m gegen gedruckte 778 m), aber das Blatt zeichnet kein ⊕.
+
+**Nicht annehmen, der ARP läge auf der Bahnmitte.** Bei EDBM tut er das (auf ein Pixel), bei
+EDSI liegt er 131 m daneben. Wer die Annahme braucht, hat keinen Anker.
+
 ## Der bessere Weg, wenn das Blatt ein Gradnetz hat
 
 Alles oben Beschriebene holt die Koordinaten aus OurAirports. Genau daran liegen dreizehn

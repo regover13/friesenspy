@@ -157,8 +157,56 @@ def test_ein_feines_blatt_faellt_nicht_am_plausibilitaetsband_durch():
     assert e["ok"], e.get("grund")
 
 
-def test_ein_faktor_zwei_fehler_bleibt_auch_unten_gefangen():
-    """Die Untergrenze darf nicht so weit rutschen, dass sie nichts mehr faengt."""
-    from scripts.passung_pruefen import MPS_MIN
-    assert MPS_MIN <= 0.51 / 1.3, "1:3000 muss durchpassen"
-    assert MPS_MIN >= 0.51 / 2.0, "ein halbierter 1:3000-Massstab muss noch anschlagen"
+def test_das_band_deckt_die_ganze_spanne_der_dfs_blaetter():
+    """Von 1:3000 (EDLP, 0,51 m/px) bis 1:40000 (ETSI, 6,82). Beide Grenzen haben je einmal
+    eine richtige Passung abgewiesen, weil sie an den bis dahin gepassten Blaettern geeicht
+    waren -- und unter denen war weder das eine noch das andere.
+
+    Ueber den Faktor dreizehn kann ein Band keinen Faktor-2-Fehler mehr fangen. Der Test
+    haelt deshalb nur noch fest, dass beide echten Faelle durchpassen; die Pruefung leistet
+    die Leiste.
+    """
+    from scripts.passung_pruefen import MPS_MAX, MPS_MIN
+    assert MPS_MIN <= 0.51 and MPS_MAX >= 6.82
+
+
+# --------------------------------------------------- Verfahren ARP (ohne Schwellenkoordinaten)
+
+from scripts.passung_pruefen import aus_arp, blattdrehung, probe_bahnlaenge  # noqa: E402
+
+
+def test_die_blattdrehung_faellt_aus_bahn_und_wahrem_kurs():
+    """EDBM: Bahn waagerecht gezeichnet, gedruckt sind 088 Grad rechtweisend."""
+    assert blattdrehung((100, 500), (800, 500), 88.0) == pytest.approx(358.0, abs=0.01)
+    # Nordgerichtetes Blatt: eine Bahn mit Kurs 090 liegt dort waagerecht.
+    assert blattdrehung((100, 500), (800, 500), 90.0) == pytest.approx(0.0, abs=0.01)
+
+
+def test_aus_arp_baut_eine_passung_mit_dem_vorgegebenen_massstab():
+    """Der Sinn des Verfahrens: Massstab kommt aus der Leiste, Drehung aus der Bahnrichtung,
+    Lage aus dem ARP -- und keine einzige Schwellenkoordinate wird gebraucht."""
+    from app import ground_charts
+    p1, g1, p2, g2 = aus_arp((400.0, 300.0), (50.0, 8.0), mps=1.5, drehung=12.0)
+    p = ground_charts.handpassung(p1, g1, p2, g2)
+    assert p.mps == pytest.approx(1.5, rel=2e-3)
+    assert p.drehung == pytest.approx(12.0, abs=0.05)
+
+
+def test_aus_arp_haelt_den_arp_fest():
+    p1, g1, _p2, _g2 = aus_arp((123.0, 456.0), (49.5, 11.07), mps=0.9, drehung=340.0)
+    assert p1 == (123.0, 456.0) and g1 == (49.5, 11.07)
+
+
+def test_die_bahnlaengen_probe_faengt_einen_falschen_massstab():
+    """Die Gegenprobe des ARP-Verfahrens. Sie misst etwas anderes als das, woraus die
+    Passung gebaut wurde -- die Leiste steckt ja schon im Massstab."""
+    gut = probe_bahnlaenge((100.0, 500.0), (100.0 + 860.0 / 1.7, 500.0), 1.7, 860.0)
+    assert gut["ok"] and gut["abweichung_prozent"] == pytest.approx(0.0, abs=0.05)
+    schlecht = probe_bahnlaenge((100.0, 500.0), (100.0 + 860.0 / 1.7, 500.0), 2.1, 860.0)
+    assert not schlecht["ok"]
+
+
+def test_die_bahnlaengen_probe_vertraegt_die_rundung_der_gedruckten_laenge():
+    """EDBM druckt 1000 m fuer 1001,6. Eine Schranke von 0,5 Prozent wiese das ab."""
+    e = probe_bahnlaenge((0.0, 0.0), (1001.6, 0.0), 1.0, 1000.0)
+    assert e["ok"]
