@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.7.4",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Nach dem Speichern stand das Ergebnis im \u00dcberschreib-Feld",
+    "items": [
+      "\ud83d\udee1\ufe0f Das Speichern trug die gerechnete Drehung in das Feld \u201eDrehung \u00fcberschreiben\u201c ein. Bei einem nordgerichteten Blatt stand dort danach eine \u201e0\u201c \u2014 und die kam beim n\u00e4chsten Speichern als ausdr\u00fcckliche Vorgabe zur\u00fcck. Das Ergebnis steht jetzt nur noch in der Anzeige daneben und in der Meldung."
+    ]
+  },
+  {
     "version": "14.7.3",
     "date": "2026-09-01",
     "highlight": false,

@@ -610,3 +610,13 @@ def test_eine_wirklich_ueberschriebene_drehung_bleibt_stehen():
     stelle = ADMIN_RUMPF.index("function _dfsIstUeberschrieben")
     block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("\n    }", stelle)]
     assert "_dfsDrehungBerechnet" in block and "360" in block
+
+
+def test_das_speichern_schreibt_nichts_in_das_ueberschreib_feld():
+    """Es ist das UEBERSCHREIB-Feld: Was darin steht, verwirft beim naechsten Speichern die
+    gerechnete Drehung. Nach einem Speichern stand dort das Ergebnis -- bei einem
+    nordgerichteten Blatt also eine "0", die beim zweiten Speichern als ausdrueckliche
+    Vorgabe zurueckkam (Nutzerfund 01.09.2026: "da steht immer noch immer eine 0 drin")."""
+    stelle = ADMIN_RUMPF.index("document.getElementById('dfs-save-btn')")
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("dfs-abbrechen-btn", stelle)]
+    assert "dfs-drehung').value =" not in block

@@ -4054,7 +4054,6 @@
       }
       const erg = await res.json();
       toast('Passung gespeichert — Drehung ' + erg.drehung + '°, ' + erg.mps + ' m/px.');
-      document.getElementById('dfs-drehung').value = erg.drehung;
       // Die Maske bleibt OFFEN und die Vorschau zieht nach (Nutzerwunsch 01.09.2026): Zahlen
       // allein verraten nicht, ob ein Blatt richtig liegt -- eine um 180 Grad verdrehte
       // Zuordnung der beiden Punkte liefert denselben Massstab.
