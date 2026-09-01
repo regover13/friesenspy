@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.7.0",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Passen: die Drehung steht jetzt da, statt geraten zu werden",
+    "items": [
+      "\ud83e\udded Die Maske zeigt jetzt die aus den beiden Punkten <b>gerechnete</b> Drehung und den Ma\u00dfstab an, sobald beide gesetzt sind. Ein gedreht gedrucktes Blatt braucht damit keine Eingabe \u2014 zwei richtig gesetzte Punkte ergeben auch 270\u00b0 von selbst.",
+      "\u26a0\ufe0f Das Feld hei\u00dft jetzt \u201eDrehung \u00fcberschreiben\u201c und sagt, was es tut: Es richtet das Blatt nicht auf, sondern dreht die ganze Abbildung <b>um Punkt 1</b> \u2014 Punkt 2 wandert dabei weg und das Blatt liegt versetzt. Gedacht ist es f\u00fcr kleine Nachbesserungen, wenn beide Punkte dicht beieinanderliegen."
+    ]
+  },
+  {
     "version": "14.6.6",
     "date": "2026-09-01",
     "highlight": false,

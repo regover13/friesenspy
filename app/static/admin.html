@@ -1345,11 +1345,19 @@
               </div>
             </div>
             <p style="margin:8px 0 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-              <label style="display:flex;gap:5px;align-items:center;">Drehung
-                <input type="text" id="dfs-drehung" size="6" placeholder="wird berechnet"></label>
+              <span id="dfs-drehung-berechnet" style="font-size:0.82rem;color:#8aa0b8;"></span>
+              <label style="display:flex;gap:5px;align-items:center;" title="Dreht die ganze Abbildung um Punkt 1. Punkt 2 wandert dabei weg — nur für kleine Nachbesserungen gedacht, nicht zum Aufrichten eines Blattes.">Drehung überschreiben
+                <input type="text" id="dfs-drehung" size="6" placeholder="leer lassen"></label>
               <button class="btn btn-primary btn-sm" id="dfs-save-btn">Passung speichern</button>
               <button class="btn btn-sm" id="dfs-abbrechen-btn">Schließen</button>
               <span id="dfs-passen-hinweis" style="color:#8aa0b8;font-size:0.82rem;"></span>
+            </p>
+            <p style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;">
+              Ein gedreht gedrucktes Blatt braucht <b>keine</b> Eingabe: Zwei richtig gesetzte
+              Punkte ergeben die Drehung von selbst. „Überschreiben“ richtet das Blatt nicht
+              auf, sondern dreht die ganze Abbildung <b>um Punkt 1</b> — Punkt 2 wandert dabei
+              weg. Es ist für kleine Nachbesserungen gedacht, wenn beide Punkte dicht
+              beieinanderliegen.
             </p>
 
           </div>
@@ -3532,8 +3540,11 @@
     function _dfsZielNachziehen() {
       const n = _dfsZiel();
       if (n === 1 && _dfsGesetzt[1].px && _dfsGesetzt[1].geo) _dfsZielSetzen(2);
-      _dfsMarkenNachziehen();
+      _dfsNachAenderung();
     }
+
+    /** Nach jeder Wertaenderung: Marken versetzen UND die gerechnete Drehung nachziehen. */
+    function _dfsNachAenderung() { _dfsMarkenNachziehen(); _dfsDrehungAnzeigen(); }
 
     function _dfsKarteAufbauen() {
       if (_dfsKarte) return;
@@ -3759,6 +3770,7 @@
         typeof eintrag.drehung === 'number' ? eintrag.drehung.toFixed(1) : '';
 
       _dfsKarteFuellen(icao, sorte, hilfe.mitte);
+      _dfsDrehungAnzeigen();
 
       const sBox = document.getElementById('dfs-schwellen');
       const bahnen = hilfe.bahnen || [];
@@ -3866,7 +3878,7 @@
       ['lat', 'lon'].forEach(function (achse) {
         ['grad', 'min', 'sek'].forEach(function (teil) {
           document.getElementById(p + '-' + achse + '-' + teil)
-            .addEventListener('input', _dfsMarkenNachziehen);
+            .addEventListener('input', _dfsNachAenderung);
         });
       });
     });
@@ -3886,6 +3898,49 @@
       if (m < 0 || m >= 60 || sk < 0 || sk >= 60) return null;
       const betrag = Math.abs(g) + m / 60 + sk / 3600;
       return g < 0 ? -betrag : betrag;
+    }
+
+    /** Meter je Grad -- dieselben Reihen wie app/runway_ref.py.
+     *
+     *  Nicht mit festen Werten rechnen: 110540 ist der Aequatorwert, der Meridiangrad
+     *  betraegt bei 47 bis 55 Grad Nord aber 111 181 bis 111 324 m. */
+    function _dfsMeterJeGrad(lat) {
+      const p = lat * Math.PI / 180;
+      return { lon: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3 * p),
+               lat: 111132.95 - 559.82 * Math.cos(2 * p) + 1.175 * Math.cos(4 * p) };
+    }
+
+    /** Drehung und Massstab aus den vier eingetragenen Werten -- dieselbe Rechnung wie
+     *  ``ground_charts.handpassung`` auf dem Server.
+     *
+     *  Sie ANZUZEIGEN ist der eigentliche Punkt: Ein um 270 Grad gedruckt vorliegendes Blatt
+     *  braucht keine Eingabe, das kommt hier von selbst heraus. Ohne die Anzeige sieht man
+     *  das nicht und tippt die Drehung ein -- und das dreht die Abbildung um Punkt 1, statt
+     *  das Blatt aufzurichten (Nutzerfund 01.09.2026, EDTS). */
+    function _dfsDrehungBerechnet() {
+      const b1 = _dfsBildpunkt(1), b2 = _dfsBildpunkt(2);
+      const la1 = _dfsWinkel('p1-lat'), lo1 = _dfsWinkel('p1-lon');
+      const la2 = _dfsWinkel('p2-lat'), lo2 = _dfsWinkel('p2-lon');
+      if (!b1 || !b2 || la1 === null || lo1 === null || la2 === null || lo2 === null) return null;
+      const m = _dfsMeterJeGrad((la1 + la2) / 2);
+      const dE = (lo2 - lo1) * m.lon, dN = (la2 - la1) * m.lat;
+      // Bild-y laeuft nach unten, Nordmeter nach oben -- ohne diese Spiegelung liegt die
+      // richtige Loesung nicht im Suchraum (s. handpassung).
+      const dx = b2.x - b1.x, dy = (-b2.y) - (-b1.y);
+      const n = dx * dx + dy * dy;
+      if (n < 1e-9) return null;
+      const a = (dx * dE + dy * dN) / n;
+      const bb = (dx * dN - dy * dE) / n;
+      const mps = Math.hypot(a, bb);
+      if (!isFinite(mps) || mps <= 0) return null;
+      return { drehung: ((-Math.atan2(bb, a) * 180 / Math.PI) % 360 + 360) % 360, mps: mps };
+    }
+
+    function _dfsDrehungAnzeigen() {
+      const e = _dfsDrehungBerechnet();
+      document.getElementById('dfs-drehung-berechnet').textContent = e
+        ? 'berechnet: ' + e.drehung.toFixed(1) + '° · ' + e.mps.toFixed(3) + ' m/px'
+        : 'berechnet: — (beide Punkte brauchen Bildpunkt und Koordinate)';
     }
 
     /** Bildpunkt aus den beiden Feldern. Die FELDER sind die Quelle der Wahrheit -- ein

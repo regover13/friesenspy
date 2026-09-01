@@ -514,3 +514,38 @@ def test_die_suche_wird_NICHT_gemerkt():
     stelle = ADMIN_RUMPF.index("function _dfsFilterMerken")
     block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("\n    }", stelle)]
     assert "dfs-suche" not in block
+
+
+# ------------------------------------------------- Drehung: gerechnet statt getippt
+
+def test_die_maske_zeigt_die_gerechnete_drehung():
+    """Ein um 270 Grad gedruckt vorliegendes Blatt braucht KEINE Eingabe: Zwei richtig
+    gesetzte Punkte liefern die Drehung von selbst. Ohne Anzeige sieht man das nicht und
+    tippt sie ein -- und das tut etwas ganz anderes (s. naechster Test)."""
+    assert 'id="dfs-drehung-berechnet"' in ADMIN
+    assert "function _dfsDrehungBerechnet" in ADMIN_RUMPF
+
+
+def test_die_gerechnete_drehung_benutzt_dieselbe_formel_wie_der_server():
+    """Sonst zeigt die Maske eine andere Zahl an, als der Server spaeter speichert."""
+    stelle = ADMIN_RUMPF.index("function _dfsDrehungBerechnet")
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("\n    }", stelle)]
+    assert "Math.atan2" in block
+    # meter_je_grad: dieselben Reihen wie app/runway_ref.py
+    assert "111132.95" in ADMIN_RUMPF and "111412.84" in ADMIN_RUMPF
+
+
+def test_das_drehfeld_sagt_was_es_wirklich_tut():
+    """Es richtet das Blatt NICHT auf, es dreht die ganze Abbildung um Punkt 1 -- Punkt 2
+    wandert dabei weg. Am 01.09.2026 gemeldet als "wenn ich das mache, passen die Punkte
+    nicht und sie wird komplett versetzt"."""
+    stelle = ADMIN.index('id="dfs-drehung"')
+    umfeld = ADMIN[max(0, stelle - 700):stelle + 700]
+    assert "Punkt 1" in umfeld and "überschreiben" in umfeld.lower()
+
+
+def test_die_gerechnete_drehung_steht_schon_beim_oeffnen_da():
+    """Sonst sieht man erst nach dem ersten Klick, dass die Drehung sich von selbst ergibt."""
+    stelle = ADMIN_RUMPF.index("async function dfsPassenStarten(")
+    block = ADMIN_RUMPF[stelle:stelle + 2600]
+    assert "_dfsDrehungAnzeigen()" in block
