@@ -230,3 +230,16 @@ def test_beide_platzrunden_lagen_benutzen_den_eigenen_pane():
 def test_der_pane_steht_bevor_die_platzrunden_geladen_werden():
     """Leaflet loest den Pane-Namen beim Einhaengen auf; fehlt er, bricht es."""
     assert RUMPF.index("createPane(_PLATZRUNDEN_PANE)") < RUMPF.index("_addPreferredPlatzrundenLayer(liveMap")
+
+
+def test_die_hoehenangabe_steht_ueber_der_platzrunde_nicht_darauf():
+    """Sie sass mit ``direction: 'center'`` genau auf der Gegenanflug-Linie und deckte sie
+    mit ihrem weissen Kasten ab (Nutzer, 01.09.2026).
+
+    Am STAPEL lag es nicht: Tooltips liegen bei Leaflet im tooltipPane (z-index 650), also
+    ohnehin ueber den Platzrunden (450) und den Kartenblaettern (310). Es war die Position.
+    """
+    stelle = RUMPF.index("className: 'platzrunden-hoehe'")
+    zeile = RUMPF[max(0, stelle - 200):stelle + 100]
+    assert "direction: 'top'" in zeile
+    assert "direction: 'center'" not in zeile

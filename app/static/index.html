@@ -4774,7 +4774,12 @@ function _platzrundenZoomWache(map) {
     _labelsImSichtbereich(
       map, _platzrundenLinien, linienAn && z >= _PLATZRUNDEN_LABEL_MIN_ZOOM,
       l => l._hoeheText,
-      { permanent: true, direction: 'center', className: 'platzrunden-hoehe', opacity: 1 }
+      // 'top' statt 'center': Mittig sass die Zahl genau AUF der Gegenanflug-Linie und
+      // deckte sie mit ihrem weissen Kasten ab. Der Ankerpunkt bleibt die Mitte des
+      // aeussersten langen Schenkels (s. _platzrundenHoehenLabel) -- nur die Zahl rueckt
+      // darueber. Am Stapel lag es nie: Tooltips liegen im tooltipPane (650), also ueber
+      // den Platzrunden (450) und den Kartenblaettern (310).
+      { permanent: true, direction: 'top', className: 'platzrunden-hoehe', opacity: 1 }
     );
   };
   map.on('zoomend', anpassen);
