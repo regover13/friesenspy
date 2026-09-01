@@ -83,9 +83,15 @@ FELD_SAUM_M = {"sichtflug": 0.0, "flugplatzkarte": 1000.0, "rollkarte": 1000.0}
 # keine ist.
 DREH_SCHWELLE = 0.25
 
-_VIERTEL = {90: Image.Transpose.ROTATE_90,
+# **Die Zuordnung ist absichtlich ueber Kreuz.** PILs ``ROTATE_90`` dreht GEGEN den
+# Uhrzeigersinn, ``rotate(-drehung)`` weiter unten dreht MIT ihm. Wer hier das
+# gleichnamige Transpose einsetzt, dreht das Blatt um 180 Grad verkehrt -- bei 180 faellt
+# es nicht auf, bei 90 und 270 sofort. Gemeldet am 01.09.2026 als "die Karte wird falsch
+# herum gedreht" (EDTM, Drehung 90,00); getroffen war genau eine der 557 Karten, weil
+# DREH_SCHWELLE nur 0,25 Grad breit ist.
+_VIERTEL = {90: Image.Transpose.ROTATE_270,
             180: Image.Transpose.ROTATE_180,
-            270: Image.Transpose.ROTATE_270}
+            270: Image.Transpose.ROTATE_90}
 
 
 @dataclass

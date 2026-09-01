@@ -307,3 +307,37 @@ def test_die_bahnvermessung_ist_zurueckgebaut():
     for weg in ("passung_rechnen", "bahnflaechen", "hauptachse", "enden_tasten",
                 "achsen_zusammenfassen", "aehnlich"):
         assert not hasattr(ground_charts, weg), weg
+
+
+# --------------------------------------------------- Viertelwendungen (Fund 01.09.2026)
+
+def test_die_viertelwendung_dreht_in_dieselbe_richtung_wie_der_allgemeine_weg():
+    """DER Test. Bei 90 und 270 Grad nimmt ``_drehen`` eine verlustfreie Abkuerzung ueber
+    ``transpose`` -- und die drehte in die ENTGEGENGESETZTE Richtung wie ``rotate(-drehung)``.
+
+    PILs ``ROTATE_90`` dreht gegen den Uhrzeigersinn, ``rotate(-90)`` mit ihm. Bei 180 Grad
+    faellt es nicht auf, weil symmetrisch; bei 90 und 270 liegt das Blatt um 180 Grad
+    verdreht. Gemeldet als "die Karte wird falsch herum gedreht" (EDTM, Drehung 90,00).
+    """
+    from PIL import Image
+    from app.ground_charts import _drehen
+    # Ein Bild, das man eindeutig wiedererkennt -- quadratisch, damit die Groesse nicht
+    # schon durch das Seitenverhaeltnis unterscheidbar waere.
+    im = Image.new("RGB", (40, 40), (255, 255, 255))
+    im.paste((0, 0, 0), (0, 0, 14, 6))
+    for grad in (90, 180, 270):
+        gedreht, tatsaechlich = _drehen(im, float(grad))
+        assert tatsaechlich == float(grad)
+        soll = im.rotate(-grad, expand=True)
+        assert list(gedreht.convert("L").getdata()) == list(soll.convert("L").getdata()), \
+            f"Viertelwendung um {grad} Grad dreht anders als rotate(-{grad})"
+
+
+def test_die_viertelwendung_bleibt_verlustfrei():
+    """Der Grund fuer die Abkuerzung: rotate() interpoliert jedes Pixel und liesse den
+    bild_hash ohne inhaltlichen Grund wandern. Sie darf also weiter transpose benutzen."""
+    import inspect
+
+    from app import ground_charts
+    quelle = inspect.getsource(ground_charts._drehen)
+    assert "transpose" in quelle

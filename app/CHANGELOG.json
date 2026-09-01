@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.7.1",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Bl\u00e4tter mit 90 oder 270 Grad lagen um 180 Grad verdreht",
+    "items": [
+      "\ud83d\udc1b Ein Blatt, dessen Drehung genau 90 oder 270 Grad betr\u00e4gt, wurde in die falsche Richtung gedreht abgelegt und lag damit um 180 Grad verkehrt. Ursache: Bei Viertelwendungen nimmt der Code eine verlustfreie Abk\u00fcrzung, und deren Drehsinn war dem allgemeinen Weg entgegengesetzt. Bei 180 Grad fiel es nicht auf, weil symmetrisch. Betroffen war genau eine der 557 Karten (EDTM Flugplatzkarte)."
+    ]
+  },
+  {
     "version": "14.7.0",
     "date": "2026-09-01",
     "highlight": false,
