@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.8.2",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "H\u00f6henangabe der Platzrunde lag hinter der Linie",
+    "items": [
+      "\ud83d\udd22 Die Platzrundenh\u00f6he steht wieder mittig auf der Linie \u2014 und liegt jetzt auch wieder davor. Beim Hochsetzen der Platzrunden \u00fcber die Kartenbl\u00e4tter war sie versehentlich \u00fcber die Beschriftungen mitgewandert, weil das Dreh-Plugin die Kartenebenen anders schachtelt als Leaflet allein."
+    ]
+  },
+  {
     "version": "14.8.1",
     "date": "2026-09-01",
     "highlight": false,

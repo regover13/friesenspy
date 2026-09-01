@@ -4774,12 +4774,11 @@ function _platzrundenZoomWache(map) {
     _labelsImSichtbereich(
       map, _platzrundenLinien, linienAn && z >= _PLATZRUNDEN_LABEL_MIN_ZOOM,
       l => l._hoeheText,
-      // 'top' statt 'center': Mittig sass die Zahl genau AUF der Gegenanflug-Linie und
-      // deckte sie mit ihrem weissen Kasten ab. Der Ankerpunkt bleibt die Mitte des
-      // aeussersten langen Schenkels (s. _platzrundenHoehenLabel) -- nur die Zahl rueckt
-      // darueber. Am Stapel lag es nie: Tooltips liegen im tooltipPane (650), also ueber
-      // den Platzrunden (450) und den Kartenblaettern (310).
-      { permanent: true, direction: 'top', className: 'platzrunden-hoehe', opacity: 1 }
+      // MITTIG auf der Linie, nicht darueber: So gelesen gehoert die Zahl sichtbar zu dem
+      // Schenkel, fuer den sie gilt. Ich hatte sie einmal auf 'top' geschoben, weil der
+      // weisse Kasten die Linie zu verdecken schien -- in Wahrheit lag er DAHINTER, und die
+      // Ursache war der Pane (s. _PLATZRUNDEN_PANE). Verdecken ist hier richtig.
+      { permanent: true, direction: 'center', className: 'platzrunden-hoehe', opacity: 1 }
     );
   };
   map.on('zoomend', anpassen);
@@ -11328,8 +11327,20 @@ async function initLiveMap() {
   liveOverlays['Platzrunden'] = _platzrundenGruppe;
   // Muss stehen, BEVOR die Ebene eingehaengt wird: Leaflet loest den Pane-Namen beim
   // Einhaengen auf, und ein fehlender Pane bricht das Zeichnen.
+  //
+  // Und er gehoert INS rotatePane. leaflet-rotate baut die Panes um: Kacheln und Overlays
+  // liegen in `rotatePane`, Marken/Tooltips/Popups in `norotatePane` -- beides Geschwister
+  // OHNE eigenen z-Wert, es entscheidet allein die DOM-Reihenfolge. Ein eigener Pane mit
+  // z-index 450 daneben stellte sich damit ueber BEIDE, also auch ueber die Tooltips: Die
+  // Hoehenangabe verschwand hinter der Platzrunde (Nutzerfund 01.09.2026, mit Screenshot).
+  //
+  // Im rotatePane liegt er ueber dem overlayPane (400) mit den Kartenblaettern und bleibt
+  // unter allem, was leaflet-rotate bewusst nicht mitdreht. Faellt das Plugin aus (onerror
+  // -> _leafletRotateFehlt), gibt es kein rotatePane; dann haengt Leaflet den Pane an
+  // mapPane, und dort greift 450 zwischen overlayPane (400) und shadowPane (500) genauso.
   if (!liveMap.getPane(_PLATZRUNDEN_PANE)) {
-    liveMap.createPane(_PLATZRUNDEN_PANE).style.zIndex = _PLATZRUNDEN_PANE_Z;
+    liveMap.createPane(_PLATZRUNDEN_PANE, liveMap.getPane('rotatePane') || undefined)
+      .style.zIndex = _PLATZRUNDEN_PANE_Z;
   }
   _addPreferredPlatzrundenLayer(liveMap, _platzrundenGruppe);
   _platzrundenZoomWache(liveMap);

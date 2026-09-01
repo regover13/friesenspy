@@ -209,7 +209,10 @@ def test_die_platzrunden_liegen_ueber_allen_kartenblaettern():
     (zIndex 300 und 310); die Platzrunden sind SVG-Pfade im SELBEN Pane und damit ohne
     eigenen zIndex zwangslaeufig darunter."""
     assert "_PLATZRUNDEN_PANE" in RUMPF
-    assert "createPane(_PLATZRUNDEN_PANE).style.zIndex = _PLATZRUNDEN_PANE_Z" in RUMPF
+    # An die Sache gebunden, nicht an die Schreibweise: Der Aufruf hat inzwischen ein
+    # zweites Argument (den Eltern-Pane) und einen Zeilenumbruch.
+    assert "createPane(_PLATZRUNDEN_PANE" in RUMPF
+    assert ".style.zIndex = _PLATZRUNDEN_PANE_Z" in RUMPF
     m = re.search(r"_PLATZRUNDEN_PANE_Z\s*=\s*(\d+)", RUMPF)
     assert m, "kein eigener Pane fuer die Platzrunden"
     # Ueber dem GANZEN overlayPane (400), nicht nur ueber den beiden zIndex-Werten darin --
@@ -229,17 +232,38 @@ def test_beide_platzrunden_lagen_benutzen_den_eigenen_pane():
 
 def test_der_pane_steht_bevor_die_platzrunden_geladen_werden():
     """Leaflet loest den Pane-Namen beim Einhaengen auf; fehlt er, bricht es."""
-    assert RUMPF.index("createPane(_PLATZRUNDEN_PANE)") < RUMPF.index("_addPreferredPlatzrundenLayer(liveMap")
+    assert RUMPF.index("createPane(_PLATZRUNDEN_PANE") < RUMPF.index("_addPreferredPlatzrundenLayer(liveMap")
 
 
-def test_die_hoehenangabe_steht_ueber_der_platzrunde_nicht_darauf():
-    """Sie sass mit ``direction: 'center'`` genau auf der Gegenanflug-Linie und deckte sie
-    mit ihrem weissen Kasten ab (Nutzer, 01.09.2026).
-
-    Am STAPEL lag es nicht: Tooltips liegen bei Leaflet im tooltipPane (z-index 650), also
-    ohnehin ueber den Platzrunden (450) und den Kartenblaettern (310). Es war die Position.
-    """
+def test_die_hoehenangabe_steht_auf_der_linie():
+    """Sie gehoert MITTIG auf den Gegenanflug -- so gelesen wird sie der Linie zugeordnet,
+    zu der sie gehoert. Ich hatte sie am 01.09.2026 auf 'top' geschoben, weil ich das
+    Verdecken fuer das Problem hielt; der Nutzer wollte sie auf der Linie, nur eben
+    davor."""
     stelle = RUMPF.index("className: 'platzrunden-hoehe'")
-    zeile = RUMPF[max(0, stelle - 200):stelle + 100]
-    assert "direction: 'top'" in zeile
-    assert "direction: 'center'" not in zeile
+    zeile = RUMPF[max(0, stelle - 250):stelle + 100]
+    assert "direction: 'center'" in zeile
+
+
+def test_der_platzrunden_pane_haengt_im_rotate_pane():
+    """DER Fehler vom 01.09.2026. leaflet-rotate baut die Panes um: Kacheln und Overlays
+    liegen in `rotatePane`, Marken/Tooltips/Popups in `norotatePane`, und beide sind
+    Geschwister ohne eigenen z-Wert -- es entscheidet die DOM-Reihenfolge.
+
+    Ein eigener Pane mit z-index 450 DANEBEN stellte sich damit ueber BEIDE, also auch
+    ueber die Tooltips: Die Hoehenangabe verschwand hinter der Platzrunde. Der Pane gehoert
+    INS rotatePane -- dort liegt er ueber dem overlayPane (400) mit den Kartenblaettern und
+    bleibt unter allem, was leaflet-rotate bewusst nicht mitdreht.
+    """
+    stelle = RUMPF.index("createPane(_PLATZRUNDEN_PANE")
+    zeile = RUMPF[stelle:stelle + 220]
+    assert "getPane('rotatePane')" in zeile
+
+
+def test_ohne_leaflet_rotate_faellt_der_pane_auf_die_vorgabe_zurueck():
+    """Das Plugin kann ausfallen (onerror -> _leafletRotateFehlt). Dann gibt es kein
+    rotatePane, und Leaflet haengt den Pane an mapPane -- dort greift der z-Wert 450
+    zwischen overlayPane (400) und shadowPane (500) genau richtig."""
+    stelle = RUMPF.index("createPane(_PLATZRUNDEN_PANE")
+    zeile = RUMPF[stelle:stelle + 220]
+    assert "||" in zeile, "kein Rueckfall, wenn rotatePane fehlt"
