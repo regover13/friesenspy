@@ -430,3 +430,31 @@ def test_fadenkreuz_auch_ueber_der_vorschaukarte():
     # Leaflet setzt `cursor: grab` auf seinem Container -- das muss ueberstimmt werden.
     m = re.search(r"#dfs-vorschau-karte[^{]*\{([^}]*)\}", ADMIN)
     assert m and "crosshair" in m.group(1)
+
+
+def test_die_maske_nennt_den_status_der_bearbeiteten_zeile():
+    """Ein Platz hat bis zu DREI Zeilen -- Sichtflug-, Flugplatz- und Rollkarte. Am
+    01.09.2026 sah es deshalb so aus, als bliebe eine frisch gepasste Karte auf "offen"
+    stehen: gepasst war die Flugplatzkarte von EDAK, offen geblieben ist die Rollkarte
+    daneben."""
+    stelle = ADMIN_RUMPF.index("function _dfsKopfSetzen")
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("\n    }", stelle)]
+    assert "_dfsStatusText" in block and "_dfsSorteText" in block
+
+
+def test_nach_dem_speichern_wird_der_kopf_nachgezogen():
+    stelle = ADMIN_RUMPF.index("document.getElementById('dfs-save-btn')")
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("dfs-abbrechen-btn", stelle)]
+    assert "_dfsKopfSetzen" in block
+
+
+def test_der_hinweis_erklaert_das_verschwinden_aus_der_liste():
+    """Der Filter 'gepasst' steht standardmaessig AUS. Die Zeile faellt beim Speichern also
+    aus der Liste, statt sichtbar den Status zu wechseln -- das sieht aus, als sei nichts
+    passiert."""
+    # Der Vorgabezustand des Filters, an den der Hinweis gebunden ist:
+    stelle = ADMIN.index('class="dfs-status-cb" value="gepasst"')
+    assert "checked" not in ADMIN[stelle:stelle + 60], "Vorgabe geaendert -- Hinweis pruefen"
+    stelle2 = ADMIN_RUMPF.index("document.getElementById('dfs-save-btn')")
+    block = ADMIN_RUMPF[stelle2:ADMIN_RUMPF.index("dfs-abbrechen-btn", stelle2)]
+    assert ".dfs-status-cb:checked" in block and "aus der Liste gefallen" in block

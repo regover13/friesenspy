@@ -3702,10 +3702,9 @@
 
       const abgeleitet = (eintrag.p1_x === null || eintrag.p1_x === undefined) && hilfe.punkte;
       _dfsPunkteSetzen(abgeleitet ? hilfe.punkte : eintrag);
-      document.getElementById('dfs-passen-kopf').textContent =
-        icao + ' — ' + _dfsSorteText(sorte) + ' passen'
-        + (abgeleitet ? ' (aus der gespeicherten Lage zurückgerechnet — nachbessern und speichern)'
-           : eintrag.p1_x !== null && eintrag.p1_x !== undefined ? ' (Werte sind vorbelegt)' : '');
+      _dfsKopfSetzen(icao, sorte,
+        abgeleitet ? 'aus der gespeicherten Lage zurückgerechnet — nachbessern und speichern'
+        : (eintrag.p1_x !== null && eintrag.p1_x !== undefined) ? 'Werte sind vorbelegt' : '');
       document.getElementById('dfs-drehung').value =
         typeof eintrag.drehung === 'number' ? eintrag.drehung.toFixed(1) : '';
 
@@ -3727,6 +3726,20 @@
             }).join('<br>');
       }
       document.getElementById('dfs-passen').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    /** Kopfzeile der Maske: Platz, Sorte UND Status.
+     *
+     *  Der Status gehoert dorthin, weil ein Platz bis zu DREI Zeilen hat -- Sichtflug-,
+     *  Flugplatz- und Rollkarte. Am 01.09.2026 sah es deshalb so aus, als bliebe eine frisch
+     *  gepasste Karte auf "offen" stehen: gepasst war die Flugplatzkarte von EDAK, offen
+     *  geblieben ist die Rollkarte daneben. */
+    function _dfsKopfSetzen(icao, sorte, zusatz) {
+      const k = _dfsAlle.find(x => x.icao === icao && x.sorte === sorte) || {};
+      document.getElementById('dfs-passen-kopf').textContent =
+        icao + ' — ' + _dfsSorteText(sorte)
+        + ' · Status: ' + (k.status === undefined ? '—' : _dfsStatusText(k))
+        + (zusatz ? ' (' + zusatz + ')' : '');
     }
 
     /** Einen Dezimalgrad in die drei Felder Grad/Minuten/Sekunden schreiben. */
@@ -3875,8 +3888,15 @@
       // Zuordnung der beiden Punkte liefert denselben Massstab.
       await loadDfsCharts();
       _dfsKarteFuellen(_dfsPassend.icao, _dfsPassend.sorte, null);
+      _dfsKopfSetzen(_dfsPassend.icao, _dfsPassend.sorte, '');
+      // Der Filter "gepasst" steht standardmaessig AUS -- die Zeile faellt beim Speichern
+      // also aus der Liste, statt sichtbar den Status zu wechseln. Ohne diesen Hinweis sieht
+      // das aus, als sei nichts passiert (Nutzer, 01.09.2026, EDAK).
+      const gepasstAn = Array.from(document.querySelectorAll('.dfs-status-cb:checked'))
+        .some(c => c.value === 'gepasst');
       document.getElementById('dfs-passen-hinweis').textContent =
-        'Gespeichert. Die Vorschau oben zeigt den neuen Stand.';
+        'Gespeichert — Status jetzt „gepasst". Die Vorschau oben zeigt den neuen Stand.'
+        + (gepasstAn ? '' : ' Die Zeile ist aus der Liste gefallen, weil der Filter „gepasst" aus ist.');
       document.getElementById('dfs-vorschau').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 

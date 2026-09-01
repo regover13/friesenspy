@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.6.2",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Passen: Status steht jetzt in der Maske",
+    "items": [
+      "\ud83c\udff7\ufe0f Die Passen-Maske nennt jetzt den Status der bearbeiteten Zeile. Ein Platz hat bis zu drei Zeilen \u2014 Sichtflug-, Flugplatz- und Rollkarte \u2014, und es sah so aus, als bliebe eine frisch gepasste Karte auf \u201eoffen\u201c stehen: Gepasst war die Flugplatzkarte, offen geblieben ist die Rollkarte daneben.",
+      "\ud83d\udc41\ufe0f Nach dem Speichern sagt die Maske ausdr\u00fccklich, dass die Zeile aus der Liste gefallen ist, solange der Filter \u201egepasst\u201c ausgeschaltet ist. Vorher verschwand sie kommentarlos, was wie \u201enichts passiert\u201c aussah."
+    ]
+  },
+  {
     "version": "14.6.1",
     "date": "2026-09-01",
     "highlight": false,
