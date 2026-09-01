@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.7.5",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Zur\u00fcckgenommen: das Ergebnis steht wieder im \u00dcberschreib-Feld",
+    "items": [
+      "\u21a9\ufe0f Nach dem Speichern steht die gerechnete Drehung wieder im Feld \u201eDrehung \u00fcberschreiben\u201c. Ich hatte sie in 14.7.4 als Fehler entfernt \u2014 sie ist aber der Weg, \u00fcber den man korrigiert: Wert ablesen, \u00e4ndern, noch einmal speichern."
+    ]
+  },
+  {
     "version": "14.7.4",
     "date": "2026-09-01",
     "highlight": false,

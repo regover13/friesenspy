@@ -612,11 +612,15 @@ def test_eine_wirklich_ueberschriebene_drehung_bleibt_stehen():
     assert "_dfsDrehungBerechnet" in block and "360" in block
 
 
-def test_das_speichern_schreibt_nichts_in_das_ueberschreib_feld():
-    """Es ist das UEBERSCHREIB-Feld: Was darin steht, verwirft beim naechsten Speichern die
-    gerechnete Drehung. Nach einem Speichern stand dort das Ergebnis -- bei einem
-    nordgerichteten Blatt also eine "0", die beim zweiten Speichern als ausdrueckliche
-    Vorgabe zurueckkam (Nutzerfund 01.09.2026: "da steht immer noch immer eine 0 drin")."""
+def test_das_speichern_bietet_das_ergebnis_zum_korrigieren_an():
+    """Das Ergebnis kommt ins Ueberschreib-Feld -- mit Absicht: Von dort aus korrigiert man
+    es. Ich hatte die Zeile am 01.09.2026 als Fehler entfernt; der Nutzer arbeitet genau so
+    ("Dann kann ich ja nicht mehr korrigieren?!") und sie kam zurueck.
+
+    Die Kehrseite ist bekannt und sichtbar: Wer danach einen PUNKT verschiebt, bekommt seine
+    neue Drehung von dem alten Wert im Feld ueberstimmt -- die Anzeige "berechnet:" daneben
+    zeigt dann zwei verschiedene Zahlen.
+    """
     stelle = ADMIN_RUMPF.index("document.getElementById('dfs-save-btn')")
     block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("dfs-abbrechen-btn", stelle)]
-    assert "dfs-drehung').value =" not in block
+    assert "dfs-drehung').value = erg.drehung" in block

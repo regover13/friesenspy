@@ -4054,6 +4054,14 @@
       }
       const erg = await res.json();
       toast('Passung gespeichert — Drehung ' + erg.drehung + '°, ' + erg.mps + ' m/px.');
+      // Das Ergebnis kommt ins Ueberschreib-Feld -- und zwar mit Absicht: Von dort aus
+      // korrigiert man es. Der Nutzer arbeitet genau so ("dann kann ich ja nicht mehr
+      // korrigieren", 01.09.2026), nachdem ich die Zeile einmal faelschlich entfernt hatte.
+      //
+      // Die Kehrseite steht daneben in der Anzeige "berechnet:": Wer danach einen PUNKT
+      // verschiebt, bekommt seine neue Drehung von dem alten Wert im Feld ueberstimmt.
+      // Sichtbar ist das, weil die beiden Zahlen dann auseinanderlaufen.
+      document.getElementById('dfs-drehung').value = erg.drehung;
       // Die Maske bleibt OFFEN und die Vorschau zieht nach (Nutzerwunsch 01.09.2026): Zahlen
       // allein verraten nicht, ob ein Blatt richtig liegt -- eine um 180 Grad verdrehte
       // Zuordnung der beiden Punkte liefert denselben Massstab.
