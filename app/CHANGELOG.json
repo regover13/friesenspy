@@ -1,5 +1,18 @@
 [
   {
+    "version": "14.6.0",
+    "date": "2026-09-01",
+    "highlight": false,
+    "title": "Karten passen: Koordinaten per Klick statt Tippen",
+    "items": [
+      "\ud83d\uddb1\ufe0f Die Koordinaten lassen sich jetzt direkt aus der Vorschaukarte abgreifen: Klick auf das Blatt setzt den Bildpunkt, Klick auf das Luftbild die Koordinate desselben Punktes. Auf dem Luftbild trifft man eine Bahnschwelle auf ein bis drei Meter genau.",
+      "\ud83d\udccf Grad, Minuten und Sekunden haben je ein eigenes Feld \u2014 Sekunden mussten bisher im Kopf in Dezimalminuten umgerechnet werden.",
+      "\ud83d\udd04 Bei den 68 Karten im Status \u201eauto\u201c kam bisher nur die Drehung in die Maske. Grund: Die zur\u00fcckgebaute Automatik hat nie Passpunkte erzeugt, sondern nur das fertige Rechteck. Die Punkte werden jetzt daraus zur\u00fcckgerechnet \u2014 gepr\u00fcft an allen 68, Ma\u00dfstab und Drehung stimmen auf 0,005 Prozent.",
+      "\ud83d\udcd0 Die Passen-Maske steht jetzt in der Reihenfolge Vorschau, Parameter, Seite. Nach dem Speichern bleibt sie offen und die Vorschau zieht nach.",
+      "\ud83d\udcc4 Die Kartenliste bl\u00e4ttert zu zehnt statt alle 557 Zeilen am St\u00fcck zu zeigen."
+    ]
+  },
+  {
     "version": "14.5.0",
     "date": "2026-09-01",
     "highlight": false,

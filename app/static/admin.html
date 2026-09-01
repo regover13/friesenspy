@@ -309,7 +309,12 @@
     /* width:auto schlaegt die 100-Prozent-Regel der allgemeinen input-Formatierung; ohne
        sie sprengt jedes Feld seine Zeile. Die Mindestbreite ist der eigentliche Schutz. */
     .dfs-punkt input { width: auto; min-width: 4.5em; padding: 6px 8px; }
-    .dfs-punkt .aip-gm input:first-child { min-width: 3em; }
+    /* Grad/Minuten/Sekunden: drei Felder je Achse statt zwei. Sie duerfen schmal sein --
+       hinein gehoeren hoechstens drei Ziffern --, und die Gruppe muss umbrechen duerfen,
+       sonst sprengt sie auf dem Telefon den Kasten und der Wert ist wieder unsichtbar
+       abgeschnitten (derselbe Fehler wie am 31.08.2026 bei EDKB). */
+    .aip-gm { flex-wrap: wrap; }
+    .dfs-punkt .aip-gm input { min-width: 3.2em; max-width: 4.5em; }
 
     .form-grid {
       display: grid;
@@ -1269,68 +1274,73 @@
           </div>
           <div id="dfs-charts" class="table-wrap"><div class="empty-hint">Lade Karten…</div></div>
 
-          <!-- Vorschau der Passung: das abgelegte Blatt ueber dem Luftbild, mit Regler.
-               Deckend sieht man nicht, wogegen man vergleicht; darum startet sie bei 65 %. -->
-          <div id="dfs-vorschau" style="display:none;margin-top:12px;">
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px;">
-              <b id="dfs-vorschau-kopf"></b>
-              <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:#8aa0b8;">
-                Deckkraft
-                <input type="range" id="dfs-vorschau-deckkraft" min="0" max="100" value="65" style="width:130px;">
-              </label>
-              <button class="btn btn-sm" id="dfs-vorschau-zu">Schließen</button>
-            </div>
-            <div id="dfs-vorschau-karte" style="height:460px;border:1px solid var(--green-grid);"></div>
-            <p style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;">
-              Die beiden Marken sind die eingetragenen Passpunkte. Liegen sie auf dem, was sie
-              bezeichnen sollen (Schwelle, Ecke), und deckt sich die Bahn mit dem Luftbild,
-              stimmt die Passung.
-            </p>
-          </div>
-
           <div id="dfs-seiten" style="display:none;margin-top:12px;"></div>
 
           <div id="dfs-passen" style="display:none;margin-top:12px;">
             <p id="dfs-passen-kopf" style="font-weight:700;margin:4px 0 2px;"></p>
             <p style="color:#8aa0b8;font-size:0.82rem;margin:2px 0 8px;">
-              Zwei gut wiedererkennbare Punkte anklicken und ihre Koordinaten eintragen — am
-              besten zwei gegenüberliegende <b>Bahnschwellen</b> oder <b>Rahmenecken</b>. Je
-              weiter sie auseinanderliegen, desto genauer die Passung. Grad und Minuten
-              <b>getrennt</b> eintragen, wie auf dem Blatt gedruckt.
+              Zwei gut wiedererkennbare Punkte — am besten zwei gegenüberliegende
+              <b>Bahnschwellen</b> oder <b>Rahmenecken</b>. Je weiter sie auseinanderliegen,
+              desto genauer die Passung. <b>Auf dem Blatt klicken</b> setzt den Bildpunkt,
+              <b>auf der Karte klicken</b> die Koordinate desselben Punktes. Wer sie vom
+              gedruckten Gradnetz abliest, tippt sie stattdessen ein.
             </p>
-            <div id="dfs-schwellen" style="display:none;margin-bottom:10px;font-size:0.82rem;color:#8aa0b8;"></div>
-            <div id="dfs-blatt-box" class="aip-blatt-box">
-              <img id="dfs-blatt" style="max-width:100%;cursor:crosshair;display:block;" alt="Kartenblatt">
-              <div id="dfs-fk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
-              <div id="dfs-fk-y" class="aip-fadenkreuz aip-fadenkreuz-y"></div>
+
+            <!-- 1. VORSCHAU — dieselbe Karte dient zum Prüfen UND zum Abgreifen der
+                 Koordinaten. Auf dem Luftbild trifft man eine Schwelle auf ein bis drei
+                 Meter genau; die ARP-Koordinate im Blattkopf gibt nur 18 m her. -->
+            <div id="dfs-vorschau" style="margin:0 0 10px;">
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px;">
+                <b id="dfs-vorschau-kopf"></b>
+                <span style="font-size:0.82rem;color:#8aa0b8;">Klick auf die Karte setzt:</span>
+                <label style="display:flex;gap:4px;align-items:center;font-size:0.82rem;cursor:pointer;">
+                  <input type="radio" name="dfs-ziel" value="1" checked> Punkt 1</label>
+                <label style="display:flex;gap:4px;align-items:center;font-size:0.82rem;cursor:pointer;">
+                  <input type="radio" name="dfs-ziel" value="2"> Punkt 2</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:#8aa0b8;">
+                  Deckkraft
+                  <input type="range" id="dfs-vorschau-deckkraft" min="0" max="100" value="65" style="width:120px;">
+                </label>
+              </div>
+              <div id="dfs-vorschau-karte" style="height:420px;border:1px solid var(--green-grid);"></div>
+              <p style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;">
+                Die roten Marken sind die eingetragenen Passpunkte. Deckt sich die Bahn mit dem
+                Luftbild und sitzen die Marken auf dem, was sie bezeichnen sollen, stimmt die Passung.
+              </p>
             </div>
+
+            <!-- 2. PARAMETER -->
+            <div id="dfs-schwellen" style="display:none;margin-bottom:10px;font-size:0.82rem;color:#8aa0b8;"></div>
             <div class="dfs-punkte">
               <div class="dfs-punkt">
                 <div class="dfs-punkt-kopf">Punkt 1</div>
                 <label>Bild x <input type="text" id="p1-x" readonly></label>
                 <label>Bild y <input type="text" id="p1-y" readonly></label>
-                <label>Breite <span class="aip-gm"><input type="text" id="p1-lat-grad" placeholder="51"><span>°</span>
-                  <input type="text" id="p1-lat-min" placeholder="16,78"><span>&prime;</span></span></label>
-                <label>Länge <span class="aip-gm"><input type="text" id="p1-lon-grad" placeholder="6"><span>°</span>
-                  <input type="text" id="p1-lon-min" placeholder="45,12"><span>&prime;</span></span></label>
+                <label>Breite <span class="aip-gm"><input type="text" id="p1-lat-grad" placeholder="51"><span>°</span><input type="text" id="p1-lat-min" placeholder="16"><span>&prime;</span><input type="text" id="p1-lat-sek" placeholder="0"><span>&Prime;</span></span></label>
+                <label>Länge <span class="aip-gm"><input type="text" id="p1-lon-grad" placeholder="6"><span>°</span><input type="text" id="p1-lon-min" placeholder="45"><span>&prime;</span><input type="text" id="p1-lon-sek" placeholder="0"><span>&Prime;</span></span></label>
               </div>
               <div class="dfs-punkt">
                 <div class="dfs-punkt-kopf">Punkt 2</div>
                 <label>Bild x <input type="text" id="p2-x" readonly></label>
                 <label>Bild y <input type="text" id="p2-y" readonly></label>
-                <label>Breite <span class="aip-gm"><input type="text" id="p2-lat-grad" placeholder="51"><span>°</span>
-                  <input type="text" id="p2-lat-min" placeholder="17,75"><span>&prime;</span></span></label>
-                <label>Länge <span class="aip-gm"><input type="text" id="p2-lon-grad" placeholder="6"><span>°</span>
-                  <input type="text" id="p2-lon-min" placeholder="47,17"><span>&prime;</span></span></label>
+                <label>Breite <span class="aip-gm"><input type="text" id="p2-lat-grad" placeholder="51"><span>°</span><input type="text" id="p2-lat-min" placeholder="17"><span>&prime;</span><input type="text" id="p2-lat-sek" placeholder="0"><span>&Prime;</span></span></label>
+                <label>Länge <span class="aip-gm"><input type="text" id="p2-lon-grad" placeholder="6"><span>°</span><input type="text" id="p2-lon-min" placeholder="47"><span>&prime;</span><input type="text" id="p2-lon-sek" placeholder="0"><span>&Prime;</span></span></label>
               </div>
             </div>
             <p style="margin:8px 0 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
               <label style="display:flex;gap:5px;align-items:center;">Drehung
                 <input type="text" id="dfs-drehung" size="6" placeholder="wird berechnet"></label>
               <button class="btn btn-primary btn-sm" id="dfs-save-btn">Passung speichern</button>
-              <button class="btn btn-sm" id="dfs-abbrechen-btn">Abbrechen</button>
+              <button class="btn btn-sm" id="dfs-abbrechen-btn">Schließen</button>
               <span id="dfs-passen-hinweis" style="color:#8aa0b8;font-size:0.82rem;"></span>
             </p>
+
+            <!-- 3. SEITE -->
+            <div id="dfs-blatt-box" class="aip-blatt-box" style="margin-top:12px;">
+              <img id="dfs-blatt" style="max-width:100%;cursor:crosshair;display:block;" alt="Kartenblatt">
+              <div id="dfs-fk-x" class="aip-fadenkreuz aip-fadenkreuz-x"></div>
+              <div id="dfs-fk-y" class="aip-fadenkreuz aip-fadenkreuz-y"></div>
+            </div>
           </div>
         </div>
 
@@ -3314,7 +3324,6 @@
     // Flugplatz- und Rollkarten gleichermassen, ueber dieselbe Maske.
     let _dfsAlle = [];
     let _dfsPassend = null;      // {icao, sorte} der gerade gepassten Karte, oder null
-    let _dfsEcken = [];          // [{x, y}] in Bildpixeln, hoechstens zwei
     let _dfsPruefenZeile = null; // die Zeile, wenn gerade eine 'pruefen'-Karte offen ist
 
     function _dfsSchluessel(k) { return k.icao + '|' + (k.sorte || ''); }
@@ -3346,6 +3355,11 @@
       return '—';
     }
 
+    // Seitenweise, zehn Zeilen. Ohne das ist die Liste 557 Zeilen lang -- bei 446 Plaetzen
+    // mit Sichtflugkarte und 111 Bodenkarten ist das der Normalfall, nicht der Ausnahmefall.
+    const DFS_PRO_SEITE = 10;
+    let _dfsSeite = 0;
+
     function dfsListeZeichnen() {
       const box = document.getElementById('dfs-charts');
       const liste = _dfsGefiltert();
@@ -3353,9 +3367,14 @@
         box.innerHTML = '<div class="empty-hint">Keine Karte in dieser Auswahl.</div>';
         return;
       }
+      const seiten = Math.max(1, Math.ceil(liste.length / DFS_PRO_SEITE));
+      if (_dfsSeite >= seiten) _dfsSeite = seiten - 1;   // Filter enger gestellt
+      if (_dfsSeite < 0) _dfsSeite = 0;
+      const von = _dfsSeite * DFS_PRO_SEITE;
+      const ausschnitt = liste.slice(von, von + DFS_PRO_SEITE);
       let html = '<table><thead><tr><th>ICAO</th><th>Sorte</th><th>Status</th>'
         + '<th>AIRAC</th><th>Drehung</th><th>Blatt</th><th></th></tr></thead><tbody>';
-      liste.forEach(function (k) {
+      ausschnitt.forEach(function (k) {
         const bild = k.sorte ? '/aip-chart-dfs/' + k.icao + '/' + k.sorte + '.png' : null;
         html += '<tr>'
           + '<td><b>' + escH(k.icao) + '</b></td>'
@@ -3372,27 +3391,44 @@
           + (k.sorte ? '<button class="btn btn-sm" data-dfs-loeschen="' + escA(k.icao) + '|' + escA(k.sorte) + '">Löschen</button>' : '')
           + '</td></tr>';
       });
-      box.innerHTML = html + '</tbody></table>';
+      html += '</tbody></table>';
+      html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;'
+        + 'font-size:0.82rem;color:#8aa0b8;">'
+        + '<button class="btn btn-sm" data-dfs-seite="zurueck"' + (_dfsSeite === 0 ? ' disabled' : '') + '>‹ Zurück</button>'
+        + '<span>' + (von + 1) + '–' + (von + ausschnitt.length) + ' von ' + liste.length
+        + ' (Seite ' + (_dfsSeite + 1) + ' von ' + seiten + ')</span>'
+        + '<button class="btn btn-sm" data-dfs-seite="vor"' + (_dfsSeite >= seiten - 1 ? ' disabled' : '') + '>Weiter ›</button>'
+        + '</div>';
+      box.innerHTML = html;
     }
 
     document.getElementById('dfs-charts').addEventListener('click', function (e) {
       if (!e.target.closest) return;
-      let b = e.target.closest('button[data-dfs-seiten]');
+      let b = e.target.closest('button[data-dfs-seite]');
+      if (b) {
+        _dfsSeite += (b.getAttribute('data-dfs-seite') === 'vor') ? 1 : -1;
+        dfsListeZeichnen();
+        return;
+      }
+      b = e.target.closest('button[data-dfs-seiten]');
       if (b) { dfsSeiten(b.getAttribute('data-dfs-seiten')); return; }
       b = e.target.closest('button[data-dfs-passen]');
       if (b) { const [icao, sorte] = b.getAttribute('data-dfs-passen').split('|'); dfsPassenStarten(icao, sorte); return; }
       b = e.target.closest('button[data-dfs-vorschau]');
-      if (b) { const [icao, sorte] = b.getAttribute('data-dfs-vorschau').split('|'); dfsVorschauZeigen(icao, sorte); return; }
+      if (b) { const [icao, sorte] = b.getAttribute('data-dfs-vorschau').split('|'); dfsPassenStarten(icao, sorte); return; }
       b = e.target.closest('button[data-dfs-pruefen]');
       if (b) { const [icao, sorte] = b.getAttribute('data-dfs-pruefen').split('|'); dfsPruefenZeigen(icao, sorte); return; }
       b = e.target.closest('button[data-dfs-loeschen]');
       if (b) { const [icao, sorte] = b.getAttribute('data-dfs-loeschen').split('|'); dfsLoeschen(icao, sorte); return; }
     });
 
+    // Jede Filteraenderung faengt wieder auf Seite 1 an -- sonst steht man hinter dem Ende.
+    function _dfsNeuFiltern() { _dfsSeite = 0; dfsListeZeichnen(); }
+
     document.querySelectorAll('.dfs-status-cb, .dfs-sorte-cb').forEach(function (cb) {
-      cb.addEventListener('change', dfsListeZeichnen);
+      cb.addEventListener('change', _dfsNeuFiltern);
     });
-    document.getElementById('dfs-suche').addEventListener('input', dfsListeZeichnen);
+    document.getElementById('dfs-suche').addEventListener('input', _dfsNeuFiltern);
 
     async function loadDfsCharts() {
       const box = document.getElementById('dfs-charts');
@@ -3412,59 +3448,99 @@
       }
     }
 
-    // --- Vorschau der Passung ----------------------------------------------------------
+    // --- Vorschau UND Koordinaten-Abgriff ------------------------------------------------
+    // Dieselbe Karte tut beides: Sie zeigt, ob das Blatt richtig liegt, und liefert per Klick
+    // die Koordinaten. Auf dem Luftbild trifft man eine Bahnschwelle auf ein bis drei Meter
+    // genau -- die ARP-Koordinate im Blattkopf gibt nur rund 18 m her, und bei genau den
+    // Plaetzen, um die es hier geht, ist OurAirports ja das Problem.
+    //
     // Sie legt das ABGELEGTE Blatt auf, nicht das Rohblatt: Die Drehung steckt im Bild, das
     // Overlay liegt achsenparallel -- genau wie im Kniebrett (index.html, _groundZeigen).
     // Eine Vorschau, die anders auflegt als die App, prueft die falsche Sache.
-    let _dfsVorschauKarte = null;
-    let _dfsVorschauBlatt = null;
+    let _dfsKarte = null;
+    let _dfsKarteBlatt = null;
+    let _dfsKarteMarken = [];
 
-    function dfsVorschauZeigen(icao, sorte) {
-      const k = _dfsAlle.find(x => x.icao === icao && x.sorte === sorte);
-      if (!k || k.nord === null || !k.bild) { toast('Diese Karte hat keine Passung.', true); return; }
-      const box = document.getElementById('dfs-vorschau');
-      box.style.display = '';
+    /** Welcher Punkt wird gerade gesetzt? Ausdruecklich gewaehlt, nicht aus der Klickzahl
+     *  hergeleitet -- daran haengt sonst, dass ein zweiter Klick den falschen Punkt trifft. */
+    function _dfsZiel() {
+      const r = document.querySelector('input[name="dfs-ziel"]:checked');
+      return r ? parseInt(r.value, 10) : 1;
+    }
+    function _dfsZielSetzen(n) {
+      const r = document.querySelector('input[name="dfs-ziel"][value="' + n + '"]');
+      if (r) r.checked = true;
+    }
+    /** Punkt vollstaendig? Bildpunkt UND Koordinate. */
+    function _dfsPunktKomplett(n) {
+      const w = id => document.getElementById(id).value.trim();
+      return w('p' + n + '-x') !== '' && w('p' + n + '-y') !== ''
+          && _dfsWinkel('p' + n + '-lat') !== null && _dfsWinkel('p' + n + '-lon') !== null;
+    }
+    /** Nach einer Eingabe automatisch auf Punkt 2 weiterruecken -- aber nie zurueck. */
+    function _dfsZielNachziehen() {
+      if (_dfsZiel() === 1 && _dfsPunktKomplett(1) && !_dfsPunktKomplett(2)) _dfsZielSetzen(2);
+      _dfsMarkenNachziehen();
+    }
+
+    function _dfsKarteAufbauen() {
+      if (_dfsKarte) return;
+      _dfsKarte = L.map('dfs-vorschau-karte', { zoomControl: true });
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        { maxZoom: 19, attribution: 'Tiles &copy; Esri' }).addTo(_dfsKarte);
+      _dfsKarte.on('click', function (e) {
+        const n = _dfsZiel();
+        _dfsGradSetzen('p' + n + '-lat', e.latlng.lat);
+        _dfsGradSetzen('p' + n + '-lon', e.latlng.lng);
+        document.getElementById('dfs-passen-hinweis').textContent =
+          'Koordinate von Punkt ' + n + ' von der Karte übernommen.';
+        _dfsZielNachziehen();
+      });
+    }
+
+    /** Marken auf die aktuell eingetragenen Punkte setzen -- sie wandern beim Klicken mit. */
+    function _dfsMarkenNachziehen() {
+      if (!_dfsKarte) return;
+      _dfsKarteMarken.forEach(m => _dfsKarte.removeLayer(m));
+      _dfsKarteMarken = [];
+      [1, 2].forEach(function (n) {
+        const lat = _dfsWinkel('p' + n + '-lat'), lon = _dfsWinkel('p' + n + '-lon');
+        if (lat === null || lon === null) return;
+        _dfsKarteMarken.push(L.circleMarker([lat, lon], {
+          radius: 7, color: '#ff3b30', weight: 2, fillColor: '#ff3b30', fillOpacity: 0.35,
+        }).bindTooltip('Punkt ' + n, { permanent: true, direction: 'right' }).addTo(_dfsKarte));
+      });
+    }
+
+    /** Blatt und Ausschnitt der Vorschau setzen. ``mitte`` traegt den Platz, wenn es noch
+     *  keine Passung gibt -- sonst stuende die Karte auf 0/0 im Golf von Guinea. */
+    function _dfsKarteFuellen(icao, sorte, mitte) {
+      _dfsKarteAufbauen();
+      const k = _dfsAlle.find(x => x.icao === icao && x.sorte === sorte) || {};
       document.getElementById('dfs-vorschau-kopf').textContent =
         icao + ' · ' + _dfsSorteText(sorte)
         + (typeof k.drehung === 'number' ? ' · Drehung ' + k.drehung.toFixed(1) + '°' : '')
         + (typeof k.mps === 'number' ? ' · ' + k.mps.toFixed(3) + ' m/px' : '');
-
-      if (!_dfsVorschauKarte) {
-        _dfsVorschauKarte = L.map('dfs-vorschau-karte', { zoomControl: true });
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-          { maxZoom: 19, attribution: 'Tiles &copy; Esri' }).addTo(_dfsVorschauKarte);
+      if (_dfsKarteBlatt) { _dfsKarte.removeLayer(_dfsKarteBlatt); _dfsKarteBlatt = null; }
+      if (k.nord !== null && k.nord !== undefined && k.bild) {
+        const grenzen = [[k.sued, k.west], [k.nord, k.ost]];
+        const deck = document.getElementById('dfs-vorschau-deckkraft').value / 100;
+        _dfsKarteBlatt = L.imageOverlay(k.bild, grenzen, { opacity: deck }).addTo(_dfsKarte);
+        _dfsKarte.fitBounds(grenzen, { padding: [20, 20] });
+      } else if (mitte) {
+        _dfsKarte.setView([mitte[0], mitte[1]], 15);
+      } else {
+        _dfsKarte.setView([51.5, 8.0], 6);
       }
-      if (_dfsVorschauBlatt) { _dfsVorschauKarte.removeLayer(_dfsVorschauBlatt); _dfsVorschauBlatt = null; }
-      (_dfsVorschauKarte._passMarken || []).forEach(m => _dfsVorschauKarte.removeLayer(m));
-      _dfsVorschauKarte._passMarken = [];
-
-      const grenzen = [[k.sued, k.west], [k.nord, k.ost]];
-      const deck = document.getElementById('dfs-vorschau-deckkraft').value / 100;
-      _dfsVorschauBlatt = L.imageOverlay(k.bild, grenzen, { opacity: deck }).addTo(_dfsVorschauKarte);
-
-      // Die Passpunkte SIND die Passung -- sitzen sie daneben, sieht man hier sofort, ob der
-      // Klick danebensass oder die Koordinate falsch war.
-      [[k.p1_lat, k.p1_lon, '1'], [k.p2_lat, k.p2_lon, '2']].forEach(function (p) {
-        if (typeof p[0] !== 'number' || typeof p[1] !== 'number') return;
-        const m = L.circleMarker([p[0], p[1]], {
-          radius: 7, color: '#ff3b30', weight: 2, fillColor: '#ff3b30', fillOpacity: 0.35,
-        }).bindTooltip('Punkt ' + p[2], { permanent: true, direction: 'right' })
-          .addTo(_dfsVorschauKarte);
-        _dfsVorschauKarte._passMarken.push(m);
-      });
-
-      _dfsVorschauKarte.fitBounds(grenzen, { padding: [20, 20] });
+      _dfsMarkenNachziehen();
       // Leaflet misst beim Bau die Kastengroesse; der Kasten war eben noch display:none.
-      setTimeout(() => _dfsVorschauKarte.invalidateSize(), 60);
-      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      setTimeout(() => _dfsKarte.invalidateSize(), 60);
     }
 
     document.getElementById('dfs-vorschau-deckkraft').addEventListener('input', function (e) {
-      if (_dfsVorschauBlatt) _dfsVorschauBlatt.setOpacity(e.target.value / 100);
+      if (_dfsKarteBlatt) _dfsKarteBlatt.setOpacity(e.target.value / 100);
     });
-    document.getElementById('dfs-vorschau-zu').addEventListener('click', function () {
-      document.getElementById('dfs-vorschau').style.display = 'none';
-    });
+
 
     document.getElementById('dfs-ebene-toggle').addEventListener('change', async (e) => {
       const desired = e.target.checked;
@@ -3563,66 +3639,83 @@
     });
 
     // --- Passen-Maske --------------------------------------------------------------------
+    // Reihenfolge im Kasten: VORSCHAU, PARAMETER, SEITE (Nutzerwunsch 01.09.2026).
     async function dfsPassenStarten(icao, sorte) {
       _dfsPassend = { icao: icao, sorte: sorte };
-      _dfsEcken = [];
       document.getElementById('dfs-passen').style.display = '';
       document.getElementById('dfs-seiten').style.display = 'none';
       const img = document.getElementById('dfs-blatt');
       img.src = '/aip-chart-roh/' + encodeURIComponent(icao) + '/' + encodeURIComponent(sorte)
         + '.png?t=' + Date.now();
       const eintrag = _dfsAlle.find(k => k.icao === icao && k.sorte === sorte) || {};
+      document.getElementById('dfs-passen-hinweis').textContent = '';
+      _dfsZielSetzen(1);
+
+      // Die Hilfsangaben holen: Bahnschwellen, Platzmitte -- und, wenn die Zeile eine Lage
+      // OHNE geklickte Punkte traegt, zwei daraus zurueckgerechnete Punkte. Genau das ist
+      // bei allen 68 auto-Karten der Fall: Die alte Automatik hat nie Punkte erzeugt,
+      // sondern nur das fertige Rechteck -- deshalb kam bisher allein die Drehung an.
+      const res = await api('GET', '/api/admin/aip-charts-dfs/' + encodeURIComponent(icao)
+                            + '/' + encodeURIComponent(sorte) + '/passhilfe');
+      const hilfe = res && res.ok ? await res.json() : {};
+
+      const abgeleitet = (eintrag.p1_x === null || eintrag.p1_x === undefined) && hilfe.punkte;
+      _dfsPunkteSetzen(abgeleitet ? hilfe.punkte : eintrag);
       document.getElementById('dfs-passen-kopf').textContent =
         icao + ' — ' + _dfsSorteText(sorte) + ' passen'
-        + (eintrag.status === 'gepasst' ? ' (bereits gepasst — Werte sind vorbelegt)' : '');
-      document.getElementById('dfs-passen-hinweis').textContent = '';
-      _dfsPunkteSetzen(eintrag);
+        + (abgeleitet ? ' (aus der gespeicherten Lage zurückgerechnet — nachbessern und speichern)'
+           : eintrag.p1_x !== null && eintrag.p1_x !== undefined ? ' (Werte sind vorbelegt)' : '');
       document.getElementById('dfs-drehung').value =
         typeof eintrag.drehung === 'number' ? eintrag.drehung.toFixed(1) : '';
 
-      // Bahnschwellen als Hilfe -- nur bei Flugplatz-/Rollkarten. Auf diesem Weg sind die
-      // ersten 68 Ground-Passungen ueberhaupt entstanden.
+      _dfsKarteFuellen(icao, sorte, hilfe.mitte);
+
       const sBox = document.getElementById('dfs-schwellen');
+      const bahnen = hilfe.bahnen || [];
       if (sorte === 'sichtflug') {
         sBox.style.display = 'none';
       } else {
         sBox.style.display = '';
-        sBox.innerHTML = 'Bahnschwellen werden geladen…';
-        const res = await api('GET', '/api/admin/aip-charts-dfs/' + encodeURIComponent(icao) + '/schwellen');
-        const bahnen = res && res.ok ? (await res.json()).bahnen || [] : [];
-        if (!bahnen.length) {
-          sBox.innerHTML = 'Keine Bahnschwellen bei OurAirports gefunden — vom Kartenrand ablesen.';
-        } else {
-          sBox.innerHTML = '<b>Bahnschwellen zum Abschreiben:</b><br>' + bahnen.map(function (b) {
-            return b.name + ' (' + b.laenge_m + ' m): '
-              + b.le_lat_grad + '°' + b.le_lat_min + '′ / ' + b.le_lon_grad + '°' + b.le_lon_min + '′'
-              + '  —  '
-              + b.he_lat_grad + '°' + b.he_lat_min + '′ / ' + b.he_lon_grad + '°' + b.he_lon_min + '′';
-          }).join('<br>');
-        }
+        sBox.innerHTML = !bahnen.length
+          ? 'Keine Bahnschwellen bei OurAirports gefunden — vom Kartenrand ablesen oder auf der Karte anklicken.'
+          : '<b>Bahnschwellen zum Abschreiben:</b><br>' + bahnen.map(function (b) {
+              return b.name + ' (' + b.laenge_m + ' m): '
+                + b.le_lat_grad + '°' + b.le_lat_min + '′ / ' + b.le_lon_grad + '°' + b.le_lon_min + '′'
+                + '  —  '
+                + b.he_lat_grad + '°' + b.he_lat_min + '′ / ' + b.he_lon_grad + '°' + b.he_lon_min + '′';
+            }).join('<br>');
       }
+      document.getElementById('dfs-passen').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
-    /** Zwei Punkte aus der gespeicherten Zeile vorbelegen -- oder leeren. */
-    function _dfsPunkteSetzen(eintrag) {
-      _dfsEcken = [];
+    /** Einen Dezimalgrad in die drei Felder Grad/Minuten/Sekunden schreiben. */
+    function _dfsGradSetzen(feld, wert) {
+      const g = document.getElementById(feld + '-grad');
+      const m = document.getElementById(feld + '-min');
+      const sk = document.getElementById(feld + '-sek');
+      if (typeof wert !== 'number' || !isFinite(wert)) { g.value = ''; m.value = ''; sk.value = ''; return; }
+      const vz = wert < 0 ? -1 : 1;
+      const abs = Math.abs(wert);
+      let grad = Math.floor(abs);
+      let min = Math.floor((abs - grad) * 60);
+      let sek = Math.round(((abs - grad) * 60 - min) * 60 * 100) / 100;
+      // Rundung kann 60,00 erzeugen -- dann eine Stufe hochtragen, sonst steht dort 60″.
+      if (sek >= 60) { sek = 0; min += 1; }
+      if (min >= 60) { min = 0; grad += 1; }
+      g.value = String(vz * grad);
+      m.value = String(min);
+      sk.value = String(sek);
+    }
+
+    /** Punkte aus einer Zeile (oder aus zurueckgerechneten Werten) vorbelegen. */
+    function _dfsPunkteSetzen(quelle) {
+      quelle = quelle || {};
       ['p1', 'p2'].forEach(function (p) {
-        const x = eintrag[p + '_x'], y = eintrag[p + '_y'];
-        const lat = eintrag[p + '_lat'], lon = eintrag[p + '_lon'];
+        const x = quelle[p + '_x'], y = quelle[p + '_y'];
         document.getElementById(p + '-x').value = typeof x === 'number' ? Math.round(x) : '';
         document.getElementById(p + '-y').value = typeof y === 'number' ? Math.round(y) : '';
-        [['lat', lat], ['lon', lon]].forEach(function (kv) {
-          const [achse, w] = kv;
-          const g = document.getElementById(p + '-' + achse + '-grad');
-          const m = document.getElementById(p + '-' + achse + '-min');
-          if (typeof w !== 'number' || !isFinite(w)) { g.value = ''; m.value = ''; return; }
-          const grad = Math.trunc(w);
-          let min = Math.round((Math.abs(w) - Math.abs(grad)) * 60 * 100) / 100;
-          if (min >= 60) min = 0;
-          g.value = String(grad);
-          m.value = String(min);
-        });
-        if (typeof x === 'number' && typeof y === 'number') _dfsEcken.push({ x: x, y: y });
+        _dfsGradSetzen(p + '-lat', quelle[p + '_lat']);
+        _dfsGradSetzen(p + '-lon', quelle[p + '_lon']);
       });
     }
 
@@ -3655,37 +3748,62 @@
       const r = img.getBoundingClientRect();
       const x = Math.round((e.clientX - r.left) * img.naturalWidth / r.width);
       const y = Math.round((e.clientY - r.top) * img.naturalHeight / r.height);
-      if (_dfsEcken.length >= 2) _dfsEcken = [];
-      _dfsEcken.push({ x: x, y: y });
-      const feld = _dfsEcken.length === 1 ? 'p1' : 'p2';
-      document.getElementById(feld + '-x').value = x;
-      document.getElementById(feld + '-y').value = y;
+      const n = _dfsZiel();
+      document.getElementById('p' + n + '-x').value = x;
+      document.getElementById('p' + n + '-y').value = y;
       document.getElementById('dfs-passen-hinweis').textContent =
-        _dfsEcken.length === 1 ? 'Punkt 1 gesetzt — jetzt Punkt 2 anklicken.'
-                               : 'Beide Punkte gesetzt — Koordinaten eintragen und speichern.';
+        'Bildpunkt ' + n + ' gesetzt (' + x + '/' + y + ').';
+      _dfsZielNachziehen();
     });
 
-    /** Ein Wert aus Grad- und Minutenfeld. null, wenn etwas fehlt oder unsinnig ist. */
+    // Tippt jemand die Koordinaten von Hand (Gradnetz ablesen), wandern die Marken mit.
+    ['p1', 'p2'].forEach(function (p) {
+      ['lat', 'lon'].forEach(function (achse) {
+        ['grad', 'min', 'sek'].forEach(function (teil) {
+          document.getElementById(p + '-' + achse + '-' + teil)
+            .addEventListener('input', _dfsMarkenNachziehen);
+        });
+      });
+    });
+
+    /** Ein Wert aus Grad-, Minuten- und Sekundenfeld. null, wenn etwas fehlt oder unsinnig ist.
+     *
+     *  Minuten und Sekunden duerfen beide leer bleiben, und die Minuten duerfen weiterhin
+     *  eine Dezimalstelle tragen -- so stehen sie auf manchen Blaettern ("47,95′"). Wer
+     *  Sekunden fuellt, tippt ganze Minuten. Beides wird schlicht addiert. */
     function _dfsWinkel(feld) {
       const z = id => document.getElementById(id).value.replace(',', '.').trim();
       const g = parseFloat(z(feld + '-grad'));
-      const mRoh = z(feld + '-min');
+      const mRoh = z(feld + '-min'), sRoh = z(feld + '-sek');
       const m = mRoh === '' ? 0 : parseFloat(mRoh);
-      if (!isFinite(g) || !isFinite(m) || m < 0 || m >= 60) return null;
-      return g < 0 ? g - m / 60 : g + m / 60;
+      const sk = sRoh === '' ? 0 : parseFloat(sRoh);
+      if (!isFinite(g) || !isFinite(m) || !isFinite(sk)) return null;
+      if (m < 0 || m >= 60 || sk < 0 || sk >= 60) return null;
+      const betrag = Math.abs(g) + m / 60 + sk / 3600;
+      return g < 0 ? -betrag : betrag;
+    }
+
+    /** Bildpunkt aus den beiden Feldern. Die FELDER sind die Quelle der Wahrheit -- ein
+     *  zweiter Merker daneben lief auseinander, sobald jemand einen Punkt neu setzte. */
+    function _dfsBildpunkt(n) {
+      const w = id => document.getElementById(id).value.trim();
+      const x = parseFloat(w('p' + n + '-x')), y = parseFloat(w('p' + n + '-y'));
+      return (isFinite(x) && isFinite(y)) ? { x: x, y: y } : null;
     }
 
     function _dfsEingaben() {
-      if (!_dfsPassend || _dfsEcken.length !== 2) { toast('Zwei Punkte anklicken.', true); return null; }
+      if (!_dfsPassend) return null;
+      const b1 = _dfsBildpunkt(1), b2 = _dfsBildpunkt(2);
+      if (!b1 || !b2) { toast('Beide Punkte brauchen einen Bildpunkt — auf das Blatt klicken.', true); return null; }
       const p1lat = _dfsWinkel('p1-lat'), p1lon = _dfsWinkel('p1-lon');
       const p2lat = _dfsWinkel('p2-lat'), p2lon = _dfsWinkel('p2-lon');
       if ([p1lat, p1lon, p2lat, p2lon].some(v => v === null)) {
-        toast('Beide Punkte brauchen Grad und Minuten (Minuten 0 bis 59).', true);
+        toast('Beide Punkte brauchen Koordinaten — auf die Karte klicken oder eintragen.', true);
         return null;
       }
       const daten = {
-        p1_x: _dfsEcken[0].x, p1_y: _dfsEcken[0].y, p1_lat: p1lat, p1_lon: p1lon,
-        p2_x: _dfsEcken[1].x, p2_y: _dfsEcken[1].y, p2_lat: p2lat, p2_lon: p2lon,
+        p1_x: b1.x, p1_y: b1.y, p1_lat: p1lat, p1_lon: p1lon,
+        p2_x: b2.x, p2_y: b2.y, p2_lat: p2lat, p2_lon: p2lon,
       };
       const drehRoh = document.getElementById('dfs-drehung').value.replace(',', '.').trim();
       if (drehRoh !== '') {
@@ -3709,19 +3827,22 @@
       }
       const erg = await res.json();
       toast('Passung gespeichert — Drehung ' + erg.drehung + '°, ' + erg.mps + ' m/px.');
-      document.getElementById('dfs-passen').style.display = 'none';
-      const gepasst = { icao: _dfsPassend.icao, sorte: _dfsPassend.sorte };
-      _dfsPassend = null; _dfsEcken = [];
+      document.getElementById('dfs-drehung').value = erg.drehung;
+      // Die Maske bleibt OFFEN und die Vorschau zieht nach (Nutzerwunsch 01.09.2026): Zahlen
+      // allein verraten nicht, ob ein Blatt richtig liegt -- eine um 180 Grad verdrehte
+      // Zuordnung der beiden Punkte liefert denselben Massstab.
       await loadDfsCharts();
-      // Sofort hinsehen. Zahlen allein sagen nicht, ob das Blatt richtig liegt -- eine um
-      // 180 Grad verdrehte Zuordnung der beiden Punkte liefert denselben Massstab.
-      dfsVorschauZeigen(gepasst.icao, gepasst.sorte);
+      _dfsKarteFuellen(_dfsPassend.icao, _dfsPassend.sorte, null);
+      document.getElementById('dfs-passen-hinweis').textContent =
+        'Gespeichert. Die Vorschau oben zeigt den neuen Stand.';
+      document.getElementById('dfs-vorschau').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
     document.getElementById('dfs-abbrechen-btn').addEventListener('click', function () {
       document.getElementById('dfs-passen').style.display = 'none';
-      _dfsPassend = null; _dfsEcken = [];
+      _dfsPassend = null;
     });
+
 
     // --- Status 'pruefen' -----------------------------------------------------------------
     // Die Maske zeigt das NEUE Blatt mit den ALTEN Passpunkten darauf -- so sieht man auf

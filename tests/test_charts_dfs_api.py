@@ -488,3 +488,54 @@ def test_eine_karte_ohne_passung_hat_keine_grenzen(client):
     k = [x for x in c.get("/api/admin/aip-charts-dfs").json()["charts"]
          if x["icao"] == "EDWJ"][0]
     assert k["nord"] is None
+
+
+# ------------------------------------------------------------------ Passhilfe fuer die Maske
+
+def test_die_passhilfe_nennt_die_platzmitte(client):
+    """Ohne sie stuende die Vorschau bei einer noch ungepassten Karte auf 0/0 im Golf von
+    Guinea -- statt ueber dem Platz, den man anklicken soll."""
+    c, db, _tmp = client
+    _karte(db, "EDDL", "flugplatzkarte", status="offen")
+    d = c.get("/api/admin/aip-charts-dfs/EDDL/flugplatzkarte/passhilfe").json()
+    assert d["mitte"] and 51 < d["mitte"][0] < 52 and 6 < d["mitte"][1] < 7
+
+
+def test_die_passhilfe_rechnet_punkte_aus_einer_auto_lage_zurueck(client):
+    """DER Punkt: Die 68 auto-Karten tragen ein fertiges Rechteck, aber keine geklickten
+    Punkte -- die zurueckgebaute Automatik hat nie welche erzeugt. In der Maske kam deshalb
+    allein die Drehung an."""
+    c, db, tmp = client
+    _rohblatt(tmp / "aip_dfs" / "EDDL.flugplatzkarte.roh.png", 1600, 1100)
+    _karte(db, "EDDL", "flugplatzkarte", status="auto")
+    d = c.get("/api/admin/aip-charts-dfs/EDDL/flugplatzkarte/passhilfe").json()
+    p = d["punkte"]
+    assert p is not None
+    for feld in ("p1_x", "p1_y", "p1_lat", "p1_lon", "p2_x", "p2_y", "p2_lat", "p2_lon"):
+        assert isinstance(p[feld], (int, float))
+    assert LAGE["sued"] - 0.01 < p["p1_lat"] < LAGE["nord"] + 0.01
+    assert abs(p["p2_x"] - p["p1_x"]) > 800
+
+
+def test_die_passhilfe_ruehrt_geklickte_punkte_nicht_an(client):
+    """Wo echte Punkte stehen, wird nichts zurueckgerechnet -- die Maske nimmt dann die
+    gespeicherten."""
+    c, db, tmp = client
+    _rohblatt(tmp / "aip_dfs" / "EDDL.flugplatzkarte.roh.png", 1600, 1100)
+    _karte(db, "EDDL", "flugplatzkarte", status="offen")
+    c.post("/api/admin/aip-charts-dfs/EDDL/flugplatzkarte", json={
+        "p1_x": 100, "p1_y": 200, "p1_lat": S_05R[0], "p1_lon": S_05R[1],
+        "p2_x": 900, "p2_y": 700, "p2_lat": S_23L[0], "p2_lon": S_23L[1]})
+    d = c.get("/api/admin/aip-charts-dfs/EDDL/flugplatzkarte/passhilfe").json()
+    assert d["punkte"] is None
+
+
+def test_die_passhilfe_braucht_anmeldung(client):
+    c, _db, _tmp = client
+    c.cookies.clear()
+    assert c.get("/api/admin/aip-charts-dfs/EDDL/flugplatzkarte/passhilfe").status_code == 401
+
+
+def test_die_passhilfe_lehnt_eine_unbekannte_sorte_ab(client):
+    c, _db, _tmp = client
+    assert c.get("/api/admin/aip-charts-dfs/EDDL/unfug/passhilfe").status_code == 404

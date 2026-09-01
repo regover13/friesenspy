@@ -301,3 +301,46 @@ def _grenzen_in_grad(bezug, ost_min, ost_max, nord_min, nord_max) -> dict:
     m_lon, m_lat = runway_ref.meter_je_grad(bezug[0])
     return {"sued": bezug[0] + nord_min / m_lat, "nord": bezug[0] + nord_max / m_lat,
             "west": bezug[1] + ost_min / m_lon, "ost": bezug[1] + ost_max / m_lon}
+
+
+def punkte_aus_lage(breite: int, hoehe: int, drehung: float, mps: float,
+                    nord: float, sued: float, west: float, ost: float,
+                    rand: float = 0.15) -> dict | None:
+    """Zwei gleichwertige Passpunkte aus einer gespeicherten Lage zurueckrechnen.
+
+    **Wozu.** Die 68 Karten im Status ``auto`` stammen aus der zurueckgebauten Automatik.
+    Sie tragen eine vollstaendige Lage -- Rechteck, Drehung, Massstab --, aber KEINE
+    geklickten Punkte: Das alte Verfahren hat nie welche erzeugt. In der Passen-Maske kam
+    deshalb allein die Drehung an, und wer nachbessern wollte, fing bei null an.
+
+    Aus Drehung, Massstab, Blattgroesse und dem Rechteck laesst sich die Abbildung
+    vollstaendig wiederherstellen. Zurueckgegeben werden zwei Punkte auf der Blattdiagonale
+    -- moeglichst weit auseinander, weil ein Pixel Fehler sich umgekehrt proportional zu
+    ihrem Abstand auf den Massstab auswirkt.
+
+    ``None``, wenn die Lage nichts hergibt (kein Massstab, entartetes Rechteck).
+    """
+    if not mps or mps <= 0 or breite <= 0 or hoehe <= 0:
+        return None
+    if nord == sued or west == ost:
+        return None
+    t = math.radians(drehung)
+    a, b = mps * math.cos(t), -mps * math.sin(t)
+    m_lon, m_lat = runway_ref.meter_je_grad((nord + sued) / 2.0)
+
+    # Dieselbe Abbildung wie in norden(): E = a*x + b*y + e, N = b*x - a*y + f.
+    # e und f sind unbekannt, kuerzen sich aber gegen das Rechteck heraus.
+    ecken = ((0, 0), (breite, 0), (0, hoehe), (breite, hoehe))
+    ew = [a * x + b * y for x, y in ecken]
+    nw = [b * x - a * y for x, y in ecken]
+    lat0 = nord - max(nw) / m_lat
+    lon0 = west - min(ew) / m_lon
+
+    def geo(x, y):
+        return (lat0 + (b * x - a * y) / m_lat, lon0 + (a * x + b * y) / m_lon)
+
+    p1 = (breite * rand, hoehe * rand)
+    p2 = (breite * (1 - rand), hoehe * (1 - rand))
+    g1, g2 = geo(*p1), geo(*p2)
+    return {"p1_x": round(p1[0], 1), "p1_y": round(p1[1], 1), "p1_lat": g1[0], "p1_lon": g1[1],
+            "p2_x": round(p2[0], 1), "p2_y": round(p2[1], 1), "p2_lat": g2[0], "p2_lon": g2[1]}

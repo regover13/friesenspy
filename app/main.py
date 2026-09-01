@@ -4509,6 +4509,53 @@ def _grad_minuten(dezimal: float) -> tuple[int, float]:
     return (grad if dezimal >= 0 else -grad), minuten
 
 
+@app.get("/api/admin/aip-charts-dfs/{icao}/{sorte}/passhilfe")
+async def admin_dfs_passhilfe(icao: str, sorte: str, request: Request):
+    """Alles, was die Passen-Maske beim Oeffnen braucht -- in EINEM Abruf.
+
+    Drei Dinge, und das dritte ist der Grund fuer den Endpunkt:
+
+    * ``bahnen`` -- Bahnschwellen aus OurAirports zum Abschreiben.
+    * ``mitte`` -- die Platzkoordinate. Ohne sie stuende die Vorschau bei einer noch
+      ungepassten Karte auf 0/0 im Golf von Guinea, statt ueber dem Platz, den man
+      anklicken soll.
+    * ``punkte`` -- zwei Passpunkte, aus der GESPEICHERTEN Lage zurueckgerechnet. Die 68
+      Karten im Status ``auto`` tragen ein vollstaendiges Rechteck, aber keine geklickten
+      Punkte: Die zurueckgebaute Automatik hat nie welche erzeugt. In der Maske kam deshalb
+      allein die Drehung an, und wer nachbessern wollte, fing bei null an.
+    """
+    require_admin(request)
+    code = (icao or "").strip().upper()
+    if sorte not in SORTEN_DFS:
+        raise HTTPException(status_code=404, detail="unbekannte Sorte")
+    aus: dict = {"icao": code, "sorte": sorte, "bahnen": [], "mitte": None, "punkte": None}
+
+    koord = geo.icao_to_coords(code)
+    if koord:
+        aus["mitte"] = [koord[0], koord[1]]
+
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        zeile = get_chart_dfs(conn, code, sorte)
+    finally:
+        conn.close()
+    if zeile is not None and zeile["p1_x"] is None and zeile["mps"]:
+        pfad = _dfs_blatt_pfad(get_settings().DB_PATH, code, sorte, "roh")
+        if pfad.is_file():
+            try:
+                from PIL import Image  # lokal, wie an den anderen Stellen dieser Datei
+                with Image.open(pfad) as im:
+                    breite, hoehe = im.size
+                aus["punkte"] = ground_charts.punkte_aus_lage(
+                    breite, hoehe, zeile["drehung"] or 0.0, zeile["mps"],
+                    zeile["nord"], zeile["sued"], zeile["west"], zeile["ost"])
+            except Exception:
+                _logger.exception("%s/%s: Punkte nicht zurueckrechenbar", code, sorte)
+
+    aus["bahnen"] = (await admin_dfs_schwellen(code, request))["bahnen"]
+    return aus
+
+
 @app.get("/api/admin/aip-charts-dfs/{icao}/schwellen")
 async def admin_dfs_schwellen(icao: str, request: Request):
     """Bahnschwellen dieses Platzes aus OurAirports -- Hilfe beim Passen einer Flugplatz-

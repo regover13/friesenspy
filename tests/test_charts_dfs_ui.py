@@ -317,3 +317,87 @@ def test_die_vorschau_laesst_sich_durchsichtig_stellen():
     """Ohne Regler liegt das Blatt deckend auf dem Luftbild -- man sieht dann gerade das
     nicht, wogegen man vergleichen will."""
     assert 'id="dfs-vorschau-deckkraft"' in ADMIN
+
+
+# --------------------------------------------- Passen-Maske: Reihenfolge, Klicks, Sekunden
+
+def test_die_maske_steht_in_der_reihenfolge_vorschau_parameter_seite():
+    """Nutzerwunsch 01.09.2026, ausdruecklich korrigiert: erst die Vorschau, dann die
+    Werte, dann das Blatt."""
+    kasten = ADMIN[ADMIN.index('<div id="dfs-passen"'):ADMIN.index('<!-- ERKENNUNGSLÜCKEN')]
+    assert (kasten.index('id="dfs-vorschau"')
+            < kasten.index('class="dfs-punkte"')
+            < kasten.index('id="dfs-blatt-box"'))
+
+
+def test_die_koordinaten_lassen_sich_von_der_karte_abgreifen():
+    """Auf dem Luftbild trifft man eine Bahnschwelle auf ein bis drei Meter genau -- die
+    ARP-Koordinate im Blattkopf gibt nur rund 18 m her, und bei den Plaetzen, um die es
+    geht, ist OurAirports selbst das Problem."""
+    stelle = ADMIN_RUMPF.index("function _dfsKarteAufbauen")
+    block = ADMIN_RUMPF[stelle:stelle + 1200]
+    assert "_dfsKarte.on('click'" in block and "e.latlng.lat" in block and "_dfsGradSetzen" in block
+
+
+def test_jeder_punkt_hat_grad_minuten_und_sekunden():
+    """Ohne Sekundenfeld muss man die Sekunden im Kopf in Dezimalminuten umrechnen."""
+    for p in ("p1", "p2"):
+        for achse in ("lat", "lon"):
+            for teil in ("grad", "min", "sek"):
+                assert f'id="{p}-{achse}-{teil}"' in ADMIN
+
+
+def test_der_winkel_addiert_grad_minuten_und_sekunden():
+    stelle = ADMIN_RUMPF.index("function _dfsWinkel")
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("\n    }", stelle)]
+    assert "'-sek'" in block and "3600" in block and "/ 60" in block
+
+
+def test_der_zielpunkt_wird_gewaehlt_nicht_aus_der_klickzahl_hergeleitet():
+    """Aus der Klickzahl hergeleitet trifft ein Klick den falschen Punkt, sobald vorbelegte
+    Werte im Spiel sind -- und man sieht es erst an einer schiefen Karte."""
+    assert 'name="dfs-ziel"' in ADMIN
+    stelle = ADMIN_RUMPF.index("document.getElementById('dfs-blatt').addEventListener('click'")
+    block = ADMIN_RUMPF[stelle:stelle + 900]
+    assert "_dfsZiel()" in block
+    assert "_dfsEcken" not in ADMIN_RUMPF, "der zweite Merker neben den Feldern ist fort"
+
+
+def test_die_maske_bleibt_nach_dem_speichern_offen():
+    """Nutzerwunsch: Vorschau zeigen, aber die Maske weiter anzeigen."""
+    stelle = ADMIN_RUMPF.index("document.getElementById('dfs-save-btn')")
+    # Nur der Speichern-Haken, nicht der Schliessen-Knopf dahinter -- der DARF verbergen.
+    block = ADMIN_RUMPF[stelle:ADMIN_RUMPF.index("dfs-abbrechen-btn", stelle)]
+    assert "_dfsKarteFuellen" in block
+    assert "dfs-passen').style.display = 'none'" not in block
+
+
+def test_die_liste_blaettert_zu_zehnt():
+    assert "DFS_PRO_SEITE = 10" in ADMIN_RUMPF
+    stelle = ADMIN_RUMPF.index("function dfsListeZeichnen")
+    block = ADMIN_RUMPF[stelle:stelle + 2600]
+    assert ".slice(von, von + DFS_PRO_SEITE)" in block
+
+
+def test_ein_engerer_filter_faengt_wieder_auf_seite_eins_an():
+    """Sonst steht man hinter dem Ende und sieht eine leere Liste."""
+    assert "function _dfsNeuFiltern() { _dfsSeite = 0;" in ADMIN_RUMPF
+    assert "addEventListener('change', _dfsNeuFiltern)" in ADMIN_RUMPF
+    assert "addEventListener('input', _dfsNeuFiltern)" in ADMIN_RUMPF
+
+
+def test_die_maske_holt_zurueckgerechnete_punkte_fuer_auto_karten():
+    """Die 68 auto-Karten tragen ein fertiges Rechteck, aber keine geklickten Punkte."""
+    stelle = ADMIN_RUMPF.index("async function dfsPassenStarten(")
+    block = ADMIN_RUMPF[stelle:stelle + 2600]
+    assert "/passhilfe" in block and "hilfe.punkte" in block
+
+
+def test_die_drei_winkelfelder_duerfen_umbrechen():
+    """Drei Felder je Achse statt zwei. Ohne Umbruch sprengt die Gruppe auf dem Telefon den
+    Kasten, und der eingetragene Wert ist wieder unsichtbar abgeschnitten -- derselbe
+    Fehler wie am 31.08.2026 bei EDKB, nur eine Spalte spaeter."""
+    m = re.search(r"\.aip-gm\s*\{([^}]*)\}[\s\S]{0,600}?\.aip-gm\s*\{([^}]*)\}", ADMIN)
+    assert "flex-wrap: wrap" in ADMIN[ADMIN.index(".aip-gm {"):ADMIN.index(".aip-gm {") + 2000]
+    r = re.search(r"\.dfs-punkt \.aip-gm input\s*\{([^}]*)\}", ADMIN)
+    assert r and "min-width" in r.group(1) and "max-width" in r.group(1)
