@@ -159,8 +159,14 @@ def airportsdata_coords(icao: str) -> tuple[float, float] | None:
 
 def search_airports(q: str, limit: int = 20) -> list[dict]:
     """#77-Erweiterung: ICAO-Präfix-Suche über airportsdata + `custom_airports`. Gibt bis zu
-    ``limit`` Treffer als ``{icao, name}`` (alphabetisch) zurück — für das Autocomplete an den
-    Platz-Eingaben. Leerer/zu kurzer Query → leer."""
+    ``limit`` Treffer als ``{icao, name, lat, lon}`` (alphabetisch) zurück — für das
+    Autocomplete an den Platz-Eingaben. Leerer/zu kurzer Query → leer.
+
+    ``lat``/``lon`` kommen aus :func:`icao_to_coords` und NICHT direkt aus ``airports[c]``:
+    Ein ``custom_airports``-Eintrag ist seit #56 ein Override, kein Fallback — ein Platz, den
+    airportsdata falsch verortet, stünde sonst hier weiterhin an der falschen Stelle, obwohl
+    die Korrektur längst gepflegt ist. Fehlt eine Position, bleiben beide Felder ``None``;
+    das Suchfeld auf der Karte bietet solche Treffer dann nicht zum Anspringen an."""
     q = (q or "").strip().upper()
     if not q:
         return []
@@ -177,7 +183,9 @@ def search_airports(q: str, limit: int = 20) -> list[dict]:
     out = []
     for c in sorted(codes)[:limit]:
         info = airports.get(c) or {}
-        out.append({"icao": c, "name": info.get("name") or ""})
+        ort = icao_to_coords(c)
+        out.append({"icao": c, "name": info.get("name") or "",
+                    "lat": ort[0] if ort else None, "lon": ort[1] if ort else None})
     return out
 
 

@@ -202,6 +202,45 @@ def test_der_versatz_greift_nur_wo_es_wirklich_zwei_gibt():
     assert "> 1" in block
 
 
+# ------------------------------------- Marken folgen dem Ausschnitt (Fund 02.09.2026)
+#
+# Engelhard Hinrichs im Forum: "man kann nur von Hannover EDDV die Flugplatzkarte
+# einblenden". Die Marken entstanden nur EINMAL -- beim Einschalten der Ebene, gefiltert
+# nach dem damaligen Ausschnitt. Beim Schieben kam keine hinzu.
+
+def test_die_bodenmarken_haengen_an_der_kartenbewegung():
+    """Wie bei der Sichtflugkarte. Ohne diese Bindung sieht man fuer den Rest der Sitzung
+    nur die Marken des Ausschnitts, in dem die Ebene eingeschaltet wurde."""
+    for ereignis in ("zoomend", "moveend"):
+        assert f"liveMap.on('{ereignis}', _groundMarkenAnpassen)" in RUMPF, ereignis
+
+
+def test_das_einschalten_der_ebene_frischt_die_liste_auf():
+    """Das Kniebrett laedt die Seite innerhalb einer Sim-Sitzung nie neu -- ohne ``true``
+    erscheint eine frisch gepasste Karte erst beim naechsten Sim-Start (Falle vom
+    24.08.2026 bei EDVM, dort behoben, hier nicht mitgezogen)."""
+    stelle = RUMPF.index("liveOverlays['Flugplatzkarte'] = _groundGruppe")
+    block = RUMPF[stelle:stelle + 900]
+    assert "_groundKartenLaden(true)" in block
+
+
+def test_bodenmarken_erst_ab_einem_regionalen_ausschnitt():
+    """Sonst stehen ueber ganz Deutschland 105 Marken gleichzeitig im Bild. Gemessen wird
+    in Grad, nicht in Zoomstufen -- die haengen an der Fenstergroesse."""
+    assert re.search(r"const\s+_GROUND_MARKE_SPANNE\s*=", RUMPF)
+    stelle = RUMPF.index("function _groundMarkenAnpassen")
+    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
+    assert "_GROUND_MARKE_SPANNE" in block
+
+
+def test_die_schwelle_misst_die_engere_achse():
+    """Bei einem breiten Fenster und einem hochkanten Ausschnitt entscheidet die Achse, an
+    der es eng wird -- mit Math.max erschienen die Marken je nach Fensterform nie."""
+    stelle = RUMPF.index("function _groundMarkenAnpassen")
+    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
+    assert "Math.min(" in block
+
+
 # ------------------------------------- Platzrunden ueber den Kartenblaettern
 
 def test_die_platzrunden_liegen_ueber_allen_kartenblaettern():

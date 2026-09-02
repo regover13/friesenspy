@@ -2168,6 +2168,15 @@ class TestKutterCreateValidation:
         assert "EDWG" in codes and all(c.startswith("EDW") for c in codes)
         assert client.get("/api/airports/search?q=").json()["results"] == []
 
+    def test_airports_search_liefert_position(self, tmp_path, monkeypatch):
+        """Das ICAO-Feld auf der Karte springt den Treffer direkt an -- ohne lat/lon in der
+        Antwort braeuchte es je Treffer einen zweiten Abruf."""
+        client, _ = self._app(tmp_path, monkeypatch)
+        treffer = client.get("/api/airports/search?q=KSPF").json()["results"]
+        assert treffer and treffer[0]["icao"] == "KSPF"
+        assert round(treffer[0]["lat"], 1) == 44.5
+        assert round(treffer[0]["lon"], 1) == -103.8
+
     # --- Entscheidung 6: genau ein Startplatz je Frachtart (Task 11) ---
     def test_mehrfach_icao_wird_abgewiesen(self):
         from app.main import _validate_transport_manifest

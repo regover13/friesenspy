@@ -643,6 +643,24 @@ class TestSyntheticIataCodes:
         # Der echte Code gewinnt jetzt auch, wenn der Landepunkt NAEHER am Platzhalter liegt.
         assert geo.nearest_airport_icao(47.59005, 7.52991, 4.0) == "ZQQA"
 
+    def test_search_liefert_koordinaten_zum_anspringen(self):
+        """Das ICAO-Feld auf der Karte springt den Treffer an -- ohne Position ginge das
+        nicht, und ein zweiter Abruf je Treffer waere reine Zusatzarbeit."""
+        treffer = search_airports("KSPF")
+        assert treffer and treffer[0]["icao"] == "KSPF"
+        assert round(treffer[0]["lat"], 2) == 44.48
+        assert round(treffer[0]["lon"], 2) == -103.79
+
+    def test_search_nimmt_die_korrigierte_position(self, monkeypatch):
+        """``custom_airports`` ist seit #56 ein Override, kein Fallback. Ein Platz, den
+        airportsdata falsch verortet, darf hier nicht an der alten Stelle bleiben."""
+        set_custom_airports([{"icao": "EDDK", "lat": 1.0, "lon": 2.0, "name": "Test"}])
+        try:
+            treffer = [e for e in search_airports("EDDK") if e["icao"] == "EDDK"]
+            assert treffer and treffer[0]["lat"] == 1.0 and treffer[0]["lon"] == 2.0
+        finally:
+            set_custom_airports([])
+
     def test_shadowed_codes_not_offered_in_autocomplete(self):
         """Fable-Review v10.4.6: Was die Platzerkennung nie zurueckgibt, darf man sich auch
         nicht in einen Event-Filter klicken koennen. Eigenstaendige Platzhalter bleiben waehlbar."""

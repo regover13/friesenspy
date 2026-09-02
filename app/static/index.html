@@ -1514,6 +1514,65 @@
       margin-top: 3px;
     }
 
+    /* ---------------------------------------------------------------------
+       ICAO-Suche: Kasten mit EIGENEM Tastenfeld (s. _addIcaoSucheControl).
+
+       Kein einziges Zeichen jenseits von ASCII, auch nicht als Symbol: Coherent GT malt
+       dort ein leeres Kaestchen -- im Kniebrett stand statt des Gradzeichens einmal
+       "038[] 6 kt" (Nutzer-Bild 23.08.2026). Loeschen und Schliessen sind deshalb als
+       SVG gezeichnet, nicht als Zeichen gesetzt.
+
+       Und kein `gap`: Das wirkt in Flexbox erst ab Chrome 84, im Kniebrett laeuft
+       Chrome 49. Abstaende stehen als margin an den Tasten selbst.
+       --------------------------------------------------------------------- */
+    .icao-box {
+      position: absolute; top: 10px; left: 50%;
+      -webkit-transform: translateX(-50%); transform: translateX(-50%);
+      z-index: 1000; display: none;
+      width: 292px; max-width: calc(100% - 20px);
+      padding: 8px;
+      background: #071525;
+      border: 1px solid rgba(45,156,219,0.3);
+      color: #cfe3f0;
+    }
+    .icao-box.icao-auf { display: block; }
+    .icao-kopf { display: flex; align-items: center; }
+    .icao-feld {
+      flex: 1; min-width: 0; height: 34px; margin-right: 4px; padding: 0 8px;
+      background: #04080f;
+      border: 1px solid rgba(45,156,219,0.35);
+      color: #cfe3f0;
+      font-family: var(--text-mono, monospace);
+      font-size: 1.05rem; letter-spacing: 2px; text-transform: uppercase;
+    }
+    .icao-taste {
+      width: 30px; height: 34px; margin: 2px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #0b2036;
+      border: 1px solid rgba(45,156,219,0.3);
+      color: #cfe3f0;
+      font-family: var(--text-mono, monospace);
+      font-size: 0.95rem; cursor: pointer;
+    }
+    .icao-taste:hover { background: #14314d; }
+    .icao-kopf .icao-taste { width: 34px; }
+    .icao-taste svg { width: 18px; height: 18px; display: block; }
+    .icao-tasten { display: flex; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+    .icao-liste { margin-top: 6px; max-height: 148px; overflow-y: auto; }
+    .icao-zeile {
+      display: flex; align-items: baseline; width: 100%;
+      padding: 5px 6px; margin: 0; text-align: left;
+      background: none; border: none; border-bottom: 1px solid rgba(45,156,219,0.15);
+      color: #cfe3f0; font-size: 0.82rem; cursor: pointer;
+    }
+    .icao-zeile:hover { background: rgba(45,156,219,0.12); }
+    .icao-zeile b {
+      font-family: var(--text-mono, monospace); color: #2d9cdb;
+      margin-right: 8px; flex: none;
+    }
+    .icao-zeile span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .icao-hinweis { padding: 6px; font-size: 0.78rem; color: #8fb3cc; }
+
     /* Im Vollbild sitzt die Windanzeige unten links -- und genau dort laeuft Leaflets
        Herkunftsangabe entlang, die im Kniebrett ueber die volle Breite umbricht und die
        Anzeige zur Haelfte verdeckt hat (Nutzer-Bild 23.08.2026).
@@ -10161,6 +10220,194 @@ function _naviKnopfAnstrich() {
 // Zeichenlast dauerhaft hochhaelt. Einmal pro Sekunde reicht voellig -- schneller als das
 // bewegt sich auf einer Karte in diesem Massstab ohnehin nichts Sichtbares.
 // ==========================================================================
+//  ICAO-SUCHE: einen Platz auf der Karte anspringen
+// ==========================================================================
+// Wunsch von Engelhard Hinrichs (Forum, 02.09.2026): ein Feld, in das man KSPF tippt, und
+// die Karte steht auf "Black Hills-Clyde Ice Field, Spearfish, South Dakota".
+//
+// EIGENES TASTENFELD statt eines blossen Eingabefelds -- das ist der Kern und keine Zierde:
+// Im Kniebrett laeuft diese Seite in einem <iframe> der EFB-Shell (msfs-panel, FriesenSpy.tsx
+// rendert <iframe class="friesenspy-frame">). Die Bildschirmtastatur des Simulators oeffnet
+// sich nur auf `Coherent.trigger('FOCUS_INPUT_FIELD', ...)`, und `Coherent` liegt im
+// Host-Frame, nicht bei uns. Ein nacktes Textfeld waere also genau dort tot, wo das
+// Kniebrett seinen Vorteil hat: in VR, wo keine Hand auf der Tastatur liegt.
+//
+// Ueber die vorhandene postMessage-Bruecke waere die Sim-Tastatur erreichbar -- das kostete
+// aber ein neues EFB-Paket, und drei der sechs Nutzer laufen heute schon mit einem zu alten
+// (Forum, 01.09.2026). Ein Tastenfeld auf der Seite wirkt sofort, in jeder Paketversion, und
+// ist mit dem VR-Zeiger so gut zu treffen wie mit der Maus.
+//
+// Gesucht wird ueber /api/airports/search -- airportsdata plus custom_airports, rund 28.000
+// Plaetze, offline im eigenen Container. Kein Fremddienst, und im Sim erreichbar.
+const _ICAO_ZEICHEN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const _ICAO_ZOOM = 13;           // Platz fuellt das Bild, die Bahnen sind zu erkennen
+const _ICAO_MIN_ZEICHEN = 2;     // bei einem Zeichen waeren es 20 beliebige Treffer
+const _ICAO_MAX_TREFFER = 8;
+
+let _icaoBox = null, _icaoFeld = null, _icaoListe = null, _icaoLeiste = null;
+let _icaoTimer = 0;
+// Laufende Nummer je Abfrage. Ohne sie kann die Antwort auf "ED" nach der auf "EDW"
+// eintreffen und die genauere Liste wieder ueberschreiben.
+let _icaoLauf = 0;
+
+function _icaoText() { return _icaoFeld ? String(_icaoFeld.value || '').toUpperCase() : ''; }
+
+function _icaoSetzen(text) {
+  if (!_icaoFeld) return;
+  _icaoFeld.value = String(text || '').toUpperCase().slice(0, 4);
+  _icaoSuchen();
+}
+
+/** Auf, zu oder umschalten (ohne Argument). */
+function _icaoOeffnen(an) {
+  if (!_icaoBox) return;
+  const auf = (an === undefined) ? !_icaoBox.classList.contains('icao-auf') : !!an;
+  _icaoBox.classList.toggle('icao-auf', auf);
+  if (_icaoLeiste) _icaoLeiste.classList.toggle('navi-an', auf);
+  // Fokus nur ausserhalb des Kniebretts: Dort oeffnet er keine Tastatur (s. oben), koennte
+  // aber Tastendruecke abfangen, die sonst das Flugzeug steuern.
+  if (auf && !_PANEL_MODUS && _icaoFeld) { try { _icaoFeld.focus(); } catch (e) {} }
+}
+
+function _icaoSuchen() {
+  const q = _icaoText();
+  if (_icaoTimer) { clearTimeout(_icaoTimer); _icaoTimer = 0; }
+  if (q.length < _ICAO_MIN_ZEICHEN) { _icaoListeZeigen([], q); return; }
+  _icaoTimer = setTimeout(function () {
+    const lauf = ++_icaoLauf;
+    fetch('/api/airports/search?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : { results: [] }; })
+      .then(function (d) {
+        if (lauf !== _icaoLauf) return;
+        _icaoListeZeigen((d && d.results) || [], q);
+      })
+      .catch(function () { if (lauf === _icaoLauf) _icaoListeZeigen([], q); });
+  }, 180);
+}
+
+function _icaoListeZeigen(treffer, q) {
+  if (!_icaoListe) return;
+  _icaoListe.innerHTML = '';
+  if (q.length < _ICAO_MIN_ZEICHEN) {
+    _icaoListe.innerHTML = '<div class="icao-hinweis">Mindestens zwei Zeichen.</div>';
+    return;
+  }
+  // Ein Platz ohne Position ist nicht anzuspringen -- gar nicht erst anbieten.
+  const brauchbar = [];
+  for (let i = 0; i < treffer.length; i++) {
+    const t = treffer[i];
+    if (typeof t.lat === 'number' && typeof t.lon === 'number') brauchbar.push(t);
+  }
+  if (!brauchbar.length) {
+    _icaoListe.innerHTML = '<div class="icao-hinweis">Kein Platz mit dieser Kennung.</div>';
+    return;
+  }
+  for (let i = 0; i < brauchbar.length && i < _ICAO_MAX_TREFFER; i++) {
+    const t = brauchbar[i];
+    const zeile = document.createElement('button');
+    zeile.type = 'button';
+    zeile.className = 'icao-zeile';
+    zeile.innerHTML = '<b>' + escHtml(t.icao) + '</b><span>' + escHtml(t.name || '') + '</span>';
+    zeile.onclick = (function (ziel) {
+      return function () { _icaoSpringen(ziel); };
+    })(t);
+    _icaoListe.appendChild(zeile);
+  }
+  if (brauchbar.length > _ICAO_MAX_TREFFER) {
+    const rest = document.createElement('div');
+    rest.className = 'icao-hinweis';
+    rest.textContent = 'Weiter tippen -- es gibt mehr Treffer.';
+    _icaoListe.appendChild(rest);
+  }
+}
+
+function _icaoSpringen(t) {
+  if (!liveMap || !t) return;
+  // Moving Map AUSDRUECKLICH abschalten. Der uebliche Weg ueber 'movestart' greift hier
+  // nicht: setView mit anderer Zoomstufe feuert zuerst 'zoomstart', und der Merker
+  // _naviZoomt nimmt genau diesen Fall von der Abschaltung aus (s. map.on('movestart')).
+  // Die Karte spraenge also hin -- und eine Sekunde spaeter zum eigenen Flugzeug zurueck.
+  if (_movingMap) {
+    _movingMap = false;
+    _naviMerke(_NAVI_MOVING_KEY, false);
+    _naviKnopfAnstrich();
+  }
+  // Wer schon naeher dran ist, wird nicht herausgezogen.
+  liveMap.setView([t.lat, t.lon], Math.max(liveMap.getZoom(), _ICAO_ZOOM));
+  _icaoOeffnen(false);
+}
+
+function _addIcaoSucheControl(map) {
+  const Suche = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function () {
+      const leiste = L.DomUtil.create('div', 'leaflet-bar navi-bar');
+      // Inline gezeichnet wie Kompass und Moving-Map-Pfeil: Ein <use href="#...">-Verweis
+      // war im Kniebrett unsichtbar (s. Kommentar bei den Navi-Knoepfen).
+      const lupe = '<svg class="kompass-nadel" viewBox="0 0 24 24" aria-hidden="true">'
+        + '<path d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l4.24 4.25 1.42-1.42-4.25-4.24A7.5 7.5 0 0 0 '
+        + '10.5 3zm0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11z" fill="currentColor"/></svg>';
+      leiste.appendChild(_naviKnopf('Flugplatz nach ICAO-Kennung suchen', lupe,
+                                    function () { _icaoOeffnen(); }));
+      _icaoLeiste = leiste;
+      return leiste;
+    }
+  });
+  map.addControl(new Suche());
+
+  const box = L.DomUtil.create('div', 'icao-box', map.getContainer());
+  box.innerHTML =
+      '<div class="icao-kopf">'
+    +   '<input class="icao-feld" type="text" maxlength="4" placeholder="ICAO"'
+    +          ' aria-label="ICAO-Kennung" autocomplete="off" spellcheck="false"'
+    +          (_PANEL_MODUS ? ' readonly' : '') + '>'
+    +   '<button type="button" class="icao-taste icao-weg" aria-label="Zeichen loeschen">'
+    +     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h11v14H9L2 12z" '
+    +     'fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9l6 6M18 9l-6 6" '
+    +     'stroke="currentColor" stroke-width="2"/></svg>'
+    +   '</button>'
+    +   '<button type="button" class="icao-taste icao-zu" aria-label="Suche schliessen">'
+    +     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" '
+    +     'stroke="currentColor" stroke-width="2"/></svg>'
+    +   '</button>'
+    + '</div>'
+    + '<div class="icao-liste"></div>'
+    + '<div class="icao-tasten"></div>';
+  _icaoBox = box;
+  _icaoFeld = box.querySelector('.icao-feld');
+  _icaoListe = box.querySelector('.icao-liste');
+
+  const tastenfeld = box.querySelector('.icao-tasten');
+  for (let i = 0; i < _ICAO_ZEICHEN.length; i++) {
+    const zeichen = _ICAO_ZEICHEN.charAt(i);
+    const taste = document.createElement('button');
+    taste.type = 'button';
+    taste.className = 'icao-taste';
+    taste.textContent = zeichen;
+    taste.onclick = (function (c) {
+      return function () { _icaoSetzen(_icaoText() + c); };
+    })(zeichen);
+    tastenfeld.appendChild(taste);
+  }
+
+  box.querySelector('.icao-weg').onclick = function () { _icaoSetzen(_icaoText().slice(0, -1)); };
+  box.querySelector('.icao-zu').onclick = function () { _icaoOeffnen(false); };
+  // Tippen bleibt moeglich, wo es eine Tastatur gibt -- im Kniebrett steht das Feld auf
+  // readonly und das Tastenfeld ist der einzige Weg.
+  _icaoFeld.oninput = function () { _icaoSetzen(_icaoFeld.value); };
+  _icaoFeld.onkeydown = function (e) {
+    if (e && (e.key === 'Enter' || e.keyCode === 13)) {
+      const erste = _icaoListe.querySelector('.icao-zeile');
+      if (erste) erste.click();
+    }
+  };
+  // Sonst zoomt ein Doppeltipp auf eine Taste die Karte mit.
+  L.DomEvent.disableClickPropagation(box);
+  L.DomEvent.disableScrollPropagation(box);
+  _icaoListeZeigen([], '');
+}
+
+// ==========================================================================
 //  SICHTFLUGKARTE ALS OVERLAY
 // ==========================================================================
 // Das ungeschnittene DFS-Blatt liegt georeferenziert ueber der Karte.
@@ -10611,9 +10858,27 @@ function _groundMarkenAnstrich() {
   }
 }
 
+// Ab welchem Ausschnitt es Bodenmarken gibt -- die ENGERE Achse in Grad, wie bei der
+// Sichtflugkarte gemessen und nicht in Zoomstufen: Eine feste Zoomschwelle haengt an der
+// Fenstergroesse, und die ist im Kniebrett eine andere als am Schreibtisch.
+//
+// Gegen die BLATTgroesse zu messen (das Verfahren der Sichtflugkarte) geht hier nicht:
+// Bodenblaetter sind winzig -- EDWF misst 0,028 Grad --, die Marke erschiene erst, wenn man
+// praktisch schon auf dem Platz steht. Massgeblich ist deshalb der Ausschnitt selbst.
+//
+// 2,0 Grad ist an den echten Daten gemessen, nicht geschaetzt: Im dichtesten Fenster dieser
+// Groesse (Raum Stuttgart) liegen 17 der 109 Bodenkarten, bei 3 Grad schon 26 und bei 4 Grad
+// 45. Ueber ganz Deutschland waeren es 105 Marken auf einmal -- ein Teppich, und jede Marke
+// ist ein DOM-Element, das Leaflet bei jeder Kartenbewegung anfasst (die Falle vom
+// 15.08.2026, s. _labelsImSichtbereich).
+const _GROUND_MARKE_SPANNE = 2.0;   // Grad
+
 /** Marken an Ausschnitt und Zustand angleichen. Muster wie bei _aipMarkenAnpassen. */
 function _groundMarkenAnpassen() {
-  const an = liveMap && liveMap.hasLayer(_groundGruppe) && _groundKarten;
+  const sicht = (liveMap && liveMap.hasLayer(_groundGruppe) && _groundKarten)
+    ? liveMap.getBounds() : null;
+  const an = sicht && Math.min(sicht.getNorth() - sicht.getSouth(),
+                               sicht.getEast() - sicht.getWest()) <= _GROUND_MARKE_SPANNE;
   if (!an) {
     for (const schluessel in _groundMarken) {
       _groundGruppe.removeLayer(_groundMarken[schluessel]);
@@ -10621,7 +10886,7 @@ function _groundMarkenAnpassen() {
     }
     return;
   }
-  const b = liveMap.getBounds();
+  const b = sicht;
   // Wo ein Platz ZWEI Bodenkarten hat, muessen ihre Marken auseinander -- der Versatz von
   // 0,004 Grad unten trennt Boden- von Sichtflugkarten, nicht zwei Bodenkarten voneinander.
   // Bei 109 von 111 Plaetzen gibt es nur eine; deren Marke darf nicht wandern.
@@ -11310,10 +11575,21 @@ async function initLiveMap() {
   // Unmittelbar hinter der Sichtflugkarte: Beide zeigen amtliche DFS-Blaetter, und die
   // Flugplatzkarte tritt ueber dem Platz an ihre Stelle.
   liveOverlays['Flugplatzkarte'] = _groundGruppe;
+  // An JEDE Kartenbewegung, genau wie die Sichtflugkarte (s. map.on('moveend',
+  // _aipMarkenAnpassen)). Ohne diese beiden Zeilen entstanden die Bodenmarken nur EINMAL --
+  // fuer den Ausschnitt, der beim Einschalten der Ebene im Bild lag. Wer sie ueber Hannover
+  // anschaltete, konnte fuer den Rest der Sitzung genau EDDV einblenden und sonst nichts,
+  // egal wohin er schob (Nutzerfund Engelhard Hinrichs, 02.09.2026, Forum).
+  liveMap.on('zoomend', _groundMarkenAnpassen);
+  liveMap.on('moveend', _groundMarkenAnpassen);
   liveMap.on('overlayadd', function (e) {
     if (e.layer !== _groundGruppe) return;
     _saveGroundPref(true);
-    _groundKartenLaden().then(function () { _groundMarkenAnpassen(); _groundNachfuehren(); });
+    // Mit ``true``, wie bei der Sichtflugkarte: Das Kniebrett laedt die Seite innerhalb einer
+    // Sim-Sitzung nie neu, eine frisch gepasste Karte erschiene sonst erst beim naechsten
+    // Sim-Start. Genau diese Falle war am 24.08.2026 bei EDVM aufgefallen und dort behoben
+    // worden -- die Bodenkarte hatte es nicht mitbekommen.
+    _groundKartenLaden(true).then(function () { _groundMarkenAnpassen(); _groundNachfuehren(); });
   });
   liveMap.on('overlayremove', function (e) {
     if (e.layer !== _groundGruppe) return;
@@ -11396,6 +11672,7 @@ async function initLiveMap() {
   _addKompassControl(liveMap);
   _addDeckkraftControl(liveMap);
   _addMovingMapControl(liveMap);
+  _addIcaoSucheControl(liveMap);
   // Nur im Kniebrett: Den Wind kennt allein der Simulator, VATSIM meldet ihn nicht.
   if (_PANEL_MODUS) _addWindControl(liveMap);
   _naviStarten();

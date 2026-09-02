@@ -1434,11 +1434,18 @@ warnen (weiche Warnung, kein Hard-Block).
 ### GET /api/airports/search (v8.16.0/#77)
 
 ICAO-**Präfix-Suche** (`?q=EDW`) über `airportsdata` + eigene `custom_airports`, bis zu 20 Treffer
-mit Flugplatznamen. Offline, kein Auth. Speist das Autocomplete an den Platz-Eingaben (Kutter-Ziel
-+ -Startplätze, Bummel-Strecke); bei Mehrfach-ICAO-Feldern wird das gerade getippte Token
-vervollständigt.
+mit Flugplatznamen **und Position**. Offline, kein Auth. Speist das Autocomplete an den
+Platz-Eingaben (Kutter-Ziel + -Startplätze, Bummel-Strecke) — bei Mehrfach-ICAO-Feldern wird das
+gerade getippte Token vervollständigt — und seit v14.9.0 das ICAO-Suchfeld auf der Live-Karte,
+das den Treffer direkt anspringt.
 
-**Response** `{"results": [{"icao": "EDWG", "name": "Wangerooge Airport"}, …]}`
+`lat`/`lon` kommen aus `icao_to_coords()` und damit aus derselben Quelle wie die Platzerkennung:
+Ein `custom_airports`-Eintrag ist seit #56 ein **Override**, kein Fallback — ein von
+`airportsdata` falsch verorteter Platz stünde sonst hier weiterhin an der falschen Stelle.
+Fehlt eine Position, sind beide Felder `null`; das Suchfeld bietet solche Treffer nicht zum
+Anspringen an.
+
+**Response** `{"results": [{"icao": "EDWG", "name": "Wangerooge Airport", "lat": 53.78…, "lon": 7.91…}, …]}`
 
 ## Flugplatz-Links (AIP-VFR / ChartFox)
 
