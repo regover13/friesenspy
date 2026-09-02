@@ -447,35 +447,74 @@ def test_alle_katalog_emoji_haben_eine_self_gehostete_svg():
         )
 
 
-def test_kein_zweiter_ausgang_aus_dem_vollbild_im_panel():
-    """Die Zurueck-Leiste ist im Vollbild ohnehin sichtbar und ihr erster Druck verlaesst
-    genau dieses Vollbild -- ein eigener Knopf dafuer ist einer zu viel und kostet Platz
-    in der Karte. Der Knopf zum HINEINgehen bleibt."""
-    assert "html.vr-panel .map-is-fullscreen .map-fullscreen-btn { display: none !important; }" in INDEX
+def test_vollbild_im_panel_zeigt_nur_die_karte():
+    """Vollbild im Kniebrett heisst seit 02.09.2026: NUR Karte -- die Zurueck-/Tab-Leiste
+    verschwindet mit.
+
+    Sie war das eigentliche Problem: fest am oberen Rand, und alles, was die Karte oben
+    anbietet, lag darunter -- zuletzt der ICAO-Suchkasten, dessen Eingabefeld dadurch halb
+    verdeckt war (Nutzer-Bild 02.09.2026).
+
+    Die Umkehr davon ist der wichtigere Teil des Tests: Ohne Leiste MUSS der Knopf in der
+    Karte zurueckkommen, sonst gibt es aus dem Vollbild gar keinen Weg mehr heraus -- genau
+    die Lage, die den Zurueck-Knopf am 13.08.2026 ueberhaupt erst noetig machte."""
+    assert "html.vr-panel.karte-vollbild .panel-topbar { display: none !important; }" in INDEX
+    # Der Knopf in der Karte darf NICHT mehr ausgeblendet werden -- er ist jetzt der Ausgang.
+    assert "html.vr-panel .map-is-fullscreen .map-fullscreen-btn { display: none" not in INDEX
+    # ... und er muss ueber Leaflets Herkunftsangabe liegen, die unten links entlanglaeuft.
+    assert "html.vr-panel .map-is-fullscreen .map-fullscreen-btn { z-index: 1200; }" in INDEX
     # Der zweite, eigene Notausgang unten rechts ist ganz entfallen: im Panel uebernimmt
     # die Zurueck-Leiste, auf der Website stand er als zweiter "Vollbild verlassen"-Knopf
     # neben dem ersten (Nutzer-Fund 14.08.2026).
     assert "global-map-exit-fs" not in INDEX
-    # panelGoBack muss das Vollbild weiterhin als ERSTE Stufe verlassen, sonst gibt es
-    # nach dem Ausblenden gar keinen Weg mehr heraus.
+    # panelGoBack muss das Vollbild weiterhin als ERSTE Stufe verlassen.
     m = re.search(r"function panelGoBack\(\) \{(.*?)\n\}", INDEX, re.S)
     assert m and "exitAnyMapFullscreen()" in m.group(1)
 
 
-def test_leaflet_bedienelemente_liegen_nicht_unter_der_zurueck_leiste():
-    """Zoom sitzt oben links, Ebenen oben rechts -- im Vollbild genau unter der Leiste am
-    oberen Rand. Der Plus-Knopf war dadurch nicht erreichbar (Nutzer-Fund).
+def test_leiste_kommt_bei_offenem_fenster_zurueck():
+    """Der Ausgang aus dem Vollbild ist der Knopf IN der Karte -- und der liegt unter jedem
+    Modal (z-index 3000 gegen 10000). Wer aus dem Vollbild heraus ein Fenster oeffnet, saesse
+    ohne die Leiste fest. Sobald ein Fenster offen ist, kommt sie deshalb zurueck."""
+    m = re.search(r"function _vollbildKlassePflegen\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_vollbildKlassePflegen nicht gefunden"
+    rumpf = m.group(1)
+    assert "map-is-fullscreen" in rumpf and "_panelOpenModal()" in rumpf, \
+        "die Bedingung muss BEIDES pruefen: Vollbild an UND kein Fenster offen"
+    assert "classList.toggle('karte-vollbild'" in rumpf
+    # Beide Wege ins und aus dem Vollbild muessen sie rufen -- und der Sekundentakt des
+    # Zurueck-Knopfs, weil Fenster an zu vielen Stellen auf- und zugehen.
+    for stelle in ("function toggleMapFullscreen", "function exitAnyMapFullscreen",
+                   "function _updatePanelBackBtn"):
+        block = INDEX[INDEX.index(stelle):]
+        block = block[:block.index("\n}\n")]
+        assert "_vollbildKlassePflegen()" in block, f"{stelle} ruft die Pflege nicht"
 
-    Der Versatz MUSS der Leistenhoehe folgen: Seit die Leiste der Tablet-Statusleiste mit
-    26px Innenabstand ausweicht, sind es 72px statt 46. Drei Stellen haengen an diesem Wert
-    (body-Abstand, Karten-Bedienelemente, Hinweis-Stapel) -- laufen sie auseinander, schiebt
-    sich wieder etwas unter die Leiste."""
+
+def test_leaflet_bedienelemente_weichen_der_tablet_statusleiste_aus():
+    """Im Vollbild ist die eigene Leiste weg -- oben bleibt aber die Statusleiste des
+    TABLETS: Die EFB-Oberflaeche legt Glocke (links) und Datum/Uhrzeit (rechts) ueber unsere
+    Seite. Zoom (oben links), Ebenen/Kompass/Lupe (oben rechts) und der Suchkasten muessen
+    darunter beginnen.
+
+    Der Versatz MUSS derselbe Wert sein, mit dem die Leiste ausserhalb des Vollbilds
+    derselben Statusleiste ausweicht (.panel-topbar padding-top) -- laufen die beiden
+    auseinander, schiebt sich wieder etwas darunter.
+
+    Bis 02.09.2026 stand hier die volle Leistenhoehe (66px), weil die Leiste im Vollbild
+    mitlief. Sie tut es nicht mehr, s. test_vollbild_im_panel_zeigt_nur_die_karte."""
     versatz = re.search(r"html\.vr-panel \.map-is-fullscreen \.leaflet-top \{ margin-top: (\d+)px; \}",
                         INDEX)
     assert versatz, "Versatz der Karten-Bedienelemente nicht gefunden"
-    hoehe = re.search(r"html\.vr-panel body \{ padding-top: (\d+)px; \}", INDEX)
-    assert hoehe, "Leistenhoehe (body padding-top) nicht gefunden"
-    assert versatz.group(1) == hoehe.group(1), "Versatz und Leistenhoehe laufen auseinander"
+    statusleiste = re.search(r"html\.vr-panel \.panel-topbar \{.*?padding-top: (\d+)px;", INDEX, re.S)
+    assert statusleiste, "Abstand zur Tablet-Statusleiste nicht gefunden"
+    assert versatz.group(1) == statusleiste.group(1), \
+        "Versatz und Abstand zur Tablet-Statusleiste laufen auseinander"
+    # Der Suchkasten sitzt 10px tiefer als die Bedienelemente -- sein eigener Abstand zum
+    # Rand ausserhalb des Vollbilds (top: 10px) kommt hinzu.
+    kasten = re.search(r"html\.vr-panel \.map-is-fullscreen \.icao-box \{ top: (\d+)px; \}", INDEX)
+    assert kasten, "Versatz des Suchkastens nicht gefunden"
+    assert int(kasten.group(1)) == int(versatz.group(1)) + 10
 
 
 # ---------------------------------------------------------------------------
@@ -2570,18 +2609,20 @@ def test_windanzeige_nur_im_kniebrett_und_richtungstreu():
 
 
 def test_windanzeige_wechselt_im_vollbild_die_ecke():
-    """Normal oben links UEBER den Zoomknoepfen, im Vollbild unten links (Nutzerwunsch
-    23.08.2026).
+    """Normal oben links UEBER den Zoomknoepfen, im Vollbild oben rechts (Nutzerwunsch
+    02.09.2026).
 
     Das Umhaengen ist noetig, weil Leaflet die Bedienelemente einer Ecke in der Reihenfolge
     stapelt, in der sie dazukommen -- der Zoomknopf entsteht schon beim Anlegen der Karte.
-    Und unten links ist ausserhalb des Vollbilds der falsche Platz: Dort sitzt der
-    Vollbild-Knopf, der als `position:absolute` gar nicht in Leaflets Ecken-Raster liegt und
-    die Anzeige verdeckt haette. Im Vollbild ist er ausgeblendet, die Ecke also frei."""
+    Unten links ist NIRGENDS der richtige Platz: Dort sitzt der Vollbild-Knopf, der als
+    `position:absolute` gar nicht in Leaflets Ecken-Raster liegt und die Anzeige verdeckt
+    haette. Bis 02.09.2026 stand sie im Vollbild trotzdem dort -- damals war der Knopf im
+    Kniebrett ausgeblendet, die Ecke also frei. Seit die Leiste im Vollbild verschwindet,
+    ist der Knopf der Ausgang und steht wieder da."""
     m = re.search(r"function _windPlatzieren\(imVollbild\) \{(.*?)\n\}", INDEX, re.S)
     assert m, "_windPlatzieren nicht gefunden"
     rumpf = m.group(1)
-    assert "imVollbild ? 'bottomleft' : 'topleft'" in rumpf
+    assert "imVollbild ? 'topright' : 'topleft'" in rumpf
     assert "ecke.insertBefore(_windKnopf, ecke.firstChild)" in rumpf, \
         "ohne Umhaengen sitzt die Anzeige UNTER den Zoomknoepfen"
     assert "if (wrapId === _ZUSTAND_KARTE_WRAP) _windPlatzieren(isFs);" in INDEX, \
@@ -2603,20 +2644,21 @@ def test_windanzeige_bleibt_bei_ascii():
     assert "' kt'" not in w.group(1), "die Windanzeige darf keine halbe Beschriftung tragen"
 
 
-def test_windanzeige_liegt_vor_der_herkunftsangabe():
-    """Im Vollbild sitzt die Windanzeige unten links -- dort laeuft auch Leaflets
-    Herkunftsangabe entlang, die im Kniebrett ueber die volle Breite umbricht und die
-    Anzeige zur Haelfte verdeckt hat (Nutzer-Bild 23.08.2026).
+def test_die_herkunftsangabe_wird_verdeckt_aber_nie_ausgeblendet():
+    """Unten links laeuft Leaflets Herkunftsangabe entlang, die im Kniebrett ueber die volle
+    Breite umbricht. Was dort steht, muss vor ihr liegen: bis 02.09.2026 die Windanzeige
+    (Nutzer-Bild 23.08.2026), seither der Vollbild-Knopf als Ausgang aus dem Vollbild.
 
-    Angehoben wird die ECKE, nicht der Kasten: Leaflet gibt jeder Ecke `z-index: 1000` und
-    macht damit einen eigenen Stapel-Zusammenhang auf -- ein hoeherer Wert am Kind darin
-    bliebe wirkungslos, verglichen werden die Ecken untereinander. Bei Gleichstand gewinnt
-    die spaetere im Dokument, und das ist die rechte mit der Herkunftsangabe.
+    Der Weg dorthin ist je nach Element ein anderer: Bei einem Kind einer Leaflet-Ecke muss
+    die ECKE angehoben werden -- Leaflet gibt jeder `z-index: 1000` und macht damit einen
+    eigenen Stapel-Zusammenhang auf, ein hoeherer Wert am Kind bliebe wirkungslos. Der
+    Vollbild-Knopf haengt dagegen als `position:absolute` am Karten-Wrapper, ausserhalb des
+    Ecken-Rasters, und traegt seinen Rang selbst.
 
-    Die Namensnennung selbst bleibt: Sie ist Lizenzbedingung der Kartenquellen und wird
-    nirgends ausgeblendet -- der schmale Kasten verdeckt nur seinen eigenen Platz."""
-    assert "html.vr-panel .leaflet-bottom.leaflet-left { z-index: 1100; }" in INDEX
-    # Gemessen: Ecke links 1100, Ecke rechts 1000.
+    Die Namensnennung SELBST bleibt in jedem Fall: Sie ist Lizenzbedingung der Kartenquellen
+    und wird nirgends ausgeblendet -- verdeckt wird immer nur der Platz des eigenen Kastens,
+    der uebrige Text bleibt stehen."""
+    assert "html.vr-panel .map-is-fullscreen .map-fullscreen-btn { z-index: 1200; }" in INDEX
     assert "display: none" not in _regel_von(".leaflet-control-attribution"), \
         "die Herkunftsangabe darf nicht verschwinden -- sie ist Lizenzbedingung"
 
@@ -2884,8 +2926,11 @@ def test_ebenen_auswahl_liegt_ueber_der_herkunftsangabe():
     macht damit einen eigenen Stapel-Zusammenhang auf; ein hoeherer Wert am Kind darin bliebe
     wirkungslos. Gleiches Muster wie beim Windpfeil unten links."""
     assert "html.vr-panel .leaflet-top.leaflet-right { z-index: 1100; }" in INDEX
-    # Der Windpfeil-Fall bleibt bestehen -- beide Ecken brauchen die Anhebung.
-    assert "html.vr-panel .leaflet-bottom.leaflet-left { z-index: 1100; }" in INDEX
+    # Die gleichartige Anhebung unten links ist am 02.09.2026 entfallen: Die Windanzeige,
+    # der sie galt, sitzt im Vollbild jetzt oben rechts, und der Vollbild-Knopf, der dort
+    # nachgerueckt ist, haengt gar nicht in einer Leaflet-Ecke -- er traegt seinen Rang
+    # selbst (s. test_vollbild_im_panel_zeigt_nur_die_karte).
+    assert "html.vr-panel .leaflet-bottom.leaflet-left { z-index: 1100; }" not in INDEX
 
 
 # ==========================================================================================

@@ -106,6 +106,25 @@ def test_kein_zeichen_jenseits_von_ascii():
     assert not schlimm, schlimm
 
 
+def test_der_suchkasten_liegt_ueber_den_kartensymbolen():
+    """Leaflet gibt seinen Ecken `z-index: 1000`, im Kniebrett steht eine davon sogar auf
+    1100 (Ebenen-Auswahl, s. test_vr_panel). Mit demselben Rang lag der Kasten HINTER
+    Ebenen-Auswahl, Kompass und Lupe -- im Kniebrett war das Eingabefeld halb verdeckt
+    (Nutzer-Bild 02.09.2026).
+
+    Verdecken ist hier richtig herum: Der Kasten ist nur offen, solange gesucht wird, und
+    traegt sein eigenes X zum Schliessen -- an die Symbole kommt man also immer wieder
+    heran. Ohne dieses X waere die Anhebung eine Falle."""
+    m = re.search(r"\n    \.icao-box \{([^}]*)\}", QUELLE, re.S)
+    assert m, ".icao-box nicht gefunden"
+    rang = re.search(r"z-index: (\d+)", m.group(1))
+    assert rang and int(rang.group(1)) > 1100, \
+        "der Kasten muss ueber Leaflets angehobene Ecken (1100) hinaus"
+    # Das X ist die Bedingung dafuer, dass er verdecken darf.
+    assert 'class="icao-taste icao-zu"' in QUELLE
+    assert "querySelector('.icao-zu').onclick" in QUELLE
+
+
 def test_der_seitenzoom_wird_zurueckgeholt():
     """iOS zoomt beim Fokus in ein Eingabefeld in die Seite hinein und zoomt danach nicht von
     selbst zurueck. Im Kartenvollbild liegen die Schaltflaechen -- auch "Vollbild verlassen"

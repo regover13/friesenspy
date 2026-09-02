@@ -1525,10 +1525,16 @@
        Und kein `gap`: Das wirkt in Flexbox erst ab Chrome 84, im Kniebrett laeuft
        Chrome 49. Abstaende stehen als margin an den Tasten selbst.
        --------------------------------------------------------------------- */
+    /* UEBER Leaflets Ecken, nicht darunter. Die Ecken stehen hier auf 1000, im Kniebrett
+       zwei davon sogar auf 1100 (s. oben) -- der Kasten mit demselben Rang 1000 lag damit
+       hinter Ebenen-Auswahl, Kompass und Lupe, und im Kniebrett war das Eingabefeld halb
+       verdeckt (Nutzer-Bild 02.09.2026). Verdecken ist hier richtig: Der Kasten ist nur
+       offen, solange gesucht wird, und traegt sein eigenes X zum Schliessen -- man kommt
+       also immer wieder an die Symbole heran. */
     .icao-box {
       position: absolute; top: 10px; left: 50%;
       -webkit-transform: translateX(-50%); transform: translateX(-50%);
-      z-index: 1000; display: none;
+      z-index: 1200; display: none;
       width: 292px; max-width: calc(100% - 20px);
       padding: 8px;
       background: #071525;
@@ -1581,21 +1587,21 @@
     .icao-zeile span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .icao-hinweis { padding: 6px; font-size: 0.78rem; color: #8fb3cc; }
 
-    /* Im Vollbild sitzt die Windanzeige unten links -- und genau dort laeuft Leaflets
-       Herkunftsangabe entlang, die im Kniebrett ueber die volle Breite umbricht und die
-       Anzeige zur Haelfte verdeckt hat (Nutzer-Bild 23.08.2026).
+    /* Hier stand bis 02.09.2026 `html.vr-panel .leaflet-bottom.leaflet-left { z-index: 1100 }`
+       -- die Windanzeige sass im Vollbild unten links und wurde von Leaflets Herkunftsangabe
+       zur Haelfte verdeckt (Nutzer-Bild 23.08.2026). Die Anzeige ist von dort weg (jetzt oben
+       rechts, s. _windPlatzieren), die Ecke also leer; unten links sitzt seither der
+       Vollbild-Knopf, und der braucht keine Ecken-Anhebung, weil er gar nicht in einer Ecke
+       haengt (s. `.map-fullscreen-btn` weiter unten). Eine Regel ohne Gegenstand haette hier
+       nur ihre falsche Begruendung weitergetragen.
 
-       Angehoben wird die ECKE, nicht der Kasten: Leaflet gibt jeder Ecke `z-index: 1000`,
-       womit sie einen eigenen Stapel-Zusammenhang aufmacht -- ein hoeherer Wert am Kind
-       darin bliebe wirkungslos, verglichen werden die Ecken untereinander. Bei Gleichstand
-       gewinnt die spaetere im Dokument, und das ist die rechte mit der Herkunftsangabe.
+       Was BLEIBT, ist das Muster: Angehoben wird die ECKE, nicht der Kasten darin. Leaflet
+       gibt jeder Ecke `z-index: 1000` und macht damit einen eigenen Stapel-Zusammenhang auf
+       -- ein hoeherer Wert am Kind bliebe wirkungslos, verglichen werden die Ecken
+       untereinander. Bei Gleichstand gewinnt die spaetere im Dokument, und das ist die
+       rechte mit der Herkunftsangabe.
 
-       Die Angabe bleibt lesbar: Der Kasten ist schmal, verdeckt nur seinen eigenen Platz
-       und laesst den uebrigen Text stehen -- die Namensnennung der Kartenquellen ist
-       Lizenzbedingung und darf nicht verschwinden. */
-    html.vr-panel .leaflet-bottom.leaflet-left { z-index: 1100; }
-
-    /* Dieselbe Behandlung fuer die Ebenen-Auswahl, aus demselben Grund und nach demselben
+       Genau das gilt fuer die Ebenen-Auswahl, aus demselben Grund und nach demselben
        Muster (Nutzer-Wunsch 30.08.2026: "wir haben den Windpfeil bereits ueber diesen DFS,
        OpenStreetMap CARTO Banner geblendet -- sorge auch dafuer, dass das Kartenlayer
        darueber liegt").
@@ -2171,20 +2177,36 @@
        Website bleibt es. */
     html.vr-panel .scanline { display: none !important; }
 
-    /* Im Vollbild gibt es im Panel keinen eigenen Ausgang mehr: Die Zurueck-Leiste ist
-       ohnehin sichtbar (Vollbild zaehlt in _panelCanGoBack als "es gibt etwas zu
-       verlassen") und ihr erster Druck verlaesst genau das Vollbild. Zwei Knoepfe fuer
-       denselben Weg sind einer zu viel -- und der zweite kostet Platz in der Karte.
-       Der Knopf zum HINEINgehen bleibt, nur der Rueckweg wandert in die Leiste. */
-    html.vr-panel .map-is-fullscreen .map-fullscreen-btn { display: none !important; }
+    /* VOLLBILD IM KNIEBRETT HEISST: NUR KARTE (Nutzerwunsch 02.09.2026).
+       Die Zurueck-/Tab-Leiste verschwindet mit, denn sie war das eigentliche Problem: Sie
+       klebt fest am oberen Rand, und alles, was die Karte oben anbietet, lag darunter --
+       zuletzt der ICAO-Suchkasten, dessen Eingabefeld dadurch halb verdeckt war
+       (Nutzer-Bild 02.09.2026). Ein Versatz haette den Kasten nur nach unten geschoben und
+       im Vollbild 66 Pixel Karte gekostet.
 
-    /* Leaflets Bedienelemente sitzen oben links (Zoom) und oben rechts (Ebenen) -- im
-       Vollbild also genau unter der Zurueck-Leiste, die fest am oberen Rand klebt. Der
-       Plus-Knopf war dadurch nicht erreichbar (Nutzer-Fund). Ausserhalb des Vollbilds
-       schiebt bereits body { padding-top } alles nach unten, dort waere ein zweiter
-       Versatz zu viel -- deshalb nur hier. Die Leiste steht seit der Zusammenlegung von
-       Kopfzeile und Tabs IMMER, deshalb ohne Bedingung und mit deren Hoehe. */
-    html.vr-panel .map-is-fullscreen .leaflet-top { margin-top: 66px; }
+       Damit kehrt der Ausgang IN die Karte zurueck: Ohne Leiste gaebe es sonst gar keinen
+       Weg mehr heraus -- genau die Lage, die den Zurueck-Knopf urspruenglich noetig machte
+       ("sass man fest", 13.08.2026). Der Knopf sitzt unten links, wo im Vollbild bisher die
+       Windanzeige stand; die wandert dafuer nach oben rechts (s. _windPlatzieren).
+       `.karte-vollbild` setzt toggleMapFullscreen am <html>: Die Leiste haengt bewusst
+       AUSSERHALB von #app am </body> und ist deshalb kein Nachfahre der Karte -- ueber die
+       Karte selbst laesst sie sich nicht ansprechen. */
+    html.vr-panel.karte-vollbild .panel-topbar { display: none !important; }
+
+    /* Der Knopf muss ueber Leaflets Herkunftsangabe liegen, die im Kniebrett ueber die
+       volle Breite umbricht und unten links entlanglaeuft -- derselbe Fall, den vorher die
+       Windanzeige an dieser Stelle hatte. Anders als dort genuegt hier ein Wert am Knopf
+       selbst: Er haengt als `position:absolute` am Karten-Wrapper und nicht in einer der
+       Leaflet-Ecken, macht also keinen fremden Stapel-Zusammenhang auf. */
+    html.vr-panel .map-is-fullscreen .map-fullscreen-btn { z-index: 1200; }
+
+    /* Was oben trotzdem freibleiben muss: die Statusleiste des TABLETS. Die EFB-Oberflaeche
+       legt Glocke (links) und Datum/Uhrzeit (rechts) ueber unsere Seite -- ausserhalb des
+       Vollbilds weicht ihr der Innenabstand der Leiste aus (.panel-topbar padding-top),
+       im Vollbild gibt es die Leiste nicht mehr, also muss der Versatz hierher. Er ist
+       dieselbe Zahl und gehoert es zu bleiben: waechst der eine, muss der andere mit. */
+    html.vr-panel .map-is-fullscreen .leaflet-top { margin-top: 26px; }
+    html.vr-panel .map-is-fullscreen .icao-box { top: 36px; }
     html.vr-panel .sse-dot { animation: none !important; }
 
     /* ---------------------------------------------------------------------
@@ -10027,7 +10049,11 @@ function _addWindControl(map) {
  */
 function _windPlatzieren(imVollbild) {
   if (!_windControl) return;
-  const wunsch = imVollbild ? 'bottomleft' : 'topleft';
+  // Im Vollbild OBEN RECHTS, nicht mehr unten links (Nutzerwunsch 02.09.2026): Unten links
+  // steht seit dem Umbau der Ausgang aus dem Vollbild, und zwei Dinge an derselben Stelle
+  // sind eins zu viel. Oben rechts reiht sie sich unter Ebenen-Auswahl, Kompass und Lupe --
+  // also UNTER die Tippziele, was richtig herum ist: Der Wind wird gelesen, nicht gedrueckt.
+  const wunsch = imVollbild ? 'topright' : 'topleft';
   if (_windControl.getPosition() !== wunsch) {
     // setPosition haengt den Control neu ein; dabei laeuft onAdd erneut und setzt die
     // Verweise auf Pfeil und Text frisch.
@@ -13600,6 +13626,7 @@ function toggleMapFullscreen(wrapId, btn, getMap) {
   const isFs = wrap.classList.toggle('map-is-fullscreen');
   btn.innerHTML = isFs ? icon('x') + ' Vollbild verlassen' : icon('fullscreen') + ' Vollbild';
   document.body.style.overflow = isFs ? 'hidden' : '';
+  _vollbildKlassePflegen();
   // Nur die Karten-Ansicht wird gemerkt: Das Track-Modal und die Events-Karte haengen an
   // einem Flug bzw. einem Rennen, das beim naechsten Start nicht mehr offen ist -- ein
   // wiederhergestelltes Vollbild ohne den zugehoerigen Inhalt waere eine leere Flaeche.
@@ -13648,6 +13675,30 @@ function exitAnyMapFullscreen() {
   if (innerBtn) { innerBtn.click(); return; }
   fsWrap.classList.remove('map-is-fullscreen');
   document.body.style.overflow = '';
+  _vollbildKlassePflegen();
+}
+
+/**
+ * Blendet die Zurueck-/Tab-Leiste des Kniebretts aus, solange NUR die Karte zu sehen ist.
+ *
+ * Am <html>, nicht am Karten-Wrapper: Die Leiste haengt bewusst ausserhalb von #app direkt
+ * am </body> und ist deshalb kein Nachfahre der Karte -- ueber die Karte selbst kaeme CSS
+ * gar nicht an sie heran. Ausgewertet in `html.vr-panel.karte-vollbild .panel-topbar`.
+ *
+ * Das offene Fenster in der Bedingung ist kein Beiwerk, sondern der Notausgang: Im Vollbild
+ * fuehrt der Weg nach draussen ueber den Knopf IN der Karte -- der liegt aber unter jedem
+ * Modal (z-index 3000 gegen 10000). Wer aus dem Vollbild heraus ein Fenster oeffnet, saesse
+ * ohne die Leiste fest, und zwar genau so, wie es sie am 13.08.2026 ueberhaupt erst noetig
+ * gemacht hat. Sobald ein Fenster offen ist, kommt sie deshalb zurueck.
+ *
+ * Gerufen von beiden Wegen ins Vollbild und zusaetzlich aus _updatePanelBackBtn, das
+ * ohnehin nach jeder Eingabe und im Sekundentakt prueft -- Fenster gehen an zu vielen
+ * Stellen auf und zu, als dass man sie einzeln abfangen koennte (dieselbe Begruendung wie
+ * beim Zurueck-Knopf selbst).
+ */
+function _vollbildKlassePflegen() {
+  const nurKarte = !!document.querySelector('.map-is-fullscreen') && !_panelOpenModal();
+  document.documentElement.classList.toggle('karte-vollbild', nurKarte);
 }
 
 // ==========================================================================
@@ -13705,6 +13756,7 @@ function _updatePanelBackBtn() {
   // die Leiste reserviert ihren Platz per festem CSS (html.vr-panel body { padding-top }).
   // Nur der Knopf selbst blendet sich weiterhin je nach Zustand ein/aus.
   btn.hidden = !_panelCanGoBack();
+  _vollbildKlassePflegen();
 }
 
 function _initPanelBackButton() {

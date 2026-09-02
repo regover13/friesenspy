@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.11.0",
+    "date": "2026-09-02",
+    "highlight": false,
+    "title": "Kniebrett: Vollbild zeigt nur noch die Karte",
+    "items": [
+      "\ud83d\uddfa\ufe0f Kniebrett: Im Kartenvollbild verschwindet jetzt auch die obere Leiste mit Zur\u00fcck und Tabs \u2014 sie klebte am oberen Rand, und alles, was die Karte dort anbietet, lag darunter. Der Ausgang kehrt daf\u00fcr in die Karte zur\u00fcck: \u201eVollbild verlassen\u201c steht unten links. \u00d6ffnet man aus dem Vollbild ein Fenster, kommt die Leiste von selbst wieder, denn der Knopf liegt dann darunter.",
+      "\ud83e\udded Kniebrett: Die Windanzeige sitzt im Vollbild nicht mehr unten links, sondern oben rechts unter den \u00fcbrigen Symbolen \u2014 unten links steht jetzt der Ausgang.",
+      "\ud83d\udd0d Das Suchfeld f\u00fcr die ICAO-Kennung liegt \u00fcber den Kartensymbolen statt dahinter. Bisher verdeckten Ebenenauswahl, Kompass und Lupe die Eingabezeile; zum Schlie\u00dfen gibt es das X im Kasten selbst."
+    ]
+  },
+  {
     "version": "14.10.2",
     "date": "2026-09-02",
     "highlight": false,
