@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.10.1",
+    "date": "2026-09-02",
+    "highlight": false,
+    "title": "iPhone kam aus dem Kartenvollbild nicht mehr heraus",
+    "items": [
+      "\ud83d\udcf1 iPhone: Die Karte bleibt nach der ICAO-Suche nicht mehr hineingezoomt. Safari zoomt beim Antippen eines Eingabefelds in die Seite und holt den Ma\u00dfstab nicht von selbst zur\u00fcck \u2014 im Kartenvollbild lagen danach alle Schaltfl\u00e4chen au\u00dferhalb des Bildes, auch \u201eVollbild verlassen\u201c, und die Auszoom-Geste fing die Karte ab. Der Ma\u00dfstab wird jetzt zur\u00fcckgeholt, sobald das Feld verlassen wird."
+    ]
+  },
+  {
     "version": "14.10.0",
     "date": "2026-09-02",
     "highlight": false,

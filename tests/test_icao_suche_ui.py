@@ -104,3 +104,36 @@ def test_kein_zeichen_jenseits_von_ascii():
     abschnitt = QUELLE[stelle:QUELLE.index("//  SICHTFLUGKARTE ALS OVERLAY", stelle)]
     schlimm = [c for c in abschnitt if ord(c) > 127]
     assert not schlimm, schlimm
+
+
+def test_der_seitenzoom_wird_zurueckgeholt():
+    """iOS zoomt beim Fokus in ein Eingabefeld in die Seite hinein und zoomt danach nicht von
+    selbst zurueck. Im Kartenvollbild liegen die Schaltflaechen -- auch "Vollbild verlassen"
+    -- danach ausserhalb des Bildes, und die Auszoom-Geste faengt Leaflet ab: Der Nutzer kam
+    nur noch ueber einen Neustart der App heraus (Fund 02.09.2026, mit Bild)."""
+    block = _block("_seitenZoomZurueck")
+    assert "maximum-scale=1.0" in block
+    # Die Sperre muss WIEDER WEG -- ein dauerhaftes maximum-scale=1 naehme jedem den
+    # Zwei-Finger-Zoom auf der Karte.
+    assert "setTimeout(" in block
+
+
+def test_der_zoom_kommt_schon_beim_verlassen_des_feldes_zurueck():
+    """Nicht erst beim Schliessen des Kastens: Wer die Tastatur wegtippt und den Kasten offen
+    laesst, sass sonst weiter auf der hineingezoomten Seite (zweite Nutzer-Aufnahme)."""
+    block = _block("_addIcaoSucheControl")
+    assert "_icaoFeld.onblur = function () { _seitenZoomZurueck(); }" in block
+    assert "_seitenZoomZurueck()" in _block("_icaoOeffnen")
+
+
+def test_die_feldschrift_haelt_die_sechzehn_pixel():
+    """Unter 16 px zoomt Safari beim Fokus grundsaetzlich. In px und nicht in rem: An der
+    Basisgroesse haengend wuerde der Wert still kippen, sobald die jemand aendert."""
+    assert "font-size: 16px; letter-spacing: 2px" in QUELLE
+
+
+def test_nur_auf_ios():
+    """Andere Browser zoomen beim Fokus gar nicht erst und wuerden hier nur ihre eigene, vom
+    Nutzer gewaehlte Zoomstufe verlieren."""
+    assert "const _IOS_GERAET = /iP(hone|ad|od)/.test(" in RUMPF
+    assert "if (!_IOS_GERAET) return;" in _block("_seitenZoomZurueck")

@@ -1543,7 +1543,11 @@
       border: 1px solid rgba(45,156,219,0.35);
       color: #cfe3f0;
       font-family: var(--text-mono, monospace);
-      font-size: 1.05rem; letter-spacing: 2px; text-transform: uppercase;
+      /* 16px, ausdruecklich in px und nicht in rem: Safari auf iOS zoomt beim Fokus in
+         die Seite hinein, sobald die Schrift eines Eingabefelds UNTER 16 px liegt. In rem
+         haenge der Wert an der Basisgroesse -- aendert die jemand, kippt still auch das
+         hier, und niemand braechte das mit dem Zoom in Verbindung. */
+      font-size: 16px; letter-spacing: 2px; text-transform: uppercase;
     }
     .icao-taste {
       width: 28px; height: 34px; margin: 2px; padding: 0;
@@ -10265,6 +10269,35 @@ function _icaoSetzen(text) {
   _icaoSuchen();
 }
 
+// iOS zoomt beim Fokus in ein Eingabefeld in die Seite hinein und zoomt danach NICHT von
+// selbst zurueck. Im KARTENVOLLBILD ist das eine Falle: Die Schaltflaechen liegen dann
+// ausserhalb des Bildes -- auch "Vollbild verlassen" --, und die Auszoom-Geste beginnt auf
+// der Karte, wo Leaflet sie abfaengt. Der Nutzer kam nur noch ueber einen Neustart der App
+// heraus (Fund 02.09.2026, mit Bild).
+//
+// Zurueckgeholt wird ueber den Viewport-Eintrag: Kurz `maximum-scale=1` setzen zwingt Safari
+// auf Massstab 1; die Sperre wird sofort wieder genommen, damit Zwei-Finger-Zoom moeglich
+// bleibt. Ein dauerhaftes `maximum-scale=1` waere der bequemere Weg und zugleich eine
+// Barriere fuer jeden, der die Karte vergroessern muss.
+//
+// Nur auf iOS: Andere Browser zoomen beim Fokus gar nicht erst und wuerden hier nur ihre
+// eigene, vom Nutzer gewaehlte Zoomstufe verlieren.
+const _IOS_GERAET = /iP(hone|ad|od)/.test(navigator.userAgent || '');
+
+function _seitenZoomZurueck() {
+  if (!_IOS_GERAET) return;
+  const meta = document.querySelector('meta[name="viewport"]');
+  if (!meta) return;
+  const vorher = meta.getAttribute('content') || 'width=device-width, initial-scale=1.0';
+  meta.setAttribute('content', vorher + ', maximum-scale=1.0');
+  // Zwei Bilder reichen nicht -- Safari zieht den Massstab erst nach, wenn die Tastatur
+  // wirklich weg ist. 350 ms sind die uebliche Dauer ihrer Einblendung.
+  setTimeout(function () { meta.setAttribute('content', vorher); }, 350);
+  // Und das verschobene Layout wieder an den Anfang: Beim Fokus in einem `position: fixed`
+  // liegenden Feld schiebt iOS zusaetzlich den Ausschnitt, was das Vollbild verrutscht.
+  window.scrollTo(0, 0);
+}
+
 /** Auf, zu oder umschalten (ohne Argument). */
 function _icaoOeffnen(an) {
   if (!_icaoBox) return;
@@ -10274,6 +10307,12 @@ function _icaoOeffnen(an) {
   // Fokus nur ausserhalb des Kniebretts: Dort oeffnet er keine Tastatur (s. oben), koennte
   // aber Tastendruecke abfangen, die sonst das Flugzeug steuern.
   if (auf && !_PANEL_MODUS && _icaoFeld) { try { _icaoFeld.focus(); } catch (e) {} }
+  // Zumachen heisst: Tastatur weg UND der Massstab zurueck. Beides gehoert zusammen -- eine
+  // geschlossene Suche auf einer hineingezoomten Seite ist genau die Falle von oben.
+  if (!auf) {
+    if (_icaoFeld) { try { _icaoFeld.blur(); } catch (e) {} }
+    _seitenZoomZurueck();
+  }
 }
 
 function _icaoSuchen() {
@@ -10413,6 +10452,10 @@ function _addIcaoSucheControl(map) {
   // Tippen bleibt moeglich, wo es eine Tastatur gibt -- im Kniebrett steht das Feld auf
   // readonly und das Tastenfeld ist der einzige Weg.
   _icaoFeld.oninput = function () { _icaoSetzen(_icaoFeld.value); };
+  // AUCH beim blossen Verlassen des Feldes, nicht erst beim Schliessen des Kastens: Wer die
+  // Tastatur wegtippt und den Kasten offen laesst, sass sonst weiter auf der hineingezoomten
+  // Seite (Nutzer-Bild 02.09.2026, zweite Aufnahme -- Tastatur weg, Zoom geblieben).
+  _icaoFeld.onblur = function () { _seitenZoomZurueck(); };
   _icaoFeld.onkeydown = function (e) {
     if (e && (e.key === 'Enter' || e.keyCode === 13)) {
       const erste = _icaoListe.querySelector('.icao-zeile');
