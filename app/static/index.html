@@ -1546,7 +1546,7 @@
       font-size: 1.05rem; letter-spacing: 2px; text-transform: uppercase;
     }
     .icao-taste {
-      width: 30px; height: 34px; margin: 2px; padding: 0;
+      width: 28px; height: 34px; margin: 2px; padding: 0;
       display: inline-flex; align-items: center; justify-content: center;
       background: #0b2036;
       border: 1px solid rgba(45,156,219,0.3);
@@ -1557,7 +1557,11 @@
     .icao-taste:hover { background: #14314d; }
     .icao-kopf .icao-taste { width: 34px; }
     .icao-taste svg { width: 18px; height: 18px; display: block; }
-    .icao-tasten { display: flex; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+    .icao-tasten { margin-top: 6px; }
+    .icao-reihe { display: flex; justify-content: center; }
+    /* Zehn Tasten in der Ziffernreihe geben die Breite vor: 10 x (28 + 2 x 2) + Innenabstand
+       und Rahmen. Ohne Tastenfeld (Web) bleibt der Kasten schmal. */
+    .icao-box.icao-mit-tastatur { width: 338px; }
     .icao-liste { margin-top: 6px; max-height: 148px; overflow-y: auto; }
     .icao-zeile {
       display: flex; align-items: baseline; width: 100%;
@@ -10239,7 +10243,10 @@ function _naviKnopfAnstrich() {
 //
 // Gesucht wird ueber /api/airports/search -- airportsdata plus custom_airports, rund 28.000
 // Plaetze, offline im eigenen Container. Kein Fremddienst, und im Sim erreichbar.
-const _ICAO_ZEICHEN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+// QWERTZ mit der Ziffernreihe oben -- also das Bild, das jeder vom Schreibtisch kennt
+// (Nutzerwunsch 02.09.2026). Alphabetisch waere kuerzer zu schreiben, aber niemand sucht
+// Buchstaben alphabetisch.
+const _ICAO_TASTENREIHEN = ['1234567890', 'QWERTZUIOP', 'ASDFGHJKL', 'YXCVBNM'];
 const _ICAO_ZOOM = 13;           // Platz fuellt das Bild, die Bahnen sind zu erkennen
 const _ICAO_MIN_ZEICHEN = 2;     // bei einem Zeichen waeren es 20 beliebige Treffer
 const _ICAO_MAX_TREFFER = 8;
@@ -10377,20 +10384,31 @@ function _addIcaoSucheControl(map) {
   _icaoFeld = box.querySelector('.icao-feld');
   _icaoListe = box.querySelector('.icao-liste');
 
-  const tastenfeld = box.querySelector('.icao-tasten');
-  for (let i = 0; i < _ICAO_ZEICHEN.length; i++) {
-    const zeichen = _ICAO_ZEICHEN.charAt(i);
-    const taste = document.createElement('button');
-    taste.type = 'button';
-    taste.className = 'icao-taste';
-    taste.textContent = zeichen;
-    taste.onclick = (function (c) {
-      return function () { _icaoSetzen(_icaoText() + c); };
-    })(zeichen);
-    tastenfeld.appendChild(taste);
+  // NUR im Kniebrett (Nutzerwunsch 02.09.2026). Am Schreibtisch liegt eine echte Tastatur
+  // vor dem Nutzer -- ein nachgebautes Tastenfeld waere dort nur im Weg. Im Panel ist es der
+  // einzige Weg, weil der Simulator einem iframe keine Tastatur durchreicht (s. oben).
+  if (_PANEL_MODUS) {
+    box.classList.add('icao-mit-tastatur');
+    const tastenfeld = box.querySelector('.icao-tasten');
+    for (let r = 0; r < _ICAO_TASTENREIHEN.length; r++) {
+      const reihe = L.DomUtil.create('div', 'icao-reihe', tastenfeld);
+      const zeichen = _ICAO_TASTENREIHEN[r];
+      for (let i = 0; i < zeichen.length; i++) {
+        const taste = document.createElement('button');
+        taste.type = 'button';
+        taste.className = 'icao-taste';
+        taste.textContent = zeichen.charAt(i);
+        taste.onclick = (function (c) {
+          return function () { _icaoSetzen(_icaoText() + c); };
+        })(zeichen.charAt(i));
+        reihe.appendChild(taste);
+      }
+    }
+    box.querySelector('.icao-weg').onclick = function () { _icaoSetzen(_icaoText().slice(0, -1)); };
+  } else {
+    // Ohne Tastenfeld braucht es auch keine Ruecktaste -- dafuer gibt es die echte.
+    box.querySelector('.icao-weg').style.display = 'none';
   }
-
-  box.querySelector('.icao-weg').onclick = function () { _icaoSetzen(_icaoText().slice(0, -1)); };
   box.querySelector('.icao-zu').onclick = function () { _icaoOeffnen(false); };
   // Tippen bleibt moeglich, wo es eine Tastatur gibt -- im Kniebrett steht das Feld auf
   // readonly und das Tastenfeld ist der einzige Weg.
@@ -10622,39 +10640,18 @@ function _aipKarteFestnageln(icao) {
 // also gar nicht, und im Kniebrett erst nach dem Start. Sie zeigen nebenbei, wo es ueberhaupt
 // ein Blatt gibt.
 //
-// SICHTBAR AB welchem Zoom (Nutzer-Wahl 24.08.2026: "etwa so, dass etwas mehr als das ganze
-// Blatt angezeigt wird"): Gemessen wird nicht in Zoomstufen, sondern am Verhaeltnis von
-// Ausschnitt zu Blatt. Eine feste Zoomschwelle haengt an der Fenstergroesse -- was am
-// Schreibtisch passt, stimmt im Kniebrett nicht mehr, und die Blaetter sind ohnehin
-// verschieden gross (EDXW ist fast doppelt so breit wie ein Standardblatt).
+// WELCHE Marken erscheinen, steht seit dem 02.09.2026 nicht mehr hier, sondern in
+// _markenAuswahl -- eine Regel fuer Sichtflug- und Bodenkarten gemeinsam. Bis dahin mass
+// diese Ebene das Verhaeltnis von Ausschnitt zu Blatt (_AIP_MARKE_FAKTOR = 2,0, sichtbar ab
+// dem Vierfachen). Der Gedanke war richtig -- "sichtbar, wenn etwas mehr als das ganze Blatt
+// im Bild ist" (Nutzer-Wahl 24.08.2026) --, der Bezugspunkt aber unsichtbar: Die Blaetter
+// streuen um den Faktor 7, dieselbe Marke erschien deshalb je nach Platz zwischen 0,75 und
+// 5,36 Grad Ausschnitt (Nutzerfund 02.09.2026: "warum werden Icons je nach Platz frueher
+// oder spaeter angezeigt?").
 //
-// Massgeblich ist die ENGERE der beiden Achsen: An ihr entscheidet sich, ob das Blatt ins
-// Fenster passt. Bei einem breiten Fenster und einem hochkanten Blatt zeigt die Waagerechte
-// laengst zwei Blattbreiten, waehrend die Senkrechte gerade eine Blatthoehe fasst -- das Blatt
-// passt trotzdem. Mit Math.max() erschiene die Marke in dieser Lage nie.
-// Der Wert ist an echten Blaettern nachgerechnet, nicht geschaetzt. Zoomstufen sind
-// ganzzahlig und verdoppeln sich, das Verhaeltnis springt also in Zweierschritten. Fuer
-// die drei Blattmassstaebe im Bestand (0,094 / 0,142 / 0,189 Grad Blatthoehe) liegen die
-// erreichbaren Werte bei 0,86 / 1,72 / 3,44 bzw. 1,13 / 2,26 und 0,86 / 1,72. Eine
-// Schwelle von 2,0 trennt sauber: Sie laesst genau die erste Stufe zu, auf der das ganze
-// Blatt ins Bild passt, und schliesst die naechste heraus. Mit 1,4 waere ausgerechnet
-// diese Stufe herausgefallen -- die Marke erschiene erst, wenn das Blatt schon ueber den
-// Bildrand hinausragt, und damit nicht dort, wo sie verlangt war.
-const _AIP_MARKE_FAKTOR = 2.0;   // 1,0 = Blatt fuellt die engere Achse genau aus
-// SICHTBAR schon bei VIERFACHEM Ausschnitt (Nutzerwunsch 25.08.2026 abends): Die Marke war
-// zu spaet da, man musste erst hineinzoomen, um ueberhaupt zu sehen, wo es ein Blatt gibt.
-//
-// Vorgegeben ist der Ausschnitt, nicht die Zoomstufe: viermal so gross wie die Lage, in der
-// das Blatt gerade ins Bild passt. Da eine Zoomstufe die Kantenlaenge verdoppelt, sind das
-// zwei Stufen frueher. Wer es weiter aufmachen will, verdoppelt; Zwischenwerte tun nichts,
-// weil Zoomstufen ganzzahlig sind.
-const _AIP_MARKE_SICHTBAR_FAKTOR = _AIP_MARKE_FAKTOR * 4;
-// **Zwei Schwellen, und das ist Absicht.** Bis zum 25.08.2026 nachmittags gab es nur eine,
-// weil Sichtbarkeit und Naehe damals dasselbe waren. Bei vierfachem Ausschnitt steht ein
-// Vielfaches an Marken im Bild -- volle Groesse waere ein Teppich, und ein permanenter
-// Tooltip je Marke ist ein DOM-Element, das Leaflet bei JEDER Kartenbewegung neu setzt (die
-// Falle vom 15.08.2026, s. _labelsImSichtbereich). Gross und beschriftet wird deshalb
-// weiterhin erst, wenn das Blatt wirklich ins Bild passt.
+// Die zweite Schwelle bleibt als Gedanke erhalten: Gross und beschriftet wird erst, wenn nur
+// noch wenige Marken im Bild sind (_MARKEN_BESCHRIFTEN_BIS). Der Grund dafuer ist unveraendert
+// -- ein permanenter Tooltip je Marke ist die Falle vom 15.08.2026.
 // ---------------------------------------------------------------------------------------
 // Flugplatzkarten (Aerodrome Chart / Ground Movement Chart)
 //
@@ -10858,35 +10855,89 @@ function _groundMarkenAnstrich() {
   }
 }
 
-// Ab welchem Ausschnitt es Bodenmarken gibt -- die ENGERE Achse in Grad, wie bei der
-// Sichtflugkarte gemessen und nicht in Zoomstufen: Eine feste Zoomschwelle haengt an der
-// Fenstergroesse, und die ist im Kniebrett eine andere als am Schreibtisch.
+// --------------------------------------------------------------------------
+//  Welche Blaetter bekommen eine Marke? EINE Regel fuer beide Kartenarten
+// --------------------------------------------------------------------------
+// Nutzerentscheidung 02.09.2026: was ins Bild ragt, davon die naechsten zur Kartenmitte,
+// hoechstens _MARKEN_HOECHSTENS Stueck.
 //
-// Gegen die BLATTgroesse zu messen (das Verfahren der Sichtflugkarte) geht hier nicht:
-// Bodenblaetter sind winzig -- EDWF misst 0,028 Grad --, die Marke erschiene erst, wenn man
-// praktisch schon auf dem Platz steht. Massgeblich ist deshalb der Ausschnitt selbst.
+// Vorher waren es zwei verschiedene Regeln, und beide fielen als Merkwuerdigkeit auf:
+//   * Die Sichtflugkarte mass das Verhaeltnis von Ausschnitt zu BLATT (Faktor 8). Weil die
+//     Blaetter um den Faktor 7 streuen -- 0,094 Grad Hoehe bei 279 von 446 Blaettern, 0,670
+//     bei EDSB --, erschien dieselbe Marke je nach Platz zwischen 0,75 und 5,36 Grad
+//     Ausschnitt. Welches Blattformat sein Platz hat, sieht niemand voraus.
+//   * Die Bodenkarte mass eine feste Gradspanne. Blattproportional ginge dort nicht: Die
+//     EDWF-Rollkarte ist 0,028 Grad hoch, ihre Marke erschiene erst auf dem Platz selbst.
 //
-// 2,0 Grad ist an den echten Daten gemessen, nicht geschaetzt: Im dichtesten Fenster dieser
-// Groesse (Raum Stuttgart) liegen 17 der 109 Bodenkarten, bei 3 Grad schon 26 und bei 4 Grad
-// 45. Ueber ganz Deutschland waeren es 105 Marken auf einmal -- ein Teppich, und jede Marke
-// ist ein DOM-Element, das Leaflet bei jeder Kartenbewegung anfasst (die Falle vom
-// 15.08.2026, s. _labelsImSichtbereich).
-const _GROUND_MARKE_SPANNE = 2.0;   // Grad
+// Beide alten Bezugsgroessen -- Blattformat und Fenstergroesse -- sind fuer den Nutzer
+// unsichtbar. Die ZAHL der Marken ist es nicht: Sie ist genau das, was stoert, wenn es zu
+// viele werden. FSE arbeitet seit jeher so (app/fse.py, MAX_PUNKTE_PLAETZE = 250), dort
+// allerdings im Server, weil es um 2.335 Plaetze und die Datenmenge geht, nicht um die
+// Anzeigedichte auf dem Schirm.
+const _MARKEN_HOECHSTENS = 20;      // je Kartenart
+// Hysterese gegen Flackern. Bei Moving Map schiebt der Sekundentakt die Kartenmitte; die
+// "naechsten 20" waeren damit eine Menge, die sich staendig neu bildet, und am Rand kaeme
+// und ginge eine Marke im Sekundentakt. Wer schon steht, bleibt deshalb bis Rang 25 stehen.
+const _MARKEN_HALTEN_BIS = 25;
+// Ab wann beschriftet wird -- eine eigene, strengere Stufe, und das bleibt sie auch: Ein
+// permanenter Tooltip ist ein DOM-Element, das Leaflet bei JEDER Kartenbewegung neu setzt
+// (die Falle vom 15.08.2026, s. _labelsImSichtbereich). Neu ist nur der Massstab: die Zahl
+// der Marken im Bild statt "das Blatt passt ins Fenster".
+const _MARKEN_BESCHRIFTEN_BIS = 8;
+
+/**
+ * Auswahl der Marken: im Ausschnitt, nach Abstand zur Kartenmitte, gedeckelt.
+ *
+ * ``karten``     Liste mit nord/sued/west/ost und feld_* -- beide Kartenarten tragen beides,
+ *                sie kommen aus derselben Tabelle.
+ * ``schluessel`` Karte -> Schluessel des Markenverzeichnisses (ICAO bzw. ICAO|sorte).
+ * ``vorhanden``  das Verzeichnis selbst, fuer die Hysterese.
+ * ``pflicht``    Schluessel des gerade LIEGENDEN Blatts. Seine Marke kommt immer mit, auch
+ *                wenn zwanzig andere naeher an der Mitte liegen: Sie zeigt den Zustand an
+ *                (gefuellt = liegt) und ist der Weg, das Blatt wieder wegzuklicken.
+ */
+function _markenAuswahl(karten, schluessel, vorhanden, pflicht) {
+  const soll = {};
+  if (!liveMap || !karten) return soll;
+  const b = liveMap.getBounds();
+  const mitte = liveMap.getCenter();
+  // Ein Laengengrad ist auf 53 Grad Nord nur noch rund 0,6 so lang wie ein Breitengrad.
+  // Ohne diesen Faktor waere "am naechsten" nach Osten grosszuegiger als nach Norden.
+  const strecken = Math.cos(mitte.lat * Math.PI / 180);
+  const nah = [];
+  for (let i = 0; i < karten.length; i++) {
+    const k = karten[i];
+    if (!(k.nord > k.sued) || !(k.ost > k.west)) continue;
+    // Nach den BLATTgrenzen, nicht nach dem Kartenfeld: So bleibt die Marke des Nachbarblatts
+    // erreichbar, solange sein Blatt ueberhaupt ins Bild ragt -- und ein grosses Blatt
+    // verliert seine Marke nicht, sobald man in eine seiner Ecken hineinzoomt.
+    if (!b.intersects([[k.sued, k.west], [k.nord, k.ost]])) continue;
+    const dy = mitte.lat - (k.feld_nord + k.feld_sued) / 2;
+    const dx = (mitte.lng - (k.feld_west + k.feld_ost) / 2) * strecken;
+    nah.push({ k: k, s: schluessel(k), d: dy * dy + dx * dx });
+  }
+  nah.sort(function (a, c) { return a.d - c.d; });
+  for (let i = 0; i < nah.length; i++) {
+    const e = nah[i];
+    if (e.s === pflicht) { soll[e.s] = e.k; continue; }
+    if (i >= _MARKEN_HALTEN_BIS) break;
+    if (i < _MARKEN_HOECHSTENS || (vorhanden && vorhanden[e.s])) soll[e.s] = e.k;
+  }
+  return soll;
+}
 
 /** Marken an Ausschnitt und Zustand angleichen. Muster wie bei _aipMarkenAnpassen. */
 function _groundMarkenAnpassen() {
-  const sicht = (liveMap && liveMap.hasLayer(_groundGruppe) && _groundKarten)
-    ? liveMap.getBounds() : null;
-  const an = sicht && Math.min(sicht.getNorth() - sicht.getSouth(),
-                               sicht.getEast() - sicht.getWest()) <= _GROUND_MARKE_SPANNE;
-  if (!an) {
-    for (const schluessel in _groundMarken) {
-      _groundGruppe.removeLayer(_groundMarken[schluessel]);
-      delete _groundMarken[schluessel];
-    }
-    return;
+  const an = liveMap && liveMap.hasLayer(_groundGruppe) && _groundKarten;
+  const soll = an
+    ? _markenAuswahl(_groundKarten, _groundSchluessel, _groundMarken, _groundAktiv)
+    : {};
+  for (const schluessel in _groundMarken) {
+    if (soll[schluessel]) continue;
+    _groundGruppe.removeLayer(_groundMarken[schluessel]);
+    delete _groundMarken[schluessel];
   }
-  const b = sicht;
+  if (!an) return;
   // Wo ein Platz ZWEI Bodenkarten hat, muessen ihre Marken auseinander -- der Versatz von
   // 0,004 Grad unten trennt Boden- von Sichtflugkarten, nicht zwei Bodenkarten voneinander.
   // Bei 109 von 111 Plaetzen gibt es nur eine; deren Marke darf nicht wandern.
@@ -10895,20 +10946,12 @@ function _groundMarkenAnpassen() {
     const c = _groundKarten[i].icao;
     _groundDoppelt[c] = (_groundDoppelt[c] || 0) + 1;
   }
-  for (let i = 0; i < _groundKarten.length; i++) {
-    const k = _groundKarten[i];
-    const sl = _groundSchluessel(k);
+  for (const sl in soll) {
+    if (_groundMarken[sl]) continue;
+    const k = soll[sl];
     const lat = (k.feld_nord + k.feld_sued) / 2;
     const lon = (k.feld_west + k.feld_ost) / 2
       + (_groundDoppelt[k.icao] > 1 ? (k.sorte === 'rollkarte' ? -0.006 : 0.006) : 0);
-    if (!b.contains([lat, lon])) {
-      if (_groundMarken[sl]) {
-        _groundGruppe.removeLayer(_groundMarken[sl]);
-        delete _groundMarken[sl];
-      }
-      continue;
-    }
-    if (_groundMarken[sl]) continue;
     // Versatz nach unten: Beide Markensaetze liegen sonst exakt uebereinander und die
     // untere waere nicht anklickbar.
     const m = L.marker([lat - 0.004, lon], { icon: _groundMarkeIcon(_groundAktiv === sl) });
@@ -10945,31 +10988,17 @@ function _aipMarkeIcon(an) {
 /** Marken an Ausschnitt und Zustand angleichen. Laeuft auf zoomend/moveend, nicht im Takt. */
 function _aipMarkenAnpassen() {
   const an = liveMap && liveMap.hasLayer(_aipKartenGruppe) && _aipKarten;
-  const b = an ? liveMap.getBounds() : null;
-  const sichtLat = b ? (b.getNorth() - b.getSouth()) : 0;
-  const sichtLon = b ? (b.getEast() - b.getWest()) : 0;
-  const soll = {};
-  let nah = false;
-  for (let i = 0; an && i < _aipKarten.length; i++) {
-    const k = _aipKarten[i];
-    const blattLat = k.nord - k.sued, blattLon = k.ost - k.west;
-    if (!(blattLat > 0) || !(blattLon > 0)) continue;
-    // Nach den BLATTgrenzen, nicht nach dem Kartenfeld: So bleibt die Marke des Nachbarblatts
-    // erreichbar, solange sein Blatt ueberhaupt in den Ausschnitt ragt.
-    if (!b.intersects([[k.sued, k.west], [k.nord, k.ost]])) continue;
-    // Zwei Schwellen am selben Verhaeltnis: die lockere entscheidet, OB die Marke da ist,
-    // die strenge, ob sie gross und beschriftet ist. Eine blosse Zuweisung statt des
-    // Aussprungs waere der Stand vom 24.08.2026 -- Marken auf jeder Zoomstufe.
-    const enge = Math.min(sichtLat / blattLat, sichtLon / blattLon);
-    if (enge > _AIP_MARKE_SICHTBAR_FAKTOR) continue;
-    if (enge <= _AIP_MARKE_FAKTOR) nah = true;
-    soll[k.icao] = k;
-  }
-  // ``nah`` ist NICHT dasselbe wie "es steht eine Marke da": Marken gibt es schon beim
-  // vierfachen Ausschnitt, gross und beschriftet werden sie erst, wenn das Blatt ins Bild
-  // passt. Die Beschriftung haengt an ``nah``, und das ist keine Zierde -- ein permanenter
-  // Tooltip ist ein DOM-Element, das Leaflet bei JEDER Kartenbewegung neu setzt. Genau daran
-  // hing die Karte am 15.08.2026 (s. _labelsImSichtbereich).
+  const soll = an
+    ? _markenAuswahl(_aipKarten, function (k) { return k.icao; }, _aipMarken, _aipKarteAktiv)
+    : {};
+  let anzahl = 0;
+  for (const x in soll) anzahl++;
+  // ``nah`` ist NICHT dasselbe wie "es steht eine Marke da": Marken gibt es bis zu zwanzig,
+  // gross und beschriftet werden sie erst, wenn nur noch wenige im Bild sind. Die
+  // Beschriftung ist keine Zierde -- ein permanenter Tooltip ist ein DOM-Element, das
+  // Leaflet bei JEDER Kartenbewegung neu setzt. Genau daran hing die Karte am 15.08.2026
+  // (s. _labelsImSichtbereich).
+  const nah = anzahl > 0 && anzahl <= _MARKEN_BESCHRIFTEN_BIS;
   if (liveMap) {
     const el = liveMap.getContainer();
     if (el) el.classList.toggle('aip-nah', nah);

@@ -35,10 +35,29 @@ def test_es_gibt_ein_eigenes_tastenfeld():
     """Im Kniebrett laeuft die Seite in einem <iframe> der EFB-Shell; die
     Bildschirmtastatur des Simulators oeffnet nur `Coherent.trigger('FOCUS_INPUT_FIELD')`
     aus dem Host-Frame. Ein blosses Textfeld waere in VR unbedienbar."""
-    zeichen = re.search(r"const\s+_ICAO_ZEICHEN\s*=\s*'([^']+)'", RUMPF)
-    assert zeichen
-    assert len(zeichen.group(1)) == 36           # A-Z und 0-9
-    assert "_ICAO_ZEICHEN.charAt(i)" in _block("_addIcaoSucheControl")
+    reihen = re.search(r"const\s+_ICAO_TASTENREIHEN\s*=\s*\[([^\]]+)\]", RUMPF)
+    assert reihen
+    zeichen = "".join(re.findall(r"'([^']+)'", reihen.group(1)))
+    assert len(zeichen) == 36                              # A-Z und 0-9, keins doppelt
+    assert set(zeichen) == set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+
+def test_das_tastenfeld_ist_qwertz_mit_ziffernreihe():
+    """Nutzerwunsch 02.09.2026. Alphabetisch waere kuerzer zu schreiben, aber niemand sucht
+    Buchstaben alphabetisch."""
+    reihen = re.findall(r"'([A-Z0-9]+)'", re.search(
+        r"const\s+_ICAO_TASTENREIHEN\s*=\s*\[([^\]]+)\]", RUMPF).group(1))
+    assert reihen == ['1234567890', 'QWERTZUIOP', 'ASDFGHJKL', 'YXCVBNM']
+
+
+def test_das_tastenfeld_gibt_es_nur_im_kniebrett():
+    """Am Schreibtisch liegt eine echte Tastatur vor dem Nutzer -- ein nachgebautes
+    Tastenfeld waere dort nur im Weg (Nutzerwunsch 02.09.2026)."""
+    block = _block("_addIcaoSucheControl")
+    stelle = block.index("_ICAO_TASTENREIHEN[r]")
+    davor = block[:stelle]
+    assert "if (_PANEL_MODUS) {" in davor
+    assert davor.rindex("if (_PANEL_MODUS) {") > davor.rindex("const box =")
 
 
 def test_im_kniebrett_ist_das_feld_schreibgeschuetzt():

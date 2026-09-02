@@ -132,50 +132,73 @@ def test_marken_haengen_in_der_ebene():
     assert "_aipKartenGruppe.removeLayer(" in abschnitt
 
 
-def test_marke_erscheint_ab_der_sichtbarkeitsschwelle():
-    """Nutzer-Wunsch 25.08.2026: die Zoom-Sichtbarkeit wieder einbauen -- aber frueher.
+def test_eine_auswahlregel_fuer_beide_kartenarten():
+    """Nutzerentscheidung 02.09.2026: was ins Bild ragt, davon die naechsten zur
+    Kartenmitte, hoechstens N.
 
-    Am 24.08.2026 stand hier das Gegenteil: Marken auf jeder Zoomstufe, die Schwelle
-    entschied nur noch ueber Groesse und Beschriftung (Commit c485eaa). Am 25.08. mittags
-    zurueckgenommen, am selben Abend nachjustiert -- sie kamen zu spaet.
-
-    An den Aussprung gebunden, nicht an den blossen Namen der Schwelle: Eine reine Zuweisung
-    statt des ``continue`` waere genau der Rueckfall auf den 24.08.
+    Bis dahin mass diese Ebene das Verhaeltnis von Ausschnitt zu BLATT. Der Gedanke war
+    richtig -- "sichtbar, wenn etwas mehr als das ganze Blatt im Bild ist" (24.08.2026) --,
+    der Bezugspunkt aber unsichtbar: Die Blaetter streuen um den Faktor 7 (0,094 Grad bei
+    279 von 446, 0,670 bei EDSB), dieselbe Marke erschien deshalb je nach Platz zwischen
+    0,75 und 5,36 Grad Ausschnitt.
     """
     start = INDEX.index("function _aipMarkenAnpassen(")
-    abschnitt = INDEX[start:start + 3000]
-    assert "> _AIP_MARKE_SICHTBAR_FAKTOR) continue" in abschnitt
-    assert "> _AIP_MARKE_FAKTOR) continue" not in abschnitt, \
-        "die strenge Schwelle darf die Marke nicht mehr verstecken"
+    abschnitt = INDEX[start:start + 1200]
+    assert "_markenAuswahl(_aipKarten" in abschnitt
+    assert "_AIP_MARKE_SICHTBAR_FAKTOR" not in INDEX.replace(
+        "_AIP_MARKE_FAKTOR = 2,0", ""), "die alte Schwelle darf nicht wieder auftauchen"
 
 
-def test_sichtbarkeit_und_naehe_sind_zwei_schwellen():
-    """Die lockere entscheidet OB, die strenge ueber Groesse und Beschriftung.
+def test_der_deckel_haelt_die_zahl_der_marken_klein():
+    """Ohne ihn stuenden auf der Deutschlandkarte 446 Marken -- und je Marke ein
+    DOM-Element, das Leaflet bei jeder Kartenbewegung anfasst."""
+    import re
+    m = re.search(r"const _MARKEN_HOECHSTENS = (\d+)", INDEX)
+    assert m and 5 <= int(m.group(1)) <= 40
 
-    Sie zusammenzulegen war der Stand vom 25.08.2026 nachmittags und ging nur gut, solange
-    beide dasselbe bedeuteten. Bei vierfachem Ausschnitt stehen viele Marken im Bild -- in
-    voller Groesse ein Teppich, mit je einem permanenten Tooltip die Falle vom 15.08.2026.
-    """
+
+def test_wer_schon_steht_bleibt_stehen():
+    """Hysterese gegen Flackern: Bei Moving Map schiebt der Sekundentakt die Kartenmitte,
+    die "naechsten 20" sind also eine Menge, die sich staendig neu bildet. Ohne Haltezone
+    kaeme und ginge am Rand eine Marke im Sekundentakt."""
+    import re
+    hoechstens = int(re.search(r"const _MARKEN_HOECHSTENS = (\d+)", INDEX).group(1))
+    halten = int(re.search(r"const _MARKEN_HALTEN_BIS = (\d+)", INDEX).group(1))
+    assert halten > hoechstens
+    start = INDEX.index("function _markenAuswahl(")
+    block = INDEX[start:INDEX.index("\n}", start)]
+    assert "vorhanden && vorhanden[e.s]" in block
+
+
+def test_die_auswahl_sortiert_nach_abstand_zur_mitte():
+    start = INDEX.index("function _markenAuswahl(")
+    block = INDEX[start:INDEX.index("\n}", start)]
+    assert "nah.sort(" in block
+    # Laengengrade sind auf 53 Grad Nord nur rund 0,6 so lang wie Breitengrade -- ohne
+    # diesen Faktor waere "am naechsten" nach Osten grosszuegiger als nach Norden.
+    assert "Math.cos(mitte.lat" in block
+
+
+def test_die_auswahl_prueft_die_blattgrenzen():
+    """Nach dem BLATT, nicht nach dem Kartenfeld: So bleibt die Marke des Nachbarblatts
+    erreichbar, solange sein Blatt ins Bild ragt -- und ein grosses Blatt verliert seine
+    Marke nicht, sobald man in eine seiner Ecken hineinzoomt."""
+    start = INDEX.index("function _markenAuswahl(")
+    block = INDEX[start:INDEX.index("\n}", start)]
+    assert "b.intersects([[k.sued, k.west], [k.nord, k.ost]])" in block
+
+
+def test_beschriftet_wird_nach_der_zahl_der_marken():
+    """Die zweite Stufe bleibt -- ein permanenter Tooltip je Marke ist die Falle vom
+    15.08.2026. Nur ihr Massstab ist neu: die Zahl der Marken statt das Blattformat."""
+    import re
+    assert re.search(r"const _MARKEN_BESCHRIFTEN_BIS = (\d+)", INDEX)
     start = INDEX.index("function _aipMarkenAnpassen(")
-    abschnitt = INDEX[start:start + 3000]
-    assert "if (enge <= _AIP_MARKE_FAKTOR) nah = true" in abschnitt
-    # Und die Verkleinerung muss es wieder geben, sonst ist der Teppich da.
+    abschnitt = INDEX[start:start + 1200]
+    assert "anzahl <= _MARKEN_BESCHRIFTEN_BIS" in abschnitt
+    # Und die Verkleinerung muss es weiter geben, sonst ist der Teppich da.
     assert "transform: scale(0.6)" in INDEX
     assert ".leaflet-container.aip-nah .aip-marke svg { transform: scale(1); }" in INDEX
-
-
-def test_sichtbarkeitsschwelle_ist_ein_vielfaches_von_zwei():
-    """Nutzer-Wunsch 25.08.2026 abends: Marken schon beim VIERFACHEN Ausschnitt.
-
-    Eine Zoomstufe verdoppelt die Kantenlaenge, also auch das Verhaeltnis Ausschnitt/Blatt.
-    Vorgegeben war der Ausschnitt (4x), nicht die Stufenzahl -- gebunden wird deshalb an den
-    Faktor. Zwischenwerte waeren wirkungslos, weil Zoomstufen ganzzahlig sind.
-    """
-    import re
-    m = re.search(r"_AIP_MARKE_SICHTBAR_FAKTOR = _AIP_MARKE_FAKTOR \* (\d+)", INDEX)
-    assert m, "Sichtbarkeitsschwelle nicht als Vielfaches der strengen definiert"
-    faktor = int(m.group(1))
-    assert faktor == 4, f"Nutzer-Vorgabe ist der vierfache Ausschnitt, gefunden {faktor}"
 
 
 def test_beschriftung_bleibt_an_der_schwelle():
@@ -200,33 +223,6 @@ def test_beschriftung_nur_beim_wechsel():
     start = INDEX.index("function _aipMarkenAnpassen(")
     abschnitt = INDEX[start:start + 3500]
     assert "const wechsel = (_aipNah !== nah)" in abschnitt
-
-
-def test_marken_schwelle_misst_die_engere_achse():
-    """Nutzer-Wahl 24.08.2026: sichtbar, wenn etwas mehr als das ganze Blatt im Bild ist.
-
-    ``Math.min`` und nicht ``Math.max``: An der engeren Achse entscheidet sich, ob das Blatt
-    ins Fenster passt. Bei breitem Fenster und hochkantem Blatt zeigt die Waagerechte laengst
-    zwei Blattbreiten, waehrend die Senkrechte gerade eine Blatthoehe fasst -- nach ``max``
-    erschiene die Marke dort nie.
-    """
-    start = INDEX.index("function _aipMarkenAnpassen(")
-    abschnitt = INDEX[start:start + 3000]
-    assert "const enge = Math.min(sichtLat / blattLat, sichtLon / blattLon)" in abschnitt
-
-
-def test_marken_schwelle_laesst_das_ganze_blatt_zu():
-    """Zoomstufen springen in Zweierschritten -- eine zu enge Schwelle ueberspringt die Stufe.
-
-    Nachgerechnet an den drei Blattmassstaeben im Bestand: Die erreichbaren Verhaeltnisse
-    liegen bei 0,86 / 1,72 / 3,44 (bzw. 1,13 / 2,26). Eine Schwelle unter 1,72 liesse die
-    Marke erst erscheinen, wenn das Blatt schon ueber den Bildrand hinausragt; ab 3,44 waere
-    sie auf der Deutschlandkarte zu sehen. Der zulaessige Bereich ist also eng.
-    """
-    import re
-    m = re.search(r"_AIP_MARKE_FAKTOR = ([\d.]+)", INDEX)
-    assert m, "Schwelle nicht gefunden"
-    assert 1.72 < float(m.group(1)) < 3.44
 
 
 def test_marke_sitzt_auf_der_feldmitte():
@@ -454,3 +450,13 @@ def test_fadenkreuz_schluckt_den_klick_nicht():
     den sie ausrichten sollen."""
     start = ADMIN.index(".aip-fadenkreuz {")
     assert "pointer-events: none" in ADMIN[start:start + 400]
+
+
+def test_das_liegende_blatt_behaelt_seine_marke():
+    """Sonst verliert es sie in dichten Gegenden an den Deckel -- und mit ihr den Anstrich,
+    der zeigt, dass es liegt, und den Weg, es wieder wegzuklicken."""
+    start = INDEX.index("function _markenAuswahl(")
+    block = INDEX[start:INDEX.index("\n}", start)]
+    assert "e.s === pflicht" in block
+    anpassen = INDEX.index("function _aipMarkenAnpassen(")
+    assert "_aipMarken, _aipKarteAktiv)" in INDEX[anpassen:anpassen + 600]

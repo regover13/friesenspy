@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.10.0",
+    "date": "2026-09-02",
+    "highlight": false,
+    "title": "Kartensymbole nach einer einzigen Regel",
+    "items": [
+      "\ud83d\uddfa\ufe0f Sichtflug-, Flugplatz- und Rollkarten zeigen ihre Symbole jetzt nach derselben Regel: was ins Bild ragt, davon die 20 n\u00e4chsten zur Kartenmitte. Bisher ma\u00df die Sichtflugkarte das Verh\u00e4ltnis von Ausschnitt zu Blatt \u2014 weil die Bl\u00e4tter um den Faktor 7 auseinanderliegen, erschien dasselbe Symbol je nach Platz zwischen 0,75 und 5,36 Grad Ausschnitt, ohne dass man dem Platz das ansehen konnte.",
+      "\ud83c\udff7\ufe0f Beschriftet werden die Symbole, sobald h\u00f6chstens acht im Bild sind \u2014 vorher hing auch das am Blattformat.",
+      "\ud83d\udccc Das gerade liegende Blatt beh\u00e4lt sein Symbol immer, auch wenn zwanzig andere n\u00e4her an der Kartenmitte liegen.",
+      "\u2328\ufe0f Das Tastenfeld der ICAO-Suche ist jetzt eine QWERTZ-Tastatur mit Ziffernreihe \u2014 und erscheint nur noch im Kniebrett. Am Schreibtisch tippt man mit der echten Tastatur."
+    ]
+  },
+  {
     "version": "14.9.0",
     "date": "2026-09-02",
     "highlight": false,

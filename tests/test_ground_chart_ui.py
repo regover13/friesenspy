@@ -21,6 +21,11 @@ def _ohne_kommentare(text: str) -> str:
 RUMPF = _ohne_kommentare(QUELLE)
 
 
+def _block(name: str) -> str:
+    stelle = RUMPF.index("function " + name)
+    return RUMPF[stelle:RUMPF.index("\n}", stelle)]
+
+
 def test_die_ebene_ist_eingehaengt():
     assert "liveOverlays['Flugplatzkarte'] = _groundGruppe" in RUMPF
 
@@ -224,21 +229,20 @@ def test_das_einschalten_der_ebene_frischt_die_liste_auf():
     assert "_groundKartenLaden(true)" in block
 
 
-def test_bodenmarken_erst_ab_einem_regionalen_ausschnitt():
-    """Sonst stehen ueber ganz Deutschland 105 Marken gleichzeitig im Bild. Gemessen wird
-    in Grad, nicht in Zoomstufen -- die haengen an der Fenstergroesse."""
-    assert re.search(r"const\s+_GROUND_MARKE_SPANNE\s*=", RUMPF)
-    stelle = RUMPF.index("function _groundMarkenAnpassen")
-    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
-    assert "_GROUND_MARKE_SPANNE" in block
+def test_die_bodenmarken_kommen_aus_der_gemeinsamen_auswahl():
+    """Seit 02.09.2026 entscheidet EINE Regel fuer beide Kartenarten, welche Blaetter eine
+    Marke bekommen -- vorher mass die Bodenkarte eine feste Gradspanne und die
+    Sichtflugkarte das Verhaeltnis von Ausschnitt zu Blatt."""
+    block = _block("_groundMarkenAnpassen")
+    flach = " ".join(block.split())
+    assert "_markenAuswahl(_groundKarten, _groundSchluessel, _groundMarken, _groundAktiv)" in flach
 
 
-def test_die_schwelle_misst_die_engere_achse():
-    """Bei einem breiten Fenster und einem hochkanten Ausschnitt entscheidet die Achse, an
-    der es eng wird -- mit Math.max erschienen die Marken je nach Fensterform nie."""
-    stelle = RUMPF.index("function _groundMarkenAnpassen")
-    block = RUMPF[stelle:RUMPF.index("\n}", stelle)]
-    assert "Math.min(" in block
+def test_der_versatz_greift_weiter_nur_bei_zwei_karten():
+    """109 der 111 Plaetze haben genau eine Bodenkarte. Deren Marke darf nicht wandern --
+    auch nicht nach dem Umbau auf die gemeinsame Auswahl."""
+    block = _block("_groundMarkenAnpassen")
+    assert "_groundDoppelt" in block and "> 1" in block
 
 
 # ------------------------------------- Platzrunden ueber den Kartenblaettern
