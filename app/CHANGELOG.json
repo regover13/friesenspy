@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.13.1",
+    "date": "2026-09-02",
+    "highlight": false,
+    "title": "Kniebrett: Kartenkn\u00f6pfe sitzen im Raster",
+    "items": [
+      "\ud83d\uddfa\ufe0f Kniebrett-Vollbild: Zoom, Ebenen, Kompass und Lupe r\u00fccken 10 Pixel nach oben. Der eigene Abstand zur Tablet-Statusleiste kam zu Leaflets eigenem Rand hinzu, statt ihn einzurechnen \u2014 die Kn\u00f6pfe standen dadurch tiefer als n\u00f6tig.",
+      "\ud83c\udfaf Der Folge-Knopf unten rechts stand als einziger au\u00dferhalb des Rasters: 6 Pixel weiter au\u00dfen als die Symbolspalte \u00fcber ihm und h\u00f6her als der Vollbild-Knopf gegen\u00fcber. Seine Sonderbehandlung ist entfallen, jetzt sitzt er auf denselben Abst\u00e4nden wie alles andere."
+    ]
+  },
+  {
     "version": "14.13.0",
     "date": "2026-09-02",
     "highlight": false,

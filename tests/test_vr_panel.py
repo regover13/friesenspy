@@ -522,36 +522,41 @@ def test_leaflet_bedienelemente_weichen_der_tablet_statusleiste_aus():
     """Im Vollbild ist die eigene Leiste weg -- oben bleibt aber die Statusleiste des
     TABLETS: Die EFB-Oberflaeche legt Glocke (links) und Datum/Uhrzeit (rechts) ueber unsere
     Seite. Zoom (oben links), Ebenen/Kompass/Lupe (oben rechts) und der Suchkasten muessen
-    darunter beginnen.
+    darunter beginnen -- aber auch keinen Pixel tiefer.
 
-    Der Versatz MUSS derselbe Wert sein, mit dem die Leiste ausserhalb des Vollbilds
-    derselben Statusleiste ausweicht (.panel-topbar padding-top) -- laufen die beiden
-    auseinander, schiebt sich wieder etwas darunter.
+    DIE FALLE IST DIE ADDITION: Leaflet gibt jedem Bedienelement selbst schon `margin: 10px`
+    (leaflet.css). Der eigene Versatz kommt oben drauf, muss also um genau diese 10 kleiner
+    sein als die Hoehe der Statusleiste -- sonst stehen die Knoepfe zu tief (Nutzerfund
+    02.09.2026: "die Buttons oben koennen noch weiter hoch").
 
-    Bis 02.09.2026 stand hier die volle Leistenhoehe (66px), weil die Leiste im Vollbild
-    mitlief. Sie tut es nicht mehr, s. test_vollbild_im_panel_zeigt_nur_die_karte."""
+    Der Suchkasten haengt dagegen als `position:absolute` am Kartencontainer und nicht in
+    einer Leaflet-Ecke: Er bekommt nichts geschenkt und traegt die volle Zahl."""
     versatz = re.search(r"html\.vr-panel \.map-is-fullscreen \.leaflet-top \{ margin-top: (\d+)px; \}",
                         INDEX)
     assert versatz, "Versatz der Karten-Bedienelemente nicht gefunden"
     statusleiste = re.search(r"html\.vr-panel \.panel-topbar \{.*?padding-top: (\d+)px;", INDEX, re.S)
     assert statusleiste, "Abstand zur Tablet-Statusleiste nicht gefunden"
-    assert versatz.group(1) == statusleiste.group(1), \
-        "Versatz und Abstand zur Tablet-Statusleiste laufen auseinander"
-    # Der Suchkasten sitzt 10px tiefer als die Bedienelemente -- sein eigener Abstand zum
-    # Rand ausserhalb des Vollbilds (top: 10px) kommt hinzu.
+    LEAFLET_EIGENER_RAND = 10
+    assert int(versatz.group(1)) + LEAFLET_EIGENER_RAND == int(statusleiste.group(1)), \
+        "Versatz plus Leaflets eigener Rand muss die Statusleiste genau treffen"
     kasten = re.search(r"html\.vr-panel \.map-is-fullscreen \.icao-box \{ top: (\d+)px; \}", INDEX)
     assert kasten, "Versatz des Suchkastens nicht gefunden"
-    assert int(kasten.group(1)) == int(versatz.group(1)) + 10
+    assert int(kasten.group(1)) == int(statusleiste.group(1)), \
+        "der Kasten liegt ausserhalb von Leaflets Raster und traegt die volle Zahl"
 
 
-# ---------------------------------------------------------------------------
-#  Vereinheitlichte Kopf-/Tab-Leiste (v11.15.0)
-# ---------------------------------------------------------------------------
-# Nutzerwunsch 13.08.2026: "Tab-Navigation in den Balken mit zurueck einbauen, als
-# Hintergrund dieser Leiste das FriesenSpy-Schriftzug". Kopfzeile + Tab-Reihe fraßen bis
-# dahin durchgehend zwei Zeilen auf dem 790px hohen Tablet (gemessen mit Playwright:
-# 57px Kopfzeile + 119.8px Tab-Reihe, weil "STATISTIKEN" bei 558px Fensterbreite in eine
-# zweite Zeile umbrach) -- jetzt eine feste ~46px-Leiste.
+def test_der_folge_knopf_steht_in_leaflets_raster():
+    """Er trug bis 02.09.2026 eine Sonderbehandlung (`margin-bottom: 18px; margin-right: 4px`)
+    und stand damit aus zwei Rastern: 6 Pixel weiter aussen als die Spalte darueber (Ebenen,
+    Kompass, Lupe auf Leaflets `margin-right: 10px`) und hoeher als der Vollbild-Knopf
+    gegenueber, mit dem er eine Linie bilden soll (`bottom: 10px`).
+
+    Ohne die Regel greift Leaflets eigener `margin: 10px` in beide Richtungen -- dieselbe
+    Zahl, auf der auch der Vollbild-Knopf sitzt."""
+    assert ".leaflet-bottom.leaflet-right .navi-bar {" not in _ohne_kommentare(INDEX)
+    knopf = re.search(r"\n    \.map-fullscreen-btn \{([^}]*)\}", INDEX, re.S)
+    assert knopf and "bottom: 10px" in knopf.group(1), \
+        "der Gegenpart unten links muss auf derselben Zahl sitzen"
 
 
 def test_alte_kopfzeile_im_panel_komplett_ausgeblendet():

@@ -1645,14 +1645,24 @@
       color: #cfe3f0;
       white-space: nowrap;
     }
-    /* Der Moving-Map-Knopf sitzt unten rechts, wo auch Leaflets Herkunftsangabe klebt --
-       ohne Abstand liegt er darauf.
+    /* HIER STAND EINE SONDERBEHANDLUNG FUER DEN MOVING-MAP-KNOPF unten rechts
+       (`margin-bottom: 18px; margin-right: 4px`) -- Abstand zu Leaflets Herkunftsangabe,
+       die dort entlanglaeuft.
 
-       10px statt der frueheren 18: Gegenueber, unten links, steht der Vollbild-Knopf auf
-       `bottom: 10px`, und die beiden sollen auf einer Linie liegen (Nutzerwunsch
-       02.09.2026). Der Abstand zur Herkunftsangabe bleibt damit derselbe, den der
-       Vollbild-Knopf schon immer hatte. */
-    .leaflet-bottom.leaflet-right .navi-bar { margin-bottom: 10px; margin-right: 4px; }
+       Sie ist am 02.09.2026 ersatzlos entfallen, weil sie den Knopf aus GLEICH ZWEI Rastern
+       geworfen hat (Nutzerfund: "in eine Reihe mit den anderen rechts, und auf der Hoehe des
+       X Vollbild"):
+
+       * seitlich: Alle uebrigen Bedienelemente rechts (Ebenen, Kompass, Lupe) stehen auf
+         Leaflets eigenen `margin-right: 10px`. Mit 4 stand dieser eine 6 Pixel weiter
+         aussen als die Spalte darueber.
+       * in der Hoehe: Gegenueber, unten links, sitzt der Vollbild-Knopf auf `bottom: 10px`
+         -- dieselbe Zahl, die Leaflet seinen Elementen ohnehin gibt. Mit 18 lag er hoeher
+         als der Knopf, mit dem er eine Linie bilden soll.
+
+       Ohne die Regel greift Leaflets `margin: 10px` fuer beide Richtungen, und beides sitzt
+       von selbst richtig. Die Herkunftsangabe bleibt lesbar: Der Knopf verdeckt nur seinen
+       eigenen Platz -- genau wie der Vollbild-Knopf gegenueber, der das seit jeher tut. */
     .leaflet-control-attribution {
       background: rgba(4,8,15,0.8) !important;
       color: #6b9ab8 !important;
@@ -2191,10 +2201,19 @@
     /* Was oben trotzdem freibleiben muss: die Statusleiste des TABLETS. Die EFB-Oberflaeche
        legt Glocke (links) und Datum/Uhrzeit (rechts) ueber unsere Seite -- ausserhalb des
        Vollbilds weicht ihr der Innenabstand der Leiste aus (.panel-topbar padding-top),
-       im Vollbild gibt es die Leiste nicht mehr, also muss der Versatz hierher. Er ist
-       dieselbe Zahl und gehoert es zu bleiben: waechst der eine, muss der andere mit. */
-    html.vr-panel .map-is-fullscreen .leaflet-top { margin-top: 26px; }
-    html.vr-panel .map-is-fullscreen .icao-box { top: 36px; }
+       im Vollbild gibt es die Leiste nicht mehr, also muss der Versatz hierher.
+
+       16 und nicht 26: Leaflet gibt JEDEM Bedienelement selbst schon `margin: 10px`
+       (leaflet.css, `.leaflet-top .leaflet-control`). Die beiden addieren sich -- mit 26
+       standen die Knoepfe 36 Pixel unter der Oberkante und damit 10 Pixel tiefer als noetig
+       (Nutzerfund 02.09.2026: "die Buttons oben koennen noch weiter hoch"). 16 + 10 ergibt
+       genau die 26, mit denen die Leiste der Statusleiste ausweicht.
+
+       Der Suchkasten traegt dieselbe Rechnung, nur ohne fremden Beitrag: Er haengt als
+       `position:absolute` am Kartencontainer, nicht in einer Leaflet-Ecke, und braucht die
+       26 deshalb ganz allein. */
+    html.vr-panel .map-is-fullscreen .leaflet-top { margin-top: 16px; }
+    html.vr-panel .map-is-fullscreen .icao-box { top: 26px; }
     html.vr-panel .sse-dot { animation: none !important; }
 
     /* ---------------------------------------------------------------------
