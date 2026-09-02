@@ -10284,19 +10284,40 @@ function _icaoSetzen(text) {
 // eigene, vom Nutzer gewaehlte Zoomstufe verlieren.
 const _IOS_GERAET = /iP(hone|ad|od)/.test(navigator.userAgent || '');
 
+// Der Eintrag, wie er im Kopf der Seite steht -- EINMAL beim Laden gelesen. Nicht bei
+// jedem Aufruf: Laufen zwei kurz hintereinander, laese der zweite den gesperrten Stand als
+// "normal" und die Sperre bliebe fuer immer.
+const _VIEWPORT_NORMAL = (function () {
+  const m = document.querySelector('meta[name="viewport"]');
+  return (m && m.getAttribute('content')) || 'width=device-width, initial-scale=1.0';
+})();
+
+/**
+ * Viewport-Eintrag setzen -- durch AUSTAUSCH des Elements, nicht per setAttribute.
+ *
+ * Safari uebernimmt ein per setAttribute zurueckgenommenes `maximum-scale` erst beim
+ * naechsten Laden der Seite. Die Sperre blieb dadurch stehen: Das Feld zoomte genau einmal
+ * hinein, danach nie wieder -- und mit ihr war auch der GEWOLLTE Zwei-Finger-Zoom tot
+ * (am Geraet gegengeprueft, 02.09.2026: "Nein, tot"). Ein frisches Element liest Safari neu.
+ */
+function _viewportSetzen(inhalt) {
+  const alt = document.querySelector('meta[name="viewport"]');
+  const neu = document.createElement('meta');
+  neu.setAttribute('name', 'viewport');
+  neu.setAttribute('content', inhalt);
+  if (alt && alt.parentNode) alt.parentNode.replaceChild(neu, alt);
+  else document.head.appendChild(neu);
+}
+
 function _seitenZoomZurueck() {
   if (!_IOS_GERAET) return;
-  const meta = document.querySelector('meta[name="viewport"]');
-  if (!meta) return;
-  const vorher = meta.getAttribute('content') || 'width=device-width, initial-scale=1.0';
-  meta.setAttribute('content', vorher + ', maximum-scale=1.0');
-  // Zwei Bilder reichen nicht -- Safari zieht den Massstab erst nach, wenn die Tastatur
-  // wirklich weg ist. 350 ms sind die uebliche Dauer ihrer Einblendung.
-  setTimeout(function () { meta.setAttribute('content', vorher); }, 350);
-  // Und das verschobene Layout wieder an den Anfang: Beim Fokus in einem `position: fixed`
-  // liegenden Feld schiebt iOS zusaetzlich den Ausschnitt, was das Vollbild verrutscht.
+  _viewportSetzen(_VIEWPORT_NORMAL + ', maximum-scale=1.0');
+  // Sofort wieder freigeben. Der Massstab bleibt auf 1, die Sperre gilt nur fuer den
+  // Augenblick des Zurueckziehens -- danach darf wieder jeder zoomen, der will.
+  setTimeout(function () { _viewportSetzen(_VIEWPORT_NORMAL); }, 350);
   window.scrollTo(0, 0);
 }
+
 
 /** Auf, zu oder umschalten (ohne Argument). */
 function _icaoOeffnen(an) {

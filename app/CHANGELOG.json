@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.10.2",
+    "date": "2026-09-02",
+    "highlight": false,
+    "title": "Zoomsperre blieb auf dem iPhone stehen",
+    "items": [
+      "\ud83d\udcf1 iPhone: Der Zwei-Finger-Zoom bleibt erhalten. Beim Zur\u00fcckholen des Ma\u00dfstabs nach der ICAO-Suche wurde die Zoomsperre zwar sofort wieder aufgehoben \u2014 Safari \u00fcbernahm das aber erst beim n\u00e4chsten Laden der Seite und lie\u00df danach gar nichts mehr zoomen. Der Viewport-Eintrag wird jetzt ausgetauscht statt ge\u00e4ndert, damit Safari ihn neu liest."
+    ]
+  },
+  {
     "version": "14.10.1",
     "date": "2026-09-02",
     "highlight": false,

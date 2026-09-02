@@ -115,7 +115,26 @@ def test_der_seitenzoom_wird_zurueckgeholt():
     assert "maximum-scale=1.0" in block
     # Die Sperre muss WIEDER WEG -- ein dauerhaftes maximum-scale=1 naehme jedem den
     # Zwei-Finger-Zoom auf der Karte.
-    assert "setTimeout(" in block
+    assert "setTimeout(" in block and "_viewportSetzen(_VIEWPORT_NORMAL)" in block
+
+
+def test_der_viewport_eintrag_wird_ausgetauscht_nicht_geaendert():
+    """Safari uebernimmt ein per setAttribute zurueckgenommenes `maximum-scale` erst beim
+    naechsten Laden der Seite. Die Sperre blieb dadurch stehen: Das Feld zoomte genau einmal
+    hinein, danach nie wieder -- und der GEWOLLTE Zwei-Finger-Zoom war mit tot (am Geraet
+    gegengeprueft, 02.09.2026)."""
+    block = _block("_viewportSetzen")
+    assert "document.createElement('meta')" in block
+    assert "replaceChild(neu, alt)" in block
+
+
+def test_der_normale_eintrag_wird_nur_einmal_gelesen():
+    """Laufen zwei Rueckholungen kurz hintereinander, laese die zweite den gesperrten Stand
+    als "normal" -- und die Sperre bliebe fuer immer stehen."""
+    import re
+    m = re.search(r"const _VIEWPORT_NORMAL = \(function \(\) \{", RUMPF)
+    assert m, "der Ausgangswert muss beim Laden festgehalten werden, nicht je Aufruf"
+    assert "_VIEWPORT_NORMAL" in _block("_seitenZoomZurueck")
 
 
 def test_der_zoom_kommt_schon_beim_verlassen_des_feldes_zurueck():
