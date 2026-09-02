@@ -1646,8 +1646,13 @@
       white-space: nowrap;
     }
     /* Der Moving-Map-Knopf sitzt unten rechts, wo auch Leaflets Herkunftsangabe klebt --
-       ohne Abstand liegt er darauf. */
-    .leaflet-bottom.leaflet-right .navi-bar { margin-bottom: 18px; margin-right: 4px; }
+       ohne Abstand liegt er darauf.
+
+       10px statt der frueheren 18: Gegenueber, unten links, steht der Vollbild-Knopf auf
+       `bottom: 10px`, und die beiden sollen auf einer Linie liegen (Nutzerwunsch
+       02.09.2026). Der Abstand zur Herkunftsangabe bleibt damit derselbe, den der
+       Vollbild-Knopf schon immer hatte. */
+    .leaflet-bottom.leaflet-right .navi-bar { margin-bottom: 10px; margin-right: 4px; }
     .leaflet-control-attribution {
       background: rgba(4,8,15,0.8) !important;
       color: #6b9ab8 !important;
@@ -1795,7 +1800,7 @@
        Hintergrund dieser Leiste das FriesenSpy-Schriftzug". Jetzt EINE feste Leiste: Zurueck-
        Knopf, die vier Tabs und die Verbindungsanzeige sind Flex-Kinder derselben Zeile (das
        Umhaengen der bestehenden Elemente -- nicht Duplizieren -- passiert in JS, s.
-       _initPanelBackButton). Die alte Kopfzeile faellt komplett weg (Logo/Hilfe/Login-Name
+       _initPanelTopbar). Die alte Kopfzeile faellt komplett weg (Logo/Hilfe/Login-Name
        waren im Panel ohnehin schon einzeln ausgeblendet). Die Uhrzeit fliegt OHNE Ersatz raus
        -- keine Willkuer, sondern dieselbe Entscheidung, die die Website selbst bei schmalen
        Bildschirmen trifft (".utc-clock { display:none }" @media max-width:768px, oben in
@@ -1819,7 +1824,7 @@
        haengt deshalb wie vorher der Zurueck-Balken direkt am </body> AUSSERHALB von #app. */
     html.vr-panel header { display: none !important; }
     /* Die urspruengliche Tab-Reihe bleibt im DOM (ihre Kinder wandern per JS in #panel-topbar,
-       s. _initPanelBackButton) -- ausblenden statt loeschen, sonst zeigt sie eine leere Zeile. */
+       s. _initPanelTopbar) -- ausblenden statt loeschen, sonst zeigt sie eine leere Zeile. */
     html.vr-panel .tab-nav { display: none; }
 
     .panel-topbar { display: none; }
@@ -1887,41 +1892,18 @@
        der erste Seiteninhalt wieder unter die Leiste. */
     html.vr-panel body { padding-top: 66px; }
 
-    /* Zurueck-Knopf als normales Flex-Kind der Leiste statt eigener schwebender Balken. */
-    html.vr-panel .panel-topbar .panel-back-btn {
-      position: static;
-      /* Bekommt den Platz, den die Tabs uebriglassen: im Cockpit das haeufigste Ziel, und mit
-         Handschuhen/in VR das, was am ehesten daneben geht. */
-      flex: 1 1 auto;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      /* 44px Mindestgroesse -- Fingerbedienung im Cockpit, nicht Mauszeiger. */
-      min-height: 44px;
-      padding: 6px 12px;
-      background: transparent;
-      border: none;
-      border-right: 1px solid var(--green-dim);
-      color: var(--green);
-      font-family: var(--text-display);
-      font-size: 0.95rem;
-      letter-spacing: 0.03em;
-      white-space: nowrap;
-      cursor: pointer;
-      box-shadow: none;
-    }
-    /* Abstand zwischen Icon und Text als margin, NICHT als flex-gap -- CSS.supports('gap','1px')
-       ist in Coherent GT false (gemessen, s. Karten-Layout weiter unten), gap faellt dort
-       ersatzlos weg. */
-    html.vr-panel .panel-topbar .panel-back-btn svg { margin-right: 4px; }
-    .panel-back-btn[hidden] { display: none; }
-    /* Muss die Flex-Regel oben (html.vr-panel .panel-topbar .panel-back-btn { display:flex })
-       per Spezifitaet schlagen -- sonst gewinnt "display:flex" gegen "display:none" trotz
-       [hidden]-Attribut, weil die Flex-Regel die hoehere Selektor-Spezifitaet hat (Fund beim
-       Messen mit Playwright: Knopf blieb trotz hidden=true 102x59px gross sichtbar). */
-    html.vr-panel .panel-topbar .panel-back-btn[hidden] { display: none; }
-    /* Ausserhalb des Panels nie zeigen -- die Website hat ihre Browser-Navigation. */
-    html:not(.vr-panel) .panel-back-btn { display: none !important; }
+    /* HIER STAND BIS 02.09.2026 DER ZURUECK-KNOPF (`.panel-back-btn`).
+
+       Er entstand am 13.08.2026 als Notausgang: Wer ein Fenster oeffnete, war auf dessen
+       eigenen Schliessen-Knopf angewiesen -- und wenn dem Font das Glyph fehlte, sass man
+       fest. Beides ist erledigt. Die Fenster schliessen inzwischen ueber `#icon-x` aus dem
+       SVG-Sprite (alle sechs geprueft: ac-, fp-, track-, fld-, changelog-, types-modal),
+       also ueber genau die Bauform, die im Kniebrett nachweislich rendert. Und das
+       Karten-Vollbild hat seit dem Umbau am selben Tag seinen eigenen Ausgang in der Karte.
+
+       Der Knopf war damit ein zweiter Weg zu Zielen, die alle schon einen haben -- und er
+       kostete Breite in einer Leiste, in der vier Ansichten um ~413 CSS-Pixel konkurrieren
+       (Nutzerwunsch 02.09.2026: "den Back-Button brauchen wir nicht mehr"). */
 
     /* Verbindungsanzeige (#sse-badge) wandert per JS aus der (jetzt ausgeblendeten)
        Kopfzeile ans Ende derselben Leiste -- nur der Punkt, s. Begruendung oben. */
@@ -2078,7 +2060,16 @@
        Schrift deutlich groesser als die urspruenglichen 0.62rem: in VR war die Leiste
        schlecht zu lesen (Nutzer, 14.08.2026). */
     html.vr-panel .panel-topbar .tab-btn {
-      flex: 0 1 auto;
+      /* `1 1 0` und nicht `0 1 auto`: Die vier Ansichten teilen sich den Platz gleichmaessig,
+         von der Grundlage null aus verteilt und nicht nach Textlaenge -- "EVENTS" bekaeme
+         sonst mehr als "MAP".
+
+         Bis 02.09.2026 stand hier `0 1 auto`, und die gleichmaessige Verteilung galt nur,
+         wenn der Zurueck-Knopf ausgeblendet war (`\.panel-back-btn[hidden] ~ .tab-btn`) --
+         also genau in der Ansicht, die der Nutzer als die richtige benannt hat ("anzeigen,
+         wie auf dem Live-Tab"). Mit dem Knopf ist der Grund fuer die Bedingung entfallen:
+         Es gibt niemanden mehr, der sich den Rest nehmen koennte. */
+      flex: 1 1 0;
       min-width: 0;
       padding: 6px 9px;
       font-size: 0.85rem;
@@ -2093,11 +2084,7 @@
        Text der Teil, der die Ansicht benennt. Der Pfeil am Zurueck-Knopf bleibt -- er steht
        fuer sich allein und braucht keinen Platz neben einem laengeren Wort. */
     html.vr-panel .panel-topbar .tab-btn .icon { display: none; }
-    /* Ist der Zurueck-Knopf ausgeblendet (nichts zum Zurueckgehen), traegt niemand mehr die
-       Breitenverteilung -- dann teilen sich die vier Ansichten den Platz wieder gleichmaessig
-       auf. Ueber den Geschwister-Kombinator, weil der Knopf im Markup VOR den Tabs steht;
-       kein JavaScript noetig, der Zustand steht ohnehin schon im hidden-Attribut. */
-    html.vr-panel .panel-topbar .panel-back-btn[hidden] ~ .tab-btn { flex: 1 1 0; }
+
 
     /* Die Flugaktivitaets-Grafik bleibt im Panel leer: Chart.js 4.x benutzt Class-Field-
        Syntax (ES2022), die Coherent GT nicht parst -- ein bestehendes try/catch faengt das
@@ -2187,7 +2174,8 @@
        Damit kehrt der Ausgang IN die Karte zurueck: Ohne Leiste gaebe es sonst gar keinen
        Weg mehr heraus -- genau die Lage, die den Zurueck-Knopf urspruenglich noetig machte
        ("sass man fest", 13.08.2026). Der Knopf sitzt unten links, wo im Vollbild bisher die
-       Windanzeige stand; die wandert dafuer nach oben rechts (s. _windPlatzieren).
+       Windanzeige stand -- die steht seit demselben Tag fest oben links ueber den
+       Zoomknoepfen, im Vollbild wie ausserhalb (s. _windPlatzieren).
        `.karte-vollbild` setzt toggleMapFullscreen am <html>: Die Leiste haengt bewusst
        AUSSERHALB von #app am </body> und ist deshalb kein Nachfahre der Karte -- ueber die
        Karte selbst laesst sie sich nicht ansprechen. */
@@ -7285,7 +7273,7 @@ function setSSEStatus(status) {
     label.textContent = 'GETRENNT';
   }
   // Im Panel traegt die Glocke den Verbindungszustand (sie steht dort anstelle des Punktes,
-  // s. _initPanelBackButton). Hier gesetzt und nirgends sonst -- der Zustand hat genau eine
+  // s. _initPanelTopbar). Hier gesetzt und nirgends sonst -- der Zustand hat genau eine
   // Quelle, egal wie viele Stellen ihn anzeigen.
   const glocke = document.getElementById('notif-btn');
   if (glocke) glocke.classList.toggle('sse-live', live);
@@ -10032,7 +10020,7 @@ function _addWindControl(map) {
   });
   _windControl = new Wind();
   map.addControl(_windControl);
-  _windPlatzieren(!!document.querySelector('.map-is-fullscreen'));
+  _windPlatzieren();
 }
 
 /**
@@ -10047,19 +10035,26 @@ function _addWindControl(map) {
  * sonst unten links sitzt, ist im Vollbild ohnehin ausgeblendet (die Zurueck-Leiste
  * uebernimmt seine Aufgabe) -- die Ecke ist also frei.
  */
-function _windPlatzieren(imVollbild) {
+function _windPlatzieren() {
   if (!_windControl) return;
-  // Im Vollbild OBEN RECHTS, nicht mehr unten links (Nutzerwunsch 02.09.2026): Unten links
-  // steht seit dem Umbau der Ausgang aus dem Vollbild, und zwei Dinge an derselben Stelle
-  // sind eins zu viel. Oben rechts reiht sie sich unter Ebenen-Auswahl, Kompass und Lupe --
-  // also UNTER die Tippziele, was richtig herum ist: Der Wind wird gelesen, nicht gedrueckt.
-  const wunsch = imVollbild ? 'topright' : 'topleft';
-  if (_windControl.getPosition() !== wunsch) {
+  // IMMER oben links ueber den Zoomknoepfen -- im Vollbild wie ausserhalb (Nutzerwunsch
+  // 02.09.2026). Die Anzeige ist damit an einem festen Ort, statt beim Umschalten durchs
+  // Bild zu springen.
+  //
+  // Sie WANDERTE zweimal, und beide Male aus einem Grund, den es nicht mehr gibt: erst nach
+  // unten links, weil dort im Kniebrett-Vollbild Platz war (der Vollbild-Knopf war
+  // ausgeblendet), dann nach oben rechts, weil der Knopf als Ausgang dorthin zurueckkam.
+  // Der Parameter `imVollbild` ist mit dieser Fassung entfallen; wer ihn in einem alten
+  // Aufruf sucht, findet hier die Erklaerung.
+  if (_windControl.getPosition() !== 'topleft') {
     // setPosition haengt den Control neu ein; dabei laeuft onAdd erneut und setzt die
     // Verweise auf Pfeil und Text frisch.
-    _windControl.setPosition(wunsch);
+    _windControl.setPosition('topleft');
   }
-  if (!imVollbild && _windKnopf && _windKnopf.parentNode) {
+  // UEBER die Zoomknoepfe, nicht darunter: Leaflet stapelt die Bedienelemente einer Ecke in
+  // der Reihenfolge, in der sie dazukommen, und der Zoomknopf entsteht schon beim Anlegen
+  // der Karte.
+  if (_windKnopf && _windKnopf.parentNode) {
     const ecke = _windKnopf.parentNode;
     if (ecke.firstChild !== _windKnopf) ecke.insertBefore(_windKnopf, ecke.firstChild);
   }
@@ -13660,17 +13655,20 @@ setInterval(refreshLiveData, 15000);
 function toggleMapFullscreen(wrapId, btn, getMap) {
   const wrap = document.getElementById(wrapId);
   const isFs = wrap.classList.toggle('map-is-fullscreen');
-  btn.innerHTML = isFs ? icon('x') + ' Vollbild verlassen' : icon('fullscreen') + ' Vollbild';
+  // Beide Zustaende heissen "Vollbild", nur das Zeichen wechselt (Nutzerwunsch 02.09.2026):
+  // Das X sagt bereits, dass es hinausgeht, und "verlassen" kostete im Kniebrett Platz in
+  // der Karte -- der Knopf steht dort seit dem Umbau mitten im Bild statt in einer Leiste.
+  btn.innerHTML = isFs ? icon('x') + ' Vollbild' : icon('fullscreen') + ' Vollbild';
   document.body.style.overflow = isFs ? 'hidden' : '';
   _vollbildKlassePflegen();
   // Nur die Karten-Ansicht wird gemerkt: Das Track-Modal und die Events-Karte haengen an
   // einem Flug bzw. einem Rennen, das beim naechsten Start nicht mehr offen ist -- ein
   // wiederhergestelltes Vollbild ohne den zugehoerigen Inhalt waere eine leere Flaeche.
   if (wrapId === _ZUSTAND_KARTE_WRAP) _prefSchreib(_ZUSTAND_VOLLBILD_KEY, isFs ? '1' : '0');
-  // Die Windanzeige wechselt mit: oben ueber den Zoomknoepfen, im Vollbild unten links
-  // (dort ist der Vollbild-Knopf im Kniebrett ohnehin ausgeblendet). Nur die Live-Karte
-  // hat eine -- bei den anderen tut der Aufruf nichts.
-  if (wrapId === _ZUSTAND_KARTE_WRAP) _windPlatzieren(isFs);
+  // Die Windanzeige steht in beiden Zustaenden oben links ueber den Zoomknoepfen -- der
+  // Aufruf haelt sie nur dort, wenn Leaflet die Ecke beim Groessenwechsel neu aufbaut. Nur
+  // die Live-Karte hat eine, bei den anderen tut er nichts.
+  if (wrapId === _ZUSTAND_KARTE_WRAP) _windPlatzieren();
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const map = getMap();
     if (map) map.invalidateSize();
@@ -13721,92 +13719,49 @@ function exitAnyMapFullscreen() {
  * am </body> und ist deshalb kein Nachfahre der Karte -- ueber die Karte selbst kaeme CSS
  * gar nicht an sie heran. Ausgewertet in `html.vr-panel.karte-vollbild .panel-topbar`.
  *
- * Das offene Fenster in der Bedingung ist kein Beiwerk, sondern der Notausgang: Im Vollbild
- * fuehrt der Weg nach draussen ueber den Knopf IN der Karte -- der liegt aber unter jedem
- * Modal (z-index 3000 gegen 10000). Wer aus dem Vollbild heraus ein Fenster oeffnet, saesse
- * ohne die Leiste fest, und zwar genau so, wie es sie am 13.08.2026 ueberhaupt erst noetig
- * gemacht hat. Sobald ein Fenster offen ist, kommt sie deshalb zurueck.
- *
- * Gerufen von beiden Wegen ins Vollbild und zusaetzlich aus _updatePanelBackBtn, das
- * ohnehin nach jeder Eingabe und im Sekundentakt prueft -- Fenster gehen an zu vielen
- * Stellen auf und zu, als dass man sie einzeln abfangen koennte (dieselbe Begruendung wie
- * beim Zurueck-Knopf selbst).
+ * Die Bedingung hing bis 02.09.2026 zusaetzlich daran, ob ein Fenster offen ist: Die Leiste
+ * kam dann zurueck, weil ihr Zurueck-Knopf der einzige Ausgang war, der ueber einem Modal
+ * (z-index 10000 gegen 3000 der Karte) noch erreichbar blieb. Mit dem Knopf ist auch dieser
+ * Grund entfallen -- jedes der sechs Fenster schliesst ueber sein eigenes `#icon-x`, und das
+ * liegt ohnehin im Fenster selbst, also oben auf.
  */
 function _vollbildKlassePflegen() {
-  const nurKarte = !!document.querySelector('.map-is-fullscreen') && !_panelOpenModal();
-  document.documentElement.classList.toggle('karte-vollbild', nurKarte);
+  document.documentElement.classList.toggle(
+    'karte-vollbild', !!document.querySelector('.map-is-fullscreen'));
 }
 
 // ==========================================================================
-//  ZURUECK-KNOPF (nur MSFS-EFB-Panel)
+//  KOPFLEISTE DES KNIEBRETTS
 // ==========================================================================
-// Im Panel gibt es keine Browser-Bedienleiste: kein Zurueck, keine Adresszeile. Wer ein
-// Fenster oeffnete, war auf dessen eigenen Schliessen-Knopf angewiesen -- und wenn dem Font
-// das Glyph fehlte, sass man fest (Live-Test-Fund 13.08.2026). Der Knopf haengt deshalb
-// ausserhalb aller Fenster und benutzt bewusst die BESTEHENDEN close*()-Funktionen, statt
-// eigene Schliess-Logik danebenzustellen (sonst haetten wir zwei Wahrheiten).
+// Hier stand bis 02.09.2026 der ZURUECK-KNOPF mit seiner gestaffelten Logik (erst Vollbild,
+// dann offenes Fenster, dann zurueck zum Live-Tab). Er entstand am 13.08.2026, weil im Panel
+// keine Browser-Bedienleiste existiert und ein Fenster, dessen Schliess-Glyph der Font nicht
+// malen konnte, den Nutzer festsetzte.
 //
-// Reihenfolge bewusst gestaffelt, immer nur EINE Ebene pro Druck -- wie man es von einem
-// Zurueck-Knopf erwartet:
-//   1. Karten-Vollbild verlassen   2. offenes Fenster schliessen   3. zurueck zum Live-Tab
+// Beide Gruende sind erledigt: Die sechs Fenster schliessen ueber `#icon-x` aus dem
+// SVG-Sprite -- die Bauform, die im Kniebrett nachweislich rendert --, und das
+// Karten-Vollbild hat seinen eigenen Ausgang in der Karte. Was blieb, war ein zweiter Weg zu
+// Zielen mit erstem Weg, der Breite in einer engen Leiste kostete.
+//
+// Mit dem Knopf ist auch die Liste der Fenster gegangen (`_PANEL_MODALS`/`_panelOpenModal`):
+// Sie diente allein dazu, IHM zu sagen, was gerade offen ist und wie es zugeht -- ein
+// zentrales Verzeichnis, das jede neue Ansicht mitpflegen musste, sonst blieb der Knopf dort
+// stumm. Jedes Fenster kennt seinen eigenen Schliess-Weg ohnehin; eine zweite Liste daneben
+// waere genau die zweite Wahrheit, die der Knopf urspruenglich vermeiden wollte.
 
-/** Alle Modals mit ihrer jeweiligen "ist offen"-Bedingung und Schliess-Funktion. */
-const _PANEL_MODALS = [
-  { id: 'ac-modal',        isOpen: el => el.classList.contains('open'),    close: () => closeAcModal() },
-  { id: 'fp-modal',        isOpen: el => !el.classList.contains('hidden'), close: () => closeFpModal() },
-  { id: 'track-modal',     isOpen: el => !el.classList.contains('hidden'), close: () => closeTrackModal() },
-  { id: 'fld-modal',       isOpen: el => !el.classList.contains('hidden'), close: () => closeFldModal() },
-  { id: 'changelog-modal', isOpen: el => !el.classList.contains('hidden'), close: () => closeChangelogModal() },
-  { id: 'types-modal',     isOpen: el => !el.classList.contains('hidden'), close: () => closeTypesModal() },
-];
-
-function _panelOpenModal() {
-  for (const m of _PANEL_MODALS) {
-    const el = document.getElementById(m.id);
-    if (el && m.isOpen(el)) return m;
-  }
-  return null;
-}
-
-/** Gibt es ueberhaupt etwas zu verlassen? Steuert die Sichtbarkeit des Knopfes. */
-function _panelCanGoBack() {
-  if (document.querySelector('.map-is-fullscreen')) return true;
-  if (_panelOpenModal()) return true;
-  const active = document.querySelector('.tab-btn.active');
-  return !!(active && active.dataset.tab !== 'live');
-}
-
-function panelGoBack() {
-  if (document.querySelector('.map-is-fullscreen')) { exitAnyMapFullscreen(); return; }
-  const m = _panelOpenModal();
-  if (m) { try { m.close(); } catch (e) {} return; }
-  const liveTab = document.querySelector('.tab-btn[data-tab="live"]');
-  if (liveTab) liveTab.click();
-}
-
-function _updatePanelBackBtn() {
-  const btn = document.getElementById('panel-back-btn');
-  if (!btn) return;
-  // Seit v11.15.0 steckt der Knopf IN der Tab-Leiste, die selbst immer sichtbar ist -- kein
-  // Platz-Umschalten am <html>-Element mehr noetig (das erledigte vorher .panel-has-back),
-  // die Leiste reserviert ihren Platz per festem CSS (html.vr-panel body { padding-top }).
-  // Nur der Knopf selbst blendet sich weiterhin je nach Zustand ein/aus.
-  btn.hidden = !_panelCanGoBack();
-  _vollbildKlassePflegen();
-}
-
-function _initPanelBackButton() {
+function _initPanelTopbar() {
   if (!document.documentElement.classList.contains('vr-panel')) return;
-  const btn = document.getElementById('panel-back-btn');
-  if (!btn) return;
 
-  // Zurueck-Knopf, die vier echten Tab-Buttons und die Verbindungsanzeige wandern aus ihrer
-  // alten Position (schwebender Balken, <nav class="tab-nav">, Kopfzeile) in #panel-topbar --
-  // Nutzerwunsch 13.08.2026: Tab-Navigation und Zurueck in EINEN gemeinsamen Balken.
+  // Die vier echten Tab-Buttons und die Verbindungsanzeige wandern aus ihrer alten Position
+  // (<nav class="tab-nav">, Kopfzeile) in #panel-topbar -- Nutzerwunsch 13.08.2026:
+  // Tab-Navigation und Zurueck in EINEN gemeinsamen Balken. (Das Zurueck ist am 02.09.2026
+  // entfallen, s. oben; die Zusammenlegung selbst bleibt richtig.)
   // Verschieben statt Duplizieren: dieselben Elemente, dieselbe ID -- jeder bestehende
   // Klick-Handler (data-tab) und Updater (SSE-Status) laeuft unveraendert weiter, es entsteht
   // keine zweite Wahrheit. #panel-topbar liegt bewusst AUSSERHALB von #app (s. "WICHTIG" im
-  // CSS) -- sonst waere der Zurueck-Knopf ueber offenen Modalen unerreichbar. Die Uhrzeit
+  // CSS) -- entscheidend war das, solange hier der Zurueck-Knopf hing, der ueber offenen
+  // Fenstern erreichbar bleiben musste; es bleibt richtig, damit die Leiste eine eigene
+  // Stapel-Ebene hat und nicht auf Rang 1 gekappt wird. Die Uhrzeit
   // (#utc-clock) bleibt bewusst in der jetzt ausgeblendeten Kopfzeile zurueck, s. Begruendung
   // bei ".panel-topbar::before" im CSS.
   // Kurze englische Beschriftungen NUR in der Panel-Leiste (die Website bleibt deutsch):
@@ -13824,8 +13779,6 @@ function _initPanelBackButton() {
 
   const topbar = document.getElementById('panel-topbar');
   if (topbar) {
-    _panelBeschriftung(btn, 'BACK');
-    topbar.appendChild(btn);
     document.querySelectorAll('.tab-btn').forEach((t) => {
       const kurz = _PANEL_TAB_TEXT[t.dataset.tab];
       if (kurz) _panelBeschriftung(t, kurz);
@@ -13848,33 +13801,17 @@ function _initPanelBackButton() {
       topbar.appendChild(glocke);
     }
   }
-
-  // Bewusst KEIN Einklinken in jede einzelne oeffnende/schliessende Stelle: Fenster und Tabs
-  // werden an vielen Orten umgeschaltet (Klick, Escape, Klick-daneben, Deep-Link beim Laden)
-  // -- man wuerde zwangslaeufig eine uebersehen, und der Knopf waere genau dann falsch.
-  // Stattdessen nach jeder Eingabe den Zustand neu bewerten. setTimeout(0), damit die
-  // eigentlichen Klick-/Tasten-Handler vorher fertig sind.
-  const spaeterPruefen = () => setTimeout(_updatePanelBackBtn, 0);
-  document.addEventListener('click', spaeterPruefen);
-  document.addEventListener('keydown', spaeterPruefen);
-
-  // Sicherheitsnetz fuer Zustandswechsel ohne Eingabe (z. B. Deep-Link nach dem Laden,
-  // automatisch schliessende Ansichten). Langsam getaktet -- der reaktive Weg oben traegt
-  // die Hauptlast, und Browser drosseln Intervalle in Hintergrund-Tabs ohnehin stark.
-  setInterval(_updatePanelBackBtn, 1000);
-  _updatePanelBackBtn();
 }
 
 // WICHTIG -- erst wenn das Dokument fertig geparst ist: Dieses <script> steht zwar am Ende
-// des <body>, aber die festen Knoepfe (#panel-update-hint,
-// #panel-back-btn) stehen DAHINTER. Ein Inline-Skript haelt den Parser an, also existieren
+// des <body>, aber die festen Knoepfe (#panel-update-hint) stehen DAHINTER. Ein Inline-Skript haelt den Parser an, also existieren
 // sie beim Ausfuehren noch nicht -- ein direkter Aufruf hier faende per getElementById nur
-// null und _initPanelBackButton haette sich stumm ueber seine eigene Wache verabschiedet.
+// null und _initPanelTopbar haette sich stumm ueber seine eigene Wache verabschiedet.
 // Gleiches gilt fuer die Umschreibung, die einmal ueber das gesamte fertige Dokument muss.
 document.addEventListener('DOMContentLoaded', () => {
-  // _initPanelBackButton holt im Panel auch die Glocke in die Leiste und blendet sie ein --
+  // _initPanelTopbar holt im Panel auch die Glocke in die Leiste und blendet sie ein --
   // sonst bliebe sie versteckt, weil sie sonst erst mit einem VAPID-Schluessel erscheint.
-  _initPanelBackButton();
+  _initPanelTopbar();
   _initPanelTranslit();
   _initPanelShellKanal();
 });
@@ -13913,14 +13850,13 @@ document.addEventListener('visibilitychange', async () => {
        weil `href` allein im Panel nichts zeichnet -- derselbe Fund. -->
   <button type="button" onclick="_paketHinweisWeg()" aria-label="Hinweis ausblenden"><svg class="icon"><use href="#icon-x" xlink:href="#icon-x"/></svg></button>
 </div>
-<button id="panel-back-btn" class="panel-back-btn" hidden onclick="panelGoBack()"><svg class="icon"><use href="#icon-arrow-left" xlink:href="#icon-arrow-left"/></svg> Zur&uuml;ck</button>
 <!-- Vereinheitlichte Kopf-/Tab-Leiste (nur MSFS-EFB-Panel, v11.15.0): leer im Markup, JS
-     (_initPanelBackButton) haengt Zurueck-Knopf, die vier echten Tab-Buttons und die
-     Verbindungsanzeige hier ein. Steht bewusst AUSSERHALB von #app (wie die drei Knoepfe
-     darueber) -- #app hat "position:relative; z-index:1" und wuerde sonst jeden Nachfahren
-     unabhaengig von dessen eigenem z-index auf Rang 1 kappen, der Zurueck-Knopf waere dann
-     hinter jedem Modal-Overlay (z-index 10000) verschwunden (gemessen mit Playwright:
-     elementFromPoint traf ueber einem offenen Fenster das Modal, nicht den Knopf). -->
+     (_initPanelTopbar) haengt die vier echten Tab-Buttons und die Glocke hier ein. Steht
+     bewusst AUSSERHALB von #app (wie die Knoepfe darueber) -- #app hat "position:relative;
+     z-index:1" und wuerde sonst jeden Nachfahren unabhaengig von dessen eigenem z-index auf
+     Rang 1 kappen. Das war entscheidend, solange hier der Zurueck-Knopf hing (er waere hinter
+     jedem Modal-Overlay verschwunden, gemessen mit Playwright); es bleibt richtig, damit die
+     Leiste ueberhaupt eine eigene Ebene hat. -->
 <div id="panel-topbar" class="panel-topbar"></div>
 </body>
 </html>

@@ -224,12 +224,12 @@ def test_karten_layout_nutzt_kein_flex_gap():
 
 def test_panel_initialisierung_wartet_auf_das_fertige_dokument():
     """Die festen Knoepfe stehen HINTER dem Inline-Skript. Ein direkter Aufruf fand per
-    getElementById nur null -- _initPanelBackButton brach dann stumm an seiner eigenen Wache
-    ab, und der Zurueck-Knopf blieb fuer immer versteckt."""
-    assert "_initPanelBackButton();\n_initPanelTranslit();" not in INDEX
+    getElementById nur null -- _initPanelTopbar braeche dann stumm an seiner eigenen Wache
+    ab, und die Leiste bliebe leer."""
+    assert "_initPanelTopbar();\n_initPanelTranslit();" not in INDEX
     m = re.search(r"document\.addEventListener\('DOMContentLoaded', \(\) => \{\n"
                   r"(?:  //.*\n)*"                     # erklaerende Kommentare erlaubt
-                  r"  _initPanelBackButton\(\);\n  _initPanelTranslit\(\);\n"
+                  r"  _initPanelTopbar\(\);\n  _initPanelTranslit\(\);\n"
                   r"(?:.*\n)*?\}\);", INDEX)
     assert m, "Panel-Initialisierung haengt nicht an DOMContentLoaded"
     # Alles Weitere, was Elemente aus dem Dokument braucht, gehoert in denselben Block --
@@ -467,28 +467,55 @@ def test_vollbild_im_panel_zeigt_nur_die_karte():
     # die Zurueck-Leiste, auf der Website stand er als zweiter "Vollbild verlassen"-Knopf
     # neben dem ersten (Nutzer-Fund 14.08.2026).
     assert "global-map-exit-fs" not in INDEX
-    # panelGoBack muss das Vollbild weiterhin als ERSTE Stufe verlassen.
-    m = re.search(r"function panelGoBack\(\) \{(.*?)\n\}", INDEX, re.S)
-    assert m and "exitAnyMapFullscreen()" in m.group(1)
 
 
-def test_leiste_kommt_bei_offenem_fenster_zurueck():
-    """Der Ausgang aus dem Vollbild ist der Knopf IN der Karte -- und der liegt unter jedem
-    Modal (z-index 3000 gegen 10000). Wer aus dem Vollbild heraus ein Fenster oeffnet, saesse
-    ohne die Leiste fest. Sobald ein Fenster offen ist, kommt sie deshalb zurueck."""
+def test_die_leiste_bleibt_im_vollbild_einfach_weg():
+    """Sie kam bis 02.09.2026 zurueck, sobald ein Fenster offen war: Ihr Zurueck-Knopf war
+    der einzige Ausgang, der ueber einem Modal (z-index 10000 gegen 3000 der Karte) noch
+    erreichbar blieb. Mit dem Knopf ist auch dieser Grund entfallen -- jedes Fenster
+    schliesst ueber sein eigenes X, und das liegt im Fenster selbst, also oben auf."""
     m = re.search(r"function _vollbildKlassePflegen\(\) \{(.*?)\n\}", INDEX, re.S)
     assert m, "_vollbildKlassePflegen nicht gefunden"
     rumpf = m.group(1)
-    assert "map-is-fullscreen" in rumpf and "_panelOpenModal()" in rumpf, \
-        "die Bedingung muss BEIDES pruefen: Vollbild an UND kein Fenster offen"
-    assert "classList.toggle('karte-vollbild'" in rumpf
-    # Beide Wege ins und aus dem Vollbild muessen sie rufen -- und der Sekundentakt des
-    # Zurueck-Knopfs, weil Fenster an zu vielen Stellen auf- und zugehen.
-    for stelle in ("function toggleMapFullscreen", "function exitAnyMapFullscreen",
-                   "function _updatePanelBackBtn"):
+    assert "map-is-fullscreen" in rumpf and "classList.toggle(" in rumpf
+    assert "_panelOpenModal" not in rumpf
+    for stelle in ("function toggleMapFullscreen", "function exitAnyMapFullscreen"):
         block = INDEX[INDEX.index(stelle):]
         block = block[:block.index("\n}\n")]
         assert "_vollbildKlassePflegen()" in block, f"{stelle} ruft die Pflege nicht"
+
+
+def test_der_ausgang_heisst_nur_vollbild():
+    """Beide Zustaende tragen denselben Namen, nur das Zeichen wechselt (Nutzerwunsch
+    02.09.2026). Das X sagt bereits, dass es hinausgeht -- und "verlassen" kostete Breite in
+    einem Knopf, der seit dem Umbau mitten in der Karte steht statt in einer Leiste."""
+    assert "icon('x') + ' Vollbild' : icon('fullscreen') + ' Vollbild'" in INDEX
+    assert "Vollbild verlassen" not in _ohne_kommentare(INDEX)
+
+
+def test_der_zurueck_knopf_ist_ersatzlos_entfallen():
+    """Nutzerwunsch 02.09.2026: "den Back-Button brauchen wir nicht mehr".
+
+    Er entstand am 13.08.2026 als Notausgang -- wer ein Fenster oeffnete, war auf dessen
+    eigenen Schliess-Knopf angewiesen, und wenn dem Font das Glyph fehlte, sass man fest.
+    Beide Gruende sind erledigt: Die Fenster schliessen ueber `#icon-x` aus dem SVG-Sprite,
+    und das Karten-Vollbild hat seinen eigenen Ausgang in der Karte.
+
+    Der Test haelt vor allem die BEDINGUNG fest, unter der das richtig bleibt: Verliert auch
+    nur eines der sechs Fenster seinen eigenen Ausgang, ist der Knopf wieder noetig."""
+    for tot in ("panelGoBack", "_panelCanGoBack", "_updatePanelBackBtn", "_panelOpenModal"):
+        assert "function " + tot not in INDEX, tot + " lebt noch"
+    assert 'id="panel-back-btn"' not in INDEX
+    assert "const _PANEL_MODALS" not in INDEX
+    # Die Voraussetzung: jedes Fenster schliesst selbst, und zwar ueber das Sprite.
+    for modal, schliessen in (("ac-modal", "closeAcModal"), ("fp-modal", "closeFpModal"),
+                              ("track-modal", "closeTrackModal"), ("fld-modal", "closeFldModal"),
+                              ("changelog-modal", "closeChangelogModal"),
+                              ("types-modal", "closeTypesModal")):
+        stelle = INDEX.index('id="' + modal + '"')
+        block = INDEX[stelle:stelle + 4000]
+        assert 'onclick="' + schliessen + '()"' in block, modal + " hat keinen eigenen Ausgang"
+        assert 'use href="#icon-x"' in block, modal + " schliesst nicht ueber das Sprite"
 
 
 def test_leaflet_bedienelemente_weichen_der_tablet_statusleiste_aus():
@@ -576,24 +603,25 @@ def test_panel_topbar_haengt_ausserhalb_von_app():
     bestehende <nav class="tab-nav"> (die IN #app steckt) umbauen, verschwaende der
     Zurueck-Knopf hinter jedem Modal (z-index 10000) -- genau die Situation, die er loesen
     soll. #panel-topbar muss deshalb als eigenes Element NACH dem schliessenden </script>
-    stehen, wie die anderen schwebenden Knoepfe davor (
-    #panel-update-hint, #panel-back-btn) -- alle vier sind Geschwister von #app, nicht
-    seine Nachfahren."""
+    stehen, wie die anderen schwebenden Knoepfe davor (#panel-update-hint) -- sie alle sind
+    Geschwister von #app, nicht seine Nachfahren.
+
+    Der Zurueck-Knopf, um den es dabei ging, ist am 02.09.2026 entfallen. Der Ort bleibt
+    trotzdem richtig: Die Leiste braucht ihre eigene Stapel-Ebene, sonst kappte #app sie auf
+    Rang 1."""
     # rindex, nicht index: ganz am Dateianfang steht bereits ein winziges Inline-<script>
     # fuer die vr-panel-Erkennung (s. Kommentar dort), dessen </script> waere hier ein
     # falsch-positiver erster Treffer.
     script_ende = INDEX.rindex("</script>")
     topbar_stelle = INDEX.index('<div id="panel-topbar"')
     app_oeffnung = INDEX.index('<div id="app"')
-    zurueck_knopf_stelle = INDEX.index('id="panel-back-btn"')
     assert topbar_stelle > script_ende, "#panel-topbar muss hinter dem Inline-Skript stehen"
     # #app oeffnet weit vor dem Skript-Ende (Kopfzeile/Tabs/Tab-Panels stehen alle darin) --
     # #panel-topbar dagegen erst danach, zusammen mit den uebrigen schwebenden Knoepfen.
     assert app_oeffnung < script_ende
-    assert zurueck_knopf_stelle < topbar_stelle
 
 
-def test_zurueck_knopf_tabs_und_glocke_wandern_per_js_in_die_topbar():
+def test_tabs_und_glocke_wandern_per_js_in_die_topbar():
     """Verschieben statt Duplizieren: dieselben Elemente (gleiche ID/Klasse), keine zweite
     Wahrheit -- bestehende Klick-Handler (data-tab) und der SSE-Status-Updater laufen
     unveraendert weiter, weil es keine Kopien sind.
@@ -602,39 +630,40 @@ def test_zurueck_knopf_tabs_und_glocke_wandern_per_js_in_die_topbar():
     ueber ihre Farbe dasselbe und ist zusaetzlich der Weg zu den Kategorie-Schaltern. Ein
     Punkt daneben, der nur den Zustand wiederholt, waere im Cockpit verschenkter Platz.
     #sse-badge bleibt in der ausgeblendeten Kopfzeile -- ausblenden statt entfernen, damit
-    setSSEStatus unveraendert weiterschreiben kann."""
-    m = re.search(r"function _initPanelBackButton\(\) \{(.*?)\n\}", INDEX, re.S)
-    assert m, "_initPanelBackButton nicht gefunden"
+    setSSEStatus unveraendert weiterschreiben kann.
+
+    Der Zurueck-Knopf wanderte bis 02.09.2026 als erster mit; er ist ersatzlos entfallen."""
+    m = re.search(r"function _initPanelTopbar\(\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_initPanelTopbar nicht gefunden"
     rumpf = m.group(1)
     assert "getElementById('panel-topbar')" in rumpf
-    assert "topbar.appendChild(btn);" in rumpf
     assert "querySelectorAll('.tab-btn').forEach(" in rumpf
     assert "topbar.appendChild(t);" in rumpf
     assert "topbar.appendChild(glocke)" in rumpf
     assert "topbar.appendChild(sseBadge)" not in rumpf
+    # KEINE Wache auf den alten Knopf mehr: Sie stand vor dem Verschieben und haette die
+    # Leiste leer gelassen, sobald das Element fehlt.
+    assert "getElementById('panel-back-btn')" not in rumpf
 
 
-def test_versteckt_knopf_gewinnt_gegen_die_flex_regel():
-    """Regression, beim Bau selbst gefunden (Playwright-Messung: Knopf blieb trotz
-    hidden=true 102x59px gross): eine allgemeine Flex-Regel fuer den Knopf IN der Leiste hat
-    per CSS-Spezifitaet mehr Gewicht als das einfache '.panel-back-btn[hidden]' von vorher
-    und ueberschrieb dessen 'display:none'. Der gezielte Override muss existieren."""
-    assert "html.vr-panel .panel-topbar .panel-back-btn[hidden] { display: none; }" in INDEX
+def test_die_klasse_panel_has_back_bleibt_verschwunden():
+    """Der frueher schwebende Zurueck-Balken schaltete den Seiten-Abstand per
+    `.panel-has-back` um. Seit die Leiste permanent steht, reserviert festes CSS den Platz --
+    ein Klassenschalter daneben waere eine zweite Wahrheit ueber dieselbe Hoehe.
 
-
-def test_back_button_logik_ohne_klassenschalter():
-    """Seit die Leiste permanent steht, braucht es kein '.panel-has-back' mehr, das den
-    Seiten-Abstand per Klasse umschaltet -- nur noch der Knopf selbst blendet sich ein/aus."""
-    m = re.search(r"function _updatePanelBackBtn\(\) \{(.*?)\n\}", INDEX, re.S)
-    assert m, "_updatePanelBackBtn nicht gefunden"
-    rumpf = m.group(1)
-    assert "classList.toggle('panel-has-back'" not in rumpf
-    assert "btn.hidden = !_panelCanGoBack();" in rumpf
-    # Die Klasse darf nirgends mehr GESETZT (JS) oder als CSS-Selektor benutzt werden --
-    # Kommentare, die den alten Namen zur Einordnung noch nennen, sind kein Fund hier.
+    Hier stand bis 02.09.2026 zusaetzlich ein Test, der einen Spezifitaets-Konflikt am
+    versteckten Knopf festhielt (Playwright: Knopf blieb trotz hidden=true 102x59px gross).
+    Mit dem Knopf ist er gegenstandslos geworden."""
     assert "classList.toggle('panel-has-back'" not in INDEX
     assert "panel-has-back body" not in INDEX
     assert "html.vr-panel.panel-has-back" not in INDEX
+
+
+def test_die_leiste_reserviert_ihren_platz_per_festem_css():
+    """Kein JS-Klassenschalter mehr fuer den Seiten-Abstand: Die Leiste steht konstant, also
+    steht auch der Abstand konstant im CSS."""
+    hoehe = re.search(r"html\.vr-panel body \{ padding-top: (\d+)px; \}", INDEX)
+    assert hoehe, "Leistenhoehe (body padding-top) nicht gefunden"
 
 
 def test_karten_zellen_ohne_flexbox():
@@ -836,9 +865,9 @@ def test_glocke_steht_in_der_panel_leiste():
     { display: none }`) -- die Glocke darin war damit unerreichbar, obwohl sie per JS
     eingeblendet wurde. Ein lokaler Test hatte das nicht gefangen, weil er den Knopf per
     JavaScript geklickt hat statt mit der Maus: die Funktion lief, das Element war unsichtbar.
-    Sie muss deshalb wie Zurueck-Knopf und Tabs in die Panel-Leiste wandern."""
-    m = re.search(r"function _initPanelBackButton\(\) \{\n(.*?)\n\}\n", INDEX, re.S)
-    assert m, "_initPanelBackButton nicht gefunden"
+    Sie muss deshalb wie die Tabs in die Panel-Leiste wandern."""
+    m = re.search(r"function _initPanelTopbar\(\) \{\n(.*?)\n\}\n", INDEX, re.S)
+    assert m, "_initPanelTopbar nicht gefunden"
     block = m.group(1)
     assert "getElementById('notif-btn')" in block
     assert "topbar.appendChild(glocke)" in block
@@ -912,28 +941,33 @@ def test_ersatzanzeige_wartet_auf_die_bestaetigung():
 def test_panel_leiste_ist_englisch_beschriftet():
     """Kurze englische Namen NUR im Panel (die Website bleibt deutsch): Sie sind kuerzer, und
     der gewonnene Platz geht in groessere Schrift -- in VR war die Leiste schlecht zu lesen
-    (Nutzer, 14.08.2026). Gemessen bei echter Tablet-Breite (413 CSS-Pixel): BACK 154,
-    Tabs zusammen 214, Glocke 44 -- kein Ueberlauf."""
+    (Nutzer, 14.08.2026). Gemessen bei echter Tablet-Breite (413 CSS-Pixel), damals mit dem
+    Zurueck-Knopf: BACK 154, Tabs zusammen 214, Glocke 44 -- kein Ueberlauf. Seit dem Wegfall
+    des Knopfes am 02.09.2026 teilen sich die vier Tabs dessen 154 Pixel mit."""
     assert "_PANEL_TAB_TEXT = { live: 'LIVE', karte: 'MAP', statistiken: 'STATS', events: 'EVENTS' }" in INDEX
-    assert "_panelBeschriftung(btn, 'BACK')" in INDEX
+    assert "_panelBeschriftung(btn, 'BACK')" not in INDEX
     # Die Website behaelt ihre deutschen Beschriftungen.
     # Nur die Beschriftung festnageln, nicht das Symbol-Markup dazwischen -- sonst bricht der
     # Test bei jeder Aenderung an den Sprite-Verweisen (passiert beim xlink-Fix).
     assert re.search(r'data-tab="statistiken">.*?STATISTIKEN', INDEX), \
         "die Website muss ihre deutschen Tab-Beschriftungen behalten"
-    assert 'Zur&uuml;ck</button>' in INDEX
+    # Der deutsche Zurueck-Knopf ist mit dem Knopf selbst entfallen.
+    assert 'Zur&uuml;ck</button>' not in INDEX
 
 
 def test_panel_leiste_ist_in_vr_lesbar_dimensioniert():
-    """Die Ausgangswerte (Tabs 0.62rem, Zurueck 0.65rem) waren im Headset zu klein. Der
-    Zurueck-Knopf bekommt zusaetzlich den Platz, den die Tabs uebriglassen -- er ist im
-    Cockpit das haeufigste Ziel."""
-    tabs = re.search(r"html\.vr-panel \.panel-topbar \.tab-btn \{(.*?)\}", INDEX, re.S)
-    assert tabs and "font-size: 0.85rem" in tabs.group(1)
-    assert "flex: 0 1 auto" in tabs.group(1), "Tabs duerfen den Platz nicht mehr aufteilen"
-    zurueck = re.search(r"html\.vr-panel \.panel-topbar \.panel-back-btn \{(.*?)\}", INDEX, re.S)
-    assert zurueck and "font-size: 0.95rem" in zurueck.group(1)
-    assert "flex: 1 1 auto" in zurueck.group(1), "Zurueck-Knopf bekommt den Rest nicht"
+    """Die Ausgangswerte (Tabs 0.62rem) waren im Headset zu klein.
+
+    `flex: 1 1 0` verteilt die Breite gleichmaessig von der Grundlage null aus, nicht nach
+    Textlaenge -- sonst bekaeme "EVENTS" mehr Platz als "MAP" (Nutzerwunsch 02.09.2026:
+    "achte dann auf die Breiten des Menues, anzeigen wie auf dem Live-Tab"). Bis dahin stand
+    hier `0 1 auto`, und die gleichmaessige Verteilung galt nur, solange der Zurueck-Knopf
+    ausgeblendet war."""
+    tabs = re.search(r"html\.vr-panel \.panel-topbar \.tab-btn \{(.*?)\n    \}", INDEX, re.S)
+    assert tabs, "Tab-Regel der Panel-Leiste nicht gefunden"
+    assert "font-size: 0.85rem" in tabs.group(1)
+    assert "flex: 1 1 0" in tabs.group(1), "die vier Ansichten muessen sich den Platz teilen"
+    assert "flex: 0 1 auto" not in tabs.group(1), "die alte Verteilung nach Textlaenge lebt noch"
     # Symbole in den Tabs entfallen -- sonst passen Symbol UND Text nicht mehr nebeneinander.
     assert "html.vr-panel .panel-topbar .tab-btn .icon { display: none; }" in INDEX
 
@@ -948,12 +982,12 @@ def test_glocke_bleibt_rechts_auch_ohne_zurueck_knopf():
     assert "margin-left: auto;" in m.group(1)
 
 
-def test_tabs_fuellen_die_leiste_wenn_kein_zurueck_knopf_da_ist():
-    """Ohne Zurueck-Knopf traegt niemand mehr die Breitenverteilung -- dann sollen sich die
-    vier Ansichten den Platz gleichmaessig teilen statt links zusammenzurutschen
-    (Nutzerwunsch 14.08.2026). Ueber den Geschwister-Kombinator, weil der Knopf im Markup vor
-    den Tabs steht: kein JavaScript noetig, der Zustand steht im hidden-Attribut."""
-    assert "html.vr-panel .panel-topbar .panel-back-btn[hidden] ~ .tab-btn { flex: 1 1 0; }" in INDEX
+def test_die_breitenverteilung_haengt_an_keiner_bedingung_mehr():
+    """Sie hing bis 02.09.2026 am ausgeblendeten Zurueck-Knopf
+    (`.panel-back-btn[hidden] ~ .tab-btn`) und galt deshalb nur, solange es nichts zu
+    verlassen gab. Mit dem Knopf ist die Bedingung entfallen -- es gibt niemanden mehr, der
+    sich den Rest nehmen koennte."""
+    assert ".panel-back-btn[hidden] ~ .tab-btn" not in _ohne_kommentare(INDEX)
 
 
 def test_schriftzug_sitzt_zwischen_glocke_und_uhr_des_tablets():
@@ -2608,24 +2642,25 @@ def test_windanzeige_nur_im_kniebrett_und_richtungstreu():
     assert 'd="M12 2.5 L7.4 8.8 L12 6.9 L16.6 8.8 Z"' in INDEX
 
 
-def test_windanzeige_wechselt_im_vollbild_die_ecke():
-    """Normal oben links UEBER den Zoomknoepfen, im Vollbild oben rechts (Nutzerwunsch
-    02.09.2026).
+def test_windanzeige_steht_immer_oben_links_ueber_dem_zoom():
+    """Ein fester Ort in beiden Zustaenden (Nutzerwunsch 02.09.2026) -- die Anzeige springt
+    beim Umschalten nicht mehr durchs Bild.
 
-    Das Umhaengen ist noetig, weil Leaflet die Bedienelemente einer Ecke in der Reihenfolge
-    stapelt, in der sie dazukommen -- der Zoomknopf entsteht schon beim Anlegen der Karte.
-    Unten links ist NIRGENDS der richtige Platz: Dort sitzt der Vollbild-Knopf, der als
-    `position:absolute` gar nicht in Leaflets Ecken-Raster liegt und die Anzeige verdeckt
-    haette. Bis 02.09.2026 stand sie im Vollbild trotzdem dort -- damals war der Knopf im
-    Kniebrett ausgeblendet, die Ecke also frei. Seit die Leiste im Vollbild verschwindet,
-    ist der Knopf der Ausgang und steht wieder da."""
-    m = re.search(r"function _windPlatzieren\(imVollbild\) \{(.*?)\n\}", INDEX, re.S)
+    Sie WANDERTE zweimal, und beide Gruende sind entfallen: erst nach unten links, weil dort
+    im Kniebrett-Vollbild Platz war (der Vollbild-Knopf war ausgeblendet), dann nach oben
+    rechts, weil der Knopf als Ausgang dorthin zurueckkam.
+
+    Das Umhaengen INNERHALB der Ecke bleibt noetig: Leaflet stapelt die Bedienelemente in der
+    Reihenfolge, in der sie dazukommen, und der Zoomknopf entsteht schon beim Anlegen der
+    Karte -- ohne insertBefore saesse der Wind darunter."""
+    m = re.search(r"function _windPlatzieren\(\) \{(.*?)\n\}", INDEX, re.S)
     assert m, "_windPlatzieren nicht gefunden"
     rumpf = m.group(1)
-    assert "imVollbild ? 'topright' : 'topleft'" in rumpf
+    assert "_windControl.setPosition('topleft')" in rumpf
+    assert "bottomleft" not in rumpf and "topright" not in _ohne_kommentare(rumpf)
     assert "ecke.insertBefore(_windKnopf, ecke.firstChild)" in rumpf, \
         "ohne Umhaengen sitzt die Anzeige UNTER den Zoomknoepfen"
-    assert "if (wrapId === _ZUSTAND_KARTE_WRAP) _windPlatzieren(isFs);" in INDEX, \
+    assert "if (wrapId === _ZUSTAND_KARTE_WRAP) _windPlatzieren();" in INDEX, \
         "der Vollbild-Wechsel muss die Anzeige mitnehmen"
 
 
