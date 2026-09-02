@@ -86,6 +86,16 @@ def test_liste_liefert_beide_sorten(client):
     assert karten[0]["bild"].startswith("/aip-chart-dfs/EDDL/")
 
 
+def test_liste_liefert_die_platzhoehe(client):
+    """Die Bodenkarten schalten seit 02.09.2026 nach der Hoehe UEBER GRUND. Der Simulator
+    meldet Fuss ueber MSL -- ohne die Platzhoehe an der Karte liesse sich daraus nichts
+    rechnen, und ein Abruf je Platz mitten im Landeanflug waere der falsche Zeitpunkt."""
+    c, db, _tmp = client
+    _karte(db, "EDAC", "flugplatzkarte")
+    karten = c.get("/api/aip-charts-dfs").json()["charts"]
+    assert karten and karten[0]["elev_ft"] == 640.0
+
+
 def test_offene_karte_erscheint_nicht_in_der_oeffentlichen_liste(client):
     """Eine Karte, die falsch liegt, ist schlimmer als gar keine."""
     c, db, _tmp = client

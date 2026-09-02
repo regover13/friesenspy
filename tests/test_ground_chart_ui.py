@@ -310,3 +310,40 @@ def test_ohne_leaflet_rotate_faellt_der_pane_auf_die_vorgabe_zurueck():
     stelle = RUMPF.index("createPane(_PLATZRUNDEN_PANE")
     zeile = RUMPF[stelle:stelle + 220]
     assert "||" in zeile, "kein Rueckfall, wenn rotatePane fehlt"
+
+
+# --------------------------------------------------------------------------------------
+#  Hoehenschwelle (Nutzerwunsch 02.09.2026)
+# --------------------------------------------------------------------------------------
+def test_die_karte_erscheint_nur_tief_ueber_dem_platz():
+    """"Ich brauche die Flugplatzkarte in der Luft gar nicht. Auch nicht in der Platzrunde!"
+
+    Vorher entschied allein die Lage im Feld -- das ist die Huelle der Bahnen und hat keine
+    Decke: Wer in Reiseflughoehe darueber wegflog, bekam die Rollkarte eingeblendet."""
+    schwelle = re.search(r"const _GROUND_AGL_MAX_FT = (\d+);", RUMPF)
+    assert schwelle, "_GROUND_AGL_MAX_FT nicht gefunden"
+    assert int(schwelle.group(1)) == 100
+    block = _block("_groundTiefGenug")
+    # Ueber GRUND, nicht ueber MSL -- die Platzhoehe MUSS abgezogen werden.
+    assert "_simPos.alt - k.elev_ft" in block
+    assert "<= _GROUND_AGL_MAX_FT" in block
+    # Und die Pruefung muss in der Auswahl auch wirklich greifen.
+    assert "if (!_groundTiefGenug(k)) continue;" in _block("_groundNachfuehren")
+
+
+def test_ohne_verlaessliche_hoehe_bleibt_es_beim_feld():
+    """Der Weg ueber VATSIM liefert Druckhoehe bezogen auf 1013 hPa -- bei QNH 1000 rund
+    390 ft daneben, die Karte erschiene an einer 100-ft-Schwelle nie. Wo keine Sim-Hoehe
+    vorliegt, entscheidet weiterhin das Feld allein: lieber die alte Regel als eine falsche
+    Rechnung."""
+    block = _block("_groundTiefGenug")
+    assert "if (!_simPos || (Date.now() - _simPos.ts) >= _SIM_POS_MAX_ALTER_MS) return true;" in block
+    assert "if (_simPos.alt == null || k.elev_ft == null) return true;" in block
+
+
+def test_von_hand_angetippt_schlaegt_die_hoehe():
+    """Wer eine Karte antippt, will sie sehen -- auch in der Luft. Das Festnageln wird in
+    _groundNachfuehren VOR der Hoehenpruefung beantwortet und kehrt von dort zurueck."""
+    block = _block("_groundNachfuehren")
+    assert block.index("_groundFest") < block.index("_groundTiefGenug"), \
+        "die Hoehe darf ein ausdrueckliches Antippen nicht ueberstimmen"

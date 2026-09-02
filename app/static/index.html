@@ -10755,6 +10755,19 @@ const _GROUND_PREF_KEY = 'friesenspy_groundkarte';
 // 0,003 Grad statt der 0,02 der Sichtflugkarte: 2 km sind groesser als mancher Flugplatz.
 const _GROUND_HYSTERESE = 0.003;
 
+// HOEHE UEBER PLATZ -- die zweite Bedingung neben dem Feld (Nutzerwunsch 02.09.2026:
+// "Ich brauche die Flugplatzkarte in der Luft gar nicht. Auch nicht in der Platzrunde!").
+//
+// Vorher entschied allein die Lage im Feld, also in der Huelle der Bahnen. Die ist klein
+// (Median 2,1 km groesste Kante, groesstes Feld EDDM mit 4,9 x 7,2 km) -- aber sie hat keine
+// Decke: Wer in Reiseflughoehe darueber wegflog, bekam die Rollkarte eingeblendet, und beim
+// Abflug blieb sie, bis das Rechteck seitlich verlassen war.
+//
+// DIESELBE Schwelle in beide Richtungen, ausdruecklich ohne Hysterese in der Hoehe (der
+// Nutzer hat den Wert so gewaehlt). Wer laenger genau auf 100 ft steht, sieht die Karte
+// darum flackern -- beim Start und bei der Landung durchfaehrt man den Wert in Sekunden.
+const _GROUND_AGL_MAX_FT = 100;
+
 const _groundGruppe = L.layerGroup();
 let _groundKarten = null;
 
@@ -10813,6 +10826,28 @@ function _groundAttribution(k) {
  */
 function _groundRang(k) { return k.sorte === 'rollkarte' ? 0 : 1; }
 
+/**
+ * Ist das Flugzeug tief genug fuer eine Bodenkarte?
+ *
+ * Gemessen wird ueber GRUND: Der Simulator meldet `PLANE ALTITUDE` in Fuss ueber MSL, die
+ * Platzhoehe steht als `elev_ft` an der Karte (aus airportsdata, fuer alle 110 Blaetter
+ * vorhanden -- geprueft 02.09.2026).
+ *
+ * NUR mit der Sim-Hoehe, und das ist Absicht. Der Weg ueber VATSIM liefert Druckhoehe
+ * bezogen auf 1013 hPa: Bei QNH 1000 laege sie rund 390 ft daneben, die Karte erschiene an
+ * einer 100-ft-Schwelle nie. Wo keine verlaessliche Hoehe vorliegt -- am Schreibtisch, oder
+ * bei einem Kniebrett aelter als Paket 1.4.0, das noch keine Hoehe schickt --, entscheidet
+ * weiterhin das Feld allein. Lieber die alte Regel als eine falsche Rechnung.
+ *
+ * Wer eine Karte von Hand antippt, umgeht das ohnehin: `_groundFest` wird in
+ * _groundNachfuehren vor dieser Pruefung beantwortet.
+ */
+function _groundTiefGenug(k) {
+  if (!_simPos || (Date.now() - _simPos.ts) >= _SIM_POS_MAX_ALTER_MS) return true;
+  if (_simPos.alt == null || k.elev_ft == null) return true;
+  return (_simPos.alt - k.elev_ft) <= _GROUND_AGL_MAX_FT;
+}
+
 /** Liegt die Position im Feld? Das Feld ist die Huelle der Bahnen, nicht das Blatt. */
 function _groundImFeld(k, lat, lon, schonSichtbar) {
   const r = schonSichtbar ? _GROUND_HYSTERESE : 0;
@@ -10865,6 +10900,7 @@ function _groundNachfuehren() {
   let treffer = null;
   for (let i = 0; i < _groundKarten.length; i++) {
     const k = _groundKarten[i];
+    if (!_groundTiefGenug(k)) continue;
     if (!_groundImFeld(k, eigen.lat, eigen.lon, _groundSchluessel(k) === _groundAktiv)) continue;
     if (!treffer) { treffer = k; continue; }
     const d = function (x) {

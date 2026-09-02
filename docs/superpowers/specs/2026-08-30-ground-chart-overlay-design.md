@@ -440,6 +440,31 @@ Bahnen zuzüglich eines Saums von 1 km. Nach dem Drehen zeigt das Blatt viel fre
 und über der dürfte die Automatik nicht schon einschalten. Dieselbe Verwechslung steckte
 hinter dem 45-Prozent-Maßstabsfehler der Sichtflugkarten.
 
+**Nachtrag 02.09.2026 — das Feld allein genügt nicht.** Es ist ein Rechteck ohne Decke: Wer
+in Reiseflughöhe darüber wegflog, bekam die Rollkarte eingeblendet, und beim Abflug blieb sie
+liegen, bis das Rechteck seitlich verlassen war. Gemessen an den 110 Blättern in der
+Produktion ist das Feld im Median 2,1 km groß (größtes: EDDM mit 4,9 × 7,2 km) — klein genug,
+dass niemand es beim Anflug früh trifft, aber groß genug, dass man nach dem Start eine Weile
+darüber steht.
+
+Seither gilt zusätzlich eine **Höhe über Platz von 100 ft**, dieselbe Schwelle in beide
+Richtungen (Festlegung des Nutzers: „Ich brauche die Flugplatzkarte in der Luft gar nicht.
+Auch nicht in der Platzrunde!"). Drei Punkte, die daran hängen:
+
+- **Über GRUND, nicht über MSL.** Der Simulator meldet `PLANE ALTITUDE` in Fuß über MSL; die
+  Platzhöhe kommt als `elev_ft` mit der Kartenliste (`airport_elevation_ft`, für alle 110
+  Blätter vorhanden). Sie geht dort mit, statt einzeln nachgeladen zu werden — die Liste
+  kommt ohnehin genau einmal je Sim-Sitzung.
+- **Nur mit der Sim-Höhe.** Der Weg über VATSIM liefert Druckhöhe bezogen auf 1013 hPa: bei
+  QNH 1000 rund 390 ft daneben, die Karte erschiene an einer 100-ft-Schwelle nie. Fehlt eine
+  verlässliche Höhe — am Schreibtisch, oder bei einem Kniebrett älter als Paket 1.4.0 —,
+  entscheidet weiterhin das Feld allein.
+- **Antippen sticht die Höhe.** `_groundFest` wird in `_groundNachfuehren` vor der
+  Höhenprüfung beantwortet: Wer eine Karte ausdrücklich festnagelt, will sie sehen.
+
+Keine Hysterese in der Höhe, so gewählt. Wer länger genau auf 100 ft steht, sieht die Karte
+flackern; beim Start und bei der Landung durchfährt man den Wert in Sekunden.
+
 ---
 
 ## 7. Schutz der Handkorrektur

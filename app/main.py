@@ -450,6 +450,11 @@ async def aip_charts_dfs_liste():
     Steht der Hauptschalter auf aus, bleiben die Bodenkarten hier weg. Die Sperre gehoert
     auf den Server und nicht ins Frontend: Ein Kniebrett laedt diese Liste einmal je
     Sim-Sitzung und wird nie neu geladen -- was einmal drin war, bliebe sonst liegen.
+
+    ``elev_ft`` ist die Platzhoehe und traegt die Hoehenschwelle der Bodenkarten: Ohne sie
+    liesse sich aus der Hoehe ueber MSL, die der Simulator meldet, keine Hoehe ueber GRUND
+    rechnen. Sie geht hier mit, statt sie einzeln nachzuladen -- die Liste kommt ohnehin
+    genau einmal, und ein Abruf je Platz mitten im Landeanflug waere der falsche Zeitpunkt.
     """
     einst = get_settings()
     conn = get_connection(einst.DB_PATH)
@@ -466,6 +471,7 @@ async def aip_charts_dfs_liste():
          "feld_nord": k["feld_nord"], "feld_sued": k["feld_sued"],
          "feld_west": k["feld_west"], "feld_ost": k["feld_ost"],
          "airac": k["airac"],
+         "elev_ft": geo.airport_elevation_ft(k["icao"]),
          "bild": (f"/aip-chart-dfs/{k['icao']}/{k['sorte']}.png"
                   f"?h={str(k['bild_hash'])[:12]}")}
         for k in karten

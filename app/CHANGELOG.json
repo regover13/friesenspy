@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.12.0",
+    "date": "2026-09-02",
+    "highlight": false,
+    "title": "Flugplatzkarte erscheint erst dicht \u00fcber dem Platz",
+    "items": [
+      "\ud83d\udeeb Flugplatz- und Rollkarten blenden sich jetzt nach der H\u00f6he \u00fcber Platz ein und aus: unter 100 ft an, dar\u00fcber aus. Bisher z\u00e4hlte allein die Lage \u00fcber der Bahnenh\u00fclle \u2014 die hat keine Decke, also erschien die Rollkarte auch beim \u00dcberflug in Reiseflugh\u00f6he und blieb nach dem Start liegen, bis man das Rechteck seitlich verlassen hatte.",
+      "\ud83d\udccc Eine von Hand angetippte Karte bleibt davon unber\u00fchrt \u2014 sie ist auch in der Luft sichtbar, bis man sie wieder wegklickt.",
+      "\ud83d\udda5\ufe0f Am Schreibtisch \u00e4ndert sich nichts: Ohne die H\u00f6he aus dem Simulator entscheidet weiterhin die Lage allein. Die H\u00f6he \u00fcber VATSIM ist Druckh\u00f6he und l\u00e4ge je nach Luftdruck bis zu 400 ft daneben."
+    ]
+  },
+  {
     "version": "14.11.0",
     "date": "2026-09-02",
     "highlight": false,
