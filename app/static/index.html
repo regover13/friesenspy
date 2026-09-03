@@ -484,6 +484,60 @@
         } catch (_) { /* ebenso */ }
       }
 
+      /* Wie viel Platz hat die Seite wirklich?
+       *
+       * DREI Zahlen, nicht eine -- die Rechnung dazwischen war bisher eine Annahme:
+       *   - `w`/`h`       das Fenster, wie der Simulator es liefert.
+       *   - `cssW`/`cssH` was dem Layout davon bleibt. Auf dem Wurzelelement steht im
+       *                   Kniebrett `zoom: 1.35`; bisher haben wir die CSS-Breite daraus
+       *                   GERECHNET (w / 1.35). Gemessen ist besser: Sollte der Zoom
+       *                   irgendwann von der Flaeche abhaengen, stimmt die Division nicht
+       *                   mehr, und niemand saehe es.
+       *   - `zoom`        der tatsaechlich wirksame Wert, direkt vom Rechenwerk erfragt.
+       *
+       * Anlass: Engelhards Kniebrett zeigte riesige Knoepfe (Nutzer-Bild 02.09.2026). Die
+       * Messreihe ueber vier Nutzer ergab 318 bis 1093 CSS-Pixel Breite -- Faktor 3,4, waehrend
+       * unsere Tippziele mit festen 44px danebenstehen. Bevor daraus eine Formel wird, muss
+       * belegt sein, welche Groessen ueberhaupt vorkommen. */
+      function flaeche() {
+        var d = document.documentElement;
+        var zoom = null;
+        try { zoom = window.getComputedStyle(d).zoom || null; } catch (_) {}
+        return { w: window.innerWidth, h: window.innerHeight,
+                 cssW: d ? d.clientWidth : null, cssH: d ? d.clientHeight : null,
+                 zoom: zoom, dpr: window.devicePixelRatio || 1 };
+      }
+
+      /* Die Flaeche aendert sich WAEHREND des Fluges -- der Bericht oben laeuft nur einmal
+       * beim Laden und sieht davon nichts. Engelhards Werte springen regelmaessig zwischen
+       * 710x903 und 494x615; er fliegt in VR, und der Wechsel ins Headset ist der
+       * wahrscheinliche Anlass. Auch die Groessenstufe des Tablets (small/medium/large) laesst
+       * sich im laufenden Sim umstellen.
+       *
+       * Nur im Kniebrett: Am Schreibtisch zieht man Fenster staendig, das waere Rauschen.
+       * Entprellt und nur bei ECHTEM Wechsel, denn `panel_diag` haelt nur die letzten 500
+       * Eintraege -- eine Flut aus Zwischengroessen wuerde alles andere aus dem Puffer
+       * draengen, gerade die Berichte, wegen derer wir messen. */
+      function flaechenWacheStarten() {
+        if (!isPanel) return;
+        var letzte = null, timer = null;
+        try { var a = flaeche(); letzte = a.w + 'x' + a.h; } catch (_) {}
+        window.addEventListener('resize', function () {
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(function () {
+            try {
+              var f = flaeche();
+              var jetzt = f.w + 'x' + f.h;
+              if (jetzt === letzte) return;
+              letzte = jetzt;
+              var el = document.getElementById('app-version');
+              send({ kind: 'flaeche', appVersion: el ? el.textContent : null,
+                     url: location.href, isPanel: isPanel, viewport: f });
+            } catch (_) { /* Diagnose darf nie stoeren */ }
+          }, 900);
+        });
+      }
+
       function report() {
         if (sent) return;
         sent = true;
@@ -493,8 +547,7 @@
           appVersion: versionEl ? versionEl.textContent : null,
           url: location.href,
           isPanel: isPanel,
-          viewport: { w: window.innerWidth, h: window.innerHeight,
-                      dpr: window.devicePixelRatio || 1 },
+          viewport: flaeche(),
           screen: { w: (screen && screen.width) || null, h: (screen && screen.height) || null },
           css: probeCss(),
           features: probeFeatures(),
@@ -534,6 +587,9 @@
 
       // Nach dem Laden messen; genug Vorlauf, damit Fonts/Tabellen wirklich stehen.
       window.addEventListener('load', function () { setTimeout(report, 2500); });
+      // Die Wache dagegen sofort: Ein Wechsel in den Headset-Modus kann frueher kommen als
+      // der erste Bericht, und dann waere genau der Sprung nicht gemessen, um den es geht.
+      flaechenWacheStarten();
       // Sicherheitsnetz: Bleibt 'load' aus (haengendes Asset), trotzdem berichten.
       setTimeout(report, 12000);
     })();

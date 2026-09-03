@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.14.0",
+    "date": "2026-09-03",
+    "highlight": false,
+    "title": "Kniebrett meldet seine Gr\u00f6\u00dfe",
+    "items": [
+      "\ud83d\udcd0 Die Selbstdiagnose misst jetzt, wie viel Platz die Seite im Kniebrett wirklich hat \u2014 Fenster, davon verbleibende Layout-Fl\u00e4che und wirksamer Zoom, statt die Rechnung zu unterstellen. \u00c4nderungen im laufenden Flug (Wechsel ins Headset, andere Tablet-Gr\u00f6\u00dfe) werden nachgemeldet.",
+      "\ud83d\udd0e Hintergrund: Auf verschiedenen Kniebrettern stehen zwischen 318 und 1093 Pixel Breite zur Verf\u00fcgung \u2014 Faktor 3,4, w\u00e4hrend die Schaltfl\u00e4chen eine feste Gr\u00f6\u00dfe haben. Auf kleinen Tablets f\u00fcllen sie dadurch die halbe Karte, auf gro\u00dfen sind sie verloren. Die Messung ist die Grundlage daf\u00fcr, das zu beheben."
+    ]
+  },
+  {
     "version": "14.13.1",
     "date": "2026-09-02",
     "highlight": false,

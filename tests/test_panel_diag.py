@@ -230,3 +230,68 @@ class TestPanelDiagCid:
             assert list_panel_diag(conn)[0]["cid"] == 42
         finally:
             conn.close()
+
+
+# ---------------------------------------------------------------------------------------
+#  Flächenmessung im Panel (Quelltext) -- Nutzerfund 02.09.2026
+# ---------------------------------------------------------------------------------------
+# Engelhards Kniebrett zeigte riesige Knöpfe. Die Auswertung über vier Nutzer ergab 318 bis
+# 1093 CSS-Pixel Breite -- Faktor 3,4, während unsere Tippziele mit festen 44px danebenstehen.
+# Bevor daraus eine Formel wird, muss belegt sein, welche Flächen überhaupt vorkommen.
+import re as _re
+from pathlib import Path as _Path
+
+_INDEX = (_Path(__file__).resolve().parents[1] / "app" / "static"
+          / "index.html").read_text(encoding="utf-8")
+
+
+def _flaeche_block() -> str:
+    stelle = _INDEX.index("function flaeche()")
+    return _INDEX[stelle:_INDEX.index("\n      }", stelle)]
+
+
+def test_die_flaeche_wird_gemessen_statt_gerechnet():
+    """Drei Zahlen, nicht eine: das Fenster, was dem Layout davon bleibt, und der wirksame
+    Zoom.
+
+    Bisher haben wir die CSS-Breite aus der Fensterbreite GERECHNET (w / 1.35). Hinge der
+    Zoom irgendwann von der Fläche ab -- genau die Änderung, die hier vorbereitet wird --,
+    stimmte die Division nicht mehr, und niemand sähe es."""
+    block = _flaeche_block()
+    assert "window.innerWidth" in block and "window.innerHeight" in block
+    assert "clientWidth" in block and "clientHeight" in block, \
+        "was dem Layout bleibt, muss gemessen werden"
+    assert "getComputedStyle" in block and "zoom" in block, \
+        "der wirksame Zoom gehoert dazu, sonst ist die Rechnung wieder eine Annahme"
+    # Der Bericht beim Laden muss dieselbe Quelle benutzen -- zwei Messwege wären zwei
+    # Wahrheiten über dieselbe Zahl.
+    assert "viewport: flaeche()" in _INDEX
+
+
+def test_die_flaeche_wird_auch_waehrend_des_fluges_nachgemeldet():
+    """Der Bericht läuft einmal beim Laden. Engelhards Werte springen aber im Betrieb
+    zwischen 710x903 und 494x615 -- er fliegt in VR, und auch die Größenstufe des Tablets
+    lässt sich im laufenden Sim umstellen. Ohne Nachtrag sehen wir davon nichts."""
+    stelle = _INDEX.index("function flaechenWacheStarten()")
+    block = _INDEX[stelle:_INDEX.index("\n      }\n", stelle)]
+    assert "addEventListener('resize'" in block
+    assert "if (!isPanel) return;" in block, \
+        "am Schreibtisch zieht man Fenster staendig -- das waere Rauschen"
+    assert "setTimeout(" in block and "clearTimeout(" in block, "muss entprellt sein"
+    assert "if (jetzt === letzte) return;" in block, \
+        "nur ECHTE Wechsel melden, sonst laeuft der Ringpuffer voll"
+    assert "flaechenWacheStarten();" in _INDEX, "die Wache muss auch gestartet werden"
+
+
+def test_die_wache_startet_vor_dem_ersten_bericht():
+    """Der Bericht kommt 2,5 s nach `load`. Ein Wechsel ins Headset kann früher liegen --
+    dann wäre genau der Sprung nicht gemessen, um den es geht."""
+    wache = _INDEX.index("flaechenWacheStarten();\n")
+    bericht = _INDEX.index("setTimeout(report, 12000)")
+    assert wache < bericht
+
+
+def test_die_flaechenmeldung_traegt_eine_eigene_art():
+    """`kind` trennt die Meldungen in der Tabelle -- ohne eigene Art wäre der Nachtrag von
+    einem vollständigen Bericht nicht zu unterscheiden."""
+    assert "kind: 'flaeche'" in _INDEX
