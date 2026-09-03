@@ -237,13 +237,40 @@ class TestBindungNurMitBestaetigung:
         self._login(env)
         r = env.client.get(f"/auth/device?device={GERAET}", follow_redirects=False)
         assert r.status_code == 200
-        assert "Dieses Gerät dauerhaft anmelden?" in r.text
+        assert "Kniebrett dauerhaft anmelden?" in r.text
         # Entscheidend: Das blosse Aufrufen bindet NICHT.
         conn = get_connection(env.db)
         try:
             assert get_panel_device(conn, GERAET) is None
         finally:
             conn.close()
+
+    def test_die_seite_empfiehlt_das_merken_statt_davon_abzuraten(self, env):
+        """Umgebaut am 03.09.2026. Vorher standen zwei gleich grosse Knoepfe nebeneinander,
+        und darueber der Satz: "Wenn du diese Frage nicht erwartet hast ... auf Nein tippen."
+        Ein Erstnutzer erwartet sie aber NIE -- der Hinweis sollte vor einer untergeschobenen
+        Bindung schuetzen und riet damit im Normalfall zum Falschen.
+
+        Der Preis dafuer ist hoch: Ohne Bindung beginnt jeder Simulator-Start mit einer
+        Anmeldung, weil im Kniebrett kein Cookie den Neustart ueberlebt. Von fuenf
+        Kniebrett-Nutzern hatten drei keine Bindung.
+
+        Der Schutz bleibt vollstaendig -- gebunden wird weiterhin nur ueber den bestaetigten
+        POST mit Marke (s. die Tests darunter). Geaendert ist, wovor gewarnt wird: nicht mehr
+        vor der Frage selbst, sondern vor dem Fall, in dem sie unerwartet KOMMT."""
+        self._login(env)
+        r = env.client.get(f"/auth/device?device={GERAET}", follow_redirects=False)
+        text = r.text
+        assert "empfohlene Einstellung" in text, "die Empfehlung muss ausgesprochen werden"
+        assert "jedem</em> Start des Simulators erneut" in text, \
+            "was Ablehnen kostet, muss dastehen"
+        # Die alte, irrefuehrende Formulierung darf nicht zurueckkehren.
+        assert "Wenn du diese Frage nicht erwartet hast" not in text
+        # Die Warnung trifft jetzt den Angriffsfall: nicht im Simulator zu sitzen.
+        assert "nicht</strong> im Simulator" in text
+        # Und die beiden Antworten sind nicht mehr gleichrangig aufgemacht.
+        assert "button {" in text and "width:100%" in text
+        assert "a.nein {" in text and "border:none" in text
 
     def test_bindung_mit_gueltiger_marke(self, env):
         token = self._login(env)

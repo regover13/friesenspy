@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.15.0",
+    "date": "2026-09-03",
+    "highlight": false,
+    "title": "Kniebrett-Anmeldung: das Merken wird empfohlen",
+    "items": [
+      "\ud83d\udd12 Die Frage \u201eKniebrett dauerhaft anmelden?\u201c nach dem Login sagt jetzt, was Ablehnen kostet: ohne sie fragt FriesenSpy bei jedem Start des Simulators erneut nach der Anmeldung. Bisher riet der Hinweis dort, abzulehnen, \u201ewenn du diese Frage nicht erwartet hast\u201c \u2014 erwartet hat sie beim ersten Mal aber niemand.",
+      "\ud83d\udee1\ufe0f Gewarnt wird weiterhin, nur vor dem richtigen Fall: davor, die Frage zu best\u00e4tigen, w\u00e4hrend man gar nicht im Simulator sitzt. Am Schutz selbst \u00e4ndert sich nichts \u2014 angemeldet wird ein Ger\u00e4t nach wie vor nur \u00fcber die best\u00e4tigte R\u00fcckfrage."
+    ]
+  },
+  {
     "version": "14.14.0",
     "date": "2026-09-03",
     "highlight": false,

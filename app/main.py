@@ -2525,25 +2525,37 @@ async def auth_device(request: Request, device: str = "", next: str = "/panel",
  h1 {{ color:#2d9cdb; font-size:1.2rem; letter-spacing:0.08em; margin:0 0 14px; }}
  p {{ line-height:1.6; font-size:0.95rem; }}
  .hinweis {{ color:#6b9ab8; font-size:0.82rem; }}
- button, a.nein {{ font-family:'Exo 2',sans-serif; font-size:0.9rem; letter-spacing:0.08em;
-         padding:14px 22px; min-height:44px; cursor:pointer; display:inline-block;
-         text-decoration:none; margin-top:18px; }}
- button {{ background:#2d9cdb; color:#04080f; border:none; font-weight:700; }}
- a.nein {{ background:transparent; color:#6b9ab8; border:1px solid rgba(45,156,219,0.3);
-           margin-left:10px; }}
+ button, a.nein {{ font-family:'Exo 2',sans-serif; letter-spacing:0.08em;
+         min-height:44px; cursor:pointer; text-decoration:none; }}
+ /* Die beiden sind NICHT gleichwertig, und das muss man sehen.
+
+    Vorher standen sie als zwei gleich grosse Knoepfe nebeneinander, und der Hinweis darueber
+    riet ausdruecklich zum Ablehnen, "wenn du diese Frage nicht erwartet hast" -- ein
+    Erstnutzer erwartet sie aber nie. Von fuenf Kniebrett-Nutzern hatten drei keine Bindung
+    (Stand 03.09.2026); ohne sie beginnt jeder Simulator-Start mit einer Anmeldung.
+
+    Jetzt: "Ja" ist der Knopf, "Nein" steht als schlichter Text darunter -- erreichbar, aber
+    nicht gleichrangig. Die Trefferflaeche bleibt bei 44px, im Cockpit wird getippt. */
+ button {{ display:block; width:100%; margin-top:22px; padding:14px 22px;
+           background:#2d9cdb; color:#04080f; border:none; font-weight:700;
+           font-size:1rem; }}
+ a.nein {{ display:block; margin-top:14px; padding:12px; text-align:center;
+           background:transparent; color:#6b9ab8; border:none; font-size:0.82rem; }}
 </style></head><body><div class="box">
-<h1>Dieses Gerät dauerhaft anmelden?</h1>
+<h1>Kniebrett dauerhaft anmelden?</h1>
 <p>Angemeldet als <strong>{name}</strong>.</p>
-<p>Danach meldet sich FriesenSpy auf diesem Simulator von selbst an — auch nach einem
-Neustart. Du kannst das jederzeit im Admin-Bereich wieder entziehen.</p>
-<p class="hinweis">Wenn du diese Frage nicht erwartet hast, z.&nbsp;B. weil du einem Link
-gefolgt bist: auf „Nein“ tippen. Es wird dann nichts gespeichert.</p>
+<p>FriesenSpy meldet sich auf diesem Simulator dann von selbst an — auch nach einem
+Neustart. <strong>Das ist die empfohlene Einstellung fürs Cockpit.</strong></p>
+<p>Ohne sie fragt FriesenSpy bei <em>jedem</em> Start des Simulators erneut nach deiner
+Anmeldung, mitten in der Flugvorbereitung. Entziehen kannst du sie jederzeit im Admin-Bereich.</p>
+<p class="hinweis">Nur ablehnen, wenn du gerade <strong>nicht</strong> im Simulator sitzt —
+etwa weil du einem Link aus einer Nachricht gefolgt bist. Dann wird nichts gespeichert.</p>
 <form id="f" method="post" action="/auth/device/bind">
   <input type="hidden" name="device" value="{_html.escape(device)}">
   <input type="hidden" name="next" value="{_html.escape(dest)}">
   <input type="hidden" name="csrf" value="{marke}">
-  <button type="submit">Ja, Gerät merken</button>
-  <a class="nein" href="{_html.escape(dest)}">Nein, nur diesmal</a>
+  <button type="submit">Ja, dieses Kniebrett merken</button>
+  <a class="nein" href="{_html.escape(dest)}">Nein, nur für diesen Start</a>
 </form>
 <script>
 // Absenden per fetch statt klassischer Formular-Navigation. Grund (Live-Fund 13.08.2026):
