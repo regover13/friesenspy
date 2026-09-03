@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.18.0",
+    "date": "2026-09-03",
+    "highlight": false,
+    "title": "Kleines Kniebrett-Fenster: alles wird mitverkleinert",
+    "items": [
+      "\ud83d\udd0d Im frei schwebenden Tablet richtet sich die Darstellung jetzt nach der Fenstergr\u00f6\u00dfe. Bisher galt \u00fcberall derselbe feste Wert \u2014 im kleinsten Fenster nahm dadurch ein einzelner Knopf samt Zoomspalte fast ein Viertel der Breite ein und der Deckkraftregler reichte \u00fcber die halbe Karte.",
+      "\ud83d\udccc Nur nach unten: Am angedockten Tablet und in VR bleibt alles unver\u00e4ndert. Dort ist dieselbe Ansicht nur feiner aufgel\u00f6st, nicht gr\u00f6\u00dfer \u2014 mitzuwachsen h\u00e4tte kaputtgemacht, was funktioniert.",
+      "\ud83d\udcc4 Sichtflug- und Flugplatzkarte nennen ihre Quelle jetzt gleichlautend und belegen damit eine Zeile statt zwei. Fehlt einer Karte das AIRAC-Datum, entf\u00e4llt der Zusatz, statt als \u201eAIRAC ?\" Platz zu kosten."
+    ]
+  },
+  {
     "version": "14.17.0",
     "date": "2026-09-03",
     "highlight": false,

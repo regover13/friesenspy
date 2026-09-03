@@ -462,7 +462,8 @@ def test_vollbild_im_panel_zeigt_nur_die_karte():
     # Der Knopf in der Karte darf NICHT mehr ausgeblendet werden -- er ist jetzt der Ausgang.
     assert "html.vr-panel .map-is-fullscreen .map-fullscreen-btn { display: none" not in INDEX
     # ... und er muss ueber Leaflets Herkunftsangabe liegen, die unten links entlanglaeuft.
-    assert "html.vr-panel .map-is-fullscreen .map-fullscreen-btn { z-index: 1200; }" in INDEX
+    assert "html.vr-panel .map-is-fullscreen .map-fullscreen-btn { z-index: 1050; }" in INDEX, \
+        "zwischen Herkunftsangabe (1000) und Ebenen-Auswahl (1100)"
     # Der zweite, eigene Notausgang unten rechts ist ganz entfallen: im Panel uebernimmt
     # die Zurueck-Leiste, auf der Website stand er als zweiter "Vollbild verlassen"-Knopf
     # neben dem ersten (Nutzer-Fund 14.08.2026).
@@ -562,6 +563,9 @@ def test_der_folge_knopf_haengt_nicht_im_stapel_der_herkunftsangabe():
     assert "position: absolute" in regel, "ohne absolute bleibt er im Stapel"
     assert "bottom: 10px" in regel and "right: 10px" in regel
     assert "margin: 0 !important" in regel, "Leaflets eigene Raender muessen weg"
+    # ... und UEBER die Herkunftsangabe, die in derselben Ecke sitzt und von Leaflet zuletzt
+    # eingefuegt wird -- sonst gewinnt sie den Gleichstand (Nutzer-Bild 03.09.2026).
+    assert "z-index: 2;" in regel, "sonst liegt der Knopf unter der Lizenzangabe"
     # Der Gegenpart unten links sitzt auf derselben Zahl.
     knopf = re.search(r"\n    \.map-fullscreen-btn \{([^}]*)\}", INDEX, re.S)
     assert knopf and "bottom: 10px" in knopf.group(1)
@@ -2716,7 +2720,8 @@ def test_die_herkunftsangabe_wird_verdeckt_aber_nie_ausgeblendet():
     Die Namensnennung SELBST bleibt in jedem Fall: Sie ist Lizenzbedingung der Kartenquellen
     und wird nirgends ausgeblendet -- verdeckt wird immer nur der Platz des eigenen Kastens,
     der uebrige Text bleibt stehen."""
-    assert "html.vr-panel .map-is-fullscreen .map-fullscreen-btn { z-index: 1200; }" in INDEX
+    assert "html.vr-panel .map-is-fullscreen .map-fullscreen-btn { z-index: 1050; }" in INDEX, \
+        "zwischen Herkunftsangabe (1000) und Ebenen-Auswahl (1100)"
     assert "display: none" not in _regel_von(".leaflet-control-attribution"), \
         "die Herkunftsangabe darf nicht verschwinden -- sie ist Lizenzbedingung"
 
@@ -3025,3 +3030,63 @@ def test_gesperrte_ebene_ist_im_kniebrett_zu_erkennen():
     Eine Ebene, die nicht reagiert und dabei normal aussieht, kostet Stunden."""
     assert "html.vr-panel .leaflet-control-layers-selector:disabled" in INDEX
     assert ".leaflet-control-layers-selector:disabled) {" in INDEX
+
+
+# ==========================================================================================
+#  Zoom nach der Fläche (Nutzerwunsch 03.09.2026)
+# ==========================================================================================
+def _zoom_block() -> str:
+    stelle = INDEX.index("function panelZoomSetzen()")
+    return INDEX[stelle:INDEX.index("\n      }", stelle)]
+
+
+def test_der_zoom_folgt_der_flaeche_aber_nur_nach_unten():
+    """Das Kniebrett ist nicht eine Größe, sondern sechs -- gemessen über vier Nutzer:
+    angedockt 468, freies Fenster in 2D 242/298/352, in VR 750/894/1035, bei einem anderen
+    Nutzer bis 1475 Pixel.
+
+    NUR NACH UNTEN, und das ist der Kern: Der Nutzer ist mit dem angedockten Tablet UND mit
+    VR zufrieden -- in VR ist dasselbe Tablet nur feiner aufgelöst, nicht größer im
+    Sichtfeld. Ein mitwachsender Zoom machte dort kaputt, was funktioniert. Zu groß ist es
+    allein im kleinen 2D-Fenster."""
+    block = _zoom_block()
+    assert "window.innerWidth" in block
+    assert "if (z > ZOOM_MASS) z = ZOOM_MASS;" in block, \
+        "ohne Deckel nach oben wuerde VR mitwachsen -- genau das soll nicht passieren"
+    assert "if (z < ZOOM_MIN) z = ZOOM_MIN;" in block, "Notbremse gegen Unlesbarkeit fehlt"
+    mass = re.search(r"var ZOOM_MASS_BREITE = (\d+);", INDEX)
+    assert mass and int(mass.group(1)) == 468, \
+        "Bezug ist das gemessene angedockte Tablet, nicht ein gerundeter Wunschwert"
+    wert = re.search(r"var ZOOM_MASS = ([\d.]+);", INDEX)
+    assert wert and wert.group(1) == "1.35", "bei der Bezugsflaeche muss alles bleiben wie es war"
+
+
+def test_der_zoom_wird_bei_jeder_groessenaenderung_neu_gesetzt():
+    """Die Fläche ändert sich im Betrieb -- Wechsel ins Headset, andere Stufe, gezogenes
+    Fenster. Ohne Horcher bliebe der Zoom auf dem Wert des Seitenaufbaus stehen."""
+    assert "window.addEventListener('resize', panelZoomSetzen);" in INDEX
+    assert "panelZoomSetzen();\n" in INDEX, "beim Aufbau muss er auch einmal laufen"
+
+
+def test_der_zoom_greift_nur_im_kniebrett():
+    """Am Schreibtisch gibt es kein Tablet, dessen Fläche zu klein wäre."""
+    assert "if (!isPanel) return;" in _zoom_block()
+    # Die CSS-Regel bleibt als Rueckfall, falls das Skript nicht laeuft.
+    assert "zoom: 1.35;" in INDEX
+
+
+def test_beide_kartenarten_nennen_die_quelle_gleichlautend():
+    """Leaflet fasst gleichlautende Angaben zu EINER Zeile zusammen. Sichtflug- und
+    Flugplatzkarte desselben AIRAC-Standes belegen damit eine Zeile statt zwei -- im
+    kleinsten Fenster der Unterschied zwischen drei und fünf Zeilen quer über der Karte.
+
+    Fehlt das Datum, entfällt der Zusatz statt als "AIRAC ?" dazustehen: Das ist keine
+    Auskunft, kostet Platz und macht die Zeile ungleich zur anderen -- dann zeigt Leaflet
+    wieder zwei."""
+    m = re.search(r"function _dfsAttribution\(k\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_dfsAttribution nicht gefunden"
+    assert "AIRAC ?" not in m.group(1) and "'?'" not in m.group(1)
+    assert "k.airac ?" in m.group(1), "ohne Datum muss der Zusatz entfallen"
+    # Beide Kartenarten muessen durch dieselbe Funktion gehen.
+    assert "function _aipKarteAttribution(k) { return _dfsAttribution(k); }" in INDEX
+    assert "function _groundAttribution(k) { return _dfsAttribution(k); }" in INDEX

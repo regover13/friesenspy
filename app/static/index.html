@@ -14,6 +14,54 @@
       }
 
       // ===================================================================
+      //  ZOOM NACH DER FLAECHE -- nur nach UNTEN (Nutzerwunsch 03.09.2026)
+      // ===================================================================
+      // Das Kniebrett ist nicht eine Groesse, sondern sechs. Gemessen ueber vier Nutzer und
+      // drei Groessenstufen (s. panel_diag, kind='flaeche'):
+      //
+      //     angedockt (2D wie VR)   468 px
+      //     freies Fenster 2D       242 / 298 / 352 px
+      //     freies Fenster VR       750 / 894 / 1035 px
+      //     ein anderer Nutzer      bis 1475 px
+      //
+      // Bei festem `zoom: 1.35` nahm im kleinsten Fenster ein einzelner Knopf samt Zoomspalte
+      // fast ein Viertel der Breite ein, der Deckkraftregler reichte ueber die halbe
+      // Kartenhoehe, und die Herkunftsangabe brach ueber fuenf Zeilen um. Der Zoom skaliert
+      // all das gemeinsam -- Knoepfe, Regler, Schrift, Abstaende --, deshalb genuegt hier
+      // eine Zahl, wo sonst ein Dutzend Einzelmasse noetig waeren.
+      //
+      // NUR NACH UNTEN, und das ist der Kern: Bei 468 und darueber bleibt es bei 1.35. Der
+      // Nutzer ist mit dem angedockten Tablet UND mit VR zufrieden -- in VR ist dasselbe
+      // Tablet nur feiner aufgeloest (bis 1035 px), nicht groesser im Sichtfeld. Wuerde der
+      // Zoom dort mitwachsen, machte er kaputt, was funktioniert. Zu gross ist es allein im
+      // kleinen 2D-Fenster, und genau dort greift die Regel.
+      //
+      // Die 468 sind kein gerundeter Wunschwert, sondern das gemessene angedockte Tablet --
+      // die eine Ansicht, von der wir wissen, dass die Groessen dort stimmen.
+      var ZOOM_MASS_BREITE = 468;   // Bezugsflaeche: das angedockte Tablet
+      var ZOOM_MASS = 1.35;         // ... und der dort erprobte Wert
+      var ZOOM_MIN = 0.6;           // Notbremse gegen Unlesbarkeit, unterhalb aller Messwerte
+      function panelZoomSetzen() {
+        if (!isPanel) return;
+        try {
+          var breite = window.innerWidth || ZOOM_MASS_BREITE;
+          var z = ZOOM_MASS * breite / ZOOM_MASS_BREITE;
+          if (z > ZOOM_MASS) z = ZOOM_MASS;
+          if (z < ZOOM_MIN) z = ZOOM_MIN;
+          z = Math.round(z * 100) / 100;
+          // Nur schreiben, wenn er sich aendert: Ein Zuweisen bei jedem resize-Ereignis
+          // waere unnoetige Layout-Arbeit in einer Engine, die davon ohnehin wenig vertraegt.
+          if (document.documentElement.style.zoom !== String(z)) {
+            document.documentElement.style.zoom = String(z);
+          }
+        } catch (_) { /* im Zweifel bleibt die CSS-Regel html.vr-panel { zoom: 1.35 } */ }
+      }
+      panelZoomSetzen();
+      // Die Groesse aendert sich im Betrieb -- Wechsel ins Headset, andere Stufe, gezogenes
+      // Fenster. Ohne diesen Horcher bliebe der Zoom auf dem Wert des Seitenaufbaus stehen.
+      window.addEventListener('resize', panelZoomSetzen);
+
+      // ===================================================================
       //  SELBSTDIAGNOSE (nur Panel, oder erzwungen per ?diag=1)
       // ===================================================================
       // Warum ausgerechnet HIER, im winzigen Kopf-Skript, und nicht unten beim Rest des
@@ -1730,6 +1778,18 @@
       right: 10px;
       bottom: 10px;
       margin: 0 !important;
+      /* UEBER die Herkunftsangabe, die in derselben Ecke sitzt. `position: absolute` nimmt
+         den Knopf zwar aus dem Fluss, aendert aber nichts an der Reihenfolge -- und die
+         Angabe fuegt Leaflet zuletzt ein, gewann also den Gleichstand (Nutzer-Bild
+         03.09.2026: "der Follow-Button ist jetzt unter der Lizenz").
+
+         Hier wirkt ein Wert am KIND, anders als beim Vergleich zwischen zwei Ecken (s.
+         `.leaflet-top.leaflet-right` weiter oben): Die Ecke traegt selbst `z-index: 1000`
+         und macht damit einen eigenen Stapel auf, innerhalb dessen ihre Kinder verglichen
+         werden. Deshalb genuegt eine 2.
+
+         Die Namensnennung bleibt lesbar -- verdeckt wird nur der Platz des Knopfes. */
+      z-index: 2;
     }
     .leaflet-control-attribution {
       background: rgba(4,8,15,0.8) !important;
@@ -1756,7 +1816,17 @@
       position: absolute;
       bottom: 10px;
       left: 10px;
-      z-index: 1000;
+      /* ZWISCHEN Herkunftsangabe und Ebenen-Auswahl (Nutzerwunsch 03.09.2026: "Vollbild
+         hinter das Ebenenmenue, aber ueber die Lizenzen").
+
+         Leaflet gibt seinen Ecken 1000, im Kniebrett steht die rechte obere auf 1100 (s.
+         dort). Mit 1000 lag der Knopf gleichauf mit der Ecke der Herkunftsangabe -- bei
+         Gleichstand entscheidet die Reihenfolge im Dokument, und die ging zu seinen Gunsten
+         aus. Gegenueber der aufgeklappten Ebenen-Liste war das Ergebnis dagegen sichtbar
+         falsch: Sie ist das Bedienelement, er nur ein Ausgang.
+
+         1050 ordnet beides eindeutig, ohne sich auf Dokumentreihenfolge zu verlassen. */
+      z-index: 1050;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -2314,7 +2384,7 @@
        Windanzeige an dieser Stelle hatte. Anders als dort genuegt hier ein Wert am Knopf
        selbst: Er haengt als `position:absolute` am Karten-Wrapper und nicht in einer der
        Leaflet-Ecken, macht also keinen fremden Stapel-Zusammenhang auf. */
-    html.vr-panel .map-is-fullscreen .map-fullscreen-btn { z-index: 1200; }
+    html.vr-panel .map-is-fullscreen .map-fullscreen-btn { z-index: 1050; }
 
     /* Was oben trotzdem freibleiben muss: die Statusleiste des TABLETS. Die EFB-Oberflaeche
        legt Glocke (links) und Datum/Uhrzeit (rechts) ueber unsere Seite -- ausserhalb des
@@ -10744,9 +10814,23 @@ function _loadAipKartePref()   { return _prefLies(_AIP_KARTE_PREF_KEY) === '1'; 
 
 // Die Quellenangabe traegt das AIRAC-Datum des gezeigten Blatts, nicht bloss den Namen --
 // eine Karte ohne Ausgabedatum ist im Flug wertlos.
-function _aipKarteAttribution(k) {
-  return '&copy; DFS Deutsche Flugsicherung GmbH, AIRAC ' + (k.airac || '?');
+//
+// EINE Funktion fuer beide Kartenarten, und das ist mehr als Aufraeumen: Leaflet fasst
+// gleichlautende Angaben zu EINER Zeile zusammen. Sichtflug- und Flugplatzkarte desselben
+// AIRAC-Standes belegen damit eine Zeile statt zwei -- im kleinsten Fenster (242 px) ist das
+// der Unterschied zwischen drei und fuenf Zeilen quer ueber der Karte. Vorher stand hier
+// zweimal derselbe Wortlaut in zwei Funktionen (_aipKarteAttribution und
+// _groundAttribution), was diese Ersparnis nur zufaellig erreichte.
+//
+// Fehlt das Datum, entfaellt der Zusatz statt als "AIRAC ?" dazustehen: Ein Fragezeichen ist
+// keine Auskunft, kostet aber Platz und macht die Zeile ausserdem UNGLEICH zur anderen --
+// dann zeigt Leaflet wieder zwei. Betroffen sind 13 der 109 Bodenkarten (Stand 03.09.2026);
+// dass ihnen das Datum fehlt, ist ein Datenmangel und bleibt einer.
+function _dfsAttribution(k) {
+  return '&copy; DFS Deutsche Flugsicherung GmbH'
+       + (k && k.airac ? ', AIRAC ' + k.airac : '');
 }
+function _aipKarteAttribution(k) { return _dfsAttribution(k); }
 
 /** Liegt die Position im KARTENFELD? Mit Rand, wenn das Blatt schon sichtbar ist. */
 function _aipKarteImFeld(k, lat, lon, schonSichtbar) {
@@ -10988,9 +11072,7 @@ let _groundOverlay = null;
 function _saveGroundPref(an) { _prefSchreib(_GROUND_PREF_KEY, an ? '1' : '0'); }
 function _loadGroundPref()   { return _prefLies(_GROUND_PREF_KEY) === '1'; }
 
-function _groundAttribution(k) {
-  return '&copy; DFS Deutsche Flugsicherung GmbH, AIRAC ' + (k.airac || '?');
-}
+function _groundAttribution(k) { return _dfsAttribution(k); }
 
 /** Welche Bodenkarte gewinnt, wenn zwei ueber derselben Position liegen?
  *

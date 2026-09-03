@@ -79,8 +79,14 @@ def test_hysterese_ist_vorhanden():
 
 
 def test_attribution_traegt_das_airac_datum():
-    start = INDEX.index("function _aipKarteAttribution(")
+    """Eine Karte ohne Ausgabedatum ist im Flug wertlos -- das AIRAC gehoert in die Angabe.
+
+    Seit 03.09.2026 geht sie durch `_dfsAttribution`, gemeinsam mit der Flugplatzkarte:
+    Leaflet fasst gleichlautende Angaben zu EINER Zeile zusammen, und im kleinsten Kniebrett
+    (242 px) ist das der Unterschied zwischen drei und fuenf Zeilen ueber der Karte."""
+    start = INDEX.index("function _dfsAttribution(")
     assert "airac" in INDEX[start:start + 300]
+    assert "function _aipKarteAttribution(k) { return _dfsAttribution(k); }" in INDEX
 
 
 def test_nachfuehrung_haengt_im_navi_takt():
