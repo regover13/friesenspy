@@ -241,3 +241,66 @@ def test_beide_seiten_nennen_dieselbe_erste_meldende_fassung():
     py = re.search(r'_PAKET_ERSTE_MELDENDE = "([^"]+)"', haupt)
     assert js and py, "Konstante fehlt auf einer Seite"
     assert js.group(1) == py.group(1), f"JS sagt {js.group(1)}, Python sagt {py.group(1)}"
+
+
+# ---------------------------------------------------------------------------------------
+#  Sperre für Pakete vor 2.0.0 (Nutzerentscheidung 03.09.2026)
+# ---------------------------------------------------------------------------------------
+def _sperr_block() -> str:
+    stelle = INDEX.index("function _paketSperrePruefen()")
+    return INDEX[stelle:INDEX.index("\n}", stelle)]
+
+
+def test_die_sperre_greift_nur_bei_nachgewiesen_altem_paket():
+    """Erst ab 2.0.0 legt das Paket eine Geräte-ID an; ohne sie überlebt die Anmeldung keinen
+    Simulator-Neustart. Von fünf Kniebrett-Nutzern hatten drei keine Bindung.
+
+    ENTSCHEIDEND ist, wogegen die Bedingung abgrenzt: Antwortet die Hülle GAR NICHT, sieht
+    das identisch aus, hat aber eine andere Ursache (klemmender Handshake). Dann darf NICHT
+    gesperrt werden -- ein Fehlalarm nimmt jemandem das ganze Kniebrett, nicht nur eine
+    Funktion."""
+    block = _sperr_block()
+    assert "if (_panelShellDa !== true) return;" in block, \
+        "ohne Antwort der Huelle gibt es keine Aussage -- dann keine Sperre"
+    assert "if (_paketVersion) return;" in block, \
+        "wer eine Version meldet, hat mindestens 2.0.0"
+    assert "vr-panel" in block, "auf der Website darf die Sperre nie greifen"
+
+
+def test_die_sperre_haengt_nicht_am_server_abruf():
+    """Sie braucht die aktuelle Fassung vom Server nicht, nur die Antwort der Hülle. Hinge
+    sie am Abruf, bliebe sie aus, wenn der Server einmal nicht antwortet -- und ein altes
+    Paket liefe weiter."""
+    wecker = INDEX.index("setTimeout(_paketSperrePruefen, _PAKET_WARTEN_MS);")
+    # Der Abruf endet mit seinem .catch(); der Wecker muss DANACH stehen, also ausserhalb.
+    abruf_ende = INDEX.index("}).catch(function () {});")
+    horcher = INDEX.index("window.addEventListener('message', (e) => {")
+    assert abruf_ende < wecker < horcher, \
+        "der Wecker darf nicht im .then() des Server-Abrufs haengen"
+
+
+def test_die_sperre_ist_auf_der_website_abgeschaltet():
+    """`.panel-paket-sperre` ohne vr-panel steht auf display:none -- am Schreibtisch gibt es
+    kein Paket, das veraltet sein könnte."""
+    assert ".panel-paket-sperre { display: none; }" in INDEX
+    assert "html.vr-panel .panel-paket-sperre.an { display: block; }" in INDEX
+
+
+def test_die_sperre_nennt_die_adresse_als_text():
+    """Im Panel gibt es kein zweites Fenster, das ein Link öffnen könnte (deshalb ist
+    `target=_blank` dort überall ausgeblendet). Die Adresse muss also lesbar dastehen, damit
+    man sie am PC eintippen kann."""
+    stelle = INDEX.index('id="panel-paket-sperre"')
+    block = INDEX[stelle:INDEX.index("</div>", stelle)]
+    assert "friesenspy.devprops.de/efb" in block
+    assert "<a " not in block, "kein Verweis -- im Kniebrett fuehrt er ins Leere"
+
+
+def test_die_sperre_laesst_sich_nicht_wegklicken():
+    """Der wegklickbare Hinweis unten links gibt es weiterhin für neuere Pakete. Die Sperre
+    ist bewusst keiner: Genau das Wegklicken hat den Zustand jahrelang erhalten."""
+    stelle = INDEX.index('id="panel-paket-sperre"')
+    block = INDEX[stelle:INDEX.index("</div>", stelle)]
+    assert "onclick" not in block and "<button" not in block
+    # Umgekehrt muss der schwächere Hinweis verschwinden, wenn die Sperre greift.
+    assert "hinweis.hidden = true;" in _sperr_block()

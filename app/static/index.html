@@ -1816,6 +1816,51 @@
     }
     .panel-update-hint[hidden] { display: none; }
 
+    /* SPERRE FUER PAKETE VOR 2.0.0 (Nutzerentscheidung 03.09.2026).
+       Erst ab 2.0.0 legt das Paket eine Geraete-ID an; ohne sie kann sich das Kniebrett den
+       Simulator nicht merken, und JEDER Start beginnt mit einer Anmeldung. Das ist kein
+       Schoenheitsfehler, sondern der Grund, aus dem Nutzer die Sache aufgeben -- ein
+       wegklickbarer Hinweis (s. .panel-update-hint) hat dagegen nicht gereicht.
+
+       Deckend und ohne Ausweg: Wer hier landet, kann im Kniebrett ohnehin nichts tun -- die
+       neue Fassung wird am PC geladen. Deshalb steht die Adresse als TEXT da und nicht als
+       Verweis: Im Panel gibt es kein zweites Fenster, das sich oeffnen liesse.
+
+       Kein `inset` (Coherent GT ignoriert es still und macht fixed-Overlays unsichtbar) und
+       keine Viewport-Einheiten (sie ignorieren den Zoom des Wurzelelements, s. Vollbild). */
+    .panel-paket-sperre { display: none; }
+    html.vr-panel .panel-paket-sperre {
+      position: fixed;
+      top: 0; right: 0; bottom: 0; left: 0;
+      z-index: 999999;
+      display: none;
+      background: #04080f;
+      color: var(--text-bright);
+      padding: 40px 28px 28px;
+      overflow-y: auto;
+    }
+    html.vr-panel .panel-paket-sperre.an { display: block; }
+    .panel-paket-sperre h2 {
+      color: var(--amber);
+      font-family: var(--text-display);
+      font-size: 1.1rem; letter-spacing: 0.08em;
+      margin: 0 0 16px;
+    }
+    .panel-paket-sperre p { font-size: 0.9rem; line-height: 1.6; margin: 0 0 14px; }
+    .panel-paket-sperre .adresse {
+      display: block;
+      background: #071525;
+      border: 1px solid var(--green-dim);
+      color: var(--green);
+      font-family: var(--text-mono);
+      font-size: 1rem;
+      padding: 12px;
+      margin: 18px 0;
+      text-align: center;
+      word-break: break-all;
+    }
+    .panel-paket-sperre .klein { color: var(--text-label); font-size: 0.8rem; }
+
     /* Hinweis auf ein veraltetes Kniebrett-Paket. Bewusst DEZENTER als der
        Neue-Version-Knopf darueber: Der laesst sich mit einem Druck erledigen, dieser hier
        nicht -- im Tablet kann man nichts herunterladen, das muss am PC passieren. Ein grell
@@ -8096,6 +8141,45 @@ function _paketVeraltet(installiert, aktuell) {
   return _versionKleiner(installiert, aktuell);
 }
 
+/**
+ * Pakete vor 2.0.0 aussperren (Nutzerentscheidung 03.09.2026).
+ *
+ * Erst ab 2.0.0 legt das Paket eine Geraete-ID an. Ohne sie gibt es keine Bindung, und ohne
+ * Bindung ueberlebt die Anmeldung keinen Simulator-Neustart -- in Coherent GT haelt kein
+ * Cookie. Von fuenf Kniebrett-Nutzern hatten drei keine Bindung; einer hat es von sich aus
+ * als Problem gemeldet. Der wegklickbare Hinweis unten links hat das nicht aufgehalten.
+ *
+ * DIE BEDINGUNG IST BEWUSST ENG, und darauf kommt es hier an:
+ *
+ *   `_panelShellDa === true`   Die Huelle hat geantwortet -- es gibt also ein Paket, und der
+ *                              Handshake laeuft.
+ *   `_paketVersion === null`   ... meldet aber keine Version. Das ist KEIN Fehler, sondern
+ *                              die Aussage "aelter als 2.0.0" (s. dort).
+ *
+ * Antwortet die Huelle GAR NICHT (`_panelShellDa === false`), wird NICHT gesperrt. Dieser
+ * Fall sieht identisch aus, hat aber eine andere Ursache -- ein klemmender Handshake, ein
+ * Fehler an der iframe-Grenze --, und dann waere die Sperre ein Ausschluss ohne Anlass. Ein
+ * Fehlalarm nimmt jemandem das ganze Kniebrett, nicht nur eine Funktion.
+ *
+ * Auf der Website greift nichts davon: `.panel-paket-sperre` ist ausserhalb von
+ * `html.vr-panel` auf `display: none` festgenagelt.
+ */
+function _paketSperrePruefen() {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+  if (_panelShellDa !== true) return;      // keine Antwort = keine Aussage, s. oben
+  if (_paketVersion) return;               // meldet eine Version = mindestens 2.0.0
+  const kasten = document.getElementById('panel-paket-sperre');
+  if (!kasten || kasten.classList.contains('an')) return;
+  kasten.classList.add('an');
+  // Der Hinweiskasten unten links waere daneben nur Rauschen -- die Sperre sagt dasselbe
+  // deutlicher und laesst sich nicht wegklicken.
+  const hinweis = document.getElementById('panel-paket-hinweis');
+  if (hinweis) hinweis.hidden = true;
+  if (typeof window._panelDiag === 'function') {
+    window._panelDiag('paket-gesperrt', { paketVersion: _paketVersion, shellDa: _panelShellDa });
+  }
+}
+
 function _paketHinweisPruefen() {
   const kasten = document.getElementById('panel-paket-hinweis');
   if (!kasten || !_paketAktuell) return;            // beide Seiten noch nicht da
@@ -8134,6 +8218,11 @@ function _initPanelShellKanal() {
       // Meldet das Paket seine Version, greift der pong-Weg ohnehin frueher.
       setTimeout(_paketHinweisPruefen, _PAKET_WARTEN_MS);
     }).catch(function () {});
+
+  // Eigener Wecker, NICHT im .then() des Abrufs oben: Die Sperre braucht die aktuelle
+  // Fassung vom Server gar nicht, nur die Antwort der Huelle. Haenge sie am Abruf, bliebe sie
+  // aus, wenn der Server einmal nicht antwortet -- und ein altes Paket liefe weiter.
+  setTimeout(_paketSperrePruefen, _PAKET_WARTEN_MS);
 
   window.addEventListener('message', (e) => {
     const d = e && e.data;
@@ -13932,6 +14021,19 @@ document.addEventListener('visibilitychange', async () => {
      Rang 1 kappen. Das war entscheidend, solange hier der Zurueck-Knopf hing (er waere hinter
      jedem Modal-Overlay verschwunden, gemessen mit Playwright); es bleibt richtig, damit die
      Leiste ueberhaupt eine eigene Ebene hat. -->
+<!-- Sperre fuer Pakete vor 2.0.0 -- festes Markup statt per JS erzeugt, wie die uebrigen
+     schwebenden Elemente hier: Was Coherent GT beim Aufbau des Dokuments bekommt, zeichnet
+     es zuverlaessig; nachtraeglich Eingesetztes nicht immer (s. Glocke in _initPanelTopbar).
+     Steht AUSSERHALB von #app, sonst kappte dessen z-index:1 jeden Nachfahren auf Rang 1. -->
+<div id="panel-paket-sperre" class="panel-paket-sperre">
+  <h2>Kniebrett-Paket ist veraltet</h2>
+  <p>Diese Fassung kann sich den Simulator nicht merken. Deshalb beginnt jeder Start mit
+     einer Anmeldung, und die Karte bleibt so lange leer.</p>
+  <p>Die neue Fassung erledigt das einmal und dann nie wieder. Bitte am PC laden:</p>
+  <span class="adresse">friesenspy.devprops.de/efb</span>
+  <p class="klein">Danach die Datei in den Community-Ordner entpacken und den Simulator neu
+     starten. Bis dahin bleibt diese Anzeige stehen.</p>
+</div>
 <div id="panel-topbar" class="panel-topbar"></div>
 </body>
 </html>

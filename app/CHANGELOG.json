@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.16.0",
+    "date": "2026-09-03",
+    "highlight": false,
+    "title": "Kniebrett: Pakete vor 2.0.0 werden ausgesperrt",
+    "items": [
+      "\ud83d\uded1 Ein Kniebrett-Paket \u00e4lter als 2.0.0 zeigt jetzt statt der App nur noch den Hinweis, wo die neue Fassung liegt. Diese alten Pakete k\u00f6nnen sich den Simulator nicht merken \u2014 mit ihnen beginnt jeder Start mit einer Anmeldung, und der wegklickbare Hinweis darauf hat daran nichts ge\u00e4ndert.",
+      "\ud83d\udee1\ufe0f Gesperrt wird nur bei nachgewiesen altem Paket: Die H\u00fclle muss antworten, aber keine Version melden. Antwortet sie gar nicht, bleibt alles wie bisher \u2014 dieser Fall sieht gleich aus, hat aber andere Ursachen, und ein Fehlalarm w\u00fcrde das ganze Kniebrett unbenutzbar machen."
+    ]
+  },
+  {
     "version": "14.15.0",
     "date": "2026-09-03",
     "highlight": false,
