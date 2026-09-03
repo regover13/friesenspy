@@ -41,13 +41,24 @@
       var ZOOM_MASS_BREITE = 468;   // Bezugsflaeche: das angedockte Tablet
       var ZOOM_MASS = 1.35;         // ... und der dort erprobte Wert
       var ZOOM_MIN = 0.6;           // Notbremse gegen Unlesbarkeit, unterhalb aller Messwerte
+      var ZOOM_MAX = 2.5;           // ... und nach oben, s. unten
+      // Handkorrektur auf das gerechnete Ergebnis, 1 = unveraendert. Sie kommt aus den
+      // Merkern und damit erst NACH dem Seitenaufbau -- deshalb eine Variable am window und
+      // kein Wert hier: Das Hauptskript setzt sie und ruft `_panelZoomAnwenden()` erneut.
+      // Die Automatik bleibt der Ausgangspunkt; korrigiert wird ihr Ergebnis, nicht ersetzt.
+      window._panelZoomKorrektur = 1;
       function panelZoomSetzen() {
         if (!isPanel) return;
         try {
           var breite = window.innerWidth || ZOOM_MASS_BREITE;
           var z = ZOOM_MASS * breite / ZOOM_MASS_BREITE;
           if (z > ZOOM_MASS) z = ZOOM_MASS;
+          z = z * (Number(window._panelZoomKorrektur) || 1);
+          // Die Grenzen ZULETZT, also auch gegen die Handkorrektur: Im Navigraph-Forum
+          // landen Nutzer bei 510, 600 und 800 Prozent und finden nicht mehr zurueck -- wer
+          // sich die Oberflaeche unbedienbar stellt, kann sie nicht mehr zuruecksetzen.
           if (z < ZOOM_MIN) z = ZOOM_MIN;
+          if (z > ZOOM_MAX) z = ZOOM_MAX;
           z = Math.round(z * 100) / 100;
           // Nur schreiben, wenn er sich aendert: Ein Zuweisen bei jedem resize-Ereignis
           // waere unnoetige Layout-Arbeit in einer Engine, die davon ohnehin wenig vertraegt.
@@ -57,6 +68,8 @@
         } catch (_) { /* im Zweifel bleibt die CSS-Regel html.vr-panel { zoom: 1.35 } */ }
       }
       panelZoomSetzen();
+      // Damit das Hauptskript nach dem Eintreffen der Merker neu rechnen kann.
+      window._panelZoomAnwenden = panelZoomSetzen;
       // Die Groesse aendert sich im Betrieb -- Wechsel ins Headset, andere Stufe, gezogenes
       // Fenster. Ohne diesen Horcher bliebe der Zoom auf dem Wert des Seitenaufbaus stehen.
       window.addEventListener('resize', panelZoomSetzen);
@@ -733,8 +746,18 @@
     .panel-notif-schalter.an .panel-notif-kasten { color: var(--green); }
 
     /* Von den zwei Glocken im Knopf ist immer genau eine sichtbar (s. Kommentar am Knopf). */
-    .notif-glocke-panel { display: none; }
-    html.vr-panel .notif-glocke-panel { display: inline-block; }
+    /* DREI Fassungen desselben Knopfes: Twemoji-Glocke fuer die Website, gezeichnete Glocke
+       fuer den Verbindungszustand -- und seit 03.09.2026 ein Zahnrad im Kniebrett, weil die
+       Ansicht dort nicht mehr nur Benachrichtigungen enthaelt, sondern auch die
+       Anzeigegroesse.
+
+       Die FARBE bleibt die Verbindungsanzeige (gelb = live, rot = getrennt, s. setSSEStatus)
+       -- sie haengt am Knopf, nicht am Symbol, und ueberlebt den Wechsel deshalb unveraendert.
+
+       Alle drei stehen fest im Markup: Ein per innerHTML eingesetztes <svg> blieb in
+       Coherent GT unsichtbar (Sim-Fund 14.08.2026), obwohl richtig platziert und bemessen. */
+    .notif-glocke-panel, .notif-zahnrad-panel { display: none; }
+    html.vr-panel .notif-zahnrad-panel { display: inline-block; }
     html.vr-panel .notif-glocke-web { display: none; }
 
     :root {
@@ -3233,6 +3256,61 @@
       scrollbar-width: thin;
       scrollbar-color: var(--green-dim) transparent;
     }
+    /* Abschnitte in der Panel-Ansicht. Sie heisst im Kniebrett nicht mehr
+       "Benachrichtigungen", sondern traegt zwei Themen -- Anzeige und Meldungen --, deshalb
+       je eine Ueberschrift. Auf der Website bleibt es bei der einen alten Ueberschrift, dort
+       gibt es die Anzeigeeinstellung gar nicht. */
+    .panel-abschnitt-titel {
+      color: var(--text-label);
+      font-family: var(--text-display);
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin: 4px 0 8px;
+    }
+    #panel-anzeige + #panel-notif .panel-abschnitt-titel { margin-top: 18px; }
+    .panel-zoom-reihe {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .panel-zoom-knopf {
+      /* 44px: Das hier ist KEIN Kartenelement, sondern ein Knopf in einer Liste -- fuer die
+         gilt die Mindestgroesse weiter (s. die 44px-Regel im Panel-Block). */
+      width: 44px; height: 44px;
+      display: flex; align-items: center; justify-content: center;
+      background: #0b2036;
+      border: 1px solid rgba(45,156,219,0.3);
+      color: var(--green);
+      font-family: var(--text-display);
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+    .panel-zoom-knopf:hover { background: #14314d; }
+    .panel-zoom-wert {
+      min-width: 78px;
+      text-align: center;
+      font-family: var(--text-mono);
+      font-size: 0.95rem;
+      color: var(--text-bright);
+    }
+    .panel-zoom-zurueck {
+      display: block;
+      width: 100%;
+      min-height: 44px;
+      margin-top: 8px;
+      background: transparent;
+      border: 1px solid rgba(45,156,219,0.3);
+      color: var(--text-label);
+      font-family: var(--text-display);
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+    }
+    .panel-zoom-zurueck:hover { color: var(--green); }
+    /* Auf der Website gibt es kein Kniebrett, dessen Flaeche zu klein waere. */
+    html:not(.vr-panel) #panel-anzeige { display: none !important; }
+
     .notif-panel::-webkit-scrollbar { width: 8px; }
     .notif-panel::-webkit-scrollbar-thumb {
       background: var(--green-dim);
@@ -3919,7 +3997,7 @@
            die Glocke ist der einzige Fall mit zwei Fassungen (Twemoji fuer die Website,
            Vektor fuer den Verbindungszustand im Panel) -- ein Sprite-Verweis brauechte hier
            also ohnehin eine Sonderbehandlung, ohne irgendetwas zu gewinnen. -->
-      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img class="emoji-icon notif-glocke-web" src="/static/emoji/bell.svg" alt="" /><svg class="icon notif-glocke-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 8 2 8H4s2-2 2-8"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg></button>
+      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img class="emoji-icon notif-glocke-web" src="/static/emoji/bell.svg" alt="" /><svg class="icon notif-glocke-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 8 2 8H4s2-2 2-8"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg><svg class="icon notif-zahnrad-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg></button>
       <div id="sse-badge" class="sse-badge disconnected">
         <div class="sse-dot"></div>
         <span class="sse-label" id="sse-label">GETRENNT</span>
@@ -3941,7 +4019,25 @@
          nativen Kaestchen ihren Zustand nicht an (Sim-Fund 14.08.2026) -- angehakt und nicht
          angehakt sahen gleich aus, die Schalter waren damit unbrauchbar. [X] und [ ] sind
          reiner Text und damit das Einzige, was in dieser Engine sicher erscheint. -->
+    <!-- ANZEIGEGROESSE (nur Kniebrett) -- steht VOR den Benachrichtigungen, weil sie im
+         Zweifel dringender ist: Wer die Schalter nicht lesen kann, kommt an sie nicht heran.
+         Die Automatik rechnet den Zoom aus der Flaeche (s. panelZoomSetzen im Kopf-Skript);
+         hier laesst sich das Ergebnis nachjustieren. Navigraph hat an derselben Stelle NUR
+         die Handeinstellung und keine Automatik -- im dortigen Forum landen Nutzer deshalb
+         bei 510, 600 und 800 Prozent und finden nicht mehr zurueck. -->
+    <div id="panel-anzeige" hidden>
+      <div class="panel-abschnitt-titel">Anzeige</div>
+      <div class="panel-zoom-reihe">
+        <button type="button" class="panel-zoom-knopf" id="panel-zoom-kleiner"
+                aria-label="Anzeige verkleinern">&minus;</button>
+        <span class="panel-zoom-wert" id="panel-zoom-wert">100%</span>
+        <button type="button" class="panel-zoom-knopf" id="panel-zoom-groesser"
+                aria-label="Anzeige vergroessern">+</button>
+      </div>
+      <button type="button" class="panel-zoom-zurueck" id="panel-zoom-zurueck">Automatisch</button>
+    </div>
     <div id="panel-notif" hidden>
+      <div class="panel-abschnitt-titel">Benachrichtigungen</div>
       <button type="button" class="panel-notif-schalter" id="panel-notif-online" data-art="online">
         <span class="panel-notif-kasten">[ ]</span> Wenn jemand online geht
       </button>
@@ -8454,7 +8550,12 @@ function _initPanelShellKanal() {
         imIframe: window.self !== window.top,
         schalter: _panelNotifyEinstellung(),
         glocke: masse(glocke),
-        glockeSymbol: masse(glocke && glocke.querySelector('.notif-glocke-panel')),
+        // Das SICHTBARE Symbol messen: Im Kniebrett ist das seit 03.09.2026 das Zahnrad,
+        // die gezeichnete Glocke daneben steht auf display:none und maesse 0x0 -- was wie
+        // "wird nicht gezeichnet" aussaehe und genau den Fehlalarm ausloeste, gegen den diese
+        // Messung einmal eingefuehrt wurde.
+        glockeSymbol: masse(glocke && (glocke.querySelector('.notif-zahnrad-panel')
+                                       || glocke.querySelector('.notif-glocke-panel'))),
         glockeInLeiste: !!(glocke && glocke.parentElement
                            && glocke.parentElement.id === 'panel-topbar'),
         schalterKasten: masse(document.querySelector('.panel-notif-kasten')),
@@ -14038,6 +14139,81 @@ function _vollbildKlassePflegen() {
 // stumm. Jedes Fenster kennt seinen eigenen Schliess-Weg ohnehin; eine zweite Liste daneben
 // waere genau die zweite Wahrheit, die der Knopf urspruenglich vermeiden wollte.
 
+// ==========================================================================
+//  ANZEIGEGROESSE VON HAND NACHJUSTIEREN (nur Kniebrett)
+// ==========================================================================
+// Die Automatik rechnet den Zoom aus der Flaeche (s. panelZoomSetzen im Kopf-Skript) und
+// trifft damit alle gemessenen Faelle. Was sie nicht kennen kann, ist der Abstand zum
+// Bildschirm, die Sehstaerke und die Frage, ob jemand lieber mehr Karte oder groessere
+// Schrift will. Dafuer diese zwei Knoepfe.
+//
+// KORREKTUR statt Absolutwert: Gespeichert wird ein Faktor auf das gerechnete Ergebnis, kein
+// fester Zoom. Sonst zerfiele die Einstellung beim naechsten Groessenwechsel -- wer im
+// angedockten Tablet 1.5 waehlt und dann ins kleine Fenster geht, saesse dort wieder vor
+// riesigen Knoepfen. So wandert die Handkorrektur mit.
+//
+// Navigraph loest dieselbe Aufgabe mit NUR einer Handeinstellung, ohne Automatik. Im dortigen
+// Forum landen Nutzer deshalb bei 510, 600 und 800 Prozent, und die Einstellung geht ihnen
+// zwischendurch verloren -- der Entwickler vermutet Dateirechte. Beides ist hier nicht
+// moeglich: Die Grenzen fangen jeden Wert ab, und die Merker liegen serverseitig.
+const _PANEL_ZOOM_KEY = 'friesenspy_panel_zoom';
+const _PANEL_ZOOM_SCHRITT = 0.1;
+const _PANEL_ZOOM_MIN = 0.5;
+const _PANEL_ZOOM_MAX = 2.0;
+
+function _panelZoomKorrekturLesen() {
+  const roh = Number(_prefLies(_PANEL_ZOOM_KEY));
+  if (!isFinite(roh) || roh <= 0) return 1;
+  return Math.min(_PANEL_ZOOM_MAX, Math.max(_PANEL_ZOOM_MIN, roh));
+}
+
+function _panelZoomAnzeigen() {
+  const feld = document.getElementById('panel-zoom-wert');
+  if (feld) feld.textContent = Math.round(_panelZoomKorrekturLesen() * 100) + '%';
+}
+
+function _panelZoomSetzen(neu) {
+  const wert = Math.min(_PANEL_ZOOM_MAX, Math.max(_PANEL_ZOOM_MIN, Math.round(neu * 100) / 100));
+  _prefSchreib(_PANEL_ZOOM_KEY, String(wert));
+  window._panelZoomKorrektur = wert;
+  if (typeof window._panelZoomAnwenden === 'function') window._panelZoomAnwenden();
+  _panelZoomAnzeigen();
+}
+
+function _initPanelAnzeige() {
+  if (!document.documentElement.classList.contains('vr-panel')) return;
+  const block = document.getElementById('panel-anzeige');
+  if (!block) return;
+  block.hidden = false;
+
+  // Die Ansicht traegt jetzt zwei Themen -- der alte Titel benannte nur eines davon.
+  const titel = document.querySelector('.notif-panel-title');
+  if (titel) titel.textContent = 'Einstellungen';
+
+  const kleiner = document.getElementById('panel-zoom-kleiner');
+  const groesser = document.getElementById('panel-zoom-groesser');
+  const zurueck = document.getElementById('panel-zoom-zurueck');
+  if (kleiner) kleiner.onclick = function () {
+    _panelZoomSetzen(_panelZoomKorrekturLesen() - _PANEL_ZOOM_SCHRITT);
+  };
+  if (groesser) groesser.onclick = function () {
+    _panelZoomSetzen(_panelZoomKorrekturLesen() + _PANEL_ZOOM_SCHRITT);
+  };
+  if (zurueck) zurueck.onclick = function () { _panelZoomSetzen(1); };
+
+  // ERST wenn die Merker vom Server da sind: Vorher steht dort der Anfangswert, und ein
+  // sofortiges Anwenden schriebe die 1 als gemerkte Einstellung fest (dieselbe Falle wie bei
+  // _prefServerPlanen, s. dort).
+  _prefsPromise.then(function () {
+    const wert = _panelZoomKorrekturLesen();
+    window._panelZoomKorrektur = wert;
+    if (wert !== 1 && typeof window._panelZoomAnwenden === 'function') {
+      window._panelZoomAnwenden();
+    }
+    _panelZoomAnzeigen();
+  });
+}
+
 function _initPanelTopbar() {
   if (!document.documentElement.classList.contains('vr-panel')) return;
 
@@ -14101,6 +14277,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // _initPanelTopbar holt im Panel auch die Glocke in die Leiste und blendet sie ein --
   // sonst bliebe sie versteckt, weil sie sonst erst mit einem VAPID-Schluessel erscheint.
   _initPanelTopbar();
+  _initPanelAnzeige();
   _initPanelTranslit();
   _initPanelShellKanal();
 });

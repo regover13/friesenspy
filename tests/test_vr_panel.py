@@ -229,12 +229,17 @@ def test_panel_initialisierung_wartet_auf_das_fertige_dokument():
     assert "_initPanelTopbar();\n_initPanelTranslit();" not in INDEX
     m = re.search(r"document\.addEventListener\('DOMContentLoaded', \(\) => \{\n"
                   r"(?:  //.*\n)*"                     # erklaerende Kommentare erlaubt
-                  r"  _initPanelTopbar\(\);\n  _initPanelTranslit\(\);\n"
+                  r"  _initPanelTopbar\(\);\n"
+                  r"(?:  _init\w+\(\);\n)*"          # weitere Panel-Initialisierungen
+                  r"  _initPanelTranslit\(\);\n"
                   r"(?:.*\n)*?\}\);", INDEX)
     assert m, "Panel-Initialisierung haengt nicht an DOMContentLoaded"
     # Alles Weitere, was Elemente aus dem Dokument braucht, gehoert in denselben Block --
     # sonst wiederholt sich der Fehler von damals mit der naechsten Init-Funktion.
     assert "_initPanelShellKanal();" in m.group(0)
+    # Die Anzeigegroesse gehoert dazu -- sie greift auf #panel-anzeige zu, das ebenfalls
+    # hinter dem Inline-Skript steht.
+    assert "_initPanelAnzeige();" in m.group(0)
 
 
 def test_flugaktivitaets_grafik_im_panel_ausgeblendet():
@@ -916,15 +921,22 @@ def test_glocke_im_panel_ist_einfaerbbar_und_steht_fest_im_markup():
     festen Markup einwandfrei rendert (Sim-Fund 14.08.2026). Wer das wieder auf JavaScript
     umstellt, macht die Glocke im Tablet erneut unsichtbar."""
     assert 'class="emoji-icon notif-glocke-web"' in INDEX
-    assert "html.vr-panel .notif-glocke-panel { display: inline-block; }" in INDEX
     assert "html.vr-panel .notif-glocke-web { display: none; }" in INDEX
     assert "glocke.innerHTML" not in INDEX, "Glocke darf nicht per JavaScript erzeugt werden"
+    # Seit 03.09.2026 zeigt das Kniebrett ein ZAHNRAD: Die Ansicht dahinter enthaelt nicht
+    # mehr nur Benachrichtigungen, sondern auch die Anzeigegroesse. Die Farbe bleibt die
+    # Verbindungsanzeige -- sie haengt am Knopf, nicht am Symbol.
+    assert "html.vr-panel .notif-zahnrad-panel { display: inline-block; }" in INDEX
     # Der Pfad steht DIREKT im Knopf, nicht als Sprite-Verweis: die <use>-Fassung blieb im
     # Tablet unsichtbar, obwohl gemessen richtig platziert und dimensioniert (44x44 / 20x20).
-    m = re.search(r'<svg class="icon notif-glocke-panel"(.*?)</svg>', INDEX, re.S)
-    assert m, "Panel-Glocke nicht gefunden"
-    assert "<path" in m.group(1), "Glocke ohne eigenen Pfad"
-    assert "<use" not in m.group(1), "Sprite-Verweis -- im Tablet unsichtbar"
+    for klasse in ("notif-glocke-panel", "notif-zahnrad-panel"):
+        m = re.search(r'<svg class="icon ' + klasse + r'"(.*?)</svg>', INDEX, re.S)
+        assert m, f"{klasse} nicht gefunden"
+        assert "<path" in m.group(1) or "<circle" in m.group(1), f"{klasse} ohne eigenen Pfad"
+        assert "<use" not in m.group(1), "Sprite-Verweis -- im Tablet unsichtbar"
+    # Die Diagnose muss das SICHTBARE Symbol messen -- die versteckte Glocke maesse 0x0 und
+    # loeste genau den Fehlalarm aus, gegen den die Messung eingefuehrt wurde.
+    assert "querySelector('.notif-zahnrad-panel')" in INDEX
 
 
 def test_kategorie_schalter_zeigen_ihren_zustand_als_text():
@@ -933,7 +945,11 @@ def test_kategorie_schalter_zeigen_ihren_zustand_als_text():
     ASCII-Text ist das Einzige, was diese Engine sicher zeichnet."""
     assert "panel-notif-kasten" in INDEX
     assert "'[X]' : '[ ]'" in INDEX
-    m = re.search(r'<div id="panel-notif" hidden>(.*?)</div>', INDEX, re.S)
+    # Bis zum Ende des Kastens, nicht bis zum ersten </div>: Seit 03.09.2026 steht eine
+    # Abschnitts-Ueberschrift darin, an der die alte Suche vorzeitig abbrach.
+    anfang = INDEX.index('<div id="panel-notif" hidden>')
+    ende = INDEX.index('data-art="events"', anfang)
+    m = re.match(r"(?s)(.*)", INDEX[anfang:ende + 400])
     assert m, "Panel-Schalter-Block nicht gefunden"
     assert 'type="checkbox"' not in m.group(1), "native Kontrollkaestchen im Panel"
     for art in ("online", "prefile", "ts", "events"):
@@ -3114,3 +3130,52 @@ def test_beide_kartenarten_nennen_die_quelle_gleichlautend():
     # Beide Kartenarten muessen durch dieselbe Funktion gehen.
     assert "function _aipKarteAttribution(k) { return _dfsAttribution(k); }" in INDEX
     assert "function _groundAttribution(k) { return _dfsAttribution(k); }" in INDEX
+
+
+# ==========================================================================================
+#  Anzeigegröße von Hand nachjustieren (Nutzerwunsch 03.09.2026)
+# ==========================================================================================
+def test_die_handkorrektur_ist_ein_faktor_kein_absolutwert():
+    """Gespeichert wird ein Faktor AUF das gerechnete Ergebnis, kein fester Zoom. Sonst
+    zerfiele die Einstellung beim nächsten Größenwechsel: Wer im angedockten Tablet 1,5
+    wählt und dann ins kleine Fenster geht, säße dort wieder vor riesigen Knöpfen."""
+    m = re.search(r"function _panelZoomSetzen\(neu\) \{(.*?)\n\}", INDEX, re.S)
+    assert m, "_panelZoomSetzen nicht gefunden"
+    rumpf = m.group(1)
+    assert "_prefSchreib(_PANEL_ZOOM_KEY" in rumpf, "die Einstellung muss den Neustart ueberleben"
+    assert "window._panelZoomKorrektur = wert;" in rumpf
+    assert "window._panelZoomAnwenden()" in rumpf, "ohne erneutes Anwenden bleibt der Zoom stehen"
+    # Die Automatik bleibt der Ausgangspunkt -- die Korrektur multipliziert ihr Ergebnis.
+    assert "z = z * (Number(window._panelZoomKorrektur) || 1);" in INDEX
+
+
+def test_die_grenzen_fangen_auch_die_handkorrektur_ab():
+    """Im Navigraph-Forum landen Nutzer bei 510, 600 und 800 Prozent und finden nicht mehr
+    zurück. Wer sich die Oberfläche unbedienbar stellt, kann sie nicht mehr zurücksetzen --
+    deshalb greifen die Grenzen ZULETZT, also auch gegen die Handkorrektur."""
+    stelle = INDEX.index("z = z * (Number(window._panelZoomKorrektur) || 1);")
+    danach = INDEX[stelle:stelle + 600]
+    assert "if (z < ZOOM_MIN) z = ZOOM_MIN;" in danach
+    assert "if (z > ZOOM_MAX) z = ZOOM_MAX;" in danach
+    # Und ein Weg zurück muss es geben, ohne die Grenzen zu kennen.
+    assert 'id="panel-zoom-zurueck"' in INDEX
+    assert "zurueck.onclick = function () { _panelZoomSetzen(1); };" in INDEX
+
+
+def test_die_gemerkte_groesse_wird_erst_nach_der_serverantwort_angewandt():
+    """Vorher steht in den Merkern der Anfangswert. Ein sofortiges Anwenden schriebe die 1 als
+    gemerkte Einstellung fest -- dieselbe Falle wie bei _prefServerPlanen."""
+    m = re.search(r"function _initPanelAnzeige\(\) \{(.*?)\n\}\n", INDEX, re.S)
+    assert m, "_initPanelAnzeige nicht gefunden"
+    assert "_prefsPromise.then(" in m.group(1)
+    assert "if (!document.documentElement.classList.contains('vr-panel')) return;" in m.group(1)
+
+
+def test_die_einstellungsansicht_traegt_beide_themen():
+    """Die Ansicht hinter dem Zahnrad enthält seit 03.09.2026 zwei Dinge -- der alte Titel
+    „Benachrichtigungen" benannte nur eines davon."""
+    assert "titel.textContent = 'Einstellungen';" in INDEX
+    assert 'id="panel-anzeige"' in INDEX
+    assert "panel-abschnitt-titel" in INDEX
+    # Auf der Website gibt es kein Kniebrett, dessen Flaeche zu klein waere.
+    assert "html:not(.vr-panel) #panel-anzeige { display: none !important; }" in INDEX

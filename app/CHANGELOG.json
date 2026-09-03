@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.19.0",
+    "date": "2026-09-03",
+    "highlight": false,
+    "title": "Kniebrett: Anzeigegr\u00f6\u00dfe von Hand nachjustierbar",
+    "items": [
+      "\u2699\ufe0f Hinter dem Symbol oben rechts steht jetzt eine Einstellungsansicht mit zwei Abschnitten: Anzeige und Benachrichtigungen. Aus der Glocke ist ein Zahnrad geworden; die Farbe zeigt weiterhin den Verbindungszustand.",
+      "\ud83d\udd0d Zwei Kn\u00f6pfe ver\u00e4ndern die Anzeigegr\u00f6\u00dfe in Zehnerschritten, \u201eAutomatisch\" setzt sie zur\u00fcck. Die automatische Berechnung bleibt der Ausgangspunkt \u2014 verstellt wird ihr Ergebnis, damit die Einstellung auch nach einem Wechsel der Tablet-Gr\u00f6\u00dfe noch passt.",
+      "\ud83d\udd12 Die Grenzen greifen auch gegen die Handeinstellung. Sich die Oberfl\u00e4che unbedienbar zu stellen, ist damit nicht m\u00f6glich; zur\u00fcck geht es au\u00dferdem jederzeit \u00fcber \u201eAutomatisch\"."
+    ]
+  },
+  {
     "version": "14.18.2",
     "date": "2026-09-03",
     "highlight": false,
