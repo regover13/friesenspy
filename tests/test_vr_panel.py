@@ -545,18 +545,26 @@ def test_leaflet_bedienelemente_weichen_der_tablet_statusleiste_aus():
         "der Kasten liegt ausserhalb von Leaflets Raster und traegt die volle Zahl"
 
 
-def test_der_folge_knopf_steht_in_leaflets_raster():
-    """Er trug bis 02.09.2026 eine Sonderbehandlung (`margin-bottom: 18px; margin-right: 4px`)
-    und stand damit aus zwei Rastern: 6 Pixel weiter aussen als die Spalte darueber (Ebenen,
-    Kompass, Lupe auf Leaflets `margin-right: 10px`) und hoeher als der Vollbild-Knopf
-    gegenueber, mit dem er eine Linie bilden soll (`bottom: 10px`).
+def test_der_folge_knopf_haengt_nicht_im_stapel_der_herkunftsangabe():
+    """Er sitzt in derselben Ecke wie Leaflets Herkunftsangabe, und Leaflet STAPELT die
+    Elemente einer Ecke. Im Kniebrett bricht die Angabe ueber drei Zeilen um -- genau um
+    deren Hoehe stand der Knopf zu hoch (Nutzer-Bild 03.09.2026).
 
-    Ohne die Regel greift Leaflets eigener `margin: 10px` in beide Richtungen -- dieselbe
-    Zahl, auf der auch der Vollbild-Knopf sitzt."""
-    assert ".leaflet-bottom.leaflet-right .navi-bar {" not in _ohne_kommentare(INDEX)
+    Erst `position: absolute` nimmt ihn aus dem Stapel heraus; Bezugspunkt ist die Ecke, die
+    selbst schon an der Karte klebt. Damit liegt er auf denselben 10px wie der Vollbild-Knopf
+    gegenueber, egal wie viele Zeilen die Angabe gerade braucht.
+
+    Ein blosses `margin-bottom: 10px` genuegt NICHT -- das war der Anlauf vom 02.09.2026,
+    und er scheiterte genau an diesem Stapel."""
+    m = re.search(r"\.leaflet-bottom\.leaflet-right \.navi-bar \{([^}]*)\}", INDEX, re.S)
+    assert m, "Regel fuer den Folge-Knopf nicht gefunden"
+    regel = m.group(1)
+    assert "position: absolute" in regel, "ohne absolute bleibt er im Stapel"
+    assert "bottom: 10px" in regel and "right: 10px" in regel
+    assert "margin: 0 !important" in regel, "Leaflets eigene Raender muessen weg"
+    # Der Gegenpart unten links sitzt auf derselben Zahl.
     knopf = re.search(r"\n    \.map-fullscreen-btn \{([^}]*)\}", INDEX, re.S)
-    assert knopf and "bottom: 10px" in knopf.group(1), \
-        "der Gegenpart unten links muss auf derselben Zahl sitzen"
+    assert knopf and "bottom: 10px" in knopf.group(1)
 
 
 def test_alte_kopfzeile_im_panel_komplett_ausgeblendet():
@@ -1225,7 +1233,17 @@ def test_kartenknoepfe_sehen_gleich_aus():
     assert t, "Ebenen-Symbol nicht gefunden"
     assert "data:image/svg+xml" in t.group(1), "Leaflets PNG-Symbol ist noch da"
     assert "%232d9cdb" in t.group(1), "das Symbol traegt nicht die Akzentfarbe"
-    assert "44px !important" in t.group(1), "die Ebenen-Auswahl ist kleiner als die anderen Knoepfe"
+    # EINE Groesse fuer alle Bedienelemente der Karte -- dieselben 30px, die Leaflet seinen
+    # Zoomknoepfen gibt (`.leaflet-touch .leaflet-bar a`). Bis 03.09.2026 standen unsere auf
+    # 44px, dem Mindestmass fuer TIPPziele; der Nutzer bedient das Kniebrett aber mit der
+    # Maus. Zwei Massstaebe nebeneinander (Leaflets 30 links, unsere 44 rechts) fielen in
+    # jedem Bild sofort auf.
+    assert "30px !important" in t.group(1), "die Ebenen-Auswahl faellt aus der Reihe"
+    k = re.search(r"\.navi-bar \.navi-knopf \{([^}]*)\}", INDEX, re.S)
+    assert k and "width: 30px !important" in k.group(1), "Kompass/Lupe/Folge fallen aus der Reihe"
+    v = re.search(r"\n    \.map-fullscreen-btn \{([^}]*)\}", INDEX, re.S)
+    assert v and "height: 30px;" in v.group(1), \
+        "der Vollbild-Knopf muss dieselbe Hoehe haben wie Wind und Zoom"
 
 
 def test_kompass_zeigt_seinen_zustand_wie_der_pfeil():

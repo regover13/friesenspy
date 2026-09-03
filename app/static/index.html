@@ -1368,11 +1368,18 @@
     }
     .zoom-symbol { width: 1em; height: 1em; display: block; }
 
-    /* Kompass und Moving-Map-Schalter (Karte-Tab). Bewusst deutlich groesser als Leaflets
-       eigene 26px-Knoepfe: Im Cockpit wird mit dem Finger getippt, nicht mit dem Mauszeiger
-       gezielt -- und in VR trifft man kleine Ziele noch schlechter. 44px ist das gaengige
-       Mindestmass fuer Tippziele und gilt hier auf der Website gleich mit; ein grosszuegiger
-       Knopf schadet dort nicht. */
+    /* Kompass, Ebenen, Lupe und Moving-Map-Schalter -- alle auf DERSELBEN Groesse wie
+       Leaflets Zoomknoepfe (`.leaflet-touch .leaflet-bar a`, 30px).
+
+       Bis 03.09.2026 standen hier 44px, das gaengige Mindestmass fuer TIPPziele: "Im Cockpit
+       wird mit dem Finger getippt, nicht mit dem Mauszeiger gezielt." Die Annahme war falsch
+       -- der Nutzer bedient das Kniebrett mit der Maus, auch in VR. Bezahlt hat sie die
+       Karte: Auf dem kleinsten gemessenen Fenster (242px breit) nahm ein einziger 44er-Knopf
+       samt Zoom fast ein Viertel der Breite ein, und die Knopfspalte links reichte ueber die
+       halbe Kartenhoehe.
+
+       Eine Groesse fuer alles ist dabei mehr als Kosmetik: Vorher standen zwei Massstaebe
+       nebeneinander (Leaflets 30 links, unsere 44 rechts), was in jedem Bild sofort auffiel. */
     /* Warum hier !important steht, und zwar zu Recht: Leaflets eigenes Stylesheet setzt die
        Knopfmasse ueber `.leaflet-touch .leaflet-bar a { width:30px; height:30px }` und die
        Farbe ueber `.leaflet-bar a { background:#fff }`. Der erste Selektor ist mit zwei
@@ -1396,11 +1403,11 @@
     }
     .leaflet-control-layers-toggle {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2 22 8 12 14 2 8z' fill='%232d9cdb'/%3E%3Cpath d='M12 16.4 4.4 11.9 2 13.2l10 5.9 10-5.9-2.4-1.3z' fill='%232d9cdb' opacity='.6'/%3E%3C/svg%3E") !important;
-      background-size: 26px 26px !important;
+      background-size: 20px 20px !important;
       background-position: center !important;
       background-repeat: no-repeat !important;
-      width: 44px !important;
-      height: 44px !important;
+      width: 30px !important;
+      height: 30px !important;
     }
     /* Aufgeklappt: die Liste selbst gehoert ins gleiche Bild wie der Knopf. */
     .leaflet-control-layers-expanded { padding: 8px 10px !important; }
@@ -1462,8 +1469,8 @@
       display: flex !important;
       align-items: center;
       justify-content: center;
-      width: 44px !important;
-      height: 44px !important;
+      width: 30px !important;
+      height: 30px !important;
       background: #071525 !important;
       border: 1px solid rgba(45,156,219,0.3) !important;
       color: #2d9cdb !important;
@@ -1701,24 +1708,29 @@
       color: #cfe3f0;
       white-space: nowrap;
     }
-    /* HIER STAND EINE SONDERBEHANDLUNG FUER DEN MOVING-MAP-KNOPF unten rechts
-       (`margin-bottom: 18px; margin-right: 4px`) -- Abstand zu Leaflets Herkunftsangabe,
-       die dort entlanglaeuft.
+    /* DER FOLGE-KNOPF MUSS AUS DEM FLUSS SEINER ECKE HERAUS, sonst schiebt ihn die
+       Herkunftsangabe nach oben.
 
-       Sie ist am 02.09.2026 ersatzlos entfallen, weil sie den Knopf aus GLEICH ZWEI Rastern
-       geworfen hat (Nutzerfund: "in eine Reihe mit den anderen rechts, und auf der Hoehe des
-       X Vollbild"):
+       Am 02.09.2026 hatte ich seine Sonderbehandlung (`margin-bottom: 18px`) entfernt, damit
+       Leaflets eigene 10px greifen -- dieselbe Zahl, auf der auch der Vollbild-Knopf
+       gegenueber sitzt. Die Rechnung ging nicht auf, und der Grund steht direkt daneben: In
+       derselben Ecke unten rechts sitzt Leaflets Herkunftsangabe, und Leaflet STAPELT die
+       Elemente einer Ecke. Im Kniebrett bricht die Angabe ueber drei Zeilen um; genau um
+       deren Hoehe stand der Knopf zu hoch (Nutzer-Bild 03.09.2026: "warum ist der
+       Follow-Button wieder falsch positioniert?").
 
-       * seitlich: Alle uebrigen Bedienelemente rechts (Ebenen, Kompass, Lupe) stehen auf
-         Leaflets eigenen `margin-right: 10px`. Mit 4 stand dieser eine 6 Pixel weiter
-         aussen als die Spalte darueber.
-       * in der Hoehe: Gegenueber, unten links, sitzt der Vollbild-Knopf auf `bottom: 10px`
-         -- dieselbe Zahl, die Leaflet seinen Elementen ohnehin gibt. Mit 18 lag er hoeher
-         als der Knopf, mit dem er eine Linie bilden soll.
+       `position: absolute` nimmt ihn aus diesem Stapel heraus. Bezugspunkt ist die Ecke,
+       die selbst schon an der Karte klebt -- damit sitzt er auf denselben 10px wie der
+       Vollbild-Knopf, unabhaengig davon, wie viele Zeilen die Angabe gerade braucht.
 
-       Ohne die Regel greift Leaflets `margin: 10px` fuer beide Richtungen, und beides sitzt
-       von selbst richtig. Die Herkunftsangabe bleibt lesbar: Der Knopf verdeckt nur seinen
-       eigenen Platz -- genau wie der Vollbild-Knopf gegenueber, der das seit jeher tut. */
+       Die Namensnennung bleibt lesbar: Verdeckt wird nur der Platz des Knopfes, wie es der
+       Vollbild-Knopf gegenueber seit jeher tut. */
+    .leaflet-bottom.leaflet-right .navi-bar {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      margin: 0 !important;
+    }
     .leaflet-control-attribution {
       background: rgba(4,8,15,0.8) !important;
       color: #6b9ab8 !important;
@@ -1748,14 +1760,19 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 30px;
+      /* GENAU 30px hoch, wie Zoomknoepfe, Windanzeige und die Knoepfe rechts (Nutzerwunsch
+         03.09.2026: "Vollbild nur so hoch wie Wind oder wie +/-"). Vorher kam zum
+         min-height:30px noch 2x6px Innenabstand -- der Knopf war damit als einziges Element
+         in der Karte 42px hoch und stach heraus. Die Hoehe steht fest, der Innenabstand nur
+         noch seitlich. */
+      height: 30px;
       background: var(--bg-panel);
       border: 1px solid var(--green-dim);
       color: var(--text-bright);
       font-family: var(--text-display);
       font-size: 0.72rem;
       letter-spacing: 0.08em;
-      padding: 6px 14px;
+      padding: 0 10px;
       white-space: nowrap;
       cursor: pointer;
     }

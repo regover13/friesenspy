@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.17.0",
+    "date": "2026-09-03",
+    "highlight": false,
+    "title": "Kartenkn\u00f6pfe alle auf einer Gr\u00f6\u00dfe",
+    "items": [
+      "\ud83d\uddfa\ufe0f Ebenen, Kompass, Lupe und der Folge-Knopf sind jetzt so gro\u00df wie die Zoomkn\u00f6pfe \u2014 30 statt 44 Pixel. Die 44 waren das Mindestma\u00df f\u00fcr Tippziele; bedient wird das Kniebrett aber mit der Maus. Auf einem kleinen Fenster nahmen die Kn\u00f6pfe dadurch fast ein Viertel der Breite ein.",
+      "\u2b1c Der Vollbild-Knopf ist ebenfalls 30 Pixel hoch. Er kam vorher auf 42, weil zum Mindestma\u00df noch Innenabstand kam \u2014 und stach als einziges Element heraus.",
+      "\ud83c\udfaf Der Folge-Knopf unten rechts sitzt endlich auf einer Linie mit dem Vollbild-Knopf. Er hing im selben Stapel wie die Herkunftsangabe, die im Kniebrett \u00fcber drei Zeilen umbricht und ihn genau um deren H\u00f6he nach oben schob."
+    ]
+  },
+  {
     "version": "14.16.0",
     "date": "2026-09-03",
     "highlight": false,
