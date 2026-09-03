@@ -2159,10 +2159,18 @@
     }
     html.vr-panel .panel-topbar #sse-badge .sse-label { display: none; }
 
-    /* Glocke ganz rechts in der Leiste -- sie ersetzt dort die Verbindungsanzeige und sagt
-       ueber ihre Farbe dasselbe: gelb = live, rot = getrennt (Klasse .sse-live aus
-       setSSEStatus). Klick oeffnet die Kategorie-Schalter. Optisch wie das fruehere
-       #sse-badge an dieser Stelle: nur Trennlinie links, kein eigener Rahmen. */
+    /* Das Zahnrad ganz rechts in der Leiste. Klick oeffnet die Einstellungen (Anzeigegroesse
+       und Benachrichtigungen), und die Farbe traegt weiterhin den Verbindungszustand.
+
+       IM NORMALFALL DIE MENUEFARBE, nicht Gelb (Nutzer 03.09.2026: "ein Zahnrad in der Farbe
+       des Menues, keine gelbe Sonne"). Solange die Verbindung steht, ist das die Aussage
+       "nichts Besonderes" -- und dafuer ist ein Warnton der falsche Traeger. Gelb hatte die
+       Glocke geerbt, bei der es passte: Eine Glocke ist eine Meldung. Ein Zahnrad ist ein
+       Weg zu Einstellungen und soll aussehen wie die Tabs daneben.
+
+       Rot bleibt: Die Trennung ist die einzige Aussage hier, die ins Auge fallen MUSS -- sie
+       ist im Cockpit ein echter Diagnosewert, wenn die Karte stehenbleibt. Optisch sonst wie
+       das fruehere #sse-badge an dieser Stelle: nur Trennlinie links, kein eigener Rahmen. */
     html.vr-panel .panel-topbar #notif-btn {
       flex: 0 0 auto;
       /* Immer ganz rechts -- auch wenn der Zurueck-Knopf ausgeblendet ist. Er traegt sonst
@@ -2182,7 +2190,7 @@
       box-shadow: none;
       color: var(--red);
     }
-    html.vr-panel .panel-topbar #notif-btn.sse-live { color: var(--amber); }
+    html.vr-panel .panel-topbar #notif-btn.sse-live { color: var(--green); }
     html.vr-panel .panel-topbar #notif-btn .icon {
       width: 20px;
       height: 20px;
@@ -3997,7 +4005,7 @@
            die Glocke ist der einzige Fall mit zwei Fassungen (Twemoji fuer die Website,
            Vektor fuer den Verbindungszustand im Panel) -- ein Sprite-Verweis brauechte hier
            also ohnehin eine Sonderbehandlung, ohne irgendetwas zu gewinnen. -->
-      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img class="emoji-icon notif-glocke-web" src="/static/emoji/bell.svg" alt="" /><svg class="icon notif-glocke-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 8 2 8H4s2-2 2-8"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg><svg class="icon notif-zahnrad-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg></button>
+      <button id="notif-btn" class="notif-btn" title="Benachrichtigungen" hidden><img class="emoji-icon notif-glocke-web" src="/static/emoji/bell.svg" alt="" /><svg class="icon notif-glocke-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 8 2 8H4s2-2 2-8"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg><svg class="icon notif-zahnrad-panel" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M19.4 13a7.8 7.8 0 0 0 0-2l2-1.5-2-3.4-2.3 1a7.8 7.8 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5c-.6.2-1.2.6-1.7 1l-2.3-1-2 3.4L4.6 11a7.8 7.8 0 0 0 0 2l-2 1.5 2 3.4 2.3-1c.5.4 1.1.8 1.7 1l.3 2.5h4l.3-2.5c.6-.2 1.2-.6 1.7-1l2.3 1 2-3.4-2-1.5zM12 15.2A3.2 3.2 0 1 1 12 8.8a3.2 3.2 0 0 1 0 6.4z"/></svg></button>
       <div id="sse-badge" class="sse-badge disconnected">
         <div class="sse-dot"></div>
         <span class="sse-label" id="sse-label">GETRENNT</span>

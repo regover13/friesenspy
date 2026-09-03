@@ -908,7 +908,12 @@ def test_glocke_zeigt_den_verbindungszustand():
     m = re.search(r"function setSSEStatus\(status\) \{\n(.*?)\n\}", INDEX, re.S)
     assert m, "setSSEStatus nicht gefunden"
     assert "classList.toggle('sse-live', live)" in m.group(1)
-    assert "html.vr-panel .panel-topbar #notif-btn.sse-live { color: var(--amber); }" in INDEX
+    # Im Normalfall die MENUEFARBE, nicht Gelb (Nutzer 03.09.2026: "ein Zahnrad in der Farbe
+    # des Menues, keine gelbe Sonne"). "Verbindung steht" heisst "nichts Besonderes", und
+    # dafuer ist ein Warnton der falsche Traeger; Gelb hatte das Zahnrad von der Glocke
+    # geerbt, bei der es passte. Rot bleibt -- die Trennung MUSS auffallen.
+    assert "html.vr-panel .panel-topbar #notif-btn.sse-live { color: var(--green); }" in INDEX
+    assert "#notif-btn.sse-live { color: var(--amber)" not in INDEX
     assert re.search(r"html\.vr-panel \.panel-topbar #notif-btn \{[^}]*color: var\(--red\)", INDEX)
 
 

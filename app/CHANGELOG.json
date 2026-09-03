@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.19.1",
+    "date": "2026-09-03",
+    "highlight": false,
+    "title": "Zahnrad in der Farbe des Men\u00fcs",
+    "items": [
+      "\u2699\ufe0f Das Einstellungssymbol im Kniebrett hat jetzt echte Z\u00e4hne und tr\u00e4gt die Farbe der Leiste. Es hatte das Gelb von der Glocke geerbt, bei der es passte \u2014 eine Meldung darf auffallen, ein Weg zu den Einstellungen nicht. Rot bleibt: Eine unterbrochene Verbindung ist die eine Sache dort, die ins Auge fallen muss."
+    ]
+  },
+  {
     "version": "14.19.0",
     "date": "2026-09-03",
     "highlight": false,
