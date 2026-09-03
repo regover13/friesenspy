@@ -931,7 +931,7 @@ def test_glocke_im_panel_ist_einfaerbbar_und_steht_fest_im_markup():
     # Seit 03.09.2026 zeigt das Kniebrett ein ZAHNRAD: Die Ansicht dahinter enthaelt nicht
     # mehr nur Benachrichtigungen, sondern auch die Anzeigegroesse. Die Farbe bleibt die
     # Verbindungsanzeige -- sie haengt am Knopf, nicht am Symbol.
-    assert "html.vr-panel .notif-zahnrad-panel { display: inline-block; }" in INDEX
+    assert re.search(r"html\.vr-panel \.notif-zahnrad-panel \{[^}]*display: inline-block", INDEX)
     # Der Pfad steht DIREKT im Knopf, nicht als Sprite-Verweis: die <use>-Fassung blieb im
     # Tablet unsichtbar, obwohl gemessen richtig platziert und dimensioniert (44x44 / 20x20).
     for klasse in ("notif-glocke-panel", "notif-zahnrad-panel"):
@@ -942,6 +942,38 @@ def test_glocke_im_panel_ist_einfaerbbar_und_steht_fest_im_markup():
     # Die Diagnose muss das SICHTBARE Symbol messen -- die versteckte Glocke maesse 0x0 und
     # loeste genau den Fehlalarm aus, gegen den die Messung eingefuehrt wurde.
     assert "querySelector('.notif-zahnrad-panel')" in INDEX
+
+
+def test_fuellsymbole_setzen_ihre_fuellung_per_css_nicht_nur_als_attribut():
+    """Sim-Fund 03.09.2026 (v14.19.1): Das Zahnrad im Kniebrett blieb unsichtbar, obwohl die
+    Selbstdiagnose Knopf 44x44 und Symbol 20x20 an der richtigen Stelle meldete.
+
+    Ursache ist keine Eigenheit der Engine, sondern die Kaskade: `.icon` setzt `fill: none`
+    fuer die konturgezeichneten Symbole, und eine CSS-Regel schlaegt IMMER das
+    Praesentationsattribut `fill="currentColor"` am <svg>. Zusammen mit `stroke="none"` blieb
+    nichts uebrig, was gezeichnet werden koennte.
+
+    Der Test bindet sich an die Eigenschaft, nicht an das Zahnrad: Jedes Symbol der Klasse
+    `.icon`, das ueber die FUELLUNG gezeichnet wird, braucht eine eigene CSS-Regel."""
+    assert re.search(r"\.icon \{[^}]*fill: none", INDEX), (
+        "Grundlage des Tests entfallen -- `.icon` setzt kein `fill: none` mehr"
+    )
+    gefunden = 0
+    for m in re.finditer(r'<svg class="icon ([a-z0-9-]+)"([^>]*)>', INDEX):
+        klasse, attribute = m.group(1), m.group(2)
+        if 'fill="currentColor"' not in attribute:
+            continue
+        gefunden += 1
+        # ALLE Regeln der Klasse einsammeln: Anzeigen und Einfaerben stehen bewusst in
+        # getrennten Bloecken (`display: none` als Grundzustand, die Panel-Fassung darunter).
+        regeln = "".join(
+            m.group(1) for m in re.finditer(r"\." + klasse + r"[^{]*\{([^}]*)\}", INDEX)
+        )
+        assert "fill: currentColor" in regeln, (
+            f"{klasse} wird ueber die Fuellung gezeichnet, aber keine CSS-Regel hebt "
+            f"`.icon {{ fill: none }}` auf -- im Kniebrett unsichtbar"
+        )
+    assert gefunden, "kein fuellgezeichnetes .icon-Symbol gefunden -- Test laeuft ins Leere"
 
 
 def test_kategorie_schalter_zeigen_ihren_zustand_als_text():

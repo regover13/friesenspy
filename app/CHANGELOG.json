@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.19.2",
+    "date": "2026-09-03",
+    "highlight": false,
+    "title": "Zahnrad war im Kniebrett unsichtbar",
+    "items": [
+      "\u2699\ufe0f Das Einstellungssymbol im Kniebrett wurde gar nicht mehr gezeichnet. Der Knopf war da und an der richtigen Stelle \u2014 nur leer. Ursache war eine Stilregel, die allen Symbolen die F\u00fcllung nimmt, weil die meisten von ihnen als Umriss gezeichnet sind; das Zahnrad ist der erste, der eine F\u00fcllung braucht."
+    ]
+  },
+  {
     "version": "14.19.1",
     "date": "2026-09-03",
     "highlight": false,

@@ -757,7 +757,19 @@
        Alle drei stehen fest im Markup: Ein per innerHTML eingesetztes <svg> blieb in
        Coherent GT unsichtbar (Sim-Fund 14.08.2026), obwohl richtig platziert und bemessen. */
     .notif-glocke-panel, .notif-zahnrad-panel { display: none; }
-    html.vr-panel .notif-zahnrad-panel { display: inline-block; }
+    /* `fill: currentColor` MUSS hier stehen, nicht nur als Attribut am <svg>: Die Klasse
+       `.icon` setzt `fill: none` (fuer die konturgezeichneten Symbole), und eine CSS-Regel
+       schlaegt jedes Praesentationsattribut -- egal wie spezifisch das Attribut gemeint war.
+       Die Glocke daneben ueberlebt das, weil sie ueber `stroke` gezeichnet wird; das Zahnrad
+       ist ein reiner Fuellpfad und war damit fill:none + stroke:none, also unsichtbar
+       (Sim-Fund 03.09.2026, v14.19.1: Knopf 44x44 und Symbol 20x20 richtig bemessen und
+       platziert gemeldet -- nur eben leer). `fill-rule: evenodd` stanzt die Nabe aus,
+       unabhaengig davon, in welcher Richtung der innere Kreis laeuft. */
+    html.vr-panel .notif-zahnrad-panel {
+      display: inline-block;
+      fill: currentColor;
+      fill-rule: evenodd;
+    }
     html.vr-panel .notif-glocke-web { display: none; }
 
     :root {
