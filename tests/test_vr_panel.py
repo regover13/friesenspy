@@ -565,7 +565,12 @@ def test_der_folge_knopf_haengt_nicht_im_stapel_der_herkunftsangabe():
     assert "margin: 0 !important" in regel, "Leaflets eigene Raender muessen weg"
     # ... und UEBER die Herkunftsangabe, die in derselben Ecke sitzt und von Leaflet zuletzt
     # eingefuegt wird -- sonst gewinnt sie den Gleichstand (Nutzer-Bild 03.09.2026).
-    assert "z-index: 2;" in regel, "sonst liegt der Knopf unter der Lizenzangabe"
+    # UEBER Leaflets eigenen Wert: `.leaflet-control` traegt z-index: 800 (leaflet.css,
+    # nachgeschlagen 03.09.2026). Ein kleinerer Wert am Knopf schiebt ihn UNTER die Angabe --
+    # genau das ist mit einer 2 passiert, der Fehler wurde dadurch schlimmer.
+    z = re.search(r"z-index: (\d+);", regel)
+    assert z and int(z.group(1)) > 800, \
+        "muss ueber Leaflets eigenem z-index von 800 liegen, sonst deckt die Lizenzangabe ihn zu"
     # Der Gegenpart unten links sitzt auf derselben Zahl.
     knopf = re.search(r"\n    \.map-fullscreen-btn \{([^}]*)\}", INDEX, re.S)
     assert knopf and "bottom: 10px" in knopf.group(1)
@@ -1242,12 +1247,24 @@ def test_kartenknoepfe_sehen_gleich_aus():
     # 44px, dem Mindestmass fuer TIPPziele; der Nutzer bedient das Kniebrett aber mit der
     # Maus. Zwei Massstaebe nebeneinander (Leaflets 30 links, unsere 44 rechts) fielen in
     # jedem Bild sofort auf.
-    assert "30px !important" in t.group(1), "die Ebenen-Auswahl faellt aus der Reihe"
-    k = re.search(r"\.navi-bar \.navi-knopf \{([^}]*)\}", INDEX, re.S)
-    assert k and "width: 30px !important" in k.group(1), "Kompass/Lupe/Folge fallen aus der Reihe"
+    # An LEAFLETS eigene Staffelung gekoppelt: `.leaflet-bar a` ist 26px, erst
+    # `.leaflet-touch .leaflet-bar a` sind es 30 (leaflet.css, nachgeschlagen 03.09.2026).
+    # Eine feste 30 war der Fehler vom selben Tag -- im Simulator wird mit der Maus bedient,
+    # Touch wird also nicht erkannt, und unsere Knoepfe standen als einzige zu gross daneben.
+    assert "26px !important" in t.group(1), "die Ebenen-Auswahl faellt aus der Reihe"
+    assert "html.vr-panel" not in t.group(1)
+    k = re.search(r"\n    \.navi-bar \.navi-knopf \{([^}]*)\}", INDEX, re.S)
+    assert k and "width: 26px !important" in k.group(1), "Kompass/Lupe/Folge fallen aus der Reihe"
     v = re.search(r"\n    \.map-fullscreen-btn \{([^}]*)\}", INDEX, re.S)
-    assert v and "height: 30px;" in v.group(1), \
+    assert v and "height: 26px;" in v.group(1), \
         "der Vollbild-Knopf muss dieselbe Hoehe haben wie Wind und Zoom"
+    # ... und jedes davon muss die Touch-Staffel mitnehmen, sonst kippt es auf Touch-Geraeten
+    # in die andere Richtung.
+    for regel in (".leaflet-touch .leaflet-control-layers-toggle {",
+                  ".leaflet-touch .navi-bar .navi-knopf {",
+                  ".leaflet-touch .map-fullscreen-btn {",
+                  ".leaflet-touch .deckkraft-feld {"):
+        assert regel in INDEX, f"{regel} fehlt -- die Staffelung waere nur halb nachgebaut"
 
 
 def test_kompass_zeigt_seinen_zustand_wie_der_pfeil():

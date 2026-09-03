@@ -1451,9 +1451,14 @@
     }
     .leaflet-control-layers-toggle {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2 22 8 12 14 2 8z' fill='%232d9cdb'/%3E%3Cpath d='M12 16.4 4.4 11.9 2 13.2l10 5.9 10-5.9-2.4-1.3z' fill='%232d9cdb' opacity='.6'/%3E%3C/svg%3E") !important;
-      background-size: 20px 20px !important;
+      background-size: 18px 18px !important;
       background-position: center !important;
       background-repeat: no-repeat !important;
+      width: 26px !important;
+      height: 26px !important;
+    }
+    .leaflet-touch .leaflet-control-layers-toggle {
+      background-size: 20px 20px !important;
       width: 30px !important;
       height: 30px !important;
     }
@@ -1513,17 +1518,25 @@
     }
 
     .navi-bar { border: none !important; background: none !important; margin-top: 8px; }
+    /* 26px, und 30 nur mit `.leaflet-touch` -- GENAU Leaflets eigene Staffelung
+       (`.leaflet-bar a` gegen `.leaflet-touch .leaflet-bar a`, nachgeschlagen 03.09.2026).
+
+       Eine feste Zahl geht hier schief: Am 03.09. stand hier 30, "wie die Zoomknoepfe" --
+       das gilt aber nur, wenn Leaflet Touch erkennt. Im Simulator wird mit der Maus bedient,
+       dort sind es 26, und unsere Knoepfe standen als einzige zu gross daneben. Wer die Zahl
+       aendert, muss beide Zeilen anfassen. */
     .navi-bar .navi-knopf {
       display: flex !important;
       align-items: center;
       justify-content: center;
-      width: 30px !important;
-      height: 30px !important;
+      width: 26px !important;
+      height: 26px !important;
       background: #071525 !important;
       border: 1px solid rgba(45,156,219,0.3) !important;
       color: #2d9cdb !important;
       cursor: pointer;
     }
+    .leaflet-touch .navi-bar .navi-knopf { width: 30px !important; height: 30px !important; }
     .navi-bar .navi-knopf:hover { background: #0b2036 !important; }
     /* Die Suedhaelfte der Kompassnadel ist normalerweise hell -- auf dem blauen Grund des
        eingeschalteten Zustands waere sie kaum zu sehen. Dort also dunkel, genau wie der
@@ -1579,7 +1592,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      width: 30px;
+      width: 26px;
       padding: 6px 0 3px;
       background: #071525;
       border: 1px solid rgba(45,156,219,0.3);
@@ -1590,6 +1603,7 @@
        welche in Coherent GT steckt, ist unbekannt, und ein Regler, der in einer der beiden
        Welten waagerecht liegen bleibt, ist im Cockpit unbrauchbar. Eine Drehung koennen
        beide. Minus 90 Grad legt das Minimum nach UNTEN, wie man es erwartet. */
+    .leaflet-touch .deckkraft-feld { width: 30px; }
     .deckkraft-schacht { position: relative; width: 22px; height: 104px; }
     .deckkraft-regler {
       position: absolute; top: 50%; left: 50%;
@@ -1783,13 +1797,15 @@
          Angabe fuegt Leaflet zuletzt ein, gewann also den Gleichstand (Nutzer-Bild
          03.09.2026: "der Follow-Button ist jetzt unter der Lizenz").
 
-         Hier wirkt ein Wert am KIND, anders als beim Vergleich zwischen zwei Ecken (s.
-         `.leaflet-top.leaflet-right` weiter oben): Die Ecke traegt selbst `z-index: 1000`
-         und macht damit einen eigenen Stapel auf, innerhalb dessen ihre Kinder verglichen
-         werden. Deshalb genuegt eine 2.
+         900 UND NICHT 2: Leaflet gibt JEDEM Bedienelement `z-index: 800` mit
+         (`.leaflet-control` in leaflet.css, nachgeschlagen am 03.09.2026). Ein kleinerer
+         Wert am Knopf schiebt ihn also unter die Angabe, statt darueber -- der erste Anlauf
+         mit einer 2 hat den Fehler prompt verschlimmert. Verglichen wird hier innerhalb der
+         Ecke, die als einzige einen eigenen Stapel aufmacht (`z-index: 1000`); nach aussen
+         bleibt der Knopf damit weiterhin Teil dieser Ecke.
 
          Die Namensnennung bleibt lesbar -- verdeckt wird nur der Platz des Knopfes. */
-      z-index: 2;
+      z-index: 900;
     }
     .leaflet-control-attribution {
       background: rgba(4,8,15,0.8) !important;
@@ -1830,12 +1846,12 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      /* GENAU 30px hoch, wie Zoomknoepfe, Windanzeige und die Knoepfe rechts (Nutzerwunsch
-         03.09.2026: "Vollbild nur so hoch wie Wind oder wie +/-"). Vorher kam zum
-         min-height:30px noch 2x6px Innenabstand -- der Knopf war damit als einziges Element
-         in der Karte 42px hoch und stach heraus. Die Hoehe steht fest, der Innenabstand nur
-         noch seitlich. */
-      height: 30px;
+      /* Genau so hoch wie Leaflets Zoomknoepfe (Nutzerwunsch 03.09.2026: "Vollbild nur so
+         hoch wie Wind oder wie +/-"), und deshalb an DEREN Staffelung gekoppelt: 26px, mit
+         `.leaflet-touch` 30. Eine feste 30 war der erste Anlauf und blieb sichtbar zu hoch
+         -- die 30 gelten nur bei erkanntem Touch, im Simulator wird mit der Maus bedient.
+         Davor waren es sogar 42, weil zum min-height noch 2x6px Innenabstand kamen. */
+      height: 26px;
       background: var(--bg-panel);
       border: 1px solid var(--green-dim);
       color: var(--text-bright);
@@ -1846,6 +1862,7 @@
       white-space: nowrap;
       cursor: pointer;
     }
+    .leaflet-touch .map-fullscreen-btn { height: 30px; }
     .map-fullscreen-btn .icon {
       width: 1.35em;
       height: 1.35em;

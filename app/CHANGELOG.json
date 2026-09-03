@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.18.1",
+    "date": "2026-09-03",
+    "highlight": false,
+    "title": "Kartenkn\u00f6pfe: jetzt wirklich auf einer Gr\u00f6\u00dfe",
+    "items": [
+      "\ud83d\udcd0 Vollbild-Knopf, Ebenen, Kompass, Lupe, Folge-Knopf und Deckkraftregler haben jetzt exakt die Gr\u00f6\u00dfe der Zoomkn\u00f6pfe. Der vorige Anlauf hatte 30 Pixel gesetzt \u2014 Leaflets Kn\u00f6pfe sind aber nur 26 gro\u00df und werden erst auf Touchger\u00e4ten zu 30. Am Simulator wird mit der Maus bedient, also standen unsere als einzige zu gro\u00df daneben.",
+      "\ud83c\udfaf Der Folge-Knopf unten rechts liegt wieder \u00fcber der Quellenangabe. Beim letzten Anlauf hatte er einen zu niedrigen Rang bekommen \u2014 Leaflet gibt seinen Bedienelementen von Haus aus einen h\u00f6heren, dadurch verschwand er erst recht darunter."
+    ]
+  },
+  {
     "version": "14.18.0",
     "date": "2026-09-03",
     "highlight": false,
