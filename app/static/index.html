@@ -2255,10 +2255,19 @@
        ausgeblendet (s. "VEREINHEITLICHTE KOPF-/TAB-LEISTE" weiter oben), das Logo darin also
        nie sichtbar. */
     /* Mindestgroesse fuer alles Antippbare: im Cockpit wird mit dem Finger bedient, nicht
-       mit dem Mauszeiger. 44px ist das gaengige Mindestmass. */
+       mit dem Mauszeiger. 44px ist das gaengige Mindestmass.
+
+       OHNE die Bedienelemente der KARTE, seit 03.09.2026. Dort richtet sich alles nach
+       Leaflets eigenem Mass (26px, mit `.leaflet-touch` 30) -- ein 44er Knopf mittendrin
+       fiel sofort auf, und im kleinsten Fenster frass die Reihe die halbe Karte. Der
+       Nutzer bedient das Kniebrett ohnehin mit der Maus, auch in VR.
+
+       Diese Regel war dabei die eigentliche Sperre und stand drei Anlaeufe lang im Weg:
+       `min-height: 44px` schlaegt jedes `height: 26px`, das nebenan gesetzt wird, weil sie
+       mit `html.vr-panel` spezifischer ist. Wer die Kartenknoepfe messen will, muss deshalb
+       HIER nachsehen, nicht nur bei `.map-fullscreen-btn`. */
     html.vr-panel .tab-btn,
     html.vr-panel .btn,
-    html.vr-panel .map-fullscreen-btn,
     html.vr-panel .fp-close-btn,
     html.vr-panel .modal-close {
       min-height: 44px;

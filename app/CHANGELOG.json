@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.18.2",
+    "date": "2026-09-03",
+    "highlight": false,
+    "title": "Vollbild-Knopf war im Kniebrett festgenagelt",
+    "items": [
+      "\ud83d\udcd0 Der Vollbild-Knopf hat jetzt tats\u00e4chlich die Gr\u00f6\u00dfe der Zoomkn\u00f6pfe. Eine \u00e4ltere Regel schrieb allen antippbaren Elementen im Kniebrett eine Mindesth\u00f6he von 44 Pixeln vor und \u00fcbersteuerte damit jede Angabe daneben \u2014 die Karte ist davon ausgenommen, dort gilt Leaflets Ma\u00df."
+    ]
+  },
+  {
     "version": "14.18.1",
     "date": "2026-09-03",
     "highlight": false,

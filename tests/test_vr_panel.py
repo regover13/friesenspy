@@ -1258,6 +1258,13 @@ def test_kartenknoepfe_sehen_gleich_aus():
     v = re.search(r"\n    \.map-fullscreen-btn \{([^}]*)\}", INDEX, re.S)
     assert v and "height: 26px;" in v.group(1), \
         "der Vollbild-Knopf muss dieselbe Hoehe haben wie Wind und Zoom"
+    # DIE EIGENTLICHE SPERRE: `html.vr-panel ... { min-height: 44px }` ist spezifischer und
+    # schlaegt jedes `height` daneben. Drei Anlaeufe lang blieb der Knopf deshalb 44px hoch,
+    # obwohl daneben 30 und dann 26 stand (Nutzer, 03.09.2026: "Vollbild immer noch zu gross").
+    tipp = re.search(r"html\.vr-panel \.tab-btn,(.*?)\{\s*min-height: 44px;", INDEX, re.S)
+    assert tipp, "44px-Regel fuer Tippziele nicht gefunden"
+    assert "map-fullscreen-btn" not in tipp.group(1), \
+        "der Vollbild-Knopf gehoert nicht in die 44px-Regel -- sie ueberschreibt seine Hoehe"
     # ... und jedes davon muss die Touch-Staffel mitnehmen, sonst kippt es auf Touch-Geraeten
     # in die andere Richtung.
     for regel in (".leaflet-touch .leaflet-control-layers-toggle {",
