@@ -1446,6 +1446,15 @@ class VatsimPoller:
                         )
                         if positions:
                             save_statsim_positions(conn, sid, positions)
+                            # SOFORT committen, nicht erst nach der Schleife. Der erste Schreib-
+                            # zugriff oeffnet eine Transaktion und haelt damit die SQLite-Schreib-
+                            # sperre; ohne diesen commit steht sie ueber den GESAMTEN Batch --
+                            # 20 HTTP-Abrufe plus je 0,3 s Drosselung. Am 04.09.2026 waren das
+                            # 2 min 43 s, in denen JEDER andere Schreiber nach 5 s (Pythons
+                            # Default-Timeout) "database is locked" bekam: _poll_once, die
+                            # Prefile-Signaturen und PUT /api/prefs (500 fuer echte Nutzer).
+                            # Vorher fiel es nie auf, weil "0/20 neu gecacht" gar nicht schreibt.
+                            conn.commit()
                             fetched += 1
                     except Exception:
                         logger.warning(
