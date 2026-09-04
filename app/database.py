@@ -3474,7 +3474,14 @@ def canonicalize_legs(
             return False
         if end and takeoff > end:
             return False
-        landing = f.get("logoff_time")
+        # Ohne erkannte Landung zaehlt die LETZTE POSITION als Ende. Sonst faellt die
+        # Pruefung bei `logoff_time is None` ersatzlos aus, und ein laengst beendetes Leg
+        # gilt als "im Fenster" -- der GPS-Track bricht ja nur ab, das Leg endet trotzdem.
+        # Live-Fund 04.09.2026: FRS61 flog vormittags in Texas (letzte Position 09:51:30Z,
+        # keine Landung erkannt) und abends beim Ausmotten-Event mit. Im Eventfenster ab
+        # 17:00Z tauchte das Dallas-Leg mit auf; die Events-Karte spannte per fitBounds von
+        # Dallas bis Wangerooge und stand mitten im Atlantik.
+        landing = f.get("logoff_time") or f.get("last_pos_ts")
         if start and landing is not None and landing < start:
             return False
         return True
