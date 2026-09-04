@@ -3521,3 +3521,43 @@ class TestSummaryNurAbZweiFuhren:
         }
         ctx = event_summary_context({"name": "Test"}, progress)
         assert ctx["pilots"] == {"Anna (FRS10)": 2}
+
+
+class TestVerlustGeklautIstAktiv:
+    """Nutzerfund 04.09.2026: Der Abschlusstext machte den Dieb zum Opfer.
+
+    Geschrieben stand: "Reiner (FRS61) wurde unterwegs noch um 260 kg erleichtert -- irgendwer
+    hatte wohl Appetit auf Heringe". Im Modell ist aber ER der Taeter: `stolen` entsteht in
+    `_drop_load`, wenn der Pilot mit Ware an einem Platz landet, der weder Ziel noch Ladeplatz
+    ist -- er hat sie mitgenommen und dort behalten. "Fracht geklaut" laesst beide Lesarten zu,
+    deshalb aktiv formulieren.
+    """
+
+    def test_stolen_nennt_den_piloten_als_taeter(self):
+        progress = {
+            "flights": [],
+            "losses": [
+                {"loss_kind": "stolen", "name": "Reiner Kaste", "callsign": "FRS61",
+                 "lost_kg": 260},
+            ],
+            "total_kg": 0, "loaded_count": 0, "cargo": [],
+            "route": ["EDWG"], "destination": "EDWG", "lost_total_kg": 260,
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert len(ctx["verluste"]) == 1
+        eintrag = ctx["verluste"][0]
+        assert "hat" in eintrag, f"Der Eintrag muss den Piloten handeln lassen: {eintrag!r}"
+        assert "Reiner (FRS61)" in eintrag and "260" in eintrag
+
+    def test_sunk_bleibt_unveraendert(self):
+        """Beim Versinken ist der Pilot NICHT der Taeter -- das darf nicht mitgedreht werden."""
+        progress = {
+            "flights": [],
+            "losses": [
+                {"loss_kind": "sunk", "name": "Kai Dierkes", "callsign": "FRS95", "lost_kg": 50},
+            ],
+            "total_kg": 0, "loaded_count": 0, "cargo": [],
+            "route": ["EDWG"], "destination": "EDWG", "lost_total_kg": 50,
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert "Kutter versunken" in ctx["verluste"][0]

@@ -7353,7 +7353,14 @@ def event_summary_context(event: dict, progress: dict) -> dict:
         # zurückgebracht"). Stattdessen als Staffel-Übergabe getrennt (siehe `abgeladen`).
         "verluste": [
             (f"{_label(l.get('name'), l.get('callsign'))}: "
-             + ("Kutter versunken" if l.get("loss_kind") == "sunk" else "Fracht geklaut")
+             # AKTIV formulieren. "Fracht geklaut" laesst offen, WER geklaut hat, und die KI
+             # machte daraus ein Missgeschick mit unbekanntem Dieb ("wurde erleichtert --
+             # irgendwer hatte wohl Appetit", Nutzerfund 04.09.2026). `stolen` entsteht aber in
+             # _drop_load genau dann, wenn der Pilot mit Ware an einem Platz landet, der weder
+             # Ziel noch Ladeplatz ist: Er hat sie mitgenommen und dort behalten. Beim Versinken
+             # ist er dagegen NICHT der Taeter -- deshalb bleibt der Zweig unveraendert.
+             + ("Kutter versunken" if l.get("loss_kind") == "sunk"
+                else "hat die Fracht selbst geklaut")
              + f" ({round(l.get('lost_kg') or 0)} kg)")
             for l in progress.get("losses", [])
             if l.get("loss_kind") in ("sunk", "stolen")
