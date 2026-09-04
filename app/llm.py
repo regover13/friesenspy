@@ -484,12 +484,6 @@ def event_summary(context: dict) -> str | None:
         lines.append(f"Verluste unterwegs ({round(c.get('lost_total_kg') or 0)} kg): " + "; ".join(verluste))
     else:
         lines.append("Verluste: keine — alles kam heil an")
-    abgeladen = c.get("abgeladen") or []
-    if abgeladen:
-        lines.append(
-            "Am Ladeplatz abgeladen (Staffel-Übergabe, KEIN Verlust — die Ware liegt am Ladeplatz "
-            "und wird von dort weitergetragen): " + "; ".join(abgeladen)
-        )
     user = (
         "Schreibe eine kurze, launige Tagesend-Zusammenfassung für die "
         "Friesen — wie viel Fracht zusammen bewegt wurde, mit einem Augenzwinkern. "
@@ -514,9 +508,9 @@ def event_summary(context: dict) -> str | None:
         "als Opfer — kein »ihm wurde abgenommen«, kein »wurde erleichtert«, kein unbekannter "
         "Dieb und kein »irgendwer«. Beim Versinken ist er dagegen KEIN Täter, dort ist der "
         "Kutter schlicht abgesoffen. "
-        "Wer unter »Am Ladeplatz abgeladen« steht, hat NICHTS verloren — er hat die Ware an einem "
-        "Ladeplatz abgeladen, wo sie zum Weitertragen bereitliegt. Erwähne das (falls vorhanden) "
-        "locker als Staffel-Übergabe, NIE als Missgeschick, Verlust, Rückzug oder Kneifen. Fakten:\n- "
+        "Erwähne NICHT, dass jemand Fracht an einem Ladeplatz abgesetzt, abgeladen, zwischen- "
+        "gelagert oder weitergereicht habe — solche Zwischenschritte stehen bewusst nicht in den "
+        "Fakten und dürfen auch nicht erfunden werden. Fakten:\n- "
         + "\n- ".join(lines)
     )
     return _chat(_QUIP_SYSTEM, user, 800)

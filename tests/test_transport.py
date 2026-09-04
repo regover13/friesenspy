@@ -3561,3 +3561,37 @@ class TestVerlustGeklautIstAktiv:
         }
         ctx = event_summary_context({"name": "Test"}, progress)
         assert "Kutter versunken" in ctx["verluste"][0]
+
+
+class TestKeineStaffeluebergabeImBericht:
+    """Nutzerentscheidung 04.09.2026: Die Staffel-Uebergabe gehoert nicht in den Tagestext.
+
+    Im Abschlusstext des Ausmotten-Events stand, Reiner (FRS61) und Michael (FRS96) haetten
+    "ihre Fracht ordentlich am Ladeplatz abgesetzt -- Staffeluebergabe nach Lehrbuch". Tatsaechlich
+    hatten beide nur den Flugplan neu geloggt und danach alles wieder mitgenommen:
+
+        FRS61  EDXP->EDWG  18:49:44-18:54:52
+        FRS61  EDXP->EDWG  18:55:03-19:51:52     <- 11 s spaeter neu eingeloggt
+        FRS96  EDDW->EDXH  18:58:20-18:58:37     <- 17 s lang
+        FRS96  EDXH->EDWG  18:58:49-19:46:29     <- 12 s spaeter
+
+    Beim Logout faellt die Ladung ab (`_drop_load` -> "returned", weil er auf einem Ladeplatz
+    steht), beim naechsten Login laedt `_load_standing` sie wieder auf. Netto passiert nichts.
+    Das MODELL bleibt unveraendert -- der Erhaltungssatz haengt daran --, aber der Bericht
+    erwaehnt es nicht mehr.
+    """
+
+    def test_returned_taucht_nicht_mehr_im_kontext_auf(self):
+        progress = {
+            "flights": [],
+            "losses": [
+                {"loss_kind": "returned", "name": "Reiner Kaste", "callsign": "FRS61",
+                 "lost_kg": 260},
+            ],
+            "total_kg": 0, "loaded_count": 0, "cargo": [],
+            "route": ["EDWG"], "destination": "EDWG", "lost_total_kg": 0,
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert "abgeladen" not in ctx, \
+            "Die Staffel-Uebergabe gehoert nicht mehr in den Tagestext"
+        assert ctx["verluste"] == [], "und als Verlust schon gar nicht"

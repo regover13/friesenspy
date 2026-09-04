@@ -7365,14 +7365,14 @@ def event_summary_context(event: dict, progress: dict) -> dict:
             for l in progress.get("losses", [])
             if l.get("loss_kind") in ("sunk", "stolen")
         ],
-        # v10.2.1-Terminologie: „am Ladeplatz abgeladen" statt „zurückgebracht" — Ware, die ein
-        # Pilot an einem Ladeplatz abgelegt hat und die dort zum Weitertragen bereitliegt.
-        "abgeladen": [
-            f"{_label(l.get('name'), l.get('callsign'))}: Fracht an einem Ladeplatz abgeladen "
-            "(liegt zum Weitertragen bereit)"
-            for l in progress.get("losses", [])
-            if l.get("loss_kind") == "returned"
-        ],
+        # KEIN „abgeladen"-Feld mehr (Nutzerentscheidung 04.09.2026). Eine „returned"-Bewegung
+        # entsteht auch dann, wenn ein Pilot am Ladeplatz nur seinen Flugplan neu einloggt: Beim
+        # Logout faellt die Ladung ab (_drop_load), beim naechsten Login nimmt _load_standing sie
+        # sofort wieder auf. Der Tagestext feierte das als „Staffeluebergabe nach Lehrbuch",
+        # obwohl netto nichts geschehen war (FRS61 mit 11 s, FRS96 mit 17 s Sessionluecke am
+        # 04.09.2026). Aus dem Bericht liesse sich beides nicht unterscheiden — dafuer braeuchte
+        # es die Bewegungen aus derive_stacks, die hier nicht vorliegen. Deshalb gar nicht mehr
+        # erwaehnen; am Modell aendert das nichts, die Ware bleibt korrekt verbucht.
     }
 
 
