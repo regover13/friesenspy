@@ -788,14 +788,26 @@ class TestPlanRowsLookback:
             ("2026-07-02T10:05:00Z", *EDDK, 302, 15),
             ("2026-07-02T10:06:00Z", *EDDK, 1200, 80),
             ("2026-07-02T10:20:00Z", 52.0, 8.0, 5000, 120),
+            # Der Track laeuft ohne Landung ins Fenster hinein (04.09.2026): Seit
+            # _in_window bei fehlendem logoff_time die LETZTE POSITION als Ende nimmt,
+            # muss ein Leg das Fenster auch wirklich beruehren, um darin zu erscheinen.
+            # Am geprueften Fund aendert das nichts -- er haengt daran, dass die
+            # PLAN-Connection (logoff 10:35) vor `start` endet und nur ueber den
+            # 12h-Lookback noch Kandidat ist.
+            ("2026-07-02T10:35:00Z", 52.3, 8.2, 5000, 120),
+            ("2026-07-02T10:50:00Z", 52.6, 8.4, 5000, 120),
+            ("2026-07-02T11:05:00Z", 52.9, 8.6, 5000, 120),
         ]:
             _insert_pos(conn, cid, ts, lat, lon, alt, gs, "FRS56")
         conn.commit()
 
-        # Schmales Fenster ca. 3h40 NACH dem echten logoff (10:35) des fruehen Legs --
-        # innerhalb der 12h-Lookback-Grenze, genau wie im Live-Fund (Events-Fenster
-        # 18:00-20:00 desselben Tages, Connection-Ende ~15:xx).
-        narrow_window = dict(start="2026-07-02T14:00:00Z", end="2026-07-02T16:00:00Z")
+        # Fenster beginnt NACH dem echten logoff (10:35) der Plan-Connection, das Leg
+        # ragt aber noch hinein (letzte Position 11:05). Genau darum geht es hier: Der
+        # Plan-Kandidat ist nur ueber den 12h-Lookback erreichbar, weil seine Connection
+        # vor `start` endete. (Bis 04.09.2026 lag das Fenster bei 14:00-16:00 und das Leg
+        # gar nicht mehr darin -- das ging nur durch, solange `_in_window` ein Leg ohne
+        # erkannte Landung unabhaengig vom Fenster durchliess.)
+        narrow_window = dict(start="2026-07-02T11:00:00Z", end="2026-07-02T16:00:00Z")
         result = canonicalize_legs(conn, callsign_prefix="FRS", **narrow_window)
         conn.close()
 
@@ -1661,3 +1673,62 @@ class TestDurationLeBlockGuarantee:
         flight = out[0]
         assert flight["logoff_time"] is None  # nie an einem Platz gelandet -> offen
         assert flight["duration_min"] <= flight["block_min"]
+
+
+class TestLegsAusserhalbDesFensters:
+    def test_leg_ohne_landung_das_lange_vor_start_endete_faellt_raus(self):
+        """Live-Fund 04.09.2026 (Ausmotten-Event, Fenster 17:00-22:00Z).
+
+        FRS61 flog vormittags in Texas (KDFW, letzte Position 09:51:30Z) und ab 17:32Z beim
+        Event mit. Das Dallas-Leg endete ohne erkannte Landung -- der GPS-Track bricht ab,
+        ``logoff_time`` bleibt None. ``_in_window`` prueft ``landing < start`` nur, WENN
+        ``landing`` gesetzt ist; bei None fiel die Pruefung ersatzlos aus und das Leg galt
+        als "im Fenster". Auf der Events-Karte spannte ``fitBounds`` daraufhin von Dallas bis
+        Wangerooge und stellte sie mitten in den Atlantik (Mitte -43,16).
+
+        Ein Leg, dessen LETZTE Position vor dem Fensterbeginn liegt, ist beendet -- ob GPS
+        eine Landung sah oder nicht, aendert daran nichts.
+        """
+        conn = _make_conn()
+        cid = 5011
+        _insert_flight(
+            conn, cid=cid, callsign="FRS61", departure="EDDK", arrival="EDDW",
+            aircraft_short="C172",
+            logon_time="2026-09-04T09:40:00Z", logoff_time="2026-09-04T09:52:00Z",
+        )
+        # Vormittags: Track bricht im Streckenflug ab, keine Landung erkannt.
+        for ts, lat, lon, alt, gs in [
+            ("2026-09-04T09:42:00Z", *EDDK, 302, 0),
+            ("2026-09-04T09:43:00Z", *EDDK, 302, 15),
+            ("2026-09-04T09:45:00Z", *EDDK, 1200, 80),
+            ("2026-09-04T09:51:30Z", 52.0, 8.0, 5000, 120),
+        ]:
+            _insert_pos(conn, cid, ts, lat, lon, alt, gs, "FRS61")
+        # Abends: echtes Leg im Fenster, sauber gelandet.
+        _insert_flight(
+            conn, cid=cid, callsign="FRS61", departure="EDDW", arrival="EDDK",
+            aircraft_short="C172",
+            logon_time="2026-09-04T18:00:00Z", logoff_time="2026-09-04T18:30:00Z",
+        )
+        for ts, lat, lon, alt, gs in [
+            ("2026-09-04T18:02:00Z", *EDDW, 14, 0),
+            ("2026-09-04T18:04:00Z", *EDDW, 14, 20),
+            ("2026-09-04T18:06:00Z", *EDDW, 1500, 90),
+            ("2026-09-04T18:20:00Z", *EDDK, 1500, 90),
+            ("2026-09-04T18:26:00Z", *EDDK, 302, 15),
+            ("2026-09-04T18:28:00Z", *EDDK, 302, 0),
+        ]:
+            _insert_pos(conn, cid, ts, lat, lon, alt, gs, "FRS61")
+        conn.commit()
+
+        result = canonicalize_legs(conn, callsign_prefix="FRS",
+                                   start="2026-09-04T17:00:00Z", end="2026-09-04T22:00:00Z")
+        conn.close()
+
+        fruehe = [f for f in result if (f.get("logon_time") or "") < "2026-09-04T12:00:00Z"]
+        assert fruehe == [], (
+            "Leg mit letzter Position 09:51:30Z darf im Fenster ab 17:00Z nicht erscheinen; "
+            f"bekam {[(f.get('logon_time'), f.get('last_pos_ts')) for f in fruehe]}"
+        )
+        assert any((f.get("logon_time") or "") > "2026-09-04T17:00:00Z" for f in result), \
+            "das echte Abend-Leg muss erhalten bleiben"

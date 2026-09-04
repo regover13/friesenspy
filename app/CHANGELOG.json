@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.20.4",
+    "date": "2026-09-04",
+    "highlight": false,
+    "title": "Events-Karte zeigte Flüge von außerhalb des Zeitfensters",
+    "items": [
+      "🗺️ Trotz eingestelltem Zeitraum tauchten Flüge auf, die Stunden vorher woanders stattfanden. Die Karte spannte dann über beides und stand mitten im Atlantik, während die eigentlichen Spuren weit außerhalb des Bildes lagen.",
+      "🔍 Betroffen waren Streckenabschnitte, bei denen die Aufzeichnung ohne erkannte Landung abbricht — dort fiel die Prüfung gegen den Fensterbeginn ersatzlos aus. Jetzt zählt in diesem Fall die letzte aufgezeichnete Position als Ende. Abschnitte, die in den Zeitraum hineinreichen, bleiben unverändert enthalten."
+    ]
+  },
+  {
     "version": "14.20.3",
     "date": "2026-09-04",
     "highlight": false,
