@@ -661,6 +661,45 @@ class TestSyntheticIataCodes:
         finally:
             set_custom_airports([])
 
+    def test_search_zeigt_den_namen_eines_ergaenzten_platzes(self):
+        """Ein Platz, den es NUR in ``custom_airports`` gibt, traegt seinen Namen auch nur dort --
+        airportsdata kennt ihn per Definition nicht, das ist ja der Grund seiner Ergaenzung.
+        Wurde der Name allein von dort geholt, blieb die Trefferzeile leer (Fund 04.09.2026:
+        EDWT/Blexen sah im Dropdown aus wie gar nicht vorhanden, dabei fehlte nur das Schild)."""
+        set_custom_airports([
+            {"icao": "ZZBLEX", "name": "Blexen", "lat": 53.53833, "lon": 8.53833},
+        ])
+        try:
+            treffer = [e for e in search_airports("ZZBLEX") if e["icao"] == "ZZBLEX"]
+            assert treffer and treffer[0]["name"] == "Blexen"
+        finally:
+            set_custom_airports([])
+
+    def test_search_nimmt_den_korrigierten_namen(self):
+        """Gegenstueck zu :func:`test_search_nimmt_die_korrigierte_position`: Ein
+        ``custom_airports``-Eintrag ist ein Override, und zwar auch beim Namen. Sonst zeigte die
+        Trefferzeile weiter den veralteten Namen aus airportsdata, obwohl die Korrektur gepflegt
+        ist (realer Fall: EDTK steht dort als Karlsruhe-Forchheim, gehoert seit 2000 zu Sinsheim)."""
+        set_custom_airports([
+            {"icao": "EDDK", "name": "Nachgepflegter Name", "lat": 50.8659, "lon": 7.1427},
+        ])
+        try:
+            treffer = [e for e in search_airports("EDDK") if e["icao"] == "EDDK"]
+            assert treffer and treffer[0]["name"] == "Nachgepflegter Name"
+        finally:
+            set_custom_airports([])
+
+    def test_search_faellt_ohne_gepflegten_namen_auf_airportsdata_zurueck(self):
+        """``name`` ist in ``custom_airports`` NULL-erlaubt (reine Anzeige, nie Pflicht) -- ein
+        Eintrag, der nur die Koordinate korrigiert, darf den bekannten Namen nicht loeschen.
+        Haelt die Reihenfolge fest: erst der gepflegte Name, dann airportsdata, dann leer."""
+        set_custom_airports([{"icao": "EDDK", "name": "", "lat": 50.8659, "lon": 7.1427}])
+        try:
+            treffer = [e for e in search_airports("EDDK") if e["icao"] == "EDDK"]
+            assert treffer and treffer[0]["name"] == "Cologne Bonn Airport"
+        finally:
+            set_custom_airports([])
+
     def test_shadowed_codes_not_offered_in_autocomplete(self):
         """Fable-Review v10.4.6: Was die Platzerkennung nie zurueckgibt, darf man sich auch
         nicht in einen Event-Filter klicken koennen. Eigenstaendige Platzhalter bleiben waehlbar."""

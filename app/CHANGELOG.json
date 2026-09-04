@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.19.3",
+    "date": "2026-09-04",
+    "highlight": false,
+    "title": "Nachgetragene Pl\u00e4tze zeigen ihren Namen",
+    "items": [
+      "\ud83c\udff7\ufe0f Im Platz-Suchfeld standen die von Hand nachgetragenen Flugpl\u00e4tze ohne Namen da \u2014 nur die Kennung, das Namensfeld blieb leer. Ein Platz ohne Namen sieht aus wie kein Platz: EDWT (Blexen) wirkte deshalb, als sei er gar nicht in der Datenbank, obwohl er samt Namen l\u00e4ngst drin stand. Betroffen waren alle 63 Pl\u00e4tze, die es nur bei uns gibt.",
+      "\ud83d\udd0e Ursache war die Quelle: Der Name kam ausschlie\u00dflich aus der Standard-Flugplatzdatenbank. F\u00fcr einen Platz, dessen Existenzberechtigung genau darin liegt, dort zu fehlen, konnte dabei nie etwas herauskommen. Jetzt wird zuerst der bei uns gepflegte Name genommen.",
+      "\u270f\ufe0f Damit gewinnt unser Eintrag auch dort, wo die Standarddatenbank einen veralteten Namen f\u00fchrt \u2014 EDTK steht dort bis heute als Karlsruhe-Forchheim, der Code geh\u00f6rt seit 2000 zu Sinsheim. Wo wir keinen eigenen Namen gepflegt haben, bleibt der bekannte stehen."
+    ]
+  },
+  {
     "version": "14.19.2",
     "date": "2026-09-03",
     "highlight": false,

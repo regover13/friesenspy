@@ -113,19 +113,31 @@ def _hat_echten_zwilling(platzhalter: str) -> bool:
 # übergebene Standardradius gilt unverändert (rückwärtskompatibel für alle bisherigen Einträge).
 _CUSTOM_AIRPORTS: dict[str, tuple[float, float, float | None, float | None]] = {}
 
+# Der Anzeigename der Ergaenzungs-Plaetze -- bewusst ein eigener Cache und kein fuenftes Feld im
+# Tupel oben: der Name hat KEINE Funktionswirkung (die Platzerkennung rechnet nur mit lat/lon/
+# elevation/radius), und die Tupel-Form wird an mehreren Stellen entpackt. Getrennt gehalten
+# bleibt beides fuer sich lesbar.
+_CUSTOM_NAMES: dict[str, str] = {}
+
 
 def set_custom_airports(rows: list[dict]) -> None:
     """Ersetzt den Ergänzungs-Flugplatz-Cache komplett (Invalidierung = Neuaufruf).
 
-    ``rows`` wie von :func:`app.database.list_custom_airports` geliefert (Keys: ``icao``, ``lat``,
-    ``lon``, ``elevation_ft``, ``radius_km``). Codes werden uppercase gespeichert (Lookups sind
-    case-insensitive).
+    ``rows`` wie von :func:`app.database.list_custom_airports` geliefert (Keys: ``icao``, ``name``,
+    ``lat``, ``lon``, ``elevation_ft``, ``radius_km``). Codes werden uppercase gespeichert (Lookups
+    sind case-insensitive). ``name`` landet im getrennten Namens-Cache und nur, wenn er etwas
+    enthaelt -- ein leerer Name darf den aus airportsdata bekannten nicht verdraengen.
     """
-    global _CUSTOM_AIRPORTS
+    global _CUSTOM_AIRPORTS, _CUSTOM_NAMES
     _CUSTOM_AIRPORTS = {
         (r["icao"] or "").upper(): (r["lat"], r["lon"], r.get("elevation_ft"), r.get("radius_km"))
         for r in rows
         if r.get("icao") and r.get("lat") is not None and r.get("lon") is not None
+    }
+    _CUSTOM_NAMES = {
+        (r["icao"] or "").upper(): (r.get("name") or "").strip()
+        for r in rows
+        if r.get("icao") and (r.get("name") or "").strip()
     }
 
 
@@ -184,7 +196,11 @@ def search_airports(q: str, limit: int = 20) -> list[dict]:
     for c in sorted(codes)[:limit]:
         info = airports.get(c) or {}
         ort = icao_to_coords(c)
-        out.append({"icao": c, "name": info.get("name") or "",
+        # Der gepflegte Name hat Vorrang -- genau wie die Position (#56). Fuer einen Platz, den
+        # es nur hier gibt, ist er die EINZIGE Quelle; airportsdata kennt ihn ja nicht. Und wo
+        # airportsdata einen veralteten Namen fuehrt (EDTK steht dort bis heute als
+        # Karlsruhe-Forchheim, der Code gehoert seit 2000 zu Sinsheim), gewinnt der korrigierte.
+        out.append({"icao": c, "name": _CUSTOM_NAMES.get(c) or info.get("name") or "",
                     "lat": ort[0] if ort else None, "lon": ort[1] if ort else None})
     return out
 
