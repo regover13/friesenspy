@@ -149,6 +149,15 @@ mkdir -p /opt/friesenspy/data
   Buttons in eine eigene Zeile UNTER die Daten zu legen (`colspan`), statt in eine Spalte ganz
   rechts, die sonst erst nach Scrollen erreichbar ist (Erkennungslücken-Muster).
 
+- **Eine Geste, die auf dem ganzen Dokument lauscht, muss Karte und Scroll-Bereiche
+  aussparen.** Das Herunterziehen zum Aktualisieren (`_ziehErlaubt`, v14.20.0) hängt an
+  `document` und feuert damit über jedem Element. Auf dem Karten-Tab steht die Seite *immer*
+  ganz oben (`scrollY === 0`) und die Leaflet-Karte füllt fast den Bildschirm — ohne die
+  Ausnahme für `.leaflet-container` hätte jedes Verschieben des Ausschnitts nach Süden die
+  App aktualisiert. Dasselbe gilt für `.scroll-list`/`.table-scroll`: dort entscheidet der
+  `scrollTop` des **Vorfahren**, nicht der des berührten Elements. Wer eine weitere solche
+  Geste baut, prüft beide Fälle — `tests/test_zieh_aktualisieren.py` ist die Vorlage.
+
 ## AIP-Kartenblätter (stehende Regeln — IMMER einhalten)
 
 Sichtflug-, Flugplatz- und Rollkarten der DFS, als Ebenen über der Live-Karte. Seit dem

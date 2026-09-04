@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.20.0",
+    "date": "2026-09-04",
+    "highlight": false,
+    "title": "Herunterziehen aktualisiert die App",
+    "items": [
+      "\ud83d\udcf2 Wer FriesenSpy vom Home-Bildschirm aus startet, kann die Anzeige jetzt durch Herunterziehen auffrischen \u2014 dieselbe Geste, die jede andere App auf dem Telefon kann. In der installierten App gab es sie bisher nicht: iOS blendet dort die Adressleiste aus und mit ihr das eingebaute Nachladen. Im normalen Browser-Tab \u00e4ndert sich nichts, dort macht Safari das weiterhin selbst.",
+      "\ud83d\udd04 Geholt wird alles, was gerade zu sehen ist: Flugliste, Karte, aufgegebene Fl\u00fcge, TeamSpeak, Bummel und Kutter. Eine abgerissene Live-Verbindung wird dabei gleich mit aufgebaut. Die Seite selbst wird NICHT neu geladen \u2014 der Kartenausschnitt und der offene Tab bleiben stehen.",
+      "\ud83d\uddfa\ufe0f Auf der Karte bleibt Ziehen ein Verschieben des Ausschnitts, und in den eigenen Scroll-Listen bleibt es ein Scrollen. Das ist die eigentliche Arbeit an so einer Geste: Sie darf nur dort losgehen, wo der Finger nichts anderes vorhat."
+    ]
+  },
+  {
     "version": "14.19.3",
     "date": "2026-09-04",
     "highlight": false,

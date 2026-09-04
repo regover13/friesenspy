@@ -3785,6 +3785,28 @@
     #ac-body .hint { font-size: 0.72rem; color: var(--text-label); margin-top: 0.2rem; }
     #ac-body .hint a { color: var(--green); }
     #ac-body .empty-hint { font-size: 0.82rem; color: var(--text-label); font-style: italic; }
+
+    /* =====================================================================
+       HERUNTERZIEHEN ZUM AKTUALISIEREN (nur installierte App)
+       Ein Balken am oberen Rand, der mit dem Finger mitwaechst. Bewusst ohne
+       Animation und ohne Drehkringel: Die Rueckmeldung ist die Breite, und
+       beim Loslassen bleibt er stehen, bis die Daten da sind.
+       ===================================================================== */
+    .zieh-balken {
+      position: fixed;
+      top: 0; right: 0; left: 0;
+      height: 3px;
+      background: var(--green-dim);
+      transform: scaleX(0);
+      transform-origin: left;
+      z-index: 9998;      /* unter .modal (10000) -- bei offenem Modal greift die Geste ohnehin nicht */
+      pointer-events: none;
+    }
+    /* Das hidden-Attribut allein reicht hier nicht: Die Regel darueber setzt zwar kein
+       display, aber jede spaetere koennte es -- und ein sichtbarer Reststrich am oberen
+       Rand waere in jeder Ansicht zu sehen. */
+    .zieh-balken[hidden] { display: none; }
+    .zieh-balken[data-bereit="1"] { background: var(--green); }
   </style>
 </head>
 <body>
@@ -14300,6 +14322,9 @@ document.addEventListener('DOMContentLoaded', () => {
   _initPanelAnzeige();
   _initPanelTranslit();
   _initPanelShellKanal();
+  // Haengt einen eigenen Knoten an document.body -- der existiert erst, wenn das Dokument
+  // fertig geparst ist. Die Wache im Innern haelt sie ausserhalb der installierten App an.
+  _ziehAktualisierenBinden();
 });
 
 document.addEventListener('keydown', (e) => {
@@ -14314,16 +14339,134 @@ document.addEventListener('keydown', (e) => {
   e.stopImmediatePropagation();
 });
 
-// Bei Rückkehr aus Hintergrund / Screen-Lock sofort neu laden
-document.addEventListener('visibilitychange', async () => {
-  if (document.hidden) return;
+// ==========================================================================
+//  ALLES NEU HOLEN -- ein Weg, zwei Ausloeser
+// ==========================================================================
+// Die beiden Ausloeser sind die Rueckkehr aus dem Hintergrund und die Zieh-Geste darunter.
+// Beide meinen dasselbe: "zeig mir den Stand von jetzt". Deshalb EINE Funktion -- zwei
+// Listen, die mit der Zeit auseinanderlaufen, waeren der wahrscheinlichere Fehler als eine
+// Anfrage zu viel.
+//
+// Prefiles und TeamSpeak sind seit dem 04.09.2026 dabei, obwohl sie ihren eigenen langsamen
+// Takt haben (60 s bzw. 30 s): Beim Ziehen stuende sonst genau das nicht frisch da, was auf
+// dem Live-Tab unter der Flugliste steht. Was der Kommentar am Poll-Takt weiter oben
+// verbietet, ist die Kopplung an den SSE-Push -- ein gepufferter Rueckstau feuert hunderte
+// Frames und damit einen 429-Sturm. Ein Handgriff und ein Wechsel in den Vordergrund sind
+// Einzelereignisse; sie kosten zwei Anfragen.
+async function alleDatenNeuLaden() {
   await refreshLiveData();
   if (!sseSource || sseSource.readyState !== EventSource.OPEN) {
     connectSSE();
   }
   fetchBummelActive();
   fetchKutterActive();
+  fetchAndRenderPrefiles();
+  fetchAndRenderTeamspeak();
+}
+
+// Bei Rückkehr aus Hintergrund / Screen-Lock sofort neu laden
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  alleDatenNeuLaden();
 });
+
+// ==========================================================================
+//  HERUNTERZIEHEN ZUM AKTUALISIEREN (nur installierte App)
+// ==========================================================================
+// Im BROWSERTAB macht iOS das von selbst -- dort laedt Safari die Seite neu. In der
+// installierten App (Home-Bildschirm, `display-mode: standalone`) gibt es die Geste NICHT:
+// Apple blendet die Adressleiste aus und mit ihr das eingebaute Nachladen. Genau dort
+// erwartet man sie aber, weil jede andere App auf dem Telefon sie kann.
+//
+// Also von Hand, und nur dort: Im Tab wuerden sich unsere Geste und die von Safari
+// ueberlagern, im Kniebrett gibt es weder Adressleiste noch Finger. Uebernommen aus der
+// Beezy-PWA (`pwa/app.js`, `zumAktualisierenZiehenBinden`), bewusst ohne Bibliothek und
+// ohne Animation -- ein Balken, der mitwandert, mehr braucht die Geste nicht.
+//
+// Sie holt DATEN und laedt die Seite NICHT neu. Ein `location.reload()` risse die
+// SSE-Verbindung ab, warfe den Kartenausschnitt weg und den offenen Tab dazu -- fuer die
+// Frage "was ist jetzt los?" waere das der falsche Preis.
+
+const _ZIEH_SCHWELLE = 70;   // Pixel, ab denen Loslassen ausloest
+
+// Ganz oben, und nichts anderes im Weg? Die Geste hat hier mehr Nachbarn als in Beezy:
+// Karten, Modale und eigene Scrollbereiche -- in allen dreien heisst Ziehen etwas anderes.
+function _ziehErlaubt(ziel) {
+  if (window.scrollY > 0) return false;
+  // Steht ein Modal offen, waere ein Neuaufbau dahinter fuer den Nutzer unsichtbar.
+  if (document.querySelector('.fp-modal-overlay:not(.hidden), .modal.open')) return false;
+  // Nicht, waehrend jemand tippt: refreshLiveData ersetzt die Live-Tabelle als Ganzes.
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return false;
+  for (let el = ziel; el && el !== document.body; el = el.parentElement) {
+    // Auf einer Leaflet-Karte verschiebt Ziehen den Ausschnitt -- auf dem Karten-Tab die
+    // haeufigste Geste ueberhaupt, und dort steht die Seite IMMER ganz oben. Ohne diese
+    // Ausnahme wuerde jedes Verschieben nach Sueden die App aktualisieren.
+    if (el.classList && el.classList.contains('leaflet-container')) return false;
+    // Ein eigener Scrollbereich, der nicht ganz oben steht (.scroll-list, .table-scroll):
+    // dort soll der Finger diese Liste bewegen.
+    if (el.scrollTop > 0) return false;
+  }
+  return true;
+}
+
+function _ziehAktualisierenBinden() {
+  // Die Panel-Wache steht zuerst: Im Kniebrett laeuft dieselbe Seite in Coherent GT, und
+  // was dessen matchMedia auf "display-mode" antwortet, ist nicht verlaesslich.
+  if (document.documentElement.classList.contains('vr-panel')) return;
+  if (!_isStandalone()) return;
+
+  const balken = document.createElement('div');
+  balken.className = 'zieh-balken';
+  balken.hidden = true;
+  balken.dataset.bereit = '0';
+  document.body.appendChild(balken);
+
+  let start = null;
+  let laeuft = false;
+
+  const zuruecksetzen = () => {
+    balken.hidden = true;
+    balken.style.transform = 'scaleX(0)';
+    balken.dataset.bereit = '0';
+  };
+
+  document.addEventListener('touchstart', (e) => {
+    // Nur ganz oben und nur mit einem Finger. Wer mitten in einer Liste nach unten wischt,
+    // will scrollen, nicht neu laden; zwei Finger sind ein Zoom.
+    start = (!laeuft && e.touches.length === 1 && _ziehErlaubt(e.target))
+      ? e.touches[0].clientY : null;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (start === null) return;
+    const weg = e.touches[0].clientY - start;
+    if (weg <= 0) { zuruecksetzen(); return; }
+    balken.hidden = false;
+    balken.style.transform = `scaleX(${Math.min(weg / _ZIEH_SCHWELLE, 1)})`;
+    balken.dataset.bereit = weg >= _ZIEH_SCHWELLE ? '1' : '0';
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    const ausloesen = start !== null && balken.dataset.bereit === '1';
+    start = null;
+    if (!ausloesen) { zuruecksetzen(); return; }
+    // Der Balken bleibt auf voller Breite stehen, bis die Daten da sind. Ohne das waere die
+    // einzige Rueckmeldung eine Tabelle, die sich womoeglich gar nicht aendert -- und die
+    // Geste fuehle sich an, als haette sie nichts getan.
+    laeuft = true;
+    alleDatenNeuLaden()
+      .catch(() => {})
+      .then(() => { laeuft = false; zuruecksetzen(); });
+  }, { passive: true });
+
+  // Ein abgebrochener Zug (Anruf, Systemgeste) liefert KEIN touchend -- ohne diese Zeile
+  // bliebe der Balken stehen, bis die Seite neu geladen wird.
+  document.addEventListener('touchcancel', () => {
+    start = null;
+    if (!laeuft) zuruecksetzen();
+  }, { passive: true });
+}
 
 </script>
 <button id="panel-update-hint" class="panel-update-hint" hidden onclick="location.reload()"><svg class="icon"><use href="#icon-refresh" xlink:href="#icon-refresh"/></svg> Neue Version &ndash; neu laden</button>
