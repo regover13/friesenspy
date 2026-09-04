@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.20.3",
+    "date": "2026-09-04",
+    "highlight": false,
+    "title": "App war alle zehn Minuten für zwei bis drei Minuten lahmgelegt",
+    "items": [
+      "🐟 Während des Ausmotten-Events am 4. September war FriesenSpy wiederholt kaum bedienbar: Die Live-Karte fror ein, Einstellungen ließen sich nicht speichern, und die Seite antwortete zeitweise gar nicht. Betroffen waren alle Nutzer gleichzeitig, jeweils für zwei bis drei Minuten.",
+      "🔒 Ursache war das Nachladen der GPS-Streckenaufzeichnungen: Es hielt die Datenbank während des gesamten Abrufs von bis zu zwanzig Flügen gesperrt — am Eventabend zwei Minuten und 43 Sekunden am Stück. Alles andere, was in dieser Zeit schreiben wollte, lief in eine Zeitsperre. Vorher fiel es nie auf, weil ohne neue Flüge auch nichts zu schreiben war.",
+      "⏱️ Jetzt wird nach jedem einzelnen Flug gespeichert statt erst am Ende. Die Sperre besteht damit nur noch Millisekunden."
+    ]
+  },
+  {
     "version": "14.20.2",
     "date": "2026-09-04",
     "highlight": false,
