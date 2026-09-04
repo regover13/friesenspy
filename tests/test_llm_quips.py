@@ -73,7 +73,11 @@ class TestEventSummaryPrompt:
         with patch.object(llm, "_chat", side_effect=fake_chat):
             llm.event_summary(context)
         u = captured["user"]
-        assert "Ladeplatz abgeladen" in u
+        # Der Kern dieses Tests bleibt: ein "returned"-Leg landet NICHT in der Verlust-Liste.
+        # Seit dem 04.09.2026 wird es ueberhaupt nicht mehr erwaehnt (s. TestKeineStaffel-
+        # uebergabeImBericht in test_transport.py), deshalb steht die Zeile nicht mehr im Prompt.
+        assert "Reiner (FRS61): Fracht an einem Ladeplatz abgeladen" not in u
+        assert "Verluste: keine — alles kam heil an" in u
         assert "zurückgebracht" not in u
         assert "umgedreht" not in u
 
@@ -197,12 +201,13 @@ class TestReturnedRelayContext:
         }
         ctx = event_summary_context({"name": "Test"}, progress)
         verluste_joined = " ".join(ctx["verluste"])
-        abgeladen_joined = " ".join(ctx.get("abgeladen") or [])
         assert "FRS96" in verluste_joined and "geklaut" in verluste_joined
         assert "FRS61" not in verluste_joined            # Relay ist kein Verlust
-        assert "FRS61" in abgeladen_joined
-        assert "Ladeplatz abgeladen" in abgeladen_joined
-        assert "zurückgebracht" not in verluste_joined + abgeladen_joined
+        # Seit dem 04.09.2026 wird die Staffel-Uebergabe auch nicht mehr eigens erwaehnt: Eine
+        # "returned"-Bewegung entsteht schon beim blossen Neu-Einloggen des Flugplans am
+        # Ladeplatz, und im Bericht war das von echtem Liegenlassen nicht zu unterscheiden.
+        assert "abgeladen" not in ctx
+        assert "zurückgebracht" not in verluste_joined
 
     def test_flight_quip_context_returned_sets_relay_not_verlust(self):
         flight = {

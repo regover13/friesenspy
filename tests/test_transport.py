@@ -395,7 +395,9 @@ class TestQuipContext:
             "route": ["EDWG", "EDXH"], "destination": "EDXH",
         }
         ctx = event_summary_context({"name": "Test"}, progress)
-        assert ctx["pilots"] == {"Anna": 2, "Bert": 1}
+        # Bert hat nur EINE Fuhre gebracht und wird seit dem 04.09.2026 nicht mehr genannt
+        # (s. TestSummaryNurAbZweiFuhren); loaded_count zaehlt weiterhin ALLE Ablieferungen.
+        assert ctx["pilots"] == {"Anna": 2}
         assert ctx["loaded_count"] == 3
 
     def test_summary_context_gleiche_vornamen_bleiben_getrennt(self):
@@ -407,13 +409,16 @@ class TestQuipContext:
             "flights": [
                 {"loaded": True, "name": "Michael Stingl", "callsign": "FRS96"},
                 {"loaded": True, "name": "Michael Stingl", "callsign": "FRS96"},
+                # Zwei Fuhren, damit er die Schwelle von 04.09.2026 nimmt -- sonst faellt er
+                # heraus und der Test prueft die Trennung gleicher Vornamen gar nicht mehr.
+                {"loaded": True, "name": "Michael Wellner", "callsign": "FRS44"},
                 {"loaded": True, "name": "Michael Wellner", "callsign": "FRS44"},
             ],
             "total_kg": 500, "loaded_count": 3, "cargo": [],
             "route": ["EDWZ", "EDWS"], "destination": "EDWS",
         }
         ctx = event_summary_context({"name": "Test"}, progress)
-        assert ctx["pilots"] == {"Michael (FRS96)": 2, "Michael (FRS44)": 1}
+        assert ctx["pilots"] == {"Michael (FRS96)": 2, "Michael (FRS44)": 2}
 
 
 class TestCalendarCargo:
@@ -3463,3 +3468,130 @@ class TestBummelTimeGuards:
         r2 = client.post(f"/api/admin/bummel/races/{rid}", json={
             "dtend": "2026-06-01T09:00:00Z"})
         assert r2.status_code == 400
+
+
+class TestSummaryNurAbZweiFuhren:
+    """Nutzerfund 04.09.2026 (Ausmotten-Event).
+
+    Der Abschlusstext las sich als "Marco (FRS135) mit 1 Flug, Eyüp (FRS119N) mit 1 Flug, ..."
+    -- neunmal dieselbe Zahl. Beides war falsch:
+
+    * Gezaehlt wird ``loaded``, also die Ablieferung am Ziel. Wer ueber einen Zwischenplatz
+      faehrt, hat mehrere FLUEGE, aber nur EINE Fuhre. "1 Flug" war schlicht der falsche Name
+      fuer die Zahl.
+    * Eine einzelne Fuhre ist nichts Erwaehnenswertes. Namentlich genannt wird erst, wer
+      mindestens zwei gebracht hat.
+    """
+
+    def test_pilot_mit_einer_fuhre_wird_nicht_genannt(self):
+        progress = {
+            "flights": [
+                {"loaded": True, "name": "Anna Meyer", "callsign": "FRS10"},
+                {"loaded": True, "name": "Anna Meyer", "callsign": "FRS10"},
+                {"loaded": True, "name": "Bert", "callsign": "FRS11"},
+            ],
+            "total_kg": 1000, "loaded_count": 3,
+            "cargo": [], "route": ["EDWG", "EDXH"], "destination": "EDXH",
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert ctx["pilots"] == {"Anna (FRS10)": 2}, \
+            "Bert hat nur eine Fuhre gebracht und gehoert nicht in die Aufzaehlung"
+
+    def test_ohne_mehrfachtraeger_bleibt_die_liste_leer(self):
+        """Alle mit genau einer Fuhre -> niemand wird genannt (der Text kommt ohne aus)."""
+        progress = {
+            "flights": [
+                {"loaded": True, "name": "Anna", "callsign": "FRS10"},
+                {"loaded": True, "name": "Bert", "callsign": "FRS11"},
+            ],
+            "total_kg": 500, "loaded_count": 2,
+            "cargo": [], "route": ["EDWG"], "destination": "EDWG",
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert ctx["pilots"] == {}
+
+    def test_zwei_fuhren_werden_genannt(self):
+        progress = {
+            "flights": [
+                {"loaded": True, "name": "Anna", "callsign": "FRS10"},
+                {"loaded": True, "name": "Anna", "callsign": "FRS10"},
+            ],
+            "total_kg": 500, "loaded_count": 2,
+            "cargo": [], "route": ["EDWG"], "destination": "EDWG",
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert ctx["pilots"] == {"Anna (FRS10)": 2}
+
+
+class TestVerlustGeklautIstAktiv:
+    """Nutzerfund 04.09.2026: Der Abschlusstext machte den Dieb zum Opfer.
+
+    Geschrieben stand: "Reiner (FRS61) wurde unterwegs noch um 260 kg erleichtert -- irgendwer
+    hatte wohl Appetit auf Heringe". Im Modell ist aber ER der Taeter: `stolen` entsteht in
+    `_drop_load`, wenn der Pilot mit Ware an einem Platz landet, der weder Ziel noch Ladeplatz
+    ist -- er hat sie mitgenommen und dort behalten. "Fracht geklaut" laesst beide Lesarten zu,
+    deshalb aktiv formulieren.
+    """
+
+    def test_stolen_nennt_den_piloten_als_taeter(self):
+        progress = {
+            "flights": [],
+            "losses": [
+                {"loss_kind": "stolen", "name": "Reiner Kaste", "callsign": "FRS61",
+                 "lost_kg": 260},
+            ],
+            "total_kg": 0, "loaded_count": 0, "cargo": [],
+            "route": ["EDWG"], "destination": "EDWG", "lost_total_kg": 260,
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert len(ctx["verluste"]) == 1
+        eintrag = ctx["verluste"][0]
+        assert "hat" in eintrag, f"Der Eintrag muss den Piloten handeln lassen: {eintrag!r}"
+        assert "Reiner (FRS61)" in eintrag and "260" in eintrag
+
+    def test_sunk_bleibt_unveraendert(self):
+        """Beim Versinken ist der Pilot NICHT der Taeter -- das darf nicht mitgedreht werden."""
+        progress = {
+            "flights": [],
+            "losses": [
+                {"loss_kind": "sunk", "name": "Kai Dierkes", "callsign": "FRS95", "lost_kg": 50},
+            ],
+            "total_kg": 0, "loaded_count": 0, "cargo": [],
+            "route": ["EDWG"], "destination": "EDWG", "lost_total_kg": 50,
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert "Kutter versunken" in ctx["verluste"][0]
+
+
+class TestKeineStaffeluebergabeImBericht:
+    """Nutzerentscheidung 04.09.2026: Die Staffel-Uebergabe gehoert nicht in den Tagestext.
+
+    Im Abschlusstext des Ausmotten-Events stand, Reiner (FRS61) und Michael (FRS96) haetten
+    "ihre Fracht ordentlich am Ladeplatz abgesetzt -- Staffeluebergabe nach Lehrbuch". Tatsaechlich
+    hatten beide nur den Flugplan neu geloggt und danach alles wieder mitgenommen:
+
+        FRS61  EDXP->EDWG  18:49:44-18:54:52
+        FRS61  EDXP->EDWG  18:55:03-19:51:52     <- 11 s spaeter neu eingeloggt
+        FRS96  EDDW->EDXH  18:58:20-18:58:37     <- 17 s lang
+        FRS96  EDXH->EDWG  18:58:49-19:46:29     <- 12 s spaeter
+
+    Beim Logout faellt die Ladung ab (`_drop_load` -> "returned", weil er auf einem Ladeplatz
+    steht), beim naechsten Login laedt `_load_standing` sie wieder auf. Netto passiert nichts.
+    Das MODELL bleibt unveraendert -- der Erhaltungssatz haengt daran --, aber der Bericht
+    erwaehnt es nicht mehr.
+    """
+
+    def test_returned_taucht_nicht_mehr_im_kontext_auf(self):
+        progress = {
+            "flights": [],
+            "losses": [
+                {"loss_kind": "returned", "name": "Reiner Kaste", "callsign": "FRS61",
+                 "lost_kg": 260},
+            ],
+            "total_kg": 0, "loaded_count": 0, "cargo": [],
+            "route": ["EDWG"], "destination": "EDWG", "lost_total_kg": 0,
+        }
+        ctx = event_summary_context({"name": "Test"}, progress)
+        assert "abgeladen" not in ctx, \
+            "Die Staffel-Uebergabe gehoert nicht mehr in den Tagestext"
+        assert ctx["verluste"] == [], "und als Verlust schon gar nicht"

@@ -7326,7 +7326,12 @@ def event_summary_context(event: dict, progress: dict) -> dict:
         key = cs or _label(f.get("name"), f.get("callsign"))
         ent = _agg.setdefault(key, {"label": _label(f.get("name"), f.get("callsign")), "n": 0})
         ent["n"] += 1
-    per_pilot = {e["label"]: e["n"] for e in _agg.values()}
+    # Erst ab ZWEI Fuhren namentlich nennen (Nutzerentscheidung 04.09.2026). Gezaehlt wird
+    # `loaded`, also die Ablieferung am Ziel -- wer ueber einen Zwischenplatz faehrt, macht
+    # mehrere FLUEGE, bringt aber EINE Fuhre. Eine einzelne Fuhre ist nichts Erwaehnenswertes;
+    # der Abschlusstext las sich sonst als "X mit 1 Flug, Y mit 1 Flug, ..." -- neunmal
+    # dieselbe Zahl, dazu unter falschem Namen.
+    per_pilot = {e["label"]: e["n"] for e in _agg.values() if e["n"] >= 2}
     return {
         "name": event.get("name"),
         "total_kg": progress.get("total_kg"),
@@ -7348,19 +7353,26 @@ def event_summary_context(event: dict, progress: dict) -> dict:
         # zurückgebracht"). Stattdessen als Staffel-Übergabe getrennt (siehe `abgeladen`).
         "verluste": [
             (f"{_label(l.get('name'), l.get('callsign'))}: "
-             + ("Kutter versunken" if l.get("loss_kind") == "sunk" else "Fracht geklaut")
+             # AKTIV formulieren. "Fracht geklaut" laesst offen, WER geklaut hat, und die KI
+             # machte daraus ein Missgeschick mit unbekanntem Dieb ("wurde erleichtert --
+             # irgendwer hatte wohl Appetit", Nutzerfund 04.09.2026). `stolen` entsteht aber in
+             # _drop_load genau dann, wenn der Pilot mit Ware an einem Platz landet, der weder
+             # Ziel noch Ladeplatz ist: Er hat sie mitgenommen und dort behalten. Beim Versinken
+             # ist er dagegen NICHT der Taeter -- deshalb bleibt der Zweig unveraendert.
+             + ("Kutter versunken" if l.get("loss_kind") == "sunk"
+                else "hat die Fracht selbst geklaut")
              + f" ({round(l.get('lost_kg') or 0)} kg)")
             for l in progress.get("losses", [])
             if l.get("loss_kind") in ("sunk", "stolen")
         ],
-        # v10.2.1-Terminologie: „am Ladeplatz abgeladen" statt „zurückgebracht" — Ware, die ein
-        # Pilot an einem Ladeplatz abgelegt hat und die dort zum Weitertragen bereitliegt.
-        "abgeladen": [
-            f"{_label(l.get('name'), l.get('callsign'))}: Fracht an einem Ladeplatz abgeladen "
-            "(liegt zum Weitertragen bereit)"
-            for l in progress.get("losses", [])
-            if l.get("loss_kind") == "returned"
-        ],
+        # KEIN „abgeladen"-Feld mehr (Nutzerentscheidung 04.09.2026). Eine „returned"-Bewegung
+        # entsteht auch dann, wenn ein Pilot am Ladeplatz nur seinen Flugplan neu einloggt: Beim
+        # Logout faellt die Ladung ab (_drop_load), beim naechsten Login nimmt _load_standing sie
+        # sofort wieder auf. Der Tagestext feierte das als „Staffeluebergabe nach Lehrbuch",
+        # obwohl netto nichts geschehen war (FRS61 mit 11 s, FRS96 mit 17 s Sessionluecke am
+        # 04.09.2026). Aus dem Bericht liesse sich beides nicht unterscheiden — dafuer braeuchte
+        # es die Bewegungen aus derive_stacks, die hier nicht vorliegen. Deshalb gar nicht mehr
+        # erwaehnen; am Modell aendert das nichts, die Ware bleibt korrekt verbucht.
     }
 
 

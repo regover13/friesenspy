@@ -28,6 +28,17 @@ Vom Nutzer vorgemerkte, noch nicht begonnene Arbeiten stehen in
 angefangen wird. Am Projekt arbeiten mehrere Sitzungen parallel (auch in der Cloud): vor dem
 Start pullen und prüfen, ob eine andere die Aufgabe schon erledigt hat.
 
+**Zwei Nummernräume — nicht verwechseln.** Verweise wie `#23`, `#52` oder `#84` in
+Code-Kommentaren sind eine **eigene Zählung**, die nie in GitHub geführt wurde; es gibt
+dafür keine Liste, die Nummern leben ausschließlich an den Fundstellen im Code (vergeben
+sind 1–84, u. a. in `poller.py`, `geo.py`, `gps_legs.py`, `calendar_sync.py`,
+`transport_stacks.py`). **GitHub-Issues** gibt es erst seit dem 04.09.2026; sie beginnen bei
+#14. **Die Nummern 14, 15 und 18 existieren dadurch doppelt.**
+
+Im Zweifel entscheidet der Ort: Steht die Nummer in einem Kommentar neben einem beschriebenen
+Fund, ist die alte Zählung gemeint — sie mit `gh issue view` nachzuschlagen führt in die Irre.
+Neue Funde gehören als GitHub-Issue angelegt, nicht als weitere Kommentar-Nummer.
+
 ## `"highlight": false` — „GROSSES UPDATE" vergibt allein der Nutzer (stehende Regel)
 
 Jeder neue Changelog-Eintrag bekommt **`"highlight": false`**. Ohne Ausnahme, egal wie groß die

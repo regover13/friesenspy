@@ -475,36 +475,42 @@ def event_summary(context: dict) -> str | None:
         f"Event: {c.get('name') or '?'}",
         f"Ziel (dorthin geht ALLE Fracht): {c.get('destination') or '?'}",
         f"Abholplätze (Fracht wird dort geladen): {', '.join(c.get('pickups') or []) or '—'}",
-        f"Gesamt bewegt: {c.get('total_kg')} kg in {c.get('loaded_count')} Frachtflügen",
+        f"Gesamt bewegt: {c.get('total_kg')} kg in {c.get('loaded_count')} Fuhren",
         f"Fracht: {', '.join(c.get('cargo') or []) or '—'}",
-        f"Piloten (Flüge): {pilots}",
+        f"Piloten mit mehreren Fuhren: {pilots}",
     ]
     verluste = c.get("verluste") or []
     if verluste:
         lines.append(f"Verluste unterwegs ({round(c.get('lost_total_kg') or 0)} kg): " + "; ".join(verluste))
     else:
         lines.append("Verluste: keine — alles kam heil an")
-    abgeladen = c.get("abgeladen") or []
-    if abgeladen:
-        lines.append(
-            "Am Ladeplatz abgeladen (Staffel-Übergabe, KEIN Verlust — die Ware liegt am Ladeplatz "
-            "und wird von dort weitergetragen): " + "; ".join(abgeladen)
-        )
     user = (
         "Schreibe eine kurze, launige Tagesend-Zusammenfassung für die "
         "Friesen — wie viel Fracht zusammen bewegt wurde, mit einem Augenzwinkern. "
-        "Nenne JEDEN Piloten aus »Piloten (Flüge)« genau so, wie er dort steht — mit "
-        "Vorname UND Callsign in Klammern — und mit seiner GENAUEN Flugzahl. Lass keinen weg, "
+        "Eine FUHRE ist eine am Ziel abgelieferte Ladung — NICHT ein Flug. Wer über einen "
+        "Zwischenplatz fuhr, brauchte dafür mehrere Flüge und lieferte trotzdem nur eine Fuhre "
+        "ab. Schreibe deshalb IMMER »Fuhre(n)« und NIEMALS »Flug/Flüge« für diese Zahlen. "
+        "Nenne JEDEN Piloten aus »Piloten mit mehreren Fuhren« genau so, wie er dort steht — mit "
+        "Vorname UND Callsign in Klammern — und mit seiner GENAUEN Fuhrenzahl. Lass keinen weg, "
         "fasse keine zwei zusammen und erfinde weder Vornamen noch Nachnamen noch Zahlen. "
+        "Dort stehen nur Piloten mit MINDESTENS ZWEI Fuhren; wer eine einzelne gebracht hat, "
+        "wird bewusst nicht aufgezählt. Zähle deshalb NIEMANDEN auf, der dort nicht steht, und "
+        "schreibe zu niemandem »mit 1 Fuhre«. Steht dort »—«, nenne gar keine Namen und "
+        "erwähne die Piloten nur als Gruppe. "
         "Die Abholplätze sind KEINE geflogene Route oder Rundstrecke — jeder Kutter fliegt von genau "
         "EINEM Abholplatz zum Ziel. Stelle es NIEMALS als Runde/Streckenkette dar (kein »auf der Runde "
         "A-B-C-D«) und reihe die Plätze nicht mit Pfeilen/Bindestrichen aneinander. "
         "WICHTIG: Wenn es Verluste gab, MUSST du sie erwähnen (wer, versunken/geklaut, wie viel) "
         "und darfst NICHT behaupten, alles sei heil angekommen oder niemand habe etwas verloren — "
         "das wäre ein Widerspruch zu den Fakten. "
-        "Wer unter »Am Ladeplatz abgeladen« steht, hat NICHTS verloren — er hat die Ware an einem "
-        "Ladeplatz abgeladen, wo sie zum Weitertragen bereitliegt. Erwähne das (falls vorhanden) "
-        "locker als Staffel-Übergabe, NIE als Missgeschick, Verlust, Rückzug oder Kneifen. Fakten:\n- "
+        "Bei »hat die Fracht selbst geklaut« ist der genannte Pilot der TÄTER: Er ist mit der "
+        "Ladung an einem fremden Platz gelandet und hat sie dort behalten. Schreibe ihn NIEMALS "
+        "als Opfer — kein »ihm wurde abgenommen«, kein »wurde erleichtert«, kein unbekannter "
+        "Dieb und kein »irgendwer«. Beim Versinken ist er dagegen KEIN Täter, dort ist der "
+        "Kutter schlicht abgesoffen. "
+        "Erwähne NICHT, dass jemand Fracht an einem Ladeplatz abgesetzt, abgeladen, zwischen- "
+        "gelagert oder weitergereicht habe — solche Zwischenschritte stehen bewusst nicht in den "
+        "Fakten und dürfen auch nicht erfunden werden. Fakten:\n- "
         + "\n- ".join(lines)
     )
     return _chat(_QUIP_SYSTEM, user, 800)
