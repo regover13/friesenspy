@@ -475,9 +475,9 @@ def event_summary(context: dict) -> str | None:
         f"Event: {c.get('name') or '?'}",
         f"Ziel (dorthin geht ALLE Fracht): {c.get('destination') or '?'}",
         f"Abholplätze (Fracht wird dort geladen): {', '.join(c.get('pickups') or []) or '—'}",
-        f"Gesamt bewegt: {c.get('total_kg')} kg in {c.get('loaded_count')} Frachtflügen",
+        f"Gesamt bewegt: {c.get('total_kg')} kg in {c.get('loaded_count')} Fuhren",
         f"Fracht: {', '.join(c.get('cargo') or []) or '—'}",
-        f"Piloten (Flüge): {pilots}",
+        f"Piloten mit mehreren Fuhren: {pilots}",
     ]
     verluste = c.get("verluste") or []
     if verluste:
@@ -493,9 +493,16 @@ def event_summary(context: dict) -> str | None:
     user = (
         "Schreibe eine kurze, launige Tagesend-Zusammenfassung für die "
         "Friesen — wie viel Fracht zusammen bewegt wurde, mit einem Augenzwinkern. "
-        "Nenne JEDEN Piloten aus »Piloten (Flüge)« genau so, wie er dort steht — mit "
-        "Vorname UND Callsign in Klammern — und mit seiner GENAUEN Flugzahl. Lass keinen weg, "
+        "Eine FUHRE ist eine am Ziel abgelieferte Ladung — NICHT ein Flug. Wer über einen "
+        "Zwischenplatz fuhr, brauchte dafür mehrere Flüge und lieferte trotzdem nur eine Fuhre "
+        "ab. Schreibe deshalb IMMER »Fuhre(n)« und NIEMALS »Flug/Flüge« für diese Zahlen. "
+        "Nenne JEDEN Piloten aus »Piloten mit mehreren Fuhren« genau so, wie er dort steht — mit "
+        "Vorname UND Callsign in Klammern — und mit seiner GENAUEN Fuhrenzahl. Lass keinen weg, "
         "fasse keine zwei zusammen und erfinde weder Vornamen noch Nachnamen noch Zahlen. "
+        "Dort stehen nur Piloten mit MINDESTENS ZWEI Fuhren; wer eine einzelne gebracht hat, "
+        "wird bewusst nicht aufgezählt. Zähle deshalb NIEMANDEN auf, der dort nicht steht, und "
+        "schreibe zu niemandem »mit 1 Fuhre«. Steht dort »—«, nenne gar keine Namen und "
+        "erwähne die Piloten nur als Gruppe. "
         "Die Abholplätze sind KEINE geflogene Route oder Rundstrecke — jeder Kutter fliegt von genau "
         "EINEM Abholplatz zum Ziel. Stelle es NIEMALS als Runde/Streckenkette dar (kein »auf der Runde "
         "A-B-C-D«) und reihe die Plätze nicht mit Pfeilen/Bindestrichen aneinander. "

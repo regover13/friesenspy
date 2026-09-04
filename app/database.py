@@ -7326,7 +7326,12 @@ def event_summary_context(event: dict, progress: dict) -> dict:
         key = cs or _label(f.get("name"), f.get("callsign"))
         ent = _agg.setdefault(key, {"label": _label(f.get("name"), f.get("callsign")), "n": 0})
         ent["n"] += 1
-    per_pilot = {e["label"]: e["n"] for e in _agg.values()}
+    # Erst ab ZWEI Fuhren namentlich nennen (Nutzerentscheidung 04.09.2026). Gezaehlt wird
+    # `loaded`, also die Ablieferung am Ziel -- wer ueber einen Zwischenplatz faehrt, macht
+    # mehrere FLUEGE, bringt aber EINE Fuhre. Eine einzelne Fuhre ist nichts Erwaehnenswertes;
+    # der Abschlusstext las sich sonst als "X mit 1 Flug, Y mit 1 Flug, ..." -- neunmal
+    # dieselbe Zahl, dazu unter falschem Namen.
+    per_pilot = {e["label"]: e["n"] for e in _agg.values() if e["n"] >= 2}
     return {
         "name": event.get("name"),
         "total_kg": progress.get("total_kg"),
