@@ -1497,7 +1497,17 @@ async def get_pilot_track_window(cid: int, logon: str = "", logoff: str = ""):
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
-        effective_logon = logon or ""
+        # OHNE Untergrenze nichts liefern. `ts >= ''` ist in SQLite fuer JEDE Zeile wahr --
+        # ein leeres `logon` holte damit die gesamte Historie des Piloten statt eines Legs.
+        # Auf der Events-Karte spannte `fitBounds` daraufhin ueber zwei Kontinente und stellte
+        # sie mitten in den Atlantik (Fund 04.09.2026, FRS61: vormittags Dallas, abends Wooge;
+        # Kartenmitte exakt (-97,04 + 10,70) / 2 = -43,17). Der Docstring warnte bereits vor
+        # genau dieser Falle -- aber nur fuer `logoff`, wo ein Fallback auf "jetzt" wenigstens
+        # eine echte Obergrenze ist. Fuer `logon` gibt es keine solche sinnvolle Ersatzgrenze,
+        # deshalb hier die leere Antwort: ein fehlender Track faellt auf, ein falscher nicht.
+        if not logon:
+            return []
+        effective_logon = logon
         effective_logoff = logoff or datetime.now(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         rows = conn.execute(
             """

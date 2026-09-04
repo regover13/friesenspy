@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.20.2",
+    "date": "2026-09-04",
+    "highlight": false,
+    "title": "Events-Karte stand im Atlantik statt beim Event",
+    "items": [
+      "🗺️ Die Karte im Events-Tab sprang auf einen leeren Punkt mitten im Nordatlantik, und die Flugspuren des Abends waren nicht zu sehen. Sie waren gezeichnet — nur lag der Ausschnitt tausende Kilometer daneben.",
+      "🔍 Ursache: Für Streckenabschnitte ohne Startzeit ging die Anfrage ohne Untergrenze an den Server, und der lieferte daraufhin alles, was der Pilot je geflogen ist. Bei einem Teilnehmer, der am selben Vormittag in Texas unterwegs war, spannte die Karte damit von Dallas bis Wangerooge — die Mitte liegt genau im Atlantik. Ohne Untergrenze wird jetzt nichts mehr geliefert."
+    ]
+  },
+  {
     "version": "14.20.1",
     "date": "2026-09-04",
     "highlight": false,
