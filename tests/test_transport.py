@@ -395,9 +395,7 @@ class TestQuipContext:
             "route": ["EDWG", "EDXH"], "destination": "EDXH",
         }
         ctx = event_summary_context({"name": "Test"}, progress)
-        # Bert hat nur EINE Fuhre gebracht und wird seit dem 04.09.2026 nicht mehr genannt
-        # (s. TestSummaryNurAbZweiFuhren); loaded_count zaehlt weiterhin ALLE Ablieferungen.
-        assert ctx["pilots"] == {"Anna": 2}
+        assert ctx["pilots"] == {"Anna": 2, "Bert": 1}
         assert ctx["loaded_count"] == 3
 
     def test_summary_context_gleiche_vornamen_bleiben_getrennt(self):
@@ -409,16 +407,13 @@ class TestQuipContext:
             "flights": [
                 {"loaded": True, "name": "Michael Stingl", "callsign": "FRS96"},
                 {"loaded": True, "name": "Michael Stingl", "callsign": "FRS96"},
-                # Zwei Fuhren, damit er die Schwelle von 04.09.2026 nimmt -- sonst faellt er
-                # heraus und der Test prueft die Trennung gleicher Vornamen gar nicht mehr.
-                {"loaded": True, "name": "Michael Wellner", "callsign": "FRS44"},
                 {"loaded": True, "name": "Michael Wellner", "callsign": "FRS44"},
             ],
             "total_kg": 500, "loaded_count": 3, "cargo": [],
             "route": ["EDWZ", "EDWS"], "destination": "EDWS",
         }
         ctx = event_summary_context({"name": "Test"}, progress)
-        assert ctx["pilots"] == {"Michael (FRS96)": 2, "Michael (FRS44)": 2}
+        assert ctx["pilots"] == {"Michael (FRS96)": 2, "Michael (FRS44)": 1}
 
 
 class TestCalendarCargo:
@@ -3470,20 +3465,22 @@ class TestBummelTimeGuards:
         assert r2.status_code == 400
 
 
-class TestSummaryNurAbZweiFuhren:
-    """Nutzerfund 04.09.2026 (Ausmotten-Event).
+class TestFuhrenzahlNurAbZwei:
+    """Nutzerfund 04.09.2026 (Ausmotten-Event), in zwei Schritten geklaert.
 
-    Der Abschlusstext las sich als "Marco (FRS135) mit 1 Flug, Eyüp (FRS119N) mit 1 Flug, ..."
-    -- neunmal dieselbe Zahl. Beides war falsch:
+    Im Abschlusstext stand neunmal "mit 1 Flug". Falsch war beides:
 
     * Gezaehlt wird ``loaded``, also die Ablieferung am Ziel. Wer ueber einen Zwischenplatz
-      faehrt, hat mehrere FLUEGE, aber nur EINE Fuhre. "1 Flug" war schlicht der falsche Name
-      fuer die Zahl.
-    * Eine einzelne Fuhre ist nichts Erwaehnenswertes. Namentlich genannt wird erst, wer
-      mindestens zwei gebracht hat.
+      faehrt, hat mehrere FLUEGE, aber eine Fuhre -- "Flug" war der falsche Name.
+    * Die Angabe "1" sagt nichts. Weglassen soll man aber NUR DIE ZAHL, nicht den Piloten
+      (ausdrueckliche Klarstellung des Nutzers, nachdem ein Zwischenstand die Einzelfahrer
+      ganz aus dem Text geworfen hatte und nur noch Verluste uebrig blieben).
+
+    Der Kontext liefert deshalb ALLE Piloten mit ihrer Zahl; erst die Prompt-Formatierung
+    in :func:`app.llm.event_summary` laesst die Zahl bei einer einzelnen Fuhre weg.
     """
 
-    def test_pilot_mit_einer_fuhre_wird_nicht_genannt(self):
+    def test_kontext_enthaelt_auch_einzelfahrer(self):
         progress = {
             "flights": [
                 {"loaded": True, "name": "Anna Meyer", "callsign": "FRS10"},
@@ -3494,33 +3491,8 @@ class TestSummaryNurAbZweiFuhren:
             "cargo": [], "route": ["EDWG", "EDXH"], "destination": "EDXH",
         }
         ctx = event_summary_context({"name": "Test"}, progress)
-        assert ctx["pilots"] == {"Anna (FRS10)": 2}, \
-            "Bert hat nur eine Fuhre gebracht und gehoert nicht in die Aufzaehlung"
-
-    def test_ohne_mehrfachtraeger_bleibt_die_liste_leer(self):
-        """Alle mit genau einer Fuhre -> niemand wird genannt (der Text kommt ohne aus)."""
-        progress = {
-            "flights": [
-                {"loaded": True, "name": "Anna", "callsign": "FRS10"},
-                {"loaded": True, "name": "Bert", "callsign": "FRS11"},
-            ],
-            "total_kg": 500, "loaded_count": 2,
-            "cargo": [], "route": ["EDWG"], "destination": "EDWG",
-        }
-        ctx = event_summary_context({"name": "Test"}, progress)
-        assert ctx["pilots"] == {}
-
-    def test_zwei_fuhren_werden_genannt(self):
-        progress = {
-            "flights": [
-                {"loaded": True, "name": "Anna", "callsign": "FRS10"},
-                {"loaded": True, "name": "Anna", "callsign": "FRS10"},
-            ],
-            "total_kg": 500, "loaded_count": 2,
-            "cargo": [], "route": ["EDWG"], "destination": "EDWG",
-        }
-        ctx = event_summary_context({"name": "Test"}, progress)
-        assert ctx["pilots"] == {"Anna (FRS10)": 2}
+        assert ctx["pilots"] == {"Anna (FRS10)": 2, "Bert (FRS11)": 1}, \
+            "Auch wer eine einzelne Fuhre gebracht hat, gehoert in den Text"
 
 
 class TestVerlustGeklautIstAktiv:

@@ -470,14 +470,21 @@ def flight_quip(context: dict) -> str | None:
 def event_summary(context: dict) -> str | None:
     """Eine launige Tagesend-Zusammenfassung eines FriesenKutter-Events erzeugen."""
     c = context or {}
-    pilots = ", ".join(f"{k}: {v}" for k, v in (c.get("pilots") or {}).items()) or "—"
+    # Die ZAHL nur ab zwei Fuhren; bei einer einzelnen steht nur der Name. So kann die KI die
+    # nichtssagende Angabe "mit 1 Fuhre" gar nicht erst schreiben, ohne dass jemand fehlt.
+    # Semikolon statt Komma: Bei gemischter Liste ("Tobias (FRS49): 3 Fuhren, Eyuep (FRS119N)")
+    # laesst ein Komma offen, ob die Zahl noch zum naechsten Namen gehoert.
+    pilots = "; ".join(
+        (f"{k}: {v} Fuhren" if (v or 0) >= 2 else f"{k}")
+        for k, v in (c.get("pilots") or {}).items()
+    ) or "—"
     lines = [
         f"Event: {c.get('name') or '?'}",
         f"Ziel (dorthin geht ALLE Fracht): {c.get('destination') or '?'}",
         f"Abholplätze (Fracht wird dort geladen): {', '.join(c.get('pickups') or []) or '—'}",
         f"Gesamt bewegt: {c.get('total_kg')} kg in {c.get('loaded_count')} Fuhren",
         f"Fracht: {', '.join(c.get('cargo') or []) or '—'}",
-        f"Piloten mit mehreren Fuhren: {pilots}",
+        f"Piloten: {pilots}",
     ]
     verluste = c.get("verluste") or []
     if verluste:
@@ -490,13 +497,12 @@ def event_summary(context: dict) -> str | None:
         "Eine FUHRE ist eine am Ziel abgelieferte Ladung — NICHT ein Flug. Wer über einen "
         "Zwischenplatz fuhr, brauchte dafür mehrere Flüge und lieferte trotzdem nur eine Fuhre "
         "ab. Schreibe deshalb IMMER »Fuhre(n)« und NIEMALS »Flug/Flüge« für diese Zahlen. "
-        "Nenne JEDEN Piloten aus »Piloten mit mehreren Fuhren« genau so, wie er dort steht — mit "
-        "Vorname UND Callsign in Klammern — und mit seiner GENAUEN Fuhrenzahl. Lass keinen weg, "
-        "fasse keine zwei zusammen und erfinde weder Vornamen noch Nachnamen noch Zahlen. "
-        "Dort stehen nur Piloten mit MINDESTENS ZWEI Fuhren; wer eine einzelne gebracht hat, "
-        "wird bewusst nicht aufgezählt. Zähle deshalb NIEMANDEN auf, der dort nicht steht, und "
-        "schreibe zu niemandem »mit 1 Fuhre«. Steht dort »—«, nenne gar keine Namen und "
-        "erwähne die Piloten nur als Gruppe. "
+        "Nenne JEDEN Piloten aus »Piloten« genau so, wie er dort steht — mit Vorname UND "
+        "Callsign in Klammern. Lass keinen weg, fasse keine zwei zusammen und erfinde weder "
+        "Vornamen noch Nachnamen noch Zahlen. "
+        "Steht hinter einem Namen eine Fuhrenzahl, nenne sie GENAU so. Steht dort KEINE Zahl, "
+        "hat er genau eine Fuhre gebracht — nenne ihn dann einfach mit Namen und schreibe "
+        "NIEMALS »mit 1 Fuhre«, »mit einer Fuhre« oder »1 Flug«. "
         "Die Abholplätze sind KEINE geflogene Route oder Rundstrecke — jeder Kutter fliegt von genau "
         "EINEM Abholplatz zum Ziel. Stelle es NIEMALS als Runde/Streckenkette dar (kein »auf der Runde "
         "A-B-C-D«) und reihe die Plätze nicht mit Pfeilen/Bindestrichen aneinander. "

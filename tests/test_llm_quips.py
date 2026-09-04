@@ -222,3 +222,42 @@ class TestReturnedRelayContext:
         assert "Ladeplatz abgeladen" in ctx["relay"]
         assert "zurückgebracht" not in ctx["relay"]
         assert "umgedreht" not in ctx["relay"]
+
+
+class TestPilotenzeileImSummaryPrompt:
+    """Nutzerfund 04.09.2026: "mit 1 Flug" war doppelt falsch — falscher Name für die Zahl
+    (es sind Fuhren, nicht Flüge) und überhaupt nicht erwähnenswert. Weggelassen wird aber
+    NUR DIE ZAHL: Ein Zwischenstand hatte die Einzelfahrer ganz aus dem Text geworfen, sodass
+    nur noch die Verluste namentlich vorkamen."""
+
+    def _prompt(self, pilots):
+        captured = {}
+
+        def fake_chat(system, user, max_tokens):
+            captured["user"] = user
+            return "Spruch"
+
+        context = {
+            "name": "Seehundfütterung", "destination": "EDWG", "pickups": ["EDWZ", "EDXH"],
+            "total_kg": 2130, "loaded_count": 9, "cargo": [], "pilots": pilots,
+            "lost_total_kg": 0.0, "verluste": [],
+        }
+        with patch.object(llm, "_chat", side_effect=fake_chat):
+            llm.event_summary(context)
+        return [z for z in captured["user"].split("\n") if z.startswith("- Piloten:")][0]
+
+    def test_einzelfahrer_steht_drin_aber_ohne_zahl(self):
+        zeile = self._prompt({"Marco (FRS135)": 1, "Tobias (FRS49)": 3})
+        assert "Marco (FRS135)" in zeile, "der Einzelfahrer muss genannt werden"
+        assert "Marco (FRS135): 1" not in zeile, "aber ohne die nichtssagende Zahl"
+        assert "Tobias (FRS49): 3 Fuhren" in zeile
+
+    def test_alle_einzelfahrer_bleiben_erhalten(self):
+        """Der Fehlerfall: Wenn niemand mehr als eine Fuhre hat, darf die Zeile nicht leer sein."""
+        zeile = self._prompt({"Marco (FRS135)": 1, "Eyüp (FRS119N)": 1})
+        assert "Marco (FRS135)" in zeile and "Eyüp (FRS119N)" in zeile
+        assert "—" not in zeile
+
+    def test_die_zahl_heisst_fuhren_nicht_fluege(self):
+        zeile = self._prompt({"Tobias (FRS49)": 3})
+        assert "3 Fuhren" in zeile and "Flug" not in zeile
