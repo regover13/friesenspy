@@ -2271,6 +2271,22 @@
     }
     html.vr-panel .panel-cards tbody td:empty { display: none; }
 
+    /* Die Deckelung der letzten Spalte gilt NUR fuer die breite Tabelle, nicht fuer die Karte.
+       `.kutter-feed td:last-child { max-width: 260px }` begrenzt bei `box-sizing: border-box`
+       (Zeile 684) den GESAMTEN Kasten -- die Beschriftung im Karten-Layout haengt aber als
+       `padding-left: 44%` mit drin. Uebrig bleibt fuer den Text:
+
+           260px - 0,44 * Kartenbreite - 10px
+
+       Das wird mit WACHSENDER Breite kleiner, nicht groesser. Bei 318 CSS-Pixeln bleiben 110px
+       (lesbar), bei 494 noch 33px (ein Wort je Zeile), bei 710 nichts mehr. Genau in dieser
+       Reihenfolge hat der Nutzer es am 04.09.2026 gemeldet: small in Ordnung, medium schlechter,
+       large unbrauchbar -- die drei Groessenstufen des Tablets sind nichts anderes als drei
+       Viewport-Breiten (s. panel_diag, kind='flaeche'). Deshalb hier zuruecknehmen statt am
+       Prozentwert zu drehen: In der Karte steht die Spalte ohnehin allein auf ihrer Zeile und
+       braucht keine Deckelung gegen die Nachbarspalten. */
+    html.vr-panel .panel-cards tbody td:last-child { max-width: none; }
+
     /* Sortierbare Kopfzeilen ueberleben das Karten-Layout als Reihe antippbarer Schalter.
        Ohne das nimmt die Kartenansicht eine Funktion weg (Muster-Statistik, Rangliste):
        thead ist ausgeblendet, und mit ihm die einzigen Sortier-Bedienelemente. */
@@ -2471,6 +2487,14 @@
        26 deshalb ganz allein. */
     html.vr-panel .map-is-fullscreen .leaflet-top { margin-top: 16px; }
     html.vr-panel .map-is-fullscreen .icao-box { top: 26px; }
+
+    /* Links tiefer als rechts. Die Glocke der EFB-Statusleiste sitzt in der LINKEN oberen Ecke
+       und deckte in VR die Windanzeige zu (Nutzer-Screenshot 04.09.2026); rechts stehen nur
+       Datum und Uhrzeit, dort passen die 26px aus der Rechnung darueber weiter. Ein Anheben des
+       gemeinsamen Werts wuerde den Fund vom 02.09. ("die Buttons oben koennen noch weiter hoch")
+       fuer BEIDE Seiten zuruecknehmen -- deshalb nur die linke Ecke, und nur um die Hoehe der
+       Glocke: 30 + 10 (Leaflets eigener Rand je Bedienelement) = 40px Abstand nach oben. */
+    html.vr-panel .map-is-fullscreen .leaflet-top.leaflet-left { margin-top: 30px; }
     html.vr-panel .sse-dot { animation: none !important; }
 
     /* ---------------------------------------------------------------------
