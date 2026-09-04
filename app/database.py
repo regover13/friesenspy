@@ -1129,10 +1129,25 @@ def init_db(db_path: str) -> None:
 
 
 def get_connection(db_path: str) -> sqlite3.Connection:
-    """Neue Verbindung mit WAL-Mode und row_factory=sqlite3.Row."""
+    """Neue Verbindung mit WAL-Mode, busy_timeout und row_factory=sqlite3.Row."""
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    # Wartezeit auf eine fremde Schreibsperre (GitHub-Issue #14). Ohne das PRAGMA gilt
+    # Pythons Vorgabe von 5 Sekunden, und die war am 04.09.2026 der Verstaerker gleich
+    # zweier Vorfaelle: Ein Job hielt die Sperre laenger, alle anderen Schreiber brachen mit
+    # "database is locked" ab statt zu warten -- ``PUT /api/prefs`` schlug als HTTP 500 bei
+    # echten Nutzern durch, und weil FastAPI sync-Endpunkte im Threadpool faehrt, sassen die
+    # Threads ihre 5 s ab und stauten alles dahinter.
+    #
+    # 15 Sekunden = die Taktzeit des Pollers. Wer einen ganzen Poll-Zyklus lang nicht an die
+    # Datenbank kommt, hat kein Gedraenge mehr, sondern eine haengende Transaktion -- die
+    # soll als Fehler sichtbar werden statt beliebig lange zu warten.
+    #
+    # Das ist das Netz, NICHT die Loesung: Eine Transaktion, die einen Netzabruf umspannt,
+    # gehoert aufgetrennt (s. #15 und die Regel in CLAUDE.md). Ein grosszuegiger Timeout
+    # macht daraus nur eine laengere Verzoegerung.
+    conn.execute("PRAGMA busy_timeout=15000")
     conn.row_factory = sqlite3.Row
     return conn
 

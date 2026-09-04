@@ -6,6 +6,20 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-05 — Schreibsperren, Poll-Messpunkte, Events-Karte (v14.20.6)
+
+**Betrifft `app/poller.py`, `app/database.py`, `app/static/index.html`** — beim Rebase beachten.
+
+- `_check_transport_events` sammelt die Abschlusssprüche jetzt in `summary_jobs` und erzeugt sie
+  **nach** `conn.close()`. Wer dort einen `await` in die Schleife zurückholt, holt die
+  Schreibsperre über den Netzabruf zurück (GitHub-Issue #15).
+- `get_connection` setzt `PRAGMA busy_timeout=15000` (Issue #14).
+- `_poll_once` trägt Marken (`uhr.marke(...)`) an fünf Stellen; ab 2 s Gesamtlaufzeit landet die
+  Aufschlüsselung als WARNING im Log (Issue #16 — die Ursache ist damit **nicht** behoben,
+  nur messbar gemacht).
+- `index.html`: `_gueltigerTrackpunkt` (verwirft (0,0)) und `_spurenAusserhalb` stehen direkt vor
+  `renderEventsMap`, dazu das Element `#ev-map-hinweis` im Kartencontainer (Issue #18).
+
 ## 2026-08-16 — Karten-Merker auf dem Server (v13.6.3)
 
 **Betrifft `app/static/index.html`, `app/main.py`, `app/database.py`** — bitte beim Rebase

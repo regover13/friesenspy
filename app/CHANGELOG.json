@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.20.6",
+    "date": "2026-09-05",
+    "highlight": false,
+    "title": "Nachlese zum Ausmotten-Abend: Sperren, Messpunkte, Kartenausschnitt",
+    "items": [
+      "🔒 Der Abschlussspruch des Kutters wird von der KI geschrieben — und solange die antwortete, war die Datenbank für alle anderen gesperrt. Genau das hat am 4. September dafür gesorgt, dass Einstellungen nicht gespeichert werden konnten und die Seite zeitweise gar nicht antwortete. Der Spruch entsteht jetzt außerhalb der Sperre; am Ergebnis ändert sich nichts.",
+      "⏳ Wer während eines solchen Staus schreiben wollte, gab bisher nach fünf Sekunden auf und meldete einen Fehler. Jetzt wird bis zu einem vollen Poll-Zyklus (15 Sekunden) gewartet. Aus einem Fehler wird damit eine Verzögerung — das Netz darunter, nicht die Lösung.",
+      "📋 Warum der Poller an dem Abend Stunde um Stunde langsamer wurde, ist weiterhin unklar: Im Protokoll standen nur Anfang und Ende. Ab jetzt misst er seine fünf Abschnitte einzeln und schreibt die Aufschlüsselung ins Log, sobald ein Durchlauf über zwei Sekunden braucht. Beim nächsten Mal stehen dort Zahlen statt Vermutungen.",
+      "🗺️ Auf der Events-Karte zählt ein Punkt auf 0°/0° nicht mehr als Position — er ist ein fehlender Wert und zog den Ausschnitt bis in den Golf von Guinea. Und wenn die Spuren nicht ins Bild passen, sagt die Karte das jetzt, statt stumm eine leere Wasserfläche zu zeigen."
+    ]
+  },
+  {
     "version": "14.20.5",
     "date": "2026-09-04",
     "highlight": false,

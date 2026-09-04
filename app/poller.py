@@ -79,6 +79,51 @@ def _lead_phrase(dtstart: str, now: str) -> str:
 # Verweildauer-Schwelle nie exakt treffen und somit keine Baseline-Notification auslösen.
 _TS_BASELINE_STREAK = 1_000_000
 
+# Ab dieser Gesamtlaufzeit wird ein Poll-Zyklus mit seiner Abschnitts-Aufschluesselung
+# geloggt (GitHub-Issue #16). Der Job ist auf 15 s getaktet und braucht im Normalbetrieb
+# 0,2-0,4 s; 2 s sind also weit jenseits von "heute mal viel Verkehr", aber deutlich unter der
+# Schwelle, ab der APScheduler Termine verwirft. Am Abend des 04.09.2026 haette diese Zahl bei
+# den ersten Ausreissern angeschlagen (Fenster 18:40: Median 1,12 s, Maximum 32,73 s) -- Stunden
+# bevor die App unbedienbar wurde.
+_POLL_LANGSAM_SEC = 2.0
+
+
+class _Abschnittsuhr:
+    """Wanduhr je Abschnitt eines Jobs -- fuer die Frage "wo blieb die Zeit?".
+
+    Bewusst Wanduhr und nicht CPU-Zeit: Ein blockierter Event-Loop ist genau das, was am
+    04.09.2026 gemessen werden musste, und der zeigt sich als Wartezeit fremder ``await``s,
+    nicht als eigene Rechenzeit. Der Preis: Ein Abschnitt kann teuer aussehen, weil ein
+    ANDERER Job den Loop belegt hat. Der Abruf der VATSIM-Daten dauerte an dem Abend im Log
+    3-4,8 s und im Container gemessen 0,15 s -- die Aufschluesselung zeigt also, wo gewartet
+    wurde, und benennt damit nicht zwingend den Schuldigen.
+
+    ``marke`` misst immer nur den Abschnitt seit der vorigen Marke, nicht seit dem Start.
+    """
+
+    def __init__(self) -> None:
+        self._start = time.perf_counter()
+        self._letzte = self._start
+        self.dauern: dict[str, float] = {}
+
+    def marke(self, name: str) -> None:
+        jetzt = time.perf_counter()
+        # Additiv: Ein mehrfach markierter Name summiert seine Abschnitte, statt den frueheren
+        # Wert stillschweigend zu ueberschreiben.
+        self.dauern[name] = self.dauern.get(name, 0.0) + (jetzt - self._letzte)
+        self._letzte = jetzt
+
+    def gesamt(self) -> float:
+        return time.perf_counter() - self._start
+
+    def bericht(self) -> str:
+        """Abschnitte absteigend nach Dauer -- der teuerste zuerst."""
+        return " · ".join(
+            f"{name} {dauer:.2f} s"
+            for name, dauer in sorted(self.dauern.items(), key=lambda kv: -kv[1])
+        )
+
+
 # Max. Anzahl gepufferter SSE-Updates pro Client. Nur der jüngste Stand zählt; bei einem
 # gedrosselten/hängenden Client wird der älteste verworfen (Drop-Oldest), statt unbegrenzt
 # zu wachsen — deckelt zugleich den Rückstau, der einen Hintergrund-Tab beim Wiederöffnen flutet.
@@ -780,13 +825,20 @@ class VatsimPoller:
         try:
             assert self._http_client is not None, "HTTP client not initialised"
 
+            # Abschnittsmessung (#16): Bis zum 04.09.2026 standen im Log nur Start und Ende
+            # des Jobs — als er ueber einen Abend 20-mal langsamer wurde, liess sich daraus
+            # nicht ablesen, WO die Zeit blieb. Die Marken kosten je einen perf_counter-Aufruf.
+            uhr = _Abschnittsuhr()
+
             # 1. Fetch + filter
             vatsim_data = await fetch_vatsim_data(self._http_client)
+            uhr.marke("abruf")
 
             # Vor jeder weiteren Verarbeitung: Der Feed ist hier vollständig in der Hand,
             # später nicht mehr. Kostet einen Durchlauf über ~1000 Einträge alle 15 s.
             self.traffic_snapshot = snapshot_other_traffic(self.callsign_prefix, vatsim_data)
             self.traffic_snapshot_ts = time.time()
+            uhr.marke("verkehr")
 
             excl_conn = get_connection(self.db_path)
             try:
@@ -796,6 +848,7 @@ class VatsimPoller:
             online_pilots = filter_friesen_pilots(
                 self.callsign_prefix, vatsim_data, excluded_cids=excluded_cids
             )
+            uhr.marke("filter")
 
             # Prefiles mit FRS*-Callsign aus dem Feed speichern (dieselbe Ausnahmeliste wie oben --
             # eine per Admin-Checkbox ausgeschlossene CID soll auch nicht als Prefile auftauchen).
@@ -831,6 +884,7 @@ class VatsimPoller:
                 logger.exception("Fehler beim Speichern der Prefile-Signaturen")
             finally:
                 sig_conn.close()
+            uhr.marke("prefiles")
 
             # Build lookup: cid → position dict
             current: dict[int, dict] = {
@@ -1136,6 +1190,7 @@ class VatsimPoller:
                         new_codes.append(code)
             finally:
                 conn.close()
+            uhr.marke("db")
 
             self.broadcast_sse({"type": "positions", "data": live_positions})
 
@@ -1176,6 +1231,10 @@ class VatsimPoller:
                             pf,
                         )
                     )
+            uhr.marke("nachlauf")
+
+            if uhr.gesamt() >= _POLL_LANGSAM_SEC:
+                logger.warning("Poll-Zyklus langsam: %.2f s — %s", uhr.gesamt(), uhr.bericht())
 
         except Exception:
             logger.exception("Error in _poll_once")
@@ -1544,6 +1603,12 @@ class VatsimPoller:
             conn = get_connection(self.db_path)
             pushes: list[dict] = []
             quip_jobs: list[tuple] = []
+            # (event_id, Kontext, Push oder None) — die Abschlussspruesche werden hier nur
+            # GESAMMELT und erst nach conn.close() erzeugt (GitHub-Issue #15). Wer den
+            # KI-Aufruf zurueck in die Schleife holt, holt die Schreibsperre ueber den
+            # Netzabruf zurueck: Der Latch-Block darueber hat da laengst geschrieben
+            # (set_transport_summarized, write_progress_snapshot) und committet erst am Ende.
+            summary_jobs: list[tuple[int, dict, dict | None]] = []
 
             def collect_quip_jobs(ev: dict, progress: dict) -> None:
                 """Fehlende Pro-Flug-Quip-Jobs aus ``progress['flights']`` sammeln und an
@@ -1585,11 +1650,9 @@ class VatsimPoller:
                                 # bei echter Aktivität (flight_count>0) — kein bezahlter LLM-Call
                                 # für ein leeres Event. Kontext aus dem Snapshot, kein Recompute.
                                 if not ev.get("summary_quip") and snap.get("flight_count", 0) > 0:
-                                    summary = await asyncio.to_thread(
-                                        llm.event_summary, event_summary_context(ev, snap)
+                                    summary_jobs.append(
+                                        (ev["id"], event_summary_context(ev, snap), None)
                                     )
-                                    if summary:
-                                        set_transport_summary_quip(conn, ev["id"], summary)
                         continue
                     # --- nicht abgeschlossen: bisheriger Ablauf unverändert ---
                     # (detect_transport_losses entfällt: Verluste stehen jetzt in den movements
@@ -1650,24 +1713,52 @@ class VatsimPoller:
                             if frozen["flight_count"] > 0:
                                 tons = round(frozen["total_kg"] / 1000, 2)
                                 body = f"Feierabend: {frozen['loaded_count']} Frachtflüge, {tons} t bewegt ✅"
+                                push = {"title": name, "body": body, "url": "/"} if push_on else None
                                 if do_quips:
-                                    summary = await asyncio.to_thread(
-                                        llm.event_summary, event_summary_context(ev, frozen)
+                                    # Der Spruch ersetzt den Vorgabetext — er entsteht aber erst
+                                    # nach conn.close(), der Push wartet deshalb mit (#15).
+                                    summary_jobs.append(
+                                        (ev["id"], event_summary_context(ev, frozen), push)
                                     )
-                                    if summary:
-                                        set_transport_summary_quip(conn, ev["id"], summary)
-                                        body = summary
-                                if push_on:
-                                    pushes.append({"title": name, "body": body, "url": "/"})
+                                elif push is not None:
+                                    pushes.append(push)
                             # else: leeres Event — abgeschlossen (Latch), aber kein Push und
                             # kein KI-Aufruf (kein bezahlter LLM-Call ohne jede Aktivität).
                     # Pro-Flug-Sprüche für neue beladene Flüge ohne Cache sammeln (später async erzeugen).
                     if do_quips:
                         collect_quip_jobs(ev, progress)
                 conn.commit()
-                subscriptions = get_push_subscriptions_for_events(conn) if pushes else []
+                # Auch die noch wartenden Feierabend-Pushes zaehlen — ihre Empfaenger muessen
+                # hier geholt werden, solange die Verbindung offen ist.
+                braucht_abos = bool(pushes) or any(p is not None for _, _, p in summary_jobs)
+                subscriptions = get_push_subscriptions_for_events(conn) if braucht_abos else []
             finally:
                 conn.close()
+
+            # Abschlussspruesche: Verbindung ist zu, die Sperre ist frei. Jeder Spruch wird
+            # einzeln geschrieben (frische Verbindung, sofortiger Commit) — dasselbe Muster wie
+            # _gen_flight_quip. Ein Fehlschlag der KI kostet nur den Spruch: Der Push geht mit
+            # dem Vorgabetext raus, der Latch steht laengst in der Datenbank.
+            for eid, kontext, push in summary_jobs:
+                try:
+                    summary = await asyncio.to_thread(llm.event_summary, kontext)
+                except Exception:
+                    # Silent-Fail wie in _gen_flight_quip: Ein Ausfall der KI (Overloaded,
+                    # Zeitueberschreitung) darf weder die uebrigen Events noch den Push kosten.
+                    logger.exception("Abschlussspruch fuer Event %s fehlgeschlagen", eid)
+                    summary = None
+                if summary:
+                    quip_conn = get_connection(self.db_path)
+                    try:
+                        set_transport_summary_quip(quip_conn, eid, summary)
+                        quip_conn.commit()
+                    finally:
+                        quip_conn.close()
+                    if push is not None:
+                        push["body"] = summary
+                if push is not None:
+                    pushes.append(push)
+
             for payload in pushes:
                 self.broadcast_notify("events", None, payload)
             if pushes and subscriptions and self.vapid_private_key:

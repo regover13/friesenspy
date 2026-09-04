@@ -4365,6 +4365,11 @@
           style="position:absolute;top:10px;right:10px;z-index:1000;background:var(--bg-panel);border:1px solid var(--green-dim);color:var(--text-bright);font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.08em;padding:6px 12px;cursor:pointer;">
           <svg class="icon"><use href="#icon-refresh" xlink:href="#icon-refresh"/></svg> Alle Tracks
         </button>
+        <div id="ev-map-hinweis" class="hidden"
+          style="position:absolute;left:10px;bottom:10px;z-index:1000;max-width:min(90%,420px);background:var(--bg-panel);border:1px solid var(--green-dim);color:var(--text-bright);font-family:var(--text-mono);font-size:0.72rem;line-height:1.35;padding:6px 10px;">
+          Nicht alles passt ins Bild — Teile der Spuren liegen ausserhalb des Ausschnitts.
+          Weiter herauszoomen kann die Karte nicht.
+        </div>
       </div>
       <div class="panel">
         <div id="events-summary" class="events-summary"></div>
@@ -10109,7 +10114,7 @@ async function _loadAndDrawTrack(source, id, logon, logoff) {
     }
 
     const latlngs = positions
-      .filter(p => p.latitude != null && p.longitude != null)
+      .filter(_gueltigerTrackpunkt)
       .map(p => [p.latitude, p.longitude]);
 
     if (latlngs.length === 0) {
@@ -13259,6 +13264,31 @@ function _flightTrackUrl(f) {
   return null;
 }
 
+// Zaehlt ein Trackpunkt als Position? (#18) Der frühere Filter fragte nur `latitude != null`
+// und liess damit den Punkt (0, 0) durch — bei `0` ist die Bedingung wahr. Ein solcher Punkt
+// ist aber keine Position, sondern ein fehlender Wert: Er liegt im Golf von Guinea und reisst
+// den Kartenausschnitt eines Nordsee-Tracks über den halben Atlantik.
+// Bewusst nur der DOPPELTE Nullpunkt: Eine einzelne 0 (Äquator, Nullmeridian) ist eine
+// gültige Koordinate, und wer sie mit verwirft, baut aus einer Datenprüfung eine Heuristik.
+function _gueltigerTrackpunkt(pt) {
+  if (!pt || pt.latitude == null || pt.longitude == null) return false;
+  return !(Number(pt.latitude) === 0 && Number(pt.longitude) === 0);
+}
+
+// Liegt nach dem `fitBounds` etwas ausserhalb des Bildes? (#18) Leaflet klemmt den Zoom bei
+// `minZoom` (hier 6) — umspannt die Auswahl mehr, als bei Zoom 6 auf den Schirm passt, steht
+// die Karte irgendwo mittendrin (am 04.09.2026 im Nordatlantik) und die Spuren liegen
+// ausserhalb. Fuer den Betrachter sieht das aus, als fehlten sie.
+// `sichtbar` sind die vier Grenzen des tatsaechlichen Ausschnitts, `punkte` die [lat, lon] der
+// gezeichneten Spuren. Absichtlich keine Bewertung, was ein "Ausreisser" ist — nur die Frage,
+// ob das Bild haelt, was fitBounds versprochen hat.
+function _spurenAusserhalb(sichtbar, punkte) {
+  return (punkte || []).some(pt =>
+    pt[0] < sichtbar.sued || pt[0] > sichtbar.nord ||
+    pt[1] < sichtbar.west || pt[1] > sichtbar.ost
+  );
+}
+
 async function renderEventsMap(pilots, icaoStr, radiusKm) {
   if (!eventsMapInitialized) {
     await _configPromise;
@@ -13317,7 +13347,7 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
         .then(r => r.json())
         .then(pts => {
           const positions = (pts || [])
-            .filter(pt => pt.latitude != null && pt.longitude != null)
+            .filter(_gueltigerTrackpunkt)
             .map(pt => [pt.latitude, pt.longitude]);
           if (positions.length === 0) return;
           const polyline = L.polyline(positions, { color, weight: 2, opacity: 0.7 }).addTo(eventsMap);
@@ -13340,12 +13370,24 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
   }));
 
   await Promise.all(drawTasks);
+  const hinweis = document.getElementById('ev-map-hinweis');
+  if (hinweis) hinweis.classList.add('hidden');
   if (bounds.length > 0) {
     window._eventAllBounds = bounds;
     eventsMap.fitBounds(bounds, { padding: [40, 40] });
     // fitBounds feuert bei gleichbleibendem Zoom kein zoomend -> Auto-Switch explizit auswerten
     // (z. B. Zoom 6 -> Satellit statt leerer OFM-Karte).
     if (eventsMap._applyOFMAuto) eventsMap._applyOFMAuto();
+    // Zweite Schutzschicht (#18): Hat fitBounds wirklich alles ins Bild bekommen? Bei minZoom
+    // kann es das nicht — dann lieber sagen, dass etwas fehlt, als eine leere Wasserflaeche
+    // zeigen. Die Ursache solcher Spannen gehoert in die Auswahl davor (14.20.4), nicht in
+    // eine Ausreisser-Heuristik hier.
+    const b = eventsMap.getBounds();
+    const draussen = _spurenAusserhalb(
+      { sued: b.getSouth(), nord: b.getNorth(), west: b.getWest(), ost: b.getEast() },
+      bounds,
+    );
+    if (hinweis && draussen) hinweis.classList.remove('hidden');
   }
 }
 

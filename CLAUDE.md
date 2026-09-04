@@ -225,6 +225,25 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   durch — gemessen 28 Anfragen je Sekunde auf aip.dfs.de. In `_hole()` gebunden ist jeder
   Weg zur DFS gebremst, auch ein künftiger.
 
+## Datenbank (stehende Regeln — IMMER einhalten)
+
+- **Keine Datenbank-Transaktion darf einen Netzabruf umspannen.** Die Regel steht auch bei den
+  AIP-Kartenblättern, gilt aber überall — sie ist auf dieser Codebasis inzwischen **dreimal**
+  verletzt worden, jedes Mal mit demselben Bild: `database is locked` bei allen anderen
+  Schreibern, HTTP 500 bei echten Nutzern, eine App, die für Minuten nicht antwortet.
+  Der AIP-Wochenlauf hielt sie über hunderte DFS-Abrufe (31.08.2026), `_fetch_statsim_tracks`
+  2 min 43 s (14.20.3), `_check_transport_events` über den Anthropic-Aufruf (14.20.6).
+  Das Muster für den Ausweg steht in `_gen_flight_quip`: Kontext lesen, committen, schließen,
+  **dann** das Netz fragen, für das Schreiben eine frische Verbindung.
+- **`busy_timeout` steht auf 15 s (`get_connection`) — das ist das Netz, nicht die Lösung.**
+  Es macht aus einem Fehler eine Verzögerung. Wer ihn hebt, weil „es wieder klemmt", verlängert
+  nur die Zeit, in der niemand merkt, dass eine Transaktion hängt. 15 s = ein Poll-Zyklus: Was
+  länger braucht, ist kein Gedränge mehr.
+- **Wird der Poller langsam, steht die Aufschlüsselung im Log** (`Poll-Zyklus langsam: … —
+  abruf 3,10 s · db 0,40 s …`, ab 2 s Gesamtlaufzeit). Sie misst Wanduhr, nicht Rechenzeit:
+  Ein blockierter Event-Loop zeigt sich als Wartezeit in einem *fremden* Abschnitt — die
+  Aufschlüsselung sagt, wo gewartet wurde, und benennt damit nicht zwingend den Schuldigen.
+
 ## Projektstruktur
 
 - `app/config.py` — pydantic-settings, CALLSIGN_PREFIX (Friesen-Erkennung), ADMIN_PASSWORD, VAPID
