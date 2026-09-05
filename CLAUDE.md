@@ -239,6 +239,21 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   Es macht aus einem Fehler eine Verzögerung. Wer ihn hebt, weil „es wieder klemmt", verlängert
   nur die Zeit, in der niemand merkt, dass eine Transaktion hängt. 15 s = ein Poll-Zyklus: Was
   länger braucht, ist kein Gedränge mehr.
+- **Wenn die App langsam wird: erst die Log-Zeile lesen, dann den Container neu starten.**
+  Der Neustart setzt die Kurve zurück (20 s Ausfall) — er löscht aber auch die Spur, also
+  vorher `docker logs friesenspy-friesenspy-1 | grep "Poll-Zyklus langsam"` wegschreiben.
+  **Zwei naheliegende Hebel sind gemessen und fallen aus** (04.09.2026, Belege im Kommentar
+  zu GitHub-Issue #16):
+  *Andere Container abschalten (Condor)* — die Maschine hatte Luft, Load maximal 4,2 bei
+  6 Kernen, FriesenSpy selbst nie über 0,8 Kerne (13,7 % → 78,6 % über den Abend).
+  *Höhere Priorität / nice / `cpu_shares`* — der Wartedruck auf CPU (PSI `cpu_some_pressure`)
+  lag im Maximum bei **2,12 %**, `throttled` durchgehend 0, und Limits gibt es keine
+  (`NanoCpus=0, CpuShares=0, CpuQuota=0`). Der Prozess wartete nicht auf Rechenzeit, er war
+  beschäftigt; Priorität regelt aber nur die Reihenfolge bei Gedränge.
+  Wirksam wäre allein ein Eintrag im Docker-Watchdog (`/opt/docker-watchdog/watchdog.sh`,
+  Vorgabe 200 % — bei 79 % schlägt der nie an, nötig wären ~120 %). **Bewusst nicht gesetzt:**
+  Ein automatischer Neustart reisst offene Sitzungen und Kniebretter ab und löscht die Spur,
+  bevor jemand sie gelesen hat. Erst einen echten Fall messen.
 - **Wird der Poller langsam, steht die Aufschlüsselung im Log** (`Poll-Zyklus langsam: … —
   abruf 3,10 s · db 0,40 s …`, ab 2 s Gesamtlaufzeit). Sie misst Wanduhr, nicht Rechenzeit:
   Ein blockierter Event-Loop zeigt sich als Wartezeit in einem *fremden* Abschnitt — die
