@@ -21,6 +21,12 @@ uvicorn app.main:app --reload
 pytest tests/ -v
 ```
 
+**`app/CHANGELOG.json` NICHT anfassen, solange eine Suite läuft.** `version.py` liest die
+Datei einmal beim Import, `test_load_changelog_matches_module_constant` liest sie erneut und
+vergleicht — wer dazwischen einen Eintrag einfügt, bekommt einen Fehlschlag, der nichts mit
+dem Code zu tun hat (zweimal passiert am 04.09.2026). Bei parallelen Sitzungen gilt das auch
+für die *andere*: Erst die Suite abwarten, dann die Version schreiben.
+
 ## Offene Aufgaben
 
 Vom Nutzer vorgemerkte, noch nicht begonnene Arbeiten stehen in
@@ -254,6 +260,12 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   Vorgabe 200 % — bei 79 % schlägt der nie an, nötig wären ~120 %). **Bewusst nicht gesetzt:**
   Ein automatischer Neustart reisst offene Sitzungen und Kniebretter ab und löscht die Spur,
   bevor jemand sie gelesen hat. Erst einen echten Fall messen.
+- **Ein Leg ohne `logoff_time` heißt nicht „fliegt noch" — es heißt „GPS sah keine
+  Landung".** Wer nach dem Ende eines Legs fragt, nimmt `logoff_time or last_pos_ts`.
+  `_in_window` prüfte nur `logoff_time` und ließ Legs ohne Landung unabhängig vom Fenster
+  durch; die Events-Karte zeichnete dadurch einen Flug von 09:42Z in ein Fenster ab 17:00Z
+  und stand danach im Nordatlantik (14.20.4). Dasselbe Feld trägt `connection_closed`, das
+  aus demselben Grund NICHT „Flug beendet" bedeutet (s. `canonicalize_legs`).
 - **Wird der Poller langsam, steht die Aufschlüsselung im Log** (`Poll-Zyklus langsam: … —
   abruf 3,10 s · db 0,40 s …`, ab 2 s Gesamtlaufzeit). Sie misst Wanduhr, nicht Rechenzeit:
   Ein blockierter Event-Loop zeigt sich als Wartezeit in einem *fremden* Abschnitt — die
