@@ -573,6 +573,9 @@ VAPID_PRIVATE_KEY=                          # Optional: Web Push Private Key (ba
 VAPID_CONTACT_EMAIL=                        # Optional: mailto:... für Web Push
 ADMIN_PASSWORD=                             # Optional: Admin-Seite aktivieren (leer = aus; nie in git!)
 ANTHROPIC_API_KEY=                          # Optional: FriesenKutter-Zuladungs-Vorschlag (Claude); denselben Key wie TSBot nutzen
+EFB_PACKAGE_PATH=                           # Optional: eigener Ort des Kniebrett-Pakets.
+                                            # Leer = Standardort im Datenverzeichnis. Das Paket
+                                            # steckt NICHT im Docker-Image (Windows-Build).
 # Board-Login (Forum-SSO) — optional; alle leer = Board-Login inaktiv
 SSO_SECRET=                                 # GETEILT mit sso.php auf dem Forum; niemals in git
 FORUM_SSO_URL=                              # z.B. https://board.friesenflieger.de/sso.php
@@ -598,7 +601,7 @@ TS_REJOIN_DEBOUNCE_SEC=900
 pytest tests/ -v
 ```
 
-2322 Tests (Stand 05.09.2026), keine externen Abhängigkeiten (alles gemockt).
+rund 2 370 Tests (Stand 05.09.2026), keine externen Abhängigkeiten (alles gemockt).
 
 ### Deployment
 
