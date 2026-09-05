@@ -148,18 +148,6 @@ def parse_route(location: str, summary: str, description: str = "") -> tuple[str
     return ",".join(route), is_bummel, is_transport
 
 
-def is_kutter_calendar_entry(summary: str, description: str) -> bool:
-    """Variante ① (Entscheidung 20.07.2026): Ein Kalendertermin, der einen FriesenKutter
-    ankündigt, gehört NICHT nach FriesenSpy — der Kutter wird ausschließlich manuell im Admin
-    geführt (einzige Wahrheit, kein konkurrierendes Kalender-Objekt → kein Doppel im Events-Tab,
-    kein Matching-Problem). Erkennung per Stichwort ``kutter`` (deckt ``friesenkutter`` mit ab) in
-    Titel ODER Beschreibung, bewusst OHNE Flugplatz-Bedingung — Ankündigungen nennen oft nur das
-    Ziel. Solche Termine dienen nur Discord/Forum-Link und werden bei der Aufnahme verworfen.
-    """
-    text = f"{summary or ''}\n{description or ''}".lower()
-    return "kutter" in text
-
-
 async def fetch_and_parse_ical(client) -> list[dict]:
     """Holt den iCal-Feed und gibt Events als Dicts zurück (Netzwerk; Parsing in
     :func:`parse_ical_bytes`)."""
@@ -172,8 +160,14 @@ def parse_ical_bytes(content: bytes) -> list[dict]:
     """Parst rohe iCal-Bytes zu Event-Dicts (netzwerkfrei, testbar).
 
     Expandiert RRULE-Wiederholungen im Fenster 365 Tage zurück bis 90 Tage voraus.
-    Extrahiert den ersten ICAO-Code aus LOCATION, sonst aus SUMMARY. Kutter-Termine
-    (:func:`is_kutter_calendar_entry`) werden übersprungen — Variante ①.
+    Extrahiert den ersten ICAO-Code aus LOCATION, sonst aus SUMMARY.
+
+    #19 (05.09.2026): Hier wird **nichts mehr am Stichwort verworfen**. Bis dahin flog jeder
+    Termin mit „kutter" im Text raus — auch dann, wenn niemand einen Kutter angelegt hatte, und
+    der Abend war komplett unsichtbar. Ob ein Termin zu einem Event-Objekt gehört, steht seither
+    in ``bummel_races.calendar_uid`` / ``transport_events.calendar_uid`` und wird im Admin von
+    Hand ausgesprochen. Dass aus einem Termin trotzdem kein Kutter **entsteht** (Variante ①,
+    20.07.2026), entscheidet der Poller in ``_sync_calendar``.
     """
     import recurring_ical_events  # lazy import
     from icalendar import Calendar  # lazy import
@@ -221,10 +215,6 @@ def parse_ical_bytes(content: bytes) -> list[dict]:
 
         location_raw = str(comp.get("LOCATION") or "")
         description_raw = str(comp.get("DESCRIPTION") or "")
-        # Variante ①: Kutter-Kalendertermine gehören nicht nach FriesenSpy (manuell = einzige
-        # Wahrheit) — verwerfen, bevor sie gespeichert/angezeigt/erinnert werden.
-        if is_kutter_calendar_entry(summary, description_raw):
-            continue
         route, is_bummel, is_transport = parse_route(location_raw, summary, description_raw)
         # location bleibt der erste ICAO (Rückwärtskompatibilität: Event-Suche-Prefill).
         icao = route.split(",")[0] if route else ""

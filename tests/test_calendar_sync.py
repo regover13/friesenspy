@@ -11,28 +11,15 @@ from datetime import datetime, timedelta, timezone
 from app.calendar_sync import parse_route, parse_cargo_lines
 
 
-class TestKutterCalendarSuppression:
-    """Variante ① (Entscheidung 20.07.2026): Kutter-Kalendertermine gehören NICHT nach FriesenSpy —
-    der Kutter wird ausschließlich manuell im Admin geführt (einzige Wahrheit). Ein Termin mit dem
-    Stichwort ``kutter`` (deckt ``friesenkutter`` mit ab) in Titel ODER Beschreibung wird bei der
-    Kalender-Aufnahme verworfen — keine Zeile, kein Objekt, kein generischer Reminder. Ohne
-    Flugplatz-Bedingung (Ankündigungen nennen oft nur das Ziel)."""
+class TestKutterKalendertermine:
+    """#19 (05.09.2026): Das Verwerfen am Stichwort ist weg. Ein Kalendertermin, in dem
+    „Kutter" vorkommt, wird ganz normal aufgenommen und angezeigt — sonst ist ein Abend, für den
+    niemand einen Kutter angelegt hat, komplett unsichtbar, und umgekehrt genügte das Wort in
+    einem beliebigen Text, um einen Termin lautlos verschwinden zu lassen.
 
-    def test_predicate_matches_friesenkutter_in_summary(self):
-        from app.calendar_sync import is_kutter_calendar_entry
-        assert is_kutter_calendar_entry("Krabbenbrötchen für Wooge — FriesenKutter", "") is True
-
-    def test_predicate_matches_bare_kutter_in_description(self):
-        from app.calendar_sync import is_kutter_calendar_entry
-        assert is_kutter_calendar_entry("Krabbenbrötchen für Wooge", "Details siehe Kutter-Forum") is True
-
-    def test_predicate_case_insensitive(self):
-        from app.calendar_sync import is_kutter_calendar_entry
-        assert is_kutter_calendar_entry("FRIESENKUTTER", "") is True
-
-    def test_predicate_ignores_unrelated_event(self):
-        from app.calendar_sync import is_kutter_calendar_entry
-        assert is_kutter_calendar_entry("FFFreitag", "Stammtisch in Wooge EDWG") is False
+    Variante ① bleibt trotzdem gültig: Aus dem Termin entsteht **kein** Kutter-Objekt (das
+    passiert im Poller, s. ``_sync_calendar``) — ein Termin kann kein Frachtmanifest tragen.
+    """
 
     def _ics(self, *vevents: str) -> bytes:
         body = "".join(vevents)
@@ -42,24 +29,28 @@ class TestKutterCalendarSuppression:
         ).encode()
 
     def _vevent(self, uid: str, summary: str, description: str) -> str:
-        # DTSTART dynamisch nahe „jetzt“, damit es sicher im Parse-Fenster (−365d..+90d) liegt.
+        # DTSTART dynamisch nahe „jetzt", damit es sicher im Parse-Fenster (−365d..+90d) liegt.
         dt = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y%m%dT%H%M%SZ")
         return (
             f"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTART:{dt}\r\nDTEND:{dt}\r\n"
             f"SUMMARY:{summary}\r\nDESCRIPTION:{description}\r\nEND:VEVENT\r\n"
         )
 
-    def test_parse_ical_bytes_drops_kutter_keeps_normal(self):
+    def test_kutter_termin_wird_aufgenommen(self):
         from app.calendar_sync import parse_ical_bytes
         ics = self._ics(
             self._vevent("kutter-1", "Krabbenbrötchen für Wooge", "Wir testen den FriesenKutter"),
             self._vevent("normal-1", "FFFreitag", "Wangerooge EDWG"),
         )
-        events = parse_ical_bytes(ics)
-        summaries = [e["summary"] for e in events]
+        summaries = [e["summary"] for e in parse_ical_bytes(ics)]
+        assert "Krabbenbrötchen für Wooge" in summaries
         assert "FFFreitag" in summaries
-        assert all("kutter" not in (e["summary"] + e.get("uid", "")).lower() for e in events)
-        assert not any(e["uid"].startswith("kutter-1") for e in events)
+
+    def test_das_stichwort_praedikat_ist_weg(self):
+        """Es darf nicht wiederkommen: solange die Funktion existiert, ruft sie irgendwann
+        wieder jemand auf und der Termin verschwindet lautlos."""
+        import app.calendar_sync as cs
+        assert not hasattr(cs, "is_kutter_calendar_entry")
 
 
 class TestRouteExtraction:

@@ -705,7 +705,9 @@ FriesenEvents aus dem FriesenFlieger-Google-Kalender — letzte 365 Tage bis heu
 
 Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungstermine werden expandiert (jede Wiederholung als eigener Eintrag). Ganztags-Events (ohne Uhrzeit) werden nicht gespeichert. Termine, die im Google-Kalender gelöscht/storniert wurden, entfernt derselbe Sync-Lauf per Mark-and-Sweep (`delete_stale_calendar_events`) wieder aus der lokalen Kopie — sie verschwinden hier spätestens beim nächsten Sync.
 
-> **Kutter-Termine ausgeschlossen (Variante ①, 20.07.2026):** Kalendertermine mit „kutter"/„friesenkutter" im Titel oder in der Beschreibung werden **gar nicht erst aufgenommen** (`is_kutter_calendar_entry` in `calendar_sync.py`) — sie erscheinen weder hier noch als Transport-Objekt und lösen keine Erinnerung aus. FriesenKutter laufen ausschließlich **manuell** im Admin (einzige Wahrheit); der Kalendertermin dient nur der externen Ankündigung (Discord/Forum-Link). Bummel und alle übrigen Kalender-Events bleiben unberührt.
+> **Verknüpfte Termine fehlen hier (#19, 05.09.2026):** Geliefert wird ein Termin nur, solange **kein** Event-Objekt an ihm hängt. Ist er im Admin mit einem Bummel oder Kutter verknüpft (`calendar_uid`), steht statt seiner das Objekt in der Liste — mit den Werten, die im Admin gepflegt sind. So erscheint ein Abend genau einmal und eine Korrektur an der Strecke ist auch hier sichtbar.
+>
+> Bis dahin wurde am Stichwort verworfen: Jeder Termin mit „kutter" im Text fiel **bei der Aufnahme** raus (`is_kutter_calendar_entry`). Das traf auch Abende, für die niemand einen Kutter angelegt hatte — die waren dann komplett unsichtbar. Die Funktion ist entfernt. **Ein Kalendertermin legt weiterhin keinen Kutter an** (Variante ①, 20.07.2026): Der braucht ein Frachtmanifest, das ein Termin nicht tragen kann. Ein Bummel entsteht weiterhin automatisch aus einem Termin mit Strecke.
 
 **Response**
 
@@ -1265,12 +1267,52 @@ mit `400` („Enddatum muss nach dem Startdatum liegen.") — dieselbe Prüfung 
 
 Felder eines bestehenden Rennens aktualisieren. Nur angegebene Felder werden geändert.
 
-**Body (JSON)** — `name`/`route`/`dtstart`/`dtend`, alle optional (kein `radius_km` mehr, s. o.).
+**Body (JSON)** — `name`/`route`/`dtstart`/`dtend`/`calendar_uid`, alle optional (kein
+`radius_km` mehr, s. o.).
 
 **Zeit-Plausibilität (v10.3.0):** gegen die **effektiven** Werte geprüft (geänderte + bestehende) —
 wird nur `dtend` geschickt, zählt der gespeicherte `dtstart`. Ende ≤ Start → `400`.
 
-**Response** `{"status": "ok"}` oder `404`.
+**Handarbeit bleibt (#19, 05.09.2026):** Jedes Feld, das hier einen **anderen** Wert bekommt,
+wird in `manual_fields` vermerkt; der 6-stündliche Kalender-Sync überschreibt es danach nicht
+mehr. Verglichen wird der Zustand vorher/nachher, nicht „stand im Body" — die Oberfläche schickt
+beim Speichern immer alle Felder. Zurücknehmen:
+`POST /api/admin/bummel/races/{id}/kalenderstand/{feld}`.
+
+**Verknüpfung (`calendar_uid`):** Setzt oder löst die Zuordnung zu einem Kalendertermin. Gesetzt
+heißt: Dieses Rennen **ist** der Termin — er erscheint nicht mehr separat in
+`GET /api/calendar/events` und löst keine eigene Erinnerung aus. `null` trennt beide wieder.
+Ein unbekannter Termin → `400`, ein Termin, an dem schon ein Objekt hängt → `409`. Wird ein
+**manuell** angelegtes Rennen verknüpft, gelten sofort alle vier Felder als handgesetzt — sonst
+zöge der nächste Sync den Kalenderstand darüber.
+
+**Response** `{"status": "ok"}`, `400`, `404` oder `409`.
+
+---
+
+### POST /api/admin/bummel/races/{id}/kalenderstand/{feld}
+
+Nimmt den Schutz für **ein** Feld zurück (`name` | `route` | `dtstart` | `dtend`) und schreibt
+sofort den Wert aus dem verknüpften Kalendertermin zurück — auf den nächsten Sync zu warten wäre
+für den Bediener nicht erklärbar.
+
+**Response** `{"status": "ok", "wert": "…"}`; `400`, wenn das Rennen an keinem Termin hängt oder
+der Feldname nicht in der Liste steht; `404`, wenn es das Rennen nicht gibt.
+
+---
+
+### GET /api/admin/calendar/events
+
+Kalendertermine zur Auswahl im Admin — Grundlage für das Feld „Kalendertermin" beim Bummel und
+beim Kutter.
+
+**Query** — `around` (ISO-UTC, optional): schneidet auf ±`days` Tage um diesen Zeitpunkt zu;
+`days` (Default `3`). Ohne `around` kommt das ganze gespeicherte Fenster.
+
+**Response** — Liste aus `uid`, `summary`, `dtstart`, `dtend`, `location`, `route`, `is_bummel`,
+`is_transport` und `claimed_by` (`null` | `"bummel:{id}"` | `"kutter:{id}"`). `claimed_by` sagt,
+ob an dem Termin schon ein Objekt hängt — belegte Termine graut die Oberfläche aus, statt den
+Bediener in den `409` laufen zu lassen.
 
 ---
 

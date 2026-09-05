@@ -8603,14 +8603,20 @@ def events_due_for_reminder(
 ) -> list[dict]:
     """Generische FriesenEvents, deren Erinnerung jetzt fällig ist: dtstart liegt im Fenster
     (now, now+lead_min] und es wurde noch keine Erinnerung verschickt (event_reminders_sent).
-    Bummel- und Kutter-Kalenderevents (is_bummel/is_transport) sind ausgeschlossen -- die werden
-    über bummel_races_due_for_reminder / transport_events_due_for_reminder erinnert (sonst
-    Doppel-Push, da sie zusätzlich als eigenes Objekt in bummel_races/transport_events liegen)."""
+    Ausgeschlossen sind Termine, an denen ein Event-Objekt HÄNGT (``calendar_uid``) -- die
+    erinnert bummel_races_due_for_reminder / transport_events_due_for_reminder, sonst gäbe es
+    einen Doppel-Push.
+
+    #19 (05.09.2026): Vorher hingen der Ausschluss an den Flags ``is_bummel``/``is_transport``.
+    Das ging schief, sobald es zum Termin gar kein Objekt gab: Ein Kutter-Abend, den niemand im
+    Admin angelegt hatte, fiel still durch — kein Objekt, das erinnert, und der Termin selbst
+    ausgeschlossen. Maßgeblich ist jetzt die ausgesprochene Verknüpfung."""
     until = (_parse_iso(now) + timedelta(minutes=lead_min)).strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
         "SELECT uid, summary, dtstart, dtend, location, route, is_bummel FROM calendar_events "
         "WHERE dtstart > ? AND dtstart <= ? "
-        "AND is_bummel = 0 AND is_transport = 0 "
+        "AND uid NOT IN (SELECT calendar_uid FROM bummel_races WHERE calendar_uid IS NOT NULL) "
+        "AND uid NOT IN (SELECT calendar_uid FROM transport_events WHERE calendar_uid IS NOT NULL) "
         "AND uid NOT IN (SELECT uid FROM event_reminders_sent) "
         "ORDER BY dtstart",
         (now, until),

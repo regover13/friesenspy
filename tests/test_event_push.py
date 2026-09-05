@@ -101,19 +101,37 @@ class TestEventReminders:
         conn.commit()
         assert events_due_for_reminder(conn, _iso(now)) == []
 
-    def test_excludes_bummel_and_transport(self, conn):
-        """Bummel/Kutter-Kalenderevents werden jetzt über ihre eigenen Due-Funktionen erinnert
-        (bummel_races_due_for_reminder / transport_events_due_for_reminder) -- der generische
-        Pfad muss sie ausschließen, sonst gibt es einen Doppel-Push."""
+    def test_ausschluss_haengt_an_der_verknuepfung_nicht_am_flag(self, conn):
+        """#19: Ausgeschlossen wird ein Termin, an dem ein Objekt HÄNGT — nicht einer, der bloß
+        wie ein Bummel oder Kutter aussieht. Ein Kutter-Termin, zu dem niemand einen Kutter
+        angelegt hat, ist ein ganz normaler Abend und muss erinnern; vorher fiel er still
+        durch (das Flag allein reichte zum Ausschluss)."""
         now = datetime(2026, 6, 27, 20, 0, 0, tzinfo=timezone.utc)
+        soon = _iso(now + timedelta(minutes=30))
         upsert_calendar_events(conn, [
-            self._ev("generic", _iso(now + timedelta(minutes=30))),
-            {**self._ev("bummel", _iso(now + timedelta(minutes=30))), "is_bummel": 1},
-            {**self._ev("kutter", _iso(now + timedelta(minutes=30))), "is_transport": 1},
+            self._ev("generic", soon),
+            {**self._ev("kutter-ohne-objekt", soon), "is_transport": 1, "route": "EDWG,EDXH"},
         ])
         conn.commit()
         due = events_due_for_reminder(conn, _iso(now), lead_min=60)
-        assert {e["uid"] for e in due} == {"generic"}
+        assert {e["uid"] for e in due} == {"generic", "kutter-ohne-objekt"}
+
+    def test_verknuepfter_termin_erinnert_nicht_doppelt(self, conn):
+        """Gegenprobe: Sobald ein manuell angelegter Kutter mit dem Termin verknüpft ist,
+        erinnert nur noch das Objekt."""
+        from app.database import create_transport_event
+        now = datetime(2026, 6, 27, 20, 0, 0, tzinfo=timezone.utc)
+        soon = _iso(now + timedelta(minutes=30))
+        upsert_calendar_events(conn, [
+            {**self._ev("kutter-verknuepft", soon), "is_transport": 1, "route": "EDWG,EDXH"}])
+        eid = create_transport_event(conn, name="Krabben", destination="EDWG",
+                                     dtstart=soon, dtend="", cargo=None)
+        conn.execute("UPDATE transport_events SET calendar_uid = 'kutter-verknuepft' WHERE id = ?",
+                     (eid,))
+        conn.commit()
+        assert events_due_for_reminder(conn, _iso(now), lead_min=60) == []
+        due = transport_events_due_for_reminder(conn, _iso(now), lead_min=60)
+        assert [k["name"] for k in due] == ["Krabben"]
 
     def test_calendar_bummel_reminded_once_via_own_function_not_twice(self, conn):
         """Kalender-Bummel: erscheint über bummel_races_due_for_reminder, NICHT über
@@ -131,8 +149,10 @@ class TestEventReminders:
         assert [r["name"] for r in due] == ["FFB Juli"]
 
     def test_calendar_kutter_reminded_once_via_own_function_not_twice(self, conn):
-        """Kalender-Kutter: erscheint über transport_events_due_for_reminder, NICHT über
-        events_due_for_reminder -- genau eine Erinnerung."""
+        """Altpfad: Ein Kutter-Objekt MIT calendar_uid (``upsert_calendar_transport_event``) wird
+        über transport_events_due_for_reminder erinnert, nicht generisch. Seit #19 legt der
+        Poller solche Objekte nicht mehr an — die Funktion bleibt für den Fall, dass der
+        Kalenderimport für Kutter je zurückkehrt."""
         now = datetime(2026, 6, 27, 20, 0, 0, tzinfo=timezone.utc)
         soon = _iso(now + timedelta(minutes=30))
         ev = {"uid": "cal-kutter", "summary": "Kutter Juli", "dtstart": soon, "dtend": "",

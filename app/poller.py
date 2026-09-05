@@ -1337,13 +1337,14 @@ class VatsimPoller:
 
         Erkannte Bummel-Events (``is_bummel``) werden zusätzlich als persistente Rennen
         (``bummel_races``) angelegt/aktualisiert — Basis für Verdeckung/Enthüllung.
+        Kutter-Termine bleiben ein reiner Termin (Variante ①): ``upsert_calendar_transport_event``
+        existiert noch, wird aber seit dem 20.07.2026 von niemandem gerufen.
         """
         try:
             from app.calendar_sync import fetch_and_parse_ical
             from app.database import (
                 upsert_calendar_events,
                 upsert_calendar_bummel_race,
-                upsert_calendar_transport_event,
                 delete_stale_calendar_events,
             )
             assert self._http_client is not None
@@ -1356,8 +1357,10 @@ class VatsimPoller:
                     for ev in events:
                         if ev.get("is_bummel"):
                             upsert_calendar_bummel_race(conn, ev)
-                        if ev.get("is_transport"):
-                            upsert_calendar_transport_event(conn, ev)
+                        # Kein Kutter aus dem Kalender (Variante ①, 20.07.2026): ein Termin kann
+                        # kein Frachtmanifest tragen. Seit #19 wird der Termin zwar aufgenommen
+                        # und angezeigt — ein Objekt entsteht daraus aber weiterhin nicht; wer
+                        # beides zusammenführen will, verknüpft sie im Admin von Hand.
                     conn.commit()
                 finally:
                     conn.close()
