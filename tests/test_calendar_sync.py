@@ -335,3 +335,54 @@ class TestDeleteStaleCalendarEvents:
 
         assert deleted == 0
         assert len(get_calendar_events(conn, days_back=365 * 30)) == 1
+
+
+class TestTerminVerdeckung:
+    """#19 Regel 3: Ein Termin, an dem ein Event-Objekt hängt, erscheint nicht mehr separat in
+    der Events-Liste — dort steht dann das Objekt, mit den im Admin gepflegten Werten. Hängt
+    keines daran, bleibt der Termin sichtbar (auch ein Kutter-Termin)."""
+
+    def _conn(self):
+        from app.database import _DDL, get_connection, init_db
+        init_db(":memory:")
+        conn = get_connection(":memory:")
+        conn.executescript(_DDL)
+        conn.commit()
+        return conn
+
+    def _termin(self, conn, uid, *, is_transport=0):
+        from app.database import upsert_calendar_events
+        vorgestern = (datetime.now(timezone.utc) - timedelta(days=2)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+        upsert_calendar_events(conn, [{
+            "uid": uid, "summary": f"Abend {uid}", "dtstart": vorgestern, "dtend": "",
+            "location": "EDWG", "route": "EDWF,EDWG", "is_bummel": 0,
+            "is_transport": is_transport}])
+        conn.commit()
+        return vorgestern
+
+    def test_unverknuepfter_kutter_termin_bleibt_sichtbar(self):
+        from app.database import get_calendar_events
+        conn = self._conn()
+        self._termin(conn, "u-kutter", is_transport=1)
+        assert [e["uid"] for e in get_calendar_events(conn)] == ["u-kutter"]
+
+    def test_verknuepfter_termin_verschwindet_aus_der_liste(self):
+        from app.database import create_bummel_race, get_calendar_events
+        conn = self._conn()
+        start = self._termin(conn, "u-abend")
+        rid = create_bummel_race(conn, name="Aach-Bummel", route="EDTM,EDTZ",
+                                 dtstart=start, dtend="")
+        conn.execute("UPDATE bummel_races SET calendar_uid = 'u-abend' WHERE id = ?", (rid,))
+        conn.commit()
+        assert get_calendar_events(conn) == []
+
+    def test_verknuepfung_mit_kutter_verdeckt_ebenfalls(self):
+        from app.database import create_transport_event, get_calendar_events
+        conn = self._conn()
+        start = self._termin(conn, "u-kutter", is_transport=1)
+        eid = create_transport_event(conn, name="Krabben", destination="EDWG",
+                                     dtstart=start, dtend="", cargo=None)
+        conn.execute("UPDATE transport_events SET calendar_uid = 'u-kutter' WHERE id = ?", (eid,))
+        conn.commit()
+        assert get_calendar_events(conn) == []

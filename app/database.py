@@ -4820,14 +4820,23 @@ def delete_stale_calendar_events(conn: sqlite3.Connection, active_uids: list[str
 
 
 def get_calendar_events(conn: sqlite3.Connection, days_back: int = 365) -> list[dict]:
-    """FriesenEvents der letzten N Tage, neueste zuerst."""
+    """FriesenEvents der letzten N Tage, neueste zuerst.
+
+    #19: Termine, an denen ein Event-Objekt hängt (``calendar_uid``), bleiben draußen — in der
+    Liste steht dann das Objekt selbst, mit den im Admin gepflegten Werten. Vorher zeigte die
+    Oberfläche für einen Kalender-Bummel den Termin und damit die Kalenderstrecke, auch wenn
+    im Admin längst eine korrigierte stand.
+    """
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
     now_str = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
         "SELECT uid, summary, dtstart, dtend, location, route, is_bummel, is_transport "
         "FROM calendar_events "
-        "WHERE dtstart >= ? AND dtstart <= ? ORDER BY dtstart DESC",
+        "WHERE dtstart >= ? AND dtstart <= ? "
+        "AND uid NOT IN (SELECT calendar_uid FROM bummel_races WHERE calendar_uid IS NOT NULL) "
+        "AND uid NOT IN (SELECT calendar_uid FROM transport_events WHERE calendar_uid IS NOT NULL) "
+        "ORDER BY dtstart DESC",
         (cutoff, now_str),
     ).fetchall()
     return [dict(r) for r in rows]

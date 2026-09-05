@@ -8997,13 +8997,16 @@ async function fetchFriesenEvents() {
   try {
     const res  = await fetch('/api/calendar/events');
     const calEvents = await res.json();
-    // Manuell angelegte Bummel-Rennen ergänzen (toleriert Fehler)
-    let manualEvents = [];
+    // Event-Objekte ergänzen (toleriert Fehler). Seit #19 kommen ALLE Rennen, nicht nur die
+    // manuellen: Ein Termin, an dem ein Objekt hängt, liefert /api/calendar/events nicht mehr
+    // mit — ohne diese Zeile fiele ein Kalender-Bummel ganz aus der Liste. Der Gewinn ist
+    // derselbe Grund: Name und Strecke kommen jetzt aus dem Objekt, eine Admin-Korrektur an
+    // einem Kalender-Rennen ist damit hier endlich sichtbar.
+    let objectEvents = [];
     try {
       const racesRes = await fetch('/api/bummel/races');
       const races = await racesRes.json();
-      manualEvents = (races || [])
-        .filter(r => r.source === 'manual')
+      objectEvents = (races || [])
         .map(r => ({
           summary: r.name,
           dtstart: r.dtstart,
@@ -9013,15 +9016,14 @@ async function fetchFriesenEvents() {
           location: '',
           is_bummel: 1,
           _raceId: r.id,
-          _manual: true,
+          _manual: r.source === 'manual',
         }));
     } catch (_) { /* ignorieren */ }
-    // Manuell angelegte FriesenKutter-Events ergänzen (toleriert Fehler)
+    // FriesenKutter-Events ergänzen (toleriert Fehler)
     try {
       const kuttersRes = await fetch('/api/transport/events');
       const kutters = await kuttersRes.json();
-      manualEvents = manualEvents.concat((kutters || [])
-        .filter(k => k.source === 'manual')
+      objectEvents = objectEvents.concat((kutters || [])
         .map(k => ({
           summary: k.name,
           dtstart: k.dtstart,
@@ -9031,10 +9033,10 @@ async function fetchFriesenEvents() {
           location: '',
           is_transport: 1,
           _kutterId: k.id,
-          _manual: true,
+          _manual: k.source === 'manual',
         })));
     } catch (_) { /* ignorieren */ }
-    const combined = [...calEvents, ...manualEvents]
+    const combined = [...calEvents, ...objectEvents]
       .sort((a, b) => (b.dtstart || '').localeCompare(a.dtstart || ''));
     renderFriesenEvents(combined);
   } catch (e) {
