@@ -9,22 +9,29 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
 ## Inhaltsverzeichnis
 
 - [Was ist FriesenSpy?](#was-ist-friesenspy)
+  - [Wie FriesenSpy Flüge zählt (GPS-only, seit v8.0.0)](#wie-friesenspy-flüge-zählt-gps-only-seit-v800)
 - [Die vier Tabs im Überblick](#die-vier-tabs-im-überblick)
-  - [Live](#-live)
-  - [Karte](#️-karte)
-  - [Statistiken](#-statistiken)
-  - [Event-Suche](#-event-suche)
-- [FriesenFliegerBummel](#-friesenfliegerbummel)
-- [FriesenKutter (Transportflüge)](#-friesenkutter-transportflüge)
-  - [Verwaltung (Admin)](#verwaltung-admin)
-- [Benachrichtigungen](#-benachrichtigungen-push-notifications)
-- [TS-Login-Benachrichtigung](#ts-login-benachrichtigung-phase-1)
-- [Karten-Layer](#️-karten-layer)
-- [Links teilen & Deep-Linking](#-links-teilen--deep-linking)
+  - [✈ Live](#-live)
+  - [🗺️ Karte](#️-karte)
+  - [📊 Statistiken](#-statistiken)
+  - [🔍 Event-Suche](#-event-suche)
+  - [Muster-Fenster (überall anklickbar)](#muster-fenster-überall-anklickbar)
+- [🏁 FriesenFliegerBummel](#-friesenfliegerbummel)
+  - [Badge fürs Forum](#badge-fürs-forum)
+- [🦐 FriesenKutter (Transportflüge)](#-friesenkutter-transportflüge)
+- [🔧 Verwaltung (Admin)](#-verwaltung-admin)
+  - [Board-Login (Forum-SSO, optional)](#board-login-forum-sso-optional)
+  - [Rund um den FriesenFliegerBummel](#rund-um-den-friesenfliegerbummel)
+  - [Flugbetrieb und Daten](#flugbetrieb-und-daten)
+  - [Kniebrett](#kniebrett)
+  - [Diagnose](#diagnose)
+- [🔔 Benachrichtigungen (Push Notifications)](#-benachrichtigungen-push-notifications)
+- [TS-Login-Benachrichtigung (Phase 1)](#ts-login-benachrichtigung-phase-1)
+- [🗺️ Karten-Layer](#️-karten-layer)
+- [🛩️ Kniebrett (MSFS-2024-Tablet)](#️-kniebrett-msfs-2024-tablet)
+- [🔗 Links teilen & Deep-Linking](#-links-teilen--deep-linking)
 - [Woher kommen die Daten?](#woher-kommen-die-daten)
 - [Für Entwickler](#für-entwickler)
-
----
 
 ## Was ist FriesenSpy?
 
@@ -111,6 +118,8 @@ Zeigt alle Friesen, die gerade auf VATSIM fliegen — in Echtzeit, ohne Neuladen
 - **Flugplan (DEP→ARR) anklicken** → öffnet das Flugplan-Modal mit allen Details (Route, Reiseflughöhe, Bemerkungen, TAS, Flight Rules usw.)
 - **◎ anklicken** → springt direkt auf den Karte-Tab und zentriert die Karte auf diesen Piloten
 - **⎘ anklicken** → kopiert einen direkten Link zu diesem Flugplan in die Zwischenablage — zum Teilen
+- **🔊 anklicken** (hinter jedem Callsign, in der Tabelle wie im Karten-Popup) → öffnet [listen.vatsim.net](https://listen.vatsim.net) und schaltet auf die Frequenz, auf der dieser Pilot gerade ist. Dafür ist einmal eine Anmeldung mit der eigenen VATSIM-CID nötig; der Wunsch überlebt die Anmeldung, danach läuft der richtige Pilot. Zu hören ist, was gerade gesprochen wird — steht kein Lotse auf der Frequenz oder redet niemand, bleibt es still. Im Kniebrett erscheint das Symbol bewusst nicht (dort gibt es keinen Browser, in dem sich der Link öffnen ließe)
+- **Flugzeugtyp anklicken** → öffnet das [Muster-Fenster](#muster-fenster-überall-anklickbar)
 
 Die Liste aktualisiert sich über eine permanente Server-Verbindung (Server-Sent Events) live im Hintergrund — du siehst neue Positionen, ohne die Seite neu laden zu müssen. Der farbige Punkt oben rechts im Header zeigt an, ob die Verbindung aktiv ist (grün = verbunden, rot = getrennt).
 
@@ -210,6 +219,16 @@ Du gibst einen **ICAO-Code** (z.B. `EDDK`) oder **`global`** für weltweite Such
 
 > **Tipp:** Der ICAO-Code muss nicht exakt der Veranstaltungsort sein — ein Radius von 50–100 km um den nächsten Flughafen reicht in der Regel aus.
 
+### Muster-Fenster (überall anklickbar)
+
+Jedes Flugzeug-Kürzel ist ein Link — in der Live-Liste, im Karten-Popup, im Flugplan-Fenster, in allen Fluglisten. Ein Klick öffnet ein Fenster mit:
+
+- **Foto und Kurzbeschreibung** des Musters (Wikipedia/Wikimedia Commons, mit Urheber- und Lizenzangabe und Link zur Quelle)
+- **„Bei den Friesen"** — wie oft, wie lange und wie weit die Gruppe dieses Muster geflogen ist, von wann bis wann und mit wie vielen Piloten; darunter die Piloten, die es am häufigsten fliegen
+- **Kutter-Daten** — MTOW, Leergewicht und die daraus folgende Zuladung, falls für dieses Muster hinterlegt (siehe [FriesenKutter](#-friesenkutter-transportflüge))
+
+Steht im Flugplan ein anderes Kürzel als das eigentliche Muster, sagt das Fenster es dazu („Flugplan-Kürzel X, gemeint ist Y"). Der Zustand ist teilbar: Der Link trägt das Muster im Hash (`#actype=C172`).
+
 ---
 
 ## 🏁 FriesenFliegerBummel
@@ -244,26 +263,6 @@ Nach der Enthüllung eines Bummels bekommt jeder Teilnehmer ein **Badge-PNG**, d
 
 Im enthüllten Ranking erscheinen je Pilot zwei Schaltflächen: **🎖 Badge** öffnet das PNG direkt; **📋 Forum** kopiert den fertigen BBCode `[img]…/badge/{cid}.png[/img]` in die Zwischenablage — zum direkten Einfügen in board.friesenflieger.de. Die Badges werden serverseitig mit Pillow gezeichnet und unter `data/badges/` gecacht. Vor der Enthüllung liefert der Endpoint 404.
 
-### Verwaltung (Admin)
-
-Die Admin-Seite ist unter `/admin` erreichbar und passwortgeschützt. Das Passwort wird über `ADMIN_PASSWORD` in `config.env` gesetzt (leer = Admin-Bereich deaktiviert; niemals in git). Der Login setzt ein signiertes httponly-Cookie (`fs_admin`), das für die Browsersitzung gültig bleibt — ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort.
-
-#### Board-Login (Forum-SSO, optional)
-
-Ist der **Board-Login** aktiv (Admin-Tab → „Board-Login“, Standard AUS), ist die gesamte App nur für eingeloggte Forum-Mitglieder (`board.friesenflieger.de`, phpBB) sichtbar. Der Login läuft im Forum — das Passwort erreicht FriesenSpy nie: eine kleine Bridge-Datei `sso.php` (aus `deploy/forum/`, neben phpBB kopiert) liefert per Redirect ein kurzlebiges, HMAC-signiertes Token mit Benutzername, VATSIM-CID (aus dem Forum-Profil) und Admin-Flag (Forum-Gruppe „Events“). FriesenSpy prüft es (`SSO_SECRET`, Frische ≤ 60 s, Einmal-Nonce, `state`) und legt eine eigene kurze Session (`fs_user`) an. Das `ADMIN_PASSWORD` bleibt als Break-glass-Zugang erhalten. Details: `docs/superpowers/specs/2026-07-13-forum-sso-design.md` und `deploy/forum/README.md`.
-
-**Was die Admin-Seite kann:**
-- **Rennen manuell anlegen** — auch ohne Kalender-Termin, mit frei wählbarer Strecke, Start- und (optionalem) Endtermin sowie Anwesenheitsradius. Ein fehlendes `dtend` wird auf Mitternacht UTC des Starttags gesetzt.
-- **Rennen bearbeiten und löschen** — nachträgliche Korrekturen an Name, Strecke, Termin oder Radius; Löschen entfernt das Rennen dauerhaft.
-- **Enthüllung steuern** — Notfall-Enthüllung (sofort zeigen) oder wieder verbergen, z. B. um einen Fehler zu korrigieren, bevor das Ergebnis öffentlich wird.
-- **Teilnehmer-Korrekturen (Overrides)** — einzelne Piloten ausschließen (`exclude`), disqualifizieren (`disqualify`), manuell als Sieger markieren (`winner`) oder mit einer manuell eingegebenen Block-Zeit werten (`manual`). Overrides wirken auf alle öffentlichen Sichten; Durchschnitt und Ranking werden neu berechnet.
-- **Push-Benachrichtigungen je Rennen** — Start- und Enthüllungs-Push für ein einzelnes Rennen an- oder abschalten.
-- **Vorschau** — vollständige Wertung mit Zeiten und Ranking einsehen, solange das Rennen noch läuft — ohne die öffentliche Sicht zu enthüllen.
-- **Badge-Vorschau** — in der Renn-Vorschau je Teilnehmer **🎖 Badge** (öffnet das Badge-PNG, auch schon **vor** der Enthüllung) und **📋 Forum** (kopiert den öffentlichen `[img]…[/img]`-BBCode).
-- **Hinweis-Banner steuern** — bestimmen, welcher Changelog-Eintrag als Startseiten-Banner erscheint: `auto` (neuester Highlight-Eintrag), `off` (kein Banner) oder eine konkrete Version.
-- **Push-Test & Broadcast** — eine Test-Benachrichtigung nur ans eigene Gerät senden oder eine freie Nachricht (Titel + Text) an alle Abonnenten bzw. nur Events-Abonnenten.
-- **Piloten-Verwaltung** — bekannte Piloten auflisten, manuell anlegen oder umbenennen und löschen (Namenspflege; **keine** Mitglieder-Allowlist — Friesen werden weiter über das Callsign-Präfix `FRS` erkannt).
-
 ---
 
 ## 🦐 FriesenKutter (Transportflüge)
@@ -290,6 +289,49 @@ Der **FriesenKutter** ist ein kleines „FSE für Friesen": ein Transportflug-Ev
 - **Forum-Badge nach der Feierabend-Bilanz:** Sobald ein Event abgeschlossen ist, bekommt jeder Teilnehmer ein rundes Badge-PNG „Voll beladen!" (Callsign, Flugzeugmuster, gelieferte kg) — bei verlorener Fracht zusätzlich mit Verlust-Titel **SPITZBOOV!** (geklaut), **BADEMESTER!** (versenkt) oder **SEEROVER!** (beides). Im Events-Tab erscheinen dafür je Teilnehmer **🎖 Badge** (öffnet das PNG) und **📋 Forum** (kopiert den BBCode) über dem Flug-Feed — analog zum Bummel-Badge.
 - **Status im Admin:** Die Admin-Event-Liste zeigt pro Event ein Status-Badge — **Geplant** (vor `dtstart`), **Läuft** (zwischen `dtstart` und `dtend`), **Wartet** (`dtend` erreicht, Feierabend-Bilanz aber noch nicht erstellt — z. B. Nachzügler in der Luft) oder **Feierabend** (Bilanz erstellt). Rein admin-seitig, keine Änderung am Piloten-Frontend.
 - **Eingefroren nach Feierabend (v8.10.0):** Der Fortschritt eines Events mit erstellter Bilanz wird beim Abschluss einmal gespeichert (Snapshot) statt bei jedem Aufruf neu berechnet — die Übersicht lädt dadurch spürbar schneller. Eine nachträgliche Korrektur greift, sobald das Event im Admin erneut gespeichert wird (auch ohne Feldänderung). Übersichten zeigen zudem nur die letzten 12 Monate.
+
+---
+
+## 🔧 Verwaltung (Admin)
+
+Die Admin-Seite ist unter `/admin` erreichbar und passwortgeschützt. Das Passwort wird über `ADMIN_PASSWORD` in `config.env` gesetzt (leer = Admin-Bereich deaktiviert; niemals in git). Der Login setzt ein signiertes httponly-Cookie (`fs_admin`), das für die Browsersitzung gültig bleibt — ein Passwort- oder Key-Wechsel invalidiert alle bestehenden Cookies sofort.
+
+### Board-Login (Forum-SSO, optional)
+
+Ist der **Board-Login** aktiv (Admin-Tab → „Board-Login“, Standard AUS), ist die gesamte App nur für eingeloggte Forum-Mitglieder (`board.friesenflieger.de`, phpBB) sichtbar. Der Login läuft im Forum — das Passwort erreicht FriesenSpy nie: eine kleine Bridge-Datei `sso.php` (aus `deploy/forum/`, neben phpBB kopiert) liefert per Redirect ein kurzlebiges, HMAC-signiertes Token mit Benutzername, VATSIM-CID (aus dem Forum-Profil) und Admin-Flag (Forum-Gruppe „Events“). FriesenSpy prüft es (`SSO_SECRET`, Frische ≤ 60 s, Einmal-Nonce, `state`) und legt eine eigene kurze Session (`fs_user`) an. Das `ADMIN_PASSWORD` bleibt als Break-glass-Zugang erhalten. Details: `docs/superpowers/specs/2026-07-13-forum-sso-design.md` und `deploy/forum/README.md`.
+
+### Rund um den FriesenFliegerBummel
+- **Rennen manuell anlegen** — auch ohne Kalender-Termin, mit frei wählbarer Strecke, Start- und (optionalem) Endtermin sowie Anwesenheitsradius. Ein fehlendes `dtend` wird auf Mitternacht UTC des Starttags gesetzt.
+- **Rennen bearbeiten und löschen** — nachträgliche Korrekturen an Name, Strecke, Termin oder Radius; Löschen entfernt das Rennen dauerhaft.
+- **Enthüllung steuern** — Notfall-Enthüllung (sofort zeigen) oder wieder verbergen, z. B. um einen Fehler zu korrigieren, bevor das Ergebnis öffentlich wird.
+- **Teilnehmer-Korrekturen (Overrides)** — einzelne Piloten ausschließen (`exclude`), disqualifizieren (`disqualify`), manuell als Sieger markieren (`winner`) oder mit einer manuell eingegebenen Block-Zeit werten (`manual`). Overrides wirken auf alle öffentlichen Sichten; Durchschnitt und Ranking werden neu berechnet.
+- **Push-Benachrichtigungen je Rennen** — Start- und Enthüllungs-Push für ein einzelnes Rennen an- oder abschalten.
+- **Vorschau** — vollständige Wertung mit Zeiten und Ranking einsehen, solange das Rennen noch läuft — ohne die öffentliche Sicht zu enthüllen.
+- **Badge-Vorschau** — in der Renn-Vorschau je Teilnehmer **🎖 Badge** (öffnet das Badge-PNG, auch schon **vor** der Enthüllung) und **📋 Forum** (kopiert den öffentlichen `[img]…[/img]`-BBCode).
+- **Hinweis-Banner steuern** — bestimmen, welcher Changelog-Eintrag als Startseiten-Banner erscheint: `auto` (neuester Highlight-Eintrag), `off` (kein Banner) oder eine konkrete Version.
+- **Push-Test & Broadcast** — eine Test-Benachrichtigung nur ans eigene Gerät senden oder eine freie Nachricht (Titel + Text) an alle Abonnenten bzw. nur Events-Abonnenten.
+- **Piloten-Verwaltung** — bekannte Piloten auflisten, manuell anlegen oder umbenennen und löschen (Namenspflege; **keine** Mitglieder-Allowlist — Friesen werden weiter über das Callsign-Präfix `FRS` erkannt).
+
+### Flugbetrieb und Daten
+
+- **Flugplatzkarten (DFS-Blätter)** — Sicht-, Flugplatz- und Rollkarten suchen, nachtragen und **passen** (zwei Punkte anklicken, Koordinaten dazu; die Bahnschwellen des Platzes blendet die Maske als Hilfe ein). Dazu: Vorschau der Passung, Drehung von Hand überschreiben, Seitenauswahl bei mehrseitigen Blättern, „nicht gefunden" abhaken, ein **Hauptschalter** je Ebene sowie die Prüfung, wenn die DFS ein neues Blatt veröffentlicht hat — **übernehmen** (Passung bleibt) oder **verwerfen**. Handgesetzte Karten bleiben, wie sie gesetzt wurden.
+- **Erkennungslücken** — Flüge, bei denen trotz bekanntem Flugplan kein GPS-Start oder keine GPS-Landung erkannt wurde. Das sind die Kandidaten für einen fehlenden oder falsch verorteten Flugplatz. Ein Fall, der keiner ist (Absturz, Aufzeichnungslücke), lässt sich dauerhaft abhaken. Zur Diagnose einzelner Fälle gibt es den Skill `track-diagnose`.
+- **Flugplätze** — eigene Einträge und Überschreibungen (`custom_airports`): Koordinaten korrigieren, Radius und Grund hinterlegen, Plätze ergänzen, die `airportsdata` nicht kennt. Dazu die **Kartenlinks** je Platz.
+- **Flugzeugmuster** — Liste aller Muster mit MTOW, Leergewicht und Zuladung; einzeln bearbeiten, per KI-Vorschlag nachschlagen (Web-Recherche) oder Beschreibung und Foto neu holen.
+- **StatSim-Nachlauf** — einen vollständigen Abgleich mit StatSim anstoßen und seinen Fortschritt verfolgen.
+- **FriesenKutter** — Events, Frachtmanifest, Frachtart-Katalog und Standard-Zuladung pflegen, Push je Event schalten, KI-Sprüche an- oder abschalten und für ein Event neu erzeugen lassen. Siehe [FriesenKutter](#-friesenkutter-transportflüge).
+
+### Kniebrett
+
+- **Geräteübersicht** — welche Kniebretter angemeldet sind und welches Paket sie fahren; eine Verknüpfung lässt sich hier auch wieder lösen.
+- **Selbstdiagnose** — was die Panels von sich aus zurückmelden (technische Messwerte, u. a. der tatsächlich verfügbare Platz im Tablet); löschbar.
+- **Test-Meldung ins eigene Kniebrett** — geht über die Live-Verbindung, nicht über Web-Push.
+
+### Diagnose
+
+- **Push-Übersicht** (`/admin/push-overview`) — welche Abos existieren, wem sie gehören und was zuletzt zugestellt wurde. Nur erreichbar, wenn `PUSH_OVERVIEW_PASSWORD` gesetzt ist (leer = 404).
+
+---
 
 ## 🔔 Benachrichtigungen (Push Notifications)
 
@@ -392,11 +434,48 @@ Alle Karten in FriesenSpy (Live-Tab, Track-Ansicht, Event-Suche) verwenden diese
 
 **OpenAIP-Overlay** (zusätzliche Checkbox): Legt Lufträume, Flugplätze und Navaids aus der OpenAIP-Datenbank über den gewählten Basis-Layer. Besonders nützlich in Kombination mit Satellit oder CARTO. Ist nur verfügbar, wenn auf dem Server ein OpenAIP API-Key konfiguriert ist.
 
+**Platzrunden**: 412 deutsche Platzrunden mit Höhe, über jeder Kartensorte und auf jeder Zoomstufe — auch über den Kartenblättern. Fehlt die Höhe in der Quelle, steht „Höhe nicht bekannt" statt einer geratenen Zahl.
+
+**Meldepunkte**: Die visuellen Meldepunkte (VRP) als große Dreiecke mit Namen — gefüllt heißt meldepflichtig, hohl heißt auf Anforderung; das Popup nennt die Höhe, wenn sie veröffentlicht ist. Ab Zoomstufe 9, der Name ab Stufe 11, weltweit. Ihr Gewinn zeigt sich im Anflug: Das OpenAIP-Bild endet bei Zoom 14 und die OpenFlightMap trägt Luftfahrtinhalt nur bis Stufe 12 — die Meldepunkte stehen auf jeder Stufe und über jeder Karte, auch über dem Satellitenbild. Von Hand zu pflegen ist daran nichts; die Ebene braucht einen `OPENAIP_API_KEY`. Datenquelle: OpenAIP (CC BY-NC 4.0).
+
+**FSE-Plätze** und **FSE-Landeflächen**: Die Plätze aus FSEconomy mit Bahnlänge, Belag und Höhe — im Popup steht auch der Name, unter dem der Platz **im Simulator** zu finden ist (Emden heißt dort EHOW, Papenburg EDHJ). Die ICAO-Beschriftung erscheint ab Zoomstufe 11.
+
 **Sichtflugkarte** (blaues Symbol): Die amtliche DFS-Sichtflugkarte eines Platzes, halbtransparent über der Karte. Sie erscheint von allein, sobald du im Kartenfeld fliegst. Antippen des Symbols nagelt das Blatt fest oder nimmt es weg.
 
 **Flugplatzkarte** (magenta Symbol): Die DFS-Flugplatz- oder Rollkarte eines Verkehrsflughafens — mit Rollwegnamen, Haltepunkten und Standplatznummern. Sie tritt über dem Platz an die Stelle der Sichtflugkarte, weil die dort im Maßstab 1:100 000 nichts mehr hergibt, und weicht beim Verlassen wieder zurück.
 
-Diese Blätter sind nach der Bahnrichtung gedruckt statt genordet; sie werden beim Ablegen gedreht. Ihre Lage wird aus den Bahnen im Bild gerechnet und gegen amtliche Schwellenkoordinaten geprüft — **eine Karte, die diese Prüfung nicht besteht, wird nicht angezeigt**. Eine falsch liegende Karte wäre beim Rollen schlimmer als gar keine. Der verbleibende Fehler steht im Admin; zum Vergleich: Eine Bahn ist 45 m breit, ein Rollweg 23 m.
+Diese Blätter sind nach der Bahnrichtung gedruckt statt genordet; auf der Karte liegen sie gedreht und damit genordet. **Ihre Lage setzt ein Mensch** — im Admin werden zwei wiedererkennbare Punkte angeklickt und mit ihren echten Koordinaten hinterlegt, bei Flugplatz- und Rollkarten meist zwei Bahnschwellen (die zugehörigen amtlichen Werte blendet die Maske ein), bei Sichtflugkarten am Kartenrand abgelesen. Erst eine so gepasste Karte wird überhaupt angezeigt; der verbleibende Fehler steht daneben. Eine falsch liegende Karte wäre beim Rollen schlimmer als gar keine — zum Vergleich: Eine Bahn ist 45 m breit, ein Rollweg 23 m.
+
+> **Warum von Hand?** Ein erster Anlauf hat die Lage automatisch aus der Bahngeometrie gerechnet. Das Verfahren funktioniert, wo es funktioniert (EDDM auf 1,5 m), kam aber über **drei von 107 Plätzen** nicht hinaus: 271 der 446 Plätze haben in OurAirports keine Schwellenkoordinaten, Stopways werden in derselben Graustufe mitgemessen, und bei nur einer erkennbaren Bahn ist die Passung zwar exakt bestimmt, aber unprüfbar. Am 31.08.2026 wurde die Automatik deshalb zurückgebaut — für **beide** Kartensorten. Hintergrund: [`docs/flugplatzkarten-passen.md`](docs/flugplatzkarten-passen.md).
+
+---
+
+## 🛩️ Kniebrett (MSFS-2024-Tablet)
+
+Das **Kniebrett** ist FriesenSpy als eigene App im EFB-Tablet des **Microsoft Flight Simulator 2024** — dieselben vier Tabs wie auf der Website, nur direkt beim Fliegen, ohne Alt-Tab und auch in VR.
+
+**Installieren:** Paket und Schritt-für-Schritt-Anleitung stehen unter **[/efb](https://friesenspy.devprops.de/efb)** („Kniebrett" ganz unten auf der Seite): ZIP herunterladen, den enthaltenen Ordner `friesenflieger-friesenspy-efb` in den Community-Ordner des Simulators kopieren, Simulator starten — FriesenSpy steht dann in der App-Liste des Tablets. Das Paket ist nur eine **dünne Hülle**; alles Weitere kommt vom Server. Änderungen an FriesenSpy sind also ohne Neuinstallation da.
+
+**Anmelden:** Beim ersten Start fragt das Tablet nach dem Forum-Login — dieselben Zugangsdaten wie auf der Website. Die anschließende Rückfrage „Kniebrett dauerhaft anmelden?" **bestätigen**: Sonst fragt FriesenSpy bei jedem Start des Simulators erneut. Gemerkt wird dafür eine zufällige Gerätekennung, kein Passwort. Gewarnt wird nur vor dem echten Risiko — die Frage zu bestätigen, während man gar nicht selbst im Simulator sitzt. Gehört ein Rechner nicht mehr dir, löst die Verwaltung die Verknüpfung (Meldung im Forum).
+
+**Paketversion:** Erforderlich ist mindestens **2.0.0** — ältere Pakete zeigen statt der App nur noch den Hinweis, wo die neue Fassung liegt (sie können sich den Simulator nicht merken, jeder Start begänne mit einer Anmeldung). Die **Windanzeige** braucht **2.1.0**; mit einem älteren Paket bleibt sie einfach aus. Welche Version wo läuft, steht in der Geräteübersicht im Admin.
+
+**Was das Kniebrett zusätzlich kann:**
+- **Verkehr aus dem Simulator** — auf der Karte kommt der fremde Verkehr direkt aus dem Sim: **jede Sekunde gemessen** statt zwischen zwei VATSIM-Meldungen geschätzt, und auch **ohne VATSIM-Verbindung**. Geparkte Maschinen bleiben weg, rollende sind ausdrücklich dabei. Details zur Zusammenführung beider Quellen stehen oben im [Karte-Tab](#️-karte).
+- **Eigenes Flugzeug ohne VATSIM** — Kompass und Moving Map funktionieren allein aus dem Simulator; es genügt zu fliegen.
+- **Windpfeil** (oben links über den Zoomknöpfen, im Vollbild an derselben Stelle) — der Pfeil zeigt, wohin der Wind weht, die Zahl daneben nennt wie üblich die Richtung, aus der er kommt (`270° 15 kt`). Bei gedrehter Karte dreht er mit, bei Windstille steht dort „still". Den Wind kennt nur der Simulator — auf der Website gibt es die Anzeige nicht.
+- **Meldungen im Tablet** — Online-gehen, Flugplan, TeamSpeak und Events meldet das Tablet selbst, ohne Web-Push; die Meldung bleibt danach auf der Benachrichtigungs-Seite stehen. Wer unter „Wer darf über mich benachrichtigt werden?" jemanden ausgeschlossen hat, bleibt auch hier ausgeschlossen — diese Entscheidung fällt auf dem Server.
+- **Einstellungen (⚙ oben rechts)** — zwei Abschnitte: **Anzeige** (Größe in Zehnerschritten nachjustieren, „Automatisch" setzt zurück; die Grenzen greifen auch gegen die Handeinstellung, unbedienbar stellen geht nicht) und **Benachrichtigungen** (die vier Sorten einzeln an/aus). Die **Farbe des Zahnrads** zeigt den Verbindungszustand: gelb = verbunden, rot = getrennt.
+- **Kartenvollbild** — zeigt nur noch die Karte, auch die obere Leiste verschwindet; der Ausgang „Vollbild verlassen" steht unten links. Die Karteneinstellungen (Ebenen, Zoom) bleiben über das Zuklappen hinweg erhalten.
+- **ICAO-Suche** (Lupe auf der Karte) — springt einen Platz nach Kennung an.
+
+**Was im Tablet anders aussieht — beides Absicht:**
+- **Keine Umlaute.** Dort steht `ae`, `oe`, `ue` und `ss`. Die Anzeige-Engine des Simulators bringt genau eine Schrift mit, die nichts jenseits des englischen Alphabets kennt, und nimmt auch keine mitgelieferte an (geprüft). Lesbarer Text war uns wichtiger als richtige Rechtschreibung.
+- **Tabellen stehen als Karten untereinander.** Im Tablet lässt sich nichts seitwärts schieben — keine Scrollleiste, kein Ziehen, kein Mausrad. Als Tabelle wäre die rechte Hälfte unerreichbar.
+
+Nicht im Kniebrett: der **Lautsprecher** zum Mithören (es gibt keinen Browser, in dem sich der Link öffnen ließe) und das **Herunterziehen zum Aktualisieren**. Erscheint nach einem Update noch der alte Stand: Tablet einmal schließen und wieder öffnen — oben erscheint dann „Neue Version — neu laden".
+
+> **Klemmt etwas?** Ab ins Forum, am besten mit der Angabe, was du zuletzt gemacht hast. Das Panel meldet von sich aus technische Messwerte zurück (keine persönlichen Daten, keine Positionen) — damit lässt sich meist nachvollziehen, was passiert ist, ohne dass du etwas mitschneiden musst.
 
 ---
 
@@ -456,8 +535,9 @@ Verliert der VATSIM-Datenfeed einen Piloten kurzzeitig (Feed-Aussetzer), wird di
 # Abhängigkeiten installieren
 pip install -r requirements.txt
 
-# config.env anlegen (SECRET_KEY ist Pflicht)
-cp config.env.example config.env   # dann editieren
+# config.env anlegen (SECRET_KEY ist Pflicht) — eine Vorlage gibt es nicht,
+# die vollständige Liste steht unten unter „config.env"
+touch config.env   # dann füllen
 
 # Server starten
 uvicorn app.main:app --reload
@@ -481,8 +561,8 @@ STATSIM_API_KEY=                            # Optional: historische Flüge via s
 OPENAIP_API_KEY=                            # Optional: OpenAIP-Overlay (Luftraum, Navaids) UND
                                             # die Ebene „Meldepunkte" (seit v13.7.0): Ohne Key
                                             # fehlen beide, alles andere läuft. Der Server holt
-                                            # die Meldepunkte damit selbst (monatlich, Ablage im
-                                            # Datenverzeichnis) — nichts von Hand nachzupflegen.
+                                            # die Meldepunkte damit selbst und frischt sie
+                                            # monatlich auf — nichts von Hand nachzupflegen.
 CARTO_API_KEY=                              # Optional: Kacheln der Ebenen „Light"/„Dark".
                                             # Ohne Key legt CARTO seit dem 27.08.2026 ein
                                             # „API KEY REQUIRED" über jede Kachel; die Karte
@@ -518,7 +598,7 @@ TS_REJOIN_DEBOUNCE_SEC=900
 pytest tests/ -v
 ```
 
-971 Tests, keine externen Abhängigkeiten (alles gemockt).
+2322 Tests (Stand 05.09.2026), keine externen Abhängigkeiten (alles gemockt).
 
 ### Deployment
 
@@ -558,6 +638,16 @@ FriesenSpy/
 │   ├── statsim.py     # StatSim API-Client (historische Flüge)
 │   ├── geo.py         # Haversine, ICAO→Koordinaten via airportsdata (offline) + custom_airports (#50, Override seit #56, Radius-Override seit #62, Grund seit #78), Event-Filter
 │   ├── alerts.py      # Telegram-Alerts (silent fail)
+│   ├── auth.py        # Admin-Cookie (HMAC über SECRET_KEY, kein Session-Store)
+│   ├── forum_sso.py   # Board-Login: Token vom Forum prüfen (HMAC, Nonce, state)
+│   ├── transport_stacks.py # FriesenKutter: Stapel-Modell der Ladung (reine Zustandsmaschine, keine DB)
+│   ├── aircraft_info.py    # Muster-Fenster: Text + Foto von Wikipedia/Wikimedia Commons
+│   ├── llm.py         # Claude-Anbindung (Zuladungs-Vorschlag, Kutter-Sprüche), Silent-Fail
+│   ├── aip_charts.py  # DFS-Kartenblätter (die Blätter sind keine PDFs)
+│   ├── ground_charts.py    # Flugplatz-/Rollkarten: Blattkunde und Handpassung (zwei geklickte Punkte)
+│   ├── runway_ref.py  # Bahnschwellen aus OurAirports als Passhilfe
+│   ├── vrp.py         # Meldepunkte aus OpenAIP (monatlich, im Speicher, Zuschnitt auf den Ausschnitt)
+│   ├── fse.py         # FSE-Weltbestand: Plätze und Landeflächen im Kartenausschnitt
 │   ├── badge.py       # Badge-Rendering mit Pillow (Sieger-Badge + Medaille, data/badges/-Cache)
 │   ├── calendar_sync.py # FriesenFlieger Google-Kalender (iCal-Parser, alle 6h via Poller)
 │   ├── teamspeak.py   # TeamSpeak-ServerQuery-Client (FRS-Parsing, fetch_channel_clients)
@@ -565,14 +655,16 @@ FriesenSpy/
 │   ├── version.py     # liest CHANGELOG.json → VERSION + CHANGELOG
 │   ├── CHANGELOG.json # Versionsverlauf (Quelle für Header-Badge, Banner, Verlauf)
 │   └── static/
-│       ├── index.html # Vanilla-JS-SPA (4 Tabs)
-│       ├── admin.html # Admin-Verwaltung (passwortgeschützt, Bummel-Verwaltung)
+│       ├── index.html # Vanilla-JS-SPA (4 Tabs) — läuft auch als MSFS-Kniebrett
+│       ├── admin.html # Admin-Verwaltung (passwortgeschützt)
+│       ├── efb.html   # Installationsseite fürs Kniebrett (/efb, hinter dem Gate)
 │       ├── sw.js      # Service Worker (Web-Push + PWA)
 │       ├── manifest.webmanifest # PWA-Manifest (installierbar)
 │       ├── icon-192.png / icon-512.png / icon-maskable-512.png / apple-touch-icon.png
 │       └── favicon.ico
 ├── tests/             # pytest-Tests
 ├── docs/              # Architektur, API, Deployment
+├── msfs-panel/        # Quellen des MSFS-Community-Packages (Windows-Build, nicht in der CI)
 ├── nginx/             # nginx-Konfiguration für friesenspy.devprops.de
 ├── .github/workflows/ # CI/CD: Build → GHCR → SSH-Deploy
 ├── Dockerfile
@@ -624,5 +716,22 @@ FriesenSpy/
 | `/widget` | GET | Einbettbares iframe-Widget (heller friesenflieger.de-Stil, inkl. Prefiles + TS-Zähler `🎧 N im TS`) |
 | `/widget/preview` | GET | Vorschau + Einbettungscode für das Widget |
 | `/api/sse` | GET | Server-Sent Events Stream (`positions` öffentlich, `notify` nur angemeldet + nach Subjekt-Sichtbarkeit) |
+| `/api/transport/events` | GET | FriesenKutter: Events mit Fortschritt, Manifest und Flug-Feed |
+| `/api/transport/event/{id}` | GET | Ein Kutter-Event im Detail |
+| `/api/transport/event/{id}/badge/{cid}.png` | GET | Kutter-Badge „Voll beladen!" für die Forensignatur |
+| `/api/aircraft/{code}` | GET | Muster-Fenster: Wikipedia-Text, Foto, Friesen-Statistik, Kutter-Daten |
+| `/api/aircraft/{code}/photo` | GET | Das Musterfoto (serverseitig geholt und gecacht) |
+| `/api/aircraft-types/stats` | GET | Welche Muster die Gruppe wie oft fliegt |
+| `/api/airports/search` · `/api/airport/{icao}` | GET | Platzsuche (ICAO-Sprung auf der Karte) und Einzelplatz |
+| `/api/aip-charts-dfs` | GET | Gepasste DFS-Blätter im Kartenausschnitt (Sicht-, Flugplatz-, Rollkarte) |
+| `/aip-chart-dfs/{icao}/{sorte}.png` | GET | Das genordete Kartenblatt als PNG |
+| `/efb` · `/api/efb-package` · `/download/efb` | GET | Kniebrett: Installationsseite, Paketinfo, Paket-Download |
+| `/auth/forum/login` · `/auth/forum/callback` · `/auth/forum/logout` | GET | Board-Login (Forum-SSO) |
+| `/auth/device/bind` | POST | Kniebrett dauerhaft anmelden (Gerätekennung) |
+| `/api/me` · `/api/me/visibility` | GET/POST | Eigene Identität; „Wer darf über mich benachrichtigt werden?" |
+| `/api/admin/detection-gaps` | GET/POST | Erkennungslücken auflisten / einzelnen Fall abhaken |
+| `/api/admin/airports` · `/api/admin/aircraft-types` | GET/POST/DELETE | Flugplätze (`custom_airports`) und Flugzeugmuster pflegen |
+| `/api/admin/aip-charts-dfs/…` | GET/POST/DELETE | Kartenblätter suchen, passen, übernehmen, verwerfen |
+| `/api/admin/panel-devices` · `/api/admin/panel-diag` | GET/DELETE | Kniebrett-Geräte und Selbstdiagnose |
 
-Details: siehe [docs/api.md](docs/api.md)
+Die Tabelle ist eine Auswahl. Vollständig — mit Parametern, Beispiel-Responses und Fehlerfällen — steht die Schnittstelle in [docs/api.md](docs/api.md); die DFS-Kartenblatt-Endpunkte fehlen dort noch.
