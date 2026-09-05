@@ -3108,7 +3108,9 @@
           + escH(fmtDt(t.dtstart) + ' — ' + t.summary + (belegt ? ' (schon vergeben)' : ''))
           + '</option>';
       }).join('');
-      ['name', 'destination', 'dtstart', 'dtend'].forEach(feld => {
+      // destination fehlt bewusst: Das Ziel kommt nie aus dem Kalender, eine Marke mit
+      // Rückholknopf hätte dort nichts zurückzuholen.
+      ['name', 'dtstart', 'dtend'].forEach(feld => {
         const span = document.getElementById('ke-marke-' + feld);
         if (!span) return;
         span.innerHTML = ev ? feldMarke({ id: ev.id, calendar_uid: ev.calendar_uid,

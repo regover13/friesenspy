@@ -1241,7 +1241,7 @@ Volle Liste aller Bummel-Rennen inkl. interner Felder.
 
 ### POST /api/admin/bummel/races
 
-Neues Rennen manuell anlegen (ohne Kalender-Termin).
+Neues Rennen manuell anlegen.
 
 **Body (JSON)**
 
@@ -1251,6 +1251,7 @@ Neues Rennen manuell anlegen (ohne Kalender-Termin).
 | `route` | string | ✓ | CSV der Strecken-ICAOs, z.B. `"EDWF,EDWG,EDWR"` |
 | `dtstart` | string | ✓ | ISO8601 UTC — Renn-Beginn |
 | `dtend` | string | — | ISO8601 UTC — Renn-Ende; fehlt → Mitternacht UTC des Starttags |
+| `calendar_uid` | string | — | #19: Termin, zu dem dieses Rennen gehört. Gesetzt → der Termin erscheint nicht mehr separat; alle vier Felder gelten sofort als handgesetzt. Unbekannt → `400`, belegt → `409` |
 
 **Kein `radius_km` mehr** (seit GPS-only Phase 2, #23) — die Anwesenheitsprüfung nutzt überall
 den festen globalen 4-km-Radius aus dem GPS-Leg-Detektor, kein per-Rennen-Override mehr.
@@ -1423,8 +1424,10 @@ Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_k
 ### POST /api/admin/transport/events
 Manuelles Event anlegen. **Seit v8.14.0/#84 kein `route`-Feld mehr** — die Route wird aus den Startplätzen der Fracht + Ziel abgeleitet. Body: `name`, `destination` (ICAO, **Pflicht**), `dtstart` (UTC, Pflicht), `dtend` (optional, sonst Mitternacht UTC), `cargo` (`[{name, target_kg, departure}]`, **Pflicht** — mind. eine Frachtart mit Menge und **genau einem** Startplatz `departure` ≠ Ziel; fehlender/mehrfacher Platz → `400`). → `{status, id}`. **Kein `radius_km` mehr** (fester globaler 4-km-Radius seit GPS-only Phase 2/#23). **Zeit-Plausibilität (v10.1.3, `_validate_event_times`):** `dtend` ≤ `dtstart` → `400` („Enddatum muss nach dem Startdatum liegen.").
 
+**`calendar_uid` (optional, #19):** Termin, zu dem dieser Kutter gehört — dann erscheint der Termin nicht mehr separat in den Events und erinnert nicht doppelt. Unbekannter Termin → `400`, schon belegter → `409`. **Ein Kalendertermin legt weiterhin keinen Kutter an** (Variante ①): Das Frachtmanifest kann er nicht tragen, die Verknüpfung ist Handarbeit.
+
 ### POST /api/admin/transport/events/{id}
-Bearbeiten. Übergebene Felder aus `name/destination/dtstart/dtend` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest und muss dieselbe Validierung erfüllen wie beim Anlegen (Ziel + Startplätze, sonst `400`). Die `route` wird danach frisch aus dem Manifest abgeleitet — **kein `route`-Feld mehr** (v8.14.0/#84). Die Zeit-Plausibilität (`dtend` > `dtstart`) wird gegen die **effektiven** Werte geprüft (geänderte + bestehende) — Ende ≤ Start → `400`.
+Bearbeiten. Übergebene Felder aus `name/destination/dtstart/dtend/calendar_uid` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest und muss dieselbe Validierung erfüllen wie beim Anlegen (Ziel + Startplätze, sonst `400`). Die `route` wird danach frisch aus dem Manifest abgeleitet — **kein `route`-Feld mehr** (v8.14.0/#84). Die Zeit-Plausibilität (`dtend` > `dtstart`) wird gegen die **effektiven** Werte geprüft (geänderte + bestehende) — Ende ≤ Start → `400`. Jedes Feld, das hier einen **anderen** Wert bekommt, gilt danach als handgesetzt (`manual_fields`, #19); `calendar_uid: null` löst die Verknüpfung. Zurücknehmen einzelner Felder: `POST /api/admin/transport/events/{id}/kalenderstand/{feld}` (`name` | `dtstart` | `dtend` — `destination` kommt nicht aus dem Kalender).
 
 ### DELETE /api/admin/transport/events/{id}
 Event samt Manifest löschen.

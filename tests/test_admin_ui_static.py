@@ -34,7 +34,8 @@ def test_marken_je_feld_fuer_beide_eventarten():
     for feld in ("name", "route", "dtstart", "dtend"):
         assert f"feldMarke(r, '{feld}')" in SKRIPT
     assert "ke-marke-" in ADMIN
-    assert "'name', 'destination', 'dtstart', 'dtend'" in SKRIPT
+    # destination steht bewusst nicht dabei — es kommt nie aus dem Kalender.
+    assert "['name', 'dtstart', 'dtend'].forEach" in SKRIPT
 
 
 def test_zurueckholen_ruft_den_kalenderstand_endpunkt():

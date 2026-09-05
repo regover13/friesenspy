@@ -4041,7 +4041,7 @@ async def admin_create_transport_event(request: Request):
         if uid:
             update_transport_event(conn, eid, calendar_uid=uid)
             mark_manual_fields(conn, "transport_events", eid,
-                               {"name", "destination", "dtstart", "dtend"})
+                               {"name", "dtstart", "dtend"})
         conn.commit()
         return {"status": "ok", "id": eid}
     finally:
@@ -4073,7 +4073,7 @@ async def admin_update_transport_event(request: Request, event_id: int):
             fields["calendar_uid"] = uid
             if uid and cur.get("source") == "manual":
                 mark_manual_fields(conn, "transport_events", event_id,
-                                   {"name", "destination", "dtstart", "dtend"})
+                                   {"name", "dtstart", "dtend"})
         # Enddatum-Sanity gegen die EFFEKTIVEN Werte (geänderte + bestehende).
         terr = _validate_event_times(
             fields.get("dtstart", cur.get("dtstart")), fields.get("dtend", cur.get("dtend")))
@@ -4089,7 +4089,10 @@ async def admin_update_transport_event(request: Request, event_id: int):
             update_transport_event(conn, event_id, **fields)
             # #19 Regel 2 — wie beim Bummel: nur wirklich geänderte Felder markieren.
             after = get_transport_event(conn, event_id) or {}
-            changed = {k for k in ("name", "destination", "dtstart", "dtend")
+            # Nur Felder, die der Kalender überhaupt setzen könnte — `destination` leitet der
+            # Kutter aus dem Manifest ab und der Sync fasst es ohnehin nie an. Es zu markieren
+            # hieße, im Admin eine Marke samt Rückholknopf zu zeigen, hinter dem nichts liegt.
+            changed = {k for k in ("name", "dtstart", "dtend")
                        if (cur.get(k) or "") != (after.get(k) or "")}
             if changed:
                 mark_manual_fields(conn, "transport_events", event_id, changed)

@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.21.0",
+    "date": "2026-09-05",
+    "highlight": false,
+    "title": "Kalendertermin und Event gehören zusammen, wenn du es sagst",
+    "items": [
+      "🗓️ Ein Termin im Kalender und ein Bummel oder Kutter in FriesenSpy sind ab jetzt genau dann dasselbe Ereignis, wenn du beide im Admin verknüpfst. Ist das geschehen, steht der Abend einmal in den Events und erinnert einmal — vorher standen ein manuell angelegter Kutter und sein Kalendertermin nebeneinander und meldeten sich beide.",
+      "🧹 Termine verschwinden nicht mehr, weil irgendwo das Wort „Kutter\" im Text steht. Bisher flog jeder solche Termin lautlos raus, auch wenn niemand einen Kutter angelegt hatte — der Abend war dann nirgends zu sehen. Ein Kalendertermin legt weiterhin keinen Kutter an; dafür fehlt ihm das Frachtmanifest.",
+      "✋ Was du im Admin änderst, bleibt geändert. Die Strecke eines Kalender-Rennens zu korrigieren war bisher vergebliche Mühe: Spätestens sechs Stunden später hatte der Kalender sie zurückgesetzt, ohne Hinweis. Jetzt merkt sich FriesenSpy jedes Feld, das du angefasst hast, und lässt es in Ruhe — verschiebt jemand später den Termin, zieht die Zeit trotzdem mit, solange du sie nicht selbst gesetzt hast.",
+      "↺ Jedes Feld im Admin sagt, woher sein Wert kommt: aus dem Kalender oder von Hand. Und wer sich vertan hat, holt den Kalenderstand mit einem Klick zurück."
+    ]
+  },
+  {
     "version": "14.20.6",
     "date": "2026-09-05",
     "highlight": false,

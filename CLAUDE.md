@@ -266,6 +266,19 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   durch; die Events-Karte zeichnete dadurch einen Flug von 09:42Z in ein Fenster ab 17:00Z
   und stand danach im Nordatlantik (14.20.4). Dasselbe Feld trägt `connection_closed`, das
   aus demselben Grund NICHT „Flug beendet" bedeutet (s. `canonicalize_legs`).
+- **Ob ein Kalendertermin und ein Event-Objekt dasselbe Ereignis sind, steht im Datenmodell —
+  nicht im Text und nicht im Datum** (#19, 05.09.2026). Maßgeblich ist `calendar_uid`, gesetzt
+  von Hand im Admin. Vorher entschied ein Stichwort (`kutter` im Titel → Termin verwerfen); das
+  traf auch Abende, für die niemand einen Kutter angelegt hatte, und die waren dann komplett
+  unsichtbar. Datum und Uhrzeit taugen als Automatik ebenso wenig: Am 04.09.2026 liefen
+  „FFFreitag – Ausmotten" und ein Kutter am selben Abend — **bewusst** als zwei Themen mit zwei
+  Benachrichtigungen. Wer hier eine Heuristik einbaut, nimmt dem Nutzer eine Entscheidung ab,
+  die ihm gehört.
+- **Was im Admin geändert wurde, überschreibt der Kalender-Sync nicht mehr** (`manual_fields`,
+  je Feld). Zwei Fallen beim Erweitern: Die Oberfläche schickt beim Speichern **immer alle**
+  Felder — markiert werden darf deshalb nur, was vorher/nachher wirklich verschieden ist. Und
+  ein Feld ohne Entsprechung im Kalendertermin (z. B. `destination` beim Kutter) gehört nicht
+  markiert, sonst zeigt der Admin einen Rückholknopf, hinter dem nichts liegt.
 - **Wird der Poller langsam, steht die Aufschlüsselung im Log** (`Poll-Zyklus langsam: … —
   abruf 3,10 s · db 0,40 s …`, ab 2 s Gesamtlaufzeit). Sie misst Wanduhr, nicht Rechenzeit:
   Ein blockierter Event-Loop zeigt sich als Wartezeit in einem *fremden* Abschnitt — die
