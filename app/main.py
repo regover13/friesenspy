@@ -59,6 +59,7 @@ from app.database import (
     force_bummel_revealed,
     get_bummel_race,
     mark_manual_fields,
+    clear_manual_field,
     get_push_subscriptions_for_events,
     list_bummel_overrides,
     list_bummel_races,
@@ -3406,6 +3407,10 @@ async def admin_create_race(request: Request):
         raise HTTPException(status_code=400, detail=terr)
     conn = get_connection(get_settings().DB_PATH)
     try:
+        # #19: Termin gleich beim Anlegen wählbar — sonst wäre das Verknüpfen ein zweiter
+        # Arbeitsgang, den man vergisst.
+        uid = (str(body.get("calendar_uid") or "").strip()) or None
+        _pruefe_kalender_verknuepfung(conn, uid, table="bummel_races", obj_id=-1)
         rid = create_bummel_race(
             conn,
             name=body.get("name") or "FriesenFliegerBummel",
@@ -3413,6 +3418,11 @@ async def admin_create_race(request: Request):
             dtstart=body["dtstart"],
             dtend=body.get("dtend") or "",
         )
+        if uid:
+            update_bummel_race(conn, rid, calendar_uid=uid)
+            # Von Hand angelegt heißt: alle Felder sind Menschenwerk und bleiben es.
+            mark_manual_fields(conn, "bummel_races", rid,
+                               {"name", "route", "dtstart", "dtend"})
         conn.commit()
         return {"status": "ok", "id": rid}
     finally:
@@ -3519,6 +3529,66 @@ async def admin_update_race(request: Request, race_id: int):
         delete_progress_snapshot(conn, "bummel", race_id)
         conn.commit()
         return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+# Welches Objektfeld aus welcher Spalte des Kalendertermins kommt (#19).
+_KALENDERFELDER = {"name": "summary", "route": "route", "dtstart": "dtstart", "dtend": "dtend"}
+
+
+def _kalenderstand(conn, *, table: str, obj_id: int, feld: str, cur: dict | None) -> dict:
+    """Setzt EIN Feld auf den Stand des verknüpften Kalendertermins zurück und hebt seinen
+    Schutz auf (#19). Der Wert wird sofort geschrieben — auf den nächsten Sync (bis zu sechs
+    Stunden) zu warten wäre für den Bediener nicht erklärbar.
+    """
+    if cur is None:
+        raise HTTPException(status_code=404, detail="Nicht gefunden")
+    spalte = _KALENDERFELDER.get(feld)
+    if not spalte:
+        raise HTTPException(status_code=400, detail=f"Feld {feld} kommt nicht aus dem Kalender")
+    uid = cur.get("calendar_uid")
+    if not uid:
+        raise HTTPException(status_code=400, detail="Hängt an keinem Kalendertermin")
+    row = conn.execute(
+        f"SELECT {spalte} AS wert FROM calendar_events WHERE uid = ?", (uid,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=400, detail="Kalendertermin nicht mehr vorhanden")
+    wert = row["wert"] or ""
+    conn.execute(f"UPDATE {table} SET {feld} = ? WHERE id = ?", (wert, obj_id))
+    clear_manual_field(conn, table, obj_id, feld)
+    conn.commit()
+    return {"status": "ok", "wert": wert}
+
+
+@app.post("/api/admin/bummel/races/{race_id}/kalenderstand/{feld}")
+async def admin_kalenderstand_race(request: Request, race_id: int, feld: str):
+    """Ein Feld des Rennens wieder dem Kalender überlassen (#19)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        ergebnis = _kalenderstand(conn, table="bummel_races", obj_id=race_id, feld=feld,
+                                  cur=get_bummel_race(conn, race_id))
+        # Wie beim normalen Speichern: der eingefrorene Stand muss neu gerechnet werden.
+        delete_progress_snapshot(conn, "bummel", race_id)
+        conn.commit()
+        return ergebnis
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/transport/events/{event_id}/kalenderstand/{feld}")
+async def admin_kalenderstand_transport(request: Request, event_id: int, feld: str):
+    """Ein Feld des Kutters wieder dem Kalender überlassen (#19)."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        ergebnis = _kalenderstand(conn, table="transport_events", obj_id=event_id, feld=feld,
+                                  cur=get_transport_event(conn, event_id))
+        delete_progress_snapshot(conn, "kutter", event_id)
+        clear_transport_summarized(conn, event_id)
+        conn.commit()
+        return ergebnis
     finally:
         conn.close()
 
@@ -3958,6 +4028,8 @@ async def admin_create_transport_event(request: Request):
         raise HTTPException(status_code=400, detail=err)
     conn = get_connection(get_settings().DB_PATH)
     try:
+        uid = (str(body.get("calendar_uid") or "").strip()) or None
+        _pruefe_kalender_verknuepfung(conn, uid, table="transport_events", obj_id=-1)
         eid = create_transport_event(
             conn,
             name=body.get("name") or "FriesenKutter",
@@ -3966,6 +4038,10 @@ async def admin_create_transport_event(request: Request):
             dtend=body.get("dtend") or None,
             cargo=body.get("cargo") or None,
         )
+        if uid:
+            update_transport_event(conn, eid, calendar_uid=uid)
+            mark_manual_fields(conn, "transport_events", eid,
+                               {"name", "destination", "dtstart", "dtend"})
         conn.commit()
         return {"status": "ok", "id": eid}
     finally:

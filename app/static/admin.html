@@ -415,6 +415,34 @@
       color: var(--text-label);
     }
 
+    /* #19 — Herkunft je Feld: kommt der Wert aus dem Kalender oder von Hand? */
+    .feld-marke {
+      font-family: var(--text-display);
+      font-size: 0.55rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-label);
+      margin-left: 6px;
+      white-space: nowrap;
+    }
+    .feld-marke-hand { color: var(--green); }
+    .feld-marke-btn {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      font-size: 0.85rem;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .feld-marke-btn:hover { opacity: 0.7; }
+    .form-hint {
+      color: var(--text-label);
+      font-size: 0.78rem;
+      margin: 4px 0 0;
+      line-height: 1.4;
+    }
+
     .meta-val {
       font-family: var(--text-mono);
       font-size: 0.8rem;
@@ -885,6 +913,13 @@
                     <label for="nr-dtend">Ende (UTC, optional)</label>
                     <input type="datetime-local" id="nr-dtend" />
                   </div>
+                  <div class="form-group" style="grid-column:1/-1;">
+                    <label for="nr-caluid">Kalendertermin (optional)</label>
+                    <select id="nr-caluid"><option value="">— kein Termin —</option></select>
+                    <p class="form-hint">Gehört dieses Rennen zu einem Termin im Kalender? Dann
+                      hier auswählen — der Termin steht danach nicht mehr zusätzlich in den Events
+                      und erinnert nicht doppelt.</p>
+                  </div>
                 </div>
                 <div style="display:flex;gap:8px;">
                   <button type="submit" class="btn btn-primary btn-sm">Anlegen</button>
@@ -915,20 +950,28 @@
               <form id="ke-create-form">
                 <div class="form-grid" style="margin-bottom:14px;">
                   <div class="form-group">
-                    <label for="ke-name">Name</label>
+                    <label for="ke-name">Name <span id="ke-marke-name"></span></label>
                     <input type="text" id="ke-name" placeholder="z.B. Helgoland-Nachschub" required />
                   </div>
                   <div class="form-group">
-                    <label for="ke-dest">Ziel-ICAO (Fracht zählt hierhin)</label>
+                    <label for="ke-dest">Ziel-ICAO (Fracht zählt hierhin) <span id="ke-marke-destination"></span></label>
                     <input type="text" id="ke-dest" placeholder="EDXH" required />
                   </div>
                   <div class="form-group">
-                    <label for="ke-dtstart">Start (UTC)</label>
+                    <label for="ke-dtstart">Start (UTC) <span id="ke-marke-dtstart"></span></label>
                     <input type="datetime-local" id="ke-dtstart" data-end="ke-dtend" required />
                   </div>
                   <div class="form-group">
-                    <label for="ke-dtend">Ende (UTC, optional)</label>
+                    <label for="ke-dtend">Ende (UTC, optional) <span id="ke-marke-dtend"></span></label>
                     <input type="datetime-local" id="ke-dtend" />
+                  </div>
+                  <div class="form-group" style="grid-column:1/-1;">
+                    <label for="ke-caluid">Kalendertermin</label>
+                    <select id="ke-caluid"><option value="">— kein Termin —</option></select>
+                    <p class="form-hint">Verknüpft heißt: Dieser Kutter <em>ist</em> der Termin — er
+                      steht dann nicht mehr zusätzlich in den Events und erinnert nicht doppelt.
+                      Ein Kalendertermin allein legt weiterhin keinen Kutter an; das Frachtmanifest
+                      kann er nicht tragen.</p>
                   </div>
                 </div>
                 <div class="form-section-title">Fracht-Manifest (Reihenfolge = Beladung)</div>
@@ -1836,8 +1879,15 @@
     // ====================================================================
     // NEW RACE FORM
     // ====================================================================
-    document.getElementById('toggle-new-form-btn').addEventListener('click', () => {
-      document.getElementById('new-race-form').classList.toggle('hidden');
+    document.getElementById('toggle-new-form-btn').addEventListener('click', async () => {
+      const f = document.getElementById('new-race-form');
+      f.classList.toggle('hidden');
+      // #19: Terminliste erst beim Aufklappen holen — ohne Startzeit das ganze gespeicherte
+      // Fenster, danach entscheidet der Mensch.
+      if (!f.classList.contains('hidden')) {
+        await ladeTermine('');
+        fuelleTerminSelect('nr-caluid', '');
+      }
     });
     document.getElementById('cancel-new-form-btn').addEventListener('click', () => {
       document.getElementById('new-race-form').classList.add('hidden');
@@ -1862,6 +1912,8 @@
       }
       const body = { name, route, dtstart: localToIso(dtstart) };
       if (dtend) body.dtend = localToIso(dtend);
+      const nrUid = document.getElementById('nr-caluid').value;
+      if (nrUid) body.calendar_uid = nrUid;   // #19: leer = kein Termin, nichts zu senden
       const res = await api('POST', '/api/admin/bummel/races', body);
       if (!res) return;
       if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
@@ -1955,6 +2007,70 @@
         </div>`;
     }
 
+    // ==================================================================
+    // #19 — Kalendertermin und Objekt: Verknüpfung + Schutzmarken je Feld
+    // ==================================================================
+    // Termine für das Auswahlfeld; wird beim Öffnen eines Formulars geladen.
+    let _termine = [];
+
+    async function ladeTermine(umIso) {
+      try {
+        const q = umIso ? '?around=' + encodeURIComponent(umIso) + '&days=3' : '';
+        const res = await api('GET', '/api/admin/calendar/events' + q);
+        _termine = res && res.ok ? await res.json() : [];
+      } catch (_) { _termine = []; }
+    }
+
+    // Vorschlag, nicht Entscheidung (#19): gleicher Tag + ein gemeinsames Wort im Titel. Wer
+    // ihn nimmt, bestätigt ihn mit dem Speichern — automatisch verknüpft wird nichts.
+    function terminVorschlag(name, dtstart) {
+      if (!dtstart) return '';
+      const tag = dtstart.slice(0, 10);
+      const worte = (name || '').toLowerCase().split(/[^a-zäöüß]+/).filter(w => w.length > 3);
+      const treffer = _termine.filter(t =>
+        !t.claimed_by && (t.dtstart || '').slice(0, 10) === tag
+        && worte.some(w => (t.summary || '').toLowerCase().includes(w)));
+      return treffer.length ? treffer[0].uid : '';
+    }
+
+    function terminSelect(id, aktuelleUid, name, dtstart) {
+      const vorschlag = aktuelleUid || terminVorschlag(name, dtstart);
+      const optionen = _termine.map(t => {
+        const belegt = t.claimed_by && t.uid !== aktuelleUid;
+        const sel = t.uid === vorschlag ? ' selected' : '';
+        const label = fmtDt(t.dtstart) + ' — ' + t.summary + (belegt ? ' (schon vergeben)' : '');
+        return '<option value="' + escA(t.uid) + '"' + sel + (belegt ? ' disabled' : '') + '>'
+          + escH(label) + '</option>';
+      }).join('');
+      return '<select id="edit-caluid-' + id + '"><option value="">— kein Termin —</option>'
+        + optionen + '</select>';
+    }
+
+    // Optionen in ein bestehendes <select> schreiben (Anlege-Formulare).
+    function fuelleTerminSelect(selectId, aktuelleUid) {
+      const sel = document.getElementById(selectId);
+      if (!sel) return;
+      sel.innerHTML = '<option value="">— kein Termin —</option>' + _termine.map(t => {
+        const belegt = t.claimed_by && t.uid !== aktuelleUid;
+        return '<option value="' + escA(t.uid) + '"'
+          + (t.uid === aktuelleUid ? ' selected' : '') + (belegt ? ' disabled' : '') + '>'
+          + escH(fmtDt(t.dtstart) + ' — ' + t.summary + (belegt ? ' (schon vergeben)' : ''))
+          + '</option>';
+      }).join('');
+    }
+
+    // Etikett je Feld: „aus dem Kalender" oder „von Hand" mit Knopf zum Zurückholen.
+    // Ohne Verknüpfung gibt es nichts zu schützen — dann bleibt die Zeile leer.
+    function feldMarke(r, feld) {
+      if (!r.calendar_uid) return '';
+      const hand = (r.manual_fields || '').split(',').map(x => x.trim()).includes(feld);
+      if (!hand) return '<span class="feld-marke">aus dem Kalender</span>';
+      return '<span class="feld-marke feld-marke-hand">von Hand'
+        + ' <button type="button" class="feld-marke-btn" data-action="kalenderstand"'
+        + ' data-id="' + r.id + '" data-feld="' + feld + '"'
+        + ' title="Kalenderstand zurückholen">&#x21BA;</button></span>';
+    }
+
     function renderEditForm(r) {
       return `
         <div class="race-card active" id="race-card-${r.id}">
@@ -1963,20 +2079,27 @@
           </div>
           <div class="form-grid" style="margin-bottom:14px;">
             <div class="form-group">
-              <label>Name</label>
+              <label>Name ${feldMarke(r, 'name')}</label>
               <input type="text" id="edit-name-${r.id}" value="${escA(r.name)}" />
             </div>
             <div class="form-group">
-              <label>Strecke (ICAOs, kommagetrennt)</label>
+              <label>Strecke (ICAOs, kommagetrennt) ${feldMarke(r, 'route')}</label>
               <input type="text" id="edit-route-${r.id}" value="${escA(r.route)}" />
             </div>
             <div class="form-group">
-              <label>Start (UTC)</label>
+              <label>Start (UTC) ${feldMarke(r, 'dtstart')}</label>
               <input type="datetime-local" id="edit-dtstart-${r.id}" data-end="edit-dtend-${r.id}" value="${escA(isoToLocal(r.dtstart))}" />
             </div>
             <div class="form-group">
-              <label>Ende (UTC)</label>
+              <label>Ende (UTC) ${feldMarke(r, 'dtend')}</label>
               <input type="datetime-local" id="edit-dtend-${r.id}" value="${escA(isoToLocal(r.dtend))}" />
+            </div>
+            <div class="form-group" style="grid-column:1/-1;">
+              <label>Kalendertermin</label>
+              ${terminSelect(r.id, r.calendar_uid, r.name, r.dtstart)}
+              <p class="form-hint">Verknüpft heißt: Dieses Rennen <em>ist</em> der Termin — er
+                steht dann nicht mehr zusätzlich in den Events und erinnert nicht doppelt.
+                Leer lassen, wenn beide getrennt bleiben sollen.</p>
             </div>
           </div>
           <div class="race-actions">
@@ -1998,7 +2121,8 @@
         case 'hide':       await doHide(id);             break;
         case 'push-on':    await doPush(id, true);       break;
         case 'push-off':   await doPush(id, false);      break;
-        case 'edit':       startEdit(id);                break;
+        case 'edit':       await startEdit(id);          break;
+        case 'kalenderstand': await holeKalenderstand(id, btn.dataset.feld); break;
         case 'cancel-edit':cancelEdit();                 break;
         case 'save-edit':  await saveEdit(id);           break;
         case 'delete':     await doDelete(id);           break;
@@ -2008,10 +2132,24 @@
     // ====================================================================
     // EDIT
     // ====================================================================
-    function startEdit(id) {
+    async function startEdit(id) {
       _editingId = id;
+      // #19: Termine für das Auswahlfeld holen — ±3 Tage um das Rennen herum reicht, ein
+      // Kalendertermin und sein Event liegen nie weiter auseinander.
+      const r = _races.find(x => x.id === id);
+      await ladeTermine(r ? r.dtstart : '');
       if (_activePreviewId === id) closePreview();
       else renderRaces();
+    }
+
+    async function holeKalenderstand(id, feld) {
+      const res = await api('POST', `/api/admin/bummel/races/${id}/kalenderstand/${feld}`);
+      if (!res) return;
+      if (!res.ok) { toast('Fehler: ' + await res.text(), true); return; }
+      const data = await res.json();
+      toast('Aus dem Kalender: ' + (data.wert || '—'));
+      await loadRaces();
+      await startEdit(id);
     }
 
     function cancelEdit() {
@@ -2030,6 +2168,9 @@
       if (route)        body.route      = route;
       if (dtstart)      body.dtstart    = localToIso(dtstart);
       if (dtend)        body.dtend      = localToIso(dtend);
+      // #19: Auch der LEERE Wert zählt — er löst eine bestehende Verknüpfung.
+      const caluid = document.getElementById(`edit-caluid-${id}`);
+      if (caluid) body.calendar_uid = caluid.value || null;
       const res = await api('POST', `/api/admin/bummel/races/${id}`, body);
       if (!res) return;
       if (!res.ok) { const t = await res.text(); toast('Fehler: ' + t, true); return; }
@@ -2768,13 +2909,18 @@
       document.getElementById('ke-form-title').textContent = 'Neues Event anlegen';
       document.getElementById('ke-create-form').reset();
       document.getElementById('ke-cargo-rows').innerHTML = '';
+      keSetzeTerminUndMarken(null);
     }
 
-    document.getElementById('ke-toggle-form-btn').addEventListener('click', () => {
+    document.getElementById('ke-toggle-form-btn').addEventListener('click', async () => {
       const f = document.getElementById('ke-form');
       f.classList.toggle('hidden');
       if (!f.classList.contains('hidden') && document.getElementById('ke-cargo-rows').children.length === 0) {
         document.getElementById('ke-cargo-rows').appendChild(keCargoRow('', ''));
+      }
+      if (!f.classList.contains('hidden') && !_keEditingId) {
+        await ladeTermine('');                    // #19: wie beim Bummel
+        fuelleTerminSelect('ke-caluid', '');
       }
     });
     document.getElementById('ke-cancel-btn').addEventListener('click', () => {
@@ -2892,6 +3038,13 @@
       }
       const body = { name, destination: dest, dtstart: localToIso(dtstart), cargo };
       if (dtend) body.dtend = localToIso(dtend);
+      // #19: nur beim Bearbeiten — beim Anlegen steht die Liste noch leer, die Verknüpfung
+      // folgt dann im zweiten Schritt. Der leere Wert löst eine bestehende Verknüpfung.
+      const keUid = document.getElementById('ke-caluid').value;
+      // Beim Bearbeiten zählt auch der LEERE Wert (er löst die Verknüpfung); beim Anlegen gibt
+      // es nichts zu lösen, da wird nur ein gewählter Termin gesendet.
+      if (_keEditingId) body.calendar_uid = keUid || null;
+      else if (keUid) body.calendar_uid = keUid;
       const path = _keEditingId ? '/api/admin/transport/events/' + _keEditingId : '/api/admin/transport/events';
       const res = await api('POST', path, body);
       if (!res) return;
@@ -2942,10 +3095,49 @@
       }).join('');
     }
 
-    function keEdit(id) {
+    // #19: Auswahlfeld und Herkunfts-Etiketten für den Kutter füllen — dieselbe Sicht wie
+    // beim Bummel, damit beide Eventarten gleich zu bedienen sind.
+    function keSetzeTerminUndMarken(ev) {
+      const sel = document.getElementById('ke-caluid');
+      const aktuell = ev ? (ev.calendar_uid || '') : '';
+      const vorschlag = aktuell || (ev ? terminVorschlag(ev.name, ev.dtstart) : '');
+      sel.innerHTML = '<option value="">— kein Termin —</option>' + _termine.map(t => {
+        const belegt = t.claimed_by && t.uid !== aktuell;
+        return '<option value="' + escA(t.uid) + '"' + (t.uid === vorschlag ? ' selected' : '')
+          + (belegt ? ' disabled' : '') + '>'
+          + escH(fmtDt(t.dtstart) + ' — ' + t.summary + (belegt ? ' (schon vergeben)' : ''))
+          + '</option>';
+      }).join('');
+      ['name', 'destination', 'dtstart', 'dtend'].forEach(feld => {
+        const span = document.getElementById('ke-marke-' + feld);
+        if (!span) return;
+        span.innerHTML = ev ? feldMarke({ id: ev.id, calendar_uid: ev.calendar_uid,
+                                          manual_fields: ev.manual_fields }, feld)
+                                .replace('data-action="kalenderstand"',
+                                         'data-action="ke-kalenderstand"')
+                            : '';
+      });
+    }
+
+    document.addEventListener('click', async e => {
+      const btn = e.target.closest('[data-action="ke-kalenderstand"]');
+      if (!btn) return;
+      const res = await api('POST', '/api/admin/transport/events/' + btn.dataset.id
+                            + '/kalenderstand/' + btn.dataset.feld);
+      if (!res) return;
+      if (!res.ok) { toast('Fehler: ' + await res.text(), true); return; }
+      const data = await res.json();
+      toast('Aus dem Kalender: ' + (data.wert || '—'));
+      await loadKutterAdmin();
+      keEdit(parseInt(btn.dataset.id, 10));
+    });
+
+    async function keEdit(id) {
       const ev = _keEvents.find(e => e.id === id);
       if (!ev) return;
       _keEditingId = id;
+      await ladeTermine(ev.dtstart);
+      keSetzeTerminUndMarken(ev);
       document.getElementById('ke-form-title').textContent = 'Event bearbeiten';
       document.getElementById('ke-name').value = ev.name || '';
       document.getElementById('ke-dest').value = ev.destination || '';

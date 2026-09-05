@@ -1233,3 +1233,118 @@ class TestVerknuepfung:
         _kalender_rennen(db, uid="u-fern", dtstart="2026-10-20T18:00:00Z", summary="Weit weg")
         res = asyncio.run(main.admin_calendar_events(FakeReq()))
         assert "u-fern" in {e["uid"] for e in res}
+
+
+class TestKalenderstandZurueckholen:
+    """#19: Der Schutz je Feld muss auch wieder abzunehmen sein — sonst ist eine versehentliche
+    Änderung eine Einbahnstraße. Der Wert kommt sofort zurück; auf den nächsten Sync (bis zu
+    6 Stunden) zu warten wäre dem Bediener nicht zu erklären."""
+
+    def test_holt_den_terminwert_zurueck_und_loest_die_marke(self, db):
+        from app.database import manual_fields_of
+        rid = _kalender_rennen(db, route="EDWF,EDWG")
+        asyncio.run(main.admin_update_race(FakeReq(body={"route": "EDWF,EDXR"}), rid))
+        assert manual_fields_of(_race_row(db, rid)) == {"route"}
+        res = asyncio.run(main.admin_kalenderstand_race(FakeReq(), rid, "route"))
+        assert res["wert"] == "EDWF,EDWG"
+        row = _race_row(db, rid)
+        assert row["route"] == "EDWF,EDWG"
+        assert manual_fields_of(row) == set()
+
+    def test_ohne_verknuepfung_gibt_400(self, db):
+        rid = asyncio.run(main.admin_create_race(FakeReq(body={
+            "name": "Aach-Bummel", "route": "EDTM,EDTZ",
+            "dtstart": "2026-09-07T18:00:00Z"})))["id"]
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_kalenderstand_race(FakeReq(), rid, "route"))
+        assert e.value.status_code == 400
+
+    def test_unbekanntes_feld_gibt_400(self, db):
+        rid = _kalender_rennen(db)
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_kalenderstand_race(FakeReq(), rid, "radius_km"))
+        assert e.value.status_code == 400
+
+    def test_name_kommt_aus_dem_summary_des_termins(self, db):
+        rid = _kalender_rennen(db, summary="FFFreitag – Ausmotten")
+        asyncio.run(main.admin_update_race(FakeReq(body={"name": "Ausmotten (Kopie)"}), rid))
+        res = asyncio.run(main.admin_kalenderstand_race(FakeReq(), rid, "name"))
+        assert res["wert"] == "FFFreitag – Ausmotten"
+        assert _race_row(db, rid)["name"] == "FFFreitag – Ausmotten"
+
+    def test_verlangt_anmeldung(self, db):
+        rid = _kalender_rennen(db)
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_kalenderstand_race(FakeReq(cookies={}), rid, "route"))
+        assert e.value.status_code == 401
+
+    def test_kutter_variante(self, db):
+        from app.database import get_transport_event, manual_fields_of
+        _kalender_rennen(db, uid="u-kutter", summary="Krabben für Wooge")
+        conn = get_connection(db)
+        conn.execute("DELETE FROM bummel_races")
+        eid = create_transport_event(conn, name="Krabben für Wooge", destination="EDWG",
+                                     dtstart="2026-09-07T18:00:00Z", dtend="",
+                                     cargo=[{"name": "Fischbrötchen", "target_kg": 100,
+                                             "departure": "EDWF"}])
+        conn.commit(); conn.close()
+        asyncio.run(main.admin_update_transport_event(
+            FakeReq(body={"calendar_uid": "u-kutter"}), eid))
+        asyncio.run(main.admin_update_transport_event(FakeReq(body={"name": "Krabben (Kopie)"}), eid))
+        res = asyncio.run(main.admin_kalenderstand_transport(FakeReq(), eid, "name"))
+        assert res["wert"] == "Krabben für Wooge"
+        conn = get_connection(db)
+        row = get_transport_event(conn, eid)
+        conn.close()
+        assert row["name"] == "Krabben für Wooge"
+        assert "name" not in manual_fields_of(row)
+
+
+class TestVerknuepfenBeimAnlegen:
+    """#19: Die Auswahl muss schon beim Anlegen möglich sein — sonst wäre das Verknüpfen ein
+    zweiter Arbeitsgang, den man vergisst, und genau daran krankte der Zustand vorher."""
+
+    def test_rennen_mit_termin_anlegen(self, db):
+        from app.database import manual_fields_of
+        _kalender_rennen(db, uid="u-frei")
+        conn = get_connection(db)
+        conn.execute("DELETE FROM bummel_races")
+        conn.commit(); conn.close()
+        rid = asyncio.run(main.admin_create_race(FakeReq(body={
+            "name": "Aach-Bummel", "route": "EDTM,EDTZ", "dtstart": "2026-09-07T18:00:00Z",
+            "dtend": "2026-09-07T22:00:00Z", "calendar_uid": "u-frei"})))["id"]
+        row = _race_row(db, rid)
+        assert row["calendar_uid"] == "u-frei"
+        assert manual_fields_of(row) == {"name", "route", "dtstart", "dtend"}
+
+    def test_belegter_termin_beim_anlegen_gibt_409(self, db):
+        _kalender_rennen(db, uid="u-abend")
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_create_race(FakeReq(body={
+                "name": "Aach-Bummel", "route": "EDTM,EDTZ",
+                "dtstart": "2026-09-07T18:00:00Z", "calendar_uid": "u-abend"})))
+        assert e.value.status_code == 409
+
+    def test_kutter_mit_termin_anlegen(self, db):
+        from app.database import get_transport_event
+        _kalender_rennen(db, uid="u-kutter")
+        conn = get_connection(db)
+        conn.execute("DELETE FROM bummel_races")
+        conn.commit(); conn.close()
+        eid = asyncio.run(main.admin_create_transport_event(FakeReq(body={
+            "name": "Krabben", "destination": "EDWG", "dtstart": "2026-09-07T18:00:00Z",
+            "cargo": [{"name": "Fischbrötchen", "target_kg": 100, "departure": "EDWF"}],
+            "calendar_uid": "u-kutter"})))["id"]
+        conn = get_connection(db)
+        row = get_transport_event(conn, eid)
+        conn.close()
+        assert row["calendar_uid"] == "u-kutter"
+
+    def test_ohne_termin_bleibt_alles_wie_bisher(self, db):
+        from app.database import manual_fields_of
+        rid = asyncio.run(main.admin_create_race(FakeReq(body={
+            "name": "Aach-Bummel", "route": "EDTM,EDTZ",
+            "dtstart": "2026-09-07T18:00:00Z"})))["id"]
+        row = _race_row(db, rid)
+        assert row["calendar_uid"] is None
+        assert manual_fields_of(row) == set()
