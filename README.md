@@ -734,4 +734,4 @@ FriesenSpy/
 | `/api/admin/aip-charts-dfs/…` | GET/POST/DELETE | Kartenblätter suchen, passen, übernehmen, verwerfen |
 | `/api/admin/panel-devices` · `/api/admin/panel-diag` | GET/DELETE | Kniebrett-Geräte und Selbstdiagnose |
 
-Die Tabelle ist eine Auswahl. Vollständig — mit Parametern, Beispiel-Responses und Fehlerfällen — steht die Schnittstelle in [docs/api.md](docs/api.md); die DFS-Kartenblatt-Endpunkte fehlen dort noch.
+Die Tabelle ist eine Auswahl. Vollständig — mit Parametern, Beispiel-Responses und Fehlerfällen — steht die Schnittstelle in [docs/api.md](docs/api.md).

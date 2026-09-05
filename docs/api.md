@@ -222,6 +222,51 @@ Zeichenlast.
 
 ---
 
+## GET /api/aip-charts-dfs
+
+Metadaten aller gepassten DFS-Kartenblätter, beide Sorten. Speist die Ebenen
+„Sichtflugkarte" und „Flugplatzkarte" — **einmal beim Einschalten** geladen, dasselbe Muster
+wie bei Meldepunkten und Platzrunden. Keine Query-Parameter: Die Liste ist klein genug, um
+ganz zu kommen, und ein Nachladen mitten im Anflug wäre der falsche Zeitpunkt.
+
+Enthalten sind nur Blätter mit Status `gepasst` oder `auto` — eine Karte ohne Passung hat
+nichts zum Anzeigen.
+
+**Response**
+
+```json
+{ "flugplatzkarte_aktiv": true,
+  "charts": [
+    { "icao": "EDWG", "sorte": "sichtflug",
+      "nord": 53.81, "sued": 53.74, "west": 7.83, "ost": 7.95,
+      "feld_nord": 53.79, "feld_sued": 53.76, "feld_west": 7.86, "feld_ost": 7.92,
+      "airac": "2026AUG20", "elev_ft": 7,
+      "bild": "/aip-chart-dfs/EDWG/sichtflug.png?h=a1b2c3d4e5f6" } ] }
+```
+
+| Feld | Bedeutung |
+|------|-----------|
+| `sorte` | `sichtflug`, `flugplatzkarte` oder `rollkarte` |
+| `nord`/`sued`/`west`/`ost` | **Blattgrenzen** — danach wird das Overlay platziert |
+| `feld_*` | **Feldgrenzen** — danach schaltet die Ebene sich ein und aus |
+| `elev_ft` | Platzhöhe. Trägt die Höhenschwelle der Bodenkarten: Der Simulator meldet Höhe über MSL, ohne diesen Wert ließe sich daraus keine Höhe über Grund rechnen. Geht deshalb hier mit, statt je Platz nachgeladen zu werden |
+| `airac` | AIRAC-Zyklus des Blattes |
+| `bild` | URL des Blattes, mit Hash als Abfrageparameter |
+
+**`flugplatzkarte_aktiv`** spiegelt den Hauptschalter aus dem Admin. Steht er auf aus, fehlen
+die Bodenkarten **in dieser Antwort** — die Sperre gehört auf den Server, nicht ins Frontend:
+Ein Kniebrett lädt die Liste einmal je Sim-Sitzung und wird nie neu geladen; was einmal drin
+war, bliebe sonst bis zum Ende des Fluges liegen.
+
+**`GET /aip-chart-dfs/{icao}/{sorte}.png`** liefert das Blatt (genordet). Der Endpunkt liegt
+wie der Rest der App hinter dem Forum-Gate, und genau diese Beschränkung trägt das rechtliche
+Argument — er darf **nicht** öffentlich gestellt werden. `Cache-Control: private,
+max-age=2592000, immutable`: Weil der Bild-Hash in der URL steht, ist langes
+Zwischenspeichern im Browser trotzdem unbedenklich. Unbekanntes ICAO oder unbekannte Sorte →
+`404`.
+
+---
+
 ## GET /api/stats/activity
 
 Flugaktivität über Zeit — für das Liniendiagramm im Statistiken-Tab.
@@ -295,6 +340,50 @@ Aggregierte Kennzahlen beider Spezial-Events im Zeitfenster (`?days=30|90|365`, 
 Abgrenzung: Kutter „Flüge" = alle Flug-/Verlust-Zeilen (`flight_count`); Bummel „Flüge" = gewertete Tour-Legs
 (`Σ leg_count`). `returned` (am Ladeplatz abgeladen) ist kein Verlust (0 kg). `avg_absolute_min` ist `null` ohne
 gewertetes Rennen. NULL-`dtend`-Events werden ausgeschlossen.
+
+---
+
+## GET /api/aircraft/{code}
+
+Alles zu einem Flugzeugmuster — speist das Muster-Fenster, das hinter jedem Kürzel in der
+Oberfläche steckt.
+
+**Liefert immer `200`**, auch für ein unbekanntes Kürzel: Die Friesen-Zahlen dazu sind
+trotzdem echt.
+
+**Response**
+
+```json
+{ "code": "C172", "resolved_code": "C172", "alias_of": null,
+  "name": "Cessna 172", "extract": "Die Cessna 172 ist …",
+  "wiki_url": "https://de.wikipedia.org/wiki/Cessna_172",
+  "photo_url": "/api/aircraft/C172/photo?v=2026-08-30T10:00:00",
+  "photo_credit": "…", "photo_licence": "CC BY-SA 4.0",
+  "photo_artist": "…", "photo_source_url": "https://commons.wikimedia.org/…",
+  "state": "ok",
+  "friesen": { "fluege": 42, "stunden": 61.5, "nm": 4103.0, "piloten": 7,
+               "von": "2026-01-04", "bis": "2026-08-29", "alias_anteil": [] },
+  "top": [ { "cid": 1234567, "n": 18, "callsign": "FRS49", "name": "…" } ],
+  "kutter": { "mtow_kg": 1111, "empty_kg": 767, "payload_kg": 213,
+              "eigene_zeile_hinweis": null } }
+```
+
+| Feld | Bedeutung |
+|------|-----------|
+| `code` | das angefragte Kürzel, normalisiert |
+| `resolved_code` | das Muster, das gemeint ist — bei einem Alias ein anderes (`SA65` → `AS65`) |
+| `state` | `ok`, `neu` (Abruf läuft), `fehler` oder `unbekannt` (Kürzel kommt im Flugbestand nicht vor) |
+| `friesen.alias_anteil` | Liste: wie viele der gezählten Flüge unter welchem Alias erfasst wurden. Macht die Gesamtzahl nachvollziehbar, wenn mehrere Kürzel auf dasselbe Muster zeigen |
+| `kutter.eigene_zeile_hinweis` | gesetzt, wenn das **angefragte** Kürzel eine eigene Zuladung hat, während die des Ziels angezeigt wird — dann weicht die Frachtrechnung von der Anzeige ab |
+
+**Kein Abruf im Klickpfad:** Fehlen Text und Foto, wird die Beschaffung im Hintergrund
+angestoßen und die Antwort geht sofort raus — beim nächsten Öffnen ist sie da. Angestoßen
+wird das **nur für Kürzel, die im Flugbestand vorkommen**. Sonst wäre der Endpunkt ein
+Verstärker: `curl /api/aircraft/JUNK$i` in einer Schleife legt beliebig viele Zeilen an und
+feuert Wikimedia-Aufrufe von einer IP, die dort wegen „abuse" ohnehin vorbelastet ist.
+
+**`GET /api/aircraft/{code}/photo`** liefert das Bild. Die URL trägt den Änderungszeitpunkt
+als `v`, ein Wechsel des Fotos schlägt also sofort durch.
 
 ---
 
