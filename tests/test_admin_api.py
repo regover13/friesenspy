@@ -1072,3 +1072,85 @@ class TestSnapshotInvalidation:
         conn = get_connection(db)
         assert get_progress_snapshot(conn, "bummel", rid) is None
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# #19 — Admin-Änderungen markieren sich selbst; Termin und Objekt verknüpfen
+# ---------------------------------------------------------------------------
+
+def _kalender_rennen(db, uid="u-abend", route="EDWF,EDWG",
+                     dtstart="2026-09-07T18:00:00Z", dtend="2026-09-07T22:00:00Z",
+                     summary="FFFreitag – Ausmotten"):
+    """Legt Kalendertermin + daraus erzeugtes Rennen an (wie der Sync es täte)."""
+    from app.database import upsert_calendar_bummel_race, upsert_calendar_events
+    conn = get_connection(db)
+    ev = {"uid": uid, "summary": summary, "dtstart": dtstart, "dtend": dtend,
+          "location": route.split(",")[0], "route": route, "is_bummel": 1, "is_transport": 0}
+    upsert_calendar_events(conn, [ev])
+    upsert_calendar_bummel_race(conn, ev)
+    rid = conn.execute("SELECT id FROM bummel_races WHERE calendar_uid = ?", (uid,)).fetchone()["id"]
+    conn.commit(); conn.close()
+    return rid
+
+
+def _race_row(db, rid):
+    conn = get_connection(db)
+    try:
+        from app.database import get_bummel_race
+        return get_bummel_race(conn, rid)
+    finally:
+        conn.close()
+
+
+class TestAdminMarkiertHandarbeit:
+    """Regel 2 (#19): Der Admin schickt beim Speichern IMMER alle vier Felder (saveEdit in
+    admin.html). Markiert werden darf deshalb nur, was tatsächlich einen anderen Wert bekommen
+    hat — sonst wäre nach dem ersten Speichern alles geschützt und der Kalender abgehängt."""
+
+    def test_unveraendertes_speichern_markiert_nichts(self, db):
+        from app.database import manual_fields_of
+        rid = _kalender_rennen(db)
+        asyncio.run(main.admin_update_race(FakeReq(body={
+            "name": "FFFreitag – Ausmotten", "route": "EDWF,EDWG",
+            "dtstart": "2026-09-07T18:00:00Z", "dtend": "2026-09-07T22:00:00Z",
+        }), rid))
+        assert manual_fields_of(_race_row(db, rid)) == set()
+
+    def test_nur_geaenderte_felder_werden_markiert(self, db):
+        from app.database import manual_fields_of
+        rid = _kalender_rennen(db)
+        asyncio.run(main.admin_update_race(FakeReq(body={
+            "name": "FFFreitag – Ausmotten", "route": "EDWF,EDWG,EDXR",
+            "dtstart": "2026-09-07T18:00:00Z", "dtend": "2026-09-07T22:00:00Z",
+        }), rid))
+        row = _race_row(db, rid)
+        assert manual_fields_of(row) == {"route"}
+        assert row["route"] == "EDWF,EDWG,EDXR"
+
+    def test_markierung_ueberlebt_den_naechsten_sync(self, db):
+        from app.database import get_bummel_race, upsert_calendar_bummel_race
+        rid = _kalender_rennen(db)
+        asyncio.run(main.admin_update_race(FakeReq(body={"route": "EDWF,EDWG,EDXR"}), rid))
+        conn = get_connection(db)
+        upsert_calendar_bummel_race(conn, {
+            "uid": "u-abend", "summary": "FFFreitag – Ausmotten", "route": "EDWF,EDWG",
+            "dtstart": "2026-09-07T18:00:00Z", "dtend": "2026-09-07T22:00:00Z"})
+        conn.commit()
+        row = get_bummel_race(conn, rid)
+        conn.close()
+        assert row["route"] == "EDWF,EDWG,EDXR"
+
+    def test_kutter_markiert_ebenfalls(self, db):
+        from app.database import manual_fields_of, get_transport_event
+        conn = get_connection(db)
+        eid = create_transport_event(
+            conn, name="Krabben für Wooge", destination="EDWG",
+            dtstart="2026-09-07T18:00:00Z", dtend="2026-09-07T22:00:00Z",
+            cargo=[{"name": "Fischbrötchen", "target_kg": 100, "departure": "EDWF"}])
+        conn.commit(); conn.close()
+        asyncio.run(main.admin_update_transport_event(
+            FakeReq(body={"name": "Krabben für Wooge (verlegt)"}), eid))
+        conn = get_connection(db)
+        row = get_transport_event(conn, eid)
+        conn.close()
+        assert manual_fields_of(row) == {"name"}

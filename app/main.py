@@ -58,6 +58,7 @@ from app.database import (
     delete_bummel_race,
     force_bummel_revealed,
     get_bummel_race,
+    mark_manual_fields,
     get_push_subscriptions_for_events,
     list_bummel_overrides,
     list_bummel_races,
@@ -3436,6 +3437,14 @@ async def admin_update_race(request: Request, race_id: int):
             raise HTTPException(status_code=400, detail=terr)
         if fields:
             update_bummel_race(conn, race_id, **fields)
+            # #19 Regel 2: Was hier einen ANDEREN Wert bekommen hat, gehört ab jetzt dem
+            # Menschen — der Kalender-Sync lässt es stehen. Verglichen wird vorher/nachher und
+            # nicht "stand im Body": Die Oberfläche schickt beim Speichern immer alle Felder.
+            after = get_bummel_race(conn, race_id) or {}
+            changed = {k for k in ("name", "route", "dtstart", "dtend")
+                       if (cur.get(k) or "") != (after.get(k) or "")}
+            if changed:
+                mark_manual_fields(conn, "bummel_races", race_id, changed)
         # Unbedingt (auch bei leerem Body) — "Rennen antippen + speichern" ist der bewusste
         # manuelle Neuberechnungs-Hebel für ein bereits eingefrorenes Rennen (#66 Task 7).
         delete_progress_snapshot(conn, "bummel", race_id)
@@ -3926,6 +3935,12 @@ async def admin_update_transport_event(request: Request, event_id: int):
                 raise HTTPException(status_code=400, detail=err)
         if fields:
             update_transport_event(conn, event_id, **fields)
+            # #19 Regel 2 — wie beim Bummel: nur wirklich geänderte Felder markieren.
+            after = get_transport_event(conn, event_id) or {}
+            changed = {k for k in ("name", "destination", "dtstart", "dtend")
+                       if (cur.get(k) or "") != (after.get(k) or "")}
+            if changed:
+                mark_manual_fields(conn, "transport_events", event_id, changed)
         # Unbedingt (auch bei leerem Body) — "Event antippen + speichern" ist der bewusste
         # manuelle Neuberechnungs-Hebel für ein bereits eingefrorenes Event (#66 Task 7).
         # Snapshot-Löschung ALLEIN reicht nicht: `finished` hängt an `summarized_at`, sonst
