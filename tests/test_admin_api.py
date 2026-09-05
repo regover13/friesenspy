@@ -1154,3 +1154,82 @@ class TestAdminMarkiertHandarbeit:
         row = get_transport_event(conn, eid)
         conn.close()
         assert manual_fields_of(row) == {"name"}
+
+
+class TestVerknuepfung:
+    """Regel 3 (#19): Ob Termin und Objekt dasselbe Ereignis sind, ist eine Absicht — sie steht
+    in ``calendar_uid`` und wird von Hand ausgesprochen. Keine Automatik über Datum/Uhrzeit."""
+
+    def test_manuelles_rennen_mit_termin_verknuepfen(self, db):
+        from app.database import manual_fields_of
+        _kalender_rennen(db, uid="u-frei")           # Termin anlegen …
+        conn = get_connection(db)
+        conn.execute("DELETE FROM bummel_races")     # … aber ohne Objekt daran
+        conn.commit(); conn.close()
+        rid = asyncio.run(main.admin_create_race(FakeReq(body={
+            "name": "Aach-Bummel", "route": "EDTM,EDTZ",
+            "dtstart": "2026-09-07T18:00:00Z", "dtend": "2026-09-07T22:00:00Z"})))["id"]
+        asyncio.run(main.admin_update_race(FakeReq(body={"calendar_uid": "u-frei"}), rid))
+        row = _race_row(db, rid)
+        assert row["calendar_uid"] == "u-frei"
+        # Ein von Hand gepflegtes Objekt ist in allen Feldern Menschenwerk → komplett geschützt
+        assert manual_fields_of(row) == {"name", "route", "dtstart", "dtend"}
+
+    def test_verknuepfung_loesen(self, db):
+        rid = _kalender_rennen(db)
+        asyncio.run(main.admin_update_race(FakeReq(body={"calendar_uid": None}), rid))
+        assert _race_row(db, rid)["calendar_uid"] is None
+
+    def test_belegter_termin_gibt_409(self, db):
+        _kalender_rennen(db, uid="u-abend")          # Termin hängt schon an einem Rennen
+        rid = asyncio.run(main.admin_create_race(FakeReq(body={
+            "name": "Aach-Bummel", "route": "EDTM,EDTZ",
+            "dtstart": "2026-09-07T18:00:00Z"})))["id"]
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_update_race(FakeReq(body={"calendar_uid": "u-abend"}), rid))
+        assert e.value.status_code == 409
+
+    def test_unbekannter_termin_gibt_400(self, db):
+        rid = _kalender_rennen(db)
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_update_race(FakeReq(body={"calendar_uid": "gibt-es-nicht"}), rid))
+        assert e.value.status_code == 400
+
+    def test_kutter_mit_termin_verknuepfen(self, db):
+        from app.database import get_transport_event
+        _kalender_rennen(db, uid="u-kutter", summary="Krabben für Wooge — FriesenKutter")
+        conn = get_connection(db)
+        conn.execute("DELETE FROM bummel_races")
+        eid = create_transport_event(
+            conn, name="Krabben für Wooge", destination="EDWG",
+            dtstart="2026-09-07T18:00:00Z", dtend="2026-09-07T22:00:00Z",
+            cargo=[{"name": "Fischbrötchen", "target_kg": 100, "departure": "EDWF"}])
+        conn.commit(); conn.close()
+        asyncio.run(main.admin_update_transport_event(
+            FakeReq(body={"calendar_uid": "u-kutter"}), eid))
+        conn = get_connection(db)
+        row = get_transport_event(conn, eid)
+        conn.close()
+        assert row["calendar_uid"] == "u-kutter"
+
+    def test_terminliste_zeigt_belegung_und_zeitfenster(self, db):
+        _kalender_rennen(db, uid="u-abend", dtstart="2026-09-07T18:00:00Z")
+        _kalender_rennen(db, uid="u-fern", dtstart="2026-10-20T18:00:00Z", summary="Weit weg")
+        conn = get_connection(db)
+        conn.execute("DELETE FROM bummel_races WHERE calendar_uid = 'u-fern'")
+        conn.commit(); conn.close()
+        res = asyncio.run(main.admin_calendar_events(
+            FakeReq(), around="2026-09-07T18:00:00Z", days=3))
+        uids = {e["uid"]: e for e in res}
+        assert "u-abend" in uids and "u-fern" not in uids     # ±3 Tage
+        assert uids["u-abend"]["claimed_by"].startswith("bummel:")
+
+    def test_terminliste_verlangt_anmeldung(self, db):
+        with pytest.raises(HTTPException) as e:
+            asyncio.run(main.admin_calendar_events(FakeReq(cookies={})))
+        assert e.value.status_code == 401
+
+    def test_terminliste_ohne_around_nimmt_das_ganze_fenster(self, db):
+        _kalender_rennen(db, uid="u-fern", dtstart="2026-10-20T18:00:00Z", summary="Weit weg")
+        res = asyncio.run(main.admin_calendar_events(FakeReq()))
+        assert "u-fern" in {e["uid"] for e in res}

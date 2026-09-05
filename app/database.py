@@ -5046,7 +5046,9 @@ def create_bummel_race(
     return cur.lastrowid  # type: ignore[return-value]
 
 
-_UPDATABLE_RACE_FIELDS = {"name", "route", "dtstart", "dtend", "radius_km"}
+# calendar_uid ist seit #19 im Admin setzbar: die Verknüpfung Termin↔Objekt wird
+# ausgesprochen, nicht aus Datum und Stichwort erraten.
+_UPDATABLE_RACE_FIELDS = {"name", "route", "dtstart", "dtend", "radius_km", "calendar_uid"}
 
 
 def update_bummel_race(conn: sqlite3.Connection, race_id: int, **fields: object) -> None:
@@ -5947,7 +5949,9 @@ def create_transport_event(
 
 # #84: `route` NICHT mehr direkt setzbar — sie wird aus dem Manifest abgeleitet (sonst könnte ein
 # gecachtes altes admin.html die abgeleitete Route überschreiben).
-_UPDATABLE_TRANSPORT_FIELDS = {"name", "destination", "dtstart", "dtend", "radius_km"}
+# calendar_uid: siehe _UPDATABLE_RACE_FIELDS (#19).
+_UPDATABLE_TRANSPORT_FIELDS = {"name", "destination", "dtstart", "dtend", "radius_km",
+                               "calendar_uid"}
 
 
 def update_transport_event(conn: sqlite3.Connection, event_id: int, **fields: object) -> None:

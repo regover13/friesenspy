@@ -3419,6 +3419,65 @@ async def admin_create_race(request: Request):
         conn.close()
 
 
+@app.get("/api/admin/calendar/events")
+async def admin_calendar_events(request: Request, around: str = "", days: int = 3):
+    """Kalendertermine zur Auswahl im Admin — #19: FriesenSpy schlägt vor, verknüpft wird von Hand.
+
+    ``around`` (ISO-UTC) engt auf ±``days`` Tage um diesen Zeitpunkt ein; ohne ``around`` kommt
+    das ganze gespeicherte Fenster. ``claimed_by`` sagt, ob an dem Termin schon ein Objekt hängt
+    (``"bummel:{id}"`` / ``"kutter:{id}"``) — belegte Termine kann die Oberfläche ausgrauen,
+    statt den Bediener in den 409 laufen zu lassen.
+    """
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        sql = ("SELECT uid, summary, dtstart, dtend, location, route, is_bummel, is_transport "
+               "FROM calendar_events")
+        params: list = []
+        if around:
+            try:
+                mitte = datetime.fromisoformat(around.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="around: ISO-Zeitstempel erwartet")
+            spanne = timedelta(days=max(0, int(days)))
+            sql += " WHERE dtstart >= ? AND dtstart <= ?"
+            params = [(mitte - spanne).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                      (mitte + spanne).strftime("%Y-%m-%dT%H:%M:%SZ")]
+        sql += " ORDER BY dtstart"
+        belegt: dict[str, str] = {}
+        for tabelle, marke in (("bummel_races", "bummel"), ("transport_events", "kutter")):
+            for row in conn.execute(
+                    f"SELECT id, calendar_uid FROM {tabelle} WHERE calendar_uid IS NOT NULL"):
+                belegt[row["calendar_uid"]] = f"{marke}:{row['id']}"
+        out = []
+        for row in conn.execute(sql, params).fetchall():
+            ev = dict(row)
+            ev["claimed_by"] = belegt.get(ev["uid"])
+            out.append(ev)
+        return out
+    finally:
+        conn.close()
+
+
+def _pruefe_kalender_verknuepfung(conn, uid: str | None, *, table: str, obj_id: int) -> None:
+    """#19: Prüft, ob ``uid`` als Verknüpfung taugt — Termin muss existieren und darf nicht
+    schon an einem anderen Objekt hängen. Ohne uid (Verknüpfung lösen) ist nichts zu prüfen.
+
+    Ohne diese Prüfung liefe ein belegter Termin in den UNIQUE-Constraint auf
+    ``calendar_uid`` und käme als 500 zurück statt als Antwort, die man lesen kann.
+    """
+    if not uid:
+        return
+    if not conn.execute("SELECT 1 FROM calendar_events WHERE uid = ?", (uid,)).fetchone():
+        raise HTTPException(status_code=400, detail="Kalendertermin nicht gefunden")
+    for other, id_col in (("bummel_races", "id"), ("transport_events", "id")):
+        row = conn.execute(
+            f"SELECT {id_col} FROM {other} WHERE calendar_uid = ?", (uid,)).fetchone()
+        if row and not (other == table and row[id_col] == obj_id):
+            raise HTTPException(status_code=409,
+                                detail="An diesem Termin hängt schon ein Event")
+
+
 @app.post("/api/admin/bummel/races/{race_id}")
 async def admin_update_race(request: Request, race_id: int):
     """Renn-Felder bearbeiten (name/route/dtstart/dtend)."""
@@ -3430,6 +3489,16 @@ async def admin_update_race(request: Request, race_id: int):
         cur = get_bummel_race(conn, race_id)
         if not cur:
             raise HTTPException(status_code=404, detail="Rennen nicht gefunden")
+        if "calendar_uid" in body:
+            uid = (str(body.get("calendar_uid") or "").strip()) or None
+            _pruefe_kalender_verknuepfung(conn, uid, table="bummel_races", obj_id=race_id)
+            fields["calendar_uid"] = uid
+            # Ein von Hand gepflegtes Rennen ist in allen Feldern Menschenwerk. Ohne diesen
+            # Rundumschutz zöge der nächste Sync den Kalenderstand darüber, sobald es an einem
+            # Termin hängt (#19 Regel 2 + 3 greifen hier ineinander).
+            if uid and cur.get("source") == "manual":
+                mark_manual_fields(conn, "bummel_races", race_id,
+                                   {"name", "route", "dtstart", "dtend"})
         # Enddatum-Sanity gegen die EFFEKTIVEN Werte (geänderte + bestehende) — wie beim Kutter.
         terr = _validate_event_times(
             fields.get("dtstart", cur.get("dtstart")), fields.get("dtend", cur.get("dtend")))
@@ -3922,6 +3991,13 @@ async def admin_update_transport_event(request: Request, event_id: int):
         cur = get_transport_event(conn, event_id)
         if not cur:
             raise HTTPException(status_code=404, detail="Event nicht gefunden")
+        if "calendar_uid" in body:
+            uid = (str(body.get("calendar_uid") or "").strip()) or None
+            _pruefe_kalender_verknuepfung(conn, uid, table="transport_events", obj_id=event_id)
+            fields["calendar_uid"] = uid
+            if uid and cur.get("source") == "manual":
+                mark_manual_fields(conn, "transport_events", event_id,
+                                   {"name", "destination", "dtstart", "dtend"})
         # Enddatum-Sanity gegen die EFFEKTIVEN Werte (geänderte + bestehende).
         terr = _validate_event_times(
             fields.get("dtstart", cur.get("dtstart")), fields.get("dtend", cur.get("dtend")))
