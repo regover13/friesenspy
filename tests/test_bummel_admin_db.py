@@ -614,3 +614,96 @@ class TestBummelRacesDueForReminder:
         now = datetime.now(timezone.utc)
         _race(conn, dtstart=_iso(now + timedelta(minutes=90)))  # außerhalb 60-min-Fenster
         assert bummel_races_due_for_reminder(conn, _iso(now), lead_min=60) == []
+
+
+# ---------------------------------------------------------------------------
+# #19 — manual_fields: was im Admin geändert wurde, überschreibt der Kalender nie wieder
+# ---------------------------------------------------------------------------
+
+class TestManualFields:
+    """Regel 2 aus Issue #19, Variante „je Feld" (Entscheidung 05.09.2026): Geschützt ist nur,
+    was tatsächlich einen anderen Wert bekommen hat. Wer die Strecke korrigiert, schützt die
+    Strecke — verschiebt jemand danach den Termin im Kalender, zieht die Zeit weiter mit.
+    """
+
+    def test_default_is_leer(self):
+        from app.database import manual_fields_of
+        conn = _make_conn()
+        rid = _race(conn)
+        assert manual_fields_of(get_bummel_race(conn, rid)) == set()
+
+    def test_mark_ist_additiv_und_idempotent(self):
+        from app.database import manual_fields_of, mark_manual_fields
+        conn = _make_conn()
+        rid = _race(conn)
+        mark_manual_fields(conn, "bummel_races", rid, {"route"})
+        mark_manual_fields(conn, "bummel_races", rid, {"route", "dtstart"})
+        assert manual_fields_of(get_bummel_race(conn, rid)) == {"route", "dtstart"}
+
+    def test_clear_nimmt_genau_ein_feld_zurueck(self):
+        from app.database import clear_manual_field, manual_fields_of, mark_manual_fields
+        conn = _make_conn()
+        rid = _race(conn)
+        mark_manual_fields(conn, "bummel_races", rid, {"route", "dtstart"})
+        clear_manual_field(conn, "bummel_races", rid, "route")
+        assert manual_fields_of(get_bummel_race(conn, rid)) == {"dtstart"}
+
+    def test_unbekannte_tabelle_wird_ignoriert(self):
+        """Der Tabellenname geht in den SQL-Text — er kommt nur aus einer Whitelist."""
+        from app.database import mark_manual_fields
+        conn = _make_conn()
+        rid = _race(conn)
+        mark_manual_fields(conn, "flights; DROP TABLE bummel_races", rid, {"route"})
+        assert get_bummel_race(conn, rid) is not None
+
+    def test_kalender_sync_laesst_handgeaenderte_route_stehen(self):
+        from app.database import (
+            manual_fields_of, mark_manual_fields, upsert_calendar_bummel_race,
+        )
+        conn = _make_conn()
+        ev = {"uid": "u1", "summary": "Bummel", "route": "EDWF,EDWG",
+              "dtstart": "2026-09-07T18:00:00Z", "dtend": "2026-09-07T22:00:00Z"}
+        upsert_calendar_bummel_race(conn, ev)
+        rid = conn.execute(
+            "SELECT id FROM bummel_races WHERE calendar_uid = 'u1'").fetchone()["id"]
+        update_bummel_race(conn, rid, route="EDWF,EDWG,EDXR")
+        mark_manual_fields(conn, "bummel_races", rid, {"route"})
+        # Der Kalender liefert erneut den alten Stand — und eine neue Uhrzeit
+        ev["dtstart"] = "2026-09-07T19:00:00Z"
+        upsert_calendar_bummel_race(conn, ev)
+        row = get_bummel_race(conn, rid)
+        assert row["route"] == "EDWF,EDWG,EDXR"           # von Hand → geschützt
+        assert row["dtstart"] == "2026-09-07T19:00:00Z"   # nie angefasst → folgt dem Kalender
+        assert manual_fields_of(row) == {"route"}
+
+    def test_geschuetztes_dtstart_verschiebt_das_offene_ende_nicht(self):
+        """dtstart geschützt, dtend offen: Der Mitternacht-Default muss vom GESCHÜTZTEN Start
+        aus rechnen, nicht vom Kalenderstart — sonst wandert das Ende auf einen anderen Tag."""
+        from app.database import mark_manual_fields, upsert_calendar_bummel_race
+        conn = _make_conn()
+        ev = {"uid": "u2", "summary": "Bummel", "route": "EDWF,EDWG",
+              "dtstart": "2026-09-07T18:00:00Z", "dtend": ""}
+        upsert_calendar_bummel_race(conn, ev)
+        rid = conn.execute(
+            "SELECT id FROM bummel_races WHERE calendar_uid = 'u2'").fetchone()["id"]
+        update_bummel_race(conn, rid, dtstart="2026-09-06T18:00:00Z")
+        mark_manual_fields(conn, "bummel_races", rid, {"dtstart"})
+        upsert_calendar_bummel_race(conn, ev)
+        row = get_bummel_race(conn, rid)
+        assert row["dtstart"] == "2026-09-06T18:00:00Z"
+        assert row["dtend"] == "2026-09-07T00:00:00Z"
+
+    def test_kalender_darf_ungeschuetzte_felder_weiter_setzen(self):
+        from app.database import upsert_calendar_bummel_race
+        conn = _make_conn()
+        ev = {"uid": "u3", "summary": "Bummel", "route": "EDWF,EDWG",
+              "dtstart": "2026-09-07T18:00:00Z", "dtend": "2026-09-07T22:00:00Z"}
+        upsert_calendar_bummel_race(conn, ev)
+        ev["route"] = "EDWF,EDWG,EDXR"
+        ev["summary"] = "Bummel (verlegt)"
+        upsert_calendar_bummel_race(conn, ev)
+        rid = conn.execute(
+            "SELECT id FROM bummel_races WHERE calendar_uid = 'u3'").fetchone()["id"]
+        row = get_bummel_race(conn, rid)
+        assert row["route"] == "EDWF,EDWG,EDXR"
+        assert row["name"] == "Bummel (verlegt)"

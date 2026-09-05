@@ -187,7 +187,8 @@ CREATE TABLE IF NOT EXISTS bummel_races (
     created_at     TEXT,
     push_enabled   INTEGER DEFAULT 1,    -- Push-Benachrichtigungen für dieses Rennen aktiv
     started_at     TEXT,                 -- Latch: gesetzt wenn erster Pilot losgeflogen ist
-    reveal_suppressed INTEGER DEFAULT 0  -- 1 = manuell verborgen, übersteuert den Auto-Reveal
+    reveal_suppressed INTEGER DEFAULT 0, -- 1 = manuell verborgen, übersteuert den Auto-Reveal
+    manual_fields  TEXT                  -- #19: CSV der im Admin von Hand gesetzten Felder
 );
 
 CREATE TABLE IF NOT EXISTS bummel_overrides (
@@ -220,7 +221,8 @@ CREATE TABLE IF NOT EXISTS transport_events (
     summarized_at  TEXT,                 -- Latch: Abschluss-Push gesendet
     summary_quip   TEXT,                 -- lustige Tagesend-Zusammenfassung (KI, Phase 2)
     radius_km       REAL,                 -- Erkennungs-Umkreis km; NULL = Default 10
-    created_at     TEXT
+    created_at     TEXT,
+    manual_fields  TEXT                  -- #19: CSV der im Admin von Hand gesetzten Felder
 );
 
 CREATE TABLE IF NOT EXISTS transport_cargo (
@@ -736,6 +738,9 @@ _BUMMEL_MIGRATIONS = [
     "ALTER TABLE bummel_races ADD COLUMN push_enabled INTEGER DEFAULT 1",
     "ALTER TABLE bummel_races ADD COLUMN started_at TEXT",
     "ALTER TABLE bummel_races ADD COLUMN reveal_suppressed INTEGER DEFAULT 0",
+    # #19: welche Felder ein Mensch im Admin gesetzt hat — der Kalender-Sync
+    # laesst genau diese in Ruhe (Regel 2, Variante "je Feld").
+    "ALTER TABLE bummel_races ADD COLUMN manual_fields TEXT",
     """CREATE TABLE IF NOT EXISTS bummel_overrides (
         race_id          INTEGER,
         cid              INTEGER,
@@ -748,6 +753,8 @@ _BUMMEL_MIGRATIONS = [
 ]
 
 _TRANSPORT_MIGRATIONS = [
+    # #19: siehe bummel_races.manual_fields.
+    "ALTER TABLE transport_events ADD COLUMN manual_fields TEXT",
     # destination: Ziel-ICAO — nur Flüge dorthin laden Fracht (Rückflug leer).
     "ALTER TABLE transport_events ADD COLUMN destination TEXT",
     # crew_kg: Pilot/Crew-Gewicht — zählt nicht als Fracht (payload = mtow − empty − fuel − crew).
@@ -4830,6 +4837,64 @@ def get_calendar_events(conn: sqlite3.Connection, days_back: int = 365) -> list[
 # Bummel-Rennen (persistent) — Kalender-synchronisiert oder manuell (Phase B)
 # ---------------------------------------------------------------------------
 
+# --- #19: Schutzmarken je Feld ---------------------------------------------
+# Ein Kalendertermin darf ein Event-Objekt anlegen und aktuell halten. Sobald ein Mensch im
+# Admin ein Feld ändert, gehört dieses Feld ihm: Der nächste Sync (alle 6 h) lässt es stehen.
+# Bewusst je FELD und nicht je Objekt (Entscheidung 05.09.2026) — wer die Strecke korrigiert,
+# will nicht gleichzeitig eine spätere Terminverschiebung im Kalender verpassen.
+_MANUAL_TABLES = {"bummel_races", "transport_events"}
+
+
+def manual_fields_of(row) -> set[str]:
+    """Die von Hand gesetzten Feldnamen einer Objektzeile. Leer = nichts angefasst."""
+    raw = (dict(row).get("manual_fields") or "") if row is not None else ""
+    return {f for f in (part.strip() for part in raw.split(",")) if f}
+
+
+def mark_manual_fields(conn: sqlite3.Connection, table: str, obj_id: int,
+                       fields: set[str]) -> None:
+    """Feldnamen als „von Hand gesetzt" vormerken (additiv, idempotent).
+
+    ``table`` geht in den SQL-Text und kommt deshalb ausschließlich aus ``_MANUAL_TABLES``.
+    """
+    if table not in _MANUAL_TABLES or not fields:
+        return
+    row = conn.execute(
+        f"SELECT manual_fields FROM {table} WHERE id = ?", (obj_id,)).fetchone()
+    if row is None:
+        return
+    merged = sorted(manual_fields_of(row) | {str(f) for f in fields})
+    conn.execute(f"UPDATE {table} SET manual_fields = ? WHERE id = ?",
+                 (",".join(merged), obj_id))
+
+
+def clear_manual_field(conn: sqlite3.Connection, table: str, obj_id: int, field: str) -> None:
+    """Schutz für genau ein Feld aufheben — der Kalender darf es wieder setzen."""
+    if table not in _MANUAL_TABLES:
+        return
+    row = conn.execute(
+        f"SELECT manual_fields FROM {table} WHERE id = ?", (obj_id,)).fetchone()
+    if row is None:
+        return
+    rest = sorted(manual_fields_of(row) - {field})
+    conn.execute(f"UPDATE {table} SET manual_fields = ? WHERE id = ?",
+                 (",".join(rest) or None, obj_id))
+
+
+def claimed_calendar_uids(conn: sqlite3.Connection) -> set[str]:
+    """Alle Kalender-UIDs, an denen ein Event-Objekt hängt (Bummel oder Kutter).
+
+    #19 Regel 3: Diese Termine erscheinen nicht mehr separat in der Events-Liste und lösen
+    keine generische Erinnerung aus — beides erledigt jetzt das Objekt.
+    """
+    rows = conn.execute(
+        "SELECT calendar_uid FROM bummel_races WHERE calendar_uid IS NOT NULL "
+        "UNION SELECT calendar_uid FROM transport_events WHERE calendar_uid IS NOT NULL"
+    ).fetchall()
+    return {r["calendar_uid"] for r in rows if r["calendar_uid"]}
+
+
+
 def upsert_calendar_bummel_race(conn: sqlite3.Connection, ev: dict) -> None:
     """Ein erkanntes Bummel-Kalenderevent als persistentes Rennen anlegen/aktualisieren.
 
@@ -4843,9 +4908,20 @@ def upsert_calendar_bummel_race(conn: sqlite3.Connection, ev: dict) -> None:
     """
     uid = ev.get("uid")
     before = conn.execute(
-        "SELECT id, route, dtstart, dtend FROM bummel_races WHERE calendar_uid = ?",
+        "SELECT id, name, route, dtstart, dtend, manual_fields FROM bummel_races "
+        "WHERE calendar_uid = ?",
         (uid,),
     ).fetchone()
+    # #19 Regel 2: Felder, die im Admin von Hand gesetzt wurden, gehören dem Menschen — der
+    # Sync trägt für sie den Bestandswert erneut ein statt den Kalenderstand.
+    protected = manual_fields_of(before) if before else set()
+    name = before["name"] if "name" in protected else (ev.get("summary") or "")
+    route = before["route"] if "route" in protected else (ev.get("route") or "")
+    dtstart = before["dtstart"] if "dtstart" in protected else (ev.get("dtstart") or "")
+    # Der Mitternacht-Default rechnet vom EFFEKTIVEN Start — sonst wandert ein offenes Ende auf
+    # den Kalendertag zurück, obwohl der Start von Hand auf einen anderen Tag gelegt wurde.
+    dtend = (before["dtend"] if "dtend" in protected
+             else _effective_dtend(dtstart, ev.get("dtend")))
     conn.execute(
         """INSERT INTO bummel_races
                (name, route, dtstart, dtend, radius_km, source, calendar_uid, revealed_at, created_at)
@@ -4855,15 +4931,7 @@ def upsert_calendar_bummel_race(conn: sqlite3.Connection, ev: dict) -> None:
                route=excluded.route,
                dtstart=excluded.dtstart,
                dtend=excluded.dtend""",
-        (
-            ev.get("summary") or "",
-            ev.get("route") or "",
-            ev.get("dtstart") or "",
-            _effective_dtend(ev.get("dtstart") or "", ev.get("dtend")),
-            10,
-            uid,
-            _now_utc(),
-        ),
+        (name, route, dtstart, dtend, 10, uid, _now_utc()),
     )
     if before:
         after = conn.execute(
@@ -4887,7 +4955,7 @@ def list_bummel_races(conn: sqlite3.Connection, *, since: str | None = None) -> 
         params.append(since)
     sql = (
         "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
-        "revealed_at, created_at, push_enabled, started_at, reveal_suppressed "
+        "revealed_at, created_at, push_enabled, started_at, reveal_suppressed, manual_fields "
         "FROM bummel_races"
     )
     if where:
@@ -4900,7 +4968,7 @@ def list_bummel_races(conn: sqlite3.Connection, *, since: str | None = None) -> 
 def get_bummel_race(conn: sqlite3.Connection, race_id: int) -> dict | None:
     row = conn.execute(
         "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
-        "revealed_at, created_at, push_enabled, started_at, reveal_suppressed "
+        "revealed_at, created_at, push_enabled, started_at, reveal_suppressed, manual_fields "
         "FROM bummel_races WHERE id = ?",
         (race_id,),
     ).fetchone()
@@ -5711,7 +5779,8 @@ def upsert_payload(
 
 _TRANSPORT_EVENT_COLS = (
     "id, name, route, destination, dtstart, dtend, source, calendar_uid, push_enabled, "
-    "started_at, goal_reached_at, summarized_at, summary_quip, radius_km, created_at"
+    "started_at, goal_reached_at, summarized_at, summary_quip, radius_km, created_at, "
+    "manual_fields"
 )
 
 
@@ -5758,9 +5827,17 @@ def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
     route = ev.get("route") or ""
     uid = ev.get("uid")
     before = conn.execute(
-        "SELECT id, route, dtstart, dtend, destination FROM transport_events WHERE calendar_uid = ?",
+        "SELECT id, name, route, dtstart, dtend, destination, manual_fields "
+        "FROM transport_events WHERE calendar_uid = ?",
         (uid,),
     ).fetchone()
+    # #19 Regel 2 — wie in upsert_calendar_bummel_race: von Hand gesetzte Felder bleiben stehen.
+    protected = manual_fields_of(before) if before else set()
+    ev_name = before["name"] if "name" in protected else (ev.get("summary") or "")
+    ev_route = before["route"] if "route" in protected else route
+    ev_dtstart = before["dtstart"] if "dtstart" in protected else (ev.get("dtstart") or "")
+    ev_dtend = (before["dtend"] if "dtend" in protected
+                else _effective_dtend(ev_dtstart, ev.get("dtend")))
     conn.execute(
         """INSERT INTO transport_events
                (name, route, destination, dtstart, dtend, source, calendar_uid, created_at)
@@ -5769,11 +5846,11 @@ def upsert_calendar_transport_event(conn: sqlite3.Connection, ev: dict) -> None:
                name=excluded.name, route=excluded.route,
                dtstart=excluded.dtstart, dtend=excluded.dtend""",
         (
-            ev.get("summary") or "",
-            route,
+            ev_name,
+            ev_route,
             _default_destination(route),   # Ziel-Default; im Admin korrigierbar (Update lässt es unangetastet)
-            ev.get("dtstart") or "",
-            _effective_dtend(ev.get("dtstart") or "", ev.get("dtend")),
+            ev_dtstart,
+            ev_dtend,
             uid,
             _now_utc(),
         ),
