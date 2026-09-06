@@ -879,6 +879,8 @@ Beide Badges sind **rund (256 × 256 px)** mit transparenten Rändern und nutzen
 
 Beide Badges tragen jetzt **Event-Name (Überschrift) und Datum** (auch der Sieger-Badge, der vorher kein Datum hatte). Der Abstand zum Schnitt wird **signiert + sekundengenau** formatiert (z. B. „+1:23 zum Schnitt", bei punktgenauem Treffer „punktgenau").
 
+**Woher der Event-Name kommt (v14.22.0):** aus `bummel_races.badge_name`, und nur wenn das leer ist, aus `bummel_races.name`. Auf der runden Scheibe ist wenig Platz — ein Name wie „Montagsflüge in Deutschland — Aach-Bummel" schrumpft dort zur Unleserlichkeit und läuft bis an den Rand. Gesetzt wird der Kurzname im Admin (`POST /api/admin/bummel/races/{id}`, Feld `badge_name`); überall sonst — Listen, Ergebnistext, Pushs — bleibt `name` maßgeblich. Weil der Wert über `event` in den ETag eingeht (s. u.), holt das Forum nach einer Änderung von selbst die neue Grafik.
+
 **Caching (ETag + Revalidierung):** Aus den ergebnisrelevanten Feldern (inkl. `delta_sec` und `event`) wird ein Hash gebildet, der als `ETag` dient und in den serverseitigen Cache-Dateinamen einfließt (`data/badges/<race_id>_<cid>_<hash>.png`). Der Endpoint antwortet mit `Cache-Control: no-cache` + `ETag` (statt zuvor `public, max-age=86400`): Schickt der Client ein passendes `If-None-Match`, kommt `304 Not Modified` zurück. Ändert sich der Sieger (z. B. durch Admin-Override oder Wertungsänderung), ändert sich der ETag → Browser/Forum holen sofort ein frisches Bild statt eines bis zu einen Tag veralteten (behebt den Bug, dass ein alter Gewinner-Badge nach Wertungsänderung hängenblieb).
 
 **Response-Header:**
@@ -959,6 +961,10 @@ aus `progress["total_kg"]`/`["target_kg"]`, NICHT nur der Anteil dieses einen Pi
 0, aus `losses` aufsummiert — `returned` zählt nicht als Verlust), erscheint zusätzlich ein
 Verlust-Titel: **SPITZBOOV!** (nur geklaut), **BADEMESTER!** (nur versenkt) oder **SEEROVER!**
 (beides), plus eine Mengen-Zeile („150 kg geklaut, 292 kg versenkt").
+
+**Woher der Event-Name kommt (v14.22.0):** aus `transport_events.badge_name`, ersatzweise aus
+`transport_events.name` — dieselbe Regel wie beim Bummel-Badge, gesetzt über
+`POST /api/admin/transport/events/{id}`.
 
 **Caching (ETag + Revalidierung):** Aus den ergebnisrelevanten Feldern (`summarized_at`,
 `delivered_kg`, `stolen_kg`, `sunk_kg`, `aircraft`, `callsign`, `event`, `team_total_kg`) wird ein
@@ -1252,6 +1258,7 @@ Neues Rennen manuell anlegen.
 | `dtstart` | string | ✓ | ISO8601 UTC — Renn-Beginn |
 | `dtend` | string | — | ISO8601 UTC — Renn-Ende; fehlt → Mitternacht UTC des Starttags |
 | `calendar_uid` | string | — | #19: Termin, zu dem dieses Rennen gehört. Gesetzt → der Termin erscheint nicht mehr separat; alle vier Felder gelten sofort als handgesetzt. Unbekannt → `400`, belegt → `409` |
+| `badge_name` | string | — | Kurzname für das Badge-PNG. Leer/fehlt → das Badge nimmt `name` |
 
 **Kein `radius_km` mehr** (seit GPS-only Phase 2, #23) — die Anwesenheitsprüfung nutzt überall
 den festen globalen 4-km-Radius aus dem GPS-Leg-Detektor, kein per-Rennen-Override mehr.
@@ -1268,8 +1275,13 @@ mit `400` („Enddatum muss nach dem Startdatum liegen.") — dieselbe Prüfung 
 
 Felder eines bestehenden Rennens aktualisieren. Nur angegebene Felder werden geändert.
 
-**Body (JSON)** — `name`/`route`/`dtstart`/`dtend`/`calendar_uid`, alle optional (kein
-`radius_km` mehr, s. o.).
+**Body (JSON)** — `name`/`route`/`dtstart`/`dtend`/`calendar_uid`/`badge_name`, alle optional
+(kein `radius_km` mehr, s. o.).
+
+**`badge_name` (v14.22.0):** Kurzname für das Badge-PNG. Ein **leerer String wird als `NULL`
+gespeichert** — das ist die Rücknahme auf den Event-Namen, nicht „leerer Text im Badge". Das Feld
+landet bewusst **nicht** in `manual_fields`: Der Kalender kann es gar nicht setzen, eine Marke
+hätte im Admin einen Rückholknopf, hinter dem nichts liegt.
 
 **Zeit-Plausibilität (v10.3.0):** gegen die **effektiven** Werte geprüft (geänderte + bestehende) —
 wird nur `dtend` geschickt, zählt der gespeicherte `dtstart`. Ende ≤ Start → `400`.
@@ -1424,10 +1436,12 @@ Liste aller Events inkl. Fracht-Manifest (`cargo: [{id, position, name, target_k
 ### POST /api/admin/transport/events
 Manuelles Event anlegen. **Seit v8.14.0/#84 kein `route`-Feld mehr** — die Route wird aus den Startplätzen der Fracht + Ziel abgeleitet. Body: `name`, `destination` (ICAO, **Pflicht**), `dtstart` (UTC, Pflicht), `dtend` (optional, sonst Mitternacht UTC), `cargo` (`[{name, target_kg, departure}]`, **Pflicht** — mind. eine Frachtart mit Menge und **genau einem** Startplatz `departure` ≠ Ziel; fehlender/mehrfacher Platz → `400`). → `{status, id}`. **Kein `radius_km` mehr** (fester globaler 4-km-Radius seit GPS-only Phase 2/#23). **Zeit-Plausibilität (v10.1.3, `_validate_event_times`):** `dtend` ≤ `dtstart` → `400` („Enddatum muss nach dem Startdatum liegen.").
 
+**`badge_name` (optional, v14.22.0):** Kurzname für das Badge-PNG; leer/fehlt → das Badge nimmt `name`.
+
 **`calendar_uid` (optional, #19):** Termin, zu dem dieser Kutter gehört — dann erscheint der Termin nicht mehr separat in den Events und erinnert nicht doppelt. Unbekannter Termin → `400`, schon belegter → `409`. **Ein Kalendertermin legt weiterhin keinen Kutter an** (Variante ①): Das Frachtmanifest kann er nicht tragen, die Verknüpfung ist Handarbeit.
 
 ### POST /api/admin/transport/events/{id}
-Bearbeiten. Übergebene Felder aus `name/destination/dtstart/dtend/calendar_uid` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest und muss dieselbe Validierung erfüllen wie beim Anlegen (Ziel + Startplätze, sonst `400`). Die `route` wird danach frisch aus dem Manifest abgeleitet — **kein `route`-Feld mehr** (v8.14.0/#84). Die Zeit-Plausibilität (`dtend` > `dtstart`) wird gegen die **effektiven** Werte geprüft (geänderte + bestehende) — Ende ≤ Start → `400`. Jedes Feld, das hier einen **anderen** Wert bekommt, gilt danach als handgesetzt (`manual_fields`, #19); `calendar_uid: null` löst die Verknüpfung. Zurücknehmen einzelner Felder: `POST /api/admin/transport/events/{id}/kalenderstand/{feld}` (`name` | `dtstart` | `dtend` — `destination` kommt nicht aus dem Kalender).
+Bearbeiten. Übergebene Felder aus `name/destination/dtstart/dtend/calendar_uid/badge_name` werden aktualisiert; `cargo` (falls gesetzt) **ersetzt** das Manifest und muss dieselbe Validierung erfüllen wie beim Anlegen (Ziel + Startplätze, sonst `400`). Die `route` wird danach frisch aus dem Manifest abgeleitet — **kein `route`-Feld mehr** (v8.14.0/#84). Die Zeit-Plausibilität (`dtend` > `dtstart`) wird gegen die **effektiven** Werte geprüft (geänderte + bestehende) — Ende ≤ Start → `400`. Jedes Feld, das hier einen **anderen** Wert bekommt, gilt danach als handgesetzt (`manual_fields`, #19); `calendar_uid: null` löst die Verknüpfung. Zurücknehmen einzelner Felder: `POST /api/admin/transport/events/{id}/kalenderstand/{feld}` (`name` | `dtstart` | `dtend` — `destination` kommt nicht aus dem Kalender). `badge_name` (v14.22.0) wird aus demselben Grund **nicht** als handgesetzt markiert; ein leerer String wird als `NULL` gespeichert und nimmt den Kurznamen damit zurück.
 
 ### DELETE /api/admin/transport/events/{id}
 Event samt Manifest löschen.
