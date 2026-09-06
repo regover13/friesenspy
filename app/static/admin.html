@@ -905,6 +905,11 @@
                     <label for="nr-route">Strecke (ICAOs, kommagetrennt)</label>
                     <input type="text" id="nr-route" placeholder="EDWB,EDWI,EDHS,EDXW" required />
                   </div>
+                  <div class="form-group" style="grid-column:1/-1;">
+                    <label for="nr-badge-name">Name auf dem Badge (optional)</label>
+                    <input type="text" id="nr-badge-name" placeholder="leer = Name des Events" />
+                    <p class="form-hint">Der Name, den das Badge-PNG traegt. Leer lassen = Name des Events. Sinnvoll, wenn der volle Name fuer die runde Grafik zu lang ist.</p>
+                  </div>
                   <div class="form-group">
                     <label for="nr-dtstart">Start (UTC)</label>
                     <input type="datetime-local" id="nr-dtstart" data-end="nr-dtend" required />
@@ -956,6 +961,11 @@
                   <div class="form-group">
                     <label for="ke-dest">Ziel-ICAO (Fracht zählt hierhin) <span id="ke-marke-destination"></span></label>
                     <input type="text" id="ke-dest" placeholder="EDXH" required />
+                  </div>
+                  <div class="form-group" style="grid-column:1/-1;">
+                    <label for="ke-badge-name">Name auf dem Badge (optional)</label>
+                    <input type="text" id="ke-badge-name" placeholder="leer = Name des Events" />
+                    <p class="form-hint">Der Name, den das Badge-PNG traegt. Leer lassen = Name des Events. Sinnvoll, wenn der volle Name fuer die runde Grafik zu lang ist.</p>
                   </div>
                   <div class="form-group">
                     <label for="ke-dtstart">Start (UTC) <span id="ke-marke-dtstart"></span></label>
@@ -1912,6 +1922,8 @@
       }
       const body = { name, route, dtstart: localToIso(dtstart) };
       if (dtend) body.dtend = localToIso(dtend);
+      const nrBadge = document.getElementById('nr-badge-name').value.trim();
+      if (nrBadge) body.badge_name = nrBadge;   // leer = Badge nimmt den Event-Namen
       const nrUid = document.getElementById('nr-caluid').value;
       if (nrUid) body.calendar_uid = nrUid;   // #19: leer = kein Termin, nichts zu senden
       const res = await api('POST', '/api/admin/bummel/races', body);
@@ -2086,6 +2098,12 @@
               <label>Strecke (ICAOs, kommagetrennt) ${feldMarke(r, 'route')}</label>
               <input type="text" id="edit-route-${r.id}" value="${escA(r.route)}" />
             </div>
+            <div class="form-group" style="grid-column:1/-1;">
+              <label>Name auf dem Badge</label>
+              <input type="text" id="edit-badge-name-${r.id}" value="${escA(r.badge_name || '')}"
+                     placeholder="${escA(r.name)}" />
+              <p class="form-hint">Der Name, den das Badge-PNG traegt. Leer lassen = Name des Events. Sinnvoll, wenn der volle Name fuer die runde Grafik zu lang ist.</p>
+            </div>
             <div class="form-group">
               <label>Start (UTC) ${feldMarke(r, 'dtstart')}</label>
               <input type="datetime-local" id="edit-dtstart-${r.id}" data-end="edit-dtend-${r.id}" value="${escA(isoToLocal(r.dtstart))}" />
@@ -2168,6 +2186,8 @@
       if (route)        body.route      = route;
       if (dtstart)      body.dtstart    = localToIso(dtstart);
       if (dtend)        body.dtend      = localToIso(dtend);
+      // Auch leer wird gesendet: das ist das Zurücknehmen auf den Event-Namen.
+      body.badge_name = document.getElementById(`edit-badge-name-${id}`).value.trim();
       // #19: Auch der LEERE Wert zählt — er löst eine bestehende Verknüpfung.
       const caluid = document.getElementById(`edit-caluid-${id}`);
       if (caluid) body.calendar_uid = caluid.value || null;
@@ -2908,6 +2928,7 @@
       _keEditingId = null;
       document.getElementById('ke-form-title').textContent = 'Neues Event anlegen';
       document.getElementById('ke-create-form').reset();
+      document.getElementById('ke-badge-name').placeholder = 'leer = Name des Events';
       document.getElementById('ke-cargo-rows').innerHTML = '';
       keSetzeTerminUndMarken(null);
     }
@@ -3043,6 +3064,10 @@
       const keUid = document.getElementById('ke-caluid').value;
       // Beim Bearbeiten zählt auch der LEERE Wert (er löst die Verknüpfung); beim Anlegen gibt
       // es nichts zu lösen, da wird nur ein gewählter Termin gesendet.
+      const keBadge = document.getElementById('ke-badge-name').value.trim();
+      // Beim Bearbeiten zählt auch leer (zurück zum Event-Namen); beim Anlegen gibt es
+      // nichts zurückzunehmen.
+      if (_keEditingId || keBadge) body.badge_name = keBadge;
       if (_keEditingId) body.calendar_uid = keUid || null;
       else if (keUid) body.calendar_uid = keUid;
       const path = _keEditingId ? '/api/admin/transport/events/' + _keEditingId : '/api/admin/transport/events';
@@ -3143,6 +3168,9 @@
       document.getElementById('ke-form-title').textContent = 'Event bearbeiten';
       document.getElementById('ke-name').value = ev.name || '';
       document.getElementById('ke-dest').value = ev.destination || '';
+      const keBadgeFeld = document.getElementById('ke-badge-name');
+      keBadgeFeld.value = ev.badge_name || '';
+      keBadgeFeld.placeholder = ev.name || 'leer = Name des Events';
       document.getElementById('ke-dtstart').value = isoToLocal(ev.dtstart);
       document.getElementById('ke-dtend').value = isoToLocal(ev.dtend);
       const rows = document.getElementById('ke-cargo-rows');

@@ -1989,7 +1989,9 @@ def _badge_entry_data(view: dict, race: dict, cid: int) -> tuple[dict, bool]:
         "delta_sec": entry.get("delta_sec"),
         "rank": entry.get("rank"),
         "complete": cid in complete,
-        "event": race.get("name") or "FriesenFliegerBummel",
+        # Der volle Event-Name sprengt die runde Grafik; `badge_name` ist der Kurzname
+        # dafuer. Leer heisst weiter "nimm den Event-Namen".
+        "event": race.get("badge_name") or race.get("name") or "FriesenFliegerBummel",
         "date": _fmt_de_date(race.get("dtstart")),
     }
     return d, is_winner
@@ -3418,6 +3420,9 @@ async def admin_create_race(request: Request):
             dtstart=body["dtstart"],
             dtend=body.get("dtend") or "",
         )
+        badge_name = (str(body.get("badge_name") or "").strip()) or None
+        if badge_name:
+            update_bummel_race(conn, rid, badge_name=badge_name)
         if uid:
             update_bummel_race(conn, rid, calendar_uid=uid)
             # Von Hand angelegt heißt: alle Felder sind Menschenwerk und bleiben es.
@@ -3494,6 +3499,10 @@ async def admin_update_race(request: Request, race_id: int):
     require_admin(request)
     body = await request.json()
     fields = {k: body[k] for k in ("name", "route", "dtstart", "dtend") if k in body}
+    # Leeres Feld = zurueck zur Automatik (Badge nimmt wieder den Event-Namen), nicht
+    # "leerer Text im Badge". Nicht in `manual_fields`: der Kalender kennt das Feld nicht.
+    if "badge_name" in body:
+        fields["badge_name"] = (str(body.get("badge_name") or "").strip()) or None
     conn = get_connection(get_settings().DB_PATH)
     try:
         cur = get_bummel_race(conn, race_id)
@@ -3872,7 +3881,8 @@ def _kutter_badge_data(progress: dict, ev: dict, cid: int) -> dict:
         # 06.07.: der Kutter ist eine gemeinsame Leistung, das Badge soll sie feiern.
         "team_total_kg": round(progress.get("total_kg") or 0.0, 1),
         "team_target_kg": round(progress.get("target_kg") or 0.0, 1) if progress.get("target_kg") else None,
-        "event": ev.get("name") or "FriesenKutter",
+        # Kurzname fuers Badge, siehe _badge_entry_data.
+        "event": ev.get("badge_name") or ev.get("name") or "FriesenKutter",
         "date": _fmt_de_date(ev.get("dtstart")),
     }
 
@@ -4038,6 +4048,9 @@ async def admin_create_transport_event(request: Request):
             dtend=body.get("dtend") or None,
             cargo=body.get("cargo") or None,
         )
+        badge_name = (str(body.get("badge_name") or "").strip()) or None
+        if badge_name:
+            update_transport_event(conn, eid, badge_name=badge_name)
         if uid:
             update_transport_event(conn, eid, calendar_uid=uid)
             mark_manual_fields(conn, "transport_events", eid,
@@ -4060,6 +4073,8 @@ async def admin_update_transport_event(request: Request, event_id: int):
             fields[k] = body[k]
     if "destination" in body:
         fields["destination"] = str(body.get("destination") or "").strip().upper()
+    if "badge_name" in body:   # siehe admin_update_race
+        fields["badge_name"] = (str(body.get("badge_name") or "").strip()) or None
     if "cargo" in body:
         fields["cargo"] = body["cargo"]
     conn = get_connection(get_settings().DB_PATH)

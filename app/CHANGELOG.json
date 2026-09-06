@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.22.0",
+    "date": "2026-09-06",
+    "highlight": false,
+    "title": "Ein eigener Name für das Badge",
+    "items": [
+      "🎖️ Auf der runden Badge-Grafik ist wenig Platz — ein Event wie „Montagsflüge in Deutschland — Aach-Bummel\" schrumpfte dort zur Unleserlichkeit. Im Admin steht jetzt bei jedem Bummel und jedem Kutter ein Feld „Name auf dem Badge\": trägst du dort „Aach-Bummel\" ein, steht nur das auf der Scheibe.",
+      "↩️ Lässt du das Feld leer, bleibt alles wie bisher — das Badge nimmt den vollen Event-Namen, und der steht als grauer Vorschlag im Feld. Ein einmal gesetzter Kurzname lässt sich durch Leeren jederzeit wieder zurücknehmen.",
+      "📋 Überall sonst — Events-Liste, Ergebnistext fürs Forum, Benachrichtigungen — bleibt der volle Name stehen. Wer den Kurznamen nachträglich ändert, bekommt im Forum von selbst die neue Grafik zu sehen."
+    ]
+  },
+  {
     "version": "14.21.0",
     "date": "2026-09-05",
     "highlight": false,

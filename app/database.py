@@ -188,7 +188,8 @@ CREATE TABLE IF NOT EXISTS bummel_races (
     push_enabled   INTEGER DEFAULT 1,    -- Push-Benachrichtigungen für dieses Rennen aktiv
     started_at     TEXT,                 -- Latch: gesetzt wenn erster Pilot losgeflogen ist
     reveal_suppressed INTEGER DEFAULT 0, -- 1 = manuell verborgen, übersteuert den Auto-Reveal
-    manual_fields  TEXT                  -- #19: CSV der im Admin von Hand gesetzten Felder
+    manual_fields  TEXT,                 -- #19: CSV der im Admin von Hand gesetzten Felder
+    badge_name     TEXT                  -- Kurzname fuers Badge-PNG; leer = name
 );
 
 CREATE TABLE IF NOT EXISTS bummel_overrides (
@@ -222,7 +223,8 @@ CREATE TABLE IF NOT EXISTS transport_events (
     summary_quip   TEXT,                 -- lustige Tagesend-Zusammenfassung (KI, Phase 2)
     radius_km       REAL,                 -- Erkennungs-Umkreis km; NULL = Default 10
     created_at     TEXT,
-    manual_fields  TEXT                  -- #19: CSV der im Admin von Hand gesetzten Felder
+    manual_fields  TEXT,                 -- #19: CSV der im Admin von Hand gesetzten Felder
+    badge_name     TEXT                  -- Kurzname fuers Badge-PNG; leer = name
 );
 
 CREATE TABLE IF NOT EXISTS transport_cargo (
@@ -741,6 +743,9 @@ _BUMMEL_MIGRATIONS = [
     # #19: welche Felder ein Mensch im Admin gesetzt hat — der Kalender-Sync
     # laesst genau diese in Ruhe (Regel 2, Variante "je Feld").
     "ALTER TABLE bummel_races ADD COLUMN manual_fields TEXT",
+    # Der Event-Name sprengt die runde Grafik ("Montagsfluege in Deutschland - Aach-Bummel").
+    # Leer = weiter der Event-Name, damit eine spaetere Umbenennung im Badge ankommt.
+    "ALTER TABLE bummel_races ADD COLUMN badge_name TEXT",
     """CREATE TABLE IF NOT EXISTS bummel_overrides (
         race_id          INTEGER,
         cid              INTEGER,
@@ -755,6 +760,8 @@ _BUMMEL_MIGRATIONS = [
 _TRANSPORT_MIGRATIONS = [
     # #19: siehe bummel_races.manual_fields.
     "ALTER TABLE transport_events ADD COLUMN manual_fields TEXT",
+    # badge_name: siehe bummel_races.
+    "ALTER TABLE transport_events ADD COLUMN badge_name TEXT",
     # destination: Ziel-ICAO — nur Flüge dorthin laden Fracht (Rückflug leer).
     "ALTER TABLE transport_events ADD COLUMN destination TEXT",
     # crew_kg: Pilot/Crew-Gewicht — zählt nicht als Fracht (payload = mtow − empty − fuel − crew).
@@ -4964,7 +4971,8 @@ def list_bummel_races(conn: sqlite3.Connection, *, since: str | None = None) -> 
         params.append(since)
     sql = (
         "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
-        "revealed_at, created_at, push_enabled, started_at, reveal_suppressed, manual_fields "
+        "revealed_at, created_at, push_enabled, started_at, reveal_suppressed, manual_fields, "
+        "badge_name "
         "FROM bummel_races"
     )
     if where:
@@ -4977,7 +4985,8 @@ def list_bummel_races(conn: sqlite3.Connection, *, since: str | None = None) -> 
 def get_bummel_race(conn: sqlite3.Connection, race_id: int) -> dict | None:
     row = conn.execute(
         "SELECT id, name, route, dtstart, dtend, radius_km, source, calendar_uid, "
-        "revealed_at, created_at, push_enabled, started_at, reveal_suppressed, manual_fields "
+        "revealed_at, created_at, push_enabled, started_at, reveal_suppressed, manual_fields, "
+        "badge_name "
         "FROM bummel_races WHERE id = ?",
         (race_id,),
     ).fetchone()
@@ -5057,7 +5066,8 @@ def create_bummel_race(
 
 # calendar_uid ist seit #19 im Admin setzbar: die Verknüpfung Termin↔Objekt wird
 # ausgesprochen, nicht aus Datum und Stichwort erraten.
-_UPDATABLE_RACE_FIELDS = {"name", "route", "dtstart", "dtend", "radius_km", "calendar_uid"}
+_UPDATABLE_RACE_FIELDS = {"name", "route", "dtstart", "dtend", "radius_km", "calendar_uid",
+                          "badge_name"}
 
 
 def update_bummel_race(conn: sqlite3.Connection, race_id: int, **fields: object) -> None:
@@ -5791,7 +5801,7 @@ def upsert_payload(
 _TRANSPORT_EVENT_COLS = (
     "id, name, route, destination, dtstart, dtend, source, calendar_uid, push_enabled, "
     "started_at, goal_reached_at, summarized_at, summary_quip, radius_km, created_at, "
-    "manual_fields"
+    "manual_fields, badge_name"
 )
 
 
@@ -5960,7 +5970,7 @@ def create_transport_event(
 # gecachtes altes admin.html die abgeleitete Route überschreiben).
 # calendar_uid: siehe _UPDATABLE_RACE_FIELDS (#19).
 _UPDATABLE_TRANSPORT_FIELDS = {"name", "destination", "dtstart", "dtend", "radius_km",
-                               "calendar_uid"}
+                               "calendar_uid", "badge_name"}
 
 
 def update_transport_event(conn: sqlite3.Connection, event_id: int, **fields: object) -> None:
