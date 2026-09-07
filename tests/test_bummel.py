@@ -456,7 +456,6 @@ class TestPublicView:
         assert anna["aircraft"] == "C172"
         assert anna["leg_count"] == 2
 
-
 class TestGpsPresence:
     def test_gps_corrects_flightplan_typo(self):
         """GPS erkennt EDWR, obwohl der Flugplan-ARR vertippt ist (Katastrophen-Schutz)."""
@@ -566,9 +565,13 @@ class TestFragmentMerge:
 
 
 def _edge(a: str, b: str) -> str:
-    """Erwartete Kanten-Darstellung (ungerichtet, sortiert) — Spiegel der Implementierung."""
-    x, y = sorted((a, b))
-    return f"{x} ↔ {y}"
+    """Erwartete Etappen-Darstellung — Spiegel der Implementierung.
+
+    Gerechnet wird weiterhin mit der UNGERICHTETEN Kante (der Rueckweg deckt den Hinweg),
+    angezeigt wird sie in der Richtung, in der die STRECKE sie nennt. Die Argumente stehen
+    hier deshalb in Routenreihenfolge, nicht sortiert.
+    """
+    return f"{a} - {b}"
 
 
 class TestHiddenOrderNoRankLeak:

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import timedelta
 
 import pytest
 
 from app.database import (
     _bummel_anyone_in_progress,
+    _parse_iso,
     _effective_dtend,
     bummel_open_starters,
     get_bummel_race,
@@ -38,6 +40,43 @@ def _add_open_flight(conn, cid, dep_coord, logon, dep_fp="EDWF", gs=0):
         "VALUES (?, ?, ?, 200, ?, 0, ?)",
         (cid, dep_coord[0], dep_coord[1], gs, logon),
     )
+    conn.commit()
+
+
+def _add_flying_flight(conn, cid, von, nach, logon, *, landet: bool, dep_fp="EDWF"):
+    """Offener Flug (Verbindung steht) mit echtem GPS-Verlauf: Start, Steigflug, Reiseflug,
+    Sinkflug — und je nach ``landet`` ein Aufsetzer am Zielplatz oder Ende in der Luft.
+
+    Der Fall vom 07.09.2026: gelandet und abgestellt, aber noch mit VATSIM verbunden.
+    """
+    a, b = icao_to_coords(von), icao_to_coords(nach)
+    conn.execute(
+        "INSERT OR IGNORE INTO pilots (cid, name, added_at) VALUES (?, ?, ?)",
+        (cid, f"P{cid}", logon),
+    )
+    conn.execute(
+        "INSERT INTO flights (cid, callsign, aircraft_short, departure, arrival, "
+        "logon_time, logoff_time, duration_min, distance_nm, block_min) "
+        "VALUES (?, ?, 'C172', ?, ?, ?, NULL, NULL, NULL, NULL)",
+        (cid, f"FRS{cid}", dep_fp, nach, logon),
+    )
+    # (Anteil auf der Strecke, Hoehe ft, groundspeed kt)
+    verlauf = [(0.0, 20, 0), (0.0, 20, 30), (0.05, 900, 80), (0.25, 3000, 95),
+               (0.55, 3000, 95), (0.85, 1500, 90), (0.97, 400, 70)]
+    if landet:
+        verlauf += [(1.0, 20, 1), (1.0, 20, 0), (1.0, 20, 0)]
+    else:
+        verlauf += [(0.99, 1200, 85), (1.0, 1100, 85)]   # noch in der Luft
+    t = _parse_iso(logon)
+    for anteil, alt, gs in verlauf:
+        conn.execute(
+            "INSERT INTO position_history (cid, callsign, latitude, longitude, altitude, "
+            "groundspeed, heading, ts) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+            (cid, f"FRS{cid}",
+             a[0] + (b[0] - a[0]) * anteil, a[1] + (b[1] - a[1]) * anteil,
+             alt, gs, t.strftime("%Y-%m-%dT%H:%M:%SZ")),
+        )
+        t += timedelta(minutes=3)
     conn.commit()
 
 
@@ -160,6 +199,23 @@ class TestAnyoneInProgress:
         _add_open_flight(conn, 100, icao_to_coords("EDWF"), "2026-06-28T00:30:00Z")
         # Nachzügler-Fenster endet 00:00 → späterer Start blockt nicht
         assert _bummel_anyone_in_progress(conn, ROUTE, 10, started_before="2026-06-28T00:00:00Z") is False
+
+    def test_landed_no_longer_counts(self):
+        """Gelandet, aber noch verbunden — kein Nachzuegler mehr.
+
+        Der reale Fall vom 07.09.2026 (Aach-Bummel): vier Piloten standen zum Renn-Ende am
+        Zielplatz, blieben aber bis zu 25 Minuten verbunden. Weil nur `logoff_time IS NULL`
+        geprueft wurde, hing die Enthuellung an ihrem Sim-Beenden statt an ihrer Landung.
+        """
+        conn = _make_conn()
+        _add_flying_flight(conn, 100, "EDWF", "EDWG", "2026-06-27T19:00:00Z", landet=True)
+        assert _bummel_anyone_in_progress(conn, ROUTE, 10) is False
+
+    def test_still_airborne_counts(self):
+        """Wer noch in der Luft ist, haelt die Enthuellung auf — daran aendert sich nichts."""
+        conn = _make_conn()
+        _add_flying_flight(conn, 100, "EDWF", "EDWG", "2026-06-27T19:00:00Z", landet=False)
+        assert _bummel_anyone_in_progress(conn, ROUTE, 10) is True
 
 
 class TestRevealLatch:

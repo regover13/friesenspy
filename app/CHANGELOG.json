@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.23.0",
+    "date": "2026-09-07",
+    "highlight": false,
+    "title": "Der Bummel endet mit der Landung, nicht mit dem Ausloggen",
+    "items": [
+      "🏁 Die Ergebnisse eines Bummels erscheinen jetzt, sobald der letzte Teilnehmer gelandet ist. Bisher wartete FriesenSpy, bis auch die letzte VATSIM-Verbindung zu war — wer nach dem Aufsetzen im Cockpit sitzen blieb, hielt die Enthüllung auf. Beim Aach-Bummel am 7. September standen alle vier Teilnehmer ab 19:55 am Zielplatz, die Verbindungen endeten aber erst zwischen 20:03 und 20:25.",
+      "🧭 Fehlende Etappen stehen jetzt in der Richtung, in der die Strecke sie nennt: „EDTD - EDSR\" statt „EDSR ↔ EDTD\". Die Reihenfolge war alphabetisch sortiert und damit als Etappe nicht wiederzuerkennen. Gewertet wird unverändert in beide Richtungen — wer die Strecke rückwärts fliegt, hat die Etappe genauso.",
+      "🕓 Über der Teilnehmerliste steht jetzt das Zeitfenster des Rennens — wann es beginnt und wann es schließt. Solange es läuft, nennt die Statuszeile die Uhrzeit dazu („Rennen läuft bis 20:00z\"). Das ist der Anmeldeschluss: Wer erst danach startet, wird nicht mehr gewertet. Die Landezeiten der Teilnehmer bleiben bis zur Enthüllung verdeckt.",
+      "🗺️ Der Hinweis „Nicht alles passt ins Bild\" ist von der Event-Karte verschwunden."
+    ]
+  },
+  {
     "version": "14.22.0",
     "date": "2026-09-06",
     "highlight": false,

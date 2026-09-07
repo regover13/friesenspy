@@ -38,12 +38,9 @@ _ENDE = "async function renderEventsMap("
 def _hilfsquelltext() -> str:
     """Die beiden reinen Helfer aus index.html -- ohne Leaflet, ohne DOM."""
     assert _ANFANG in INDEX, f"{_ANFANG!r} fehlt in index.html"
-    assert _SPUREN in INDEX, f"{_SPUREN!r} fehlt in index.html"
     start = INDEX.index(_ANFANG)
     return INDEX[start:INDEX.index(_ENDE, start)]
 
-
-_SPUREN = "function _spurenAusserhalb("
 
 
 def _node_lauf(treiber: str) -> None:
@@ -106,40 +103,3 @@ class TestNullinselVerwerfen:
         assert "_gueltigerTrackpunkt" in rumpf
         assert "p.latitude != null" not in rumpf
 
-
-class TestAusschnittSagtBescheid:
-    def test_alles_im_bild_ist_kein_fall(self):
-        _node_lauf("""
-        const sichtbar = { sued: 53.0, nord: 55.0, west: 6.0, ost: 10.0 };
-        assert.strictEqual(_spurenAusserhalb(sichtbar, [[53.8, 7.9], [54.2, 8.6]]), false);
-        console.log('OK');
-        """)
-
-    def test_punkt_ausserhalb_wird_gemeldet(self):
-        """Der Texas-Fall: fitBounds wollte hin, minZoom liess es nicht zu."""
-        _node_lauf("""
-        const sichtbar = { sued: 40.0, nord: 55.0, west: -20.0, ost: 12.0 };
-        assert.strictEqual(_spurenAusserhalb(sichtbar, [[54.2, 8.6], [32.58, -97.03]]), true);
-        console.log('OK');
-        """)
-
-    def test_ohne_punkte_kein_hinweis(self):
-        _node_lauf("""
-        const sichtbar = { sued: 53.0, nord: 55.0, west: 6.0, ost: 10.0 };
-        assert.strictEqual(_spurenAusserhalb(sichtbar, []), false);
-        console.log('OK');
-        """)
-
-    def test_hinweis_element_existiert_und_startet_versteckt(self):
-        assert 'id="ev-map-hinweis"' in INDEX
-        marke = INDEX.index('id="ev-map-hinweis"')
-        umfeld = INDEX[marke - 200:marke + 200]
-        assert "hidden" in umfeld, "der Hinweis muss verborgen starten"
-
-    def test_renderEventsMap_wertet_den_ausschnitt_nach_fitbounds_aus(self):
-        start = INDEX.index(_ENDE)
-        rumpf = INDEX[start:INDEX.index("\nfunction resetEventFlights(", start)]
-        assert rumpf.index("fitBounds") < rumpf.index("_spurenAusserhalb"), (
-            "die Pruefung muss NACH dem fitBounds stehen -- vorher steht der Ausschnitt noch nicht"
-        )
-        assert "ev-map-hinweis" in rumpf

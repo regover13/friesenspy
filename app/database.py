@@ -4110,8 +4110,59 @@ def _bummel_anyone_in_progress(
         first = _first_pos(conn, int(r["cid"]), r["logon_time"] or "", "9999-12-31T23:59:59Z")
         dep = _nearest_airport(coords_map, first, radius_km) or (r["departure"] or "").strip().upper()
         if dep in route_set:
+            if _bummel_gelandet(
+                conn, int(r["cid"]), r["logon_time"] or "", radius_km, callsign_prefix
+            ):
+                continue  # gelandet — nur die Verbindung steht noch offen
             return True
     return False
+
+
+def _bummel_gelandet(
+    conn: sqlite3.Connection,
+    cid: int,
+    logon_time: str,
+    radius_km: float,
+    callsign_prefix: str,
+) -> bool:
+    """Hat dieser Pilot seinen letzten Leg nachweislich beendet (GPS-Landung erkannt)?
+
+    ``logoff_time IS NULL`` heisst „VATSIM-Verbindung offen", NICHT „fliegt noch". Wer landet,
+    abstellt und im Cockpit sitzen bleibt, blockierte die Enthuellung bis zum Beenden des
+    Simulators — am 07.09.2026 (Aach-Bummel) hing sie so an vier Maschinen, die seit 19:55 am
+    Zielplatz standen, waehrend die Verbindungen erst zwischen 20:03 und 20:25 endeten.
+
+    Gefragt wird deshalb derselbe Detektor, der auch die Etappen erkennt: ``complete`` heisst
+    „Landung gewertet" (der Touchdown zaehlt SOFORT, ohne Nachlauf), ``complete=False`` heisst
+    „in der Luft beendet". Eine Zeitschwelle braucht es dafuer nicht — die Landung steht in den
+    Daten, sobald sie passiert ist.
+
+    ``rescue_before`` wie in :func:`_gps_flights_for_positions`: Die Landungs-Rettung (#53)
+    darf einen LAUFENDEN Anflug nicht schliessen, nur weil der Track gerade jetzt endet.
+    """
+    from app import geo
+    from app.gps_legs import collapse_same_airport, detect_gps_legs
+
+    positions = _positions_for_cid(
+        conn, cid, logon_time, None, callsign_prefix=callsign_prefix
+    )
+    if not positions:
+        return False
+    rescue_before = (
+        datetime.now(timezone.utc) - timedelta(minutes=_GPS_RESCUE_LIVE_WINDOW_MIN)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    legs = collapse_same_airport(detect_gps_legs(
+        positions,
+        nearest_airport=geo.nearest_airport_icao_fast,
+        airport_elev_ft=geo.airport_elevation_ft,
+        radius_km=radius_km,
+        rescue_before=rescue_before,
+    ))
+    # Kein Leg = nie abgehoben: Der Pilot steht noch am Platz und will erst los. Er zaehlt
+    # weiter als unterwegs — sonst enthuellte ein Rennen, waehrend jemand am Gate wartet.
+    if not legs:
+        return False
+    return bool(legs[-1].get("complete"))
 
 
 def update_bummel_reveals(
@@ -4257,8 +4308,14 @@ def list_visibility_restrictions(conn: sqlite3.Connection) -> list[dict]:
 
 
 def _bummel_edge_label(edge: tuple[str, str]) -> str:
-    """Anzeige einer ungerichteten Etappe: „A ↔ B" (edge ist bereits sortiert)."""
-    return f"{edge[0]} ↔ {edge[1]}"
+    """Anzeige einer Etappe in Streckenrichtung: „A - B".
+
+    ``edge`` ist das gerichtete Nachbarpaar aus der Route, NICHT die sortierte Kante, mit der
+    gerechnet wird. Der Vergleich bleibt ungerichtet (der Rückweg deckt den Hinweg), die
+    Anzeige nicht: „EDSR ↔ EDTD" ist als Etappe nicht wiederzuerkennen, wenn die Strecke
+    EDTD → EDSR nennt. Trenner wie in der Streckenzeile (``route.join(' - ')``).
+    """
+    return f"{edge[0]} - {edge[1]}"
 
 
 def _route_touch_edges(segment: list[str], route_set: set[str]) -> Counter:
@@ -4334,6 +4391,13 @@ def compute_bummel_standings(
     required_edges: Counter = Counter(
         tuple(sorted((a, b))) for a, b in zip(route_seq, route_seq[1:])
     )
+    # Zu jeder ungerichteten Kante die gerichteten Nachbarpaare in Streckenreihenfolge — nur
+    # für die Beschriftung. Eine Kante kann mehrfach vorkommen (Hin- und Rückweg eines
+    # Rundkurses); dann steht hier jedes Vorkommen einzeln, damit beide Richtungen benannt
+    # werden können statt zweimal derselben.
+    edge_directions: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for a, b in zip(route_seq, route_seq[1:]):
+        edge_directions.setdefault(tuple(sorted((a, b))), []).append((a, b))
 
     # radius_km bleibt als Parameter erhalten (main.py._build_race_view reicht weiterhin
     # race["radius_km"] durch) — wirkt aber nicht mehr auf die Endpunkt-Zuordnung. Die GPS-
@@ -4415,12 +4479,18 @@ def compute_bummel_standings(
         # komplett ⇔ jede Pflicht-Etappe (mit Multiplizität) gedeckt. Counter-Subtraktion lässt
         # nur die Fehlmengen (> 0) stehen; leer ⇒ alle Etappen geflogen.
         missing_ctr = required_edges - achieved_edges
+        # Geflogene Vorkommen bekommen die vorderen Streckenrichtungen, fehlende die hinteren.
+        # Bei einfacher Kante (Regelfall) ist das genau die eine Richtung aus der Route.
         visited_edges = []
         for e, n in required_edges.items():
-            visited_edges += [_bummel_edge_label(e)] * min(achieved_edges[e], n)
+            richtungen = edge_directions[e]
+            visited_edges += [
+                _bummel_edge_label(r) for r in richtungen[:min(achieved_edges[e], n)]
+            ]
         missing_edges = []
         for e, n in missing_ctr.items():
-            missing_edges += [_bummel_edge_label(e)] * n
+            richtungen = edge_directions[e]
+            missing_edges += [_bummel_edge_label(r) for r in richtungen[len(richtungen) - n:]]
         row = conn.execute("SELECT name FROM pilots WHERE cid = ?", (cid,)).fetchone()
         entry = {
             "cid": cid,

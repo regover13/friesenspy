@@ -4365,11 +4365,6 @@
           style="position:absolute;top:10px;right:10px;z-index:1000;background:var(--bg-panel);border:1px solid var(--green-dim);color:var(--text-bright);font-family:var(--text-display);font-size:0.72rem;letter-spacing:0.08em;padding:6px 12px;cursor:pointer;">
           <svg class="icon"><use href="#icon-refresh" xlink:href="#icon-refresh"/></svg> Alle Tracks
         </button>
-        <div id="ev-map-hinweis" class="hidden"
-          style="position:absolute;left:10px;bottom:10px;z-index:1000;max-width:min(90%,420px);background:var(--bg-panel);border:1px solid var(--green-dim);color:var(--text-bright);font-family:var(--text-mono);font-size:0.72rem;line-height:1.35;padding:6px 10px;">
-          Nicht alles passt ins Bild — Teile der Spuren liegen außerhalb des Ausschnitts.
-          Weiter herauszoomen kann die Karte nicht.
-        </div>
       </div>
       <div class="panel">
         <div id="events-summary" class="events-summary"></div>
@@ -9197,11 +9192,36 @@ async function openBummel(ev) {
 }
 
 // Verdeckte Teilnahme-Ansicht (vor Enthüllung) — bewusst OHNE Zeiten/Schnitt/Ranking.
+function _bummelTagUndZeit(iso) {
+  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}. ${iso.slice(11, 16)}z`;
+}
+
+function _bummelNurZeit(iso) {
+  return `${iso.slice(11, 16)}z`;
+}
+
+// Zeitfenster eines Rennens als eine Zeile: wann es beginnt und wann es SCHLIESST. Nach dtend
+// wird kein neu begonnener Flug mehr gewertet, deshalb gehoert das Ende sichtbar dazu.
+// Bei gleichem Tag steht das Datum nur einmal. Ein fehlendes dtend wird auf Mitternacht des
+// FOLGETAGS gesetzt — dort ist das zweite Datum die eigentliche Information und darf nicht
+// wegfallen, sonst liest sich „18:00z – 00:00z" wie ein Fenster in die Vergangenheit.
+function _bummelZeitfenster(dtstart, dtend) {
+  if (!dtstart && !dtend) return '';
+  if (!dtend) return _bummelTagUndZeit(dtstart);
+  if (!dtstart) return _bummelTagUndZeit(dtend);
+  if (dtstart.slice(0, 10) === dtend.slice(0, 10)) {
+    return `${_bummelTagUndZeit(dtstart)} – ${_bummelNurZeit(dtend)}`;
+  }
+  return `${_bummelTagUndZeit(dtstart)} – ${_bummelTagUndZeit(dtend)}`;
+}
+
 function renderBummelParticipants(view) {
   const route = (view.route || []).join(' - ');
   // scheduled = Start liegt noch in der Zukunft; NICHT als „läuft" beschriften (sonst wirkt ein
   // geplantes Rennen wie ein bereits gestartetes — Fund 21.07.). waiting = beendet, Nachzügler.
-  const startTxt = view.dtstart ? `${view.dtstart.slice(8,10)}.${view.dtstart.slice(5,7)}. ${view.dtstart.slice(11,16)}z` : '';
+  const startTxt = view.dtstart ? _bummelTagUndZeit(view.dtstart) : '';
+  const endeTxt = view.dtend ? _bummelTagUndZeit(view.dtend) : '';
+  const fensterTxt = _bummelZeitfenster(view.dtstart, view.dtend);
   let statusText, lockIcon;
   if (view.status === 'scheduled') {
     lockIcon = icon('hourglass');
@@ -9211,12 +9231,15 @@ function renderBummelParticipants(view) {
     statusText = 'Rennen beendet — warten auf Nachzügler. Ergebnisse erscheinen, sobald alle gelandet (oder offline) sind.';
   } else {
     lockIcon = icon('lock');
-    statusText = 'Rennen läuft — Ergebnisse und Ranking erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann.';
+    statusText = `Rennen läuft${view.dtend ? ' bis ' + _bummelNurZeit(view.dtend) : ''} — wer später startet, wird nicht mehr gewertet. Ergebnisse und Ranking erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann.`;
   }
   const partLine = view.status === 'scheduled'
     ? (view.participant_count ? `${view.participant_count} Teilnehmer vorgemerkt` : 'Noch keine Teilnehmer')
     : `${view.participant_count} Teilnehmer bisher`;
   let html = `<div class="bummel-sub mono text-label" style="margin-bottom:6px;">Strecke: ${escHtml(route)}</div>`;
+  if (fensterTxt) {
+    html += `<div class="bummel-sub mono text-label" style="margin-bottom:6px;">Zeitfenster: ${escHtml(fensterTxt)}</div>`;
+  }
   html += `<div class="bummel-avg-row">${lockIcon} ${statusText}</div>`;
   html += `<div class="bummel-sub mono text-label" style="margin:6px 0;">${partLine}</div>`;
   const parts = view.participants || [];
@@ -13277,20 +13300,6 @@ function _gueltigerTrackpunkt(pt) {
   return !(Number(pt.latitude) === 0 && Number(pt.longitude) === 0);
 }
 
-// Liegt nach dem `fitBounds` etwas ausserhalb des Bildes? (#18) Leaflet klemmt den Zoom bei
-// `minZoom` (hier 6) — umspannt die Auswahl mehr, als bei Zoom 6 auf den Schirm passt, steht
-// die Karte irgendwo mittendrin (am 04.09.2026 im Nordatlantik) und die Spuren liegen
-// ausserhalb. Fuer den Betrachter sieht das aus, als fehlten sie.
-// `sichtbar` sind die vier Grenzen des tatsaechlichen Ausschnitts, `punkte` die [lat, lon] der
-// gezeichneten Spuren. Absichtlich keine Bewertung, was ein "Ausreisser" ist — nur die Frage,
-// ob das Bild haelt, was fitBounds versprochen hat.
-function _spurenAusserhalb(sichtbar, punkte) {
-  return (punkte || []).some(pt =>
-    pt[0] < sichtbar.sued || pt[0] > sichtbar.nord ||
-    pt[1] < sichtbar.west || pt[1] > sichtbar.ost
-  );
-}
-
 async function renderEventsMap(pilots, icaoStr, radiusKm) {
   if (!eventsMapInitialized) {
     await _configPromise;
@@ -13372,24 +13381,12 @@ async function renderEventsMap(pilots, icaoStr, radiusKm) {
   }));
 
   await Promise.all(drawTasks);
-  const hinweis = document.getElementById('ev-map-hinweis');
-  if (hinweis) hinweis.classList.add('hidden');
   if (bounds.length > 0) {
     window._eventAllBounds = bounds;
     eventsMap.fitBounds(bounds, { padding: [40, 40] });
     // fitBounds feuert bei gleichbleibendem Zoom kein zoomend -> Auto-Switch explizit auswerten
     // (z. B. Zoom 6 -> Satellit statt leerer OFM-Karte).
     if (eventsMap._applyOFMAuto) eventsMap._applyOFMAuto();
-    // Zweite Schutzschicht (#18): Hat fitBounds wirklich alles ins Bild bekommen? Bei minZoom
-    // kann es das nicht — dann lieber sagen, dass etwas fehlt, als eine leere Wasserflaeche
-    // zeigen. Die Ursache solcher Spannen gehoert in die Auswahl davor (14.20.4), nicht in
-    // eine Ausreisser-Heuristik hier.
-    const b = eventsMap.getBounds();
-    const draussen = _spurenAusserhalb(
-      { sued: b.getSouth(), nord: b.getNorth(), west: b.getWest(), ost: b.getEast() },
-      bounds,
-    );
-    if (hinweis && draussen) hinweis.classList.remove('hidden');
   }
 }
 
