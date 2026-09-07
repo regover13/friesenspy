@@ -5178,7 +5178,11 @@ _CREW_KG_DEFAULT = 85.0
 
 # Bei JEDER Rechen-Ergebnis-Änderung von compute_transport_progress / compute_bummel_standings /
 # _build_race_view im selben Commit erhöhen → invalidiert alle Snapshots (progress_snapshot).
-_PROGRESS_SNAPSHOT_VERSION = "11"  # "11": Zwischenlegs eines Milchmanns zeigen die GETRAGENE
+_PROGRESS_SNAPSHOT_VERSION = "12"  # "12": Etappen-Beschriftung folgt der Streckenrichtung
+#      („EDTD - EDSR" statt „EDSR ↔ EDTD"). Reine Anzeige — gerechnet wird weiter mit der
+#      ungerichteten Kante. Ohne diese Erhöhung behielten bereits enthüllte Rennen die alte
+#      Schreibweise aus ihrem eingefrorenen Payload (gefunden am 07.09.2026 im Aach-Bummel).
+#      "11": Zwischenlegs eines Milchmanns zeigen die GETRAGENE
 #      Ladung (carried_at, Bordladung beim Abheben) statt „leer" — der Feed nutzt die Modell-
 #      Wahrheit je Leg, nicht nur delivered_by. Reine Anzeige, Stapel/Bilanz unverändert.
 #      "10": Am-Platz-Rückgabe (Ladeplatz == Abfallort, kein Trage-
