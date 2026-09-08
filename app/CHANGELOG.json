@@ -1,5 +1,18 @@
 [
   {
+    "version": "14.24.0",
+    "date": "2026-09-08",
+    "highlight": false,
+    "title": "Blockzeit: von off blocks bis on blocks",
+    "items": [
+      "⏱️ Die Blockzeit endet jetzt dort, wo abgestellt wird — nicht erst beim nächsten Start. Wer zwischenlandete und zügig weiterflog, bekam die Standzeit bisher als Blockzeit angerechnet, und die Anrollzeit zum nächsten Start zählte sogar in beiden Legs doppelt. Betroffen war fast die Hälfte aller Leg-Übergänge (71 von 171 in fünf Wochen).",
+      "📉 **Die ausgewiesenen Blockstunden sinken dadurch rückwirkend um 4 bis 9 Prozent** — in Flugliste, Statistik und Jahressummen. Das ist keine verlorene Zeit, sondern Standzeit, die nie Blockzeit war. Ausgewertete und enthüllte Rennen behalten ihr Ergebnis.",
+      "🎯 Wo genau abgestellt wurde, entscheidet sich danach, was folgt: Startest du wieder, ist es die längste Standphase dazwischen. Loggst du aus, ist es die Phase, mit der die Aufzeichnung endet — dann wird nichts mehr abgewartet. Bleibst du stehen und online, gilt sie nach zehn Minuten. Ein Halt unterwegs (Freigabe, Standlaufprobe, Warteschlange) bleibt immer Blockzeit.",
+      "🥇 Wer beim Bummel exakt gleich weit vom Schnitt liegt, teilt sich jetzt den Platz — es gibt dann zwei Sieger, und der nächste Platz wird übersprungen. Vorher entschied in dieser Lage die VATSIM-Nummer, was mit der Nähe zum Schnitt nichts zu tun hat. Bei genau zwei Teilnehmern ist der Gleichstand übrigens zwangsläufig: Der Schnitt liegt dann immer in der Mitte.",
+      "🔢 Die Wertung rundet nicht mehr jede Etappe auf volle Minuten ab. Bisher gingen pro Leg bis zu 59 Sekunden verloren, bei drei Etappen fast drei Minuten — genug, damit zwei unterschiedlich schnelle Piloten auf demselben Wert landeten. Die Auflösung bleibt das 15-Sekunden-Raster des VATSIM-Feeds."
+    ]
+  },
+  {
     "version": "14.23.0",
     "date": "2026-09-07",
     "highlight": false,

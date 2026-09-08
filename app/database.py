@@ -3012,51 +3012,50 @@ _GPS_LEG_GAP_MINUTES = 30  # muss zum gap_minutes-Default von detect_gps_legs pa
 _GPS_RESCUE_LIVE_WINDOW_MIN = 15
 
 
-def _extend_block_end(positions: list[dict], end_ts: str, cap_ts: str | None) -> str:
-    """Blockfenster-ENDE über die Landung hinaus verlängern, wenn danach noch gerollt wird
-    (Einrollen zum Abstellplatz — gemessen: 109 von 465 Landungen rollen nach dem erkannten
-    Stillstand weiter, Median 2 min, nie mehr als 10 min. Keine feste Obergrenze hier: die
-    beiden strukturellen Deckel unten reichen).
+def _extend_block_end(
+    positions: list[dict],
+    end_ts: str,
+    cap_ts: str | None,
+    *,
+    track_beendet: bool = False,
+) -> str:
+    """**on blocks** bestimmen — das Ende des Blockfensters.
 
-    Sucht in den Samples NACH ``end_ts`` (gedeckelt auf ``cap_ts`` — Exklusivgrenze, typisch
-    der Abhebe-Zeitpunkt des chronologisch nächsten Flugs) die ERSTE qualifizierende
-    Abstell-Standphase (dieselben Kriterien a+b wie in :func:`_leg_block_seconds`:
-    >= _BLOCK_STAND_MIN_SEC UND an einem Flugplatz) und liefert deren BEGINN — nicht den
-    letzten Zeitpunkt mit ``groundspeed > _BLOCK_GS_KT`` davor (Live-Fund 2026-08-11, cid
-    1602713, Flug 666: letztes bewegtes Sample 18:03:30Z bei gs=11, tatsächlicher Stillstand
-    18:03:45Z — 15 s / ~53 m Rollstrecke fehlten im Track, weil die alte Fassung genau EINEN
-    Sample-Takt vor dem Stillstand abschnitt). ``stand_cap`` ist der früheste Zeitpunkt, zu
-    dem die Maschine NACHWEISLICH schon steht — der letzte bewegte Sample davor liegt per
-    Definition VOR dem wahren Stillstand, ``stand_cap`` liegt (spätestens im selben Sample)
-    DANACH; als Obergrenze für die Anzeige ist das die genauere Wahl.
+    Die Landung ist nicht on blocks: Danach wird zur Abstellposition gerollt, und diese Zeit
+    gehoert zur Blockzeit (gemessen: 109 von 465 Landungen rollen nach dem erkannten
+    Stillstand weiter, Median 2 min, nie mehr als 10 min). Gesucht ist deshalb die
+    Stillstandsphase, die das ABSTELLEN ist — nicht ein Halt unterwegs (Warten auf Freigabe,
+    Standlaufprobe, Warteschlange); ein solcher Halt bleibt in der Blockzeit.
 
-    Ab ``stand_cap`` ist die Maschine nachweislich geparkt — jede spätere Bewegung (z. B.
-    Pushback für den NÄCHSTEN Flug) gehört nicht mehr hierher.
+    Welche Phase das Abstellen ist, haengt davon ab, was danach passiert — drei Faelle:
 
-    OHNE qualifizierende Standphase (Suche läuft ohne 600-s-Stand aus — Datenende, Disconnect,
-    oder von ``cap_ts``/der Zeitlücken-Schranke beschnitten, bevor 600 s zusammenkommen) ist
-    das Ergebnis der LETZTE verfügbare Sample-Zeitpunkt (``tail[-1]``) — NICHT mehr der letzte
-    Zeitpunkt mit ``groundspeed > _BLOCK_GS_KT`` (zweiter Live-Fund 2026-08-11, cid 1602713,
-    Flug 666: die Aufzeichnung endet bereits 4,5 min nach dem Stillstand — 18:03:45Z bis
-    18:08:15Z, keine 10 min —, der alte Fallback sprang deshalb auf 18:03:30Z zurück, den
-    letzten BEWEGTEN Sample, und ignorierte damit sogar die 4,5 min direkt belegte Standzeit
-    danach). Ein kurzer, noch nicht qualifizierender Stand VOR dem Datenende zählt nach
-    demselben Prinzip wie ein kurzer Rollhalt in der Blockzeit selbst (< ``_BLOCK_STAND_MIN_SEC``
-    bleibt enthalten) — die letzte verfügbare Position ist immer die beste Schätzung dafür,
-    wie weit diese Leg-eigene Aktivität (Rollen ODER kurzes, noch unbewiesenes Stehen)
-    nachweislich reicht.
+    * **Es folgt ein weiterer Start** (``cap_ts`` gesetzt, der Abhebe-Zeitpunkt des naechsten
+      Legs): Die **laengste** Phase im Fenster ist das Abstellen; Halte unterwegs sind kuerzer.
+      Ihr Beginn steht fest, sobald sie die anderen ueberholt hat, und verschiebt sich nicht
+      mehr, wenn sie weiterlaeuft.
+    * **Der Track endet** (``track_beendet``, also ausgeloggt): Dann ist das Ausloggen das
+      Ende, es gibt nichts abzuwarten — die Phase, MIT DER der Track aufhoert, ist das
+      Abstellen. Endet der Track dagegen in Bewegung (z. B. Rollen zum Hangar, dann
+      Verbindungsabbruch), gilt der letzte Punkt: Was gerollt wurde, bleibt Blockzeit.
+    * **Weder noch** (steht da und bleibt online): Erst wenn eine Phase
+      ``_BLOCK_STAND_MIN_SEC`` erreicht, ist belegt, dass nicht weitergerollt wird. Nur hier
+      wirkt die Schwelle noch — und nur hier ist der Wert nicht sofort endgueltig.
 
-    Zusätzlich wird die Suche selbst an einer Zeitlücke > ``_GPS_LEG_GAP_MINUTES`` beendet
-    (dieselbe Schwelle wie beim offenen-Leg-Fensterende oben) — sonst könnte bei fehlendem
-    ``cap_ts`` (letzter Flug seines Segments) ein VÖLLIG anderes, viel späteres Segment
-    (z. B. die nächste Session Stunden danach) fälschlich mit hineingezogen werden.
+    Frueher galt in allen drei Faellen „erste Phase ueber der Schwelle, sonst letzter Punkt".
+    Das zaehlte bei zuegigem Weiterflug die Standzeit als Blockzeit und das Anrollen zum
+    naechsten Start sogar doppelt (gemessen 08.09.2026: 71 von 171 Uebergaengen betroffen).
 
-    Ohne jede Position danach bleibt es bei ``end_ts``.
+    Der Ort zaehlt weiterhin mit: Nur ein Stillstand an einem Flugplatz ist ein Abstellen —
+    im Gelaende ist es eine Aussenlandung, dort laeuft die Maschine weiter.
+
+    Zusaetzlich wird die Suche an einer Zeitluecke > ``_GPS_LEG_GAP_MINUTES`` beendet, damit
+    bei fehlenden Daten nicht ueber eine Luecke hinweg „verlaengert" wird.
     """
     from app import geo
 
     candidates = sorted(
-        (p for p in positions if p["ts"] > end_ts and (cap_ts is None or p["ts"] < cap_ts)),
+        (p for p in positions
+         if p.get("ts") and p["ts"] > end_ts and (cap_ts is None or p["ts"] < cap_ts)),
         key=lambda p: p["ts"],
     )
     tail: list[dict] = []
@@ -3070,45 +3069,49 @@ def _extend_block_end(positions: list[dict], end_ts: str, cap_ts: str | None) ->
     if not tail:
         return end_ts
 
-    # Deckel (i): Beginn der ersten qualifizierenden Abstell-Standphase in `tail` finden.
-    stand_cap: str | None = None
+    # Alle Stillstandsphasen AN EINEM FLUGPLATZ sammeln: (beginn, ende, dauer_sec).
+    phasen: list[tuple[str, str, float]] = []
     run_first = run_last = None
-    run_pos = None
+    run_pos: tuple | None = None
+
+    def _abschliessen() -> None:
+        nonlocal run_first, run_last, run_pos
+        if run_first is not None and run_last is not None and run_pos and run_pos[0] is not None:
+            if geo.nearest_airport_icao_fast(
+                run_pos[0], run_pos[1], _BUMMEL_AIRPORT_RADIUS_KM
+            ) is not None:
+                dauer = (_parse_iso(run_last) - _parse_iso(run_first)).total_seconds()
+                phasen.append((run_first, run_last, dauer))
+        run_first = run_last = None
+        run_pos = None
+
     for p in tail:
         gs = p.get("groundspeed")
         if gs is None:
-            continue
+            continue  # kein Beleg — bricht den Lauf nicht und verlaengert ihn nicht
         if gs <= _BLOCK_GS_KT:
             if run_first is None:
                 run_first = p["ts"]
                 run_pos = (p.get("latitude"), p.get("longitude"))
             run_last = p["ts"]
         else:
-            if run_first is not None and run_last is not None:
-                dur = (_parse_iso(run_last) - _parse_iso(run_first)).total_seconds()
-                if (
-                    dur >= _BLOCK_STAND_MIN_SEC and run_pos and run_pos[0] is not None
-                    and geo.nearest_airport_icao_fast(
-                        run_pos[0], run_pos[1], _BUMMEL_AIRPORT_RADIUS_KM
-                    ) is not None
-                ):
-                    stand_cap = run_first
-                    break
-            run_first = run_last = None
-            run_pos = None
-    if stand_cap is None and run_first is not None and run_last is not None:
-        dur = (_parse_iso(run_last) - _parse_iso(run_first)).total_seconds()
-        if (
-            dur >= _BLOCK_STAND_MIN_SEC and run_pos and run_pos[0] is not None
-            and geo.nearest_airport_icao_fast(
-                run_pos[0], run_pos[1], _BUMMEL_AIRPORT_RADIUS_KM
-            ) is not None
-        ):
-            stand_cap = run_first
+            _abschliessen()
+    _abschliessen()
 
-    if stand_cap is not None:
-        return stand_cap
+    if not phasen:
+        return tail[-1]["ts"]
 
+    if cap_ts is not None:
+        return max(phasen, key=lambda ph: ph[2])[0]
+
+    if track_beendet:
+        letzte = phasen[-1]
+        # Nur wenn der Track IM Stillstand aufhoert — sonst wurde danach noch gerollt.
+        return letzte[0] if letzte[1] == tail[-1]["ts"] else tail[-1]["ts"]
+
+    for beginn, _ende, dauer in phasen:
+        if dauer >= _BLOCK_STAND_MIN_SEC:
+            return beginn
     return tail[-1]["ts"]
 
 
@@ -3165,6 +3168,15 @@ def _gps_flights_for_positions(
     rescue_before = None if source == "statsim" else (
         datetime.now(timezone.utc) - timedelta(minutes=_GPS_RESCUE_LIVE_WINDOW_MIN)
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Ist der Track zu Ende (ausgeloggt) oder laeuft er gerade? Dieselbe Frage wie bei der
+    # Landungs-Rettung und mit demselben Kriterium beantwortet: Liegt der letzte Punkt
+    # ausserhalb des Live-Fensters, wird nichts mehr dazukommen. `_extend_block_end` braucht
+    # das, um on blocks beim Ausloggen sofort zu setzen, statt auf `_BLOCK_STAND_MIN_SEC`
+    # zu warten (Nutzerentscheidung 08.09.2026: „Wenn ich auslogge, warte ich nie").
+    _letzter_punkt = max((p["ts"] for p in positions if p.get("ts")), default=None)
+    track_beendet = rescue_before is None or (
+        _letzter_punkt is not None and _letzter_punkt < rescue_before
+    )
 
     legs = detect_gps_legs(
         positions,
@@ -3244,14 +3256,25 @@ def _gps_flights_for_positions(
         # Blockfenster-ENDE (``block_end``): normalerweise ``end_ts`` — zusätzlich über die
         # Landung hinaus verlängert, wenn danach noch eingerollt wird (s. ``_extend_block_end``).
         # Nur bei einer ECHTEN Landung sinnvoll (offene Legs haben nichts zum „Einrollen").
-        block_end = _extend_block_end(positions, end_ts, next_takeoff) if landing_ts else end_ts
+        block_end = _extend_block_end(
+            positions, end_ts, next_takeoff, track_beendet=track_beendet
+        ) if landing_ts else end_ts
 
-        block_min = _leg_block_seconds(positions, block_from, block_end) // 60
+        # ``block_sec`` ist der ungerundete Wert; ``block_min`` bleibt die abgeschnittene
+        # Minutenangabe für Anzeige und Bestandsdaten. Die Wertung rechnet mit den Sekunden:
+        # Bei drei Legs summierten sich sonst bis zu drei abgeschnittene Minuten, und zwei
+        # verschieden schnelle Piloten landeten auf demselben Wert (Aach-Bummel 07.09.2026).
+        # Die Auflösung ist das Poll-Raster des Feeds (15 s), nicht die Sekunde — die Zahl ist
+        # so genau wie die Positionsdaten, nicht genauer.
+        block_sec = _leg_block_seconds(positions, block_from, block_end)
         distance_nm = _distance_nm_positions(positions, takeoff_ts, end_ts)
-        duration_min = _air_seconds(positions, takeoff_ts, end_ts) // 60
+        air_sec = _air_seconds(positions, takeoff_ts, end_ts)
+        duration_min = air_sec // 60
         # Sicherheitsnetz für die GARANTIE duration_min <= block_min (Herleitung + der eine
-        # bekannte Randfall, in dem sie allein nicht reicht: s. Docstring am Funktionskopf).
-        block_min = max(block_min, duration_min)
+        # bekannte Randfall, in dem sie allein nicht reicht: s. Docstring am Funktionskopf) —
+        # auf beiden Auflösungen, damit Sekunden und Minuten nicht auseinanderlaufen.
+        block_sec = max(block_sec, air_sec)
+        block_min = max(block_sec // 60, duration_min)
 
         plan = _flightplan_asof(plan_rows, end_ts)
         gps_dep = gf.get("dep_icao")
@@ -3297,6 +3320,7 @@ def _gps_flights_for_positions(
             "duration_min": duration_min,
             "distance_nm": distance_nm,
             "block_min": block_min,
+            "block_sec": block_sec,
             "route": (plan.get("route") if plan else None) or "",
             "remarks": (plan.get("remarks") if plan else None) or "",
             "cruise_altitude": plan.get("cruise_altitude") if plan else None,
@@ -4329,6 +4353,24 @@ def _route_touch_edges(segment: list[str], route_set: set[str]) -> Counter:
     return Counter(tuple(sorted((a, b))) for a, b in zip(touch, touch[1:]))
 
 
+def _vergib_raenge(eintraege: list[dict], schluessel) -> None:
+    """Plätze vergeben — ein Gleichstand TEILT den Platz (1, 2, 2, 4).
+
+    Vorher wurde stur durchnummeriert; bei gleichem Abstand entschied damit das letzte
+    Sortierkriterium, praktisch die CID — also die VATSIM-Nummer. Zwei Piloten, die exakt
+    gleich weit vom Schnitt liegen, sind aber gleichauf, und genau das soll die Wertung sagen.
+    Nach einem geteilten Platz wird der nächste Rang übersprungen (wie im Sport üblich).
+    """
+    vorher = None
+    rang = 0
+    for i, e in enumerate(eintraege, 1):
+        k = schluessel(e)
+        if k != vorher:
+            rang = i
+            vorher = k
+        e["rank"] = rang
+
+
 def compute_bummel_standings(
     conn: sqlite3.Connection,
     route_icaos: list[str],
@@ -4423,12 +4465,17 @@ def compute_bummel_standings(
         arr = (f.get("arrival") or "").strip().upper()
         block = f.get("block_min")
         minutes = int(block) if block else int(f.get("duration_min") or 0)
-        # Block-Zeit aus block_min (canonicalize_legs hat sie bereits pro Leg aus der
-        # richtigen Positionsquelle — position_history für FS, statsim_position_history für
-        # StatSim — gerechnet, offene Legs korrekt gekappt). Minutengenau statt wie zuvor
-        # sekundengenau (der alte cid-gebundene _block_seconds las NUR position_history und
-        # war für StatSim/offene Legs falsch) — akzeptierter Genauigkeitsverlust.
-        secs = minutes * 60
+        # Block-Zeit aus canonicalize_legs (pro Leg aus der richtigen Positionsquelle —
+        # position_history für FS, statsim_position_history für StatSim —, offene Legs korrekt
+        # gekappt). Gewertet wird ``block_sec``, der UNGERUNDETE Wert; ``block_min`` ist nur die
+        # abgeschnittene Anzeige. Vorher ging die Wertung über ``minutes * 60``: Jedes Leg
+        # verlor bis zu 59 Sekunden, bei drei Legs bis zu drei Minuten — am 07.09.2026 hatten
+        # dadurch zwei Piloten mit 121,3 und 114,5 Minuten beide exakt 108 Minuten und damit
+        # denselben Abstand zum Schnitt. Ohne ``block_sec`` (Flugplan-Rückfall ohne Track)
+        # bleibt die Minutenangabe der beste verfügbare Wert.
+        block_s = f.get("block_sec")
+        secs = int(block_s) if block_s is not None else minutes * 60
+        minutes = secs // 60
         legs_by_cid.setdefault(cid, []).append({
             "departure": dep,
             "arrival": arr,
@@ -4512,10 +4559,13 @@ def compute_bummel_standings(
     for e in complete:
         e["delta"] = round(abs(e["total_min"] - average), 1)     # Minuten (Anzeige/Kompat)
         e["delta_sec"] = round(e["total_sec"] - average_sec)      # SIGNIERT, sekundengenau
-    # Sekundengenaues Ranking: löst Gleichstände bei gleicher Minuten-Blockzeit auf.
-    complete.sort(key=lambda e: (abs(e["delta_sec"]), e["total_sec"], e["cid"]))
-    for rank, e in enumerate(complete, 1):
-        e["rank"] = rank
+    # Rang nach dem Abstand zum Schnitt, im Poll-Raster des Feeds (15 s) statt in ganzen
+    # Minuten. Gleich weit entfernt heisst gleichauf — auch wenn einer darüber und einer
+    # darunter liegt; die Wertung fragt nach der Nähe zum Schnitt, nicht nach der Richtung.
+    # Der RANG haengt nur am Abstand (Gleichstand teilt den Platz); ``total_sec`` steht hier
+    # allein fuer eine stabile ANZEIGE-Reihenfolge innerhalb eines geteilten Platzes.
+    complete.sort(key=lambda e: (abs(e["delta_sec"]), e.get("total_sec") or 0, e["cid"]))
+    _vergib_raenge(complete, lambda e: abs(e["delta_sec"]))
     incomplete.sort(key=lambda e: e["cid"])
 
     return {
@@ -8600,11 +8650,16 @@ def apply_bummel_overrides(standings: dict, overrides: list[dict]) -> dict:
         result["average_min"] = 0.0
     result["count"] = len(complete)
 
+    avg_sec = (sum(e.get("total_sec") or 0 for e in complete) / len(complete)) if complete else 0.0
     for e in complete:
         e["delta"] = round(abs(e["total_min"] - result["average_min"]), 1)
-    complete.sort(key=lambda e: (e["delta"], e["total_min"], e["cid"]))
-    for rank, e in enumerate(complete, 1):
-        e["rank"] = rank
+        # delta_sec blieb hier früher auf dem Wert VOR den Overrides stehen — Anzeige und
+        # Rang wären danach auseinandergelaufen.
+        e["delta_sec"] = round((e.get("total_sec") or 0) - avg_sec)
+    # Der RANG haengt nur am Abstand (Gleichstand teilt den Platz); ``total_sec`` steht hier
+    # allein fuer eine stabile ANZEIGE-Reihenfolge innerhalb eines geteilten Platzes.
+    complete.sort(key=lambda e: (abs(e["delta_sec"]), e.get("total_sec") or 0, e["cid"]))
+    _vergib_raenge(complete, lambda e: abs(e["delta_sec"]))
 
     # Schritt 5: winner
     for ov in overrides:

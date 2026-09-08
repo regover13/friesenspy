@@ -574,6 +574,52 @@ def _edge(a: str, b: str) -> str:
     return f"{a} - {b}"
 
 
+class TestGeteiltePlaetze:
+    """Gleich weit vom Schnitt heisst gleichauf — der Platz wird geteilt (1, 2, 2, 4).
+
+    Vorher wurde stur durchnummeriert; bei gleichem Abstand entschied faktisch die CID, also
+    die VATSIM-Nummer. Das ist keine Aussage ueber die Naehe zum Schnitt (Nutzerentscheidung
+    08.09.2026: „Es gibt dann zwei Sieger.").
+    """
+
+    ROUTE = ["EDWF", "EDWG", "EDWR"]
+
+    def _tour(self, conn, cid, name, je_leg):
+        _add_flight(conn, cid, name, "EDWF", "EDWG", je_leg)
+        _add_flight(conn, cid, name, "EDWG", "EDWR", je_leg)
+
+    def test_zwei_teilnehmer_teilen_immer_platz_eins(self):
+        """Bei zwei Teilnehmern liegt der Schnitt zwangslaeufig genau in der Mitte — beide
+        sind gleich weit weg, egal wie unterschiedlich die Zeiten sind."""
+        conn = _make_conn()
+        self._tour(conn, 100, "Anna", 30)    # 60
+        self._tour(conn, 200, "Bert", 50)    # 100
+        r = compute_bummel_standings(conn, self.ROUTE, START, END)
+        assert r["average_min"] == 80
+        assert {e["rank"] for e in r["complete"]} == {1}
+        assert len(r["complete"]) == 2
+
+    def test_symmetrische_teilen_platz_zwei(self):
+        """Cara trifft den Schnitt, Anna und Bert liegen beide 20 min daneben."""
+        conn = _make_conn()
+        self._tour(conn, 100, "Anna", 30)    # 60
+        self._tour(conn, 200, "Bert", 50)    # 100
+        self._tour(conn, 300, "Cara", 40)    # 80 = Schnitt
+        r = compute_bummel_standings(conn, self.ROUTE, START, END)
+        raenge = {e["cid"]: e["rank"] for e in r["complete"]}
+        assert raenge[300] == 1
+        assert raenge[100] == 2 and raenge[200] == 2
+        assert 3 not in raenge.values(), "nach einem geteilten Platz wird uebersprungen"
+
+    def test_ohne_gleichstand_bleibt_die_reihenfolge(self):
+        conn = _make_conn()
+        self._tour(conn, 100, "Anna", 30)    # 60
+        self._tour(conn, 200, "Bert", 50)    # 100
+        self._tour(conn, 300, "Cara", 45)    # 90 -> Schnitt 83,3, keine Symmetrie
+        r = compute_bummel_standings(conn, self.ROUTE, START, END)
+        assert sorted(e["rank"] for e in r["complete"]) == [1, 2, 3]
+
+
 class TestHiddenOrderNoRankLeak:
     """Fairness: im VERDECKTEN Zustand darf die Teilnehmer-REIHENFOLGE das Ranking nicht verraten.
     `standings["complete"]` ist rang-sortiert (Nähe zum Schnitt) — würde man sie so durchreichen,

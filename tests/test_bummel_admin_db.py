@@ -397,7 +397,11 @@ class TestApplyBummelOverridesExclude:
         )
         result = apply_bummel_overrides(standings, [_ov(100, "exclude")])
         ranks = sorted(e["rank"] for e in result["complete"])
-        assert ranks == [1, 2]
+        # Nach dem Ausschluss bleiben 70 und 90 Minuten — der Schnitt liegt dann bei 80 und
+        # BEIDE sind zehn Minuten entfernt. Bei zwei Teilnehmern ist das zwangslaeufig so
+        # (der Schnitt ist immer die Mitte), also teilen sie sich Platz 1. Frueher entschied
+        # hier die CID, was keine Aussage ueber die Naehe zum Schnitt ist.
+        assert ranks == [1, 1]
         assert result["count"] == 2
 
     def test_exclude_all_complete_gives_zero_average(self):

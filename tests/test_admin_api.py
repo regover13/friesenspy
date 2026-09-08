@@ -180,10 +180,29 @@ def test_badge_endpoint(db):
         "route": "EDWF,EDWG,EDWR", "dtstart": dtstart, "dtend": _iso(now - timedelta(hours=1)),
     })))["id"]
     _seed_flights(db, dtstart)
+    # Dritter Teilnehmer, damit es ueberhaupt einen ALLEINIGEN Sieger gibt: Anna (60) und
+    # Bert (100) liegen zwangslaeufig gleich weit vom Schnitt — bei zwei Teilnehmern ist das
+    # immer so — und teilen sich seit den geteilten Plaetzen Rang 1. Dann gaebe es kein
+    # Medaillen-Badge zum Vergleich. Cara trifft mit 80 min den Schnitt exakt.
+    _conn = get_connection(db)
+    _base = datetime.fromisoformat(dtstart.replace("Z", "+00:00"))
+    _conn.execute("INSERT OR IGNORE INTO pilots (cid,name,added_at) VALUES (?,?,?)",
+                  (300, "Cara", dtstart))
+    for _dep, _arr, _t0 in (("EDWF", "EDWG", 1), ("EDWG", "EDWR", 50)):
+        _conn.execute(
+            "INSERT INTO flights (cid,callsign,aircraft_short,departure,arrival,logon_time,"
+            "logoff_time,duration_min,distance_nm,block_min) VALUES (?,?,'C172',?,?,?,?,?,50,?)",
+            (300, "FRS300", _dep, _arr, _iso(_base + timedelta(minutes=_t0)),
+             _iso(_base + timedelta(minutes=_t0 + 40)), 40, 40))
+    _conn.commit(); _conn.close()
+
     view = asyncio.run(main.get_bummel_race_endpoint(rid))   # vorbei → Auto-Reveal
     assert view["revealed"] is True
     winner = view["complete"][0]["cid"]
     other = view["complete"][1]["cid"]
+    assert view["complete"][0]["rank"] == 1 and view["complete"][1]["rank"] != 1, (
+        "Test braucht einen alleinigen Sieger und einen Nicht-Sieger"
+    )
 
     png_w = asyncio.run(main.get_bummel_badge(FakeReq(), rid, winner))
     assert png_w.media_type == "image/png" and png_w.body[:8] == b"\x89PNG\r\n\x1a\n"

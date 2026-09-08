@@ -81,9 +81,17 @@ Flug-Historie nach dem neuen Verfahren neu berechnet (kein Daten-Backfill nötig
 lagen bereits vor) — deshalb ist v8.0.0 ein Major-Release.
 
 **Flugzeit vs. Blockzeit:** Pro Flug werden zwei Zeiten unterschieden — **Flugzeit** (Abheben →
-Landung, reine Luftzeit) und **Blockzeit** (gate-to-gate: Bewegung inkl. Taxi, ab Losrollen bis
-zum Stillstand nach der Landung; belegte Standphasen ab 10 Minuten — z. B. eine Zwischenlandung
-ohne Disconnect — zählen nicht mit). Beide erscheinen getrennt in den Fluglisten.
+Landung, reine Luftzeit) und **Blockzeit** (*off blocks* bis *on blocks*: vom Verlassen der
+Abstellposition bis zum Erreichen der nächsten, Taxi eingeschlossen). Ein Halt unterwegs —
+Warten auf Freigabe, Standlaufprobe, Warteschlange — bleibt in der Blockzeit; die Zeit **an**
+der Abstellposition zählt nicht. Beide Zeiten erscheinen getrennt in den Fluglisten.
+
+Wo *on blocks* liegt, hängt davon ab, was danach passiert: Folgt ein weiterer Start, ist es die
+**längste** Stillstandsphase dazwischen — das Abstellen dauert länger als ein Halt unterwegs.
+Wird ausgeloggt, ist es die Phase, mit der die Aufzeichnung endet. Bleibt jemand einfach stehen
+und online, gilt sie ab **10 Minuten** Stillstand als Abstellen (vorher ist nicht belegt, dass
+nicht weitergerollt wird). Der Ort zählt mit: Nur ein Stillstand an einem Flugplatz ist ein
+Abstellen — im Gelände ist es eine Außenlandung, dort läuft die Zeit weiter.
 
 **Der GPS-Track zeigt seit v8.9.0 den Rollbeginn** — bei eigenen Live-Aufzeichnungen beginnt die
 Track-Linie am Losrollen (Taxi-out + Startlauf), nicht mehr erst am Abheben. Das Ende bleibt
@@ -235,7 +243,9 @@ Steht im Flugplan ein anderes Kürzel als das eigentliche Muster, sagt das Fenst
 
 ## 🏁 FriesenFliegerBummel
 
-Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzweltmeister"-Rennen: Es gewinnt **nicht der Schnellste**, sondern wer mit der **Summe seiner Gate-to-Gate-Blockzeiten am dichtesten an der Durchschnittszeit aller Teilnehmer** liegt.
+Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzweltmeister"-Rennen: Es gewinnt **nicht der Schnellste**, sondern wer mit der **Summe seiner Blockzeiten am dichtesten an der Durchschnittszeit aller Teilnehmer** liegt.
+
+**Gleich weit ist gleichauf:** Liegen zwei Teilnehmer exakt gleich weit vom Schnitt — einer darüber, einer darunter —, dann **teilen sie sich den Platz**; es gibt in dem Fall zwei Sieger und der nächste Platz wird übersprungen (seit v14.24.0). Bei genau zwei Teilnehmern ist das immer so: Der Schnitt liegt dann zwangsläufig in der Mitte, beide sind gleich weit entfernt. Das Spielprinzip entfaltet sich also erst ab drei Teilnehmern.
 
 **Automatische Erkennung — kein Admin-Aufwand:** Ein Termin im FriesenFlieger-Kalender wird als Bummel erkannt, sobald im **Titel oder in der Beschreibung** das Stichwort „Bummel" steht **und** mindestens **zwei Flugplätze** (ICAO-Codes) hinterlegt sind. Eine Plausibilitätsprüfung verhindert Fehlerkennungen: Liegen zwei Streckenflugplätze weiter als ~600 nm auseinander, wird der Termin nicht als Bummel gewertet.
 
@@ -246,7 +256,7 @@ Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzwelt
 - **Reihenfolge und Richtung egal:** Die Strecke `A–B–C` darf in beliebiger Richtung und Reihenfolge geflogen werden (auch alternative Routings wie `A→C→B`). Gewertet wird, wer **alle Flugplätze** der Strecke besucht hat.
 - **Zwischenlandungen sind erlaubt (Bummel = gemütlich):** Wer mit Zwischenstopp fliegt (z.B. `A→X→B`), kommt trotzdem in die Wertung. Gezählt wird die **Tour** vom ersten Start an einem Streckenflugplatz bis zur letzten Landung an einem Streckenflugplatz; die **Standzeit der Zwischenstopps zählt nicht mit** (nur die reine Flugzeit der Legs).
 - **Frühstarter zählen mit:** Wer schon vor dem offiziellen Event-Start losfliegt, aber währenddessen unterwegs ist, wird mit seiner **vollen Blockzeit** gewertet.
-- **Gewertete Zeit** = Summe der Blockzeiten (Bewegungszeit gate-to-gate inkl. Taxi und kurzer Halte; längere Standphasen ab 10 min — z. B. eine Zwischenlandung ohne Disconnect — zählen nicht) der Tour-Legs. Tatsächlich geflogene Meilen, Warteschleifen und Umwege spielen keine Rolle.
+- **Gewertete Zeit** = Summe der Blockzeiten der Tour-Legs (*off blocks* bis *on blocks*, Taxi und Halte unterwegs eingeschlossen; die Standzeit an Zwischenstopps zählt nicht — egal wie lange sie dauert). Tatsächlich geflogene Meilen, Warteschleifen und Umwege spielen keine Rolle.
 - **Niemand fällt still raus:** Piloten, die noch nicht alle Etappen geflogen haben, werden separat als „unvollständig" aufgelistet — mit den fehlenden Etappen, benannt in der Richtung, in der die Strecke sie nennt (`EDTD - EDSR`).
 - **GPS statt Flugplan:** Ob ein Pilot an einem Flugplatz war, erkennt FriesenSpy am **GPS-Track** (erste/letzte Position am Flugplatz), nicht am eingereichten Flugplan. Ein Tippfehler im Flugplan kann eine Wertung also nicht verhindern; der Flugplan dient nur als Rückfall, wenn kein Track vorliegt. Wie nah eine Position an einem Streckenflugplatz liegen muss, steuert der **feste, globale 4-km-Radius** (siehe oben) — es gibt keinen separat einstellbaren Radius mehr pro Rennen.
 
@@ -254,7 +264,7 @@ Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzwelt
 
 **Was du siehst:**
 - **Live-Tab:** Solange ein Bummel läuft, zeigt ein Banner oben den aktuellen Teilnahme-Zwischenstand (wer dabei ist, wer gerade unterwegs ist) — ohne Zeiten, solange das Rennen noch nicht enthüllt ist.
-- **Events-Tab:** Bummel-Termine tragen ein **🏁 BUMMEL**-Badge. Vor der Enthüllung sieht man Teilnahme und Fortschritt — darüber steht das **Zeitfenster** des Rennens (Beginn – Ende), und solange es läuft, nennt die Statuszeile die Uhrzeit, bis zu der es geht. Das ist der Anmeldeschluss: Wer erst danach startet, wird nicht mehr gewertet (seit v14.23.0). Nach der Enthüllung öffnet ein Klick das vollständige Ranking (Platz, Pilot, Flugzeug, Legs, Block-Gesamtzeit, Abstand zum Schnitt — signiert und sekundengenau, damit auch bei gleicher Minuten-Blockzeit klar ist, wer näher am Schnitt liegt) samt „unvollständig"-Liste — und **darunter die komplette normale Event-Ansicht** (Karte + alle Piloten im Umkreis, auch Nicht-Teilnehmer; gewertete Piloten tragen ihr Bummel-Standing als Badge). Im enthüllten Ranking erscheint außerdem ein **„Für Forum kopieren"**-Button — er erzeugt einen fertig formatierten Ergebnistext zum Einfügen in board.friesenflieger.de. Manuell angelegte Bummel erscheinen ebenfalls in dieser Liste und sind anklickbar.
+- **Events-Tab:** Bummel-Termine tragen ein **🏁 BUMMEL**-Badge. Vor der Enthüllung sieht man Teilnahme und Fortschritt — darüber steht das **Zeitfenster** des Rennens (Beginn – Ende), und solange es läuft, nennt die Statuszeile die Uhrzeit, bis zu der es geht. Das ist der Anmeldeschluss: Wer erst danach startet, wird nicht mehr gewertet (seit v14.23.0). Nach der Enthüllung öffnet ein Klick das vollständige Ranking (Platz, Pilot, Flugzeug, Legs, Block-Gesamtzeit, Abstand zum Schnitt — signiert und ungerundet, in der Auflösung des VATSIM-Feeds von 15 Sekunden; wer exakt gleich weit vom Schnitt liegt, **teilt sich den Platz**) samt „unvollständig"-Liste — und **darunter die komplette normale Event-Ansicht** (Karte + alle Piloten im Umkreis, auch Nicht-Teilnehmer; gewertete Piloten tragen ihr Bummel-Standing als Badge). Im enthüllten Ranking erscheint außerdem ein **„Für Forum kopieren"**-Button — er erzeugt einen fertig formatierten Ergebnistext zum Einfügen in board.friesenflieger.de. Manuell angelegte Bummel erscheinen ebenfalls in dieser Liste und sind anklickbar.
 - **Push-Benachrichtigungen:** FriesenSpy benachrichtigt (sofern Push aktiviert ist), wenn das Rennen **gestartet** wird — der Trigger ist der erste Pilot, der eine Blockzeit an einem Streckenflugplatz erreicht — und wenn die **Ergebnisse enthüllt** werden. Beide Ereignisse sind Latches (feuern nur einmal je Rennen) und können je Rennen über die Admin-Seite abgeschaltet werden. Diese Benachrichtigungen erreichen nur Abonnenten mit aktiviertem **„Events"-Schalter** (opt-in).
 
 ### Badge fürs Forum
@@ -518,7 +528,7 @@ FriesenSpy kombiniert zwei Datenquellen:
 
 **Wie ein „Flug" bestimmt wird (GPS-only, seit v8.0.0).** Eine VATSIM-Verbindung ist über `(CID, Logon-Zeit)` eindeutig — Container-Neustarts oder doppelte Aufzeichnungen können nie mehr Duplikate erzeugen (struktureller Unique-Index). Die eigentliche **Flugzählung** läuft aber über `canonicalize_legs`: Abheben und Landung werden direkt aus dem GPS-Track erkannt, unabhängig davon, ob die Verbindung dabei getrennt wird. Eine Verbindung kann dadurch **mehrere** Flüge enthalten (Zwischenlandung ohne Refile), und ein Flug zählt bereits bei der GPS-Landung, nicht erst beim Disconnect. **Nur wenn kein GPS-Track vorliegt** (reine StatSim-Historie, Serverausfall mitten im Flug), fällt FriesenSpy auf die klassische refile-/disconnect-basierte Erkennung zurück: ein **vorübergehender Reconnect** (z. B. kurzer Netzausfall) erzeugt technisch zwei Verbindungen, wird aber zu **einem** Flug zusammengeführt, solange Callsign und Flugplan passen und der Reconnect geografisch plausibel anschließt. Alle Ansichten (Statistik, Events, Piloten-Detail, Bummel, Kutter) berechnen Flugzahl und -dauer aus **einer** gemeinsamen Funktion (`canonicalize_legs`, für die globale Statistik über den materialisierten `flight_cache`) — die Zahlen stimmen überall überein. Fehlerhafte Altdaten werden reversibel bereinigt (markiert, nicht gelöscht).
 
-Pro Flug werden zwei Zeiten geführt: **Flugzeit** (Abheben → Landung, `duration_min`) und **Blockzeit** (`block_min`, Summe der tatsächlichen Bewegung gate-to-gate inkl. Taxi; kurze Halte wie Rollhalt zählen mit, belegte Standphasen ab 10 min — etwa eine Zwischenlandung ohne Disconnect — nicht). So zählt z. B. langes Parken am Gate oder auf dem Vorfeld zwar in die Flugzeit, nicht aber in die Blockzeit. Blockzeit gibt es nur für FriesenSpy-Aufzeichnungen (StatSim liefert keine GPS-Spur dafür).
+Pro Flug werden zwei Zeiten geführt: **Flugzeit** (Abheben → Landung, `duration_min`) und **Blockzeit** (`block_min` für die Anzeige, `block_sec` ungerundet für Wertungen — *off blocks* bis *on blocks*, Taxi eingeschlossen; Halte unterwegs zählen mit, die Zeit an der Abstellposition nicht). So zählt z. B. langes Parken am Gate oder auf dem Vorfeld zwar in die Flugzeit, nicht aber in die Blockzeit. Ein Zwischenstopp trennt zwei Legs an der längsten Stillstandsphase — seine Standzeit gehört damit keinem von beiden, unabhängig davon, wie lange er dauert (seit v14.24.0; vorher zählte ein Halt unter 10 Minuten als Blockzeit und die Anrollzeit zum nächsten Start sogar doppelt). Blockzeit gibt es nur für FriesenSpy-Aufzeichnungen (StatSim liefert keine GPS-Spur dafür).
 
 Verliert der VATSIM-Datenfeed einen Piloten kurzzeitig (Feed-Aussetzer), wird die Session beim Wiederauftauchen mit derselben Logon-Zeit nahtlos **wieder geöffnet** — es entstehen weder Duplikate noch verwaiste Tracks. Sollte dennoch einmal ein Flug ohne eigenen Eintrag bleiben (historischer Schaden), rekonstruiert der Server ihn beim Start automatisch aus StatSim + eigenem GPS-Track (`reconstruct_orphaned_flights`).
 
