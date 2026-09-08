@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.26.0",
+    "date": "2026-09-08",
+    "highlight": false,
+    "title": "Blockzeiten runden kaufmännisch — die Bummel-Wertung zeigt Sekunden",
+    "items": [
+      "🔢 Die angezeigte Blockzeit wird jetzt kaufmännisch gerundet statt abgeschnitten. Vorher verlor jede Etappe bis zu 59 Sekunden, und zwar immer in dieselbe Richtung: Wer die Minuten aus der Statistik von Hand addierte, kam bei drei Etappen bis zu drei Minuten unter der gewerteten Zeit heraus. Gerundet bleibt der Fehler bei einer halben Minute je Etappe und gleicht sich im Mittel aus.",
+      "⏱️ Im Bummel-Ranking und im Forum-Ergebnistext steht die Blockzeit jetzt mit Sekunden („91:45 min\" statt „1h 31m\"). Genau dieser Wert wird gewertet — die Nähe zum Schnitt entscheidet dort über Sekunden, und die soll man sehen können, ohne selbst zu addieren.",
+      "🧮 Überall sonst (Flugliste, Statistik, Jahressummen) bleibt es bei Minuten — dort ist die Sekunde kein sinnvoller Maßstab, und die Summen stimmen durch die neue Rundung jetzt mit der Wertung überein."
+    ]
+  },
+  {
     "version": "14.25.0",
     "date": "2026-09-08",
     "highlight": false,

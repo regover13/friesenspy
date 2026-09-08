@@ -9137,6 +9137,17 @@ function _fmtMin(m) {
   return h > 0 ? `${h}h ${String(mm).padStart(2, '0')}m` : `${mm}m`;
 }
 
+// Blockzeit der BUMMEL-WERTUNG: mit Sekunden, weil genau dieser Wert gewertet wird. Ueberall
+// sonst stehen gerundete Minuten — wer die von Hand summiert, kaeme sonst auf eine andere
+// Gesamtzeit als das Ranking (Nutzer-Gegenrechnung 08.09.2026). Faellt `total_sec` (Snapshot
+// aus aelteren Rennen), bleibt die Minutenanzeige.
+function _fmtBlockSek(sec, fallbackMin) {
+  if (sec == null) return _fmtMin(fallbackMin);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.round(sec % 60);
+  const ms = `${String(m).padStart(h > 0 ? 2 : 1, '0')}:${String(s).padStart(2, '0')}`;
+  return h > 0 ? `${h}h ${ms}` : `${ms} min`;
+}
+
 // Aktiver Bummel-Kontext für die Annotation der normalen Event-Karten (null = normale Suche).
 let _activeBummel = null;
 let _activeBummelId = null;  // id des gerade geöffneten Rennens (für den Teilen-Knopf im Header)
@@ -9317,7 +9328,7 @@ function _buildBummelForumText(data) {
   (data.complete || []).forEach(e => {
     const medal = e.rank === 1 ? '[Sieger] ' : '';
     const abst = _fmtSignedDelta(e.delta_sec);
-    t += `${e.rank}. ${medal}${e.name || e.callsign || ('CID ' + e.cid)} (${e.aircraft || '?'}) — ${_fmtMin(e.total_min)} (${abst})\n`;
+    t += `${e.rank}. ${medal}${e.name || e.callsign || ('CID ' + e.cid)} (${e.aircraft || '?'}) — ${_fmtBlockSek(e.total_sec, e.total_min)} (${abst})\n`;
   });
   return t;
 }
@@ -9364,7 +9375,7 @@ function renderBummelStandings(data, inProgress) {
         <td>${medal}${escHtml(e.name || e.callsign || ('CID ' + e.cid))}</td>
         <td class="mono">${acLink(e.aircraft)}</td>
         <td class="mono">${e.leg_count != null ? e.leg_count : '—'}</td>
-        <td class="mono">${_fmtMin(e.total_min)}</td>
+        <td class="mono">${_fmtBlockSek(e.total_sec, e.total_min)}</td>
         <td class="mono">${_fmtSignedDelta(e.delta_sec)}</td>
         <td>${_bummelBadgeLinks(data.id, e.cid)}</td>
       </tr>`;

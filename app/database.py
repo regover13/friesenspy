@@ -3296,7 +3296,14 @@ def _gps_flights_for_positions(
         # bekannte Randfall, in dem sie allein nicht reicht: s. Docstring am Funktionskopf) —
         # auf beiden Auflösungen, damit Sekunden und Minuten nicht auseinanderlaufen.
         block_sec = max(block_sec, air_sec)
-        block_min = max(block_sec // 60, duration_min)
+        # Kaufmaennisch runden statt abschneiden: Beim Abschneiden verlor JEDES Leg bis zu
+        # 59 Sekunden, und die Fehler summierten sich immer in dieselbe Richtung — wer die
+        # angezeigten Minuten von Hand addierte, kam bei drei Legs bis zu drei Minuten unter
+        # der gewerteten Zeit heraus (Nutzer-Gegenrechnung 08.09.2026). Gerundet bleibt der
+        # Fehler bei +/- 30 s je Leg und hebt sich im Mittel auf.
+        # Die Garantie duration_min <= block_min bleibt: round(x/60) >= x//60 fuer alle x,
+        # und block_sec >= air_sec.
+        block_min = max(round(block_sec / 60), duration_min)
         vorheriges_on_blocks = block_end
 
         plan = _flightplan_asof(plan_rows, end_ts)
@@ -4612,7 +4619,7 @@ def compute_bummel_standings(
         # bleibt die Minutenangabe der beste verfügbare Wert.
         block_s = f.get("block_sec")
         secs = int(block_s) if block_s is not None else minutes * 60
-        minutes = secs // 60
+        minutes = round(secs / 60)   # Anzeige kaufmaennisch, gewertet wird `secs`
         legs_by_cid.setdefault(cid, []).append({
             "departure": dep,
             "arrival": arr,
