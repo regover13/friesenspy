@@ -1,5 +1,14 @@
 [
   {
+    "version": "14.26.1",
+    "date": "2026-09-08",
+    "highlight": false,
+    "title": "Badge und Ranking zeigen dieselbe Zahl",
+    "items": [
+      "🎖️ Die Minutenangabe eines Teilnehmers kam bisher als Summe der je Etappe gerundeten Minuten zustande — und die Summe gerundeter Werte ist nicht dasselbe wie die gerundete Summe. Dadurch stand auf dem Badge eine andere Zahl als im Ranking (94:29 gewertet, 1h 35m auf dem Badge). Minutenangabe und Durchschnitt kommen jetzt beide aus der Gesamtzeit in Sekunden."
+    ]
+  },
+  {
     "version": "14.26.0",
     "date": "2026-09-08",
     "highlight": false,

@@ -4647,11 +4647,14 @@ def compute_bummel_standings(
         if start_idx is None or end_idx is None or end_idx < start_idx:
             continue  # keine an der Strecke beginnende UND endende Tour
         tour = legs[start_idx:end_idx + 1]
-        total = 0
         total_secs = 0
         for l in tour:
-            total += l["minutes"]
             total_secs += l["seconds"]
+        # Die Minutenangabe kommt aus der GESAMTZEIT, nicht als Summe der je Leg gerundeten
+        # Minuten — sonst zeigen Badge und Ranking verschiedene Zahlen fuer denselben Piloten
+        # (gefunden 08.09.2026: 94:29 gewertet, aber 38+30+24=95 als Summe der Leg-Minuten).
+        # Summe gerundeter Werte ist nicht gleich gerundete Summe; massgeblich sind die Sekunden.
+        total = round(total_secs / 60)
         # achieved_edges: geflogene Etappen — Kanten NUR aus zusammenhängenden Leg-Ketten. Eine
         # Lücke (arr von Leg i ≠ dep von Leg i+1) oder ein leerer Endpunkt bricht die Kette, damit
         # keine Phantom-Kante über nie geflogene Strecken entsteht (A1). Off-Route-Zwischenstopps
@@ -4698,8 +4701,9 @@ def compute_bummel_standings(
         (complete if not missing_ctr else incomplete).append(entry)
 
     count = len(complete)
-    average = (sum(e["total_min"] for e in complete) / count) if count else 0.0
     average_sec = (sum(e["total_sec"] for e in complete) / count) if count else 0.0
+    # Auch der angezeigte Schnitt aus den Sekunden, damit er zu den Abstaenden passt.
+    average = round(average_sec / 60, 1) if count else 0.0
     for e in complete:
         e["delta"] = round(abs(e["total_min"] - average), 1)     # Minuten (Anzeige/Kompat)
         e["delta_sec"] = round(e["total_sec"] - average_sec)      # SIGNIERT, sekundengenau
