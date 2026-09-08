@@ -89,6 +89,12 @@ auf einem Flugplatz länger als das am Stück steht, gilt als abgestellt, auch w
 weiterrollt und startet. Das trifft selten zu (drei von 351 Flügen im Spätsommer 2026) und
 unterstellt im Zweifel eine Pause statt einer sehr langen Warteschlange. Beide Zeiten erscheinen getrennt in den Fluglisten.
 
+**Angezeigt wird auf Minuten kaufmännisch gerundet, gerechnet wird ungerundet.** In Fluglisten
+und Statistik stehen ganze Minuten — wer sie addiert, liegt höchstens eine halbe Minute je Flug
+daneben, und die Abweichungen gleichen sich aus. Nur die Bummel-Wertung zeigt Sekunden, weil dort
+die Nähe zum Schnitt über Sekunden entscheidet. Genauer als das Poll-Raster des VATSIM-Feeds
+(etwa 15 Sekunden) wird es nirgends — die Zahl ist so genau wie die Positionsdaten.
+
 Wo *on blocks* liegt, hängt davon ab, was danach passiert: Folgt ein weiterer Start, ist es die
 **längste** Stillstandsphase dazwischen — das Abstellen dauert länger als ein Halt unterwegs.
 Wird ausgeloggt, ist es die Phase, mit der die Aufzeichnung endet. Bleibt jemand einfach stehen

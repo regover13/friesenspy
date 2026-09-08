@@ -27,6 +27,18 @@ vergleicht — wer dazwischen einen Eintrag einfügt, bekommt einen Fehlschlag, 
 dem Code zu tun hat (zweimal passiert am 04.09.2026). Bei parallelen Sitzungen gilt das auch
 für die *andere*: Erst die Suite abwarten, dann die Version schreiben.
 
+**Messungen außerhalb der App brauchen zwei Dinge**, sonst messen sie etwas anderes als die
+Produktion: `geo.set_custom_airports(list_custom_airports(conn))` — die Registry füllt sonst nur
+der App-Start, ohne sie fehlen Ergänzungsflugplätze (EDSR!) und alle Leg-Erkennungen kippen —
+und eine OBERE Zeitgrenze bei Positionssuchen, sonst geraten spätere Flüge desselben Piloten
+hinein („50 348 Minuten Standzeit"). Im Zweifel `docker exec friesenspy-friesenspy-1 python -c …`,
+dort stimmt die Welt von selbst.
+
+**Einen neuen Regressionstest gegen den entfernten Fix gegenprüfen** — er muss ohne ihn rot
+werden. Am 08.09.2026 war einer grün, weil die Pause im Testtrack über `_BLOCK_STAND_MIN_SEC`
+lag und den Fehler zufällig ausglich; ein zweiter, weil die Textersetzung beim Entschärfen gar
+nicht gegriffen hatte (immer `assert s.count(alt) == 1` vor `replace`).
+
 ## Offene Aufgaben
 
 Vom Nutzer vorgemerkte, noch nicht begonnene Arbeiten stehen in
@@ -241,6 +253,13 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   2 min 43 s (14.20.3), `_check_transport_events` über den Anthropic-Aufruf (14.20.6).
   Das Muster für den Ausweg steht in `_gen_flight_quip`: Kontext lesen, committen, schließen,
   **dann** das Netz fragen, für das Schreiben eine frische Verbindung.
+- **`_PROGRESS_SNAPSHOT_VERSION` zu erhöhen verwirft ENTHÜLLTE Ergebnisse.** Der Kommentar
+  dort verlangt die Erhöhung bei jeder Rechenänderung — das gilt für laufende Events, nicht
+  für abgeschlossene. Am 07.09.2026 wurde damit ein bereits verkündetes Bummel-Ergebnis
+  überschrieben (der Sieger wechselte, das Original war weg). Gerettet haben es die gerenderten
+  Badge-PNGs unter `data/badges/`, deren Dateiname den Ergebnis-Hash trägt — daraus ließ sich
+  der alte Stand ablesen und per Zustandsrekonstruktion nachrechnen. Vor jedem Bump: Payload
+  sichern und prüfen, wen die Neuberechnung trifft.
 - **`busy_timeout` steht auf 15 s (`get_connection`) — das ist das Netz, nicht die Lösung.**
   Es macht aus einem Fehler eine Verzögerung. Wer ihn hebt, weil „es wieder klemmt", verlängert
   nur die Zeit, in der niemand merkt, dass eine Transaktion hängt. 15 s = ein Poll-Zyklus: Was
@@ -283,6 +302,30 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
   abruf 3,10 s · db 0,40 s …`, ab 2 s Gesamtlaufzeit). Sie misst Wanduhr, nicht Rechenzeit:
   Ein blockierter Event-Loop zeigt sich als Wartezeit in einem *fremden* Abschnitt — die
   Aufschlüsselung sagt, wo gewartet wurde, und benennt damit nicht zwingend den Schuldigen.
+
+## Blockzeit (stehende Regeln — IMMER einhalten)
+
+- **Blockzeit ist off blocks bis on blocks**, nicht Abheben bis Landung. Taxi zählt, die Zeit
+  AN der Abstellposition nicht. Gewertet wird `block_sec` (ungerundet); `block_min` ist nur
+  Anzeige und rundet kaufmännisch. Die Auflösung ist das Poll-Raster des Feeds (~15 s, mit
+  Jitter) — „sekundengenau" ist die falsche Vokabel.
+- **Wo on blocks liegt, hängt davon ab, was danach passiert** (`_extend_block_end`): folgt ein
+  weiterer Start → **längste** Standphase im Fenster; Track endet/ausgeloggt → die Phase, MIT
+  DER er endet (sonst letzter Punkt); steht und bleibt online → erst ab
+  `_BLOCK_STAND_MIN_SEC` (600 s). Nur Stillstand **an einem Flugplatz** zählt, und nie ein
+  einzelner Messpunkt (Dauer 0) — der kann ein Halt an der Haltelinie oder ein Ausreißer sein.
+- **Eine geschlossene Verbindung gilt sofort als Trackende.** Ohne das entschied allein das
+  15-Minuten-Fenster `rescue_before`, und ein gerade Ausgeloggter galt so lange als „live" —
+  während er aus der Enthüllungs-Wartebedingung schon herausfiel. Genau so wird ein unfertiger
+  Wert eingefroren.
+- **Ein Leg darf nie vor dem on blocks des Vorgängers beginnen.** `taxi_start_ts` startet beim
+  AUFSETZEN des Vorgängers (bewusst, `be772c7`: „Turnaround gehört zum Folge-Leg") — ohne die
+  Schranke in `_gps_flights_for_positions` zählt dessen Einrollen in BEIDEN Blockzeiten.
+- **`block_start` ist Anzeige und Track-Untergrenze, `block_from` die Rechnung.** `block_start`
+  nicht anfassen: Daran hängt `TestReconnectAtOtherAirport` (Reconnect 240 km entfernt, sonst
+  beginnt der gezeichnete Track am falschen Platz).
+- **Die Enthüllung eines Rennens fragt nicht „ist er gelandet?", sondern „steht der Wert fest?"**
+  Die Landung ist am Touchdown erkannt, die Blockzeit aber erst nach dem Abstellen endgültig.
 
 ## Projektstruktur
 
