@@ -126,3 +126,69 @@ class TestSekundenBleibenErhalten:
         quelle = inspect.getsource(database.compute_bummel_standings)
         assert 'block_s = f.get("block_sec")' in quelle
         assert "minutes * 60" in quelle, "Rueckfall ohne Track muss erhalten bleiben"
+
+
+
+class TestEinzelnerMesspunktIstKeinAbstellen:
+    """Ein einzelnes ``gs=0``-Sample belegt keine Zeitspanne.
+
+    Es kann ein kurzer Halt an der Haltelinie sein oder ein Ausreisser. Als on blocks zaehlt
+    nur, was ueber mindestens zwei Punkte hinweg steht. Ohne diese Pruefung wurde im
+    Turnaround ein einzelner Punkt zum „Abstellen" — Leg 1 endete zu spaet und der Kern-Test
+    ``TestPrevEndBoundary`` brach (gefunden 08.09.2026).
+    """
+
+    def test_einzelpunkt_beendet_den_block_nicht(self):
+        # rollt, EIN Sample mit gs=0, rollt weiter, dann Start -> kein on blocks
+        spur = _spur((0, 1, 10)) + [_pos("10:01:00", 0)] + _spur((2, 1, 12))
+        ende = _extend_block_end(spur, "2026-06-27T09:59:45Z", "2026-06-27T10:03:00Z")
+        assert ende == "2026-06-27T09:59:45Z", ende   # Fallback: die Landung
+
+    def test_zwei_punkte_zaehlen_schon(self):
+        spur = _spur((0, 1, 10), (1, 1, 0), (2, 1, 12))
+        ende = _extend_block_end(spur, "2026-06-27T09:59:45Z", "2026-06-27T10:04:00Z")
+        assert ende == "2026-06-27T10:01:00Z", ende
+
+
+class TestKeineDoppelzaehlungUeberLegGrenzen:
+    """Das Einrollen des einen Legs darf nicht als „erste Bewegung" des naechsten gelten.
+
+    ``taxi_start_ts`` eines Legs ist der Beginn der ON_GROUND-Phase — und die faengt mit dem
+    AUFSETZEN des Vorgaengers an (bewusst so, s. Commit be772c7: „Turnaround gehoert zum
+    Folge-Leg"). Hat der Vorgaenger danach ein echtes on blocks, wuerde sein Einrollen sonst
+    in BEIDEN Blockzeiten stehen (gemessen 08.09.2026: 20 Uebergaenge, zusammen 17,6 min).
+    """
+
+    def _zwei_fluege(self) -> list[dict]:
+        a, b, c = (geo.icao_to_coords(x) for x in ("EDWF", "EDWG", "EDWR"))
+        plan = [
+            (0.0, a, 20, 0), (1.0, a, 20, 25),
+            (3.0, a, 1200, 85), (8.0, b, 3000, 110),
+            (13.0, b, 400, 60), (14.0, b, 20, 0),       # Landung
+            (15.0, b, 20, 12),                          # einrollen -> gehoert zu Leg 1
+            # Pause unter _BLOCK_STAND_MIN_SEC: laenger wuerde sie abgezogen und die
+            # Doppelzaehlung zufaellig ausgleichen — der Fehler waere unsichtbar.
+            (16.0, b, 20, 0), (21.0, b, 20, 0),         # abgestellt (5 min)
+            (22.0, b, 20, 15),                          # anrollen -> Leg 2
+            (24.0, b, 1200, 85), (29.0, c, 3000, 110),
+            (34.0, c, 400, 60), (35.0, c, 20, 0),
+            (37.0, c, 20, 0), (49.0, c, 20, 0),
+        ]
+        out = []
+        for minute, coord, alt, gs in plan:
+            t = int(minute * 60)
+            out.append({"ts": f"2026-06-27T10:{t // 60:02d}:{t % 60:02d}Z",
+                        "latitude": coord[0], "longitude": coord[1],
+                        "altitude": alt, "groundspeed": gs})
+        return out
+
+    def test_leg_zwei_beginnt_nicht_vor_leg_eins_ende(self):
+        from app.database import _gps_flights_for_positions, _parse_iso
+        fluege = _gps_flights_for_positions(
+            self._zwei_fluege(), plan_rows=[], source="friesenspy", radius_km=10)
+        assert len(fluege) >= 2, [f.get("departure") for f in fluege]
+        a, b = fluege[0], fluege[1]
+        beginn_b = _parse_iso(b["block_end"]).timestamp() - b["block_sec"]
+        assert _parse_iso(a["block_end"]).timestamp() <= beginn_b, (
+            f"Leg A endet {a['block_end']}, Leg B beginnt frueher — das Einrollen zaehlt doppelt"
+        )

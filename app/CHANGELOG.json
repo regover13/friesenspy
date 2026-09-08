@@ -1,5 +1,19 @@
 [
   {
+    "version": "14.25.0",
+    "date": "2026-09-08",
+    "highlight": false,
+    "title": "Der Abschluss sagt, worauf er wartet — und das Einrollen zählt nur einmal",
+    "items": [
+      "🕰️ Nach dem Renn-Ende steht in der Statuszeile, woran es hängt: „Abschluss wartet auf FRS102, FRS49\" — oder, wenn alle unten sind, „alle am Boden — Abschluss wartet bis Logout oder 20:05:32z zur Erfassung der Blockzeiten\". Bisher stand dort nur „warten auf Nachzügler\", was offenließ, ob noch jemand fliegt.",
+      "⏳ Die Enthüllung wartet jetzt, bis die Blockzeiten wirklich feststehen. Eine Landung allein genügt nicht: Wer am Boden steht und online bleibt, dessen Blockzeit läuft weiter, bis zehn Minuten Stillstand belegt sind. Vorher konnte ein Zwischenstand eingefroren werden — am 7. September ist genau das passiert.",
+      "🚪 Wer sich auslogt, hält niemanden auf: Der Flug ist damit abgeschlossen und der Abschluss läuft sofort weiter. Die angezeigte Uhrzeit ist deshalb ein „spätestens\" — sie verschiebt sich auch nach hinten, wenn jemand doch noch einmal rollt.",
+      "🔁 Das Einrollen nach der Landung zählte in zwei Flügen: einmal richtig beim gelandeten, einmal zusätzlich beim nächsten. Grund war, dass der Folgeflug seine erste Bewegung schon ab der Landung des Vorgängers suchte und dort dessen Einrollen fand. Bei Pausen über zehn Minuten glich sich das zufällig aus, darunter nicht — 21 Flugwechsel in fünf Wochen, zusammen 18 Minuten. Jetzt beginnt ein Flug nie vor dem Abstellen des vorherigen.",
+      "🔎 Ein einzelner Messpunkt mit Stillstand gilt nicht mehr als Abstellen. Er kann ein kurzer Halt an der Haltelinie sein oder ein Ausreißer — als Abstellen zählt nur, was über mindestens zwei Messpunkte hinweg steht. Vorher konnte ein solcher Einzelpunkt die Blockzeit eines Fluges an der falschen Stelle beenden.",
+      "📉 Zusammen mit der Blockzeit-Korrektur der Vorversion sinken die ausgewiesenen Blockstunden um rund 6 Prozent gegenüber vorgestern (229,4 h → 214,4 h über fünf Wochen). Das ist keine verlorene Zeit, sondern Standzeit, die nie Blockzeit war. Ausgewertete und enthüllte Rennen behalten ihr Ergebnis."
+    ]
+  },
+  {
     "version": "14.24.0",
     "date": "2026-09-08",
     "highlight": false,

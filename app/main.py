@@ -45,6 +45,7 @@ from app.forum_sso import (
 )
 from app import aip_charts, ground_charts, runway_ref
 from app.database import (
+    _BUMMEL_AIRPORT_RADIUS_KM,
     _DATA_RETENTION_DAYS,
     aggregate_bummel_kpis,
     aggregate_kutter_kpis,
@@ -129,6 +130,7 @@ from app.database import (
     clear_transport_quips,
     get_progress_snapshot,
     write_progress_snapshot,
+    bummel_wartestand,
     delete_progress_snapshot,
     delete_progress_snapshots,
     clear_transport_summarized,
@@ -1887,6 +1889,15 @@ def _build_race_view(conn, race: dict, now: str, *, force_reveal: bool = False) 
     view["dtstart"] = race.get("dtstart")
     view["dtend"] = race.get("dtend")
     view["status"] = _race_status(race, now)
+    if view["status"] == "waiting":
+        # Worauf haengt der Abschluss? Dieselbe Auskunft, die auch die Enthuellung prueft —
+        # damit die Anzeige nicht behaupten kann, es sei alles fertig, waehrend der Latch
+        # noch wartet (oder umgekehrt).
+        view["wartestand"] = bummel_wartestand(
+            conn, route_icaos, _BUMMEL_AIRPORT_RADIUS_KM, now,
+            started_before=race.get("dtend") or None,
+            callsign_prefix=get_settings().CALLSIGN_PREFIX,
+        )
     if revealed and standings.get("disqualified"):
         view["disqualified"] = standings["disqualified"]
     return view

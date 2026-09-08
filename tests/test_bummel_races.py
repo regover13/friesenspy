@@ -211,6 +211,49 @@ class TestAnyoneInProgress:
         _add_flying_flight(conn, 100, "EDWF", "EDWG", "2026-06-27T19:00:00Z", landet=True)
         assert _bummel_anyone_in_progress(conn, ROUTE, 10) is False
 
+    def test_gerade_gelandet_ist_noch_nicht_fertig_gerechnet(self):
+        """Gelandet heisst nicht, dass die Blockzeit feststeht.
+
+        Solange jemand am Boden steht und ONLINE bleibt, ist on blocks noch nicht bestimmt —
+        `_extend_block_end` faellt auf „bis zur letzten Position" zurueck und die Blockzeit
+        waechst mit jeder Minute. Wer in diesem Fenster enthuellt, friert einen Zwischenstand
+        ein; genau das ist am 07.09.2026 beim Aach-Bummel passiert (113 min statt 108).
+        Letzte Bewegung im Track: 19:18 -> endgueltig ab 19:28.
+        """
+        conn = _make_conn()
+        _add_flying_flight(conn, 100, "EDWF", "EDWG", "2026-06-27T19:00:00Z", landet=True)
+        assert _bummel_anyone_in_progress(
+            conn, ROUTE, 10, now="2026-06-27T19:25:00Z") is True
+        assert _bummel_anyone_in_progress(
+            conn, ROUTE, 10, now="2026-06-27T19:30:00Z") is False
+
+    def test_wartestand_nennt_ross_und_reiter(self):
+        """Die Anzeige braucht denselben Befund wie die Pruefung."""
+        from app.database import bummel_wartestand
+        conn = _make_conn()
+        _add_flying_flight(conn, 100, "EDWF", "EDWG", "2026-06-27T19:00:00Z", landet=False)
+        _add_flying_flight(conn, 200, "EDWF", "EDWG", "2026-06-27T19:00:00Z", landet=True)
+        w = bummel_wartestand(conn, ROUTE, 10, "2026-06-27T19:25:00Z")
+        assert w["fliegen"] == ["FRS100"], w
+        assert w["stabil_ab"] == "2026-06-27T19:28:00Z", w
+
+    def test_wartestand_leer_wenn_alle_fertig(self):
+        from app.database import bummel_wartestand
+        conn = _make_conn()
+        _add_flying_flight(conn, 100, "EDWF", "EDWG", "2026-06-27T19:00:00Z", landet=True)
+        w = bummel_wartestand(conn, ROUTE, 10, "2026-06-27T19:40:00Z")
+        assert w == {"fliegen": [], "nie_gestartet": [], "stabil_ab": None}, w
+
+    def test_nie_abgehoben_ist_kein_nachzuegler(self):
+        """Wer am Platz steht und nie gestartet ist, haelt den Abschluss zwar auf, ist aber
+        kein Nachzuegler — „wartet auf FRS100" waere irrefuehrend."""
+        from app.database import bummel_wartestand
+        conn = _make_conn()
+        _add_open_flight(conn, 100, icao_to_coords("EDWF"), "2026-06-27T19:00:00Z")
+        w = bummel_wartestand(conn, ROUTE, 10, "2026-06-27T20:30:00Z")
+        assert w["fliegen"] == []
+        assert w["nie_gestartet"] == ["FRS100"], w
+
     def test_still_airborne_counts(self):
         """Wer noch in der Luft ist, haelt die Enthuellung auf — daran aendert sich nichts."""
         conn = _make_conn()

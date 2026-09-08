@@ -2919,20 +2919,28 @@ class TestExtendBlockEnd:
         assert end == "2026-08-11T18:03:45Z"
 
     def test_extension_capped_at_next_takeoff(self):
-        """Ohne Abstell-Stand, aber mit einem chronologisch nächsten Flug: die Verlängerung
-        darf nicht bis zu oder über dessen Abheben reichen."""
+        """Die Verlängerung darf nicht bis zu oder über das Abheben des nächsten Flugs reichen.
+
+        Seit v14.25.0 mit einer ECHTEN Standphase geprüft statt ohne: Folgt ein weiterer Start
+        und stand die Maschine nirgends still, endet der Block jetzt bei der Landung (sie ist
+        durchgerollt, das Rollen gehört zum Anrollen des Folge-Legs) — dann gibt es gar nichts
+        mehr zu deckeln, und der Test prüfte seinen eigenen Zweck nicht mehr. Der Deckel selbst
+        ist unverändert: Der Punkt um 10:50 liegt hinter ``next_takeoff`` und bleibt außen vor.
+        """
         from app.database import _extend_block_end
 
         pos = [
             {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 10,
              "ts": _track_ts("10:41:00")},
-            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 8,
-             "ts": _track_ts("10:42:30")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:42:00")},
+            {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 0,
+             "ts": _track_ts("10:42:30")},   # Stillstand über zwei Punkte = on blocks
             {"latitude": EDDK_POS[0], "longitude": EDDK_POS[1], "groundspeed": 15,
              "ts": _track_ts("10:50:00")},  # liegt hinter dem Deckel (next_takeoff 10:45)
         ]
         end = _extend_block_end(pos, _track_ts("10:40:00"), _track_ts("10:45:00"))
-        assert end == _track_ts("10:42:30")
+        assert end == _track_ts("10:42:00")
 
     def test_single_stand_sample_after_landing_still_extends(self):
         """Ein einzelner gs=0-Sample eine Minute nach der Landung ist zu kurz, um als

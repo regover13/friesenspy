@@ -9228,7 +9228,25 @@ function renderBummelParticipants(view) {
     statusText = `Rennen noch nicht gestartet${startTxt ? ' — geplanter Start ' + startTxt : ''}. Ergebnisse erscheinen erst nach Renn-Ende.`;
   } else if (view.status === 'waiting') {
     lockIcon = icon('lock');
-    statusText = 'Rennen beendet — warten auf Nachzügler. Ergebnisse erscheinen, sobald alle gelandet (oder offline) sind.';
+    // Konkret sagen, woran es haengt — „warten auf Nachzuegler" liess offen, ob noch jemand
+    // fliegt oder ob nur die Blockzeit-Erfassung laeuft. Beides kommt aus derselben Quelle,
+    // die auch die Enthuellung prueft (`bummel_wartestand`).
+    var _w = view.wartestand || {};
+    var _fliegen = _w.fliegen || [];
+    var _nie = _w.nie_gestartet || [];
+    var _teile = [];
+    if (_fliegen.length) _teile.push('unterwegs: ' + escHtml(_fliegen.join(', ')));
+    // Wer verbunden ist, aber nie abgehoben, haelt den Abschluss ebenfalls auf — er ist nur
+    // kein Nachzuegler, und „wartet auf X" allein laese ihn wie einen aussehen.
+    if (_nie.length) _teile.push('nicht gestartet: ' + escHtml(_nie.join(', ')));
+    if (_teile.length) {
+      statusText = 'Rennen beendet — Abschluss wartet auf ' + _teile.join(' · ') + '.';
+    } else if (_w.stabil_ab) {
+      statusText = 'Rennen beendet, alle am Boden — Abschluss wartet bis Logout oder '
+        + escHtml(_w.stabil_ab.slice(11, 19)) + 'z zur Erfassung der Blockzeiten.';
+    } else {
+      statusText = 'Rennen beendet — die Ergebnisse erscheinen gleich.';
+    }
   } else {
     lockIcon = icon('lock');
     statusText = `Rennen läuft${view.dtend ? ' bis ' + _bummelNurZeit(view.dtend) : ''} — wer später startet, wird nicht mehr gewertet. Ergebnisse und Ranking erscheinen erst nach Renn-Ende, damit niemand seine Zeit auf den Schnitt ausrichten kann.`;

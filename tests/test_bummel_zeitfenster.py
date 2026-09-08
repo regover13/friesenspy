@@ -96,3 +96,36 @@ class TestAnzeige:
         assert "<th>Start (UTC)</th>" in rumpf
         assert "Ende (UTC)" not in rumpf, "Landezeit gehoert nicht in die verdeckte Ansicht"
         assert "p.ended" not in rumpf
+
+
+class TestWartestandAnzeige:
+    """Nach Renn-Ende soll dastehen, WORAN der Abschluss haengt — nicht nur „warten auf
+    Nachzuegler". Die Auskunft kommt aus `bummel_wartestand`, derselben Quelle, die auch die
+    Enthuellung prueft."""
+
+    def _rumpf(self) -> str:
+        start = INDEX.index("function renderBummelParticipants(")
+        return INDEX[start:INDEX.index("\nfunction ", start + 10)]
+
+    def test_nennt_wer_noch_fliegt(self):
+        rumpf = self._rumpf()
+        assert "Abschluss wartet auf " in rumpf
+        assert "_fliegen.join(', ')" in rumpf
+
+    def test_trennt_unterwegs_von_nicht_gestartet(self):
+        """Wer nie abgehoben ist, haelt den Abschluss auf, ist aber kein Nachzuegler."""
+        rumpf = self._rumpf()
+        assert "unterwegs: " in rumpf
+        assert "nicht gestartet: " in rumpf
+        assert "_w.nie_gestartet" in rumpf
+
+    def test_nennt_den_zeitpunkt_der_erfassung(self):
+        rumpf = self._rumpf()
+        assert "Abschluss wartet bis Logout oder " in rumpf
+        assert "zur Erfassung der Blockzeiten" in rumpf
+        assert "_w.stabil_ab.slice(11, 19)" in rumpf, "hh:mm:ss, nicht nur hh:mm"
+
+    def test_speist_sich_aus_dem_wartestand(self):
+        rumpf = self._rumpf()
+        assert "view.wartestand" in rumpf
+        assert "warten auf Nachzügler" not in rumpf, "der unbestimmte Text ist ersetzt"

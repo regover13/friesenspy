@@ -3081,7 +3081,11 @@ def _extend_block_end(
                 run_pos[0], run_pos[1], _BUMMEL_AIRPORT_RADIUS_KM
             ) is not None:
                 dauer = (_parse_iso(run_last) - _parse_iso(run_first)).total_seconds()
-                phasen.append((run_first, run_last, dauer))
+                # Ein EINZELNER Messpunkt belegt keine Zeitspanne — er kann ein kurzer Halt
+                # beim Rollen sein (Haltelinie, Freigabe) oder ein Ausreisser. Als Abstellen
+                # zaehlt nur, was ueber mindestens zwei Punkte hinweg steht.
+                if dauer > 0:
+                    phasen.append((run_first, run_last, dauer))
         run_first = run_last = None
         run_pos = None
 
@@ -3099,7 +3103,12 @@ def _extend_block_end(
     _abschliessen()
 
     if not phasen:
-        return tail[-1]["ts"]
+        # Kein Stillstand gefunden. Folgt ein weiterer Start, wurde durchgerollt (kurzer
+        # Turnaround, Backtrack zur Bahn) — dann gab es kein on blocks, und das Rollen gehoert
+        # bereits zum ANROLLEN des naechsten Legs. Die Landung ist hier das Blockende.
+        # Endet dagegen der Track, ist der letzte Punkt die beste Schaetzung fuer die
+        # nachweisbare Aktivitaet dieses Legs.
+        return end_ts if cap_ts is not None else tail[-1]["ts"]
 
     if cap_ts is not None:
         return max(phasen, key=lambda ph: ph[2])[0]
@@ -3193,6 +3202,7 @@ def _gps_flights_for_positions(
     callsign_by_ts = {p["ts"]: p.get("callsign") for p in positions if p.get("callsign")}
 
     out: list[dict] = []
+    vorheriges_on_blocks: str | None = None
     for i, gf in enumerate(gps_flights):
         takeoff_ts = gf.get("takeoff_ts")
         landing_ts = gf.get("landing_ts")
@@ -3247,11 +3257,23 @@ def _gps_flights_for_positions(
         # 0 trotz voller Flugzeit (s. GARANTIE-Kommentar am Funktionskopf, dort auch der
         # Floor, der das strukturell absichert). Wird keine Bewegung gefunden, gilt
         # ``takeoff_ts`` (frühestens dort ist die Bewegung durch das Abheben selbst belegt).
+        such_ab = block_start
+        # Nicht vor dem on blocks des VORGAENGERS suchen: ``taxi_start_ts`` ist der Beginn
+        # der ON_GROUND-Phase und faengt beim AUFSETZEN des vorigen Legs an. Ohne die
+        # Schranke findet die Suche als "erste Bewegung" dieses Legs noch dessen EINROLLEN,
+        # und dieselben Minuten stuenden in beiden Blockzeiten.
+        # Sie beruehrt NUR die Suche nach dem Blockfenster-Anfang, nicht ``block_start`` —
+        # das bleibt der Rollbeginn am eigenen Platz (s. TestReconnectAtOtherAirport, wo ein
+        # Reconnect 240 km entfernt sonst am falschen Platz gezeichnet wuerde).
+        if vorheriges_on_blocks and such_ab < vorheriges_on_blocks:
+            such_ab = vorheriges_on_blocks
         moves_in_window = [
             p["ts"] for p in positions
-            if block_start <= p["ts"] <= end_ts and (p.get("groundspeed") or 0) > _BLOCK_GS_KT
+            if such_ab <= p["ts"] <= end_ts and (p.get("groundspeed") or 0) > _BLOCK_GS_KT
         ]
         block_from = min(min(moves_in_window), takeoff_ts) if moves_in_window else takeoff_ts
+        if vorheriges_on_blocks and block_from < vorheriges_on_blocks:
+            block_from = vorheriges_on_blocks
 
         # Blockfenster-ENDE (``block_end``): normalerweise ``end_ts`` — zusätzlich über die
         # Landung hinaus verlängert, wenn danach noch eingerollt wird (s. ``_extend_block_end``).
@@ -3275,6 +3297,7 @@ def _gps_flights_for_positions(
         # auf beiden Auflösungen, damit Sekunden und Minuten nicht auseinanderlaufen.
         block_sec = max(block_sec, air_sec)
         block_min = max(block_sec // 60, duration_min)
+        vorheriges_on_blocks = block_end
 
         plan = _flightplan_asof(plan_rows, end_ts)
         gps_dep = gf.get("dep_icao")
@@ -4105,6 +4128,78 @@ def _nearest_airport(
     return best
 
 
+def bummel_wartestand(
+    conn: sqlite3.Connection,
+    route_icaos: list[str],
+    radius_km: float,
+    now: str | None = None,
+    *,
+    started_before: str | None = None,
+    callsign_prefix: str = "FRS",
+) -> dict:
+    """Worauf wartet die Enthuellung noch? — ``{"fliegen": [callsign, …], "stabil_ab": iso|None}``
+
+    ``fliegen``  — Teilnehmer, die noch in der Luft sind (kein abgeschlossenes Leg, aber
+                   Bewegung im Track).
+    ``nie_gestartet`` — verbunden an einem Streckenflugplatz, aber nie abgehoben. Halten den
+                   Abschluss ebenfalls auf, sind aber keine Nachzuegler.
+    ``stabil_ab``— spaetester Zeitpunkt, ab dem alle Blockzeiten endgueltig sind; ``None``,
+                   wenn schon jetzt alle stehen. Wer sich ausloggt, faellt sofort heraus (der
+                   Flug ist dann geschlossen und taucht hier nicht mehr auf) — deshalb ist das
+                   ein „bis spaetestens", kein Termin.
+
+    Dieselbe Auskunft speist die Pruefung (:func:`_bummel_anyone_in_progress`) und die Anzeige
+    im Events-Tab, damit beide nicht auseinanderlaufen koennen.
+    """
+    from app.geo import icao_to_coords
+
+    now = now or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    route_set = {(c or "").strip().upper() for c in route_icaos if c and c.strip()}
+    coords_map = {icao: icao_to_coords(icao) for icao in route_set}
+    rows = conn.execute(
+        "SELECT cid, callsign, departure, logon_time FROM flights "
+        "WHERE logoff_time IS NULL AND superseded_by IS NULL AND callsign LIKE ?",
+        (callsign_prefix + "%",),
+    ).fetchall()
+
+    fliegen: list[str] = []
+    nie_gestartet: list[str] = []
+    stabil_ab: str | None = None
+    for r in rows:
+        if started_before and (r["logon_time"] or "") > started_before:
+            continue
+        cid, logon = int(r["cid"]), (r["logon_time"] or "")
+        first = _first_pos(conn, cid, logon, "9999-12-31T23:59:59Z")
+        dep = _nearest_airport(coords_map, first, radius_km) or (r["departure"] or "").strip().upper()
+        if dep not in route_set:
+            continue
+        if not _bummel_gelandet(conn, cid, logon, radius_km, callsign_prefix):
+            # Kein abgeschlossenes Leg: entweder in der Luft — oder nie abgehoben. Beide
+            # halten den Abschluss auf, aber „wartet auf X" liest sich beim Gate-Steher
+            # falsch. Wer sich nie bewegt hat, kommt deshalb getrennt heraus.
+            name = (r["callsign"] or "").strip() or f"CID {cid}"
+            if _bummel_steht_seit(conn, cid, logon) is None:
+                nie_gestartet.append(name)
+            else:
+                fliegen.append(name)
+            continue
+        if _bummel_blockzeit_steht(conn, cid, logon, now):
+            continue  # gelandet und lange genug gestanden — dieser Wert aendert sich nicht mehr
+        seit = _bummel_steht_seit(conn, cid, logon)
+        if seit is None:
+            continue
+        ab = (_parse_iso(seit) + timedelta(seconds=_BLOCK_STAND_MIN_SEC)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        if stabil_ab is None or ab > stabil_ab:
+            stabil_ab = ab
+    return {
+        "fliegen": sorted(fliegen),
+        "nie_gestartet": sorted(nie_gestartet),
+        "stabil_ab": stabil_ab,
+    }
+
+
 def _bummel_anyone_in_progress(
     conn: sqlite3.Connection,
     route_icaos: list[str],
@@ -4112,6 +4207,7 @@ def _bummel_anyone_in_progress(
     *,
     started_before: str | None = None,
     callsign_prefix: str = "FRS",
+    now: str | None = None,
 ) -> bool:
     """True, wenn gerade noch ein Teilnehmer auf der Tour unterwegs ist (Enthüllung verschieben).
 
@@ -4128,18 +4224,59 @@ def _bummel_anyone_in_progress(
         "WHERE logoff_time IS NULL AND superseded_by IS NULL AND callsign LIKE ?",
         (callsign_prefix + "%",),
     ).fetchall()
-    for r in rows:
-        if started_before and (r["logon_time"] or "") > started_before:
-            continue
-        first = _first_pos(conn, int(r["cid"]), r["logon_time"] or "", "9999-12-31T23:59:59Z")
-        dep = _nearest_airport(coords_map, first, radius_km) or (r["departure"] or "").strip().upper()
-        if dep in route_set:
-            if _bummel_gelandet(
-                conn, int(r["cid"]), r["logon_time"] or "", radius_km, callsign_prefix
-            ):
-                continue  # gelandet — nur die Verbindung steht noch offen
-            return True
-    return False
+    stand = bummel_wartestand(
+        conn, route_icaos, radius_km, now,
+        started_before=started_before, callsign_prefix=callsign_prefix,
+    )
+    return (
+        bool(stand["fliegen"]) or bool(stand["nie_gestartet"])
+        or stand["stabil_ab"] is not None
+    )
+
+
+def _bummel_steht_seit(
+    conn: sqlite3.Connection, cid: int, logon_time: str, bis: str | None = None
+) -> str | None:
+    """Zeitpunkt der letzten Bewegung — ab da laeuft die Standzeit.
+
+    ``None``, wenn es keine Positionen gibt oder sich nie etwas bewegt hat (dann ist der Pilot
+    noch nicht losgeflogen und die Frage stellt sich nicht).
+
+    ``bis`` deckelt die Suche nach oben. Fuer einen OFFENEN Flug ist das entbehrlich — es gibt
+    keine spaeteren Positionen —, und genau so wird die Funktion aufgerufen. Ohne den Deckel
+    liefert sie fuer einen bereits geschlossenen Flug aber die letzte Bewegung eines SPAETEREN
+    Fluges desselben Piloten; beim Nachrechnen am 08.09.2026 ist genau das passiert.
+    """
+    sql = ("SELECT MAX(ts) FROM position_history "
+           "WHERE cid = ? AND ts >= ? AND groundspeed > ?")
+    params: list = [cid, logon_time, _BLOCK_GS_KT]
+    if bis:
+        sql += " AND ts <= ?"
+        params.append(bis)
+    return conn.execute(sql, params).fetchone()[0]
+
+
+def _bummel_blockzeit_steht(
+    conn: sqlite3.Connection, cid: int, logon_time: str, now: str
+) -> bool:
+    """Steht die Blockzeit dieses Piloten endgueltig fest?
+
+    Nicht dasselbe wie „gelandet". Solange jemand am Boden steht und ONLINE bleibt, greift in
+    :func:`_extend_block_end` der Rueckfall „bis zur letzten Position" — on blocks ist noch
+    nicht bestimmt und die Blockzeit waechst mit jeder Minute weiter. Erst wenn die
+    Stillstandsphase ``_BLOCK_STAND_MIN_SEC`` erreicht, ist sie belegt und der Wert endgueltig.
+
+    Genau hier ist die Schwelle die exakte Bedingung — anders als bei der Frage „ist er
+    fertig?", fuer die sie am 08.09.2026 zu Recht als Kruecke verworfen wurde: Die Landung
+    steht in den Daten, der Zeitpunkt von on blocks aber erst nach dieser Wartezeit.
+    """
+    seit = _bummel_steht_seit(conn, cid, logon_time)
+    if seit is None:
+        return False
+    try:
+        return (_parse_iso(now) - _parse_iso(seit)).total_seconds() >= _BLOCK_STAND_MIN_SEC
+    except Exception:
+        return False
 
 
 def _bummel_gelandet(
