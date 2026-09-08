@@ -3053,9 +3053,13 @@ def _extend_block_end(
     """
     from app import geo
 
+    # ``>= end_ts``, nicht ``>``: Die Landung wird bei ``groundspeed < _GPS_BLOCK_GS_KT``
+    # erkannt — das Landesample STEHT also bereits und gehoert zur Stillstandsphase. Mit ``>``
+    # begann sie ein Sample spaeter und on blocks lag rund 15 s zu spaet (Fable-Review
+    # 08.09.2026: 177 von 316 gelandeten Legs betroffen, meist exakt ein Sample-Takt).
     candidates = sorted(
         (p for p in positions
-         if p.get("ts") and p["ts"] > end_ts and (cap_ts is None or p["ts"] < cap_ts)),
+         if p.get("ts") and p["ts"] >= end_ts and (cap_ts is None or p["ts"] < cap_ts)),
         key=lambda p: p["ts"],
     )
     tail: list[dict] = []
@@ -3183,7 +3187,15 @@ def _gps_flights_for_positions(
     # das, um on blocks beim Ausloggen sofort zu setzen, statt auf `_BLOCK_STAND_MIN_SEC`
     # zu warten (Nutzerentscheidung 08.09.2026: „Wenn ich auslogge, warte ich nie").
     _letzter_punkt = max((p["ts"] for p in positions if p.get("ts")), default=None)
-    track_beendet = rescue_before is None or (
+    # Ist die Verbindung nachweislich schon zu? Dann kommt nichts mehr, egal wie frisch der
+    # letzte Punkt ist. Ohne diese Zeile galt ein gerade ausgeloggter Pilot noch 15 Minuten
+    # lang als "live" (nur `rescue_before` entschied), und on blocks lief solange bis zum
+    # letzten Punkt statt bis zum Beginn der Standphase. Wer nach kurzem Stand ausloggt, faellt
+    # aber sofort aus der Enthuellungs-Wartebedingung — der unfertige Wert konnte also
+    # eingefroren werden (Fable-Review 08.09.2026, Beispiel 427 s zu viel).
+    _zuletzt = max(plan_rows, key=lambda r: (r.get("logon_time") or "")) if plan_rows else None
+    _verbindung_zu = bool(_zuletzt and (_zuletzt.get("logoff_time") or ""))
+    track_beendet = _verbindung_zu or rescue_before is None or (
         _letzter_punkt is not None and _letzter_punkt < rescue_before
     )
 

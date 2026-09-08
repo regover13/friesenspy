@@ -192,3 +192,44 @@ class TestKeineDoppelzaehlungUeberLegGrenzen:
         assert _parse_iso(a["block_end"]).timestamp() <= beginn_b, (
             f"Leg A endet {a['block_end']}, Leg B beginnt frueher — das Einrollen zaehlt doppelt"
         )
+
+
+class TestAusgeloggtGiltSofort:
+    """Eine geschlossene Verbindung heisst: es kommt nichts mehr.
+
+    Vorher entschied allein ``rescue_before`` (15-min-Live-Fenster), ob ein Track als beendet
+    galt. Ein gerade ausgeloggter Pilot war damit noch 15 Minuten lang „live", on blocks lief
+    solange bis zum LETZTEN PUNKT statt bis zum Beginn der Standphase — waehrend er aus der
+    Enthuellungs-Wartebedingung sofort herausfiel, weil sein Flug geschlossen ist. Genau dieser
+    unfertige Wert konnte eingefroren werden (Fable-Review 08.09.2026, Beispiel 427 s zu viel).
+    """
+
+    def _frischer_track(self):
+        """Landung vor 4 min, danach Stillstand — zu kurz fuer _BLOCK_STAND_MIN_SEC."""
+        from datetime import datetime, timedelta, timezone
+        jetzt = datetime.now(timezone.utc).replace(microsecond=0)
+        pos = []
+        for minuten_vorher, gs in [(9, 0), (8, 25), (7, 90), (5, 90), (4, 10), (3, 0), (2, 0), (1, 0)]:
+            t = jetzt - timedelta(minutes=minuten_vorher)
+            pos.append({"ts": t.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "latitude": EDWF[0], "longitude": EDWF[1],
+                        "altitude": 20 if gs < 50 else 1500, "groundspeed": gs})
+        return pos, (jetzt - timedelta(minutes=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def test_offene_verbindung_wartet_noch(self):
+        """Ohne logoff_time gilt der Track als live — on blocks steht noch nicht fest."""
+        pos, standbeginn = self._frischer_track()
+        ende = _extend_block_end(pos, pos[4]["ts"], None, track_beendet=False)
+        assert ende == pos[-1]["ts"], ende
+
+    def test_geschlossene_verbindung_setzt_on_blocks_sofort(self):
+        from app.database import _gps_flights_for_positions
+        pos, standbeginn = self._frischer_track()
+        plan = [{"logon_time": pos[0]["ts"], "logoff_time": pos[-1]["ts"],
+                 "departure": "EDWF", "arrival": "EDWF"}]
+        f = _gps_flights_for_positions(pos, plan_rows=plan, source="friesenspy", radius_km=10)
+        assert f, "kein Leg erkannt"
+        assert f[-1]["block_end"] == standbeginn, (
+            f"on blocks {f[-1]['block_end']} statt {standbeginn} — die Standzeit nach der "
+            f"Landung zaehlt noch als Blockzeit"
+        )

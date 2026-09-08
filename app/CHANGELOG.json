@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.27.0",
+    "date": "2026-09-08",
+    "highlight": false,
+    "title": "Drei Feinheiten an der Blockzeit",
+    "items": [
+      "🚪 Wer sich ausloggt, gilt sofort als gelandet und abgestellt. Vorher entschied allein ein 15-Minuten-Fenster darüber, ob eine Aufzeichnung als beendet gilt — ein gerade ausgeloggter Pilot war also noch eine Viertelstunde „unterwegs\", und seine Blockzeit lief solange weiter. Bei einem Rennen konnte dadurch ein unfertiger Wert eingefroren werden.",
+      "🛬 Der Moment des Aufsetzens zählt jetzt zur Standzeit dazu. Die Landung wird erkannt, sobald die Maschine steht — genau dieser Messpunkt wurde bisher übersprungen, wodurch die Blockzeit rund 15 Sekunden zu spät endete. Betraf gut die Hälfte aller Landungen.",
+      "📖 Im Handbuch stand, ein Halt unterwegs bleibe in der Blockzeit. Das gilt nur für Halte unter zehn Minuten — wer länger am Stück steht, gilt als abgestellt. Die Einschränkung fehlte und ist jetzt beschrieben."
+    ]
+  },
+  {
     "version": "14.26.1",
     "date": "2026-09-08",
     "highlight": false,

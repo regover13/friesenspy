@@ -186,17 +186,18 @@ class TestFormParity:
         # "fix/blockzeit-anblock": duration_min bleibt 34 (_air_seconds findet im Track
         # keine Bodenphase -- jedes Sample-Paar zwischen 10:06 und 10:40 liegt entweder mehr
         # als 300 s auseinander oder mehr als 200 m entfernt, s. Kriterien in _air_seconds).
-        # block_min steigt von 37 auf 43: _leg_block_seconds zaehlt WANDUHR ab block_from
-        # (10:01, erstes Sample mit groundspeed > 2 kt) bis block_end. block_end selbst
-        # verlaengert sich ueber die Landung (10:40) hinaus bis zum LETZTEN VERFUEGBAREN
-        # Sample (10:44 -- der einzige Stand danach hat nur 1 Sample, viel zu kurz fuer die
-        # 600-s-Schwelle einer qualifizierenden Abstell-Standphase, zaehlt aber trotzdem als
-        # direkt belegte Standzeit, s. _extend_block_end). 10:01-10:44 = 43 min, keine
-        # qualifizierenden Abzuege -> 43 (vorher zaehlte die SESSION-Blockzeit-Formel nur die
-        # Summe der Bewegungs-Luecken zwischen Messpunkten, 37 min -- s.
-        # `_block_seconds_positions`, die für die Leg-Metrik nicht mehr verwendet wird).
+        # block_min = WANDUHR ab block_from (10:01, erstes Sample mit groundspeed > 2 kt) bis
+        # ON BLOCKS. Der Track endet im Stillstand: Aufsetzen 10:40 mit gs < 2, danach steht
+        # die Maschine bis zum letzten Sample 10:44. on blocks ist der BEGINN dieser Phase,
+        # also 10:40 -> 10:01-10:40 = 39 min.
+        #
+        # Bis 08.09.2026 stand hier 43: Damals lief block_end bis zum letzten verfuegbaren
+        # Sample (10:44), die vier Minuten Stehen zaehlten also als Blockzeit. Zwei Aenderungen
+        # haben das korrigiert — die Standphase am Trackende bestimmt on blocks (v14.24.0),
+        # und das Landesample selbst gehoert zu ihr, statt sie erst ein Sample spaeter
+        # beginnen zu lassen (Fable-Review). Zeit AN der Abstellposition ist keine Blockzeit.
         assert flight["duration_min"] == 34
-        assert flight["block_min"] == 43
+        assert flight["block_min"] == 39
         assert flight["block_min"] >= flight["duration_min"]
 
     def test_block_start_is_roll_begin_before_takeoff(self):

@@ -82,9 +82,12 @@ lagen bereits vor) — deshalb ist v8.0.0 ein Major-Release.
 
 **Flugzeit vs. Blockzeit:** Pro Flug werden zwei Zeiten unterschieden — **Flugzeit** (Abheben →
 Landung, reine Luftzeit) und **Blockzeit** (*off blocks* bis *on blocks*: vom Verlassen der
-Abstellposition bis zum Erreichen der nächsten, Taxi eingeschlossen). Ein Halt unterwegs —
-Warten auf Freigabe, Standlaufprobe, Warteschlange — bleibt in der Blockzeit; die Zeit **an**
-der Abstellposition zählt nicht. Beide Zeiten erscheinen getrennt in den Fluglisten.
+Abstellposition bis zum Erreichen der nächsten, Taxi eingeschlossen). Ein **kurzer** Halt
+unterwegs — Warten auf Freigabe, Standlaufprobe, Warteschlange — bleibt in der Blockzeit; die
+Zeit **an** der Abstellposition zählt nicht. Die Grenze liegt bei **zehn Minuten**: Wer irgendwo
+auf einem Flugplatz länger als das am Stück steht, gilt als abgestellt, auch wenn er danach
+weiterrollt und startet. Das trifft selten zu (drei von 351 Flügen im Spätsommer 2026) und
+unterstellt im Zweifel eine Pause statt einer sehr langen Warteschlange. Beide Zeiten erscheinen getrennt in den Fluglisten.
 
 Wo *on blocks* liegt, hängt davon ab, was danach passiert: Folgt ein weiterer Start, ist es die
 **längste** Stillstandsphase dazwischen — das Abstellen dauert länger als ein Halt unterwegs.
