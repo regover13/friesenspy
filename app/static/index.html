@@ -13461,9 +13461,15 @@ function _kesc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Tonnen erst ab 10 t — darunter immer die exakte Kilogrammzahl. Eine Nachkommastelle rundet
+// auf volle 100 kg: 1960 kg standen als „2,0 t" im Kopf, während der Abschlusstext darunter
+// korrekt 1960 kg nannte (Nutzer-Fund 09.09.). Ein Kutter wird in Kilogramm gepflegt und
+// gewertet, und der Erhaltungssatz (geliefert + verloren + an Bord + Rest = Manifest) ist nur
+// in Kilogramm nachprüfbar — Tonnen sind bei 2 t Kosmetik, die genau hier zu viel behauptet hat.
+// Ab 10 t bleibt die Kurzform, dort fällt eine 100-kg-Rundung nicht mehr ins Gewicht.
 function _kfmtT(kg) {
   kg = kg || 0;
-  return (kg >= 1000)
+  return (kg >= 10000)
     ? (kg / 1000).toFixed(kg % 1000 === 0 ? 0 : 1).replace('.', ',') + ' t'
     : Math.round(kg) + ' kg';
 }
@@ -13650,17 +13656,41 @@ function _kutterBarAndTotals(d, showBreakdown = true) {
       const stacks = d.place_stacks || {};
       const places = new Set(d.cargo.map(c => c.departure).filter(Boolean));  // Manifest-Plätze (auch leere)
       Object.keys(stacks).forEach(p => places.add(p));                        // + jeder Platz mit Bestand
+      // Ziel je (Platz, Name) aus dem Manifest — Grundlage für den Fortschritt "abgeholt". Ohne
+      // das normierte sich die Breite nur auf den AKTUELLEN Reststapel und der Balken sah immer
+      // "voll" aus, egal wie viel schon weg war (Nutzer-Fund 09.09.: Kutter live, Balken zeigten
+      // trotz laufendem Abtransport unverändert voll).
+      //
+      // Die Liste kommt aus dem MANIFEST, nicht aus dem Stapel: `place_stacks` führt nur, was noch
+      // > 0 ist, eine FERTIG abgeholte Frachtart fällt dort ganz heraus. Aus dem Stapel gebaut
+      // verschwände ihr voller Balken genau in dem Moment, in dem sie fertig wird — der Balken
+      // spränge rückwärts (an EDWG gemessen: 1610 von 2810 kg weg, angezeigt 20 %, weil fünf
+      // erledigte Frachtarten fehlten). Ware ohne eigene Manifest-Zeile an DIESEM Platz (relayte/
+      // zurückgebrachte Ware, #2) kommt zusätzlich dazu; für sie ist kein Ursprung bekannt, sie
+      // gilt als frisch angekommen (Ziel = was da liegt, 0 % abgeholt).
+      const placeTargets = {};
+      d.cargo.forEach(c => {
+        if (!c.departure) return;
+        const byName = placeTargets[c.departure] || (placeTargets[c.departure] = {});
+        byName[c.name] = (byName[c.name] || 0) + (c.target_kg || 0);
+      });
       [...places].sort((a, b) => a.localeCompare(b)).forEach(k => {
-        const contents = Object.entries(stacks[k] || {}).filter(([, kg]) => kg > 0.05)
-          .sort((a, b) => a[0].localeCompare(b[0]));
+        const stackHere = stacks[k] || {};
+        const targetsHere = placeTargets[k] || {};
+        const names = [...new Set([...Object.keys(targetsHere), ...Object.keys(stackHere)])]
+          .sort((a, b) => a.localeCompare(b));
+        const items = names.map(name => {
+          const kg = stackHere[name] || 0;
+          return {
+            c: { name, emoji: emojiByName[name], on_stack_kg: kg,
+                 target_kg: Math.max(targetsHere[name] || 0, kg) },
+            gi: nameIdx[name] || 0,
+          };
+        }).filter(({ c }) => c.target_kg > 0.05);
         bar += '<div class="kutter-grp-h">' + icon('plane-departure') + ' ' + _kesc(k) + '</div>';
-        if (!contents.length) { bar += '<div class="kutter-legend kutter-legend--sub"><span style="opacity:.6">leer</span></div>'; return; }
-        const totalHere = contents.reduce((s, [, kg]) => s + kg, 0) || 1;
-        const segs = contents.map(([name, kg]) => '<div class="kutter-seg" style="width:'
-          + (100 * kg / totalHere).toFixed(2) + '%"><i style="width:100%;background:' + _kColor(nameIdx[name] || 0) + '"></i></div>').join('');
-        const legend = contents.map(([name, kg]) => '<span>'
-          + (emojiByName[name] ? emojiChar(emojiByName[name]) + ' ' : '') + _kesc(name) + ' ' + _kfmtT(kg) + '</span>').join('');
-        bar += '<div class="kutter-bar kutter-bar--sub">' + segs + '</div><div class="kutter-legend kutter-legend--sub">' + legend + '</div>';
+        if (!items.length) { bar += '<div class="kutter-legend kutter-legend--sub"><span style="opacity:.6">leer</span></div>'; return; }
+        const totalHere = items.reduce((s, { c }) => s + c.target_kg, 0) || 1;
+        bar += _kStockLegend(items, totalHere);
       });
     }
   }

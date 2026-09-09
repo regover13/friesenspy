@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.27.1",
+    "date": "2026-09-09",
+    "highlight": false,
+    "title": "Kutter: Balken je Abholplatz zeigte nie, was schon weg war",
+    "items": [
+      "📦 Der Balken je Abholplatz normierte sich bisher auf den aktuellen Reststapel — er sah deshalb immer „voll\" aus, egal ob dort noch 900 kg oder nur noch 9 kg lagen. Über acht echte Events nachgemessen zeigte er ausnahmslos „100 %\" oder „leer\", nie etwas dazwischen. Jetzt normiert er sich auf die ursprüngliche Manifest-Menge an diesem Platz: der farbige Anteil wächst mit jedem Frachtflug, der Rest schrumpft sichtbar.",
+      "⚖️ Mengen stehen bis 10 t in Kilogramm statt in gerundeten Tonnen. Der Abschluss des Wilhelmshaven-Kutters meldete im Kopf „2,0 t / 2,0 t\", während der Text darunter korrekt 1960 kg nannte — eine Nachkommastelle rundet auf volle 100 kg und behauptete damit 40 kg zu viel. Jetzt steht dort „1960 kg / 1960 kg\". Ein Kutter wird in Kilogramm gepflegt und gewertet, und der Erhaltungssatz ist nur in Kilogramm nachprüfbar; erst ab 10 t bleibt die Kurzform in Tonnen.",
+      "✅ Eine fertig abgeholte Frachtart bleibt im Balken stehen (voll gefüllt), statt daraus zu verschwinden — sonst spränge der Balken genau in dem Moment zurück, in dem eine Ware fertig wird. Ein vollständig geräumter Platz zeigt deshalb einen vollen Balken mit „0 kg · alles abgeholt\" statt wie bisher nur das Wort „leer\". Ware, die ohne eigene Manifest-Zeile an einen Platz zurückgebracht oder umgeladen wurde, gilt als gerade angekommen und damit als noch nicht abgeholt."
+    ]
+  },
+  {
     "version": "14.27.0",
     "date": "2026-09-08",
     "highlight": false,
