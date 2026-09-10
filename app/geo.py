@@ -370,11 +370,31 @@ def nearest_airport_icao(lat: float, lon: float, max_km: float) -> str | None:
     return best
 
 
-# Grad-Grid-Bucket-Index: jeder Flugplatz wird nach seiner Ganzzahl-Zelle
-# (floor(lat), floor(lon)) einsortiert. Eine Umkreis-Abfrage muss dann nur noch
-# die wenigen Zellen der Bounding-Box scannen statt aller ~28k Einträge — gedacht
-# für häufige Abfragen (Poll-Takt / Leg-Detektor). Einmal modulweit + faul gecacht.
+# Grid-Bucket-Index: jeder Flugplatz wird nach seiner Zelle einsortiert. Eine Umkreis-Abfrage
+# muss dann nur noch die wenigen Zellen der Bounding-Box scannen statt aller ~28k Einträge —
+# gedacht für häufige Abfragen (Poll-Takt / Leg-Detektor). Einmal modulweit + faul gecacht.
+#
+# **Zellengröße 0,1° seit dem 10.09.2026 — vorher 1°.** Das alte Raster war für die einzige
+# real vorkommende Abfrage um zwei Größenordnungen zu grob: Der Produktionsradius ist 4 km
+# (``_BUMMEL_AIRPORT_RADIUS_KM``), die Bounding-Box also ±0,046°. Mit 1°-Zellen und dem
+# Sicherheitsrand von einer Zelle wurden daraus 3°×3° — rund 300 × 200 km durchsucht, um zu
+# beantworten, ob ein Platz 4 km entfernt liegt. Gemessen an einem Kutter-Event: 58.598
+# Aufrufe mit im Schnitt **83 Kandidaten** je Aufruf, zusammen 4,86 Mio. ``haversine``-Aufrufe
+# und damit der mit Abstand teuerste Posten von ``compute_transport_progress``
+# (cProfile 09./10.09.2026, s. docs/kutter-zuladung-invalidierung.md).
+#
+# Die zugesicherte Ergebnisgleichheit mit dem Linearscan hängt an der Bounding-Box, NICHT an
+# der Zellengröße: Die Kandidatenmenge bleibt eine Obermenge aller Plätze innerhalb ``max_km``.
+# ``test_fast_matches_linear_scan`` prüft das über beide Verfahren gegeneinander.
+_GRID_ZELLEN_JE_GRAD = 10
 _AIRPORT_GRID: dict[tuple[int, int], list[tuple[int, str, float, float]]] | None = None
+
+# Ab wie vielen Zellen sich das Raster nicht mehr lohnt. Feine Zellen sind für kleine Radien
+# ein Gewinn und für große ein Verlust — bei 500 km wären es über 100.000 Zellen-Nachschläge
+# für eine Kandidatenmenge, die ohnehin halb Europa umfasst. Dann ist der Linearscan über die
+# ~28k Einträge billiger, und er ist per Definition ergebnisgleich (die schnelle Variante ist
+# als seine Neuimplementierung definiert). Der Produktionsradius von 4 km braucht 16 Zellen.
+_GRID_MAX_ZELLEN = 4096
 
 
 def _airport_grid() -> dict[tuple[int, int], list[tuple[int, str, float, float]]]:
@@ -391,7 +411,8 @@ def _airport_grid() -> dict[tuple[int, int], list[tuple[int, str, float, float]]
             alat, alon = a.get("lat"), a.get("lon")
             if alat is None or alon is None:
                 continue
-            key = (math.floor(alat), math.floor(alon))
+            key = (math.floor(alat * _GRID_ZELLEN_JE_GRAD),
+                   math.floor(alon * _GRID_ZELLEN_JE_GRAD))
             grid.setdefault(key, []).append((idx, icao, alat, alon))
         _AIRPORT_GRID = grid
     return _AIRPORT_GRID
@@ -404,6 +425,9 @@ def nearest_airport_icao_fast(lat: float, lon: float, max_km: float) -> str | No
     nur die Buckets, die die ``max_km``-Bounding-Box abdecken (in Längengrad großzügig um
     ``cos(lat)`` korrigiert, plus 1 Bucket Rand → Kandidatenmenge ist stets eine Obermenge
     aller Plätze innerhalb ``max_km``). Rückgabe: ICAO des nächsten Platzes ≤ ``max_km`` oder None.
+
+    Wird die Bounding-Box zu groß (großer Radius, polnah), fällt die Funktion auf den
+    Linearscan zurück — dort ist er billiger, und ergebnisgleich ist er ohnehin.
     """
     grid = _airport_grid()
 
@@ -415,18 +439,25 @@ def nearest_airport_icao_fast(lat: float, lon: float, max_km: float) -> str | No
     else:
         lon_span = max_km / (111.0 * abs(coslat)) + 0.01
 
-    ilat0 = math.floor(lat - lat_span) - 1
-    ilat1 = math.floor(lat + lat_span) + 1
+    k = _GRID_ZELLEN_JE_GRAD
+    ilat0 = math.floor((lat - lat_span) * k) - 1
+    ilat1 = math.floor((lat + lat_span) * k) + 1
     if lon_span >= 180.0:
-        ilon_range = range(-180, 180)
+        ilon_range = range(-180 * k, 180 * k)
     else:
-        ilon_range = range(math.floor(lon - lon_span) - 1, math.floor(lon + lon_span) + 2)
+        ilon_range = range(math.floor((lon - lon_span) * k) - 1,
+                           math.floor((lon + lon_span) * k) + 2)
+
+    # Bei großem ``max_km`` (oder polnah) sprengt die Bounding-Box jeden Nutzen des Rasters —
+    # dann direkt linear scannen. Ergebnisgleich, s. Kommentar bei `_GRID_MAX_ZELLEN`.
+    if (ilat1 - ilat0 + 1) * len(ilon_range) > _GRID_MAX_ZELLEN:
+        return nearest_airport_icao(lat, lon, max_km)
 
     # Bucket-Keys sammeln (Set gegen Duplikate durch Längengrad-Wraparound bei ±180).
     keys: set[tuple[int, int]] = set()
     for ilat in range(ilat0, ilat1 + 1):
         for ilon_raw in ilon_range:
-            ilon = ((ilon_raw + 180) % 360) - 180
+            ilon = ((ilon_raw + 180 * k) % (360 * k)) - 180 * k
             keys.add((ilat, ilon))
 
     candidates: list[tuple[int, str, float, float]] = []

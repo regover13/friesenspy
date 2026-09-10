@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.27.4",
+    "date": "2026-09-10",
+    "highlight": false,
+    "title": "Kutter-Auswertung rechnet ein Drittel schneller",
+    "items": [
+      "⚡ Die Flugplatz-Suche benutzte ein viel zu grobes Raster: Um zu klären, ob ein Platz 4 km entfernt liegt, durchsuchte sie ein Feld von rund 300 mal 200 Kilometern und prüfte dabei im Schnitt 89 Plätze — für eine einzige Kutter-Auswertung fast 60.000 Mal. Mit feinerem Raster sind es noch 2,4 Plätze je Abfrage. Die Auswertung aller zehn Events fällt damit von 160 auf 110 Sekunden; einzelne Abfragen werden achtmal schneller.",
+      "✅ Die Ergebnisse ändern sich dabei nicht — geprüft gegen das langsame Vergleichsverfahren über 400 Zufallspunkte weltweit und zusätzlich auf den echten Daten: Menge, Flugzahl und Verluste aller zehn Events sind zeichengleich."
+    ]
+  },
+  {
     "version": "14.27.3",
     "date": "2026-09-10",
     "highlight": false,

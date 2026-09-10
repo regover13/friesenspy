@@ -374,6 +374,42 @@ class TestNearestAirportFast:
                 slow = nearest_airport_icao(lat, lon, r)
                 assert fast == slow, f"mismatch at ({lat},{lon}) r={r}: {fast!r} != {slow!r}"
 
+    def test_matches_linear_scan_zufaellig(self):
+        """Breite Zufallsstichprobe — die feste Koordinatenliste oben trifft naturgemäß nur,
+        woran jemand gedacht hat.
+
+        Fester Seed: Ein Fehlschlag muss reproduzierbar sein, sonst ist er wertlos. Die Radien
+        umfassen den Produktionswert (4 km, ``_BUMMEL_AIRPORT_RADIUS_KM``) und decken BEIDE
+        Wege ab — Raster und den Linearscan-Rückfall bei zu großer Bounding-Box.
+        """
+        import random
+        rng = random.Random(20260910)
+        for _ in range(400):
+            lat = rng.uniform(-89.9, 89.9)
+            lon = rng.uniform(-180.0, 180.0)
+            r = rng.choice([0.5, 4.0, 12.0, 60.0, 400.0])
+            fast = nearest_airport_icao_fast(lat, lon, r)
+            slow = nearest_airport_icao(lat, lon, r)
+            assert fast == slow, f"mismatch at ({lat},{lon}) r={r}: {fast!r} != {slow!r}"
+
+    def test_zellenraster_schneidet_die_kandidatenmenge(self):
+        """Der Sinn der feineren Zellen: deutlich weniger Kandidaten je Abfrage.
+
+        Ohne diesen Test bliebe die Umstellung von 1° auf 0,1° unbemerkt reversibel — die
+        Ergebnisse sind ja identisch, nur die Kosten nicht. Gemessen wird die Zellenfläche,
+        die eine 4-km-Abfrage aufzieht: mit 1°-Zellen waren es 3×3 = 9 Quadratgrad, jetzt
+        müssen es deutlich unter 1 sein.
+        """
+        from app import geo
+        k = geo._GRID_ZELLEN_JE_GRAD
+        lat, lon, max_km = 53.5, 8.05, 4.0
+        lat_span = max_km / 111.0 + 0.01
+        lon_span = max_km / (111.0 * math.cos(math.radians(lat))) + 0.01
+        n_lat = (math.floor((lat + lat_span) * k) + 1) - (math.floor((lat - lat_span) * k) - 1) + 1
+        n_lon = (math.floor((lon + lon_span) * k) + 2) - (math.floor((lon - lon_span) * k) - 1)
+        flaeche_grad2 = n_lat * n_lon / (k * k)
+        assert flaeche_grad2 < 0.5, f"Rasterfläche {flaeche_grad2} Quadratgrad ist zu grob"
+
     def test_finds_eddk(self):
         # Direkt am EDDK, kleiner Radius → EDDK.
         assert nearest_airport_icao_fast(50.8659, 7.14274, 5.0) == "EDDK"

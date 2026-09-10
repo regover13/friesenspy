@@ -100,12 +100,34 @@ wo sie liegen:
 **Es ist fast reines Python, keine Datenbank.** Das ist auch der Grund, warum ein Verschieben in
 einen Worker-Thread weniger hilft, als es klingt: Nur SQLite gibt die GIL frei, `haversine` nicht.
 
-Der eigentliche Hebel steckt in `nearest_airport_icao_fast`: Der Index arbeitet mit **1°×1°-Kacheln**
-und legt vorsichtshalber eine weitere Kachel Rand darum. Für eine Frage mit rund 4 km Radius wird
-damit ein Feld von etwa 3°×3° durchsucht — im Schnitt 83 Flugplätze je Aufruf. Feinere Kacheln
-würden die Kandidatenmenge um etwa zwei Größenordnungen senken, ohne am Ergebnis etwas zu ändern;
-die zugesicherte Ergebnisgleichheit mit dem Linearscan hängt an der Bounding-Box, nicht an der
-Kachelgröße. Ein Gleichheitstest gegen `nearest_airport_icao` gehört in denselben Commit.
+`nearest_airport_icao_fast` arbeitete mit **1°×1°-Kacheln** und legte vorsichtshalber eine weitere
+Kachel Rand darum. Für eine Frage mit rund 4 km Radius wurde damit ein Feld von etwa 3°×3°
+durchsucht. Am 10.09.2026 auf **0,1°** umgestellt (v14.27.4), mit Rückfall auf den Linearscan,
+wenn die Bounding-Box zu groß wird. Gemessen auf einer konsistenten Kopie der Produktions-DB,
+dieselbe Maschine, alt gegen neu:
+
+| | vorher (1°) | nachher (0,1°) |
+|---|---|---|
+| Kandidaten je Abfrage | 89,0 | **2,4** |
+| 100.000 Abfragen | 13,06 s | **1,58 s** |
+| **alle zehn Events** | **160,1 s** | **110,5 s** |
+
+Ergebnisgleichheit auf echten Daten geprüft: Menge, Flugzahl und Verluste aller zehn Events sind
+zeichengleich.
+
+### Die Messfalle dabei: cProfile hat den Hebel überzeichnet
+
+Das Profil oben legte nahe, `haversine` und `nearest_airport_icao_fast` machten zusammen den
+Löwenanteil aus — 33,5 s von 52,7 s. Tatsächlich hat das Streichen von **97 % aller
+haversine-Aufrufe** nur **31 %** der Laufzeit eingespart.
+
+Der Grund: cProfile zahlt seinen Aufschlag **je Aufruf**. Eine Funktion mit 4,86 Millionen
+winzigen Aufrufen sieht darin dramatisch teurer aus, als sie ist. **Für die Frage „wo lohnt sich
+Arbeit?" ist bei aufrufreichem Code nicht das Profil maßgeblich, sondern ein Vorher-Nachher an der
+Uhr.** Das Profil taugt zum Finden von Kandidaten, nicht zum Beziffern des Gewinns.
+
+Wo die verbleibenden 110 s liegen, ist damit **offen** — das Profil kann es nach diesem Befund
+nicht beantworten, und eine Wanduhr-Messung dafür steht aus.
 
 ## Drei Messfallen aus dieser Untersuchung
 
