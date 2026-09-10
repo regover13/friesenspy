@@ -2602,9 +2602,9 @@
        Marker-Icon: Der Marker wird bei Track-up mitgedreht (rotateWithView), ein Label darin
        stuende dann auf dem Kopf. Tooltips liegen bei leaflet-rotate im nicht drehenden Pane
        (im Quelltext des Plugins nachgesehen), bleiben also aufrecht. */
-    /* Platzrunden: hellblaue Linie mit schiefergrauem Saum rundherum. Der Saum ist ein drop-shadow OHNE
+    /* Platzrunden: orange Linie mit schiefergrauem Saum rundherum. Der Saum ist ein drop-shadow OHNE
        Versatz -- kein Schlagschatten nach einer Seite, sondern ein gleichmaessiger Rand. Er
-       traegt die helle Linie sowohl auf dem hellen CARTO als auch auf dem Satellitenbild;
+       traegt die Linie sowohl auf dem hellen CARTO als auch auf dem Satellitenbild;
        eine einfarbige Linie verschwindet je nach Untergrund auf der einen oder anderen Karte.
        Als Leaflet-Pfadoption laesst sich ein Filter nicht setzen, deshalb ueber die Klasse. */
     .platzrunde {
@@ -5048,11 +5048,32 @@ function _loadPlatzrundenPref() {
 // Der Saum ist ein drop-shadow OHNE Versatz -- er liegt gleichmaessig um die Linie und traegt
 // sie damit auf jeder Kartensorte: auf dem hellen CARTO wie auf dem Satellitenbild. Er steckt
 // in der CSS-Klasse .platzrunde (Filter lassen sich nicht als Leaflet-Pfadoption setzen).
-// Hellblaue Linie mit dunklem Saum rundherum -- nicht umgekehrt. Der erste Anlauf hatte die
+// Helle Linie mit dunklem Saum rundherum -- nicht umgekehrt. Der erste Anlauf hatte die
 // Linie schiefergrau gezeichnet; auf der Karte blieb davon nur ein grauer Strich uebrig, die
-// Platzrunde war als solche nicht mehr zu erkennen. Das Hellblau IST die Platzrunde, das
+// Platzrunde war als solche nicht mehr zu erkennen. Die Farbe IST die Platzrunde, das
 // Schiefergrau ist der Saum, der sie auf hellem Untergrund traegt.
-const _PLATZRUNDEN_FARBE  = '#8ab4d8';
+//
+// **Orange statt Hellblau seit dem 10.09.2026** (Nutzerbefund: "Hellblau ist schwer zu
+// erkennen"). Das alte #8ab4d8 stammt aus der Zeit vor den DFS-Kartenblaettern; seitdem liegt
+// dieses Pane (450) UEBER ihnen, und ein blasses Blau steht dort neben den blauen
+// Luftraumgrenzen des Blattes selbst. Die drei erwogenen Alternativen und warum sie es nicht
+// wurden:
+//
+//   Magenta    -- scheidet aus: #e07be0 sind die Meldepunkte, und die liegen AUF der
+//                 Platzrunde. Ausgerechnet die zwei Dinge, die man auseinanderhalten muss,
+//                 waeren dann gleich.
+//   Rot        -- im Haus frei, in der Fliegerei aber besetzt (Beschraenkungs- und
+//                 Gefahrengebiete) und auf dem DFS-Blatt schon vergeben.
+//   Dunkelblau -- moeglich, die Farbregel erlaubt es sogar (Blau ist Klickbarem vorbehalten,
+//                 und die Platzrunde IST klickbar). Aber es zwaenge, den Saum UMZUDREHEN:
+//                 dunkle Linie mit dunklem Saum verschwaende auf Satellit und auf der dunklen
+//                 Grundkarte. Und neben dem Blau des Blattes bliebe sie ein Blau unter vielen.
+//
+// Orange ist die einzige der vier, die mit dem VORHANDENEN dunklen Saum auf allen vier
+// Untergruenden traegt -- helles CARTO, Satellit, dunkle Grundkarte, DFS-Blatt -- und die das
+// DFS-Blatt selbst praktisch nicht benutzt. Bewusst waermer als das #f0a500 der Prefile-Route;
+// die ist ausserdem duenn und gestrichelt, diese hier 4 px und durchgezogen.
+const _PLATZRUNDEN_FARBE  = '#ff7a18';
 const _PLATZRUNDEN_STAERKE = 4;
 // Unsichtbare Fanglinie unter der sichtbaren: Bei einem Pfad ohne Fuellung ist ALLEIN der
 // Strich die Trefferflaeche -- bei 3 Pixeln trifft man ihn mit der Maus kaum und auf dem

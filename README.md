@@ -463,15 +463,15 @@ Alle Karten in FriesenSpy (Live-Tab, Track-Ansicht, Event-Suche) verwenden diese
 
 **OpenAIP-Overlay** (zusätzliche Checkbox): Legt Lufträume, Flugplätze und Navaids aus der OpenAIP-Datenbank über den gewählten Basis-Layer. Besonders nützlich in Kombination mit Satellit oder CARTO. Ist nur verfügbar, wenn auf dem Server ein OpenAIP API-Key konfiguriert ist.
 
-**Platzrunden**: 412 deutsche Platzrunden mit Höhe, über jeder Kartensorte und auf jeder Zoomstufe — auch über den Kartenblättern. Fehlt die Höhe in der Quelle, steht „Höhe nicht bekannt" statt einer geratenen Zahl.
+**Platzrunden** (orange Linie): 412 deutsche Platzrunden mit Höhe, über jeder Kartensorte und auf jeder Zoomstufe — auch über den Kartenblättern. Fehlt die Höhe in der Quelle, steht „Höhe nicht bekannt" statt einer geratenen Zahl.
 
 **Meldepunkte**: Die visuellen Meldepunkte (VRP) als große Dreiecke mit Namen — gefüllt heißt meldepflichtig, hohl heißt auf Anforderung; das Popup nennt die Höhe, wenn sie veröffentlicht ist. Ab Zoomstufe 9, der Name ab Stufe 11, weltweit. Ihr Gewinn zeigt sich im Anflug: Das OpenAIP-Bild endet bei Zoom 14 und die OpenFlightMap trägt Luftfahrtinhalt nur bis Stufe 12 — die Meldepunkte stehen auf jeder Stufe und über jeder Karte, auch über dem Satellitenbild. Von Hand zu pflegen ist daran nichts; die Ebene braucht einen `OPENAIP_API_KEY`. Datenquelle: OpenAIP (CC BY-NC 4.0).
 
 **FSE-Plätze** und **FSE-Landeflächen**: Die Plätze aus FSEconomy mit Bahnlänge, Belag und Höhe — im Popup steht auch der Name, unter dem der Platz **im Simulator** zu finden ist (Emden heißt dort EHOW, Papenburg EDHJ). Die ICAO-Beschriftung erscheint ab Zoomstufe 11.
 
-**Sichtflugkarte** (blaues Symbol): Die amtliche DFS-Sichtflugkarte eines Platzes, halbtransparent über der Karte. Sie erscheint von allein, sobald du im Kartenfeld fliegst. Antippen des Symbols nagelt das Blatt fest oder nimmt es weg.
+**Sichtflugkarte** (blaues Symbol, ein hochkantes Blatt mit Textzeilen): Die amtliche DFS-Sichtflugkarte eines Platzes, halbtransparent über der Karte. Sie erscheint von allein, sobald du im Kartenfeld fliegst. Antippen des Symbols nagelt das Blatt fest oder nimmt es weg.
 
-**Flugplatzkarte** (magenta Symbol): Die DFS-Flugplatz- oder Rollkarte eines Verkehrsflughafens — mit Rollwegnamen, Haltepunkten und Standplatznummern. Sie tritt über dem Platz an die Stelle der Sichtflugkarte, weil die dort im Maßstab 1:100 000 nichts mehr hergibt, und weicht beim Verlassen wieder zurück.
+**Flugplatzkarte** (**ebenfalls blaues** Symbol — die beiden unterscheiden sich über die Form, nicht die Farbe: ein liegendes Rechteck mit Quer- und Längsstrichen, also ein Rollfeld): Die DFS-Flugplatz- oder Rollkarte eines Verkehrsflughafens — mit Rollwegnamen, Haltepunkten und Standplatznummern. Sie tritt über dem Platz an die Stelle der Sichtflugkarte, weil die dort im Maßstab 1:100 000 nichts mehr hergibt, und weicht beim Verlassen wieder zurück.
 
 Diese Blätter sind nach der Bahnrichtung gedruckt statt genordet; auf der Karte liegen sie gedreht und damit genordet. **Ihre Lage setzt ein Mensch** — im Admin werden zwei wiedererkennbare Punkte angeklickt und mit ihren echten Koordinaten hinterlegt, bei Flugplatz- und Rollkarten meist zwei Bahnschwellen (die zugehörigen amtlichen Werte blendet die Maske ein), bei Sichtflugkarten am Kartenrand abgelesen. Erst eine so gepasste Karte wird überhaupt angezeigt; der verbleibende Fehler steht daneben. Eine falsch liegende Karte wäre beim Rollen schlimmer als gar keine — zum Vergleich: Eine Bahn ist 45 m breit, ein Rollweg 23 m.
 

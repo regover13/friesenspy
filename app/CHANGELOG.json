@@ -1,5 +1,15 @@
 [
   {
+    "version": "14.27.2",
+    "date": "2026-09-10",
+    "highlight": false,
+    "title": "Platzrunden sind jetzt orange",
+    "items": [
+      "🟠 Die Platzrunden waren hellblau und damit schwer zu erkennen — besonders auf den DFS-Sichtflugkarten, die seit Ende August unter ihnen liegen und deren Luftraumgrenzen selbst blau gezeichnet sind. Jetzt sind sie orange. Magenta schied aus, weil das die Meldepunkte sind und die genau auf der Platzrunde liegen; Rot ist in der Fliegerei für Beschränkungs- und Gefahrengebiete besetzt. Orange ist die einzige Farbe, die auf allen vier Untergründen trägt — helles CARTO, Satellit, dunkle Grundkarte und Kartenblatt.",
+      "🗺️ Handbuch berichtigt: Die Marke der Flugplatzkarte war dort als „magenta\" beschrieben. Sie ist seit dem 31.08.2026 blau wie die der Sichtflugkarte — unterschieden werden die beiden über die Form, nicht die Farbe."
+    ]
+  },
+  {
     "version": "14.27.1",
     "date": "2026-09-09",
     "highlight": false,
