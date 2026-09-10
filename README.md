@@ -349,6 +349,7 @@ Ist der **Board-Login** aktiv (Admin-Tab → „Board-Login“, Standard AUS), i
 - **Flugzeugmuster** — Liste aller Muster mit MTOW, Leergewicht und Zuladung; einzeln bearbeiten, per KI-Vorschlag nachschlagen (Web-Recherche) oder Beschreibung und Foto neu holen.
 - **StatSim-Nachlauf** — einen vollständigen Abgleich mit StatSim anstoßen und seinen Fortschritt verfolgen.
 - **FriesenKutter** — Events, Frachtmanifest, Frachtart-Katalog und Standard-Zuladung pflegen, Push je Event schalten, KI-Sprüche an- oder abschalten und für ein Event neu erzeugen lassen. Siehe [FriesenKutter](#-friesenkutter-transportflüge).
+  **Ein abgeschlossener Kutter bleibt so gewertet, wie er war.** Änderungen an Zuladungen wirken sofort auf laufende Events, rühren fertige aber nicht mehr an. Soll ein fertiges Event die neuen Werte bekommen, tippst du es an und speicherst es — das ist der bewusste Neuberechnungs-Hebel.
 
 ### Kniebrett
 

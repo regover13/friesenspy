@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.27.3",
+    "date": "2026-09-10",
+    "highlight": false,
+    "title": "Zuladung speichern legte die ganze App lahm",
+    "items": [
+      "🛑 Wer in „FriesenKutter — Zuladung je Flugzeugtyp\" auf Speichern drückte, verwarf damit die eingefrorenen Ergebnisse ALLER Kutter-Events. Der nächste Seitenaufruf rechnete sie komplett neu — gemessen 111 Sekunden für zehn Events, und währenddessen antwortete die App niemandem mehr: kein Kniebrett, keine Karte, keine Live-Daten. Am 09.09. hat das den Betrieb zweimal für rund drei Minuten angehalten; ausgelöst hatte es eine bloße Namenskorrektur an einem Muster, das in keinem einzigen Kutter je geflogen ist.",
+      "🧊 Das Verwerfen ist ersatzlos entfallen. Ein abgeschlossener Kutter bleibt jetzt so gewertet, wie er war — das ist ohnehin die richtige Vorgabe. Ein laufender Kutter rechnet wie bisher bei jedem Aufruf frisch, eine Zuladungskorrektur wirkt dort also unverändert sofort.",
+      "🔁 Soll ein fertiges Event die neuen Werte doch bekommen, tippst du es im Admin an und speicherst es. Diesen Hebel gab es schon immer; er kostet ein Event statt zehn und geschieht auf Ansage. In der Zuladungs-Maske steht der Hinweis jetzt dabei."
+    ]
+  },
+  {
     "version": "14.27.2",
     "date": "2026-09-10",
     "highlight": false,

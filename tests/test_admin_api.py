@@ -948,7 +948,10 @@ class TestAdminDetectionGaps:
 class TestSnapshotInvalidation:
     """Ein eingefrorener ``progress_snapshot`` (Kutter oder Bummel) muss verworfen werden,
     sobald die zugrunde liegenden Daten BEWUSST geändert werden — auch beim manuellen Neu-
-    berechnungs-Hebel "Event/Rennen antippen + (leer) speichern"."""
+    berechnungs-Hebel "Event/Rennen antippen + (leer) speichern".
+
+    Die Kehrseite steht hier ebenso: Die Zuladungs-Pflege ist KEINE solche Änderung und lässt
+    abgeschlossene Events in Ruhe (s. die beiden ``..._keeps_kutter_snapshots``)."""
 
     def _kutter_event(self, db):
         conn = get_connection(db)
@@ -991,7 +994,21 @@ class TestSnapshotInvalidation:
         assert get_progress_snapshot(conn, "kutter", eid) is None
         conn.close()
 
-    def test_admin_payload_change_clears_all_kutter_snapshots(self, db):
+    # Diese beiden Tests standen bis zum 10.09.2026 auf dem Kopf: Sie verlangten, dass die
+    # Zuladungs-Pflege ALLE Kutter-Snapshots verwirft. Genau das hat die App am 09.09.2026
+    # zweimal fuer rund drei Minuten angehalten -- der naechste Aufruf von
+    # /api/transport/events rechnete alle Events neu, synchron in der Event-Loop (gemessen:
+    # 111 s fuer zehn Events). Ausgeloest hatte es eine blosse Namenskorrektur an einem
+    # Muster, das in keinem einzigen Kutter je geflogen ist.
+    #
+    # Das Verwerfen war fuer seinen Zweck ausserdem von Anfang an untauglich: Ein LAUFENDES
+    # Event bekommt nie einen Snapshot (`_frozen_or_compute` friert nur `finished` ein) und
+    # rechnet ohnehin frisch. Treffen konnte es also ausschliesslich ABGESCHLOSSENE Events --
+    # also genau die, die bleiben sollen, wie sie gewertet wurden.
+    #
+    # Der bewusste Neuberechnungs-Hebel bleibt `test_admin_update_kutter_clears_snapshot`
+    # weiter oben. Hergang: docs/kutter-zuladung-invalidierung.md
+    def test_admin_payload_change_keeps_kutter_snapshots(self, db):
         conn = get_connection(db)
         e1 = create_transport_event(
             conn, name="A", route="EDWG,EDXH", destination="EDXH",
@@ -1010,11 +1027,11 @@ class TestSnapshotInvalidation:
         assert res["status"] == "ok"
 
         conn = get_connection(db)
-        assert get_progress_snapshot(conn, "kutter", e1) is None
-        assert get_progress_snapshot(conn, "kutter", e2) is None
+        assert get_progress_snapshot(conn, "kutter", e1) == {"total_kg": 1.0}
+        assert get_progress_snapshot(conn, "kutter", e2) == {"total_kg": 2.0}
         conn.close()
 
-    def test_admin_default_payload_change_clears_all_kutter_snapshots(self, db):
+    def test_admin_default_payload_change_keeps_kutter_snapshots(self, db):
         conn = get_connection(db)
         eid = create_transport_event(
             conn, name="A", route="EDWG,EDXH", destination="EDXH",
@@ -1028,7 +1045,7 @@ class TestSnapshotInvalidation:
         assert res["status"] == "ok"
 
         conn = get_connection(db)
-        assert get_progress_snapshot(conn, "kutter", eid) is None
+        assert get_progress_snapshot(conn, "kutter", eid) == {"total_kg": 1.0}
         conn.close()
 
     def _bummel_race(self, db):

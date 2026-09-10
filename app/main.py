@@ -132,7 +132,6 @@ from app.database import (
     write_progress_snapshot,
     bummel_wartestand,
     delete_progress_snapshot,
-    delete_progress_snapshots,
     clear_transport_summarized,
     list_custom_airports,
     upsert_custom_airport,
@@ -4211,8 +4210,19 @@ async def admin_upsert_payload(request: Request):
             fuel_full_kg=_num("fuel_full_kg"), crew_kg=_num("crew_kg"),
             source="manual", make_model=(body.get("make_model") or None),
         )
-        # Zuladungs-Änderung wirkt auf ALLE Kutter-Events (#66 Task 7) — global invalidieren.
-        delete_progress_snapshots(conn, "kutter")
+        # KEINE Snapshot-Invalidierung. Hier stand bis 10.09.2026 ein
+        # `delete_progress_snapshots(conn, "kutter")` — es hat die App zweimal für Minuten
+        # lahmgelegt (siehe docs/kutter-zuladung-invalidierung.md) und war dabei von Anfang an
+        # wirkungslos für das, was es erreichen sollte:
+        #
+        #   * Ein LAUFENDES Event bekommt nie einen Snapshot (`_frozen_or_compute` friert nur
+        #     `finished` ein). Eine Zuladungskorrektur wirkt dort ohnehin sofort.
+        #   * Ein ABGESCHLOSSENES Event soll bleiben, wie es gewertet wurde.
+        #
+        # Wer ein abgeschlossenes Event doch neu rechnen lassen will, hat dafür den bewussten
+        # Hebel, der aus derselben Aufgabe stammt (#66 Task 7): Event im Admin antippen und
+        # speichern (`admin_update_transport_event` löscht unbedingt UND taut auf). Das kostet
+        # ein Event statt aller und geschieht auf Ansage.
         conn.commit()
         return {"status": "ok"}
     finally:
@@ -4256,8 +4266,9 @@ async def admin_set_default_payload(request: Request):
     conn = get_connection(get_settings().DB_PATH)
     try:
         set_app_setting(conn, "transport_default_payload_kg", str(value))
-        # Globaler Fallback wirkt auf ALLE Kutter-Events (#66 Task 7) — global invalidieren.
-        delete_progress_snapshots(conn, "kutter")
+        # KEINE Snapshot-Invalidierung — dieselbe Begründung wie bei `admin_upsert_payload`:
+        # laufende Events rechnen ohnehin frisch, abgeschlossene sollen stehen bleiben, und der
+        # bewusste Neuberechnungs-Hebel ist „Event antippen + speichern".
         conn.commit()
         return {"status": "ok", "default_kg": value}
     finally:

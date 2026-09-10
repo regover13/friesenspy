@@ -1077,10 +1077,18 @@
               <input type="number" id="kp-payload" min="0" step="1" />
               <small style="display:block;margin-top:4px;color:var(--text-label,#8aa0b8);font-size:0.78em;line-height:1.3;">Leer lassen → wird automatisch berechnet: MTOW − Leergewicht − Tank − Crew. Ein Wert hier überschreibt die Berechnung (freie Wunsch-Zuladung).</small></div>
           </div>
-          <div style="display:flex;gap:8px;margin-bottom:14px;">
+          <div style="display:flex;gap:8px;margin-bottom:6px;">
             <button class="btn btn-sm" id="kp-suggest-btn">💡 KI-Vorschlag</button>
             <button class="btn btn-primary btn-sm" id="kp-save-btn">Speichern</button>
           </div>
+          <!-- Ohne diesen Satz ist der Neuberechnungs-Hebel unsichtbar: Speichern wirkt seit
+               dem 10.09.2026 bewusst NICHT mehr auf abgeschlossene Kutter (vorher wurden dabei
+               ALLE Snapshots verworfen, was die App minutenlang blockierte). -->
+          <p style="margin:0 0 14px;color:var(--text-label,#8aa0b8);font-size:0.78em;line-height:1.35;">
+            Wirkt sofort auf <b>laufende</b> Kutter. Ein <b>abgeschlossener</b> Kutter bleibt so
+            gewertet, wie er war — soll er die neuen Werte bekommen, das Event oben antippen und
+            dort speichern.
+          </p>
           <div id="ke-payloads-container" class="scroll-list"><div class="empty-hint">Lade Zuladungen…</div></div>
         </div>
 
