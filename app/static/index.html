@@ -13593,12 +13593,26 @@ function _kSegLegend(items, totalTarget, sub) {
 // Bestands-Ansicht je Abholplatz (Detail): zeigt, was pro Platz WIRKLICH bekannt ist — wie viel
 // noch am Platz liegt (on_stack_kg = Rest-Stapel) und wie viel schon abgeholt wurde (Ziel − Rest).
 // Bewusst OHNE geliefert/verloren: die gibt es nur als Name-Gesamt (Ware ist name-keyed), sie
-// stehen oben in „Gesamt“. Der Balken füllt sich mit dem bereits Abgeholten.
+// stehen oben in „Gesamt“.
+//
+// **Der Balken LEERT sich — er ist der Stapel, nicht der Fortschritt** (Nutzer 10.09.2026:
+// „Ich will, dass der Balken sich leert"). Die farbige Füllung ist das, was am Platz NOCH LIEGT:
+// am Anfang volle Schiene, nach dem letzten Abflug leer. In v14.27.1 war sie herum (Füllung =
+// das bereits Abgeholte), also am Anfang leer und am Ende voll — das liest sich als
+// Fortschrittsbalken und widerspricht dem, was der Block zeigen soll.
+//
+// Der Fortschrittsbalken steht darüber in „Gesamt“ (`_kSegLegend`, füllt sich mit dem
+// Gelieferten). Beide zusammen sind widerspruchsfrei: oben wächst, was geschafft ist, unten
+// schrumpft, was noch daliegt.
+//
+// Die SEGMENTBREITE bleibt am Manifest-Ziel und ändert sich nie. Nur so bleiben die Frachtarten
+// über die ganze Veranstaltung vergleichbar und der Balken springt nicht, sobald eine Ware fertig
+// wird (der Fehler, der in v14.27.1 im Review gefunden wurde).
 function _kStockLegend(items, totalTarget) {
   totalTarget = totalTarget || 1;
   const segs = items.map(({ c, gi }) => {
-    const picked = Math.max(0, (c.target_kg || 0) - (c.on_stack_kg || 0));
-    const pct = c.target_kg > 0 ? Math.min(100, 100 * picked / c.target_kg) : 0;
+    const pct = c.target_kg > 0
+      ? Math.min(100, 100 * Math.max(0, c.on_stack_kg || 0) / c.target_kg) : 0;
     return '<div class="kutter-seg" style="width:' + (100 * c.target_kg / totalTarget).toFixed(2)
       + '%"><i style="width:' + pct.toFixed(1) + '%;background:' + _kColor(gi) + '"></i></div>';
   }).join('');

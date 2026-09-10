@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.27.5",
+    "date": "2026-09-10",
+    "highlight": false,
+    "title": "Der Balken je Abholplatz leert sich jetzt wirklich",
+    "items": [
+      "📉 Die Füllung war herum. Seit v14.27.1 wuchs der Balken je Abholplatz mit dem bereits Abgeholten — am Anfang leer, am Ende voll. Das ist ein Fortschrittsbalken, und den gibt es oben unter „Gesamt\" schon. Der Block darunter soll den Stapel zeigen: Die Farbe ist jetzt das, was am Platz NOCH LIEGT, und schrumpft mit jedem Frachtflug bis auf null.",
+      "🧭 Beide Balken sagen damit dasselbe aus zwei Richtungen: oben wächst, was geschafft ist, unten schrumpft, was noch daliegt. Ein vollständig geräumter Platz zeigt folgerichtig einen leeren Balken statt eines vollen.",
+      "📏 Die Breite der Segmente bleibt am Manifest und ändert sich nie — nur so bleiben die Frachtarten über die ganze Veranstaltung vergleichbar, und der Balken springt nicht, sobald eine Ware fertig wird."
+    ]
+  },
+  {
     "version": "14.27.4",
     "date": "2026-09-10",
     "highlight": false,
