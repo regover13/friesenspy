@@ -1089,7 +1089,7 @@ async def get_stats_endpoint(
 
 @app.get("/api/stats/special-events")
 async def get_special_events_stats(days: int = 30):
-    """Aggregierte Kennzahlen beider Spezial-Events (FriesenKutter + FriesenFliegerBummel) im
+    """Aggregierte Kennzahlen beider Spezial-Events (FriesenKutter + FriesenBummel) im
     Zeitfenster — NUR abgeschlossene Events/Rennen, bedient aus den #66-Snapshots (kein
     Track-Recompute). ?days=30|90|365."""
     if days not in (30, 90, 365):
@@ -1111,7 +1111,7 @@ async def get_special_events_stats(days: int = 30):
                 k_progresses.append(p)
         kutter = aggregate_kutter_kpis(k_progresses)
 
-        # --- FriesenFliegerBummel: revealed_at & now>=dtend & dtend im Fenster ---
+        # --- FriesenBummel: revealed_at & now>=dtend & dtend im Fenster ---
         update_bummel_reveals(conn, now, callsign_prefix=prefix)
         b_views = []
         for race in list_bummel_races(conn, since=since):
@@ -2001,7 +2001,7 @@ def _badge_entry_data(view: dict, race: dict, cid: int) -> tuple[dict, bool]:
         "complete": cid in complete,
         # Der volle Event-Name sprengt die runde Grafik; `badge_name` ist der Kurzname
         # dafuer. Leer heisst weiter "nimm den Event-Namen".
-        "event": race.get("badge_name") or race.get("name") or "FriesenFliegerBummel",
+        "event": race.get("badge_name") or race.get("name") or "FriesenBummel",
         "date": _fmt_de_date(race.get("dtstart")),
     }
     return d, is_winner
@@ -3425,7 +3425,7 @@ async def admin_create_race(request: Request):
         _pruefe_kalender_verknuepfung(conn, uid, table="bummel_races", obj_id=-1)
         rid = create_bummel_race(
             conn,
-            name=body.get("name") or "FriesenFliegerBummel",
+            name=body.get("name") or "FriesenBummel",
             route=route,
             dtstart=body["dtstart"],
             dtend=body.get("dtend") or "",
@@ -3646,7 +3646,7 @@ async def admin_reveal_race(request: Request, race_id: int):
             subs = get_push_subscriptions_for_events(conn)
             if subs:
                 from app.poller import send_web_push
-                payload = {"title": race.get("name") or "FriesenFliegerBummel",
+                payload = {"title": race.get("name") or "FriesenBummel",
                            "body": "Die Bummel-Ergebnisse sind da! 🏁", "url": "/"}
                 asyncio.create_task(send_web_push(
                     settings.VAPID_PRIVATE_KEY, settings.VAPID_CONTACT_EMAIL, settings.DB_PATH,

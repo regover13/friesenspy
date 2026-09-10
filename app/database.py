@@ -666,7 +666,7 @@ _CALENDAR_MIGRATIONS = [
     # UIDs wurden auf zusammengesetztes Format umgestellt (uid_YYYYMMDDTHHMMSSZ).
     # Alte Einträge ohne dieses Suffix entfernen (idempotent).
     "DELETE FROM calendar_events WHERE uid NOT LIKE '%\\_2%T%Z' ESCAPE '\\'",
-    # route: CSV aller ICAOs der Strecke; is_bummel: FriesenFliegerBummel erkannt.
+    # route: CSV aller ICAOs der Strecke; is_bummel: FriesenBummel erkannt.
     "ALTER TABLE calendar_events ADD COLUMN route TEXT",
     "ALTER TABLE calendar_events ADD COLUMN is_bummel INTEGER DEFAULT 0",
     # is_transport: FriesenKutter-Transportevent (Stichwort "friesenkutter") erkannt.
@@ -4536,7 +4536,7 @@ def compute_bummel_standings(
     cids: list[int] | None = None,
     radius_km: float | None = None,
 ) -> dict:
-    """Wertung für einen FriesenFliegerBummel.
+    """Wertung für einen FriesenBummel.
 
     Es gewinnt, wer mit der Summe seiner Gate-to-Gate-Blockzeiten am dichtesten an der
     Durchschnittszeit aller KOMPLETTEN Touren liegt. Eine Tour gilt als komplett, wenn der

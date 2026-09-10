@@ -106,7 +106,7 @@ class TestCalendarRaceCrud:
         conn = _make_conn()
         ev = {
             "uid": "bummel_20260627T180000Z",
-            "summary": "FriesenFliegerBummel Ostfriesland",
+            "summary": "FriesenBummel Ostfriesland",
             "route": "EDWF,EDWG,EDWR",
             "dtstart": "2026-06-27T18:00:00Z",
             "dtend": "",  # → Mitternacht-Default
@@ -116,7 +116,7 @@ class TestCalendarRaceCrud:
         races = list_bummel_races(conn)
         assert len(races) == 1
         race = races[0]
-        assert race["name"] == "FriesenFliegerBummel Ostfriesland"
+        assert race["name"] == "FriesenBummel Ostfriesland"
         assert race["route"] == "EDWF,EDWG,EDWR"
         assert race["source"] == "calendar"
         assert race["calendar_uid"] == "bummel_20260627T180000Z"
@@ -141,7 +141,7 @@ class TestCalendarSyncSnapshotInvalidation:
 
     def _ev(self, **overrides):
         ev = {
-            "uid": "bummel_sync_1", "summary": "FriesenFliegerBummel Ostfriesland",
+            "uid": "bummel_sync_1", "summary": "FriesenBummel Ostfriesland",
             "route": "EDWF,EDWG,EDWR", "dtstart": "2026-06-27T18:00:00Z", "dtend": "",
         }
         ev.update(overrides)

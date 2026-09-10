@@ -1208,7 +1208,7 @@ class TestCheckEventReminders:
         assert len(sent) == 3
         payloads = [call[4] for call in sent]
         assert {p["title"] for p in payloads} == {
-            "FriesenEvent", "FriesenFliegerBummel", "FriesenKutter",
+            "FriesenEvent", "FriesenBummel", "FriesenKutter",
         }
         assert {p["body"] for p in payloads} == {
             "🗓 In etwa 30 min: Stammtisch",
@@ -1289,7 +1289,7 @@ class TestCheckEventReminders:
 
         assert len(sent) == 1
         payload = sent[0][4]
-        assert payload["title"] == "FriesenFliegerBummel"
+        assert payload["title"] == "FriesenBummel"
         assert payload["body"] == "🗓 In etwa 30 min: FFB Juli"
 
 

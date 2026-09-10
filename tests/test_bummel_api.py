@@ -94,7 +94,7 @@ def _seed(db, *, dtstart, dtend, with_open=False):
         _add_flying_track(conn, 200, "EDWF", "EDWG")
 
     upsert_calendar_bummel_race(conn, {
-        "uid": "race1", "summary": "FriesenFliegerBummel Ostfriesland",
+        "uid": "race1", "summary": "FriesenBummel Ostfriesland",
         "route": "EDWF,EDWG,EDWR", "dtstart": dtstart, "dtend": dtend,
     })
     conn.commit()

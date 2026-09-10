@@ -1,4 +1,4 @@
-"""Runde Badge-PNGs für FriesenFliegerBummel + FriesenKutter — Text per Pillow auf FF-Hintergründe.
+"""Runde Badge-PNGs für FriesenBummel + FriesenKutter — Text per Pillow auf FF-Hintergründe.
 
 Hintergründe (rund, FriesenFlieger-Markenoptik) liegen unter
 ``app/static/badge/`` (``winner_bg.png`` / ``medal_bg.png``); der Text wird

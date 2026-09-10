@@ -1555,12 +1555,12 @@ class VatsimPoller:
                 for rid, callsign in started:
                     race = get_bummel_race(conn, rid)
                     if race and race.get("push_enabled"):
-                        pushes.append({"title": race.get("name") or "FriesenFliegerBummel",
+                        pushes.append({"title": race.get("name") or "FriesenBummel",
                                        "body": f"{callsign} hat den Bummel gestartet!", "url": "/"})
                 for rid in revealed:
                     race = get_bummel_race(conn, rid)
                     if race and race.get("push_enabled"):
-                        pushes.append({"title": race.get("name") or "FriesenFliegerBummel",
+                        pushes.append({"title": race.get("name") or "FriesenBummel",
                                        "body": "Die Bummel-Ergebnisse sind da! 🏁", "url": "/"})
                 subscriptions = get_push_subscriptions_for_events(conn) if pushes else []
             finally:
@@ -2307,8 +2307,8 @@ class VatsimPoller:
                 })
             for r in bummels:
                 reminder_pushes.append({
-                    "title": "FriesenFliegerBummel",
-                    "body": f"🗓 {_lead_phrase(r['dtstart'], now)}: {r.get('name') or 'FriesenFliegerBummel'}",
+                    "title": "FriesenBummel",
+                    "body": f"🗓 {_lead_phrase(r['dtstart'], now)}: {r.get('name') or 'FriesenBummel'}",
                     "url": "/",
                 })
             for k in kutters:

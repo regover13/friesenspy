@@ -16,12 +16,12 @@ VATSIM Live-Tracker für die FriesenFlieger Virtual Airline. Zeigt wer von der G
   - [📊 Statistiken](#-statistiken)
   - [🔍 Event-Suche](#-event-suche)
   - [Muster-Fenster (überall anklickbar)](#muster-fenster-überall-anklickbar)
-- [🏁 FriesenFliegerBummel](#-friesenfliegerbummel)
+- [🏁 FriesenBummel](#-friesenbummel)
   - [Badge fürs Forum](#badge-fürs-forum)
 - [🦐 FriesenKutter (Transportflüge)](#-friesenkutter-transportflüge)
 - [🔧 Verwaltung (Admin)](#-verwaltung-admin)
   - [Board-Login (Forum-SSO, optional)](#board-login-forum-sso-optional)
-  - [Rund um den FriesenFliegerBummel](#rund-um-den-friesenfliegerbummel)
+  - [Rund um den FriesenBummel](#rund-um-den-friesenbummel)
   - [Flugbetrieb und Daten](#flugbetrieb-und-daten)
   - [Kniebrett](#kniebrett)
   - [Diagnose](#diagnose)
@@ -112,7 +112,7 @@ also enthalten). StatSim-Tracks zeigten das Rollen schon immer.
 > **Die Koordinaten sind nicht durchweg korrekt.** `airportsdata` nennt [OurAirports](https://ourairports.com) als Quelle, deckt sich aber nachweislich nicht damit: Bei 848 von 24.253 gemeinsamen Codes liegen beide Datenbanken mehr als 3 km auseinander (3,5 %). Belgien ist mit 34 % der Plätze der schlimmste Fall in Europa (EBBR 42 km, EBKT 37 km, ELLX 29 km — alle nach Südwesten verschoben), Deutschland mit 1 von 452 der beste. Bekannte Fehler werden über `custom_airports` überschrieben (siehe #56/#62); zur Diagnose einzelner Fälle gibt es den Skill `track-diagnose`.
 
 > **Landeplatz-Radius:** Ein datenbasiert ermittelter, **fester Radius von 4 km** um einen
-> Flugplatz gilt für die gesamte Platz-Zuordnung (Flugerkennung, FriesenFliegerBummel,
+> Flugplatz gilt für die gesamte Platz-Zuordnung (Flugerkennung, FriesenBummel,
 > FriesenKutter) — klein genug, um eng benachbarte Plätze (z. B. Ostfriesische Inseln) nicht zu
 > verwechseln. Es gibt **keinen** separat einstellbaren Radius mehr pro Bummel-Rennen oder
 > Kutter-Event.
@@ -209,7 +209,7 @@ daneben den **eingereichten Flugplan** (DEP/ARR), falls vorhanden; beide können
 Zwischenlandung ohne Refile auseinanderfallen. Ein noch nicht gelandeter (offener) Flug trägt ein
 **„🛫 läuft"**-Kennzeichen statt eines Ziels. Flüge unter einem **Nicht-`FRS`-Callsign** (z. B. ein
 anderes Rufzeichen desselben Piloten) erscheinen ebenfalls in der Liste, tragen aber ein **„nicht
-gewertet"**-Badge — sie zählen nicht in Statistik, FriesenFliegerBummel oder FriesenKutter.
+gewertet"**-Badge — sie zählen nicht in Statistik, FriesenBummel oder FriesenKutter.
 
 ---
 
@@ -250,9 +250,9 @@ Steht im Flugplan ein anderes Kürzel als das eigentliche Muster, sagt das Fenst
 
 ---
 
-## 🏁 FriesenFliegerBummel
+## 🏁 FriesenBummel
 
-Der **FriesenFliegerBummel** ist ein besonderer Event-Typ — ein „Schätzweltmeister"-Rennen: Es gewinnt **nicht der Schnellste**, sondern wer mit der **Summe seiner Blockzeiten am dichtesten an der Durchschnittszeit aller Teilnehmer** liegt.
+Der **FriesenBummel** ist ein besonderer Event-Typ — ein „Schätzweltmeister"-Rennen: Es gewinnt **nicht der Schnellste**, sondern wer mit der **Summe seiner Blockzeiten am dichtesten an der Durchschnittszeit aller Teilnehmer** liegt.
 
 **Gleich weit ist gleichauf:** Liegen zwei Teilnehmer exakt gleich weit vom Schnitt — einer darüber, einer darunter —, dann **teilen sie sich den Platz**; es gibt in dem Fall zwei Sieger und der nächste Platz wird übersprungen (seit v14.24.0). Bei genau zwei Teilnehmern ist das immer so: Der Schnitt liegt dann zwangsläufig in der Mitte, beide sind gleich weit entfernt. Das Spielprinzip entfaltet sich also erst ab drei Teilnehmern.
 
@@ -326,7 +326,7 @@ Die Admin-Seite ist unter `/admin` erreichbar und passwortgeschützt. Das Passwo
 
 Ist der **Board-Login** aktiv (Admin-Tab → „Board-Login“, Standard AUS), ist die gesamte App nur für eingeloggte Forum-Mitglieder (`board.friesenflieger.de`, phpBB) sichtbar. Der Login läuft im Forum — das Passwort erreicht FriesenSpy nie: eine kleine Bridge-Datei `sso.php` (aus `deploy/forum/`, neben phpBB kopiert) liefert per Redirect ein kurzlebiges, HMAC-signiertes Token mit Benutzername, VATSIM-CID (aus dem Forum-Profil) und Admin-Flag (Forum-Gruppe „Events“). FriesenSpy prüft es (`SSO_SECRET`, Frische ≤ 60 s, Einmal-Nonce, `state`) und legt eine eigene kurze Session (`fs_user`) an. Das `ADMIN_PASSWORD` bleibt als Break-glass-Zugang erhalten. Details: `docs/superpowers/specs/2026-07-13-forum-sso-design.md` und `deploy/forum/README.md`.
 
-### Rund um den FriesenFliegerBummel
+### Rund um den FriesenBummel
 - **Rennen manuell anlegen** — auch ohne Kalender-Termin, mit frei wählbarer Strecke, Start- und (optionalem) Endtermin sowie Anwesenheitsradius. Ein fehlendes `dtend` wird auf Mitternacht UTC des Starttags gesetzt.
 - **Rennen bearbeiten und löschen** — nachträgliche Korrekturen an Name, Strecke, Termin oder Radius; Löschen entfernt das Rennen dauerhaft. **Was du hier änderst, bleibt geändert:** Jedes Feld zeigt, woher sein Wert kommt — *aus dem Kalender* oder *von Hand*. Von Hand gesetzte Felder rührt der Kalender-Abgleich nicht mehr an; die übrigen bleiben ihm überlassen. Vertan? Der Pfeil **↺** neben dem Feld holt den Kalenderstand sofort zurück.
 - **Kalendertermin verknüpfen** — beim Anlegen und beim Bearbeiten wählst du aus einer Liste den Termin, zu dem dieses Rennen gehört (oder lässt das Feld leer). Verknüpft heißt: Rennen und Termin **sind dasselbe Ereignis** — der Termin steht dann nicht mehr zusätzlich in den Events und erinnert nicht doppelt. FriesenSpy schlägt einen passenden Termin vor (gleicher Tag, ähnlicher Titel), entscheidet aber nichts von allein: Bestätigt wird mit dem Speichern. Termine, an denen schon ein Event hängt, sind ausgegraut. **Beim Kutter genauso** (dort zusätzlich das Ziel, das nie aus dem Kalender kommt).
@@ -515,7 +515,7 @@ Jeder Zustand in FriesenSpy ist als Link teilbar — der aktuelle Tab, ein geöf
 
 Das ⎘-Symbol neben Piloten und Flügen kopiert den fertigen Link direkt in die Zwischenablage. Wenn das Flugdetail-Modal geöffnet ist, enthält der kopierte Link auch genau diesen Flug — der Empfänger sieht beim Öffnen des Links das Modal direkt.
 
-Auch ein **FriesenFliegerBummel** ist teilbar: in der Bummel-Ansicht (sowohl verdeckt als auch nach Enthüllung) kopiert ein **⎘ Teilen**-Knopf den Direkt-Link in die Zwischenablage. Der Link (`#tab=events&bummel=<id>`) öffnet beim Empfänger direkt diesen Bummel. Läuft oder wartet gerade ein Bummel, führt zudem ein **🏁 Zum Bummel**-Knopf im Live-Banner (Live-Tab) direkt in dieselbe Detailansicht.
+Auch ein **FriesenBummel** ist teilbar: in der Bummel-Ansicht (sowohl verdeckt als auch nach Enthüllung) kopiert ein **⎘ Teilen**-Knopf den Direkt-Link in die Zwischenablage. Der Link (`#tab=events&bummel=<id>`) öffnet beim Empfänger direkt diesen Bummel. Läuft oder wartet gerade ein Bummel, führt zudem ein **🏁 Zum Bummel**-Knopf im Live-Banner (Live-Tab) direkt in dieselbe Detailansicht.
 
 ---
 

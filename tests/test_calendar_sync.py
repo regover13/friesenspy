@@ -1,7 +1,7 @@
 """Tests für die ICAO-/Bummel-Erkennung im Kalender-Parser (app/calendar_sync.py).
 
 parse_route extrahiert alle ICAO-Codes (Reihenfolge erhaltend, dedupliziert) aus LOCATION,
-dann SUMMARY → CSV-Strecke, und erkennt einen FriesenFliegerBummel (Stichwort 'bummel' im
+dann SUMMARY → CSV-Strecke, und erkennt einen FriesenBummel (Stichwort 'bummel' im
 SUMMARY UND >= 2 Flugplätze).
 """
 from __future__ import annotations
@@ -55,7 +55,7 @@ class TestKutterKalendertermine:
 
 class TestRouteExtraction:
     def test_collects_all_icaos_from_location_in_order(self):
-        route, _, _ = parse_route("EDWF EDWG EDWR", "FriesenFliegerBummel")
+        route, _, _ = parse_route("EDWF EDWG EDWR", "FriesenBummel")
         assert route == "EDWF,EDWG,EDWR"
 
     def test_deduplicates_preserving_order(self):
@@ -94,7 +94,7 @@ class TestRouteExtraction:
 
 class TestBummelDetection:
     def test_bummel_keyword_plus_two_icaos(self):
-        _, is_bummel, _ = parse_route("EDWF EDWG", "FriesenFliegerBummel über die Inseln")
+        _, is_bummel, _ = parse_route("EDWF EDWG", "FriesenBummel über die Inseln")
         assert is_bummel is True
 
     def test_bummel_case_insensitive(self):
@@ -102,7 +102,7 @@ class TestBummelDetection:
         assert is_bummel is True
 
     def test_bummel_keyword_but_only_one_icao_is_not_bummel(self):
-        _, is_bummel, _ = parse_route("EDWF", "FriesenFliegerBummel")
+        _, is_bummel, _ = parse_route("EDWF", "FriesenBummel")
         assert is_bummel is False
 
     def test_two_icaos_without_keyword_is_not_bummel(self):
@@ -113,23 +113,23 @@ class TestBummelDetection:
 class TestPlausibility:
     def test_implausibly_far_apart_route_is_not_bummel(self):
         # EDDF (Frankfurt) und KJFK (New York) sind ~3300 nm auseinander → kein Bummel.
-        _, is_bummel, _ = parse_route("EDDF KJFK", "FriesenFliegerBummel")
+        _, is_bummel, _ = parse_route("EDDF KJFK", "FriesenBummel")
         assert is_bummel is False
 
     def test_plausible_short_route_stays_bummel(self):
         # EDDH (Hamburg) und EDDB (Berlin) sind ~130 nm auseinander → plausibel.
-        _, is_bummel, _ = parse_route("EDDH EDDB", "FriesenFliegerBummel")
+        _, is_bummel, _ = parse_route("EDDH EDDB", "FriesenBummel")
         assert is_bummel is True
 
     def test_route_csv_unchanged_by_plausibility(self):
-        route, _, _ = parse_route("EDDF KJFK", "FriesenFliegerBummel")
+        route, _, _ = parse_route("EDDF KJFK", "FriesenBummel")
         assert route == "EDDF,KJFK"
 
 
 class TestDescription:
     def test_keyword_in_description_activates_bummel(self):
         route, is_bummel, _ = parse_route(
-            "", "Gruppenflug", "Diesmal als FriesenFliegerBummel: EDWF EDWG EDWR"
+            "", "Gruppenflug", "Diesmal als FriesenBummel: EDWF EDWG EDWR"
         )
         assert is_bummel is True
         assert route == "EDWF,EDWG,EDWR"
@@ -237,7 +237,7 @@ class TestDbRoundtrip:
         # dtstart in der Vergangenheit, damit get_calendar_events (dtstart <= now) es liefert
         upsert_calendar_events(conn, [{
             "uid": "x_20200101T100000Z",
-            "summary": "FriesenFliegerBummel",
+            "summary": "FriesenBummel",
             "dtstart": "2020-01-01T10:00:00Z",
             "dtend": "2020-01-01T18:00:00Z",
             "location": "EDWF",

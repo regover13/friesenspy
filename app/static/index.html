@@ -1203,7 +1203,7 @@
       white-space: nowrap;
     }
 
-    /* ---- FriesenFliegerBummel ---- */
+    /* ---- FriesenBummel ---- */
     .bummel-badge {
       display: inline-block;
       font-family: var(--text-display);
@@ -4305,7 +4305,7 @@
     <div id="bummel-results" class="hidden">
       <div class="panel">
         <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <span id="bummel-title"><img class="emoji-icon" src="/static/emoji/checkered-flag.svg" alt="" /> FriesenFliegerBummel</span>
+          <span id="bummel-title"><img class="emoji-icon" src="/static/emoji/checkered-flag.svg" alt="" /> FriesenBummel</span>
           <button class="btn-share" onclick="copyBummelShareHeader(this)">⎘ Teilen</button>
         </div>
         <div id="bummel-content"></div>
@@ -9184,7 +9184,7 @@ async function openBummel(ev) {
   wrap.classList.remove('hidden');
   // Bummel-View in den Sichtbereich holen (sonst scrollt searchEvents() unten zur Karte vorbei).
   wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  title.innerHTML = emoji('checkered-flag') + ' ' + escHtml(ev.summary || 'FriesenFliegerBummel');
+  title.innerHTML = emoji('checkered-flag') + ' ' + escHtml(ev.summary || 'FriesenBummel');
   content.innerHTML = '<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>Lade…</div>';
   _activeBummel = null;
   document.getElementById('events-results').classList.add('hidden');
@@ -9344,7 +9344,7 @@ function _bummelStandingBadge(cid) {
 let _bummelForumText = '';
 function _buildBummelForumText(data) {
   const route = (data.route || []).join(' - ');
-  let t = `FriesenFliegerBummel — ${route}\n`;
+  let t = `FriesenBummel — ${route}\n`;
   t += `Durchschnittszeit: ${_fmtMin(Math.round(data.average_min))}\n\n`;
   (data.complete || []).forEach(e => {
     const medal = e.rank === 1 ? '[Sieger] ' : '';
@@ -9438,8 +9438,8 @@ async function fetchBummelActive() {
     const v = await res.json();
     if (!v) { banner.hidden = true; banner.innerHTML = ''; return; }
     const head = v.status === 'waiting'
-      ? `${emoji('checkered-flag')} ${escHtml(v.name || 'FriesenFliegerBummel')} — wartet auf Nachzügler`
-      : `${emoji('checkered-flag')} ${escHtml(v.name || 'FriesenFliegerBummel')} läuft gerade`;
+      ? `${emoji('checkered-flag')} ${escHtml(v.name || 'FriesenBummel')} — wartet auf Nachzügler`
+      : `${emoji('checkered-flag')} ${escHtml(v.name || 'FriesenBummel')} läuft gerade`;
     let html = `<div class="bb-title">${head}</div>`;
     html += `<div class="bb-sub">Strecke: ${escHtml((v.route || []).join(' - '))}</div>`;
     html += `<div class="bb-sub">${v.participant_count} Teilnehmer · ${icon('lock')} Ergebnisse nach Renn-Ende</div>`;

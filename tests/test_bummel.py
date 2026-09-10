@@ -1,4 +1,4 @@
-"""Tests für die FriesenFliegerBummel-Wertung (compute_bummel_standings).
+"""Tests für die FriesenBummel-Wertung (compute_bummel_standings).
 
 Bummel-Regel (bewusst robust): Es gewinnt, wer mit der Summe seiner Gate-to-Gate-Blockzeiten
 am dichtesten an der Durchschnittszeit aller kompletten Touren liegt. Eine Tour ist komplett,

@@ -457,7 +457,7 @@ Sortiert nach `logon_time` absteigend. FriesenSpy-Einträge haben Vorrang bei Ze
 
 `duration_min` = **Flugzeit** (Abheben → Landung). `block_min` = **Blockzeit** (Summe der GPS-Bewegungsabschnitte gate-to-gate inkl. Taxi; belegte Standphasen ≥ 10 min, z. B. eine Zwischenlandung ohne Disconnect, zählen nicht) — nur bei FriesenSpy-Flügen vorhanden, StatSim/Altflüge haben `null`.
 
-Flüge unter einem **Nicht-`FRS`-Callsign** (`callsign_prefix=""` liefert sie mit) erscheinen ebenfalls in der Antwort, zählen aber nicht in Statistik, FriesenFliegerBummel oder FriesenKutter (das Frontend markiert sie als „nicht gewertet").
+Flüge unter einem **Nicht-`FRS`-Callsign** (`callsign_prefix=""` liefert sie mit) erscheinen ebenfalls in der Antwort, zählen aber nicht in Statistik, FriesenBummel oder FriesenKutter (das Frontend markiert sie als „nicht gewertet").
 
 ---
 
@@ -735,7 +735,7 @@ Der Kalender wird alle 6 Stunden automatisch synchronisiert. RRULE-Wiederholungs
 
 ## GET /api/bummel/races
 
-Liste aller bekannten FriesenFliegerBummel-Rennen (aus `bummel_races`, persistent gespeichert). Rennen werden beim Kalender-Sync automatisch angelegt.
+Liste aller bekannten FriesenBummel-Rennen (aus `bummel_races`, persistent gespeichert). Rennen werden beim Kalender-Sync automatisch angelegt.
 
 **Retention (v8.10.0, #66/#67):** zeigt nur Rennen der letzten 365 Tage (`dtend` innerhalb des Fensters bzw. `NULL`) — reine Anzeige-Grenze, nichts wird gelöscht; ältere Rennen bleiben in `GET /api/admin/bummel/races` (ungefiltert) sichtbar. Ein bereits enthülltes Rennen (`revealed_at` gesetzt **und** `now >= dtend`) wird aus einem beim ersten Abruf eingefrorenen Snapshot bedient statt bei jedem Request neu berechnet — Korrekturen greifen erst, sobald das Rennen im Admin erneut gespeichert wird.
 
@@ -745,7 +745,7 @@ Liste aller bekannten FriesenFliegerBummel-Rennen (aus `bummel_races`, persisten
 [
   {
     "id": 1,
-    "name": "FriesenFliegerBummel Ostfriesland",
+    "name": "FriesenBummel Ostfriesland",
     "route": ["EDWF", "EDWG", "EDWR"],
     "dtstart": "2026-06-27T14:00:00Z",
     "dtend": "2026-06-27T20:00:00Z",
@@ -778,7 +778,7 @@ Liste aller bekannten FriesenFliegerBummel-Rennen (aus `bummel_races`, persisten
 ```json
 {
   "id": 1,
-  "name": "FriesenFliegerBummel Ostfriesland",
+  "name": "FriesenBummel Ostfriesland",
   "route": ["EDWF", "EDWG", "EDWR"],
   "dtstart": "2026-06-27T14:00:00Z",
   "dtend": "2026-06-27T20:00:00Z",
@@ -836,14 +836,14 @@ Gibt `404` zurück wenn die `id` nicht existiert.
 
 ## GET /api/bummel/active
 
-Aktuell laufendes oder wartendes FriesenFliegerBummel-Rennen als redigierte (öffentliche) Sicht — speist das Live-Banner. Gibt `null` zurück wenn gerade kein Rennen mit `status` ∈ `running` | `waiting` läuft. Bereits enthüllte Rennen erscheinen hier **nicht** mehr.
+Aktuell laufendes oder wartendes FriesenBummel-Rennen als redigierte (öffentliche) Sicht — speist das Live-Banner. Gibt `null` zurück wenn gerade kein Rennen mit `status` ∈ `running` | `waiting` läuft. Bereits enthüllte Rennen erscheinen hier **nicht** mehr.
 
 **Response** — `null`, wenn kein aktives Rennen, sonst die redigierte Rennen-Sicht (identisches Format wie `GET /api/bummel/race/{id}` vor Enthüllung):
 
 ```json
 {
   "id": 1,
-  "name": "FriesenFliegerBummel Ostfriesland",
+  "name": "FriesenBummel Ostfriesland",
   "route": ["EDWF", "EDWG", "EDWR"],
   "dtstart": "2026-06-27T14:00:00Z",
   "dtend": "2026-06-27T20:00:00Z",
@@ -1222,7 +1222,7 @@ Volle Liste aller Bummel-Rennen inkl. interner Felder.
 [
   {
     "id": 1,
-    "name": "FriesenFliegerBummel Ostfriesland",
+    "name": "FriesenBummel Ostfriesland",
     "route": ["EDWF", "EDWG", "EDWR"],
     "dtstart": "2026-06-27T14:00:00Z",
     "dtend": "2026-06-27T20:00:00Z",

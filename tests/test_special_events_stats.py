@@ -84,7 +84,7 @@ def test_special_events_aggregates_finished_bummel(tmp_path, monkeypatch):
     dtend = _iso(now - timedelta(days=1))
     conn = get_connection(db)
     upsert_calendar_bummel_race(conn, {
-        "uid": "r1", "summary": "FriesenFliegerBummel Ostfriesland",
+        "uid": "r1", "summary": "FriesenBummel Ostfriesland",
         "route": "EDWF,EDWG,EDWR",
         "dtstart": _iso(now - timedelta(days=1, hours=4)), "dtend": dtend,
     })

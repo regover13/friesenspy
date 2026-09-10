@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.28.0",
+    "date": "2026-09-10",
+    "highlight": false,
+    "title": "Aus dem FriesenFliegerBummel wird der FriesenBummel",
+    "items": [
+      "🏁 Der Name war der längste der Familie und fiel zwischen 🦐 FriesenKutter und dem geplanten 🔭 FriesenKieker heraus. Ab jetzt heißt das Schätzrennen schlicht FriesenBummel — überall in der Oberfläche, in den Meldungen, auf dem Badge und im Handbuch.",
+      "📅 An der Erkennung ändert das nichts: Ein Kalendertermin wird weiterhin am Stichwort „bummel\" erkannt, gleich wie er im Übrigen heißt. Bestehende Rennen mit eigenem Namen behalten ihren Namen unverändert.",
+      "🗄 Der Changelog und die datierten Entwurfsdokumente bleiben stehen, wie sie geschrieben wurden — dort steht, wie es damals hieß."
+    ]
+  },
+  {
     "version": "14.27.5",
     "date": "2026-09-10",
     "highlight": false,
