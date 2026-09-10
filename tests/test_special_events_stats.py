@@ -61,7 +61,7 @@ def test_special_events_only_finished_in_window(tmp_path, monkeypatch):
     conn.commit()
     conn.close()
 
-    res = asyncio.run(main.get_special_events_stats(days=30))
+    res = main.get_special_events_stats(days=30)
 
     assert res["kutter"]["event_count"] == 1          # nur (a)
     assert res["kutter"]["flights"] == 3
@@ -100,7 +100,7 @@ def test_special_events_aggregates_finished_bummel(tmp_path, monkeypatch):
     conn.commit()
     conn.close()
 
-    res = asyncio.run(main.get_special_events_stats(days=365))
+    res = main.get_special_events_stats(days=365)
     assert res["bummel"]["race_count"] == 1
     assert res["bummel"]["participations"] == 3
     assert res["bummel"]["legs"] == 7            # 3 + 3 + 1 über complete+incomplete
@@ -112,7 +112,7 @@ def test_special_events_shape(tmp_path, monkeypatch):
     db = str(tmp_path / "t.db")
     init_db(db)
     _patch(monkeypatch, db)
-    res = asyncio.run(main.get_special_events_stats(days=365))
+    res = main.get_special_events_stats(days=365)
     assert set(res.keys()) == {"kutter", "bummel"}
     assert set(res["kutter"].keys()) == {
         "event_count", "participations", "flights", "delivered_kg",

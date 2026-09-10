@@ -7,7 +7,9 @@ import hmac
 import html as _html
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import secrets
+import threading
 import time
 import zipfile
 from contextlib import asynccontextmanager
@@ -160,7 +162,7 @@ from app.version import CHANGELOG, VERSION
 _logger = logging.getLogger(__name__)
 
 
-def configure_logging(level: str = "INFO") -> None:
+def configure_logging(level: str = "INFO", diagnose_pfad: str | None = None) -> None:
     """Root-Logger konfigurieren, damit App-INFO-Logs sichtbar werden.
 
     Unter uvicorn hat der Root-Logger keinen eigenen Handler — Pythons
@@ -168,6 +170,9 @@ def configure_logging(level: str = "INFO") -> None:
     "PrefilePush … sent OK" verschwinden. `force=True` (re)installiert einen
     StreamHandler am Root-Logger und setzt das Level; uvicorns eigene benannte
     Logger bleiben unberührt. Ungültiges Level → Fallback INFO.
+
+    ``diagnose_pfad`` haengt zusaetzlich eine rotierende Datei fuer WARNING+ an — die
+    Zweitschrift, die einen Container-Neustart uebersteht (#16).
     """
     resolved = getattr(logging, level.upper(), None)
     if not isinstance(resolved, int):
@@ -177,6 +182,44 @@ def configure_logging(level: str = "INFO") -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         force=True,
     )
+    if diagnose_pfad:
+        _diagnose_handler_anhaengen(diagnose_pfad)
+
+
+# Groesse und Anzahl der Diagnosedateien. 5 MB fassen rund 30.000 Warnzeilen — genug fuer
+# Monate, denn im Normalbetrieb schweigt die Abschnittsmessung (Schwelle 2 s).
+_DIAGNOSE_MAX_BYTES = 5 * 1024 * 1024
+_DIAGNOSE_BACKUPS = 3
+
+
+def _diagnose_log_pfad(settings) -> str:
+    """Die Diagnosedatei liegt neben der Datenbank — das ist der Bind-Mount auf den Host.
+
+    Bewusst aus ``DB_PATH`` abgeleitet statt als eigene Einstellung: Zwei Angaben fuer
+    denselben Ort laufen frueher oder spaeter auseinander, und dann schreibt die Diagnose in
+    den Container zurueck, ohne dass es jemandem auffaellt."""
+    return str(Path(settings.DB_PATH).parent / "diagnose.log")
+
+
+def _diagnose_handler_anhaengen(pfad: str) -> None:
+    """WARNING+ zusaetzlich in eine rotierende Datei schreiben.
+
+    Der Container-Log bleibt unveraendert; das hier ist die Zweitschrift, die einen Deploy
+    ueberlebt (#16). Schlaegt das Anlegen fehl — fehlendes Verzeichnis, fehlende Rechte —,
+    laeuft die App ohne Zweitschrift weiter: Eine Diagnosehilfe darf den Dienst nie aufhalten.
+    """
+    try:
+        handler = RotatingFileHandler(
+            pfad, maxBytes=_DIAGNOSE_MAX_BYTES, backupCount=_DIAGNOSE_BACKUPS,
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        logging.getLogger(__name__).warning(
+            "Diagnose-Log %s nicht schreibbar (%s) — es wird keins gefuehrt", pfad, exc)
+        return
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.getLogger().addHandler(handler)
 
 # CID → Zeitpunkt des letzten vollständigen StatSim-Abrufs (days=0).
 # Verloren beim Neustart → erstes days=0 nach Restart holt immer frische Daten.
@@ -227,7 +270,7 @@ async def _fetch_statsim_background(cid: int, api_key: str, db_path: str, full: 
 async def lifespan(app: FastAPI):
     # Startup
     settings = get_settings()
-    configure_logging(settings.LOG_LEVEL)
+    configure_logging(settings.LOG_LEVEL, _diagnose_log_pfad(settings))
     if settings.SSO_SECRET and settings.SSO_SECRET == settings.SECRET_KEY:
         _logger.warning(
             "SSO_SECRET == SECRET_KEY — bitte UNTERSCHIEDLICHE Geheimnisse verwenden "
@@ -1088,7 +1131,7 @@ async def get_stats_endpoint(
 
 
 @app.get("/api/stats/special-events")
-async def get_special_events_stats(days: int = 30):
+def get_special_events_stats(days: int = 30):
     """Aggregierte Kennzahlen beider Spezial-Events (FriesenKutter + FriesenBummel) im
     Zeitfenster — NUR abgeschlossene Events/Rennen, bedient aus den #66-Snapshots (kein
     Track-Recompute). ?days=30|90|365."""
@@ -3786,11 +3829,45 @@ def _clamp_retention_start(start: str, now: str) -> str:
     return floor if (not start or start < floor) else start
 
 
+# Einfachlauf-Sperre je (Art, Event) fuer die Fortschrittsrechnung. Seit die rechnenden
+# Endpunkte im Threadpool laufen (kein `async def` mehr, siehe unten), koennen sie sich
+# ueberlappen: Am 09.09.2026 standen 30 Anfragen an `/api/transport/events` gleichzeitig an,
+# waehrend die Snapshots fehlten -- ohne Sperre waeren daraus 30 parallele Laeufe von je
+# ~110 s geworden. Je Event, nicht global: sonst bremst ein langsames Event alle anderen aus,
+# und die Liste rechnet ihre zehn Events ohnehin nacheinander.
+# Gebunden in tests/test_kutter_eventloop.py.
+_progress_sperren: dict[tuple[str, int], threading.Lock] = {}
+_progress_sperren_verwaltung = threading.Lock()
+
+
+def _progress_sperre(kind: str, ref_id: int) -> threading.Lock:
+    """Die Sperre fuer genau ein Event -- beim ersten Zugriff angelegt.
+
+    Waechst mit der Zahl der je abgerufenen Events, nicht mit der Zahl der Anfragen: Die
+    Retention (#67) haelt die Menge klein, ein Aufraeumen lohnt den Aufwand nicht."""
+    schluessel = (kind, ref_id)
+    with _progress_sperren_verwaltung:
+        sperre = _progress_sperren.get(schluessel)
+        if sperre is None:
+            sperre = _progress_sperren[schluessel] = threading.Lock()
+        return sperre
+
+
 def _frozen_or_compute(conn, kind: str, ref_id: int, *, finished: bool, compute_fn, now: str) -> dict:
     """Gemeinsamer Zugriffs-Helfer Kutter/Bummel (#66 §3): ein abgeschlossenes Event/Rennen wird
     aus dem Snapshot bedient (Lazy-Freeze beim ersten Read, falls noch keiner existiert);
-    ein aktives wird immer live gerechnet."""
+    ein aktives wird immer live gerechnet.
+
+    Die Rechnung laeuft je Event nur einmal gleichzeitig (#16)."""
     if finished:
+        snap = get_progress_snapshot(conn, kind, ref_id)
+        if snap is not None:
+            return snap
+    with _progress_sperre(kind, ref_id):
+        if not finished:
+            return compute_fn()
+        # Zweiter Blick: Wer hier gewartet hat, findet den Snapshot des Vordermanns vor und
+        # spart sich die volle Rechnung -- das ist der eigentliche Gewinn der Sperre.
         snap = get_progress_snapshot(conn, kind, ref_id)
         if snap is not None:
             return snap
@@ -3798,7 +3875,6 @@ def _frozen_or_compute(conn, kind: str, ref_id: int, *, finished: bool, compute_
         write_progress_snapshot(conn, kind, ref_id, result, now)
         conn.commit()
         return result
-    return compute_fn()
 
 
 def _kutter_progress(conn, ev: dict, now: str, prefix: str) -> dict:
@@ -3823,7 +3899,7 @@ def _kutter_progress(conn, ev: dict, now: str, prefix: str) -> dict:
 
 
 @app.get("/api/transport/events")
-async def transport_events():
+def transport_events():
     """Alle FriesenKutter-Events (Kalender + manuell) mit kompaktem Fortschritt — letzte
     ``_DATA_RETENTION_DAYS`` Tage (#67), abgeschlossene Events aus dem Snapshot (#66)."""
     now = _now_iso()
@@ -3839,7 +3915,7 @@ async def transport_events():
 
 
 @app.get("/api/transport/event/{event_id}")
-async def transport_event_detail(event_id: int):
+def transport_event_detail(event_id: int):
     """Voller Zustand eines Events: Zielbalken (cargo) + chronologischer Flug-Feed — abgeschlossen
     aus dem Snapshot, aktiv live (#66)."""
     now = _now_iso()
@@ -3903,7 +3979,7 @@ def _render_kutter_badge(d: dict) -> bytes:
 
 
 @app.get("/api/transport/event/{event_id}/badge/{cid}.png")
-async def get_transport_badge(request: Request, event_id: int, cid: int):
+def get_transport_badge(request: Request, event_id: int, cid: int):
     """Forum-Badge (PNG) für einen Kutter-Teilnehmer — erst nach der Feierabend-Bilanz
     (``summarized_at``), damit kein Zwischenstand als "fertig" verewigt wird."""
     import hashlib
@@ -3948,7 +4024,7 @@ async def get_transport_badge(request: Request, event_id: int, cid: int):
 
 
 @app.get("/api/admin/transport/events/{event_id}/badge/{cid}.png")
-async def admin_transport_badge(request: Request, event_id: int, cid: int):
+def admin_transport_badge(request: Request, event_id: int, cid: int):
     """Badge-Vorschau für den Admin — funktioniert auch VOR der Feierabend-Bilanz, immer frisch
     gerendert (kein Cache)."""
     require_admin(request)
@@ -4163,7 +4239,7 @@ async def admin_delete_transport_event(request: Request, event_id: int):
 
 
 @app.get("/api/admin/transport/payloads")
-async def admin_transport_payloads(request: Request):
+def admin_transport_payloads(request: Request):
     """Zuladungs-Tabelle + globaler Default + beobachtete, noch nicht gepflegte Flugzeugtypen."""
     require_admin(request)
     now = _now_iso()

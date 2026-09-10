@@ -82,10 +82,70 @@ entfallen (`admin_upsert_payload`, `admin_set_default_payload`). Die Funktion se
 ist getestet und könnte wieder gebraucht werden. In der Maske steht jetzt ein Satz, der den Hebel
 sichtbar macht; ohne ihn wäre das Verhalten nur noch schwerer zu erraten als vorher.
 
+## Die zweite Reparatur: die Rechnung raus aus der Event-Loop (10.09.2026)
+
+Die erste Reparatur hat den *Auslöser* entfernt. Der Mechanismus dahinter blieb: Eine teure
+Rechnung lief in der Event-Loop, und solange sie lief, stand die ganze App. Jeder andere Weg zu
+einer Neuberechnung — ein bewusst aufgetautes Event, ein laufender Kutter unter Last — hätte
+dieselbe Wirkung gehabt.
+
+**Sechs Endpunkte stießen die Rechnung an, alle sechs waren `async def` ohne ein einziges
+`await`:**
+
+| | |
+|---|---|
+| `/api/transport/events` | die Liste, zehn Events auf einmal |
+| `/api/transport/event/{id}` | die Detailsicht |
+| `/api/transport/event/{id}/badge/{cid}.png` | Badge |
+| `/api/admin/transport/events/{id}/badge/{cid}.png` | Badge (Admin) |
+| `/api/admin/transport/payloads` | die Zuladungsmaske selbst |
+| `/api/stats/special-events` | Statistik |
+
+Starlette führt einen `async def`-Handler **in der Event-Loop** aus und einen gewöhnlichen `def`
+von selbst **im Threadpool**. Das `async` war hier reine Gewohnheit — es gab nichts zu erwarten.
+Gestrichen. Aus „die App steht still" wird damit „dieser eine Aufruf dauert lang".
+
+**Dazu gehört ein Geländer, sonst verschlimmert die Änderung den Fall.** Am 09.09. standen um
+19:35 rund **30 Anfragen** an `/api/transport/events` gleichzeitig an. Im Threadpool wären daraus
+30 parallele Läufe von je ~110 s geworden — dieselbe Arbeit dreißigmal, und mit ihr dreißig
+gleichzeitige Schreibversuche auf dieselbe SQLite-Datei. `_frozen_or_compute` hält deshalb eine
+**Einfachlauf-Sperre je Event**:
+
+- Wer wartet, sieht danach noch einmal nach dem Snapshot. Bei einem abgeschlossenen Event findet
+  er den des Vordermanns und spart die volle Rechnung — das ist der eigentliche Gewinn.
+- Die Sperre gilt **je Event, nicht global**. Sonst bremst ein langsames Event alle anderen aus;
+  die Liste rechnet ihre zehn Events ohnehin nacheinander.
+- Bei einem **laufenden** Event spart sie nichts (dort gibt es nie einen Snapshot), verhindert
+  aber, dass 30 Anfragen 30 Rechnungen gleichzeitig starten.
+
+Gebunden in `tests/test_kutter_eventloop.py`. Der Test sucht die betroffenen Endpunkte über den
+**AST** statt über eine Namensliste: Ein neuer Handler, der `_kutter_progress` aufruft, fällt
+damit von selbst auf. Ein zweiter Test prüft, dass die Suche überhaupt etwas findet — ohne ihn
+wäre die Prüfung stillschweigend grün, sobald die Erkennung nicht mehr greift.
+
+**Was das nicht ist:** eine Beschleunigung. Die 110 s bleiben, sie treffen nur niemanden mehr,
+der nicht selbst danach gefragt hat.
+
+## Die Spur überlebt jetzt den Deploy
+
+Zweimal ist die Aufklärung an derselben Stelle gescheitert: Die Container-Logs waren weg, bevor
+jemand sie lesen konnte — am 09.09. mit dem 14.27.1-Deploy, und für die Abschnittsmessung des
+Pollers (14.20.6, Issue #16) in den sechs Tagen danach bei **15 weiteren Deploys**. Ein
+Eventabend fällt selten, ein Deploy oft.
+
+`configure_logging` hängt deshalb einen rotierenden Datei-Handler für **WARNING und höher** an,
+und zwar nach `data/diagnose.log` — neben die Datenbank, also in den einzigen Bind-Mount, der auf
+dem Host liegt. Der Pfad wird aus `DB_PATH` abgeleitet und nicht separat eingestellt; zwei
+Angaben für denselben Ort laufen früher oder später auseinander.
+
+INFO bleibt draußen (der Poller schreibt im 15-s-Takt), und ein nicht beschreibbarer Pfad hält
+den Start nicht auf — eine Diagnosehilfe darf den Dienst nie aufhalten.
+
 ## Was offen bleibt
 
-**Die 111 Sekunden sind damit nicht weg, nur seltener.** Sie fallen weiterhin an, wenn ein Event
-bewusst neu gerechnet wird, und anteilig bei jedem Aufruf während eines laufenden Kutters.
+**Die 111 Sekunden sind damit nicht weg, nur seltener — und sie halten seit dem 10.09.2026
+niemanden mehr auf.** Sie fallen weiterhin an, wenn ein Event bewusst neu gerechnet wird, und
+anteilig bei jedem Aufruf während eines laufenden Kutters.
 
 Ein `cProfile`-Lauf über ein einzelnes Event (Event 1, 16 s real, 52,7 s unter dem Profiler) zeigt,
 wo sie liegen:
@@ -133,7 +193,9 @@ nicht beantworten, und eine Wanduhr-Messung dafür steht aus.
 
 - **`docker logs` überlebt keinen Deploy.** Die Logs des Containers, in dem der Vorfall passierte,
   waren beim Nachsehen bereits mit dem 14.27.1-Deploy verschwunden. Wer einen Vorfall aufklären
-  will, sichert sie **vor** dem nächsten Ausrollen.
+  will, sichert sie **vor** dem nächsten Ausrollen. Für WARNING und höher gibt es seit dem
+  10.09.2026 die Zweitschrift `data/diagnose.log` auf dem Host (siehe oben) — für alles darunter
+  gilt der Satz unverändert.
 - **`zgrep` über `goaccess.log*` liefert unsortierte Zeilen.** Die rotierten Dateien werden
   hintereinandergehängt, nicht verschränkt. Eine Lückenanalyse darauf erfindet Lücken (hier: eine
   „56-Sekunden-Blockade nach dem Neustart", die es nie gab) und übersieht echte. Erst `sort`, dann

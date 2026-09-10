@@ -88,7 +88,7 @@ def test_upsert_payload_persists_make_model_and_fuel_full(db):
         "type_code": "AEST", "mtow_kg": 2767, "empty_kg": 1700,
         "fuel_kg": 100, "fuel_full_kg": 200, "crew_kg": 85, "make_model": "Aerostar 600",
     })))
-    res = asyncio.run(main.admin_transport_payloads(FakeReq()))
+    res = main.admin_transport_payloads(FakeReq())
     row = next(p for p in res["payloads"] if p["type_code"] == "AEST")
     assert row["make_model"] == "Aerostar 600"
     assert abs(row["fuel_full_kg"] - 200) < 0.5

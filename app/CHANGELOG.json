@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.29.0",
+    "date": "2026-09-10",
+    "highlight": false,
+    "title": "Die Kutter-Auswertung hält die App nicht mehr an",
+    "items": [
+      "🧮 Die Auswertung eines Kutters ist Rechenarbeit — für alle zehn Events zusammen rund zwei Minuten. Bisher lief sie an der Stelle, an der die App auch alles andere erledigt: Solange sie rechnete, gab es keine Karte, kein Kniebrett, keine Antwort für irgendwen. Genau das hat am 09.09. zweimal für Minuten alles angehalten. Die Rechnung läuft jetzt daneben; wer sie auslöst, wartet auf seine eigene Anfrage, alle anderen merken nichts davon.",
+      "🚦 Dazu eine Sperre je Event: Stauen sich mehrere Anfragen zum selben Kutter, rechnet einer, die übrigen übernehmen sein Ergebnis. Am 09.09. hätten sich sonst dreißig Anfragen dieselbe Arbeit dreißigmal gemacht. Verschiedene Events bremsen sich dabei nicht gegenseitig aus.",
+      "🗒 Warnmeldungen schreibt der Server ab jetzt zusätzlich in eine Datei neben der Datenbank. Bisher standen sie nur im Container und waren beim nächsten Ausrollen weg — zweimal ist die Aufklärung eines Ausfalls genau daran gescheitert.",
+      "⏱ Schneller wird die Auswertung dadurch nicht. Sie hält nur niemanden mehr auf, der nicht selbst nach ihr gefragt hat."
+    ]
+  },
+  {
     "version": "14.28.0",
     "date": "2026-09-10",
     "highlight": false,
