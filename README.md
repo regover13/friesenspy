@@ -252,7 +252,7 @@ Steht im Flugplan ein anderes Kürzel als das eigentliche Muster, sagt das Fenst
 
 ## 🏁 FriesenBummel
 
-Der **FriesenBummel** ist ein besonderer Event-Typ — ein „Schätzweltmeister"-Rennen: Es gewinnt **nicht der Schnellste**, sondern wer mit der **Summe seiner Blockzeiten am dichtesten an der Durchschnittszeit aller Teilnehmer** liegt.
+Der **FriesenBummel** ist ein besonderer Event-Typ — ein „Schätzweltmeister"-Rennen: Es gewinnt **nicht der Schnellste**, sondern wer mit der **Summe seiner Blockzeiten am dichtesten an der Durchschnittszeit aller Teilnehmer** liegt. (Bis v14.28.0 hieß er *FriesenFliegerBummel*; am Rennen selbst hat sich dabei nichts geändert.)
 
 **Gleich weit ist gleichauf:** Liegen zwei Teilnehmer exakt gleich weit vom Schnitt — einer darüber, einer darunter —, dann **teilen sie sich den Platz**; es gibt in dem Fall zwei Sieger und der nächste Platz wird übersprungen (seit v14.24.0). Bei genau zwei Teilnehmern ist das immer so: Der Schnitt liegt dann zwangsläufig in der Mitte, beide sind gleich weit entfernt. Das Spielprinzip entfaltet sich also erst ab drei Teilnehmern.
 
