@@ -219,9 +219,11 @@ belanglos, weil die Brügge ohnehin durchläuft.
 
 1. ~~Wer in der Gruppe fliegt X-Plane?~~ **Beantwortet: etwa ein Drittel.**
 2. ~~Lohnt sich ein zweites Paket?~~ **Ja** — bei rund 20 Piloten steht es außer Frage.
-3. Ordnerstruktur und Namensgebung **vor** dem ersten Paket-Commit festlegen. Vorschlag:
-   ein `PROTOKOLL.md` als simulatorfreier Vertrag, daneben `msfs/` (für 2020 **und** 2024) und
-   `xplane/`. Die Server-Seite kennt nur das Protokoll und nie ein SimObject.
+3. ~~Ordnerstruktur und Namensgebung **vor** dem ersten Paket-Commit festlegen.~~
+   **Geschrieben am 11.09.2026:** [`friesenbruegge/PROTOKOLL.md`](../friesenbruegge/PROTOKOLL.md)
+   — der simulatorfreie Vertrag, Fassung 1. Daneben entstehen `msfs/` (für 2020 **und** 2024)
+   und `xplane/`. Die Server-Seite kennt nur das Protokoll und nie ein SimObject.
+   **Vom Nutzer noch nicht abgenommen.**
 4. Der Positions-Endpunkt (#23) sollte von vornherein so beschrieben werden, dass ein
    X-Plane-Plugin ihn ohne Änderung bedienen kann — das kostet jetzt nichts.
 5. **Neu:** Ein X-Plane-Probeflug, der dasselbe belegt wie der MSFS-Probeflug — Objekt

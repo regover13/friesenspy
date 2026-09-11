@@ -6,6 +6,32 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-11 — Bruegge-Protokoll Fassung 1 geschrieben, Deploy-Filter gesetzt (Sim-Sitzung)
+
+**Betrifft `friesenbruegge/`, `docs/` und `.github/`** — kein Anwendungscode, keine Version,
+kein CHANGELOG-Eintrag. Live blieb v14.29.0.
+
+- **`friesenbruegge/PROTOKOLL.md`** angelegt: der Vertrag zwischen Server und Bruegge, der
+  dreimal umgesetzt wird (MSFS 2020, MSFS 2024, X-Plane 12). Schritt 2 der Reihenfolge aus
+  #25, und die Vorbedingung fuer jede Codezeile im Paket. **Vom Nutzer noch nicht abgenommen.**
+- **Wer an der Server-Seite arbeitet, liest dort Abschnitt 1 und 4.** Zwei Dinge daraus
+  betreffen `app/` unmittelbar:
+  - Ein Endpunkt `POST /api/bruegge/melden` traegt Position **und** Sollzustand. Er bedient
+    damit #23 nebenbei mit — dieselbe Nutzlast, dieselbe Richtung.
+  - **Der Server muss `steht[].hoehe_ft` auswerten.** FriesenSpy hat kein Gelaendemodell und
+    kann nicht wissen, ob an einer Koordinate Wasser auf Meereshoehe liegt; die Rueckmeldung
+    der tatsaechlich erreichten Hoehe ist der einzige Weg, eine untaugliche Stelle zu
+    erkennen. Raten waere der Anfang einer neuen Fehlersuche.
+  - Vor der ersten Auslieferung: **eigene nginx-`location` mit eigener Rate-Limit-Zone** fuer
+    `/api/bruegge/`. Die vorhandene Zone gilt je IP, nicht je Geraet — Bruegge und Kniebrett
+    eines Piloten teilen sich sonst 120 Anfragen pro Minute.
+- **`paths-ignore` im Deploy-Workflow** gesetzt fuer `docs/**`, `friesenbruegge/**`,
+  `msfs-panel/**` und `**.md`. Anlass war Nutzerkritik: 15 Pushes an einem Tag haben 15
+  Container-Neustarts ausgeloest, keiner davon beruehrte `app/`. Ein Deploy reisst offene
+  SSE-Verbindungen und Kniebretter ab (s. CLAUDE.md). Bewusst als Ausschluss-, nicht als
+  Einschlussliste — eine vergessene Zeile kostet dann einen ueberfluessigen Deploy statt
+  eines ausbleibenden.
+
 ## 2026-09-11 — Probefluege am Simulator: alle drei Simulatoren gemessen (Sim-Sitzung)
 
 **Betrifft `friesenbruegge/` und `docs/`** — kein Anwendungscode, keine Version, kein
