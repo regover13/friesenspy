@@ -49,10 +49,28 @@ Damit steht und fällt der ganze Eventtyp mit **einer** Messung:
 Trägt der Weg, wird gebaut. Trägt er nicht, **lassen wir es** (wörtlich: *„Weil sonst lassen
 wir es!"*). Es gibt keinen Ersatzplan und es soll keinen geben.
 
+> ## ✅ Am 11.09.2026 gemessen: Der Weg trägt.
+>
+> Ein mitgeliefertes Boot entsteht per `AICreateSimulatedObject` an frei gewählter Koordinate,
+> wird vollständig gezeichnet und bleibt liegen — 180 Lagemeldungen ohne Drift. Belege,
+> Rohausgaben und Screenshots in **[`friesenbruegge/probe-msfs/ERGEBNIS.md`](../../../friesenbruegge/probe-msfs/ERGEBNIS.md)**.
+>
+> **Drei Befunde ändern den Zuschnitt und sind unten eingearbeitet:**
+>
+> 1. **Objekte sterben mit der SimConnect-Verbindung.** Nach `Close` ist die Objekt-ID
+>    `UNRECOGNIZED_ID`, und die Schiffe waren sichtbar weg. Die Brügge ist damit ein
+>    **dauerhaft mitlaufender Prozess**, kein Aufruf, der etwas hinterlässt. Das ist die
+>    folgenreichste Erkenntnis des Probeflugs.
+> 2. **Keine Entfernungsgrenze beim Anlegen** — bis 10.000 km angenommen, mit geländerichtiger
+>    Höhe. Die Brügge darf eine ganze Kollektion verteilen, statt der Position nachzulaufen.
+>    *Offen bleibt*, ob weit entfernt Gesetztes beim Hinkommen auch gezeichnet wird.
+> 3. **`OnGround=1` genügt** — der Simulator setzt selbst auf Gelände wie auf Wasser auf
+>    (2,4 ft an Land, 0,0 ft im Watt). Höhen müssen nicht gerechnet werden.
+
 | Stufe | Was sie bringt | Zustand |
 |---|---|---|
-| **0 — Der Probeflug** | Antwort auf die eine Frage | **jetzt**, `friesenbruegge/probe-msfs/` |
-| **1 — Eventtyp + Paket** | der Kieker, wie er unten beschrieben ist | wartet auf Stufe 0 |
+| **0 — Der Probeflug** | Antwort auf die eine Frage | **erledigt 11.09.2026 — positiv** |
+| **1 — Eventtyp + Brügge** | der Kieker, wie er unten beschrieben ist | **jetzt dran** |
 | **2 — Politur** | Badge fürs Forum, eigene Robben-Modelle | danach |
 
 **Der Probeflug liegt fertig bereit:** `friesenbruegge/probe-msfs/kieker_probe.py` mit Anleitung in
@@ -884,9 +902,20 @@ ohnehin nicht.
 ```
 GET /api/kieker/event/{id}/lage?lat=<breite>&lon=<laenge>
 Authorization: Bearer <kieker-schluessel>
-→ 200 { "objekte": [ {"titel": "Boat_Small", "lat": …, "lon": …, "kurs": 210} ] }
+→ 200 { "objekte": [ {"titel": "Boat01", "lat": …, "lon": …, "kurs": 210} ] }
 → 409 wenn die gemeldete Position nicht zur letzten VATSIM-Position der CID passt
 ```
+
+**Der Titel `Boat_Small` aus dem ersten Entwurf existiert nicht** — er war geraten. Gemessen
+sind `Boat01`, `Boat02`, `FishingBoat`, `FishingShip02/03`, `Yacht01–03`, `CargoShip01`,
+`CruiseShip01/02`, `PlatformSupply`; erprobt und bestätigt sind `Boat01` und `FishingBoat`.
+Titel stehen nicht als `sim.cfg` auf der Platte, sondern in unverschlüsselten
+`content\minimal.fsarchive`-Dateien (ERGEBNIS.md, Abschnitt 3).
+
+**Die Brügge holt die Lage einmal — halten muss sie sie dauernd.** Der Abruf oben bleibt
+richtig, aber er beschreibt nur die halbe Aufgabe: Weil Objekte mit der SimConnect-Verbindung
+sterben, hält die Brügge ihre Verbindung offen, solange der Pilot fliegt. Ein Prozess, der
+setzt und sich beendet, hinterlässt nichts.
 
 Kein `umkreis_km` in der Anfrage (Abschnitt 12). Der Schlüssel ist ein Zufallswert, den der
 Pilot einmal aus der Weboberfläche in die Konfigurationsdatei des Pakets kopiert
@@ -895,21 +924,37 @@ Geräteweg des Kniebretts nicht mitbenutzen — der lebt in MSFS' eigenem Speich
 Platte. **Der Schlüssel ist ein Zugangsgeheimnis und muss im Admin widerrufbar sein**, wie eine
 Panel-Gerätebindung.
 
-### 13.4 Die vier Messfragen
+### 13.4 Die Messfragen — Stand nach dem Probeflug
 
 Vom Nutzer am Simulator zu beantworten; ein geratener Wert wäre schlimmer als eine offene
 Frage.
 
+**Beantwortet am 11.09.2026:**
+
+- ✅ **Gibt es `exe.xml` in MSFS 2024 noch als Autostart-Weg?** Ja, und er ist in Gebrauch:
+  sieben Addons tragen sich ein, `ActiveSkyUtils` und `FlowShare` starten nachweislich mit dem
+  Simulator (07:49:17 gegen Sim-Start 07:46:48) und zeigen **kein Fenster**. Damit ist der Weg
+  für eine unbemerkt mitlaufende Brügge offen. *Offen bleibt die SmartScreen-Frage bei einer
+  unsignierten eigenen Datei* — die vorhandenen Addons sind signiert.
+
+**Weiterhin offen:**
+
 1. Erreicht `AICreateSimulatedObject` ein **WASM-Modul** im Paket? Wenn ja, entfällt das
    externe Programm — die WASM-Fassung von SimConnect kennt nur einen Teil des Befehlsvorrats.
+   **Achtung, neue Bedingung:** Ein WASM-Modul lebt im Simulator und hätte damit von selbst
+   die dauerhafte Verbindung, die ein externer Prozess sich nehmen muss. Die Frage ist durch
+   den Probeflug also *wichtiger* geworden, nicht unwichtiger.
 2. Welche **SimObject-Kategorie** passt für ein liegendes Tier, ohne dass der Simulator ihm ein
-   Verhalten andichtet? (Für Boote stellt sich die Frage nicht.)
-3. Gibt es **`exe.xml`** in MSFS 2024 noch als Autostart-Weg?
-4. Wie viele Objekte verträgt der Simulator, bevor es ruckelt?
-
-**Der erste Schritt ist billig und trifft den Kern:** ein mitgeliefertes Boot per SimConnect an
-eine Wattkoordinate setzen und nachsehen, ob es dort steht. Liegt es dort, lohnt sich alles
-Weitere; liegt es nicht dort, ist Stufe 1 trotzdem fertig und spielbar.
+   Verhalten andichtet? (Für Boote stellt sich die Frage nicht.) Hinweis aus dem Probeflug:
+   MSFS 2024 liefert **41 Tier-Pakete** als SimObjects aus (`fs24-microsoft-simobjects-animals-*`)
+   — Robbe ist keine dabei, aber die Gattung ist vorgesehen.
+3. Wie viele Objekte verträgt der Simulator, bevor es ruckelt? **Nicht gemessen** — der
+   Probeflug setzte nie mehr als zwei gleichzeitig, und die Frage war ausdrücklich
+   zurückgestellt, bis eines funktioniert.
+4. **Neu:** Wird ein **weit entfernt gesetztes Objekt gezeichnet, wenn der Pilot hinkommt?**
+   Das Anlegen gelingt bis 10.000 km, die Sichtbarkeit ist aber nur im Nahbereich belegt
+   (200 m an Land, 1,6 km auf dem Wasser). Die Frage entscheidet, ob die Brügge einmal
+   verteilen darf oder unterwegs nachsetzen muss. Sie braucht einen echten Flug.
 
 ## 14. Tests
 
@@ -1035,7 +1080,9 @@ beantwortet, zwei mit der verworfenen Zwischenstufe weggefallen.
 
 **Entschieden:**
 
-- **Version:** v15.0.0, Major. `highlight` bleibt aus.
+- **Version:** **nicht** durchgehend v15.0.0 — die Hauptnummer bekommt allein der sichtbare
+  Schritt, und der wird vorher abgesprochen (Abschnitt 15). Server, Wertung, Endpunkte und
+  Admin laufen als **v14.x**. `highlight` bleibt in jedem Fall aus.
 - **Board-Login:** dauerhaft an, der Schalter sitzt hinter dem Admin-Passwort. Kein
   Warnhinweis, keine Anpassung (Abschnitt 6).
 - **Die Zwischenstufe auf fest gebaute Szenerie entfällt** (Abschnitt 2). Damit sind die
@@ -1045,9 +1092,9 @@ beantwortet, zwei mit der verworfenen Zwischenstufe weggefallen.
 
 **Offen:**
 
-1. **Der Probeflug** (`friesenbruegge/probe-msfs/`) — er braucht deinen Simulator. Alles andere
-   wartet darauf. Wenn etwas klemmt: die Ausgabe herschicken, dann repariere ich das Skript,
-   statt zu raten.
+1. ~~**Der Probeflug**~~ **Erledigt am 11.09.2026, positiv.** Ergebnis in
+   [`friesenbruegge/probe-msfs/ERGEBNIS.md`](../../../friesenbruegge/probe-msfs/ERGEBNIS.md),
+   Zusammenfassung im Kasten in Abschnitt 2. Damit ist Stufe 1 freigegeben.
 
 2. **Die Wertungsformel** (3.2): Abstand zur hinterlegten Wahrheit, relativ und bei 100 %
    gedeckelt. Oder wie beim Bummel Abstand zum **Gruppenschnitt**? Mit dem Wegfall der
