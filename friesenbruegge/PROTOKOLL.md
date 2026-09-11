@@ -149,6 +149,39 @@ wird nie aufgeräumt, und eine dichtere Reihe verschiebt Aufsetz- und Abstellpun
 `canonicalize_legs`. Bummel-Blockzeiten würden sich rückwirkend ändern, je nachdem wer eine
 Brügge laufen hatte. Die Begründung steht ausführlich in #23, Fundstück 2.
 
+#### ⚠ Beim Laden springt die Position — und die Brügge darf das nicht melden
+
+**Gemessen am 11.09.2026, in drei Anläufen gelernt.** Wer nach dem Start eines Simulators die
+eigene Lage abfragt, bekommt nicht sofort den geladenen Flug:
+
+| | was ankam | |
+|---|---|---|
+| Sekunden 1–5 | `0.00000 / 90.00763` | der SimConnect-Nullpunkt |
+| Sekunde 9 | `47.51893 / -122.29450` | **Seattle** — der Standard-Startpunkt von MSFS |
+| danach | `53.78226 / 7.92593` | Wangerooge, der tatsächlich geladene Flug |
+
+**Jeder dieser Werte sieht für sich vernünftig aus.** Seattle ist eine gültige Koordinate mit
+gültiger Geländehöhe; nichts daran verrät, dass der Pilot dort nie war.
+
+**Die Brügge darf solche Punkte weder in `lage` noch in `spur` schicken.** Was sonst geschähe:
+
+- Der **Positionsmatch** liefe gegen Seattle — er fände niemanden, aber der Server rechnete
+  ihn bei jeder Meldung neu, weil keine Zuordnung zustande kommt.
+- Der **Track** bekäme einen Sprung über 8.000 km. In `position_history` gehören diese Punkte
+  ohnehin nicht (s. oben), aber auch die Karte zeigte eine Linie quer über den Atlantik.
+- Objekte würden **am falschen Ort gesetzt** — genau das ist im Probeflug dreimal passiert.
+
+**Die Regel: gemeldet wird erst, wenn die Lage ruhig ist.** Zwei aufeinanderfolgende Messungen
+müssen weniger als **500 m** auseinanderliegen. Bei 1-Sekunden-Takt liegt selbst ein sehr
+schnelles Flugzeug darunter — 600 kt sind 309 m/s.
+
+⚠ **Nicht auf bekannte Fehlwerte prüfen.** Der erste Anlauf verwarf `0/90` und lief in Seattle
+hinein; eine Liste deckt immer nur die Orte ab, die schon aufgefallen sind. Der Sprung
+dagegen verrät den Ladevorgang, ohne dass man einen einzigen Ort kennen muss.
+
+**Dasselbe gilt nach jedem Slew und jedem Flugwechsel** — beides erzeugt denselben Sprung, und
+beides kommt im Alltag häufiger vor als ein Simulatorstart.
+
 #### Wie die Position zum VATSIM-Flug findet
 
 **Die Zuordnung entsteht im Server aus der gemeldeten Position** (Abschnitt 5) und mündet in
@@ -451,9 +484,10 @@ angegebene Altitude ändert daran fast nichts — es ist also nicht die Höhe, d
 sondern `OnGround` tut etwas Eigenes. **Im externen Programm gibt es das nicht** — dort setzt
 dasselbe Flag zuverlässig auf, in beiden Simulatoren.
 
-**Dreimal gemessen, zweimal von unabhängigen Clients gegengelesen** — 49,0 / 49,1 / 49,2 ft,
-während der Boden bei 5,3 ft liegt. Ob das ein fester Wert ist oder „Geländehöhe plus 44 ft",
-ist offen: Alle Läufe waren am selben Ort.
+**Der Wert ist ortsabhängig** — auf Wangerooge (Boden 5 ft) landeten die Objekte bei 49 ft,
+in Seattle (Boden ~21 ft) bei 122–130 ft, an einem ungeladenen Ort bei 213–216 ft. Er ist am
+selben Ort reproduzierbar, folgt aber keiner erkennbaren Regel. **Ein Herausrechnen scheidet
+damit aus**; brauchbar ist allein `OnGround=0`.
 
 *(Eine Zwischenmessung ergab 216 ft und schien zu zeigen, dass der Wert schwankt. Sie war
 falsch — die Boote standen bei 0°/90° im Indischen Ozean, weil das Modul bei der ersten

@@ -27,7 +27,13 @@ static DWORD g_lagen = 0;
 static DWORD g_objekt_lagen = 0;          // Lagemeldungen der gesetzten Objekte, alle zusammen
 static DWORD g_gesetzt_sekunde = 0;       // wann gesetzt wurde
 static DWORD g_objekt_zuletzt[4] = {0};   // letzte Meldesekunde je Variante
-static DWORD g_nullpunkte = 0;            // Lagemeldungen mit 0/90 -- verworfen
+static DWORD g_nullpunkte = 0;            // verworfene Lagemeldungen (Sprung zur vorigen)
+static double g_letzte_lat = 0.0;         // die vorige Lage -- nur zum Sprungvergleich
+static double g_letzte_lon = 0.0;
+static bool g_letzte_gueltig = false;
+static bool g_sim_laeuft = false;         // SimStart/FlightLoaded ist gekommen
+static DWORD g_seit_start = 0;            // Sekunden seit diesem Signal
+static DWORD g_startsignale = 0;
 
 // ---------------------------------------------------------------------------
 // Rueckkanal Nr. 3: ein gemeinsamer Speicherbereich (ClientData).
@@ -49,7 +55,8 @@ static DWORD g_nullpunkte = 0;            // Lagemeldungen mit 0/90 -- verworfen
 //   [10] Sekunde der letzten Objektmeldung, [11] Sekunde des Setzens
 //   [12..15] letzte Meldesekunde je Variante 0..3 -- der Abstand zu [8] ist die Antwort
 //   [16..19] erreichte Hoehe je Variante, in ZEHNTELFUSS (490 = 49,0 ft)
-//   [20] verworfene Lagemeldungen mit 0/90, [21] Sekunde des Setzens
+//   [20] verworfene Lagemeldungen (Sprung oder Nullpunkt), [21] Sekunde des Setzens
+//   [24] Zahl der SimStart/FlightLoaded-Signale, [25] Sekunden seit dem letzten
 //   [22] Breite, [23] Laenge, mit der GESETZT wurde (x 100000) -- nicht die zuletzt gelesene
 //
 // Der zweite Block beantwortet die OnGround-Frage aus dem Modul heraus: Extern gemessen
@@ -95,6 +102,11 @@ static void feld(int nr, DWORD wert)
 
 enum {
     EV_SEKUNDE = 1,
+    // Die Simulation laeuft (nicht Hauptmenue, nicht Ladebildschirm). Das ist das Signal,
+    // auf das es ankommt -- alle drei Versuche, es aus den Koordinaten zu erraten, sind
+    // gescheitert. Siehe den Kommentar bei der Lagemeldung.
+    EV_SIMSTART = 2,
+    EV_FLUGGELADEN = 3,
     // ACHTUNG, hier lag vermutlich der EXCEPTION-3-Fehler vom 11.09.2026:
     // DEF_LAGE stand auf 1 -- derselbe Wert wie CD_DEF. SimConnect_AddToDataDefinition und
     // SimConnect_AddToClientDataDefinition nehmen BEIDE eine SIMCONNECT_DATA_DEFINITION_ID,
@@ -210,10 +222,25 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
         // Flug geladen -- dieselbe Falle wie beim externen Probeflug, wo die Position
         // 0/90 zurueckkam.
         auto* evt = (SIMCONNECT_RECV_EVENT*)pData;
+
+        if (evt->uEventID == EV_SIMSTART || evt->uEventID == EV_FLUGGELADEN) {
+            // Ab hier ist eine Welt geladen. Der Zaehler beginnt neu, damit die Ruhepruefung
+            // unten sich auf die NEUE Position bezieht und nicht auf die alte.
+            g_sim_laeuft = true;
+            g_letzte_gueltig = false;
+            g_seit_start = 0;
+            feld(24, ++g_startsignale);
+            break;
+        }
+
         if (evt->uEventID != EV_SEKUNDE) break;
 
         g_sekunden++;
         feld(8, g_sekunden);
+        if (g_sim_laeuft) {
+            g_seit_start++;
+            feld(25, g_seit_start);
+        }
 
         // Die Lage EINMAL anfordern, sobald der Sim laeuft. Im module_init ist noch kein
         // Flug geladen -- dieselbe Falle wie beim externen Probeflug, wo 0/90 zurueckkam.
@@ -234,7 +261,7 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
         // der Rueckfall -- und das Modul setzte an der festen Koordinate, obwohl es die
         // eigene Lage laengst kannte (11.09.2026 gemessen: vier Boote auf 53.78721 statt auf
         // 53.78226). Der echte Weg waere so nie getestet worden.
-        if (g_sekunden == 20 && !g_versucht) {
+        if (g_sim_laeuft && g_seit_start == 20 && !g_versucht) {
             g_versucht = true;
             melde("rueckfall_feste_koordinate", 0);
             Lage fest{ 53.78721, 7.90970, 0.0 };   // Wangerooge, Standort des Probeflugs
@@ -278,19 +305,43 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
             // die zuletzt GELESENE Lage korrekt war. Beides stimmte; nur gesetzt wurde am
             // falschen Ort.
             //
-            // Zwei Bedingungen, weil eine allein nicht reicht: Die Wartezeit deckt den
-            // Ladevorgang ab, die Plausibilitaetspruefung den Fall, dass er laenger dauert.
+            // Warten, bis die Lage RUHIG ist -- nicht, bis sie plausibel aussieht.
+            //
+            // Zwei Anlaeufe sind hier gescheitert, und beide Male sah der Wert vollkommen
+            // vernuenftig aus:
+            //   1. Ohne jede Pruefung landeten die Boote bei 0/90 im Indischen Ozean.
+            //   2. Mit 0/90-Pruefung und "ab Sekunde 5" landeten sie bei 47.51893 /
+            //      -122.29450 -- in SEATTLE. Der Simulator liefert nach dem Nullpunkt erst
+            //      seinen Standard-Startpunkt, bevor der geladene Flug greift.
+            //
+            // Eine Liste bekannter Fehlwerte waere der dritte Anlauf derselben Sorte: Sie
+            // deckt genau die Orte ab, die schon aufgefallen sind. Was den Ladevorgang
+            // dagegen zuverlaessig verraet, ist der SPRUNG -- der Standort wechselt zwischen
+            // zwei Sekunden um tausende Kilometer, und kein Flugzeug tut das.
+            //
+            // 0,005 Grad Breite sind rund 555 m. Bei 1-Sekunden-Takt liegt selbst ein sehr
+            // schnelles Flugzeug darunter (600 kt sind 309 m/s).
+            const double dlat = lage->lat - g_letzte_lat;
+            const double dlon = lage->lon - g_letzte_lon;
+            const bool ruhig = (g_letzte_gueltig &&
+                                dlat > -0.005 && dlat < 0.005 &&
+                                dlon > -0.005 && dlon < 0.005);
+            // Der Nullpunkt ist RUHIG -- er springt nicht, er steht still. Deshalb genuegt
+            // die Ruhepruefung allein nicht; sie hat den Fall am 11.09.2026 durchgelassen.
             const bool nullpunkt = (lage->lat > -0.01 && lage->lat < 0.01 &&
                                     lage->lon > 89.9 && lage->lon < 90.1);
-            if (nullpunkt) {
-                feld(20, ++g_nullpunkte);
-            } else if (!g_versucht && g_sekunden >= 5) {
+            if (!ruhig || nullpunkt) {
+                feld(20, ++g_nullpunkte);          // verworfen: Sprung oder Nullpunkt
+            } else if (!g_versucht && g_sim_laeuft && g_seit_start >= 3) {
                 g_versucht = true;
                 feld(21, g_sekunden);              // in welcher Sekunde gesetzt wurde
                 feld(22, (DWORD)(long)(lage->lat * 100000.0));
                 feld(23, (DWORD)(long)(lage->lon * 100000.0));
                 boot_setzen(*lage);
             }
+            g_letzte_lat = lage->lat;
+            g_letzte_lon = lage->lon;
+            g_letzte_gueltig = true;
         }
         break;
     }
@@ -357,6 +408,11 @@ extern "C" MSFS_CALLBACK void module_init(void)
     // zu setzen.
     hr = SimConnect_SubscribeToSystemEvent(g_sim, EV_SEKUNDE, "1sec");
     melde("subscribe_hr", (long)hr);
+
+    // "SimStart" feuert, sobald die Simulation laeuft -- im Hauptmenue und waehrend des
+    // Ladens ist sie gestoppt. "FlightLoaded" feuert zusaetzlich bei jedem Flugwechsel.
+    SimConnect_SubscribeToSystemEvent(g_sim, EV_SIMSTART, "SimStart");
+    SimConnect_SubscribeToSystemEvent(g_sim, EV_FLUGGELADEN, "FlightLoaded");
 
     hr = SimConnect_CallDispatch(g_sim, dispatch, nullptr);
     melde("calldispatch_hr", (long)hr);

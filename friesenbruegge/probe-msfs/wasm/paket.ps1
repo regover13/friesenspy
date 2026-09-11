@@ -39,7 +39,7 @@ $filetime = (Get-Item "$paket\modules\modul.wasm").LastWriteTimeUtc.ToFileTimeUt
   "content_type": "MISC",
   "title": "FriesenBruegge WASM-Probe",
   "manufacturer": "",
-  "creator": "FriesenFlieger",
+  "creator": "devprops",
   "package_version": "0.1.0",
   "minimum_game_version": "$(if ($Fuer2020) { '1.38.2' } else { '1.7.35' })",
   "minimum_compatibility_version": "7.26.0.214",

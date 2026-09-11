@@ -875,9 +875,14 @@ def status_lesen(dll_pfad: Path, sekunden: int) -> int:
                 wo = ""
                 if setz_lat or setz_lon:
                     wo = f" bei {_grad(setz_lat):.5f} / {_grad(setz_lon):.5f}"
+                signale, seit = roh.werte[24], roh.werte[25]
+                if signale:
+                    print(f"      SimStart/FlightLoaded: {signale}x, zuletzt vor {seit}s.")
+                else:
+                    print("      KEIN SimStart/FlightLoaded empfangen.")
                 if verworfen:
-                    print(f"      {verworfen} Lagemeldung(en) mit 0/90 verworfen "
-                          "(Welt noch nicht geladen).")
+                    print(f"      {verworfen} Lagemeldung(en) verworfen "
+                          "(Sprung oder Nullpunkt).")
                 print(f"      Gesetzt in Sekunde {gesetzt_sek}{wo}, jetzt Sekunde {sek}:")
                 for z in zeilen:
                     print(z)
