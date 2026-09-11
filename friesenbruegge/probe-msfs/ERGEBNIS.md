@@ -596,7 +596,16 @@ asobo-simobjects-misc       Flaggen, Marshaller_Stick, Optical_Landing_System
 asobo-simobjects-vehicles   Ambulanz, Gepäckwagen, Tankwagen, Caddy, …
 ```
 
-Eine Robbe ist nicht dabei — aber die **Gattung `Animal` existiert und funktioniert**.
+Eine Robbe ist nicht dabei — aber die **Gattung `Animal` existiert, funktioniert und wird
+gezeichnet**: Vier Elefanten und vier Giraffen, unmittelbar neben einer Windmühle gesetzt, waren
+im Bild. Damit ist der Ersatz für die ursprüngliche Robben-Idee nicht nur vorhanden, sondern
+erprobt.
+
+**Dabei zum dritten Mal an diesem Tag dieselbe Falle:** Ein erster Versuch mit Elefanten in
+150 m und 230 m Entfernung wurde nicht gefunden — 6 von 6 angelegt, zehn Minuten lang 100 %
+Meldungsrate, und trotzdem „ich sehe keine Elefanten". Erst 20 m neben einem hohen, bereits
+sichtbaren Objekt waren sie da. Die Regel von heute Vormittag gilt unverändert und ist offenbar
+schwer einzuhalten: **groß, nah und lange — und am besten neben etwas, das man schon sieht.**
 
 ### Boote: „0,0 ft" heißt Meereshöhe, nicht Wasseroberfläche
 
