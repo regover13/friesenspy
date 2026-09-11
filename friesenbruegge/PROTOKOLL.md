@@ -60,6 +60,7 @@ die natürliche Form.
     "alt_agl_ft": 12.3,           // null, wenn der Simulator sie nicht kennt
     "gs_kt": 0.0,
     "kurs": 210.4,
+    "vs_ft_min": 0.0,             // Steig-/Sinkrate -- der Server braucht sie, s. unten
     "am_boden": true
   },
 
@@ -90,6 +91,30 @@ zurückkommt. Der Server braucht sie ohnehin, um `soll` zu füllen.
 laufen hat, ist in Echtzeit auf der Karte, ohne dass das Kniebrett offen sein muss. Die
 Felder decken sich mit denen, die das EFB-Panel heute schon aus dem Simulator liest
 (`msfs-panel/…/FriesenSpy.tsx`, `POSITION_INTERVALL_MS`).
+
+#### ⚠ `vs_ft_min` ist keine Zugabe — ohne sie reißt die Zuordnung im Steigflug
+
+**Nachgetragen am 11.09.2026, nach dem ersten echten Flug.** Der Server rechnet die
+Höhenschranke aus der Steig-/Sinkrate: Ein steigendes Flugzeug **muss** von seiner
+VATSIM-Höhe abweichen, weil der Feed 29 Sekunden alt ist.
+
+| Steigrate | Abweichung nach 29 s | Schranke (Faktor 2) |
+|---|---|---|
+| 0 (Reiseflug) | 0 ft | 300 ft (Untergrenze) |
+| 700 ft/min | 338 ft | 677 ft |
+| 1500 ft/min | 725 ft | 1450 ft |
+
+**Fehlt das Feld, rechnet der Server mit 0 und bekommt die Untergrenze von 300 ft** — und
+ein normaler Steigflug reißt sie. Genau das ist im ersten Flug passiert: Die Zuordnung stand,
+solange das Flugzeug am Boden war, und fiel beim Steigen.
+
+**Und sie riss zweimal, nicht einmal.** Die abgelehnten Meldungen schrieben die gemerkte
+Position nicht fort, der Abstand dazu wuchs, und schließlich löste ein *Phantom-Sprung* die
+Zuordnung vollends (s. Sprungregel oben). Ein fehlendes Feld erzeugte damit einen Fehler, der
+wie ein ganz anderer aussah.
+
+Eine Brügge, die die Rate nicht liefern kann, schickt `0` — dann gilt die Untergrenze, und
+das Matching funktioniert im Reiseflug weiterhin.
 
 #### `spur` trägt die Auflösung, die `lage` allein nicht schafft
 

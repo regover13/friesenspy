@@ -754,6 +754,23 @@ def _bruegge_antwort(takt: int, soll=None, gilt_bis: int | None = None) -> dict:
     }
 
 
+def _bruegge_sekunden_her(gemerkt) -> float:
+    """Wie lange ist die letzte ANGENOMMENE Meldung dieser Kennung her?
+
+    Gebraucht fuer die Sprungschranke: Zwischen zwei angenommenen Meldungen koennen abgelehnte
+    liegen, und dann ist der zurueckgelegte Weg ganz regulaer groesser als bei 1 s Takt.
+    """
+    if not gemerkt or not gemerkt.get("gesehen_am"):
+        return 1.0
+    try:
+        t = datetime.fromisoformat(str(gemerkt["gesehen_am"]).replace("Z", "+00:00"))
+    except ValueError:
+        return 1.0
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=_timezone.utc)
+    return max(1.0, (datetime.now(_timezone.utc) - t).total_seconds())
+
+
 @app.post("/api/bruegge/melden", include_in_schema=False)
 async def bruegge_melden(request: Request):
     """Die Bruegge meldet ihre Lage und erfaehrt, was um sie herum stehen soll.
@@ -799,12 +816,18 @@ async def bruegge_melden(request: Request):
     simulator = str(body.get("simulator") or "")[:20] or None
     gs_kt = float(lage.get("gs_kt") or 0.0)
     alt_ft = float(lage.get("alt_msl_ft") or 0.0)
+    # Die Steig-/Sinkrate ist KEINE Zugabe: Ohne sie rechnet die Hoehenschranke mit 0 und
+    # faellt auf ihre Untergrenze von 300 ft zurueck. Ein steigendes Flugzeug weicht aber
+    # zwangslaeufig von seiner 29 s alten VATSIM-Hoehe ab -- bei 1000 ft/min um 483 ft.
+    # Genau daran ist die Zuordnung im ersten Flug gerissen (11.09.2026).
+    vs_ft_min = float(lage.get("vs_ft_min") or 0.0)
 
     settings = get_settings()
     conn = get_connection(settings.DB_PATH)
     try:
         takt = _bruegge_takt(conn)
-        cid = _bruegge_zuordnen(conn, kennung, lat, lon, alt_ft, gs_kt, simulator, settings)
+        cid = _bruegge_zuordnen(conn, kennung, lat, lon, alt_ft, gs_kt, simulator,
+                                settings, vs_ft_min)
         if cid is None:
             # Ohne Zuordnung geschieht NICHTS -- keine Anzeige, keine Ablage, keine Objekte.
             # Die Pruefung steht damit vor allem Teuren; ein Pilot, der den Simulator laufen
@@ -824,7 +847,8 @@ async def bruegge_melden(request: Request):
 
 
 def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
-                      gs_kt: float, simulator: str | None, settings) -> int | None:
+                      gs_kt: float, simulator: str | None, settings,
+                      vs_ft_min: float = 0.0) -> int | None:
     """Welcher Pilot meldet hier? ``None`` heisst: nichts geschieht.
 
     Drei Bedingungen, und alle drei muessen erfuellt sein:
@@ -841,7 +865,9 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
     # Ladevorgang, Slew oder Flugwechsel. Solche Punkte gehoeren weder in die Ablage noch in
     # den Track: Nach dem Start eines Simulators kommt erst 0/90, dann Seattle, dann der
     # geladene Flug -- und jeder dieser Werte sieht fuer sich vernuenftig aus.
-    if gemerkt and bruegge.ist_sprung(lat, lon, gemerkt.get("vor_lat"), gemerkt.get("vor_lon")):
+    sekunden_her = _bruegge_sekunden_her(gemerkt)
+    if gemerkt and bruegge.ist_sprung(lat, lon, gemerkt.get("vor_lat"), gemerkt.get("vor_lon"),
+                                      sekunden_her, gs_kt):
         bruegge_zuordnung_loesen(conn, kennung)
         bruegge_position_loeschen(conn, int(gemerkt["cid"]))
         return None
@@ -850,7 +876,8 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
     if gemerkt:
         cid = int(gemerkt["cid"])
         partner = next((k for k in kandidaten if k.cid == cid), None)
-        if partner is not None and bruegge.bleibt_plausibel(lat, lon, alt_ft, gs_kt, partner):
+        if partner is not None and bruegge.bleibt_plausibel(lat, lon, alt_ft, gs_kt, partner,
+                                                            vs_ft_min):
             bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
             return cid
         # Der Partner ist fort (ausgeloggt) oder die Position passt nicht mehr. Geloest wird
@@ -866,7 +893,12 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         return None
 
     # --- Erstzuordnung -----------------------------------------------------------------
-    treffer, _grund = bruegge.zuordnen(lat, lon, alt_ft, gs_kt, kandidaten)
+    treffer, grund = bruegge.zuordnen(lat, lon, alt_ft, gs_kt, kandidaten, vs_ft_min)
+    if treffer is None and kandidaten:
+        # Nur wenn es ueberhaupt Friesen in der Luft gab -- sonst ist "niemand passt" der
+        # Normalfall und faellt nicht auf. Mit Kandidaten ist es ein Hinweis, und ohne diese
+        # Zeile sucht man ihn im Simulator statt im Log.
+        _logger.info("Bruegge: keine Zuordnung (%d Kandidaten) -- %s", len(kandidaten), grund)
     if treffer is None:
         return None
     if not cid_ist_authentifiziert(conn, treffer.cid):

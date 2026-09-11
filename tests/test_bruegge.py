@@ -186,3 +186,32 @@ def test_im_stand_wirkt_der_loesefaktor_nicht():
     """
     assert bruegge.schranke_m(0, bruegge.PAARUNG_FAKTOR) ==            bruegge.schranke_m(0, bruegge.PAARUNG_LOESEN_FAKTOR)
     assert bruegge.schranke_m(30, bruegge.PAARUNG_LOESEN_FAKTOR) >            bruegge.schranke_m(30, bruegge.PAARUNG_FAKTOR)
+
+
+def test_ohne_steigrate_reisst_die_zuordnung_im_steigflug():
+    """DER Fehler des ersten Fluges (11.09.2026), als Test festgehalten.
+
+    Ein Friese steigt mit 1000 ft/min. Seine VATSIM-Meldung ist 29 s alt und zeigt deshalb
+    eine um rund 480 ft niedrigere Höhe -- das ist der Sollwert, kein Fehler. Ohne die
+    gemeldete Steigrate rechnet der Server mit der Untergrenze von 300 ft und verwirft ihn.
+    """
+    f = _friese(111, "FRS01", 53.78, 7.92, alt=5000, gs=110, hdg=90)
+    k = bruegge.kandidaten_bilden([f])
+    # Der Sim ist 480 ft weiter oben -- nach 29 s bei 1000 ft/min.
+    ohne_rate, _ = bruegge.zuordnen(53.78, 7.92, 5480, 110, k, vs_ft_min=0)
+    assert ohne_rate is None, "so war es kaputt"
+
+    k2 = bruegge.kandidaten_bilden([f])
+    mit_rate, _ = bruegge.zuordnen(53.78, 7.92, 5480, 110, k2, vs_ft_min=1000)
+    assert mit_rate is not None and mit_rate.cid == 111, "mit Steigrate muss es passen"
+
+
+def test_sprungschranke_waechst_mit_der_pause():
+    """Der Folgefehler: Zwischen zwei angenommenen Meldungen liegen abgelehnte.
+
+    Bei 110 kt und 20 s Pause sind 1130 m ganz regulär zurückgelegt -- eine feste 500-m-
+    Schranke erklärte das zum Sprung und löste eine Zuordnung, mit der alles stimmte.
+    """
+    weit = 53.78 + 1130 / 111320.0
+    assert bruegge.ist_sprung(weit, 7.92, 53.78, 7.92, sekunden=1, gs_kt=110) is True
+    assert bruegge.ist_sprung(weit, 7.92, 53.78, 7.92, sekunden=20, gs_kt=110) is False

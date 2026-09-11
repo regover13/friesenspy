@@ -48,7 +48,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.0.0"
+#define BRUEGGE_VERSION   "1.0.1"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -88,6 +88,12 @@ struct Lage {
     double gs_kt;
     double kurs;
     double am_boden;
+    // Die Steig-/Sinkrate. KEINE Zugabe: Der Server braucht sie fuer die Hoehenschranke.
+    // Ohne sie rechnet er mit 0 und faellt auf die Untergrenze von 300 ft zurueck -- ein
+    // steigendes Flugzeug weicht aber zwangslaeufig von seiner 29 s alten VATSIM-Hoehe ab,
+    // bei 1000 ft/min um 483 ft. Genau daran ist die Zuordnung im ersten Flug gerissen
+    // (11.09.2026, Fassung 1.0.1).
+    double vs_ft_min;
 };
 
 struct SpurPunkt {
@@ -222,6 +228,7 @@ static void meldung_bauen(char* puffer, size_t groesse) {
     j.feld("alt_agl_ft"); j.zahl(g_lage.alt_agl_ft, 1);  j.komma();
     j.feld("gs_kt");      j.zahl(g_lage.gs_kt, 1);       j.komma();
     j.feld("kurs");       j.zahl(g_lage.kurs, 1);        j.komma();
+    j.feld("vs_ft_min");  j.zahl(g_lage.vs_ft_min, 0);   j.komma();
     j.feld("am_boden");   j.roh(g_lage.am_boden > 0.5 ? "true" : "false");
     j.roh("}");
     j.komma();
@@ -444,6 +451,7 @@ extern "C" MSFS_CALLBACK void module_init(void) {
     SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "GROUND VELOCITY", "knots");
     SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "PLANE HEADING DEGREES TRUE", "degrees");
     SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "SIM ON GROUND", "bool");
+    SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "VERTICAL SPEED", "feet per minute");
 
     SimConnect_RequestDataOnSimObject(g_sim, REQ_LAGE, DEF_LAGE,
                                       SIMCONNECT_OBJECT_ID_USER, SIMCONNECT_PERIOD_SECOND);

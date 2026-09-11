@@ -42,7 +42,7 @@ def _meldung(lat=53.78227, lon=7.92593, kennung="a3f9c1e0b2d48576", **mehr):
     lage = {
         "lat": lat, "lon": lon,
         "alt_msl_ft": 5.3, "alt_agl_ft": 0.0,
-        "gs_kt": 0.0, "kurs": 210.4, "am_boden": True,
+        "gs_kt": 0.0, "kurs": 210.4, "vs_ft_min": 0.0, "am_boden": True,
     }
     lage.update(mehr.pop("lage", {}))
     m = {

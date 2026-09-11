@@ -219,11 +219,21 @@ def bleibt_plausibel(lat: float, lon: float, alt_ft: float, gs_kt: float,
     return abs(kandidat.alt_ft - (alt_ft or 0.0)) <= schranke_ft(vs_ft_min, PAARUNG_LOESEN_FAKTOR)
 
 
-def ist_sprung(lat: float, lon: float, vor_lat: float | None, vor_lon: float | None) -> bool:
+def ist_sprung(lat: float, lon: float, vor_lat: float | None, vor_lon: float | None,
+               sekunden: float = 1.0, gs_kt: float = 0.0) -> bool:
     """Ist die Position gegenüber der vorigen gesprungen?
 
     Ein Sprung heißt: Ladevorgang, Slew oder Flugwechsel — kein Flug. Solche Punkte gehören
     weder in die Ablage noch in den Track (Protokoll, Abschnitt 1).
+
+    ⚠ **Die Schranke wächst mit der verstrichenen Zeit**, und das ist keine Feinheit, sondern
+    die Lehre aus dem ersten Flug (11.09.2026): Eine feste Schranke von 500 m stimmt nur für
+    den 1-Sekunden-Takt. Wird gedrosselt — oder liegen zwischen zwei *angenommenen* Meldungen
+    mehrere abgelehnte — so wächst der zurückgelegte Weg ganz regulär über 500 m, und ein
+    Phantom-Sprung löst eine Zuordnung, mit der alles in Ordnung war.
+
+    Gerechnet wird deshalb wie überall sonst hier: Weg = Geschwindigkeit mal Zeit, großzügig
+    genommen, mit ``SPRUNG_M`` als Untergrenze für den Stand.
 
     Die erste Meldung einer Brügge hat keinen Vorgänger und gilt nicht als Sprung; sie wird
     stattdessen vom Matching geprüft, und eine Position mitten im Indischen Ozean findet dort
@@ -231,4 +241,5 @@ def ist_sprung(lat: float, lon: float, vor_lat: float | None, vor_lon: float | N
     """
     if vor_lat is None or vor_lon is None:
         return False
-    return abstand_m(lat, lon, vor_lat, vor_lon) > SPRUNG_M
+    erwartet = (gs_kt or 0.0) * 0.514444 * max(1.0, sekunden) * 2.0
+    return abstand_m(lat, lon, vor_lat, vor_lon) > max(SPRUNG_M, erwartet)
