@@ -242,3 +242,27 @@ def test_unsinniger_taktwert_faellt_auf_die_vorgabe_zurueck(klient, tmp_path):
     conn.close()
     assert klient.post("/api/bruegge/melden", json=_meldung()
                        ).json()["naechste_frage_in_s"] == 1
+
+
+# ---------------------------------------------------------------------------------------
+# Das Forum-Gate
+# ---------------------------------------------------------------------------------------
+
+def test_der_endpunkt_liegt_nicht_hinter_dem_forum_gate():
+    """Gefunden am 11.09.2026 beim ersten Aufruf gegen die Produktion: `401 Login erforderlich`.
+
+    FriesenSpy steht hinter dem Forum-Login, und ein Community-Modul im Simulator hat kein
+    Sitzungs-Cookie und kann keines bekommen -- die Brügge hat bewusst **keine** Anmeldung.
+    Läge der Endpunkt hinter dem Gate, wäre das Protokoll schlicht nicht umsetzbar.
+
+    Gate-frei heißt nicht ungeprüft: Der Endpunkt setzt seine eigenen drei Bedingungen, und
+    eine davon ist genau der Forum-Login -- nur zeitversetzt, über `forum_callsign`.
+    """
+    import app.main as main
+    assert "/api/bruegge/melden" in main._GATE_ALLOW_PREFIXES
+
+
+def test_der_endpunkt_antwortet_auch_ohne_anmeldung(klient, tmp_path):
+    """Die Gegenprobe zum Test darüber, über den echten Aufruf statt über die Liste."""
+    r = klient.post("/api/bruegge/melden", json=_meldung())
+    assert r.status_code == 200, "kein 401 -- die Brügge kann sich nicht anmelden"

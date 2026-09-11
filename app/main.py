@@ -353,6 +353,16 @@ _GATE_ALLOW_PREFIXES = (
     # Gate, fehlten die Messwerte ausgerechnet dann. Der Endpunkt nimmt nur Diagnosedaten
     # entgegen und gibt nichts preis (s. panel_diag-Kommentar in database.py).
     "/api/panel-diag",
+    # Die Bruegge kann sich nicht anmelden -- sie hat bewusst KEINE Anmeldung (Protokoll,
+    # Abschnitt 5). Sie meldet eine Position, und der Server sucht sich den Piloten dazu.
+    # Laege der Endpunkt hinter dem Gate, waere das Protokoll nicht umsetzbar: Ein
+    # Community-Modul im Simulator hat kein Sitzungs-Cookie und kann keines bekommen.
+    #
+    # Gate-frei heisst NICHT ungeprueft. Der Endpunkt setzt seine eigenen drei Bedingungen --
+    # auf VATSIM mit Friesen-Praefix, eine Zeile in forum_callsign (der Nachweis DESSELBEN
+    # Forum-Logins, nur zeitversetzt), und die Position passt. Er gibt zudem nichts preis:
+    # Die Antwort ist in allen Ablehnungsfaellen dieselbe.
+    "/api/bruegge/melden",
 )
 
 # Break-glass-Kopie des Admin-Cookies auf ``path=/`` — das eigentliche Admin-Cookie liegt auf
