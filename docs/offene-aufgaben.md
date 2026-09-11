@@ -250,7 +250,8 @@ Vier Entscheidungen des Nutzers vom 11.09.2026, die alles Weitere binden:
 
 | Frage | warum sie zählt |
 |---|---|
-| **WASM kann die eigene Position nicht lesen** (`EXCEPTION 3`) | Ein Modul, das seine Lage nicht liest, kann sie nicht melden **und nicht prüfen, ob ein Objekt noch steht**. Entscheidet über den Auslieferungsweg. |
+| ~~WASM kann die eigene Position nicht lesen~~ — **gelöst am 11.09.2026** | Es war eine ID-Kollision im eigenen Quelltext: `DEF_LAGE` und `CD_DEF` standen beide auf 1, und beide leben im selben Nummernraum. Nach dem Auseinanderziehen: 441 Lagemeldungen, Position korrekt. **WASM bleibt als Auslieferungsweg im Rennen.** |
+| **Wie lange lebt ein vom WASM-Modul gesetztes Objekt?** | Das Boot war nach wenigen Minuten nicht mehr auffindbar — während ein extern gesetztes gefunden wurde (Kontrolle). Wann und warum es verschwand, ist offen: Das Modul abonniert die Lage seines eigenen Objekts nicht. |
 | `OnGround=1` wirkt in WASM nicht | sonst schwebt alles |
 | Wird ein weit gesetztes Objekt gezeichnet, wenn der Pilot hinkommt? | entscheidet, ob einmal verteilt oder unterwegs nachgesetzt wird. Braucht einen echten Flug — ein stehender Sim beantwortet es nicht. |
 | **Ab welcher Entfernung wird `hoehe_ft` unbrauchbar?** | Brauchbar bis 200 km gemessen, falsch bei 691 km (2106,5 statt 1297,2 ft am selben Punkt). Dazwischen eine Lücke — und die Zahl entscheidet, wann der Server einer Höhenmeldung glauben darf. |

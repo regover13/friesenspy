@@ -417,6 +417,73 @@ Die Lehre ist dieselbe wie beim ursprünglichen Skript, das die Verbindung zu fr
 messen.** Wer die 8 % geglaubt hätte, hätte den Kieker auf „höchstens eine Handvoll Objekte"
 zugeschnitten.
 
+## ✅ GELÖST: WASM kann die eigene Position lesen — es war eine ID-Kollision
+
+**Die Frage blockierte den Auslieferungsweg.** Ein Modul, das seine Lage nicht liest, kann sie
+weder melden noch prüfen, ob ein gesetztes Objekt noch steht — damit wäre WASM für die Brügge
+erledigt gewesen und nur der Weg über eine externe EXE geblieben (mit Installer und
+SmartScreen-Warnung).
+
+**Die Ursache stand die ganze Zeit im eigenen Quelltext:**
+
+```c
+#define CD_DEF    1     // ClientDataDefinition -- der Rueckkanal
+    DEF_LAGE   = 1,     // DataDefinition -- die Lageabfrage
+```
+
+`SimConnect_AddToClientDataDefinition` und `SimConnect_AddToDataDefinition` nehmen **beide**
+eine `SIMCONNECT_DATA_DEFINITION_ID`. Es ist ein gemeinsamer Nummernraum. ID 1 war als
+ClientData-Definition belegt; die spätere Benutzung als Datendefinition endete mit
+`EXCEPTION 3 — UNRECOGNIZED_ID`.
+
+**Warum es im externen Probeflug nie auffiel:** Der legt gar kein ClientData an. Dort ist ID 1
+frei, und dieselbe Zeile funktioniert. Der Fehler entsteht erst, wenn beides im selben Client
+lebt — und das ist im WASM-Modul zwangsläufig so, weil ClientData dort der einzige
+funktionierende Rückkanal ist (`fprintf` erreicht die Konsole nicht, `fsNetworkHttpRequestGet`
+kein 127.0.0.1).
+
+**Nach dem Auseinanderziehen (`DEF_LAGE = 10`, `REQ_LAGE = 20`), gemessen auf Wangerooge:**
+
+```
+AddToDataDefinition: S_OK    RequestDataOnSimObject: S_OK
+*** LAGE GELESEN: 441 Meldungen, zuletzt 53.78226 / 7.92593 ***
+Schritt 8: *** OBJEKT ANGELEGT ***   Objekt-ID: 2949120
+```
+
+441 Lagemeldungen im Sekundentakt, die Position deckt sich auf fünf Nachkommastellen mit dem
+Standplatz des Flugzeugs. Das Objekt wurde **an der gelesenen Lage** gesetzt, nicht an der
+fest einprogrammierten Rückfall-Koordinate — der Weg ist also vollständig durchlaufen.
+
+**Damit bleibt WASM als Auslieferungsweg im Rennen.** Was dafür spricht: ein Verzeichnis im
+Community-Ordner statt eines Installers, keine SmartScreen-Warnung, kein zweiter Prozess.
+Was weiter dagegen steht: Die Network-API nimmt nur HTTPS, `OnGround=1` wirkt nicht (s. unten),
+und für X-Plane ist es ohnehin ein anderer Weg.
+
+### ⚠ Offen geblieben: das Boot des Moduls war nach wenigen Minuten fort
+
+Unmittelbar danach gemessen, mit Kontrolle:
+
+| | Objekt-ID | von der Zählung gefunden? |
+|---|---|---|
+| extern gesetzt, 300 m entfernt | 101171200 | **ja** — 6,7 ft, korrekte Lage |
+| vom WASM-Modul gesetzt | 2949120 | **nein** |
+
+**Die Kontrollzeile trägt den Beweis:** `RequestDataOnSimObjectType` findet extern gesetzte
+Boote zuverlässig. Dass es das Modul-Boot nicht findet, liegt also nicht an der Methode.
+
+**Was daraus NICHT folgt:** wann es verschwand und warum. Das Modul meldet die Objekt-ID in
+den Statusbereich, abonniert danach aber **nicht** die Lage des gesetzten Objekts — es weiß
+selbst nicht, ob sein Boot noch steht. Zwischen dem Setzen (Sekunde 1 nach dem Laden) und der
+Zählung lagen mehrere Minuten.
+
+**Auffällig ist die Objekt-ID:** 2949120 gegenüber 100777984 und 101171200 bei externen
+Läufen. WASM-Objekte scheinen in einem anderen Nummernbereich zu liegen; ob das etwas
+bedeutet, ist nicht untersucht.
+
+**Die nächste Messung dazu** wäre ein Modul, das die Lage seines eigenen Objekts abonniert und
+in den Statusbereich schreibt — dieselbe Kontrolle, die der externe Probeflug seit heute hat.
+Das ist ein Umbau plus Sim-Neustart und war heute nicht mehr dran.
+
 ## WASM: Ja — ein Modul im Simulator kann es auch
 
 **Spec 13.4, Frage 1 ist beantwortet.** Ein WASM-Modul im Community-Ordner startet mit dem
