@@ -80,9 +80,19 @@ SimConnect-Verbindung — das war der folgenreichste Befund dort. Hier zerstört
 Instanz in `XPluginStop` selbst, die Frage ist also noch nicht beantwortet. Für den Zuschnitt
 zählt sie wenig: Die Brügge läuft ohnehin durch, solange geflogen wird.
 
-**Ob es in der Demo läuft.** Diese Messung fand in einer Installation unter `D:\X-Plane 12`
-statt; das Flugzeug stand bei 47,8 N / 13,0 O, also im Alpenraum und nicht in der
-Demo-Region Seattle. Ob eine reine Demo-Installation Plugins lädt, bleibt damit ungeprüft.
+## ✅ Die Demo lädt Plugins — beiläufig mitbelegt
+
+**Diese Messung lief in der kostenlosen Demo**, nicht in einer Vollversion. Damit ist die
+letzte offene Frage aus der Vorplanung beantwortet: Eine reine Demo-Installation lädt Plugins
+und führt sie vollständig aus.
+
+Das ist praktisch wertvoll: Wer aus der Gruppe die Brügge ausprobieren soll, **braucht X-Plane
+nicht zu kaufen**. Ein Test kostet 25 GB Plattenplatz und sonst nichts.
+
+**Ein eigener Fehlschluss gehört dazu:** Aus der Position im Alpenraum (47,8 N / 13,0 O) hatte
+ich zunächst auf eine Vollinstallation geschlossen — die Demo sei ja auf Seattle beschränkt.
+Falsch: Beschränkt ist nur die **detaillierte** Szenerie; fliegen lässt die Demo einen überall.
+Der Schluss „woanders als Seattle, also Vollversion" war eine Annahme, keine Messung.
 
 ## Ein Fehler im Messaufbau
 

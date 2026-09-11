@@ -204,10 +204,14 @@ einer XPPython3-Doku stammte und die heikelste war. Einzelheiten in
 Fregatte, **Hirsche** und **Möwen** als fertige Objekte mit — für einen Zähl-Event reichhaltiger
 als MSFS' Bootssortiment und der Robben-Idee näher als alles, was Asobo für 2024 ausliefert.
 
-**Offen bleibt nur:** ob eine reine **Demo**-Installation Plugins lädt (gemessen wurde in einer
-Vollinstallation, das Flugzeug stand im Alpenraum, nicht in der Demo-Region Seattle), und ob
-eine Instanz das Entladen des Plugins überdauert — für den Zuschnitt belanglos, weil die Brügge
-ohnehin durchläuft.
+**Und das lief in der kostenlosen Demo.** Damit ist auch die letzte Vorplanungsfrage
+beantwortet: Eine Demo-Installation lädt Plugins und führt sie vollständig aus. Wer aus der
+Gruppe die Brügge ausprobieren soll, **braucht X-Plane nicht zu kaufen** — ein Test kostet
+25 GB Plattenplatz und sonst nichts. (Die Demo beschränkt nur die *detaillierte* Szenerie auf
+Seattle; fliegen lässt sie einen überall — der Flug lief im Alpenraum.)
+
+**Offen bleibt nur,** ob eine Instanz das Entladen des Plugins überdauert — für den Zuschnitt
+belanglos, weil die Brügge ohnehin durchläuft.
 
 ### Erst zu klären, bevor etwas gebaut wird
 
