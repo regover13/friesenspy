@@ -753,9 +753,37 @@ def status_lesen(dll_pfad: Path, sekunden: int) -> int:
         if art == RECV_CLIENT_DATA:
             roh = ctypes.cast(zeiger, ctypes.POINTER(RecvClientData)).contents
             s, wert2, wert3 = roh.werte[0], roh.werte[1], roh.werte[2]
-            print(f"  Schritt {s}: {SCHRITTE.get(s, 'unbekannt')}"
-                  + (f"   Fehler/HR: {wert2}" if wert2 else "")
-                  + (f"   Objekt-ID: {wert3}" if wert3 else ""))
+            zeile = f"  Schritt {s}: {SCHRITTE.get(s, 'unbekannt')}"
+            if wert2:
+                zeile += f"   Fehler/HR: {wert2}"
+            if wert3:
+                zeile += f"   Objekt-ID: {wert3}"
+            print(zeile)
+
+            # Die Messpunkte der Lage-Frage (Felder 3..8, s. modul.cpp). Sie beantworten,
+            # ob ein WASM-Modul seine eigene Position lesen kann -- und daran haengt der
+            # Auslieferungsweg: ein Modul, das seine Lage nicht liest, kann sie weder
+            # melden noch pruefen, ob ein gesetztes Objekt noch steht.
+            datadef, request = roh.werte[3], roh.werte[4]
+            lagen, lat_e5, lon_e5, sek = (roh.werte[5], roh.werte[6],
+                                          roh.werte[7], roh.werte[8])
+            if datadef or request or lagen or sek:
+                def _hr(v):
+                    # HRESULT kommt als DWORD an; 0 ist S_OK, alles andere ist ein Fehler.
+                    return "S_OK" if v == 0 else f"0x{v:08X}"
+
+                def _grad(v):
+                    # Als DWORD gelesen, gemeint war ein Vorzeichenwert.
+                    g = v - 0x100000000 if v > 0x7FFFFFFF else v
+                    return g / 100000.0
+
+                print(f"      AddToDataDefinition: {_hr(datadef)}"
+                      f"    RequestDataOnSimObject: {_hr(request)}")
+                if lagen:
+                    print(f"      *** LAGE GELESEN: {lagen} Meldungen, zuletzt "
+                          f"{_grad(lat_e5):.5f} / {_grad(lon_e5):.5f} ***")
+                elif sek >= 2:
+                    print(f"      Noch keine Lagemeldung nach {sek} Sekunden.")
             gesehen = True
         elif art == RECV_EXCEPTION:
             ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents

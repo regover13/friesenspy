@@ -34,9 +34,11 @@ POST /api/bruegge/melden
 Content-Type: application/json
 ```
 
-**Kein `Authorization`-Kopf.** Die Brügge weist sich nicht aus — sie meldet eine Position, und
-der Server sucht sich den Piloten dazu (Abschnitt 5). Das ist der Kern der Entscheidung vom
-11.09.2026 und zieht sich durch das ganze Dokument.
+**Kein `Authorization`-Kopf, aber eine Kennung.** Die Brügge weist sich nicht aus — sie meldet
+eine Position, und der Server sucht sich den Piloten dazu (Abschnitt 5). Was sie trotzdem
+mitschickt, ist eine selbst erzeugte, dauerhafte `kennung`: **kein Geheimnis, sondern ein
+Wiedererkennungszeichen.** Was sie leistet, steht in Abschnitt 5 unter „Die Kennung
+beschleunigt, sie autorisiert nicht".
 
 Die Brügge muss ohnehin sagen, wo sie ist, damit der Server weiß, was um sie herum stehen
 soll. Position hinauf und Objekte hinunter in einer Anfrage ist deshalb nicht gespart, sondern
@@ -49,7 +51,7 @@ die natürliche Form.
   "protokoll": 1,
   "simulator": "msfs2024",        // msfs2020 | msfs2024 | xplane12
   "bruegge_version": "1.0.0",
-  "instanz": "a3f9c1",            // Zufallswert je Prozessstart -- s. unten
+  "kennung": "a3f9c1e0…",        // dauerhaft, je Installation -- s. unten
   "kann": ["tier_gross", "bauwerk", "fahrzeug", "boot_klein"],
 
   "lage": {                        // der Stand JETZT -- maßgeblich für "soll"
@@ -151,11 +153,14 @@ Brügge laufen hatte. Die Begründung steht ausführlich in #23, Fundstück 2.
 
 **Die Zuordnung entsteht im Server aus der gemeldeten Position** (Abschnitt 5) und mündet in
 eine CID — `live_positions` ist nach CID geschlüsselt (`app/database.py:77`). Die Brügge
-schickt **keine** Kennung mit: weder eine CID noch ein Callsign, weder einen Schlüssel noch
-eine Flugnummer. Sie weiß nichts von VATSIM und nichts von Flugplänen.
+schickt **nichts mit, was einen Piloten benennt:** keine CID, kein Callsign, keine Flugnummer.
+Sie weiß nichts von VATSIM und nichts von Flugplänen.
 
-**Das ist keine Sparsamkeit, sondern die einzige Möglichkeit.** Eine Kennung, die die Brügge
-mitschickte, müsste irgendwo auf dem Rechner des Piloten stehen — und genau das ist verworfen.
+**Die `kennung` ist davon ausgenommen — und sie benennt auch niemanden.** Sie ist eine
+Zufallsfolge ohne Bedeutung; erst der Server verknüpft sie mit einer CID, und zwar allein
+über die Position. Beim allerersten Mal sagt sie gar nichts aus, danach nur noch: *dieselbe
+wie vorhin*. Der Unterschied zu einem Ausweis ist, dass die Prüfung trotzdem stattfindet —
+s. „Die Kennung beschleunigt, sie autorisiert nicht“.
 
 **Die Rollen sind verschieden und ergänzen sich:**
 
@@ -250,16 +255,31 @@ neue Auskunft gültig bleibt. Danach räumt die Brügge ab. Ohne diese Zahl ents
 drei Umsetzungen selbst, was bei Netzausfall geschieht — und für die Baake wäre „stehen
 bleiben" eine Station, die nie verschwindet.
 
-#### `instanz` — ein Pilot kann zwei Brüggen laufen haben
+#### `kennung` — dauerhaft, je Installation, kein Geheimnis
 
-Ein Zufallswert, den die Brügge bei jedem Prozessstart neu zieht. **Die CID allein genügt
-nicht:** Ein Drittel der Gruppe fliegt X-Plane, manche haben beides installiert. Wer
-MSFS und X-Plane gleichzeitig laufen lässt — oder zwei Rechner benutzt — meldet sonst zwei
-Positionen unter einer CID. Der Server sähe eine springende Position und ein `steht`, das sich
-mit jeder Anfrage widerspricht.
+**Hier stand `instanz`: ein Zufallswert je Prozessstart, begründet damit, dass jemand MSFS und
+X-Plane gleichzeitig laufen lassen könnte. Der Nutzer hat widersprochen, und zu Recht:**
 
-Der Server führt den Zustand je `(cid, instanz)` und zeigt Doppelmeldungen im Admin an. Die
-CID stammt dabei aus dem Positionsmatch, nicht aus der Meldung.
+> *„Zwei Sims gleichzeitig geht gegen 0! Wie will man zwei Flugzeuge gleichzeitig bewegen?
+> Außerdem geht nur eine VATSIM-Verbindung."*
+
+Beides stimmt. Der Fall, für den `instanz` gebaut war, existiert praktisch nicht — und der
+zweite Satz erledigt ihn endgültig: Ohne zweite VATSIM-Verbindung gibt es keine zweite
+Position, der eine zweite Brügge zugeordnet werden könnte.
+
+**An seine Stelle tritt etwas anderes, mit einem anderen Zweck.** Die `kennung` wird
+**einmal** erzeugt und bleibt — über Prozessstarts, Sim-Neustarts und Rechner-Neustarts hinweg.
+Sie sagt nicht „ich bin Friese 12345", sondern nur: **„ich bin dieselbe wie vorhin."**
+
+**Das Vorbild steht schon im Kniebrett.** Dort erzeugt das Panel eine `device_id` und legt sie
+in MSFS' eigener Ablage ab (`SetStoredData`, s. `panel_devices` in `app/database.py:577`).
+Heute wird sie **nach einem Forum-Login** an die CID gebunden; morgen entsteht dieselbe
+Bindung **über die Position**. Die Kennung selbst ändert sich dabei nicht — nur, wodurch sie
+ihren Piloten bekommt.
+
+**Wo sie liegt, ist je Umsetzung verschieden** und keine Protokollfrage: in MSFS' Ablage, in
+einer Datei neben dem X-Plane-Plugin, in der Registry. Verloren gegangen ist sie nie ein
+Problem — die Brügge zieht eine neue, und der nächste Positionsmatch bindet sie erneut.
 
 #### Die übrigen Felder
 
@@ -460,6 +480,11 @@ Hier standen nacheinander zwei Entwürfe — eine eigene Tabelle `bruegge_schlue
 Eintrag in `panel_devices`. **Beide sind verworfen.** Die Brügge bekommt **keinen Schlüssel,
 keine Konfigurationsdatei und keinen Anmeldeschritt.**
 
+**Nicht verworfen ist die Kennung.** Sie ist etwas anderes als ein Schlüssel: selbst erzeugt
+statt vom Server vergeben, öffentlich statt geheim, und sie öffnet nichts — sie sagt nur, wer
+schon einmal da war. Was sie leistet, steht weiter unten unter „Die Kennung beschleunigt, sie
+autorisiert nicht“.
+
 ### Wie die Zuordnung stattdessen entsteht
 
 Die Brügge meldet einfach, was sie sieht. Der Server sucht dazu den passenden Piloten:
@@ -512,6 +537,55 @@ gegen die Liste der Friesen — dieselben Regeln, ein einfacherer Fall.
 
 ⚠ **Die Konstanten liegen heute im Frontend** (`index.html:5948–5971`). Wandert das Matching
 in den Server, gehören sie an **eine** Stelle, nicht in zwei Dateien mit zwei Wahrheiten.
+
+### Die Kennung beschleunigt, sie autorisiert nicht
+
+**Nutzerfrage vom 11.09.2026:** *„Beim EFB wird aber der Sim-Key für die Authentifizierung
+gespeichert, richtig? Was ist, wenn EFB und Brügge Positionen melden? Auch könnte man das
+ständige Neurechnen des Matchings stark reduzieren, weil man über die dann schon gespeicherte
+ID matchen kann."*
+
+**Beides trifft zu, und das Protokoll nimmt es auf.** Der Match aus dem Abschnitt darüber
+läuft **nicht** bei jeder Meldung neu:
+
+```
+erste Meldung einer kennung  →  voller Match gegen alle Friesen in live_positions
+                                 Treffer? → bruegge_zuordnung(kennung, cid) merken
+jede weitere Meldung         →  cid nachschlagen (ein Indexzugriff),
+                                 Position nur noch gegen DIESE eine VATSIM-Meldung prüfen
+```
+
+Das ist derselbe Weg, den das Kniebrett schon geht: `_verkehrZusammenfuehren` merkt sich eine
+gefundene Paarung und löst sie erst nach `_PAARUNG_LOESEN_TAKTE = 4` Verstößen **in Folge**
+(Abschnitt darüber). Die Kennung überträgt dieses Merken vom Sitzungs- auf den Serverzustand.
+
+| | ohne Kennung | mit Kennung |
+|---|---|---|
+| je Meldung zu prüfen | alle Friesen in der Luft | **eine** Zeile |
+| bei 13 gleichzeitig, 1-s-Takt | 13 × 13 Abstände je Sekunde | 13 Abstände je Sekunde |
+| EFB und Brügge desselben Piloten | nicht unterscheidbar | zwei Kennungen, zwei Zeilen |
+
+**Der zweite Punkt ist der wichtigere.** Melden EFB und Brügge gleichzeitig, sind es zwei
+Quellen für dieselbe CID. Ohne Kennung sieht der Server zwei Positionen und muss raten,
+welche gilt; mit Kennung weiß er, welche Quelle welche ist, und kann die genauere vorziehen
+oder die ältere verwerfen.
+
+⚠ **Und jetzt die Grenze, die dabei einzuhalten ist.** Eine gemerkte Zuordnung ist eine
+**Abkürzung der Rechnung, keine Vollmacht.** Die Prüfung entfällt nicht, sie wird billiger:
+
+- Die Position muss **weiterhin** zur VATSIM-Meldung derselben CID passen. Tut sie das
+  wiederholt nicht, fällt die Zuordnung, und der nächste Match beginnt von vorn.
+- Loggt die CID von VATSIM ab, fällt die Zuordnung sofort — ohne VATSIM geschieht ohnehin
+  nichts.
+- Die Kennung allein reicht **nie**, um Positionen zu setzen. Wer eine fremde Kennung stiehlt,
+  muss trotzdem die öffentliche VATSIM-Position dieses Piloten treffen — und gewinnt damit
+  genau das, was er auch ohne sie gewinnt: nichts.
+
+**Deshalb ist die Kennung kein Geheimnis** und braucht keinen Schutz, kein Ablaufdatum und
+keine Übertragungssicherung. Sie unterscheidet sich darin von der `device_id` des Kniebretts,
+die heute *doch* ein Zugangsschlüssel ist (`app/database.py:573`: „wer ihn hat, ist als dieser
+Nutzer angemeldet"). **Genau diese Eigenschaft verliert sie mit der Umstellung** — was sie
+nach der Umstellung noch trägt, ist die Wiedererkennung.
 
 ### Die ehrliche Einordnung: das ist Identifikation, keine Authentifizierung
 
@@ -679,6 +753,43 @@ Zwei Dinge müssen trotzdem stehen, bevor die erste Brügge ausgeliefert wird:
   setzen. Wird es einmal eng, drosselt er auf 2 s — ohne Client-Release, ohne dass jemand
   etwas neu installiert, und ohne dass es jemand merkt außer der Karte. Fällt der Server aus,
   verdoppelt die Brügge ihren Abstand von selbst bis 60 s, statt zu hämmern.
+
+### Ein Schieber im Admin — bis hin zum Aus
+
+**Nutzerentscheidung vom 11.09.2026:** *„Baue eine Drossel zur Deaktivierung der
+Brügge-Positionsmeldungen unter Admin ein. Zur Notabschaltung, wenn Performance-Probleme
+auftreten. Beispielsweise einen Schieber von 1 s – 15 s – aus."*
+
+**Verbindlich, und der Grund ist die Geschichte dieser Codebasis.** Wenn die App langsam wird,
+steht in CLAUDE.md eine Liste gemessener Hebel, die *nicht* wirken — Container abschalten,
+Priorität, `cpu_shares`. Was fehlt, ist ein Hebel, der wirkt, **ohne** einen Deploy: Der reißt
+jede offene Sitzung ab und macht ein geöffnetes Kniebrett schwarz.
+
+| Stellung | `naechste_frage_in_s` | wofür |
+|---|---|---|
+| **1 s** | 1 | Regelbetrieb (Abschnitt oben) |
+| Zwischenstufen | 2, 5, 10 | spürbare Entlastung, Track bleibt sekundengenau (`spur`) |
+| **15 s** | 15 | so grob wie der VATSIM-Feed — die Brügge bringt dann keinen Vorteil mehr |
+| **aus** | 900 | keine Positionen, keine Objekte |
+
+**Wie es wirkt:** Der Wert steht in `app_settings` (`bruegge_takt_s`, Muster wie die
+Bannerverwaltung, `app/database.py:1182`) und wird bei **jeder** Antwort gelesen. Er wirkt
+damit **sofort für alle** — ohne Deploy, ohne Client-Release, ohne dass ein Pilot etwas tun
+muss. Genau dafür steht `naechste_frage_in_s` überhaupt im Protokoll.
+
+⚠ **„Aus" heißt 900 s, nicht 0.** Eine Brügge, die gar keine Antwort mehr bekommt, weiß nicht,
+ob der Server abgeschaltet hat oder ob das Netz weg ist — sie behielte ihren Sollzustand,
+bis `gilt_bis_s` abläuft, und versuchte es weiter. Mit 900 s räumt sie ab und fragt
+viertelstündlich nach; das Zurückschalten erreicht sie dann von allein.
+
+⚠ **Was der Schieber nicht abschaltet:** die Prüfung selbst. Eine Meldung kommt weiterhin an
+und wird beantwortet — nur eben mit leerem `soll` und langem Takt. Wer den Endpunkt ganz
+schließen will, nimmt ihn im nginx heraus; das ist eine andere Entscheidung mit anderen
+Folgen.
+
+**Stand:** Noch nicht gebaut — es gibt keinen Endpunkt, den ein Schieber drosseln könnte, und
+einen Knopf ohne Wirkung wollte ich nicht in den Admin stellen. Er entsteht **zusammen mit
+`/api/bruegge/melden`**, im selben Zug.
 
 ### Die Position ist ein eigener Sichtbarkeitsgrad
 

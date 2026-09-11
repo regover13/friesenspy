@@ -22,6 +22,8 @@
 
 static HANDLE g_sim = 0;
 static bool g_versucht = false;
+static DWORD g_sekunden = 0;
+static DWORD g_lagen = 0;
 
 // ---------------------------------------------------------------------------
 // Rueckkanal Nr. 3: ein gemeinsamer Speicherbereich (ClientData).
@@ -33,7 +35,12 @@ static bool g_versucht = false;
 // macht es auf demselben Rechner genauso.
 //
 // Aufbau: 16 DWORDs. In [0] steht, wie weit das Modul gekommen ist, in [1] der letzte
-// Fehlerwert, in [2] die Objekt-ID. Der Rest ist Reserve.
+// Fehlerwert, in [2] die Objekt-ID. Ab [3] die Messpunkte der Lage-Frage:
+//   [3] HRESULT der drei AddToDataDefinition (ver-odert)
+//   [4] HRESULT von RequestDataOnSimObject
+//   [5] Zahl der empfangenen Lagemeldungen
+//   [6] Breite * 100000, [7] Laenge * 100000  (als DWORD, also ohne Vorzeichen lesen)
+//   [8] Zahl der vergangenen Sekunden
 #define CD_NAME   "FriesenBruegge.Status"
 #define CD_ID     1
 #define CD_DEF    1
@@ -47,6 +54,9 @@ enum Schritt {
     S_EVENT = 6, S_CREATE_GERUFEN = 7, S_OBJEKT_DA = 8, S_EXCEPTION = 9,
 };
 
+// Schreibt ein einzelnes Feld, ohne den Schritt zu veraendern.
+static void feld(int nr, DWORD wert);
+
 static void status(DWORD schritt, DWORD wert2 = 0, DWORD wert3 = 0)
 {
     g_status[0] = schritt;
@@ -58,10 +68,26 @@ static void status(DWORD schritt, DWORD wert2 = 0, DWORD wert3 = 0)
     }
 }
 
+static void feld(int nr, DWORD wert)
+{
+    if (nr < 0 || nr >= CD_WORTE) return;
+    g_status[nr] = wert;
+    if (g_cd_bereit) {
+        SimConnect_SetClientData(g_sim, CD_ID, CD_DEF, 0, 0,
+                                 sizeof(g_status), g_status);
+    }
+}
+
 enum {
     EV_SEKUNDE = 1,
-    DEF_LAGE   = 1,
-    REQ_LAGE   = 1,
+    // ACHTUNG, hier lag vermutlich der EXCEPTION-3-Fehler vom 11.09.2026:
+    // DEF_LAGE stand auf 1 -- derselbe Wert wie CD_DEF. SimConnect_AddToDataDefinition und
+    // SimConnect_AddToClientDataDefinition nehmen BEIDE eine SIMCONNECT_DATA_DEFINITION_ID,
+    // also denselben Nummernraum. ID 1 war als ClientData-Definition belegt; die spaetere
+    // Benutzung als Datendefinition endete mit UNRECOGNIZED_ID. Der externe Probeflug hat
+    // den Fehler nicht, weil er gar kein ClientData anlegt -- deshalb fiel es dort nie auf.
+    DEF_LAGE   = 10,
+    REQ_LAGE   = 20,
     REQ_BOOT   = 4711,
 };
 
@@ -161,17 +187,28 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
         // Flug geladen -- dieselbe Falle wie beim externen Probeflug, wo die Position
         // 0/90 zurueckkam.
         auto* evt = (SIMCONNECT_RECV_EVENT*)pData;
-        if (evt->uEventID == EV_SEKUNDE && !g_versucht) {
-            g_versucht = true;
+        if (evt->uEventID != EV_SEKUNDE) break;
+
+        g_sekunden++;
+        feld(8, g_sekunden);
+
+        // Die Lage EINMAL anfordern, sobald der Sim laeuft. Im module_init ist noch kein
+        // Flug geladen -- dieselbe Falle wie beim externen Probeflug, wo 0/90 zurueckkam.
+        if (g_sekunden == 1) {
             status(S_EVENT);
-            // FESTE Koordinate statt Lage-Abfrage.
-            //
-            // Der Umweg ueber RequestDataOnSimObject scheiterte mit EXCEPTION 3
-            // (UNRECOGNIZED_ID, 11.09.2026) -- die Datendefinition kam nicht zustande, und
-            // die Rueckgabewerte von AddToDataDefinition wurden nicht geprueft. Fuer die
-            // eigentliche Frage ist die Abfrage aber gar nicht noetig: Ob ein WASM-Modul
-            // ein Objekt SETZEN kann, zeigt ein fester Punkt genauso -- und zwar ohne eine
-            // zweite Fehlerquelle dazwischen.
+            HRESULT r = SimConnect_RequestDataOnSimObject(
+                g_sim, REQ_LAGE, DEF_LAGE, SIMCONNECT_OBJECT_ID_USER,
+                SIMCONNECT_PERIOD_SECOND);
+            melde("request_hr", (long)r);
+            feld(4, (DWORD)r);
+        }
+
+        // Rueckfallebene: Kommt nach acht Sekunden keine Lagemeldung, wird trotzdem
+        // gesetzt -- an einem festen Punkt. Sonst bliebe der Lauf ohne jedes Ergebnis,
+        // und die zweite Frage (kann WASM ueberhaupt setzen?) waere mit erschlagen.
+        if (g_sekunden == 8 && !g_versucht) {
+            g_versucht = true;
+            melde("rueckfall_feste_koordinate", 0);
             Lage fest{ 53.78721, 7.90970, 0.0 };   // Wangerooge, Standort des Probeflugs
             boot_setzen(fest);
         }
@@ -182,9 +219,18 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
         auto* d = (SIMCONNECT_RECV_SIMOBJECT_DATA*)pData;
         if (d->dwRequestID == REQ_LAGE) {
             Lage* lage = (Lage*)&d->dwData;
+            g_lagen++;
+            feld(5, g_lagen);
+            feld(6, (DWORD)(long)(lage->lat * 100000.0));
+            feld(7, (DWORD)(long)(lage->lon * 100000.0));
             melde("lage_lat_e5", (long)(lage->lat * 100000.0));
             melde("lage_lon_e5", (long)(lage->lon * 100000.0));
-            boot_setzen(*lage);
+            // Nur beim ERSTEN Mal setzen -- die Anfrage laeuft im Sekundentakt weiter,
+            // damit sichtbar bleibt, ob die Meldungen anhalten.
+            if (!g_versucht) {
+                g_versucht = true;
+                boot_setzen(*lage);
+            }
         }
         break;
     }
@@ -236,6 +282,7 @@ extern "C" MSFS_CALLBACK void module_init(void)
     HRESULT d3 = SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "PLANE ALTITUDE", "feet");
     melde("datadef_hr", (long)(d1 | d2 | d3));
     status(S_DATADEF);
+    feld(3, (DWORD)(d1 | d2 | d3));
 
     // "1sec" feuert erst, wenn der Sim laeuft -- der Aufhaenger, um nicht im Hauptmenue
     // zu setzen.
