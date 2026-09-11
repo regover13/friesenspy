@@ -104,21 +104,32 @@ der Systemuhr des Piloten, die falsch gehen darf.
 `spur` darf leer sein: bei der ersten Meldung, nach einer Pause, oder wenn die Brügge nicht
 sammeln kann. Der Server kommt dann mit `lage` allein aus.
 
-**Die Karte spielt die Spur ab, sie springt nicht von Meldung zu Meldung.** Das ist der
-eigentliche Gewinn der Bündelung und gehört ausdrücklich hierher: Bei 2 s Takt kommen zwei
-Punkte an, und wer sie nacheinander setzt, bewegt das Flugzeug **im Sekundentakt** — nur eben
-zwei Sekunden hinter der Wirklichkeit. Bei 90 kt sind das 46 m je Schritt statt 93 m.
+#### Flüssig oder aktuell — bei 2 s muss man sich entscheiden
 
-| | Sprungweite bei 90 kt | wie oft |
-|---|---|---|
-| heute, VATSIM-Feed | ~700 m | alle 15 s |
-| Brügge, 2 s, Spur nicht abgespielt | ~93 m | alle 2 s |
-| **Brügge, 2 s, Spur abgespielt** | **~46 m** | **jede Sekunde** |
-| Brügge, 1 s | ~46 m | jede Sekunde |
+**Das ist ein echter Zielkonflikt und kein Detail.** Wer die Spur abspielt, bewegt das
+Flugzeug im Sekundentakt — zeigt aber dauerhaft eine Position, die so alt ist wie der Takt.
+Bei `t=2` erscheint der Punkt von `t=0`, bei `t=3` der von `t=1`.
 
-Die letzten beiden Zeilen sind auf der Karte nicht unterscheidbar. **Die Bewegungsauflösung
-hängt an der Spur, nicht am Sendetakt** — schneller zu senden macht die Bewegung nicht
-flüssiger, nur aktueller.
+Gerechnet bei 90 kt (rund 46 m/s):
+
+| | bewegt sich | Sprungweite | Alter des Gezeigten |
+|---|---|---|---|
+| heute, VATSIM-Feed | alle 15 s | ~700 m | 0 → 15 s |
+| Brügge 2 s, Spur **abgespielt** | **jede Sekunde** | ~46 m | **durchgehend 2 s** |
+| Brügge 2 s, nur **neuester** Punkt | alle 2 s | ~93 m | 0 → 2 s |
+| Brügge **1 s** | jede Sekunde | ~46 m | 0 → 1 s |
+
+**Nur der 1-s-Takt löst den Konflikt auf**, statt ihn zu verschieben. Das ist beim Abwägen
+gegen die Serverlast (Abschnitt 6) ehrlich mitzuwiegen: Der Gewinn ist nicht nur „eine
+Sekunde", sondern die Möglichkeit, flüssig *und* aktuell zu sein.
+
+**Eine Abschwächung gibt es.** `lage` wird **beim Absenden frisch gelesen** und ist damit
+nicht Teil des Rückstands — nur die Punkte in `spur` sind älter. Wer den Marker auf `lage`
+setzt und `spur` nur für die gezeichnete Linie nimmt, bekommt die aktuellste Position und
+einen vollständigen Track; er zahlt mit dem gröberen Sprung des Markers.
+
+**Diese Wahl gehört ins Frontend und kann später fallen.** Das Protokoll liefert beide
+Möglichkeiten aus denselben Daten — es legt sich hier bewusst nicht fest.
 
 ⚠ **Nicht interpolieren, abspielen.** Leaflets Bewegungsanimation ist in dieser App bewusst
 abgeschaltet (`app/static/index.html:11828`): *„in Coherent GT genau die Sorte Dauerbewegung,
@@ -487,9 +498,13 @@ der Takt drosseln, ohne den Track auszudünnen.
 Die naheliegende Frage, und sie ist berechtigt — **die Antwort ist kein Nein, sondern ein
 „später, wenn gemessen".**
 
-Was 1 s statt 2 s gewänne: **eine Sekunde Verzögerung.** Nicht mehr. Die Spur ist ohnehin
-sekundengenau, weil sie gebündelt kommt; die Karte zeichnet dieselbe Linie, nur einen
-Lidschlag später. Eine Zwischenbewegung im Client verdeckt auch das.
+Was 1 s statt 2 s gewinnt, ist **mehr als eine Sekunde Verzögerung**: Es löst den Zielkonflikt
+aus Abschnitt 1 auf. Bei 2 s muss die Karte zwischen flüssiger Bewegung (Spur abspielen,
+dauerhaft 2 s alt) und aktueller Position (nur der neueste Punkt, Sprünge von 93 m) wählen.
+Bei 1 s liegen beide Wege nur noch eine Sekunde auseinander, und die Wahl wird gleichgültig.
+
+*(Hier stand zwischenzeitlich „gewinnt nur eine Sekunde Verzögerung". Das war zu kurz gedacht
+— der Nutzer hat es am 11.09.2026 richtiggestellt.)*
 
 Was es kostet:
 
@@ -509,6 +524,11 @@ vorgeführt, dass er empfindlich ist — am 04.09.2026 stieg die CPU-Last über 
 ohne dass ein Pilot etwas neu installiert.** Genau dafür gibt es `naechste_frage_in_s`. Die
 Reihenfolge „erst messen, dann aufdrehen" ist billig; die umgekehrte kostet einen Ausfall am
 Eventabend.
+
+Und der Takt darf **je Pilot verschieden** sein. Fliegen an einem Abend drei Leute, kann der
+Server allen 1 s geben; werden es zwanzig, drosselt er auf 2 s — ohne dass jemand etwas
+merkt außer der Karte. Das ist die eigentliche Absicherung: **nicht die kleine Voreinstellung,
+sondern dass sie sich zur Laufzeit bewegt.**
 
 ### Die Position ist ein eigener Sichtbarkeitsgrad
 
