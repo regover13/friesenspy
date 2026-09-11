@@ -6,6 +6,40 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-11 (spaet) — Protokoll war in sich widerspruechlich (Sim-Sitzung)
+
+**Betrifft nur `friesenbruegge/`.** Kein Anwendungscode, keine Version.
+
+Der Eintrag darunter beschreibt die Entscheidung „keine Anmeldung“. Sie war aber nur in
+Abschnitt 5 umgesetzt — die Abschnitte 1 und 2 trugen den verworfenen Schluessel weiter
+(`Authorization: Bearer`, `401`, Zustand je `(schluessel, instanz)`, `naechste_frage_in_s: 10`).
+Ist in `e6f5997` bereinigt. **Wer PROTOKOLL.md vor diesem Commit gelesen hat, liest Abschnitt 1
+neu.**
+
+Neu festgelegt: Passt eine Position zu **niemandem**, antwortet der Server genau wie bei
+„kein VATSIM“ — leeres `soll`, Minutentakt. Fuer die Bruegge ununterscheidbar, mit Absicht:
+Eine Fehlermeldung waere ein Werkzeug fuer den, der ausprobiert, welche erfundene Position
+durchgeht.
+
+**Messbefunde am laufenden MSFS 2024** (`probe-msfs/kieker_probe.py` hat jetzt eine
+Kontrollspur — die eigene Lage laeuft neben der Objektlage mit, sonst ist „keine Meldung mehr“
+mehrdeutig):
+
+- **Aus der Ferne ist `steht[].hoehe_ft` unbrauchbar.** Dieselbe Koordinate am Bodensee:
+  2106,5 ft bei 691 km Entfernung, 1297,2 ft aus der Naehe — 810 ft Unterschied. Der Simulator
+  antwortet aus grobem Gelaende. Steht jetzt in Abschnitt 4: Der Server darf die Hoehe nur
+  auswerten, wenn der Pilot in der Naehe ist. Wie nah, ist NICHT gemessen (brauchbar bis 200 km,
+  falsch bei 691 km, dazwischen Luecke).
+- **Objekte bleiben stehen** — zweimal 240 s durchgehend, 0,5 km und 691 km entfernt, exakt
+  240 Meldungen je Lauf. Ein frueherer Lauf, der bei t=+45s verstummte, ist nicht
+  reproduzierbar; dort wurde vermutlich der Sim beendet. Der Protokollzustand `verschwunden`
+  bleibt trotzdem begruendet (MSFS 2020 verhielt sich zweimal verschieden), ist in MSFS 2024
+  aber kein Regelfall.
+- **Objekte ueberleben das Schliessen der Verbindung nicht** (`EXCEPTION 3` in der Nachprobe) —
+  bestaetigt Abschnitt 7.
+
+---
+
 ## 2026-09-11 (abends) — Protokoll ueberarbeitet: keine Anmeldung mehr (Sim-Sitzung)
 
 **Betrifft `friesenbruegge/`, `docs/` und die Issues #23/#25** — kein Anwendungscode, keine

@@ -252,8 +252,8 @@ Vier Entscheidungen des Nutzers vom 11.09.2026, die alles Weitere binden:
 |---|---|
 | **WASM kann die eigene Position nicht lesen** (`EXCEPTION 3`) | Ein Modul, das seine Lage nicht liest, kann sie nicht melden **und nicht prüfen, ob ein Objekt noch steht**. Entscheidet über den Auslieferungsweg. |
 | `OnGround=1` wirkt in WASM nicht | sonst schwebt alles |
-| Wird ein weit gesetztes Objekt gezeichnet, wenn der Pilot hinkommt? | entscheidet, ob einmal verteilt oder unterwegs nachgesetzt wird |
-| Schwimmt ein Boot in **MSFS 2024** auf einem Binnensee? | In 2020 liegt es 395 m zu tief; 2024 verhält sich anders, ist dort aber nur an Land gemessen |
+| Wird ein weit gesetztes Objekt gezeichnet, wenn der Pilot hinkommt? | entscheidet, ob einmal verteilt oder unterwegs nachgesetzt wird. Braucht einen echten Flug — ein stehender Sim beantwortet es nicht. |
+| **Ab welcher Entfernung wird `hoehe_ft` unbrauchbar?** | Brauchbar bis 200 km gemessen, falsch bei 691 km (2106,5 statt 1297,2 ft am selben Punkt). Dazwischen eine Lücke — und die Zahl entscheidet, wann der Server einer Höhenmeldung glauben darf. |
 | SmartScreen bei unsignierter EXE | betrifft nur den externen Weg |
 
 ## Forum

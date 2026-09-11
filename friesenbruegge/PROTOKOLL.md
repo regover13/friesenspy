@@ -426,6 +426,28 @@ die Stelle für diese Gattung untauglich — der Server nimmt sie aus der Wertun
 Piloten etwas zuzumuten, das niemand sehen kann. **Die Rückmeldung ist der einzige Weg dorthin;
 Raten wäre der Anfang einer neuen Fehlersuche.**
 
+#### ⚠ Aber nur aus der Nähe — gemessen am 11.09.2026 spätabends
+
+**Dieselbe Koordinate, zwei Entfernungen, 810 ft Unterschied:**
+
+| `CruiseShip01` am Bodensee | Flieger 691 km entfernt | Flieger in der Nähe |
+|---|---|---|
+| gemeldete Höhe | **2106,5 ft** | 1297,2 ft |
+
+Der Seespiegel liegt bei 1296 ft. 2106 ft entspricht 642 m und gehört zu keinem Punkt des
+Sees — aus der Entfernung antwortet der Simulator aus einer groben Geländestufe, nicht aus
+geladenem Terrain.
+
+**Der Server darf `hoehe_ft` deshalb nur auswerten, wenn der Pilot in der Nähe ist.** Sonst
+sortierte er brauchbare Stellen aus und behielte untaugliche — beides aus Werten, die gar keine
+Messung sind. Wie nah „nah genug" ist, ist **nicht gemessen**: Die vorhandene Reihe zeigt
+brauchbare Geländehöhen bis 200 km (`probe-msfs/ERGEBNIS.md`, Reality Bubble), der erste
+falsche Wert liegt bei 691 km. Dazwischen ist eine Lücke.
+
+**Praktisch entschärft sich das von selbst:** Der Server fordert Objekte in der Umgebung des
+Piloten an — weit entfernte gibt es im Betrieb gar nicht. Die Regel schützt gegen den Fall, in
+dem jemand später doch einmal auf Vorrat setzt.
+
 ---
 
 ## 5. Anmeldung: gar keine — der Server erkennt den Piloten an der Position

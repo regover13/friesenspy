@@ -293,6 +293,62 @@ beobachten.
 Objekt ist auch nicht der Fall, an dem sich das zeigen würde. Die Frage stellt sich erst bei
 vielen Objekten, und die ist laut Übergabe ausdrücklich noch nicht dran.
 
+### Nachgemessen am 11.09. spätabends: 240 s, zweimal, MSFS 2024
+
+Anlass war ein Lauf, der bei t=+45 s verstummte und danach 375 s schwieg. Er hatte **keine
+Kontrolle** — es war nicht zu unterscheiden, ob der Simulator das Objekt weggeräumt hatte oder
+ob schlicht die Verbindung tot war. Genau diese Lücke hatte auch der untaugliche
+Chiemsee-Versuch weiter unten.
+
+**Deshalb hat der Probeflug jetzt eine Kontrollspur:** Die eigene Lage wird parallel zur
+Objektlage abonniert (`REQ_KONTROLLE`, `PERIOD_SECOND`). Schweigt das Objekt, während die
+Kontrolle weiterläuft, war es das Objekt. Schweigen beide, meldet das Skript
+`MESSUNG UNGUELTIG` statt eines Befunds.
+
+| | Ziel | Entfernung Flieger | Dauer | Ergebnis |
+|---|---|---|---|---|
+| Lauf A | Bodensee 47.645/9.500 | **691,3 km** | 240 s | 240 Meldungen, durchgehend |
+| Lauf B | 500 m östlich des Flugzeugs | **0,5 km** | 240 s | 240 Meldungen, durchgehend |
+
+**Beide Male exakt 240 Meldungen in 240 s** — `PERIOD_SECOND` liefert zuverlässig im
+Sekundentakt, ohne eine einzige Lücke. Das ist zugleich der Beleg dafür, dass der 1-s-Regeltakt
+des Protokolls auf der Simulator-Seite überhaupt bedienbar ist.
+
+**Das Verstummen bei t=+45 s ist damit nicht reproduzierbar.** Die naheliegende Erklärung ist,
+dass der Simulator in jenem Lauf beendet wurde — er war danach nachweislich zu. Ein
+`RECV_QUIT` kam zwar nicht an, aber ein hart beendeter Sim schickt keins mehr.
+
+⚠ **Daraus folgt nicht, dass Objekte immer stehen bleiben.** In MSFS 2020 verlief derselbe
+Aufruf zweimal verschieden (einmal nach einer Sekunde fort, einmal 600 s stabil) — der
+Protokollzustand `verschwunden` bleibt begründet. Er ist nach dieser Messung nur kein
+**Regelfall** in MSFS 2024.
+
+### ⚠ Aus der Ferne ist die gemeldete Höhe unbrauchbar
+
+Der wichtigere Befund steckt im Vergleich der beiden Läufe:
+
+| | Lauf A (691 km) | am selben Ort aus der Nähe |
+|---|---|---|
+| `CruiseShip01` am Bodensee | **2106,5 ft** | 1297,2 ft |
+
+**Das sind 810 ft Unterschied an derselben Koordinate.** Der Seespiegel liegt bei 1296 ft; 2106
+ft entspricht 642 m und gehört zu keinem Punkt des Sees. Der Simulator antwortet aus der
+Entfernung offenbar aus einer groben Geländestufe, nicht aus dem geladenen Terrain.
+
+Das ergänzt die Tabelle unter „Die Reality Bubble": Dort folgten die Höhen dem Gelände bis
+200 km (139,8 ft Mecklenburger Seenplatte), und ab 500 km stand `—`, weil nicht gemessen wurde.
+**Jetzt ist gemessen, und der Wert ist da — aber falsch.**
+
+**Folge für das Protokoll:** `steht[].hoehe_ft` ist nur verlässlich, wenn der Pilot in der Nähe
+ist. Der Server darf aus einer Höhenmeldung aus großer Entfernung **nicht** schließen, dass
+eine Stelle tauglich oder untauglich ist — er würde brauchbare Stellen aussortieren und
+untaugliche behalten.
+
+### Objekte überleben die Verbindung nicht — erneut bestätigt
+
+Beide Nachproben: `EXCEPTION 3 — UNRECOGNIZED_ID`. Ein Prozess, der setzt und sich beendet,
+hinterlässt nichts. Die Brügge muss durchlaufen.
+
 ## 6. Schritt 4 — läuft so etwas unbemerkt mit?
 
 Beantwortet, und zwar **ohne einen Eintrag anzulegen**: Was die Übergabe mit einem Testeintrag
