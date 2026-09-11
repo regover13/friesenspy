@@ -71,6 +71,27 @@ nicht die Nummer.
 Am 17.08.2026 schiefgegangen: v13.7.0 ging mit `highlight: true` raus. Beim Zurücknehmen wurde
 dann fälschlich die Nummer angefasst statt des Hakens — der Ärger kam von der roten Marke.
 
+## Ein MAJOR gehört an die sichtbare Änderung — und wird vorher abgesprochen (stehende Regel)
+
+**Die Hauptnummer steigt erst mit einer Frontend-Änderung außerhalb des Admin-Bereichs** —
+also mit dem Schritt, an dem der Nutzen beim Mitglied ankommt und auffällt. Nicht mit der
+Vorarbeit, so groß sie auch sei: Datenbank-Tabellen, Rechenwege, Endpunkte, Poller-Jobs und
+Admin-Oberfläche sind MINOR oder PATCH unter der laufenden Hauptnummer, auch wenn sie den
+ganzen Aufwand ausmachen.
+
+**Und dieser Schritt ist vorher mit dem Nutzer abzusprechen.** Nicht die Nummer allein — der
+Schritt. Wer eine sichtbare Änderung ausliefert, hat vorher gefragt.
+
+Stehende Regel seit dem 11.09.2026, aufgestellt am FriesenKieker: Dort war v15.0.0 für den
+„dritten Eventtyp" vorgesehen, also für ein Vorhaben, dessen erste Hälfte reine Server- und
+Admin-Arbeit ist. **Die Hauptnummer hätte damit einen Umbau gefeiert, von dem im Frontend
+nichts zu sehen gewesen wäre.** Der Nutzer liest den Verlauf in der App; eine Hauptnummer ohne
+sichtbare Änderung ist dort ein leeres Versprechen.
+
+Zusammen mit der Regel darüber ergibt das eine klare Aufteilung: **`highlight` vergibt der
+Nutzer, den MAJOR gibt die sichtbare Änderung her, und den Zeitpunkt bestimmt ebenfalls der
+Nutzer.**
+
 ## Zum Lesen Bestimmtes muss beim Nutzer ankommen (stehende Regel — IMMER einhalten)
 
 **In einer Cloud-Session sieht der Nutzer keine Datei, die nur im Repo liegt.** Die Sitzung

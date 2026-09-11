@@ -941,8 +941,25 @@ entlarvt.
 ## 15. Version und Doku
 
 - `app/CHANGELOG.json`: neuer Eintrag oben, **`"highlight": false`** (stehende Regel, ohne
-  Ausnahme). Nummer: **v15.0.0**, Major — vom Nutzer am 11.09.2026 entschieden
-  (*„3 mayor release"*). Der Haken `highlight` bleibt davon unberührt und aus.
+  Ausnahme).
+
+**Die Nummer ist v15.0.0 — aber NICHT für den ganzen Kieker** (Nutzerentscheidung
+11.09.2026, inzwischen als stehende Regel in `CLAUDE.md`):
+
+> *„v15 wird es erst geben, wenn wir eine Frontend-Änderung außerhalb Admin machen. Also der
+> Schritt, der den Nutzen auffällt! Und das ist vorher mit mir abzusprechen!"*
+
+Der Kieker zerfällt damit in zwei Auslieferungen:
+
+| Was | Nummer |
+|---|---|
+| Tabellen, Wertung, Abdeckungsrechnung, Endpunkte, **Admin-Oberfläche**, Kalender, Push | **v14.x** (MINOR), so viele wie nötig |
+| Events-Tab, Eingabemaske, Karten-Ebene — alles, was ein Mitglied sieht | **v15.0.0**, und **vorher abgesprochen** |
+
+Das ist keine Formalie: Die erste Hälfte ist der größere Teil der Arbeit und im Frontend
+unsichtbar. Eine Hauptnummer darauf hätte einen Umbau gefeiert, von dem niemand etwas merkt.
+
+Der Haken `highlight` bleibt in jedem Fall aus und ist davon unberührt.
 - `README.md`: eigener Handbuch-Abschnitt **und** der Hilfetext hinter dem `?` — ohne beides
   gilt ein Feature-Commit in diesem Projekt als unfertig.
 - `docs/api.md`: alle Endpunkte aus Abschnitt 8.
