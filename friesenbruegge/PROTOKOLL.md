@@ -519,25 +519,48 @@ diesem Nutzer?"**
 
 ### Die drei Bedingungen
 
-1. **Das VATSIM-Callsign trägt das Friesen-Präfix** (`CALLSIGN_PREFIX`, Vorgabe `FRS`). Das
-   ist ohnehin erfüllt, weil `live_positions` nur solche Piloten enthält.
-2. **`forum_callsign[callsign]` existiert und zeigt auf dieselbe CID**, die VATSIM meldet.
-   **Das ist die eigentliche Authentifizierung** — sie stammt aus dem Forum-Profil, also aus
-   einer Anmeldung, die wirklich stattgefunden hat.
+1. **Der Pilot steht in `live_positions`** — er fliegt also gerade auf VATSIM, und zwar mit
+   Friesen-Präfix (`CALLSIGN_PREFIX`, Vorgabe `FRS`); andere nimmt der Poller gar nicht auf.
+2. **Seine CID hat eine Zeile in `forum_callsign`.** Das ist die eigentliche
+   Authentifizierung: Die Zeile entsteht nur beim Forum-Login, aus dem Forum-Profil.
 3. **Die Position passt** nach den Regeln oben.
 
-### Warum das den Angriff ausschließt
+### ⚠ Geprüft wird die CID, nicht das Callsign
 
-| Fall | `forum_callsign` | Ergebnis |
+**Das ist eine bewusste Entscheidung und war zwischenzeitlich anders.** Hier stand, das
+gemeldete Callsign müsse in `forum_callsign` stehen und auf dieselbe CID zeigen. **Das
+zerbricht beim ersten Callsign-Wechsel** — und der kommt bei fast jedem Friesen genau einmal:
+wenn er das `N` verliert und aus `FRS123N` ein `FRS556` wird.
+
+Die Tabelle zieht zwar sauber nach — der Login trägt die Callsigns des Profils ein und löscht
+alle anderen Zeilen derselben CID (`app/main.py:2755-2766`). **Aber eben erst beim nächsten
+Login.** Wer sein Rufzeichen im Forum ändert und sich danach nicht bei FriesenSpy anmeldet,
+fliegt als `FRS556`, während die Tabelle nur `FRS123N` kennt: keine Zuordnung, ohne dass
+irgendwo etwas kaputt aussieht.
+
+**Über die CID gibt es dieses Problem nicht.** Sie ist der VATSIM-Kontoschlüssel und ändert
+sich nie; welches Rufzeichen daran hängt, ist gleichgültig.
+
+```sql
+EXISTS (SELECT 1 FROM forum_callsign WHERE cid = :vatsim_cid)
+```
+
+### Der Angriff scheitert trotzdem
+
+| Fall | CID in `forum_callsign`? | Ergebnis |
 |---|---|---|
-| Fremder setzt sich `FRS99` | keine Zeile | **keine Zuordnung** |
-| Fremder setzt das Callsign eines echten Friesen | Zeile zeigt auf **dessen** CID, nicht auf seine | **keine Zuordnung** |
-| Friese fliegt sein eigenes `FRS61` | Zeile passt zur VATSIM-CID | ✅ |
+| Fremder setzt sich `FRS99` | **nein** — sein VATSIM-Konto war nie angemeldet | **keine Zuordnung** |
+| Fremder nimmt das Callsign eines echten Friesen | **nein** — es zählt seine eigene CID, nicht das getippte Rufzeichen | **keine Zuordnung** |
+| Friese nach dem Callsign-Wechsel | **ja** — Zeile hängt an der CID | ✅ |
+| Friese, nie bei FriesenSpy angemeldet | nein | keine Zuordnung *(gewollt)* |
 
-Der zweite Fall ist der interessante: Das Callsign allein genügt nicht, weil die **CID** aus
-dem VATSIM-Feed dazu passen muss — und die gehört dem VATSIM-Konto, nicht dem, der gerade ein
-Rufzeichen tippt. Die Tabelle führt darüber sogar schon Buch: `upsert_forum_callsign` meldet
-eine Kollision, wenn ein Callsign die CID wechselt (`app/database.py:9095`).
+**Der Grund ist derselbe wie vorher, nur sauberer:** Das getippte Rufzeichen beweist nichts,
+die CID kommt vom VATSIM-Konto. Wer nie per Forum angemeldet war, hat keine Zeile — gleich
+welches Callsign er sich gibt.
+
+**Die Callsign-Spalte bleibt trotzdem nützlich**, nur nicht als Schranke: `upsert_forum_callsign`
+meldet eine Kollision, wenn ein Callsign die CID wechselt (`app/database.py:9095`) — das ist
+ein Hinweis fürs Log, kein Prüfkriterium.
 
 ### Der Unterschied zum Kniebrett im Alltag
 
@@ -550,15 +573,17 @@ als `DEABC` unterwegs ist. Das soll so bleiben.
 | | Kniebrett benutzen | Position melden |
 |---|---|---|
 | Forum-Login (CID) | nötig | nötig — als Zeile in `forum_callsign` |
-| FRS-Callsign auf VATSIM | **nicht** nötig | **nötig** |
+| FRS-Callsign auf VATSIM | **nicht** nötig | **nötig** (Präfix, nicht das genaue Rufzeichen) |
 | auf VATSIM online | nicht nötig | nötig |
 
 ### ⚠ Was das kostet
 
-**Wer sein Callsign nicht im Forum-Profil führt, kann nicht melden.** Die Zeile entsteht nur
-aus dem Profilfeld; ohne Eintrag gibt es keine. Das ist kein Fehler, sondern der Preis dieser
-Prüfung — er gehört aber in die Anleitung, sonst sucht jemand den Fehler an der falschen
-Stelle.
+**Wer gar kein Callsign im Forum-Profil führt, kann nicht melden.** Ohne Eintrag legt der
+Login keine Zeile an, und ohne Zeile gibt es keine CID zum Prüfen. Ein *veraltetes* Callsign
+schadet dagegen nicht mehr — geprüft wird die CID.
+
+Das ist kein Fehler, sondern der Preis dieser Prüfung. Er gehört aber in die Anleitung, sonst
+sucht jemand den Fehler an der falschen Stelle.
 
 **Und der Forum-Login bleibt die einmalige Voraussetzung.** „Keine Anmeldung" heißt: kein
 Schlüssel, keine Konfiguration, kein Schritt vor jedem Flug. Es heißt nicht, dass jemand ohne
