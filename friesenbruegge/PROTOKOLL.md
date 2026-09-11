@@ -88,14 +88,14 @@ Felder decken sich mit denen, die das EFB-Panel heute schon aus dem Simulator li
 
 #### `spur` trägt die Auflösung, die `lage` allein nicht schafft
 
-Eine Position je Anfrage ist bei einem Takt von 10 s nicht besser als das 15-Sekunden-Raster
-von VATSIM — das Versprechen aus #23 wäre damit nicht eingelöst. **Deshalb sammelt die Brügge
-zwischen zwei Anfragen** (im Sekundentakt oder dichter) und schickt das Gesammelte als
-`spur` mit.
+**Die Brügge liest ihre Lage jede Sekunde — unabhängig davon, wie oft sie sendet.** Was
+zwischen zwei Anfragen anfällt, geht als `spur` mit.
 
-Das ist derselbe Weg, den #23 für das Kniebrett vorschreibt, und aus demselben Grund: Das
-nginx-Rate-Limit erlaubt keine Meldung je Sekunde (Abschnitt 6). Gebündelt bleibt der Track
-dicht, ohne das Budget zu sprengen.
+Beim Regeltakt von 1 s (Abschnitt 6) ist `spur` deshalb leer oder trägt einen Punkt. **Sie ist
+die Rückfallebene für den gedrosselten Fall:** Setzt der Server `naechste_frage_in_s` auf 5
+oder 10, kommen fünf bzw. zehn Punkte in einer Anfrage — der Track bleibt sekundengenau, auch
+wenn seltener gesendet wird. Ohne `spur` verlöre jede Drosselung unwiederbringlich
+Auflösung.
 
 `alter_s` ist das Alter des Punktes in Sekunden **zum Zeitpunkt des Absendens**, nicht eine
 Uhrzeit. Der Server rechnet es gegen seine eigene Empfangszeit auf — damit hängt nichts an
@@ -104,11 +104,13 @@ der Systemuhr des Piloten, die falsch gehen darf.
 `spur` darf leer sein: bei der ersten Meldung, nach einer Pause, oder wenn die Brügge nicht
 sammeln kann. Der Server kommt dann mit `lage` allein aus.
 
-#### Flüssig oder aktuell — bei 2 s muss man sich entscheiden
+#### Flüssig oder aktuell — ein Zielkonflikt, den erst der 1-s-Takt auflöst
 
-**Das ist ein echter Zielkonflikt und kein Detail.** Wer die Spur abspielt, bewegt das
+**Sobald gedrosselt wird, muss die Karte sich entscheiden.** Wer die Spur abspielt, bewegt das
 Flugzeug im Sekundentakt — zeigt aber dauerhaft eine Position, die so alt ist wie der Takt.
 Bei `t=2` erscheint der Punkt von `t=0`, bei `t=3` der von `t=1`.
+
+Genau deshalb ist der Regeltakt 1 s und nicht 2 s: **Dort stellt sich die Frage gar nicht.**
 
 Gerechnet bei 90 kt (rund 46 m/s):
 
@@ -119,9 +121,10 @@ Gerechnet bei 90 kt (rund 46 m/s):
 | Brügge 2 s, nur **neuester** Punkt | alle 2 s | ~93 m | 0 → 2 s |
 | Brügge **1 s** | jede Sekunde | ~46 m | 0 → 1 s |
 
-**Nur der 1-s-Takt löst den Konflikt auf**, statt ihn zu verschieben. Das ist beim Abwägen
-gegen die Serverlast (Abschnitt 6) ehrlich mitzuwiegen: Der Gewinn ist nicht nur „eine
-Sekunde", sondern die Möglichkeit, flüssig *und* aktuell zu sein.
+**Nur der 1-s-Takt löst den Konflikt auf**, statt ihn zu verschieben — der Gewinn ist nicht
+nur „eine Sekunde", sondern die Möglichkeit, flüssig *und* aktuell zu sein. Die beiden
+mittleren Zeilen beschreiben, was eine Drosselung kostet; sie ist damit nicht gratis, sondern
+eine bewusste Notbremse.
 
 **Eine Abschwächung gibt es.** `lage` wird **beim Absenden frisch gelesen** und ist damit
 nicht Teil des Rückstands — nur die Punkte in `spur` sind älter. Wer den Marker auf `lage`
@@ -212,9 +215,9 @@ gescheitertes:
 
 **Warum das kein Beiwerk ist:** Scheitert das Erzeugen — `NAME_UNRECOGNIZED` (die Brügge
 kennt den Titel nicht), `TOO_MANY_OBJECTS`, `OBJECT_OUTSIDE_REALITY_BUBBLE` —, dann steht das
-Objekt nicht in `steht`, bleibt aber in `soll`. Ohne dieses Feld **versucht die Brügge es alle
-zwei Sekunden erneut, für immer**, und der Server erfährt nie, dass die Stelle für diese
-Brügge unbrauchbar ist.
+Objekt nicht in `steht`, bleibt aber in `soll`. Ohne dieses Feld **versucht die Brügge es jede
+Sekunde erneut, für immer**, und der Server erfährt nie, dass die Stelle für diese Brügge
+unbrauchbar ist.
 
 **Die Regeln dazu:**
 
@@ -475,60 +478,54 @@ vollständig im Server.
 
 ## 6. Takt
 
-⚠ **`nginx/friesenspy.devprops.de.conf:7` erlaubt 120 Anfragen pro Minute je IP**, und die Zone
-geht über die Adresse, nicht das Gerät. Ein Pilot mit Brügge *und* geöffnetem Kniebrett teilt
-sich dieses Budget.
+**Der Server bestimmt den Takt, nicht die Brügge** — `naechste_frage_in_s` steht in jeder
+Antwort. Das ist die einzige Stellschraube, die nach der Verteilung an 61 Piloten noch
+erreichbar ist, und sie darf **je Pilot** verschieden stehen.
 
-- **Eine eigene `location` mit eigener Zone** für `/api/bruegge/`, bevor die erste Brügge
-  ausgeliefert wird.
-- **Der Server bestimmt den Takt**, nicht die Brügge: `naechste_frage_in_s` in jeder Antwort.
-  Damit lässt er sich ohne Client-Release ändern — die einzige Stellschraube, die nach der
-  Verteilung noch erreichbar ist.
-- Vorschlag für die Voreinstellung: **2 s**, wenn Objekte in der Nähe stehen oder stehen
-  könnten, sonst **10 s**. Fällt der Server aus, verdoppelt die Brügge ihren Abstand bis
-  60 s, statt zu hämmern.
+### Der Regeltakt ist 1 s — gemessen, nicht geschätzt
 
-**Der Takt betrifft nur die Anfragen, nicht die Auflösung der Position.** Die Brügge liest
-ihre Lage unabhängig davon **jede Sekunde** (oder dichter) und legt die Punkte in `spur`
-ab — bei 10 s Takt kommen also zehn Punkte in einer Anfrage an, nicht einer. Damit lässt sich
-der Takt drosseln, ohne den Track auszudünnen.
+Die Frage „warum nicht jede Sekunde?" stand hier zweimal, und die Antwort war beide Male
+schlechter als die Frage. **Hier stand als Empfehlung 2 s**, gestützt auf die Annahme, es
+könnten 20 Brüggen gleichzeitig melden. Diese Zahl war geschätzt und nie geprüft.
 
-### Warum nicht jede Sekunde senden?
+**Am 11.09.2026 in der Produktionsdatenbank nachgesehen** (`position_history`, 30 Tage,
+11.318 Minuten mit Flugbetrieb):
 
-Die naheliegende Frage, und sie ist berechtigt — **die Antwort ist kein Nein, sondern ein
-„später, wenn gemessen".**
+| | gleichzeitig in der Luft |
+|---|---|
+| Spitze, einmal erreicht | **13** |
+| Mittel über alle Flugminuten | **1,58** |
+| Minuten mit 10 oder mehr | 97 von 11.318 |
 
-Was 1 s statt 2 s gewinnt, ist **mehr als eine Sekunde Verzögerung**: Es löst den Zielkonflikt
-aus Abschnitt 1 auf. Bei 2 s muss die Karte zwischen flüssiger Bewegung (Spur abspielen,
-dauerhaft 2 s alt) und aktueller Position (nur der neueste Punkt, Sprünge von 93 m) wählen.
-Bei 1 s liegen beide Wege nur noch eine Sekunde auseinander, und die Wahl wird gleichgültig.
+Das sind **alle** Friesen in der Luft, nicht nur die mit Brügge — die echte Obergrenze liegt
+also darunter. Daraus die Last bei 1 s Takt:
 
-*(Hier stand zwischenzeitlich „gewinnt nur eine Sekunde Verzögerung". Das war zu kurz gedacht
-— der Nutzer hat es am 11.09.2026 richtiggestellt.)*
+| | Anfragen je Sekunde |
+|---|---|
+| im Mittel | **1,6** |
+| in der 30-Tage-Spitze | **13** |
+| unter der verworfenen Annahme (20 Brüggen) | 20 |
 
-Was es kostet:
+**13 Anfragen je Sekunde sind für FastAPI kein Thema.** Dazu kommt die Sparregel aus
+Abschnitt 1: Wer nicht auf VATSIM ist, kostet eine Indexabfrage je Minute — eine Brügge im
+Leerlauf zählt nicht mit.
 
-| | 2 s | 1 s |
-|---|---|---|
-| Anfragen je Pilot und Minute | 30 | 60 |
-| bei 20 gleichzeitigen Brüggen | 10/s | **20/s** |
-| Anteil am nginx-Budget je IP (120 r/m) | ¼ | **½** |
+**Also 1 s als Voreinstellung.** Das löst zugleich den Zielkonflikt aus Abschnitt 1: flüssige
+Bewegung *und* aktuelle Position, ohne Wahl zwischen beidem.
 
-Jede Anfrage ist nicht nur ein Schreibvorgang: Der Server muss aus der Position auch `soll`
-berechnen, also Geo-Abstände gegen alle in Frage kommenden Objekte. Und dieser Container hat
-vorgeführt, dass er empfindlich ist — am 04.09.2026 stieg die CPU-Last über einen Abend von
-13,7 % auf 78,6 %, ohne dass eine Brügge existierte (CLAUDE.md, Datenbank-Regeln).
+### Die Drosselung bleibt — als Reserve, nicht als Voreinstellung
 
-**Entscheidend ist aber:** Der Takt ist kein Vertrag, sondern eine Zahl in jeder Antwort. Mit
-2 s anfangen, unter echter Last messen, und bei Bedarf auf 1 s gehen — **ohne Client-Release,
-ohne dass ein Pilot etwas neu installiert.** Genau dafür gibt es `naechste_frage_in_s`. Die
-Reihenfolge „erst messen, dann aufdrehen" ist billig; die umgekehrte kostet einen Ausfall am
-Eventabend.
+Zwei Dinge müssen trotzdem stehen, bevor die erste Brügge ausgeliefert wird:
 
-Und der Takt darf **je Pilot verschieden** sein. Fliegen an einem Abend drei Leute, kann der
-Server allen 1 s geben; werden es zwanzig, drosselt er auf 2 s — ohne dass jemand etwas
-merkt außer der Karte. Das ist die eigentliche Absicherung: **nicht die kleine Voreinstellung,
-sondern dass sie sich zur Laufzeit bewegt.**
+- **Eine eigene `location` mit eigener Zone** für `/api/bruegge/`. Bei 1 s sind es 60 Anfragen
+  je Minute — in der gemeinsamen Zone wäre das die **halbe** Ration eines Anschlusses
+  (`nginx/friesenspy.devprops.de.conf:7`, 120 r/m je IP), und ein Pilot mit Brügge *und*
+  geöffnetem Kniebrett teilt sich diese Ration. Getrennt ist es kein Thema; gemeinsam wäre es
+  genau die Falle, die schon einmal 429er erzeugt hat.
+- **`naechste_frage_in_s` in jeder Antwort**, und der Server darf es **je Pilot verschieden**
+  setzen. Wird es einmal eng, drosselt er auf 2 s — ohne Client-Release, ohne dass jemand
+  etwas neu installiert, und ohne dass es jemand merkt außer der Karte. Fällt der Server aus,
+  verdoppelt die Brügge ihren Abstand von selbst bis 60 s, statt zu hämmern.
 
 ### Die Position ist ein eigener Sichtbarkeitsgrad
 
