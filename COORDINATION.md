@@ -23,9 +23,10 @@ CHANGELOG-Eintrag. Live blieb v14.29.0.
 
 1. **Objekte sterben mit der SimConnect-Verbindung.** Die Bruegge muss durchlaufen, ein
    Einmal-Aufruf hinterlaesst nichts.
-2. **Die Objektart bestimmt die Hoehe.** `Boat` landet auf **Meereshoehe** (versinkt daher ueber
-   Land), `Animal`/`StaticObject`/`GroundVehicle` auf **Gelaendehoehe**. Das gehoert in die
-   Gattungstabelle des Protokolls.
+2. **Die Objektart bestimmt die Hoehe.** `Boat` versinkt ueber Land (auf Wangerooge drei Meter
+   tief im Platz), `Animal`/`StaticObject`/`GroundVehicle` landen auf **Gelaendehoehe**. Das
+   gehoert in die Gattungstabelle des Protokolls. **Ungeklaert:** was ein Boot auf einem
+   Binnensee tut — die einzige Probe lief 800 km entfernt ohne geladenes Gelaende.
 3. **Ein gesetztes Objekt bleibt nicht garantiert** (in MSFS 2020 beobachtet): zweimal derselbe
    Aufruf, einmal nach einer Sekunde weg, einmal 600 s stabil. Nach dem Setzen gehoert eine
    Lagemeldung abonniert.

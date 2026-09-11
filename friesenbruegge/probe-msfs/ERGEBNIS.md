@@ -607,15 +607,27 @@ Meldungsrate, und trotzdem „ich sehe keine Elefanten". Erst 20 m neben einem h
 sichtbaren Objekt waren sie da. Die Regel von heute Vormittag gilt unverändert und ist offenbar
 schwer einzuhalten: **groß, nah und lange — und am besten neben etwas, das man schon sieht.**
 
-### Boote: „0,0 ft" heißt Meereshöhe, nicht Wasseroberfläche
+### ❓ Boote auf einem Binnensee: UNGEKLÄRT
 
-Die Frage kam vom Nutzer: Was wird aus einem Boot auf einem Bergsee? Probe auf dem Chiemsee
-(518 m ü. NN, also ≈1700 ft): Das Boot meldete **0,0 ft**, nicht 1700.
+Die Frage kam vom Nutzer: Was wird aus einem Boot auf einem Bergsee?
 
-**Mit Vorbehalt:** Der Chiemsee lag 800 km entfernt, dort war vermutlich gar kein Gelände
-geladen — der Simulator konnte die Wasserhöhe nicht kennen. Das ist ein starker Hinweis, kein
-Beweis. Für die Nordsee ist es belanglos (dort fällt beides zusammen); für einen späteren Event
-an einem Alpensee wäre es vor Ort zu prüfen.
+**Belegt ist nur der Landfall:** Über Land landen Boote auf 0,0 ft und versinken (Wangerooge,
+Geländehöhe 10 ft — dreifach beobachtet). Und auf der **Nordsee** schwimmen sie richtig, aber
+dort fallen Meereshöhe und Wasseroberfläche zusammen; der Fall unterscheidet nichts.
+
+**Nicht belegt:** ob der Simulator auf einem Binnensee die *lokale* Wasserhöhe nimmt. Eine Probe
+auf den Chiemsee (518 m ü. NN, ≈1700 ft) ergab 0,0 ft — **aber aus 800 km Entfernung, wo kein
+Gelände geladen war.** Der Simulator konnte die Wasserhöhe dort gar nicht kennen; das Ergebnis
+sagt nichts.
+
+> **Diese Stelle behauptete zwischenzeitlich, „0,0 ft heißt Meereshöhe, nicht
+> Wasseroberfläche".** Das war durch nichts gedeckt außer dem untauglichen Chiemsee-Lauf. Ein
+> Vorbehalt im Nebensatz macht aus einer unbelegten Aussage keine belegte — die Behauptung ist
+> zurückgenommen.
+
+**Zu klären, bevor jemand einen Event am Bodensee plant:** Flug dorthin laden, ein Boot setzen,
+Höhe messen. Kommt der Seespiegel (Bodensee ≈1296 ft), funktionieren Binnenseen; kommt 0,0 ft,
+nicht.
 
 Für MSFS 2024 gilt das nicht: Dort kommt `Altitude` an, die Brügge müsste nur die Geländehöhe
 kennen. Die hat FriesenSpy nicht (Spec 4.2) — dieselbe Einschränkung, die auch den

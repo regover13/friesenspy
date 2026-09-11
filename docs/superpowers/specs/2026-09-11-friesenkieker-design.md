@@ -921,10 +921,10 @@ Kieker reichen vorhandene Tiere; ein Robbenmodell bliebe eine spätere Verschön
 | `Boat` | **Meereshöhe**, nicht Wasseroberfläche |
 | `Animal`, `StaticObject`, `GroundVehicle` | **Geländehöhe** |
 
-Boote versinken deshalb über Land (auf Wangerooge drei Meter tief im Platz). Umgekehrt ist noch
-**offen**, ob ein Boot auf einem **Binnensee** auf dem Seespiegel liegt oder darunter — die Probe
-auf dem Chiemsee ergab 0,0 ft, war aber 800 km entfernt ohne geladenes Gelände. Das ist vor Ort
-zu klären, bevor jemand einen Kieker am Bodensee plant.
+Boote versinken deshalb über Land (auf Wangerooge drei Meter tief im Platz). **Ungeklärt ist
+dagegen, was auf einem Binnensee passiert** — ob der Simulator dort die lokale Wasserhöhe nimmt
+oder ebenfalls die Meereshöhe. Die einzige Probe lief 800 km entfernt ohne geladenes Gelände und
+sagt nichts. Vor Ort zu klären, bevor jemand einen Kieker am Bodensee plant.
 
 **Verworfen bleibt vPilot**, aus zwei unabhängigen Gründen: Es zeichnet ausschließlich, was das
 VATSIM-Netz meldet — ein Objekt erschiene nur, wenn sich etwas als Flugzeug an dieser Position
