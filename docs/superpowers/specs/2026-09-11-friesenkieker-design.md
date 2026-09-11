@@ -815,6 +815,23 @@ Rückfall ist.
 **Nicht Gegenstand der Umsetzung dieser Spec.** Hier steht der Vertrag, damit Stufe 1 ihn nicht
 verbaut.
 
+### 13.0 ⚠ Vorbehalt: X-Plane ist mitzudenken
+
+**Vorgemerkt vom Nutzer am 11.09.2026.** Dieser ganze Abschnitt setzt MSFS voraus — der
+Ordnername `msfs-kieker/` schreibt es sogar fest. Nur **4 von 61 Piloten** haben eine
+Kniebrett-Gerätebindung; ein rein MSFS-Weg erreicht also womöglich einen kleinen Teil der
+Gruppe.
+
+**Die Server-Seite ist davon nicht betroffen** (Wertung, Deckungsprüfung, Endpunkte rechnen
+mit Koordinaten, nicht mit Simulatoren). Betroffen ist ausschließlich das Paket. Bevor dessen
+erster Commit fällt, gehört Struktur und Benennung geklärt. Einzelheiten und die zu
+bestätigenden API-Entsprechungen stehen in `docs/offene-aufgaben.md`, Abschnitt „X-Plane
+mitdenken".
+
+Bemerkenswert dabei: X-Plane liefert die **Höhe über Grund direkt** (`y_agl`). Die
+Einschränkung aus Abschnitt 4.2 — MSL statt AGL, weil kein Geländemodell da ist — fiele dort
+weg.
+
 ### 13.1 Ort
 
 `msfs-kieker/` im friesenspy-Repo, neben `msfs-panel/`. Begründung ist die Kopplung: Das Paket

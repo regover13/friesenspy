@@ -41,6 +41,63 @@ EDLA, EDQA, EDNG, EDQC, EDRB, EDLP, dazu EDDN/EDDS) wurden beim maschinellen Pas
 die Längenmessung verfälschten (EDDV: 2784 m für eine 2340-m-Bahn). Von Hand ist das kein
 Hindernis — man klickt die Schwellen, statt sie zu messen.
 
+## X-Plane mitdenken (vorgemerkt 11.09.2026)
+
+**Alles, was gerade an Simulator-Anbindung entworfen wird, setzt stillschweigend MSFS voraus.**
+Der Nutzer hat vorgemerkt, dass X-Plane mitgedacht werden muss — **bevor** das erste Paket
+gebaut wird, nicht danach.
+
+Betroffen sind zwei laufende Vorhaben:
+
+- **#20 FriesenKieker** — der Spawner, der Objekte setzt. Hängt an `SimConnect`, das es in
+  X-Plane nicht gibt.
+- **#23 Kniebrett meldet die Position zurück** — hängt heute an der MSFS-2024-EFB-App.
+
+**Warum das jetzt zählt und nicht später:** Nur **4 von 61 Piloten** haben überhaupt eine
+Kniebrett-Gerätebindung (`panel_devices`, Stand 11.09.2026, alle vier in den letzten 60 Tagen
+aktiv). Ein Weg, der ausschließlich über die MSFS-2024-EFB-App führt, erreicht also einen sehr
+kleinen Teil der Gruppe. Wie viele X-Plane fliegen, **wissen wir nicht** — der VATSIM-Feed
+meldet den Simulator nicht. Das ist die erste zu klärende Frage, und sie ist eher im Forum zu
+beantworten als durch Messen.
+
+### Was sicher ist und was nicht
+
+**Sicher unproblematisch: die Server-Seite.** Wertung, Deckungsprüfung, Endpunkte und
+Datenmodell des Kiekers sind simulator-agnostisch — sie rechnen mit Koordinaten, Höhe und
+Zeit. Auch der Positions-Endpunkt aus #23 fragt nicht, wer meldet. **Dort ist nichts
+verbaut.**
+
+**Simulator-spezifisch ist ausschließlich das Paket.** Und schon der vorgesehene Ordnername
+`msfs-kieker/` schreibt MSFS fest. Wenn X-Plane ernsthaft in Frage kommt, gehört das vor dem
+ersten Commit des Pakets geklärt — ein späterer Umzug ist billiger als eine Struktur, die
+zwei Simulatoren nicht nebeneinander verträgt.
+
+### Was ich dazu weiß — und was davon ungeprüft ist
+
+Nicht am Gerät nachgesehen, nur aus allgemeiner Kenntnis; **vor jeder Planung zu bestätigen:**
+
+| Frage | MSFS | X-Plane (unbestätigt) |
+|---|---|---|
+| Objekte zur Laufzeit setzen | `SimConnect_AICreateSimulatedObject` | `XPLMInstance`-API (`XPLMCreateInstance` + `XPLMLoadObject`) — scheint gut zu passen |
+| Eigene Position lesen | SimVars | Datarefs `sim/flightmodel/position/latitude` / `longitude` / `elevation` |
+| Höhe über Grund | nur über Umwege | `sim/flightmodel/position/y_agl` — **direkt vorhanden** |
+| Erweiterungssprache | WASM / externes Programm | XPLM-Plugin (C), oder XPPython3 |
+| Tablet-Oberfläche wie das EFB | ja (MSFS 2024) | kein Gegenstück |
+
+**Ein Punkt sticht heraus:** X-Plane liefert die **Höhe über Grund direkt**. Die Spec zu #20
+musste sich in Abschnitt 4.2 ausdrücklich auf MSL beschränken, weil FriesenSpy kein
+Geländemodell hat. Für X-Plane fiele diese Einschränkung weg — was den Kieker über Land
+(Norwegen, Berge) erst richtig brauchbar machte. Das ist ein Argument **für** X-Plane, nicht
+nur eine Pflichtübung.
+
+### Erst zu klären, bevor etwas gebaut wird
+
+1. Wer in der Gruppe fliegt X-Plane? (Forum, nicht messbar.)
+2. Lohnt sich ein zweites Paket überhaupt für diese Zahl?
+3. Falls ja: Ordnerstruktur und Namensgebung **vor** dem ersten Paket-Commit festlegen.
+4. Der Positions-Endpunkt (#23) sollte von vornherein so beschrieben werden, dass ein
+   X-Plane-Plugin ihn ohne Änderung bedienen kann — das kostet jetzt nichts.
+
 ## Forum
 
 - Thema heißt noch **„V13 - Platzhirsch"**, live ist V14 „Zettelwirtschaft". Umbenennen hieße,
