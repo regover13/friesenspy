@@ -1,0 +1,7 @@
+# Bauergebnisse -- gehoeren nicht ins Repo, sie entstehen aus bauen.ps1
+*.o
+*.obj
+*.wasm
+*.xpl
+*.lib
+*.exp

@@ -320,6 +320,21 @@ def _bindungen(sc: ctypes.WinDLL) -> None:
     sc.SimConnect_Close.argtypes = [w.HANDLE]
 
 
+def _schliessen(sc: ctypes.WinDLL, handle) -> None:
+    """Verbindung schliessen, ohne daran zu scheitern.
+
+    Wird der Simulator waehrend eines Laufs beendet, wirft `SimConnect_Close` einen
+    WinError -2147467259 ("Unbekannter Fehler") -- der Lauf endete dadurch mit einem
+    Python-Stapelabzug statt mit seinem Messergebnis (11.09.2026, als MSFS 2020 mitten in
+    einem 10-Minuten-Lauf geschlossen wurde). Das Schliessen ist der letzte Schritt; ob es
+    gelingt, aendert am Gemessenen nichts.
+    """
+    try:
+        sc.SimConnect_Close(handle)
+    except OSError:
+        print("  (Der Simulator war schon fort -- Verbindung nicht mehr zu schliessen.)")
+
+
 def _verbinden(sc: ctypes.WinDLL, name: bytes) -> w.HANDLE | None:
     global _lage_definiert
     _lage_definiert = False   # Datendefinitionen gehoeren der Verbindung, nicht dem Prozess
@@ -428,7 +443,7 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
         lage = _eigene_lage(sc, handle)
         if lage is None:
             print("FEHLSCHLAG: --neben-mir braucht die eigene Position, die kam nicht.")
-            sc.SimConnect_Close(handle)
+            _schliessen(sc, handle)
             return 2
         m_lat, m_lon, m_alt = lage
         print(f"  Flugzeug steht bei {m_lat:.5f} / {m_lon:.5f}, {m_alt:.0f} ft.")
@@ -453,7 +468,7 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
     except OSError as e:
         print(f"FEHLSCHLAG: Der Aufruf selbst wurde abgelehnt ({e}).")
         print("  Das hiesse: die DLL kennt die Funktion nicht -- falsche/zu alte SimConnect.dll.")
-        sc.SimConnect_Close(handle)
+        _schliessen(sc, handle)
         return 2
 
     # Der Aufruf meldet fast immer Erfolg. Ob er WIRKLICH geklappt hat, kommt erst
@@ -490,7 +505,7 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
         print("  Das ist selbst ein Befund: der Aufruf verpufft folgenlos.")
 
     if ergebnis != 0 or objekt_id is None:
-        sc.SimConnect_Close(handle)
+        _schliessen(sc, handle)
         return ergebnis
 
     # ---- Die Verbindung bleibt OFFEN, waehrend der Pilot hinsieht. ----------------
@@ -542,7 +557,7 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
         print(f"\n  DURCHGEHEND DA: {anzahl} Lagemeldungen ueber {dauer:.0f}s, "
               "bis zum Schluss.")
 
-    sc.SimConnect_Close(handle)
+    _schliessen(sc, handle)
     print("  Verbindung geschlossen.")
 
     # ---- Ueberlebt das Objekt die Verbindung? ------------------------------------
@@ -574,7 +589,7 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
                 break
         if not antwort:
             print("  Keine Antwort auf die Nachfrage -- unklar.")
-        sc.SimConnect_Close(handle2)
+        _schliessen(sc, handle2)
 
     return ergebnis
 
@@ -604,7 +619,7 @@ def mengentest(titel: str, anzahl: int, raster_m: float, dll_pfad: Path, halten:
     if neben_mir is not None:
         lage = _eigene_lage(sc, handle)
         if lage is None:
-            sc.SimConnect_Close(handle)
+            _schliessen(sc, handle)
             return 2
         lat, lon, _ = lage
         print(f"  Flugzeug steht bei {lat:.5f} / {lon:.5f}")
@@ -656,7 +671,7 @@ def mengentest(titel: str, anzahl: int, raster_m: float, dll_pfad: Path, halten:
         if nr == 11:
             print("     Das ist die harte Grenze: der Simulator nimmt keine weiteren an.")
     if not ids:
-        sc.SimConnect_Close(handle)
+        _schliessen(sc, handle)
         return 1
 
     print(f"\nLage aller {len(ids)} Objekte abonnieren; erwartet werden {len(ids)} Meldungen/s.")
@@ -683,7 +698,7 @@ def mengentest(titel: str, anzahl: int, raster_m: float, dll_pfad: Path, halten:
             letzte, zaehler = t, 0
 
     print(f"\n  {gesamt} Lagemeldungen insgesamt ueber {time.time() - start:.0f}s.")
-    sc.SimConnect_Close(handle)
+    _schliessen(sc, handle)
     print("  Verbindung geschlossen -- die Objekte verschwinden damit.")
     return 0
 
