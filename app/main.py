@@ -101,6 +101,7 @@ from app.database import (
     bruegge_position_loeschen,
     bruegge_positionen_holen,
     bruegge_uebersicht,
+    bruegge_aufraeumen,
     get_panel_prefs,
     set_panel_prefs,
     revoke_panel_device,
@@ -723,7 +724,15 @@ async def panel_diag(request: Request):
 _BRUEGGE_MAX_BYTES = 64 * 1024       # eine Meldung mit voller spur liegt weit darunter
 _BRUEGGE_PROTOKOLL = 1               # was dieser Server spricht
 _BRUEGGE_GILT_BIS_S = 300            # so lange gilt "soll" ohne neue Auskunft
-_BRUEGGE_TAKT_OHNE_VATSIM_S = 60     # wer nicht fliegt, fragt im Minutentakt
+# Wer nicht auf VATSIM ist, fragt selten -- aber nicht SO selten, dass er eine Minute lang
+# nicht merkt, dass er sich gerade verbunden hat.
+#
+# 60 s waren uebervorsichtig. Eine Meldung ohne VATSIM-Verbindung kostet genau eine
+# Indexabfrage; die Pruefung steht vor allem Teuren. Selbst wenn zehn Piloten gleichzeitig den
+# Simulator ohne VATSIM laufen lassen, sind das bei 10 s eine Anfrage je Sekunde -- ein
+# Dreizehntel dessen, was fuer den Regelbetrieb gemessen und als unproblematisch eingestuft
+# wurde (13/s bei 13 gleichzeitigen Fliegern).
+_BRUEGGE_TAKT_OHNE_VATSIM_S = 10
 # ... aber wer fliegt und nur noch nicht ERKANNT ist, braucht einen kurzen Takt.
 #
 # Sonst entsteht ein Teufelskreis, und genau der ist am 11.09.2026 im ersten Flug
@@ -879,6 +888,11 @@ async def bruegge_melden(request: Request):
                 gilt_bis=0)
 
         bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
+        # Gelegentlich aufraeumen -- kein eigener Job fuer eine Handvoll Zeilen. Ein Prozent
+        # der Meldungen genuegt: Bei Sekundentakt ist das rund alle anderthalb Minuten je
+        # fliegendem Piloten, und wenn niemand fliegt, gibt es auch nichts aufzuraeumen.
+        if secrets.randbelow(100) == 0:
+            bruegge_aufraeumen(conn)
         conn.commit()
     finally:
         conn.close()

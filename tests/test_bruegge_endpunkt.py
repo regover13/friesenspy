@@ -126,7 +126,7 @@ def test_ohne_vatsim_geschieht_nichts(klient, tmp_path):
     r = klient.post("/api/bruegge/melden", json=_meldung())
     assert r.status_code == 200
     assert r.json()["soll"] == []
-    assert r.json()["naechste_frage_in_s"] == 60
+    assert r.json()["naechste_frage_in_s"] == 10
     assert r.json()["gilt_bis_s"] == 0
 
     from app.database import get_connection, bruegge_position_holen
@@ -174,7 +174,7 @@ def test_die_ablehnungen_verraten_keinen_grund(klient, tmp_path):
         assert a["soll"] == []
         assert a["gilt_bis_s"] == 0
     # Kein Friese in der Luft: Minutentakt. Mit Friesen: gleich nochmal.
-    assert ohne_vatsim["naechste_frage_in_s"] == 60
+    assert ohne_vatsim["naechste_frage_in_s"] == 10
     assert ohne_login["naechste_frage_in_s"] == weit_weg["naechste_frage_in_s"] <= 5
 
 
@@ -327,3 +327,41 @@ def test_die_hoehenschranke_laeuft_der_vatsim_hoehe_nach(klient, tmp_path):
     z = bruegge_zuordnung_holen(conn, "a3f9c1e0b2d48576")
     conn.close()
     assert z is not None and z["verstoesse"] == 0
+
+
+def test_eine_neue_kennung_verdraengt_die_alte_derselben_cid(klient, tmp_path):
+    """Die Kennung hält in MSFS nicht über einen Sim-Neustart — jede Sitzung zieht eine neue.
+
+    Ohne diese Regel sammelt sich je Pilot eine Karteileiche pro Simulator-Start. Am
+    11.09.2026 standen nach einem Abend zwei Zeilen für dieselbe CID, und die ältere hat beim
+    Nachsehen in die Irre geführt.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    klient.post("/api/bruegge/melden", json=_meldung(kennung="1111111111111111"))
+    klient.post("/api/bruegge/melden", json=_meldung(kennung="2222222222222222"))
+
+    from app.database import get_connection
+    conn = get_connection(db)
+    zeilen = conn.execute("SELECT kennung FROM bruegge_zuordnung WHERE cid = 1234567").fetchall()
+    conn.close()
+    assert len(zeilen) == 1, "zwei Brüggen gleichzeitig gibt es nicht"
+    assert zeilen[0][0] == "2222222222222222", "die neuere gilt"
+
+
+def test_alte_zuordnungen_werden_aufgeraeumt(tmp_path):
+    """Wer die Brügge deinstalliert, hinterlässt sonst eine Zeile für immer."""
+    from app.database import (get_connection, init_db, bruegge_zuordnung_setzen,
+                              bruegge_aufraeumen)
+    pfad = str(tmp_path / "a.db")
+    init_db(pfad)
+    conn = get_connection(pfad)
+    bruegge_zuordnung_setzen(conn, "altealtealteaaaa", 111, "msfs2024")
+    conn.execute("UPDATE bruegge_zuordnung SET gesehen_am = '2020-01-01T00:00:00Z'")
+    bruegge_zuordnung_setzen(conn, "neueneueneueaaaa", 222, "msfs2024")
+    conn.commit()
+
+    assert bruegge_aufraeumen(conn, stunden=24) == 1
+    uebrig = [r[0] for r in conn.execute("SELECT kennung FROM bruegge_zuordnung")]
+    conn.close()
+    assert uebrig == ["neueneueneueaaaa"]

@@ -2470,7 +2470,21 @@ def bruegge_zuordnung_holen(conn: sqlite3.Connection, kennung: str) -> dict | No
 
 def bruegge_zuordnung_setzen(conn: sqlite3.Connection, kennung: str, cid: int,
                              simulator: str | None) -> None:
-    """Eine neue Zuordnung merken (kein commit)."""
+    """Eine neue Zuordnung merken (kein commit).
+
+    Aeltere Zuordnungen DERSELBEN CID fallen dabei weg. Der Grund ist gemessen: Die Kennung
+    haelt in MSFS nicht ueber einen Sim-Neustart (die Datei-API des WASM-Moduls greift nicht,
+    s. friesenbruegge/msfs/bruegge.cpp), also zieht jede Sitzung eine neue -- und ohne diese
+    Zeile sammelt sich je Pilot eine Karteileiche pro Simulator-Start. Am 11.09.2026 standen
+    nach einem Abend zwei Zeilen fuer dieselbe CID, und die aeltere hat beim Nachsehen in die
+    Irre gefuehrt.
+
+    Zwei Bruegge gleichzeitig gibt es nicht -- das ist eine Nutzerentscheidung mit Begruendung
+    (PROTOKOLL.md, Abschnitt 1): Man kann keine zwei Flugzeuge gleichzeitig bewegen, und es
+    gibt nur eine VATSIM-Verbindung.
+    """
+    conn.execute("DELETE FROM bruegge_zuordnung WHERE cid = ? AND kennung <> ?",
+                 (int(cid), kennung))
     now = _now_utc()
     conn.execute(
         "INSERT INTO bruegge_zuordnung (kennung, cid, simulator, zugeordnet_am, gesehen_am, "
@@ -2579,6 +2593,25 @@ def bruegge_positionen_holen(conn: sqlite3.Connection) -> list[dict]:
 def bruegge_position_loeschen(conn: sqlite3.Connection, cid: int) -> None:
     """Die Bruegge-Position vergessen (kein commit) -- etwa beim Ausloggen von VATSIM."""
     conn.execute("DELETE FROM bruegge_positions WHERE cid = ?", (int(cid),))
+
+
+def bruegge_aufraeumen(conn: sqlite3.Connection, stunden: int = 24) -> int:
+    """Zuordnungen wegraeumen, die lange nicht mehr gesehen wurden (kein commit).
+
+    Faengt den Fall ab, den die Regel in ``bruegge_zuordnung_setzen`` nicht abdeckt: Wer die
+    Bruegge deinstalliert oder monatelang nicht fliegt, hinterlaesst sonst eine Zeile, die nie
+    wieder angefasst wird.
+
+    Die Bruegge-POSITION bleibt dabei stehen -- sie ist ohnehin an die CID gebunden und wird
+    von der naechsten Meldung ueberschrieben; sie zu loeschen wuerde nur eine Karte leeren,
+    die ohnehin auf das Alter des Punktes schaut.
+    """
+    grenze = (datetime.now(timezone.utc) - timedelta(hours=stunden)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+    cur = conn.execute(
+        "DELETE FROM bruegge_zuordnung "
+        "WHERE COALESCE(gesehen_am, zugeordnet_am) < ?", (grenze,))
+    return cur.rowcount or 0
 
 
 def bruegge_uebersicht(conn: sqlite3.Connection) -> list[dict]:
