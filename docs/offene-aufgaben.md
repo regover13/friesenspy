@@ -56,9 +56,22 @@ Betroffen sind zwei laufende Vorhaben:
 **Warum das jetzt zählt und nicht später:** Nur **4 von 61 Piloten** haben überhaupt eine
 Kniebrett-Gerätebindung (`panel_devices`, Stand 11.09.2026, alle vier in den letzten 60 Tagen
 aktiv). Ein Weg, der ausschließlich über die MSFS-2024-EFB-App führt, erreicht also einen sehr
-kleinen Teil der Gruppe. Wie viele X-Plane fliegen, **wissen wir nicht** — der VATSIM-Feed
-meldet den Simulator nicht. Das ist die erste zu klärende Frage, und sie ist eher im Forum zu
-beantworten als durch Messen.
+kleinen Teil der Gruppe.
+
+### Die Verteilung — vom Nutzer beantwortet (11.09.2026)
+
+> **Etwa ein Drittel der Gruppe fliegt X-Plane.** Der Rest MSFS 2024, **wenige** noch MSFS 2020.
+
+Bei 61 Piloten sind das rund **20 X-Plane-Flieger**. Damit kehrt sich die Annahme um, unter der
+die Kieker-Spec geschrieben wurde:
+
+- **X-Plane ist kein Vorbehalt, sondern der zweite Hauptweg.** Ein MSFS-only-Eventtyp schlösse
+  ein Drittel der Gruppe aus — mehr als jede andere Einschränkung, die bisher diskutiert wurde.
+- **MSFS 2020 ist der Randfall**, nicht X-Plane. Genau andersherum als gedacht. Und selbst der
+  kostet fast nichts, s. unten.
+
+Der VATSIM-Feed meldet den Simulator nicht; die Zahl stammt aus der Kenntnis des Nutzers über
+die Gruppe und ist nicht gemessen.
 
 ### Was sicher ist und was nicht
 
@@ -84,12 +97,15 @@ ohne Umlaut `friesenbruegge/`, wie das Repo `friesenspy` heißt; geschrieben wir
 
 Nicht am Gerät nachgesehen, nur aus allgemeiner Kenntnis; **vor jeder Planung zu bestätigen:**
 
-| Frage | MSFS | X-Plane (unbestätigt) |
+| Frage | MSFS 2020 + 2024 | X-Plane |
 |---|---|---|
-| Objekte zur Laufzeit setzen | `SimConnect_AICreateSimulatedObject` | `XPLMInstance`-API (`XPLMCreateInstance` + `XPLMLoadObject`) — scheint gut zu passen |
+| Objekte zur Laufzeit setzen | `SimConnect_AICreateSimulatedObject` — **gemessen**, 400 Stück ohne Ruckeln | `XPLMInstance` (`XPLMCreateInstance` + `XPLMLoadObject`) — Doku, ungemessen |
+| Objekt benennen | Container-Titel (`Boat01`) — **gemessen** | Pfad (`…/dynamic/SailBoat.obj`) oder Bibliotheks-Pfad — Doku |
+| Eigenes 3D-Modell nötig? | **nein** — Boote liegen bei | **nein** — Boote liegen bei (s. u.) |
+| Lebensdauer der Objekte | **nur solange die Verbindung offen ist** — gemessen | Instanz gehört dem Plugin, das ohnehin läuft — Doku |
 | Eigene Position lesen | SimVars | Datarefs `sim/flightmodel/position/latitude` / `longitude` / `elevation` |
 | Höhe über Grund | nur über Umwege | `sim/flightmodel/position/y_agl` — **direkt vorhanden** |
-| Erweiterungssprache | WASM / externes Programm | XPLM-Plugin (C), oder XPPython3 |
+| Erweiterungssprache | WASM / externes Programm über `exe.xml` — **gemessen** | XPLM-Plugin (C), oder XPPython3 |
 | Tablet-Oberfläche wie das EFB | ja (MSFS 2024) | kein Gegenstück |
 
 **Ein Punkt sticht heraus:** X-Plane liefert die **Höhe über Grund direkt**. Die Spec zu #20
@@ -98,13 +114,62 @@ Geländemodell hat. Für X-Plane fiele diese Einschränkung weg — was den Kiek
 (Norwegen, Berge) erst richtig brauchbar machte. Das ist ein Argument **für** X-Plane, nicht
 nur eine Pflichtübung.
 
+### MSFS 2020 und 2024 sind EIN Adapter, nicht zwei (gemessen 11.09.2026)
+
+Drei Befunde aus dem Probeflug, die zusammen deutlich sind:
+
+- **Dieselben Container-Titel.** In MSFS 2020 liegen die Boote unter
+  `Official/OneStore/asobo-simobjects-boats`, in MSFS 2024 unter
+  `StreamedPackages/`**`fs20`**`-asobo-simobjects-boats` — MSFS 2024 liefert das 2020er Paket
+  mit. Beide Male `Boat01`, `FishingBoat`, `Yacht01`.
+- **Beide SDK-DLLs exportieren `SimConnect_AICreateSimulatedObject`** (per `ctypes` geprüft,
+  nicht vermutet). Die SDK-Doku nennt als einzigen Schritt für 2024: gegen den neuen Header neu
+  kompilieren.
+- **SimConnect verbindet sich zu dem Simulator, der läuft.** Ein über `exe.xml` mitgestartetes
+  Programm findet den, der es gestartet hat.
+
+**Ungeprüft:** ob die 2024er DLL auch gegen MSFS 2020 verbindet. In fünf Minuten messbar,
+sobald jemand MSFS 2020 startet. Falls nicht, liefert man beide DLLs mit — 79 und 67 KB.
+
+### X-Plane braucht kein eigenes 3D-Modell (recherchiert 11.09.2026, nicht gemessen)
+
+Das war die befürchtete Hürde: In MSFS genügt ein **Container-Titel**, X-Plane dagegen lädt mit
+`XPLMLoadObject` eine **`.obj`-Datei aus dem Dateisystem**. Ein eigenes Modell hätte den
+X-Plane-Weg von vornherein teuer gemacht.
+
+**Die Befürchtung trifft nicht zu.** X-Plane bringt ladbare Objekte mit, angesprochen über
+einen Pfad relativ zum X-System-Ordner — und darunter ist ausgerechnet ein Boot:
+
+```
+Resources/default scenery/sim objects/dynamic/SailBoat.obj
+```
+
+Dazu kommt eine Bibliothek virtueller Pfade (`Resources/default scenery/sim objects/library.txt`,
+z. B. `lib/airport/vehicles/fuel/hyd_disp_truck.obj`). Damit steht dem X-Plane-Adapter dasselbe
+offen wie dem MSFS-Adapter: mitgeliefertes Objekt, kein Blender, keine Lizenzfrage.
+Quellen: [XPLMLoadObject](https://developer.x-plane.com/sdk/XPLMLoadObject/),
+[XPLMScenery](https://developer.x-plane.com/sdk/XPLMScenery/),
+[XPPython3-Doku](https://xppython3.readthedocs.io/en/latest/development/modules/scenery.html).
+
+**Eine Falle ist schon bekannt:** In X-Plane 12 stürzt `XPLMLoadObject()` ab, wenn es in
+`XPluginStart`/`XPluginEnable` aufgerufen wird und das Objekt einen Emitter hat — Objekte
+gehören in einen Flight-Loop-Callback. Ebenso müssen die Datarefs, die ein Objekt animiert,
+vorher geladen sein.
+
+**Das alles ist Doku, keine Messung** — hier steht kein X-Plane. Ein Gegenstück zum Probeflug
+(`probe-xplane/`) wäre die ehrliche Bestätigung, bevor gebaut wird.
+
 ### Erst zu klären, bevor etwas gebaut wird
 
-1. Wer in der Gruppe fliegt X-Plane? (Forum, nicht messbar.)
-2. Lohnt sich ein zweites Paket überhaupt für diese Zahl?
-3. Falls ja: Ordnerstruktur und Namensgebung **vor** dem ersten Paket-Commit festlegen.
+1. ~~Wer in der Gruppe fliegt X-Plane?~~ **Beantwortet: etwa ein Drittel.**
+2. ~~Lohnt sich ein zweites Paket?~~ **Ja** — bei rund 20 Piloten steht es außer Frage.
+3. Ordnerstruktur und Namensgebung **vor** dem ersten Paket-Commit festlegen. Vorschlag:
+   ein `PROTOKOLL.md` als simulatorfreier Vertrag, daneben `msfs/` (für 2020 **und** 2024) und
+   `xplane/`. Die Server-Seite kennt nur das Protokoll und nie ein SimObject.
 4. Der Positions-Endpunkt (#23) sollte von vornherein so beschrieben werden, dass ein
    X-Plane-Plugin ihn ohne Änderung bedienen kann — das kostet jetzt nichts.
+5. **Neu:** Ein X-Plane-Probeflug, der dasselbe belegt wie der MSFS-Probeflug — Objekt
+   entsteht, bleibt liegen, ist sichtbar. Braucht einen Rechner mit X-Plane.
 
 ## Forum
 
