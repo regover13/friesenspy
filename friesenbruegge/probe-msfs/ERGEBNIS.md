@@ -196,16 +196,31 @@ MSFS 2024.
 Pilot in Reichweite kommt — das war die Alternative, und sie hätte bedeutet, dass der Server
 laufend wissen muss, wo jeder Pilot gerade ist.
 
-⚠ **Die Zahl 22 km gilt für ein Kreuzfahrtschiff, nicht allgemein.** Ein `CruiseShip01` ist
-rund 300 m lang; große Objekte blendet der Simulator deutlich früher ein als kleine. Für den
-Kieker sind aber gerade die **kleinen** die relevanten — `Boat01` misst acht Meter, ein Tier
-zwei.
+#### Nachgemessen mit einem kleinen Objekt — im selben Flug
 
-**Der tragende Teil des Befunds hängt nicht an der Zahl:** Belegt ist, dass der Simulator ein
-aus 45 km gesetztes Objekt **nicht vergisst**, sondern zeichnet, sobald der Pilot in Reichweite
-kommt. Das ist eine Eigenschaft der Objektverwaltung und nicht der Größe. **Ungemessen bleibt,
-ob ein kleines Objekt denselben Weg geht** — der Test dafür ist derselbe Flug mit `Boat01`
-statt `CruiseShip01`.
+| Objekt | Länge | gesetzt aus | **sichtbar ab** | Flughöhe |
+|---|---|---|---|---|
+| `CruiseShip01` | ~300 m | 44,7 km | **22,1 km** | 534 ft |
+| `Boat01` | ~8 m | 41 km | **1,0 km** | 251 ft |
+
+**Faktor 22 in der Sichtweite bei Faktor 37 in der Länge** — die Einblendreichweite skaliert
+grob mit der Objektgröße. Die Vermutung des Nutzers („so große Objekte werden meist viel früher
+eingeblendet als kleinere") ist damit bestätigt und beziffert.
+
+**Der tragende Befund hält:** Beide Objekte wurden aus über 40 km Entfernung gesetzt, und beide
+waren da, als der Pilot hinkam. **Der Simulator vergisst ein weit gesetztes Objekt nicht** — bei
+acht Metern so wenig wie bei dreihundert. Der Server darf also verteilen, sobald er weiß, wohin
+der Pilot fliegt.
+
+⚠ **Für den Kieker ist die Zahl 1 km die wichtigere von beiden.** Sie sagt, wie nah ein Pilot an
+eine Station heranfliegen muss, um überhaupt etwas zu sehen — und das ist keine technische
+Randnotiz, sondern eine Spielregel: Stationen dürfen nicht so gesetzt werden, dass man sie nur
+mit Zufall findet. Wer Tiere zählen soll, muss wissen, wo er hinschauen muss, oder nah genug
+vorbeikommen.
+
+⚠ **Beide Läufe unterscheiden sich auch in der Flughöhe** (534 gegenüber 251 ft). Ob das die
+Einblendung beeinflusst, ist nicht getrennt gemessen; die Größe erklärt den Unterschied
+allerdings schon fast vollständig.
 
 **Zweiter Befund aus derselben Reihe:** Die Höhe blieb über die ganze Strecke an der
 Wasserlinie. **Bei 45 km ist die Höhenmeldung also brauchbar** — der Phantomwert am Bodensee

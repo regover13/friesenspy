@@ -359,16 +359,19 @@ einen Wert, ist er MSL und die Brügge versucht ihn zu treffen.
 > zweifelsfrei zu sehen** (EDWG→EDWY, MSFS 2024). Der Server darf also verteilen, sobald er
 > weiß, wohin der Pilot fliegt — und muss nicht jede Sekunde nachlegen.
 >
-> ⚠ **Die Zahl 22 km gilt für ein Kreuzfahrtschiff, nicht allgemein.** Ein `CruiseShip01` ist
-> rund 300 m lang; große Objekte blendet der Simulator deutlich früher ein als kleine. Für den
-> Kieker sind aber gerade die **kleinen** die relevanten — `Boat01` misst acht Meter, ein Tier
-> zwei.
+> ### Und mit einem kleinen Objekt nachgemessen
 >
-> **Der tragende Teil des Befunds hängt nicht an der Zahl:** Belegt ist, dass der Simulator ein
-> aus 45 km gesetztes Objekt **nicht vergisst**, sondern zeichnet, sobald der Pilot in Reichweite
-> kommt. Das ist eine Eigenschaft der Objektverwaltung und nicht der Größe. **Ungemessen bleibt,
-> ob ein kleines Objekt denselben Weg geht** — der Test dafür ist derselbe Flug mit `Boat01`
-> statt `CruiseShip01`.
+> | Objekt | Länge | gesetzt aus | **sichtbar ab** |
+> |---|---|---|---|
+> | `CruiseShip01` | ~300 m | 44,7 km | **22,1 km** |
+> | `Boat01` | ~8 m | 41 km | **1,0 km** |
+>
+> Die Einblendreichweite skaliert mit der Größe — **der Befund selbst hängt aber nicht daran:**
+> Beide Objekte wurden aus über 40 km gesetzt, beide waren da. Der Simulator vergisst sie nicht.
+>
+> ⚠ **Für den Kieker ist 1 km die wichtigere Zahl.** Sie sagt, wie nah ein Pilot an eine
+> Station heran muss, um überhaupt etwas zu sehen — eine Spielregel, keine technische Randnotiz.
+> Stationen dürfen nicht so gesetzt werden, dass man sie nur mit Zufall findet.
 >
 > ⚠ **Für MSFS 2020 und X-Plane ist das nicht gemessen.** Die Anleitung steht in
 > [`probe-msfs/FLUGTEST.md`](probe-msfs/FLUGTEST.md) und gilt für jede Strecke.
