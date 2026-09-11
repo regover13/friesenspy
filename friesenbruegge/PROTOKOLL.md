@@ -498,14 +498,71 @@ Leuten, die sich kennen, ist der Aufwand die Sache nicht wert.
 Community-Ordner weiterwandert. Ein Geheimnis, das auf zwanzig fremden Rechnern liegt, ist
 keines.
 
-### ⚠ „Eingeloggt" ist serverseitig nicht feststellbar Der FriesenSpy-Login ist zustandslos
-— `make_user_token` gibt ein signiertes Cookie aus (`app/forum_sso.py:96`), es gibt **keine
-Session-Tabelle**. Der Server kann also nicht wissen, ob jemand gerade eingeloggt ist.
+### Wer melden darf: `forum_callsign` ist der Nachweis
 
-Prüfbar ist stattdessen: **ist es ein bekannter Friese, der gerade auf VATSIM fliegt** — und
-das ist genau, was `live_positions` beantwortet. Soll es wirklich „eingeloggt" heißen, braucht
-es eine Tabelle aktiver Sitzungen. **Vorschlag: darauf verzichten**, denn sie bringt nichts
-dazu: Wer als Friese auf VATSIM fliegt, ist ohnehin der, dem die Position gehört.
+**Nutzervorgabe vom 11.09.2026:** *„Ich will vermeiden, dass jemand sich einfach ein
+FRS-Callsign setzt und damit fliegt. […] Hier will ich nur authentifizierte CIDs, die auf
+VATSIM und mit FRS-Callsign fliegen."*
+
+Hier stand, „eingeloggt" sei serverseitig nicht feststellbar. **Das war zu kurz gesucht.** Der
+Login ist zwar zustandslos (`make_user_token`, `app/forum_sso.py:96`), aber er **hinterlässt
+eine Spur**:
+
+```sql
+forum_callsign (callsign TEXT PRIMARY KEY, cid INTEGER NOT NULL, updated_at TEXT)
+```
+
+Diese Tabelle wird bei **jedem** Forum-Login aus dem Forum-Profil gepflegt
+(`app/main.py:2740`, Token v2, Feld `cs`). Sie beantwortet mehr als die ursprüngliche Frage:
+nicht nur *„war diese CID je angemeldet?"*, sondern **„gehört dieses Callsign laut Forum
+diesem Nutzer?"**
+
+### Die drei Bedingungen
+
+1. **Das VATSIM-Callsign trägt das Friesen-Präfix** (`CALLSIGN_PREFIX`, Vorgabe `FRS`). Das
+   ist ohnehin erfüllt, weil `live_positions` nur solche Piloten enthält.
+2. **`forum_callsign[callsign]` existiert und zeigt auf dieselbe CID**, die VATSIM meldet.
+   **Das ist die eigentliche Authentifizierung** — sie stammt aus dem Forum-Profil, also aus
+   einer Anmeldung, die wirklich stattgefunden hat.
+3. **Die Position passt** nach den Regeln oben.
+
+### Warum das den Angriff ausschließt
+
+| Fall | `forum_callsign` | Ergebnis |
+|---|---|---|
+| Fremder setzt sich `FRS99` | keine Zeile | **keine Zuordnung** |
+| Fremder setzt das Callsign eines echten Friesen | Zeile zeigt auf **dessen** CID, nicht auf seine | **keine Zuordnung** |
+| Friese fliegt sein eigenes `FRS61` | Zeile passt zur VATSIM-CID | ✅ |
+
+Der zweite Fall ist der interessante: Das Callsign allein genügt nicht, weil die **CID** aus
+dem VATSIM-Feed dazu passen muss — und die gehört dem VATSIM-Konto, nicht dem, der gerade ein
+Rufzeichen tippt. Die Tabelle führt darüber sogar schon Buch: `upsert_forum_callsign` meldet
+eine Kollision, wenn ein Callsign die CID wechselt (`app/database.py:9095`).
+
+### Der Unterschied zum Kniebrett im Alltag
+
+**Das EFB selbst bleibt, wie es ist** — CID-gebunden über den Forum-Login, **unabhängig vom
+Callsign**. Wer als Friese angemeldet ist, benutzt sein Kniebrett auch dann, wenn er gerade
+als `DEABC` unterwegs ist. Das soll so bleiben.
+
+**Nur die Positionsmeldung ist strenger**, und das gilt für Kniebrett und Brügge gleich:
+
+| | Kniebrett benutzen | Position melden |
+|---|---|---|
+| Forum-Login (CID) | nötig | nötig — als Zeile in `forum_callsign` |
+| FRS-Callsign auf VATSIM | **nicht** nötig | **nötig** |
+| auf VATSIM online | nicht nötig | nötig |
+
+### ⚠ Was das kostet
+
+**Wer sein Callsign nicht im Forum-Profil führt, kann nicht melden.** Die Zeile entsteht nur
+aus dem Profilfeld; ohne Eintrag gibt es keine. Das ist kein Fehler, sondern der Preis dieser
+Prüfung — er gehört aber in die Anleitung, sonst sucht jemand den Fehler an der falschen
+Stelle.
+
+**Und der Forum-Login bleibt die einmalige Voraussetzung.** „Keine Anmeldung" heißt: kein
+Schlüssel, keine Konfiguration, kein Schritt vor jedem Flug. Es heißt nicht, dass jemand ohne
+FriesenSpy-Konto melden könnte.
 
 ## 6. Takt
 
