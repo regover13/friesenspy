@@ -413,8 +413,11 @@ Festhalten, weil es die Einordnung ändert: **Diese Rückmeldung ist kein Kieker
 ist eine allgemeine Verbesserung von FriesenSpy und hängt **nicht** vom Ausgang des
 Probeflugs ab. Ein dichter, aus dem Simulator gespeister Track verbessert die Kartenanzeige,
 die Erkennungslücken-Diagnose (#16) und alles, was heute an der 15-Sekunden-Auflösung leidet.
-Sie sollte deshalb als **eigenes Vorhaben** geführt werden und nicht als Anhängsel hier —
-siehe Frage 3.
+Sie wird deshalb als **eigenes Vorhaben** geführt: **Issue #23**, angelegt am 11.09.2026.
+Dort steht auch der Grund, aus dem der Nutzer sie ohnehin wollte — *„damit wären wenigstens
+die EFB-Nutzer in Echtzeit auf der Karte erfassbar"* —, und die drei Fundstücke, die das
+Design bestimmen (nginx-Rate-Limit 120 r/min je IP, kein Schreiben nach `position_history`,
+Sichtbarkeitsfrage).
 
 ## 5. Datenmodell
 
@@ -1011,7 +1014,5 @@ beantwortet, zwei mit der verworfenen Zwischenstufe weggefallen.
    die mildere: Sie verzeiht, wenn ein Pilot Objekte nicht sieht, die der Server gesetzt hat.
    **Braucht keine Antwort vor dem Probeflug.**
 
-3. **Die Kniebrett-Rückmeldung** (4.6) als eigenes Vorhaben? Sie hängt **nicht** am
-   Probeflug und nützt auch ohne Kieker — dichtere Tracks, echte Höhe, möglicherweise echtes
-   AGL. Soll ich sie getrennt spezifizieren, damit sie unabhängig vom Kieker gebaut werden
-   kann?
+3. ~~Die Kniebrett-Rückmeldung als eigenes Vorhaben?~~ **Erledigt** — als **#23** angelegt
+   (11.09.2026). Sie hängt nicht am Probeflug und wird unabhängig verfolgt.
