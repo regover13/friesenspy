@@ -451,10 +451,13 @@ angegebene Altitude ändert daran fast nichts — es ist also nicht die Höhe, d
 sondern `OnGround` tut etwas Eigenes. **Im externen Programm gibt es das nicht** — dort setzt
 dasselbe Flag zuverlässig auf, in beiden Simulatoren.
 
-*(Eine zweite Messung ergab 216 statt 49 ft und schien zu zeigen, dass der Wert nicht einmal
-reproduzierbar ist. Sie war falsch: Die Boote standen bei 0°/90° im Indischen Ozean, weil das
-Modul bei der ersten Lagemeldung setzte — vor dem Laden der Welt. Belegt in
-`probe-msfs/ERGEBNIS.md`. Ob der Wert konstant ist, bleibt damit ungemessen.)*
+**Dreimal gemessen, zweimal von unabhängigen Clients gegengelesen** — 49,0 / 49,1 / 49,2 ft,
+während der Boden bei 5,3 ft liegt. Ob das ein fester Wert ist oder „Geländehöhe plus 44 ft",
+ist offen: Alle Läufe waren am selben Ort.
+
+*(Eine Zwischenmessung ergab 216 ft und schien zu zeigen, dass der Wert schwankt. Sie war
+falsch — die Boote standen bei 0°/90° im Indischen Ozean, weil das Modul bei der ersten
+Lagemeldung setzte, vor dem Laden der Welt. Belegt in `probe-msfs/ERGEBNIS.md`.)*
 
 #### Der Ausweg steht schon im Protokoll
 

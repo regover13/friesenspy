@@ -251,8 +251,8 @@ Vier Entscheidungen des Nutzers vom 11.09.2026, die alles Weitere binden:
 | Frage | warum sie zählt |
 |---|---|
 | ~~WASM kann die eigene Position nicht lesen~~ — **gelöst am 11.09.2026** | Es war eine ID-Kollision im eigenen Quelltext: `DEF_LAGE` und `CD_DEF` standen beide auf 1, und beide leben im selben Nummernraum. Nach dem Auseinanderziehen: 441 Lagemeldungen, Position korrekt. **WASM bleibt als Auslieferungsweg im Rennen.** |
-| **Wie lange lebt ein vom WASM-Modul gesetztes Objekt?** | Das Boot war nach wenigen Minuten nicht mehr auffindbar — während ein extern gesetztes gefunden wurde (Kontrolle). Wann und warum es verschwand, ist offen: Das Modul abonniert die Lage seines eigenen Objekts nicht. |
-| `OnGround=1` wirkt in WASM nicht | sonst schwebt alles |
+| ~~Wie lange lebt ein vom WASM-Modul gesetztes Objekt?~~ — **geklärt** | Sie verschwinden nicht: 364 s, vier Objekte, von zwei unabhängigen Clients bestätigt. Das frühere „Boot ist fort“ war eine Fehlmessung — es stand bei 0°/90° im Indischen Ozean. |
+| ~~`OnGround=1` wirkt in WASM nicht~~ — **gemessen und mit Ausweg** | Dreimal bestätigt: rund 49 ft statt 5,3 ft Boden. `OnGround=0` mit expliziter Höhe trifft dagegen exakt — die Brügge rechnet die Geländehöhe aus `PLANE ALTITUDE − PLANE ALT ABOVE GROUND`. Offen bleibt nur, ob die 49 ft ein fester Wert sind (alle Läufe am selben Ort). |
 | Wird ein weit gesetztes Objekt gezeichnet, wenn der Pilot hinkommt? | entscheidet, ob einmal verteilt oder unterwegs nachgesetzt wird. Braucht einen echten Flug — ein stehender Sim beantwortet es nicht. |
 | **Ab welcher Entfernung wird `hoehe_ft` unbrauchbar?** | Brauchbar bis 200 km gemessen, falsch bei 691 km (2106,5 statt 1297,2 ft am selben Punkt). Dazwischen eine Lücke — und die Zahl entscheidet, wann der Server einer Höhenmeldung glauben darf. |
 | SmartScreen bei unsignierter EXE | betrifft nur den externen Weg |

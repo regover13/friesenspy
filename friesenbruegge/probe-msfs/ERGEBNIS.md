@@ -600,11 +600,40 @@ Beide Bedingungen sind nötig — die Wartezeit deckt den Regelfall, die Prüfun
 das Laden länger dauert. Zusätzlich meldet es jetzt die Koordinate, **mit der gesetzt wurde**,
 getrennt von der zuletzt gelesenen; ohne diese Trennung war der Fehler von außen unsichtbar.
 
-⚠ **Damit steht die OnGround-Frage wieder offen.** Gültig ist nur die Erstmessung
-(49,0 / 0,0 / 500,0 / 49,2 ft auf Wangerooge): `OnGround=0` trifft die angegebene Höhe exakt,
-`OnGround=1` setzt nicht auf. Ob der Wert bei `OnGround=1` über Läufe hinweg konstant ist,
-ist **nicht** gemessen — die Wiederholung, die es zeigen sollte, ist die hier beschriebene
-Fehlmessung.
+#### ✅ Dritte Messung: der Wert ist doch konstant
+
+**Nach dem Fix, auf Wangerooge (Boden 5,3 ft), mit zwei unabhängigen Clients gegengelesen:**
+
+| | `OnGround=1`, Alt 0 | `OnGround=0`, Alt 0 | `OnGround=0`, Alt 500 | `OnGround=1`, Alt 500 |
+|---|---|---|---|---|
+| Erstmessung | 49,0 ft | 0,0 ft | 500,0 ft | 49,2 ft |
+| Statusbereich des Moduls | 49,0 ft | 0,0 ft | 500,0 ft | 49,1 ft |
+| externe Zählung, gleichzeitig | 49,0 ft | 0,0 ft | 500,0 ft | 49,2 ft |
+
+**`OnGround=1` landet reproduzierbar auf rund 49 ft**, während der Boden bei 5,3 ft liegt —
+gut 13 Meter zu hoch. Der Zwischenbefund „nicht reproduzierbar" ist damit erledigt; er kam
+allein aus der 0/90-Fehlmessung.
+
+⚠ **Was weiterhin offen ist:** Alle drei Läufe waren am **selben Ort**. Ob 49 ft ein fester
+Wert ist oder „Geländehöhe plus 44 ft", lässt sich daraus nicht entscheiden — dafür bräuchte
+es eine Messung an einem Platz mit deutlich anderer Höhe. Für die Umsetzung ist die Frage
+zweitrangig, weil `OnGround=0` ohnehin der bessere Weg ist; für das Verständnis des
+MSFS-Fehlers wäre sie interessant.
+
+#### ✅ Und: WASM-Objekte verschwinden nicht
+
+**Nach 364 Sekunden lebten alle vier**, und zwar von zwei Seiten bestätigt: Das Modul bekam
+fortlaufend Lagemeldungen, und eine externe Zählung fand im selben Augenblick alle vier
+Objekte mit passenden Höhen und Abständen (804 / 896 / 994 / 1096 m).
+
+**Die frühere Beobachtung „das Boot des Moduls ist fort" war die 0/90-Fehlmessung** — es stand
+9488 km entfernt und damit außerhalb jedes Suchradius.
+
+⚠ **Ein Wettlauf steckte noch im Probe-Modul selbst**, und er hätte den eigentlichen Weg
+ungetestet gelassen: Rückfall-Koordinate und Lage-Zweig konnten beide in Sekunde 8 feuern.
+Gewann das Sekunden-Ereignis, setzte das Modul an der fest einprogrammierten Koordinate,
+obwohl es die eigene Lage längst kannte — sichtbar nur daran, dass die gefundenen Boote auf
+`53.78721` standen statt auf `53.78226`. Der Rückfall liegt jetzt auf Sekunde 20.
 
 #### Die Abhilfe
 

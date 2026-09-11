@@ -229,7 +229,12 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
         // Rueckfallebene: Kommt nach acht Sekunden keine Lagemeldung, wird trotzdem
         // gesetzt -- an einem festen Punkt. Sonst bliebe der Lauf ohne jedes Ergebnis,
         // und die zweite Frage (kann WASM ueberhaupt setzen?) waere mit erschlagen.
-        if (g_sekunden == 8 && !g_versucht) {
+        // Erst in Sekunde 20, nicht in 8. Bei 8 gab es einen Wettlauf mit dem Lage-Zweig
+        // darueber: Kam das Sekunden-Ereignis vor der Lagemeldung derselben Sekunde, gewann
+        // der Rueckfall -- und das Modul setzte an der festen Koordinate, obwohl es die
+        // eigene Lage laengst kannte (11.09.2026 gemessen: vier Boote auf 53.78721 statt auf
+        // 53.78226). Der echte Weg waere so nie getestet worden.
+        if (g_sekunden == 20 && !g_versucht) {
             g_versucht = true;
             melde("rueckfall_feste_koordinate", 0);
             Lage fest{ 53.78721, 7.90970, 0.0 };   // Wangerooge, Standort des Probeflugs
