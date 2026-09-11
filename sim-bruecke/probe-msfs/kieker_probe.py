@@ -6,17 +6,16 @@ sich alles Weitere. Wenn nicht, lassen wir es.
 
 Laeuft auf dem Windows-Rechner mit dem Simulator, NICHT auf dem Server.
 
-    py kieker_probe.py --titel "Boat_Small"
+    py kieker_probe.py --titel "Boat01"
 
 Ohne --titel sucht das Skript erst einmal, welche Boote der Simulator ueberhaupt kennt:
 
     py kieker_probe.py --titel-suche
 
-WICHTIG -- diese Datei ist auf dem Linux-Server geschrieben und dort NICHT lauffaehig
-gewesen. Sie ist nach der offiziellen SimConnect-Signatur gebaut und gibt bei jedem
-Schritt aus, was sie tut; ein Fehlschlag ist deshalb aussagekraeftig und kein Raetsel.
-Die Enum-Nummern (RECV_ID 1 = EXCEPTION, 2 = OPEN) sind gegen die eigenen Messungen aus
-regover13/FSEconomy-SimConnect-Stub, PROTOCOL_NOTES.md, gegengeprueft.
+STAND 11.09.2026 -- am Simulator-Rechner ueberarbeitet. Die Erstfassung kam vom Linux-Server
+und war ungeprueft; was daran falsch war, steht als Kommentar an der jeweiligen Stelle. Alle
+Enum-Werte und Signaturen sind jetzt gegen den echten SDK-Header gezaehlt:
+C:\\MSFS 2024 SDK\\SimConnect SDK\\include\\SimConnect.h
 """
 from __future__ import annotations
 
@@ -35,20 +34,35 @@ STANDARD_LON = 6.9800
 # Wo SimConnect.dll ueblicherweise liegt. Die Liste wird der Reihe nach probiert; mit
 # --dll laesst sich ein eigener Pfad angeben, und eine DLL NEBEN diesem Skript gewinnt
 # immer (dann braucht es gar keine Suche).
+#
+# KORREKTUR: MSFS2024_SDK steht VOR MSFS_SDK. Auf diesem Rechner zeigt MSFS_SDK auf das
+# 2020er SDK (D:\MSFS SDK) und MSFS2024_SDK auf C:\MSFS 2024 SDK -- die alte Reihenfolge
+# haette also gegen MSFS 2024 die aeltere DLL genommen.
 DLL_KANDIDATEN = [
-    r"%MSFS_SDK%\SimConnect SDK\lib\SimConnect.dll",
     r"%MSFS2024_SDK%\SimConnect SDK\lib\SimConnect.dll",
+    r"%MSFS_SDK%\SimConnect SDK\lib\SimConnect.dll",
     r"C:\MSFS 2024 SDK\SimConnect SDK\lib\SimConnect.dll",
     r"C:\MSFS SDK\SimConnect SDK\lib\SimConnect.dll",
 ]
 
-# SIMCONNECT_RECV_ID -- nur die, die hier vorkommen koennen.
+# SIMCONNECT_RECV_ID -- am Header nachgezaehlt (Zeile 88 ff.): NULL=0, EXCEPTION=1, OPEN=2,
+# QUIT=3, EVENT=4, EVENT_OBJECT_ADDREMOVE=5, EVENT_FILENAME=6, EVENT_FRAME=7,
+# SIMOBJECT_DATA=8, SIMOBJECT_DATA_BYTYPE=9, WEATHER_OBSERVATION=10, CLOUD_STATE=11,
+# ASSIGNED_OBJECT_ID=12. Die 12 war aus dem SDK uebernommen und stimmt.
 RECV_EXCEPTION = 1
 RECV_OPEN = 2
+RECV_QUIT = 3
+RECV_SIMOBJECT_DATA = 8
 RECV_ASSIGNED_OBJECT_ID = 12
 
-# SIMCONNECT_EXCEPTION, Auszug. Unbekannte Nummern werden roh ausgegeben, damit auch ein
-# hier nicht gelisteter Fall auswertbar bleibt.
+# SIMCONNECT_EXCEPTION, vollstaendig am Header nachgezaehlt (Zeile 158 ff.).
+#
+# KORREKTUR -- hier lag die Erstfassung ab 12 daneben, und zwar so, dass ein Fehlschlag
+# falsch benannt worden waere: sie hatte 12=ILLEGAL_OPERATION (ist 25), 28=OBJECT_CONTAINER
+# (ist 34), 29=OBJECT_AI (ist 35), 30=OBJECT_ATC (ist 36), 31=OBJECT_SCHEDULE (ist 37).
+# 0 bis 7 stimmten. Wichtigster Neuzugang fuer genau diese Messung ist die 33: ein Objekt
+# zu weit vom Flugzeug weg wird abgelehnt, und das ist der wahrscheinlichste Fehlschlag,
+# wenn der Flug nicht in Ostfriesland steht.
 EXCEPTION_NAMEN = {
     0: "NONE",
     1: "ERROR (allgemeiner Fehler)",
@@ -56,17 +70,67 @@ EXCEPTION_NAMEN = {
     3: "UNRECOGNIZED_ID",
     4: "UNOPENED",
     5: "VERSION_MISMATCH",
+    6: "TOO_MANY_GROUPS",
     7: "NAME_UNRECOGNIZED (der Container-Titel ist dem Sim unbekannt)",
-    12: "ILLEGAL_OPERATION",
-    28: "OBJECT_CONTAINER (Container liess sich nicht erzeugen)",
-    29: "OBJECT_AI (die KI-Engine hat abgelehnt)",
-    30: "OBJECT_ATC",
-    31: "OBJECT_SCHEDULE",
+    8: "TOO_MANY_EVENT_NAMES",
+    9: "EVENT_ID_DUPLICATE",
+    10: "TOO_MANY_MAPS",
+    11: "TOO_MANY_OBJECTS",
+    12: "TOO_MANY_REQUESTS",
+    13: "WEATHER_INVALID_PORT",
+    14: "WEATHER_INVALID_METAR",
+    15: "WEATHER_UNABLE_TO_GET_OBSERVATION",
+    16: "WEATHER_UNABLE_TO_CREATE_STATION",
+    17: "WEATHER_UNABLE_TO_REMOVE_STATION",
+    18: "INVALID_DATA_TYPE",
+    19: "INVALID_DATA_SIZE",
+    20: "DATA_ERROR",
+    21: "INVALID_ARRAY",
+    22: "CREATE_OBJECT_FAILED (der Sim konnte das Objekt nicht anlegen)",
+    23: "LOAD_FLIGHTPLAN_FAILED",
+    24: "OPERATION_INVALID_FOR_OBJECT_TYPE",
+    25: "ILLEGAL_OPERATION",
+    26: "ALREADY_SUBSCRIBED",
+    27: "INVALID_ENUM",
+    28: "DEFINITION_ERROR",
+    29: "DUPLICATE_ID",
+    30: "DATUM_ID",
+    31: "OUT_OF_BOUNDS",
+    32: "ALREADY_CREATED",
+    33: "OBJECT_OUTSIDE_REALITY_BUBBLE (zu weit vom Flugzeug weg)",
+    34: "OBJECT_CONTAINER (Container liess sich nicht erzeugen)",
+    35: "OBJECT_AI (die KI-Engine hat abgelehnt)",
+    36: "OBJECT_ATC",
+    37: "OBJECT_SCHEDULE",
+    38: "JETWAY_DATA",
+    39: "ACTION_NOT_FOUND",
+    40: "NOT_AN_ACTION",
+    41: "INCORRECT_ACTION_PARAMS",
+    42: "GET_INPUT_EVENT_FAILED",
+    43: "SET_INPUT_EVENT_FAILED",
+    44: "INTERNAL",
 }
+
+# SIMCONNECT_DATATYPE (Zeile 132 ff.) und SIMCONNECT_PERIOD (Zeile 230 ff.), nachgezaehlt.
+DATATYPE_FLOAT64 = 4
+PERIOD_ONCE = 1
+PERIOD_SECOND = 4
+
+DEF_LAGE = 1        # eigene Definitions-ID fuer die Lagemeldung
+REQ_ERZEUGEN = 4711
+REQ_LAGE = 4712
+REQ_NACHPRUEFEN = 4713
+REQ_EIGENE_LAGE = 4714
+
+OBJEKT_USER = 0     # SIMCONNECT_OBJECT_ID_USER_AIRCRAFT, Header Zeile 26
 
 
 class InitPosition(ctypes.Structure):
-    """SIMCONNECT_DATA_INITPOSITION -- 6 Doubles, dann 2 DWORDs (56 Bytes)."""
+    """SIMCONNECT_DATA_INITPOSITION -- 6 Doubles, dann 2 DWORDs (56 Bytes).
+
+    Am Header gegengeprueft (Zeile 759 ff.): Latitude, Longitude, Altitude (Fuss), Pitch,
+    Bank, Heading als double, dann OnGround und Airspeed als DWORD. Stimmte.
+    """
 
     _fields_ = [
         ("Latitude", ctypes.c_double),
@@ -98,6 +162,23 @@ class RecvAssignedObjectId(ctypes.Structure):
     ]
 
 
+class RecvSimObjectData(ctypes.Structure):
+    """SIMCONNECT_RECV_SIMOBJECT_DATA (Header Zeile 566 ff.).
+
+    Hinter dwDefineCount beginnen die Datenwerte. Bei drei FLOAT64 sind das drei Doubles
+    unmittelbar im Anschluss -- deshalb steht hier ein Array der passenden Laenge statt
+    des variablen SIMCONNECT_DATAV aus dem Header.
+    """
+
+    _fields_ = [
+        ("dwSize", w.DWORD), ("dwVersion", w.DWORD), ("dwID", w.DWORD),
+        ("dwRequestID", w.DWORD), ("dwObjectID", w.DWORD), ("dwDefineID", w.DWORD),
+        ("dwFlags", w.DWORD), ("dwentrynumber", w.DWORD), ("dwoutof", w.DWORD),
+        ("dwDefineCount", w.DWORD),
+        ("werte", ctypes.c_double * 3),
+    ]
+
+
 def dll_finden(eigener: str | None) -> Path:
     """SimConnect.dll suchen. Eine DLL neben dem Skript hat Vorrang vor jeder Suche."""
     if eigener:
@@ -121,52 +202,86 @@ def dll_finden(eigener: str | None) -> Path:
     )
 
 
-def titel_suchen() -> None:
-    """Alle Container-Titel aus den SimObjects-Ordnern lesen.
+def _paket_wurzeln() -> list[Path]:
+    """Die Paketordner beider Simulatoren, aus UserCfg.opt gelesen.
 
-    SimConnect hat keinen Aufruf 'zeig mir alle Container'. Die Titel stehen aber im
-    Klartext in den ``sim.cfg``-Dateien, und die liegen auf der Platte -- das ist der
-    sichere Weg, statt einen Namen zu raten.
+    KORREKTUR: Die Erstfassung lief mit rglob ueber ganze Laufwerke. Das dauert nicht nur
+    Minuten, es findet in MSFS 2024 auch NICHTS -- dort liegen die Pakete nicht als
+    Ordnerbaum, sondern in "minimal.fsarchive"-Dateien (s. titel_suchen).
     """
     wurzeln: list[Path] = []
-    for umgeb in ("APPDATA", "LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)"):
-        basis = os.environ.get(umgeb)
-        if basis:
-            wurzeln.append(Path(basis))
-    for laufwerk in ("C:", "D:", "E:"):
-        wurzeln.append(Path(laufwerk + "\\"))
-
-    gefunden: dict[str, Path] = {}
-    gesehen: set[Path] = set()
-    for wurzel in wurzeln:
-        if not wurzel.exists() or wurzel in gesehen:
+    lokal = Path(os.environ.get("LOCALAPPDATA", "")) / "Packages"
+    for paket in ("Microsoft.Limitless_8wekyb3d8bbwe",          # MSFS 2024
+                  "Microsoft.FlightSimulator_8wekyb3d8bbwe"):   # MSFS 2020
+        cfg = lokal / paket / "LocalCache" / "UserCfg.opt"
+        if not cfg.is_file():
             continue
-        gesehen.add(wurzel)
-        try:
-            for cfg in wurzel.rglob("SimObjects/**/sim.cfg"):
-                try:
-                    text = cfg.read_text(encoding="utf-8", errors="ignore")
-                except OSError:
-                    continue
-                for zeile in text.splitlines():
-                    z = zeile.strip()
-                    if z.lower().startswith("title"):
-                        _, _, wert = z.partition("=")
-                        titel = wert.strip().strip('"')
-                        if titel:
-                            gefunden.setdefault(titel, cfg)
-        except (OSError, PermissionError):
-            continue
+        for zeile in cfg.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if zeile.strip().startswith("InstalledPackagesPath"):
+                pfad = Path(zeile.split(None, 1)[1].strip().strip('"'))
+                if pfad.is_dir():
+                    wurzeln.append(pfad)
+    return wurzeln
 
-    if not gefunden:
-        print("Keine sim.cfg gefunden. Dann bitte von Hand nachsehen, unter:")
-        print(r"  ...\Packages\Official\...\SimObjects\Boats\<irgendwas>\sim.cfg")
-        print(r"  Die Zeile 'title = ...' ist der Wert fuer --titel.")
+
+def titel_suchen() -> None:
+    """Alle Container-Titel finden, die nach Booten aussehen.
+
+    Zwei Quellen, weil die beiden Simulatoren ihre Pakete verschieden ablegen:
+
+    * MSFS 2020 legt ``sim.cfg`` als Datei ab -- da steht ``title = ...`` im Klartext.
+    * MSFS 2024 packt dieselben Pakete in ``content\\minimal.fsarchive``. Das Archiv ist
+      NICHT verschluesselt (sein Kopf sagt woertlich ``"scheme":"none"``), die Titel stehen
+      als lesbarer Text darin. Deshalb wird die Datei einfach nach ``title=`` durchsucht.
+    """
+    wurzeln = _paket_wurzeln()
+    if not wurzeln:
+        print("Keine UserCfg.opt gefunden -- laeuft hier ueberhaupt ein MSFS?")
         return
 
-    boote = {t: p for t, p in gefunden.items() if "boat" in str(p).lower()
-             or "boat" in t.lower() or "ship" in t.lower()}
-    print(f"{len(gefunden)} Container-Titel gefunden, davon {len(boote)} nach Booten aussehend.\n")
+    gefunden: dict[str, str] = {}
+
+    for wurzel in wurzeln:
+        print(f"durchsuche {wurzel} ...")
+        # MSFS 2020: sim.cfg als Datei
+        for cfg in wurzel.rglob("SimObjects/**/sim.cfg"):
+            try:
+                text = cfg.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for zeile in text.splitlines():
+                z = zeile.strip()
+                if z.lower().startswith("title"):
+                    titel = z.partition("=")[2].strip().strip('"')
+                    if titel:
+                        gefunden.setdefault(titel, str(cfg))
+
+        # MSFS 2024: Klartext im Archiv
+        for archiv in wurzel.rglob("*.fsarchive"):
+            if "boat" not in str(archiv).lower() and "ship" not in str(archiv).lower():
+                continue
+            try:
+                roh = archiv.read_bytes()
+            except OSError:
+                continue
+            for stueck in roh.split(b"title"):
+                kopf = stueck[:64]
+                if not kopf.startswith(b"=") and not kopf.startswith(b" ="):
+                    continue
+                wert = kopf.partition(b"=")[2].split(b"\n")[0].split(b"\r")[0]
+                titel = wert.decode("utf-8", "ignore").strip().strip('"')
+                if titel and len(titel) < 60 and titel.isprintable():
+                    gefunden.setdefault(titel, str(archiv))
+
+    if not gefunden:
+        print("Nichts gefunden. Dann bitte von Hand nachsehen, unter:")
+        print(r"  ...\Packages\Official\...\SimObjects\Boats\<irgendwas>\sim.cfg")
+        return
+
+    boote = {t: p for t, p in gefunden.items()
+             if "boat" in p.lower() or "boat" in t.lower() or "ship" in t.lower()
+             or "yacht" in t.lower() or "cargo" in t.lower()}
+    print(f"\n{len(gefunden)} Container-Titel gefunden, davon {len(boote)} bootartig.\n")
     for titel, pfad in sorted(boote.items()):
         print(f"  {titel}\n      {pfad}")
     if not boote:
@@ -175,23 +290,12 @@ def titel_suchen() -> None:
             print(f"  {titel}")
 
 
-def probe(titel: str, lat: float, lon: float, dll_pfad: Path, wartesekunden: int) -> int:
-    print(f"SimConnect.dll: {dll_pfad}")
-    sc = ctypes.WinDLL(str(dll_pfad))
-
-    handle = w.HANDLE()
+def _bindungen(sc: ctypes.WinDLL) -> None:
+    """Signaturen setzen -- alle am SDK-Header (Zeile 924 ff., 954) gegengeprueft."""
     sc.SimConnect_Open.restype = ctypes.HRESULT
     sc.SimConnect_Open.argtypes = [
         ctypes.POINTER(w.HANDLE), ctypes.c_char_p, w.HWND, w.DWORD, w.HANDLE, w.DWORD,
     ]
-    try:
-        sc.SimConnect_Open(ctypes.byref(handle), b"FriesenKieker-Probe", None, 0, None, 0)
-    except OSError as e:
-        print(f"FEHLSCHLAG: SimConnect_Open ging nicht durch ({e}).")
-        print("  Laeuft der Simulator? Ist ein Flug geladen (nicht nur das Hauptmenue)?")
-        return 2
-    print("SimConnect_Open: verbunden.")
-
     sc.SimConnect_AICreateSimulatedObject.restype = ctypes.HRESULT
     sc.SimConnect_AICreateSimulatedObject.argtypes = [
         w.HANDLE, ctypes.c_char_p, InitPosition, w.DWORD,
@@ -200,20 +304,130 @@ def probe(titel: str, lat: float, lon: float, dll_pfad: Path, wartesekunden: int
     sc.SimConnect_GetNextDispatch.argtypes = [
         w.HANDLE, ctypes.POINTER(ctypes.POINTER(Recv)), ctypes.POINTER(w.DWORD),
     ]
+    sc.SimConnect_AddToDataDefinition.restype = ctypes.HRESULT
+    sc.SimConnect_AddToDataDefinition.argtypes = [
+        w.HANDLE, w.DWORD, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,
+        ctypes.c_float, w.DWORD,
+    ]
+    sc.SimConnect_RequestDataOnSimObject.restype = ctypes.HRESULT
+    sc.SimConnect_RequestDataOnSimObject.argtypes = [
+        w.HANDLE, w.DWORD, w.DWORD, w.DWORD, ctypes.c_int, w.DWORD, w.DWORD, w.DWORD,
+        w.DWORD,
+    ]
+    sc.SimConnect_AIRemoveObject.restype = ctypes.HRESULT
+    sc.SimConnect_AIRemoveObject.argtypes = [w.HANDLE, w.DWORD, w.DWORD]
     sc.SimConnect_Close.restype = ctypes.HRESULT
     sc.SimConnect_Close.argtypes = [w.HANDLE]
 
+
+def _verbinden(sc: ctypes.WinDLL, name: bytes) -> w.HANDLE | None:
+    handle = w.HANDLE()
+    try:
+        sc.SimConnect_Open(ctypes.byref(handle), name, None, 0, None, 0)
+    except OSError as e:
+        print(f"FEHLSCHLAG: SimConnect_Open ging nicht durch ({e}).")
+        print("  Laeuft der Simulator? Ist ein Flug geladen (nicht nur das Hauptmenue)?")
+        return None
+    return handle
+
+
+def _lage_abonnieren(sc: ctypes.WinDLL, handle, objekt_id: int, req: int,
+                     dauerhaft: bool) -> None:
+    """Position des erzeugten Objekts anfordern.
+
+    Das ist der Teil, der die eigentliche Frage beantwortet: eine vergebene Objekt-ID sagt
+    nur, dass der Sim den Auftrag angenommen hat. Ob dort wirklich etwas STEHT und ob es
+    dort BLEIBT, zeigt erst die Lagemeldung Sekunde fuer Sekunde.
+    """
+    for name, einheit in ((b"PLANE LATITUDE", b"degrees"),
+                          (b"PLANE LONGITUDE", b"degrees"),
+                          (b"PLANE ALTITUDE", b"feet")):
+        sc.SimConnect_AddToDataDefinition(handle, DEF_LAGE, name, einheit,
+                                          DATATYPE_FLOAT64, 0.0, 0xFFFFFFFF)
+    sc.SimConnect_RequestDataOnSimObject(
+        handle, req, DEF_LAGE, objekt_id,
+        PERIOD_SECOND if dauerhaft else PERIOD_ONCE, 0, 0, 0, 0,
+    )
+
+
+def _pakete(sc: ctypes.WinDLL, handle, sekunden: float):
+    """Alle wartenden Meldungen fuer die naechsten <sekunden> ausliefern."""
+    ende = time.time() + sekunden
+    zeiger = ctypes.POINTER(Recv)()
+    groesse = w.DWORD()
+    while time.time() < ende:
+        try:
+            sc.SimConnect_GetNextDispatch(handle, ctypes.byref(zeiger),
+                                          ctypes.byref(groesse))
+        except OSError:
+            # Leere Warteschlange meldet E_FAIL -- das ist keine Stoerung.
+            time.sleep(0.05)
+            continue
+        if not zeiger:
+            time.sleep(0.05)
+            continue
+        yield zeiger.contents.dwID, zeiger
+
+
+def _eigene_lage(sc: ctypes.WinDLL, handle) -> tuple[float, float, float] | None:
+    """Wo steht das Flugzeug gerade?
+
+    Gebraucht fuer --neben-mir. Ein SimObject muss innerhalb der "reality bubble" um das
+    Flugzeug entstehen, sonst kommt EXCEPTION 33 -- das ist der wahrscheinlichste
+    Fehlschlag, wenn der geladene Flug nicht zufaellig am Zielort steht.
+    """
+    _lage_abonnieren(sc, handle, OBJEKT_USER, REQ_EIGENE_LAGE, dauerhaft=False)
+    for art, zeiger in _pakete(sc, handle, 8):
+        if art == RECV_SIMOBJECT_DATA:
+            d = ctypes.cast(zeiger, ctypes.POINTER(RecvSimObjectData)).contents
+            if d.dwRequestID == REQ_EIGENE_LAGE:
+                return d.werte[0], d.werte[1], d.werte[2]
+        if art == RECV_EXCEPTION:
+            ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents
+            print(f"  Eigene Lage nicht lesbar: EXCEPTION {ex.dwException} -- "
+                  f"{EXCEPTION_NAMEN.get(ex.dwException, 'unbekannt')}")
+            return None
+    return None
+
+
+def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
+          dll_pfad: Path, wartesekunden: int, halten: int, nachpruefen: bool,
+          neben_mir: float | None) -> int:
+    print(f"SimConnect.dll: {dll_pfad}")
+    sc = ctypes.WinDLL(str(dll_pfad))
+    _bindungen(sc)
+
+    handle = _verbinden(sc, b"FriesenKieker-Probe")
+    if handle is None:
+        return 2
+    print("SimConnect_Open: verbunden.")
+
+    if neben_mir is not None:
+        lage = _eigene_lage(sc, handle)
+        if lage is None:
+            print("FEHLSCHLAG: --neben-mir braucht die eigene Position, die kam nicht.")
+            sc.SimConnect_Close(handle)
+            return 2
+        m_lat, m_lon, m_alt = lage
+        print(f"  Flugzeug steht bei {m_lat:.5f} / {m_lon:.5f}, {m_alt:.0f} ft.")
+        # Versatz nach Osten, in Grad. 1 Grad Laenge = 111320 m * cos(Breite).
+        import math
+        lon = m_lon + neben_mir / (111320.0 * math.cos(math.radians(m_lat)))
+        lat = m_lat
+        print(f"  Ziel {neben_mir:.0f} m oestlich davon: {lat:.5f} / {lon:.5f}")
+
     pos = InitPosition(
         Latitude=lat, Longitude=lon,
-        Altitude=0.0,          # Meereshoehe -- eine Sandbank liegt auf null
+        Altitude=hoehe,
         Pitch=0.0, Bank=0.0, Heading=210.0,
-        OnGround=1,            # Boot liegt auf, faellt nicht
+        OnGround=1 if am_boden else 0,
         Airspeed=0,
     )
-    anfrage_id = 4711
-    print(f'AICreateSimulatedObject: titel="{titel}" bei {lat:.4f}/{lon:.4f} ...')
+    print(f'AICreateSimulatedObject: titel="{titel}" bei {lat:.4f}/{lon:.4f}, '
+          f'{hoehe:.0f} ft, OnGround={pos.OnGround} ...')
     try:
-        sc.SimConnect_AICreateSimulatedObject(handle, titel.encode("utf-8"), pos, anfrage_id)
+        sc.SimConnect_AICreateSimulatedObject(handle, titel.encode("utf-8"), pos,
+                                              REQ_ERZEUGEN)
     except OSError as e:
         print(f"FEHLSCHLAG: Der Aufruf selbst wurde abgelehnt ({e}).")
         print("  Das hiesse: die DLL kennt die Funktion nicht -- falsche/zu alte SimConnect.dll.")
@@ -225,23 +439,13 @@ def probe(titel: str, lat: float, lon: float, dll_pfad: Path, wartesekunden: int
     # Genau das ist die Falle, an der so ein Probeflug sonst als "hat funktioniert"
     # durchgeht, obwohl nichts entstanden ist.
     print(f"Warte {wartesekunden} s auf die Antwort des Simulators ...")
-    ergebnis = 1
-    ende = time.time() + wartesekunden
-    zeiger = ctypes.POINTER(Recv)()
-    groesse = w.DWORD()
-    while time.time() < ende:
-        try:
-            sc.SimConnect_GetNextDispatch(handle, ctypes.byref(zeiger), ctypes.byref(groesse))
-        except OSError:
-            time.sleep(0.05)
-            continue
-        if not zeiger:
-            time.sleep(0.05)
-            continue
-        art = zeiger.contents.dwID
+    objekt_id = None
+    ergebnis = 3
+    for art, zeiger in _pakete(sc, handle, wartesekunden):
         if art == RECV_ASSIGNED_OBJECT_ID:
             zu = ctypes.cast(zeiger, ctypes.POINTER(RecvAssignedObjectId)).contents
-            print(f"\n  ERFOLG: Objekt-ID {zu.dwObjectID} (Anfrage {zu.dwRequestID}).")
+            objekt_id = zu.dwObjectID
+            print(f"\n  ERFOLG: Objekt-ID {objekt_id} (Anfrage {zu.dwRequestID}).")
             print("  Der Simulator hat das Objekt angelegt.")
             ergebnis = 0
             break
@@ -251,24 +455,105 @@ def probe(titel: str, lat: float, lon: float, dll_pfad: Path, wartesekunden: int
             print(f"\n  ABGELEHNT: EXCEPTION {ex.dwException} -- {name}")
             if ex.dwException == 7:
                 print('  Der Titel stimmt nicht. Mit "--titel-suche" die echten Namen holen.')
+            if ex.dwException == 33:
+                print("  Das Ziel liegt zu weit vom Flugzeug weg. Naeher heranfliegen oder")
+                print("  mit --lat/--lon ein Ziel in Sichtweite waehlen.")
             ergebnis = 1
             break
-        if art == RECV_OPEN:
+        if art in (RECV_OPEN, RECV_QUIT):
             continue
         print(f"  (Nebenmeldung RECV_ID {art}, ignoriert)")
     else:
         print("\n  KEINE ANTWORT. Weder Objekt-ID noch Fehler.")
         print("  Das ist selbst ein Befund: der Aufruf verpufft folgenlos.")
-        ergebnis = 3
+
+    if ergebnis != 0 or objekt_id is None:
+        sc.SimConnect_Close(handle)
+        return ergebnis
+
+    # ---- Die Verbindung bleibt OFFEN, waehrend der Pilot hinsieht. ----------------
+    # KORREKTUR gegenueber der Erstfassung: die schloss sofort nach dem Erfolg. SimConnect
+    # raeumt beim Close die vom Client erzeugten AI-Objekte weg -- der Probeflug haette
+    # also genau das weggeraeumt, was nachgesehen werden soll, und "nichts zu sehen"
+    # gemeldet, ohne dass es am Simulator gelegen haette.
+    print("\n" + "=" * 68)
+    print(f"  JETZT HINSEHEN: per Slew nach {lat:.4f} / {lon:.4f}.")
+    print(f"  Die Verbindung bleibt {halten} s offen -- solange kann das Objekt leben.")
+    print("  Die Lagemeldung unten sagt, ob es noch da ist und auf welcher Hoehe.")
+    print("=" * 68 + "\n")
+
+    _lage_abonnieren(sc, handle, objekt_id, REQ_LAGE, dauerhaft=True)
+    start = time.time()
+    letzte_meldung = 0.0
+    zuletzt_gesehen = None
+    anzahl = 0
+    for art, zeiger in _pakete(sc, handle, halten):
+        t = time.time() - start
+        if art == RECV_SIMOBJECT_DATA:
+            d = ctypes.cast(zeiger, ctypes.POINTER(RecvSimObjectData)).contents
+            if d.dwRequestID != REQ_LAGE:
+                continue
+            anzahl += 1
+            zuletzt_gesehen = t
+            if t - letzte_meldung >= 10 or anzahl == 1:
+                letzte_meldung = t
+                print(f"  t=+{t:6.1f}s  {d.werte[0]:.5f} / {d.werte[1]:.5f}  "
+                      f"{d.werte[2]:7.1f} ft   (Objekt {d.dwObjectID} lebt)")
+        elif art == RECV_EXCEPTION:
+            ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents
+            name = EXCEPTION_NAMEN.get(ex.dwException, "unbekannt")
+            print(f"  t=+{t:6.1f}s  EXCEPTION {ex.dwException} -- {name}")
+        elif art == RECV_QUIT:
+            print(f"  t=+{t:6.1f}s  Der Simulator wurde beendet.")
+            break
+
+    dauer = time.time() - start
+    if anzahl == 0:
+        print("\n  KEINE EINZIGE LAGEMELDUNG. Die Objekt-ID gibt es, das Objekt nicht.")
+        ergebnis = 4
+    elif zuletzt_gesehen is not None and dauer - zuletzt_gesehen > 5:
+        print(f"\n  ABGERAEUMT: letzte Lagemeldung bei t=+{zuletzt_gesehen:.1f}s, "
+              f"danach nichts mehr ({dauer - zuletzt_gesehen:.0f}s Stille).")
+        print("  Das Objekt entstand und verschwand wieder -- wichtiger Befund.")
+        ergebnis = 5
+    else:
+        print(f"\n  DURCHGEHEND DA: {anzahl} Lagemeldungen ueber {dauer:.0f}s, "
+              "bis zum Schluss.")
 
     sc.SimConnect_Close(handle)
+    print("  Verbindung geschlossen.")
 
-    if ergebnis == 0:
-        print("\n" + "=" * 68)
-        print("  JETZT NACHSEHEN -- die Objekt-ID beweist noch nichts Sichtbares.")
-        print(f"  Per Slew oder Anflug nach {lat:.4f} / {lon:.4f} und schauen,")
-        print("  ob das Boot dort liegt und liegen BLEIBT (auch nach 2 Minuten).")
-        print("=" * 68)
+    # ---- Ueberlebt das Objekt die Verbindung? ------------------------------------
+    # Fuer den Kieker entscheidend: laeuft der Spawner spaeter kurz und geht wieder, oder
+    # muss er die ganze Zeit mitlaufen? Das beantwortet nur ein zweiter Anlauf.
+    if nachpruefen:
+        print("\n  Nachprobe: neu verbinden und dieselbe Objekt-ID abfragen ...")
+        time.sleep(3)
+        handle2 = _verbinden(sc, b"FriesenKieker-Nachprobe")
+        if handle2 is None:
+            return ergebnis
+        _lage_abonnieren(sc, handle2, objekt_id, REQ_NACHPRUEFEN, dauerhaft=False)
+        antwort = False
+        for art, zeiger in _pakete(sc, handle2, 8):
+            if art == RECV_SIMOBJECT_DATA:
+                d = ctypes.cast(zeiger, ctypes.POINTER(RecvSimObjectData)).contents
+                if d.dwRequestID != REQ_NACHPRUEFEN:
+                    continue
+                print(f"  UEBERLEBT: {d.werte[0]:.5f} / {d.werte[1]:.5f}  "
+                      f"{d.werte[2]:.1f} ft -- das Objekt haengt NICHT an der Verbindung.")
+                antwort = True
+                break
+            if art == RECV_EXCEPTION:
+                ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents
+                name = EXCEPTION_NAMEN.get(ex.dwException, "unbekannt")
+                print(f"  WEG: EXCEPTION {ex.dwException} -- {name}")
+                print("  Das Objekt lebte nur, solange die Verbindung offen war.")
+                antwort = True
+                break
+        if not antwort:
+            print("  Keine Antwort auf die Nachfrage -- unklar.")
+        sc.SimConnect_Close(handle2)
+
     return ergebnis
 
 
@@ -277,13 +562,23 @@ def main() -> int:
         print("Dieses Skript gehoert auf den Windows-Rechner mit dem Simulator.")
         return 2
     ap = argparse.ArgumentParser(description="FriesenKieker: SimObject-Probeflug")
-    ap.add_argument("--titel", help='Container-Titel, z. B. "Boat_Small"')
+    ap.add_argument("--titel", help='Container-Titel, z. B. "Boat01"')
     ap.add_argument("--titel-suche", action="store_true",
                     help="Nur nachsehen, welche Container der Sim kennt")
     ap.add_argument("--lat", type=float, default=STANDARD_LAT)
     ap.add_argument("--lon", type=float, default=STANDARD_LON)
+    ap.add_argument("--hoehe", type=float, default=0.0, help="Fuss ueber MSL")
+    ap.add_argument("--frei", action="store_true",
+                    help="OnGround=0 statt 1 (dann zaehlt --hoehe wirklich)")
     ap.add_argument("--dll", help="Pfad zu SimConnect.dll")
     ap.add_argument("--warten", type=int, default=10, help="Sekunden auf die Antwort")
+    ap.add_argument("--halten", type=int, default=180,
+                    help="Sekunden, die die Verbindung offen bleibt (zum Hinsehen)")
+    ap.add_argument("--ohne-nachprobe", action="store_true",
+                    help="Nicht pruefen, ob das Objekt das Schliessen ueberlebt")
+    ap.add_argument("--neben-mir", type=float, metavar="METER",
+                    help="Ziel nicht aus --lat/--lon, sondern <METER> oestlich des "
+                         "Flugzeugs (schliesst EXCEPTION 33 aus)")
     a = ap.parse_args()
 
     if a.titel_suche:
@@ -291,7 +586,8 @@ def main() -> int:
         return 0
     if not a.titel:
         ap.error('entweder --titel "..." oder --titel-suche')
-    return probe(a.titel, a.lat, a.lon, dll_finden(a.dll), a.warten)
+    return probe(a.titel, a.lat, a.lon, a.hoehe, not a.frei, dll_finden(a.dll),
+                 a.warten, a.halten, not a.ohne_nachprobe, a.neben_mir)
 
 
 if __name__ == "__main__":
