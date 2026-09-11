@@ -106,10 +106,10 @@ alles Übrige ist weiterhin nur gelesen und **vor jeder Planung zu bestätigen.*
 | Objekt benennen | Container-Titel (`Boat01`) — **gemessen** | Pfad `…/dynamic/SailBoat.obj` — **gemessen** |
 | Eigenes 3D-Modell nötig? | **nein** — Boote liegen bei | **nein** — Boote, Plattformen, Hirsche, Möwen liegen bei |
 | Lebensdauer der Objekte | **nur solange die Verbindung offen ist** — gemessen | Instanz gehört dem Plugin — 150 s belegt, Entladen ungeprüft |
-| Eigene Position lesen | SimVars | Datarefs `sim/flightmodel/position/latitude` / `longitude` / `elevation` |
-| Höhe über Grund | nur über Umwege | `sim/flightmodel/position/y_agl` — **direkt vorhanden** |
+| Eigene Position lesen | SimVars — **extern gemessen; aus WASM heraus gescheitert** (`EXCEPTION 3`) | Datarefs `sim/flightmodel/position/latitude` / `longitude` / `elevation` — **gemessen** |
+| Höhe über Grund | SimVar `PLANE ALT ABOVE GROUND`; der Umweg über die Platzhöhe betrifft nur das EFB im Browser | `sim/flightmodel/position/y_agl` — **direkt vorhanden** |
 | Erweiterungssprache | externes Programm über `exe.xml` **und** WASM-Modul — beides **gemessen**, ein Quelltext für 2020+2024 | XPLM-Plugin (C) — **gebaut und gelaufen** |
-| Objektart bestimmt die Höhe | **ja** — `Boat` auf Meereshöhe, `Animal`/`StaticObject`/`GroundVehicle` auf Geländehöhe | Terrain-Probe für alles |
+| Objektart bestimmt die Höhe | **nur in MSFS 2020** — dort landet `Boat` auf Meereshöhe (Bodensee: 395 m zu tief), alles andere auf Geländehöhe. **In MSFS 2024 findet auch `Boat` den Grund** (Wangerooge gemessen, Binnensee dort ungeprüft) | Terrain-Probe für alles |
 | Zählbare Tiere mitgeliefert | **ja** — Bär, Elefant, Giraffe, Nilpferd; gesetzt und gesehen | **ja** — Hirsche, Möwen |
 | Tablet-Oberfläche wie das EFB | ja (MSFS 2024) | kein Gegenstück |
 
@@ -221,13 +221,40 @@ belanglos, weil die Brügge ohnehin durchläuft.
 2. ~~Lohnt sich ein zweites Paket?~~ **Ja** — bei rund 20 Piloten steht es außer Frage.
 3. ~~Ordnerstruktur und Namensgebung **vor** dem ersten Paket-Commit festlegen.~~
    **Geschrieben am 11.09.2026:** [`friesenbruegge/PROTOKOLL.md`](../friesenbruegge/PROTOKOLL.md)
-   — der simulatorfreie Vertrag, Fassung 1. Daneben entstehen `msfs/` (für 2020 **und** 2024)
-   und `xplane/`. Die Server-Seite kennt nur das Protokoll und nie ein SimObject.
-   **Vom Nutzer noch nicht abgenommen.**
-4. Der Positions-Endpunkt (#23) sollte von vornherein so beschrieben werden, dass ein
-   X-Plane-Plugin ihn ohne Änderung bedienen kann — das kostet jetzt nichts.
-5. **Neu:** Ein X-Plane-Probeflug, der dasselbe belegt wie der MSFS-Probeflug — Objekt
-   entsteht, bleibt liegen, ist sichtbar. Braucht einen Rechner mit X-Plane.
+   — der simulatorfreie Vertrag, Fassung 1, einmal adversarisch gegengeprüft. Daneben
+   entstehen `msfs/` (für 2020 **und** 2024) und `xplane/`. Die Server-Seite kennt nur das
+   Protokoll und nie ein SimObject. **Vom Nutzer noch nicht abgenommen.**
+4. ~~Der Positions-Endpunkt (#23) sollte so beschrieben werden, dass ein X-Plane-Plugin ihn
+   ohne Änderung bedienen kann.~~ **Erledigt:** `POST /api/bruegge/melden` trägt Position und
+   Sollzustand in einer Anfrage und kennt keinen Simulator. #23 ist auf denselben Stand
+   gebracht — **ein Endpunkt, zwei Quellen, eine Prüfung.**
+5. ~~Ein X-Plane-Probeflug.~~ ✅ **Erledigt am 11.09.2026** (s. unten).
+
+### Was seit dem Protokoll entschieden ist
+
+Vier Entscheidungen des Nutzers vom 11.09.2026, die alles Weitere binden:
+
+- **Keine Anmeldung, kein Schlüssel.** Der Server erkennt den Piloten über das
+  Positionsmatching — mit **denselben Regeln, die das EFB schon benutzt**
+  (`_verkehrZusammenfuehren`). Damit wandert kein Geheimnis in eine Textdatei und von dort mit
+  einem Community-Ordner auf fremde Rechner.
+- **Geprüft wird die CID**, nicht das Callsign: eine Zeile in `forum_callsign` beweist den
+  Forum-Login. Am Callsign zu prüfen bräche beim N-Verlust (`FRS123N` → `FRS556`), weil die
+  Tabelle erst beim *nächsten* Login nachzieht.
+- **Der Regeltakt ist 1 s.** Gemessen statt geschätzt: Die Spitze liegt bei 13 gleichzeitig
+  fliegenden Friesen (30 Tage), das Mittel bei 1,58. Voraussetzung ist eine eigene nginx-Zone.
+- **Ohne VATSIM geschieht nichts** — keine Zuordnung, keine Anzeige, keine Objekte. Das ist
+  zugleich die billigste Prüfung, die es gibt.
+
+### Noch zu messen, bevor gebaut wird
+
+| Frage | warum sie zählt |
+|---|---|
+| **WASM kann die eigene Position nicht lesen** (`EXCEPTION 3`) | Ein Modul, das seine Lage nicht liest, kann sie nicht melden **und nicht prüfen, ob ein Objekt noch steht**. Entscheidet über den Auslieferungsweg. |
+| `OnGround=1` wirkt in WASM nicht | sonst schwebt alles |
+| Wird ein weit gesetztes Objekt gezeichnet, wenn der Pilot hinkommt? | entscheidet, ob einmal verteilt oder unterwegs nachgesetzt wird |
+| Schwimmt ein Boot in **MSFS 2024** auf einem Binnensee? | In 2020 liegt es 395 m zu tief; 2024 verhält sich anders, ist dort aber nur an Land gemessen |
+| SmartScreen bei unsignierter EXE | betrifft nur den externen Weg |
 
 ## Forum
 

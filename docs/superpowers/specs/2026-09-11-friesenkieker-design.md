@@ -939,32 +939,47 @@ VATSIM-Netz meldet — ein Objekt erschiene nur, wenn sich etwas als Flugzeug an
 einloggt, was gegen den Code of Conduct verstößt — und eine Injektionsschnittstelle gibt es
 ohnehin nicht.
 
-### 13.3 Die Schnittstelle
+### 13.3 Die Schnittstelle — überholt, sie steht jetzt im Protokoll
 
-```
-GET /api/kieker/event/{id}/lage?lat=<breite>&lon=<laenge>
-Authorization: Bearer <kieker-schluessel>
-→ 200 { "objekte": [ {"titel": "Boat01", "lat": …, "lon": …, "kurs": 210} ] }
-→ 409 wenn die gemeldete Position nicht zur letzten VATSIM-Position der CID passt
-```
+> **Stand 11.09.2026 abends.** Was hier stand, ist durch
+> [`friesenbruegge/PROTOKOLL.md`](../../../friesenbruegge/PROTOKOLL.md) ersetzt. Die Brügge ist
+> aus dem Kieker herausgelöst (#25) und **kennt keine Events** — sie fragt „ich bin hier, was
+> soll um mich herum stehen?" und weiß nicht, ob gezählt, gesucht oder gerätselt wird.
 
-**Der Titel `Boat_Small` aus dem ersten Entwurf existiert nicht** — er war geraten. Gemessen
-sind `Boat01`, `Boat02`, `FishingBoat`, `FishingShip02/03`, `Yacht01–03`, `CargoShip01`,
-`CruiseShip01/02`, `PlatformSupply`; erprobt und bestätigt sind `Boat01` und `FishingBoat`.
-Titel stehen nicht als `sim.cfg` auf der Platte, sondern in unverschlüsselten
-`content\minimal.fsarchive`-Dateien (ERGEBNIS.md, Abschnitt 3).
+**Was sich gegenüber dem Entwurf hier geändert hat, und warum es den Kieker betrifft:**
 
-**Die Brügge holt die Lage einmal — halten muss sie sie dauernd.** Der Abruf oben bleibt
-richtig, aber er beschreibt nur die halbe Aufgabe: Weil Objekte mit der SimConnect-Verbindung
-sterben, hält die Brügge ihre Verbindung offen, solange der Pilot fliegt. Ein Prozess, der
-setzt und sich beendet, hinterlässt nichts.
+| hier stand | gilt jetzt |
+|---|---|
+| `GET /api/kieker/event/{id}/lage` | `POST /api/bruegge/melden` — **event-unabhängig**, ein Endpunkt für alle Eventtypen |
+| `Authorization: Bearer <kieker-schlüssel>` | **gar keine Anmeldung** — der Server erkennt den Piloten am Positionsmatching |
+| Der Pilot kopiert einen Schlüssel aus der Weboberfläche | nichts zu kopieren, nichts einzustellen |
+| Die Antwort trägt Container-Titel (`Boat01`) | die Antwort trägt **Gattungen** (`tier_gross`), die Brügge übersetzt |
 
-Kein `umkreis_km` in der Anfrage (Abschnitt 12). Der Schlüssel ist ein Zufallswert, den der
-Pilot einmal aus der Weboberfläche in die Konfigurationsdatei des Pakets kopiert
-(`kieker_schluessel(schluessel PK, cid, created_at, last_seen)`). Ein nativer Spawner kann den
-Geräteweg des Kniebretts nicht mitbenutzen — der lebt in MSFS' eigenem Speicher, nicht auf der
-Platte. **Der Schlüssel ist ein Zugangsgeheimnis und muss im Admin widerrufbar sein**, wie eine
-Panel-Gerätebindung.
+**Die Anmeldung ist ersatzlos entfallen** (Nutzerentscheidung): Die Brügge schickt keinen
+Schlüssel und keine CID. Der Server sucht den Piloten in `live_positions` — nach **denselben
+Regeln, die das EFB schon benutzt** (`_verkehrZusammenfuehren`, `app/static/index.html:6026`).
+Authentifiziert wird über die **CID**: eine Zeile in `forum_callsign` beweist den Forum-Login.
+
+Damit wandert kein Geheimnis mehr in eine Textdatei — und damit auch keines mit einem
+Community-Ordner auf fremde Rechner. Das war der schwerste Einwand gegen den Schlüssel.
+
+**Für den Kieker ändert das zwei Dinge:**
+
+1. **`kieker_schluessel` entfällt.** Die Tabelle wird nicht gebraucht, und mit ihr die
+   Widerrufs-Oberfläche im Admin.
+2. **Die Wertung bekommt eine bessere Quelle.** Die Brügge meldet die Position im Sekundentakt
+   — dichter als die 15 s des VATSIM-Feeds, aus denen Abschnitt 4 seine Deckungsprüfung baut.
+   Abschnitt 4.6 beschreibt das bereits für das Kniebrett; die Brügge ist der zweite Weg
+   dorthin und erreicht auch, wer kein Tablet aufklappt.
+
+**Was aus diesem Abschnitt gültig bleibt:** Die Container-Titel. `Boat_Small` existiert nicht —
+gemessen sind `Boat01`, `Boat02`, `FishingBoat`, `FishingShip02/03`, `Yacht01–03`,
+`CargoShip01`, `CruiseShip01/02`, `PlatformSupply`; erprobt und im Bild bestätigt sind `Boat01`
+und `CruiseShip01`. Titel stehen nicht als `sim.cfg` auf der Platte, sondern in
+unverschlüsselten `content\minimal.fsarchive`-Dateien (ERGEBNIS.md, Abschnitt 3).
+
+**Und die Brügge läuft durch.** Objekte leben nur, solange die SimConnect-Verbindung offen ist;
+ein Prozess, der setzt und sich beendet, hinterlässt nichts.
 
 ### 13.4 Die Messfragen — Stand nach dem Probeflug
 

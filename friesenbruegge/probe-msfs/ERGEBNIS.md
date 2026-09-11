@@ -648,12 +648,37 @@ und 139,8 ft bei 200 km — **geländefolgend**, nicht auf 0 festgenagelt.
 
 | **MSFS 2024** | Land | Nordsee | Binnensee |
 |---|---|---|---|
-| `Boat` | ✓ gemessen | ✓ | **ungemessen** — der Bodensee-Flug lief in 2020 |
-| `StaticObject`, `Animal`, `GroundVehicle` | ✓ | ✓ | ungemessen |
+| `Boat` | ✓ gemessen | ✓ | **✓ gemessen** |
+| `StaticObject`, `Animal`, `GroundVehicle` | ✓ | ✓ | ✓ gemessen |
 
-**Die eine offene Zelle ist ehrlich offen:** Dass ein Boot in MSFS 2024 auch auf einem
-Binnensee schwimmt, ist die naheliegende Erwartung — belegt ist sie nicht. Wer einen Event am
-Bodensee plant, misst es vorher.
+#### ✅ Die letzte offene Zelle ist geschlossen (11.09.2026 abends)
+
+Derselbe Flug, derselbe Platz, dieselbe Koordinate wie beim 2020er Lauf — **EDNY
+Friedrichshafen, Objekte auf 47.6450 / 9.5000**, 3,0 km in Richtung 196° draußen auf dem See:
+
+```
+Windmill      (StaticObject)   1297,1 ft     <- Kontrolle: der Sim KENNT den Seespiegel
+CruiseShip01  (Boat)           1297,2 ft     <- in MSFS 2020: 0,0 ft
+Boat01        (Boat)           1297,1 ft
+```
+
+**Die Windmühle ist die entscheidende Zeile.** Sie beweist, dass das Gelände geladen war und
+der Simulator die Seehöhe kannte — dieselbe Stelle, dieselbe Sitzung. Genau diese Kontrolle
+fehlte beim Chiemsee-Versuch, dessen 0,0 ft deshalb nichts aussagten.
+
+**Sichtbestätigt:** Der Pilot hat das Kreuzfahrtschiff auf dem See gesehen.
+
+**Damit steht der Unterschied zwischen den Simulatoren fest** — gemessen, nicht hergeleitet:
+
+| | MSFS 2020 | MSFS 2024 |
+|---|---|---|
+| `Boat` über Land (Wangerooge, Gelände ~3 m) | **0,0 ft** — versunken, unsichtbar | **2,4 ft** — im Gras, im Bild |
+| `Boat` auf dem Bodensee (Spiegel 1296 ft) | **0,0 ft** — 395 m zu tief | **1297,2 ft** — schwimmt |
+| Kontrollobjekte an derselben Stelle | 1297,0 ft | 1297,1 ft |
+
+**In MSFS 2024 verhält sich `Boat` wie jede andere Kategorie.** Die Einschränkung gilt allein
+für MSFS 2020 — und damit für den Simulator, den laut Nutzer nur **wenige** aus der Gruppe
+fliegen.
 
 **Das ist ein bekannter Fehler, nicht unser Aufbau.** Im MSFS-DevSupport steht er seit dem
 11.05.2022 als *„SimConnect injected Boat underwater"*: Boote spawnen an den **Great Lakes**

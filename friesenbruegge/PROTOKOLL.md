@@ -328,13 +328,13 @@ Stelle aus — er sendet nie ins Leere.
 
 ### Der Katalog der Fassung 1
 
-| Gattung | Grund | MSFS 2020 + 2024 | X-Plane 12 |
+| Gattung | MSFS 2020 + 2024 | X-Plane 12 | Grund |
 |---|---|---|---|
-| `tier_gross` | Gelände | `BlackBear` ✅ | `deer_buck.obj` ⚠ |
-| `bauwerk` | Gelände | `Windmill` ✅ | `OilPlatform.obj` ⚠ |
-| `fahrzeug` | Gelände | `ASO_Ambulance_Japan` ✅ | `lib/airport/vehicles/…` ⚠ |
-| `boot_klein` | **Meereshöhe** | `Boat01` ✅ | `SailBoat.obj` ✅ |
-| `boot_gross` | **Meereshöhe** | `CruiseShip01` ✅ | `Perry.obj` ⚠ |
+| `tier_gross` | `BlackBear` ✅ | `deer_buck.obj` ⚠ | Gelände |
+| `bauwerk` | `Windmill` ✅ | `OilPlatform.obj` ⚠ | Gelände |
+| `fahrzeug` | `ASO_Ambulance_Japan` ✅ | `lib/airport/vehicles/…` ⚠ | Gelände |
+| `boot_klein` | `Boat01` ✅ | `SailBoat.obj` ✅ | Gelände — **außer MSFS 2020: Meereshöhe** |
+| `boot_gross` | `CruiseShip01` ✅ | `Perry.obj` ⚠ | Gelände — **außer MSFS 2020: Meereshöhe** |
 
 ✅ = gesetzt und im Bild gesehen · ⚠ = Datei auf der Platte nachgewiesen, aber nie gesetzt
 
@@ -367,40 +367,41 @@ Daraus die **Grundregel**, die jede Gattung im Katalog trägt:
 - **`Grund: Meereshöhe`** — das Objekt landet **immer** auf 0 ft MSL, gleich was darunter
   liegt. `OnGround`, `Altitude` und `SetDataOnSimObject` sind wirkungslos.
 
-### ⚠ Für welchen Simulator diese Regel gilt, ist NICHT geklärt
+### ✅ Die Regel gilt für MSFS 2020 — in MSFS 2024 nicht (beides gemessen)
 
-**Die Bodensee-Messung ist ohne Simulator-Angabe protokolliert.** Im ganzen
-[`probe-msfs/ERGEBNIS.md`](probe-msfs/ERGEBNIS.md) steht der Simulator genau einmal (Zeile 4,
-MSFS 2024) und gilt dort dem Vormittagslauf; der Bodensee-Abschnitt am Ende nennt keinen.
-Damit ist **nicht belegt**, dass die Regel für beide MSFS-Fassungen gilt — der Katalog oben
-führt sie trotzdem unter „MSFS 2020 + 2024".
+**Hier stand die Regel ohne Simulator, und das war falsch.** Am selben Abend nachgemessen, auf
+demselben Platz, an derselben Koordinate:
 
-**Es gibt sogar einen Hinweis auf das Gegenteil.** Unmittelbar nach der Bodensee-Tabelle steht
-in ERGEBNIS.md: *„Für MSFS 2024 gilt das nicht: Dort kommt `Altitude` an."* Wenn das stimmt,
-ist `Boat` in MSFS 2024 **steuerbar** — man müsste nur die Zielhöhe kennen. Dann wäre die
-Kategorie dort nicht kaputt, sondern nur unbequem.
+| | MSFS 2020 | MSFS 2024 |
+|---|---|---|
+| `Windmill` (Kontrolle) | 1297,0 ft | 1297,1 ft |
+| `CruiseShip01` (**Boat**) | **0,0 ft** — 395 m zu tief | **1297,2 ft** — schwimmt |
+| `Boat01` (**Boat**) | 0,0 ft über Land | 1297,1 ft |
 
-Auch die Gegenprobe an Land trennt nicht sauber: Auf Wangerooge (Platzhöhe ~3–10 ft) sind
-„Meereshöhe" und „Geländehöhe" nur wenige Fuß auseinander — dieselbe Schwäche, die schon den
-Nordsee-Fall wertlos machte.
+**Die Kontrollzeile trägt den Beweis:** Der Simulator kannte die Seehöhe in beiden Fällen. Wo
+das Boot trotzdem auf 0 liegt, ist es die Kategorie — und das ist nur in MSFS 2020 so.
 
-**Zu klären, bevor der Katalog steht:** Bodensee-Messung je Simulator wiederholen, mit
-`Boat01` **und** `CruiseShip01`, und den Simulator ins Protokoll schreiben. Bis dahin führt
-die `Grund`-Spalte je Simulator einen eigenen Wert, statt einen gemeinsamen zu behaupten.
+**Folge für den Katalog:** Die Spalte `Grund` steht **je Simulator**, nicht gemeinsam.
 
-*(Gefunden im Fable-Review vom 11.09.2026. Es ist an diesem Tag das dritte Mal, dass eine
-Aussage über Bootshöhen weiter reichte als ihre Messung.)*
+| Gattung | MSFS 2020 | MSFS 2024 | X-Plane 12 |
+|---|---|---|---|
+| `boot_klein`, `boot_gross` | **Meereshöhe** | Gelände | Gelände (Terrain-Probe) |
+| alle übrigen | Gelände | Gelände | Gelände |
 
-**Eine Gattung mit `Grund: Meereshöhe` darf nur dort angefordert werden, wo der Meeresspiegel
-die Oberfläche ist.** Auf der Nordsee stimmt das — und der FriesenKieker spielt an den
-Friesischen Inseln, dort sind Boote also brauchbar. Über Land versinken sie (auf Wangerooge
-drei Meter tief im Platz, komplett unsichtbar), auf dem Bodensee 395 m tief.
+**Praktisch heißt das:** Nur in MSFS 2020 darf der Server keine Boote über Land oder
+Binnengewässern anfordern. Auf der Nordsee sind sie auch dort brauchbar, weil MSL die
+Oberfläche ist — und der FriesenKieker spielt an den Friesischen Inseln. **MSFS 2020 fliegen
+laut Nutzer ohnehin nur wenige.**
 
-Das ist ein **bekannter MSFS-Fehler**, kein Aufbaufehler: *„SimConnect injected Boat
-underwater"*, gemeldet am 11.05.2022 für die Great Lakes, bis heute ohne Antwort von Asobo
-([DevSupport](https://devsupport.flightsimulator.com/t/simconnect-injected-boat-underwater/4226)).
-Der dort genannte Ausweg ist ein eigenes SimObject mit **Flugzeug-Kategorie** — mit dem
-Nachteil, dass Schiffe dann als Flugzeuge gezählt werden.
+Der zugrundeliegende MSFS-Fehler ist seit dem 11.05.2022 im DevSupport gemeldet
+(*„SimConnect injected Boat underwater"*, Great Lakes) und bis heute ohne Antwort von Asobo.
+Der Melder fragte im Juni 2023, ob MSFS 2024 es behebe —
+**die Antwort ist, nach dieser Messung: ja.**
+<https://devsupport.flightsimulator.com/t/simconnect-injected-boat-underwater/4226>
+
+*(Auf dem Weg hierher stand diese Regel zweimal zu weit gefasst: erst gestützt auf eine
+untaugliche Probe aus 800 km Entfernung, dann ohne Simulator-Angabe. Beide Male hat der
+Nutzer widersprochen, beide Male zu Recht.)*
 
 ### Wie der Server davon erfährt
 
@@ -580,10 +581,15 @@ als `DEABC` unterwegs ist. Das soll so bleiben.
 
 **Wer gar kein Callsign im Forum-Profil führt, kann nicht melden.** Ohne Eintrag legt der
 Login keine Zeile an, und ohne Zeile gibt es keine CID zum Prüfen. Ein *veraltetes* Callsign
-schadet dagegen nicht mehr — geprüft wird die CID.
+schadet dagegen nicht — geprüft wird die CID.
 
-Das ist kein Fehler, sondern der Preis dieser Prüfung. Er gehört aber in die Anleitung, sonst
-sucht jemand den Fehler an der falschen Stelle.
+**Entschieden am 11.09.2026:** Dafür wird **keine** Ersatzzeile angelegt (CID ohne Callsign).
+Auf die Frage, ob der Login eine solche schreiben soll, kam: *„Das darf eigentlich nicht
+vorkommen — also lass es."* Ein Friese ohne Rufzeichen im Profil ist ein gepflegtes Profil
+weniger, kein Sonderfall, den das Protokoll abfangen muss.
+
+Der Preis gehört trotzdem in die Anleitung, sonst sucht der erste Betroffene den Fehler in der
+Brügge statt im Forum.
 
 **Und der Forum-Login bleibt die einmalige Voraussetzung.** „Keine Anmeldung" heißt: kein
 Schlüssel, keine Konfiguration, kein Schritt vor jedem Flug. Es heißt nicht, dass jemand ohne

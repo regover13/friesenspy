@@ -6,6 +6,49 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-11 (abends) — Protokoll ueberarbeitet: keine Anmeldung mehr (Sim-Sitzung)
+
+**Betrifft `friesenbruegge/`, `docs/` und die Issues #23/#25** — kein Anwendungscode, keine
+Version, kein CHANGELOG-Eintrag. Live blieb v14.29.0.
+
+**Wer an der Server-Seite arbeitet, liest `friesenbruegge/PROTOKOLL.md` Abschnitt 5 neu.**
+Der Entwurf mit einem Bruegge-Schluessel ist verworfen, ebenso der Nachfolger, der
+`panel_devices` mitbenutzt haette. Es gibt **gar keine Anmeldung** mehr:
+
+- Die Bruegge schickt **keinen Schluessel und keine CID**. Der Server erkennt den Piloten am
+  **Positionsmatching** gegen `live_positions`.
+- **Dafuer werden die Regeln des EFB uebernommen**, nicht neue erfunden:
+  `_verkehrZusammenfuehren` (`app/static/index.html:6026`), einschliesslich der Konstanten bei
+  `:5948-5971`. Wandert das Matching in den Server, gehoeren sie an EINE Stelle statt in zwei
+  Dateien mit zwei Wahrheiten.
+- **Authentifiziert wird ueber die CID**: eine Zeile in `forum_callsign` beweist den
+  Forum-Login. NICHT ueber das Callsign -- das braeche beim N-Verlust (FRS123N -> FRS556),
+  weil die Tabelle erst beim naechsten Login nachzieht (`app/main.py:2755-2766`).
+- **Ohne VATSIM geschieht nichts**: keine Zeile in `live_positions` -> keine Zuordnung, keine
+  Anzeige, keine Ablage. Die Pruefung steht VOR allem Teuren und ist ein Blick auf einen
+  Primaerschluessel.
+- **Regeltakt 1 s** (vorher 2 s). Gemessen in `position_history`: Spitze 13 gleichzeitig
+  fliegende Friesen ueber 30 Tage, Mittel 1,58. **Voraussetzung ist eine eigene nginx-Zone**
+  fuer `/api/bruegge/` -- 60 r/min waeren in der gemeinsamen Zone die halbe Ration einer IP.
+- Die Bruegge-Position gehoert in eine **eigene** Ablage, nicht in `live_positions`: Der
+  Poller wuerde sie sonst dreimal je Minute mit dem groberen VATSIM-Stand ueberbuegeln
+  (`INSERT OR REPLACE`, `app/database.py:2280`).
+
+**#23 ist auf denselben Stand gebracht** -- ein Endpunkt, zwei Quellen, eine Pruefung. Dort
+steht auch ein Messergebnis, das dieses Vorhaben unmittelbar trifft: **Aus WASM heraus ist das
+Lesen der eigenen Position gescheitert** (`EXCEPTION 3`, `probe-msfs/wasm/modul.cpp:183`).
+Objekte setzen geht; die eigene Lage lesen nicht. Solange das offen ist, fuehrt der Weg fuer
+die Positionsmeldung ueber die EFB-Seite oder ein externes Programm.
+
+**Zwei Korrekturen an frueheren Aussagen dieser Sitzung**, beide vom Nutzer angestossen:
+
+- Der Bodensee-Befund ("die Kategorie `Boat` ist kaputt") gilt **MSFS 2020**. In MSFS 2024
+  findet auch ein Boot den Grund -- auf Wangerooge gemessen (2,4 ft, im Bild), waehrend
+  dasselbe Modell in 2020 auf 0,0 ft lag. Der Katalog fuehrt die Hoehen-Semantik jetzt je
+  Simulator; der Binnensee-Fall ist fuer 2024 **ungemessen**.
+- `alt_agl_ft` ist in MSFS **nicht** nur ueber Umwege zu haben: `PLANE ALT ABOVE GROUND` ist
+  ein Standard-SimVar. Der Umweg betrifft das EFB im Browser, nicht SimConnect.
+
 ## 2026-09-11 — Bruegge-Protokoll Fassung 1 geschrieben, Deploy-Filter gesetzt (Sim-Sitzung)
 
 **Betrifft `friesenbruegge/`, `docs/` und `.github/`** — kein Anwendungscode, keine Version,
