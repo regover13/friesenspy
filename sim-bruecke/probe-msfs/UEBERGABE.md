@@ -2,7 +2,12 @@
 
 **Für:** eine Claude-Code-Sitzung auf dem Windows-Rechner mit MSFS
 **Von:** der Server-Sitzung (VPS), 11.09.2026
-**Repo:** `regover13/friesenspy` — diese Datei liegt in `msfs-kieker/probe/`
+**Repo:** `regover13/friesenspy` — diese Datei liegt in `sim-bruecke/probe-msfs/`
+
+> ⚠ **Der Ordner hieß bis zum 11.09.2026 `msfs-kieker/probe/`.** Wenn du den alten Pfad
+> aufgerufen bekommen hast: einmal `git pull`, dann stimmt es wieder. Inhaltlich hat sich am
+> Probeflug **nichts** geändert — nur der Spawner ist inzwischen als eigenes, event- und
+> simulator-unabhängiges Stück entworfen (Issue #25), und dazu passte der alte Name nicht mehr.
 
 ---
 
@@ -175,7 +180,7 @@ Ein Push auf `main` löst GitHub Actions aus, baut das Image neu und **startet d
 FriesenSpy-Container neu**. Wer dann mit offenem Kniebrett im Flug ist, bekommt ein schwarzes
 Tablet — das ist in diesem Projekt schon passiert und eine stehende Regel.
 
-`msfs-kieker/` landet zwar gar nicht im Image (der Dockerfile kopiert nur `app/` und
+`sim-bruecke/` landet zwar gar nicht im Image (der Dockerfile kopiert nur `app/` und
 `scripts/`), der Neustart passiert trotzdem.
 
 **Also: lokal committen, nicht pushen.** Der Nutzer oder die Server-Sitzung pusht später.
@@ -196,7 +201,7 @@ aufbaut.
 
 ## Ausdrücklich NICHT Teil dieser Aufgabe
 
-- Kein `msfs-kieker`-Paket bauen, keine `manifest.json`, kein `layout.json`.
+- Kein `sim-bruecke`-Paket bauen, keine `manifest.json`, kein `layout.json`.
 - Kein WASM-Modul (das ist eine eigene, spätere Messfrage).
 - Keine Änderung am FriesenSpy-Server, an `app/` oder an der Datenbank.
 - Keine Robben-Modelle, kein Blender.

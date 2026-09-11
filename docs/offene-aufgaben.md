@@ -67,10 +67,10 @@ Datenmodell des Kiekers sind simulator-agnostisch — sie rechnen mit Koordinate
 Zeit. Auch der Positions-Endpunkt aus #23 fragt nicht, wer meldet. **Dort ist nichts
 verbaut.**
 
-**Simulator-spezifisch ist ausschließlich das Paket.** Und schon der vorgesehene Ordnername
-`msfs-kieker/` schreibt MSFS fest. Wenn X-Plane ernsthaft in Frage kommt, gehört das vor dem
-ersten Commit des Pakets geklärt — ein späterer Umzug ist billiger als eine Struktur, die
-zwei Simulatoren nicht nebeneinander verträgt.
+**Simulator-spezifisch ist ausschließlich das Paket.** Der ursprünglich vorgesehene Ordnername
+`msfs-kieker/` schrieb MSFS fest; er heißt seit dem 11.09.2026 **`sim-bruecke/`**, und der
+MSFS-Probeflug liegt darin als `probe-msfs/`. Der Entwurf dazu steht in **#25** — eine
+event-unabhängige Brücke, die für alle drei Simulatoren dasselbe Protokoll spricht.
 
 ### Was ich dazu weiß — und was davon ungeprüft ist
 

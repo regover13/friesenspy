@@ -51,12 +51,12 @@ wir es!"*). Es gibt keinen Ersatzplan und es soll keinen geben.
 
 | Stufe | Was sie bringt | Zustand |
 |---|---|---|
-| **0 — Der Probeflug** | Antwort auf die eine Frage | **jetzt**, `msfs-kieker/probe/` |
+| **0 — Der Probeflug** | Antwort auf die eine Frage | **jetzt**, `sim-bruecke/probe-msfs/` |
 | **1 — Eventtyp + Paket** | der Kieker, wie er unten beschrieben ist | wartet auf Stufe 0 |
 | **2 — Politur** | Badge fürs Forum, eigene Robben-Modelle | danach |
 
-**Der Probeflug liegt fertig bereit:** `msfs-kieker/probe/kieker_probe.py` mit Anleitung in
-`msfs-kieker/probe/README.md`. Er setzt ein **mitgeliefertes Boot** — MSFS bringt Boote als
+**Der Probeflug liegt fertig bereit:** `sim-bruecke/probe-msfs/kieker_probe.py` mit Anleitung in
+`sim-bruecke/probe-msfs/README.md`. Er setzt ein **mitgeliefertes Boot** — MSFS bringt Boote als
 SimObjects mit, es braucht also kein 3D-Modell, keine Lizenzfrage, kein Blender. Fällt die
 Antwort negativ aus, hat der Versuch keine Modellierungsarbeit gekostet.
 
@@ -810,15 +810,16 @@ auf der Platte. Wer sie öffnet, hat alle Zahlen, ohne einen Meter zu fliegen. D
 Handgriff vor dem Flug und dem Wegfall von MSFS 2020 der dritte Grund, warum dieser Weg nur der
 Rückfall ist.
 
-## 13. Stufe 2 — das Paket `msfs-kieker/`
+## 13. Stufe 2 — das Paket `sim-bruecke/`
 
 **Nicht Gegenstand der Umsetzung dieser Spec.** Hier steht der Vertrag, damit Stufe 1 ihn nicht
 verbaut.
 
 ### 13.0 ⚠ Vorbehalt: X-Plane ist mitzudenken
 
-**Vorgemerkt vom Nutzer am 11.09.2026.** Dieser ganze Abschnitt setzt MSFS voraus — der
-Ordnername `msfs-kieker/` schreibt es sogar fest. Nur **4 von 61 Piloten** haben eine
+**Vorgemerkt vom Nutzer am 11.09.2026.** Dieser ganze Abschnitt war auf MSFS zugeschnitten.
+Er ist damit **überholt** — der Spawner wird event- und simulator-unabhängig entworfen, siehe
+**#25**; dieser Abschnitt beschreibt nur noch die MSFS-Seite davon. Nur **4 von 61 Piloten** haben eine
 Kniebrett-Gerätebindung; ein rein MSFS-Weg erreicht also womöglich einen kleinen Teil der
 Gruppe.
 
@@ -834,7 +835,7 @@ weg.
 
 ### 13.1 Ort
 
-`msfs-kieker/` im friesenspy-Repo, neben `msfs-panel/`. Begründung ist die Kopplung: Das Paket
+`sim-bruecke/` im friesenspy-Repo, neben `msfs-panel/`. Begründung ist die Kopplung: Das Paket
 holt seine Lage vom Server; ein eigenes Repo ließe Paketversion und Server-Schnittstelle
 auseinanderdriften — dasselbe Problem, das das Kniebrett schon hatte („Erforderlich ist
 mindestens 2.0.0"), nur über zwei Repos verteilt.
@@ -1037,7 +1038,7 @@ beantwortet, zwei mit der verworfenen Zwischenstufe weggefallen.
 
 **Offen:**
 
-1. **Der Probeflug** (`msfs-kieker/probe/`) — er braucht deinen Simulator. Alles andere
+1. **Der Probeflug** (`sim-bruecke/probe-msfs/`) — er braucht deinen Simulator. Alles andere
    wartet darauf. Wenn etwas klemmt: die Ausgabe herschicken, dann repariere ich das Skript,
    statt zu raten.
 
