@@ -21,6 +21,13 @@ Ein Spawner, der kurz läuft, seine Objekte setzt und sich beendet, hinterlässt
 muss durchlaufen, solange jemand die Objekte sehen soll. Das ist keine Absage — es heißt nur,
 dass der Kieker-Spawner ein mitlaufender Begleitprozess wird, kein Einmal-Aufruf.
 
+**Zweifach belegt, und das war nötig.** `EXCEPTION 3 — UNRECOGNIZED_ID` allein hätte zweierlei
+heißen können: das Objekt ist weg, *oder* es existiert weiter und ist einem neuen Client nur
+nicht unter derselben ID bekannt. Der Unterschied entscheidet über den Zuschnitt des Pakets,
+also wurde er nachgesehen: Nach dem Ende beider Prozesse waren **Kutter und Kreuzfahrtschiff
+sichtbar verschwunden**, an einer Stelle, an der sie Minuten zuvor noch auf Screenshots lagen.
+Es ist die erste Lesart.
+
 ### Was belegt ist und wodurch
 
 | Frage | Antwort | Beleg |
@@ -31,7 +38,7 @@ dass der Kieker-Spawner ein mitlaufender Begleitprozess wird, kein Einmal-Aufruf
 | Bleibt es liegen? | **ja** | 180 Lagemeldungen über 180 s, Koordinate auf 5 Nachkommastellen unverändert |
 | Liegt es auf der Oberfläche? | ja, `OnGround=1` genügt | Land 2,4 ft, Wasser 0,0 ft — der Sim setzt selbst auf |
 | Schwimmt es richtig? | **ja** | Screenshot 08:36:07 — Kutter auf der Wasserlinie, mit Schatten im Wasser |
-| Überlebt es die Verbindung? | **nein** | Nachprobe: `EXCEPTION 3 — UNRECOGNIZED_ID` |
+| Überlebt es die Verbindung? | **nein** | `EXCEPTION 3` — **und beide Schiffe waren nach Prozessende sichtbar weg** |
 | Gibt es eine Entfernungsgrenze? | **nein, beim Anlegen nicht** | bis 10.000 km angenommen, s. Abschnitt „Reality Bubble" |
 
 ## 2. Rohe Ausgabe
