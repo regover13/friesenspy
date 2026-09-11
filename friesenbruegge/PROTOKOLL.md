@@ -470,9 +470,14 @@ schreiben.
 4. Die Brügge schickt ihn bei jeder Anfrage mit:
    `Authorization: Bearer <wert>`
 
-**Die CID steht in der Tabelle** — die Brügge schickt keine mit, und der Server muss nichts
-über die Position zuordnen. Ein widerrufener Eintrag bekommt `401`, und die Brügge räumt auf,
-statt es erneut zu versuchen.
+**Die CID steht in der Tabelle — aber nur, weil Schritt 1 stattgefunden hat.** Der Eintrag
+entsteht ausschließlich hinter dem Forumslogin; ohne ihn gibt es keine Zeile, keine CID und
+damit keine Zuordnung. Die Brügge schickt deshalb keine CID mit, und der Server muss auch
+nichts über die Position zuschreiben — **aber der Login ist die Voraussetzung dafür, nicht
+etwas, das dadurch entfiele.**
+
+Ein widerrufener Eintrag bekommt `401`, und die Brügge räumt auf, statt es erneut zu
+versuchen.
 
 **Nur über HTTPS.** Der Wert geht bei jeder Anfrage über die Leitung. Für MSFS-WASM ist das
 ohnehin die einzige Möglichkeit — die Network-API dort lässt ausschließlich `https` zu (und
@@ -488,7 +493,12 @@ Rechtetrennung oben.
 bekannten VATSIM-Position derselben CID — Sprung über hunderte Kilometer, Geschwindigkeit
 jenseits des Musters —, antwortet er `409` und verwirft sie.
 
-Das steht schon in der Kieker-Spec (13.3) und ist beim Schreiben dieses Protokolls
+**Damit hängt eine Meldung an zwei Bedingungen, nicht an einer:** Der Eintrag sagt, *wer*
+meldet — die Prüfung sagt, dass die Meldung *plausibel* ist. Dieselbe Regel steht seit dem
+11.09.2026 wörtlich in [#23](https://github.com/regover13/friesenspy/issues/23), damit
+Kniebrett und Brügge nicht verschieden behandelt werden.
+
+Das steht schon in der Kieker-Spec (13.3) und war beim Schreiben dieses Protokolls
 herausgefallen. **Ohne die Prüfung ist eine Kieker-Abdeckung frei erfindbar**, und zwar
 billiger als über jeden Weg, den Spec-Abschnitt 12 als Schummelrisiko diskutiert: Man
 schickte einfach Koordinaten. Die Prüfung kostet die Brügge nichts — sie geschieht
