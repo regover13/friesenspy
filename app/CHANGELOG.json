@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.30.0",
+    "date": "2026-09-11",
+    "highlight": false,
+    "title": "Vorarbeit: die Sim-Brügge meldet Positionen",
+    "items": [
+      "🌉 Neu im Hintergrund: eine Brügge für den Flugsimulator, die die eigene Position sekundengenau an FriesenSpy meldet — deutlich dichter und aktueller als der VATSIM-Feed mit seinem 15-Sekunden-Raster. Sie braucht keine Anmeldung und keine Einstellungen: Der Server erkennt den Piloten an der Position, und zwar nur, wenn er auf VATSIM mit Friesen-Rufzeichen fliegt und sich schon einmal im Forum angemeldet hat.",
+      "🔧 Zu sehen ist davon noch nichts — das Paket ist nicht verteilt, und die Karte zeigt weiterhin die VATSIM-Positionen. Dieser Schritt legt die Serverseite und die Admin-Steuerung an.",
+      "🎛️ Dazu eine Notbremse im Admin: Wird es eng, lässt sich der Melde-Takt von einer Sekunde bis auf ganz aus drosseln — sofort und für alle, ohne dass dafür etwas neu ausgeliefert werden muss."
+    ]
+  },
+  {
     "version": "14.29.0",
     "date": "2026-09-10",
     "highlight": false,
