@@ -12,12 +12,16 @@
 #
 # Nach dem Ablegen muss der Simulator NEU GESTARTET werden.
 
+param([switch]$Fuer2020)     # ins Community-Verzeichnis von MSFS 2020 statt 2024
+
 $ErrorActionPreference = 'Stop'
 $hier = $PSScriptRoot
 $wasm = "$hier\modul.wasm"
 if (-not (Test-Path $wasm)) { throw "modul.wasm fehlt -- erst .\bauen.ps1 laufen lassen." }
 
-$community = "$env:LOCALAPPDATA\Packages\Microsoft.Limitless_8wekyb3d8bbwe\LocalCache\Packages\Community"
+$paketordner = if ($Fuer2020) { 'Microsoft.FlightSimulator_8wekyb3d8bbwe' }
+               else            { 'Microsoft.Limitless_8wekyb3d8bbwe' }
+$community = "$env:LOCALAPPDATA\Packages\$paketordner\LocalCache\Packages\Community"
 if (-not (Test-Path $community)) { throw "Community-Ordner nicht gefunden: $community" }
 
 $paket = Join-Path $community "friesenbruegge-wasm-probe"
@@ -37,10 +41,10 @@ $filetime = (Get-Item "$paket\modules\modul.wasm").LastWriteTimeUtc.ToFileTimeUt
   "manufacturer": "",
   "creator": "FriesenFlieger",
   "package_version": "0.1.0",
-  "minimum_game_version": "1.7.35",
+  "minimum_game_version": "$(if ($Fuer2020) { '1.38.2' } else { '1.7.35' })",
   "minimum_compatibility_version": "7.26.0.214",
   "export_type": "Community",
-  "builder": "Microsoft Flight Simulator 2024",
+  "builder": "$(if ($Fuer2020) { 'Microsoft Flight Simulator' } else { 'Microsoft Flight Simulator 2024' })",
   "package_order_hint": "MISC",
   "release_notes": {
     "neutral": {

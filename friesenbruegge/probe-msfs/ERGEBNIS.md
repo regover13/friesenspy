@@ -453,6 +453,40 @@ WASM nicht ins Netz darf — GoFish und Flow nutzen die Funktion nachweislich er
 gegen *externe* Server (`http response received: 200` steht im selben Log). Für die Brügge, die
 `friesenspy.devprops.de` fragt, ist der lokale Fall ohnehin nicht der Anwendungsfall.
 
+### WASM in MSFS 2020: nicht belegt — und ein Modul reicht ohnehin nicht für beide
+
+**Schon ohne Simulator gemessen:** Das 2020er SDK kennt `AICreateSimulatedObject_EX1`
+**nicht** — die Funktion steht nicht in seinem `SimConnect.h`. Ein Modul, das sie importiert,
+scheitert dort am unauflösbaren Import, genau wie zuvor an `__stack_chk_fail`.
+
+Also eine eigene Fassung, gegen das 2020er SDK gebaut, mit der alten Funktion ohne Suffix.
+Ergebnis in MSFS 2020:
+
+```
+WASM: Compiled module modul.wasm in 1 seconds
+WASM: Module modul.wasm loaded...
+WASM: Module modul.wasm initialized.
+```
+
+Geladen, übersetzt, initialisiert — **aber kein Objekt** (von außen mit `--boote-zaehlen`
+gegengeprüft: kein einziges Boot im Umkreis von 5 km). Und **keine einzige `[modul.wasm]`-Zeile**,
+obwohl dieselben `fprintf`-Aufrufe in MSFS 2024 nach jedem Schritt eine lieferten. MSFS 2020
+leitet WASM-`stderr` offenbar nicht in die Konsole — damit fehlt genau das Werkzeug, das die
+2024er Diagnose überhaupt erst möglich gemacht hat.
+
+**Nicht belegt heißt hier nicht „geht nicht".** Es heißt: Ohne Log ist die Ursache von außen
+nicht zu bestimmen, und die Suche hätte dieselbe Form wie in 2024 — Start für Start, nur blind.
+
+**Für den Zuschnitt ist die Frage ohnehin entschieden:** Weil `_EX1` in 2020 fehlt, braucht der
+WASM-Weg **zwei Module**, je eines pro Simulator. Der externe Weg braucht **ein** Programm für
+beide (gemessen). Damit schrumpft der WASM-Vorteil von „ein Ordner zum Hineinkopieren" auf „der
+richtige Ordner für deine Version".
+
+| | MSFS 2020 | MSFS 2024 |
+|---|---|---|
+| extern über `exe.xml` | ✅ ein Programm für beide | ✅ |
+| WASM-Modul | ❌ nicht belegt, eigener Build nötig | ✅ |
+
 ## Was daraus für den Kieker folgt
 
 Die Entscheidungsfrage ist positiv beantwortet — das Tor ist offen. Drei Dinge sind dabei

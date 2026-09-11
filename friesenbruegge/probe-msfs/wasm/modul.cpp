@@ -92,8 +92,15 @@ static void boot_setzen(const Lage& lage)
         pos.OnGround  = varianten[i].on_ground;
         pos.Airspeed  = 0;
 
+#ifdef FUER_MSFS2020
+        // MSFS 2020 kennt _EX1 NICHT -- die Funktion fehlt in seinem SimConnect.h
+        // (geprueft am Header des 2020er SDK, 11.09.2026). Ein Modul, das sie importiert,
+        // scheitert dort am unaufloesbaren Import, genau wie bei __stack_chk_fail.
+        HRESULT hr = SimConnect_AICreateSimulatedObject(g_sim, "Boat01", pos, REQ_BOOT + i);
+#else
         HRESULT hr = SimConnect_AICreateSimulatedObject_EX1(g_sim, "Boat01", "", pos,
                                                             REQ_BOOT + i);
+#endif
         melde("create_aufgerufen", (long)hr);
     }
 }
