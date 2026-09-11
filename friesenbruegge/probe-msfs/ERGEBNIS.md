@@ -563,10 +563,50 @@ Beide standen auf derselben Koordinate und derselben gemeldeten Höhe. Der Pilot
 Schiff, und das erklärt auch, warum die vier WASM-Boote trotz gültiger Objekt-IDs nirgends zu
 finden waren.
 
-**In MSFS 2020 lässt sich die Höhe überhaupt nicht steuern** — `OnGround=1` blieb wirkungslos,
-`Altitude=500` ebenso, alles landet auf 0,0 ft. Für den Kieker im Wattenmeer ist das folgenlos
-(dort *ist* die Oberfläche die Meereshöhe). **Objekte über Land sind in MSFS 2020 per WASM
-nicht brauchbar zu setzen** — sie versinken im Gelände.
+### ✅ Aufgelöst: Es liegt an der Objektart, nicht an der Höhe
+
+Hier stand zwischenzeitlich, in MSFS 2020 lasse sich die Höhe „überhaupt nicht steuern". **Das
+war zu weit verallgemeinert** — es gilt nur für **Boote**. Gemessen, alle am selben Ort, bei
+einer Geländehöhe von rund 5 ft:
+
+| Titel | Kategorie | gemessene Höhe |
+|---|---|---|
+| `Boat01` | **Boat** | **0,0 ft** — Meereshöhe |
+| `Windsock` | StaticObject | 4,6 ft |
+| `BlackBear` | **Animal** | 5,0 ft |
+| `Windmill` | StaticObject | 5,8 ft |
+| `ASO_Ambulance_Japan` | GroundVehicle | 5,6 ft |
+
+**Alles außer Booten landet auf Geländehöhe.** MSFS 2020 zwingt Boote auf die Meereshöhe —
+deshalb versanken die vier `Boat01` drei Meter tief im Platz, während das Kreuzfahrtschiff an
+derselben Stelle sichtbar blieb: Es ist hoch genug, um herauszuragen.
+
+Damit ist auch klar, warum `Altitude` und `SetDataOnSimObject` wirkungslos schienen — beides
+wurde ausschließlich an Booten erprobt.
+
+**Für den Kieker heißt das:** Objekte an Land sind kein Problem, man darf nur keine Boote
+nehmen. Und MSFS 2020 bringt dafür genau das mit, was der Eventtyp ursprünglich mit Robben
+vorhatte:
+
+```
+asobo-simobjects-animals    BlackBear, AfricanElephant, AfricanGiraffe, Hippo, …
+                            Flamingo, Goose  (FlyingAnimal, ungeprüft)
+asobo-simobjects-landmarks  Windsock, Windmill, VfxSpawner
+asobo-simobjects-misc       Flaggen, Marshaller_Stick, Optical_Landing_System
+asobo-simobjects-vehicles   Ambulanz, Gepäckwagen, Tankwagen, Caddy, …
+```
+
+Eine Robbe ist nicht dabei — aber die **Gattung `Animal` existiert und funktioniert**.
+
+### Boote: „0,0 ft" heißt Meereshöhe, nicht Wasseroberfläche
+
+Die Frage kam vom Nutzer: Was wird aus einem Boot auf einem Bergsee? Probe auf dem Chiemsee
+(518 m ü. NN, also ≈1700 ft): Das Boot meldete **0,0 ft**, nicht 1700.
+
+**Mit Vorbehalt:** Der Chiemsee lag 800 km entfernt, dort war vermutlich gar kein Gelände
+geladen — der Simulator konnte die Wasserhöhe nicht kennen. Das ist ein starker Hinweis, kein
+Beweis. Für die Nordsee ist es belanglos (dort fällt beides zusammen); für einen späteren Event
+an einem Alpensee wäre es vor Ort zu prüfen.
 
 Für MSFS 2024 gilt das nicht: Dort kommt `Altitude` an, die Brügge müsste nur die Geländehöhe
 kennen. Die hat FriesenSpy nicht (Spec 4.2) — dieselbe Einschränkung, die auch den

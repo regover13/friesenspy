@@ -339,6 +339,13 @@ def _bindungen(sc: ctypes.WinDLL) -> None:
         w.HANDLE, w.DWORD, w.DWORD, w.DWORD, ctypes.c_int, w.DWORD, w.DWORD, w.DWORD,
         w.DWORD,
     ]
+    # Hoehe NACHTRAEGLICH setzen -- der zweite Weg, wenn AICreateSimulatedObject die
+    # Hoehe verschluckt (MSFS 2020 setzt alles auf 0,0 ft, egal was in der InitPosition
+    # steht; extern wie aus WASM gemessen, 11.09.2026).
+    sc.SimConnect_SetDataOnSimObject.restype = ctypes.HRESULT
+    sc.SimConnect_SetDataOnSimObject.argtypes = [
+        w.HANDLE, w.DWORD, w.DWORD, w.DWORD, w.DWORD, w.DWORD, ctypes.c_void_p,
+    ]
     sc.SimConnect_AIRemoveObject.restype = ctypes.HRESULT
     sc.SimConnect_AIRemoveObject.argtypes = [w.HANDLE, w.DWORD, w.DWORD]
     sc.SimConnect_Close.restype = ctypes.HRESULT
@@ -454,7 +461,8 @@ def _eigene_lage(sc: ctypes.WinDLL, handle) -> tuple[float, float, float] | None
 
 def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
           dll_pfad: Path, wartesekunden: int, halten: int, nachpruefen: bool,
-          neben_mir: float | None, ex1: bool = False) -> int:
+          neben_mir: float | None, ex1: bool = False,
+          setz_hoehe: float | None = None) -> int:
     print(f"SimConnect.dll: {dll_pfad}")
     sc = ctypes.WinDLL(str(dll_pfad))
     _bindungen(sc)
@@ -549,6 +557,21 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
     print("=" * 68 + "\n")
 
     _lage_abonnieren(sc, handle, objekt_id, REQ_LAGE, dauerhaft=True)
+
+    if setz_hoehe is not None:
+        # Die Datendefinition DEF_LAGE enthaelt lat/lon/alt in genau dieser Reihenfolge --
+        # sie laesst sich also auch zum SCHREIBEN benutzen.
+        werte = (ctypes.c_double * 3)(lat, lon, setz_hoehe)
+        hr_setz = None
+        try:
+            sc.SimConnect_SetDataOnSimObject(handle, DEF_LAGE, objekt_id, 0, 0,
+                                             ctypes.sizeof(werte),
+                                             ctypes.cast(werte, ctypes.c_void_p))
+            hr_setz = "abgesetzt"
+        except OSError as e:
+            hr_setz = f"abgelehnt ({e})"
+        print(f"  SetDataOnSimObject auf {setz_hoehe:.1f} ft: {hr_setz}")
+
     start = time.time()
     letzte_meldung = 0.0
     zuletzt_gesehen = None
@@ -899,6 +922,8 @@ def main() -> int:
     ap.add_argument("--neben-mir", type=float, metavar="METER",
                     help="Ziel nicht aus --lat/--lon, sondern <METER> oestlich des "
                          "Flugzeugs (schliesst EXCEPTION 33 aus)")
+    ap.add_argument("--setz-hoehe", type=float, metavar="FUSS",
+                    help="Hoehe NACH dem Anlegen per SetDataOnSimObject setzen")
     ap.add_argument("--ex1", action="store_true",
                     help="AICreateSimulatedObject_EX1 statt der alten Fassung benutzen")
     ap.add_argument("--status", action="store_true",
@@ -927,7 +952,7 @@ def main() -> int:
         return mengentest(a.titel, a.anzahl, a.raster, dll_finden(a.dll), a.halten,
                           a.neben_mir, a.lat, a.lon)
     return probe(a.titel, a.lat, a.lon, a.hoehe, not a.frei, dll_finden(a.dll),
-                 a.warten, a.halten, not a.ohne_nachprobe, a.neben_mir, a.ex1)
+                 a.warten, a.halten, not a.ohne_nachprobe, a.neben_mir, a.ex1, a.setz_hoehe)
 
 
 if __name__ == "__main__":
