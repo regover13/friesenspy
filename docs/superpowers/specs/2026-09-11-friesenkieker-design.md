@@ -10,6 +10,11 @@
 > Sie ist einmal adversarisch gegengeprüft worden (Fable, 11.09.2026). Die Funde stehen an
 > Ort und Stelle als **Fable-Fund** — sie haben die Wertung, die Geometrie, das Datenmodell
 > und den Betriebsteil erheblich verändert. Abschnitt 17 fasst zusammen, was sich geändert hat.
+>
+> **Danach hat der Nutzer sie umgestellt (11.09.2026):** Die Zwischenstufe auf fest gebaute
+> Szenerie ist verworfen, der **Probeflug ist das Tor** (Abschnitt 2), und aus seiner Idee,
+> das Kniebrett die Positionen zurückmelden zu lassen, ist Abschnitt 4.6 geworden. Die
+> Entscheidungen stehen in Abschnitt 18.
 
 ---
 
@@ -23,38 +28,39 @@ Der Typ heißt nach dem Hinsehen, nicht nach dem Gezählten: „Kieker" ist auf 
 und zugleich der, der guckt. Gezählt werden kann alles — Boote in der Deutschen Bucht, Robben
 auf den Sandbänken, Elche in Norwegen. Die Objektart ist ein Feld, keine Programmvariante.
 
-## 2. Der Zuschnitt, der diese Spec umsetzbar macht
+## 2. Der Probeflug ist das Tor — alles andere wartet
 
-Im Brainstorming standen der Eventtyp und das MSFS-Paket, das die Objekte setzt, als **ein**
-Vorhaben. So ist es nicht baubar: Das Paket hängt an vier Messfragen, die nur am Simulator zu
-beantworten sind (Abschnitt 14), und solange sie offen sind, wird auch der Server nicht fertig.
+**Nutzerentscheidung vom 11.09.2026, und sie kehrt die Reihenfolge um.**
 
-**Der Ausweg:** Es gibt Objekte, die ohne jedes Addon in bekannter Zahl im Simulator stehen —
-fest gebaute Szenerie. Windräder, Schiffe an einer Pier, Silos. Wer sie zählen lässt, braucht
-kein Addon, keine Verteilung, kein SimConnect; die Wahrheit trägt der Admin ein.
+Die erste Fassung schlug eine Zwischenstufe vor: ein Kieker auf **fest gebaute Szenerie**
+(Windräder, Schiffe an der Pier), server-only, ohne Addon. Der Nutzer hat sie verworfen —
+*„Der Rest sind Fragen, die es nur wegen 1 gibt. Der Schritt ist unnötig!"* Und er hat recht:
+Die Zwischenstufe erzeugte vier eigene Folgefragen (wer zählt nach, welche Objekte, wie
+verhindert man Nachschlagen, ist die Szenerie bei allen gleich), von denen **keine** eine
+Frage des eigentlichen Eventtyps war. Fable hatte zudem gezeigt, dass die Wahrheit dort bei
+Wikipedia steht (Riffgat 30, Alpha Ventus 12, Nordergründe 18) — ein Wettbewerb ohne
+Trennschärfe.
 
-| Stufe | Was sie bringt | Was sie braucht | Risiko |
-|---|---|---|---|
-| **1 — Der Eventtyp** | spielbarer Kieker auf fest gebaute Szenerie | nur Server + Oberfläche | **Wahrheit oft nachschlagbar, Szenerie ist addon-abhängig** (s. u.) |
-| **2 — Das Paket** | frei gesetzte Objekte, Lage vom Server, je Pilot verschieden | `msfs-kieker/`, SimConnect | vier offene Messfragen |
-| **3 — Politur** | Badge fürs Forum, eigene Robben-Modelle | Stufe 2 muss stehen | Modellierung, Lizenzfragen |
+Damit steht und fällt der ganze Eventtyp mit **einer** Messung:
 
-**Fable-Fund (KRITISCH), hier stand vorher „Risiko: keins, alles bekannt" — das war falsch,
-gleich doppelt:**
+> **Lässt sich ein SimObject per SimConnect zur Laufzeit an eine frei gewählte Koordinate
+> setzen — und bleibt es dort?**
 
-1. **Die Wahrheit ist bei fest gebauter Szenerie oft öffentlich.** Riffgat hat 30 Anlagen,
-   Alpha Ventus 12, Nordergründe 18 — das steht bei Wikipedia. Wer die Stellen überfliegt und
-   die Zahlen abschreibt, hat Fehler 0. Bei `wertungspunkte = N` teilen sich dann **alle**,
-   die N Stellen abgeflogen haben, den ersten Platz; das Event verliert als Wettbewerb jede
-   Trennschärfe. (Daher der Gleichstands-Bruch in Abschnitt 3.5 — und Frage 6.)
-2. **„In jedem Simulator dieselbe Zahl" ist unbelegt.** Ob ein Pilot mit Addon-Szenerie,
-   einer auf MSFS 2020 und einer auf MSFS 2024 dieselben Objekte sehen, hängt von deren
-   Installation ab. Weder Fable noch ich konnten das prüfen. **Die Objektart für das erste
-   Event ist deshalb so zu wählen, dass sie in der Grundszenerie steht** — und es gehört
-   ausprobiert, bevor gewertet wird.
+Trägt der Weg, wird gebaut. Trägt er nicht, **lassen wir es** (wörtlich: *„Weil sonst lassen
+wir es!"*). Es gibt keinen Ersatzplan und es soll keinen geben.
 
-Beides macht Stufe 1 nicht wertlos: Sie prüft die gesamte Mechanik unter echten Bedingungen,
-bevor irgendwer ein Addon installiert. Es macht sie nur zu etwas, das man ansagen muss.
+| Stufe | Was sie bringt | Zustand |
+|---|---|---|
+| **0 — Der Probeflug** | Antwort auf die eine Frage | **jetzt**, `msfs-kieker/probe/` |
+| **1 — Eventtyp + Paket** | der Kieker, wie er unten beschrieben ist | wartet auf Stufe 0 |
+| **2 — Politur** | Badge fürs Forum, eigene Robben-Modelle | danach |
+
+**Der Probeflug liegt fertig bereit:** `msfs-kieker/probe/kieker_probe.py` mit Anleitung in
+`msfs-kieker/probe/README.md`. Er setzt ein **mitgeliefertes Boot** — MSFS bringt Boote als
+SimObjects mit, es braucht also kein 3D-Modell, keine Lizenzfrage, kein Blender. Fällt die
+Antwort negativ aus, hat der Versuch keine Modellierungsarbeit gekostet.
+
+Der Rest dieser Spec beschreibt Stufe 1 und ist **unter dem Vorbehalt von Stufe 0 zu lesen**.
 
 ## 3. Die Wertung
 
@@ -314,6 +320,102 @@ CREATE TABLE IF NOT EXISTS kieker_abdeckung (
 Zusammenfassen ~9.400 Strecken. Der Job rechnet je Lauf nur den letzten Takt (~60 neue
 Strecken × 14 Stellen), die Lesepfade gar nichts.
 
+## 4.6 Die genauere Quelle: das Kniebrett meldet zurück
+
+**Nutzeridee vom 11.09.2026** — *„das EFB Tablett hat genauere und aktuellere Daten! Könnten
+diese Informationen nicht auch wieder zurückgeschickt werden?"* Nachgesehen: **Der Weg
+existiert schon zu neun Zehnteln.**
+
+`msfs-panel/PackageSources/FriesenSpy/src/FriesenSpy.tsx` liest **alle 500 ms** aus dem
+Simulator (`POSITION_INTERVALL_MS`, Zeile 159) und reicht per `postMessage` in die Seite:
+
+| SimVar | Feld | was es ist |
+|---|---|---|
+| `PLANE LATITUDE` / `PLANE LONGITUDE` | `lat`, `lon` | auf 5 Nachkommastellen gerundet ≈ 1,5 m |
+| `PLANE ALTITUDE` (feet) | `alt` | **wahre Höhe über MSL**, nicht die Anzeige des Höhenmessers |
+| `GROUND VELOCITY` (knots) | `gs` | |
+| `PLANE HEADING DEGREES TRUE` | `hdg` | |
+
+Dort endet der Weg: `_simPos` in `app/static/index.html:10273` zeichnet damit die Karte —
+**zum Server geht nichts.** Es fehlt genau ein Sprung.
+
+### Was das für den Kieker löst
+
+Drei Probleme auf einmal, und zwar die drei teuersten aus Abschnitt 4:
+
+1. **Die Abtastdichte.** 2 Hz statt 1/15 s ist **dreißigmal** dichter. Das Überspringen einer
+   1-km-Zone (4.1) kann konstruktiv nicht mehr vorkommen.
+2. **Die Höhenfrage ist beantwortet.** Abschnitt 4.2 musste offenlassen, ob der VATSIM-Feed
+   barometrisch meldet. `PLANE ALTITUDE` ist die wahre Höhe über MSL — beim Kniebrett-Piloten
+   ist die Unsicherheit weg. Der großzügige 2000-ft-Deckel bliebe trotzdem, solange auch
+   Nicht-Kniebrett-Piloten mitfliegen.
+3. **Die Lückenregel wird nebensächlich.** Die gemessenen Aussetzer (4.3) sind langsame
+   Poll-Zyklen des Servers — die betreffen den Weg über den Simulator gar nicht.
+
+Und eine Möglichkeit, die es vorher nicht gab: **`PLANE ALT ABOVE GROUND` ist ein
+Standard-SimVar.** Damit wäre AGL *gemessen* statt geschätzt, und die Einschränkung aus 4.2
+(„über norwegischen Bergen bräuchte es ein Geländemodell") fiele weg. Für einen Kieker über
+Land ist das der Unterschied zwischen „geht" und „geht nicht".
+
+### Was es kostet — und warum es NICHT in `position_history` gehört
+
+Zwei Gründe, beide wiegen schwer:
+
+**Erstens die Menge.** `position_history` hat heute 169.835 Zeilen aus 3,2 Monaten (92 MB
+Datenbank). Roh bei 2 Hz wären das je Pilot und Flugstunde **7.200** Zeilen; fünf Piloten an
+einem Abend von drei Stunden erzeugten 108.000 — **mehr als der gesamte bisherige Bestand.**
+Und der Bestand wird bewusst nie aufgeräumt (`app/poller.py:561`).
+
+**Zweitens, und das ist der eigentliche Grund: dichtere Punkte würden die Blockzeiten
+verändern.** `canonicalize_legs` und die Standphasen-Erkennung (`_BLOCK_STAND_MIN_SEC`, 600 s)
+sind auf dem 15-Sekunden-Raster feinjustiert — eine 30-fach dichtere Reihe verschiebt
+Aufsetz- und Abstellpunkte. Das hieße: **Bummel-Ergebnisse würden sich rückwirkend ändern**,
+je nachdem, wer ein Kniebrett offen hatte. Genau die Sorte stiller Wertungsänderung, die am
+07.09.2026 schon einmal einen verkündeten Sieger überschrieben hat.
+
+Deshalb: **eigene Tabelle, eigene Aufbewahrung, eigene Verdünnung.**
+
+```sql
+CREATE TABLE IF NOT EXISTS panel_track (
+    cid        INTEGER NOT NULL,
+    ts         TEXT NOT NULL,
+    lat        REAL NOT NULL,
+    lon        REAL NOT NULL,
+    alt_msl_ft REAL,
+    alt_agl_ft REAL,          -- PLANE ALT ABOVE GROUND, wenn das Paket es liefert
+    gs_kt      REAL,
+    PRIMARY KEY (cid, ts)
+);
+```
+
+**Verdünnung im Panel, nicht auf dem Server** — was nicht gesendet wird, kostet auch keine
+Bandbreite: senden, wenn sich die Position um **> 150 m** geändert hat, spätestens aber alle
+**30 s** (Herzschlag, damit „steht still" von „Verbindung tot" unterscheidbar bleibt — dieselbe
+Lehre wie `POSITION_HERZSCHLAG_MS`, Zeile 185). Bei 90 kt sind das gut drei Punkte je 150 m,
+am Boden zwei je Minute: rund **3.600 Zeilen je Flugstunde und Pilot** statt 7.200 bei 2 Hz.
+
+Die Deckungsrechnung nimmt dann je Pilot die **bessere** Quelle: `panel_track`, wenn für das
+Zeitfenster Zeilen da sind, sonst `position_history`. Die Geometrie aus 4.4 bleibt unverändert
+— sie fragt nicht, woher die Punkte kommen.
+
+### Die ehrliche Einschränkung
+
+**Nur wer das Kniebrett offen hat, meldet so.** Für alle anderen bleibt es beim 15-Sekunden-
+Raster. Das erzeugt zwei Genauigkeitsklassen — hinnehmbar, weil die gröbere Klasse mit den
+Werten aus 4.2/4.3 nachweislich funktioniert und die feinere nur besser ist. Es darf nur
+nicht dazu führen, dass ein Kniebrett-Pilot systematisch bevorzugt wird: Die Abdeckung ist
+eine Ja/Nein-Frage mit großzügigen Schwellen, keine Punktwertung — wer ordentlich tief drüber
+fliegt, wird in beiden Klassen erkannt.
+
+### Das ist größer als der Kieker
+
+Festhalten, weil es die Einordnung ändert: **Diese Rückmeldung ist kein Kieker-Feature.** Sie
+ist eine allgemeine Verbesserung von FriesenSpy und hängt **nicht** vom Ausgang des
+Probeflugs ab. Ein dichter, aus dem Simulator gespeister Track verbessert die Kartenanzeige,
+die Erkennungslücken-Diagnose (#16) und alles, was heute an der 15-Sekunden-Auflösung leidet.
+Sie sollte deshalb als **eigenes Vorhaben** geführt werden und nicht als Anhängsel hier —
+siehe Frage 3.
+
 ## 5. Datenmodell
 
 ```sql
@@ -416,10 +518,14 @@ Weg**: Die Gerätebindung wird gegen `panel_devices` geprüft (`app/main.py:2549
 danach dasselbe `USER_COOKIE` (`2560`). Eine Sonderbehandlung fürs Panel ist weder nötig noch
 erlaubt — es gibt einen Identitätsweg, nicht zwei.
 
-⚠ **Harte Abhängigkeit:** `_current_cid` gibt `None` zurück, solange das Board-Login
-abgeschaltet ist (`app/main.py:2360`). **Ohne aktives Forum-SSO kann niemand eine Schätzung
-eintragen, und der Kieker ist unspielbar.** Der Admin zeigt an einem Kieker-Event einen
-Warnhinweis, wenn das Board-Login aus ist. Siehe Frage 4.
+`_current_cid` gibt `None` zurück, solange das Board-Login abgeschaltet ist
+(`app/main.py:2360`) — ohne Forum-SSO kann also niemand eine Schätzung eintragen.
+
+**Das ist hier festgehalten, aber kein Handlungsbedarf** (Nutzerentscheidung 11.09.2026):
+Das Board-Login ist dauerhaft an, und der Schalter dafür sitzt hinter dem Admin-Passwort —
+*„Aber warum den Schalter deshalb anpassen?"* Die erste Fassung wollte im Admin einen
+Warnhinweis einblenden; das ist eine Vorkehrung gegen einen Handgriff, den nur der Admin
+selbst tun könnte und nicht tut. Sie entfällt ersatzlos.
 
 ### 6.1 Der Schreibweg braucht einen Absenderschutz
 
@@ -832,7 +938,8 @@ entlarvt.
 ## 15. Version und Doku
 
 - `app/CHANGELOG.json`: neuer Eintrag oben, **`"highlight": false`** (stehende Regel, ohne
-  Ausnahme). Nummer: **v15.0.0** — dritter Eventtyp. Siehe Frage 3.
+  Ausnahme). Nummer: **v15.0.0**, Major — vom Nutzer am 11.09.2026 entschieden
+  (*„3 mayor release"*). Der Haken `highlight` bleibt davon unberührt und aus.
 - `README.md`: eigener Handbuch-Abschnitt **und** der Hilfetext hinter dem `?` — ohne beides
   gilt ein Feature-Commit in diesem Projekt als unfertig.
 - `docs/api.md`: alle Endpunkte aus Abschnitt 8.
@@ -878,35 +985,33 @@ Zur Einordnung, falls jemand die erste Fassung im git-Verlauf findet (`56d1dc8`)
 
 ## 18. Offene Fragen
 
-Nummeriert, damit du mit „mach 2 und 5" antworten kannst.
+Stand nach der Nutzerrunde vom 11.09.2026. **Fünf der sieben Fragen sind erledigt** — drei
+beantwortet, zwei mit der verworfenen Zwischenstufe weggefallen.
 
-1. **Stimmt die Staffelung?** Stufe 1 zählt fest gebaute Szenerie und braucht kein Addon —
-   sofort spielbar, ganze Mechanik unter echten Bedingungen erprobt. **Aber** Fable hat
-   gezeigt, dass die Wahrheit dabei oft nachschlagbar ist (Abschnitt 2). Willst du Stufe 1
-   trotzdem, oder soll der Eventtyp erst zusammen mit den gesetzten Objekten kommen?
+**Entschieden:**
 
-2. **Die Wertungsformel** (3.2): relativer Fehler je Stelle, bei 100 % gedeckelt, gemittelt,
-   als Güte in Prozent. Oder soll der Sieger wie beim Bummel über den Abstand zu einem
-   **Gruppenschnitt** ermittelt werden? Das bräuchte gar keine hinterlegte Wahrheit — und
-   löste damit sowohl das Nachschlage- als auch das Wer-zählt-nach-Problem auf einen Schlag.
-   **Das ist nach dem Review die interessanteste Alternative**, und ich habe sie bewusst nicht
-   selbst entschieden.
+- **Version:** v15.0.0, Major. `highlight` bleibt aus.
+- **Board-Login:** dauerhaft an, der Schalter sitzt hinter dem Admin-Passwort. Kein
+  Warnhinweis, keine Anpassung (Abschnitt 6).
+- **Die Zwischenstufe auf fest gebaute Szenerie entfällt** (Abschnitt 2). Damit sind die
+  früheren Fragen „wer trägt die Wahrheit ein?" und „welches erste Event?" gegenstandslos —
+  sie existierten nur wegen dieser Stufe.
+- **Der Probeflug kommt zuerst.** Trägt er nicht, wird der Kieker nicht gebaut.
 
-3. **Versionsnummer:** v15.0.0 (dritter Eventtyp) oder lieber v14.30.0? `highlight` bleibt in
-   jedem Fall aus, das ist deine Entscheidung allein.
+**Offen:**
 
-4. **Board-Login:** Ohne aktives Forum-SSO kann niemand eine Schätzung eintragen (6). Ist es
-   dauerhaft an? Wenn nicht, brauchen wir einen zweiten Eingabeweg.
+1. **Der Probeflug** (`msfs-kieker/probe/`) — er braucht deinen Simulator. Alles andere
+   wartet darauf. Wenn etwas klemmt: die Ausgabe herschicken, dann repariere ich das Skript,
+   statt zu raten.
 
-5. **Wer trägt die Wahrheit ein?** In Stufe 1 der Admin von Hand — bei Windrädern das Abzählen
-   einer Karte, bei Schiffen an einer Pier müsstest du selbst hinfliegen. Reicht dir das?
-   (Abschnitt 7.3 wartet jetzt darauf, statt leere Ergebnisse einzufrieren.)
+2. **Die Wertungsformel** (3.2): Abstand zur hinterlegten Wahrheit, relativ und bei 100 %
+   gedeckelt. Oder wie beim Bummel Abstand zum **Gruppenschnitt**? Mit dem Wegfall der
+   Zwischenstufe hat die Frage an Schärfe verloren — der Server erzeugt die Lage jetzt
+   ohnehin selbst und *ist* damit die Wahrheit. Die Gruppenschnitt-Variante bliebe trotzdem
+   die mildere: Sie verzeiht, wenn ein Pilot Objekte nicht sieht, die der Server gesetzt hat.
+   **Braucht keine Antwort vor dem Probeflug.**
 
-6. **Das erste Event.** Welche Objekte, welche Stellen? Die ostfriesischen Offshore-Windparks
-   liegen nahe (Riffgat, Alpha Ventus, Nordergründe — gut fliegbar von EDWR/EDWG, feste
-   Anlagenzahlen, über Wasser stimmt MSL ≈ AGL exakt). **Nur:** Genau bei denen steht die
-   Zahl bei Wikipedia. Etwas, dessen Zahl nur du kennst, wäre der bessere Anfang.
-
-7. **Der Probeflug für Stufe 2** (ein mitgeliefertes Boot per SimConnect an eine
-   Wattkoordinate setzen) braucht deinen Simulator. Vor Stufe 1 — oder unabhängig, wann es
-   dir passt?
+3. **Die Kniebrett-Rückmeldung** (4.6) als eigenes Vorhaben? Sie hängt **nicht** am
+   Probeflug und nützt auch ohne Kieker — dichtere Tracks, echte Höhe, möglicherweise echtes
+   AGL. Soll ich sie getrennt spezifizieren, damit sie unabhängig vom Kieker gebaut werden
+   kann?
