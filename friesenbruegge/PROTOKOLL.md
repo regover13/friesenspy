@@ -154,11 +154,39 @@ dreimal je Minute. Die Karte ruckelte zwischen zwei Quellen hin und her.
 mischt beim Ausliefern: Ist der Brügge-Punkt jünger als eine kurze Frist, hat er Vorrang;
 sonst zählt der VATSIM-Punkt. `live_positions` bleibt dem Poller allein, wie es heute ist.
 
-**Offen und vom Nutzer zu entscheiden:** Was geschieht, wenn ein Pilot **ohne VATSIM** fliegt?
-Die Brügge meldet dann weiter, aber `live_positions` hat keine Zeile — der Poller hat sie beim
-Ausloggen gelöscht (`app/database.py:2299`). Ein solcher Pilot wäre auf der Karte sichtbar,
-**ohne je online gewesen zu sein**. Das ist neu, es ist nicht offensichtlich richtig oder
-falsch, und es gehört mit der Sichtbarkeitsfrage aus Abschnitt 6 zusammen entschieden.
+#### Ohne VATSIM geschieht nichts — und das ist zugleich die Sparregel
+
+**Nutzerentscheidung vom 11.09.2026:** *„Das braucht es nicht. Kein Matching, keine Anzeige."*
+
+Meldet eine Brügge, während die CID **keine** Zeile in `live_positions` hat, dann ist der
+Pilot nicht auf VATSIM — der Poller löscht die Zeile beim Ausloggen
+(`app/database.py:2299`). Der Server tut dann **nichts**:
+
+```
+kein VATSIM  →  { "protokoll": 1, "naechste_frage_in_s": 60, "gilt_bis_s": 0, "soll": [] }
+```
+
+Keine Anzeige, keine Ablage, keine Objekte. Die Brügge räumt ab und fragt im Minutentakt
+weiter, bis der Pilot online geht.
+
+**Das ist auch die Antwort auf die Lastfrage**, und es trifft genau die richtige Stelle: Die
+Prüfung ist ein Blick auf den Primärschlüssel von `live_positions` — sie steht **vor** allem
+Teuren. Was dahinter läge, entfällt vollständig:
+
+| Was sonst je Meldung anfiele | ohne VATSIM |
+|---|---|
+| Geo-Abstände gegen alle Stellen rechnen (`soll`) | entfällt |
+| Position schreiben | entfällt |
+| `spur` auswerten | entfällt |
+| Plausibilitätsprüfung gegen VATSIM | gegenstandslos |
+
+Ein Pilot, der den Simulator mit installierter Brügge laufen lässt, ohne zu fliegen, kostet
+den Server damit **eine Indexabfrage je Minute**. Das ist billiger als jede Verbindung, die
+heute schon offen steht.
+
+**Ein Nebeneffekt, der zählt:** Damit kann die Brügge gar nicht erst zur Hintertür für eine
+Sichtbarkeit werden, die niemand eingeräumt hat. Wer nicht auf VATSIM ist, erscheint nicht —
+unabhängig davon, was in seiner Konfigurationsdatei steht.
 
 #### `zustand` — ohne ihn dreht die Brügge endlos im Kreis
 
@@ -375,19 +403,46 @@ Raten wäre der Anfang einer neuen Fehlersuche.**
 
 ## 5. Anmeldung: der Brügge-Schlüssel
 
-Die Brügge ist ein eigenständiges Programm ohne Browser — der Geräteweg des Kniebretts
-(`panel_devices` → `USER_COOKIE`) steht ihr nicht offen, er lebt im Speicher von MSFS.
+### Warum nicht der Weg des Kniebretts
 
-Also ein Zufallswert, den der Pilot **einmal** aus der Weboberfläche in die Konfigurationsdatei
-kopiert. Er trägt die CID.
+Das Kniebrett bindet ein Gerät über ein Cookie (`panel_devices` → `USER_COOKIE`). **Dieser Weg
+steht der Brügge nicht offen:** Er lebt im Speicher von MSFS, in der Browser-Umgebung des EFB.
+Die Brügge ist ein eigenständiges Programm ohne Browser — sie hat keinen Cookie-Speicher, und
+im WASM-Fall nicht einmal ein Fenster, in dem sich jemand anmelden könnte.
+
+### Der Ablauf
+
+1. Der Pilot meldet sich **in der Weboberfläche** an (der Board-Login läuft).
+2. Dort drückt er einmal auf „Brügge-Schlüssel erzeugen" und bekommt einen Zufallswert.
+3. Er kopiert ihn in die Konfigurationsdatei neben der Brügge.
+4. Die Brügge schickt ihn bei jeder Anfrage mit:
+   `Authorization: Bearer <schlüssel>`
 
 ```
 bruegge_schluessel(schluessel PK, cid, erzeugt_am, zuletzt_gesehen, widerrufen_am)
 ```
 
-**Er ist ein Zugangsgeheimnis und muss im Admin widerrufbar sein**, wie eine
+**Der Schlüssel trägt die CID** — deshalb muss die Brügge keine Kennung mitschicken und der
+Server keine Zuordnung raten.
+
+### Was der Schlüssel darf und was nicht
+
+| | |
+|---|---|
+| **darf** | an `/api/bruegge/melden` Position melden und Objekte abholen |
+| **darf nicht** | alles andere — kein Konto, kein Admin, keine Einstellungen, keine fremden Daten |
+
+**Das ist keine Formalie.** Ein Schlüssel, der in eine Textdatei auf 20 Rechnern wandert, ist
+kein Passwort-Ersatz: Er muss so wenig können, dass sein Verlust nichts kostet außer falschen
+Positionsmeldungen — und die fängt die VATSIM-Plausibilitätsprüfung unten ab.
+
+**Er ist trotzdem ein Zugangsgeheimnis und muss im Admin widerrufbar sein**, wie eine
 Panel-Gerätebindung. Ein widerrufener Schlüssel bekommt `401`, und die Brügge räumt auf,
 statt es erneut zu versuchen.
+
+**Nur über HTTPS.** Der Schlüssel geht bei jeder Anfrage über die Leitung. Für MSFS-WASM ist
+das ohnehin die einzige Möglichkeit — die Network-API dort lässt ausschließlich `https` zu
+(und genau daran scheiterte im Probeflug der Versuch mit `http://127.0.0.1`).
 
 ⚠ **Der Schlüssel wandert mit dem Ordner.** Ein WASM-Paket liegt im Community-Ordner, und
 Community-Ordner werden kopiert und weitergegeben. Wer seinen Ordner teilt, teilt seinen
