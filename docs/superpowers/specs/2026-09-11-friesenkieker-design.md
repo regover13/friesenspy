@@ -948,12 +948,12 @@ Frage.
    Verhalten andichtet? (Für Boote stellt sich die Frage nicht.) Hinweis aus dem Probeflug:
    MSFS 2024 liefert **41 Tier-Pakete** als SimObjects aus (`fs24-microsoft-simobjects-animals-*`)
    — Robbe ist keine dabei, aber die Gattung ist vorgesehen.
-3. Wie viele Objekte verträgt der Simulator, bevor es ruckelt? **Teilweise beantwortet:**
-   25, 100 und 400 Boote wurden allesamt angenommen — keine `TOO_MANY_OBJECTS`, volle
-   Meldungsrate (43.200 Lagemeldungen in 120 s bei 400 Objekten). Der Kieker bräuchte 10 bis
-   50. **Offen bleibt die Bildrate:** SimConnect gibt keine her, das kann nur der Pilot
-   beurteilen. Ein einzelner ungeklärter Ratenaussetzer im 400er-Lauf ist in ERGEBNIS.md
-   festgehalten.
+3. ✅ Wie viele Objekte verträgt der Simulator, bevor es ruckelt? **Beantwortet: mindestens
+   400.** 25, 100 und 400 Boote wurden allesamt angenommen — keine `TOO_MANY_OBJECTS`, volle
+   Meldungsrate (43.200 Lagemeldungen in 120 s bei 400 Objekten), und der Pilot hat bei
+   stehenden 400 Booten **kein Ruckeln** gesehen. Der Kieker bräuchte 10 bis 50; die Menge ist
+   damit keine Einschränkung beim Zuschnitt. Ein einzelner ungeklärter Ratenaussetzer im
+   400er-Lauf ist in ERGEBNIS.md festgehalten — im Bild war er nicht zu sehen.
 4. **Neu:** Wird ein **weit entfernt gesetztes Objekt gezeichnet, wenn der Pilot hinkommt?**
    Das Anlegen gelingt bis 10.000 km, die Sichtbarkeit ist aber nur im Nahbereich belegt
    (200 m an Land, 1,6 km auf dem Wasser). Die Frage entscheidet, ob die Brügge einmal

@@ -336,9 +336,13 @@ einzeln wartet, misst seine eigene Wartepause.
 Läufen nicht zu sehen. Ob Simulator, Nachladevorgang oder Kamerabewegung — mit diesem Aufbau
 nicht auseinanderzuhalten.
 
-**Was diese Zahlen NICHT sind: eine Bildrate.** SimConnect gibt keine her. Die Meldungsrate
-zeigt, ob der Simulator die Objekte weiterführt, nicht ob es flüssig aussieht. Die Frage „ab
-wann ruckelt es" kann nur der Pilot beantworten und ist **weiterhin offen**.
+**Was diese Zahlen nicht sind: eine Bildrate.** SimConnect gibt keine her. Die Meldungsrate
+zeigt, ob der Simulator die Objekte weiterführt, nicht ob es flüssig aussieht. Deshalb hat der
+Pilot bei stehenden 400 Booten hingesehen — sein Urteil: **kein Ruckeln.** Damit ist die Frage
+beantwortet, und zwar deutlich oberhalb dessen, was der Kieker je braucht.
+
+Der Aussetzer oben bleibt davon unberührt und ungeklärt: Er war in der Meldungsrate sichtbar,
+im Bild offenbar nicht.
 
 ### Ein Messfehler im eigenen Aufbau, der fast als Sim-Befund durchgegangen wäre
 
