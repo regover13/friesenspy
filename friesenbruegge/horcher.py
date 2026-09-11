@@ -51,12 +51,27 @@ DEUTUNG = {
 
 
 class Ohr(BaseHTTPRequestHandler):
+    # Die Proben schliessen die Verbindung, ohne die Antwort zu lesen -- das ist in
+    # Ordnung, sie wollen nur melden. http.server wirft dafuer sonst einen Traceback je
+    # Meldung und macht das Protokoll unlesbar (11.09.2026: 30 KB Tracebacks um 14 echte
+    # Zeilen herum).
+    def handle_one_request(self) -> None:
+        try:
+            super().handle_one_request()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            self.close_connection = True
+
     def do_GET(self) -> None:  # noqa: N802
         frage = parse_qs(urlparse(self.path).query)
         schritt = frage.get("schritt", ["?"])[0]
         wert = frage.get("wert", ["?"])[0]
         uhr = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"{uhr}  {schritt:<20} {wert:>12}   {DEUTUNG.get(schritt, '')}", flush=True)
+        # Lange Werte (Dateipfade) nicht in die Zahlenspalte quetschen.
+        if len(wert) > 12:
+            print(f"{uhr}  {schritt:<20}   {DEUTUNG.get(schritt, '')}\n"
+                  f"          -> {wert}", flush=True)
+        else:
+            print(f"{uhr}  {schritt:<20} {wert:>12}   {DEUTUNG.get(schritt, '')}", flush=True)
         self.send_response(200)
         self.send_header("Content-Length", "2")
         self.end_headers()

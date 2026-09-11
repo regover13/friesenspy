@@ -93,19 +93,22 @@ Dasselbe Wort bezeichnet die **Schiffsbrücke** — und nebenbei das Butterbrot.
 ohne Umlaut `friesenbruegge/`, wie das Repo `friesenspy` heißt; geschrieben wird der Name
 **FriesenBrügge**.
 
-### Was ich dazu weiß — und was davon ungeprüft ist
+### Was gemessen ist — und was noch nicht
 
-Nicht am Gerät nachgesehen, nur aus allgemeiner Kenntnis; **vor jeder Planung zu bestätigen:**
+Am 11.09.2026 wurde der größte Teil dieser Tabelle **am Gerät nachgemessen**, in allen drei
+Simulatoren. Wo „gemessen" steht, liegt ein Protokoll und meist ein Screenshot dazu
+([MSFS](../friesenbruegge/probe-msfs/ERGEBNIS.md), [X-Plane](../friesenbruegge/probe-xplane/ERGEBNIS.md));
+alles Übrige ist weiterhin nur gelesen und **vor jeder Planung zu bestätigen.**
 
 | Frage | MSFS 2020 + 2024 | X-Plane |
 |---|---|---|
-| Objekte zur Laufzeit setzen | `SimConnect_AICreateSimulatedObject` — **in 2024 und 2020 gemessen**, sichtbar, 400 Stück ohne Ruckeln | `XPLMInstance` (`XPLMCreateInstance` + `XPLMLoadObject`) — Doku, ungemessen |
-| Objekt benennen | Container-Titel (`Boat01`) — **gemessen** | Pfad (`…/dynamic/SailBoat.obj`) oder Bibliotheks-Pfad — Doku |
-| Eigenes 3D-Modell nötig? | **nein** — Boote liegen bei | **nein** — Boote liegen bei (s. u.) |
-| Lebensdauer der Objekte | **nur solange die Verbindung offen ist** — gemessen | Instanz gehört dem Plugin, das ohnehin läuft — Doku |
+| Objekte zur Laufzeit setzen | `SimConnect_AICreateSimulatedObject` — **in 2024 und 2020 gemessen**, sichtbar, 400 Stück ohne Ruckeln | `XPLMInstance` — **gemessen**, sichtbar, 150 s stabil |
+| Objekt benennen | Container-Titel (`Boat01`) — **gemessen** | Pfad `…/dynamic/SailBoat.obj` — **gemessen** |
+| Eigenes 3D-Modell nötig? | **nein** — Boote liegen bei | **nein** — Boote, Plattformen, Hirsche, Möwen liegen bei |
+| Lebensdauer der Objekte | **nur solange die Verbindung offen ist** — gemessen | Instanz gehört dem Plugin — 150 s belegt, Entladen ungeprüft |
 | Eigene Position lesen | SimVars | Datarefs `sim/flightmodel/position/latitude` / `longitude` / `elevation` |
 | Höhe über Grund | nur über Umwege | `sim/flightmodel/position/y_agl` — **direkt vorhanden** |
-| Erweiterungssprache | WASM / externes Programm über `exe.xml` — **gemessen** | XPLM-Plugin (C), oder XPPython3 |
+| Erweiterungssprache | WASM / externes Programm über `exe.xml` — **gemessen** | XPLM-Plugin (C) — **gebaut und gelaufen** |
 | Tablet-Oberfläche wie das EFB | ja (MSFS 2024) | kein Gegenstück |
 
 **Ein Punkt sticht heraus:** X-Plane liefert die **Höhe über Grund direkt**. Die Spec zu #20
@@ -186,8 +189,25 @@ Quellen: [XPLMLoadObject](https://developer.x-plane.com/sdk/XPLMLoadObject/),
 gehören in einen Flight-Loop-Callback. Ebenso müssen die Datarefs, die ein Objekt animiert,
 vorher geladen sein.
 
-**Das alles ist Doku, keine Messung** — hier steht kein X-Plane. Ein Gegenstück zum Probeflug
-(`probe-xplane/`) wäre die ehrliche Bestätigung, bevor gebaut wird.
+### ✅ Am 11.09.2026 gemessen — X-Plane trägt auch
+
+X-Plane 12 wurde installiert, ein Plugin gebaut, und die Kette lief lückenlos: Datarefs
+gefunden, Geländehöhe per `XPLMProbeTerrainXYZ` (335,11 m), `XPLMCreateInstance`, Position
+gesetzt, `XPLMInstanceSetAutoShift` aktiv, danach über 150 s Lebenszeichen.
+**Screenshot 11:29:34** zeigt ein voll texturiertes Segelboot mit Schattenwurf auf einer Wiese.
+
+Alle sieben Annahmen der Tabelle oben haben gehalten — **einschließlich des Pfads**, der aus
+einer XPPython3-Doku stammte und die heikelste war. Einzelheiten in
+[`friesenbruegge/probe-xplane/ERGEBNIS.md`](../friesenbruegge/probe-xplane/ERGEBNIS.md).
+
+**Unerwartete Zugabe:** X-Plane liefert neben Booten auch `OilPlatform`, `OilRig`, eine
+Fregatte, **Hirsche** und **Möwen** als fertige Objekte mit — für einen Zähl-Event reichhaltiger
+als MSFS' Bootssortiment und der Robben-Idee näher als alles, was Asobo für 2024 ausliefert.
+
+**Offen bleibt nur:** ob eine reine **Demo**-Installation Plugins lädt (gemessen wurde in einer
+Vollinstallation, das Flugzeug stand im Alpenraum, nicht in der Demo-Region Seattle), und ob
+eine Instanz das Entladen des Plugins überdauert — für den Zuschnitt belanglos, weil die Brügge
+ohnehin durchläuft.
 
 ### Erst zu klären, bevor etwas gebaut wird
 

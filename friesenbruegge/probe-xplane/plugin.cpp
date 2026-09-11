@@ -76,13 +76,35 @@ static double          g_ziel_lat = 0, g_ziel_lon = 0;
 // ---------------------------------------------------------------------------
 // Rueckkanal. Ein roher HTTP-GET ueber Winsock -- keine Bibliothek, damit der Bau
 // nichts weiter braucht als das SDK.
+// Alles, was in einer URL Aerger macht, wird zu %XX. Ohne das zerbricht ein Wert mit
+// LEERZEICHEN die ganze Anfrage: "GET /xplane?wert=Resources/default scenery/... HTTP/1.1"
+// liest der Server als Pfad "…/default" und Version "scenery/sim" -- die Meldung geht
+// verloren, und im Server hagelt es Tracebacks. Genau das ist am 11.09.2026 passiert: Die
+// wichtigste Zeile (welcher .obj-Pfad traegt) fehlte im Protokoll, obwohl alles lief.
+static std::string url_sicher(const char* roh)
+{
+    static const char* HEX = "0123456789ABCDEF";
+    std::string aus;
+    for (const unsigned char* p = (const unsigned char*)roh; *p; ++p) {
+        if (isalnum(*p) || *p == '-' || *p == '_' || *p == '.' || *p == '~') {
+            aus += (char)*p;
+        } else {
+            aus += '%';
+            aus += HEX[*p >> 4];
+            aus += HEX[*p & 15];
+        }
+    }
+    return aus;
+}
+
 static void melde(const char* schritt, const char* wert)
 {
-    char anfrage[900];
+    std::string w = url_sicher(wert);
+    char anfrage[1400];
     std::snprintf(anfrage, sizeof(anfrage),
                   "GET /xplane?schritt=%s&wert=%s HTTP/1.1\r\n"
                   "Host: 127.0.0.1:8099\r\nConnection: close\r\n\r\n",
-                  schritt, wert);
+                  schritt, w.c_str());
 
     char zeile[900];
     std::snprintf(zeile, sizeof(zeile), "[FriesenBruegge] %s = %s\n", schritt, wert);
