@@ -46,9 +46,10 @@ die natürliche Form.
   "protokoll": 1,
   "simulator": "msfs2024",        // msfs2020 | msfs2024 | xplane12
   "bruegge_version": "1.0.0",
+  "instanz": "a3f9c1",            // Zufallswert je Prozessstart -- s. unten
   "kann": ["tier_gross", "bauwerk", "fahrzeug", "boot_klein"],
 
-  "lage": {
+  "lage": {                        // der Stand JETZT -- maßgeblich für "soll"
     "lat": 53.7863, "lon": 7.9104,
     "alt_msl_ft": 1348.9,
     "alt_agl_ft": 12.3,           // null, wenn der Simulator sie nicht kennt
@@ -57,19 +58,144 @@ die natürliche Form.
     "am_boden": true
   },
 
-  "steht": [                       // was die Brügge JETZT gesetzt hat
-    { "id": "k7-3-a", "hoehe_ft": 1297.0, "seit_s": 143 }
+  "spur": [                        // die Punkte seit der letzten Meldung, ältester zuerst
+    { "alter_s": 1.9, "lat": 53.7861, "lon": 7.9099, "alt_msl_ft": 1347.1,
+      "gs_kt": 0.0, "kurs": 210.1 },
+    { "alter_s": 0.9, "lat": 53.7862, "lon": 7.9102, "alt_msl_ft": 1348.0,
+      "gs_kt": 0.0, "kurs": 210.3 }
+  ],
+
+  "steht": [                       // wie es JEDEM Objekt aus "soll" ergangen ist
+    { "id": "k7-3-a", "zustand": "steht", "hoehe_ft": 1297.0, "seit_s": 143 },
+    { "id": "k7-3-b", "zustand": "fehlgeschlagen", "fehler": "NAME_UNRECOGNIZED" },
+    { "id": "k7-3-c", "zustand": "verschwunden", "seit_s": 12 }
   ]
 }
 ```
+
+#### `lage` ist die aktuelle Position des Piloten — sie geht immer mit
+
+**Das ist keine Zugabe, sondern der Kern der Meldung.** Bei *jeder* Anfrage trägt die Brügge
+die Position hinauf, an der der Pilot in diesem Augenblick steht oder fliegt — unabhängig
+davon, ob gerade ein Event läuft, ob Objekte in der Nähe stehen oder ob überhaupt etwas
+zurückkommt. Der Server braucht sie ohnehin, um `soll` zu füllen.
+
+**Damit ist die Brügge die bessere Positionsquelle als der VATSIM-Feed** und löst
+[#23](https://github.com/regover13/friesenspy/issues/23) für ihre Nutzer mit ein: Wer sie
+laufen hat, ist in Echtzeit auf der Karte, ohne dass das Kniebrett offen sein muss. Die
+Felder decken sich mit denen, die das EFB-Panel heute schon aus dem Simulator liest
+(`msfs-panel/…/FriesenSpy.tsx`, `POSITION_INTERVALL_MS`).
+
+#### `spur` trägt die Auflösung, die `lage` allein nicht schafft
+
+Eine Position je Anfrage ist bei einem Takt von 10 s nicht besser als das 15-Sekunden-Raster
+von VATSIM — das Versprechen aus #23 wäre damit nicht eingelöst. **Deshalb sammelt die Brügge
+zwischen zwei Anfragen** (im Sekundentakt oder dichter) und schickt das Gesammelte als
+`spur` mit.
+
+Das ist derselbe Weg, den #23 für das Kniebrett vorschreibt, und aus demselben Grund: Das
+nginx-Rate-Limit erlaubt keine Meldung je Sekunde (Abschnitt 6). Gebündelt bleibt der Track
+dicht, ohne das Budget zu sprengen.
+
+`alter_s` ist das Alter des Punktes in Sekunden **zum Zeitpunkt des Absendens**, nicht eine
+Uhrzeit. Der Server rechnet es gegen seine eigene Empfangszeit auf — damit hängt nichts an
+der Systemuhr des Piloten, die falsch gehen darf.
+
+`spur` darf leer sein: bei der ersten Meldung, nach einer Pause, oder wenn die Brügge nicht
+sammeln kann. Der Server kommt dann mit `lage` allein aus.
+
+⚠ **Für den Server:** Diese Punkte gehören **nicht** nach `position_history` — die Tabelle
+wird nie aufgeräumt, und eine dichtere Reihe verschiebt Aufsetz- und Abstellpunkte in
+`canonicalize_legs`. Bummel-Blockzeiten würden sich rückwirkend ändern, je nachdem wer eine
+Brügge laufen hatte. Die Begründung steht ausführlich in #23, Fundstück 2.
+
+#### Wie die Position zum VATSIM-Flug findet
+
+**Die Zuordnung geschieht im Server über die CID** — der Brügge-Schlüssel trägt sie
+(Abschnitt 5), und `live_positions` ist ebenfalls nach CID geschlüsselt
+(`app/database.py:77`). Die Brügge schickt **keine** Kennung des Fluges mit; sie weiß nichts
+von VATSIM, von Callsigns oder von Flugplänen.
+
+**Die Rollen sind verschieden und ergänzen sich:**
+
+| | liefert |
+|---|---|
+| **VATSIM-Feed** | Identität: Callsign, Flugplan, Route, Flugregeln, Muster |
+| **Brügge** | Position: genauer, dichter, aktueller |
+
+⚠ **Ein Fehler, der sonst sicher einträte:** Der Poller schreibt alle 15 s
+`INSERT OR REPLACE INTO live_positions` (`app/database.py:2280`). Schriebe die Brügge in
+dieselbe Zeile, **überbügelte der nächste Poll die genaue Position mit der groben** — und zwar
+dreimal je Minute. Die Karte ruckelte zwischen zwei Quellen hin und her.
+
+**Also:** Die Brügge-Position gehört in eine **eigene** Ablage
+(`bruegge_positions(cid PK, lat, lon, alt_msl_ft, gs_kt, kurs, gemeldet_am)`), und `/api/live`
+mischt beim Ausliefern: Ist der Brügge-Punkt jünger als eine kurze Frist, hat er Vorrang;
+sonst zählt der VATSIM-Punkt. `live_positions` bleibt dem Poller allein, wie es heute ist.
+
+**Offen und vom Nutzer zu entscheiden:** Was geschieht, wenn ein Pilot **ohne VATSIM** fliegt?
+Die Brügge meldet dann weiter, aber `live_positions` hat keine Zeile — der Poller hat sie beim
+Ausloggen gelöscht (`app/database.py:2299`). Ein solcher Pilot wäre auf der Karte sichtbar,
+**ohne je online gewesen zu sein**. Das ist neu, es ist nicht offensichtlich richtig oder
+falsch, und es gehört mit der Sichtbarkeitsfrage aus Abschnitt 6 zusammen entschieden.
+
+#### `zustand` — ohne ihn dreht die Brügge endlos im Kreis
+
+**`steht` meldet nicht nur Erfolge.** Jedes Objekt aus `soll` bekommt eine Zeile, auch ein
+gescheitertes:
+
+| `zustand` | Bedeutung |
+|---|---|
+| `steht` | erzeugt, lebt, Lage wird gemeldet |
+| `fehlgeschlagen` | Erzeugen abgelehnt — `fehler` nennt den Grund |
+| `verschwunden` | war da, meldet nicht mehr (`seit_s` = seit wann) |
+
+**Warum das kein Beiwerk ist:** Scheitert das Erzeugen — `NAME_UNRECOGNIZED` (die Brügge
+kennt den Titel nicht), `TOO_MANY_OBJECTS`, `OBJECT_OUTSIDE_REALITY_BUBBLE` —, dann steht das
+Objekt nicht in `steht`, bleibt aber in `soll`. Ohne dieses Feld **versucht die Brügge es alle
+zwei Sekunden erneut, für immer**, und der Server erfährt nie, dass die Stelle für diese
+Brügge unbrauchbar ist.
+
+**Die Regeln dazu:**
+
+- Nach `fehlgeschlagen` versucht die Brügge es erst wieder, wenn die `id` aus `soll`
+  verschwunden und wiedergekommen ist. Der Server entscheidet, wann das ist.
+- Bei `verschwunden` setzt die Brügge neu (Abschnitt 2) — das ist der gemessene Fall.
+
+#### Was bei Fehlern geschieht
+
+| Lage | Die Brügge tut |
+|---|---|
+| `401` — Schlüssel ungültig oder widerrufen | räumt auf und hält an. Kein Wiederholen. |
+| `426` — Protokollfassung zu alt | räumt auf und hält an, nennt dem Piloten die Hinweisadresse |
+| `429` — Rate-Limit | verdoppelt den Abstand bis 60 s |
+| `5xx`, Zeitüberschreitung, kein Netz | behält den letzten Sollzustand, solange `gilt_bis_s` reicht |
+
+**`gilt_bis_s` steht in jeder Antwort** und sagt, wie lange der gelieferte Sollzustand ohne
+neue Auskunft gültig bleibt. Danach räumt die Brügge ab. Ohne diese Zahl entschiede jede der
+drei Umsetzungen selbst, was bei Netzausfall geschieht — und für die Baake wäre „stehen
+bleiben" eine Station, die nie verschwindet.
+
+#### `instanz` — ein Pilot kann zwei Brüggen laufen haben
+
+Ein Zufallswert, den die Brügge bei jedem Prozessstart neu zieht. **Der Schlüssel allein
+genügt nicht:** Ein Drittel der Gruppe fliegt X-Plane, manche haben beides installiert. Wer
+MSFS und X-Plane gleichzeitig laufen lässt — oder zwei Rechner benutzt — meldet sonst zwei
+Positionen unter einer CID. Der Server sähe eine springende Position und ein `steht`, das sich
+mit jeder Anfrage widerspricht.
+
+Der Server führt den Zustand je `(schlüssel, instanz)` und zeigt Doppelmeldungen im Admin an.
+
+#### Die übrigen Felder
 
 `kann` ist die Liste der Gattungen, die diese Brügge beherrscht (Abschnitt 3). Sie wird bei
 **jeder** Anfrage mitgeschickt, nicht nur beim ersten Mal — der Server hält keine Sitzung, und
 eine zustandslose Meldung übersteht jeden Neustart auf beiden Seiten.
 
-`alt_agl_ft` ist in X-Plane direkt vorhanden (`sim/flightmodel/position/y_agl`), in MSFS nur
-über Umwege — dort steht `null`, und der Server rechnet ohne. Die Kieker-Spec beschränkt ihre
-Deckungsprüfung aus genau diesem Grund auf MSL (Abschnitt 4.2).
+`alt_agl_ft` ist in X-Plane direkt vorhanden (`sim/flightmodel/position/y_agl`). In MSFS gibt
+es dafür das SimVar `PLANE ALT ABOVE GROUND` — der „Umweg über die Platzhöhe", der anderswo
+beschrieben ist, betrifft das EFB-Panel im Browser, **nicht** SimConnect. Kann eine Brügge das
+Feld nicht liefern, schickt sie `null`, und der Server rechnet ohne.
 
 ### Hinunter
 
@@ -77,6 +203,7 @@ Deckungsprüfung aus genau diesem Grund auf MSL (Abschnitt 4.2).
 {
   "protokoll": 1,
   "naechste_frage_in_s": 10,
+  "gilt_bis_s": 300,               // so lange gilt "soll" ohne neue Auskunft
   "soll": [
     { "id": "k7-3-a", "art": "tier_gross", "lat": 53.6612, "lon": 6.9835,
       "kurs": 210, "erwartete_hoehe_ft": null }
@@ -122,7 +249,8 @@ Objekt als fort.
 Sie ist undurchsichtig für die Brügge — ein Zeichenkettenschlüssel, den der Server vergibt und
 wiedererkennt. Die Brügge führt daneben ihre eigene Simulator-ID (`496` in MSFS, ein
 `XPLMInstanceRef` in X-Plane) und hält die Zuordnung. **Auf Wertebereiche ist kein Verlass:**
-MSFS 2024 vergibt achtstellige IDs, MSFS 2020 dreistellige, das WASM-Modul begann bei 16384.
+MSFS 2024 vergab achtstellige IDs, MSFS 2020 dreistellige, das WASM-Modul in 2024 begann bei
+16384 und in 2020 bei 1.
 
 ---
 
@@ -176,6 +304,30 @@ Daraus die **Grundregel**, die jede Gattung im Katalog trägt:
 - **`Grund: Meereshöhe`** — das Objekt landet **immer** auf 0 ft MSL, gleich was darunter
   liegt. `OnGround`, `Altitude` und `SetDataOnSimObject` sind wirkungslos.
 
+### ⚠ Für welchen Simulator diese Regel gilt, ist NICHT geklärt
+
+**Die Bodensee-Messung ist ohne Simulator-Angabe protokolliert.** Im ganzen
+[`probe-msfs/ERGEBNIS.md`](probe-msfs/ERGEBNIS.md) steht der Simulator genau einmal (Zeile 4,
+MSFS 2024) und gilt dort dem Vormittagslauf; der Bodensee-Abschnitt am Ende nennt keinen.
+Damit ist **nicht belegt**, dass die Regel für beide MSFS-Fassungen gilt — der Katalog oben
+führt sie trotzdem unter „MSFS 2020 + 2024".
+
+**Es gibt sogar einen Hinweis auf das Gegenteil.** Unmittelbar nach der Bodensee-Tabelle steht
+in ERGEBNIS.md: *„Für MSFS 2024 gilt das nicht: Dort kommt `Altitude` an."* Wenn das stimmt,
+ist `Boat` in MSFS 2024 **steuerbar** — man müsste nur die Zielhöhe kennen. Dann wäre die
+Kategorie dort nicht kaputt, sondern nur unbequem.
+
+Auch die Gegenprobe an Land trennt nicht sauber: Auf Wangerooge (Platzhöhe ~3–10 ft) sind
+„Meereshöhe" und „Geländehöhe" nur wenige Fuß auseinander — dieselbe Schwäche, die schon den
+Nordsee-Fall wertlos machte.
+
+**Zu klären, bevor der Katalog steht:** Bodensee-Messung je Simulator wiederholen, mit
+`Boat01` **und** `CruiseShip01`, und den Simulator ins Protokoll schreiben. Bis dahin führt
+die `Grund`-Spalte je Simulator einen eigenen Wert, statt einen gemeinsamen zu behaupten.
+
+*(Gefunden im Fable-Review vom 11.09.2026. Es ist an diesem Tag das dritte Mal, dass eine
+Aussage über Bootshöhen weiter reichte als ihre Messung.)*
+
 **Eine Gattung mit `Grund: Meereshöhe` darf nur dort angefordert werden, wo der Meeresspiegel
 die Oberfläche ist.** Auf der Nordsee stimmt das — und der FriesenKieker spielt an den
 Friesischen Inseln, dort sind Boote also brauchbar. Über Land versinken sie (auf Wangerooge
@@ -216,6 +368,22 @@ bruegge_schluessel(schluessel PK, cid, erzeugt_am, zuletzt_gesehen, widerrufen_a
 Panel-Gerätebindung. Ein widerrufener Schlüssel bekommt `401`, und die Brügge räumt auf,
 statt es erneut zu versuchen.
 
+⚠ **Der Schlüssel wandert mit dem Ordner.** Ein WASM-Paket liegt im Community-Ordner, und
+Community-Ordner werden kopiert und weitergegeben. Wer seinen Ordner teilt, teilt seinen
+Schlüssel mit — das ist beim Widerrufen mitzudenken.
+
+### Die Position wird gegen VATSIM geprüft
+
+**Der Server nimmt eine gemeldete Position nicht ungeprüft an.** Passt sie nicht zur letzten
+bekannten VATSIM-Position derselben CID — Sprung über hunderte Kilometer, Geschwindigkeit
+jenseits des Musters —, antwortet er `409` und verwirft sie.
+
+Das steht schon in der Kieker-Spec (13.3) und ist beim Schreiben dieses Protokolls
+herausgefallen. **Ohne die Prüfung ist eine Kieker-Abdeckung frei erfindbar**, und zwar
+billiger als über jeden Weg, den Spec-Abschnitt 12 als Schummelrisiko diskutiert: Man
+schickte einfach Koordinaten. Die Prüfung kostet die Brügge nichts — sie geschieht
+vollständig im Server.
+
 ---
 
 ## 6. Takt
@@ -233,6 +401,51 @@ sich dieses Budget.
   könnten, sonst **10 s**. Fällt der Server aus, verdoppelt die Brügge ihren Abstand bis
   60 s, statt zu hämmern.
 
+**Der Takt betrifft nur die Anfragen, nicht die Auflösung der Position.** Die Brügge liest
+ihre Lage unabhängig davon **jede Sekunde** (oder dichter) und legt die Punkte in `spur`
+ab — bei 10 s Takt kommen also zehn Punkte in einer Anfrage an, nicht einer. Damit lässt sich
+der Takt drosseln, ohne den Track auszudünnen.
+
+### Warum nicht jede Sekunde senden?
+
+Die naheliegende Frage, und sie ist berechtigt — **die Antwort ist kein Nein, sondern ein
+„später, wenn gemessen".**
+
+Was 1 s statt 2 s gewänne: **eine Sekunde Verzögerung.** Nicht mehr. Die Spur ist ohnehin
+sekundengenau, weil sie gebündelt kommt; die Karte zeichnet dieselbe Linie, nur einen
+Lidschlag später. Eine Zwischenbewegung im Client verdeckt auch das.
+
+Was es kostet:
+
+| | 2 s | 1 s |
+|---|---|---|
+| Anfragen je Pilot und Minute | 30 | 60 |
+| bei 20 gleichzeitigen Brüggen | 10/s | **20/s** |
+| Anteil am nginx-Budget je IP (120 r/m) | ¼ | **½** |
+
+Jede Anfrage ist nicht nur ein Schreibvorgang: Der Server muss aus der Position auch `soll`
+berechnen, also Geo-Abstände gegen alle in Frage kommenden Objekte. Und dieser Container hat
+vorgeführt, dass er empfindlich ist — am 04.09.2026 stieg die CPU-Last über einen Abend von
+13,7 % auf 78,6 %, ohne dass eine Brügge existierte (CLAUDE.md, Datenbank-Regeln).
+
+**Entscheidend ist aber:** Der Takt ist kein Vertrag, sondern eine Zahl in jeder Antwort. Mit
+2 s anfangen, unter echter Last messen, und bei Bedarf auf 1 s gehen — **ohne Client-Release,
+ohne dass ein Pilot etwas neu installiert.** Genau dafür gibt es `naechste_frage_in_s`. Die
+Reihenfolge „erst messen, dann aufdrehen" ist billig; die umgekehrte kostet einen Ausfall am
+Eventabend.
+
+### Die Position ist ein eigener Sichtbarkeitsgrad
+
+⚠ **Vor der ersten Auslieferung zu entscheiden, nicht danach.** `pilot_visibility` kennt heute
+die Dienste `online`, `prefile` und `ts` — das sind **Benachrichtigungen**. Eine
+sekundengenaue Position ist etwas anderes als ein Eintrag im 15-Sekunden-Raster, das ohnehin
+öffentlich über VATSIM läuft: Sie zeigt Platzrunden, Fehlanflüge und Abbrüche in einer
+Auflösung, die es vorher nicht gab.
+
+Das ist keine Blockade für das Protokoll — die Brügge meldet, der Server entscheidet, wem er
+es zeigt. Aber es ist eine Entscheidung, die dem Nutzer gehört, und sie steht auch in
+[#23](https://github.com/regover13/friesenspy/issues/23) noch offen.
+
 ---
 
 ## 7. Die Brügge läuft durch — ein Einmal-Aufruf hinterlässt nichts
@@ -247,7 +460,7 @@ und endet mit ihm.
 | Simulator | Autostart | Belegt |
 |---|---|---|
 | MSFS 2020 + 2024 | **WASM-Modul im Community-Ordner** | ✅ ein Quelltext für beide |
-| MSFS 2020 + 2024 | externes Programm über `exe.xml` | ✅ derselbe Adapter, aber SmartScreen |
+| MSFS 2020 + 2024 | externes Programm über `exe.xml` | ✅ derselbe Adapter; SmartScreen **ungemessen** |
 | X-Plane 12 | `Resources/plugins/` | ✅ läuft auch in der kostenlosen Demo |
 
 **Empfohlen für MSFS ist der WASM-Weg:** ein Ordner zum Hineinkopieren, kein `exe.xml`-Eintrag,
