@@ -415,52 +415,72 @@ Raten wäre der Anfang einer neuen Fehlersuche.**
 
 ---
 
-## 5. Anmeldung: der Brügge-Schlüssel
+## 5. Anmeldung: ein Eintrag in `panel_devices`
 
-### Warum nicht der Weg des Kniebretts
+### Der Weg des Kniebretts ist die Vorlage — die Tabelle gibt es schon
 
-Das Kniebrett bindet ein Gerät über ein Cookie (`panel_devices` → `USER_COOKIE`). **Dieser Weg
-steht der Brügge nicht offen:** Er lebt im Speicher von MSFS, in der Browser-Umgebung des EFB.
-Die Brügge ist ein eigenständiges Programm ohne Browser — sie hat keinen Cookie-Speicher, und
-im WASM-Fall nicht einmal ein Fenster, in dem sich jemand anmelden könnte.
+**Nutzerfrage vom 11.09.2026:** *„Können wir nicht einfach wieder denselben Key nutzen, der
+auch beim Kniebrett mitgegeben wird?"* — Ja. Hier stand zwischenzeitlich eine eigene Tabelle
+`bruegge_schluessel`; die war überflüssig, denn `panel_devices` ist bereits genau das:
+
+```sql
+panel_devices(device_id PK, cid, name, created_at, last_seen_at, paket_version)
+```
+
+Ein Zufallswert, der auf eine CID zeigt — mit `get_panel_device`, `bind_panel_device`,
+`touch_panel_device`, `list_panel_devices` und `revoke_panel_device` fertig daneben. Sogar
+`paket_version` passt: Die Brügge meldet ihre Fassung ohnehin (`bruegge_version`), und der
+Admin sieht dann für beide Gerätearten dasselbe.
+
+**Also dieselbe Tabelle, ein Feld mehr:**
+
+```sql
+ALTER TABLE panel_devices ADD COLUMN zweck TEXT DEFAULT 'panel';   -- 'panel' | 'bruegge'
+```
+
+Das kauft eine Verwaltung, einen Admin-Bildschirm, eine Widerrufsstelle — statt zweier, die
+auseinanderlaufen.
+
+### ⚠ Was NICHT geteilt werden darf: die Rechte
+
+**Ein Kniebrett-Gerät erzeugt beim Anmelden ein volles Nutzer-Token** (`make_user_token`,
+`app/main.py:2551`) — also Zugriff auf das Konto. Für einen Wert, der in einer **Textdatei**
+neben der Brügge liegt, ist das zu viel:
+
+| | Kniebrett heute | Brügge |
+|---|---|---|
+| wo der Wert lebt | MSFS' eigener Speicher (`DataStore`), unsichtbar | **Textdatei auf der Platte** |
+| wer ihn sehen kann | niemand, auch der Pilot nicht | jeder am Rechner |
+| wandert er weiter? | nein | **ja** — im WASM-Fall im Community-Ordner, und die werden weitergegeben |
+
+Deshalb: **Ein Eintrag mit `zweck='bruegge'` gilt ausschließlich an `/api/bruegge/melden` und
+erzeugt nie ein Nutzer-Token.** Sein Verlust kostet dann nichts außer falschen
+Positionsmeldungen — und die fängt die Prüfung unten ab.
+
+Aus demselben Grund kann die Brügge auch nicht einfach den *vorhandenen* Kniebrett-Schlüssel
+mitbenutzen: Der Pilot sieht ihn gar nicht (`getOrCreateDeviceId` legt ihn in MSFS' Speicher
+ab), und ihn dafür sichtbar zu machen hieße, einen Konto-Schlüssel in eine Textdatei zu
+schreiben.
 
 ### Der Ablauf
 
 1. Der Pilot meldet sich **in der Weboberfläche** an (der Board-Login läuft).
-2. Dort drückt er einmal auf „Brügge-Schlüssel erzeugen" und bekommt einen Zufallswert.
+2. Dort erzeugt er einmal einen Brügge-Eintrag und bekommt den Wert angezeigt.
 3. Er kopiert ihn in die Konfigurationsdatei neben der Brügge.
 4. Die Brügge schickt ihn bei jeder Anfrage mit:
-   `Authorization: Bearer <schlüssel>`
+   `Authorization: Bearer <wert>`
 
-```
-bruegge_schluessel(schluessel PK, cid, erzeugt_am, zuletzt_gesehen, widerrufen_am)
-```
-
-**Der Schlüssel trägt die CID** — deshalb muss die Brügge keine Kennung mitschicken und der
-Server keine Zuordnung raten.
-
-### Was der Schlüssel darf und was nicht
-
-| | |
-|---|---|
-| **darf** | an `/api/bruegge/melden` Position melden und Objekte abholen |
-| **darf nicht** | alles andere — kein Konto, kein Admin, keine Einstellungen, keine fremden Daten |
-
-**Das ist keine Formalie.** Ein Schlüssel, der in eine Textdatei auf 20 Rechnern wandert, ist
-kein Passwort-Ersatz: Er muss so wenig können, dass sein Verlust nichts kostet außer falschen
-Positionsmeldungen — und die fängt die VATSIM-Plausibilitätsprüfung unten ab.
-
-**Er ist trotzdem ein Zugangsgeheimnis und muss im Admin widerrufbar sein**, wie eine
-Panel-Gerätebindung. Ein widerrufener Schlüssel bekommt `401`, und die Brügge räumt auf,
+**Die CID steht in der Tabelle** — die Brügge schickt keine mit, und der Server muss nichts
+über die Position zuordnen. Ein widerrufener Eintrag bekommt `401`, und die Brügge räumt auf,
 statt es erneut zu versuchen.
 
-**Nur über HTTPS.** Der Schlüssel geht bei jeder Anfrage über die Leitung. Für MSFS-WASM ist
-das ohnehin die einzige Möglichkeit — die Network-API dort lässt ausschließlich `https` zu
-(und genau daran scheiterte im Probeflug der Versuch mit `http://127.0.0.1`).
+**Nur über HTTPS.** Der Wert geht bei jeder Anfrage über die Leitung. Für MSFS-WASM ist das
+ohnehin die einzige Möglichkeit — die Network-API dort lässt ausschließlich `https` zu (und
+genau daran scheiterte im Probeflug der Versuch mit `http://127.0.0.1`).
 
-⚠ **Der Schlüssel wandert mit dem Ordner.** Ein WASM-Paket liegt im Community-Ordner, und
-Community-Ordner werden kopiert und weitergegeben. Wer seinen Ordner teilt, teilt seinen
-Schlüssel mit — das ist beim Widerrufen mitzudenken.
+⚠ **Der Wert wandert mit dem Ordner.** Ein WASM-Paket liegt im Community-Ordner, und die
+werden kopiert und weitergegeben. Das ist beim Widerrufen mitzudenken — und der Grund für die
+Rechtetrennung oben.
 
 ### Die Position wird gegen VATSIM geprüft
 
