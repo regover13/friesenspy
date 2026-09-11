@@ -6,6 +6,49 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-11 — Probefluege am Simulator: alle drei Simulatoren gemessen (Sim-Sitzung)
+
+**Betrifft `friesenbruegge/` und `docs/`** — kein Anwendungscode, keine Version, kein
+CHANGELOG-Eintrag. Live blieb v14.29.0.
+
+- **Die Torfrage aus #20 ist beantwortet: ja.** Objekte lassen sich zur Laufzeit setzen, in
+  **MSFS 2024, MSFS 2020 und X-Plane 12** — jeweils mit Screenshot belegt. Fuer MSFS zusaetzlich
+  **beide Auslieferungswege** erprobt: extern ueber `exe.xml` und als WASM-Modul im
+  Community-Ordner, aus einem gemeinsamen Quelltext.
+- **Ordner `sim-bruecke/` → `friesenbruegge/`** (Nutzerentscheidung; „Bruegge" ist Platt fuer
+  Bruecke). Darin `probe-msfs/` und `probe-xplane/`, je mit `ERGEBNIS.md`.
+- **Ausfuehrlicher Kommentar an #25** mit allem, was das Protokoll betrifft.
+
+**Drei Befunde, die jede weitere Planung betreffen:**
+
+1. **Objekte sterben mit der SimConnect-Verbindung.** Die Bruegge muss durchlaufen, ein
+   Einmal-Aufruf hinterlaesst nichts.
+2. **Die Objektart bestimmt die Hoehe.** `Boat` landet auf **Meereshoehe** (versinkt daher ueber
+   Land), `Animal`/`StaticObject`/`GroundVehicle` auf **Gelaendehoehe**. Das gehoert in die
+   Gattungstabelle des Protokolls.
+3. **Ein gesetztes Objekt bleibt nicht garantiert** (in MSFS 2020 beobachtet): zweimal derselbe
+   Aufruf, einmal nach einer Sekunde weg, einmal 600 s stabil. Nach dem Setzen gehoert eine
+   Lagemeldung abonniert.
+
+**Was in der Spec aus Herleitung stammte und jetzt widerlegt ist:** Der Container-Titel
+`Boat_Small` existiert nicht (echt sind `Boat01`, `FishingBoat`, …), die Exception-Nummern im
+Probe-Skript waren ab 12 falsch, und **eigene 3D-Modelle sind keine Voraussetzung** — der
+Simulator liefert zaehlbare Tiere mit (Baer, Elefant, Giraffe; in X-Plane Hirsche und Moewen).
+
+**Beim Rebase zu beachten:** Diese Sitzung hat ausschliesslich `friesenbruegge/` und `docs/`
+angefasst, nie `app/`. Wer an der Spec arbeitet: Abschnitte 13.2 und 13.4 sind nachgezogen,
+die Messergebnisse dort haben Vorrang vor allem Hergeleiteten.
+
+**Fuer die naechste Sitzung am Simulator** — drei Dinge haben je etwa eine Stunde gekostet und
+sind vermeidbar:
+- **Die DevMode-Konsole gehoert an den Anfang.** Ein WASM-Modul, das die Validierung nicht
+  besteht, ist von aussen nicht von einem zu unterscheiden, das nichts tut. Vier Sim-Starts
+  lang wurde von aussen geraten, waehrend die Konsole die Antwort bereithielt.
+- **Eine Regel nie an einem einzigen Objekttyp pruefen.** `Altitude`, `OnGround` und
+  `SetDataOnSimObject` schienen alle wirkungslos — weil ausschliesslich an Booten erprobt.
+- **Sichtpruefungen gross, nah und lange ansetzen**, am besten neben etwas bereits Sichtbarem.
+  Dreimal hiess es „ich sehe nichts", und dreimal war das Objekt da.
+
 ## 2026-09-11 — Vier neue Eventtyp-Issues, Spec-Arbeit, keine Codeaenderung (Server-Sitzung)
 
 **Betrifft nur `docs/` und `CLAUDE.md`** — kein Anwendungscode, keine Version, kein
