@@ -180,10 +180,39 @@ Höhe es sitzt — nicht, dass es gezeichnet wird. Ein Objekt 10.000 km entfernt
 nicht gerendert. Die Sichtbarkeit ist ausschließlich im Nahbereich belegt (200 m an Land,
 1,6 km auf dem Wasser, beides per Screenshot).
 
-**Die offene Frage lautet damit präziser als vorher:** Wird ein weit entfernt angelegtes Objekt
-gezeichnet, wenn der Pilot später hinkommt? Das braucht einen Flug oder einen Slew über größere
-Distanz und ist hier nicht gemessen worden. Für den Kieker ist sie nicht blockierend — ein
-mitlaufender Spawner kann nachsetzen, sobald der Pilot näher kommt.
+### ✅ Geflogen am 11.09.2026: ja, es wird gezeichnet
+
+**Die Frage lautete:** Wird ein weit entfernt angelegtes Objekt gezeichnet, wenn der Pilot
+später hinkommt? Sie brauchte einen echten Flug — EDWG Wangerooge nach EDWY Norderney,
+MSFS 2024.
+
+| Entfernung | gemeldete Höhe | |
+|---|---|---|
+| 44,7 km | −0,8 ft | `CruiseShip01` gesetzt, Flugzeug stand noch in EDWG |
+| 22,1 km | 1,8 ft | **zweifelsfrei gesehen** |
+| 4,5 km | −0,1 ft | |
+
+**Der Server darf einmal verteilen.** Die Brügge muss nicht unterwegs nachsetzen, sobald der
+Pilot in Reichweite kommt — das war die Alternative, und sie hätte bedeutet, dass der Server
+laufend wissen muss, wo jeder Pilot gerade ist.
+
+⚠ **Die Zahl 22 km gilt für ein Kreuzfahrtschiff, nicht allgemein.** Ein `CruiseShip01` ist
+rund 300 m lang; große Objekte blendet der Simulator deutlich früher ein als kleine. Für den
+Kieker sind aber gerade die **kleinen** die relevanten — `Boat01` misst acht Meter, ein Tier
+zwei.
+
+**Der tragende Teil des Befunds hängt nicht an der Zahl:** Belegt ist, dass der Simulator ein
+aus 45 km gesetztes Objekt **nicht vergisst**, sondern zeichnet, sobald der Pilot in Reichweite
+kommt. Das ist eine Eigenschaft der Objektverwaltung und nicht der Größe. **Ungemessen bleibt,
+ob ein kleines Objekt denselben Weg geht** — der Test dafür ist derselbe Flug mit `Boat01`
+statt `CruiseShip01`.
+
+**Zweiter Befund aus derselben Reihe:** Die Höhe blieb über die ganze Strecke an der
+Wasserlinie. **Bei 45 km ist die Höhenmeldung also brauchbar** — der Phantomwert am Bodensee
+trat erst bei 691 km auf. Die Grenze liegt damit irgendwo zwischen 200 und 691 km.
+
+⚠ **Für MSFS 2020 und X-Plane ist das nicht gemessen.** Die Anleitung steht in
+[`FLUGTEST.md`](FLUGTEST.md) und gilt für jede Strecke.
 
 ## 3. Die Container-Titel, die funktioniert haben
 

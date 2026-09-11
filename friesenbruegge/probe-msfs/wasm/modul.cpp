@@ -253,20 +253,15 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
             feld(4, (DWORD)r);
         }
 
-        // Rueckfallebene: Kommt nach acht Sekunden keine Lagemeldung, wird trotzdem
-        // gesetzt -- an einem festen Punkt. Sonst bliebe der Lauf ohne jedes Ergebnis,
-        // und die zweite Frage (kann WASM ueberhaupt setzen?) waere mit erschlagen.
-        // Erst in Sekunde 20, nicht in 8. Bei 8 gab es einen Wettlauf mit dem Lage-Zweig
-        // darueber: Kam das Sekunden-Ereignis vor der Lagemeldung derselben Sekunde, gewann
-        // der Rueckfall -- und das Modul setzte an der festen Koordinate, obwohl es die
-        // eigene Lage laengst kannte (11.09.2026 gemessen: vier Boote auf 53.78721 statt auf
-        // 53.78226). Der echte Weg waere so nie getestet worden.
-        if (g_sim_laeuft && g_seit_start == 20 && !g_versucht) {
-            g_versucht = true;
-            melde("rueckfall_feste_koordinate", 0);
-            Lage fest{ 53.78721, 7.90970, 0.0 };   // Wangerooge, Standort des Probeflugs
-            boot_setzen(fest);
-        }
+        // Der Rueckfall auf eine feste Koordinate ist ERSATZLOS ENTFALLEN.
+        //
+        // Er sollte verhindern, dass ein Lauf ohne Ergebnis bleibt -- und hat stattdessen
+        // zweimal den Blick verstellt: Die Boote standen auf 53.78721 statt auf 53.78226,
+        // und das sah aus wie ein gelungener Lauf, solange niemand die Koordinaten verglich.
+        // Ein Lauf ohne Ergebnis ist ehrlicher als einer mit einem Ergebnis vom falschen Ort.
+        //
+        // Setzt das Modul nach 60 Sekunden nichts, steht das im Statusbereich: [21] bleibt
+        // 0, und [20] sagt, wie viele Lagemeldungen verworfen wurden.
         break;
     }
 
@@ -305,19 +300,28 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
             // die zuletzt GELESENE Lage korrekt war. Beides stimmte; nur gesetzt wurde am
             // falschen Ort.
             //
-            // Warten, bis die Lage RUHIG ist -- nicht, bis sie plausibel aussieht.
+            // EINE MINUTE WARTEN. Nichts erraten.
             //
-            // Zwei Anlaeufe sind hier gescheitert, und beide Male sah der Wert vollkommen
-            // vernuenftig aus:
-            //   1. Ohne jede Pruefung landeten die Boote bei 0/90 im Indischen Ozean.
-            //   2. Mit 0/90-Pruefung und "ab Sekunde 5" landeten sie bei 47.51893 /
-            //      -122.29450 -- in SEATTLE. Der Simulator liefert nach dem Nullpunkt erst
-            //      seinen Standard-Startpunkt, bevor der geladene Flug greift.
+            // Hier standen nacheinander drei Heuristiken, und jede deckte genau den Fall ab,
+            // der zuletzt aufgefallen war (11.09.2026, alle drei gemessen):
             //
-            // Eine Liste bekannter Fehlwerte waere der dritte Anlauf derselben Sorte: Sie
-            // deckt genau die Orte ab, die schon aufgefallen sind. Was den Ladevorgang
-            // dagegen zuverlaessig verraet, ist der SPRUNG -- der Standort wechselt zwischen
-            // zwei Sekunden um tausende Kilometer, und kein Flugzeug tut das.
+            //   1. keine Pruefung        -> Boote bei 0/90, Indischer Ozean
+            //   2. 0/90 verwerfen, ab 5s -> Boote in SEATTLE (47.51893 / -122.29450),
+            //                               dem Standard-Startpunkt von MSFS
+            //   3. Spruenge erkennen     -> wieder 0/90, denn der Nullpunkt SPRINGT NICHT.
+            //                               Er steht still und galt damit als "ruhig".
+            //
+            // Der eigentliche Fehler lag eine Ebene hoeher: Die echte Bruegge leitet ihre
+            // Setzpositionen NICHT aus der eigenen Lage ab -- die bekommt sie vom Server.
+            // Sie liest die eigene Lage nur, um sie zu MELDEN. Das Probe-Modul tut es nur,
+            // weil es keinen Server hat, und fuer diesen Zweck genuegt: lange genug warten.
+            //
+            // 60 Sekunden sind mehr als jeder Ladevorgang braucht und kosten nichts. Die
+            // Ruhe- und Nullpunktpruefung bleiben als zweites Netz stehen.
+            //
+            // (Fuer das MELDEN gilt die Sprungregel weiter -- sie steht in PROTOKOLL.md,
+            // Abschnitt 1, und ist dort richtig aufgehoben: Der Server darf einen Sprung
+            // ueber 8.000 km nicht als Track bekommen.)
             //
             // 0,005 Grad Breite sind rund 555 m. Bei 1-Sekunden-Takt liegt selbst ein sehr
             // schnelles Flugzeug darunter (600 kt sind 309 m/s).
@@ -332,7 +336,7 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
                                     lage->lon > 89.9 && lage->lon < 90.1);
             if (!ruhig || nullpunkt) {
                 feld(20, ++g_nullpunkte);          // verworfen: Sprung oder Nullpunkt
-            } else if (!g_versucht && g_sim_laeuft && g_seit_start >= 3) {
+            } else if (!g_versucht && g_sekunden >= 60) {
                 g_versucht = true;
                 feld(21, g_sekunden);              // in welcher Sekunde gesetzt wurde
                 feld(22, (DWORD)(long)(lage->lat * 100000.0));

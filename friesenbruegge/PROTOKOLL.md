@@ -349,6 +349,30 @@ einen Wert, ist er MSL und die Brügge versucht ihn zu treffen.
 
 ## 2. Der Sollzustand wird abgeglichen, nicht befolgt
 
+> ### ✅ Einmal verteilen genügt — geflogen am 11.09.2026
+>
+> Die Frage war, ob der Server Objekte **einmal** setzen lassen darf oder ob die Brügge sie
+> unterwegs nachsetzen muss, sobald der Pilot in Reichweite kommt. Das Anlegen gelingt bis
+> 10.000 km, belegt war die **Sichtbarkeit** aber nur im Nahbereich (1,6 km auf dem Wasser).
+>
+> **Ein `CruiseShip01`, aus 44,7 km Entfernung vor Norderney gesetzt, war bei 22,1 km
+> zweifelsfrei zu sehen** (EDWG→EDWY, MSFS 2024). Der Server darf also verteilen, sobald er
+> weiß, wohin der Pilot fliegt — und muss nicht jede Sekunde nachlegen.
+>
+> ⚠ **Die Zahl 22 km gilt für ein Kreuzfahrtschiff, nicht allgemein.** Ein `CruiseShip01` ist
+> rund 300 m lang; große Objekte blendet der Simulator deutlich früher ein als kleine. Für den
+> Kieker sind aber gerade die **kleinen** die relevanten — `Boat01` misst acht Meter, ein Tier
+> zwei.
+>
+> **Der tragende Teil des Befunds hängt nicht an der Zahl:** Belegt ist, dass der Simulator ein
+> aus 45 km gesetztes Objekt **nicht vergisst**, sondern zeichnet, sobald der Pilot in Reichweite
+> kommt. Das ist eine Eigenschaft der Objektverwaltung und nicht der Größe. **Ungemessen bleibt,
+> ob ein kleines Objekt denselben Weg geht** — der Test dafür ist derselbe Flug mit `Boat01`
+> statt `CruiseShip01`.
+>
+> ⚠ **Für MSFS 2020 und X-Plane ist das nicht gemessen.** Die Anleitung steht in
+> [`probe-msfs/FLUGTEST.md`](probe-msfs/FLUGTEST.md) und gilt für jede Strecke.
+
 Die Brügge vergleicht `soll` mit dem, was sie tatsächlich gesetzt hat, und gleicht in **beide**
 Richtungen ab:
 

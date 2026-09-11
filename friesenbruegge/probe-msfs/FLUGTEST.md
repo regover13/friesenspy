@@ -1,5 +1,38 @@
 # Flugtest: Wird ein weit gesetztes Objekt gezeichnet, wenn der Pilot hinkommt?
 
+> ## ✅ Geflogen am 11.09.2026 — **ja, es wird gezeichnet**
+>
+> EDWG Wangerooge nach EDWY Norderney, MSFS 2024. Ein `CruiseShip01` wurde aus **44,7 km**
+> Entfernung vor Norderney gesetzt und war bei **22,1 km** zweifelsfrei zu sehen.
+>
+> | Entfernung | gemeldete Höhe | |
+> |---|---|---|
+> | 44,7 km | −0,8 ft | gesetzt |
+> | 22,1 km | 1,8 ft | **gesehen** |
+> | 4,5 km | −0,1 ft | |
+>
+> **Folge: Der Server darf einmal verteilen.** Die Brügge muss nicht unterwegs nachsetzen,
+> sobald der Pilot in Reichweite kommt.
+>
+> ⚠ **Die Zahl 22 km gilt für ein Kreuzfahrtschiff, nicht allgemein.** Ein `CruiseShip01` ist
+> rund 300 m lang; große Objekte blendet der Simulator deutlich früher ein als kleine. Für den
+> Kieker sind aber gerade die **kleinen** die relevanten — `Boat01` misst acht Meter, ein Tier
+> zwei.
+>
+> **Der tragende Teil des Befunds hängt nicht an der Zahl:** Belegt ist, dass der Simulator ein
+> aus 45 km gesetztes Objekt **nicht vergisst**, sondern zeichnet, sobald der Pilot in Reichweite
+> kommt. Das ist eine Eigenschaft der Objektverwaltung und nicht der Größe. **Ungemessen bleibt,
+> ob ein kleines Objekt denselben Weg geht** — der Test dafür ist derselbe Flug mit `Boat01`
+> statt `CruiseShip01`.
+>
+> **Zweiter Befund:** Die Höhe blieb über die ganze Strecke an der Wasserlinie. Bei 45 km ist
+> die Höhenmeldung also brauchbar — der Phantomwert vom Bodensee trat erst bei 691 km auf.
+> Das grenzt die offene Frage nach der Grenze ein: irgendwo zwischen 200 und 691 km.
+>
+> *Die Anleitung unten bleibt stehen — für eine Wiederholung in MSFS 2020 und X-Plane, wo
+> die Frage noch offen ist.*
+
+
 **Die letzte Frage, die einen echten Flug braucht** — alle übrigen sind im Stand zu messen.
 Sie entscheidet darüber, wie die Brügge arbeitet:
 
