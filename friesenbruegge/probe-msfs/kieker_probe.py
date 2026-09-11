@@ -53,7 +53,12 @@ RECV_EXCEPTION = 1
 RECV_OPEN = 2
 RECV_QUIT = 3
 RECV_SIMOBJECT_DATA = 8
+RECV_SIMOBJECT_DATA_BYTYPE = 9
 RECV_ASSIGNED_OBJECT_ID = 12
+
+# SIMCONNECT_SIMOBJECT_TYPE (Header Zeile 221 ff.): USER=0, ALL=1, AIRCRAFT=2,
+# HELICOPTER=3, BOAT=4, GROUND=5.
+TYP_BOAT = 4
 
 # SIMCONNECT_EXCEPTION, vollstaendig am Header nachgezaehlt (Zeile 158 ff.).
 #
@@ -594,6 +599,77 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
     return ergebnis
 
 
+def boote_zaehlen(dll_pfad: Path, radius_m: int) -> int:
+    """Welche Boote stehen im Umkreis? -- unabhaengig davon, WER sie gesetzt hat.
+
+    Gebaut, um eine Sichtpruefung zu ersetzen, die nichts taugt: Ein `Boat01` ist rund acht
+    Meter lang, und "ich sehe keins" heisst auf 200 m Entfernung wenig (11.09.2026 in
+    MSFS 2020 zweimal erlebt -- das Boot war da, gesehen wurde es erst als
+    Kreuzfahrtschiff). Der Simulator weiss es besser als das Auge.
+
+    Dient hier der Frage, ob das WASM-Modul ein Objekt gesetzt hat: Findet ein ZWEITER
+    Client das Boot, dann laeuft das Modul, und es fehlt ihm nur der Netzzugang.
+    """
+    print(f"SimConnect.dll: {dll_pfad}")
+    sc = ctypes.WinDLL(str(dll_pfad))
+    _bindungen(sc)
+    sc.SimConnect_RequestDataOnSimObjectType.restype = ctypes.HRESULT
+    sc.SimConnect_RequestDataOnSimObjectType.argtypes = [
+        w.HANDLE, w.DWORD, w.DWORD, w.DWORD, ctypes.c_int,
+    ]
+
+    handle = _verbinden(sc, b"FriesenKieker-Zaehlung")
+    if handle is None:
+        return 2
+    print("SimConnect_Open: verbunden.")
+
+    lage = _eigene_lage(sc, handle)
+    if lage is None:
+        _schliessen(sc, handle)
+        return 2
+    m_lat, m_lon, _ = lage
+    print(f"  Flugzeug steht bei {m_lat:.5f} / {m_lon:.5f}")
+
+    print(f"\nFrage alle Boote im Umkreis von {radius_m} m ab ...")
+    sc.SimConnect_RequestDataOnSimObjectType(handle, REQ_LAGE + 900, DEF_LAGE,
+                                             radius_m, TYP_BOAT)
+
+    import math
+    gefunden = []
+    for art, zeiger in _pakete(sc, handle, 12):
+        if art == RECV_SIMOBJECT_DATA_BYTYPE:
+            d = ctypes.cast(zeiger, ctypes.POINTER(RecvSimObjectData)).contents
+            if d.dwRequestID != REQ_LAGE + 900:
+                continue
+            # Ein leeres Ergebnis kommt trotzdem als Paket -- mit dwoutof = 0 und einer
+            # Objekt-ID 0 bei 0/0. Ohne diese Pruefung meldet die Zaehlung "1 Boot
+            # gefunden, 6010 km entfernt", was Unsinn ist.
+            if d.dwoutof == 0 or d.dwObjectID == 0:
+                break
+            lat, lon, alt = d.werte[0], d.werte[1], d.werte[2]
+            # grobe Entfernung, reicht zum Einordnen
+            dx = (lon - m_lon) * 111320.0 * math.cos(math.radians(m_lat))
+            dy = (lat - m_lat) * 111320.0
+            gefunden.append((math.hypot(dx, dy), lat, lon, alt, d.dwObjectID))
+            if d.dwentrynumber >= d.dwoutof:
+                break
+        elif art == RECV_EXCEPTION:
+            ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents
+            print(f"  EXCEPTION {ex.dwException} -- "
+                  f"{EXCEPTION_NAMEN.get(ex.dwException, 'unbekannt')}")
+            break
+
+    if not gefunden:
+        print("\n  KEIN EINZIGES BOOT im Umkreis.")
+    else:
+        print(f"\n  {len(gefunden)} Boot(e) gefunden:\n")
+        for entf, lat, lon, alt, oid in sorted(gefunden):
+            print(f"    {entf:8.0f} m   {lat:.5f} / {lon:.5f}   {alt:7.1f} ft   "
+                  f"Objekt {oid}")
+    _schliessen(sc, handle)
+    return 0 if gefunden else 1
+
+
 def mengentest(titel: str, anzahl: int, raster_m: float, dll_pfad: Path, halten: int,
                neben_mir: float | None, lat: float, lon: float) -> int:
     """Wie viele Objekte vertraegt der Simulator? (Spec 13.4, Frage 3)
@@ -725,6 +801,10 @@ def main() -> int:
     ap.add_argument("--neben-mir", type=float, metavar="METER",
                     help="Ziel nicht aus --lat/--lon, sondern <METER> oestlich des "
                          "Flugzeugs (schliesst EXCEPTION 33 aus)")
+    ap.add_argument("--boote-zaehlen", action="store_true",
+                    help="Nur nachsehen, welche Boote im Umkreis stehen (egal von wem)")
+    ap.add_argument("--radius", type=int, default=20000, metavar="METER",
+                    help="Umkreis fuer --boote-zaehlen (Vorgabe 20000 m)")
     ap.add_argument("--anzahl", type=int, metavar="N",
                     help="Mengentest: N Objekte im Raster setzen (Spec 13.4, Frage 3)")
     ap.add_argument("--raster", type=float, default=150.0, metavar="METER",
@@ -734,6 +814,8 @@ def main() -> int:
     if a.titel_suche:
         titel_suchen()
         return 0
+    if a.boote_zaehlen:
+        return boote_zaehlen(dll_finden(a.dll), a.radius)
     if not a.titel:
         ap.error('entweder --titel "..." oder --titel-suche')
     if a.anzahl:
