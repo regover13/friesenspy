@@ -892,6 +892,40 @@ nachträglich zu SimObjects erklären — eigene schon. Szenerie ist überdies s
 gelesen, zur Laufzeit nicht änderbar. Beides zusammen schließt den Szenerie-Weg für ein
 serverseitig gesteuertes Event aus.
 
+### ✅ Nachtrag 11.09.2026: Eigene Modelle sind womöglich gar nicht nötig
+
+Der Abschnitt oben bleibt richtig — **für die Robben aus dem Szenerie-Repo**. Er verallgemeinert
+aber zu weit: Der Simulator bringt sehr wohl **ansprechbare Tiere** mit, als echte SimObjects mit
+Container-Titel.
+
+In MSFS 2020 unter `asobo-simobjects-animals`, in MSFS 2024 als 41 einzelne Pakete
+(`fs24-microsoft-simobjects-animals-*`):
+
+```
+BlackBear · AfricanElephant · AfricanGiraffe · Hippo · …   (category = Animal)
+Flamingo · Goose                                            (category = FlyingAnimal)
+```
+
+**Gemessen und gesehen** (Screenshot 14:39:47): Vier Elefanten und vier Giraffen, per
+`AICreateSimulatedObject` gesetzt, standen auf der Wiese von Wangerooge — auf Geländehöhe, voll
+texturiert, mit Schattenwurf.
+
+**Eine Robbe ist nicht dabei.** Aber die Gattung funktioniert, und damit ist „wir brauchen ein
+eigenes 3D-Modell" keine Voraussetzung mehr, sondern eine Geschmacksfrage. Für einen ersten
+Kieker reichen vorhandene Tiere; ein Robbenmodell bliebe eine spätere Verschönerung.
+
+**Wichtig dabei — die Objektart entscheidet über die Höhe:**
+
+| Kategorie | wo das Objekt landet |
+|---|---|
+| `Boat` | **Meereshöhe**, nicht Wasseroberfläche |
+| `Animal`, `StaticObject`, `GroundVehicle` | **Geländehöhe** |
+
+Boote versinken deshalb über Land (auf Wangerooge drei Meter tief im Platz). Umgekehrt ist noch
+**offen**, ob ein Boot auf einem **Binnensee** auf dem Seespiegel liegt oder darunter — die Probe
+auf dem Chiemsee ergab 0,0 ft, war aber 800 km entfernt ohne geladenes Gelände. Das ist vor Ort
+zu klären, bevor jemand einen Kieker am Bodensee plant.
+
 **Verworfen bleibt vPilot**, aus zwei unabhängigen Gründen: Es zeichnet ausschließlich, was das
 VATSIM-Netz meldet — ein Objekt erschiene nur, wenn sich etwas als Flugzeug an dieser Position
 einloggt, was gegen den Code of Conduct verstößt — und eine Injektionsschnittstelle gibt es
@@ -949,10 +983,11 @@ Frage.
    beiden Fassungen gegengeprüft: 2,0 ft und 3,6 ft), und der HTTP-Rückkanal erreichte kein
    `127.0.0.1`. Einzelheiten und die zwei Build-Flags, ohne die gar nichts läuft, stehen in
    [`friesenbruegge/probe-msfs/ERGEBNIS.md`](../../../friesenbruegge/probe-msfs/ERGEBNIS.md).
-2. Welche **SimObject-Kategorie** passt für ein liegendes Tier, ohne dass der Simulator ihm ein
-   Verhalten andichtet? (Für Boote stellt sich die Frage nicht.) Hinweis aus dem Probeflug:
-   MSFS 2024 liefert **41 Tier-Pakete** als SimObjects aus (`fs24-microsoft-simobjects-animals-*`)
-   — Robbe ist keine dabei, aber die Gattung ist vorgesehen.
+2. ✅ Welche **SimObject-Kategorie** passt für ein liegendes Tier? **`Animal`** — gemessen und
+   gesehen. Elefanten und Giraffen standen ruhig auf Geländehöhe, kein angedichtetes Verhalten.
+   Titel stehen in `asobo-simobjects-animals` (MSFS 2020) bzw. in 41 Einzelpaketen
+   (`fs24-microsoft-simobjects-animals-*`, MSFS 2024). **Die Objektart entscheidet auch über die
+   Höhe:** `Boat` landet auf Meereshöhe, alles andere auf Geländehöhe (s. 13.2).
 3. ✅ Wie viele Objekte verträgt der Simulator, bevor es ruckelt? **Beantwortet: mindestens
    400.** 25, 100 und 400 Boote wurden allesamt angenommen — keine `TOO_MANY_OBJECTS`, volle
    Meldungsrate (43.200 Lagemeldungen in 120 s bei 400 Objekten), und der Pilot hat bei

@@ -108,7 +108,9 @@ alles Übrige ist weiterhin nur gelesen und **vor jeder Planung zu bestätigen.*
 | Lebensdauer der Objekte | **nur solange die Verbindung offen ist** — gemessen | Instanz gehört dem Plugin — 150 s belegt, Entladen ungeprüft |
 | Eigene Position lesen | SimVars | Datarefs `sim/flightmodel/position/latitude` / `longitude` / `elevation` |
 | Höhe über Grund | nur über Umwege | `sim/flightmodel/position/y_agl` — **direkt vorhanden** |
-| Erweiterungssprache | WASM / externes Programm über `exe.xml` — **gemessen** | XPLM-Plugin (C) — **gebaut und gelaufen** |
+| Erweiterungssprache | externes Programm über `exe.xml` **und** WASM-Modul — beides **gemessen**, ein Quelltext für 2020+2024 | XPLM-Plugin (C) — **gebaut und gelaufen** |
+| Objektart bestimmt die Höhe | **ja** — `Boat` auf Meereshöhe, `Animal`/`StaticObject`/`GroundVehicle` auf Geländehöhe | Terrain-Probe für alles |
+| Zählbare Tiere mitgeliefert | **ja** — Bär, Elefant, Giraffe, Nilpferd; gesetzt und gesehen | **ja** — Hirsche, Möwen |
 | Tablet-Oberfläche wie das EFB | ja (MSFS 2024) | kein Gegenstück |
 
 **Ein Punkt sticht heraus:** X-Plane liefert die **Höhe über Grund direkt**. Die Spec zu #20
