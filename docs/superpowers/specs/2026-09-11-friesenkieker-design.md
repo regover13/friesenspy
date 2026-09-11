@@ -921,10 +921,18 @@ Kieker reichen vorhandene Tiere; ein Robbenmodell bliebe eine spätere Verschön
 | `Boat` | **Meereshöhe**, nicht Wasseroberfläche |
 | `Animal`, `StaticObject`, `GroundVehicle` | **Geländehöhe** |
 
-Boote versinken deshalb über Land (auf Wangerooge drei Meter tief im Platz). **Ungeklärt ist
-dagegen, was auf einem Binnensee passiert** — ob der Simulator dort die lokale Wasserhöhe nimmt
-oder ebenfalls die Meereshöhe. Die einzige Probe lief 800 km entfernt ohne geladenes Gelände und
-sagt nichts. Vor Ort zu klären, bevor jemand einen Kieker am Bodensee plant.
+Boote versinken deshalb über Land (auf Wangerooge drei Meter tief im Platz) **und auf jedem
+Binnensee**: Am Bodensee gemessen (Seespiegel ≈1296 ft) lag ein `CruiseShip01` auf 0,0 ft, also
+395 m unter Wasser — während `Windmill`, `BlackBear` und ein Fahrzeug an derselben Stelle
+**1297,0 ft** meldeten, also sauber auf der Oberfläche.
+
+**Die Kategorie `Boat` ist schlicht kaputt** — ein seit dem 11.05.2022 im MSFS-DevSupport
+gemeldeter Fehler ohne Antwort von Asobo
+([„SimConnect injected Boat underwater"](https://devsupport.flightsimulator.com/t/simconnect-injected-boat-underwater/4226)).
+**Folge: Die Brügge verwendet keine `Boat`-SimObjects.** Alles andere findet die Oberfläche, auf
+Land wie auf Wasser. Muss ein Objekt nach Schiff aussehen, führt der Weg über ein eigenes
+SimObject mit passender `sim.cfg` — das ist der einzige Punkt, an dem eigene Modelle doch nötig
+werden, und es geht dabei um die **Kategorie**, nicht um das Aussehen.
 
 **Verworfen bleibt vPilot**, aus zwei unabhängigen Gründen: Es zeichnet ausschließlich, was das
 VATSIM-Netz meldet — ein Objekt erschiene nur, wenn sich etwas als Flugzeug an dieser Position

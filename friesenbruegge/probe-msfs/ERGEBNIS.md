@@ -607,27 +607,44 @@ Meldungsrate, und trotzdem „ich sehe keine Elefanten". Erst 20 m neben einem h
 sichtbaren Objekt waren sie da. Die Regel von heute Vormittag gilt unverändert und ist offenbar
 schwer einzuhalten: **groß, nah und lange — und am besten neben etwas, das man schon sieht.**
 
-### ❓ Boote auf einem Binnensee: UNGEKLÄRT
+### ✅ Am Bodensee entschieden: die Kategorie `Boat` ist kaputt
 
-Die Frage kam vom Nutzer: Was wird aus einem Boot auf einem Bergsee?
+Die Frage kam vom Nutzer: Was wird aus einem Boot auf einem Bergsee? Vor Ort gemessen, Flug auf
+**EDNY Friedrichshafen** (Platz 1348,9 ft), Objekte 2,5 km südlich mitten auf den See gesetzt.
+Der Bodensee liegt auf 395 m ≈ **1296 ft**:
 
-**Belegt ist nur der Landfall:** Über Land landen Boote auf 0,0 ft und versinken (Wangerooge,
-Geländehöhe 10 ft — dreifach beobachtet). Und auf der **Nordsee** schwimmen sie richtig, aber
-dort fallen Meereshöhe und Wasseroberfläche zusammen; der Fall unterscheidet nichts.
+| Titel | Kategorie | gemessene Höhe |
+|---|---|---|
+| `CruiseShip01` | **Boat** | **0,0 ft** — 395 m unter dem See |
+| `Windmill` | StaticObject | **1297,0 ft** ✅ |
+| `BlackBear` | Animal | **1297,0 ft** ✅ |
+| `ASO_Ambulance_Japan` | GroundVehicle | **1297,0 ft** ✅ |
 
-**Nicht belegt:** ob der Simulator auf einem Binnensee die *lokale* Wasserhöhe nimmt. Eine Probe
-auf den Chiemsee (518 m ü. NN, ≈1700 ft) ergab 0,0 ft — **aber aus 800 km Entfernung, wo kein
-Gelände geladen war.** Der Simulator konnte die Wasserhöhe dort gar nicht kennen; das Ergebnis
-sagt nichts.
+**Alles außer Booten findet die Oberfläche — auch auf einem Binnensee.** Die „Geländehöhe", auf
+die `OnGround=1` diese Objekte setzt, ist über Wasser der Wasserspiegel. Nur die Kategorie
+`Boat` ignoriert das und nimmt stur die Meereshöhe.
 
-> **Diese Stelle behauptete zwischenzeitlich, „0,0 ft heißt Meereshöhe, nicht
-> Wasseroberfläche".** Das war durch nichts gedeckt außer dem untauglichen Chiemsee-Lauf. Ein
-> Vorbehalt im Nebensatz macht aus einer unbelegten Aussage keine belegte — die Behauptung ist
-> zurückgenommen.
+| | Land | Nordsee | Binnensee |
+|---|---|---|---|
+| `Boat` | ✗ versinkt | ✓ — aber nur, weil MSL dort die Oberfläche *ist* | ✗ 395 m zu tief |
+| `StaticObject`, `Animal`, `GroundVehicle` | ✓ | ✓ | ✓ |
 
-**Zu klären, bevor jemand einen Event am Bodensee plant:** Flug dorthin laden, ein Boot setzen,
-Höhe messen. Kommt der Seespiegel (Bodensee ≈1296 ft), funktionieren Binnenseen; kommt 0,0 ft,
-nicht.
+**Das ist ein bekannter Fehler, nicht unser Aufbau.** Im MSFS-DevSupport steht er seit dem
+11.05.2022 als *„SimConnect injected Boat underwater"*: Boote spawnen an den **Great Lakes**
+unter Wasser, während eine Cessna mit Schwimmern bei identischen Parametern korrekt aufsetzt.
+**Bis heute keine Antwort von Asobo**, Status offen; zuletzt fragte der Melder im Juni 2023.
+Der dort genannte Workaround ist ein eigenes SimObject mit Flugzeug-Kategorie — mit dem
+Nachteil, dass Schiffe dann als Flugzeuge gezählt werden.
+<https://devsupport.flightsimulator.com/t/simconnect-injected-boat-underwater/4226>
+
+**Folge für die Brügge: keine `Boat`-SimObjects verwenden.** Soll etwas auf dem Wasser stehen,
+nimmt man ein Objekt einer anderen Kategorie. Muss es nach Schiff aussehen, führt der Weg über
+ein eigenes SimObject mit passender `sim.cfg`.
+
+> **Zum Weg hierher:** Diese Aussage stand schon einmal hier — gestützt allein auf eine Probe
+> am Chiemsee aus 800 km Entfernung, wo kein Gelände geladen war. Der Nutzer hat sie bezweifelt,
+> sie wurde zurückgenommen, und dann vor Ort richtig gemessen. Das Ergebnis ist dasselbe, der
+> Unterschied ist, dass es jetzt trägt.
 
 Für MSFS 2024 gilt das nicht: Dort kommt `Altitude` an, die Brügge müsste nur die Geländehöhe
 kennen. Die hat FriesenSpy nicht (Spec 4.2) — dieselbe Einschränkung, die auch den

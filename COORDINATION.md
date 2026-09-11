@@ -25,8 +25,10 @@ CHANGELOG-Eintrag. Live blieb v14.29.0.
    Einmal-Aufruf hinterlaesst nichts.
 2. **Die Objektart bestimmt die Hoehe.** `Boat` versinkt ueber Land (auf Wangerooge drei Meter
    tief im Platz), `Animal`/`StaticObject`/`GroundVehicle` landen auf **Gelaendehoehe**. Das
-   gehoert in die Gattungstabelle des Protokolls. **Ungeklaert:** was ein Boot auf einem
-   Binnensee tut — die einzige Probe lief 800 km entfernt ohne geladenes Gelaende.
+   gehoert in die Gattungstabelle des Protokolls. **Die Kategorie `Boat` ist kaputt** und darf
+   nicht verwendet werden: Am Bodensee (Spiegel 1296 ft) lag ein Kreuzfahrtschiff auf 0,0 ft,
+   waehrend Windmuehle, Baer und Fahrzeug an derselben Stelle 1297,0 ft meldeten. Seit 2022 im
+   MSFS-DevSupport gemeldet, ohne Antwort von Asobo.
 3. **Ein gesetztes Objekt bleibt nicht garantiert** (in MSFS 2020 beobachtet): zweimal derselbe
    Aufruf, einmal nach einer Sekunde weg, einmal 600 s stabil. Nach dem Setzen gehoert eine
    Lagemeldung abonniert.
