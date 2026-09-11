@@ -549,6 +549,27 @@ ließen sie sich nach dieser Messung gar nicht anheben.
 | extern über `exe.xml` | ✅ ein Programm für beide | ✅ |
 | WASM-Modul | ✅ ein Quelltext, zwei Builds | ✅ |
 
+### ⚠ In MSFS 2020 bleibt ein Objekt nicht zuverlässig
+
+Zweimal derselbe Aufruf, dieselbe Koordinate, dasselbe Modell — zwei verschiedene Ergebnisse:
+
+| Lauf | Objekt-ID | Lagemeldungen | Beobachtung |
+|---|---|---|---|
+| 1 | 496 | **keine einzige** | „kurz aufgetaucht und wieder verschwunden — insgesamt eine Sekunde" |
+| 2 | 506 | laufen stabil | steht und bleibt |
+
+**Das ist nicht deterministisch**, und es war nur zu sehen, weil der erste Versuch schiefging.
+Ein frisch gesetztes Objekt kann sofort wieder abgeräumt werden, ohne Exception, ohne Meldung —
+der Aufruf meldet `ERFOLG` und eine Objekt-ID wie immer.
+
+**Folge für die Brügge:** Sie darf sich nicht darauf verlassen, dass ein gesetztes Objekt auch
+bleibt. Nach dem Setzen gehört eine Lagemeldung abonniert (`RequestDataOnSimObject`,
+`PERIOD_SECOND`); bleibt sie aus, ist das Objekt weg und muss neu gesetzt werden. Das
+Probe-Skript macht genau das ohnehin — deshalb fiel es überhaupt auf.
+
+Die Ursache ist **nicht gemessen**. Denkbar ist ein Wettlauf beim Laden der Szenerie; der erste
+Versuch lief kurz nach dem Flugstart.
+
 ## Was daraus für den Kieker folgt
 
 Die Entscheidungsfrage ist positiv beantwortet — das Tor ist offen. Drei Dinge sind dabei
