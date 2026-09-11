@@ -24,6 +24,10 @@ static HANDLE g_sim = 0;
 static bool g_versucht = false;
 static DWORD g_sekunden = 0;
 static DWORD g_lagen = 0;
+static DWORD g_objekt_lagen = 0;          // Lagemeldungen der gesetzten Objekte, alle zusammen
+static DWORD g_gesetzt_sekunde = 0;       // wann gesetzt wurde
+static DWORD g_objekt_zuletzt[4] = {0};   // letzte Meldesekunde je Variante
+static DWORD g_nullpunkte = 0;            // Lagemeldungen mit 0/90 -- verworfen
 
 // ---------------------------------------------------------------------------
 // Rueckkanal Nr. 3: ein gemeinsamer Speicherbereich (ClientData).
@@ -41,10 +45,21 @@ static DWORD g_lagen = 0;
 //   [5] Zahl der empfangenen Lagemeldungen
 //   [6] Breite * 100000, [7] Laenge * 100000  (als DWORD, also ohne Vorzeichen lesen)
 //   [8] Zahl der vergangenen Sekunden
+//   [9] Lagemeldungen der GESETZTEN Objekte (alle Varianten zusammen)
+//   [10] Sekunde der letzten Objektmeldung, [11] Sekunde des Setzens
+//   [12..15] letzte Meldesekunde je Variante 0..3 -- der Abstand zu [8] ist die Antwort
+//   [16..19] erreichte Hoehe je Variante, in ZEHNTELFUSS (490 = 49,0 ft)
+//   [20] verworfene Lagemeldungen mit 0/90, [21] Sekunde des Setzens
+//   [22] Breite, [23] Laenge, mit der GESETZT wurde (x 100000) -- nicht die zuletzt gelesene
+//
+// Der zweite Block beantwortet die OnGround-Frage aus dem Modul heraus: Extern gemessen
+// landete Variante 0 (OnGround=1, Alt=0) auf 49,0 ft statt am Boden -- derselbe Aufruf setzt
+// aus einem externen Programm sauber auf. Bisher war das nur von aussen sichtbar; jetzt
+// meldet es das Modul selbst, und zwar fortlaufend.
 #define CD_NAME   "FriesenBruegge.Status"
 #define CD_ID     1
 #define CD_DEF    1
-#define CD_WORTE  16
+#define CD_WORTE  32
 
 static DWORD g_status[CD_WORTE] = {0};
 static bool  g_cd_bereit = false;
@@ -88,6 +103,12 @@ enum {
     // den Fehler nicht, weil er gar kein ClientData anlegt -- deshalb fiel es dort nie auf.
     DEF_LAGE   = 10,
     REQ_LAGE   = 20,
+    // Je gesetztem Objekt eine eigene Anfrage, damit die Lagemeldungen auseinanderzuhalten
+    // sind. Ohne diese Beobachtung weiss das Modul NICHT, ob sein Boot noch steht -- am
+    // 11.09.2026 war eines nach wenigen Minuten spurlos fort, und der Statusbereich meldete
+    // trotzdem unveraendert "OBJEKT ANGELEGT". Eine vergebene Objekt-ID ist eben nur die
+    // Bestaetigung, dass der Auftrag angekommen ist.
+    REQ_OBJEKT = 30,          // 30..33, eine je Variante
     REQ_BOOT   = 4711,
 };
 
@@ -171,6 +192,8 @@ static void boot_setzen(const Lage& lage)
 #endif
         melde("create_aufgerufen", (long)hr);
         status(S_CREATE_GERUFEN, (DWORD)(hr & 0xFFFF));
+        g_gesetzt_sekunde = g_sekunden;
+        feld(11, g_gesetzt_sekunde);
     }
 }
 
@@ -217,6 +240,23 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
 
     case SIMCONNECT_RECV_ID_SIMOBJECT_DATA: {
         auto* d = (SIMCONNECT_RECV_SIMOBJECT_DATA*)pData;
+
+        // Meldet eines der gesetzten Boote noch? Festgehalten wird die SEKUNDE der letzten
+        // Meldung, nicht die Zahl -- der Abstand zu g_sekunden sagt dann, seit wann es
+        // schweigt, und das ist die eigentliche Frage.
+        if (d->dwRequestID >= REQ_OBJEKT && d->dwRequestID < REQ_OBJEKT + 4) {
+            int i = (int)(d->dwRequestID - REQ_OBJEKT);
+            Lage* ol = (Lage*)&d->dwData;
+            g_objekt_lagen++;
+            g_objekt_zuletzt[i] = g_sekunden;
+            feld(9, g_objekt_lagen);
+            feld(10, g_sekunden);
+            feld(12 + i, g_sekunden);
+            // In Zehntelfuss, damit ein DWORD genuegt und die Nachkommastelle bleibt.
+            feld(16 + i, (DWORD)(long)(ol->alt * 10.0));
+            break;
+        }
+
         if (d->dwRequestID == REQ_LAGE) {
             Lage* lage = (Lage*)&d->dwData;
             g_lagen++;
@@ -225,10 +265,25 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
             feld(7, (DWORD)(long)(lage->lon * 100000.0));
             melde("lage_lat_e5", (long)(lage->lat * 100000.0));
             melde("lage_lon_e5", (long)(lage->lon * 100000.0));
-            // Nur beim ERSTEN Mal setzen -- die Anfrage laeuft im Sekundentakt weiter,
-            // damit sichtbar bleibt, ob die Meldungen anhalten.
-            if (!g_versucht) {
+            // NICHT bei der ersten Meldung setzen. Am 11.09.2026 landeten so vier Boote
+            // bei 0.00000 / 90.00763 -- im Indischen Ozean, 9488 km entfernt: Die erste
+            // Lagemeldung kam, bevor die Welt fertig geladen war, und trug den Nullpunkt.
+            // Von aussen sah es aus wie ein Modul, dessen Objekte spurlos verschwinden
+            // (--boote-zaehlen fand nichts), waehrend der Statusbereich "lebt" meldete und
+            // die zuletzt GELESENE Lage korrekt war. Beides stimmte; nur gesetzt wurde am
+            // falschen Ort.
+            //
+            // Zwei Bedingungen, weil eine allein nicht reicht: Die Wartezeit deckt den
+            // Ladevorgang ab, die Plausibilitaetspruefung den Fall, dass er laenger dauert.
+            const bool nullpunkt = (lage->lat > -0.01 && lage->lat < 0.01 &&
+                                    lage->lon > 89.9 && lage->lon < 90.1);
+            if (nullpunkt) {
+                feld(20, ++g_nullpunkte);
+            } else if (!g_versucht && g_sekunden >= 5) {
                 g_versucht = true;
+                feld(21, g_sekunden);              // in welcher Sekunde gesetzt wurde
+                feld(22, (DWORD)(long)(lage->lat * 100000.0));
+                feld(23, (DWORD)(long)(lage->lon * 100000.0));
                 boot_setzen(*lage);
             }
         }
@@ -240,6 +295,15 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
         // DAS ist die Antwort auf Frage 1.
         melde("ERFOLG_objekt_id", (long)z->dwObjectID);
         status(S_OBJEKT_DA, 0, z->dwObjectID);
+
+        // Und ab jetzt hinsehen. Die Variante steht in der Anfrage-Nummer, mit der gesetzt
+        // wurde -- so bleibt zuzuordnen, welches Boot meldet und welches schweigt.
+        int i = (int)(z->dwRequestID - REQ_BOOT);
+        if (i >= 0 && i < 4) {
+            SimConnect_RequestDataOnSimObject(
+                g_sim, REQ_OBJEKT + i, DEF_LAGE, z->dwObjectID,
+                SIMCONNECT_PERIOD_SECOND);
+        }
         break;
     }
 

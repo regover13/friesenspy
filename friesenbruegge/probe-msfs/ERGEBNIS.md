@@ -560,15 +560,69 @@ Vier Varianten in einem Lauf gesetzt, von außen nachgemessen:
 ABI-Problem scheidet damit aus, ebenso ein Feldversatz (die Koordinaten stimmten ohnehin auf
 fünf Nachkommastellen).
 
-**`OnGround=1` setzt aus WASM heraus auf konstant ~49 ft**, unabhängig vom Höhenwert — die
-Zeilen 1 und 4 landen beide dort. Extern bewirkt dasselbe Flag zuverlässig das Aufsetzen auf
-Gelände oder Wasser. In WASM ist es unbrauchbar.
+**`OnGround=1` setzt aus WASM heraus nicht auf**, unabhängig vom Höhenwert — die Zeilen 1
+und 4 landen beide auf demselben falschen Wert. Extern bewirkt dasselbe Flag zuverlässig das
+Aufsetzen auf Gelände oder Wasser. In WASM ist es unbrauchbar.
 
-**Die Abhilfe ist einfach und für den Kieker sogar günstig:** `OnGround=0` mit
-`Altitude=0` ergibt **0,0 ft, also exakt Meereshöhe**. Für Boote im Wattenmeer ist das genau
-richtig, ohne jede Rechnung. Objekte über Land bräuchten eine Geländehöhe, die FriesenSpy nicht
-hat (Spec 4.2) — dort träfe den WASM-Weg dieselbe Einschränkung wie den X-Plane-Adapter, der
-ohnehin `XPLMProbeTerrainXYZ` fragen muss.
+#### ⚠ Eine zweite Messung schien das zu widerlegen — sie war selbst falsch
+
+**Am selben Abend, nach einem Sim-Neustart, kamen für dieselben vier Varianten
+216,2 / 0,0 / 500,0 / 212,8 ft heraus.** Daraus wurde hier kurzzeitig geschlossen, der
+`OnGround`-Wert sei nicht einmal reproduzierbar. **Das war ein Trugschluss, und er hätte eine
+Umsetzung in die Irre geführt.**
+
+**Die Boote standen gar nicht auf Wangerooge.** Eine direkte Abfrage der Objekt-ID zeigte:
+
+```
+Frage Objekt 2949120 ...
+  t=+  0.3s  -0.00000 / 90.00763    212.8 ft   9488390 m vom Flugzeug
+```
+
+**0° / 90°, im Indischen Ozean.** Das ist der Nullpunkt, den SimConnect liefert, solange kein
+Flug geladen ist — und genau davor warnt ein Kommentar zwei Funktionen weiter oben. Das
+umgebaute Modul setzte bei der **ersten** Lagemeldung, und die kam, bevor die Welt fertig
+geladen war.
+
+**Drei Beobachtungen passten dazu, und alle drei waren richtig:**
+
+| Beobachtung | warum sie stimmte |
+|---|---|
+| Statusbereich meldete `53.78226 / 7.92593` | das war die **zuletzt gelesene** Lage, nicht die, mit der gesetzt wurde |
+| `--boote-zaehlen` fand nichts im Umkreis von 3 km | die Boote standen 9488 km entfernt |
+| Modul meldete „alle vier leben" | sie lebten — nur woanders |
+
+**Die 216 ft sind damit dieselbe Sorte Phantomwert wie am Bodensee aus 691 km Entfernung:**
+grobes Gelände an einem Ort, den der Simulator nicht geladen hat. Der Lauf mit 49 ft benutzte
+die fest einprogrammierte Wangerooge-Koordinate und ist der **einzige gültige**.
+
+**Behoben:** Das Modul verwirft Lagemeldungen mit 0/90 und setzt frühestens in Sekunde 5.
+Beide Bedingungen sind nötig — die Wartezeit deckt den Regelfall, die Prüfung den Fall, dass
+das Laden länger dauert. Zusätzlich meldet es jetzt die Koordinate, **mit der gesetzt wurde**,
+getrennt von der zuletzt gelesenen; ohne diese Trennung war der Fehler von außen unsichtbar.
+
+⚠ **Damit steht die OnGround-Frage wieder offen.** Gültig ist nur die Erstmessung
+(49,0 / 0,0 / 500,0 / 49,2 ft auf Wangerooge): `OnGround=0` trifft die angegebene Höhe exakt,
+`OnGround=1` setzt nicht auf. Ob der Wert bei `OnGround=1` über Läufe hinweg konstant ist,
+ist **nicht** gemessen — die Wiederholung, die es zeigen sollte, ist die hier beschriebene
+Fehlmessung.
+
+#### Die Abhilfe
+
+`OnGround=0` mit `Altitude=0` ergibt **0,0 ft, also exakt Meereshöhe** — für Boote im
+Wattenmeer genau richtig, ohne jede Rechnung.
+
+**Für Objekte über Land** kann die Brügge die Geländehöhe selbst ausrechnen, aus zwei Werten,
+die sie ohnehin liest:
+
+```
+Geländehöhe  =  PLANE ALTITUDE  −  PLANE ALT ABOVE GROUND
+```
+
+⚠ **Die Grenze:** Das ist die Geländehöhe **unter dem Flugzeug**, nicht am Zielort. Für ein
+Objekt wenige hundert Meter daneben taugt sie, für eines 5 km weiter nicht. Für den Kieker an
+den Friesischen Inseln fällt das kaum ins Gewicht; in den Alpen wäre es eine andere Rechnung.
+Der X-Plane-Adapter hat das Problem nicht — er fragt `XPLMProbeTerrainXYZ` und bekommt die
+Höhe am Zielort selbst.
 
 **Der HTTP-Rückkanal blieb stumm**, obwohl dieselben Meldungen per `fprintf` in der Konsole
 standen. `fsNetworkHttpRequestGet` erreichte kein `127.0.0.1`. Das ist **kein** Beweis, dass

@@ -178,7 +178,7 @@ class RecvClientData(ctypes.Structure):
         ("dwRequestID", w.DWORD), ("dwObjectID", w.DWORD), ("dwDefineID", w.DWORD),
         ("dwFlags", w.DWORD), ("dwentrynumber", w.DWORD), ("dwoutof", w.DWORD),
         ("dwDefineCount", w.DWORD),
-        ("werte", w.DWORD * 16),
+        ("werte", w.DWORD * 32),
     ]
 
 
@@ -697,6 +697,64 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
     return ergebnis
 
 
+def objekt_abfragen(dll_pfad: Path, objekt_id: int, sekunden: int) -> int:
+    """Lebt das Objekt mit dieser ID -- und wo steht es?
+
+    Gebaut am 11.09.2026 fuer einen Widerspruch: Das WASM-Modul meldete vier lebende Objekte
+    mit fortlaufenden Lagemeldungen, waehrend --boote-zaehlen im selben Augenblick "kein
+    einziges Boot" fand. Eines von beiden misst etwas anderes, als es zu messen glaubt.
+
+    Die Typ-Suche (RequestDataOnSimObjectType) fragt nach Kategorie und Radius; diese hier
+    fragt eine ID. Antwortet sie, existiert das Objekt fuer diesen Client -- dann ist die
+    Typ-Suche der blinde Fleck. Antwortet sie mit EXCEPTION 3, existiert es fuer ihn nicht,
+    und die Frage wird zu: Sieht der Pilot es trotzdem?
+    """
+    print(f"SimConnect.dll: {dll_pfad}")
+    sc = ctypes.WinDLL(str(dll_pfad))
+    _bindungen(sc)
+    handle = _verbinden(sc, b"FriesenKieker-Objektfrage")
+    if handle is None:
+        return 2
+    print("SimConnect_Open: verbunden.")
+
+    eigene = _eigene_lage(sc, handle)
+    print(f"\nFrage Objekt {objekt_id} ueber {sekunden}s ab ...\n")
+    _lage_abonnieren(sc, handle, objekt_id, REQ_LAGE, dauerhaft=True)
+
+    start = time.time()
+    anzahl = 0
+    for art, zeiger in _pakete(sc, handle, sekunden):
+        t = time.time() - start
+        if art == RECV_SIMOBJECT_DATA:
+            d = ctypes.cast(zeiger, ctypes.POINTER(RecvSimObjectData)).contents
+            if d.dwRequestID != REQ_LAGE:
+                continue
+            anzahl += 1
+            if anzahl <= 3 or anzahl % 10 == 0:
+                weit = ""
+                if eigene is not None:
+                    m = _abstand_m(eigene[0], eigene[1], d.werte[0], d.werte[1])
+                    weit = f"   {m:7.0f} m vom Flugzeug"
+                print(f"  t=+{t:5.1f}s  {d.werte[0]:.5f} / {d.werte[1]:.5f}  "
+                      f"{d.werte[2]:7.1f} ft{weit}")
+        elif art == RECV_EXCEPTION:
+            ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents
+            name = EXCEPTION_NAMEN.get(ex.dwException, "unbekannt")
+            print(f"  EXCEPTION {ex.dwException} -- {name}")
+            if ex.dwException == 3:
+                print("  Das Objekt existiert fuer DIESEN Client nicht.")
+                _schliessen(sc, handle)
+                return 1
+
+    _schliessen(sc, handle)
+    if anzahl == 0:
+        print("  Keine Antwort und keine Exception -- unklar.")
+        return 1
+    print(f"\n  LEBT: {anzahl} Lagemeldungen. Das Objekt existiert auch fuer einen")
+    print("  zweiten Client -- die Typ-Suche hat es nur nicht gefunden.")
+    return 0
+
+
 def status_lesen(dll_pfad: Path, sekunden: int) -> int:
     """Den Statusbereich auslesen, den das WASM-Modul beschreibt.
 
@@ -740,7 +798,7 @@ def status_lesen(dll_pfad: Path, sekunden: int) -> int:
         return 2
     print("SimConnect_Open: verbunden.")
 
-    CD_ID, CD_DEF, WORTE = 1, 1, 16
+    CD_ID, CD_DEF, WORTE = 1, 1, 32
     sc.SimConnect_MapClientDataNameToID(handle, b"FriesenBruegge.Status", CD_ID)
     sc.SimConnect_AddToClientDataDefinition(handle, CD_DEF, 0, WORTE * 4, 0.0, 0xFFFFFFFF)
     # PERIOD 2 = SIMCONNECT_CLIENT_DATA_PERIOD_ON_SET: melden, sobald das Modul schreibt.
@@ -784,6 +842,45 @@ def status_lesen(dll_pfad: Path, sekunden: int) -> int:
                           f"{_grad(lat_e5):.5f} / {_grad(lon_e5):.5f} ***")
                 elif sek >= 2:
                     print(f"      Noch keine Lagemeldung nach {sek} Sekunden.")
+
+            # Leben die vom Modul gesetzten Objekte noch? Der Abstand zwischen der
+            # letzten Meldesekunde einer Variante und der laufenden Sekunde ist die
+            # Antwort -- nicht die vergebene Objekt-ID, die nur den angenommenen
+            # Auftrag bestaetigt.
+            #
+            # Die vier Varianten unterscheiden sich in OnGround/Altitude:
+            #   0: OnGround=1, Alt=0     1: OnGround=0, Alt=0
+            #   2: OnGround=0, Alt=500   3: OnGround=1, Alt=500
+            gesetzt_sek = roh.werte[11]
+            if gesetzt_sek:
+                zeilen = []
+                for i, wie in enumerate(("OnGround=1 Alt=0  ", "OnGround=0 Alt=0  ",
+                                         "OnGround=0 Alt=500", "OnGround=1 Alt=500")):
+                    zuletzt = roh.werte[12 + i]
+                    hoehe = roh.werte[16 + i]
+                    if not zuletzt:
+                        zeilen.append(f"        Variante {i} ({wie}): NIE gemeldet")
+                        continue
+                    stille = sek - zuletzt
+                    h = (hoehe - 0x100000000 if hoehe > 0x7FFFFFFF else hoehe) / 10.0
+                    zustand = ("lebt" if stille <= 3
+                               else f"WEG seit {stille}s (lebte {zuletzt - gesetzt_sek}s)")
+                    zeilen.append(f"        Variante {i} ({wie}): {h:7.1f} ft  {zustand}")
+                # Womit gesetzt wurde -- NICHT die zuletzt gelesene Lage. Der
+                # Unterschied hat am 11.09.2026 eine Stunde gekostet: vier Boote
+                # standen im Indischen Ozean, waehrend der Statusbereich die korrekte
+                # letzte Lage zeigte.
+                setz_lat, setz_lon = roh.werte[22], roh.werte[23]
+                verworfen = roh.werte[20]
+                wo = ""
+                if setz_lat or setz_lon:
+                    wo = f" bei {_grad(setz_lat):.5f} / {_grad(setz_lon):.5f}"
+                if verworfen:
+                    print(f"      {verworfen} Lagemeldung(en) mit 0/90 verworfen "
+                          "(Welt noch nicht geladen).")
+                print(f"      Gesetzt in Sekunde {gesetzt_sek}{wo}, jetzt Sekunde {sek}:")
+                for z in zeilen:
+                    print(z)
             gesehen = True
         elif art == RECV_EXCEPTION:
             ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents
@@ -1005,6 +1102,8 @@ def main() -> int:
                     help="Hoehe NACH dem Anlegen per SetDataOnSimObject setzen")
     ap.add_argument("--ex1", action="store_true",
                     help="AICreateSimulatedObject_EX1 statt der alten Fassung benutzen")
+    ap.add_argument("--objekt-id", type=int, metavar="ID",
+                    help="Eine bekannte Objekt-ID direkt abfragen (statt per Typ zu suchen)")
     ap.add_argument("--status", action="store_true",
                     help="Statusbereich des WASM-Moduls auslesen (ClientData)")
     ap.add_argument("--status-sekunden", type=int, default=20)
@@ -1021,6 +1120,8 @@ def main() -> int:
     if a.titel_suche:
         titel_suchen()
         return 0
+    if a.objekt_id:
+        return objekt_abfragen(dll_finden(a.dll), a.objekt_id, a.status_sekunden)
     if a.status:
         return status_lesen(dll_finden(a.dll), a.status_sekunden)
     if a.boote_zaehlen:

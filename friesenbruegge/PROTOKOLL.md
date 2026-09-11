@@ -435,6 +435,48 @@ Der Melder fragte im Juni 2023, ob MSFS 2024 es behebe —
 untaugliche Probe aus 800 km Entfernung, dann ohne Simulator-Angabe. Beide Male hat der
 Nutzer widersprochen, beide Male zu Recht.)*
 
+### ⚠ In WASM wirkt `OnGround` nicht — gemessen, mit Ausweg
+
+**Vier Aufrufe aus einem WASM-Modul, auf Wangerooge (Boden ≈ 4 ft):**
+
+| angefordert | erreicht | |
+|---|---|---|
+| `OnGround=1`, `Altitude=0` | **49,0 ft** | ✗ |
+| `OnGround=0`, `Altitude=0` | **0,0 ft** | ✅ exakt |
+| `OnGround=0`, `Altitude=500` | **500,0 ft** | ✅ exakt |
+| `OnGround=1`, `Altitude=500` | **49,2 ft** | ✗ |
+
+**`OnGround=0` wirkt auf die Nachkommastelle genau.** `OnGround=1` setzt nicht auf, und die
+angegebene Altitude ändert daran fast nichts — es ist also nicht die Höhe, die ignoriert wird,
+sondern `OnGround` tut etwas Eigenes. **Im externen Programm gibt es das nicht** — dort setzt
+dasselbe Flag zuverlässig auf, in beiden Simulatoren.
+
+*(Eine zweite Messung ergab 216 statt 49 ft und schien zu zeigen, dass der Wert nicht einmal
+reproduzierbar ist. Sie war falsch: Die Boote standen bei 0°/90° im Indischen Ozean, weil das
+Modul bei der ersten Lagemeldung setzte — vor dem Laden der Welt. Belegt in
+`probe-msfs/ERGEBNIS.md`. Ob der Wert konstant ist, bleibt damit ungemessen.)*
+
+#### Der Ausweg steht schon im Protokoll
+
+**Die Brügge kann die Geländehöhe selbst ausrechnen**, aus zwei Werten, die sie ohnehin liest:
+
+```
+Geländehöhe  =  PLANE ALTITUDE  −  PLANE ALT ABOVE GROUND
+                (alt_msl_ft)       (alt_agl_ft)
+```
+
+Beide stehen in `lage` (Abschnitt 1). Eine WASM-Brügge setzt damit **`OnGround=0` und eine
+gerechnete Höhe** statt `OnGround=1`.
+
+⚠ **Die Grenze davon:** Das ist die Geländehöhe **unter dem Flugzeug**, nicht am Zielort. Für
+ein Objekt wenige hundert Meter daneben ist sie ein guter Anhalt, für eines 5 km weiter nicht
+mehr. **Für den FriesenKieker fällt das kaum ins Gewicht** — er spielt an den Friesischen
+Inseln, wo Watt und Wasser auf Meereshöhe liegen.
+
+**Und `erwartete_hoehe_ft` bleibt der bessere Weg, wo der Server es weiß** (Abschnitt 1): Was
+er einmal aus einer Rückmeldung gelernt hat, kann er beim nächsten Mal mitgeben, statt die
+Brügge raten zu lassen.
+
 ### Wie der Server davon erfährt
 
 **FriesenSpy hat kein Geländemodell.** Der Server kann nicht wissen, ob an einer Koordinate
