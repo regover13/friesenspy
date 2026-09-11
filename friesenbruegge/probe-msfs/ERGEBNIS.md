@@ -420,11 +420,32 @@ am Anfang stehen müssen, nicht nach vier Starts.
 | HTTP an `127.0.0.1` | — | ❌ nichts kam an |
 
 **Das Schweben ist ein WASM-Effekt, nicht ein `_EX1`-Effekt.** Gegenprobe extern, beide
-Fassungen, gleicher Flug: alte Fassung 2,0 ft, `_EX1` 3,6 ft — beide sauber am Boden. Dieselbe
-Struktur aus einem WASM-Modul heraus ergab ein Boot hoch in der Luft. Die Ursache ist nicht
-gemessen; naheliegend ist, dass `SIMCONNECT_DATA_INITPOSITION` bei der Übergabe aus WASM anders
-behandelt wird als bei einem x64-Aufruf. **Für die Brügge lösbar** (Höhe explizit setzen und
-nachmessen, wie sie interpretiert wird), aber es ist Arbeit, die das externe Programm nicht hat.
+Fassungen, gleicher Flug: alte Fassung 2,0 ft, `_EX1` 3,6 ft — beide sauber am Boden.
+
+### Ausgemessen: `OnGround` ist der Übeltäter, `Altitude` ist unschuldig
+
+Vier Varianten in einem Lauf gesetzt, von außen nachgemessen:
+
+| `OnGround` | `Altitude` gesetzt | **gemessen** |
+|---|---|---|
+| 1 | 0 ft | **49,0 ft** |
+| 0 | 0 ft | **0,0 ft** |
+| 0 | 500 ft | **500,0 ft** |
+| 1 | 500 ft | **49,2 ft** |
+
+**`Altitude` kommt unverändert an** — 0 bleibt 0, 500 bleibt 500,0. Ein Struct- oder
+ABI-Problem scheidet damit aus, ebenso ein Feldversatz (die Koordinaten stimmten ohnehin auf
+fünf Nachkommastellen).
+
+**`OnGround=1` setzt aus WASM heraus auf konstant ~49 ft**, unabhängig vom Höhenwert — die
+Zeilen 1 und 4 landen beide dort. Extern bewirkt dasselbe Flag zuverlässig das Aufsetzen auf
+Gelände oder Wasser. In WASM ist es unbrauchbar.
+
+**Die Abhilfe ist einfach und für den Kieker sogar günstig:** `OnGround=0` mit
+`Altitude=0` ergibt **0,0 ft, also exakt Meereshöhe**. Für Boote im Wattenmeer ist das genau
+richtig, ohne jede Rechnung. Objekte über Land bräuchten eine Geländehöhe, die FriesenSpy nicht
+hat (Spec 4.2) — dort träfe den WASM-Weg dieselbe Einschränkung wie den X-Plane-Adapter, der
+ohnehin `XPLMProbeTerrainXYZ` fragen muss.
 
 **Der HTTP-Rückkanal blieb stumm**, obwohl dieselben Meldungen per `fprintf` in der Konsole
 standen. `fsNetworkHttpRequestGet` erreichte kein `127.0.0.1`. Das ist **kein** Beweis, dass

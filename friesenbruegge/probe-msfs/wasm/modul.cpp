@@ -59,29 +59,43 @@ static void melde(const char* was, long zahl)
 // ---------------------------------------------------------------------------
 static void boot_setzen(const Lage& lage)
 {
-    // 200 m oestlich, wie im externen Probeflug -- schliesst EXCEPTION 33 aus.
-    const double grad_lon = 200.0 / (111320.0 * 0.59);   // cos(53.8 Grad)
-
-    SIMCONNECT_DATA_INITPOSITION pos{};
-    pos.Latitude  = lage.lat;
-    pos.Longitude = lage.lon + grad_lon;
-    pos.Altitude  = 0.0;
-    pos.Pitch     = 0.0;
-    pos.Bank      = 0.0;
-    pos.Heading   = 210.0;
-    pos.OnGround  = 1;
-    pos.Airspeed  = 0;
-
-    // _EX1 statt der alten Fassung, mit zusaetzlichem Livery-Parameter.
+    // VIER Varianten nebeneinander, je 120 m auseinander. Grund: Aus WASM heraus landete
+    // ein Boot mit OnGround=1 und Altitude=0 auf 49,1 ft statt am Boden (11.09.2026,
+    // extern gemessen an Objekt 16384) -- derselbe Aufruf setzt extern sauber auf (2,0 ft).
+    // Die Koordinate stimmte dabei exakt, ein Feldversatz in der Struktur scheidet also aus.
+    // Welcher der beiden Werte ignoriert oder umgedeutet wird, zeigt der Vergleich:
     //
-    // DAS war der Fehler (11.09.2026): Das Modul importierte
-    // SimConnect_AICreateSimulatedObject ohne Suffix -- in WASM offenbar nicht vorhanden.
-    // Ein unaufloesbarer Import laesst den Simulator das GANZE Modul verwerfen, lautlos:
-    // kein module_init, keine Meldung, kein Objekt. Aufgefallen ist es erst am Vergleich
-    // mit p42-util-gofish, einem produktiven Addon, das Objekte aus WASM setzt -- dessen
-    // Modul importiert ausschliesslich die _EX1-Fassung.
-    HRESULT hr = SimConnect_AICreateSimulatedObject_EX1(g_sim, "Boat01", "", pos, REQ_BOOT);
-    melde("create_aufgerufen", (long)hr);
+    //   0: OnGround=1, Alt=0     wie bisher -- die Referenz
+    //   1: OnGround=0, Alt=0     wird die Hoehe ueberhaupt beachtet?
+    //   2: OnGround=0, Alt=500   kommt ein bekannter Wert unveraendert an?
+    //   3: OnGround=1, Alt=500   was gewinnt, wenn beide gesetzt sind?
+    //
+    // Von aussen mit --boote-zaehlen abzulesen: die Laenge sagt, welche Variante es ist.
+    struct Variante { unsigned long on_ground; double alt; };
+    const Variante varianten[4] = {
+        { 1, 0.0 },
+        { 0, 0.0 },
+        { 0, 500.0 },
+        { 1, 500.0 },
+    };
+
+    const double grad_lon = 120.0 / (111320.0 * 0.59);   // cos(53.8 Grad)
+
+    for (int i = 0; i < 4; ++i) {
+        SIMCONNECT_DATA_INITPOSITION pos{};
+        pos.Latitude  = lage.lat;
+        pos.Longitude = lage.lon + grad_lon * (i + 1);
+        pos.Altitude  = varianten[i].alt;
+        pos.Pitch     = 0.0;
+        pos.Bank      = 0.0;
+        pos.Heading   = 210.0;
+        pos.OnGround  = varianten[i].on_ground;
+        pos.Airspeed  = 0;
+
+        HRESULT hr = SimConnect_AICreateSimulatedObject_EX1(g_sim, "Boat01", "", pos,
+                                                            REQ_BOOT + i);
+        melde("create_aufgerufen", (long)hr);
+    }
 }
 
 // ---------------------------------------------------------------------------
