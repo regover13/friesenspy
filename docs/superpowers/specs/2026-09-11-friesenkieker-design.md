@@ -939,11 +939,16 @@ Frage.
 
 **Weiterhin offen:**
 
-1. Erreicht `AICreateSimulatedObject` ein **WASM-Modul** im Paket? Wenn ja, entfällt das
-   externe Programm — die WASM-Fassung von SimConnect kennt nur einen Teil des Befehlsvorrats.
-   **Achtung, neue Bedingung:** Ein WASM-Modul lebt im Simulator und hätte damit von selbst
-   die dauerhafte Verbindung, die ein externer Prozess sich nehmen muss. Die Frage ist durch
-   den Probeflug also *wichtiger* geworden, nicht unwichtiger.
+1. ✅ Erreicht `AICreateSimulatedObject` ein **WASM-Modul** im Paket? **Ja, gemessen** —
+   Modul geladen, SimConnect offen, `ERFOLG_objekt_id = 16384`, Boot im Bild (Screenshot
+   12:50:56). Belegt ist nur die **`_EX1`**-Fassung; die alte ohne Suffix wurde in WASM nicht
+   geprüft. Damit könnte die MSFS-Seite ein reines Community-Paket werden — ein Ordner zum
+   Hineinkopieren, kein `exe.xml`, keine unsignierte EXE, kein SmartScreen.
+   **Zwei Dinge sind in WASM trotzdem anders und kosten Arbeit:** `OnGround=1` setzte das
+   Objekt **nicht** auf den Boden (das Boot schwebte — extern tut es das zuverlässig, mit
+   beiden Fassungen gegengeprüft: 2,0 ft und 3,6 ft), und der HTTP-Rückkanal erreichte kein
+   `127.0.0.1`. Einzelheiten und die zwei Build-Flags, ohne die gar nichts läuft, stehen in
+   [`friesenbruegge/probe-msfs/ERGEBNIS.md`](../../../friesenbruegge/probe-msfs/ERGEBNIS.md).
 2. Welche **SimObject-Kategorie** passt für ein liegendes Tier, ohne dass der Simulator ihm ein
    Verhalten andichtet? (Für Boote stellt sich die Frage nicht.) Hinweis aus dem Probeflug:
    MSFS 2024 liefert **41 Tier-Pakete** als SimObjects aus (`fs24-microsoft-simobjects-animals-*`)
