@@ -3,7 +3,7 @@
 **Der Vertrag zwischen dem FriesenSpy-Server und einer Brügge im Simulator.**
 Verbindlich für alle Umsetzungen — MSFS 2020, MSFS 2024, X-Plane 12.
 
-> Stand 11.09.2026 · Protokollfassung **1** · Entwurf, noch nicht umgesetzt
+> Stand 11.09.2026 · Protokollfassung **1** · ✅ **vom Nutzer abgenommen** — noch nicht umgesetzt
 > Grundlage: GitHub-Issue [#25](https://github.com/regover13/friesenspy/issues/25) und die
 > Probeflüge in [`probe-msfs/ERGEBNIS.md`](probe-msfs/ERGEBNIS.md) und
 > [`probe-xplane/ERGEBNIS.md`](probe-xplane/ERGEBNIS.md).
