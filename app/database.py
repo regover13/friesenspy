@@ -608,6 +608,67 @@ CREATE TABLE IF NOT EXISTS panel_prefs (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (cid, kontext)
 );
+
+-- Die Position, die eine Bruegge im Simulator meldet (friesenbruegge/PROTOKOLL.md, Fassung 1).
+--
+-- EIGENE Tabelle, NICHT live_positions -- und das ist kein Ordnungssinn, sondern der Ausweg
+-- aus einem Fehler, der sonst sicher eintraete: Der Poller schreibt alle 15 s
+-- INSERT OR REPLACE INTO live_positions (database.py, save_live_positions). Schriebe die
+-- Bruegge in dieselbe Zeile, ueberbuegelte der naechste Poll die genaue Position mit der
+-- groben -- dreimal je Minute, und die Karte ruckelte zwischen zwei Quellen hin und her.
+--
+-- /api/live mischt stattdessen beim Ausliefern: Ist der Bruegge-Punkt jung genug, hat er
+-- Vorrang; sonst zaehlt der VATSIM-Punkt. live_positions bleibt dem Poller allein.
+--
+-- Die Punkte gehoeren ebenso wenig nach position_history: Die Tabelle wird nie aufgeraeumt,
+-- und eine dichtere Reihe verschiebt Aufsetz- und Abstellpunkte in canonicalize_legs.
+-- Bummel-Blockzeiten wuerden sich rueckwirkend aendern, je nachdem wer eine Bruegge laufen
+-- hatte.
+CREATE TABLE IF NOT EXISTS bruegge_positions (
+    cid          INTEGER PRIMARY KEY,
+    lat          REAL NOT NULL,
+    lon          REAL NOT NULL,
+    alt_msl_ft   REAL,
+    alt_agl_ft   REAL,          -- NULL, wenn der Simulator sie nicht kennt
+    gs_kt        REAL,
+    kurs         REAL,
+    am_boden     INTEGER,       -- 0/1
+    simulator    TEXT,          -- msfs2020 | msfs2024 | xplane12
+    kennung      TEXT,          -- welche Bruegge gemeldet hat (s. bruegge_zuordnung)
+    gemeldet_am  TEXT NOT NULL  -- Empfangszeit des SERVERS, nicht die Uhr des Piloten
+);
+
+-- Welche Bruegge gehoert zu welchem Piloten?
+--
+-- Die kennung ist KEIN Schluessel und kein Geheimnis: Die Bruegge erzeugt sie selbst, sie
+-- steht offen in jeder Meldung, und sie oeffnet nichts. Sie sagt nur "ich bin dieselbe wie
+-- vorhin" -- und erspart damit, den vollen Positionsmatch bei JEDER Meldung neu zu rechnen
+-- (bei 13 gleichzeitigen Fliegern im 1-s-Takt: 13 statt 13x13 Abstaende je Sekunde).
+--
+-- WICHTIG, und im Protokoll ausdruecklich festgehalten: Eine gemerkte Zuordnung ist eine
+-- Abkuerzung der RECHNUNG, keine Vollmacht. Die Position muss weiterhin zur VATSIM-Meldung
+-- derselben CID passen; tut sie das PAARUNG_LOESEN_TAKTE mal in Folge nicht, faellt die
+-- Zuordnung und der naechste Match beginnt von vorn. Wer eine fremde kennung stiehlt, muss
+-- trotzdem die oeffentliche VATSIM-Position dieses Piloten treffen -- und gewinnt damit
+-- genau das, was er auch ohne sie gewinnt: nichts.
+--
+-- Darin unterscheidet sie sich von panel_devices.device_id, die heute DOCH ein
+-- Zugangsschluessel ist ("wer ihn hat, ist als dieser Nutzer angemeldet").
+CREATE TABLE IF NOT EXISTS bruegge_zuordnung (
+    kennung      TEXT PRIMARY KEY,
+    cid          INTEGER NOT NULL,
+    simulator    TEXT,
+    zugeordnet_am TEXT NOT NULL,
+    gesehen_am   TEXT,
+    verstoesse   INTEGER NOT NULL DEFAULT 0,   -- in Folge; ab PAARUNG_LOESEN_TAKTE geloest
+    -- Die zuletzt gemeldete Position -- gebraucht, um einen SPRUNG zu erkennen (Ladevorgang,
+    -- Slew, Flugwechsel). Ohne sie liefe der Match gegen Seattle, wenn ein Simulator gerade
+    -- startet, und der Track bekaeme einen Sprung ueber 8.000 km.
+    vor_lat      REAL,
+    vor_lon      REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bruegge_zuordnung_cid ON bruegge_zuordnung(cid);
 """
 
 
@@ -2325,6 +2386,165 @@ def get_live_positions(conn: sqlite3.Connection) -> list[dict]:
     """Alle aktuellen Live-Positionen als Liste von Dicts."""
     rows = conn.execute(
         "SELECT lp.*, p.name FROM live_positions lp LEFT JOIN pilots p ON lp.cid = p.cid"
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Bruegge (friesenbruegge/PROTOKOLL.md, Fassung 1 -- abgenommen 11.09.2026)
+# ---------------------------------------------------------------------------
+
+def friesen_in_der_luft(conn: sqlite3.Connection, prefix: str = "FRS") -> list[dict]:
+    """Die Kandidaten fuer den Positionsmatch: Friesen, die JETZT auf VATSIM sind.
+
+    Nur Zeilen mit Koordinaten -- eine Zeile ohne lat/lon kann keinen Partner abgeben, und
+    sie hier zu behalten hiesse, sie im Matching nochmal wegzuwerfen.
+    """
+    rows = conn.execute(
+        "SELECT cid, callsign, latitude, longitude, altitude, groundspeed, heading, "
+        "       updated_at "
+        "FROM live_positions "
+        "WHERE latitude IS NOT NULL AND longitude IS NOT NULL "
+        "  AND callsign LIKE ? || '%'",
+        (prefix,),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def cid_ist_authentifiziert(conn: sqlite3.Connection, cid: int) -> bool:
+    """Hat sich diese CID jemals per Forum-Login angemeldet?
+
+    Die Zeile in `forum_callsign` entsteht NUR beim Login, aus dem Forum-Profil
+    (`main.py`, Forum-SSO). Ein gesetztes FRS-Callsign allein genuegt also nicht -- sonst
+    koennte jeder ein Praefix waehlen und damit melden.
+
+    GEPRUEFT WIRD DIE CID, NICHT DAS CALLSIGN. Am Callsign zu pruefen zerbricht beim ersten
+    Wechsel, und der kommt bei fast jedem Friesen genau einmal: wenn er das N verliert und
+    aus FRS123N ein FRS556 wird. Die Tabelle zieht zwar nach, aber erst beim naechsten Login.
+    Die CID ist der VATSIM-Kontoschluessel und aendert sich nie.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM forum_callsign WHERE cid = ? LIMIT 1", (int(cid),)
+    ).fetchone()
+    return row is not None
+
+
+def bruegge_zuordnung_holen(conn: sqlite3.Connection, kennung: str) -> dict | None:
+    """Die gemerkte Zuordnung einer Kennung -- oder ``None``."""
+    if not kennung:
+        return None
+    row = conn.execute(
+        "SELECT kennung, cid, simulator, zugeordnet_am, gesehen_am, verstoesse, "
+        "       vor_lat, vor_lon "
+        "FROM bruegge_zuordnung WHERE kennung = ?",
+        (kennung,),
+    ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def bruegge_zuordnung_setzen(conn: sqlite3.Connection, kennung: str, cid: int,
+                             simulator: str | None) -> None:
+    """Eine neue Zuordnung merken (kein commit)."""
+    now = _now_utc()
+    conn.execute(
+        "INSERT INTO bruegge_zuordnung (kennung, cid, simulator, zugeordnet_am, gesehen_am, "
+        "                               verstoesse) "
+        "VALUES (?, ?, ?, ?, ?, 0) "
+        "ON CONFLICT(kennung) DO UPDATE SET cid = excluded.cid, "
+        "    simulator = excluded.simulator, zugeordnet_am = excluded.zugeordnet_am, "
+        "    gesehen_am = excluded.gesehen_am, verstoesse = 0",
+        (kennung, int(cid), simulator, now, now),
+    )
+
+
+def bruegge_zuordnung_bestaetigen(conn: sqlite3.Connection, kennung: str,
+                                  lat: float, lon: float) -> None:
+    """Die Zuordnung gilt weiter: Verstoesse zuruecksetzen, letzte Lage merken (kein commit)."""
+    conn.execute(
+        "UPDATE bruegge_zuordnung SET verstoesse = 0, gesehen_am = ?, vor_lat = ?, vor_lon = ? "
+        "WHERE kennung = ?",
+        (_now_utc(), float(lat), float(lon), kennung),
+    )
+
+
+def bruegge_zuordnung_verstoss(conn: sqlite3.Connection, kennung: str) -> int:
+    """Ein Verstoss mehr. Gibt den neuen Stand zurueck (kein commit).
+
+    Erst nach mehreren Verstoessen IN FOLGE wird geloest -- bei einem einzelnen Ausreisser
+    zu loesen waere das Flackern durch die Hintertuer, und genau dagegen gibt es das Merken.
+    """
+    conn.execute(
+        "UPDATE bruegge_zuordnung SET verstoesse = verstoesse + 1, gesehen_am = ? "
+        "WHERE kennung = ?",
+        (_now_utc(), kennung),
+    )
+    row = conn.execute(
+        "SELECT verstoesse FROM bruegge_zuordnung WHERE kennung = ?", (kennung,)
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def bruegge_zuordnung_loesen(conn: sqlite3.Connection, kennung: str) -> None:
+    """Die Zuordnung faellt (kein commit). Die naechste Meldung beginnt von vorn."""
+    conn.execute("DELETE FROM bruegge_zuordnung WHERE kennung = ?", (kennung,))
+
+
+def bruegge_position_schreiben(conn: sqlite3.Connection, cid: int, lage: dict,
+                               simulator: str | None, kennung: str | None) -> None:
+    """Die gemeldete Position ablegen (kein commit).
+
+    ``gemeldet_am`` ist die Empfangszeit des SERVERS. Die Uhr des Piloten darf falsch gehen --
+    deshalb traegt auch ``spur`` ein ALTER in Sekunden und keine Uhrzeit.
+    """
+    conn.execute(
+        "INSERT INTO bruegge_positions (cid, lat, lon, alt_msl_ft, alt_agl_ft, gs_kt, kurs, "
+        "                               am_boden, simulator, kennung, gemeldet_am) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(cid) DO UPDATE SET lat = excluded.lat, lon = excluded.lon, "
+        "    alt_msl_ft = excluded.alt_msl_ft, alt_agl_ft = excluded.alt_agl_ft, "
+        "    gs_kt = excluded.gs_kt, kurs = excluded.kurs, am_boden = excluded.am_boden, "
+        "    simulator = excluded.simulator, kennung = excluded.kennung, "
+        "    gemeldet_am = excluded.gemeldet_am",
+        (int(cid), float(lage["lat"]), float(lage["lon"]),
+         lage.get("alt_msl_ft"), lage.get("alt_agl_ft"),
+         lage.get("gs_kt"), lage.get("kurs"),
+         1 if lage.get("am_boden") else 0,
+         simulator, kennung, _now_utc()),
+    )
+
+
+def bruegge_position_holen(conn: sqlite3.Connection, cid: int) -> dict | None:
+    """Die zuletzt gemeldete Bruegge-Position einer CID."""
+    row = conn.execute(
+        "SELECT * FROM bruegge_positions WHERE cid = ?", (int(cid),)
+    ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def bruegge_positionen_holen(conn: sqlite3.Connection) -> list[dict]:
+    """Alle Bruegge-Positionen -- fuer /api/live, das sie ueber die VATSIM-Punkte legt."""
+    rows = conn.execute("SELECT * FROM bruegge_positions").fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def bruegge_position_loeschen(conn: sqlite3.Connection, cid: int) -> None:
+    """Die Bruegge-Position vergessen (kein commit) -- etwa beim Ausloggen von VATSIM."""
+    conn.execute("DELETE FROM bruegge_positions WHERE cid = ?", (int(cid),))
+
+
+def bruegge_uebersicht(conn: sqlite3.Connection) -> list[dict]:
+    """Wer meldet gerade? Fuer den Admin.
+
+    Zeigt auch Doppelmeldungen: Zwei Kennungen auf derselben CID stehen als zwei Zeilen da.
+    """
+    rows = conn.execute(
+        "SELECT z.kennung, z.cid, z.simulator, z.zugeordnet_am, z.gesehen_am, z.verstoesse, "
+        "       p.lat, p.lon, p.gs_kt, p.am_boden, p.gemeldet_am, "
+        "       (SELECT callsign FROM live_positions l WHERE l.cid = z.cid) AS callsign, "
+        "       (SELECT name FROM pilots pi WHERE pi.cid = z.cid) AS name "
+        "FROM bruegge_zuordnung z "
+        "LEFT JOIN bruegge_positions p ON p.cid = z.cid "
+        "ORDER BY COALESCE(z.gesehen_am, z.zugeordnet_am) DESC"
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
 

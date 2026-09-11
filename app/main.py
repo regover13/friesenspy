@@ -89,6 +89,17 @@ from app.database import (
     bind_panel_device,
     touch_panel_device,
     list_panel_devices,
+    friesen_in_der_luft,
+    cid_ist_authentifiziert,
+    bruegge_zuordnung_holen,
+    bruegge_zuordnung_setzen,
+    bruegge_zuordnung_bestaetigen,
+    bruegge_zuordnung_verstoss,
+    bruegge_zuordnung_loesen,
+    bruegge_position_schreiben,
+    bruegge_position_loeschen,
+    bruegge_positionen_holen,
+    bruegge_uebersicht,
     get_panel_prefs,
     set_panel_prefs,
     revoke_panel_device,
@@ -154,6 +165,7 @@ from app.database import (
     PassungGesperrt,
 )
 from app import geo
+from app import bruegge
 from app.geo import filter_event_pilots
 from app.poller import VatsimPoller, create_poller, send_web_push
 from app.statsim import fetch_flight_track, fetch_pilot_flights
@@ -691,6 +703,201 @@ async def panel_diag(request: Request):
     finally:
         conn.close()
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------------------
+# Die Bruegge (friesenbruegge/PROTOKOLL.md, Fassung 1 -- abgenommen 11.09.2026)
+# ---------------------------------------------------------------------------------------
+
+_BRUEGGE_MAX_BYTES = 64 * 1024       # eine Meldung mit voller spur liegt weit darunter
+_BRUEGGE_PROTOKOLL = 1               # was dieser Server spricht
+_BRUEGGE_GILT_BIS_S = 300            # so lange gilt "soll" ohne neue Auskunft
+_BRUEGGE_TAKT_OHNE_VATSIM_S = 60     # wer nicht fliegt, fragt im Minutentakt
+_BRUEGGE_TAKT_VORGABE_S = 1          # Regeltakt, gemessen (s. Protokoll, Abschnitt 6)
+
+
+def _bruegge_takt(conn) -> int:
+    """Der Takt, den der Server vorgibt -- aus `app_settings`, bei JEDER Antwort gelesen.
+
+    Damit wirkt die Admin-Drossel sofort fuer alle, ohne Deploy und ohne Client-Release.
+    Genau dafuer steht `naechste_frage_in_s` ueberhaupt im Protokoll: Wenn die App langsam
+    wird, sind die naheliegenden Hebel gemessen wirkungslos (s. CLAUDE.md), und der einzige
+    verbliebene -- ein Deploy -- reisst jede offene Sitzung ab.
+
+    "Aus" ist 900, nicht 0: Eine Bruegge, die gar keine Antwort mehr bekaeme, koennte
+    Abschaltung nicht von Netzausfall unterscheiden und versuchte es weiter.
+    """
+    roh = get_app_setting(conn, "bruegge_takt_s", str(_BRUEGGE_TAKT_VORGABE_S))
+    try:
+        takt = int(roh)
+    except (TypeError, ValueError):
+        return _BRUEGGE_TAKT_VORGABE_S
+    return max(1, min(900, takt))
+
+
+def _bruegge_antwort(takt: int, soll=None, gilt_bis: int | None = None) -> dict:
+    return {
+        "protokoll": _BRUEGGE_PROTOKOLL,
+        "naechste_frage_in_s": takt,
+        "gilt_bis_s": _BRUEGGE_GILT_BIS_S if gilt_bis is None else gilt_bis,
+        "soll": soll or [],
+    }
+
+
+@app.post("/api/bruegge/melden", include_in_schema=False)
+async def bruegge_melden(request: Request):
+    """Die Bruegge meldet ihre Lage und erfaehrt, was um sie herum stehen soll.
+
+    **Kein Authorization-Kopf.** Die Bruegge weist sich nicht aus -- sie meldet eine Position,
+    und der Server sucht sich den Piloten dazu. Was sie mitschickt, ist eine selbst erzeugte
+    `kennung`: kein Geheimnis, sondern ein Wiedererkennungszeichen, das den vollen
+    Positionsmatch bei jeder Meldung erspart.
+
+    **Die Antwort ist in allen Ablehnungsfaellen dieselbe** -- leeres `soll`, langer Takt,
+    HTTP 200. Fuer die Bruegge sind "nicht auf VATSIM", "niemand passt" und "nicht
+    authentifiziert" ununterscheidbar, und das ist Absicht: Eine Fehlermeldung waere ein
+    Werkzeug fuer den, der ausprobieren will, welche erfundene Position durchgeht.
+    """
+    raw = await request.body()
+    if len(raw) > _BRUEGGE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Meldung zu groß")
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HTTPException(status_code=400, detail="Ungültiges JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Objekt erwartet")
+
+    # Protokollfassung: Eine neuere Bruegge als dieser Server ist ein Fall fuer 426, damit
+    # sie aufraeumt und anhaelt statt in einem Vertrag zu reden, den niemand liest.
+    fassung = body.get("protokoll")
+    if isinstance(fassung, int) and fassung > _BRUEGGE_PROTOKOLL:
+        raise HTTPException(status_code=426, detail="Protokollfassung zu neu für diesen Server")
+
+    lage = body.get("lage")
+    if not isinstance(lage, dict):
+        raise HTTPException(status_code=400, detail="lage fehlt")
+    try:
+        lat = float(lage["lat"])
+        lon = float(lage["lon"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="lage.lat/lon fehlen oder sind ungültig")
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        raise HTTPException(status_code=400, detail="lage.lat/lon außerhalb des Gültigen")
+
+    kennung = str(body.get("kennung") or "")[:64]
+    simulator = str(body.get("simulator") or "")[:20] or None
+    gs_kt = float(lage.get("gs_kt") or 0.0)
+    alt_ft = float(lage.get("alt_msl_ft") or 0.0)
+
+    settings = get_settings()
+    conn = get_connection(settings.DB_PATH)
+    try:
+        takt = _bruegge_takt(conn)
+        cid = _bruegge_zuordnen(conn, kennung, lat, lon, alt_ft, gs_kt, simulator, settings)
+        if cid is None:
+            # Ohne Zuordnung geschieht NICHTS -- keine Anzeige, keine Ablage, keine Objekte.
+            # Die Pruefung steht damit vor allem Teuren; ein Pilot, der den Simulator laufen
+            # laesst, ohne zu fliegen, kostet eine Indexabfrage je Minute.
+            conn.commit()
+            return _bruegge_antwort(_BRUEGGE_TAKT_OHNE_VATSIM_S, gilt_bis=0)
+
+        bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
+        conn.commit()
+    finally:
+        conn.close()
+
+    # `soll` ist in Fassung 1 noch leer: Objekte gehoeren zum FriesenKieker, und der ist ein
+    # eigenes Vorhaben. Die Bruegge ist absichtlich event-unabhaengig -- wenn das Protokoll
+    # taugt, kommt der erste Eventtyp ohne eine einzige Aenderung an ihr dazu.
+    return _bruegge_antwort(takt)
+
+
+def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
+                      gs_kt: float, simulator: str | None, settings) -> int | None:
+    """Welcher Pilot meldet hier? ``None`` heisst: nichts geschieht.
+
+    Drei Bedingungen, und alle drei muessen erfuellt sein:
+      1. Der Pilot steht in `live_positions` -- fliegt also auf VATSIM, mit Friesen-Praefix.
+      2. Seine CID hat eine Zeile in `forum_callsign` -- der Nachweis des Forum-Logins.
+      3. Die Position passt, nach den Regeln, die das Kniebrett schon benutzt.
+    """
+    gemerkt = bruegge_zuordnung_holen(conn, kennung) if kennung else None
+    kandidaten = bruegge.kandidaten_bilden(
+        friesen_in_der_luft(conn, settings.CALLSIGN_PREFIX)
+    )
+
+    # --- Ein SPRUNG ist kein Flug ------------------------------------------------------
+    # Ladevorgang, Slew oder Flugwechsel. Solche Punkte gehoeren weder in die Ablage noch in
+    # den Track: Nach dem Start eines Simulators kommt erst 0/90, dann Seattle, dann der
+    # geladene Flug -- und jeder dieser Werte sieht fuer sich vernuenftig aus.
+    if gemerkt and bruegge.ist_sprung(lat, lon, gemerkt.get("vor_lat"), gemerkt.get("vor_lon")):
+        bruegge_zuordnung_loesen(conn, kennung)
+        bruegge_position_loeschen(conn, int(gemerkt["cid"]))
+        return None
+
+    # --- Eine gemerkte Zuordnung: pruefen, nicht neu rechnen ---------------------------
+    if gemerkt:
+        cid = int(gemerkt["cid"])
+        partner = next((k for k in kandidaten if k.cid == cid), None)
+        if partner is not None and bruegge.bleibt_plausibel(lat, lon, alt_ft, gs_kt, partner):
+            bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
+            return cid
+        # Der Partner ist fort (ausgeloggt) oder die Position passt nicht mehr. Geloest wird
+        # erst nach mehreren Verstoessen IN FOLGE -- ein einzelner Ausreisser loest nichts.
+        if partner is None or bruegge.PAARUNG_LOESEN_TAKTE <= bruegge_zuordnung_verstoss(
+            conn, kennung
+        ):
+            bruegge_zuordnung_loesen(conn, kennung)
+            bruegge_position_loeschen(conn, cid)
+            return None
+        # Noch im Toleranzfenster: Die Zuordnung gilt, aber die Position wird nicht
+        # uebernommen -- sie passt ja gerade nicht.
+        return None
+
+    # --- Erstzuordnung -----------------------------------------------------------------
+    treffer, _grund = bruegge.zuordnen(lat, lon, alt_ft, gs_kt, kandidaten)
+    if treffer is None:
+        return None
+    if not cid_ist_authentifiziert(conn, treffer.cid):
+        # Auf VATSIM mit FRS-Praefix, aber nie im Forum angemeldet. Ein gesetztes Callsign
+        # allein genuegt nicht -- sonst koennte jeder ein Praefix waehlen und damit melden.
+        return None
+    if kennung:
+        bruegge_zuordnung_setzen(conn, kennung, treffer.cid, simulator)
+        bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
+    return treffer.cid
+
+
+@app.get("/api/admin/bruegge")
+async def admin_bruegge(request: Request):
+    """Wer meldet gerade, und mit welchem Takt laeuft die Drossel? (Admin)"""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        return {"takt_s": _bruegge_takt(conn), "melder": bruegge_uebersicht(conn)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/admin/bruegge/takt")
+async def admin_bruegge_takt(request: Request):
+    """Die Drossel stellen -- 1 bis 15 Sekunden, oder 900 fuer "aus"."""
+    require_admin(request)
+    body = await request.json()
+    try:
+        takt = int(body.get("takt_s"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="takt_s fehlt oder ist keine Zahl")
+    if not (1 <= takt <= 900):
+        raise HTTPException(status_code=400, detail="takt_s muss zwischen 1 und 900 liegen")
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        set_app_setting(conn, "bruegge_takt_s", str(takt))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok", "takt_s": takt}
 
 
 @app.get("/api/admin/panel-diag")
