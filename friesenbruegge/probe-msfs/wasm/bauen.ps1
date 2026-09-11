@@ -29,7 +29,10 @@
 # Nach dem Bau muss der Simulator NEU GESTARTET werden -- Community-Pakete liest er
 # ausschliesslich beim Start.
 
-param([switch]$Fuer2020)     # gegen das MSFS-2020-SDK bauen statt gegen das 2024er
+param(
+    [switch]$Fuer2020,   # gegen das MSFS-2020-SDK bauen statt gegen das 2024er
+    [switch]$NutzeEx1    # AICreateSimulatedObject_EX1 statt der alten Fassung (nur 2024)
+)
 
 $ErrorActionPreference = 'Stop'
 if ($Fuer2020) {
@@ -61,7 +64,7 @@ Write-Output "Compiler: $clang"
     --target=wasm32-unknown-wasi `
     "/clang:--sysroot=$sdk\WASM\wasi-sysroot" `
     -D_MSFS_WASM=1 -D__wasi__ -D_LIBCPP_HAS_NO_THREADS -D_WINDLL -D_MBCS `
-    $(if ($Fuer2020) { '-DFUER_MSFS2020=1' }) `
+    $(if ($NutzeEx1) { '-DNUTZE_EX1=1' }) `
     "-I$sdk\WASM\include" `
     "-I$sdk\SimConnect SDK\include" `
     -Wno-ignored-attributes `

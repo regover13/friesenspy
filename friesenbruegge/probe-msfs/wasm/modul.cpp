@@ -23,6 +23,41 @@
 static HANDLE g_sim = 0;
 static bool g_versucht = false;
 
+// ---------------------------------------------------------------------------
+// Rueckkanal Nr. 3: ein gemeinsamer Speicherbereich (ClientData).
+//
+// Noetig geworden, weil die beiden anderen ausfallen koennen: fprintf landet in MSFS 2020
+// NICHT in der Konsole (11.09.2026 gemessen -- das Modul laedt, initialisiert und meldet
+// dann gar nichts), und fsNetworkHttpRequestGet erreichte kein 127.0.0.1. ClientData
+// funktioniert unabhaengig von beidem und ist von einem externen Programm lesbar; SPAD.neXt
+// macht es auf demselben Rechner genauso.
+//
+// Aufbau: 16 DWORDs. In [0] steht, wie weit das Modul gekommen ist, in [1] der letzte
+// Fehlerwert, in [2] die Objekt-ID. Der Rest ist Reserve.
+#define CD_NAME   "FriesenBruegge.Status"
+#define CD_ID     1
+#define CD_DEF    1
+#define CD_WORTE  16
+
+static DWORD g_status[CD_WORTE] = {0};
+static bool  g_cd_bereit = false;
+
+enum Schritt {
+    S_START = 1, S_OPEN = 2, S_DATADEF = 3, S_SUBSCRIBE = 4, S_DISPATCH = 5,
+    S_EVENT = 6, S_CREATE_GERUFEN = 7, S_OBJEKT_DA = 8, S_EXCEPTION = 9,
+};
+
+static void status(DWORD schritt, DWORD wert2 = 0, DWORD wert3 = 0)
+{
+    g_status[0] = schritt;
+    if (wert2) g_status[1] = wert2;
+    if (wert3) g_status[2] = wert3;
+    if (g_cd_bereit) {
+        SimConnect_SetClientData(g_sim, CD_ID, CD_DEF, 0, 0,
+                                 sizeof(g_status), g_status);
+    }
+}
+
 enum {
     EV_SEKUNDE = 1,
     DEF_LAGE   = 1,
@@ -92,16 +127,24 @@ static void boot_setzen(const Lage& lage)
         pos.OnGround  = varianten[i].on_ground;
         pos.Airspeed  = 0;
 
-#ifdef FUER_MSFS2020
-        // MSFS 2020 kennt _EX1 NICHT -- die Funktion fehlt in seinem SimConnect.h
-        // (geprueft am Header des 2020er SDK, 11.09.2026). Ein Modul, das sie importiert,
-        // scheitert dort am unaufloesbaren Import, genau wie bei __stack_chk_fail.
-        HRESULT hr = SimConnect_AICreateSimulatedObject(g_sim, "Boat01", pos, REQ_BOOT + i);
-#else
+        // DIE ALTE FASSUNG IST DER NORMALFALL -- sie bedient beide Simulatoren.
+        //
+        // MSFS 2020 kennt _EX1 nicht (fehlt in seinem SimConnect.h). Die Fassung ohne
+        // Suffix steht dagegen in BEIDEN SDKs, und sie ist aus WASM erreichbar: am
+        // 11.09.2026 in MSFS 2024 gemessen, vier Boote, Hoehen identisch zum _EX1-Lauf
+        // (49,0 / 0,0 / 500,0 / 49,2 ft). Ein gemeinsames Modul ist damit baubar.
+        //
+        // Der Umweg ueber _EX1 entstand aus einem Fehlschluss: p42-util-gofish benutzt sie,
+        // woraus geschlossen wurde, die andere gehe nicht. Mit -DNUTZE_EX1 laesst sie sich
+        // weiterhin waehlen -- etwa wenn spaeter Liveries gebraucht werden, die nur _EX1 kann.
+#ifdef NUTZE_EX1
         HRESULT hr = SimConnect_AICreateSimulatedObject_EX1(g_sim, "Boat01", "", pos,
                                                             REQ_BOOT + i);
+#else
+        HRESULT hr = SimConnect_AICreateSimulatedObject(g_sim, "Boat01", pos, REQ_BOOT + i);
 #endif
         melde("create_aufgerufen", (long)hr);
+        status(S_CREATE_GERUFEN, (DWORD)(hr & 0xFFFF));
     }
 }
 
@@ -120,6 +163,7 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
         auto* evt = (SIMCONNECT_RECV_EVENT*)pData;
         if (evt->uEventID == EV_SEKUNDE && !g_versucht) {
             g_versucht = true;
+            status(S_EVENT);
             // FESTE Koordinate statt Lage-Abfrage.
             //
             // Der Umweg ueber RequestDataOnSimObject scheiterte mit EXCEPTION 3
@@ -149,12 +193,14 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
         auto* z = (SIMCONNECT_RECV_ASSIGNED_OBJECT_ID*)pData;
         // DAS ist die Antwort auf Frage 1.
         melde("ERFOLG_objekt_id", (long)z->dwObjectID);
+        status(S_OBJEKT_DA, 0, z->dwObjectID);
         break;
     }
 
     case SIMCONNECT_RECV_ID_EXCEPTION: {
         auto* ex = (SIMCONNECT_RECV_EXCEPTION*)pData;
         melde("exception", (long)ex->dwException);
+        status(S_EXCEPTION, ex->dwException);
         break;
     }
 
@@ -174,6 +220,14 @@ extern "C" MSFS_CALLBACK void module_init(void)
         return;
     }
 
+    // ClientData einrichten, sobald die Verbindung steht.
+    SimConnect_MapClientDataNameToID(g_sim, CD_NAME, CD_ID);
+    SimConnect_CreateClientData(g_sim, CD_ID, sizeof(g_status),
+                                SIMCONNECT_CREATE_CLIENT_DATA_FLAG_DEFAULT);
+    SimConnect_AddToClientDataDefinition(g_sim, CD_DEF, 0, sizeof(g_status));
+    g_cd_bereit = true;
+    status(S_OPEN);
+
     // Drei Doubles -- identisch zum externen Probeflug.
     // Rueckgabewerte melden -- ohne sie blieb offen, warum die spaetere Abfrage mit
     // EXCEPTION 3 endete.
@@ -181,6 +235,7 @@ extern "C" MSFS_CALLBACK void module_init(void)
     HRESULT d2 = SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "PLANE LONGITUDE", "degrees");
     HRESULT d3 = SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "PLANE ALTITUDE", "feet");
     melde("datadef_hr", (long)(d1 | d2 | d3));
+    status(S_DATADEF);
 
     // "1sec" feuert erst, wenn der Sim laeuft -- der Aufhaenger, um nicht im Hauptmenue
     // zu setzen.
@@ -189,6 +244,7 @@ extern "C" MSFS_CALLBACK void module_init(void)
 
     hr = SimConnect_CallDispatch(g_sim, dispatch, nullptr);
     melde("calldispatch_hr", (long)hr);
+    status(S_DISPATCH);
 }
 
 extern "C" MSFS_CALLBACK void module_deinit(void)

@@ -55,6 +55,7 @@ RECV_QUIT = 3
 RECV_SIMOBJECT_DATA = 8
 RECV_SIMOBJECT_DATA_BYTYPE = 9
 RECV_ASSIGNED_OBJECT_ID = 12
+RECV_CLIENT_DATA = 16          # Header Zeile 104, nachgezaehlt
 
 # SIMCONNECT_SIMOBJECT_TYPE (Header Zeile 221 ff.): USER=0, ALL=1, AIRCRAFT=2,
 # HELICOPTER=3, BOAT=4, GROUND=5.
@@ -164,6 +165,18 @@ class RecvAssignedObjectId(ctypes.Structure):
     _fields_ = [
         ("dwSize", w.DWORD), ("dwVersion", w.DWORD), ("dwID", w.DWORD),
         ("dwRequestID", w.DWORD), ("dwObjectID", w.DWORD),
+    ]
+
+
+class RecvClientData(ctypes.Structure):
+    """SIMCONNECT_RECV_CLIENT_DATA -- erbt von RECV_SIMOBJECT_DATA, gleiches Vorspann."""
+
+    _fields_ = [
+        ("dwSize", w.DWORD), ("dwVersion", w.DWORD), ("dwID", w.DWORD),
+        ("dwRequestID", w.DWORD), ("dwObjectID", w.DWORD), ("dwDefineID", w.DWORD),
+        ("dwFlags", w.DWORD), ("dwentrynumber", w.DWORD), ("dwoutof", w.DWORD),
+        ("dwDefineCount", w.DWORD),
+        ("werte", w.DWORD * 16),
     ]
 
 
@@ -610,6 +623,77 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
     return ergebnis
 
 
+def status_lesen(dll_pfad: Path, sekunden: int) -> int:
+    """Den Statusbereich auslesen, den das WASM-Modul beschreibt.
+
+    Der dritte Rueckkanal, und der einzige, der in BEIDEN Simulatoren funktioniert:
+    `fprintf` landet in MSFS 2020 nicht in der Konsole, und `fsNetworkHttpRequestGet`
+    erreichte kein 127.0.0.1. ClientData ist ein gemeinsamer Speicherbereich zwischen
+    Modul und externem Programm -- SPAD.neXt macht es auf demselben Rechner genauso.
+
+    Kommt hier nichts an, ist das selbst aussagekraeftig: Dann hat das Modul nicht einmal
+    SimConnect geoeffnet.
+    """
+    SCHRITTE = {
+        0: "(noch nichts geschrieben)",
+        1: "START",
+        2: "SimConnect offen, ClientData eingerichtet",
+        3: "Datendefinition angelegt",
+        4: "System-Event abonniert",
+        5: "Dispatch gesetzt",
+        6: "Sim laeuft -- Event empfangen",
+        7: "AICreateSimulatedObject gerufen",
+        8: "*** OBJEKT ANGELEGT ***",
+        9: "vom Simulator ABGELEHNT",
+    }
+    print(f"SimConnect.dll: {dll_pfad}")
+    sc = ctypes.WinDLL(str(dll_pfad))
+    _bindungen(sc)
+    for name, argtypes in (
+        ("SimConnect_MapClientDataNameToID", [w.HANDLE, ctypes.c_char_p, w.DWORD]),
+        ("SimConnect_AddToClientDataDefinition",
+         [w.HANDLE, w.DWORD, w.DWORD, w.DWORD, ctypes.c_float, w.DWORD]),
+        ("SimConnect_RequestClientData",
+         [w.HANDLE, w.DWORD, w.DWORD, w.DWORD, ctypes.c_int, w.DWORD, w.DWORD, w.DWORD,
+          w.DWORD]),
+    ):
+        f = getattr(sc, name)
+        f.restype = ctypes.HRESULT
+        f.argtypes = argtypes
+
+    handle = _verbinden(sc, b"FriesenKieker-Status")
+    if handle is None:
+        return 2
+    print("SimConnect_Open: verbunden.")
+
+    CD_ID, CD_DEF, WORTE = 1, 1, 16
+    sc.SimConnect_MapClientDataNameToID(handle, b"FriesenBruegge.Status", CD_ID)
+    sc.SimConnect_AddToClientDataDefinition(handle, CD_DEF, 0, WORTE * 4, 0.0, 0xFFFFFFFF)
+    # PERIOD 2 = SIMCONNECT_CLIENT_DATA_PERIOD_ON_SET: melden, sobald das Modul schreibt.
+    sc.SimConnect_RequestClientData(handle, CD_ID, REQ_LAGE + 800, CD_DEF, 2, 0, 0, 0, 0)
+
+    print(f"Lausche {sekunden}s auf den Statusbereich des Moduls ...")
+    print()
+    gesehen = False
+    for art, zeiger in _pakete(sc, handle, sekunden):
+        if art == RECV_CLIENT_DATA:
+            roh = ctypes.cast(zeiger, ctypes.POINTER(RecvClientData)).contents
+            s, wert2, wert3 = roh.werte[0], roh.werte[1], roh.werte[2]
+            print(f"  Schritt {s}: {SCHRITTE.get(s, 'unbekannt')}"
+                  + (f"   Fehler/HR: {wert2}" if wert2 else "")
+                  + (f"   Objekt-ID: {wert3}" if wert3 else ""))
+            gesehen = True
+        elif art == RECV_EXCEPTION:
+            ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents
+            print(f"  EXCEPTION {ex.dwException} -- "
+                  f"{EXCEPTION_NAMEN.get(ex.dwException, 'unbekannt')}")
+    if not gesehen:
+        print("  NICHTS. Das Modul hat den Bereich nie beschrieben --")
+        print("  es hat also nicht einmal SimConnect geoeffnet.")
+    _schliessen(sc, handle)
+    return 0 if gesehen else 1
+
+
 def boote_zaehlen(dll_pfad: Path, radius_m: int) -> int:
     """Welche Boote stehen im Umkreis? -- unabhaengig davon, WER sie gesetzt hat.
 
@@ -814,6 +898,9 @@ def main() -> int:
                          "Flugzeugs (schliesst EXCEPTION 33 aus)")
     ap.add_argument("--ex1", action="store_true",
                     help="AICreateSimulatedObject_EX1 statt der alten Fassung benutzen")
+    ap.add_argument("--status", action="store_true",
+                    help="Statusbereich des WASM-Moduls auslesen (ClientData)")
+    ap.add_argument("--status-sekunden", type=int, default=20)
     ap.add_argument("--boote-zaehlen", action="store_true",
                     help="Nur nachsehen, welche Boote im Umkreis stehen (egal von wem)")
     ap.add_argument("--radius", type=int, default=20000, metavar="METER",
@@ -827,6 +914,8 @@ def main() -> int:
     if a.titel_suche:
         titel_suchen()
         return 0
+    if a.status:
+        return status_lesen(dll_finden(a.dll), a.status_sekunden)
     if a.boote_zaehlen:
         return boote_zaehlen(dll_finden(a.dll), a.radius)
     if not a.titel:

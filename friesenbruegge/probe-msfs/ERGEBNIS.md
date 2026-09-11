@@ -477,15 +477,31 @@ leitet WASM-`stderr` offenbar nicht in die Konsole — damit fehlt genau das Wer
 **Nicht belegt heißt hier nicht „geht nicht".** Es heißt: Ohne Log ist die Ursache von außen
 nicht zu bestimmen, und die Suche hätte dieselbe Form wie in 2024 — Start für Start, nur blind.
 
-**Für den Zuschnitt ist die Frage ohnehin entschieden:** Weil `_EX1` in 2020 fehlt, braucht der
-WASM-Weg **zwei Module**, je eines pro Simulator. Der externe Weg braucht **ein** Programm für
-beide (gemessen). Damit schrumpft der WASM-Vorteil von „ein Ordner zum Hineinkopieren" auf „der
-richtige Ordner für deine Version".
+### Korrektur: Ein gemeinsames Modul ist doch baubar
+
+Hier stand zwischenzeitlich, der WASM-Weg brauche **zwei Module**, weil `_EX1` in MSFS 2020
+fehlt. **Das war falsch**, und der Nutzer hat es zu Recht bezweifelt („wieso kann man kein WASM
+für beide bauen?").
+
+Die Fassung **ohne** Suffix steht in **beiden** SDKs — und sie ist aus WASM erreichbar. Am
+11.09.2026 in MSFS 2024 gemessen: vier Boote, Höhen identisch zum `_EX1`-Lauf
+(49,0 / 0,0 / 500,0 / 49,2 ft). Auch das `OnGround`-Verhalten hängt also nicht an der
+Funktionswahl.
+
+**Der Fehlschluss war derselbe wie mehrfach an diesem Tag:** Aus *„GoFish benutzt `_EX1`"* wurde
+*„die andere geht nicht"*. Der Quelltext benutzt jetzt die alte Fassung als Normalfall;
+`-NutzeEx1` schaltet auf `_EX1` um, falls später Liveries gebraucht werden, die nur sie kann.
 
 | | MSFS 2020 | MSFS 2024 |
 |---|---|---|
 | extern über `exe.xml` | ✅ ein Programm für beide | ✅ |
-| WASM-Modul | ❌ nicht belegt, eigener Build nötig | ✅ |
+| WASM-Modul | ⏳ lädt, tut aber nichts — Grund offen | ✅ |
+
+**Was in 2020 fehlt, ist also nicht die Funktion, sondern die Sicht.** Deshalb schreibt das
+Modul seinen Fortschritt jetzt zusätzlich in einen **ClientData**-Bereich, den ein externes
+Programm mitliest (`kieker_probe.py --status`). Das ist der einzige Rückkanal, der in beiden
+Simulatoren funktioniert — `fprintf` zeigt MSFS 2020 nicht an, und die Netz-API erreicht kein
+`127.0.0.1`. SPAD.neXt macht es auf demselben Rechner genauso.
 
 ## Was daraus für den Kieker folgt
 
