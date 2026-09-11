@@ -492,11 +492,17 @@ Funktionswahl.
 *„die andere geht nicht"*. Der Quelltext benutzt jetzt die alte Fassung als Normalfall;
 `-NutzeEx1` schaltet auf `_EX1` um, falls später Liveries gebraucht werden, die nur sie kann.
 
-**Was in 2020 fehlte, war nicht die Funktion, sondern die Sicht.** Deshalb schreibt das Modul
-seinen Fortschritt zusätzlich in einen **ClientData**-Bereich, den ein externes Programm
-mitliest (`kieker_probe.py --status`). Das ist der einzige Rückkanal, der in beiden Simulatoren
-funktioniert — `fprintf` zeigt MSFS 2020 nicht an, und die Netz-API erreicht kein `127.0.0.1`.
-SPAD.neXt macht es auf demselben Rechner genauso.
+**Was in 2020 fehlte, war nicht die Funktion, sondern die Sicht** — allerdings anders, als hier
+zwischenzeitlich stand. Das Modul schreibt seinen Fortschritt jetzt zusätzlich in einen
+**ClientData**-Bereich, den ein externes Programm mitliest (`kieker_probe.py --status`); SPAD.neXt
+macht es auf demselben Rechner genauso. Dieser Rückkanal ist unabhängig von Konsole und Netz und
+hat die Sache entschieden.
+
+> **Korrektur:** Hier stand, MSFS 2020 leite WASM-`stderr` nicht in die Konsole. **Das ist
+> falsch.** Die Meldungen kommen dort sehr wohl an — nur **ohne** das `[modul.wasm]`-Präfix, das
+> MSFS 2024 voranstellt. Gesucht wurde nach genau diesem Präfix, und aus dem Nichtfinden wurde
+> ein Befund gemacht. Der erste 2020-Fehlschlag erklärt sich damit vermutlich auch: Der
+> Log-Ausschnitt endete bei `initialized`, die Zeilen danach waren nicht mit dabei.
 
 ### ✅ Und damit läuft WASM auch in MSFS 2020
 
@@ -506,14 +512,20 @@ Mit dem Rückkanal war es sofort sichtbar:
 Schritt 8: *** OBJEKT ANGELEGT ***   Objekt-ID: 4
 ```
 
-Gegenprobe von außen: **vier Boote**, 107 bis 463 m entfernt, Objekt-IDs 1 bis 4.
+Gegenprobe von außen: **vier Boote**, 107 bis 463 m entfernt, Objekt-IDs 1 bis 4. Und in der
+Konsole die ganze Kette:
+
+```
+[FriesenBruegge] module_init = 0
+[FriesenBruegge] open_hr = 0
+[FriesenBruegge] create_aufgerufen = 0
+[FriesenBruegge] ERFOLG_objekt_id = 1 … 4
+Loading: 'vfs://asobo-simobjects-boats/SimObjects/Boats/Boat01/model/Boat01.gltf'
+```
 
 **Ein gemeinsames Modul bedient damit beide Simulatoren** — gebaut mit der alten
-`AICreateSimulatedObject`, je einmal gegen das passende SDK übersetzt.
-
-Warum der erste 2020-Versuch nichts setzte, ist **nicht abschließend geklärt**; am ehesten war
-der Flug noch nicht vollständig geladen, sodass das `1sec`-Ereignis nie kam. Das Modul selbst
-war dasselbe.
+`AICreateSimulatedObject`, je einmal gegen das passende SDK übersetzt. Damit ist der WASM-Weg
+für MSFS vollständig: ein Quelltext, zwei Builds, zwei Ordner zum Hineinkopieren.
 
 ### Die Höhe verhält sich in beiden Simulatoren verschieden — eine Einstellung passt trotzdem
 
