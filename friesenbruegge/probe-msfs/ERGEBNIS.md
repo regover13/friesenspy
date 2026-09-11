@@ -492,16 +492,50 @@ Funktionswahl.
 *„die andere geht nicht"*. Der Quelltext benutzt jetzt die alte Fassung als Normalfall;
 `-NutzeEx1` schaltet auf `_EX1` um, falls später Liveries gebraucht werden, die nur sie kann.
 
+**Was in 2020 fehlte, war nicht die Funktion, sondern die Sicht.** Deshalb schreibt das Modul
+seinen Fortschritt zusätzlich in einen **ClientData**-Bereich, den ein externes Programm
+mitliest (`kieker_probe.py --status`). Das ist der einzige Rückkanal, der in beiden Simulatoren
+funktioniert — `fprintf` zeigt MSFS 2020 nicht an, und die Netz-API erreicht kein `127.0.0.1`.
+SPAD.neXt macht es auf demselben Rechner genauso.
+
+### ✅ Und damit läuft WASM auch in MSFS 2020
+
+Mit dem Rückkanal war es sofort sichtbar:
+
+```
+Schritt 8: *** OBJEKT ANGELEGT ***   Objekt-ID: 4
+```
+
+Gegenprobe von außen: **vier Boote**, 107 bis 463 m entfernt, Objekt-IDs 1 bis 4.
+
+**Ein gemeinsames Modul bedient damit beide Simulatoren** — gebaut mit der alten
+`AICreateSimulatedObject`, je einmal gegen das passende SDK übersetzt.
+
+Warum der erste 2020-Versuch nichts setzte, ist **nicht abschließend geklärt**; am ehesten war
+der Flug noch nicht vollständig geladen, sodass das `1sec`-Ereignis nie kam. Das Modul selbst
+war dasselbe.
+
+### Die Höhe verhält sich in beiden Simulatoren verschieden — eine Einstellung passt trotzdem
+
+| Variante | MSFS 2024 | MSFS 2020 |
+|---|---|---|
+| `OnGround=1`, `Alt=0` | 49,0 ft | 0,0 ft |
+| **`OnGround=0`, `Alt=0`** | **0,0 ft** | **0,0 ft** |
+| `OnGround=0`, `Alt=500` | 500,0 ft | 0,0 ft |
+| `OnGround=1`, `Alt=500` | 49,2 ft | 0,0 ft |
+
+**MSFS 2020 ignoriert die Höhe vollständig** und setzt alles auf Meereshöhe — auch die 500 ft.
+MSFS 2024 nimmt sie ernst, verunglückt aber bei `OnGround=1` auf konstant 49 ft.
+
+**Die Schnittmenge ist `OnGround=0` mit `Altitude=0`:** beide Simulatoren setzen dann auf
+0,0 ft, also exakt Meereshöhe. Für Boote im Wattenmeer ist das genau richtig, und die Brügge
+braucht keine Fallunterscheidung. Objekte über Land blieben eine offene Frage — in MSFS 2020
+ließen sie sich nach dieser Messung gar nicht anheben.
+
 | | MSFS 2020 | MSFS 2024 |
 |---|---|---|
 | extern über `exe.xml` | ✅ ein Programm für beide | ✅ |
-| WASM-Modul | ⏳ lädt, tut aber nichts — Grund offen | ✅ |
-
-**Was in 2020 fehlt, ist also nicht die Funktion, sondern die Sicht.** Deshalb schreibt das
-Modul seinen Fortschritt jetzt zusätzlich in einen **ClientData**-Bereich, den ein externes
-Programm mitliest (`kieker_probe.py --status`). Das ist der einzige Rückkanal, der in beiden
-Simulatoren funktioniert — `fprintf` zeigt MSFS 2020 nicht an, und die Netz-API erreicht kein
-`127.0.0.1`. SPAD.neXt macht es auf demselben Rechner genauso.
+| WASM-Modul | ✅ ein Quelltext, zwei Builds | ✅ |
 
 ## Was daraus für den Kieker folgt
 
