@@ -2,12 +2,15 @@
 
 **Für:** eine Claude-Code-Sitzung auf dem Windows-Rechner mit MSFS
 **Von:** der Server-Sitzung (VPS), 11.09.2026
-**Repo:** `regover13/friesenspy` — diese Datei liegt in `sim-bruecke/probe-msfs/`
+**Repo:** `regover13/friesenspy` — diese Datei liegt in `friesenbruegge/probe-msfs/`
 
-> ⚠ **Der Ordner hieß bis zum 11.09.2026 `msfs-kieker/probe/`.** Wenn du den alten Pfad
+> ⚠ **Der Ordner hieß am 11.09.2026 zweimal anders:** erst `msfs-kieker/probe/`, dann kurz
+> `sim-bruecke/probe-msfs/`, jetzt **`friesenbruegge/probe-msfs/`**. Wenn du einen alten Pfad
 > aufgerufen bekommen hast: einmal `git pull`, dann stimmt es wieder. Inhaltlich hat sich am
-> Probeflug **nichts** geändert — nur der Spawner ist inzwischen als eigenes, event- und
-> simulator-unabhängiges Stück entworfen (Issue #25), und dazu passte der alte Name nicht mehr.
+> Probeflug **nichts** geändert. Grund für die erste Umbenennung: Der Spawner ist inzwischen als
+> eigenes, event- und simulator-unabhängiges Stück entworfen (Issue #25), und `msfs-kieker`
+> schrieb MSFS fest. Grund für die zweite: `sim-bruecke` fiel aus dem Namensschema der Gruppe —
+> **Brügge** ist ostfriesisches Platt für Brücke und meint dasselbe Wort wie die Schiffsbrücke.
 
 ---
 
@@ -180,7 +183,7 @@ Ein Push auf `main` löst GitHub Actions aus, baut das Image neu und **startet d
 FriesenSpy-Container neu**. Wer dann mit offenem Kniebrett im Flug ist, bekommt ein schwarzes
 Tablet — das ist in diesem Projekt schon passiert und eine stehende Regel.
 
-`sim-bruecke/` landet zwar gar nicht im Image (der Dockerfile kopiert nur `app/` und
+`friesenbruegge/` landet zwar gar nicht im Image (der Dockerfile kopiert nur `app/` und
 `scripts/`), der Neustart passiert trotzdem.
 
 **Also: lokal committen, nicht pushen.** Der Nutzer oder die Server-Sitzung pusht später.
@@ -201,7 +204,7 @@ aufbaut.
 
 ## Ausdrücklich NICHT Teil dieser Aufgabe
 
-- Kein `sim-bruecke`-Paket bauen, keine `manifest.json`, kein `layout.json`.
+- Kein `friesenbruegge`-Paket bauen, keine `manifest.json`, kein `layout.json`.
 - Kein WASM-Modul (das ist eine eigene, spätere Messfrage).
 - Keine Änderung am FriesenSpy-Server, an `app/` oder an der Datenbank.
 - Keine Robben-Modelle, kein Blender.

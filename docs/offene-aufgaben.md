@@ -68,9 +68,17 @@ Zeit. Auch der Positions-Endpunkt aus #23 fragt nicht, wer meldet. **Dort ist ni
 verbaut.**
 
 **Simulator-spezifisch ist ausschließlich das Paket.** Der ursprünglich vorgesehene Ordnername
-`msfs-kieker/` schrieb MSFS fest; er heißt seit dem 11.09.2026 **`sim-bruecke/`**, und der
+`msfs-kieker/` schrieb MSFS fest; er heißt seit dem 11.09.2026 **`friesenbruegge/`**, und der
 MSFS-Probeflug liegt darin als `probe-msfs/`. Der Entwurf dazu steht in **#25** — eine
 event-unabhängige Brücke, die für alle drei Simulatoren dasselbe Protokoll spricht.
+
+**Zum Namen** (Nutzerentscheidung, 11.09.2026): Zwischenzeitlich hieß der Ordner `sim-bruecke/`.
+Das war beschreibend, fiel aber aus dem Schema — FriesenFlieger, FriesenKutter, FriesenBummel,
+FriesenKieker. **`Brügge`** ist das ostfriesische Platt für Brücke (`de Brügg`, auch `Brügge`,
+Pl. `de Brüggen`; [Wörterbuch der Ostfriesischen Landschaft](https://www.platt-wb.de/platt-hoch/?term=Br%C3%BCgg)).
+Dasselbe Wort bezeichnet die **Schiffsbrücke** — und nebenbei das Butterbrot. Der Ordner heißt
+ohne Umlaut `friesenbruegge/`, wie das Repo `friesenspy` heißt; geschrieben wird der Name
+**FriesenBrügge**.
 
 ### Was ich dazu weiß — und was davon ungeprüft ist
 

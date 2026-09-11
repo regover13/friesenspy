@@ -51,12 +51,12 @@ wir es!"*). Es gibt keinen Ersatzplan und es soll keinen geben.
 
 | Stufe | Was sie bringt | Zustand |
 |---|---|---|
-| **0 — Der Probeflug** | Antwort auf die eine Frage | **jetzt**, `sim-bruecke/probe-msfs/` |
+| **0 — Der Probeflug** | Antwort auf die eine Frage | **jetzt**, `friesenbruegge/probe-msfs/` |
 | **1 — Eventtyp + Paket** | der Kieker, wie er unten beschrieben ist | wartet auf Stufe 0 |
 | **2 — Politur** | Badge fürs Forum, eigene Robben-Modelle | danach |
 
-**Der Probeflug liegt fertig bereit:** `sim-bruecke/probe-msfs/kieker_probe.py` mit Anleitung in
-`sim-bruecke/probe-msfs/README.md`. Er setzt ein **mitgeliefertes Boot** — MSFS bringt Boote als
+**Der Probeflug liegt fertig bereit:** `friesenbruegge/probe-msfs/kieker_probe.py` mit Anleitung in
+`friesenbruegge/probe-msfs/README.md`. Er setzt ein **mitgeliefertes Boot** — MSFS bringt Boote als
 SimObjects mit, es braucht also kein 3D-Modell, keine Lizenzfrage, kein Blender. Fällt die
 Antwort negativ aus, hat der Versuch keine Modellierungsarbeit gekostet.
 
@@ -810,7 +810,7 @@ auf der Platte. Wer sie öffnet, hat alle Zahlen, ohne einen Meter zu fliegen. D
 Handgriff vor dem Flug und dem Wegfall von MSFS 2020 der dritte Grund, warum dieser Weg nur der
 Rückfall ist.
 
-## 13. Stufe 2 — das Paket `sim-bruecke/`
+## 13. Stufe 2 — das Paket `friesenbruegge/` („FriesenBrügge")
 
 **Nicht Gegenstand der Umsetzung dieser Spec.** Hier steht der Vertrag, damit Stufe 1 ihn nicht
 verbaut.
@@ -835,7 +835,14 @@ weg.
 
 ### 13.1 Ort
 
-`sim-bruecke/` im friesenspy-Repo, neben `msfs-panel/`. Begründung ist die Kopplung: Das Paket
+`friesenbruegge/` im friesenspy-Repo, neben `msfs-panel/`. **Der Name ist ostfriesisches Platt:**
+`de Brügg`, auch `Brügge`, heißt Brücke — und dasselbe Wort meint die Schiffsbrücke
+([Wörterbuch der Ostfriesischen Landschaft](https://www.platt-wb.de/platt-hoch/?term=Br%C3%BCgg)).
+Geschrieben wird er **FriesenBrügge**, der Ordner trägt ihn ohne Umlaut, wie das Repo
+`friesenspy` heißt. Vorgänger waren `msfs-kieker/` (schrieb MSFS fest) und `sim-bruecke/` (fiel
+aus dem Namensschema der Gruppe).
+
+Begründung für den Ort ist die Kopplung: Das Paket
 holt seine Lage vom Server; ein eigenes Repo ließe Paketversion und Server-Schnittstelle
 auseinanderdriften — dasselbe Problem, das das Kniebrett schon hatte („Erforderlich ist
 mindestens 2.0.0"), nur über zwei Repos verteilt.
@@ -1038,7 +1045,7 @@ beantwortet, zwei mit der verworfenen Zwischenstufe weggefallen.
 
 **Offen:**
 
-1. **Der Probeflug** (`sim-bruecke/probe-msfs/`) — er braucht deinen Simulator. Alles andere
+1. **Der Probeflug** (`friesenbruegge/probe-msfs/`) — er braucht deinen Simulator. Alles andere
    wartet darauf. Wenn etwas klemmt: die Ausgabe herschicken, dann repariere ich das Skript,
    statt zu raten.
 
