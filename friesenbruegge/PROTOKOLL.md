@@ -252,6 +252,16 @@ kein VATSIM  →  { "protokoll": 1, "naechste_frage_in_s": 60, "gilt_bis_s": 0, 
 Keine Anzeige, keine Ablage, keine Objekte. Die Brügge räumt ab und fragt im Minutentakt
 weiter, bis der Pilot online geht.
 
+⚠ **Eine Ausnahme, und sie ist im ersten Flug erzwungen worden:** Sind Friesen in der Luft,
+aber passt keiner, antwortet der Server mit **3 s** statt 60. Ohne diese Unterscheidung
+entsteht ein Teufelskreis — ohne Zuordnung meldet die Brügge im Minutentakt, und in einer
+Minute fliegt ein Flugzeug so weit, dass die Zuordnung *schwerer* wird statt leichter. Am
+Boden fällt das nicht auf; ein stehendes Flugzeug fliegt in einer Minute nirgendwohin.
+
+**Der Takt verrät damit eine Kleinigkeit** — ob gerade Friesen fliegen. Das steht aber
+ohnehin im öffentlichen VATSIM-Feed, und über eine *bestimmte* Person sagt er nichts. Die
+Nutzlast bleibt in allen Ablehnungsfällen gleich: leeres `soll`, `gilt_bis_s: 0`, kein Grund.
+
 **Dieselbe Antwort gilt, wenn die Position zu niemandem passt** — der Pilot ist auf VATSIM,
 aber der Match aus Abschnitt 5 findet keinen eindeutigen Treffer. Für die Brügge ist beides
 ununterscheidbar und soll es auch sein: Sie erfährt nicht, ob sie unbekannt ist oder nur

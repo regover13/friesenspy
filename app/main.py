@@ -723,6 +723,17 @@ _BRUEGGE_MAX_BYTES = 64 * 1024       # eine Meldung mit voller spur liegt weit d
 _BRUEGGE_PROTOKOLL = 1               # was dieser Server spricht
 _BRUEGGE_GILT_BIS_S = 300            # so lange gilt "soll" ohne neue Auskunft
 _BRUEGGE_TAKT_OHNE_VATSIM_S = 60     # wer nicht fliegt, fragt im Minutentakt
+# ... aber wer fliegt und nur noch nicht ERKANNT ist, braucht einen kurzen Takt.
+#
+# Sonst entsteht ein Teufelskreis, und genau der ist am 11.09.2026 im ersten Flug
+# aufgetreten: Ohne Zuordnung meldet die Bruegge alle 60 s -- und in 60 s ist ein fliegendes
+# Flugzeug so weit weitergeflogen, dass die Zuordnung schwerer wird statt leichter. Am Boden
+# faellt das nicht auf, weil ein stehendes Flugzeug in einer Minute nirgendwohin fliegt.
+#
+# Die Unterscheidung ist billig: Gibt es ueberhaupt Friesen in der Luft? Wenn nicht, ist
+# "niemand passt" der Normalfall und der Minutentakt richtig. Wenn doch, ist es ein
+# Kandidatenproblem, und die naechste Meldung soll bald kommen.
+_BRUEGGE_TAKT_UNERKANNT_S = 3
 _BRUEGGE_TAKT_VORGABE_S = 1          # Regeltakt, gemessen (s. Protokoll, Abschnitt 6)
 
 
@@ -826,14 +837,22 @@ async def bruegge_melden(request: Request):
     conn = get_connection(settings.DB_PATH)
     try:
         takt = _bruegge_takt(conn)
-        cid = _bruegge_zuordnen(conn, kennung, lat, lon, alt_ft, gs_kt, simulator,
-                                settings, vs_ft_min)
+        cid, kandidaten_da = _bruegge_zuordnen(conn, kennung, lat, lon, alt_ft, gs_kt,
+                                               simulator, settings, vs_ft_min)
         if cid is None:
             # Ohne Zuordnung geschieht NICHTS -- keine Anzeige, keine Ablage, keine Objekte.
             # Die Pruefung steht damit vor allem Teuren; ein Pilot, der den Simulator laufen
             # laesst, ohne zu fliegen, kostet eine Indexabfrage je Minute.
+            #
+            # Der TAKT unterscheidet aber die beiden Faelle, auch wenn die Antwort sonst
+            # dieselbe bleibt: Niemand in der Luft heisst Minutentakt, jemand in der Luft
+            # heisst "gleich nochmal" -- sonst verhindert der Takt die Zuordnung, die er
+            # voraussetzt. Fuer die Bruegge bleiben beide Faelle ununterscheidbar, denn sie
+            # sieht nur eine Zahl, keinen Grund.
             conn.commit()
-            return _bruegge_antwort(_BRUEGGE_TAKT_OHNE_VATSIM_S, gilt_bis=0)
+            return _bruegge_antwort(
+                _BRUEGGE_TAKT_UNERKANNT_S if kandidaten_da else _BRUEGGE_TAKT_OHNE_VATSIM_S,
+                gilt_bis=0)
 
         bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
         conn.commit()
@@ -848,8 +867,10 @@ async def bruegge_melden(request: Request):
 
 def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
                       gs_kt: float, simulator: str | None, settings,
-                      vs_ft_min: float = 0.0) -> int | None:
-    """Welcher Pilot meldet hier? ``None`` heisst: nichts geschieht.
+                      vs_ft_min: float = 0.0) -> tuple[int | None, bool]:
+    """Welcher Pilot meldet hier? ``(cid | None, ob Friesen in der Luft waren)``.
+
+    Das zweite Feld entscheidet ueber den TAKT der Absage -- s. _BRUEGGE_TAKT_UNERKANNT_S.
 
     Drei Bedingungen, und alle drei muessen erfuellt sein:
       1. Der Pilot steht in `live_positions` -- fliegt also auf VATSIM, mit Friesen-Praefix.
@@ -870,7 +891,7 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
                                       sekunden_her, gs_kt):
         bruegge_zuordnung_loesen(conn, kennung)
         bruegge_position_loeschen(conn, int(gemerkt["cid"]))
-        return None
+        return None, bool(kandidaten)
 
     # --- Eine gemerkte Zuordnung: pruefen, nicht neu rechnen ---------------------------
     if gemerkt:
@@ -879,7 +900,7 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         if partner is not None and bruegge.bleibt_plausibel(lat, lon, alt_ft, gs_kt, partner,
                                                             vs_ft_min):
             bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
-            return cid
+            return cid, True
         # Der Partner ist fort (ausgeloggt) oder die Position passt nicht mehr. Geloest wird
         # erst nach mehreren Verstoessen IN FOLGE -- ein einzelner Ausreisser loest nichts.
         if partner is None or bruegge.PAARUNG_LOESEN_TAKTE <= bruegge_zuordnung_verstoss(
@@ -887,10 +908,10 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         ):
             bruegge_zuordnung_loesen(conn, kennung)
             bruegge_position_loeschen(conn, cid)
-            return None
+            return None, bool(kandidaten)
         # Noch im Toleranzfenster: Die Zuordnung gilt, aber die Position wird nicht
         # uebernommen -- sie passt ja gerade nicht.
-        return None
+        return None, True
 
     # --- Erstzuordnung -----------------------------------------------------------------
     treffer, grund = bruegge.zuordnen(lat, lon, alt_ft, gs_kt, kandidaten, vs_ft_min)
@@ -900,15 +921,15 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         # Zeile sucht man ihn im Simulator statt im Log.
         _logger.info("Bruegge: keine Zuordnung (%d Kandidaten) -- %s", len(kandidaten), grund)
     if treffer is None:
-        return None
+        return None, bool(kandidaten)
     if not cid_ist_authentifiziert(conn, treffer.cid):
         # Auf VATSIM mit FRS-Praefix, aber nie im Forum angemeldet. Ein gesetztes Callsign
         # allein genuegt nicht -- sonst koennte jeder ein Praefix waehlen und damit melden.
-        return None
+        return None, bool(kandidaten)
     if kennung:
         bruegge_zuordnung_setzen(conn, kennung, treffer.cid, simulator)
         bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
-    return treffer.cid
+    return treffer.cid, True
 
 
 @app.get("/api/admin/bruegge")

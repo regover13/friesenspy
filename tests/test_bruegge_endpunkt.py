@@ -147,11 +147,21 @@ def test_ohne_forum_login_geschieht_nichts(klient, tmp_path):
     assert r.json()["soll"] == []
 
 
-def test_die_ablehnungen_sind_fuer_die_bruegge_ununterscheidbar(klient, tmp_path):
+def test_die_ablehnungen_verraten_keinen_grund(klient, tmp_path):
     """Mit Absicht: Eine Fehlermeldung wäre ein Werkzeug.
 
-    Wer ausprobieren wollte, welche erfundene Position durchgeht, bekäme vom Server sonst
-    die Rückmeldung dazu.
+    Wer ausprobieren wollte, welche erfundene Position durchgeht, bekäme vom Server sonst die
+    Rückmeldung dazu. Deshalb sind `soll` und `gilt_bis_s` in jedem Ablehnungsfall gleich.
+
+    ⚠ **Der Takt ist davon ausgenommen, und das ist eine bewusste Abwägung** (11.09.2026,
+    nach dem ersten Flug): Er unterscheidet „niemand in der Luft" von „jemand in der Luft,
+    aber keiner passt". Ohne diese Unterscheidung entsteht ein Teufelskreis -- ohne Zuordnung
+    meldet die Brügge im Minutentakt, und in einer Minute fliegt ein Flugzeug so weit, dass
+    die Zuordnung schwerer wird statt leichter.
+
+    **Was der Takt damit preisgibt, ist bereits öffentlich:** ob gerade Friesen auf VATSIM
+    fliegen, steht im VATSIM-Feed, den jeder lesen kann. Über eine *bestimmte* Person sagt er
+    nichts -- und nur das wäre die Information, die ein Angreifer nicht ohnehin hat.
     """
     db = str(tmp_path / "t.db")
     ohne_vatsim = klient.post("/api/bruegge/melden", json=_meldung()).json()
@@ -159,7 +169,26 @@ def test_die_ablehnungen_sind_fuer_die_bruegge_ununterscheidbar(klient, tmp_path
     ohne_login = klient.post("/api/bruegge/melden", json=_meldung()).json()
     weit_weg = klient.post("/api/bruegge/melden",
                            json=_meldung(lat=48.0, lon=11.0)).json()
-    assert ohne_vatsim == ohne_login == weit_weg
+
+    for a in (ohne_vatsim, ohne_login, weit_weg):
+        assert a["soll"] == []
+        assert a["gilt_bis_s"] == 0
+    # Kein Friese in der Luft: Minutentakt. Mit Friesen: gleich nochmal.
+    assert ohne_vatsim["naechste_frage_in_s"] == 60
+    assert ohne_login["naechste_frage_in_s"] == weit_weg["naechste_frage_in_s"] <= 5
+
+
+def test_wer_fliegt_aber_nicht_erkannt_wird_darf_bald_wieder_fragen(klient, tmp_path):
+    """Der Teufelskreis, als Test festgehalten.
+
+    Im ersten echten Flug (11.09.2026) stand die Zuordnung am Boden und fiel beim Steigen.
+    Danach meldete die Brügge im Minutentakt -- und fand nie wieder zurück, weil sie zwischen
+    zwei Meldungen zu weit geflogen war.
+    """
+    _friese_anlegen(str(tmp_path / "t.db"))
+    # Weit weg vom einzigen Friesen: kein Treffer, aber es gibt Kandidaten.
+    a = klient.post("/api/bruegge/melden", json=_meldung(lat=48.35, lon=11.78)).json()
+    assert a["naechste_frage_in_s"] <= 5, "sonst verhindert der Takt die Zuordnung"
 
 
 def test_position_ohne_passenden_friesen_wird_nicht_abgelegt(klient, tmp_path):
