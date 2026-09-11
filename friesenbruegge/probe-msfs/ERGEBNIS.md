@@ -540,9 +540,37 @@ für MSFS vollständig: ein Quelltext, zwei Builds, zwei Ordner zum Hineinkopier
 MSFS 2024 nimmt sie ernst, verunglückt aber bei `OnGround=1` auf konstant 49 ft.
 
 **Die Schnittmenge ist `OnGround=0` mit `Altitude=0`:** beide Simulatoren setzen dann auf
-0,0 ft, also exakt Meereshöhe. Für Boote im Wattenmeer ist das genau richtig, und die Brügge
-braucht keine Fallunterscheidung. Objekte über Land blieben eine offene Frage — in MSFS 2020
-ließen sie sich nach dieser Messung gar nicht anheben.
+0,0 ft, also exakt Meereshöhe.
+
+### ⚠ Und genau deshalb sind Objekte über Land unsichtbar
+
+Das klang nach der bequemen Lösung — ist es aber nur auf **Wasser**. Am Boden auf Wangerooge
+nachgemessen:
+
+```
+Flugzeug steht bei 53.78691 / 7.90998, 10.0 ft   <- Gelaendehoehe, rund 3 m ueber MSL
+alle gesetzten Objekte:                  0.0 ft   <- Meereshoehe
+```
+
+**Die Objekte sitzen drei Meter unter dem Platz.** Zwei Beobachtungen belegen es unabhängig:
+
+| Objekt | Höhe des Modells | sichtbar? |
+|---|---|---|
+| `Boat01` | ~2,5 m | **nein** — vollständig im Boden |
+| `CruiseShip01` | ~50 m | **ja** — ragt 47 m heraus |
+
+Beide standen auf derselben Koordinate und derselben gemeldeten Höhe. Der Pilot sah nur das
+Schiff, und das erklärt auch, warum die vier WASM-Boote trotz gültiger Objekt-IDs nirgends zu
+finden waren.
+
+**In MSFS 2020 lässt sich die Höhe überhaupt nicht steuern** — `OnGround=1` blieb wirkungslos,
+`Altitude=500` ebenso, alles landet auf 0,0 ft. Für den Kieker im Wattenmeer ist das folgenlos
+(dort *ist* die Oberfläche die Meereshöhe). **Objekte über Land sind in MSFS 2020 per WASM
+nicht brauchbar zu setzen** — sie versinken im Gelände.
+
+Für MSFS 2024 gilt das nicht: Dort kommt `Altitude` an, die Brügge müsste nur die Geländehöhe
+kennen. Die hat FriesenSpy nicht (Spec 4.2) — dieselbe Einschränkung, die auch den
+X-Plane-Adapter trifft, der deshalb `XPLMProbeTerrainXYZ` fragt.
 
 | | MSFS 2020 | MSFS 2024 |
 |---|---|---|

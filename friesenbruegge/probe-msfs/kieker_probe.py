@@ -722,8 +722,11 @@ def boote_zaehlen(dll_pfad: Path, radius_m: int) -> int:
     if lage is None:
         _schliessen(sc, handle)
         return 2
-    m_lat, m_lon, _ = lage
-    print(f"  Flugzeug steht bei {m_lat:.5f} / {m_lon:.5f}")
+    m_lat, m_lon, m_alt = lage
+    # Die Hoehe des Flugzeugs ist der beste verfuegbare Anhalt fuer die Gelaendehoehe --
+    # es steht ja darauf. Gebraucht, um zu beurteilen, ob ein Objekt auf 0 ft (Meereshoehe)
+    # sichtbar waere oder im Boden steckt.
+    print(f"  Flugzeug steht bei {m_lat:.5f} / {m_lon:.5f}, {m_alt:.1f} ft")
 
     print(f"\nFrage alle Boote im Umkreis von {radius_m} m ab ...")
     sc.SimConnect_RequestDataOnSimObjectType(handle, REQ_LAGE + 900, DEF_LAGE,
