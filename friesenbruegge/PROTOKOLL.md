@@ -415,96 +415,97 @@ Raten wäre der Anfang einer neuen Fehlersuche.**
 
 ---
 
-## 5. Anmeldung: ein Eintrag in `panel_devices`
+## 5. Anmeldung: gar keine — der Server erkennt den Piloten an der Position
 
-### Der Weg des Kniebretts ist die Vorlage — die Tabelle gibt es schon
+**Nutzerentscheidung vom 11.09.2026:** *„Wert entsteht bei beiden durch Positionsmatching der
+VATSIM-Verbindung eines bereits in FriesenSpy eingeloggten Users. Keine Gerätebindung, kein
+Login, keine Weboberfläche mehr!"*
 
-**Nutzerfrage vom 11.09.2026:** *„Können wir nicht einfach wieder denselben Key nutzen, der
-auch beim Kniebrett mitgegeben wird?"* — Ja. Hier stand zwischenzeitlich eine eigene Tabelle
-`bruegge_schluessel`; die war überflüssig, denn `panel_devices` ist bereits genau das:
+Hier standen nacheinander zwei Entwürfe — eine eigene Tabelle `bruegge_schluessel`, dann ein
+Eintrag in `panel_devices`. **Beide sind verworfen.** Die Brügge bekommt **keinen Schlüssel,
+keine Konfigurationsdatei und keinen Anmeldeschritt.**
 
-```sql
-panel_devices(device_id PK, cid, name, created_at, last_seen_at, paket_version)
+### Wie die Zuordnung stattdessen entsteht
+
+Die Brügge meldet einfach, was sie sieht. Der Server sucht dazu den passenden Piloten:
+
+```
+Meldung: lat/lon/alt/gs/kurs   →   welcher Friese ist in live_positions dort?
+                                    genau einer?  → das ist er
+                                    keiner / mehrere → keine Zuordnung, nichts geschieht
 ```
 
-Ein Zufallswert, der auf eine CID zeigt — mit `get_panel_device`, `bind_panel_device`,
-`touch_panel_device`, `list_panel_devices` und `revoke_panel_device` fertig daneben. Sogar
-`paket_version` passt: Die Brügge meldet ihre Fassung ohnehin (`bruegge_version`), und der
-Admin sieht dann für beide Gerätearten dasselbe.
+### Die Regeln dafür gibt es schon — `_verkehrZusammenfuehren`
 
-**Also dieselbe Tabelle, ein Feld mehr:**
+**Nutzerentscheidung:** *„Für das Matching nehmen wir die Regeln, die auch das
+Positionsmatching des EFB nutzt."* Das Kniebrett ordnet seit v13.2.0 Sim-Verkehr und
+VATSIM-Verkehr einander zu (`app/static/index.html:6026`), und diese Regeln sind nicht
+ausgedacht, sondern im Flug erarbeitet. Sie werden übernommen, nicht neu erfunden.
 
-```sql
-ALTER TABLE panel_devices ADD COLUMN zweck TEXT DEFAULT 'panel';   -- 'panel' | 'bruegge'
-```
-
-Das kauft eine Verwaltung, einen Admin-Bildschirm, eine Widerrufsstelle — statt zweier, die
-auseinanderlaufen.
-
-### ⚠ Was NICHT geteilt werden darf: die Rechte
-
-**Ein Kniebrett-Gerät erzeugt beim Anmelden ein volles Nutzer-Token** (`make_user_token`,
-`app/main.py:2551`) — also Zugriff auf das Konto. Für einen Wert, der in einer **Textdatei**
-neben der Brügge liegt, ist das zu viel:
-
-| | Kniebrett heute | Brügge |
+| Regel | Wert | wofür |
 |---|---|---|
-| wo der Wert lebt | MSFS' eigener Speicher (`DataStore`), unsichtbar | **Textdatei auf der Platte** |
-| wer ihn sehen kann | niemand, auch der Pilot nicht | jeder am Rechner |
-| wandert er weiter? | nein | **ja** — im WASM-Fall im Community-Ordner, und die werden weitergegeben |
+| Vergleich gegen die **fortgerechnete** VATSIM-Position | `_jetztGerechnet` | holt das Alter des Feeds auf, statt gegen einen veralteten Punkt zu messen |
+| Schranke aus der Geschwindigkeit | `_PAARUNG_FAKTOR = 2` | deckt Latenzstreuung, Wind, leichte Kurven |
+| Untergrenze der Schranke | `_PAARUNG_MIN_M = 400` | damit ein **stehendes** Flugzeug überhaupt einen Partner findet |
+| Eindeutigkeit über den **Vorsprung** | `_PAARUNG_VORSPRUNG = 0.5` | der beste Kandidat muss halb so weit weg sein wie der zweitbeste |
+| Zuordnung wird gemerkt | je Sitzung | eine einmal gefundene bleibt |
+| Gelöst erst nach Verstößen **in Folge** | `_PAARUNG_LOESEN_TAKTE = 4` | ein einzelner Ausreißer löst nichts |
+| Beim Lösen großzügiger als beim Zuordnen | `_PAARUNG_LOESEN_FAKTOR = 3` | zu frühes Lösen bringt das Flackern zurück |
 
-Deshalb: **Ein Eintrag mit `zweck='bruegge'` gilt ausschließlich an `/api/bruegge/melden` und
-erzeugt nie ein Nutzer-Token.** Sein Verlust kostet dann nichts außer falschen
-Positionsmeldungen — und die fängt die Prüfung unten ab.
+### Und damit löst sich das Mehrdeutigkeitsproblem von selbst
 
-Aus demselben Grund kann die Brügge auch nicht einfach den *vorhandenen* Kniebrett-Schlüssel
-mitbenutzen: Der Pilot sieht ihn gar nicht (`getOrCreateDeviceId` legt ihn in MSFS' Speicher
-ab), und ihn dafür sichtbar zu machen hieße, einen Konto-Schlüssel in eine Textdatei zu
-schreiben.
+**Hier stand: „Bei Mehrdeutigkeit geschieht nichts" — das war eine schlechtere Fassung einer
+Frage, die am 16.08.2026 im Flug schon beantwortet wurde.** Der Kommentar bei
+`index.html:5954` hält beide Fehlversuche fest:
 
-### Der Ablauf
+> *Mit 400 m Untergrenze lagen auf dem Vorfeld mehrere Flugzeuge im selben Umkreis — nichts
+> war eindeutig, also wurde gar nicht zugeordnet. Mit 150 m fand mancher gar keinen Partner
+> mehr und blieb namenlos. Beide Male war die Zahl schuld, und beide Male hätte jede andere
+> Zahl an anderer Stelle dasselbe Problem gemacht.*
 
-1. Der Pilot meldet sich **in der Weboberfläche** an (der Board-Login läuft).
-2. Dort erzeugt er einmal einen Brügge-Eintrag und bekommt den Wert angezeigt.
-3. Er kopiert ihn in die Konfigurationsdatei neben der Brügge.
-4. Die Brügge schickt ihn bei jeder Anfrage mit:
-   `Authorization: Bearer <wert>`
+**Ein Verhältnis hat diese Schwäche nicht.** Steht die eine Maschine 20 m von ihrer
+VATSIM-Meldung und die nächste 80 m, ist die Zuordnung klar — gleich wo die Schranke liegt.
+Sie sagt nur noch, wer überhaupt in Frage kommt; entschieden wird über den Vorsprung.
 
-**Die CID steht in der Tabelle — aber nur, weil Schritt 1 stattgefunden hat.** Der Eintrag
-entsteht ausschließlich hinter dem Forumslogin; ohne ihn gibt es keine Zeile, keine CID und
-damit keine Zuordnung. Die Brügge schickt deshalb keine CID mit, und der Server muss auch
-nichts über die Position zuschreiben — **aber der Login ist die Voraussetzung dafür, nicht
-etwas, das dadurch entfiele.**
+Dazu kommt das **Merken**: Einmal zugeordnet, bleibt die Zuordnung bestehen, auch wenn der
+Pilot später dicht neben einem anderen fliegt. Die Formation, die ich als Verlust beschrieben
+hatte, ist damit keiner — die Zuordnung entstand beim Rollen oder Steigen und hält.
 
-Ein widerrufener Eintrag bekommt `401`, und die Brügge räumt auf, statt es erneut zu
-versuchen.
+**Für die Brügge ist die Aufgabe sogar leichter als im Kniebrett:** Dort werden *viele*
+Sim-Flugzeuge *vielen* VATSIM-Meldungen zugeordnet. Hier ist es **eine** gemeldete Position
+gegen die Liste der Friesen — dieselben Regeln, ein einfacherer Fall.
 
-**Nur über HTTPS.** Der Wert geht bei jeder Anfrage über die Leitung. Für MSFS-WASM ist das
-ohnehin die einzige Möglichkeit — die Network-API dort lässt ausschließlich `https` zu (und
-genau daran scheiterte im Probeflug der Versuch mit `http://127.0.0.1`).
+⚠ **Die Konstanten liegen heute im Frontend** (`index.html:5948–5971`). Wandert das Matching
+in den Server, gehören sie an **eine** Stelle, nicht in zwei Dateien mit zwei Wahrheiten.
 
-⚠ **Der Wert wandert mit dem Ordner.** Ein WASM-Paket liegt im Community-Ordner, und die
-werden kopiert und weitergegeben. Das ist beim Widerrufen mitzudenken — und der Grund für die
-Rechtetrennung oben.
+### Die ehrliche Einordnung: das ist Identifikation, keine Authentifizierung
 
-### Die Position wird gegen VATSIM geprüft
+**VATSIM-Positionen sind öffentlich.** Jeder kann den Feed lesen und weiß, wo FRS61 gerade
+ist — und diese Position dann selbst melden. Die Zuordnung ist damit nicht fälschungssicher,
+und das muss hier stehen, statt in einer Fußnote zu verschwinden.
 
-**Der Server nimmt eine gemeldete Position nicht ungeprüft an.** Passt sie nicht zur letzten
-bekannten VATSIM-Position derselben CID — Sprung über hunderte Kilometer, Geschwindigkeit
-jenseits des Musters —, antwortet er `409` und verwirft sie.
+**Warum es trotzdem trägt:** Die Prüfung lässt nur durch, was zur öffentlichen Position
+passt. Ein Fälscher kann deshalb nur **bestätigen, was der VATSIM-Feed ohnehin sagt** — er
+gewinnt nichts. Sein einziger Spielraum ist die Toleranz der Prüfung: Zwischen zwei
+VATSIM-Punkten könnte er einen falschen Weg behaupten, solange dessen Enden passen.
 
-**Damit hängt eine Meldung an zwei Bedingungen, nicht an einer:** Der Eintrag sagt, *wer*
-meldet — die Prüfung sagt, dass die Meldung *plausibel* ist. Dieselbe Regel steht seit dem
-11.09.2026 wörtlich in [#23](https://github.com/regover13/friesenspy/issues/23), damit
-Kniebrett und Brügge nicht verschieden behandelt werden.
+**Für den Kieker heißt das:** Die Toleranz der Prüfung begrenzt, wie weit sich eine Abdeckung
+erschleichen lässt. Das ist eine bewusste Abwägung, keine Lücke — Spec-Abschnitt 12 hält
+ohnehin fest, dass der Kieker nicht manipulationssicher ist, und für eine Gruppe von 61
+Leuten, die sich kennen, ist der Aufwand die Sache nicht wert.
 
-Das steht schon in der Kieker-Spec (13.3) und war beim Schreiben dieses Protokolls
-herausgefallen. **Ohne die Prüfung ist eine Kieker-Abdeckung frei erfindbar**, und zwar
-billiger als über jeden Weg, den Spec-Abschnitt 12 als Schummelrisiko diskutiert: Man
-schickte einfach Koordinaten. Die Prüfung kostet die Brügge nichts — sie geschieht
-vollständig im Server.
+**Ein Schlüssel hätte daran wenig geändert:** Er hätte in einer Textdatei gelegen, die mit dem
+Community-Ordner weiterwandert. Ein Geheimnis, das auf zwanzig fremden Rechnern liegt, ist
+keines.
 
----
+### ⚠ „Eingeloggt" ist serverseitig nicht feststellbar Der FriesenSpy-Login ist zustandslos
+— `make_user_token` gibt ein signiertes Cookie aus (`app/forum_sso.py:96`), es gibt **keine
+Session-Tabelle**. Der Server kann also nicht wissen, ob jemand gerade eingeloggt ist.
+
+Prüfbar ist stattdessen: **ist es ein bekannter Friese, der gerade auf VATSIM fliegt** — und
+das ist genau, was `live_positions` beantwortet. Soll es wirklich „eingeloggt" heißen, braucht
+es eine Tabelle aktiver Sitzungen. **Vorschlag: darauf verzichten**, denn sie bringt nichts
+dazu: Wer als Friese auf VATSIM fliegt, ist ohnehin der, dem die Position gehört.
 
 ## 6. Takt
 
