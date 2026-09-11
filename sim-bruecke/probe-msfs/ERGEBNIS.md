@@ -27,12 +27,12 @@ dass der Kieker-Spawner ein mitlaufender Begleitprozess wird, kein Einmal-Aufruf
 |---|---|---|
 | Wird der Aufruf angenommen? | ja | Objekt-IDs 50937856 / 103202816 / 103202817, keine Exception |
 | Wird wirklich etwas gezeichnet? | **ja** | Screenshot 08:15:06, Boot in voller Textur mit Schatten |
+| Ist das Gesehene auch unseres? | **ja** | Gegenprobe: `CruiseShip01` erscheint auf Zuruf 150 m daneben |
 | Bleibt es liegen? | **ja** | 180 Lagemeldungen über 180 s, Koordinate auf 5 Nachkommastellen unverändert |
 | Liegt es auf der Oberfläche? | ja, `OnGround=1` genügt | Land 2,4 ft, Wasser 0,0 ft — der Sim setzt selbst auf |
+| Schwimmt es richtig? | **ja** | Screenshot 08:36:07 — Kutter auf der Wasserlinie, mit Schatten im Wasser |
 | Überlebt es die Verbindung? | **nein** | Nachprobe: `EXCEPTION 3 — UNRECOGNIZED_ID` |
-
-Die Sichtprüfung **auf dem Wasser** steht noch aus (Lauf 3 lief ohne Screenshot ab); die
-Lagemeldung sagt 0,0 ft, was die richtige Höhe ist, aber ein Bild ist es nicht.
+| Gibt es eine Entfernungsgrenze? | **nein, beim Anlegen nicht** | bis 10.000 km angenommen, s. Abschnitt „Reality Bubble" |
 
 ## 2. Rohe Ausgabe
 
@@ -118,6 +118,65 @@ AICreateSimulatedObject: titel="FishingBoat" bei 53.7955/7.9142, 0 ft, OnGround=
 
 Land 2,4 ft, Wasser 0,0 ft — bei identischem Aufruf. `OnGround=1` genügt, die Höhe muss nicht
 berechnet werden.
+
+**Sichtbestätigung:** Screenshot 08:36:07 — ein Fischkutter liegt auf der Wasserlinie, mit
+Schattenwurf ins Wasser. Nicht darüber schwebend, nicht versunken.
+
+### Gegenprobe — ist das überhaupt unser Objekt?
+
+Der Nutzer hat zu Recht eingewandt, dass MSFS 2024 **eigenen Schiffsverkehr** hat; auf dem
+Screenshot segelt im Hintergrund ein Boot, das niemand gesetzt hat. Ein Kutter in der Nordsee
+beweist also erst einmal gar nichts.
+
+Gegenprobe: Bei laufendem Kutter ein **`CruiseShip01` 150 m westlich daneben** gesetzt
+(`53.79550 / 7.91192`, Objekt-ID 103907331).
+
+```
+  ERFOLG: Objekt-ID 103907331 (Anfrage 4711).
+  t=+   1.0s  53.79550 / 7.91192      0.2 ft   (Objekt 103907331 lebt)
+  t=+  12.0s  53.79550 / 7.91192     -0.0 ft   (Objekt 103907331 lebt)
+```
+
+Screenshot 08:37:39 zeigt beide nebeneinander: ein Kreuzfahrtschiff und daneben der Kutter,
+beide mit Spiegelung auf der Wasseroberfläche. Ein Kreuzfahrtschiff, das auf Zuruf an einer
+vorher genannten Koordinate erscheint, ist kein Zufallsverkehr.
+
+**Damit ist belegt, was eine Objekt-ID allein nie belegt hätte:** Der Simulator führt das
+Objekt nicht nur im Register, er zeichnet es auch.
+
+## Die Reality Bubble — es gibt keine Entfernungsgrenze beim Anlegen
+
+Erwartet war eine Grenze, jenseits derer `EXCEPTION 33 — OBJECT_OUTSIDE_REALITY_BUBBLE` kommt.
+**Sie wurde nicht gefunden.** Elf Läufe, jeweils östlich des Flugzeugs auf Wangerooge:
+
+| Abstand | Ergebnis | gemeldete Höhe |
+|---|---|---|
+| 200 m | angenommen | 2,4 ft |
+| 1 km | angenommen | 3,5 ft |
+| 5 km | angenommen | 0,1 ft |
+| 10 km | angenommen | −0,1 ft |
+| 25 km | angenommen | 1,2 ft |
+| 50 km | angenommen | 28,4 ft |
+| 100 km | angenommen | 7,1 ft |
+| 200 km | angenommen | 139,8 ft |
+| 500 km | angenommen | — |
+| 1.000 km | angenommen | — |
+| 3.000 km | angenommen | — |
+| 10.000 km | angenommen | — |
+
+Keine einzige Exception. Aufschlussreich sind die **Höhen**: Sie folgen dem Gelände — Watt bei
+5 und 10 km auf Meereshöhe, 28,4 ft im Binnenland bei 50 km, 139,8 ft bei 200 km (Mecklenburger
+Seenplatte). Der Simulator konsultiert also echtes, vermessenes Terrain, auch 200 km entfernt.
+
+**Was das NICHT beweist:** Eine Lagemeldung sagt, dass das Objekt existiert und auf welcher
+Höhe es sitzt — nicht, dass es gezeichnet wird. Ein Objekt 10.000 km entfernt ist mit Sicherheit
+nicht gerendert. Die Sichtbarkeit ist ausschließlich im Nahbereich belegt (200 m an Land,
+1,6 km auf dem Wasser, beides per Screenshot).
+
+**Die offene Frage lautet damit präziser als vorher:** Wird ein weit entfernt angelegtes Objekt
+gezeichnet, wenn der Pilot später hinkommt? Das braucht einen Flug oder einen Slew über größere
+Distanz und ist hier nicht gemessen worden. Für den Kieker ist sie nicht blockierend — ein
+mitlaufender Spawner kann nachsetzen, sobald der Pilot näher kommt.
 
 ## 3. Die Container-Titel, die funktioniert haben
 
@@ -256,10 +315,11 @@ herausgekommen, die den Zuschnitt betreffen und vor dem Weiterbauen bedacht sein
    das, was Schritt 4 erwogen hat: ein Begleitprozess, der über `exe.xml` mitstartet — und der
    dann auch gleich die Position ans FriesenSpy melden kann (Issue #23), ohne dass das
    EFB-Panel offen sein muss.
-2. **Die Reality Bubble begrenzt, wo gesetzt werden kann.** Objekte entstehen in der Nähe des
-   Flugzeugs, nicht irgendwo auf der Welt. Der Spawner muss also der Position folgen und
-   nachsetzen, statt einmalig eine Kollektion über Ostfriesland zu verteilen. Wie weit die
-   Bubble reicht, ist **nicht gemessen** — 200 m und 1,6 km gingen, die Grenze ist offen.
+2. **Die Reality Bubble begrenzt das Anlegen nicht.** Bis 10.000 km wurde jedes Objekt
+   angenommen, mit geländerichtiger Höhe. Der Spawner darf also getrost eine ganze Kollektion
+   über Ostfriesland verteilen, statt der Position hinterherzulaufen. **Offen bleibt nur, ob
+   ein weit entfernt gesetztes Objekt beim Hinkommen auch gezeichnet wird** — Sichtbarkeit ist
+   nur im Nahbereich belegt. Das ist die nächste Messung, und sie braucht einen echten Flug.
 3. **Höhe muss nicht gerechnet werden.** `OnGround=1` setzt sauber auf Gelände wie auf Wasser.
 
 ## Was ausdrücklich nicht gemacht wurde
