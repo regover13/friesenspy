@@ -3,6 +3,21 @@ name: Build & Deploy
 on:
   push:
     branches: [main]
+    # Ein Deploy startet den Container neu und trifft jede offene Sitzung -- SSE bricht ab,
+    # ein geoeffnetes Kniebrett wird schwarz (s. CLAUDE.md, Kniebrett-Standards). Pfade, die
+    # das Image nachweislich nicht beruehren, loesen deshalb keinen aus: Der Dockerfile
+    # kopiert ausschliesslich requirements.txt, app/ und scripts/.
+    #
+    # Bewusst als Ausschlussliste (paths-ignore), nicht als Einschlussliste (paths): Wer hier
+    # eine Zeile vergisst, bekommt einen ueberfluessigen Deploy -- bei paths waere es ein
+    # ausbleibender, und der faellt erst auf, wenn eine Aenderung nicht ankommt.
+    #
+    # Beruehrt ein Commit AUCH nur eine nicht gelistete Datei, laeuft der Workflow wie immer.
+    paths-ignore:
+      - 'docs/**'            # Specs, Analysen, Handbuch
+      - 'friesenbruegge/**'  # Sim-Bruegge, laeuft auf dem Flieger-PC (Issue #25)
+      - 'msfs-panel/**'      # EFB-Panel, eigener Build und eigener Auslieferungsweg
+      - '**.md'              # README, COORDINATION, jedes Begleitdokument
 
 env:
   REGISTRY: ghcr.io
