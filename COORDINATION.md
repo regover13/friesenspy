@@ -6,6 +6,31 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-11 — Vier neue Eventtyp-Issues, Spec-Arbeit, keine Codeaenderung (Server-Sitzung)
+
+**Betrifft nur `docs/` und `CLAUDE.md`** — kein Anwendungscode, keine Version, kein
+CHANGELOG-Eintrag. Live blieb v14.29.0.
+
+- **Spec** `docs/superpowers/specs/2026-09-11-friesenkieker-design.md` angelegt (Eventtyp
+  FriesenKieker), einmal adversarisch gegengeprueft (12 Funde eingearbeitet), danach auf
+  Nutzerentscheid umgestellt: die Zwischenstufe auf fest gebaute Szenerie ist **verworfen**,
+  der Probeflug ist das Tor.
+- **Neue GitHub-Issues:** #23 (Kniebrett meldet Position zurueck), #24 (FriesenBaake,
+  Schnitzeljagd), #25 (Sim-Bruecke, event-unabhaengiger Spawner). #20 wurde mehrfach
+  ergaenzt.
+- **Ordner-Umbenennung** `msfs-kieker/` → `sim-bruecke/` (inzwischen von der Sim-Sitzung
+  weiter zu `friesenbruegge/`). Alle Verweise nachgezogen, historische Rueckverweise
+  absichtlich stehen gelassen.
+- **`CLAUDE.md` um zwei stehende Regeln ergaenzt:** „Ein MAJOR gehoert an die sichtbare
+  Aenderung" (Hauptnummer erst bei Frontend ausserhalb Admin, und der Schritt wird vorher
+  abgesprochen) und ein Verweis auf **diese Datei** — sie stand bis dahin nirgends, und
+  genau deshalb hat diese Sitzung sie erst nach Stunden gefunden.
+- **`docs/offene-aufgaben.md`:** Abschnitt „X-Plane mitdenken" (vom Nutzer vorgemerkt).
+
+**Beim Rebase zu beachten:** Die Sim-Sitzung hat am selben Tag parallel gemessen und dabei
+Spec und Ordner weiter veraendert. Ihre Messergebnisse haben Vorrang vor allem, was in der
+Spec aus Herleitung stammt.
+
 ## 2026-09-05 — Schreibsperren, Poll-Messpunkte, Events-Karte (v14.20.6)
 
 **Betrifft `app/poller.py`, `app/database.py`, `app/static/index.html`** — beim Rebase beachten.

@@ -51,11 +51,28 @@ Code-Kommentaren sind eine **eigene Zählung**, die nie in GitHub geführt wurde
 dafür keine Liste, die Nummern leben ausschließlich an den Fundstellen im Code (vergeben
 sind 1–84, u. a. in `poller.py`, `geo.py`, `gps_legs.py`, `calendar_sync.py`,
 `transport_stacks.py`). **GitHub-Issues** gibt es erst seit dem 04.09.2026; sie beginnen bei
-#14. **Die Nummern 14, 15 und 18 existieren dadurch doppelt.**
+#14 und stehen am 11.09.2026 bei **#25**. **Doppelt belegt sind dadurch 14, 15, 18, 21, 22,
+23, 24 und 25** — die Überschneidung wächst mit jedem neuen Issue weiter in die interne
+Zählung hinein.
+
+Besonders tückisch ist **23**: intern steht es für **GPS-only Phase 2** (`canonicalize_legs`,
+fester Radius `_BUMMEL_AIRPORT_RADIUS_KM`) und wird in `database.py` und `geo.py` mehrfach
+zitiert — auf GitHub für die Positions-Rückmeldung des Kniebretts. Also ausgerechnet zweimal
+dasselbe Thema.
 
 Im Zweifel entscheidet der Ort: Steht die Nummer in einem Kommentar neben einem beschriebenen
 Fund, ist die alte Zählung gemeint — sie mit `gh issue view` nachzuschlagen führt in die Irre.
 Neue Funde gehören als GitHub-Issue angelegt, nicht als weitere Kommentar-Nummer.
+
+**Absprachen zwischen parallelen Sitzungen stehen in [`COORDINATION.md`](COORDINATION.md)** —
+im Wurzelverzeichnis, neueste Einträge oben. Dort steht, welche Dateien gerade von mehreren
+Seiten angefasst werden und was beim Rebase zu beachten ist. **Vor jedem Push gilt dort:
+`git fetch` + Rebase auf `origin/main`, und niemals fremde Änderungen überschreiben.**
+
+Diese Zeile fehlte bis zum 11.09.2026, und das hatte Folgen: Eine ganze Sitzung lang wurde die
+Datei nicht gelesen, weil nichts auf sie zeigte — während parallel am selben Vorhaben
+gearbeitet wurde. Eine Koordinationsdatei, die man erst findet, wenn man ohnehin `ls` tippt,
+koordiniert nicht.
 
 ## `"highlight": false` — „GROSSES UPDATE" vergibt allein der Nutzer (stehende Regel)
 
@@ -365,6 +382,10 @@ belassen es bei einer einfachen Hash-Aktualitätsprüfung.").
 - `app/static/index.html` — Vanilla-JS-SPA (4 Tabs)
 - `msfs-panel/` — MSFS-2024-EFB-App "FriesenSpy" (Coherent-GT-Panel, rendert `/panel` per
   iframe); eigener Node/esbuild-Build, s. `docs/superpowers/specs/2026-08-12-msfs-efb-panel-design.md`
+- `friesenbruegge/` — die Sim-Brücke: setzt Objekte im Simulator und meldet die Position
+  zurück. **Event-unabhängig und für MSFS 2020/2024 + X-Plane gedacht** (GitHub-Issue #25);
+  Probeflüge unter `probe-msfs/` und `probe-xplane/`. Kommt NICHT ins Docker-Image — der
+  Dockerfile kopiert nur `app/` und `scripts/`.
 
 ## Konfiguration (config.env — NIE in git)
 
