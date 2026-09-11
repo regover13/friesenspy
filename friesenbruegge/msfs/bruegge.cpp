@@ -48,7 +48,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.0.1"
+#define BRUEGGE_VERSION   "1.1.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -71,13 +71,43 @@
 // Soviel Puffer braucht die Meldung mit voller Spur, großzügig gerechnet.
 #define MELDUNG_PUFFER 8192
 
+// Soviele Objekte haelt die Bruegge gleichzeitig. Der Simulator vertraegt deutlich mehr
+// (im Probeflug gemessen), aber eine feste Obergrenze im Modul ist billiger als eine
+// dynamische Verwaltung -- und der Server weiss ohnehin, was er anfordert.
+#define SOLL_MAX 32
+
 enum {
     EV_SEKUNDE   = 1,
     EV_SIMSTART  = 2,
     EV_FLUGGELADEN = 3,
     DEF_LAGE     = 10,
     REQ_LAGE     = 20,
+    // Je gesetztem Objekt eine eigene Anfrage-Nummer -- so bleibt zuzuordnen, welches Objekt
+    // meldet. Der Abstand zu den uebrigen IDs ist Absicht: SIMCONNECT_DATA_DEFINITION_ID ist
+    // ein gemeinsamer Nummernraum, und eine Kollision endet mit UNRECOGNIZED_ID an einer
+    // Stelle, die voellig unverdaechtig aussieht (11.09.2026 gemessen).
+    REQ_ERZEUGEN = 1000,      // 1000 .. 1000+SOLL_MAX
+    REQ_OBJEKT   = 2000,      // 2000 .. 2000+SOLL_MAX
 };
+
+// Ein Objekt, das dastehen soll -- und wie es ihm ergangen ist.
+struct SollObjekt {
+    char   id[40];
+    char   art[24];
+    double lat, lon, kurs, erwartete_hoehe_ft;
+    bool   hat_hoehe;
+
+    bool   belegt;            // Platz in Benutzung
+    bool   in_soll;           // steht in der aktuellen Antwort des Servers
+    bool   erzeugt_gerufen;   // AICreateSimulatedObject ist raus
+    DWORD  objekt_id;         // vom Simulator vergeben, 0 = noch keine
+    double hoehe_ft;          // zuletzt gemeldete Hoehe
+    DWORD  letzte_meldung_s;  // Sekunde der letzten Lagemeldung
+    DWORD  seit_s;            // seit wann im aktuellen Zustand
+    char   fehler[32];        // gesetzt, wenn das Erzeugen abgelehnt wurde
+};
+
+static SollObjekt g_soll[SOLL_MAX];
 
 // Die Lagedaten, in genau dieser Reihenfolge in der Datendefinition angemeldet.
 struct Lage {
@@ -120,6 +150,8 @@ static char    g_kennung[40] = {0};
 static int     g_takt_s = 1;              // was der Server zuletzt vorgegeben hat
 static DWORD   g_seit_meldung = 0;
 static FsNetworkRequestId g_laufend = 0;  // 0 = keine Anfrage offen
+static DWORD   g_gilt_bis_s = 300;        // wie lange `soll` ohne neue Auskunft gilt
+static DWORD   g_letzte_antwort_s = 0;    // Sekunde der letzten angekommenen Antwort
 static DWORD   g_laufend_seit = 0;        // Sekunden -- gegen haengende Anfragen
 
 // ---------------------------------------------------------------------------------------
@@ -203,6 +235,26 @@ static void kennung_pruefen() {
 }
 
 // ---------------------------------------------------------------------------------------
+// Gattung -> Container-Titel
+// ---------------------------------------------------------------------------------------
+//
+// DIE ZUORDNUNGSTABELLE GEHOERT ZUR BRUEGGE, nicht zum Server. Sie kennt ihren Simulator;
+// der Server kennt ihn nicht. Eine Gattung ist eine BEDEUTUNG, kein Modell -- welches Tier
+// ein tier_gross ist, darf sich zwischen Simulatoren unterscheiden, denn der Pilot zaehlt
+// Tiere, nicht Baeren.
+//
+// Alle Titel hier sind im Probeflug gesetzt und im Bild gesehen worden
+// (../probe-msfs/ERGEBNIS.md).
+static const char* titel_fuer(const char* art) {
+    if (std::strcmp(art, "tier_gross") == 0)  return "BlackBear";
+    if (std::strcmp(art, "bauwerk") == 0)     return "Windmill";
+    if (std::strcmp(art, "fahrzeug") == 0)    return "ASO_Ambulance_Japan";
+    if (std::strcmp(art, "boot_klein") == 0)  return "Boat01";
+    if (std::strcmp(art, "boot_gross") == 0)  return "CruiseShip01";
+    return nullptr;   // unbekannte Gattung: nicht raten, sondern melden
+}
+
+// ---------------------------------------------------------------------------------------
 // Die Meldung bauen
 // ---------------------------------------------------------------------------------------
 
@@ -255,8 +307,185 @@ static void meldung_bauen(char* puffer, size_t groesse) {
     // `steht` meldet, wie es JEDEM Objekt aus `soll` ergangen ist. In Fassung 1 schickt der
     // Server nichts, also steht hier nichts -- das Feld bleibt trotzdem drin, damit der
     // Server nicht zwischen "nichts gesetzt" und "Feld fehlt" raten muss.
-    j.feld("steht"); j.roh("[]");
+    // `steht` meldet, wie es JEDEM Objekt aus `soll` ergangen ist -- auch den gescheiterten.
+    // Ohne diese Rueckmeldung versuchte die Bruegge ein abgelehntes Objekt jede Sekunde
+    // erneut, fuer immer, und der Server erfuehre nie, dass die Stelle unbrauchbar ist.
+    j.feld("steht");
+    j.roh("[");
+    bool erstes = true;
+    for (int i = 0; i < SOLL_MAX; ++i) {
+        if (!g_soll[i].belegt) continue;
+        if (!erstes) j.komma();
+        erstes = false;
+        j.roh("{");
+        j.feld("id"); j.text(g_soll[i].id); j.komma();
+        if (g_soll[i].fehler[0]) {
+            j.feld("zustand"); j.text("fehlgeschlagen"); j.komma();
+            j.feld("fehler");  j.text(g_soll[i].fehler);
+        } else if (g_soll[i].objekt_id == 0) {
+            j.feld("zustand"); j.text("fehlgeschlagen"); j.komma();
+            j.feld("fehler");  j.text("KEINE_ANTWORT");
+        } else if (g_sekunden > g_soll[i].letzte_meldung_s + 5) {
+            j.feld("zustand"); j.text("verschwunden"); j.komma();
+            j.feld("seit_s");  j.ganzzahl((long)(g_sekunden - g_soll[i].letzte_meldung_s));
+        } else {
+            j.feld("zustand");  j.text("steht"); j.komma();
+            j.feld("hoehe_ft"); j.zahl(g_soll[i].hoehe_ft, 1); j.komma();
+            j.feld("seit_s");   j.ganzzahl((long)(g_sekunden - g_soll[i].seit_s));
+        }
+        j.roh("}");
+    }
+    j.roh("]");
     j.roh("}");
+}
+
+// ---------------------------------------------------------------------------------------
+// Der Sollzustand-Abgleich
+// ---------------------------------------------------------------------------------------
+//
+// `soll` ist die VOLLSTAENDIGE Liste dessen, was jetzt dastehen soll -- kein Strom von
+// Befehlen. Die Bruegge vergleicht sie mit dem, was sie tatsaechlich gesetzt hat, und gleicht
+// in beide Richtungen ab:
+//
+//   in soll, noch nicht gesetzt        erzeugen
+//   in soll, gesetzt, lebt             nichts
+//   in soll, gesetzt, verschwunden     neu erzeugen
+//   gesetzt, nicht mehr in soll        entfernen
+//
+// Der Unterschied zu Befehlen entscheidet ueber die Robustheit: Geht eine Anfrage verloren,
+// haengt das Netz kurz oder startet der Simulator neu, holt die naechste Antwort den Zustand
+// von allein wieder ein. Bei Befehlen bliebe eine verpasste Loeschung fuer immer stehen.
+
+// Der Platz eines Objekts -- vorhandener oder freier. -1, wenn alles belegt ist.
+static int soll_platz(const char* id) {
+    int frei = -1;
+    for (int i = 0; i < SOLL_MAX; ++i) {
+        if (g_soll[i].belegt && std::strcmp(g_soll[i].id, id) == 0) return i;
+        if (!g_soll[i].belegt && frei < 0) frei = i;
+    }
+    return frei;
+}
+
+// Die Gelaendehoehe unter dem Flugzeug.
+//
+// Gebraucht, weil OnGround aus WASM heraus NICHT aufsetzt: Es landet auf einem ortsabhaengigen
+// Wert (49 ft auf Wangerooge, 122-130 ft in Seattle, 213-216 ft an einem ungeladenen Ort --
+// alles am 11.09.2026 gemessen). OnGround=0 mit einer gerechneten Hoehe trifft dagegen auf
+// die Nachkommastelle genau.
+//
+// ACHTUNG, die Grenze: Das ist die Hoehe UNTER DEM FLUGZEUG, nicht am Zielort. Fuer ein
+// Objekt wenige hundert Meter daneben taugt sie, fuer eines 5 km weiter nicht. An den
+// Friesischen Inseln faellt das kaum ins Gewicht -- Watt und Wasser liegen auf Meereshoehe.
+// Wo der Server es besser weiss, schickt er erwartete_hoehe_ft mit.
+static double gelaendehoehe() {
+    if (!g_lage_gueltig) return 0.0;
+    double h = g_lage.alt_msl_ft - g_lage.alt_agl_ft;
+    // Ueber Wasser meldet MSFS manchmal ein leicht negatives AGL. Auf 0 zu klemmen ist
+    // richtiger, als ein Objekt einen Meter unter den Meeresspiegel zu setzen.
+    return (h < 0.0 && h > -50.0) ? 0.0 : h;
+}
+
+static void objekt_erzeugen(int i) {
+    SollObjekt& o = g_soll[i];
+    const char* titel = titel_fuer(o.art);
+    if (!titel) {
+        // Unbekannte Gattung: nicht raten. Der Server erfaehrt es ueber `steht` und kann
+        // etwas anderes anfordern -- oder die Stelle auslassen.
+        std::snprintf(o.fehler, sizeof(o.fehler), "GATTUNG_UNBEKANNT");
+        o.erzeugt_gerufen = true;
+        return;
+    }
+
+    SIMCONNECT_DATA_INITPOSITION pos{};
+    pos.Latitude  = o.lat;
+    pos.Longitude = o.lon;
+    pos.Altitude  = o.hat_hoehe ? o.erwartete_hoehe_ft : gelaendehoehe();
+    pos.Pitch     = 0.0;
+    pos.Bank      = 0.0;
+    pos.Heading   = o.kurs;
+    pos.OnGround  = 0;        // s. gelaendehoehe() -- OnGround=1 ist aus WASM unbrauchbar
+    pos.Airspeed  = 0;
+
+    HRESULT hr = SimConnect_AICreateSimulatedObject(g_sim, titel, pos, REQ_ERZEUGEN + i);
+    o.erzeugt_gerufen = true;
+    o.seit_s = g_sekunden;
+    if (hr != S_OK) {
+        std::snprintf(o.fehler, sizeof(o.fehler), "CREATE_HR_%08lX", (unsigned long)hr);
+    }
+}
+
+static void objekt_entfernen(int i) {
+    SollObjekt& o = g_soll[i];
+    if (o.objekt_id != 0) {
+        SimConnect_AIRemoveObject(g_sim, o.objekt_id, REQ_ERZEUGEN + i);
+    }
+    std::memset(&o, 0, sizeof(o));
+}
+
+// Alles wegraeumen -- bei Netzausfall nach gilt_bis_s, beim Flugwechsel, beim Herunterfahren.
+static void alles_abraeumen() {
+    for (int i = 0; i < SOLL_MAX; ++i) {
+        if (g_soll[i].belegt) objekt_entfernen(i);
+    }
+}
+
+static void soll_abgleichen(const char* json) {
+    // Erst alles als "nicht mehr gefordert" markieren -- was in der Antwort steht, wird
+    // gleich wieder gesetzt. Was uebrig bleibt, faellt weg.
+    for (int i = 0; i < SOLL_MAX; ++i) g_soll[i].in_soll = false;
+
+    const char* e = json_array(json, "soll");
+    while (e) {
+        char id[40];
+        if (!json_text_in(e, "id", id, sizeof(id)) || id[0] == '\0') { e = json_naechstes(e); continue; }
+
+        int i = soll_platz(id);
+        if (i < 0) { e = json_naechstes(e); continue; }   // voll -- der Server erfaehrt es
+                                                          // daran, dass das Objekt in `steht`
+                                                          // fehlt
+        SollObjekt& o = g_soll[i];
+        if (!o.belegt) {
+            std::memset(&o, 0, sizeof(o));
+            std::snprintf(o.id, sizeof(o.id), "%s", id);
+            o.belegt = true;
+            o.seit_s = g_sekunden;
+        }
+        json_text_in(e, "art", o.art, sizeof(o.art));
+        o.lat  = json_zahl_in(e, "lat", o.lat);
+        o.lon  = json_zahl_in(e, "lon", o.lon);
+        o.kurs = json_zahl_in(e, "kurs", 0.0);
+        bool hat = false;
+        double h = json_zahl_in(e, "erwartete_hoehe_ft", 0.0, &hat);
+        o.hat_hoehe = hat;
+        o.erwartete_hoehe_ft = h;
+        o.in_soll = true;
+
+        e = json_naechstes(e);
+    }
+
+    for (int i = 0; i < SOLL_MAX; ++i) {
+        SollObjekt& o = g_soll[i];
+        if (!o.belegt) continue;
+
+        if (!o.in_soll) {              // nicht mehr gefordert
+            objekt_entfernen(i);
+            continue;
+        }
+        if (o.fehler[0]) continue;     // abgelehnt -- NICHT jede Sekunde erneut versuchen.
+                                       // Der Server entscheidet, wann es wieder losgeht:
+                                       // Er nimmt die id aus `soll` und schickt sie neu.
+        if (!o.erzeugt_gerufen) {
+            objekt_erzeugen(i);
+            continue;
+        }
+        // Verschwunden? Dann neu erzeugen -- das ist der gemessene Fall (MSFS 2020 liess
+        // zweimal denselben Aufruf verschieden ausgehen).
+        if (o.objekt_id != 0 && g_sekunden > o.letzte_meldung_s + 10) {
+            o.objekt_id = 0;
+            o.erzeugt_gerufen = false;
+            objekt_erzeugen(i);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -272,10 +501,15 @@ static void antwort_lesen(const char* json) {
     if (takt > 900.0) takt = 900.0;
     g_takt_s = (int)takt;
 
-    // `soll` ist in Fassung 1 immer leer. Sobald der erste Eventtyp kommt, wird hier
-    // abgeglichen -- und zwar in BEIDE Richtungen: erzeugen, was fehlt, und entfernen, was
-    // nicht mehr in der Liste steht. Ein Sollzustand, kein Strom von Befehlen: Geht eine
-    // Anfrage verloren, holt die nächste Antwort den Zustand von allein wieder ein.
+    // Wie lange der Sollzustand ohne neue Auskunft gilt. Ohne diese Zahl entschiede jede der
+    // drei Umsetzungen selbst, was bei Netzausfall geschieht -- und fuer eine Baake waere
+    // "stehen bleiben" eine Station, die nie verschwindet.
+    double gilt = json_zahl(json, "gilt_bis_s", (double)g_gilt_bis_s);
+    if (gilt < 0.0) gilt = 0.0;
+    g_gilt_bis_s = (DWORD)gilt;
+    g_letzte_antwort_s = g_sekunden;
+
+    soll_abgleichen(json);
 }
 
 // Die Antwort kommt per CALLBACK -- und nur dort.
@@ -396,6 +630,15 @@ static void sekunde() {
     // Alle vorhandenen Punkte altern um eine Sekunde.
     for (int i = 0; i < g_spur_anzahl; ++i) g_spur[i].alter_s += 1.0;
 
+    // Kommt laenger keine Antwort, faellt der Sollzustand. Ohne das bliebe bei einem
+    // Netzausfall stehen, was der Server laengst zurueckgenommen hat -- fuer eine Baake
+    // hiesse das eine Station, die nie verschwindet.
+    if (g_gilt_bis_s > 0 && g_letzte_antwort_s > 0 &&
+        g_sekunden > g_letzte_antwort_s + g_gilt_bis_s) {
+        alles_abraeumen();
+        g_letzte_antwort_s = 0;      // nur EINMAL abraeumen, nicht jede Sekunde erneut
+    }
+
     if (++g_seit_meldung >= (DWORD)g_takt_s) {
         g_seit_meldung = 0;
         melden();
@@ -417,6 +660,10 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
             g_spur_anzahl = 0;
             g_vor_gueltig = false;
             g_lage_gueltig = false;
+            // Eine neue Welt. Die gesetzten Objekte ueberleben den Wechsel zwar (gemessen
+            // 11.09.2026), gehoeren aber zur alten Lage des Piloten -- der Server schickt
+            // beim naechsten Takt, was HIER stehen soll.
+            alles_abraeumen();
             break;
         }
         if (e->uEventID == EV_SEKUNDE && g_welt_da) sekunde();
@@ -427,6 +674,53 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD, void*) {
         if (d->dwRequestID == REQ_LAGE) {
             std::memcpy(&g_lage, &d->dwData, sizeof(Lage));
             g_lage_gueltig = true;
+            break;
+        }
+        // Meldet eines der gesetzten Objekte? Festgehalten wird die SEKUNDE der letzten
+        // Meldung -- der Abstand zu jetzt sagt, seit wann es schweigt, und das ist die
+        // eigentliche Frage. Eine vergebene Objekt-ID ist nur die Bestaetigung, dass der
+        // Auftrag angekommen ist, nicht dass dort etwas STEHT.
+        if (d->dwRequestID >= REQ_OBJEKT && d->dwRequestID < REQ_OBJEKT + SOLL_MAX) {
+            int i = (int)(d->dwRequestID - REQ_OBJEKT);
+            if (g_soll[i].belegt) {
+                Lage* ol = (Lage*)&d->dwData;
+                g_soll[i].hoehe_ft = ol->alt_msl_ft;
+                g_soll[i].letzte_meldung_s = g_sekunden;
+            }
+        }
+        break;
+    }
+
+    case SIMCONNECT_RECV_ID_ASSIGNED_OBJECT_ID: {
+        auto* z = (SIMCONNECT_RECV_ASSIGNED_OBJECT_ID*)pData;
+        int i = (int)(z->dwRequestID - REQ_ERZEUGEN);
+        if (i >= 0 && i < SOLL_MAX && g_soll[i].belegt) {
+            g_soll[i].objekt_id = z->dwObjectID;
+            g_soll[i].letzte_meldung_s = g_sekunden;
+            g_soll[i].seit_s = g_sekunden;
+            // Ab jetzt hinsehen: Lebt das Objekt noch, und auf welcher Hoehe steht es?
+            // Die Hoehe ist der einzige Weg, auf dem der Server erfaehrt, ob die Stelle
+            // taugt -- FriesenSpy hat kein Gelaendemodell.
+            SimConnect_RequestDataOnSimObject(g_sim, REQ_OBJEKT + i, DEF_LAGE,
+                                              z->dwObjectID, SIMCONNECT_PERIOD_SECOND);
+        }
+        break;
+    }
+
+    case SIMCONNECT_RECV_ID_EXCEPTION: {
+        auto* ex = (SIMCONNECT_RECV_EXCEPTION*)pData;
+        // Die Exception traegt die Anfrage-Nummer im SendID-Feld, das sich ohne
+        // SimConnect_GetLastSentPacketID nicht zuordnen laesst. Statt zu raten, welches
+        // Objekt gemeint ist, wird der letzte Erzeugungsversuch markiert -- er ist der
+        // wahrscheinliche Verursacher, und der Server erfaehrt ueber `steht`, dass es
+        // schiefging.
+        for (int i = SOLL_MAX - 1; i >= 0; --i) {
+            if (g_soll[i].belegt && g_soll[i].erzeugt_gerufen && g_soll[i].objekt_id == 0
+                && !g_soll[i].fehler[0]) {
+                std::snprintf(g_soll[i].fehler, sizeof(g_soll[i].fehler),
+                              "EXCEPTION_%lu", (unsigned long)ex->dwException);
+                break;
+            }
         }
         break;
     }
@@ -466,6 +760,10 @@ extern "C" MSFS_CALLBACK void module_init(void) {
 }
 
 extern "C" MSFS_CALLBACK void module_deinit(void) {
+    // Aufraeumen, bevor die Verbindung faellt. SimConnect raeumt die Objekte beim Close
+    // ohnehin weg (gemessen: EXCEPTION 3 in der Nachprobe), aber sich darauf zu verlassen
+    // hiesse, eine Zusicherung anzunehmen, die nirgends steht.
+    alles_abraeumen();
     if (g_sim) {
         SimConnect_Close(g_sim);
         g_sim = 0;

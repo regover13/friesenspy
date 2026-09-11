@@ -102,6 +102,10 @@ from app.database import (
     bruegge_positionen_holen,
     bruegge_uebersicht,
     bruegge_aufraeumen,
+    bruegge_soll_fuer,
+    bruegge_soll_setzen,
+    bruegge_soll_loeschen,
+    bruegge_soll_alle,
     get_panel_prefs,
     set_panel_prefs,
     revoke_panel_device,
@@ -744,6 +748,12 @@ _BRUEGGE_TAKT_OHNE_VATSIM_S = 10
 # "niemand passt" der Normalfall und der Minutentakt richtig. Wenn doch, ist es ein
 # Kandidatenproblem, und die naechste Meldung soll bald kommen.
 _BRUEGGE_TAKT_UNERKANNT_S = 3
+
+# Die Gattungen aus PROTOKOLL.md, Abschnitt 3. Eine Gattung ist eine BEDEUTUNG, kein Modell:
+# Welches Tier ein tier_gross ist, darf sich zwischen Simulatoren unterscheiden -- der Pilot
+# zaehlt Tiere, nicht Baeren. Der Server prueft nur gegen diese Liste, damit ein Tippfehler
+# nicht als stille Nicht-Anforderung endet.
+_BRUEGGE_GATTUNGEN = ("tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross")
 _BRUEGGE_TAKT_VORGABE_S = 1          # Regeltakt, gemessen (s. Protokoll, Abschnitt 6)
 
 
@@ -888,6 +898,7 @@ async def bruegge_melden(request: Request):
                 gilt_bis=0)
 
         bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
+        soll = bruegge_soll_fuer(conn, cid)
         # Gelegentlich aufraeumen -- kein eigener Job fuer eine Handvoll Zeilen. Ein Prozent
         # der Meldungen genuegt: Bei Sekundentakt ist das rund alle anderthalb Minuten je
         # fliegendem Piloten, und wenn niemand fliegt, gibt es auch nichts aufzuraeumen.
@@ -897,10 +908,14 @@ async def bruegge_melden(request: Request):
     finally:
         conn.close()
 
-    # `soll` ist in Fassung 1 noch leer: Objekte gehoeren zum FriesenKieker, und der ist ein
-    # eigenes Vorhaben. Die Bruegge ist absichtlich event-unabhaengig -- wenn das Protokoll
-    # taugt, kommt der erste Eventtyp ohne eine einzige Aenderung an ihr dazu.
-    return _bruegge_antwort(takt)
+    # `soll` ist die VOLLSTAENDIGE Liste dessen, was jetzt dastehen soll -- kein Strom von
+    # Befehlen. Der Unterschied entscheidet ueber die Robustheit: Geht eine Anfrage verloren,
+    # holt die naechste Antwort den Zustand von allein wieder ein.
+    #
+    # Was drinsteht, entscheidet der Server allein. Die Bruegge weiss nicht, ob gerade
+    # gezaehlt, gesucht oder geraetselt wird -- ein neuer Eventtyp braucht deshalb keine
+    # Aenderung an ihr und kein neues Paket beim Piloten.
+    return _bruegge_antwort(takt, soll=soll)
 
 
 def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
@@ -976,13 +991,66 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
     return treffer.cid, True
 
 
+@app.post("/api/admin/bruegge/soll")
+async def admin_bruegge_soll_setzen(request: Request):
+    """Ein Objekt anfordern (Admin).
+
+    ``cid`` leer heisst: fuer jede Bruegge. ``art`` ist eine GATTUNG, kein Dateiname --
+    welches Modell daraus wird, entscheidet die Bruegge, denn sie kennt ihren Simulator.
+    """
+    require_admin(request)
+    body = await request.json()
+    try:
+        art = str(body["art"])[:40]
+        lat = float(body["lat"])
+        lon = float(body["lon"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="art, lat und lon sind Pflicht")
+    if art not in _BRUEGGE_GATTUNGEN:
+        raise HTTPException(status_code=400,
+                            detail=f"unbekannte Gattung -- erlaubt: {', '.join(_BRUEGGE_GATTUNGEN)}")
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        raise HTTPException(status_code=400, detail="lat/lon außerhalb des Gültigen")
+
+    kennung_id = str(body.get("id") or f"admin-{secrets.token_hex(4)}")[:60]
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        bruegge_soll_setzen(
+            conn, kennung_id, art, lat, lon,
+            cid=int(body["cid"]) if body.get("cid") else None,
+            kurs=float(body["kurs"]) if body.get("kurs") is not None else None,
+            erwartete_hoehe_ft=(float(body["erwartete_hoehe_ft"])
+                                if body.get("erwartete_hoehe_ft") is not None else None),
+            gilt_bis=str(body["gilt_bis"])[:32] if body.get("gilt_bis") else None,
+            bemerkung=str(body.get("bemerkung") or "")[:200] or None,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok", "id": kennung_id}
+
+
+@app.delete("/api/admin/bruegge/soll/{soll_id}")
+async def admin_bruegge_soll_loeschen(request: Request, soll_id: str):
+    """Ein Objekt zuruecknehmen (Admin). Die Bruegge raeumt es beim naechsten Takt weg."""
+    require_admin(request)
+    conn = get_connection(get_settings().DB_PATH)
+    try:
+        weg = bruegge_soll_loeschen(conn, soll_id)
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok", "geloescht": weg}
+
+
 @app.get("/api/admin/bruegge")
 async def admin_bruegge(request: Request):
     """Wer meldet gerade, und mit welchem Takt laeuft die Drossel? (Admin)"""
     require_admin(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
-        return {"takt_s": _bruegge_takt(conn), "melder": bruegge_uebersicht(conn)}
+        return {"takt_s": _bruegge_takt(conn), "melder": bruegge_uebersicht(conn),
+                "soll": bruegge_soll_alle(conn)}
     finally:
         conn.close()
 

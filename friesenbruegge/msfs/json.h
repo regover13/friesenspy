@@ -103,6 +103,102 @@ inline double json_zahl(const char* json, const char* name, double vorgabe) {
     return (ende == p) ? vorgabe : wert;
 }
 
+// Der Anfang des Arrays hinter "name": -- also das Zeichen NACH der oeffnenden Klammer.
+// ``nullptr``, wenn es das Feld nicht gibt.
+inline const char* json_array(const char* json, const char* name) {
+    char muster[64];
+    std::snprintf(muster, sizeof(muster), "\"%s\"", name);
+    const char* p = std::strstr(json, muster);
+    if (!p) return nullptr;
+    p = std::strchr(p, '[');
+    return p ? p + 1 : nullptr;
+}
+
+// Vom Anfang eines Array-Elements zum naechsten.
+//
+// Zaehlt Klammern mit, statt nach dem naechsten Komma zu suchen: Ein Komma steht auch INNEN
+// in jedem Objekt, und wer danach sucht, findet die Feldtrenner statt der Elementgrenzen.
+// Anfuehrungszeichen werden uebersprungen, damit ein Komma in einer Zeichenkette nicht zaehlt.
+//
+// ``nullptr`` am Ende des Arrays.
+inline const char* json_naechstes(const char* p) {
+    if (!p) return nullptr;
+    int tiefe = 0;
+    bool in_text = false;
+    for (; *p; ++p) {
+        if (in_text) {
+            if (*p == '\\' && p[1]) { ++p; continue; }   // maskiertes Zeichen ueberspringen
+            if (*p == '"') in_text = false;
+            continue;
+        }
+        if (*p == '"') { in_text = true; continue; }
+        if (*p == '{' || *p == '[') { ++tiefe; continue; }
+        if (*p == '}' || *p == ']') {
+            if (tiefe == 0) return nullptr;               // Array zu Ende
+            --tiefe;
+            continue;
+        }
+        if (*p == ',' && tiefe == 0) {
+            ++p;
+            while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') ++p;
+            return p;
+        }
+    }
+    return nullptr;
+}
+
+// Ein Textfeld aus EINEM Element lesen -- also nur bis zu dessen Ende suchen.
+//
+// Ohne diese Begrenzung faende ein Feldname das Vorkommen im NAECHSTEN Element, sobald er im
+// eigenen fehlt: Aus einem Objekt ohne "kurs" wuerde stillschweigend der Kurs des folgenden.
+inline bool json_text_in(const char* element, const char* name,
+                         char* ziel, size_t ziel_gross) {
+    if (!element || !ziel || ziel_gross == 0) return false;
+    ziel[0] = '\0';
+    const char* ende = json_naechstes(element);
+    char muster[64];
+    std::snprintf(muster, sizeof(muster), "\"%s\"", name);
+    const char* p = std::strstr(element, muster);
+    if (!p || (ende && p >= ende)) return false;
+    p = std::strchr(p, ':');
+    if (!p) return false;
+    ++p;
+    while (*p == ' ' || *p == '\t') ++p;
+    if (*p != '"') return false;
+    ++p;
+    size_t n = 0;
+    while (*p && *p != '"' && n + 1 < ziel_gross) {
+        if (*p == '\\' && p[1]) ++p;
+        ziel[n++] = *p++;
+    }
+    ziel[n] = '\0';
+    return true;
+}
+
+// Eine Zahl aus EINEM Element. ``gefunden`` sagt, ob das Feld ueberhaupt da war -- der
+// Unterschied zaehlt: ``erwartete_hoehe_ft: null`` heisst "nimm die Oberflaeche", ein
+// fehlendes Feld dagegen ist ein Protokollbruch.
+inline double json_zahl_in(const char* element, const char* name, double vorgabe,
+                           bool* gefunden = nullptr) {
+    if (gefunden) *gefunden = false;
+    if (!element) return vorgabe;
+    const char* ende = json_naechstes(element);
+    char muster[64];
+    std::snprintf(muster, sizeof(muster), "\"%s\"", name);
+    const char* p = std::strstr(element, muster);
+    if (!p || (ende && p >= ende)) return vorgabe;
+    p = std::strchr(p, ':');
+    if (!p) return vorgabe;
+    ++p;
+    while (*p == ' ' || *p == '\t') ++p;
+    if (std::strncmp(p, "null", 4) == 0) return vorgabe;   // ausdruecklich "kein Wert"
+    char* zeiger_ende = nullptr;
+    double wert = std::strtod(p, &zeiger_ende);
+    if (zeiger_ende == p) return vorgabe;
+    if (gefunden) *gefunden = true;
+    return wert;
+}
+
 // Steht hinter "name": ein LEERES Array? Das ist in Fassung 1 der Regelfall für `soll`, und
 // die Unterscheidung "leer" gegen "fehlt" zählt: Ein fehlendes `soll` wäre ein Protokollbruch,
 // ein leeres heisst schlicht "hier soll nichts stehen".

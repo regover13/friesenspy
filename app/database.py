@@ -678,6 +678,34 @@ CREATE TABLE IF NOT EXISTS bruegge_zuordnung (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bruegge_zuordnung_cid ON bruegge_zuordnung(cid);
+
+-- Was soll im Simulator stehen? Der Sollzustand, den die Bruegge abgleicht.
+--
+-- KEIN Strom von Befehlen, sondern eine vollstaendige Liste (PROTOKOLL.md, Abschnitt 2):
+-- Geht eine Anfrage verloren, haengt das Netz kurz oder startet der Simulator neu, holt die
+-- naechste Antwort den Zustand von allein wieder ein. Bei Befehlen bliebe eine verpasste
+-- Loeschung fuer immer stehen.
+--
+-- cid NULL heisst "fuer alle" -- damit laesst sich eine Station fuer ein Event setzen, ohne
+-- sie je Pilot zu vervielfachen. Ein Eintrag MIT cid gilt nur fuer diesen einen Piloten.
+--
+-- Die `art` ist eine GATTUNG, kein Dateiname: tier_gross, bauwerk, fahrzeug, boot_klein,
+-- boot_gross. Welches Modell daraus wird, entscheidet die Bruegge -- sie kennt ihren
+-- Simulator, der Server kennt ihn nicht.
+CREATE TABLE IF NOT EXISTS bruegge_soll (
+    id            TEXT PRIMARY KEY,
+    cid           INTEGER,          -- NULL = fuer alle Bruegge
+    art           TEXT NOT NULL,
+    lat           REAL NOT NULL,
+    lon           REAL NOT NULL,
+    kurs          REAL,
+    erwartete_hoehe_ft REAL,        -- NULL = "nimm die Oberflaeche"
+    angelegt_am   TEXT NOT NULL,
+    gilt_bis      TEXT,             -- NULL = ohne Ende
+    bemerkung     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_bruegge_soll_cid ON bruegge_soll(cid);
 """
 
 
@@ -2612,6 +2640,54 @@ def bruegge_aufraeumen(conn: sqlite3.Connection, stunden: int = 24) -> int:
         "DELETE FROM bruegge_zuordnung "
         "WHERE COALESCE(gesehen_am, zugeordnet_am) < ?", (grenze,))
     return cur.rowcount or 0
+
+
+def bruegge_soll_fuer(conn: sqlite3.Connection, cid: int) -> list[dict]:
+    """Was soll bei diesem Piloten stehen?
+
+    Abgelaufene Eintraege fallen weg, ohne geloescht zu werden -- ein Event kann so vorbereitet
+    und mit einem Zeitfenster versehen werden, ohne dass jemand hinterherraeumen muss.
+    """
+    now = _now_utc()
+    rows = conn.execute(
+        "SELECT id, art, lat, lon, kurs, erwartete_hoehe_ft FROM bruegge_soll "
+        "WHERE (cid IS NULL OR cid = ?) AND (gilt_bis IS NULL OR gilt_bis > ?) "
+        "ORDER BY id",
+        (int(cid), now),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def bruegge_soll_setzen(conn: sqlite3.Connection, kennung_id: str, art: str,
+                        lat: float, lon: float, cid: int | None = None,
+                        kurs: float | None = None,
+                        erwartete_hoehe_ft: float | None = None,
+                        gilt_bis: str | None = None,
+                        bemerkung: str | None = None) -> None:
+    """Ein Objekt anfordern (kein commit). Gleiche ``id`` ueberschreibt."""
+    conn.execute(
+        "INSERT INTO bruegge_soll (id, cid, art, lat, lon, kurs, erwartete_hoehe_ft, "
+        "                          angelegt_am, gilt_bis, bemerkung) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET cid = excluded.cid, art = excluded.art, "
+        "    lat = excluded.lat, lon = excluded.lon, kurs = excluded.kurs, "
+        "    erwartete_hoehe_ft = excluded.erwartete_hoehe_ft, "
+        "    gilt_bis = excluded.gilt_bis, bemerkung = excluded.bemerkung",
+        (kennung_id, cid, art, float(lat), float(lon), kurs, erwartete_hoehe_ft,
+         _now_utc(), gilt_bis, bemerkung),
+    )
+
+
+def bruegge_soll_loeschen(conn: sqlite3.Connection, kennung_id: str) -> int:
+    """Ein Objekt zuruecknehmen (kein commit). Die Bruegge raeumt es beim naechsten Takt weg."""
+    cur = conn.execute("DELETE FROM bruegge_soll WHERE id = ?", (kennung_id,))
+    return cur.rowcount or 0
+
+
+def bruegge_soll_alle(conn: sqlite3.Connection) -> list[dict]:
+    """Alles, was angefordert ist -- fuer den Admin."""
+    rows = conn.execute("SELECT * FROM bruegge_soll ORDER BY angelegt_am DESC").fetchall()
+    return [_row_to_dict(r) for r in rows]
 
 
 def bruegge_uebersicht(conn: sqlite3.Connection) -> list[dict]:

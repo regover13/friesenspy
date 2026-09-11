@@ -365,3 +365,72 @@ def test_alte_zuordnungen_werden_aufgeraeumt(tmp_path):
     uebrig = [r[0] for r in conn.execute("SELECT kennung FROM bruegge_zuordnung")]
     conn.close()
     assert uebrig == ["neueneueneueaaaa"]
+
+
+# ---------------------------------------------------------------------------------------
+# Der Sollzustand
+# ---------------------------------------------------------------------------------------
+
+def _soll_anlegen(db, soll_id, art="boot_gross", lat=47.7050, lon=8.9750, cid=None,
+                  gilt_bis=None):
+    from app.database import get_connection, bruegge_soll_setzen
+    conn = get_connection(db)
+    bruegge_soll_setzen(conn, soll_id, art, lat, lon, cid=cid, gilt_bis=gilt_bis)
+    conn.commit()
+    conn.close()
+
+
+def test_soll_wird_an_die_bruegge_ausgeliefert(klient, tmp_path):
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _soll_anlegen(db, "schiff-1")
+    a = klient.post("/api/bruegge/melden", json=_meldung()).json()
+    assert len(a["soll"]) == 1
+    o = a["soll"][0]
+    assert o["id"] == "schiff-1"
+    assert o["art"] == "boot_gross"
+    assert o["lat"] == pytest.approx(47.7050)
+
+
+def test_soll_ohne_cid_gilt_fuer_alle(klient, tmp_path):
+    """Eine Station für ein Event soll nicht je Pilot vervielfacht werden müssen."""
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _soll_anlegen(db, "fuer-alle", cid=None)
+    assert len(klient.post("/api/bruegge/melden", json=_meldung()).json()["soll"]) == 1
+
+
+def test_soll_mit_fremder_cid_kommt_nicht_an(klient, tmp_path):
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _soll_anlegen(db, "fuer-jemand-anderen", cid=999999)
+    assert klient.post("/api/bruegge/melden", json=_meldung()).json()["soll"] == []
+
+
+def test_abgelaufenes_soll_faellt_weg(klient, tmp_path):
+    """Ein Event lässt sich mit Zeitfenster vorbereiten, ohne dass jemand hinterherräumt."""
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    _soll_anlegen(db, "abgelaufen", gilt_bis="2020-01-01T00:00:00Z")
+    _soll_anlegen(db, "laeuft-noch", gilt_bis="2099-01-01T00:00:00Z")
+    ids = [o["id"] for o in klient.post("/api/bruegge/melden", json=_meldung()).json()["soll"]]
+    assert ids == ["laeuft-noch"]
+
+
+def test_ohne_zuordnung_kommt_kein_soll(klient, tmp_path):
+    """Ohne VATSIM geschieht nichts -- auch keine Objekte."""
+    _soll_anlegen(str(tmp_path / "t.db"), "schiff-1")
+    assert klient.post("/api/bruegge/melden", json=_meldung()).json()["soll"] == []
+
+
+def test_unbekannte_gattung_wird_abgewiesen(klient, tmp_path):
+    """Ein Tippfehler in der Gattung darf nicht als stille Nicht-Anforderung enden."""
+    from app.auth import make_admin_token, make_confirm_token
+    import app.main as main
+    s = main.get_settings()
+    kekse = {"fs_admin": make_admin_token(s.SECRET_KEY, s.ADMIN_PASSWORD),
+             "fs_confirm": make_confirm_token(s.SECRET_KEY, s.ADMIN_PASSWORD, 9_999_999_999)}
+    r = klient.post("/api/admin/bruegge/soll",
+                    json={"art": "raumschiff", "lat": 53.0, "lon": 7.0}, cookies=kekse)
+    assert r.status_code == 400
+    assert "Gattung" in r.json()["detail"]

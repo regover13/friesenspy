@@ -1454,6 +1454,65 @@
           <div id="dg-container" class="scroll-list"><div class="empty-hint">Noch nicht geprüft.</div></div>
         </div>
 
+        <div class="panel">
+          <div class="panel-title"><span>🌉 Brügge</span></div>
+          <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
+            Die Sim-Brügge meldet die Position aus dem Simulator und stellt hin, was hier
+            angefordert wird. Sie braucht <b>keine Anmeldung</b> — der Server erkennt den
+            Piloten an der Position, und zwar nur, wenn er auf VATSIM mit Friesen-Präfix
+            fliegt <i>und</i> sich schon einmal im Forum angemeldet hat.
+          </p>
+
+          <div style="margin-bottom:14px;">
+            <label style="font-size:0.85rem;color:#cfe0f2;">
+              Takt: <b id="bg-takt-wert">1</b> s
+            </label>
+            <input type="range" id="bg-takt" min="1" max="15" value="1"
+                   style="width:100%;margin:6px 0;">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-sm" id="bg-takt-speichern">Takt setzen</button>
+              <button class="btn btn-sm" id="bg-takt-aus" style="opacity:.8;">Ganz aus</button>
+              <span style="color:#8aa0b8;font-size:0.78rem;">
+                Notbremse bei Last — wirkt sofort für alle, ohne Deploy.
+              </span>
+            </div>
+          </div>
+
+          <div class="table-wrap" style="margin-bottom:14px;">
+            <table>
+              <thead><tr><th>Pilot</th><th>Simulator</th><th>Position</th><th>zuletzt</th></tr></thead>
+              <tbody id="bg-melder"><tr><td colspan="4" class="empty-hint">Lädt …</td></tr></tbody>
+            </table>
+          </div>
+
+          <div style="border-top:1px solid #22303f;padding-top:12px;">
+            <div style="font-size:0.85rem;color:#cfe0f2;margin-bottom:8px;">Objekte anfordern</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
+              <select id="bg-art" class="btn btn-sm" style="padding:6px;">
+                <option value="boot_gross">boot_gross (Kreuzfahrtschiff)</option>
+                <option value="boot_klein">boot_klein (Boot)</option>
+                <option value="tier_gross">tier_gross (Bär)</option>
+                <option value="bauwerk">bauwerk (Windmühle)</option>
+                <option value="fahrzeug">fahrzeug (Fahrzeug)</option>
+              </select>
+              <input id="bg-lat" placeholder="Breite" style="width:110px;padding:6px;">
+              <input id="bg-lon" placeholder="Länge" style="width:110px;padding:6px;">
+              <input id="bg-cid" placeholder="CID (leer = alle)" style="width:140px;padding:6px;">
+              <button class="btn btn-sm" id="bg-soll-setzen">Hinstellen</button>
+            </div>
+            <p style="color:#8aa0b8;font-size:0.78rem;margin:0 0 10px;">
+              Eine <b>Gattung</b>, kein Modell: Welches Tier ein <code>tier_gross</code> ist,
+              entscheidet die Brügge — sie kennt ihren Simulator, der Server nicht.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>id</th><th>Gattung</th><th>Ort</th><th>für</th><th></th></tr></thead>
+                <tbody id="bg-soll"><tr><td colspan="5" class="empty-hint">Lädt …</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -1964,6 +2023,96 @@
       // #77-Erweiterung: Autocomplete an den (dynamisch gerenderten) Bearbeiten-Strecken-Feldern.
       c.querySelectorAll('input[id^="edit-route-"]').forEach(inp => wireIcaoPicker(inp));
     }
+
+    // ---------------------------------------------------------------- Brügge
+    async function bgLaden() {
+      try {
+        const r = await fetch('/api/admin/bruegge', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const d = await r.json();
+
+        const takt = document.getElementById('bg-takt');
+        if (takt && d.takt_s <= 15) { takt.value = d.takt_s; }
+        const wert = document.getElementById('bg-takt-wert');
+        if (wert) wert.textContent = d.takt_s >= 900 ? 'aus' : d.takt_s;
+
+        const mb = document.getElementById('bg-melder');
+        if (mb) {
+          mb.innerHTML = (d.melder && d.melder.length)
+            ? d.melder.map(function (m) {
+                const pos = (m.lat != null)
+                  ? m.lat.toFixed(4) + ' / ' + m.lon.toFixed(4) +
+                    (m.gs_kt != null ? '  ' + Math.round(m.gs_kt) + ' kt' : '')
+                  : '—';
+                return '<tr><td>' + (m.callsign || m.name || m.cid) + '</td><td>' +
+                       (m.simulator || '—') + '</td><td class="mono">' + pos +
+                       '</td><td>' + (m.gesehen_am || '—') + '</td></tr>';
+              }).join('')
+            : '<tr><td colspan="4" class="empty-hint">Niemand meldet gerade.</td></tr>';
+        }
+
+        const sb = document.getElementById('bg-soll');
+        if (sb) {
+          sb.innerHTML = (d.soll && d.soll.length)
+            ? d.soll.map(function (o) {
+                return '<tr><td class="mono">' + o.id + '</td><td>' + o.art +
+                       '</td><td class="mono">' + o.lat.toFixed(4) + ' / ' + o.lon.toFixed(4) +
+                       '</td><td>' + (o.cid || 'alle') +
+                       '</td><td><button class="btn btn-sm bg-weg" data-id="' + o.id +
+                       '">wegnehmen</button></td></tr>';
+              }).join('')
+            : '<tr><td colspan="5" class="empty-hint">Nichts angefordert.</td></tr>';
+          sb.querySelectorAll('.bg-weg').forEach(function (b) {
+            b.addEventListener('click', async function () {
+              await fetch('/api/admin/bruegge/soll/' + encodeURIComponent(b.dataset.id),
+                          { method: 'DELETE', credentials: 'same-origin' });
+              bgLaden();
+            });
+          });
+        }
+      } catch (e) { /* Admin bleibt bedienbar, auch wenn die Brügge schweigt */ }
+    }
+
+    (function bgBinden() {
+      const takt = document.getElementById('bg-takt');
+      const wert = document.getElementById('bg-takt-wert');
+      if (takt && wert) {
+        takt.addEventListener('input', function () { wert.textContent = takt.value; });
+      }
+      const setzen = async function (s) {
+        await fetch('/api/admin/bruegge/takt', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ takt_s: s }),
+        });
+        bgLaden();
+      };
+      const sp = document.getElementById('bg-takt-speichern');
+      if (sp) sp.addEventListener('click', function () { setzen(parseInt(takt.value, 10)); });
+      const aus = document.getElementById('bg-takt-aus');
+      if (aus) aus.addEventListener('click', function () { setzen(900); });
+
+      const hin = document.getElementById('bg-soll-setzen');
+      if (hin) hin.addEventListener('click', async function () {
+        const lat = parseFloat(document.getElementById('bg-lat').value);
+        const lon = parseFloat(document.getElementById('bg-lon').value);
+        if (!isFinite(lat) || !isFinite(lon)) { alert('Breite und Länge fehlen.'); return; }
+        const cid = document.getElementById('bg-cid').value.trim();
+        const r = await fetch('/api/admin/bruegge/soll', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            art: document.getElementById('bg-art').value,
+            lat: lat, lon: lon, cid: cid ? parseInt(cid, 10) : null,
+          }),
+        });
+        if (!r.ok) { alert('Ging nicht: ' + (await r.text())); return; }
+        bgLaden();
+      });
+
+      bgLaden();
+      setInterval(bgLaden, 10000);
+    })();
 
     function renderRaceCard(r) {
       if (_editingId === r.id) return renderEditForm(r);
