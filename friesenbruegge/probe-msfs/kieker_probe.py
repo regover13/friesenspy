@@ -321,6 +321,8 @@ def _bindungen(sc: ctypes.WinDLL) -> None:
 
 
 def _verbinden(sc: ctypes.WinDLL, name: bytes) -> w.HANDLE | None:
+    global _lage_definiert
+    _lage_definiert = False   # Datendefinitionen gehoeren der Verbindung, nicht dem Prozess
     handle = w.HANDLE()
     try:
         sc.SimConnect_Open(ctypes.byref(handle), name, None, 0, None, 0)
@@ -331,19 +333,39 @@ def _verbinden(sc: ctypes.WinDLL, name: bytes) -> w.HANDLE | None:
     return handle
 
 
-def _lage_abonnieren(sc: ctypes.WinDLL, handle, objekt_id: int, req: int,
-                     dauerhaft: bool) -> None:
-    """Position des erzeugten Objekts anfordern.
+_lage_definiert = False
 
-    Das ist der Teil, der die eigentliche Frage beantwortet: eine vergebene Objekt-ID sagt
-    nur, dass der Sim den Auftrag angenommen hat. Ob dort wirklich etwas STEHT und ob es
-    dort BLEIBT, zeigt erst die Lagemeldung Sekunde fuer Sekunde.
+
+def _lage_definition(sc: ctypes.WinDLL, handle) -> None:
+    """Die Datendefinition fuer eine Lagemeldung -- GENAU EINMAL je Verbindung.
+
+    ACHTUNG, hier lag ein eigener Messfehler (11.09.2026): Urspruenglich haben Definition
+    und Anfrage in einer Funktion gesteckt, die je Objekt aufgerufen wurde. Bei EINEM Objekt
+    faellt das nicht auf; beim Mengentest mit 25 Objekten hatte dieselbe Definition danach
+    75 Eintraege statt 3, und die gemessene "Meldungsrate" sagte nichts ueber den Simulator
+    aus, sondern nur ueber diesen Fehler. Eine Definition wird einmal angelegt und dann von
+    beliebig vielen Anfragen benutzt -- das ist genau, wofuer die DefineID da ist.
     """
+    global _lage_definiert
+    if _lage_definiert:
+        return
     for name, einheit in ((b"PLANE LATITUDE", b"degrees"),
                           (b"PLANE LONGITUDE", b"degrees"),
                           (b"PLANE ALTITUDE", b"feet")):
         sc.SimConnect_AddToDataDefinition(handle, DEF_LAGE, name, einheit,
                                           DATATYPE_FLOAT64, 0.0, 0xFFFFFFFF)
+    _lage_definiert = True
+
+
+def _lage_abonnieren(sc: ctypes.WinDLL, handle, objekt_id: int, req: int,
+                     dauerhaft: bool) -> None:
+    """Position eines Objekts anfordern.
+
+    Das ist der Teil, der die eigentliche Frage beantwortet: eine vergebene Objekt-ID sagt
+    nur, dass der Sim den Auftrag angenommen hat. Ob dort wirklich etwas STEHT und ob es
+    dort BLEIBT, zeigt erst die Lagemeldung Sekunde fuer Sekunde.
+    """
+    _lage_definition(sc, handle)
     sc.SimConnect_RequestDataOnSimObject(
         handle, req, DEF_LAGE, objekt_id,
         PERIOD_SECOND if dauerhaft else PERIOD_ONCE, 0, 0, 0, 0,
@@ -557,6 +579,115 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
     return ergebnis
 
 
+def mengentest(titel: str, anzahl: int, raster_m: float, dll_pfad: Path, halten: int,
+               neben_mir: float | None, lat: float, lon: float) -> int:
+    """Wie viele Objekte vertraegt der Simulator? (Spec 13.4, Frage 3)
+
+    Zwei Messgroessen, und die zweite ist die ehrlichere:
+
+    * **Nimmt der Sim sie an?** EXCEPTION 11 waere TOO_MANY_OBJECTS -- eine harte Grenze.
+    * **Bleibt er gesund?** Jedes Objekt meldet seine Lage im Sekundentakt. Erwartet werden
+      also <anzahl> Meldungen je Sekunde. Bricht die Rate ein, hat der Simulator zu tun --
+      das ist ein Indikator, kein Bildratenmesser. Ob es *ruckelt*, sagt am Ende der Pilot;
+      eine Bildrate gibt SimConnect nicht her.
+    """
+    import math
+
+    print(f"SimConnect.dll: {dll_pfad}")
+    sc = ctypes.WinDLL(str(dll_pfad))
+    _bindungen(sc)
+    handle = _verbinden(sc, b"FriesenKieker-Menge")
+    if handle is None:
+        return 2
+    print("SimConnect_Open: verbunden.")
+
+    if neben_mir is not None:
+        lage = _eigene_lage(sc, handle)
+        if lage is None:
+            sc.SimConnect_Close(handle)
+            return 2
+        lat, lon, _ = lage
+        print(f"  Flugzeug steht bei {lat:.5f} / {lon:.5f}")
+
+    # Quadratisches Raster um den Zielpunkt. Ein Gitter statt eines Haufens, damit die
+    # Objekte nicht ineinanderstecken und der Pilot sie zaehlen kann.
+    kante = max(1, int(math.ceil(math.sqrt(anzahl))))
+    grad_lat = raster_m / 111320.0
+    grad_lon = raster_m / (111320.0 * math.cos(math.radians(lat)))
+    print(f"\n{anzahl}x \"{titel}\" im {kante}x{kante}-Raster, {raster_m:.0f} m Abstand ...")
+
+    ids: list[int] = []
+    fehler: dict[int, int] = {}
+    begonnen = time.time()
+    for i in range(anzahl):
+        z, s = divmod(i, kante)
+        pos = InitPosition(
+            Latitude=lat + (z - kante / 2) * grad_lat,
+            Longitude=lon + (s - kante / 2) * grad_lon,
+            Altitude=0.0, Pitch=0.0, Bank=0.0, Heading=210.0,
+            OnGround=1, Airspeed=0,
+        )
+        try:
+            sc.SimConnect_AICreateSimulatedObject(handle, titel.encode("utf-8"), pos,
+                                                  REQ_ERZEUGEN + i)
+        except OSError as e:
+            print(f"  Aufruf {i} abgelehnt: {e}")
+            break
+
+    # Erst ALLE Auftraege absetzen, dann die Antworten holen. Vorher stand hier eine Pause
+    # von 80 ms je Objekt -- die floss in die gemessene "Zeit je Aufruf" ein und machte den
+    # Simulator langsamer, als er ist.
+    absetzen = time.time() - begonnen
+    print(f"  {anzahl} Auftraege abgesetzt in {absetzen:.2f}s "
+          f"({absetzen / max(1, anzahl) * 1000:.1f} ms je Aufruf).")
+
+    for art, zeiger in _pakete(sc, handle, 15):
+        if art == RECV_ASSIGNED_OBJECT_ID:
+            zu = ctypes.cast(zeiger, ctypes.POINTER(RecvAssignedObjectId)).contents
+            ids.append(zu.dwObjectID)
+        elif art == RECV_EXCEPTION:
+            ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents
+            fehler[ex.dwException] = fehler.get(ex.dwException, 0) + 1
+
+    dauer = time.time() - begonnen
+    print(f"  {len(ids)} von {anzahl} angelegt, Antworten vollstaendig nach {dauer:.1f}s.")
+    for nr, wie_oft in sorted(fehler.items()):
+        print(f"  {wie_oft}x EXCEPTION {nr} -- {EXCEPTION_NAMEN.get(nr, 'unbekannt')}")
+        if nr == 11:
+            print("     Das ist die harte Grenze: der Simulator nimmt keine weiteren an.")
+    if not ids:
+        sc.SimConnect_Close(handle)
+        return 1
+
+    print(f"\nLage aller {len(ids)} Objekte abonnieren; erwartet werden {len(ids)} Meldungen/s.")
+    for i, oid in enumerate(ids):
+        _lage_abonnieren(sc, handle, oid, REQ_LAGE + i, dauerhaft=True)
+
+    print(f"Verbindung bleibt {halten}s offen -- JETZT HINSEHEN und auf Ruckeln achten.\n")
+    start = time.time()
+    letzte = 0.0
+    zaehler = 0
+    gesamt = 0
+    for art, zeiger in _pakete(sc, handle, halten):
+        if art == RECV_SIMOBJECT_DATA:
+            zaehler += 1
+            gesamt += 1
+        elif art == RECV_EXCEPTION:
+            ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents
+            fehler[ex.dwException] = fehler.get(ex.dwException, 0) + 1
+        t = time.time() - start
+        if t - letzte >= 10:
+            anteil = zaehler / (t - letzte) / len(ids) * 100
+            print(f"  t=+{t:5.0f}s  {zaehler / (t - letzte):6.1f} Meldungen/s "
+                  f"= {anteil:5.1f}% der erwarteten Rate")
+            letzte, zaehler = t, 0
+
+    print(f"\n  {gesamt} Lagemeldungen insgesamt ueber {time.time() - start:.0f}s.")
+    sc.SimConnect_Close(handle)
+    print("  Verbindung geschlossen -- die Objekte verschwinden damit.")
+    return 0
+
+
 def main() -> int:
     if not sys.platform.startswith("win"):
         print("Dieses Skript gehoert auf den Windows-Rechner mit dem Simulator.")
@@ -579,6 +710,10 @@ def main() -> int:
     ap.add_argument("--neben-mir", type=float, metavar="METER",
                     help="Ziel nicht aus --lat/--lon, sondern <METER> oestlich des "
                          "Flugzeugs (schliesst EXCEPTION 33 aus)")
+    ap.add_argument("--anzahl", type=int, metavar="N",
+                    help="Mengentest: N Objekte im Raster setzen (Spec 13.4, Frage 3)")
+    ap.add_argument("--raster", type=float, default=150.0, metavar="METER",
+                    help="Abstand der Objekte im Mengentest (Vorgabe 150 m)")
     a = ap.parse_args()
 
     if a.titel_suche:
@@ -586,6 +721,9 @@ def main() -> int:
         return 0
     if not a.titel:
         ap.error('entweder --titel "..." oder --titel-suche')
+    if a.anzahl:
+        return mengentest(a.titel, a.anzahl, a.raster, dll_finden(a.dll), a.halten,
+                          a.neben_mir, a.lat, a.lon)
     return probe(a.titel, a.lat, a.lon, a.hoehe, not a.frei, dll_finden(a.dll),
                  a.warten, a.halten, not a.ohne_nachprobe, a.neben_mir)
 

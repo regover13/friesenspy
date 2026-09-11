@@ -313,6 +313,50 @@ messen wollte, lässt sich an den vorhandenen Addons ablesen.
 
 **In `exe.xml` wurde nichts geändert.**
 
+## Wie viele Objekte verträgt der Simulator? (Spec 13.4, Frage 3)
+
+Gemessen mit `--anzahl`, Boote als quadratisches Raster neben dem Flugzeug. Zwei Größen: ob
+der Simulator sie **annimmt** (`EXCEPTION 11 = TOO_MANY_OBJECTS` wäre die harte Grenze) und ob
+er **gesund bleibt** — jedes Objekt meldet seine Lage im Sekundentakt, erwartet werden also
+so viele Meldungen je Sekunde, wie Objekte stehen.
+
+| Objekte | angelegt | Meldungsrate | Exceptions |
+|---:|---|---|---|
+| 25 | 25 von 25 | 100 % | keine |
+| 100 | 100 von 100 | 100 % | keine |
+| 400 | 400 von 400 | 100 % (43.200 Meldungen in 120 s) | keine |
+
+**Keine Grenze gefunden.** Der Kieker bräuchte realistisch 10 bis 50 Objekte — 400 sind weit
+jenseits des Bedarfs. `AICreateSimulatedObject` ist **asynchron**: 400 Aufträge sind in unter
+10 ms abgesetzt, die Objekt-IDs trudeln danach über etwa 15 Sekunden ein. Wer auf jede Antwort
+einzeln wartet, misst seine eigene Wartepause.
+
+**Ein Aussetzer ist aufgetreten und bleibt ungeklärt:** Im 400er-Lauf fiel die Rate bei
+`t=+35s` auf 14,6 % und erholte sich danach auf 100 %. Ein Einzelereignis, in den kleineren
+Läufen nicht zu sehen. Ob Simulator, Nachladevorgang oder Kamerabewegung — mit diesem Aufbau
+nicht auseinanderzuhalten.
+
+**Was diese Zahlen NICHT sind: eine Bildrate.** SimConnect gibt keine her. Die Meldungsrate
+zeigt, ob der Simulator die Objekte weiterführt, nicht ob es flüssig aussieht. Die Frage „ab
+wann ruckelt es" kann nur der Pilot beantworten und ist **weiterhin offen**.
+
+### Ein Messfehler im eigenen Aufbau, der fast als Sim-Befund durchgegangen wäre
+
+Der erste 25er-Lauf meldete **8 % der erwarteten Rate** — das sah nach einem überlasteten
+Simulator aus. Die Ursache lag im Probe-Skript: `_lage_abonnieren` hängte je Objekt drei
+Variablen an **dieselbe** Datendefinition, die hatte nach 25 Objekten also 75 Einträge statt
+drei. Bei einem einzelnen Objekt fällt das nie auf.
+
+Behoben, indem Definition und Anfrage getrennt wurden (`_lage_definition` läuft genau einmal je
+Verbindung — dafür ist eine `DefineID` da). Gleicher Anlass, zweiter Fund: Die gemessenen
+„302 ms je Aufruf" waren die eigene Wartepause von 80 ms je Objekt, nicht der Simulator. Nach
+der Reparatur: 100 % Rate, 0 ms je Aufruf.
+
+Die Lehre ist dieselbe wie beim ursprünglichen Skript, das die Verbindung zu früh schloss:
+**Ein Messaufbau, der beim Einzelfall funktioniert, kann bei der Menge etwas ganz anderes
+messen.** Wer die 8 % geglaubt hätte, hätte den Kieker auf „höchstens eine Handvoll Objekte"
+zugeschnitten.
+
 ## Was daraus für den Kieker folgt
 
 Die Entscheidungsfrage ist positiv beantwortet — das Tor ist offen. Drei Dinge sind dabei
