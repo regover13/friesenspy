@@ -104,6 +104,27 @@ der Systemuhr des Piloten, die falsch gehen darf.
 `spur` darf leer sein: bei der ersten Meldung, nach einer Pause, oder wenn die Brügge nicht
 sammeln kann. Der Server kommt dann mit `lage` allein aus.
 
+**Die Karte spielt die Spur ab, sie springt nicht von Meldung zu Meldung.** Das ist der
+eigentliche Gewinn der Bündelung und gehört ausdrücklich hierher: Bei 2 s Takt kommen zwei
+Punkte an, und wer sie nacheinander setzt, bewegt das Flugzeug **im Sekundentakt** — nur eben
+zwei Sekunden hinter der Wirklichkeit. Bei 90 kt sind das 46 m je Schritt statt 93 m.
+
+| | Sprungweite bei 90 kt | wie oft |
+|---|---|---|
+| heute, VATSIM-Feed | ~700 m | alle 15 s |
+| Brügge, 2 s, Spur nicht abgespielt | ~93 m | alle 2 s |
+| **Brügge, 2 s, Spur abgespielt** | **~46 m** | **jede Sekunde** |
+| Brügge, 1 s | ~46 m | jede Sekunde |
+
+Die letzten beiden Zeilen sind auf der Karte nicht unterscheidbar. **Die Bewegungsauflösung
+hängt an der Spur, nicht am Sendetakt** — schneller zu senden macht die Bewegung nicht
+flüssiger, nur aktueller.
+
+⚠ **Nicht interpolieren, abspielen.** Leaflets Bewegungsanimation ist in dieser App bewusst
+abgeschaltet (`app/static/index.html:11828`): *„in Coherent GT genau die Sorte Dauerbewegung,
+die uns schon einmal Flackern beschert hat."* Gerechnete Zwischenschritte führen dorthin
+zurück; echte Messpunkte nicht.
+
 ⚠ **Für den Server:** Diese Punkte gehören **nicht** nach `position_history` — die Tabelle
 wird nie aufgeräumt, und eine dichtere Reihe verschiebt Aufsetz- und Abstellpunkte in
 `canonicalize_legs`. Bummel-Blockzeiten würden sich rückwirkend ändern, je nachdem wer eine

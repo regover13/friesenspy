@@ -607,7 +607,11 @@ Meldungsrate, und trotzdem „ich sehe keine Elefanten". Erst 20 m neben einem h
 sichtbaren Objekt waren sie da. Die Regel von heute Vormittag gilt unverändert und ist offenbar
 schwer einzuhalten: **groß, nah und lange — und am besten neben etwas, das man schon sieht.**
 
-### ✅ Am Bodensee entschieden: die Kategorie `Boat` ist kaputt
+### ✅ Am Bodensee entschieden: in **MSFS 2020** ist die Kategorie `Boat` kaputt
+
+> **Simulator: MSFS 2020.** Diese Angabe fehlte hier bis zum 11.09.2026 abends und wurde vom
+> Nutzer nachgetragen — sie ist entscheidend, denn **in MSFS 2024 gilt der Befund nicht**
+> (s. den Kasten unter der Tabelle).
 
 Die Frage kam vom Nutzer: Was wird aus einem Boot auf einem Bergsee? Vor Ort gemessen, Flug auf
 **EDNY Friedrichshafen** (Platz 1348,9 ft), Objekte 2,5 km südlich mitten auf den See gesetzt.
@@ -621,13 +625,35 @@ Der Bodensee liegt auf 395 m ≈ **1296 ft**:
 | `ASO_Ambulance_Japan` | GroundVehicle | **1297,0 ft** ✅ |
 
 **Alles außer Booten findet die Oberfläche — auch auf einem Binnensee.** Die „Geländehöhe", auf
-die `OnGround=1` diese Objekte setzt, ist über Wasser der Wasserspiegel. Nur die Kategorie
-`Boat` ignoriert das und nimmt stur die Meereshöhe.
+die `OnGround=1` diese Objekte setzt, ist über Wasser der Wasserspiegel. In MSFS 2020 ignoriert
+die Kategorie `Boat` das und nimmt stur die Meereshöhe.
 
-| | Land | Nordsee | Binnensee |
+| **MSFS 2020** | Land | Nordsee | Binnensee |
 |---|---|---|---|
 | `Boat` | ✗ versinkt | ✓ — aber nur, weil MSL dort die Oberfläche *ist* | ✗ 395 m zu tief |
 | `StaticObject`, `Animal`, `GroundVehicle` | ✓ | ✓ | ✓ |
+
+### ⚠ In MSFS 2024 gilt das **nicht** — dort finden auch Boote die Oberfläche
+
+**Der Unterschied ist in denselben Protokollen belegt, an derselben Stelle, mit demselben
+Modell.** Wangerooge, Geländehöhe rund drei Meter:
+
+| Simulator | `Boat01` gemeldet | im Bild |
+|---|---|---|
+| **MSFS 2024** | **2,4 ft** | **ja** — Motorboot im Gras, Screenshot 08:15:06 |
+| **MSFS 2020** | **0,0 ft** (Flugzeug daneben: 10,0 ft) | **nein** — drei Meter unter dem Platz |
+
+Dazu die Reality-Bubble-Läufe in MSFS 2024: dasselbe Boot meldete 28,4 ft bei 50 km Entfernung
+und 139,8 ft bei 200 km — **geländefolgend**, nicht auf 0 festgenagelt.
+
+| **MSFS 2024** | Land | Nordsee | Binnensee |
+|---|---|---|---|
+| `Boat` | ✓ gemessen | ✓ | **ungemessen** — der Bodensee-Flug lief in 2020 |
+| `StaticObject`, `Animal`, `GroundVehicle` | ✓ | ✓ | ungemessen |
+
+**Die eine offene Zelle ist ehrlich offen:** Dass ein Boot in MSFS 2024 auch auf einem
+Binnensee schwimmt, ist die naheliegende Erwartung — belegt ist sie nicht. Wer einen Event am
+Bodensee plant, misst es vorher.
 
 **Das ist ein bekannter Fehler, nicht unser Aufbau.** Im MSFS-DevSupport steht er seit dem
 11.05.2022 als *„SimConnect injected Boat underwater"*: Boote spawnen an den **Great Lakes**
@@ -637,9 +663,10 @@ Der dort genannte Workaround ist ein eigenes SimObject mit Flugzeug-Kategorie �
 Nachteil, dass Schiffe dann als Flugzeuge gezählt werden.
 <https://devsupport.flightsimulator.com/t/simconnect-injected-boat-underwater/4226>
 
-**Folge für die Brügge: keine `Boat`-SimObjects verwenden.** Soll etwas auf dem Wasser stehen,
-nimmt man ein Objekt einer anderen Kategorie. Muss es nach Schiff aussehen, führt der Weg über
-ein eigenes SimObject mit passender `sim.cfg`.
+**Folge für die Brügge: in MSFS 2020 keine `Boat`-SimObjects über Land oder Binnengewässern.**
+Auf der Nordsee sind sie dort brauchbar, weil MSL die Oberfläche ist. **In MSFS 2024 gilt die
+Einschränkung nicht** — dort verhält sich `Boat` wie jede andere Kategorie. Die Gattungstabelle
+des Protokolls führt den `Grund` deshalb **je Simulator**, nicht gemeinsam.
 
 > **Zum Weg hierher:** Diese Aussage stand schon einmal hier — gestützt allein auf eine Probe
 > am Chiemsee aus 800 km Entfernung, wo kein Gelände geladen war. Der Nutzer hat sie bezweifelt,
@@ -647,7 +674,7 @@ ein eigenes SimObject mit passender `sim.cfg`.
 > Unterschied ist, dass es jetzt trägt.
 
 Für MSFS 2024 gilt das nicht: Dort kommt `Altitude` an, die Brügge müsste nur die Geländehöhe
-kennen. Die hat FriesenSpy nicht (Spec 4.2) — dieselbe Einschränkung, die auch den
+kennen (s. den Kasten oben). Die hat FriesenSpy nicht (Spec 4.2) — dieselbe Einschränkung, die auch den
 X-Plane-Adapter trifft, der deshalb `XPLMProbeTerrainXYZ` fragt.
 
 | | MSFS 2020 | MSFS 2024 |
