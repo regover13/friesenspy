@@ -1,0 +1,244 @@
+"""Der Endpunkt `/api/bruegge/melden` gegen eine Brügge-Attrappe.
+
+**Warum das hier steht und nicht im Simulator gemessen wird:** Zwischen Client und Server
+liegt ein JSON-Vertrag, und ein Tippfehler darin kostet im Simulator einen Neustart und im
+schlimmsten Fall ein Client-Release an 61 Piloten. Hier kostet er eine Sekunde.
+
+Die Nutzlast unten ist dieselbe, die `friesenbruegge/msfs/bruegge.cpp` zusammenbaut --
+Feldnamen und Verschachtelung wörtlich. Wer dort etwas ändert, ändert es hier mit, sonst
+bemerkt es niemand, bis jemand fliegt.
+"""
+
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture()
+def klient(tmp_path, monkeypatch):
+    """Nach dem Muster von tests/test_vr_panel.py -- Einstellungen vorbeischieben statt
+    Umgebungsvariablen zu setzen, damit der Lauf unabhaengig von der echten config.env ist."""
+    from types import SimpleNamespace
+    import app.main as main
+    from app.database import init_db
+
+    pfad = str(tmp_path / "t.db")
+    init_db(pfad)
+    settings = SimpleNamespace(
+        DB_PATH=pfad, CALLSIGN_PREFIX="FRS",
+        SECRET_KEY="test-nur-fuer-diesen-lauf", ADMIN_PASSWORD="test",
+        SSO_SECRET="", FORUM_SSO_URL="", FORUM_SSO_CALLBACK="",
+        USER_SESSION_MAX_AGE_SEC=3600, OPENAIP_API_KEY="", VAPID_PUBLIC_KEY="",
+    )
+    monkeypatch.setattr(main, "get_settings", lambda: settings)
+    if hasattr(main, "_reset_gate_cache"):
+        main._reset_gate_cache()
+    return TestClient(main.app)
+
+
+def _meldung(lat=53.78227, lon=7.92593, kennung="a3f9c1e0b2d48576", **mehr):
+    """Genau die Nutzlast, die bruegge.cpp baut."""
+    lage = {
+        "lat": lat, "lon": lon,
+        "alt_msl_ft": 5.3, "alt_agl_ft": 0.0,
+        "gs_kt": 0.0, "kurs": 210.4, "am_boden": True,
+    }
+    lage.update(mehr.pop("lage", {}))
+    m = {
+        "protokoll": 1,
+        "simulator": "msfs2024",
+        "bruegge_version": "1.0.0",
+        "kennung": kennung,
+        "kann": ["tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross"],
+        "lage": lage,
+        "spur": [],
+        "steht": [],
+    }
+    m.update(mehr)
+    return m
+
+
+def _friese_anlegen(db_pfad, cid=1234567, callsign="FRS61",
+                    lat=53.78227, lon=7.92593, mit_forum_login=True):
+    """Ein Friese auf VATSIM -- und, wenn gewollt, mit Forum-Login."""
+    from app.database import get_connection, _now_utc
+    conn = get_connection(db_pfad)
+    conn.execute(
+        "INSERT OR REPLACE INTO live_positions "
+        "(cid, callsign, latitude, longitude, altitude, groundspeed, heading, updated_at) "
+        "VALUES (?, ?, ?, ?, 5, 0, 210, ?)",
+        (cid, callsign, lat, lon, _now_utc()),
+    )
+    if mit_forum_login:
+        conn.execute(
+            "INSERT OR REPLACE INTO forum_callsign (callsign, cid, updated_at) VALUES (?, ?, ?)",
+            (callsign, cid, _now_utc()),
+        )
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------------------
+# Der gute Fall
+# ---------------------------------------------------------------------------------------
+
+def test_meldung_eines_bekannten_friesen_wird_abgelegt(klient, tmp_path):
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    r = klient.post("/api/bruegge/melden", json=_meldung())
+    assert r.status_code == 200
+    antwort = r.json()
+    assert antwort["protokoll"] == 1
+    assert antwort["soll"] == [], "Fassung 1 verteilt noch keine Objekte"
+    assert antwort["naechste_frage_in_s"] == 1, "Regeltakt"
+
+    from app.database import get_connection, bruegge_position_holen
+    conn = get_connection(db)
+    lage = bruegge_position_holen(conn, 1234567)
+    conn.close()
+    assert lage is not None
+    assert lage["lat"] == pytest.approx(53.78227)
+    assert lage["kennung"] == "a3f9c1e0b2d48576"
+
+
+def test_zweite_meldung_nutzt_die_gemerkte_zuordnung(klient, tmp_path):
+    """Die Kennung erspart den vollen Match -- die Zuordnung muss also stehenbleiben."""
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    klient.post("/api/bruegge/melden", json=_meldung())
+
+    from app.database import get_connection, bruegge_zuordnung_holen
+    conn = get_connection(db)
+    z = bruegge_zuordnung_holen(conn, "a3f9c1e0b2d48576")
+    conn.close()
+    assert z is not None and z["cid"] == 1234567
+    assert z["verstoesse"] == 0
+    assert z["vor_lat"] == pytest.approx(53.78227)
+
+
+# ---------------------------------------------------------------------------------------
+# Die Ablehnungen -- und dass sie ununterscheidbar sind
+# ---------------------------------------------------------------------------------------
+
+def test_ohne_vatsim_geschieht_nichts(klient, tmp_path):
+    """Niemand in live_positions: leeres soll, Minutentakt, kein Eintrag."""
+    r = klient.post("/api/bruegge/melden", json=_meldung())
+    assert r.status_code == 200
+    assert r.json()["soll"] == []
+    assert r.json()["naechste_frage_in_s"] == 60
+    assert r.json()["gilt_bis_s"] == 0
+
+    from app.database import get_connection, bruegge_position_holen
+    conn = get_connection(str(tmp_path / "t.db"))
+    assert bruegge_position_holen(conn, 1234567) is None
+    conn.close()
+
+
+def test_ohne_forum_login_geschieht_nichts(klient, tmp_path):
+    """Auf VATSIM mit FRS-Präfix, aber nie im Forum angemeldet.
+
+    Das ist der Fall, den der Nutzer ausdrücklich ausschließen wollte: Wer sich einfach ein
+    FRS-Callsign setzt, soll nicht melden dürfen.
+    """
+    _friese_anlegen(str(tmp_path / "t.db"), mit_forum_login=False)
+    r = klient.post("/api/bruegge/melden", json=_meldung())
+    assert r.status_code == 200
+    assert r.json()["soll"] == []
+
+
+def test_die_ablehnungen_sind_fuer_die_bruegge_ununterscheidbar(klient, tmp_path):
+    """Mit Absicht: Eine Fehlermeldung wäre ein Werkzeug.
+
+    Wer ausprobieren wollte, welche erfundene Position durchgeht, bekäme vom Server sonst
+    die Rückmeldung dazu.
+    """
+    db = str(tmp_path / "t.db")
+    ohne_vatsim = klient.post("/api/bruegge/melden", json=_meldung()).json()
+    _friese_anlegen(db, mit_forum_login=False)
+    ohne_login = klient.post("/api/bruegge/melden", json=_meldung()).json()
+    weit_weg = klient.post("/api/bruegge/melden",
+                           json=_meldung(lat=48.0, lon=11.0)).json()
+    assert ohne_vatsim == ohne_login == weit_weg
+
+
+def test_position_ohne_passenden_friesen_wird_nicht_abgelegt(klient, tmp_path):
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    # München, 600 km entfernt.
+    r = klient.post("/api/bruegge/melden", json=_meldung(lat=48.35, lon=11.78))
+    assert r.status_code == 200
+    from app.database import get_connection, bruegge_position_holen
+    conn = get_connection(db)
+    assert bruegge_position_holen(conn, 1234567) is None
+    conn.close()
+
+
+# ---------------------------------------------------------------------------------------
+# Missbrauch und Schlamperei
+# ---------------------------------------------------------------------------------------
+
+def test_kaputtes_json_wird_abgewiesen(klient):
+    r = klient.post("/api/bruegge/melden", content=b"{nicht wirklich json",
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 400
+
+
+def test_fehlende_lage_wird_abgewiesen(klient):
+    m = _meldung()
+    del m["lage"]
+    assert klient.post("/api/bruegge/melden", json=m).status_code == 400
+
+
+def test_unsinnige_koordinaten_werden_abgewiesen(klient):
+    assert klient.post("/api/bruegge/melden",
+                       json=_meldung(lat=91.0, lon=7.0)).status_code == 400
+    assert klient.post("/api/bruegge/melden",
+                       json=_meldung(lat=53.0, lon=181.0)).status_code == 400
+
+
+def test_zu_grosse_meldung_wird_abgewiesen(klient):
+    r = klient.post("/api/bruegge/melden", content=b"{" + b"x" * 70000,
+                    headers={"Content-Type": "application/json"})
+    assert r.status_code == 413
+
+
+def test_neuere_protokollfassung_bekommt_426(klient):
+    """Damit eine neuere Brügge aufräumt und anhält, statt in einem Vertrag zu reden,
+    den niemand liest."""
+    r = klient.post("/api/bruegge/melden", json=_meldung(protokoll=2))
+    assert r.status_code == 426
+
+
+# ---------------------------------------------------------------------------------------
+# Die Drossel
+# ---------------------------------------------------------------------------------------
+
+def test_die_drossel_wirkt_sofort(klient, tmp_path):
+    """Der Takt wird bei JEDER Antwort gelesen -- ohne Deploy, ohne Client-Release."""
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    assert klient.post("/api/bruegge/melden", json=_meldung()
+                       ).json()["naechste_frage_in_s"] == 1
+
+    from app.database import get_connection, set_app_setting
+    conn = get_connection(db)
+    set_app_setting(conn, "bruegge_takt_s", "15")
+    conn.commit()
+    conn.close()
+
+    assert klient.post("/api/bruegge/melden", json=_meldung()
+                       ).json()["naechste_frage_in_s"] == 15
+
+
+def test_unsinniger_taktwert_faellt_auf_die_vorgabe_zurueck(klient, tmp_path):
+    """Ein kaputter Eintrag in app_settings darf die Brügge nicht lahmlegen."""
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    from app.database import get_connection, set_app_setting
+    conn = get_connection(db)
+    set_app_setting(conn, "bruegge_takt_s", "voellig kaputt")
+    conn.commit()
+    conn.close()
+    assert klient.post("/api/bruegge/melden", json=_meldung()
+                       ).json()["naechste_frage_in_s"] == 1

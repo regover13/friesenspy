@@ -1,0 +1,3 @@
+# Bauabfall -- das Paket entsteht aus bauen.ps1 + paket.ps1
+*.o
+*.wasm
