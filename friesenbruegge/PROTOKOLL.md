@@ -31,9 +31,12 @@ neues Paket beim Piloten.
 
 ```
 POST /api/bruegge/melden
-Authorization: Bearer <brügge-schlüssel>
 Content-Type: application/json
 ```
+
+**Kein `Authorization`-Kopf.** Die Brügge weist sich nicht aus — sie meldet eine Position, und
+der Server sucht sich den Piloten dazu (Abschnitt 5). Das ist der Kern der Entscheidung vom
+11.09.2026 und zieht sich durch das ganze Dokument.
 
 Die Brügge muss ohnehin sagen, wo sie ist, damit der Server weiß, was um sie herum stehen
 soll. Position hinauf und Objekte hinunter in einer Anfrage ist deshalb nicht gespart, sondern
@@ -146,10 +149,13 @@ Brügge laufen hatte. Die Begründung steht ausführlich in #23, Fundstück 2.
 
 #### Wie die Position zum VATSIM-Flug findet
 
-**Die Zuordnung geschieht im Server über die CID** — der Brügge-Schlüssel trägt sie
-(Abschnitt 5), und `live_positions` ist ebenfalls nach CID geschlüsselt
-(`app/database.py:77`). Die Brügge schickt **keine** Kennung des Fluges mit; sie weiß nichts
-von VATSIM, von Callsigns oder von Flugplänen.
+**Die Zuordnung entsteht im Server aus der gemeldeten Position** (Abschnitt 5) und mündet in
+eine CID — `live_positions` ist nach CID geschlüsselt (`app/database.py:77`). Die Brügge
+schickt **keine** Kennung mit: weder eine CID noch ein Callsign, weder einen Schlüssel noch
+eine Flugnummer. Sie weiß nichts von VATSIM und nichts von Flugplänen.
+
+**Das ist keine Sparsamkeit, sondern die einzige Möglichkeit.** Eine Kennung, die die Brügge
+mitschickte, müsste irgendwo auf dem Rechner des Piloten stehen — und genau das ist verworfen.
 
 **Die Rollen sind verschieden und ergänzen sich:**
 
@@ -182,6 +188,12 @@ kein VATSIM  →  { "protokoll": 1, "naechste_frage_in_s": 60, "gilt_bis_s": 0, 
 
 Keine Anzeige, keine Ablage, keine Objekte. Die Brügge räumt ab und fragt im Minutentakt
 weiter, bis der Pilot online geht.
+
+**Dieselbe Antwort gilt, wenn die Position zu niemandem passt** — der Pilot ist auf VATSIM,
+aber der Match aus Abschnitt 5 findet keinen eindeutigen Treffer. Für die Brügge ist beides
+ununterscheidbar und soll es auch sein: Sie erfährt nicht, ob sie unbekannt ist oder nur
+gerade niemand in der Nähe. **Eine Fehlermeldung wäre hier ein Werkzeug** — wer probieren
+wollte, welche erfundene Position durchgeht, bekäme vom Server die Rückmeldung dazu.
 
 **Das ist auch die Antwort auf die Lastfrage**, und es trifft genau die richtige Stelle: Die
 Prüfung ist ein Blick auf den Primärschlüssel von `live_positions` — sie steht **vor** allem
@@ -229,7 +241,6 @@ unbrauchbar ist.
 
 | Lage | Die Brügge tut |
 |---|---|
-| `401` — Schlüssel ungültig oder widerrufen | räumt auf und hält an. Kein Wiederholen. |
 | `426` — Protokollfassung zu alt | räumt auf und hält an, nennt dem Piloten die Hinweisadresse |
 | `429` — Rate-Limit | verdoppelt den Abstand bis 60 s |
 | `5xx`, Zeitüberschreitung, kein Netz | behält den letzten Sollzustand, solange `gilt_bis_s` reicht |
@@ -241,13 +252,14 @@ bleiben" eine Station, die nie verschwindet.
 
 #### `instanz` — ein Pilot kann zwei Brüggen laufen haben
 
-Ein Zufallswert, den die Brügge bei jedem Prozessstart neu zieht. **Der Schlüssel allein
-genügt nicht:** Ein Drittel der Gruppe fliegt X-Plane, manche haben beides installiert. Wer
+Ein Zufallswert, den die Brügge bei jedem Prozessstart neu zieht. **Die CID allein genügt
+nicht:** Ein Drittel der Gruppe fliegt X-Plane, manche haben beides installiert. Wer
 MSFS und X-Plane gleichzeitig laufen lässt — oder zwei Rechner benutzt — meldet sonst zwei
 Positionen unter einer CID. Der Server sähe eine springende Position und ein `steht`, das sich
 mit jeder Anfrage widerspricht.
 
-Der Server führt den Zustand je `(schlüssel, instanz)` und zeigt Doppelmeldungen im Admin an.
+Der Server führt den Zustand je `(cid, instanz)` und zeigt Doppelmeldungen im Admin an. Die
+CID stammt dabei aus dem Positionsmatch, nicht aus der Meldung.
 
 #### Die übrigen Felder
 
@@ -265,7 +277,7 @@ Feld nicht liefern, schickt sie `null`, und der Server rechnet ohne.
 ```jsonc
 {
   "protokoll": 1,
-  "naechste_frage_in_s": 10,
+  "naechste_frage_in_s": 1,        // Regeltakt, s. Abschnitt 6
   "gilt_bis_s": 300,               // so lange gilt "soll" ohne neue Auskunft
   "soll": [
     { "id": "k7-3-a", "art": "tier_gross", "lat": 53.6612, "lon": 6.9835,

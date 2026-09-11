@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import ctypes.wintypes as w
+import math
 import os
 import sys
 import time
@@ -127,6 +128,7 @@ REQ_ERZEUGEN = 4711
 REQ_LAGE = 4712
 REQ_NACHPRUEFEN = 4713
 REQ_EIGENE_LAGE = 4714
+REQ_KONTROLLE = 4715   # Kontrollspur: die eigene Lage, waehrend das Objekt beobachtet wird
 
 OBJEKT_USER = 0     # SIMCONNECT_OBJECT_ID_USER_AIRCRAFT, Header Zeile 26
 
@@ -438,6 +440,16 @@ def _pakete(sc: ctypes.WinDLL, handle, sekunden: float):
         yield zeiger.contents.dwID, zeiger
 
 
+def _abstand_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Luftlinie in Metern -- sagt beim Verschwinden, wie weit der Flieger weg war."""
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
 def _eigene_lage(sc: ctypes.WinDLL, handle) -> tuple[float, float, float] | None:
     """Wo steht das Flugzeug gerade?
 
@@ -558,6 +570,15 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
 
     _lage_abonnieren(sc, handle, objekt_id, REQ_LAGE, dauerhaft=True)
 
+    # KONTROLLSPUR -- ohne sie ist "keine Meldung mehr" mehrdeutig.
+    # Am 11.09.2026 schwieg ein Kreuzfahrtschiff auf dem Bodensee ab t=+45s, und der Lauf
+    # konnte nicht sagen, ob der Simulator das OBJEKT weggeraeumt hatte oder ob schlicht
+    # die Verbindung tot war. Dieselbe Luecke hatte der untaugliche Chiemsee-Versuch: eine
+    # Messung ohne Kontrolle misst auch das eigene Messmittel mit. Die eigene Lage laeuft
+    # deshalb daneben mit -- kommt sie weiter, waehrend das Objekt schweigt, war es das
+    # Objekt.
+    _lage_abonnieren(sc, handle, OBJEKT_USER, REQ_KONTROLLE, dauerhaft=True)
+
     if setz_hoehe is not None:
         # Die Datendefinition DEF_LAGE enthaelt lat/lon/alt in genau dieser Reihenfolge --
         # sie laesst sich also auch zum SCHREIBEN benutzen.
@@ -576,18 +597,28 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
     letzte_meldung = 0.0
     zuletzt_gesehen = None
     anzahl = 0
+    kontroll_zuletzt = None
+    kontroll_anzahl = 0
+    entfernung_m = None
     for art, zeiger in _pakete(sc, handle, halten):
         t = time.time() - start
         if art == RECV_SIMOBJECT_DATA:
             d = ctypes.cast(zeiger, ctypes.POINTER(RecvSimObjectData)).contents
+            if d.dwRequestID == REQ_KONTROLLE:
+                kontroll_anzahl += 1
+                kontroll_zuletzt = t
+                entfernung_m = _abstand_m(d.werte[0], d.werte[1], lat, lon)
+                continue
             if d.dwRequestID != REQ_LAGE:
                 continue
             anzahl += 1
             zuletzt_gesehen = t
             if t - letzte_meldung >= 10 or anzahl == 1:
                 letzte_meldung = t
+                weit = f"{entfernung_m / 1000:.1f} km" if entfernung_m is not None else "?"
                 print(f"  t=+{t:6.1f}s  {d.werte[0]:.5f} / {d.werte[1]:.5f}  "
-                      f"{d.werte[2]:7.1f} ft   (Objekt {d.dwObjectID} lebt)")
+                      f"{d.werte[2]:7.1f} ft   (Objekt {d.dwObjectID} lebt, "
+                      f"Flieger {weit} entfernt)")
         elif art == RECV_EXCEPTION:
             ex = ctypes.cast(zeiger, ctypes.POINTER(RecvException)).contents
             name = EXCEPTION_NAMEN.get(ex.dwException, "unbekannt")
@@ -597,16 +628,36 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
             break
 
     dauer = time.time() - start
+    kontrolle_traegt = (kontroll_zuletzt is not None and dauer - kontroll_zuletzt <= 5)
+    if kontroll_zuletzt is None:
+        print("")
+        print("  Kontrollspur (eigene Lage): KEINE EINZIGE Meldung.")
+    else:
+        print("")
+        print(f"  Kontrollspur (eigene Lage): {kontroll_anzahl} Meldungen, "
+              f"letzte bei t=+{kontroll_zuletzt:.1f}s.")
+
     if anzahl == 0:
-        print("\n  KEINE EINZIGE LAGEMELDUNG. Die Objekt-ID gibt es, das Objekt nicht.")
+        print("  KEINE EINZIGE LAGEMELDUNG. Die Objekt-ID gibt es, das Objekt nicht.")
         ergebnis = 4
     elif zuletzt_gesehen is not None and dauer - zuletzt_gesehen > 5:
-        print(f"\n  ABGERAEUMT: letzte Lagemeldung bei t=+{zuletzt_gesehen:.1f}s, "
-              f"danach nichts mehr ({dauer - zuletzt_gesehen:.0f}s Stille).")
-        print("  Das Objekt entstand und verschwand wieder -- wichtiger Befund.")
-        ergebnis = 5
+        # Hier entscheidet die Kontrolle, was ueberhaupt gemessen wurde.
+        if kontrolle_traegt:
+            weit = (f", Flieger {entfernung_m / 1000:.1f} km entfernt"
+                    if entfernung_m is not None else "")
+            print(f"  ABGERAEUMT: das OBJEKT schwieg ab t=+{zuletzt_gesehen:.1f}s "
+                  f"({dauer - zuletzt_gesehen:.0f}s Stille){weit} --")
+            print("  die Kontrollspur lief die ganze Zeit weiter. Der Simulator hat es")
+            print("  weggeraeumt, es lag NICHT an Verbindung oder Messmittel.")
+            ergebnis = 5
+        else:
+            print(f"  MESSUNG UNGUELTIG: beide Spuren schwiegen ab etwa "
+                  f"t=+{zuletzt_gesehen:.1f}s.")
+            print("  Damit ist NICHT gezeigt, dass das Objekt verschwand -- ebenso gut")
+            print("  war die Verbindung tot oder der Simulator pausiert. Wiederholen.")
+            ergebnis = 6
     else:
-        print(f"\n  DURCHGEHEND DA: {anzahl} Lagemeldungen ueber {dauer:.0f}s, "
+        print(f"  DURCHGEHEND DA: {anzahl} Lagemeldungen ueber {dauer:.0f}s, "
               "bis zum Schluss.")
 
     _schliessen(sc, handle)
