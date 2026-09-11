@@ -72,7 +72,15 @@ static void boot_setzen(const Lage& lage)
     pos.OnGround  = 1;
     pos.Airspeed  = 0;
 
-    HRESULT hr = SimConnect_AICreateSimulatedObject(g_sim, "Boat01", pos, REQ_BOOT);
+    // _EX1 statt der alten Fassung, mit zusaetzlichem Livery-Parameter.
+    //
+    // DAS war der Fehler (11.09.2026): Das Modul importierte
+    // SimConnect_AICreateSimulatedObject ohne Suffix -- in WASM offenbar nicht vorhanden.
+    // Ein unaufloesbarer Import laesst den Simulator das GANZE Modul verwerfen, lautlos:
+    // kein module_init, keine Meldung, kein Objekt. Aufgefallen ist es erst am Vergleich
+    // mit p42-util-gofish, einem produktiven Addon, das Objekte aus WASM setzt -- dessen
+    // Modul importiert ausschliesslich die _EX1-Fassung.
+    HRESULT hr = SimConnect_AICreateSimulatedObject_EX1(g_sim, "Boat01", "", pos, REQ_BOOT);
     melde("create_aufgerufen", (long)hr);
 }
 
@@ -91,10 +99,16 @@ void CALLBACK dispatch(SIMCONNECT_RECV* pData, DWORD cbData, void* pContext)
         auto* evt = (SIMCONNECT_RECV_EVENT*)pData;
         if (evt->uEventID == EV_SEKUNDE && !g_versucht) {
             g_versucht = true;
-            melde("fordere_lage_an", 0);
-            SimConnect_RequestDataOnSimObject(g_sim, REQ_LAGE, DEF_LAGE,
-                                              SIMCONNECT_OBJECT_ID_USER,
-                                              SIMCONNECT_PERIOD_ONCE);
+            // FESTE Koordinate statt Lage-Abfrage.
+            //
+            // Der Umweg ueber RequestDataOnSimObject scheiterte mit EXCEPTION 3
+            // (UNRECOGNIZED_ID, 11.09.2026) -- die Datendefinition kam nicht zustande, und
+            // die Rueckgabewerte von AddToDataDefinition wurden nicht geprueft. Fuer die
+            // eigentliche Frage ist die Abfrage aber gar nicht noetig: Ob ein WASM-Modul
+            // ein Objekt SETZEN kann, zeigt ein fester Punkt genauso -- und zwar ohne eine
+            // zweite Fehlerquelle dazwischen.
+            Lage fest{ 53.78721, 7.90970, 0.0 };   // Wangerooge, Standort des Probeflugs
+            boot_setzen(fest);
         }
         break;
     }
@@ -140,9 +154,12 @@ extern "C" MSFS_CALLBACK void module_init(void)
     }
 
     // Drei Doubles -- identisch zum externen Probeflug.
-    SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "PLANE LATITUDE", "degrees");
-    SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "PLANE LONGITUDE", "degrees");
-    SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "PLANE ALTITUDE", "feet");
+    // Rueckgabewerte melden -- ohne sie blieb offen, warum die spaetere Abfrage mit
+    // EXCEPTION 3 endete.
+    HRESULT d1 = SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "PLANE LATITUDE", "degrees");
+    HRESULT d2 = SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "PLANE LONGITUDE", "degrees");
+    HRESULT d3 = SimConnect_AddToDataDefinition(g_sim, DEF_LAGE, "PLANE ALTITUDE", "feet");
+    melde("datadef_hr", (long)(d1 | d2 | d3));
 
     // "1sec" feuert erst, wenn der Sim laeuft -- der Aufhaenger, um nicht im Hauptmenue
     // zu setzen.

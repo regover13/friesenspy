@@ -361,6 +361,77 @@ Die Lehre ist dieselbe wie beim ursprünglichen Skript, das die Verbindung zu fr
 messen.** Wer die 8 % geglaubt hätte, hätte den Kieker auf „höchstens eine Handvoll Objekte"
 zugeschnitten.
 
+## WASM: Ja — ein Modul im Simulator kann es auch
+
+**Spec 13.4, Frage 1 ist beantwortet.** Ein WASM-Modul im Community-Ordner startet mit dem
+Simulator, öffnet SimConnect und setzt Objekte:
+
+```
+WASM: Module modul.wasm initialized.
+[modul.wasm] [FriesenBruegge] module_init = 0
+[modul.wasm] [FriesenBruegge] open_hr = 0             SimConnect offen
+[modul.wasm] [FriesenBruegge] datadef_hr = 0
+[modul.wasm] [FriesenBruegge] open_bestaetigt = 1     der Simulator antwortet
+[modul.wasm] [FriesenBruegge] create_aufgerufen = 0
+[modul.wasm] [FriesenBruegge] ERFOLG_objekt_id = 16384
+```
+
+Das Boot war im Bild (Screenshot 12:50:56). Damit könnte die MSFS-Seite der Brügge ein reines
+Community-Paket werden: ein Ordner zum Hineinkopieren, kein Eintrag in `exe.xml`, keine
+unsignierte EXE, kein SmartScreen-Dialog.
+
+### Vier Anläufe, und der Grund war jedes Mal unsichtbar
+
+Die ersten vier Starts endeten mit **nichts** — kein Objekt, keine Meldung, keine Fehlerzeile.
+Von außen ist ein Modul, das die Validierung nicht besteht, von einem Modul, das nichts tut,
+nicht zu unterscheiden. Erst die **DevMode-Konsole** zeigte den Grund, und es waren zwei:
+
+| Meldung in der Konsole | Ursache | Abhilfe |
+|---|---|---|
+| `ERR_UNKNOWN_BLANK_IMPORT: __stack_chk_fail not found` | `clang-cl` schaltet den Buffer Security Check wie MSVC **standardmäßig ein**; die MSFS-WASM-Laufzeit kennt `__stack_chk_fail` nicht | `/GS-` und `-fno-stack-protector` |
+| `Error getting indirect function table` | Ein Callback (`SimConnect_CallDispatch`) ist ein Funktionszeiger, und der wird über die indirect function table aufgelöst | `--export-table`, dazu `--growable-table` |
+
+Beides sind **Voreinstellungen, die man nie gesetzt hat** und deshalb nicht sucht. Beide stehen
+jetzt mitsamt ihrer Fehlermeldung als Kommentar in `bauen.ps1`.
+
+### Drei eigene Fehldiagnosen, bevor die Konsole befragt wurde
+
+Erwähnenswert, weil jede plausibel klang und jede Zeit gekostet hat:
+
+1. **„Das Manifest ist zu knapp."** Falsch — `spad-bridge-module` läuft auf demselben Rechner
+   mit einem genauso knappen.
+2. **„Das Paket wird nicht geladen."** Falsch — es stand die ganze Zeit als
+   `active="Activated"` in der Paketliste. Ich hatte in die falsche `Content.xml` gesehen: Die
+   unter `LocalCache/` stammt vom Juli 2025, die maßgebliche liegt unter `LocalCache/hrsgrlw/`.
+3. **„Es fehlt `_EX1`."** Falsch als Ursache, richtig als Hinweis: Der Vergleich mit
+   `p42-util-gofish` — einem Addon, das selbst Objekte setzt — brachte die Bestätigung, dass
+   beides aus WASM geht. Der Wechsel auf `_EX1` behob den Fehler aber nicht.
+
+**Die Lehre:** Wo ein Simulator schweigt, hilft kein weiteres Raten von außen. Die Konsole hätte
+am Anfang stehen müssen, nicht nach vier Starts.
+
+### Was in WASM anders ist als im externen Programm
+
+| | extern | WASM |
+|---|---|---|
+| Objekt setzen | ✅ | ✅ |
+| `AICreateSimulatedObject` ohne Suffix | ✅ | nur `_EX1` belegt |
+| **`OnGround=1` setzt auf den Boden** | ✅ 2,0 ft | ❌ **das Boot schwebte** |
+| HTTP an `127.0.0.1` | — | ❌ nichts kam an |
+
+**Das Schweben ist ein WASM-Effekt, nicht ein `_EX1`-Effekt.** Gegenprobe extern, beide
+Fassungen, gleicher Flug: alte Fassung 2,0 ft, `_EX1` 3,6 ft — beide sauber am Boden. Dieselbe
+Struktur aus einem WASM-Modul heraus ergab ein Boot hoch in der Luft. Die Ursache ist nicht
+gemessen; naheliegend ist, dass `SIMCONNECT_DATA_INITPOSITION` bei der Übergabe aus WASM anders
+behandelt wird als bei einem x64-Aufruf. **Für die Brügge lösbar** (Höhe explizit setzen und
+nachmessen, wie sie interpretiert wird), aber es ist Arbeit, die das externe Programm nicht hat.
+
+**Der HTTP-Rückkanal blieb stumm**, obwohl dieselben Meldungen per `fprintf` in der Konsole
+standen. `fsNetworkHttpRequestGet` erreichte kein `127.0.0.1`. Das ist **kein** Beweis, dass
+WASM nicht ins Netz darf — GoFish und Flow nutzen die Funktion nachweislich erfolgreich, aber
+gegen *externe* Server (`http response received: 200` steht im selben Log). Für die Brügge, die
+`friesenspy.devprops.de` fragt, ist der lokale Fall ohnehin nicht der Anwendungsfall.
+
 ## Was daraus für den Kieker folgt
 
 Die Entscheidungsfrage ist positiv beantwortet — das Tor ist offen. Drei Dinge sind dabei

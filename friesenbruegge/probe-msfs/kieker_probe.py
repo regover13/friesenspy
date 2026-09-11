@@ -305,6 +305,13 @@ def _bindungen(sc: ctypes.WinDLL) -> None:
     sc.SimConnect_AICreateSimulatedObject.argtypes = [
         w.HANDLE, ctypes.c_char_p, InitPosition, w.DWORD,
     ]
+    # Die _EX1-Fassung nimmt zusaetzlich eine Livery. Sie ist die einzige, die ein
+    # WASM-Modul benutzen kann -- und damit die Vergleichsgroesse, wenn sich WASM und
+    # externes Programm unterschiedlich verhalten.
+    sc.SimConnect_AICreateSimulatedObject_EX1.restype = ctypes.HRESULT
+    sc.SimConnect_AICreateSimulatedObject_EX1.argtypes = [
+        w.HANDLE, ctypes.c_char_p, ctypes.c_char_p, InitPosition, w.DWORD,
+    ]
     sc.SimConnect_GetNextDispatch.restype = ctypes.HRESULT
     sc.SimConnect_GetNextDispatch.argtypes = [
         w.HANDLE, ctypes.POINTER(ctypes.POINTER(Recv)), ctypes.POINTER(w.DWORD),
@@ -434,7 +441,7 @@ def _eigene_lage(sc: ctypes.WinDLL, handle) -> tuple[float, float, float] | None
 
 def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
           dll_pfad: Path, wartesekunden: int, halten: int, nachpruefen: bool,
-          neben_mir: float | None) -> int:
+          neben_mir: float | None, ex1: bool = False) -> int:
     print(f"SimConnect.dll: {dll_pfad}")
     sc = ctypes.WinDLL(str(dll_pfad))
     _bindungen(sc)
@@ -468,8 +475,12 @@ def probe(titel: str, lat: float, lon: float, hoehe: float, am_boden: bool,
     print(f'AICreateSimulatedObject: titel="{titel}" bei {lat:.4f}/{lon:.4f}, '
           f'{hoehe:.0f} ft, OnGround={pos.OnGround} ...')
     try:
-        sc.SimConnect_AICreateSimulatedObject(handle, titel.encode("utf-8"), pos,
-                                              REQ_ERZEUGEN)
+        if ex1:
+            sc.SimConnect_AICreateSimulatedObject_EX1(handle, titel.encode("utf-8"), b"",
+                                                      pos, REQ_ERZEUGEN)
+        else:
+            sc.SimConnect_AICreateSimulatedObject(handle, titel.encode("utf-8"), pos,
+                                                  REQ_ERZEUGEN)
     except OSError as e:
         print(f"FEHLSCHLAG: Der Aufruf selbst wurde abgelehnt ({e}).")
         print("  Das hiesse: die DLL kennt die Funktion nicht -- falsche/zu alte SimConnect.dll.")
@@ -801,6 +812,8 @@ def main() -> int:
     ap.add_argument("--neben-mir", type=float, metavar="METER",
                     help="Ziel nicht aus --lat/--lon, sondern <METER> oestlich des "
                          "Flugzeugs (schliesst EXCEPTION 33 aus)")
+    ap.add_argument("--ex1", action="store_true",
+                    help="AICreateSimulatedObject_EX1 statt der alten Fassung benutzen")
     ap.add_argument("--boote-zaehlen", action="store_true",
                     help="Nur nachsehen, welche Boote im Umkreis stehen (egal von wem)")
     ap.add_argument("--radius", type=int, default=20000, metavar="METER",
@@ -822,7 +835,7 @@ def main() -> int:
         return mengentest(a.titel, a.anzahl, a.raster, dll_finden(a.dll), a.halten,
                           a.neben_mir, a.lat, a.lon)
     return probe(a.titel, a.lat, a.lon, a.hoehe, not a.frei, dll_finden(a.dll),
-                 a.warten, a.halten, not a.ohne_nachprobe, a.neben_mir)
+                 a.warten, a.halten, not a.ohne_nachprobe, a.neben_mir, a.ex1)
 
 
 if __name__ == "__main__":
