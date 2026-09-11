@@ -114,6 +114,7 @@ static char    g_kennung[40] = {0};
 static int     g_takt_s = 1;              // was der Server zuletzt vorgegeben hat
 static DWORD   g_seit_meldung = 0;
 static FsNetworkRequestId g_laufend = 0;  // 0 = keine Anfrage offen
+static DWORD   g_laufend_seit = 0;        // Sekunden -- gegen haengende Anfragen
 
 // ---------------------------------------------------------------------------------------
 // Kennung -- dauerhaft, wo es geht
@@ -270,19 +271,57 @@ static void antwort_lesen(const char* json) {
     // Anfrage verloren, holt die nächste Antwort den Zustand von allein wieder ein.
 }
 
-static void anfrage_fertig(FsNetworkRequestId id, int fehler, void*) {
+// Die Antwort kommt per CALLBACK -- und nur dort.
+//
+// Zwei Anlaeufe stecken in dieser Aufteilung, beide am 11.09.2026 im Live-Lauf gemessen:
+//
+//   1. Callback mit `if (fehler != 0) return;` -- der zweite Parameter heisst im Header
+//      `errorCode`, traegt aber den HTTP-STATUS. Damit wurde JEDE Antwort verworfen, auch
+//      die erfolgreiche. Die Bruegge sendete weiter und nahm nie zur Kenntnis, was zurueckkam.
+//
+//   2. Kein Callback, dafuer den Zustand jede Sekunde abfragen. Scheitert aus einem Grund,
+//      der im Header steht: DATA_READY ist "available only during this frame" -- bei 60 fps
+//      also rund 17 ms. Eine Abfrage im Sekundentakt verpasst ihn systematisch.
+//
+// Der Callback liest also, und die Zustandsabfrage ist nur noch WAECHTER: Sie raeumt eine
+// Anfrage weg, deren Callback ausbleibt. Ohne sie haengt eine einzige verlorene Anfrage die
+// Bruegge fuer den Rest der Sitzung auf -- auch das ist passiert, und von aussen sah es aus
+// wie ein Modul, das gar nicht geladen wurde.
+static void anfrage_fertig(FsNetworkRequestId id, int status, void*) {
     if (id != g_laufend) return;
     g_laufend = 0;
-    if (fehler != 0) return;               // 5xx, Zeitüberschreitung, kein Netz: still weiter
+    g_laufend_seit = 0;
+
+    if (status == 426) {
+        // Protokollfassung zu alt: aufraeumen und anhalten. Weiterzureden hiesse, in einem
+        // Vertrag zu reden, den auf der anderen Seite niemand mehr liest.
+        g_takt_s = 900;
+        return;
+    }
+    if (status == 429) {
+        g_takt_s = (g_takt_s * 2 > 60) ? 60 : g_takt_s * 2;   // Rate-Limit
+        return;
+    }
+    // 0 gilt mit, falls die Laufzeit doch ein Fehlerkennzeichen liefert statt eines Status.
+    if (!(status == 0 || (status >= 200 && status < 300))) return;
+
     unsigned long n = fsNetworkHttpRequestGetDataSize(id);
     unsigned char* daten = fsNetworkHttpRequestGetData(id);
     if (!daten || n == 0) return;
-    // "available only during this frame" -- also jetzt lesen, nicht später.
     static char kopie[4096];
     unsigned long m = (n < sizeof(kopie) - 1) ? n : sizeof(kopie) - 1;
     std::memcpy(kopie, daten, m);
     kopie[m] = '\0';
     antwort_lesen(kopie);
+}
+
+// Der Waechter. Er liest NICHTS -- dafuer ist der Callback da -- er raeumt nur auf.
+static void anfrage_bewachen() {
+    if (g_laufend == 0) return;
+    if (++g_laufend_seit <= 30) return;
+    fsNetworkHttpCancelRequest(g_laufend);
+    g_laufend = 0;
+    g_laufend_seit = 0;
 }
 
 static void melden() {
@@ -302,6 +341,7 @@ static void melden() {
     p.dataSize = (unsigned int)std::strlen(puffer);
 
     g_laufend = fsNetworkHttpRequestPost(BRUEGGE_URL, &p, anfrage_fertig, nullptr);
+    g_laufend_seit = 0;
     g_spur_anzahl = 0;                     // was mitging, ist mitgegangen
 }
 
@@ -312,6 +352,7 @@ static void melden() {
 static void sekunde() {
     ++g_sekunden;
     kennung_pruefen();
+    anfrage_bewachen();
     if (!g_lage_gueltig) return;
 
     // Ein SPRUNG ist kein Flug. Nach dem Start liefert der Simulator erst 0/90, dann Seattle,
