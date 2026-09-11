@@ -99,7 +99,7 @@ Nicht am Gerät nachgesehen, nur aus allgemeiner Kenntnis; **vor jeder Planung z
 
 | Frage | MSFS 2020 + 2024 | X-Plane |
 |---|---|---|
-| Objekte zur Laufzeit setzen | `SimConnect_AICreateSimulatedObject` — **gemessen**, 400 Stück ohne Ruckeln | `XPLMInstance` (`XPLMCreateInstance` + `XPLMLoadObject`) — Doku, ungemessen |
+| Objekte zur Laufzeit setzen | `SimConnect_AICreateSimulatedObject` — **in 2024 und 2020 gemessen**, sichtbar, 400 Stück ohne Ruckeln | `XPLMInstance` (`XPLMCreateInstance` + `XPLMLoadObject`) — Doku, ungemessen |
 | Objekt benennen | Container-Titel (`Boat01`) — **gemessen** | Pfad (`…/dynamic/SailBoat.obj`) oder Bibliotheks-Pfad — Doku |
 | Eigenes 3D-Modell nötig? | **nein** — Boote liegen bei | **nein** — Boote liegen bei (s. u.) |
 | Lebensdauer der Objekte | **nur solange die Verbindung offen ist** — gemessen | Instanz gehört dem Plugin, das ohnehin läuft — Doku |
@@ -144,6 +144,17 @@ SimConnect_Open: verbunden.
 Verbindung, Container-Titel `Boat01`, Objektlebensdauer, Sterben beim `Close` — **alles
 identisch zu MSFS 2024**. Damit ist „ein Adapter für beide" nicht mehr hergeleitet, sondern
 gemessen. Zwei DLLs mitzuliefern erübrigt sich.
+
+**Auch die Sichtbarkeit ist belegt**, und das war nötig: Beim ersten Versuch (`Boat01`, 40 s,
+200 m entfernt) hat der Pilot **nichts gesehen** — ein kleines Motorboot auf einem Grasplatz
+ist leicht zu übersehen, und die Zeit war knapp. Das sah für einen Moment nach dem
+schlimmsten Fall aus: Sim führt das Objekt, zeichnet es aber nicht. Zweiter Versuch mit
+`CruiseShip01`, 150 m entfernt, zehn Minuten Standzeit — Screenshot 10:47:13 zeigt ein
+vollständig texturiertes Kreuzfahrtschiff mit Schattenwurf auf der Graspiste von Wangerooge,
+neben zwei geparkten Maschinen.
+
+**Lehre für jede weitere Sichtprüfung:** groß, nah und lange. Ein „nichts gesehen" bei einem
+kleinen Objekt mit kurzer Standzeit ist kein Befund, sondern eine zu knappe Gelegenheit.
 
 Zwei Randbeobachtungen: Die Objekt-IDs sind in MSFS 2020 klein (445, 463) statt achtstellig wie
 in 2024 — kein Verlass auf Wertebereiche. Und der allererste Lauf lieferte nur **eine**
