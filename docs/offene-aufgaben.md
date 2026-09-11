@@ -128,8 +128,27 @@ Drei Befunde aus dem Probeflug, die zusammen deutlich sind:
 - **SimConnect verbindet sich zu dem Simulator, der läuft.** Ein über `exe.xml` mitgestartetes
   Programm findet den, der es gestartet hat.
 
-**Ungeprüft:** ob die 2024er DLL auch gegen MSFS 2020 verbindet. In fünf Minuten messbar,
-sobald jemand MSFS 2020 startet. Falls nicht, liefert man beide DLLs mit — 79 und 67 KB.
+**Am 11.09.2026 nachgemessen — es gilt auch praktisch.** MSFS 2020 gestartet, die **2024er**
+DLL dagegen laufen lassen:
+
+```
+SimConnect.dll: C:\MSFS 2024 SDK\SimConnect SDK\lib\SimConnect.dll
+SimConnect_Open: verbunden.
+  Flugzeug steht bei 53.78633 / 7.91037, 10 ft.
+  ERFOLG: Objekt-ID 463 (Anfrage 4711).
+  t=+  31.6s  53.78633 / 7.91341      0.0 ft   (Objekt 463 lebt)
+  DURCHGEHEND DA: 40 Lagemeldungen ueber 40s, bis zum Schluss.
+  WEG: EXCEPTION 3 -- UNRECOGNIZED_ID
+```
+
+Verbindung, Container-Titel `Boat01`, Objektlebensdauer, Sterben beim `Close` — **alles
+identisch zu MSFS 2024**. Damit ist „ein Adapter für beide" nicht mehr hergeleitet, sondern
+gemessen. Zwei DLLs mitzuliefern erübrigt sich.
+
+Zwei Randbeobachtungen: Die Objekt-IDs sind in MSFS 2020 klein (445, 463) statt achtstellig wie
+in 2024 — kein Verlass auf Wertebereiche. Und der allererste Lauf lieferte nur **eine**
+Lagemeldung; der unmittelbar folgende war normal. Vermutlich lud der Simulator noch. Wer
+gleich nach dem Start misst, sollte einen zweiten Lauf machen, bevor er etwas daraus schließt.
 
 ### X-Plane braucht kein eigenes 3D-Modell (recherchiert 11.09.2026, nicht gemessen)
 
