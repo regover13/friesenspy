@@ -128,6 +128,32 @@ trotzdem nichts zeichnen. Also per Slew oder im Anflug hin:
 - Liegt es nach **zwei Minuten immer noch** da? (Die KI-Engine räumt manches wieder ab.)
 - Liegt es **auf** dem Wasser oder darin/darüber?
 
+### Schritt 4 — NUR wenn Schritt 3 geklappt hat: läuft so etwas unbemerkt?
+
+Diese Frage ist am 11.09.2026 dazugekommen und **zweitrangig** — sie lohnt sich erst, wenn
+ein Objekt nachweislich entsteht. Dann aber entscheidet sie über den Zuschnitt des Pakets.
+
+Hintergrund: Wenn der Spawner ohne Zutun des Piloten läuft, kann er **auch die Position an
+den Server melden** (Issue #23) — besser als die EFB-App, die dafür geöffnet sein muss. Dann
+gäbe es ein Paket statt zwei. Das setzt aber voraus, dass er von selbst startet und niemanden
+stört.
+
+Drei Teilfragen, alle billig zu beantworten:
+
+1. **Gibt es `exe.xml` in MSFS 2024 noch?** Nachsehen, ob die Datei existiert und ob etwas
+   darin steht:
+   `%APPDATA%\Microsoft Flight Simulator 2024\exe.xml` — und die 2020er-Pfade zum Vergleich.
+   Existiert sie samt Einträgen anderer Addons, ist der Weg lebendig.
+2. **Startet ein Eintrag wirklich mit?** Einen harmlosen Test eintragen (etwas, das nur eine
+   Datei mit Zeitstempel schreibt), Sim starten, nachsehen ob die Datei da ist.
+3. **Sieht der Pilot etwas davon?** Konsolenfenster? Windows-Defender- oder
+   SmartScreen-Meldung bei einer unsignierten Datei? Das ist kein Schönheitsfehler —
+   es entscheidet, ob man das Clubmitgliedern zumuten kann.
+
+**Bitte nichts bauen, nur nachsehen und berichten.** Und: **kein Eintrag in `exe.xml` darf
+stehen bleiben**, der nicht bewusst dort hingehört — die Datei startet Programme bei jedem
+Simulatorstart.
+
 ## Die wahrscheinlichen Stolpersteine, mit Gegenmittel
 
 | Symptom | Vermutung | Was zu probieren ist |
