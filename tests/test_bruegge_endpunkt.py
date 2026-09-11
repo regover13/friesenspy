@@ -295,3 +295,35 @@ def test_der_endpunkt_antwortet_auch_ohne_anmeldung(klient, tmp_path):
     """Die Gegenprobe zum Test darüber, über den echten Aufruf statt über die Liste."""
     r = klient.post("/api/bruegge/melden", json=_meldung())
     assert r.status_code == 200, "kein 401 -- die Brügge kann sich nicht anmelden"
+
+
+def test_die_hoehenschranke_laeuft_der_vatsim_hoehe_nach(klient, tmp_path):
+    """Der Abfang-Moment, als Test festgehalten (11.09.2026, erster Flug).
+
+    Maßgeblich ist nicht die *jetzige* Steigrate, sondern die von vor 16–29 Sekunden — so alt
+    ist die VATSIM-Höhe, mit der verglichen wird. Beim Abfangen geht die jetzige schlagartig
+    auf null, und genau dann ist die Differenz am größten.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+
+    # Steigflug: 1200 ft/min, der Sim ist 580 ft über der VATSIM-Höhe (5 ft).
+    steigend = _meldung()
+    steigend["lage"]["vs_ft_min"] = 1200.0
+    steigend["lage"]["alt_msl_ft"] = 585.0
+    assert klient.post("/api/bruegge/melden", json=steigend
+                       ).json()["naechste_frage_in_s"] == 1
+
+    # Abgefangen: Steigrate null, Höhendifferenz noch da. Ohne Nachlauf risse es hier.
+    abgefangen = _meldung()
+    abgefangen["lage"]["vs_ft_min"] = 0.0
+    abgefangen["lage"]["alt_msl_ft"] = 585.0
+    assert klient.post("/api/bruegge/melden", json=abgefangen
+                       ).json()["naechste_frage_in_s"] == 1, \
+        "die Schranke muss der VATSIM-Höhe nachlaufen"
+
+    from app.database import get_connection, bruegge_zuordnung_holen
+    conn = get_connection(db)
+    z = bruegge_zuordnung_holen(conn, "a3f9c1e0b2d48576")
+    conn.close()
+    assert z is not None and z["verstoesse"] == 0

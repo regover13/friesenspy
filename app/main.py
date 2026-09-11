@@ -94,6 +94,7 @@ from app.database import (
     bruegge_zuordnung_holen,
     bruegge_zuordnung_setzen,
     bruegge_zuordnung_bestaetigen,
+    bruegge_vs_spitze_merken,
     bruegge_zuordnung_verstoss,
     bruegge_zuordnung_loesen,
     bruegge_position_schreiben,
@@ -765,6 +766,29 @@ def _bruegge_antwort(takt: int, soll=None, gilt_bis: int | None = None) -> dict:
     }
 
 
+def _bruegge_vs_spitze(gemerkt) -> float:
+    """Die groesste Steigrate der letzten 30 s -- oder 0, wenn sie zu alt ist.
+
+    30 s deckt die VATSIM-Latenz ab (gemessen rund 16 s, im Kniebrett mit 29 s angesetzt).
+    Danach ist die alte Rate gegenstandslos: Die VATSIM-Hoehe hat den Steigflug dann
+    eingeholt, und die Schranke darf sich wieder zusammenziehen.
+    """
+    if not gemerkt or gemerkt.get("vs_spitze_ft_min") in (None, ""):
+        return 0.0
+    stempel = gemerkt.get("vs_spitze_am")
+    if not stempel:
+        return 0.0
+    try:
+        t = datetime.fromisoformat(str(stempel).replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=_timezone.utc)
+    if (datetime.now(_timezone.utc) - t).total_seconds() > 30:
+        return 0.0
+    return abs(float(gemerkt["vs_spitze_ft_min"]))
+
+
 def _bruegge_sekunden_her(gemerkt) -> float:
     """Wie lange ist die letzte ANGENOMMENE Meldung dieser Kennung her?
 
@@ -886,6 +910,10 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
     # Ladevorgang, Slew oder Flugwechsel. Solche Punkte gehoeren weder in die Ablage noch in
     # den Track: Nach dem Start eines Simulators kommt erst 0/90, dann Seattle, dann der
     # geladene Flug -- und jeder dieser Werte sieht fuer sich vernuenftig aus.
+    # Die Hoehenschranke laeuft der VATSIM-Hoehe NACH: Die ist 16-29 s alt, also zaehlt die
+    # Steigrate von damals. Beim Abfangen ist die jetzige null -- und genau dann ist die
+    # Differenz am groessten. Deshalb gilt die groesste Rate der letzten 30 Sekunden.
+    vs_wirksam = max(abs(vs_ft_min), _bruegge_vs_spitze(gemerkt))
     sekunden_her = _bruegge_sekunden_her(gemerkt)
     if gemerkt and bruegge.ist_sprung(lat, lon, gemerkt.get("vor_lat"), gemerkt.get("vor_lon"),
                                       sekunden_her, gs_kt):
@@ -898,8 +926,9 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         cid = int(gemerkt["cid"])
         partner = next((k for k in kandidaten if k.cid == cid), None)
         if partner is not None and bruegge.bleibt_plausibel(lat, lon, alt_ft, gs_kt, partner,
-                                                            vs_ft_min):
+                                                            vs_wirksam):
             bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
+            bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
             return cid, True
         # Der Partner ist fort (ausgeloggt) oder die Position passt nicht mehr. Geloest wird
         # erst nach mehreren Verstoessen IN FOLGE -- ein einzelner Ausreisser loest nichts.
@@ -914,7 +943,7 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
         return None, True
 
     # --- Erstzuordnung -----------------------------------------------------------------
-    treffer, grund = bruegge.zuordnen(lat, lon, alt_ft, gs_kt, kandidaten, vs_ft_min)
+    treffer, grund = bruegge.zuordnen(lat, lon, alt_ft, gs_kt, kandidaten, vs_wirksam)
     if treffer is None and kandidaten:
         # Nur wenn es ueberhaupt Friesen in der Luft gab -- sonst ist "niemand passt" der
         # Normalfall und faellt nicht auf. Mit Kandidaten ist es ein Hinweis, und ohne diese
@@ -929,6 +958,7 @@ def _bruegge_zuordnen(conn, kennung: str, lat: float, lon: float, alt_ft: float,
     if kennung:
         bruegge_zuordnung_setzen(conn, kennung, treffer.cid, simulator)
         bruegge_zuordnung_bestaetigen(conn, kennung, lat, lon)
+        bruegge_vs_spitze_merken(conn, kennung, vs_ft_min)
     return treffer.cid, True
 
 

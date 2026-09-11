@@ -665,7 +665,16 @@ CREATE TABLE IF NOT EXISTS bruegge_zuordnung (
     -- Slew, Flugwechsel). Ohne sie liefe der Match gegen Seattle, wenn ein Simulator gerade
     -- startet, und der Track bekaeme einen Sprung ueber 8.000 km.
     vor_lat      REAL,
-    vor_lon      REAL
+    vor_lon      REAL,
+    -- Die groesste Steig-/Sinkrate der letzten Sekunden, mit Zeitstempel.
+    --
+    -- Gebraucht, weil die Hoehenschranke der VATSIM-Hoehe NACHLAUFEN muss: Die ist 16-29 s
+    -- alt, also zaehlt die Rate von DAMALS, nicht die von jetzt. Beim Abfangen geht die
+    -- jetzige schlagartig auf null und die Schranke schrumpft auf 300 ft -- genau in dem
+    -- Augenblick, in dem die Differenz am groessten ist. Gemessen am 11.09.2026 im ersten
+    -- Flug, als einzelner Aussetzer ("kein Kandidat innerhalb 3712 m / 300 ft").
+    vs_spitze_ft_min REAL,
+    vs_spitze_am     TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_bruegge_zuordnung_cid ON bruegge_zuordnung(cid);
@@ -779,6 +788,17 @@ _PANEL_DIAG_MIGRATIONS = [
     # Docstring) -- gerade die Faelle, in denen die Anmeldung scheitert, sollen meldbar
     # bleiben. Steht kein Sitzungs-Cookie an, bleibt die Spalte leer.
     "ALTER TABLE panel_diag ADD COLUMN cid INTEGER",
+]
+
+# Die Bruegge-Tabellen sind am 11.09.2026 entstanden und wachsen noch -- eine Aenderung am
+# CREATE TABLE erreicht eine bestehende Datenbank NICHT (IF NOT EXISTS legt nichts nach).
+_BRUEGGE_MIGRATIONS = [
+    # Die groesste Steigrate der letzten Sekunden. Die Hoehenschranke muss der VATSIM-Hoehe
+    # nachlaufen: Die ist 16-29 s alt, also zaehlt die Rate von damals. Beim Abfangen ist die
+    # jetzige null und die Schranke schrumpft auf 300 ft -- genau dann, wenn die Differenz am
+    # groessten ist (im ersten Flug als einzelner Aussetzer gemessen).
+    "ALTER TABLE bruegge_zuordnung ADD COLUMN vs_spitze_ft_min REAL",
+    "ALTER TABLE bruegge_zuordnung ADD COLUMN vs_spitze_am TEXT",
 ]
 
 _VISIBILITY_MIGRATIONS = [
@@ -985,6 +1005,11 @@ def init_db(db_path: str) -> None:
             except sqlite3.OperationalError:
                 pass
         for stmt in _TRANSPORT_MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        for stmt in _BRUEGGE_MIGRATIONS:
             try:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
@@ -2433,11 +2458,12 @@ def bruegge_zuordnung_holen(conn: sqlite3.Connection, kennung: str) -> dict | No
     """Die gemerkte Zuordnung einer Kennung -- oder ``None``."""
     if not kennung:
         return None
+    # SELECT * und nicht eine Spaltenliste: Die Tabelle waechst noch, und eine vergessene
+    # Spalte faellt hier nicht als Fehler auf -- sie kommt schlicht als None an und die
+    # Rechnung daneben wird still falsch. Genau so ist vs_spitze_ft_min beim ersten Anlauf
+    # wirkungslos geblieben (11.09.2026).
     row = conn.execute(
-        "SELECT kennung, cid, simulator, zugeordnet_am, gesehen_am, verstoesse, "
-        "       vor_lat, vor_lon "
-        "FROM bruegge_zuordnung WHERE kennung = ?",
-        (kennung,),
+        "SELECT * FROM bruegge_zuordnung WHERE kennung = ?", (kennung,)
     ).fetchone()
     return _row_to_dict(row) if row else None
 
@@ -2465,6 +2491,29 @@ def bruegge_zuordnung_bestaetigen(conn: sqlite3.Connection, kennung: str,
         "WHERE kennung = ?",
         (_now_utc(), float(lat), float(lon), kennung),
     )
+
+
+def bruegge_vs_spitze_merken(conn: sqlite3.Connection, kennung: str,
+                             vs_ft_min: float) -> None:
+    """Die groesste Steig-/Sinkrate festhalten -- aber nur, wenn sie groesser ist (kein commit).
+
+    Der Zeitstempel wird dabei IMMER mitgezogen, sonst altert eine einmal gesehene Spitze nie
+    aus. Ein kurzer Ausschlag soll die Schranke ein paar Sekunden weit halten, nicht fuer den
+    Rest des Fluges.
+    """
+    if not kennung:
+        return
+    row = conn.execute(
+        "SELECT vs_spitze_ft_min FROM bruegge_zuordnung WHERE kennung = ?", (kennung,)
+    ).fetchone()
+    alt_wert = abs(float(row[0])) if row and row[0] is not None else 0.0
+    neu = abs(float(vs_ft_min or 0.0))
+    if neu >= alt_wert:
+        conn.execute(
+            "UPDATE bruegge_zuordnung SET vs_spitze_ft_min = ?, vs_spitze_am = ? "
+            "WHERE kennung = ?",
+            (neu, _now_utc(), kennung),
+        )
 
 
 def bruegge_zuordnung_verstoss(conn: sqlite3.Connection, kennung: str) -> int:
