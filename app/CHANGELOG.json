@@ -8,7 +8,8 @@
       "🌉 Die Sim-Brügge meldete bisher brav zurück, ob ein angefordertes Objekt tatsächlich im Simulator steht — der Server hat diese Antwort aber weggeworfen. Jetzt wird sie ausgewertet und im Admin angezeigt.",
       "🦭 Das ist mehr als Kosmetik: Ohne die Rückmeldung könnte später eine Station für ein Event angelegt werden, die es im Simulator gar nicht gibt — und jemand fliegt hin und findet nichts. Gemeldet wird auch der Grund, wenn das Hinstellen scheitert.",
       "🔧 Weiterhin nichts davon zu sehen: Das Paket ist nicht verteilt, die Karte zeigt die VATSIM-Positionen.",
-      "🧹 Und die Rückmeldungen räumen sich selbst wieder weg, wenn eine Brügge sich verabschiedet — sonst bliebe für jeden Simulator, der je gemeldet hat, eine Zeile liegen, die niemand mehr bestätigt."
+      "🧹 Und die Rückmeldungen räumen sich selbst wieder weg, wenn eine Brügge sich verabschiedet — sonst bliebe für jeden Simulator, der je gemeldet hat, eine Zeile liegen, die niemand mehr bestätigt.",
+      "📻 Und die Brügge sagt jetzt Bescheid, wenn eine Antwort des Servers zu groß für sie war — statt sie stillschweigend halb zu lesen. Sie behält dann lieber ihren letzten Stand, und im Server-Log steht, wie viel zu viel es war."
     ]
   },
   {
