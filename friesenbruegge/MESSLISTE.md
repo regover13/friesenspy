@@ -118,6 +118,40 @@ tatsächlichen abweicht.
 
 ---
 
+## 2b. Der Referenzpunkt eines Modells liegt NICHT am Boden
+
+> ### ✅ Gemessen am 12.09.2026 — mit zwei Booten im selben Bild
+>
+> Ein `boot_klein` auf Geländehöhe und eines 10 ft darüber, nebeneinander:
+>
+> | | Was zu sehen ist |
+> |---|---|
+> | 10 ft über Grund | komplettes Motorboot — Rumpf, Deck, Verdeck |
+> | auf Geländehöhe | **nur Verdeck und Streben** — der Rumpf steckt im Boden |
+>
+> **Der Referenzpunkt eines Bootsmodells liegt an der Wasserlinie, nicht am Kiel.** Wird es
+> auf Geländehöhe gesetzt, verschwindet alles darunter im Boden — bei `Boat01` rund
+> anderthalb Meter.
+>
+> ⚠ **Und der Simulator meldet dabei nichts Auffälliges:** Die zurückgegebene `hoehe_ft` ist
+> die des Referenzpunkts, und die stimmt. Aus den Zahlen allein ist das Versenken **nicht**
+> zu erkennen — es brauchte den Blick aus dem Cockpit. Das ist die Gegenrichtung zur Lehre
+> von Punkt 3b (*der Simulator weiß es besser als das Auge*): Hier weiß das Auge es besser.
+> Beide Prüfungen sehen verschiedene Dinge, und keine ersetzt die andere.
+>
+> **Folge für den Kieker — zwei Regeln:**
+>
+> 1. „Auf Geländehöhe setzen" heißt **nicht** „steht auf dem Boden". Jede Gattung hat ihren
+>    eigenen Referenzpunkt; ein Tier steht auf den Pfoten, ein Boot auf der Wasserlinie.
+> 2. `erwartete_hoehe_ft` ist der Hebel dagegen — **nachweislich exakt**: 1388,2 ft
+>    angefordert, 1388,2 ft gesetzt. Damit kann der Server einen Versatz je Gattung vorgeben.
+>
+> **Offen:** der Versatz je Gattung ist nicht vermessen. Für `boot_klein` liegt er bei rund
+> 4–5 ft; für `tier_gross`, `bauwerk` und `fahrzeug` ist er unbekannt. Das ist eine
+> Stand-Messung und braucht keinen Flug.
+
+---
+
 ## 3. Räumt sie ab, was aus `soll` verschwindet?
 
 Im Admin auf „wegnehmen" klicken. Innerhalb eines Takts (1 s) verschwindet das Objekt aus
