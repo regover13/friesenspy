@@ -169,6 +169,31 @@ lag — genau das hat den 12.09. gekostet.
 
 ---
 
+## 3c. Ein Objekt VERSETZEN — gefunden am 12.09.2026, behoben in 1.1.3
+
+> ### ⚠ Der Server konnte ein Objekt nicht verschieben — und merkte es nicht
+>
+> Ein Bär wurde unter **derselben `id`** 5 m weiter östlich angefordert. Er rührte sich
+> nicht: `seit_s` lief unverändert auf **1725** weiter, statt bei null neu zu beginnen.
+>
+> **Die Ursache steht in `soll_abgleichen`:** Ist `erzeugt_gerufen` gesetzt, läuft der
+> Erzeugungspfad nicht mehr. Die neue Koordinate wurde übernommen und nie verwendet — ein
+> bereits erzeugtes Objekt lässt sich nicht nachträglich verschieben.
+>
+> **Das ist ein stiller Fehler der schlimmsten Sorte:** Die Brügge meldet `zustand: steht`,
+> der Server hält das Objekt für umgesetzt, und alles sieht richtig aus. Nur steht es am
+> alten Ort. Für den Kieker hieße das eine Station, die dort ist, wo sie letzte Woche war.
+>
+> **Behoben in 1.1.3:** Ändert der Server Ort, Ausrichtung oder Gattung eines stehenden
+> Objekts, wird es entfernt und neu gesetzt. Die Schranke ist bewusst grob (~1 m, 1°) — sie
+> soll eine **Absicht** erkennen, kein Rundungsrauschen; sonst flackert das Objekt bei jeder
+> Meldung.
+>
+> **Nach dem Neustart zu prüfen:** Bär unter derselben `id` versetzen → `seit_s` beginnt bei
+> null, und er steht 5 m weiter.
+
+---
+
 ## 4. Was passiert bei einer unbekannten Gattung?
 
 > ### ✅ Gemessen am 12.09.2026 — sie meldet, statt zu raten

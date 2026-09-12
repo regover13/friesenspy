@@ -48,7 +48,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.1.2"
+#define BRUEGGE_VERSION   "1.1.3"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -484,15 +484,65 @@ static void soll_abgleichen(const char* json) {
             o.belegt = true;
             o.seit_s = g_sekunden;
         }
-        json_text_in(e, "art", o.art, sizeof(o.art));
-        o.lat  = json_zahl_in(e, "lat", o.lat);
-        o.lon  = json_zahl_in(e, "lon", o.lon);
-        o.kurs = json_zahl_in(e, "kurs", 0.0);
-        bool hat = false;
-        double h = json_zahl_in(e, "erwartete_hoehe_ft", 0.0, &hat);
+        // Die neuen Werte erst NEBEN die alten legen, nicht darueber -- sonst laesst sich
+        // nicht mehr feststellen, ob sich etwas geaendert hat.
+        char   n_art[24] = {0};
+        json_text_in(e, "art", n_art, sizeof(n_art));
+        double n_lat  = json_zahl_in(e, "lat", o.lat);
+        double n_lon  = json_zahl_in(e, "lon", o.lon);
+        double n_kurs = json_zahl_in(e, "kurs", 0.0);
+        bool   hat = false;
+        double n_hoehe = json_zahl_in(e, "erwartete_hoehe_ft", 0.0, &hat);
+
+        // UMSETZEN: Aendert der Server Ort, Ausrichtung oder Gattung eines Objekts, das schon
+        // dasteht, muss es weg und neu hin. Ein bereits erzeugtes Objekt laesst sich nicht
+        // nachtraeglich verschieben -- `AICreateSimulatedObject` legt es an, danach steht es.
+        //
+        // Ohne diese Pruefung passierte GAR NICHTS: `erzeugt_gerufen` war true, also lief der
+        // Erzeugungspfad nicht mehr, und die neue Koordinate wurde nur gemerkt. Der Server
+        // sah `zustand: steht` und hielt das Objekt fuer umgesetzt -- es stand aber am alten
+        // Ort. Gemessen am 12.09.2026: Ein Baer wurde um 5 m versetzt angefordert und ruehrte
+        // sich nicht (`seit_s` lief unveraendert auf 1725 weiter, statt bei null neu zu
+        // beginnen).
+        //
+        // Fuer den FriesenKieker waere das ein stiller Fehler der schlimmsten Sorte: Eine
+        // verschobene Station meldet "steht", und alles sieht richtig aus. Nur ist sie
+        // woanders.
+        //
+        // Die Schranke ist bewusst grob (rund 1 m in der Breite, 1 Grad im Kurs): Sie soll
+        // eine ABSICHT des Servers erkennen, nicht Rundungsrauschen im JSON -- sonst wird ein
+        // Objekt bei jeder Meldung neu gesetzt, und das ist genau das Flackern, das die
+        // Sollzustands-Idee vermeiden soll.
+        const double GRAD_1M = 0.000009;   // 1 m in Breitengrad
+        bool versetzt = o.erzeugt_gerufen && (
+            (o.lat - n_lat >  GRAD_1M) || (n_lat - o.lat >  GRAD_1M) ||
+            (o.lon - n_lon >  GRAD_1M) || (n_lon - o.lon >  GRAD_1M) ||
+            (o.kurs - n_kurs > 1.0)    || (n_kurs - o.kurs > 1.0)    ||
+            (n_art[0] && std::strcmp(o.art, n_art) != 0));
+
+        std::snprintf(o.art, sizeof(o.art), "%s", n_art);
+        o.lat = n_lat;
+        o.lon = n_lon;
+        o.kurs = n_kurs;
         o.hat_hoehe = hat;
-        o.erwartete_hoehe_ft = h;
+        o.erwartete_hoehe_ft = n_hoehe;
         o.in_soll = true;
+
+        if (versetzt) {
+            // Wegnehmen und beim Durchlauf unten gleich neu erzeugen. `objekt_entfernen`
+            // loescht den Platz komplett, deshalb die Angaben danach wieder eintragen.
+            objekt_entfernen(i);
+            std::snprintf(o.id,  sizeof(o.id),  "%s", id);
+            std::snprintf(o.art, sizeof(o.art), "%s", n_art);
+            o.belegt = true;
+            o.in_soll = true;
+            o.lat = n_lat;
+            o.lon = n_lon;
+            o.kurs = n_kurs;
+            o.hat_hoehe = hat;
+            o.erwartete_hoehe_ft = n_hoehe;
+            o.seit_s = g_sekunden;
+        }
 
         e = json_naechstes(e);
     }
