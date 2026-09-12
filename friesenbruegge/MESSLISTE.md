@@ -314,6 +314,46 @@ gehören aber zur alten Position des Piloten.)
 
 ---
 
+## 5c. EINE Geländehöhe für ein ganzes Feld taugt nicht — ✅ gesehen am 12.09.2026
+
+> Der Mengentest (5b) lieferte den Beleg nebenbei mit. Zwölf Boote in einem Raster von
+> 180 × 180 m, **alle auf dieselbe Höhe gesetzt** (1386,4 ft — die Bodenhöhe unter dem
+> Flugzeug), **alle melden 1386,4 ft zurück**. Im Bild:
+>
+> | Boot | |
+> |---|---|
+> | eines | bis zum Verdeck **im Boden** |
+> | eines | steht sauber |
+> | eines | **schwebt** über dem Gras |
+>
+> **Die Wiese ist nicht flach.** Über 200 m ändert sich das Gelände um mehrere Fuß, und die
+> Brügge setzt alles auf eine einzige Höhe, weil sie nur die unter dem Flugzeug kennt
+> (`gelaendehoehe()` = `PLANE ALTITUDE − PLANE ALT ABOVE GROUND`).
+>
+> **Drei Befunde dieses Abends greifen hier ineinander:**
+>
+> 1. Die Geländehöhe gilt nur am Flugzeug — schon 100 m weiter ist sie falsch (5c)
+> 2. Die Rückmeldung ist ein Echo und deckt den Fehler nicht auf (Punkt 2, Gegenprobe)
+> 3. Der Referenzpunkt des Modells kommt obendrauf (Punkt 2b)
+>
+> ### ⚠ Das ist die zentrale offene Frage für den FriesenKieker
+>
+> **Der Server muss die Geländehöhe je Station kennen**, sonst stehen Robben mal im Watt und
+> mal in der Luft. `erwartete_hoehe_ft` ist der Weg dorthin und wirkt exakt — **woher die
+> Zahl kommt, ist offen.** Drei denkbare Wege, keiner gemessen:
+>
+> | Weg | Haken |
+> |---|---|
+> | Höhenmodell auf dem Server (DEM/SRTM) | weicht vom MSFS-Gelände ab; wie stark, ist unbekannt |
+> | Die Brügge fragt am Zielort nach und meldet zurück | braucht einen neuen Rückkanal; der Pilot muss hinfliegen |
+> | Nur dort setzen, wo der Pilot schon ist | widerspricht „der Server darf einmal verteilen" |
+>
+> **Am Wattenmeer entschärft sich das Problem:** Dort ist das Gelände flach und liegt nahe
+> null. Für den Kieker auf den Friesischen Inseln ist das womöglich gar keine Hürde — das ist
+> aber eine Vermutung und gehört dort gemessen, nicht hier.
+
+---
+
 ## 5b. Wie viele Objekte auf einmal? — ✅ gemessen am 12.09.2026
 
 > **Zwölf `boot_klein` in EINEM `soll`-Durchlauf angefordert: 12 gesetzt, 12 gezählt, 0 Fehler.**
