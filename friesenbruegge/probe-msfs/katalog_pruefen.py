@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import http.cookiejar
 import json
 import math
 import sys
@@ -62,21 +63,37 @@ from kieker_probe import (
 REQ_BASIS = 7000
 
 
-def _holen(server: str, passwort: str, anzahl: int) -> list[dict]:
+def anmelden(server: str, passwort: str):
+    """Erst anmelden, dann arbeiten.
+
+    ⚠ Das Passwort als Cookie zu schicken reicht NICHT: `require_admin` prueft ein SIGNIERTES
+    Token, nicht das Passwort (12.09.2026: `401 Admin-Login erforderlich`). Der Login-Endpunkt
+    setzt das Token als httponly-Cookie, ein `CookieJar` nimmt es entgegen.
+    """
+    jar = http.cookiejar.CookieJar()
+    oeffner = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    req = urllib.request.Request(
+        server.rstrip("/") + "/api/admin/login",
+        data=json.dumps({"password": passwort}).encode("utf-8"),
+        method="POST", headers={"Content-Type": "application/json"})
+    with oeffner.open(req, timeout=30) as r:
+        r.read()
+    return oeffner
+
+
+def _holen(oeffner, server: str, anzahl: int) -> list[dict]:
     url = (server.rstrip("/")
            + f"/api/admin/bruegge/katalog?simulator=msfs2024&offen=true&grenze={anzahl}")
-    req = urllib.request.Request(url, headers={"Cookie": "fs_admin=" + passwort})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with oeffner.open(urllib.request.Request(url), timeout=60) as r:
         return json.load(r).get("eintraege", [])
 
 
-def _melden(server: str, passwort: str, ergebnisse: list[dict]) -> int:
+def _melden(oeffner, server: str, ergebnisse: list[dict]) -> int:
     rumpf = json.dumps({"ergebnisse": ergebnisse}).encode("utf-8")
     req = urllib.request.Request(server.rstrip("/") + "/api/admin/bruegge/katalog/ergebnis",
                                  data=rumpf, method="POST",
-                                 headers={"Content-Type": "application/json",
-                                          "Cookie": "fs_admin=" + passwort})
-    with urllib.request.urlopen(req, timeout=60) as r:
+                                 headers={"Content-Type": "application/json"})
+    with oeffner.open(req, timeout=60) as r:
         return json.load(r).get("vermerkt", 0)
 
 
@@ -143,7 +160,12 @@ def main() -> int:
     ap.add_argument("--dll", help="Pfad zu SimConnect.dll")
     a = ap.parse_args()
 
-    offen = _holen(a.server, a.passwort, a.anzahl)
+    try:
+        oeffner = anmelden(a.server, a.passwort)
+    except urllib.error.HTTPError as e:
+        print(f"Anmeldung fehlgeschlagen: HTTP {e.code} — {e.read()[:200]!r}")
+        return 1
+    offen = _holen(oeffner, a.server, a.anzahl)
     if not offen:
         print("Nichts Offenes im Katalog — alles geprüft oder noch nichts eingetragen.")
         return 0
@@ -194,7 +216,7 @@ def main() -> int:
 
         if ergebnisse and not a.trocken:
             try:
-                _melden(a.server, a.passwort, ergebnisse)
+                _melden(oeffner, a.server, ergebnisse)
             except urllib.error.URLError as ex:
                 print(f"  Melden ging nicht: {ex} — Lauf geht weiter, Ergebnis ist verloren.")
 

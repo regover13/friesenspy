@@ -16,6 +16,7 @@ Prüfergebnisse überschreibt er nicht.
 from __future__ import annotations
 
 import argparse
+import http.cookiejar
 import json
 import sys
 import urllib.error
@@ -25,10 +26,28 @@ from pathlib import Path
 HAEPPCHEN = 500
 
 
-def hochladen(server: str, passwort: str, eintraege: list[dict]) -> int:
-    # Das Admin-Passwort geht als Cookie mit -- denselben Weg nimmt der Browser.
-    # `make_admin_token` steht auf dem Server; hier genuegt das Passwort im Klartext, weil
-    # `require_admin` beides akzeptiert.
+def anmelden(server: str, passwort: str):
+    """Erst anmelden, dann arbeiten -- wie der Browser auch.
+
+    ⚠ Das Passwort im Klartext als Cookie zu schicken reicht NICHT: `require_admin` prueft ein
+    SIGNIERTES Token (`verify_admin_token`), nicht das Passwort. Der erste Anlauf am
+    12.09.2026 endete deshalb mit `401 Admin-Login erforderlich`.
+
+    Der Login-Endpunkt setzt das Token als httponly-Cookie; ein `CookieJar` nimmt es
+    entgegen und schickt es bei jeder weiteren Anfrage mit.
+    """
+    jar = http.cookiejar.CookieJar()
+    oeffner = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    req = urllib.request.Request(
+        server.rstrip("/") + "/api/admin/login",
+        data=json.dumps({"password": passwort}).encode("utf-8"),
+        method="POST", headers={"Content-Type": "application/json"})
+    with oeffner.open(req, timeout=30) as r:
+        r.read()
+    return oeffner
+
+
+def hochladen(oeffner, server: str, eintraege: list[dict]) -> int:
     gesamt = 0
     for i in range(0, len(eintraege), HAEPPCHEN):
         teil = eintraege[i:i + HAEPPCHEN]
@@ -36,10 +55,9 @@ def hochladen(server: str, passwort: str, eintraege: list[dict]) -> int:
         req = urllib.request.Request(
             server.rstrip("/") + "/api/admin/bruegge/katalog",
             data=rumpf, method="POST",
-            headers={"Content-Type": "application/json",
-                     "Cookie": "fs_admin=" + passwort})
+            headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with oeffner.open(req, timeout=60) as r:
                 antwort = json.load(r)
         except urllib.error.HTTPError as e:
             print(f"  Häppchen {i//HAEPPCHEN + 1}: HTTP {e.code} — {e.read()[:200]!r}")
@@ -63,7 +81,12 @@ def main() -> int:
 
     eintraege = json.loads(Path(a.datei).read_text(encoding="utf-8"))
     print(f"{len(eintraege)} Einträge aus {a.datei} nach {a.server}")
-    n = hochladen(a.server, a.passwort, eintraege)
+    try:
+        oeffner = anmelden(a.server, a.passwort)
+    except urllib.error.HTTPError as e:
+        print(f"Anmeldung fehlgeschlagen: HTTP {e.code} — {e.read()[:200]!r}")
+        return 1
+    n = hochladen(oeffner, a.server, eintraege)
     print(f"\n{n} eingetragen.")
     return 0 if n else 1
 
