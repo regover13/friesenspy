@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.31.1",
+    "date": "2026-09-12",
+    "highlight": false,
+    "title": "Eine Karte für die Brügge",
+    "items": [
+      "🗺 Im Admin lassen sich die Koordinaten für Sim-Objekte jetzt **auf einer Karte anklicken**, statt sie einzutippen. Dieselbe Satellitenansicht wie beim Einpassen der Sichtflugkarten.",
+      "🔵 Die Karte zeigt zugleich, was los ist: blau die gemeldeten Positionen aus dem Simulator, grün die Objekte, die wirklich dastehen, rot die, die es nicht tun — und gelb die Stelle, an der das nächste Objekt entstehen soll.",
+      "🔧 Weiterhin nur im Admin sichtbar; für Mitglieder ändert sich nichts."
+    ]
+  },
+  {
     "version": "14.31.0",
     "date": "2026-09-12",
     "highlight": false,

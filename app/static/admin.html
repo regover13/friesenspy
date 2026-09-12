@@ -1500,6 +1500,20 @@
               <input id="bg-lon" placeholder="Länge" style="width:110px;padding:6px;">
               <input id="bg-cid" placeholder="CID (leer = alle)" style="width:140px;padding:6px;">
               <button class="btn btn-sm" id="bg-soll-setzen">Hinstellen</button>
+              <button class="btn btn-sm" id="bg-karte-auf">🗺 Karte</button>
+            </div>
+
+            <!-- Die Karte nach dem Vorbild der AIP-Passung (`dfs-vorschau-karte`): Satellitenbild,
+                 Klick uebernimmt die Koordinate. Koordinaten von Hand einzutippen war am
+                 12.09.2026 die haeufigste Fehlerquelle -- ein Vorzeichen, und das Objekt steht
+                 in einem anderen Land. -->
+            <div id="bg-karte-box" class="hidden" style="margin-bottom:10px;">
+              <div id="bg-karte" style="height:340px;border:1px solid #22303f;border-radius:6px;"></div>
+              <p style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;">
+                <b>Klicken setzt Breite und Länge.</b> Blau sind die gemeldeten Brügge-Positionen,
+                grün die angeforderten Objekte, rot die, die nicht stehen.
+                <span id="bg-karte-hinweis" style="color:#5cb85c;"></span>
+              </p>
             </div>
             <p style="color:#8aa0b8;font-size:0.78rem;margin:0 0 10px;">
               Eine <b>Gattung</b>, kein Modell: Welches Tier ein <code>tier_gross</code> ist,
@@ -2034,6 +2048,11 @@
         if (!r.ok) return;
         const d = await r.json();
 
+        // Den Stand fuer die Karte merken und sie nachziehen -- sie zeigt Melder, angeforderte
+        // und tatsaechlich stehende Objekte, also genau den Vergleich, um den es geht.
+        _bgStand = { melder: d.melder || [], soll: d.soll || [], steht: d.steht || [] };
+        if (_bgKarte) bgKarteFuellen();
+
         const takt = document.getElementById('bg-takt');
         if (takt && d.takt_s <= 15) { takt.value = d.takt_s; }
         const wert = document.getElementById('bg-takt-wert');
@@ -2144,9 +2163,96 @@
         bgLaden();
       });
 
+      // --- Die Karte -------------------------------------------------------------------
+      // Nach dem Vorbild der AIP-Passung (`_dfsKarteAufbauen`): Satellitenbild, Klick
+      // uebernimmt die Koordinate. Koordinaten von Hand einzutippen war am 12.09.2026 die
+      // haeufigste Fehlerquelle -- und ein Objekt, das 11 m daneben steht, sieht man nicht,
+      // eines mit falschem Vorzeichen steht in einem anderen Land.
+      const auf = document.getElementById('bg-karte-auf');
+      if (auf) auf.addEventListener('click', function () {
+        const box = document.getElementById('bg-karte-box');
+        box.classList.toggle('hidden');
+        if (box.classList.contains('hidden')) return;
+        bgKarteAufbauen();
+        // Leaflet rechnet die Groesse beim Erzeugen aus. Steckte die Karte da noch in einem
+        // `hidden`-Container, ist sie 0 Pixel hoch und bleibt grau -- deshalb erst JETZT.
+        setTimeout(function () { if (_bgKarte) { _bgKarte.invalidateSize(); bgKarteFuellen(); } }, 60);
+      });
+
       bgLaden();
       setInterval(bgLaden, 10000);
     })();
+
+    // Karte und Marken leben ausserhalb der Schliessung, damit `bgLaden` sie nachziehen kann.
+    let _bgKarte = null;
+    let _bgMarken = [];
+    let _bgStand = { melder: [], soll: [], steht: [] };
+
+    function bgKarteAufbauen() {
+      if (_bgKarte) return;
+      _bgKarte = L.map('bg-karte', { zoomControl: true });
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        { maxZoom: 19, attribution: 'Tiles &copy; Esri' }).addTo(_bgKarte);
+      _bgKarte.setView([53.7, 7.9], 9);   // Friesische Inseln, bis eine echte Position da ist
+      _bgKarte.on('click', function (e) {
+        // Fuenf Nachkommastellen sind rund ein Meter -- genauer waere Schein, denn die
+        // Kartenkacheln selbst liegen nicht metergenau auf dem Sim-Gelaende.
+        document.getElementById('bg-lat').value = e.latlng.lat.toFixed(5);
+        document.getElementById('bg-lon').value = e.latlng.lng.toFixed(5);
+        const h = document.getElementById('bg-karte-hinweis');
+        if (h) h.textContent = 'übernommen: ' + e.latlng.lat.toFixed(5) + ' / ' + e.latlng.lng.toFixed(5);
+        bgKarteFuellen();
+      });
+    }
+
+    /** Marken neu zeichnen: Melder blau, stehende Objekte grün, fehlende rot, Ziel gelb. */
+    function bgKarteFuellen() {
+      if (!_bgKarte) return;
+      _bgMarken.forEach(m => _bgKarte.removeLayer(m));
+      _bgMarken = [];
+      const punkte = [];
+
+      function marke(lat, lon, farbe, text) {
+        if (lat == null || lon == null) return;
+        _bgMarken.push(L.circleMarker([lat, lon], {
+          radius: 6, color: farbe, weight: 2, fillColor: farbe, fillOpacity: 0.4,
+        }).bindTooltip(text, { direction: 'right' }).addTo(_bgKarte));
+        punkte.push([lat, lon]);
+      }
+
+      (_bgStand.melder || []).forEach(function (m) {
+        marke(m.lat, m.lon, '#2d9cdb', (m.callsign || m.cid) + ' (Brügge)');
+      });
+
+      // Ein Objekt gilt als stehend, wenn IRGENDEINE Brügge es meldet -- `steht` ist nach
+      // (kennung, id) geschluesselt, dasselbe Objekt kann also mehrfach vorkommen.
+      const stehtIds = new Set((_bgStand.steht || [])
+        .filter(z => z.zustand === 'steht').map(z => z.id));
+      (_bgStand.soll || []).forEach(function (o) {
+        const da = stehtIds.has(o.id);
+        marke(o.lat, o.lon, da ? '#5cb85c' : '#d9534f',
+              o.id + ' · ' + o.art + (da ? '' : ' — steht nicht'));
+      });
+
+      // Das gerade eingetippte Ziel -- damit sichtbar ist, wohin das nächste Objekt käme.
+      const zlat = parseFloat(document.getElementById('bg-lat').value);
+      const zlon = parseFloat(document.getElementById('bg-lon').value);
+      if (isFinite(zlat) && isFinite(zlon)) {
+        _bgMarken.push(L.circleMarker([zlat, zlon], {
+          radius: 9, color: '#f0a500', weight: 3, fillOpacity: 0,
+        }).bindTooltip('hier hinstellen', { permanent: true, direction: 'top' }).addTo(_bgKarte));
+        punkte.push([zlat, zlon]);
+      }
+
+      // Nur beim ERSTEN Füllen den Ausschnitt setzen. Sonst spränge die Karte alle zehn
+      // Sekunden zurück, während jemand sie verschiebt -- dieselbe Falle wie bei der
+      // Live-Karte im Frontend.
+      if (punkte.length && !_bgKarte._bgGesetzt) {
+        _bgKarte._bgGesetzt = true;
+        if (punkte.length === 1) _bgKarte.setView(punkte[0], 15);
+        else _bgKarte.fitBounds(punkte, { padding: [40, 40], maxZoom: 15 });
+      }
+    }
 
     function renderRaceCard(r) {
       if (_editingId === r.id) return renderEditForm(r);

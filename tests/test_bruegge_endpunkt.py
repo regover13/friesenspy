@@ -642,3 +642,29 @@ def test_auf_boden_geht_bis_zur_bruegge_durch(klient, tmp_path):
     nach_id = {o["id"]: o for o in soll}
     assert nach_id["sonde"]["auf_boden"] == 1
     assert nach_id["normal"]["auf_boden"] == 0
+
+
+def test_die_admin_karte_hat_alles_was_sie_braucht():
+    """Die Karte im Admin zeichnet Melder, angeforderte und stehende Objekte.
+
+    Gebaut auf Nutzerwunsch (12.09.2026): Koordinaten von Hand einzutippen war die
+    haeufigste Fehlerquelle des Abends -- ein Vorzeichen daneben, und das Objekt steht in
+    einem anderen Land.
+
+    Der Test bindet die drei Dinge, die beim Nachbauen leicht verlorengehen:
+    das Aufbauen der Karte, das Nachziehen aus `bgLaden`, und `invalidateSize` -- ohne das
+    bleibt eine Leaflet-Karte grau, wenn sie in einem versteckten Container entsteht.
+    """
+    from pathlib import Path
+    html = Path(__file__).resolve().parents[1] / "app" / "static" / "admin.html"
+    s = html.read_text(encoding="utf-8")
+
+    assert 'id="bg-karte"' in s, "der Kartencontainer fehlt"
+    assert "bgKarteAufbauen" in s and "bgKarteFuellen" in s
+    # Ohne invalidateSize bleibt die Karte grau -- sie entsteht in einem hidden-Container.
+    assert "invalidateSize" in s, "ohne invalidateSize bleibt die Karte grau"
+    # Der Klick MUSS beide Felder fuellen, sonst ist die Karte nur Zierat.
+    assert "'bg-lat').value = e.latlng.lat" in s
+    assert "'bg-lon').value = e.latlng.lng" in s
+    # Und bgLaden muss den Stand weiterreichen, sonst zeigt die Karte nie etwas an.
+    assert "_bgStand = {" in s and "if (_bgKarte) bgKarteFuellen();" in s
