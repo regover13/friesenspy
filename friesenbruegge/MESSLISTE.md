@@ -11,7 +11,7 @@ messen. Die laufende Sim-Sitzung ist die knappe Ressource, nicht die Bauzeit.
 ## Vorbereitung (einmal, vor dem Start)
 
 **Der Stand ist schon abgelegt** — Paket `friesenbruegge` liegt im Community-Ordner, Fassung
-**1.1.1**. Nichts mehr zu bauen.
+**1.1.3**. Nichts mehr zu bauen.
 
 > ### ⚠ Zuerst: lädt das Modul überhaupt?
 >
@@ -121,7 +121,7 @@ tatsächlichen abweicht.
 ## 3. Räumt sie ab, was aus `soll` verschwindet?
 
 Im Admin auf „wegnehmen" klicken. Innerhalb eines Takts (1 s) verschwindet das Objekt aus
-`steht` — **aber nicht aus dem Simulator.** Das ist in Fassung 1.1.1 so gewollt und kein
+`steht` — **aber nicht aus dem Simulator.** Das war in Fassung 1.1.1 so und kein
 Fehler: `SimConnect_AIRemoveObject` ist vorerst ausgebaut (s. `objekt_entfernen` in
 `bruegge.cpp`), weil beim ersten Lauf nach dem BOM-Fund genau **eine** Sache anders sein
 sollte. Die Brügge vergisst das Objekt also nur; weggeräumt wird es beim Schließen der
@@ -130,7 +130,7 @@ Verbindung.
 **Das ist der Kern des Sollzustands-Gedankens:** Die Brügge befolgt keine Befehle, sondern
 gleicht ab. Geht eine Anfrage verloren, holt die nächste den Zustand wieder ein.
 
-### 3b. `AIRemoveObject` — **eingebaut, Fassung 1.1.2, wartet auf einen Neustart**
+### 3b. `AIRemoveObject` — **eingebaut, wartet auf einen Neustart**
 
 > #### ⚠ Der Aufruf ist eine Voraussetzung, keine Annehmlichkeit — gemessen am 12.09.2026
 >
@@ -156,8 +156,8 @@ gleicht ab. Geht eine Anfrage verloren, holt die nächste den Zustand wieder ein
 > 1384,9 auf 1379,2) deuteten zwar richtig auf ein Neusetzen hin — **belegt** haben sie die
 > Verdopplung aber nicht, denn sie sagen nichts darüber, ob das alte Objekt noch existiert.
 >
-> **Zu prüfen bleibt nur noch, ob das Modul damit lädt.** Fassung 1.1.2 liegt im
-> Community-Ordner (68.580 Bytes).
+> **Zu prüfen bleibt nur noch, ob das Modul damit lädt.** Fassung 1.1.3 liegt im
+> Community-Ordner (69.041 Bytes).
 
 | Beobachtung | heißt |
 |---|---|
