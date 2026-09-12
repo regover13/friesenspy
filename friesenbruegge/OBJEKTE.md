@@ -11,6 +11,17 @@ kennt (PROTOKOLL.md, Abschnitt 2).
 > Bordmittel. Die Titel unten stammen aus der Installation selbst — das ist die einzige
 > Quelle, die auch stimmt, wenn Asobo etwas umbenennt.
 
+> ### ⚠ Und sie waren zuerst UNVOLLSTÄNDIG — `find` steigt nicht in Symlinks
+>
+> Die Suchbefehle unten laufen über `LocalCache\Packages`. Der **Community-Ordner liegt dort
+> als Sammlung von Symlinks** (Addons Linker), und `find` folgt ihnen ohne `-L` nicht. Damit
+> blieben 32 Tier-SimObjects unsichtbar, die direkt neben der Behauptung „keine Robben"
+> lagen — darunter der Seehund, um den sich der ganze FriesenKieker dreht (s. Abschnitt
+> „Robben" unten).
+>
+> **Wer den Bestand erhebt, nimmt `find -L`** — oder liest den Community-Ordner an seinem
+> echten Ort (hier `E:\Addons\Community`) zusätzlich.
+
 ---
 
 ## MSFS 2020 — `sim.cfg` liegt als Datei vor
@@ -32,10 +43,11 @@ find "$P" -path "*SimObjects/Animals/*" -name "sim.cfg" \
 `SriLankanElephant_Child`, `SriLankanElephant_Child_Albino`, `SumatranElephant`,
 `SumatranElephant_Child`, `SumatranElephant_Child_Albino`, `SyrianBear`
 
-⚠ **Keine Robben, keine Seehunde.** Für den FriesenKieker ist das der wichtigste Eintrag
-dieser Liste: Was gezählt werden soll, bringt der Simulator nicht mit. `devprops-counting-
-seals-frisian-islands` löst das über **Szenerie**-Objekte (BGL), nicht über SimObjects — und
-Szenerie lässt sich nicht zur Laufzeit setzen.
+⚠ **Keine Robben, keine Seehunde** — nicht im Bordbestand. Für den FriesenKieker ist das der
+wichtigste Eintrag dieser Liste: Was gezählt werden soll, bringt der Simulator nicht mit.
+`devprops-counting-seals-frisian-islands` löst das über **Szenerie**-Objekte (BGL), nicht über
+SimObjects — und Szenerie lässt sich nicht zur Laufzeit setzen. **Aber es gibt sie als
+SimObject in einem Community-Paket — s. Abschnitt „Robben" unten.**
 
 **Boote (14):** `Boat01`, `Boat02`, `CargoContainer01`, `CargoGas01`, `CargoOil01`,
 `CargoShip01`, **`CruiseShip01`**, `CruiseShip02`, `FishingBoat`, `FishingShip02`,
@@ -89,6 +101,42 @@ sind also nicht verschwunden, nur ergänzt.
 scheiterte die Gattung `fahrzeug` am 12.09.2026 mit `EXCEPTION_22` — und weil dort **ein
 einziger** Titel stand, fiel die ganze Gattung aus. Seit Fassung 1.3.0 rückt bei einer
 Ausnahme der nächste Titel nach.
+
+---
+
+## Robben — nicht an Bord, aber als SimObject im Community-Ordner
+
+Beide Simulatoren bringen keine mit. **Ein Community-Paket schon**, und zwar in genau der Form,
+die `AICreateSimulatedObject` braucht — nicht als Szenerie:
+
+`human-library-animated` (Freeware, `creator: Superspud`, v1.4.0, 556 MB, 32 Tier-SimObjects),
+in MSFS 2024 verlinkt, in MSFS 2020 **nicht**. Ausgelesen aus
+`E:\Addons\Community\human-library-animated\SimObjects\Animals\*\sim.cfg`:
+
+| Titel | Modell | Dateien |
+|---|---|---|
+| `ahqa seal moving` | Seehund, Bounding-Box 0,74 × 1,53 × 0,31 m | 186 KB glTF + `.bin`, 131 KB DDS |
+| `ahqa sea lion moving` | Seelöwe | 380 KB |
+| `ahqa walrus moving` | Walross | 224 KB |
+| `ahqa puffin walking` | Papageitaucher | — |
+
+`category=Animal`, zwei Animationen (`Default_State`, `sealmove`), glTF 2.0 mit
+`ASOBO_asset_optimized` — also fertig kompiliert, nicht rohes Blender-Material. Die Textur
+liegt per `texture.CFG`-Fallback im Nachbarordner (`ahqa Deer Running\texture`), beim
+Umpacken also mitnehmen.
+
+⚠ **Das ist dasselbe Paket, das `counting seals` seit immer als Abhängigkeit hat** — dort
+werden die Modelle aber über GUIDs aus `Hummods.BGL` als **Szenerie** platziert. Seine
+SimObject-Seite hat nie jemand angefasst.
+
+**Gattung `robbe` (Fassung 1.4.0) trägt diese drei Titel, bewusst ohne Rückfall auf den
+Bordbestand:** Fiele sie still auf `BlackBear` zurück, lieferte der Kieker eine Zahl, während
+am Strand Bären liegen. Eine fehlende Robbe muss als `EXCEPTION_22` sichtbar werden.
+
+⚠ **Ungemessen und entscheidend** (Messliste 8): Ob `AICreateSimulatedObject` einen Titel aus
+einem **Community**-Paket überhaupt findet. Alle bisher im Flug belegten Titel stammen aus
+Asobos Bordbestand. Davon hängt auch ein eigenes Robben-Paket ab — deshalb wird zuerst mit
+Superspuds Modellen gemessen und erst danach über die Verpackung geredet.
 
 ---
 
@@ -150,9 +198,14 @@ und keine Höhe — sonst wäre das Protokoll an MSFS gekettet. Eine X-Plane-Br�
 
 ## Offen
 
-- **Robben fehlen in beiden Simulatoren.** Für den FriesenKieker die grundlegendste Frage:
-  Womit wird gezählt? Ein eigenes SimObject-Paket wäre nötig (als SimObject, nicht als
-  Szenerie wie `counting-seals`) — oder eine andere Gattung als Platzhalter.
+- **Robben: das Modell ist gefunden, der Weg dorthin nicht gemessen.** Die drei Titel aus
+  `human-library-animated` stehen in der Gattung `robbe` — ob ein Community-SimObject gesetzt
+  werden kann, entscheidet Messliste 8. Danach die zwei Folgefragen: Superspud um Weitergabe
+  der Modelle bitten oder ein eigenes bauen, und wie das Paket aussieht (Vorbild ist
+  `human-library-animated` selbst: `content_type: SCENERY` mit **minimalem** Manifest — ohne
+  `export_type`, `builder`, `minimum_compatibility_version`, also genau die Felder, die das
+  WASM-Paket der Brügge zwingend braucht). Ziel ist ein eigenes Paket im selben Download wie
+  die Brügge, keine 556-MB-Fremdabhängigkeit.
 - Die 30 gestreamten Tierpakete sind ungeprüft: Ob ein Titel aus einem noch nicht geladenen
   Paket gesetzt werden kann, ist nicht gemessen.
 - Für MSFS 2020 ist **nichts** von alldem im Flug belegt — nur die Titel sind ausgelesen.

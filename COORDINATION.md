@@ -65,6 +65,37 @@ Aufraeumer beruecksichtigt.
 
 ---
 
+## 2026-09-12 — Gattung `robbe` + Messliste 8 (Bruegge 1.4.0)
+
+**Betrifft nur `friesenbruegge/`.** Kein Anwendungscode, keine FriesenSpy-Version, kein
+CHANGELOG-Eintrag.
+
+⚠ **Eine zweite Sitzung arbeitet parallel an der Bruegge.** Angefasst wurden genau drei
+Dateien — wer dort gleichzeitig schreibt, liest sie vor dem Rebase neu:
+
+| Datei | Was |
+|---|---|
+| `msfs/bruegge.cpp` | `BRUEGGE_VERSION` 1.3.0 → **1.4.0**, neue Gattung `robbe` am Ende von `g_gattungen` |
+| `MESSLISTE.md` | neuer Abschnitt **8** (hinter 7, vor „Was NICHT mehr zu messen ist") |
+| `OBJEKTE.md` | neuer Abschnitt „Robben", Warnkasten `find -L`, „Offen"-Punkt ersetzt |
+
+**Der Fund dahinter:** Robben gibt es doch — als **SimObject** im Community-Paket
+`human-library-animated` (`ahqa seal moving`, `ahqa sea lion moving`, `ahqa walrus moving`).
+Dass `OBJEKTE.md` das bisher bestritt, lag an der Suche: `find` steigt ohne `-L` nicht in die
+Community-Symlinks, und dort lagen 32 Tier-SimObjects.
+
+**Ungemessen und fuer alles Weitere entscheidend (Messliste 8):** Ob
+`AICreateSimulatedObject` einen Titel aus einem **Community**-Paket ueberhaupt findet — alle
+bisher belegten Titel stammen aus Asobos Bordbestand. Faellt das negativ aus, ist auch ein
+eigenes Robben-Paket auf diesem Weg tot. **Deshalb wird erst gemessen, dann verpackt** — wer
+in der Zwischenzeit ein Modellpaket baut, baut auf Sand.
+
+⚠ **`bruegge.wasm` ist NICHT neu gebaut.** Wer baut, kompiliert den Stand des gemeinsamen
+Arbeitsbaums mit — bei paralleler Arbeit also erst absprechen, sonst liegt halbfertiger Code
+im Community-Ordner (und ein Sim-Neustart ist dann noetig, um ihn wieder loszuwerden).
+
+---
+
 ## 2026-09-11 (spaet) — Protokoll war in sich widerspruechlich (Sim-Sitzung)
 
 **Betrifft nur `friesenbruegge/`.** Kein Anwendungscode, keine Version.

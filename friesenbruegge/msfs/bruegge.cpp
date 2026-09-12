@@ -55,7 +55,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.3.0"
+#define BRUEGGE_VERSION   "1.4.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -301,6 +301,23 @@ static const Gattung g_gattungen[] = {
                        "ASO_Pushback_White", "ASO_Ambulance_Japan", nullptr } },
     { "boot_klein",  { "Boat01", "Boat02", "FishingBoat", "Yacht01", nullptr } },
     { "boot_gross",  { "CruiseShip01", "CruiseShip02", "CargoShip01", nullptr } },
+    // ROBBE: die einzige Gattung, die NICHT aus dem Bordbestand kommt -- weder MSFS 2020 noch
+    // 2024 bringt eine Robbe mit (s. OBJEKTE.md). Diese drei Titel stammen aus dem
+    // Community-Paket `human-library-animated` (Superspud, Freeware), ausgelesen aus
+    // `SimObjects/Animals/*/sim.cfg` -- dasselbe Paket, das `counting seals` als Szenerie
+    // benutzt, nur eben seine SimObject-Seite.
+    //
+    // KEIN RUECKFALL AUF DEN BORDBESTAND, und das ist Absicht: Die Nachrueck-Mechanik soll
+    // verhindern, dass eine Gattung an einem fehlenden Titel stirbt -- hier waere sie
+    // schaedlich. Fiele `robbe` still auf `BlackBear` zurueck, lieferte der Kieker eine
+    // Zahl, waehrend am Strand Baeren liegen. Eine fehlende Robbe MUSS als EXCEPTION_22 im
+    // `fehler`-Feld sichtbar werden.
+    //
+    // UNGEMESSEN (Messliste 8): Ob ein SimObject aus einem COMMUNITY-Paket ueberhaupt per
+    // AICreateSimulatedObject erzeugt werden kann. Alle bisher belegten Titel stammen aus
+    // Asobos Bordbestand. Von dieser einen Frage haengt auch ein eigenes Robben-Paket ab.
+    { "robbe",       { "ahqa seal moving", "ahqa sea lion moving", "ahqa walrus moving",
+                       nullptr } },
 };
 
 // Den n-ten Titel einer Gattung. Gibt nullptr, wenn die Gattung unbekannt ist ODER die Liste
