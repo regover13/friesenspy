@@ -213,6 +213,38 @@ daneben taugt sie, für eines 5 km weiter nicht.
 > **Nebenbei bewiesen:** Fassung 1.2.0 läuft — sonst wäre `auf_boden` ignoriert worden und
 > alle fünf hätten 1565,5 gemeldet.
 >
+> ### ✅ Und der ganze Ablauf, am Stück gemessen (12.09.2026)
+>
+> Ein `bauwerk` als Sonde **250 m voraus**, mit absichtlich 300 ft zu hoher Anforderung:
+>
+> | | |
+> |---|---|
+> | Boden unter dem Flugzeug | 1386,4 ft |
+> | **Sonde meldet** | **1422,1 ft** |
+> | Unterschied auf 250 m | **35,7 ft — elf Meter** |
+>
+> Dann Sonde weg und **zwei** `boot_klein` an dieselbe Stelle, 60 m auseinander:
+>
+> | Boot | Höhe aus | Ergebnis |
+> |---|---|---|
+> | rechts | **der Sondenmessung** (1422,1 ft) | ✅ steht sauber im Feld, voller Rumpf |
+> | links | der Höhe unterm Flugzeug (1386,4 ft) | ✖ **elf Meter im Boden, unsichtbar** |
+>
+> Der Zähler findet **beide** (`146980866` und `146800641`) — das versunkene existiert, es ist
+> nur begraben. Weder das Auge noch die Rückmeldung allein hätten das verraten; erst der
+> Vergleich zeigt es.
+>
+> **Das Verfahren steht damit vollständig:**
+>
+> ```
+> 1. Sonde setzen   { "art": "bauwerk", "auf_boden": 1, "lat": …, "lon": … }
+> 2. Höhe ablesen   "steht": [{ "hoehe_ft": 1422.1 }]
+> 3. Sonde weg, Objekt hin   { …, "erwartete_hoehe_ft": 1422.1 }
+> ```
+>
+> Kein Höhenmodell, kein Überflug, keine fremde Datenquelle — gemessen in genau dem
+> Simulator, in dem das Objekt später stehen soll.
+
 > ### ⚠ Und ein Bug, den erst der Blick aus dem Cockpit aufdeckte
 >
 > `tier_gross` wurde als **`fehlgeschlagen / EXCEPTION_22`** gemeldet — **der Bär stand aber
