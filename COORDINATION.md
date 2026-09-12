@@ -52,6 +52,52 @@ Migration) · `app/main.py` (Endpunkt wertet `steht` aus, loggt `antwort_zu_gros
 `bruegge_steht` (Schluessel `(kennung, id)`), im Admin neben der Anforderung sichtbar, und im
 Aufraeumer beruecksichtigt.
 
+## 2026-09-12 (Nacht) — Titelliste `fahrzeug` ist falsch sortiert (fuer die Robben-Session)
+
+**Kleine Sache, aber sie kostet sonst einen Sim-Neustart zum Suchen.** In `g_gattungen` stehen
+bei `fahrzeug` zwei Titel vorn, die in MSFS 2024 **nicht existieren**:
+
+```c
+{ "fahrzeug", { "ASO_Firetruck01", "ASO_FuelTruck01_White", … } }   // beide gehen NICHT
+```
+
+Ich habe in der Nacht alle 37 Fahrzeugtitel einzeln im laufenden Simulator geprueft
+(`probe-msfs/titel_schau.py`). **Es fehlen genau sechs:** `ASO_Ambulance_Japan`,
+`ASO_Firetruck01`, `ASO_FuelTruck01_Black`, `ASO_FuelTruck01_White`, `ASO_FuelTruck02_Black`,
+`ASO_FuelTruck02_White`, `ASO_Ground_Power_Unit`. Die uebrigen 31 laufen.
+
+**Vorschlag, in dieser Reihenfolge:**
+
+```c
+{ "fahrzeug", { "ASO_CarUtility01", "ASO_Pushback_White", "ASO_Firetruck02",
+                "ASO_TruckUtility01", "ASO_Tug01_White", nullptr } },
+```
+
+Die Nachrueck-Mechanik faengt den Fehler zwar ab — sie kostet aber je Fehlschlag einen Takt
+und eine Exception, und der erste Eindruck im Admin waere ein rotes `EXCEPTION_22`.
+
+**Ich fasse `bruegge.cpp` nicht an** (wie abgesprochen) — baut es bitte bei Gelegenheit mit ein.
+
+⚠ **Und wir teilen dieselbe ARBEITSKOPIE**, nicht nur dasselbe Repo. Ich habe eure
+`robbe`-Gattung im Quelltext gefunden, bevor ich sie auf `origin` gesehen habe. Uncommittete
+Aenderungen sind fuer die jeweils andere Seite also sofort sichtbar und ueberschreibbar.
+
+### Weitere geprüfte Titel, falls ihr Gattungen ergaenzt
+
+| Gattung | funktioniert (alle einzeln geprueft) |
+|---|---|
+| Tiere klein | `Seagull`, `Goose`, `Flamingo` |
+| Tier Wasser | `HumpbackWhale` |
+| Marken | `Flag_Checker`, `Flag_Orange`, `Flag_Yellow`, `Flag_RWB` + 8 weitere `Flag_*` |
+| Landepunkte | `SI_SimObject_Fly-In_Landing_{Blue,Green,Red,Yellow}_Dot` (Addon SayIntentions) |
+| **Rauch/Feuer** | `SIAI_VFX_Smoke_Red/Orange`, `SIAI_VFX_Fire`, `SIAI_SignalFire`, `SIAI_VFX_WildFire` |
+| Kegel, Schilder | `SI_SimObejct_Cone`, `SI_SimObejct_Event_Parking_Signs_{Left,Right,Straight}` |
+
+⚠ **Rauch ist fuer die Auffindbarkeit interessant:** Ein `Boat01` ist erst ab rund 1 km
+eingeblendet (11.09. gemessen). Eine Rauchsaeule sieht man kilometerweit.
+
+---
+
 ### ⚠⚠ ES GIBT SCHON EINE ROBBE — und sie ist animiert (12.09.2026, spaet)
 
 **Bevor ihr ein Modell baut, lest das.** Im Community-Ordner dieses Rechners liegt
