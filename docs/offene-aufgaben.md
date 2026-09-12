@@ -41,7 +41,24 @@ EDLA, EDQA, EDNG, EDQC, EDRB, EDLP, dazu EDDN/EDDS) wurden beim maschinellen Pas
 die Längenmessung verfälschten (EDDV: 2784 m für eine 2340-m-Bahn). Von Hand ist das kein
 Hindernis — man klickt die Schwellen, statt sie zu messen.
 
-## Robben für den Kieker: Anfrage an Superspud (vorgemerkt 12.09.2026)
+## Robben für den Kieker: Anfrage an Superspud — ✉ VERSCHICKT (13.09.2026)
+
+> **Der Nutzer hat die Anfrage abgeschickt.** Was jetzt zu tun ist: **auf die Antwort warten**
+> — nichts vorbereiten, nichts bauen, nichts entscheiden. Der Text unten bleibt stehen, damit
+> nachvollziehbar ist, was genau gefragt wurde.
+>
+> **Und es eilt nicht:** Der Weg über die Abhängigkeit funktioniert bereits. Die Brügge nennt
+> nur den Titel `ahqa seal moving`; wer Superspuds Paket installiert hat, bekommt die Robbe,
+> wer nicht, bekommt einen sauberen Fehler statt eines falschen Tieres. **Einen Titel zu
+> nennen ist keine Weitergabe** — eine Erlaubnis wird erst gebraucht, wenn ein Modell
+> mitgeliefert werden soll.
+>
+> ⚠ **Dasselbe gilt für alle anderen Addon-Objekte** (SayIntentions-Rauch, p42-Fackeln,
+> Campout-Zubehör): Sie im Katalog zu führen und ihre Titel zu nennen ist unbedenklich; sie in
+> ein eigenes Paket zu kopieren wäre es nicht. Bei SayIntentions wiegt das besonders schwer —
+> das ist ein Abo-Dienst, und die README erlaubt nichts dergleichen.
+
+## Die ursprüngliche Vormerkung (12.09.2026)
 
 **Der Nutzer verschickt die Anfrage, nicht Claude.** Kontaktformular auf
 https://flightsim.to/addon/33166/animated-humans-library (Autor: *Superspud*). Der fertige
