@@ -366,9 +366,16 @@ daneben taugt sie, für eines 5 km weiter nicht.
 > **2. „Dann ist es eine Atem- oder Kopfanimation."** Ebenfalls falsch: *„Es gibt keine Atem-
 > oder Kopfanimation. Das wäre ja gut! Aber die gibt es nicht."*
 >
-> **Woher die 0,8 ft kommen, ist damit offen.** Denkbar wäre, dass ein mit `OnGround=1`
-> gesetztes Objekt dem Gelände folgt, wenn der Simulator es in besserer Auflösung nachlädt —
-> das ist aber eine Vermutung und **kein Befund**.
+> **Die Verlaufsmessung klärt es:** Der Bär springt zwischen **genau zwei** Werten hin und her,
+> immer denselben — 1368,3 und 1367,5 ft. Kein Wandern, sondern Quantisierung oder ein Wechsel
+> zwischen zwei Geländeauflösungen. Das Auto dagegen fällt monoton:
+>
+> ```
+> Auto  1363,4 → 1357,7 → 1344,2 → 1342,2 → 1342,2 ft     21 ft bergab, dann steht es
+> Bär   1368,3 → 1367,5 → 1367,5 → 1368,3 → 1367,5 ft     zwei Werte, hin und her
+> ```
+>
+> **Das Auto rollte einen Hang hinunter und hielt unten.** 21 Fuß in zwei Minuten.
 >
 > **Die belastbare Lehre:** *Kleine Höhenänderungen in der Rückmeldung beweisen nichts.* Wer
 > daraus auf Bewegung schließt, liegt falsch. Für eine Aussage über Bewegung braucht es die
