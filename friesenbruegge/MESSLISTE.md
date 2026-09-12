@@ -134,20 +134,27 @@ gleicht ab. Geht eine Anfrage verloren, holt die nächste den Zustand wieder ein
 
 > #### ⚠ Der Aufruf ist eine Voraussetzung, keine Annehmlichkeit — gemessen am 12.09.2026
 >
-> Als vPilot kurz die Verbindung verlor, löste der Server die Zuordnung und lieferte kein
-> `soll` mehr. Die Brügge **vergaß** das Objekt daraufhin — der Bär im Simulator blieb aber
-> stehen (vom Nutzer gesehen). Beim Wiederverbinden kam dasselbe Objekt erneut an und wurde
-> **ein zweites Mal gesetzt**.
+> Nachgewiesen mit `kieker_probe.py --boote-zaehlen`, weil das Auge hier nicht ausreicht.
+> Ein `boot_klein` an fester Koordinate, in drei Schritten:
 >
-> | Beleg | vorher | nachher |
+> | Schritt | Boote im Umkreis | Objekt-IDs |
 > |---|---|---|
-> | `seit_s` | 860 | **186** — fing wieder bei null an |
-> | `hoehe_ft` | 1384,9 | **1379,2** — ein anderes Objekt |
+> | angefordert | 1 | `149372931` |
+> | aus `soll` genommen, Brügge vergisst es | **1** | `149372931` — steht weiter |
+> | **dieselbe id erneut angefordert** | **2** | `149372931` + `148946946` |
 >
 > **Jeder Verbindungsabriss verdoppelt die gesetzten Objekte.** Für den FriesenKieker heißt
 > das: Ein Pilot mit wackliger Leitung zählt Tiere doppelt und dreifach — und niemand sähe
 > dem Ergebnis an, dass es falsch ist. Deshalb ist der Aufruf wieder drin, obwohl er ein
 > Import mehr ist.
+>
+> ⚠ **Warum gezählt und nicht hingeschaut wurde:** Derselbe Vorgang lief zuvor mit einem
+> Bären, und der Blick aus dem Cockpit meldete **einen**. Zwei gleiche Modelle an derselben
+> Koordinate sind nicht zu unterscheiden — die Sichtprüfung hätte den Befund glatt verneint.
+> Das ist dieselbe Lehre wie am 11.09. beim `Boat01`: *Der Simulator weiß es besser als das
+> Auge.* Zwei Zahlen aus der Rückmeldung (`seit_s` sprang von 860 auf 186, `hoehe_ft` von
+> 1384,9 auf 1379,2) deuteten zwar richtig auf ein Neusetzen hin — **belegt** haben sie die
+> Verdopplung aber nicht, denn sie sagen nichts darüber, ob das alte Objekt noch existiert.
 >
 > **Zu prüfen bleibt nur noch, ob das Modul damit lädt.** Fassung 1.1.2 liegt im
 > Community-Ordner (68.580 Bytes).

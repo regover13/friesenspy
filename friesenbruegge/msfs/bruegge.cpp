@@ -424,12 +424,15 @@ static void objekt_entfernen(int i) {
 
     // SimConnect_AIRemoveObject -- und der Aufruf ist eine VORAUSSETZUNG, keine Annehmlichkeit.
     //
-    // Gemessen am 12.09.2026 im Simulator, und der Befund war ueberraschend deutlich: Als
-    // vPilot kurz die Verbindung verlor, loeste der Server die Zuordnung und lieferte kein
-    // `soll` mehr. Die Bruegge VERGASS das Objekt daraufhin -- der Baer im Simulator blieb
-    // aber stehen. Beim Wiederverbinden kam dasselbe Objekt erneut im `soll` an und wurde
-    // ein zweites Mal gesetzt. Nachweisbar an zwei Zahlen: `seit_s` fing wieder bei null an,
-    // und die gemeldete Hoehe wechselte von 1384,9 auf 1379,2 ft.
+    // Gemessen am 12.09.2026 mit `kieker_probe.py --boote-zaehlen`: Ein Boot angefordert (1
+    // Boot, Objekt 149372931), aus `soll` genommen -- die Bruegge vergisst es, das Objekt
+    // BLEIBT stehen --, dieselbe id erneut angefordert: **2 Boote**, 149372931 und 148946946,
+    // an derselben Koordinate und in derselben Hoehe.
+    //
+    // Gezaehlt und nicht hingeschaut, und das war noetig: Derselbe Vorgang lief zuvor mit
+    // einem Baeren, und der Blick aus dem Cockpit meldete EINEN. Zwei gleiche Modelle an
+    // derselben Stelle sind nicht zu unterscheiden. Dieselbe Lehre wie am 11.09. beim
+    // Boat01 -- der Simulator weiss es besser als das Auge.
     //
     // FOLGE OHNE DIESEN AUFRUF: Jeder Verbindungsabriss verdoppelt die gesetzten Objekte.
     // Fuer den FriesenKieker hiesse das, dass ein Pilot mit wackliger Leitung Tiere doppelt
