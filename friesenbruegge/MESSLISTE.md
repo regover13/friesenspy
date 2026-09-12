@@ -245,6 +245,39 @@ daneben taugt sie, für eines 5 km weiter nicht.
 > Kein Höhenmodell, kein Überflug, keine fremde Datenquelle — gemessen in genau dem
 > Simulator, in dem das Objekt später stehen soll.
 
+> ### ✅✅ Und sie trägt über ZEHN KILOMETER (12.09.2026)
+>
+> Die entscheidende Frage am Verfahren: Misst die Sonde auch dort, wo der Pilot **nicht** ist?
+> Vier `bauwerk`-Sonden nach Süden ins Bergland, alle mit absichtlich 500 ft zu hoher
+> Anforderung (1886,5 ft):
+>
+> | Sonde | **gemeldet** |
+> |---|---|
+> | 1 km | **1425,2 ft** |
+> | 3 km | **1422,5 ft** |
+> | 6 km | **1311,4 ft** |
+> | 10 km | **1297,5 ft** |
+>
+> **Keine steht auf der angeforderten Höhe** — alle sind aufgesetzt, und das Gelände fällt
+> über die Strecke um **128 Fuß** ab.
+>
+> ⚠ **Die Gegenprobe liegt in der letzten Zeile:** Der Bodensee liegt bei 395,5 m =
+> **1297,6 ft**. Die 10-km-Sonde meldet **1297,5 ft** — sie steht im Wasser und trifft den
+> Seespiegel auf einen Zehntelfuß. Das ist keine Schätzung, das ist eine Messung.
+>
+> ### Damit ist auch das „Phantom vom 11.09." erklärt
+>
+> Damals meldete ein Schiff am Bodensee aus der Ferne 2106,5 ft und aus der Nähe 1297,2 ft.
+> Daraus wurde geschlossen: *„Aus der Ferne lügt sogar die Lagemeldung."* **Das stimmte
+> nicht.** Es stand wirklich auf 2106,5 ft — die *gerechnete* Höhe war falsch, nicht die
+> Meldung. Mit `OnGround=1` steht dasselbe Objekt aus 10 km Entfernung sofort richtig.
+>
+> ### Folge für den FriesenKieker
+>
+> **Der Server kann ein Revier vorab vermessen, ohne dass jemand hinfliegt.** Sonden setzen,
+> Höhen einsammeln, Sonden wegräumen, Stationen exakt platzieren — aus der Ferne, in wenigen
+> Takten. Das war die offene Architekturfrage aus 5c, und sie ist damit beantwortet.
+
 > ### ⚠ Und ein Bug, den erst der Blick aus dem Cockpit aufdeckte
 >
 > `tier_gross` wurde als **`fehlgeschlagen / EXCEPTION_22`** gemeldet — **der Bär stand aber
