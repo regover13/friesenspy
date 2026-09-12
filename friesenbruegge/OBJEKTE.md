@@ -24,6 +24,51 @@ kennt (PROTOKOLL.md, Abschnitt 2).
 
 ---
 
+## 📚 Der Katalog — 1693 setzbare Objekte, einzeln geprüft (13.09.2026)
+
+**Alles hier Genannte ist im laufenden MSFS 2024 gesetzt worden**, Titel für Titel
+(`probe-msfs/katalog_pruefen.py`). Der Bestand liegt in der Tabelle `bruegge_katalog` auf dem
+Server; `friesenbruegge/katalog_sammeln.py` liest ihn von der Platte, `katalog_hochladen.py`
+schiebt ihn hoch.
+
+| Quelle | gesamt | **setzbar** | nicht |
+|---|---|---|---|
+| MSFS 2024, Community-Addons | 1417 | **1417** | 0 |
+| MSFS 2020, Community-Addons | 119 | **119** | 0 |
+| MSFS 2020, Bordmittel | 200 | **155** | 45 |
+| gestreamte Platzhalter | 53 | 2 | 13 |
+| X-Plane 12 | 1146 | *offen* | — |
+
+**Was aus einer `sim.cfg` eines installierten Pakets kommt, lässt sich setzen — ausnahmslos.**
+1536 von 1536 Addon-Titeln. Der einzige nennenswerte Ausfall sind **Tiere im Bordbestand**:
+
+| Kategorie (MSFS-2020-Bestand) | setzbar | nicht |
+|---|---|---|
+| Humans | **75** | 0 |
+| GroundVehicles | 30 | 7 |
+| Misc | 18 | 0 |
+| Boats | 14 | 0 |
+| Landmarks | 11 | 0 |
+| **Animals** | **7** | **38** |
+
+⚠ **Die 75 Menschen sind ein Fund für sich** — sie stehen im Bordbestand, brauchen also kein
+Addon: Wanderer, Läufer, Strandgänger, Arbeiter, Bodenpersonal, Piloten.
+
+### Rauch und Feuer — was im Cockpit wirklich zu sehen war
+
+| Titel | Paket | gesehen? |
+|---|---|---|
+| `SIAI_VFX_Smoke_Red` | SayIntentions | ✅ **rote Säule, auffällig** |
+| `Smoke_Volcano` | **Bordmittel** | ✅ sichtbar, aber unspektakulär |
+| `item_flare_red/blue/green/yellow` | p42-util-campout-mp | vier Farben, gesetzt |
+| `winter_fire_bucket`, `item_gas_cooker_fire_red` | p42-util-campout-mp | winzig, als Marke untauglich |
+
+⚠ **„Setzbar" heißt nicht „sichtbar".** Der Katalog misst nur, ob der Simulator ein Objekt
+anlegt — ob man es sieht, sagt allein der Blick aus dem Cockpit. Bei VFX-Objekten ist das
+keine Formsache: Sie können als unsichtbare Hülle dastehen.
+
+---
+
 ## ⚠ Woher stammt was — und was mutet das den Piloten zu?
 
 **Die Frage entscheidet über den Zuschnitt** (Nutzerfrage, 12.09.2026): *„Davon hängt ab, was
