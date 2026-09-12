@@ -113,8 +113,30 @@ aus WASM heraus nicht aufsetzt (gemessen: 49 ft auf Wangerooge, 122–130 ft in 
 ist die Höhe **unter dem Flugzeug**, nicht am Zielort — für ein Objekt wenige hundert Meter
 daneben taugt sie, für eines 5 km weiter nicht.
 
-**Gegenprobe:** Objekt weit weg anfordern (5–10 km) und schauen, ob die gemeldete Höhe von der
-tatsächlichen abweicht.
+> ### ✅ Gegenprobe gemessen am 12.09.2026 — **die Höhe ist ein Echo, keine Messung**
+>
+> Drei `boot_gross` in 2, 5 und 10 km Entfernung nach Norden, ins Bergland:
+>
+> | Entfernung | gemeldete `hoehe_ft` |
+> |---|---|
+> | 2 km | 1378,2 |
+> | 5 km | 1378,2 |
+> | 10 km | 1378,2 |
+> | *Boden unter dem Flugzeug* | *1378,2* |
+>
+> Auf die Nachkommastelle identisch — **der Simulator gibt zurück, was hineingeschrieben
+> wurde.** Die Rückmeldung bestätigt nicht die Platzierung, sie wiederholt die Anforderung.
+>
+> Das schärft den Bodensee-Fund vom 11.09. (2106,5 ft aus der Ferne, 1297,2 ft aus der Nähe):
+> Es ist nicht „grobes Gelände", es ist **gar keine Messung**.
+>
+> **Regel für den Kieker:** Für ein Objekt in der Nähe des Piloten ist `gelaendehoehe()`
+> brauchbar (am Boden auf 1–2 ft genau gemessen). Für alles Weitere ist sie geraten, und die
+> Rückmeldung deckt den Irrtum nicht auf. Wer Stationen im Voraus verteilt, muss die Höhe
+> **mitliefern** — `erwartete_hoehe_ft` wirkt exakt (s. Punkt 2b) und ist genau dafür da.
+>
+> ⚠ **Das ändert nichts am Befund des Flugtests** („der Server darf einmal verteilen", s.
+> `probe-msfs/FLUGTEST.md`) — es ergänzt ihn um eine Bedingung: verteilen ja, aber mit Höhe.
 
 ---
 
