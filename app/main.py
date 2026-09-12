@@ -755,7 +755,13 @@ _BRUEGGE_TAKT_UNERKANNT_S = 3
 # Welches Tier ein tier_gross ist, darf sich zwischen Simulatoren unterscheiden -- der Pilot
 # zaehlt Tiere, nicht Baeren. Der Server prueft nur gegen diese Liste, damit ein Tippfehler
 # nicht als stille Nicht-Anforderung endet.
-_BRUEGGE_GATTUNGEN = ("tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross")
+#
+# `robbe` ist die erste Gattung, die NICHT aus dem Bordbestand kommt: Weder MSFS 2020 noch
+# 2024 bringt eine Robbe mit (s. `friesenbruegge/OBJEKTE.md`), die Bruegge holt sie ab
+# Fassung 1.4.0 aus einem Community-Paket. Fuer den Server aendert das nichts -- er nennt die
+# Bedeutung, nicht das Modell -- aber ohne den Eintrag hier laesst sich die Gattung im Admin
+# nicht anfordern, und damit ist sie auch nicht messbar.
+_BRUEGGE_GATTUNGEN = ("tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross", "robbe")
 _BRUEGGE_TAKT_VORGABE_S = 1          # Regeltakt, gemessen (s. Protokoll, Abschnitt 6)
 
 

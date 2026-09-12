@@ -361,8 +361,20 @@ static void meldung_bauen(char* puffer, size_t groesse) {
 
     // `kann` geht bei JEDER Anfrage mit, nicht nur beim ersten Mal: Der Server hält keine
     // Sitzung, und eine zustandslose Meldung übersteht jeden Neustart auf beiden Seiten.
+    //
+    // AUS `g_gattungen` ERZEUGT, nicht abgeschrieben. Hier stand eine feste Zeichenkette mit
+    // denselben fünf Namen -- also dieselbe Tatsache zweimal. Beim Eintragen der Gattung
+    // `robbe` (Fassung 1.4.0) fiel genau das auf: Das Modul konnte sie setzen und meldete
+    // gleichzeitig, es könne sie nicht. Der Server wirft `kann` derzeit weg, aber das
+    // Protokoll (Abschnitt 3) sieht vor, dass er ausweicht, wenn eine Gattung fehlt -- die
+    // Lüge wäre also erst dann aufgefallen, wenn sie Folgen hat.
     j.feld("kann");
-    j.roh("[\"tier_gross\",\"bauwerk\",\"fahrzeug\",\"boot_klein\",\"boot_gross\"]");
+    j.roh("[");
+    for (unsigned g = 0; g < sizeof(g_gattungen)/sizeof(g_gattungen[0]); ++g) {
+        if (g) j.komma();
+        j.text(g_gattungen[g].art);
+    }
+    j.roh("]");
     j.komma();
 
     j.feld("lage");

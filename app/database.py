@@ -690,8 +690,9 @@ CREATE INDEX IF NOT EXISTS idx_bruegge_zuordnung_cid ON bruegge_zuordnung(cid);
 -- sie je Pilot zu vervielfachen. Ein Eintrag MIT cid gilt nur fuer diesen einen Piloten.
 --
 -- Die `art` ist eine GATTUNG, kein Dateiname: tier_gross, bauwerk, fahrzeug, boot_klein,
--- boot_gross. Welches Modell daraus wird, entscheidet die Bruegge -- sie kennt ihren
--- Simulator, der Server kennt ihn nicht.
+-- boot_gross, robbe. Welches Modell daraus wird, entscheidet die Bruegge -- sie kennt ihren
+-- Simulator, der Server kennt ihn nicht. Die Pruefliste steht in `app/main.py`
+-- (`_BRUEGGE_GATTUNGEN`); dieser Kommentar ist nur Beschreibung, keine zweite Wahrheit.
 CREATE TABLE IF NOT EXISTS bruegge_soll (
     id            TEXT PRIMARY KEY,
     cid           INTEGER,          -- NULL = fuer alle Bruegge

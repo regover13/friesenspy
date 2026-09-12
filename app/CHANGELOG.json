@@ -1,5 +1,17 @@
 [
   {
+    "version": "14.31.0",
+    "date": "2026-09-12",
+    "highlight": false,
+    "title": "Vorarbeit: eine Robbe ist jetzt eine eigene Gattung",
+    "items": [
+      "🦭 Für den geplanten Kieker soll gezählt werden, was am Strand liegt — nur bringt der Simulator gar keine Robben mit, weder der von 2020 noch der von 2024. Es gibt sie aber in einem frei erhältlichen Zusatzpaket, und zwar in der Form, die sich aus der Luft hinstellen lässt.",
+      "🌉 Die Sim-Brügge kennt deshalb eine neue Gattung „robbe\", und im Admin lässt sie sich auswählen. Bewusst ohne Ausweichmodell: Fehlt das Paket, meldet die Brügge einen Fehler, statt still einen Bären hinzustellen — eine Zahl, die zu Bären gehört, wäre für eine Robbenzählung wertlos.",
+      "🔧 Weiterhin nichts davon zu sehen: Das Paket ist nicht verteilt, und ob sich ein Modell aus einem Zusatzpaket überhaupt aus der Luft setzen lässt, wird erst im Simulator gemessen.",
+      "🧹 Nebenbei aufgeräumt: Die Brügge führte ihre Gattungsliste doppelt und behauptete beim ersten Versuch prompt, sie könne etwas nicht, das sie konnte."
+    ]
+  },
+  {
     "version": "14.30.1",
     "date": "2026-09-12",
     "highlight": false,

@@ -50,7 +50,10 @@ def _meldung(lat=53.78227, lon=7.92593, kennung="a3f9c1e0b2d48576", **mehr):
         "simulator": "msfs2024",
         "bruegge_version": "1.0.0",
         "kennung": kennung,
-        "kann": ["tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross"],
+        # Dieselbe Liste, die `meldung_bauen` aus `g_gattungen` erzeugt -- ab Bruegge 1.4.0
+        # samt `robbe`. Sie steht hier woertlich, weil die Attrappe die Nutzlast spiegeln soll;
+        # im Modul ist sie KEINE eigene Zeichenkette mehr (das war eine zweite Wahrheit).
+        "kann": ["tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross", "robbe"],
         "lage": lage,
         "spur": [],
         "steht": [],
@@ -434,6 +437,25 @@ def test_unbekannte_gattung_wird_abgewiesen(klient, tmp_path):
                     json={"art": "raumschiff", "lat": 53.0, "lon": 7.0}, cookies=kekse)
     assert r.status_code == 400
     assert "Gattung" in r.json()["detail"]
+
+
+def test_robbe_ist_eine_erlaubte_gattung(klient, tmp_path):
+    """Ohne diese Gattung ist der FriesenKieker nicht messbar.
+
+    Weder MSFS 2020 noch 2024 bringt eine Robbe mit (s. `friesenbruegge/OBJEKTE.md`); die
+    Bruegge holt sie ab Fassung 1.4.0 aus dem Community-Paket `human-library-animated`. Die
+    Pruefliste hier ist die einzige Stelle, die das verhindern koennte -- und sie tat es:
+    `robbe` war nicht drin, das Modul konnte die Gattung setzen, und im Admin liess sie sich
+    nicht anfordern. Aufgefallen ist das NICHT im Simulator, sondern beim Nachsehen.
+    """
+    from app.auth import make_admin_token, make_confirm_token
+    import app.main as main
+    s = main.get_settings()
+    kekse = {"fs_admin": make_admin_token(s.SECRET_KEY, s.ADMIN_PASSWORD),
+             "fs_confirm": make_confirm_token(s.SECRET_KEY, s.ADMIN_PASSWORD, 9_999_999_999)}
+    r = klient.post("/api/admin/bruegge/soll",
+                    json={"art": "robbe", "lat": 53.7235, "lon": 7.2502}, cookies=kekse)
+    assert r.status_code == 200, r.text
 
 
 # ---------------------------------------------------------------------------------------

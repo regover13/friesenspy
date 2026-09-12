@@ -490,8 +490,22 @@ Stelle aus — er sendet nie ins Leere.
 | `fahrzeug` | `ASO_Ambulance_Japan` ✅ | `lib/airport/vehicles/…` ⚠ | Gelände |
 | `boot_klein` | `Boat01` ✅ | `SailBoat.obj` ✅ | Gelände — **außer MSFS 2020: Meereshöhe** |
 | `boot_gross` | `CruiseShip01` ✅ | `Perry.obj` ⚠ | Gelände — **außer MSFS 2020: Meereshöhe** |
+| `robbe` (ab 1.4.0) | `ahqa seal moving` ⚠ **Community** | — | Gelände |
 
 ✅ = gesetzt und im Bild gesehen · ⚠ = Datei auf der Platte nachgewiesen, aber nie gesetzt
+
+### ⚠ `robbe` ist die erste Gattung ohne Bordmodell
+
+Weder MSFS 2020 noch 2024 bringt eine Robbe mit (`OBJEKTE.md`). Die drei Titel kommen aus dem
+Community-Paket `human-library-animated` — **und ob `AICreateSimulatedObject` einen Titel aus
+einem Community-Paket überhaupt findet, ist ungemessen** (Messliste 8). Alle ✅ oben stammen aus
+Asobos Bordbestand.
+
+Diese Gattung hat **bewusst keinen Rückfall** auf ein Bordmodell: Der Pilot zählt Tiere, aber
+er zählt hier eine *bestimmte Art* — fiele sie still auf `BlackBear` zurück, lieferte der
+Kieker eine Zahl, während am Strand Bären liegen. Das ist der Fall, den der Satz oben
+(„Wer eine bestimmte Art braucht, braucht eine eigene Gattung") meint, bis zum Ende gedacht:
+Eine eigene Gattung **und** kein Ausweichen.
 
 **Eine Gattung ist eine Bedeutung, kein Modell.** Welches Tier ein `tier_gross` ist, darf sich
 zwischen Simulatoren und zwischen Brügge-Fassungen unterscheiden — der Pilot zählt Tiere, nicht
@@ -499,6 +513,17 @@ Bären. Wer eine bestimmte Art braucht, braucht eine eigene Gattung.
 
 **Neue Gattungen brauchen keine Server-Änderung.** Eine neuere Brügge meldet in `kann` einfach
 mehr; der Server darf anfordern, was mindestens eine Brügge kann.
+
+⚠ **Für den Admin gilt das nicht — dort steht eine Positivliste** (`_BRUEGGE_GATTUNGEN`,
+`app/main.py`), damit ein Tippfehler nicht als stille Nicht-Anforderung endet. Eine neue Gattung
+braucht also keinen neuen *Endpunkt*, aber einen Eintrag in dieser Liste und in der Auswahl im
+Admin. Bei `robbe` wäre das beinahe übersehen worden: Das Modul hätte sie setzen können, im
+Admin ließ sie sich nicht anfordern — und damit nicht messen (`tests/test_bruegge_endpunkt.py`,
+`test_robbe_ist_eine_erlaubte_gattung`).
+
+**`kann` wird in der Brügge aus der Gattungstabelle erzeugt, nicht aufgezählt** (ab 1.4.0).
+Vorher stand dieselbe Liste zweimal im Modul, und beim Eintragen von `robbe` meldete es
+prompt, es könne eine Gattung nicht, die es setzen konnte.
 
 ---
 
