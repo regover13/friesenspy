@@ -41,6 +41,84 @@ EDLA, EDQA, EDNG, EDQC, EDRB, EDLP, dazu EDDN/EDDS) wurden beim maschinellen Pas
 die Längenmessung verfälschten (EDDV: 2784 m für eine 2340-m-Bahn). Von Hand ist das kein
 Hindernis — man klickt die Schwellen, statt sie zu messen.
 
+## Robben für den Kieker: Anfrage an Superspud (vorgemerkt 12.09.2026)
+
+**Der Nutzer verschickt die Anfrage, nicht Claude.** Kontaktformular auf
+https://flightsim.to/addon/33166/animated-humans-library (Autor: *Superspud*). Der fertige
+Text steht unten.
+
+**Ausgangslage:** Weder MSFS 2020 noch 2024 bringt eine Robbe mit. Superspuds Community-Paket
+`human-library-animated` hat sie als SimObject (`ahqa seal moving` u. a.), und dass sich ein
+Community-Titel zur Laufzeit setzen lässt, ist seit dem 12.09.2026 belegt (Screenshot,
+`friesenbruegge/MESSLISTE.md` Abschnitt 8). Gattung `robbe` ist ab Brügge 1.4.0 eingebaut,
+Server und Admin nehmen sie seit v14.31.0.
+
+**Die beschlossene Reihenfolge — sie verschwendet keine Arbeit:**
+
+1. **Jetzt: Abhängigkeit.** Die Brügge nennt nur den Titel; das ist keine Weitergabe und
+   braucht keine Erlaubnis. Damit lässt sich der Kieker vollständig bauen und testen. Preis:
+   556 MB Fremdpaket, von Hand installiert, bei rund 200 Mitgliedern. Wer es nicht hat,
+   erzeugt `EXCEPTION_22` — sichtbar in `bruegge_steht` und im Admin, also vorher prüfbar.
+2. **Parallel: fragen.** Sagt er ja, schrumpft der Download auf unter ein Megabyte (drei
+   SimObjects à ~320 KB), mit seinem Namen im Paket.
+3. **Eigenes Modell nur, wenn nötig** — also wenn er nein sagt UND die 556 MB nachweislich
+   Leute abhalten. Es käme als **zweiter Titel hinter seinen**, nicht an seine Stelle: Wer sein
+   Addon hat, bekommt die animierte Robbe, alle anderen unsere. Ein Rückfall auf eine andere
+   **Art** (Bär, Schaf) bleibt ausgeschlossen — gezählt wird eine bestimmte Art.
+
+⚠ **Ein eigenes Modell gehört NICHT ins Git-Repo** — es ist öffentlich. Der Weg wäre der des
+Kniebrett-ZIP: Datei auf dem VPS, nicht in git. Und technisch schützen lässt sich ein
+Community-Paket nicht (jedes `.gltf`/`.dds` ist lesbar); was hilft, ist ein Fingerabdruck im
+Modell (unbenutzter Knoten, Copyright im `asset`-Block) plus `creator: devprops` im Manifest —
+damit ist ein Diebstahl beweisbar, nicht verhindert.
+
+### Der Anfragetext (fertig zum Kopieren)
+
+> **Subject:** Permission request — using 3 SimObjects from Animated Humans Library in a small
+> non-commercial group package
+>
+> Hi Superspud,
+>
+> first of all: thank you for Animated Humans Library. We have been using it for a while — our
+> little scenery addon "Counting Seals" places your animals as library objects along the East
+> Frisian Islands, and your package is listed as its dependency.
+>
+> I am writing because of a new, non-commercial project for our virtual flying group
+> (FriesenFlieger, around 200 members). We are building an event in which pilots fly along the
+> Wadden Sea coast and count seal colonies from the air. Unlike the scenery addon, this one
+> places the animals **at runtime** via SimConnect (`AICreateSimulatedObject`), because the
+> colonies differ from event to event.
+>
+> That is where we hit a wall: **MSFS simply has no seals.** We went through the entire stock
+> inventory of both MSFS 2020 (45 animal titles) and MSFS 2024 (41 animal packages) — there is
+> no seal, sea lion or walrus anywhere. Your library is the only source we could find, and your
+> `ahqa seal moving` works beautifully as a SimObject: we set one yesterday and it looked
+> exactly right.
+>
+> **My question:** would you allow us to include three of your SimObjects — `ahqa seal moving`,
+> `ahqa sea lion moving`, `ahqa walrus moving` (model, texture and sim.cfg, roughly 320 KB
+> each) — in a small package of our own, handed out to the members of our group?
+>
+> What we would do in return, or differently, entirely as you prefer:
+>
+> - full credit with your name and a link to this page, in the package manifest, in our
+>   changelog and on the download page
+> - no public upload anywhere — the file would go to our members only, not onto flightsim.to or
+>   any other site
+> - any condition you want to attach, and we remove it immediately if you ever change your mind
+>
+> And if you would rather not, that is completely fine — no hard feelings. In that case we will
+> keep referring to your titles and simply ask our members to install your library themselves.
+> It works, it just means a 556 MB download for people who only need one animal, so we thought
+> it was worth asking first.
+>
+> Thanks either way, and thanks for making animals that actually move.
+>
+> Best regards,
+> Tobias (devprops) — FriesenFlieger
+
+---
+
 ## X-Plane mitdenken (vorgemerkt 11.09.2026)
 
 **Alles, was gerade an Simulator-Anbindung entworfen wird, setzt stillschweigend MSFS voraus.**
