@@ -6,6 +6,65 @@ Vor jedem Push: `git fetch` + Rebase auf `origin/main`; niemals fremde, uncommit
 
 ---
 
+## 2026-09-12 (Abend) — GROSSE Bruegge-Sitzung: 1.0.1 → 1.3.0, mehrere Altbefunde widerlegt
+
+**Betrifft `friesenbruegge/` UND `app/` (v14.30.1, ausgeliefert).** Eine zweite Session
+arbeitet parallel an der Bruegge — **bitte diesen Eintrag ganz lesen, bevor etwas auf den
+Altbefunden aufgebaut wird.**
+
+### Angefasste Dateien
+
+`app/database.py` (neue Tabelle `bruegge_steht`, Spalte `bruegge_soll.auf_boden`, beide mit
+Migration) · `app/main.py` (Endpunkt wertet `steht` aus, loggt `antwort_zu_gross`) ·
+`app/static/admin.html` (Spalte „steht wirklich?“) · `tests/test_bruegge_endpunkt.py` ·
+`friesenbruegge/msfs/bruegge.cpp` (1.0.1 → **1.3.0**) · `friesenbruegge/msfs/paket.ps1` ·
+`PROTOKOLL.md` · `MESSLISTE.md` · **neu: `OBJEKTE.md`**
+
+### ⚠ Vier Altbefunde sind WIDERLEGT — nicht mehr zitieren
+
+1. **„Aus der Ferne ist `steht[].hoehe_ft` unbrauchbar“** (Eintrag direkt darunter, Bodensee
+   2106,5 ft). **Falsch gedeutet:** Die Meldung log nie — das Objekt stand wirklich dort, weil
+   die *gerechnete* Hoehe falsch war. Mit `auf_boden: 1` (`OnGround=1`) meldeten vier Sonden
+   aus 1, 3, 6 und **10 km** korrekte Gelaendehoehen; die 10-km-Sonde traf den Bodensee-Spiegel
+   auf 0,1 ft genau (1297,5 gegen 1297,6 ft).
+2. **„`OnGround=1` ist aus WASM unbrauchbar“** (`probe-msfs/ERGEBNIS.md`). Galt nur fuer
+   **ein Modell an einem Ort** (`Boat01` auf Wangerooge). Vier von fuenf Gattungen setzen sauber
+   auf. **Fuer MSFS 2020 weiterhin ungemessen.**
+3. **„Die Gleichzeitigkeit ueberfordert den Simulator.“** Nein — 30 Objekte in einem Zug gehen
+   fehlerfrei, samt gleichzeitigem Versetzen, bei 89,4 FPS.
+4. **„Der Sondenumweg ist noetig.“** Gestrichen (Nutzerentscheidung): `auf_boden: 1` genuegt
+   allein. Die Idee bleibt in MESSLISTE 2c aufgehoben — **falls MSFS 2020 das Flag ignoriert.**
+
+### Was am Modul neu ist (alles im Flug belegt)
+
+| | |
+|---|---|
+| **Das Paket lud gar nicht** | UTF-8-**BOM** in `manifest.json`/`layout.json` (`Set-Content -Encoding UTF8` unter PS 5.1). `paket.ps1` schreibt jetzt BOM-frei und **prueft sich selbst**. |
+| `AIRemoveObject` | wieder drin — ohne ihn verdoppelt **jeder** Verbindungsabriss die Objekte |
+| Objekte **versetzen** | geht jetzt (gleiche `id`, neue Koordinate); vorher passierte stillschweigend **nichts**, waehrend `steht` Erfolg meldete |
+| `ANTWORT_PUFFER` | 4096 → **16384**; bei 30 Objekten waren 3776 Bytes erreicht. Eine zu grosse Antwort wird jetzt **verworfen statt halb gelesen** und als `antwort_zu_gross` gemeldet |
+| Exception-Zuordnung | ueber `GetLastSentPacketID` **exakt statt geraten** — vorher galt ein sichtbar dastehender Baer als „fehlgeschlagen“ und war nie mehr abraeumbar |
+| Titel je Gattung | **Liste statt Einzelname** (`ASO_Ambulance_Japan` gibt es nur in MSFS 2020) |
+
+### Serverseite
+
+`steht` wurde **seit Fassung 1 weggeworfen** — der Endpunkt las den Block nicht aus. Jetzt in
+`bruegge_steht` (Schluessel `(kennung, id)`), im Admin neben der Anforderung sichtbar, und im
+Aufraeumer beruecksichtigt.
+
+### Fuer die parallele Session
+
+- **`bruegge.cpp` ist stark umgebaut** (1.0.1 → 1.3.0). Bei Konflikten: meine Fassung ist im
+  Simulator belegt, die Befunde stehen in `MESSLISTE.md`.
+- **`MESSLISTE.md` ist jetzt das Hauptdokument** — alle sieben Punkte abgehakt plus 2b, 2c, 2d,
+  3b, 3c, 5b, 5c, 5d. Wer etwas an der Bruegge aendert, liest es zuerst.
+- **`OBJEKTE.md` ist neu:** Titellisten je Simulator, aus der Installation ausgelesen. ⚠ Darin
+  der Befund, der den Kieker am meisten angeht: **weder MSFS 2020 noch 2024 bringt Robben mit.**
+- X-Plane war bereits am 11.09. vermessen (`probe-xplane/ERGEBNIS.md`) — **erst dort nachsehen,
+  nicht suchen.** Dort gibt es mit `XPLMProbeTerrainXYZ` eine echte Gelaendeabfrage.
+
+---
+
 ## 2026-09-11 (spaet) — Protokoll war in sich widerspruechlich (Sim-Sitzung)
 
 **Betrifft nur `friesenbruegge/`.** Kein Anwendungscode, keine Version.
