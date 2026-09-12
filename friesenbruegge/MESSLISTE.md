@@ -383,8 +383,17 @@ daneben taugt sie, für eines 5 km weiter nicht.
 >
 > ### Für den FriesenKieker
 >
-> **Fahrzeuge taugen nicht als Zählstation** — sie fahren weg. Tiere, Bauwerke und Boote
-> bleiben, wo sie hingesetzt werden.
+> **Ein `fahrzeug` bleibt nicht liegen, wo man es hinstellt — Tiere, Bauwerke und Boote schon.**
+>
+> ⚠ Hier stand zuerst „Fahrzeuge taugen nicht als Zählstation". Das ist eine **Wertung, kein
+> Befund** (vom Nutzer angemerkt: *„naja, wer weiß. Aber man muss das wissen."*). Ein
+> rollendes Fahrzeug kann genauso gut erwünscht sein — ein bewegliches Ziel, ein Konvoi, etwas
+> zum Hinterherfliegen. Wer ein Event baut, entscheidet das; die Messung liefert nur die
+> Eigenschaft.
+>
+> **Was sie liefert, ist präzise:** 21 ft Höhenverlust in zwei Minuten, dann Stillstand. Wer
+> ein Fahrzeug an einem Hang setzt, findet es unten wieder; auf ebenem Grund vermutlich nicht
+> — **das ist ungemessen.**
 >
 > ⚠ Schade ist das trotzdem: Eine Robbenbank aus völlig reglosen Modellen wirkt tot. **Ob
 > sich ein Tier gezielt in Bewegung setzen lässt**, ist ungemessen — Kandidaten wären
