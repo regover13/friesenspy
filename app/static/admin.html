@@ -1455,9 +1455,9 @@
         </div>
 
         <div class="panel">
-          <div class="panel-title"><span>🌉 Brügge</span></div>
+          <div class="panel-title"><span>🌉 FriesenBrügge</span></div>
           <p style="color:#8aa0b8;font-size:0.82rem;margin:4px 0 12px;">
-            Die Sim-Brügge meldet die Position aus dem Simulator und stellt hin, was hier
+            Die FriesenBrügge meldet die Position aus dem Simulator und stellt hin, was hier
             angefordert wird. Sie braucht <b>keine Anmeldung</b> — der Server erkennt den
             Piloten an der Position, und zwar nur, wenn er auf VATSIM mit Friesen-Präfix
             fliegt <i>und</i> sich schon einmal im Forum angemeldet hat.
@@ -1524,16 +1524,16 @@
               </div>
               <div id="bg-karte" style="height:340px;border:1px solid #22303f;border-radius:6px;"></div>
               <p style="color:#8aa0b8;font-size:0.78rem;margin:6px 0 0;">
-                <b>Klicken setzt Breite und Länge.</b> Blau sind die gemeldeten Brügge-Positionen,
+                <b>Klicken setzt Breite und Länge.</b> Blau sind die gemeldeten FriesenBrügge-Positionen,
                 grün die angeforderten Objekte, rot die, die nicht stehen.
                 <span id="bg-karte-hinweis" style="color:#5cb85c;"></span>
               </p>
             </div>
             <p style="color:#8aa0b8;font-size:0.78rem;margin:0 0 10px;">
               Eine <b>Gattung</b>, kein Modell: Welches Tier ein <code>tier_gross</code> ist,
-              entscheidet die Brügge — sie kennt ihren Simulator, der Server nicht.
+              entscheidet die FriesenBrügge — sie kennt ihren Simulator, der Server nicht.
               <code>robbe</code> braucht ein Community-Paket (MSFS bringt keine Robben mit) —
-              fehlt es, meldet die Brügge einen Fehler statt still ein anderes Tier zu setzen.
+              fehlt es, meldet die FriesenBrügge einen Fehler statt still ein anderes Tier zu setzen.
             </p>
             <div class="table-wrap">
               <table>
@@ -2207,7 +2207,7 @@
       const zuMir = document.getElementById('bg-karte-zu-mir');
       if (zuMir) zuMir.addEventListener('click', function () {
         const m = bgZielPilot();
-        if (!m) { alert('Keine Brügge meldet gerade eine Position.'); return; }
+        if (!m) { alert('Keine FriesenBrügge meldet gerade eine Position.'); return; }
         if (_bgKarte) _bgKarte.setView([m.lat, m.lon], 16);
       });
       const alles = document.getElementById('bg-karte-alles');

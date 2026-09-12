@@ -3,9 +3,9 @@
     "version": "14.33.0",
     "date": "2026-09-13",
     "highlight": false,
-    "title": "Die Brügge steht zum Herunterladen bereit",
+    "title": "Die FriesenBrügge steht zum Herunterladen bereit",
     "items": [
-      "🌉 Auf der Kniebrett-Seite gibt es jetzt ein zweites Paket: die Brügge. Sie hat kein Fenster und keine Knöpfe — sie läuft im Hintergrund mit, meldet die eigene Position sekundengenau und kann umgekehrt in den Simulator stellen, was der Server ihr nennt.",
+      "🌉 Auf der Kniebrett-Seite gibt es jetzt ein zweites Paket: die FriesenBrügge. Sie hat kein Fenster und keine Knöpfe — sie läuft im Hintergrund mit, meldet die eigene Position sekundengenau und kann umgekehrt in den Simulator stellen, was der Server ihr nennt.",
       "🦭 Zu sehen ist davon noch nichts: Die Karte zeigt weiterhin die VATSIM-Positionen. Sie ist die Vorarbeit für Events, bei denen im Simulator etwas dastehen soll — Tiere zum Zählen, Boote, Marken, Rauchsäulen als Wegweiser.",
       "🎛️ Im Admin lassen sich Objekte jetzt bequemer setzen: Gattung und Pilot sind Suchfelder statt Eingabefelder, und beim Piloten steht das Friesen-Rufzeichen vor der CID — eine siebenstellige Zahl sagt niemandem, wen sie meint."
     ]
@@ -26,7 +26,7 @@
     "version": "14.31.1",
     "date": "2026-09-12",
     "highlight": false,
-    "title": "Eine Karte für die Brügge",
+    "title": "Eine Karte für die FriesenBrügge",
     "items": [
       "🗺 Im Admin lassen sich die Koordinaten für Sim-Objekte jetzt **auf einer Karte anklicken**, statt sie einzutippen. Dieselbe Satellitenansicht wie beim Einpassen der Sichtflugkarten.",
       "🔵 Die Karte zeigt zugleich, was los ist: blau die gemeldeten Positionen aus dem Simulator, grün die Objekte, die wirklich dastehen, rot die, die es nicht tun — und gelb die Stelle, an der das nächste Objekt entstehen soll.",
@@ -41,32 +41,32 @@
     "title": "Vorarbeit: eine Robbe ist jetzt eine eigene Gattung",
     "items": [
       "🦭 Für den geplanten Kieker soll gezählt werden, was am Strand liegt — nur bringt der Simulator gar keine Robben mit, weder der von 2020 noch der von 2024. Es gibt sie aber in einem frei erhältlichen Zusatzpaket, und zwar in der Form, die sich aus der Luft hinstellen lässt.",
-      "🌉 Die Sim-Brügge kennt deshalb eine neue Gattung „robbe\", und im Admin lässt sie sich auswählen. Bewusst ohne Ausweichmodell: Fehlt das Paket, meldet die Brügge einen Fehler, statt still einen Bären hinzustellen — eine Zahl, die zu Bären gehört, wäre für eine Robbenzählung wertlos.",
+      "🌉 Die FriesenBrügge kennt deshalb eine neue Gattung „robbe\", und im Admin lässt sie sich auswählen. Bewusst ohne Ausweichmodell: Fehlt das Paket, meldet die FriesenBrügge einen Fehler, statt still einen Bären hinzustellen — eine Zahl, die zu Bären gehört, wäre für eine Robbenzählung wertlos.",
       "🔧 Weiterhin nichts davon zu sehen: Das Paket ist nicht verteilt, und ob sich ein Modell aus einem Zusatzpaket überhaupt aus der Luft setzen lässt, wird erst im Simulator gemessen.",
-      "🧹 Nebenbei aufgeräumt: Die Brügge führte ihre Gattungsliste doppelt und behauptete beim ersten Versuch prompt, sie könne etwas nicht, das sie konnte."
+      "🧹 Nebenbei aufgeräumt: Die FriesenBrügge führte ihre Gattungsliste doppelt und behauptete beim ersten Versuch prompt, sie könne etwas nicht, das sie konnte."
     ]
   },
   {
     "version": "14.30.1",
     "date": "2026-09-12",
     "highlight": false,
-    "title": "Die Brügge sagt jetzt zurück, was wirklich dasteht",
+    "title": "Die FriesenBrügge sagt jetzt zurück, was wirklich dasteht",
     "items": [
-      "🌉 Die Sim-Brügge meldete bisher brav zurück, ob ein angefordertes Objekt tatsächlich im Simulator steht — der Server hat diese Antwort aber weggeworfen. Jetzt wird sie ausgewertet und im Admin angezeigt.",
+      "🌉 Die FriesenBrügge meldete bisher brav zurück, ob ein angefordertes Objekt tatsächlich im Simulator steht — der Server hat diese Antwort aber weggeworfen. Jetzt wird sie ausgewertet und im Admin angezeigt.",
       "🦭 Das ist mehr als Kosmetik: Ohne die Rückmeldung könnte später eine Station für ein Event angelegt werden, die es im Simulator gar nicht gibt — und jemand fliegt hin und findet nichts. Gemeldet wird auch der Grund, wenn das Hinstellen scheitert.",
       "🔧 Weiterhin nichts davon zu sehen: Das Paket ist nicht verteilt, die Karte zeigt die VATSIM-Positionen.",
-      "🧹 Und die Rückmeldungen räumen sich selbst wieder weg, wenn eine Brügge sich verabschiedet — sonst bliebe für jeden Simulator, der je gemeldet hat, eine Zeile liegen, die niemand mehr bestätigt.",
-      "📻 Und die Brügge sagt jetzt Bescheid, wenn eine Antwort des Servers zu groß für sie war — statt sie stillschweigend halb zu lesen. Sie behält dann lieber ihren letzten Stand, und im Server-Log steht, wie viel zu viel es war."
+      "🧹 Und die Rückmeldungen räumen sich selbst wieder weg, wenn eine FriesenBrügge sich verabschiedet — sonst bliebe für jeden Simulator, der je gemeldet hat, eine Zeile liegen, die niemand mehr bestätigt.",
+      "📻 Und die FriesenBrügge sagt jetzt Bescheid, wenn eine Antwort des Servers zu groß für sie war — statt sie stillschweigend halb zu lesen. Sie behält dann lieber ihren letzten Stand, und im Server-Log steht, wie viel zu viel es war."
     ]
   },
   {
     "version": "14.30.0",
     "date": "2026-09-11",
     "highlight": false,
-    "title": "Vorarbeit: die Sim-Brügge",
+    "title": "Vorarbeit: die FriesenBrügge",
     "items": [
-      "🌉 Neu im Hintergrund: eine Brügge für den Flugsimulator. Sie tut zweierlei — sie meldet die eigene Position sekundengenau an FriesenSpy (deutlich dichter und aktueller als der VATSIM-Feed mit seinem 15-Sekunden-Raster), und sie stellt in den Simulator, was der Server ihr nennt: Tiere, Boote, Fahrzeuge, Bauwerke.",
-      "🦭 Das Hinstellen ist der eigentliche Zweck — ohne es gäbe es nichts zu zählen und nichts zu suchen. Was dort steht, entscheidet allein der Server; die Brügge weiß nicht einmal, ob gerade ein Event läuft. Ein neuer Eventtyp braucht deshalb später kein neues Paket beim Piloten.",
+      "🌉 Neu im Hintergrund: eine FriesenBrügge für den Flugsimulator. Sie tut zweierlei — sie meldet die eigene Position sekundengenau an FriesenSpy (deutlich dichter und aktueller als der VATSIM-Feed mit seinem 15-Sekunden-Raster), und sie stellt in den Simulator, was der Server ihr nennt: Tiere, Boote, Fahrzeuge, Bauwerke.",
+      "🦭 Das Hinstellen ist der eigentliche Zweck — ohne es gäbe es nichts zu zählen und nichts zu suchen. Was dort steht, entscheidet allein der Server; die FriesenBrügge weiß nicht einmal, ob gerade ein Event läuft. Ein neuer Eventtyp braucht deshalb später kein neues Paket beim Piloten.",
       "🔧 Zu sehen ist davon noch nichts — das Paket ist nicht verteilt, und die Karte zeigt weiterhin die VATSIM-Positionen. Dieser Schritt legt die Serverseite und die Admin-Steuerung an.",
       "🎛️ Dazu eine Notbremse im Admin: Wird es eng, lässt sich der Melde-Takt von einer Sekunde bis auf ganz aus drosseln — sofort und für alle, ohne dass dafür etwas neu ausgeliefert werden muss."
     ]

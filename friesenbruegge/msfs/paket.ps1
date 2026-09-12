@@ -36,7 +36,12 @@
 #
 # Nach dem Ablegen muss der Simulator NEU GESTARTET werden.
 
-param([switch]$Fuer2020)     # ins Community-Verzeichnis von MSFS 2020 statt 2024
+param(
+    [switch]$Fuer2020,     # ins Community-Verzeichnis von MSFS 2020 statt 2024
+    # Das ZIP gleich auf den VPS schieben. Bewusst NICHT die Vorgabe: Ein frisch gebautes
+    # Paket ist noch nicht im Simulator geprueft, und der Upload faellt nach draussen.
+    [switch]$Hochladen
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -127,5 +132,41 @@ Write-Output "JSON geprueft: kein BOM, parsebar."
 
 Write-Output "Paket liegt: $paket"
 Get-ChildItem $paket -Recurse -File | ForEach-Object { "  {0,8}  {1}" -f $_.Length, $_.FullName.Replace($paket, '') }
+Write-Output ""
+
+# ---------------------------------------------------------------------------------------
+# Das ZIP fuer die Download-Seite -- IMMER mitgebaut, nicht auf Zuruf.
+#
+# Warum automatisch: Das ZIP liegt von Hand auf dem VPS, und KEIN Deploy fasst es an. Beim
+# EFB-Paket ist genau das dreimal schiefgegangen -- der Download lief drei Fassungen hinterher
+# und fiel nur im Browsertest auf. Wer sich merken muss, ein ZIP zu bauen, vergisst es; wer es
+# ohnehin bekommt, muss es nur noch hochladen.
+#
+# Der Upload bleibt bewusst ein eigener Schritt (`-Hochladen`): Er faellt nach draussen, und
+# ein Paket, das gerade erst gebaut wurde, ist noch nicht im Simulator geprueft.
+# ---------------------------------------------------------------------------------------
+$zip = Join-Path (Split-Path $hier -Parent) "friesenbruegge.zip"
+if (Test-Path $zip) { Remove-Item $zip -Force }
+Compress-Archive -Path $paket -DestinationPath $zip -CompressionLevel Optimal
+$zg = (Get-Item $zip).Length
+Write-Output ("ZIP gebaut:  {0}  ({1:N0} Bytes, Fassung {2})" -f $zip, $zg, $fassung)
+
+if ($Hochladen) {
+    # Der Pfad ist derselbe wie beim EFB-ZIP -- beide liegen im Volume neben der Datenbank.
+    $ziel = "server:/opt/friesenspy/data/efb/friesenbruegge.zip"
+    Write-Output "Lade hoch nach $ziel ..."
+    & scp -q $zip $ziel
+    if ($LASTEXITCODE -eq 0) {
+        Write-Output "Hochgeladen. Die Download-Seite zeigt jetzt Fassung $fassung."
+    } else {
+        Write-Warning "scp ging schief (Code $LASTEXITCODE) -- die Download-Seite bleibt alt!"
+    }
+} else {
+    Write-Output ""
+    Write-Output "Noch NICHT auf der Download-Seite. Wenn das Paket im Simulator geprueft ist:"
+    Write-Output "    .\paket.ps1 -Hochladen"
+    Write-Output "  oder von Hand:  scp `"$zip`" server:/opt/friesenspy/data/efb/"
+}
+
 Write-Output ""
 Write-Output "MSFS 2024 jetzt NEU STARTEN -- Community-Pakete liest der Simulator nur beim Start."

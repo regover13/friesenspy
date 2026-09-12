@@ -828,3 +828,31 @@ def test_das_cid_feld_sucht_ueber_callsign_name_und_cid():
     # Und Freitext darf NICHT als CID durchgehen -- ein Objekt versehentlich fuer ALLE zu
     # setzen ist der teurere Fehler.
     assert "ist keine CID" in s
+
+
+def test_auf_der_website_steht_der_volle_name():
+    """„FriesenBrügge" ist der Name, „Brügge" nur unsere Abkürzung im Gespräch.
+
+    Stehende Regel (Nutzer, 13.09.2026): *„Nur weil wir das abkürzen, muss das auf der
+    Website immer so stehen."* Betroffen sind die Download-Seite, der Admin und der
+    Änderungsverlauf — überall dort, wo ein Mitglied den Namen liest.
+
+    Kommentare im Quelltext sind ausgenommen; dort ist „Brügge" die Arbeitsbezeichnung.
+    """
+    import json
+    import re
+    from pathlib import Path
+    wurzel = Path(__file__).resolve().parents[1]
+
+    # 1. Die Download-Seite -- sichtbarer Text, also alles ausserhalb von <script>.
+    efb = (wurzel / "app" / "static" / "efb.html").read_text(encoding="utf-8")
+    ohne_skript = re.sub(r"<script\b.*?</script>", "", efb, flags=re.S | re.I)
+    nackt = re.findall(r"(?<!Friesen)(?<!friesen)\bBrügge\b", ohne_skript)
+    assert not nackt, f"{len(nackt)}x Bruegge ohne Friesen auf der Download-Seite"
+
+    # 2. Der Aenderungsverlauf -- er erscheint als Banner bei jedem Besucher.
+    log = json.loads((wurzel / "app" / "CHANGELOG.json").read_text(encoding="utf-8"))
+    for e in log:
+        text = e["title"] + " " + " ".join(e.get("items", []))
+        treffer = re.findall(r"(?<!Friesen)(?<!friesen)\bBrügge\b", text)
+        assert not treffer, f"v{e['version']}: Bruegge ohne Friesen"
