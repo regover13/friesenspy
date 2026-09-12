@@ -1493,7 +1493,7 @@
                    ginge beim Zuklappen verloren. Hier steht sie in jeder Zeile. -->
               <div style="position:relative;display:flex;flex-direction:column;gap:2px;">
                 <input id="bg-art" placeholder="was hinstellen?" autocomplete="off"
-                       value="tier_gross" style="width:230px;padding:6px;">
+                       style="width:230px;padding:6px;">
                 <div id="bg-art-picker" class="ke-c-picker"></div>
               </div>
               <input id="bg-lat" placeholder="Breite" style="width:110px;padding:6px;">
@@ -1506,10 +1506,17 @@
                        style="width:190px;padding:6px;">
                 <div id="bg-cid-picker" class="ke-c-picker"></div>
               </div>
+              <!-- Entweder der Simulator setzt auf (OnGround=1) ODER es wird eine Höhe
+                   vorgegeben. Beides zugleich ergibt keinen Sinn: Bei OnGround=1 ignoriert
+                   der Simulator die Höhe (11.09.2026 gemessen -- 0 und 500 ft ergaben
+                   dasselbe Ergebnis). Deshalb sperrt der Haken das Feld. -->
               <label style="color:#8aa0b8;font-size:0.78rem;display:flex;align-items:center;gap:4px;"
-                     title="OnGround=1 — der Simulator setzt das Objekt selbst auf den Boden. Trifft bis 10 km Entfernung. Ohne den Haken wird die Höhe unter dem Flugzeug genommen, und die stimmt schon 100 m weiter nicht mehr.">
+                     title="OnGround=1 — der Simulator setzt das Objekt selbst auf den Boden. Trifft bis 10 km Entfernung. Ohne den Haken zählt die Höhe rechts.">
                 <input type="checkbox" id="bg-auf-boden" checked> auf den Boden
               </label>
+              <input id="bg-hoehe" type="number" step="1" placeholder="Höhe ft MSL" disabled
+                     title="Höhe über Meer in Fuß. Nur wenn „auf den Boden“ abgewählt ist."
+                     style="width:120px;padding:6px;">
               <button class="btn btn-sm" id="bg-soll-setzen">Hinstellen</button>
               <button class="btn btn-sm" id="bg-karte-auf">🗺 Karte</button>
             </div>
@@ -2165,6 +2172,8 @@
 
       const hin = document.getElementById('bg-soll-setzen');
       if (hin) hin.addEventListener('click', async function () {
+        const art = document.getElementById('bg-art').value.trim();
+        if (!art) { alert('Keine Gattung gewählt.'); return; }
         const lat = parseFloat(document.getElementById('bg-lat').value);
         const lon = parseFloat(document.getElementById('bg-lon').value);
         if (!isFinite(lat) || !isFinite(lon)) { alert('Breite und Länge fehlen.'); return; }
@@ -2182,9 +2191,16 @@
           method: 'POST', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            art: document.getElementById('bg-art').value,
+            art: art,
             lat: lat, lon: lon, cid: cid ? parseInt(cid, 10) : null,
             auf_boden: document.getElementById('bg-auf-boden').checked,
+            erwartete_hoehe_ft: (function () {
+              const h = document.getElementById('bg-hoehe');
+              const v = parseFloat(h.value);
+              // Nur mitschicken, wenn OnGround AUS ist und eine Zahl dasteht -- sonst
+              // stünde im Katalog eine Höhe, die der Simulator ohnehin verwirft.
+              return (!document.getElementById('bg-auf-boden').checked && isFinite(v)) ? v : null;
+            })(),
           }),
         });
         if (!r.ok) { alert('Ging nicht: ' + (await r.text())); return; }
@@ -2219,6 +2235,19 @@
       if (alles) alles.addEventListener('click', function () {
         if (_bgKarte) { _bgKarte._bgGesetzt = false; bgKarteFuellen(); }
       });
+
+      // Der Haken sperrt das Höhenfeld -- bei OnGround=1 ignoriert der Simulator jede
+      // Höhenangabe, ein bedienbares Feld daneben wäre eine Lüge.
+      const hakenB = document.getElementById('bg-auf-boden');
+      const hoeheF = document.getElementById('bg-hoehe');
+      if (hakenB && hoeheF) {
+        const nachziehen = function () {
+          hoeheF.disabled = hakenB.checked;
+          hoeheF.style.opacity = hakenB.checked ? '0.45' : '1';
+        };
+        hakenB.addEventListener('change', nachziehen);
+        nachziehen();
+      }
 
       bgArtPicker();
       bgPilotenLaden().then(bgCidPicker);
@@ -2270,7 +2299,7 @@
     // muss hier sichtbar sein, sonst setzt jemand eine Station, die nur bei ihm selbst steht.
     const _bgGattungen = [
       { wert: 'tier_gross',  text: 'Bär, Grizzly',                    hinweis: '' },
-      { wert: 'tier_wasser', text: 'Buckelwal',                       hinweis: '' },
+      { wert: 'tier_wasser', text: 'Buckelwal',        hinweis: 'nur auf WASSER sichtbar!' },
       { wert: 'boot_klein',  text: 'Boot, Kutter, Jacht',             hinweis: '' },
       { wert: 'boot_gross',  text: 'Kreuzfahrtschiff, Frachter',      hinweis: '' },
       { wert: 'bauwerk',     text: 'Windmühle, Windsack',             hinweis: '' },

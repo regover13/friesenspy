@@ -388,7 +388,17 @@ static const Gattung g_gattungen[] = {
     // Wild.
     { "tier_wild",   { "ahqa Deer Running", "ahqa stag walking", "ahqa moose bull walking",
                        "ahqa fox walking", "ahqa boar walking", nullptr } },
-    // Das groesste, was der Bordbestand hergibt -- und das einzige, das ins Wasser gehoert.
+    // ⚠ BRAUCHT WASSER. Am 13.09.2026 auf DREI METERN Abstand ueber Land gesetzt: Das Objekt
+    // meldete `steht` mit korrekter Hoehe (1386,5 ft bei 1386,5 ft Gelaende) -- und war
+    // trotzdem nicht zu sehen. Ein 15-Meter-Wal auf drei Metern fuellt das Seitenfenster;
+    // wenn da nichts ist, zeichnet MSFS ihn an Land schlicht nicht.
+    //
+    // Das ist die einzige Gattung mit dieser Bedingung. Boote stehen sehr wohl auf der Wiese
+    // (an demselben Abend mehrfach gesehen) -- beim Wal genuegt dem Simulator das nicht.
+    //
+    // ⚠ UND ES IST DAS LEHRSTUECK ZUM KATALOG: "setzbar" heisst nicht "sichtbar". Der
+    // Katalog misst, ob der Simulator ein Objekt anlegt -- ob man es sieht, sagt allein der
+    // Blick aus dem Cockpit. 1693 gruene Haken bedeuten also weniger, als sie aussehen.
     { "tier_wasser", { "HumpbackWhale", nullptr } },
 
     // Eine Marke, die nicht wegrollt und aus der Luft auffaellt. Zwoelf Flaggenfarben sind
