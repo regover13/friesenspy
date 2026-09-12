@@ -348,9 +348,31 @@ gehören aber zur alten Position des Piloten.)
 > | Die Brügge fragt am Zielort nach und meldet zurück | braucht einen neuen Rückkanal; der Pilot muss hinfliegen |
 > | Nur dort setzen, wo der Pilot schon ist | widerspricht „der Server darf einmal verteilen" |
 >
-> **Am Wattenmeer entschärft sich das Problem:** Dort ist das Gelände flach und liegt nahe
-> null. Für den Kieker auf den Friesischen Inseln ist das womöglich gar keine Hürde — das ist
-> aber eine Vermutung und gehört dort gemessen, nicht hier.
+> ⚠ **Hier stand, das Problem entschärfe sich am Wattenmeer, weil es dort flach ist. Das war
+> frei erfunden** — aus dem Namen „FriesenKieker" und den Robben geschlossen, nicht aus den
+> Unterlagen. **Der Kieker spielt überall auf der Welt** (vom Nutzer richtiggestellt,
+> 12.09.2026), also auch in Bergen, an Steilküsten und auf Hochebenen. Damit ist die
+> Höhenfrage nicht kleiner als gedacht, sondern größer.
+>
+> **Der vierte Weg, und er kostet nichts Neues:** Die Brügge misst die Geländehöhe bereits bei
+> jeder Meldung — `alt_msl_ft − alt_agl_ft` ist genau die Rechnung aus `gelaendehoehe()`, nur
+> je Meldung statt je Objekt. Der Server bekommt sie im Sekundentakt für jeden Punkt der
+> Flugbahn und könnte daraus eine Geländekarte aufbauen: gemessen in genau dem Simulator, in
+> dem später die Station stehen soll. Kein DEM käme da mit, weil bei jedem die Frage bliebe,
+> wie stark es von Asobos Gelände abweicht.
+>
+> **Heute wird das weggeworfen:** `bruegge_positions` hat `cid INTEGER PRIMARY KEY` — eine
+> Zeile je Pilot, bei jeder Meldung überschrieben. Die Höhe jedes überflogenen Punktes lebt
+> eine Sekunde.
+>
+> **Zwei Dinge sind daran ungemessen und gehören geprüft, bevor jemand es baut:**
+>
+> 1. **Wie genau ist `alt_agl_ft` aus großer Höhe?** Unter dem Flugzeug ist das Terrain
+>    geladen, aber in Reiseflughöhe ist sein Detailgrad gröber. Wenn die Messung aus
+>    10.000 ft um zwanzig Fuß danebenliegt, taugt sie nicht zum Stationensetzen.
+> 2. **Reicht die Abdeckung?** Kartiert wird nur, wo schon einmal jemand geflogen ist —
+>    entlang der Flugbahn, nicht in der Fläche. Für ein Revier, das ein Pilot erst betritt,
+>    liegt zunächst nichts vor.
 
 ---
 
