@@ -418,9 +418,33 @@ daneben taugt sie, für eines 5 km weiter nicht.
 > wenig.
 >
 > **Ungemessen ist:** ob sich ein Tier über `SetDataOnSimObject` überhaupt steuern lässt, und
-> welche Variablen dafür taugen (`GROUND VELOCITY`? ein Animationszustand?). Der frühere
-> Verdacht, ein neuer Import lasse das Modul nicht mehr laden, ist widerlegt —
-> `AIRemoveObject` und `GetLastSentPacketID` kamen beide dazu, ohne dass etwas zerbrach.
+> welche Variablen dafür taugen. Der frühere Verdacht, ein neuer Import lasse das Modul nicht
+> mehr laden, ist widerlegt — `AIRemoveObject` und `GetLastSentPacketID` kamen beide dazu,
+> ohne dass etwas zerbrach.
+>
+> ### Und was ist mit Beinen und Kopf? — recherchiert am 12.09.2026
+>
+> **Die Animationen existieren.** Der DevMode bietet beim Spawnen eines SimObjects eine
+> **„Play Animation"-Liste** — die Modelle können also laufen, sich umsehen, sich hinlegen.
+>
+> ⚠ **Über SimConnect gibt es aber keinen dokumentierten Weg dorthin.** Im MSFS-DevSupport
+> steht ein offener Feature-Request eines Entwicklers mit genau diesem Problem: Er erzeugt
+> `Tarmac_Male_Summer_Caucasian` per `AICreateSimulatedObject_EX1` und bekommt ihn nur im
+> Zustand *standing idle*, obwohl er *Driving_Pushback* braucht. **Keine Antwort von Asobo.**
+> ([Thread 17717](https://devsupport.flightsimulator.com/t/simconnect-aicreatesimulatedobject-character-animation-state/17717))
+>
+> **Zwei Hoffnungen bleiben, beide ungemessen:**
+>
+> 1. **Geschwindigkeit löst die Animation aus.** Bei AI-Fahrzeugen drehen sich die Räder beim
+>    Fahren — das `fahrzeug` rollt ja nachweislich. Gibt `SetDataOnSimObject` einem Tier eine
+>    Geschwindigkeit, könnte die Laufanimation von selbst anspringen. Das wäre der Glücksfall:
+>    **ein** Import, und Bewegung samt Beinen.
+> 2. **Ein Animationszustand als Datenvariable.** Nicht dokumentiert, aber der DevMode macht
+>    es irgendwie.
+>
+> **Ein Test kostet nichts und braucht keinen Neustart:** Im DevMode selbst einen `BlackBear`
+> spawnen und in die „Play Animation"-Liste sehen. Stehen dort „walk", „idle", „look around",
+> lohnt die Richtung; steht dort nur „idle", erübrigt sie sich.
 
 ---
 
