@@ -2262,3 +2262,64 @@ Alle vier brauchen eine Admin-Sitzung.
 
 `cid: null` heißt „für alle" — damit lässt sich eine Station für ein Event setzen, ohne sie je
 Pilot zu vervielfachen.
+
+`auf_boden` ist die **Vorgabe** (seit 13.09.2026): `OnGround=1` lässt den Simulator selbst
+aufsetzen und trifft bis 10 km Entfernung. Ohne den Haken gilt `erwartete_hoehe_ft`, und ohne
+beides die Geländehöhe **unter dem Flugzeug** — die stimmt schon 100 m weiter nicht mehr
+(zwölf Objekte in einem 180-m-Raster: eines versunken, eines sauber, eines schwebend).
+
+### Der Objektkatalog
+
+Ein Verzeichnis dessen, was sich in einen Simulator stellen lässt — je Simulator, mit dem
+Paket als Abhängigkeit. **Warum es das braucht:** Von 45 Tiertiteln des MSFS-2020-Bestands
+funktionieren in MSFS 2024 nur sieben, und welche, verrät weder Dateiname noch Dokumentation.
+Das sagt nur der Versuch. Stand 13.09.2026: **1693 setzbare Objekte**, alle einzeln im
+laufenden Simulator geprüft.
+
+| Endpunkt | Zweck |
+|---|---|
+| `POST /api/admin/bruegge/katalog` | Bestand aufnehmen (`{eintraege: [{simulator, titel, quelle, paket?, kategorie?, bemerkung?}]}`). **Vorhandene Prüfergebnisse bleiben stehen** — ein Verzeichnislauf ist billig, ein Simulator-Lauf teuer |
+| `POST /api/admin/bruegge/katalog/ergebnis` | Festhalten, wie ein Setzversuch ausging (`{ergebnisse: [{simulator, titel, ergebnis, fehler?, hoehe_ft?, geprueft_in?}]}`) |
+| `GET /api/admin/bruegge/katalog` | Abfragen; `offen_fuer=msfs2024` liefert alles, was in **diesem** Simulator noch nicht versucht wurde |
+
+⚠ **`simulator` ist der Fundort, `geprueft_in` der Prüfort** — und das ist nicht dasselbe:
+`BlackBear` steht in der MSFS-2020-Installation und lässt sich in MSFS 2024 setzen, während 38
+seiner Nachbarn es nicht tun. Genau daran hängt der interessante Teil des Katalogs.
+
+⚠ **„Setzbar" heißt nicht „sichtbar".** Der Katalog misst, ob der Simulator ein Objekt
+**anlegt**. Ob man es **sieht**, sagt allein der Blick aus dem Cockpit. `HumpbackWhale` ist der
+Beleg: setzbar an drei Orten, gezeichnet an keinem (s. `friesenbruegge/OBJEKTE.md`).
+
+Gefüttert wird der Katalog von zwei Werkzeugen, die beim Piloten laufen müssen — der Server
+sieht dessen `sim.cfg`-Dateien nie: `friesenbruegge/katalog_sammeln.py` liest den Bestand aus,
+`katalog_hochladen.py` schiebt ihn hoch, `probe-msfs/katalog_pruefen.py` geht ihn im laufenden
+Simulator durch.
+
+### Das Paket herunterladen
+
+| Endpunkt | Zweck |
+|---|---|
+| `GET /api/bruegge-package` | Welche Pakete liegen bereit? Version, Größe, Stand — je Simulator |
+| `GET /download/bruegge` | Das Community-Package für **MSFS** als ZIP |
+| `GET /download/bruegge-xplane` | Das Plugin für **X-Plane 12** als ZIP |
+
+```jsonc
+{
+  "verfuegbar": true, "version": "1.6.0", …,   // die MSFS-Felder, flach — s. unten
+  "pakete": {
+    "msfs":   { "verfuegbar": true,  "version": "1.6.0", "groesse_kb": 25, "stand": "13.09.2026" },
+    "xplane": { "verfuegbar": true,  "version": "1.0.0", "groesse_kb": 99, "stand": "13.09.2026" }
+  }
+}
+```
+
+Die MSFS-Felder stehen **zusätzlich flach** in der Antwort. Sie waren vor dem X-Plane-Plugin
+die ganze Auskunft, und eine Seite, die noch im Cache eines Piloten liegt, soll davon nichts
+merken.
+
+Die Version kommt **aus dem Archiv** — bei MSFS aus der `manifest.json`, bei X-Plane aus einer
+`fassung.json`, die `xplane/paket.ps1` dazulegt (ein Plugin hat kein Manifest). So kann die
+angezeigte Version gar nicht erst von der ausgelieferten abweichen.
+
+⚠ **Beide Dateien liegen von Hand im Volume neben der Datenbank — kein Deploy fasst sie an**
+(dieselbe Falle wie beim EFB-ZIP). `paket.ps1 -Hochladen` erledigt es, je Simulator einmal.

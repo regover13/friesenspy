@@ -167,7 +167,7 @@
 
     <hr style="border:0;border-top:1px solid #22303f;margin:2.6rem 0 1.8rem;">
     <h2 style="margin-top:2.2rem;">Die FriesenBrügge <span style="font-weight:400;font-size:0.72em;color:#8aa0b8;">— neu, für Neugierige</span></h2>
-    <div class="untertitel" style="margin-top:-0.4rem;">MSFS 2024</div>
+    <div class="untertitel" style="margin-top:-0.4rem;">MSFS 2024 &amp; X-Plane 12</div>
     <p>
       Ein zweites, kleines Paket. Es hat kein Fenster und keine Knöpfe: Die FriesenBrügge läuft im
       Hintergrund mit und meldet FriesenSpy, wo du gerade bist — sekundengenau statt im
@@ -181,21 +181,36 @@
     </p>
 
     <div class="kasten">
-      <p style="margin-bottom:0.6rem;"><strong>Herunterladen</strong></p>
-      <a class="lade-knopf" id="bg-lade-knopf" href="/download/bruegge">FriesenBrügge herunterladen</a>
+      <p style="margin-bottom:0.6rem;"><strong>Herunterladen — MSFS 2024</strong></p>
+      <a class="lade-knopf" id="bg-lade-knopf" href="/download/bruegge">Die FriesenBrügge für MSFS 2024</a>
       <div class="paket-info" id="bg-paket-info">wird geprüft&nbsp;…</div>
     </div>
 
     <p style="color:#8aa0b8;font-size:0.88rem;">
       Einbauen genauso wie oben — entpacken, den Ordner <code>friesenbruegge</code> in
-      denselben Community-Ordner, Simulator neu starten. Es gibt nichts einzustellen und
-      nichts anzumelden: Die FriesenBrügge erkennt dich an deiner Position, sobald du mit
-      Friesen-Rufzeichen auf VATSIM fliegst. Wer das nicht tut, für den tut sie gar nichts.
+      denselben Community-Ordner, Simulator neu starten.
+    </p>
+
+    <div class="kasten">
+      <p style="margin-bottom:0.6rem;"><strong>Herunterladen — X-Plane 12</strong></p>
+      <a class="lade-knopf" id="bgx-lade-knopf" href="/download/bruegge-xplane">Die FriesenBrügge für X-Plane 12</a>
+      <div class="paket-info" id="bgx-paket-info">wird geprüft&nbsp;…</div>
+    </div>
+
+    <p style="color:#8aa0b8;font-size:0.88rem;">
+      Bei X-Plane ist es ein Plugin statt eines Pakets: entpacken und den Ordner
+      <code>FriesenBruegge</code> nach <code>X-Plane 12\Resources\plugins\</code> legen,
+      dann X-Plane neu starten. Diese Fassung läuft auf Windows.
+    </p>
+
+    <p style="color:#8aa0b8;font-size:0.88rem;">
+      Es gibt bei beiden nichts einzustellen und nichts anzumelden: Die FriesenBrügge erkennt
+      dich an deiner Position, sobald du mit Friesen-Rufzeichen auf VATSIM fliegst. Wer das
+      nicht tut, für den tut sie gar nichts.
     </p>
     <p style="color:#8aa0b8;font-size:0.88rem;">
-      <strong>Dieses Paket ist für MSFS 2024.</strong> Fassungen für MSFS 2020 und X-Plane 12
-      sind vorbereitet und kommen nach — beide Simulatoren sind bereits vermessen, es fehlt
-      nur das fertige Paket.
+      Eine Fassung für <strong>MSFS 2020</strong> kommt nach — der Simulator ist vermessen,
+      es fehlt nur das fertige Paket.
     </p>
 
 
@@ -228,30 +243,42 @@
         })
         .catch(function () { info.textContent = ''; });
 
-      // Dasselbe für die Brügge. Bewusst eine eigene Abfrage und kein gemeinsamer Endpunkt:
-      // Die beiden Pakete werden getrennt gebaut und getrennt hochgeladen, also darf auch
-      // das eine verfügbar sein, während das andere fehlt.
-      var bgKnopf = document.getElementById('bg-lade-knopf');
-      var bgInfo = document.getElementById('bg-paket-info');
-      if (bgKnopf && bgInfo) {
-        fetch('/api/bruegge-package', { credentials: 'same-origin' })
-          .then(function (r) { return r.ok ? r.json() : null; })
-          .then(function (d) {
-            if (!d || !d.verfuegbar) {
-              bgKnopf.setAttribute('aria-disabled', 'true');
-              bgKnopf.removeAttribute('href');
-              bgKnopf.textContent = 'Noch nicht verfügbar';
-              bgInfo.textContent = 'Es ist gerade kein Paket hinterlegt.';
-              return;
-            }
-            var t = [];
-            if (d.version) t.push('Version ' + d.version);
-            if (d.groesse_kb) t.push(d.groesse_kb + ' kB');
-            if (d.stand) t.push('Stand ' + d.stand);
-            bgInfo.textContent = t.join('  ·  ');
-          })
-          .catch(function () { bgInfo.textContent = ''; });
+      // Dasselbe für die Brügge — für beide Simulatoren aus EINER Abfrage. Die Pakete
+      // werden getrennt gebaut und getrennt hochgeladen, also darf auch das eine da sein,
+      // während das andere fehlt; genau deshalb bekommt jeder Kasten seine eigene Auskunft.
+      function bgFuellen(knopfId, infoId, paket) {
+        var knopf = document.getElementById(knopfId);
+        var inf = document.getElementById(infoId);
+        if (!knopf || !inf) return;
+        if (!paket || !paket.verfuegbar) {
+          knopf.setAttribute('aria-disabled', 'true');
+          knopf.removeAttribute('href');
+          knopf.textContent = 'Noch nicht verfügbar';
+          inf.textContent = 'Es ist gerade kein Paket hinterlegt.';
+          return;
+        }
+        var t = [];
+        if (paket.version) t.push('Version ' + paket.version);
+        if (paket.groesse_kb) t.push(paket.groesse_kb + ' kB');
+        if (paket.stand) t.push('Stand ' + paket.stand);
+        inf.textContent = t.join('  ·  ');
       }
+
+      fetch('/api/bruegge-package', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          // `pakete` kam mit dem X-Plane-Plugin dazu; die flachen Felder sind die
+          // MSFS-Auskunft von vorher und bleiben als Rückfall stehen.
+          var p = (d && d.pakete) || {};
+          bgFuellen('bg-lade-knopf', 'bg-paket-info', p.msfs || d);
+          bgFuellen('bgx-lade-knopf', 'bgx-paket-info', p.xplane);
+        })
+        .catch(function () {
+          var a = document.getElementById('bg-paket-info');
+          var b = document.getElementById('bgx-paket-info');
+          if (a) a.textContent = '';
+          if (b) b.textContent = '';
+        });
     })();
   </script>
 </body>

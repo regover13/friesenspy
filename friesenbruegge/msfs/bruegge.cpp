@@ -49,13 +49,13 @@
 #include <cstring>
 #include <cstdlib>
 
-#include "json.h"
+#include "../json.h"
 
 // ---------------------------------------------------------------------------------------
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.5.0"
+#define BRUEGGE_VERSION   "1.6.0"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -388,25 +388,29 @@ static const Gattung g_gattungen[] = {
     // Wild.
     { "tier_wild",   { "ahqa Deer Running", "ahqa stag walking", "ahqa moose bull walking",
                        "ahqa fox walking", "ahqa boar walking", nullptr } },
-    // ⚠ UEBER LAND UNSICHTBAR -- und ob ihn Wasser sichtbar macht, ist UNGEMESSEN.
+    // ⚠⚠ `HumpbackWhale` IST DRAUSSEN -- er wird ueberhaupt nicht gezeichnet.
     //
-    // Am 13.09.2026 auf DREI METERN Abstand ueber Land gesetzt: Das Objekt meldete `steht`
-    // mit korrekter Hoehe (1386,5 ft bei 1386,5 ft Gelaende) und war trotzdem nicht zu sehen.
-    // Ein 15-Meter-Wal auf drei Metern fuellt das Seitenfenster; wenn da nichts ist, zeichnet
-    // MSFS ihn dort nicht.
+    // Am 13.09.2026 an DREI Orten geprueft, jedes Mal mit einem `boot_klein` daneben als
+    // Gegenprobe:
     //
-    // Hier stand zuerst "braucht Wasser". Das ist eine VERMUTUNG, kein Befund (vom Nutzer
-    // eingewandt): Genauso gut kann das Modell ueberhaupt nicht gezeichnet werden -- etwa
-    // weil es gestreamt wird und nie ankam. **Zu messen waere: derselbe Wal auf Wasser, mit
-    // einem Boot daneben als Gegenprobe.** Ist das Boot da und der Wal nicht, liegt es am
-    // Modell; sind beide da, war es das Land.
+    //   Land,     3 m Abstand, 1386,5 ft   kein Wal   (Boote dort mehrfach gesehen)
+    //   Bodensee, 5 m Abstand, 1297,8 ft   kein Wal   Boot sichtbar
+    //   Nordsee,  5 m Abstand,   -0,6 ft   kein Wal   Boot sichtbar
     //
-    // Boote stehen uebrigens sehr wohl auf der Wiese (an demselben Abend mehrfach gesehen).
+    // Der Simulator legt das Objekt an und meldet eine korrekte Hoehe zurueck -- und zeichnet
+    // nichts. Weder Untergrund noch Entfernung erklaeren das; das Boot beweist jedes Mal, dass
+    // Ort, Hoehe und Verfahren stimmen.
     //
-    // ⚠ UND ES IST DAS LEHRSTUECK ZUM KATALOG: "setzbar" heisst nicht "sichtbar". Der
-    // Katalog misst, ob der Simulator ein Objekt anlegt -- ob man es sieht, sagt allein der
-    // Blick aus dem Cockpit. 1693 gruene Haken bedeuten also weniger, als sie aussehen.
-    { "tier_wasser", { "HumpbackWhale", nullptr } },
+    // ⚠ DAS IST DAS LEHRSTUECK ZUM KATALOG: "setzbar" heisst nicht "sichtbar". Der Katalog
+    // misst, ob der Simulator ein Objekt ANLEGT -- ob man es SIEHT, sagt allein der Blick aus
+    // dem Cockpit. Die 1693 gruenen Haken bedeuten also weniger, als sie aussehen, und
+    // `HumpbackWhale` ist ihr erster Beleg dafuer.
+    //
+    // Die Gattung bleibt, aber mit brauchbaren Modellen: Walross und Seeloewe aus
+    // `human-library-animated` sind Wassertiere, animiert und nachweislich sichtbar (dasselbe
+    // Paket wie `robbe`). Ohne dieses Addon gibt es kein `tier_wasser` -- und das ist
+    // ehrlicher als ein Titel, der zwar durchgeht, aber unsichtbar bleibt.
+    { "tier_wasser", { "ahqa walrus moving", "ahqa sea lion moving", nullptr } },
 
     // Eine Marke, die nicht wegrollt und aus der Luft auffaellt. Zwoelf Flaggenfarben sind
     // geprueft; vier genuegen, um Stationen zu unterscheiden, ohne Text lesen zu muessen.

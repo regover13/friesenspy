@@ -1,0 +1,5 @@
+# Bauabfall -- das Plugin entsteht aus bauen.ps1, das ZIP aus paket.ps1
+*.xpl
+*.obj
+*.lib
+*.exp

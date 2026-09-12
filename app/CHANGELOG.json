@@ -1,5 +1,18 @@
 [
   {
+    "version": "14.34.0",
+    "date": "2026-09-13",
+    "highlight": false,
+    "title": "Die FriesenBrügge gibt es jetzt auch für X-Plane 12",
+    "items": [
+      "✈️ Wer X-Plane 12 fliegt, findet auf der Kniebrett-Seite jetzt ein eigenes Paket. Bisher gab es Die FriesenBrügge nur für MSFS 2024 — rund ein Drittel der Gruppe war damit außen vor.",
+      "🦌 Sie kann dort acht Gattungen hinstellen: Hirsche, Möwen, Boote, eine Fregatte, Ölplattformen, Bojen — und Heißluftballons als weithin sichtbare Marke. Was der Simulator nicht mitbringt, verspricht sie auch nicht.",
+      "🏔️ Eine Sache kann X-Plane besser als MSFS: Es kennt die Geländehöhe an einem beliebigen Ort, nicht nur unter dem Flugzeug. Objekte stehen dort deshalb sauber auf dem Boden, auch weit entfernt — und wenn das Gelände noch nicht geladen ist, rückt Die FriesenBrügge sie nach, sobald es da ist.",
+      "🔌 Einbauen ist ein Ordner in Resources\\plugins und ein Neustart. Diese Fassung läuft auf Windows.",
+      "💾 Das Paket für MSFS 2024 ist gleich mit nachgezogen (Fassung 1.6.0)."
+    ]
+  },
+  {
     "version": "14.33.0",
     "date": "2026-09-13",
     "highlight": false,

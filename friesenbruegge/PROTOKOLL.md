@@ -298,6 +298,29 @@ gescheitertes:
 | `fehlgeschlagen` | Erzeugen abgelehnt — `fehler` nennt den Grund |
 | `verschwunden` | war da, meldet nicht mehr (`seit_s` = seit wann) |
 
+#### `hoehe_gemessen` — ab der X-Plane-Brügge 1.0.0, und der Server darf es ignorieren
+
+**Ein `hoehe_ft` ist nicht immer eine Messung.** Die X-Plane-Brügge fragt das Gelände am
+Zielort selbst (`XPLMProbeTerrainXYZ`) — aber nur geladenes Gelände antwortet, und X-Plane
+hält jeweils nur einen Umkreis geladen. Steht das Ziel außerhalb, bekommt das Objekt
+Meereshöhe, und die Meldung sieht dann **genau aus wie ein Wattobjekt auf 0,0 ft**.
+
+Das ist heikel, weil der Server nach Abschnitt 4 gerade daraus schließen soll, ob eine Stelle
+taugt: *„meldet ein Objekt über Land 0,0 ft, ist die Stelle für diese Gattung untauglich."*
+Ohne dieses Feld wäre das ein stiller Fehlschluss — und zwar einer, der eine brauchbare Stelle
+dauerhaft aussortiert.
+
+```jsonc
+{ "id": "k7-3-a", "zustand": "steht", "hoehe_ft": 0.0, "hoehe_gemessen": false }
+```
+
+`false` heißt also: *„da steht etwas, aber die Höhe ist geraten."* Die Brügge versucht die
+Probe jede Sekunde erneut und **rückt das Objekt nach**, sobald sie trifft — in X-Plane geht
+das, weil `XPLMInstanceSetPosition` jederzeit erneut aufgerufen werden darf.
+
+**Die MSFS-Brügge sendet das Feld nicht**, und das ist richtig so: Dort gibt es keine
+Geländeabfrage am Zielort, also auch nicht die beiden Fälle, die das Feld unterscheidet.
+
 **Warum das kein Beiwerk ist:** Scheitert das Erzeugen — `NAME_UNRECOGNIZED` (die Brügge
 kennt den Titel nicht), `TOO_MANY_OBJECTS`, `OBJECT_OUTSIDE_REALITY_BUBBLE` —, dann steht das
 Objekt nicht in `steht`, bleibt aber in `soll`. Ohne dieses Feld **versucht die Brügge es jede
@@ -487,10 +510,17 @@ Stelle aus — er sendet nie ins Leere.
 |---|---|---|---|
 | `tier_gross` | `BlackBear` ✅ | `deer_buck.obj` ⚠ | Gelände |
 | `bauwerk` | `Windmill` ✅ | `OilPlatform.obj` ⚠ | Gelände |
-| `fahrzeug` | `ASO_Ambulance_Japan` ✅ | `lib/airport/vehicles/…` ⚠ | Gelände |
+| `fahrzeug` | `ASO_Ambulance_Japan` ✅ | **gibt es nicht** — s. u. | Gelände |
 | `boot_klein` | `Boat01` ✅ | `SailBoat.obj` ✅ | Gelände — **außer MSFS 2020: Meereshöhe** |
 | `boot_gross` | `CruiseShip01` ✅ | `Perry.obj` ⚠ | Gelände — **außer MSFS 2020: Meereshöhe** |
 | `robbe` (ab 1.4.0) | `ahqa seal moving` ✅ **Community** | — | Gelände |
+
+⚠ **`fahrzeug` stand hier als `lib/airport/vehicles/…` — das war eine Annahme, und sie trägt
+nicht.** X-Plane 12 bringt kein Bodenfahrzeug als eigenständige `.obj` mit; was am Flughafen
+fährt, liegt in der Szenerie-Bibliothek und ist nur über `XPLMLookupObjects` erreichbar, nicht
+über `XPLMLoadObject`. Die X-Plane-Brügge meldet die Gattung deshalb nicht in `kann`. Die
+vollständige Tabelle steht in [`OBJEKTE.md`](OBJEKTE.md); dort auch, welche acht Gattungen sie
+stattdessen beherrscht.
 
 ✅ = gesetzt und im Bild gesehen · ⚠ = Datei auf der Platte nachgewiesen, aber nie gesetzt
 

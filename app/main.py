@@ -611,15 +611,20 @@ def _efb_zip_path(settings) -> Path:
 
 
 def _efb_package_version(pfad: Path) -> str | None:
-    """Liest ``package_version`` aus der manifest.json IM Archiv.
+    """Liest ``package_version`` aus dem Archiv.
 
     Bewusst aus dem Archiv statt aus einer Begleitdatei: So kann die angezeigte Version
     gar nicht erst von der ausgelieferten abweichen — es gibt nur eine Wahrheit, und die
-    ist die Datei, die der Nutzer herunterlädt."""
+    ist die Datei, die der Nutzer herunterlädt.
+
+    Zwei Dateinamen, weil es zwei Simulatoren gibt: MSFS-Pakete tragen ohnehin eine
+    ``manifest.json``, ein X-Plane-Plugin nicht — dort legt ``xplane/paket.ps1`` eine
+    ``fassung.json`` mit demselben Feld dazu. Der Simulator ignoriert sie; sie ist allein
+    dafür da, dass die Download-Seite nicht raten muss."""
     try:
         with zipfile.ZipFile(pfad) as z:
             for name in z.namelist():
-                if name.endswith("manifest.json") and name.count("/") <= 1:
+                if (name.endswith("manifest.json") or name.endswith("fassung.json"))                         and name.count("/") <= 1:
                     with z.open(name) as f:
                         return str(json.loads(f.read().decode("utf-8")).get("package_version") or "") or None
     except Exception:  # defekte/fehlende Datei darf die Seite nicht mitreißen
@@ -663,17 +668,29 @@ async def efb_download():
 # ⚠ Und es teilt die Falle des EFB-ZIPs (s. Memory „Kniebrett-Download-ZIP"): KEIN Deploy
 # fasst diese Datei an. Wer eine neue Bruegge baut, muss sie selbst hochladen -- sonst laeuft
 # der Download still einer alten Fassung hinterher, und das faellt erst im Simulator auf.
-def _bruegge_zip_path(settings) -> Path:
-    eigen = str(getattr(settings, "BRUEGGE_PACKAGE_PATH", "") or "").strip()
-    if eigen:
-        return Path(eigen)
-    return Path(settings.DB_PATH).parent / "efb" / "friesenbruegge.zip"
+#
+# ZWEI PAKETE, zwei Dateien: Das MSFS-Paket traegt ein WASM-Modul, das X-Plane-Paket eine
+# .xpl -- verschiedene Werkzeugketten, verschiedene Bauzeitpunkte. Sie werden getrennt
+# gebaut und getrennt hochgeladen, und deshalb darf auch das eine da sein, waehrend das
+# andere fehlt.
+_BRUEGGE_ARCHIVE = {
+    "msfs": "friesenbruegge.zip",
+    "xplane": "friesenbruegge-xplane.zip",
+}
 
 
-@app.get("/api/bruegge-package", include_in_schema=False)
-async def bruegge_package_info():
-    """Ist ein Bruegge-Paket hinterlegt, und welches? Speist die Installationsseite."""
-    pfad = _bruegge_zip_path(get_settings())
+def _bruegge_zip_path(settings, simulator: str = "msfs") -> Path:
+    datei = _BRUEGGE_ARCHIVE.get(simulator, _BRUEGGE_ARCHIVE["msfs"])
+    if simulator == "msfs":
+        # Nur fuer MSFS, weil die Einstellung aus der Zeit stammt, als es nur ein Paket gab.
+        eigen = str(getattr(settings, "BRUEGGE_PACKAGE_PATH", "") or "").strip()
+        if eigen:
+            return Path(eigen)
+    return Path(settings.DB_PATH).parent / "efb" / datei
+
+
+def _bruegge_paket_info(simulator: str) -> dict:
+    pfad = _bruegge_zip_path(get_settings(), simulator)
     if not pfad.is_file():
         return {"verfuegbar": False}
     stat = pfad.stat()
@@ -687,14 +704,35 @@ async def bruegge_package_info():
     }
 
 
+@app.get("/api/bruegge-package", include_in_schema=False)
+async def bruegge_package_info():
+    """Welche Bruegge-Pakete liegen bereit? Speist die Installationsseite.
+
+    Die MSFS-Felder stehen zusaetzlich flach in der Antwort -- sie waren vor dem
+    X-Plane-Paket die ganze Auskunft, und eine Seite, die noch im Cache eines Piloten
+    liegt, soll davon nichts merken."""
+    msfs = _bruegge_paket_info("msfs")
+    return {**msfs, "pakete": {"msfs": msfs, "xplane": _bruegge_paket_info("xplane")}}
+
+
 @app.get("/download/bruegge", include_in_schema=False)
 async def bruegge_download():
-    """Das Bruegge-Community-Package als ZIP. Hinter dem Gate wie der Rest der App."""
-    pfad = _bruegge_zip_path(get_settings())
+    """Das Bruegge-Community-Package fuer MSFS als ZIP. Hinter dem Gate wie der Rest."""
+    pfad = _bruegge_zip_path(get_settings(), "msfs")
     if not pfad.is_file():
         raise HTTPException(status_code=404, detail="Kein Bruegge-Paket hinterlegt")
     return FileResponse(pfad, media_type="application/zip",
                         filename="friesenbruegge.zip")
+
+
+@app.get("/download/bruegge-xplane", include_in_schema=False)
+async def bruegge_xplane_download():
+    """Das Bruegge-Plugin fuer X-Plane 12 als ZIP."""
+    pfad = _bruegge_zip_path(get_settings(), "xplane")
+    if not pfad.is_file():
+        raise HTTPException(status_code=404, detail="Kein Bruegge-Paket hinterlegt")
+    return FileResponse(pfad, media_type="application/zip",
+                        filename="friesenbruegge-xplane.zip")
 
 
 @app.get("/impressum", include_in_schema=False)
@@ -815,11 +853,15 @@ _BRUEGGE_TAKT_UNERKANNT_S = 3
 # (`probe-msfs/titel_schau.py`, s. OBJEKTE.md). Was nicht ging, steht nicht in der Liste.
 _BRUEGGE_GATTUNGEN = (
     # Bordmittel -- laufen ueberall
-    "tier_gross", "tier_wasser", "bauwerk", "fahrzeug", "boot_klein", "boot_gross",
+    "tier_gross", "bauwerk", "fahrzeug", "boot_klein", "boot_gross",
     "marke",
     # brauchen ein Community-Paket; fehlt es, meldet die Bruegge einen Fehler,
     # statt still etwas anderes hinzustellen
-    "robbe", "tier_klein", "tier_vieh", "tier_wild",
+    #
+    # `tier_wasser` stand bis zum 13.09.2026 bei den Bordmitteln -- mit `HumpbackWhale`.
+    # Der wird von MSFS 2024 ueberhaupt nicht gezeichnet (an drei Orten geprueft, jedes
+    # Mal mit einem sichtbaren Boot daneben), also gibt es dafuer kein Bordmittel mehr.
+    "robbe", "tier_klein", "tier_vieh", "tier_wild", "tier_wasser",
     "punkt", "kegel", "rauch", "feuer", "himmel",
 )
 _BRUEGGE_TAKT_VORGABE_S = 1          # Regeltakt, gemessen (s. Protokoll, Abschnitt 6)

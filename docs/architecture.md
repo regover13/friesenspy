@@ -630,9 +630,27 @@ TeamSpeak-Server (port 10011)
 
 ## Datenfluss Sim-Brügge (`friesenbruegge/`)
 
-Die Brügge ist ein WASM-Modul im Simulator — sie setzt dort Objekte und meldet die eigene
-Position zurück. Sie gehört **nicht** ins Docker-Image (der Dockerfile kopiert nur `app/` und
-`scripts/`) und läuft auf dem Rechner des Piloten.
+Die Brügge läuft im Simulator — sie setzt dort Objekte und meldet die eigene Position zurück.
+Sie gehört **nicht** ins Docker-Image (der Dockerfile kopiert nur `app/` und `scripts/`) und
+läuft auf dem Rechner des Piloten.
+
+**Es gibt sie zweimal, und beide sprechen dasselbe Protokoll:**
+
+| | `msfs/bruegge.cpp` | `xplane/bruegge.cpp` |
+|---|---|---|
+| Form | WASM-Modul in einem Community-Paket | `.xpl` (eine Windows-DLL) in `Resources/plugins/` |
+| Objekt benennen | Container-Titel (`BlackBear`) | Dateipfad (`dynamic/deer_buck.obj`) |
+| setzen | `AICreateSimulatedObject` | `XPLMLoadObjectAsync` + `XPLMCreateInstance` |
+| versetzen | wegnehmen und neu erzeugen | `XPLMInstanceSetPosition` — echtes Verschieben |
+| Höhe am Zielort | **gibt es nicht** — nur die unter dem Flugzeug | `XPLMProbeTerrainXYZ` |
+| Netz | `fsNetworkHttpRequestPost` (Callback) | eigener Thread mit WinHTTP |
+| gemeinsam | `json.h`, Protokollfassung 1, Kennung, Spur, Sprungerkennung, Sollabgleich | |
+
+Der Server merkt vom Unterschied nichts: Er spricht in Gattungen, und `simulator` in der
+Meldung ist für ihn ein Textfeld. Genau dafür ist der Entwurf so geschnitten (Punkt 2 unten).
+
+⚠ **Die Fassungsnummern laufen getrennt** — MSFS steht bei 1.6.0, X-Plane fängt bei 1.0.0 an.
+Verbindlich ist nicht die Fassung, sondern `protokoll: 1`.
 
 ```
 MSFS/X-Plane (Pilot)              FastAPI                         SQLite
@@ -656,9 +674,12 @@ MSFS/X-Plane (Pilot)              FastAPI                         SQLite
    Piloten an der Position und prüft die Berechtigung über `forum_callsign` (CID, nicht
    Callsign — das bricht beim N-Verlust). Ablehnungen sind für sie ununterscheidbar.
 2. **Der Server spricht in Gattungen, nie in Modellnamen.** `tier_gross`, `robbe`, `boot_klein`
-   … — welcher Container-Titel daraus wird, entscheidet allein die Brügge in `titel_fuer`
-   (`msfs/bruegge.cpp`), weil nur sie ihren Simulator kennt. Ein Modellname in der Antwort
-   würde das Protokoll an MSFS ketten; X-Plane spricht in `.obj`-Pfaden.
+   … — welches Modell daraus wird, entscheidet allein die Brügge (`titel_fuer` in
+   `msfs/bruegge.cpp`, `pfad_fuer` in `xplane/bruegge.cpp`), weil nur sie ihren Simulator
+   kennt. Ein Modellname in der Antwort würde das Protokoll an MSFS ketten; X-Plane spricht
+   in `.obj`-Pfaden. **Was eine Brügge nicht kann, meldet sie nicht in `kann`** — die
+   X-Plane-Fassung beherrscht acht der sechzehn Gattungen, und der Server fordert die
+   übrigen bei ihr gar nicht erst an.
 3. **`soll` ist ein Zustand, kein Befehlsstrom.** Geht eine Anfrage verloren, holt die nächste
    Antwort alles ein. Der Takt (`naechste_frage_in_s`) kommt aus `app_settings` und wirkt
    sofort für alle, ohne Deploy — ein Deploy risse jede offene Sitzung ab.
@@ -666,6 +687,35 @@ MSFS/X-Plane (Pilot)              FastAPI                         SQLite
 **Gegenrichtung `steht`:** Die Brügge meldet zurück, was tatsächlich dasteht (`bruegge_steht`,
 Schlüssel `(kennung, id)`). Ohne das könnte eine Station in `soll` stehen, die es im Simulator
 nie gab — und jemand fliegt hin und findet nichts.
+
+### Der Objektkatalog (`bruegge_katalog`, seit 13.09.2026)
+
+**Das Problem:** Welche Objekte ein Simulator hergibt, steht in `sim.cfg`-Dateien auf der
+Platte des Piloten — der Server hat sie nie gesehen, und keine Dokumentation listet sie. Von
+45 Tiertiteln des MSFS-2020-Bestands funktionieren in MSFS 2024 nur sieben; welche, verrät
+allein der Versuch.
+
+**Der Weg dorthin** führt deshalb über drei Werkzeuge, die beim Piloten laufen:
+
+```
+katalog_sammeln.py     liest sim.cfg (MSFS) bzw. .obj-Pfade (X-Plane)  →  katalog.json
+katalog_hochladen.py   schiebt es in Häppchen zu 500 auf den Server
+katalog_pruefen.py     setzt jeden offenen Titel im laufenden Simulator und meldet zurück
+```
+
+Drei Entscheidungen tragen die Tabelle:
+
+1. **`simulator` ist der Fundort, `geprueft_in` der Prüfort.** Nicht dasselbe — `BlackBear`
+   steht in der 2020er Installation und läuft in 2024. Ohne die Trennung übersprang der erste
+   Prüflauf 200 Titel.
+2. **Ein Verzeichnislauf überschreibt keine Prüfergebnisse.** Ein Simulator-Lauf ist teuer,
+   ein erneutes Einlesen billig — dieselbe Überlegung wie bei `gesehener_hash` (AIP-Blätter).
+3. **`geprueft_am IS NULL` heißt „nie versucht", nicht „geht nicht".** Nur so lässt sich eine
+   Arbeitsliste abarbeiten.
+
+⚠ **Und die Grenze der Methode gehört dazu: „setzbar" heißt nicht „sichtbar".** Der Katalog
+misst, ob der Simulator ein Objekt anlegt. Ob man es sieht, sagt allein der Blick aus dem
+Cockpit — `HumpbackWhale` ist an drei Orten setzbar und an keinem gezeichnet.
 
 ## Datenbankschema
 

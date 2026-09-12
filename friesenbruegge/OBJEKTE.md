@@ -37,7 +37,7 @@ schiebt ihn hoch.
 | MSFS 2020, Community-Addons | 119 | **119** | 0 |
 | MSFS 2020, Bordmittel | 200 | **155** | 45 |
 | gestreamte Platzhalter | 53 | 2 | 13 |
-| X-Plane 12 | 1146 | *offen* | — |
+| X-Plane 12 | 1146 | *offen* | — (aber s. Gattungstabelle unten: 22 Pfade einzeln nachgesehen) |
 
 **Was aus einer `sim.cfg` eines installierten Pakets kommt, lässt sich setzen — ausnahmslos.**
 1536 von 1536 Addon-Titeln. Der einzige nennenswerte Ausfall sind **Tiere im Bordbestand**:
@@ -388,6 +388,52 @@ und keine Höhe — sonst wäre das Protokoll an MSFS gekettet. Eine X-Plane-Br�
 **Quellen:** [`probe-xplane/ERGEBNIS.md`](probe-xplane/ERGEBNIS.md) (gemessen) ·
 [XPLMInstance](https://developer.x-plane.com/sdk/XPLMInstance/) ·
 [XPLMScenery](https://developer.x-plane.com/sdk/XPLMScenery/)
+
+### Die Gattungstabelle der X-Plane-Brügge (13.09.2026)
+
+Alle Pfade stehen relativ zum X-System-Ordner und sind **auf der Platte nachgesehen**, jeder
+einzeln (`xplane/bruegge.cpp`). Der gemeinsame Anfang `Resources/default scenery/sim objects/`
+ist weggelassen.
+
+| Gattung | Modelle, in dieser Reihenfolge |
+|---|---|
+| `tier_gross` | `dynamic/deer_buck.obj`, `dynamic/deer_doe.obj` |
+| `tier_wild` | dieselben — ein Hirsch **ist** Wild |
+| `tier_klein` | `dynamic/seagull_glide.obj`, `…_flap.obj`, `…_far.obj` |
+| `bauwerk` | `dynamic/OilPlatform.obj` (63 MB, weithin sichtbar), `dynamic/OilRig.obj`, `legacy env files/radio_tower.obj` |
+| `boot_klein` | `dynamic/SailBoat.obj` ✅, `ships/Sail_1000_01.obj`, `ships/Runabout_750_01.obj`, `ships/Dinghy_400_01.obj` |
+| `boot_gross` | `dynamic/Perry.obj` (Fregatte, ~135 m), `ships/Cruiser_1900_01.obj`, `ships/Cruiser_1200_01.obj` |
+| `marke` | `dynamic/balloon1-3.obj`, `landscape/windsock_orange.obj` |
+| `punkt` | `landscape/buoy.obj`, `landscape/radar.obj` |
+
+✅ = im Probeflug gesetzt und im Bild gesehen (11.09.2026)
+
+⭐ **Der Heißluftballon ist das X-Plane-Gegenstück zur Rauchsäule.** In MSFS löst `rauch` das
+Problem, dass ein Boot erst ab rund 1 km eingeblendet wird; X-Plane kennt keine
+Rauchobjekte — aber ein Ballon steht in der Luft und ist kilometerweit zu sehen. Für jedes
+Event, bei dem jemand etwas *finden* soll, zählt das mehr als das genauere Modell am Boden.
+
+### ⚠ Was die X-Plane-Brügge NICHT kann — und warum das so dasteht
+
+Sie meldet diese Gattungen gar nicht erst in `kann`; der Server fordert sie damit bei einem
+X-Plane-Piloten nicht an (PROTOKOLL.md, Abschnitt 3).
+
+| Gattung | Grund |
+|---|---|
+| `fahrzeug` | X-Plane 12 bringt **kein Bodenfahrzeug als eigenständige `.obj`** mit. Was am Flughafen fährt, liegt in der Szenerie-Bibliothek (`lib/airport/vehicles/…`) und ist nur über `XPLMLookupObjects` erreichbar, nicht über `XPLMLoadObject`. Gangbar, aber ungemessen. |
+| `robbe`, `tier_vieh`, `tier_wasser` | kein Modell im Bordbestand, und kein Addon-Gegenstück zu `human-library-animated` gemessen |
+| `rauch`, `feuer` | X-Plane zeichnet Rauch über Partikelsysteme, nicht über Objekte |
+| `kegel` | keine Pylone im Bordbestand |
+
+⚠ **Die dicken Pötte fallen aus, und das ist ein Katalogfund:** `BulkCarrier`,
+`ContainerCarrier`, `OilTanker` und `LNGCarrier` liegen **nur als `.agp`** vor — das ist ein
+Autogen-Punkt für den Szenerienbau, keine ladbare `.obj`. Im Katalog stehen sie trotzdem als
+Zeilen, weil der Sammler Dateien gelistet hat; **gesetzt werden kann davon keine.** Von 403
+Einträgen der Kategorie `ships` sind nur **47** wirklich `.obj`, und das größte davon ist eine
+19-m-Yacht. Deshalb ist `boot_gross` hier die Fregatte und kein Containerschiff.
+
+Das ist derselbe Vorbehalt wie bei den 1693 grünen Haken der MSFS-Seite, nur eine Stufe
+früher: Dort hieß „setzbar ≠ sichtbar", hier heißt es **„gelistet ≠ ladbar"**.
 
 ---
 
