@@ -153,6 +153,85 @@ Schaf): Gezählt wird hier eine bestimmte Art, nicht „irgendein Tier".
 
 ---
 
+## ⭐ Addon-Bibliotheken — die eigentliche Fundgrube (12.09.2026)
+
+**Ein SimObject aus einem Community-Addon lässt sich genauso setzen wie ein Bordmittel.** Die
+Brügge merkt keinen Unterschied; es zählt allein, ob der Titel auf dem Rechner des Piloten
+existiert. Auf diesem Rechner liegen **1417 Addon-Titel** in 15 Paketen.
+
+⚠ **Der Preis:** Wer das Addon nicht hat, bekommt das Objekt nicht. **Dafür ist die Titelliste
+je Gattung da** (`g_gattungen` in `bruegge.cpp`, seit Fassung 1.3.0): erst das schöne
+Addon-Modell, dann ein Bordmittel als Rückfall. Scheitert der erste Titel, rückt der nächste
+automatisch nach.
+
+### 🦭 `human-library-animated` (Superspud) — Tiere, und zwar BEWEGTE
+
+**Der wichtigste Fund für den FriesenKieker.** 30 Tiere, alle mit `walking`, `running` oder
+`moving` im Namen — **die Animation steckt im Modell**, es braucht keine SimConnect-API:
+
+```
+ahqa seal moving        ← die ROBBE, im Screenshot belegt
+ahqa sea lion moving    ahqa walrus moving    ahqa puffin walking
+ahqa Deer Running       ahqa stag walking     ahqa moose bull/cow walking
+ahqa boar walking       ahqa fox walking      ahqa wolf running   ahqa coyote walking
+ahqa cow walking (+ highland, longhorn, longhorn_c1)   ahqa sheep walking
+ahqa goat walking       ahqa pig walking      ahqa donkey walking
+ahqa shetland pony walking   ahqa chicken walking   ahqa goose walking
+ahqa crocodile walking  ahqa gazelle walking  ahqa buffalo african walking
+ahqa ibex walking       ahqa dog 1/4 walking
+```
+
+**Robbe, Seelöwe, Walross und Papageitaucher** — das Wattenmeer-Sortiment, fertig und animiert.
+Damit erledigt sich die Frage, wie man Beine und Kopf bewegt (s. MESSLISTE 2d): **gar nicht
+über SimConnect, sondern über die Wahl des Modells.**
+
+### 🔥 `SayIntentions-SimObjects-Optional` — Feuer und Rauch
+
+```
+SIAI_VFX_Smoke_Red   SIAI_VFX_Smoke_Orange   SIAI_VFX_Fire
+SIAI_SignalFire      SIAI_VFX_WildFire       SIAI_SmokeCanister
+```
+
+⚠ **Das löst ein gemessenes Problem:** Ein `Boat01` ist erst ab rund **1 km** eingeblendet
+(11.09.2026), ein `CruiseShip01` ab 22 km. Eine **Rauchsäule** sieht man kilometerweit — damit
+findet ein Pilot eine Station, ohne dass die Koordinate auf zehn Meter stimmen muss. Dazu
+Radfahrer (`ahqm cyclist …`).
+
+### 🎯 `sayintentions-fly-in-library` — Marken für Events
+
+```
+SI_SimObject_Fly-In_Landing_Blue/Green/Red/Yellow_Dot    farbige Landepunkte
+SI_SimObejct_Cone                                        Kegel
+SI_SimObejct_Event_Parking_Signs_Left/Right/Straight      Wegweiser
+```
+
+Vier Farben — genug, um Stationen zu unterscheiden, ohne Text lesen zu müssen.
+
+### Und der Rest
+
+| Paket | was drin ist |
+|---|---|
+| `p42-util-campout-mp` | **Hunde** in 14 Rassen, Futternäpfe, Campingzeug |
+| `superspud-airport-edxh-duene-2024models` | **Helgoland-Düne**: `helgosachsen`, `OLTIslander`, Windsack, Flaggen |
+| `southoakco-auroraborealis` | **Polarlichter** `southoakco_aurora1`–`4` |
+| `aerosoft-airfields-east-frisian-islands` | `Strandkorb_1`, `Schild_RWY10`, Parkpositionen |
+| `hangar8-airport-edkb-bonn` | statische Flugzeuge, Hallen |
+| `aerosoft-modellib-vdgs` | Andockleitsysteme |
+
+**Alle hier genannten Titel sind gesetzt und gezeichnet worden**, außer wo anders vermerkt.
+
+**So findet man weitere:**
+
+```bash
+C=".../LocalCache/Packages/Community"
+find -L "$C" -path "*SimObjects/*" -name sim.cfg   -exec grep -ohiE '^[[:space:]]*title[[:space:]]*=[[:space:]]*"?[^";]+' {} \;
+```
+
+⚠ **`-L` ist Pflicht** — viele Community-Pakete sind Symlinks, und ohne `-L` übersieht die
+Suche sie. Beim ersten Anlauf fand sie so 265 statt 1417 Titel.
+
+---
+
 ## X-Plane 12 — **schon gemessen, s. `probe-xplane/ERGEBNIS.md`**
 
 > ⚠ **Dieser Abschnitt stand hier zuerst als Web-Recherche. Das war überflüssig:** Am
