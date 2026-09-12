@@ -52,6 +52,60 @@ Migration) · `app/main.py` (Endpunkt wertet `steht` aus, loggt `antwort_zu_gros
 `bruegge_steht` (Schluessel `(kennung, id)`), im Admin neben der Anforderung sichtbar, und im
 Aufraeumer beruecksichtigt.
 
+### ⚠⚠ ES GIBT SCHON EINE ROBBE — und sie ist animiert (12.09.2026, spaet)
+
+**Bevor ihr ein Modell baut, lest das.** Im Community-Ordner dieses Rechners liegt
+`human-library-animated` (Superspud, Paketversion 1.4.0). Darin:
+
+```
+ahqa seal moving      ← die Robbe. Gesetzt, gezeichnet, im Screenshot belegt.
+ahqa sea lion moving  ahqa walrus moving  ahqa puffin walking
+```
+
+**Alle dreissig Tiere dieser Bibliothek tragen `walking`, `running` oder `moving` im Namen —
+die Animation steckt im Modell.** Damit erledigt sich die Frage, wie man Beine und Kopf
+bewegt: gar nicht ueber SimConnect, sondern ueber die Wahl des Modells.
+
+Weiter drin: `deer running`, `stag`, `moose bull/cow`, `boar`, `fox`, `wolf running`,
+`coyote`, `cow` (4 Sorten), `sheep`, `goat`, `pig`, `donkey`, `shetland pony`, `chicken`,
+`goose`, `crocodile`, `gazelle`, `buffalo african`, `ibex`, `dog` (2). Volle Liste ueber
+`find -L .../Community -path "*SimObjects/*" -name sim.cfg -exec grep -h title= {} \;`.
+
+**Der Haken:** Es ist ein Community-Addon, kein Bordmittel — jeder Pilot muesste es haben.
+
+**Und genau dafuer ist die Titelliste in `g_gattungen` da** (s. unten): Ein Eintrag
+
+```c
+{ "robbe", { "ahqa seal moving", "<euer eigenes Modell>", nullptr } },
+```
+
+nimmt Superspuds Robbe, wenn sie installiert ist, und faellt sonst auf euer Modell zurueck.
+Scheitert der erste Titel, rueckt seit Fassung 1.3.0 automatisch der naechste nach. **Kein
+Pilot wird ausgeschlossen, und wer das Addon hat, bekommt eine bewegte Robbe.**
+
+⚠ **Das heisst nicht, dass euer Modell ueberfluessig waere** — es ist der Rueckfall fuer alle
+ohne das Addon, und ihr habt die `sim.cfg` selbst in der Hand. Aber ihr koennt euch an einem
+funktionierenden Beispiel orientieren, statt bei null anzufangen:
+`Community/human-library-animated/SimObjects/Animals/ahqa seal moving/sim.cfg`.
+
+### Was von den BORDMITTELN in MSFS 2024 wirklich geht (127 Titel einzeln geprueft)
+
+Mit `probe-msfs/titel_schau.py` (neu) im laufenden Simulator durchprobiert:
+
+| | |
+|---|---|
+| **Boote** | **14 von 14** — Boat01/02, FishingBoat, FishingShip02/03, Yacht01-03, CargoShip01, CargoContainer/Gas/Oil01, CruiseShip01/02 |
+| **Landmarks, Flaggen, Misc** | **alle** — `windmill`, `windsock`, `Windsock_05/08/NoBase`, 12 `Flag_*`, `Parachute`, `Marshaller_Stick` |
+| **Fahrzeuge** | **31 von 37** — es fehlen `ASO_Ambulance_Japan`, `ASO_Firetruck01`, beide `FuelTruck01/02_*`, `ASO_Ground_Power_Unit` |
+| **Tiere (2020er Titel)** | **nur 7 von 45**: `BlackBear`, `GrizzlyBear`, `SyrianBear`, `Flamingo`, `Goose`, `Seagull`, `HumpbackWhale` |
+| **Tiere (2024er)** | **0 von 11** — der Ordnername ist NICHT der Titel, die `sim.cfg` ist gepackt. Auch mit `_EX1` abgelehnt. **Wissensluecke, kein Mangel.** |
+
+⚠ **Viele Fahrzeugtitel sind nur Farbvarianten desselben Modells**
+(`ASO_Boarding_Stairs` / `_Red` / `_Yellow`), was beim Durchsehen wie eine Wiederholung wirkt.
+
+⚠ **Alle `ASO_*`-Fahrzeuge ROLLEN WEG** — gemessen 21 ft Hoehenverlust in zwei Minuten an
+einem Hang. Als ortsfeste Marke taugen sie nicht; als bewegliches Ziel womoeglich schon.
+
 ### Fuer die parallele Session — sie baut die ROBBEN
 
 **Wir kommen uns nicht ins Gehege, wenn wir uns an eine Stelle halten:** Die Robben brauchen
