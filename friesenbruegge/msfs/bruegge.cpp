@@ -48,7 +48,7 @@
 // Feste Größen
 // ---------------------------------------------------------------------------------------
 
-#define BRUEGGE_VERSION   "1.1.1"
+#define BRUEGGE_VERSION   "1.1.2"
 #define BRUEGGE_URL       "https://friesenspy.devprops.de/api/bruegge/melden"
 #define KENNUNG_DATEI     "\\work\\friesenbruegge.kennung"
 
@@ -422,31 +422,34 @@ static void objekt_erzeugen(int i) {
 static void objekt_entfernen(int i) {
     SollObjekt& o = g_soll[i];
 
-    // HIER STAND SimConnect_AIRemoveObject, und es steht aus einem Grund nicht mehr hier,
-    // der mit dem Aufruf selbst NICHTS zu tun hat -- das gehoert dazugesagt, sonst schickt
-    // dieser Kommentar den Naechsten auf dieselbe falsche Faehrte wie mich.
+    // SimConnect_AIRemoveObject -- und der Aufruf ist eine VORAUSSETZUNG, keine Annehmlichkeit.
     //
-    // Am 12.09.2026 lud das Paket nicht, und der Verdacht fiel auf diesen Aufruf: ein Import,
-    // den die WASM-Laufzeit nicht kennt, laesst das Modul beim Laden lautlos durchfallen. Die
-    // Vermutung war falsch. Die wahre Ursache lag im Paket und nicht im Code -- ein
-    // UTF-8-BOM in manifest.json und layout.json, geschrieben von `Set-Content -Encoding
-    // UTF8` unter Windows PowerShell 5.1 (s. paket.ps1, dort steht die ganze Geschichte).
-    // Auch die Fassung 1.0.1, die nachweislich gelaufen war, lud mit diesem BOM nicht mehr.
+    // Gemessen am 12.09.2026 im Simulator, und der Befund war ueberraschend deutlich: Als
+    // vPilot kurz die Verbindung verlor, loeste der Server die Zuordnung und lieferte kein
+    // `soll` mehr. Die Bruegge VERGASS das Objekt daraufhin -- der Baer im Simulator blieb
+    // aber stehen. Beim Wiederverbinden kam dasselbe Objekt erneut im `soll` an und wurde
+    // ein zweites Mal gesetzt. Nachweisbar an zwei Zahlen: `seit_s` fing wieder bei null an,
+    // und die gemeldete Hoehe wechselte von 1384,9 auf 1379,2 ft.
     //
-    // Entfernt bleibt der Aufruf trotzdem, vorerst: Beim ersten Lauf nach dem BOM-Fund soll
-    // genau EINE Sache anders sein, damit das Ergebnis etwas beweist. Ist das Laden bestaetigt,
-    // kommt AIRemoveObject als eigener, einzeln pruefbarer Schritt zurueck -- so steht es in
-    // MESSLISTE.md.
+    // FOLGE OHNE DIESEN AUFRUF: Jeder Verbindungsabriss verdoppelt die gesetzten Objekte.
+    // Fuer den FriesenKieker hiesse das, dass ein Pilot mit wackliger Leitung Tiere doppelt
+    // und dreifach zaehlt -- und niemand saehe dem Ergebnis an, dass es falsch ist. Genau
+    // deshalb steht der Aufruf wieder hier, obwohl er ein Import mehr ist.
     //
-    // Was FUER den Aufruf spricht: p42-util-campout-mp benutzt ihn und laeuft. Was dagegen
-    // sprechen koennte: Im Log steht daneben "The version of simconnect used by the module
-    // CampOutModule.wasm cannot be found. It will use the last version used in MSFS2020." --
-    // es laeuft also mit der ALTEN SimConnect-Fassung, waehrend dieses Modul gegen das 2024er
-    // SDK gebaut wird. Das ist ein Unterschied, aber kein Beleg. Also messen, nicht raten.
+    // Der Verdacht gegen ihn war uebrigens falsch: Dass Fassung 1.1.0 nicht lud, lag an einem
+    // UTF-8-BOM in manifest.json und layout.json (s. paket.ps1). Auch die nachweislich
+    // laufende 1.0.1 lud mit diesem BOM nicht mehr -- der Code war nie das Problem.
     //
-    // SOLANGE ER FEHLT: Ein Objekt, das nicht mehr in `soll` steht, bleibt stehen. Die Bruegge
-    // vergisst es nur. Weggeraeumt wird es beim Schliessen der Verbindung -- gemessen, das
-    // tut SimConnect zuverlaessig (EXCEPTION 3 in der Nachprobe, zweimal am 11.09.2026).
+    // BLEIBT ZU PRUEFEN: p42-util-campout-mp benutzt AIRemoveObject und laeuft, allerdings
+    // laut Log mit der ALTEN SimConnect-Fassung ("The version of simconnect used by the
+    // module CampOutModule.wasm cannot be found. It will use the last version used in
+    // MSFS2020."), waehrend dieses Modul gegen das 2024er SDK gebaut wird. Sollte das Modul
+    // mit diesem Aufruf nicht mehr laden, ist DAS die Erklaerung -- und der Ausweg waere
+    // `SetDataOnSimObject` (das Objekt weit wegsetzen), selbst wieder ein neuer Import und
+    // deshalb einzeln zu messen.
+    if (o.objekt_id != 0) {
+        SimConnect_AIRemoveObject(g_sim, o.objekt_id, REQ_ERZEUGEN + i);
+    }
     std::memset(&o, 0, sizeof(o));
 }
 

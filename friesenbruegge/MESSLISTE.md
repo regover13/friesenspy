@@ -130,16 +130,27 @@ Verbindung.
 **Das ist der Kern des Sollzustands-Gedankens:** Die Brügge befolgt keine Befehle, sondern
 gleicht ab. Geht eine Anfrage verloren, holt die nächste den Zustand wieder ein.
 
-### 3b. `AIRemoveObject` zurückholen — derselbe Termin, eigener Schritt
+### 3b. `AIRemoveObject` — **eingebaut, Fassung 1.1.2, wartet auf einen Neustart**
 
-Sobald Punkt 1 und 2 stehen, lohnt der Versuch **in dieser Sitzung**, denn er kostet nur einen
-Neustart und beantwortet eine Frage, die sonst offen bleibt:
-
-```
-# in bruegge.cpp, objekt_entfernen():
-    SimConnect_AIRemoveObject(g_sim, o.objekt_id, REQ_ERZEUGEN + i);
-# dann:  .\bauen.ps1  &&  .\paket.ps1  →  Sim neu starten
-```
+> #### ⚠ Der Aufruf ist eine Voraussetzung, keine Annehmlichkeit — gemessen am 12.09.2026
+>
+> Als vPilot kurz die Verbindung verlor, löste der Server die Zuordnung und lieferte kein
+> `soll` mehr. Die Brügge **vergaß** das Objekt daraufhin — der Bär im Simulator blieb aber
+> stehen (vom Nutzer gesehen). Beim Wiederverbinden kam dasselbe Objekt erneut an und wurde
+> **ein zweites Mal gesetzt**.
+>
+> | Beleg | vorher | nachher |
+> |---|---|---|
+> | `seit_s` | 860 | **186** — fing wieder bei null an |
+> | `hoehe_ft` | 1384,9 | **1379,2** — ein anderes Objekt |
+>
+> **Jeder Verbindungsabriss verdoppelt die gesetzten Objekte.** Für den FriesenKieker heißt
+> das: Ein Pilot mit wackliger Leitung zählt Tiere doppelt und dreifach — und niemand sähe
+> dem Ergebnis an, dass es falsch ist. Deshalb ist der Aufruf wieder drin, obwohl er ein
+> Import mehr ist.
+>
+> **Zu prüfen bleibt nur noch, ob das Modul damit lädt.** Fassung 1.1.2 liegt im
+> Community-Ordner (68.580 Bytes).
 
 | Beobachtung | heißt |
 |---|---|
@@ -152,6 +163,18 @@ lag — genau das hat den 12.09. gekostet.
 ---
 
 ## 4. Was passiert bei einer unbekannten Gattung?
+
+> ### ✅ Gemessen am 12.09.2026 — sie meldet, statt zu raten
+>
+> Eine Gattung `seeungeheuer` am Admin vorbei in `soll` geschrieben:
+>
+> ```
+> messung-4-unbekannt   fehlgeschlagen   GATTUNG_UNBEKANNT
+> ```
+>
+> Kein Modell geraten, kein endloser Wiederholungsversuch im Sekundentakt, und der Server
+> weiß, dass diese Anforderung nie erfüllt wird. Ohne den `steht`-Block (v14.30.1) wäre
+> dieser Fehlschlag dauerhaft unsichtbar geblieben.
 
 Der Admin lässt nur die fünf bekannten zu — für diesen Test also per curl eine erfinden, oder
 im Modul einen Titel verstellen, den MSFS nicht kennt.
