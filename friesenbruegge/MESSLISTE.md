@@ -831,23 +831,28 @@ liegen. Eine fehlende Robbe muss als `EXCEPTION_22` sichtbar werden.
 
 ### Vier Prüfpunkte, in einem Zug
 
-Über den Admin drei `robbe` an einen Inselstrand setzen (Koordinaten aus
-`counting seals/seal_colonies.json`, z. B. Norderney Oststrand 53,7235 / 7,2502), dann:
+Über den Admin drei `robbe` an einen Inselstrand setzen, **mit `auf_boden: 1` und ohne
+Höhenangabe** (Koordinaten aus `counting seals/seal_colonies.json`, z. B. Norderney Oststrand
+53,7235 / 7,2502), dann:
 
 1. **Erscheint sie überhaupt?** Das ist die eigentliche Messung. `zustand: steht` in der
    Rückmeldung heißt ja; `fehler: EXCEPTION_22` heißt: Community-SimObjects sind für
    `AICreateSimulatedObject` unsichtbar — und dann ist auch ein eigenes Paket auf diesem Weg
    tot, egal wie sauber gebaut. **Erst dieses Ergebnis abwarten, dann über das Paket reden.**
-2. **Läuft die Animation?** Das Modell trägt zwei (`Default_State`, `sealmove`). Punkt 2d hat
-   gezeigt, dass Tiere von selbst loslaufen — bei einer Robbe am Strand wäre Robben*wandern*
-   über den Deich unschön. Draufsehen, nicht nur zählen.
-3. **Wie liest die Sonde sie ab?** Die Bounding-Box beginnt bei z = **−0,003 m**, der
-   Referenzpunkt liegt also praktisch am Boden — anders als bei `boot_klein` (Wasserlinie,
-   4–5 ft Versatz, Punkt 2b). Erwartung: Geländehöhe genügt, kein Zuschlag. Gegenprobe wie
-   damals: eine auf Geländehöhe, eine 3 ft darüber, nebeneinander.
-4. **Trägt eine Kolonie?** 30 Robben auf 60 m Radius, gegen Punkt 5d gemessen. Eine echte
-   Kolonie hat 12–40 Tiere (s. `counting seals/README.md`), das ist also die Zählgröße, nicht
-   der Härtetest.
+2. **Bleibt sie liegen, wo sie liegt?** Das Modell trägt zwei Animationen (`Default_State`,
+   `sealmove`). **Auslösen lässt sich davon nichts** — über SimConnect ist das nicht
+   dokumentiert (offener Feature-Request bei Asobo, s. Punkt 2d). Die Frage ist also die
+   umgekehrte: ob sie von selbst losrobbt. Punkt 2d hat gezeigt, dass Tiere und Fahrzeuge das
+   tun, und eine Robbenkolonie, die über den Deich wandert, wäre für einen Zähl-Event das
+   Ende. Draufsehen, nicht nur zählen.
+3. **Setzt `auf_boden: 1` sie sauber in den Sand?** Die Bounding-Box beginnt bei z =
+   **−0,003 m**, der Referenzpunkt liegt also praktisch am Boden — anders als bei `boot_klein`
+   (Wasserlinie, rund anderthalb Meter im Boden, Punkt 2b). Erwartung: passt ohne Zuschlag.
+   Geprüft wird mit dem Auge, nicht mit `hoehe_ft` — genau das ist die Lehre aus 2b.
+   Sollte MSFS 2020 das Flag ignorieren, greift der aufgehobene Sondenweg aus 2c.
+4. **Trägt eine Kolonie?** 30 Robben auf 60 m Radius, gegen Punkt 5d gemessen (dort waren 30
+   Objekte fehlerfrei, bei 89,4 FPS). Eine echte Kolonie hat 12–40 Tiere (s.
+   `counting seals/README.md`), das ist also schon die Zählgröße und nicht der Härtetest.
 
 ### Was danach zu entscheiden ist (nicht hier)
 
@@ -857,7 +862,10 @@ nicht hat, sieht nichts und kann nicht mitzählen. Offen bleiben dafür zwei Din
 nach Punkt 1 sinnvoll:
 
 - **Das Modell.** Superspud um Weitergabe der drei Meerestiere bitten (~320 KB je Tier,
-  Freeware) oder ein eigenes bauen (Blender + Asobo-glTF-Exporter).
+  Freeware) oder ein eigenes bauen (Blender + Asobo-glTF-Exporter). Für ein eigenes spricht
+  mehr als die Rechtelage: Bei einem fremden Modell ist die `sim.cfg` gegeben, bei einem
+  eigenen schreiben wir sie selbst — und damit auch, was das Tier von sich aus tut
+  (`DistanceToNotAnimate`, `max_speed_mph` im `[DesignSpecs]`-Block, s. Prüfpunkt 2).
 - **Die Verpackung.** Vorbild ist `human-library-animated` selbst: `content_type: SCENERY` mit
   einem **minimalen** Manifest — ohne `export_type`, ohne `builder`, ohne
   `minimum_compatibility_version`, also genau die Felder, die das WASM-Paket der Brügge

@@ -131,6 +131,22 @@ bisher belegten Titel stammen aus Asobos Bordbestand. Faellt das negativ aus, is
 eigenes Robben-Paket auf diesem Weg tot. **Deshalb wird erst gemessen, dann verpackt** — wer
 in der Zwischenzeit ein Modellpaket baut, baut auf Sand.
 
+### Nachtrag, nach dem Eintrag darueber (Uebergabestelle gelesen)
+
+**Die Zeile in `g_gattungen` ist gesetzt** (`c78bf78`) — `bruegge.cpp` ist von hier aus fertig,
+mehr braucht die Robbe am Modul nicht. Wer dort weiterarbeitet, hat freie Bahn.
+
+**Und die vier widerlegten Altbefunde sind eingearbeitet:** Messlisten-Abschnitt 8 stand
+zuerst mit dem Sondenumweg da (Objekt setzen, Hoehe ablesen, wegraeumen). Er prueft jetzt
+`auf_boden: 1` ohne Hoehenangabe, und die Animationsfrage ist umgedreht — **ausloesen** laesst
+sich nichts (ueber SimConnect nicht dokumentiert), gefragt ist, ob die Robbe von selbst
+losrobbt. Fuer einen Zaehl-Event ist eine wandernde Kolonie das Ende, und Punkt 2d zeigt, dass
+Tiere genau das tun.
+
+⚠ **`bruegge.wasm` ist weiterhin NICHT neu gebaut** — im Community-Ordner liegt 1.3.0, der
+Quelltext sagt 1.4.0. Wer als Erster baut, baut den gemeinsamen Arbeitsbaum mit; bei
+gleichzeitiger Arbeit also vorher absprechen.
+
 ⚠ **`bruegge.wasm` ist NICHT neu gebaut.** Wer baut, kompiliert den Stand des gemeinsamen
 Arbeitsbaums mit — bei paralleler Arbeit also erst absprechen, sonst liegt halbfertiger Code
 im Community-Ordner (und ein Sim-Neustart ist dann noetig, um ihn wieder loszuwerden).
