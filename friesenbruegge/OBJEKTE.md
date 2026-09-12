@@ -92,33 +92,59 @@ Ausnahme der nächste Titel nach.
 
 ---
 
-## X-Plane 12 — ein völlig anderer Mechanismus
+## X-Plane 12 — **schon gemessen, s. `probe-xplane/ERGEBNIS.md`**
 
-**Es gibt keine Titel.** X-Plane lädt eine **OBJ-Datei über ihren Pfad** und erzeugt daraus
-Instanzen:
+> ⚠ **Dieser Abschnitt stand hier zuerst als Web-Recherche. Das war überflüssig:** Am
+> 11.09.2026 wurde X-Plane 12 bereits im Probeflug vermessen, mit einem eigenen Plugin und
+> Sichtbestätigung. Die Belege stehen in
+> [`probe-xplane/ERGEBNIS.md`](probe-xplane/ERGEBNIS.md) — **erst dort nachsehen, dann
+> suchen.**
+
+**Mitgelieferte Objekte** in `Resources/default scenery/sim objects/dynamic/` (auf der Platte
+nachgesehen, nicht aus einer Doku):
+
+| Datei | wofür |
+|---|---|
+| `SailBoat.obj` | im Flug belegt — gesetzt und gesehen |
+| `OilPlatform.obj`, `OilRig.obj` | passt zur Nordsee |
+| `Perry.obj` | Fregatte |
+| **`deer_buck.obj`, `deer_doe.obj`** | **Tiere** |
+| **`seagull_far/flap/glide.obj`** | **Möwen**, in drei Flugzuständen |
+
+Dazu rund 8.000 weitere `.obj` in `Resources/`, u. a. eine ganze Schiffsflotte
+(`sim objects/ships/`: `Cruiser_1200_01`, `Dinghy_360_01`, `Whaler_470_01` …).
+
+**Für einen Zähl-Event ist das reichhaltiger als MSFS' Sortiment** — Hirsche und Möwen stehen
+der Robben-Idee näher als alles, was Asobo mitbringt.
+
+### Der Mechanismus
 
 | | MSFS | X-Plane 12 |
 |---|---|---|
-| Objekt benennen | `title` aus `sim.cfg` | **Dateipfad** zur `.obj`, relativ zum X-System-Ordner |
+| Objekt benennen | `title` aus `sim.cfg` | **Dateipfad** zur `.obj` |
+| Koordinaten | `lat`/`lon` direkt | lokale Meter, `XPLMWorldToLocal` |
 | erzeugen | `SimConnect_AICreateSimulatedObject` | `XPLMLoadObject` + `XPLMCreateInstance` |
-| bewegen | neu setzen | `XPLMInstanceSetPosition` |
+| bewegen | entfernen und neu erzeugen | `XPLMInstanceSetPosition` — **echtes Verschieben** |
 | entfernen | `SimConnect_AIRemoveObject` | `XPLMDestroyInstance` |
+| **auf den Boden** | Sonde mit `OnGround=1` (s. MESSLISTE 2c) | **`XPLMProbeTerrainXYZ`** |
 
-**Das bestätigt den Entwurf:** Der Server nennt eine **Gattung**, keinen Modellnamen — sonst
-wäre das Protokoll an MSFS gekettet. Eine X-Plane-Brügge bildet `tier_gross` auf einen
-OBJ-Pfad ab, und der Server merkt davon nichts.
+### ⚠ Und das wiegt am schwersten: X-Plane kann das Gelände direkt fragen
 
-⚠ **Ein Unterschied fällt für den Kieker ins Gewicht:** In X-Plane ist `XPLMInstanceSetPosition`
-ein echtes **Verschieben** — das Objekt bleibt dasselbe. In MSFS muss dafür entfernt und neu
-erzeugt werden (s. `soll_abgleichen`). Wer die Brügge portiert, sollte das Verschieben dort
-nicht nachbauen, sondern nutzen.
+**`XPLMProbeTerrainXYZ` lieferte im Probeflug 335,11 m** — eine echte Geländeabfrage an einer
+beliebigen Koordinate, ohne dass etwas gesetzt werden müsste.
 
-**Quellen:**
+**Der ganze Sondenumweg in MSFS (Objekt setzen, Höhe ablesen, wegräumen — MESSLISTE 2c) ist
+der Ersatz für eine Funktion, die X-Plane einfach mitbringt.** Wer die Brügge portiert, baut
+ihn dort nicht nach.
+
+**Das bestätigt zugleich den Entwurf:** Der Server nennt eine **Gattung**, keinen Modellnamen
+und keine Höhe — sonst wäre das Protokoll an MSFS gekettet. Eine X-Plane-Brügge bildet
+`tier_gross` auf `deer_buck.obj` ab, fragt das Gelände selbst und meldet dieselbe
+`steht`-Struktur zurück. Der Server merkt vom Unterschied nichts.
+
+**Quellen:** [`probe-xplane/ERGEBNIS.md`](probe-xplane/ERGEBNIS.md) (gemessen) ·
 [XPLMInstance](https://developer.x-plane.com/sdk/XPLMInstance/) ·
-[XPLMLoadObject](https://developer.x-plane.com/sdk/XPLMLoadObject/) ·
-[XPLMScenery](https://developer.x-plane.com/sdk/XPLMScenery/) ·
-[Plugins and Objects](https://developer.x-plane.com/article/pluginsandobjects/) ·
-[SimConnect_AICreateSimulatedObject_EX1](https://docs.flightsimulator.com/msfs2024/html/6_Programming_APIs/SimConnect/API_Reference/AI_Object/SimConnect_AICreateSimulatedObject_EX1.htm)
+[XPLMScenery](https://developer.x-plane.com/sdk/XPLMScenery/)
 
 ---
 
@@ -130,3 +156,16 @@ nicht nachbauen, sondern nutzen.
 - Die 30 gestreamten Tierpakete sind ungeprüft: Ob ein Titel aus einem noch nicht geladenen
   Paket gesetzt werden kann, ist nicht gemessen.
 - Für MSFS 2020 ist **nichts** von alldem im Flug belegt — nur die Titel sind ausgelesen.
+- Für X-Plane: ob eine Instanz das Entladen des Plugins überdauert (s. `probe-xplane`).
+
+---
+
+## ⚠ Lehre aus dem Entstehen dieser Datei
+
+Der X-Plane-Abschnitt entstand zuerst als **Websuche** — obwohl seit dem 11.09.2026 ein
+vollständiger Probeflug samt Plugin, Protokoll und Screenshot im Repo lag. Die Suche fand
+weniger und Ungenaueres als das, was schon dastand, und nannte vor allem `XPLMProbeTerrainXYZ`
+nicht als das, was es ist: die Antwort auf genau die Frage, um die sich der ganze Abend drehte.
+
+**Erst `probe-*/ERGEBNIS.md` lesen, dann suchen.** Dasselbe gilt für die MSFS-Titel: Die
+brauchbare Quelle war nicht das Netz, sondern die Installation auf der Platte.
