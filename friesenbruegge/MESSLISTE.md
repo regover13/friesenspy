@@ -330,6 +330,10 @@ gehören aber zur alten Position des Piloten.)
 > Brügge setzt alles auf eine einzige Höhe, weil sie nur die unter dem Flugzeug kennt
 > (`gelaendehoehe()` = `PLANE ALTITUDE − PLANE ALT ABOVE GROUND`).
 >
+> **Im Bild des 30er-Rasters (5d) ist es unübersehbar:** Ein Boot im Vordergrund zeigt nur
+> noch Verdeck und Sitzbänke, die hinteren stehen vollständig da, eines wirkt angehoben —
+> und alle wurden auf **dieselbe** Höhe gesetzt.
+>
 > **Drei Befunde dieses Abends greifen hier ineinander:**
 >
 > 1. Die Geländehöhe gilt nur am Flugzeug — schon 100 m weiter ist sie falsch (5c)
@@ -453,9 +457,28 @@ gehören aber zur alten Position des Piloten.)
 > 3. Sie meldet es als `antwort_zu_gross` mit der tatsächlichen Größe, der Server schreibt
 >    eine Warnung ins Log. Aus einem stillen Fehler wird ein lauter.
 >
-> **Offen:** ob das gleichzeitige Versetzen von 30 Objekten im Cockpit ruckelt. Die Zählung
-> sieht das nicht — nur das Auge. Falls ja, muss das Versetzen über mehrere Takte verteilt
-> werden; bei einem Piloten, der sich einem Revier nähert, wäre das ohnehin natürlicher.
+> ### ✅ Und die Leistung? — **89,4 FPS mit dreißig Objekten**
+>
+> Aus dem DevMode-Overlay, während dreißig Objekte gleichzeitig um 60 m versetzt wurden
+> (MSFS 2024, Mi-2 am Boden):
+>
+> | | |
+> |---|---|
+> | Bildrate | **89,4 FPS** |
+> | MainThread | 23,6 ms |
+> | RdrThread | 20,5 ms |
+> | Terrain-/Objects-/Buildings-LOD | je 1.00 |
+>
+> **Kein spürbarer Einbruch, kein Ruckler** (vom Nutzer bestätigt: „habe nichts gesehen").
+> Damit bleibt die Brügge so einfach, wie sie ist: **kein Verteilen über mehrere Takte, keine
+> Warteschlange.** Der Server darf ein ganzes Revier auf einmal umsetzen.
+>
+> Das passt zum Bild: Der Simulator setzt AI-Objekte ohnehin laufend (Verkehr, Schiffe);
+> dreißig mehr fallen nicht ins Gewicht.
+>
+> ⚠ **Eine Zeile im Overlay ist ungedeutet:** `MarkersFailed: 20` bei `MarkersWait: 0`. Ob
+> das mit den gesetzten Objekten zusammenhängt oder aus einer ganz anderen Ecke kommt, ist
+> **nicht** geklärt — hier steht es als Beobachtung, nicht als Befund.
 
 ---
 
