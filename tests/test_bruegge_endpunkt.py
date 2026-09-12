@@ -856,3 +856,30 @@ def test_auf_der_website_steht_der_volle_name():
         text = e["title"] + " " + " ".join(e.get("items", []))
         treffer = re.findall(r"(?<!Friesen)(?<!friesen)\bBrügge\b", text)
         assert not treffer, f"v{e['version']}: Bruegge ohne Friesen"
+
+
+def test_ein_xplane_pfad_gehoert_nicht_in_einen_msfs_lauf(klient):
+    """Ein X-Plane-Eintrag ist ein DATEIPFAD, kein Container-Titel -- in MSFS sinnlos.
+
+    Ohne die Schranke lieferte `offen_fuer=msfs2024` am 13.09.2026 auch die 1146
+    X-Plane-Objekte. Das waeren 1146 Versuche gewesen, die nur Fehlschlaege ergeben koennen,
+    und ein Katalog voller falscher "geht nicht".
+
+    MSFS 2020 und 2024 gehoeren dagegen ZUSAMMEN geprueft: Sie teilen sich den Bestand, und
+    genau daran zeigt sich, welche 2020er Titel in 2024 ueberlebt haben.
+    """
+    klient.post("/api/admin/bruegge/katalog", cookies=_admin_kekse(), json={"eintraege": [
+        {"simulator": "msfs2020", "titel": "BlackBear", "quelle": "bord"},
+        {"simulator": "msfs2024", "titel": "Boat01", "quelle": "bord"},
+        {"simulator": "xplane12", "titel": "Resources/.../SailBoat.obj", "quelle": "bord"},
+    ]})
+    fuer_msfs = {z["titel"] for z in klient.get(
+        "/api/admin/bruegge/katalog?offen_fuer=msfs2024", cookies=_admin_kekse()
+    ).json()["eintraege"]}
+    assert "BlackBear" in fuer_msfs and "Boat01" in fuer_msfs
+    assert "Resources/.../SailBoat.obj" not in fuer_msfs
+
+    fuer_xp = {z["titel"] for z in klient.get(
+        "/api/admin/bruegge/katalog?offen_fuer=xplane12", cookies=_admin_kekse()
+    ).json()["eintraege"]}
+    assert fuer_xp == {"Resources/.../SailBoat.obj"}

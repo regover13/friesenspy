@@ -2911,6 +2911,20 @@ def katalog_lesen(conn: sqlite3.Connection, simulator: str | None = None,
     if offen_fuer:
         wo.append("(geprueft_in IS NULL OR geprueft_in <> ?)"); werte.append(offen_fuer)
         wo.append("(bemerkung IS NULL OR bemerkung NOT LIKE 'Titel unbekannt%')")
+        # Nur Titel, die in DIESEM Simulator ueberhaupt etwas bedeuten koennen.
+        #
+        # MSFS 2020 und 2024 teilen sich den Bestand -- ein 2020er Titel gehoert in einem
+        # 2024er Lauf geprueft, denn genau daran zeigt sich, welche ueberlebt haben. Ein
+        # X-Plane-Eintrag ist dagegen ein DATEIPFAD (`Resources/.../SailBoat.obj`) und in
+        # MSFS sinnlos -- und umgekehrt genauso.
+        #
+        # Ohne diese Schranke lieferte `offen_fuer=msfs2024` am 13.09.2026 auch die 1146
+        # X-Plane-Objekte: 1146 Versuche, die nur Fehlschlaege ergeben koennen, und ein
+        # Katalog voller falscher "geht nicht".
+        if offen_fuer.startswith("msfs"):
+            wo.append("simulator IN ('msfs2020', 'msfs2024')")
+        else:
+            wo.append("simulator = ?"); werte.append(offen_fuer)
     if simulator:
         wo.append("simulator = ?"); werte.append(simulator)
     if quelle:
