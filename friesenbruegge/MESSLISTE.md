@@ -46,6 +46,26 @@ Forum-Login der CID ebenso wenig.
 
 ## 1. Setzt die Brügge ein Objekt aus `soll`?
 
+> ### ✅ Gemessen am 12.09.2026 — **ja, sie setzt**
+>
+> Ein `tier_gross` (BlackBear) wurde 30 m vor dem stehenden Flugzeug angefordert und war
+> sofort da. Damit trägt die Kette von Ende zu Ende: Admin → `bruegge_soll` → Antwort des
+> Endpunkts → `soll_abgleichen` im Modul → `AICreateSimulatedObject` → sichtbares Objekt.
+>
+> **Nebenbefund, und kein kleiner: Der Bär stand auf einem Zelt.**
+>
+> Die Höhe kommt aus der Geländeabfrage, und die kennt **nur das Terrain, keine
+> Szenerie-Objekte**. Die Brügge setzt also auf den nackten Boden und merkt nicht, was dort
+> schon steht — hier ein Zelt des Campout-Moduls, anderswo ein Gebäude, ein Hangar, eine
+> Mauer.
+>
+> ⚠ **Für den Kieker ist das eine Spielregel, keine Randnotiz:** Eine Station, die in einem
+> Gebäude oder auf einem Dach landet, ist entweder unsichtbar oder unerreichbar. Wer
+> Stationen setzt, kann sich auf „der Boden ist frei" nicht verlassen — und der Server hat
+> keine Möglichkeit, das von sich aus zu prüfen. Die gemeldete `hoehe_ft` aus dem
+> `steht`-Block ist der einzige Hinweis, den er bekommt, und sie sagt nur, wie hoch das
+> Objekt liegt, nicht worauf.
+
 **Die Kernfrage.** Alles Weitere hängt daran.
 
 Im Admin (`/admin`, Panel „🌉 Brügge") ein `boot_gross` anfordern — Breite und Länge aus der
@@ -75,8 +95,14 @@ python probe-msfs/kieker_probe.py --boote-zaehlen --radius 5000
 Das ist der einzige Weg, auf dem der Server erfährt, ob eine Stelle taugt — **FriesenSpy hat
 kein Geländemodell.**
 
+> ⚠ **Bis v14.30.1 war das gar nicht messbar.** Die Brügge sendete den `steht`-Block seit
+> Fassung 1 und das Protokoll sah ihn vor — der Endpunkt las ihn schlicht nicht aus und warf
+> ihn weg. Aufgefallen ist das erst beim Versuch, genau diesen Punkt zu messen: Es war
+> nirgends etwas da. Seit v14.30.1 landet die Rückmeldung in `bruegge_steht` und steht im
+> Admin **in derselben Zeile wie die Anforderung**, unter „steht wirklich?".
+
 ```
-GET /api/admin/bruegge      →  die Melder-Tabelle
+GET /api/admin/bruegge      →  Melder, soll UND steht
 ```
 
 Zu prüfen: Meldet die Brügge `zustand: steht` mit einer **plausiblen Höhe**? Am Wasser rund

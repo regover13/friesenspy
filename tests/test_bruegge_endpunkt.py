@@ -434,3 +434,113 @@ def test_unbekannte_gattung_wird_abgewiesen(klient, tmp_path):
                     json={"art": "raumschiff", "lat": 53.0, "lon": 7.0}, cookies=kekse)
     assert r.status_code == 400
     assert "Gattung" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------------------
+# Die Rueckmeldung: was steht WIRKLICH?
+#
+# Der Block stand seit Fassung 1 im Protokoll und wurde von bruegge.cpp gesendet -- der
+# Server hat ihn bis zum 12.09.2026 weggeworfen. Aufgefallen ist das erst im Simulator, als
+# Punkt 2 der Messliste gemessen werden sollte und schlicht nichts da war.
+# ---------------------------------------------------------------------------------------
+
+def _steht_lesen(db, kennung="a3f9c1e0b2d48576"):
+    import sqlite3
+    c = sqlite3.connect(db)
+    c.row_factory = sqlite3.Row
+    rows = c.execute("SELECT * FROM bruegge_steht WHERE kennung = ? ORDER BY id",
+                     (kennung,)).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+
+def test_steht_wird_festgehalten(klient, tmp_path):
+    """DER Test gegen den Fund. Ohne die Auswertung im Endpunkt bleibt die Tabelle leer."""
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    klient.post("/api/bruegge/melden", json=_meldung(steht=[
+        {"id": "baer-1", "zustand": "steht", "hoehe_ft": 1297.4, "seit_s": 143},
+    ]))
+    zeilen = _steht_lesen(db)
+    assert len(zeilen) == 1
+    assert zeilen[0]["zustand"] == "steht"
+    assert zeilen[0]["hoehe_ft"] == pytest.approx(1297.4)
+    assert zeilen[0]["seit_s"] == 143
+
+
+def test_ein_fehlschlag_kommt_mit_grund_an(klient, tmp_path):
+    """Der wichtigste Fall: Der Server MUSS erfahren, dass eine Stelle unbrauchbar ist."""
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    klient.post("/api/bruegge/melden", json=_meldung(steht=[
+        {"id": "station-7", "zustand": "fehlgeschlagen", "fehler": "KEINE_ANTWORT"},
+    ]))
+    z = _steht_lesen(db)[0]
+    assert z["zustand"] == "fehlgeschlagen"
+    assert z["fehler"] == "KEINE_ANTWORT"
+    assert z["hoehe_ft"] is None
+
+
+def test_die_rueckmeldung_ist_vollstaendig_und_ersetzt(klient, tmp_path):
+    """`steht` ist die ganze Lage, kein Zuwachs -- wie `soll` in der Gegenrichtung.
+
+    Sonst behauptete eine stehengebliebene Zeile, ein Objekt staende noch, das die Bruegge
+    laengst vergessen hat.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    klient.post("/api/bruegge/melden", json=_meldung(steht=[
+        {"id": "a", "zustand": "steht"}, {"id": "b", "zustand": "steht"},
+    ]))
+    assert [z["id"] for z in _steht_lesen(db)] == ["a", "b"]
+    klient.post("/api/bruegge/melden", json=_meldung(steht=[{"id": "b", "zustand": "steht"}]))
+    assert [z["id"] for z in _steht_lesen(db)] == ["b"]
+
+
+def test_zwei_simulatoren_melden_dasselbe_objekt_getrennt(klient, tmp_path):
+    """Ein `soll`-Eintrag ohne cid gilt fuer ALLE -- er hat so viele Wirklichkeiten wie Piloten.
+
+    Genau deshalb ist der Schluessel (kennung, id) und nicht id allein.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    klient.post("/api/bruegge/melden",
+                json=_meldung(kennung="aaaa", steht=[{"id": "s1", "zustand": "steht"}]))
+    klient.post("/api/bruegge/melden",
+                json=_meldung(kennung="bbbb",
+                              steht=[{"id": "s1", "zustand": "fehlgeschlagen",
+                                      "fehler": "KEINE_ANTWORT"}]))
+    assert _steht_lesen(db, "aaaa")[0]["zustand"] == "steht"
+    assert _steht_lesen(db, "bbbb")[0]["zustand"] == "fehlgeschlagen"
+
+
+def test_muell_in_der_rueckmeldung_wirft_den_endpunkt_nicht_um(klient, tmp_path):
+    """Der Endpunkt liegt NICHT hinter dem Login -- jeder kann ihn bedienen.
+
+    Erwartet wird deshalb: verdauen, was verdaulich ist, den Rest verwerfen, und in keinem
+    Fall eine 500 -- die waere fuer einen offenen Endpunkt eine Einladung.
+    """
+    db = str(tmp_path / "t.db")
+    _friese_anlegen(db)
+    r = klient.post("/api/bruegge/melden", json=_meldung(steht=[
+        {"id": "gut", "zustand": "steht", "hoehe_ft": "keine Zahl", "seit_s": None},
+        {"id": "ohne-zustand"},
+        "gar kein Objekt",
+        {"zustand": "steht"},
+        {"id": "x" * 500, "zustand": "steht"},
+    ]))
+    assert r.status_code == 200
+    ids = [z["id"] for z in _steht_lesen(db)]
+    assert "gut" in ids and "ohne-zustand" not in ids
+    assert all(len(i) <= 64 for i in ids)
+    assert [z for z in _steht_lesen(db) if z["id"] == "gut"][0]["hoehe_ft"] is None
+
+
+def test_steht_ohne_zuordnung_wird_nicht_geschrieben(klient, tmp_path):
+    """Ohne VATSIM geschieht nichts -- auch kein Festhalten fremder Rueckmeldungen.
+
+    Sonst waere der offene Endpunkt eine Ablage, die jeder ungefragt fuellen kann.
+    """
+    db = str(tmp_path / "t.db")
+    klient.post("/api/bruegge/melden", json=_meldung(steht=[{"id": "x", "zustand": "steht"}]))
+    assert _steht_lesen(db) == []

@@ -1,5 +1,16 @@
 [
   {
+    "version": "14.30.1",
+    "date": "2026-09-12",
+    "highlight": false,
+    "title": "Die Brügge sagt jetzt zurück, was wirklich dasteht",
+    "items": [
+      "🌉 Die Sim-Brügge meldete bisher brav zurück, ob ein angefordertes Objekt tatsächlich im Simulator steht — der Server hat diese Antwort aber weggeworfen. Jetzt wird sie ausgewertet und im Admin angezeigt.",
+      "🦭 Das ist mehr als Kosmetik: Ohne die Rückmeldung könnte später eine Station für ein Event angelegt werden, die es im Simulator gar nicht gibt — und jemand fliegt hin und findet nichts. Gemeldet wird auch der Grund, wenn das Hinstellen scheitert.",
+      "🔧 Weiterhin nichts davon zu sehen: Das Paket ist nicht verteilt, die Karte zeigt die VATSIM-Positionen."
+    ]
+  },
+  {
     "version": "14.30.0",
     "date": "2026-09-11",
     "highlight": false,

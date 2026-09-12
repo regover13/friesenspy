@@ -706,6 +706,37 @@ CREATE TABLE IF NOT EXISTS bruegge_soll (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bruegge_soll_cid ON bruegge_soll(cid);
+
+-- Was steht WIRKLICH im Simulator? Die Rueckmeldung der Bruegge (PROTOKOLL.md, Abschnitt 1).
+--
+-- Eigene Tabelle und nicht Spalten an `bruegge_soll`, weil es zwei verschiedene Dinge sind:
+-- `soll` ist der Wunsch des Servers, `steht` die Wirklichkeit im Simulator eines bestimmten
+-- Piloten. Ein Eintrag in `soll` ohne cid gilt fuer ALLE Bruegge -- er hat damit so viele
+-- Wirklichkeiten wie Piloten, und die passen nicht in eine Spalte daneben.
+--
+-- Der Schluessel ist deshalb (kennung, id): dasselbe Objekt, gemeldet von zwei Simulatoren,
+-- sind zwei Zeilen.
+--
+-- WOZU das ueberhaupt gebraucht wird: Ohne diese Rueckmeldung weiss der Server nie, ob ein
+-- Objekt tatsaechlich dasteht. Er schriebe eine Station in `soll`, die Bruegge scheiterte
+-- still (unbekannte Gattung, Stelle unbrauchbar), und das Event liefe mit einer Station, die
+-- es nicht gibt. Beim FriesenKieker hiesse das: Ein Pilot fliegt hin und findet nichts.
+CREATE TABLE IF NOT EXISTS bruegge_steht (
+    kennung     TEXT NOT NULL,       -- WELCHE Bruegge meldet; dieselbe id kann mehrfach stehen
+    id          TEXT NOT NULL,       -- die id aus bruegge_soll
+    cid         INTEGER,             -- wem sie zugeordnet war, als sie meldete
+    -- "steht", "fehlgeschlagen" oder "verschwunden" -- die drei Zustaende aus bruegge.cpp.
+    -- Bewusst NICHT auf einen Wertebereich eingeschraenkt: Kommt eine kuenftige Fassung mit
+    -- einem vierten, soll er ankommen und sichtbar sein, statt am CHECK zu scheitern.
+    zustand     TEXT NOT NULL,
+    hoehe_ft    REAL,                -- nur bei "steht": wo der Simulator das Objekt hinsetzte
+    seit_s      INTEGER,             -- wie lange es schon steht bzw. weg ist
+    fehler      TEXT,                -- nur bei "fehlgeschlagen", z. B. KEINE_ANTWORT
+    gemeldet_am TEXT NOT NULL,
+    PRIMARY KEY (kennung, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bruegge_steht_id ON bruegge_steht(id);
 """
 
 
@@ -2687,6 +2718,78 @@ def bruegge_soll_loeschen(conn: sqlite3.Connection, kennung_id: str) -> int:
 def bruegge_soll_alle(conn: sqlite3.Connection) -> list[dict]:
     """Alles, was angefordert ist -- fuer den Admin."""
     rows = conn.execute("SELECT * FROM bruegge_soll ORDER BY angelegt_am DESC").fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def bruegge_steht_melden(conn: sqlite3.Connection, kennung: str, cid: int | None,
+                         steht: list) -> int:
+    """Die Rueckmeldung der Bruegge festhalten (kein commit). Gibt die Zahl der Zeilen zurueck.
+
+    ``steht`` ist die VOLLSTAENDIGE Lage aus Sicht dieser Bruegge, genau wie ``soll`` in der
+    Gegenrichtung vollstaendig ist -- deshalb werden alte Zeilen dieser Kennung geloescht und
+    nicht etwa zusammengefuehrt. Ein Objekt, das die Bruegge nicht mehr meldet, hat sie
+    vergessen; eine stehengebliebene Zeile wuerde behaupten, es stuende noch.
+
+    **Fremddaten, also misstrauisch lesen.** Was hier ankommt, hat kein Login passiert (s.
+    PROTOKOLL.md, Abschnitt 5) -- jeder kann diesen Endpunkt bedienen. Deshalb: Laengen
+    begrenzen, Zahlen erzwingen, Zahl der Eintraege deckeln. Die Bruegge selbst hat ein
+    Limit von SOLL_MAX = 32; alles darueber ist entweder ein Fehler oder Absicht.
+    """
+    conn.execute("DELETE FROM bruegge_steht WHERE kennung = ?", (kennung,))
+    if not isinstance(steht, list):
+        return 0
+    jetzt = _now_utc()
+    n = 0
+    for eintrag in steht[:32]:
+        if not isinstance(eintrag, dict):
+            continue
+        obj_id = str(eintrag.get("id") or "")[:64]
+        zustand = str(eintrag.get("zustand") or "")[:32]
+        if not obj_id or not zustand:
+            continue
+        conn.execute(
+            "INSERT OR REPLACE INTO bruegge_steht "
+            "  (kennung, id, cid, zustand, hoehe_ft, seit_s, fehler, gemeldet_am) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (kennung, obj_id, cid, zustand,
+             _als_zahl(eintrag.get("hoehe_ft")),
+             _als_ganzzahl(eintrag.get("seit_s")),
+             (str(eintrag.get("fehler"))[:120] if eintrag.get("fehler") else None),
+             jetzt),
+        )
+        n += 1
+    return n
+
+
+def _als_zahl(wert) -> float | None:
+    """Fremddaten in eine Fliesskommazahl -- oder NULL. Nie eine Ausnahme."""
+    try:
+        return float(wert) if wert is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _als_ganzzahl(wert) -> int | None:
+    try:
+        return int(wert) if wert is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def bruegge_steht_alle(conn: sqlite3.Connection, hoechstalter_s: int = 60) -> list[dict]:
+    """Was steht gerade wirklich? Fuer den Admin.
+
+    ``hoechstalter_s`` wirft aus, was laenger nicht gemeldet wurde -- eine Bruegge, die sich
+    verabschiedet hat (Simulator zu, Netz weg), laesst ihre letzte Lage sonst fuer immer
+    stehen und behauptet damit etwas, das niemand mehr bestaetigt. Das ist dieselbe
+    Ueberlegung wie bei `logoff_time`: Das Fehlen einer Meldung ist kein Zustand.
+    """
+    grenze = (datetime.now(timezone.utc)
+              - timedelta(seconds=hoechstalter_s)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        "SELECT * FROM bruegge_steht WHERE gemeldet_am >= ? ORDER BY id, kennung",
+        (grenze,),
+    ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 

@@ -304,12 +304,17 @@ static void meldung_bauen(char* puffer, size_t groesse) {
     j.roh("]");
     j.komma();
 
-    // `steht` meldet, wie es JEDEM Objekt aus `soll` ergangen ist. In Fassung 1 schickt der
-    // Server nichts, also steht hier nichts -- das Feld bleibt trotzdem drin, damit der
-    // Server nicht zwischen "nichts gesetzt" und "Feld fehlt" raten muss.
     // `steht` meldet, wie es JEDEM Objekt aus `soll` ergangen ist -- auch den gescheiterten.
     // Ohne diese Rueckmeldung versuchte die Bruegge ein abgelehntes Objekt jede Sekunde
     // erneut, fuer immer, und der Server erfuehre nie, dass die Stelle unbrauchbar ist.
+    //
+    // Das Feld bleibt auch dann drin, wenn nichts dasteht -- als leeres Array. Sonst muesste
+    // der Server zwischen "nichts gesetzt" und "Feld fehlt" raten, und das sind zwei sehr
+    // verschiedene Dinge.
+    //
+    // Die Gegenseite gibt es seit dem 12.09.2026: Bis dahin sendete die Bruegge diesen Block
+    // und der Server warf ihn weg (`bruegge_steht_melden` in database.py). Aufgefallen ist
+    // das erst im Simulator, als es zu messen galt.
     j.feld("steht");
     j.roh("[");
     bool erstes = true;

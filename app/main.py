@@ -104,6 +104,8 @@ from app.database import (
     bruegge_aufraeumen,
     bruegge_soll_fuer,
     bruegge_soll_setzen,
+    bruegge_steht_melden,
+    bruegge_steht_alle,
     bruegge_soll_loeschen,
     bruegge_soll_alle,
     get_panel_prefs,
@@ -898,6 +900,16 @@ async def bruegge_melden(request: Request):
                 gilt_bis=0)
 
         bruegge_position_schreiben(conn, cid, lage, simulator, kennung or None)
+
+        # Die Gegenrichtung: Was steht WIRKLICH? Ohne diese Zeile erfaehrt der Server nie, ob
+        # ein Objekt tatsaechlich dasteht -- er schriebe eine Station in `soll`, die Bruegge
+        # scheiterte still, und ein Pilot floege hin und faende nichts. Das Protokoll sieht
+        # den Block seit Fassung 1 vor (Abschnitt 1) und die Bruegge sendet ihn seit jeher;
+        # ausgewertet wurde er bis zum 12.09.2026 nicht -- aufgefallen ist das erst, als
+        # Punkt 2 der Messliste im Simulator gemessen werden sollte und nichts da war.
+        if kennung:
+            bruegge_steht_melden(conn, kennung, cid, body.get("steht") or [])
+
         soll = bruegge_soll_fuer(conn, cid)
         # Gelegentlich aufraeumen -- kein eigener Job fuer eine Handvoll Zeilen. Ein Prozent
         # der Meldungen genuegt: Bei Sekundentakt ist das rund alle anderthalb Minuten je
@@ -1049,8 +1061,11 @@ async def admin_bruegge(request: Request):
     require_admin(request)
     conn = get_connection(get_settings().DB_PATH)
     try:
+        # `soll` und `steht` gehoeren zusammen ausgeliefert und nicht in zwei Abfragen: Der
+        # Admin will genau den VERGLEICH sehen -- angefordert gegen tatsaechlich dastehend.
+        # Ein Objekt, das in `soll` steht und in `steht` fehlt, ist der interessante Fall.
         return {"takt_s": _bruegge_takt(conn), "melder": bruegge_uebersicht(conn),
-                "soll": bruegge_soll_alle(conn)}
+                "soll": bruegge_soll_alle(conn), "steht": bruegge_steht_alle(conn)}
     finally:
         conn.close()
 

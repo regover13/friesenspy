@@ -1506,8 +1506,8 @@
             </p>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>id</th><th>Gattung</th><th>Ort</th><th>für</th><th></th></tr></thead>
-                <tbody id="bg-soll"><tr><td colspan="5" class="empty-hint">Lädt …</td></tr></tbody>
+                <thead><tr><th>id</th><th>Gattung</th><th>Ort</th><th>für</th><th>steht wirklich?</th><th></th></tr></thead>
+                <tbody id="bg-soll"><tr><td colspan="6" class="empty-hint">Lädt …</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -2053,15 +2053,46 @@
 
         const sb = document.getElementById('bg-soll');
         if (sb) {
+          // Die Rueckmeldungen nach id buendeln. Ein Eintrag ohne cid gilt fuer ALLE Bruegge
+          // und hat damit so viele Wirklichkeiten wie Piloten -- deshalb je id eine Liste,
+          // nicht ein Wert.
+          const proId = {};
+          (d.steht || []).forEach(function (z) {
+            if (!proId[z.id]) proId[z.id] = [];
+            proId[z.id].push(z);
+          });
+
+          function lage(id) {
+            const zeilen = proId[id];
+            // Kein Eintrag heisst NICHT "steht nicht" -- es heisst "niemand hat es gemeldet".
+            // Das ist dieselbe Unterscheidung wie bei `nicht_gefunden` in den AIP-Blaettern:
+            // die Abwesenheit einer Meldung ist kein Zustand.
+            if (!zeilen || !zeilen.length) {
+              return '<span style="color:#6b7d8f;">keine Rückmeldung</span>';
+            }
+            return zeilen.map(function (z) {
+              if (z.zustand === 'steht') {
+                const h = (z.hoehe_ft != null) ? ' ' + Math.round(z.hoehe_ft) + ' ft' : '';
+                return '<span style="color:#5cb85c;">✔ steht</span>' +
+                       '<span class="mono" style="color:#8aa0b8;">' + h + '</span>';
+              }
+              if (z.zustand === 'verschwunden') {
+                return '<span style="color:#e0a030;">⚠ verschwunden</span>';
+              }
+              return '<span style="color:#d9534f;">✖ ' + (z.fehler || z.zustand) + '</span>';
+            }).join('<br>');
+          }
+
           sb.innerHTML = (d.soll && d.soll.length)
             ? d.soll.map(function (o) {
                 return '<tr><td class="mono">' + o.id + '</td><td>' + o.art +
                        '</td><td class="mono">' + o.lat.toFixed(4) + ' / ' + o.lon.toFixed(4) +
                        '</td><td>' + (o.cid || 'alle') +
+                       '</td><td>' + lage(o.id) +
                        '</td><td><button class="btn btn-sm bg-weg" data-id="' + o.id +
                        '">wegnehmen</button></td></tr>';
               }).join('')
-            : '<tr><td colspan="5" class="empty-hint">Nichts angefordert.</td></tr>';
+            : '<tr><td colspan="6" class="empty-hint">Nichts angefordert.</td></tr>';
           sb.querySelectorAll('.bg-weg').forEach(function (b) {
             b.addEventListener('click', async function () {
               await fetch('/api/admin/bruegge/soll/' + encodeURIComponent(b.dataset.id),
