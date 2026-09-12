@@ -21,6 +21,13 @@ uvicorn app.main:app --reload
 pytest tests/ -v
 ```
 
+**KEINE Datei anfassen, solange eine Suite läuft — nicht nur `CHANGELOG.json`.** Mehrere
+Tests lesen Quelldateien als Text und prüfen deren Inhalt: `test_kutter_eventloop.py`
+durchsucht `app/main.py` nach Endpunkten, `test_handpassung_schutz.py` prüft `database.py`
+auf die Sperre, `test_vr_panel.py` liest `index.html`. Wer währenddessen speichert, bekommt
+Fehlschläge, die nichts mit dem Code zu tun haben — am 12.09.2026 zweimal hintereinander,
+beide Male grün, sobald der Test allein lief. **Erst die Suite abwarten, dann weiterschreiben.**
+
 **`app/CHANGELOG.json` NICHT anfassen, solange eine Suite läuft.** `version.py` liest die
 Datei einmal beim Import, `test_load_changelog_matches_module_constant` liest sie erneut und
 vergleicht — wer dazwischen einen Eintrag einfügt, bekommt einen Fehlschlag, der nichts mit
