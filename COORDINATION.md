@@ -52,7 +52,48 @@ Migration) · `app/main.py` (Endpunkt wertet `steht` aus, loggt `antwort_zu_gros
 `bruegge_steht` (Schluessel `(kennung, id)`), im Admin neben der Anforderung sichtbar, und im
 Aufraeumer beruecksichtigt.
 
-### Fuer die parallele Session
+### Fuer die parallele Session — sie baut die ROBBEN
+
+**Wir kommen uns nicht ins Gehege, wenn wir uns an eine Stelle halten:** Die Robben brauchen
+in der Bruegge genau **einen** Eintrag, und zwar in `g_gattungen` (`msfs/bruegge.cpp`, direkt
+ueber `titel_fuer`). Dort steht je Gattung eine Titelliste:
+
+```c
+{ "tier_gross",  { "BlackBear", "GrizzlyBear", … , nullptr } },
+```
+
+Ein Robben-Eintrag waere z. B. `{ "robbe", { "<euer Titel>", nullptr } }` — **mehr ist an der
+Bruegge nicht zu tun.** Der Server kennt Gattungen ohnehin nur als Text; die Pruefliste im
+Admin steht in `app/main.py` (`admin_bruegge_soll_setzen`, Gattungspruefung).
+
+**Ich fasse `bruegge.cpp` ab jetzt nur noch an, wenn es sich nicht vermeiden laesst** — sagt
+Bescheid, wenn ihr die Zeile selbst setzt, dann bleibe ich ganz weg.
+
+### ⚠ Drei Befunde, die den Robbenbau direkt betreffen
+
+1. **Es gibt keine Robben im Bestand** — weder in MSFS 2020 (45 Tiertitel) noch in 2024
+   (41 Tierpakete). Vollstaendige Listen in **`friesenbruegge/OBJEKTE.md`**.
+2. **`devprops-counting-seals-frisian-islands` loest es ueber SZENERIE (BGL)** — und Szenerie
+   laesst sich zur Laufzeit **nicht** setzen. Fuer die Bruegge braucht es ein echtes
+   **SimObject** (`SimObjects/Animals/<Name>/sim.cfg` mit `title=`), kein `modellib.BGL`.
+3. **Das Paket darf KEIN UTF-8-BOM in `manifest.json`/`layout.json` haben.** Sonst wird es
+   registriert, gemountet und in der `Content.xml` als „Activated“ gefuehrt — und trotzdem
+   lautlos uebergangen (`MyLibrary init … took 0.0002`, kein „WASM: Module … loaded“). Das hat
+   hier einen ganzen Tag gekostet. Pruefen mit
+   `head -c 3 manifest.json | od -An -tx1` → muss `7b` sein, nicht `ef bb bf`.
+
+### Und was die Bruegge fuer Robben schon kann (alles im Flug belegt)
+
+| | |
+|---|---|
+| auf den Boden setzen | `auf_boden: 1` genuegt, ohne Hoehenangabe — auch 10 km entfernt |
+| wegnehmen, versetzen | ja, seit 1.1.3/1.2.1 |
+| 30 Stueck auf einmal | fehlerfrei, 89,4 FPS |
+| **bewegen** | nur ueber Versetzen, und das **springt sichtbar**. Fluessig waere `SetDataOnSimObject` — ungemessen |
+| **Animation (Beine, Kopf)** | Modelle haben sie (DevMode „Play Animation“), ueber SimConnect aber **nicht dokumentiert** — offener Feature-Request bei Asobo, ohne Antwort. **Fuer ein EIGENES Robbenmodell ist das womoeglich leichter, weil ihr die `sim.cfg` selbst schreibt.** |
+
+### Sonstiges fuer die parallele Session
+
 
 - **`bruegge.cpp` ist stark umgebaut** (1.0.1 → 1.3.0). Bei Konflikten: meine Fassung ist im
   Simulator belegt, die Befunde stehen in `MESSLISTE.md`.
