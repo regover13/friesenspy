@@ -104,7 +104,7 @@ Ausnahme der nächste Titel nach.
 
 ---
 
-## Robben — nicht an Bord, aber als SimObject im Community-Ordner
+## Robben — ✅ gesetzt und gesehen (12.09.2026), aus dem Community-Ordner
 
 Beide Simulatoren bringen keine mit. **Ein Community-Paket schon**, und zwar in genau der Form,
 die `AICreateSimulatedObject` braucht — nicht als Szenerie:
@@ -115,7 +115,7 @@ in MSFS 2024 verlinkt, in MSFS 2020 **nicht**. Ausgelesen aus
 
 | Titel | Modell | Dateien |
 |---|---|---|
-| `ahqa seal moving` | Seehund, Bounding-Box 0,74 × 1,53 × 0,31 m | 186 KB glTF + `.bin`, 131 KB DDS |
+| `ahqa seal moving` ✅ | Seehund, Bounding-Box 0,74 × 1,53 × 0,31 m | 186 KB glTF + `.bin`, 131 KB DDS |
 | `ahqa sea lion moving` | Seelöwe | 380 KB |
 | `ahqa walrus moving` | Walross | 224 KB |
 | `ahqa puffin walking` | Papageitaucher | — |
@@ -133,10 +133,23 @@ SimObject-Seite hat nie jemand angefasst.
 Bordbestand:** Fiele sie still auf `BlackBear` zurück, lieferte der Kieker eine Zahl, während
 am Strand Bären liegen. Eine fehlende Robbe muss als `EXCEPTION_22` sichtbar werden.
 
-⚠ **Ungemessen und entscheidend** (Messliste 8): Ob `AICreateSimulatedObject` einen Titel aus
-einem **Community**-Paket überhaupt findet. Alle bisher im Flug belegten Titel stammen aus
-Asobos Bordbestand. Davon hängt auch ein eigenes Robben-Paket ab — deshalb wird zuerst mit
-Superspuds Modellen gemessen und erst danach über die Verpackung geredet.
+✅ **Gemessen am 12.09.2026 (parallele Sitzung):** `ahqa seal moving` wurde mit
+`probe-msfs/titel_schau.py` gesetzt und gezeichnet — Screenshot mit Robbe und Kuh im Bild.
+**`AICreateSimulatedObject` findet also auch Community-Titel**, nicht nur Asobos Bordbestand.
+Ein eigenes Robben-Paket scheitert damit nicht mehr am Verfahren.
+
+⚠ **Noch offen:** derselbe Weg über die Brügge (WASM statt externer Client) — s. Messliste 8.
+
+**Die ganze Bibliothek ist animiert.** Alle dreißig Tiere tragen `walking`, `running` oder
+`moving` im Namen; die Bewegung steckt im Modell, nicht in einem SimConnect-Befehl. Damit
+erledigt sich die Frage, wie man Beine und Kopf bewegt — und es entsteht die umgekehrte:
+ob eine Robbe namens „moving" am Strand liegen bleibt (Messliste 8, Prüfpunkt 2).
+
+**Für die Gattung heißt das:** Superspuds Robbe zuerst, ein eigenes Modell als zweiter Titel.
+Die Nachrück-Mechanik nimmt dann das Addon, wo es installiert ist, und das eigene Modell bei
+allen anderen — kein Pilot wird ausgeschlossen, und wer das Addon hat, bekommt eine bewegte
+Robbe. **Was weiterhin nicht passieren darf, ist ein Rückfall auf eine andere ART** (Bär,
+Schaf): Gezählt wird hier eine bestimmte Art, nicht „irgendein Tier".
 
 ---
 

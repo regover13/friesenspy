@@ -490,22 +490,28 @@ Stelle aus — er sendet nie ins Leere.
 | `fahrzeug` | `ASO_Ambulance_Japan` ✅ | `lib/airport/vehicles/…` ⚠ | Gelände |
 | `boot_klein` | `Boat01` ✅ | `SailBoat.obj` ✅ | Gelände — **außer MSFS 2020: Meereshöhe** |
 | `boot_gross` | `CruiseShip01` ✅ | `Perry.obj` ⚠ | Gelände — **außer MSFS 2020: Meereshöhe** |
-| `robbe` (ab 1.4.0) | `ahqa seal moving` ⚠ **Community** | — | Gelände |
+| `robbe` (ab 1.4.0) | `ahqa seal moving` ✅ **Community** | — | Gelände |
 
 ✅ = gesetzt und im Bild gesehen · ⚠ = Datei auf der Platte nachgewiesen, aber nie gesetzt
 
 ### ⚠ `robbe` ist die erste Gattung ohne Bordmodell
 
 Weder MSFS 2020 noch 2024 bringt eine Robbe mit (`OBJEKTE.md`). Die drei Titel kommen aus dem
-Community-Paket `human-library-animated` — **und ob `AICreateSimulatedObject` einen Titel aus
-einem Community-Paket überhaupt findet, ist ungemessen** (Messliste 8). Alle ✅ oben stammen aus
-Asobos Bordbestand.
+Community-Paket `human-library-animated` — **und dass `AICreateSimulatedObject` auch einen
+solchen Titel findet, ist seit dem 12.09.2026 belegt** (gesetzt, gezeichnet, Screenshot;
+Messliste 8). Alle übrigen ✅ oben stammen aus Asobos Bordbestand. Offen ist nur noch, ob das
+WASM-Modul denselben Titel auflöst wie der externe Client, mit dem gemessen wurde.
 
-Diese Gattung hat **bewusst keinen Rückfall** auf ein Bordmodell: Der Pilot zählt Tiere, aber
-er zählt hier eine *bestimmte Art* — fiele sie still auf `BlackBear` zurück, lieferte der
-Kieker eine Zahl, während am Strand Bären liegen. Das ist der Fall, den der Satz oben
-(„Wer eine bestimmte Art braucht, braucht eine eigene Gattung") meint, bis zum Ende gedacht:
-Eine eigene Gattung **und** kein Ausweichen.
+Diese Gattung hat **bewusst keinen Rückfall auf eine andere Art**: Der Pilot zählt sonst
+Tiere, hier aber eine *bestimmte Art* — fiele sie still auf `BlackBear` zurück, lieferte der
+Kieker eine Zahl, während am Strand Bären liegen. Das ist der Fall, den der Satz oben („Wer
+eine bestimmte Art braucht, braucht eine eigene Gattung") bis zum Ende gedacht meint: eine
+eigene Gattung **und** kein artfremdes Ausweichen.
+
+**Eine zweite Robbe darf dagegen jederzeit dazu.** Sobald ein eigenes Modellpaket steht,
+gehört sein Titel hinter Superspuds: Das Addon zieht, wo es installiert ist, das eigene Modell
+überall sonst. Damit wird niemand ausgeschlossen, und wer das Addon hat, bekommt eine bewegte
+Robbe — die ganze Bibliothek ist animiert (`walking`/`running`/`moving` im Modellnamen).
 
 **Eine Gattung ist eine Bedeutung, kein Modell.** Welches Tier ein `tier_gross` ist, darf sich
 zwischen Simulatoren und zwischen Brügge-Fassungen unterscheiden — der Pilot zählt Tiere, nicht

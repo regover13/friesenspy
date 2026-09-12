@@ -800,12 +800,34 @@ grep 'bruegge/melden' /var/log/nginx/access.log | tail -5 | awk '{print $4}'
 
 ---
 
-## 8. ROBBEN — lässt sich ein SimObject aus einem **Community**-Paket setzen?
+## 8. ROBBEN — ✅ **ein Community-SimObject lässt sich setzen** (12.09.2026)
 
-**Die wichtigste offene Frage der ganzen Liste.** Von ihr hängt nicht nur diese Gattung ab,
-sondern jedes künftige eigene Modellpaket: Alle bisher belegten Titel (`BlackBear`, `Boat01`,
-`Windmill`) stammen aus **Asobos Bordbestand**. Ob `AICreateSimulatedObject` auch einen Titel
-aus einem Paket im **Community-Ordner** findet, ist ungemessen.
+> ### ✅ Prüfpunkt 1 ist beantwortet — und zwar mit einer Robbe im Bild
+>
+> Die parallele Sitzung hat `ahqa seal moving` am selben Abend mit `probe-msfs/titel_schau.py`
+> gesetzt: **gezeichnet, im Screenshot belegt**, neben einer Kuh als Größenvergleich, flach am
+> Boden liegend. Damit ist die Frage beantwortet, von der alles Weitere abhing —
+> `AICreateSimulatedObject` findet auch einen Titel aus dem **Community-Ordner**, nicht nur aus
+> Asobos Bordbestand.
+>
+> **Ein eigenes Robben-Paket ist damit gangbar.** Es scheitert nicht mehr am Verfahren,
+> sondern nur noch an Modell und Rechten.
+>
+> ⚠ **Was das NICHT belegt:** Gesetzt hat es ein externer SimConnect-Client, nicht die Brügge.
+> Der Weg Server → Brügge → `robbe` (WASM, `g_gattungen`) ist weiterhin ungemessen — in
+> `bruegge_steht` stand an diesem Abend keine einzige `robbe`-Zeile. Es ist derselbe Aufruf und
+> bei allen fünf bisherigen Gattungen war er deckungsgleich, aber „derselbe Aufruf" ist ein
+> Argument, kein Befund.
+>
+> **Und ein zweiter Fund, der Prüfpunkt 2 verschärft:** Alle dreißig Tiere dieser Bibliothek
+> heißen `walking`, `running` oder `moving` — **die Animation steckt im Modell**. Das erledigt
+> die Frage, wie man Beine und Kopf bewegt (gar nicht über SimConnect, sondern über die Wahl
+> des Modells), macht aber die Gegenfrage dringlicher: Eine Robbe, die „moving" heißt, könnte
+> genau das tun.
+
+**Die wichtigste offene Frage der ganzen Liste — beantwortet.** Von ihr hing nicht nur diese
+Gattung ab, sondern jedes künftige eigene Modellpaket: Alle zuvor belegten Titel (`BlackBear`,
+`Boat01`, `Windmill`) stammen aus **Asobos Bordbestand**.
 
 Und für den FriesenKieker ist es die Existenzfrage: **Weder MSFS 2020 noch 2024 bringt eine
 Robbe mit** (s. [`OBJEKTE.md`](OBJEKTE.md)). Was gezählt werden soll, muss von außen kommen.
@@ -835,16 +857,18 @@ liegen. Eine fehlende Robbe muss als `EXCEPTION_22` sichtbar werden.
 Höhenangabe** (Koordinaten aus `counting seals/seal_colonies.json`, z. B. Norderney Oststrand
 53,7235 / 7,2502), dann:
 
-1. **Erscheint sie überhaupt?** Das ist die eigentliche Messung. `zustand: steht` in der
-   Rückmeldung heißt ja; `fehler: EXCEPTION_22` heißt: Community-SimObjects sind für
-   `AICreateSimulatedObject` unsichtbar — und dann ist auch ein eigenes Paket auf diesem Weg
-   tot, egal wie sauber gebaut. **Erst dieses Ergebnis abwarten, dann über das Paket reden.**
-2. **Bleibt sie liegen, wo sie liegt?** Das Modell trägt zwei Animationen (`Default_State`,
-   `sealmove`). **Auslösen lässt sich davon nichts** — über SimConnect ist das nicht
-   dokumentiert (offener Feature-Request bei Asobo, s. Punkt 2d). Die Frage ist also die
+1. **Kommt sie auch über die Brügge?** Der Titel ist belegt (Kasten oben), der Weg noch nicht:
+   `zustand: steht` in der Rückmeldung heißt ja, `fehler: EXCEPTION_22` hieße, dass das
+   WASM-Modul den Titel anders auflöst als ein externer Client. Das ist jetzt eine
+   Bestätigungsmessung, keine Existenzfrage mehr.
+2. **Bleibt sie liegen, wo sie liegt?** ⚠ **Jetzt der wichtigste Punkt.** Das Modell heißt
+   `ahqa seal moving` und trägt zwei Animationen (`Default_State`, `sealmove`); auslösen lässt
+   sich davon nichts (über SimConnect nicht dokumentiert, Punkt 2d). Die Frage ist die
    umgekehrte: ob sie von selbst losrobbt. Punkt 2d hat gezeigt, dass Tiere und Fahrzeuge das
-   tun, und eine Robbenkolonie, die über den Deich wandert, wäre für einen Zähl-Event das
-   Ende. Draufsehen, nicht nur zählen.
+   tun, und die parallele Sitzung hat **21 ft Höhenverlust in zwei Minuten** an den
+   `ASO_*`-Fahrzeugen gemessen — die rollen einen Hang hinunter. Eine Robbenkolonie, die über
+   den Deich wandert, wäre für einen Zähl-Event das Ende. **Also: hinsetzen, zwei Minuten
+   stehen lassen, wieder hinsehen** — nicht nur einmal zählen.
 3. **Setzt `auf_boden: 1` sie sauber in den Sand?** Die Bounding-Box beginnt bei z =
    **−0,003 m**, der Referenzpunkt liegt also praktisch am Boden — anders als bei `boot_klein`
    (Wasserlinie, rund anderthalb Meter im Boden, Punkt 2b). Erwartung: passt ohne Zuschlag.
@@ -858,8 +882,9 @@ Höhenangabe** (Koordinaten aus `counting seals/seal_colonies.json`, z. B. Norde
 
 Das Ziel ist ein **eigenes Paket**, ausgeliefert mit der Brügge — nicht eine 556-MB-Abhängigkeit
 auf Superspuds Sammlung. Denn per SimConnect erzeugte Objekte sind **lokal**: Wer das Modell
-nicht hat, sieht nichts und kann nicht mitzählen. Offen bleiben dafür zwei Dinge, beide erst
-nach Punkt 1 sinnvoll:
+nicht hat, sieht nichts und kann nicht mitzählen. Das eine schließt das andere nicht aus — in
+der Titelliste stehen beide, Superspuds Robbe zuerst, das eigene Modell dahinter. Offen bleiben
+zwei Dinge:
 
 - **Das Modell.** Superspud um Weitergabe der drei Meerestiere bitten (~320 KB je Tier,
   Freeware) oder ein eigenes bauen (Blender + Asobo-glTF-Exporter). Für ein eigenes spricht

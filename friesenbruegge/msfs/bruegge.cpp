@@ -307,15 +307,21 @@ static const Gattung g_gattungen[] = {
     // `SimObjects/Animals/*/sim.cfg` -- dasselbe Paket, das `counting seals` als Szenerie
     // benutzt, nur eben seine SimObject-Seite.
     //
-    // KEIN RUECKFALL AUF DEN BORDBESTAND, und das ist Absicht: Die Nachrueck-Mechanik soll
-    // verhindern, dass eine Gattung an einem fehlenden Titel stirbt -- hier waere sie
-    // schaedlich. Fiele `robbe` still auf `BlackBear` zurueck, lieferte der Kieker eine
-    // Zahl, waehrend am Strand Baeren liegen. Eine fehlende Robbe MUSS als EXCEPTION_22 im
+    // KEIN RUECKFALL AUF EINE ANDERE ART, und das ist Absicht: Die Nachrueck-Mechanik soll
+    // verhindern, dass eine Gattung an einem fehlenden Titel stirbt -- artfremd waere sie
+    // hier schaedlich. Fiele `robbe` still auf `BlackBear` zurueck, lieferte der Kieker eine
+    // Zahl, waehrend am Strand Baeren liegen. Fehlt jede Robbe, MUSS das als EXCEPTION_22 im
     // `fehler`-Feld sichtbar werden.
     //
-    // UNGEMESSEN (Messliste 8): Ob ein SimObject aus einem COMMUNITY-Paket ueberhaupt per
-    // AICreateSimulatedObject erzeugt werden kann. Alle bisher belegten Titel stammen aus
-    // Asobos Bordbestand. Von dieser einen Frage haengt auch ein eigenes Robben-Paket ab.
+    // Eine WEITERE ROBBE darf dagegen jederzeit dazu: Sobald ein eigenes Modellpaket steht,
+    // gehoert sein Titel hinter Superspuds -- dann nimmt die Bruegge das Addon, wo es
+    // installiert ist, und das eigene Modell bei allen anderen.
+    //
+    // ✅ BELEGT am 12.09.2026: `ahqa seal moving` wurde gesetzt und gezeichnet (Screenshot,
+    // Messliste 8). AICreateSimulatedObject findet also auch Community-Titel, nicht nur
+    // Asobos Bordbestand -- damit ist auch ein eigenes Paket gangbar. Gesetzt hat es
+    // allerdings ein EXTERNER SimConnect-Client; dass das WASM-Modul denselben Titel
+    // aufloest, ist noch nicht gemessen.
     { "robbe",       { "ahqa seal moving", "ahqa sea lion moving", "ahqa walrus moving",
                        nullptr } },
 };
