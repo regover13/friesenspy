@@ -186,7 +186,20 @@ Verbindung.
 **Das ist der Kern des Sollzustands-Gedankens:** Die Brügge befolgt keine Befehle, sondern
 gleicht ab. Geht eine Anfrage verloren, holt die nächste den Zustand wieder ein.
 
-### 3b. `AIRemoveObject` — **eingebaut, wartet auf einen Neustart**
+### 3b. `AIRemoveObject` — ✅ **bestätigt am 12.09.2026, Fassung 1.1.3 läuft**
+
+> **Das Modul lädt mit dem Import.** Der Verdacht gegen ihn war von Anfang an falsch; es war
+> immer nur das BOM im Paket.
+>
+> Gemessen nach dem Neustart, mit sauberer Ausgangslage (alle Objekte frisch, `seit_s` = 112):
+>
+> | | Boote | |
+> |---|---|---|
+> | vorher | 3 | 43 m, 94 m, 2021 m |
+> | `ref-boot` aus `soll` genommen | **2** | das 94-m-Boot ist **weg** |
+>
+> Damit trägt der Sollzustand-Gedanke in **beide** Richtungen. Bis dahin konnte die Brügge
+> ihn nur zur Hälfte durchsetzen: hinstellen ja, wegnehmen nein.
 
 > #### ⚠ Der Aufruf ist eine Voraussetzung, keine Annehmlichkeit — gemessen am 12.09.2026
 >
@@ -245,8 +258,16 @@ lag — genau das hat den 12.09. gekostet.
 > soll eine **Absicht** erkennen, kein Rundungsrauschen; sonst flackert das Objekt bei jeder
 > Meldung.
 >
-> **Nach dem Neustart zu prüfen:** Bär unter derselben `id` versetzen → `seit_s` beginnt bei
-> null, und er steht 5 m weiter.
+> ### ✅ Bestätigt am 12.09.2026 — und der Härtetest gleich mit
+>
+> | Versatz | Ergebnis |
+> |---|---|
+> | Boot 20 m nach Norden, gleiche `id` | ✅ umgezogen, neue Objekt-ID, **weiterhin 2 Boote** |
+> | Kreuzfahrtschiff **2 km** herangeholt | ✅ in EINEM Takt da, **weiterhin 2 Boote** |
+>
+> Der springende Punkt ist die unveränderte Anzahl: Das alte Objekt wird beim Umzug
+> weggeräumt. Ohne `AIRemoveObject` wären es jetzt vier. Beide Änderungen aus 1.1.3 greifen
+> also ineinander — das Versetzen funktioniert nur, weil das Wegnehmen funktioniert.
 
 ---
 
